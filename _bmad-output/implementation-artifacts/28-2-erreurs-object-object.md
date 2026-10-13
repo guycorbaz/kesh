@@ -2,8 +2,9 @@
 
 ## Status
 
-**in-progress** — validation close le 2026-10-13 (P3 ciblée : 0 MEDIUM, 2 LOW appliqués) ; développement
-(`bmad-dev-story`) en cours. Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
+**review** — développement fait le 2026-10-13 (`bmad-dev-story`, Opus 5.5, dernier commit de code `4ff3a11e`) ;
+revue de code P1 à lancer : `28-2-review-prompt-p1.md` (Sonnet, lentilles B, E, A). Validation close le 2026-10-13
+(P3 ciblée : 0 MEDIUM, 2 LOW appliqués). Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
 (rétrospective de l'Epic 27, #641), branche `story/28-2`, worktree `/home/gcorbaz/devel/kesh-28-2`. Port **3035**,
 bases `kesh_282` / `kesh_e2e_282`. Choix consignés au registre de l'epic `epic-28-choix-autonomes.md`
 (§ Story 28-2, versé par union à la validation P2), **C-28-2-1 à C-28-2-29**. 11 AC (AC1 à AC11).
@@ -438,26 +439,26 @@ Record et au prompt de revue P1 (C-28-2-14).
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Montage** (consignes 6, 8, 11, 13) : bases `kesh_282` / `kesh_e2e_282` (migrations du worktree, seed),
+- [x] **T0 — Montage** (consignes 6, 8, 11, 13) : bases `kesh_282` / `kesh_e2e_282` (migrations du worktree, seed),
   `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-28-2/target`, `node_modules` par `cp -al` si absent, port 3035.
-- [ ] **T1 — Tests d'abord, rouges** (AC8, AC9, AC10 scénario 1 + captures « avant ») : écrire
+- [x] **T1 — Tests d'abord, rouges** (AC8, AC9, AC10 scénario 1 + captures « avant ») : écrire
   `error-message.test.ts`, les cas de `api-client.test.ts`, les tests A1-A4 ; constater le rouge et le noter.
-- [ ] **T2 — `api-error.ts` et `error-message.ts`** (AC1) ; retrait d'`errorMessageOf` d'`api-client.ts`, réexport
+- [x] **T2 — `api-error.ts` et `error-message.ts`** (AC1) ; retrait d'`errorMessageOf` d'`api-client.ts`, réexport
   d'`isApiError` ; quatre importeurs (AC4).
-- [ ] **T3 — Traduction à la source** (AC2) : `serverStatusMessage`, `toFetchApiError` ; trois clés × 4 locales (AC7).
-- [ ] **T4 — Classe A** (AC3) et `handleDelete` de `BankProfileList.svelte` (C-28-2-20), puis **classe B** (AC4),
+- [x] **T3 — Traduction à la source** (AC2) : `serverStatusMessage`, `toFetchApiError` ; trois clés × 4 locales (AC7).
+- [x] **T4 — Classe A** (AC3) et `handleDelete` de `BankProfileList.svelte` (C-28-2-20), puis **classe B** (AC4),
   fichier par fichier, un commit par lot cohérent. La classe C ne change pas (AC5, C-28-2-25).
-- [ ] **T5 — Garde** `erreurs-en-texte.test.ts` (AC6) avec ses auto-tests, et `blocEquilibre` dans
+- [x] **T5 — Garde** `erreurs-en-texte.test.ts` (AC6) avec ses auto-tests, et `blocEquilibre` dans
   `i18n-literal-reader.js` avec ses tests (C-28-2-16) ; elle doit **rougir** sur la base de
   `6f971d76` (le vérifier avant T4 en la posant sur une copie, ou en rejouant M7) puis verdir après T4.
-- [ ] **T6 — Tests de la classe B** (AC9, dont les deux tests de page neufs `api-keys-page.test.ts` et
+- [x] **T6 — Tests de la classe B** (AC9, dont les deux tests de page neufs `api-keys-page.test.ts` et
   `reports-page.test.ts`) et E2E scénario 2 (AC10) ; captures « après ».
-- [ ] **T7 — Recomptes** : inventaire (AC5) par les commandes du § Inventaire ; `sitesTotal` et compagnie
+- [x] **T7 — Recomptes** : inventaire (AC5) par les commandes du § Inventaire ; `sitesTotal` et compagnie
   d'`i18n-keys.test.ts` (§ Pièges) ; les cinq planchers de l'AC6.
-- [ ] **T8 — CHANGELOG, manuel** (AC11 : contrôle sur texte aplati, `.tex` et PDF).
-- [ ] **T9 — Mutations** M1-M27 (§ Mutations), restauration `git checkout -- <f>` + `touch` (mémoire *Mutation
+- [x] **T8 — CHANGELOG, manuel** (AC11 : contrôle sur texte aplati, `.tex` et PDF).
+- [x] **T9 — Mutations** M1-M27 (§ Mutations), restauration `git checkout -- <f>` + `touch` (mémoire *Mutation
   restaurée, binaire périmé*).
-- [ ] **T10 — Gates complets au dernier commit de code** (consigne 3, D7) : `npm run check`,
+- [x] **T10 — Gates complets au dernier commit de code** (consigne 3, D7) : `npm run check`,
   `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build` ; `scripts/test-fast.sh` (le catalogue FTL est
   lu par `kesh-i18n`, `loader.rs::parity_between_locales`) ; E2E complet (8 échecs attendus à juger fichier par
   fichier, `docs/testing.md` § *Les échecs attendus*). Tous sous `flock …/.gate.lock` (consigne 13).
@@ -705,13 +706,159 @@ catalogues FTL : union à la fusion, `sitesTotal` **recompté** après rebase, j
 
 ### Agent Model Used
 
+Opus 5.5 (`bmad-dev-story`, autonomie), le 2026-10-13, sur `01ab2473` (validation close) rebasé sur `5aad8b35`.
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/` :
+
+- T1 « avant » : `28-2-t1-avant-{build-front,build-back,backend,e2e}.log` ;
+- mutations : `28-2-mutations.log` (trois campagnes), sorties par mutation dans `28-2-mut/` ;
+- gate backend : `28-2-gate-testfast.log` (+ `28-2-gate-rebuild-db.log`) ; frontend au premier passage :
+  `28-2-gate-front-{check,lint-i18n-ownership,test:unit,build}.log` ;
+- frontend et E2E au dernier commit de code : `28-2-final-front-{check,lint-i18n-ownership,test:unit}.log`,
+  `28-2-final-{build-front,build-back,backend,e2e}.log` ;
+- captures de la recette visuelle : `28-2-captures/books-lock-{avant,apres}-{light,dark}.png`.
 
 ### Completion Notes List
 
 - Fiche créée par analyse exhaustive du contexte (bmad-create-story) — guide de développement complet.
 
+**Ce qui a été livré, AC par AC.**
+
+- **AC1** — `utils/api-error.ts` (garde-type, `import type` seul) et `utils/error-message.ts` (`errorMessageOf`,
+  tableau de l'AC1 dans l'ordre, `console.error('[errorMessageOf]', err)` pour toute valeur qui n'est pas une
+  `ApiError`). `api-client.ts` réexporte `isApiError` et ne porte plus `errorMessageOf` ; les quatre importeurs
+  changent d'import.
+- **AC2** — `serverStatusMessage(status)` (un site pour les trois « Erreur serveur »), `toFetchApiError` par
+  `i18nMsg` ; replis = texte français d'avant, au caractère près ; un `message` du corps toujours repris.
+- **AC3 / AC4** — les 4 sites A et les 16 sites B, tableau par tableau ; `handleDelete` de `BankProfileList`
+  enveloppé (`notifyError`) ; branches préservées ; imports `isApiError` retirés là où ils devenaient inutiles
+  (`bank-accounts/+page.svelte`, `BankAccountJournalLinkForm.svelte`).
+- **AC5** — inventaire recompté au `HEAD` par les commandes du § Inventaire : la commande `String(…)` rend **5**
+  lignes (3 journalisations de classe C + 2 commentaires : `ManualMatchModal.svelte:145`, doc-comment
+  `error-message.ts:11`) ; `instanceof Error`, les **mêmes 5** ; gabarits, `+ ''`, `.toString()` : **0**. Classe
+  A = 0, B = 0, C = 3 inchangées (`hooks.client.ts`, `auth.svelte.ts` non touchés). Classe D : non recomptée par le
+  détecteur heuristique (non versionné) ; aucun fichier des quatre modules qui la portent (`credit-notes`,
+  `invoices`, `payment-batches`, `supplier-invoices`) n'est touché — suivie par #644. Classe E : non touchée.
+- **AC6** — garde `erreurs-en-texte.test.ts` ; `blocEquilibre` dans `i18n-literal-reader.js`, `corpsDeFonction`
+  devenu son appel en accolades (ses quatre tests verts sans modification, cinq tests neufs en parenthèses).
+  **Vérifiée rouge sur les sources de `5aad8b35`** (les fichiers A et B ramenés à la base, garde jouée, puis
+  restaurés) : les 20 sites nommés `fichier:ligne`, les 3 journalisations exemptées. Recueil au `HEAD`, mesuré par
+  la garde : **319** fichiers, **160** `catch (x)`, **4** `catch (x: T)`, **5** rappels `.catch`, **169** liaisons —
+  exactement la colonne « attendu en fin de story ».
+- **AC7** — trois clés × quatre catalogues, sous `# Story 28-2 — erreurs fabriquées par le client (#520)` ;
+  `i18n-repli-divergent-actif`, `i18n-un-repli-par-cle`, `i18n-entrees-a-variables`, `i18n-harvest`,
+  `i18n-keys` verts ; `parity_between_locales` dans le gate backend.
+- **AC8 / AC9** — tests listés au File List. Les tests de soumission des deux modales pilotent le vrai
+  `AccountAutocomplete` et constatent l'appel API.
+- **AC10** — `error-messages.spec.ts` : rouge avant le correctif (scénario 1 : `Received "[object Object]"` ;
+  scénario 2 : la clé `error-network` n'était pas servie), vert après. ⚠️ Comme la fiche l'écrit : le scénario 2
+  prouve la traversée, **pas la traduction** (fr-CH, texte servi = repli) ; la traduction n'est prouvée que par
+  les tests unitaires au catalogue allemand.
+- **AC11** — `CHANGELOG.md` : `## [0.13.3] — Non publié`, `### Corrigé`, la phrase de l'AC11. Manuel : contrôle
+  refait sur `.tex` et PDF aplatis — sortie **identique** à celle écrite pour `6f971d76` (`user-manual` 1
+  « Impossible de contacter », `admin-manual` 1 « erreur serveur », brochure 0) ; « Erreur chargement profils »,
+  « Profil introuvable », « ID invalide » : 0 dans les trois `.tex`, les trois PDF, le README, `website/`. Le manuel
+  ne change pas.
+
+**Mutations (T9)** — 28 jouées (M1-M27, M27 en deux variantes a/b) **plus M20b**, une par une, motif vérifié
+unique, restauration `git checkout --` puis `touch`, sous le verrou ; journal `28-2-mutations.log`. **27 / 27
+mutations de la fiche tuées ou déclarées** : 26 tuées par un test nommé (rouge pour la bonne raison, sorties
+relues dans `28-2-mut/`) ; **M20** (repli d'`error-server-status` en gabarit JS) **survit** à cinq tests et est
+**déclarée équivalente** (C-28-2-35 : rendu identique dans tous les chemins ; la garde nommée par la fiche écarte
+par construction les replis non littéraux) ; **M20b** (site qui passe `{ code: … }`), la seconde forme écrite par
+la fiche, est **tuée**. Incident de campagne : M19 a d'abord été **abandonnée** par le pilote, motif trouvé deux
+fois (`auth-recovery-error-network` porte le même texte) ; ancrée en début de ligne et rejouée : tuée par
+`cargo test -p kesh-i18n` (`i18n-keys.test.ts` reste vert — il ne compare pas les locales).
+
+**Gates (T10)** — bases `kesh_282` / `kesh_e2e_282` reconstruites avant chaque gate complet.
+
+| gate | commit | résultat |
+|---|---|---|
+| `scripts/test-fast.sh` (fmt + clippy + nextest, `DATABASE_URL` → `kesh_282`) | `5aff1a89` | **3514 exécutés, 3514 passés, 6 ignorés** |
+| `npm run check` | `5aff1a89` | **rouge** : 7 erreurs TS dans le test neuf de `TransactionSplitModal` → corrigé par `4ff3a11e` |
+| `npm run check` | `4ff3a11e` | 0 erreur, 29 avertissements (5 fichiers, aucun sur une ligne de la story) |
+| `npm run lint-i18n-ownership` | `4ff3a11e` | PASS |
+| `npm run test:unit` | `4ff3a11e` | **140 fichiers, 1483 tests passés** |
+| `npm run build` | `4ff3a11e` | vert (dans le script E2E) |
+| E2E complet (port 3035, `smtpConfigured:true`, 0 « Permission denied ») | `4ff3a11e` | **267 passés, 9 échoués, 19 ignorés** |
+
+`4ff3a11e` est le **dernier commit de code** ; son diff avec `5aff1a89` ne touche qu'un fichier de test frontend
+(`TransactionSplitModal.test.ts`, typage) : le gate backend n'a **pas** été rejoué sur `4ff3a11e`, et c'est
+déclaré ainsi. Les **9 échecs E2E**, jugés fichier par fichier contre `docs/testing.md` § *Les échecs attendus* :
+les 7 de la **KF-029** (#97 — `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`,
+`:150`) et les 2 de la **KF-045** (#421 — `invoices:415`, `:439` ; run lancé vers 10:50 UTC, donc avant midi
+UTC). **Aucun huitième de pollution** sur ce run ; aucun échec hors liste, rien à rejouer seul. Les deux scénarios
+de `error-messages.spec.ts` sont **verts**.
+
+**Décomptes, avec leur périmètre** (`01ab2473` → `4ff3a11e`, hors `_bmad-output`) : 41 fichiers (`git diff --name-status` : 9 neufs —
+2 modules, 6 tests Vitest dont la garde, 1 spec E2E —, 32 modifiés dont 4 catalogues et le CHANGELOG) ; **76**
+`it(`/`test(` ajoutés (74 Vitest + 2 E2E) et **2** `it.each` ; 0 test retiré. `sitesTotal` 2075 → **2079**, mesuré
+par la collecte d'`i18n-keys.test.ts` ; `sitesNonResolus`, `relais`, `sitesGabarit` inchangés. Clés : 3 × 4
+(`grep -c` : 3 par catalogue). `isApiError(` : 164 appels hors tests, inchangés par la story (AC1).
+
+**Recette visuelle (B2)** — captures « avant » (`[object Object]` sous le titre du verrou) et « après » (le message
+du serveur) en clair et en sombre. **Deux constats, hors périmètre, à remonter** : (1) `text-destructive` n'a
+**aucune couleur définie** (`app.css` ne porte que `--color-error` ; la classe est employée dans 40 fichiers
+`.svelte`) — le message d'erreur du verrou s'affiche en **noir**, avant comme après ; (2) l'application **n'a pas de
+thème sombre** (aucune règle `prefers-color-scheme` ni `.dark` dans `app.css`) : les captures « sombre » sont
+identiques aux claires. L'orchestrateur vérifie si une issue couvre le (1).
+
+**Écarts à la fiche** :
+
+1. **M20** déclarée équivalente, **M20b** ajoutée (C-28-2-35) — la fiche attribuait M20 à une garde qui ne voit pas
+   les replis en gabarit.
+2. **G4** voit aussi `${String(<liaison>)}`, d'où un double constat G1 + G4 sur cette forme (C-28-2-32).
+3. **`formatError`** garde `return err.message` dans sa branche `ApiError` : une `ApiError` au message vide y rend
+   `''` et rien ne s'affiche (C-28-2-33) — la fiche dit « seule la dernière ligne change ».
+4. **Captures** pilotées par `KESH_E2E_CAPTURES_DIR` / `_TAG` et prises **avant** l'assertion du texte
+   (C-28-2-30).
+5. **Le test de `BankProfileList.svelte` couvre `handleDelete` par une `ApiError`** ; la fiche ne demandait pas de
+   cas `Error` pour lui (il passe par le même `errorMessageOf`, testé seul).
+6. **Incident d'environnement** : le scratchpad de session est **partagé** avec l'agent de la 28-3, qui a écrasé
+   le script `e2e.sh` de cet agent à 12:59, pendant le run final (Playwright fini à 13:01 ; la sortie est celle du
+   script de la 28-2, le backend du port 3035 a été arrêté). Aucun effet constaté sur les résultats ; les scripts
+   de gate des agents gagneraient à porter la clé de la story dans leur nom.
+
+**Choix neufs** : C-28-2-30 à C-28-2-35 (registre `epic-28-choix-autonomes.md`, § Story 28-2).
+
 ### File List
+
+Neufs :
+
+- `frontend/src/lib/shared/utils/api-error.ts`
+- `frontend/src/lib/shared/utils/error-message.ts`
+- `frontend/src/lib/shared/utils/error-message.test.ts`
+- `frontend/src/lib/shared/erreurs-en-texte.test.ts`
+- `frontend/src/lib/features/bank-import/BankProfileList.test.ts`
+- `frontend/src/routes/(app)/bank-import/profiles/[id]/profile-page.test.ts`
+- `frontend/src/routes/(app)/settings/api-keys/api-keys-page.test.ts`
+- `frontend/src/routes/(app)/reports/reports-page.test.ts`
+- `frontend/tests/e2e/error-messages.spec.ts`
+
+Modifiés :
+
+- `CHANGELOG.md`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/lib/shared/utils/api-client.ts`, `api-client.test.ts`
+- `frontend/src/lib/shared/i18n-literal-reader.js`, `i18n-literal-reader.test.ts`, `i18n-keys.test.ts`
+- `frontend/src/routes/(app)/settings/+page.svelte`, `settings-page.test.ts`
+- `frontend/src/routes/(app)/settings/api-keys/+page.svelte`
+- `frontend/src/routes/(app)/bank-import/profiles/[id]/+page.svelte`
+- `frontend/src/routes/(app)/bank-accounts/+page.svelte`, `bank-accounts-page.test.ts`
+- `frontend/src/routes/(app)/reports/+page.svelte`
+- `frontend/src/routes/(app)/reconciliation/rules/+page.svelte`
+- `frontend/src/lib/features/bank-import/BankProfileList.svelte`
+- `frontend/src/lib/features/bank-import/DeleteBankImportAction.svelte`, `DeleteBankImportAction.test.ts`
+- `frontend/src/lib/features/bank-accounts/BankAccountJournalLinkForm.svelte`, `BankAccountJournalLinkForm.test.ts`
+- `frontend/src/lib/features/reconciliation/CancelReconciliationDialog.svelte`, `CancelReconciliationDialog.test.ts`
+- `frontend/src/lib/features/reconciliation/ManualMatchModal.svelte`, `ManualMatchModal.test.ts`
+- `frontend/src/lib/features/reconciliation/TransactionSplitModal.svelte`, `TransactionSplitModal.test.ts`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`
+- `frontend/src/lib/features/reconciliation/rules/RuleFormModal.svelte`, `RulesList.svelte`
+- `_bmad-output/implementation-artifacts/28-2-erreurs-object-object.md`, `epic-28-choix-autonomes.md`,
+  `sprint-status.yaml`, `28-2-review-prompt-p1.md` (neuf)
 
 ## Change Log
 
@@ -788,3 +935,10 @@ catalogues FTL : union à la fusion, `sitesTotal` **recompté** après rebase, j
     close. **Signal D5** déclaré au Project Lead en P2 (MEDIUM maintenu de P1 à P2, F1 = R2 né de la remédiation P1) :
     traité par un **retrait de périmètre** (C-28-2-19 retiré, classe C inchangée), non par un découpage. Statut
     `in-progress`.
+- 2026-10-13 — **Développement** (`bmad-dev-story`, Opus 5.5, autonomie) : T0-T10 faits ; commits `e4016aeb`
+  (utilitaire, traduction à la source, catalogues), `f744b4dc` (classes A et B), `86705aa9` (garde,
+  `blocEquilibre`), `bb45f4a0` (tests de la classe B, modales, E2E), `5aff1a89` (CHANGELOG), `4ff3a11e` (typage
+  d'un test — dernier commit de code). Mutations : 26 tuées, M20 déclarée équivalente, M20b ajoutée et tuée.
+  Gates : backend 3514/3514 (6 ignorés) à `5aff1a89` ; frontend complet et E2E complet (267 passés, 9 échecs
+  attendus KF-029 ×7 et KF-045 ×2) à `4ff3a11e`. Choix C-28-2-30 à 35. Écarts et constats de recette au Dev Agent
+  Record. Statut `review` ; prompt de revue P1 : `28-2-review-prompt-p1.md`.

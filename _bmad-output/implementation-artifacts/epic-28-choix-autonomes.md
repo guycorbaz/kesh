@@ -958,3 +958,68 @@ Choix faits à la remédiation de la validation P2 (2026-10-13, Opus 5.5, autono
 - **Écartée** : traiter un `null` d'exemption comme « hors de l'appel » (échec bruyant, mais pour une mauvaise
   raison : la garde accuserait une conversion qu'elle n'a pas localisée).
 - **Réversible** : oui.
+
+### C-28-2-30 — Les captures de la recette visuelle sont pilotées par une variable, jamais par un chemin écrit en dur (dev)
+
+- **Contexte** : l'AC10 demande des captures du scénario 1, en thème clair et sombre, avant et après le correctif,
+  **hors dépôt** (`kesh-gate-logs/28-2-captures/`). Écrire ce chemin dans un spec versionné y ferait entrer un
+  chemin de la station de dev, et la spec écrirait sur le disque à chaque gate E2E complet.
+- **Retenu** : `KESH_E2E_CAPTURES_DIR` (et `KESH_E2E_CAPTURES_TAG`, `avant` / `apres`) ; sans la variable, la spec
+  ne capture rien. Les captures sont prises **avant** l'assertion du texte, pour que la spec rouge d'avant le
+  correctif les produise quand même.
+- **Écartées** : chemin absolu dans la spec ; `testInfo.outputPath` (dans `test-results/`, effacé au run suivant).
+- **Réversible** : oui.
+
+### C-28-2-31 — Le détecteur de la garde vit dans le fichier de test (dev)
+
+- **Contexte** : la fiche prescrit des auto-tests « sur sources fictives passées à la fonction de détection ».
+  La fonction peut vivre dans un module `.js` partagé ou dans le test.
+- **Retenu** : dans `erreurs-en-texte.test.ts`, comme la garde modèle `i18n-libelle-en-dur.test.ts`. Seul
+  `blocEquilibre`, dont la garde a besoin et que `corpsDeFonction` réutilise, entre dans `i18n-literal-reader.js`.
+- **Écartée** : un module `erreurs-en-texte.js` — aucun autre consommateur, et un export de plus à maintenir.
+- **Réversible** : oui.
+
+### C-28-2-32 — G4 voit aussi `${String(<liaison>)}`, au prix d'un double constat avec G1 (dev)
+
+- **Contexte** : l'AC6 écrit G4 « `${<liaison>}` ou `${String(<liaison>)}` dans un gabarit », et la mutation M11 (A3
+  rétabli : `` `… ${String(err)}` ``) attend « garde G4 ». Or `${String(err)}` relève déjà de G1.
+- **Retenu** : G4 reconnaît les deux formes ; le site ressort sous G1 **et** G4. Le message d'échec est plus long,
+  mais la règle nommée par la fiche est celle qui rougit.
+- **Écartée** : G4 réduite à `${x}` (M11 ne serait vue que par G1, contrairement à la fiche).
+- **Réversible** : oui.
+
+### C-28-2-33 — `formatError` (rapports) garde `return err.message` dans sa branche `ApiError` (dev)
+
+- **Contexte** : l'AC4 dit de `formatError` (B15) que « seule la dernière ligne change ». Sa branche `ApiError`
+  rend `err.message` tel quel : une `ApiError` au message vide y rendrait la chaîne vide, et `{#if errorMsg}`
+  n'afficherait rien.
+- **Retenu** : la fiche, à la lettre — seule la dernière ligne passe par `errorMessageOf`. Le cas du message vide
+  est écrit ici et au Dev Agent Record : il relève du « message vide » (classe D, #644), non d'un « [object
+  Object] ».
+- **Écartée** : `return errorMessageOf(err)` aussi dans la branche `ApiError` — plus sûr, mais hors du périmètre
+  écrit, et la revue P1 en jugera.
+- **Réversible** : oui, une ligne.
+
+### C-28-2-34 — Le scénario 2 de l'E2E échoue en le disant si la clé `error-network` n'est pas servie (dev)
+
+- **Contexte** : le scénario lit le texte attendu au catalogue servi par `/api/v1/i18n/messages`. Une clé absente
+  rendrait `undefined`, et `toContainText(undefined)` échouerait d'une façon trompeuse.
+- **Retenu** : assertion explicite, avec son message, sur la présence de la clé avant l'interception. Avant le
+  correctif, le scénario 2 rougit donc sur ce message (constaté au run « avant »).
+- **Réversible** : oui.
+
+### C-28-2-35 — M20 sous sa forme « repli en gabarit » est déclarée équivalente ; M20b la complète (dev)
+
+- **Contexte** : la fiche attend que `i18n-entrees-a-variables.test.ts` fasse rougir M20 (repli
+  d'`error-server-status` écrit en gabarit JS). Jouée contre cette garde, `i18n-keys`, `i18n-repli-divergent-actif`,
+  `i18n-un-repli-par-cle` et `api-client.test.ts`, elle **survit** : la garde écarte par construction les replis
+  qui ne sont pas des littéraux (`repli.kind !== 'literal'`), et le dépôt en porte déjà un, légitime
+  (`reports/+page.svelte`, `reports-error-period-out-of-fiscal-year`). Le rendu est **identique** dans tous les
+  chemins : catalogue chargé, le repli n'est pas lu ; catalogue vide ou clé absente, le gabarit rend
+  « Erreur serveur (502) », exactement ce que rend l'interpolation du littéral.
+- **Retenu** : M20 (gabarit) **déclarée équivalente** à l'observation ; la règle « le repli porte les `{ $x }` »
+  reste une convention tenue en revue. La seconde forme écrite par la fiche, « site passant `{ code: … }` », est
+  jouée comme **M20b** et **tuée** (maillon 3 d'`i18n-entrees-a-variables`, et `api-client.test.ts`).
+- **Écartée** : étendre `i18n-entrees-a-variables` aux replis en gabarit — elle rougirait sur le site légitime des
+  rapports, hors périmètre.
+- **Réversible** : oui.
