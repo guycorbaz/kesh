@@ -2444,6 +2444,12 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 > plus : la règle d'ordre « pièces → compte → exercice » ne gouverne plus que W8 et W27, qui verrouillaient déjà le
 > compte au sol ; le cycle W9 / W24 n'existe plus. Restent en vigueur : la garde de W8 dans l'instruction de
 > `settle_invoice` et non dans `create_in_tx`, `accept_one_invoice` sans garde (I1), R5 et M19 sans objet.*
+>
+> *Annotation de la validation P3 (2026-10-13) : les **positions** de cette entrée (W9, W25, W29 avant le verrou
+> d'exercice ; W24 entre les étapes 1 et 2) sont **remplacées** par la règle de placement de C-28-4-21 (annotation P3) :
+> une garde non verrouillante posée avant un verrou y fait naître la vue avant l'attente (R1 = F1, R2 = F2). Le
+> « W24 après l'étape 2 » écarté ici l'était pour un cycle qui ne vaut que pour une garde **verrouillante** : il est
+> désormais retenu.*
 
 - **Contexte** : F1 (HIGH) — la règle « garde après les verrous métier » plaçait le compte après l'exercice dans W9,
   W25, W29, l'inverse de `settle_invoice` et `pay_in_tx` : cycle. F4 = R2 — W24 « après les étapes 1-2 » formait un
@@ -2465,6 +2471,9 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
   `settlement_bank_account_id` à `NULL` ; le classement « SansCompteBancaire » était faux.
 - **Retenu** : gardé comme W29 (si `settlement_bank_account_id` non nul, entre le verrou facture et le verrou de
   l'écriture d'achat), ligne de l'AC6, test T-a27, mutations M39 (position) et M40 (retrait), manuel.
+  *Annotation de la validation P3 (2026-10-13) : position remplacée — la garde suit le verrou de l'écriture d'achat et
+  de son exercice (C-28-4-21, annotation P3) ; M39 rétablie avec l'objet inverse (garde avancée avant ce verrou),
+  tuée par T-a48 (c).*
 - **Écartée** : exception assumée (annuler une facture payée sur un compte clos resterait permis) — contraire à
   C-28-4-10.
 - **Réversible** : oui.
@@ -2528,6 +2537,37 @@ l'orchestrateur).*
 
 ### C-28-4-21 — La garde « compte clos » ne verrouille rien ; aucun verrou ajouté, aucun ordre changé
 
+> *Annotation de la validation P3 (2026-10-13, Opus 5.5, sur décision de l'orchestrateur) — la simplification est
+> **maintenue sur le principe** (la garde reste non verrouillante), mais elle avait un défaut de **placement** (R1 = F1,
+> HIGH, confirmé par l'orchestrateur sur `reconciliation_cancel.rs:246-250`) : en rendant non verrouillante une garde
+> laissée à sa position P1, la P2 a posé une lecture ordinaire **avant** le verrou d'exercice de W9, W25, W28, W29
+> (et avant l'étape 2 de W24, R2 = F2). Sous `REPEATABLE READ`, la vue naît alors avant l'attente ; une annulation qui
+> attend derrière une clôture d'exercice relirait l'exercice « ouvert » et passerait — une erreur comptable. Le texte
+> ci-dessous est celui de la P2 ; il est **complété** ainsi :*
+>
+> 1. ***Règle de placement*** — *chaque garde se pose après le dernier verrou que le chemin prend avant sa première
+>    lecture ordinaire, de sorte que la story ne déplace jamais la naissance de la vue cohérente.* Doc-comments du sol
+>    qui l'imposent : `reconciliation_cancel.rs:247-252` et `:296`, `supplier_invoices.rs:1040-1045`,
+>    `invoice_settlements_write.rs:858-861`, `bank_imports.rs:389-391` et `:420-425`. Positions : W9 entre (3) et (4) ;
+>    W25 entre (2-bis) et (3) ; W28 après `supplier_invoices.rs:1070-1080` ; W29 après (1-bis) ; W24 après l'étape 2 ;
+>    W30 après le verrou de sa ligne ; W22 inchangée (vue déjà née dans la route).
+> 2. ***Critère à deux volets*** (AC7) — le point 3 ci-dessous gagne : *« aucun déplacement de la naissance de la
+>    vue : la première lecture non verrouillante de chaque chemin reste celle du sol »* ; la table *Position par
+>    chemin* gagne la colonne qui le prouve.
+> 3. ***Tests et mutations*** — M36 à M39, déclarées « sans objet » au point *Conséquences tirées*, sont **rétablies**
+>    avec l'objet inverse (garde avancée avant le verrou d'exercice) : M36 tuée par le test existant
+>    `reconciliation_cancel.rs:128`, M37 à M39 par T-a48 (entrelacement par virement, neuf) ; M54 (W24 avancée)
+>    équivalente sous MariaDB 10.11.
+> 4. ***L1 reclassée P2*** (R6 = F8) — le point 4 ci-dessous disait « P3 au plus » : la grille du `CLAUDE.md` donne
+>    **P2** (« comportement faux sans effet sur les comptes »). L1 reste une **dette assumée et motivée** (la fermer
+>    exige une garde verrouillante, donc les cycles de la P1), et s'écrit aussi à `docs/api-external.md` (les
+>    intégrations par clé d'API ne lisent pas le manuel ; R6 b). Ouvrir une issue `P2` qui la trace : à la décision
+>    de l'orchestrateur.
+> 5. ***Écartée en P3*** — reprendre une garde verrouillante pour fermer le défaut : inutile, le placement suffit, et
+>    c'est la voie qui avait ouvert les cycles de la P2.
+>
+> *Réversibilité inchangée : le placement est une modification locale par site.*
+
 - **Contexte** : la validation P2 rend 1 HIGH et 9 MEDIUM, presque tous nés de la remédiation P1 — le verrou exclusif
   de la garde, combiné aux verrous partagés que les `INSERT` à clé étrangère posent sur `companies`, ouvrait des cycles
   neufs avec les routes de gestion (R1, F5), avec `unreject` de la 28-5 (F1, HIGH), avec `accept_one_invoice` (F2) ;
@@ -2580,5 +2620,22 @@ l'orchestrateur).*
   sans verrou, mais `accept_one_invoice` n'en a pas besoin et le refus y deviendrait un code mort) ; l'écrire comme
   angle mort du doc-comment (laisse le mode d'échec ouvert, alors que l'extracteur existe).
 - **Réversible** : oui.
+
+*Choix C-28-4-23 : remédiation de la validation P3 (2026-10-13, Opus 5.5, autonomie). La règle de placement et le
+reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
+
+### C-28-4-23 — `cancel_batch` (W21) : une sortie d'état autorisée, et non un invariant
+
+- **Contexte** : F8 de la P3 — le registre de l'AC8 classait W21 `Invariant("I2", "un compte clos n'a aucun lot
+  generated")`. Sous L1, un lot `generated` peut exister sur un compte clos, et `cancel_batch`, non gardé, est
+  précisément le geste qui l'en fait sortir (c'est le remède de L1). La raison écrite était donc fausse.
+- **Retenu** : un cinquième statut au registre, `SortieAutorisee("<raison>")` — geste qui ne fait que sortir de l'état
+  qu'un invariant interdit sur un compte clos, laissé sans garde à dessein —, porté par W21 seul.
+- ⚠️ **Exception à C-28-4-10, dite comme telle** : annuler un lot `generated` écrit sur un compte clos. Elle ne se
+  présente que dans une situation que L1 a créée, et ne fait que rétablir I2.
+- **Écartées** : garder le statut `Invariant` en réécrivant la raison (le statut dirait encore « hors d'atteinte »,
+  ce qui est faux) ; garder W21 (`Gardee`) — cohérent avec C-28-4-10, mais oblige à rouvrir le compte pour annuler
+  un lot que L1 a laissé passer ; le remède « rouvrir, traiter, clore » reste de toute façon possible.
+- **Réversible** : oui (une variante de statut, un site).
 
 [#642]: https://github.com/guycorbaz/kesh/issues/642
