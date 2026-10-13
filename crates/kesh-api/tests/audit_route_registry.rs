@@ -24,12 +24,12 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 115 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 116 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (115 routes) ; celui du
-//! REGISTRE est plus large (118), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (116 routes) ; celui du
+//! REGISTRE est plus large (119), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -111,7 +111,14 @@
 //!   (point (vi)). Le lot de **rejet** (`reconciliation::post_reject`, non
 //!   rejoué) verrouille ses transactions par identifiant croissant depuis la
 //!   Story 27-1 (AC4-bis), comme la suppression d'un import, ce qui ferme leur
-//!   cycle.
+//!   cycle. L'**annulation d'un rejet**
+//!   (`reconciliation::post_unreject_transaction`, Story 28-5a, non rejouée)
+//!   verrouille **une** ligne de `bank_transactions` puis insère une ligne
+//!   d'audit ; un seul cycle est nommé (C-28-5-30) : la remise à zéro
+//!   d'onboarding (`kesh_seed::reset_demo`) prend `audit_log` par une lecture
+//!   verrouillante **puis** supprime `bank_transactions` — l'ordre inverse.
+//!   Victime, l'annulation rend 500 sans rien de partiel ; rare (installation
+//!   de démonstration), et c'est le cas même de `post_reject`.
 //!   S'y ajoutent, **par choix** (Story 15-7a2, revue P1 B-4 = E-4, choix
 //!   C-15-7a2-4), les **huit routes d'étape de l'onboarding** autres que
 //!   `finalize` (`language`, `mode`, `start-production`, `org-type`,
@@ -320,6 +327,8 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "reconciliation::post_split", Traced, Rejouee),
     // Story 25-3-b (#418) — `reconciliation.cancelled`.
     ("post", "reconciliation::post_cancel_reconciliation", Traced, Rejouee),
+    // Story 28-5a (#526) — `reconciliation.unrejected`.
+    ("post", "reconciliation::post_unreject_transaction", Traced, SansEcritureAuJournal),
     ("post", "bank_accounts::create_bank_account", Traced, SansEcritureAuJournal),
     ("patch", "bank_accounts::patch_bank_account_journal_link", Traced, SansEcritureAuJournal),
     ("put", "bank_accounts::update_bank_account", Traced, SansEcritureAuJournal),
@@ -642,10 +651,10 @@ fn the_registry_partition_is_what_the_story_declares() {
         .filter(|(_, _, s, _)| matches!(s, NoMatter(_)))
         .count();
 
-    assert_eq!(LIB_ROUTES.len(), 115, "l'inventaire porte sur 115 routes");
+    assert_eq!(LIB_ROUTES.len(), 116, "l'inventaire porte sur 116 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 109,
+        traced, 110,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -655,7 +664,7 @@ fn the_registry_partition_is_what_the_story_declares() {
          de configuration de l'installation (15-7a2, #434), plus le peuplement de \
          démonstration (15-7b1, #434), plus le lettrage et le délettrage manuels \
          (15-1a-i, #518), plus la remise à zéro (15-7b2, #434), plus la suppression d'un \
-         import non rapproché (27-1, #632)"
+         import non rapproché (27-1, #632), plus l'annulation d'un rejet (28-5a, #526)"
     );
     assert_eq!(exempt, 4, "4 routes d'auth (#435)");
     assert_eq!(
@@ -664,7 +673,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        118,
+        119,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -988,13 +997,13 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 91,
-        "90 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
-         import, 27-1), plus \
+        sans_ecriture, 92,
+        "91 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
+         import, 27-1 ; l'annulation d'un rejet, 28-5a), plus \
          /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
-    assert_eq!(tout.len(), 118);
+    assert_eq!(tout.len(), 119);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

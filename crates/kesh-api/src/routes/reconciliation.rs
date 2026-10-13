@@ -11,6 +11,10 @@
 //! - `POST /api/v1/reconciliation/reject` — marque les transactions
 //!   comme manuellement revues (`auto_match_rejected_at = NOW()`)
 //!   sous mutex. Body : `{ bankAccountId, bankTransactionIds }`.
+//! - `POST /api/v1/reconciliation/transactions/{id}/unreject` — annule le
+//!   rejet d'une transaction (`auto_match_rejected_at = NULL`) sous mutex,
+//!   sans corps, `204` ; la transaction redevient proposable (Story 28-5a,
+//!   #526 — [`post_unreject_transaction`]).
 //!
 //! **Lots, Story 27-4 (#634)** : une transaction du lot introuvable
 //! (supprimée avec son import, d'un autre compte ou d'une autre société),
@@ -4309,11 +4313,14 @@ async fn post_split_once(
     })
 }
 
-/// Conclut une tentative de `post_manual` ou `post_split` (revue P1 de la
-/// Story 15-5e2, B-3 : le `match` était recopié dans les deux) : `commit` si la
-/// fermeture de `with_account_lock` a réussi, sinon `rollback` et conversion de
-/// la [`ReconciliationError`] en [`AppError`]. `flow` nomme la route dans le
-/// 500 défensif des variants `Rule*`.
+/// Conclut une tentative de `post_manual`, de `post_split` (revue P1 de la
+/// Story 15-5e2, B-3 : le `match` était recopié dans les deux) ou de
+/// `post_unreject_transaction` (Story 28-5a, C-28-5-18 — d'où la signature
+/// générique) : `commit` si la fermeture de `with_account_lock` a réussi,
+/// sinon `rollback` et conversion de la [`ReconciliationError`] en
+/// [`AppError`]. `flow` nomme la route dans le 500 défensif des variants
+/// `Rule*`. Pour un refus de l'annulation de rejet, la fermeture n'a rien
+/// écrit : le `commit` vaut un `rollback`.
 ///
 /// ⛔ Un 1213 sort de la branche `Db` en `AppError::Database(DbError::Sqlx(_))`
 /// **intact** : c'est la forme que reconnaît le prédicat de
@@ -4322,18 +4329,18 @@ async fn post_split_once(
 ///
 /// P-H4 Pass 1 (8-5a-base) : `rollback().await` explicite plutôt que `drop` ;
 /// son échec éventuel est ignoré, l'erreur principale étant plus signifiante.
-async fn conclude_locked_attempt(
+async fn conclude_locked_attempt<T>(
     tx_outer: sqlx::Transaction<'_, sqlx::MySql>,
-    lock_result: Result<i64, ReconciliationError>,
+    lock_result: Result<T, ReconciliationError>,
     flow: &'static str,
-) -> Result<i64, AppError> {
+) -> Result<T, AppError> {
     match lock_result {
-        Ok(journal_entry_id) => {
+        Ok(value) => {
             tx_outer
                 .commit()
                 .await
                 .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
-            Ok(journal_entry_id)
+            Ok(value)
         }
         Err(ReconciliationError::AccountLocked {
             bank_account_id,
@@ -4363,8 +4370,9 @@ async fn conclude_locked_attempt(
             let _ = tx_outer.rollback().await;
             Err(AppError::Database(DbError::Sqlx(e)))
         }
-        // Story 8-5a-bis — ni `post_manual` ni `post_split` n'ouvrent de
-        // savepoint : branche exhaustive, inatteignable en pratique.
+        // Story 8-5a-bis — ni `post_manual`, ni `post_split`, ni
+        // `post_unreject_transaction` (Story 28-5a) n'ouvrent de savepoint :
+        // branche exhaustive, inatteignable en pratique.
         Err(ReconciliationError::TransactionAborted { source }) => {
             drop(tx_outer);
             Err(transaction_aborted_outside_accept(&source))
@@ -4381,8 +4389,9 @@ async fn conclude_locked_attempt(
                 difference,
             })
         }
-        // Story 8-5b — branche exhaustive (ces routes ne touchent pas aux
-        // règles). Inatteignable en pratique.
+        // Story 8-5b — branche exhaustive (`post_manual`, `post_split` et
+        // `post_unreject_transaction` ne touchent pas aux règles).
+        // Inatteignable en pratique.
         Err(
             ReconciliationError::RuleNotFound { .. }
             | ReconciliationError::RuleNoLongerMatches { .. }
@@ -4511,17 +4520,8 @@ async fn cancel_reconciliation_once(
     user_id: i64,
     actor_api_key_id: Option<i64>,
 ) -> Result<CancelReconciliationResponse, AppError> {
-    // Le compte, pour nommer le verrou — lu hors verrou, scopé par société :
-    // il ne change jamais pour une transaction.
-    let bank_account_id: i64 = sqlx::query_scalar(
-        "SELECT bank_account_id FROM bank_transactions WHERE id = ? AND company_id = ?",
-    )
-    .bind(bank_transaction_id)
-    .bind(company_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| AppError::Database(DbError::Sqlx(e)))?
-    .ok_or(AppError::Database(DbError::NotFound))?;
+    let bank_account_id =
+        bank_account_of_transaction(pool, company_id, bank_transaction_id).await?;
 
     let mut tx = pool
         .begin()
@@ -4582,6 +4582,205 @@ async fn cancel_reconciliation_once(
                 }
             })
         }
+    }
+}
+
+/// Le compte bancaire d'une transaction, pour nommer le verrou — lu hors
+/// verrou, scopé par société : il ne change jamais pour une transaction.
+/// Absente (ou d'une autre société) → `404 NOT_FOUND`. Partagée par
+/// `…/cancel` et `…/unreject` (Story 28-5a, C-28-5-18).
+///
+/// Lecture non verrouillante en autocommit : elle ne demande aucun verrou et
+/// ne peut être victime d'aucun interblocage.
+async fn bank_account_of_transaction(
+    pool: &sqlx::MySqlPool,
+    company_id: i64,
+    bank_transaction_id: i64,
+) -> Result<i64, AppError> {
+    sqlx::query_scalar(
+        "SELECT bank_account_id FROM bank_transactions WHERE id = ? AND company_id = ?",
+    )
+    .bind(bank_transaction_id)
+    .bind(company_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| AppError::Database(DbError::Sqlx(e)))?
+    .ok_or(AppError::Database(DbError::NotFound))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Story 28-5 (#526) — annuler un rejet
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Ce que décide, pour une annulation de rejet, la ligne lue sous verrou
+/// ([`classify_unreject`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UnrejectOutcome {
+    /// Rejetée et non rapprochée : le rejet est annulé (`204`).
+    Unrejected,
+    /// Introuvable — d'une autre société, ou supprimée avec son import pendant
+    /// l'attente du verrou : `404 NOT_FOUND`.
+    NotFound,
+    /// Non rejetée (jamais, ou plus), ou rapprochée :
+    /// `409 RECONCILIATION_TRANSACTION_NOT_REJECTED`.
+    NotRejected,
+}
+
+/// Classe une annulation de rejet à partir de la ligne lue **sous verrou**,
+/// par une lecture verrouillante, ou de son absence — Story 28-5a, AC3
+/// (#526). Fonction **pure** ; l'ordre des bras est la priorité :
+///
+/// | ligne lue | issue |
+/// |---|---|
+/// | absente | `NotFound` |
+/// | rapprochée au sens d'[`is_reconciled`], marquée ou non | `NotRejected` |
+/// | non rapprochée, `auto_match_rejected_at` nul | `NotRejected` |
+/// | sinon — rejetée | `Unrejected` |
+///
+/// ⛔ **Une seule définition de « rapprochée »** : la fonction appelle
+/// [`is_reconciled`] (Story 27-1) et n'écrit aucun second test de statut. Une
+/// transaction rapprochée **et** marquée — état qu'aucun chemin réel ne
+/// produit — est refusée, marqueur intact.
+///
+/// [`is_reconciled`]: kesh_db::repositories::bank_imports::is_reconciled
+fn classify_unreject(row: Option<&BankTransaction>) -> UnrejectOutcome {
+    use kesh_db::repositories::bank_imports::is_reconciled;
+    match row {
+        None => UnrejectOutcome::NotFound,
+        Some(t) if is_reconciled(t.status.as_str(), t.matched_entry_id) => {
+            UnrejectOutcome::NotRejected
+        }
+        Some(t) if t.auto_match_rejected_at.is_none() => UnrejectOutcome::NotRejected,
+        Some(_) => UnrejectOutcome::Unrejected,
+    }
+}
+
+/// `POST /api/v1/reconciliation/transactions/{id}/unreject` — annule le rejet
+/// d'une transaction bancaire (Comptable+, clés API d'écriture admises, Story
+/// 28-5a, #526). Sans corps ; `204`.
+///
+/// Le marqueur `auto_match_rejected_at` repasse à `NULL` (`version + 1`) : la
+/// transaction **redevient proposable** (`GET /reconciliation/proposals`, dans
+/// la limite de `limit`). Statut et lien inchangés ; aucune écriture, aucun
+/// règlement. Trace `reconciliation.unrejected`, `details.previouslyRejectedAt`
+/// = le marqueur lu sous verrou, même chaîne que le champ
+/// `autoMatchRejectedAt` de la transaction exposée.
+///
+/// Refus, sans rien écrire ni tracer : `404 NOT_FOUND` (introuvable, autre
+/// société, supprimée pendant l'attente du verrou) ;
+/// `409 RECONCILIATION_TRANSACTION_NOT_REJECTED` (non rejetée, ou rapprochée) ;
+/// `409 RECONCILIATION_ACCOUNT_LOCKED` ; `409 OPTIMISTIC_LOCK_CONFLICT`,
+/// défensif et inatteignable.
+///
+/// **Pas de rejeu sur interblocage** (`SansEcritureAuJournal`, comme
+/// `post_reject`) : la transaction verrouille **une** ligne de
+/// `bank_transactions` puis insère une ligne d'audit. Seul cycle connu : la
+/// remise à zéro d'onboarding (`kesh_seed::reset_demo`), qui prend `audit_log`
+/// par une lecture verrouillante puis supprime `bank_transactions` — l'ordre
+/// inverse. Victime, l'annulation rend `500`, sans rien de partiel ; c'est le
+/// cas même de `post_reject` (C-28-5-30, point (iv) d'`audit_route_registry.rs`).
+pub async fn post_unreject_transaction(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Result<axum::http::StatusCode, AppError> {
+    unreject_once(
+        &state.pool,
+        current_user.company_id,
+        id,
+        current_user.user_id,
+        current_user.api_key_id,
+    )
+    .await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+/// La transaction de l'annulation : verrou du compte, lecture verrouillante,
+/// classement et — rejetée — remise à `NULL` du marqueur et trace, puis
+/// conclusion par [`conclude_locked_attempt`].
+async fn unreject_once(
+    pool: &sqlx::MySqlPool,
+    company_id: i64,
+    bank_transaction_id: i64,
+    user_id: i64,
+    actor_api_key_id: Option<i64>,
+) -> Result<(), AppError> {
+    let bank_account_id =
+        bank_account_of_transaction(pool, company_id, bank_transaction_id).await?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+    let lock_result: Result<UnrejectOutcome, ReconciliationError> = with_account_lock(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        LOCK_TIMEOUT_SECS,
+        async move |tx_inner| {
+            // Lecture COURANTE et verrouillante : une `SELECT` ordinaire lirait
+            // la vue cohérente ; celle-ci attend une suppression d'import en
+            // cours, puis la voit (`404`, B10).
+            let row = reconciliation_repo::find_by_id_for_account_for_update(
+                &mut **tx_inner,
+                company_id,
+                bank_account_id,
+                bank_transaction_id,
+            )
+            .await
+            .map_err(ReconciliationError::Db)?;
+            let outcome = classify_unreject(row.as_ref());
+            if outcome != UnrejectOutcome::Unrejected {
+                return Ok(outcome);
+            }
+            // `DATETIME(3)` décodé en `NaiveDateTime` : `.and_utc()` comme
+            // `reject_batch` et le champ `autoMatchRejectedAt` (même chaîne).
+            let previously_rejected_at = row
+                .and_then(|t| t.auto_match_rejected_at)
+                .map(|d| d.and_utc());
+
+            let result = sqlx::query(
+                "UPDATE bank_transactions \
+                 SET auto_match_rejected_at = NULL, updated_at = NOW(3), \
+                     version = version + 1 \
+                 WHERE id = ? AND company_id = ? AND bank_account_id = ?",
+            )
+            .bind(bank_transaction_id)
+            .bind(company_id)
+            .bind(bank_account_id)
+            .execute(&mut **tx_inner)
+            .await
+            .map_err(|e| ReconciliationError::Db(DbError::Sqlx(e)))?;
+            if result.rows_affected() != 1 {
+                // Inatteignable : la ligne est verrouillée par la lecture
+                // ci-dessus (C-28-5-19) — jamais un `204` muet.
+                return Err(ReconciliationError::Db(DbError::OptimisticLockConflict));
+            }
+
+            audit_log::insert_in_tx(
+                tx_inner,
+                NewAuditLogEntry::for_actor(
+                    user_id,
+                    actor_api_key_id,
+                    "reconciliation.unrejected",
+                    "bank_transaction",
+                    bank_transaction_id,
+                    Some(serde_json::json!({
+                        "previouslyRejectedAt": previously_rejected_at,
+                    })),
+                ),
+            )
+            .await?;
+            Ok(UnrejectOutcome::Unrejected)
+        },
+    )
+    .await;
+
+    match conclude_locked_attempt(tx, lock_result, "post_unreject").await? {
+        UnrejectOutcome::Unrejected => Ok(()),
+        UnrejectOutcome::NotFound => Err(AppError::Database(DbError::NotFound)),
+        UnrejectOutcome::NotRejected => Err(AppError::ReconciliationTransactionNotRejected {
+            bank_transaction_id,
+        }),
     }
 }
 
@@ -4772,7 +4971,8 @@ mod batch_classification_tests {
     //! Codes écrits **en dur**, jamais relus d'une constante de production.
     use super::*;
 
-    fn tx(
+    /// Partagée avec `unreject_classification_tests` (Story 28-5a).
+    pub(super) fn tx(
         status: BankTransactionStatus,
         matched_entry_id: Option<i64>,
         rejected: bool,
@@ -4900,5 +5100,35 @@ mod batch_classification_tests {
         let merged = merge_failed_in_order(&[9, 5, 1, 3], pre, vec![f(5)]);
         let ids: Vec<i64> = merged.iter().map(|x| x.bank_transaction_id).collect();
         assert_eq!(ids, vec![9, 5, 1]);
+    }
+}
+
+#[cfg(test)]
+mod unreject_classification_tests {
+    //! Story 28-5a (#526), B8 — le classement d'une annulation de rejet.
+    use super::batch_classification_tests::tx;
+    use super::*;
+
+    #[test]
+    fn absent_row_is_not_found() {
+        assert_eq!(classify_unreject(None), UnrejectOutcome::NotFound);
+    }
+
+    #[test]
+    fn reconciled_row_is_not_rejected_even_if_marked() {
+        let t = tx(BankTransactionStatus::Reconciled, Some(3), true);
+        assert_eq!(classify_unreject(Some(&t)), UnrejectOutcome::NotRejected);
+    }
+
+    #[test]
+    fn unmarked_row_is_not_rejected() {
+        let t = tx(BankTransactionStatus::Pending, None, false);
+        assert_eq!(classify_unreject(Some(&t)), UnrejectOutcome::NotRejected);
+    }
+
+    #[test]
+    fn rejected_row_is_unrejected() {
+        let t = tx(BankTransactionStatus::Pending, None, true);
+        assert_eq!(classify_unreject(Some(&t)), UnrejectOutcome::Unrejected);
     }
 }

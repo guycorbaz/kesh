@@ -22,7 +22,8 @@
 //!   chaque ligne et refuse par proposition dans `failed[]`.
 //! - [`find_by_id_for_account_for_update`] : relecture **verrouillante**
 //!   (lecture courante) d'une transaction par le rejet, quand son
-//!   `UPDATE` n'a touché aucune ligne (Story 27-4, AC4).
+//!   `UPDATE` n'a touché aucune ligne (Story 27-4, AC4), et lecture de
+//!   l'annulation d'un rejet, sous verrou, avant son `UPDATE` (Story 28-5a).
 //! - [`find_pending_by_id_for_account`] : recharge UNE
 //!   `BankTransaction` pending par id (C2 Pass 1 — TOCTOU fix : appelé
 //!   inside lock dans `accept_one` pour fermer la fenêtre entre le
@@ -390,11 +391,16 @@ fn bank_tx_by_id_for_account_sql(suffix: &str) -> String {
 /// jusqu'à la fin de la transaction (verrou d'intervalle si la ligne est
 /// absente) : l'appelant sait ce que la ligne est **maintenant**.
 ///
-/// Seul appelant : `reject_batch` (`kesh-api/src/routes/reconciliation.rs`),
-/// quand l'`UPDATE` du rejet n'a touché aucune ligne — la ligne relue est
-/// reclassée (introuvable, rapprochée, rejetée). Le verrou porte sur une
-/// ligne que l'`UPDATE` qui précède visait déjà : même ordre, aucun
-/// cycle neuf.
+/// Deux appelants, dans `kesh-api/src/routes/reconciliation.rs` :
+///
+/// - `reject_batch`, quand l'`UPDATE` du rejet n'a touché aucune ligne — la
+///   ligne relue est reclassée (introuvable, rapprochée, rejetée). Le verrou
+///   porte sur une ligne que l'`UPDATE` qui précède visait déjà : même ordre,
+///   aucun cycle neuf ;
+/// - `unreject_once` (Story 28-5a, #526), qui lit la ligne sous le verrou du
+///   compte **avant** son `UPDATE` et la classe (`classify_unreject`) : une
+///   transaction supprimée avec son import pendant l'attente est vue absente
+///   (`404`), là où la vue cohérente la verrait encore.
 ///
 /// ⚠️ Appelée **hors** transaction (autocommit), elle ne verrouille rien
 /// au-delà de l'instruction : réservée à un exécuteur transactionnel.

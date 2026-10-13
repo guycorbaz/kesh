@@ -1394,3 +1394,30 @@ est portée en note à C-28-5-4 et C-28-5-19.
 - **Écartée** : rejouer la route sur 1213 (une enveloppe de rejeu pour un cas que `post_reject`, voisin, assume déjà ;
   le geste se refait d'un clic).
 - **Réversible** : oui.
+
+### C-28-5-31 — B8 réutilise le constructeur de transaction des tests de la 27-4 (28-5a, dev)
+
+- **Contexte** : le `mod unreject_classification_tests` (B8) a besoin d'une `BankTransaction` de test ;
+  `batch_classification_tests::tx` (27-4) la construit déjà, privée à son module.
+- **Retenu** : `tx` passe en `pub(super)` (un mot et une ligne de doc) et B8 l'importe — règle DRY du `CLAUDE.md`.
+- **Écartée** : recopier les 25 lignes du constructeur dans le module neuf.
+- **Réversible** : oui. ⚠️ Région hors du tableau des régions de la fiche (une ligne, `batch_classification_tests`) :
+  union au rebase si la 28-6 y touche.
+
+### C-28-5-32 — L'auxiliaire `bank_account_of_transaction` vit dans la section neuve (28-5a, dev)
+
+- **Contexte** : C-28-5-18 prescrit l'auxiliaire sans fixer sa place.
+- **Retenu** : placé en tête de la section neuve, après `cancel_reconciliation_once` ; son doc-comment reprend mot
+  pour mot le commentaire supprimé de `cancel` (« lu hors verrou, scopé par société : il ne change jamais pour une
+  transaction ») et la note « lecture non verrouillante en autocommit ».
+- **Réversible** : oui.
+
+### C-28-5-33 — Gates frontend exécutés bien qu'aucun fichier frontend ne soit touché (28-5a, dev)
+
+- **Contexte** : la 28-5a ne touche aucun fichier sous `frontend/` (C-28-5-26), mais plusieurs gardes Vitest
+  (`i18n-keys.test.ts`, `i18n-entrees-a-variables.test.ts`…) **lisent** les catalogues `crates/kesh-i18n/locales/*`,
+  auxquels la 28-5a ajoute deux clés.
+- **Retenu** : `check`, `lint-i18n-ownership`, `test:unit` et `build` exécutés au dernier commit de code, sous verrou.
+- **Écartée** : s'en tenir à la lettre de T7a (aucun gate frontend exigé) — une garde Vitest pouvait rougir sans
+  fichier frontend modifié.
+- **Réversible** : sans objet.

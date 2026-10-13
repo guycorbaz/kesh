@@ -929,6 +929,15 @@ pub enum AppError {
     #[error("Transaction bancaire non pending : id={bank_transaction_id}")]
     ReconciliationTransactionNotPending { bank_transaction_id: i64 },
 
+    /// Story 28-5a (#526) — l'annulation d'un rejet
+    /// (`POST /reconciliation/transactions/{id}/unreject`) vise une transaction
+    /// qui n'est pas rejetée : jamais rejetée, rejet déjà annulé, ou
+    /// rapprochée au sens d'`is_reconciled` (marquée ou non) →
+    /// `409 RECONCILIATION_TRANSACTION_NOT_REJECTED`, `details.bankTransactionId`.
+    /// Une transaction introuvable rend `404 NOT_FOUND`, pas ce code.
+    #[error("Transaction bancaire non rejetée : id={bank_transaction_id}")]
+    ReconciliationTransactionNotRejected { bank_transaction_id: i64 },
+
     // ----- Story 8-5a-bis — split FR48 -----
     /// `sum(splits) != tx.amount.abs()` (Decimal exact, pas de tolérance)
     /// → `400 RECONCILIATION_SPLIT_IMBALANCE`. Body `details = {
@@ -2675,6 +2684,25 @@ impl IntoResponse for AppError {
                     }
                 });
                 (StatusCode::NOT_FOUND, Json(body)).into_response()
+            }
+
+            // Story 28-5a (#526) — annulation d'un rejet sur une transaction
+            // non rejetée. Repli égal mot pour mot au catalogue fr-CH (G9).
+            AppError::ReconciliationTransactionNotRejected {
+                bank_transaction_id,
+            } => {
+                let msg = t(
+                    "reconciliation-errors-transaction-not-rejected",
+                    "Cette transaction n'est pas rejetée : son rejet a peut-être déjà été annulé, ou elle a été rapprochée.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_TRANSACTION_NOT_REJECTED",
+                        "message": msg,
+                        "details": { "bankTransactionId": bank_transaction_id },
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
             }
 
             // Story 8-5a-bis FR48 — split imbalance → 400 avec body Decimal stringifié.

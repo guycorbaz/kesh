@@ -1188,6 +1188,8 @@ reconciliation-labels-score = Punteggio
 reconciliation-errors-account-locked = Conto bancario in fase di riconciliazione da parte di un altro utente. Riprova tra qualche secondo.
 reconciliation-errors-already-reconciled = Questa transazione è già stata riconciliata.
 reconciliation-errors-invoice-not-eligible = Questa fattura non è idonea alla riconciliazione.
+# Story 28-5a (#526) — refus de l'annulation d'un rejet (409).
+reconciliation-errors-transaction-not-rejected = Questa transazione non è rifiutata: il rifiuto potrebbe essere già stato annullato, oppure è stata riconciliata.
 reconciliation-toast-accept-success = { $count } transazione/i riconciliata/e con successo.
 reconciliation-toast-reject-success = { $count } transazione/i rifiutata/e con successo.
 
@@ -2366,6 +2368,7 @@ audit-log-action-reconciliation-cancelled = Riconciliazione annullata
 audit-log-action-reconciliation-rejected = Riconciliazione rifiutata
 audit-log-action-reconciliation-manual-matched = Riconciliazione manuale effettuata
 audit-log-action-reconciliation-split-applied = Transazione suddivisa
+audit-log-action-reconciliation-unrejected = Rifiuto della riconciliazione annullato
 audit-log-action-reconciliation-rule-created = Regola di assegnazione creata
 audit-log-action-reconciliation-rule-updated = Regola di assegnazione aggiornata
 audit-log-action-reconciliation-rule-deleted = Regola di assegnazione eliminata
