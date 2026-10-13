@@ -2,7 +2,7 @@
 
 ## Status
 
-**28-4a : review** (développée le 2026-10-13, Opus 5.5 ; revue P1 à lancer : `28-4a-review-prompt-p1.md`) —
+**28-4a : review** (développée le 2026-10-13, Opus 5.5 ; revue P1 faite et remédiée ; passe ciblée P2 à lancer : `28-4a-review-prompt-p2-ciblee.md`) —
 **28-4b : ready-for-dev**. Historique : **ready-for-dev** (deux clés) — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur
 `5aad8b35` (kickoff de l'Epic 28), worktree `/home/gcorbaz/devel/kesh-28-4`, branche `story/28-4`. Validation P1
 faite (Sonnet, lentilles R et F : 4 HIGH, 9 MEDIUM, 12 LOW, trois convergences) et remédiée ; validation P2 faite
@@ -1385,7 +1385,9 @@ qui est la preuve exigée par la fiche, non par un premier passage rouge des tes
 passent d'abord au rouge », assumé et écrit ici.
 
 **Campagne de mutations** (`mutations-28-4a.py`, motif vérifié unique, restauration `git checkout --` + `touch`,
-sous `flock`) — **42 mutations à tuer, 42 tuées** (43 exécutions : M53 jouée pour l'appel CAMT puis CSV) : M1-M9,
+sous `flock`) — *en deux exécutions* (revue P1, E-9) : la première s'est arrêtée sur M11, motif introuvable (texte
+reformaté par `rustfmt`) après M1-M10-bis, tous tués ; le motif corrigé (ainsi que celui du pré-vol d'archivage, M42
+et M43, trouvé par une vérification à blanc), la seconde a repris à M11 sur un arbre propre (`git diff --quiet` exigé) — **42 mutations à tuer, 42 tuées** (43 exécutions : M53 jouée pour l'appel CAMT puis CSV) : M1-M9,
 M10-bis, M11-M18, M20-M24, M33, M34, M36-M48, M52-M55. **Équivalentes déclarées, confirmées survivantes** : M14-bis
 (`confirm_batch` n'écrit rien avant sa boucle : W27 rend le même `409`), M20-bis (W22 rend le même `409`), M51 (le
 pré-vol rend le même `409`). **M56 « non tuée, assumée »** : jouée, survit, comme la P5 le prévoyait ; T-a49 n'est
@@ -1402,7 +1404,7 @@ appliqué.**
 réouverture au dépôt (`compte_clos`) ; T-a6-7 (`les_lectures_ecartent…`) ; T-a10 (`csv_tables.rs`, test existant
 étendu) ; T-a11 (`backup.rs`) ; T-a12-14 (`clore_un_compte`) ; T-a15-21 (`les_refus_de_la_cloture_dans_l_ordre`) ;
 T-a22 (`roles_et_cles_d_api`) ; T-a23-25 (`rouvrir_un_compte`) ; T-a26 (`le_compte_clos_refuse_ses_modifications`) ;
-T-a27 — **dix-huit lignes** en huit tests (aperçu, import, W24 a et b, `accept`, `reject`, `manual`, `split`,
+T-a27 — **dix-huit lignes** en neuf tests *(« huit » corrigé en « neuf » à la revue P1, A-L4 ; recompté sur `bank_accounts_closed_e2e.rs`)* (aperçu, import, W24 a et b, `accept`, `reject`, `manual`, `split`,
 `unreject`, W9 `Entry` et facture, W8, W25, W27, W29, W28, W17, W20) plus W21 permis ; T-a28-29
 (`accepter_et_rejeter…`) ; T-a30 et T-a48 (a) (`invoice_settlement.rs`) ; T-a48 (b)-(c)
 (`supplier_invoices_repository.rs`) ; T-a33-34 et T-a47 (`bank_account_closed_inventory.rs`, et le test unitaire de
@@ -1451,6 +1453,43 @@ prompt de revue.
 **Demandé à l'orchestrateur** : push de `story/28-4` et PR de la 28-4a, corps en **`refs #642`** et **`refs #651`**
 — ⛔ jamais `closes` ; revue de code P1 par le prompt versionné `28-4a-review-prompt-p1.md` (Opus, lentilles B, E, A).
 
+**Annotation de la revue de code P1 (2026-10-13)** — bilan 0/0/4/17 (B 0/0/0/5, E 0/0/3/6, A 0/0/1/6), remédié au
+commit de code `8d73a9a4`, sur la branche **rebasée** sur `origin/main` `c28d0a20` (la 28-1 ; un conflit, registre,
+par union ; aucun sur le CHANGELOG, les catalogues ni les gardes — `audit_route_registry`, G9 et `sitesTotal`
+inchangés par la 28-1, recompte au gate).
+
+- **Production — une seule modification**, B-1 : `close_bank_account` refuse en `400 VALIDATION_ERROR` un `closedOn`
+  hors de `1000..=9999` (domaine de `DATE`), avant toute transaction (C-28-4-35).
+- **Documentation** : A-M1, les deux notes de `docs/api-external.md` perdent la réserve de #651 (W8 et W27 lisent le
+  compte sous `FOR UPDATE`, sans fenêtre) — symptôme grepé : plus aucune occurrence de #651 dans ce fichier ; le
+  CHANGELOG et les doc-comments n'en portaient pas ; A-L1, A-L2 (doc-comments de l'import et du `412`, symptôme
+  « non-archivé » grepé, sans autre copie) ; A-L3 (barre finale de la ligne d'audit) ; A-L5 (en-tête du registre) ;
+  B-3 (angle mort « archivé et clos », doc-comment d'`ensure_open_in_tx`).
+- **Tests** (5 neufs, `fdd6f94c` → `8d73a9a4`) : W30 seule par une course déterministe (E-1,
+  `annuler_un_rejet_pendant_une_cloture_refuse_par_w30`, qui exerce aussi le rendu de W30 par
+  `conclude_locked_attempt`) ; annulations vers un compte archivé pour W25, W28, W29 (E-2) ; export global d'un compte
+  clos non archivé (E-3) ; renforcés : B-1 (deux dates), E-4 (deux propositions, deux identifiants non triés), E-5
+  (forme avant 404, pending avant lot, version avant « déjà clos »), E-6 (`etat()` voit les rejets et les lots
+  confirmés), A-L6 (code sous clé).
+- **Mutations de la remédiation** (`mutations-28-4a-p1.py`, même moteur, sous `flock`) : **10 à tuer, 10 tuées** —
+  M33-b (W30 seule), trois « `ensure_open_unarchived_in_tx` à la place de `ensure_open_in_tx` » (W25, W28, W29), E3
+  (`include_closed: false` à l'export), B1 (borne retirée), E4 (`take(1)` à R1, tri retiré à R2), E5 (lots avant
+  pending, clos avant version). **M33-a (R8 seul) équivalente**, confirmée survivante : W30 rend le même `409`
+  (C-28-4-34). M33 d'origine (R8 et W30 ensemble) reste tuée.
+- **Angles morts écrits** : B-6 (`confirm_batch` dans la course d'un archivage rend `404 NOT_FOUND`, C-28-4-33) ;
+  B-3 ; B-5 au registre de sprint (la 28-4a ne se publie pas sans la 28-4b — un compte clos par l'API disparaît de
+  l'écran actuel, qui n'appelle pas `includeClosed`).
+- **Legs à la 28-4b** (E-8 = B-4) : `docs/manual/fr/user-manual.tex:1696` (« comptes bancaires non archivés déclarés »
+  → « ni archivés ni clos ») entre dans la liste de l'AC14 ; et les textes des choix C-28-4-27 et C-28-4-32.
+- **Écart de méthode** : le renforcement de T-a28 / T-a29 a été écrit par un script de remplacement sur le fichier de
+  test, contre la consigne 14 (« l'outil Edit uniquement ») ; le résultat a été relu et passe au gate.
+
+- **Gates au dernier commit de code `8d73a9a4`** (sous `flock`, bases `kesh_284` et `kesh_e2e_284` remises à zéro,
+  port 3037) : `test-fast.sh` — fmt, clippy `-D warnings`, **nextest 3584 / 3584, 6 ignorés** ; frontend — `check` 0
+  erreur, `lint-i18n-ownership` PASS, **Vitest 144 fichiers, 1546 tests** (la 28-1 en ajoute), `build` vert ; **E2E
+  complet : 272 passés, 8 échecs, 19 ignorés** — les 7 KF-029 (#97) et `sidebar-navigation.spec.ts:75`, **rejouée
+  seule : 4 / 4** (pollution d'état, non la KF-046). Conforme à `docs/testing.md` § *Les échecs attendus*.
+
 ### File List
 
 - `CHANGELOG.md`
@@ -1470,6 +1509,8 @@ prompt de revue.
 - `crates/kesh-api/tests/bank_accounts_closed_e2e.rs` *(neuf)*
 - `crates/kesh-api/tests/bank_accounts_e2e.rs`
 - `crates/kesh-api/tests/textes_coherents.rs`
+- `crates/kesh-api/tests/exports_global_e2e.rs` *(revue P1)*
+- `_bmad-output/implementation-artifacts/28-4a-review-prompt-p2-ciblee.md` *(neuf, revue P1)*
 - `crates/kesh-db/migrations.sha384`
 - `crates/kesh-db/migrations/20261013000001_bank_accounts_closed_on.sql` *(neuf)*
 - `crates/kesh-db/src/backup.rs`
@@ -1510,3 +1551,4 @@ prompt de revue.
 | 2026-10-13 | Validation P4 (Opus 5.5, lentilles R et F) et sa remédiation (Opus 5.5) | **Trend** (CRIT/HIGH/MED/LOW) : P1 — R 0/1/6/7, F 0/3/3/5 ; P2 — R 0/0/4/2, F 0/1/5/7 ; P3 — R 0/1/2/5, F 0/1/2/6 ; **P4 — R 0/0/3/9, F 0/0/2/7** (rapports `kesh-gate-logs/28-4-validate-p4-{R,F}.md`, hors dépôt). **Le HIGH est à 0 depuis la P4** ; les MEDIUM sont **distincts** et ne recyclent pas un défaut de conception — sauf **F-M1**, né de la remédiation P3 (raison de M54) ; R3 = F-M2 est lui aussi daté de la P3 par les deux lentilles (reclassement P2 sans issue), mais c'est un défaut de **traçage**, réglé hors fiche par l'issue. Signal D5 : non levé (sévérité en baisse, HIGH → 0). Double critère de l'AC7 tenu sur tous les chemins par les deux lentilles (aucun verrou ajouté, aucun ordre changé, aucune vue déplacée). Convergences : R3 = F-M2, R1 ⊃ F-L3, R11 = F-L4, R9 = F-L7, R10 ⊃ F-L6 ; F-M1 recoupe R12. **MEDIUM** — **R3 = F-M2** (L1 P2 sans issue) : réglé par l'orchestrateur, qui a ouvert **#651** (`bug`, `P2`, piste du rejeu) ; #651 cité à l'AC7 (L1), à l'AC14, aux angles morts, à la note d'`api-external.md` (AC16), au CHANGELOG prescrit, au registre (annotation P4 de C-28-4-21), aux tâches T4, T9, T14 ; corps de PR : 28-4a `refs #642` + `refs #651`, 28-4b `closes #642` + `refs #651` ; la promesse de #642 (« refusée côté serveur ») bornée, au périmètre, à l'AC14 et au CHANGELOG, à « hors de la fenêtre de #651 ». **R1** (W24, impasse « rouvrez-le ») : garde **après le comptage de l'étape 3, avant le `DELETE`** (C-28-4-24, décision de l'orchestrateur) — ordre des refus `404` → `409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS` → `409 BANK_ACCOUNT_CLOSED`, écrit à l'AC6, testé (T-a27, deux lignes W24), dit au manuel (AC14) et à `api-external.md` ; la position vérifiée contre la règle de placement (W24 n'a aucune lecture ordinaire hors l'audit ; entre l'étape 2 et la garde, seul le comptage en mémoire). **R2** (restauration mal située, « le seul site connu ») : `kesh-db/src/backup.rs:496` et `:548` (`restore_body`, l. 473 ; `restore_tables_in_tx`, l. 444 ; appelée par `routes/admin.rs:295`) nommés à l'inventaire, à l'I1, à l'AC8 (trois sites énumérés) et aux angles morts ; le statut `HorsPerimetre` de l'AC8 ne la vise **pas** — l'extraction ne la voit pas, une entrée sans site ferait rougir le diff inverse : elle est hors périmètre **au doc-comment**. **F-M1** (M54 non équivalente) : avec la position neuve, M54 est tuée **séquentiellement** par T-a27 (ligne W24 b) ; sa part « vue seule » devient **M56**, tuée par **T-a49** (neuf, montage de F-M1 : import vide, import suivant non commité sur un autre compte, clôture commitée pendant l'attente de l'étape 2), dont l'étape (3) contrôle la prémisse InnoDB ; repli écrit d'avance (M56 « non tuée, assumée », raison exacte, bornée à MariaDB 10.11 CI et dev — R12) ; **M55** neuve (position P3, tuée par T-a27). **LOW** — R4 (sous-`SELECT` de l'audit exclus du second volet, AC7 et table), R5 (W22 « en tête de la fonction »), R6 (R8 lecture neuve), R7 (raison de l'appelant `accept_one_invoice` ; sous L1, le pré-vol protège), R8 (fenêtre de l'import à l'AC14), R9 = F-L7 (exception de C-28-4-23 au périmètre, à l'AC6, à l'AC14), R10 = F-L6 (1563 / 1598, l. 860-861, `parseBankAccount` l. 80, verrous de W26, citation de W29 réattribuée à `supplier_invoices.rs:1290-1294`), R11 = F-L4 (bras `DbError::BankAccountClosed` dans le `match` d'`AppError::Database`, `errors.rs:2905`, rendu partagé, AC6 et T3), R12 (borne MariaDB, à M56), F-L1 (verrou d'arrondi de W8, l. 225), F-L2 (clause « avant sa première écriture » à la règle de placement, aux trois lieux), F-L3 (couvert par R1), F-L5 (exercice de W27 à l'étape (4)). **Écarts à la consigne** : le refus du sol de W24 est un **`409`** `BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS` (`errors.rs`, `StatusCode::CONFLICT`), non le « `412` » des rapports et de la consigne — écrit tel quel ; M54 n'est pas déclarée « non tuée » : la position neuve la rend tuable par un test séquentiel, et T-a49 couvre la part que l'ordre des refus ne voit pas ; `origin/main` a reçu la 28-3 (`c1667e8a`), qui décale `backup.rs` (l. 528, 557, 581, 633) et touche `bank_imports.rs` — numéros de `5aad8b35` gardés, décalage écrit, à relire au rebase (T0). **Recomptes** (par `grep` sur la fiche, après remédiation) : 18 AC ; T-a1-T-a49 (49 numéros, 5 retirés, **44 actifs**) + 14 T-b ; mutations M1-M56 + trois `-bis` = **59** numéros, dont **5 sans objet** (M10, M19, M35, M49, M50), **3 équivalentes** (M14-bis, M20-bis, M51), **51 à tuer** ; 30 sites W1-W30, 16 « Gardée » hors W30 (inchangé) ; T-a27 à **dix-huit** lignes (16 + 1 + 1) ; choix C-28-4-1 à C-28-4-24 (un neuf, C-28-4-24 ; C-28-4-21 annoté). Validation P5 : `28-4-validate-prompt-p5.md` (Sonnet, lentilles R et F, double critère obligatoire, axe sur les régressions de cette remédiation). |
 | 2026-10-13 | Validation P5 (Sonnet 5.5 ; R complète, F partielle limitée à T-a49 et M54-M56) et sa remédiation (Opus 5.5) — **validation close** | **Trend** (CRIT/HIGH/MED/LOW) : P1 — R 0/1/6/7, F 0/3/3/5 ; P2 — R 0/0/4/2, F 0/1/5/7 ; P3 — R 0/1/2/5, F 0/1/2/6 ; P4 — R 0/0/3/9, F 0/0/2/7 ; **P5 — R 0/0/0/9, F 0/0/1/2** (rapports `kesh-gate-logs/28-4-validate-p5-{R,F}.md`, hors dépôt). Convergence : F1 (MEDIUM) = R6 (LOW) — la prémisse InnoDB de T-a49 est très probablement fausse (un verrou d'intervalle n'attend pas un verrou d'enregistrement non validé ; la sonde voit une requête en cours, non bloquée). Le MEDIUM vient de la remédiation P4 ; il n'est pas recyclé en défaut de conception. **Décision de l'orchestrateur — repli prévu en P4, appliqué** : T-a49 **retiré** (« prémisse InnoDB réfutée en P5 »), rétablissable par le dev en option (piste F1 (ii) : transaction `pending` de l'import N sur le compte B, verrouillée par une autre transaction ; attente détectée par `INNODB_TRX`) ; M56 « **non tuée, assumée** » (fraîcheur de la vue pendant l'attente de l'étape 2, indiscernable par un test déterministe ; bornée à MariaDB 10.11, CI et dev) ; F2 (M56 conditionnelle) réglé par ce reclassement ; F3 (M54 et M55 tuées par T-a27 b) : confirmé, « et T-a49 » retiré de M54. **LOW** — R1 (W27 : première lecture non verrouillante par la route `pay`, `in_generated_batch` l. 619) ; R2 (W26 : l. 433 = comptes de charge ; projets par `validate_taggable_in_tx` l. 362, `contacts` l. 366) ; R3 (ordre des refus de W24 retiré de l'AC16 : route fermée aux clés ; il reste à l'AC6 et au manuel ; C-28-4-24 annoté) ; R4 (AC7 alignée sur le texte de #651 corrigé par l'orchestrateur : même fenêtre, huit chemins dont W28) ; R5 (« so that » borné ; C-28-4-10 annoté) ; R6 (= F1) ; R7 (statut `HorsPerimetre` **retiré**, C-28-4-25 : aucun site possible, variante morte ; quatre statuts) ; R8 (T0 : relire au rebase sur `c1667e8a` les trois énoncés sur #633 et les numéros de `backup.rs`) ; R9 (`archive_for_company`, doc l. 608-612). **Constat de clôture** : le remède P5 **retire** une exigence (T-a49) et n'en ajoute aucune ; aucune règle métier ne change ; la lentille R n'a rien relevé au-dessus de LOW sur le périmètre complet — **la boucle de validation est close** (décision de l'orchestrateur), sans passe ciblée : la remédiation ne touche aucune ligne de code de production prescrite autrement qu'en retirant un test. Signal D5 : non levé. **Recomptes** (par `grep` sur la fiche, après remédiation) : 18 AC ; T-a1-T-a49 (49 numéros, **6 retirés** — T-a32, T-a39, T-a40, T-a41, T-a44, T-a49 —, **43 actifs**) + 14 T-b ; mutations M1-M56 + trois `-bis` = **59** numéros, dont 5 sans objet (M10, M19, M35, M49, M50), 3 équivalentes (M14-bis, M20-bis, M51), **1 non tuée, assumée** (M56), **50 à tuer** ; 30 sites W1-W30, 16 « Gardée » hors W30 ; T-a27 à dix-huit lignes ; **quatre** statuts au registre de l'AC8 ; choix C-28-4-1 à **C-28-4-25** (un neuf ; C-28-4-10, -21, -23, -24 annotés). Clés `28-4a-cloture-serveur` et `28-4b-cloture-ecran` : `ready-for-dev`. |
 | 2026-10-13 | Développement de la 28-4a (`bmad-dev-story`, Opus 5.5, autonomie) | Rebase sur `eab77cf1` (28-2, 28-3, 28-5a), 4 conflits par union. Commits de code `bafa4f80` (production) et `01af1c0e` (tests et gardes, **dernier commit de code**). Migration `20261013000001_bank_accounts_closed_on`, non-breaking, sans bump ; routes `close` / `reopen` ; gardes W8-W30 et pré-vols R1-R8 sans verrou ajouté ni vue déplacée ; registre statique (31 sites). **38 tests neufs** (`eab77cf1` → `01af1c0e`) ; **mutations : 42 à tuer, 42 tuées**, 3 équivalentes confirmées, M56 assumée et survivante ; aucun repli InnoDB. Gates à `01af1c0e` : nextest 3579 / 3579 ; Vitest 1497 ; E2E 268 passés, 8 échecs attendus (7 KF-029 + pollution, rejouée seule verte). Relectures de T0 au Dev Agent Record (trois énoncés sur #633 devenus faux). Choix C-28-4-26 à C-28-4-32. Clé `28-4a-cloture-serveur` : `review`. |
+| 2026-10-13 | Revue de code P1 (Opus 5.5, lentilles B, E, A) et sa remédiation (Opus 5.5) | **Bilan 0/0/4/17** (CRIT/HIGH/MED/LOW) : B 0/0/0/5, E 0/0/3/6, A 0/0/1/6 (rapports `kesh-gate-logs/28-4a-review-p1-{B,E,A}.md`, hors dépôt). **MEDIUM** — A-M1 (réserve de #651 sur W8 / W27, retirée d'`api-external.md`) ; E-1 (M33 scindée : M33-b tuée par une course déterministe qui atteint W30 sans R8, M33-a équivalente, C-28-4-34) ; E-2 (annulations vers un compte archivé pour W25, W28, W29, trois mutations tuées) ; E-3 (export d'un compte clos non archivé, mutation tuée). **LOW** — B-1 traité en **production** sur décision de l'orchestrateur (borne de `closedOn`, C-28-4-35) ; B-3, B-6 (C-28-4-33) écrits comme angles morts ; B-5 au registre de sprint ; A-L1 à A-L6, E-4 à E-9 appliqués ou écrits ; E-8 = B-4 légué à la 28-4b. Rebase sur `c28d0a20` (28-1). Commit de code `8d73a9a4` ; **5 tests neufs** (`fdd6f94c` → `8d73a9a4`) ; mutations de la remédiation **10 / 10** ; gates : nextest 3584 / 3584, Vitest 1546, E2E 272 + 8 attendus. Signal D5 : non levé (aucun MEDIUM ne naît d'une remédiation, aucun HIGH). **Boucle ouverte** : la remédiation touche la production (B-1) — passe ciblée P2 (Sonnet) : `28-4a-review-prompt-p2-ciblee.md`. Choix C-28-4-33 à C-28-4-35. |

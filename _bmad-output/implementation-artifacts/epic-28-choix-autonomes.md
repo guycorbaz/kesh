@@ -2787,5 +2787,40 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
 - **Écartées** : élargir les gardes (elles protègent l'exercice) ; « schreibgeschützt » seul (ne nomme pas le geste).
 - **Réversible** : oui (textes, deux entrées d'exemption).
 
+*Choix C-28-4-33 à C-28-4-35 : remédiation de la revue de code P1 de la 28-4a (2026-10-13, Opus 5.5, autonomie).*
+
+### C-28-4-33 — `confirm_batch` dans la course d'un archivage : `404 NOT_FOUND`, accepté (B-6)
+
+- **Contexte** : le pré-check (2) de `confirm_batch` lit le compte sans verrou ; `pay_in_tx`, qui suit, le relit sous
+  `FOR UPDATE` et rend désormais `NotFound` pour un archivé (AC6-bis). Un archivage commité entre les deux fait sortir
+  la confirmation en `404 NOT_FOUND` (« lot introuvable ») au lieu du refus « compte archivé ».
+- **Retenu** : **accepter et écrire** (décision de l'orchestrateur) — fenêtre de quelques millisecondes, aucune
+  écriture (le lot reste `generated`, la transaction est abandonnée), refus plus sûr qu'avant (le paiement passait).
+  Angle mort au Dev Agent Record.
+- **Écartées** : traduire `NotFound` de `pay_in_tx` en `IllegalStateTransition` dans la boucle (production pour un
+  message, dans une fenêtre de course).
+- **Réversible** : oui.
+
+### C-28-4-34 — W30 seule : prouvée par une course déterministe, non déclarée équivalente (E-1)
+
+- **Contexte** : M33 retirait R8 et W30 ensemble ; séquentiellement, chacune masque l'autre.
+- **Retenu** : M33 scindée. **M33-b (W30 seule)** est tuée par un test neuf qui atteint W30 sans R8 : une transaction
+  de test tient la ligne de la transaction bancaire, l'annulation de rejet passe R8 puis attend ce verrou (sonde), la
+  clôture est commitée pendant l'attente ; W30, première lecture non verrouillante, la voit et refuse — rendu par
+  `conclude_locked_attempt`, ce qui exerce aussi ce chemin. **M33-a (R8 seul) est équivalente** : W30 rend le même
+  `409` sans rien écrire ; R8 n'épargne que l'ouverture de la transaction et le verrou nommé.
+- **Écartées** : déclarer les deux équivalentes (W30 n'aurait été prouvée par rien).
+- **Réversible** : oui (test).
+
+### C-28-4-35 — `closedOn` borné à `1000..=9999` (B-1, production)
+
+- **Contexte** : `chrono` admet des années signées et au-delà de 9999 ; la colonne `DATE` de MariaDB couvre
+  1000-9999. Hors domaine, la date partait à la base.
+- **Retenu** : `400 VALIDATION_ERROR` dans le handler de clôture, avant toute transaction (décision de
+  l'orchestrateur ; seule ligne de production de la remédiation). La date reste informative (C-28-4-3) : aucune autre
+  borne.
+- **Écartées** : laisser la base refuser (`500`).
+- **Réversible** : oui.
+
 [#651]: https://github.com/guycorbaz/kesh/issues/651
 [#642]: https://github.com/guycorbaz/kesh/issues/642
