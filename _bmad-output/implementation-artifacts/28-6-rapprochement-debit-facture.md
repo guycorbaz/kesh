@@ -4,8 +4,9 @@
 
 **ready-for-dev** — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `5aad8b35`
 (kickoff de l'Epic 28), branche `story/28-6`, worktree `/home/gcorbaz/devel/kesh-28-6` (port **3039**, bases
-`kesh_286` / `kesh_e2e_286`). Choix consignés au registre `epic-28-choix-autonomes.md`, **C-28-6-1 à C-28-6-10**.
-9 AC (AC1 à AC9). Validation P1 à lancer : `28-6-validate-prompt-p1.md` (lentilles R et F, Sonnet).
+`kesh_286` / `kesh_e2e_286`). Choix consignés au registre `epic-28-choix-autonomes.md`, **C-28-6-1 à C-28-6-14**.
+9 AC (AC1 à AC9). Validation P1 faite (lentilles R et F, Sonnet : 1 MEDIUM, 9 LOW dont 8 distincts, remédiés) ; passe ciblée P2 à
+lancer : `28-6-validate-prompt-p2-ciblee.md` (Haiku).
 PR : **`closes #482`**.
 
 ⚠️ **Développement en série** avec la 28-5 (#526) et la 28-7 (#548), qui touchent aussi
@@ -31,7 +32,8 @@ Issue : [#482](https://github.com/guycorbaz/kesh/issues/482) (bug, **P2**), rele
 `ReconciliationProposals.svelte:217-221` ne soumet que la candidate affichée. Mais `POST
 /api/v1/reconciliation/accept` est appelable directement — par une clé d'API `read-write` comme par un appel
 forgé — avec un couple `(bankTransactionId, invoiceId)` arbitraire. Ni le pré-vol (`classify_batch_transaction`,
-`:872`), ni la recharge sous verrou (`find_pending_by_id_for_account`, `:1563`), ni `accept_one_invoice`
+`:872`), ni la recharge sous le verrou du compte (`find_pending_by_id_for_account`, `:1563` — une lecture sans
+`FOR UPDATE` ; le verrou est celui du compte bancaire, pris par `post_accept`), ni `accept_one_invoice`
 (`:1549-2238`) ne regardent le **signe** de la transaction.
 
 Une transaction de débit est aujourd'hui arrêtée par la garde de score (`:1725`, `score.total <= 0.0` →
@@ -69,7 +71,7 @@ changer le correctif prescrit.
   | `bank_transaction.amount` | Résultat | `errorCode` | `details` |
   |---|---|---|---|
   | `< 0` (débit) | refus | **`RECONCILIATION_TRANSACTION_NOT_CREDIT`** (code neuf) | `{ "reason": "debit_transaction", "transactionAmount": <montant> }` |
-  | `= 0` (dont `-0.00`) | refus | `RECONCILIATION_TRANSACTION_NOT_CREDIT` | `{ "reason": "zero_amount_transaction", "transactionAmount": <montant> }` |
+  | `= 0` (dont `-0.00`, cas de la seule fonction pure — cf. *Pièges*) | refus | `RECONCILIATION_TRANSACTION_NOT_CREDIT` | `{ "reason": "zero_amount_transaction", "transactionAmount": <montant> }` |
   | `> 0` | accepté (suite inchangée) | — | — |
 
 - `transactionAmount` a la **même forme** que le champ homonyme de `RECONCILIATION_OVERPAYMENT` (`:1855`,
@@ -78,10 +80,15 @@ changer le correctif prescrit.
   — la forme que compte `grep -ohE 'error_code: "[A-Z_]+"'` (27 codes distincts aujourd'hui, **28** après) et que
   relève le commentaire de tête de `failed-proposal-label.test.ts`.
 - **Place** : dans `accept_one_invoice`, **après** l'étape 4 (statut `pending`, `:1588-1594`) et **avant**
-  l'étape 5 (lecture de la facture, `:1596`). Ordre des refus qui en résulte : `BANK_TRANSACTION_NOT_FOUND` →
-  `RECONCILIATION_ALREADY_RECONCILED` → **`RECONCILIATION_TRANSACTION_NOT_CREDIT`** → `INVOICE_NOT_FOUND` →
-  `RECONCILIATION_INVOICE_NOT_ELIGIBLE` → `RECONCILIATION_SCORE_TOO_LOW` → … La garde s'applique à la transaction
-  **rechargée sous verrou**, jamais à l'instantané du pré-vol.
+  l'étape 5 (lecture de la facture, `:1596`). Ordre des refus qui en résulte, pré-vol compris :
+  1. **au pré-vol** de `post_accept` (`classify_batch_transaction`, `:872`), sur l'instantané, avant le verrou :
+     `BANK_TRANSACTION_NOT_FOUND`, `RECONCILIATION_ALREADY_RECONCILED`, `RECONCILIATION_ALREADY_REJECTED` —
+     un débit **déjà rejeté** rend donc `RECONCILIATION_ALREADY_REJECTED`, jamais le code neuf ;
+  2. **dans `accept_one_invoice`**, sous le verrou du compte : `BANK_TRANSACTION_NOT_FOUND` (recharge) →
+     `RECONCILIATION_ALREADY_RECONCILED` (statut) → **`RECONCILIATION_TRANSACTION_NOT_CREDIT`** →
+     `INVOICE_NOT_FOUND` → `RECONCILIATION_INVOICE_NOT_ELIGIBLE` → `RECONCILIATION_SCORE_TOO_LOW` → …
+
+  La garde s'applique à la transaction **rechargée sous le verrou du compte**, jamais à l'instantané du pré-vol.
 - La garde s'écrit `amount <= Decimal::ZERO`, la forme de `get_proposals` (`:645`) : **une seule** règle « un
   règlement de facture exige un encaissement » au code, écrite deux fois (proposition et acceptation), et le
   doc-comment de la fonction le dit, en nommant `get_proposals`.
@@ -91,8 +98,9 @@ changer le correctif prescrit.
 **AC2 — Les cas qui la prouvent, de bout en bout (tests d'intégration, `crates/kesh-api/tests/reconciliation_e2e.rs`).**
 
 Chacun via `POST /api/v1/reconciliation/accept`, `200`, une proposition `type: "invoice"` dans `failed[]`, et
-**rien d'écrit** — assertions explicites : nombre de lignes de `journal_entries` et de `invoice_settlements` de la
-société inchangé, transaction toujours `pending` avec `matched_entry_id` nul et `version` inchangée, facture
+**rien d'écrit** — assertions explicites : nombre de lignes de `journal_entries`, de `journal_entry_lines` et
+d'`invoice_settlements` de la société inchangé, compteur de numéros de l'exercice
+(`journal_entry_number_sequences.next_number`) inchangé (cf. T1), transaction toujours `pending` avec `matched_entry_id` nul et `version` inchangée, facture
 `paid_at` nul et `version` inchangée, aucune trace `reconciliation.accepted` ni `invoice.paid` /
 `invoice.partially_settled`.
 
@@ -118,7 +126,11 @@ société inchangé, transaction toujours `pending` avec `matched_entry_id` nul 
 Les codes sont écrits **en dur** dans les tests, jamais relus d'une constante de production.
 
 **AC3 — Tests unitaires de la fonction pure** (module `#[cfg(test)]` propre, en fin de `reconciliation.rs`) :
-−100.00 → débit ; −0.01 → débit ; 0.00 → nul ; `dec!(-0.00)` (zéro négatif, `is_sign_negative()` vrai) → nul ; 0.01 → aucun refus ; `bank_transaction_id` reporté tel quel ; `details` exacts.
+−100.00 → débit ; −0.01 → débit ; 0.00 → nul ; `dec!(-0.00)` (zéro négatif) → nul ; 0.01 → aucun refus ; `bank_transaction_id` reporté tel quel ; `details` exacts.
+Le cas `-0.00` **asserte d'abord sa précondition** (`assert!(dec!(-0.00).is_sign_negative())`) : si la valeur
+construite n'était pas un zéro négatif, le cas serait un doublon de 0.00 et passerait à vide. Ce cas n'existe
+qu'ici : `bank_transactions.amount` est `DECIMAL(18,2)`, et la base ne rend jamais un zéro négatif — aucun test
+d'intégration ne peut l'atteindre (C-28-6-12).
 
 **AC4 — Ce qui ne change pas, et qui est vérifié.**
 
@@ -126,8 +138,22 @@ Les codes sont écrits **en dur** dans les tests, jamais relus d'une constante d
   garde de sens ajoutée**. Ils n'écrivent aucun règlement de facture (contrepartie choisie, écriture
   `banque ↔ compte`), et un débit y est légitime (une dépense, un remboursement) — `kesh-reconciliation/src/rules.rs:8`
   le dit déjà (« PAS hériter du sign filter 8-4 invoice »), `validate_split_balance` compare à `tx_amount.abs()`
-  (`split.rs:171`). Leur refus du montant nul existe déjà (`:2447`, `:2870`, `:3659`, `:4109`,
-  `VALIDATION_ERROR` + `zero_amount_transaction`) et n'est pas touché (C-28-6-5).
+  (`split.rs:171`). Leur refus du montant nul existe déjà et n'est pas touché (C-28-6-5) : pour `split` et `rule`
+  dans `accept`, par proposition, en `VALIDATION_ERROR` + `details.reason = "zero_amount_transaction"` (`:2447`,
+  `:2870`) ; pour `POST /reconciliation/manual` et `/split`, en `400 VALIDATION_ERROR` « zero_amount_transaction »
+  (`:3659`, `:4109`).
+- **Ce qui le tient** (C-28-6-14) — des tests existants, qui acceptent un **débit** et rougiraient si une garde de
+  sens était ajoutée à la variante :
+  - `accept_one_split` : `reconciliation_e2e.rs::accept_with_explicit_split_type_runs_split_flow` (−100.00,
+    `accepted.len() == 1`) ;
+  - `accept_one_rule` : `reconciliation_rules_e2e.rs::accept_with_rule_creates_journal_entry_and_increments_count`
+    (−150.00, `accepted` à un élément, `failed` vide) ;
+  - `post_manual` : `reconciliation_manual_e2e.rs::post_manual_creates_journal_entry_and_marks_transaction_reconciled`
+    (−150.00, `200`) ;
+  - `post_split` : `reconciliation_split_e2e.rs::split_creates_journal_entry_with_n_plus_1_lines` (montage
+    `setup_split_ctx`, −10700.00, `200`).
+
+  Ces quatre tests restent verts **sans modification** ; la revue de code vérifie qu'ils n'ont pas été touchés.
 - Les tests existants d'acceptation d'un **encaissement** (montant positif) restent verts sans modification.
 - `get_proposals` : inchangé.
 
@@ -137,8 +163,16 @@ Les codes sont écrits **en dur** dans les tests, jamais relus d'une constante d
   'RECONCILIATION_TRANSACTION_NOT_CREDIT'` → clé `reconciliation-failed-transaction-not-credit`, repli français
   identique au catalogue. Un seul libellé pour les deux `reason`.
 - `failed-proposal-label.test.ts` : la table `EXPECTED_KEYS` gagne l'entrée ; « couvre les 29 codes relevés » →
-  **30** (`:68-69`), et le commentaire de tête (« les 27 littéraux … 29 codes ») passe à **28 littéraux, 30
-  codes**, avec la mention de la Story 28-6.
+  **30** (`:68-69`), et le commentaire de tête (« les 27 littéraux … 29 codes », `:5-9`) passe à **28 littéraux,
+  30 codes**, sa généalogie (« Story 15-12b : … ; Story 27-4 : … aussi ») gagnant « Story 28-6 :
+  `RECONCILIATION_TRANSACTION_NOT_CREDIT` aussi ».
+- Le **doc-comment de `failed-proposal-label.ts`** porte le même décompte, et passe aussi : « **Les 29 codes** … les
+  27 littéraux » (`:9-10`) → **30 codes**, **28 littéraux** ; la phrase de la 27-4 (`:25-28`, « le littéral ajouté
+  en dernier (ce qui porte le compte à 27) est `RECONCILIATION_ALREADY_REJECTED` ») n'est plus vraie telle quelle —
+  elle devient « le littéral ajouté par la Story 27-4 (ce qui portait le compte à 27) », suivie d'une phrase pour la
+  Story 28-6 (#482) : le littéral ajouté en dernier, qui porte le compte à 28, est
+  `RECONCILIATION_TRANSACTION_NOT_CREDIT`, un débit ou un nul proposé contre une facture. Recompter les deux
+  fichiers par `grep -nE "\b(27|28|29|30)\b"` après la modification.
 - `frontend/src/lib/shared/i18n-keys.test.ts:601` : `sitesTotal` **+1** (un `i18nMsg(` de plus dans
   `failed-proposal-label.ts`, 34 → 35), **recompté** par la collecte du test, avec une ligne de commentaire datée
   dans la généalogie (patron de la 27-4, `:595-600`). `sitesNonResolus`, `relais`, `sitesGabarit` inchangés —
@@ -147,8 +181,9 @@ Les codes sont écrits **en dur** dans les tests, jamais relus d'une constante d
 - Aucune capture d'écran : le refus n'est pas atteignable depuis l'écran (C-28-6-7).
 
 **AC6 — Catalogue, quatre locales** (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`), clé
-`reconciliation-failed-transaction-not-credit`, insérée dans l'ordre alphabétique du bloc `reconciliation-failed-*`
-(après `reconciliation-failed-score-too-low`, avant `reconciliation-failed-transaction-not-pending`) :
+`reconciliation-failed-transaction-not-credit`, insérée dans le bloc `reconciliation-failed-*` (qui n'est **pas**
+alphabétique : `already-rejected` suit `bank-transaction-not-found`), après `reconciliation-failed-score-too-low`
+et avant `reconciliation-failed-transaction-not-pending` :
 
 | Locale | Texte |
 |---|---|
@@ -164,9 +199,13 @@ français de `failed-proposal-label.ts` est **identique** à la ligne fr-CH.
 facture, le score est recalculé par le serveur », une phrase : une transaction de **débit** ou de montant **nul**
 ne règle jamais une facture — refusée par proposition en `RECONCILIATION_TRANSACTION_NOT_CREDIT`,
 `details.reason` = `debit_transaction` ou `zero_amount_transaction`, `details.transactionAmount`, **avant** la
-lecture de la facture *(depuis la v0.13.3)* ; ⚠️ **changement** : elle rendait auparavant
-`RECONCILIATION_SCORE_TOO_LOW` (rien de reconnu) ou **le code observé en T1** (référence ou contact reconnus).
-Les propositions `split` et `rule` admettent un débit (inchangé).
+lecture de la facture — mais **après** les refus du pré-vol (une transaction introuvable, rapprochée ou déjà
+rejetée garde son code) *(depuis la v0.13.3)* ; ⚠️ **changement** : pour une facture à reste dû positif, elle
+rendait auparavant `RECONCILIATION_SCORE_TOO_LOW` (rien de reconnu) ou **le code observé en T1** (référence ou
+contact reconnus). Les propositions `split` et `rule` admettent un débit (inchangé). Une demi-phrase dit la
+divergence assumée du **montant nul** (C-28-6-13) : pour `split` et `rule`, il reste refusé en `VALIDATION_ERROR`
+avec `details.reason = "zero_amount_transaction"` (en `400` pour le rapprochement manuel et ventilé) — un client
+qui ne teste que `details.reason` sous `VALIDATION_ERROR` ne verra pas le cas de la facture.
 
 **AC8 — CHANGELOG** : section `## [0.13.3] — Non publié` en tête (après le `---` de l'en-tête, avant
 `## [0.13.2]`), créée si aucune story de l'Epic 28 ne l'a encore ouverte — sinon **réunie** à celle de `main`,
@@ -176,12 +215,32 @@ jusqu'à la base, qui le refusait sous une « erreur de la base de données » ;
 `RECONCILIATION_TRANSACTION_NOT_CREDIT`, libellé à l'écran ; intégrations par clé d'API : nouveau code, renvoi à
 `docs/api-external.md`.
 
-**AC9 — Manuels : vérifiés, non modifiés (C-28-6-8).** Le manuel utilisateur dit que les factures ne sont
-cherchées que pour une transaction « créditrice, en CHF » (`docs/manual/fr/user-manual.tex:1919`) — vrai avant
-comme après ; il ne promet rien de l'acceptation d'un débit, que l'écran ne peut pas soumettre. Le manuel
-d'administration ne décrit pas les codes de `failed[]` (renvoi à `docs/api-external.md`, `admin-manual.tex:1994`).
-La lentille de validation et la revue de code contrôlent ce constat **sur le PDF aplati** ; aucun `make` des
-manuels n'est donc dû.
+**AC9 — Manuels : le manuel utilisateur vérifié et non modifié ; le manuel d'administration reçoit une ligne
+pour les intégrations (C-28-6-8, C-28-6-11).**
+
+- **Manuel utilisateur** : il dit que les factures ne sont cherchées que pour une transaction « créditrice, en
+  CHF » (`docs/manual/fr/user-manual.tex:1919`) — vrai avant comme après ; il ne promet rien de l'acceptation d'un
+  débit, que l'écran ne peut pas soumettre. Non modifié.
+- **Manuel d'administration** : il **nomme** des codes de `failed[]`. Le paragraphe « Intégrations par l'API : les
+  lots de réconciliation » de la 0.13.2 (`admin-manual.tex:1992-1994`) annonce un **changement de contrat** de
+  `POST /api/v1/reconciliation/accept` pour les clés d'API, avec trois codes (`BANK_TRANSACTION_NOT_FOUND`,
+  `RECONCILIATION_ALREADY_RECONCILED`, `RECONCILIATION_ALREADY_REJECTED`), puis renvoie à `docs/api-external.md`.
+  Ce paragraphe reste vrai après la story (il ne parle que des transactions absentes). Mais la 28-6 change elle
+  aussi le contrat d'`accept` (AC7), et le précédent de la 0.13.2 veut qu'un tel changement soit dit aux
+  intégrations dans la section de version. Donc, à T5 :
+  - si, au rebase, la sous-section **« Passer à la 0.13.3 »** existe (ouverte par une story antérieure de
+    l'Epic 28), y écrire une ligne — au paragraphe d'intégrations par l'API, créé s'il manque, sur le modèle de
+    celui de la 0.13.2 — qui nomme le code neuf **`RECONCILIATION_TRANSACTION_NOT_CREDIT`** : une proposition
+    `invoice` sur une transaction de débit ou de montant nul est refusée par proposition sous ce code (elle
+    rendait le code observé en T1, ou `RECONCILIATION_SCORE_TOO_LOW`) ; une intégration qui rejouait ce refus
+    doit cesser ; détail dans `docs/api-external.md`. Puis régénérer le PDF (`make fr` dans `docs/manual/`, sous
+    `flock`) et le commiter ;
+  - sinon, **ne pas créer** la sous-section : la préparation de la release v0.13.3 l'ouvre et y écrit cette ligne,
+    ce que C-28-6-11 lui prescrit au registre ; le dire au Dev Agent Record. La puce du CHANGELOG (AC8) en est
+    l'entrée.
+
+La lentille de validation et la revue de code contrôlent ces constats **sur le PDF aplati**
+(`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`) ; le `make` n'est dû que dans le premier cas.
 
 ## Tasks / Subtasks
 
@@ -190,13 +249,21 @@ manuels n'est donc dû.
   `cp -al`. Relever les numéros de ligne cités ici contre le `HEAD` rebasé (ils bougent avec la 28-5).
 - [ ] **T1 — Rouge d'abord (AC2, AC3)** : écrire les cas 1, 2, 4, 5 de l'AC2 et l'adaptation du cas 3 ; les faire
   tourner **avant** le correctif (gate ciblé `binary(reconciliation_e2e)`) ; consigner au Dev Agent Record le code
-  **observé** pour le cas 1 et le cas 2, et le constat « rien d'écrit » (cf. *Prémisse*).
+  **observé** pour le cas 1 et le cas 2, **sur le montage nommé** — facture validée de 100.00 sans règlement, donc
+  **reste dû > 0** (un reste dû négatif, s'il est atteignable, rendrait `RECONCILIATION_OVERPAYMENT` avant le
+  journal : non établi, non exercé, et `docs/api-external.md` ne doit pas présenter le code observé comme le seul
+  possible) —, et le constat « rien d'écrit » (cf. *Prémisse*). Ce constat nomme **ce qui s'écrit avant la ligne
+  refusée** et que seul le `ROLLBACK TO SAVEPOINT` annule : la valeur du compteur de numéros de l'exercice
+  (`journal_entry_number_sequences.next_number`, consommé par `next_number_for`, étape 3 de
+  `create_in_tx_inner`) et l'en-tête d'écriture (`journal_entries`, étape 4), relevés avant et après — avec
+  `journal_entry_lines`. Les assertions de l'AC2 portent aussi le compteur.
 - [ ] **T2 — La garde (AC1)** : fonction pure + appel entre l'étape 4 et l'étape 5 ; doc-comments ; tests unitaires
   (AC3). Vert ciblé.
 - [ ] **T3 — Écran (AC5)** : `failed-proposal-label.ts`, son test, `i18n-keys.test.ts` (`sitesTotal` recompté).
 - [ ] **T4 — Catalogue (AC6)** : quatre locales.
 - [ ] **T5 — Documentation (AC7, AC8, AC9)** : `docs/api-external.md` (avec le code observé en T1), CHANGELOG ;
-  vérification du manuel (PDF aplati), consignée.
+  vérification du manuel utilisateur (PDF aplati), consignée ; ligne du manuel d'administration si la sous-section
+  de la 0.13.3 existe au rebase (puis `make fr`, PDF aplati contrôlé), sinon le dire au Dev Agent Record (C-28-6-11).
 - [ ] **T6 — Mutations** (§ *Mutations*) : chacune rougit au moins un test nommé ; restauration
   `git checkout -- <fichier>` **puis `touch`**.
 - [ ] **T7 — Gates au dernier commit de code**, sous `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock` : base
@@ -215,6 +282,7 @@ manuels n'est donc dû.
 | M5 | `reason` des deux branches échangés | AC2-1 ou AC2-2, AC3 |
 | M6 | comparaison inversée (`>= ZERO` refusé) | tout test d'acceptation d'un encaissement existant (ex. le cas « encaissement » de AC2-4) |
 | M7 | retrait du `case` frontend | `failed-proposal-label.test.ts` (clé attendue) |
+| M8 | classification par **test de signe** : `amount.is_sign_negative()` → débit, sinon `amount.is_zero()` → nul (le piège nommé aux *Pièges*) | AC3 (`dec!(-0.00)` → nul, rendu `debit_transaction`) |
 
 ## Dev Notes
 
@@ -267,12 +335,12 @@ reste, écrit comme angle mort **assumé** :
 | Site | Ce qui reste | Pourquoi assumé |
 |---|---|---|
 | Rapprochement manuel, ventilé ou par règle **vers le compte débiteurs** (lignes 3 à 6) | un débit ou un crédit peut mouvementer le 1100 sans régler ni facture ni reste dû | catégorie C : contrepartie choisie par l'utilisateur, deux sens légitimes (remboursement, acompte non affecté) ; le lettrage manuel le rattache (`docs/api-external.md:339`, « Une écriture rapprochée … se lettre ») ; aucune facture n'est liée, donc pas le défaut de #482 |
-| Le pré-vol de `post_accept` (`:1044-1073`) ne connaît pas le sens | un lot fait de seuls débits prend le verrou du compte avant d'être refusé | sans effet comptable ; la garde vit là où la transaction est rechargée sous verrou, une seule fois ; l'ajouter au pré-vol la dupliquerait (C-28-6-3) |
+| Le pré-vol de `post_accept` (`:1044-1073`) ne connaît pas le sens | un lot fait de seuls débits prend le verrou du compte avant d'être refusé | sans effet comptable ; la garde vit là où la transaction est rechargée sous le verrou du compte, une seule fois ; l'ajouter au pré-vol la dupliquerait (C-28-6-3) |
 | Défense en profondeur de la base (`chk_jel_*`) | reste la dernière barrière, inchangée | voulue |
 
 ### État actuel des fichiers modifiés — ce qui doit être préservé
 
-- **`accept_one_invoice`** : recharge sous verrou (C2 Pass 1, TOCTOU) ; ordre des refus existant ; garde de score
+- **`accept_one_invoice`** : recharge sous le verrou du compte (C2 Pass 1, TOCTOU) ; ordre des refus existant ; garde de score
   (P3-H4) ; trop-perçu à double borne (#476) ; créance lue sur l'écriture de vente (15-6a) ; refus « compte =
   créance » (15-6b) ; verrou optimiste `version = ?` contre le double règlement (25-4-c2) ; lettrage après l'`UPDATE`
   (15-1a2-i) ; double trace d'audit. **La story n'ajoute qu'un refus en tête** ; rien d'autre ne bouge.
@@ -292,15 +360,19 @@ reste, écrit comme angle mort **assumé** :
 | `messages.ftl` ×4 | une clé | clés du rejet | non attendu |
 | `docs/api-external.md` | `:538` | `:540`, `:552` | `:538` possible (date) |
 | `CHANGELOG.md` | `[0.13.3]` | idem | idem |
+| `admin-manual.tex` / `.pdf` | une ligne, sous-section 0.13.3, **seulement si elle existe** (AC9, C-28-6-11) | possible (contrat du rejet) | non attendu |
 
 Conflits attendus : textuels, à réunir (union) ; **recompter** `sitesTotal`, les 29/30 codes et les littéraux après
 chaque rebase.
 
 ### Pièges connus du dépôt, applicables ici
 
-- **`-0.00`** : un CSV peut produire un zéro négatif (`user-manual.tex:1788` l'accepte en import). `Decimal`
-  compare `-0.00 <= 0` vrai, mais `is_zero()` et `is_sign_negative()` divergent : la garde **compare**, elle ne
-  teste pas le signe — sinon `-0.00` rendrait `debit_transaction`. AC3 le fixe.
+- **`-0.00`** : défense en profondeur de la fonction pure, **pas un cas atteignable par la base**. Un CSV peut
+  porter un zéro négatif (`user-manual.tex:1788` l'accepte en import), mais `bank_transactions.amount` est
+  `DECIMAL(18,2)` : la valeur s'écrit et se relit `0.00`, et la garde d'`accept_one_invoice` ne verra jamais
+  `-0.00`. `Decimal` compare `-0.00 <= 0` vrai, mais `is_zero()` et `is_sign_negative()` divergent : la garde
+  **compare**, elle ne teste pas le signe — sinon `-0.00` rendrait `debit_transaction`. AC3 le fixe (précondition
+  assertée) et M8 le prouve (C-28-6-12).
 - **Test qui accepte deux codes** (`post_accept_filters_signed_amount`) : la forme `matches!(code, A | B)` rend un
   test vert pour deux comportements ; c'est ce qui a laissé #482 ouverte. Une égalité stricte, partout.
 - **Mutation restaurée, binaire périmé** : après `git checkout -- <fichier>`, `touch <fichier>` (cargo compare des
@@ -311,7 +383,8 @@ chaque rebase.
 
 Modules touchés (règle de splitting, > 5 modules) : **4** — `kesh-api` (route + tests), `frontend/src/lib/features/reconciliation`,
 `frontend/src/lib/shared` (un compteur de test), `kesh-i18n` (catalogues) ; plus deux documents
-(`docs/api-external.md`, `CHANGELOG.md`). Une seule règle métier ajoutée, à un seul site.
+(`docs/api-external.md`, `CHANGELOG.md`), et une ligne du manuel d'administration dans un seul des deux cas de
+l'AC9. Une seule règle métier ajoutée, à un seul site.
 
 ### Exclusions écrites (périmètre minimal, C-28-6-10)
 
@@ -320,7 +393,8 @@ Modules touchés (règle de splitting, > 5 modules) : **4** — `kesh-api` (rout
 - Pas de changement de `get_proposals`, du score, de `classify_payment`, de `settlement_journal_lines`.
 - Pas d'harmonisation du `VALIDATION_ERROR` + `zero_amount_transaction` des autres variantes avec le nouveau code.
 - Pas de rapprochement de facture fournisseur ni d'avoir.
-- Pas de modification des manuels (AC9), pas de capture d'écran.
+- Pas de modification du manuel utilisateur ; au manuel d'administration, la seule ligne d'intégrations de
+  l'AC9, et seulement si la sous-section de la 0.13.3 existe au rebase (C-28-6-11). Pas de capture d'écran.
 - Le bras `_` → `DATABASE_ERROR` de `project_error_to_failed_proposal` reste tel quel (une violation de contrainte
   y redevient une panne réelle, ce qu'elle doit être une fois la garde métier posée).
 
@@ -352,3 +426,17 @@ Conforme : refus par proposition dans la route (patron 27-4, `classify_batch_tra
 - 2026-10-13 — Fiche créée (`bmad-create-story`, Opus 5.5, autonomie). Prémisse de l'issue corrigée (C-28-6-1) :
   à la lecture, la base refuse l'écriture négative ; le défaut est le refus présenté comme une panne, à constater
   au rouge (T1). Choix C-28-6-1 à C-28-6-10.
+- 2026-10-13 — **Validation P1** (lentilles R et F, Sonnet 5.5 ; rapports `kesh-gate-logs/28-6-validate-p1-{R,F}.md`) :
+  0 CRITICAL, 0 HIGH, **1 MEDIUM**, 9 LOW, 8 distincts (R : 1 MEDIUM, 5 LOW ; F : 4 LOW ; F3 = R5). Prémisse C-28-6-1
+  confirmée par les deux lentilles, maillon par maillon (lecture, non exécution). Remédiés (Opus 5.5) :
+  **R1** (MEDIUM) — l'AC9 et C-28-6-8 disaient à tort que le manuel d'administration ne nomme aucun code de
+  `failed[]` (`admin-manual.tex:1994` en nomme trois) : justification réécrite, une ligne prescrite au paragraphe
+  d'intégrations de la 0.13.3 si la sous-section existe au rebase, sinon à la préparation de release (C-28-6-11) ;
+  **F1** « sous le verrou du compte » ; **F2** montage de T1 nommé (reste dû > 0) et AC7 borné à ce cas ;
+  **F3/R5** `-0.00` cas de la seule fonction pure, précondition assertée en AC3, mutation **M8** (test de signe)
+  ajoutée (C-28-6-12) ; **F4** demi-phrase d'AC7 sur la divergence du montant nul (C-28-6-13) ; **R2** doc-comment
+  de `failed-proposal-label.ts` (29/27 → 30/28, généalogie 27-4 complétée) à l'AC5 ; **R3** quatre tests existants
+  nommés à l'AC4 (C-28-6-14) ; **R4** compteur de numéros et en-tête d'écriture nommés au constat « rien d'écrit »
+  de T1 ; **R6** ordre des refus écrit pré-vol compris (`RECONCILIATION_ALREADY_REJECTED` d'abord), « alphabétique »
+  retiré de l'AC6. Choix C-28-6-11 à C-28-6-14 ajoutés, C-28-6-8 amendé. Mutations : 7 → 8. Suite : passe ciblée
+  P2 (Haiku), `28-6-validate-prompt-p2-ciblee.md`.

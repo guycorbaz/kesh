@@ -2069,7 +2069,10 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 
 ### C-28-6-3 — La garde dans `accept_one_invoice`, après le statut et avant la facture ; pas au pré-vol
 
-- **Retenu** : sur la transaction **rechargée sous verrou**, entre l'étape 4 et l'étape 5. Le refus ne dépend que
+- **Retenu** : sur la transaction **rechargée sous le verrou du compte** (la relecture n'a pas de `FOR UPDATE` ;
+  le verrou est celui du compte bancaire, pris par `post_accept` — précision de la validation P1, F1), entre
+  l'étape 4 et l'étape 5. Les refus du pré-vol (`BANK_TRANSACTION_NOT_FOUND`, `RECONCILIATION_ALREADY_RECONCILED`,
+  `RECONCILIATION_ALREADY_REJECTED`) la précèdent (R6). Le refus ne dépend que
   de la transaction : il précède la lecture de la facture (`INVOICE_NOT_FOUND`), l'éligibilité et le score.
 - **Écartées** : au pré-vol de `post_accept` (dupliquerait la règle, et le pré-vol est commun aux trois variantes,
   dont deux admettent un débit) ; après le score (laisserait `SCORE_TOO_LOW` répondre pour un débit sans référence).
@@ -2110,8 +2113,13 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 ### C-28-6-8 — Manuels vérifiés, non modifiés
 
 - **Retenu** : `user-manual.tex:1919` (« créditrice, en CHF ») reste vrai ; aucun texte ne promet l'acceptation d'un
-  débit ; le manuel d'administration renvoie à `docs/api-external.md` pour les codes. Le contrat d'API, lui, est
-  modifié (AC7). Contrôle du PDF aplati par les passes de revue.
+  débit ; le manuel utilisateur n'est pas modifié. Le contrat d'API, lui, est modifié (AC7). Contrôle du PDF aplati
+  par les passes de revue.
+- **Amendé en validation P1 (R1, MEDIUM)** : la version d'origine disait que « le manuel d'administration renvoie à
+  `docs/api-external.md` pour les codes » — faux : `admin-manual.tex:1992-1994` (paragraphe « Intégrations par
+  l'API : les lots de réconciliation », 0.13.2) **nomme** trois codes de `failed[]` et annonce un changement de
+  contrat d'`accept` aux intégrations par clé d'API, avant de renvoyer à `docs/api-external.md`. Ce paragraphe
+  reste vrai après la story ; la ligne que la 0.13.3 lui doit est l'objet de C-28-6-11.
 - **Écartée** : une phrase au manuel utilisateur sur un refus que l'écran ne peut pas produire.
 - **Réversible** : oui.
 
@@ -2126,7 +2134,60 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 
 - **Retenu** : une règle à un site, son libellé, son contrat, son CHANGELOG ; quatre modules de code. Exclus par
   écrit : pré-vol, autres variantes, harmonisation des codes du nul, `get_proposals`, score, `classify_payment`,
-  manuels, captures, bras `_` de `project_error_to_failed_proposal`.
+  manuel utilisateur, captures, bras `_` de `project_error_to_failed_proposal`. *(Validation P1 : « manuels »
+  devient « manuel utilisateur » — le manuel d'administration reçoit une ligne, C-28-6-11.)*
+- **Réversible** : oui.
+
+### C-28-6-11 — Le manuel d'administration nomme le code neuf, dans la section de la 0.13.3 (validation P1, R1)
+
+- **Contexte** : la 0.13.2 a dit aux intégrations par clé d'API, au manuel d'administration, le changement de
+  contrat d'`accept` (codes nommés, renvoi à `docs/api-external.md`). Ce paragraphe a été écrit à la **préparation
+  de release** (`d415e66c`), dans une sous-section « Passer à la 0.13.2 » ouverte par une **story** (27-2,
+  `e04122dc`). La 28-6 change à son tour ce contrat (AC7). Au `5aad8b35`, aucune sous-section « Passer à la
+  0.13.3 » n'existe.
+- **Retenu** : à T5, si la sous-section de la 0.13.3 existe au rebase, la 28-6 y écrit une ligne — paragraphe
+  d'intégrations par l'API, sur le modèle de la 0.13.2 — qui nomme `RECONCILIATION_TRANSACTION_NOT_CREDIT` pour les
+  intégrations par clé d'API, et régénère le PDF (`make fr`, sous `flock`). Sinon, elle ne crée pas la
+  sous-section, et **la préparation de la release v0.13.3 écrit cette ligne** en ouvrant la sous-section : le
+  présent choix est sa consigne, la puce du CHANGELOG (AC8) son entrée. Le Dev Agent Record dit lequel des deux
+  cas s'est produit.
+- **Écartées** : ne rien écrire au manuel d'administration (le précédent de la 0.13.2 laisserait croire aux
+  intégrations que la 0.13.3 ne change pas le contrat d'`accept`) ; ouvrir la sous-section dans la 28-6 (son
+  intitulé et ses consignes de mise à jour — migrations, retour, scripts — relèvent de la version entière, que la
+  préparation de release connaît, non une story isolée).
+- **Réversible** : oui.
+
+### C-28-6-12 — `-0.00` : cas de la seule fonction pure, précondition assertée, mutation M8 (validation P1, F3 = R5)
+
+- **Contexte** : `bank_transactions.amount` est `DECIMAL(18,2)` : un zéro négatif lu d'un CSV s'écrit et se relit
+  `0.00`. La fiche rangeait `-0.00` parmi les cas de la garde comme s'il pouvait l'atteindre.
+- **Retenu** : `-0.00` reste un cas de l'AC3 (défense en profondeur de la fonction pure), dit inatteignable par la
+  base ; le test asserte d'abord `dec!(-0.00).is_sign_negative()` (sans quoi le cas serait un doublon muet de
+  0.00) ; mutation M8 — classification par test de signe — tuée par ce cas.
+- **Écartées** : retirer le cas (le piège « test de signe » ne serait plus fixé par rien) ; le tester de bout en
+  bout (impossible : la base ne le rend pas).
+- **Réversible** : oui.
+
+### C-28-6-13 — La divergence du montant nul entre `invoice` et les autres variantes est dite au contrat (validation P1, F4)
+
+- **Contexte** : un nul est refusé en `VALIDATION_ERROR` + `details.reason = "zero_amount_transaction"` pour `split`
+  et `rule` (et en `400` pour le rapprochement manuel et ventilé), en `RECONCILIATION_TRANSACTION_NOT_CREDIT` avec
+  la même `reason` pour une facture (C-28-6-2, C-28-6-5).
+- **Retenu** : une demi-phrase dans `docs/api-external.md` (AC7), pour qu'une intégration qui teste
+  `details.reason` sous `VALIDATION_ERROR` sache que le cas de la facture a un autre code. Pas d'harmonisation
+  (exclusion C-28-6-10 maintenue).
+- **Écartée** : harmoniser les codes (changement de contrat de trois variantes, hors #482).
+- **Réversible** : oui.
+
+### C-28-6-14 — « Aucune garde sur les autres variantes » tenu par quatre tests existants nommés, sans mutation neuve (validation P1, R3)
+
+- **Retenu** : l'AC4 nomme, par variante, un test existant qui accepte un débit et rougirait si une garde de sens y
+  était ajoutée (`accept_with_explicit_split_type_runs_split_flow`,
+  `accept_with_rule_creates_journal_entry_and_increments_count`,
+  `post_manual_creates_journal_entry_and_marks_transaction_reconciled`,
+  `split_creates_journal_entry_with_n_plus_1_lines`) ; la revue de code vérifie qu'ils n'ont pas été modifiés.
+- **Écartée** : une mutation par variante (quatre mutations pour prouver une **absence** de code que la story
+  n'écrit pas ; les tests nommés suffisent à la tenir).
 - **Réversible** : oui.
 
 [#482]: https://github.com/guycorbaz/kesh/issues/482
