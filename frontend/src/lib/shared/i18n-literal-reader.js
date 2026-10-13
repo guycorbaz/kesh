@@ -406,6 +406,27 @@ export function findRelays(source) {
  * @returns {string | null}
  */
 export function corpsDeFonction(source, ouvrante) {
+	return blocEquilibre(source, ouvrante, '{', '}');
+}
+
+/**
+ * Rend le contenu du bloc dont le délimiteur ouvrant `ouvre` est en `ouvrante`, jusqu'au
+ * délimiteur `ferme` qui l'équilibre — en sautant chaînes, gabarits et regex, comme
+ * `corpsDeFonction`, dont c'est la boucle généralisée (Story 28-2, C-28-2-16).
+ *
+ * Elle sert à la garde `erreurs-en-texte.test.ts` avec `'('` / `')'` : corps-expression
+ * d'un rappel `.catch(…)`, liste d'arguments d'un appel `console.*`. Une seule boucle pour
+ * les deux appariements — une copie dans la garde aurait repayé les trois passes de
+ * durcissement décrites ci-dessus.
+ *
+ * @param {string} source
+ * @param {number} ouvrante position du délimiteur ouvrant
+ * @param {string} ouvre délimiteur ouvrant (`'{'`, `'('`)
+ * @param {string} ferme délimiteur fermant (`'}'`, `')'`)
+ * @returns {string | null} le contenu, délimiteurs exclus ; `null` s'il n'est jamais
+ *   équilibré
+ */
+export function blocEquilibre(source, ouvrante, ouvre, ferme) {
 	let profondeur = 0;
 	let j = ouvrante;
 	while (j < source.length) {
@@ -428,8 +449,8 @@ export function corpsDeFonction(source, ouvrante) {
 			j = lu ? lu.end : j + 1;
 			continue;
 		}
-		if (c === '{') profondeur += 1;
-		else if (c === '}') {
+		if (c === ouvre) profondeur += 1;
+		else if (c === ferme) {
 			profondeur -= 1;
 			if (profondeur === 0) return source.slice(ouvrante + 1, j);
 		}
