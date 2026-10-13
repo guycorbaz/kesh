@@ -2036,3 +2036,97 @@ Rapports `kesh-gate-logs/28-1-validate-p3-{R,F}.md` (hors dépôt). Bilan au Cha
 - **Écartée** : `getAnimations()` du seul dialogue (le voile, `Dialog.Overlay`, est un frère et anime aussi) ;
   une seconde analyse bornée au bouton (deux analyses pour une question).
 - **Réversible** : oui.
+---
+
+## Story 28-6 — Le rapprochement refuse de régler une facture client par un débit ([#482])
+
+Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
+`28-6-rapprochement-debit-facture.md`.
+
+### C-28-6-1 — Prémisse de l'issue corrigée : la base refuse l'écriture, le défaut est le refus présenté comme une panne
+
+- **Contexte** : #482 écrit que le rapprochement « écrirait un règlement de montant négatif ». À la lecture,
+  `settlement_journal_lines` pose `debit = montant` (négatif), que `chk_jel_debit_credit_exclusive` /
+  `chk_jel_debit_nonneg` refusent (4025 → `CheckConstraintViolation` → bras `_` de
+  `project_error_to_failed_proposal` → `DATABASE_ERROR`), point de sauvegarde annulé.
+- **Retenu** : la fiche le dit comme **hypothèse** et exige de la constater au rouge (T1), code observé consigné ;
+  si quoi que ce soit était écrit, le défaut serait un P1, à signaler. Priorité P2 maintenue : comportement faux
+  (refus annoncé comme panne, rejeu encouragé), la seule garde étant une contrainte de base.
+- **Écartées** : croire l'issue (P1 implicite) ; ne rien corriger au motif que rien n'est écrit (une contrainte de
+  base n'est pas une règle métier, et le message est faux).
+- **Réversible** : oui. **Demandé à l'orchestrateur** : un commentaire sur #482 après T1, avec le code observé.
+
+### C-28-6-2 — Code dédié `RECONCILIATION_TRANSACTION_NOT_CREDIT`, un seul pour le débit et le nul
+
+- **Contexte** : l'issue demande « un code dédié ». Les autres variantes (`split`, `rule`, `manual`, `split`
+  standalone) refusent déjà le montant nul en `VALIDATION_ERROR` + `zero_amount_transaction`.
+- **Retenu** : un code neuf, `details.reason` = `debit_transaction` | `zero_amount_transaction`, plus
+  `transactionAmount` (forme de `RECONCILIATION_OVERPAYMENT`). Un libellé lisible, un seul code à traiter pour une
+  intégration.
+- **Écartées** : `VALIDATION_ERROR` (libellé « Erreur de validation », muet) ; deux codes distincts (deux libellés
+  pour une seule règle) ; `RECONCILIATION_SCORE_TOO_LOW` (faux : le score n'y est pour rien).
+- **Réversible** : non une fois publié (code de contrat) — d'où le choix avant la v0.13.3.
+
+### C-28-6-3 — La garde dans `accept_one_invoice`, après le statut et avant la facture ; pas au pré-vol
+
+- **Retenu** : sur la transaction **rechargée sous verrou**, entre l'étape 4 et l'étape 5. Le refus ne dépend que
+  de la transaction : il précède la lecture de la facture (`INVOICE_NOT_FOUND`), l'éligibilité et le score.
+- **Écartées** : au pré-vol de `post_accept` (dupliquerait la règle, et le pré-vol est commun aux trois variantes,
+  dont deux admettent un débit) ; après le score (laisserait `SCORE_TOO_LOW` répondre pour un débit sans référence).
+- **Réversible** : oui.
+
+### C-28-6-4 — Garde écrite `amount <= Decimal::ZERO`, comparaison et non test de signe
+
+- **Retenu** : même forme que `get_proposals` ; la règle « un règlement de facture exige un encaissement » écrite
+  deux fois, proposition et acceptation, les deux doc-comments se nommant. Le zéro négatif est un nul.
+- **Écartée** : une fonction partagée par `get_proposals` et `accept_one_invoice` (le filtre de `get_proposals`
+  est une ligne dans une boucle de lecture ; l'extraire toucherait une région que la 28-5 lit aussi, sans gain).
+- **Réversible** : oui.
+
+### C-28-6-5 — Aucune garde de sens sur `split`, `rule`, `manual` et l'éclatement standalone
+
+- **Contexte** : l'epic demande de « vérifier les autres `accept_one_*` pour la même absence de garde ».
+- **Retenu** : vérifié, **pas la même absence** : ils n'écrivent aucun règlement de facture ; un débit y est
+  légitime (dépense, remboursement), ce que `rules.rs:8` et `validate_split_balance` (`abs()`) disent déjà ; le nul
+  y est déjà refusé (`:2447`, `:2870`, `:3659`, `:4109`).
+- **Réversible** : oui.
+
+### C-28-6-6 — Libellé frontend et clé i18n, bien que le refus ne soit pas atteignable depuis l'écran
+
+- **Contexte** : l'écran ne soumet que la candidate proposée, et `get_proposals` ne propose jamais de facture pour
+  un débit. Le code n'apparaîtra donc, en pratique, qu'à une intégration.
+- **Retenu** : un `case` et une clé dans les quatre locales — `failed-proposal-label.test.ts` déclare couvrir tous
+  les codes de `failed[]` (patron de la 15-5c) ; un code sans libellé s'afficherait « Refus non reconnu (CODE) » le
+  jour où l'écran permettrait de choisir une autre candidate. Coût : un `case`, quatre lignes, deux compteurs.
+- **Écartée** : rien côté frontend (périmètre plus étroit, mais l'invariant « tous les codes » deviendrait faux).
+- **Réversible** : oui.
+
+### C-28-6-7 — Pas de capture d'écran
+
+- **Retenu** : la story ne change ce que l'écran affiche dans aucun parcours atteignable (cf. C-28-6-6) ; la règle
+  de recette visuelle de l'epic vise la 28-6 « si elle change ce que l'écran affiche ».
+- **Réversible** : oui.
+
+### C-28-6-8 — Manuels vérifiés, non modifiés
+
+- **Retenu** : `user-manual.tex:1919` (« créditrice, en CHF ») reste vrai ; aucun texte ne promet l'acceptation d'un
+  débit ; le manuel d'administration renvoie à `docs/api-external.md` pour les codes. Le contrat d'API, lui, est
+  modifié (AC7). Contrôle du PDF aplati par les passes de revue.
+- **Écartée** : une phrase au manuel utilisateur sur un refus que l'écran ne peut pas produire.
+- **Réversible** : oui.
+
+### C-28-6-9 — Le symétrique (crédit ↔ facture fournisseur) n'existe pas ; les avoirs non plus
+
+- **Retenu** : aucun chemin ne lie une transaction bancaire à une facture fournisseur ni à un avoir (inventaire de la
+  fiche) : rien à refuser, l'absence est écrite. Le remboursement d'un client par un débit passe par l'affectation
+  manuelle, sans lien de facture : catégorie C, pas le défaut de #482.
+- **Réversible** : oui (à reprendre si un rapprochement fournisseur est un jour ajouté).
+
+### C-28-6-10 — Périmètre minimal, exclusions écrites
+
+- **Retenu** : une règle à un site, son libellé, son contrat, son CHANGELOG ; quatre modules de code. Exclus par
+  écrit : pré-vol, autres variantes, harmonisation des codes du nul, `get_proposals`, score, `classify_payment`,
+  manuels, captures, bras `_` de `project_error_to_failed_proposal`.
+- **Réversible** : oui.
+
+[#482]: https://github.com/guycorbaz/kesh/issues/482
