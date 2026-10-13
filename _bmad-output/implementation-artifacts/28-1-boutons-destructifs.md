@@ -3,11 +3,13 @@
 ## Status
 
 **ready-for-dev** — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`), sur `6f971d76`
-(rétrospective de l'Epic 27), branche `story/28-1`, worktree `/home/gcorbaz/devel/kesh-28-1`. Choix consignés
-au registre `epic-28-choix-autonomes-28-1.md` (**C-28-1-1 à C-28-1-25**), fusionné plus tard par union dans
-`epic-28-choix-autonomes.md`. 13 AC (AC1-AC13), tâches T0-T10, mutations M1-M20. Validation P1 faite (Sonnet,
-lentilles R et F) et remédiée — **périmètre réduit à #640** (C-28-1-17) ; validation P2 : prompt
-`28-1-validate-prompt-p2.md`. PR : **`closes #640`** (et `refs #645 #646`, angles morts renvoyés).
+(rétrospective de l'Epic 27), branche `story/28-1`, worktree `/home/gcorbaz/devel/kesh-28-1`, rebasée en
+validation P2 sur `5aad8b35` (kickoff de l'Epic 28, #643). Choix consignés au registre
+`epic-28-choix-autonomes.md` (**C-28-1-1 à C-28-1-31** ; le registre séparé de la story y a été versé par union
+en validation P2). 13 AC (AC1-AC13), tâches T0-T9, mutations M1-M21 (M18 retirée). Validations P1 (Sonnet) et
+P2 (Opus), lentilles R et F, remédiées — **périmètre réduit à #640** en P1 (C-28-1-17), puis **au strict
+nécessaire pour fermer #640** en P2 (C-28-1-26) ; validation P3 : prompt `28-1-validate-prompt-p3.md`. PR :
+**`closes #640`** (et `refs #645 #646`, angles morts renvoyés).
 
 ## Story
 
@@ -18,8 +20,8 @@ comme un bouton,
 de la v0.13.2 — et que je distingue d'un regard l'action irréversible de son *Annuler*.
 
 Issue : [#640](https://github.com/guycorbaz/kesh/issues/640) (`bug`, **P3**, recette de la v0.13.2 du
-2026-10-13). Epic : `_bmad-output/planning-artifacts/epic-28-recette-v0-13-2.md` (en cours d'écriture sur
-`chore/epic-28-kickoff`). Cible : **v0.13.3**.
+2026-10-13). Epic : `_bmad-output/planning-artifacts/epic-28-recette-v0-13-2.md` (sur `main` depuis
+`5aad8b35`, #643). Cible : **v0.13.3**.
 
 ⚠️ **La cause écrite dans l'issue et dans l'epic est inexacte, et la fiche la corrige (C-28-1-1).** L'issue dit
 « `bg-destructive/10` — un fond rouge à 10 % — sous un texte rouge ». En réalité **le jeton `destructive`
@@ -55,19 +57,23 @@ Dans `frontend/src/app.css`, bloc `@theme`, après `--color-error` :
 
 ```css
   /* Action destructive (Story 28-1, #640) — distincte de --color-error (#dc2626), trop
-     clair pour un texte sur bandeau bg-destructive/10 (4,13:1 < 4,5). Ratios WCAG mesurés :
-     blanc sur destructive 6,47:1 ; blanc sur destructive-hover 8,31:1 ; destructive sur
-     blanc 6,47:1 ; destructive sur bandeau /10 (#f8e8e8) 5,45:1. */
+     clair pour un texte sur bandeau bg-destructive/10 (4,14:1 < 4,5). Ratios WCAG, calculés
+     comme le helper contrast.ts (mélanges non arrondis, arrondi au centième) : blanc sur
+     destructive 6,47:1 ; blanc sur destructive-hover 8,31:1 ; destructive sur blanc 6,47:1 ;
+     destructive sur bandeau /10 5,46:1. */
   --color-destructive: #b91c1c;
   --color-destructive-foreground: #ffffff;
   --color-destructive-hover: #991b1b;
 ```
 
-Le 5,45:1 du bandeau est calculé sur le mélange **non arrondi** de `#b91c1c` à 10 % sur blanc,
-`(248 ; 232,3 ; 232,3)` — c'est ce que rend Chromium pour une couleur à alpha 0,1 composée sur blanc, et ce que
-calcule le helper `blend` (AC8) ; arrondi à `#f8e8e8`, le ratio vaut 5,46. Le `/20` n'est plus cité : plus
-aucun usage applicatif ne l'emploie (seuls l'ancienne variante et le `dark:` inutilisé de
-`dropdown-menu-item.svelte:23`).
+**Une seule méthode de calcul, celle du helper (C-28-1-27).** Tout ratio de la fiche, du registre, d'`app.css`,
+de la spec UX et du CHANGELOG est calculé comme le fait `blend` + `contrastRatio` du helper de l'AC7 (3) : un
+mélange à alpha est pris **non arrondi** (le bandeau `/10` vaut `(248 ; 232,3 ; 232,3)`), puis le ratio est
+**arrondi au centième** (non tronqué). Sur le pixel 8 bits `#f8e8e8`, le même bandeau donnerait 5,45 : ce n'est
+pas la valeur citée. Le `/20` n'est plus cité : plus aucun **fond sous un texte** ne l'emploie (l'ancienne
+variante, et le `dark:` inutilisé de `dropdown-menu-item.svelte:23`) ; les `aria-invalid:ring-destructive/20` de
+`input.svelte:28,41`, `select-trigger.svelte:22` et de la base de `button.svelte:7` restent actifs, mais ce sont
+des anneaux, sans texte dessus.
 
 Après `npm run build`, `grep -c 'bg-destructive' build/_app/immutable/assets/*.css` rend au moins une
 occurrence (la commande et sa sortie au Dev Agent Record). `--color-error` **ne change pas** (73 lignes
@@ -108,12 +114,12 @@ destructive: "bg-destructive text-destructive-foreground hover:bg-destructive-ho
 | repos | fond `rgb(185, 28, 28)`, texte `rgb(255, 255, 255)` | 6,47:1 (texte) ; 6,47:1 (fond / page blanche) | 1.4.3 ≥ 4,5 ; 1.4.11 ≥ 3 |
 | survol | fond `rgb(153, 27, 27)` | 8,31:1 | 1.4.3 ≥ 4,5 |
 | focus clavier | `outline-style: solid`, `outline-color: rgb(59, 130, 246)` (règle globale `app.css:62-65`) ; `border-top-color: rgb(185, 28, 28)` (la bordure de focus de la variante, C-28-1-20 — non celle du jeton absent `ring`) | 3,68:1 contre la page (le contour est décalé de 2 px) | 2.4.7 ; 1.4.11 ≥ 3 |
-| désactivé | `opacity: 0.5`, fond **toujours** `rgb(185, 28, 28)` (l'opacité s'applique à l'élément) | 2,53:1 effectif | **exempté** (1.4.3 : composant inactif) — distinct du repos (C-28-1-5) |
+| désactivé | `opacity: 0.5`, fond **toujours** `rgb(185, 28, 28)` (l'opacité s'applique à l'élément) | 2,54:1 effectif (mélange non arrondi `(220 ; 141,5 ; 141,5)`) | **exempté** (1.4.3 : composant inactif) — distinct du repos (C-28-1-5) |
 | repos, `prefers-color-scheme: dark` émulé | **identique** au repos clair | — | C-28-1-7 |
 
 L'anneau `focus-visible:ring-destructive/40` (3 px, rouge à 40 %) n'est **pas** asserté : sa couleur passe par
-`color-mix(in oklab, …)`, que `getComputedStyle` rend dans une syntaxe que `parseRgb` refuse (AC8) ; il est
-vu sur la capture. Toutes les valeurs du tableau se lisent **après stabilisation** : la base porte
+`color-mix(in oklab, …)`, que `getComputedStyle` rend en `oklab(…)`/`color(…)` et non en `rgb(…)` ; il est
+vu sur la capture **de l'état focalisé** (`a-focus-<clair|sombre>.png`, AC8, C-28-1-29) — œil seul, angle mort 10. Toutes les valeurs du tableau se lisent **après stabilisation** : la base porte
 `transition-all` (150 ms par défaut, `tailwindcss/theme.css` `--default-transition-duration`), et une lecture
 immédiate après `hover()` ou `focus` rendrait une couleur intermédiaire (AC8, C-28-1-19).
 
@@ -129,10 +135,12 @@ Définir `--color-destructive` active d'un coup tous les usages du jeton qui ne 
 bandeaux d'erreur, les textes d'erreur `text-destructive` (`<p>`, `<span>`, `<td>`, `<li>`), les bordures de
 champ en erreur (`border-destructive` sur `Input`, `aria-invalid:border-destructive` de `input.svelte`,
 `select-trigger.svelte` — 11 sites `aria-invalid` hors `ui/`), la section `border-destructive` de
-`settings/vat-rates/+page.svelte:356`, et les trois `<button>` bruts bordés en `text-destructive` (Dev Notes §
-Inventaire, classe C ; le seul `text-destructive` de la classe D, *Annuler le rapprochement*, est migré par l'AC5). **Aucun de ces sites n'est édité** pour l'AC4 — c'était leur intention d'origine.
+`settings/vat-rates/+page.svelte:356`, et les quatre `<button>` bruts en `text-destructive` — les trois bordés de la classe C et
+*Annuler le rapprochement* du détail d'import (classe D), qui devient un texte **rouge** souligné à côté du lien
+*Voir l'écriture* (Dev Notes § Inventaire). **Aucun de ces sites n'est édité** pour l'AC4 — c'était leur
+intention d'origine.
 
-- Contraste garanti par AC1 : texte sur blanc 6,47:1, texte sur bandeau `/10` 5,45:1.
+- Contraste garanti par AC1 : texte sur blanc 6,47:1, texte sur bandeau `/10` 5,46:1.
 - Les specs E2E qui lancent axe **avec la règle `color-contrast` active** restent vertes : c'est le contrôle
   indépendant que le rouge neuf ne crée aucune violation là où un bandeau est affiché à l'analyse. Décompte au
   2026-10-13, depuis `frontend/` (C-28-1-25) :
@@ -152,34 +160,25 @@ Inventaire, classe C ; le seul `text-destructive` de la classe D, *Annuler le ra
   `:96` et `:231`). **3 fichiers** la neutralisent entièrement (`users`, `email-templates`, `reminders`) :
   ils ne contrôlent rien du rouge neuf. La spec neuve de l'AC8 en ajoute une dix-septième.
 
-**AC5 — Cinq boutons stylés à la main passent au `Button` partagé : quatre à `destructive`, un à `outline`
-(C-28-1-9, C-28-1-21).**
+**AC5 — Aucun site applicatif n'est édité (C-28-1-26).**
 
-| Site | Aujourd'hui | Devient |
-|---|---|---|
-| `routes/(app)/settings/fiscal-years/+page.svelte:603` (`fiscal-year-close-confirm`) | `<Button class="bg-red-600 hover:bg-red-700">` | `<Button variant="destructive">`, `class` retiré |
-| `routes/(app)/settings/email-templates/+page.svelte:439` (`email-template-restore-confirm`) | `<Button class="bg-red-600 hover:bg-red-700">` | `<Button variant="destructive">`, `class` retiré |
-| `routes/(app)/bank-import/[id]/+page.svelte:141-149` (`detail-tx-cancel-reconciliation`) | `<button class="ml-2 text-destructive underline">` — se lit comme un lien | `<Button variant="outline" size="sm" class="ml-2">` — la forme exacte du même bouton sur la fiche de la facture (C-28-1-21) |
-| `lib/features/contacts/ContactPersonsManager.svelte:112-119` (`contact-person-delete-{id}`) | `<button class="text-red-600 hover:underline">` | `<Button variant="destructive" size="xs">` |
-| `lib/features/bank-import/BankProfileList.svelte:75-83` (`bank-import-profile-delete-button`) | `<button class="ml-2 text-error">` | `<Button variant="destructive" size="xs" class="ml-2">` |
+La story ne touche, dans `frontend/src/`, que trois modules : `app.css` (AC1), `lib/components/ui/` (variante,
+AC2 ; gardes, AC6, AC7) et `routes/design-system` (AC9). `git diff --stat main -- frontend/src` au dernier
+commit de code ne nomme aucun autre fichier (sortie au Dev Agent Record). En particulier, les cinq boutons rouges
+stylés à la main — classe B (`fiscal-years:603`, `email-templates:439`) et classe D (`ContactPersonsManager:114`,
+`BankProfileList:79`, `bank-import/[id]:143`) — **restent tels quels** et sont inscrits à la table de l'AC6 ;
+leur forme est un angle mort (Dev Notes, angle mort 11), non un livrable de la 28-1. Le retrait est écrit à
+C-28-1-26 : la migration de ces cinq sites, et le passage d'*Annuler le rapprochement* en `outline` (C-28-1-21,
+**annulé** — la variante `outline` le rendait moins visible qu'aujourd'hui : bordure à 1,23:1, ni fond ni survol
+tant que #645 n'est pas fait), étaient nés de la remédiation P1 et non de #640, dont le symptôme est
+*Supprimer l'import* (classe A, corrigé par l'AC2 sans édition).
 
-`data-testid`, `onclick`, `disabled`, libellé `i18nMsg` (clé et repli) **inchangés** ; le `Button` partagé pose
-`type="button"` par défaut (`button.svelte:51`, `type = "button"`). Un seul de ces sites est rendu **dans un
-`<form>`** : `ContactPersonsManager`, monté à `contacts/+page.svelte:1099` dans le formulaire d'édition
-(`:824-1116`) ; son `<button>` actuel est déjà `type="button"`, et le `Button` le reste — aucun envoi du
-formulaire n'est introduit. Import `import { Button } from '$lib/components/ui/button';` ajouté là où il manque.
+**AC6 — Inventaire clos des boutons rouges posés à la main : une garde Vitest (C-28-1-11, C-28-1-22,
+C-28-1-28).**
 
-*Annuler le rapprochement* passe à `outline` et non à `destructive` (C-28-1-21) : le manuel promet « le même
-bouton » sur le détail de l'import et sur la fiche de la facture (`user-manual.tex:2019-2020`), où il est un
-`<Button variant="outline" size="sm">` (`InvoiceSettlements.svelte:106-111`, `invoice-settlement-cancel-reconciliation`) ;
-c'est un déclencheur qui ouvre `CancelReconciliationDialog`, dont la **confirmation** est, elle, `destructive`
-(`CancelReconciliationDialog.svelte:137-138`, classe A). Le défaut de l'issue — « se lit comme du texte » — est
-corrigé par la bordure et la forme de bouton.
-
-**AC6 — Inventaire clos des boutons rouges posés à la main : une garde Vitest (C-28-1-11, C-28-1-22).**
-
-Fichier neuf `frontend/src/lib/components/ui/button/boutons-rouges-inventory.test.ts`, sur le patron de
-`frontend/src/lib/features/bank-accounts/bank-name-inventory.test.ts` (Story 26-2b) :
+Fichier neuf `frontend/src/lib/components/ui/button/boutons-rouges-inventory.test.ts`, sur le patron de la
+**table fermée** de `frontend/src/lib/features/bank-accounts/bank-name-inventory.test.ts` (Story 26-2b) — non de
+son analyse : aucune garde du dépôt n'emploie encore `svelte/compiler`, celle-ci sera la première :
 
 - parcourt **tous** les `.svelte` de `src/` (hors `.test.`), les analyse par `parse(source, { modern: true })` de
   `svelte/compiler` (pas d'expression régulière sur des balises : un `onclick={() => …}` contient un `>`) ;
@@ -188,31 +187,43 @@ Fichier neuf `frontend/src/lib/components/ui/button/boutons-rouges-inventory.tes
 - relève tout jeton `(text|bg|border|ring|outline)-(destructive|error|red-\d{2,3})(/\d+)?`, préfixes de variante
   compris (`hover:text-destructive`) ;
 - exige que l'ensemble `{ clé → jetons }` **égale** une table fermée, chaque entrée avec son motif. La **clé**
-  est non ambiguë (C-28-1-22) : `<chemin relatif à src/>#<data-testid>` quand l'élément porte un `data-testid`
-  — texte source de la valeur, gabarit compris (`api-keys-revoke-{k.id}` s'écrit tel quel, `settings/api-keys/+page.svelte:379`) —, sinon
-  `<chemin>@<élément>:<rang>`, le rang comptant à partir de 1 les éléments **sans** `data-testid` porteurs
-  d'un jeton rouge du même fichier, dans l'ordre du source. Pas de numéro de ligne (une édition sans rapport
-  ferait rougir la garde). Les deux `<button>` de `supplier-invoices/[id]/+page.svelte` (`:410`, `:457`) ont
-  deux `data-testid` distincts ; les trois icônes ✕, sans `data-testid`, sont chacune seule dans son fichier
-  (`@button:1`). La garde **échoue** si deux éléments produisent la même clé. Après la story, la table contient
-  **exactement neuf entrées** : les six déclencheurs bordés de la classe C et les trois icônes ✕ de la classe E
-  (Dev Notes § Inventaire). Une entrée en trop **ou** en moins fait rougir (les deux sens, M12/M13) ;
-- **sites migrés** (C-28-1-22) : une seconde table fermée, des cinq sites de l'AC5, `{ chemin#data-testid →
-  { élément: 'Button', variant, class } }` — `variant` **littéral** attendu (`destructive` ×4, `outline` ×1),
-  `class` attendu exactement (`ml-2` ou absent). La garde retrouve l'élément par son `data-testid` et exige
-  qu'il soit un composant `Button` (non un `<button>`), avec ce `variant` et cette `class`. C'est ce qui fait
-  rougir le retour d'un site à un `<button class="ml-2">` nu ou à un `Button` sans `variant` — invisibles à la
-  première table, qui ne relève que les jetons rouges (M18) ;
+  est non ambiguë (C-28-1-22) : `<chemin relatif à src/>#<data-testid>` quand l'élément porte un `data-testid`,
+  sinon `<chemin>@<élément>:<rang>`, le rang comptant à partir de 1 les éléments **sans** `data-testid` porteurs
+  d'un jeton rouge du même fichier, dans l'ordre du source. Le `data-testid` s'écrit par son **texte source**
+  (C-28-1-28) : `source.slice(start, end)` de la **valeur** de l'attribut — pour une valeur entre guillemets
+  (tableau `Text`/`ExpressionTag`), du début du premier nœud à la fin du dernier, guillemets exclus
+  (`api-keys-revoke-{k.id}`, `settings/api-keys/+page.svelte:379`) ; pour une valeur `ExpressionTag` seule,
+  accolades comprises (``{`contact-person-delete-${p.id}`}``, `ContactPersonsManager.svelte:116`). Aucune
+  normalisation des gabarits. Pas de numéro de ligne (une édition sans rapport ferait rougir la garde). Les deux
+  `<button>` de `supplier-invoices/[id]/+page.svelte` (`:410`, `:457`) ont deux `data-testid` distincts ; les
+  trois icônes ✕, sans `data-testid`, sont chacune seule dans son fichier (`@button:1`). La garde **échoue** si
+  deux éléments produisent la même clé. La table contient **exactement quatorze entrées** (Dev Notes §
+  Inventaire) : les deux `Button` rouges par `class` de la classe B, les six déclencheurs bordés de la classe C,
+  les trois `<button>` sans bordure de la classe D et les trois icônes ✕ de la classe E. Une entrée en trop **ou**
+  en moins, ou des jetons changés, fait rougir (M11-M14). Clés attendues des classes B et D :
+  `routes/(app)/settings/fiscal-years/+page.svelte#fiscal-year-close-confirm`,
+  `routes/(app)/settings/email-templates/+page.svelte#email-template-restore-confirm`,
+  ``lib/features/contacts/ContactPersonsManager.svelte#{`contact-person-delete-${p.id}`}``,
+  `lib/features/bank-import/BankProfileList.svelte#bank-import-profile-delete-button`,
+  `routes/(app)/bank-import/[id]/+page.svelte#detail-tx-cancel-reconciliation` ;
+- **(f) — aucune `class` sur la variante destructive** (C-28-1-28) : tout composant `Button` dont l'attribut
+  `variant` est le littéral `destructive` ne porte **aucun** attribut `class` (24 usages au 2026-10-13, aucun avec
+  `class`). C'est ce qui rend vraie *par construction* la phrase « les 24 usages de la variante rendent le style de
+  l'AC2 » (M21) ;
+- **auto-tests sur source synthétique** (R13) : la fonction de relevé est exportée du fichier de test (ou d'un
+  module voisin `boutons-rouges-releve.ts`) et appliquée à trois sources écrites dans le test : un `<button
+  class:text-destructive={x}>` → jeton relevé (tue M17) ; deux `<button class="text-error">` sans `data-testid`
+  → clés `@button:1` et `@button:2` ; deux éléments au même `data-testid` → la garde lève ;
 - doc-comment : ce qu'elle voit, ce qu'elle **ne voit pas** (rouge passé par une variable de script, par `cn(…)`
   dans le `<script>`, par un `style=`, ou porté par un `<a>`/`<div role="button">` — aucun aujourd'hui, vérifié),
   et comment ajouter une entrée légitime (« avec son motif : c'est le but — le changement se voit en revue »).
 
-La variante `destructive` du `Button` est la **seule** source du rouge d'un bouton hors table. La première
-table ne contrôle pas `variant=`, qui n'est pas une classe ; la seconde le contrôle pour les **cinq sites
-migrés seulement** — les 24 sites de la classe A ne sont pas tenus par une table (un `variant="destructive"`
-retiré de l'un d'eux ne rougit aucune garde : angle mort 7).
+La variante `destructive` du `Button` est la **seule** source du rouge d'un bouton hors table. La table ne
+contrôle pas `variant=`, qui n'est pas une classe : un `variant="destructive"` retiré d'un des 24 usages de la
+classe A ne rougit aucune garde (angle mort 7) ; une `class` ajoutée à l'un d'eux rougit (f).
 
-**AC7 — Une garde Vitest qui rougit si la variante redevient pâle (C-28-1-11, C-28-1-12, C-28-1-18, C-28-1-23).**
+**AC7 — Des gardes Vitest qui rougissent si la variante redevient pâle (C-28-1-11, C-28-1-12, C-28-1-18, C-28-1-23,
+C-28-1-30).**
 
 Fichier neuf `frontend/src/lib/components/ui/button/button-destructive.test.ts` :
 
@@ -236,112 +247,130 @@ contenu, même garde) et l'écrire au Debug Log. La sortie fusionnée ne sert qu
    `--color-destructive:\s*(#[0-9a-f]{6})`) ; **tout** jeton de couleur employé par la variante — chaque classe de
    la variante, préfixes de variante (`hover:`, `focus-visible:`) et opacité (`/40`) retirés, de la forme
    `(bg|text|border|ring)-X` → `--color-X` — est défini. C'est la classe de défaut d'origine, bornée à la variante.
-3. Contrastes recalculés **depuis les valeurs lues** dans `app.css`, par le helper de l'AC8 :
+3. Contrastes recalculés **depuis les valeurs lues** dans `app.css`, par le helper
+   `frontend/tests/e2e/helpers/contrast.ts` (§ *Helper de contraste* ci-dessous) :
    `destructive-foreground`/`destructive` ≥ 4,5 ; `destructive-foreground`/`destructive-hover` ≥ 4,5 ;
    `destructive`/`#ffffff` ≥ 4,5 (texte d'erreur) ; `destructive`/mélange 10 % sur blanc ≥ 4,5 (bandeau) ;
-   `destructive`/`#ffffff` ≥ 3 (limite du bouton, 1.4.11).
-4. **Facultatif — garde d'ensemble clos des classes de couleur sans jeton défini, en table fermée
-   (C-28-1-23).** Fichier `frontend/src/lib/components/ui/jetons-non-definis.test.ts`
-   (`// @vitest-environment node`). Elle relève dans tous les `.svelte` et `.ts` de `src/` (hors `.test.`) les
-   classes candidates `(bg|text|border|ring|outline|fill|stroke|divide|placeholder|decoration|caret|accent)-<nom>`
-   (préfixes de variante et opacité retirés), et demande **à Tailwind lui-même** lesquelles n'engendrent aucune
-   règle, en compilant `src/app.css` par `compile` de `@tailwindcss/node` (exporté, `dist/index.d.ts:256`) puis
-   `build([candidat])`, ou par `__unstable__loadDesignSystem(...).candidatesToCss(...)` (rend `null` pour un
-   candidat non résolu). Ce n'est **pas** une liste de formes connues : c'est l'inventaire des non-résolus,
-   décidé par le compilateur (CLAUDE.md, « inventorier les sites NON RÉSOLUS »). L'ensemble des **noms** non
-   résolus doit **égaler** une table fermée, chaque nom renvoyé à **#645** ; attendu d'après le relevé
-   indépendant des lentilles P1 : `muted`, `muted-foreground`, `foreground`, `background`, `ring`, `input`,
-   `accent`, `accent-foreground`, `card`, `error-soft`, `warning-soft`, `danger`. La garde rougit (a) si un nom
-   **neuf** non défini apparaît, (b) si un nom listé devient défini sans que la table soit mise à jour (#645 la
-   videra). Tout écart entre la sortie du compilateur et la liste attendue ci-dessus est **examiné nom par nom**
-   et écrit au Debug Log avant d'être recopié dans la table — la table ne se remplit pas depuis la sortie de la
-   garde qu'elle contrôle (le défaut de l'AC7 de l'Epic 23, vert par construction). Si aucune des deux API ne se
-   charge sous Vitest, le point (4) est abandonné et le Debug Log le dit : la décision de l'orchestrateur le
-   rend facultatif, et les points (1) à (3) couvrent seuls #640.
+   `destructive`/`#ffffff` ≥ 3 (limite du bouton, 1.4.11). C'est le seul contrôle des contrastes de la story ;
+   l'E2E ne recalcule aucun ratio (C-28-1-31).
+4. **Garde d'ensemble clos des classes de couleur sans jeton défini, en table fermée (C-28-1-23, C-28-1-30).**
+   Fichier `frontend/src/lib/components/ui/jetons-non-definis.test.ts` (`// @vitest-environment node`).
+   - **Relevé** : dans tous les `.svelte` et `.ts` de `src/` (hors `.test.`), le texte est découpé en jetons sur
+     les séparateurs `` [\s"'`{}()] `` ; un jeton est retenu s'il s'écrit, une fois retirés ses préfixes de variante
+     (tout ce qui précède le dernier `:`), un `!` initial et une opacité finale `/<n>`,
+     `^(bg|text|border|ring|outline|fill|stroke|divide|placeholder|decoration|caret|accent)-[a-z][a-z0-9-]*$`.
+     La frontière est le **début du jeton** : `context-menu` ne livre pas `text-menu`.
+   - **Décision par Tailwind lui-même** : `__unstable__loadDesignSystem(css, { base })` de `@tailwindcss/node`
+     (exporté, `dist/index.d.ts:256` ; il fournit lui-même `loadModule`/`loadStylesheet`, si bien que les
+     `@import` d'`app.css` se résolvent depuis `base` = `frontend/src`), puis `candidatesToCss(candidats)`, qui
+     rend `null` pour un candidat non résolu. Pas `compile(...).build(...)` : son `build` est cumulatif et rend
+     la feuille entière, il ne décide pas candidat par candidat. **`@tailwindcss/node` est déclaré** en
+     `devDependencies` de `frontend/package.json`, à la version exacte de `tailwindcss` installée (4.2.2) — il
+     n'est aujourd'hui qu'une dépendance transitive de `@tailwindcss/vite`, qu'un test ne doit pas supposer.
+   - **Repli**, si l'API ne se charge pas sous Vitest (écrit au Debug Log avec l'erreur) : un nom est « défini »
+     s'il figure parmi les `--color-<nom>` du `@theme` d'`app.css` **ou** de `node_modules/tailwindcss/theme.css`
+     (palette), ou parmi les mots-clés `transparent`, `current`, `inherit`, `black`, `white` ; les candidats dont
+     le nom n'est pas une couleur (`text-sm`, `border-b`…) sont écartés par la même règle que Tailwind (le
+     candidat est résolu par une autre utilité) — cette dernière règle étant elle-même une liste, le repli est
+     moins sûr que l'API, et le Debug Log le dit.
+   - **Table** : ce n'est **pas** une liste de formes connues, c'est l'inventaire des non-résolus (CLAUDE.md,
+     « inventorier les sites NON RÉSOLUS »). L'ensemble des **noms** non résolus doit **égaler** une table
+     fermée de **treize** noms, chacun renvoyé à **#645** : `muted`, `muted-foreground`, `foreground`,
+     `background`, `ring`, `input`, `accent`, `accent-foreground`, `card`, `error-soft`, `warning-soft`, `danger`,
+     `surface-hover` (relevé indépendant des lentilles P1 et P2 ; `surface-hover` : `credit-notes:59`,
+     `payment-batches:229`, `supplier-invoices:452`). La garde rougit (a) si un nom **neuf** non défini
+     apparaît, (b) si un nom listé devient défini sans que la table soit mise à jour (#645 la videra). Tout écart
+     entre la sortie du compilateur et cette liste est **examiné nom par nom** et écrit au Debug Log avant
+     d'être recopié dans la table — la table ne se remplit pas depuis la sortie de la garde qu'elle contrôle (le
+     défaut de l'AC7 de l'Epic 23, vert par construction).
 
-**AC8 — Recette visuelle : une spec Playwright qui mesure le style calculé et laisse des captures (C-28-1-10,
-C-28-1-19, C-28-1-22).**
+**AC8 — Recette visuelle : une spec Playwright qui mesure le style calculé et laisse des captures, centrée sur
+*Supprimer l'import* (C-28-1-10, C-28-1-19, C-28-1-26, C-28-1-29, C-28-1-31).**
 
-Fichier neuf `frontend/tests/e2e/destructive-buttons.spec.ts`, et helper `frontend/tests/e2e/helpers/contrast.ts`
-(fonctions pures `parseRgb`, `relativeLuminance`, `contrastRatio`, `blend` ; tests unitaires
-`frontend/tests/e2e/helpers/contrast.test.ts` — Vitest les ramasse par `tests/**/*.test.ts`, Playwright les
-ignore par `testMatch`). Chaque scénario tourne **deux fois**, `page.emulateMedia({ colorScheme: 'light' })` puis
-`'dark'` ; le passage sombre ne porte d'exigence que sur la **variante destructive** (identique au clair,
-C-28-1-7) — les `dark:` d'autres composants (`outline` : `dark:bg-input/30`, `dark:border-input`, inertes tant que
-`input` n'est pas défini, #645) ne sont pas assertés, sinon par « fonds différents » en (b)/(d).
+Fichier neuf `frontend/tests/e2e/destructive-buttons.spec.ts`. Deux scénarios, chacun écrit comme **deux tests
+distincts**, un par schéma de couleurs (`for (const scheme of ['light', 'dark'] as const) test(…)`, avec
+`page.emulateMedia({ colorScheme: scheme })` en tête) : un échec en clair n'empêche pas la passe sombre de tourner
+et de laisser ses captures. Le passage sombre ne porte d'exigence que sur la **variante destructive** (identique
+au clair, C-28-1-7) — les `dark:` d'autres composants (`outline` : `dark:bg-input/30`, `dark:border-input`, inertes
+tant que `input` n'est pas défini, #645) ne sont pas assertés, sinon par « fonds différents » en (b).
 
 **Lecture stabilisée, obligatoire (C-28-1-19).** La base porte `transition-all` (150 ms) : une valeur lue par
 `evaluate(el => getComputedStyle(el)…)` juste après `hover()` ou `focus` est une couleur **intermédiaire**. Toute
-assertion de valeur passe par `await expect(locator).toHaveCSS('<propriété>', '<valeur>')` (réessai intégré) ;
-une valeur qui sert ensuite à un calcul (contraste) se lit par `await expect.poll(() => lire(locator)).toBe(<valeur
-attendue>)`, puis le calcul porte sur cette valeur stabilisée. Repos et désactivé n'ont pas de transition en
-cours, mais suivent la même forme (un seul idiome dans la spec).
+assertion de valeur passe par `expect.soft(locator).toHaveCSS('<propriété>', '<valeur>')` (réessai intégré).
+L'E2E **ne recalcule aucun contraste** (C-28-1-31) : la valeur stabilisée y est, par l'assertion même, égale à la
+valeur attendue, et un ratio calculé dessus serait une constante ; les contrastes sont contrôlés par l'AC7 (3),
+depuis `app.css`, et dans les dialogues par axe.
 
-**`parseRgb` (helper).** Accepte `rgb(r, g, b)` et `rgba(r, g, b, a)` et rend `{ r, g, b, a }` (`a = 1` pour
-`rgb(`) ; toute autre syntaxe — `color(srgb …)`, `oklab(…)`, `oklch(…)`, que Chromium rend pour une couleur
-issue de `color-mix(in oklab, …)` comme `bg-destructive/10` — **lève** une erreur nommant la chaîne reçue, au
-lieu de rendre une valeur fausse. `rgba(0, 0, 0, 0)` (fond transparent : le cas de M2) se lit et a `a = 0`.
-`contrast.test.ts` couvre : les deux formes acceptées, le refus d'une forme `oklab(` et de `color(`, et trois
-ratios connus (blanc/noir 21 ; blanc/blanc 1 ; blanc/`#b91c1c` 6,47 à 0,01 près) — c'est ce qui tue M15 et M16.
+**États, assertions et captures (C-28-1-29).** Chaque état est un `test.step` ; ses assertions de valeur sont
+`expect.soft` (elles rendent le test rouge sans l'arrêter) ; sa capture est prise **dans le `finally`** du step,
+donc aussi quand une action du step lève (clic ou survol qui expire). La capture vient **après** les assertions
+de l'état — c'est-à-dire après stabilisation, ou après expiration du délai en phase rouge (T0) — sous le nom
+`<scénario>-<état>-<clair|sombre>.png`, par `locator.screenshot()` de l'élément (bouton, ou dialogue entier),
+dans `process.env.KESH_E2E_CAPTURES_DIR` s'il est défini, sinon `testInfo.outputPath()`. Douze captures par
+exécution complète : `a-repos`, `a-survol`, `a-focus`, `a-desactive`, `b-bouton`, `b-dialogue`, × clair/sombre.
+Les captures **ne sont pas versionnées** et ne servent **pas** de référence de comparaison (pas de
+`toHaveScreenshot`, C-28-1-10) : elles sont la pièce de la recette humaine, jointe au prompt de revue et à la PR
+par l'orchestrateur. Données **synthétiques** (fixture `csv_e2e_delete_import.csv` du dépôt).
 
 Scénarios :
 
-- **(a) `/design-system`** (route publique, hors `(app)`) — section *Boutons* : le bouton destructif au repos,
-  survolé (`hover()`), focalisé **au clavier** (`getByTestId('ds-destructive').focus()`, puis
-  `keyboard.press('Shift+Tab')` et `keyboard.press('Tab')` pour que le focus vienne du clavier ;
-  `evaluate(el => el.matches(':focus-visible'))` doit rendre `true` avant de lire le contour), désactivé (exemple ajouté par
-  l'AC9) : valeurs du tableau de l'AC3 — dont, au focus, `outline-color` **et** `border-top-color`
-  (`rgb(185, 28, 28)`, C-28-1-20) —, contraste recalculé dans le test depuis la valeur stabilisée ≥ 4,5
-  (repos, survol) ;
-- **(b) détail d'un import** — *Supprimer l'import* (`bank-import-delete-button`) : fond **non transparent**
-  (canal alpha 1) et égal à `rgb(185, 28, 28)`, contraste ≥ 4,5 ; ouverture du dialogue
-  (`bank-import-delete-dialog`) : *Annuler* (`outline`) et *Supprimer définitivement*
-  (`bank-import-delete-submit`) ont des fonds **différents** ; `new AxeBuilder({ page })
-  .include('[data-testid="bank-import-delete-dialog"]').withRules(['color-contrast']).analyze()` → 0 violation ;
-- **(c) liste des profils** (`/bank-import/profiles`) — `bank-import-profile-delete-button` (taille `xs`,
-  AC5) : fond `rgb(185, 28, 28)` ;
-- **(d) dialogue d'archivage d'un compte** (`/accounts`, plan comptable du seed `with-company`) — ouvert par
-  `account-row-<numéro>-archive-button` (`accounts/+page.svelte:499`, déclencheur `ghost`, présent seulement si
-  `canModify()` et compte actif ; prendre le premier :
-  `page.locator('[data-testid^="account-row-"][data-testid$="-archive-button"]').first()`), le bouton
-  `account-archive-dialog-confirm` (`:742`) à côté d'`account-archive-dialog-cancel` (`:740`, `autofocus`) : mêmes
-  assertions que (b), axe compris ; le dialogue est **refermé par *Annuler*** (rien n'est archivé).
-- **(e) *Annuler le rapprochement*, dans la spec existante** `tests/e2e/reconciliation-cancel.spec.ts` (C-28-1-22) :
-  juste avant le clic de `:139`, une assertion `await expect(row.getByTestId('detail-tx-cancel-reconciliation'))
-  .toHaveCSS('border-top-width', '1px')` **et** `toHaveCSS('border-top-color', 'rgb(226, 232, 240)')`
-  (`--color-border`, la bordure de la variante `outline`). Aujourd'hui `border-top-width` vaut `0px` : le
-  préflight pose `border: 0 solid` (`tailwindcss/preflight.css:15` — le **style** est donc déjà `solid`, ne pas
-  l'asserter) et le `<button>` brut n'a pas de classe `border` ; l'assertion rougit en T0.
-  Le montage de rapprochement de cette spec est réutilisé tel quel ; aucune autre ligne n'en change.
+- **(a) `/design-system`** (route publique, hors `(app)`) — section *Boutons* : le bouton destructif
+  (`ds-destructive`) au **repos**, **survolé** (`hover()`), **focalisé au clavier**
+  (`getByTestId('ds-destructive').focus()`, puis `keyboard.press('Shift+Tab')` et `keyboard.press('Tab')` pour
+  que le focus vienne du clavier ; `evaluate(el => el.matches(':focus-visible'))` doit rendre `true` avant de lire
+  le contour), et l'exemple **désactivé** (`ds-destructive-disabled`, AC9) : valeurs du tableau de l'AC3 — dont,
+  au focus, `outline-color` **et** `border-top-color` (`rgb(185, 28, 28)`, C-28-1-20). Une capture par état ;
+  celle du focus montre l'anneau, que rien n'asserte (angle mort 10).
+- **(b) détail d'un import — *Supprimer l'import*, le symptôme de la recette.** Montage **par test** :
+  `test.beforeEach` appelle `seedTestState('with-company')`, puis le test se connecte, monte compte et profil et
+  importe le fichier **une fois** par l'écran (helper extrait, ci-dessous), ouvre le détail. Chaque passe part donc
+  d'une base remise à zéro : aucun second import du même fichier, donc jamais l'avertissement de doublon qui
+  désactive *Confirmer* (`BankImportUpload.svelte:345`, C-28-1-29). Assertions : *Supprimer l'import*
+  (`bank-import-delete-button`) a `background-color: rgb(185, 28, 28)` et `color: rgb(255, 255, 255)` ;
+  capture `b-bouton`. Ouverture du dialogue (`bank-import-delete-dialog`) : *Supprimer définitivement*
+  (`bank-import-delete-submit`) a le même fond ; *Annuler* — sans `data-testid` (`DeleteBankImportAction.svelte:135`),
+  visé par le sélecteur **structurel**
+  `getByTestId('bank-import-delete-dialog').locator('[data-slot="dialog-footer"] [data-slot="button"]:not([data-testid])')`,
+  dont le test exige d'abord `toHaveCount(1)` — n'a **pas** ce fond (`not.toHaveCSS('background-color',
+  'rgb(185, 28, 28)')`) ; `new AxeBuilder({ page }).include('[data-testid="bank-import-delete-dialog"]')
+  .withRules(['color-contrast']).analyze()` → 0 violation ; capture `b-dialogue`. Le dialogue est **refermé par
+  *Annuler*** et `bank-import-delete-button` reste visible (rien n'est supprimé).
 
-Le cinquième site de l'AC5, `contact-person-delete-{id}`, n'a **aucune** spec E2E qui le monte (`grep -rn
-"contact-person-delete" frontend/tests` → rien) : il est couvert **par transitivité** — la garde « sites migrés »
-de l'AC6 prouve qu'il est un `Button variant="destructive" size="xs"` sans `class`, et le scénario (c) prouve
-qu'un tel bouton rend un fond `rgb(185, 28, 28)`. Angle mort assumé (Dev Notes, angle mort 8) : un style propre à
-son conteneur (dialogue d'édition du contact) qui l'écraserait ne serait vu que par l'œil.
+Le dialogue de (b) est le **dialogue de confirmation destructif représentatif** de la story : *Supprimer
+définitivement* à côté d'un *Annuler* `outline`, la configuration de 12 des 24 usages de la variante (seize sont la
+confirmation d'un dialogue, à côté d'un *Annuler* `outline` pour douze et `ghost` pour quatre — Dev Notes §
+Classe A, recompté au 2026-10-13). Les 17 fichiers et 24 usages de la classe A ne sont **pas** montrés un à un à l'écran : ils sont
+vérifiés **par construction** — l'AC7 (1)-(2) garde la variante, seule source de leur style, et l'AC6 (f) garde
+qu'aucun ne lui passe de `class` qui la contredirait ; l'E2E en montre un échantillon, (a) et (b)
+(C-28-1-28) — trois usages sur 24 (`design-system:69`, `DeleteBankImportAction:73` et `:139`). Angle mort
+assumé : un style propre au conteneur d'un des 21 autres usages (angle mort 7).
 
 ⚠️ **Aucun sélecteur sur un libellé** : la garde `src/lib/shared/e2e-selecteurs-traduits.test.ts` (KF-043, #326)
-l'interdit — `data-testid` seulement. C'est pourquoi (d) vise les comptes et non les contacts : le dialogue
-d'archivage d'un contact (`contacts/+page.svelte:1135-1140`) n'a pas de `data-testid`.
+l'interdit — `data-testid`, ou sélecteur structurel par `data-slot`, seulement.
 
-**Captures** : chaque scénario prend `locator.screenshot()` du bouton **et** du dialogue (ou de la section),
-**avant** ses assertions, sous le nom `<scénario>-<clair|sombre>.png`, dans
-`process.env.KESH_E2E_CAPTURES_DIR` s'il est défini, sinon `testInfo.outputPath()`. Les captures **ne sont pas
-versionnées** et ne servent **pas** de référence de comparaison (pas de `toHaveScreenshot`, C-28-1-10) : elles
-sont la pièce de la recette humaine, jointe au prompt de revue et à la PR par l'orchestrateur. Données des
-scénarios **synthétiques** (fixtures du dépôt, contact inventé).
+Le montage d'import de (b) — compte bancaire, profil `E2E suppression`, import par l'écran — est aujourd'hui
+écrit dans `tests/e2e/bank-import-delete.spec.ts:35-85` (`login`, `mount`, `importByScreen`) : il est **extrait**
+dans `tests/e2e/helpers/bank-import-fixtures.ts` et les deux specs l'importent (C-28-1-16 — une spec n'importe pas
+une autre spec : Playwright y enregistrerait ses tests deux fois). Le scénario de `bank-import-delete.spec.ts`
+ne change pas.
 
-Le montage d'import de (b) et (c) — compte bancaire, profil `E2E suppression`, import par l'écran — est
-aujourd'hui écrit dans `tests/e2e/bank-import-delete.spec.ts:35-85` (`login`, `mount`, `importByScreen`) : il est
-**extrait** dans `tests/e2e/helpers/bank-import-fixtures.ts` et les deux specs l'importent (C-28-1-16 — une spec
-n'importe pas une autre spec : Playwright y enregistrerait ses tests deux fois).
+**Helper de contraste** (pour l'AC7 (3), C-28-1-31) : `frontend/tests/e2e/helpers/contrast.ts` — fonctions pures
+`parseHex` (`#rrggbb` seulement ; toute autre chaîne **lève** une erreur qui la nomme), `relativeLuminance`,
+`contrastRatio` et `blend(couleur, fond, alpha)` (mélange **non arrondi**, C-28-1-27) ; tests unitaires
+`frontend/tests/e2e/helpers/contrast.test.ts` — Vitest les ramasse par `tests/**/*.test.ts`, Playwright les ignore
+par `testMatch`, précédent `helpers/test-state.test.ts`. Les tests couvrent : le refus d'une chaîne `rgb(…)` et
+d'un `#fff` court ; `blend('#b91c1c', '#ffffff', 0.1)` = `(248 ; 232,3 ; 232,3)` à 0,01 près ; et cinq ratios
+connus, **dans les deux ordres** — `#ffffff`/`#000000` 21 **et** `#000000`/`#ffffff` 21, `#ffffff`/`#ffffff` 1,
+`#b91c1c`/`#ffffff` 6,47 (la couleur foncée en premier) et le bandeau `/10` 5,46, à 0,01 près. Le premier cas
+tue M15 (sans `+ 0,05`, 1/0) ; les cas « foncé en premier » tuent M16 (luminances non triées), que des appels
+« clair en premier » laisseraient vivre.
 
 **AC9 — La page `/design-system` montre la variante dans tous ses états (C-28-1-10).**
 
-`frontend/src/routes/design-system/+page.svelte:66-73` (section *Boutons*) : ajouter
-`<Button variant="destructive" disabled data-testid="ds-destructive-disabled">Destructive désactivé</Button>` et
-`<Button variant="destructive" size="xs" data-testid="ds-destructive-xs">Destructive xs</Button>`, et poser
-`data-testid="ds-destructive"` sur l'exemple existant (`:69`). Le pavé de palette (`:39-47`) gagne un carré
+`frontend/src/routes/design-system/+page.svelte:66-73` (section *Boutons*) : ajouter **un**
+exemple, `<Button variant="destructive" disabled data-testid="ds-destructive-disabled">Destructive
+désactivé</Button>`, et poser `data-testid="ds-destructive"` sur l'exemple existant (`:69`). (L'exemple `size="xs"`
+des passes précédentes est retiré avec la migration des sites `xs`, C-28-1-26.) Le pavé de palette (`:39-47`) gagne un carré
 `bg-destructive` « Destructive ». Le bouton *Toast erreur* (`:170`) reste tel quel (page de démonstration).
 
 **AC10 — Manuels : « grisé » devient « désactivé », PDF régénérés (C-28-1-5).**
@@ -356,11 +385,13 @@ Avec le nouveau style, un bouton destructif désactivé est un rouge estompé, n
 Le reste du manuel est vrai au code : il ne décrit la couleur d'aucun bouton (`grep -niE "rouge|couleur"
 docs/manual/fr/user-manual.tex` ne rend rien) et ses 25 emplacements de capture sont tous au
 `_placeholder.png` (aucune capture réelle à refaire). `docs/manual/fr/user-manual.tex:1107` (« Bouton grisé avec
-une infobulle », envoi d'e-mail, variante `default`) n'est **pas** touché. Les deux PDF sont régénérés (`make fr`
-dans `docs/manual/`, sous `flock`) et contrôlés aplatis :
-`pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -c "le bouton est désactivé, avec le nombre"`
-→ 1 ; même contrôle, `admin-manual.pdf`, « le bouton est désactivé avec leur nombre » → 1 ; et
-`grep -c "le bouton est grisé, avec le nombre"` → 0. Le CHANGELOG de la 0.13.2 écrit « grisé » deux fois pour ce
+une infobulle », envoi d'e-mail, variante `default`) n'est **pas** touché, ni `admin-manual.tex:803` et `:1172`
+(« est simplement grisé », bouton d'envoi, variante `default`). Les deux PDF sont régénérés (`make fr` dans
+`docs/manual/`, sous `flock`) et contrôlés aplatis — par `grep -o … | wc -l`, qui compte, et non `grep -c`, qui
+sur un texte aplati en une ligne ne rend que 0 ou 1 :
+`pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "le bouton est désactivé, avec le nombre" | wc -l`
+→ 1 ; même contrôle, `admin-manual.pdf`, « le bouton est désactivé avec leur nombre » → 1 ; et, sur les deux,
+« le bouton est grisé » → 0. Le CHANGELOG de la 0.13.2 écrit « grisé » deux fois pour ce
 même bouton (`CHANGELOG.md:19` et `:27`) : historique, non touché. `user-manual.tex:1739` coupe la phrase après
 « avec le » (« nombre » à la ligne suivante) : la substitution ne vise que le mot `grisé`. `user-manual.tex:2010`
 (« grisée », liste de règles, hors bouton) n'est pas touché non plus.
@@ -370,7 +401,9 @@ même bouton (`CHANGELOG.md:19` et `:27`) : historique, non touché. `user-manua
 `_bmad-output/planning-artifacts/ux-design-specification.md` § *Système de Couleurs* : une ligne
 `| **Action destructive** | Rouge foncé | `#b91c1c` | Boutons qui suppriment, archivent, révoquent ; survol `#991b1b` |`
 après la ligne *Erreur*, et sous *Ratios de contraste WCAG AA* : « Bouton destructif (blanc sur rouge foncé) :
-6,47:1 (AA) ; texte destructif sur bandeau d'erreur : 5,45:1 (AA) ».
+6.47:1 (AA) ; texte destructif sur bandeau d'erreur : 5.46:1 (AA) » — avec le **point** décimal de la spec
+(`ux-design-specification.md:660-662` écrit `13.5:1`, `4.6:1`, `7.2:1`). Hors périmètre, signalé seulement :
+`:660` « 13.5:1 » vaut 14,63:1 recalculé, et `:514` « Axe-core intégré dans la CI » est démenti par #577.
 
 **AC12 — CHANGELOG.**
 
@@ -382,11 +415,12 @@ absente — d'autres stories de l'epic la créent aussi, fusion par union), sous
 >   (factures, contacts, produits, comptes, écritures, comptes bancaires, utilisateurs, clés d'API, taux de TVA,
 >   niveaux de relance, restauration d'une sauvegarde, réinitialisation de la démonstration, déverrouillage des
 >   livres) s'affichaient comme du texte : leur couleur n'était pas définie dans le thème. Ils ont désormais un
->   fond rouge plein et un texte blanc (contraste 6,47:1), un survol plus foncé et un état désactivé estompé. Les
->   messages et cadres d'erreur, qui devaient être rouges et ne l'étaient pas, le deviennent. La suppression
->   d'une personne de contact et celle d'un profil d'import prennent la même forme de bouton ; *Annuler le
->   rapprochement*, dans le détail d'un import, qui se lisait comme un lien, prend la forme qu'il a déjà sur la
->   fiche de la facture.
+>   fond rouge plein et un texte blanc (contraste 6,47:1), un survol plus foncé et un état désactivé estompé.
+>   Les messages, cadres et champs d'erreur qui emploient cette même couleur, censés être rouges, le deviennent
+>   aussi — de même que le lien *Annuler le rapprochement* du détail d'un import. Deux familles de cadres
+>   emploient d'autres couleurs, elles aussi non définies, et ne changent pas encore : les cadres d'erreur de la
+>   sauvegarde et de la restauration restent sans couleur, trois cadres d'erreur de l'import bancaire gardent leur
+>   bordure rouge sans fond ([#645](https://github.com/guycorbaz/kesh/issues/645)).
 
 **AC13 — Gates, au dernier commit de code.**
 
@@ -401,51 +435,55 @@ recomptés.
 ## Tasks / Subtasks
 
 - [ ] **T0 — Captures « avant » et phase rouge** (AC8) : écrire `helpers/contrast.ts` (+ tests),
-      `helpers/bank-import-fixtures.ts` (extraction, AC8), `destructive-buttons.spec.ts` et l'assertion (e) de
-      `reconciliation-cancel.spec.ts` **avant** de toucher `app.css`, `button.svelte` ou les sites de l'AC5 ; les
-      lancer seules avec `KESH_E2E_CAPTURES_DIR=/home/gcorbaz/devel/kesh-gate-logs/28-1-captures/avant`
-      — elles **doivent rougir** sur les assertions de fond et de bordure (sortie copiée au Debug Log ; un
-      `toHaveCSS` qui expire est le rouge attendu, une exception de `parseRgb` sur une syntaxe inattendue ne l'est
-      pas et se documente) et laisser les captures « avant ». ⚠️ Le scénario (a) a besoin des exemples de
-      l'AC9 : faire d'abord la T5.
+      `helpers/bank-import-fixtures.ts` (extraction, AC8) et `destructive-buttons.spec.ts` **avant** de toucher
+      `app.css` ou `button.svelte` ; les lancer seules avec
+      `KESH_E2E_CAPTURES_DIR=/home/gcorbaz/devel/kesh-gate-logs/28-1-captures/avant` — elles **doivent rougir**
+      sur les assertions de fond et de couleur (sortie copiée au Debug Log ; un `toHaveCSS` qui expire est le
+      rouge attendu, toute autre exception se documente) et laisser les **douze** captures « avant » (assertions
+      `expect.soft`, captures dans le `finally` de chaque step, passes clair et sombre en tests distincts,
+      C-28-1-29) ; le nombre de fichiers produits est copié au Debug Log. ⚠️ Le scénario (a) a besoin de
+      l'exemple de l'AC9 : faire d'abord la T4.
 - [ ] **T1 — Jetons** (AC1) dans `app.css`, doc-comment compris.
 - [ ] **T2 — Variante** (AC2) dans `button.svelte:14`.
-- [ ] **T3 — Gardes Vitest** (AC6, AC7) ; table de l'AC6 à neuf entrées, motifs écrits ; table « sites migrés »
-      à cinq entrées ; AC7 (4) **facultatif** — tenté, et son sort (écrite, ou abandonnée avec la raison) écrit au
+- [ ] **T3 — Gardes Vitest** (AC6, AC7) : table de l'AC6 à **quatorze** entrées, motifs écrits, assertion (f) et
+      auto-tests sur source synthétique ; AC7 (1) à (4), avec `@tailwindcss/node` déclaré en `devDependencies`
+      (version exacte de `tailwindcss`, `npm install`, lockfile commité) ; si l'API de l'AC7 (4) ne se charge pas,
+      le repli est écrit au Debug Log avec l'erreur.
+- [ ] **T4 — Page `/design-system`** (AC9).
+- [ ] **T5 — Captures « après »** : la spec neuve verte, douze captures dans `…/28-1-captures/apres`.
+- [ ] **T6 — Manuels** (AC10) + `make fr` sous `flock` + contrôles aplatis copiés au Debug Log.
+- [ ] **T7 — Spec UX et CHANGELOG** (AC11, AC12).
+- [ ] **T8 — Mutations M1-M21** (§ ci-dessous ; M18 retirée), chacune restaurée par `git checkout -- <fichier>`
+      puis `touch` (mémoire *Mutation restaurée, binaire périmé*) ; tableau « mutation → test qui rougit » au
       Debug Log.
-- [ ] **T4 — Cinq sites** (AC5) : quatre `destructive`, un `outline` (*Annuler le rapprochement*).
-- [ ] **T5 — Page `/design-system`** (AC9).
-- [ ] **T6 — Captures « après »** : la spec neuve verte, captures dans `…/28-1-captures/apres`.
-- [ ] **T7 — Manuels** (AC10) + `make fr` sous `flock` + contrôles aplatis copiés au Debug Log.
-- [ ] **T8 — Spec UX et CHANGELOG** (AC11, AC12).
-- [ ] **T9 — Mutations M1-M20** (§ ci-dessous ; M20 seulement si AC7 (4) est écrite), chacune restaurée par `git checkout -- <fichier>` puis `touch`
-      (mémoire *Mutation restaurée, binaire périmé*) ; tableau « mutation → test qui rougit » au Debug Log.
-- [ ] **T10 — Gates** (AC13), au dernier commit de code ; grep de propagation du symptôme (§ ci-dessous).
+- [ ] **T9 — Gates** (AC13), au dernier commit de code ; `git diff --stat main -- frontend/src` (AC5) ; grep de
+      propagation du symptôme (§ ci-dessous).
 
-## Mutations à tuer (T9)
+## Mutations à tuer (T8)
 
 | # | Mutation | Doit rougir |
 |---|---|---|
 | M1 | variante rendue à sa valeur d'origine (`bg-destructive/10 … text-destructive …`) | AC7 (1), AC8 (a)(b) |
-| M2 | `--color-destructive` retiré d'`app.css` | AC7 (2), AC8 (fond transparent) |
+| M2 | `--color-destructive` retiré d'`app.css` | AC7 (2), AC8 (fond ≠ `rgb(185, 28, 28)`) |
 | M3 | `dark:bg-destructive/20` rajouté à la variante | AC7 (1) ; AC8 passe sombre |
-| M4 | `--color-destructive: #dc2626` | AC7 (3) — bandeau 4,13 < 4,5 |
-| M5 | `--color-destructive-foreground: #fca5a5` | AC7 (3), AC8 contraste |
+| M4 | `--color-destructive: #dc2626` | AC7 (3) — bandeau 4,14 < 4,5 |
+| M5 | `--color-destructive-foreground: #fca5a5` | AC7 (3) (3,41 < 4,5), AC8 (`color` ≠ blanc) |
 | M6 | `hover:bg-destructive-hover` retiré | AC7 (1), AC8 survol |
 | M7 | `--color-destructive-hover: #ef4444` | AC7 (3) (3,76 < 4,5) |
 | M8 | variante `bg-transparent border-destructive text-destructive` (contour seul) | AC7 (1) |
 | M9 | règle `:focus-visible` d'`app.css:62-65` retirée | AC8 focus |
 | M10 | `disabled:opacity-50` retiré de la base | AC8 désactivé |
-| M11 | `ContactPersonsManager.svelte` rendu à son `<button class="text-red-600 …">` | AC6 |
+| M11 | `ContactPersonsManager.svelte:114` : `text-red-600` remplacé par `text-error`, table inchangée | AC6 (jetons changés) |
 | M12 | un `<button class="text-destructive">` ajouté dans un fichier quelconque | AC6 (entrée en trop) |
 | M13 | une icône ✕ de la table rendue neutre (classe retirée) sans toucher la table | AC6 (entrée en moins) |
-| M14 | `fiscal-years/+page.svelte:603` rendu à `class="bg-red-600 hover:bg-red-700"` | AC6 |
-| M15 | `contrastRatio` sans le `+ 0.05` | `contrast.test.ts` |
-| M16 | `contrastRatio` qui ne trie pas les luminances (L2/L1) | `contrast.test.ts` |
-| M17 | la garde AC6 ne lit plus les directives `class:` | AC6 (test de la garde sur un source synthétique `class:text-destructive`) |
-| M18 | `variant` retiré d'un site migré (`BankProfileList.svelte`, `Button` sans `variant`), puis, second essai, le site `bank-import/[id]` rendu à un `<button class="ml-2">` nu | AC6 (sites migrés) ; AC8 (c), resp. (e) |
+| M14 | `fiscal-years/+page.svelte:603` : `bg-red-600 hover:bg-red-700` → `bg-red-700 hover:bg-red-800`, table inchangée | AC6 (jetons changés) |
+| M15 | `contrastRatio` sans le `+ 0.05` | `contrast.test.ts` (blanc/noir : 1/0) |
+| M16 | `contrastRatio` qui ne trie pas les luminances (`(L(a)+0,05)/(L(b)+0,05)`) | `contrast.test.ts` (cas « foncé en premier ») |
+| M17 | la garde AC6 ne lit plus les directives `class:` | AC6 (auto-test sur source synthétique `class:text-destructive`) |
+| M18 | *retirée en validation P2* (elle visait la table « sites migrés », retirée avec l'AC5 d'origine, C-28-1-26) | — |
 | M19 | `focus-visible:border-destructive` retiré de la variante | AC7 (1) et (1-bis) ; AC8 (a) focus (`border-top-color` ≠ `rgb(185, 28, 28)`) |
-| M20 | *(si AC7 (4) est écrite)* un `<p class="text-inexistant">` ajouté dans un `.svelte`, puis, second essai, `--color-card: #ffffff` ajouté à `@theme` sans toucher la table | AC7 (4), dans les deux sens |
+| M20 | un `<p class="text-inexistant">` ajouté dans un `.svelte`, puis, second essai, `--color-card: #ffffff` ajouté à `@theme` sans toucher la table | AC7 (4), dans les deux sens |
+| M21 | `class="bg-transparent"` ajouté au `<Button variant="destructive">` de `DeleteBankImportAction.svelte:73` | AC6 (f) ; AC8 (b) |
 
 Une mutation qui survit est écrite au Debug Log avec sa raison (équivalente, ou test ajouté).
 
@@ -467,17 +505,17 @@ grep -rnE '(text|bg|border)-(error|red-[0-9]+)' src --include=*.svelte | wc -l  
 élément par élément ; aucun n'emploie la variante pour un **texte** d'erreur, ce que l'epic demandait de
 vérifier ; aucun ne passe de `class`). Corrigés par AC2, **sans édition** :
 
-| Fichier:ligne | Action | Dialogue avec *Annuler* `outline` ? |
+| Fichier:ligne | Action | Dialogue avec *Annuler* ? (« oui » : *Annuler* `outline`) |
 |---|---|---|
 | `lib/features/bank-import/DeleteBankImportAction.svelte:73` | *Supprimer l'import* (déclencheur, page) | — |
 | `…/DeleteBankImportAction.svelte:139` | *Supprimer définitivement* | oui (`:135`) |
 | `lib/features/reconciliation/CancelReconciliationDialog.svelte:138` | confirmer l'annulation du rapprochement | oui (`:133`) |
 | `lib/features/admin-restore/AdminRestorePanel.svelte:182` | *Importer et remplacer l'installation* (déclencheur) | — |
-| `…/AdminRestorePanel.svelte:218` | confirmer la restauration | oui (`ghost`) |
+| `…/AdminRestorePanel.svelte:218` | confirmer la restauration | *Annuler* `ghost` |
 | `lib/shared/components/DemoBanner.svelte:68` | confirmer la réinitialisation | oui |
 | `routes/(app)/accounts/+page.svelte:717` | archiver (formulaire d'édition) | — |
 | `…/accounts/+page.svelte:742` | confirmer l'archivage | oui |
-| `routes/(app)/bank-accounts/+page.svelte:586` | confirmer l'archivage | oui |
+| `routes/(app)/bank-accounts/+page.svelte:586` | confirmer l'archivage | *Annuler* `ghost` (`:590`) |
 | `routes/(app)/contacts/+page.svelte:1138` | confirmer l'archivage | oui (`:1136`) |
 | `routes/(app)/products/+page.svelte:760` | confirmer l'archivage | oui (`:758`) |
 | `routes/(app)/invoices/+page.svelte:519` | confirmer la suppression | oui |
@@ -487,16 +525,22 @@ vérifier ; aucun ne passe de `class`). Corrigés par AC2, **sans édition** :
 | `…/invoices/[id]/+page.svelte:1496` | confirmer la dévalidation | oui |
 | `routes/(app)/journal-entries/[id]/+page.svelte:557` | confirmer la suppression | oui (`:553`) |
 | `routes/(app)/settings/+page.svelte:568` | *Déverrouiller* les livres (`size="sm"`) | — |
-| `routes/(app)/settings/api-keys/+page.svelte:404` | confirmer la révocation | oui |
+| `routes/(app)/settings/api-keys/+page.svelte:404` | confirmer la révocation | *Annuler* `ghost` (`:409-413`) |
 | `routes/(app)/settings/dunning/+page.svelte:300` | confirmer la suppression d'un niveau | oui |
-| `routes/(app)/settings/vat-rates/+page.svelte:366` | confirmer la désactivation | oui |
+| `routes/(app)/settings/vat-rates/+page.svelte:366` | confirmer la désactivation | *Annuler* `ghost` (`:373`) |
 | `routes/(app)/users/+page.svelte:485` | confirmer la désactivation | oui (`autofocus` sur *Annuler*) |
 | `routes/design-system/+page.svelte:69` | exemple | — |
 | `routes/design-system/+page.svelte:170` | *Toast erreur* (démonstration) | — |
 
-**Classe B — `<Button>` rouge par `class` : 2 sites**, migrés par AC5 (`fiscal-years:603`,
-`email-templates:439`). Déjà visibles (`bg-red-600`, texte blanc 4,83:1) : la migration est une affaire de DRY
-et de garde, non de visibilité.
+Seize de ces 24 usages sont la confirmation d'un dialogue : douze à côté d'un *Annuler* `outline`, quatre à côté
+d'un *Annuler* `ghost` (recompté au 2026-10-13, variante du bouton voisin lue à ±10 lignes). Un *Annuler* `ghost`
+se lit comme du texte tant que #645 n'est pas fait — hors périmètre (angle mort 1).
+
+**Classe B — `<Button>` rouge par `class` : 2 sites, laissés tels quels, inscrits à la table de l'AC6**
+(C-28-1-26) : `fiscal-years:603`, `email-templates:439`. Déjà visibles : `bg-red-600` — le `red-600` de
+Tailwind **v4**, `oklch(57.7% 0.245 27.325)` (`node_modules/tailwindcss/theme.css:16`), ≈ `#e7000b` —, texte blanc
+≈ 4,8:1 (valeur approchée, conversion oklch non rendue). Leur passage à la variante serait une affaire de DRY et
+de garde, non de visibilité (angle mort 11).
 
 **Classe C — `<button>` brut bordé, texte rouge : 6 sites, laissés tels quels, inscrits à la table de l'AC6**
 (C-28-1-9). La bordure les fait lire comme des boutons ; trois sont en `text-destructive` et **deviennent
@@ -511,10 +555,12 @@ rouges** par AC4 (aujourd'hui gris foncé).
 | `routes/(app)/supplier-invoices/[id]/+page.svelte:410` (`supplier-invoice-settlement-cancel`) | `border … text-destructive` | idem |
 | `routes/(app)/supplier-invoices/[id]/+page.svelte:457` (`supplier-invoice-cancel`) | `border … text-destructive` | idem |
 
-**Classe D — `<button>` brut sans bordure, texte rouge : 3 sites, migrés par AC5** — exactement le symptôme de
-l'issue (« se lit comme du texte ») : `ContactPersonsManager.svelte:114` et `BankProfileList.svelte:79` passent à
-`destructive` ; `bank-import/[id]/+page.svelte:143` (souligné, à côté du lien *Voir l'écriture*, sur l'écran même
-de la recette) passe à `outline size="sm"`, la forme du même bouton sur la fiche de la facture (C-28-1-21).
+**Classe D — `<button>` brut sans bordure, texte rouge : 3 sites, laissés tels quels, inscrits à la table de
+l'AC6** (C-28-1-26) : `ContactPersonsManager.svelte:114` (`text-red-600 hover:underline`, déjà rouge),
+`BankProfileList.svelte:79` (`text-error`, déjà rouge) et `bank-import/[id]/+page.svelte:143` (`text-destructive
+underline`, à côté du lien *Voir l'écriture* ; **devient rouge** par l'AC4, aujourd'hui gris foncé). Ils se lisent
+comme du texte ou comme un lien — la forme du symptôme de #640, mais non le bouton que nomme l'issue, qui est
+*Supprimer l'import* (classe A). Angle mort 11, issue demandée à l'orchestrateur.
 
 **Classe E — icônes ✕ / X de retrait d'une ligne de saisie : 3 sites, laissés, inscrits à la table** :
 `routes/(app)/supplier-invoices/+page.svelte:403` et `routes/(app)/supplier-invoices/import/+page.svelte:564`
@@ -528,14 +574,24 @@ de menu de démonstration) ; les variantes `data-[variant=destructive]` de `drop
 `DropdownMenu.Item` de `(app)/+layout.svelte:311-332` n'ont pas de variante). `role="button"` : un seul site,
 la zone de dépôt de `BankImportUpload.svelte:391`, non destructive. Aucun `<a>` rouge.
 
-**Déclencheurs neutres d'une action destructive — hors périmètre** : `journal-entries/[id]/+page.svelte:327`
-(*Supprimer*, `outline`), `settings/vat-rates/+page.svelte:249` (*Désactiver*, `ghost`),
-`settings/projects/+page.svelte:274/298` (*Archiver*, `outline`), `DemoBanner.svelte:51` (*Réinitialiser*,
-`outline`), `RulesList.svelte:161` (*Désactiver*, bordé neutre), `InvoiceSettlements.svelte:86-91` (*Annuler le
-règlement* / *Annuler le solde*, `invoice-settlement-cancel`, `outline sm`) et `:106-111` (*Annuler le
-rapprochement*, `invoice-settlement-cancel-reconciliation`, `outline sm` — la forme que prend désormais le bouton
-du détail d'import). Ils **se voient** (bordure ou survol) et ouvrent une confirmation : leur sobriété est une
-hiérarchie voulue, non le défaut de l'issue.
+**Déclencheurs neutres bordés d'une action destructive — hors périmètre** : `journal-entries/[id]/+page.svelte:327`
+(*Supprimer*, `outline`), `settings/projects/+page.svelte:274/298` (*Archiver*, `outline`), `DemoBanner.svelte:51`
+(*Réinitialiser*, `outline`), `settings/+page.svelte:544` (*Déverrouiller*, `outline`, ouvre la confirmation
+`:568`), `RulesList.svelte:161` (*Désactiver*, bordé neutre), `InvoiceSettlements.svelte:86-95` (*Annuler le
+règlement* / *Annuler le solde*, `invoice-settlement-cancel`, `outline sm`) et `:106-117` (*Annuler le
+rapprochement*, `invoice-settlement-cancel-reconciliation`, `outline sm`). Ils portent une bordure et ouvrent une
+confirmation : leur sobriété est une hiérarchie voulue, non le défaut de l'issue — sous réserve d'une bordure
+`outline` à 1,23:1 (angle mort 9, #645).
+
+**Déclencheurs `ghost` d'une action destructive — hors périmètre, renvoyés à #645** : la variante `ghost`
+(`button.svelte:13`) n'a ni fond ni bordure, et son survol `hover:bg-muted` est sans règle (jeton absent) : ils
+**se lisent comme du texte** tant que #645 n'a pas défini `muted`. Avec libellé : `settings/dunning/+page.svelte:241`
+(*Supprimer* un niveau), `settings/vat-rates/+page.svelte:245-250` (*Désactiver* un taux). À icône :
+`accounts/+page.svelte:499` (*Archiver*), `contacts/+page.svelte:784` (*Archiver*), `products/+page.svelte:581`
+(*Archiver*), `users/+page.svelte:344` (*Réinitialiser le mot de passe*) et `:348` (*Désactiver*),
+`invoices/+page.svelte:440` (*Supprimer la facture*) ; retrait de ligne, à icône : `InvoiceForm.svelte:850`,
+`TransactionSplitModal.svelte:313`. Relevés par la lentille R de la validation P2 (gestionnaire `onclick`
+destructif sur un `Button` non destructif) ; #645 les porte.
 
 **Confirmation non destructive d'une annulation — hors périmètre, signalée** : `invoices/[id]/+page.svelte:1666-1674`
 (`invoice-settlement-cancel-confirm`, *Annuler le règlement* / *Annuler le solde*) est un `<Button>` `default`
@@ -549,19 +605,22 @@ se ressaisit). Signalé à l'orchestrateur, sans demande d'issue.
 1. **D'autres jetons de couleur ne sont pas définis non plus — renvoi à #645** (P3, ouverte). Les neuf noms
    shadcn `muted`, `muted-foreground`, `foreground`, `background`, `ring`, `input`, `accent`,
    `accent-foreground`, `card` (ordre de grandeur : `muted-foreground` seul ≈ 58 occurrences dans 23 fichiers),
-   et trois noms relevés par la lentille R de la validation P1 : `error-soft` (3 sites), `warning-soft` (8 sites)
-   et `danger` (`AdminRestorePanel.svelte:173`, `AdminBackupPanel.svelte:71`). Effet visible : la variante
-   `outline` (*Annuler*) n'a ni fond ni survol (`bg-background`, `hover:bg-muted` sans règle), `ghost` n'a pas de
-   survol, `focus-visible:ring-ring` est sans effet (le contour global bleu compense ; la variante destructive
-   fixe sa propre bordure et son propre anneau de focus, C-28-1-20). **Hors périmètre** (C-28-1-13, C-28-1-17) :
-   *Annuler* reste lisible (bordure `border-border`, jeton défini). La validation P1 a mesuré que les définir
-   n'est pas neutre — `input` sert à la fois de bordure (≥ 3:1 requis) et de fond désactivé, `muted-foreground`
-   au ton shadcn `#64748b` tombe à 4,34:1 sur `muted` : ces mesures sont à reprendre dans #645, non ici. La garde
-   facultative AC7 (4) tient cette liste en table fermée, renvoyée à #645.
+   trois noms relevés par la lentille R de la validation P1 — `error-soft` (3 sites), `warning-soft` (8 sites),
+   `danger` (`AdminRestorePanel.svelte:173`, `AdminBackupPanel.svelte:71`) — et un treizième relevé par les deux
+   lentilles de la validation P2, `surface-hover` (`credit-notes:59`, `payment-batches:229`,
+   `supplier-invoices:452`, survol des lignes de trois listes). Effet visible : la variante `outline` (*Annuler*)
+   n'a ni fond ni survol (`bg-background`, `hover:bg-muted` sans règle), `ghost` n'a ni fond ni survol — d'où
+   les *Annuler* `ghost` de quatre dialogues et les déclencheurs `ghost` destructifs (Dev Notes § Inventaire) qui
+   se lisent comme du texte —, `focus-visible:ring-ring` est sans effet (le contour global bleu compense ; la
+   variante destructive fixe sa propre bordure et son propre anneau de focus, C-28-1-20). **Hors périmètre**
+   (C-28-1-13, C-28-1-17, C-28-1-26). La validation P1 a mesuré que les définir n'est pas neutre — `input` sert à
+   la fois de bordure (≥ 3:1 requis) et de fond désactivé, `muted-foreground` au ton shadcn `#64748b` tombe à
+   4,34:1 sur `muted` : ces mesures sont à reprendre dans #645, non ici. La garde AC7 (4) tient ces treize noms
+   en table fermée, renvoyée à #645 ; #645 porte les treize noms et les déclencheurs `ghost`.
 2. **Suppression d'une personne de contact sans confirmation — renvoi à #646** (P3, ouverte)
    (`ContactPersonsManager.svelte:76-83` : `removePerson` appelle `deleteContactPerson` directement), contraire
-   au principe UX « confirmations avant actions destructives » (spec UX l. 286). La story rend le bouton
-   visible, elle n'ajoute pas de confirmation (C-28-1-17).
+   au principe UX « confirmations avant actions destructives » (spec UX l. 286). La story ne touche ni ce bouton
+   (angle mort 11) ni sa confirmation (C-28-1-17).
 3. **Sous `prefers-color-scheme: dark`**, des classes `dark:` d'autres composants s'activent déjà
    (`dark:bg-amber-950/30`, `dark:bg-green-900`… émises dans le build) alors que Kesh n'a pas de thème sombre.
    Préexistant, hors périmètre ; la variante destructive n'en porte plus aucune (AC2).
@@ -570,79 +629,75 @@ se ressaisit). Signalé à l'orchestrateur, sans demande d'issue.
 5. **Pas de régression au pixel** : les captures ne sont pas comparées (C-28-1-10). Une régression de style hors
    des propriétés mesurées (taille, police, espacement) n'est vue que par l'œil.
 6. **La CI n'exécute aucun E2E** (#577) : en CI, seules les gardes Vitest (AC6, AC7) protègent la variante.
-7. **Les 24 sites de la classe A ne sont tenus par aucune table** : un `variant="destructive"` retiré de l'un
-   d'eux ne fait rougir aucune garde (la table « sites migrés » de l'AC6 ne couvre que les cinq sites de l'AC5) ;
-   seuls les trois exercés par l'AC8 — (b) et (d) — le verraient, hors CI.
-8. **`contact-person-delete-{id}` n'est vu à l'écran par aucun test** : couvert par transitivité (AC8, fin).
-9. **Bordure d'`outline` à 1,23:1** contre le blanc (`--color-border` `#e2e8f0` : L = 0,8018 ; 1,05 / 0,8518) —
-   la bordure de tous les *Annuler* de l'application et du bouton *Annuler le rapprochement* de la fiche
-   facture, que l'AC5 étend au détail d'import. Le bouton reste identifiable par sa forme et son libellé
-   (texte courant `#1e293b`, 14,6:1) ; le contraste de la bordure n'est pas traité ici.
+7. **Les 24 usages de la classe A ne sont montrés à l'écran que pour trois d'entre eux** (`design-system:69`,
+   `DeleteBankImportAction:73` et `:139`, AC8) : les autres sont tenus par construction (AC7 (1)-(2) sur la
+   variante, AC6 (f) contre toute `class`, C-28-1-28). Restent invisibles à toute garde : un `variant="destructive"`
+   **retiré** d'un usage, et un style propre au conteneur d'un des 21 autres usages qui écraserait la variante.
+8. **Les cinq boutons rouges stylés à la main ne sont montrés à l'écran par aucun test de la story** : l'AC6 tient
+   leurs jetons, non leur rendu (angle mort 11).
+9. **Bordure d'`outline` à 1,23:1** contre le blanc (`--color-border` `#e2e8f0` : L = 0,8017 ; 1,05 / 0,8517) —
+   la bordure de tous les *Annuler* `outline` de l'application, dont celui du dialogue de (b), et des déclencheurs
+   neutres bordés. Le bouton reste identifiable par sa forme et son libellé (texte courant `#1e293b`, 14,63:1) ;
+   le contraste de la bordure n'est pas traité ici. **Renvoyé à #645**, qui le porte depuis la validation P2.
+10. **L'anneau de focus `focus-visible:ring-destructive/40` n'est asserté par rien** : sa couleur passe par
+    `color-mix(in oklab, …)`, que `getComputedStyle` ne rend pas en `rgb(…)`. Il est vu sur la capture
+    `a-focus-<clair|sombre>.png` (AC8), par l'œil seulement ; la bordure et le contour de focus, eux, sont
+    assertés (AC3).
+11. **Cinq boutons rouges stylés à la main restent tels quels** (C-28-1-26) : classe B (`fiscal-years:603`,
+    `email-templates:439`, déjà visibles, rouge de palette au lieu de la variante) et classe D
+    (`ContactPersonsManager:114`, `BankProfileList:79`, `bank-import/[id]:143` — trois `<button>` sans bordure
+    qui se lisent comme du texte ou comme un lien ; le troisième devient un lien **rouge** par l'AC4, à côté de
+    *Supprimer l'import*). Ce n'est pas du thème : **issue à ouvrir par l'orchestrateur** (« cinq boutons rouges
+    stylés à la main, hors du `Button` partagé »), qui reprendra aussi la question de la forme d'*Annuler le
+    rapprochement* (C-28-1-21 annulé : `outline` le rendait moins visible tant que #645 n'est pas fait).
 
 ### État actuel des fichiers modifiés — ce qui doit être préservé
 
 - `button.svelte` : `buttonVariants` est **exporté** (`ui/button/index.ts:5,13`), sans autre consommateur dans
-  `src/` au 2026-10-13 (`grep -rn buttonVariants frontend/src`) ; seules la ligne `destructive` change. Le rendu `<a>` (avec `href`) et
-  `<button>` reste identique.
+  `src/` au 2026-10-13 (`grep -rn buttonVariants frontend/src`) ; seule la ligne `destructive` change. Le rendu
+  `<a>` (avec `href`) et `<button>` reste identique.
 - `app.css` : ordre du `@theme`, styles globaux, espacement Guidé/Expert et règle `:focus-visible` inchangés.
-- Sites de l'AC5 : comportements préservés — la
-  `confirm()` native de `BankProfileList.handleDelete` (`:26`), l'ouverture de `CancelReconciliationDialog` par
-  `cancelTxId` (`bank-import/[id]/+page.svelte:147`), l'absence de confirmation de `removePerson` (#646, hors
-  périmètre), les `disabled={closeSubmitting}` / `{restoreSubmitting}` des dialogues B. Tests qui ciblent ces
-  boutons, par `data-testid` seulement (aucun n'assert une classe) : `fiscal-years-page.test.ts:282`,
-  `e2e/fiscal-years.spec.ts`, `e2e/email-templates.spec.ts`, `e2e/reconciliation-cancel.spec.ts:139,149`
-  (`:139` reçoit l'assertion (e) de l'AC8).
+- Sites applicatifs : **aucun n'est édité** (AC5). Les tests qui ciblent les boutons de la classe A et des
+  classes B à E, par `data-testid` seulement (aucun n'asserte une classe), ne changent pas.
 - Le seul test du dépôt qui lit la classe `text-destructive` : `routes/(app)/contacts/contacts-page.test.ts:729`
   (`document.querySelector('p.text-destructive')`) — la classe ne change pas, il reste vrai.
 - `bank-import-delete.spec.ts` : son scénario ne change pas, seul son montage passe par le helper extrait.
+- `frontend/package.json` : seule une ligne `devDependencies` s'ajoute (`@tailwindcss/node`, AC7 (4)) ; le
+  lockfile ne doit changer que pour cette entrée (`git diff package-lock.json` relu au Debug Log).
 
-### Propagation post-patch (T10)
+### Propagation post-patch (T9)
 
-Greper la **valeur** après chaque correctif : `grep -rnE '#b91c1c|#991b1b|6,47|5,45|8,31|2,53|1,23' frontend/src
-_bmad-output/implementation-artifacts/28-1-* _bmad-output/planning-artifacts/ux-design-specification.md
-CHANGELOG.md` (les ratios cités doivent tous être ceux d'`app.css`) ; `grep -rnE '4,59|\b33 bandeaux'
+Greper la **valeur** après chaque correctif : `grep -rnE '#b91c1c|#991b1b|6,47|5,46|8,31|2,54|4,14|1,23'
+frontend/src _bmad-output/implementation-artifacts/28-1-* _bmad-output/planning-artifacts/ux-design-specification.md
+CHANGELOG.md` (les ratios cités doivent tous être ceux d'`app.css`, calculés par la méthode du helper,
+C-28-1-27 ; la spec UX les écrit avec un point) ; `grep -rnE '5,45|2,53|4,13|4,83|5,58|4,59|\b33 bandeaux'
 _bmad-output/implementation-artifacts/28-1-boutons-destructifs.md` → seulement le Change Log et les rectifications
-du registre (valeurs retirées en validation P1) ; `grep -rn 'bg-destructive/10 hover' frontend/src` → 0 ;
-`grep -rn 'est grisé' docs/manual/fr/*.tex` → seul `user-manual.tex:1107`.
+du registre (valeurs retirées en validations P1 et P2), plus la mention de 5,45 comme valeur **non citée** de
+l'AC1 ; `grep -rn 'bg-destructive/10 hover' frontend/src` → 0 ; `grep -rn 'est grisé' docs/manual/fr/*.tex` → 0
+après l'AC10 ; `grep -rn 'variant="outline"' 'frontend/src/routes/(app)/bank-import/[id]/+page.svelte'` → 0.
 
-### Découpage préventif — Dérogation règle de splitting (C-28-1-24, remplace C-28-1-15)
+### Découpage préventif — trois modules, pas de dérogation (C-28-1-26, remplace C-28-1-24)
 
-**Recompte, sur le périmètre réduit** (validation P1, finding R6 : l'ancien « cinq modules au plus » était faux
-sur sa propre liste). Modules de code de premier niveau édités, dans `frontend/src/` :
+**Recompte, sur le périmètre réduit de la validation P2.** Modules de code de premier niveau édités, dans
+`frontend/src/` :
 
 | # | Module | Ce qui change |
 |---|---|---|
-| 1 | `lib/components/ui/button` (et `ui/` pour la garde facultative AC7 (4)) | variante (1 ligne) ; gardes AC6, AC7 |
+| 1 | `lib/components/ui` (`button/` et, pour la garde AC7 (4), `ui/` lui-même) | variante (1 ligne) ; gardes AC6, AC7 |
 | 2 | `app.css` (thème) | trois jetons |
-| 3 | `lib/features/contacts` | `ContactPersonsManager.svelte` : un `<button>` → `Button` |
-| 4 | `lib/features/bank-import` | `BankProfileList.svelte` : idem |
-| 5 | `routes/(app)/bank-import` | `[id]/+page.svelte` : idem (`outline`) |
-| 6 | `routes/(app)/settings` | `fiscal-years`, `email-templates` : `class` → `variant` |
-| 7 | `routes/design-system` | trois exemples, un `data-testid`, un carré de palette |
+| 3 | `routes/design-system` | un exemple, un `data-testid`, un carré de palette |
 
-Hors code de production : `tests/e2e` (spec neuve, deux helpers, `bank-import-delete.spec.ts`,
-`reconciliation-cancel.spec.ts`), `docs/manual/fr` (deux phrases, deux PDF), la spec UX, le CHANGELOG. Aucun
-crate, aucune clé i18n, aucune migration, aucune règle métier.
+Hors code de production : `tests/e2e` (spec neuve, deux helpers, montage de `bank-import-delete.spec.ts`),
+`frontend/package.json` et son lockfile (une `devDependency`), `docs/manual/fr` (deux phrases, deux PDF), la spec
+UX, le CHANGELOG. Aucun crate, aucune clé i18n, aucune migration, aucune règle métier.
 
-**Sept modules : le critère « plus de 5 modules » est franchi, et la story n'est pas découpée.** Motifs :
-
-- **Ce que la règle protège n'est pas exposé ici.** Elle vise une story trop large pour tenir dans un seul
-  modèle mental adversarial. Les modules 3 à 7 portent chacun une édition **mécanique d'une à trois lignes**
-  (`<button class>` → `<Button variant>`), sans logique ; le seul changement qui demande un raisonnement est
-  concentré dans les modules 1 et 2.
-- **Le découpage qu'elle prescrit existe déjà dans la fiche.** Le patron « story-zéro qui pose le patron, puis
-  rollout mécanique » donnerait 28-1 = modules 1, 2, 7 (jetons, variante, gardes, page de démonstration) et
-  28-1b = modules 3 à 6 (cinq sites). Mais la garde AC6 est **l'inventaire même** des sites — ses deux tables
-  bougent avec chaque migration ; scindée, elle serait écrite deux fois, et l'état intermédiaire (variante
-  pleine, `Annuler le rapprochement` encore souligné) serait livré à part sans que l'issue soit close.
-- **Le rollout se revoit fichier par fichier**, comme la règle le demande pour une sous-story de rollout : le
-  prompt de revue de code nommera les cinq sites de l'AC5 un à un, contre la table « sites migrés ».
-
-**Risque accepté** : une régression dans un des cinq sites qui ne toucherait ni la classe, ni le `variant`, ni le
-`data-testid` (par exemple un `onclick` perdu) ne serait vue que par les tests existants de ces écrans
-(`fiscal-years-page.test.ts`, `fiscal-years.spec.ts`, `email-templates.spec.ts`, `reconciliation-cancel.spec.ts`,
-`bank-import-delete.spec.ts`) — `ContactPersonsManager` et `BankProfileList` n'ont pas de test de clic.
-Le signal de découpage est **déclaré au Project Lead** par l'orchestrateur (CLAUDE.md, amendement D5).
+**Trois modules : le critère « plus de 5 modules » n'est pas franchi** ; la dérogation de C-28-1-24 (sept modules,
+dont la conformité à l'exception codifiée était contestée par les deux lentilles P2, R6 et F9) est **sans objet**,
+et son « risque accepté » (R12 = F11) avec elle. Le second critère, lui, a été levé : la validation P2 a rendu une
+sévérité égale à la P1 (MEDIUM), et la plupart de ses défauts étaient nés de la remédiation P1 — c'est le
+**recyclage** que l'amendement D5 désigne. L'orchestrateur, sur l'autonomie déléguée par Guy le 2026-10-13
+(`epic-28-recette-v0-13-2.md`), a décidé de ne pas découper formellement et de **réduire le périmètre au strict
+nécessaire pour fermer #640** (C-28-1-26) ; le signal est déclaré au Project Lead (Change Log, validation P2).
 
 ### Pièges connus du dépôt, applicables ici
 
@@ -654,8 +709,8 @@ Le signal de découpage est **déclaré au Project Lead** par l'orchestrateur (C
 - **Base** : `kesh_281` / `kesh_e2e_281`, jamais `restart` du conteneur partagé (consigne 2).
 - **Édition** du code par l'outil Edit uniquement (consigne 14) ; mutations restaurées par `git checkout --` +
   `touch`.
-- **tailwind-merge** (`cn`) : `class="ml-2"` sur un `Button` ne heurte pas la variante ; ne **pas** passer de
-  classe de couleur à un `Button variant="destructive"` (la garde AC6 la relèverait).
+- **tailwind-merge** (`cn`) : ne passer **aucune** `class` à un `Button variant="destructive"` (l'assertion (f)
+  de l'AC6 la refuse).
 - **Données réelles** : aucune ; les captures ne montrent que les fixtures synthétiques.
 
 ### Fichiers probablement communs avec les autres stories de l'epic
@@ -663,14 +718,15 @@ Le signal de découpage est **déclaré au Project Lead** par l'orchestrateur (C
 `CHANGELOG.md` (section `[0.13.3] — Non publié`, créée par plusieurs stories), `sprint-status.yaml` (section
 `epic-28`, créée aussi par la 28-0), `docs/manual/fr/user-manual.{tex,pdf}` et `admin-manual.{tex,pdf}` (la 28-4
 et la 28-5 les réécrivent : **conflit binaire des PDF**, résolu en régénérant après fusion),
-`lib/features/bank-import/BankProfileList.svelte` (la 28-2 y traite un `String(e)` — lignes distinctes),
-`routes/(app)/bank-import/[id]/+page.svelte` (la 28-5 peut y toucher les rejetées).
+`frontend/package.json` et son lockfile (une `devDependency` ajoutée). La 28-1 n'édite plus
+`BankProfileList.svelte` ni `bank-import/[id]/+page.svelte` (C-28-1-26) : plus de conflit avec la 28-2 ni la 28-5
+sur ces fichiers.
 
 ### References
 
 - Issue #640 ; epic `epic-28-recette-v0-13-2.md` § 28-1 et § *Recette visuelle (B2)*.
 - `_bmad-output/planning-artifacts/ux-design-specification.md` l. 286, 446, 514, 639-662, 714-718.
-- Patron de garde : `frontend/src/lib/features/bank-accounts/bank-name-inventory.test.ts`.
+- Patron de table fermée : `frontend/src/lib/features/bank-accounts/bank-name-inventory.test.ts`.
 - `frontend/src/lib/components/ui/sonner/sonner.svelte:3` (« Kesh n'a pas de dark mode »).
 - WCAG 2.2 : 1.4.3 (exemption des composants inactifs), 1.4.11, 2.4.7.
 
@@ -726,3 +782,44 @@ et la 28-5 les réécrivent : **conflit binaire des PDF**, résolu en régénér
     des livres), F6 (`ContactPersonsManager` **est** dans un `<form>` — énoncé corrigé, sans conséquence). Décomptes
     rectifiés au registre (C-28-1-25).
   Choix C-28-1-17 à C-28-1-25. Mutations M1-M20. Validation P2 : `28-1-validate-prompt-p2.md`.
+- 2026-10-13 — **Validation P2** (Opus 5.5 selon le prompt versionné, lentilles R et F, prompt
+  `28-1-validate-prompt-p2.md` ; rapports hors dépôt `kesh-gate-logs/28-1-validate-p2-{R,F}.md`) :
+  **R 0 CRITICAL / 0 HIGH / 6 MEDIUM / 10 LOW ; F 0 / 0 / 9 MEDIUM / 7 LOW** (bilans recomptés sur les titres par
+  les lentilles, conformes). Après rapprochement (R1 = F2, R3 = F1, R4 ≈ F8, R6 = F9, R11 = F3 — titré LOW chez R,
+  MEDIUM chez F —, R12 = F11) : **26 sujets distincts, dont 11 MEDIUM** ; sept des onze MEDIUM sont nés de la
+  remédiation P1 (R1, R3, R4, R6, F3, F4, F5), quatre de la conception d'origine (R2, R5, F6, F7). Branche rebasée
+  au préalable sur `origin/main` (`5aad8b35`, kickoff de l'Epic 28) ; registre de la story versé par union dans
+  `epic-28-choix-autonomes.md`, fichier séparé supprimé ; `sprint-status.yaml` réuni par union.
+  - **Constat D5 et décision.** La P1 avait rendu 3 HIGH et une douzaine de MEDIUM, la P2 rend une douzaine de
+    MEDIUM distincts : sévérité égale ou supérieure au sens du second critère de découpage, et la majorité des
+    défauts naissent du correctif précédent (C-28-1-19 à 25) — c'est le **recyclage** que l'amendement D5
+    désigne, non une revue qui découvre des défauts d'origine. Décision de l'**orchestrateur**, sur l'autonomie
+    déléguée par Guy le 2026-10-13 : pas de découpage formel, **réduction du périmètre au strict nécessaire pour
+    fermer #640** (C-28-1-26). Signal déclaré au Project Lead par cette entrée.
+  - **Retiré** (C-28-1-26) : la migration des cinq boutons stylés à la main (ancien AC5 ; l'AC5 devient « aucun
+    site applicatif n'est édité ») ; le passage d'*Annuler le rapprochement* en `outline` (C-28-1-21 **annulé** :
+    il rendait le bouton moins visible, bordure à 1,23:1 sans fond ni survol — F8, R4) ; la table « sites
+    migrés » de l'AC6 et M18 ; les scénarios E2E (c), (d), (e) ; l'exemple `xs` de l'AC9 ; l'exigence de captures
+    des 17 fichiers (R5 : remplacée par la vérification par construction, C-28-1-28) ; les déclencheurs `ghost`
+    destructifs (R2) et la bordure `outline` (R4) sont renvoyés à **#645**, qui les porte déjà. Les cinq sites
+    restants sont inscrits à la table de l'AC6 (quatorze entrées) et forment l'angle mort 11, **issue demandée**.
+  - **Modules recomptés** : trois (`lib/components/ui`, `app.css`, `routes/design-system`) — la règle n'est plus
+    franchie, la dérogation C-28-1-24 est sans objet (R6, F9), son risque accepté aussi (R12 = F11).
+  - **Corrigé dans le périmètre** : R1 = F2 (`surface-hover`, treizième nom, AC7 (4) et angle mort 1) ; F1 = R3
+    et R10 (une seule méthode de calcul, celle du helper : 5,46, 2,54, 4,14, 5,59 — C-28-1-27) ; F4 (M16 tuée par
+    des cas « foncé en premier ») ; F5 + F6 (captures par état, dans le `finally` de chaque `test.step`, assertions
+    `expect.soft`, passes clair et sombre en tests distincts — C-28-1-29) ; F7 (base remise à zéro avant chaque
+    test de (b), un seul import par passe) ; F12 (*Annuler* du dialogue visé par `data-slot`, sans libellé) ; F13
+    (`candidatesToCss` de `@tailwindcss/node`, déclaré en `devDependencies`, frontière de jeton, repli écrit —
+    C-28-1-30 ; l'AC7 (4) n'est plus facultative) ; F15 (l'E2E ne recalcule plus de contraste, `parseRgb` retiré,
+    `parseHex` pour l'AC7 (3) — C-28-1-31) ; F10 (palette Tailwind v4) ; F11 = R12 (sans objet) ; F14 (un seul
+    exemple) ; F16 (CHANGELOG : `danger` et `error-soft` restent sans couleur, #645) ; R5 (AC6 (f), C-28-1-28) ;
+    R7 (quatre *Annuler* `ghost` dans la classe A) ; R8 (`est grisé` → 0 après l'AC10, `admin-manual.tex:803`,
+    `:1172` nommés, `grep -o | wc -l`) ; R9 (`InvoiceSettlements.svelte:86-95`, `:106-117`, relus au sol —
+    la lentille donnait `:108`) ; R11 = F3 (clé de l'AC6 par `source.slice` de la valeur, gabarit JS compris) ;
+    R13 (auto-tests sur source synthétique) ; R14 (epic sur `main`, « contact inventé » retiré) ; R15 (« aucun
+    fond sous un texte ») ; R16 (point décimal dans la spec UX).
+  - Recomptes : 13 AC, tâches T0-T9, mutations M1-M21 (M18 retirée : 20 actives), choix C-28-1-26 à C-28-1-31.
+    Demandes à l'orchestrateur : issue des cinq boutons stylés à la main (angle mort 11) ; rectifier à nouveau le
+    commentaire de #640 (« boutons stylés à la main » ne sont plus traités). Validation P3 :
+    `28-1-validate-prompt-p3.md`.
