@@ -1995,6 +1995,9 @@ Rapports `kesh-gate-logs/28-1-validate-p3-{R,F}.md` (hors dépôt). Bilan au Cha
   story qui ajoute un bouton de suppression, sans rien protéger de plus, et l'habitude de relever le chiffre sans
   regarder viderait l'assertion de son sens. Le `>=` voit un usage **retiré** tant que personne n'en ajoute ;
   au-delà, l'angle mort 7 reste écrit.
+  *[Annotation de la revue de code P2, P2-3 : « déjà tenu par (f) » était inexact — (f) ne contrôle qu'une `class`
+  ou une directive `class:` ; un usage ajouté sans elles n'est simplement pas fautif. Le choix reste le même ;
+  le commentaire du test est corrigé.]*
 - **Réversible** : oui (une ligne).
 
 ### C-28-1-42 — Lockfile : la ligne `"license": "MIT"` rétablie à la main

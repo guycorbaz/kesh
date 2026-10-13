@@ -2,7 +2,8 @@
 
 ## Status
 
-**review** — développement fait le 2026-10-13 (`bmad-dev-story`, Opus 5.5), gates au dernier commit ; revue de code
+**done** — revue de code close le 2026-10-13 : P1 (Sonnet, B/E/A) remédiée, passe ciblée P2 (Haiku, 3 LOW)
+remédiée en tests seuls (`f3fadb5a`). AVANT : **review** — développement fait le 2026-10-13 (`bmad-dev-story`, Opus 5.5), gates au dernier commit ; revue de code
 P1 : prompt `28-1-review-prompt-p1.md`. Validation close après la passe ciblée P4. Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`), sur `6f971d76`
 (rétrospective de l'Epic 27), branche `story/28-1`, worktree `/home/gcorbaz/devel/kesh-28-1`, rebasée en
 validation P2 sur `5aad8b35` (kickoff de l'Epic 28, #643). Choix consignés au registre
@@ -755,6 +756,11 @@ se ressaisit). Signalé à l'orchestrateur, sans demande d'issue.
     sont pas lus** (aucune classe de couleur au 2026-10-13), et **la table tient des noms** : un `bg-danger` neuf
     passe, `danger` y figurant déjà (voulu, #645 traite le nom). Le `!` final et les préfixes `shadow-`, `from-`,
     `via-`, `to-`, `ring-offset-`, `inset-ring-`, `inset-shadow-`, eux, sont relevés depuis la remédiation P1.
+    *[Revue de code P2, P2-2 :]* le relevé lit **tout** le texte des `.svelte` et `.ts`, non les seules valeurs de
+    `class` (des classes passent par des chaînes de `cn(…)` en script) : un mot de prose ou un identifiant commençant
+    par `to-`, `from-` ou `via-` (`to-do`) rougirait la garde au premier ajout. Faux rouge **bruyant**, jamais
+    silencieux ; aucun tel mot au 2026-10-13 ; à examiner puis traiter par la table, non en retirant le préfixe.
+    *[P2-1 :]* `bg-foo!/40` est relevé comme `bg-foo/40!` depuis la remédiation P2.
 
 ### État actuel des fichiers modifiés — ce qui doit être préservé
 
@@ -1221,3 +1227,20 @@ sans mutation — axe tronque le `html` d'un élément long avant le `data-testi
     7 échoués = les 7 KF-029**, 19 ignorés (KF-045 verte, après midi UTC).
   - Passe ciblée P2 (Haiku, une lentille, diff aplati de cette remédiation) : `28-1-review-prompt-p2-ciblee.md`,
     rapport attendu `kesh-gate-logs/28-1-review-p2-ciblee.md`.
+- 2026-10-13 — **Revue de code P2 ciblée** (Haiku, une lentille sur le diff aplati `5ded5663..b577b8da`, prompt
+  `28-1-review-prompt-p2-ciblee.md` ; rapport hors dépôt `kesh-gate-logs/28-1-review-p2-ciblee.md`) :
+  **0 CRITICAL / 0 HIGH / 0 MEDIUM / 3 LOW**, tous nés de la remédiation P1, aucun dans le code de production.
+  Remédiés par `f3fadb5a` (Opus 5.5), deux fichiers de test seuls :
+  - **P2-1** : le relevé AC7 (4) retire l'opacité et le `!` dans les deux ordres (`bg-foo!/40` comme
+    `bg-foo/40!`) ; auto-test neuf ; mutation P2-M1 (retour à l'ordre `!` puis opacité) **rouge** sur cet auto-test
+    (`kesh-gate-logs/28-1-mut-p1/P2-M1-vitest.log`).
+  - **P2-2** : restreindre `to-`/`from-`/`via-` aux valeurs de `class` n'est pas simple (des classes passent par
+    `cn(…)` en script) ; écrit en angle mort, au préambule de la garde et à l'angle mort 13.
+  - **P2-3** : commentaire du montage de (f) corrigé (un usage ajouté sans `class` n'est pas « tenu par (f) », il
+    n'est pas fautif) ; C-28-1-41 annoté au registre, sans réécriture.
+  - Gates au commit `f3fadb5a` : gate ciblé Vitest sur les trois gardes 40/40 ; `npm run test:unit` complet sous
+    `flock` **1444 / 1444**, 138 fichiers (+1 depuis `99682720`) ; `npm run check` 0 erreur, 29 avertissements.
+    E2E non rejoué : ni production ni spec E2E touchées depuis `99682720` (E2E complet vert à ce commit).
+  - **Trend de la revue de code** : P1 (Sonnet B/E/A) 0/0/2/10 bruts, 9 sujets → P2 ciblée (Haiku) 0/0/0/3, toutes
+    remédiations en tests seuls → **boucle close** (seulement des LOW, et la remédiation finale ne touche aucune
+    ligne de production). Statut **`done`**.
