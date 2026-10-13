@@ -577,4 +577,113 @@ describe('page des comptes bancaires — clôture (Story 28-4b, AC11)', () => {
 			'Le compte a été modifié entre-temps.',
 		);
 	});
+
+	// ── Revue de code P1 (2026-10-13) ────────────────────────────────────────────
+
+	// B-1 = E-4 — une bascule referme le dialogue ouvert : sans quoi, la ligne masquée,
+	// le mode restait ouvert sur un compte absent et les actions de TOUTES les lignes
+	// disparaissaient (garde `mode.kind === 'none'`).
+	it.each([['toggle-closed'], ['toggle-archived']])(
+		'%s referme le dialogue ouvert et rend les actions des lignes',
+		async (bascule) => {
+			const r = render(Page);
+			await fireEvent.click(await r.findByTestId('reopen-7'));
+			await r.findByTestId('reopen-confirm');
+			await fireEvent.click(r.getByTestId(bascule));
+			await waitFor(() => expect(r.queryByTestId('reopen-confirm')).toBeNull());
+			expect(await r.findByTestId('close-6')).toBeTruthy();
+		},
+	);
+
+	// B-2 — un conflit de version recharge la liste : le second essai part avec la
+	// version relue, non avec la périmée.
+	it('un conflit de version recharge la liste, et le second essai envoie la version relue', async () => {
+		closeBankAccountMock.mockRejectedValueOnce({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			message: 'Conflit de version — la ressource a été modifiée',
+			status: 409,
+		});
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('close-6'));
+		listBankAccountsMock.mockResolvedValue([PRINCIPAL, { ...OUVERT, version: 9 }, CLOS]);
+		await fireEvent.click(await r.findByTestId('close-confirm-button'));
+		expect((await r.findByTestId('close-error')).textContent).toContain('Conflit de version');
+		await waitFor(() => expect(listBankAccountsMock).toHaveBeenCalledTimes(2));
+		await fireEvent.click(r.getByTestId('close-confirm-button'));
+		await waitFor(() => expect(closeBankAccountMock).toHaveBeenLastCalledWith(6, 9, expect.any(String)));
+	});
+
+	// E-1 — la date préremplie est la date LOCALE : à 00:30 à Zurich, l'UTC dit encore la
+	// veille. Horloge figée (seul `Date` est simulé, les attentes de testing-library
+	// gardent leurs minuteries) et fuseau épinglé par `process.env.TZ`, que Node relit
+	// à chaque calcul de date.
+	it('la date préremplie est la date locale, non la date UTC (00:30 à Zurich)', async () => {
+		const tz = process.env.TZ;
+		process.env.TZ = 'Europe/Zurich';
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(new Date('2026-10-13T22:30:00Z'));
+		try {
+			// Le montage est-il celui que l'on croit ? 22:30 UTC = 00:30 le 14 à Zurich.
+			expect(new Date().getDate()).toBe(14);
+			expect(new Date().toISOString().slice(0, 10)).toBe('2026-10-13');
+			const r = render(Page);
+			await fireEvent.click(await r.findByTestId('close-6'));
+			expect(((await r.findByTestId('close-date')) as HTMLInputElement).value).toBe('2026-10-14');
+		} finally {
+			vi.useRealTimers();
+			if (tz === undefined) delete process.env.TZ;
+			else process.env.TZ = tz;
+		}
+	});
+
+	// E-2 — une date vidée désactive la confirmation.
+	it('une date de clôture vidée désactive Clore le compte', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('close-6'));
+		const bouton = (await r.findByTestId('close-confirm-button')) as HTMLButtonElement;
+		expect(bouton.disabled).toBe(false);
+		await fireEvent.input(r.getByTestId('close-date'), { target: { value: '' } });
+		await waitFor(() => expect(bouton.disabled).toBe(true));
+	});
+
+	// E-3 — les deux bascules se composent.
+	it('les deux bascules se composent : archivés puis clos → (true, true)', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('toggle-archived'));
+		await waitFor(() => expect(listBankAccountsMock).toHaveBeenLastCalledWith(true, false));
+		await fireEvent.click(await r.findByTestId('toggle-closed'));
+		await waitFor(() => expect(listBankAccountsMock).toHaveBeenLastCalledWith(true, true));
+	});
+
+	// E-3 — un compte archivé ET clos (base restaurée) : deux badges, aucune action.
+	it('un compte archivé et clos porte les deux badges et aucune action', async () => {
+		listBankAccountsMock.mockResolvedValue([PRINCIPAL, { ...CLOS, archived: true }]);
+		const r = render(Page);
+		expect(await r.findByTestId('archived-badge-7')).toBeTruthy();
+		expect(r.getByTestId('closed-badge-7')).toBeTruthy();
+		for (const absent of ['reopen-7', 'close-7', 'archive-button-7', 'edit-button-7']) {
+			expect(r.queryByTestId(absent)).toBeNull();
+		}
+	});
+
+	// A-L6 — liste vide, comptes clos ou archivés masqués : le message dit où les trouver.
+	it('liste vide avec les clos masqués : le message renvoie aux bascules', async () => {
+		listBankAccountsMock.mockResolvedValue([]);
+		const r = render(Page);
+		expect((await r.findByTestId('bank-accounts-empty')).textContent).toContain(
+			'Les comptes clos ou archivés éventuels sont masqués',
+		);
+	});
+
+	it('liste vide, clos et archivés affichés : aucun compte configuré', async () => {
+		listBankAccountsMock.mockResolvedValue([]);
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('toggle-closed'));
+		await waitFor(() => expect(listBankAccountsMock).toHaveBeenLastCalledWith(false, true));
+		await fireEvent.click(await r.findByTestId('toggle-archived'));
+		await waitFor(() => expect(listBankAccountsMock).toHaveBeenLastCalledWith(true, true));
+		expect((await r.findByTestId('bank-accounts-empty')).textContent?.trim()).toBe(
+			'Aucun compte bancaire configuré.',
+		);
+	});
 });

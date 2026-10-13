@@ -625,7 +625,10 @@ const ATTENDU = {
 	// `reconciliation-failed-bank-account-closed`). `sitesNonResolus`, `relais`,
 	// `sitesGabarit` inchangés (que des littéraux), mesurés. Rebasée sur `4687af69` (28-4a et
 	// 28-5b, 2084) : **2103**, mesuré par la collecte de ce test sur la branche rebasée.
-	sitesTotal: 2103,
+	// Revue de code P1 de la 28-4b (A-L6) : **2103 → 2104** (+1, `bank-accounts/+page.svelte`
+	// 69 → 70 : `bank-accounts-labels-empty-hidden`), mesuré par la collecte et par
+	// `grep -o "i18nMsg("`. `sitesNonResolus`, `relais`, `sitesGabarit` inchangés.
+	sitesTotal: 2104,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

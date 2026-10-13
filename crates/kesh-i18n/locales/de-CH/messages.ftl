@@ -1229,6 +1229,7 @@ bank-accounts-labels-iban = IBAN
 bank-accounts-labels-journal-account-id = Verbundenes Buchhaltungskonto
 bank-accounts-labels-not-configured = Nicht konfiguriert
 bank-accounts-labels-empty = Keine Bankkonten konfiguriert.
+bank-accounts-labels-empty-hidden = Kein offenes Bankkonto. Allfällige aufgelöste oder archivierte Konten sind ausgeblendet: Zeigen Sie sie mit den Schaltflächen oben an.
 bank-accounts-labels-loading = Wird geladen…
 bank-accounts-actions-link-account = Mit Kontorahmen verbinden
 bank-accounts-actions-unlink-account = Trennen

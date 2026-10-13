@@ -1229,6 +1229,7 @@ bank-accounts-labels-iban = IBAN
 bank-accounts-labels-journal-account-id = Conto contabile collegato
 bank-accounts-labels-not-configured = Non configurato
 bank-accounts-labels-empty = Nessun conto bancario configurato.
+bank-accounts-labels-empty-hidden = Nessun conto bancario aperto. Gli eventuali conti chiusi o archiviati sono nascosti: mostrarli con i pulsanti qui sopra.
 bank-accounts-labels-loading = Caricamento…
 bank-accounts-actions-link-account = Collega al piano dei conti
 bank-accounts-actions-unlink-account = Scollega
@@ -1271,7 +1272,7 @@ bank-accounts-toast-create-success = Conto bancario creato.
 bank-accounts-toast-update-success = Conto bancario modificato.
 bank-accounts-toast-archive-success = Conto bancario archiviato.
 # Story 28-4b (#642) — chiudere e riaprire un conto bancario.
-bank-accounts-actions-close = Chiudi
+bank-accounts-actions-close = Chiudi il conto
 bank-accounts-actions-reopen = Riapri
 bank-accounts-actions-show-closed = Mostra i conti chiusi
 bank-accounts-actions-hide-closed = Nascondi i conti chiusi

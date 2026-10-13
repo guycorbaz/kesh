@@ -168,9 +168,12 @@ test.describe('Clôture d’un compte bancaire (Story 28-4b)', () => {
 		await page.getByTestId('close-confirm-button').click();
 
 		// Clos masqué par défaut : la ligne disparaît, le toast dit comment la retrouver.
-		// Le toast paraît (son texte — « Affichez les comptes clos pour le retrouver » quand
-		// les clos sont masqués — est tenu par Vitest : un sélecteur E2E ne se fige pas sur
-		// un libellé traduit, KF-043).
+		// Le toast paraît. Il n'a pas de `data-testid` : le VISER par son texte figerait un
+		// SÉLECTEUR sur un libellé traduit (KF-043, garde `e2e-selecteurs-traduits`) ; son texte
+		// — « Affichez les comptes clos pour le retrouver » quand les clos sont masqués — est
+		// tenu par Vitest. Les assertions de CONTENU de cette spec (aide du principal, badge),
+		// posées sur des éléments visés par `data-testid`, ne tombent pas sous cette règle :
+		// la suite E2E tourne en français, et la garde les admet.
 		await expect(page.locator('[data-sonner-toast]').first()).toBeVisible();
 		await expect(page.getByTestId(`bank-account-row-${aClore}`)).toHaveCount(0);
 

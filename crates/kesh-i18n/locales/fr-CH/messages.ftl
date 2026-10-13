@@ -1293,6 +1293,7 @@ bank-accounts-labels-iban = IBAN
 bank-accounts-labels-journal-account-id = Compte comptable lié
 bank-accounts-labels-not-configured = Non configuré
 bank-accounts-labels-empty = Aucun compte bancaire configuré.
+bank-accounts-labels-empty-hidden = Aucun compte bancaire ouvert. Les comptes clos ou archivés éventuels sont masqués : affichez-les par les boutons ci-dessus.
 bank-accounts-labels-loading = Chargement…
 bank-accounts-actions-link-account = Lier au plan comptable
 bank-accounts-actions-unlink-account = Délier

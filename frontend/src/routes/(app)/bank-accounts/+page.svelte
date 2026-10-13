@@ -14,6 +14,7 @@
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
+	import { isApiError } from '$lib/shared/utils/api-error';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { withCurrentAccount, withoutAccountIds } from '$lib/features/accounts/account-options';
@@ -366,6 +367,7 @@
 			closeForm();
 		} catch (err) {
 			closeError = errorMessageOf(err);
+			await refreshAfterVersionConflict(err);
 		} finally {
 			submitting = false;
 		}
@@ -384,19 +386,47 @@
 			closeForm();
 		} catch (err) {
 			reopenError = errorMessageOf(err);
+			await refreshAfterVersionConflict(err);
 		} finally {
 			submitting = false;
 		}
 	}
 
-	async function handleToggleClosed() {
-		includeClosed = !includeClosed;
+	/**
+	 * Story 28-4b (revue P1, B-2) — après un `409 OPTIMISTIC_LOCK_CONFLICT`, la liste est
+	 * relue : le dialogue reste ouvert avec son message, et le second essai part avec la
+	 * version relue au lieu de rejouer la périmée. Les autres refus ne rechargent rien
+	 * (un compte déjà clos, par exemple, disparaîtrait de la liste sous le dialogue).
+	 */
+	async function refreshAfterVersionConflict(err: unknown): Promise<void> {
+		if (isApiError(err) && err.code === 'OPTIMISTIC_LOCK_CONFLICT') await reload();
+	}
+
+	/**
+	 * Une bascule (archivés, clos) recharge la liste sous un indicateur de chargement.
+	 * Story 28-4b (revue P1, B-1 = E-4) : elle referme d'abord le formulaire ou le
+	 * dialogue ouvert — sa ligne peut disparaître de la liste rechargée, et le mode resté
+	 * ouvert masquait alors les actions de toutes les lignes.
+	 *
+	 * ⚠️ Angle mort assumé (B-3) : un `reload()` lancé par une clôture ou une réouverture
+	 * réussie et celui d'une bascule cliquée pendant ce temps ne sont pas ordonnés — la
+	 * dernière réponse arrivée gagne (fenêtre d'un aller-retour réseau ; même schéma que la
+	 * bascule des archivés d'avant la 28-4b). Un nouveau clic sur la bascule rétablit la
+	 * liste attendue.
+	 */
+	async function toggleAndReload(flip: () => void) {
+		closeForm();
+		flip();
 		loading = true;
 		try {
 			await reload();
 		} finally {
 			loading = false;
 		}
+	}
+
+	async function handleToggleClosed() {
+		await toggleAndReload(() => (includeClosed = !includeClosed));
 	}
 
 	function handleJournalUpdated(updated: BankAccountSummary) {
@@ -407,13 +437,7 @@
 	async function handleToggleArchived() {
 		// F18 Pass 1 code review : indicateur de chargement pendant le reload
 		// pour feedback UX cohérent avec onMount.
-		includeArchived = !includeArchived;
-		loading = true;
-		try {
-			await reload();
-		} finally {
-			loading = false;
-		}
+		await toggleAndReload(() => (includeArchived = !includeArchived));
 	}
 </script>
 
@@ -541,8 +565,16 @@
 
 		<!-- Liste -->
 		{#if bankAccounts.length === 0}
+			<!-- Story 28-4b (revue P1, A-L6) — une bascule au moins masque des comptes : le
+			     message dit où les trouver (une société dont les seuls comptes restants sont
+			     clos voyait « Aucun compte bancaire configuré » sur l'écran de gestion). -->
 			<p class="text-text-muted" data-testid="bank-accounts-empty">
-				{i18nMsg('bank-accounts-labels-empty', 'Aucun compte bancaire configuré.')}
+				{includeClosed && includeArchived
+					? i18nMsg('bank-accounts-labels-empty', 'Aucun compte bancaire configuré.')
+					: i18nMsg(
+							'bank-accounts-labels-empty-hidden',
+							'Aucun compte bancaire ouvert. Les comptes clos ou archivés éventuels sont masqués : affichez-les par les boutons ci-dessus.',
+						)}
 			</p>
 		{:else}
 			<table class="w-full text-sm" data-testid="bank-accounts-list">

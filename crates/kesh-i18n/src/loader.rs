@@ -1323,4 +1323,50 @@ mod tests {
         }
         assert!(panneaux > 0 && separables > 0, "{panneaux} / {separables}");
     }
+
+    /// **G11-bis** (Story 28-4b, #642, revue P1 A-M1) — clore un **compte bancaire**
+    /// n'emprunte pas non plus le verbe nu qui ferme un panneau (KF-041), dans les
+    /// **quatre** locales : G11 ne voit que l'allemand et l'exercice. Les deux clés
+    /// d'action de la clôture doivent différer de toute valeur de panneau
+    /// (`-close` / `-dismiss`) et du verbe nu de la locale.
+    ///
+    /// ⚠️ **Angle mort** : le domaine est **nommé**, non découvert — une troisième clé
+    /// d'action de clôture qui écrirait le verbe nu échapperait au contrôle. Et le
+    /// critère de panneau est un **suffixe** de clé : `bank-accounts-actions-close` le
+    /// porte, d'où son retrait explicite de l'ensemble des panneaux.
+    #[test]
+    fn la_cloture_d_un_compte_bancaire_ne_parle_pas_comme_un_panneau() {
+        const ACTIONS: [&str; 2] = [
+            "bank-accounts-actions-close",
+            "bank-accounts-close-dialog-confirm",
+        ];
+        const VERBES_NUS: [(&str, &str); 4] = [
+            ("fr-CH", "Fermer"),
+            ("de-CH", "Schliessen"),
+            ("it-CH", "Chiudi"),
+            ("en-CH", "Close"),
+        ];
+        for (locale, nu) in VERBES_NUS {
+            let v = valeurs_brutes(locale);
+            let panneaux: Vec<&String> = v
+                .iter()
+                .filter(|(k, _)| {
+                    (k.ends_with("-close") || k.ends_with("-dismiss"))
+                        && !ACTIONS.contains(&k.as_str())
+                })
+                .map(|(_, valeur)| valeur)
+                .collect();
+            assert!(!panneaux.is_empty(), "{locale} : aucune clé de panneau");
+            for cle in ACTIONS {
+                let valeur = v
+                    .get(cle)
+                    .unwrap_or_else(|| panic!("{locale} : {cle} absente"));
+                assert_ne!(valeur, nu, "{locale} : {cle} est le verbe nu du panneau");
+                assert!(
+                    !panneaux.contains(&valeur),
+                    "{locale} : {cle} = « {valeur} », la valeur d'un panneau"
+                );
+            }
+        }
+    }
 }

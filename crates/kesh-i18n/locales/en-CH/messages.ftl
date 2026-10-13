@@ -1229,6 +1229,7 @@ bank-accounts-labels-iban = IBAN
 bank-accounts-labels-journal-account-id = Linked ledger account
 bank-accounts-labels-not-configured = Not configured
 bank-accounts-labels-empty = No bank accounts configured.
+bank-accounts-labels-empty-hidden = No open bank account. Any closed or archived accounts are hidden: show them with the buttons above.
 bank-accounts-labels-loading = Loading…
 bank-accounts-actions-link-account = Link to chart of accounts
 bank-accounts-actions-unlink-account = Unlink
@@ -1271,7 +1272,7 @@ bank-accounts-toast-create-success = Bank account created.
 bank-accounts-toast-update-success = Bank account updated.
 bank-accounts-toast-archive-success = Bank account archived.
 # Story 28-4b (#642) — closing and reopening a bank account.
-bank-accounts-actions-close = Close
+bank-accounts-actions-close = Close account
 bank-accounts-actions-reopen = Reopen
 bank-accounts-actions-show-closed = Show closed accounts
 bank-accounts-actions-hide-closed = Hide closed accounts
