@@ -1933,4 +1933,8 @@ Rapports `kesh-gate-logs/28-1-validate-p3-{R,F}.md` (hors dépôt). Bilan au Cha
   (la rectification de #648 et du commentaire de #640 revient à l'orchestrateur). **R9** : la ligne du doublon est
   `BankImportUpload.svelte:344`. **R10** : septième `ghost` à icône destructif, `fiscal-years:417` (*Clôturer*).
   **F4** : les titres de tests portent le schéma.
+- **Rectification (validation P4 ciblée, 2026-10-13)** : deux valeurs de cette entrée étaient fausses à leur date.
+  **R1** : 12 confirmations dans un `Dialog.Root` et **5** hors, non 13 et 4 — `journal-entries/[id]:557` est dans
+  un overlay `role="dialog"` maison (`:526-530`), non dans un `Dialog.Root` (P4-1). **R9** : la ligne du doublon est
+  `BankImportUpload.svelte:345` ; `:344` est celle de `balanceMismatch` (P4-2).
 - **Réversible** : —.

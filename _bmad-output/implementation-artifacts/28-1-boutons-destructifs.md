@@ -2,14 +2,14 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`), sur `6f971d76`
+**in-progress** — validation close après la passe ciblée P4 (2026-10-13). Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`), sur `6f971d76`
 (rétrospective de l'Epic 27), branche `story/28-1`, worktree `/home/gcorbaz/devel/kesh-28-1`, rebasée en
 validation P2 sur `5aad8b35` (kickoff de l'Epic 28, #643). Choix consignés au registre
 `epic-28-choix-autonomes.md` (**C-28-1-1 à C-28-1-36** ; le registre séparé de la story y a été versé par union
 en validation P2). 13 AC (AC1-AC13), tâches T0-T9, mutations M1-M22 (M18 retirée). Validations P1 (Sonnet),
 P2 (Opus) et P3 (Sonnet), lentilles R et F, remédiées — **périmètre réduit à #640** en P1 (C-28-1-17), puis **au
-strict nécessaire pour fermer #640** en P2 (C-28-1-26) ; passe ciblée P4 : prompt
-`28-1-validate-prompt-p4-ciblee.md`. PR : **`closes #640`** (et `refs #645 #646 #648`, angles morts renvoyés).
+strict nécessaire pour fermer #640** en P2 (C-28-1-26) ; passe ciblée P4 (Haiku, prompt
+`28-1-validate-prompt-p4-ciblee.md`), remédiée — validation close. PR : **`closes #640`** (et `refs #645 #646 #648`, angles morts renvoyés).
 
 ## Story
 
@@ -376,7 +376,7 @@ Scénarios :
   `test.beforeEach` appelle `seedTestState('with-company')`, puis le test se connecte, monte compte et profil et
   importe le fichier **une fois** par l'écran (helper extrait, ci-dessous), ouvre le détail. Chaque passe part donc
   d'une base remise à zéro : aucun second import du même fichier, donc jamais l'avertissement de doublon qui
-  désactive *Confirmer* (`BankImportUpload.svelte:344`, C-28-1-29, ligne rectifiée en validation P3). Assertions : *Supprimer l'import*
+  désactive *Confirmer* (`BankImportUpload.svelte:345`, C-28-1-29, ligne rectifiée en validations P3 et P4). Assertions : *Supprimer l'import*
   (`bank-import-delete-button`) a `background-color: rgb(185, 28, 28)` et `color: rgb(255, 255, 255)` ;
   capture `b-bouton`. Ouverture du dialogue (`bank-import-delete-dialog`) : *Supprimer définitivement*
   (`bank-import-delete-submit`) a le même fond ; *Annuler* — sans `data-testid` (`DeleteBankImportAction.svelte:135`),
@@ -389,9 +389,9 @@ Scénarios :
 
 Le dialogue de (b) est le **dialogue de confirmation destructif représentatif** de la story : *Supprimer
 définitivement* à côté d'un *Annuler* `outline`, la configuration de 13 des 24 usages de la variante (dix-sept
-sont une confirmation, à côté d'un *Annuler* `outline` pour treize et `ghost` pour quatre ; treize de ces
-confirmations sont dans un `Dialog.Root`, quatre sont en ligne dans la page — Dev Notes § Classe A, recompté en
-validation P3, C-28-1-36). Les 17 fichiers et 24 usages de la classe A ne sont **pas** montrés un à un à l'écran : ils sont
+sont une confirmation, à côté d'un *Annuler* `outline` pour treize et `ghost` pour quatre ; douze de ces
+confirmations sont dans un `Dialog.Root`, cinq hors — dont l'overlay `role="dialog"` maison de
+`journal-entries/[id]` — Dev Notes § Classe A, recompté en validations P3 et P4, C-28-1-36). Les 17 fichiers et 24 usages de la classe A ne sont **pas** montrés un à un à l'écran : ils sont
 vérifiés **par construction** — l'AC7 (1)-(2) garde la variante, seule source de leur style, et l'AC6 (f) garde
 qu'aucun ne lui passe de `class` qui la contredirait ; l'E2E en montre un échantillon, (a) et (b)
 (C-28-1-28) — trois usages sur 24 (`design-system:69`, `DeleteBankImportAction:73` et `:139`). Angle mort
@@ -591,9 +591,11 @@ vérifier ; aucun ne passe de `class`). Corrigés par AC2, **sans édition** :
 
 Dix-sept de ces 24 usages sont une confirmation : treize à côté d'un *Annuler* `outline`, quatre à côté d'un
 *Annuler* `ghost` (recompté en validation P3, variante du bouton voisin lue à ±10 lignes, C-28-1-36 — la ligne
-`:717` décrivait à tort un archivage). Treize sont dans un `Dialog.Root` ; **quatre sont en ligne** dans la page
-(`<section>` ou `<div>`) : `dunning:300` (*Annuler* `outline`), `vat-rates:366`, `api-keys:404`,
-`bank-accounts:586` (*Annuler* `ghost`). Un *Annuler* `ghost`
+`:717` décrivait à tort un archivage). Douze sont dans un `Dialog.Root` ; **cinq sont hors** `Dialog.Root`
+(recompté en validation P4 ciblée, P4-1) : quatre en ligne dans la page (`<section>` ou `<div>`) — `dunning:300`
+(*Annuler* `outline`), `vat-rates:366`, `api-keys:404`, `bank-accounts:586` (*Annuler* `ghost`) — et
+`journal-entries/[id]:557`, dans un overlay `role="dialog"` maison (`{#if showDeleteConfirm && entry}`,
+`:526-530`), à côté d'un *Annuler* `outline` (`:553`). Un *Annuler* `ghost`
 se lit comme du texte tant que #645 n'est pas fait — hors périmètre (angle mort 1).
 
 **Classe B — `<Button>` rouge par `class` : 2 sites, laissés tels quels, inscrits à la table de l'AC6**
@@ -915,12 +917,23 @@ sur ces fichiers.
     d'une ponctuation) (C-28-1-34).
   - **R1 (MEDIUM)** : `accounts:717` décrit (changement de type, *Annuler* `outline`) ; 17 confirmations, 13
     `outline` + 4 `ghost`, dont 4 en ligne hors `Dialog.Root` ; AC8 « 13 des 24 » (C-28-1-36).
+    *[Annotation P4 : la répartition était fausse à sa date — 12 dans un `Dialog.Root`, 5 hors, cf. entrée P4.]*
   - **LOW** : F4 (titres de tests portant le schéma) ; F6 (`@tailwindcss/node` au spécificateur de `tailwindcss`,
     assertion de version, C-28-1-35) ; R4 (six `<button>` bruts en `text-destructive`, nommés à l'AC4) ; R5
     (CHANGELOG : boutons bordés et ✕ qui deviennent rouges) ; R6 (C-28-1-17 rectifiée) ; R7 (contrôle muet
     `variant="outline"` retiré de la T9) ; R8 (**#648** cité au Status, à la classe D et à l'angle mort 11 ; un
     seul des cinq sites dépend du jeton ; la rectification du texte de #648 et du commentaire de #640 revient à
-    l'orchestrateur) ; R9 (`BankImportUpload.svelte:344`) ; R10 (septième `ghost` à icône, `fiscal-years:417`).
+    l'orchestrateur) ; R9 (`BankImportUpload.svelte:344` — *[annotation P4 : fausse à sa date, `:345`]*) ; R10 (septième `ghost` à icône, `fiscal-years:417`).
   - Recomptes : 13 AC, tâches T0-T9, mutations M1-M22 (M18 retirée : 21 actives), angles morts 1-12, choix
     C-28-1-32 à C-28-1-36. Passe ciblée P4 (Haiku, une lentille, diff aplati de cette remédiation) :
     `28-1-validate-prompt-p4-ciblee.md`.
+- 2026-10-13 — **Validation P4 ciblée** (Haiku, une lentille sur le seul commit de remédiation P3 `2d794013`,
+  prompt `28-1-validate-prompt-p4-ciblee.md` ; rapport hors dépôt `kesh-gate-logs/28-1-validate-p4-ciblee.md`) :
+  **0 CRITICAL / 0 HIGH / 1 MEDIUM / 1 LOW**, tous deux nés de la remédiation P3, vérifiés par l'orchestrateur au
+  sol. **P4-1 (MEDIUM, décompte)** : 12 confirmations dans un `Dialog.Root` et **5** hors — `journal-entries/[id]`
+  est un overlay `role="dialog"` maison (`:526-530`) ; corrigé à l'AC8, en Dev Notes § Classe A et au registre
+  (C-28-1-36, annotation). **P4-2 (LOW)** : le contrôle du doublon est `BankImportUpload.svelte:345` ; corrigé à
+  l'AC8 et au registre. Les entrées P3 portent une annotation datée, sans réécriture. Aucun ne touche de code.
+  **Validation close.** Trend : P1 (Sonnet) 3 HIGH + ~12 MEDIUM → P2 (Opus) ~11 MEDIUM (constat D5 : périmètre
+  réduit à #640, trois modules) → P3 (Sonnet) 4 MEDIUM → P4 ciblée (Haiku) 1 MEDIUM de décompte, fiche seule →
+  close (la remédiation P4 ne touche aucune ligne de code). Statut `in-progress`.
