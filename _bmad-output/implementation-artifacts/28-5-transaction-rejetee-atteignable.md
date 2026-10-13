@@ -424,6 +424,9 @@ du verrou tenu de `post_accept_returns_409_on_account_lock_contention` l. 1435 ;
 | M11 | b | `onUnrejected` non appelé sur échec | V2 |
 | M12 | b | indication déplacée dans la branche « liste non vide » | V4 |
 | M16 | b | `isRejected` en `!== null` au lieu de `!= null` | V1 (cas `undefined`) |
+| M21 | b | garde `if (submitting) return` retirée — *ajoutée en revue de code P1 de la 28-5b, E-2 = A-1 = B-L3* | V2 (succès : `disabled` levé à la main, le second clic ne doit rien envoyer) |
+| M22 | b | `finally { submitting = false }` retiré — *revue P1, B-L3* | V2 (échec : le bouton redevient actif) |
+| M23 | b | `new Date()` au lieu de `new Date(tx.autoMatchRejectedAt)` — *revue P1, E-1* | V2 (`canManage=false` : texte exact « Rejetée le 4 mars 2026 ») |
 
 ## Dev Notes
 
@@ -507,6 +510,7 @@ fixtures `#[cfg(test)]`) :
 | page *Imports précédents* (`BankImportList.svelte`) | ne compte pas les rejetées | **angle mort assumé** : l'utilisateur ouvre l'import d'après la date de la transaction ; un compteur serait du périmètre en plus |
 | colonne *Statut* du détail (`pending` brut) | ne dit pas « rejetée » | **angle mort assumé**, la mention de l'AC5 le dit à côté ; traduction suivie par #339 |
 | liste de la page *Réconciliation* au-delà de 100 lignes | une rejetée annulée, ancienne, n'y reparaît pas | **angle mort assumé, suivi par #649** ; les textes le disent (C-28-5-20) |
+| date de la mention « Rejetée le … » (`UnrejectTransactionAction.svelte`) | formatée **dans le fuseau du navigateur** (`Intl.DateTimeFormat` sans `timeZone`) : un rejet à 23:30 UTC s'affiche au jour suivant en Suisse | **angle mort assumé**, conforme à C-28-5-15 (la date sert à retrouver la transaction, non à dater un acte) — *ajouté en revue de code P1 de la 28-5b, A-2* |
 | *Hors code de production* — lignes de **commentaire** : `routes/reconciliation.rs:12`, `:857`, `:2535`, `:3129`, `:3353`, `:3394`, `:3401`, `:3501`, `:4256` ; `repositories/reconciliation.rs:12`, `:163`, `:330`, `:337` | décrivent le marqueur | sans effet sur la classe ; l'en-tête `routes/reconciliation.rs:12` et `repositories/reconciliation.rs:12` reçoivent la puce de la route neuve (AC10) |
 | *Hors code de production* — **fixtures `#[cfg(test)]`** : `kesh-reconciliation/src/matching.rs:208`, `manual.rs:152`, `split.rs:217`, `rules.rs:170` (`auto_match_rejected_at: None`, dans les `#[cfg(test)]` ouverts l. 178, 127, 192, 137) ; `routes/reconciliation.rs:4799` (module de tests) | construisent une transaction de test | sans effet |
 
@@ -686,6 +690,18 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5b/` ; script
   | M16 | tuée | V1 (champ absent) |
 
   Aucune survivante.
+
+  *Revue de code P1* (`mutations-p1-run.txt`, `mutations/M2{1,2,3}.log`, sous le verrou ; script
+  `mutations-p1-28-5b.py`, même protocole, composant restauré, `git status` vide) :
+
+  | # | Résultat | Tuée par |
+  |---|---|---|
+  | M21 (garde `if (submitting) return` retirée) | tuée | V2 succès (`disabled` levé à la main, second clic) |
+  | M22 (`finally { submitting = false }` retiré) | tuée | V2 échec (le bouton redevient actif) |
+  | M23 (`new Date()` au lieu de la date du rejet) | tuée | V2 `canManage=false` (« Rejetée le 4 mars 2026 ») |
+
+  Les deux premières étaient proposées comme « équivalentes » par la revue (E-2 = A-1 = B-L3) ; elles sont exercées
+  plutôt que déclarées.
 - **T12 — observation de la page *Réconciliation* sous Consultation** (scénario 2 de la spec, journal
   `final-e2e.log`) : la page affiche `reconciliation-error` = **« Accès interdit »** (message traduit, non un `403`
   brut) et, sous lui, l'indication des rejetées. Non corrigé (*Exclu*) ; à l'orchestrateur de juger s'il faut une
@@ -938,3 +954,33 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5b/` ; script
   3541/3541 (6 ignorés), Vitest 1514/1514, `check` 0 erreur, `lint-i18n-ownership` et `build` verts, E2E 273 passés /
   7 échecs, les sept KF-029. Choix C-28-5-36 à 40. Statut **review** ; revue de code P1 à lancer
   (`28-5b-review-prompt-p1.md`, Sonnet, lentilles B, E et A).
+- 2026-10-13 — **Revue de code P1 de la 28-5b** (Sonnet, lentilles B, E et A ; rapports
+  `kesh-gate-logs/28-5b-review-p1-{B,E,A}.md`, prompt `28-5b-review-prompt-p1.md`) : B 0/0/0/4, E 0/0/1/4, A 0/0/0/3 —
+  soit **0 CRITICAL, 0 HIGH, 1 MEDIUM, 11 LOW**, dont trois recoupements (E-2 = A-1 = B-L3, B-L1 = E-3). Remédiation
+  sur les **seuls tests, la fiche et le CHANGELOG** (aucune ligne de production, décision de l'orchestrateur) :
+  - **E-1 (MEDIUM)** — V2 n'établissait que l'année de la mention : la fixture date le rejet du **4 mars 2026 à
+    11:00 UTC** (un autre jour qu'aujourd'hui ; le même jour de UTC-11 à UTC+12 — A-2), et V2 asserte le texte exact
+    « Rejetée le 4 mars 2026 ». Mutation **M23** (`new Date()`) jouée : **tuée**.
+  - **E-4 (LOW)** — les replis des **quatre** clés neuves sont comparés mot pour mot au catalogue fr-CH : trois dans
+    V2 (mention et bouton relevés par le mock d'`i18nMsg`, succès par l'argument de `notifySuccess`), l'indication dans
+    V4 ; `reconciliation-failed-already-rejected` l'était déjà (V6).
+  - **E-2 = A-1 = B-L3 (LOW)** — la garde `if (submitting) return` et le `finally` sont **exercés** plutôt que déclarés
+    équivalents : V2 lève `disabled` à la main et reclique (**M21 tuée**) ; V2 échec attend le bouton réactivé (**M22
+    tuée**).
+  - **E-5 (LOW)** — CHANGELOG, entrée *Corrigé* bornée : « …, si aucune transaction de l'import n'était rapprochée ».
+  - **A-2 (LOW)** — la date suit le fuseau du navigateur : écrit à l'inventaire des sites non résolus comme **angle
+    mort assumé**, conforme à C-28-5-15.
+  - **B-L4 (LOW)** — la limite des 100 dans l'E2E : **angle mort de la spec**, déjà consigné par C-28-5-39 ; la spec
+    n'est pas touchée (elle obligerait à rejouer l'E2E complet).
+  - **Non corrigés, LOW, faute de toucher la production** : **B-L1 = E-3** — une chaîne `autoMatchRejectedAt`
+    invalide fait lever `Intl.DateTimeFormat.format` dans le `$derived` et casse le rendu de la page ; le serveur
+    sérialise toujours un `DateTime<Utc>` (`.and_utc()`), le cas n'est atteignable que par un serveur défectueux ;
+    **B-L2** — `errorMessage` de la page de détail n'est jamais remis à `null` par `load()`, et deux relectures
+    concurrentes peuvent se croiser : préexistant (même chemin qu'*Annuler le rapprochement*), auto-réparé au clic
+    suivant (`409` puis relecture).
+  - **A-3 (LOW)** — union avec la 28-6 : constat, rien à faire avant le rebase.
+  Gates : Vitest ciblé (2 fichiers, 30 passés) ; mutations M21-M23 tuées ; `check` (0 erreur, 29 avertissements
+  préexistants) et `test:unit` complets sous verrou (`p1-remed-frontend.log`) : **1515 passés, 142 fichiers** (1514 + le
+  test neuf des replis ; les autres ajouts sont des assertions dans des tests existants). E2E non rejoué : ni la production ni la spec E2E ne bougent. Trend : P1 = 1 MEDIUM,
+  11 LOW → remédiés sur les tests seuls ; passe **ciblée P2** à lancer (`28-5b-review-prompt-p2-ciblee.md`, Haiku, une
+  lentille sur le seul diff de la remédiation).
