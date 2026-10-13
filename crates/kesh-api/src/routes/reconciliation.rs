@@ -1530,9 +1530,10 @@ fn lettering_error_to_failed_proposal(bank_transaction_id: i64, err: DbError) ->
 /// proposée), écrite une seconde fois parce que `POST /accept` est appelable
 /// directement — par une clé d'API comme par un appel forgé — avec un couple
 /// `(bankTransactionId, invoiceId)` arbitraire. Sans elle, un débit dont la
-/// référence ou la contrepartie ressemblait à la facture passait la garde de
-/// score, et seule une contrainte de la base (`chk_jel_*`) arrêtait
-/// l'écriture : le refus arrivait en `DATABASE_ERROR`, qui invite au rejeu.
+/// référence et la contrepartie ressemblaient à la facture (cas exécuté au
+/// rouge de la story) passait la garde de score, et seule une contrainte de la
+/// base (`chk_jel_*`) arrêtait l'écriture : le refus arrivait en
+/// `DATABASE_ERROR`, qui invite au rejeu.
 ///
 /// Rend `None` pour un montant strictement positif ; sinon le refus
 /// `RECONCILIATION_TRANSACTION_NOT_CREDIT`, avec `details.reason` =
@@ -1543,7 +1544,7 @@ fn lettering_error_to_failed_proposal(bank_transaction_id: i64, err: DbError) ->
 /// ⚠️ La garde **compare** au zéro, elle ne teste pas le signe : un zéro
 /// négatif (`-0.00`, porté par un `Decimal` mais jamais rendu par la colonne
 /// `DECIMAL(18,2)`) est un montant nul, et `is_sign_negative()` le classerait
-/// en débit (C-28-6-12).
+/// en débit (C-28-6-12, C-28-6-15).
 fn refuse_non_credit_settlement(
     bank_transaction_id: i64,
     amount: Decimal,
