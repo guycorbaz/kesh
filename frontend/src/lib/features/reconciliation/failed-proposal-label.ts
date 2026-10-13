@@ -6,8 +6,8 @@
  * FailedProposal per-proposal* du `CLAUDE.md` ; seul leur affichage est traduit. Patron :
  * `failedItemLabel` (`payment-batches/payment-batch-helpers.ts`).
  *
- * **Les 29 codes** sont ceux que `crates/kesh-api/src/routes/reconciliation.rs` peut poser dans
- * `failed[]` : les 27 littéraux relevés par
+ * **Les 30 codes** sont ceux que `crates/kesh-api/src/routes/reconciliation.rs` peut poser dans
+ * `failed[]` : les 28 littéraux relevés par
  * `grep -ohE 'error_code: "[A-Z_]+"' crates/kesh-api/src/routes/reconciliation.rs | sort -u`,
  * plus les deux codes posés par `DbError::error_code()` (seules formes non littérales du
  * fichier) : `ACCOUNT_NOT_POSTABLE` et, depuis la Story 15-6b (#474),
@@ -22,10 +22,12 @@
  * ⚠️ **Les clés sont écrites en toutes lettres, jamais construites par gabarit** : une clé
  * statique est vue par `i18n-keys.test.ts` dès qu'elle manque d'un catalogue.
  *
- * Depuis la Story 27-4 (#634), le littéral ajouté en dernier (ce qui porte le compte à 27) est
+ * Le littéral ajouté par la Story 27-4 (#634) (ce qui portait le compte à 27) est
  * `RECONCILIATION_ALREADY_REJECTED` : une
  * transaction rejetée refusée par le pré-vol d'un lot (auparavant, le lot entier était refusé
- * en `400`).
+ * en `400`). Depuis la Story 28-6 (#482), le littéral ajouté en dernier, qui porte le compte à
+ * 28, est `RECONCILIATION_TRANSACTION_NOT_CREDIT` : un débit ou un montant nul proposé contre
+ * une facture (un seul libellé pour ses deux `details.reason`).
  *
  * ⚠️ **Cinq codes seulement lisent leur `details`** : `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`
  * (Story 15-6b), pour son `role` — le compte de banque lié au compte débiteurs et le compte
@@ -254,6 +256,11 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 			return i18nMsg(
 				'reconciliation-split-error-imbalance',
 				"L'éclatement n'équilibre pas le montant de la transaction."
+			);
+		case 'RECONCILIATION_TRANSACTION_NOT_CREDIT':
+			return i18nMsg(
+				'reconciliation-failed-transaction-not-credit',
+				'Cette transaction n’est pas une entrée d’argent (débit ou montant nul) : elle ne peut pas régler une facture client.'
 			);
 		case 'RECONCILIATION_TRANSACTION_NOT_PENDING':
 			return i18nMsg(

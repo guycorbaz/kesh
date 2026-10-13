@@ -1172,6 +1172,7 @@ reconciliation-failed-rule-mismatch = Das Gegenkonto der Regel hat sich geänder
 reconciliation-failed-rule-no-longer-matches = Die Regel passt nicht mehr auf diese Transaktion: Sie wurde inzwischen geändert.
 reconciliation-failed-rule-not-found = Regel nicht gefunden oder deaktiviert.
 reconciliation-failed-score-too-low = Die Rechnung stimmt nicht ausreichend mit der Transaktion überein, um abgeglichen zu werden.
+reconciliation-failed-transaction-not-credit = Diese Transaktion ist kein Zahlungseingang (Belastung oder Betrag null): Sie kann keine Kundenrechnung begleichen.
 reconciliation-failed-transaction-not-pending = Diese Transaktion wartet nicht mehr auf den Abgleich.
 reconciliation-failed-unknown = Unbekannte Ablehnung ({ $code }).
 reconciliation-cols-tx-date = Datum
