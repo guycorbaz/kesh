@@ -4,8 +4,10 @@
 
 **ready-for-dev** (deux clés) — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur
 `5aad8b35` (kickoff de l'Epic 28), worktree `/home/gcorbaz/devel/kesh-28-4`, branche `story/28-4`. Validation P1
-faite (Sonnet, lentilles R et F : 4 HIGH, 9 MEDIUM, 12 LOW, trois convergences) et remédiée ; validation P2 à lancer :
-`28-4-validate-prompt-p2.md` (Opus, lentilles R et F).
+faite (Sonnet, lentilles R et F : 4 HIGH, 9 MEDIUM, 12 LOW, trois convergences) et remédiée ; validation P2 faite
+(Opus, lentilles R et F : 1 HIGH, 9 MEDIUM, 9 LOW) et remédiée par **simplification de la conception** (C-28-4-21 :
+la garde ne verrouille plus, aucun verrou ajouté à aucun chemin) ; validation P3 à lancer :
+`28-4-validate-prompt-p3.md` (Sonnet, lentilles R et F).
 
 ⛔ **Deux stories, une fiche, deux PR successives** (C-28-4-1, sur le précédent C-26-2-15) :
 
@@ -51,7 +53,7 @@ toute extension en cours de validation ou de revue se refuse ici, par écrit, ou
 5. les manuels, les messages, le CHANGELOG ;
 6. **extension décidée par l'orchestrateur en validation P1** (F3 = R12, C-28-4-12 réécrit) : les gestes qui
    **créent** une ligne rattachée à un compte bancaire refusent aussi un compte **archivé** (AC6-bis) — défaut voisin,
-   préexistant, que la lecture verrouillée de la clôture rencontre aux mêmes endroits. Borné aux créations ; les
+   préexistant, que la garde de la clôture rencontre aux mêmes endroits. Borné aux créations ; les
    annulations n'en sont **pas** (table *Dehors*). C'est la seule extension, et elle ne s'élargit plus.
 
 **Dehors**, et pourquoi :
@@ -62,7 +64,7 @@ toute extension en cours de validation ou de revue se refuse ici, par écrit, ou
 | Contrôler la date de clôture contre les dates des transactions, ou l'interdire dans le futur | La date est **informative** ; c'est l'état qui garde (C-28-4-3). Un contrôle de date ouvrirait des questions de fuseau (UTC du serveur contre date locale suisse) sans rien protéger. |
 | Clôture automatique (relevé CAMT portant un solde nul, inactivité) | #642 demande un geste ; une clôture automatique serait un appariement qui décide seul (§ *Un appariement automatique propose, il ne crée jamais*). |
 | Masquer, dans l'historique des imports ou des règlements, les boutons *Supprimer l'import* / *Annuler le règlement* d'un compte clos | Le serveur refuse avec un message traduit (AC6) ; masquer exigerait de porter l'état du compte dans trois payloads de lecture. Angle mort assumé, écrit au manuel (AC14). |
-| Refuser un compte **archivé** aux **annulations** (W9, W24, W25, W28, W29, W30) et aux `accept_one_*` | ⛔ **Interdit**, non seulement exclu. Un compte archivé peut porter des règlements par virement et des lots (l'archivage ne compte que `bank_transactions`, `bank_accounts.rs:744-752`), et il **ne se rouvre pas** (aucune route de restauration, `archive_for_company` doc l. 614-617) : refuser l'annulation d'un règlement de ce compte la rendrait **définitivement impossible**. `lock_open_for_write`, que les annulations appellent, ne lit donc **que** `closed_on`. Les `accept_one_*` n'en ont pas besoin : un archivé n'a aucune transaction (l'archivage la refuse), et le pré-vol R1 le rend déjà `404` (C-28-4-12). |
+| Refuser un compte **archivé** aux **annulations** (W9, W24, W25, W28, W29, W30) et aux `accept_one_*` | ⛔ **Interdit**, non seulement exclu. Un compte archivé peut porter des règlements par virement et des lots (l'archivage ne compte que `bank_transactions`, `bank_accounts.rs:744-752`), et il **ne se rouvre pas** (aucune route de restauration, `archive_for_company` doc l. 614-617) : refuser l'annulation d'un règlement de ce compte la rendrait **définitivement impossible**. `ensure_open_in_tx`, que les annulations appellent, ne lit donc **que** `closed_on`. Les `accept_one_*` n'en ont pas besoin : un archivé n'a aucune transaction (l'archivage la refuse), et le pré-vol R1 le rend déjà `404` (C-28-4-12). |
 | Lever le refus `412 BANK_ACCOUNT_HAS_TRANSACTIONS` de l'archivage | Écarté par #642 lui-même (« le sens d'archivé deviendrait flou ») : la clôture **remplace** cet usage. Seul le message du refus change (il propose la clôture, AC9). |
 | Manuels DE / IT / EN | `docs/manual/{de,en,it}/` ne portent qu'un `README.md` : rien à traduire. |
 | Cohérence d'une sauvegarde prise pendant une clôture | Relève de #633 (instantané commun, Story 28-3). Angle mort écrit à la doc de `close_in_tx`. |
@@ -188,7 +190,8 @@ CHANGELOG s'y ajoutent comme documents).
 - Séquence (dépôt, `bank_accounts::close_in_tx`) : `SELECT … FROM bank_accounts WHERE company_id = ? AND id = ? AND
   archived = FALSE FOR UPDATE` **première instruction** de la transaction, **sans** sentinelle `companies` ; puis les
   deux décomptes en **lecture non verrouillante** (Dev Notes § *Concurrence*) ; puis `UPDATE`. Réponse `200` avec le
-  compte.
+  compte. Chemin **neuf** : son seul verrou de ligne est celui de sa propre ligne, pris en première instruction, sans
+  autre verrou tenu ni demandé ensuite (`audit_log` n'a aucune clé étrangère) — il ne peut pas fermer un cycle (AC7).
 
 **AC4 — Rouvrir.**
 
@@ -208,17 +211,21 @@ BANK_ACCOUNT_CLOSED`**, lu sur la ligne qu'ils verrouillent `FOR UPDATE`. Place 
 - `PUT` et `PATCH` : immédiatement **après** le `409` de version de chacun, sur la ligne qu'ils verrouillent déjà (pas
   de seconde lecture, C-28-4-9). Le court-circuit no-op du `PATCH` (KF-004) **ne** dispense **pas** du refus : un
   `PATCH` identique sur un compte clos rend `409`, non `200`.
-- `DELETE` (archivage) — **ordre changé en validation P1** (F6, C-28-4-16) : la route lit aujourd'hui le décompte des
-  transactions (`routes/bank_accounts.rs:862-870`) **avant** le `FOR UPDATE` d'`archive_for_company` (l. 884-891) ; un
-  compte clos qui porte des imports — le cas ordinaire : on clôt un compte qui a servi — rendrait donc `412
-  BANK_ACCOUNT_HAS_TRANSACTIONS`, dont le message propose… la clôture. Sur le **patron de la clôture**, la route prend
-  désormais, juste après la sentinelle `companies`, le verrou de la ligne par `bank_accounts::lock_open_for_write`
-  (refus `409 BANK_ACCOUNT_CLOSED`), **puis** les décomptes, puis `archive_for_company`, qui relit sous le verrou déjà
-  tenu (aucune attente neuve). Ordre : `400` → `404` (pré-vol hors transaction, archivé compris) → sentinelle → `409
-  BANK_ACCOUNT_CLOSED` → `412 BANK_ACCOUNT_HAS_TRANSACTIONS` → `412 BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY` → `409
-  OPTIMISTIC_LOCK_CONFLICT` (version, dans `archive_for_company`, inchangé). **Effet de bord voulu** : le décompte,
-  lu après le verrou de ligne, voit tout import qui a pris la garde W22 et commité avant (la limite L5 de la route,
-  l. 840-843, se ferme pour les imports ; T-a44 (ii)).
+- `DELETE` (archivage) — **réécrit en validation P2** (C-28-4-21, qui remplace C-28-4-16) : la route garde **sa
+  séquence au sol** (`routes/bank_accounts.rs:823-916` : pré-vol hors transaction → sentinelle `companies` → décompte
+  des transactions → principal → `archive_for_company`), et ne gagne que deux lectures de `closed_on` **sur des
+  instructions qui existent déjà** : (1) le **pré-vol** non verrouillant (`find_by_id_for_company`, l. 839-845, à côté
+  de `existing.archived`) refuse un compte clos en `409 BANK_ACCOUNT_CLOSED` — **avant** la sentinelle et le décompte,
+  si bien qu'un compte clos qui porte des imports (le cas ordinaire : on clôt un compte qui a servi) rend `409` et non
+  le `412 BANK_ACCOUNT_HAS_TRANSACTIONS` dont le message propose… la clôture ; (2) le `SELECT … FOR UPDATE` existant
+  d'`archive_for_company` (`repositories/bank_accounts.rs:619-623`) lit aussi `closed_on` et refuse en `409
+  BANK_ACCOUNT_CLOSED`, **après** son contrôle de version (comme `PUT` et `PATCH`) — c'est le refus d'une clôture
+  commitée entre le pré-vol et ce verrou, sur une ligne que le chemin verrouillait déjà. **Aucun verrou ajouté, ordre
+  inchangé.** Ordre des refus : `400` → `404` (pré-vol, archivé compris) → `409 BANK_ACCOUNT_CLOSED` (pré-vol) →
+  sentinelle → `412 BANK_ACCOUNT_HAS_TRANSACTIONS` → `412 BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY` → `404` / `409
+  OPTIMISTIC_LOCK_CONFLICT` → `409 BANK_ACCOUNT_CLOSED` (sous verrou, course seulement). La limite L5 de la route
+  (`routes/bank_accounts.rs:853-856`, l'import ne prend pas la sentinelle) **reste telle quelle** : la story ne la
+  ferme pas.
 
 L'archivage d'un compte clos est donc refusé (il faut le rouvrir d'abord, C-28-4-10).
 
@@ -226,27 +233,31 @@ L'archivage d'un compte clos est donc refusé (il faut le rouvrir d'abord, C-28-
 
 Le refus est `409 BANK_ACCOUNT_CLOSED` (`details: { "bankAccountId" }`), sauf dans les lots, où il est par proposition
 (§ *Pattern batch*). Il est posé aux **points d'étranglement du dépôt** — toute route, clé d'API comprise, qui y passe
-est couverte — et doublé, là où la route lit déjà le compte en pré-vol, d'un refus précoce. Table complète au § *Inventaire*
+est couverte — et doublé, là où la route lit déjà le compte en pré-vol, d'un refus précoce. ⛔ **Depuis la validation
+P2 (C-28-4-21), aucune garde ne prend de verrou** : là où le chemin verrouille **déjà** la ligne du compte au sol (W8,
+W27, W13-W15), `closed_on` se lit dans cette instruction ; partout ailleurs, la garde est une **lecture cohérente non
+verrouillante** (`bank_accounts::ensure_open_in_tx`, ou `ensure_open_unarchived_in_tx` pour W22), dans la transaction de
+l'écrivain — ni `FOR UPDATE`, ni `LOCK IN SHARE MODE`. Critère et preuve : AC7. Table complète au § *Inventaire*
 (sites W1 à W29, et W30 que la 28-5 introduit) ; résumé :
 
 | Route | Garde | Refus |
 |---|---|---|
 | `POST /bank-imports/preview` | pré-vol route (R6, à côté de `archived`, `bank_imports.rs:965`) | `409` |
 | `POST /bank-imports` (CAMT et CSV) | pré-vol (R7, l. 1114) **et** `bank_imports::create_with_transactions` (W22-W23) | `409` |
-| `DELETE /bank-imports/{id}` | `bank_imports::delete_unreconciled_in_tx` (W24), **entre l'étape 1** (entête verrouillé, qui donne `bank_account_id`) **et l'étape 2** (transactions et verrou de trou) | `409` |
-| `POST /reconciliation/accept` | pré-vol (R1, à côté de l. 1040) → **chaque** proposition en `failed[]`, code `BANK_ACCOUNT_CLOSED`, `200`. ⛔ **Aucun verrou du compte** dans `accept_one_*` (C-28-4-14) : l'invariant I1 suffit, la clôture voit `pending` la transaction tenue par le lot et refuse. L'appariement R5 est **retiré** | `200` + `failed[]` |
+| `DELETE /bank-imports/{id}` | `bank_imports::delete_unreconciled_in_tx` (W24) : lecture non verrouillante **après l'étape 1** (entête verrouillé, qui donne `bank_account_id`), avant l'étape 2 | `409` |
+| `POST /reconciliation/accept` | pré-vol (R1, à côté de l. 1040) → **chaque** proposition en `failed[]`, code `BANK_ACCOUNT_CLOSED`, `200`. ⛔ **Aucune garde** dans `accept_one_*` (C-28-4-14) : l'invariant I1 suffit, la clôture voit `pending` la transaction tenue par le lot et refuse. L'appariement R5 est **retiré** | `200` + `failed[]` |
 | `POST /reconciliation/reject` | pré-vol (R2, l. 3174) → chaque transaction en `failed[]` | `200` + `failed[]` |
 | `POST /reconciliation/manual` | pré-vol (R3, l. 3564) | `409` |
 | `POST /reconciliation/split` | pré-vol (R4, l. 4007) | `409` |
-| `POST /reconciliation/transactions/{id}/cancel` | `reconciliation_cancel::cancel_in_tx` (W9), sur `bt.bank_account_id`, **entre l'étape (2)** (règlement et facture verrouillés) **et l'étape (3)** (écriture et exercice) | `409` |
-| `POST /reconciliation/transactions/{id}/unreject` — **introduite par la 28-5, à garder au rebase** (absente de `5aad8b35`) | pré-vol R8 + garde dans sa transaction (W30), après le verrou de la ligne `bank_transactions` ; ⛔ R8 se place **avant** la classification « pas rejetée » de la route (la fiche 28-5 lit la transaction, puis classe) : sur un compte clos, c'est la clôture qui doit répondre. Si la 28-5 n'est pas mergée au moment du dev, la ligne reste à faire et se dit au Dev Agent Record — la 28-4a ne dépend pas de son code | `409` |
+| `POST /reconciliation/transactions/{id}/cancel` | `reconciliation_cancel::cancel_in_tx` (W9), lecture non verrouillante sur `bt.bank_account_id`, après l'étape (2) (règlement et facture verrouillés), avant l'étape (3) ; pour un rapprochement de facture, l'étape (6) appelle W25, qui relit le compte de son règlement (seconde lecture non verrouillante) | `409` |
+| `POST /reconciliation/transactions/{id}/unreject` — **introduite par la 28-5, à garder au rebase** (absente de `5aad8b35`) | pré-vol R8 + garde non verrouillante dans sa transaction (W30), après le verrou de la ligne `bank_transactions` ; ⛔ R8 se place **avant** la classification « pas rejetée » de la route (la fiche 28-5 lit la transaction, puis classe) : sur un compte clos, c'est la clôture qui doit répondre. Si la 28-5 n'est pas mergée au moment du dev, la ligne reste à faire et se dit au Dev Agent Record — la 28-4a ne dépend pas de son code | `409` |
 | `POST /invoices/{id}/settlements` (virement) | `settle_invoice` (W8) : `closed_on` lu **dans** le `SELECT … FOR UPDATE` du compte qui existe déjà (`invoice_settlements_write.rs:131-135`, étape (3)) — **et non** dans `invoice_settlements::create_in_tx`, que `accept_one_invoice` appelle après avoir pris l'exercice (C-28-4-14) | `409` |
-| `POST /invoices/{id}/settlements/{sid}/cancel` | `invoice_settlements_write::cancel_settlement_in_tx` (W25), si `settlement_bank_account_id` est non nul — colonne **ajoutée** au `SELECT` verrouillé de l'étape (2) (l. 835-836, qui ne la lit pas aujourd'hui), garde **entre (2) et (2-bis)** (verrou d'exercice) | `409` |
+| `POST /invoices/{id}/settlements/{sid}/cancel` | `invoice_settlements_write::cancel_settlement_in_tx` (W25), si `settlement_bank_account_id` est non nul — colonne **ajoutée** au `SELECT` verrouillé de l'étape (2) (l. 835-836, qui ne la lit pas aujourd'hui ; même ligne, verrou inchangé), puis garde non verrouillante sur ce compte, avant (2-bis) | `409` |
 | `POST /supplier-invoices/{id}/pay` (virement) | `supplier_invoices::pay_in_tx` (W27), dans le `SELECT … FOR UPDATE` existant (l. 753-756, étape (3), avant l'exercice de l'étape (5)) | `409` |
-| `POST /supplier-invoices/{id}/settlement/cancel` | `supplier_invoices::cancel_settlement_in_tx` (W29), si `inv.settlement_bank_account_id` est non nul (ligne verrouillée à l'étape (1)), garde **entre (1) et (1-bis)** (verrou d'exercice, l. 1290-1303) | `409` |
-| `POST /supplier-invoices/{id}/cancel` (facture **payée** par virement) — **ajoutée en validation P1** (F2 = R1) | `supplier_invoices::cancel_in_tx` (W28) annule aussi une facture payée et remet `settlement_bank_account_id` à `NULL` (l. 1131-1134) : garde si `inv.settlement_bank_account_id` est non nul, **entre le verrou facture (l. 1061) et le verrou de l'écriture d'achat et de son exercice (l. 1070-1080)** | `409` |
-| `POST /payment-batches` | `payment_batches::create_batch` (W17-W19) : refus précoce à l'étape (0) (l. 85-99, à côté de `archived`) **et** relecture verrouillée **après** les verrous `supplier_invoices` (l. 289) | `409` |
-| `POST /payment-batches/{id}/confirm` | transitif : chaque facture passe par `pay_in_tx` (W27) ; l'étape (2) (l. 427-441) gagne le refus précoce à côté de `archived` | `409` |
+| `POST /supplier-invoices/{id}/settlement/cancel` | `supplier_invoices::cancel_settlement_in_tx` (W29), si `inv.settlement_bank_account_id` est non nul (ligne verrouillée à l'étape (1)), garde non verrouillante avant (1-bis) (l. 1290-1303) | `409` |
+| `POST /supplier-invoices/{id}/cancel` (facture **payée** par virement) — **ajoutée en validation P1** (F2 = R1) | `supplier_invoices::cancel_in_tx` (W28) annule aussi une facture payée et remet `settlement_bank_account_id` à `NULL` (l. 1131-1134) : garde non verrouillante si `inv.settlement_bank_account_id` est non nul, après le verrou facture (l. 1061), avant l'écriture d'achat et son exercice (l. 1070-1080) | `409` |
+| `POST /payment-batches` | `payment_batches::create_batch` (W17-W19) : `closed_on` lu dans la lecture non verrouillante **existante** de l'étape (0) (l. 85-99, à côté de `archived`) — la relecture verrouillée de la P1 est **retirée** (C-28-4-21) | `409` |
+| `POST /payment-batches/{id}/confirm` | transitif : chaque facture passe par `pay_in_tx` (W27) ; la lecture non verrouillante existante de l'étape (2) (l. 427-441) gagne le refus précoce à côté de `archived` | `409` |
 | `PUT` / `PATCH` / `DELETE /bank-accounts/{id}` | AC5 (W13-W15) | `409` |
 
 - `DbError::BankAccountClosed { bank_account_id: i64 }` (nouveau, `crates/kesh-db/src/errors.rs`) → `AppError::BankAccountClosed
@@ -270,87 +281,109 @@ est couverte — et doublé, là où la route lit déjà le compte en pré-vol, 
 Décision de l'orchestrateur (F3 = R12) ; C-28-4-12 réécrit. Défaut **préexistant** (P2 : une opération acceptée sur un
 compte retiré de l'usage) : `settle_invoice` (`invoice_settlements_write.rs:131-135`) et `pay_in_tx`
 (`supplier_invoices.rs:753-756`) lisent le compte sans contrôler `archived` ; `create_batch` et l'import le contrôlent en
-lecture **non** verrouillante seulement (étape (0) de `payment_batches.rs:85-99`, pré-vols R6/R7).
+lecture **non** verrouillante seulement (étape (0) de `payment_batches.rs:85-99`, pré-vols R6/R7) — et c'est ce qu'ils
+**continuent** de faire après la validation P2 (C-28-4-21) : la story ne ferme pas la course archivage / création
+(L5 de la route), elle ferme le règlement vers un archivé.
 
 | Site | Lecture verrouillée | Archivé → erreur **existante** du chemin |
 |---|---|---|
 | W8 `settle_invoice` | `SELECT journal_account_id, closed_on, archived FROM bank_accounts … FOR UPDATE` (l'instruction de l'étape (3), étendue) | `DbError::NotFound` — celle que rend aujourd'hui un compte inexistant ou d'une autre société (l. 141) |
 | W27 `pay_in_tx` | même extension de l'instruction de l'étape (3) (l. 753-756) | `DbError::NotFound` (l. 763) |
-| W17-W19 `create_batch` | la relecture verrouillée de l'AC6 (après les verrous `supplier_invoices`) lit aussi `archived` | `DbError::IllegalStateTransition("le compte bancaire source est archivé")`, le refus de l'étape (0) (l. 95-98) |
-| W22-W23 `create_with_transactions` | la garde de tête lit aussi `archived` | `DbError::NotFound`, que la route d'import (`routes/bank_imports.rs:1312`) apparie à `AppError::BankAccountNotFound` — le `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` que rend déjà le pré-vol R7 |
+| W17-W19 `create_batch` | **aucun changement** (validation P2) : l'étape (0) refuse déjà l'archivé, en lecture non verrouillante, au sol | `DbError::IllegalStateTransition("le compte bancaire source est archivé")` (l. 95-98), inchangé |
+| W22-W23 `create_with_transactions` | la garde de tête (`ensure_open_unarchived_in_tx`, **non verrouillante**) lit aussi `archived` | `DbError::NotFound`, que la route d'import **devra apparier**, aux **deux** appels — `routes/bank_imports.rs:1312` (CAMT) **et** `:2199` (CSV, `create_csv`) — par `.map_err(\|e\| match e { DbError::NotFound => AppError::BankAccountNotFound, e => e.into() })` : au sol, les deux font `?`, et `DbError::NotFound` deviendrait `404 NOT_FOUND` « Ressource introuvable » (`errors.rs:165`, `2917-2921`), non le `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` du pré-vol R7. L'appariement est sûr : au sol, `create_with_transactions` ne rend jamais `NotFound` (doc l. 52-58 : seulement `ForeignKeyViolation`), seule la garde neuve le produit |
 
 - **Ordre dans la lecture** : absent, autre société ou archivé → l'erreur existante du chemin ; puis clos → `409
   BANK_ACCOUNT_CLOSED` ; puis (W8, W27) `journal_account_id` nul → `ConfigurationRequired`. Un compte ne peut pas être
   à la fois clos et archivé par l'API (la clôture refuse l'archivé, l'archivage refuse le clos) ; l'ordre ne vaut que
   pour une base restaurée ou forcée.
-- **Deux fonctions de garde, et non une** : `bank_accounts::lock_open_for_write` (annulations W9, W24, W25, W28, W29,
-  W30 ; archivage AC5) lit `closed_on` **seul** ; `bank_accounts::lock_open_unarchived_for_write` (W17, W22) lit
-  `closed_on, archived` et rend `DbError::NotFound` pour l'archivé, que l'appelant traduit. W8 et W27 n'appellent ni
-  l'une ni l'autre : ils étendent leur instruction existante. ⛔ **Interdit, écrit aux deux doc-comments** : faire lire
-  `archived` à `lock_open_for_write`, ou appeler la variante « unarchived » depuis une annulation (table *Dehors* :
-  un archivé ne se rouvre pas).
-- **Ce que cela ferme avec l'AC5** : l'archivage prend désormais la ligne avant son décompte (F6) ; l'import la prend
-  en tête et lit `archived`. Les deux ordres d'une course archivage / import sont couverts — l'import qui tient la garde
-  fait attendre l'archivage, qui compte alors ses transactions (`412`) ; l'archivage commité d'abord fait refuser
-  l'import (`404`) — T-a44.
-- **Aucun code neuf, aucune clé i18n** : les erreurs existent, avec leurs messages.
+- **Deux fonctions de garde, et non une** — renommées en validation P2 (elles ne verrouillent plus, C-28-4-21) :
+  `bank_accounts::ensure_open_in_tx` (annulations W9, W24, W25, W28, W29, W30) lit `closed_on` **seul** ;
+  `bank_accounts::ensure_open_unarchived_in_tx` (W22) lit `closed_on, archived` et rend `DbError::NotFound` pour
+  l'archivé, que l'appelant traduit. Toutes deux par une lecture cohérente **non verrouillante**, SQL tenu dans une
+  constante (`ENSURE_OPEN_SQL`, `ENSURE_OPEN_UNARCHIVED_SQL`) que T-a45 contrôle. W8, W27, W13-W15, W17 et W20
+  n'appellent ni l'une ni l'autre : ils étendent une instruction existante. ⛔ **Interdit, écrit aux deux
+  doc-comments** : faire lire `archived` à `ensure_open_in_tx`, ou appeler la variante « unarchived » depuis une
+  annulation (table *Dehors* : un archivé ne se rouvre pas) ; et y ajouter un verrou (AC7).
+- **Ce que cela ne ferme pas** : une course archivage / import ou archivage / création de lot reste ce qu'elle est au
+  sol (L5 de la route) — les lectures d'`archived` de W17 et W22 sont non verrouillantes. Séquentiellement, W22 refuse
+  l'archivé au dépôt (T-a46), derrière le pré-vol R7.
+- **Aucune clé i18n, aucun code d'erreur neuf** : les erreurs existent, avec leurs messages. Le seul code neuf est
+  l'appariement des deux appels de la route d'import (ci-dessus).
 - `### Corrigé` du CHANGELOG (`## [0.13.3] — Non publié`, créé ou complété par **union**) — **dans la PR de la
   28-4a** (règle d'inclusion du `CLAUDE.md` : la doc va avec le code qui la motive) : « **Un compte bancaire archivé ne
-  reçoit plus de règlement.** Un règlement de facture ou un paiement fournisseur par virement vers un compte archivé,
-  un lot de paiement ou un import créés pendant son archivage, étaient acceptés ; ils sont refusés comme vers un compte
-  inexistant. L'annulation d'un règlement ancien de ce compte reste possible. » Et `docs/api-external.md`, § 7, une
+  reçoit plus de règlement.** Un règlement de facture ou un paiement fournisseur par virement vers un compte archivé
+  étaient acceptés ; ils sont refusés comme vers un compte inexistant. L'annulation d'un règlement ancien de ce compte
+  reste possible. » (Réécrit en validation P2 : la mention « un lot de paiement ou un import créés pendant son
+  archivage » est retirée — la course n'est plus fermée, C-28-4-21.) Et `docs/api-external.md`, § 7, une
   note « *Depuis la v0.13.3* » à la ligne des règlements (l. 464 et 514 ; à relire au rebase) : même contenu, codes
   rendus.
-- Tests T-a42 à T-a44 ; mutations M46 à M50.
+- Tests T-a42, T-a43, T-a46, T-a47 ; mutations M46 à M48 et M53 (M49 et M50 sans objet depuis la validation P2).
 
-**AC7 — Concurrence : la clôture et un écrivain ne se croisent pas.**
+**AC7 — Concurrence : la story n'ajoute aucun verrou, et elle nomme ce qu'elle laisse passer.**
 
-- **Règle de la garde** (écrite au doc-comment de `bank_accounts::lock_open_for_write`, **réécrite en validation P1**,
-  F1, C-28-4-14) : lecture **exclusive** — `SELECT closed_on FROM bank_accounts WHERE company_id = ? AND id = ? FOR
-  UPDATE` (et `closed_on, archived` pour la variante de l'AC6-bis) —, **dans la transaction de l'écriture**, posée
-  **immédiatement après les verrous de pièce** que le chemin prend en tête (transaction bancaire, facture, facture
-  fournisseur, règlement, entête d'import, lot) et **avant** tout verrou d'exercice (`fiscal_years`), d'écriture
-  comptable, de compteur d'écritures ou de trou sur `bank_transactions`. **Ordre global : pièces → `bank_accounts` →
-  exercice / écritures / compteur.** C'est l'ordre que suivent **déjà** les deux chemins qui verrouillent le compte
-  aujourd'hui : `settle_invoice` (facture l. 91 → compte l. 133 → exercice dans `journal_entries::create_in_tx`,
-  étape (6), l. 258) et `pay_in_tx` (facture l. 725 → compte l. 755 → exercice, l. 874). Là où le chemin verrouille déjà
-  la ligne (W8, W27), le contrôle se lit **dans cette même instruction**. La règle d'origine (« après tous les verrous
-  métier ») faisait prendre le compte **après** l'exercice à W9, W25 et W29 — l'ordre inverse de `settle_invoice` et
-  de `pay_in_tx`, donc un cycle (`1213`) entre un règlement depuis l'écran et une annulation sur le même compte et le
-  même exercice.
-- **Position par chemin** — table au § *Concurrence* des Dev Notes, une ligne par site gardé, à recopier au Dev Agent
-  Record avec la ligne de code retenue (T6).
-- **`accept_one_invoice` : aucun verrou du compte** (C-28-4-14). Il ne lit le compte qu'en non-verrouillant
-  (`reconciliation.rs:1758-1760`), avant l'exercice (l. 1964-1972) ; une garde dans `invoice_settlements::create_in_tx`
-  (l. 415) tomberait **après** l'exercice. Elle y serait aussi **inutile** : la transaction qu'accepte le lot est
-  `pending` et tenue par son verrou de ligne jusqu'au commit ; le décompte de la clôture, lu sur la version commitée,
-  la voit `pending` et refuse (I1). Une clôture commitée avant, elle, n'a laissé aucune `pending` à accepter.
-- **La clôture** ne prend que le verrou exclusif de **sa** ligne, en première instruction, puis lit en non-verrouillant :
-  aucun cycle possible avec un écrivain, qui ne lui dispute que cette ligne.
-- **Inversion connue, préexistante, que la garde étend** (constat de la remédiation P1, C-28-4-17) : l'ordre documenté
-  des mutations de comptes bancaires est `companies` (sentinelle) → réglages → `bank_accounts`
-  (`routes/bank_accounts.rs:415-416`) ; un écrivain gardé tient `bank_accounts` en exclusif puis insère des lignes à
-  clé étrangère vers `companies` (écriture comptable, entête d'import, lot), ce qui pose un verrou **partagé** sur la
-  ligne `companies`. Cycle possible avec `POST`, `PUT` et `DELETE /bank-accounts…` sur le même compte (ou, pour `POST`
-  et `PUT`, sur le principal qu'ils démettent). `settle_invoice` et `pay_in_tx` le portent **déjà** ; la garde l'étend
-  à W9, W17, W22, W24, W25, W28, W29. Les écrivains rejoués sur `1213` le subissent sans dommage ; ne le sont **pas** :
-  l'import (`bank_imports::create`), la création de lot (`routes/payment_batches.rs:159`) et les trois routes de
-  gestion qui prennent la sentinelle (`routes/bank_accounts.rs:561, 719, 857`) — un `500` rare reste possible là. Angle mort **écrit** au doc-comment, aucune enveloppe ajoutée
-  (hors #642).
-- **Tests déterministes** (kesh-db, `attendre_une_requete_en_cours`, `test_fixtures.rs:561`, qui filtre
-  `INFO LIKE '%motif%'` et panique après 10 s ; **motifs écrits ici**, F11) :
-  (i) T-a31 — une transaction d'import a pris la garde et inséré des transactions `pending` sans commiter ; une clôture
-  lancée en parallèle **attend** — motifs `["FROM bank_accounts", "archived = FALSE FOR UPDATE"]` (première instruction
-  de `close_in_tx`) —, puis, au commit de l'import, rend `BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS` ;
-  (ii) T-a32 — une clôture tient son verrou sans commiter ; un import lancé en parallèle attend sur la garde — motifs
-  `["SELECT closed_on", "FROM bank_accounts", "FOR UPDATE"]` —, puis, au commit de la clôture, rend
-  `BankAccountClosed` et **n'a rien inséré** ;
-  (iii) T-a39 à T-a41 et T-a44 (§ *Tests*) : création de lot contre clôture, sérialisation de deux écrivains d'un même
-  compte, **non-interblocage** des annulations contre un règlement concurrent, archivage contre import. ⛔ Les motifs
-  sont tenus égaux au texte SQL des gardes : changer la forme d'une garde (`LOCK IN SHARE MODE`, colonnes) rend le
-  détecteur aveugle — c'est voulu (M35), et c'est à relire à chaque retouche.
-- Les routes neuves sont classées `SansEcritureAuJournal` au registre des routes (aucune enveloppe de rejeu) ; un `1213`
-  éventuel remonte en `500` comme pour l'archivage — angle mort assumé, écrit au doc-comment.
+*Réécrit en validation P2 (C-28-4-21, qui remplace C-28-4-16 et C-28-4-17 et rend sans objet la partie « ordre des
+verrous » de C-28-4-14).* La P1 avait fait prendre à la garde un verrou exclusif sur la ligne du compte ; la P2 a
+montré que ce verrou, combiné aux verrous partagés que les `INSERT` à clé étrangère posent sur `companies`, ouvrait
+des cycles neufs avec les routes de gestion et avec `unreject` (28-5), et que chaque correctif en ouvrait un autre —
+le recyclage que désigne l'amendement D5. La conception est donc simplifiée.
+
+- **Critère décidable** : ⛔ *la story n'ajoute aucun verrou de ligne, explicite (`FOR UPDATE`, `LOCK IN SHARE MODE`,
+  `FOR SHARE`) ou implicite par clé étrangère (aucun `INSERT` ni `UPDATE` de colonne à clé étrangère neuf), à aucun
+  chemin qui existe sur `origin/main` (`5aad8b35`), et ne change l'ordre des verrous d'aucun de ces chemins.* La preuve
+  est la table *Position par chemin* (Dev Notes § *Concurrence*) : une ligne par chemin, les verrous au sol, ce que
+  la story ajoute, et les deux réponses « verrou ajouté ? » et « ordre changé ? » — toutes deux **non** sur chaque
+  ligne. La table se **recopie au Dev Agent Record** avec la ligne de code retenue (T6), et la revue de code la vérifie
+  chemin par chemin contre le diff.
+- **Règle de la garde** (doc-comment de `bank_accounts::ensure_open_in_tx`) : là où le chemin verrouille **déjà** la
+  ligne du compte au sol, `closed_on` (et `archived`, AC6-bis) se lit **dans cette instruction**, élargie de colonnes
+  (W8 `settle_invoice` l. 131-135, W27 `pay_in_tx` l. 753-756, W13 l. 413, W14 l. 548, W15 `archive_for_company`
+  l. 619-623) ; là où le chemin lit déjà la ligne sans verrou (W17 étape (0), W20 étape (2), pré-vols R1-R4, R6-R8 et
+  celui de l'archivage), `closed_on` s'ajoute à cette lecture ; ailleurs (W9, W22, W24, W25, W28, W29, W30), la garde
+  est une **lecture cohérente non verrouillante** (`SELECT closed_on FROM bank_accounts WHERE company_id = ? AND
+  id = ?`), dans la transaction de l'écrivain, après la lecture verrouillée de la pièce qui donne `bank_account_id`.
+  Sa position ne règle plus aucun ordre de verrous ; elle se place au plus tôt, avant la première écriture.
+- **Les deux chemins neufs** (clôture, réouverture) ne sont pas au sol : leur seul verrou est celui de **leur** ligne,
+  en première instruction, sans autre verrou tenu ni demandé ensuite (lectures non verrouillantes, `UPDATE` de la même
+  ligne, `audit_log` sans clé étrangère). Une transaction qui ne demande qu'un verrou, en tenant rien, ne ferme aucun
+  cycle.
+- **Ce qui sérialise encore, et qui est au sol** : un écrivain qui a **inséré** une ligne rattachée au compte (entête
+  et transactions d'import, lot, règlement) tient, par la clé étrangère, un verrou partagé sur la ligne du compte
+  jusqu'à son commit ; le `FOR UPDATE` de la clôture l'attend, puis ses décomptes voient ce qu'il a commité (T-a31).
+  De même W8, W27, W13-W15 lisent le compte sous leur verrou existant, donc la valeur commitée la plus récente : une
+  clôture commitée avant leur verrou les fait refuser, sans fenêtre.
+- **L1 — angle mort assumé** (C-28-4-21 ; doc-comment d'`ensure_open_in_tx`, manuel utilisateur AC14) : une écriture
+  dont la transaction a pris sa **vue cohérente** avant le commit d'une clôture peut encore aboutir sur le compte
+  qu'on clôt — en REPEATABLE READ, sa lecture non verrouillante lit cet instantané antérieur. Chemins concernés : ceux
+  dont la garde est non verrouillante (W9, W17, W22, W24, W25, W28, W29, W30). Conséquence : **une opération réelle de
+  plus** sur un compte clos — un import (ses transactions `pending`, ce qui défait I1 pour ce compte), un lot
+  `generated` (défait I2), une annulation de rapprochement ou de règlement (une contre-passation vraie), une
+  suppression d'import, une annulation de rejet. **Aucune erreur comptable** : l'opération est vraie, et elle aurait
+  été acceptée une seconde plus tôt. Remède à la main : rouvrir le compte, traiter l'opération (rapprocher ou supprimer
+  l'import, confirmer ou annuler le lot — `cancel_batch`, W21, n'est pas gardé), clore à nouveau. Classe **P3 au plus**,
+  acceptable pour #642 (« lecture seule pour ne plus l'utiliser à l'avenir ») ; aucune issue ouverte. Fenêtre : une
+  clôture commitée pendant qu'une requête d'écriture est **en cours** sur le même compte — pour une PME, deux onglets
+  au même instant.
+- **`accept_one_invoice`** (C-28-4-14) : **aucune garde**, donc aucun verrou pris par la story ; il lit le compte en
+  non-verrouillant (`reconciliation.rs:1758-1760`), et son `INSERT invoice_settlements`
+  (`settlement_bank_account_id`, `fk_invoice_settlements_settlement_bank`) pose un verrou **partagé implicite** sur la
+  ligne du compte, après l'exercice — **au sol**, inchangé (F2 de la P2). L'invariant I1 le tient hors d'atteinte : la
+  transaction qu'accepte le lot est `pending` et tenue par son verrou de ligne jusqu'au commit ; le décompte de la
+  clôture la voit `pending` et refuse.
+- **Inversion `companies` → `bank_accounts`, préexistante et inchangée** : W8 et W27 tiennent le compte en exclusif
+  puis insèrent des lignes à clé étrangère vers `companies` (verrou partagé), alors que `POST`, `PUT` et `DELETE
+  /bank-accounts…` prennent la sentinelle `companies` puis le compte (ou, pour `PUT` / `POST` avec `isPrimary`, les
+  comptes de la société par `flip_primary_off_for_company`). Ce cycle est **au sol** ; la story ne l'étend à aucun
+  chemin (aucune garde verrouillante) et ne le traite pas. Les autres cycles préexistants que la P2 a nommés
+  (`create_batch` / `confirm_batch`, W9 « écriture » / W8 sur `uq_invoice_settlements_entry`) sont au sol, inchangés.
+- **Tests de concurrence** : **T-a31** seul (clôture contre import qui a inséré : la clôture attend sur le verrou
+  partagé de clé étrangère, puis rend `BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS` ; motifs `["FROM bank_accounts",
+  "archived = FALSE FOR UPDATE"]`, première instruction de `close_in_tx` ; `attendre_une_requete_en_cours`,
+  `test_fixtures.rs:561`, qui filtre `INFO LIKE '%motif%'` et panique après 10 s) ; et **T-a45**, statique : les SQL des
+  deux fonctions de garde ne portent aucun verrou. Retirés en validation P2, faute d'objet : T-a32 (un import attendait
+  la garde d'une clôture), T-a39 (création de lot contre clôture), T-a40 (sérialisation exclusive), T-a41
+  (non-interblocage selon la position de la garde), T-a44 (archivage contre import).
+- Les routes neuves sont classées `SansEcritureAuJournal` au registre des routes (aucune enveloppe de rejeu) : elles
+  ne peuvent pas être victimes d'un cycle (point précédent). Aucune route existante ne gagne ni ne perd d'enveloppe.
 
 **AC8 — Le registre statique des écrivains : l'inventaire clos se tient tout seul.**
 
@@ -376,6 +409,25 @@ poussée par `push(table)` (un `QueryBuilder::new("INSERT INTO bank_transactions
 `bank_imports.rs:110`, **est** vu, F8) —, SQL hors de ces deux crates. Le seul site connu de la première forme,
 `kesh-seed/src/lib.rs:586` (`format!("DELETE FROM \`{table}\`")`, remise à zéro de la démo, toutes tables), est hors
 des deux crates lues et se range `HorsPerimetre` dans la liste des angles morts du doc-comment (F5).
+
+**Second inventaire clos, par appelant** (validation P2, F6 ; C-28-4-22) : la garde de W8 ne vit pas dans
+`invoice_settlements::create_in_tx` mais chez un de ses appelants (C-28-4-14), si bien qu'un statut par couple
+`(fichier, fonction)` du SQL ne peut pas dire vrai pour W8 — et qu'un quatrième appelant créé demain, avec
+`SettlementKind::Choice(BankTransfer { … })` et sans garde, passerait sans rougir. Le même test extrait donc aussi
+**tout appel** `invoice_settlements::create_in_tx(` hors tests et hors commentaires dans les deux crates, le rattache à
+sa fonction englobante, et exige un statut **par appelant**, diff dans les deux sens. Sur `5aad8b35`, trois appelants
+(`grep -rn "invoice_settlements::create_in_tx(" crates/kesh-db/src crates/kesh-api/src`) :
+
+| Appelant | Statut |
+|---|---|
+| `kesh-db/src/repositories/invoice_settlements_write.rs::settle_invoice` (l. 283) | `Gardee("closed_on, archived lus dans le FOR UPDATE du compte, étape (3), l. 131-135")` |
+| `kesh-api/src/routes/reconciliation.rs::accept_one_invoice` (l. 1986) | `Invariant("I1", "transaction pending tenue par le lot ; pré-vol R1")` |
+| `kesh-db/src/repositories/invoice_settlements_write.rs::write_off_invoice` (l. 637) | `SansCompteBancaire("passage en perte : aucun compte bancaire")` |
+
+Précédent et extracteur à réutiliser : `crates/kesh-db/tests/letterings_lexical.rs`,
+`invoice_settlement_writers_stay_in_their_module_and_sync` (l. 577-627), qui **assert déjà** cette liste de trois
+créateurs (`appels_et_suite`, l. 463) — le registre neuf y ajoute le statut « compte clos » ; il ne la remplace pas.
+La ligne W8 du registre principal prend le statut `Gardee("par ses appelants : inventaire des appelants")`.
 
 **AC9 — Messages serveur et audit, quatre locales.**
 
@@ -413,18 +465,21 @@ post-patch*). **G9** (`textes_coherents.rs:711`, table fermée : fr-CH et repli 
 
 **AC10 — Les tests de la partie a, et les gardes qui changent de sens.**
 
-Tests listés au § *Tests* (T-a1 à T-a44) ; mutations M1 à M24, M33 à M50 et les trois `-bis` (M10-bis, M14-bis,
-M20-bis) (§ *Mutations*) **toutes rouges**, ou déclarées équivalentes avec la raison (M19 est sans objet). Gardes
+Tests listés au § *Tests* (T-a1 à T-a47, dont cinq retirés en validation P2 : T-a32, T-a39, T-a40, T-a41, T-a44) ;
+mutations M1 à M24, M33 à M53 et les trois `-bis` (M10-bis, M14-bis, M20-bis) (§ *Mutations*) **toutes rouges**, ou
+déclarées équivalentes avec la raison, ou sans objet (M19 depuis la P1 ; M10, M35 à M39, M49, M50 depuis la P2). Gardes
 existantes à faire suivre, **chacune nommée** : `audit_route_registry.rs` (deux routes neuves `("post",
 "bank_accounts::close_bank_account", Traced, SansEcritureAuJournal)` et `reopen` ; les décomptes de son doc-comment —
 **115** routes de `lib.rs`, **118** au registre sur `5aad8b35`, l. 26-31 — passent à 117 / 120, **et ses assertions**
 avec eux : `LIB_ROUTES.len() == 115` (l. 645), `traced == 109` (l. 648) → 111, le `118` de l. 667 → 120 ; tout à relire
 après le rebase sur la 28-5 qui en ajoute) ; `audit_label_registry.rs` ; `test_schema_guard.rs` ;
 `migrations_upgrade_path.rs` ; `textes_coherents.rs` **G9** (l. 711, AC9 : une ligne existante suit, six entrent) ;
-`bank_accounts_e2e.rs:2316-2320` (le test de la 27-1 sur le message du `412`, qui reste vert, AC9) ; tests du CSV
+`bank_accounts_e2e.rs:2316-2320` (le test de la 27-1 sur le message du `412`, qui reste vert, AC9) ;
+`letterings_lexical.rs` (sa liste des trois créateurs de règlement reste vraie, AC8) ; tests du CSV
 (`exports_global_e2e.rs`, en-tête de `bank_accounts.csv`) ; `admin_backup_e2e.rs` (aller-retour) ; les tests existants de
 l'archivage dont l'ordre des refus change pour un compte clos (AC5 — aucun aujourd'hui ne combine clos et décompte,
-à confirmer par le gate). **Gate backend
+à confirmer par le gate). Le doc-comment du point (vi) d'`audit_route_registry.rs` (routes `SansEcritureAuJournal`
+rejouées) **ne change pas** : aucune enveloppe n'est ajoutée (AC7). **Gate backend
 complet** à chaque commit de la boucle (story `kesh-db` : migration et dépôts — **pas** de gate ciblé, même en boucle de
 revue), E2E complet au dernier commit de code (il ne touche pas l'écran, mais `/companies/current` et `GET
 /bank-accounts` changent de contenu).
@@ -501,7 +556,9 @@ dans un autre onglet) ; un test Vitest du libellé.
   annulation, **annulation d'une facture fournisseur payée par ce compte** (W28), lot de paiement, modification,
   archivage) ; ce qui reste (historique des imports, écritures, rapports, export, sauvegarde ; le compte comptable lié
   reste ouvert) ; l'avertissement de solde ; la réouverture et sa trace ; l'angle mort des boutons *Supprimer
-  l'import* / *Annuler le règlement* qui restent affichés et sont refusés ; **une transaction rejetée compte comme non
+  l'import* / *Annuler le règlement* qui restent affichés et sont refusés ; **une opération lancée au moment même de la
+  clôture**, dans un autre onglet ou par une intégration, peut encore aboutir sur le compte (L1, AC7) : le rouvrir pour
+  la traiter, puis le clore à nouveau ; **une transaction rejetée compte comme non
   rapprochée** (elle est `pending`) : elle empêche la clôture tant qu'elle n'est pas rapprochée manuellement ou que son
   import n'est pas supprimé (R13 — la voie « annuler le rejet » de la 28-5, si elle est mergée, se nomme aussi) ; et,
   au paragraphe de l'archivage, qu'**un compte principal s'archive quand tous les autres sont clos**, laissant la société
@@ -581,21 +638,25 @@ lint-i18n-ownership` ; `frontend/src/lib/shared/i18n-keys.test.ts` — `ATTENDU.
   CSV `closed_on` (AC2).
 - [ ] **T3** — `DbError::BankAccountClosed`, `AppError` (cinq variantes neuves, `errors.rs` près de l. 2580-2610),
   fallbacks Rust (AC6, AC9).
-- [ ] **T4** — `bank_accounts::lock_open_for_write`, `close_in_tx`, `reopen_in_tx` + doc-comments (règle de la garde,
-  invariants I1-I3, angles morts) ; handlers `close_bank_account`, `reopen_bank_account` ; routes `lib.rs` (AC3, AC4, AC7).
+- [ ] **T4** — `bank_accounts::ensure_open_in_tx`, `ensure_open_unarchived_in_tx` (lectures non verrouillantes, SQL en
+  constantes), `close_in_tx`, `reopen_in_tx` + doc-comments (règle de la garde, critère « aucun verrou ajouté »,
+  invariants I1-I3, angle mort L1) ; handlers `close_bank_account`, `reopen_bank_account` ; routes `lib.rs` (AC3, AC4,
+  AC7).
 - [ ] **T5** — Refus du compte sur lui-même : `update_for_company`, `set_journal_account_id_for_company`,
-  `archive_for_company` ; dans la route d'archivage, verrou de ligne (`lock_open_for_write`) **avant** le décompte
-  des transactions (AC5, F6).
-- [ ] **T6** — Gardes des points d'étranglement W8, W9, W17-W19, W22-W25, W27, W28, W29 ; W30 (au rebase sur la 28-5,
-  R8 avant la classification) ; pré-vols R1-R4, R6-R8 (AC6). **Aucun** verrou du compte dans `accept_one_*` ni dans
-  `invoice_settlements::create_in_tx` (C-28-4-14). Pour chaque site, **recopier au Dev Agent Record** la ligne de la
-  table *Position par chemin* (§ *Concurrence*) avec la ligne de code retenue (AC7).
-- [ ] **T6-bis** — Archivé aux gestes qui créent : W8, W27 (instruction étendue), W17, W22
-  (`lock_open_unarchived_for_write`), appariement de la route d'import ; `### Corrigé` du CHANGELOG et note
-  d'`api-external.md` (AC6-bis).
-- [ ] **T7** — Registre statique `bank_account_closed_inventory.rs` (AC8).
+  `archive_for_company` (`closed_on` lu dans leur `FOR UPDATE` existant) ; dans la route d'archivage, refus `409` dans
+  le pré-vol existant, avant la sentinelle — **aucun verrou neuf** (AC5, C-28-4-21).
+- [ ] **T6** — Gardes des points d'étranglement W8, W9, W17-W19, W20, W22-W25, W27, W28, W29 ; W30 (au rebase sur la
+  28-5, R8 avant la classification) ; pré-vols R1-R4, R6-R8 (AC6). **Aucune** garde dans `accept_one_*` ni dans
+  `invoice_settlements::create_in_tx` (C-28-4-14). **Aucun verrou ajouté** (AC7) : pour chaque site, **recopier au
+  Dev Agent Record** la ligne de la table *Position par chemin* (§ *Concurrence*) avec la ligne de code retenue, et
+  y répondre « verrou ajouté : non ; ordre changé : non ».
+- [ ] **T6-bis** — Archivé aux gestes qui créent : W8, W27 (instruction étendue), W22 (`ensure_open_unarchived_in_tx`),
+  appariement `DbError::NotFound` → `AppError::BankAccountNotFound` aux **deux** appels de la route d'import
+  (`routes/bank_imports.rs:1312` CAMT, `:2199` CSV) ; `### Corrigé` du CHANGELOG et note d'`api-external.md` (AC6-bis).
+- [ ] **T7** — Registre statique `bank_account_closed_inventory.rs`, écrivains **et** appelants de
+  `invoice_settlements::create_in_tx` (AC8).
 - [ ] **T8** — i18n serveur ×4, `audit_labels.rs` (AC9).
-- [ ] **T9** — Tests T-a1 à T-a44, mutations M1-M24, M33-M50 et les trois `-bis`, gardes nommées à l'AC10 ; gate complet + E2E complet au dernier
+- [ ] **T9** — Tests T-a1 à T-a47 (cinq retirés), mutations M1-M24, M33-M53 et les trois `-bis`, gardes nommées à l'AC10 ; gate complet + E2E complet au dernier
   commit de code ; commit par étape ; Dev Agent Record (« clôture accessible par l'API seulement jusqu'à la 28-4b »).
 
 ### 28-4b
@@ -631,36 +692,36 @@ ligne, hors bloc `#[cfg(test)] mod …`, fonction englobante) sur `crates/` :
 
 | # | Site | Fonction | Instruction | Classement |
 |---|---|---|---|---|
-| W1 | `kesh-api/src/routes/reconciliation.rs:2039` | `accept_one_invoice` | `UPDATE bank_transactions` | Invariant I1 + pré-vol R1 ; et W8 en aval (R5) |
+| W1 | `kesh-api/src/routes/reconciliation.rs:2039` | `accept_one_invoice` | `UPDATE bank_transactions` | Invariant I1 + pré-vol R1 ; W8 en aval **sans garde** (C-28-4-14) |
 | W2 | `…/reconciliation.rs:2538` | `accept_one_split` | `UPDATE bank_transactions` | Invariant I1 + pré-vol R1 |
 | W3 | `…/reconciliation.rs:2990` | `accept_one_rule` | `UPDATE bank_transactions` | Invariant I1 + pré-vol R1 |
 | W4 | `…/reconciliation.rs:3356` | `reject_batch` | `UPDATE bank_transactions` | Invariant I1 + pré-vol R2 |
 | W5 | `…/reconciliation.rs:3801` | `post_manual_once` | `UPDATE bank_transactions` | Invariant I1 + pré-vol R3 |
 | W6 | `…/reconciliation.rs:4258` | `post_split_once` | `UPDATE bank_transactions` | Invariant I1 + pré-vol R4 |
 | W7 | `kesh-api/src/routes/bank_accounts.rs:604` | `create_bank_account` | `INSERT INTO bank_accounts` | SansCompteBancaire (compte neuf, ouvert) |
-| W8 | `kesh-db/src/repositories/invoice_settlements.rs:415` | `create_in_tx` | `INSERT INTO invoice_settlements` | **Gardée par ses appelants** (C-28-4-14) : `settle_invoice` lit `closed_on, archived` dans le `FOR UPDATE` du compte de son étape (3) (`invoice_settlements_write.rs:131-135`, avant l'exercice) ; `accept_one_invoice` (`reconciliation.rs:1986`) : Invariant I1 + pré-vol R1, **sans verrou** ; `write_off_invoice` (l. 637) : sans compte bancaire. ⛔ Aucune garde **dans** `create_in_tx` (elle tomberait après l'exercice d'`accept_one_invoice`) |
-| W9 | `kesh-db/src/repositories/reconciliation_cancel.rs:339` | `cancel_in_tx` | `UPDATE bank_transactions` | **Gardée** (`bt.bank_account_id`, **entre les étapes (2) et (3)** : après la transaction et la facture, avant l'écriture et son exercice) |
+| W8 | `kesh-db/src/repositories/invoice_settlements.rs:415` | `create_in_tx` | `INSERT INTO invoice_settlements` | **Gardée par ses appelants** (C-28-4-14) : `settle_invoice` lit `closed_on, archived` dans le `FOR UPDATE` existant du compte de son étape (3) (`invoice_settlements_write.rs:131-135`) ; `accept_one_invoice` (`reconciliation.rs:1986`) : Invariant I1 + pré-vol R1, **sans garde** ; `write_off_invoice` (l. 637) : sans compte bancaire. ⛔ Aucune garde **dans** `create_in_tx`. Statut par appelant : second inventaire de l'AC8 (F6 de la P2) |
+| W9 | `kesh-db/src/repositories/reconciliation_cancel.rs:339` | `cancel_in_tx` | `UPDATE bank_transactions` | **Gardée** (`ensure_open_in_tx` sur `bt.bank_account_id`, lecture non verrouillante après l'étape (2), avant (3) ; pour un rapprochement de facture, l'étape (6) passe aussi par la garde de W25) |
 | W10 | `kesh-db/src/repositories/bank_accounts.rs:49` | `create` | `INSERT INTO bank_accounts` | SansCompteBancaire (compte neuf) |
 | W11 | `…/bank_accounts.rs:301` | `upsert_primary_in_tx` | `UPDATE bank_accounts` | Invariant I3 (vise le principal, jamais clos) |
 | W12 | `…/bank_accounts.rs:331` | `upsert_primary_in_tx` | `INSERT INTO bank_accounts` | SansCompteBancaire (compte neuf) |
-| W13 | `…/bank_accounts.rs:457` | `set_journal_account_id_for_company` | `UPDATE bank_accounts` | **Gardée** (AC5) |
-| W14 | `…/bank_accounts.rs:577` | `update_for_company` | `UPDATE bank_accounts` | **Gardée** (AC5) |
-| W15 | `…/bank_accounts.rs:640` | `archive_for_company` | `UPDATE bank_accounts` | **Gardée** (AC5) |
+| W13 | `…/bank_accounts.rs:457` | `set_journal_account_id_for_company` | `UPDATE bank_accounts` | **Gardée** (AC5 : `closed_on` dans le `FOR UPDATE` existant, l. 413) |
+| W14 | `…/bank_accounts.rs:577` | `update_for_company` | `UPDATE bank_accounts` | **Gardée** (AC5 : `closed_on` dans le `FOR UPDATE` existant, l. 548) |
+| W15 | `…/bank_accounts.rs:640` | `archive_for_company` | `UPDATE bank_accounts` | **Gardée** (AC5 : `closed_on` dans le `FOR UPDATE` existant, l. 619-623, et dans le pré-vol de la route) |
 | W16 | `…/bank_accounts.rs:702` | `flip_primary_off_for_company` | `UPDATE bank_accounts` | Invariant I3 (vise le principal) |
-| W17 | `kesh-db/src/repositories/payment_batches.rs:137` | `create_batch` | `INSERT INTO payment_batches` | **Gardée** (relecture `lock_open_unarchived_for_write` après les verrous `supplier_invoices`, AC6-bis ; aucun verrou d'exercice sur ce chemin) |
+| W17 | `kesh-db/src/repositories/payment_batches.rs:137` | `create_batch` | `INSERT INTO payment_batches` | **Gardée** (`closed_on` ajouté à la lecture non verrouillante existante de l'étape (0), l. 85-99 ; la relecture verrouillée de la P1 est retirée, C-28-4-21) |
 | W18 | `…/payment_batches.rs:152` | `create_batch` | `UPDATE payment_batches` | **Gardée** (même transaction que W17) |
 | W19 | `…/payment_batches.rs:164` | `create_batch` | `INSERT INTO payment_batch_items` | **Gardée** (même transaction) |
-| W20 | `…/payment_batches.rs:507` | `confirm_batch` | `UPDATE payment_batches` | **Gardée**, transitivement par W27 (+ refus précoce) ; et Invariant I2 |
+| W20 | `…/payment_batches.rs:507` | `confirm_batch` | `UPDATE payment_batches` | **Gardée**, transitivement par W27 (+ refus précoce dans la lecture non verrouillante existante de l'étape (2)) ; et Invariant I2 |
 | W21 | `…/payment_batches.rs:589` | `cancel_batch` | `UPDATE payment_batches` | Invariant I2 (un compte clos n'a aucun lot `generated`) |
-| W22 | `kesh-db/src/repositories/bank_imports.rs:66` | `create_with_transactions` | `INSERT INTO bank_imports` | **Gardée** (`lock_open_unarchived_for_write`, première instruction de la fonction, avant l'`INSERT` d'entête ; AC6-bis) |
+| W22 | `kesh-db/src/repositories/bank_imports.rs:66` | `create_with_transactions` | `INSERT INTO bank_imports` | **Gardée** (`ensure_open_unarchived_in_tx`, lecture non verrouillante, première instruction de la fonction, avant l'`INSERT` d'entête ; AC6-bis) |
 | W23 | `…/bank_imports.rs:110` | `create_with_transactions` | `INSERT INTO bank_transactions` | **Gardée** (même transaction) |
-| W24 | `…/bank_imports.rs:494` | `delete_unreconciled_in_tx` | `DELETE FROM bank_imports` | **Gardée** (**entre l'étape 1**, entête verrouillé qui donne `bank_account_id`, **et l'étape 2**, transactions et verrou de trou ; C-28-4-14 — le doc-comment « l'entête, première instruction » reste vrai, la garde vient deuxième) |
-| W25 | `kesh-db/src/repositories/invoice_settlements_write.rs:922` | `cancel_settlement_in_tx` | `DELETE FROM invoice_settlements` | **Gardée** si `settlement_bank_account_id` est non nul — colonne **à ajouter** au `SELECT` verrouillé de l'étape (2) (l. 835-836 ne lit que `journal_entry_id, amount, settled_on`, R8) ; garde **entre (2) et (2-bis)** |
+| W24 | `…/bank_imports.rs:494` | `delete_unreconciled_in_tx` | `DELETE FROM bank_imports` | **Gardée** (`ensure_open_in_tx`, lecture non verrouillante après l'étape 1, entête verrouillé qui donne `bank_account_id`, avant l'étape 2 ; le doc-comment « l'entête, première instruction » reste vrai) |
+| W25 | `kesh-db/src/repositories/invoice_settlements_write.rs:922` | `cancel_settlement_in_tx` | `DELETE FROM invoice_settlements` | **Gardée** si `settlement_bank_account_id` est non nul — colonne **à ajouter** au `SELECT` verrouillé de l'étape (2) (l. 835-836 ne lit que `journal_entry_id, amount, settled_on`, R8 ; même ligne, verrou inchangé) ; garde non verrouillante avant (2-bis) |
 | W26 | `kesh-db/src/repositories/supplier_invoices.rs:524` | `create_in_tx` | `INSERT INTO supplier_invoices` | SansCompteBancaire — **confirmé en validation P1** (R1, F2) : la facture naît ouverte, la liste de colonnes de l'`INSERT` (l. 524-528) ne nomme aucun `settlement_*` |
-| W27 | `…/supplier_invoices.rs:895` | `pay_in_tx` | `UPDATE supplier_invoices` | **Gardée** (dans le `FOR UPDATE` de l. 753-756, `closed_on, archived` ajoutés, AC6-bis) |
-| W28 | `…/supplier_invoices.rs:1133` | `cancel_in_tx` | `UPDATE supplier_invoices` | **Gardée** si `inv.settlement_bank_account_id` est non nul, **entre le verrou facture (l. 1061) et le verrou de l'écriture d'achat et de son exercice (l. 1070-1080)** — ⛔ **reclassée en validation P1** (F2 = R1) : le classement d'origine, « SansCompteBancaire, n'annule qu'une facture non réglée », était **faux** ; la fonction annule une facture « ouverte ou payée » (doc l. 1052) et remet `settlement_bank_account_id` à `NULL` (l. 1131-1134), et `supplier_invoice_cancel_blocker` (l. 985-1030) ne refuse pas l'état `paid` |
-| W29 | `…/supplier_invoices.rs:1369` | `cancel_settlement_in_tx` | `UPDATE supplier_invoices` | **Gardée** si `settlement_bank_account_id` |
-| W30 | *introduite par la 28-5, à garder au rebase* — handler de `POST /api/v1/reconciliation/transactions/{id}/unreject` (annuler le rejet, #526 ; fiche `28-5-transaction-rejetee-atteignable.md`, non mergée au `5aad8b35`) | à relire sur la branche rebasée | `UPDATE bank_transactions` (remise à NULL de `auto_match_rejected_at`) | **Refus `409 BANK_ACCOUNT_CLOSED`** (pré-vol R8 sur le `bank_account_id` de la transaction, et garde `lock_open_for_write` dans sa transaction, après le verrou de la ligne `bank_transactions` et sous le verrou du compte qu'elle prend) ; en outre Invariant I1 (une rejetée est `pending`) |
+| W27 | `…/supplier_invoices.rs:895` | `pay_in_tx` | `UPDATE supplier_invoices` | **Gardée** (dans le `FOR UPDATE` existant de l. 753-756, `closed_on, archived` ajoutés, AC6-bis) |
+| W28 | `…/supplier_invoices.rs:1133` | `cancel_in_tx` | `UPDATE supplier_invoices` | **Gardée** si `inv.settlement_bank_account_id` est non nul (`ensure_open_in_tx`, non verrouillante, après le verrou facture l. 1061, avant l'écriture d'achat et son exercice l. 1070-1080) — ⛔ **reclassée en validation P1** (F2 = R1) : le classement d'origine, « SansCompteBancaire, n'annule qu'une facture non réglée », était **faux** ; la fonction annule une facture « ouverte ou payée » (doc l. 1052) et remet `settlement_bank_account_id` à `NULL` (l. 1131-1134), et `supplier_invoice_cancel_blocker` (l. 985-1030) ne refuse pas l'état `paid` |
+| W29 | `…/supplier_invoices.rs:1369` | `cancel_settlement_in_tx` | `UPDATE supplier_invoices` | **Gardée** si `settlement_bank_account_id` (`ensure_open_in_tx`, non verrouillante) |
+| W30 | *introduite par la 28-5, à garder au rebase* — handler de `POST /api/v1/reconciliation/transactions/{id}/unreject` (annuler le rejet, #526 ; fiche `28-5-transaction-rejetee-atteignable.md`, non mergée au `5aad8b35`) | à relire sur la branche rebasée | `UPDATE bank_transactions` (remise à NULL de `auto_match_rejected_at`) | **Refus `409 BANK_ACCOUNT_CLOSED`** (pré-vol R8 sur le `bank_account_id` de la transaction, et garde `ensure_open_in_tx`, non verrouillante, dans sa transaction, après le verrou de la ligne `bank_transactions`, sous le verrou nommé du compte que la 28-5 prend) ; en outre Invariant I1 (une rejetée est `pending`) |
 
 Hors de l'extraction, à classer `HorsPerimetre` si le registre les voit : le rejeu post-restauration
 (`kesh-db/src/post_restore/*.sql`, SQL et non Rust), l'import d'installation (`admin_backup/import.rs`), les routes de
@@ -705,67 +766,52 @@ W28, W29 — tous gardés désormais.
 
 ### Concurrence — la doctrine appliquée ici
 
+*Réécrit en validation P2 (C-28-4-21). Les versions P0 et P1 de ce paragraphe — garde exclusive, règle « pièces →
+compte → exercice », archivage verrouillé avant son décompte — sont dans l'historique Git (`32ee4e36`) ; elles ne
+s'appliquent plus.*
+
 - InnoDB, `REPEATABLE READ` ; `sqlx::begin()` émet `BEGIN` sans instantané : la vue cohérente naît à la **première
-  lecture non verrouillante**. La clôture fait son `FOR UPDATE` **d'abord** ; ses décomptes, lus ensuite en
-  non-verrouillant, voient donc tout écrivain qui a commité avant qu'elle obtienne le verrou. Un écrivain qui tenait la
-  garde au moment de la demande de verrou la fait **attendre** jusqu'à son commit ; un écrivain qui arrive après attend
-  la fin de la clôture, puis lit `closed_on` en lecture **verrouillante** (valeur commitée la plus récente) et refuse.
-- **Pourquoi la garde en verrou exclusif, et non partagé** : deux chemins verrouillent déjà la ligne `bank_accounts`
-  en exclusif (règlement client l. 131-135, `pay_in_tx` l. 753-756), et `confirm_batch` les enchaîne dans une même
-  transaction. Une garde partagée qu'un exclusif suivrait sur la même ligne, dans la même transaction, serait une
-  **montée de verrou** : deux écrivains concurrents en partagé, chacun demandant l'exclusif, s'interbloquent.
-  ⚠️ *Précision de la validation P1* : depuis que W8 et W27 lisent la garde **dans** leur instruction existante,
-  aucun chemin gardé ne reprend aujourd'hui la ligne en exclusif **après** un `lock_open_for_write` partagé — le cas
-  est **à venir**, non présent. L'exclusif reste la règle (uniformité avec W8 / W27, et tout chemin futur qui
-  enchaînerait une annulation et un règlement) ; il sérialise les écritures d'un même compte bancaire, ce qui est
-  négligeable (une PME, un humain), et T-a40 le fixe (M35).
-- ~~**Pourquoi après les lignes métier**~~ — **règle remplacée en validation P1** (F1, C-28-4-14). Elle s'arrêtait à la
-  facture et oubliait l'exercice : l'ordre réel des chemins qui verrouillent déjà le compte est **pièce → compte →
-  exercice → compteur**, et « après tous les verrous métier » plaçait la garde de W9, W25 et W29 après leur verrou
-  d'exercice. Règle juste : **après les verrous de pièce, avant le verrou d'exercice** (AC7).
-- **Position par chemin** (sur `5aad8b35` ; à recopier au Dev Agent Record avec la ligne de code retenue) :
+  lecture non verrouillante** de la transaction. Une lecture **verrouillante** (`FOR UPDATE`) lit au contraire la
+  dernière version commitée. Deux conséquences, et c'est toute la doctrine de la story :
+  - une garde **non verrouillante** lit l'instantané de sa transaction : une clôture commitée après la naissance de cet
+    instantané ne se voit pas — c'est l'angle mort **L1** (AC7) ;
+  - la clôture fait son `FOR UPDATE` **d'abord** ; ses décomptes, lus ensuite en non-verrouillant, voient tout ce qui
+    a été commité avant qu'elle obtienne le verrou. Un écrivain qui a **inséré** une ligne rattachée au compte tient,
+    par la clé étrangère, un verrou partagé sur la ligne du compte : la clôture l'attend (T-a31). C'est au sol.
+- **Critère** (AC7) : aucun verrou ajouté, aucun ordre changé, chemin par chemin. **Position par chemin** — la preuve
+  (sur `5aad8b35` ; à recopier au Dev Agent Record avec la ligne de code retenue) :
 
-  | Chemin | Ordre, garde comprise | Rejoué sur `1213` |
-  |---|---|---|
-  | `settle_invoice` (W8) | facture (l. 91) → **compte** (l. 133, instruction existante étendue) → exercice (étape (6), `journal_entries::create_in_tx`) | oui (`invoices::settle`) |
-  | `pay_in_tx` (W27), seul ou par `confirm_batch` | facture (l. 725) → **compte** (l. 755, instruction étendue) → exercice (l. 874) | oui (`supplier_invoices::pay`, `payment_batches::confirm`) |
-  | `create_batch` (W17-W19) | (0) lecture non verrouillante → factures fournisseur `FOR UPDATE` (l. 289) → **compte** → `INSERT` | **non** |
-  | `create_with_transactions` (W22-W23) | **compte** (tête) → `INSERT bank_imports` → `INSERT bank_transactions` | **non** |
-  | `delete_unreconciled_in_tx` (W24) | entête (étape 1) → **compte** → transactions et trou (étape 2) | oui (`bank_imports::delete`) |
-  | `reconciliation_cancel::cancel_in_tx` (W9) | transaction (1) → règlement, facture (2) → **compte** → écriture et exercice (3) | oui (`reconciliation::cancel`) |
-  | `cancel_settlement_in_tx` client (W25) | facture (1) → règlement (2) → **compte** → exercice (2-bis) | oui (`invoices::cancel_settlement`) |
-  | `cancel_settlement_in_tx` fournisseur (W29) | facture (1) → **compte** → exercice (1-bis) | oui (`supplier_invoices::cancel_settlement`) |
-  | `supplier_invoices::cancel_in_tx` (W28) | facture (l. 1061) → **compte** → écriture d'achat et exercice (l. 1070-1080) | oui (`supplier_invoices::cancel`) |
-  | `accept_one_invoice` (W1, W8) | transactions → … → exercice (l. 1964) ; **aucun verrou du compte** (I1) | oui (`retry_with`, `reconciliation.rs:1101`) |
-  | `unreject` (W30, 28-5) | transaction → **compte** (R8 avant la classification) | à relire au rebase |
-  | archivage (AC5) | sentinelle `companies` → **compte** → décomptes → `archive_for_company` (même ligne) | **non** |
-  | clôture / réouverture | **compte** seul, puis lectures non verrouillantes | **non** (AC7) |
+  | Chemin | Verrous au sol, dans l'ordre | Ce que la story ajoute | Verrou ajouté ? | Ordre changé ? |
+  |---|---|---|---|---|
+  | W8 `settle_invoice` | facture X (l. 91) → compte X (l. 131-135) → exercice X (étape (5), `find_open_covering_date … FOR UPDATE`, l. 244 → `fiscal_years.rs:740`) → `INSERT journal_entries` (clé étrangère → `companies` S) → `INSERT invoice_settlements` → `UPDATE invoices` → audit | `closed_on, archived` lus dans l'instruction du compte, élargie | non | non |
+  | W27 `pay_in_tx` (seul ou par `confirm_batch`) | facture fournisseur X (l. 725) → compte X (l. 753-756) → exercice X (l. 843) → `INSERT journal_entries` → `UPDATE supplier_invoices` → lettrage → audit | `closed_on, archived` dans l'instruction du compte, élargie | non | non |
+  | W20 `confirm_batch` | lot X (l. 412) → compte lu **sans** verrou (l. 427-441) → W27 facture par facture | `closed_on` lu dans la lecture existante de l'étape (2) | non | non |
+  | W17-W19 `create_batch` | compte lu sans verrou (étape (0), l. 85-99) → factures fournisseur X (l. 289) → `INSERT payment_batches` (clés étrangères → compte S, `companies` S) → `INSERT payment_batch_items` → audit | `closed_on` lu dans l'étape (0) existante | non | non |
+  | W22-W23 `create_with_transactions` (routes l. 1312 CAMT, l. 2199 CSV) | lectures de doublons sans verrou → `INSERT bank_imports` (compte S, `companies` S, `users` S) → `INSERT bank_transactions` → audit | une lecture non verrouillante `closed_on, archived` en tête | non | non |
+  | W24 `delete_unreconciled_in_tx` | entête X (l. 456) → transactions de l'import X et trou (l. 469) → `DELETE` (cascade) → audit | une lecture non verrouillante entre l'étape 1 et l'étape 2 | non | non |
+  | W9 `reconciliation_cancel::cancel_in_tx` | transaction X (1) → règlement ou trou de `uq_invoice_settlements_entry`, facture X (2) → écriture et exercice X (3) → `UPDATE bank_transactions` (5) → (6) W25 imbriqué, ou `reverse_in_tx` (`companies` S) → audit | une lecture non verrouillante entre (2) et (3) ; en (6), celle de W25 (même compte pour un règlement issu d'un rapprochement, `reconciliation.rs:1998-2000`) | non | non |
+  | W25 `cancel_settlement_in_tx` (client) | facture X (1) → règlement X (2) → écriture et exercice X (2-bis) → lettrage → `reverse_owned_in_tx` (`companies` S) → `DELETE` règlement → `UPDATE invoices` → audit | `settlement_bank_account_id` ajouté au `SELECT` verrouillé de (2) (même ligne) ; une lecture non verrouillante du compte avant (2-bis) | non | non |
+  | W28 `supplier_invoices::cancel_in_tx` | facture X (l. 1061) → écriture d'achat et exercice X (l. 1070-1080) → lettrage → contre-passation (`companies` S) → `UPDATE` (l. 1133) → audit | une lecture non verrouillante (facture payée par virement) avant l. 1070 | non | non |
+  | W29 `supplier_invoices::cancel_settlement_in_tx` | facture X (l. 1282) → écriture de règlement et exercice X (l. 1290-1303) → lettrage → contre-passation (`companies` S) → `UPDATE` (l. 1369) → audit | une lecture non verrouillante avant l. 1290 | non | non |
+  | W30 `unreject` (28-5, à relire au rebase) | verrou nommé du compte (`with_account_lock`, hors InnoDB) → transaction X (`find_by_id_for_account_for_update`) → `UPDATE bank_transactions` (aucune colonne à clé étrangère) → audit | une lecture non verrouillante après la transaction ; pré-vol R8 hors transaction | non | non |
+  | W13 `PATCH` | (réglages S si lien) → compte X (l. 413) → `accounts` → `UPDATE` → audit | `closed_on` dans l'instruction du compte | non | non |
+  | W14 `PUT` | `companies` X (sentinelle, l. 719) → réglages S → compte X (l. 548) → principal démis X (`flip_primary_off_for_company`) → `UPDATE` → audit | `closed_on` dans l'instruction du compte | non | non |
+  | W15 archivage | pré-vol sans verrou (l. 839-845, hors transaction) → `companies` X (l. 857) → décomptes sans verrou (l. 862-880) → compte X (`archive_for_company`, l. 619-623) → `UPDATE` → audit | `closed_on` lu dans le pré-vol et dans l'instruction d'`archive_for_company` | non | non |
+  | `POST /bank-accounts` | `companies` X (l. 561) → réglages S → principal démis X → `INSERT` → audit | rien | non | non |
+  | `accept_one_*` (W1-W3, W8 par `accept_one_invoice`) | verrou nommé → transactions X → facture X → exercice X (l. 1964-1972) → `INSERT journal_entries` → `INSERT invoice_settlements` (compte S implicite) | rien dans la transaction ; pré-vol R1 hors transaction (`find_by_id_for_company` sur le pool, l. 1032-1043) | non | non |
+  | `reject`, `manual`, `split` (W4-W6) ; `preview`, `create` d'import | inchangés | `closed_on` lu sur la ligne que le pré-vol existant lit déjà (R2-R4, R6, R7 : `find_by_id_for_company`, pool, autocommit) | non | non |
+  | **clôture / réouverture** (neuves) | — (absentes du sol) | compte X en première instruction → décomptes sans verrou → `UPDATE` de la même ligne → audit (sans clé étrangère) | chemin neuf : un verrou, rien d'autre | — |
 
-  Un règlement (pièce → compte → exercice) et une annulation (pièce → compte → exercice) prennent désormais les
-  mêmes classes de verrous dans le même ordre : plus de cycle compte / exercice entre eux. Ordre préexistant, que la
-  garde ne change pas : `confirm_batch` enchaîne `pay_in_tx` facture par facture, donc reprend une **pièce** après le
-  compte et l'exercice de la précédente — un cycle exercice / facture avec W28 ou W29 sur une facture du lot existe
-  sans la garde (elles ne prennent pas le compte pour une facture non payée), et les deux routes sont rejouées.
-- **Import (W22) et suppression d'import (W24) : sans cycle** (F4 = R2). La création tient le compte d'abord et rien
-  avant ; la suppression tient l'entête, puis attend le compte **avant** de poser son verrou de trou (étape 2). Si la
-  création a le compte, la suppression attend sans tenir de trou, la création insère et commite ; si la suppression a
-  le compte, la création attend en ne tenant **rien**. Sur un autre compte, la création n'attend que le trou, et la
-  suppression n'attend rien d'elle. Cas de l'index unique `uq_bank_imports_company_hash` : la route d'import lit
-  `find_by_company_and_hash` **avant** la garde, dans la même transaction (`routes/bank_imports.rs`, avant l. 1312) ; un
-  fichier dont l'import est en cours de suppression y est encore visible et refusé comme doublon avant tout verrou.
-  La phrase « Conséquence connue, sans cycle » du doc-comment (`bank_imports.rs:415-418`) **reste vraie**, et la garde
-  s'y ajoute.
-- ⚠️ **Cycle résiduel W9 / W24, rejoué des deux côtés.** La suppression (entête → compte → transactions de l'import) et
-  l'annulation d'un rapprochement (transaction → facture → compte) prennent `bank_transactions` et `bank_accounts`
-  dans l'ordre inverse : annuler le rapprochement d'une transaction de l'import **que l'on supprime en même temps**
-  peut finir en `1213`. Placer W24 après l'étape 2 l'éviterait, mais recréerait le cycle avec l'import (F4), qui n'est
-  pas rejoué. Retenu : W24 entre 1 et 2 ; les deux routes de ce cycle sont rejouées (`bank_imports::delete`,
-  `reconciliation::cancel`) — aucun `500`, écrit au doc-comment de `delete_unreconciled_in_tx` (C-28-4-14).
-- **Inversion `companies` par clé étrangère** : AC7 et C-28-4-17.
-- La clôture **ne prend pas** la sentinelle `companies` (contrairement à l'archivage, `routes/bank_accounts.rs:857`, et à la création et au remplacement, l. 561 et 719) : elle
-  n'a besoin d'aucune autre ligne, et la sentinelle l'exposerait aux chemins qui verrouillent `companies` après
-  `bank_accounts`. Le refus du principal se lit sur sa propre ligne, verrouillée ; un `PUT` concurrent sur la même ligne
-  est sérialisé par le même verrou.
+  Aucune instruction neuve n'est un `INSERT` ou un `UPDATE` de colonne à clé étrangère : la story n'ajoute donc pas
+  non plus de verrou implicite. Les cycles préexistants nommés par la P2 (inversion `companies` / compte de W8 et W27
+  contre les routes de gestion ; `create_batch` / `confirm_batch` ; W9 « écriture » / W8 sur le trou de
+  `uq_invoice_settlements_entry`) sont **au sol** et inchangés (AC7).
+- **Import (W22), suppression d'import (W24), annulation de rapprochement (W9), annulation de rejet (W30)** : les
+  cycles que la P1 avait analysés (W9 / W24, W30 / W24) naissaient du verrou exclusif de la garde ; sans lui, ces
+  chemins gardent leur suite de verrous au sol, où aucun d'eux ne demande la ligne du compte.
+- La clôture **ne prend pas** la sentinelle `companies` (contrairement à l'archivage, `routes/bank_accounts.rs:857`, et
+  à la création et au remplacement, l. 561 et 719) : elle n'a besoin d'aucune autre ligne. Le refus du principal se lit
+  sur sa propre ligne, verrouillée ; un `PUT` concurrent sur la même ligne est sérialisé par ce même verrou.
 
 ### Angles morts assumés (à écrire aux doc-comments)
 
@@ -773,10 +819,14 @@ W28, W29 — tous gardés désormais.
 - Sauvegarde prise pendant une clôture : #633 / 28-3.
 - Boutons *Supprimer l'import* / *Annuler le règlement* affichés sur l'historique d'un compte clos, refusés au clic
   (manuel, AC14).
-- Un `1213` sur les deux routes neuves remonte en `500` (aucune enveloppe de rejeu, comme l'archivage).
-- L'inversion `companies` → `bank_accounts` par clé étrangère (AC7, C-28-4-17) : `500` rare possible sur l'import, la
-  création de lot et les trois routes de gestion à sentinelle.
-- Le cycle résiduel W9 / W24, rejoué des deux côtés (§ *Concurrence*).
+- **L1** (AC7, C-28-4-21) : une écriture dont la vue cohérente précède le commit d'une clôture peut encore aboutir sur
+  le compte clos (garde non verrouillante) — une opération réelle de plus, sans erreur comptable ; I1 ou I2 défait pour
+  ce compte jusqu'au traitement ; remède : rouvrir, traiter, clore. Numérotation propre à la fiche (L5 est celle du
+  code de la route d'archivage).
+- Les routes neuves n'ont pas d'enveloppe de rejeu : un seul verrou, en tenant rien, elles ne peuvent pas être victimes
+  d'un cycle (AC7).
+- L'inversion `companies` → `bank_accounts` de W8 / W27 contre les routes de gestion : **au sol**, inchangée, non
+  traitée (AC7).
 - Une transaction rejetée bloque la clôture comme une non rapprochée (R13, manuel).
 - Le principal s'archive quand tous les autres comptes sont clos (F9, manuel et message).
 - La date de clôture n'est contrôlée ni contre les transactions ni contre le futur (C-28-4-3).
@@ -784,8 +834,9 @@ W28, W29 — tous gardés désormais.
 ### État actuel des fichiers modifiés — ce qui doit être préservé
 
 - `routes/bank_accounts.rs` : l'archivage (l. 823-916) garde ses refus (pré-vol hors transaction pour le `404`,
-  sentinelle, `412` transactions, `412` principal, `409` version) et leur ordre relatif ; **seul ajout** (AC5, F6) : le
-  verrou de la ligne et le refus `409 BANK_ACCOUNT_CLOSED`, entre la sentinelle et le décompte. Le `PATCH` garde son
+  sentinelle, `412` transactions, `412` principal, `409` version) et leur ordre relatif ; **seul ajout** (AC5,
+  C-28-4-21) : le refus `409 BANK_ACCOUNT_CLOSED` lu dans le pré-vol (avant la sentinelle) et dans le `FOR UPDATE`
+  d'`archive_for_company` — aucun verrou neuf. Le `PATCH` garde son
   court-circuit no-op **pour un compte ouvert**.
 - `routes/reconciliation.rs` : le pré-vol par lot de la 27-4 (l. 1043-1075, `classify_batch_transaction`) reste tel
   quel ; le refus de clôture vient **avant** lui (une requête sur un compte clos ne lit pas ses transactions).
@@ -809,8 +860,9 @@ La 28-4a touche `kesh-db` (une migration, l'entité, sept dépôts) et `kesh-api
 modules. ⚠️ **C'est une dérogation à la règle de découpage, non l'exception qu'elle prévoit** (R14) : l'exception du
 `CLAUDE.md` vise les cycles de dépendance Cargo et les merges intermédiaires impossibles à tester ; ce n'est pas le
 cas ici, et la dérogation écarte aussi le « story-zero pilote » que la règle prescrit. Elle se motive autrement, et
-c'est au Project Lead d'en juger. Justification : (1) **un seul pattern** — un appel `lock_open_for_write` à des points d'étranglement, ou une
-colonne lue dans un `FOR UPDATE` existant — répété mécaniquement ; (2) l'**inventaire clos** est l'unité de preuve : une
+c'est au Project Lead d'en juger. Justification : (1) **un seul pattern** — une lecture non verrouillante
+`ensure_open_in_tx` à des points d'étranglement, ou une colonne lue dans une instruction existante — répété
+mécaniquement, sans verrou ajouté ; (2) l'**inventaire clos** est l'unité de preuve : une
 moitié de gardes sur `main` ferait mentir l'état « clos » sur l'autre moitié, et le registre de l'AC8 ne peut pas être
 vert à moitié ; (3) les touches à `routes/reconciliation.rs` sont réduites à quelques lignes (pré-vols R1-R4, R8), pour limiter
 le conflit avec la 28-5, la 28-6, la 28-7. **Risque accepté** : une revue de code plus longue ; la revue du rollout se
@@ -858,44 +910,54 @@ Project Lead, comme le veut D5.
   T-a25 le compte rouvert n'est pas principal.
 - T-a26 `PUT`, `PATCH` (non identique **et** identique, no-op), `DELETE` sur un clos → `409` (AC5) ; `DELETE` sur un
   clos **sans** transaction (sinon le `412` masquerait M42) **et** sur un clos **avec** transactions (`409
-  BANK_ACCOUNT_CLOSED`, non `412` : l'ordre de F6).
-- T-a27 une ligne par route de la table de l'AC6 — **seize** lignes (dix-sept lignes de table, moins `PUT` / `PATCH` /
-  `DELETE`, portés par T-a26), la ligne `unreject` comprise si la 28-5 est mergée : refus **et** absence d'écriture et de trace ; le même
-  jeu sur le compte rouvert passe. Lignes construites par SQL direct : AC6, dernier point.
+  BANK_ACCOUNT_CLOSED`, non `412` : le refus du pré-vol précède le décompte, AC5).
+- T-a27 une ligne par route de la table de l'AC6 — **dix-sept** lignes (seize routes : dix-sept lignes de table, moins
+  `PUT` / `PATCH` / `DELETE`, portés par T-a26 ; plus la seconde ligne W9 de la validation P2, ci-dessous), la ligne `unreject` comprise si la 28-5 est mergée : refus **et** absence d'écriture et de trace ; le même
+  jeu sur le compte rouvert passe. Lignes construites par SQL direct : AC6, dernier point. ⚠️ **Ligne W9**
+  (validation P2, R4) : elle annule un rapprochement de type **`Entry`** (manuel, ventilé ou par règle) — sur un
+  rapprochement de facture, l'étape (6) de W9 passe par W25, dont la garde refuse avec le même `409`, et M9 survivrait ;
+  une seconde ligne W9 sur un rapprochement **de facture** s'ajoute (refus par l'une ou l'autre garde).
 - T-a28 `accept` sur un clos : `200`, toutes les propositions en `failed[]` `BANK_ACCOUNT_CLOSED`, aucune ligne
   modifiée ; T-a29 `reject` idem.
 - T-a30 (réécrit en validation P1, R5 retiré) : test de dépôt — `settle_invoice` par virement sur un compte clos rend
   `BankAccountClosed` et n'écrit rien (aucune ligne `invoice_settlements`, `journal_entries`, facture inchangée).
-- T-a31, T-a32 les deux tests déterministes de l'AC7 (motifs écrits à l'AC7).
+- T-a31 le test déterministe de l'AC7 (motifs écrits à l'AC7) : une transaction d'import a **inséré** son entête et
+  ses transactions `pending` sans commiter — elle tient, par la clé étrangère, un verrou partagé sur la ligne du
+  compte, au sol — ; une clôture lancée en parallèle **attend** sur sa première instruction, puis, au commit de
+  l'import, rend `BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS` (tue M6). Si la prémisse InnoDB (verrou partagé du parent à
+  l'`INSERT` d'un enfant) était fausse, la sonde paniquerait au bout de 10 s : le test la vérifie aussi.
+- ~~T-a32~~ — **retiré en validation P2** (C-28-4-21) : un import n'attend plus la garde d'une clôture (garde non
+  verrouillante) ; ce qu'il ferait sous concurrence est l'angle mort L1.
 - T-a33 registre statique (AC8) ; T-a34 son volet inverse (entrée sans site) par un cas construit.
 - T-a35 `audit_label_registry.rs`, `audit_route_registry.rs`, `test_schema_guard.rs`, `migrations_upgrade_path.rs` verts.
 - T-a36 `GET /bank-imports` liste l'import d'un compte clos (`200`) ; T-a37 `GET /bank-imports/{id}` d'un import de
   compte clos (`200`) ; T-a38 `GET /reconciliation/proposals?bankAccountId=<clos>` → `200`, liste vide (AC2).
-- T-a39 déterministe (kesh-db) : une clôture tient son verrou sans commiter ; `create_batch` lancé en parallèle passe
-  l'étape (0) (lecture non verrouillante : le compte paraît ouvert), verrouille ses factures et **attend** sur la
-  relecture (motifs `["SELECT closed_on", "FROM bank_accounts", "FOR UPDATE"]`) ; au commit de la clôture, il rend
-  `BankAccountClosed` et n'a créé aucun lot (tue M10).
-- T-a40 déterministe : deux annulations de règlement client (W25) sur deux factures réglées par le **même** compte ;
-  la première tient la garde sans commiter, la seconde **attend** (motifs de la garde) — sérialisation exclusive
-  (tue M35).
-- T-a41 déterministe, **non-interblocage**, une ligne par site d'annulation (W9, W25, W28, W29) : une transaction A
-  prend `SELECT … FROM bank_accounts WHERE id = <B> FOR UPDATE` (la position d'un règlement après son étape (3)) ; le
-  site, lancé en B, prend sa pièce puis **attend** sur la garde (motifs) ; A demande alors `SELECT id FROM
-  fiscal_years WHERE id = <exercice du règlement> FOR UPDATE` et **l'obtient** (aucun `1213`) ; A annule ; B termine
-  avec son résultat attendu. Sous une garde placée après le verrou d'exercice, B tient l'exercice quand A le demande :
-  interblocage, InnoDB rend `1213` à l'une des deux — le test exige que **ni** A **ni** B ne le reçoive (tue M36 à M39).
-  ⚠️ Pour W25, l'exercice que B verrouille est celui de l'**écriture de règlement** (2-bis) ; pour W9, celui de
-  l'écriture du rapprochement (3) ; pour W28, celui de l'écriture d'achat ; pour W29, celui du règlement (1-bis) —
-  à lire au montage, pas à supposer.
+- ~~T-a39~~ — **retiré en validation P2** : la relecture verrouillée de `create_batch` qu'il exerçait n'existe plus
+  (M10 sans objet) ; la création de lot pendant une clôture relève de L1.
+- ~~T-a40~~ — **retiré en validation P2** : la garde ne sérialise plus deux écrivains (M35 sans objet).
+- ~~T-a41~~ — **retiré en validation P2** : une garde non verrouillante ne peut pas former de cycle, quelle que soit
+  sa position (M36 à M39 sans objet). Le critère « aucun verrou ajouté » se tient par la table *Position par chemin*
+  et par T-a45.
 - T-a42 `POST /invoices/{id}/settlements` par virement vers un compte **archivé** → l'erreur que la route rend
   aujourd'hui pour un compte inexistant (code relu au dev, écrit au Dev Agent Record), aucune écriture ; clé d'API
   `read-write` comprise (AC6-bis).
 - T-a43 `POST /supplier-invoices/{id}/pay` par virement vers un compte archivé → idem (AC6-bis).
-- T-a44 déterministe, archivage contre import (AC5, AC6-bis) : (i) un archivage tient la sentinelle et la ligne du
-  compte sans commiter ; un import lancé en parallèle attend sur la garde ; au commit de l'archivage, l'import rend
-  `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` (route) ou `DbError::NotFound` (dépôt) et n'a rien inséré (tue M48) ;
-  (ii) un import tient la garde et des transactions sans commiter ; un archivage lancé en parallèle attend sur la
-  ligne du compte ; au commit de l'import, il rend `412 BANK_ACCOUNT_HAS_TRANSACTIONS` (tue M49).
+- ~~T-a44~~ — **retiré en validation P2** (C-28-4-21) : (i) l'import n'attend plus la garde d'un archivage (garde non
+  verrouillante ; la course archivage / import reste la limite L5 de la route, au sol) ; (ii) l'archivage ne prend
+  plus la ligne avant son décompte (M49 sans objet). La part séquentielle de (i) passe à T-a46.
+- T-a45 statique (kesh-db, test unitaire) : les constantes `ENSURE_OPEN_SQL` et `ENSURE_OPEN_UNARCHIVED_SQL` ne
+  contiennent ni `FOR UPDATE`, ni `LOCK IN SHARE MODE`, ni `FOR SHARE` (insensible à la casse) — garde-fou du critère
+  de l'AC7 sur les deux fonctions neuves (tue M52). ⛔ Il ne prouve pas le critère sur les instructions élargies (W8,
+  W27, W13-W15, W17, W20) : celles-là se vérifient au diff, par la table.
+- T-a46 dépôt (séquentiel) : `bank_imports::create_with_transactions` appelé directement sur un compte **archivé** →
+  `DbError::NotFound`, et sur un compte **clos** → `DbError::BankAccountClosed` ; dans les deux cas, aucune ligne
+  `bank_imports` ni `bank_transactions` (tue M48, et M11 côté dépôt).
+- T-a47 appariement de la route d'import (validation P2, R3 / F4) : les deux appels (`routes/bank_imports.rs:1312`
+  CAMT, `:2199` CSV) passent par **un** auxiliaire nommé, `import_create_error(e: DbError) -> AppError`
+  (`NotFound` → `AppError::BankAccountNotFound` ; tout autre → `e.into()`, donc `BankAccountClosed` → `409`) ; test
+  unitaire de l'auxiliaire, **et** assertion textuelle sur la source hors tests : exactement deux appels
+  `bank_imports::create_with_transactions(`, chacun suivi de `.map_err(import_create_error)` (tue M53). Le cas réel —
+  un archivage commité entre le pré-vol R7 et la garde — est une course que la story ne monte pas (L5).
 
 **Partie b** (Vitest, Playwright) :
 
@@ -916,7 +978,7 @@ Chacune doit faire rougir au moins un test nommé ; une mutation équivalente se
 
 | # | Mutation | Test attendu rouge |
 |---|---|---|
-| M1 | `lock_open_for_write` ne contrôle plus `closed_on` | T-a27 (plusieurs lignes) |
+| M1 | `ensure_open_in_tx` ne contrôle plus `closed_on` | T-a27 (plusieurs lignes) |
 | M2 | filtre de liste ignore `include_closed` (défaut inclut les clos) | T-a2-T-a7 |
 | M3 | clôture ne refuse plus le principal | T-a19 (la contrainte rend alors une erreur SQL, non le `412`) |
 | M4 | décompte *pending* retiré | T-a20 |
@@ -924,10 +986,10 @@ Chacune doit faire rougir au moins un test nommé ; une mutation équivalente se
 | M6 | décompte *pending* en lecture faite **avant** le `FOR UPDATE` | T-a31 |
 | M7 | réouverture ne remet pas `closed_on` à NULL | T-a23 |
 | M8 | garde W8 retirée (`closed_on` ôté de l'instruction de `settle_invoice`, l. 131-135 — site **unique** depuis la validation P1) | T-a27 (règlement), T-a30 |
-| M9 | garde W9 retirée | T-a27 (annulation de rapprochement) |
-| M10 | relecture verrouillée de W17 retirée (création de lot ; l'étape (0) gardée) | T-a39 — ⚠️ **pas** T-a27, où l'étape (0) refuse déjà avec le même `409` |
-| M10-bis | refus précoce de l'étape (0) de `create_batch` retiré (relecture gardée) | **équivalente** pour la suite : la relecture rend le même `409` sans rien créer ; l'étape (0) n'épargne que les verrous des factures |
-| M11 | garde W22 retirée (import) | T-a27 (import, pré-vol R7 neutralisé aussi), T-a32 |
+| M9 | garde W9 retirée | T-a27 (annulation d'un rapprochement de type `Entry` — sur un rapprochement de facture, la garde de W25 refuse aussi : R4 de la P2) |
+| M10 | ~~relecture verrouillée de W17 retirée~~ | **sans objet** depuis la validation P2 : la relecture n'existe plus (C-28-4-21) |
+| M10-bis | refus « clos » de l'étape (0) de `create_batch` retiré | T-a27 (création de lot) — **n'est plus équivalente** depuis la validation P2 : l'étape (0) est désormais la seule garde de W17 |
+| M11 | garde W22 retirée (import) | T-a27 (import, pré-vol R7 neutralisé aussi), T-a46 (compte clos) |
 | M12 | garde W24 retirée | T-a27 (suppression d'import) |
 | M13 | garde W25 retirée | T-a27 (annulation de règlement client) |
 | M14 | garde W27 retirée | T-a27 (paiement fournisseur) — la ligne de confirmation est refusée d'abord par le refus précoce de l'étape (2) de `confirm_batch` |
@@ -953,22 +1015,25 @@ Chacune doit faire rougir au moins un test nommé ; une mutation équivalente se
 | M32 | bascule des clos sans effet | T-b9 |
 | M33 | pré-vol R8 et garde W30 retirés (`unreject`, après le rebase sur la 28-5) | T-a27 (ligne `unreject`, construite par SQL direct) |
 | M34 | `GET /reconciliation/proposals` refuse un compte clos (garde d'archivage l. 610 étendue) | T-a38 |
-| M35 | garde `lock_open_for_write` en `LOCK IN SHARE MODE` au lieu de `FOR UPDATE` | T-a40 |
-| M36 | garde W9 posée après le verrou d'exercice (3) | T-a41 (W9) |
-| M37 | garde W25 posée après (2-bis) | T-a41 (W25) |
-| M38 | garde W29 posée après (1-bis) | T-a41 (W29) |
-| M39 | garde W28 posée après le verrou de l'écriture d'achat et de son exercice | T-a41 (W28) |
+| M35 | ~~garde en `LOCK IN SHARE MODE` au lieu de `FOR UPDATE`~~ | **sans objet** depuis la validation P2 : la garde ne verrouille plus ; son inverse est M52 |
+| M36 | ~~garde W9 posée après le verrou d'exercice (3)~~ | **sans objet** (P2) : une garde non verrouillante ne règle aucun ordre de verrous |
+| M37 | ~~garde W25 posée après (2-bis)~~ | **sans objet** (P2), même raison |
+| M38 | ~~garde W29 posée après (1-bis)~~ | **sans objet** (P2), même raison |
+| M39 | ~~garde W28 posée après l'écriture d'achat~~ | **sans objet** (P2), même raison |
 | M40 | garde W28 retirée | T-a27 (annulation d'une facture fournisseur payée) |
 | M41 | AC5 : `set_journal_account_id_for_company` ne refuse plus | T-a26 (`PATCH` non identique) |
-| M42 | AC5 : l'archivage ne refuse plus un compte clos | T-a26 (`DELETE` sans transaction) |
-| M43 | AC5 : refus « clos » de l'archivage replacé après le décompte | T-a26 (`DELETE` avec transactions : `412` au lieu de `409`) |
+| M42 | AC5 : l'archivage ne refuse plus un compte clos (les deux lectures : pré-vol **et** `archive_for_company`) | T-a26 (`DELETE` sans transaction) |
+| M43 | AC5 : refus « clos » du pré-vol de l'archivage replacé après le décompte | T-a26 (`DELETE` avec transactions : `412` au lieu de `409`) |
 | M44 | `first_active_bank_account_linked_to` exclut les clos | T-a9 |
 | M45 | colonne `closed_on` absente ou vide dans `bank_accounts.csv` | T-a10 |
 | M46 | W8 n'écarte plus l'archivé | T-a42 |
 | M47 | W27 n'écarte plus l'archivé | T-a43 |
-| M48 | W22 n'écarte plus l'archivé | T-a44 (i) — séquentiellement, le pré-vol R7 refuse d'abord |
-| M49 | archivage : décompte lu avant le verrou de la ligne | T-a44 (ii) |
-| M50 | relecture de W17 n'écarte plus l'archivé | **équivalente** pour la suite : l'étape (0) refuse l'archivé avec la même erreur ; seule une course archivage / création de lot la distingue, et aucun test déterministe n'est prescrit (coût d'un T-a39 de plus pour une fenêtre de quelques millisecondes) |
+| M48 | W22 n'écarte plus l'archivé | T-a46 (dépôt) — par la route, le pré-vol R7 refuse d'abord |
+| M49 | ~~archivage : décompte lu avant le verrou de la ligne~~ | **sans objet** depuis la validation P2 : l'archivage ne prend plus la ligne avant son décompte (C-28-4-21 remplace C-28-4-16) |
+| M50 | ~~relecture de W17 n'écarte plus l'archivé~~ | **sans objet** depuis la validation P2 (relecture retirée). *Avant la P2 :* **équivalente** pour la suite : l'étape (0) refuse l'archivé avec la même erreur ; seule une course archivage / création de lot la distingue, et aucun test déterministe n'est prescrit (coût d'un T-a39 de plus pour une fenêtre de quelques millisecondes) |
+| M51 | AC5 : refus « clos » retiré de la seule lecture verrouillée d'`archive_for_company` (pré-vol gardé) | **équivalente** pour la suite : le pré-vol rend le même `409` ; seule une clôture commitée entre le pré-vol et le `FOR UPDATE` la distingue, et aucun test de course n'est prescrit (le refus sous verrou empêche un compte à la fois clos et archivé, sans conséquence comptable) |
+| M52 | une fonction de garde (`ensure_open_in_tx` ou `ensure_open_unarchived_in_tx`) écrite en `FOR UPDATE` (ou `LOCK IN SHARE MODE`) | T-a45 |
+| M53 | appariement `import_create_error` retiré à l'un des deux appels de la route d'import (rejouée pour CAMT, l. 1312, puis pour CSV, l. 2199) | T-a47 |
 
 ### Project Structure Notes
 
@@ -1006,3 +1071,4 @@ Chacune doit faire rougir au moins un test nommé ; une mutation équivalente se
 |---|---|---|
 | 2026-10-13 | Fiche créée (`bmad-create-story`, Opus 5.5, autonomie) | Sur `5aad8b35`. Deux clés (28-4a serveur, 28-4b écran) ; 17 AC ; inventaire W1-W30 et R1-R8 (W30, R8 : route `unreject` de la 28-5, ajoutée sur message de l orchestrateur) ; invariants I1-I3 ; tests T-a1-T-a35, T-b1-T-b14 ; mutations M1-M33 ; choix C-28-4-1 à C-28-4-13. Validation P1 à lancer (`28-4-validate-prompt-p1.md`). |
 | 2026-10-13 | Validation P1 (Sonnet, lentilles R et F) et sa remédiation (Opus 5.5) | **Bilan** : R — 0 CRITICAL, 1 HIGH, 6 MEDIUM, 7 LOW ; F — 0 CRITICAL, 3 HIGH, 3 MEDIUM, 5 LOW (rapports `kesh-gate-logs/28-4-validate-p1-{R,F}.md`, hors dépôt). Convergences : F2 = R1 (W28), F4 ≈ R2 (W24), F3 = R12 (archivé). **HIGH** — F1 : la règle « garde après les verrous métier » prenait le compte après l'exercice dans W9, W25, W29 (cycle avec `settle_invoice` / `pay_in_tx`) → règle « pièces → compte → exercice », table des positions par chemin, `accept_one_invoice` sans verrou (I1), garde de W8 dans l'instruction de `settle_invoice` et non dans `create_in_tx`, appariement R5 et mutation M19 sans objet (C-28-4-14). F2 = R1 : W28 annule une facture payée et détache `settlement_bank_account_id` → **gardé** (ligne de l'AC6, T-a27, M40, M39 ; C-28-4-15). F3 = R12 : archivé intégré, borné aux gestes qui créent (W8, W27, W17-W19, W22-W23), erreurs existantes, annulations interdites de lire `archived` → **AC6-bis**, deux fonctions de garde, `### Corrigé` et note d'`api-external.md` dans la 28-4a (C-28-4-12 réécrit). **MEDIUM** — F4 = R2 : W24 entre les étapes 1 et 2, démonstration d'absence de cycle avec l'import, cycle résiduel W9 / W24 rejoué des deux côtés. R3 : message du `412` qui garde la voie de la 27-1 (test `bank_accounts_e2e.rs:2316-2320` inchangé), G9 nommé, six clés y entrent. R4 : T-a36 à T-a38, M34. R5 : M8 (site unique), M10 (T-a39), M20 scindé, M10-bis / M14-bis / M20-bis / M50 déclarées équivalentes, mutations neuves d'ordre, de mode de verrou, `PATCH`, `DELETE`, C-28-4-7, CSV (M35 à M45). R6 : lignes de T-a27 construites par SQL direct nommées, R8 avant la classification de la 28-5. R7 : § *Solde comptable*, `admin-manual.tex:1943`, tuile de l'accueil (C-28-4-18). F5 : constat `ignore_missing` exact, `kesh-seed/src/lib.rs:586` `HorsPerimetre`. F6 : archivage — verrou de ligne et refus « clos » avant le décompte (C-28-4-16 ; ferme aussi L5 pour les imports, T-a44, M49). **LOW** — R8 (colonne de W25 à ajouter), R9 (deux booléens, consommateurs nommés ; C-28-4-20), R10 (commentaires exclus), R11 (sept dépôts, l. 141, assertions de `audit_route_registry.rs`), R13 (rejetées, manuel), R14 (dérogation dite comme telle), F7 (§ *Rollback*), F8 (`QueryBuilder`), F9 (principal archivable, message ; C-28-4-19), F10 (cinq sous-sections d'`api-external.md`), F11 (motifs). **Constat neuf de la remédiation** : inversion `companies` → `bank_accounts` par clé étrangère, préexistante pour W8 / W27, étendue par la garde — angle mort écrit (C-28-4-17). **Recomptes** (fiche après remédiation) : 18 AC (AC1-AC17 + AC6-bis) ; 44 T-a (T-a1-T-a44) + 14 T-b ; mutations M1-M50 + trois `-bis` = 53 numéros, dont M19 sans objet et quatre équivalentes déclarées (M10-bis, M14-bis, M20-bis, M50) ; 29 sites W1-W29 (+ W30), sites classés « Gardée » hors W30 : **16** (W8, W9, W13-W15, W17-W20, W22-W25, W27-W29 ; 15 avant la remédiation — le « 16 → 17 » de F2 compte un de trop), recompté par `grep -E "^\| W[0-9]+ \|"` sur la table ; choix C-28-4-1 à C-28-4-20. Validation P2 : `28-4-validate-prompt-p2.md` (Opus). |
+| 2026-10-13 | Validation P2 (Opus 5.5, lentilles R et F) et sa remédiation (Opus 5.5) — **conception simplifiée** | **Trend** : P1 — 4 HIGH (R 0/1/6/7, F 0/3/3/5, en CRIT/HIGH/MED/LOW) ; P2 — R 0/0/4/2, F 0/1/5/7 (rapports `kesh-gate-logs/28-4-validate-p2-{R,F}.md`, hors dépôt), soit 1 HIGH, 9 MEDIUM, 9 LOW. **Signal D5 levé** : la sévérité ne baisse pas (HIGH → HIGH), et presque tous les défauts de la P2 **naissent de la remédiation P1** (garde exclusive, archivage verrouillé avant son décompte, analyse de cycles qui s'étend à chaque correctif) — c'est le **recyclage** que désigne l'amendement D5 de la règle de découpage, non une revue qui trouve des défauts d'origine neufs. **Décision de l'orchestrateur** : simplifier la conception plutôt que corriger la sentinelle (C-28-4-21, qui remplace C-28-4-16 et C-28-4-17, et C-28-4-14 en partie) — la garde est une lecture cohérente **non verrouillante** (`ensure_open_in_tx`, `ensure_open_unarchived_in_tx`), ou une colonne ajoutée à une instruction qui lit déjà le compte ; l'archivage garde sa séquence au sol (refus « clos » au pré-vol et dans le `FOR UPDATE` existant) ; critère décidable de l'AC7, « aucun verrou ajouté, explicite ou implicite par clé étrangère, aucun ordre changé, à aucun chemin de `origin/main` », prouvé par la table *Position par chemin* refondue ; angle mort **L1** (une écriture dont la vue précède le commit d'une clôture peut encore aboutir — sans erreur comptable, P3 au plus, manuel utilisateur, pas d'issue). Aucun chemin ne déroge au critère : `retry_app_on_deadlock` n'est ajouté nulle part. **Findings corrigés** (9) : R3 = F4 — l'appariement `DbError::NotFound` → `BankAccountNotFound` n'existait pas ; prescrit aux deux appels (`routes/bank_imports.rs:1312` CAMT, `:2199` CSV) par un auxiliaire `import_create_error`, « aucun code neuf » borné, T-a47, M53 ; R4 — T-a27 gagne une ligne W9 de type `Entry` (qui tue M9) et une ligne de facture, la table nomme W25 imbriqué en (6) ; F6 — second inventaire clos des appelants de `invoice_settlements::create_in_tx` (AC8, C-28-4-22, sur le précédent `letterings_lexical.rs:577-627`) ; F7 — W24 ne figure plus dans aucune liste de l'inversion `companies` ; F8 — l'index `uq_bank_imports_company_hash` (supprimé par `20260507000001`) n'est plus cité ; F10 — exercice de `settle_invoice` à l'étape (5) (l. 244, `fiscal_years.rs:740`), de `pay_in_tx` à l. 843 ; R5 — ligne W1 ; R6 — L5 à `routes/bank_accounts.rs:853-856`. **Sans objet après simplification** (10) : R1 et F5 (cycles des routes de gestion, partenaires sous-estimés, raison de l'écartée de C-28-4-17) — la garde ne prend plus le compte, l'archivage plus la ligne avant son décompte ; seule l'inversion **au sol** de W8 / W27 reste, nommée à l'AC7 comme préexistante ; R2 et F3 (T-a44 (ii), M49, « L5 se ferme ») — test et mutation retirés, L5 reste ouverte et dite ; **F1 (HIGH, `unreject` / W24)** — vérifié dans la fiche 28-5 (worktree `kesh-28-5`, `da25bf1b`, § *Séquence de la route*, l. 420-467, lecture seule) : W30 prend le verrou nommé du compte (hors InnoDB, que W24 ne prend pas), la ligne `bank_transactions` en `FOR UPDATE`, un `UPDATE` sans colonne à clé étrangère, un audit sans clé étrangère ; avec une garde non verrouillante, W30 ne demande plus la ligne du compte, W24 l'attend au plus sur la transaction, sans réciproque : **aucun cycle**. La phrase de la 28-5 qui annonce un `FOR UPDATE` du compte dans `unreject` (l. 462-465) devient fausse — à relire au rebase, non modifiée ici ; F2 — le cycle introduit avec `accept_one_invoice` naissait de la garde ; la phrase « aucun verrou du compte » est corrigée (« aucune garde ; un verrou partagé implicite par clé étrangère, au sol ») ; F9 — plus de montée de verrou possible (aucune garde verrouillante, l'archivage n'appelle plus de garde) ; F11 — la position de la garde de W25 imbriquée ne règle plus aucun ordre, la table la nomme (R4) ; F12 et F13 — cycles préexistants que la garde « élargissait » : elle ne les touche plus, nommés à l'AC7 comme au sol. **Recomptes** (fiche après remédiation, par `grep` sur la fiche) : 18 AC ; T-a1-T-a47 (47 numéros, dont 5 retirés : T-a32, T-a39, T-a40, T-a41, T-a44 ; **42 actifs**) + 14 T-b ; mutations M1-M53 + trois `-bis` = **56** numéros, dont **9 sans objet** (M10, M19, M35-M39, M49, M50), **3 équivalentes** déclarées (M14-bis, M20-bis, M51 ; M10-bis redevient tuable), **44 à tuer** ; 29 sites W1-W29 (+ W30), 16 « Gardée » hors W30 (inchangé) ; T-a27 à dix-sept lignes ; choix C-28-4-1 à C-28-4-22. Validation P3 : `28-4-validate-prompt-p3.md` (Sonnet, lentilles R et F, axe obligatoire : le critère de l'AC7 chemin par chemin). |

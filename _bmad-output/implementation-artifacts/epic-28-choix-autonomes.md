@@ -2407,6 +2407,10 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 
 ### C-28-4-12 — L'archivé est refusé aux gestes qui créent, jamais aux annulations *(réécrit en validation P1)*
 
+> *Annotation de la validation P2 (2026-10-13) : les fonctions de garde sont renommées `ensure_open_in_tx` et
+> `ensure_open_unarchived_in_tx`, et ne verrouillent plus ; W17 garde son étape (0) au sol, sans relecture (C-28-4-21).
+> Le texte ci-dessous est celui de la P1.*
+
 - **Contexte** : à l'inventaire, `invoice_settlements_write.rs:131-135` et `supplier_invoices.rs:753-756` lisent le
   compte bancaire sans contrôler `archived` ; `create_batch` et l'import ne le contrôlent qu'en lecture non
   verrouillante — défaut voisin, préexistant. Décision de l'orchestrateur à la validation P1 (F3 = R12) : l'intégrer.
@@ -2436,6 +2440,11 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 
 ### C-28-4-14 — Ordre des verrous : pièces → compte → exercice ; `accept_one_invoice` sans verrou
 
+> *Annotation de la validation P2 (2026-10-13) : **partiellement remplacé par C-28-4-21**. La garde ne verrouille
+> plus : la règle d'ordre « pièces → compte → exercice » ne gouverne plus que W8 et W27, qui verrouillaient déjà le
+> compte au sol ; le cycle W9 / W24 n'existe plus. Restent en vigueur : la garde de W8 dans l'instruction de
+> `settle_invoice` et non dans `create_in_tx`, `accept_one_invoice` sans garde (I1), R5 et M19 sans objet.*
+
 - **Contexte** : F1 (HIGH) — la règle « garde après les verrous métier » plaçait le compte après l'exercice dans W9,
   W25, W29, l'inverse de `settle_invoice` et `pay_in_tx` : cycle. F4 = R2 — W24 « après les étapes 1-2 » formait un
   cycle avec l'import (verrou de trou). Décision de l'orchestrateur : garde juste après le verrou de pièce, avant tout
@@ -2462,6 +2471,8 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 
 ### C-28-4-16 — Archivage : verrou de ligne et refus « clos » avant le décompte
 
+> *⛔ **Remplacé par C-28-4-21** en validation P2 (2026-10-13). Texte de la P1 conservé ci-dessous.*
+
 - **Contexte** : F6 — la route d'archivage compte les transactions avant le `FOR UPDATE` : un compte clos qui porte des
   imports rendait `412 HAS_TRANSACTIONS`, dont le message propose la clôture.
 - **Retenu** : sur le patron de la clôture, `lock_open_for_write` juste après la sentinelle, puis les décomptes ;
@@ -2471,6 +2482,9 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 - **Réversible** : oui.
 
 ### C-28-4-17 — L'inversion `companies` → `bank_accounts` par clé étrangère reste un angle mort écrit
+
+> *⛔ **Remplacé par C-28-4-21** en validation P2 (2026-10-13) : la garde ne verrouillant plus, elle n'étend
+> l'inversion à aucun chemin ; seule reste l'inversion au sol de W8 / W27. Texte de la P1 conservé ci-dessous.*
 
 - **Contexte** : constat de la remédiation P1 — un écrivain gardé tient le compte en exclusif puis insère des lignes à
   clé étrangère vers `companies` (verrou partagé), alors que les routes de gestion prennent la sentinelle `companies`
@@ -2507,6 +2521,64 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
   `false`.
 - **Retenu** : second paramètre booléen ; aucun appelant existant ne change.
 - **Écartée** : objet d'options (réécriture de tous les appelants).
+- **Réversible** : oui.
+
+*Choix C-28-4-21 et C-28-4-22 : remédiation de la validation P2 (2026-10-13, Opus 5.5, autonomie, sur décision de
+l'orchestrateur).*
+
+### C-28-4-21 — La garde « compte clos » ne verrouille rien ; aucun verrou ajouté, aucun ordre changé
+
+- **Contexte** : la validation P2 rend 1 HIGH et 9 MEDIUM, presque tous nés de la remédiation P1 — le verrou exclusif
+  de la garde, combiné aux verrous partagés que les `INSERT` à clé étrangère posent sur `companies`, ouvrait des cycles
+  neufs avec les routes de gestion (R1, F5), avec `unreject` de la 28-5 (F1, HIGH), avec `accept_one_invoice` (F2) ;
+  l'archivage verrouillé avant son décompte (C-28-4-16) créait un cycle avec W9 et un test irréalisable (R2, F3). Chaque
+  correctif P1 ouvrait le défaut suivant : le **recyclage** que désigne l'amendement D5 de la règle de découpage.
+  Décision de l'orchestrateur : simplifier la conception plutôt que corriger la sentinelle.
+- **Retenu** :
+  1. la garde de chaque chemin d'écriture est une **lecture cohérente non verrouillante** de `closed_on` (et
+     `archived` pour W22), dans la transaction de l'écrivain — fonctions `bank_accounts::ensure_open_in_tx` et
+     `ensure_open_unarchived_in_tx` (renommées : elles ne verrouillent plus), SQL en constantes contrôlées par T-a45 ;
+     là où le chemin lit **déjà** la ligne du compte au sol, `closed_on` s'ajoute à cette instruction (verrouillée :
+     W8, W27, W13-W15 ; non verrouillée : W17 étape (0), W20 étape (2), pré-vols) — aucune instruction neuve ;
+  2. l'archivage garde sa séquence au sol ; il gagne le refus `409 BANK_ACCOUNT_CLOSED` dans son pré-vol (avant le
+     décompte : un compte clos qui porte des imports rend `409`, non `412`) et dans le `FOR UPDATE` existant
+     d'`archive_for_company` ; plus de sentinelle déplacée, plus de verrou avant le décompte ;
+  3. critère décidable de l'AC7 : *la story n'ajoute aucun verrou de ligne, explicite ou implicite par clé étrangère,
+     à aucun chemin de `origin/main`, et ne change l'ordre des verrous d'aucun* ; la table *Position par chemin* le
+     prouve ligne à ligne (« verrou ajouté : non ; ordre changé : non ») ; les deux chemins neufs (clôture,
+     réouverture) ne prennent qu'un verrou, leur propre ligne, en première instruction ;
+  4. angle mort **L1** : une écriture dont la vue cohérente précède le commit d'une clôture peut encore aboutir sur le
+     compte clos (REPEATABLE READ) — une opération réelle de plus, sans erreur comptable, I1 ou I2 défait pour ce
+     compte jusqu'à ce qu'on rouvre, traite et clôt ; classe P3 au plus, acceptable pour #642 ; écrit à l'AC7, au
+     doc-comment d'`ensure_open_in_tx` et au manuel **utilisateur** (AC14) ; ni au manuel d'administration (ce n'est
+     pas un geste d'installation ou de mise à jour), ni en issue.
+  Aucun chemin de l'inventaire ne déroge au critère : le remède `retry_app_on_deadlock` des deux côtés n'a pas lieu de
+  servir.
+- **Conséquences tirées** : tests T-a32, T-a39, T-a40, T-a41, T-a44 retirés ; mutations M10, M35 à M39, M49, M50 sans
+  objet ; M10-bis tuable (l'étape (0) devient la seule garde de W17) ; M51 (équivalente), M52 et M53, T-a45 à T-a47
+  ajoutés ; CHANGELOG de l'AC6-bis réduit au règlement vers un archivé (la course archivage / import ou lot reste L5).
+- **Écartées** :
+  - corriger la conception P1 en enveloppant de `retry_app_on_deadlock` les cinq routes non rejouées et `unreject`
+    (option des deux lentilles) : faisable, mais traite les cycles **que la story crée**, au prix de cinq enveloppes
+    hors #642 et d'une 28-5 à reprendre ;
+  - prendre `companies` en partagé en tête de chaque écrivain : change la doctrine d'ordre de tout le dépôt et ouvre un
+    cycle avec les flux qui prennent l'exercice avant la sentinelle de projets (F, option 2) ;
+  - garde en `LOCK IN SHARE MODE` : ajoute un verrou, et une montée S → X sur W8 / W27 ;
+  - garder un verrou exclusif pour fermer L1 : c'est la conception P1, et son coût est ce qui vient d'être mesuré.
+- **Réversible** : oui — revenir à une garde verrouillante est une modification locale des deux fonctions et des
+  positions, mais elle rouvre l'analyse de cycles de la P2 ; à ne faire qu'avec une story dédiée.
+
+### C-28-4-22 — Un second inventaire clos : les appelants de `invoice_settlements::create_in_tx`
+
+- **Contexte** : F6 de la P2 — la garde de W8 vit chez un appelant (C-28-4-14) ; le registre de l'AC8, indexé sur la
+  fonction qui porte le SQL, ne peut pas dire vrai pour W8 et ne verrait pas un quatrième appelant sans garde.
+- **Retenu** : le test de l'AC8 extrait aussi les appels `invoice_settlements::create_in_tx(` hors tests et
+  commentaires et exige un statut par appelant (trois sur `5aad8b35` : `settle_invoice` gardé, `accept_one_invoice`
+  I1, `write_off_invoice` sans compte bancaire), diff dans les deux sens ; extracteur repris de
+  `letterings_lexical.rs` (`appels_et_suite`), dont la liste des trois créateurs reste.
+- **Écartées** : remettre la garde dans `create_in_tx` (tomberait après l'exercice d'`accept_one_invoice` — moins grave
+  sans verrou, mais `accept_one_invoice` n'en a pas besoin et le refus y deviendrait un code mort) ; l'écrire comme
+  angle mort du doc-comment (laisse le mode d'échec ouvert, alors que l'extracteur existe).
 - **Réversible** : oui.
 
 [#642]: https://github.com/guycorbaz/kesh/issues/642
