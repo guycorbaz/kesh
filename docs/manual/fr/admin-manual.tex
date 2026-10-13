@@ -2019,7 +2019,7 @@ La 0.13.3 ne demande ni nouveau compose ni nouvelle variable de \keshpath{.env} 
 
 \paragraph{Intégrations par l'API : les comptes bancaires clos.}\mbox{}\\
 \begin{sloppypar}
-Un compte bancaire peut désormais être \textbf{clos} (lecture seule, historique conservé ; manuel utilisateur, \emph{Clore un compte bancaire}). \texttt{GET /api/v1/bank-accounts} et \texttt{GET /api/v1/companies/current} \textbf{n'en rendent plus les comptes clos} : une intégration qui doit les voir interroge \texttt{GET /api/v1/bank-accounts?includeClosed=true} (\texttt{/companies/current} n'a pas ce paramètre). Toute écriture qui vise un compte clos est refusée en \texttt{409 BANK\_ACCOUNT\_CLOSED} (dans \texttt{failed[]} pour les lots de réconciliation). Le détail est dans \texttt{docs/api-external.md}.
+Un compte bancaire peut désormais être \textbf{clos} (lecture seule, historique conservé ; manuel utilisateur, \emph{Clore un compte bancaire}). \texttt{GET /api/v1/bank-accounts} \textbf{n'en rend plus les comptes clos}, non plus que la route qui décrit la société courante : une intégration qui doit les voir interroge \texttt{GET /api/v1/bank-accounts?includeClosed=true}, seule à porter ce paramètre. Toute écriture qui vise un compte clos est refusée en \texttt{409 BANK\_ACCOUNT\_CLOSED} (dans \texttt{failed[]} pour les lots de réconciliation). Le détail est dans \texttt{docs/api-external.md}.
 \end{sloppypar}
 
 \subsubsection{Passer à la 0.13.2 : la colonne Devise des profils CSV}\label{sec:maj-0-13-2}

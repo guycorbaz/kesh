@@ -2897,6 +2897,9 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
   rebase sur une `main` qui porte la 28-5b, ajouter la voie à l'écran — action écrite au Dev Agent Record.
 - **Écartée** : décrire un bouton absent de l'écran livré.
 - **Réversible** : oui.
+- *Annotation du 2026-10-13 (rebase sur `4687af69`, qui porte la 28-5b)* : l'action est faite — la condition « aucune
+  transaction non rapprochée » du manuel nomme désormais *Annuler le rejet* (détail de l'import, renvoi à la
+  réconciliation).
 
 ### C-28-4-43 — Renvoi de l'import corrigé : `sec:comptes-bancaires`, non `sec:ajout-compte`
 
