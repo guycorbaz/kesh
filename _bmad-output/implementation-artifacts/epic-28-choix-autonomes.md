@@ -2878,8 +2878,10 @@ nécessaire à #548 ; ses deux prémisses (« l'ancien SQL rendait `NULL` », «
 `500` ») n'ont été mesurées nulle part ; et il écartait `check` de l'acceptation actuelle aux extrémités (pour
 `D = 1000-01-15`, une facture `0999-12-20` admise aujourd'hui aurait été refusée). La fenêtre se calcule par
 l'arithmétique ordinaire de chrono, sans ramènement ; une date lue d'une colonne `DATE` ne fait pas déborder
-`NaiveDate`. Le cas d'une transaction datée aux extrémités de la plage `DATE` n'est atteint par aucun chemin du
-produit ; s'il l'était, ce serait une issue à part. Texte d'origine conservé ci-dessous pour l'historique.
+`NaiveDate`. ~~Le cas d'une transaction datée aux extrémités de la plage `DATE` n'est atteint par aucun chemin du
+produit ; s'il l'était, ce serait une issue à part.~~ *(Affirmation fausse, corrigée en validation P2, F3 : l'import
+CAMT accepte toute année, le cas est atteignable ; angle mort écrit en C-28-7-12. Le retrait du ramènement n'est
+pas rouvert.)* Texte d'origine conservé ci-dessous pour l'historique.
 
 - **Contexte** : l'ancien SQL (`DATE_ADD('9999-12-31', INTERVAL 30 DAY)` → `NULL`) rendait « aucune candidate » pour
   une date extrême ; une borne calculée en Rust (`10000-01-01`) liée au SQL risquerait une erreur, donc un `500`.
@@ -2945,8 +2947,10 @@ produit ; s'il l'était, ce serait une issue à part. Texte d'origine conservé 
 - **Contexte** : `find_unpaid_invoices_for_window` tronque à 50 candidates sans `ORDER BY` : au-delà, la
   troncature dépend du plan. La création l'avait exclu (« hors #548 ») et renvoyé à l'orchestrateur.
 - **Retenu** : `ORDER BY i.date ASC, i.id ASC` — la plus ancienne facture d'abord (celle qu'un débiteur règle
-  d'ordinaire en premier) ; c'est l'ordre de fait de l'index `idx_invoices_company_validated_unpaid_date` puis de
-  la clé primaire (les tests qui lisent `candidates[0]` ne bougent pas), et `id ASC` reprend le départage aval
+  d'ordinaire en premier) ; l'index `idx_invoices_company_validated_unpaid_date` permet de servir cet ordre sans
+  tri si l'optimiseur le choisit, ce qui n'est pas établi (aucun plan relevé — *reformulé en validation P2, F5 =
+  R3 : la création de ce choix l'affirmait comme un fait*) ; l'`ORDER BY` le garantit quel que soit le plan ; aucun
+  test ne lit l'ordre du SQL (`propose_matches` retrie) ; et `id ASC` reprend le départage aval
   `invoice_id ASC` (`kesh-reconciliation/src/matching.rs:104-110`). Le `LIMIT 50` est inchangé, désormais
   déterministe. Test de dépôt à 52 factures de même reste dû insérées en dates décroissantes ; mutations
   « `ORDER BY` retiré », « `DESC` », « `id` seul ».
@@ -2955,5 +2959,50 @@ produit ; s'il l'était, ce serait une issue à part. Texte d'origine conservé 
   mais autre décision, ordre sur `amount_due` — écrite en exclusion à la fiche) ; ne rien faire (troncature
   laissée au plan).
 - **Réversible** : oui (une clause SQL).
+
+### C-28-7-11 — Le manuel décrit l'écran de règlement, plus strict que le serveur
+
+*(Ajouté en validation P2, findings F1 et F2.)*
+
+- **Contexte** : la remédiation P1 faisait écrire au manuel que le règlement depuis la fiche applique « la même
+  tolérance d'un jour avant la facture » — vrai du serveur (`settle_invoice`, `write_off_invoice`), faux de
+  l'écran : `SettleInvoiceDialog.svelte` et `WriteOffDialog.svelte` refusent toute date antérieure à la facture et
+  n'en offrent aucune au sélecteur (`min={invoiceDate}`).
+- **Retenu** : le manuel (AC8) dit ce que voit l'utilisateur — l'écran refuse un règlement daté avant la facture,
+  sans borne de 30 jours après — et ne parle d'aucune tolérance pour ce chemin. Les deux dialogues entrent à
+  l'inventaire (b) comme sites non résolus assumés (tolérance nulle), non au doc-comment Rust de
+  `InvoiceDateWindow`, qui nomme les sites serveur.
+- **Écartées** : aligner les dialogues sur la tolérance du serveur (hors #548, change un écran) ; décrire au
+  manuel la tolérance du serveur (promesse que l'écran ne tient pas).
+- **Réversible** : oui (texte).
+
+### C-28-7-12 — Transaction datée aux extrémités de la plage `DATE` : angle mort écrit, non mesuré
+
+*(Ajouté en validation P2, finding F3 ; corrige la phrase de retrait de C-28-7-4.)*
+
+- **Contexte** : sans ramènement (C-28-7-4 retiré), une transaction datée `9999-12-31` donne
+  `latest = +10000-01-01`, lié au SQL. L'import CAMT accepte toute année (`kesh-import/src/camt053/mod.rs`,
+  `parse_date`, sans borne ; aucune borne à la route d'import). Le dépôt connaît ce mode d'échec
+  (`routes/letterings.rs:507-511`, 15-1b : chrono lit ce que sqlx refuse d'encoder ou que la base lit comme une
+  date invalide). L'ancien SQL rendait `NULL`, donc aucune candidate ; le nouveau comportement va de « aucune
+  candidate » à une erreur.
+- **Retenu** : écrire le fait à la fiche (AC1, Exclusions) comme angle mort accepté : atteignable, non mesuré,
+  extrême (aucune banque ne date une valeur en 9999). Ni test ni ramènement.
+- **Écartées** : rouvrir le ramènement (décision de l'orchestrateur en P1) ; un test de dépôt
+  `for_payment_date(9999-12-31)` qui asserte `is_ok()` — une mesure utile, mais dont un rouge rouvrirait la
+  question du ramènement en plein développement ; à reprendre en issue si le cas devait se présenter.
+- **Réversible** : oui.
+
+### C-28-7-13 — Le plafond de 50 candidates n'est décrit ni au CHANGELOG ni au manuel
+
+*(Ajouté en validation P2, findings F8 = R6.)*
+
+- **Contexte** : la remédiation P1 annonçait au CHANGELOG que « les 50 plus anciennes » candidates sont examinées
+  (phrase redondante), alors que le manuel n'a jamais décrit ce plafond.
+- **Retenu** : la phrase est retirée du CHANGELOG (T7) — le geste le plus simple, qui ne touche pas le manuel et
+  n'ouvre aucun écart entre supports. Le comportement reste fixé par l'`ORDER BY` et son test (C-28-7-10).
+- **Écartée** : une demi-phrase au manuel (§ *Algorithme de matching*) et la phrase gardée au CHANGELOG (deux
+  textes de plus pour un cas rare, invisible en deçà de 50 candidates).
+- **Réversible** : oui (texte).
 
 [#548]: https://github.com/guycorbaz/kesh/issues/548
