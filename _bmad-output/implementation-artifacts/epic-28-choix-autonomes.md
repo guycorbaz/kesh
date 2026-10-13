@@ -2822,7 +2822,7 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
 - **Écartées** : laisser la base refuser (`500`).
 - **Réversible** : oui.
 
-*Choix C-28-4-36 à C-28-4-45 : développement de la 28-4b (2026-10-13, Opus 5.5, autonomie).*
+*Choix C-28-4-36 à C-28-4-46 : développement de la 28-4b (2026-10-13, Opus 5.5, autonomie).*
 
 ### C-28-4-36 — T-b12 : deux niveaux de preuve, choisis par écran
 
@@ -2937,6 +2937,58 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
   l'assert (cellule de solde atténuée, cellule de *Rouvrir* et ligne non).
 - **Écartée** : garder l'atténuation sur la ligne (action illisible).
 - **Réversible** : oui.
+
+*Choix C-28-4-47 à C-28-4-50 : remédiation de la revue de code P1 de la 28-4b (2026-10-14, Opus 5.5, autonomie, sur
+consigne de l'orchestrateur).*
+
+### C-28-4-47 — L'action de clôture qualifiée en italien et en anglais ; une garde pour les quatre locales (A-M1)
+
+- **Contexte** : `Chiudi` et `Close` nus sont les verbes du panneau (glossaire, KF-041) ; la 28-4b les avait pris pour
+  *Clore*. G11 ne voit que l'allemand et l'exercice ; le glossaire n'avait pas l'entrée promise par C-28-4-32.
+- **Retenu** : `bank-accounts-actions-close` = **Chiudi il conto** / **Close account** (la confirmation disait déjà
+  « Chiudi il conto » / « Close the account ») ; *Riapri* / *Reopen* inchangés (ce ne sont pas des verbes de panneau) ;
+  deux entrées au glossaire (clore / clos ; rouvrir) ; garde **G11-bis**
+  `la_cloture_d_un_compte_bancaire_ne_parle_pas_comme_un_panneau` : dans les quatre locales, les deux clés d'action
+  de la clôture diffèrent du verbe nu et de toute valeur de panneau. Rouge avant le correctif (it-CH), verte après.
+- **Angle mort écrit au doc-comment** : domaine **nommé** (deux clés), non découvert ; critère de panneau par
+  suffixe de clé (`-close`), que porte `bank-accounts-actions-close`, d'où son retrait explicite.
+- **Écartées** : « Estingui » (vocabulaire bancaire juste, mais absent du catalogue, où les messages serveur de la
+  28-4a disent « chiuso ») ; « Mark as closed » (plus long, sans précédent).
+- **Réversible** : oui.
+
+### C-28-4-48 — Une bascule referme le mode ouvert ; un conflit de version recharge la liste (B-1 = E-4, B-2)
+
+- **Contexte** : masquer les clos pendant le dialogue de réouverture laissait un mode orphelin qui masquait les
+  actions de toutes les lignes ; un `409 OPTIMISTIC_LOCK_CONFLICT` laissait le dialogue rejouer la version périmée.
+- **Retenu** : les deux bascules passent par `toggleAndReload`, qui appelle `closeForm()` d'abord (production,
+  voulu par l'orchestrateur) ; après un conflit de **version** seulement, `refreshAfterVersionConflict` relit la
+  liste, le dialogue restant ouvert avec son message. Les autres refus ne rechargent pas : un `409
+  BANK_ACCOUNT_CLOSED` (déjà clos) ferait disparaître la ligne sous le dialogue.
+- **Angle mort écrit (B-3)** : un `reload()` de geste réussi et celui d'une bascule concurrente ne sont pas ordonnés.
+- **Écartée** : refermer le mode quand son `id` manque après `reload()` (plus général, mais efface le message d'un
+  refus que l'utilisateur n'a pas encore lu).
+- **Réversible** : oui.
+
+### C-28-4-49 — Liste vide : un message qui renvoie aux bascules tant qu'une des deux masque des comptes (A-L6)
+
+- **Contexte** : une société dont les seuls comptes restants sont clos voyait « Aucun compte bancaire configuré »
+  sur l'écran de gestion.
+- **Retenu** : clé neuve `bank-accounts-labels-empty-hidden` (quatre locales) — « Aucun compte bancaire ouvert. Les
+  comptes clos ou archivés éventuels sont masqués : affichez-les par les boutons ci-dessus. » — tant que l'une des
+  deux bascules masque ; le message d'origine quand les deux affichent. « Éventuels » : l'écran ne sait pas s'il en
+  existe (aucune requête de plus).
+- **Écartée** : interroger aussi `includeClosed=true` pour savoir s'il existe des clos (une requête par chargement
+  pour un cas rare).
+- **Réversible** : oui.
+
+### C-28-4-50 — La date locale prouvée par une horloge figée et un fuseau épinglé (E-1)
+
+- **Contexte** : remplacer `todayLocal()` par la date UTC restait vert hors de 00 h - 02 h à Zurich.
+- **Retenu** : test de page — `vi.useFakeTimers({ toFake: ['Date'] })`, `vi.setSystemTime(2026-10-13T22:30Z)`,
+  `process.env.TZ = 'Europe/Zurich'` (Node relit le fuseau à chaque calcul) ; le test vérifie d'abord son propre
+  montage (jour local 14, jour UTC 13), puis la date préremplie `2026-10-14`. Mutation M33 (date UTC) : à tuer.
+- **Écartée** : un `vi.mock` de `todayLocal` (prouverait l'appel, non la date).
+- **Réversible** : oui (test).
 
 [#651]: https://github.com/guycorbaz/kesh/issues/651
 [#642]: https://github.com/guycorbaz/kesh/issues/642

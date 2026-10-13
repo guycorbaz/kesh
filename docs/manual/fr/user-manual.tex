@@ -247,8 +247,8 @@ Ce solde ne reflète un encaissement qu'une fois celui-ci comptabilisé, par un 
 ou un règlement. Le total ne compte qu'une fois un
 compte du grand livre partagé par plusieurs comptes bancaires. Un compte bancaire
 \textbf{clos} ne figure plus sur la tuile, même si son solde comptable n'est pas nul~: ce solde
-se lit sur l'écran \emph{Comptes bancaires} (\emph{Afficher les comptes clos}) et au plan
-comptable (\S\ref{sec:clore-compte-bancaire}).
+se lit sur l'écran \emph{Comptes bancaires} (\emph{Afficher les comptes clos},
+\S\ref{sec:clore-compte-bancaire}) et au plan comptable.
 
 Quand un relevé a été importé, la tuile affiche aussi \emph{Relevé du \dots} : le solde de
 clôture du relevé CAMT.053 \textbf{dont la période se termine le plus tard} (et non du dernier importé), à sa
@@ -1609,7 +1609,8 @@ première qu'il faut choisir.
 Le règlement d'une facture payée par un lot \textbf{confirmé} peut être annulé --- le cas
 d'usage est le \textbf{rejet} du virement par la banque. Le lot, lui, n'est pas modifié~: il
 reste la trace de l'ordre transmis. La facture redevient \emph{ouverte} et peut repartir dans un
-nouveau lot.
+nouveau lot. Si le compte bancaire du lot a été \textbf{clos} depuis, l'annulation est refusée
+tant qu'il n'est pas rouvert (\S\ref{sec:clore-compte-bancaire}).
 
 \textbf{Si la banque a réellement exécuté l'ordre}, la facture est déjà payée~: un nouveau lot
 la paierait \textbf{deux fois}. Kesh vous le rappelle au moment d'annuler, en nommant le dernier
@@ -1732,9 +1733,11 @@ réouverture avec la date de clôture levée.
 
 \paragraph{Deux limites.}
 \begin{itemize}
-    \item Les boutons \emph{Supprimer l'import} (détail d'un import) et \emph{Annuler le
-          règlement} (fiche d'une facture) restent affichés pour un compte clos~: c'est
-          l'enregistrement qui est refusé, avec le message «~Ce compte bancaire est clos : il est
+    \item Les boutons \emph{Supprimer l'import}, \emph{Annuler le rapprochement} et
+          \emph{Annuler le rejet} (détail d'un import), \emph{Annuler le règlement} (fiche d'une
+          facture client ou fournisseur) et \emph{Annuler la facture} (facture fournisseur
+          payée par ce compte) restent affichés pour un compte clos~: c'est l'enregistrement
+          qui est refusé, avec le message «~Ce compte bancaire est clos : il est
           en lecture seule. Pour y enregistrer une opération, rouvrez d'abord le compte
           (Administration → Comptes bancaires).~»
     \item Une \textbf{opération déjà en cours} au moment de la clôture --- dans un autre onglet
@@ -1745,13 +1748,15 @@ réouverture avec la date de clôture levée.
           nouveau.
 \end{itemize}
 
-\paragraph{Clôture et archivage.} L'archivage retire un compte de toute vue, et un compte archivé
+\paragraph{Clôture et archivage.} L'archivage retire un compte des sélecteurs et de l'usage
+--- il ne reparaît sur cette page que par \emph{Afficher les archivés} ---, et un compte archivé
 ne se rouvre pas~; il n'est permis qu'à un compte sans transaction importée. La clôture est le
 geste pour un compte qui a servi. Un compte clos ne s'archive pas~: rouvrez-le d'abord. Le
 \textbf{compte principal} s'archive quand tous les autres comptes sont archivés \emph{ou clos}~:
 la société reste alors sans compte principal, donc sans IBAN pour la QR-facture, et
-\emph{Paramètres} affiche «~Aucun compte bancaire configuré~». Pour en sortir, rouvrez un compte
-clos et désignez-le compte principal.
+\emph{Paramètres} affiche «~Aucun compte bancaire configuré~» --- cette page-ci, tant que les
+comptes clos sont masqués, dit qu'aucun compte n'est ouvert et renvoie aux deux boutons
+d'affichage. Pour en sortir, rouvrez un compte clos et désignez-le compte principal.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Import bancaire}\label{sec:import-bancaire}
