@@ -898,6 +898,12 @@ const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
     ),
     // Nom de table.
     ("README.md", "FK vers `companies.id`"),
+    // Nom de table : la clé étrangère recréée par le remède de moteur (Story
+    // 28-3, #633, § « Exporter (sauvegarde complète) »).
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "REFERENCES companies(id) ON DELETE CASCADE",
+    ),
     // Ajoutés en revue de code P1 (motif élargi) — absence ou modèle, vrais
     // pour une installation à une société.
     // L'absence, deux phrases distinctes (public visé ; configuration).
@@ -933,9 +939,10 @@ const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
 
 /// Nombre **exact** d'occurrences de [`MULTI_SOCIETE`] dans la documentation
 /// utilisateur, toutes assumées (recompté le 2026-10-09 en revue de code P1 :
-/// 7 de la forme d'origine + 9 du motif élargi). Un motif qui cesserait de voir
+/// 7 de la forme d'origine + 9 du motif élargi ; + 1 le 2026-10-13, Story 28-3 :
+/// le nom de table du remède de moteur). Un motif qui cesserait de voir
 /// un site rougit (A-9, B10 : `>=` laissait passer une occurrence perdue).
-const MULTI_SOCIETE_TOTAL: usize = 16;
+const MULTI_SOCIETE_TOTAL: usize = 17;
 
 /// **G18** (#127) — une installation porte une société : la documentation
 /// utilisateur ne promet pas le contraire. Chaque occurrence de

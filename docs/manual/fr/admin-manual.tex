@@ -1822,7 +1822,43 @@ Depuis la version v0.2, Kesh permet d'\textbf{exporter et de réimporter l'inté
 
 \subsubsection{Exporter (sauvegarde complète)}
 
-Menu \textbf{Administration → Sauvegarde complète} (\keshpath{/admin/backup}) → bouton \textbf{« Exporter toute l'installation »}. Le navigateur télécharge un fichier \keshcommand{kesh-installation-AAAA-MM-JJ.keshbackup}. Cette opération est en lecture seule (aucun effet de bord sur les données).
+Menu \textbf{Administration → Sauvegarde complète} (\keshpath{/admin/backup}) → bouton \textbf{« Exporter toute l'installation »}. Le navigateur télécharge un fichier \keshcommand{kesh-installation-AAAA-MM-JJ.keshbackup}. L'export ne modifie aucune donnée comptable ni aucun réglage : il ajoute seulement, une fois le fichier produit, une entrée au journal d'audit (\keshcommand{admin.full\_export}) --- entrée que le fichier, pris avant elle, ne contient donc pas.
+
+Kesh lit toutes les tables dans \textbf{un seul instantané} de la base, pris au début de l'export : ce qui est saisi, modifié ou supprimé pendant qu'il se prépare n'y figure pas, et une saisie concurrente ne peut plus y laisser une ligne sans son en-tête --- une transaction sans son import, une ligne de facture sans sa facture. L'export ne bloque aucune saisie. La sauvegarde de sécurité prise avant un import (plus bas) est lue de la même façon. Une base qui porte \emph{déjà} de telles lignes, pour avoir restauré une sauvegarde incohérente d'une version antérieure, les garde, et l'export les reproduit.
+
+\begin{keshwarning}
+\textbf{Avant la 0.13.3}, un export pris pendant une saisie pouvait porter de telles lignes, et la restauration les recréait telles quelles. Une sauvegarde de cette époque que l'on compte garder se \textbf{refait}.
+\end{keshwarning}
+
+L'instantané ne vaut que pour les tables \textbf{InnoDB}, le moteur transactionnel de MariaDB ; une table d'un autre moteur y échappe, \textbf{sans que l'export le signale}. Sur l'image MariaDB de \keshpath{docker-compose.yml}, toutes les tables de Kesh sont InnoDB. Une table, \keshcommand{contact\_persons}, est toutefois créée sans moteur explicite et prend le moteur par défaut du serveur (une seconde, \keshcommand{contacts}, l'est aussi, mais les clés étrangères InnoDB qui la visent l'obligent à être InnoDB). Sur une base fournie par ailleurs (\keshpath{docker-compose.prod.yml} --- paquet MariaDB de Synology, serveur ou base gérée), le vérifier une fois, par le client MariaDB, en \textbf{nommant} la base de Kesh (\keshcommand{kesh} par défaut, la valeur de \keshcommand{MARIADB\_DATABASE}) :
+
+\begin{lstlisting}
+SELECT COUNT(*) FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA = 'kesh';
+SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA = 'kesh' AND (ENGINE IS NULL OR ENGINE <> 'InnoDB');
+\end{lstlisting}
+
+La première requête doit rendre \textbf{au moins 40} : sinon la base nommée n'est pas celle de Kesh, et la seconde ne prouverait rien. La seconde ne doit rendre \textbf{aucune ligne}, ou seulement \keshcommand{\_sqlx\_migrations} --- le registre des migrations, qui n'est pas sauvegardé : son moteur est sans effet sur l'instantané. Si \keshcommand{contact\_persons} est listée, après un dump (\keshpath{kesh-dump.sh}) :
+
+\begin{lstlisting}
+ALTER TABLE contact_persons ENGINE=InnoDB;
+SHOW CREATE TABLE contact_persons;
+\end{lstlisting}
+
+Hors InnoDB, MariaDB n'enregistre pas les clés étrangères d'une table : si la sortie de \keshcommand{SHOW CREATE TABLE} ne porte pas les deux lignes \keshcommand{CONSTRAINT fk\_contact\_persons\_company} et \keshcommand{fk\_contact\_persons\_contact}, les recréer :
+
+\begin{lstlisting}
+ALTER TABLE contact_persons
+  ADD CONSTRAINT fk_contact_persons_company FOREIGN KEY (company_id)
+    REFERENCES companies(id) ON DELETE CASCADE,
+  ADD CONSTRAINT fk_contact_persons_contact FOREIGN KEY (contact_id)
+    REFERENCES contacts(id) ON DELETE CASCADE;
+\end{lstlisting}
+
+Et régler \keshcommand{default\_storage\_engine=InnoDB} dans la configuration du serveur, pour les tables à venir.
+
+L'\textbf{export global} (CSV, \textbf{Administration → Export global}) ne bénéficie \textbf{pas encore} de cette garantie : il lit ses tables l'une après l'autre (issue \#465).
 
 \begin{keshwarning}
 Le fichier \keshcommand{.keshbackup} est un \textbf{secret} : il contient les \textbf{condensés (hash) des mots de passe} de tous les utilisateurs, les \textbf{condensés des clés API (PAT)} ainsi que les \textbf{jetons de session}. Il n'est \textbf{pas chiffré} par défaut. Conservez-le et transmettez-le comme une donnée hautement sensible — chiffrez-le pour tout transit hors de votre infrastructure contrôlée (par ex. \keshcommand{gpg} ou \keshcommand{age}).
