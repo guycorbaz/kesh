@@ -16,6 +16,14 @@
   --color-secondary-foreground: #ffffff;
   --color-success: #16a34a;
   --color-error: #dc2626;
+  /* Action destructive (Story 28-1, #640) — distincte de --color-error (#dc2626), trop
+     clair pour un texte sur bandeau bg-destructive/10 (4,14:1 < 4,5). Ratios WCAG, calculés
+     comme le helper contrast.ts (mélanges non arrondis, arrondi au centième) : blanc sur
+     destructive 6,47:1 ; blanc sur destructive-hover 8,31:1 ; destructive sur blanc 6,47:1 ;
+     destructive sur bandeau /10 5,46:1. */
+  --color-destructive: #b91c1c;
+  --color-destructive-foreground: #ffffff;
+  --color-destructive-hover: #991b1b;
   --color-warning: #d97706;
   --color-info: #0ea5e9;
   --color-surface: #ffffff;

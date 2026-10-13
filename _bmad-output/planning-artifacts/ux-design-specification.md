@@ -648,6 +648,7 @@ Basée sur Tailwind Slate/Blue — éprouvée, accessible, cohérente avec le la
 | **Primaire clair** | Bleu ciel | `#3b82f6` | Survol, sélection, focus |
 | **Succès** | Vert | `#16a34a` | Facture payée, import réussi, balance OK |
 | **Erreur** | Rouge | `#dc2626` | Écriture déséquilibrée, erreur, retard |
+| **Action destructive** | Rouge foncé | `#b91c1c` | Boutons qui suppriment, archivent, révoquent ; survol `#991b1b` |
 | **Attention** | Ambre | `#d97706` | Avertissement, démo, en attente |
 | **Info** | Bleu clair | `#0ea5e9` | Tooltips, bannières info, onboarding |
 | **Fond principal** | Blanc | `#ffffff` | Fond de page |
@@ -660,6 +661,7 @@ Basée sur Tailwind Slate/Blue — éprouvée, accessible, cohérente avec le la
 - Texte principal sur fond blanc : 13.5:1 (AA+)
 - Texte secondaire sur fond blanc : 4.6:1 (AA)
 - Bouton primaire (blanc sur bleu) : 7.2:1 (AA+)
+- Bouton destructif (blanc sur rouge foncé) : 6.47:1 (AA) ; texte destructif sur bandeau d'erreur : 5.46:1 (AA)
 
 ### Système Typographique
 

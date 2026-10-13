@@ -23,6 +23,21 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   que l'on saisissait se refait. L'export global CSV n'en bénéficie pas encore ([#465](https://github.com/guycorbaz/kesh/issues/465)).
 - Une erreur renvoyée par le serveur ne s'affiche plus « [object Object] » — verrouillage des livres, profils bancaires — : le message du refus est affiché. Une panne imprévue affiche « Erreur inattendue. », et les messages de perte de connexion suivent la langue de l'installation une fois la page chargée — ou rechargée — avec une session ouverte ; la page de connexion, et l'interface jusqu'au premier rechargement qui suit une connexion, restent en français ([#520](https://github.com/guycorbaz/kesh/issues/520)).
 
+- **Les boutons d'action destructive se voient ([#640](https://github.com/guycorbaz/kesh/issues/640)).**
+  *Supprimer l'import*, les confirmations de suppression, d'archivage, de révocation ou de désactivation
+  (factures, contacts, produits, comptes, écritures, comptes bancaires, utilisateurs, clés d'API, taux de TVA,
+  niveaux de relance, restauration d'une sauvegarde, réinitialisation de la démonstration, déverrouillage des
+  livres) s'affichaient comme du texte : leur couleur n'était pas définie dans le thème. Ils ont désormais un
+  fond rouge plein et un texte blanc (contraste 6,47:1), un survol plus foncé et un état désactivé estompé.
+  Les messages, cadres et champs d'erreur qui emploient cette même couleur, censés être rouges, le deviennent
+  aussi — de même que le lien *Annuler le rapprochement* du détail d'un import, les boutons bordés *Annuler le
+  lot*, *Annuler le règlement* et *Annuler la facture* (factures fournisseurs, lots de paiement) et les croix de
+  retrait d'une ligne de saisie des factures fournisseurs, qui passent du gris foncé au rouge ; la croix de
+  retrait d'une ligne d'écriture, elle, ne rougit qu'au survol. Deux familles de cadres
+  emploient d'autres couleurs, elles aussi non définies, et ne changent pas encore : les cadres d'erreur de la
+  sauvegarde et de la restauration restent sans couleur, trois cadres d'erreur de l'import bancaire gardent leur
+  bordure rouge sans fond ([#645](https://github.com/guycorbaz/kesh/issues/645)).
+
 ## [0.13.2] — 2026-10-13
 
 ⚠️ **Cette version n'est toujours pas destinée à tenir une comptabilité réelle.** Correctif de la 0.13.1, issu de sa recette (Epic 27) : un import bancaire dont aucune transaction n'est rapprochée se supprime, pour être réimporté ; la devise d'un relevé est lue, et un relevé qui n'est pas en francs suisses est refusé ; changer de profil après la prévisualisation la recalcule ; un lot de réconciliation qui contient une transaction disparue n'est plus refusé en entier. La version n'apporte aucune migration. Le **bouclement d'exercice** ([#232](https://github.com/guycorbaz/kesh/issues/232)) et les **pièces justificatives** ([#235](https://github.com/guycorbaz/kesh/issues/235)) manquent encore.

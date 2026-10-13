@@ -6,23 +6,21 @@
  * depuis le détail, réimport du même fichier sans l'avertissement « fichier
  * déjà importé ». La fixture `csv_e2e_delete_import.csv` est SYNTHÉTIQUE.
  *
+ * Le montage (`login`, `mount`, `importByScreen`) vit dans
+ * `helpers/bank-import-fixtures.ts` depuis la Story 28-1 (#640), qui le partage
+ * avec `destructive-buttons.spec.ts` ; le scénario n'a pas changé.
+ *
  * Pré-requis : cf. `docs/testing.md` § « Prérequis Playwright local ».
  */
 
-import { expect, test, type Page } from '@playwright/test';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { expect, test } from '@playwright/test';
+import { seedTestState, clearAuthStorage } from './helpers/test-state';
 import {
-	seedTestState,
-	clearAuthStorage,
-	authedApiContext,
-	disposeContextSafe,
-} from './helpers/test-state';
-
-const FIXTURE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
-const FILENAME = 'csv_e2e_delete_import.csv';
-const FIXTURE = path.join(FIXTURE_DIR, FILENAME);
-const TEST_IBAN = 'CH4431999123000889012';
+	DELETE_IMPORT_FILENAME as FILENAME,
+	importByScreen,
+	login,
+	mount,
+} from './helpers/bank-import-fixtures';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -31,58 +29,6 @@ test.beforeAll(async () => {
 test.afterEach(async ({ page }) => {
 	await clearAuthStorage(page);
 });
-
-async function login(page: Page): Promise<void> {
-	await page.goto('/login');
-	await page.fill('#username', 'admin');
-	await page.fill('#password', 'admin123');
-	await page.click('button[type="submit"]');
-	await expect(page).toHaveURL('/');
-}
-
-/** Compte bancaire et profil CSV du scénario, montés par l'API. */
-async function mount(page: Page): Promise<void> {
-	const ctx = await authedApiContext(page);
-	try {
-		const company = await ctx.get('/api/v1/companies/current');
-		const json = company.ok() ? await company.json() : {};
-		if (!Array.isArray(json.bankAccounts) || json.bankAccounts.length === 0) {
-			const res = await ctx.post('/api/v1/bank-accounts', {
-				data: { bankName: 'UBS Test', iban: TEST_IBAN, qrIban: null, isPrimary: true },
-			});
-			expect(res.ok(), `bank-account create failed: ${res.status()}`).toBeTruthy();
-		}
-		// Corps recopié du formulaire réel (`BankProfileForm.svelte`) ; `debitSign`
-		// est exigé depuis la v0.13.1.
-		const profile = await ctx.post('/api/v1/bank-profiles', {
-			data: {
-				bankName: 'E2E suppression',
-				filenamePattern: '^csv_e2e_delete_import\\.csv$',
-				columnMapping: { date: 0, amount: 1, reference: 2, details: 3 },
-				dateFormat: '%Y-%m-%d',
-				decimalSeparator: '.',
-				fieldSeparator: ';',
-				encoding: null,
-				headerRowCount: 1,
-				debitSign: 'positive',
-			},
-		});
-		expect(
-			profile.status() === 201 || profile.status() === 409,
-			`bank-profile create failed: ${profile.status()} ${await profile.text()}`,
-		).toBeTruthy();
-	} finally {
-		await disposeContextSafe(ctx);
-	}
-}
-
-async function importByScreen(page: Page): Promise<void> {
-	await page.goto('/bank-import');
-	await expect(page.getByTestId('bank-import-page-title')).toBeVisible();
-	await page.getByTestId('bank-account-select').selectOption({ index: 1 });
-	await page.getByTestId('bank-import-file-input').setInputFiles(FIXTURE);
-	await expect(page.getByTestId('bank-import-preview')).toBeVisible();
-}
 
 test('supprimer un import non rapproché puis réimporter le même fichier', async ({ page }) => {
 	await login(page);
