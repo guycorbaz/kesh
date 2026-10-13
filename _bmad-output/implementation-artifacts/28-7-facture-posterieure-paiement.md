@@ -678,6 +678,19 @@ seed) — `kesh-gate-logs/28-7-gates.txt` :
 - Ciblés en cours de route : `binary(textes_coherents)` 15/15 ; `kesh-i18n` 39/39 ; Vitest de
   `failed-proposal-label`, G13 et `i18n-keys` 79/79.
 
+**Rebase sur `origin/main` `4687af69` (28-4a fusionnée), 2026-10-13.** Code rebasé sans conflit : dans
+`accept_one_invoice`, la garde de signe de la 28-6 puis l'étape 6 (statut, payée, écriture, fenêtre
+`InvoiceDateWindow`) restent dans cet ordre ; les gardes « compte clos » de la 28-4a sont des pré-vols de lot (R1
+dans `post_accept`, avant `accept_one_*`) et ne touchent pas l'étape 6. Conflits documentaires seulement : registre
+des choix (union, section 28-7 après la 28-4, séparateur en double retiré), registre de sprint (union par clé,
+en-tête reconstruit depuis `main`, `yaml.safe_load` vert), CHANGELOG (union, une seule section 0.13.3). Manuel non
+touché par la 28-4a : PDF inchangé. Aucune route ajoutée par la 28-7 : compteurs du registre des routes inchangés,
+tenus par `audit_route_registry`. Gates au HEAD `1baa2e89`, sous le verrou, bases `kesh_287`/`kesh_e2e_287` remises à
+zéro (81 migrations) — `kesh-gate-logs/28-7-r3-gates.txt` : `scripts/test-fast.sh` **3603/3603** (6 ignorés),
+`npm run check`, `lint-i18n-ownership`, `build` verts, Vitest **1566/1566**, E2E complet (port 3040) **277 passés,
+7 échecs, 19 ignorés** — les sept de la KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`,
+`onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
+
 ### Completion Notes List
 
 - **Décomptes**, de `9f4e5237` (étape 0, rebasé) à `7b10e555` (dernier commit de code), recomptés à la source :

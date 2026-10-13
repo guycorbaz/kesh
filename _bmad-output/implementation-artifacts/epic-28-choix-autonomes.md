@@ -2827,9 +2827,6 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
 
 ---
 
-
----
-
 ## Story 28-7 — Une facture postérieure au paiement n'est plus proposée ([#548], P3)
 
 Choix faits à la création de la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
