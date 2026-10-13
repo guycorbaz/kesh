@@ -1720,8 +1720,10 @@ journal, et ce compte s'archive par son propre geste (\S\ref{sec:plan-comptable-
 Sur cette page, \emph{Afficher les comptes clos} fait réapparaître le compte, atténué, avec la
 mention «~Clos le JJ.MM.AAAA~». Si le compte d'une action ouverte sur cette page (modification,
 clôture, réouverture, archivage) quitte la liste --- clos ou archivé entre-temps dans un autre onglet,
-ou masqué par l'un des deux boutons d'affichage ---, l'action se referme et la page le dit~; un
-formulaire de création, lui, reste ouvert avec sa saisie.
+ou masqué par l'un des deux boutons d'affichage ---, l'action se referme \textbf{au prochain
+rechargement de la liste} (un bouton d'affichage, ou un conflit de version à l'enregistrement) et la
+page le dit~; d'ici là, le dialogue reste ouvert et son enregistrement est refusé. Un formulaire de
+création, lui, reste ouvert avec sa saisie.
 
 \paragraph{Le solde.} Si le solde comptable du compte lié n'est pas nul, le dialogue de clôture
 l'affiche et invite à le vérifier --- il reste souvent une écriture de virement ou de frais à
