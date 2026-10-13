@@ -706,7 +706,7 @@ catalogues FTL : union à la fusion, `sitesTotal` **recompté** après rebase, j
 
 ### Agent Model Used
 
-Opus 5.5 (`bmad-dev-story`, autonomie), le 2026-10-13, sur `01ab2473` (validation close) rebasé sur `5aad8b35`.
+Opus 5.5 (`bmad-dev-story`, autonomie), le 2026-10-13, sur `4b31fcac` (validation close) rebasé sur `5aad8b35`.
 
 ### Debug Log References
 
@@ -792,7 +792,7 @@ les 7 de la **KF-029** (#97 — `mode-expert:26`, `:41`, `onboarding-path-b:65`,
 UTC). **Aucun huitième de pollution** sur ce run ; aucun échec hors liste, rien à rejouer seul. Les deux scénarios
 de `error-messages.spec.ts` sont **verts**.
 
-**Décomptes, avec leur périmètre** (`01ab2473` → `4ff3a11e`, hors `_bmad-output`) : 41 fichiers (`git diff --name-status` : 9 neufs —
+**Décomptes, avec leur périmètre** (`4b31fcac` → `4ff3a11e`, hors `_bmad-output`) : 41 fichiers (`git diff --name-status` : 9 neufs —
 2 modules, 6 tests Vitest dont la garde, 1 spec E2E —, 32 modifiés dont 4 catalogues et le CHANGELOG) ; **76**
 `it(`/`test(` ajoutés (74 Vitest + 2 E2E) et **2** `it.each` ; 0 test retiré. `sitesTotal` 2075 → **2079**, mesuré
 par la collecte d'`i18n-keys.test.ts` ; `sitesNonResolus`, `relais`, `sitesGabarit` inchangés. Clés : 3 × 4

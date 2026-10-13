@@ -3,7 +3,7 @@
 *Versionné le 2026-10-13. Trois lentilles (Sonnet), contexte frais chacune, lecture seule.*
 
 Dépôt (worktree) `/home/gcorbaz/devel/kesh-28-2`, branche `story/28-2`. **Le diff à revoir** :
-`git diff 01ab2473 4ff3a11e -- . ':(exclude)_bmad-output'` (`01ab2473` = validation close de la fiche ;
+`git diff 4b31fcac 4ff3a11e -- . ':(exclude)_bmad-output'` (`4b31fcac` = validation close de la fiche ;
 `4ff3a11e` = dernier commit de code ; les commits suivants ne portent que la fiche, le registre et ce prompt).
 ⚠️ Pathspec `':(exclude)…'` et **non** `':!…'`, que le shell peut interpréter. Fiche :
 `_bmad-output/implementation-artifacts/28-2-erreurs-object-object.md` — AC1 à AC11, Tâches T0-T10, Dev Notes
