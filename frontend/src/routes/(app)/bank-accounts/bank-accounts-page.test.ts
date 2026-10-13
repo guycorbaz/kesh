@@ -600,6 +600,18 @@ describe('page des comptes bancaires — clôture (Story 28-4b, AC11)', () => {
 		},
 	);
 
+	// P2 ciblée (C-28-4-51) — un geste RÉUSSI qui retire son compte de la liste (clôture,
+	// clos masqués) n'est pas annoncé comme un changement survenu ailleurs.
+	it('une clôture réussie, clos masqués, ne déclenche pas le message « n’est plus affiché »', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('close-6'));
+		listBankAccountsMock.mockResolvedValue([PRINCIPAL]);
+		await fireEvent.click(await r.findByTestId('close-confirm-button'));
+		await waitFor(() => expect(r.queryByTestId('bank-account-row-6')).toBeNull());
+		expect(r.queryByTestId('close-confirm')).toBeNull();
+		expect(r.queryByTestId('bank-accounts-stale-notice')).toBeNull();
+	});
+
 	// P2 ciblée (L1) — une bascule ne referme plus un mode dont le compte reste visible,
 	// ni un formulaire de création, qui ne vise aucun compte.
 	it('une bascule conserve le formulaire de création et sa saisie', async () => {
