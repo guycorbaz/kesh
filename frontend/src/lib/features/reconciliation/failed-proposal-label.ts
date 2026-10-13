@@ -36,11 +36,12 @@
  * nommer les comptes ; `LATER_FISCAL_YEAR_CLOSED` (Story 15-12b, #543), pour nommer l'exercice
  * postérieur clos (`details.fiscalYearName`, repli sans nom si le champ manque) ; et
  * `RECONCILIATION_INVOICE_NOT_ELIGIBLE`, pour la seule raison
- * `payment_date_before_invoice_date` (revue de code P1, E1 — choix C-15-5c-3). Cette raison
- * est la seule qu'un utilisateur rencontre sans avoir rien fait de travers : la proposition
- * retient les factures datées de 30 jours avant à 30 jours après la transaction, alors que
- * l'acceptation refuse un paiement antérieur de plus d'un jour à la facture (#548). Les
- * autres raisons gardent le libellé générique. Enfin, depuis la Story 27-4 (#634, choix
+ * `payment_date_before_invoice_date` (revue de code P1, E1 — choix C-15-5c-3). Depuis la
+ * Story 28-7 (#548), la proposition et l'acceptation partagent la même fenêtre de dates
+ * (`InvoiceDateWindow`, `kesh-db`) : une facture datée de plus d'un jour après le paiement
+ * n'est plus proposée, et cette raison ne se rencontre plus que si la facture a été redatée
+ * entre la proposition et l'acceptation, ou par un appel d'API direct. Les autres raisons
+ * gardent le libellé générique. Enfin, depuis la Story 27-4 (#634, choix
  * C-27-4-8), `RECONCILIATION_ALREADY_RECONCILED`, pour la seule raison `race_during_update` : la
  * transaction a changé entre la relecture et l'écriture — rapprochée, rejetée **ou supprimée** —,
  * et « déjà réconciliée » serait faux pour une suppression.
@@ -224,7 +225,7 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 			if (failureReason(details) === 'payment_date_before_invoice_date') {
 				return i18nMsg(
 					'reconciliation-failed-payment-before-invoice',
-					'Le paiement est daté de plus d’un jour avant la facture : il ne peut pas la régler, même si elle a été proposée.'
+					'Le paiement est daté de plus d’un jour avant la facture : il ne peut pas la régler.'
 				);
 			}
 			return i18nMsg(

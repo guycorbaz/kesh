@@ -75,7 +75,8 @@ async function partiallySettledInvoiceAndItsBalance(
 	const unique = `${Date.now()}`;
 	const contactName = `Solde ${unique}`;
 	const contactId = await createContactWithAddressViaApi(page, contactName);
-	// Date de facture dans la fenêtre de 30 jours autour du relevé (2026-05-15).
+	// Date de facture au plus 30 jours avant le relevé (2026-05-15) : dans la fenêtre de la
+	// proposition et de l'acceptation (Story 28-7, #548).
 	const invoiceId = await createAndValidateInvoiceViaApi(page, contactId, '2026-05-10');
 
 	const ctx = await authedApiContext(page);
