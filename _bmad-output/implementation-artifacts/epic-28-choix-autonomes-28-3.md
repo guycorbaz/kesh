@@ -58,6 +58,9 @@ Fiche : `28-3-sauvegarde-instantane-commun.md`. Choix faits à la création de l
 - **Écartées** : `&mut MySqlConnection` (n'atteste pas qu'on est dans un instantané) ; un `Transaction<'_, MySql>` nu
   (idem) ; une garde lexicale sur le code source (contournable, et redondante avec le type).
 - **Réversible** : oui.
+- *Amendé par C-28-3-15 (validation P1, F1/R6) : « un appel sur le pool ne compile plus » ne vaut que pour les quatre
+  lectures existantes ; la garde lexicale écartée ici est reprise, en complément du type, pour les deux fonctions qui
+  tiennent un pool.*
 
 ### C-28-3-4 — `kesh-db` lit toute l'installation en une fonction ; `build_keshbackup` garde nom et signature
 
@@ -124,6 +127,8 @@ Fiche : `28-3-sauvegarde-instantane-commun.md`. Choix faits à la création de l
   l'hypothèse dont dépend toute la promesse : elle se contrôle, elle ne se suppose pas.
 - **Écartées** : se fier au squash (il dit l'état d'aujourd'hui, non celui de la prochaine migration).
 - **Réversible** : oui.
+- *Amendé par C-28-3-17 (validation P1, F2/R11) : le contrôle passe à l'exécution, dans l'instantané, et fait
+  échouer la sauvegarde ; le test seul ne contrôlait que la base de test.*
 
 ### C-28-3-10 — La restauration n'est pas touchée
 
@@ -154,6 +159,7 @@ Fiche : `28-3-sauvegarde-instantane-commun.md`. Choix faits à la création de l
   `## [0.13.3] — Non publié`.
 - **Écartées** : se taire sur #465 (le lecteur généraliserait la garantie).
 - **Réversible** : oui.
+- *Amendé par C-28-3-18 (validation P1, R2) : la phrase « aucun effet de bord » est fausse au code et se remplace.*
 
 ### C-28-3-13 — Ni migration, ni changement de format, ni d'écran
 
@@ -168,4 +174,127 @@ Fiche : `28-3-sauvegarde-instantane-commun.md`. Choix faits à la création de l
 - **Retenu** : P1 en **Sonnet**, deux lentilles (R : relecture contre le code ; F : faisabilité, concurrence et
   sémantique MariaDB/sqlx), prompt versionné `28-3-validate-prompt-p1.md`. Les passes suivantes reviennent à
   l'orchestrateur.
+- **Réversible** : oui.
+
+---
+
+## Remédiation de la validation P1 (2026-10-13, Opus 5.5)
+
+*Rapports : `kesh-gate-logs/28-3-validate-p1-F.md` (1 MEDIUM, 6 LOW), `28-3-validate-p1-R.md` (2 MEDIUM, 10 LOW).*
+
+### C-28-3-15 — La garantie de l'AC2 dite exactement : type, structure, deux gardes lexicales (F1/R6)
+
+- **Contexte** : la fiche disait l'inventaire « tenu par le compilateur » et M10 « non représentable ». Faux : le
+  constructeur `ReadSnapshot::begin(pool)` est public, si bien qu'un **second** instantané se compile (c'est la forme
+  de M1), et une lecture neuve `sqlx::query(…).fetch_*(pool)` se compile partout où un pool est en portée. M10 compilait
+  donc, et aucun test ne la tuait (`min_required` est constant pendant la vie du processus).
+- **Retenu** : (1) le type garantit que les **quatre** lectures existantes ne s'appellent plus sur le pool, et la
+  fiche ne dit plus rien de plus ; (2) le cœur `export_installation_in` ne reçoit **aucun pool** ; (3) deux gardes
+  lexicales — `export_installation` et `build_keshbackup` portent chacune l'identifiant `pool` exactement deux fois
+  (paramètre et unique appel), sur le modèle de `avant_sauvegarde_branchee_aux_appels_de_l_import`. M10 requalifiée
+  (compile, tuée par la garde (ii)), M11 neuve (tuée par la garde (i)). Angle mort écrit : une donnée lue par un
+  appelant et passée en paramètre.
+- **Écartées** : rendre `ReadSnapshot::begin` `pub(crate)` (proposition de F1) — l'outil est destiné à l'export
+  global (#465, autre module de `kesh-api`), qui doit pouvoir l'ouvrir ; et cela n'empêcherait pas la lecture neuve
+  sur le pool. Retirer M10 (on perdrait la seule forme qui motive la garde (ii)).
+- **Réversible** : oui (deux tests à retirer).
+
+### C-28-3-16 — `ReadSnapshot` dégradé dès T1 : le même texte de test rougit puis verdit (R1, F6 (ii))
+
+- **Contexte** : T1 écrivait le cœur « sur le pool » alors que le test devait ouvrir un `ReadSnapshot` qui n'existait
+  qu'à T2 : le test de T1 et celui de T2 auraient été deux textes, et « rouge avant, vert après » n'aurait rien prouvé.
+- **Retenu** : T1 pose le type avec son API définitive mais un intérieur **dégradé** (connexion du pool, aucune
+  transaction ; lectures en autocommit) ; les quatre lectures, le cœur et `build_keshbackup` y sont branchés dès T1,
+  pour que le workspace compile. (a-défaut), (a-RC) et (b) rougissent à T1 ; T2 ne change que l'intérieur du type ;
+  preuve : `git diff` T1→T2 du module de test, vide sur ces trois tests.
+- **Écartées** : un test à T1 sur `&MySqlPool` réécrit à T2 (deux textes) ; une `feature` qui bascule l'intérieur
+  (proscrite par C-28-3-6).
+- **Réversible** : oui.
+
+### C-28-3-17 — Garde de moteur à l'exécution, dans l'instantané, échec fermé (F2/R11)
+
+- **Contexte** : le test (e) d'origine lisait la base de test (moteurs du squash). 13 des 51 `CREATE TABLE` des
+  migrations n'ont pas de clause `ENGINE` et prennent, en exploitation, le moteur par défaut du serveur, qu'aucun
+  fichier du dépôt ne fixe. Une table non transactionnelle échapperait à l'instantané sans signal.
+- **Retenu** : première lecture du cœur, `information_schema.TABLES` (`TABLE_NAME`, `ENGINE` en `Option<String>`) ;
+  `DbError::Invariant` nommant la table si une table sauvegardée n'est pas InnoDB, ou manque. Tests (e1) (compte =
+  `TABLES_TO_TRUNCATE.len() + 1`) et (e2) (`ALTER TABLE _kesh_version ENGINE=MyISAM` sur la base éphémère : la
+  sauvegarde échoue en nommant la table). Conséquence voulue : sur une telle base, l'import est refusé
+  (`AdminPreImportBackupFailed`). Manuel et CHANGELOG le disent. Une requête de plus (81 dans l'instantané).
+- **Écartées** : écrire la limite aux seules Dev Notes (l'utilisateur ne la verrait jamais) ; journaliser sans
+  échouer (le fichier resterait incohérent, en silence).
+- **Réversible** : oui.
+
+### C-28-3-18 — Le manuel ne dit plus « aucun effet de bord » (R2)
+
+- **Contexte** : `admin-manual.tex:1825` (PDF identique) promet un export « en lecture seule (aucun effet de bord sur
+  les données) » ; le handler `full_export` écrit, après le fichier, une entrée `admin.full_export` au journal d'audit
+  (`routes/admin.rs:44`, `:653-692`, best-effort). L'AC10 greffait la garantie neuve sur cette phrase.
+- **Retenu** : la phrase est remplacée — l'export ne modifie aucune donnée comptable ni aucun réglage ; il ajoute
+  seulement une entrée d'audit, que le fichier, pris avant elle, ne contient pas. Contrôle : `grep -c "aucun effet de
+  bord"` → `0` sur le `.tex` et sur le PDF aplati.
+- **Écartées** : laisser la phrase (défaut antérieur à la story, mais la story réécrit ce paragraphe) ; déplacer
+  l'audit avant la production du fichier (changement de comportement hors périmètre).
+- **Réversible** : oui.
+
+### C-28-3-19 — Ouverture de l'instantané : protocole texte, `close_on_drop`, dépendance `#[doc(hidden)]` épinglée (F4, F5/R8)
+
+- **Contexte** : `sqlx::query("SET TRANSACTION …")` passerait en protocole préparé, dont l'acceptation par MariaDB pour
+  cette instruction n'est pas établie ; un échec entre le `SET` et le `START` rendrait au pool une connexion portant le
+  niveau « pour la prochaine transaction » ; `Transaction::begin` est `#[doc(hidden)]`.
+- **Retenu** : `conn.execute("SET TRANSACTION …")` sur un `&str` (protocole texte, comme le `BEGIN` de sqlx) ; sur
+  échec du `SET`, `conn.close_on_drop()` avant de rendre l'erreur. Sur échec de `Transaction::begin`, la connexion a
+  été cédée à sqlx : **résidu assumé** — l'échec d'un `START TRANSACTION` après un `SET` réussi est, en pratique, une
+  connexion rompue, que le `ping` de `return_to_pool` écarte ; sinon, la prochaine transaction de cette connexion est
+  forcée en REPEATABLE READ — sans effet si c'est le niveau du serveur (le défaut de MariaDB), réel s'il a été réglé
+  en READ COMMITTED. Commentaire de dépendance dans `snapshot.rs` et Dev Notes § *Risque de
+  montée de sqlx* (alternatives documentées examinées et écartées : `Connection::begin_with` emprunte la connexion,
+  `Pool::begin_with` en prend une neuve).
+- **Écartées** : `close_on_drop` systématique (chaque sauvegarde fermerait sa connexion ; (d) et (f) perdraient leur
+  objet) ; une instruction multiple `SET …; START …` dans `Transaction::begin` (dépend du drapeau multi-instructions du
+  client, non établi).
+- **Réversible** : oui.
+
+### C-28-3-20 — Une erreur du `ROLLBACK` final fait échouer la sauvegarde (R12)
+
+- **Contexte** : la fiche ne disait pas si une erreur de `finish`, après lecture complète, devait faire échouer
+  l'export.
+- **Retenu** : elle se propage (`AdminFullExportFailed`, ou refus de l'import en pré-import). Les données lues sont
+  cohérentes, mais une erreur de base en fin de sauvegarde signale une connexion en mauvais état ; l'administrateur
+  relance. Échouer fermé est la règle du reste de la story.
+- **Écartées** : journaliser et rendre les données (plus permissif, gain nul pour une opération rare et relançable).
+- **Réversible** : oui.
+
+### C-28-3-21 — L'observateur a la forme `BoxFuture`, alias local, sans dépendance neuve (F6 (i))
+
+- **Contexte** : la fiche laissait `AsyncFnMut` « au choix du dev » ; dans un futur qui doit être `Send` (handler
+  axum), l'inférence d'auto-trait y est fragile. `kesh-db` ne dépend pas de `futures`.
+- **Retenu** : `&mut (dyn FnMut(Etape) -> BoxFuture<'static, ()> + Send)`, `BoxFuture` alias local
+  `Pin<Box<dyn Future<Output = ()> + Send + 'a>>` ; observateur vide en production.
+- **Écartées** : `AsyncFnMut` ; ajouter `futures` à `kesh-db` pour un alias.
+- **Réversible** : oui.
+
+### C-28-3-22 — `@@in_transaction`, et sinon `INNODB_TRX` : le test tranche (F7)
+
+- **Contexte** : `@@in_transaction` n'est utilisé nulle part dans le dépôt ; son existence en MariaDB 10.11 n'est pas
+  établie sans exécuter une requête.
+- **Retenu** : AC5 (d) lit `@@in_transaction` ; si le serveur le refuse, repli sur
+  `SELECT COUNT(*) FROM information_schema.INNODB_TRX WHERE trx_mysql_thread_id = CONNECTION_ID()` ; (d1) et (d2)
+  lisent une table avant de rendre la connexion, pour que le repli reste discriminant sous M6. Le Dev Agent Record
+  écrit quelle forme a servi.
+- **Réversible** : oui.
+
+### C-28-3-23 — PDF des manuels au rebase : régénérés, jamais fusionnés (R9)
+
+- **Contexte** : 28-1, 28-2 et 28-3 avancent en parallèle ; les PDF sont des binaires.
+- **Retenu** : au rebase, union sur le `.tex`, PDF repris de `main` puis régénérés (`make fr`, sous `flock`), contrôle
+  aplati refait.
+- **Réversible** : sans objet.
+
+### C-28-3-24 — Validation P2 en Opus, lentilles R et F, axe premier sur les régressions de la remédiation
+
+- **Contexte** : rotation D6 (Sonnet ↔ Opus pour les passes complètes) ; P1 était en Sonnet ; la remédiation a
+  touché AC1 à AC5, AC7, AC8, AC10, AC11, les tâches et les mutations — trop large pour une passe ciblée.
+- **Retenu** : passe complète **Opus**, deux lentilles, mêmes axes et interdits que P1, plus un axe premier : les
+  régressions introduites par cette remédiation. Prompt versionné `28-3-validate-prompt-p2.md`.
 - **Réversible** : oui.
