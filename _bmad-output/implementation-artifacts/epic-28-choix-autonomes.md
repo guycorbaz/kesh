@@ -3056,3 +3056,109 @@ pas rouvert.)* Texte d'origine conservé ci-dessous pour l'historique.
 - **Réversible** : oui.
 
 [#548]: https://github.com/guycorbaz/kesh/issues/548
+
+## Story 28-8 — Cinq petits correctifs indépendants ([#421], [#561], [#595], [#612], [#615])
+
+*(Création de la fiche, 2026-10-13, Opus 5.5, sur `6de5a7ff`.)*
+
+### C-28-8-1 — Une story pour cinq correctifs, sans découpage
+
+- **Contexte** : six modules touchés (test E2E, `docs/testing.md`, `kesh-db`, `api-external.md`, manuels FR,
+  CHANGELOG) — au-delà du seuil de cinq de la règle de découpage.
+- **Retenu** : une story, dérogation écrite (fiche § *Dérogation à la règle de découpage*) : correctifs
+  indépendants et mécaniques, un seul en code de production (une suppression sans appelant), revue fichier par
+  fichier. Un correctif qui ne se règle pas entièrement **sort du périmètre** au lieu de retenir la PR.
+- **Écartées** : cinq stories (cinq cycles de CI pour le même diff) ; deux stories code / documentation (même
+  coût de cycle, aucun gain de revue).
+- **Réversible** : oui — sortir un correctif de la branche.
+
+### C-28-8-2 — #421 : un rappel daté d'une heure avant l'appel ; les KF nommées par leur numéro actuel
+
+- **Contexte** : `sentAt` codé à `${today}T12:00:00`, comparé à `Utc::now()` ; `docs/testing.md` nomme encore
+  KF-045 et KF-046, renumérotées KF-051 et KF-052 le 2026-09-10.
+- **Retenu** : `new Date(Date.now() - 3_600_000).toISOString().slice(0, 19)` — vrai à toute heure et dans tout
+  fuseau, `NaiveDateTime` complet (#249). Dans `docs/testing.md`, le texte **vivant** dit KF-051/KF-052 ; le
+  tableau historique du 2026-08-30 garde ses étiquettes et reçoit une annotation datée (consigne 15).
+- **Écartées** : horloge simulée (Playwright `clock`, ou côté backend) — le backend lit `Utc::now()`, une horloge
+  du navigateur n'y change rien ; dater `${today}T00:00:00` (vrai à toute heure, mais garde la forme « heure codée en dur »
+  que l'issue demande de chasser) ; renommer aussi dans les relevés datés.
+- **Réversible** : oui.
+
+### C-28-8-3 — #421 : la formule des échecs attendus devient 7 à 10
+
+- **Contexte** : la formule dit `7 + (2 si matinal) + (1 si KF-046) + 1 à 2 de pollution`, soit 8 à 12 ; la 28-4a
+  a relevé un run complet à **7** échecs (registre de sprint : « E2E 273 + 7 KF-029 »).
+- **Retenu** : `7 + (1 si la KF-052 se déclenche) + 0 à 2 de pollution`, soit **7 à 10**, et le relevé E2E de la
+  story ajouté en une ligne datée.
+- **Écartées** : retirer le seul terme matinal (8 à 10 — la borne basse serait déjà démentie par un relevé).
+- **Réversible** : oui.
+
+### C-28-8-4 — #561 : supprimer plutôt que corriger le doc-comment
+
+- **Contexte** : l'issue laisse le choix (« supprimer la fonction ou corriger son doc-comment, selon qu'on veut la
+  garder pour la remise à zéro »). `reset_demo` ne l'emprunte pas ; aucun appelant, tests compris.
+- **Retenu** : suppression ; la compilation de toutes les cibles en est la preuve.
+- **Écartées** : la garder « pour les tests » (aucun test ne l'appelle ; les montages ont leurs propres helpers) ;
+  `#[cfg(test)]` (code mort quand même).
+- **Réversible** : oui (`git revert`).
+
+### C-28-8-5 — #595 : les deux listes, au rang 3, avec la mention « défensif » ; sans test neuf
+
+- **Contexte** : l'issue cite `api-external.md:426` « et la liste voisine `:434` » (relevés sur `056997b0`) :
+  annulation du règlement d'une facture fournisseur, annulation d'une facture fournisseur. Les deux passent par
+  `settlement_entry_cancel_blocker`, puis par le socle de contre-passation, qui oppose `MatchedBankTransaction`
+  (`409`, `details.documentId`). Or les cinq sites qui posent `matched_entry_id` rapprochent tous une écriture
+  qu'ils viennent de créer : aucun geste ne rapproche aujourd'hui l'écriture de règlement ou d'achat d'une facture
+  fournisseur.
+- **Retenu** : insérer le code dans les deux listes, après `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` et avant
+  `ACCOUNT_ARCHIVED` (l'ordre réel), avec la mention « refus défensif » ; pas de test neuf (route inchangée, refus
+  injoignable par un geste de Kesh ; chaîne relue et citée).
+- **Écartées** : le tableau suggéré par l'issue (« envisager » — optionnel) ; omettre la mention (un intégrateur
+  chercherait le geste qui le produit) ; un test qui forcerait `matched_entry_id` en SQL (il testerait une donnée
+  que l'application ne produit pas) ; `409 BANK_ACCOUNT_CLOSED` sur ces routes (28-4b, AC16 de la fiche 28-4).
+- **Réversible** : oui.
+
+### C-28-8-6 — #612 : un bloc livré propre, une réserve sur le bouclement ; le « point voisin » hors périmètre
+
+- **Contexte** : le bloc *Déjà livré (v0.1 à v0.3.2)* est borné par ses versions ; la fonction livrée en v0.8.0 est
+  le report **calculé** des soldes (`CHANGELOG.md` `[0.8.0]`), non les écritures de bouclement ([#232], ouvert).
+  L'issue signale aussi un « point voisin » (page des rapports sans test Vitest), « à couvrir à l'occasion ».
+- **Retenu** : un bloc *Report à-nouveau automatique (Epic 14, v0.8, livré)*, au patron des blocs TVA et lettrage,
+  placé avant le bloc TVA ; une puce exacte, avec la réserve « les écritures de bouclement restent à venir ». Le
+  point voisin sort du périmètre ; **l'orchestrateur ouvre une issue dédiée** avant de fermer #612, pour qu'il ne
+  se perde pas.
+- **Écartées** : ajouter la puce au bloc *v0.1 à v0.3.2* (fausse son intitulé) ; élargir l'intitulé (le bloc
+  deviendrait une liste prétendument complète jusqu'à v0.8) ; reprendre le libellé « à la clôture d'exercice »
+  (laisserait croire au bouclement) ; traiter le point voisin ici (un test Vitest sur une page qui n'en a aucun,
+  hors du « À faire »).
+- **Réversible** : oui.
+
+### C-28-8-7 — #615 : le listing suit `.env.example`, la prose dit « décommentez »
+
+- **Contexte** : le listing du manuel écrit `MARIADB_ROOT_PASSWORD=<…>` et `MARIADB_PASSWORD=<…>` décommentés ;
+  `.env.example` les laisse commentés et vides, avec la consigne « installation neuve : générer, décommenter,
+  écrire ». La consigne de la story dit le gabarit `<…>` refusé au démarrage : c'est vrai de `KESH_JWT_SECRET` et
+  `KESH_ADMIN_PASSWORD` seulement ; pour `DATABASE_URL`, Kesh avertit ; `MARIADB_ROOT_PASSWORD` n'est pas lu.
+- **Retenu** : les quatre lignes MariaDB dans l'ordre et la forme de `.env.example` (`#MARIADB_ROOT_PASSWORD=`,
+  `MARIADB_DATABASE=kesh`, `MARIADB_USER=kesh`, `#MARIADB_PASSWORD=`) ; un commentaire « neuve / existante » ; la
+  prose gagne « décommentez les deux lignes et écrivez-y la valeur » et « décommentée sans valeur, une ligne fait
+  refuser Compose ». Le paragraphe des chevrons acceptés reste (il demeure vrai). Aucun refus n'est écrit pour les
+  `MARIADB_*`.
+- **Écartées** : aligner `.env.example` sur le manuel (l'issue permet l'inverse, mais `.env.example` est la source
+  copiée par `curl` et tenue par `configuration_transmise.rs`) ; la détection de #578 (hors #615).
+- **Réversible** : oui.
+
+### C-28-8-8 — CHANGELOG : une puce « Documentation corrigée » pour #595, #612, #615
+
+- **Contexte** : le CHANGELOG s'adresse aux utilisateurs ; #421 corrige un test, #561 du code mort.
+- **Retenu** : une puce sous `### Corrigé` de `## [0.13.3] — Non publié`, trois points ; rien pour #421 ni #561.
+- **Écartées** : cinq puces (deux sans effet visible) ; une rubrique `### Documentation` (absente des autres
+  versions).
+- **Réversible** : oui.
+
+[#232]: https://github.com/guycorbaz/kesh/issues/232
+[#421]: https://github.com/guycorbaz/kesh/issues/421
+[#561]: https://github.com/guycorbaz/kesh/issues/561
+[#595]: https://github.com/guycorbaz/kesh/issues/595
+[#612]: https://github.com/guycorbaz/kesh/issues/612
+[#615]: https://github.com/guycorbaz/kesh/issues/615

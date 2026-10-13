@@ -7,7 +7,8 @@ rétrospective de l'Epic 27 (action B1), de [#633] (Q8) et d'une fonctionnalité
 la Q7, la clôture d'un compte bancaire ([#642]). **Cible : v0.13.3.**
 
 ⚠️ **Contrepartie BMAD des issues** — chaque issue tient le détail, cet epic le périmètre. Il se
-clôt quand les sept issues ci-dessous sont fermées et la v0.13.3 publiée.
+clôt quand les sept issues ci-dessous sont fermées et la v0.13.3 publiée *(douze depuis l'ajout de
+la 28-8, le 2026-10-13 : [#421], [#561], [#595], [#612], [#615])*.
 
 ## Le décompte, et la règle de release
 
@@ -155,6 +156,23 @@ prioritaire).
 - tests aux bornes (J−1, J, J+1, `value_date` absente) ;
 - **`kesh-db` touché → gate complet même en boucle.**
 
+### 28-8 — Cinq petits correctifs indépendants ([#421], [#561], [#595], [#612], [#615])
+
+*Ajoutée le 2026-10-13 par l'orchestrateur, pour que la release ait moins d'issues ouvertes que la
+précédente.* Chacun déjà diagnostiqué par un tri en lecture seule ; périmètre **fermé** à ces cinq,
+à **minima** — une issue qui ne se règle pas entièrement sort du périmètre :
+
+- [#421] (KF-051) : le rappel manuel d'`invoices.spec.ts` daté d'une heure avant l'appel ; la liste
+  des échecs attendus de `docs/testing.md` mise à jour ;
+- [#561] : `accounts::delete_all_by_company`, sans appelant, supprimée ;
+- [#595] : `MATCHED_BANK_TRANSACTION` ajouté aux refus de l'annulation d'un paiement fournisseur et
+  d'une facture fournisseur (`docs/api-external.md`) ;
+- [#612] : le report des soldes de bilan quitte le backlog de la brochure ;
+- [#615] : le gabarit `.env` du manuel d'administration suit `.env.example`.
+
+Effet sur le décompte : **−2** (#421 `known-failure`, #595 `bug`). **`kesh-db` touché → gate complet.**
+PR : `closes #421 #561 #595 #612 #615`.
+
 ## Ordre
 
 - **28-1, 28-2, 28-3 en parallèle** : ni module ni fichier commun attendu.
@@ -166,6 +184,9 @@ prioritaire).
   de `i18n-keys.test.ts` et la section `reconciliation-*` des catalogues.
 - **28-4 après elles, ou en parallèle avec rebase** : elle pose des gardes sur les chemins d'écriture
   de la réconciliation et de l'import, ceux-là mêmes que touchent la 28-5 et la 28-6.
+- **28-8 en parallèle de tout** : un seul fichier de code (`accounts.rs`, une suppression) ; union au
+  rebase sur `CHANGELOG.md` et sur `docs/api-external.md` (la 28-4b complète le même paragraphe de
+  refus, `409 BANK_ACCOUNT_CLOSED`).
 - Intégration **sérielle** sur `main`, comme sur l'Epic 27 : une PR mergée avant que la suivante soit
   rebasée.
 
@@ -183,3 +204,8 @@ vérification Docker Hub (`:0.13.3`, `:latest`, `/health`). Autorisé d'office p
 [#633]: https://github.com/guycorbaz/kesh/issues/633
 [#640]: https://github.com/guycorbaz/kesh/issues/640
 [#642]: https://github.com/guycorbaz/kesh/issues/642
+[#421]: https://github.com/guycorbaz/kesh/issues/421
+[#561]: https://github.com/guycorbaz/kesh/issues/561
+[#595]: https://github.com/guycorbaz/kesh/issues/595
+[#612]: https://github.com/guycorbaz/kesh/issues/612
+[#615]: https://github.com/guycorbaz/kesh/issues/615
