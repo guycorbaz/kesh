@@ -2844,7 +2844,10 @@ Choix faits à la création de la fiche (2026-10-13), en autonomie, sur `5aad8b3
   manuel) ; facture antidatée : plus ancienne, reste dans la fenêtre ; facture postdatée au-delà du lendemain :
   plus proposée, remède = corriger sa date. Tolérance d'un jour conservée (fuseau, comme `settle_invoice`).
 - **Écartées** : élargir l'acceptation (règlement daté avant sa créance, risque P1, rupture avec le règlement
-  depuis la fiche) ; garder la proposition et expliquer le refus à l'écran (déjà fait par la 15-5c, C-15-5c-3 :
+  depuis la fiche — `settle_invoice`, `write_off_invoice` —, et heurt avec la CHECK de schéma
+  `chk_invoices_paid_at_after_date`, `DATE(paid_at) >= date - INTERVAL 1 DAY`, migration
+  `20260419000001_invoice_paid_at.sql:32-33`, qui ne se desserre que par une migration — *ajouté en validation
+  P1, F3*) ; garder la proposition et expliquer le refus à l'écran (déjà fait par la 15-5c, C-15-5c-3 :
   c'est ce que #548 demande de dépasser).
 - **Réversible** : oui (une fonction).
 
@@ -2868,7 +2871,15 @@ Choix faits à la création de la fiche (2026-10-13), en autonomie, sur `5aad8b3
 - **Écartée** : `booking_date` partout (changerait l'acceptation et la date du règlement).
 - **Réversible** : oui.
 
-### C-28-7-4 — Bornes ramenées à la plage d'une colonne `DATE`
+### C-28-7-4 — Bornes ramenées à la plage d'une colonne `DATE` — **RETIRÉ en validation P1**
+
+⚠️ **Retiré le 2026-10-13** (validation P1, findings F1 et R2 convergents ; décision de l'orchestrateur) : non
+nécessaire à #548 ; ses deux prémisses (« l'ancien SQL rendait `NULL` », « une borne `10000-01-01` risquerait un
+`500` ») n'ont été mesurées nulle part ; et il écartait `check` de l'acceptation actuelle aux extrémités (pour
+`D = 1000-01-15`, une facture `0999-12-20` admise aujourd'hui aurait été refusée). La fenêtre se calcule par
+l'arithmétique ordinaire de chrono, sans ramènement ; une date lue d'une colonne `DATE` ne fait pas déborder
+`NaiveDate`. Le cas d'une transaction datée aux extrémités de la plage `DATE` n'est atteint par aucun chemin du
+produit ; s'il l'était, ce serait une issue à part. Texte d'origine conservé ci-dessous pour l'historique.
 
 - **Contexte** : l'ancien SQL (`DATE_ADD('9999-12-31', INTERVAL 30 DAY)` → `NULL`) rendait « aucune candidate » pour
   une date extrême ; une borne calculée en Rust (`10000-01-01`) liée au SQL risquerait une erreur, donc un `500`.
@@ -2898,9 +2909,13 @@ Choix faits à la création de la fiche (2026-10-13), en autonomie, sur `5aad8b3
 
 ### C-28-7-7 — Le règlement depuis la fiche de la facture garde sa propre borne
 
-- **Contexte** : `invoice_settlements_write.rs:115` et `:489` portent la même tolérance d'un jour
-  (`settled_on < invoice_date − 1`), sur une date saisie, sans borne haute.
-- **Retenu** : non modifiés — sites non résolus assumés, nommés au doc-comment de `InvoiceDateWindow`. Ils ne
+- **Contexte** : `settle_invoice` et `write_off_invoice` (`invoice_settlements_write.rs`, au sol `:115` et
+  `:489` — le second est le solde par escompte, perte, frais ou arrondi, non « le règlement du reste » comme
+  l'écrivait la création : corrigé en validation P1, R1) portent la même tolérance d'un jour
+  (`settled_on < invoice_date − 1`), sur une date saisie, sans borne haute. La CHECK de schéma
+  `chk_invoices_paid_at_after_date` la double (F3).
+- **Retenu** : non modifiés — sites non résolus assumés, nommés **par leur nom** au doc-comment de
+  `InvoiceDateWindow`, avec la CHECK. Ils ne
   choisissent pas de facture pour une transaction : hors de #548, et les y brancher étendrait le diff à un
   troisième fichier de `kesh-db` pour une égalité qui tient déjà.
 - **Écartée** : leur faire lire `PAYMENT_BEFORE_INVOICE_TOLERANCE_DAYS` (DRY plus strict, périmètre plus large ;
@@ -2922,5 +2937,23 @@ Choix faits à la création de la fiche (2026-10-13), en autonomie, sur `5aad8b3
   commit de code.
 - **Écartée** : une spec Playwright de parité (même preuve, plus lente, fixtures CAMT datées à construire).
 - **Réversible** : oui.
+
+### C-28-7-10 — `ORDER BY i.date ASC, i.id ASC` avant le `LIMIT 50` de la proposition
+
+*(Ajouté en validation P1, finding F2 et note `ORDER BY` de la lentille R ; décision de l'orchestrateur.)*
+
+- **Contexte** : `find_unpaid_invoices_for_window` tronque à 50 candidates sans `ORDER BY` : au-delà, la
+  troncature dépend du plan. La création l'avait exclu (« hors #548 ») et renvoyé à l'orchestrateur.
+- **Retenu** : `ORDER BY i.date ASC, i.id ASC` — la plus ancienne facture d'abord (celle qu'un débiteur règle
+  d'ordinaire en premier) ; c'est l'ordre de fait de l'index `idx_invoices_company_validated_unpaid_date` puis de
+  la clé primaire (les tests qui lisent `candidates[0]` ne bougent pas), et `id ASC` reprend le départage aval
+  `invoice_id ASC` (`kesh-reconciliation/src/matching.rs:104-110`). Le `LIMIT 50` est inchangé, désormais
+  déterministe. Test de dépôt à 52 factures de même reste dû insérées en dates décroissantes ; mutations
+  « `ORDER BY` retiré », « `DESC` », « `id` seul ».
+- **Écartées** : `DESC` (favorise la facture la plus récente, la moins probable d'être celle que le paiement règle) ; « la plus
+  proche de la date de paiement » (exige `D` dans la requête, même défaut) ; priorité au montant exact (meilleure,
+  mais autre décision, ordre sur `amount_due` — écrite en exclusion à la fiche) ; ne rien faire (troncature
+  laissée au plan).
+- **Réversible** : oui (une clause SQL).
 
 [#548]: https://github.com/guycorbaz/kesh/issues/548
