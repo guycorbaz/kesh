@@ -4,9 +4,10 @@
 
 **28-5a : done** (2026-10-13 ; dernier commit de code de production `822ba587`, tests de la revue P1 `9081041c` ;
 revue de code P1 close — Sonnet, lentilles B, E et A : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 5 LOW, remédiation sur les
-seuls tests). *Avant :* **review** (`bmad-dev-story`, Opus 5.5). **28-5b : review** (2026-10-13 ; `bmad-dev-story`,
-Opus 5.5, branche `story/28-5b` sur `origin/main` `eab77cf1` ; dernier commit de code `31df9d74` ; revue de code P1 à
-lancer, `28-5b-review-prompt-p1.md`). *Avant :* ready-for-dev.
+seuls tests). *Avant :* **review** (`bmad-dev-story`, Opus 5.5). **28-5b : done** (2026-10-13 ; revue de code close à la passe
+ciblée P3 — P1 Sonnet B/E/A 0/0/1/11, P2 ciblée Haiku 0/0/0/2, P3 ciblée Haiku 0/0/1/2 dont le MEDIUM reclassé LOW et
+tracé dans #655 ; rebasée sur `origin/main`). *Avant :* **review** (`bmad-dev-story`, Opus 5.5, branche `story/28-5b`
+sur `eab77cf1` ; dernier commit de code du développement `31df9d74`), puis ready-for-dev.
 
 *Historique :* **ready-for-dev** (deux clés) — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur
 `5aad8b35`, branche `story/28-5` ; validation **P1** (Sonnet, lentilles R et F : 0 HIGH, 6 MEDIUM, 14 LOW)
@@ -978,7 +979,9 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5b/` ; script
     sérialise toujours un `DateTime<Utc>` (`.and_utc()`), le cas n'est atteignable que par un serveur défectueux ;
     **B-L2** — `errorMessage` de la page de détail n'est jamais remis à `null` par `load()`, et deux relectures
     concurrentes peuvent se croiser : préexistant (même chemin qu'*Annuler le rapprochement*), auto-réparé au clic
-    suivant (`409` puis relecture).
+    suivant (`409` puis relecture). *(Annoté le 2026-10-13, revue P2 ciblée P2-1 puis P3 ciblée P3-2 : raison
+    **fausse** — la bannière masque les lignes, il n'y a plus de clic possible ; B-L2 a été corrigé pour la relecture
+    séquentielle, le chevauchement reste ouvert, #655 — cf. les entrées P2 et P3 ci-dessous.)*
   - **A-3 (LOW)** — union avec la 28-6 : constat, rien à faire avant le rebase.
   Gates : Vitest ciblé (2 fichiers, 30 passés) ; mutations M21-M23 tuées ; `check` (0 erreur, 29 avertissements
   préexistants) et `test:unit` complets sous verrou (`p1-remed-frontend.log`) : **1515 passés, 142 fichiers** (1514 + le
@@ -990,7 +993,8 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5b/` ; script
   0 MEDIUM, 2 LOW**, tous deux issus de la remédiation P1. Remédiation (décision de l'orchestrateur) :
   - **P2-1 (LOW)** — la raison écrite pour **B-L2** était fausse : la bannière d'erreur de la page de détail **masque
     les lignes** (branche `{:else if errorMessage}`), il n'y a donc plus de bouton à cliquer, et seul un rechargement
-    réparait la page. **B-L2 est corrigé, et n'est plus assumé** : `errorMessage = null` en tête de `load()`
+    réparait la page. **B-L2 est corrigé, et n'est plus assumé** *(annoté le 2026-10-13, revue P3 ciblée : corrigé pour
+    la relecture **séquentielle** ; le chevauchement de deux relectures reste ouvert, #655)* : `errorMessage = null` en tête de `load()`
     (`frontend/src/routes/(app)/bank-import/[id]/+page.svelte`) — **une ligne de production, voulue**. Test V3 neuf :
     deux annulations lancées coup sur coup, la relecture de la première échoue (bannière), celle de la seconde réussit
     — les lignes reviennent, sans bannière. Mutation **M24** (ligne retirée) jouée sous verrou : **tuée**
@@ -1006,3 +1010,18 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5b/` ; script
   **La boucle n'est pas close** : la remédiation touche une ligne de production ; passe **ciblée P3** à lancer
   (`28-5b-review-prompt-p3-ciblee.md`, Haiku, une lentille sur le seul diff de cette correction). Trend : P1 = 1 MEDIUM,
   11 LOW → P2 ciblée = 0 MEDIUM, 2 LOW.
+- 2026-10-13 — **Revue de code P3 ciblée de la 28-5b** (Haiku, une lentille sur le diff `201b8edb..ffba2485` ; rapport
+  `kesh-gate-logs/28-5b-review-p3-ciblee.md`, prompt `28-5b-review-prompt-p3-ciblee.md`) : **0 CRITICAL, 0 HIGH,
+  1 MEDIUM, 2 LOW**. Décisions de l'orchestrateur :
+  - **P3-1 (MEDIUM → LOW, reclassé)** — `errorMessage = null` ne couvre pas deux relectures qui **se chevauchent** :
+    si la plus ancienne échoue **après** la plus récente, la bannière masque des lignes valides jusqu'au rechargement.
+    Défaut **préexistant** à la 28-5b (deux gestes, l'ancien échouant après le récent) : **tracé dans #655** (P3).
+    **B-L2 est donc corrigé pour la relecture séquentielle ; le chevauchement reste ouvert, #655.**
+  - **P3-2 (LOW)** — la raison fausse de B-L2 n'était annotée qu'à l'entrée P2 : annotation datée ajoutée à
+    l'emplacement même de la phrase P1, et à l'entrée P2, sans réécrire ni l'une ni l'autre (consigne 15).
+  - **P3-3 (LOW)** — la page des profils bancaires pose `errorMessage` sans jamais le remettre à `null` : hors
+    périmètre, **tracé dans #655** avec P3-1.
+  Remédiation sur la **seule fiche** : aucune ligne de code. **Boucle close.** Trend : P1 (Sonnet, B/E/A) 1 MEDIUM,
+  11 LOW → P2 ciblée (Haiku) 0 MEDIUM, 2 LOW → P3 ciblée (Haiku) 1 MEDIUM reclassé LOW et tracé (#655), 2 LOW ; 0 HIGH
+  à toutes les passes. Statut **done** ; rebase sur `origin/main` (28-1 `c28d0a20` comprise) et gates complets au HEAD
+  rebasé, consignés au Debug Log.
