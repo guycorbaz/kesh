@@ -1171,6 +1171,8 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
   une story « route sans écran », qui ne ferme pas #526, et une story « écran », qui ne se teste pas sans elle.
 - **Risque accepté** : une passe de revue doit couvrir backend et frontend ; le prompt de validation nomme les deux.
 - **Réversible** : oui (découpage possible en validation si la sévérité stagne).
+- ⛔ **Remplacé** à la validation P1 (2026-10-13) par **C-28-5-17** : la dérogation ne relevait pas de l'exception
+  codifiée au `CLAUDE.md` (finding F3).
 
 ### C-28-5-12 — Deux auxiliaires partagés avec l'annulation d'un rapprochement
 
@@ -1180,6 +1182,8 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
   inchangés.
 - **Écartée** : copier les deux blocs.
 - **Réversible** : oui. ⚠️ Touche une région que la 28-6 ne vise pas (`accept_one_invoice`) : pas de conflit attendu.
+- ⛔ **Remplacé** à la validation P1 (2026-10-13) par **C-28-5-18** : aucune extraction du convertisseur ; la route
+  suit `conclude_locked_attempt` (findings F1, R2).
 
 ### C-28-5-13 — Pas de garde « compte archivé » sur la route neuve
 
@@ -1209,4 +1213,98 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
   (`setup_company`, `seed_bank_transactions`, auxiliaires des clés et du verrou) — un binaire neuf les recopierait.
   La 28-6 et la 28-7, développées après, rebaseront sur cette fin de fichier. La section `## [0.13.3] — Non publié`
   du CHANGELOG est créée si absente, réunie par union sinon (précédent C-28-2-12).
+- **Réversible** : oui.
+
+### Validation P1 de la 28-5 (2026-10-13) — choix C-28-5-17 à C-28-5-24
+
+Remédiation des rapports `28-5-validate-p1-R.md` et `28-5-validate-p1-F.md` (Sonnet 5.5), par Opus 5.5, sur les
+décisions de l'orchestrateur.
+
+### C-28-5-17 — Découpage en 28-5a (serveur) et 28-5b (écran) — décision de l'orchestrateur
+
+- **Contexte** : huit sites de premier niveau ; la dérogation C-28-5-11 invoquait la fermeture de l'issue, motif que
+  la règle de découpage préventif n'admet pas (elle n'admet que des cycles Cargo ou des fusions intermédiaires
+  intestables) — finding F3.
+- **Retenu** : une fiche, deux clés — `28-5a-annuler-rejet-serveur` (route, champ, audit, messages serveur, gardes,
+  tests backend, `docs/api-external.md` ; PR `refs #526`) puis `28-5b-annuler-rejet-ecran` (écran, i18n de
+  l'interface, libellé `already-rejected`, manuel + PDF, CHANGELOG, E2E, captures ; PR `closes #526`) ; clé mère
+  `split` ; aucune release entre les deux. Précédents C-26-2-15, C-28-4-1.
+- **Écartée** : garder la story unique et demander l'accord écrit de Guy (allonge la file sans gain : chaque partie
+  se teste seule).
+- **Réversible** : oui tant que la 28-5a n'est pas fusionnée.
+
+### C-28-5-18 — Aucune troisième copie du convertisseur ; seule la lecture du compte est partagée
+
+- **Contexte** : C-28-5-12 extrayait le `match` de `cancel_reconciliation_once`, seule garde du rejeu de `…/cancel`,
+  qu'aucun test dynamique n'exerce (F1) ; un auxiliaire `conclude_locked_attempt` factorise déjà ce `match` pour
+  `post_manual` et `post_split` (R2), et les deux conversions diffèrent (`FiscalYearClosed`, `SplitImbalance`,
+  `TransactionAborted`).
+- **Retenu** : la route neuve appelle `conclude_locked_attempt`, dont seule la **signature** devient générique en
+  `T` (corps intact ; le `commit` d'une fermeture qui n'a rien écrit vaut un `rollback`) ; les erreurs de la
+  fermeture sont rangées comme dans `post_manual_once` (`map_err(… Db(DbError::Sqlx(e)))`, `.await?`). De
+  `cancel_reconciliation_once`, seule la lecture du `bank_account_id` (l. 4514-4524) passe, mot pour mot, dans un
+  auxiliaire privé partagé (règle DRY) : lecture non verrouillante en autocommit, qui ne peut être victime d'un
+  interblocage — le rejeu de `…/cancel` n'est pas en jeu. Son `match` reste intouché.
+- **Écartées** : extraire le `match` de `cancel` (F1 : propriété non gardée) ; copier la lecture du compte (DRY) ;
+  une fonction de dépôt neuve dans `kesh-db` pour cette lecture (un module de plus pour neuf lignes).
+- **Réversible** : oui.
+
+### C-28-5-19 — Garde `rows_affected() != 1` en `OptimisticLockConflict`, déclarée inatteignable
+
+- **Contexte** : l'AC3 prescrivait `tracing::error!` + `AppError::Internal`, alors que la fermeture rend une
+  `ReconciliationError` (R2) et que la garde est inatteignable, donc sans mutation tuable (F6).
+- **Retenu** : `Err(ReconciliationError::Db(DbError::OptimisticLockConflict))`, patron de `post_manual_once`
+  (`:3822-3826`), rendu `409 OPTIMISTIC_LOCK` par `conclude_locked_attempt` ; mutation M13 déclarée équivalente (ligne
+  lue `FOR UPDATE` sous verrou par sa clé primaire) ; M14 (portée de l'`UPDATE`) équivalente aussi.
+- **Écartée** : retirer la garde (un `204` muet si un jour la lecture cesse d'être verrouillante).
+- **Réversible** : oui.
+
+### C-28-5-20 — La limite de 100 propositions : exclue, suivie par #649, dite par les textes
+
+- **Contexte** : `GET …/proposals` rend les 100 plus récentes, `hasMore` n'est lu par aucun écran (F2) ; une
+  transaction ancienne dont le rejet est annulé est proposable mais non listée. Issue **#649** ouverte par
+  l'orchestrateur (P3).
+- **Retenu** : exclusion écrite avec renvoi à #649 ; le toast `reconciliation-unreject-success` et la puce
+  *Rejeter* du manuel citent la limite au lieu de promettre un retour inconditionnel ; l'AC2 parle de transaction
+  « proposable ».
+- **Écartée** : lire `hasMore` et paginer (hors périmètre de #526).
+- **Réversible** : oui — la résolution de #649 réécrit ces deux textes (dit dans la fiche).
+
+### C-28-5-21 — Cohérence avec la 27-4 : AC13 et libellé `already-rejected` réécrit
+
+- **Contexte** : l'epic demande la cohérence avec la 27-4 ; la fiche n'avait ni AC ni exclusion (R1) ; le libellé
+  « … elle n’est plus proposée » devient une impasse dès qu'un geste existe.
+- **Retenu** : AC13 (28-5a) — rejeter → annuler → rejeter de nouveau (B1) et accepter après annulation (B9, proposition
+  `split`) ; le libellé est **complété** dans les quatre locales (28-5b), renvoyant au détail de l'import, repli de
+  `failed-proposal-label.ts` égal au catalogue.
+- **Écartée** : laisser le libellé tel quel (il tairait le geste au seul endroit où l'utilisateur bute sur le rejet).
+- **Réversible** : oui.
+
+### C-28-5-22 — Indication en fin de section, texte vrai pour tout rôle
+
+- **Contexte** : « sous la liste » (manuel) n'était pas pinné (F10) ; « d'où son rejet s'annule » est faux pour la
+  Consultation (R5).
+- **Retenu** : paragraphe en fin de `<section>`, après le bloc des échecs partiels ; texte « … où son rejet peut être
+  annulé si votre rôle le permet ».
+- **Écartées** : avant les échecs partiels (les sépare de la liste qu'ils commentent) ; afficher l'indication selon
+  le rôle (le composant ne reçoit pas le rôle : une prop de plus pour une phrase).
+- **Réversible** : oui.
+
+### C-28-5-23 — La lecture verrouillante : mutation M15 survivante assumée, pas de test à deux connexions
+
+- **Contexte** : remplacer `find_by_id_for_account_for_update` par une lecture ordinaire survit aux tests séquentiels
+  (R8, F6).
+- **Retenu** : M15 inscrite et déclarée **survivante assumée** : la différence ne se voit que dans l'intervalle entre
+  la relâche du verrou nommé et le `commit` d'un geste concurrent, que rien ne rend déterministe — angle mort déjà
+  écrit au doc-comment de la lecture (Story 27-4).
+- **Écartée** : un test à deux connexions (interleaving non déterministe : un test qui passerait au hasard).
+- **Réversible** : oui.
+
+### C-28-5-24 — Ce qui va dans chaque partie : messages serveur en a, CHANGELOG et interface en b
+
+- **Retenu** : la 28-5a porte les deux clés serveur (message du `409`, inscrit à G9 ; étiquette d'audit, exigée par
+  `audit_label_registry.rs`) et `docs/api-external.md` ; la 28-5b porte les clés d'interface, le libellé réécrit, le
+  manuel et le CHANGELOG — *Ajouté* (le geste et la route) et *Corrigé* (#526), un geste neuf étant un *Ajouté*
+  (précédent 27-1, R9).
+- **Écartée** : CHANGELOG en 28-5a (il annoncerait un geste que l'interface n'offre pas encore).
 - **Réversible** : oui.

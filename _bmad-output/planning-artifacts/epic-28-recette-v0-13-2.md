@@ -130,6 +130,10 @@ l'annulation d'un rapprochement remet le marquage à zéro.
   (`RECONCILIATION_ALREADY_REJECTED` dans `failed[]`) ;
 - le manuel, que la 15-5c a réécrit « sans promettre de chemin », redevient affirmatif.
 
+*Découpée à la validation P1 (2026-10-13, C-28-5-17)* : **28-5a** (serveur — route `…/unreject`, champ
+`autoMatchRejectedAt`, audit ; PR `refs #526`), puis **28-5b** (écran, manuel, E2E ; PR `closes #526`), sans
+release entre les deux. La limite de 100 propositions de la page *Réconciliation* est suivie par **#649**.
+
 ### 28-6 — Le rapprochement refuse un débit ([#482], P2)
 
 `accept_one_invoice` ne vérifie pas le signe : un débit dont la référence ou le contact désigne la
