@@ -9,6 +9,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type {
 	GetProposalsResponse,
 	AcceptResponse,
@@ -656,14 +658,23 @@ describe('ReconciliationProposals — indication des transactions rejetées (Sto
 		expect((await findByTestId('reconciliation-rejected-hint')).textContent).toContain(HINT);
 	});
 
-	it('liste non vide ⇒ l’indication est rendue', async () => {
+	it('liste non vide ⇒ l’indication est rendue, et son repli égale le catalogue fr-CH (revue P1, E-4)', async () => {
 		mockApi.getProposals.mockResolvedValue({
 			proposals: [makeProposalWithCandidate(1, 101, 1.0)],
 			hasMore: false,
 		} satisfies GetProposalsResponse);
 		const { findAllByTestId, getByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
 		await findAllByTestId('reconciliation-row');
-		expect(getByTestId('reconciliation-rejected-hint').textContent).toContain(HINT);
+		const texte = (getByTestId('reconciliation-rejected-hint').textContent ?? '').trim();
+		expect(texte).toContain(HINT);
+		// Le mock d'`i18nMsg` rend le repli : on le compare mot pour mot à la valeur fr-CH.
+		const prefixe = 'reconciliation-labels-rejected-hint = ';
+		const attendu = readFileSync(join('../crates/kesh-i18n/locales', 'fr-CH', 'messages.ftl'), 'utf-8')
+			.split('\n')
+			.find((l) => l.startsWith(prefixe))
+			?.slice(prefixe.length);
+		expect(attendu).toBeDefined();
+		expect(texte).toBe(attendu);
 	});
 
 	it('liste en erreur ⇒ l’indication est rendue', async () => {
