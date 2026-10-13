@@ -4,10 +4,12 @@
 
 **ready-for-dev** — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
 (rétrospective de l'Epic 27), branche `story/28-3`, worktree `/home/gcorbaz/devel/kesh-28-3`, port **3036**,
-bases `kesh_283` / `kesh_e2e_283`. Choix consignés au registre `epic-28-choix-autonomes-28-3.md`
-(**C-28-3-1 à C-28-3-24**, à verser par union dans `epic-28-choix-autonomes.md`). 12 AC (AC1 à AC12).
-Validation P1 faite (Sonnet, lentilles R et F : 3 MEDIUM, 16 LOW), remédiée (C-28-3-15 à 23) ; validation P2 à
-lancer : `28-3-validate-prompt-p2.md` (Opus, lentilles R et F, C-28-3-24).
+bases `kesh_283` / `kesh_e2e_283`. Choix consignés au registre de l'epic `epic-28-choix-autonomes.md`
+(**C-28-3-1 à C-28-3-32** ; le registre séparé `epic-28-choix-autonomes-28-3.md` y a été versé par union au rebase
+sur le kickoff, puis supprimé). 12 AC (AC1 à AC12).
+Validation P1 faite (Sonnet, lentilles R et F : 3 MEDIUM, 16 LOW), remédiée (C-28-3-15 à 23) ; validation P2 faite
+(Opus, lentilles R et F : 5 MEDIUM, 14 LOW), remédiée par simplification (C-28-3-25 à 31) ; validation P3 à lancer :
+`28-3-validate-prompt-p3.md` (Sonnet, lentilles R et F, C-28-3-32).
 PR : **`closes #633`**, **`refs #465`** (jamais `closes #465` : C-28-3-1).
 
 ## Story
@@ -21,7 +23,7 @@ le fichier une ligne sans son parent, que la restauration recréerait telle quel
 Issue : [#633](https://github.com/guycorbaz/kesh/issues/633) (bug, **P2**), relevée en validation P2 de la Story 27-1
 (lentille R, R2-1). Jumeau : [#465](https://github.com/guycorbaz/kesh/issues/465) (export de souveraineté CSV, P2),
 **hors périmètre** (C-28-3-1). Epic : `_bmad-output/planning-artifacts/epic-28-recette-v0-13-2.md` § *28-3* (fichier
-du kickoff, worktree `kesh-28-0`, non encore mergé à la création de cette fiche). Cible : **v0.13.3**.
+du kickoff, lu dans le worktree `kesh-28-0` à la création de cette fiche, mergé depuis — `5aad8b35`). Cible : **v0.13.3**.
 
 ⚠️ **Pourquoi maintenant** : depuis le 2026-10-13, l'instance du NAS porte de vraies transactions. Une sauvegarde
 incohérente n'est plus une hypothèse d'école : c'est la pièce qu'on restaure le jour où il faut restaurer.
@@ -84,27 +86,39 @@ START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY;
 - `READ ONLY` : toute écriture dans la transaction est refusée par le serveur (AC5 (c)) ; la transaction n'obtient
   pas d'identifiant d'écriture.
 - La transaction se **clôt avant** la compression ZIP (C-28-3-5) — par `ROLLBACK` (rien à valider) — et, sur toute
-  erreur, la connexion revient au pool **hors transaction** (le `Drop` de `sqlx::Transaction` émet le `ROLLBACK`).
+  erreur survenue **une fois l'instantané ouvert**, la connexion revient au pool **hors transaction** (le `Drop` de
+  `sqlx::Transaction` émet le `ROLLBACK`). Les erreurs **de l'ouverture** elle-même ont leurs résidus, au dernier
+  point de cette liste.
   Une erreur du `ROLLBACK` final (`finish`) fait **échouer** la sauvegarde (C-28-3-20) : `export_installation` la
   propage, même si toutes les tables ont été lues.
 - Ouverture, sur une `PoolConnection` acquise : d'abord le `SET TRANSACTION …` par `conn.execute("SET TRANSACTION …")`
   — un `&str` passé à `Executor::execute`, donc en **protocole texte**, comme le `BEGIN` de sqlx ; **pas**
   `sqlx::query(…)`, qui passerait en protocole préparé (C-28-3-19) ; puis `sqlx::Transaction::begin(conn,
-  Some(<instruction>))` sur cette même connexion. `Transaction::begin` (`sqlx-core-0.8.6/src/transaction.rs:99`) est
-  exportée mais marquée `#[doc(hidden)]` (l. 98) : hors contrat semver, c'est une **dépendance à épingler** (commentaire
-  de `snapshot.rs`, et Dev Notes § *Risque de montée de sqlx*) ; c'est pourtant la seule qui rende un type `'static`
+  Some("START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY".into()))` sur cette même connexion — le paramètre est un
+  `Option<Cow<'static, str>>` (`sqlx-core-0.8.6/src/transaction.rs:101`), d'où le `.into()` (C-28-3-30).
+  `Transaction::begin` (`sqlx-core-0.8.6/src/transaction.rs:99`) est
+  exportée mais marquée `#[doc(hidden)]` (l. 98) : hors contrat semver, c'est une dépendance **signalée en
+  commentaire** — non épinglée : `kesh-db/Cargo.toml:16` porte `sqlx = { version = "0.8", … }`, et seul `Cargo.lock` tient la 0.8.6
+  (commentaire de `snapshot.rs`, et Dev Notes § *Risque de montée de sqlx*, C-28-3-30) ; c'est pourtant la seule qui rende un type `'static`
   après un `SET` sur la même connexion (C-28-3-19). Elle contrôle `in_transaction()` après l'instruction
   (`sqlx-mysql-0.8.6/src/transaction.rs:33-34`). ⛔ **Jamais** un `START TRANSACTION` brut par `execute` hors de cette
   API : sqlx ne saurait pas la connexion en transaction et la rendrait au pool **transaction ouverte**.
 - Échec du `SET TRANSACTION` : `conn.close_on_drop()` avant de rendre l'erreur — la connexion ne retourne pas au pool
   avec un état incertain. Échec de `Transaction::begin` (la connexion lui a été cédée) : le niveau « pour la prochaine
   transaction » peut rester posé sur une connexion rendue au pool ; résidu **assumé**, écrit au registre (C-28-3-19).
+  Cas particulier, sans remède possible puisque la connexion a été cédée : `Error::BeginFailed`
+  (`sqlx-mysql-0.8.6/src/transaction.rs:33-34`) — le serveur a exécuté le `START`, mais le drapeau
+  `SERVER_STATUS_IN_TRANS` manque ; la connexion repart au pool avec `transaction_depth = 0` et peut-être une
+  transaction ouverte côté serveur. Résidu **assumé** lui aussi (C-28-3-30) ; s'il se produisait, tous les tests de
+  l'AC5 rougiraient (fait de la Dev Notes § *Faits MariaDB*, ligne `SERVER_STATUS_IN_TRANS`).
 
 ### AC2 — Le type, la structure et deux gardes lexicales tiennent l'inventaire des lectures
 
 Un type neuf, `ReadSnapshot` (module neuf `crates/kesh-db/src/snapshot.rs`, C-28-3-3), enveloppe la transaction de
 l'AC1. Il n'a que deux constructeurs — `ReadSnapshot::begin(pool: &MySqlPool)` (public) et
-`ReadSnapshot::begin_on(conn: PoolConnection<MySql>)` (`pub(crate)`, pour l'AC5 (a)) — et une fin explicite
+`ReadSnapshot::begin_on(conn: PoolConnection<MySql>)` (`pub(crate)`, pour l'AC5 (a)) — `begin` n'étant que
+`pool.acquire()` suivi de `begin_on(conn)`, si bien que `begin_on` sert aussi en production et n'est pas du code mort
+sous `clippy -D warnings` (C-28-3-29) — et une fin explicite
 (`finish`, qui fait le `ROLLBACK` et rend l'erreur éventuelle). Il donne accès à la connexion pour l'exécution des
 requêtes (`&mut MySqlConnection`, par une méthode ou `DerefMut`), jamais au pool ni à la `PoolConnection`.
 
@@ -138,15 +152,16 @@ Les **quatre** fonctions de lecture de la sauvegarde de `backup.rs` prennent `&m
 
 Ce qui reste hors des gardes, et c'est écrit comme angle mort : une donnée que lirait un **appelant**
 (`full_export`, `run_backup_and_restore`) sur le pool et qu'il passerait à `build_keshbackup` par un paramètre neuf
-— le compte de (ii) ne bougerait pas ; le détecteur restant est la revue. `column_constraints` (`backup.rs:388`, import) **ne change pas** : il sert
+— le compte de (ii) ne bougerait pas ; et un **alias** du pool (`let p = pool;` puis `export_installation(p)` et
+`ReadSnapshot::begin(p)`), qui ramène M10 ou M11 à exactement deux `pool` (C-28-3-31). Le détecteur restant, pour
+l'un comme pour l'autre, est la revue. `column_constraints` (`backup.rs:388`, import) **ne change pas** : il sert
 la restauration, non la sauvegarde (AC9).
 
 ### AC3 — Une seule fonction de `kesh-db` lit l'installation ; `kesh-api` n'assemble plus que le ZIP
 
 `kesh_db::backup::export_installation(pool: &MySqlPool) -> Result<InstallationExport, DbError>` ouvre le
-`ReadSnapshot`, contrôle le moteur des tables sauvegardées (AC4, garde de moteur), lit `min_required`, `instance_id`
-et chaque table **dans l'ordre de `TABLES_TO_TRUNCATE`**, clôt l'instantané (`finish`, dont l'erreur se propage :
-C-28-3-20), et rend :
+`ReadSnapshot`, le passe au cœur (AC4), qui lit `min_required`, `instance_id` et chaque table **dans l'ordre de
+`TABLES_TO_TRUNCATE`**, puis clôt elle-même l'instantané (`finish`, dont l'erreur se propage : C-28-3-20), et rend :
 
 ```rust
 pub struct InstallationExport {
@@ -169,30 +184,39 @@ avant ni après la story). Ce que contrôlent `admin_full_export_e2e.rs` et cons
 
 ### AC4 — Le cœur est observable, pour le test, sans changer le chemin de production
 
-`export_installation` délègue à une fonction **privée** du module (nom au choix, par exemple
-`export_installation_in`) qui prend un `ReadSnapshot` déjà ouvert et un **observateur** appelé :
+`export_installation` délègue à une fonction **privée** du module, prescrite (C-28-3-29) :
+`export_installation_in(snap: &mut ReadSnapshot, obs: &mut (dyn FnMut(Etape) -> BoxFuture<'static, ()> + Send))
+-> Result<InstallationExport, DbError>`. Le cœur **emprunte** l'instantané et ne le clôt pas : `finish` revient à
+l'appelant — `export_installation` en production, le test sinon (AC5). Les tests (a), (b) appellent donc le cœur
+privé avec un `ReadSnapshot` de `begin(&pool)` ou de `begin_on(conn)`, puis font `finish` ; le chemin
+`export_installation` → cœur est couvert par l'AC5 (e) et par les suites de l'AC6. Le cœur reçoit un **observateur**
+appelé :
 
 - une fois **après l'ouverture de l'instantané et avant la première lecture** (étape `Ouvert`) ;
 - une fois **après la lecture de chaque table** (étape `ApresTable(&'static str)`).
 
 L'observateur a **cette** forme, prescrite (C-28-3-21) : `&mut (dyn FnMut(Etape) -> BoxFuture<'static, ()> + Send)`,
-où `BoxFuture` est un alias **local** du module, `Pin<Box<dyn Future<Output = ()> + Send + 'a>>` (std seule :
+où `BoxFuture` est un alias **local** du module, à **deux** paramètres (C-28-3-30) :
+`type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;` (std seule :
 `kesh-db` ne dépend pas du crate `futures`, et la story n'en ajoute pas — `grep -n futures crates/kesh-db/Cargo.toml`
-ne rend rien) ; `Etape` est `Copy`. `AsyncFnMut` est écarté : dans un cœur appelé depuis un handler
+ne rend rien) ; `Etape` est `Copy`. Le champ de `Etape::ApresTable` n'est lu que sous `cfg(test)` (la production
+passe un observateur vide) : il porte `#[cfg_attr(not(test), allow(dead_code))]` avec sa raison en commentaire, faute
+de quoi `clippy -D warnings` rougirait sur la cible lib (C-28-3-29). `AsyncFnMut` est écarté : dans un cœur appelé depuis un handler
 axum, dont le futur doit être `Send`, l'inférence d'auto-trait y est fragile. Le test capture dans la fermeture un
 clone du pool et un compteur partagé (`Arc<AtomicUsize>`). `export_installation` lui passe un observateur **vide**
 (`&mut |_| Box::pin(async {})`). Aucun drapeau, aucune variable d'environnement, aucune `feature` : la production
 emprunte **exactement** le chemin testé (C-28-3-6). La signature du cœur ne reçoit **aucun pool** (AC2, point 2).
 
-**Garde de moteur, à l'exécution** (C-28-3-17). Première lecture du cœur, après l'étape `Ouvert` et dans
-l'instantané : `SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()`, filtrée
-en Rust sur les tables de `TABLES_TO_TRUNCATE` et `_kesh_version`. Le cœur **échoue fermé**
-(`DbError::Invariant`, message nommant la table et son moteur) si l'une n'est pas `InnoDB` — `ENGINE` se lit en
-`Option<String>`, comme dans `test_schema_guard.rs:166`, et un `NULL` compte comme « pas InnoDB » —, ou si l'une manque
-(compte trouvé ≠ `TABLES_TO_TRUNCATE.len() + 1`). Motif : 13 des 51 `CREATE TABLE` des migrations n'ont pas de clause
-`ENGINE` et prennent, sur la base servie, le moteur par défaut du **serveur** — qu'aucun fichier du dépôt ne fixe ;
-une garde sur la seule base de test ne verrait pas une table non transactionnelle en exploitation, qui échapperait à
-l'instantané sans signal. La fonction de contrôle est `pub(crate)` et rend le nombre de tables contrôlées (AC5 (e1)).
+**Moteur de stockage : contrôlé dans les tests, écrit au manuel, pas à l'exécution** (C-28-3-25, qui remplace
+C-28-3-17). Le cœur **ne contrôle pas** le moteur des tables qu'il lit, et la sauvegarde n'échoue jamais pour cette
+raison. Le contrôle vit dans les tests : le squash de test (`ENGINE=InnoDB` sur ses 40 tables, Dev Notes § *Moteurs*),
+`test_schema_guard.rs` (qui compare à chaque gate le moteur du vrai schéma migré à celui du squash, `schema_facts`, l. 154-168) et
+l'AC5 (e) (toute table sauvegardée est InnoDB sur la base de test). Motif : 2 des 40 `CREATE TABLE` des migrations
+(`contacts`, `contact_persons`) n'ont pas de clause `ENGINE` et prennent, sur la base servie, le moteur par défaut du
+**serveur** ; or l'installation réelle (le NAS de Guy) tourne le paquet MariaDB de Synology, dont le moteur par défaut
+n'est pas vérifié. Une garde qui échouerait fermée y refuserait **toute** sauvegarde et **tout** import, en
+permanence : pire que le défaut qu'elle garde. Le manuel d'administration dit la limite, la vérification et le remède
+(AC10).
 
 ### AC5 — Tests de l'instantané (`crates/kesh-db/src/backup.rs`, `mod tests`, `#[sqlx::test(migrations = "./test-schema")]`)
 
@@ -227,11 +251,25 @@ type, mêmes constructeurs `begin`/`begin_on`, même accès connexion, même `fi
 qu'acquérir ou garder une `PoolConnection`, **sans** `SET TRANSACTION` ni `START TRANSACTION`, et `finish` ne fait
 que rendre la connexion. Les quatre lectures, le cœur et l'observateur sont, dès T1, sur `&mut ReadSnapshot` ; les
 lectures y sont donc en autocommit sur **une** connexion, et la suppression concurrente est vue. Résultat attendu à
-T1, et à copier au Dev Agent Record : (a-défaut), (a-RC) et (b) rouges — assertion 2 ou 3, orphelins listés. T2 ne
-change que l'**intérieur** de `ReadSnapshot` (`begin_on` ouvre l'instantané de l'AC1, `finish` fait le `ROLLBACK`,
-le champ devient une `sqlx::Transaction<'static, MySql>`) : les trois tests passent au vert **sans qu'une ligne de
-`mod tests` ne change** — le Dev Agent Record le prouve par `git diff <commit T1> <commit T2> -- ` restreint au
-module de test (sortie vide sur ces trois tests).
+T1, et à copier au Dev Agent Record : (a-défaut), (a-RC) et (b) rouges — assertion 2 ou 3, orphelins listés. Côté
+production, T2 ne change que l'**intérieur** de `ReadSnapshot` (`begin_on` ouvre l'instantané de l'AC1, `finish` fait
+le `ROLLBACK`, le champ devient une `sqlx::Transaction<'static, MySql>`) ; côté `mod tests`, T2 **ajoute** des tests
+neufs ((c), (d1), (d2), (e), (f), (g)(i)) mais ne touche **ni** les trois tests (a-défaut), (a-RC), (b), **ni** leurs
+helpers (`orphelins`, le montage commun, l'observateur s'il est factorisé). Les trois tests passent au vert sans que
+leur texte ni celui de leurs helpers ne change. Preuve, au Dev Agent Record, une commande **par fonction** (chacun
+des trois tests et chacun de leurs helpers), sortie copiée, **vide** attendue (C-28-3-27) :
+
+```sh
+git log --oneline -L '/fn <fonction>(/,/^    }$/:crates/kesh-db/src/backup.rs' <commit T1>..<commit T2>
+```
+
+⚠️ Forme à expressions, **non** `-L :<fonction>:` : le dépôt n'a pas de `.gitattributes` qui associe `*.rs` au pilote
+`diff=rust`, et le pilote par défaut ne reconnaît comme en-tête de fonction qu'une ligne non indentée ; pour une
+fonction de `mod tests` (indentée de quatre espaces), la plage s'étendrait jusqu'à la ligne non indentée suivante,
+engloberait les tests neufs de T2 et rendrait une sortie non vide sur un texte inchangé. La borne de fin `^    }$`
+est l'accolade fermante d'une fonction de `mod tests` formatée par `rustfmt` ; le dev vérifie, sur le commit T2, que
+chaque plage couvre bien la fonction entière et elle seule (`git show <T2>:crates/kesh-db/src/backup.rs` et numéros
+de ligne copiés), sans quoi une sortie vide ne prouverait rien.
 
 **(b) L'instantané est pris à l'ouverture.** L'observateur, à l'étape `Ouvert`, supprime l'import de la même façon.
 Attendu : la sauvegarde contient l'import et ses transactions. (Sans `WITH CONSISTENT SNAPSHOT`, la vue naîtrait à la
@@ -250,22 +288,26 @@ connexion réacquise après la sauvegarde est **nécessairement** celle qui a po
 `CONNECTION_ID()` identique avant et après. `sqlx::Transaction` ne rend pas sa connexion : `finish` et le `drop` la
 remettent au pool, d'où ce montage. **(d1)** `begin_on`, une lecture (`read_min_required`), puis `finish` ;
 **(d2)** `begin_on`, la même lecture, puis `drop` sans `finish` (chemin d'erreur). Dans les deux cas, la connexion réacquise n'est plus en transaction : `SELECT @@in_transaction`
-rend `0`. Si le serveur refuse `@@in_transaction` (fait non vérifié, F7 de la validation P1), le test bascule sur
-`SELECT COUNT(*) FROM information_schema.INNODB_TRX WHERE trx_mysql_thread_id = CONNECTION_ID()` (`0` attendu) —
-**le test tranche**, et le Dev Agent Record écrit laquelle des deux formes a servi (C-28-3-22). ⚠️ Ce repli ne voit
-que les transactions qu'InnoDB a enregistrées ; d'où la lecture que (d1) et (d2) font avant de rendre la connexion,
-qui garde le repli discriminant sous M6.
+rend `0` (C-28-3-26, qui remplace C-28-3-22). L'existence de `@@in_transaction` en 10.11 n'est pas établie par
+requête : **le test lui-même la vérifie** (une erreur « variable inconnue » le fait échouer, il ne passe pas à vide).
+Si elle n'existe pas, le dev remplace la forme par un repli **sans privilège** : sur la connexion réacquise,
+`SET TRANSACTION READ WRITE` (sans portée) doit **réussir** — dans une transaction ouverte, le serveur le refuse en
+`1568` (`ER_CANT_CHANGE_TX_CHARACTERISTICS`, fait non vérifié, tranché par ce test sous M6) ; le numéro se lit comme
+en (c). Le Dev Agent Record écrit laquelle des deux formes a servi, et la fiche est corrigée en conséquence. ⛔ Pas de
+repli sur `information_schema.INNODB_TRX` : il exige le privilège `PROCESS`, que l'utilisateur de dev `kesh` n'a pas
+(`reconciliation_e2e.rs:7244-7248`) — le test passerait en CI (`root`) et échouerait sur le poste de dev.
 
-**(e) Toutes les tables sauvegardées sont transactionnelles — et sinon la sauvegarde échoue** (C-28-3-17, garde de
-moteur de l'AC4).
-**(e1)** Sur la base du test, la garde rend `Ok(n)` avec `n = TABLES_TO_TRUNCATE.len() + 1` (assertion de montage :
-aucune table oubliée par la garde).
-**(e2)** Après `ALTER TABLE _kesh_version ENGINE=MyISAM` sur la base éphémère du test (`_kesh_version` ne porte
-aucune clé étrangère, squash l. 23-31 — choisie pour cela : une table liée par clé étrangère ne changerait pas de
-moteur ; acceptation de cet `ALTER` non vérifiée, tranchée par le test), `export_installation`
-rend `Err(DbError::Invariant(m))` avec `m` contenant `_kesh_version` et `MyISAM`. Une table neuve créée en `MyISAM`,
-`Aria` ou `MEMORY`, en test comme sur un serveur d'exploitation réglé autrement, ferait de même échouer la sauvegarde
-au lieu de lui échapper **sans que rien ne le voie**.
+**(e) Toutes les tables sauvegardées sont InnoDB sur la base de test, et `export_installation` les rend toutes**
+(C-28-3-25 ; garde de moteur **de test**, non d'exécution — AC4). Le test lit
+`SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()` (`ENGINE` en
+`Option<String>`, comme `test_schema_guard.rs:166` ; un `NULL` compte comme « pas InnoDB »), et vérifie que chaque
+table de `TABLES_TO_TRUNCATE` et `_kesh_version` y figure (assertion de montage : `TABLES_TO_TRUNCATE.len() + 1` noms
+trouvés — sans elle, une liste vide passerait à vide) avec le moteur `InnoDB` ; le message d'échec nomme la table et
+son moteur. Puis `export_installation(&pool)` rend `Ok(e)` avec `e.tables` égal, nom pour nom et dans l'ordre, à
+`TABLES_TO_TRUNCATE` — c'est la couverture, dans `kesh-db`, du chemin public vers le cœur. Ce test rougit si une
+migration future crée une table sauvegardée en `MyISAM`, `Aria` ou `MEMORY` par une clause explicite (le squash la
+reproduirait, et `test_schema_guard.rs` ne verrait rien, les deux schémas étant d'accord). Il ne voit **pas** le moteur
+par défaut d'un serveur d'exploitation : c'est l'objet du manuel (AC10).
 
 **(f) Le niveau d'isolation de la session n'est pas modifié.** Même montage que (d) : sur la connexion passée en
 `SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED`, après une sauvegarde par `begin_on` puis `finish`, la connexion
@@ -298,9 +340,8 @@ dans `tx` (`admin.rs:239`), **puis** `build_keshbackup(&state.pool)` sur une **a
 restauration dans `tx`. La lecture de `_kesh_version` par l'instantané est une lecture **non verrouillante** : elle ne
 bloque pas sur le `FOR UPDATE` tenu par `tx` (comme aujourd'hui). Le commentaire `admin.rs:254-262` (« `build_keshbackup`
 lit via le pool (connexions séparées) ») est réécrit : une connexion séparée, un instantané pris après le verrou.
-Seul changement de comportement, voulu : sur une base dont une table n'est pas InnoDB, la garde de moteur (AC4) fait
-échouer la sauvegarde de sécurité, donc refuser l'import (`AdminPreImportBackupFailed`, chemin d'erreur existant) —
-un import ne s'engage pas sans sauvegarde cohérente. Aucun
+Aucun changement de comportement à l'import : la story ne contrôle pas le moteur des tables à l'exécution
+(C-28-3-25), et la sauvegarde de sécurité n'échoue donc pas pour une raison neuve. Aucun
 test neuf exigé ici : `admin_full_import_e2e.rs` exerce déjà ce chemin de bout en bout (un interblocage le ferait
 rougir ou pendre).
 
@@ -310,7 +351,7 @@ rougir ou pendre).
   d'orphelins ; **reste** l'export global CSV, #465.
 - `crates/kesh-api/src/admin_backup/export.rs` : en-tête (`:1-13` — et le « (22) » périmé de `:11`, à remplacer par
   « une par table de `TABLES_TO_TRUNCATE` », **sans nombre**) et doc-comment de `build_keshbackup`.
-- `crates/kesh-db/src/backup.rs` : doc du module (`:1-17`) et de `export_table` ; et le commentaire `:487-488`, qui
+- `crates/kesh-db/src/backup.rs` : doc du module (`:1-17`) et de `export_table` ; et le commentaire `:488-489`, qui
   cite `export.rs:55` (déjà périmé : la boucle est à `export.rs:60`) et `:96` — à **dépouiller des numéros de
   ligne** (« la boucle de `export_installation` »), puisque la story déplace la boucle de crate.
 - `crates/kesh-api/src/exports/global.rs:21-24` **reste** tel quel (#465 ouvert) ; ajouter seulement que la
@@ -347,12 +388,23 @@ entrée du journal d'audit, `admin.full_export` (`emit_full_export_audit`, `rout
 > une entrée au journal d'audit (`admin.full_export`) — entrée que le fichier, pris avant elle, ne contient donc pas.
 >
 > Kesh lit toutes les tables dans **un seul instantané** de la base, pris au début de l'export : ce qui est saisi,
-> modifié ou supprimé pendant qu'il se prépare n'y figure pas, et le fichier ne porte jamais une ligne sans son
-> en-tête — une transaction sans son import, une ligne de facture sans sa facture. L'export ne bloque aucune saisie.
-> La sauvegarde de sécurité prise avant un import (plus bas) est lue de la même façon. Si une table de la base n'est
-> pas transactionnelle (moteur autre qu'InnoDB, par un réglage du serveur), l'export **échoue** plutôt que de produire
-> un fichier qui ne serait pas cohérent. ⚠️ *Avant la 0.13.3*, un export pris pendant une saisie pouvait porter de
+> modifié ou supprimé pendant qu'il se prépare n'y figure pas, et une saisie concurrente ne peut plus y laisser une
+> ligne sans son en-tête — une transaction sans son import, une ligne de facture sans sa facture. L'export ne bloque
+> aucune saisie. La sauvegarde de sécurité prise avant un import (plus bas) est lue de la même façon. Une base qui
+> porte **déjà** de telles lignes, pour avoir restauré une sauvegarde incohérente d'une version antérieure, les garde,
+> et l'export les reproduit (C-28-3-28). ⚠️ *Avant la 0.13.3*, un export pris pendant une saisie pouvait porter de
 > telles lignes ; une sauvegarde de cette époque que l'on compte garder se **refait**.
+>
+> L'instantané ne vaut que pour les tables **InnoDB**, le moteur transactionnel de MariaDB ; une table d'un autre
+> moteur y échappe, **sans que l'export le signale**. Sur l'image MariaDB de `docker-compose.yml`, toutes les tables
+> de Kesh sont InnoDB. Deux d'entre elles sont toutefois créées sans moteur explicite et prennent le moteur par
+> défaut du serveur : sur une base fournie par ailleurs (`docker-compose.prod.yml` — paquet MariaDB de Synology,
+> serveur ou base gérée), le vérifier une fois, par le client MariaDB connecté à la base de Kesh
+> (`docker compose exec mariadb mariadb -u kesh -p kesh`, ou le client du paquet DSM) :
+> `SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND (ENGINE IS NULL OR
+> ENGINE <> 'InnoDB');` — **aucune ligne** attendue. Remède, pour chaque table listée, après un dump
+> (`kesh-dump.sh`) : `ALTER TABLE <table> ENGINE=InnoDB;` ; et régler `default_storage_engine=InnoDB` dans la
+> configuration du serveur, pour les tables à venir.
 
 Et, au même endroit ou au § *Quelle méthode de sauvegarde choisir ?* (`:1901`), une phrase : l'**export global**
 (CSV, *Administration → Export global*) ne bénéficie **pas encore** de cette garantie (#465). Côté manuel utilisateur
@@ -362,7 +414,10 @@ qu'en partie ; le lancer quand personne ne saisit (#465).
 
 **PDF régénérés** (`make fr` dans `docs/manual/`, sous `flock`), et contrôlés **aplatis** :
 `pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "un seul instantané[^.]*"` (et de
-même pour le manuel utilisateur), **et** l'absence de l'ancienne promesse :
+même pour le manuel utilisateur), la phrase de moteur
+(`… | grep -o "ne vaut que pour les tables[^.]*"`, une occurrence attendue) et la requête de vérification
+(`… | grep -c "ENGINE <> 'InnoDB'"` → au moins `1` ; `lstlisting` et ligature du PDF peuvent altérer l'apostrophe :
+en cas de `0`, contrôler la forme rendue et l'écrire au Dev Agent Record), **et** l'absence de l'ancienne promesse :
 `pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -c "aucun effet de bord"` → `0` (de même
 `grep -c "aucun effet de bord" docs/manual/fr/admin-manual.tex` → `0`). Aucune modification de version des manuels
 (macro `\keshVersion` : gate de release, pas de story).
@@ -381,8 +436,9 @@ créer aussi : fusion par union au rebase), `### Corrigé` :
 >   sécurité prise avant un import — lisait ses tables l'une après l'autre : une saisie ou une suppression faite
 >   pendant la sauvegarde pouvait y laisser des lignes sans leur parent (par exemple des transactions sans leur
 >   import), que la restauration recréait telles quelles. Toutes les tables sont désormais lues dans un instantané
->   unique, en lecture seule, qui ne bloque aucune saisie ; si une table n'est pas transactionnelle (moteur autre
->   qu'InnoDB), la sauvegarde échoue au lieu de produire un fichier incohérent. Une sauvegarde prise sous une version antérieure pendant
+>   unique, en lecture seule, qui ne bloque aucune saisie ; la garantie vaut pour les tables InnoDB, et le manuel
+>   d'administration dit comment vérifier le moteur d'une base fournie par ailleurs. Une base qui porte déjà de telles
+>   lignes les garde. Une sauvegarde prise sous une version antérieure pendant
 >   que l'on saisissait se refait. L'export global CSV n'en bénéficie pas encore ([#465](https://github.com/guycorbaz/kesh/issues/465)).
 
 ### AC12 — Aucune migration, aucun changement d'API ni d'écran
@@ -404,19 +460,22 @@ frontend : inchangés.
   `export_installation` et adaptation des quatre tests appelant `export_table` — pour que le **workspace** compile à
   ce commit ; helper `orphelins` ; tests (a-défaut), (a-RC), (b). Exécuter, constater le **rouge** des trois, copier
   la sortie au Dev Agent Record. Commit (`test(28-3): … rouge avant la correction (refs #633)`).
-- [ ] **T2 — L'instantané** (AC1, AC2 point 3 (i), AC4 garde de moteur) : l'intérieur de `ReadSnapshot` seul
+- [ ] **T2 — L'instantané** (AC1, AC2 point 3 (i)) : côté production, l'intérieur de `ReadSnapshot` seul
   (`SET TRANSACTION` en protocole texte, `close_on_drop` sur son échec, `Transaction::begin`, `ROLLBACK` de `finish`,
-  commentaire de dépendance `#[doc(hidden)]` — C-28-3-19) ; garde de moteur dans le cœur. Les tests (a-défaut),
-  (a-RC), (b) passent **sans modification** (`git diff` du module de test copié, AC5 (a)). Tests (c), (d1), (d2), (e1),
-  (e2), (f), (g)(i).
+  commentaire de dépendance `#[doc(hidden)]` — C-28-3-19). Côté `mod tests`, tests neufs (c), (d1), (d2), (e), (f),
+  (g)(i) ; les tests (a-défaut), (a-RC), (b) et leurs helpers ne changent pas et passent au vert (preuve
+  `git log -L` par fonction, sorties vides copiées, AC5 (a), C-28-3-27).
 - [ ] **T3 — `kesh-api`** (AC2 point 3 (ii), AC3, AC6, AC7) : garde (g)(ii) dans un `mod tests` neuf de
   `admin_backup/export.rs` ; commentaire `admin.rs:254-262` ; suites de l'AC6 vertes.
 - [ ] **T4 — Propagation** (AC8) : commentaires, grep de propagation copié au Dev Agent Record.
 - [ ] **T5 — Documentation** (AC10, AC11) : manuels, PDF régénérés et contrôlés aplatis, CHANGELOG.
-- [ ] **T6 — Mutations et gates** (AC1-AC12) : campagne M1-M12 (ci-dessous) ; base remise à zéro **avant** le gate
+- [ ] **T6 — Mutations et gates** (AC1-AC12) : campagne M1-M11 (ci-dessous ; M12 retirée, C-28-3-25) ; base remise à zéro **avant** le gate
   complet ; gate complet `scripts/test-fast.sh` (**`kesh-db` touché : gate complet même en boucle de revue**) ;
   `npm run check`, `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build` ; **E2E complet au dernier
-  commit de code** (aucun écran ne change, mais la règle D7 ne connaît pas d'exception).
+  commit de code** (aucun écran ne change, mais la règle D7 ne connaît pas d'exception). **Demandé à l'orchestrateur, hors
+  agent** (R2-1, C-28-3-25) : avant la publication de la 0.13.3, la requête de moteur de l'AC10, en lecture seule, sur
+  la base du NAS — résultat écrit « conforme / non conforme » au Dev Agent Record (jamais de nom de base ni d'hôte
+  réels) ; non conforme, le remède du manuel s'applique avant la release. Cela ne bloque pas la story.
 
 ### Mutations à exécuter (T6)
 
@@ -426,7 +485,7 @@ ou une équivalence **à démontrer**, jamais à déclarer.
 
 | # | Mutation | Test qui doit rougir |
 |---|---|---|
-| M1 | le cœur lit chaque table par une connexion neuve du pool (retour au code d'avant, par un `ReadSnapshot::begin(pool)` **par table**) | AC5 (a-défaut), (a-RC) |
+| M1 | l'intérieur de `ReadSnapshot` redevient celui de T1 : `begin_on` garde la connexion **sans** ouvrir de transaction, `finish` la rend (lectures en autocommit). Redéfinie en P2 (R2-5/F2-4) : la forme d'origine, « une connexion neuve du pool par table », n'est pas représentable dans un cœur qui ne reçoit aucun pool (AC2 point 2) ; sa forme représentable est M11 | AC5 (a-défaut), (a-RC), (b) |
 | M2 | `START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY` → `START TRANSACTION READ ONLY` | AC5 (b) |
 | M3 | suppression du `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ` | AC5 (a-RC) |
 | M4 | `SET TRANSACTION …` → `SET SESSION TRANSACTION …` | AC5 (f) |
@@ -434,10 +493,10 @@ ou une équivalence **à démontrer**, jamais à déclarer.
 | M6 | `ReadSnapshot` ouvre la transaction par un `execute("START TRANSACTION …")` brut sur la `PoolConnection`, hors de `sqlx::Transaction` (le piège de l'AC1) ; `finish` se contente de rendre la connexion | AC5 (d1), (d2) — `@@in_transaction` à `1`. ⚠️ Un `finish` qui oublie le `ROLLBACK` **mais** garde la `sqlx::Transaction` est, lui, **équivalent** (le `Drop` de sqlx l'émet) : à consigner comme tel, non comme survivant |
 | M7 | l'observateur n'est plus appelé après chaque table | AC5 (a) — assertion de montage (compteur) |
 | M8 | le helper `orphelins` ne lit plus que les FK d'une table (filtre `TABLE_NAME = 'invoices'`) | AC5 (a) — assertion de montage du helper |
-| M9 | une table de `TABLES_TO_TRUNCATE` exclue de la garde de moteur (`skip(1)` sur la liste contrôlée) | AC5 (e1) — compte rendu par la garde |
+| M9 | dans le squash `test-schema/0001_schema_squash.sql`, `_kesh_version` passe de `ENGINE=InnoDB` à `ENGINE=MyISAM` (mutation temporaire, restaurée ; AC12 ne vise que le livrable) | AC5 (e) — moteur nommé dans le message. (`test_schema_guard.rs` rougit aussi : à noter, sans en dépendre) |
 | M10 | `build_keshbackup` relit `min_required` dans un **second** instantané (`kesh_db::snapshot::ReadSnapshot::begin(pool)` puis `read_min_required`) — **compile** (C-28-3-15) | AC5 (g)(ii) — `pool` trois fois. Aucun test fonctionnel ne la tue (`min_required` ne change qu'au démarrage) : c'est la raison d'être de la garde |
 | M11 | `export_installation` ouvre un second `ReadSnapshot::begin(pool)` pour l'une des lectures — compile | AC5 (g)(i) — `pool` trois fois |
-| M12 | la garde de moteur rend `Ok` sans regarder `ENGINE` | AC5 (e2) |
+| M12 | *retirée en P2* (C-28-3-25) : il n'y a plus de garde de moteur à l'exécution | — |
 
 ## Dev Notes
 
@@ -477,9 +536,10 @@ crates/kesh-db/tests/accounts_role_backfill.rs:237:    let export = kesh_db::bac
 `kesh-api`, deux appelants de `build_keshbackup`, quatre tests. Après T1, les quatre fonctions exigent
 `&mut ReadSnapshot` : aucune d'elles ne peut plus s'appeler sur le pool. Ce n'est **pas** une interdiction de tout
 site neuf (AC2, C-28-3-15) : le cœur sans pool et les deux gardes lexicales (AC5 (g)) couvrent les deux fonctions qui
-tiennent un pool. La story **ajoute** une lecture, celle de la garde de moteur (`information_schema.TABLES`, AC4), dans
-l'instantané. **Sites non résolus après la story** : aucun pour la sauvegarde **dans les formes couvertes** ; angle
-mort écrit à l'AC2 (une lecture faite par un appelant et passée en paramètre) ; l'export global (`exports/global.rs`,
+tiennent un pool. La story n'ajoute **aucune** lecture à la sauvegarde (la garde de moteur à l'exécution de la
+remédiation P1 a été retirée en P2, C-28-3-25). **Sites non résolus après la story** : aucun pour la sauvegarde
+**dans les formes couvertes** ; angles morts écrits à l'AC2 (une lecture faite par un appelant et passée en
+paramètre ; un alias du pool) ; l'export global (`exports/global.rs`,
 29 lectures sur le pool) reste hors périmètre, nommé (#465, C-28-3-1).
 
 `grep -rn "kesh_db::backup::" crates` : les autres usages (`kesh-seed`, `admin_backup/import.rs`, tests e2e) ne
@@ -497,12 +557,34 @@ $ grep -ci 'CREATE TABLE' $S ; grep -ci 'ENGINE=InnoDB' $S
 
 Les 40 tables du squash (régénéré depuis `SHOW CREATE TABLE`, donc fidèle au moteur réel) : les 39 de
 `TABLES_TO_TRUNCATE` (recompté : `sed -n '/^pub const TABLES_TO_TRUNCATE/,/^];/p' crates/kesh-db/src/backup.rs | grep -c '^    "'`
-→ 39) + `_kesh_version`. Toutes InnoDB. Les migrations portent 51 `CREATE TABLE` pour 38 `ENGINE=InnoDB` (tables
-recréées, ou créées sans clause et donc au moteur par défaut **du serveur**) : le squash fait foi pour la base de
-test — `test_schema_guard.rs` compare d'ailleurs le moteur du squash à celui du vrai schéma (`schema_facts`, l. 155-165)
+→ 39) + `_kesh_version`. Toutes InnoDB. Côté migrations, recompté en P2 (hors lignes de commentaire, C-28-3-25) :
+
+```text
+$ cd crates/kesh-db/migrations
+$ grep -v '^\s*--' *.sql | grep -ci 'create table' ; grep -h -v '^\s*--' *.sql | grep -ci 'ENGINE\s*=\s*InnoDB'
+40
+38
+$ for f in *.sql; do c=$(grep -v '^\s*--' "$f" | grep -ci 'create table'); \
+    e=$(grep -v '^\s*--' "$f" | grep -ci 'ENGINE\s*=\s*InnoDB'); [ "$c" != "$e" ] && echo "$f create=$c engine=$e"; done
+20260414000001_contacts.sql create=1 engine=0
+20260706000001_contact_persons.sql create=1 engine=0
+```
+
+Soit **2 des 40** instructions `CREATE TABLE` sans clause `ENGINE` — `contacts` et `contact_persons` —, créées donc
+au moteur par défaut **du serveur**. (Les « 51 » et « 38 » écrits jusqu'en P1 comptaient des lignes, dont 11
+lignes de commentaire du côté `CREATE TABLE` ; les « 13 » en étaient la soustraction, et « tables recréées » n'avait
+pas de fondement. La lentille R de P2 avait recompté **5** par un `awk` qui clôt une instruction au premier `;`,
+y compris dans un commentaire `--` en fin de ligne ou une chaîne `COMMENT '…'` : `bank_imports` — l. 25,
+`-- 'CAMT053_V04', … ; CSV variants` —, `bank_profiles` — l. 39, `CHECK (field_separator IN (',', ';', …))` — et
+`api_keys` — l. 25, `COMMENT '… ; NULL = permanente …'` — portent bien `ENGINE=InnoDB`, l. 53, 58 et 38 de leurs
+fichiers.) Le squash fait foi pour la base de
+test — `test_schema_guard.rs` compare d'ailleurs le moteur du squash à celui du vrai schéma (`schema_facts`, l. 154-168)
 —, mais **pas** pour une base servie dont le serveur aurait un autre `default_storage_engine` (aucun fichier du dépôt
-ne le fixe : `grep -rniE "default.storage.engine"` sans résultat). D'où la garde **à l'exécution** de l'AC4
-(C-28-3-17), qui contrôle la base réellement sauvegardée. `_sqlx_migrations` n'est pas lue par la sauvegarde.
+ne le fixe : `grep -rniE "default.storage.engine"` sans résultat). La garde à l'exécution qu'en tirait la remédiation
+P1 (C-28-3-17) est **retirée** (C-28-3-25) : l'installation réelle (NAS, paquet MariaDB de Synology) a un moteur par
+défaut non vérifié, et une garde qui échouerait fermée y refuserait toute sauvegarde et tout import. Le contrôle reste
+dans les tests (AC5 (e), `test_schema_guard.rs`) ; la limite, la vérification et le remède sont au manuel (AC10).
+`_sqlx_migrations` n'est pas lue par la sauvegarde.
 
 ### DDL concurrente, durée, purge — ce que l'instantané change et ce qu'il ne change pas
 
@@ -511,11 +593,14 @@ ne le fixe : `grep -rniE "default.storage.engine"` sans résultat). D'où la gar
   (`backup.rs:496`, `kesh-seed/src/lib.rs:586`). Une DDL concurrente ne peut donc venir que d'un second processus
   (un autre conteneur qui démarre et migre sur la même base). Dans ce cas : une table **déjà lue** est protégée par
   le verrou de métadonnées que la transaction garde jusqu'à sa fin — la DDL **attend** la fin de la sauvegarde ; une
-  table **pas encore lue** et reconstruite entre-temps fait échouer sa lecture (`ER_TABLE_DEF_CHANGED`, 1412) : la
-  sauvegarde échoue, **fermée** (`AdminFullExportFailed`), jamais incohérente. Angle mort assumé, non testé
-  (C-28-3-8).
-- **Durée** : la transaction couvre 81 requêtes (1 + 2 + 39 × 2 : garde de moteur, `min_required` et
-  `instance_id`, puis colonnes et lignes de chaque table), sans compression (C-28-3-5) ; quelques secondes au plus
+  table **pas encore lue** et **reconstruite** entre-temps fait échouer sa lecture (`ER_TABLE_DEF_CHANGED`, 1412) :
+  la sauvegarde échoue, **fermée** (`AdminFullExportFailed`). Une DDL **sans reconstruction** (`ALGORITHM=INSTANT`,
+  le défaut de 10.11 pour un `ADD COLUMN` qui le permet) n'échoue pas forcément : la lecture peut rendre la structure
+  neuve, colonne ajoutée à sa valeur par défaut, alors que `INFORMATION_SCHEMA.COLUMNS` a été lu à un autre moment —
+  non établi (aucune requête). Ni « jamais incohérente » ni l'inverse ne sont donc affirmés : la sauvegarde échoue,
+  ou lit la structure neuve. Angle mort assumé, non testé (C-28-3-8, C-28-3-31).
+- **Durée** : la transaction couvre 80 requêtes (2 + 39 × 2 : `min_required` et `instance_id`, puis colonnes et
+  lignes de chaque table — la 81ᵉ, celle de la garde de moteur de P1, est retirée avec elle, C-28-3-25), sans compression (C-28-3-5) ; quelques secondes au plus
   sur une installation de PME. Elle **ne pose aucun verrou de ligne** (lectures cohérentes non verrouillantes) :
   aucune saisie n'attend la sauvegarde.
 - **Purge** : la vue retient la purge InnoDB des versions plus récentes qu'elle pendant sa durée — même effet qu'un
@@ -535,9 +620,13 @@ ne le fixe : `grep -rniE "default.storage.engine"` sans résultat). D'où la gar
 `sqlx-core-0.8.6/src/transaction.rs:98-99` : `#[doc(hidden)] pub fn begin(...)`. Exportée, mais hors contrat semver.
 Les alternatives documentées ne conviennent pas : `Connection::begin_with` (`connection.rs:59`) **emprunte** la
 connexion et ne rend pas de type `'static` ; `Pool::begin_with` (`pool/mod.rs:391-399`) acquiert une connexion
-**neuve**, sur laquelle le `SET TRANSACTION` n'a pas été posé. `snapshot.rs` épingle la dépendance en commentaire
+**neuve**, sur laquelle le `SET TRANSACTION` n'a pas été posé. `snapshot.rs` **signale** la dépendance en commentaire
 (« dépend de `sqlx::Transaction::begin` (`doc(hidden)`), sqlx 0.8.6 ; contrôlé par AC5 (d) à chaque montée de
-sqlx ») ; à une montée de sqlx, AC5 (a-RC), (d) et (f) sont les tests qui diraient qu'elle a changé (C-28-3-19).
+sqlx ») ; elle n'est **pas épinglée** : `crates/kesh-db/Cargo.toml:16` porte `sqlx = { version = "0.8", … }`, et
+seul `Cargo.lock` tient la 0.8.6 — un `cargo update` passerait à une 0.8.x suivante sans signal (C-28-3-30). À une
+montée de sqlx, un changement de signature rougit à la compilation, et AC5 (a-RC), (d) et (f) sont les tests qui
+diraient qu'un comportement a changé (C-28-3-19). Épingler `=0.8.6` est écarté : tout le workspace en dépend, et la
+montée de sqlx est une décision à part.
 
 ### Gardes existantes — ce qu'elles demandent, ou non
 
@@ -588,11 +677,10 @@ sqlx ») ; à une montée de sqlx, AC5 (a-RC), (d) et (f) sont les tests qui dir
 | `START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY` est accepté par 10.11 | tous ceux de l'AC5 |
 | sous `READ COMMITTED`, `WITH CONSISTENT SNAPSHOT` ne fige pas la vue | AC5 (a-RC) **sous M3** |
 | une écriture en `READ ONLY` est refusée en `1792` | AC5 (c) |
-| `@@in_transaction` est une variable de session lisible (sinon repli `INNODB_TRX`, C-28-3-22) | AC5 (d) |
+| `@@in_transaction` est une variable de session lisible (sinon repli `SET TRANSACTION READ WRITE` → `1568` dans une transaction ouverte, C-28-3-26) | AC5 (d) — le test le vérifie lui-même |
 | `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ` sans portée l'emporte sur une session `READ COMMITTED` au moment où `START TRANSACTION WITH CONSISTENT SNAPSHOT` assigne la vue | AC5 (a-RC) — rouge **sur le code correct** s'il était faux |
 | `START TRANSACTION … READ ONLY` laisse `SERVER_STATUS_IN_TRANS` posé (sinon sqlx rend `BeginFailed`) | tous ceux de l'AC5 (échec à l'ouverture) |
-| `information_schema.TABLES` se lit dans une transaction `READ ONLY` | AC5 (e1), et tous ceux de l'AC5 (garde de moteur en tête du cœur) |
-| `ALTER TABLE _kesh_version ENGINE=MyISAM` est accepté (table sans clé étrangère, `CHECK` compris) | AC5 (e2) |
+| `SET TRANSACTION READ WRITE` hors transaction réussit, et rend `1568` dans une transaction ouverte (repli seulement) | AC5 (d) sous M6, si le repli sert |
 | `@@tx_isolation` reflète le niveau de session, et `SET TRANSACTION` sans `SESSION` ne le change pas | AC5 (f) **sous M4** |
 | une `DELETE` concurrente n'attend pas la transaction de lecture (lectures non verrouillantes, verrou de métadonnées partagé compatible) | AC5 (a) — il pendrait sinon |
 
@@ -620,7 +708,7 @@ porté le périmètre à **24** modules de dépôt (C-28-3-1) : c'est le motif d
   | READ ONLY | READ WRITE] [, …]` ; `SET TRANSACTION ISOLATION LEVEL` sans `SESSION`/`GLOBAL` = transaction suivante.
 - Précédent d'instantané de lecture dans le dépôt : `routes/journal_entries.rs:474-480` (`pool.begin()` +
   `rollback`), sans `READ ONLY` ni isolation forcée.
-- Registre : `epic-28-choix-autonomes-28-3.md`.
+- Registre : `epic-28-choix-autonomes.md` § *Story 28-3* (le registre séparé de la création y a été versé par union).
 
 ## Dev Agent Record
 
@@ -657,3 +745,45 @@ porté le périmètre à **24** modules de dépôt (C-28-3-1) : c'est le motif d
     R7 grep de propagation discriminant, site `backup.rs:488` ajouté ; R9 PDF au rebase (C-28-3-23) ; R10 mémoire en
     angle mort ; R12 erreur de `finish` propagée (C-28-3-20). Décomptes après remédiation : 12 AC, 7 tâches (T0-T6),
     12 mutations (M1-M12), choix C-28-3-1 à 24.
+- 2026-10-13 — **Validation P2** (Opus, lentilles R et F, contexte frais, lecture seule ; prompt
+  `28-3-validate-prompt-p2.md`, rapports `kesh-gate-logs/28-3-validate-p2-{R,F}.md`) : **0 CRITICAL, 0 HIGH,
+  5 MEDIUM, 14 LOW** (19 bruts — R : 3 MEDIUM, 5 LOW ; F : 2 MEDIUM, 9 LOW —, 17 distincts après les convergences
+  R2-4=F2-3 et R2-5=F2-4). Des 5 MEDIUM, **4 sont nés de la remédiation P1** (R2-1, R2-2 : garde de moteur à
+  l'exécution, C-28-3-17 ; F2-1 : repli `INNODB_TRX`, C-28-3-22 ; F2-2 : preuve `git diff` T1→T2, C-28-3-16) ; un est
+  d'origine (R2-3, texte du manuel depuis la création).
+  - **Signal D5** : la sévérité monte (P1 3 MEDIUM → P2 5 MEDIUM), et la hausse vient du correctif précédent — la
+    forme « recyclage » que vise D5. **Décision de l'orchestrateur** (autonomie déléguée par Guy le 2026-10-13 ;
+    précédents 27-3 et 27-4) : **pas de découpage**, remédiation **par simplification** — retirer les mécanismes
+    neufs qui ont porté les défauts plutôt que les réparer. Remédiation (Opus 5.5) :
+  - **R2-1, R2-2 (MEDIUM), F2-10 (LOW), et R2-6 (LOW) par voie de conséquence — garde de moteur retirée de
+    l'exécution** : elle n'échoue plus fermé, et il n'y a pas d'avertissement journalisé non plus (option la plus
+    simple ; un avertissement aurait exigé une requête de plus dans l'instantané et un test, pour un signal que
+    personne ne lit). Le contrôle reste dans les tests (squash, `test_schema_guard.rs`, AC5 (e) refondu en un seul
+    test qui couvre aussi `export_installation`) ; le manuel d'administration dit la limite (l'instantané ne vaut que
+    pour les tables InnoDB), la vérification (`information_schema.TABLES`, `ENGINE <> 'InnoDB'`) et le remède
+    (`ALTER TABLE … ENGINE=InnoDB`, `default_storage_engine`) ; CHANGELOG et AC7 alignés ; vérification sur le NAS
+    demandée à l'orchestrateur, non bloquante (T6). M9 redéfinie (mutation du squash), M12 retirée ; 80 requêtes
+    dans l'instantané, non plus 81. Les conséquences de l'échec fermé sur l'import (R2-2) disparaissent avec lui.
+    C-28-3-25.
+  - **F2-1 (MEDIUM)** — repli `INNODB_TRX` retiré (privilège `PROCESS`) ; `@@in_transaction` prescrit, son existence
+    vérifiée par le test lui-même ; à défaut, repli sans privilège `SET TRANSACTION READ WRITE` → `1568` dans une
+    transaction ouverte. C-28-3-26.
+  - **F2-2 (MEDIUM)** — preuve « rouge avant, vert après » par `git log -L` sur chacun des trois tests et de leurs
+    helpers, sortie vide attendue ; forme à expressions `/fn <nom>(/,/^    }$/` et non `:<fonction>:` (pas de
+    `.gitattributes` `diff=rust` : le pilote par défaut ne borne pas une fonction indentée) ; AC5 (a) et T2 disent
+    que T2 ajoute des tests neufs sans toucher les trois tests ni leurs helpers. C-28-3-27.
+  - **R2-3 (MEDIUM)** — la promesse du manuel bornée : une saisie concurrente ne peut plus laisser d'orphelin ; une
+    base qui en porte déjà les garde, et l'export les reproduit (AC10, AC11). C-28-3-28.
+  - LOW : R2-4=F2-3 **recompté** — 2 des 40 `CREATE TABLE` sans `ENGINE` (`contacts`, `contact_persons`), commande et
+    sortie copiées aux Dev Notes ; les deux lentilles divergeaient (5 selon R, 2 selon F) : l'`awk` de R clôt une
+    instruction au premier `;`, y compris dans un commentaire ou une chaîne (trois faux positifs nommés) ;
+    R2-5=F2-4 M1 redéfinie (intérieur de T1, tuée par (a-défaut), (a-RC), (b)) ; R2-7 cœur prescrit
+    `export_installation_in(&mut ReadSnapshot, obs)`, `finish` par l'appelant, couverture du chemin public par (e)
+    et l'AC6 (C-28-3-29) ; R2-8 `backup.rs:488-489` ; F2-5 alias `BoxFuture<'a, T>` à deux paramètres,
+    `Some("…".into())` pour le `Option<Cow<'static, str>>` (C-28-3-30) ; F2-6 alias du pool écrit en angle mort de
+    l'AC2 (C-28-3-31) ; F2-7 `begin` = `acquire` + `begin_on`, `#[cfg_attr(not(test), allow(dead_code))]` sur le champ
+    d'`Etape` (C-28-3-29) ; F2-8 cas `BeginFailed` nommé, « sur toute erreur » borné à l'instantané ouvert
+    (C-28-3-30) ; F2-9 DDL `INSTANT` : « échoue, ou lit la structure neuve » (C-28-3-31) ; F2-11 « épinglée »
+    → « signalée en commentaire », `Cargo.lock` seul (C-28-3-30). Registre séparé versé par union dans
+    `epic-28-choix-autonomes.md` au rebase sur le kickoff (`5aad8b35`), puis supprimé. Décomptes après remédiation
+    (recomptés) : 12 AC, 7 tâches (T0-T6), 11 mutations actives (M1-M11, M12 retirée), choix C-28-3-1 à 32.
