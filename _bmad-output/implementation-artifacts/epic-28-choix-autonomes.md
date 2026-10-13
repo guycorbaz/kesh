@@ -2567,6 +2567,21 @@ l'orchestrateur).*
 >    c'est la voie qui avait ouvert les cycles de la P2.
 >
 > *Réversibilité inchangée : le placement est une modification locale par site.*
+>
+> *Annotation de la validation P4 (2026-10-13, Opus 5.5, sur décisions de l'orchestrateur) — le texte ci-dessus et
+> l'annotation P3 restent ceux de leur date ; ils sont **complétés** ainsi :*
+>
+> 1. ***Clause finale de la règle de placement*** (F-L2) — *« … ou, si le chemin n'a aucune lecture ordinaire hors
+>    l'audit, après le dernier verrou qu'il prend avant sa première écriture, et avant cette écriture »* : écrite
+>    aux trois lieux (AC6, AC7, ici). Les sous-`SELECT` de l'audit sont exclus du second volet du critère (R4).
+> 2. ***W24 après le comptage*** (R1, C-28-4-24) — la position « W24 après l'étape 2 » du point 1 de l'annotation P3
+>    devient « après le comptage de l'étape 3, avant le `DELETE` » : même vue, et le refus du sol passe d'abord.
+> 3. ***M54*** (F-M1) — l'« équivalente sous MariaDB 10.11 » du point 3 de l'annotation P3 était fausse (elle
+>    oubliait la fraîcheur de la garde elle-même pendant l'attente de l'étape 2) ; M54 est tuable par T-a27 et T-a49,
+>    M55 et M56 s'y ajoutent.
+> 4. ***L1 tracée par [#651]*** (R3 = F-M2) — la décision laissée à l'orchestrateur au point 4 de l'annotation P3 est
+>    prise : #651 (`bug`, `P2`), avec la piste du rejeu. La 28-4a et la 28-4b la citent en `refs #651` ; la promesse
+>    de #642, « toute écriture … refusée côté serveur », vaut hors de la fenêtre que #651 décrit.
 
 - **Contexte** : la validation P2 rend 1 HIGH et 9 MEDIUM, presque tous nés de la remédiation P1 — le verrou exclusif
   de la garde, combiné aux verrous partagés que les `INSERT` à clé étrangère posent sur `companies`, ouvrait des cycles
@@ -2638,4 +2653,26 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
   un lot que L1 a laissé passer ; le remède « rouvrir, traiter, clore » reste de toute façon possible.
 - **Réversible** : oui (une variante de statut, un site).
 
+*Choix C-28-4-24 : remédiation de la validation P4 (2026-10-13, Opus 5.5, sur décision de l'orchestrateur).*
+
+### C-28-4-24 — W24 : la garde « compte clos » après le comptage ; l'import rapproché rend le refus du sol
+
+- **Contexte** : R1 (MEDIUM) et F-L3 de la P4 — la garde de W24, posée entre l'étape 2 et le comptage (P3), passait
+  avant le refus du sol `HasReconciled`. Par I1, tout import non vide d'un compte clos ne porte que des transactions
+  rapprochées : son *Supprimer l'import* rendait `409 BANK_ACCOUNT_CLOSED` (« rouvrez-le d'abord »), puis, une fois le
+  compte rouvert, `409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS` — toujours. Le message conseillait un geste qui ne
+  menait qu'au refus suivant ; l'ordre n'était ni écrit ni testé.
+- **Retenu** : la garde se pose **après le comptage de l'étape 3, avant le `DELETE` de l'étape 4**. Ordre des refus :
+  `404` → `409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS` → `409 BANK_ACCOUNT_CLOSED` → suppression. La position tient
+  la règle de placement (clause finale : W24 n'a aucune lecture ordinaire hors l'audit ; entre l'étape 2, dernier
+  verrou avant la première écriture, et la garde, seul le comptage en mémoire) et ne déplace pas la vue. Deux cas à
+  T-a27, une phrase au manuel (§ *Supprimer un import*), l'ordre dans la note d'`api-external.md` ; M55 neuve. ⚠️ Le
+  refus du sol est un **`409`** (`errors.rs`, `StatusCode::CONFLICT`), non un `412` comme le disaient les rapports et
+  la consigne : seul le **code** distingue les deux refus.
+- **Écartées** : garder la position P3 en écrivant l'ordre et son effet (option de R1) — défendable comme l'archivage
+  (AC5), mais le refus « clos » n'y apprend rien à l'utilisateur, alors que celui du sol le met sur la voie ; masquer le
+  bouton (table *Dehors* de la fiche).
+- **Réversible** : oui (une ligne, un site).
+
+[#651]: https://github.com/guycorbaz/kesh/issues/651
 [#642]: https://github.com/guycorbaz/kesh/issues/642
