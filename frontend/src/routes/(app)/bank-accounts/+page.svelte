@@ -221,6 +221,16 @@
 		return ba.currentBalance !== null && !new Big(ba.currentBalance).eq(0);
 	}
 
+	/**
+	 * Story 28-4b (AC11, C-28-4-46) — un compte archivé ou clos s'affiche atténué.
+	 * L'atténuation porte sur les cellules de DONNÉES, non sur la ligne : `opacity`
+	 * ne se défait pas dans un enfant, et l'action « Rouvrir » d'un compte clos doit
+	 * rester pleinement lisible.
+	 */
+	function dimClass(ba: BankAccountSummary): string {
+		return ba.archived || ba.closedOn !== null ? 'opacity-50' : '';
+	}
+
 	/** Story 28-4b (AC11) — pourquoi « Clore » est désactivé sur le principal (`title` et aide). */
 	function primaryCloseHint(): string {
 		return i18nMsg(
@@ -547,8 +557,8 @@
 				</thead>
 				<tbody>
 					{#each bankAccounts as ba (ba.id)}
-						<tr class="border-b border-border {ba.archived || ba.closedOn !== null ? 'opacity-50' : ''}" data-testid="bank-account-row-{ba.id}">
-							<td class="py-2 pr-4">
+						<tr class="border-b border-border" data-testid="bank-account-row-{ba.id}">
+							<td class="py-2 pr-4 {dimClass(ba)}">
 								<span data-testid="bank-account-name-{ba.id}">{bankAccountName(ba)}</span>
 								{#if ba.isPrimary}
 									<span class="ml-2 rounded bg-primary-light/20 px-1.5 py-0.5 text-xs text-primary" data-testid="primary-badge-{ba.id}">
@@ -568,11 +578,11 @@
 									</span>
 								{/if}
 							</td>
-							<td class="py-2 pr-4 font-mono text-xs" title={ba.iban}>{ba.iban}</td>
-							<td class="py-2 pr-4 text-right font-mono" data-testid="balance-cell-{ba.id}">
+							<td class="py-2 pr-4 font-mono text-xs {dimClass(ba)}" title={ba.iban}>{ba.iban}</td>
+							<td class="py-2 pr-4 text-right font-mono {dimClass(ba)}" data-testid="balance-cell-{ba.id}">
 								{formatBalance(ba.currentBalance)}
 							</td>
-							<td class="py-2 pr-4" data-testid="journal-account-cell-{ba.id}">
+							<td class="py-2 pr-4 {dimClass(ba)}" data-testid="journal-account-cell-{ba.id}">
 								{accountLabel(ba.journalAccountId)}
 							</td>
 							<td class="py-2 whitespace-nowrap">

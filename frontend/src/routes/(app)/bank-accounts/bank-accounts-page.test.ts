@@ -430,7 +430,11 @@ describe('page des comptes bancaires — clôture (Story 28-4b, AC11)', () => {
 		for (const absent of ['close-7', 'link-button-7', 'edit-button-7', 'archive-button-7']) {
 			expect(r.queryByTestId(absent)).toBeNull();
 		}
-		expect(r.getByTestId('bank-account-row-7').className).toContain('opacity-50');
+		// Atténuée comme une archivée — ses cellules de données, non son action : « Rouvrir »
+		// reste pleinement lisible (recette visuelle, C-28-4-46).
+		expect(r.getByTestId('balance-cell-7').className).toContain('opacity-50');
+		expect(r.getByTestId('reopen-7').closest('td')?.className).not.toContain('opacity-50');
+		expect(r.getByTestId('bank-account-row-7').className).not.toContain('opacity-50');
 		// Une ligne ouverte : « Clore », et pas « Rouvrir ».
 		expect(r.getByTestId('close-6')).toBeTruthy();
 		expect(r.queryByTestId('reopen-6')).toBeNull();

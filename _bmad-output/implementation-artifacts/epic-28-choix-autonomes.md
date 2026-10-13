@@ -2822,6 +2822,119 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
 - **Écartées** : laisser la base refuser (`500`).
 - **Réversible** : oui.
 
+*Choix C-28-4-36 à C-28-4-45 : développement de la 28-4b (2026-10-13, Opus 5.5, autonomie).*
+
+### C-28-4-36 — T-b12 : deux niveaux de preuve, choisis par écran
+
+- **Contexte** : l'AC12 veut un E2E qui vérifie l'absence d'un compte clos dans six sélecteurs et la tuile. Deux
+  sélecteurs n'apparaissent que sur une pièce dans un état précis : le paiement d'une facture fournisseur
+  **ouverte** (`pay-bank-account`) et le règlement depuis l'échéancier (une facture échue à régler).
+- **Retenu** : preuve au **DOM** pour la tuile, l'import, la réconciliation, le lot de paiement et le règlement d'une
+  facture client (facture créée et validée par l'API, dialogue ouvert) ; preuve à la **réponse consommée** par
+  l'écran (`GET /api/v1/bank-accounts`, intercepté au chargement) pour l'échéancier et la fiche d'une facture
+  fournisseur — l'AC12 dit précisément que ces écrans ne changent pas de code et que leur **source** exclut les
+  clos. Présence vérifiée de même après réouverture.
+- **Écartées** : fabriquer une facture fournisseur et une facture échue pour ces deux dialogues (montage plus long,
+  pour un sélecteur qui affiche la liste reçue telle quelle) ; s'en tenir à l'API (ne prouve rien des écrans).
+- **Réversible** : oui (test).
+
+### C-28-4-37 — Les refus de la clôture et de la réouverture s'affichent dans le dialogue
+
+- **Contexte** : l'archivage affiche son refus en toast. Les refus de la clôture (`412` principal, transactions non
+  rapprochées, lot généré) disent quoi faire avant de recommencer.
+- **Retenu** : `role="alert"` dans le dialogue (`close-error`, `reopen-error`), par `errorMessageOf` ; le dialogue
+  reste ouvert.
+- **Écartée** : toast (disparaît avant d'être lu, et sépare le refus du geste).
+- **Réversible** : oui.
+
+### C-28-4-38 — « Clore » de la ligne en bouton neutre ; « Clore le compte » en `destructive`
+
+- **Contexte** : consigne de l'orchestrateur — le bouton de clôture emploie la variante `destructive` (28-1), sans
+  classe ajoutée ; la garde (f) de `boutons-rouges-inventory.test.ts` et l'inventaire clos des boutons rouges.
+- **Retenu** : le déclencheur de ligne (`close-{id}`) est un bouton bordé neutre, comme *Lier* et *Modifier* : il
+  ouvre un dialogue et ne fait rien d'irréversible ; la confirmation (`close-confirm-button`) est
+  `<Button variant="destructive">` sans classe. Aucune entrée neuve à l'inventaire des boutons rouges. *Rouvrir* est
+  un bouton par défaut ; *Annuler* des deux dialogues est `outline` (AC11).
+- **Écartées** : déclencheur rouge comme *Archiver* (il faudrait une entrée de classe C à l'inventaire, pour un geste
+  réversible) ; confirmation sans `destructive` (contraire à la consigne).
+- **Réversible** : oui.
+
+### C-28-4-39 — Quatre clés d'écran exemptées de G8 et G8-bis : « rouvrir » vise un compte bancaire
+
+- **Contexte** : G8 / G8-bis (`kesh-i18n/src/loader.rs`) exigent l'ordre et la borne de toute valeur fr-CH qui
+  prescrit de « rouvrir » — ils visent l'exercice. Quatre clés neuves contiennent le verbe :
+  `bank-accounts-actions-reopen`, `bank-accounts-close-dialog-body`, `bank-accounts-reopen-dialog-body`,
+  `reconciliation-failed-bank-account-closed` (recensées par `grep -E "[Rr]ouvr|[Rr]éouv"`).
+- **Retenu** : inscrites aux deux listes `EXEMPTEES` (11 → 15), motif « autre objet », sur le précédent de
+  `bank-accounts-errors-closed` (C-28-4-32). L'assertion « une exemption doit rester au domaine » les tient.
+- **Écartées** : éviter le verbe (l'interface doit dire *Rouvrir*) ; élargir les gardes.
+- **Réversible** : oui.
+
+### C-28-4-40 — `todayLocal` et `formatSwissDate` réutilisés, non recopiés
+
+- **Contexte** : le dialogue préremplit la date **locale** du jour, le badge affiche la date au format suisse.
+- **Retenu** : `todayLocal` (`features/open-items/open-items.ts`, C-15-1c-5 — jamais l'UTC) et `formatSwissDate`
+  (`features/reports/reports.api.ts`, déjà importé par l'accueil et les soldes de départ). Import entre domaines,
+  comme ces deux précédents.
+- **Écartées** : une copie locale (DRY) ; déplacer les deux fonctions dans `shared/` (refactor hors périmètre).
+- **Réversible** : oui.
+
+### C-28-4-41 — Captures d'écran par la spec E2E, sous `KESH_CAPTURES_DIR`
+
+- **Contexte** : l'AC17 veut des captures clair et sombre, hors dépôt.
+- **Retenu** : le parcours T-b13 enregistre ses écrans si `KESH_CAPTURES_DIR` est posé (`page.emulateMedia`,
+  `colorScheme` clair puis sombre) ; sans la variable, la spec ne capture rien. Dossier :
+  `kesh-gate-logs/28-4b-captures/`.
+- **Écartée** : un script Playwright hors `testDir` (la configuration ne le lancerait pas).
+- **Réversible** : oui.
+
+### C-28-4-42 — Le manuel ne nomme pas « annuler le rejet » : l'écran de la 28-5b n'est pas sur la branche
+
+- **Contexte** : l'AC14 demande de nommer la voie « annuler le rejet » de la 28-5 **si elle est mergée**. La route
+  (28-5a) l'est ; l'écran (28-5b) est en cours de fusion, absent de `story/28-4b`.
+- **Retenu** : le manuel dit qu'une transaction rejetée empêche la clôture tant qu'elle n'est pas rapprochée
+  manuellement ou que son import n'est pas supprimé ; `docs/api-external.md` nomme `unreject` (la route existe). Au
+  rebase sur une `main` qui porte la 28-5b, ajouter la voie à l'écran — action écrite au Dev Agent Record.
+- **Écartée** : décrire un bouton absent de l'écran livré.
+- **Réversible** : oui.
+
+### C-28-4-43 — Renvoi de l'import corrigé : `sec:comptes-bancaires`, non `sec:ajout-compte`
+
+- **Contexte** : la phrase de l'import (`user-manual.tex`, « comptes bancaires non archivés déclarés dans
+  Administration → Comptes bancaires ») renvoyait à `sec:ajout-compte`, « Ajout d'un compte » du **plan comptable**.
+- **Retenu** : renvoi à `sec:comptes-bancaires`, et à `sec:clore-compte-bancaire` pour un compte clos — la phrase est
+  réécrite par l'AC14 de toute façon.
+- **Réversible** : oui.
+
+### C-28-4-44 — La spec E2E crée ses propres comptes de liquidités (1021, 1022)
+
+- **Contexte** : le plan du seed `with-company` n'a que deux comptes d'actif, `1000` et `1100` — ce dernier est le
+  compte débiteurs désigné, qu'un compte bancaire ne peut pas lier (et que le règlement écarte).
+- **Retenu** : la spec crée au besoin `1021` et `1022` (actif, imputables) et y lie ses deux comptes bancaires,
+  IBAN de test propres à la spec.
+- **Écartée** : lier au compte débiteurs (refusé) ; ne pas lier (la tuile, le lot et le règlement ne proposent qu'un
+  compte lié).
+- **Réversible** : oui (test).
+
+### C-28-4-45 — Apostrophes : droites pour `bank-accounts-*`, typographiques pour `reconciliation-*`
+
+- **Contexte** : le catalogue fr-CH emploie l'apostrophe droite dans l'espace `bank-accounts-*` (« d'abord ») et
+  l'apostrophe typographique dans `reconciliation-failed-*`.
+- **Retenu** : chaque clé neuve suit son espace ; le libellé de la réconciliation dit « rouvrez d’abord le compte »
+  (C-28-4-27), les clés de l'écran « désignez d'abord ».
+- **Réversible** : oui.
+
+### C-28-4-46 — L'atténuation d'une ligne close porte sur ses cellules de données, non sur la ligne
+
+- **Contexte** : recette visuelle (captures AC17) — l'AC11 veut la ligne close « atténuée comme une archivée »
+  (`opacity-50` sur le `<tr>`). Une archivée n'a pas d'action ; une close en a une, *Rouvrir*, qui sortait elle aussi
+  à 50 % et se lisait à peine. `opacity` ne se défait pas dans un enfant.
+- **Retenu** : `opacity-50` sur les quatre cellules de données (banque, IBAN, solde, compte lié), par `dimClass`,
+  pour une archivée comme pour une close ; la cellule d'actions reste pleine. Rendu d'une archivée inchangé. T-b5
+  l'assert (cellule de solde atténuée, cellule de *Rouvrir* et ligne non).
+- **Écartée** : garder l'atténuation sur la ligne (action illisible).
+- **Réversible** : oui.
+
 [#651]: https://github.com/guycorbaz/kesh/issues/651
 [#642]: https://github.com/guycorbaz/kesh/issues/642
 
