@@ -8,7 +8,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { isApiError } from '$lib/shared/utils/api-client';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { withCurrentAccount, withoutAccountIds } from '$lib/features/accounts/account-options';
@@ -73,9 +73,7 @@
 			bankAccounts = baResult.value;
 			loadError = null;
 		} else {
-			loadError = isApiError(baResult.reason)
-				? baResult.reason.message
-				: String(baResult.reason);
+			loadError = errorMessageOf(baResult.reason);
 		}
 		if (accResult.status === 'fulfilled') {
 			accounts = accResult.value;
@@ -236,7 +234,7 @@
 			await reload();
 			closeForm();
 		} catch (err) {
-			formError = isApiError(err) ? err.message : String(err);
+			formError = errorMessageOf(err);
 		} finally {
 			submitting = false;
 		}
@@ -262,7 +260,7 @@
 			await reload();
 			closeForm();
 		} catch (err) {
-			formError = isApiError(err) ? err.message : String(err);
+			formError = errorMessageOf(err);
 		} finally {
 			submitting = false;
 		}
@@ -278,7 +276,7 @@
 			await reload();
 			closeForm();
 		} catch (err) {
-			toast.error(isApiError(err) ? err.message : String(err));
+			toast.error(errorMessageOf(err));
 		} finally {
 			submitting = false;
 		}

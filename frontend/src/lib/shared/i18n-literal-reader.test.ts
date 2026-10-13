@@ -9,6 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+	blocEquilibre,
 	corpsDeFonction,
 	findCallSites,
 	findRelays,
@@ -329,6 +330,37 @@ describe('`corpsDeFonction`, exportée pour la garde des libellés en dur (23-3b
 	it('rend null sur un corps non clos plutôt que de rendre du faux', () => {
 		const src = 'function f() { return 1;';
 		expect(corpsDeFonction(src, src.indexOf('{'))).toBeNull();
+	});
+});
+
+describe('`blocEquilibre` en parenthèses — la boucle de `corpsDeFonction` généralisée (28-2)', () => {
+	// Mêmes cas que `corpsDeFonction`, pour l'appariement des parenthèses dont la garde
+	// `erreurs-en-texte.test.ts` a besoin (corps-expression de `.catch(`, appel `console.*`).
+	it("rend le contenu délimité par appariement, pas par la première parenthèse fermante", () => {
+		const src = 'f(a, g(b), c) + d';
+		expect(blocEquilibre(src, src.indexOf('('), '(', ')')).toBe('a, g(b), c');
+	});
+
+	it('une parenthèse dans une chaîne ne fausse pas le compte', () => {
+		const src = "f(')', x)";
+		expect(blocEquilibre(src, src.indexOf('('), '(', ')')).toBe("')', x");
+	});
+
+	it('une parenthèse dans une regex ne fausse pas le compte', () => {
+		const src = 'f(/[)]/.test(k), x)';
+		expect(blocEquilibre(src, src.indexOf('('), '(', ')')).toBe('/[)]/.test(k), x');
+	});
+
+	it('rend null sur un appel non clos plutôt que de rendre du faux', () => {
+		const src = 'f(a, g(b)';
+		expect(blocEquilibre(src, src.indexOf('('), '(', ')')).toBeNull();
+	});
+
+	it('`corpsDeFonction` est l’appel en accolades', () => {
+		const src = 'function f() { if (x) { return 1; } }';
+		expect(blocEquilibre(src, src.indexOf('{'), '{', '}')).toBe(
+			corpsDeFonction(src, src.indexOf('{'))
+		);
 	});
 });
 

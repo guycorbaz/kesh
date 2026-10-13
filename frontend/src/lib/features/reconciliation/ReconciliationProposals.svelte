@@ -19,7 +19,7 @@
   le lot a vidé la liste.
 -->
 <script lang="ts">
-	import { errorMessageOf } from '$lib/shared/utils/api-client';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import {
 		acceptProposals,

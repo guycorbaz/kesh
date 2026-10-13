@@ -14,6 +14,7 @@
 	import { bankAccountName } from '$lib/features/bank-accounts/format';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { isPlausibleEmail } from '$lib/shared/utils/email';
 	import { notifySuccess } from '$lib/shared/utils/notify';
 
@@ -234,7 +235,7 @@
 			if (data) data = { ...data, company: updated };
 			lockThrough = '';
 		} catch (e) {
-			lockError = e instanceof Error ? e.message : String(e);
+			lockError = errorMessageOf(e);
 		} finally {
 			lockBusy = false;
 		}
@@ -258,7 +259,7 @@
 			unlockMotif = '';
 			showUnlock = false;
 		} catch (e) {
-			lockError = e instanceof Error ? e.message : String(e);
+			lockError = errorMessageOf(e);
 		} finally {
 			lockBusy = false;
 		}

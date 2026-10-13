@@ -7,7 +7,7 @@
 // du composant (hoisting Vitest).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { ReconciliationProposal } from './reconciliation.types';
 
 vi.mock('./reconciliation.api', () => ({
@@ -196,5 +196,71 @@ describe('TransactionSplitModal', () => {
 		// Tenter de retirer encore (min 2) — le bouton doit être disabled.
 		const remove0 = (await findByTestId('split-remove-0')) as HTMLButtonElement;
 		expect(remove0.disabled).toBe(true);
+	});
+});
+
+// Story 28-2 (#520, AC9 — B14, C-28-2-26) — tests de SOUMISSION, avec le vrai
+// `AccountAutocomplete` sur chacune des deux lignes, et des montants dont la
+// somme égale la valeur absolue de la transaction (`balanceExact`).
+describe('TransactionSplitModal — soumission rejetée (Story 28-2, B14)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	async function choisirCompte(
+		findByTestId: (id: string) => Promise<HTMLElement>,
+		ligne: number,
+		numero: string,
+	) {
+		const rang = await findByTestId(`split-row-${ligne}`);
+		const champ = rang.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
+		await fireEvent.focus(champ);
+		const options = await waitFor(() => {
+			const o = Array.from(rang.querySelectorAll<HTMLElement>('[role="option"]'));
+			expect(o.length).toBeGreaterThan(0);
+			return o;
+		});
+		const option = options.find((o) => o.textContent?.includes(numero));
+		expect(option, `le compte ${numero} doit être proposé`).toBeTruthy();
+		await fireEvent.mouseDown(option as HTMLElement);
+	}
+
+	async function soumettre(rejet: unknown) {
+		mockApi.splitTransaction.mockRejectedValue(rejet);
+		const r = render(TransactionSplitModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal('-100.00'),
+			accounts: makeAccounts(),
+			onSuccess: () => {},
+		});
+		await choisirCompte(r.findByTestId, 0, '5000');
+		await fireEvent.input(await r.findByTestId('split-amount-0'), { target: { value: '60' } });
+		await choisirCompte(r.findByTestId, 1, '5700');
+		await fireEvent.input(await r.findByTestId('split-amount-1'), { target: { value: '40' } });
+		const submit = (await r.findByTestId('split-submit')) as HTMLButtonElement;
+		await waitFor(() => expect(submit.disabled).toBe(false));
+		await fireEvent.click(submit);
+		await waitFor(() => expect(mockApi.splitTransaction).toHaveBeenCalledTimes(1));
+		return r;
+	}
+
+	it('(i) rejet new Error → split-error affiche le générique', async () => {
+		const r = await soumettre(new Error('boom'));
+		const erreur = await r.findByTestId('split-error');
+		expect(erreur.textContent).toContain('Erreur inattendue.');
+		expect(erreur.textContent).not.toContain('boom');
+		expect(erreur.textContent).not.toContain('[object Object]');
+	});
+
+	it('(ii) rejet 412 BANK_ACCOUNT_NOT_CONFIGURED → l’indication du compte non configuré (M26)', async () => {
+		const r = await soumettre({ code: 'BANK_ACCOUNT_NOT_CONFIGURED', message: 'm', status: 412 });
+		expect(await r.findByTestId('split-bank-not-configured')).toBeTruthy();
 	});
 });

@@ -9,6 +9,7 @@
 	import { goto } from '$app/navigation';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import ReportSelector from '$lib/features/reports/ReportSelector.svelte';
 	import BalanceSheetView from '$lib/features/reports/BalanceSheetView.svelte';
@@ -210,9 +211,10 @@
 					},
 				);
 			}
-			return err.message;
 		}
-		return err instanceof Error ? err.message : String(err);
+		// Story 28-2 (C-28-2-33 révisé, revue P1 B-1/A-4) : hors du code spécifique,
+		// errorMessageOf rend le message d'une ApiError, et le générique s'il est vide.
+		return errorMessageOf(err);
 	}
 
 	/** Construit la query du rapport projet actif (null si incomplet). */

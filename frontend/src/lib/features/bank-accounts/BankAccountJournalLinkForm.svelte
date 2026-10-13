@@ -8,7 +8,7 @@
 -->
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { isApiError } from '$lib/shared/utils/api-client';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { notifySuccess } from '$lib/shared/utils/notify';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { withCurrentAccount, withoutAccountIds } from '$lib/features/accounts/account-options';
@@ -92,11 +92,7 @@
 			);
 			onSuccess(updated);
 		} catch (err) {
-			if (isApiError(err)) {
-				errorMessage = err.message;
-			} else {
-				errorMessage = String(err);
-			}
+			errorMessage = errorMessageOf(err);
 		} finally {
 			submitting = false;
 		}
@@ -121,11 +117,7 @@
 			);
 			onSuccess(updated);
 		} catch (err) {
-			if (isApiError(err)) {
-				errorMessage = err.message;
-			} else {
-				errorMessage = String(err);
-			}
+			errorMessage = errorMessageOf(err);
 		} finally {
 			submitting = false;
 		}

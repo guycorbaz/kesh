@@ -598,7 +598,13 @@ const ATTENDU = {
 	// `features/reconciliation/failed-proposal-label.ts` gagne deux appels
 	// (`reconciliation-failed-changed-during-batch`, `reconciliation-failed-already-rejected`).
 	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des littéraux).
-	sitesTotal: 2075,
+	// Story 28-2 (#520) : **2075 → 2079** (+4), mesuré par la collecte de ce test sur la
+	// branche (2075 étant la borne verte de `5aad8b35`) : `shared/utils/error-message.ts` (neuf, 1 :
+	// `error-unexpected`) et `shared/utils/api-client.ts` (0 → 3 : `error-network`,
+	// `error-timeout`, `error-server-status` — un seul site pour les trois messages
+	// d'erreur serveur, `serverStatusMessage`). `sitesNonResolus`, `relais`,
+	// `sitesGabarit` inchangés (que des littéraux), mesurés.
+	sitesTotal: 2079,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

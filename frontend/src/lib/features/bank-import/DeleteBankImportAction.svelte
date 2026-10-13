@@ -15,6 +15,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { deleteBankImport } from './bank-import.api';
 	import { reconciledCount } from './bank-import-deletion';
 	import type { BankImportDetailResponse } from './bank-import.types';
@@ -59,7 +60,7 @@
 					"Cet import n'existe plus : il a peut-être déjà été supprimé.",
 				);
 			} else {
-				errorMsg = isApiError(err) ? err.message : String(err);
+				errorMsg = errorMessageOf(err);
 			}
 		} finally {
 			submitting = false;

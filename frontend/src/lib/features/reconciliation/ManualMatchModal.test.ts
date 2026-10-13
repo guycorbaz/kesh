@@ -8,7 +8,7 @@
 // definis AVANT l'import du composant (hoisting Vitest).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { ReconciliationProposal } from './reconciliation.types';
 
 // Mock du module API.
@@ -259,5 +259,57 @@ describe('ManualMatchModal — compte de la banque écarté (Story 15-6d)', () =
 
 	it('bankLedgerAccountId null → aucun filtrage au-delà des classes 5/6/7', async () => {
 		expect(await proposedNumbers(null)).toEqual(['5200', '5999', '6810', '7510']);
+	});
+});
+
+// Story 28-2 (#520, AC9 — B13, C-28-2-26) — tests de SOUMISSION, avec le vrai
+// `AccountAutocomplete` : focus sur son champ, `mouseDown` sur l'option (il
+// sélectionne au `mousedown`), puis clic sur *Valider*. Le test « 412 » plus haut
+// ne soumet pas (il ne peut choisir de contrepartie) ; ceux-ci soumettent.
+describe('ManualMatchModal — soumission rejetée (Story 28-2, B13)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	async function soumettre(rejet: unknown) {
+		mockApi.manualMatchTransaction.mockRejectedValue(rejet);
+		const r = render(ManualMatchModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal(),
+			accounts: makeAccounts(),
+			onSuccess: () => {},
+		});
+		const champ = document.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
+		await fireEvent.focus(champ);
+		const options = await r.findAllByRole('option');
+		const frais = options.find((o) => o.textContent?.includes('6810'));
+		expect(frais, 'le compte 6810 doit être proposé').toBeTruthy();
+		await fireEvent.mouseDown(frais as HTMLElement);
+		const submit = (await r.findByTestId('manual-match-submit')) as HTMLButtonElement;
+		await waitFor(() => expect(submit.disabled).toBe(false));
+		await fireEvent.click(submit);
+		await waitFor(() => expect(mockApi.manualMatchTransaction).toHaveBeenCalledTimes(1));
+		expect(mockApi.manualMatchTransaction.mock.calls[0][2]).toBe(100);
+		return r;
+	}
+
+	it('(i) rejet new Error → manual-match-error affiche le générique', async () => {
+		const r = await soumettre(new Error('boom'));
+		const erreur = await r.findByTestId('manual-match-error');
+		expect(erreur.textContent).toContain('Erreur inattendue.');
+		expect(erreur.textContent).not.toContain('boom');
+		expect(erreur.textContent).not.toContain('[object Object]');
+	});
+
+	it('(ii) rejet 412 BANK_ACCOUNT_NOT_CONFIGURED → l’indication du compte non configuré (M15)', async () => {
+		const r = await soumettre({ code: 'BANK_ACCOUNT_NOT_CONFIGURED', message: 'm', status: 412 });
+		expect(await r.findByTestId('manual-match-bank-not-configured')).toBeTruthy();
 	});
 });

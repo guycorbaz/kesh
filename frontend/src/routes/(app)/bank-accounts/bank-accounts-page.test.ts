@@ -34,11 +34,13 @@ const listBankAccountsMock = vi.fn<() => Promise<BankAccountSummary[]>>();
 // Story 26-2a — les payloads de création et de modification sont inspectés.
 const createBankAccountMock = vi.fn<(payload: unknown) => Promise<unknown>>();
 const updateBankAccountMock = vi.fn<(id: number, payload: unknown) => Promise<unknown>>();
+// Story 28-2 (revue P1 E-L5) — l'archivage est piloté pour le cas B4.
+const archiveBankAccountMock = vi.fn<(id: number, version: number) => Promise<unknown>>();
 vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
 	listBankAccounts: () => listBankAccountsMock(),
 	createBankAccount: (payload: unknown) => createBankAccountMock(payload),
 	updateBankAccount: (id: number, payload: unknown) => updateBankAccountMock(id, payload),
-	archiveBankAccount: vi.fn(),
+	archiveBankAccount: (id: number, version: number) => archiveBankAccountMock(id, version),
 	updateBankAccountJournalLink: vi.fn(),
 }));
 
@@ -50,6 +52,7 @@ vi.mock('$lib/features/invoices/invoices.api', () => ({
 	getInvoiceSettings: () => getInvoiceSettingsMock(),
 }));
 
+import { toast } from 'svelte-sonner';
 import Page from './+page.svelte';
 
 function account(overrides: Partial<AccountResponse>): AccountResponse {
@@ -274,5 +277,87 @@ describe('page des comptes bancaires — description (Story 26-2a, AC7)', () => 
 	it('sans description, la cellule affiche la banque seule', async () => {
 		const { findByTestId } = render(Page);
 		expect((await findByTestId('bank-account-name-5')).textContent).toBe('BCV');
+	});
+});
+
+// Story 28-2 (#520, AC9 — B1) — un rejet du chargement de la liste qui n'est pas
+// une `ApiError` affiche le générique traduit, ni « Error: boom » ni
+// « [object Object] » (site `Promise.allSettled`, `baResult.reason`).
+describe('page des comptes bancaires — échec imprévu du chargement (Story 28-2, B1)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		fetchAccountsMock.mockResolvedValue(accounts);
+		getInvoiceSettingsMock.mockResolvedValue({
+			defaultReceivableAccountId: null,
+			defaultPayableAccountId: null,
+		});
+	});
+
+	it('rejet non-ApiError de listBankAccounts → le générique', async () => {
+		listBankAccountsMock.mockRejectedValue(new Error('boom'));
+		const { findByTestId } = render(Page);
+		const erreur = await findByTestId('load-error');
+		expect(erreur.textContent).toBe('Erreur inattendue.');
+		expect(erreur.textContent).not.toContain('boom');
+		expect(erreur.textContent).not.toContain('[object Object]');
+	});
+
+	it('rejet ApiError de listBankAccounts → son message', async () => {
+		listBankAccountsMock.mockRejectedValue({ code: 'FORBIDDEN', message: 'Accès refusé.', status: 403 });
+		const { findByTestId } = render(Page);
+		expect((await findByTestId('load-error')).textContent).toBe('Accès refusé.');
+	});
+});
+
+// Story 28-2 (revue P1 E-L5 — B2, B3, B4) — les trois autres sites du fichier, sur
+// un rejet qui n'est pas une `ApiError` : création, modification, archivage.
+describe('page des comptes bancaires — échec imprévu d’une écriture (Story 28-2, B2-B4)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		fetchAccountsMock.mockResolvedValue(accounts);
+		listBankAccountsMock.mockResolvedValue([bankAccount]);
+		getInvoiceSettingsMock.mockResolvedValue({
+			defaultReceivableAccountId: null,
+			defaultPayableAccountId: null,
+		});
+	});
+
+	async function fill(el: HTMLElement, value: string) {
+		await fireEvent.input(el, { target: { value } });
+	}
+
+	it('B2 — création rejetée hors ApiError → le générique dans le formulaire', async () => {
+		createBankAccountMock.mockRejectedValue(new Error('boom'));
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('create-bank-account-button'));
+		await fill(await r.findByTestId('form-bank-name'), 'UBS');
+		await fill(await r.findByTestId('form-iban'), 'CH3908704016075473007');
+		await fireEvent.click(await r.findByTestId('form-submit'));
+		await waitFor(() => expect(createBankAccountMock).toHaveBeenCalledTimes(1));
+		const erreur = await r.findByTestId('form-error');
+		expect(erreur.textContent).toBe('Erreur inattendue.');
+		expect(erreur.textContent).not.toContain('boom');
+	});
+
+	it('B3 — modification rejetée hors ApiError → le générique dans le formulaire', async () => {
+		updateBankAccountMock.mockRejectedValue(new TypeError('Failed to fetch'));
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('edit-button-5'));
+		await fireEvent.click(await r.findByTestId('edit-form-submit'));
+		await waitFor(() => expect(updateBankAccountMock).toHaveBeenCalledTimes(1));
+		const erreur = await r.findByTestId('edit-form-error');
+		expect(erreur.textContent).toBe('Erreur inattendue.');
+		expect(erreur.textContent).not.toContain('Failed to fetch');
+	});
+
+	it('B4 — archivage rejeté hors ApiError → le générique en toast', async () => {
+		archiveBankAccountMock.mockRejectedValue(new Error('boom'));
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('archive-button-5'));
+		await fireEvent.click(await r.findByTestId('archive-confirm-button'));
+		await waitFor(() => expect(archiveBankAccountMock).toHaveBeenCalledWith(5, 2));
+		await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Erreur inattendue.'));
 	});
 });

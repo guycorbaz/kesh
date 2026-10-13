@@ -3,6 +3,8 @@
 -->
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
+	import { notifyError } from '$lib/shared/utils/notify';
 	import { listBankProfiles, deleteBankProfile } from './bank-profile.api';
 	import type { BankProfile } from './bank-profile.types';
 
@@ -16,7 +18,9 @@
 			const res = await listBankProfiles();
 			profiles = res.items;
 		} catch (err) {
-			errorMessage = `Erreur chargement profils : ${String(err)}`;
+			// Story 28-2 (#520) : le message du refus se suffit — un préfixe
+			// en dur n'était ni traduit, ni exact pour une panne réseau.
+			errorMessage = errorMessageOf(err);
 		} finally {
 			isLoading = false;
 		}
@@ -26,8 +30,15 @@
 		if (!confirm(i18nMsg('bank-import-profile-labels-confirm-delete', 'Supprimer ce profil ?'))) {
 			return;
 		}
-		await deleteBankProfile(id);
-		await load();
+		// Story 28-2 (C-28-2-20) : sans `try/catch`, un refus devenait un rejet
+		// non géré et rien ne s'affichait. Une notification, et non
+		// `errorMessage`, qui remplacerait toute la liste pour un refus ponctuel.
+		try {
+			await deleteBankProfile(id);
+			await load();
+		} catch (err) {
+			notifyError(errorMessageOf(err));
+		}
 	}
 
 	$effect(() => {

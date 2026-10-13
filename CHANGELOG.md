@@ -21,6 +21,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   d'administration dit comment vérifier le moteur d'une base fournie par ailleurs. Une base qui porte déjà de telles
   lignes les garde. Une sauvegarde prise sous une version antérieure pendant
   que l'on saisissait se refait. L'export global CSV n'en bénéficie pas encore ([#465](https://github.com/guycorbaz/kesh/issues/465)).
+- Une erreur renvoyée par le serveur ne s'affiche plus « [object Object] » — verrouillage des livres, profils bancaires — : le message du refus est affiché. Une panne imprévue affiche « Erreur inattendue. », et les messages de perte de connexion suivent la langue de l'installation une fois la page chargée — ou rechargée — avec une session ouverte ; la page de connexion, et l'interface jusqu'au premier rechargement qui suit une connexion, restent en français ([#520](https://github.com/guycorbaz/kesh/issues/520)).
 
 ## [0.13.2] — 2026-10-13
 
