@@ -5,7 +5,7 @@
 // - Submit désactivé sur no-op (selection identique à valeur initiale).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { render, waitFor, fireEvent } from '@testing-library/svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import type { BankAccountSummary } from './bank-accounts.api';
 
@@ -18,6 +18,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 }));
 
 import BankAccountJournalLinkForm from './BankAccountJournalLinkForm.svelte';
+import { updateBankAccountJournalLink } from './bank-accounts.api';
 
 function makeAccount(
 	id: number,
@@ -241,5 +242,67 @@ describe('BankAccountJournalLinkForm — en-tête (Story 26-2a, D2)', () => {
 		expect(getByTestId('bank-account-journal-link-heading').textContent?.trim()).toBe(
 			'UBS — CH4431999123000889012',
 		);
+	});
+});
+
+// Story 28-2 (#520, AC9 — B11/B12) — premiers cas de REJET de ce composant : un
+// refus du serveur s'affiche par son message, une panne imprévue par le
+// générique traduit (ni « Error: boom », ni « [object Object] »).
+describe('BankAccountJournalLinkForm — erreurs (Story 28-2, B11/B12)', () => {
+	const accounts: AccountResponse[] = [
+		makeAccount(1, '1020', 'Caisse banque', 'Asset'),
+		makeAccount(2, '1030', 'Banque', 'Asset'),
+	];
+
+	function monter() {
+		return render(BankAccountJournalLinkForm, {
+			props: {
+				bankAccount: makeBankAccount(1),
+				accounts,
+				claimAccountIds: new Set<number>(),
+				onSuccess: vi.fn(),
+				onCancel: vi.fn(),
+			},
+		});
+	}
+
+	beforeEach(() => {
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+	});
+
+	it('B11 — liaison en échec imprévu → le générique', async () => {
+		vi.mocked(updateBankAccountJournalLink).mockRejectedValue(new Error('boom'));
+		const { container, findByTestId } = monter();
+		const select = container.querySelector('[data-testid="journal-account-select"]') as HTMLSelectElement;
+		await fireEvent.change(select, { target: { value: '2' } });
+		await fireEvent.click(container.querySelector('[data-testid="submit-link"]') as HTMLElement);
+		const erreur = await findByTestId('form-error');
+		expect(updateBankAccountJournalLink).toHaveBeenCalledWith(17, 2, 3);
+		expect(erreur.textContent?.trim()).toBe('Erreur inattendue.');
+	});
+
+	it('B11 — liaison refusée par une ApiError → son message', async () => {
+		vi.mocked(updateBankAccountJournalLink).mockRejectedValue({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			message: 'Le compte a été modifié entre-temps.',
+			status: 409,
+		});
+		const { container, findByTestId } = monter();
+		const select = container.querySelector('[data-testid="journal-account-select"]') as HTMLSelectElement;
+		await fireEvent.change(select, { target: { value: '2' } });
+		await fireEvent.click(container.querySelector('[data-testid="submit-link"]') as HTMLElement);
+		expect((await findByTestId('form-error')).textContent?.trim()).toBe(
+			'Le compte a été modifié entre-temps.',
+		);
+	});
+
+	it('B12 — déliaison en échec imprévu → le générique', async () => {
+		vi.mocked(updateBankAccountJournalLink).mockRejectedValue(new Error('boom'));
+		const { container, findByTestId } = monter();
+		await fireEvent.click(container.querySelector('[data-testid="unlink-button"]') as HTMLElement);
+		const erreur = await findByTestId('form-error');
+		expect(updateBankAccountJournalLink).toHaveBeenCalledWith(17, null, 3);
+		expect(erreur.textContent?.trim()).toBe('Erreur inattendue.');
+		expect(erreur.textContent).not.toContain('[object Object]');
 	});
 });

@@ -228,3 +228,19 @@ describe('DeleteBankImportAction', () => {
 		);
 	});
 });
+
+// Story 28-2 (#520, AC9 — B5) — un rejet qui n'est pas une `ApiError` affiche le
+// générique traduit, ni le message technique ni « [object Object] ».
+describe('DeleteBankImportAction — échec imprévu (Story 28-2, B5)', () => {
+	it('rejet new Error ⇒ le générique (mutation : repli String(err) rétabli)', async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		mockApi.deleteBankImport.mockRejectedValue(new Error('boom'));
+		const { getByTestId, findByTestId } = monter(detail([tx(1)]));
+		await fireEvent.click(getByTestId('bank-import-delete-button'));
+		await fireEvent.click(await findByTestId('bank-import-delete-submit'));
+		const erreur = await findByTestId('bank-import-delete-error');
+		expect(erreur.textContent).toContain('Erreur inattendue.');
+		expect(erreur.textContent).not.toContain('boom');
+		expect(erreur.textContent).not.toContain('[object Object]');
+	});
+});

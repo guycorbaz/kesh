@@ -109,3 +109,20 @@ describe('CancelReconciliationDialog', () => {
 		expect(onSuccess).not.toHaveBeenCalled();
 	});
 });
+
+// Story 28-2 (#520, AC9 — B10) — le rejet de `cancelReconciliation` à la
+// confirmation (`:97`), et non celui du chargement (B9), par une valeur qui n'est
+// pas une `ApiError` : le générique traduit.
+describe('CancelReconciliationDialog — échec imprévu à la confirmation (Story 28-2, B10)', () => {
+	it('rejet new Error AU CLIC ⇒ le générique (mutation : repli String(err) rétabli — M14)', async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		mockApi.getReconciliationTransaction.mockResolvedValue(view({}));
+		mockApi.cancelReconciliation.mockRejectedValue(new Error('boom'));
+		const { findByTestId } = monter();
+		await fireEvent.click(await findByTestId('reconciliation-cancel-submit'));
+		const erreur = await findByTestId('reconciliation-cancel-error');
+		expect(erreur.textContent).toContain('Erreur inattendue.');
+		expect(erreur.textContent).not.toContain('boom');
+		expect(erreur.textContent).not.toContain('[object Object]');
+	});
+});

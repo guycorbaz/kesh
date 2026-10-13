@@ -276,3 +276,33 @@ describe('page des comptes bancaires — description (Story 26-2a, AC7)', () => 
 		expect((await findByTestId('bank-account-name-5')).textContent).toBe('BCV');
 	});
 });
+
+// Story 28-2 (#520, AC9 — B1) — un rejet du chargement de la liste qui n'est pas
+// une `ApiError` affiche le générique traduit, ni « Error: boom » ni
+// « [object Object] » (site `Promise.allSettled`, `baResult.reason`).
+describe('page des comptes bancaires — échec imprévu du chargement (Story 28-2, B1)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		fetchAccountsMock.mockResolvedValue(accounts);
+		getInvoiceSettingsMock.mockResolvedValue({
+			defaultReceivableAccountId: null,
+			defaultPayableAccountId: null,
+		});
+	});
+
+	it('rejet non-ApiError de listBankAccounts → le générique', async () => {
+		listBankAccountsMock.mockRejectedValue(new Error('boom'));
+		const { findByTestId } = render(Page);
+		const erreur = await findByTestId('load-error');
+		expect(erreur.textContent).toBe('Erreur inattendue.');
+		expect(erreur.textContent).not.toContain('boom');
+		expect(erreur.textContent).not.toContain('[object Object]');
+	});
+
+	it('rejet ApiError de listBankAccounts → son message', async () => {
+		listBankAccountsMock.mockRejectedValue({ code: 'FORBIDDEN', message: 'Accès refusé.', status: 403 });
+		const { findByTestId } = render(Page);
+		expect((await findByTestId('load-error')).textContent).toBe('Accès refusé.');
+	});
+});
