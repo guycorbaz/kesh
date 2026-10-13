@@ -46,11 +46,14 @@
  * | affichage réservé aux `ApiError`, **rien** pour le reste (classe D) | ❌ non | un silence n'est pas une conversion ; suivi par #644 |
  * | `String(x ?? '')`, `String(x as T)` | ❌ non | G1 ne reconnaît que `String(<liaison>)` seul |
  * | `x?.toString()` | ❌ non | G6 exige `x.toString()` |
- * | `(x as Error).message` sans garde | ❌ non | aucune règle : ce n'est pas une conversion, c'est un champ (vide pour un objet sans `message`) |
+ * | `(x as Error).message` sans garde | ❌ non | aucune règle : ce n'est pas une conversion, c'est un champ (`undefined` pour un objet sans `message`) |
  * | `String(f(y).reason)`, `String(r.at(0).reason)` | ❌ non | G2 n'admet pas de parenthèse avant `.reason` |
  * | rappel de rejet en **second argument** de `.then(ok, (x) => …)` | ❌ non | seul `.catch(` est recueilli |
+ * | `(x) + ''`, `'a' + (x)`, `(x as T) + ''`, `x as T + ''` | ❌ non | G5 exige la liaison nue, adjacente au `+` |
+ * | `'a'.concat(x)`, `[x].join(…)` | ❌ non | G5 ne voit que l'opérateur `+` |
  *
- * Aucune de ces formes n'existe dans `src/` à l'écriture de la garde (revue P1, E-L4).
+ * Aucune de ces formes n'est appliquée à une liaison d'erreur dans `src/` à l'écriture de la garde (revue P1, E-L4 ;
+ * revue P2 ciblée, P2-3 et P2-4). `String(x ?? '')` y existe, mais sur des valeurs qui ne sont pas des erreurs.
  *
  * **Faux positif bruyant, donc sans danger** : un `+` unaire (`+x`) ou une addition
  * numérique (`x + 1`) sur la liaison relève de G5 ; aucune n'a de sens sur une erreur.

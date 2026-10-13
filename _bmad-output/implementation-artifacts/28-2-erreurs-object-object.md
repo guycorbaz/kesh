@@ -2,8 +2,8 @@
 
 ## Status
 
-**review** — revue de code P1 remédiée le 2026-10-13 (1 MEDIUM, 14 LOW ; cf. Change Log) ; passe ciblée P2 à lancer :
-`28-2-review-prompt-p2-ciblee.md` (Haiku, une lentille, diff de la remédiation P1). Validation close (P3 ciblée),
+**done** — revue de code close le 2026-10-13 : P1 (Sonnet) 1 MEDIUM, 14 LOW, remédiés ; P2 ciblée (Haiku) 1 MEDIUM
+reclassé et rattaché à #644, 4 LOW, remédiation sans ligne de production (cf. Change Log). Validation close (P3 ciblée),
 développement fait (`bmad-dev-story`, Opus 5.5). Branche `story/28-2`, worktree `/home/gcorbaz/devel/kesh-28-2`,
 port **3035**, bases `kesh_282` / `kesh_e2e_282`. Choix consignés au registre `epic-28-choix-autonomes.md`
 (§ Story 28-2), **C-28-2-1 à C-28-2-38**. 11 AC (AC1 à AC11). PR : **`closes #520`**, **`refs #644`** (classe D).
@@ -63,7 +63,13 @@ ne le réexporte pas ; ses quatre importeurs l'importent du module neuf. Règles
 | `ApiError` dont `message` est vide ou blanc, **ou n'est pas une chaîne** (`undefined`, nombre, objet : `isApiError`, `api-client.ts:19-28`, ne vérifie que `code` et `status` — C-28-2-24) | `i18nMsg('error-unexpected', 'Erreur inattendue.')` |
 | toute autre valeur — `Error`, `TypeError`, `DOMException`, chaîne, nombre, `null`, `undefined`, objet quelconque | `i18nMsg('error-unexpected', 'Erreur inattendue.')`, **et** `console.error('[errorMessageOf]', err)` pour le diagnostic (C-28-2-3) |
 
-⛔ Le rendu n'est **jamais** `'[object Object]'`, jamais la chaîne vide, jamais `'undefined'`/`'null'`.
+⛔ Le rendu **d'`errorMessageOf`** n'est **jamais** `'[object Object]'`, jamais la chaîne vide, jamais `'undefined'`/`'null'`.
+La garantie « jamais la chaîne vide » vaut pour l'utilitaire et les sites que la story fait passer par lui (classes
+A et B). **Elle ne vaut pas** pour les sites qui rendent encore `err.message` d'une `ApiError` sans contrôle du
+message vide : `reconciliation-cancel.ts:102` (repli de B10), `pdf-error.ts:43`, `export/+page.svelte:28`,
+`supplier-invoices/import/+page.svelte:301`, `AdminRestorePanel.svelte:84` et les branches
+`BANK_ACCOUNT_NOT_CONFIGURED` des deux modales. Tous sont **rattachés à #644** (classe D). *(Précisé en revue de
+code P2 ciblée, P2-1 et P2-2.)*
 ⚠️ Le repli `'Erreur inattendue.'` est **exactement** celui des **20** sites existants de `error-unexpected` (point
 final compris ; `grep -rn "'error-unexpected'" frontend/src … | grep -v "'Erreur inattendue.'"` ne rend rien) : `i18n-un-repli-par-cle.test.ts` exige un repli unique par clé.
 
@@ -793,7 +799,11 @@ de `error-messages.spec.ts` sont **verts**.
 2 modules, 6 tests Vitest dont la garde, 1 spec E2E —, 32 modifiés dont 4 catalogues et le CHANGELOG) ; **76**
 `it(`/`test(` ajoutés (74 Vitest + 2 E2E) et **2** `it.each` ; 0 test retiré. `sitesTotal` 2075 → **2079**, mesuré
 par la collecte d'`i18n-keys.test.ts` ; `sitesNonResolus`, `relais`, `sitesGabarit` inchangés. Clés : 3 × 4
-(`grep -c` : 3 par catalogue). `isApiError(` : **164 appels hors tests à `4b31fcac`, 151 au `HEAD` (−13)** — les sites
+(`grep -c` : 3 par catalogue). `isApiError(` : **164 appels hors tests à `4b31fcac`, 151 au `HEAD` (−13)** — commande :
+`git grep -nE "isApiError\(" <réf> -- frontend/src | grep -vE "\.test\.ts:" | grep -vF "export function isApiError(" | grep -vE ":[0-9]+:\s*(\*|//)" | wc -l`.
+Sans les deux derniers filtres, on compte les lignes brutes : **166 → 153**, le chiffre de la passe P2 ciblée. L'écart
+est fait de deux exclusions, une à chaque borne : la déclaration (`api-client.ts:19` à la base, `api-error.ts:20` au
+`HEAD`) et le doc-comment `notify.ts:89`. Recompté en revue de code P2 ciblée. Les sites
 A/B qui passent désormais par `errorMessageOf` (bank-accounts 4, api-keys 3, `BankAccountJournalLinkForm` 2,
 `DeleteBankImportAction`, `CancelReconciliationDialog`, `ManualMatchModal`, `TransactionSplitModal` 1 chacun) ; les
 fichiers hors tests qui portent `isApiError(` passent de **55 à 54** (`git grep -l`, mêmes filtres) : le perdent
@@ -989,3 +999,27 @@ Modifiés :
     scénarios d'`error-messages.spec.ts` verts.
   - Passe suivante : **P2 ciblée** (Haiku, une lentille, diff aplati `12ec02c8..HEAD`),
     `28-2-review-prompt-p2-ciblee.md` — la remédiation touche une ligne de production, la boucle n'est donc pas close.
+- 2026-10-13 — **Revue de code P2 ciblée** (Haiku, une lentille, diff aplati `12ec02c8..be08bf10` ; rapport hors dépôt
+  `kesh-gate-logs/28-2-review-p2-ciblee.md`) : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW**. Aucune régression de la
+  remédiation P1. Remédiation **sans aucune ligne de code de production** :
+  - **P2-1 (MEDIUM) reclassé par l'orchestrateur** : `reconciliation-cancel.ts:102` rend `err.message` brut pour un
+    code hors liste. Le défaut est préexistant et hors du diff de la story. **Rattaché à #644** (commentaire
+    https://github.com/guycorbaz/kesh/issues/644#issuecomment-6145327361), avec `pdf-error.ts:43` (**P2-2**, LOW) et
+    les trois sites de C-28-2-37. La phrase « jamais la chaîne vide » de l'AC1 est bornée à `errorMessageOf` et aux
+    sites de la story, et renvoie à #644 pour les sites encore ouverts.
+  - **P2-3** : quatre formes que G5 ne voit pas, ajoutées au tableau des angles morts du préambule de la garde
+    (`(x) + ''`, `(x as T) + ''`, `'a'.concat(x)`, `[x].join(…)`). Ce changement ne porte que sur un commentaire de
+    test. La garde a été rejouée : 38 / 38 verts.
+  - **P2-4** : la phrase devient exacte : « aucune de ces formes n'est appliquée à une liaison d'erreur ». Le
+    préambule note que `String(x ?? '')` existe dans `src/` sur des valeurs qui ne sont pas des erreurs. Pour un objet
+    sans `message`, le champ vaut `undefined` et non une chaîne vide.
+  - **P2-5** : le journal `kesh-gate-logs/28-2-mutations-p1.log` reçoit une annotation par ajout. Les deux lignes
+    « motif non unique » sont des tentatives de P1-M3 et de P1-M9, refusées avant toute écriture puis rejouées sur
+    l'occurrence voulue.
+  - **Recompte d'`isApiError(`** : la valeur vivante du Dev Agent Record porte désormais sa commande et ses deux
+    exclusions. Lignes brutes : **166 → 153**. Hors déclaration et doc-comment `notify.ts:89` : **164 → 151**. Les
+    deux décomptes sont justes. Aucune entrée passée n'a été réécrite.
+  - **Clôture de la revue de code.** Trend : P1 (Sonnet, lentilles B, E, A) **1 MEDIUM, 14 LOW** → P2 ciblée (Haiku)
+    **1 MEDIUM** (reclassé et rattaché à #644, hors du diff de la story), **4 LOW**. La remédiation P2 ne touche aucune
+    ligne de production, donc **la boucle est close**. Les gates complets restent ceux du dernier commit de code
+    `d514132e`. La remédiation P2 ne modifie qu'un commentaire de test. Statut **`done`**.
