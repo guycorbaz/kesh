@@ -2,7 +2,11 @@
 
 ## Status
 
-**ready-for-dev** (deux clés) — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur
+**28-5a : review** (2026-10-13, `bmad-dev-story`, Opus 5.5 ; dernier commit de code `822ba587` ; revue de code P1 à
+lancer, `28-5a-review-prompt-p1.md`, Sonnet, lentilles B, E et A). **28-5b : ready-for-dev** (part de `origin/main`
+après la fusion de la 28-5a).
+
+*Historique :* **ready-for-dev** (deux clés) — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur
 `5aad8b35`, branche `story/28-5` ; validation **P1** (Sonnet, lentilles R et F : 0 HIGH, 6 MEDIUM, 14 LOW)
 **remédiée** le 2026-10-13, avec **découpage** décidé par l'orchestrateur (C-28-5-17, qui remplace la dérogation
 C-28-5-11) ; validation **P2** (Opus, lentilles R et F : 0 HIGH, 4 MEDIUM soit 2 distincts, 18 LOW) **remédiée** le
@@ -321,25 +325,25 @@ test ajouté, soit déclarée **équivalente** avec sa preuve au Debug Log.
 
 ### 28-5a
 
-- [ ] **T0a — Montage** : bases `kesh_285` / `kesh_e2e_285` (migrations du worktree, seed), port **3038**,
+- [x] **T0a — Montage** : bases `kesh_285` / `kesh_e2e_285` (migrations du worktree, seed), port **3038**,
       `CARGO_TARGET_DIR=<worktree>/target`, `node_modules` par `cp -al` (§ 4 de `docs/agents-orchestration.md`).
       Rafraîchir la base avant tout gate complet.
-- [ ] **T1 — Champ `autoMatchRejectedAt`** (AC1) : `TransactionResponse` + `From` ; test B7.
-- [ ] **T2 — Route** (AC2, AC3, AC4, AC13) : variante `AppError::ReconciliationTransactionNotRejected { bank_transaction_id }`
+- [x] **T1 — Champ `autoMatchRejectedAt`** (AC1) : `TransactionResponse` + `From` ; test B7.
+- [x] **T2 — Route** (AC2, AC3, AC4, AC13) : variante `AppError::ReconciliationTransactionNotRejected { bank_transaction_id }`
       et son bras (`409`, code, message `t("reconciliation-errors-transaction-not-rejected", "<texte fr-CH exact>")`) ;
       dans `routes/reconciliation.rs`, section « Story 28-5 (#526) — annuler un rejet » : `post_unreject_transaction`,
       `unreject_once`, `enum UnrejectOutcome { Unrejected, NotFound, NotRejected }`, `classify_unreject` ;
       l'auxiliaire de lecture du compte et la signature générique de `conclude_locked_attempt` (C-28-5-18) ; route
       dans `lib.rs`.
-- [ ] **T3 — Gardes et commentaires** (AC7 a, AC10) : registre des routes, `ACTIONS`, G9, deux clés serveur × quatre
+- [x] **T3 — Gardes et commentaires** (AC7 a, AC10) : registre des routes, `ACTIONS`, G9, deux clés serveur × quatre
       locales, doc-comments ; grep du symptôme.
-- [ ] **T4 — Tests backend** B1-B10 (§ Tests) ; **`kesh-db` touché (un dépôt, même en doc-comment) → gate complet à
+- [x] **T4 — Tests backend** B1-B10 (§ Tests) ; **`kesh-db` touché (un dépôt, même en doc-comment) → gate complet à
       chaque passe, ciblage interdit** (règle `CLAUDE.md`, § *Pendant une boucle de revue*, exception `kesh-db`) — y
       compris en cours de boucle de revue.
-- [ ] **T5a — Documentation** (AC9 a) : `docs/api-external.md`.
-- [ ] **T6a — Mutations** (AC12 a) M1-M8, M13-M15, M17 (M13 et M14 équivalentes : preuve au Debug Log ; **M17 rejouée** — son équivalence, lue sur le DDL, se confirme en l'exécutant : B1 doit rester vert sous M17, résultat consigné au Debug Log ; si B1 rougit, M17 n'est pas équivalente et la fiche se corrige), sous verrou ; restauration `git checkout -- <f>` **puis
+- [x] **T5a — Documentation** (AC9 a) : `docs/api-external.md`.
+- [x] **T6a — Mutations** (AC12 a) M1-M8, M13-M15, M17 (M13 et M14 équivalentes : preuve au Debug Log ; **M17 rejouée** — son équivalence, lue sur le DDL, se confirme en l'exécutant : B1 doit rester vert sous M17, résultat consigné au Debug Log ; si B1 rougit, M17 n'est pas équivalente et la fiche se corrige), sous verrou ; restauration `git checkout -- <f>` **puis
       `touch <f>`**.
-- [ ] **T7a — Gate et comptes rendus** : gate complet **et** suite E2E complète au dernier commit de code (verrou de
+- [x] **T7a — Gate et comptes rendus** : gate complet **et** suite E2E complète au dernier commit de code (verrou de
       gate, recette de `docs/testing.md`, échecs jugés fichier par fichier) ; la 28-5a ne touche **aucun** fichier
       frontend (C-28-5-26) : aucun gate frontend n'est exigé d'elle — **s'il en touchait un**, ajouter `npm run
       check`, `lint-i18n-ownership`, `test:unit` et `build` au même commit ; Dev Agent Record (dont la phrase
@@ -573,11 +577,107 @@ pas », « rejetées comprises ») reste vrai — il l'est, la story ne change p
 
 ### Agent Model Used
 
+28-5a : Claude Opus 5.5 (`bmad-dev-story`, autonomie, worktree `kesh-28-5`, port 3038, bases `kesh_285` /
+`kesh_e2e_285`).
+
 ### Debug Log References
+
+Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5a/`.
+
+- **Rouge d'abord** (`red.log`, tests écrits, code absent — seul un bouchon `classify_unreject` rendant toujours
+  `NotFound` pour que B8 compile) : filtre de 14 tests (`test(unreject) | …`, qui attrape aussi
+  `batch_classification_tests::pending_unrejected_row_is_eligible`, préexistant) — **12 rouges, 2 verts** : les neuf
+  tests HTTP B1-B7, B9, B10 rougissent (route absente : `405` au lieu du statut attendu ; B7 : champ
+  `autoMatchRejectedAt` absent ; B10 : la sonde ne voit aucune attente, montage asserté), et B8 rougit sur 3 de ses
+  4 cas (`absent_row_is_not_found` vert par construction du bouchon).
+- **Vert** (`green1.log`, gate ciblé) : `fmt` et `clippy --workspace --all-targets -D warnings` verts ; nextest sur
+  `reconciliation_e2e`, `audit_route_registry`, `textes_coherents`, `audit_label_registry`, `bank_imports_e2e`, la
+  bibliothèque `kesh-api` et `kesh-i18n` : **657 passés, 0 échec, 2 ignorés** ; les 13 tests de la story (B1-B7, B9,
+  B10 et les quatre cas de B8) verts.
+- **Mutations T6a** (`mutations/`, `mutations-run.txt`, sous le verrou de gate ; script
+  `scratchpad/28-5a/mutations-28-5a.py`, motif vérifié unique, restauration `git checkout --` puis `touch`, `git
+  status` des crates vide après la campagne). Filtre de 14 tests ci-dessus à chaque mutation :
+
+  | # | Résultat | Tuée par |
+  |---|---|---|
+  | M1 | tuée | B8 (`reconciled_row_is_not_rejected_even_if_marked`), B3 |
+  | M2 | tuée | B8 (`unmarked_row_is_not_rejected`), B2 |
+  | M3 | tuée | B1 |
+  | M4 | tuée | B1, B2, B6 |
+  | M5 | tuée | B6 |
+  | M6 | tuée | B5 (fermeture appelée directement, sans `with_account_lock`) |
+  | M7 | tuée | B4 (route montée dans `authenticated_routes`) |
+  | M8 | tuée | B7, B1 |
+  | M13 | **survit — équivalente** (14/14 verts) | la ligne est lue `FOR UPDATE` sous verrou, scopée par sa clé primaire : l'`UPDATE` ne peut toucher qu'elle (C-28-5-19) ; M15 garde la prémisse |
+  | M14 | **survit — équivalente** (14/14 verts) | `id` est la clé primaire et la ligne a été lue scopée société et compte sous verrou ; les deux prédicats restent en défense en profondeur |
+  | M15 | tuée | B10 (`409 OPTIMISTIC_LOCK_CONFLICT` au lieu de `404`) |
+  | M17 | **rejouée — survit, équivalente** (14/14 verts, dont B1) | `bank_transactions.updated_at` porte `ON UPDATE CURRENT_TIMESTAMP(3)` : sans l'affectation explicite, le moteur renouvelle la colonne et B1 voit toujours `updated_at` postérieur à la valeur forcée. **L'équivalence lue sur le DDL est confirmée par l'exécution** ; la fiche n'a pas à être corrigée |
+
+  Aucune survivante assumée : les trois survivantes sont les trois équivalences prescrites (AC12 (a)).
+- **Gate final au dernier commit de code `822ba587`** (`final-gate.out`, sous le verrou de gate, bases `kesh_285` et
+  `kesh_e2e_285` remises à zéro par `DROP`/`CREATE` + migrations + seed, sans redémarrer le conteneur) :
+  - `scripts/test-fast.sh` (fmt + clippy + nextest, `final-testfast.log`) : **3527 passés, 0 échec, 6 ignorés**
+    (baseline v0.13.2 : 3514 ; +13 = les tests de la story) ;
+  - frontend (C-28-5-33 : aucun fichier frontend touché, mais des gardes Vitest lisent les catalogues) :
+    `npm run check` 0 erreur, 29 avertissements préexistants (`BankProfileForm.svelte` notamment) ;
+    `lint-i18n-ownership` PASS ; `test:unit` **1395 passés, 134 fichiers** ; `build` vert ;
+  - E2E complet (recette de la consigne 6, port 3038, `final-e2e.log`) : **267 passés, 7 échecs, 19 ignorés**. Les
+    sept échecs sont nominativement les sept KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* :
+    `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
+    Aucun huitième de pollution, aucun KF-045 (run de l'après-midi), pas de KF-046. Aucune régression.
 
 ### Completion Notes List
 
+- **28-5a livrée côté serveur** : `POST /api/v1/reconciliation/transactions/{id}/unreject` (Comptable+, clés
+  `read-write`), `204` ; `classify_unreject` pure (appelle `is_reconciled`, aucun second test de statut) ;
+  `unreject_once` sous `with_account_lock`, lecture `find_by_id_for_account_for_update`, `UPDATE` scopé
+  `id`/`company_id`/`bank_account_id`, garde `rows_affected() != 1` → `OptimisticLockConflict`, audit
+  `reconciliation.unrejected` (`previouslyRejectedAt`, `.and_utc()`, `for_actor`) ; `conclude_locked_attempt` rendu
+  générique (liaison `Ok(value)`, deux commentaires internes et doc-comment nommant les trois appelants, logique
+  intouchée) ; la lecture du compte de `…/cancel` passe dans `bank_account_of_transaction`, mot pour mot, son
+  `match` intouché ; `AppError::ReconciliationTransactionNotRejected` (`409`, repli inscrit à G9) ;
+  `TransactionResponse.auto_match_rejected_at` (AC1).
+- Gardes suivies : registre des routes (`LIB_ROUTES` 116, `traced` 110, `sans_ecriture` 92, total 119, doc du
+  module et point (iv)), `ACTIONS`, G9 ; deux clés serveur × quatre locales ; doc-comments de
+  `repositories/reconciliation.rs` (en-tête, « Deux appelants ») et d'`is_reconciled` (inventaire des écrivains,
+  « trois chemins » appelants). Symptômes grepés après patch : `Seul appelant` (0 dans `crates`, `frontend/src`,
+  `docs`), `` post_manual` ou `post_split `` / `` post_split` n' `` (0), `\b115\b`/`\b118\b`/`\b109\b` dans
+  `audit_route_registry.rs` (0), `\b91\b` (une ligne, le libellé « 91 routes de lib.rs », juste), `inventaire clos`
+  (une ligne, l'en-tête d'`is_reconciled`, juste) ; `bank-import-deletion.ts` non touché (28-5b, C-28-5-26).
+- `docs/api-external.md` : sous-section « Annuler le rejet d'une transaction bancaire », renvoi au paragraphe
+  « Transaction disparue, rapprochée ou rejetée », `autoMatchRejectedAt` à la ligne `GET /api/v1/bank-imports/{id}`.
+- **Aucune release entre les deux PR** : entre la fusion de la 28-5a et celle de la 28-5b, l'annulation n'existe que
+  par l'API, sans écran, sans manuel ni CHANGELOG — la 28-5b les apporte.
+- **Décomptes** (périmètre : `da25bf1b` — validation close — à `822ba587` — dernier commit de code) : **13 tests
+  neufs** — `reconciliation_e2e.rs` 81 → 90 attributs `#[sqlx::test]` (+9 : B1-B7, B9, B10) et
+  `routes/reconciliation.rs` 14 → 18 `#[test]` (+4 : B8) ; 15 fichiers de code, de test, de catalogue et de doc
+  touchés, plus deux de `_bmad-output` (registre, registre de sprint) — `git diff --stat da25bf1b 822ba587` : 17
+  fichiers. **Deux** clés i18n neuves × quatre locales. Aucune migration, aucun `Cargo.toml`, aucun fichier
+  frontend.
+- Choix consignés : **C-28-5-31** (constructeur de test partagé, `pub(super)`), **C-28-5-32** (place de
+  l'auxiliaire), **C-28-5-33** (gates frontend exécutés), **C-28-5-34** (fiche corrigée : la garde de la 28-4 ne
+  verrouille pas le compte, C-28-4-21).
+- À l'attention de la revue : la sonde de B10 n'observe qu'une requête **en cours** (angle mort repris de la 27-4,
+  écrit au doc-comment) ; la 28-4 ajoutera sa garde « compte clos » à `unreject` (W30) — non traitée ici.
+
 ### File List
+
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/src/routes/bank_imports.rs`
+- `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/audit_labels.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-api/tests/audit_route_registry.rs`
+- `crates/kesh-api/tests/textes_coherents.rs`
+- `crates/kesh-db/src/repositories/reconciliation.rs` (doc-comments)
+- `crates/kesh-db/src/repositories/bank_imports.rs` (doc-comment)
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`
+- `docs/api-external.md`
+- `_bmad-output/implementation-artifacts/28-5-transaction-rejetee-atteignable.md`
+- `_bmad-output/implementation-artifacts/28-5a-review-prompt-p1.md` (neuf)
+- `_bmad-output/implementation-artifacts/epic-28-choix-autonomes.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -655,3 +755,10 @@ pas », « rejetées comprises ») reste vrai — il l'est, la story ne change p
 - 2026-10-13 — **Fiche corrigée** (dev 28-5a, sur note de l'orchestrateur) : § *Séquence de la route*, la garde
   « compte clos » de la 28-4 ne prendra aucun verrou — lecture cohérente non verrouillante (C-28-4-21) ; la phrase
   qui annonçait un `bank_accounts FOR UPDATE` dans `unreject` est réécrite. Aucun code touché. Choix C-28-5-34.
+- 2026-10-13 — **Développement de la 28-5a** (`bmad-dev-story`, Opus 5.5) : T0a-T7a. Route `…/unreject`, champ
+  `autoMatchRejectedAt`, gardes, deux clés serveur × quatre locales, doc-comments, `docs/api-external.md` (commit de
+  code `822ba587`). Tests B1-B10 rouges avant la correction (12 des 14 tests du filtre), verts après. Mutations :
+  M1-M8 et M15 tuées ; M13, M14 et **M17 (rejouée)** survivent, équivalentes. Gate final au `822ba587` : nextest
+  3527/3527 (6 ignorés), Vitest 1395/1395, `check` 0 erreur, `lint-i18n-ownership` et `build` verts, E2E 267 passés
+  / 7 échecs, les sept KF-029. Choix C-28-5-31 à 33. Statut **review** ; revue de code P1 à lancer
+  (`28-5a-review-prompt-p1.md`, Sonnet, lentilles B, E et A).
