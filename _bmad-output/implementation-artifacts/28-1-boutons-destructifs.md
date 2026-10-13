@@ -2,7 +2,8 @@
 
 ## Status
 
-**in-progress** — validation close après la passe ciblée P4 (2026-10-13). Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`), sur `6f971d76`
+**review** — développement fait le 2026-10-13 (`bmad-dev-story`, Opus 5.5), gates au dernier commit ; revue de code
+P1 : prompt `28-1-review-prompt-p1.md`. Validation close après la passe ciblée P4. Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`), sur `6f971d76`
 (rétrospective de l'Epic 27), branche `story/28-1`, worktree `/home/gcorbaz/devel/kesh-28-1`, rebasée en
 validation P2 sur `5aad8b35` (kickoff de l'Epic 28, #643). Choix consignés au registre
 `epic-28-choix-autonomes.md` (**C-28-1-1 à C-28-1-36** ; le registre séparé de la story y a été versé par union
@@ -488,7 +489,7 @@ recomptés.
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Captures « avant » et phase rouge** (AC8) : écrire `helpers/contrast.ts` (+ tests),
+- [x] **T0 — Captures « avant » et phase rouge** (AC8) : écrire `helpers/contrast.ts` (+ tests),
       `helpers/bank-import-fixtures.ts` (extraction, AC8) et `destructive-buttons.spec.ts` **avant** de toucher
       `app.css` ou `button.svelte` ; les lancer seules avec
       `KESH_E2E_CAPTURES_DIR=/home/gcorbaz/devel/kesh-gate-logs/28-1-captures/avant` — elles **doivent rougir**
@@ -498,21 +499,21 @@ recomptés.
       captures dans le `finally` de chaque step, passes clair et sombre en tests distincts, C-28-1-29) ; le nombre
       de fichiers produits est copié au Debug Log. ⚠️ Le scénario (a) a besoin de
       l'exemple de l'AC9 : faire d'abord la T4.
-- [ ] **T1 — Jetons** (AC1) dans `app.css`, doc-comment compris.
-- [ ] **T2 — Variante** (AC2) dans `button.svelte:14`.
-- [ ] **T3 — Gardes Vitest** (AC6, AC7) : table de l'AC6 à **quatorze** entrées, motifs écrits, assertion (f) et
+- [x] **T1 — Jetons** (AC1) dans `app.css`, doc-comment compris.
+- [x] **T2 — Variante** (AC2) dans `button.svelte:14`.
+- [x] **T3 — Gardes Vitest** (AC6, AC7) : table de l'AC6 à **quatorze** entrées, motifs écrits, assertion (f) et
       auto-tests sur source synthétique ; AC7 (1) à (4), avec `@tailwindcss/node` déclaré en `devDependencies`
       (même spécificateur que `tailwindcss`, `npm install`, lockfile commité, assertion de version — C-28-1-35)
       et les auto-tests du relevé (C-28-1-34) ; si l'API de l'AC7 (4) ne se charge pas,
       le repli est écrit au Debug Log avec l'erreur.
-- [ ] **T4 — Page `/design-system`** (AC9).
-- [ ] **T5 — Captures « après »** : la spec neuve verte, douze captures dans `…/28-1-captures/apres`.
-- [ ] **T6 — Manuels** (AC10) + `make fr` sous `flock` + contrôles aplatis copiés au Debug Log.
-- [ ] **T7 — Spec UX et CHANGELOG** (AC11, AC12).
-- [ ] **T8 — Mutations M1-M22** (§ ci-dessous ; M18 retirée), chacune restaurée par `git checkout -- <fichier>`
+- [x] **T4 — Page `/design-system`** (AC9).
+- [x] **T5 — Captures « après »** : la spec neuve verte, douze captures dans `…/28-1-captures/apres`.
+- [x] **T6 — Manuels** (AC10) + `make fr` sous `flock` + contrôles aplatis copiés au Debug Log.
+- [x] **T7 — Spec UX et CHANGELOG** (AC11, AC12).
+- [x] **T8 — Mutations M1-M22** (§ ci-dessous ; M18 retirée), chacune restaurée par `git checkout -- <fichier>`
       puis `touch` (mémoire *Mutation restaurée, binaire périmé*) ; tableau « mutation → test qui rougit » au
       Debug Log.
-- [ ] **T9 — Gates** (AC13), au dernier commit de code ; `git diff --stat main -- frontend/src` (AC5) ; grep de
+- [x] **T9 — Gates** (AC13), au dernier commit de code ; `git diff --stat main -- frontend/src` (AC5) ; grep de
       propagation du symptôme (§ ci-dessous).
 
 ## Mutations à tuer (T8)
@@ -807,11 +808,186 @@ sur ces fichiers.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), `bmad-dev-story` en autonomie, 2026-10-13. Worktree `kesh-28-1`, port 3034,
+bases `kesh_281` / `kesh_e2e_281`, `CARGO_TARGET_DIR` du worktree ; gates lourds, campagne de mutations, E2E et
+`make` des manuels sous `flock kesh-gate-logs/.gate.lock`.
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/` : `28-1-t0-rouge.log` (phase rouge),
+`28-1-t5-vert.log`, `28-1-make-fr.log`, `28-1-mutations.log` et `28-1-mut/` (sorties par mutation),
+`28-1-gate-testfast.log`, `28-1-gate-front-*.log`, `28-1-gate-e2e.log`, `28-1-gate-e2e-rejeu-invoices.log`.
+Captures : `28-1-captures/{avant,apres,gate}/`.
+
+**Ordre suivi** : T4 (exemple de l'AC9, prérequis du scénario (a)), puis helpers, spec E2E et gardes Vitest, puis
+**T0 avant toute édition d'`app.css` et de `button.svelte`** (le build de la phase rouge a été fait, sous verrou, sur
+un arbre où seule la T4 touchait `frontend/src`), puis T1/T2, T5, T6, T7, T8, T9.
+
+**T0 — phase rouge** (`28-1-t0-rouge.log`, commit de base `bbd0a9a1` + T4 et tests, non commités) :
+`destructive-buttons.spec.ts` **4 tests rouges / 4**, `bank-import-delete.spec.ts` (montage extrait) **vert**.
+Toutes les erreurs sont des `toHaveCSS` expirés à 2 s — **22**, aucune autre exception, **aucun timeout de test**
+(durées 15,4 s, 15,4 s, 10,7 s, 10,8 s) :
+
+```
+Error: expect(locator).toHaveCSS(expected) failed     ×22
+Expected: "rgb(185, 28, 28)"   Received: "rgba(0, 0, 0, 0)"   (fond, repos/focus/désactivé/Supprimer…)
+Expected: "rgb(255, 255, 255)" Received: "rgb(30, 41, 59)"    (texte : le texte courant #1e293b)
+Expected: "rgb(153, 27, 27)"   Received: "rgba(0, 0, 0, 0)"   (survol)
+4 failed, 1 passed (58.5s)
+```
+
+Ventilation : (a) 7 par schéma (repos fond + texte, survol fond + texte, focus bordure + fond, désactivé fond), (b) 4
+par schéma (*Supprimer l'import* fond + texte, *Supprimer définitivement* fond + texte) : 2 × 7 + 2 × 4 = 22. Restés
+**verts** dès la phase rouge, et c'est une information : `:focus-visible` vrai après Shift+Tab/Tab, `outline-style:
+solid` et `outline-color: rgb(59, 130, 246)` — la règle globale hors couche l'emporte bien sur `outline-none`
+(lecture de l'AC3 vérifiée, aucune correction de la variante nécessaire) — ; `opacity: 0.5` du désactivé ; *Annuler*
+sans fond rouge ; axe `color-contrast` 0 violation (un texte `#1e293b` sans fond passe). **12 fichiers** produits
+dans `28-1-captures/avant/` (les douze noms attendus). Les gardes Vitest, écrites avant T1/T2, étaient rouges elles
+aussi : `button-destructive.test.ts` **16 / 17** (seul « est lue sur la variante seule » vert : `.variants` est
+exposé, la lecture par `readFileSync` n'a pas servi) ; `jetons-non-definis.test.ts` 1 / 7, sur le seul nom
+`destructive` ; `boutons-rouges-inventory.test.ts` vert (il ne dépend pas du thème).
+
+**T5** (`28-1-t5-vert.log`) : 5 / 5 verts (4 neufs + `bank-import-delete`), 12 captures dans `…/apres/`, regardées :
+fond rouge plein et texte blanc au repos, plus foncé au survol, contour bleu et anneau rouge au focus, rouge estompé
+désactivé, *Supprimer définitivement* rouge plein à côté d'un *Annuler* bordé, sombre identique au clair.
+
+**AC1** — après `npm run build` :
+
+```
+$ grep -c 'bg-destructive' build/_app/immutable/assets/*.css
+…/0.BjaBLe4V.css:1        (0 dans les six autres feuilles)
+```
+
+Ratios recalculés par la méthode du helper (mélanges non arrondis, arrondi au centième) : blanc/destructive 6,47 ;
+blanc/destructive-hover 8,31 ; destructive/bandeau `/10` 5,46 ; désactivé effectif 2,54 ; `#dc2626`/son bandeau 4,14 ;
+contour `#3b82f6`/blanc 3,68 — conformes à la fiche.
+
+**AC5** — `git diff --stat bbd0a9a1 3b0f7707 -- frontend/src` :
+
+```
+ frontend/src/app.css                               |   8 +
+ .../ui/button/boutons-rouges-inventory.test.ts     | 314 +++++
+ .../ui/button/button-destructive.test.ts           | 135 +++++
+ .../src/lib/components/ui/button/button.svelte     |   8 +-
+ .../lib/components/ui/jetons-non-definis.test.ts   | 184 +++++
+ frontend/src/routes/design-system/+page.svelte     |   4 +-
+ 6 files changed, 651 insertions(+), 2 deletions(-)
+```
+
+Trois modules (`app.css`, `lib/components/ui`, `routes/design-system`), aucun site applicatif.
+
+**AC7 (4) — l'API s'est chargée** (C-28-1-40) : pas de repli. **AC6 — table écrite depuis la fiche** ; la première
+exécution n'a rougi que sur deux clés dont la fiche ne donnait que la forme (C-28-1-39), lues au sol.
+
+**Lockfile** (`git diff package-lock.json`) : l'entrée racine gagne `"@tailwindcss/node": "^4.2.2"`, l'entrée
+`node_modules/@tailwindcss/node` perd `"license": "MIT"` (normalisation de npm 9.2.0) ; rien d'autre (C-28-1-37).
+
+**T6 — manuels** (`make fr`, sous verrou) : `admin-manual.pdf` et `user-manual.pdf` stables en 3 passes ;
+`marketing-brochure.pdf`, régénéré par la même cible sans changement de source, a été **remis** à sa version
+commitée (aucune modification à verser). Contrôles aplatis :
+
+```
+pdftotext user-manual.pdf  | … | grep -o "le bouton est désactivé, avec le nombre" | wc -l   → 1
+pdftotext admin-manual.pdf | … | grep -o "le bouton est désactivé avec leur nombre"  | wc -l   → 1
+les deux PDF | grep -o "le bouton est grisé" | wc -l                                        → 0
+grep -rn 'est grisé' docs/manual/fr/*.tex | wc -l                                           → 0
+```
+
+**T8 — mutations** (`28-1-mutations.log`, `28-1-campagne` à `HEAD=3b0f7707`, arbre propre exigé avant chacune, motif
+unique vérifié, restauration `git checkout --` puis `touch`). Gardes Vitest à chaque mutation (les quatre fichiers
+neufs, 41 tests) ; E2E `destructive-buttons.spec.ts` (frontend rebâti) pour celles dont la fiche nomme l'AC8.
+**21 / 21 actives tuées** (M20 jouée en ses deux essais) :
+
+| # | Vitest rouge | E2E rouge |
+|---|---|---|
+| M1 | 7 — (1) quatre mots entiers, aucun `dark:`, ni `bg-destructive/<n>`, (1-bis) | 4/4 — fonds, textes, bordure de focus |
+| M2 | 7 — (2) `--color-destructive` défini et jetons de la variante, (3) quatre ratios, AC7 (4) (a) | 4/4 — fonds |
+| M3 | 2 — (1) aucun `dark:`, ni `bg-destructive/<n>` | 2/4 — les deux passes **sombres** seules (fonds ; axe en (b)) |
+| M4 | 1 — (3) bandeau | — |
+| M5 | 2 — (3) texte/fond et texte/survol | 4/4 — `color`, et axe en (b) |
+| M6 | 1 — (1) `hover:bg-destructive-hover` | 2/4 — (a) survol |
+| M7 | 1 — (3) texte/survol | — |
+| M8 | 7 — (1) quatre mots entiers, `bg-transparent`, (1-bis), (2) jetons de la variante | — |
+| M9 | 0 (attendu : AC8 seule) | 2/4 — (a) `outline-style`, `outline-color` |
+| M10 | 0 (attendu : AC8 seule) | 2/4 — (a) `opacity` |
+| M11 | 1 — AC6 table (jetons changés) | — |
+| M12 | 1 — AC6 table (entrée en trop) | — |
+| M13 | 1 — AC6 table (entrée en moins) | — |
+| M14 | 1 — AC6 table (jetons changés) | — |
+| M15 | 4 — blanc/noir dans les deux ordres, 6,47, bandeau | — |
+| M16 | 6 — les cas « foncé en premier » de `contrast.test.ts` et trois ratios de (3) | — |
+| M17 | 1 — auto-test « une directive class: est relevée » | — |
+| M19 | 2 — (1) `focus-visible:border-destructive`, (1-bis) | 2/4 — (a) `border-top-color` au focus |
+| M20 (a) `<p class="text-inexistant">` | 1 — AC7 (4) (a) | — |
+| M20 (b) `--color-card` | 1 — AC7 (4) (b) | — |
+| M21 | 1 — AC6 (f) | 2/4 — (b) fond de *Supprimer l'import* |
+| M22 | 1 — auto-test « une directive class: livre son nom » | — |
+
+Constat de M8 : la garde AC7 (2) rougit aussi sur `bg-transparent` (`--color-transparent` n'est pas un jeton du
+`@theme`) — lecture littérale de la règle « `(bg|text|border|ring)-X` → `--color-X` » de l'AC7 (2). C'est sans
+conséquence aujourd'hui (l'AC7 (1) interdit `bg-transparent` dans la variante), mais un mot-clé Tailwind
+(`transparent`, `current`, `white`…) ajouté un jour à la variante ferait rougir (2) à tort : le message le dirait.
+
+**T9 — gates au dernier commit** (`HEAD=3b0f7707`, dernier commit de code `37b74298`, `3b0f7707` ne portant que les
+PDF ; bases `kesh_281` et `kesh_e2e_281` recréées avant le gate backend **et** avant l'E2E) :
+
+- `scripts/test-fast.sh` complet (fmt + clippy `-D warnings` + nextest) : **3514 exécutés, 3514 passés, 6 ignorés**
+  (153,4 s).
+- Frontend : `npm run check` 0 erreur (29 avertissements préexistants, 5 fichiers) ; `lint-i18n-ownership` PASS ;
+  `npm run test:unit` **1436 / 1436**, 138 fichiers ; `npm run build` vert.
+- **E2E complet** (port 3034, `kesh_e2e_281`, recette de `docs/testing.md`, `smtpConfigured: true`) :
+  **269 passés, 9 échoués, 19 ignorés** (11,0 min). Les 9, fichier par fichier contre `docs/testing.md` § *Les
+  échecs attendus* : les **7 de la KF-029** (#97) — `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`,
+  `onboarding:57`, `:77`, `:150` — et les **2 de la KF-045** (#421) — `invoices.spec.ts:415` « historique des
+  rappels affiché » et `:439` « axe-core sans violations sur la fiche », `manual reminder failed: 422`, run lancé
+  avant 12:00 UTC (11:3x UTC). Aucun échec de pollution sur ce run. La spec neuve, 4 / 4 verte ; les 16 fichiers à
+  `color-contrast` actif, verts — `invoices.spec.ts` compris, dont l'analyse `:439` (KF-045) rougissait au montage du rappel et passe au rejeu.
+  **Rejeu** de `invoices.spec.ts` seul, base `kesh_e2e_281` recréée, lancé à 12:01 UTC (même `HEAD`, frontend
+  rebâti) : **23 / 23 passés**, dont `:415` et `:439` — confirmé KF-045, sans rapport avec la story
+  (`28-1-gate-e2e-rejeu-invoices.log`). Bilan E2E, les deux runs réunis : 271 passés (269 + 2), 7 échoués, tous KF-029, 19 ignorés.
+- Propagation (T9) : `grep -rn 'bg-destructive/10 hover' frontend/src` → 0 ; ratios cités = ceux d'`app.css` dans
+  `app.css`, la spec UX (point décimal) et le CHANGELOG ; `est grisé` → 0 dans les `.tex`.
 
 ### Completion Notes List
 
+- **AC1-AC3** : trois jetons dans `@theme`, variante pleine sans `dark:`, quatre états mesurés au style calculé
+  (E2E), identiques en sombre émulé. La règle globale `:focus-visible` l'emporte sur `outline-none` (vérifié dès T0).
+- **AC4** : aucun site édité ; le jeton défini rend leur rouge aux bandeaux, textes et champs d'erreur et aux six
+  `<button>` bruts. Les 16 specs à `color-contrast` restent vertes.
+- **AC6-AC7** : trois gardes Vitest neuves (32 tests) et les tests du helper (9) — **41 tests Vitest neufs**, de
+  `bbd0a9a1` à `HEAD`. Quatorze entrées en table fermée (AC6), treize noms non définis renvoyés à #645 (AC7 (4)).
+- **AC8** : 4 tests E2E neufs (2 scénarios × 2 schémas) ; montage d'import extrait dans un helper partagé, scénario
+  de `bank-import-delete.spec.ts` inchangé et vert.
+- **AC9-AC12** : `/design-system` (exemple désactivé, `data-testid`, palette) ; manuels et PDF ; spec UX ; CHANGELOG.
+- **Écarts à la fiche** : 25 usages de la variante au `HEAD` au lieu de 24 (l'exemple désactivé de l'AC9 est un
+  usage), `design-system:69` devenu `:70` (C-28-1-38) ; deux `data-testid` lus au sol (C-28-1-39) ; pas de repli de
+  l'AC7 (4) (C-28-1-40) ; `@tailwindcss/node` installé à `4.2.2` explicitement (C-28-1-37) ; constat de M8 sur l'AC7
+  (2) (ci-dessus). Aucun autre écart.
+- **Angles morts** : ceux de la fiche, 1 à 12, inchangés (Dev Notes) ; renvois #645, #646, #648.
+- **Demandes à l'orchestrateur** : push de `story/28-1`, PR `closes #640` (et `refs #645 #646 #648`) ; aucune issue
+  neuve.
+
 ### File List
+
+- `frontend/src/app.css` (modifié)
+- `frontend/src/lib/components/ui/button/button.svelte` (modifié)
+- `frontend/src/lib/components/ui/button/button-destructive.test.ts` (nouveau)
+- `frontend/src/lib/components/ui/button/boutons-rouges-inventory.test.ts` (nouveau)
+- `frontend/src/lib/components/ui/jetons-non-definis.test.ts` (nouveau)
+- `frontend/src/routes/design-system/+page.svelte` (modifié)
+- `frontend/tests/e2e/destructive-buttons.spec.ts` (nouveau)
+- `frontend/tests/e2e/helpers/bank-import-fixtures.ts` (nouveau)
+- `frontend/tests/e2e/helpers/contrast.ts` (nouveau)
+- `frontend/tests/e2e/helpers/contrast.test.ts` (nouveau)
+- `frontend/tests/e2e/bank-import-delete.spec.ts` (modifié — montage importé du helper)
+- `frontend/package.json`, `frontend/package-lock.json` (modifiés — `@tailwindcss/node`)
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf` (modifiés)
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf` (modifiés)
+- `_bmad-output/planning-artifacts/ux-design-specification.md` (modifié)
+- `CHANGELOG.md` (modifié — `## [0.13.3] — Non publié`)
+- `_bmad-output/implementation-artifacts/epic-28-choix-autonomes.md` (C-28-1-37 à C-28-1-40)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/28-1-review-prompt-p1.md` (nouveau)
 
 ## Change Log
 
@@ -937,3 +1113,11 @@ sur ces fichiers.
   **Validation close.** Trend : P1 (Sonnet) 3 HIGH + ~12 MEDIUM → P2 (Opus) ~11 MEDIUM (constat D5 : périmètre
   réduit à #640, trois modules) → P3 (Sonnet) 4 MEDIUM → P4 ciblée (Haiku) 1 MEDIUM de décompte, fiche seule →
   close (la remédiation P4 ne touche aucune ligne de code). Statut `in-progress`.
+- 2026-10-13 — **Développement** (`bmad-dev-story`, Opus 5.5, autonomie) : T0-T9 faites. Phase rouge T0 consignée
+  (22 `toHaveCSS` rouges, aucun timeout, 12 captures « avant ») avant toute édition d'`app.css` et de
+  `button.svelte` ; jetons (AC1), variante (AC2), trois gardes Vitest et le helper de contraste (41 tests neufs),
+  E2E `destructive-buttons.spec.ts` (4 tests) et montage extrait, `/design-system`, manuels et PDF, spec UX,
+  CHANGELOG `## [0.13.3] — Non publié`. Mutations **21 / 21** actives tuées (M20 en deux essais). Gates au `HEAD`
+  `3b0f7707` (dernier commit de code `37b74298`) : `test-fast.sh` 3514/3514 (6 ignorés) ; Vitest 1436/1436 ;
+  `check`, `lint-i18n-ownership`, `build` verts ; E2E complet 269 passés, 9 échoués = 7 KF-029 + 2 KF-045 (avant
+  12:00 UTC), voir le Dev Agent Record pour le rejeu. Choix C-28-1-37 à C-28-1-40. Statut `review`.
