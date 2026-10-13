@@ -171,21 +171,29 @@ juge pas au nombre : il se juge fichier par fichier contre cette liste.
 
 #### ⚠️ `KESH_COOKIE_SECURE=false` est OBLIGATOIRE en local HTTP — sans lui, TOUTE la suite échoue en 401
 
-**Le montage qui marche**, vérifié le 2026-08-04 :
+**Le montage qui marche**, vérifié le 2026-08-04 — recopié de `docs/testing.md` § *Prérequis Playwright local*, qui fait foi :
 
 ```sh
 # terminal 1 — backend, servant aussi le frontend buildé
+mkdir -p /tmp/kesh-e2e/inbox /tmp/kesh-e2e/documents /tmp/kesh-e2e/backup
 KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_COOKIE_SECURE=false \
+  KESH_PORT=3000 KESH_STATIC_DIR=frontend/build \
+  KESH_INBOX_DIR=/tmp/kesh-e2e/inbox KESH_DOCUMENTS_DIR=/tmp/kesh-e2e/documents \
+  KESH_ADMIN_BACKUP_DIR=/tmp/kesh-e2e/backup \
+  KESH_ADMIN_USERNAME=admin KESH_ADMIN_PASSWORD=e2e-admin-password-12chars \
+  KESH_SMTP_HOST=smtp.invalid KESH_SMTP_USER=e2e \
+  KESH_SMTP_PASSWORD=e2e KESH_SMTP_FROM=kesh@example.invalid \
   DATABASE_URL='mysql://kesh:kesh_dev@127.0.0.1:3306/kesh_e2e' \
-  KESH_JWT_SECRET='<32+ octets>' KESH_ADMIN_PASSWORD='<12+ caractères>' \
-  KESH_PORT=3000 KESH_STATIC_DIR=frontend/build KESH_ADMIN_BACKUP_DIR=target/kesh-backup \
+  KESH_JWT_SECRET='dev-secret-at-least-32-bytes-long-for-testing' \
   cargo run -p kesh-api
 
-# terminal 2
+# terminal 2 — KESH_TEST_MODE aussi côté runner (xss-token-protection.spec.ts le lit)
 cd frontend
-PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 \
+KESH_TEST_MODE=true PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 \
   KESH_BACKEND_URL=http://127.0.0.1:3000 npm run test:e2e
 ```
+
+⚠️ **Ces valeurs sont factices et c'est voulu — ne pas les remplacer par des gabarits.** Ce bloc portait `KESH_JWT_SECRET='<32+ octets>'` et `KESH_ADMIN_PASSWORD='<12+ caractères>'` : depuis la Story 15-11a, **toute valeur de la forme `<…>` est refusée au démarrage** (`is_template_placeholder`, `crates/kesh-api/src/config.rs`), si bien que la recette recopiée telle quelle ne démarrait plus. Il omettait aussi `KESH_INBOX_DIR`, `KESH_DOCUMENTS_DIR` et les quatre `KESH_SMTP_*`, sans lesquels cinq specs sans rapport avec la branche rougissent (`email-templates`, `reminders`, `dunning-roundtrip`, `invoice-send-email`, `inbox-import`). *(Corrigé le 2026-10-13, Story 28-0 — A-C6 de la rétrospective de l'Epic 15, B7 de celle de l'Epic 26.)*
 
 **Pourquoi**, à la ligne près — pour que personne ne re-diagnostique ce symptôme :
 
@@ -257,9 +265,13 @@ Cette règle ne s'applique pas aux **commits doc-only** (markdown, yaml de plann
 
 *(Corrigé le 2026-08-30, sur remarque de Guy. La formulation d'origine — « généralement no-op, cache hit instantané » — laissait croire qu'un commit de documentation ne déclenchait rien ; il déclenche tout.)*
 
+⚠️ **La CI dépend de Docker Hub.** Le job `Backend (Rust)` tire `mariadb:10.11` **anonymement** (aucun `credentials` sous `services:` dans `ci.yml` ni `release.yml`) : un `429` de Docker Hub le fait échouer sans rapport avec le diff — relancer, ne pas diagnostiquer. *(A-C9 de la rétrospective de l'Epic 15, versé le 2026-10-13 ; à retirer si les téléchargements sont authentifiés — A2 de la même rétrospective.)*
+
 ## Plafonds mémoire — pourquoi une session de travail meurt en plein gate
 
 **Règle** : sur la station de dev, lancer tout travail lourd (gate backend, build workspace, suite vitest, E2E) via `scripts/mem-guard.sh`, qui l'exécute dans un cgroup à mémoire bornée. `scripts/test-fast.sh` le fait déjà tout seul.
+
+**Plusieurs worktrees en parallèle** : le plafond borne un gate, pas la somme de plusieurs — tout gate lourd passe en plus par le **verrou** `flock <kesh-gate-logs>/.gate.lock`, et les agents suivent les consignes communes de `docs/agents-orchestration.md` (base, port et cible cargo par worktree, interdits, registre des choix par union).
 
 ```sh
 scripts/mem-guard.sh --protect-shell        # une fois par nouvelle fenêtre/onglet
@@ -481,6 +493,8 @@ Pourquoi cette règle existe : sur l'Epic 16, **le compte rendu est devenu le li
 
 *(codifié 2026-08-11, rétrospective Epic 16)*
 
+⛔ **Recompter n'est pas réécrire l'historique.** Quand un décompte change, la nouvelle valeur va dans l'entrée **vivante** (la passe en cours, la note de synthèse) — **jamais** dans l'entrée d'une passe passée. Un compte rendu de passe est un relevé daté : il se corrige s'il était faux **à sa date**, par une annotation datée, et ne se « met pas à jour ». *Précédent (Story 27-3) : une propagation de décompte a réécrit l'entrée P3 d'un Change Log, qui disait juste, en oubliant la note vivante qu'elle devait toucher — trop large et trop étroite à la fois. Greper la valeur est juste ; la remplacer partout ne l'est pas.* *(B4 de la rétrospective de l'Epic 27, versé le 2026-10-13.)*
+
 ### Un gate laisse la base piégée — et pas seulement quand il est interrompu
 
 **Règle** : remettre la base de gate à zéro **avant tout gate complet**, sans se demander comment le run précédent s'est terminé. Ne jamais diagnostiquer un rouge de gate sans avoir d'abord reconstruit la base.
@@ -600,7 +614,7 @@ Trois engagements par epic, dans cet ordre :
 2. **Aucun P1 ne passe d'un epic à l'autre, dans la mesure du possible.** Ce ne sera pas toujours tenable — un P1 qui reste doit alors être nommé à la rétrospective, avec la raison.
 3. **L'epic livre une fonctionnalité nouvelle si c'est possible** — la baisse des défauts restant prioritaire.
 
-⚠️ **Report assumé : les neuf P1 de la TVA** (jalon « Vague 2 » : #390 à #397, #401). Ce sont des erreurs comptables du produit, et ils restent P1. Mais le seul utilisateur réel de Kesh **n'est pas assujetti à la TVA** (personne physique), si bien qu'ils ne font obstacle à aucune comptabilité tenue. Ils sont donc reportés d'epic en epic, **nommés à chaque rétrospective** comme l'exige l'engagement 2 — et ce report tombe dès que Kesh tient, ou est proposé pour tenir, les livres d'un assujetti. *(Décision de Guy, 2026-10-08 ; elle prolonge celle de la rétrospective de l'Epic 24 — « vague 1, puis comptabilité personnelle, puis TVA ».)*
+⚠️ **Report assumé : les dix P1 de la TVA** (jalon « Vague 2 » : #390 à #397, #401, #525 — recompté le 2026-10-13 par `gh issue list --milestone "Vague 2 — La TVA opposable : rattacher le décompte aux livres" --state open --label P1`, qui en rend dix ; ce paragraphe en annonçait neuf jusqu'à cette date, #525 ayant rejoint le jalon après sa rédaction). Ce sont des erreurs comptables du produit, et ils restent P1. Mais le seul utilisateur réel de Kesh **n'est pas assujetti à la TVA** (personne physique), si bien qu'ils ne font obstacle à aucune comptabilité tenue. Ils sont donc reportés d'epic en epic, **nommés à chaque rétrospective** comme l'exige l'engagement 2 — et ce report tombe dès que Kesh tient, ou est proposé pour tenir, les livres d'un assujetti. *(Décision de Guy, 2026-10-08 ; elle prolonge celle de la rétrospective de l'Epic 24 — « vague 1, puis comptabilité personnelle, puis TVA ».)*
 
 Toute nouvelle issue de défaut reçoit sa priorité à la création. Point de départ, au triage du 2026-10-08 : **49 bugs**, dont 14 P1 (9 dans le jalon de la TVA), 11 P2, 16 P3 et 8 P4 — plus trois issues de documentation ou de dette pure, classées P3 mais hors décompte faute de label `bug` (#291, #458, #438).
 
