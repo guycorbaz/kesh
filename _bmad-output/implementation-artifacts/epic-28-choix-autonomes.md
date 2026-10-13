@@ -1632,6 +1632,8 @@ Rapports `kesh-gate-logs/28-1-validate-p1-{R,F}.md` (hors dépôt). Bilan au Cha
   au jeton `destructive` (et `-foreground`, `-hover`), à la variante, aux boutons rouges stylés à la main
   (AC5), aux gardes et à la recette visuelle. Les autres jetons → **#645** ; la confirmation → **#646**. La fiche
   les cite comme angles morts 1 et 2, avec renvoi.
+  *(Rectifié en validation P3 : l'AC5 n'édite plus aucun site, les boutons stylés à la main restent tels quels,
+  inscrits à la table de l'AC6 — C-28-1-26.)*
 - **Effet sur les findings** : F3, F5, R1, R2, R3, R7, R8 se ferment par le retrait du périmètre ; F4 n'est
   traité que pour la part qui touche la variante. Le commentaire déjà posté sur #640 (« la Story 28-1 traite
   l'ensemble ») est devenu faux : à rectifier par l'orchestrateur.
@@ -1779,6 +1781,8 @@ Rapports `kesh-gate-logs/28-1-validate-p2-{R,F}.md` (hors dépôt). Bilan au Cha
 - **Effet** : trois modules (`lib/components/ui`, `app.css`, `routes/design-system`), la règle de découpage n'est
   plus franchie, C-28-1-24 est sans objet. Les cinq sites retirés forment l'angle mort 11 ; issue à ouvrir par
   l'orchestrateur.
+  *(Rectifié en validation P3 : l'issue est **#648** ; un seul des cinq sites, `bank-import/[id]:143`, dépend du
+  jeton — C-28-1-36.)*
 - **Écartées** : découper en 28-1 (jetons, variante, gardes) et 28-1b (cinq sites) — la 28-1b ne porte pas le
   symptôme de #640 et peut naître de l'issue de l'angle mort 11 ; poursuivre la boucle sur le périmètre P1 —
   c'est le recyclage que D5 désigne.
@@ -1825,6 +1829,8 @@ Rapports `kesh-gate-logs/28-1-validate-p2-{R,F}.md` (hors dépôt). Bilan au Cha
   passe claire pourrait laisser l'import dans un état inattendu pour la sombre) ; un `data-testid` neuf sur
   *Annuler* (édite `features/bank-import`, un module de plus pour un sélecteur) ; toutes les captures avant toute
   assertion (elles montreraient des états non stabilisés).
+  *(Complété en validation P3 : délais fixés — C-28-1-32 ; captures cadrées au-delà de la boîte de bordure,
+  pointeur éloigné avant le focus — C-28-1-33.)*
 - **Réversible** : oui.
 
 ### C-28-1-30 — AC7 (4) : `candidatesToCss` de `@tailwindcss/node`, déclaré ; plus facultative
@@ -1839,6 +1845,8 @@ Rapports `kesh-gate-logs/28-1-validate-p2-{R,F}.md` (hors dépôt). Bilan au Cha
   inconditionnelle.
 - **Écartées** : `compile` + `build` (ne décide pas candidat par candidat) ; s'appuyer sur la dépendance
   transitive (une mise à jour de `@tailwindcss/vite` peut la retirer sans signal).
+  *(Rectifié en validation P3 : le `=` s'ajoute aux séparateurs — C-28-1-34 ; `@tailwindcss/node` prend le même
+  spécificateur que `tailwindcss`, non la version exacte, sous une assertion de version — C-28-1-35.)*
 - **Réversible** : oui (un fichier de test, une ligne de `package.json`).
 
 ### C-28-1-31 — L'E2E n'assert que des valeurs ; le helper sert la seule garde AC7 (3)
@@ -1852,3 +1860,77 @@ Rapports `kesh-gate-logs/28-1-validate-p2-{R,F}.md` (hors dépôt). Bilan au Cha
 - **Écartées** : garder le calcul en E2E « pour la forme » (un test qui prouve moins) ; déplacer le helper dans
   `src/lib/` (code de test dans le produit, C-28-1-12).
 - **Réversible** : oui.
+
+### Choix de la remédiation de la validation P3 (2026-10-13)
+
+Rapports `kesh-gate-logs/28-1-validate-p3-{R,F}.md` (hors dépôt). Bilan au Change Log de la fiche.
+
+### C-28-1-32 — Délais de la spec E2E : 120 s par test, 2 s par assertion de valeur
+
+- **Contexte** (F1 = R2, MEDIUM) : `playwright.config.ts` ne fixe aucun délai ; défauts de Playwright, 30 s par
+  test et 5 s par assertion. En phase rouge (T0), cinq assertions de (a) expirent (≈ 25 s), trois de (b) (≈ 15 s,
+  plus montage) : le test serait interrompu avant ses derniers steps, et les « douze captures » de C-28-1-29 ne
+  seraient pas toutes prises.
+- **Retenu** : `test.describe.configure({ timeout: 120_000 })` en tête de spec ; toute assertion de valeur par
+  `const softExpect = expect.configure({ soft: true, timeout: 2_000 })` (la transition est de 150 ms) ; les
+  assertions de montage gardent le délai par défaut et ne sont pas `soft`. Un test fini en timeout en T0 n'est pas
+  le rouge attendu et se documente.
+- **Écartées** : `test.slow()` seul (triple le délai à 90 s, sans borner les assertions : la marge dépend du
+  montage) ; un délai global dans `playwright.config.ts` (touche toutes les specs pour le besoin d'une seule).
+- **Réversible** : oui (deux lignes de la spec).
+
+### C-28-1-33 — Captures cadrées au-delà de la boîte de bordure ; pointeur éloigné avant le focus
+
+- **Contexte** (F2, MEDIUM ; F5, LOW) : `locator.screenshot()` rogne à la `boundingBox()` de l'élément
+  (`playwright-core/lib/server/screenshotter.js`, `screenshotElement`) ; l'anneau `ring-3` et le contour
+  `:focus-visible` (2 px décalés de 2 px) sont hors de cette boîte, si bien que `a-focus` ne pouvait montrer ni
+  l'un ni l'autre — alors que l'AC3 et l'angle mort 10 s'appuient sur elle. Et le pointeur, resté sur le bouton
+  après `hover()`, laissait le fond de survol sur la capture du focus.
+- **Retenu** : les quatre captures de (a) et `b-bouton` par `page.screenshot({ clip })` sur la boîte du bouton
+  élargie de 8 px (bornée à 0), après `scrollIntoViewIfNeeded()` ; `b-dialogue` reste `locator.screenshot()`.
+  `page.mouse.move(0, 0)` avant le step de focus, et le fond asserté au repos dans ce step.
+- **Écartées** : retirer « vu sur la capture » de l'AC3 et de l'angle mort 10 (l'anneau ne serait plus vu par
+  personne) ; capturer le conteneur parent (cadre dépendant de la mise en page de `/design-system`).
+- **Réversible** : oui (un helper de la spec).
+
+### C-28-1-34 — AC7 (4) : le `=` est un séparateur ; auto-tests du relevé ; M22
+
+- **Contexte** (F3 = R3, MEDIUM) : sans `=` parmi les séparateurs, `class:bg-accent={…}` livre `bg-accent=`, que
+  l'ancre `$` rejette ; les 15 directives `class:` de couleur du dépôt (16 à préfixe de couleur, `class:text-right`
+  compris) échappaient au relevé. Aucun des treize noms ne dépend aujourd'hui d'une directive seule, mais un
+  `class:text-inexistant={x}` neuf passait — alors que l'AC6, elle, lit les directives (M17).
+- **Retenu** : séparateurs `` [\s"'`{}()=] `` ; auto-tests sur source synthétique (directive → nom relevé ;
+  `context-menu` → rien ; préfixes, `!` et opacité retirés) ; mutation M22 (le `=` retiré). Le `=` ajouté ne fait
+  naître aucun jeton neuf hors directives (relevé au 2026-10-13). Un jeton suivi d'une ponctuation de prose
+  (`text-foo.`) reste écarté : angle mort 12.
+- **Écartée** : traiter les `ClassDirective` par leur `name` au moyen de `svelte/compiler`, comme l'AC6 (la garde
+  porte aussi sur les `.ts`, qu'un AST Svelte ne couvre pas ; deux chemins de relevé au lieu d'un).
+- **Réversible** : oui.
+
+### C-28-1-35 — `@tailwindcss/node` au même spécificateur que `tailwindcss`, sous assertion de version
+
+- **Contexte** (F6, LOW) : épinglé exact à 4.2.2 à côté de `tailwindcss` en `^4.2.2`, il divergerait au premier
+  `tailwindcss` 4.3 — `@tailwindcss/node` dépend de `tailwindcss` exactement à sa propre version et en
+  embarquerait une copie : la garde déciderait avec un autre moteur que celui du build, sans signal.
+- **Retenu** : `^4.2.2`, comme `tailwindcss` et `@tailwindcss/vite` ; en tête de la garde, versions de
+  `@tailwindcss/node` et de `tailwindcss` égales (`readFileSync` des deux `package.json`) et absence de
+  `node_modules/@tailwindcss/node/node_modules/tailwindcss`, avec le message « monter les trois ensemble ».
+- **Écartée** : la contrainte écrite dans le seul doc-comment (une consigne qu'aucun test ne contrôle).
+- **Réversible** : oui.
+
+### C-28-1-36 — Décomptes et références rectifiés (validation P3)
+
+- **R1** (MEDIUM) : `accounts:717` est la confirmation du changement de type (*Changer le type quand même*), à côté
+  d'un *Annuler* `outline` (`:712`), non un archivage : **17** confirmations parmi les 24 usages, **13** à côté
+  d'un *Annuler* `outline`, 4 `ghost` ; 13 dans un `Dialog.Root`, 4 en ligne (`dunning:300`, `vat-rates:366`,
+  `api-keys:404`, `bank-accounts:586`). L'AC8 dit « 13 des 24 ».
+- **R4** : **six** `<button>` bruts en `text-destructive` (trois bordés de la classe C, *Annuler le rapprochement*,
+  deux ✕), non quatre ; `JournalEntryForm:465` ne rougit qu'au survol.
+- **R5** : le CHANGELOG nomme aussi *Annuler le lot*, *Annuler le règlement*, *Annuler la facture* et les croix de
+  retrait de ligne, qui deviennent rouges.
+- **R6** : C-28-1-17 porte sa rectification. **R7** : le contrôle `variant="outline"` de la T9 est retiré (muet :
+  le fichier ne porte aucun `variant=`). **R8** : la fiche cite **#648** ; un seul des cinq sites dépend du jeton
+  (la rectification de #648 et du commentaire de #640 revient à l'orchestrateur). **R9** : la ligne du doublon est
+  `BankImportUpload.svelte:344`. **R10** : septième `ghost` à icône destructif, `fiscal-years:417` (*Clôturer*).
+  **F4** : les titres de tests portent le schéma.
+- **Réversible** : —.
