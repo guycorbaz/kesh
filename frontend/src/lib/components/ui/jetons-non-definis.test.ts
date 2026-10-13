@@ -35,7 +35,14 @@
  * - les fichiers `.js` de `src/` et `app.html`, non lus (aucune classe de couleur au
  *   2026-10-13) ;
  * - la table tient des NOMS, non des classes : un `bg-danger` neuf passe, `danger`
- *   y étant déjà (voulu : #645 traite le nom, quelle que soit l'utilité).
+ *   y étant déjà (voulu : #645 traite le nom, quelle que soit l'utilité) ;
+ * - le relevé lit TOUT le texte des `.svelte` et `.ts`, non les seules valeurs de
+ *   `class` (les classes passent aussi par des chaînes de `cn(…)` en script) : un mot
+ *   de prose ou un identifiant qui commence par `to-`, `from-` ou `via-` (`to-do`)
+ *   serait relevé, et rougirait la garde au premier ajout s'il n'est pas une utilité.
+ *   Faux rouge bruyant, jamais silencieux : l'examiner, puis le traiter par la
+ *   table, avec son motif — pas en retirant le préfixe du motif (revue de code P2,
+ *   P2-2 ; aucun tel mot au 2026-10-13).
  *
  * ## Mettre la table à jour
  *
@@ -72,7 +79,7 @@ const SEPARATEURS = /[\s"'`{}()=]+/;
 
 /**
  * Candidats de couleur relevés dans un texte source : `bg-x`, `text-y`…, une
- * fois retirés préfixes de variante, `!` initial et opacité.
+ * fois retirés préfixes de variante, `!` initial ou final et opacité.
  */
 export function releverCandidats(source: string): string[] {
 	const out: string[] = [];
@@ -80,9 +87,10 @@ export function releverCandidats(source: string): string[] {
 		const candidat = morceau
 			.slice(morceau.lastIndexOf(':') + 1)
 			.replace(/^!/, '')
-			// `!` final : forme canonique de l'important en Tailwind v4 (revue de code P1, E4).
-			.replace(/!$/, '')
-			.replace(/\/\d+$/, '');
+			// Fin du jeton : `!` final (forme canonique de l'important en Tailwind v4, revue
+			// de code P1, E4) et opacité, dans les deux ordres — `bg-foo/40!` comme
+			// `bg-foo!/40` (revue de code P2, P2-1).
+			.replace(/!?(?:\/\d+)?!?$/, '');
 		if (MOTIF.test(candidat)) out.push(candidat);
 	}
 	return out;
@@ -142,6 +150,10 @@ describe('relevé des candidats — auto-tests sur source synthétique', () => {
 
 	it('le ! final de Tailwind v4 est retiré, avec ou sans opacité', () => {
 		expect(releverCandidats('<p class="bg-foo! hover:text-bar/40!">').map(nomDe)).toEqual(['foo', 'bar']);
+	});
+
+	it('le ! avant l’opacité est retiré aussi (bg-foo!/40)', () => {
+		expect(releverCandidats('<p class="bg-foo!/40">').map(nomDe)).toEqual(['foo']);
 	});
 
 	it('shadow-, from-, via-, to- et ring-offset- livrent leur nom de couleur', () => {

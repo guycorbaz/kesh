@@ -336,8 +336,9 @@ describe('AC6 — inventaire clos des boutons rouges posés à la main', () => {
 	// Montage de (f), relevé PAR L'ANALYSEUR — celui que (f) emploie — et confronté au compte
 	// textuel : un analyseur aveuglé (comparaison inversée, type mal posé) rendrait moins que
 	// le texte. Seuil au compte du 2026-10-13 (25, C-28-1-38) et non à l'égalité : un usage
-	// AJOUTÉ est déjà tenu par (f) ; seul un usage RETIRÉ doit rougir, et un `>=` le voit
-	// tant que personne n'en ajoute (C-28-1-41).
+	// AJOUTÉ n'est pas fautif tant qu'il ne porte ni `class` ni `class:` — ce que (f) vérifie —
+	// ; seul un usage RETIRÉ doit rougir, et un `>=` le voit tant que personne n'en ajoute
+	// (C-28-1-41).
 	it('(f) montage : la variante destructive est bien relevée (au moins 25 usages)', () => {
 		let parAnalyseur = 0;
 		let parTexte = 0;
