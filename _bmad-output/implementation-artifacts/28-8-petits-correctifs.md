@@ -290,8 +290,8 @@ pdftotext docs/manual/fr/marketing-brochure.pdf - | tr '\n' ' ' | tr -s ' ' | gr
 ### Ce qui doit être préservé
 
 - `#249` : `sentAt` reste un `NaiveDateTime` complet (`AAAA-MM-JJTHH:MM:SS`), jamais une date nue.
-- `journal_entries::delete_all_by_company` (`journal_entries.rs:2035`), utilisée par une vingtaine de montages de
-  tests et par `journal_entry_reversal_e2e.rs:905`, **ne se touche pas**.
+- `journal_entries::delete_all_by_company` (`journal_entries.rs:2035`), appelée par dix-huit montages de tests
+  de son propre module (`grep -c "^\s*delete_all_by_company(" journal_entries.rs` → 18) et par `journal_entry_reversal_e2e.rs:905`, **ne se touche pas**.
 - Les relevés datés de `docs/testing.md` gardent leurs chiffres et leurs étiquettes (consigne 15).
 - Les URL `raw.githubusercontent.com/guycorbaz/kesh/v0.13.2/…` du manuel (`:225`, `:236`) : la garde G19 les tient
   égales à `\keshVersion` ; la release les portera au tag — **ne pas** les changer ici.
