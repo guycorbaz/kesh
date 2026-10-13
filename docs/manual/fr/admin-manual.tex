@@ -1980,7 +1980,7 @@ Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (vers
 \subsection{Procédure de mise à jour standard}
 
 \begin{enumerate}
-    \item \textbf{Sauvegarder} la base de données --- avec \keshpath{docker-compose.yml}, le volume \texttt{<projet>\_kesh-mariadb-data} ; sur Synology avec \keshpath{docker-compose.prod.yml}, un dump par \keshpath{kesh-dump.sh} (\S\ref{sec:backup-dsm}) --- (cf. section précédente). \textbf{Pour passer à la 0.13.0 ou à la 0.13.1, cette sauvegarde est le seul retour en arrière possible} : une fois migrée, la base refuse tout binaire antérieur --- 0.12.x après la 0.13.0 (\S\ref{sec:maj-0-13-sans-retour}), 0.13.0 après la 0.13.1 (\S\ref{sec:maj-0-13-1-sans-retour}). La 0.13.2 n'a pas de migration : le retour à la 0.13.1 se fait sans restaurer, à condition d'avoir retiré la colonne Devise des profils CSV (\S\ref{sec:maj-0-13-2-retour}).
+    \item \textbf{Sauvegarder} la base de données --- avec \keshpath{docker-compose.yml}, le volume \texttt{<projet>\_kesh-mariadb-data} ; sur Synology avec \keshpath{docker-compose.prod.yml}, un dump par \keshpath{kesh-dump.sh} (\S\ref{sec:backup-dsm}) --- (cf. section précédente). \textbf{Pour passer à la 0.13.0 ou à la 0.13.1, cette sauvegarde est le seul retour en arrière possible} : une fois migrée, la base refuse tout binaire antérieur --- 0.12.x après la 0.13.0 (\S\ref{sec:maj-0-13-sans-retour}), 0.13.0 après la 0.13.1 (\S\ref{sec:maj-0-13-1-sans-retour}). La 0.13.2 n'a pas de migration : le retour à la 0.13.1 se fait sans restaurer, à condition d'avoir retiré la colonne Devise des profils CSV (\S\ref{sec:maj-0-13-2-retour}). La 0.13.3 en a une : \textbf{le retour à la 0.13.2 passe par cette sauvegarde} (\S\ref{sec:maj-0-13-3}).
     \item \textbf{Lire le changelog} de la nouvelle version pour identifier les breaking changes éventuels et les migrations nécessaires.
     \item \textbf{Mettre à jour le fichier compose} --- \textbf{obligatoire pour passer à la 0.13.0} (\S\ref{sec:maj-0-13}) : re-télécharger le compose et y reporter ses adaptations locales, puis vérifier les placeholders de \keshpath{.env} --- dont les lignes \texttt{MARIADB\_ROOT\_PASSWORD} et \texttt{MARIADB\_PASSWORD} : une valeur entre chevrons y est acceptée par Compose, et pour root rien d'autre ne la signale. Sur une base déjà créée, \textbf{ne remplacez pas} ces deux valeurs dans \keshpath{.env} --- ni des chevrons, ni \texttt{kesh\_dev} : la base a gardé celles de sa création, et une valeur neuve n'y change rien (1045 pour Kesh, sauvegarde en échec pour root) ; changez-les par le \S\ref{sec:mariadb-mdp}, \texttt{ALTER USER} d'abord. Pour les versions suivantes : selon le changelog (nouvelles variables, changement d'image).
     \item \textbf{Tirer la nouvelle image} : \keshcommand{docker compose pull kesh-api}.
@@ -2008,6 +2008,19 @@ L'opération s'inscrit au journal d'audit sous \emph{Réparation de l'installati
 La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la durée de session plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Si le journal du serveur porte « réparation de l'installation au démarrage » suivi d'une erreur, voir la section \emph{Dépannage}.
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
+
+\subsubsection{Passer à la 0.13.3}\label{sec:maj-0-13-3}
+
+La 0.13.3 ne demande ni nouveau compose ni nouvelle variable de \keshpath{.env} : on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.13.2, appliquez d'abord la section suivante (\S\ref{sec:maj-0-13-2}).
+
+\begin{sloppypar}
+\textbf{Sauvegardez la base avant la mise à jour} (étape 1 de la procédure, \S\ref{sec:mise-a-jour}). La 0.13.3 ajoute une \textbf{migration} --- la date de clôture d'un compte bancaire, \texttt{bank\_accounts.closed\_on} ---, qui n'est pas breaking : \texttt{kesh\_version\_min\_required} reste à \texttt{0.13.1}. Une base migrée porte pourtant une migration que la 0.13.2 ne connaît pas, et elle ne devrait pas démarrer sur cette base : \textbf{le retour à la 0.13.2 passe par la restauration de la sauvegarde prise avant la mise à jour}.
+\end{sloppypar}
+
+\paragraph{Intégrations par l'API : les comptes bancaires clos.}\mbox{}\\
+\begin{sloppypar}
+Un compte bancaire peut désormais être \textbf{clos} (lecture seule, historique conservé ; manuel utilisateur, \emph{Clore un compte bancaire}). \texttt{GET /api/v1/bank-accounts} et \texttt{GET /api/v1/companies/current} \textbf{n'en rendent plus les comptes clos} : une intégration qui doit les voir interroge \texttt{GET /api/v1/bank-accounts?includeClosed=true} (\texttt{/companies/current} n'a pas ce paramètre). Toute écriture qui vise un compte clos est refusée en \texttt{409 BANK\_ACCOUNT\_CLOSED} (dans \texttt{failed[]} pour les lots de réconciliation). Le détail est dans \texttt{docs/api-external.md}.
+\end{sloppypar}
 
 \subsubsection{Passer à la 0.13.2 : la colonne Devise des profils CSV}\label{sec:maj-0-13-2}
 
@@ -2288,7 +2301,7 @@ docker compose up -d
 # la sauvegarde DB d'avant la mise a jour (cf. section Restauration).
 \end{lstlisting}
 
-Revenir à l'image précédente \textbf{ne défait pas} la réparation de l'installation faite au premier démarrage (\S\ref{sec:reparation-installation}) : les clés révoquées restent révoquées --- aucune ne se réactive ---, et les sociétés provisoires supprimées ne reviennent pas ; seule la restauration de la sauvegarde d'avant la mise à jour les rend. La réparation n'impose elle-même aucune version minimale ; le retour à la version précédente n'est possible que si \textbf{aucune autre} migration de la release ne relève la version minimale exigée --- vérifiez-le au CHANGELOG. Pour la 0.13.2, le retour exige en plus que les profils CSV ne lisent plus la colonne Devise (\S\ref{sec:maj-0-13-2}).
+Revenir à l'image précédente \textbf{ne défait pas} la réparation de l'installation faite au premier démarrage (\S\ref{sec:reparation-installation}) : les clés révoquées restent révoquées --- aucune ne se réactive ---, et les sociétés provisoires supprimées ne reviennent pas ; seule la restauration de la sauvegarde d'avant la mise à jour les rend. La réparation n'impose elle-même aucune version minimale ; le retour à la version précédente n'est possible que si \textbf{aucune autre} migration de la release ne relève la version minimale exigée --- vérifiez-le au CHANGELOG. Cette condition ne suffit pas toujours : une release qui ajoute une migration ferme vraisemblablement le retour sans restauration, qu'elle relève ou non la version minimale --- c'est le cas de la 0.13.3 (\S\ref{sec:maj-0-13-3}). Pour la 0.13.2, le retour exige en plus que les profils CSV ne lisent plus la colonne Devise (\S\ref{sec:maj-0-13-2}).
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Sécurité}

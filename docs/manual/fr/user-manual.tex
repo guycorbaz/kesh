@@ -245,7 +245,10 @@ débiteurs} ni le \textbf{compte créanciers} désignés dans \emph{Paramètres}
 propose pas et refuse ce lien~; reliez le compte bancaire à son propre compte de banque.
 Ce solde ne reflète un encaissement qu'une fois celui-ci comptabilisé, par un rapprochement
 ou un règlement. Le total ne compte qu'une fois un
-compte du grand livre partagé par plusieurs comptes bancaires.
+compte du grand livre partagé par plusieurs comptes bancaires. Un compte bancaire
+\textbf{clos} ne figure plus sur la tuile, même si son solde comptable n'est pas nul~: ce solde
+se lit sur l'écran \emph{Comptes bancaires} (\emph{Afficher les comptes clos}) et au plan
+comptable (\S\ref{sec:clore-compte-bancaire}).
 
 Quand un relevé a été importé, la tuile affiche aussi \emph{Relevé du \dots} : le solde de
 clôture du relevé CAMT.053 \textbf{dont la période se termine le plus tard} (et non du dernier importé), à sa
@@ -1170,7 +1173,10 @@ Pour relancer les factures en retard, Kesh dispose d'un \textbf{écran de rappel
 \textbf{Enregistrer.} Sur la fiche d'une facture validée, \emph{Enregistrer un règlement}~: le
 mode (virement sur un compte bancaire, ou espèces et un autre compte de contrepartie), le montant
 et la date. Kesh passe l'écriture \emph{Débit contrepartie / Crédit débiteurs} et calcule ce qui
-reste dû. La contrepartie \textbf{ne peut pas être le compte débiteurs de la facture}~: l'écriture
+reste dû. Un compte bancaire \textbf{archivé} n'est plus proposé, et l'API refuse d'y enregistrer
+un règlement~; un règlement passé sur ce compte avant son archivage s'annule toujours. Un compte
+\textbf{clos} n'est pas proposé non plus, et ses règlements ne s'annulent qu'une fois le compte
+rouvert (\S\ref{sec:clore-compte-bancaire}). La contrepartie \textbf{ne peut pas être le compte débiteurs de la facture}~: l'écriture
 serait nulle, et le reste dû baisserait sans que rien ne bouge au grand livre. Kesh le refuse dans
 tous les cas~--- de même qu'un compte bancaire lié au compte débiteurs~--- et ne le propose pas dans
 les listes, \textbf{à condition} qu'il porte, au plan comptable, le \textbf{rôle} de compte de
@@ -1493,7 +1499,11 @@ cas selon le moyen de paiement :
 
 \begin{itemize}
     \item \textbf{Virement bancaire} : vous choisissez le \emph{compte bancaire
-    source}. Kesh solde la dette fournisseur par le crédit de ce compte bancaire.
+    source}. Kesh solde la dette fournisseur par le crédit de ce compte bancaire. Un compte
+    \textbf{archivé} n'est plus proposé, et l'API refuse d'y enregistrer un paiement~; un paiement
+    passé sur ce compte avant son archivage s'annule toujours. Un compte \textbf{clos} n'est pas
+    proposé non plus, et ni ses paiements ni les factures qu'il a payées ne s'annulent avant sa
+    réouverture (\S\ref{sec:clore-compte-bancaire}).
     \item \textbf{Compte interne} (caisse, carte, compte de passage) : vous
     choisissez un \emph{compte de contrepartie}.
 \end{itemize}
@@ -1641,7 +1651,7 @@ facture.
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Comptes bancaires}\label{sec:comptes-bancaires}
 
-Les comptes bancaires de la société se gèrent dans \emph{Administration} → \emph{Comptes bancaires} : on y crée, modifie et archive un compte, et on le lie au plan comptable. Un compte qui porte des transactions importées ne s'archive pas (\S\ref{sec:supprimer-import}). Chaque compte porte :
+Les comptes bancaires de la société se gèrent dans \emph{Administration} → \emph{Comptes bancaires} : on y crée, modifie, clôt et archive un compte, et on le lie au plan comptable. Un compte qui porte des transactions importées ne s'archive pas (\S\ref{sec:supprimer-import}) : pour le retirer de l'usage en gardant son historique, on le \textbf{clôt} (\S\ref{sec:clore-compte-bancaire}). Chaque compte porte :
 
 \begin{itemize}
     \item la \textbf{banque} ;
@@ -1660,6 +1670,86 @@ La description ne se saisit pas à l'onboarding, mais ensuite, sur cette page. E
 \begin{keshnote}
 Pour qui modifie un compte par l'API : \texttt{PUT /bank-accounts/\{id\}} remplace tous les champs du compte --- un corps qui omet la description l'\textbf{efface}. Le lien au grand livre (\texttt{PATCH}) ne la touche pas.
 \end{keshnote}
+
+\subsection{Clore un compte bancaire}\label{sec:clore-compte-bancaire}
+
+Un compte que vous n'utilisez plus, ou que la banque a clôturé, se \textbf{clôt}~: il passe en
+\textbf{lecture seule}. Plus rien ne s'y enregistre, et son historique reste entier pendant les
+dix ans de conservation (CO art.~958f). Sur la ligne du compte, \emph{Clore} ouvre un dialogue
+qui le rappelle~; la \textbf{date de clôture} y est préremplie à la date du jour et se corrige.
+Elle est informative~: c'est l'état du compte, non sa date, qui refuse les écritures.
+
+\paragraph{Trois conditions.} La clôture est refusée, avec un message qui dit quoi faire~:
+\begin{itemize}
+    \item si le compte est le \textbf{compte principal}~: désignez d'abord un autre compte
+          principal --- c'est lui que porte la QR-facture. Sur la ligne du compte principal, le
+          bouton \emph{Clore} est désactivé et le dit~;
+    \item s'il porte des \textbf{transactions importées non rapprochées}~: rapprochez-les, ou
+          supprimez l'import s'il ne contient aucune transaction rapprochée
+          (\S\ref{sec:supprimer-import}). Une transaction \textbf{rejetée} à la réconciliation
+          compte comme non rapprochée~: elle empêche la clôture tant qu'elle n'est pas
+          rapprochée manuellement ou que son import n'est pas supprimé~;
+    \item si un \textbf{lot de paiement généré} sur ce compte n'est ni confirmé ni annulé~:
+          confirmez-le ou annulez-le (\S\ref{sec:paiements-fournisseurs}).
+\end{itemize}
+
+\paragraph{Ce qui devient impossible.} Sur un compte clos, Kesh refuse --- à l'écran comme par
+une clé d'API~:
+\begin{itemize}
+    \item l'import d'un relevé, et la suppression d'un import~;
+    \item le rapprochement de ses transactions, et l'annulation d'un rapprochement~;
+    \item le règlement par virement sur ce compte, d'une facture client ou fournisseur, et
+          l'annulation d'un tel règlement~;
+    \item l'annulation d'une facture fournisseur payée par ce compte~;
+    \item la création et la confirmation d'un lot de paiement --- l'\textbf{annulation} d'un lot
+          déjà généré reste possible~;
+    \item la modification du compte, et son archivage.
+\end{itemize}
+Le compte n'est plus proposé dans les sélecteurs --- import, réconciliation, règlement d'une
+facture, règlement d'une facture fournisseur, lot de paiement ---, ni sur la tuile des comptes de
+l'accueil, ni dans \emph{Paramètres}.
+
+\paragraph{Ce qui reste.} L'historique des imports et leur détail, les écritures, les rapports,
+l'export CSV (\texttt{bank\_accounts.csv} porte la date de clôture, colonne
+\texttt{closed\_on}) et la sauvegarde d'installation. Le \textbf{compte comptable lié reste
+ouvert}~: une écriture de correction --- frais de clôture, virement du solde --- s'y passe au
+journal, et ce compte s'archive par son propre geste (\S\ref{sec:plan-comptable-archivage}).
+Sur cette page, \emph{Afficher les comptes clos} fait réapparaître le compte, atténué, avec la
+mention «~Clos le JJ.MM.AAAA~».
+
+\paragraph{Le solde.} Si le solde comptable du compte lié n'est pas nul, le dialogue de clôture
+l'affiche et invite à le vérifier --- il reste souvent une écriture de virement ou de frais à
+passer. Kesh \textbf{avertit}, il ne refuse pas. Une fois clos, le compte ne figure plus sur la
+tuile de l'accueil, même avec un solde~: celui-ci se lit sur cette page (\emph{Afficher les
+comptes clos}) et au plan comptable (\S\ref{sec:solde-comptable}).
+
+\paragraph{Rouvrir.} Une clôture se défait~: sur la ligne du compte clos, \emph{Rouvrir} rend
+le compte utilisable. Il ne redevient pas compte principal. La clôture et la réouverture sont
+inscrites au journal d'audit (\emph{Compte bancaire clos}, \emph{Compte bancaire rouvert}), la
+réouverture avec la date de clôture levée.
+
+\paragraph{Deux limites.}
+\begin{itemize}
+    \item Les boutons \emph{Supprimer l'import} (détail d'un import) et \emph{Annuler le
+          règlement} (fiche d'une facture) restent affichés pour un compte clos~: c'est
+          l'enregistrement qui est refusé, avec le message «~Ce compte bancaire est clos : il est
+          en lecture seule. Pour y enregistrer une opération, rouvrez d'abord le compte
+          (Administration → Comptes bancaires).~»
+    \item Une \textbf{opération déjà en cours} au moment de la clôture --- dans un autre onglet
+          ou par une intégration, et pour un import \textbf{dès l'envoi du fichier} --- peut
+          encore aboutir sur le compte (issue \#651). Le refus des écritures vaut donc
+          \textbf{hors de cette fenêtre}. Si cela arrive~: rouvrir le compte, traiter
+          l'opération (rapprocher les transactions importées, par exemple), puis le clore à
+          nouveau.
+\end{itemize}
+
+\paragraph{Clôture et archivage.} L'archivage retire un compte de toute vue, et un compte archivé
+ne se rouvre pas~; il n'est permis qu'à un compte sans transaction importée. La clôture est le
+geste pour un compte qui a servi. Un compte clos ne s'archive pas~: rouvrez-le d'abord. Le
+\textbf{compte principal} s'archive quand tous les autres comptes sont archivés \emph{ou clos}~:
+la société reste alors sans compte principal, donc sans IBAN pour la QR-facture, et
+\emph{Paramètres} affiche «~Aucun compte bancaire configuré~». Pour en sortir, rouvrez un compte
+clos et désignez-le compte principal.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Import bancaire}\label{sec:import-bancaire}
@@ -1693,8 +1783,9 @@ banque à l'autre. Si l'e-banking ne le propose pas, exportez le relevé en CSV
 \begin{enumerate}
     \item \emph{Quotidien} → \emph{Importer des relevés}.
     \item Choisir le compte du relevé dans \textbf{Compte bancaire cible}. La liste propose les
-    comptes bancaires non archivés déclarés dans \emph{Administration} → \emph{Comptes
-    bancaires} (\S\ref{sec:ajout-compte}).
+    comptes bancaires ni archivés ni clos déclarés dans \emph{Administration} → \emph{Comptes
+    bancaires} (\S\ref{sec:comptes-bancaires} ; un compte clos se rouvre,
+    \S\ref{sec:clore-compte-bancaire}).
     \item Pour un fichier CSV, si des profils existent, choisir le \textbf{Profil bancaire CSV},
     avant ou après le dépôt du fichier (\S\ref{sec:import-csv-profil}).
     \item Glisser-déposer le fichier dans la zone de dépôt, ou cliquer dessus pour le choisir.
@@ -1754,7 +1845,15 @@ même fichier peut ensuite être réimporté.
           tard, ou disparaît s'il n'en reste aucun (\S\ref{sec:solde-comptable}). Un
           compte bancaire qui porte des transactions importées ne s'archive pas~; supprimer ses
           imports peut le rendre archivable \textbf{s'il ne lui reste aucune transaction}, sous
-          les autres conditions de l'archivage (dont celle du compte principal).
+          les autres conditions de l'archivage (dont celle du compte principal). Pour retirer
+          de l'usage un compte qui a servi, sans rien supprimer, le geste est la
+          \textbf{clôture} (\S\ref{sec:clore-compte-bancaire}).
+    \item \textbf{Sur un compte clos}~: un import dont une transaction est rapprochée ne se
+          supprime pas, \textbf{que son compte soit clos ou non}~--- c'est le refus ci-dessus
+          («~annulez d'abord leur rapprochement~»)~; et sur un compte clos, annuler un
+          rapprochement exige de rouvrir d'abord le compte. Le refus «~compte clos~» ne
+          s'affiche que pour un import sans transaction rapprochée~: rouvrez le compte,
+          supprimez l'import, puis clôturez-le de nouveau si besoin.
     \item \textbf{Une page \emph{Réconciliation} ouverte avant la suppression}~: si elle coche
           encore une transaction supprimée, cette transaction est refusée et apparaît sous
           \emph{Échecs partiels} avec son motif, et les autres propositions du lot sont traitées.

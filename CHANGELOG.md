@@ -10,9 +10,28 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.13.3] — Non publié
 
+⚠️ **À faire en passant à la 0.13.3** — le détail est au manuel d'administration, *Passer à la 0.13.3* :
+
+1. **Sauvegarder la base avant la mise à jour**, comme à chaque version. La 0.13.3 ajoute une migration (date de clôture des comptes bancaires), qui ne relève pas `kesh_version_min_required` (il reste à `0.13.1`) ; une base migrée ne devrait pourtant plus démarrer sous la 0.13.2 : **le retour à la 0.13.2 passe par la restauration de cette sauvegarde**.
+2. **Intégrations par clé d'API** : `GET /api/v1/bank-accounts` et `/api/v1/companies/current` ne rendent plus les comptes bancaires **clos** ; `GET /api/v1/bank-accounts?includeClosed=true` les ajoute. Une écriture qui vise un compte clos est refusée en `409 BANK_ACCOUNT_CLOSED` (dans `failed[]` pour les lots de réconciliation). Détail dans `docs/api-external.md`.
+
 ### Ajouté
 
 - Annuler le rejet d'une transaction bancaire, depuis le détail de son import ou par l'API (`POST /api/v1/reconciliation/transactions/{id}/unreject`), et champ `autoMatchRejectedAt` ([#526](https://github.com/guycorbaz/kesh/issues/526)). Dans le détail de l'import (*Quotidien → Importer des relevés*, liste *Imports précédents*, nom du fichier), une transaction rejetée porte la mention « Rejetée le … » ; le bouton *Annuler le rejet*, réservé au Comptable et à l'Administrateur, la remet parmi les propositions de la réconciliation, sans passer d'écriture, et laisse la trace *Rejet de réconciliation annulé* au journal d'audit. La liste de la réconciliation ne montre que les 100 transactions en attente les plus récentes : une transaction plus ancienne n'y reparaît qu'une fois les plus récentes traitées ([#649](https://github.com/guycorbaz/kesh/issues/649)).
+- **Clore un compte bancaire ([#642](https://github.com/guycorbaz/kesh/issues/642)).** Un compte que l'on n'utilise
+  plus, ou que la banque a clôturé, se **clôt** depuis *Administration → Comptes bancaires* : il passe en lecture
+  seule, avec une date de clôture (préremplie au jour, informative). Plus rien ne s'y enregistre — import,
+  rapprochement et son annulation, règlement ou paiement fournisseur par virement et leur annulation, annulation
+  d'une facture fournisseur qu'il a payée, création et confirmation d'un lot de paiement, modification, archivage ;
+  l'annulation d'un lot déjà généré reste possible. Trois conditions : le compte n'est pas le compte principal,
+  ne porte aucune transaction non rapprochée (une transaction rejetée compte), et aucun lot généré sur lui n'attend
+  confirmation ou annulation. Un solde comptable non nul est signalé, sans bloquer. Le compte n'est plus proposé
+  dans les sélecteurs ni sur la tuile de l'accueil ; son historique reste entier et lisible — imports, écritures,
+  rapports, export, sauvegarde —, le compte comptable lié reste ouvert, et une bascule *Afficher les comptes clos*
+  le retrouve. **Rouvrir** défait la clôture ; les deux gestes sont inscrits au journal d'audit. Les écritures
+  visant un compte clos sont refusées côté serveur ; une opération déjà en cours au moment de la clôture peut
+  encore aboutir ([#651](https://github.com/guycorbaz/kesh/issues/651)) — rouvrir, traiter, clore à nouveau. Le
+  message de refus de l'archivage d'un compte qui porte des transactions propose désormais la clôture.
 
 ### Corrigé
 
