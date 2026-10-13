@@ -1739,11 +1739,32 @@ mod tests {
             );
         }
 
+        // Revue de code P1 (E3) : une société, pour que `instance_id` ait une
+        // valeur à lire (sur une base vide, le repli `0` la masquerait).
+        crate::test_fixtures::seed_accounting_company(&pool)
+            .await
+            .expect("seed société");
+        let min_required_attendu: String =
+            sqlx::query_scalar("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1")
+                .fetch_one(&pool)
+                .await
+                .expect("_kesh_version");
+        let instance_id_attendu: i64 = sqlx::query_scalar("SELECT MIN(id) FROM companies")
+            .fetch_one(&pool)
+            .await
+            .expect("MIN(companies.id)");
+        assert!(
+            instance_id_attendu >= 1,
+            "assertion de montage : une société existe"
+        );
+
         let export = export_installation(&pool)
             .await
             .expect("export_installation");
         let noms: Vec<&str> = export.tables.iter().map(|(nom, _)| *nom).collect();
         assert_eq!(noms, TABLES_TO_TRUNCATE);
+        assert_eq!(export.min_required, min_required_attendu, "min_required");
+        assert_eq!(export.instance_id, instance_id_attendu, "instance_id");
     }
 
     /// AC5 (f) — le niveau d'isolation de la **session** n'est pas modifié par
@@ -1833,5 +1854,55 @@ mod tests {
             n, 2,
             "`pool` doit apparaître exactement deux fois (paramètre, ReadSnapshot::begin) :\n{corps}"
         );
+        // Revue de code P1 (E1, L1, A-5) : l'erreur de `finish` est propagée
+        // par un `?` — `let _ = snap.finish().await;` compilerait et
+        // l'avalerait, et aucun test d'exécution n'atteint ce point.
+        assert!(
+            corps.contains("snap.finish().await?"),
+            "`export_installation` doit propager l'erreur de `finish` (`snap.finish().await?`) :\n{corps}"
+        );
+    }
+
+    /// Revue de code P1 (A-4, E2) — échec du `SET TRANSACTION` : la connexion
+    /// est fermée (`close_on_drop`), non rendue au pool. Le `SET` est provoqué
+    /// par une transaction brute déjà ouverte sur la connexion (`1568`,
+    /// `ER_CANT_CHANGE_TX_CHARACTERISTICS`), que sqlx ignore : rendue au pool,
+    /// la connexion y reviendrait **transaction ouverte**.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn echec_du_set_ferme_la_connexion(pool: MySqlPool) {
+        let p1 = pool_d_une_connexion(&pool).await;
+        let mut conn = p1.acquire().await.expect("connexion");
+        let id_avant = id_de_connexion(&mut conn).await;
+        sqlx::Executor::execute(&mut *conn, "BEGIN")
+            .await
+            .expect("transaction brute");
+        assert_eq!(
+            en_transaction(&mut conn).await,
+            1,
+            "assertion de montage : la transaction brute est ouverte"
+        );
+        let err = match ReadSnapshot::begin_on(conn).await {
+            Ok(_) => panic!("le SET TRANSACTION doit échouer dans une transaction ouverte"),
+            Err(e) => e,
+        };
+        let numero = match &err {
+            DbError::Sqlx(e) => numero_mariadb(e),
+            _ => None,
+        };
+        assert_eq!(numero, Some(1568), "erreur inattendue : {err}");
+
+        let mut conn = p1.acquire().await.expect("réacquisition");
+        assert_ne!(
+            id_de_connexion(&mut conn).await,
+            id_avant,
+            "la connexion du SET en échec est revenue au pool au lieu d'être fermée"
+        );
+        assert_eq!(
+            en_transaction(&mut conn).await,
+            0,
+            "la connexion réacquise est en transaction"
+        );
+        drop(conn);
+        p1.close().await;
     }
 }

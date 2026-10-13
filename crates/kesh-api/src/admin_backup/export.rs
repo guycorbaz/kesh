@@ -163,5 +163,12 @@ mod tests {
             n, 2,
             "`pool` doit apparaître exactement deux fois (paramètre, export_installation) :\n{corps}"
         );
+        // Revue de code P1 (L3) : le second `pool` est bien l'appel
+        // `export_installation(pool)` — une autre fonction qui prendrait le
+        // pool laisserait le compte à deux.
+        assert!(
+            corps.contains("export_installation(pool)"),
+            "`build_keshbackup` doit lire par `export_installation(pool)` :\n{corps}"
+        );
     }
 }
