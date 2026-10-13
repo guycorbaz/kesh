@@ -470,7 +470,7 @@ ou d'avant production) et c'est **le cas même de `post_reject`**, préexistant.
 d'`audit_route_registry.rs` (AC10). Hors ce cas, aucun cycle à `5aad8b35`. **La garde de la 28-4 ne prendra aucun
 verrou** (C-28-4-21) : la garde « compte clos » qu'elle ajoute à `unreject` (W30) lit la ligne du compte par une
 lecture cohérente non verrouillante, et n'ajoute donc aucun verrou à l'ordre ci-dessus ; l'argument reste à relire
-sur le code fusionné, au rebase sur la 28-4a. *(Corrigé le 2026-10-13, sur note de l'orchestrateur : la phrase
+sur le code fusionné, au rebase sur la 28-4a. **Revérifié au rebase sur `d46fcf69`** (28-2 et 28-3 fusionnées, 28-4 non fusionnée) : **sans changement**. *(Corrigé le 2026-10-13, sur note de l'orchestrateur : la phrase
 annonçait un `bank_accounts FOR UPDATE` pris par `unreject` du fait de la 28-4.)* Le verrou nommé est relâché avant le `commit`
 (`kesh-reconciliation/src/mutex.rs`, propriété commune à tous les gestes) : un geste concurrent qui obtient le verrou
 dans cet intervalle bute sur la lecture `FOR UPDATE` et attend le `commit` ; un lot qui aurait classé la ligne avant
@@ -635,6 +635,20 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5a/`.
     sept échecs sont nominativement les sept KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* :
     `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
     Aucun huitième de pollution, aucun KF-045 (run de l'après-midi), pas de KF-046. Aucune régression.
+- **Rebase sur `origin/main` `d46fcf69`** (28-3 `c1667e8a` puis 28-2 PR #652 fusionnées), 2026-10-13 : conflits
+  sur le seul `_bmad-output` — registre des choix et en-tête `last_updated` de `sprint-status.yaml` résolus par union
+  (corps du registre de sprint fusionné sans conflit, relu par `yaml.safe_load`, aucune clé en double ; lignes
+  d'en-tête de la 28-5 relabellisées `(28-5)` et une ligne `(118)` en tête) ; code, catalogues et gardes fusionnés sans
+  conflit (main n'avait touché ni `lib.rs`, ni `routes/reconciliation.rs`, ni `audit_route_registry.rs`) ; CHANGELOG
+  inchangé par la 28-5a. Argument « aucun cycle » (C-28-5-30) revérifié : sans changement, la 28-4 n'étant pas
+  fusionnée. Bases `kesh_285` et `kesh_e2e_285` remises à zéro, puis sous le verrou de gate, au HEAD rebasé `fec5477e`
+  (code identique à `9081041c`) : `scripts/test-fast.sh` **3541 passés, 0 échec, 6 ignorés** (3526 de main + 15 de la
+  28-5a) ; frontend `check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit`
+  **1497 passés, 140 fichiers**, `build` vert ; E2E complet (port 3038) **269 passés, 7 échecs, 19 ignorés** — les sept
+  KF-029 (#97), nommément `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` ; aucune régression. ⚠️ Les journaux `final-*.log` de
+  `kesh-gate-logs/28-5a/` portent désormais ce run (`rebase-gate.out`) ; ceux du `822ba587` ont été écrasés, leurs
+  chiffres restent ceux consignés plus haut.
 
 ### Completion Notes List
 
