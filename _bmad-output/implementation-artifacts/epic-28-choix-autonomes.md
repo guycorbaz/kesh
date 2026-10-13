@@ -2074,6 +2074,9 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
   l'étape 4 et l'étape 5. Les refus du pré-vol (`BANK_TRANSACTION_NOT_FOUND`, `RECONCILIATION_ALREADY_RECONCILED`,
   `RECONCILIATION_ALREADY_REJECTED`) la précèdent (R6). Le refus ne dépend que
   de la transaction : il précède la lecture de la facture (`INVOICE_NOT_FOUND`), l'éligibilité et le score.
+- **Amendé en validation P1 (F1, R6)** : la version d'origine disait « sous verrou » sans le nommer, et ne
+  plaçait pas les refus du pré-vol dans l'ordre ; les deux précisions ci-dessus sont celles de la remédiation P1
+  (marqueur ajouté à l'étape 0 du développement, finding P2-2 de la validation P2).
 - **Écartées** : au pré-vol de `post_accept` (dupliquerait la règle, et le pré-vol est commun aux trois variantes,
   dont deux admettent un débit) ; après le score (laisserait `SCORE_TOO_LOW` répondre pour un débit sans référence).
 - **Réversible** : oui.

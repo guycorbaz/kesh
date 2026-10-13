@@ -27,16 +27,16 @@ Issue : [#482](https://github.com/guycorbaz/kesh/issues/482) (bug, **P2**), rele
 
 ### Le défaut, au sol
 
-`get_proposals` écarte les débits (`crates/kesh-api/src/routes/reconciliation.rs:644-648`,
+`get_proposals` écarte les débits (`crates/kesh-api/src/routes/reconciliation.rs:648-652`,
 `if tx.amount <= Decimal::ZERO`) : l'écran ne propose jamais de facture pour un débit, et
 `ReconciliationProposals.svelte:217-221` ne soumet que la candidate affichée. Mais `POST
 /api/v1/reconciliation/accept` est appelable directement — par une clé d'API `read-write` comme par un appel
 forgé — avec un couple `(bankTransactionId, invoiceId)` arbitraire. Ni le pré-vol (`classify_batch_transaction`,
-`:872`), ni la recharge sous le verrou du compte (`find_pending_by_id_for_account`, `:1563` — une lecture sans
+`:876`), ni la recharge sous le verrou du compte (`find_pending_by_id_for_account`, `:1567` — une lecture sans
 `FOR UPDATE` ; le verrou est celui du compte bancaire, pris par `post_accept`), ni `accept_one_invoice`
-(`:1549-2238`) ne regardent le **signe** de la transaction.
+(`:1553-2228`) ne regardent le **signe** de la transaction.
 
-Une transaction de débit est aujourd'hui arrêtée par la garde de score (`:1725`, `score.total <= 0.0` →
+Une transaction de débit est aujourd'hui arrêtée par la garde de score (`:1729`, `score.total <= 0.0` →
 `RECONCILIATION_SCORE_TOO_LOW`) **seulement si elle ne ressemble à rien** : le score de montant vaut 0 (le reste
 dû est positif), mais le score de référence (`kesh-reconciliation/src/matching.rs:121-145`) et le score de contact
 (`:148`) ne dépendent pas du signe. Un débit dont la référence contient le numéro de la facture (score 0,40) ou
@@ -50,7 +50,7 @@ rapprochement « écrirait un règlement de montant négatif ». À la lecture, 
 transaction ; son insertion viole `chk_jel_debit_credit_exclusive` / `chk_jel_debit_nonneg`
 (`kesh-db/migrations/20260412000001_journal_entries.sql:46-47`), MariaDB rend 4025, `map_db_error` le traduit en
 `DbError::CheckConstraintViolation` (`kesh-db/src/errors.rs:1469-1471`), et `project_error_to_failed_proposal`
-(`reconciliation.rs:341`) le range dans son bras `_` : **`DATABASE_ERROR`**, avec le message brut de la contrainte
+(`reconciliation.rs:345`) le range dans son bras `_` : **`DATABASE_ERROR`**, avec le message brut de la contrainte
 dans `details.message`, et le point de sauvegarde de la proposition est annulé. Rien ne serait donc écrit — mais
 la seule garde est **une contrainte de la base**, et le refus se présente comme une panne : à l'écran,
 « Erreur de la base de données : réessayez ; si le problème persiste, contactez le support »
@@ -74,14 +74,14 @@ changer le correctif prescrit.
   | `= 0` (dont `-0.00`, cas de la seule fonction pure — cf. *Pièges*) | refus | `RECONCILIATION_TRANSACTION_NOT_CREDIT` | `{ "reason": "zero_amount_transaction", "transactionAmount": <montant> }` |
   | `> 0` | accepté (suite inchangée) | — | — |
 
-- `transactionAmount` a la **même forme** que le champ homonyme de `RECONCILIATION_OVERPAYMENT` (`:1855`,
+- `transactionAmount` a la **même forme** que le champ homonyme de `RECONCILIATION_OVERPAYMENT` (`:1859`,
   `serde_json::json!` sur le `Decimal`), pour qu'un client lise les deux de la même façon.
 - Le code est écrit **au site de construction**, sous la forme `error_code: "RECONCILIATION_TRANSACTION_NOT_CREDIT".to_string()`
   — la forme que compte `grep -ohE 'error_code: "[A-Z_]+"'` (27 codes distincts aujourd'hui, **28** après) et que
   relève le commentaire de tête de `failed-proposal-label.test.ts`.
-- **Place** : dans `accept_one_invoice`, **après** l'étape 4 (statut `pending`, `:1588-1594`) et **avant**
-  l'étape 5 (lecture de la facture, `:1596`). Ordre des refus qui en résulte, pré-vol compris :
-  1. **au pré-vol** de `post_accept` (`classify_batch_transaction`, `:872`), sur l'instantané, avant le verrou :
+- **Place** : dans `accept_one_invoice`, **après** l'étape 4 (statut `pending`, `:1592-1598`) et **avant**
+  l'étape 5 (lecture de la facture, `:1601`). Ordre des refus qui en résulte, pré-vol compris :
+  1. **au pré-vol** de `post_accept` (`classify_batch_transaction`, `:876`), sur l'instantané, avant le verrou :
      `BANK_TRANSACTION_NOT_FOUND`, `RECONCILIATION_ALREADY_RECONCILED`, `RECONCILIATION_ALREADY_REJECTED` —
      un débit **déjà rejeté** rend donc `RECONCILIATION_ALREADY_REJECTED`, jamais le code neuf ;
   2. **dans `accept_one_invoice`**, sous le verrou du compte : `BANK_TRANSACTION_NOT_FOUND` (recharge) →
@@ -89,10 +89,10 @@ changer le correctif prescrit.
      `INVOICE_NOT_FOUND` → `RECONCILIATION_INVOICE_NOT_ELIGIBLE` → `RECONCILIATION_SCORE_TOO_LOW` → …
 
   La garde s'applique à la transaction **rechargée sous le verrou du compte**, jamais à l'instantané du pré-vol.
-- La garde s'écrit `amount <= Decimal::ZERO`, la forme de `get_proposals` (`:645`) : **une seule** règle « un
+- La garde s'écrit `amount <= Decimal::ZERO`, la forme de `get_proposals` (`:649`) : **une seule** règle « un
   règlement de facture exige un encaissement » au code, écrite deux fois (proposition et acceptation), et le
   doc-comment de la fonction le dit, en nommant `get_proposals`.
-- Le doc-comment d'`accept_one_invoice` (`:1519-1548`) gagne une ligne : la garde, sa place, et pourquoi elle
+- Le doc-comment d'`accept_one_invoice` (`:1523-1552`) gagne une ligne : la garde, sa place, et pourquoi elle
   précède la facture (le refus ne dépend que de la transaction).
 
 **AC2 — Les cas qui la prouvent, de bout en bout (tests d'intégration, `crates/kesh-api/tests/reconciliation_e2e.rs`).**
@@ -139,9 +139,9 @@ d'intégration ne peut l'atteindre (C-28-6-12).
   `banque ↔ compte`), et un débit y est légitime (une dépense, un remboursement) — `kesh-reconciliation/src/rules.rs:8`
   le dit déjà (« PAS hériter du sign filter 8-4 invoice »), `validate_split_balance` compare à `tx_amount.abs()`
   (`split.rs:171`). Leur refus du montant nul existe déjà et n'est pas touché (C-28-6-5) : pour `split` et `rule`
-  dans `accept`, par proposition, en `VALIDATION_ERROR` + `details.reason = "zero_amount_transaction"` (`:2447`,
-  `:2870`) ; pour `POST /reconciliation/manual` et `/split`, en `400 VALIDATION_ERROR` « zero_amount_transaction »
-  (`:3659`, `:4109`).
+  dans `accept`, par proposition, en `VALIDATION_ERROR` + `details.reason = "zero_amount_transaction"` (`:2455`,
+  `:2878`) ; pour `POST /reconciliation/manual` et `/split`, en `400 VALIDATION_ERROR` « zero_amount_transaction »
+  (`:3664`, `:4114`).
 - **Ce qui le tient** (C-28-6-14) — des tests existants, qui acceptent un **débit** et rougiraient si une garde de
   sens était ajoutée à la variante :
   - `accept_one_split` : `reconciliation_e2e.rs::accept_with_explicit_split_type_runs_split_flow` (−100.00,
@@ -225,7 +225,7 @@ pour les intégrations (C-28-6-8, C-28-6-11).**
   lots de réconciliation » de la 0.13.2 (`admin-manual.tex:1992-1994`) annonce un **changement de contrat** de
   `POST /api/v1/reconciliation/accept` pour les clés d'API, avec trois codes (`BANK_TRANSACTION_NOT_FOUND`,
   `RECONCILIATION_ALREADY_RECONCILED`, `RECONCILIATION_ALREADY_REJECTED`), puis renvoie à `docs/api-external.md`.
-  Ce paragraphe reste vrai après la story (il ne parle que des transactions absentes). Mais la 28-6 change elle
+  Ce paragraphe reste vrai après la story (il ne parle que des transactions absentes, rapprochées ou rejetées, jamais d'un débit). Mais la 28-6 change elle
   aussi le contrat d'`accept` (AC7), et le précédent de la 0.13.2 veut qu'un tel changement soit dit aux
   intégrations dans la section de version. Donc, à T5 :
   - si, au rebase, la sous-section **« Passer à la 0.13.3 »** existe (ouverte par une story antérieure de
@@ -297,16 +297,16 @@ grep -rln "bank_transaction" crates/kesh-api/src/routes/ crates/kesh-db/src/repo
 grep -n "supplier" crates/kesh-api/src/routes/reconciliation.rs crates/kesh-db/src/repositories/reconciliation.rs
 ```
 
-Relevé au `5aad8b35` (hors modules `#[cfg(test)]`, hors tests d'intégration) :
+Relevé au `5aad8b35`, numéros de ligne recalés au `eab77cf1` (cf. § *Fichiers communs*) (hors modules `#[cfg(test)]`, hors tests d'intégration) :
 
 | # | Chemin | Lie à une facture ? | Sens contrôlé aujourd'hui | Après la story |
 |---|---|---|---|---|
-| 1 | `get_proposals` (`reconciliation.rs:583`, filtre `:644-648`) | propose seulement | `<= 0` écarté | inchangé (résolu) |
-| 2 | `accept_one_invoice` (`:1549`) — règlement `invoice_settlements::create_in_tx` `:1986`, rapprochement `UPDATE … matched_entry_id` `:2040` | **oui** (facture client) | **non** — seule la contrainte de base arrête | **résolu** (AC1) |
-| 3 | `accept_one_split` (`:2240`, `UPDATE` `:2539`) | non — contreparties choisies | deux sens légitimes ; nul refusé `:2447` | inchangé (C-28-6-5) |
-| 4 | `accept_one_rule` (`:2653`, `UPDATE` `:2991`) | non | deux sens légitimes (`rules.rs:8`) ; nul refusé `:2870` | inchangé |
-| 5 | `post_manual` (`:3523`, `UPDATE` `:3802`) | non | deux sens ; nul refusé `:3659` | inchangé |
-| 6 | `post_split` (`:3935`, `UPDATE` `:4259`) | non | deux sens ; nul refusé `:4109` | inchangé |
+| 1 | `get_proposals` (`reconciliation.rs:587`, filtre `:648-652`) | propose seulement | `<= 0` écarté | inchangé (résolu) |
+| 2 | `accept_one_invoice` (`:1553`) — règlement `invoice_settlements::create_in_tx` `:1990`, rapprochement `UPDATE … matched_entry_id` `:2044` | **oui** (facture client) | **non** — seule la contrainte de base arrête | **résolu** (AC1) |
+| 3 | `accept_one_split` (`:2244`, `UPDATE` `:2543`) | non — contreparties choisies | deux sens légitimes ; nul refusé `:2455` | inchangé (C-28-6-5) |
+| 4 | `accept_one_rule` (`:2657`, `UPDATE` `:2995`) | non | deux sens légitimes (`rules.rs:8`) ; nul refusé `:2878` | inchangé |
+| 5 | `post_manual` (`:3527`, `UPDATE` `:3806`) | non | deux sens ; nul refusé `:3664` | inchangé |
+| 6 | `post_split` (`:3939`, `UPDATE` `:4263`) | non | deux sens ; nul refusé `:4114` | inchangé |
 | 7 | Règlement depuis la facture, `invoice_settlements_write::settle_invoice` (`:67`, appel `routes/invoices.rs:1283`) | oui | montant saisi `<= 0` refusé (`:76`) ; **aucune transaction bancaire** n'y est liée | hors classe (résolu) |
 | 8 | Solde d'une facture, `write_off_invoice` (`:429`) | oui | `<= 0` refusé (`:495`) ; aucune transaction | hors classe |
 | 9 | `post_cancel_reconciliation` / `reconciliation_cancel.rs:340` | défait un lien | — | hors classe |
@@ -315,7 +315,7 @@ Relevé au `5aad8b35` (hors modules `#[cfg(test)]`, hors tests d'intégration) :
 
 **Le symétrique — un crédit lié à une facture fournisseur — n'existe pas (C-28-6-9).** Aucun chemin ne rapproche une
 transaction bancaire d'une facture fournisseur : la réconciliation ne cherche que des `invoices` (factures
-clientes ; `grep -n supplier` dans les deux fichiers de réconciliation ne rend que le commentaire `:1752`, qui
+clientes ; `grep -n supplier` dans les deux fichiers de réconciliation ne rend que le commentaire `:1756`, qui
 cite `pay_in_tx` comme gabarit), le paiement fournisseur et les lots de paiement n'écrivent aucun lien vers
 `bank_transactions`. Rien à refuser ; l'angle mort est écrit pour que l'absence ne passe pas pour un oubli. Le jour
 où un rapprochement de facture fournisseur existera, la même règle — un règlement fournisseur exige une
@@ -335,7 +335,7 @@ reste, écrit comme angle mort **assumé** :
 | Site | Ce qui reste | Pourquoi assumé |
 |---|---|---|
 | Rapprochement manuel, ventilé ou par règle **vers le compte débiteurs** (lignes 3 à 6) | un débit ou un crédit peut mouvementer le 1100 sans régler ni facture ni reste dû | catégorie C : contrepartie choisie par l'utilisateur, deux sens légitimes (remboursement, acompte non affecté) ; le lettrage manuel le rattache (`docs/api-external.md:339`, « Une écriture rapprochée … se lettre ») ; aucune facture n'est liée, donc pas le défaut de #482 |
-| Le pré-vol de `post_accept` (`:1044-1073`) ne connaît pas le sens | un lot fait de seuls débits prend le verrou du compte avant d'être refusé | sans effet comptable ; la garde vit là où la transaction est rechargée sous le verrou du compte, une seule fois ; l'ajouter au pré-vol la dupliquerait (C-28-6-3) |
+| Le pré-vol de `post_accept` (`:1048-1087`) ne connaît pas le sens | un lot fait de seuls débits prend le verrou du compte avant d'être refusé | sans effet comptable ; la garde vit là où la transaction est rechargée sous le verrou du compte, une seule fois ; l'ajouter au pré-vol la dupliquerait (C-28-6-3) |
 | Défense en profondeur de la base (`chk_jel_*`) | reste la dernière barrière, inchangée | voulue |
 
 ### État actuel des fichiers modifiés — ce qui doit être préservé
@@ -353,7 +353,7 @@ reste, écrit comme angle mort **assumé** :
 
 | Fichier | 28-6 touche | 28-5 (#526) attendue | 28-7 (#548) attendue |
 |---|---|---|---|
-| `routes/reconciliation.rs` | fonction pure **juste au-dessus** d'`accept_one_invoice` (vers `:1518`) ; un appel entre l'étape 4 et l'étape 5 (`:1594-1596`) ; module de tests **en fin de fichier** | rejet, liste des rejetées, « annuler le rejet » (`post_reject`, `reject_batch`, `:3138-3500`), peut-être `classify_batch_transaction` (`:872`) | bornes de date d'`accept_one_invoice`, étape 6 (`:1655-1690`) — voisine, hunk distinct |
+| `routes/reconciliation.rs` | fonction pure **juste au-dessus** d'`accept_one_invoice` (vers `:1522`) ; un appel entre l'étape 4 et l'étape 5 (`:1598-1601`) ; module de tests **en fin de fichier** | rejet, liste des rejetées, « annuler le rejet » (`post_reject`, `reject_batch`, `:3128-3463`), peut-être `classify_batch_transaction` (`:876`) | bornes de date d'`accept_one_invoice`, étape 6 (`:1638-1688`) — voisine, hunk distinct |
 | `tests/reconciliation_e2e.rs` | `post_accept_filters_signed_amount` (`:2129`) + nouveaux tests en fin de fichier | tests du rejet | tests aux bornes de date |
 | `failed-proposal-label.ts` / `.test.ts` | un `case`, une entrée, 29 → 30 | possible (si un code neuf) | non attendu |
 | `i18n-keys.test.ts` (`sitesTotal`) | +1 | possible | non attendu |
@@ -364,6 +364,18 @@ reste, écrit comme angle mort **assumé** :
 
 Conflits attendus : textuels, à réunir (union) ; **recompter** `sitesTotal`, les 29/30 codes et les littéraux après
 chaque rebase.
+
+**Relu au rebase sur `eab77cf1`** (28-2, 28-3 et 28-5a fusionnées ; étape 0 du développement). Tous les numéros de
+ligne de `routes/reconciliation.rs` cités dans cette fiche ont été recalés sur ce `HEAD`, par lecture de chaque site
+(la 28-5a décale de +4 tout ce qui précède `:4312` ; quelques numéros de la fiche visaient déjà, au `5aad8b35`, la
+ligne voisine du site — le commentaire au lieu du `return` — et sont recalés sur le site lui-même ; `accept_one_invoice`
+court de `:1553` à `:2228`). Ce que la 28-5a a réellement fait du fichier : une section
+« annuler le rejet » **en fin de fichier**, avant les modules de tests (`bank_account_of_transaction` `:4595`,
+`classify_unreject` `:4646`, `post_unreject_transaction` `:4682`, `unreject_once` `:4701`), un module de tests
+`unreject_classification_tests` (`:5106`, dernier du fichier), et `conclude_locked_attempt` rendue générique
+(`:4332`, `<T>`). Elle n'a touché ni `classify_batch_transaction` (`:876`), ni `accept_one_invoice`. La 28-6 reste
+hors de ces régions : sa fonction pure va au-dessus d'`accept_one_invoice`, son module de tests **après**
+`unreject_classification_tests`.
 
 ### Pièges connus du dépôt, applicables ici
 
