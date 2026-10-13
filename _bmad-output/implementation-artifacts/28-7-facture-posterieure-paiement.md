@@ -2,9 +2,11 @@
 
 ## Status
 
-**in-progress** — développement commencé le 2026-10-13 (`bmad-dev-story`, Opus 5.5), branche rebasée sur
-`story/28-6` (`8ba4e168`, non encore fusionnée) ; validation close par la passe ciblée P3 (Haiku : 1 MEDIUM,
-7 LOW, remédiés à l'étape 0, cf. Change Log). — Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `5aad8b35`
+**review** — développement fait le 2026-10-13 (`bmad-dev-story`, Opus 5.5) ; branche rebasée sur `origin/main`
+(`5629acc2`, 28-6 fusionnée) ; dernier commit de code `7b10e555` ; gates complets verts au HEAD `0d94fdc7` ;
+mutations 14 tuées sur 15, M10 équivalente au plan observé ; revue de code P1 à lancer
+(`28-7-review-prompt-p1.md`, Sonnet, lentilles B, E, A). Choix C-28-7-14 à 16 ajoutés au développement.
+Validation close par la passe ciblée P3 (Haiku : 1 MEDIUM, 7 LOW, remédiés à l'étape 0, cf. Change Log). — Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `5aad8b35`
 (kickoff de l'Epic 28), branche `story/28-7`, worktree `/home/gcorbaz/devel/kesh-28-7`. Validation P1 faite
 (Sonnet, lentilles R et F : 0 CRITICAL, 0 HIGH, 5 MEDIUM soit 4 distincts, 12 LOW soit 10 distincts — remédiés,
 cf. Change Log) ;
@@ -343,37 +345,37 @@ d'entrée `POST_RESTORE_BACKFILLS`.
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Rebase et relevé** (prérequis)
-  - [ ] Rebaser `story/28-7` sur `origin/main` après le merge de la 28-6 ; relire les numéros de ligne de la fiche
+- [x] **T0 — Rebase et relevé** (prérequis)
+  - [x] Rebaser `story/28-7` sur `origin/main` après le merge de la 28-6 ; relire les numéros de ligne de la fiche
         (`grep -nF` des motifs cités) et noter tout écart au Dev Agent Record.
-  - [ ] Créer `kesh_287` et `kesh_e2e_287` (migrations du worktree, seed) ; `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-28-7/target`.
-- [ ] **T1 — La fenêtre** (AC1, AC6)
-  - [ ] Constantes, `payment_date`, `InvoiceDateWindow`, `InvoiceDateRefusal` (arithmétique sans ramènement de borne) ; doc-comments (règle, pourquoi, lecteurs, trois sites non résolus nommés par leur nom).
-  - [ ] `mod tests` unitaire.
-- [ ] **T2 — La proposition** (AC2)
-  - [ ] Nouvelle signature et SQL `BETWEEN ? AND ?` ; `ORDER BY i.date ASC, i.id ASC` avant `LIMIT 50` (C-28-7-10) ; doc-comment du filtre 3 (ordre compris) et doc de module (`:5-10`).
-  - [ ] `get_proposals` : `InvoiceDateWindow::for_transaction(&tx)` ; retrait de `WINDOW_DAYS`.
-- [ ] **T3 — L'acceptation** (AC3)
-  - [ ] `check` dans `accept_one_invoice`, raisons et `details` identiques ; `let paid_at_candidate = payment_date(&bank_transaction);` (ses cinq lectures restantes inchangées) ; `Duration` retiré de l'import `:30` s'il n'a plus d'emploi (`grep -nw Duration`, `clippy -D warnings`).
-  - [ ] Commentaires P3-M2 / « Lower bound (existant) » (`:1659`, `:1667-1672`) réécrits ; doc de `AcceptProposalBody::Split` (`:465`) **non touché** (date d'écriture, hors fenêtre).
-- [ ] **T4 — Tests d'intégration** (AC4, AC5, AC6 fin)
-  - [ ] `proposal_and_acceptance_share_the_invoice_date_window`, `proposals_use_the_value_date_like_the_acceptance` (dont `settled_on` au cas (b)).
-  - [ ] Réécriture de `find_unpaid_invoices_filters_by_30_day_window` ; adaptation des dix appels de tests ;
+  - [x] Créer `kesh_287` et `kesh_e2e_287` (migrations du worktree, seed) ; `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-28-7/target`.
+- [x] **T1 — La fenêtre** (AC1, AC6)
+  - [x] Constantes, `payment_date`, `InvoiceDateWindow`, `InvoiceDateRefusal` (arithmétique sans ramènement de borne) ; doc-comments (règle, pourquoi, lecteurs, trois sites non résolus nommés par leur nom).
+  - [x] `mod tests` unitaire.
+- [x] **T2 — La proposition** (AC2)
+  - [x] Nouvelle signature et SQL `BETWEEN ? AND ?` ; `ORDER BY i.date ASC, i.id ASC` avant `LIMIT 50` (C-28-7-10) ; doc-comment du filtre 3 (ordre compris) et doc de module (`:5-10`).
+  - [x] `get_proposals` : `InvoiceDateWindow::for_transaction(&tx)` ; retrait de `WINDOW_DAYS`.
+- [x] **T3 — L'acceptation** (AC3)
+  - [x] `check` dans `accept_one_invoice`, raisons et `details` identiques ; `let paid_at_candidate = payment_date(&bank_transaction);` (ses cinq lectures restantes inchangées) ; `Duration` retiré de l'import `:30` s'il n'a plus d'emploi (`grep -nw Duration`, `clippy -D warnings`).
+  - [x] Commentaires P3-M2 / « Lower bound (existant) » (`:1659`, `:1667-1672`) réécrits ; doc de `AcceptProposalBody::Split` (`:465`) **non touché** (date d'écriture, hors fenêtre).
+- [x] **T4 — Tests d'intégration** (AC4, AC5, AC6 fin)
+  - [x] `proposal_and_acceptance_share_the_invoice_date_window`, `proposals_use_the_value_date_like_the_acceptance` (dont `settled_on` au cas (b)).
+  - [x] Réécriture de `find_unpaid_invoices_filters_by_30_day_window` ; adaptation des dix appels de tests ;
         `find_unpaid_invoices_orders_by_date_then_id_before_limit` (AC6, C-28-7-10).
-  - [ ] Grep des tests de propositions dont une facture serait datée **après** `D + 1` ou **avant** `D − 30`
+  - [x] Grep des tests de propositions dont une facture serait datée **après** `D + 1` ou **avant** `D − 30`
         (proposition attendue qui disparaîtrait) — `reconciliation_e2e.rs` (lecteurs listés à l'inventaire (c)),
         `reconciliation_rules_e2e.rs`, `frontend/tests/e2e/reconciliation-amount-due.spec.ts` ; aucun lecteur de
         propositions hors de ces trois fichiers (`rejeu_interblocage_e2e.rs` n'appelle que `POST /accept` et
         `POST /manual`, jamais `reconciliation/proposals`) : en
         lister le résultat au Dev Agent Record, même vide.
-- [ ] **T5 — Libellé** (AC7) : quatre `.ftl`, repli (G13), doc-comment et commentaire de test, assertion
+- [x] **T5 — Libellé** (AC7) : quatre `.ftl`, repli (G13), doc-comment et commentaire de test, assertion
       `not.toContain('proposée')` ; commentaire de
       `frontend/tests/e2e/reconciliation-amount-due.spec.ts:78` (« dans la fenêtre de 30 jours autour du relevé »
       → « au plus 30 jours avant le relevé », § *Inventaire (c)*) ; recompte `i18nMsg(`.
-- [ ] **T6 — Manuel** (AC8) : trois sites, `make fr`, contrôle aplati du PDF, `textes_coherents` ; grep de
+- [x] **T6 — Manuel** (AC8) : trois sites, `make fr`, contrôle aplati du PDF, `textes_coherents` ; grep de
       propagation sur **tout** `docs/manual/fr/*.tex` — `marketing-brochure.tex:167` (« sur une fenêtre de 30
       jours ») reste exact (la fenêtre garde 30 jours côté facture ancienne) : trié au Dev Agent Record, non modifié.
-- [ ] **T7 — CHANGELOG** : sous `## [0.13.3] — Non publié` (à créer s'il n'existe pas encore au rebase, au-dessus
+- [x] **T7 — CHANGELOG** : sous `## [0.13.3] — Non publié` (à créer s'il n'existe pas encore au rebase, au-dessus
       de `## [0.13.2]` ; sinon y ajouter), section `### Corrigé` :
       « **La réconciliation ne propose plus une facture qu'elle refuserait ensuite ([#548](https://github.com/guycorbaz/kesh/issues/548)).**
       Une facture datée de plus d'un jour **après** le paiement était proposée, puis l'acceptation la refusait
@@ -387,7 +389,7 @@ d'entrée `POST_RESTORE_BACKFILLS`.
       proposé ([#529](https://github.com/guycorbaz/kesh/issues/529)). L'API de réconciliation est inchangée. »
       Le plafond de 50 candidates et leur ordre n'y figurent pas, ni au manuel, qui ne décrit pas ce plafond
       (C-28-7-13).
-- [ ] **T8 — Mutations** (AC10) et **gates** (AC11) ; Dev Agent Record (chiffres recomptés, périmètre déclaré).
+- [x] **T8 — Mutations** (AC10) et **gates** (AC11) ; Dev Agent Record (chiffres recomptés, périmètre déclaré).
 
 ## Dev Notes
 
@@ -594,9 +596,97 @@ clé, `yaml.safe_load` vert). Bases `kesh_287` et `kesh_e2e_287` créées (80 mi
 | `reconciliation_repository.rs:258` et les dix appels | inchangés (`:306` pour l'appel du test de fenêtre) |
 | CHANGELOG | `## [0.13.3] — Non publié` existe déjà (`:11`) |
 
+*Après le second rebase (sur `origin/main` `5629acc2`, 28-6 fusionnée après sa revue)* : garde de signe de la 28-6
+à `routes/reconciliation.rs:1661`, `accept_one_invoice` `:1608`, `check` de la fenêtre `:1733` — la garde reste
+**avant** l'étape 6. `reconciliation_e2e.rs` compte 94 `#[sqlx::test]` à l'étape 0 (80 sur `5aad8b35` : la 28-5a
+et la 28-6 en ont ajouté).
+
+**T1 — rouge d'abord** (commit `0813d96f`, rebasé en `91e1494d` ; C-28-7-14). Sur le code non corrigé, journal
+`kesh-gate-logs/28-7-t1-rouge.log` : `proposal_and_acceptance_share_the_invoice_date_window` **rouge** (proposés
+`{−30, −1, 0, +1, +2, +30}`, acceptés `{−30, −1, 0, +1}` : les décalages `+2` et `+30` de #548) ;
+`proposals_use_the_value_date_like_the_acceptance` **rouge** (proposés (a), (c), (d), (e) ; attendus (b), (d)) ;
+`find_unpaid_invoices_orders_by_date_then_id_before_limit` **vert** dès l'ancien code — le plan livre déjà
+`(date, id)` (C-28-7-15). T5 : `expect(label).not.toContain('proposée')` **rouge** avant la réécriture du repli
+(« expected … not to contain 'proposée' »), vert après.
+
+**T4 — lecteurs de propositions.** `reconciliation_e2e.rs` (binaire entier vert après la correction : aucune
+proposition attendue n'a disparu), `reconciliation_rules_e2e.rs` et `rejeu_interblocage_e2e.rs` (58/58 verts, gate
+ciblé) ; `reconciliation-amount-due.spec.ts` : facture au 2026-05-10, relevé au 2026-05-15, dans la fenêtre — la
+spec passe à l'E2E complet. **Aucun test existant dont une facture sorte de `[D−30, D+1]`.**
+
+**T8 — campagne de mutations** (`kesh-gate-logs/28-7-mutations-run.txt`, sorties `28-7-mutations/M*.log`, script
+hors dépôt, sous le verrou ; filtre : binaires `reconciliation_e2e`, `reconciliation_repository`,
+`invoice_write_off` et `repositories::reconciliation::tests`, 134 tests). Restauration `git checkout --` + `touch`
+après chacune ; `git status` vide à la fin.
+
+| # | Résultat | Tests rouges (extrait) |
+|---|---|---|
+| M1 | tuée | AC4, AC5, `check_admits…`, `the_window_of…`, `…filters_by_30_day_window` |
+| M2 | tuée | idem M1 |
+| M3 | tuée | AC4, `check_admits…`, `the_window_of…`, `…30_day_window`, `…orders_by_date…` |
+| M4 | tuée | AC4, `check_admits…`, `the_window_of…`, `…30_day_window` |
+| M5 | tuée | AC5, `the_payment_date_is_the_value_date_when_there_is_one` |
+| M6 | tuée | AC5 |
+| M7 | tuée | AC4, AC5, `check_admits…` |
+| M8 | tuée | `post_accept_rejects_payment_date_before_invoice_date`, `…_outside_window`, AC4, AC5 |
+| M9 | tuée | 14 tests, dont AC4, AC5, `…30_day_window`, `…orders_by_date…` |
+| M10 | **survivante — équivalente au plan observé** (C-28-7-15) | aucun ; 134/134 verts |
+| M11 | tuée | AC5 |
+| M12 | tuée | AC5 (`settled_on`) |
+| M13 | tuée | `…30_day_window`, `…orders_by_date…` |
+| M14 | tuée | `…orders_by_date…` |
+| M15 | tuée | AC4, `check_admits…` |
+
+**14 tuées, 1 équivalente, 0 survivante non expliquée.**
+
+**Gates.** Au dernier commit de code, rebasé (`7b10e555`), mesurés au HEAD `0d94fdc7` (seuls des fichiers de
+documentation après le code), sous le verrou, après remise à zéro de `kesh_287` et `kesh_e2e_287` (80 migrations,
+seed) — `kesh-gate-logs/28-7-gates.txt` :
+- `scripts/test-fast.sh` (fmt, clippy `-D warnings`, nextest) : **3560 passés / 3560**, 6 ignorés ;
+- `npm run check` : 0 erreur (29 avertissements, préexistants, aucun dans un fichier touché) ;
+  `npm run lint-i18n-ownership` : vert ; `npm run test:unit` : **1547 / 1547** (144 fichiers) ; `npm run build` : vert ;
+- E2E complet (port 3040, `/health` : `smtpConfigured: true`) : **273 passés, 7 échecs, 19 ignorés**, 11,1 min. Les
+  7 échecs sont exactement les sept de la **KF-029** (#97) de `docs/testing.md` § *Les échecs attendus* —
+  `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
+  Aucun échec hors liste ; aucun `Permission denied` dans le journal du backend.
+- Ciblés en cours de route : `binary(textes_coherents)` 15/15 ; `kesh-i18n` 39/39 ; Vitest de
+  `failed-proposal-label`, G13 et `i18n-keys` 79/79.
+
 ### Completion Notes List
 
+- **Décomptes**, de `9f4e5237` (étape 0, rebasé) à `7b10e555` (dernier commit de code), recomptés à la source :
+  **7 tests neufs** — 2 `#[sqlx::test]` dans `reconciliation_e2e.rs` (94 → 96), 1 dans
+  `reconciliation_repository.rs` (12 → 13), 4 `#[test]` dans `repositories/reconciliation.rs` (0 → 4) ;
+  `invoice_write_off.rs` inchangé (20) ; une assertion ajoutée à un test Vitest existant. **15 fichiers** hors
+  `_bmad-output` de `9f4e5237` au HEAD (12 au dernier commit de code, avant manuel, PDF et CHANGELOG).
+  `i18nMsg(` = **1962** aux deux bornes (aucune clé ajoutée ni retirée).
+- Propagation grepée (motif de la fiche, § *Propagation*) après le patch : restent les occurrences légitimes (« 30
+  jours net », jetons de session, `window_days` du contrat et de ses tests, entrées historiques du CHANGELOG) ;
+  `marketing-brochure.tex:167` (« sur une fenêtre de 30 jours ») trié, **non modifié** (la fenêtre garde 30 jours
+  côté facture ancienne) ; `docs/`, `website/`, README : aucune occurrence. de-CH, en-CH, it-CH : texte de l'AC7
+  contrôlé au `Read`.
+- PDF contrôlé aplati et normalisé (`kesh-gate-logs/28-7-user-manual-flat.txt`) : « peut être proposée » absente,
+  aucun `??`, le titre « Une facture datée de plus d'un jour après le paiement n'est pas proposée. » et le renvoi
+  de la FAQ (§ 14.1.1) présents.
+- Deux rebases : sur `story/28-6` (`8ba4e168`), puis, la 28-6 fusionnée, `--onto origin/main 8ba4e168`. Au second, le
+  PDF du manuel (binaire) a été pris de `main` puis **régénéré** depuis le `.tex` fusionné (commit `0d94fdc7`).
+- **Aucune migration** : pas de bump `min_required`, pas de ligne d'audit d'idempotence, pas d'entrée de rejeu.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/reconciliation.rs`
+- `crates/kesh-db/tests/reconciliation_repository.rs`
+- `crates/kesh-db/tests/invoice_write_off.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `frontend/src/lib/features/reconciliation/failed-proposal-label.ts`
+- `frontend/src/lib/features/reconciliation/failed-proposal-label.test.ts`
+- `frontend/tests/e2e/reconciliation-amount-due.spec.ts`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/28-7-facture-posterieure-paiement.md`, `epic-28-choix-autonomes.md`,
+  `sprint-status.yaml`, `28-7-review-prompt-p1.md`
 
 ## Change Log
 
@@ -702,3 +792,10 @@ clé, `yaml.safe_load` vert). Bases `kesh_287` et `kesh_e2e_287` créées (80 mi
     désigne le chemin serveur (`settle_invoice`, `write_off_invoice`), appelé par les deux écrans.
   - Trend de la validation : P1 5 MEDIUM (4 distincts) → P2 2 MEDIUM → P3 ciblée 1 MEDIUM (rédaction du
     registre) → close. Modèles : Sonnet, Opus, Haiku.
+- **2026-10-13 — Développement** (`bmad-dev-story`, Opus 5.5). Étape 0 (`9f4e5237`) : rebase sur `story/28-6`,
+  MEDIUM et LOW de la P3 remédiés, lignes recalées. Rouge d'abord (`91e1494d`), correction serveur (`ee36da36`),
+  libellé (`7b10e555`, dernier commit de code), manuel, PDF et CHANGELOG (`b2cdf995`), PDF régénéré après le second
+  rebase sur `origin/main` `5629acc2` (`0d94fdc7`). Mutations : 14 tuées, M10 équivalente au plan observé. Gates au
+  HEAD `0d94fdc7` : nextest 3560/3560, Vitest 1547/1547, check, lint-i18n-ownership et build verts, E2E 273 passés
+  + 7 KF-029. Choix C-28-7-14 à 16. Détail au Dev Agent Record. Statut **review** ; revue de code P1 à lancer :
+  `28-7-review-prompt-p1.md` (Sonnet, lentilles B, E, A).

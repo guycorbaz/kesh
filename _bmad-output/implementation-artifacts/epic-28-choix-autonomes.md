@@ -3013,4 +3013,44 @@ pas rouvert.)* Texte d'origine conservé ci-dessous pour l'historique.
   textes de plus pour un cas rare, invisible en deçà de 50 candidates).
 - **Réversible** : oui (texte).
 
+### C-28-7-14 — Le rouge d'abord par les tests HTTP, la fenêtre écrite ensuite
+
+*(Développement, 2026-10-13.)*
+
+- **Contexte** : les tests de l'AC6 portent sur un type qui n'existe pas avant la correction ; ils ne peuvent
+  rougir, ils ne compilent pas. Le rouge doit pourtant précéder le correctif.
+- **Retenu** : un premier commit (`test(28-7)`) ne pose que les deux tests HTTP (AC4, AC5), qui passent par l'API et
+  compilent contre le code non corrigé, et le test d'ordre écrit sur l'**ancienne** signature. AC4 et AC5 y rougissent
+  (journal `kesh-gate-logs/28-7-t1-rouge.log`) ; le test d'ordre y passe déjà. Les tests unitaires et le test de
+  fenêtre réécrit arrivent avec la correction ; ils sont exercés par la campagne de mutations.
+- **Écartées** : un type « dégradé » qui reproduirait l'ancienne fenêtre pour faire rougir les tests unitaires (du
+  code écrit pour être jeté).
+- **Réversible** : sans objet.
+
+### C-28-7-15 — M10 déclarée équivalente au plan observé
+
+*(Développement, 2026-10-13.)*
+
+- **Contexte** : la fiche ne prédisait pas l'issue de M10 (`ORDER BY` retiré).
+- **Retenu** : observée **survivante**, et déjà verte sur le code d'avant la story : sur MariaDB 10.11 de dev, le
+  plan livre les 52 factures du test en `(date, id)` croissants sans `ORDER BY`. Elle est déclarée **équivalente
+  au plan observé**, non au code : l'`ORDER BY` reste la seule garantie, et M13 (`DESC`) comme M14 (`id` seul) sont
+  tuées par le même test, qui lit donc bien l'ordre.
+- **Écartées** : forcer un plan contraire dans le test (`IGNORE INDEX`, au test seulement : il ne mesurerait plus la
+  requête de production).
+- **Réversible** : oui.
+
+### C-28-7-16 — Deux précisions de test et de manuel au-delà de la fiche
+
+*(Développement, 2026-10-13.)*
+
+- **Contexte** : la fiche prescrit, à l'AC5, `settled_on` au cas (b) seul et, au cas (e), « non proposée » seul ; et
+  laisse la FAQ « aucun match automatique » à sa première puce (« à plus de 30 jours de la date de la facture »).
+- **Retenu** : l'AC5 asserte aussi `settled_on == B` au cas (d) (la date de comptabilisation à défaut de valeur)
+  et le refus `payment_date_before_invoice_date` du cas (e) forcé ; la puce de la FAQ dit « plus de 30 jours
+  **après** la date de la facture », la règle n'étant plus symétrique.
+- **Écartées** : s'en tenir à la lettre de la fiche (la puce de la FAQ serait restée ambiguë dans le sens que la
+  story rend faux).
+- **Réversible** : oui.
+
 [#548]: https://github.com/guycorbaz/kesh/issues/548
