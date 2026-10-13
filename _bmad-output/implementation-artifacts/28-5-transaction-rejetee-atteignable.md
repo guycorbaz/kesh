@@ -225,7 +225,7 @@ ligne `GET /api/v1/bank-imports/{id}` (l. 574).
 
 **AC12 (a) — Mutations.** M1-M8 et **M15** font rougir au moins un test chacune (M15 : B10, C-28-5-25) ;
 M13, M14 et **M17** sont déclarées **équivalentes** avec leur preuve (§ Tests, C-28-5-19 ; M17 : `updated_at` porte
-`ON UPDATE CURRENT_TIMESTAMP(3)`), au Debug Log. Aucune survivante assumée.
+`ON UPDATE CURRENT_TIMESTAMP(3)`, équivalence lue sur le DDL **et confirmée par le rejeu de T6a**), au Debug Log. Aucune survivante assumée.
 
 ### Partie b — `28-5b-annuler-rejet-ecran` (PR `closes #526`)
 
@@ -337,7 +337,7 @@ test ajouté, soit déclarée **équivalente** avec sa preuve au Debug Log.
       chaque passe, ciblage interdit** (règle `CLAUDE.md`, § *Pendant une boucle de revue*, exception `kesh-db`) — y
       compris en cours de boucle de revue.
 - [ ] **T5a — Documentation** (AC9 a) : `docs/api-external.md`.
-- [ ] **T6a — Mutations** (AC12 a) M1-M8, M13-M15, M17 (M13, M14 et M17 équivalentes : preuve au Debug Log, pas de rejeu), sous verrou ; restauration `git checkout -- <f>` **puis
+- [ ] **T6a — Mutations** (AC12 a) M1-M8, M13-M15, M17 (M13 et M14 équivalentes : preuve au Debug Log ; **M17 rejouée** — son équivalence, lue sur le DDL, se confirme en l'exécutant : B1 doit rester vert sous M17, résultat consigné au Debug Log ; si B1 rougit, M17 n'est pas équivalente et la fiche se corrige), sous verrou ; restauration `git checkout -- <f>` **puis
       `touch <f>`**.
 - [ ] **T7a — Gate et comptes rendus** : gate complet **et** suite E2E complète au dernier commit de code (verrou de
       gate, recette de `docs/testing.md`, échecs jugés fichier par fichier) ; la 28-5a ne touche **aucun** fichier
@@ -372,7 +372,7 @@ du verrou tenu de `post_accept_returns_409_on_account_lock_contention` l. 1435 ;
 
 | # | Test | Établit |
 |---|---|---|
-| B1 | `unreject_puts_a_rejected_transaction_back_in_the_proposals` | rejet par la route ; `updated_at` **forcé** à une valeur passée au montage (un rejet et son annulation peuvent tomber dans la même milliseconde) ; `204` ; marqueur `NULL`, `version` +1, `updated_at` **postérieur** à la valeur forcée (établit que la ligne a bien été écrite par l'annulation ; ne tue **pas** M17, la colonne étant renouvelée par `ON UPDATE`), `status`/`matched_entry_id` inchangés ; nombre de lignes de `journal_entries` et d'`invoice_settlements` de la société **inchangé** (aucune écriture, aucun règlement) ; la transaction est dans `GET /proposals` (absente avant) ; **une** ligne `reconciliation.unrejected` dont `previouslyRejectedAt` est **la même chaîne** que l'`autoMatchRejectedAt` lu par `GET /bank-imports/{id}` avant l'annulation ; puis **cycle** (AC13) : `POST /reject` du même id → `rejected[]` le contient, `failed[]` vide, marqueur reposé ; `…/unreject` → `204` |
+| B1 | `unreject_puts_a_rejected_transaction_back_in_the_proposals` | rejet par la route ; `updated_at` **forcé** à une valeur passée au montage, par un `UPDATE … SET updated_at = <valeur>` qui l'affecte **explicitement** (sans quoi `ON UPDATE` écraserait la valeur forcée) (un rejet et son annulation peuvent tomber dans la même milliseconde) ; `204` ; marqueur `NULL`, `version` +1, `updated_at` **postérieur** à la valeur forcée (établit que la ligne a bien été écrite par l'annulation ; ne tue **pas** M17, la colonne étant renouvelée par `ON UPDATE`), `status`/`matched_entry_id` inchangés ; nombre de lignes de `journal_entries` et d'`invoice_settlements` de la société **inchangé** (aucune écriture, aucun règlement) ; la transaction est dans `GET /proposals` (absente avant) ; **une** ligne `reconciliation.unrejected` dont `previouslyRejectedAt` est **la même chaîne** que l'`autoMatchRejectedAt` lu par `GET /bank-imports/{id}` avant l'annulation ; puis **cycle** (AC13) : `POST /reject` du même id → `rejected[]` le contient, `failed[]` vide, marqueur reposé ; `…/unreject` → `204` |
 | B2 | `unreject_refuses_a_transaction_that_is_not_rejected` | jamais rejetée → `409` code ; un second appel après succès → `409` ; ni `version` ni `audit_log` ne bougent |
 | B3 | `unreject_refuses_a_reconciled_transaction_even_if_marked` | état **forgé, et dit tel** (`status='reconciled'`, `matched_entry_id`, marqueur posé — patron du test l. 4438) → `409` ; marqueur intact |
 | B4 | `unreject_roles_and_scope` | Consultation → `403` ; autre société → `404` et rien d'écrit (comptes de lignes avant/après, patron l. 4385) ; Administrateur → `204` |
@@ -641,3 +641,13 @@ pas », « rejetées comprises ») reste vrai — il l'est, la story ne change p
   Recompte après remédiation (inchangé) : **13 AC**, tâches T0a-T7a et T0b-T14, **B1-B10**, **V1-V6**, **M1-M17**
   (dont **trois équivalentes** en partie a : M13, M14, M17), choix C-28-5-1 à C-28-5-30. Passe **ciblée P4** à lancer
   (`28-5-validate-prompt-p4-ciblee.md`, une lentille sur le seul diff de cette remédiation).
+- 2026-10-13 — **Validation P4 ciblée** (Haiku 5.5, une lentille sur le diff de la remédiation P3, rapport
+  `$GATE_LOGS/28-5-validate-p4-ciblee.md`) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW. **F1 reclassé LOW par
+  l'orchestrateur** : il ne relève aucun défaut de la conception — l'équivalence de M17 est juste sur le DDL, et
+  aucun contre-exemple n'a été trouvé —, mais une formulation (« pas de rejeu ») qui aurait fait déclarer au dev une
+  équivalence non exécutée ; une spec ne s'exécute pas, sa campagne de mutations si. Remédiation (orchestrateur) :
+  T6a **rejoue M17** et consigne le résultat, AC12 (a) le dit (F1, F2) ; B1 prescrit le forçage par une affectation
+  **explicite** de `updated_at`, sans quoi `ON UPDATE` écraserait la valeur forcée (F3). La remédiation ne touche que
+  la formulation de deux tâches et d'un test prescrit, aucun AC ni aucune règle métier : **boucle de validation
+  close** — trend P1 → P4 : 6 MEDIUM (5 distincts) → 4 MEDIUM (2 distincts) → 1 MEDIUM → 0 MEDIUM après
+  reclassement, 0 HIGH à toutes les passes ; modèles Sonnet, Opus, Haiku, Haiku. Recompte inchangé : 13 AC, B1-B10, V1-V6, M1-M17, C-28-5-1 à C-28-5-30.
