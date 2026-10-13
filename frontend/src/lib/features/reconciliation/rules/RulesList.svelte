@@ -4,7 +4,7 @@
   `RuleFormModal` en mode édition.
 -->
 <script lang="ts">
-	import { errorMessageOf } from '$lib/shared/utils/api-client';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { deleteRule, updateRule } from './rules.api';

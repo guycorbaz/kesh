@@ -14,31 +14,15 @@
 import type { ApiError } from '$lib/shared/types/api';
 import { authState } from '$lib/app/stores/auth.svelte';
 import { apiHealth } from '$lib/shared/utils/api-health.svelte';
+// ⚠️ Cycle d'import bénin (Story 28-2, C-28-2-4) : `i18n.svelte.ts` importe
+// `apiClient`. Aucun des deux modules n'utilise l'autre au niveau supérieur,
+// seulement à l'appel — l'ordre d'évaluation est donc sans effet.
+import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 
-/** Type guard pour vérifier qu'une erreur est un ApiError. */
-export function isApiError(err: unknown): err is ApiError {
-	return (
-		typeof err === 'object' &&
-		err !== null &&
-		'code' in err &&
-		'status' in err &&
-		typeof (err as ApiError).code === 'string' &&
-		typeof (err as ApiError).status === 'number'
-	);
-}
-
-/**
- * Texte lisible d'une erreur attrapée dans un `catch` (Story 15-5b, AC14).
- *
- * Le client lève un `ApiError` **objet simple**, pas une instance d'`Error` :
- * le motif `e instanceof Error ? e.message : String(e)` l'affichait
- * « [object Object] ». Patron de `ManualMatchModal.svelte` : `ApiError` → son
- * `message` ; `Error` → son `message` ; autre → `String(e)`.
- */
-export function errorMessageOf(err: unknown): string {
-	if (isApiError(err)) return err.message;
-	return err instanceof Error ? err.message : String(err);
-}
+// Le garde-type vit dans un module sans dépendance (Story 28-2, C-28-2-2) ;
+// il est réexporté ici pour ses importeurs existants. Le texte d'une erreur
+// attrapée se calcule par `errorMessageOf` (`$lib/shared/utils/error-message`).
+export { isApiError } from './api-error';
 
 /** URLs exclues de l'injection du header Authorization. */
 const AUTH_EXCLUDED_URLS = ['/api/v1/auth/login', '/api/v1/auth/logout', '/api/v1/auth/refresh'];
@@ -215,8 +199,19 @@ function buildHeaders(
 }
 
 /**
+ * Le message d'une réponse d'erreur que le serveur n'a pas décrite (Story
+ * 28-2, AC2) — traduit, le statut HTTP interpolé. Un seul site `i18nMsg` pour
+ * les trois cas de `parseErrorResponse` (C-28-2-4). ⚠️ Le repli porte la
+ * variable sous forme Fluent `{ $status }`, jamais en gabarit JS.
+ */
+function serverStatusMessage(status: number): string {
+	return i18nMsg('error-server-status', 'Erreur serveur ({ $status })', { status });
+}
+
+/**
  * Parse une réponse d'erreur en `ApiError`.
- * Gère les cas : JSON structuré, JSON non structuré, réponse non-JSON.
+ * Gère les cas : JSON structuré, JSON non structuré, réponse non-JSON. Un
+ * `message` présent dans le corps est repris tel quel (le serveur l'a traduit).
  */
 async function parseErrorResponse(res: Response): Promise<ApiError> {
 	let body: unknown;
@@ -225,7 +220,7 @@ async function parseErrorResponse(res: Response): Promise<ApiError> {
 	} catch {
 		return {
 			code: 'UNKNOWN_ERROR',
-			message: `Erreur serveur (${res.status})`,
+			message: serverStatusMessage(res.status),
 			status: res.status,
 		};
 	}
@@ -239,7 +234,7 @@ async function parseErrorResponse(res: Response): Promise<ApiError> {
 		const err = (body as { error: Record<string, unknown> }).error;
 		return {
 			code: typeof err.code === 'string' ? err.code : 'UNKNOWN_ERROR',
-			message: typeof err.message === 'string' ? err.message : `Erreur serveur (${res.status})`,
+			message: typeof err.message === 'string' ? err.message : serverStatusMessage(res.status),
 			details: typeof err.details === 'object' ? (err.details as Record<string, unknown>) : undefined,
 			status: res.status,
 		};
@@ -247,7 +242,7 @@ async function parseErrorResponse(res: Response): Promise<ApiError> {
 
 	return {
 		code: 'UNKNOWN_ERROR',
-		message: `Erreur serveur (${res.status})`,
+		message: serverStatusMessage(res.status),
 		status: res.status,
 	};
 }
@@ -284,14 +279,19 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
 	}
 }
 
-/** Construit l'ApiError correspondant à un fetch échoué (network ou timeout). */
+/**
+ * Construit l'ApiError correspondant à un fetch échoué (network ou timeout).
+ * Les messages sont traduits à la source (Story 28-2, AC2) ; leur repli est le
+ * texte français d'avant, au caractère près. Les `code` ne changent pas : des
+ * écrans aiguillent sur `NETWORK_ERROR`.
+ */
 function toFetchApiError(err: unknown): ApiError {
 	const isTimeout = err instanceof DOMException && err.name === 'AbortError';
 	return {
 		code: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
 		message: isTimeout
-			? 'Le serveur ne répond pas. Réessayez ultérieurement.'
-			: 'Impossible de contacter le serveur. Vérifiez votre connexion.',
+			? i18nMsg('error-timeout', 'Le serveur ne répond pas. Réessayez ultérieurement.')
+			: i18nMsg('error-network', 'Impossible de contacter le serveur. Vérifiez votre connexion.'),
 		status: 0,
 	};
 }

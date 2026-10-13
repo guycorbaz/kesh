@@ -2,7 +2,7 @@
   Story 8-5b FR47 — Modal CREATE/EDIT pour reconciliation_rules.
 -->
 <script lang="ts">
-	import { errorMessageOf } from '$lib/shared/utils/api-client';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { withCurrentAccount } from '$lib/features/accounts/account-options';

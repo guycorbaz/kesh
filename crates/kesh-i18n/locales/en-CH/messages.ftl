@@ -1623,6 +1623,10 @@ common-save = Save
 common-admin-only = Administrators only.
 common-edit = Edit
 error-unexpected = Unexpected error.
+# Story 28-2 — erreurs fabriquées par le client (#520)
+error-network = Unable to reach the server. Check your connection.
+error-timeout = The server is not responding. Try again later.
+error-server-status = Server error ({ $status })
 invoice-send-email-button = Send by email
 invoice-resend-email-button = Resend by email
 invoice-send-email-smtp-tooltip = Email sending is not configured (KESH_SMTP_* variables) — see the administrator manual.

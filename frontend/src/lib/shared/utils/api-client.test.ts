@@ -34,6 +34,7 @@ vi.mock('$lib/shared/utils/api-health.svelte', () => ({
 }));
 
 import { apiClient, isApiError } from './api-client';
+import { loadI18nMessages } from './i18n.svelte';
 import { authState } from '$lib/app/stores/auth.svelte';
 
 /** Fabrique un JWT factice en base64url. */
@@ -582,6 +583,119 @@ describe('apiClient', () => {
 	});
 
 	// --- isApiError type guard ---
+
+	// --- Story 28-2 (#520) : messages fabriqués par le client, traduits à la source ---
+
+	describe('messages fabriqués par le client (Story 28-2, AC2/AC8)', () => {
+		/** Catalogue allemand servi par `/api/v1/i18n/messages` (simulé). */
+		const CATALOGUE_DE = {
+			'error-network': 'Server nicht erreichbar. Überprüfen Sie Ihre Verbindung.',
+			'error-timeout': 'Der Server antwortet nicht. Versuchen Sie es später erneut.',
+			'error-server-status': 'Serverfehler ({ $status })',
+		};
+
+		/** Charge un catalogue par le vrai `loadI18nMessages`, `fetch` simulé. */
+		async function chargerCatalogue(messages: Record<string, string>): Promise<void> {
+			mockFetch.mockResolvedValueOnce(mockResponse(200, { locale: 'de-CH', messages }));
+			await loadI18nMessages();
+		}
+
+		beforeEach(() => {
+			authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
+		});
+
+		afterEach(async () => {
+			// `_messages` est un état de module : sans ce rechargement d'un
+			// catalogue vide, les cas « sans catalogue » dépendraient de l'ordre.
+			mockFetch.mockReset();
+			await chargerCatalogue({});
+		});
+
+		it('sans catalogue : les replis français à l’identique de l’avant-story', async () => {
+			mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
+				code: 'NETWORK_ERROR',
+				message: 'Impossible de contacter le serveur. Vérifiez votre connexion.',
+			});
+			mockFetch.mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
+			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
+				code: 'TIMEOUT',
+				message: 'Le serveur ne répond pas. Réessayez ultérieurement.',
+			});
+			mockFetch.mockResolvedValueOnce(mockNonJsonResponse(502));
+			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
+				code: 'UNKNOWN_ERROR',
+				message: 'Erreur serveur (502)',
+			});
+		});
+
+		it('NETWORK_ERROR porte le texte du catalogue chargé', async () => {
+			await chargerCatalogue(CATALOGUE_DE);
+			mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
+				code: 'NETWORK_ERROR',
+				status: 0,
+				message: CATALOGUE_DE['error-network'],
+			});
+		});
+
+		it('TIMEOUT porte le texte du catalogue chargé', async () => {
+			await chargerCatalogue(CATALOGUE_DE);
+			mockFetch.mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
+			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
+				code: 'TIMEOUT',
+				status: 0,
+				message: CATALOGUE_DE['error-timeout'],
+			});
+		});
+
+		it('réponse non JSON → error-server-status interpolé', async () => {
+			await chargerCatalogue(CATALOGUE_DE);
+			mockFetch.mockResolvedValueOnce(mockNonJsonResponse(502));
+			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
+				code: 'UNKNOWN_ERROR',
+				status: 502,
+				message: 'Serverfehler (502)',
+			});
+		});
+
+		it('JSON sans `error` → error-server-status interpolé', async () => {
+			await chargerCatalogue(CATALOGUE_DE);
+			mockFetch.mockResolvedValueOnce(mockResponse(502, { autre: 1 }));
+			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
+				code: 'UNKNOWN_ERROR',
+				message: 'Serverfehler (502)',
+			});
+		});
+
+		it('JSON `{ error: { code } }` sans message → error-server-status interpolé', async () => {
+			await chargerCatalogue(CATALOGUE_DE);
+			mockFetch.mockResolvedValueOnce(mockResponse(502, { error: { code: 'X' } }));
+			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
+				code: 'X',
+				message: 'Serverfehler (502)',
+			});
+		});
+
+		it('JSON `{ error: { message } }` sans code → le message du corps, repris tel quel', async () => {
+			await chargerCatalogue(CATALOGUE_DE);
+			mockFetch.mockResolvedValueOnce(mockResponse(502, { error: { message: 'm' } }));
+			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
+				code: 'UNKNOWN_ERROR',
+				message: 'm',
+			});
+		});
+
+		it('échec de loadI18nMessages lui-même : la promesse se résout, le repli français reste', async () => {
+			mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+			await expect(loadI18nMessages()).resolves.toBeUndefined();
+			mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+			await expect(apiClient.get('/api/v1/users')).rejects.toMatchObject({
+				code: 'NETWORK_ERROR',
+				message: 'Impossible de contacter le serveur. Vérifiez votre connexion.',
+			});
+		});
+	});
 
 	describe('isApiError', () => {
 		it('retourne true pour un ApiError valide', () => {
