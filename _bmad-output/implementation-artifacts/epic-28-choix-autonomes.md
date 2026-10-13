@@ -1983,3 +1983,53 @@ Rapports `kesh-gate-logs/28-1-validate-p3-{R,F}.md` (hors dépôt). Bilan au Cha
   résolus, les treize de la table **et** `destructive` (garde rouge sur ce seul nom) ; après la T1, les treize.
   Aucun faux positif de prose ou d'attribut SVG au relevé.
 - **Réversible** : oui (le repli s'écrirait si une version future cassait l'API instable).
+
+### C-28-1-41 — Montage de la garde (f) : `>= 25` relevé par l'analyseur, non l'égalité
+
+- **Contexte** : revue de code P1, E3 = A-L3. L'assertion de montage de (f) exigeait « au moins 24 » quand le `HEAD`
+  en compte 25 (C-28-1-38), et comptait par expression régulière, non par l'analyseur qu'emploie (f).
+- **Retenu** : `boutonsDestructifs` (analyseur `svelte/compiler`) partagé par (f) et par le montage ; le montage
+  exige `parAnalyseur === parTexte` (un analyseur aveuglé rendrait moins que le texte) et `parAnalyseur >= 25`.
+  Plus trois auto-tests synthétiques de `destructifsAvecClasse` (attribut, directive, cas négatifs).
+- **Écartée** : l'égalité exacte à 25. Un usage **ajouté** est déjà tenu par (f) ; l'égalité ferait rougir chaque
+  story qui ajoute un bouton de suppression, sans rien protéger de plus, et l'habitude de relever le chiffre sans
+  regarder viderait l'assertion de son sens. Le `>=` voit un usage **retiré** tant que personne n'en ajoute ;
+  au-delà, l'angle mort 7 reste écrit.
+- **Réversible** : oui (une ligne).
+
+### C-28-1-42 — Lockfile : la ligne `"license": "MIT"` rétablie à la main
+
+- **Contexte** : revue de code P1, B3 = E5. `npm install` (npm 9.2) avait retiré `"license": "MIT"` de l'entrée
+  `node_modules/@tailwindcss/node` (C-28-1-37) — bruit de normalisation, sans effet.
+- **Retenu** : ligne rétablie par l'outil Edit, sans résolution npm (aucun `npm install`) : la valeur est celle
+  du `package.json` publié du paquet, et le diff du lockfile contre `bbd0a9a1` se réduit à l'unique insertion
+  `"@tailwindcss/node": "^4.2.2"` de l'entrée racine. JSON relu (`JSON.parse`), `npm run build` et Vitest
+  repassés au gate.
+- **Écartée** : régénérer avec une autre version de npm (résolution, risque d'autres écarts) ; laisser la ligne.
+- **Réversible** : oui. Un futur `npm install` sous npm 9.2 pourra la retirer de nouveau.
+
+### C-28-1-43 — Relevé AC7 (4) : `!` final et préfixes `shadow-`, `from-`, `via-`, `to-` ajoutés
+
+- **Contexte** : revue de code P1, E4.
+- **Retenu** : le `!` final de Tailwind v4 est retiré comme l'initial ; `MOTIF` reçoit `shadow`, `from`, `via`,
+  `to`, et les préfixes composés `ring-offset`, `inset-ring`, `inset-shadow` (avant leur racine, pour que le nom
+  ne commence pas par `offset-`) ; `nomDe` lit le nom dans le groupe du motif. Deux auto-tests synthétiques.
+  Mesuré : le relevé élargi ne fait naître **aucun** nom non résolu neuf (garde verte, table inchangée) — les
+  candidats neufs du dépôt sont `shadow-sm`, `shadow-md`, `shadow-lg`, que Tailwind résout.
+- **Écrits en angles morts** (en-tête de la garde) plutôt que traités : les `.js` de `src/` et `app.html` (aucune
+  classe de couleur au 2026-10-13 ; `app.html` ne porte que `<meta name="text-scale">`) ; la table tient des noms,
+  si bien qu'un `bg-danger` neuf passe (voulu, #645 traite le nom).
+- **Réversible** : oui.
+
+### C-28-1-44 — E2E (b) : attente des animations et nœud axe résolu par son `target`
+
+- **Contexte** : revue de code P1, E1. axe ne vérifiait que `violations == []` ; un nœud `incomplete` passait à
+  vide, et l'analyse pouvait courir pendant le fondu d'ouverture du dialogue.
+- **Retenu** : avant toute mesure du dialogue, `expect.poll` sur `document.getAnimations()` en cours, animations
+  infinies exclues (un indicateur de chargement ne finit jamais) ; puis *Supprimer définitivement* doit figurer
+  dans les `passes` de `color-contrast` et non dans ses `incomplete`. Le nœud se reconnaît en résolvant dans la
+  page le sélecteur `target[0]` donné par axe : le premier essai, sur `node.html`, rougissait à tort — axe tronque
+  le `html` d'un élément long, et la classe du bouton fait passer le `data-testid` au-delà de la coupe.
+- **Écartée** : `getAnimations()` du seul dialogue (le voile, `Dialog.Overlay`, est un frère et anime aussi) ;
+  une seconde analyse bornée au bouton (deux analyses pour une question).
+- **Réversible** : oui.

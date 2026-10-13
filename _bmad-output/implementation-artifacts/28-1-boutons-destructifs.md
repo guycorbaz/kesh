@@ -6,8 +6,11 @@
 P1 : prompt `28-1-review-prompt-p1.md`. Validation close après la passe ciblée P4. Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`), sur `6f971d76`
 (rétrospective de l'Epic 27), branche `story/28-1`, worktree `/home/gcorbaz/devel/kesh-28-1`, rebasée en
 validation P2 sur `5aad8b35` (kickoff de l'Epic 28, #643). Choix consignés au registre
-`epic-28-choix-autonomes.md` (**C-28-1-1 à C-28-1-36** ; le registre séparé de la story y a été versé par union
-en validation P2). 13 AC (AC1-AC13), tâches T0-T9, mutations M1-M22 (M18 retirée). Validations P1 (Sonnet),
+`epic-28-choix-autonomes.md` (**C-28-1-1 à C-28-1-44** — recompté le 2026-10-13 à la remédiation de la revue de
+code P1, `grep -c '^### C-28-1-'` ; le registre séparé de la story y a été versé par union en validation P2). 13 AC
+(AC1-AC13), tâches T0-T9, mutations M1-M22 (M18 retirée), plus P1-M1 à P1-M11 de la remédiation de la revue de
+code P1. Revue de code P1 (Sonnet, lentilles B, E, A) remédiée ; passe ciblée P2 : prompt
+`28-1-review-prompt-p2-ciblee.md`. Validations P1 (Sonnet),
 P2 (Opus) et P3 (Sonnet), lentilles R et F, remédiées — **périmètre réduit à #640** en P1 (C-28-1-17), puis **au
 strict nécessaire pour fermer #640** en P2 (C-28-1-26) ; passe ciblée P4 (Haiku, prompt
 `28-1-validate-prompt-p4-ciblee.md`), remédiée — validation close. PR : **`closes #640`** (et `refs #645 #646 #648`, angles morts renvoyés).
@@ -477,6 +480,11 @@ absente — d'autres stories de l'epic la créent aussi, fusion par union), sous
 >   sauvegarde et de la restauration restent sans couleur, trois cadres d'erreur de l'import bancaire gardent leur
 >   bordure rouge sans fond ([#645](https://github.com/guycorbaz/kesh/issues/645)).
 
+*[Amendement de la revue de code P1, 2026-10-13 (B1 = A-L1) : le texte ci-dessus promettait trop pour la
+troisième croix de la classe E (`JournalEntryForm.svelte`, `hover:text-destructive`), rouge au survol seulement.
+Le CHANGELOG écrit : « … les croix de retrait d'une ligne de saisie des factures fournisseurs, qui passent du gris
+foncé au rouge ; la croix de retrait d'une ligne d'écriture, elle, ne rougit qu'au survol ».]*
+
 **AC13 — Gates, au dernier commit de code.**
 
 `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` ; E2E
@@ -486,6 +494,24 @@ fichier par fichier) **plus** la spec neuve ; `scripts/test-fast.sh` complet (le
 `crates/kesh-api/tests/textes_coherents.rs`). Gates lourds sous `flock
 /home/gcorbaz/devel/kesh-gate-logs/.gate.lock`. Le Dev Agent Record n'affirme que ce qui a tourné, chiffres
 recomptés.
+
+### Amendements de la revue de code P1 (2026-10-13)
+
+Portés par les **tests** seuls (aucune ligne de production) ; le texte des AC ci-dessus reste celui de la
+validation, ces amendements le complètent.
+
+- **AC6 (f)** (B2, E3 = A-L3 ; C-28-1-41) : la garde refuse aussi une **directive `class:`** sur un
+  `<Button variant="destructive">` ; trois auto-tests synthétiques de `destructifsAvecClasse` ; le montage compte
+  par l'**analyseur** (`boutonsDestructifs`), exige l'égalité avec le compte textuel et `>= 25`.
+- **AC7 (1) et (1-bis)** (E2) : `focus-visible:ring-destructive/40` est le cinquième mot entier exigé de la
+  variante ; la sortie fusionnée le contient et ne contient plus `focus-visible:ring-ring/50`.
+- **AC7 (2) et (3)** (E6) : le `@theme` est lu **sans ses commentaires** ; auto-test synthétique.
+- **AC7 (4)** (E4 ; C-28-1-43) : `!` final retiré ; préfixes `shadow-`, `from-`, `via-`, `to-`, `ring-offset-`,
+  `inset-ring-`, `inset-shadow-` relevés ; deux auto-tests. Angles morts écrits : `.js` et `app.html` non lus,
+  table au niveau du nom.
+- **AC8 (b)** (E1 ; C-28-1-44) : axe ne court qu'une fois les animations du document finies (infinies exclues), et
+  *Supprimer définitivement* doit être dans les `passes` de `color-contrast`, non dans ses `incomplete`.
+- **AC12** (B1 = A-L1) : voir l'amendement sous l'AC12.
 
 ## Tasks / Subtasks
 
@@ -707,7 +733,9 @@ se ressaisit). Signalé à l'orchestrateur, sans demande d'issue.
    la bordure de tous les *Annuler* `outline` de l'application, dont celui du dialogue de (b), et des déclencheurs
    neutres bordés. Le bouton reste identifiable par sa forme et son libellé (texte courant `#1e293b`, 14,63:1) ;
    le contraste de la bordure n'est pas traité ici. **Renvoyé à #645**, qui le porte depuis la validation P2.
-10. **L'anneau de focus `focus-visible:ring-destructive/40` n'est asserté par rien** : sa couleur passe par
+10. *[Revue de code P1, E2 : la PRÉSENCE de la classe est désormais assertée par l'AC7 (1) et (1-bis) — retirer
+    `focus-visible:ring-destructive/40` rougit (P1-M1). Reste vrai ce qui suit pour sa COULEUR rendue.]*
+    **L'anneau de focus `focus-visible:ring-destructive/40` n'est asserté par rien** : sa couleur passe par
     `color-mix(in oklab, …)`, que `getComputedStyle` ne rend pas en `rgb(…)`. Il est vu sur la capture
     `a-focus-<clair|sombre>.png` (AC8), cadrée 8 px au-delà de la boîte de bordure pour qu'il y figure
     (C-28-1-33), par l'œil seulement ; la bordure et le contour de focus, eux, sont assertés (AC3).
@@ -723,6 +751,10 @@ se ressaisit). Signalé à l'orchestrateur, sans demande d'issue.
 12. **Relevé de l'AC7 (4) : un jeton suivi d'une ponctuation** (`text-foo.` ou `text-foo,` dans un commentaire ou
     une chaîne de prose) est écarté par l'ancre `$` : un nom non défini écrit **seulement** ainsi échapperait à la
     garde. Aucune classe Tailwind ne s'écrit ainsi dans un attribut ; le trou est assumé (C-28-1-34).
+13. *[Ajouté en revue de code P1, E4, C-28-1-43.]* **Relevé de l'AC7 (4) : les `.js` de `src/` et `app.html` ne
+    sont pas lus** (aucune classe de couleur au 2026-10-13), et **la table tient des noms** : un `bg-danger` neuf
+    passe, `danger` y figurant déjà (voulu, #645 traite le nom). Le `!` final et les préfixes `shadow-`, `from-`,
+    `via-`, `to-`, `ring-offset-`, `inset-ring-`, `inset-shadow-`, eux, sont relevés depuis la remédiation P1.
 
 ### État actuel des fichiers modifiés — ce qui doit être préservé
 
@@ -989,6 +1021,52 @@ PDF ; bases `kesh_281` et `kesh_e2e_281` recréées avant le gate backend **et**
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 - `_bmad-output/implementation-artifacts/28-1-review-prompt-p1.md` (nouveau)
 
+Remédiation de la revue de code P1 (commit de code `99682720`) : les trois gardes Vitest, la spec
+`destructive-buttons.spec.ts`, `CHANGELOG.md`, `frontend/package-lock.json` (modifiés) ; registre (C-28-1-41 à
+C-28-1-44) ; `28-1-review-prompt-p2-ciblee.md` (nouveau). **Aucun fichier de production** :
+`git diff --stat 37b74298..HEAD -- frontend/src ':!*.test.ts' ':!*.spec.ts'` ne rend rien.
+
+### Remédiation de la revue de code P1 (2026-10-13, Opus 5.5)
+
+**Mutations de la remédiation** — journal `kesh-gate-logs/28-1-mutations-p1.log`, chacune à motif vérifié unique,
+restaurée par `git checkout --` puis `touch`, au `HEAD` `99682720`. **11 / 11 rouges** :
+
+| # | Mutation | Rougit |
+|---|---|---|
+| P1-M1 | `focus-visible:ring-destructive/40` retiré de la variante (`button.svelte`) | 2 — (1) le mot entier, (1-bis) |
+| P1-M2 | `blocTheme` ne retire plus les commentaires | 1 — auto-test du jeton commenté |
+| P1-M3 | `--color-destructive-hover` mis en commentaire dans `app.css` | 3 — (2) défini, (2) tout jeton, (3) survol |
+| P1-M4 | (f) ne refuse plus la directive `class:` | 1 — auto-test de la directive |
+| P1-M5 | `class:bg-transparent={false}` ajouté à *Supprimer l'import* | 1 — (f) sur le dépôt |
+| P1-M6 | `boutonsDestructifs` : `===` → `!==` | 5 — trois auto-tests, (f), montage |
+| P1-M7 | `variant="destructive"` retiré de l'exemple désactivé de `/design-system` | 1 — montage (`>= 25`) |
+| P1-M8 | le `!` final n'est plus retiré | 1 — auto-test du `!` final |
+| P1-M9 | `shadow`, `from`, `via`, `to` retirés du motif | 1 — auto-test des préfixes |
+| P1-M10 | E2E : `withRules(['button-name'])` au lieu de `color-contrast` | 2/2 tests (b) — « absent de passes » |
+| P1-M11 | E2E : `class="bg-linear-to-r from-destructive to-destructive-hover"` sur *Supprimer définitivement* | 2/2 tests (b) — absent de `passes` ET présent dans `incomplete` ; `violations` vide |
+
+P1-M11 est la preuve d'E1 : l'ancien test (`violations == []` seul) serait resté vert. L'attente des animations,
+elle, n'a pas de mutation qui rougisse de façon déterministe (le fondu dure 100 ms) : c'est une mesure de
+robustesse, non une assertion.
+
+**Premier essai d'E1 rouge à tort**, consigné : l'identification par `node.html` rendait « absent de passes »
+sans mutation — axe tronque le `html` d'un élément long avant le `data-testid`. Remplacée par la résolution de
+`target[0]` dans la page (C-28-1-44) ; E2E ciblé `destructive-buttons.spec.ts` ensuite vert, 4/4
+(`kesh-gate-logs/28-1-p1rem-e2e-cible.log`).
+
+**Gates au dernier commit de code `99682720`**, sous `flock`, bases `kesh_281` et `kesh_e2e_281` remises à zéro
+(drop, create, migrations, seed) avant le backend et avant l'E2E — journaux `kesh-gate-logs/28-1-p1rem-*` :
+
+- `scripts/test-fast.sh` : `3514 tests run: 3514 passed, 6 skipped` (aucun Rust touché) ;
+- `npm run check` : 0 erreur, 29 avertissements (5 fichiers), comme au développement ;
+  `lint-i18n-ownership` : PASS ; `npm run build` : vert ;
+- `npm run test:unit` : **1443 / 1443**, 138 fichiers. Périmètre : de `5ded5663` à `99682720`, +7 tests exécutés
+  (`button-destructive` 17 → 19, `boutons-rouges-inventory` 8 → 11, `jetons-non-definis` 7 → 9) ; 1436 + 7 = 1443 ;
+- **E2E complet**, port 3034 : **271 passés, 7 échoués, 19 ignorés** (11,0 min, fin 13:45 UTC). Les 7 sont les
+  sept KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* : `mode-expert:26`, `:41`,
+  `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`. Aucun huitième ; KF-045 (`invoices:415`, `:439`)
+  verte, l'heure passée midi UTC. 271 = 267 (référence 27-4) + 4 de la spec neuve.
+
 ## Change Log
 
 - 2026-10-13 — Fiche créée en autonomie (Opus 5.5), `ready-for-dev`. Prémisse de l'issue corrigée (C-28-1-1 :
@@ -1121,3 +1199,25 @@ PDF ; bases `kesh_281` et `kesh_e2e_281` recréées avant le gate backend **et**
   `3b0f7707` (dernier commit de code `37b74298`) : `test-fast.sh` 3514/3514 (6 ignorés) ; Vitest 1436/1436 ;
   `check`, `lint-i18n-ownership`, `build` verts ; E2E complet 269 passés, 9 échoués = 7 KF-029 + 2 KF-045 (avant
   12:00 UTC), voir le Dev Agent Record pour le rejeu. Choix C-28-1-37 à C-28-1-40. Statut `review`.
+- 2026-10-13 — **Revue de code P1** (Sonnet selon le prompt versionné `28-1-review-prompt-p1.md`, lentilles B, E et
+  A ; rapports hors dépôt `kesh-gate-logs/28-1-review-p1-{B,E,A}.md`, diff `bbd0a9a1..3b0f7707`) : **B 0 / 0 / 0 /
+  3 LOW ; E 0 / 0 / 2 MEDIUM / 4 LOW ; A 0 / 0 / 0 / 3 LOW** (+ 3 observations sans sévérité), bilans recomptés sur
+  les titres des rapports, soit **0 CRITICAL / 0 HIGH / 2 MEDIUM / 10 LOW** bruts. Après rapprochement (B1 = A-L1,
+  B3 = E5, E3 = A-L3) : **9 sujets distincts — 2 MEDIUM (E1, E2), 7 LOW** ; aucun ne touche de code de production. Remédiés par
+  `99682720` (Opus 5.5), tests, CHANGELOG et lockfile seuls :
+  - **E1 (MEDIUM)** : l'E2E (b) attend la fin des animations du document et exige que `color-contrast` ait
+    **évalué** *Supprimer définitivement* (`passes`, non `incomplete`) ; P1-M10 et P1-M11 rougissent (C-28-1-44).
+  - **E2 (MEDIUM)** : `focus-visible:ring-destructive/40` exigé en (1), `focus-visible:ring-ring/50` absent en
+    (1-bis) ; P1-M1 rougit ; angle mort 10 annoté.
+  - **LOW** : B1 = A-L1 (CHANGELOG : la croix d'écriture ne rougit qu'au survol ; amendement sous l'AC12) ; B2
+    (directive `class:` refusée par (f), auto-test) ; B3 = E5 (`"license": "MIT"` rétabli à la main, C-28-1-42) ;
+    E3 = A-L3 (montage `>= 25` par l'analyseur, égal au compte textuel, trois auto-tests, C-28-1-41) ; E4 (`!`
+    final et préfixes `shadow-`/`from-`/`via-`/`to-`/`ring-offset-` relevés, `.js`/`app.html` en angle mort 13,
+    C-28-1-43) ; E6 (`@theme` lu sans commentaires, auto-test) ; A-L2 (Status : C-28-1-1 à C-28-1-44, recompté).
+  - Recomptes : choix **C-28-1-41 à C-28-1-44** (`grep -c '^### C-28-1-'` → 44) ; mutations P1-M1 à P1-M11,
+    **11 / 11 rouges** ; tests Vitest **+7** exécutés de `5ded5663` à `99682720` (1436 → 1443) ; angles morts 1-13.
+  - Gates au dernier commit de code `99682720`, sous `flock`, bases remises à zéro : `test-fast.sh` 3514/3514
+    (6 ignorés) ; Vitest 1443/1443 ; `check`, `lint-i18n-ownership`, `build` verts ; E2E complet **271 passés,
+    7 échoués = les 7 KF-029**, 19 ignorés (KF-045 verte, après midi UTC).
+  - Passe ciblée P2 (Haiku, une lentille, diff aplati de cette remédiation) : `28-1-review-prompt-p2-ciblee.md`,
+    rapport attendu `kesh-gate-logs/28-1-review-p2-ciblee.md`.
