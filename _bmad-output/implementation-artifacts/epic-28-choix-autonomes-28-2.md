@@ -23,6 +23,7 @@ Fiche : `28-2-erreurs-object-object.md`. Choix faits à la création de la fiche
   la garde ne pourrait pas interdire `String(err)`) ; A + B + D + E (refonte d'une centaine de sites, hors registre
   de la demande, dans sept modules de plus).
 - **Réversible** : oui.
+- **Révisé en validation P1** : classe C passée à la valeur brute (C-28-2-19) ; classe D suivie par #644 (C-28-2-22).
 
 ### C-28-2-2 — L'utilitaire dans un module neuf ; `isApiError` extrait et réexporté
 
@@ -107,6 +108,7 @@ Fiche : `28-2-erreurs-object-object.md`. Choix faits à la création de la fiche
 - **Retenu** : inventoriée et comptée dans la fiche ; issue demandée à l'orchestrateur, P3.
 - **Écartée** : la traiter ici (découpage préventif, et défaut distinct de #520).
 - **Réversible** : oui.
+- **Révisé en validation P1** : l'issue est ouverte (#644, par l'orchestrateur) ; voir C-28-2-22.
 
 ### C-28-2-11 — Un test par fichier de la classe B, la garde pour le reste
 
@@ -115,6 +117,7 @@ Fiche : `28-2-erreurs-object-object.md`. Choix faits à la création de la fiche
   un cas dans un test existant s'il y en a un, sinon la garde AC6 seule, écrit au Dev Agent Record.
 - **Écartée** : un test par site (vingt montages pour une ligne chacun).
 - **Réversible** : oui.
+- **Révisé en validation P1** : plus d'exception pour `reports` — voir C-28-2-21.
 
 ### C-28-2-12 — La section `[0.13.3] — Non publié` du CHANGELOG est créée par cette branche si absente
 
@@ -133,4 +136,111 @@ Fiche : `28-2-erreurs-object-object.md`. Choix faits à la création de la fiche
   `/home/gcorbaz/devel/kesh-gate-logs/28-2-captures/`, citées au Dev Agent Record et au prompt de revue (action B2
   de la rétrospective de l'Epic 27).
 - **Écartée** : captures versionnées (poids du dépôt, aucune garde ne les relit).
+- **Réversible** : oui.
+
+---
+
+Choix faits à la remédiation de la validation P1 (2026-10-13, Opus 5.5, autonomie). Rapports hors dépôt :
+`kesh-gate-logs/28-2-validate-p1-{R,F}.md`.
+
+### C-28-2-15 — Le manuel cite le message réseau ; il reste exact et ne change pas (F1 = R1)
+
+- **Contexte** : `user-manual.tex:1871-1873` cite « Impossible de contacter le serveur… » (import CSV, fichier
+  modifié après l'aperçu), citation coupée sur deux lignes — d'où le zéro du `grep` mono-ligne de la fiche.
+- **Retenu** : AC11 réécrit ; le passage reste exact en français (repli et texte `fr-CH` identiques, garde
+  `i18n-repli-divergent-actif`) ; les manuels `de/en/it` n'ont pas de `.tex` ; manuel et PDF inchangés ; contrôle
+  sur texte aplati, `.tex` et PDF, sorties attendues écrites.
+- **Écartées** : ajouter « dans la langue de l'installation » au passage (rien ne change pour le lecteur du manuel
+  français) ; supprimer la citation (elle aide l'utilisateur à reconnaître le cas).
+- **Réversible** : oui.
+
+### C-28-2-16 — Portée des liaisons dans la garde, et échec sur portée incalculable (F2)
+
+- **Contexte** : l'AC6 disait « recueille les liaisons » sans borner leur portée ; `corpsDeFonction` rend `null` sur
+  des accolades déséquilibrées, et un `null` sauté en silence est le précédent de la 23-1a.
+- **Retenu** : portée = bloc (`corpsDeFonction`) pour `catch` et `.catch` à bloc ; pour un `.catch` à
+  corps-expression, de `=>` à la parenthèse qui ferme `.catch(`, même saut des littéraux — par une fonction
+  `blocEquilibre(source, ouvrante, ouvre, ferme)` exportée d'`i18n-literal-reader.js`, dont `corpsDeFonction`
+  devient un appel (les outils de saut des littéraux y sont privés) ; une portée `null` fait échouer la garde en
+  nommant la ligne ; auto-tests accolades dans chaîne / gabarit / regex.
+- **Écartées** : chercher les règles dans tout le fichier (faux positifs sur les `err` d'autres portées) ; sauter
+  une portée incalculable avec un avertissement (garde muette) ; recopier la boucle dans la garde, ou exporter les
+  trois outils privés du lecteur (copie de logique, ou surface publique élargie pour un seul appelant).
+- **Réversible** : oui.
+
+### C-28-2-17 — Planchers anti-muet par forme de liaison (F3)
+
+- **Contexte** : un plancher global de 160 laissait passer la perte de toutes les liaisons `.catch` (5) ou typées (4).
+- **Retenu** : fichiers ≥ 310 (317), `catch` non typé ≥ 150 (159), typé ≥ 4 (4), `.catch` lié ≥ 5 (5), total ≥ 160
+  (168) ; les petites formes au plancher exact ; un plancher qui rougit se baisse avec sa raison écrite.
+- **Écartée** : bornes exactes partout (rougiraient à chaque `catch` ajouté ou retiré par une story ordinaire).
+- **Réversible** : oui.
+
+### C-28-2-18 — G3 interdit `instanceof Error` sous toute forme, dans tout le fichier (F8)
+
+- **Contexte** : G3 ne visait que la forme ternaire ; `if (e instanceof Error) msg = e.message; else msg = repli;`
+  n'était vue par aucune règle ; et la forme peut vivre hors d'une portée de liaison (`.reason` d'`allSettled`,
+  fonction intermédiaire).
+- **Retenu** : toute occurrence hors commentaires et hors appel `console`, dans tout le fichier ; à la fin de la
+  story il n'en reste aucune (les 9 lignes de code disparaissent avec A, B et C).
+- **Écartée** : garder la seule forme ternaire (laisse passer la forme `if`, qui affiche le même texte technique).
+- **Réversible** : oui.
+
+### C-28-2-19 — Classe C : les journalisations passent la valeur brute (F5 = R8)
+
+- **Contexte** : `hooks.client.ts:27`, `auth.svelte.ts:301`, `api-client.ts:162` journalisent
+  `error instanceof Error ? error.message : String(error)` : une `ApiError` y devient « [object Object] ».
+- **Retenu** : `console.*('[…]:', error)` — une ligne par site ; la console affiche l'objet (`code`, `message`,
+  `status`). L'exemption `console` de la garde reste (auto-tests). Classe C : 3 → 0.
+- **Écartées** : laisser en l'état (diagnostic perdu, alors que `errorMessageOf` prend soin de le conserver) ;
+  un formateur de journal dédié (code neuf pour trois lignes).
+- **Réversible** : oui.
+
+### C-28-2-20 — `handleDelete` de `BankProfileList.svelte` reçoit un `try/catch` (R10)
+
+- **Contexte** : `await deleteBankProfile(id)` sans `try/catch` : un refus devient un rejet non géré, sans message ;
+  même fichier qu'A3.
+- **Retenu** : `try { delete; load } catch (err) { notifyError(errorMessageOf(err)); }` — notification, la liste
+  restant affichée ; test et mutation M23.
+- **Écartées** : `errorMessage = …` (remplacerait toute la liste) ; l'angle mort seul (le fichier est touché, le
+  correctif tient en trois lignes).
+- **Réversible** : oui.
+
+### C-28-2-21 — Tests de page neufs pour `reports` et `api-keys`, sans exception (R7)
+
+- **Contexte** : l'AC9 exigeait un test par fichier B puis exceptait `reports` ; ni `reports` ni `api-keys` n'ont de
+  test de page (`reports.api.test.ts` teste l'API).
+- **Retenu** : `api-keys-page.test.ts` (B6) et `reports-page.test.ts` (B15, branche `REPORT_PERIOD_…` préservée) ;
+  mutations M21, M22.
+- **Écartée** : la garde AC6 seule pour `reports` (elle voit la forme, pas le rendu).
+- **Réversible** : oui.
+
+### C-28-2-22 — Classe D hors périmètre, suivie par #644 (F4, R2, R3)
+
+- **Contexte** : décision de l'orchestrateur après la validation P1 — la correction n'est pas mécanique (silences
+  voulus, `invoices/[id]/+page.svelte:186` et `:483`), et l'intégrer porterait la story de 6 à au moins 10 modules.
+  Il a ouvert l'issue **#644** (bug, P3).
+- **Retenu** : la fiche cite la classe D comme angle mort assumé, avec renvoi `refs #644` (PR comprise), et les deux
+  silences voulus ; **aucune** autre issue de suivi n'est demandée.
+- **Écartée** : intégrer la classe D (règle G8, ~25 fichiers, dérogation au découpage intenable).
+- **Réversible** : oui.
+
+### C-28-2-23 — La traduction vaut une fois le catalogue chargé ; CHANGELOG et AC10 le disent (F6 ≈ R5)
+
+- **Contexte** : le catalogue est derrière l'authentification et chargé à l'`onMount` racine si une session est
+  ouverte : `/login`, un rechargement serveur injoignable et la navigation après connexion restent en français ;
+  l'E2E en `fr-CH` ne distingue pas un texte traduit d'un littéral.
+- **Retenu** : angle mort n° 5 ; phrase du CHANGELOG restreinte ; l'AC10 écrit que le scénario 2 ne prouve pas la
+  traduction (les tests unitaires au catalogue allemand le font) ; l'orchestrateur vérifie si une issue couvre la
+  limite préexistante du chargement du catalogue.
+- **Écartées** : charger le catalogue après la connexion (hors sujet, touche l'authentification) ; une instance E2E
+  en `de-CH` (montage neuf pour un contrôle que l'unitaire fait déjà).
+- **Réversible** : oui.
+
+### C-28-2-24 — Une `ApiError` dont le `message` n'est pas une chaîne rend le générique (F7)
+
+- **Contexte** : `isApiError` ne vérifie que `code` et `status` ; un `message` `undefined` ou numérique passerait.
+- **Retenu** : ligne explicite au tableau de l'AC1 et cas de test ; `isApiError` lui-même n'est pas durci (110
+  importeurs, comportement inchangé hors de l'utilitaire).
+- **Écartée** : durcir `isApiError` (changerait l'aiguillage de sites que la story ne touche pas).
 - **Réversible** : oui.

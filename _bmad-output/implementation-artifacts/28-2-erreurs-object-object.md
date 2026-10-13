@@ -5,14 +5,16 @@
 **ready-for-dev** — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
 (rétrospective de l'Epic 27, #641), branche `story/28-2`, worktree `/home/gcorbaz/devel/kesh-28-2`. Port **3035**,
 bases `kesh_282` / `kesh_e2e_282`. Choix consignés au registre `epic-28-choix-autonomes-28-2.md`,
-**C-28-2-1 à C-28-2-14** (à verser par union au registre de l'epic à la fusion). 11 AC (AC1 à AC11).
-Validation P1 à lancer : `28-2-validate-prompt-p1.md` (Sonnet, lentilles R et F). PR : **`closes #520`**.
+**C-28-2-1 à C-28-2-24** (à verser par union au registre de l'epic à la fusion). 11 AC (AC1 à AC11).
+Validation P1 faite (Sonnet, lentilles R et F : 7 MEDIUM, 11 LOW, remédiés) ; validation P2 à lancer :
+`28-2-validate-prompt-p2.md` (Opus, lentilles R et F). PR : **`closes #520`**, **`refs #644`** (classe D).
 
 ## Story
 
 **As a** comptable qui utilise Kesh,
 **I want** que toute erreur renvoyée par le serveur s'affiche par son message — traduit dans la langue de
-l'installation —, et qu'une panne imprévue s'affiche par un message générique traduit,
+l'installation dès que le catalogue est chargé (§ Angles morts, n° 5) —, et qu'une panne imprévue s'affiche par un
+message générique traduit,
 **so that** je ne lise plus jamais « [object Object] » à la place de la raison du refus, et que je sache quoi
 corriger.
 
@@ -59,7 +61,7 @@ ne le réexporte pas ; ses quatre importeurs l'importent du module neuf. Règles
 | entrée | rendu |
 |---|---|
 | `ApiError` (`isApiError`) dont `message` est une chaîne non vide après `trim()` | `err.message`, tel quel (le serveur l'a déjà traduit, `crates/kesh-api/src/errors.rs:31-60`) |
-| `ApiError` dont `message` est vide ou blanc | `i18nMsg('error-unexpected', 'Erreur inattendue.')` |
+| `ApiError` dont `message` est vide ou blanc, **ou n'est pas une chaîne** (`undefined`, nombre, objet : `isApiError`, `api-client.ts:19-28`, ne vérifie que `code` et `status` — C-28-2-24) | `i18nMsg('error-unexpected', 'Erreur inattendue.')` |
 | toute autre valeur — `Error`, `TypeError`, `DOMException`, chaîne, nombre, `null`, `undefined`, objet quelconque | `i18nMsg('error-unexpected', 'Erreur inattendue.')`, **et** `console.error('[errorMessageOf]', err)` pour le diagnostic (C-28-2-3) |
 
 ⛔ Le rendu n'est **jamais** `'[object Object]'`, jamais la chaîne vide, jamais `'undefined'`/`'null'`.
@@ -105,10 +107,20 @@ qui précèdent une redirection (C-28-2-5).
 Pour A3 et A4, le préfixe français en dur disparaît (C-28-2-6) : le message du serveur (« … introuvable », traduit)
 ou du client (réseau, traduit par l'AC2) se suffit, et « Profil introuvable » était **faux** pour une panne réseau.
 
+**Même fichier qu'A3, un rejet sans aucun message** (C-28-2-20) : `BankProfileList.svelte:25-31` (`handleDelete`)
+appelle `await deleteBankProfile(id)` **sans `try/catch`** — un refus de suppression devient un rejet non géré,
+rien ne s'affiche. Il reçoit un `try { await deleteBankProfile(id); await load(); } catch (err) {
+notifyError(errorMessageOf(err)); }` : une **notification**, et non `errorMessage`, qui remplace toute la liste
+(`{:else if errorMessage}`, `:41`) et ferait disparaître les profils pour un refus ponctuel. Ce site n'est pas un
+« [object Object] » (il n'a pas de `catch`, aucun détecteur de la fiche ne le voit) : il est traité parce que la
+story touche ce fichier et que l'écran d'A3 serait laissé avec un second chemin muet.
+
 ### AC4 — Les seize replis `String` / `instanceof Error` (classe B) passent par l'utilitaire
 
 Chaque site ci-dessous traite déjà l'`ApiError`, mais rend `String(x)` (ou `x.message` d'une `Error`) pour tout le
-reste. Remplacement **mécanique** ; les branches spécifiques existantes (codes, drapeaux) sont **préservées**.
+reste. Remplacement **mécanique** d'une expression par un appel pour B1-B10 et B15 ; **réécriture d'un
+`if/else`** pour B11-B14 (deux branches fondues en une) ; **suppression** pour B16. Les branches spécifiques
+existantes (codes, drapeaux) sont **préservées**.
 
 | # | site | après |
 |---|---|---|
@@ -127,15 +139,28 @@ reste. Remplacement **mécanique** ; les branches spécifiques existantes (codes
 Les quatre importeurs actuels d'`errorMessageOf` changent d'import, sans autre changement :
 `routes/(app)/reconciliation/rules/+page.svelte:5`, `lib/features/reconciliation/ReconciliationProposals.svelte:22`,
 `lib/features/reconciliation/rules/RulesList.svelte:7`, `lib/features/reconciliation/rules/RuleFormModal.svelte:5`.
-Un import d'`isApiError` qui devient inutilisé est **retiré** (`npm run check` / ESLint le signaleraient).
+Un import d'`isApiError` qui devient inutilisé est **retiré** (`npm run check` / ESLint le signaleraient) — au
+moins celui de `BankAccountJournalLinkForm.svelte:11`, dont les deux seuls usages (`:95`, `:124`) sont B11 et B12.
 
 ### AC5 — L'ensemble des sites non résolus est clos, et chaque reste est nommé
 
 À la fin de la story, l'inventaire du § Dev Notes *Inventaire des sites NON RÉSOLUS* est **recompté** depuis la
-source (mêmes commandes), et le Dev Agent Record rend : classe A = 0, classe B = 0 ; classe C (journalisation seule)
-= 3, inchangée, légitime **par critère** ; classe D (affichage réservé aux `ApiError`, rien pour le reste) =
-**angle mort assumé**, comptée, issue de suivi **demandée à l'orchestrateur** (C-28-2-10) ; classe E (repli
-`i18nMsg` générique) conforme, non refactorée.
+source (mêmes commandes), et le Dev Agent Record rend : classe A = 0, classe B = 0 ; classe C (journalisation)
+= **0** — les trois journalisations passent désormais la **valeur elle-même** à `console.*`, au lieu de la
+convertir en texte (C-28-2-19, ci-dessous) ; l'exemption `console` de l'AC6 reste, exercée par ses auto-tests ;
+classe D (affichage réservé aux `ApiError`, rien pour le reste) = **angle mort assumé**, comptée, suivie par
+l'issue **#644** (bug, P3, ouverte par l'orchestrateur — C-28-2-22 ; la PR la cite en `refs #644`, aucune autre
+issue de suivi n'est à demander) ; classe E (repli fixe pour une valeur qui n'est pas une `ApiError`) conforme, non
+refactorée.
+
+**Classe C, une ligne par site** (C-28-2-19) : `hooks.client.ts:27`, `lib/app/stores/auth.svelte.ts:301`,
+`lib/shared/utils/api-client.ts:162` journalisent `error instanceof Error ? error.message : String(error)` — une
+`ApiError` d'`hydrate()` y devient « [object Object] » dans la console, et le diagnostic perd son `code` et son
+`message`. L'argument devient `error` lui-même (`console.error('[auth] …:', error)`), que la console affiche en
+objet structuré (`code`, `message`, `status`) comme une `Error` avec sa pile. Le libellé du premier argument ne
+change pas : `auth.svelte.test.ts:196` (`expect.stringContaining('Hydration via /me returned non-OK status 503')`)
+porte sur une autre journalisation ; le développeur recherche toute autre assertion sur ces arguments
+(`grep -rn "Hydration via\|doRefresh: /me" frontend/src`).
 
 ### AC6 — Une garde de non-régression lit les sources
 
@@ -144,32 +169,77 @@ même préambule « ce qu'elle voit / ce qu'elle ne peut pas voir », C-28-2-7).
 hors `.test.` — `dansLePerimetreDeFichier` d'`i18n-harvest.js`), masque les commentaires (`masquerCommentaires`
 d'`i18n-literal-reader.js`), recueille les **liaisons d'erreur** de chaque fichier — paramètre de `catch (x)` /
 `catch (x: unknown)`, paramètre d'un rappel `.catch((x) => …)` / `.catch(x => …)` / `.catch(function (x) …)` — et
-**échoue en nommant `fichier:ligne`** sur :
+**échoue en nommant `fichier:ligne`** sur les règles G1-G7 ci-dessous.
+
+**Portée d'une liaison** (C-28-2-16) — les règles G1, G4-G7 ne sont cherchées **que dans la portée** de la liaison
+qu'elles nomment :
+
+| forme | portée |
+|---|---|
+| `catch (x) {` / `catch (x: T) {` | le bloc dont l'accolade ouvrante suit la parenthèse **fermante** de la liaison (et non un `{` de type inline), borné par `corpsDeFonction` (`i18n-literal-reader.js:408`), qui saute chaînes, gabarits et regex |
+| `.catch((x) => {` / `.catch(function (x) {` / `.catch(x => {` | le bloc du rappel, même calcul |
+| `.catch((x) => <expression>)` / `.catch(x => <expression>)` (corps-expression) | de `=>` jusqu'à la parenthèse qui **ferme** `.catch(`, par équilibrage des parenthèses avec le même saut des chaînes, gabarits et regex. ⚠️ Les outils de ce saut (`ouvreUnLitteral`, `:141`, `estDebutDeRegex`, `:183`, `finDeRegex`, `:211`) sont **privés** au module — seuls `readLiteral` et `corpsDeFonction` sont exportés : la boucle de `corpsDeFonction` est donc **généralisée** en une fonction exportée `blocEquilibre(source, ouvrante, ouvre, ferme)` (même module), dont `corpsDeFonction` devient l'appel `blocEquilibre(source, ouvrante, '{', '}')`, signature et comportement inchangés ; la garde l'appelle avec `'('`, `')'`. Pas de copie de la boucle dans la garde (DRY). Tests dans `i18n-literal-reader.test.ts` : ceux de `corpsDeFonction` (`:310-331`) restent verts **sans modification** ; `blocEquilibre` en parenthèses reçoit les mêmes cas (chaîne, regex, non équilibré → `null`) |
+
+⛔ **Une portée incalculable fait ÉCHOUER la garde**, en nommant `fichier:ligne` de la liaison : `corpsDeFonction`
+rend `null` sur des accolades non équilibrées, et le précédent de la 23-1a (le commentaire de
+`i18n-literal-reader.js:413-418`) est exactement celui d'un `null` qui faisait jeter un site **en silence**. Une
+liaison dont la portée n'a pas été inspectée n'est pas une liaison sans défaut.
+
+G2 et G3 ne dépendent pas d'une liaison : elles sont cherchées dans **tout le fichier** (commentaires masqués,
+exemption `console` appliquée).
 
 | règle | forme interdite | précédent |
 |---|---|---|
 | G1 | `String(<liaison>)` | A1-A4, B2-B16 |
 | G2 | `String(<expr>.reason)` (résultat de `Promise.allSettled`) | B1 |
-| G3 | `instanceof Error ?` (toute expression conditionnelle sur `instanceof Error`) | A1, A2, B13-B15 |
+| G3 | `instanceof Error`, **toute forme** — ternaire ou `if (x instanceof Error)` —, dans tout le fichier (C-28-2-18) : afficher le `message` d'une `Error` est précisément ce que C-28-2-3 écarte, et la forme peut vivre **hors** d'une portée de liaison — un `.reason` d'`allSettled` (la forme de B1, aujourd'hui écrite avec `String` seul) ou une fonction intermédiaire qui l'emploie (angle mort n° 4) —, ce que seule une recherche à l'échelle du fichier attrape. À `6f971d76`, 11 lignes (`grep -rn "instanceof Error"`, hors tests), dont 2 commentaires : les 9 lignes de code disparaissent avec A, B et C (C-28-2-19) | A1, A2, B13-B16 |
 | G4 | `${<liaison>}` ou `${String(<liaison>)}` dans un gabarit | A3, A4 |
 | G5 | `<liaison> + ''`, `'' + <liaison>` (et guillemets doubles / gabarit vide) | — (forme connue, absente) |
 | G6 | `<liaison>.toString()` | — |
 | G7 | `JSON.stringify(<liaison>` | — |
 
 **Exemption par critère, jamais par entrée** : une occurrence située **dans la liste d'arguments d'un appel
-`console.(log|info|warn|error|debug)(`** (portée calculée par équilibrage des parenthèses, appel multi-ligne
-compris) est permise — journaliser n'est pas afficher (classe C : `hooks.client.ts:23-28`,
-`lib/app/stores/auth.svelte.ts:301`, `lib/shared/utils/api-client.ts:159-163`). Aucune allowlist de fichiers ;
-`error-message.ts` n'en a pas besoin (il ne convertit rien en texte).
+`console.(log|info|warn|error|debug)(`** (portée calculée par équilibrage des parenthèses — le même
+`blocEquilibre` —, appel multi-ligne compris) est permise — journaliser n'est pas afficher. À `6f971d76`, trois sites en relèvent
+(`hooks.client.ts:23-28`, `lib/app/stores/auth.svelte.ts:301`, `lib/shared/utils/api-client.ts:159-163`) ; après
+C-28-2-19, plus aucun : l'exemption reste pour qu'une journalisation future qui convertit ne fasse pas rougir à tort,
+et ses auto-tests l'exercent. Aucune allowlist de fichiers ; `error-message.ts` n'en a pas besoin (il ne convertit
+rien en texte).
 
-**Anti-muet** (le mode d'échec du test muet, CLAUDE.md § E2E) : le test affirme des **planchers** mesurés —
-fichiers parcourus ≥ **300** (317 à `6f971d76`), liaisons d'erreur recueillies ≥ **160** (164 `catch` liés + 5
-rappels `.catch` liés = 169 à `6f971d76`). Le Dev Agent Record recompte les deux valeurs au dernier commit.
+**Anti-muet** (le mode d'échec du test muet, CLAUDE.md § E2E) — des planchers **par forme** (C-28-2-17), parce
+qu'un plancher global de 160 laissait passer un recueil qui perdrait **toutes** les liaisons d'une forme (les 5
+`.catch` liés : 168 − 5 = 163 ; les 4 `catch (e: unknown)` : 164) :
 
-**Auto-tests du détecteur** : chaque règle G1-G7 a au moins une **source fictive positive** (le détecteur la
-signale) ; l'exemption `console` a une fictive négative **mono-ligne et multi-ligne** ; une liaison nommée autrement
-que `e`/`err` (`caught`) est vue ; un `String(x)` sur une variable qui **n'est pas** une liaison d'erreur n'est pas
-signalé ; un commentaire contenant `String(err)` n'est pas signalé.
+| compte | mesuré à `6f971d76` (commentaires masqués) | plancher |
+|---|---|---|
+| fichiers parcourus | 317 | ≥ **310** |
+| `catch (x)` lié, non typé | 159 | ≥ **150** |
+| `catch (x: <type>)` lié, typé | 4 (`RulesList.svelte:64`, `:87`, `reconciliation/rules/+page.svelte:32`, `RuleFormModal.svelte:112`) | ≥ **4** |
+| rappel `.catch` lié | 5 (liste au § Inventaire) | ≥ **5** |
+| total des liaisons | 168 | ≥ **160** |
+
+Les deux petites formes portent un plancher **égal à leur mesure** : sur 4 ou 5 occurrences, une marge vaut
+absence de contrôle. Si la story ou une suivante retire légitimement une de ces liaisons, le plancher rougit et se
+baisse **avec la raison écrite** au-dessus de lui — « une borne exacte qui rougit fait son travail ». Le Dev Agent
+Record recompte les cinq valeurs au dernier commit.
+
+**Auto-tests du détecteur** (sources fictives passées à la fonction de détection, non au parcours) :
+
+- chaque règle G1-G7 a au moins une **fictive positive** (le détecteur la signale) ; G3 en forme ternaire **et** en
+  forme `if (e instanceof Error) msg = e.message; else msg = repli;` ;
+- l'exemption `console` a une fictive négative **mono-ligne et multi-ligne**, et une fictive positive : la même
+  conversion **hors** de l'appel `console`, dans un fichier qui journalise par ailleurs (M16) ;
+- **chaque forme de liaison** est recueillie et sa portée inspectée : `catch (caught)` (nom autre que `e`/`err`),
+  `catch (e: unknown)`, `.catch((err) => …${String(err)}…)` (corps-expression), `.catch(err => String(err))`,
+  `.catch(function (x) { … String(x) … })` ;
+- **portée et littéraux** : à l'intérieur d'un `catch`, une chaîne qui contient une accolade seule
+  (`'{'`, `"}"`), un gabarit imbriqué (`` `a ${`b ${n} }`} {` ``) et une regex (`/[{]/`), suivis d'un `String(err)` —
+  qui doit **encore** être signalé (la portée n'a pas été coupée trop tôt) ; et un `String(err)` placé **après**
+  la fermeture du `catch`, sur une autre variable `err` hors portée, qui **ne l'est pas** ;
+- **portée incalculable** : un `catch (err) {` dont l'accolade ne se ferme jamais fait échouer la détection en
+  nommant la ligne (M24) ;
+- un `String(x)` sur une variable qui **n'est pas** une liaison d'erreur n'est pas signalé ; un commentaire
+  contenant `String(err)` n'est pas signalé.
 
 ### AC7 — Quatre locales
 
@@ -178,7 +248,18 @@ Trois clés neuves dans les quatre catalogues `crates/kesh-i18n/locales/{fr-CH,d
 par le client (#520)`. Textes au § *Textes proposés* (alignés sur `auth-recovery-error-network`, déjà traduite).
 Préfixe `error-` : espace de noms global, permis partout par `scripts/lint-i18n-ownership.js:16`.
 `loader.rs::parity_between_locales`, `i18n-keys.test.ts`, `i18n-un-repli-par-cle.test.ts`,
-`i18n-entrees-a-variables.test.ts` verts.
+`i18n-entrees-a-variables.test.ts` verts. Et trois gardes que la première rédaction ne nommait pas :
+
+- **`frontend/src/lib/shared/i18n-repli-divergent-actif.test.ts`** — dès que les trois clés figurent au catalogue
+  `fr-CH`, `i18nMsg` fait `_messages[key] || fallback` : le texte **fr-CH** et le **repli** du site doivent être
+  identiques **au caractère près** (point final, espace de `({ $status })`, apostrophe). C'est elle qui tient
+  l'exigence « aucun changement en français » de l'AC2 ; sa liste `TOLEREES` ne reçoit **aucune** entrée.
+- **`frontend/src/lib/shared/i18n-harvest.test.ts`** — preuves du moissonneur (`moissonner`, périmètre et
+  détection des conflits de repli, 23-1b) ; les quatre sites neufs (un dans `error-message.ts`, trois dans
+  `api-client.ts`) entrent dans son périmètre et ne doivent créer **aucun** conflit (le repli d'`error-unexpected`
+  est celui des vingt sites existants).
+- **`frontend/src/lib/shared/i18n-dette-connue.ts`** — liste **vide** depuis la 23-6 ; elle le reste : une clé
+  manquante se répare dans les quatre catalogues, jamais en l'y inscrivant.
 
 ### AC8 — Tests unitaires de l'utilitaire et du client
 
@@ -195,24 +276,42 @@ Préfixe `error-` : espace de noms global, permis partout par `scripts/lint-i18n
   catalogue : les replis français **à l'identique** de l'avant-story (non-régression FR).
   ⚠️ Le chargement du catalogue passe par `loadI18nMessages()` avec le `fetch` simulé de
   `/api/v1/i18n/messages` (ou tout moyen qui n'ajoute pas d'export de production pour les tests).
+  ⚠️ **`_messages` est un état de module** (`i18n.svelte.ts:11`) qui persiste d'un test à l'autre du même fichier :
+  chaque cas « catalogue allemand » est suivi d'un rechargement d'un catalogue vide `{}` (`afterEach`), faute de quoi
+  les cas « sans catalogue » dépendent de l'ordre d'exécution. Même règle dans `error-message.test.ts`.
+  Deux cas de plus : **(a)** `loadI18nMessages()` lui-même en échec (`fetch` rejeté sur `/api/v1/i18n/messages`) →
+  la promesse **se résout** (son `catch {}` silencieux, `i18n.svelte.ts:48-50`, avale l'`ApiError` que le client a
+  fabriquée — en appelant `i18nMsg` sur un catalogue vide, sans récursion), et un `NETWORK_ERROR` provoqué ensuite
+  porte le **repli français** (c'est le cas du démarrage) ; **(b)** dans `error-message.test.ts`, une `ApiError` dont `message`
+  vaut `undefined` ou `42` → le générique (C-28-2-24).
 
 ### AC9 — Tests des écrans de la classe A, et un test par fichier de la classe B
 
 - **A1/A2** : `routes/(app)/settings/settings-page.test.ts` (complété) — `lockBooks` puis `releaseBooksLock`
   rejetés par une `ApiError` `{ code: 'VALIDATION_ERROR', message: 'La date doit suivre le verrou actuel.', status: 400 }`
   → `[data-testid="books-lock-error"]` contient ce message et **pas** `[object Object]` ; rejet par
-  `new Error('boom')` → le générique, pas `boom`.
+  `new Error('boom')` → le générique, pas `boom`. ⚠️ Pour A2, le bouton de déverrouillage
+  (`books-lock-release-toggle`) n'apparaît que si la société simulée porte un verrou : la réponse simulée de la
+  société doit être **enrichie** de `booksLockedThrough` (le test existant ne le simule pas).
 - **A3** : `lib/features/bank-import/BankProfileList.test.ts` (neuf) — `listBankProfiles` rejeté par une
-  `ApiError` → son message, sans préfixe, sans `[object Object]`.
+  `ApiError` → son message, sans préfixe, sans `[object Object]`. **Et `handleDelete`** (C-28-2-20) :
+  `deleteBankProfile` rejeté par une `ApiError` → `notifyError` appelé avec son message, la liste des profils
+  **toujours affichée**, aucun rejet non géré (Vitest fait échouer le fichier sur un rejet non géré : c'est ce qui
+  fait rougir M23).
 - **A4** : `routes/(app)/bank-import/profiles/[id]/profile-page.test.ts` (neuf ; le préfixe `+` est réservé par
   SvelteKit) — `getBankProfile` rejeté par une `ApiError` 404 → son message.
 - **B** : un test au moins **par fichier** touché de la classe B, sur un rejet **non-`ApiError`**
   (`new Error('boom')`) → le générique traduit, ni `boom`, ni `Error: boom`, ni `[object Object]` ; dans les
   fichiers de test existants quand il y en a (`bank-accounts-page.test.ts`, `DeleteBankImportAction.test.ts`,
   `CancelReconciliationDialog.test.ts`, `BankAccountJournalLinkForm.test.ts`, `ManualMatchModal.test.ts`,
-  `TransactionSplitModal.test.ts`) ; `settings/api-keys` et `reports` n'ont pas de test de page : y créer
-  `api-keys-page.test.ts` et un cas dans le test de rapports existant s'il y en a un, sinon le noter au Dev Agent
-  Record comme couvert par la seule garde AC6 (C-28-2-11).
+  `TransactionSplitModal.test.ts`) ; `BankAccountJournalLinkForm.test.ts` ne contient aujourd'hui **aucun** cas
+  de rejet (`grep -nE "Rejected|new Error"` vide) : le cas s'écrit de zéro, montage compris.
+  **Sans exception** (C-28-2-21, qui révise C-28-2-11) : `settings/api-keys` et `reports` n'ont pas de test de
+  page (`ls` : `+page.svelte` seul, et `+page.ts` pour `reports` ; `lib/features/reports/reports.api.test.ts` teste
+  l'API, pas l'écran) — deux tests **neufs**, `routes/(app)/settings/api-keys/api-keys-page.test.ts` (un rejet
+  non-`ApiError` du chargement de la liste, B6) et `routes/(app)/reports/reports-page.test.ts` (un rejet
+  non-`ApiError` d'un rapport, rendu par `formatError`, B15 ; la branche `REPORT_PERIOD_OUT_OF_FISCAL_YEAR` vérifiée
+  préservée).
 - Les tests existants « pas « [object Object] » » du rapprochement (`rules-page.test.ts:35`,
   `RuleFormModal.test.ts:106`, `RulesList.test.ts:76`, `ReconciliationProposals.test.ts:295-340`) restent verts
   **sans modification** de leurs assertions.
@@ -231,6 +330,11 @@ partagée (C-28-2-8) :
    affiche le texte de `error-network` **du catalogue servi** (lu par l'API `/api/v1/i18n/messages` dans le test,
    pas recopié en dur), sans `[object Object]`.
 
+⚠️ **Ce que le scénario 2 n'établit pas** (C-28-2-23) : l'instance E2E tourne en `fr-CH`, où le texte servi égale
+le repli — l'assertion ne distingue pas un message traduit d'un littéral français conservé (M5 ne la fait pas
+rougir). Il prouve la traversée réelle (absence de « [object Object] », M11) ; **la traduction n'est prouvée que par
+les tests unitaires** au catalogue allemand (AC8, M5-M7). Le Dev Agent Record ne l'écrit pas autrement.
+
 Recette visuelle (action B2 de la rétrospective de l'Epic 27) : le scénario 1 prend une capture de la section
 `settings-books-lock` en thème **clair** et **sombre** (`page.emulateMedia({ colorScheme })`), **avant** le
 correctif (T1, spec rouge) et **après** ; les quatre fichiers vont dans
@@ -243,11 +347,36 @@ Record et au prompt de revue P1 (C-28-2-14).
   (union avec les branches 28-1 et 28-3 à la fusion, C-28-2-12), rubrique `### Corrigé` : *« Une erreur renvoyée par
   le serveur ne s'affiche plus « [object Object] » — verrouillage des livres, profils bancaires — : le message du
   refus est affiché. Une panne imprévue affiche « Erreur inattendue. », et les messages de perte de connexion
-  s'affichent dans la langue de l'installation ([#520](https://github.com/guycorbaz/kesh/issues/520)). »*
-- **Manuel** : aucun texte à changer — `grep -rn "object Object\|Impossible de contacter\|Erreur serveur\|ne répond
-  pas" docs/manual/*/*.tex` ne rend rien à `6f971d76`. Le Dev Agent Record le **recompte** (et sur les PDF aplatis,
-  `pdftotext … - | tr '\n' ' ' | tr -s ' '`) ; un texte neuf du manuel qui décrirait un de ces messages serait à
-  confronter au code.
+  suivent la langue de l'installation une fois l'interface chargée avec une session ouverte ; la page de connexion
+  reste en français ([#520](https://github.com/guycorbaz/kesh/issues/520)). »* (C-28-2-23 : la phrase de la
+  première rédaction, « s'affichent dans la langue de l'installation », promettait plus que le code ne tient — § Angles
+  morts, n° 5.)
+- **Manuel** (C-28-2-15) : **un** passage cite un de ces messages — `docs/manual/fr/user-manual.tex:1871-1873`
+  (encadré de l'import CSV : fichier modifié sur le disque après l'aperçu, « l'envoi échoue avec un message d'erreur
+  de connexion (« Impossible de contacter le serveur… ») qui se répète à chaque clic »). La citation est coupée sur
+  deux lignes du `.tex` : c'est pourquoi le `grep` mono-ligne de la première rédaction rendait zéro, et le recompte
+  se fait **sur texte aplati**. Ce message est le `NETWORK_ERROR` du client (`api-client.ts:294`), que l'AC2 rend
+  traduisible.
+  - **En français**, le passage **reste exact** : le repli et le texte `fr-CH` d'`error-network` sont le texte
+    actuel au caractère près (AC2, garde `i18n-repli-divergent-actif.test.ts`), et la citation tronquée
+    (« Impossible de contacter le serveur… ») en est le début.
+  - **Dans les autres langues**, une installation `de-CH`, `it-CH` ou `en-CH` dont le catalogue est chargé affichera
+    le texte traduit (« Server nicht erreichbar. … », etc.) ; or les manuels `de/`, `en/`, `it/` ne contiennent
+    qu'un `README.md`, sans `.tex` : aucun manuel ne cite le message dans ces langues, et leur traduction future
+    citera le texte de la clé `error-network`.
+  - **Le manuel ne change donc pas**, ni son PDF ; aucune mention « dans la langue de l'installation » n'est
+    ajoutée (le manuel français s'adresse à une installation française, où rien ne change).
+  - Contrôle à refaire au Dev Agent Record, sur `.tex` **et** PDF :
+    ```sh
+    for f in docs/manual/fr/*.tex; do echo "== $f"; tr '\n' ' ' < "$f" | tr -s ' ' \
+      | grep -oiE "object Object|Impossible de contacter|Erreur serveur|ne répond pas|Erreur inattendue" | sort | uniq -c; done
+    for f in docs/manual/fr/*.pdf; do echo "== $f"; pdftotext "$f" - | tr '\n' ' ' | tr -s ' ' \
+      | grep -oiE "object Object|Impossible de contacter|Erreur serveur|ne répond pas|Erreur inattendue" | sort | uniq -c; done
+    ```
+    Sortie à `6f971d76` : `user-manual` (.tex et .pdf) **1** « Impossible de contacter » ; `admin-manual` (.tex et
+    .pdf) **1** « erreur serveur » — `admin-manual.tex:1472`, « le téléchargement répond une erreur serveur » (PDF
+    figé altéré) : une description de la réponse HTTP, non une citation du texte `Erreur serveur ({ $status })`,
+    **sans rapport** et inchangée ; `marketing-brochure` 0. Tout autre résultat est à confronter au code.
 - **README / site** : rien (correctif sans fonctionnalité nouvelle).
 
 ## Tasks / Subtasks
@@ -259,14 +388,17 @@ Record et au prompt de revue P1 (C-28-2-14).
 - [ ] **T2 — `api-error.ts` et `error-message.ts`** (AC1) ; retrait d'`errorMessageOf` d'`api-client.ts`, réexport
   d'`isApiError` ; quatre importeurs (AC4).
 - [ ] **T3 — Traduction à la source** (AC2) : `serverStatusMessage`, `toFetchApiError` ; trois clés × 4 locales (AC7).
-- [ ] **T4 — Classe A** (AC3), puis **classe B** (AC4), fichier par fichier, un commit par lot cohérent.
-- [ ] **T5 — Garde** `erreurs-en-texte.test.ts` (AC6) avec ses auto-tests ; elle doit **rougir** sur la base de
+- [ ] **T4 — Classe A** (AC3) et `handleDelete` de `BankProfileList.svelte` (C-28-2-20), puis **classe B** (AC4),
+  puis les trois journalisations de **classe C** (AC5, C-28-2-19), fichier par fichier, un commit par lot cohérent.
+- [ ] **T5 — Garde** `erreurs-en-texte.test.ts` (AC6) avec ses auto-tests, et `blocEquilibre` dans
+  `i18n-literal-reader.js` avec ses tests (C-28-2-16) ; elle doit **rougir** sur la base de
   `6f971d76` (le vérifier avant T4 en la posant sur une copie, ou en rejouant M7) puis verdir après T4.
-- [ ] **T6 — Tests de la classe B** (AC9) et E2E scénario 2 (AC10) ; captures « après ».
+- [ ] **T6 — Tests de la classe B** (AC9, dont les deux tests de page neufs `api-keys-page.test.ts` et
+  `reports-page.test.ts`) et E2E scénario 2 (AC10) ; captures « après ».
 - [ ] **T7 — Recomptes** : inventaire (AC5) par les commandes du § Inventaire ; `sitesTotal` et compagnie
-  d'`i18n-keys.test.ts` (§ Pièges) ; planchers de l'AC6.
-- [ ] **T8 — CHANGELOG, manuel** (AC11).
-- [ ] **T9 — Mutations** M1-M20 (§ Mutations), restauration `git checkout -- <f>` + `touch` (mémoire *Mutation
+  d'`i18n-keys.test.ts` (§ Pièges) ; les cinq planchers de l'AC6.
+- [ ] **T8 — CHANGELOG, manuel** (AC11 : contrôle sur texte aplati, `.tex` et PDF).
+- [ ] **T9 — Mutations** M1-M25 (§ Mutations), restauration `git checkout -- <f>` + `touch` (mémoire *Mutation
   restaurée, binaire périmé*).
 - [ ] **T10 — Gates complets au dernier commit de code** (consigne 3, D7) : `npm run check`,
   `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build` ; `scripts/test-fast.sh` (le catalogue FTL est
@@ -285,8 +417,12 @@ active `useUnknownInCatchVariables` ; `npm run check` est donc la garde de cette
 
 **Univers** (mesuré par un script d'inventaire de l'auteur, non versionné, qui équilibre les accolades ; ses
 comptes sont reproductibles à la main par les `grep` ci-dessous) : 317 fichiers `.svelte`/`.ts` hors tests sous
-`frontend/src`, **257** instructions `catch` (164 liées, 93 sans liaison — `catch {` ne peut rien convertir),
-**20** rappels `.catch(` dont 5 liés (`mode.svelte.ts:57`, `audit-log/+page.svelte:133`,
+`frontend/src`, **256** instructions `catch` hors commentaires (**163** liées — dont 4 typées `catch (e: unknown)`,
+159 non typées —, 93 sans liaison — `catch {` ne peut rien convertir), **20** rappels `.catch(` dont 5 liés, soit
+**168** liaisons. *(Recompté en validation P1 : la première rédaction écrivait 257 / 164 / « 169 mesurés ». Le `grep`
+`(^|[^.A-Za-z_])catch\s*(\(|\{)` hors tests rend 258 lignes et 165 liées, dont **deux commentaires** —
+`settings/fiscal-years/+page.svelte:320` « try/catch (miroir… » et `lib/shared/utils/notify.ts:88`, exemple de
+doc-comment —, que la garde masque.)* (`mode.svelte.ts:57`, `audit-log/+page.svelte:133`,
 `bank-import/profiles/[id]/+page.svelte:24`, `vat-rates.store.svelte.ts:48`, `InvoiceForm.svelte:351`), et deux
 lectures de `.reason` d'`allSettled` (`journal-entries/[id]/+page.svelte:88`, `bank-accounts/+page.svelte:76-78`).
 
@@ -310,9 +446,9 @@ Les 26 lignes de la première commande se ventilent en : **3 commentaires** (`ap
 |---|---|---|---|
 | **A** | `ApiError` rendue « [object Object] » (aucune garde `isApiError` avant la conversion) | A1 `settings/+page.svelte:237`, A2 `:261`, A3 `BankProfileList.svelte:19`, A4 `bank-import/profiles/[id]/+page.svelte:25` | **résolus** (AC3) |
 | **B** | `ApiError` traitée, repli `String`/`instanceof Error` pour le reste (« TypeError: … », « [object Object] » pour un objet) | B1-B16 (AC4) : `bank-accounts/+page.svelte:78`, `:239`, `:265`, `:281` ; `DeleteBankImportAction.svelte:62` ; `settings/api-keys/+page.svelte:63`, `:159`, `:198` ; `CancelReconciliationDialog.svelte:60`, `:97` ; `BankAccountJournalLinkForm.svelte:98`, `:127` ; `ManualMatchModal.svelte:153` ; `TransactionSplitModal.svelte:216` ; `reports/+page.svelte:215` ; `api-client.ts:40` | **résolus** (AC4) |
-| **C** | conversion dans un appel `console.*` — journal, non affiché | `hooks.client.ts:27`, `lib/app/stores/auth.svelte.ts:301`, `lib/shared/utils/api-client.ts:162` | **légitimes par critère** (exemption G de l'AC6) |
-| **D** | affichage réservé aux `ApiError` (`if (isApiError(err)) x = err.message;` sans autre branche) : une valeur d'une autre nature n'affiche **rien** — le « message vide » | ≈ **23** sites, détecteur ci-dessous | **angle mort assumé** (C-28-2-10) |
-| **E** | `isApiError(err) ? err.message : i18nMsg('<générique>', …)` | nombreux (`invoices/[id]`, `dunning`, `projects`, `audit-log`, …) | **conformes** : traduits, jamais « [object Object] » ; non refactorés (registre de la demande) |
+| **C** | conversion dans un appel `console.*` — journal, non affiché | `hooks.client.ts:27`, `lib/app/stores/auth.svelte.ts:301`, `lib/shared/utils/api-client.ts:162` | légitimes par critère (exemption de l'AC6), **et** passées à la valeur brute (C-28-2-19, AC5) : 0 à la fin |
+| **D** | affichage réservé aux `ApiError` (`if (isApiError(err)) x = err.message;` sans autre branche) : une valeur d'une autre nature n'affiche **rien** — le « message vide » | ≈ **23** sites, détecteur ci-dessous | **angle mort assumé**, suivi par **#644** (C-28-2-10, C-28-2-22) |
+| **E** | `isApiError(err) ? err.message : <repli fixe>` — le repli étant soit un `i18nMsg` générique, soit un **littéral français** (`journal-entries/[id]/+page.svelte:89`, « Erreur de chargement de l'écriture » ; `ProductPicker.svelte:55`, « Erreur de chargement des produits » ; les préfixes d'`InvoiceForm`) | nombreux (`invoices/[id]`, `dunning`, `projects`, `audit-log`, …) | **conformes au sujet** : jamais « [object Object] », jamais un texte technique ; non refactorés (registre de la demande) ; les replis en littéral français sont une dette i18n, § Angles morts n° 3 |
 
 **Détecteur de la classe D** (heuristique, à recompter, pas une garde) : `catch` lié dont le corps (commentaires
 retirés) contient `isApiError(` et ne contient **aucun** de `else`, `?`, `errorMessageOf`, `String(`, `i18nMsg`,
@@ -325,26 +461,47 @@ Pourquoi la classe D n'est pas traitée ici : la cause n'est pas #520 (aucun « 
 un silence), le cas ne survient que sur une valeur qui n'est pas une `ApiError` (le client convertit toute panne
 réseau et tout refus HTTP en `ApiError` ; restent un corps de **succès** non JSON — `res.json()` qui lève — et une
 erreur de programmation), et la traiter ajouterait **sept** modules métier (règle de découpage préventif).
-→ Issue de suivi à ouvrir par l'orchestrateur : *« [bug] Un `catch` qui n'affiche que les `ApiError` laisse une
-panne imprévue sans message (23 sites) »*, **P3**, renvoyant à cette fiche.
+La validation P1 (F4, R2, R3) a confirmé que la correction **n'est pas mécanique** : chaque site demande un choix
+(notification, message en ligne, ou silence), et certains silences sont **voulus** — `invoices/[id]/+page.svelte:186`
+(`afterReconciliationCancelled`) et `:483` (`reloadInvoiceAndSettlements`, « échecs tolérés ») suivent une action
+**réussie** et relisent la facture ; `errorMsg` y est un état de page (`{:else if errorMsg}`, `:1111`, avant
+`{:else if invoice}`, `:1113`), si bien qu'un `errorMsg = errorMessageOf(err)` y masquerait la fiche facture
+derrière « Erreur inattendue. » pour une opération qui a abouti.
+→ Suivi : issue **#644** (bug, **P3**), ouverte par l'orchestrateur le 2026-10-13 (C-28-2-22). La PR la cite en
+**`refs #644`** ; aucune autre issue de suivi n'est à demander.
 
 ### Angles morts assumés (écrits pour qu'on ne les croie pas couverts)
 
-1. **Classe D** (ci-dessus) — issue de suivi demandée.
+1. **Classe D** (ci-dessus) — suivie par **#644** (`refs #644`).
 2. **`SETUP_REQUIRED` / `UNAUTHENTICATED`** (`api-client.ts:404-430`, `:501-524`) : messages français en dur, non
    traduits par l'AC2 ; ils précèdent une redirection (`/onboarding`, `/login`) et ne sont lus par aucun écran
    connu. Un écran qui afficherait `err.message` à cet instant montrerait « Session expirée » en français (C-28-2-5).
 3. **Littéraux français en dur voisins, hors du sujet** : `'ID invalide'` (`bank-import/profiles/[id]/+page.svelte:15`),
    le message réseau recopié en dur de `routes/login/+page.svelte:54`, `ResetPasswordForm.svelte:77`,
    `ForgotPasswordForm.svelte:54` (ces deux-là en repli d'`i18nMsg`, conformes), et les préfixes français de
-   `InvoiceForm.svelte:354-355`, `:379-380`, `:542-543` (`` `… (${err.message})` ``). Dette i18n préexistante,
+   `InvoiceForm.svelte:354-355`, `:379-380`, `:542-543` (`` `… (${err.message})` ``), et les replis de classe E en
+   littéral (`journal-entries/[id]/+page.svelte:89`, `ProductPicker.svelte:55`, le suffixe « — Configurez les
+   comptes par défaut… » d'`invoices/[id]/+page.svelte:411`). Dette i18n préexistante,
    invisible des gardes i18n (le préambule d'`i18n-libelle-en-dur.test.ts` le dit) ; **signalée**, non traitée
    (C-28-2-13). L'orchestrateur vérifie si une issue la couvre.
 4. **La garde AC6 ne voit pas** : une conversion par une **fonction intermédiaire** (`const f = (x: unknown) =>
    String(x)` appelée avec une erreur) — elle ne connaît que les liaisons d'erreur, pas le flot ; une conversion
    **dans le balisage** Svelte (`{String(err)}`) d'une variable d'état qui contiendrait une erreur brute ; un
    `catch` dont la liaison est **déstructurée** (`catch ({ message })`) — 0 à `6f971d76`
-   (`grep -rnE "catch \(\{" frontend/src` ne rend rien). Ces formes sont écrites dans son préambule.
+   (`grep -rnE "catch \(\{" frontend/src` ne rend rien) ; un rejet **sans** `catch` du tout (le cas de
+   `handleDelete`, corrigé ici, C-28-2-20 ; un autre ailleurs resterait invisible). Ces formes sont écrites dans son
+   préambule.
+5. **La traduction des messages du client ne vaut qu'une fois le catalogue chargé** (C-28-2-23). Le catalogue est
+   servi par `/api/v1/i18n/messages`, **derrière l'authentification**, et `routes/+layout.svelte:51-53` ne le charge
+   qu'à l'`onMount` racine, **si** une session est ouverte (le commentaire `:36-50` l'écrit : « fallback FR figé reste
+   affiché sur `/login` … Limitation à corriger v0.2 via endpoint i18n public »). Hors `onboarding` (`:18`, `:27`),
+   aucun autre site ne l'appelle. D'où trois cas où un `NETWORK_ERROR` / `TIMEOUT` / `Erreur serveur` reste **en
+   français** sur une installation `de-CH`, `it-CH` ou `en-CH` : la **page de connexion** (qui recopie d'ailleurs le
+   message réseau en dur, n° 3) ; un **rechargement complet** alors que le serveur est injoignable (le chargement du
+   catalogue échoue lui-même) ; et la navigation qui suit une **connexion** par `goto('/')`
+   (`routes/login/+page.svelte:50`), l'`onMount` racine ne se rejouant pas — jusqu'au prochain rechargement complet.
+   Ce dernier cas n'est pas propre à cette story : **tout** `i18nMsg` de l'interface est alors en français.
+   Limitation préexistante, hors périmètre ; l'orchestrateur vérifie si une issue la couvre.
 
 ### État actuel des fichiers modifiés — ce qui doit être préservé
 
@@ -363,6 +520,12 @@ panne imprévue sans message (23 sites) »*, **P3**, renvoyant à cette fiche.
   P-H1 de `ManualMatchModal.svelte:142-146` peut renvoyer à `error-message.ts`.
 - `reports/+page.svelte` `formatError` : la branche `REPORT_PERIOD_OUT_OF_FISCAL_YEAR` (interpolation des bornes)
   reste ; seule la dernière ligne change. Ses huit appelants (`:253` à `:504`) ne changent pas.
+- `BankProfileList.svelte` : outre A3, `handleDelete` (`:25-31`) reçoit son `try/catch` (C-28-2-20) ; le
+  `confirm(...)` d'entrée et le rechargement après succès sont inchangés ; `notifyError` s'importe de
+  `$lib/shared/utils/notify`.
+- `hooks.client.ts`, `lib/app/stores/auth.svelte.ts` : une ligne chacun, l'argument de journalisation (C-28-2-19) ;
+  le reste (hydratation non fatale ; issue #347 : un échec réseau ne prouve pas l'invalidité de la session) est
+  inchangé.
 - `ReconciliationProposals.svelte:206`/`:224` lèvent des `Error` techniques (« No candidate for txId=… ») attrapées
   à `:230` : elles s'afficheront désormais « Erreur inattendue. » (journalisées) — voulu (C-28-2-3).
 
@@ -403,6 +566,12 @@ la règle recommande, tenue dans une seule fiche parce que le rollout est d'une 
 laisserait une garde AC6 rouge sur la sous-story pilote. Risque accepté : une revue qui survolerait les seize
 sites B. Parade : le prompt de revue P1 exige la revue site par site contre le tableau de l'AC4. **Signal déclaré au
 Project Lead** par le rapport de l'agent.
+*(Validation P1.)* La remédiation ajoute deux fichiers d'**infrastructure** de démarrage, une ligne de journalisation
+chacun (`hooks.client.ts`, `lib/app/stores/auth.svelte.ts` — C-28-2-19) : en les comptant comme un septième module
+(`app`), le critère est franchi de deux ; aucun module **métier** ne s'ajoute (`handleDelete` est dans
+`bank-import`, déjà compté), et la classe D, qui en aurait ajouté au moins quatre, reste hors périmètre (#644). La
+dérogation est maintenue, et le signal redéclaré. Les réécritures d'`if/else` de B11-B14 (AC4) ne sont pas une
+substitution d'une ligne : la parade « revue site par site » les vise aussi.
 
 ### Mutations (à jouer en T9, chacune doit faire rougir au moins un test nommé)
 
@@ -424,10 +593,15 @@ Project Lead** par le rapport de l'agent.
 | M14 | B10 rétabli (`… : String(err)`) | garde G1, `CancelReconciliationDialog.test.ts` |
 | M15 | B13 : branche `BANK_ACCOUNT_NOT_CONFIGURED` supprimée | `ManualMatchModal.test.ts` (existant) — préservation |
 | M16 | garde : exemption `console` étendue à tout le fichier | auto-test G (fictive positive hors `console` dans un fichier qui journalise) |
-| M17 | garde : liaisons de rappel `.catch` non recueillies | auto-test `.catch((err) => …${String(err)}…)` + M12 |
-| M18 | garde : parcours pointé sur un dossier vide | plancher « fichiers ≥ 300 » |
+| M17 | garde : liaisons de rappel `.catch` non recueillies | auto-tests `.catch` (AC6) + plancher « `.catch` lié ≥ 5 » + M12 |
+| M18 | garde : parcours pointé sur un dossier vide | plancher « fichiers ≥ 310 » |
 | M19 | `error-network` retiré de `de-CH` | `loader.rs::parity_between_locales` / `i18n-keys.test.ts` |
 | M20 | repli de `error-server-status` en gabarit JS, ou site passant `{ code: … }` | `i18n-entrees-a-variables.test.ts` |
+| M21 | B15 rétabli (`err instanceof Error ? err.message : String(err)` dans `formatError`) | `reports-page.test.ts`, garde G1/G3 |
+| M22 | B6 rétabli (`isApiError(err) ? err.message : String(err)`) | `api-keys-page.test.ts`, garde G1 |
+| M23 | `handleDelete` : `try/catch` retiré | `BankProfileList.test.ts` (`notifyError` non appelé, rejet non géré) |
+| M24 | garde : une liaison dont la portée vaut `null` est sautée au lieu d'échouer | auto-test « portée incalculable » |
+| M25 | garde : liaisons typées `catch (e: unknown)` non recueillies | auto-test `catch (e: unknown)` + plancher « typé ≥ 4 » |
 
 ### Fichiers communs avec les branches 28-1 et 28-3 (non mergées)
 
@@ -468,3 +642,26 @@ catalogues FTL : union à la fusion, `sitesTotal` **recompté** après rebase, j
 
 - 2026-10-13 — Fiche créée (bmad-create-story, Opus 5.5, autonomie), sur `6f971d76`. Inventaire : 20 sites non
   résolus (A 4, B 16), C 3 légitimes, D ≈ 23 assumés, E conformes. Choix C-28-2-1 à C-28-2-14. Statut ready-for-dev.
+- 2026-10-13 — **Validation P1** (Sonnet 5.5, lentilles R et F, rapports hors dépôt
+  `kesh-gate-logs/28-2-validate-p1-{R,F}.md`) : **0 CRITICAL, 0 HIGH, 7 MEDIUM, 11 LOW** (F : 4 MEDIUM, 4 LOW ;
+  R : 3 MEDIUM, 7 LOW). Convergences : F1 = R1 (l'AC11 niait à tort qu'un manuel cite ces messages :
+  `user-manual.tex:1871-1873`, citation coupée sur deux lignes) ; F5 = R8 ; F6 ≈ R5. Remédiation (Opus 5.5) :
+  - **F1/R1** — AC11 réécrit : le passage est cité, il reste exact en français, ce qu'il devient dans les autres
+    langues est écrit, le manuel ne change pas ; contrôle sur texte aplati, `.tex` et PDF (C-28-2-15).
+  - **F2** — AC6 : portée de liaison définie pour `catch`, `.catch` à bloc et `.catch` à corps-expression ; une portée
+    incalculable fait échouer la garde ; auto-tests avec accolades dans une chaîne, un gabarit, une regex (C-28-2-16).
+  - **F3** — AC6 : planchers par forme (fichiers ≥ 310, non typé ≥ 150, typé ≥ 4, `.catch` lié ≥ 5, total ≥ 160) et
+    auto-tests de chaque forme de liaison (C-28-2-17).
+  - **F4, R2, R3** (classe D) — décision de l'orchestrateur : **hors périmètre**, issue **#644** ouverte par lui ; la
+    fiche la cite en angle mort (`refs #644`), avec les deux silences voulus d'`invoices/[id]` ; aucune autre issue
+    de suivi n'est demandée (C-28-2-22). AC5 et § Inventaire mis à jour en conséquence.
+  - **LOW retenus** : F5/R8 (classe C : la valeur brute est journalisée, C-28-2-19) ; F6/R5 (portée réelle de la
+    traduction : angle mort n° 5, CHANGELOG exact, ce que l'E2E scénario 2 n'établit pas — C-28-2-23) ; F7 (état de
+    module du catalogue, échec de `loadI18nMessages`, `ApiError` à `message` non textuel — C-28-2-24) ; F8 (G3 étendue
+    à toute forme, tout le fichier — C-28-2-18) ; R4 (trois gardes i18n nommées à l'AC7) ; R6 (recompte : 256 `catch`
+    hors commentaires, 163 liés dont 4 typés, 168 liaisons) ; R7 (deux tests de page neufs, `reports` et
+    `api-keys`, C-28-2-21 ; formulation « mécanique » de l'AC4 corrigée ; A2 et `BankAccountJournalLinkForm.test.ts`
+    précisés) ; R9 (classe E redéfinie, replis en littéral ajoutés à l'angle mort n° 3) ; R10 (`handleDelete` de
+    `BankProfileList.svelte` corrigé dans la story, C-28-2-20).
+  - Mutations M21-M25 ajoutées ; dérogation au découpage réexaminée (deux fichiers d'infrastructure, aucun module
+    métier de plus). Choix C-28-2-15 à C-28-2-24. Validation P2 : `28-2-validate-prompt-p2.md` (Opus, R et F).
