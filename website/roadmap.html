@@ -325,6 +325,13 @@
 					</div>
 					<p class="text-sm text-slate-400">Found by importing a real statement: in debit/credit CSV profiles, <strong class="text-slate-200">every UBS expense became a receipt</strong>, silently. The <strong class="text-slate-200">sign of debits is now a profile setting</strong>, never a guess, and a statement whose amount contradicts its column is refused as a whole; up to 20 header lines let the UBS CSV import as it is. Bank accounts get an optional <strong class="text-slate-200">short description</strong> (“UBS — Personal”) shown in every list and picker; the Synology restore script <strong class="text-slate-200">fails closed</strong> while Kesh may be running; the manual describes the actual chart-of-accounts and import screens. ⚠️ <strong class="text-slate-200">No way back to v0.13.0</strong> once the database is upgraded — back it up first.</p>
 				</div>
+				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
+					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+						<h3 class="font-semibold">E27 — Acceptance testing of v0.13.1 <span class="text-slate-500 font-mono text-xs">v0.13.2</span></h3>
+						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
+					</div>
+					<p class="text-sm text-slate-400">A bank import none of whose transactions is reconciled can now be <strong class="text-slate-200">deleted, then re-imported</strong> — traced in the audit log. The <strong class="text-slate-200">currency of a statement is read</strong> — an optional Currency column in CSV profiles, the amount&rsquo;s own currency in CAMT.053 — and a statement not in Swiss francs is <strong class="text-slate-200">refused</strong> instead of being booked in CHF without a word. <strong class="text-slate-200">Changing the profile after the preview recomputes it</strong>, and an import whose profile, account or file changed since the preview is refused. A reconciliation batch holding a transaction that has disappeared is processed proposal by proposal instead of failing as a whole. No database migration: going back to v0.13.1 remains possible once the Currency column is removed from profiles.</p>
+				</div>
 			</div>
 		</div>
 	</section>

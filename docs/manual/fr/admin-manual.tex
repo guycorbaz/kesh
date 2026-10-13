@@ -222,7 +222,7 @@ cd /opt/kesh
 Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.1/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.2/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -233,7 +233,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.1/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.2/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -546,7 +546,7 @@ Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh,
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.1
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.2
 curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
 curl -fsSL "$DEPOT/.env.example" -o .env
 
@@ -1660,13 +1660,13 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.1
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.2
 curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
 curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
 \end{lstlisting}
 
-L'URL désigne l'étiquette d'une version publiée (\keshpath{v0.13.1} ici) : prenez celle de la version que vous installez, la même que l'image de votre compose --- les scripts d'une autre version peuvent attendre d'autres réglages. Ne prenez pas \keshpath{main}, qui peut être en avance sur l'image publiée.
+L'URL désigne l'étiquette d'une version publiée (\keshpath{v0.13.2} ici) : prenez celle de la version que vous installez, la même que l'image de votre compose --- les scripts d'une autre version peuvent attendre d'autres réglages. Ne prenez pas \keshpath{main}, qui peut être en avance sur l'image publiée.
 
 \keshpath{kesh-dump.sh} écrit dans \keshpath{dump/} (forcé en 700) le dump et son empreinte (\keshpath{.sha256}), lisibles de root seul. Il s'arrête à la première erreur ; le dump s'écrit d'abord dans un fichier \keshpath{.tmp}, vérifié (archive intègre, au moins une table, dump complet), puis renommé : un dump raté ou vide ne remplace pas celui de la veille et ne laisse aucun fichier. Un verrou (\keshpath{dump/.verrou}) empêche deux dumps simultanés ; laissé par un arrêt brutal, il se supprime à la main (\keshcommand{rmdir}). Ses réglages, par variables d'environnement, ont pour défauts ceux de ce manuel : \texttt{SAUVEGARDE\_DOSSIER} (\keshpath{/volume1/docker/kesh}), \texttt{SAUVEGARDE\_BASE} (\texttt{kesh}, la base de \texttt{DATABASE\_URL}), \texttt{SAUVEGARDE\_RESEAU} (\keshcommand{frontend}), \texttt{SAUVEGARDE\_IMAGE} (\keshcommand{mariadb:10.11}) ; si votre base porte un autre nom, la commande de la tâche devient :
 
@@ -1940,7 +1940,7 @@ Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (vers
 \subsection{Procédure de mise à jour standard}
 
 \begin{enumerate}
-    \item \textbf{Sauvegarder} la base de données --- avec \keshpath{docker-compose.yml}, le volume \texttt{<projet>\_kesh-mariadb-data} ; sur Synology avec \keshpath{docker-compose.prod.yml}, un dump par \keshpath{kesh-dump.sh} (\S\ref{sec:backup-dsm}) --- (cf. section précédente). \textbf{Pour passer à la 0.13.0 ou à la 0.13.1, cette sauvegarde est le seul retour en arrière possible} : une fois migrée, la base refuse tout binaire antérieur --- 0.12.x après la 0.13.0 (\S\ref{sec:maj-0-13-sans-retour}), 0.13.0 après la 0.13.1 (\S\ref{sec:maj-0-13-1-sans-retour}).
+    \item \textbf{Sauvegarder} la base de données --- avec \keshpath{docker-compose.yml}, le volume \texttt{<projet>\_kesh-mariadb-data} ; sur Synology avec \keshpath{docker-compose.prod.yml}, un dump par \keshpath{kesh-dump.sh} (\S\ref{sec:backup-dsm}) --- (cf. section précédente). \textbf{Pour passer à la 0.13.0 ou à la 0.13.1, cette sauvegarde est le seul retour en arrière possible} : une fois migrée, la base refuse tout binaire antérieur --- 0.12.x après la 0.13.0 (\S\ref{sec:maj-0-13-sans-retour}), 0.13.0 après la 0.13.1 (\S\ref{sec:maj-0-13-1-sans-retour}). La 0.13.2 n'a pas de migration : le retour à la 0.13.1 se fait sans restaurer, à condition d'avoir retiré la colonne Devise des profils CSV (\S\ref{sec:maj-0-13-2-retour}).
     \item \textbf{Lire le changelog} de la nouvelle version pour identifier les breaking changes éventuels et les migrations nécessaires.
     \item \textbf{Mettre à jour le fichier compose} --- \textbf{obligatoire pour passer à la 0.13.0} (\S\ref{sec:maj-0-13}) : re-télécharger le compose et y reporter ses adaptations locales, puis vérifier les placeholders de \keshpath{.env} --- dont les lignes \texttt{MARIADB\_ROOT\_PASSWORD} et \texttt{MARIADB\_PASSWORD} : une valeur entre chevrons y est acceptée par Compose, et pour root rien d'autre ne la signale. Sur une base déjà créée, \textbf{ne remplacez pas} ces deux valeurs dans \keshpath{.env} --- ni des chevrons, ni \texttt{kesh\_dev} : la base a gardé celles de sa création, et une valeur neuve n'y change rien (1045 pour Kesh, sauvegarde en échec pour root) ; changez-les par le \S\ref{sec:mariadb-mdp}, \texttt{ALTER USER} d'abord. Pour les versions suivantes : selon le changelog (nouvelles variables, changement d'image).
     \item \textbf{Tirer la nouvelle image} : \keshcommand{docker compose pull kesh-api}.
@@ -1973,6 +1973,10 @@ La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la d
 
 La 0.13.2 ne demande ni nouveau compose ni nouvelle variable de \keshpath{.env} : on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.13.1, appliquez d'abord la section suivante (\S\ref{sec:maj-0-13-1}).
 
+\begin{sloppypar}
+\textbf{Sauvegardez la base avant la mise à jour} (étape 1 de la procédure, \S\ref{sec:mise-a-jour}), comme à chaque version. La 0.13.2 n'apporte \textbf{aucune migration} : \texttt{kesh\_version\_min\_required} reste à \texttt{0.13.1}, et le retour à une 0.13.1 reste possible sans restaurer --- sous la réserve de la colonne Devise (\S\ref{sec:maj-0-13-2-retour}).
+\end{sloppypar}
+
 \paragraph{Ajouter la colonne Devise aux profils CSV.}\mbox{}\\
 \begin{sloppypar}
 Un profil CSV peut désormais désigner la \textbf{colonne Devise} de son fichier : Kesh lit alors la devise de chaque ligne et refuse un relevé qui n'est pas en francs suisses (\texttt{422 BANK\_IMPORT\_UNSUPPORTED\_CURRENCY}) ou qui mélange plusieurs devises (\texttt{422 BANK\_CSV\_MIXED\_CURRENCIES}). \textbf{Les profils existants n'ont pas cette colonne} : leur relevé reste \textbf{supposé en CHF}, comme avant, et la prévisualisation le dit à chaque dépôt. Pour tout profil dont le fichier porte une colonne Devise --- \textbf{le profil UBS, colonne 4} ---, ouvrez \emph{Administration → Profils bancaires} et réglez-la. Le détail est au manuel utilisateur, \emph{Profils banque} et \emph{Le relevé CSV d'UBS}. Modifier un profil à l'écran garde désormais sa colonne contrepartie, que seule l'API règle et que le formulaire supprimait au premier enregistrement.
@@ -1984,6 +1988,14 @@ Un profil CSV peut désormais désigner la \textbf{colonne Devise} de son fichie
 \begin{sloppypar}
 Aucune migration de la 0.13.2 ne relève la version minimale exigée : le retour à la 0.13.1 reste possible. Mais \textbf{un seul profil qui lit la colonne Devise} fait échouer, sous la 0.13.1, la liste des profils bancaires de \textbf{toute la société} (\texttt{GET /api/v1/bank-profiles}, erreur 500) : l'écran \emph{Profils bancaires} est inutilisable, et l'écran d'import affiche un sélecteur de profil \textbf{vide, sans message} ; les imports par ce profil sont refusés --- rien n'est importé à tort. \textbf{Retirez la colonne Devise de tous les profils avant le retour}, sous la 0.13.2. Oubliée, elle se retire encore \textbf{par l'API} de la 0.13.1 : un \texttt{PUT /api/v1/bank-profiles/\{id\}} complet sans \texttt{columnMapping.currency}, ou un \texttt{DELETE} ; l'identifiant et les réglages du profil, que la 0.13.1 ne rend plus, se lisent dans \textbf{l'export global} de la 0.13.1 (\keshpath{bank\_profiles.csv}, colonnes \texttt{id} et \texttt{column\_mapping\_json}). Le SQL reste le dernier recours. Une sauvegarde d'installation prise sous la 0.13.2 s'importe dans une 0.13.1, avec la même conséquence.
 \end{sloppypar}
+
+\paragraph{Intégrations par l'API : les lots de réconciliation.}\mbox{}\\
+\begin{sloppypar}
+\textbf{Changement de contrat} pour \texttt{POST /api/v1/reconciliation/accept} et \texttt{/reject} : un lot qui contient une transaction disparue, déjà rapprochée ou déjà rejetée n'est plus refusé en entier (\texttt{400 VALIDATION\_ERROR}) ; la réponse est un \texttt{200} à lire proposition par proposition, la transaction refusée figurant dans \texttt{failed[]} avec \texttt{BANK\_TRANSACTION\_NOT\_FOUND}, \texttt{RECONCILIATION\_ALREADY\_RECONCILED} ou \texttt{RECONCILIATION\_ALREADY\_REJECTED}. Un lot de plus de 500 transactions est refusé en \texttt{400}. Une intégration qui traitait ce \texttt{400} doit désormais lire \texttt{failed[]}. Le détail est dans \texttt{docs/api-external.md}. Les autres changements d'API de la version sont additifs : \texttt{columnMapping.currency} des profils bancaires, \texttt{previewFingerprint} de la prévisualisation d'import (facultatif à la création), et la suppression d'un import, fermée aux clés d'API (\S\ref{sec:api-keys}).
+\end{sloppypar}
+
+\paragraph{Sur Synology : les scripts de sauvegarde.}\mbox{}\\
+\keshpath{kesh-dump.sh} et \keshpath{kesh-restore.sh} sont inchangés depuis la 0.13.1 : rien à re-télécharger si vous avez ceux de la 0.13.1. Pour les re-télécharger, prenez-les \textbf{au tag \keshpath{v0.13.2}} (\S\ref{sec:backup-dsm}), la même version que l'image de votre compose.
 
 \subsubsection{Passer à la 0.13.1 : sens des débits CSV et \keshpath{kesh-restore.sh}}\label{sec:maj-0-13-1}
 
