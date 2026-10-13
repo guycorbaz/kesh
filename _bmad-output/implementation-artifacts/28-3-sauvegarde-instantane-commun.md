@@ -2,14 +2,15 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
+**in-progress** — validation close le 2026-10-13 (P3 : 0 MEDIUM+, LOW appliqués) ; développement en cours.
+Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
 (rétrospective de l'Epic 27), branche `story/28-3`, worktree `/home/gcorbaz/devel/kesh-28-3`, port **3036**,
 bases `kesh_283` / `kesh_e2e_283`. Choix consignés au registre de l'epic `epic-28-choix-autonomes.md`
 (**C-28-3-1 à C-28-3-32** ; le registre séparé `epic-28-choix-autonomes-28-3.md` y a été versé par union au rebase
 sur le kickoff, puis supprimé). 12 AC (AC1 à AC12).
 Validation P1 faite (Sonnet, lentilles R et F : 3 MEDIUM, 16 LOW), remédiée (C-28-3-15 à 23) ; validation P2 faite
-(Opus, lentilles R et F : 5 MEDIUM, 14 LOW), remédiée par simplification (C-28-3-25 à 31) ; validation P3 à lancer :
-`28-3-validate-prompt-p3.md` (Sonnet, lentilles R et F, C-28-3-32).
+(Opus, lentilles R et F : 5 MEDIUM, 14 LOW), remédiée par simplification (C-28-3-25 à 31) ; validation P3 faite
+(Sonnet, lentilles R et F, `28-3-validate-prompt-p3.md`, C-28-3-32 : 0 MEDIUM, 15 LOW bruts, 11 distincts), LOW appliqués — boucle close.
 PR : **`closes #633`**, **`refs #465`** (jamais `closes #465` : C-28-3-1).
 
 ## Story
@@ -90,7 +91,16 @@ START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY;
   `sqlx::Transaction` émet le `ROLLBACK`). Les erreurs **de l'ouverture** elle-même ont leurs résidus, au dernier
   point de cette liste.
   Une erreur du `ROLLBACK` final (`finish`) fait **échouer** la sauvegarde (C-28-3-20) : `export_installation` la
-  propage, même si toutes les tables ont été lues.
+  propage, même si toutes les tables ont été lues. Que `finish` **rende** l'erreur est établi par l'AC5 (h) (connexion
+  tuée par `KILL`) ; que `export_installation` la **propage** (un `?` sur `finish`) n'est exercé par aucun test — le
+  cœur observable ne peut pas atteindre l'instantané de `export_installation` après sa dernière lecture : **angle mort
+  assumé**, dont le détecteur est la revue (validation P3, F3-7).
+- **Plan B, si l'AC5 (a-RC) rougit sur le code correct** (le `SET TRANSACTION` sans portée ne serait pas pris en compte
+  par le `START … WITH CONSISTENT SNAPSHOT` qui le suit — fait non vérifié) : le dev ne corrige pas le test ; il
+  remplace, dans `begin_on`, le `SET TRANSACTION` par la lecture du niveau de session (`@@tx_isolation`), un
+  `SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ`, puis, **après** le `START`, le rétablissement du niveau lu
+  (protocole texte, `close_on_drop` sur tout échec de ces instructions) ; l'AC5 (f) reste l'oracle de la session
+  inchangée. Décision écrite au registre (C-28-3-33 ou suivant) et à la fiche, sans question (validation P3, F3-8).
 - Ouverture, sur une `PoolConnection` acquise : d'abord le `SET TRANSACTION …` par `conn.execute("SET TRANSACTION …")`
   — un `&str` passé à `Executor::execute`, donc en **protocole texte**, comme le `BEGIN` de sqlx ; **pas**
   `sqlx::query(…)`, qui passerait en protocole préparé (C-28-3-19) ; puis `sqlx::Transaction::begin(conn,
@@ -204,12 +214,14 @@ passe un observateur vide) : il porte `#[cfg_attr(not(test), allow(dead_code))]`
 de quoi `clippy -D warnings` rougirait sur la cible lib (C-28-3-29). `AsyncFnMut` est écarté : dans un cœur appelé depuis un handler
 axum, dont le futur doit être `Send`, l'inférence d'auto-trait y est fragile. Le test capture dans la fermeture un
 clone du pool et un compteur partagé (`Arc<AtomicUsize>`). `export_installation` lui passe un observateur **vide**
-(`&mut |_| Box::pin(async {})`). Aucun drapeau, aucune variable d'environnement, aucune `feature` : la production
+(`&mut |_| Box::pin(async {})`, littéral dont le type se déduit de l'attendu). Un observateur **factorisé** en
+variable (tests (a), (b)) porte l'annotation de retour — `move |e: Etape| -> BoxFuture<'static, ()> { … }` — faute de
+quoi son type de retour serait `Pin<Box<[bloc async]>>` et ne coercerait pas (validation P3, R3-6). Aucun drapeau, aucune variable d'environnement, aucune `feature` : la production
 emprunte **exactement** le chemin testé (C-28-3-6). La signature du cœur ne reçoit **aucun pool** (AC2, point 2).
 
 **Moteur de stockage : contrôlé dans les tests, écrit au manuel, pas à l'exécution** (C-28-3-25, qui remplace
 C-28-3-17). Le cœur **ne contrôle pas** le moteur des tables qu'il lit, et la sauvegarde n'échoue jamais pour cette
-raison. Le contrôle vit dans les tests : le squash de test (`ENGINE=InnoDB` sur ses 40 tables, Dev Notes § *Moteurs*),
+raison. Le contrôle vit dans les tests : le squash de test (`ENGINE=InnoDB` sur ses 40 tables, Dev Notes § *Moteurs de stockage, au sol*),
 `test_schema_guard.rs` (qui compare à chaque gate le moteur du vrai schéma migré à celui du squash, `schema_facts`, l. 154-168) et
 l'AC5 (e) (toute table sauvegardée est InnoDB sur la base de test). Motif : 2 des 40 `CREATE TABLE` des migrations
 (`contacts`, `contact_persons`) n'ont pas de clause `ENGINE` et prennent, sur la base servie, le moteur par défaut du
@@ -229,6 +241,11 @@ valeur non nulle de la colonne fille dans le NDJSON de la table fille doit figur
 référencée dans le NDJSON de la table parente ; le helper rend la liste des violations
 (`"bank_transactions.import_id=17 → bank_imports.id absent"`). Assertion de montage du helper : il voit **au moins**
 la FK `fk_bank_transactions_import` (sinon il serait muet).
+
+**Protocole des instructions `SET` des tests** (validation P3, F3-2) : toute instruction `SET` émise par un test —
+`SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED` ((a-RC), (f)), et le repli `SET TRANSACTION READ WRITE` de (d)
+— passe par `conn.execute("…")` sur un `&str` (protocole texte), comme en production (C-28-3-19), jamais par
+`sqlx::query(…)`.
 
 **(a) Suppression concurrente entre deux lectures — le test qui rougit avant la correction.**
 L'observateur, à l'étape `ApresTable("bank_transactions")`, supprime l'import **par l'écrivain réel**
@@ -254,7 +271,7 @@ lectures y sont donc en autocommit sur **une** connexion, et la suppression conc
 T1, et à copier au Dev Agent Record : (a-défaut), (a-RC) et (b) rouges — assertion 2 ou 3, orphelins listés. Côté
 production, T2 ne change que l'**intérieur** de `ReadSnapshot` (`begin_on` ouvre l'instantané de l'AC1, `finish` fait
 le `ROLLBACK`, le champ devient une `sqlx::Transaction<'static, MySql>`) ; côté `mod tests`, T2 **ajoute** des tests
-neufs ((c), (d1), (d2), (e), (f), (g)(i)) mais ne touche **ni** les trois tests (a-défaut), (a-RC), (b), **ni** leurs
+neufs ((c), (d1), (d2), (e), (f), (g)(i), (h)) mais ne touche **ni** les trois tests (a-défaut), (a-RC), (b), **ni** leurs
 helpers (`orphelins`, le montage commun, l'observateur s'il est factorisé). Les trois tests passent au vert sans que
 leur texte ni celui de leurs helpers ne change. Preuve, au Dev Agent Record, une commande **par fonction** (chacun
 des trois tests et chacun de leurs helpers), sortie copiée, **vide** attendue (C-28-3-27) :
@@ -271,6 +288,18 @@ est l'accolade fermante d'une fonction de `mod tests` formatée par `rustfmt` ; 
 chaque plage couvre bien la fonction entière et elle seule (`git show <T2>:crates/kesh-db/src/backup.rs` et numéros
 de ligne copiés), sans quoi une sortie vide ne prouverait rien.
 
+Complément obligatoire (validation P3, R3-5, F3-3) — une sortie vide est aussi celle d'une plage **non résolue** (le
+`fatal:` part sur stderr), et la plage commence à la ligne `fn`, si bien que l'attribut `#[sqlx::test(…)]` qui choisit
+le schéma lui échappe :
+
+1. chaque commande `git log -L` est suivie de `; echo "exit=$?"`, et `exit=0` est copié avec la sortie ;
+2. **témoin positif** : la même commande sur l'intervalle `<commit T1>~1..<commit T2>` rend une sortie **non vide**
+   (la fonction naît en T1) — preuve que la plage se résout et que la commande voit un changement quand il y en a un ;
+3. **ajouts purs** : `git diff -U0 <commit T1> <commit T2> -- crates/kesh-db/src/backup.rs`, dont chaque hunk situé
+   après la ligne `mod tests` est de la forme `@@ -N,0 +M,K @@` (aucune ligne ancienne retirée ni modifiée) — ce qui
+   couvre attributs, `///` et helpers de toute forme ; toute exception est expliquée au Dev Agent Record. Les helpers
+   visés sont des `fn` à quatre espaces (`orphelins`, le montage, l'observateur s'il est factorisé en `fn`).
+
 **(b) L'instantané est pris à l'ouverture.** L'observateur, à l'étape `Ouvert`, supprime l'import de la même façon.
 Attendu : la sauvegarde contient l'import et ses transactions. (Sans `WITH CONSISTENT SNAPSHOT`, la vue naîtrait à la
 première lecture, **après** la suppression : M2.)
@@ -285,12 +314,16 @@ test qui comparerait `code()` à `"1792"` rougirait sur le code correct.
 **(d) La connexion revient propre.** Le test monte un **pool d'une seule connexion** sur la base du test
 (`MySqlPoolOptions::new().max_connections(1).connect_with((*pool.connect_options()).clone())`), si bien que la
 connexion réacquise après la sauvegarde est **nécessairement** celle qui a porté l'instantané — assertion de montage :
-`CONNECTION_ID()` identique avant et après. `sqlx::Transaction` ne rend pas sa connexion : `finish` et le `drop` la
+`CONNECTION_ID()` identique avant et après. `CONNECTION_ID()` est `BIGINT UNSIGNED` et se lit
+`SELECT CAST(CONNECTION_ID() AS SIGNED)` ; de même `SELECT CAST(@@in_transaction AS SIGNED)` (précédent
+`onboarding_audit_e2e.rs:2632`, `:2656` ; validation P3, F3-1). Les lectures se font par `fetch_one` et `expect` :
+une erreur rend le test rouge, jamais muet. `sqlx::Transaction` ne rend pas sa connexion : `finish` et le `drop` la
 remettent au pool, d'où ce montage. **(d1)** `begin_on`, une lecture (`read_min_required`), puis `finish` ;
 **(d2)** `begin_on`, la même lecture, puis `drop` sans `finish` (chemin d'erreur). Dans les deux cas, la connexion réacquise n'est plus en transaction : `SELECT @@in_transaction`
 rend `0` (C-28-3-26, qui remplace C-28-3-22). L'existence de `@@in_transaction` en 10.11 n'est pas établie par
 requête : **le test lui-même la vérifie** (une erreur « variable inconnue » le fait échouer, il ne passe pas à vide).
-Si elle n'existe pas, le dev remplace la forme par un repli **sans privilège** : sur la connexion réacquise,
+Si elle n'existe pas — erreur MariaDB **1193** (`ER_UNKNOWN_SYSTEM_VARIABLE`), lue par `number()`, et **non** une
+erreur de décodage, qui appellerait un `CAST` —, le dev remplace la forme par un repli **sans privilège** : sur la connexion réacquise,
 `SET TRANSACTION READ WRITE` (sans portée) doit **réussir** — dans une transaction ouverte, le serveur le refuse en
 `1568` (`ER_CANT_CHANGE_TX_CHARACTERISTICS`, fait non vérifié, tranché par ce test sous M6) ; le numéro se lit comme
 en (c). Le Dev Agent Record écrit laquelle des deux formes a servi, et la fiche est corrigée en conséquence. ⛔ Pas de
@@ -302,7 +335,8 @@ repli sur `information_schema.INNODB_TRX` : il exige le privilège `PROCESS`, qu
 `SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()` (`ENGINE` en
 `Option<String>`, comme `test_schema_guard.rs:166` ; un `NULL` compte comme « pas InnoDB »), et vérifie que chaque
 table de `TABLES_TO_TRUNCATE` et `_kesh_version` y figure (assertion de montage : `TABLES_TO_TRUNCATE.len() + 1` noms
-trouvés — sans elle, une liste vide passerait à vide) avec le moteur `InnoDB` ; le message d'échec nomme la table et
+**attendus** trouvés parmi ceux de la base, qui porte aussi `_sqlx_migrations` — sans elle, une liste vide passerait
+à vide) avec le moteur `InnoDB` ; le message d'échec nomme la table et
 son moteur. Puis `export_installation(&pool)` rend `Ok(e)` avec `e.tables` égal, nom pour nom et dans l'ordre, à
 `TABLES_TO_TRUNCATE` — c'est la couverture, dans `kesh-db`, du chemin public vers le cœur. Ce test rougit si une
 migration future crée une table sauvegardée en `MyISAM`, `Aria` ou `MEMORY` par une clause explicite (le squash la
@@ -314,6 +348,13 @@ par défaut d'un serveur d'exploitation : c'est l'objet du manuel (AC10).
 réacquise rend à `SELECT @@tx_isolation` toujours `READ-COMMITTED` : le `SET TRANSACTION` de l'AC1 ne vaut que pour la
 transaction de l'instantané. (MariaDB 10.11 : `@@tx_isolation` porte le niveau de **session** ; c'est lui qu'on
 contrôle ici, non celui de la transaction en cours.)
+
+**(h) Une erreur du `ROLLBACK` final est rendue par `finish`** (C-28-3-20 ; validation P3, F3-7). Sur un `ReadSnapshot`
+de `begin(&pool)`, après une lecture, le test lit `CAST(CONNECTION_ID() AS SIGNED)` **par l'instantané**, puis tue
+cette connexion depuis une autre connexion du pool (`KILL <id>` — un compte peut tuer ses propres threads, sans
+privilège `PROCESS`), puis appelle `finish` : `Err` attendu. Assertion de montage : le `KILL` a réussi. Si le
+comportement de sqlx rend ce test non déterministe (fait non vérifié), le dev le retire, l'écrit au Dev Agent Record
+et au registre, et l'AC1 garde l'angle mort.
 
 **(g) Les deux gardes lexicales de l'AC2** — (i) `export_installation_n_ouvre_qu_un_instantane` (`backup.rs`,
 `mod tests`, test ordinaire `#[test]`, lecture de `include_str!("backup.rs")`) et (ii)
@@ -397,14 +438,23 @@ entrée du journal d'audit, `admin.full_export` (`emit_full_export_audit`, `rout
 >
 > L'instantané ne vaut que pour les tables **InnoDB**, le moteur transactionnel de MariaDB ; une table d'un autre
 > moteur y échappe, **sans que l'export le signale**. Sur l'image MariaDB de `docker-compose.yml`, toutes les tables
-> de Kesh sont InnoDB. Deux d'entre elles sont toutefois créées sans moteur explicite et prennent le moteur par
-> défaut du serveur : sur une base fournie par ailleurs (`docker-compose.prod.yml` — paquet MariaDB de Synology,
-> serveur ou base gérée), le vérifier une fois, par le client MariaDB connecté à la base de Kesh
-> (`docker compose exec mariadb mariadb -u kesh -p kesh`, ou le client du paquet DSM) :
-> `SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND (ENGINE IS NULL OR
-> ENGINE <> 'InnoDB');` — **aucune ligne** attendue. Remède, pour chaque table listée, après un dump
-> (`kesh-dump.sh`) : `ALTER TABLE <table> ENGINE=InnoDB;` ; et régler `default_storage_engine=InnoDB` dans la
-> configuration du serveur, pour les tables à venir.
+> de Kesh sont InnoDB. Une table, `contact_persons`, est toutefois créée sans moteur explicite et prend le moteur
+> par défaut du serveur (une seconde, `contacts`, l'est aussi, mais les clés étrangères InnoDB qui la visent
+> l'obligent à être InnoDB) : sur une base fournie par ailleurs (`docker-compose.prod.yml` — paquet MariaDB de
+> Synology, serveur ou base gérée), le vérifier une fois, par le client MariaDB, en **nommant** la base de Kesh
+> (`kesh` par défaut, la valeur de `MARIADB_DATABASE`) :
+> `SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'kesh';` — **au moins 40** (sinon la base
+> nommée n'est pas celle de Kesh, et la requête suivante ne prouverait rien) ; puis
+> `SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'kesh' AND (ENGINE IS NULL OR
+> ENGINE <> 'InnoDB');` — **aucune ligne** attendue, ou seulement `_sqlx_migrations` (le registre des migrations,
+> qui n'est pas sauvegardé : son moteur est sans effet sur l'instantané). Remède, si `contact_persons` est listée,
+> après un dump (`kesh-dump.sh`) : `ALTER TABLE contact_persons ENGINE=InnoDB;`, puis `SHOW CREATE TABLE
+> contact_persons;` — hors InnoDB, MariaDB n'enregistre pas les clés étrangères : si les deux lignes
+> `CONSTRAINT fk_contact_persons_company` et `fk_contact_persons_contact` manquent, les recréer :
+> `ALTER TABLE contact_persons ADD CONSTRAINT fk_contact_persons_company FOREIGN KEY (company_id) REFERENCES
+> companies(id) ON DELETE CASCADE, ADD CONSTRAINT fk_contact_persons_contact FOREIGN KEY (contact_id) REFERENCES
+> contacts(id) ON DELETE CASCADE;`. Et régler `default_storage_engine=InnoDB` dans la configuration du serveur, pour
+> les tables à venir.
 
 Et, au même endroit ou au § *Quelle méthode de sauvegarde choisir ?* (`:1901`), une phrase : l'**export global**
 (CSV, *Administration → Export global*) ne bénéficie **pas encore** de cette garantie (#465). Côté manuel utilisateur
@@ -463,8 +513,9 @@ frontend : inchangés.
 - [ ] **T2 — L'instantané** (AC1, AC2 point 3 (i)) : côté production, l'intérieur de `ReadSnapshot` seul
   (`SET TRANSACTION` en protocole texte, `close_on_drop` sur son échec, `Transaction::begin`, `ROLLBACK` de `finish`,
   commentaire de dépendance `#[doc(hidden)]` — C-28-3-19). Côté `mod tests`, tests neufs (c), (d1), (d2), (e), (f),
-  (g)(i) ; les tests (a-défaut), (a-RC), (b) et leurs helpers ne changent pas et passent au vert (preuve
-  `git log -L` par fonction, sorties vides copiées, AC5 (a), C-28-3-27).
+  (g)(i), (h) ; les tests (a-défaut), (a-RC), (b) et leurs helpers ne changent pas et passent au vert (preuve
+  `git log -L` par fonction, sorties vides et `exit=0` copiés, témoin positif, `git diff -U0` en ajouts purs, AC5 (a),
+  C-28-3-27).
 - [ ] **T3 — `kesh-api`** (AC2 point 3 (ii), AC3, AC6, AC7) : garde (g)(ii) dans un `mod tests` neuf de
   `admin_backup/export.rs` ; commentaire `admin.rs:254-262` ; suites de l'AC6 vertes.
 - [ ] **T4 — Propagation** (AC8) : commentaires, grep de propagation copié au Dev Agent Record.
@@ -473,14 +524,19 @@ frontend : inchangés.
   complet ; gate complet `scripts/test-fast.sh` (**`kesh-db` touché : gate complet même en boucle de revue**) ;
   `npm run check`, `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build` ; **E2E complet au dernier
   commit de code** (aucun écran ne change, mais la règle D7 ne connaît pas d'exception). **Demandé à l'orchestrateur, hors
-  agent** (R2-1, C-28-3-25) : avant la publication de la 0.13.3, la requête de moteur de l'AC10, en lecture seule, sur
-  la base du NAS — résultat écrit « conforme / non conforme » au Dev Agent Record (jamais de nom de base ni d'hôte
+  agent** (R2-1, C-28-3-25) : avant la publication de la 0.13.3, les deux requêtes de moteur de l'AC10 (témoin de compte puis liste), en lecture
+  seule, sur la base du NAS **nommée** — « conforme » exige le témoin à au moins 40 et aucune ligne hors
+  `_sqlx_migrations` ; résultat écrit « conforme / non conforme » au Dev Agent Record (jamais de nom de base ni d'hôte
   réels) ; non conforme, le remède du manuel s'applique avant la release. Cela ne bloque pas la story.
 
 ### Mutations à exécuter (T6)
 
 Chaque mutation : motif vérifié unique, appliquée, test ciblé rejoué, restauration `git checkout -- <fichier>` +
-`touch` (cargo garde sinon le binaire muté). Résultat attendu écrit ; une mutation qui survit est un défaut du test
+`touch` (cargo garde sinon le binaire muté). M1 et M6 ne sont pas des remplacements de motif mais des
+**réécritures** de l'intérieur de `snapshot.rs` : elles s'appliquent par un patch préparé (`git apply`), dont le
+`git diff` est copié au journal de mutation avant le test. M9 vise **la** ligne `ENGINE=InnoDB` de `_kesh_version`,
+qui figure 40 fois dans le squash : le motif unique est le couple de lignes `CONSTRAINT chk_kesh_version_single_row …`
++ `) ENGINE=InnoDB …` (validation P3, F3-8). Résultat attendu écrit ; une mutation qui survit est un défaut du test
 ou une équivalence **à démontrer**, jamais à déclarer.
 
 | # | Mutation | Test qui doit rougir |
@@ -586,6 +642,15 @@ défaut non vérifié, et une garde qui échouerait fermée y refuserait toute s
 dans les tests (AC5 (e), `test_schema_guard.rs`) ; la limite, la vérification et le remède sont au manuel (AC10).
 `_sqlx_migrations` n'est pas lue par la sauvegarde.
 
+Exposition réelle (validation P3, R3-2, F3-4) : `contacts` est la cible de clés étrangères posées par des tables
+`ENGINE=InnoDB` (`20260416000001_invoices.sql:32`, `20260627000001_credit_notes.sql:44`,
+`20260628000001_supplier_invoices.sql:56`, et `contact_persons.sql:26`) ; une clé étrangère InnoDB vers une table d'un
+autre moteur est refusée, si bien qu'une installation migrée a `contacts` en InnoDB. Seule `contact_persons`, cible
+d'aucune clé, est exposée. Elle porte deux clés étrangères (`fk_contact_persons_company`, `fk_contact_persons_contact`)
+que MariaDB n'enregistre pas hors InnoDB : le remède du manuel le dit et prescrit le contrôle (`SHOW CREATE TABLE`)
+puis la recréation. `_sqlx_migrations`, créée par sqlx sans clause `ENGINE`, peut aussi être listée par la requête du
+manuel ; elle n'est pas sauvegardée, le manuel le dit.
+
 ### DDL concurrente, durée, purge — ce que l'instantané change et ce qu'il ne change pas
 
 - **DDL** : Kesh n'en exécute qu'au démarrage (`MIGRATOR.run`, `main.rs:149`), avant d'écouter (`main.rs:382`) ; les
@@ -684,7 +749,14 @@ montée de sqlx est une décision à part.
 | `@@tx_isolation` reflète le niveau de session, et `SET TRANSACTION` sans `SESSION` ne le change pas | AC5 (f) **sous M4** |
 | une `DELETE` concurrente n'attend pas la transaction de lecture (lectures non verrouillantes, verrou de métadonnées partagé compatible) | AC5 (a) — il pendrait sinon |
 
-Si l'un d'eux est faux, la fiche est fausse à cet endroit : corriger la fiche et le registre, non le test.
+Si l'un d'eux est faux, la fiche est fausse à cet endroit : corriger la fiche et le registre, non le test. Pour la
+ligne `SET TRANSACTION … l'emporte`, le remède est prescrit : le **plan B** de l'AC1.
+
+S'y ajoutent, de la validation P3 : `CONNECTION_ID()` et `@@in_transaction` se décodent par `CAST(… AS SIGNED)` (AC5
+(d)) ; un `KILL` de la connexion de l'instantané fait échouer le `ROLLBACK` de `finish` (AC5 (h)) ; hors InnoDB,
+MariaDB n'enregistre pas les clés étrangères d'un `CREATE TABLE` (le manuel prescrit un contrôle par `SHOW CREATE
+TABLE` plutôt que de s'y fier, AC10) ; une clé étrangère InnoDB vers une table non InnoDB est refusée (motif pour
+lequel `contacts` n'est pas exposée — non exécuté, raisonnement d'après la documentation).
 
 ### Découpage préventif — non requis
 
@@ -787,3 +859,23 @@ porté le périmètre à **24** modules de dépôt (C-28-3-1) : c'est le motif d
     → « signalée en commentaire », `Cargo.lock` seul (C-28-3-30). Registre séparé versé par union dans
     `epic-28-choix-autonomes.md` au rebase sur le kickoff (`5aad8b35`), puis supprimé. Décomptes après remédiation
     (recomptés) : 12 AC, 7 tâches (T0-T6), 11 mutations actives (M1-M11, M12 retirée), choix C-28-3-1 à 32.
+- 2026-10-13 — **Validation P3** (Sonnet, lentilles R et F, contexte frais, lecture seule ; prompt
+  `28-3-validate-prompt-p3.md`, rapports `kesh-gate-logs/28-3-validate-p3-{R,F}.md`) : **0 CRITICAL, 0 HIGH,
+  0 MEDIUM, 15 LOW** (R : 7 LOW ; F : 8 LOW), 11 distincts après les convergences R3-1=F3-6, R3-2≈F3-4, R3-4≈F3-5,
+  R3-5≈F3-3. Recyclages déclarés par les lentilles : R3-1, R3-2 (partiel), R3-5 (partiel), F3-2 (partiel), F3-3, F3-6 —
+  tous de propagation de texte ; aucun ne touche une ligne de production prescrite. **Boucle close** (0 MEDIUM+).
+  LOW appliqués à la clôture (Opus 5.5) : registre — annotations de C-28-3-9 (chaîne -17 → -25), C-28-3-19 (« épinglée »
+  → signalée ; protocole texte des tests), C-28-3-20 (échec fermé borné à l'instantané), C-28-3-21 (alias à deux
+  paramètres, annotation de l'observateur factorisé) ; AC10 — seule `contact_persons` est exposée (`contacts` est
+  contrainte par ses clés étrangères entrantes), remède complet (`ALTER … ENGINE=InnoDB` puis contrôle par
+  `SHOW CREATE TABLE` et recréation des deux clés), requêtes à base **nommée** avec témoin de compte (≥ 40),
+  `_sqlx_migrations` expliquée, et T6 aligné ; AC5 — protocole texte des `SET` des tests, `CAST(… AS SIGNED)` pour
+  `CONNECTION_ID()` et `@@in_transaction` (repli sur la seule erreur 1193), preuve `git log -L` complétée (`exit=$?`,
+  témoin positif `T1~1..T2`, `git diff -U0` en ajouts purs), assertion de montage de (e) précisée, test neuf (h)
+  (`KILL` puis `finish` en erreur) ; AC1 — propagation de l'erreur de `finish` par `export_installation` écrite en
+  angle mort, plan B si (a-RC) rougit sur le code correct ; AC4 — observateur factorisé annoté, renvoi « Moteurs de
+  stockage, au sol » ; mutations — M1/M6 par patch vérifié, M9 à motif unique de deux lignes. Décomptes
+  (recomptés) : 12 AC, 7 tâches (T0-T6), 11 mutations actives (M1-M11), choix C-28-3-1 à 32 ; tests de l'AC5 : (a-défaut),
+  (a-RC), (b), (c), (d1), (d2), (e), (f), (g)(i), (g)(ii), (h).
+  Tendance de la boucle : P1 Sonnet 3 MEDIUM → P2 Opus 5 MEDIUM (signal D5, recyclage : remédiation par
+  simplification, sans découpage) → P3 Sonnet 0 MEDIUM.

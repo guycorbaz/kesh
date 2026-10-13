@@ -222,6 +222,8 @@ Ne demandent pas qu'un commit de documentation, ou relèvent d'une décision qui
 - **Réversible** : oui.
 - *Amendé par C-28-3-17 (validation P1, F2/R11) : le contrôle passe à l'exécution, dans l'instantané, et fait
   échouer la sauvegarde ; le test seul ne contrôlait que la base de test.*
+- *Annotation du 2026-10-13 (validation P3, R3-1, F3-6) : l'amendement C-28-3-17 est lui-même retiré — le contrôle
+  revient aux tests (AC5 (e), `test_schema_guard.rs`) et la limite passe au manuel ; voir C-28-3-25.*
 
 ### C-28-3-10 — La restauration n'est pas touchée
 
@@ -349,6 +351,9 @@ Ne demandent pas qu'un commit de documentation, ou relèvent d'une décision qui
   objet) ; une instruction multiple `SET …; START …` dans `Transaction::begin` (dépend du drapeau multi-instructions du
   client, non établi).
 - **Réversible** : oui.
+- *Annotation du 2026-10-13 (validation P3, R3-1, F3-6) : « épinglée » du titre est inexact — la dépendance est
+  **signalée en commentaire**, non épinglée (`Cargo.toml` porte `0.8`, seul `Cargo.lock` tient la 0.8.6) ; voir
+  C-28-3-30. Le protocole texte vaut aussi pour les `SET` émis par les tests (validation P3, F3-2).*
 
 ### C-28-3-20 — Une erreur du `ROLLBACK` final fait échouer la sauvegarde (R12)
 
@@ -359,6 +364,10 @@ Ne demandent pas qu'un commit de documentation, ou relèvent d'une décision qui
   relance. Échouer fermé est la règle du reste de la story.
 - **Écartées** : journaliser et rendre les données (plus permissif, gain nul pour une opération rare et relançable).
 - **Réversible** : oui.
+- *Annotation du 2026-10-13 (validation P3, F3-6, F3-7) : « échouer fermé est la règle » vaut pour une erreur de base
+  survenue dans l'instantané, non pour le moteur des tables, que la story choisit de ne pas contrôler à l'exécution
+  (C-28-3-25). La propagation de l'erreur de `finish` est testée par un `KILL` de la connexion, ou écrite en angle
+  mort si ce test s'avère non déterministe (fiche, AC1 ; tranché au Dev Agent Record).*
 
 ### C-28-3-21 — L'observateur a la forme `BoxFuture`, alias local, sans dépendance neuve (F6 (i))
 
@@ -368,6 +377,9 @@ Ne demandent pas qu'un commit de documentation, ou relèvent d'une décision qui
   `Pin<Box<dyn Future<Output = ()> + Send + 'a>>` ; observateur vide en production.
 - **Écartées** : `AsyncFnMut` ; ajouter `futures` à `kesh-db` pour un alias.
 - **Réversible** : oui.
+- *Annotation du 2026-10-13 (validation P3, R3-1, R3-6) : l'alias prescrit a deux paramètres,
+  `BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>` (C-28-3-30) ; un observateur factorisé en
+  variable porte l'annotation de retour `-> BoxFuture<'static, ()>`.*
 
 ### C-28-3-22 — `@@in_transaction`, et sinon `INNODB_TRX` : le test tranche (F7)
 
