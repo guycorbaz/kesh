@@ -2,8 +2,9 @@
 
 ## Status
 
-**28-5a : review** (2026-10-13, `bmad-dev-story`, Opus 5.5 ; dernier commit de code `822ba587` ; revue de code P1 à
-lancer, `28-5a-review-prompt-p1.md`, Sonnet, lentilles B, E et A). **28-5b : ready-for-dev** (part de `origin/main`
+**28-5a : done** (2026-10-13 ; dernier commit de code de production `822ba587`, tests de la revue P1 `9081041c` ;
+revue de code P1 close — Sonnet, lentilles B, E et A : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 5 LOW, remédiation sur les
+seuls tests). *Avant :* **review** (`bmad-dev-story`, Opus 5.5). **28-5b : ready-for-dev** (part de `origin/main`
 après la fusion de la 28-5a).
 
 *Historique :* **ready-for-dev** (deux clés) — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur
@@ -414,6 +415,9 @@ du verrou tenu de `post_accept_returns_409_on_account_lock_contention` l. 1435 ;
 | M14 | a | `UPDATE` scopé par le seul `id` (sans `company_id` ni `bank_account_id`) | **équivalente** : `id` est la clé primaire, et la ligne a été lue scopée société et compte sous verrou — la portée est déjà établie ; les deux prédicats restent comme défense en profondeur (patron du dépôt) |
 | M15 | a | lecture **non** verrouillante (`find_pending_by_id_for_account`, l. 351) au lieu de `find_by_id_for_account_for_update` | **B10** : la suppression d'import ne prend pas le verrou nommé, sa transaction entière est la fenêtre, et le test la tient ouverte ; code juste → `404`, M15 → `409 OPTIMISTIC_LOCK_CONFLICT` (C-28-5-25, qui remplace C-28-5-23). M15 garde aussi M13 : l'équivalence de M13 suppose la lecture verrouillante |
 | M17 | a | `UPDATE` : retirer `updated_at = NOW(3)` | **équivalente** : `bank_transactions.updated_at` est `DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)` (`20260504000001_bank_imports.sql:74` ; même définition dans le squash `crates/kesh-db/test-schema/0001_schema_squash.sql`) : l'`UPDATE` change `auto_match_rejected_at` et `version`, le moteur renouvelle donc la colonne même sans l'affectation explicite. L'affectation reste dans la requête (lisibilité, patron du dépôt) |
+| M18 | a | `classify_unreject` : bras « rapprochée » sur le **statut seul** (`status != 'pending'`) — *ajoutée en revue de code P1, E-1* | B8 `pending_row_with_matched_entry_is_not_rejected_even_if_marked` |
+| M19 | a | `classify_unreject` : bras « rapprochée » sur le **lien seul** (`matched_entry_id.is_some()`) — *ajoutée en revue de code P1, E-1* | B8 `reconciled_row_without_link_is_not_rejected_even_if_marked` |
+| M20 | a | `bank_account_of_transaction` sans `company_id` (`WHERE id = ?`) — *déclarée en revue de code P1, E-2* | **équivalente** : la lecture verrouillante sous verrou est scopée société (`WHERE company_id = ? AND bank_account_id = ? AND id = ?`) : une transaction d'une autre société y est introuvable, et la route rend le **même `404 NOT_FOUND`**, sans rien écrire ni tracer ; seule différence, le nom du verrou nommé pris (compte d'une autre société), sans effet observable. Lecture partagée avec `…/cancel`, dont le dépôt est lui aussi scopé société |
 | M9 | b | `isRejected` sans `!isReconciled(tx)` | V1 |
 | M10 | b | bouton rendu sans condition `canManage` | V2 |
 | M11 | b | `onUnrejected` non appelé sur échec | V2 |
@@ -613,7 +617,13 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5a/`.
   | M15 | tuée | B10 (`409 OPTIMISTIC_LOCK_CONFLICT` au lieu de `404`) |
   | M17 | **rejouée — survit, équivalente** (14/14 verts, dont B1) | `bank_transactions.updated_at` porte `ON UPDATE CURRENT_TIMESTAMP(3)` : sans l'affectation explicite, le moteur renouvelle la colonne et B1 voit toujours `updated_at` postérieur à la valeur forcée. **L'équivalence lue sur le DDL est confirmée par l'exécution** ; la fiche n'a pas à être corrigée |
 
-  Aucune survivante assumée : les trois survivantes sont les trois équivalences prescrites (AC12 (a)).
+  | M18 | tuée *(revue P1, `mutations/M18.log`)* | B8 `pending_row_with_matched_entry_is_not_rejected_even_if_marked` |
+  | M19 | tuée *(revue P1, `mutations/M19.log`)* | B8 `reconciled_row_without_link_is_not_rejected_even_if_marked` |
+  | M20 | équivalente, déclarée sans exécution *(revue P1, E-2)* | cf. § *Tests* : même `404` par la lecture verrouillante scopée société |
+
+  Aucune survivante assumée : les trois survivantes sont les trois équivalences prescrites (AC12 (a)). *(Revue de
+  code P1 : M18 et M19 jouées sous le verrou de gate au commit `9081041c`, restauration `git checkout --` puis
+  `touch`, `git status` des crates vide ensuite ; filtre de 16 tests, les deux cas neufs de B8 compris.)*
 - **Gate final au dernier commit de code `822ba587`** (`final-gate.out`, sous le verrou de gate, bases `kesh_285` et
   `kesh_e2e_285` remises à zéro par `DROP`/`CREATE` + migrations + seed, sans redémarrer le conteneur) :
   - `scripts/test-fast.sh` (fmt + clippy + nextest, `final-testfast.log`) : **3527 passés, 0 échec, 6 ignorés**
@@ -762,3 +772,27 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5a/`.
   3527/3527 (6 ignorés), Vitest 1395/1395, `check` 0 erreur, `lint-i18n-ownership` et `build` verts, E2E 267 passés
   / 7 échecs, les sept KF-029. Choix C-28-5-31 à 33. Statut **review** ; revue de code P1 à lancer
   (`28-5a-review-prompt-p1.md`, Sonnet, lentilles B, E et A).
+- 2026-10-13 — **Revue de code P1** (Sonnet, lentilles B, E et A ; rapports `kesh-gate-logs/28-5a-review-p1-{B,E,A}.md`,
+  prompt `28-5a-review-prompt-p1.md`) : B 0/0/0/1, E 0/0/1/3, A 0/0/0/1 — soit **0 CRITICAL, 0 HIGH, 1 MEDIUM, 5 LOW**.
+  Remédiation, sur les **seuls tests et la fiche** (aucune ligne de production) :
+  - **E-1 (MEDIUM)** — le bras « rapprochée » de `classify_unreject` n'était épinglé que sur des états où statut et
+    lien concordent. B8 gagne `pending_row_with_matched_entry_is_not_rejected_even_if_marked` et
+    `reconciled_row_without_link_is_not_rejected_even_if_marked` (`9081041c`, patron des tests de la 27-4) ;
+    mutations **M18** (statut seul) et **M19** (lien seul) jouées sous le verrou : **tuées** chacune par son cas neuf.
+  - **E-2 (LOW)** — **M20** (`company_id` retiré de `bank_account_of_transaction`) déclarée **équivalente** au tableau
+    des mutations : la lecture verrouillante est scopée société et rend le même `404`.
+  - **A-LOW-1** — terminologie (« rapprochée » / « abgestimmt » contre « réconciliée » / « abgeglichen » de la clé
+    voisine) : catalogues **inchangés**, décision de l'orchestrateur (C-28-5-35).
+  - **B-LOW-1** — RBAC de `comptable_routes` non relu par la lentille, **vérifié ici** : la route (`lib.rs:683-684`)
+    est dans le bloc `let comptable_routes = Router::new()` (l. 349), fermé par
+    `.route_layer(axum::middleware::from_fn(crate::middleware::rbac::require_comptable_role))` (l. 748-750), puis
+    fusionné dans `protected` sous `require_auth` (l. 1056-1063) ; B4 l'établit à l'exécution (Consultation → `403`)
+    et M7 (montage dans `authenticated_routes`) est tuée. Aucun changement.
+  - **E-3 (LOW)** — la sonde de B10 : constat conforme, angle mort déjà écrit au doc-comment. Aucun changement.
+  - **E-4 (LOW)** — aucun test d'identifiant de chemin non numérique ou non positif : comportement hérité de
+    `…/cancel` (`Path<i64>`, `404` pour `0`), non régressif. Aucun changement.
+  Gates au `9081041c` : gate ciblé (fmt, clippy du workspace, binaires touchés) **659 passés** ; base `kesh_285`
+  remise à zéro puis `scripts/test-fast.sh` complet sous verrou : **3529 passés, 0 échec, 6 ignorés** (3527 + les deux
+  cas neufs). E2E non rejoué : il a tourné au `822ba587` et aucun commit de production n'a suivi. **Boucle close** —
+  la remédiation ne touche aucune ligne de production. Trend : P1 = 1 MEDIUM, 5 LOW → remédiés sur les tests seuls,
+  0 au-dessus de LOW. Statut **done**.

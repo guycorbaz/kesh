@@ -1431,3 +1431,14 @@ est portée en note à C-28-5-4 et C-28-5-19.
   dans un commit de fiche séparé ; le code de la 28-5a n'est pas touché ; la relecture de l'argument d'interblocage
   au rebase sur la 28-4a reste prescrite.
 - **Réversible** : oui (texte de fiche).
+
+### C-28-5-35 — Terminologie du refus `transaction-not-rejected` : catalogues inchangés (28-5a, revue P1, A-LOW-1)
+
+- **Contexte** : la lentille A relève que le message neuf dit « rapprochée » (fr-CH) et « abgestimmt » (de-CH), quand
+  la clé voisine `reconciliation-errors-already-reconciled` dit « réconciliée » et « abgeglichen ».
+- **Retenu** (décision de l'orchestrateur) : **les catalogues ne changent pas**. Les textes sont ceux que prescrit
+  la fiche (§ *Textes*, validée), et le glossaire (`docs/i18n-glossaire.md`) admet « rapprochée » et « Abstimmung /
+  abgestimmt » pour la réconciliation. Aucune ligne de production ne change : la boucle de revue reste close.
+- **Écartée** : aligner sur « abgeglichen » / « réconciliée » — un changement de production en fin de boucle, pour une
+  nuance que le glossaire tranche déjà.
+- **Réversible** : oui (texte de catalogue, avec son repli G9).
