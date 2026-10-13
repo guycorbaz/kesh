@@ -3,6 +3,7 @@
 	import BankProfileForm from '$lib/features/bank-import/BankProfileForm.svelte';
 	import { getBankProfile } from '$lib/features/bank-import/bank-profile.api';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import type { BankProfile } from '$lib/features/bank-import/bank-profile.types';
 
 	let profile = $state<BankProfile | null>(null);
@@ -22,7 +23,9 @@
 				isLoading = false;
 			})
 			.catch((err) => {
-				errorMessage = `Profil introuvable : ${String(err)}`;
+				// Story 28-2 (#520) : « Profil introuvable » était faux pour une
+				// panne réseau ; le message du serveur ou du client se suffit.
+				errorMessage = errorMessageOf(err);
 				isLoading = false;
 			});
 	});

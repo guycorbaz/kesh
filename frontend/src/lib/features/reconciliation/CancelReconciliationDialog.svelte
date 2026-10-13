@@ -18,6 +18,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { cancelReconciliation, getReconciliationTransaction } from './reconciliation.api';
 	import type {
 		CancelReconciliationResponse,
@@ -57,7 +58,7 @@
 		try {
 			view = await getReconciliationTransaction(id);
 		} catch (err) {
-			errorMsg = isApiError(err) ? err.message : String(err);
+			errorMsg = errorMessageOf(err);
 		} finally {
 			loading = false;
 		}
@@ -94,7 +95,7 @@
 			const result = await cancelReconciliation(bankTransactionId);
 			onSuccess(result);
 		} catch (err) {
-			errorMsg = isApiError(err) ? reconciliationCancelErrorMessage(err) : String(err);
+			errorMsg = isApiError(err) ? reconciliationCancelErrorMessage(err) : errorMessageOf(err);
 		} finally {
 			submitting = false;
 		}

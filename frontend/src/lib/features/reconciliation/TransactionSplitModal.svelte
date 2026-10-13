@@ -21,6 +21,7 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import AccountAutocomplete from '$lib/features/journal-entries/AccountAutocomplete.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
@@ -210,10 +211,8 @@
 			if (isApiError(e) && e.code === 'BANK_ACCOUNT_NOT_CONFIGURED') {
 				bankNotConfigured = true;
 				errorMsg = e.message;
-			} else if (isApiError(e)) {
-				errorMsg = e.message;
 			} else {
-				errorMsg = e instanceof Error ? e.message : String(e);
+				errorMsg = errorMessageOf(e);
 			}
 		} finally {
 			submitting = false;

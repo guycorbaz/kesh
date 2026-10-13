@@ -9,6 +9,7 @@
 	import { onMount } from 'svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { copyToClipboard } from '$lib/shared/utils/clipboard';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -60,7 +61,7 @@
 			keys = await listApiKeys();
 			loadError = null;
 		} catch (err) {
-			loadError = isApiError(err) ? err.message : String(err);
+			loadError = errorMessageOf(err);
 		}
 	}
 
@@ -156,7 +157,7 @@
 			await reload();
 			closeForm();
 		} catch (err) {
-			formError = isApiError(err) ? err.message : String(err);
+			formError = errorMessageOf(err);
 		} finally {
 			submitting = false;
 		}
@@ -195,7 +196,7 @@
 					i18nMsg('api-keys-errors-conflict', 'La clé a changé entre-temps — liste rechargée, réessayez.'),
 				);
 			} else {
-				toast.error(isApiError(err) ? err.message : String(err));
+				toast.error(errorMessageOf(err));
 			}
 		} finally {
 			// Toujours recharger + fermer : sur 404 (clé déjà supprimée ailleurs) ou
