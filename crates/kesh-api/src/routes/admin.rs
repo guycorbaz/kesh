@@ -254,10 +254,11 @@ async fn run_backup_and_restore(
     // 4. Backup automatique de l'état courant (cœur sans audit, O-4) → disque.
     //    Jamais d'import sans backup réussi (DC5). Pris **sous le verrou**
     //    (review Pass 4) : aucun autre import ne peut committer pendant cette
-    //    lecture (ils bloquent au FOR UPDATE ci-dessus) ⇒ pas de torn-read
-    //    inter-imports. `build_keshbackup` lit via le pool (connexions
-    //    séparées) ; le SELECT non-bloquant sur `_kesh_version` ne deadlocke
-    //    pas avec le FOR UPDATE détenu par cette transaction. Tout échec
+    //    lecture (ils bloquent au FOR UPDATE ci-dessus). `build_keshbackup`
+    //    lit toute la base sur UNE autre connexion du pool, dans un instantané
+    //    pris après ce verrou (Story 28-3, #633 : aucune saisie concurrente ne
+    //    peut y laisser d'orphelin) ; sa lecture de `_kesh_version` est non
+    //    verrouillante et n'attend pas le FOR UPDATE de `tx`. Tout échec
     //    jusqu'à l'écriture réussie du fichier est `AdminPreImportBackupFailed`
     //    (Story 15-13b, #576) : aucune sauvegarde n'existe encore.
     let (backup_bytes, _meta) = build_keshbackup(&state.pool)

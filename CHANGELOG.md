@@ -8,6 +8,20 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.13.3] — Non publié
+
+### Corrigé
+
+- **La sauvegarde d'installation photographie la base à un seul instant ([#633](https://github.com/guycorbaz/kesh/issues/633)).**
+  Jusqu'ici, le fichier `.keshbackup` — l'export d'*Administration → Sauvegarde complète* comme la sauvegarde de
+  sécurité prise avant un import — lisait ses tables l'une après l'autre : une saisie ou une suppression faite
+  pendant la sauvegarde pouvait y laisser des lignes sans leur parent (par exemple des transactions sans leur
+  import), que la restauration recréait telles quelles. Toutes les tables sont désormais lues dans un instantané
+  unique, en lecture seule, qui ne bloque aucune saisie ; la garantie vaut pour les tables InnoDB, et le manuel
+  d'administration dit comment vérifier le moteur d'une base fournie par ailleurs. Une base qui porte déjà de telles
+  lignes les garde. Une sauvegarde prise sous une version antérieure pendant
+  que l'on saisissait se refait. L'export global CSV n'en bénéficie pas encore ([#465](https://github.com/guycorbaz/kesh/issues/465)).
+
 ## [0.13.2] — 2026-10-13
 
 ⚠️ **Cette version n'est toujours pas destinée à tenir une comptabilité réelle.** Correctif de la 0.13.1, issu de sa recette (Epic 27) : un import bancaire dont aucune transaction n'est rapprochée se supprime, pour être réimporté ; la devise d'un relevé est lue, et un relevé qui n'est pas en francs suisses est refusé ; changer de profil après la prévisualisation la recalcule ; un lot de réconciliation qui contient une transaction disparue n'est plus refusé en entier. La version n'apporte aucune migration. Le **bouclement d'exercice** ([#232](https://github.com/guycorbaz/kesh/issues/232)) et les **pièces justificatives** ([#235](https://github.com/guycorbaz/kesh/issues/235)) manquent encore.

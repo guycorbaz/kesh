@@ -2594,6 +2594,11 @@ pas le document lui-même, qui se conserve avec le répertoire des documents de 
 \textbf{toute} votre comptabilité~: il n'y a ni exercice à choisir ni format à sélectionner. Le
 ZIP est téléchargeable immédiatement (quelques secondes à une minute selon le volume).
 
+L'export lit ses tables l'une après l'autre (issue \#465) : une saisie faite pendant qu'il se
+prépare peut n'y figurer qu'en partie --- par exemple une ligne sans la pièce à laquelle elle
+appartient. Lancez-le quand personne ne saisit. La sauvegarde complète d'installation, elle, est lue dans un seul instantané (manuel
+d'administration).
+
 \subsection{Vérification d'intégrité}
 
 Le \texttt{metadata.json} contient un hash SHA-256 par fichier. Pour vérifier l'intégrité après

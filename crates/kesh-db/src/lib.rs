@@ -13,6 +13,7 @@ pub mod pool;
 pub mod post_restore;
 pub mod repositories;
 pub mod retry;
+pub mod snapshot;
 pub mod test_fixtures;
 pub mod util;
 pub mod version;
