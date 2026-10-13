@@ -1,0 +1,489 @@
+# Story 28.3 : La sauvegarde d'installation lit ses tables dans un instantané commun
+
+## Status
+
+**ready-for-dev** — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
+(rétrospective de l'Epic 27), branche `story/28-3`, worktree `/home/gcorbaz/devel/kesh-28-3`, port **3036**,
+bases `kesh_283` / `kesh_e2e_283`. Choix consignés au registre `epic-28-choix-autonomes-28-3.md`
+(**C-28-3-1 à C-28-3-14**, à verser par union dans `epic-28-choix-autonomes.md`). 12 AC (AC1 à AC12).
+Validation P1 à lancer : `28-3-validate-prompt-p1.md` (Sonnet, lentilles R et F).
+PR : **`closes #633`**, **`refs #465`** (jamais `closes #465` : C-28-3-1).
+
+## Story
+
+**As an** Administrateur qui sauvegarde une installation où l'on saisit,
+**I want** que le fichier `.keshbackup` — celui que je télécharge comme celui que Kesh écrit avant chaque import —
+photographie la base **à un seul instant**,
+**so that** une saisie, une suppression d'import ou une validation faite pendant la sauvegarde ne laisse jamais dans
+le fichier une ligne sans son parent, que la restauration recréerait telle quelle.
+
+Issue : [#633](https://github.com/guycorbaz/kesh/issues/633) (bug, **P2**), relevée en validation P2 de la Story 27-1
+(lentille R, R2-1). Jumeau : [#465](https://github.com/guycorbaz/kesh/issues/465) (export de souveraineté CSV, P2),
+**hors périmètre** (C-28-3-1). Epic : `_bmad-output/planning-artifacts/epic-28-recette-v0-13-2.md` § *28-3* (fichier
+du kickoff, worktree `kesh-28-0`, non encore mergé à la création de cette fiche). Cible : **v0.13.3**.
+
+⚠️ **Pourquoi maintenant** : depuis le 2026-10-13, l'instance du NAS porte de vraies transactions. Une sauvegarde
+incohérente n'est plus une hypothèse d'école : c'est la pièce qu'on restaure le jour où il faut restaurer.
+
+### Le défaut, au sol
+
+`build_keshbackup` (`crates/kesh-api/src/admin_backup/export.rs:45`) lit la base en **41 requêtes indépendantes
+sur le pool**, chacune en autocommit, donc chacune dans sa propre vue :
+
+```rust
+let min_required = read_min_required(pool).await.map_err(map_db)?;      // export.rs:46
+let instance_id = read_instance_id(pool).await.map_err(map_db)?;        // export.rs:47
+for &table in TABLES_TO_TRUNCATE {                                       // export.rs:60
+    let export = export_table(pool, table).await.map_err(map_db)?;      // export.rs:61
+```
+
+et `export_table` (`crates/kesh-db/src/backup.rs:173`) fait elle-même **deux** requêtes sur le pool
+(`non_generated_columns`, `backup.rs:157`, puis le `SELECT` des lignes, `backup.rs:201`). Aucune transaction : deux
+tables lues l'une après l'autre peuvent l'être sur deux connexions différentes, à deux instants différents.
+
+`TABLES_TO_TRUNCATE` (`backup.rs:34`) est ordonnée **enfants → parents** : `bank_transactions` est lue **avant**
+`bank_imports`, `invoice_lines` avant `invoices`, `journal_entry_lines` avant `journal_entries`, etc. Une suppression
+de parent committée entre les deux lectures — `bank_imports::delete_unreconciled_in_tx` (Story 27-1,
+`repositories/bank_imports.rs:449`) en est un écrivain atteignable d'un clic — laisse dans le fichier des
+transactions **sans leur import**. La restauration (`restore_tables_in_tx`, `backup.rs:444`) charge avec
+`FOREIGN_KEY_CHECKS=0` : elle les recrée telles quelles, et rien ne le signale.
+
+Le code le reconnaît lui-même, `repositories/bank_imports.rs:447-448` :
+
+```rust
+/// - Une sauvegarde prise pendant une suppression peut porter des transactions
+///   orphelines (#633 ; export global CSV, #465).
+```
+
+**Deux appelants**, tous deux concernés (`grep -rn "build_keshbackup(" crates --include=*.rs`, hors commentaires) :
+
+| Site | Rôle |
+|---|---|
+| `crates/kesh-api/src/routes/admin.rs:39` | `full_export` — *Administration → Sauvegarde complète* |
+| `crates/kesh-api/src/routes/admin.rs:263` | `run_backup_and_restore` — sauvegarde de sécurité **pré-import**, prise sous le verrou d'installation (`SELECT … FROM _kesh_version … FOR UPDATE`, `admin.rs:239`) |
+
+## Critères d'acceptation
+
+### AC1 — Une seule connexion, un seul instantané, en lecture seule
+
+Toutes les lectures de la sauvegarde — `kesh_version_min_required`, l'identifiant d'installation, et, pour chaque
+table de `TABLES_TO_TRUNCATE`, ses colonnes (`INFORMATION_SCHEMA.COLUMNS`) et ses lignes — passent par **une seule
+connexion**, dans **une seule transaction** ouverte ainsi, sur cette connexion et dans cet ordre :
+
+```sql
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;            -- vaut pour la transaction suivante seulement
+START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY;
+```
+
+- `SET TRANSACTION` **sans** `SESSION` : il ne vaut que pour la transaction suivante et ne laisse rien sur la
+  connexion rendue au pool (C-28-3-2). Il est **obligatoire** même si le serveur est en `REPEATABLE READ` par défaut :
+  sous `READ COMMITTED`, `WITH CONSISTENT SNAPSHOT` est sans effet et chaque `SELECT` reprend une vue neuve — le
+  défaut reviendrait **en silence**.
+- `WITH CONSISTENT SNAPSHOT` : la vue est prise **à l'ouverture**, non à la première lecture (AC5 (b)).
+- `READ ONLY` : toute écriture dans la transaction est refusée par le serveur (AC5 (c)) ; la transaction n'obtient
+  pas d'identifiant d'écriture.
+- La transaction se **clôt avant** la compression ZIP (C-28-3-5) — par `ROLLBACK` (rien à valider) — et, sur toute
+  erreur, la connexion revient au pool **hors transaction** (le `Drop` de `sqlx::Transaction` émet le `ROLLBACK`).
+- Ouverture par `sqlx::Transaction::begin(conn, Some(<instruction>))` sur une `PoolConnection` acquise **après** le
+  `SET` sur cette même connexion — l'API publique de sqlx 0.8.6 (`sqlx-core-0.8.6/src/transaction.rs:99`), qui
+  contrôle `in_transaction()` après l'instruction (`sqlx-mysql-0.8.6/src/transaction.rs:32-35`). ⛔ **Jamais** un
+  `START TRANSACTION` brut par `execute` hors de cette API : sqlx ne saurait pas la connexion en transaction et la
+  rendrait au pool **transaction ouverte**.
+
+### AC2 — Le type porte la garantie : aucune lecture de sauvegarde ne peut se faire sur le pool
+
+Un type neuf, `ReadSnapshot` (module neuf `crates/kesh-db/src/snapshot.rs`, C-28-3-3), enveloppe la transaction de
+l'AC1. Il n'a que deux constructeurs — `ReadSnapshot::begin(pool: &MySqlPool)` (public) et
+`ReadSnapshot::begin_on(conn: PoolConnection<MySql>)` (`pub(crate)`, pour l'AC5 (a)) — et une fin explicite
+(`finish`, qui fait le `ROLLBACK` et rend l'erreur éventuelle). Il donne accès à la connexion pour l'exécution des
+requêtes (`&mut MySqlConnection`, par une méthode ou `DerefMut`), jamais au pool.
+
+Les **quatre** fonctions de lecture de la sauvegarde de `backup.rs` prennent `&mut ReadSnapshot` au lieu de
+`&MySqlPool` :
+
+| Fonction | Ligne aujourd'hui | Requête |
+|---|---|---|
+| `non_generated_columns` (privée) | `backup.rs:145` | `INFORMATION_SCHEMA.COLUMNS` |
+| `export_table` | `backup.rs:173` | `SELECT <colonnes> FROM <table>` |
+| `read_min_required` | `backup.rs:307` | `_kesh_version` |
+| `read_instance_id` | `backup.rs:321` | `MIN(id) FROM companies` |
+
+Ainsi, l'inventaire « toutes les lectures passent par cette connexion » est **tenu par le compilateur** : un appel
+sur le pool ne compile plus. `column_constraints` (`backup.rs:388`, import) **ne change pas** : il sert la
+restauration, non la sauvegarde (AC9).
+
+### AC3 — Une seule fonction de `kesh-db` lit l'installation ; `kesh-api` n'assemble plus que le ZIP
+
+`kesh_db::backup::export_installation(pool: &MySqlPool) -> Result<InstallationExport, DbError>` ouvre le
+`ReadSnapshot`, lit `min_required`, `instance_id` et chaque table **dans l'ordre de `TABLES_TO_TRUNCATE`**, clôt
+l'instantané, et rend :
+
+```rust
+pub struct InstallationExport {
+    pub min_required: String,
+    pub instance_id: i64,
+    /// Une entrée par table de `TABLES_TO_TRUNCATE`, dans son ordre.
+    pub tables: Vec<(&'static str, TableExport)>,
+}
+```
+
+`build_keshbackup` (`admin_backup/export.rs`) **garde son nom et sa signature** (`pool: &MySqlPool`) — la garde
+lexicale `avant_sauvegarde_branchee_aux_appels_de_l_import` (`routes/admin.rs:870-914`) compte ses appels — et ne fait
+plus **qu'un** appel à la base : `export_installation(pool)`. Le reste (SHA-256, `BackupTableMeta`, entrées
+`data/<table>.ndjson`, `files/`, `manifest.json` en dernier, `KeshBackupMeta`) est **inchangé octet pour octet** pour
+un même état de base : même ordre d'entrées, mêmes noms, même manifeste. Les erreurs restent
+`AppError::AdminFullExportFailed` (via `map_db`), converties en `AdminPreImportBackupFailed` par
+`avant_sauvegarde` à l'import — comportement inchangé.
+
+### AC4 — Le cœur est observable, pour le test, sans changer le chemin de production
+
+`export_installation` délègue à une fonction **privée** du module (nom au choix, par exemple
+`export_installation_in`) qui prend un `ReadSnapshot` déjà ouvert et un **observateur** appelé :
+
+- une fois **après l'ouverture de l'instantané et avant la première lecture** (étape `Ouvert`) ;
+- une fois **après la lecture de chaque table** (étape `ApresTable(&'static str)`).
+
+L'observateur est asynchrone (par exemple `&mut (dyn FnMut(Etape) -> BoxFuture<'static, ()> + Send)`, ou
+`AsyncFnMut` — Rust 1.96.1, édition 2024 : au choix du dev). `export_installation` lui passe un observateur
+**vide**. Aucun drapeau, aucune variable d'environnement, aucune `feature` : la production emprunte **exactement**
+le chemin testé (C-28-3-6).
+
+### AC5 — Tests de l'instantané (`crates/kesh-db/src/backup.rs`, `mod tests`, `#[sqlx::test(migrations = "./test-schema")]`)
+
+Montage commun : `seed_accounting_company` (`test_fixtures.rs:80`), un compte bancaire, **un** import portant au
+moins **deux** transactions (`bank_imports::create_with_transactions`, `repositories/bank_imports.rs:59` ; modèle de
+montage : `crates/kesh-db/tests/bank_transactions_repository.rs:119`). Helper de test
+`orphelins(&InstallationExport) -> Vec<String>` : pour **chaque** clé étrangère du schéma lue dans
+`information_schema.KEY_COLUMN_USAGE` (`REFERENCED_TABLE_NAME IS NOT NULL`, `TABLE_SCHEMA = DATABASE()`), toute
+valeur non nulle de la colonne fille dans le NDJSON de la table fille doit figurer parmi les valeurs de la colonne
+référencée dans le NDJSON de la table parente ; le helper rend la liste des violations
+(`"bank_transactions.import_id=17 → bank_imports.id absent"`). Assertion de montage du helper : il voit **au moins**
+la FK `fk_bank_transactions_import` (sinon il serait muet).
+
+**(a) Suppression concurrente entre deux lectures — le test qui rougit avant la correction.**
+L'observateur, à l'étape `ApresTable("bank_transactions")`, supprime l'import **par l'écrivain réel**
+(`bank_imports::delete_unreconciled_in_tx` dans une transaction neuve du pool, validée), **sur une autre connexion**.
+Attendus :
+
+1. **assertion de montage** : après la sauvegarde, la base ne contient plus l'import ni ses transactions (le geste
+   concurrent a bien eu lieu — sans elle, le test passerait à vide) ; l'observateur a bien été appelé pour
+   `bank_transactions` (compteur) ;
+2. la sauvegarde contient l'import **et** ses transactions (elle montre la base d'avant la suppression) ;
+3. `orphelins(&export)` est **vide**.
+
+Le test est exécuté deux fois sur le même montage : **(a-RC)** sur une connexion dont la session a été passée en
+`SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED` avant `ReadSnapshot::begin_on(conn)` — il prouve que le
+`SET TRANSACTION … REPEATABLE READ` de l'AC1 est effectif ; **(a-défaut)** par `ReadSnapshot::begin(&pool)`.
+
+⛔ **Le test doit avoir rougi avant la correction**, et la preuve s'écrit au Dev Agent Record : T1 pose
+l'observateur et le test **sur le code actuel** (lectures sur le pool, sans instantané) — résultat attendu, et à
+copier : l'assertion 2 ou 3 rouge, avec les orphelins listés — puis T2 introduit l'instantané, et le même test
+passe au vert sans être modifié.
+
+**(b) L'instantané est pris à l'ouverture.** L'observateur, à l'étape `Ouvert`, supprime l'import de la même façon.
+Attendu : la sauvegarde contient l'import et ses transactions. (Sans `WITH CONSISTENT SNAPSHOT`, la vue naîtrait à la
+première lecture, **après** la suppression : M2.)
+
+**(c) La transaction est en lecture seule.** Une écriture exécutée **dans** un `ReadSnapshot` (par exemple
+`UPDATE companies SET name = name`) est refusée par le serveur ; le test vérifie le **code** d'erreur MariaDB
+(`1792`, `ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION`) et non un message.
+
+**(d) La connexion revient propre.** Le test monte un **pool d'une seule connexion** sur la base du test
+(`MySqlPoolOptions::new().max_connections(1).connect_with((*pool.connect_options()).clone())`), si bien que la
+connexion réacquise après la sauvegarde est **nécessairement** celle qui a porté l'instantané — assertion de montage :
+`CONNECTION_ID()` identique avant et après. `sqlx::Transaction` ne rend pas sa connexion : `finish` et le `drop` la
+remettent au pool, d'où ce montage. **(d1)** `begin_on` puis `finish` ; **(d2)** `begin_on` puis `drop` sans `finish`
+(chemin d'erreur). Dans les deux cas, la connexion réacquise n'est plus en transaction : `SELECT @@in_transaction`
+rend `0`.
+
+**(e) Toutes les tables sauvegardées sont transactionnelles.** Pour chaque table de `TABLES_TO_TRUNCATE` et pour
+`_kesh_version`, `information_schema.TABLES.ENGINE = 'InnoDB'`. Une table neuve créée en `MyISAM`, `Aria` ou
+`MEMORY` ferait rougir ce test, en nommant la table : elle échapperait à l'instantané **sans que rien d'autre ne le
+voie** (C-28-3-9). Assertion de montage : le nombre de tables contrôlées vaut `TABLES_TO_TRUNCATE.len() + 1`.
+
+**(f) Le niveau d'isolation de la session n'est pas modifié.** Même montage que (d) : sur la connexion passée en
+`SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED`, après une sauvegarde par `begin_on` puis `finish`, la connexion
+réacquise rend à `SELECT @@tx_isolation` toujours `READ-COMMITTED` : le `SET TRANSACTION` de l'AC1 ne vaut que pour la
+transaction de l'instantané. (MariaDB 10.11 : `@@tx_isolation` porte le niveau de **session** ; c'est lui qu'on
+contrôle ici, non celui de la transaction en cours.)
+
+### AC6 — Le chemin de `kesh-api` reste couvert, sans régression
+
+Les suites existantes restent vertes **sans modification de leurs assertions** : `crates/kesh-api/tests/admin_full_export_e2e.rs`,
+`admin_full_import_e2e.rs`, `admin_backup_e2e.rs`, et les tests de `routes/admin.rs` (dont la garde lexicale de
+l'AC3). Les tests de `backup.rs` qui appellent `export_table(&pool, …)` (`backup.rs:884`, `:910`, `:1209`) et
+`crates/kesh-db/tests/accounts_role_backfill.rs:237` passent par un `ReadSnapshot` (adaptation mécanique, assertions
+inchangées).
+
+### AC7 — Pré-import : l'instantané est pris sous le verrou, sans interblocage
+
+Le comportement de `run_backup_and_restore` est inchangé dans son ordre : verrou `FOR UPDATE` sur `_kesh_version`
+dans `tx` (`admin.rs:239`), **puis** `build_keshbackup(&state.pool)` sur une **autre** connexion du pool, **puis** la
+restauration dans `tx`. La lecture de `_kesh_version` par l'instantané est une lecture **non verrouillante** : elle ne
+bloque pas sur le `FOR UPDATE` tenu par `tx` (comme aujourd'hui). Le commentaire `admin.rs:254-262` (« `build_keshbackup`
+lit via le pool (connexions séparées) ») est réécrit : une connexion séparée, un instantané pris après le verrou. Aucun
+test neuf exigé ici : `admin_full_import_e2e.rs` exerce déjà ce chemin de bout en bout (un interblocage le ferait
+rougir ou pendre).
+
+### AC8 — Les commentaires qui décrivent le défaut sont mis à jour (propagation)
+
+- `crates/kesh-db/src/repositories/bank_imports.rs:447-448` : la sauvegarde d'installation ne porte plus
+  d'orphelins ; **reste** l'export global CSV, #465.
+- `crates/kesh-api/src/admin_backup/export.rs` : en-tête (`:1-13` — et le « (22) » périmé de `:11`, à remplacer par
+  « une par table de `TABLES_TO_TRUNCATE` », **sans nombre**) et doc-comment de `build_keshbackup`.
+- `crates/kesh-db/src/backup.rs` : doc du module (`:1-17`) et de `export_table`.
+- `crates/kesh-api/src/exports/global.rs:21-24` **reste** tel quel (#465 ouvert) ; ajouter seulement que la
+  sauvegarde d'installation, elle, lit dans un instantané (`kesh_db::snapshot::ReadSnapshot`), réutilisable pour #465.
+- Grep de propagation **avant** la passe suivante, sur la valeur et non la formulation :
+  `grep -rn "633\|sans instantané\|instantané commun\|orphelin" crates docs CHANGELOG.md`.
+
+### AC9 — La restauration n'est pas concernée, et la fiche le prouve
+
+Aucune modification de `restore_tables_in_tx`, `force_onboarding_done_if_eligible` (`backup.rs:444`, `:626`),
+`post_restore.rs`, `admin_backup/import.rs`. Motif, vérifié au sol : la restauration **écrit** dans **une** transaction
+(`tx`, ouverte `admin.rs:236`, validée `admin.rs:489`) sous le verrou d'installation ; ses seules lectures hors `tx`
+sont celles de `check_schema_compat` (`column_constraints`, `INFORMATION_SCHEMA`), qui portent sur le **schéma**, non
+sur les données, et que rien ne modifie à l'exécution (migrations au démarrage, `main.rs:149`, avant l'écoute
+`main.rs:382`). Le défaut de #633 est un défaut de **lecture** des données ; la restauration ne le partage pas.
+
+### AC10 — Manuel d'administration (`docs/manual/fr/admin-manual.tex`, § *Exporter (sauvegarde complète)*, l. 1823 et suivantes)
+
+Après « Cette opération est en lecture seule (aucun effet de bord sur les données). » (`:1825`), ajouter, en substance :
+
+> Kesh lit toutes les tables dans **un seul instantané** de la base, pris au début de l'export : ce qui est saisi,
+> modifié ou supprimé pendant qu'il se prépare n'y figure pas, et le fichier ne porte jamais une ligne sans son
+> en-tête — une transaction sans son import, une ligne de facture sans sa facture. L'export ne bloque aucune saisie.
+> La sauvegarde de sécurité prise avant un import (plus bas) est lue de la même façon. ⚠️ *Avant la 0.13.3*, un
+> export pris pendant une saisie pouvait porter de telles lignes ; une sauvegarde de cette époque que l'on compte
+> garder se **refait**.
+
+Et, au même endroit ou au § *Quelle méthode de sauvegarde choisir ?* (`:1901`), une phrase : l'**export global**
+(CSV, *Administration → Export global*) ne bénéficie **pas encore** de cette garantie (#465). Côté manuel utilisateur
+(`docs/manual/fr/user-manual.tex`, § *Exports de souveraineté*, après « Lancer l'export », `:2593-2595`) : une phrase
+honnête — l'export lit ses tables l'une après l'autre ; une saisie faite pendant qu'il se prépare peut n'y figurer
+qu'en partie ; le lancer quand personne ne saisit (#465).
+
+**PDF régénérés** (`make fr` dans `docs/manual/`, sous `flock`), et contrôlés **aplatis** :
+`pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "un seul instantané[^.]*"` (et de
+même pour le manuel utilisateur). Aucune modification de version des manuels (macro `\keshVersion` : gate de release,
+pas de story).
+
+### AC11 — CHANGELOG
+
+Sous `## [0.13.3] — Non publié` (à créer en tête des versions si absent — les stories sœurs 28-1 et 28-2 peuvent la
+créer aussi : fusion par union au rebase), `### Corrigé` :
+
+> - **La sauvegarde d'installation photographie la base à un seul instant ([#633](https://github.com/guycorbaz/kesh/issues/633)).**
+>   Jusqu'ici, le fichier `.keshbackup` — l'export d'*Administration → Sauvegarde complète* comme la sauvegarde de
+>   sécurité prise avant un import — lisait ses tables l'une après l'autre : une saisie ou une suppression faite
+>   pendant la sauvegarde pouvait y laisser des lignes sans leur parent (par exemple des transactions sans leur
+>   import), que la restauration recréait telles quelles. Toutes les tables sont désormais lues dans un instantané
+>   unique, en lecture seule, qui ne bloque aucune saisie. Une sauvegarde prise sous une version antérieure pendant
+>   que l'on saisissait se refait. L'export global CSV n'en bénéficie pas encore ([#465](https://github.com/guycorbaz/kesh/issues/465)).
+
+### AC12 — Aucune migration, aucun changement d'API ni d'écran
+
+Aucun fichier sous `crates/kesh-db/migrations/` ni `test-schema/` ; `kesh_version_min_required` inchangé ;
+`docs/migrations-idempotence-audit.md` et `post_restore.rs` (P5, P7) non concernés. Format `.keshbackup` inchangé
+(un fichier produit par la 0.13.3 s'importe dans une 0.13.2, et réciproquement). Route, codes d'erreur, i18n,
+frontend : inchangés.
+
+## Tasks / Subtasks
+
+- [ ] **T0 — Montage** (AC —) : bases `kesh_283` et `kesh_e2e_283` (migrations du worktree, seed
+  `scripts/seed-dev-db.sql`), port `3036`, `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-28-3/target`, `node_modules`
+  par `cp -al` depuis le dépôt principal. Gates lourds sous `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock`.
+- [ ] **T1 — Le test rouge d'abord** (AC4, AC5 (a)) : `InstallationExport`, `export_installation` et son cœur
+  observable écrits **sur les lectures actuelles** (pool) ; helper `orphelins` ; test (a-défaut). Exécuter, constater
+  le **rouge**, copier la sortie au Dev Agent Record. Commit (`test(28-3): … rouge avant la correction (refs #633)`).
+- [ ] **T2 — L'instantané** (AC1, AC2) : `crates/kesh-db/src/snapshot.rs` (`ReadSnapshot`, `begin`, `begin_on`,
+  `finish`, accès connexion), `pub mod snapshot;` dans `lib.rs` ; les quatre lectures de `backup.rs` sur
+  `&mut ReadSnapshot` ; le cœur ouvre l'instantané. Le test (a-défaut) passe **sans modification**. Tests (a-RC), (b),
+  (c), (d1), (d2), (e), (f).
+- [ ] **T3 — `kesh-api`** (AC3, AC6, AC7) : `build_keshbackup` sur `export_installation` ; adaptation des quatre
+  tests appelant `export_table` ; commentaire `admin.rs:254-262`.
+- [ ] **T4 — Propagation** (AC8) : commentaires, grep de propagation copié au Dev Agent Record.
+- [ ] **T5 — Documentation** (AC10, AC11) : manuels, PDF régénérés et contrôlés aplatis, CHANGELOG.
+- [ ] **T6 — Mutations et gates** (AC1-AC12) : campagne M1-M10 (ci-dessous) ; base remise à zéro **avant** le gate
+  complet ; gate complet `scripts/test-fast.sh` (**`kesh-db` touché : gate complet même en boucle de revue**) ;
+  `npm run check`, `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build` ; **E2E complet au dernier
+  commit de code** (aucun écran ne change, mais la règle D7 ne connaît pas d'exception).
+
+### Mutations à exécuter (T6)
+
+Chaque mutation : motif vérifié unique, appliquée, test ciblé rejoué, restauration `git checkout -- <fichier>` +
+`touch` (cargo garde sinon le binaire muté). Résultat attendu écrit ; une mutation qui survit est un défaut du test
+ou une équivalence **à démontrer**, jamais à déclarer.
+
+| # | Mutation | Test qui doit rougir |
+|---|---|---|
+| M1 | le cœur lit chaque table par une connexion neuve du pool (retour au code d'avant, par un `ReadSnapshot::begin(pool)` **par table**) | AC5 (a-défaut), (a-RC) |
+| M2 | `START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY` → `START TRANSACTION READ ONLY` | AC5 (b) |
+| M3 | suppression du `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ` | AC5 (a-RC) |
+| M4 | `SET TRANSACTION …` → `SET SESSION TRANSACTION …` | AC5 (f) |
+| M5 | suppression de `, READ ONLY` | AC5 (c) |
+| M6 | `ReadSnapshot` ouvre la transaction par un `execute("START TRANSACTION …")` brut sur la `PoolConnection`, hors de `sqlx::Transaction` (le piège de l'AC1) ; `finish` se contente de rendre la connexion | AC5 (d1), (d2) — `@@in_transaction` à `1`. ⚠️ Un `finish` qui oublie le `ROLLBACK` **mais** garde la `sqlx::Transaction` est, lui, **équivalent** (le `Drop` de sqlx l'émet) : à consigner comme tel, non comme survivant |
+| M7 | l'observateur n'est plus appelé après chaque table | AC5 (a) — assertion de montage (compteur) |
+| M8 | le helper `orphelins` ne lit plus que les FK d'une table (filtre `TABLE_NAME = 'invoices'`) | AC5 (a) — assertion de montage du helper |
+| M9 | une table de `TABLES_TO_TRUNCATE` exclue du contrôle de moteur (`skip(1)`) | AC5 (e) — assertion de montage du compte |
+| M10 | `build_keshbackup` relit `min_required` hors instantané (ajout d'une lecture sur le pool, si elle compile encore) | **non représentable** si l'AC2 est tenu : la mutation ne compile pas — consigner la sortie de `cargo build` comme preuve |
+
+## Dev Notes
+
+### Inventaire clos des lectures de la sauvegarde, au sol (2026-10-13, `6f971d76`)
+
+Commandes, et sorties copiées :
+
+```text
+$ grep -n "fetch_\|execute(" crates/kesh-db/src/backup.rs | sed -n 1,5p
+157:    .fetch_all(pool)          ← non_generated_columns (INFORMATION_SCHEMA.COLUMNS)
+201:        .fetch_all(pool)      ← export_table (SELECT des lignes)
+311:    .fetch_one(pool)          ← read_min_required (_kesh_version)
+323:        .fetch_one(pool)      ← read_instance_id (MIN(id) FROM companies)
+399:    .fetch_all(pool)          ← column_constraints — IMPORT, hors sauvegarde
+```
+
+(les lignes suivantes, `449` et au-delà, sont sur `&mut **tx` : restauration.)
+
+```text
+$ grep -rn "build_keshbackup\|export_table(\|read_min_required\|read_instance_id" crates --include=*.rs \
+    | grep -v "^crates/kesh-db/src/backup.rs:.*fn "
+crates/kesh-api/src/admin_backup/export.rs:46:    let min_required = read_min_required(pool)…
+crates/kesh-api/src/admin_backup/export.rs:47:    let instance_id = read_instance_id(pool)…
+crates/kesh-api/src/admin_backup/export.rs:61:            let export = export_table(pool, table)…
+crates/kesh-api/src/routes/admin.rs:39:    let (bytes, meta) = build_keshbackup(&state.pool).await?;
+crates/kesh-api/src/routes/admin.rs:263:    let (backup_bytes, _meta) = build_keshbackup(&state.pool)
+crates/kesh-db/src/backup.rs:884:        let export = export_table(&pool, "reconciliation_rules")      (test)
+crates/kesh-db/src/backup.rs:910:        let export = export_table(&pool, "companies")                 (test)
+crates/kesh-db/src/backup.rs:1209:        let export = export_table(&pool, "companies")…                (test)
+crates/kesh-db/tests/accounts_role_backfill.rs:237:    let export = kesh_db::backup::export_table(&pool, "accounts")  (test)
+```
+
+(plus des mentions en commentaire : `admin_backup/mod.rs:10`, `export.rs:3`, `routes/admin.rs:41`, `:129`, `:258`,
+`:498`, `:873-914` — garde lexicale.)
+
+**Ensemble clos** : quatre sites SQL de lecture de données ou de schéma pour la sauvegarde, trois appels depuis
+`kesh-api`, deux appelants de `build_keshbackup`, quatre tests. Après T2, les quatre fonctions exigent
+`&mut ReadSnapshot` : le compilateur interdit tout site neuf sur le pool. **Sites non résolus après la story** : aucun
+pour la sauvegarde ; l'export global (`exports/global.rs`, 29 lectures sur le pool) reste hors périmètre, nommé (#465,
+C-28-3-1).
+
+`grep -rn "kesh_db::backup::" crates` : les autres usages (`kesh-seed`, `admin_backup/import.rs`, tests e2e) ne
+touchent que `TABLES_TO_TRUNCATE`, `reset_cleared_tables`, `TableRestore`, `column_constraints`,
+`parse_ndjson_rows`, `restore_tables_in_tx`, `force_onboarding_done_if_eligible` — aucune lecture de sauvegarde.
+
+### Moteurs de stockage, au sol
+
+```text
+$ S=crates/kesh-db/test-schema/0001_schema_squash.sql
+$ grep -ci 'CREATE TABLE' $S ; grep -ci 'ENGINE=InnoDB' $S
+40
+40
+```
+
+Les 40 tables du squash (régénéré depuis `SHOW CREATE TABLE`, donc fidèle au moteur réel) : les 39 de
+`TABLES_TO_TRUNCATE` (recompté : `sed -n '/^pub const TABLES_TO_TRUNCATE/,/^];/p' crates/kesh-db/src/backup.rs | grep -c '^    "'`
+→ 39) + `_kesh_version`. Toutes InnoDB. Les migrations portent 51 `CREATE TABLE` pour 38 `ENGINE=InnoDB` (tables
+recréées, ou créées sans clause et donc au moteur par défaut, InnoDB) : c'est le squash qui fait foi, et la garde
+AC5 (e) le contrôlera sur la base réelle du test. `_sqlx_migrations` n'est pas lue par la sauvegarde.
+
+### DDL concurrente, durée, purge — ce que l'instantané change et ce qu'il ne change pas
+
+- **DDL** : Kesh n'en exécute qu'au démarrage (`MIGRATOR.run`, `main.rs:149`), avant d'écouter (`main.rs:382`) ; les
+  `TRUNCATE` de `test_fixtures.rs:401` sont de test ; la restauration et la remise à zéro procèdent par `DELETE`
+  (`backup.rs:496`, `kesh-seed/src/lib.rs:586`). Une DDL concurrente ne peut donc venir que d'un second processus
+  (un autre conteneur qui démarre et migre sur la même base). Dans ce cas : une table **déjà lue** est protégée par
+  le verrou de métadonnées que la transaction garde jusqu'à sa fin — la DDL **attend** la fin de la sauvegarde ; une
+  table **pas encore lue** et reconstruite entre-temps fait échouer sa lecture (`ER_TABLE_DEF_CHANGED`, 1412) : la
+  sauvegarde échoue, **fermée** (`AdminFullExportFailed`), jamais incohérente. Angle mort assumé, non testé
+  (C-28-3-8).
+- **Durée** : la transaction couvre 80 requêtes (2 + 39 × 2), sans compression (C-28-3-5) ; quelques secondes au
+  plus sur une installation de PME. Elle **ne pose aucun verrou de ligne** (lectures cohérentes non verrouillantes) :
+  aucune saisie n'attend la sauvegarde.
+- **Purge** : la vue retient la purge InnoDB des versions plus récentes qu'elle pendant sa durée — même effet qu'un
+  `mariadb-dump --single-transaction` (celui de `scripts/synology/kesh-dump.sh:8`), négligeable à cette échelle.
+- **Pool** : une connexion tenue pendant la sauvegarde (aujourd'hui : une connexion à la fois, prise et rendue par
+  requête). À l'import, deux connexions (`tx` + instantané) sur les 5 du pool (`main.rs:75`) — comme aujourd'hui en pic.
+- **Streaming** : `full_export` streame **après** `build_keshbackup` (`admin.rs:39-60`) ; l'instantané est clos
+  avant toute écriture de réponse.
+
+### État actuel des fichiers modifiés — ce qui doit être préservé
+
+- `admin_backup/export.rs` : ordre des entrées ZIP (`data/<table>.ndjson` dans l'ordre de `TABLES_TO_TRUNCATE`, puis
+  `files/`, puis `manifest.json`), options de compression (`Deflated`, `0o644`), `KeshBackupMeta { byte_size,
+  table_count = TABLES_TO_TRUNCATE.len(), total_rows }`, messages d'erreur `zip …`. Aucune émission d'audit dans
+  `build_keshbackup` (elle reste au handler, `admin.rs:44`).
+- `backup.rs` : format NDJSON (ordre des clés, `decode_cell`, `%Y-%m-%dT%H:%M:%S%.f`), garde du back-quote, erreur
+  `Invariant` si aucune colonne non générée — inchangés ; seuls changent le type du premier paramètre et l'exécuteur.
+- `routes/admin.rs` : la garde lexicale (`:870-914`) compte **un** `check_schema_compat(` et **deux**
+  `build_keshbackup(` dans le code de production hors commentaires `//` : ne pas en ajouter, ne pas en retirer.
+
+### Pièges connus du dépôt, applicables ici
+
+- **Test muet** : l'assertion de montage de l'AC5 (a) (le geste concurrent a eu lieu) et celle du helper (il voit la
+  FK) sont obligatoires — précédent `backfill_skips_archived_accounts` (16-1a).
+- **Mutation restaurée, binaire périmé** : `touch` après chaque restauration.
+- **Base de gate piégée** : remise à zéro inconditionnelle avant le gate complet (§ CLAUDE.md, KF-039 #310).
+- **`kesh-db` touché** : gate complet même en cours de boucle de revue.
+- **Édition du code par l'outil Edit uniquement** (consigne 14) ; pas de `sed -i`.
+- **sqlx et `START TRANSACTION` brut** : seul `Transaction::begin(conn, Some(stmt))` tient le compte de profondeur de
+  transaction ; voir AC1.
+- **`SET TRANSACTION` et les valeurs de session** : sous MariaDB, `@@tx_isolation` reflète le niveau de **session** ;
+  le niveau « pour la transaction suivante » posé par `SET TRANSACTION` ne s'y lit pas forcément — ne pas fonder sur
+  cette variable la preuve que l'instantané est en `REPEATABLE READ` : cette preuve est le comportement (AC5 (a-RC)) ;
+  la variable ne sert qu'à l'AC5 (f) (la session n'a pas changé).
+
+### Faits MariaDB tirés de la documentation, non exécutés à la création de la fiche
+
+Écrits d'après la documentation de MariaDB, **non exécutés** ici (la fiche n'a lancé aucune requête) ; chacun est
+établi, ou réfuté, par le test qui le porte — le dev le note au Dev Agent Record :
+
+| Fait | Test qui l'établit |
+|---|---|
+| `START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY` est accepté par 10.11 | tous ceux de l'AC5 |
+| sous `READ COMMITTED`, `WITH CONSISTENT SNAPSHOT` ne fige pas la vue | AC5 (a-RC) **sous M3** |
+| une écriture en `READ ONLY` est refusée en `1792` | AC5 (c) |
+| `@@in_transaction` est une variable de session lisible | AC5 (d) |
+| `@@tx_isolation` reflète le niveau de session, et `SET TRANSACTION` sans `SESSION` ne le change pas | AC5 (f) **sous M4** |
+| une `DELETE` concurrente n'attend pas la transaction de lecture (lectures non verrouillantes, verrou de métadonnées partagé compatible) | AC5 (a) — il pendrait sinon |
+
+Si l'un d'eux est faux, la fiche est fausse à cet endroit : corriger la fiche et le registre, non le test.
+
+### Découpage préventif — non requis
+
+Modules touchés : `kesh-db` (`snapshot.rs` neuf, `backup.rs`, `lib.rs`, `repositories/bank_imports.rs` — commentaire,
+`tests/accounts_role_backfill.rs`), `kesh-api` (`admin_backup/export.rs`, `routes/admin.rs` — commentaire,
+`exports/global.rs` — commentaire), documentation. Moins de cinq modules métier de premier niveau. Inclure #465 aurait
+porté le périmètre à **24** modules de dépôt (C-28-3-1) : c'est le motif du découpage, appliqué d'office.
+
+### Project Structure Notes
+
+- `crates/kesh-db/src/snapshot.rs` : module neuf, documenté (`//!` + `///`), réutilisable par l'export global (#465).
+- Aucun fichier neuf dans `kesh-api`.
+
+### References
+
+- Issue #633, issue #465 (`gh issue view --json`).
+- `crates/kesh-api/src/admin_backup/export.rs:45-110` ; `crates/kesh-db/src/backup.rs:34-90, 145-325` ;
+  `crates/kesh-api/src/routes/admin.rs:32-60, 230-300, 489, 870-914` ; `crates/kesh-db/src/repositories/bank_imports.rs:426-449`.
+- sqlx 0.8.6 : `sqlx-core-0.8.6/src/transaction.rs:99` (`Transaction::begin`), `sqlx-mysql-0.8.6/src/transaction.rs:19-40`.
+- MariaDB 10.11 (`docker-compose.yml:4`, `.github/workflows/ci.yml:50`) : `START TRANSACTION [WITH CONSISTENT SNAPSHOT
+  | READ ONLY | READ WRITE] [, …]` ; `SET TRANSACTION ISOLATION LEVEL` sans `SESSION`/`GLOBAL` = transaction suivante.
+- Précédent d'instantané de lecture dans le dépôt : `routes/journal_entries.rs:474-480` (`pool.begin()` +
+  `rollback`), sans `READ ONLY` ni isolation forcée.
+- Registre : `epic-28-choix-autonomes-28-3.md`.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
+
+## Change Log
+
+- 2026-10-13 — Fiche créée (`bmad-create-story`, Opus 5.5, autonomie) : 12 AC, 7 tâches (T0-T6), 10 mutations
+  (M1-M10), choix C-28-3-1 à C-28-3-14. #465 séparé (C-28-3-1).
