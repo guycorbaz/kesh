@@ -3039,6 +3039,11 @@ pas rouvert.)* Texte d'origine conservé ci-dessous pour l'historique.
 - **Écartées** : forcer un plan contraire dans le test (`IGNORE INDEX`, au test seulement : il ne mesurerait plus la
   requête de production).
 - **Réversible** : oui.
+- *Annotation du 2026-10-13 (revue de code P1, E-LOW-1 et E-LOW-2) : aucun `EXPLAIN` n'a été relevé — seul l'**ordre**
+  des résultats l'a été. Lire **« équivalente à l'ordre observé »**, et non « au plan observé ». Le montage du test
+  d'ordre fait désormais traverser par la coupure du `LIMIT 50` un groupe de trois factures de même date ; la
+  mutation M16 (`ORDER BY i.date ASC` sans `i.id`) y survit pour la même raison que M10 — les égalités de date sortent
+  en `id` croissant sans départage explicite — et se déclare équivalente à l'ordre observé au même titre.*
 
 ### C-28-7-16 — Deux précisions de test et de manuel au-delà de la fiche
 

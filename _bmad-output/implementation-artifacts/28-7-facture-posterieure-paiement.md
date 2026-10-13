@@ -2,7 +2,7 @@
 
 ## Status
 
-**review** — développement fait le 2026-10-13 (`bmad-dev-story`, Opus 5.5) ; branche rebasée sur `origin/main`
+**done** — revue de code close à la P1 le 2026-10-13 (Sonnet, B, E, A : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 9 LOW, remédiés sans ligne de production ; cf. Change Log). — Développement fait le 2026-10-13 (`bmad-dev-story`, Opus 5.5) ; branche rebasée sur `origin/main`
 (`5629acc2`, 28-6 fusionnée) ; dernier commit de code `7b10e555` ; gates complets verts au HEAD `0d94fdc7` ;
 mutations 14 tuées sur 15, M10 équivalente au plan observé ; revue de code P1 à lancer
 (`28-7-review-prompt-p1.md`, Sonnet, lentilles B, E, A). Choix C-28-7-14 à 16 ajoutés au développement.
@@ -139,7 +139,10 @@ d'abord, et le départage `invoice_id ASC` du tri aval (`kesh-reconciliation/src
 `idx_invoices_company_validated_unpaid_date (company_id, status, paid_at, date)` permet de servir cet ordre sans
 tri **si** l'optimiseur le choisit ; ce choix n'est pas établi (aucun plan relevé, et la table porte aussi
 `idx_invoices_company_date`) : c'est l'`ORDER BY` qui garantit l'ordre, quel que soit le plan. Aucun test ne lit
-l'ordre du SQL (`propose_matches` retrie par `score DESC, invoice_id ASC`). Au-delà de 50 candidates, ce sont donc les plus récentes qui
+l'ordre du SQL (`propose_matches` retrie par `score DESC, invoice_id ASC`). *(Annotation du 2026-10-13, revue de
+code P1, A-LOW-4 : la phrase précédente décrit l'état d'avant la remédiation P1 de la validation ; depuis, le test
+de dépôt `find_unpaid_invoices_orders_by_date_then_id_before_limit` (AC6) lit l'ordre du SQL, et M13, M14 et M16
+le prouvent. Aucun test HTTP ne le lit.)* Au-delà de 50 candidates, ce sont donc les plus récentes qui
 sont écartées, et toujours les mêmes. Le doc-comment (point 3 des filtres, `:91`) est réécrit et dit l'ordre. `get_proposals` (`routes/reconciliation.rs:649`) passe
 `InvoiceDateWindow::for_transaction(&tx)` ; la constante `WINDOW_DAYS` (`:62-64`) **disparaît** de
 `routes/reconciliation.rs`. Aucun appelant ne peut plus choisir sa propre fenêtre.
@@ -639,6 +642,29 @@ après chacune ; `git status` vide à la fin.
 
 **14 tuées, 1 équivalente, 0 survivante non expliquée.**
 
+*(Annotation du 2026-10-13, revue de code P1, E-LOW-2 : « équivalente au plan observé » est une inférence — aucun
+`EXPLAIN` n'a été relevé ; seul l'**ordre** des résultats l'a été. Lire **« équivalente à l'ordre observé »** pour
+M10, ici comme à C-28-7-15.)*
+
+**Mutations de la revue de code P1** (`kesh-gate-logs/28-7-mutations-p1-run.txt`, sorties
+`28-7-mutations-p1/M*.log`, sous le verrou, 135 tests ; le test d'ordre a désormais trois factures à `D + 1`, et la
+coupure du `LIMIT 50` traverse ce groupe — E-LOW-1 ; l'AC5 lit aussi `paid_at` et `entry_date` — E-LOW-3) :
+
+| # | Mutation | Résultat | Tests rouges |
+|---|---|---|---|
+| M10 | `ORDER BY` retiré (rejouée sur le nouveau montage) | **survivante — équivalente à l'ordre observé** | aucun ; 135/135 |
+| M13 | `ORDER BY i.date DESC, i.id DESC` (rejouée) | tuée | `…30_day_window`, `…orders_by_date…` |
+| M14 | `ORDER BY i.id ASC` (rejouée) | tuée | `…orders_by_date…` |
+| M16 | `ORDER BY i.date ASC` sans `i.id` | **survivante — équivalente à l'ordre observé** | aucun ; 135/135 |
+| M17 | `entry_date: bank_transaction.booking_date` (écriture d'encaissement) | tuée | AC5 |
+| M18 | `paid_at_dt` calculé sur `bank_transaction.booking_date` | tuée | AC5 |
+
+M16 survit pour la même raison que M10 : sur MariaDB 10.11 de dev, les factures de même date sortent en `id`
+croissant sans départage explicite — le montage établit pourtant que la coupure tombe dans un groupe de même date
+(assertion de montage), si bien que le test rougirait dès que cet ordre implicite changerait. L'`i.id` de l'`ORDER BY`
+reste la seule garantie (C-28-7-10, C-28-7-15). Bilan de la story : **18 mutations distinctes (M1-M18), 16 tuées, 2
+équivalentes à l'ordre observé (M10, M16)** ; M13 et M14, rejouées, ne comptent qu'une fois.
+
 **Gates.** Au dernier commit de code, rebasé (`7b10e555`), mesurés au HEAD `0d94fdc7` (seuls des fichiers de
 documentation après le code), sous le verrou, après remise à zéro de `kesh_287` et `kesh_e2e_287` (80 migrations,
 seed) — `kesh-gate-logs/28-7-gates.txt` :
@@ -659,7 +685,13 @@ seed) — `kesh-gate-logs/28-7-gates.txt` :
   `reconciliation_repository.rs` (12 → 13), 4 `#[test]` dans `repositories/reconciliation.rs` (0 → 4) ;
   `invoice_write_off.rs` inchangé (20) ; une assertion ajoutée à un test Vitest existant. **15 fichiers** hors
   `_bmad-output` de `9f4e5237` au HEAD (12 au dernier commit de code, avant manuel, PDF et CHANGELOG).
-  `i18nMsg(` = **1962** aux deux bornes (aucune clé ajoutée ni retirée).
+  `i18nMsg(` = **1962** aux deux bornes (aucune clé ajoutée ni retirée). *(Annotation du 2026-10-13, revue de code
+  P1, B-LOW-2 = A-LOW-3 — commande et périmètre : nombre de **lignes** qui contiennent `i18nMsg(` dans les seuls
+  fichiers `.ts` et `.svelte` de `frontend/src`, tests compris :
+  `git grep -c 'i18nMsg(' <ref> -- 'frontend/src/*.ts' 'frontend/src/*.svelte' | awk -F: '{s+=$NF} END {print s}'`,
+  qui rend 1962 à `9f4e5237` comme à `7b10e555`. Les 1970 des lentilles comptent tout `frontend/src` (autres
+  extensions comprises), les 1986 les occurrences (`-o`) : l'invariant, l'égalité aux deux bornes, tient pour
+  chacune.)*
 - Propagation grepée (motif de la fiche, § *Propagation*) après le patch : restent les occurrences légitimes (« 30
   jours net », jetons de session, `window_days` du contrat et de ses tests, entrées historiques du CHANGELOG) ;
   `marketing-brochure.tex:167` (« sur une fenêtre de 30 jours ») trié, **non modifié** (la fenêtre garde 30 jours
@@ -799,3 +831,29 @@ seed) — `kesh-gate-logs/28-7-gates.txt` :
   HEAD `0d94fdc7` : nextest 3560/3560, Vitest 1547/1547, check, lint-i18n-ownership et build verts, E2E 273 passés
   + 7 KF-029. Choix C-28-7-14 à 16. Détail au Dev Agent Record. Statut **review** ; revue de code P1 à lancer :
   `28-7-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
+- **2026-10-13 — Revue de code P1** (`28-7-review-prompt-p1.md`, Sonnet, lentilles B, E et A en contexte frais ;
+  rapports hors dépôt `kesh-gate-logs/28-7-review-p1-{B,E,A}.md`). **B : 0 C / 0 H / 0 M / 2 L ; E : 0 / 0 / 0 / 3 ;
+  A : 0 / 0 / 0 / 4** — soit **0/0/0/9** bruts, 7 distincts (B-LOW-1 = A-LOW-1, B-LOW-2 = A-LOW-3). Aucun MEDIUM :
+  **boucle close** (décision de l'orchestrateur). Origine : 5 développement, 1 conception d'origine (E-LOW-3), 1
+  remédiation P1 de la validation (A-LOW-4). Remédiation **sans ligne de production** :
+  - B-LOW-1 = A-LOW-1 : manuel, « ce qui est proposé est accepté » → « une facture proposée n'est plus refusée pour
+    sa date » ; A-LOW-2 : la parenthèse « sa date, pas son échéance » rattachée à « la date de la facture », « au
+    plus un jour avant elle ». PDF régénéré (`make fr` sous le verrou ; les PDF d'administration et de la brochure,
+    au texte identique, remis à leur état commité), contrôlé aplati : formule absolue absente, aucun `??`.
+  - E-LOW-1 : le test d'ordre a trois factures à `D + 1`, la coupure du `LIMIT 50` traverse ce groupe (assertion de
+    montage) ; mutation **M16** (`ORDER BY i.date ASC` sans `i.id`) jouée : **survivante, équivalente à l'ordre
+    observé**, comme M10 (Dev Agent Record, C-28-7-15 annoté).
+  - E-LOW-2 : M10 et C-28-7-15 annotés « équivalente à l'ordre observé » (aucun `EXPLAIN` relevé).
+  - E-LOW-3 : l'AC5 asserte `paid_at` et la date de l'écriture d'encaissement aux cas (b) et (d) ; **M17**
+    (`entry_date` sur la date de comptabilisation) et **M18** (`paid_at` sur la date de comptabilisation) tuées.
+  - B-LOW-2 = A-LOW-3 : commande et périmètre du décompte `i18nMsg(` déclarés (annotation datée).
+  - A-LOW-4 : phrase de l'AC2 « Aucun test ne lit l'ordre du SQL » annotée.
+  - Symptôme grepé (`ce qui est proposé est accepté`) sur `docs`, CHANGELOG, README, `website`, `_bmad-output`,
+    `crates`, `frontend/src` : aucune autre occurrence.
+  - Gates (`kesh-gate-logs/28-7-p1-gates.txt`), sous le verrou, après remise à zéro de `kesh_287` et `kesh_e2e_287` :
+    `scripts/test-fast.sh` **3560/3560** (6 ignorés), Vitest **1547/1547** (144 fichiers). E2E non rejoué : ni le code
+    de production ni les specs E2E n'ont bougé depuis `7b10e555` (E2E au HEAD `0d94fdc7` : 273 + 7 KF-029).
+  - Recompte : `kesh-api/tests/reconciliation_e2e.rs` 96 `#[sqlx::test]`, `kesh-db/tests/reconciliation_repository.rs`
+    13 — inchangés (assertions ajoutées à deux tests existants). Mutations : 18 distinctes, 16 tuées, 2 équivalentes à
+    l'ordre observé.
+  - Trend de la revue : P1 0 MEDIUM → close. Modèle : Sonnet.
