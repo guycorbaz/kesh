@@ -1856,6 +1856,8 @@ ALTER TABLE contact_persons
     REFERENCES contacts(id) ON DELETE CASCADE;
 \end{lstlisting}
 
+Cet ajout est refusé s'il reste dans \keshcommand{contact\_persons} des lignes \textbf{orphelines} --- une personne de contact dont la société ou le contact a été supprimé : hors InnoDB, le \keshcommand{ON DELETE CASCADE} n'a jamais joué. Les supprimer, ou les rattacher, puis relancer l'\keshcommand{ALTER TABLE}.
+
 Et régler \keshcommand{default\_storage\_engine=InnoDB} dans la configuration du serveur, pour les tables à venir.
 
 L'\textbf{export global} (CSV, \textbf{Administration → Export global}) ne bénéficie \textbf{pas encore} de cette garantie : il lit ses tables l'une après l'autre (issue \#465).

@@ -571,6 +571,8 @@ l'autonomie déléguée par Guy le 2026-10-13 : pas de découpage, remédiation 
   « après ».
 - **Retenu** : (h) conservé — 20 exécutions sur 20 vertes. (d1)/(d2) vérifient aussi, **dans** l'instantané, que
   `@@in_transaction` vaut 1 (sans quoi le 0 d'après ne prouverait rien).
+  *(Annotation du 2026-10-13, revue de code P1, A-3 : les 20 exécutions n'étaient tracées par aucun journal ;
+  rejouées au commit `6940b560`, 20 PASS sur 20, `kesh-gate-logs/28-3-h-20-executions.log`.)*
 - **Réversible** : oui.
 
 ### C-28-3-39 — T3 et T4 dans un même commit ; M3 par substitution de l'instruction
@@ -578,4 +580,58 @@ l'autonomie déléguée par Guy le 2026-10-13 : pas de découpage, remédiation 
 - **Contexte** : T3 et T4 touchent le même fichier (`export.rs` : garde et en-tête) ; M3 « supprime » le `SET`.
 - **Retenu** : un commit `c00a7f63` pour T3 et T4, dit au Dev Agent Record. M3 remplace la valeur de la constante
   `SET_ISOLATION` par `DO 0` (instruction neutre) : le chemin de code reste identique, seul l'effet disparaît.
+- **Réversible** : oui.
+
+## Remédiation de la revue de code P1 de la Story 28-3 (2026-10-13, Opus 5.5)
+
+Contrainte de l'orchestrateur : la boucle est close à 0 MEDIUM ; la remédiation ne touche **aucune ligne de code de
+production** (tests, fiche, manuels, registre seulement).
+
+### C-28-3-40 — `close_on_drop` sur échec du `SET` : testé, non déclaré en angle mort
+
+- **Contexte** : A-4 (lentille A) et E2 (lentille E) — la branche `conn.close_on_drop()` de `begin_on` n'avait aucun
+  test, et la suppression de la ligne survivait.
+- **Retenu** : test `echec_du_set_ferme_la_connexion` (AC5 (j)) — pool d'une connexion, `BEGIN` **brut** par
+  `execute` (sqlx l'ignore, `transaction_depth` reste 0), puis `begin_on` : erreur `1568` attendue, puis la connexion
+  réacquise doit avoir un autre `CONNECTION_ID()` et `@@in_transaction` = 0. Faisable sans toucher la production,
+  `begin_on` étant `pub(crate)`. Mutation P1-MA (suppression de `conn.close_on_drop();`) tuée : la connexion revient
+  au pool, même identifiant.
+- **Écartées** : déclarer l'angle mort à l'AC1 (le test est bon marché et déterministe) ; provoquer l'échec du `SET`
+  par un `KILL` (par raisonnement, non essayé : une connexion morte ne revient pas utilisable au pool, avec ou sans
+  `close_on_drop`, et le test ne distinguerait pas la mutation).
+- **Réversible** : oui.
+
+### C-28-3-41 — La propagation de `finish` et l'appel unique, tenus par des sous-chaînes dans les gardes lexicales
+
+- **Contexte** : E1, L1, A-5 — `let _ = snap.finish().await;` survivait ; L3 — remplacer `export_installation(pool)`
+  par une autre fonction prenant le pool laissait le compte de (g)(ii) à deux.
+- **Retenu** : (g)(i) exige la sous-chaîne `snap.finish().await?` (P1-MB tuée) ; (g)(ii) exige
+  `export_installation(pool)` (P1-ME, fonction de substitution `autre_lecture(pool)`, tuée). L'AC1 est reformulée
+  sans « inatteignable » : la propagation n'est exercée par aucun test d'exécution, parce que l'observateur du cœur y
+  est vide et que le rendre injectable changerait la production.
+- **Écartées** : `export_installation_with(pool, obs)` et un test qui tue la connexion à `ApresTable(dernière)`
+  (proposé par B et E) — refactor de production, interdit à cette remédiation ; à reprendre si la boucle se rouvre.
+- **Réversible** : oui.
+
+### C-28-3-42 — Le test (e) seede une société pour asserter `instance_id`
+
+- **Contexte** : E3 — `min_required` et `instance_id` n'étaient assertés nulle part ; sur la base vide de (e), le
+  repli `unwrap_or(0)` aurait masqué `read_instance_id` rendant toujours 0.
+- **Retenu** : (e) appelle `seed_accounting_company` avant l'export et compare `min_required` et `instance_id` aux
+  valeurs lues directement (`_kesh_version`, `MIN(companies.id)`, assertion de montage ≥ 1). P1-MC (`Ok(0)`) et
+  P1-MD (autre colonne lue pour `min_required`) tuées.
+- **Écartées** : un test neuf dédié (le chemin public est déjà monté par (e)) ; deux sociétés pour distinguer `MIN`
+  de `MAX` (la mutation `MAX(id)` survit avec une seule société : non demandé, signalé ici).
+- **Réversible** : oui.
+
+### C-28-3-43 — Lignes orphelines avant `ADD CONSTRAINT` : une phrase, sans requête de repérage
+
+- **Contexte** : E4 — l'ajout des clés étrangères du remède échoue s'il reste des lignes orphelines dans
+  `contact_persons`, probable puisque hors InnoDB le `ON DELETE CASCADE` n'a jamais joué. Seul le manuel
+  d'administration porte le remède (`grep -rn "ADD CONSTRAINT" docs/manual` : `admin-manual.tex` seul).
+- **Retenu** : une phrase après le listing (« Cet ajout est refusé s'il reste … des lignes orphelines … Les supprimer,
+  ou les rattacher, puis relancer l'`ALTER TABLE` »). PDF régénéré, contrôlé aplati.
+- **Écartées** : une requête `NOT EXISTS` de repérage — elle nommerait `companies`, que la garde G18
+  (`textes_coherents.rs`) compte comme promesse multi-société ; il faudrait une seconde occurrence assumée et
+  `MULTI_SOCIETE_TOTAL` 17 → 18, pour un remède que l'administrateur peut écrire depuis la phrase.
 - **Réversible** : oui.

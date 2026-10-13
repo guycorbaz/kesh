@@ -8,7 +8,7 @@
 Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
 (rétrospective de l'Epic 27), branche `story/28-3`, worktree `/home/gcorbaz/devel/kesh-28-3`, port **3036**,
 bases `kesh_283` / `kesh_e2e_283`. Choix consignés au registre de l'epic `epic-28-choix-autonomes.md`
-(**C-28-3-1 à C-28-3-32** ; le registre séparé `epic-28-choix-autonomes-28-3.md` y a été versé par union au rebase
+(**C-28-3-1 à C-28-3-43** ; le registre séparé `epic-28-choix-autonomes-28-3.md` y a été versé par union au rebase
 sur le kickoff, puis supprimé). 12 AC (AC1 à AC12).
 Validation P1 faite (Sonnet, lentilles R et F : 3 MEDIUM, 16 LOW), remédiée (C-28-3-15 à 23) ; validation P2 faite
 (Opus, lentilles R et F : 5 MEDIUM, 14 LOW), remédiée par simplification (C-28-3-25 à 31) ; validation P3 faite
@@ -94,9 +94,12 @@ START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY;
   point de cette liste.
   Une erreur du `ROLLBACK` final (`finish`) fait **échouer** la sauvegarde (C-28-3-20) : `export_installation` la
   propage, même si toutes les tables ont été lues. Que `finish` **rende** l'erreur est établi par l'AC5 (h) (connexion
-  tuée par `KILL`) ; que `export_installation` la **propage** (un `?` sur `finish`) n'est exercé par aucun test — le
-  cœur observable ne peut pas atteindre l'instantané de `export_installation` après sa dernière lecture : **angle mort
-  assumé**, dont le détecteur est la revue (validation P3, F3-7).
+  tuée par `KILL`) ; que `export_installation` la **propage** (un `?` sur `finish`) n'est exercé par aucun test
+  d'**exécution** : l'observateur du cœur y est vide, et le rendre injectable demanderait de changer la production.
+  Depuis la revue de code P1 (E1, L1, A-5 ; C-28-3-41), c'est la garde lexicale (g)(i) qui le tient — elle exige la
+  sous-chaîne `snap.finish().await?` dans le corps d'`export_installation` et tue la mutation
+  `let _ = snap.finish().await;` (P1-MB). Reste hors de sa vue une propagation écrite autrement (un `match` qui rend
+  l'erreur) : elle ferait rougir la garde, jamais la taire.
 - **Plan B, si l'AC5 (a-RC) rougit sur le code correct** (le `SET TRANSACTION` sans portée ne serait pas pris en compte
   par le `START … WITH CONSISTENT SNAPSHOT` qui le suit — fait non vérifié) : le dev ne corrige pas le test ; il
   remplace, dans `begin_on`, le `SET TRANSACTION` par la lecture du niveau de session (`@@tx_isolation`), un
@@ -116,7 +119,7 @@ START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY;
   (`sqlx-mysql-0.8.6/src/transaction.rs:33-34`). ⛔ **Jamais** un `START TRANSACTION` brut par `execute` hors de cette
   API : sqlx ne saurait pas la connexion en transaction et la rendrait au pool **transaction ouverte**.
 - Échec du `SET TRANSACTION` : `conn.close_on_drop()` avant de rendre l'erreur — la connexion ne retourne pas au pool
-  avec un état incertain. Échec de `Transaction::begin` (la connexion lui a été cédée) : le niveau « pour la prochaine
+  avec un état incertain (établi par l'AC5 (j), ajouté en revue de code P1 : C-28-3-40). Échec de `Transaction::begin` (la connexion lui a été cédée) : le niveau « pour la prochaine
   transaction » peut rester posé sur une connexion rendue au pool ; résidu **assumé**, écrit au registre (C-28-3-19).
   Cas particulier, sans remède possible puisque la connexion a été cédée : `Error::BeginFailed`
   (`sqlx-mysql-0.8.6/src/transaction.rs:33-34`) — le serveur a exécuté le `START`, mais le drapeau
@@ -161,12 +164,16 @@ Les **quatre** fonctions de lecture de la sauvegarde de `backup.rs` prennent `&m
      `build_keshbackup_ne_lit_la_base_qu_une_fois`) : `pool: &MySqlPool` et `export_installation(pool)`.
    Assertion de montage de chaque garde : la fonction est trouvée et son corps n'est pas vide (sinon la garde rendrait
    zéro et passerait à vide). Elles tuent M10 et M11.
+   Depuis la revue de code P1, chacune exige aussi une sous-chaîne : (i) `snap.finish().await?` (E1, C-28-3-41 —
+   P1-MB) ; (ii) `export_installation(pool)` (L3, C-28-3-41 — une autre fonction qui prendrait le pool laissait le
+   compte à deux : P1-ME).
 
 Ce qui reste hors des gardes, et c'est écrit comme angle mort : une donnée que lirait un **appelant**
 (`full_export`, `run_backup_and_restore`) sur le pool et qu'il passerait à `build_keshbackup` par un paramètre neuf
 — le compte de (ii) ne bougerait pas ; et un **alias** du pool (`let p = pool;` puis `export_installation(p)` et
 `ReadSnapshot::begin(p)`), qui ramène M10 ou M11 à exactement deux `pool` (C-28-3-31). Le détecteur restant, pour
-l'un comme pour l'autre, est la revue. `column_constraints` (`backup.rs:388`, import) **ne change pas** : il sert
+l'un comme pour l'autre, est la revue. *(Revue de code P1 : la sous-chaîne `export_installation(pool)` qu'exige
+désormais (ii) ferme, par raisonnement et non par mutation, l'alias dans `build_keshbackup` ; il reste ouvert pour (i).)* `column_constraints` (`backup.rs:388`, import) **ne change pas** : il sert
 la restauration, non la sauvegarde (AC9).
 
 ### AC3 — Une seule fonction de `kesh-db` lit l'installation ; `kesh-api` n'assemble plus que le ZIP
@@ -340,7 +347,10 @@ table de `TABLES_TO_TRUNCATE` et `_kesh_version` y figure (assertion de montage 
 **attendus** trouvés parmi ceux de la base, qui porte aussi `_sqlx_migrations` — sans elle, une liste vide passerait
 à vide) avec le moteur `InnoDB` ; le message d'échec nomme la table et
 son moteur. Puis `export_installation(&pool)` rend `Ok(e)` avec `e.tables` égal, nom pour nom et dans l'ordre, à
-`TABLES_TO_TRUNCATE` — c'est la couverture, dans `kesh-db`, du chemin public vers le cœur. Ce test rougit si une
+`TABLES_TO_TRUNCATE` — c'est la couverture, dans `kesh-db`, du chemin public vers le cœur. Depuis la revue de code
+P1 (E3, C-28-3-42), une société est d'abord seedée, et `e.min_required` et `e.instance_id` sont comparés aux valeurs
+lues directement sur la base (`_kesh_version`, `MIN(companies.id)` ≥ 1) : mutations P1-MC (`Ok(0)`) et P1-MD (autre
+colonne lue) tuées. Ce test rougit si une
 migration future crée une table sauvegardée en `MyISAM`, `Aria` ou `MEMORY` par une clause explicite (le squash la
 reproduirait, et `test_schema_guard.rs` ne verrait rien, les deux schémas étant d'accord). Il ne voit **pas** le moteur
 par défaut d'un serveur d'exploitation : c'est l'objet du manuel (AC10).
@@ -357,6 +367,13 @@ cette connexion depuis une autre connexion du pool (`KILL <id>` — un compte pe
 privilège `PROCESS`), puis appelle `finish` : `Err` attendu. Assertion de montage : le `KILL` a réussi. Si le
 comportement de sqlx rend ce test non déterministe (fait non vérifié), le dev le retire, l'écrit au Dev Agent Record
 et au registre, et l'AC1 garde l'angle mort.
+
+**(j) Un `SET TRANSACTION` en échec ferme la connexion** (ajouté en revue de code P1, A-4/E2, C-28-3-40). Même montage
+que (d) : sur la connexion unique, une transaction **brute** est ouverte (`conn.execute("BEGIN")`, que sqlx ignore —
+assertion de montage : `@@in_transaction` = 1), puis `begin_on(conn)` : `Err` attendu, de numéro `1568`
+(`ER_CANT_CHANGE_TX_CHARACTERISTICS`). La connexion réacquise a un **autre** `CONNECTION_ID()` et n'est pas en
+transaction : celle du `SET` en échec a été fermée (`close_on_drop`), non rendue au pool transaction ouverte. Test
+`echec_du_set_ferme_la_connexion` ; tue la mutation « suppression de `conn.close_on_drop();` » (P1-MA).
 
 **(g) Les deux gardes lexicales de l'AC2** — (i) `export_installation_n_ouvre_qu_un_instantane` (`backup.rs`,
 `mod tests`, test ordinaire `#[test]`, lecture de `include_str!("backup.rs")`) et (ii)
@@ -864,7 +881,7 @@ vérifié propre après chaque mutation ; sous `flock`). Chaque rouge vient de l
 | `SET TRANSACTION … REPEATABLE READ` sans portée l'emporte sur une session `READ COMMITTED` | **établi** | (a-RC) vert ; le plan B de l'AC1 n'a pas servi |
 | `@@tx_isolation` reflète la session ; `SET TRANSACTION` sans `SESSION` ne la change pas | **établi** | (f) vert, rouge sous M4 |
 | une `DELETE` concurrente n'attend pas la transaction de lecture | **établi** | (a) vert, sans pendre |
-| `KILL` de la connexion → le `ROLLBACK` de `finish` échoue | **établi** | (h) vert, 20 exécutions sur 20 |
+| `KILL` de la connexion → le `ROLLBACK` de `finish` échoue | **établi** | (h) vert, 20 exécutions sur 20 *(non tracé à cette date — revue P1, A-3 ; rejoué le 2026-10-13 au commit `6940b560` : 20 PASS sur 20, journal `kesh-gate-logs/28-3-h-20-executions.log`)* |
 | le `Drop` de `sqlx::Transaction` rend la connexion hors transaction | **établi** | (d2) vert |
 | hors InnoDB, MariaDB n'enregistre pas les clés étrangères ; une clé InnoDB vers une table non InnoDB est refusée | **non vérifié** (aucune exécution) | le manuel prescrit le contrôle `SHOW CREATE TABLE` plutôt que de s'y fier |
 
@@ -1038,7 +1055,8 @@ seedées juste avant ; le conteneur MariaDB partagé n'a pas été redémarré) 
   `ReadSnapshot` dégradé, trois tests rouges, sortie copiée), `1894bf0c` (T2 — l'instantané ; preuve `git log -L`,
   `exit=0`, témoin, `git diff -U0` en ajout pur), `c00a7f63` (T3-T4), `90c85099` (T5 — manuels, PDF, CHANGELOG, garde
   G18 16 → 17). 11 tests neufs (9 `#[sqlx::test]`, 2 `#[test]`). Mutations M1-M11 : **11/11 tuées**. Faits MariaDB
-  de la fiche tranchés par les tests et mutations (dix établis, deux non vérifiés : le repli `1568`, inutilisé, et le
+  de la fiche tranchés par les tests et mutations (neuf établis *[« dix » à l'origine, faux à sa date : le tableau
+  porte neuf lignes « établi » — corrigé le 2026-10-13, revue de code P1, A-1]*, deux non vérifiés : le repli `1568`, inutilisé, et le
   comportement des clés étrangères hors InnoDB, que le manuel ne suppose pas). Choix C-28-3-33 à 39. Gates au dernier
   commit de code : backend 3525/3525 (6 ignorés), Vitest 1395/1395, svelte-check 0 erreur, build OK, E2E 265 passés +
   9 échecs de la baseline (7 KF-029, 2 KF-045 matinaux). Statut `review` ; prompt de la revue P1
