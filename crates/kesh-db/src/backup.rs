@@ -10,6 +10,11 @@
 //!   NDJSON (1 objet JSON par ligne), avec liste de colonnes explicite
 //!   **excluant les colonnes générées** (ex. `reconciliation_rules.active_uniq`
 //!   `GENERATED … VIRTUAL`, non réinsérable à l'import).
+//! - [`export_installation`] : la lecture de toute l'installation pour le
+//!   `.keshbackup`, dans **un seul instantané** ([`ReadSnapshot`], Story 28-3,
+//!   #633) — les lectures de la sauvegarde exigent `&mut ReadSnapshot` et ne
+//!   peuvent plus s'exécuter sur le pool, table par table, à des instants
+//!   différents.
 //!
 //! Le format NDJSON est figé par la spec parente 17-3 (§Format normatif) :
 //! UTF-8, fin de ligne LF, NULL → `null`, ordre des clés = `column_names`,
@@ -173,6 +178,10 @@ async fn non_generated_columns(
 ///
 /// L'ordre des clés de chaque objet JSON suit `column_names` (déterministe,
 /// garantit la stabilité du SHA-256 entre export et import).
+///
+/// Lit dans l'instantané reçu (Story 28-3, #633) : appelée par
+/// [`export_installation`] pour chaque table, elle voit la base au même instant
+/// que les autres tables de la sauvegarde.
 pub async fn export_table(snap: &mut ReadSnapshot, table: &str) -> Result<TableExport, DbError> {
     let columns = non_generated_columns(snap, table).await?;
     if columns.is_empty() {
@@ -560,8 +569,9 @@ async fn restore_body(
     // promettait l'inamovibilité sans la tenir.
     //
     // ⚠️ La table **reste dans `TABLES_TO_TRUNCATE`**, et il le faut : la
-    // constante sert aussi à produire l'export (`export.rs:55`), à compter les
-    // tables du manifeste (`:96`) et à REJETER un manifeste portant une table
+    // constante sert aussi à produire l'export (la boucle de
+    // `export_installation`), à compter les tables du manifeste
+    // (`build_keshbackup`) et à REJETER un manifeste portant une table
     // hors inventaire (`import.rs:129`). L'en sortir rendrait **tout backup
     // existant inimportable**.
     for &table in TABLES_TO_TRUNCATE {

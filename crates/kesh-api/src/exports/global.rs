@@ -21,7 +21,9 @@
 //! ⚠️ **Lectures successives, sans instantané commun** : chaque table est lue
 //! par sa propre requête sur le pool. Une écriture concurrente pendant
 //! l'export peut donc y laisser une incohérence (ligne fille sans parent).
-//! Défaut antérieur à la 25-5-a, tracé par #465.
+//! Défaut antérieur à la 25-5-a, tracé par #465. La sauvegarde d'installation,
+//! elle, lit dans un instantané (`kesh_db::snapshot::ReadSnapshot`, Story 28-3,
+//! #633), réutilisable ici.
 
 use std::collections::BTreeMap;
 use std::io::Write;

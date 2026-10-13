@@ -444,8 +444,10 @@ pub const LOCK_IMPORT_TRANSACTIONS_SQL: &str = "SELECT id, status, matched_entry
 ///   possible, rejoué côté suppression par `retry_app_on_deadlock`. La
 ///   restauration n'étant exclusive que des autres imports (Story 15-12b), une
 ///   suppression concurrente d'une restauration n'est pas gardée au-delà.
-/// - Une sauvegarde prise pendant une suppression peut porter des transactions
-///   orphelines (#633 ; export global CSV, #465).
+/// - L'export global CSV pris pendant une suppression peut porter des
+///   transactions orphelines (#465). La sauvegarde d'installation, elle, lit
+///   toutes ses tables dans un instantané commun (Story 28-3) : elle montre la
+///   base d'avant la suppression, ou d'après, jamais un mélange.
 pub async fn delete_unreconciled_in_tx(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
