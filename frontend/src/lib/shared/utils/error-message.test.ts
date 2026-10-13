@@ -43,18 +43,23 @@ describe('errorMessageOf (Story 28-2, AC1/AC8)', () => {
 		expect(consoleError).not.toHaveBeenCalled();
 	});
 
+	it('ApiError à message entouré de blancs → le message tel quel, blancs compris (revue P1 E-L1)', () => {
+		expect(errorMessageOf({ code: 'X', message: ' Refus. ', status: 400 })).toBe(' Refus. ');
+	});
+
 	it.each([
 		['message vide', ''],
 		['message blanc', '  '],
 		['message undefined', undefined],
 		['message numérique', 42],
 		['message objet', { a: 1 }],
-	])('ApiError au %s → le générique', (_nom, message) => {
+	])('ApiError au %s → le générique, sans journalisation (revue P1 E-L2)', (_nom, message) => {
 		const err = { code: 'X', message, status: 500 };
 		const rendu = errorMessageOf(err);
 		expect(rendu).toBe(GENERIQUE_FR);
 		expect(rendu).not.toBe('[object Object]');
 		expect(rendu).not.toBe('');
+		expect(consoleError).not.toHaveBeenCalled();
 	});
 
 	it.each([

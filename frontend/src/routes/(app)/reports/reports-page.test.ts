@@ -87,4 +87,22 @@ describe('page des rapports — erreur d’un rapport (Story 28-2, B15)', () => 
 		const { findByRole } = render(Page, { data });
 		expect((await findByRole('alert')).textContent).toBe('Refus du serveur.');
 	});
+
+	it('ApiError au message vide → le générique, jamais une alerte vide (revue P1 B-1/A-4)', async () => {
+		getGeneralLedgerMock.mockRejectedValue({ code: 'X', message: '', status: 400 });
+		const { findByRole } = render(Page, { data });
+		const alerte = await findByRole('alert');
+		expect(getGeneralLedgerMock).toHaveBeenCalledTimes(1);
+		expect(alerte.textContent).toBe('Erreur inattendue.');
+	});
+
+	it('REPORT_PERIOD_OUT_OF_FISCAL_YEAR sans bornes → le message de l’ApiError', async () => {
+		getGeneralLedgerMock.mockRejectedValue({
+			code: 'REPORT_PERIOD_OUT_OF_FISCAL_YEAR',
+			message: 'Période hors exercice.',
+			status: 400,
+		});
+		const { findByRole } = render(Page, { data });
+		expect((await findByRole('alert')).textContent).toBe('Période hors exercice.');
+	});
 });

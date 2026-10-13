@@ -125,4 +125,14 @@ describe('CancelReconciliationDialog — échec imprévu à la confirmation (Sto
 		expect(erreur.textContent).not.toContain('boom');
 		expect(erreur.textContent).not.toContain('[object Object]');
 	});
+
+	it('B9 — rejet new Error AU CHARGEMENT ⇒ le générique (revue P1 E-L5)', async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		mockApi.getReconciliationTransaction.mockRejectedValue(new Error('boom'));
+		const { findByTestId } = monter();
+		const erreur = await findByTestId('reconciliation-cancel-error');
+		expect(mockApi.getReconciliationTransaction).toHaveBeenCalledWith(42);
+		expect(erreur.textContent).toContain('Erreur inattendue.');
+		expect(erreur.textContent).not.toContain('boom');
+	});
 });

@@ -86,7 +86,7 @@ test.describe('Erreurs d’API affichées par leur message (Story 28-2)', () => 
 		await expect(page.locator('body')).not.toContainText('[object Object]');
 	});
 
-	test('scénario 2 — une panne réseau des profils bancaires affiche le message réseau du catalogue', async ({
+	test('scénario 2 — une panne réseau des profils bancaires affiche le message réseau, jamais [object Object]', async ({
 		page,
 	}) => {
 		await login(page);

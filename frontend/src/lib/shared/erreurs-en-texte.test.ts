@@ -21,7 +21,7 @@
  * | G2 | `String(<expr>.reason)` (résultat d'`allSettled`) | tout le fichier |
  * | G3 | `instanceof Error`, **tout usage**, classification comprise | tout le fichier |
  * | G4 | `${x}` dans un gabarit | la liaison |
- * | G5 | `x + ''`, `'' + x` | la liaison |
+ * | G5 | `x` opérande entier d'un `+` / `+=` : `x + ''`, `'Erreur : ' + x`, `m += x` | la liaison |
  * | G6 | `x.toString()` | la liaison |
  * | G7 | `JSON.stringify(x` | la liaison |
  *
@@ -44,6 +44,19 @@
  * | bloc Svelte `{:catch err}` | ❌ non | aucun à l'écriture de la garde |
  * | rejet **sans** `catch` du tout | ❌ non | rien à recueillir (le cas de `handleDelete` des profils bancaires, corrigé par la story) |
  * | affichage réservé aux `ApiError`, **rien** pour le reste (classe D) | ❌ non | un silence n'est pas une conversion ; suivi par #644 |
+ * | `String(x ?? '')`, `String(x as T)` | ❌ non | G1 ne reconnaît que `String(<liaison>)` seul |
+ * | `x?.toString()` | ❌ non | G6 exige `x.toString()` |
+ * | `(x as Error).message` sans garde | ❌ non | aucune règle : ce n'est pas une conversion, c'est un champ (vide pour un objet sans `message`) |
+ * | `String(f(y).reason)`, `String(r.at(0).reason)` | ❌ non | G2 n'admet pas de parenthèse avant `.reason` |
+ * | rappel de rejet en **second argument** de `.then(ok, (x) => …)` | ❌ non | seul `.catch(` est recueilli |
+ *
+ * Aucune de ces formes n'existe dans `src/` à l'écriture de la garde (revue P1, E-L4).
+ *
+ * **Faux positif bruyant, donc sans danger** : un `+` unaire (`+x`) ou une addition
+ * numérique (`x + 1`) sur la liaison relève de G5 ; aucune n'a de sens sur une erreur.
+ * G3 interdit **toute** occurrence d'`instanceof Error`, classification comprise
+ * (C-28-2-27) : c'est un coût de maintenance assumé, le message d'échec indique
+ * l'alternative (revue P1, B-3).
  *
  * ## Anti-muet
  *
@@ -230,7 +243,13 @@ function reglesDeLiaison(nom: string): [string, RegExp][] {
 			'G4 ${<liaison>} dans un gabarit',
 			new RegExp(`\\$\\{\\s*(?:${x}|String\\(\\s*${x}\\s*\\))\\s*\\}`, 'g'),
 		],
-		['G5 <liaison> + chaîne vide', new RegExp(`${x}\\s*\\+\\s*(?:''|""|\`\`)|(?:''|""|\`\`)\\s*\\+\\s*${x}`, 'g')],
+		[
+			// Revue P1 E-M1 : toute concaténation, pas seulement avec la chaîne vide —
+			// `'Erreur : ' + err` rend « Erreur : [object Object] ». La liaison doit être
+			// l'opérande ENTIER : `err.message + ' …'`, `'… ' + err.code` ne relèvent pas.
+			'G5 <liaison> opérande d’un + (concaténation)',
+			new RegExp(`${x}\\s*\\+(?!\\+)|(?<!\\+)\\+=?\\s*${x}(?!\\s*(?:\\??\\.|\\[|\\())`, 'g'),
+		],
 		['G6 <liaison>.toString()', new RegExp(`${x}\\.toString\\(\\s*\\)`, 'g')],
 		['G7 JSON.stringify(<liaison>', new RegExp(`\\bJSON\\.stringify\\(\\s*${x}`, 'g')],
 	];
@@ -371,6 +390,25 @@ describe('garde — auto-tests du détecteur, sur sources fictives', () => {
 		it("G5 <liaison> + '' et '' + <liaison>", () => {
 			expect(regles("try {} catch (err) { a = err + ''; b = \"\" + err; }")).toEqual(['G5', 'G5']);
 		});
+		it('G5 concaténation avec une chaîne non vide, des deux côtés (revue P1 E-M1)', () => {
+			expect(regles("try {} catch (err) { a = 'Erreur : ' + err; }")).toEqual(['G5']);
+			expect(regles("try {} catch (err) { a = err + ' (détail)'; }")).toEqual(['G5']);
+			expect(regles('try {} catch (err) { a = `Erreur : ` + err; }')).toEqual(['G5']);
+			// Encadrée, sans blancs : un seul constat, la liaison est consommée par le premier `+`.
+			expect(regles("try {} catch (err) { a = 'Erreur : '+err+'.'; }")).toEqual(['G5']);
+		});
+		it('G5 multi-ligne et += (revue P1 E-M1)', () => {
+			expect(regles("try {} catch (err) {\n\tmsg = 'Erreur : ' +\n\t\terr;\n}")).toEqual(['G5']);
+			expect(regles("try {} catch (err) { msg += err; }")).toEqual(['G5']);
+		});
+		it('G5 ne relève pas un champ de la liaison, ni ++, ni une autre variable (revue P1 E-M1)', () => {
+			expect(
+				regles(
+					"try {} catch (err) { a = 'Erreur : ' + err.message; b = err.code + ' x'; c = 'x' + err?.code; d = 'x' + err[0]; e = 'x' + err2; f = 'x' + myerr; }"
+				)
+			).toEqual([]);
+			expect(regles('try {} catch (e) { n++; m = n + 1; }')).toEqual([]);
+		});
 		it('G6 <liaison>.toString()', () => {
 			expect(regles('try {} catch (err) { m = err.toString(); }')).toEqual(['G6']);
 		});
@@ -405,6 +443,12 @@ describe('garde — auto-tests du détecteur, sur sources fictives', () => {
 			].join('\n');
 			const r = detecter(src).violations;
 			expect(r.map((v) => [v.regle.slice(0, 2), v.ligne])).toEqual([['G1', 3]]);
+		});
+		it('étendue : une conversion après l’appel, SUR LA MÊME LIGNE, est signalée (revue P1 E-L3)', () => {
+			expect(regles("try {} catch (e) { console.error('a'); m = String(e); }")).toEqual(['G1']);
+		});
+		it('borne basse : une conversion en tout premier argument est exemptée (revue P1 E-L3)', () => {
+			expect(regles('try {} catch (e) { console.error(String(e)); }')).toEqual([]);
 		});
 	});
 

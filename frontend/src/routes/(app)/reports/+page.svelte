@@ -211,8 +211,9 @@
 					},
 				);
 			}
-			return err.message;
 		}
+		// Story 28-2 (C-28-2-33 révisé, revue P1 B-1/A-4) : hors du code spécifique,
+		// errorMessageOf rend le message d'une ApiError, et le générique s'il est vide.
 		return errorMessageOf(err);
 	}
 
