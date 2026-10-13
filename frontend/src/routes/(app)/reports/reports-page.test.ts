@@ -14,7 +14,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 
-const { getGeneralLedgerMock } = vi.hoisted(() => ({ getGeneralLedgerMock: vi.fn() }));
+const { getGeneralLedgerMock, fetchAccountsMock } = vi.hoisted(() => ({
+	getGeneralLedgerMock: vi.fn(),
+	fetchAccountsMock: vi.fn(async (_includeArchived?: boolean) => []),
+}));
 
 vi.mock('$app/state', () => ({
 	page: {
@@ -27,7 +30,9 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 		args ? fallback.replace(/\{ \$(\w+) \}/g, (_m, k) => String(args[k])) : fallback,
 }));
 vi.mock('$lib/features/projects/projects.api', () => ({ listProjects: async () => [] }));
-vi.mock('$lib/features/accounts/accounts.api', () => ({ fetchAccounts: async () => [] }));
+vi.mock('$lib/features/accounts/accounts.api', () => ({
+	fetchAccounts: (includeArchived?: boolean) => fetchAccountsMock(includeArchived),
+}));
 vi.mock('$lib/features/reports/reports.api', async (importOriginal) => {
 	const vrai = await importOriginal<typeof import('$lib/features/reports/reports.api')>();
 	return {
@@ -104,5 +109,23 @@ describe('page des rapports — erreur d’un rapport (Story 28-2, B15)', () => 
 		});
 		const { findByRole } = render(Page, { data });
 		expect((await findByRole('alert')).textContent).toBe('Période hors exercice.');
+	});
+});
+
+// #612 (point voisin, Story 28-8) : le grand livre donne à lire l'historique d'un
+// compte archivé ; la page doit donc charger les comptes ARCHIVÉS COMPRIS.
+describe('page des rapports — comptes chargés (#612)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		// Le grand livre est ouvert d'office par le lien profond : un rejet évite de monter la vue.
+		getGeneralLedgerMock.mockRejectedValue(new Error('boom'));
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+	});
+
+	it('charge la liste des comptes archivés compris : fetchAccounts(true)', async () => {
+		render(Page, { data });
+		await vi.waitFor(() => expect(fetchAccountsMock).toHaveBeenCalled());
+		expect(fetchAccountsMock).toHaveBeenCalledWith(true);
+		expect(fetchAccountsMock).not.toHaveBeenCalledWith(false);
 	});
 });

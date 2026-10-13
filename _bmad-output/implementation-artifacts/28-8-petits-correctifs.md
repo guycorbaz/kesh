@@ -2,7 +2,7 @@
 
 ## Status
 
-**review** — développée le 2026-10-14 (`bmad-dev-story`, Sonnet 5.5, autonomie), cinq commits de code/doc `ebb9bc81`..`7d69e5ab` puis le relevé et le Dev Agent Record. Historique : fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6de5a7ff`
+**done** — revue de code P1 (0/0/0/4, boucle close). Développée le 2026-10-14 (`bmad-dev-story`, Sonnet 5.5, autonomie), cinq commits de code/doc `ebb9bc81`..`7d69e5ab` puis le relevé et le Dev Agent Record. Historique : fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6de5a7ff`
 (`origin/main`, 28-7 fusionnée), branche `story/28-8`, worktree `/home/gcorbaz/devel/kesh-28-8`. Validation close en P1
 (Sonnet, une lentille R+F : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 8 LOW — tous remédiés, cf. Change Log). Choix consignés au registre `epic-28-choix-autonomes.md`, **C-28-8-1 à C-28-8-8**.
 
@@ -404,6 +404,9 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/28-8/` : `build.log`, `test-fa
 - **Gates (au HEAD de code `7d69e5ab`, tous sous flock, bases `kesh_288`/`kesh_e2e_288` remises à zéro juste avant, conteneur non redémarré)** : `scripts/test-fast.sh` : fmt + clippy verts, **3603 tests exécutés, 3603 passés, 6 ignorés** (145,6 s) ; `npm run check` 0, `lint-i18n-ownership` 0, `test:unit` **146 fichiers / 1566 tests passés**, `build` 0 ; **E2E complet** port 3042 : **277 passés / 7 échoués / 19 ignorés** (11,0 min), les sept échecs sont exactement les sept KF-029 de `docs/testing.md` mis à jour (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; ni KF-052 ni pollution ; `invoices.spec.ts:418`/`:442` (ex-:415/:439) passent. Les commits suivants (relevé de `testing.md`, fiche, prompt) ne touchent aucun code ni `.tex`.
 - **Aucun** `closes` dans les messages de commit ; aucune donnée réelle dans le dépôt.
 
+- *Annotation du 2026-10-14 (revue P1, L1) : la phrase ci-dessus sur le jumeau « T[0-9]{2}… » est inexacte ; rejoué, `git grep -nE "T[0-9]{2}:[0-9]{2}:[0-9]{2}" frontend/tests/e2e` ne rend, après correction, que les fixtures `camt053_v04_*.xml` et aucune ligne de `invoices.spec.ts`.*
+- **Après la revue P1 (0/0/0/4, boucle close)** : le point voisin de #612 est couvert ici plutôt que par une issue : test Vitest `reports-page.test.ts` « charge la liste des comptes archivés compris : fetchAccounts(true) » (`fetchAccounts` devient un `vi.fn` hoisté). Mutation `fetchAccounts(true)` -> `fetchAccounts(false)` dans `+page.svelte` : le test rougit (1 échoué / 5 passés), restaurée (`git checkout --` + `touch`). L3 corrigé (`admin-manual.tex:246`, « DATABASE_URL --- puis décommentez »), PDF d'administration régénéré sous flock et contrôlé aplati. Gates : `npm run check` 0 ; `test:unit` 146 fichiers / 1567 tests passés. E2E non rejoué (ni production ni specs E2E modifiées).
+
 ### File List
 
 `frontend/tests/e2e/invoices.spec.ts` ; `crates/kesh-db/src/repositories/accounts.rs` ; `docs/testing.md` ; `docs/api-external.md` ; `docs/manual/fr/marketing-brochure.tex` et `.pdf` ; `docs/manual/fr/admin-manual.tex` et `.pdf` ; `CHANGELOG.md` ; `_bmad-output/implementation-artifacts/28-8-petits-correctifs.md`, `28-8-review-prompt-p1.md`, `sprint-status.yaml`.
@@ -434,6 +437,8 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/28-8/` : `build.log`, `test-fa
     ligne de code — la boucle se clôt sans passe ciblée. Statut **ready-for-dev**.
 
 - **2026-10-14 — Développement** (`bmad-dev-story`, Sonnet 5.5) : T0-T8 faits, cf. Dev Agent Record. Statut **review** ; revue de code P1 : `28-8-review-prompt-p1.md` (Sonnet, une lentille B+E+A).
+
+- **2026-10-14 — Revue de code P1** (`28-8-review-prompt-p1.md`, Sonnet, une lentille B+E+A ; rapport hors dépôt `kesh-gate-logs/28-8-review-p1.md`) : **0 CRITICAL / 0 HIGH / 0 MEDIUM / 4 LOW**. L1 : annotation datée du Dev Agent Record ; L3 : tiret du manuel d'administration corrigé, PDF régénéré ; L2 relève de la clôture d'epic, L4 de la preuve « matin » (orchestrateur). Point voisin de #612 couvert par un test Vitest (mutation `fetchAccounts(false)` rouge). Aucune ligne de production touchée : boucle close. Statut **done**.
 
 [#232]: https://github.com/guycorbaz/kesh/issues/232
 [#421]: https://github.com/guycorbaz/kesh/issues/421
