@@ -2035,6 +2035,54 @@ Rapports `kesh-gate-logs/28-1-validate-p3-{R,F}.md` (hors dépôt). Bilan au Cha
   le `html` d'un élément long, et la classe du bouton fait passer le `data-testid` au-delà de la coupe.
 - **Écartée** : `getAnimations()` du seul dialogue (le voile, `Dialog.Overlay`, est un frère et anime aussi) ;
   une seconde analyse bornée au bouton (deux analyses pour une question).
+
+### C-28-5-36 — L'utilisateur Consultation de l'E2E est désactivé, non supprimé (28-5b, dev)
+
+- **Contexte** : AC11 prescrit « import et utilisateur supprimés en `finally` ». Kesh n'a aucune route de
+  suppression d'utilisateur (`lib.rs` : `GET`/`PUT /api/v1/users/{id}`, `PUT …/disable`, `PUT …/reset-password`).
+- **Retenu** : l'import est supprimé, l'utilisateur **désactivé** (`PUT /api/v1/users/{id}/disable`) en `finally`,
+  par le contexte d'API de l'administrateur ouvert avant le changement de session ; nom unique à l'exécution.
+- **Écartée** : ajouter une route de suppression d'utilisateur — hors périmètre ; ne rien faire — l'utilisateur
+  resterait actif dans la base E2E.
+- **Réversible** : oui.
+
+### C-28-5-37 — `UnrejectTransactionAction` porte lui-même la condition `isRejected` (28-5b, dev)
+
+- **Contexte** : AC5 dit que le composant rend la mention et le bouton « pour toute transaction rejetée », sans
+  fixer qui teste la condition.
+- **Retenu** : le composant ne rend **rien** hors d'une rejetée (patron de `DeleteBankImportAction`, qui ne rend rien
+  sans `canManage`) ; la page le monte sur chaque ligne, dans la colonne *Rapprochement*. V2 couvre « non rejetée ⇒
+  rien », V3 le montage par la page.
+- **Écartée** : `{#if isRejected(tx)}` dans la page — la condition et son rendu vivraient dans deux fichiers.
+- **Réversible** : oui.
+
+### C-28-5-38 — Captures sans auxiliaire partagé, un test par schéma pour le scénario 1 (28-5b, dev)
+
+- **Contexte** : AC11 demande de reprendre l'auxiliaire de captures de la 28-1 (C-28-1-29) « s'il est sur `main` ».
+  Il n'y est pas : `grep -rn KESH_E2E_CAPTURES_DIR frontend/tests` ne rend que `error-messages.spec.ts` (28-2), qui
+  écrit ses captures en ligne.
+- **Retenu** : un auxiliaire local `capturePath(testInfo, nom)` — `KESH_E2E_CAPTURES_DIR` s'il est posé, sinon
+  `testInfo.outputPath()` ; le scénario 1 tourne **une fois par schéma** (`page.emulateMedia` en tête de test),
+  avec son propre relevé unique, et prend ses trois captures — six au total.
+- **Écartée** : basculer le schéma en cours de test (patron de la 28-2) — la capture « après annulation » exige un
+  second rejet, donc un second parcours.
+- **Réversible** : oui ; l'auxiliaire de la 28-1, s'il arrive sur `main`, le remplacera.
+
+### C-28-5-39 — E2E : la limite des 100 propositions, risque hérité du patron (28-5b, dev)
+
+- **Contexte** : le scénario 1 vérifie que la transaction revient dans la liste de la réconciliation, qui ne montre
+  que les 100 plus récentes en attente (#649) ; la fixture CAMT date ses transactions de mai 2026.
+- **Retenu** : patron de `reconciliation-deleted-import.spec.ts`, qui fait la même hypothèse (les specs nettoient
+  leurs imports en `finally`) ; l'échec, s'il survenait, se lirait sur l'assertion `reconciliation-row`.
+- **Écartée** : réécrire la date de réservation — elle touche la période du relevé et l'avertissement de solde.
+- **Réversible** : oui.
+
+### C-28-5-40 — CHANGELOG : la phrase prescrite, suivie de son mode d'emploi (28-5b, dev)
+
+- **Contexte** : AC9 (b) prescrit les deux entrées *Ajouté* et *Corrigé* ; le CHANGELOG s'adresse aux utilisateurs.
+- **Retenu** : chaque entrée commence par la phrase prescrite, mot pour mot, et la suit d'une ou deux phrases — où se
+  trouve le bouton, qui le voit, la trace d'audit, la limite des 100 (#649) pour *Ajouté* ; ce qui était cassé pour
+  *Corrigé*.
 - **Réversible** : oui.
 ---
 

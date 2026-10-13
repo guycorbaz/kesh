@@ -10,6 +10,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.13.3] — Non publié
 
+### Ajouté
+
+- Annuler le rejet d'une transaction bancaire, depuis le détail de son import ou par l'API (`POST /api/v1/reconciliation/transactions/{id}/unreject`), et champ `autoMatchRejectedAt` ([#526](https://github.com/guycorbaz/kesh/issues/526)). Dans le détail de l'import (*Quotidien → Importer des relevés*, liste *Imports précédents*, nom du fichier), une transaction rejetée porte la mention « Rejetée le … » ; le bouton *Annuler le rejet*, réservé au Comptable et à l'Administrateur, la remet parmi les propositions de la réconciliation, sans passer d'écriture, et laisse la trace *Rejet de réconciliation annulé* au journal d'audit. La liste de la réconciliation ne montre que les 100 transactions en attente les plus récentes : une transaction plus ancienne n'y reparaît qu'une fois les plus récentes traitées ([#649](https://github.com/guycorbaz/kesh/issues/649)).
+
 ### Corrigé
 
 - **La sauvegarde d'installation photographie la base à un seul instant ([#633](https://github.com/guycorbaz/kesh/issues/633)).**
@@ -28,6 +32,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   ou de montant nul, proposée contre une facture est désormais refusée proposition par proposition, en
   `RECONCILIATION_TRANSACTION_NOT_CREDIT`, avec un libellé à l'écran. Intégrations par clé d'API : nouveau code,
   détail dans `docs/api-external.md`.
+- Une transaction bancaire rejetée se retrouve et redevient proposable ([#526](https://github.com/guycorbaz/kesh/issues/526)). Rejeter une proposition la faisait quitter la liste de la réconciliation sans qu'aucun geste de l'interface ne l'y remette : il fallait supprimer et réimporter tout le relevé. La page *Réconciliation* dit désormais où la retrouver, et le refus d'un lot qui contient une transaction déjà rejetée dit où annuler ce rejet.
 
 - **Les boutons d'action destructive se voient ([#640](https://github.com/guycorbaz/kesh/issues/640)).**
   *Supprimer l'import*, les confirmations de suppression, d'archivage, de révocation ou de désactivation
