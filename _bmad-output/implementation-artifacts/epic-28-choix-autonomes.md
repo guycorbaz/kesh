@@ -2282,3 +2282,140 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 - **Réversible** : oui (tests et commentaires ; aucune ligne de production exécutée ne change).
 
 [#482]: https://github.com/guycorbaz/kesh/issues/482
+## Story 28-4 — Clore un compte bancaire, en lecture seule ([#642])
+
+Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
+`implementation-artifacts/28-4-cloture-compte-bancaire.md`.
+
+### C-28-4-1 — Une fiche, deux stories (28-4a serveur, 28-4b écran) ; dérogation motivée pour la 28-4a
+
+- **Contexte** : plus de cinq modules (`kesh-db`, quatre modules de `kesh-api`, `kesh-i18n`, trois du frontend, les
+  manuels) — § *Règle de splitting préventif*. Leçon de l'epic : poser le périmètre minimal dès la fiche.
+- **Retenu** : précédent C-26-2-15 — une fiche, deux clés, deux PR successives, clé mère au statut `split`. 28-4a :
+  état, gestes, refus serveur sur l'inventaire clos, registre statique, messages serveur (`refs #642`). 28-4b : écran,
+  sélecteurs, manuels, CHANGELOG, captures (`closes #642`). Aucune release entre les deux. La 28-4a reste au-dessus de
+  cinq modules : dérogation (un seul pattern de garde, mécanique ; l'inventaire clos n'a de sens que complet ; touches à
+  `routes/reconciliation.rs` réduites aux pré-vols). Revue du rollout fichier par fichier.
+- **Écartées** : une story unique (trop large pour une passe adversariale fiable) ; trois stories (socle / gardes /
+  écran) — un état « clos » sur `main` qui ne tiendrait pas sur une partie des chemins, et un registre statique
+  impossible à mettre au vert à moitié.
+- **Écart à la consigne de l'orchestrateur** : la consigne demandait la clé `28-4-cloture-compte-bancaire:
+  ready-for-dev` ; le précédent C-26-2-15 met la clé mère en `split` et les deux clés filles en `ready-for-dev`. Retenu
+  le précédent, signalé au rapport.
+- **Réversible** : oui (fusionner les deux clés avant le dev).
+
+### C-28-4-2 — Un état distinct de l'archivage, porté par une seule colonne `closed_on DATE NULL`
+
+- **Contexte** : #642 laisse le choix entre étendre `archived` et un état distinct. `archived` signifie aujourd'hui
+  « disparu » : `404` anti-énumération partout, exclu des listes. Clos doit rester **lisible**.
+- **Retenu** : colonne `closed_on DATE NULL` — `NULL` = ouvert, une date = clos depuis cette date. Une seule colonne
+  porte l'état et la date (pas de booléen redondant qui pourrait la contredire). Les deux états se combinent : un compte
+  clos sans transaction peut être archivé après réouverture.
+- **Écartées** : étendre `archived` (perd la lecture) ; un `ENUM status` (`open`/`closed`/`archived`) qui remplacerait
+  `archived` (migration breaking, réécriture de tous les filtres existants) ; deux colonnes `closed_at DATETIME` +
+  `closing_date DATE` (horodatage déjà à l'audit).
+- **Réversible** : à coût de migration.
+
+### C-28-4-3 — Date de clôture facultative, jour UTC par défaut, sans borne
+
+- **Contexte** : #642 veut une date facultative. Un contrôle (pas dans le futur, pas avant la dernière transaction)
+  bute sur le fuseau (le serveur raisonne en UTC, l'utilisateur en heure suisse) et ne protège rien : c'est l'état qui
+  garde.
+- **Retenu** : `closedOn` optionnel à l'API, défaut `Utc::now().date_naive()` (précédent `opening_balances.rs`) ;
+  l'écran l'envoie toujours, prérempli à la date locale. Aucune borne serveur ; angle mort écrit.
+- **Écartées** : date obligatoire ; bornes serveur.
+- **Réversible** : oui.
+
+### C-28-4-4 — Transactions non rapprochées et lots générés : la clôture est refusée
+
+- **Contexte** : #642, « à trancher : refus de clore, ou clôture qui les laisse consultables ».
+- **Retenu** : refus `412` avec le décompte (`BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS`,
+  `BANK_ACCOUNT_HAS_OPEN_PAYMENT_BATCHES`). Une transaction en attente sur un compte en lecture seule ne pourrait plus
+  jamais être rapprochée : clore la laisserait muette. Le refus établit aussi les invariants I1 et I2, sur lesquels
+  reposent six écrivains de la réconciliation et l'annulation de lot (pas de garde à y poser).
+- **Écartée** : clôture qui les laisse consultables (comptabilité incomplète, sans signal).
+- **Réversible** : oui.
+
+### C-28-4-5 — Le compte principal ne se clôt pas, et la base l'interdit
+
+- **Contexte** : le principal est l'IBAN de la QR-facture (`find_primary`). Un principal clos imprimerait un compte
+  fermé.
+- **Retenu** : `412 BANK_ACCOUNT_CANNOT_CLOSE_PRIMARY` (désigner d'abord un autre principal) ; et contrainte
+  `CHECK (closed_on IS NULL OR is_primary = FALSE)`, qui rend l'invariant I3 structurel contre tout écrivain présent ou
+  futur (leçon *invariant dans le temps*).
+- **Écartées** : clore le principal unique (comme l'archivage, AC#10 de la v014-1) — la QR-facture porterait un compte
+  clos ; transférer d'office le statut de principal (Kesh choisirait seul).
+- **Réversible** : oui (migration pour la contrainte).
+
+### C-28-4-6 — Solde du compte comptable lié non nul : avertir, ne pas refuser
+
+- **Contexte** : #642, « avertir ou refuser ». Le compte comptable peut être partagé entre plusieurs comptes bancaires,
+  ou absent ; un frais de clôture peut arriver après.
+- **Retenu** : l'écran avertit (solde `currentBalance` déjà dans la liste) ; le serveur ne refuse pas.
+- **Écartée** : refus serveur (bloquerait un compte comptable partagé, et une clôture légitime avant l'écriture de
+  frais).
+- **Réversible** : oui.
+
+### C-28-4-7 — Le compte comptable d'un compte clos reste « lié à une banque »
+
+- **Contexte** : `first_active_bank_account_linked_to` refuse qu'un compte comptable lié à une banque soit désigné
+  compte de créance ; il filtre `archived`, pas encore la clôture.
+- **Retenu** : il **garde** les comptes clos (le compte a servi de banque ; son historique est bancaire) ; les réglages
+  de facturation passent `includeClosed: true` pour rester alignés.
+- **Écartée** : libérer le compte comptable à la clôture (un 1020 deviendrait désignable comme débiteurs avec son
+  historique bancaire).
+- **Réversible** : oui.
+
+### C-28-4-8 — Clore et rouvrir sont ouverts aux clés d'API `read-write`
+
+- **Contexte** : la 27-1 a fermé la suppression d'un import aux clés (destructif). L'archivage est ouvert.
+- **Retenu** : ouverts, comme l'archivage — gestes réversibles et tracés ; une clé `read` est refusée par le
+  middleware. Les refus d'écriture sur un compte clos s'appliquent aux clés comme à l'interface.
+- **Écartée** : fermer aux clés (rien de destructif à protéger).
+- **Réversible** : oui.
+
+### C-28-4-9 — `409 BANK_ACCOUNT_CLOSED` pour une écriture refusée ; `412` pour une clôture impossible
+
+- **Contexte** : codes HTTP du dépôt — `412` pour une précondition de l'archivage, `409` pour un conflit d'état.
+- **Retenu** : écrire sur un compte clos est un conflit avec son état → `409` ; ne pas pouvoir clore est une
+  précondition non remplie → `412`, comme l'archivage. Dans les lots de réconciliation, `failed[]` par proposition
+  (§ *Pattern batch*, précédent 8-5b). Le refus se place après le `409` de version des gestes existants.
+- **Réversible** : oui.
+
+### C-28-4-10 — Rien ne s'écrit sur un compte clos, archivage compris, sauf la réouverture
+
+- **Contexte** : « lecture seule » admet des exceptions tentantes (corriger la description, archiver, annuler un
+  règlement ancien).
+- **Retenu** : une seule règle, décidable : toute écriture qui vise le compte ou une ligne qui lui est rattachée est
+  refusée ; la réouverture (tracée) est le seul geste. Corriger le passé = rouvrir, corriger, reclore — trois traces.
+- **Écartée** : exceptions par geste (chacune à justifier, chacune une garde à manquer).
+- **Réversible** : oui.
+
+### C-28-4-11 — Pas de bump `min_required` ; le retour arrière se dit sans affirmer son mécanisme
+
+- **Contexte** : `ADD COLUMN` nullable et `ADD CONSTRAINT CHECK` sont non breaking (P1/P3). Constat statique : sqlx
+  0.8.6, `ignore_missing: false`, jamais activé dans le dépôt — une 0.13.2 refuserait de démarrer (`VersionMissing`).
+  Prémisse A-C8 de l'Epic 15, non exécutée ici.
+- **Retenu** : aucun bump ; le manuel d'administration prescrit la restauration de la sauvegarde d'avant mise à jour,
+  sans affirmer le mécanisme. A-C8 reste à verser au `CLAUDE.md` après vérification à l'exécution (hors périmètre).
+- **Réversible** : oui.
+
+### C-28-4-12 — La garde de clôture ne lit que `closed_on` ; l'archivage non contrôlé au règlement est signalé, non corrigé
+
+- **Contexte** : à l'inventaire, `invoice_settlements_write.rs:131-135`, `supplier_invoices.rs:753-756` et les
+  `accept_one_*` lisent le compte bancaire sans contrôler `archived` — défaut voisin, préexistant.
+- **Retenu** : hors périmètre (leçon de l'epic) ; issue à ouvrir par l'orchestrateur.
+- **Écartée** : faire contrôler aussi `archived` par la garde (change le comportement de chemins hors #642).
+- **Réversible** : oui.
+
+### C-28-4-13 — Les comptes clos masqués par défaut, avec une bascule, comme les archivés
+
+- **Contexte** : #642 veut des listes « avec filtre ».
+- **Retenu** : bascule « Afficher les comptes clos » sur l'écran de gestion, défaut masqué ; le toast de clôture dit
+  comment retrouver le compte. Par défaut, `GET /bank-accounts` et `/companies/current` excluent les clos : les
+  sélecteurs d'écriture ne les proposent plus sans changement de code.
+- **Écartée** : clos toujours affichés sur l'écran de gestion (contraire à « retirer de l'usage » ; incohérent avec les
+  archivés).
+- **Réversible** : oui.
+
+[#642]: https://github.com/guycorbaz/kesh/issues/642
