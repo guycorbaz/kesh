@@ -4,7 +4,7 @@ use kesh_db::entities::account::AccountType;
 use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{Language, NewAccount, NewBankAccount, NewCompany, OrgType};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::bank_accounts::BankAccountPutFields;
+use kesh_db::repositories::bank_accounts::{BankAccountListFilter, BankAccountPutFields};
 use kesh_db::repositories::company_invoice_settings::ClaimAccounts;
 use kesh_db::repositories::{accounts, bank_accounts, companies};
 use sqlx::MySqlPool;
@@ -88,7 +88,7 @@ async fn list_by_company(pool: MySqlPool) {
     .await
     .unwrap();
 
-    let list = bank_accounts::list_by_company(&pool, company_id, /*include_archived=*/ false)
+    let list = bank_accounts::list_by_company(&pool, company_id, Default::default())
         .await
         .unwrap();
     assert_eq!(list.len(), 1);
@@ -131,7 +131,7 @@ async fn upsert_primary_creates_then_updates(pool: MySqlPool) {
     assert_eq!(updated.id, created.id); // Same row updated
 
     // Only one account in DB
-    let list = bank_accounts::list_by_company(&pool, company_id, /*include_archived=*/ false)
+    let list = bank_accounts::list_by_company(&pool, company_id, Default::default())
         .await
         .unwrap();
     assert_eq!(list.len(), 1);
@@ -857,14 +857,14 @@ async fn archived_invariants_list_by_company_filters_or_includes(pool: MySqlPool
     create_archived_bank_account(&pool, company_id, "CH4431999123000889012").await;
 
     // include_archived=false (défaut UI) : exclut.
-    let active_only = bank_accounts::list_by_company(&pool, company_id, false)
+    let active_only = bank_accounts::list_by_company(&pool, company_id, Default::default())
         .await
         .unwrap();
     assert_eq!(active_only.len(), 1);
     assert!(!active_only[0].archived);
 
     // include_archived=true (export ZIP souveraineté) : retourne tout.
-    let all = bank_accounts::list_by_company(&pool, company_id, true)
+    let all = bank_accounts::list_by_company(&pool, company_id, BankAccountListFilter::ALL)
         .await
         .unwrap();
     assert_eq!(all.len(), 2);
@@ -1616,8 +1616,8 @@ async fn description_hydratee_par_toutes_les_lectures(pool: MySqlPool) {
         .unwrap()
         .unwrap();
     assert_eq!(by_id.description, attendu);
-    for include_archived in [false, true] {
-        let list = bank_accounts::list_by_company(&pool, company_id, include_archived)
+    for filter in [BankAccountListFilter::default(), BankAccountListFilter::ALL] {
+        let list = bank_accounts::list_by_company(&pool, company_id, filter)
             .await
             .unwrap();
         assert_eq!(list[0].description, attendu);
@@ -1842,4 +1842,509 @@ async fn flip_primary_off_conserve_la_description(pool: MySqlPool) {
         .unwrap();
     assert!(!relu.is_primary);
     assert_eq!(relu.description.as_deref(), Some("Personnel"));
+}
+
+// ===========================================================================
+// Story 28-4a (#642) — le compte bancaire clos
+// ===========================================================================
+
+mod compte_clos {
+    use super::*;
+    use chrono::NaiveDate;
+    use kesh_db::entities::{BankImportSourceFormat, NewBankImport, NewBankTransaction};
+    use kesh_db::repositories::bank_accounts::{ClosureOutcome, ClosureRefusal};
+    use kesh_db::repositories::bank_imports;
+
+    fn ymd(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    /// Un compte bancaire non principal (IBAN distinct de `create_bank_account`).
+    async fn compte_secondaire(pool: &MySqlPool, company_id: i64, iban: &str) -> i64 {
+        bank_accounts::create(
+            pool,
+            NewBankAccount {
+                company_id,
+                bank_name: "PostFinance".into(),
+                iban: iban.into(),
+                qr_iban: None,
+                is_primary: false,
+            },
+        )
+        .await
+        .unwrap()
+        .id
+    }
+
+    /// Pose `closed_on` par SQL direct (montage).
+    async fn clore_sql(pool: &MySqlPool, id: i64) {
+        sqlx::query("UPDATE bank_accounts SET closed_on = '2026-01-31' WHERE id = ?")
+            .bind(id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    async fn version(pool: &MySqlPool, id: i64) -> i32 {
+        sqlx::query_scalar("SELECT version FROM bank_accounts WHERE id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    /// Un import d'une transaction `pending` sur `bank_account_id`, dans `tx`.
+    async fn importer(
+        tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+        company_id: i64,
+        bank_account_id: i64,
+        user_id: i64,
+        hash: &str,
+    ) -> Result<(), DbError> {
+        bank_imports::create_with_transactions(
+            tx,
+            NewBankImport {
+                company_id,
+                bank_account_id,
+                filename: "releve.xml".into(),
+                file_hash: format!("{hash:0>64}"),
+                source_format: BankImportSourceFormat::Camt053V04,
+                statement_id: Some("CLOS-1".into()),
+                period_from: ymd(2026, 1, 1),
+                period_to: ymd(2026, 1, 31),
+                opening_balance: None,
+                closing_balance: None,
+                transaction_count: 1,
+                imported_by_user_id: user_id,
+            },
+            vec![NewBankTransaction {
+                company_id,
+                bank_account_id,
+                booking_date: ymd(2026, 1, 15),
+                value_date: Some(ymd(2026, 1, 15)),
+                amount: rust_decimal::Decimal::new(-1500, 2),
+                currency: "CHF".into(),
+                reference: None,
+                details: "Frais".into(),
+                end_to_end_id: None,
+                transaction_id: None,
+                counterparty_iban: None,
+                counterparty_name: None,
+            }],
+        )
+        .await
+        .map(|_| ())
+    }
+
+    async fn compter(pool: &MySqlPool, sql: &str, id: i64) -> i64 {
+        sqlx::query_scalar(sql)
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    /// T-a1 (AC1) — la contrainte `chk_bank_accounts_closed_not_primary` :
+    /// un principal ne se clôt pas, un clos ne devient pas principal (SQL
+    /// direct, sans passer par le dépôt).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn la_contrainte_interdit_un_principal_clos(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let principal = create_bank_account(&pool, company_id).await;
+        let err = sqlx::query("UPDATE bank_accounts SET closed_on = '2026-01-31' WHERE id = ?")
+            .bind(principal)
+            .execute(&pool)
+            .await
+            .expect_err("un principal ne se clôt pas");
+        assert!(
+            err.to_string()
+                .contains("chk_bank_accounts_closed_not_primary"),
+            "{err}"
+        );
+        let autre = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+        clore_sql(&pool, autre).await;
+        let err = sqlx::query("UPDATE bank_accounts SET is_primary = TRUE WHERE id = ?")
+            .bind(autre)
+            .execute(&pool)
+            .await
+            .expect_err("un clos ne devient pas principal");
+        assert!(
+            err.to_string()
+                .contains("chk_bank_accounts_closed_not_primary"),
+            "{err}"
+        );
+    }
+
+    /// T-a2 à T-a5 (AC2) — les quatre combinaisons du filtre de liste, sur un
+    /// compte ouvert, un clos, un archivé et un archivé clos.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn le_filtre_de_liste_et_ses_quatre_combinaisons(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let ouvert = create_bank_account(&pool, company_id).await;
+        let clos = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+        clore_sql(&pool, clos).await;
+        let archive =
+            create_archived_bank_account(&pool, company_id, "CH5604835012345678009").await;
+        let archive_clos =
+            create_archived_bank_account(&pool, company_id, "CH9300762011623852957").await;
+        clore_sql(&pool, archive_clos).await;
+
+        let ids = |filter: BankAccountListFilter| {
+            let pool = pool.clone();
+            async move {
+                let mut v: Vec<i64> = bank_accounts::list_by_company(&pool, company_id, filter)
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|b| b.id)
+                    .collect();
+                v.sort_unstable();
+                v
+            }
+        };
+        let trie = |mut v: Vec<i64>| {
+            v.sort_unstable();
+            v
+        };
+        // T-a2 — défaut : ni archivés ni clos.
+        assert_eq!(ids(BankAccountListFilter::default()).await, vec![ouvert]);
+        // T-a3 — + clos non archivés.
+        assert_eq!(
+            ids(BankAccountListFilter {
+                include_archived: false,
+                include_closed: true
+            })
+            .await,
+            trie(vec![ouvert, clos])
+        );
+        // T-a4 — + archivés, clos ou non.
+        assert_eq!(
+            ids(BankAccountListFilter {
+                include_archived: true,
+                include_closed: false
+            })
+            .await,
+            trie(vec![ouvert, archive, archive_clos])
+        );
+        // T-a5 — tout.
+        assert_eq!(
+            ids(BankAccountListFilter::ALL).await,
+            trie(vec![ouvert, clos, archive, archive_clos])
+        );
+        // `closed_on` hydraté par la macro `columns!`.
+        let relu = bank_accounts::find_by_id_for_company(&pool, company_id, clos)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(relu.closed_on, Some(ymd(2026, 1, 31)));
+    }
+
+    /// T-a8 (AC2) — un compte clos ne compte pas parmi les « autres comptes
+    /// actifs » : il n'empêche plus l'archivage du principal.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn un_compte_clos_n_empeche_pas_d_archiver_le_principal(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let principal = create_bank_account(&pool, company_id).await;
+        let autre = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+        let mut tx = pool.begin().await.unwrap();
+        assert_eq!(
+            bank_accounts::count_other_active_for_company(&mut tx, company_id, principal)
+                .await
+                .unwrap(),
+            1
+        );
+        tx.rollback().await.unwrap();
+        clore_sql(&pool, autre).await;
+        let mut tx = pool.begin().await.unwrap();
+        assert_eq!(
+            bank_accounts::count_other_active_for_company(&mut tx, company_id, principal)
+                .await
+                .unwrap(),
+            0,
+            "le compte clos ne compte plus"
+        );
+    }
+
+    /// T-a9 (AC2, C-28-4-7) — le compte comptable d'un compte clos reste « lié
+    /// à une banque » : `first_active_bank_account_linked_to` le voit.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn le_compte_lie_d_un_compte_clos_reste_lie(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let user_id = create_test_user(&pool, company_id, "u").await;
+        let ledger = create_account(
+            &pool,
+            company_id,
+            user_id,
+            "1020",
+            "Banque",
+            AccountType::Asset,
+        )
+        .await;
+        let clos = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+        sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+            .bind(ledger)
+            .bind(clos)
+            .execute(&pool)
+            .await
+            .unwrap();
+        clore_sql(&pool, clos).await;
+        let mut tx = pool.begin().await.unwrap();
+        let lie = bank_accounts::first_active_bank_account_linked_to(&mut tx, company_id, ledger)
+            .await
+            .unwrap();
+        assert_eq!(lie.map(|(id, _)| id), Some(clos));
+    }
+
+    /// Clôture et réouverture au dépôt : l'ordre des refus, et l'effet (rien
+    /// d'autre que `closed_on` et `version`).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn cloture_et_reouverture_au_depot(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let principal = create_bank_account(&pool, company_id).await;
+        let autre = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+
+        // Le principal : refusé avant tout décompte.
+        let mut tx = pool.begin().await.unwrap();
+        let r = bank_accounts::close_in_tx(
+            &mut tx,
+            company_id,
+            principal,
+            version(&pool, principal).await,
+            ymd(2026, 1, 31),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            r,
+            ClosureOutcome::Refused(ClosureRefusal::Primary)
+        ));
+        tx.rollback().await.unwrap();
+
+        // Version périmée.
+        let mut tx = pool.begin().await.unwrap();
+        let err = bank_accounts::close_in_tx(&mut tx, company_id, autre, 99, ymd(2026, 1, 31))
+            .await
+            .expect_err("version");
+        assert!(matches!(err, DbError::OptimisticLockConflict));
+        tx.rollback().await.unwrap();
+
+        // Rouvrir un compte ouvert.
+        let mut tx = pool.begin().await.unwrap();
+        let r =
+            bank_accounts::reopen_in_tx(&mut tx, company_id, autre, version(&pool, autre).await)
+                .await
+                .unwrap();
+        assert!(matches!(
+            r,
+            ClosureOutcome::Refused(ClosureRefusal::NotClosed)
+        ));
+        tx.rollback().await.unwrap();
+
+        // Clore.
+        let v = version(&pool, autre).await;
+        let mut tx = pool.begin().await.unwrap();
+        let ClosureOutcome::Done { after, before } =
+            bank_accounts::close_in_tx(&mut tx, company_id, autre, v, ymd(2026, 1, 31))
+                .await
+                .unwrap()
+        else {
+            panic!("clôture attendue");
+        };
+        tx.commit().await.unwrap();
+        assert_eq!(before.closed_on, None);
+        assert_eq!(after.closed_on, Some(ymd(2026, 1, 31)));
+        assert_eq!(after.version, v + 1);
+        assert!(!after.archived && !after.is_primary);
+        assert_eq!(after.journal_account_id, before.journal_account_id);
+
+        // Déjà clos.
+        let mut tx = pool.begin().await.unwrap();
+        let err = bank_accounts::close_in_tx(&mut tx, company_id, autre, v + 1, ymd(2026, 2, 1))
+            .await
+            .expect_err("déjà clos");
+        assert!(matches!(
+            err,
+            DbError::BankAccountClosed { bank_account_id } if bank_account_id == autre
+        ));
+        tx.rollback().await.unwrap();
+
+        // Rouvrir : `closed_on` remis à NULL, le compte ne devient pas principal.
+        let mut tx = pool.begin().await.unwrap();
+        let ClosureOutcome::Done { after, .. } =
+            bank_accounts::reopen_in_tx(&mut tx, company_id, autre, v + 1)
+                .await
+                .unwrap()
+        else {
+            panic!("réouverture attendue");
+        };
+        tx.commit().await.unwrap();
+        assert_eq!(after.closed_on, None);
+        assert!(!after.is_primary);
+        assert_eq!(after.version, v + 2);
+    }
+
+    /// Les décomptes de la clôture : une transaction `pending` (rejetée
+    /// comprise) et un lot `generated` la refusent.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn la_cloture_refuse_les_pending_et_les_lots_ouverts(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let user_id = create_test_user(&pool, company_id, "u").await;
+        let autre = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+        let mut tx = pool.begin().await.unwrap();
+        importer(&mut tx, company_id, autre, user_id, "a")
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        // Rejetée : toujours `pending`.
+        sqlx::query("UPDATE bank_transactions SET auto_match_rejected_at = NOW(3)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let r = bank_accounts::close_in_tx(
+            &mut tx,
+            company_id,
+            autre,
+            version(&pool, autre).await,
+            ymd(2026, 1, 31),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            r,
+            ClosureOutcome::Refused(ClosureRefusal::PendingTransactions { pending_count: 1 })
+        ));
+        tx.rollback().await.unwrap();
+
+        sqlx::query("UPDATE bank_transactions SET status = 'reconciled'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO payment_batches (company_id, bank_account_id, status, \
+             requested_execution_date, msg_id, payment_info_id) \
+             VALUES (?, ?, 'generated', '2026-02-01', 'M', 'P')",
+        )
+        .bind(company_id)
+        .bind(autre)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let r = bank_accounts::close_in_tx(
+            &mut tx,
+            company_id,
+            autre,
+            version(&pool, autre).await,
+            ymd(2026, 1, 31),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            r,
+            ClosureOutcome::Refused(ClosureRefusal::OpenPaymentBatches { batch_count: 1 })
+        ));
+    }
+
+    /// T-a46 (AC6-bis) — l'import, au dépôt : un compte **archivé** rend
+    /// `NotFound`, un compte **clos** `BankAccountClosed` ; aucune ligne écrite.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn l_import_refuse_l_archive_et_le_clos_au_depot(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let user_id = create_test_user(&pool, company_id, "u").await;
+        let archive =
+            create_archived_bank_account(&pool, company_id, "CH5604835012345678009").await;
+        let clos = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+        clore_sql(&pool, clos).await;
+
+        let mut tx = pool.begin().await.unwrap();
+        let err = importer(&mut tx, company_id, archive, user_id, "a")
+            .await
+            .expect_err("archivé");
+        assert!(matches!(err, DbError::NotFound), "{err:?}");
+        tx.rollback().await.unwrap();
+
+        let mut tx = pool.begin().await.unwrap();
+        let err = importer(&mut tx, company_id, clos, user_id, "b")
+            .await
+            .expect_err("clos");
+        assert!(
+            matches!(err, DbError::BankAccountClosed { bank_account_id } if bank_account_id == clos),
+            "{err:?}"
+        );
+        tx.rollback().await.unwrap();
+
+        for table in ["bank_imports", "bank_transactions"] {
+            let n: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(n, 0, "{table}");
+        }
+    }
+
+    /// T-a31 (AC7, premier volet) — **déterministe** : un import a inséré son
+    /// entête et sa transaction `pending` sans commiter ; il tient, par la clé
+    /// étrangère, un verrou partagé sur la ligne du compte. La clôture lancée
+    /// en parallèle **attend** sur sa première instruction (`FOR UPDATE`), puis,
+    /// au commit de l'import, ses décomptes — lus APRÈS le verrou — voient la
+    /// transaction et refusent. Si la prémisse InnoDB (verrou partagé du parent
+    /// à l'`INSERT` d'un enfant) était fausse, la sonde paniquerait au bout de
+    /// dix secondes : le test la vérifie aussi. Tue M6 (décompte lu avant le
+    /// verrou : la vue naîtrait avant l'attente et ne verrait pas l'import).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn une_cloture_attend_un_import_en_cours_puis_le_voit(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let user_id = create_test_user(&pool, company_id, "u").await;
+        let autre = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+        let v = version(&pool, autre).await;
+
+        let mut import = pool.begin().await.unwrap();
+        importer(&mut import, company_id, autre, user_id, "a")
+            .await
+            .unwrap();
+
+        let p = pool.clone();
+        let cloture = tokio::spawn(async move {
+            let mut tx = p.begin().await.unwrap();
+            let r =
+                bank_accounts::close_in_tx(&mut tx, company_id, autre, v, ymd(2026, 1, 31)).await;
+            if matches!(r, Ok(ClosureOutcome::Done { .. })) {
+                tx.commit().await.unwrap();
+            }
+            r
+        });
+        let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+            &pool,
+            &["FROM bank_accounts", "archived = FALSE FOR UPDATE"],
+            || cloture.is_finished(),
+        )
+        .await;
+        if !vue {
+            panic!(
+                "la clôture a fini sans attendre l'import : {:?}",
+                cloture.await.map(|r| r.map(|_| ()))
+            );
+        }
+        import.commit().await.unwrap();
+
+        let r = cloture.await.expect("tâche de clôture").expect("clôture");
+        assert!(
+            matches!(
+                r,
+                ClosureOutcome::Refused(ClosureRefusal::PendingTransactions { pending_count: 1 })
+            ),
+            "la clôture devait voir l'import commité — reçu {r:?}"
+        );
+        assert_eq!(
+            compter(
+                &pool,
+                "SELECT COUNT(*) FROM bank_accounts WHERE id = ? AND closed_on IS NULL",
+                autre
+            )
+            .await,
+            1,
+            "le compte reste ouvert"
+        );
+    }
 }

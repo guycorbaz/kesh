@@ -15,6 +15,20 @@
 //!   → `DbError::NotFound` (anti-énumération KF-002) si row archivée.
 //! - [`count_transactions_for_bank_account`] : utilisé par DELETE pour
 //!   refuser 412 BANK_ACCOUNT_HAS_TRANSACTIONS si historique présent.
+//!
+//! ## Sémantique de `closed_on` — le compte clos (Story 28-4a, #642)
+//!
+//! Un compte **clos** (`closed_on` non nul) est en **lecture seule** : il reste
+//! lisible partout (détail, export, sauvegarde, historique des imports), il
+//! n'est plus proposé là où l'on écrit ([`list_by_company`] l'écarte par
+//! défaut, [`BankAccountListFilter`]), et tout chemin d'écriture qui le vise
+//! refuse en [`DbError::BankAccountClosed`]. Gestes : [`close_in_tx`],
+//! [`reopen_in_tx`]. Gardes des autres dépôts : [`ensure_open_in_tx`],
+//! [`ensure_open_unarchived_in_tx`] — leur doc-comment porte la règle de la
+//! garde, sa règle de placement, les trois invariants et l'angle mort L1.
+//! [`set_journal_account_id_for_company`], [`update_for_company`] et
+//! [`archive_for_company`] refusent un compte clos dans leur `FOR UPDATE`
+//! existant, après leur contrôle de version.
 
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, Transaction};
@@ -35,7 +49,7 @@ use crate::errors::{DbError, map_db_error};
 /// [`find_by_id_in_tx`].
 macro_rules! columns {
     () => {
-        "id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, archived, description, created_at, updated_at"
+        "id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, archived, description, closed_on, created_at, updated_at"
     };
 }
 
@@ -163,29 +177,64 @@ pub async fn find_by_id_in_tx(
     .ok_or(DbError::NotFound)
 }
 
+/// Filtre de [`list_by_company`] — Story 28-4a (#642).
+///
+/// `Default` = les deux à `false` : comptes **ni archivés ni clos**, ceux où
+/// l'on peut écrire (sélecteurs d'import, de réconciliation, de règlement, de
+/// lot). `include_closed` ajoute les clos non archivés ; `include_archived`
+/// ajoute les archivés, **clos ou non**.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BankAccountListFilter {
+    /// Ajoute les comptes archivés (clos ou non).
+    pub include_archived: bool,
+    /// Ajoute les comptes clos non archivés.
+    pub include_closed: bool,
+}
+
+impl BankAccountListFilter {
+    /// Tous les comptes, archivés et clos compris (export global).
+    pub const ALL: Self = Self {
+        include_archived: true,
+        include_closed: true,
+    };
+}
+
 /// Liste les comptes bancaires d'une company.
 ///
-/// Story v014-1 — paramètre `include_archived` :
-/// - `false` (défaut UI/handler GET) : filtre `archived = FALSE`.
-/// - `true` (export ZIP souveraineté + toggle UI « afficher archivés ») :
-///   retourne **tous** les comptes, archivés inclus.
+/// Story v014-1, Story 28-4a — filtre [`BankAccountListFilter`] :
+/// - défaut (handler GET, `/companies/current`) : ni archivés ni clos ;
+/// - `include_closed` : + les clos non archivés (écran de gestion, réglages
+///   de facturation) ;
+/// - `include_archived` : + les archivés, clos ou non (toggle UI « afficher
+///   archivés ») ; les deux : **tous** (export ZIP souveraineté).
 pub async fn list_by_company(
     pool: &MySqlPool,
     company_id: i64,
-    include_archived: bool,
+    filter: BankAccountListFilter,
 ) -> Result<Vec<BankAccount>, DbError> {
-    let sql = if include_archived {
-        concat!(
+    // (archivé ⇒ inclus si include_archived) ; (non archivé ⇒ ouvert, ou clos
+    // si include_closed).
+    let sql = match (filter.include_archived, filter.include_closed) {
+        (true, true) => concat!(
             "SELECT ",
             columns!(),
             " FROM bank_accounts WHERE company_id = ? ORDER BY is_primary DESC, id",
-        )
-    } else {
-        concat!(
+        ),
+        (true, false) => concat!(
+            "SELECT ",
+            columns!(),
+            " FROM bank_accounts WHERE company_id = ? AND (archived = TRUE OR closed_on IS NULL) ORDER BY is_primary DESC, id",
+        ),
+        (false, true) => concat!(
             "SELECT ",
             columns!(),
             " FROM bank_accounts WHERE company_id = ? AND archived = FALSE ORDER BY is_primary DESC, id",
-        )
+        ),
+        (false, false) => concat!(
+            "SELECT ",
+            columns!(),
+            " FROM bank_accounts WHERE company_id = ? AND archived = FALSE AND closed_on IS NULL ORDER BY is_primary DESC, id",
+        ),
     };
     sqlx::query_as::<_, BankAccount>(sql)
         .bind(company_id)
@@ -433,6 +482,16 @@ pub async fn set_journal_account_id_for_company(
         return Err(DbError::OptimisticLockConflict);
     }
 
+    // Story 28-4a (#642, AC5) — un compte clos refuse ses propres
+    // modifications, lu sur la ligne que ce `FOR UPDATE` verrouille déjà
+    // (aucun verrou ajouté). AVANT le court-circuit no-op : un `PATCH`
+    // identique sur un compte clos rend `409`, non `200`.
+    if existing.is_closed() {
+        return Err(DbError::BankAccountClosed {
+            bank_account_id: id,
+        });
+    }
+
     // KF-004 court-circuit no-op : pas de bump version, pas d'audit_log côté
     // handler. Le caller (handler) doit checker `before.version ==
     // updated.version` pour détecter le no-op et skipper
@@ -562,6 +621,16 @@ pub async fn update_for_company(
         return Err(DbError::OptimisticLockConflict);
     }
 
+    // Story 28-4a (#642, AC5) — compte clos : refus lu sous le verrou de la
+    // ligne cible, déjà pris (aucun verrou ajouté). Une démotion de l'ancien
+    // principal faite par la route dans la même transaction est annulée avec
+    // elle (le handler rend `Err` sans commit).
+    if existing.is_closed() {
+        return Err(DbError::BankAccountClosed {
+            bank_account_id: id,
+        });
+    }
+
     // Story 15-5b (AC12, choix C10) — postabilité du compte lié, sous le
     // verrou, **seulement s'il change** et n'est pas `NULL` : un PUT qui
     // renvoie le compte en place, devenu non imputable après coup, passe.
@@ -636,6 +705,16 @@ pub async fn archive_for_company(
         return Err(DbError::OptimisticLockConflict);
     }
 
+    // Story 28-4a (#642, AC5) — un compte clos ne s'archive pas (il faut le
+    // rouvrir d'abord). La route refuse déjà au pré-vol ; ce refus-ci, lu sur
+    // la ligne que ce `FOR UPDATE` verrouillait déjà, est celui d'une clôture
+    // commitée entre le pré-vol et ce verrou. Aucun verrou ajouté.
+    if existing.is_closed() {
+        return Err(DbError::BankAccountClosed {
+            bank_account_id: id,
+        });
+    }
+
     let rows = sqlx::query(
         "UPDATE bank_accounts SET archived = TRUE, version = version + 1 \
          WHERE id = ? AND company_id = ? AND version = ?",
@@ -659,6 +738,346 @@ pub async fn archive_for_company(
         .map_err(map_db_error)?;
 
     Ok((updated, existing))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Story 28-4a (#642) — le compte clos : gardes, clôture, réouverture
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// SQL de [`ensure_open_in_tx`] — **lecture cohérente non verrouillante**, ni
+/// `FOR UPDATE`, ni `LOCK IN SHARE MODE` (T-a45 le contrôle). Ne lit **que**
+/// `closed_on` : jamais `archived` (voir la fonction).
+const ENSURE_OPEN_SQL: &str = "SELECT closed_on FROM bank_accounts WHERE company_id = ? AND id = ?";
+
+/// SQL de [`ensure_open_unarchived_in_tx`] — même contrat, plus `archived`.
+const ENSURE_OPEN_UNARCHIVED_SQL: &str =
+    "SELECT closed_on, archived FROM bank_accounts WHERE company_id = ? AND id = ?";
+
+/// Refuse un compte bancaire **clos** — la garde des annulations (W9, W24,
+/// W25, W28, W29, W30), Story 28-4a (#642).
+///
+/// Rend [`DbError::BankAccountClosed`] si `closed_on` est non nul,
+/// [`DbError::NotFound`] si le compte n'existe pas dans la société (inatteignable
+/// par les appelants : la clé étrangère de la ligne qu'ils annulent le
+/// garantit), `Ok(())` sinon.
+///
+/// # La règle de la garde (AC7)
+///
+/// ⛔ **Aucune garde ne prend de verrou** — critère décidable de l'AC7, en deux
+/// volets : (1) *la story n'ajoute aucun verrou de ligne*, explicite (`FOR
+/// UPDATE`, `LOCK IN SHARE MODE`, `FOR SHARE`) ou implicite par clé étrangère,
+/// *à aucun chemin qui existait avant elle, et ne change l'ordre des verrous
+/// d'aucun* ; (2) *elle ne déplace la naissance de la vue cohérente d'aucun
+/// chemin*. Là où le chemin verrouille **déjà** la ligne du compte au sol
+/// (`settle_invoice`, `supplier_invoices::pay_in_tx`, et les trois
+/// modifications du compte de ce module), `closed_on` se lit **dans cette
+/// instruction**, élargie de colonnes ; là où le chemin lit déjà la ligne sans
+/// verrou (`create_batch`, `confirm_batch`, pré-vols de route), `closed_on`
+/// s'ajoute à cette lecture ; ailleurs, la garde est **cette** fonction (ou
+/// [`ensure_open_unarchived_in_tx`] pour l'import), lecture cohérente non
+/// verrouillante, dans la transaction de l'écrivain. Interdit d'y ajouter un
+/// verrou : une garde exclusive ouvrait des cycles neufs avec les routes de
+/// gestion du compte (validation P2 de la fiche, C-28-4-21).
+///
+/// # La règle de placement (AC7)
+///
+/// ⛔ La garde se pose **après le dernier verrou que le chemin prend avant sa
+/// première lecture ordinaire — ou, si le chemin n'en a aucune hors l'audit,
+/// après le dernier verrou qu'il prend avant sa première écriture, et avant
+/// cette écriture**. Sous `REPEATABLE READ`, la vue cohérente naît à la
+/// première lecture non verrouillante : posée **avant** un verrou, la garde
+/// figerait l'instantané avant l'attente de ce verrou, et le chemin relirait
+/// ensuite un exercice « ouvert » qu'une clôture d'exercice concurrente vient
+/// de fermer — une erreur comptable. Chaque site renvoie, en une ligne, au
+/// doc-comment du sol qui impose sa position. Les sous-`SELECT` sur `users` de
+/// l'`INSERT` d'`audit_log` ne comptent pas comme « première lecture
+/// ordinaire » (dernière instruction, aucune décision n'en dépend).
+///
+/// # Invariants qui tiennent les écrivains sans garde
+///
+/// - **I1** — un compte clos ne porte aucune transaction `pending` (rejetées
+///   comprises) : établi par [`close_in_tx`]. Producteurs : l'import (gardé) et
+///   l'annulation de rapprochement (gardée). Il tient hors d'atteinte les
+///   acceptations de propositions, le rejet, le rapprochement manuel et ventilé.
+/// - **I2** — un compte clos ne porte aucun lot `generated` : établi par
+///   [`close_in_tx`]. Seul producteur : `payment_batches::create_batch` (gardé).
+/// - **I3** — un compte clos n'est jamais principal : **structurel**, contrainte
+///   `chk_bank_accounts_closed_not_primary`.
+///
+/// # Angle mort assumé — L1 ([#651](https://github.com/guycorbaz/kesh/issues/651))
+///
+/// La garde est non verrouillante : elle lit l'instantané de sa transaction.
+/// Une écriture dont la transaction a pris sa **vue cohérente** avant le commit
+/// d'une clôture peut donc encore aboutir sur le compte qu'on clôt — fenêtre
+/// « du début de la transaction de l'écrivain à la validation de la clôture ;
+/// pour un import, elle couvre donc aussi l'analyse du fichier ». Huit chemins :
+/// annulation de rapprochement, création de lot, import CAMT et CSV,
+/// suppression d'import, annulation de règlement client et fournisseur,
+/// annulation d'une facture fournisseur payée, annulation de rejet.
+/// Conséquence : **une opération réelle de plus** sur un compte clos (I1 ou I2
+/// défait pour ce compte jusqu'au traitement), **aucune erreur comptable**.
+/// Remède à la main : rouvrir, traiter (rapprocher ou supprimer l'import,
+/// confirmer ou annuler le lot — `cancel_batch` n'est pas gardé), clore à
+/// nouveau. **Classe P2** par la grille du `CLAUDE.md`, dette assumée et
+/// motivée : la fermer exige une garde verrouillante, c'est-à-dire les cycles
+/// que la conception a écartés. Tracée par **#651**.
+///
+/// ⛔ **Interdit** : faire lire `archived` à cette fonction, ou appeler
+/// [`ensure_open_unarchived_in_tx`] depuis une annulation. Un compte archivé
+/// peut porter des règlements et des lots, et **il ne se rouvre pas** :
+/// refuser l'annulation d'un de ses règlements la rendrait définitivement
+/// impossible.
+///
+/// # Angle mort assumé — un compte à la fois archivé et clos (revue P1, B-3)
+///
+/// Aucun geste ne produit cet état : la clôture refuse un archivé, l'archivage
+/// refuse un clos, et les deux passent par le `FOR UPDATE` de la même ligne. Il
+/// ne naît que d'une écriture **SQL directe**. Ses annulations rendent alors
+/// `409 BANK_ACCOUNT_CLOSED`, et le compte ne se rouvre pas (la réouverture
+/// filtre `archived = FALSE`) : impasse. Remède, à la main :
+/// `UPDATE bank_accounts SET closed_on = NULL WHERE id = …`.
+pub async fn ensure_open_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    bank_account_id: i64,
+) -> Result<(), DbError> {
+    let row: Option<(Option<chrono::NaiveDate>,)> = sqlx::query_as(ENSURE_OPEN_SQL)
+        .bind(company_id)
+        .bind(bank_account_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    match row {
+        None => Err(DbError::NotFound),
+        Some((Some(_),)) => Err(DbError::BankAccountClosed { bank_account_id }),
+        Some((None,)) => Ok(()),
+    }
+}
+
+/// Refuse un compte bancaire **archivé** ([`DbError::NotFound`], l'erreur que
+/// rend un compte inexistant) puis **clos** ([`DbError::BankAccountClosed`]) —
+/// la garde de l'import (`bank_imports::create_with_transactions`), Story
+/// 28-4a (#642, AC6-bis).
+///
+/// Même contrat que [`ensure_open_in_tx`] — lecture cohérente **non
+/// verrouillante**, règle de la garde, règle de placement, angle mort L1
+/// (#651) : voir sa documentation. L'appelant traduit `NotFound` en `404
+/// BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` (`import_create_error` de la route
+/// d'import). Ne ferme pas la course archivage / import (L5 de la route
+/// d'archivage) : la lecture d'`archived` est non verrouillante.
+///
+/// ⛔ **Interdit** : l'appeler depuis une annulation (un archivé ne se rouvre
+/// pas), ou y ajouter un verrou.
+pub async fn ensure_open_unarchived_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    bank_account_id: i64,
+) -> Result<(), DbError> {
+    let row: Option<(Option<chrono::NaiveDate>, bool)> = sqlx::query_as(ENSURE_OPEN_UNARCHIVED_SQL)
+        .bind(company_id)
+        .bind(bank_account_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    match row {
+        None | Some((_, true)) => Err(DbError::NotFound),
+        Some((Some(_), false)) => Err(DbError::BankAccountClosed { bank_account_id }),
+        Some((None, false)) => Ok(()),
+    }
+}
+
+/// Ce qui s'oppose à une clôture ou à une réouverture, hors version et
+/// existence (qui sont des [`DbError`]) — Story 28-4a (#642).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClosureRefusal {
+    /// Réouverture d'un compte qui n'est pas clos (`409 BANK_ACCOUNT_NOT_CLOSED`).
+    NotClosed,
+    /// Clôture du compte principal (`412 BANK_ACCOUNT_CANNOT_CLOSE_PRIMARY`).
+    Primary,
+    /// Transactions `pending`, rejetées comprises
+    /// (`412 BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS`).
+    PendingTransactions { pending_count: i64 },
+    /// Lots au statut `generated` (`412 BANK_ACCOUNT_HAS_OPEN_PAYMENT_BATCHES`).
+    OpenPaymentBatches { batch_count: i64 },
+}
+
+/// Issue de [`close_in_tx`] et de [`reopen_in_tx`].
+#[derive(Debug, Clone)]
+pub enum ClosureOutcome {
+    /// Le geste a été fait : `(after, before)`, comme les autres mutations
+    /// (en `Box` : `clippy::large_enum_variant`).
+    Done {
+        /// L'état relu après l'`UPDATE`.
+        after: Box<BankAccount>,
+        /// L'état lu sous verrou, avant l'`UPDATE`.
+        before: Box<BankAccount>,
+    },
+    /// Refusé, rien n'a été écrit.
+    Refused(ClosureRefusal),
+}
+
+/// Ligne du compte, verrouillée en **première instruction** de la transaction
+/// — partagé par [`close_in_tx`] et [`reopen_in_tx`]. Filtre `archived =
+/// FALSE` : un archivé ne se clôt ni ne se rouvre (`NotFound`).
+async fn lock_for_closure(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+    expected_version: i32,
+) -> Result<BankAccount, DbError> {
+    let existing = sqlx::query_as::<_, BankAccount>(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM bank_accounts WHERE company_id = ? AND id = ? AND archived = FALSE FOR UPDATE",
+    ))
+    .bind(company_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .ok_or(DbError::NotFound)?;
+    if existing.version != expected_version {
+        return Err(DbError::OptimisticLockConflict);
+    }
+    Ok(existing)
+}
+
+/// Écrit `closed_on` (une date, ou `NULL`) sous verrou optimiste et relit.
+async fn write_closed_on(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+    expected_version: i32,
+    closed_on: Option<chrono::NaiveDate>,
+) -> Result<BankAccount, DbError> {
+    let rows = sqlx::query(
+        "UPDATE bank_accounts SET closed_on = ?, version = version + 1 \
+         WHERE id = ? AND company_id = ? AND version = ?",
+    )
+    .bind(closed_on)
+    .bind(id)
+    .bind(company_id)
+    .bind(expected_version)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    if rows == 0 {
+        return Err(DbError::OptimisticLockConflict);
+    }
+    sqlx::query_as::<_, BankAccount>(FIND_BY_ID_SQL)
+        .bind(id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)
+}
+
+/// **Clôt** un compte bancaire — Story 28-4a (#642, AC3) : `closed_on =
+/// <date>`, `version + 1`, **rien d'autre** (ni `archived`, ni
+/// `journal_account_id`, ni le compte comptable lié). L'appelant trace
+/// `bank_account.closed` dans la même transaction et commite.
+///
+/// Ordre des refus : [`DbError::NotFound`] (inexistant, autre société,
+/// archivé) → [`DbError::OptimisticLockConflict`] → [`DbError::BankAccountClosed`]
+/// (déjà clos) → [`ClosureRefusal::Primary`] → [`ClosureRefusal::PendingTransactions`]
+/// → [`ClosureRefusal::OpenPaymentBatches`].
+///
+/// # Séquence — et pourquoi elle établit I1 et I2
+///
+/// `SELECT … FOR UPDATE` de la ligne du compte, **première instruction** de la
+/// transaction (l'appelant ne lit rien avant), sans sentinelle `companies` ;
+/// puis les deux décomptes en **lecture non verrouillante** ; puis l'`UPDATE`.
+/// Sous `REPEATABLE READ`, la vue naît au premier décompte, **après** le verrou :
+/// un écrivain qui a inséré une ligne rattachée au compte (import, lot,
+/// règlement) tient, par la clé étrangère, un verrou partagé sur la ligne du
+/// compte jusqu'à son commit — la clôture l'attend, puis ses décomptes voient
+/// ce qu'il a commité (T-a31). Chemin **neuf** : son seul verrou est celui de
+/// sa propre ligne, sans autre verrou tenu ni demandé ensuite (l'audit n'a
+/// aucune clé étrangère) — il ne peut fermer aucun cycle.
+///
+/// ⚠️ La date est **informative** : ni bornée, ni contrôlée contre les dates
+/// des transactions (C-28-4-3). Angle mort : la cohérence d'une sauvegarde
+/// prise pendant la clôture relève de l'instantané commun de la sauvegarde
+/// (Story 28-3, #633), qui la tient depuis — la sauvegarde voit l'état d'avant
+/// ou d'après la clôture, jamais un état mêlé.
+pub async fn close_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+    expected_version: i32,
+    closed_on: chrono::NaiveDate,
+) -> Result<ClosureOutcome, DbError> {
+    let existing = lock_for_closure(tx, company_id, id, expected_version).await?;
+    if existing.is_closed() {
+        return Err(DbError::BankAccountClosed {
+            bank_account_id: id,
+        });
+    }
+    // I3 : la contrainte de la migration le rend structurel ; le refus est
+    // nommé ici pour un message utile, avant les décomptes.
+    if existing.is_primary {
+        return Ok(ClosureOutcome::Refused(ClosureRefusal::Primary));
+    }
+    // I1 — lecture non verrouillante, APRÈS le verrou de la ligne (la vue
+    // naît ici). Rejetées comprises : une rejetée est `pending`.
+    let (pending_count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM bank_transactions \
+         WHERE company_id = ? AND bank_account_id = ? AND status = 'pending'",
+    )
+    .bind(company_id)
+    .bind(id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if pending_count > 0 {
+        return Ok(ClosureOutcome::Refused(
+            ClosureRefusal::PendingTransactions { pending_count },
+        ));
+    }
+    // I2 — même vue.
+    let (batch_count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM payment_batches \
+         WHERE company_id = ? AND bank_account_id = ? AND status = 'generated'",
+    )
+    .bind(company_id)
+    .bind(id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if batch_count > 0 {
+        return Ok(ClosureOutcome::Refused(
+            ClosureRefusal::OpenPaymentBatches { batch_count },
+        ));
+    }
+    let after = write_closed_on(tx, company_id, id, expected_version, Some(closed_on)).await?;
+    Ok(ClosureOutcome::Done {
+        after: Box::new(after),
+        before: Box::new(existing),
+    })
+}
+
+/// **Rouvre** un compte bancaire clos — Story 28-4a (#642, AC4) : `closed_on
+/// = NULL`, `version + 1`. Le compte **ne redevient pas principal** (il ne
+/// l'était pas, I3). L'appelant trace `bank_account.reopened`.
+///
+/// Ordre des refus : [`DbError::NotFound`] (inexistant, autre société,
+/// archivé) → [`DbError::OptimisticLockConflict`] →
+/// [`ClosureRefusal::NotClosed`]. Même verrou unique que [`close_in_tx`].
+pub async fn reopen_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+    expected_version: i32,
+) -> Result<ClosureOutcome, DbError> {
+    let existing = lock_for_closure(tx, company_id, id, expected_version).await?;
+    if !existing.is_closed() {
+        return Ok(ClosureOutcome::Refused(ClosureRefusal::NotClosed));
+    }
+    let after = write_closed_on(tx, company_id, id, expected_version, None).await?;
+    Ok(ClosureOutcome::Done {
+        after: Box::new(after),
+        before: Box::new(existing),
+    })
 }
 
 /// Helper transition primary : flip un éventuel autre primary à `is_primary=FALSE`
@@ -757,10 +1176,17 @@ pub async fn count_transactions_for_bank_account(
     Ok(row.0)
 }
 
-/// Compte le nombre d'autres bank_accounts non-archivés du même company
+/// Compte le nombre d'autres bank_accounts ni archivés ni clos du même company
 /// (exclut le compte courant) **dans une transaction fournie par le caller**.
 /// Utilisé par DELETE pour décider si on autorise l'archivage d'un primary
-/// (autorisé seulement si c'est le dernier compte non-archivé — AC#10).
+/// (autorisé seulement si c'est le dernier compte ni archivé ni clos — AC#10).
+///
+/// Story 28-4a (#642, AC2) — **exclut les comptes clos** : un compte clos ne
+/// peut pas devenir principal (contrainte `chk_bank_accounts_closed_not_primary`),
+/// il ne doit donc plus empêcher l'archivage du principal. ⚠️ Conséquence
+/// assumée : quand tous les autres comptes sont clos, le principal s'archive
+/// et la société reste **sans principal** (QR-facture sans IBAN) ; le remède
+/// est de rouvrir un compte clos, puis de le désigner principal.
 pub async fn count_other_active_for_company(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
@@ -768,7 +1194,7 @@ pub async fn count_other_active_for_company(
 ) -> Result<i64, DbError> {
     let row: (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM bank_accounts \
-         WHERE company_id = ? AND archived = FALSE AND id != ?",
+         WHERE company_id = ? AND archived = FALSE AND closed_on IS NULL AND id != ?",
     )
     .bind(company_id)
     .bind(excluded_id)
@@ -807,6 +1233,10 @@ pub async fn count_other_active_for_company(
 /// touche la zone des NULL. Attente transitoire, sans cycle
 /// (aucun flux ne tient `bank_accounts` puis ne réclame les réglages), **non
 /// mesurée** (revue de code P1, F1).
+///
+/// Story 28-4a (#642, C-28-4-7) — **garde les comptes clos** : le compte
+/// comptable d'un compte clos reste « lié à une banque » (le compte se
+/// rouvre), et ne peut donc pas être désigné compte de créance.
 ///
 /// ⚠️ `LOCK IN SHARE MODE`, pas `FOR SHARE` (erreur de syntaxe sur MariaDB
 /// 10.11). Le test de sérialisation côté réglages attend sur le texte
@@ -962,9 +1392,9 @@ struct BalancesRow {
 pub async fn list_by_company_with_balances(
     pool: &MySqlPool,
     company_id: i64,
-    include_archived: bool,
+    filter: BankAccountListFilter,
 ) -> Result<Vec<(BankAccount, BankAccountBalances)>, DbError> {
-    let accounts = list_by_company(pool, company_id, include_archived).await?;
+    let accounts = list_by_company(pool, company_id, filter).await?;
 
     if accounts.is_empty() {
         return Ok(Vec::new());
@@ -1081,4 +1511,31 @@ pub async fn list_by_company_with_balances(
             (b, balances)
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// T-a45 (Story 28-4a, AC7) — les deux gardes sont des lectures
+    /// **non verrouillantes** : leur SQL ne porte ni `FOR UPDATE`, ni
+    /// `LOCK IN SHARE MODE`, ni `FOR SHARE`. ⛔ Ne prouve pas le critère sur
+    /// les instructions élargies des autres chemins : celles-là se vérifient
+    /// au diff, par la table *Position par chemin* de la fiche.
+    #[test]
+    fn les_gardes_du_compte_clos_ne_verrouillent_rien() {
+        for sql in [ENSURE_OPEN_SQL, ENSURE_OPEN_UNARCHIVED_SQL] {
+            let haut = sql.to_uppercase();
+            for verrou in ["FOR UPDATE", "LOCK IN SHARE MODE", "FOR SHARE"] {
+                assert!(
+                    !haut.contains(verrou),
+                    "une garde du compte clos ne doit prendre aucun verrou ({verrou}) : {sql}"
+                );
+            }
+        }
+        // La garde des annulations ne lit jamais `archived` (un archivé ne se
+        // rouvre pas : refuser l'annulation la rendrait impossible).
+        assert!(!ENSURE_OPEN_SQL.contains("archived"));
+        assert!(ENSURE_OPEN_UNARCHIVED_SQL.contains("archived"));
+    }
 }

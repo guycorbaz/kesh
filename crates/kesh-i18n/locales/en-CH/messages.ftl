@@ -1236,8 +1236,14 @@ bank-accounts-actions-submit = Link
 bank-accounts-errors-account-not-found = Ledger account not found.
 bank-accounts-errors-invalid-account-type = Invalid account type (Asset or Liability required).
 # Story v014-1 — CRUD bank_accounts post-onboarding
-bank-accounts-errors-has-transactions = Bank account has transactions — archive refused to preserve accounting audit. Bank imports with no reconciled transaction can be deleted (Daily → Import statements).
-bank-accounts-errors-cannot-archive-primary = The primary account cannot be archived while another non-archived account exists. First set another account as primary, then archive this one.
+bank-accounts-errors-has-transactions = Bank account has transactions — archive refused to preserve accounting audit. Bank imports with no reconciled transaction can be deleted (Daily → Import statements). Otherwise, to withdraw the account from use, close the account: it becomes read-only and keeps its history.
+bank-accounts-errors-cannot-archive-primary = The primary account cannot be archived while another account that is neither archived nor closed exists. First set another account as primary, then archive this one.
+# Story 28-4a (#642) — closed bank account, read-only
+bank-accounts-errors-closed = This bank account is closed: it is read-only. To record a transaction on it, reopen it first (Administration → Bank accounts).
+bank-accounts-errors-not-closed = This bank account is not closed.
+bank-accounts-errors-cannot-close-primary = The primary account cannot be closed: first designate another account as primary (it is the one shown on the QR-bill).
+bank-accounts-errors-has-pending-transactions = This account has imported transactions that are not reconciled. Reconcile them, or delete the import if it contains no reconciled transaction, before closing the account.
+bank-accounts-errors-has-open-payment-batches = A payment batch generated on this account is neither confirmed nor cancelled. Confirm or cancel it before closing the account.
 bank-accounts-errors-onboarding-not-complete = Onboarding must be completed (step 7) before bank accounts can be managed.
 # Story v014-1 — CRUD UI labels & actions (F3 Pass 1 code review parity DE/IT/EN)
 bank-accounts-actions-create = New bank account
@@ -2369,6 +2375,8 @@ audit-log-action-payment-batch-cancelled = Payment batch cancelled
 audit-log-action-bank-account-created = Bank account created
 audit-log-action-bank-account-updated = Bank account updated
 audit-log-action-bank-account-archived = Bank account archived
+audit-log-action-bank-account-closed = Bank account closed
+audit-log-action-bank-account-reopened = Bank account reopened
 audit-log-action-bank-import-created = Bank import completed
 audit-log-action-bank-import-deleted = Bank import deleted
 audit-log-action-bank-profile-created = Bank profile created

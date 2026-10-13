@@ -2320,6 +2320,11 @@ async fn deleting_the_imports_lifts_the_archive_guard(pool: MySqlPool) {
         ),
         "le message du 412 nomme le remède : {msg}"
     );
+    // Story 28-4a (#642, AC9) — et propose la clôture.
+    assert!(
+        msg.contains("clore le compte : il passe en lecture seule"),
+        "le message du 412 propose la clôture : {msg}"
+    );
 
     assert_eq!(delete_import_as(&app, &ctx, import_id).await, 204);
     let resp = archive(&app, &pool, &ctx).await;

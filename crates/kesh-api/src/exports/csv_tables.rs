@@ -623,6 +623,9 @@ pub fn serialize_invoice_lines_csv<W: Write>(
 ///
 /// Story 26-2a (#622, C-26-2-6) — `description` **juste après** `bank_name`
 /// (texte libre : passe par `csv_sanitize`), vide si absente.
+///
+/// Story 28-4a (#642) — `closed_on` **juste après** `archived` : date de
+/// clôture `AAAA-MM-JJ`, vide pour un compte ouvert.
 pub fn serialize_bank_accounts_csv<W: Write>(
     rows: &[BankAccount],
     writer: W,
@@ -640,6 +643,7 @@ pub fn serialize_bank_accounts_csv<W: Write>(
         "is_primary",
         "journal_account_id",
         "archived",
+        "closed_on",
         "version",
         "created_at",
         "updated_at",
@@ -656,6 +660,7 @@ pub fn serialize_bank_accounts_csv<W: Write>(
             fmt_bool(b.is_primary),
             fmt_opt_i64(b.journal_account_id),
             fmt_bool(b.archived),
+            fmt_opt_date(b.closed_on),
             b.version.to_string(),
             fmt_dt(b.created_at),
             fmt_dt(b.updated_at),
@@ -1806,12 +1811,14 @@ mod tests {
             journal_account_id: None,
             version: 1,
             archived: false,
+            closed_on: None,
             created_at: now,
             updated_at: now,
         };
         let sans = BankAccount {
             id: 8,
             description: None,
+            closed_on: chrono::NaiveDate::from_ymd_opt(2026, 1, 31),
             ..base.clone()
         };
         let formule = BankAccount {
@@ -1826,20 +1833,19 @@ mod tests {
         assert_eq!(
             lines.next().unwrap(),
             "id;company_id;bank_name;description;iban;qr_iban;is_primary;\
-             journal_account_id;archived;version;created_at;updated_at",
+             journal_account_id;archived;closed_on;version;created_at;updated_at",
             "en-tête complet"
         );
+        // T-a10 (Story 28-4a) — `closed_on` vide pour un compte ouvert,
+        // `AAAA-MM-JJ` pour un compte clos, juste après `archived`.
+        let ouvert = lines.next().unwrap();
+        assert!(ouvert.starts_with("7;1;UBS;Épargne;CH9300762011623852957;"));
+        assert!(ouvert.contains(";false;;1;"), "closed_on vide : {ouvert}");
+        let clos = lines.next().unwrap();
+        assert!(clos.starts_with("8;1;UBS;;CH9300762011623852957;"));
         assert!(
-            lines
-                .next()
-                .unwrap()
-                .starts_with("7;1;UBS;Épargne;CH9300762011623852957;")
-        );
-        assert!(
-            lines
-                .next()
-                .unwrap()
-                .starts_with("8;1;UBS;;CH9300762011623852957;")
+            clos.contains(";false;2026-01-31;1;"),
+            "closed_on daté : {clos}"
         );
         let ligne_formule = lines.next().unwrap();
         assert!(

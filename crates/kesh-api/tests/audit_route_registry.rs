@@ -24,12 +24,12 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 116 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 118 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (116 routes) ; celui du
-//! REGISTRE est plus large (119), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (118 routes) ; celui du
+//! REGISTRE est plus large (121), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -333,6 +333,11 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("patch", "bank_accounts::patch_bank_account_journal_link", Traced, SansEcritureAuJournal),
     ("put", "bank_accounts::update_bank_account", Traced, SansEcritureAuJournal),
     ("delete", "bank_accounts::archive_bank_account", Traced, SansEcritureAuJournal),
+    // Story 28-4a (#642) — clore et rouvrir un compte bancaire : un seul verrou
+    // (la ligne du compte, en première instruction), en tenant rien — aucune
+    // enveloppe de rejeu (C-28-4-21).
+    ("post", "bank_accounts::close_bank_account", Traced, SansEcritureAuJournal),
+    ("post", "bank_accounts::reopen_bank_account", Traced, SansEcritureAuJournal),
     ("post", "reconciliation_rules::post_create", Traced, SansEcritureAuJournal),
     ("patch", "reconciliation_rules::patch", Traced, SansEcritureAuJournal),
     ("delete", "reconciliation_rules::delete", Traced, SansEcritureAuJournal),
@@ -651,10 +656,10 @@ fn the_registry_partition_is_what_the_story_declares() {
         .filter(|(_, _, s, _)| matches!(s, NoMatter(_)))
         .count();
 
-    assert_eq!(LIB_ROUTES.len(), 116, "l'inventaire porte sur 116 routes");
+    assert_eq!(LIB_ROUTES.len(), 118, "l'inventaire porte sur 118 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 110,
+        traced, 112,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -664,7 +669,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          de configuration de l'installation (15-7a2, #434), plus le peuplement de \
          démonstration (15-7b1, #434), plus le lettrage et le délettrage manuels \
          (15-1a-i, #518), plus la remise à zéro (15-7b2, #434), plus la suppression d'un \
-         import non rapproché (27-1, #632), plus l'annulation d'un rejet (28-5a, #526)"
+         import non rapproché (27-1, #632), plus l'annulation d'un rejet (28-5a, #526), \
+         plus la clôture et la réouverture d'un compte bancaire (28-4a, #642)"
     );
     assert_eq!(exempt, 4, "4 routes d'auth (#435)");
     assert_eq!(
@@ -673,7 +679,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        119,
+        121,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -997,13 +1003,13 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 92,
-        "91 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
-         import, 27-1 ; l'annulation d'un rejet, 28-5a), plus \
-         /password-reset-token de test_endpoints.rs"
+        sans_ecriture, 94,
+        "93 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
+         import, 27-1 ; l'annulation d'un rejet, 28-5a ; la clôture et la réouverture d'un \
+         compte bancaire, 28-4a), plus /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
-    assert_eq!(tout.len(), 119);
+    assert_eq!(tout.len(), 121);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

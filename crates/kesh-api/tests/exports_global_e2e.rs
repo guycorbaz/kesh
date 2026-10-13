@@ -607,6 +607,54 @@ async fn export_global_zip_success_path(pool: MySqlPool) {
     assert!(entries.iter().any(|(n, _)| n == "company.csv"));
 }
 
+/// Story 28-4a (#642, revue P1 E-3) — l'export de souveraineté (CO art. 957)
+/// porte **tous** les comptes bancaires : un compte **clos non archivé** y
+/// figure, `closed_on` renseigné, à côté d'un ouvert et d'un archivé. Tue la
+/// mutation « `include_closed: false` » à `exports/global.rs` (la traduction
+/// fautive de l'ancien booléen `include_archived = true`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn export_global_zip_porte_les_comptes_clos(pool: MySqlPool) {
+    let ctx = seed_company(&pool, "co_clos", Role::Comptable).await;
+    for (nom, iban, archived, closed_on) in [
+        ("Ouvert", "CH9300762011623852957", false, None),
+        ("Clos", "CH4431999123000889012", false, Some("2026-01-31")),
+        ("Archive", "CH5604835012345678009", true, None),
+    ] {
+        sqlx::query(
+            "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, archived, closed_on) \
+             VALUES (?, ?, ?, FALSE, ?, ?)",
+        )
+        .bind(ctx.company_id)
+        .bind(nom)
+        .bind(iban)
+        .bind(archived)
+        .bind(closed_on)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let app = spawn_app(pool).await;
+    let resp = app
+        .client
+        .get(app.url("/api/v1/exports/global.zip"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = resp.bytes().await.unwrap();
+    let entries = assert_zip_response(&body);
+    let csv = String::from_utf8_lossy(entry_bytes(&entries, "bank_accounts.csv")).into_owned();
+    for nom in ["Ouvert", "Clos", "Archive"] {
+        assert!(csv.contains(&format!(";{nom};")), "{nom} absent : {csv}");
+    }
+    let clos = csv
+        .lines()
+        .find(|l| l.contains(";Clos;"))
+        .expect("ligne du compte clos");
+    assert!(clos.contains(";2026-01-31;"), "closed_on : {clos}");
+}
+
 // ============================================================
 // AC #29(b) — Multi-tenant IDOR scope (7 tables : 5 directes + 2 JOINées)
 // ============================================================

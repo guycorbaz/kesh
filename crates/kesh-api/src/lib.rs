@@ -696,6 +696,16 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
                 .put(routes::bank_accounts::update_bank_account)
                 .delete(routes::bank_accounts::archive_bank_account),
         )
+        // Story 28-4a (#642) : clore un compte bancaire (lecture seule,
+        // historique conservé) et le rouvrir.
+        .route(
+            "/api/v1/bank-accounts/{id}/close",
+            post(routes::bank_accounts::close_bank_account),
+        )
+        .route(
+            "/api/v1/bank-accounts/{id}/reopen",
+            post(routes::bank_accounts::reopen_bank_account),
+        )
         // Story 8-5b : CRUD règles d'affectation (Comptable+ mutations).
         .route(
             "/api/v1/reconciliation/rules",

@@ -286,8 +286,9 @@ pub async fn build_global_export(
         .map_err(map_db)?;
     // Story v014-1 : include_archived=true pour souveraineté CO Art. 957
     // (conservation 10 ans). Cohérent pattern accounts/contacts ci-dessus.
+    // Story 28-4a (#642) : les comptes clos aussi — tous les comptes.
     let bank_accounts_rows =
-        bank_accounts::list_by_company(pool, company_id, /*include_archived=*/ true)
+        bank_accounts::list_by_company(pool, company_id, bank_accounts::BankAccountListFilter::ALL)
             .await
             .map_err(map_db)?;
     let bank_imports_rows = bank_imports::list_all_by_company(pool, company_id)

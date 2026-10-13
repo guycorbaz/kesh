@@ -1236,8 +1236,14 @@ bank-accounts-actions-submit = Collega
 bank-accounts-errors-account-not-found = Conto contabile non trovato.
 bank-accounts-errors-invalid-account-type = Tipo di conto non valido (Attivo o Passivo richiesto).
 # Story v014-1 — CRUD bank_accounts post-onboarding
-bank-accounts-errors-has-transactions = Il conto bancario contiene transazioni — archiviazione rifiutata per preservare l'audit contabile. Le importazioni bancarie di cui nessuna transazione è riconciliata possono essere eliminate (Quotidiano → Importa estratti conto).
-bank-accounts-errors-cannot-archive-primary = Il conto principale non può essere archiviato finché esiste un altro conto non archiviato. Definire prima un altro conto come principale, poi archiviare questo.
+bank-accounts-errors-has-transactions = Il conto bancario contiene transazioni — archiviazione rifiutata per preservare l'audit contabile. Le importazioni bancarie di cui nessuna transazione è riconciliata possono essere eliminate (Quotidiano → Importa estratti conto). Altrimenti, per ritirare il conto dall'uso, chiudere il conto: passa in sola lettura e conserva il suo storico.
+bank-accounts-errors-cannot-archive-primary = Il conto principale non può essere archiviato finché esiste un altro conto né archiviato né chiuso. Definire prima un altro conto come principale, poi archiviare questo.
+# Story 28-4a (#642) — conto bancario chiuso, in sola lettura
+bank-accounts-errors-closed = Questo conto bancario è chiuso: è in sola lettura. Per registrarvi un'operazione, riaprirlo prima (Amministrazione → Conti bancari).
+bank-accounts-errors-not-closed = Questo conto bancario non è chiuso.
+bank-accounts-errors-cannot-close-primary = Il conto principale non può essere chiuso: designare prima un altro conto come principale (è quello che figura sulla fattura QR).
+bank-accounts-errors-has-pending-transactions = Questo conto contiene transazioni importate non riconciliate. Riconciliarle, o eliminare l'importazione se non contiene alcuna transazione riconciliata, prima di chiudere il conto.
+bank-accounts-errors-has-open-payment-batches = Un lotto di pagamento generato su questo conto non è né confermato né annullato. Confermarlo o annullarlo prima di chiudere il conto.
 bank-accounts-errors-onboarding-not-complete = L'onboarding deve essere completato (passo 7) prima di poter gestire i conti bancari.
 # Story v014-1 — CRUD UI labels & actions (F3 Pass 1 code review parity DE/IT/EN)
 bank-accounts-actions-create = Nuovo conto bancario
@@ -2364,6 +2370,8 @@ audit-log-action-payment-batch-cancelled = Lotto di pagamento annullato
 audit-log-action-bank-account-created = Conto bancario creato
 audit-log-action-bank-account-updated = Conto bancario aggiornato
 audit-log-action-bank-account-archived = Conto bancario archiviato
+audit-log-action-bank-account-closed = Conto bancario chiuso
+audit-log-action-bank-account-reopened = Conto bancario riaperto
 audit-log-action-bank-import-created = Importazione bancaria effettuata
 audit-log-action-bank-import-deleted = Importazione bancaria eliminata
 audit-log-action-bank-profile-created = Profilo bancario creato

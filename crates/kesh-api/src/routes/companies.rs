@@ -348,9 +348,11 @@ pub async fn get_current(
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<CompanyCurrentResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    // Story 28-4a (#642) — ni archivés ni clos : `/companies/current` nourrit
+    // les sélecteurs d'import et de réconciliation, où un compte clos ne doit
+    // plus être proposé.
     let accounts =
-        bank_accounts::list_by_company(&state.pool, company.id, /*include_archived=*/ false)
-            .await?;
+        bank_accounts::list_by_company(&state.pool, company.id, Default::default()).await?;
 
     Ok(Json(CompanyCurrentResponse {
         company: company.into(),

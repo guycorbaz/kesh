@@ -1340,6 +1340,60 @@ mod tests {
         // du pool — ce test garantit surtout que le restore a committé propre).
     }
 
+    /// T-a11 (Story 28-4a, #642, AC2) — un compte bancaire **clos** revient
+    /// clos, à la même date, d'un aller-retour par l'export générique et la
+    /// restauration (rien à coder : `export_table` lit toutes les colonnes).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn restore_round_trips_a_closed_bank_account(pool: MySqlPool) {
+        let seeded = crate::test_fixtures::seed_accounting_company(&pool)
+            .await
+            .expect("seed");
+        sqlx::query(
+            "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, closed_on) \
+             VALUES (?, 'UBS', 'CH4431999123000889012', FALSE, '2026-01-31')",
+        )
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .expect("compte clos");
+
+        let mut snap = ReadSnapshot::begin(&pool).await.expect("snapshot");
+        let mut tables = BTreeMap::new();
+        for table in ["companies", "bank_accounts"] {
+            let export = export_table(&mut snap, table).await.expect("export");
+            let rows = parse_ndjson_rows(&export.ndjson, &export.column_names).expect("parse");
+            tables.insert(
+                table.to_string(),
+                TableRestore {
+                    column_names: export.column_names.clone(),
+                    rows,
+                },
+            );
+        }
+        snap.finish().await.expect("finish");
+        assert!(
+            tables["bank_accounts"]
+                .column_names
+                .iter()
+                .any(|c| c == "closed_on"),
+            "l'export porte closed_on"
+        );
+
+        let mut tx = pool.begin().await.expect("begin");
+        restore_tables_in_tx(&mut tx, &tables)
+            .await
+            .expect("restore");
+        tx.commit().await.expect("commit");
+
+        let closed_on: Option<chrono::NaiveDate> =
+            sqlx::query_scalar("SELECT closed_on FROM bank_accounts WHERE iban = ?")
+                .bind("CH4431999123000889012")
+                .fetch_one(&pool)
+                .await
+                .expect("compte restauré");
+        assert_eq!(closed_on, chrono::NaiveDate::from_ymd_opt(2026, 1, 31));
+    }
+
     // --- Story 28-3 (#633) : la sauvegarde lit ses tables dans un instantané ---
 
     /// Montage commun de l'AC5 : une société comptable, un compte bancaire, un

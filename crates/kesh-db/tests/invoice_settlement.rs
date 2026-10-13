@@ -1964,3 +1964,230 @@ async fn later_closed_year_group_is_refused(pool: MySqlPool) {
     assert_eq!(traces(&pool).await, avant, "rien d'écrit");
     assert_eq!(lignes_du_groupe(&pool, cle).await, 2);
 }
+
+// ---------------------------------------------------------------------------
+// Story 28-4a (#642) — le compte bancaire clos
+// ---------------------------------------------------------------------------
+mod compte_bancaire_clos {
+    use super::*;
+
+    /// Un compte bancaire **non principal**, lié au compte 1020 (créé ici : le
+    /// 1100 du seed est la créance, qu'un règlement ne peut pas viser).
+    async fn compte_bancaire(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
+        let ledger: i64 = sqlx::query_scalar(
+            "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+             VALUES (?, '1020', 'Banque', 'Asset', 1, 1) RETURNING id",
+        )
+        .bind(seeded.company_id)
+        .fetch_one(pool)
+        .await
+        .expect("compte 1020");
+        sqlx::query_scalar(
+            "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id) \
+             VALUES (?, 'UBS', 'CH4431999123000889012', FALSE, ?) RETURNING id",
+        )
+        .bind(seeded.company_id)
+        .bind(ledger)
+        .fetch_one(pool)
+        .await
+        .expect("compte bancaire")
+    }
+
+    /// T-a30 (AC6, W8) — `settle_invoice` par virement vers un compte **clos**
+    /// rend `BankAccountClosed` et n'écrit rien : ni règlement, ni écriture, la
+    /// facture inchangée. Tue M8.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn un_reglement_vers_un_compte_clos_est_refuse(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.expect("seed");
+        let bank = compte_bancaire(&pool, &seeded).await;
+        let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+        sqlx::query("UPDATE bank_accounts SET closed_on = '2026-03-02' WHERE id = ?")
+            .bind(bank)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let ecritures = count(&pool, "SELECT COUNT(*) FROM journal_entries").await;
+
+        let err = invoice_settlements_write::settle_invoice(
+            &pool,
+            seeded.admin_user_id,
+            seeded.company_id,
+            inv_id,
+            SettlementChoice::BankTransfer {
+                bank_account_id: bank,
+            },
+            dec!(100.00),
+            ymd(2026, 3, 5),
+        )
+        .await
+        .expect_err("compte clos");
+        assert!(
+            matches!(err, DbError::BankAccountClosed { bank_account_id } if bank_account_id == bank),
+            "{err:?}"
+        );
+        assert_eq!(
+            count(&pool, "SELECT COUNT(*) FROM invoice_settlements").await,
+            0
+        );
+        assert_eq!(
+            count(&pool, "SELECT COUNT(*) FROM journal_entries").await,
+            ecritures
+        );
+        let paid: Option<NaiveDate> =
+            sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+                .bind(inv_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(paid, None);
+    }
+
+    /// Revue P1 (E-2) — l'« Interdit » des annulations : un règlement par virement
+    /// vers un compte bancaire **archivé** s'annule (un archivé ne se rouvre pas ;
+    /// le refuser rendrait l'annulation définitivement impossible). Tue la
+    /// mutation « `ensure_open_unarchived_in_tx` à la place de `ensure_open_in_tx` »
+    /// au site W25.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn l_annulation_d_un_virement_vers_un_compte_archive_passe(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.expect("seed");
+        let bank = compte_bancaire(&pool, &seeded).await;
+        let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+        let out = invoice_settlements_write::settle_invoice(
+            &pool,
+            seeded.admin_user_id,
+            seeded.company_id,
+            inv_id,
+            SettlementChoice::BankTransfer {
+                bank_account_id: bank,
+            },
+            dec!(40.00),
+            ymd(2026, 3, 5),
+        )
+        .await
+        .expect("règlement par virement");
+        let sid: i64 =
+            sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE journal_entry_id = ?")
+                .bind(out.journal_entry_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query("UPDATE bank_accounts SET archived = TRUE WHERE id = ?")
+            .bind(bank)
+            .execute(&pool)
+            .await
+            .unwrap();
+        invoice_settlements_write::cancel_settlement(
+            &pool,
+            seeded.admin_user_id,
+            seeded.company_id,
+            inv_id,
+            sid,
+        )
+        .await
+        .expect("l'annulation d'un règlement vers un compte archivé doit passer");
+        assert_eq!(
+            count(&pool, "SELECT COUNT(*) FROM invoice_settlements").await,
+            0
+        );
+    }
+
+    /// T-a48 (a) (AC7, second volet, W25) — **entrelacement par virement** :
+    /// une clôture d'exercice concurrente contre l'annulation d'un règlement par
+    /// virement vers un compte bancaire **ouvert** (sans quoi la garde ne passe
+    /// pas — le défaut des tests existants, montés en espèces). La garde,
+    /// lecture non verrouillante, est posée APRÈS le verrou d'exercice (2-bis) :
+    /// la vue naît après l'attente, les motifs voient l'exercice clos et
+    /// refusent. Avancée avant (2-bis), elle ferait naître la vue avant
+    /// l'attente : les motifs liraient l'exercice ouvert et l'annulation
+    /// passerait (tue M37). Règlement dans un exercice autre que celui du jour.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn une_cloture_d_exercice_attend_l_annulation_d_un_virement(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.expect("seed");
+        let today = chrono::Utc::now().date_naive();
+        let d = today - chrono::Duration::days(60);
+        sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
+            .bind(d)
+            .bind(seeded.fiscal_year_id)
+            .execute(&pool)
+            .await
+            .expect("raccourcir l'exercice");
+        fiscal_years::create(
+            &pool,
+            seeded.admin_user_id,
+            kesh_db::entities::NewFiscalYear {
+                company_id: seeded.company_id,
+                name: "Courant".into(),
+                start_date: d + chrono::Duration::days(1),
+                end_date: ymd(2030, 12, 31),
+            },
+        )
+        .await
+        .expect("exercice courant");
+        let bank = compte_bancaire(&pool, &seeded).await;
+        let inv_id =
+            validated_invoice(&pool, &seeded, dec!(100.00), d - chrono::Duration::days(20)).await;
+        let out = invoice_settlements_write::settle_invoice(
+            &pool,
+            seeded.admin_user_id,
+            seeded.company_id,
+            inv_id,
+            SettlementChoice::BankTransfer {
+                bank_account_id: bank,
+            },
+            dec!(40.00),
+            d - chrono::Duration::days(10),
+        )
+        .await
+        .expect("règlement par virement");
+        let sid: i64 =
+            sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE journal_entry_id = ?")
+                .bind(out.journal_entry_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let mut closing = pool.begin().await.unwrap();
+        sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+            .bind(seeded.fiscal_year_id)
+            .execute(&mut *closing)
+            .await
+            .unwrap();
+        let p = pool.clone();
+        let (company_id, user_id) = (seeded.company_id, seeded.admin_user_id);
+        let annulation = tokio::spawn(async move {
+            invoice_settlements_write::cancel_settlement(&p, user_id, company_id, inv_id, sid).await
+        });
+        let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+            &pool,
+            &["fiscal_years", "FOR UPDATE"],
+            || annulation.is_finished(),
+        )
+        .await;
+        if !vue {
+            panic!(
+                "l'annulation a fini sans attendre de verrou : {:?}",
+                annulation.await
+            );
+        }
+        closing.commit().await.unwrap();
+        let result = annulation.await.expect("tâche d'annulation");
+        assert!(
+            matches!(
+                result,
+                Err(DbError::SettlementNotCancellable {
+                    blocker: SettlementCancelBlocker::FiscalYearClosed
+                })
+            ),
+            "l'annulation devait attendre la clôture puis refuser l'exercice clos — reçu {result:?}"
+        );
+        assert_eq!(
+            count(
+                &pool,
+                &format!("SELECT COUNT(*) FROM invoice_settlements WHERE id = {sid}")
+            )
+            .await,
+            1,
+            "rien n'a été annulé"
+        );
+    }
+}

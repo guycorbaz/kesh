@@ -128,8 +128,14 @@ pub async fn settle_invoice(
     // (3) Contrepartie selon le mode.
     let counterparty_account_id = match choice {
         SettlementChoice::BankTransfer { bank_account_id } => {
-            let journal_account_id: Option<Option<i64>> = sqlx::query_scalar(
-                "SELECT journal_account_id FROM bank_accounts \
+            // Story 28-4a (#642, W8, AC6-bis) — `closed_on` et `archived` lus
+            // DANS l'instruction verrouillée qui existait au sol (élargie de
+            // colonnes, aucun verrou ajouté) : elle lit la dernière version
+            // commitée, sans fenêtre. Ordre : absent, autre société ou archivé
+            // → `NotFound` ; clos → `BankAccountClosed` ; sans compte lié →
+            // `ConfigurationRequired`.
+            let row: Option<(Option<i64>, Option<NaiveDate>, bool)> = sqlx::query_as(
+                "SELECT journal_account_id, closed_on, archived FROM bank_accounts \
                  WHERE id = ? AND company_id = ? FOR UPDATE",
             )
             .bind(bank_account_id)
@@ -137,11 +143,16 @@ pub async fn settle_invoice(
             .fetch_optional(&mut *tx)
             .await
             .map_err(map_db_error)?;
-            journal_account_id
-                .ok_or(DbError::NotFound)?
-                .ok_or_else(|| {
-                    DbError::ConfigurationRequired("bank_account.journal_account_id".into())
-                })?
+            let (journal_account_id, closed_on, archived) = row.ok_or(DbError::NotFound)?;
+            if archived {
+                return Err(DbError::NotFound);
+            }
+            if closed_on.is_some() {
+                return Err(DbError::BankAccountClosed { bank_account_id });
+            }
+            journal_account_id.ok_or_else(|| {
+                DbError::ConfigurationRequired("bank_account.journal_account_id".into())
+            })?
         }
         SettlementChoice::InternalAccount { account_id } => {
             // ⚠️ N'importe quel compte du plan — caisse, poste, compensation —
@@ -831,8 +842,11 @@ pub async fn cancel_settlement_in_tx(
 
     // (2) Verrou sur la ligne de règlement, scopée par société ET facture : un
     //     règlement d'une autre facture n'existe pas pour cette route.
-    let settlement: Option<(i64, Decimal, NaiveDate)> = sqlx::query_as(
-        "SELECT journal_entry_id, amount, settled_on FROM invoice_settlements \
+    //     Story 28-4a (#642, W25) : `settlement_bank_account_id` ajouté à cette
+    //     instruction (même ligne, même clé primaire, verrou inchangé).
+    let settlement: Option<(i64, Decimal, NaiveDate, Option<i64>)> = sqlx::query_as(
+        "SELECT journal_entry_id, amount, settled_on, settlement_bank_account_id \
+         FROM invoice_settlements \
          WHERE id = ? AND company_id = ? AND invoice_id = ? FOR UPDATE",
     )
     .bind(settlement_id)
@@ -841,7 +855,8 @@ pub async fn cancel_settlement_in_tx(
     .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)?;
-    let (entry_id, amount, settled_on) = settlement.ok_or(DbError::NotFound)?;
+    let (entry_id, amount, settled_on, settlement_bank_account_id) =
+        settlement.ok_or(DbError::NotFound)?;
 
     // (2-bis) ⛔ Verrou sur l'EXERCICE de l'écriture de règlement — et sur
     //     l'écriture elle-même, jointe. Sans lui, le rang 2 serait une lecture
@@ -871,6 +886,15 @@ pub async fn cancel_settlement_in_tx(
     .await
     .map_err(map_db_error)?
     .ok_or(DbError::NotFound)?;
+
+    // Story 28-4a (#642, W25) — règlement par virement vers un compte clos :
+    // lecture non verrouillante APRÈS (2-bis), avant les motifs de (3) —
+    // l'instantané « ne se fige qu'à sa première lecture non verrouillante,
+    // qui vient APRÈS » le verrou (2-bis) (ci-dessus) ; règle de placement de
+    // `bank_accounts::ensure_open_in_tx`. Ne lit pas `archived`.
+    if let Some(bank_account_id) = settlement_bank_account_id {
+        super::bank_accounts::ensure_open_in_tx(tx, company_id, bank_account_id).await?;
+    }
 
     // (3) Les motifs du geste. Rangs 1, 1 bis, 2 et 2 bis : refusés ici.
     //     Rangs 3-5 : laissés au socle, qui les refuse avec son erreur

@@ -19,6 +19,10 @@
 //! - `PATCH  /api/v1/bank-accounts/{id}` — legacy 8-5a-zero, scope strict
 //!   `journal_account_id` (Comptable+). Audit log `details_json.trigger =
 //!   "journal_account_link"` (F7 Pass 3 Opus — cohérence audit avec PUT).
+//! - `POST   /api/v1/bank-accounts/{id}/close` et `…/reopen` — Story 28-4a
+//!   (#642) : clore un compte (lecture seule, historique conservé) et le
+//!   rouvrir (Comptable+). `PUT`, `PATCH` et `DELETE` refusent un compte clos
+//!   en `409 BANK_ACCOUNT_CLOSED` ; `GET` l'écarte sauf `?includeClosed=true`.
 //!
 //! Audit log émis depuis le handler (jamais le repo) dans la même transaction
 //! que les UPDATEs — atomicité garantie. Court-circuit no-op KF-004 sur le
@@ -113,12 +117,35 @@ pub struct ArchiveBankAccountBody {
     pub version: i32,
 }
 
-/// Query string du GET `/bank-accounts` — paramètre `includeArchived`.
+/// Query string du GET `/bank-accounts` — paramètres `includeArchived` et,
+/// depuis la Story 28-4a (#642), `includeClosed` (défaut `false` : un compte
+/// clos n'est pas proposé là où l'on écrit).
 #[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ListBankAccountsQuery {
     #[serde(default)]
     pub include_archived: bool,
+    #[serde(default)]
+    pub include_closed: bool,
+}
+
+/// Body de `POST /bank-accounts/{id}/close` — Story 28-4a (#642, AC3).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloseBankAccountBody {
+    /// Optimistic lock.
+    pub version: i32,
+    /// Date de clôture, informative (C-28-4-3) ; absente → date du jour UTC.
+    #[serde(default)]
+    pub closed_on: Option<chrono::NaiveDate>,
+}
+
+/// Body de `POST /bank-accounts/{id}/reopen` — Story 28-4a (#642, AC4).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReopenBankAccountBody {
+    /// Optimistic lock.
+    pub version: i32,
 }
 
 /// Payload étendu retourné par GET `/bank-accounts` — Story v014-1 T5.
@@ -213,6 +240,16 @@ impl_validation_extractor!(
 impl_validation_extractor!(
     ArchiveBankAccountBodyExtractor,
     ArchiveBankAccountBody,
+    "`version` i32"
+);
+impl_validation_extractor!(
+    CloseBankAccountBodyExtractor,
+    CloseBankAccountBody,
+    "`version` i32, `closedOn?` date AAAA-MM-JJ"
+);
+impl_validation_extractor!(
+    ReopenBankAccountBodyExtractor,
+    ReopenBankAccountBody,
     "`version` i32"
 );
 
@@ -492,7 +529,10 @@ pub async fn list_bank_accounts(
     let rows = bank_accounts::list_by_company_with_balances(
         &state.pool,
         current_user.company_id,
-        query.include_archived,
+        bank_accounts::BankAccountListFilter {
+            include_archived: query.include_archived,
+            include_closed: query.include_closed,
+        },
     )
     .await?;
 
@@ -843,6 +883,17 @@ pub async fn archive_bank_account(
         // Idempotence v0.1 non-supportée — déjà archivé → 404 anti-énumération.
         return Err(AppError::BankAccountNotFound);
     }
+    // Story 28-4a (#642, AC5) — un compte clos ne s'archive pas : il faut le
+    // rouvrir d'abord. Lu sur ce pré-vol existant (aucun verrou ajouté),
+    // AVANT la sentinelle et le décompte : un compte clos qui porte des imports
+    // rend `409 BANK_ACCOUNT_CLOSED`, non le `412` dont le message propose la
+    // clôture. Une clôture commitée après ce pré-vol est refusée sous le verrou
+    // d'`archive_for_company`.
+    if existing.is_closed() {
+        return Err(AppError::BankAccountClosed {
+            bank_account_id: id,
+        });
+    }
 
     let mut tx = state
         .pool
@@ -913,6 +964,167 @@ pub async fn archive_bank_account(
         .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
 
     Ok(Json(updated))
+}
+
+/// Traduit le refus d'une clôture ou d'une réouverture (Story 28-4a, #642).
+fn closure_refusal_error(refusal: bank_accounts::ClosureRefusal) -> AppError {
+    use bank_accounts::ClosureRefusal;
+    match refusal {
+        ClosureRefusal::NotClosed => AppError::BankAccountNotClosed,
+        ClosureRefusal::Primary => AppError::BankAccountCannotClosePrimary,
+        ClosureRefusal::PendingTransactions { pending_count } => {
+            AppError::BankAccountHasPendingTransactions { pending_count }
+        }
+        ClosureRefusal::OpenPaymentBatches { batch_count } => {
+            AppError::BankAccountHasOpenPaymentBatches { batch_count }
+        }
+    }
+}
+
+/// Handler `POST /api/v1/bank-accounts/{id}/close` — **clôt** un compte
+/// bancaire : il passe en lecture seule, son historique reste entier
+/// (Comptable+, clés d'API `read-write` admises ; Story 28-4a, #642, AC3).
+///
+/// Corps `{ "version", "closedOn"? }` ; `closedOn` absent → date du jour
+/// **UTC** (l'écran l'envoie toujours). Effet : `closed_on = <date>`,
+/// `version + 1`, rien d'autre. Trace `bank_account.closed`.
+///
+/// **Ordre des refus** : forme (`400` : `version < 1`, date illisible, ou année
+/// de `closedOn` hors de `1000..=9999`, le domaine de `DATE`) →
+/// `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`
+/// (inexistant, autre société, archivé) → sous verrou : `409
+/// OPTIMISTIC_LOCK_CONFLICT` → `409 BANK_ACCOUNT_CLOSED` (déjà clos) → `412
+/// BANK_ACCOUNT_CANNOT_CLOSE_PRIMARY` → `412 BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS`
+/// → `412 BANK_ACCOUNT_HAS_OPEN_PAYMENT_BATCHES`.
+///
+/// ⛔ La route ne lit **rien** dans la transaction avant
+/// `bank_accounts::close_in_tx` : le `FOR UPDATE` de la ligne est sa première
+/// instruction, et c'est ce qui fait voir aux décomptes tout écrivain commité
+/// (voir le doc-comment de `close_in_tx`). Pas de rejeu sur interblocage : un
+/// seul verrou, en tenant rien, la route ne peut pas fermer de cycle.
+pub async fn close_bank_account(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    CloseBankAccountBodyExtractor(body): CloseBankAccountBodyExtractor,
+) -> Result<Json<BankAccount>, AppError> {
+    assert_onboarding_complete(&state.pool).await?;
+    if body.version < 1 {
+        return Err(AppError::Validation("version doit être >= 1".to_string()));
+    }
+    let closed_on = body
+        .closed_on
+        .unwrap_or_else(|| chrono::Utc::now().date_naive());
+    // Revue P1 (B-1) — la date est informative (C-28-4-3), non sans domaine :
+    // `chrono` admet des années signées et au-delà de 9999, que la colonne `DATE`
+    // de MariaDB refuserait en `500`. Hors de `1000..=9999` (le domaine de
+    // `DATE`) : `400`, avant toute transaction.
+    if !(1000..=9999).contains(&chrono::Datelike::year(&closed_on)) {
+        return Err(AppError::Validation(
+            "closedOn doit être une date entre l'an 1000 et l'an 9999".to_string(),
+        ));
+    }
+
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
+    let (after, before) = match bank_accounts::close_in_tx(
+        &mut tx,
+        current_user.company_id,
+        id,
+        body.version,
+        closed_on,
+    )
+    .await
+    {
+        Ok(bank_accounts::ClosureOutcome::Done { after, before }) => (after, before),
+        Ok(bank_accounts::ClosureOutcome::Refused(refusal)) => {
+            return Err(closure_refusal_error(refusal));
+        }
+        Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
+        Err(e) => return Err(AppError::Database(e)),
+    };
+
+    let details = serde_json::json!({
+        "bank_account_id": id,
+        "closed_on": after.closed_on,
+        "before": { "closed_on": before.closed_on, "version": before.version },
+        "after": { "closed_on": after.closed_on, "version": after.version },
+    });
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::from_current_user(
+            &current_user,
+            "bank_account.closed",
+            "bank_account",
+            id,
+            Some(details),
+        ),
+    )
+    .await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
+    Ok(Json(*after))
+}
+
+/// Handler `POST /api/v1/bank-accounts/{id}/reopen` — **rouvre** un compte
+/// bancaire clos (Comptable+, clés d'API `read-write` admises ; Story 28-4a,
+/// #642, AC4). Corps `{ "version" }`. Effet : `closed_on = NULL`,
+/// `version + 1` ; le compte ne redevient pas principal. Trace
+/// `bank_account.reopened`, dont `before.closed_on` garde la date levée.
+///
+/// **Ordre des refus** : forme (`400`) → `404` (inexistant, autre société,
+/// archivé) → sous verrou : `409 OPTIMISTIC_LOCK_CONFLICT` → `409
+/// BANK_ACCOUNT_NOT_CLOSED`.
+pub async fn reopen_bank_account(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    ReopenBankAccountBodyExtractor(body): ReopenBankAccountBodyExtractor,
+) -> Result<Json<BankAccount>, AppError> {
+    assert_onboarding_complete(&state.pool).await?;
+    if body.version < 1 {
+        return Err(AppError::Validation("version doit être >= 1".to_string()));
+    }
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
+    let (after, before) =
+        match bank_accounts::reopen_in_tx(&mut tx, current_user.company_id, id, body.version).await
+        {
+            Ok(bank_accounts::ClosureOutcome::Done { after, before }) => (after, before),
+            Ok(bank_accounts::ClosureOutcome::Refused(refusal)) => {
+                return Err(closure_refusal_error(refusal));
+            }
+            Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
+            Err(e) => return Err(AppError::Database(e)),
+        };
+
+    let details = serde_json::json!({
+        "bank_account_id": id,
+        "before": { "closed_on": before.closed_on, "version": before.version },
+        "after": { "closed_on": after.closed_on, "version": after.version },
+    });
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::from_current_user(
+            &current_user,
+            "bank_account.reopened",
+            "bank_account",
+            id,
+            Some(details),
+        ),
+    )
+    .await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
+    Ok(Json(*after))
 }
 
 /// Handler `PATCH /api/v1/bank-accounts/{id}` — met à jour le

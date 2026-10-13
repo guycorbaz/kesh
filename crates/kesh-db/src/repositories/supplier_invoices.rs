@@ -750,8 +750,14 @@ pub async fn pay_in_tx(
     let (counterparty_account_id, settlement_type, bank_account_id, internal_account_id, journal) =
         match choice {
             SettlementChoice::BankTransfer { bank_account_id } => {
-                let journal_account_id: Option<Option<i64>> = sqlx::query_scalar(
-                    "SELECT journal_account_id FROM bank_accounts \
+                // Story 28-4a (#642, W27, AC6-bis) — `closed_on` et `archived`
+                // lus DANS l'instruction verrouillée du sol (élargie de
+                // colonnes, aucun verrou ajouté) : dernière version commitée,
+                // sans fenêtre. Ordre : absent, autre société ou archivé →
+                // `NotFound` ; clos → `BankAccountClosed` ; sans compte lié →
+                // `ConfigurationRequired`.
+                let row: Option<(Option<i64>, Option<chrono::NaiveDate>, bool)> = sqlx::query_as(
+                    "SELECT journal_account_id, closed_on, archived FROM bank_accounts \
                      WHERE id = ? AND company_id = ? FOR UPDATE",
                 )
                 .bind(bank_account_id)
@@ -759,12 +765,16 @@ pub async fn pay_in_tx(
                 .fetch_optional(&mut **tx)
                 .await
                 .map_err(map_db_error)?;
-                let counterparty =
-                    journal_account_id
-                        .ok_or(DbError::NotFound)?
-                        .ok_or_else(|| {
-                            DbError::ConfigurationRequired("bank_account.journal_account_id".into())
-                        })?;
+                let (journal_account_id, closed_on, archived) = row.ok_or(DbError::NotFound)?;
+                if archived {
+                    return Err(DbError::NotFound);
+                }
+                if closed_on.is_some() {
+                    return Err(DbError::BankAccountClosed { bank_account_id });
+                }
+                let counterparty = journal_account_id.ok_or_else(|| {
+                    DbError::ConfigurationRequired("bank_account.journal_account_id".into())
+                })?;
                 (
                     counterparty,
                     "bank_transfer",
@@ -1079,6 +1089,16 @@ pub async fn cancel_in_tx(
     .map_err(map_db_error)?
     .ok_or_else(|| DbError::Invariant("facture fournisseur sans écriture d'achat".into()))?;
 
+    // Story 28-4a (#642, W28) — facture payée par virement vers un compte clos
+    // (l'annulation en détache `settlement_bank_account_id`) : lecture non
+    // verrouillante APRÈS le verrou de l'écriture d'achat et de son exercice,
+    // avant les motifs de (2) — « les verrous d'abord, tous, avant toute
+    // lecture non verrouillante » (doc ci-dessus) ; règle de placement de
+    // `bank_accounts::ensure_open_in_tx`. Ne lit pas `archived`.
+    if let Some(bank_account_id) = inv.settlement_bank_account_id {
+        super::bank_accounts::ensure_open_in_tx(tx, company_id, bank_account_id).await?;
+    }
+
     // (2) Les motifs. Têtes, exercice clos et lettrage figé par la période
     //     (rang 2 bis, Story 15-1a2-0) : refusés ici. Les autres : laissés au
     //     socle, qui les refuse avec son erreur canonique (400 qui NOMME les
@@ -1309,6 +1329,15 @@ pub async fn cancel_settlement_in_tx(
         .map_err(map_db_error)?
         .ok_or(DbError::NotFound)?;
         settlement_fiscal_year_id = Some(fy_id);
+    }
+
+    // Story 28-4a (#642, W29) — règlement par virement vers un compte clos :
+    // lecture non verrouillante APRÈS (1-bis), avant les motifs de (2) — « la
+    // queue lit l'exercice SANS verrou, et le socle ne verrouille l'exercice de
+    // l'origine qu'APRÈS » (ci-dessus) ; règle de placement de
+    // `bank_accounts::ensure_open_in_tx`. Ne lit pas `archived`.
+    if let Some(bank_account_id) = inv.settlement_bank_account_id {
+        super::bank_accounts::ensure_open_in_tx(tx, company_id, bank_account_id).await?;
     }
 
     // (2) Les motifs. Rang 1, « exercice clos » et lettrage figé par la

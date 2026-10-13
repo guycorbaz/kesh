@@ -2282,3 +2282,545 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 - **Réversible** : oui (tests et commentaires ; aucune ligne de production exécutée ne change).
 
 [#482]: https://github.com/guycorbaz/kesh/issues/482
+## Story 28-4 — Clore un compte bancaire, en lecture seule ([#642])
+
+Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
+`implementation-artifacts/28-4-cloture-compte-bancaire.md`.
+
+### C-28-4-1 — Une fiche, deux stories (28-4a serveur, 28-4b écran) ; dérogation motivée pour la 28-4a
+
+- **Contexte** : plus de cinq modules (`kesh-db`, quatre modules de `kesh-api`, `kesh-i18n`, trois du frontend, les
+  manuels) — § *Règle de splitting préventif*. Leçon de l'epic : poser le périmètre minimal dès la fiche.
+- **Retenu** : précédent C-26-2-15 — une fiche, deux clés, deux PR successives, clé mère au statut `split`. 28-4a :
+  état, gestes, refus serveur sur l'inventaire clos, registre statique, messages serveur (`refs #642`). 28-4b : écran,
+  sélecteurs, manuels, CHANGELOG, captures (`closes #642`). Aucune release entre les deux. La 28-4a reste au-dessus de
+  cinq modules : dérogation (un seul pattern de garde, mécanique ; l'inventaire clos n'a de sens que complet ; touches à
+  `routes/reconciliation.rs` réduites aux pré-vols). Revue du rollout fichier par fichier.
+- **Écartées** : une story unique (trop large pour une passe adversariale fiable) ; trois stories (socle / gardes /
+  écran) — un état « clos » sur `main` qui ne tiendrait pas sur une partie des chemins, et un registre statique
+  impossible à mettre au vert à moitié.
+- **Écart à la consigne de l'orchestrateur** : la consigne demandait la clé `28-4-cloture-compte-bancaire:
+  ready-for-dev` ; le précédent C-26-2-15 met la clé mère en `split` et les deux clés filles en `ready-for-dev`. Retenu
+  le précédent, signalé au rapport.
+- **Précision de la validation P1** (R14) : la 28-4a **dépasse elle-même cinq modules** (sept dépôts de `kesh-db`,
+  quatre modules de `kesh-api`, `kesh-i18n`). C'est une **dérogation** à la règle de découpage, et non l'exception que
+  la règle prévoit (cycles Cargo, merges intermédiaires impossibles à tester) ; elle écarte aussi le « story-zero
+  pilote ». Elle se motive par le pattern unique et l'inventaire qui n'a de sens que complet — au Project Lead d'en
+  juger.
+- **Réversible** : oui (fusionner les deux clés avant le dev).
+
+### C-28-4-2 — Un état distinct de l'archivage, porté par une seule colonne `closed_on DATE NULL`
+
+- **Contexte** : #642 laisse le choix entre étendre `archived` et un état distinct. `archived` signifie aujourd'hui
+  « disparu » : `404` anti-énumération partout, exclu des listes. Clos doit rester **lisible**.
+- **Retenu** : colonne `closed_on DATE NULL` — `NULL` = ouvert, une date = clos depuis cette date. Une seule colonne
+  porte l'état et la date (pas de booléen redondant qui pourrait la contredire). Les deux états se combinent : un compte
+  clos sans transaction peut être archivé après réouverture.
+- **Écartées** : étendre `archived` (perd la lecture) ; un `ENUM status` (`open`/`closed`/`archived`) qui remplacerait
+  `archived` (migration breaking, réécriture de tous les filtres existants) ; deux colonnes `closed_at DATETIME` +
+  `closing_date DATE` (horodatage déjà à l'audit).
+- **Réversible** : à coût de migration.
+
+### C-28-4-3 — Date de clôture facultative, jour UTC par défaut, sans borne
+
+- **Contexte** : #642 veut une date facultative. Un contrôle (pas dans le futur, pas avant la dernière transaction)
+  bute sur le fuseau (le serveur raisonne en UTC, l'utilisateur en heure suisse) et ne protège rien : c'est l'état qui
+  garde.
+- **Retenu** : `closedOn` optionnel à l'API, défaut `Utc::now().date_naive()` (précédent `opening_balances.rs`) ;
+  l'écran l'envoie toujours, prérempli à la date locale. Aucune borne serveur ; angle mort écrit.
+- **Écartées** : date obligatoire ; bornes serveur.
+- **Réversible** : oui.
+
+### C-28-4-4 — Transactions non rapprochées et lots générés : la clôture est refusée
+
+- **Contexte** : #642, « à trancher : refus de clore, ou clôture qui les laisse consultables ».
+- **Retenu** : refus `412` avec le décompte (`BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS`,
+  `BANK_ACCOUNT_HAS_OPEN_PAYMENT_BATCHES`). Une transaction en attente sur un compte en lecture seule ne pourrait plus
+  jamais être rapprochée : clore la laisserait muette. Le refus établit aussi les invariants I1 et I2, sur lesquels
+  reposent six écrivains de la réconciliation et l'annulation de lot (pas de garde à y poser).
+- **Écartée** : clôture qui les laisse consultables (comptabilité incomplète, sans signal).
+- **Réversible** : oui.
+
+### C-28-4-5 — Le compte principal ne se clôt pas, et la base l'interdit
+
+- **Contexte** : le principal est l'IBAN de la QR-facture (`find_primary`). Un principal clos imprimerait un compte
+  fermé.
+- **Retenu** : `412 BANK_ACCOUNT_CANNOT_CLOSE_PRIMARY` (désigner d'abord un autre principal) ; et contrainte
+  `CHECK (closed_on IS NULL OR is_primary = FALSE)`, qui rend l'invariant I3 structurel contre tout écrivain présent ou
+  futur (leçon *invariant dans le temps*).
+- **Écartées** : clore le principal unique (comme l'archivage, AC#10 de la v014-1) — la QR-facture porterait un compte
+  clos ; transférer d'office le statut de principal (Kesh choisirait seul).
+- **Réversible** : oui (migration pour la contrainte).
+
+### C-28-4-6 — Solde du compte comptable lié non nul : avertir, ne pas refuser
+
+- **Contexte** : #642, « avertir ou refuser ». Le compte comptable peut être partagé entre plusieurs comptes bancaires,
+  ou absent ; un frais de clôture peut arriver après.
+- **Retenu** : l'écran avertit (solde `currentBalance` déjà dans la liste) ; le serveur ne refuse pas.
+- **Écartée** : refus serveur (bloquerait un compte comptable partagé, et une clôture légitime avant l'écriture de
+  frais).
+- **Réversible** : oui.
+
+### C-28-4-7 — Le compte comptable d'un compte clos reste « lié à une banque »
+
+- **Contexte** : `first_active_bank_account_linked_to` refuse qu'un compte comptable lié à une banque soit désigné
+  compte de créance ; il filtre `archived`, pas encore la clôture.
+- **Retenu** : il **garde** les comptes clos (le compte a servi de banque ; son historique est bancaire) ; les réglages
+  de facturation passent `includeClosed` à vrai pour rester alignés (second paramètre booléen, C-28-4-20).
+- **Écartée** : libérer le compte comptable à la clôture (un 1020 deviendrait désignable comme débiteurs avec son
+  historique bancaire).
+- **Réversible** : oui.
+
+### C-28-4-8 — Clore et rouvrir sont ouverts aux clés d'API `read-write`
+
+- **Contexte** : la 27-1 a fermé la suppression d'un import aux clés (destructif). L'archivage est ouvert.
+- **Retenu** : ouverts, comme l'archivage — gestes réversibles et tracés ; une clé `read` est refusée par le
+  middleware. Les refus d'écriture sur un compte clos s'appliquent aux clés comme à l'interface.
+- **Écartée** : fermer aux clés (rien de destructif à protéger).
+- **Réversible** : oui.
+
+### C-28-4-9 — `409 BANK_ACCOUNT_CLOSED` pour une écriture refusée ; `412` pour une clôture impossible
+
+- **Contexte** : codes HTTP du dépôt — `412` pour une précondition de l'archivage, `409` pour un conflit d'état.
+- **Retenu** : écrire sur un compte clos est un conflit avec son état → `409` ; ne pas pouvoir clore est une
+  précondition non remplie → `412`, comme l'archivage. Dans les lots de réconciliation, `failed[]` par proposition
+  (§ *Pattern batch*, précédent 8-5b). Le refus se place après le `409` de version des gestes existants.
+- **Réversible** : oui.
+
+### C-28-4-10 — Rien ne s'écrit sur un compte clos, archivage compris, sauf la réouverture
+
+> *Annotation de la validation P5 (2026-10-13, Opus 5.5, R5) — la règle ci-dessous, écrite absolue, est **bornée**
+> depuis par deux décisions ultérieures : l'annulation d'un lot généré reste permise (C-28-4-23, exception dite comme
+> telle) ; et une écriture en cours au moment de la clôture peut encore aboutir (L1, C-28-4-21, tracée par [#651]).
+> Le texte reste celui de sa date.*
+
+- **Contexte** : « lecture seule » admet des exceptions tentantes (corriger la description, archiver, annuler un
+  règlement ancien).
+- **Retenu** : une seule règle, décidable : toute écriture qui vise le compte ou une ligne qui lui est rattachée est
+  refusée ; la réouverture (tracée) est le seul geste. Corriger le passé = rouvrir, corriger, reclore — trois traces.
+- **Écartée** : exceptions par geste (chacune à justifier, chacune une garde à manquer).
+- **Réversible** : oui.
+
+### C-28-4-11 — Pas de bump `min_required` ; le retour arrière se dit sans affirmer son mécanisme
+
+- **Contexte** : `ADD COLUMN` nullable et `ADD CONSTRAINT CHECK` sont non breaking (P1/P3). Constat statique : sqlx
+  0.8.6, `ignore_missing: false`, jamais activé dans le dépôt — une 0.13.2 refuserait de démarrer (`VersionMissing`).
+  Prémisse A-C8 de l'Epic 15, non exécutée ici.
+- **Retenu** : aucun bump ; le manuel d'administration prescrit la restauration de la sauvegarde d'avant mise à jour,
+  sans affirmer le mécanisme. A-C8 reste à verser au `CLAUDE.md` après vérification à l'exécution (hors périmètre).
+- **Réversible** : oui.
+
+### C-28-4-12 — L'archivé est refusé aux gestes qui créent, jamais aux annulations *(réécrit en validation P1)*
+
+> *Annotation de la validation P2 (2026-10-13) : les fonctions de garde sont renommées `ensure_open_in_tx` et
+> `ensure_open_unarchived_in_tx`, et ne verrouillent plus ; W17 garde son étape (0) au sol, sans relecture (C-28-4-21).
+> Le texte ci-dessous est celui de la P1.*
+
+- **Contexte** : à l'inventaire, `invoice_settlements_write.rs:131-135` et `supplier_invoices.rs:753-756` lisent le
+  compte bancaire sans contrôler `archived` ; `create_batch` et l'import ne le contrôlent qu'en lecture non
+  verrouillante — défaut voisin, préexistant. Décision de l'orchestrateur à la validation P1 (F3 = R12) : l'intégrer.
+- **Retenu** : refus de l'archivé **aux seuls gestes qui créent** — W8 et W27 (instruction `FOR UPDATE` existante
+  étendue), W17-W19 et W22-W23 (`lock_open_unarchived_for_write`) —, mappé vers l'erreur **existante** de chaque
+  chemin (`DbError::NotFound` ; `IllegalStateTransition` pour le lot ; `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` à
+  l'import), AC distinct (AC6-bis), `### Corrigé` du CHANGELOG et note d'`api-external.md` dans la PR de la 28-4a.
+  ⛔ Les annulations (W9, W24, W25, W28, W29, W30) **ne lisent pas** `archived` : `lock_open_for_write` ne lit que
+  `closed_on`. Raison : un compte archivé porte des règlements par virement et des lots (l'archivage ne compte que
+  les transactions bancaires) et ne se rouvre pas ; refuser l'annulation la rendrait définitivement impossible.
+- **Écartées** : le choix initial de la fiche (hors périmètre, issue à ouvrir) — l'orchestrateur l'a écarté ; une
+  garde commune lisant `archived` pour tous les sites (impasse des annulations, F3) ; un code d'erreur neuf pour
+  l'archivé (trois comportements d'archivé coexisteraient, F3 point 5).
+- **Réversible** : oui (chaque site se retire seul).
+
+### C-28-4-13 — Les comptes clos masqués par défaut, avec une bascule, comme les archivés
+
+- **Contexte** : #642 veut des listes « avec filtre ».
+- **Retenu** : bascule « Afficher les comptes clos » sur l'écran de gestion, défaut masqué ; le toast de clôture dit
+  comment retrouver le compte. Par défaut, `GET /bank-accounts` et `/companies/current` excluent les clos : les
+  sélecteurs d'écriture ne les proposent plus sans changement de code.
+- **Écartée** : clos toujours affichés sur l'écran de gestion (contraire à « retirer de l'usage » ; incohérent avec les
+  archivés).
+- **Réversible** : oui.
+
+*Choix C-28-4-14 à C-28-4-20 : remédiation de la validation P1 (2026-10-13, Opus 5.5, autonomie).*
+
+### C-28-4-14 — Ordre des verrous : pièces → compte → exercice ; `accept_one_invoice` sans verrou
+
+> *Annotation de la validation P2 (2026-10-13) : **partiellement remplacé par C-28-4-21**. La garde ne verrouille
+> plus : la règle d'ordre « pièces → compte → exercice » ne gouverne plus que W8 et W27, qui verrouillaient déjà le
+> compte au sol ; le cycle W9 / W24 n'existe plus. Restent en vigueur : la garde de W8 dans l'instruction de
+> `settle_invoice` et non dans `create_in_tx`, `accept_one_invoice` sans garde (I1), R5 et M19 sans objet.*
+>
+> *Annotation de la validation P3 (2026-10-13) : les **positions** de cette entrée (W9, W25, W29 avant le verrou
+> d'exercice ; W24 entre les étapes 1 et 2) sont **remplacées** par la règle de placement de C-28-4-21 (annotation P3) :
+> une garde non verrouillante posée avant un verrou y fait naître la vue avant l'attente (R1 = F1, R2 = F2). Le
+> « W24 après l'étape 2 » écarté ici l'était pour un cycle qui ne vaut que pour une garde **verrouillante** : il est
+> désormais retenu.*
+
+- **Contexte** : F1 (HIGH) — la règle « garde après les verrous métier » plaçait le compte après l'exercice dans W9,
+  W25, W29, l'inverse de `settle_invoice` et `pay_in_tx` : cycle. F4 = R2 — W24 « après les étapes 1-2 » formait un
+  cycle avec l'import (verrou de trou). Décision de l'orchestrateur : garde juste après le verrou de pièce, avant tout
+  verrou d'exercice ; pas de verrou dans `accept_one_invoice`.
+- **Retenu** : règle « pièces → `bank_accounts` → exercice / écritures / compteur », position écrite par chemin
+  (table du § *Concurrence*). W8 : `closed_on` lu dans l'instruction de `settle_invoice` (l. 131-135), plus dans
+  `invoice_settlements::create_in_tx` ; `accept_one_invoice` tenu par I1 et le pré-vol R1 ; l'appariement R5 et la
+  mutation M19 deviennent sans objet. W24 entre l'étape 1 et l'étape 2 : sans cycle avec l'import (démontré à la
+  fiche) ; cycle résiduel avec W9, dont les deux routes sont rejouées sur `1213`.
+- **Écartées** : garder la règle d'origine (cycle) ; W24 après l'étape 2 (cycle avec l'import, non rejoué) ; une
+  garde dans `create_in_tx` (après l'exercice d'`accept_one_invoice`) ; un verrou neuf lu avant l. 1964 dans
+  `accept_one_invoice` (inutile sous I1).
+- **Réversible** : oui (positions, à coût de tests).
+
+### C-28-4-15 — W28 (annulation d'une facture fournisseur payée) est gardé
+
+- **Contexte** : F2 = R1 (HIGH) — `supplier_invoices::cancel_in_tx` annule une facture ouverte **ou payée** et remet
+  `settlement_bank_account_id` à `NULL` ; le classement « SansCompteBancaire » était faux.
+- **Retenu** : gardé comme W29 (si `settlement_bank_account_id` non nul, entre le verrou facture et le verrou de
+  l'écriture d'achat), ligne de l'AC6, test T-a27, mutations M39 (position) et M40 (retrait), manuel.
+  *Annotation de la validation P3 (2026-10-13) : position remplacée — la garde suit le verrou de l'écriture d'achat et
+  de son exercice (C-28-4-21, annotation P3) ; M39 rétablie avec l'objet inverse (garde avancée avant ce verrou),
+  tuée par T-a48 (c).*
+- **Écartée** : exception assumée (annuler une facture payée sur un compte clos resterait permis) — contraire à
+  C-28-4-10.
+- **Réversible** : oui.
+
+### C-28-4-16 — Archivage : verrou de ligne et refus « clos » avant le décompte
+
+> *⛔ **Remplacé par C-28-4-21** en validation P2 (2026-10-13). Texte de la P1 conservé ci-dessous.*
+
+- **Contexte** : F6 — la route d'archivage compte les transactions avant le `FOR UPDATE` : un compte clos qui porte des
+  imports rendait `412 HAS_TRANSACTIONS`, dont le message propose la clôture.
+- **Retenu** : sur le patron de la clôture, `lock_open_for_write` juste après la sentinelle, puis les décomptes ;
+  `archive_for_company` relit sous le verrou tenu. Les autres refus gardent leur ordre relatif. Effet voulu : le décompte
+  voit tout import qui a pris la garde (L5 fermée pour les imports, avec AC6-bis).
+- **Écartée** : refus « clos » lu sur le pré-vol non verrouillant (ne ferme rien sous concurrence).
+- **Réversible** : oui.
+
+### C-28-4-17 — L'inversion `companies` → `bank_accounts` par clé étrangère reste un angle mort écrit
+
+> *⛔ **Remplacé par C-28-4-21** en validation P2 (2026-10-13) : la garde ne verrouillant plus, elle n'étend
+> l'inversion à aucun chemin ; seule reste l'inversion au sol de W8 / W27. Texte de la P1 conservé ci-dessous.*
+
+- **Contexte** : constat de la remédiation P1 — un écrivain gardé tient le compte en exclusif puis insère des lignes à
+  clé étrangère vers `companies` (verrou partagé), alors que les routes de gestion prennent la sentinelle `companies`
+  puis le compte. Préexistant pour `settle_invoice` et `pay_in_tx` ; la garde l'étend à W9, W17, W22, W24, W25, W28,
+  W29.
+- **Retenu** : angle mort écrit (AC7, doc-comment) ; les écrivains rejoués le subissent sans dommage ; `500` rare
+  possible sur l'import, la création de lot et les trois routes de gestion à sentinelle. À trancher par l'orchestrateur
+  s'il veut une issue.
+- **Écartées** : ajouter un rejeu aux routes non rejouées (hors #642) ; prendre la sentinelle dans chaque écrivain
+  (sérialiserait toute la société).
+- **Réversible** : oui.
+
+### C-28-4-18 — La tuile de l'accueil et les Paramètres ne montrent plus un compte clos
+
+- **Contexte** : R7 — la tuile lit `listBankAccounts(false)` ; un compte clos peut garder un solde comptable non nul.
+- **Retenu** : la tuile et la liste des Paramètres excluent les clos, sans code neuf ; le solde se lit sur l'écran
+  *Comptes bancaires* (bascule) et au plan comptable ; le manuel le dit (§ *Solde comptable*).
+- **Écartée** : garder sur la tuile les clos à solde non nul (logique d'écran neuve pour un cas que la clôture
+  signale déjà).
+- **Réversible** : oui.
+
+### C-28-4-19 — Messages : le `412` d'archivage garde la voie de la 27-1 ; le refus du principal parle des clos
+
+- **Contexte** : R3 — la réécriture prescrite effaçait la voie « supprimer les imports non rapprochés, puis archiver »,
+  qui sert encore ; F9 — un compte clos ne bloque plus l'archivage du principal.
+- **Retenu** : le message `has-transactions` garde sa phrase de la 27-1 à l'octet et ajoute la clôture ;
+  `cannot-archive-primary` dit « ni archivé ni clos » ; quatre locales, replis Rust, G9.
+- **Écartée** : ne proposer que la clôture (fait disparaître une voie valide).
+- **Réversible** : oui.
+
+### C-28-4-20 — `listBankAccounts(includeArchived, includeClosed)` : deux booléens
+
+- **Contexte** : R9 — la signature actuelle prend un booléen ; un objet d'options casserait les appelants qui passent
+  `false`.
+- **Retenu** : second paramètre booléen ; aucun appelant existant ne change.
+- **Écartée** : objet d'options (réécriture de tous les appelants).
+- **Réversible** : oui.
+
+*Choix C-28-4-21 et C-28-4-22 : remédiation de la validation P2 (2026-10-13, Opus 5.5, autonomie, sur décision de
+l'orchestrateur).*
+
+### C-28-4-21 — La garde « compte clos » ne verrouille rien ; aucun verrou ajouté, aucun ordre changé
+
+> *Annotation de la validation P3 (2026-10-13, Opus 5.5, sur décision de l'orchestrateur) — la simplification est
+> **maintenue sur le principe** (la garde reste non verrouillante), mais elle avait un défaut de **placement** (R1 = F1,
+> HIGH, confirmé par l'orchestrateur sur `reconciliation_cancel.rs:246-250`) : en rendant non verrouillante une garde
+> laissée à sa position P1, la P2 a posé une lecture ordinaire **avant** le verrou d'exercice de W9, W25, W28, W29
+> (et avant l'étape 2 de W24, R2 = F2). Sous `REPEATABLE READ`, la vue naît alors avant l'attente ; une annulation qui
+> attend derrière une clôture d'exercice relirait l'exercice « ouvert » et passerait — une erreur comptable. Le texte
+> ci-dessous est celui de la P2 ; il est **complété** ainsi :*
+>
+> 1. ***Règle de placement*** — *chaque garde se pose après le dernier verrou que le chemin prend avant sa première
+>    lecture ordinaire, de sorte que la story ne déplace jamais la naissance de la vue cohérente.* Doc-comments du sol
+>    qui l'imposent : `reconciliation_cancel.rs:247-252` et `:296`, `supplier_invoices.rs:1040-1045`,
+>    `invoice_settlements_write.rs:858-861`, `bank_imports.rs:389-391` et `:420-425`. Positions : W9 entre (3) et (4) ;
+>    W25 entre (2-bis) et (3) ; W28 après `supplier_invoices.rs:1070-1080` ; W29 après (1-bis) ; W24 après l'étape 2 ;
+>    W30 après le verrou de sa ligne ; W22 inchangée (vue déjà née dans la route).
+> 2. ***Critère à deux volets*** (AC7) — le point 3 ci-dessous gagne : *« aucun déplacement de la naissance de la
+>    vue : la première lecture non verrouillante de chaque chemin reste celle du sol »* ; la table *Position par
+>    chemin* gagne la colonne qui le prouve.
+> 3. ***Tests et mutations*** — M36 à M39, déclarées « sans objet » au point *Conséquences tirées*, sont **rétablies**
+>    avec l'objet inverse (garde avancée avant le verrou d'exercice) : M36 tuée par le test existant
+>    `reconciliation_cancel.rs:128`, M37 à M39 par T-a48 (entrelacement par virement, neuf) ; M54 (W24 avancée)
+>    équivalente sous MariaDB 10.11.
+> 4. ***L1 reclassée P2*** (R6 = F8) — le point 4 ci-dessous disait « P3 au plus » : la grille du `CLAUDE.md` donne
+>    **P2** (« comportement faux sans effet sur les comptes »). L1 reste une **dette assumée et motivée** (la fermer
+>    exige une garde verrouillante, donc les cycles de la P1), et s'écrit aussi à `docs/api-external.md` (les
+>    intégrations par clé d'API ne lisent pas le manuel ; R6 b). Ouvrir une issue `P2` qui la trace : à la décision
+>    de l'orchestrateur.
+> 5. ***Écartée en P3*** — reprendre une garde verrouillante pour fermer le défaut : inutile, le placement suffit, et
+>    c'est la voie qui avait ouvert les cycles de la P2.
+>
+> *Réversibilité inchangée : le placement est une modification locale par site.*
+>
+> *Annotation de la validation P4 (2026-10-13, Opus 5.5, sur décisions de l'orchestrateur) — le texte ci-dessus et
+> l'annotation P3 restent ceux de leur date ; ils sont **complétés** ainsi :*
+>
+> 1. ***Clause finale de la règle de placement*** (F-L2) — *« … ou, si le chemin n'a aucune lecture ordinaire hors
+>    l'audit, après le dernier verrou qu'il prend avant sa première écriture, et avant cette écriture »* : écrite
+>    aux trois lieux (AC6, AC7, ici). Les sous-`SELECT` de l'audit sont exclus du second volet du critère (R4).
+> 2. ***W24 après le comptage*** (R1, C-28-4-24) — la position « W24 après l'étape 2 » du point 1 de l'annotation P3
+>    devient « après le comptage de l'étape 3, avant le `DELETE` » : même vue, et le refus du sol passe d'abord.
+> 3. ***M54*** (F-M1) — l'« équivalente sous MariaDB 10.11 » du point 3 de l'annotation P3 était fausse (elle
+>    oubliait la fraîcheur de la garde elle-même pendant l'attente de l'étape 2) ; M54 est tuable par T-a27 et T-a49,
+>    M55 et M56 s'y ajoutent.
+> 4. ***L1 tracée par [#651]*** (R3 = F-M2) — la décision laissée à l'orchestrateur au point 4 de l'annotation P3 est
+>    prise : #651 (`bug`, `P2`), avec la piste du rejeu. La 28-4a et la 28-4b la citent en `refs #651` ; la promesse
+>    de #642, « toute écriture … refusée côté serveur », vaut hors de la fenêtre que #651 décrit.
+>
+> *Annotation de la validation P5 (2026-10-13, Opus 5.5, sur décision de l'orchestrateur) — le point 3 de l'annotation
+> P4 est **corrigé** : M54 n'est tuée que par T-a27 ; T-a49 est retiré (prémisse InnoDB réfutée en P5 : l'étape 2,
+> sur un import vide, ne pose qu'un verrou d'intervalle, qui n'attend pas une insertion non validée), et M56 est
+> « non tuée, assumée », bornée à MariaDB 10.11 (CI et dev). Le texte de #651 a été aligné par l'orchestrateur sur la
+> fenêtre et les huit chemins de l'AC7.*
+
+- **Contexte** : la validation P2 rend 1 HIGH et 9 MEDIUM, presque tous nés de la remédiation P1 — le verrou exclusif
+  de la garde, combiné aux verrous partagés que les `INSERT` à clé étrangère posent sur `companies`, ouvrait des cycles
+  neufs avec les routes de gestion (R1, F5), avec `unreject` de la 28-5 (F1, HIGH), avec `accept_one_invoice` (F2) ;
+  l'archivage verrouillé avant son décompte (C-28-4-16) créait un cycle avec W9 et un test irréalisable (R2, F3). Chaque
+  correctif P1 ouvrait le défaut suivant : le **recyclage** que désigne l'amendement D5 de la règle de découpage.
+  Décision de l'orchestrateur : simplifier la conception plutôt que corriger la sentinelle.
+- **Retenu** :
+  1. la garde de chaque chemin d'écriture est une **lecture cohérente non verrouillante** de `closed_on` (et
+     `archived` pour W22), dans la transaction de l'écrivain — fonctions `bank_accounts::ensure_open_in_tx` et
+     `ensure_open_unarchived_in_tx` (renommées : elles ne verrouillent plus), SQL en constantes contrôlées par T-a45 ;
+     là où le chemin lit **déjà** la ligne du compte au sol, `closed_on` s'ajoute à cette instruction (verrouillée :
+     W8, W27, W13-W15 ; non verrouillée : W17 étape (0), W20 étape (2), pré-vols) — aucune instruction neuve ;
+  2. l'archivage garde sa séquence au sol ; il gagne le refus `409 BANK_ACCOUNT_CLOSED` dans son pré-vol (avant le
+     décompte : un compte clos qui porte des imports rend `409`, non `412`) et dans le `FOR UPDATE` existant
+     d'`archive_for_company` ; plus de sentinelle déplacée, plus de verrou avant le décompte ;
+  3. critère décidable de l'AC7 : *la story n'ajoute aucun verrou de ligne, explicite ou implicite par clé étrangère,
+     à aucun chemin de `origin/main`, et ne change l'ordre des verrous d'aucun* ; la table *Position par chemin* le
+     prouve ligne à ligne (« verrou ajouté : non ; ordre changé : non ») ; les deux chemins neufs (clôture,
+     réouverture) ne prennent qu'un verrou, leur propre ligne, en première instruction ;
+  4. angle mort **L1** : une écriture dont la vue cohérente précède le commit d'une clôture peut encore aboutir sur le
+     compte clos (REPEATABLE READ) — une opération réelle de plus, sans erreur comptable, I1 ou I2 défait pour ce
+     compte jusqu'à ce qu'on rouvre, traite et clôt ; classe P3 au plus, acceptable pour #642 ; écrit à l'AC7, au
+     doc-comment d'`ensure_open_in_tx` et au manuel **utilisateur** (AC14) ; ni au manuel d'administration (ce n'est
+     pas un geste d'installation ou de mise à jour), ni en issue.
+  Aucun chemin de l'inventaire ne déroge au critère : le remède `retry_app_on_deadlock` des deux côtés n'a pas lieu de
+  servir.
+- **Conséquences tirées** : tests T-a32, T-a39, T-a40, T-a41, T-a44 retirés ; mutations M10, M35 à M39, M49, M50 sans
+  objet ; M10-bis tuable (l'étape (0) devient la seule garde de W17) ; M51 (équivalente), M52 et M53, T-a45 à T-a47
+  ajoutés ; CHANGELOG de l'AC6-bis réduit au règlement vers un archivé (la course archivage / import ou lot reste L5).
+- **Écartées** :
+  - corriger la conception P1 en enveloppant de `retry_app_on_deadlock` les cinq routes non rejouées et `unreject`
+    (option des deux lentilles) : faisable, mais traite les cycles **que la story crée**, au prix de cinq enveloppes
+    hors #642 et d'une 28-5 à reprendre ;
+  - prendre `companies` en partagé en tête de chaque écrivain : change la doctrine d'ordre de tout le dépôt et ouvre un
+    cycle avec les flux qui prennent l'exercice avant la sentinelle de projets (F, option 2) ;
+  - garde en `LOCK IN SHARE MODE` : ajoute un verrou, et une montée S → X sur W8 / W27 ;
+  - garder un verrou exclusif pour fermer L1 : c'est la conception P1, et son coût est ce qui vient d'être mesuré.
+- **Réversible** : oui — revenir à une garde verrouillante est une modification locale des deux fonctions et des
+  positions, mais elle rouvre l'analyse de cycles de la P2 ; à ne faire qu'avec une story dédiée.
+
+### C-28-4-22 — Un second inventaire clos : les appelants de `invoice_settlements::create_in_tx`
+
+- **Contexte** : F6 de la P2 — la garde de W8 vit chez un appelant (C-28-4-14) ; le registre de l'AC8, indexé sur la
+  fonction qui porte le SQL, ne peut pas dire vrai pour W8 et ne verrait pas un quatrième appelant sans garde.
+- **Retenu** : le test de l'AC8 extrait aussi les appels `invoice_settlements::create_in_tx(` hors tests et
+  commentaires et exige un statut par appelant (trois sur `5aad8b35` : `settle_invoice` gardé, `accept_one_invoice`
+  I1, `write_off_invoice` sans compte bancaire), diff dans les deux sens ; extracteur repris de
+  `letterings_lexical.rs` (`appels_et_suite`), dont la liste des trois créateurs reste.
+- **Écartées** : remettre la garde dans `create_in_tx` (tomberait après l'exercice d'`accept_one_invoice` — moins grave
+  sans verrou, mais `accept_one_invoice` n'en a pas besoin et le refus y deviendrait un code mort) ; l'écrire comme
+  angle mort du doc-comment (laisse le mode d'échec ouvert, alors que l'extracteur existe).
+- **Réversible** : oui.
+
+*Choix C-28-4-23 : remédiation de la validation P3 (2026-10-13, Opus 5.5, autonomie). La règle de placement et le
+reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
+
+### C-28-4-23 — `cancel_batch` (W21) : une sortie d'état autorisée, et non un invariant
+
+> *Annotation de la validation P5 (2026-10-13, Opus 5.5, R7, C-28-4-25) — `HorsPerimetre` est retiré du registre :
+> `SortieAutorisee` en est désormais le **quatrième** statut, non plus le cinquième.*
+
+- **Contexte** : F8 de la P3 — le registre de l'AC8 classait W21 `Invariant("I2", "un compte clos n'a aucun lot
+  generated")`. Sous L1, un lot `generated` peut exister sur un compte clos, et `cancel_batch`, non gardé, est
+  précisément le geste qui l'en fait sortir (c'est le remède de L1). La raison écrite était donc fausse.
+- **Retenu** : un cinquième statut au registre, `SortieAutorisee("<raison>")` — geste qui ne fait que sortir de l'état
+  qu'un invariant interdit sur un compte clos, laissé sans garde à dessein —, porté par W21 seul.
+- ⚠️ **Exception à C-28-4-10, dite comme telle** : annuler un lot `generated` écrit sur un compte clos. Elle ne se
+  présente que dans une situation que L1 a créée, et ne fait que rétablir I2.
+- **Écartées** : garder le statut `Invariant` en réécrivant la raison (le statut dirait encore « hors d'atteinte »,
+  ce qui est faux) ; garder W21 (`Gardee`) — cohérent avec C-28-4-10, mais oblige à rouvrir le compte pour annuler
+  un lot que L1 a laissé passer ; le remède « rouvrir, traiter, clore » reste de toute façon possible.
+- **Réversible** : oui (une variante de statut, un site).
+
+*Choix C-28-4-24 : remédiation de la validation P4 (2026-10-13, Opus 5.5, sur décision de l'orchestrateur).*
+
+### C-28-4-24 — W24 : la garde « compte clos » après le comptage ; l'import rapproché rend le refus du sol
+
+> *Annotation de la validation P5 (2026-10-13, Opus 5.5) — (1) R3 : l'ordre des refus **ne va pas** dans la note
+> d'`api-external.md` — la route `DELETE /bank-imports/{id}` est fermée aux clés d'API ; il reste à l'AC6 et au manuel
+> utilisateur. (2) F1 = R6 : T-a49 est retiré (prémisse InnoDB réfutée) ; M56 « non tuée, assumée » ; la position de
+> la garde reste tenue par T-a27 (b), qui tue M54 et M55. Le texte ci-dessous reste celui de sa date.*
+
+- **Contexte** : R1 (MEDIUM) et F-L3 de la P4 — la garde de W24, posée entre l'étape 2 et le comptage (P3), passait
+  avant le refus du sol `HasReconciled`. Par I1, tout import non vide d'un compte clos ne porte que des transactions
+  rapprochées : son *Supprimer l'import* rendait `409 BANK_ACCOUNT_CLOSED` (« rouvrez-le d'abord »), puis, une fois le
+  compte rouvert, `409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS` — toujours. Le message conseillait un geste qui ne
+  menait qu'au refus suivant ; l'ordre n'était ni écrit ni testé.
+- **Retenu** : la garde se pose **après le comptage de l'étape 3, avant le `DELETE` de l'étape 4**. Ordre des refus :
+  `404` → `409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS` → `409 BANK_ACCOUNT_CLOSED` → suppression. La position tient
+  la règle de placement (clause finale : W24 n'a aucune lecture ordinaire hors l'audit ; entre l'étape 2, dernier
+  verrou avant la première écriture, et la garde, seul le comptage en mémoire) et ne déplace pas la vue. Deux cas à
+  T-a27, une phrase au manuel (§ *Supprimer un import*), l'ordre dans la note d'`api-external.md` ; M55 neuve. ⚠️ Le
+  refus du sol est un **`409`** (`errors.rs`, `StatusCode::CONFLICT`), non un `412` comme le disaient les rapports et
+  la consigne : seul le **code** distingue les deux refus.
+- **Écartées** : garder la position P3 en écrivant l'ordre et son effet (option de R1) — défendable comme l'archivage
+  (AC5), mais le refus « clos » n'y apprend rien à l'utilisateur, alors que celui du sol le met sur la voie ; masquer le
+  bouton (table *Dehors* de la fiche).
+- **Réversible** : oui (une ligne, un site).
+
+*Choix C-28-4-25 : remédiation de la validation P5 (2026-10-13, Opus 5.5, autonomie).*
+
+### C-28-4-25 — Le registre de l'AC8 perd le statut `HorsPerimetre`
+
+- **Contexte** : R7 de la P5 — depuis la P4, le statut ne visait plus que « les routes de test et tout écrivain hors
+  périmètre que l'extraction voit » ; or aucun n'existe : restauration d'installation et `kesh-seed` ont un nom de
+  table variable, le rejeu post-restauration est du SQL, `routes/test_endpoints.rs` n'écrit aucune des sept tables.
+  La variante n'aurait jamais de site.
+- **Retenu** : la **retirer** ; quatre statuts (`Gardee`, `Invariant`, `SansCompteBancaire`, `SortieAutorisee`) ; les
+  écrivains hors périmètre vivent tous dans la liste des angles morts du doc-comment, avec leur raison. Si l'un d'eux
+  devient visible de l'extraction, le statut se crée avec son premier site.
+- **Écartées** : la garder et la construire dans T-a34 (une variante dont le seul usage est un test qui prouve qu'elle
+  ne sert à rien — variante morte déguisée) ; la garder sans la construire (`dead_code` sous `clippy -D warnings`,
+  et la règle « une entrée sans site rougit » interdirait de lui donner un site factice).
+- **Réversible** : oui (une variante).
+
+*Choix C-28-4-26 à C-28-4-32 : développement de la 28-4a (2026-10-13, Opus 5.5, autonomie, `bmad-dev-story`).*
+
+### C-28-4-26 — Montage des tests HTTP de l'AC6 : l'état préalable par le dépôt, le geste refusé par HTTP
+
+- **Contexte** : T-a27 prescrit « une ligne par route », l'état « construit par l'API » sauf les lignes qui cassent un
+  invariant (SQL direct). Construire chaque état par HTTP aurait demandé un relevé CAMT par ligne, des factures validées
+  et des rapprochements par la route pour chaque cas.
+- **Retenu** : l'état qui **précède** le geste refusé se pose par les **fonctions du dépôt que les routes appellent**
+  (`bank_imports::create_with_transactions`, `supplier_invoices::create`) ou par les routes quand c'est simple
+  (rapprochement manuel, facture validée, règlement, paiement, création de lot) ; le geste refusé, la clôture et la
+  réouverture passent **toujours** par HTTP. Les lignes qui contredisent I1/I2 posent `closed_on` par SQL direct,
+  comme prescrit. Écrit en tête de `bank_accounts_closed_e2e.rs`.
+- **Écartées** : tout par HTTP (multipart CAMT à chaque ligne : coût sans objet, le refus testé est celui du geste) ;
+  tout par SQL (ne prouverait pas qu'un état réel atteint la garde).
+- **Réversible** : oui (montage de test).
+
+### C-28-4-27 — Texte du refus « compte clos » : « rouvrez d'abord le compte », non « rouvrez-le d'abord »
+
+- **Contexte** : la garde G9 de `textes_coherents.rs` (Story 15-14a) interdit la chaîne `rouvrez-le` dans
+  `crates/kesh-api/src/errors.rs` (formule périmée d'un message d'exercice). Le texte prescrit par l'AC9 la contient.
+- **Retenu** : « Pour y enregistrer une opération, **rouvrez d'abord le compte** (Administration → Comptes
+  bancaires). » en fr-CH et dans le repli Rust ; le sens est inchangé, les trois autres locales aussi. La 28-4b reprend
+  ce texte s'il apparaît à l'écran ou au manuel.
+- **Écartées** : affaiblir la garde G9 (elle protège un autre message) ; écrire un repli Rust différent du catalogue
+  (G9 l'interdit aussi).
+- **Réversible** : oui (une phrase).
+
+### C-28-4-28 — `write_closed_on`, l'écrivain neuf du registre : 31 sites, non 30
+
+- **Contexte** : l'AC8 annonce 30 sites (W1-W30) après le rebase sur la 28-5. La story ajoute elle-même une écriture
+  `UPDATE bank_accounts` (`closed_on`), dans l'auxiliaire `write_closed_on` partagé par la clôture et la réouverture.
+- **Retenu** : l'entrée `Gardee("le geste lui-même …")` au registre, et l'assertion anti-muet à **31** sites. Le
+  registre a vu exactement les 30 sites de la fiche plus celui-ci : l'inventaire W1-W30 est confirmé par l'extraction.
+- **Écartées** : écrire l'`UPDATE` dans `close_in_tx` et `reopen_in_tx` (deux sites, duplication) ; le classer
+  `SansCompteBancaire` (faux : il écrit le compte).
+- **Réversible** : oui.
+
+### C-28-4-29 — L'analyseur lexical des tests structurels, partagé
+
+- **Contexte** : le registre de l'AC8 a besoin du découpage lexical (`decouper`, `blocs_de_test`, `fonctions`…) que
+  `crates/kesh-db/tests/letterings_lexical.rs` définit ; la fiche nomme ce précédent « extracteur à réutiliser ».
+- **Retenu** : le code est **déplacé à l'identique** dans `crates/kesh-db/tests/lexique/mod.rs`, inclus par
+  `letterings_lexical.rs` (`mod lexique;`) et par `crates/kesh-api/tests/bank_account_closed_inventory.rs`
+  (`#[path]`). Aucun changement de sens ; `letterings_lexical` reste vert.
+- **Écartées** : copier ~200 lignes (règle DRY) ; une crate de test partagée (dépendance neuve pour un test).
+- **Réversible** : oui.
+
+### C-28-4-30 — `ClosureOutcome` porte des comptes en `Box`
+
+- **Contexte** : `clippy::large_enum_variant` (`-D warnings`) refuse un enum dont une variante porte deux
+  `BankAccount` et l'autre un refus d'un mot.
+- **Retenu** : `Done { after: Box<BankAccount>, before: Box<BankAccount> }`.
+- **Écartées** : `#[allow]` (masquer l'avertissement) ; rendre `(after, before)` et les refus en `DbError` neufs (élargir
+  `DbError` de quatre variantes propres à un seul chemin).
+- **Réversible** : oui.
+
+### C-28-4-31 — Les refus de la clôture : un enum du dépôt, non des `DbError`
+
+- **Contexte** : la fiche nomme cinq variantes `AppError` neuves et une seule `DbError` (`BankAccountClosed`).
+- **Retenu** : `close_in_tx` / `reopen_in_tx` rendent `ClosureOutcome::Refused(ClosureRefusal)` pour le principal, les
+  transactions `pending`, les lots ouverts et « pas clos » ; la route les traduit (`closure_refusal_error`). Version et
+  existence restent des `DbError` ; « déjà clos » est `DbError::BankAccountClosed`, rendu par la fonction partagée.
+- **Écartées** : quatre `DbError` neuves (rendues par le bras générique `AppError::Database`, dont le `match`
+  exhaustif en aurait gagné quatre de plus).
+- **Réversible** : oui.
+
+### C-28-4-32 — Le compte clos en allemand : « aufgelöst », et une exemption nommée pour « rouvrir »
+
+- **Contexte** : deux gardes du catalogue (`kesh-i18n/src/loader.rs`, Story 15-14a) visent l'**exercice** : G11
+  réserve « geschlossen / schliessen » nu aux panneaux (KF-041), G8 / G10 exigent l'ordre et la borne de toute
+  prescription de « rouvrir » en fr-CH. Les messages du compte clos tombaient dans leurs deux domaines.
+- **Retenu** : en de-CH, le vocabulaire bancaire d'un compte soldé — « aufgelöst », « auflösen », « wieder
+  eröffnen » (étiquettes d'audit comprises) ; en fr-CH, `bank-accounts-errors-closed` entre aux deux listes
+  `EXEMPTEES` (« autre objet », comme `error-reminder-amounts-changed`), le compte bancaire n'ayant ni ordre ni borne.
+  La 28-4b reprend ces termes à l'écran et au glossaire.
+- **Écartées** : élargir les gardes (elles protègent l'exercice) ; « schreibgeschützt » seul (ne nomme pas le geste).
+- **Réversible** : oui (textes, deux entrées d'exemption).
+
+*Choix C-28-4-33 à C-28-4-35 : remédiation de la revue de code P1 de la 28-4a (2026-10-13, Opus 5.5, autonomie).*
+
+### C-28-4-33 — `confirm_batch` dans la course d'un archivage : `404 NOT_FOUND`, accepté (B-6)
+
+- **Contexte** : le pré-check (2) de `confirm_batch` lit le compte sans verrou ; `pay_in_tx`, qui suit, le relit sous
+  `FOR UPDATE` et rend désormais `NotFound` pour un archivé (AC6-bis). Un archivage commité entre les deux fait sortir
+  la confirmation en `404 NOT_FOUND` (« lot introuvable ») au lieu du refus « compte archivé ».
+- **Retenu** : **accepter et écrire** (décision de l'orchestrateur) — fenêtre de quelques millisecondes, aucune
+  écriture (le lot reste `generated`, la transaction est abandonnée), refus plus sûr qu'avant (le paiement passait).
+  Angle mort au Dev Agent Record.
+- **Écartées** : traduire `NotFound` de `pay_in_tx` en `IllegalStateTransition` dans la boucle (production pour un
+  message, dans une fenêtre de course).
+- **Réversible** : oui.
+
+### C-28-4-34 — W30 seule : prouvée par une course déterministe, non déclarée équivalente (E-1)
+
+- **Contexte** : M33 retirait R8 et W30 ensemble ; séquentiellement, chacune masque l'autre.
+- **Retenu** : M33 scindée. **M33-b (W30 seule)** est tuée par un test neuf qui atteint W30 sans R8 : une transaction
+  de test tient la ligne de la transaction bancaire, l'annulation de rejet passe R8 puis attend ce verrou (sonde), la
+  clôture est commitée pendant l'attente ; W30, première lecture non verrouillante, la voit et refuse — rendu par
+  `conclude_locked_attempt`, ce qui exerce aussi ce chemin. **M33-a (R8 seul) est équivalente** : W30 rend le même
+  `409` sans rien écrire ; R8 n'épargne que l'ouverture de la transaction et le verrou nommé.
+- **Écartées** : déclarer les deux équivalentes (W30 n'aurait été prouvée par rien).
+- **Réversible** : oui (test).
+
+### C-28-4-35 — `closedOn` borné à `1000..=9999` (B-1, production)
+
+- **Contexte** : `chrono` admet des années signées et au-delà de 9999 ; la colonne `DATE` de MariaDB couvre
+  1000-9999. Hors domaine, la date partait à la base.
+- **Retenu** : `400 VALIDATION_ERROR` dans le handler de clôture, avant toute transaction (décision de
+  l'orchestrateur ; seule ligne de production de la remédiation). La date reste informative (C-28-4-3) : aucune autre
+  borne.
+- **Écartées** : laisser la base refuser (`500`).
+- **Réversible** : oui.
+
+[#651]: https://github.com/guycorbaz/kesh/issues/651
+[#642]: https://github.com/guycorbaz/kesh/issues/642

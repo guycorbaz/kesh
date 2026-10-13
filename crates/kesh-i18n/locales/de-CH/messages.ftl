@@ -1236,8 +1236,14 @@ bank-accounts-actions-submit = Verbinden
 bank-accounts-errors-account-not-found = Buchhaltungskonto nicht gefunden.
 bank-accounts-errors-invalid-account-type = Ungültiger Kontotyp (Aktiv- oder Passivkonto erforderlich).
 # Story v014-1 — CRUD bank_accounts post-onboarding
-bank-accounts-errors-has-transactions = Das Bankkonto enthält Transaktionen — Archivierung verweigert, um die Buchhaltungsprüfung zu wahren. Bankimporte, von denen keine Transaktion abgeglichen ist, können gelöscht werden (Täglich → Kontoauszüge importieren).
-bank-accounts-errors-cannot-archive-primary = Das Hauptkonto kann nicht archiviert werden, solange ein anderes nicht-archiviertes Konto besteht. Setzen Sie zuerst ein anderes Konto als Hauptkonto und archivieren Sie dieses dann.
+bank-accounts-errors-has-transactions = Das Bankkonto enthält Transaktionen — Archivierung verweigert, um die Buchhaltungsprüfung zu wahren. Bankimporte, von denen keine Transaktion abgeglichen ist, können gelöscht werden (Täglich → Kontoauszüge importieren). Andernfalls, um das Konto aus der Nutzung zu nehmen, das Konto auflösen: Es wird schreibgeschützt und behält seine Historie.
+bank-accounts-errors-cannot-archive-primary = Das Hauptkonto kann nicht archiviert werden, solange ein anderes weder archiviertes noch aufgelöstes Konto besteht. Setzen Sie zuerst ein anderes Konto als Hauptkonto und archivieren Sie dieses dann.
+# Story 28-4a (#642) — aufgelöstes Bankkonto, schreibgeschützt (« geschlossen » ist den Fenstern vorbehalten)
+bank-accounts-errors-closed = Dieses Bankkonto ist aufgelöst: Es ist schreibgeschützt. Um darauf einen Vorgang zu erfassen, eröffnen Sie es zuerst wieder (Administration → Bankkonten).
+bank-accounts-errors-not-closed = Dieses Bankkonto ist nicht aufgelöst.
+bank-accounts-errors-cannot-close-primary = Das Hauptkonto kann nicht aufgelöst werden: Bestimmen Sie zuerst ein anderes Konto als Hauptkonto (es ist dasjenige, das die QR-Rechnung trägt).
+bank-accounts-errors-has-pending-transactions = Dieses Konto enthält importierte Transaktionen, die nicht abgeglichen sind. Gleichen Sie sie ab oder löschen Sie den Import, wenn er keine abgeglichene Transaktion enthält, bevor Sie das Konto auflösen.
+bank-accounts-errors-has-open-payment-batches = Ein auf diesem Konto erstellter Zahlungslauf ist weder bestätigt noch storniert. Bestätigen oder stornieren Sie ihn, bevor Sie das Konto auflösen.
 bank-accounts-errors-onboarding-not-complete = Das Onboarding muss abgeschlossen sein (Schritt 7), bevor Bankkonten verwaltet werden können.
 # Story v014-1 — CRUD UI labels & actions (F3 Pass 1 code review parity DE/IT/EN)
 bank-accounts-actions-create = Neues Bankkonto
@@ -2363,6 +2369,8 @@ audit-log-action-payment-batch-cancelled = Zahlungsstapel storniert
 audit-log-action-bank-account-created = Bankkonto erstellt
 audit-log-action-bank-account-updated = Bankkonto aktualisiert
 audit-log-action-bank-account-archived = Bankkonto archiviert
+audit-log-action-bank-account-closed = Bankkonto aufgelöst
+audit-log-action-bank-account-reopened = Bankkonto wieder eröffnet
 audit-log-action-bank-import-created = Bankimport durchgeführt
 audit-log-action-bank-import-deleted = Bankimport gelöscht
 audit-log-action-bank-profile-created = Bankprofil erstellt
