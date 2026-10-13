@@ -3013,6 +3013,11 @@ l'orchestrateur).*
 - **Écartées** : une garde par site (la cause du défaut) ; une clé existante (aucune ne disait « n'est plus
   affiché »).
 - **Réversible** : oui.
+- *Annotation du 2026-10-14 (passe ciblée P3)* : deux angles morts assumés, sans production — **L2**, le message
+  survit à l'ouverture d'une autre action jusqu'à la relecture suivante ; **L3**, une bascule perd la sélection non
+  enregistrée de *Lier au plan comptable* (`edit-journal`, état interne du composant démonté par `{#if loading}`),
+  comme sur `origin/main` : non régressif. La détection n'a lieu qu'**au rechargement** (bascule, conflit de version),
+  le manuel le dit.
 
 ### C-28-4-52 — Liste vide : trois messages, selon la bascule active (L2)
 
