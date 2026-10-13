@@ -2,12 +2,14 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `5aad8b35`
-(kickoff de l'Epic 28), branche `story/28-6`, worktree `/home/gcorbaz/devel/kesh-28-6` (port **3039**, bases
-`kesh_286` / `kesh_e2e_286`). Choix consignés au registre `epic-28-choix-autonomes.md`, **C-28-6-1 à C-28-6-14**.
-9 AC (AC1 à AC9). Validation P1 faite (lentilles R et F, Sonnet : 1 MEDIUM, 9 LOW dont 8 distincts, remédiés) ; passe ciblée P2 à
-lancer : `28-6-validate-prompt-p2-ciblee.md` (Haiku).
-PR : **`closes #482`**.
+**review** — développement fait le 2026-10-13 (`bmad-dev-story`, Opus 5.5, autonomie), sur `eab77cf1` (28-2, 28-3 et
+28-5a fusionnées) ; dernier commit de code `3c3d0a86`. Gates complets au `4908ae62` (code identique). Revue de code
+P1 à lancer : `28-6-review-prompt-p1.md` (Sonnet, lentilles B, E et A).
+*Historique : fiche créée le 2026-10-13 sur `5aad8b35`, branche `story/28-6`, worktree `/home/gcorbaz/devel/kesh-28-6`
+(port **3039**, bases `kesh_286` / `kesh_e2e_286`) ; 9 AC ; choix C-28-6-1 à C-28-6-15 au registre
+`epic-28-choix-autonomes.md` ; validation P1 (R et F, Sonnet : 1 MEDIUM, 9 LOW) remédiée, passe ciblée P2 (Haiku :
+0 MEDIUM, 2 LOW) appliquée à l'étape 0.*
+PR : **`closes #482`** (au titre ou au corps de la PR seulement, jamais dans un commit).
 
 ⚠️ **Développement en série** avec la 28-5 (#526) et la 28-7 (#548), qui touchent aussi
 `crates/kesh-api/src/routes/reconciliation.rs` : la 28-6 se développe **après le merge de la 28-5** et se
@@ -244,10 +246,10 @@ La lentille de validation et la revue de code contrôlent ces constats **sur le 
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Préparer** : rebase sur `main` après le merge de la 28-5 ; bases `kesh_286` / `kesh_e2e_286`
+- [x] **T0 — Préparer** : rebase sur `main` après le merge de la 28-5 ; bases `kesh_286` / `kesh_e2e_286`
   (migrations du worktree, seed) ; `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-28-6/target` ; `node_modules` par
   `cp -al`. Relever les numéros de ligne cités ici contre le `HEAD` rebasé (ils bougent avec la 28-5).
-- [ ] **T1 — Rouge d'abord (AC2, AC3)** : écrire les cas 1, 2, 4, 5 de l'AC2 et l'adaptation du cas 3 ; les faire
+- [x] **T1 — Rouge d'abord (AC2, AC3)** : écrire les cas 1, 2, 4, 5 de l'AC2 et l'adaptation du cas 3 ; les faire
   tourner **avant** le correctif (gate ciblé `binary(reconciliation_e2e)`) ; consigner au Dev Agent Record le code
   **observé** pour le cas 1 et le cas 2, **sur le montage nommé** — facture validée de 100.00 sans règlement, donc
   **reste dû > 0** (un reste dû négatif, s'il est atteignable, rendrait `RECONCILIATION_OVERPAYMENT` avant le
@@ -257,16 +259,16 @@ La lentille de validation et la revue de code contrôlent ces constats **sur le 
   (`journal_entry_number_sequences.next_number`, consommé par `next_number_for`, étape 3 de
   `create_in_tx_inner`) et l'en-tête d'écriture (`journal_entries`, étape 4), relevés avant et après — avec
   `journal_entry_lines`. Les assertions de l'AC2 portent aussi le compteur.
-- [ ] **T2 — La garde (AC1)** : fonction pure + appel entre l'étape 4 et l'étape 5 ; doc-comments ; tests unitaires
+- [x] **T2 — La garde (AC1)** : fonction pure + appel entre l'étape 4 et l'étape 5 ; doc-comments ; tests unitaires
   (AC3). Vert ciblé.
-- [ ] **T3 — Écran (AC5)** : `failed-proposal-label.ts`, son test, `i18n-keys.test.ts` (`sitesTotal` recompté).
-- [ ] **T4 — Catalogue (AC6)** : quatre locales.
-- [ ] **T5 — Documentation (AC7, AC8, AC9)** : `docs/api-external.md` (avec le code observé en T1), CHANGELOG ;
+- [x] **T3 — Écran (AC5)** : `failed-proposal-label.ts`, son test, `i18n-keys.test.ts` (`sitesTotal` recompté).
+- [x] **T4 — Catalogue (AC6)** : quatre locales.
+- [x] **T5 — Documentation (AC7, AC8, AC9)** : `docs/api-external.md` (avec le code observé en T1), CHANGELOG ;
   vérification du manuel utilisateur (PDF aplati), consignée ; ligne du manuel d'administration si la sous-section
   de la 0.13.3 existe au rebase (puis `make fr`, PDF aplati contrôlé), sinon le dire au Dev Agent Record (C-28-6-11).
-- [ ] **T6 — Mutations** (§ *Mutations*) : chacune rougit au moins un test nommé ; restauration
+- [x] **T6 — Mutations** (§ *Mutations*) : chacune rougit au moins un test nommé ; restauration
   `git checkout -- <fichier>` **puis `touch`**.
-- [ ] **T7 — Gates au dernier commit de code**, sous `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock` : base
+- [x] **T7 — Gates au dernier commit de code**, sous `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock` : base
   remise à zéro, `scripts/test-fast.sh` (fmt + clippy + nextest complet), `npm run check`,
   `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build`, **E2E Playwright complet** (recette
   `docs/testing.md`, port 3039) jugé fichier par fichier contre la liste des échecs attendus.
@@ -427,11 +429,91 @@ Conforme : refus par proposition dans la route (patron 27-4, `classify_batch_tra
 
 ### Agent Model Used
 
+Opus 5.5 (`bmad-dev-story`, autonomie complète), le 2026-10-13.
+
 ### Debug Log References
+
+Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/` : `28-6-t1-rouge.log` et `28-6-t1-rouge-2.log` (rouge d'abord),
+`28-6-t2-vert.log` (gate ciblé après la garde), `28-6-mutations.txt` et `28-6-mutations/M{1..8}.log` (campagne),
+`28-6-gates.txt`, `28-6-gate-testfast.log`, `28-6-gate-front-{check,lint-i18n-ownership,test:unit}.log`,
+`28-6-e2e-backend.log.build` (build frontend), `28-6-gate-e2e.log`, `28-6-e2e-backend.log` (gates finaux). Scripts :
+scratchpad `28-6/` (`reset-db-28-6.sh`, `mutations-28-6.py`, `gates-28-6.sh`, `e2e-run-28-6.sh`).
 
 ### Completion Notes List
 
+- **Étape 0** : rebase sur `eab77cf1` (conflits du registre et de `sprint-status.yaml` réunis par union, YAML relu par
+  `yaml.safe_load`) ; LOW P2-1 (justification de l'AC9) et P2-2 (marqueur « Amendé » de C-28-6-3) appliqués ;
+  `routes/reconciliation.rs` relu contre la 28-5a — tous les numéros de ligne de la fiche recalés (§ *Fichiers
+  communs*). La sous-section « Passer à la 0.13.3 » du manuel d'administration **n'existe pas** au rebase : sa ligne
+  revient à la préparation de release (C-28-6-11), rien n'est écrit au manuel.
+- **T1 — rouge d'abord, code observé** (`binary(reconciliation_e2e)`, avant la garde, montage de la fiche : facture
+  validée de 100.00 sans règlement, reste dû > 0) : 5/5 rouges.
+  - AC2-1 (débit −100.00, référence `INV-DEBIT`, contrepartie du client) : **`DATABASE_ERROR`**, `details.message` =
+    « Contrainte CHECK violée : CONSTRAINT `chk_jel_debit_credit_exclusive` failed … `journal_entry_lines` ».
+  - AC2-2 (0.00) : **`DATABASE_ERROR`**, même contrainte.
+  - AC2-3 (`ANY-REF`) : `RECONCILIATION_SCORE_TOO_LOW` (`details.reason = "score_zero_no_match"`).
+  - AC2-4 (lot) : l'encaissement accepté, le débit en `DATABASE_ERROR`.
+  - AC2-5 (facture inexistante) : `INVOICE_NOT_FOUND`.
+  - **Rien d'écrit**, constaté avant le correctif : au second run, l'assertion d'état (`Etat286` — `journal_entries`,
+    `journal_entry_lines`, `invoice_settlements` de la société, compteurs `journal_entry_number_sequences`,
+    transaction `(status, matched_entry_id, version)`, facture `(paid_at, version)`, traces
+    `reconciliation.accepted` / `invoice.paid` / `invoice.partially_settled`) est placée **avant** celle du code et
+    passe ; l'échec ne vient qu'au code. La prémisse C-28-6-1 tient : **pas de P1**, le défaut est le refus présenté
+    comme une panne.
+- **T2** : `refuse_non_credit_settlement` (pure, `amount <= Decimal::ZERO`, doc-comment nommant `get_proposals`) au-dessus
+  d'`accept_one_invoice` ; appel à l'étape 4bis ; ligne au doc-comment d'`accept_one_invoice` ; renvoi en commentaire
+  au filtre de `get_proposals`. Module `non_credit_settlement_tests` (7 tests, AC3). ⚠️ **Écart à la fiche** : au
+  premier run, la précondition `dec!(-0.00).is_sign_negative()` a **rougi** — le macro normalise le zéro négatif. Le
+  cas aurait passé à vide ; il se construit par `Decimal::new(0, 2)` + `set_sign_negative(true)` (C-28-6-15). La
+  validation P2 avait déclaré « exécution de `dec!(-0.00)` non exercée » : c'est exactement là qu'était l'écart.
+- **T3** : `case` frontend, doc-comment 29/27 → 30/28 et généalogie 27-4/28-6 ; `EXPECTED_KEYS` 29 → 30 ;
+  `sitesTotal` 2079 → 2080, mesuré par la collecte du test (vert à 2080) ; `sitesNonResolus` 31, `relais` 6,
+  `sitesGabarit` 11 inchangés (le test est vert sans les toucher). **T4** : une clé, quatre catalogues, textes de
+  l'AC6. **T5** : `docs/api-external.md` (§ `accept`, avec le code observé et « d'autres montages pouvaient rendre
+  d'autres codes »), CHANGELOG `[0.13.3]` (section existante, puce ajoutée sous *Corrigé*). Manuel utilisateur vérifié
+  sur le PDF aplati (« créditrice, en CHF » une occurrence, `user-manual.tex:1919`, vrai avant comme après ; aucun
+  libellé de refus de lot cité) : non modifié. Manuel d'administration : aucune occurrence de « Passer à la 0.13.3 »
+  ni du code neuf, paragraphe de la 0.13.2 toujours vrai : non modifié.
+- **T6 — mutations, 8/8 tuées** (script, motif vérifié unique, restauration `git checkout --` + `touch`) :
+  M1 (appel retiré) → 5 rouges (AC2-1, -2, -3, -4, -5) ; M2 (`<` au lieu de `<=`) → AC2-2 et AC3 (0.00, zéro négatif) ;
+  M3 (après l'étape 5) → AC2-5 ; M4 (après le score) → AC2-3 et AC2-5 ; M5 (raisons échangées) → 8 rouges (AC2-1, -2,
+  -3, -5, AC3 ×4) ; M6 (`>=`) → 49 rouges, dont AC2-4 et les acceptations d'encaissement existantes ; M7 (`case`
+  frontend retiré) → `failed-proposal-label.test.ts` et `i18n-keys.test.ts` (« la collecte ne passe pas à vide ») ;
+  M8 (classement par `is_sign_negative()`) → AC3 zéro négatif.
+- **Inventaire clos rejoué** au `289a7fed` (méthode de la fiche) : les cinq `UPDATE … matched_entry_id` et l'unique
+  `invoice_settlements::create_in_tx` lié à une transaction sont ceux du tableau ; les autres `INSERT INTO
+  invoice_settlements` sont dans `mod tests` (`invoices.rs:4662`) ou sans transaction bancaire
+  (`invoice_settlements_write.rs`). Aucun site neuf.
+- **T7 — gates au dernier commit de code** (`3c3d0a86` ; exécutés au `4908ae62`, code identique, sous `flock`, bases
+  `kesh_286` / `kesh_e2e_286` remises à zéro par drop/create + 80 migrations + seed, conteneur non redémarré) :
+  `scripts/test-fast.sh` vert — fmt, clippy `-D warnings`, nextest **3552/3552** (6 ignorés) ; `npm run check`
+  0 erreur (29 avertissements, aucun sur un fichier de la story) ; `lint-i18n-ownership` PASS ; `test:unit` **1498/1498** (140 fichiers) ;
+  `npm run build` vert ; **E2E complet** (port 3039) : **269 passés, 7 échecs, 19 ignorés** — les 7 échecs sont
+  exactement ceux de la KF-029 (#97) : `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`,
+  `onboarding.spec.ts:57`, `:77` et `:150` (`docs/testing.md` § « Les échecs attendus ») ; aucun échec hors liste.
+- **Décomptes** (recomptés depuis la source, de `3d9753fc` à `289a7fed`) : `#[sqlx::test]` de `reconciliation_e2e.rs`
+  90 → 94 (**+4** : AC2-1, -2, -4, -5 ; AC2-3 réécrit) ; `#[test]` de `reconciliation.rs` 20 → 27 (**+7**, AC3) ;
+  Vitest +1 cas (`EXPECTED_KEYS`) ; littéraux `error_code:` distincts du fichier de routes **28** ; **11** fichiers hors
+  `_bmad-output` (`git diff --stat`, 495 insertions, 28 suppressions). Aucun fichier de `kesh-db`, de migrations, de
+  `test-schema`, ni `Cargo.toml`, ni `docs/manual/`.
+
 ### File List
+
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-i18n/locales/fr-CH/messages.ftl`
+- `crates/kesh-i18n/locales/de-CH/messages.ftl`
+- `crates/kesh-i18n/locales/it-CH/messages.ftl`
+- `crates/kesh-i18n/locales/en-CH/messages.ftl`
+- `frontend/src/lib/features/reconciliation/failed-proposal-label.ts`
+- `frontend/src/lib/features/reconciliation/failed-proposal-label.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `docs/api-external.md`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/28-6-rapprochement-debit-facture.md`
+- `_bmad-output/implementation-artifacts/28-6-review-prompt-p1.md` (neuf)
+- `_bmad-output/implementation-artifacts/epic-28-choix-autonomes.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -452,3 +534,14 @@ Conforme : refus par proposition dans la route (patron 27-4, `classify_batch_tra
   de T1 ; **R6** ordre des refus écrit pré-vol compris (`RECONCILIATION_ALREADY_REJECTED` d'abord), « alphabétique »
   retiré de l'AC6. Choix C-28-6-11 à C-28-6-14 ajoutés, C-28-6-8 amendé. Mutations : 7 → 8. Suite : passe ciblée
   P2 (Haiku), `28-6-validate-prompt-p2-ciblee.md`.
+- 2026-10-13 — **Validation P2 ciblée** (Haiku, rapport `kesh-gate-logs/28-6-validate-p2-ciblee.md`) : 0 CRITICAL,
+  0 HIGH, 0 MEDIUM, **2 LOW** (P2-1 justification de l'AC9, P2-2 marqueur « Amendé » de C-28-6-3), appliqués à
+  l'étape 0 du développement. Validation close.
+- 2026-10-13 — **Développement** (`bmad-dev-story`, Opus 5.5) : rebase sur `eab77cf1`, numéros recalés après la
+  28-5a ; T1 rouge (code observé : `DATABASE_ERROR` sur `chk_jel_debit_credit_exclusive`, rien d'écrit — pas de P1) ;
+  garde `refuse_non_credit_settlement` à l'étape 4bis, code `RECONCILIATION_TRANSACTION_NOT_CREDIT` ; écran, quatre
+  catalogues, contrat d'API, CHANGELOG ; manuels vérifiés, non modifiés (pas de sous-section 0.13.3 au rebase,
+  C-28-6-11). Écart : zéro négatif de l'AC3 construit par `set_sign_negative`, `dec!(-0.00)` étant normalisé
+  (C-28-6-15). Mutations 8/8 tuées. Gates au dernier commit de code : nextest 3552/3552, Vitest 1498/1498, check,
+  lint, build verts, E2E 269 passés + 7 KF-029. Statut **review** ; revue de code P1 à lancer
+  (`28-6-review-prompt-p1.md`, Sonnet, B/E/A).
