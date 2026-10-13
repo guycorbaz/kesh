@@ -1188,6 +1188,8 @@ reconciliation-labels-score = Wert
 reconciliation-errors-account-locked = Bankkonto wird gerade von einem anderen Benutzer abgeglichen. Bitte versuchen Sie es in wenigen Sekunden erneut.
 reconciliation-errors-already-reconciled = Diese Transaktion wurde bereits abgeglichen.
 reconciliation-errors-invoice-not-eligible = Diese Rechnung ist für den Abgleich nicht zulässig.
+# Story 28-5a (#526) — refus de l'annulation d'un rejet (409).
+reconciliation-errors-transaction-not-rejected = Diese Transaktion ist nicht abgelehnt: Die Ablehnung wurde möglicherweise bereits aufgehoben, oder sie wurde abgestimmt.
 reconciliation-toast-accept-success = { $count } Transaktion(en) erfolgreich abgeglichen.
 reconciliation-toast-reject-success = { $count } Transaktion(en) erfolgreich abgelehnt.
 
@@ -2365,6 +2367,7 @@ audit-log-action-reconciliation-cancelled = Abgleich aufgehoben
 audit-log-action-reconciliation-rejected = Abstimmung abgelehnt
 audit-log-action-reconciliation-manual-matched = Manueller Abgleich durchgeführt
 audit-log-action-reconciliation-split-applied = Transaktion aufgeteilt
+audit-log-action-reconciliation-unrejected = Abstimmungsablehnung aufgehoben
 audit-log-action-reconciliation-rule-created = Zuordnungsregel erstellt
 audit-log-action-reconciliation-rule-updated = Zuordnungsregel aktualisiert
 audit-log-action-reconciliation-rule-deleted = Zuordnungsregel gelöscht

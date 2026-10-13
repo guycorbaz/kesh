@@ -730,6 +730,8 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("bank-import-csv-errors-mixed-currencies", 1, DEVISES),
                 // Story 27-3 (#626) — refus d'une empreinte d'aperçu périmée.
                 ("bank-import-errors-preview-stale", 1, &[]),
+                // Story 28-5a (#526) — refus de l'annulation d'un rejet.
+                ("reconciliation-errors-transaction-not-rejected", 1, &[]),
             ],
         ),
         (

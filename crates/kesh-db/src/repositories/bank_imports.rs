@@ -339,7 +339,8 @@ pub struct DeletedBankImport {
 /// les cinq chemins qui rapprochent posent les deux colonnes ensemble, le seul
 /// qui les retire (`reconciliation_cancel::cancel_in_tx`) les retire ensemble,
 /// et le **rejet** (`reject_batch`) ne touche aucune des deux — une transaction
-/// rejetée n'est donc **pas** rapprochée. La disjonction couvre en plus deux
+/// rejetée n'est donc **pas** rapprochée —, et l'**annulation du rejet**
+/// (`unreject_once`, Story 28-5a) non plus. La disjonction couvre en plus deux
 /// états qu'aucun chemin vivant ne produit (`reconciled` sans lien, `pending`
 /// avec lien).
 ///
@@ -347,12 +348,14 @@ pub struct DeletedBankImport {
 /// `frontend/src/lib/features/bank-import/bank-import-deletion.ts`
 /// (`isReconciled`). L'écran n'est qu'une commodité : le serveur seul décide.
 ///
-/// **Appelée** par deux chemins du serveur : la suppression d'import
-/// ([`delete_unreconciled_in_tx`]) et, depuis la Story 27-4 (C-27-4-19), la
+/// **Appelée** par trois chemins du serveur : la suppression d'import
+/// ([`delete_unreconciled_in_tx`]) ; depuis la Story 27-4 (C-27-4-19), la
 /// classification des lots de réconciliation (`classify_batch_transaction`,
 /// `kesh-api/src/routes/reconciliation.rs`), qui refuse une transaction
 /// rapprochée en `RECONCILIATION_ALREADY_RECONCILED` sans écrire de second test
-/// de statut.
+/// de statut ; et, depuis la Story 28-5a (#526), le classement de l'annulation
+/// d'un rejet (`classify_unreject`, même fichier), qui refuse une transaction
+/// rapprochée — même marquée — en `RECONCILIATION_TRANSACTION_NOT_REJECTED`.
 pub fn is_reconciled(status: &str, matched_entry_id: Option<i64>) -> bool {
     status != "pending" || matched_entry_id.is_some()
 }

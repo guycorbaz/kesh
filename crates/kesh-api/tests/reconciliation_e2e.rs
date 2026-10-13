@@ -7524,3 +7524,628 @@ async fn batches_over_500_transactions_are_refused_in_400(pool: MySqlPool) {
         }
     }
 }
+
+// ============================================================
+// Story 28-5a (#526) — annuler le rejet d'une transaction
+// ============================================================
+
+/// `POST /api/v1/reconciliation/transactions/{id}/unreject` ; rend
+/// `(statut, corps)` — `Null` pour un `204`, qui n'a pas de corps.
+async fn unreject(app: &TestApp, jwt: &str, tx_id: i64) -> (u16, Value) {
+    let resp = app
+        .client
+        .post(app.url(&format!(
+            "/api/v1/reconciliation/transactions/{tx_id}/unreject"
+        )))
+        .bearer_auth(jwt)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap_or(Value::Null))
+}
+
+/// Rejette `ids` par la route du lot (`POST /reconciliation/reject`) ; exige un
+/// `200` sans refus et rend le corps.
+async fn reject_285(app: &TestApp, jwt: &str, bank_account_id: i64, ids: &[i64]) -> Value {
+    let (st, body) = post_274(
+        app,
+        jwt,
+        "/api/v1/reconciliation/reject",
+        &serde_json::json!({ "bankAccountId": bank_account_id, "bankTransactionIds": ids }),
+    )
+    .await;
+    assert_eq!(st, 200, "{body}");
+    assert!(
+        body["failed"].as_array().unwrap().is_empty(),
+        "montage : le rejet ne refuse rien — {body}"
+    );
+    body
+}
+
+/// `n` transactions `pending` d'un même import, montants distincts ; rend
+/// leurs identifiants.
+async fn seed_txs_285(pool: &MySqlPool, ctx: &CompanyCtx, seed: &str, n: usize) -> Vec<i64> {
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let txs = (0..n)
+        .map(|i| {
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                Decimal::new(10_000 + 100 * i as i64, 2),
+                "CHF",
+                &format!("REF-{seed}-{i}"),
+                None,
+            )
+        })
+        .collect();
+    seed_bank_transactions(
+        pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash(seed),
+        day,
+        day,
+        txs,
+    )
+    .await
+}
+
+/// Les `bankTransactionId` que `GET /reconciliation/proposals` liste pour le
+/// compte.
+async fn proposed_ids_285(app: &TestApp, jwt: &str, bank_account_id: i64) -> Vec<i64> {
+    let body: Value = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={bank_account_id}"
+        )))
+        .bearer_auth(jwt)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    body["proposals"]
+        .as_array()
+        .unwrap_or_else(|| panic!("pas de proposals[] : {body}"))
+        .iter()
+        .map(|p| p["bankTransactionId"].as_i64().unwrap())
+        .collect()
+}
+
+/// La transaction `tx_id` telle que la rend le détail de son import
+/// (`GET /api/v1/bank-imports/{id}`).
+async fn import_detail_tx_285(app: &TestApp, pool: &MySqlPool, jwt: &str, tx_id: i64) -> Value {
+    let import_id: i64 = sqlx::query_scalar("SELECT import_id FROM bank_transactions WHERE id = ?")
+        .bind(tx_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let resp = app
+        .client
+        .get(app.url(&format!("/api/v1/bank-imports/{import_id}")))
+        .bearer_auth(jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    body["transactions"]
+        .as_array()
+        .unwrap_or_else(|| panic!("pas de transactions[] : {body}"))
+        .iter()
+        .find(|t| t["id"].as_i64() == Some(tx_id))
+        .unwrap_or_else(|| panic!("transaction {tx_id} absente du détail : {body}"))
+        .clone()
+}
+
+/// `(entity_type, details_json)` des lignes `reconciliation.unrejected` de la
+/// transaction.
+async fn unrejected_traces_285(pool: &MySqlPool, tx_id: i64) -> Vec<(String, Value)> {
+    sqlx::query_as(
+        "SELECT entity_type, details_json FROM audit_log \
+         WHERE action = 'reconciliation.unrejected' AND entity_id = ? ORDER BY id",
+    )
+    .bind(tx_id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+async fn count_285(pool: &MySqlPool, sql: &str) -> i64 {
+    sqlx::query_scalar(sql).fetch_one(pool).await.unwrap()
+}
+
+async fn updated_at_285(pool: &MySqlPool, tx_id: i64) -> NaiveDateTime {
+    sqlx::query_scalar("SELECT updated_at FROM bank_transactions WHERE id = ?")
+        .bind(tx_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Le refus `409 RECONCILIATION_TRANSACTION_NOT_REJECTED`, `details` compris.
+fn assert_not_rejected_285(st: u16, body: &Value, tx_id: i64) {
+    assert_eq!(st, 409, "{body}");
+    assert_eq!(
+        body["error"]["code"], "RECONCILIATION_TRANSACTION_NOT_REJECTED",
+        "{body}"
+    );
+    assert_eq!(
+        body["error"]["details"],
+        serde_json::json!({ "bankTransactionId": tx_id }),
+        "{body}"
+    );
+}
+
+/// B1 (AC2, AC13) — annuler le rejet remet la transaction dans les
+/// propositions, sans écriture ni règlement, et le trace ; puis le cycle
+/// rejeter → annuler se rejoue.
+///
+/// `updated_at` est **forcé** dans le passé par une affectation explicite (sans
+/// elle, `ON UPDATE CURRENT_TIMESTAMP(3)` écraserait la valeur forcée) : un
+/// rejet et son annulation peuvent tomber dans la même milliseconde. Son
+/// assertion établit que la ligne a été écrite ; elle ne tue pas M17, la
+/// colonne étant renouvelée par le moteur.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unreject_puts_a_rejected_transaction_back_in_the_proposals(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let tx_id = seed_txs_285(&pool, &ctx, "b1", 1).await[0];
+    let app = spawn_app(pool.clone()).await;
+    reject_285(&app, &ctx.jwt, ctx.bank_account_id, &[tx_id]).await;
+
+    let forced = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_milli_opt(0, 0, 0, 0)
+        .unwrap();
+    sqlx::query("UPDATE bank_transactions SET updated_at = ? WHERE id = ?")
+        .bind(forced)
+        .bind(tx_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        updated_at_285(&pool, tx_id).await,
+        forced,
+        "montage : updated_at forcé"
+    );
+    let (status0, matched0, rejected0, version0) = tx_row_274(&pool, tx_id).await.unwrap();
+    assert_eq!((status0.as_str(), matched0), ("pending", None));
+    assert!(rejected0.is_some(), "montage : la transaction est rejetée");
+    let rejected_at =
+        import_detail_tx_285(&app, &pool, &ctx.jwt, tx_id).await["autoMatchRejectedAt"]
+            .as_str()
+            .expect("autoMatchRejectedAt d'une rejetée")
+            .to_string();
+    assert!(
+        !proposed_ids_285(&app, &ctx.jwt, ctx.bank_account_id)
+            .await
+            .contains(&tx_id),
+        "montage : une rejetée n'est pas proposée"
+    );
+    let books_sql = [
+        format!(
+            "SELECT COUNT(*) FROM journal_entries WHERE company_id = {}",
+            ctx.company_id
+        ),
+        format!(
+            "SELECT COUNT(*) FROM invoice_settlements WHERE company_id = {}",
+            ctx.company_id
+        ),
+    ];
+    let mut books_before = Vec::new();
+    for q in &books_sql {
+        books_before.push(count_285(&pool, q).await);
+    }
+
+    let (st, body) = unreject(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 204, "{body}");
+
+    let (status1, matched1, rejected1, version1) = tx_row_274(&pool, tx_id).await.unwrap();
+    assert_eq!(rejected1, None, "le marqueur est remis à NULL");
+    assert_eq!(version1, version0 + 1, "version + 1");
+    assert_eq!(
+        (status1.as_str(), matched1),
+        ("pending", None),
+        "statut et lien inchangés"
+    );
+    assert!(
+        updated_at_285(&pool, tx_id).await > forced,
+        "la ligne a été écrite par l'annulation"
+    );
+    for (q, n) in books_sql.iter().zip(&books_before) {
+        assert_eq!(
+            count_285(&pool, q).await,
+            *n,
+            "aucune écriture, aucun règlement : {q}"
+        );
+    }
+    assert!(
+        proposed_ids_285(&app, &ctx.jwt, ctx.bank_account_id)
+            .await
+            .contains(&tx_id),
+        "la transaction est de nouveau proposée"
+    );
+    let traces = unrejected_traces_285(&pool, tx_id).await;
+    assert_eq!(traces.len(), 1, "une ligne d'audit : {traces:?}");
+    assert_eq!(traces[0].0, "bank_transaction");
+    assert_eq!(
+        traces[0].1,
+        serde_json::json!({ "previouslyRejectedAt": rejected_at }),
+        "même chaîne que le champ autoMatchRejectedAt lu avant"
+    );
+
+    // AC13 — la transaction se rejette de nouveau, et s'annule de nouveau.
+    let body = reject_285(&app, &ctx.jwt, ctx.bank_account_id, &[tx_id]).await;
+    assert_eq!(ids_274(&body, "rejected"), vec![tx_id], "{body}");
+    assert!(
+        tx_row_274(&pool, tx_id).await.unwrap().2.is_some(),
+        "le marqueur est reposé"
+    );
+    let (st, body) = unreject(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 204, "{body}");
+    assert_eq!(unrejected_traces_285(&pool, tx_id).await.len(), 2);
+}
+
+/// B2 (AC3) — une transaction non rejetée, jamais ou plus : `409`, sans rien
+/// écrire ni tracer.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unreject_refuses_a_transaction_that_is_not_rejected(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let tx_id = seed_txs_285(&pool, &ctx, "b2", 1).await[0];
+    let app = spawn_app(pool.clone()).await;
+    let audit_sql = "SELECT COUNT(*) FROM audit_log";
+
+    let audit0 = count_285(&pool, audit_sql).await;
+    let version0 = tx_row_274(&pool, tx_id).await.unwrap().3;
+    let (st, body) = unreject(&app, &ctx.jwt, tx_id).await;
+    assert_not_rejected_285(st, &body, tx_id);
+    assert_eq!(tx_row_274(&pool, tx_id).await.unwrap().3, version0);
+    assert_eq!(count_285(&pool, audit_sql).await, audit0, "rien de tracé");
+
+    reject_285(&app, &ctx.jwt, ctx.bank_account_id, &[tx_id]).await;
+    assert_eq!(unreject(&app, &ctx.jwt, tx_id).await.0, 204);
+    let audit1 = count_285(&pool, audit_sql).await;
+    let version1 = tx_row_274(&pool, tx_id).await.unwrap().3;
+    let (st, body) = unreject(&app, &ctx.jwt, tx_id).await;
+    assert_not_rejected_285(st, &body, tx_id);
+    assert_eq!(tx_row_274(&pool, tx_id).await.unwrap().3, version1);
+    assert_eq!(count_285(&pool, audit_sql).await, audit1, "rien de tracé");
+    assert_eq!(unrejected_traces_285(&pool, tx_id).await.len(), 1);
+}
+
+/// B3 (AC3) — une transaction rapprochée au sens d'`is_reconciled` est
+/// refusée **même si** son marqueur de rejet est posé.
+///
+/// ⚠️ **État FORGÉ, et dit tel** : aucun chemin réel ne laisse le marqueur sur
+/// une transaction rapprochée (cf. le test du dé-rapprochement
+/// `a_previously_rejected_transaction_comes_back_to_the_proposals`). C'est ce
+/// que la classification refuse sans second test de statut.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unreject_refuses_a_reconciled_transaction_even_if_marked(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let tx_id = seed_txs_285(&pool, &ctx, "b3", 1).await[0];
+    let fy_id = insert_fake_fiscal_year(&pool, ctx.company_id).await;
+    let entry_id = insert_fake_journal_entry(&pool, ctx.company_id, fy_id).await;
+    sqlx::query(
+        "UPDATE bank_transactions SET status = 'reconciled', matched_entry_id = ?, \
+         auto_match_rejected_at = NOW(3) WHERE id = ?",
+    )
+    .bind(entry_id)
+    .bind(tx_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let before = tx_row_274(&pool, tx_id).await.unwrap();
+    assert!(before.2.is_some(), "montage : marqueur posé");
+    let app = spawn_app(pool.clone()).await;
+
+    let (st, body) = unreject(&app, &ctx.jwt, tx_id).await;
+    assert_not_rejected_285(st, &body, tx_id);
+    assert_eq!(
+        tx_row_274(&pool, tx_id).await.unwrap(),
+        before,
+        "marqueur, statut, lien et version intacts"
+    );
+    assert!(unrejected_traces_285(&pool, tx_id).await.is_empty());
+}
+
+/// B4 (AC3, AC4) — Consultation → `403` ; autre société → `404` et rien
+/// d'écrit ; Administrateur → `204`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unreject_roles_and_scope(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let other = setup_company(&pool, "Autre", "CH9300762011623852957", Role::Comptable).await;
+    let tx_id = seed_txs_285(&pool, &ctx, "b4", 1).await[0];
+    let app = spawn_app(pool.clone()).await;
+    reject_285(&app, &ctx.jwt, ctx.bank_account_id, &[tx_id]).await;
+
+    let reader_id = create_user(&pool, "lecteur", Role::Consultation, ctx.company_id).await;
+    let reader = forge_jwt(reader_id, "Consultation", ctx.company_id);
+    assert_eq!(unreject(&app, &reader, tx_id).await.0, 403);
+
+    let tables = [
+        "SELECT COUNT(*) FROM bank_transactions WHERE auto_match_rejected_at IS NOT NULL",
+        "SELECT COUNT(*) FROM audit_log",
+    ];
+    let mut before = Vec::new();
+    for q in tables {
+        before.push(count_285(&pool, q).await);
+    }
+    let row_before = tx_row_274(&pool, tx_id).await.unwrap();
+    let (st, body) = unreject(&app, &other.jwt, tx_id).await;
+    assert_eq!(st, 404, "{body}");
+    assert_eq!(body["error"]["code"], "NOT_FOUND", "{body}");
+    for (q, n) in tables.iter().zip(before) {
+        assert_eq!(count_285(&pool, q).await, n, "rien d'écrit : {q}");
+    }
+    assert_eq!(tx_row_274(&pool, tx_id).await.unwrap(), row_before);
+
+    let admin_id = create_user(&pool, "admin_acme", Role::Admin, ctx.company_id).await;
+    let admin = forge_jwt(admin_id, "Admin", ctx.company_id);
+    let (st, body) = unreject(&app, &admin, tx_id).await;
+    assert_eq!(st, 204, "{body}");
+    assert_eq!(tx_row_274(&pool, tx_id).await.unwrap().2, None);
+}
+
+/// B5 (AC2, AC3) — le geste prend le verrou nommé du compte : tenu par une
+/// autre connexion, il rend `409 RECONCILIATION_ACCOUNT_LOCKED` et laisse le
+/// marqueur intact (patron de
+/// `post_accept_returns_409_on_account_lock_contention`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unreject_returns_409_when_the_account_is_locked(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let tx_id = seed_txs_285(&pool, &ctx, "b5", 1).await[0];
+    let app = spawn_app(pool.clone()).await;
+    reject_285(&app, &ctx.jwt, ctx.bank_account_id, &[tx_id]).await;
+    let before = tx_row_274(&pool, tx_id).await.unwrap();
+
+    // Le nom porte la base courante (KF-038, #228) : à reconstruire à l'identique.
+    let db_name: String = sqlx::query_scalar("SELECT COALESCE(DATABASE(), '')")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let lock_name = format!(
+        "reconcile:{}:{}:{}",
+        db_name, ctx.company_id, ctx.bank_account_id
+    );
+    let mut hold_conn = pool.acquire().await.unwrap();
+    let acquired: Option<i32> = sqlx::query_scalar("SELECT GET_LOCK(?, ?)")
+        .bind(&lock_name)
+        .bind(60)
+        .fetch_one(&mut *hold_conn)
+        .await
+        .unwrap();
+    assert_eq!(acquired, Some(1), "montage : verrou tenu");
+
+    let (st, body) = unreject(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 409, "{body}");
+    assert_eq!(
+        body["error"]["code"], "RECONCILIATION_ACCOUNT_LOCKED",
+        "{body}"
+    );
+    assert_eq!(
+        tx_row_274(&pool, tx_id).await.unwrap(),
+        before,
+        "marqueur intact"
+    );
+    assert!(unrejected_traces_285(&pool, tx_id).await.is_empty());
+
+    let _: Option<i32> = sqlx::query_scalar("SELECT RELEASE_LOCK(?)")
+        .bind(&lock_name)
+        .fetch_one(&mut *hold_conn)
+        .await
+        .unwrap();
+}
+
+/// B6 (AC4) — une clé d'API `read-write` annule un rejet, et la ligne d'audit
+/// la nomme.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_api_key_unrejects_and_is_named_in_the_audit(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let tx_id = seed_txs_285(&pool, &ctx, "b6", 1).await[0];
+    let app = spawn_app(pool.clone()).await;
+    reject_285(&app, &ctx.jwt, ctx.bank_account_id, &[tx_id]).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/settings/api-keys"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({ "name": "rw", "scope": "read-write" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let body: Value = resp.json().await.unwrap();
+    let (key_id, key) = (
+        body["id"].as_i64().unwrap(),
+        body["key"].as_str().unwrap().to_string(),
+    );
+
+    let (st, body) = unreject(&app, &key, tx_id).await;
+    assert_eq!(st, 204, "{body}");
+    let (actor_type, actor_key): (String, Option<i64>) = sqlx::query_as(
+        "SELECT actor_type, actor_api_key_id FROM audit_log \
+         WHERE action = 'reconciliation.unrejected' AND entity_id = ?",
+    )
+    .bind(tx_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((actor_type.as_str(), actor_key), ("api_key", Some(key_id)));
+}
+
+/// B7 (AC1) — le détail d'un import expose `autoMatchRejectedAt` : chaîne
+/// ISO 8601 UTC pour la rejetée, `null` pour l'autre, `null` après
+/// l'annulation.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_import_detail_exposes_the_rejection_date(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let ids = seed_txs_285(&pool, &ctx, "b7", 2).await;
+    let (rejected, other) = (ids[0], ids[1]);
+    let app = spawn_app(pool.clone()).await;
+    reject_285(&app, &ctx.jwt, ctx.bank_account_id, &[rejected]).await;
+
+    let r = import_detail_tx_285(&app, &pool, &ctx.jwt, rejected).await;
+    let at = r["autoMatchRejectedAt"]
+        .as_str()
+        .unwrap_or_else(|| panic!("chaîne attendue : {r}"));
+    assert!(at.ends_with('Z'), "UTC, suffixe Z : {at}");
+    assert!(
+        chrono::DateTime::parse_from_rfc3339(at).is_ok(),
+        "ISO 8601 : {at}"
+    );
+    let o = import_detail_tx_285(&app, &pool, &ctx.jwt, other).await;
+    assert!(
+        o.get("autoMatchRejectedAt").is_some_and(Value::is_null),
+        "null pour une transaction non rejetée : {o}"
+    );
+
+    assert_eq!(unreject(&app, &ctx.jwt, rejected).await.0, 204);
+    let r = import_detail_tx_285(&app, &pool, &ctx.jwt, rejected).await;
+    assert!(
+        r.get("autoMatchRejectedAt").is_some_and(Value::is_null),
+        "null après l'annulation : {r}"
+    );
+}
+
+/// B9 (AC13) — une transaction dont le rejet est annulé s'accepte de nouveau :
+/// avant l'annulation, l'acceptation d'une proposition ventilée la refuse en
+/// `RECONCILIATION_ALREADY_REJECTED` ; après, elle la rapproche.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_transaction_whose_rejection_is_undone_can_be_accepted_again(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup_accept_split_ctx(&pool, "unreject_split", "CH1000000000000099285").await;
+    let tx_id = ctx.tx_ids[0];
+    reject_285(&app, &ctx.jwt, ctx.bank_account_id, &[tx_id]).await;
+    let accept_body = serde_json::json!({
+        "bankAccountId": ctx.bank_account_id,
+        "proposals": [{
+            "type": "split",
+            "bankTransactionId": tx_id,
+            "splits": [
+                { "counterpartyAccountId": ctx.cp_a, "amount": "60.00", "description": "Ligne" },
+                { "counterpartyAccountId": ctx.cp_b, "amount": "40.00", "description": "Ligne" },
+            ],
+        }],
+    });
+
+    let (st, body) = post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/accept",
+        &accept_body,
+    )
+    .await;
+    assert_eq!(st, 200, "{body}");
+    assert!(ids_274(&body, "accepted").is_empty(), "{body}");
+    assert_eq!(
+        failed_274(&body),
+        vec![(
+            tx_id,
+            "RECONCILIATION_ALREADY_REJECTED".to_string(),
+            Value::Null
+        )],
+        "{body}"
+    );
+
+    assert_eq!(unreject(&app, &ctx.jwt, tx_id).await.0, 204);
+
+    let (st, body) = post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/accept",
+        &accept_body,
+    )
+    .await;
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(ids_274(&body, "accepted"), vec![tx_id], "{body}");
+    assert!(failed_274(&body).is_empty(), "{body}");
+    let (status, matched, rejected, _) = tx_row_274(&pool, tx_id).await.unwrap();
+    assert_eq!(status, "reconciled");
+    assert!(matched.is_some(), "rapprochée : lien posé");
+    assert_eq!(rejected, None, "marqueur NULL");
+}
+
+/// B10 (AC3, « disparue sous verrou ») — une transaction supprimée pendant que
+/// l'annulation attend sa lecture verrouillante est **introuvable** : `404`,
+/// rien de tracé (tue M15 ; patron de
+/// `post_reject_locking_reread_sees_a_deletion_committed_after_the_snapshot`).
+///
+/// Le test supprime la transaction dans une transaction SQL **non validée**
+/// (verrou X), lance l'annulation : la lecture hors verrou du compte (lecture
+/// cohérente, autocommit) la voit encore ; sous le verrou nommé, la lecture
+/// `FOR UPDATE` se bloque. La suppression est alors validée : la lecture
+/// courante voit la ligne absente → `404`. Sous M15 (lecture ordinaire), la vue
+/// cohérente la voit encore rejetée, l'`UPDATE` attend le verrou X puis ne
+/// touche aucune ligne → `409 OPTIMISTIC_LOCK_CONFLICT` : rouge sur le statut,
+/// non sur le montage.
+///
+/// Les motifs `["bank_transactions", "bank_account_id = ?"]` sont communs à la
+/// lecture verrouillante (`bank_tx_by_id_for_account_sql`) et à l'`UPDATE` de
+/// l'annulation, absents de la lecture hors verrou (`WHERE id = ? AND
+/// company_id = ?`). Observation **durable** (C-27-4-26) : la sonde est
+/// appelée deux fois, à 500 ms d'écart.
+///
+/// ⚠️ **Angle mort assumé** : la sonde voit une requête **en cours**, non une
+/// requête **en attente de verrou** — `information_schema.INNODB_TRX` exige le
+/// privilège `PROCESS`, absent sur le poste de dev. Sous M15, la mutation ne
+/// survivrait que si la lecture ordinaire, par clé primaire, durait plus de
+/// 500 ms. Si M15 survit à une campagne, rejouer le test avant de la déclarer
+/// survivante.
+///
+/// ⚠️ Repose sur MariaDB 10.11 : avec `innodb_snapshot_isolation` (défaut
+/// depuis 11.6), la lecture verrouillante rendrait `ER_CHECKREAD`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unreject_of_a_transaction_deleted_under_the_lock_is_not_found(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let tx_id = seed_txs_285(&pool, &ctx, "b10", 1).await[0];
+    let app = spawn_app(pool.clone()).await;
+    reject_285(&app, &ctx.jwt, ctx.bank_account_id, &[tx_id]).await;
+
+    let mut deleting = pool.begin().await.unwrap();
+    let deleted = sqlx::query("DELETE FROM bank_transactions WHERE id = ?")
+        .bind(tx_id)
+        .execute(&mut *deleting)
+        .await
+        .unwrap();
+    assert_eq!(
+        deleted.rows_affected(),
+        1,
+        "montage : transaction supprimée, non validée"
+    );
+
+    let task = {
+        let client = app.client.clone();
+        let url = app.url(&format!(
+            "/api/v1/reconciliation/transactions/{tx_id}/unreject"
+        ));
+        let jwt = ctx.jwt.clone();
+        tokio::spawn(async move {
+            let resp = client.post(url).bearer_auth(jwt).send().await.unwrap();
+            let status = resp.status().as_u16();
+            (status, resp.json::<Value>().await.unwrap_or(Value::Null))
+        })
+    };
+    let motifs = ["bank_transactions", "bank_account_id = ?"];
+    for _ in 0..2 {
+        let bloque = kesh_db::test_fixtures::attendre_une_requete_en_cours(&pool, &motifs, || {
+            task.is_finished()
+        })
+        .await;
+        assert!(
+            bloque,
+            "l'annulation devait attendre la suppression non validée — le montage ne prouve rien sinon"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    deleting.commit().await.unwrap();
+
+    let (st, body) = task.await.unwrap();
+    assert_eq!(st, 404, "{body}");
+    assert_eq!(body["error"]["code"], "NOT_FOUND", "{body}");
+    assert!(unrejected_traces_285(&pool, tx_id).await.is_empty());
+}

@@ -157,6 +157,7 @@ pub const ACTIONS: &[&str] = &[
     "reconciliation.manual_matched",
     "reconciliation.rejected",
     "reconciliation.split_applied",
+    "reconciliation.unrejected",
     "reconciliation_rule.applied",
     "reconciliation_rule.created",
     "reconciliation_rule.deleted",

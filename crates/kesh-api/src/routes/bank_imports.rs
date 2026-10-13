@@ -265,6 +265,11 @@ pub struct TransactionResponse {
     /// ce qui empêche d'annuler se lit au clic, pour UNE transaction
     /// (`GET /reconciliation/transactions/{id}`).
     pub matched_entry_id: Option<i64>,
+    /// La date du rejet de la proposition (`auto_match_rejected_at`), `None`
+    /// si la transaction n'est pas rejetée (Story 28-5a, #526) — sérialisée
+    /// `autoMatchRejectedAt`, ISO 8601 UTC. `.and_utc()` comme `reject_batch`
+    /// et l'audit de `…/unreject`, qui en porte la même chaîne.
+    pub auto_match_rejected_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl From<kesh_db::entities::bank_transaction::BankTransaction> for TransactionResponse {
@@ -283,6 +288,7 @@ impl From<kesh_db::entities::bank_transaction::BankTransaction> for TransactionR
             counterparty_name: t.counterparty_name,
             status: t.status.as_str().to_string(),
             matched_entry_id: t.matched_entry_id,
+            auto_match_rejected_at: t.auto_match_rejected_at.map(|d| d.and_utc()),
         }
     }
 }

@@ -677,6 +677,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/reconciliation/transactions/{id}/cancel",
             post(routes::reconciliation::post_cancel_reconciliation),
         )
+        // Story 28-5a (#526) : annuler le rejet d'une transaction (Comptable+,
+        // clés API d'écriture admises, comme `/reject` et `…/cancel`).
+        .route(
+            "/api/v1/reconciliation/transactions/{id}/unreject",
+            post(routes::reconciliation::post_unreject_transaction),
+        )
         // Story 8-5a-zero : configuration `bank_account.journal_account_id`
         // (Comptable+ pour la mutation, foundation FR45/FR48).
         // Story v014-1 : CRUD complet post-onboarding (POST/PUT/DELETE).

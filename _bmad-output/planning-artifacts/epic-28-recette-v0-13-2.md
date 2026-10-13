@@ -130,6 +130,10 @@ l'annulation d'un rapprochement remet le marquage à zéro.
   (`RECONCILIATION_ALREADY_REJECTED` dans `failed[]`) ;
 - le manuel, que la 15-5c a réécrit « sans promettre de chemin », redevient affirmatif.
 
+*Découpée à la validation P1 (2026-10-13, C-28-5-17)* : **28-5a** (serveur — route `…/unreject`, champ
+`autoMatchRejectedAt`, audit ; PR `refs #526`), puis **28-5b** (écran, manuel, E2E ; PR `closes #526`), sans
+release entre les deux. La limite de 100 propositions de la page *Réconciliation* est suivie par **#649**.
+
 ### 28-6 — Le rapprochement refuse un débit ([#482], P2)
 
 `accept_one_invoice` ne vérifie pas le signe : un débit dont la référence ou le contact désigne la
@@ -154,9 +158,12 @@ prioritaire).
 ## Ordre
 
 - **28-1, 28-2, 28-3 en parallèle** : ni module ni fichier commun attendu.
-- **28-5, 28-6, 28-7 sérialisées** : toutes dans `routes/reconciliation.rs` (et la 28-7 dans
-  `repositories/reconciliation.rs`) — la configuration qui a fait différer la 27-4 derrière la 27-1.
-  Chacune se merge avant que la suivante soit rebasée.
+- **28-5a, puis 28-6 ∥ 28-5b, puis 28-7** *(ordre fixé par l'orchestrateur après le découpage de la 28-5,
+  C-28-5-29)* : la 28-5a, la 28-6 et la 28-7 touchent `routes/reconciliation.rs` (et la 28-7
+  `repositories/reconciliation.rs`) — la configuration qui a fait différer la 27-4 derrière la 27-1 — et se
+  sérialisent : chacune se merge avant que la suivante soit rebasée. La 28-5b ne touche pas ce fichier : elle se
+  développe en parallèle de la 28-6, avec union au rebase sur `failed-proposal-label.ts`, son test, `sitesTotal`
+  de `i18n-keys.test.ts` et la section `reconciliation-*` des catalogues.
 - **28-4 après elles, ou en parallèle avec rebase** : elle pose des gardes sur les chemins d'écriture
   de la réconciliation et de l'import, ceux-là mêmes que touchent la 28-5 et la 28-6.
 - Intégration **sérielle** sur `main`, comme sur l'Epic 27 : une PR mergée avant que la suivante soit

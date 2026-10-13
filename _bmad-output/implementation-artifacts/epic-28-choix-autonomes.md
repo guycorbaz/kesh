@@ -1062,4 +1062,383 @@ Choix faits à la remédiation de la validation P2 (2026-10-13, Opus 5.5, autono
   bancaires ; création et révocation des clés d'API ; chargement du dialogue d'annulation), chacun constatant
   l'appel API ; mutations P1-M9 à P1-M14 (`(err as Error).message`) jouées. Les sites B5, B11, B12 restent couverts
   par le test unique de leur fichier, comme l'AC9 l'admet.
+## Story 28-5 — Une transaction rejetée redevient atteignable (#526)
+
+Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
+`implementation-artifacts/28-5-transaction-rejetee-atteignable.md`.
+
+### C-28-5-1 — Retrouver la rejetée dans le détail de son import, non par un filtre de la page *Réconciliation*
+
+- **Contexte** : l'issue et l'epic disent « filtre ou onglet ». La transaction rejetée est **déjà** listée dans le
+  détail de son import (statut brut `pending`, sans action) ; c'est aussi l'écran où la 25-3-b a placé *Annuler le
+  rapprochement*.
+- **Retenu** : marquer la ligne « Rejetée le … » et y poser *Annuler le rejet* ; une phrase de la page
+  *Réconciliation* dit où la retrouver (C-28-5-10). Écart **assumé** à la lettre de l'issue, pour le périmètre
+  minimal.
+- **Écartée** : filtre ou section « Rejetées » sur la page *Réconciliation* — une route de lecture, une fonction de
+  dépôt, un composant et leurs tests de plus, pour un besoin que le détail couvre.
+- **Réversible** : oui ; le filtre peut s'ajouter plus tard sans rien défaire (CR si la recette le réclame).
+
+### C-28-5-2 — Seul geste neuf : annuler le rejet
+
+- **Contexte** : l'issue offre « rapprocher manuellement, **ou** annuler le rejet ».
+- **Retenu** : annuler le rejet ; la transaction revient dans la liste des propositions, où *Accepter*, *Affecter
+  manuellement* et *Éclater* existent déjà.
+- **Écartée** : poser *Affecter manuellement* et *Éclater* sur la ligne rejetée du détail d'import (deux modales à
+  rebrancher hors de leur page, pour éviter un clic).
 - **Réversible** : oui.
+
+### C-28-5-3 — Route unitaire `POST /api/v1/reconciliation/transactions/{id}/unreject`, `204`
+
+- **Contexte** : le rejet est un lot (`{ rejected, failed }`) ; l'annulation d'un rapprochement est unitaire, sous
+  `…/transactions/{id}/cancel`.
+- **Retenu** : route unitaire, même famille de chemin que `…/cancel`, sans corps, `204 No Content` (rien à rendre :
+  l'écran relit le détail). Refus en `AppError` (pas de `FailedProposal` : ce n'est pas un lot).
+- **Écartées** : `POST /reconciliation/unreject` en lot (un pattern batch neuf, pour un geste qui se fait ligne à
+  ligne) ; `DELETE …/rejection` (aucune route du module n'emploie `DELETE`) ; `200` avec la transaction relue (une
+  lecture de plus, sans lecteur).
+- **Réversible** : oui (route neuve, aucun client existant).
+
+### C-28-5-4 — Verrou nommé du compte pris ; pas de rejeu sur interblocage
+
+- **Contexte** : tous les gestes de réconciliation qui écrivent prennent `with_account_lock` ; seuls ceux qui écrivent
+  au journal sont rejoués (`audit_route_registry.rs`, colonne `Rejeu`).
+- **Retenu** : verrou pris (sérialise avec accept, reject, manual, split, cancel du même compte : un rapprochement
+  manuel concurrent ne bute pas sur un conflit de `version`) ; classement `SansEcritureAuJournal`, sans enveloppe de
+  rejeu. Raisonnement d'interblocage : une ligne de `bank_transactions` verrouillée, puis une insertion d'audit ; la
+  suppression d'import (27-1) verrouille ses lignes par identifiant croissant sans le verrou nommé — aucun cycle (nuancé, C-28-5-30).
+- **Écartée** : pas de verrou (l'`UPDATE` conditionnel suffirait à l'atomicité, mais ferait échouer en
+  `OPTIMISTIC_LOCK_CONFLICT` un geste concurrent qui n'a rien de fautif).
+- **Réversible** : oui.
+- ⚠️ **Validation P2** (2026-10-13) : le code s'écrit `OPTIMISTIC_LOCK_CONFLICT` (`errors.rs:2924`), graphie
+  corrigée ci-dessus (findings F1 = R1) ; « aucun cycle » est **nuancé** par **C-28-5-30** — la remise à zéro
+  d'onboarding en ferme un (F9 = R3).
+
+### C-28-5-5 — Lecture verrouillante d'abord, classement décisif, un seul code de refus
+
+- **Contexte** : `reject_batch` fait un `UPDATE` gardé puis relit pour classer ; ici il faut aussi l'horodatage
+  d'avant pour l'audit.
+- **Retenu** : `find_by_id_for_account_for_update` sous verrou → `classify_unreject` (fonction pure, appelle
+  `is_reconciled`, aucun second test de statut) → `UPDATE` scopé `id`/`company_id`/`bank_account_id`, une ligne
+  exactement sinon erreur défensive tracée. Refus : `404 NOT_FOUND` (absente ou autre société, indiscernables) ;
+  `409 RECONCILIATION_TRANSACTION_NOT_REJECTED` pour « non rejetée » **et** « rapprochée » (une rapprochée n'est
+  jamais rejetée par les chemins réels : un code suffit, et il dit vrai).
+- **Écartées** : `UPDATE` gardé d'abord (perd l'horodatage d'avant, et rend équivalentes les mutations des gardes) ;
+  deux codes distincts (« rapprochée » n'est atteignable que par un état forgé).
+- **Réversible** : oui. ⚠️ Fait de `kesh-db` un module touché (doc-comment « Seul appelant ») : gate complet en
+  boucle.
+
+### C-28-5-6 — Audit `reconciliation.unrejected`, ouverte aux clés `read-write`
+
+- **Retenu** : une ligne par geste, `entity_type = 'bank_transaction'`, `details = { "previouslyRejectedAt" }`
+  (casse de la trace voisine `reconciliation.cancelled`, `wasPreviouslyRejected`), écrite par `for_actor` : une clé
+  est nommée. Route ouverte aux clés, comme `/reject` et `…/cancel` (la suppression d'import, fermée aux clés, est
+  irréversible ; ce geste ne l'est pas).
+- **Écartée** : fermer aux clés (aucun motif : geste réversible, sans écriture comptable).
+- **Réversible** : oui.
+
+### C-28-5-7 — Rôle Consultation : la mention, pas le bouton
+
+- **Retenu** : « Rejetée le … » visible de tous les rôles qui lisent le détail d'import (route de lecture ouverte à
+  tout rôle authentifié) ; bouton réservé au Comptable et à l'Administrateur par la `canManage` existante ; serveur :
+  `403` par `comptable_routes`. La page *Réconciliation*, réservée de fait au Comptable, n'est pas changée pour la
+  Consultation (comportement existant noté en recette, exclu).
+- **Réversible** : oui.
+
+### C-28-5-8 — Champ `autoMatchRejectedAt` additif sur `TransactionResponse`
+
+- **Retenu** : horodatage ISO UTC ou `null`, exposé partout où le type sert (détail d'import, `GET
+  …/transactions/{id}`, réponse de `…/cancel`). Les types frontend de ces deux dernières réponses ne sont pas étendus
+  (aucun lecteur).
+- **Écartée** : un booléen `rejected` (perd la date que l'écran affiche).
+- **Réversible** : oui (champ additif).
+
+### C-28-5-9 — Bouton en style de lien, sans dialogue de confirmation
+
+- **Retenu** : `text-primary underline`, comme *Affecter manuellement* ; aucune confirmation : le geste se défait par
+  un nouveau rejet et ne touche pas la comptabilité.
+- **Écartées** : variante destructive (le geste n'est pas destructif) ; dialogue (friction sans risque à couvrir).
+- **Réversible** : oui.
+
+### C-28-5-10 — Une phrase sur la page *Réconciliation*, hors des branches de la liste
+
+- **Retenu** : `reconciliation-labels-rejected-hint`, rendue même quand un rejet a vidé la liste (patron C38 de la
+  15-5c pour le bilan du lot). Sans lien (une phrase traduite qui porte un lien se découpe mal).
+- **Réversible** : oui.
+
+### C-28-5-11 — Dérogation à la règle de découpage préventif
+
+- **Contexte** : quatre paquets, mais huit sites de premier niveau à la granularité de l'exemple du `CLAUDE.md`.
+- **Retenu** : story unique. Un seul site porte une logique neuve (la route) ; les sept autres reçoivent quelques
+  lignes mécaniques (un champ, une ligne de registre, une variante, des clés, un doc-comment). Découper donnerait
+  une story « route sans écran », qui ne ferme pas #526, et une story « écran », qui ne se teste pas sans elle.
+- **Risque accepté** : une passe de revue doit couvrir backend et frontend ; le prompt de validation nomme les deux.
+- **Réversible** : oui (découpage possible en validation si la sévérité stagne).
+- ⛔ **Remplacé** à la validation P1 (2026-10-13) par **C-28-5-17** : la dérogation ne relevait pas de l'exception
+  codifiée au `CLAUDE.md` (finding F3).
+
+### C-28-5-12 — Deux auxiliaires partagés avec l'annulation d'un rapprochement
+
+- **Contexte** : la route neuve répète deux blocs de `cancel_reconciliation_once` : la lecture scopée du
+  `bank_account_id` hors verrou, et la conversion `ReconciliationError` → `AppError` qui préserve `DbError::Sqlx`.
+- **Retenu** : les extraire (règle DRY), sans changer le comportement de `…/cancel`, dont les tests restent
+  inchangés.
+- **Écartée** : copier les deux blocs.
+- **Réversible** : oui. ⚠️ Touche une région que la 28-6 ne vise pas (`accept_one_invoice`) : pas de conflit attendu.
+- ⛔ **Remplacé** à la validation P1 (2026-10-13) par **C-28-5-18** : aucune extraction du convertisseur ; la route
+  suit `conclude_locked_attempt` (findings F1, R2).
+
+### C-28-5-13 — Pas de garde « compte archivé » sur la route neuve
+
+- **Contexte** : `/reject` refuse un compte archivé en `404`.
+- **Retenu** : pas de garde : un compte archivé n'a aucune transaction (archivage refusé en
+  `412 BANK_ACCOUNT_HAS_TRANSACTIONS`), le cas est inatteignable, et un code sans test serait mort. La clôture de
+  compte (28-4) devra inscrire cette route à son inventaire des chemins d'écriture — signalé dans la fiche.
+- **Réversible** : oui.
+
+### C-28-5-14 — Captures par `KESH_E2E_CAPTURES_DIR`, hors dépôt
+
+- **Retenu** : convention de la 28-1 (C-28-1-29) ; six captures (détail avec rejetée, détail après annulation,
+  indication de la page *Réconciliation*, × clair/sombre) dans `kesh-gate-logs/28-5-captures/` ; aucune référence de
+  comparaison.
+- **Réversible** : oui.
+
+### C-28-5-15 — Date du rejet sans l'heure
+
+- **Retenu** : `Intl.DateTimeFormat(i18nLocale(), { dateStyle: 'medium' })` — patron du journal d'audit
+  (`audit-log/+page.svelte:62-64`), sans `timeStyle` : l'heure n'aide pas à retrouver une transaction, et la même
+  construction n'est pas recopiée à l'identique (pas d'utilitaire partagé à extraire pour deux sites différents).
+- **Réversible** : oui.
+
+### C-28-5-16 — Tests dans `reconciliation_e2e.rs`, section de fin ; CHANGELOG par union
+
+- **Retenu** : les tests B1-B7 vont en fin de `reconciliation_e2e.rs`, qui porte déjà les montages
+  (`setup_company`, `seed_bank_transactions`, auxiliaires des clés et du verrou) — un binaire neuf les recopierait.
+  La 28-6 et la 28-7, développées après, rebaseront sur cette fin de fichier. La section `## [0.13.3] — Non publié`
+  du CHANGELOG est créée si absente, réunie par union sinon (précédent C-28-2-12).
+- **Réversible** : oui.
+- *Depuis les validations P1 et P2* : B9 et B10 s'y ajoutent (B8 reste unitaire, dans `routes/reconciliation.rs`).
+
+### Validation P1 de la 28-5 (2026-10-13) — choix C-28-5-17 à C-28-5-24
+
+Remédiation des rapports `28-5-validate-p1-R.md` et `28-5-validate-p1-F.md` (Sonnet 5.5), par Opus 5.5, sur les
+décisions de l'orchestrateur.
+
+### C-28-5-17 — Découpage en 28-5a (serveur) et 28-5b (écran) — décision de l'orchestrateur
+
+- **Contexte** : huit sites de premier niveau ; la dérogation C-28-5-11 invoquait la fermeture de l'issue, motif que
+  la règle de découpage préventif n'admet pas (elle n'admet que des cycles Cargo ou des fusions intermédiaires
+  intestables) — finding F3.
+- **Retenu** : une fiche, deux clés — `28-5a-annuler-rejet-serveur` (route, champ, audit, messages serveur, gardes,
+  tests backend, `docs/api-external.md` ; PR `refs #526`) puis `28-5b-annuler-rejet-ecran` (écran, i18n de
+  l'interface, libellé `already-rejected`, manuel + PDF, CHANGELOG, E2E, captures ; PR `closes #526`) ; clé mère
+  `split` ; aucune release entre les deux. Précédents C-26-2-15, C-28-4-1.
+- **Écartée** : garder la story unique et demander l'accord écrit de Guy (allonge la file sans gain : chaque partie
+  se teste seule).
+- **Réversible** : oui tant que la 28-5a n'est pas fusionnée.
+
+### C-28-5-18 — Aucune troisième copie du convertisseur ; seule la lecture du compte est partagée
+
+- **Contexte** : C-28-5-12 extrayait le `match` de `cancel_reconciliation_once`, seule garde du rejeu de `…/cancel`,
+  qu'aucun test dynamique n'exerce (F1) ; un auxiliaire `conclude_locked_attempt` factorise déjà ce `match` pour
+  `post_manual` et `post_split` (R2), et les deux conversions diffèrent (`FiscalYearClosed`, `SplitImbalance`,
+  `TransactionAborted`).
+- **Retenu** : la route neuve appelle `conclude_locked_attempt`, dont seule la **signature** devient générique en
+  `T` (corps intact ; le `commit` d'une fermeture qui n'a rien écrit vaut un `rollback`) ; les erreurs de la
+  fermeture sont rangées comme dans `post_manual_once` (`map_err(… Db(DbError::Sqlx(e)))`, `.await?`). De
+  `cancel_reconciliation_once`, seule la lecture du `bank_account_id` (l. 4514-4524) passe, mot pour mot, dans un
+  auxiliaire privé partagé (règle DRY) : lecture non verrouillante en autocommit, qui ne peut être victime d'un
+  interblocage — le rejeu de `…/cancel` n'est pas en jeu. Son `match` reste intouché.
+- **Écartées** : extraire le `match` de `cancel` (F1 : propriété non gardée) ; copier la lecture du compte (DRY) ;
+  une fonction de dépôt neuve dans `kesh-db` pour cette lecture (un module de plus pour neuf lignes).
+- **Réversible** : oui.
+
+### C-28-5-19 — Garde `rows_affected() != 1` en `OptimisticLockConflict`, déclarée inatteignable
+
+- **Contexte** : l'AC3 prescrivait `tracing::error!` + `AppError::Internal`, alors que la fermeture rend une
+  `ReconciliationError` (R2) et que la garde est inatteignable, donc sans mutation tuable (F6).
+- **Retenu** : `Err(ReconciliationError::Db(DbError::OptimisticLockConflict))`, patron de `post_manual_once`
+  (`:3822-3826`), que `conclude_locked_attempt` rend en `AppError::Database` et que le **mapping des erreurs de
+  base** rend `409 OPTIMISTIC_LOCK_CONFLICT` (`errors.rs:2922-2925`) — *graphie et producteur corrigés en validation
+  P2 (F1 = R1) : la première rédaction écrivait `409 OPTIMISTIC_LOCK`, code que le serveur n'émet pas, et
+  l'attribuait à `conclude_locked_attempt`* ; mutation M13 déclarée équivalente (ligne
+  lue `FOR UPDATE` sous verrou par sa clé primaire) ; M14 (portée de l'`UPDATE`) équivalente aussi.
+- **Écartée** : retirer la garde (un `204` muet si un jour la lecture cesse d'être verrouillante).
+- **Réversible** : oui.
+
+### C-28-5-20 — La limite de 100 propositions : exclue, suivie par #649, dite par les textes
+
+- **Contexte** : `GET …/proposals` rend les 100 plus récentes, `hasMore` n'est lu par aucun écran (F2) ; une
+  transaction ancienne dont le rejet est annulé est proposable mais non listée. Issue **#649** ouverte par
+  l'orchestrateur (P3).
+- **Retenu** : exclusion écrite avec renvoi à #649 ; le toast `reconciliation-unreject-success` et la puce
+  *Rejeter* du manuel citent la limite au lieu de promettre un retour inconditionnel ; l'AC2 parle de transaction
+  « proposable ».
+- **Écartée** : lire `hasMore` et paginer (hors périmètre de #526).
+- **Réversible** : oui — la résolution de #649 réécrit ces deux textes (dit dans la fiche).
+
+### C-28-5-21 — Cohérence avec la 27-4 : AC13 et libellé `already-rejected` réécrit
+
+- **Contexte** : l'epic demande la cohérence avec la 27-4 ; la fiche n'avait ni AC ni exclusion (R1) ; le libellé
+  « … elle n’est plus proposée » devient une impasse dès qu'un geste existe.
+- **Retenu** : AC13 (28-5a) — rejeter → annuler → rejeter de nouveau (B1) et accepter après annulation (B9, proposition
+  `split`) ; le libellé est **complété** dans les quatre locales (28-5b), renvoyant au détail de l'import, repli de
+  `failed-proposal-label.ts` égal au catalogue.
+- **Écartée** : laisser le libellé tel quel (il tairait le geste au seul endroit où l'utilisateur bute sur le rejet).
+- **Réversible** : oui.
+
+### C-28-5-22 — Indication en fin de section, texte vrai pour tout rôle
+
+- **Contexte** : « sous la liste » (manuel) n'était pas pinné (F10) ; « d'où son rejet s'annule » est faux pour la
+  Consultation (R5).
+- **Retenu** : paragraphe en fin de `<section>`, après le bloc des échecs partiels ; texte « … où son rejet peut être
+  annulé si votre rôle le permet ».
+- **Écartées** : avant les échecs partiels (les sépare de la liste qu'ils commentent) ; afficher l'indication selon
+  le rôle (le composant ne reçoit pas le rôle : une prop de plus pour une phrase).
+- **Réversible** : oui.
+
+### C-28-5-23 — La lecture verrouillante : mutation M15 survivante assumée, pas de test à deux connexions
+
+- **Contexte** : remplacer `find_by_id_for_account_for_update` par une lecture ordinaire survit aux tests séquentiels
+  (R8, F6).
+- **Retenu** : M15 inscrite et déclarée **survivante assumée** : la différence ne se voit que dans l'intervalle entre
+  la relâche du verrou nommé et le `commit` d'un geste concurrent, que rien ne rend déterministe — angle mort déjà
+  écrit au doc-comment de la lecture (Story 27-4).
+- **Écartée** : un test à deux connexions (interleaving non déterministe : un test qui passerait au hasard).
+- **Réversible** : oui.
+- ⛔ **Remplacé** à la validation P2 (2026-10-13) par **C-28-5-25** (F2 = R2). Les trois prémisses étaient fausses :
+  le doc-comment de la lecture (`repositories/reconciliation.rs:385-400`) n'écrit **aucun** angle mort — il dit
+  pourquoi la lecture doit être courante ; la suppression d'import ne prend pas le verrou nommé, si bien que la
+  fenêtre est sa transaction entière, qu'un test tient ouverte ; et un test déterministe sur ce patron existe à la
+  27-4, qui a tué la mutation jumelle M11.
+
+### C-28-5-24 — Ce qui va dans chaque partie : messages serveur en a, CHANGELOG et interface en b
+
+- **Retenu** : la 28-5a porte les deux clés serveur (message du `409`, inscrit à G9 ; étiquette d'audit, exigée par
+  `audit_label_registry.rs`) et `docs/api-external.md` ; la 28-5b porte les clés d'interface, le libellé réécrit, le
+  manuel et le CHANGELOG — *Ajouté* (le geste et la route) et *Corrigé* (#526), un geste neuf étant un *Ajouté*
+  (précédent 27-1, R9).
+- **Écartée** : CHANGELOG en 28-5a (il annoncerait un geste que l'interface n'offre pas encore).
+- **Réversible** : oui.
+
+### Validation P2 de la 28-5 (2026-10-13) — choix C-28-5-25 à C-28-5-30
+
+Remédiation des rapports `28-5-validate-p2-F.md` et `28-5-validate-p2-R.md` (Opus 5.5), par Opus 5.5, sur les
+consignes de l'orchestrateur. La correction du code `OPTIMISTIC_LOCK_CONFLICT` (F1 = R1) n'est pas un choix : elle
+est portée en note à C-28-5-4 et C-28-5-19.
+
+### C-28-5-25 — Test B10 déterministe : M15 tuée (remplace C-28-5-23)
+
+- **Contexte** : M15 (lecture ordinaire au lieu de `FOR UPDATE`) était déclarée survivante sur un argument faux, et
+  le « disparue sous verrou → `404` » de l'AC3 n'avait aucun test (F2 = R2).
+- **Retenu** : **B10** `unreject_of_a_transaction_deleted_under_the_lock_is_not_found`, patron de
+  `post_reject_locking_reread_sees_a_deletion_committed_after_the_snapshot` (`reconciliation_e2e.rs:7225-7330`) :
+  `DELETE` non validé, `…/unreject` en tâche, sonde `attendre_une_requete_en_cours` sur
+  `["bank_transactions", "bank_account_id = ?"]` (motifs communs au `SELECT … FOR UPDATE` et à l'`UPDATE` prescrit,
+  absents de la lecture hors verrou), deux observations à 500 ms (C-27-4-26), `commit`, puis `404 NOT_FOUND` et
+  aucune trace. Sous M15 : `409 OPTIMISTIC_LOCK_CONFLICT`. M15 passe à « tuée par B10 » ; AC12 (a) n'admet plus de
+  survivante assumée.
+- **Écartées** : sonde sur `["bank_transactions", "FOR UPDATE"]` (sous M15, la sonde n'observerait jamais rien et le
+  test rougirait sur son **montage**, non sur le statut : la mutation serait tuée pour une mauvaise raison) ;
+  garder M15 survivante (argument réfuté).
+- **Réversible** : oui. ⚠️ Mêmes réserves que le test de la 27-4, à reprendre au doc-comment : la sonde voit une
+  requête en cours, non en attente (privilège `PROCESS` absent sur le poste de dev) ; MariaDB ≥ 11.6
+  (`innodb_snapshot_isolation`).
+
+### C-28-5-26 — Le doc-comment de `bank-import-deletion.ts` passe à la 28-5b
+
+- **Contexte** : la 28-5a comptait six sites de premier niveau, dont un doc-comment frontend, au-delà du seuil de
+  cinq qui a motivé le découpage (F5), et ce fichier lui imposait un gate frontend (R7).
+- **Retenu** : la 28-5b, qui touche déjà `frontend/features/bank-import`, complète le doc-comment ; la 28-5a ne
+  touche aucun fichier frontend (cinq sites). Entre les deux PR, le commentaire est incomplet, non faux.
+- **Écartée** : écrire que les modules touchés en commentaire seul ne comptent pas (une exception de plus à la règle
+  de découpage, pour un commentaire).
+- **Réversible** : oui.
+
+### C-28-5-27 — Renvoi de `docs/api-external.md` au paragraphe du refus `ALREADY_REJECTED`
+
+- **Contexte** : la phrase de renvoi était prescrite l. 552 (ordre de tri du rejet), alors que la cause de
+  `RECONCILIATION_ALREADY_REJECTED` est décrite l. 540 (R6).
+- **Retenu** : la phrase va au paragraphe « Transaction disparue, rapprochée ou rejetée » (l. 540), seul.
+- **Écartée** : aux deux paragraphes (une redite).
+- **Réversible** : oui.
+
+### C-28-5-28 — `conclude_locked_attempt` : trois retouches de texte autorisées
+
+- **Contexte** : « corps intouché » figeait la liaison `Ok(journal_entry_id)`, fausse pour `UnrejectOutcome` (R12), et
+  deux commentaires internes qui nomment deux appelants sur trois (l. 4366, 4384 — F7).
+- **Retenu** : liaison renommée `Ok(value)` ; les deux commentaires nomment les trois appelants ; logique et `match`
+  inchangés ; motif `` post_split` n' `` ajouté au grep du symptôme de l'AC10.
+- **Écartée** : laisser les noms (un commentaire faux sur un auxiliaire partagé).
+- **Réversible** : oui.
+
+### C-28-5-29 — Ordre de l'epic : 28-5a, puis 28-6 ∥ 28-5b, puis 28-7 — décision de l'orchestrateur
+
+- **Contexte** : le § *Ordre* de l'epic sérialisait « 28-5, 28-6, 28-7 » sans connaître le découpage ; la fiche
+  laissait l'ordre 28-5b / 28-6 ouvert (F6 = R10).
+- **Retenu** : la 28-5a seule touche `routes/reconciliation.rs` et `docs/api-external.md` : elle passe d'abord ; la
+  28-6 et la 28-5b se développent ensuite en parallèle, avec union au rebase sur `failed-proposal-label.ts`, son
+  test, `sitesTotal` (recompté par la seconde fusionnée) et la section `reconciliation-*` des catalogues ; la 28-7
+  vient après la 28-6.
+- **Réversible** : oui, tant qu'aucune n'est fusionnée.
+
+### C-28-5-30 — Interblocage avec la remise à zéro d'onboarding : nommé, non rejoué
+
+- **Contexte** : l'argument « aucun cycle » (C-28-5-4) omettait `kesh_seed::reset_demo`, qui prend `audit_log` puis
+  `bank_transactions` — l'ordre inverse de l'annulation (R3) ; et il était écrit comme absolu alors que la 28-4a
+  rouvrira la question (F9).
+- **Retenu** : l'angle mort est **écrit** — au point (iv) d'`audit_route_registry.rs` et dans la fiche : victime
+  désignée, l'annulation rend `500` sans rien de partiel, comme `post_reject` (préexistant) ; rare (installation de
+  démonstration ou d'avant production) ; argument à revérifier au rebase sur la 28-4a (W30). Classement
+  `SansEcritureAuJournal` maintenu.
+- **Écartée** : rejouer la route sur 1213 (une enveloppe de rejeu pour un cas que `post_reject`, voisin, assume déjà ;
+  le geste se refait d'un clic).
+- **Réversible** : oui.
+
+### C-28-5-31 — B8 réutilise le constructeur de transaction des tests de la 27-4 (28-5a, dev)
+
+- **Contexte** : le `mod unreject_classification_tests` (B8) a besoin d'une `BankTransaction` de test ;
+  `batch_classification_tests::tx` (27-4) la construit déjà, privée à son module.
+- **Retenu** : `tx` passe en `pub(super)` (un mot et une ligne de doc) et B8 l'importe — règle DRY du `CLAUDE.md`.
+- **Écartée** : recopier les 25 lignes du constructeur dans le module neuf.
+- **Réversible** : oui. ⚠️ Région hors du tableau des régions de la fiche (une ligne, `batch_classification_tests`) :
+  union au rebase si la 28-6 y touche.
+
+### C-28-5-32 — L'auxiliaire `bank_account_of_transaction` vit dans la section neuve (28-5a, dev)
+
+- **Contexte** : C-28-5-18 prescrit l'auxiliaire sans fixer sa place.
+- **Retenu** : placé en tête de la section neuve, après `cancel_reconciliation_once` ; son doc-comment reprend mot
+  pour mot le commentaire supprimé de `cancel` (« lu hors verrou, scopé par société : il ne change jamais pour une
+  transaction ») et la note « lecture non verrouillante en autocommit ».
+- **Réversible** : oui.
+
+### C-28-5-33 — Gates frontend exécutés bien qu'aucun fichier frontend ne soit touché (28-5a, dev)
+
+- **Contexte** : la 28-5a ne touche aucun fichier sous `frontend/` (C-28-5-26), mais plusieurs gardes Vitest
+  (`i18n-keys.test.ts`, `i18n-entrees-a-variables.test.ts`…) **lisent** les catalogues `crates/kesh-i18n/locales/*`,
+  auxquels la 28-5a ajoute deux clés.
+- **Retenu** : `check`, `lint-i18n-ownership`, `test:unit` et `build` exécutés au dernier commit de code, sous verrou.
+- **Écartée** : s'en tenir à la lettre de T7a (aucun gate frontend exigé) — une garde Vitest pouvait rougir sans
+  fichier frontend modifié.
+- **Réversible** : sans objet.
+
+### C-28-5-34 — La garde « compte clos » de la 28-4 ne verrouille pas le compte : fiche corrigée (28-5a)
+
+- **Contexte** : le § *Séquence de la route* de la fiche annonçait qu'à cause de la 28-4 (W30) `unreject` prendrait
+  `bank_accounts FOR UPDATE` après la ligne de `bank_transactions`. La conception de la 28-4 a changé (C-28-4-21) :
+  la garde lit la ligne du compte par une lecture cohérente non verrouillante. Note de l'orchestrateur, 2026-10-13.
+- **Retenu** : la phrase de la fiche est réécrite (« la garde de la 28-4 ne prendra aucun verrou, cf. C-28-4-21 »),
+  dans un commit de fiche séparé ; le code de la 28-5a n'est pas touché ; la relecture de l'argument d'interblocage
+  au rebase sur la 28-4a reste prescrite.
+- **Réversible** : oui (texte de fiche).
+
+### C-28-5-35 — Terminologie du refus `transaction-not-rejected` : catalogues inchangés (28-5a, revue P1, A-LOW-1)
+
+- **Contexte** : la lentille A relève que le message neuf dit « rapprochée » (fr-CH) et « abgestimmt » (de-CH), quand
+  la clé voisine `reconciliation-errors-already-reconciled` dit « réconciliée » et « abgeglichen ».
+- **Retenu** (décision de l'orchestrateur) : **les catalogues ne changent pas**. Les textes sont ceux que prescrit
+  la fiche (§ *Textes*, validée), et le glossaire (`docs/i18n-glossaire.md`) admet « rapprochée » et « Abstimmung /
+  abgestimmt » pour la réconciliation. Aucune ligne de production ne change : la boucle de revue reste close.
+- **Écartée** : aligner sur « abgeglichen » / « réconciliée » — un changement de production en fin de boucle, pour une
+  nuance que le glossaire tranche déjà.
+- **Réversible** : oui (texte de catalogue, avec son repli G9).
