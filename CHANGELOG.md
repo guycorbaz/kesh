@@ -34,6 +34,17 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   détail dans `docs/api-external.md`.
 - Une transaction bancaire rejetée se retrouve et redevient proposable ([#526](https://github.com/guycorbaz/kesh/issues/526)). Rejeter une proposition la faisait quitter la liste de la réconciliation sans qu'aucun geste de l'interface ne l'y remette : il fallait supprimer et réimporter tout le relevé, si aucune transaction de l'import n'était rapprochée. La page *Réconciliation* dit désormais où la retrouver, et le refus d'un lot qui contient une transaction déjà rejetée dit où annuler ce rejet.
 - **Un compte bancaire archivé ne reçoit plus de règlement.** Un règlement de facture ou un paiement fournisseur par virement vers un compte archivé étaient acceptés ; ils sont refusés comme vers un compte inexistant. L'annulation d'un règlement ancien de ce compte reste possible.
+- **La réconciliation ne propose plus une facture qu'elle refuserait ensuite ([#548](https://github.com/guycorbaz/kesh/issues/548)).**
+  Une facture datée de plus d'un jour **après** le paiement était proposée, puis l'acceptation la refusait
+  (« Le paiement est daté de plus d'un jour avant la facture »). La proposition applique désormais la même
+  fenêtre que l'acceptation, sur la même date — la date de valeur de la transaction, à défaut sa date de
+  comptabilisation : la facture est datée au plus un jour après le paiement, et au plus 30 jours avant. Une
+  facture datée de 30 jours avant à un jour après le paiement est donc proposée même quand la date de valeur
+  précède la date de comptabilisation ; à l'inverse, quand la date de valeur suit la date de comptabilisation,
+  une facture datée de plus de 30 jours avant la date de valeur n'est plus proposée — l'acceptation la
+  refusait déjà. Un paiement reçu plus de 30 jours après la facture n'est toujours pas
+  proposé ([#529](https://github.com/guycorbaz/kesh/issues/529)). L'API de réconciliation est inchangée.
+
 - **Les boutons d'action destructive se voient ([#640](https://github.com/guycorbaz/kesh/issues/640)).**
   *Supprimer l'import*, les confirmations de suppression, d'archivage, de révocation ou de désactivation
   (factures, contacts, produits, comptes, écritures, comptes bancaires, utilisateurs, clés d'API, taux de TVA,

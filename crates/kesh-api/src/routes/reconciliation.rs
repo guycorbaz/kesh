@@ -31,13 +31,16 @@ use axum::Json;
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{Extension, FromRequest, Query, Request, State};
 use axum::response::{IntoResponse, Response};
-use chrono::{Duration, NaiveDate};
+use chrono::NaiveDate;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_transaction::{BankTransaction, BankTransactionStatus};
 use kesh_db::entities::invoice::Invoice;
 use kesh_db::errors::{ClaimSide, DbError};
 use kesh_db::repositories::invoice_settlements::{ClaimSubject, GapAccountRole, PaymentAgainstDue};
-use kesh_db::repositories::reconciliation::UnpaidInvoiceCandidate;
+use kesh_db::repositories::reconciliation::{
+    INVOICE_WINDOW_DAYS_AFTER_INVOICE, InvoiceDateRefusal, InvoiceDateWindow,
+    UnpaidInvoiceCandidate, payment_date,
+};
 use kesh_db::repositories::{
     accounts as accounts_repo, audit_log, bank_accounts, company_invoice_settings,
     contacts as contacts_repo, fiscal_years, invoice_settlements, journal_entries, letterings,
@@ -62,10 +65,6 @@ const DEFAULT_PROPOSALS_LIMIT: i64 = 100;
 /// Cap maximum de la query param `limit` (M9 Pass 1 code review —
 /// défense anti-DoS contre `?limit=999999`).
 const MAX_PROPOSALS_LIMIT: i64 = 500;
-
-/// Fenêtre temporelle ± `WINDOW_DAYS` autour de `tx.booking_date` pour
-/// le filtre `find_unpaid_invoices_for_window` (§candidate-window).
-const WINDOW_DAYS: i64 = 30;
 
 /// Tolérance amount ± `AMOUNT_TOLERANCE` CHF (5 centimes) au repo
 /// — réduit le candidate set sans accepter le mismatch (le helper
@@ -651,12 +650,14 @@ pub async fn get_proposals(
             tx_candidates.push((tx, Vec::new()));
             continue;
         }
+        // Story 28-7 (#548) — la fenêtre de dates de l'acceptation, sur la
+        // même date (valeur, à défaut comptabilisation) : une facture
+        // proposée est une facture que `accept_one_invoice` admet.
         let candidates = reconciliation_repo::find_unpaid_invoices_for_window(
             &state.pool,
             current_user.company_id,
-            tx.booking_date,
+            InvoiceDateWindow::for_transaction(&tx),
             tx.amount,
-            WINDOW_DAYS,
             amount_tolerance,
         )
         .await?;
@@ -1734,32 +1735,33 @@ async fn accept_one_invoice(
             details: Some(serde_json::json!({ "reason": "invoice_journal_entry_not_set" })),
         });
     }
-    let paid_at_candidate = bank_transaction
-        .value_date
-        .unwrap_or(bank_transaction.booking_date);
-    // Lower bound (existant) — paiement >= invoice.date - 1 day.
-    if paid_at_candidate < invoice.date - Duration::days(1) {
-        return Err(FailedProposal {
-            bank_transaction_id,
-            error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
-            details: Some(serde_json::json!({ "reason": "payment_date_before_invoice_date" })),
-        });
-    }
-    // Upper bound (P3-M2 Pass 3) — paiement <= invoice.date + WINDOW_DAYS.
-    // Aligne `accept_one_invoice` sur le candidate window ±30j de
-    // `find_unpaid_invoices_for_window`. Empêche d'accepter une tx
-    // récente contre une invoice très ancienne ou une tx future contre
-    // invoice récente. L27 (cf. spec) : paiements tardifs > 30j sont
-    // reportés Story 8-5 manual.
-    if paid_at_candidate > invoice.date + Duration::days(WINDOW_DAYS) {
-        return Err(FailedProposal {
-            bank_transaction_id,
-            error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
-            details: Some(serde_json::json!({
-                "reason": "payment_date_outside_window",
-                "window_days": WINDOW_DAYS,
-            })),
-        });
+    // Date du règlement écrit : date de valeur, à défaut de comptabilisation.
+    let paid_at_candidate = payment_date(&bank_transaction);
+    // Story 28-7 (#548) — la fenêtre de dates que la proposition a déjà
+    // appliquée (`get_proposals`) : le paiement au plus un jour avant la
+    // facture, au plus 30 jours après. Codes, raisons et `details` inchangés
+    // (contrat d'API) ; le refus n'est plus atteint qu'à une facture redatée
+    // entre la proposition et l'acceptation, ou par un appel d'API direct.
+    // Paiement tardif au-delà de 30 jours : #529, rapprochement manuel.
+    match InvoiceDateWindow::for_transaction(&bank_transaction).check(invoice.date) {
+        Ok(()) => {}
+        Err(InvoiceDateRefusal::PaymentBeforeInvoice) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
+                details: Some(serde_json::json!({ "reason": "payment_date_before_invoice_date" })),
+            });
+        }
+        Err(InvoiceDateRefusal::PaymentTooLate) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
+                details: Some(serde_json::json!({
+                    "reason": "payment_date_outside_window",
+                    "window_days": INVOICE_WINDOW_DAYS_AFTER_INVOICE,
+                })),
+            });
+        }
     }
     let sale_entry_id = invoice.journal_entry_id.unwrap();
 

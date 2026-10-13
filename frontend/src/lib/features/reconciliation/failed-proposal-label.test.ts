@@ -192,14 +192,17 @@ describe('failedProposalLabel', () => {
 		expect(label).not.toContain('2026-03-31');
 	});
 
-	// Revue de code P1 (E1, choix C-15-5c-3) : la proposition peut offrir une facture
-	// postérieure au paiement que l'acceptation refuse (#548) ; cette raison-là a son libellé.
+	// Revue de code P1 (E1, choix C-15-5c-3) : cette raison-là a son libellé. Depuis la
+	// Story 28-7 (#548), la proposition et l'acceptation partagent la même fenêtre de dates :
+	// la raison ne se rencontre plus que par une facture redatée entre-temps ou un appel
+	// d'API, et le libellé ne parle plus d'une facture « proposée ».
 	it('RECONCILIATION_INVOICE_NOT_ELIGIBLE : libellé dédié au paiement antérieur à la facture', () => {
 		const label = failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE', {
 			reason: 'payment_date_before_invoice_date',
 		});
 		expect(calls).toEqual(['reconciliation-failed-payment-before-invoice']);
 		expect(label).toContain('plus d’un jour avant la facture');
+		expect(label).not.toContain('proposée');
 	});
 
 	// Story 15-6b (#474, AC7) — deux remèdes selon `details.role`.

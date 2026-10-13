@@ -2,12 +2,17 @@
 //!
 //! Helpers :
 //!
+//! - [`InvoiceDateWindow`] : **la** fenêtre de dates dans laquelle une
+//!   facture peut être réglée par une transaction (Story 28-7, #548) —
+//!   seule définition du dépôt, lue par la proposition
+//!   ([`find_unpaid_invoices_for_window`]) **et** par l'acceptation
+//!   (`accept_one_invoice`, `kesh-api`).
 //! - [`find_unpaid_invoices_for_window`] : charge les factures
 //!   candidates pour le matching d'une transaction bancaire — filtre
-//!   multi-tenant + fenêtre temporelle ± `window_days` + tolérance
-//!   amount ± `amount_tolerance`. **PAS de filtre currency** (S4-1
-//!   Pass 4 revert : colonne `invoices.currency` n'existe pas v0.1
-//!   mono-CHF, cf. L38).
+//!   multi-tenant + [`InvoiceDateWindow`] + tolérance amount
+//!   ± `amount_tolerance`, par `(date, id)` croissants, 50 au plus.
+//!   **PAS de filtre currency** (S4-1 Pass 4 revert : colonne
+//!   `invoices.currency` n'existe pas v0.1 mono-CHF, cf. L38).
 //! - [`find_pending_transactions_for_account`] : charge les
 //!   transactions `status='pending'` non-rejetées (`auto_match_rejected_at IS NULL`)
 //!   pour un compte donné, multi-tenant scoped, paginées (limit
@@ -82,6 +87,117 @@ const BANK_TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booki
      counterparty_iban, counterparty_name, status, matched_entry_id, \
      auto_match_rejected_at, version, created_at, updated_at";
 
+/// Un paiement règle une facture au plus **30 jours après** la date de
+/// celle-ci (borne de [`InvoiceDateWindow::earliest_invoice_date`]).
+///
+/// Au-delà, le paiement n'est ni proposé ni accepté : c'est la borne de
+/// #529 (paiement tardif), que la Story 28-7 laisse où elle est.
+pub const INVOICE_WINDOW_DAYS_AFTER_INVOICE: i64 = 30;
+
+/// Un paiement peut précéder la facture qu'il règle d'**un jour** au plus
+/// (borne de [`InvoiceDateWindow::latest_invoice_date`]).
+///
+/// La date de paiement est une date bancaire, la date de facture une date
+/// métier locale : l'écart de fuseau suffit à faire paraître un paiement
+/// « la veille ». Un paiement antérieur de plus d'un jour — un acompte, par
+/// exemple — ne règle pas cette facture : Kesh n'a pas de modèle d'acompte,
+/// il se rapproche à la main.
+pub const PAYMENT_BEFORE_INVOICE_TOLERANCE_DAYS: i64 = 1;
+
+/// La date de paiement d'une transaction bancaire : sa **date de valeur**,
+/// à défaut sa date de comptabilisation.
+///
+/// C'est la date que lisent la fenêtre ([`InvoiceDateWindow::for_transaction`])
+/// et le règlement écrit à l'acceptation (`paid_at`, `settled_on`, date de
+/// l'écriture d'encaissement).
+pub fn payment_date(tx: &BankTransaction) -> NaiveDate {
+    tx.value_date.unwrap_or(tx.booking_date)
+}
+
+/// La fenêtre de dates de facture qu'une transaction peut régler (Story 28-7,
+/// #548) : `D − 30 jours ≤ F ≤ D + 1 jour`, `D` étant la
+/// [date de paiement](payment_date) et `F` la date de la facture, bornes
+/// incluses.
+///
+/// **Une seule définition, deux lecteurs.** La proposition
+/// ([`find_unpaid_invoices_for_window`], appelée par `get_proposals`) et
+/// l'acceptation (`accept_one_invoice`, `kesh-api`) la lisent toutes deux :
+/// une facture proposée est une facture que l'acceptation admet, et
+/// réciproquement. Avant la Story 28-7, la proposition cherchait
+/// `± 30 jours` autour de la date de comptabilisation, et proposait des
+/// factures que l'acceptation refusait ensuite.
+///
+/// **Pourquoi l'acceptation fait foi** (C-28-7-1) : admettre un paiement
+/// antérieur à sa facture changerait ce que Kesh écrit au journal — un
+/// règlement daté avant la créance —, romprait l'accord avec le règlement
+/// saisi depuis la fiche de la facture, et se heurterait à la base.
+///
+/// **Sites qui portent la même borne basse sans lire cette fenêtre** — non
+/// résolus, assumés (C-28-7-7) :
+/// - `settle_invoice` et `write_off_invoice`
+///   (`repositories::invoice_settlements_write`, le règlement et le solde par
+///   escompte, perte, frais ou arrondi) : même tolérance d'un jour sur une
+///   date **saisie**, sans borne haute — ils ne règlent pas une transaction ;
+/// - la contrainte `chk_invoices_paid_at_after_date` (migration
+///   `20260419000001_invoice_paid_at.sql`, copiée dans le squash de
+///   `test-schema`) : `DATE(paid_at) >= date - INTERVAL 1 DAY`. La base
+///   double la tolérance d'un jour, qui ne se desserre que par une migration.
+///
+/// Aucune borne n'est ramenée à la plage d'une colonne `DATE` : `check`
+/// compare exactement ce que comparait l'acceptation. Une transaction datée
+/// aux extrémités de cette plage est un angle mort écrit (C-28-7-12).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvoiceDateWindow {
+    /// Date de facture la plus ancienne admise : `D − 30 jours`.
+    pub earliest_invoice_date: NaiveDate,
+    /// Date de facture la plus récente admise : `D + 1 jour`.
+    pub latest_invoice_date: NaiveDate,
+}
+
+/// Pourquoi une facture sort de l'[`InvoiceDateWindow`] d'une transaction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InvoiceDateRefusal {
+    /// La facture est datée de plus d'un jour **après** le paiement : le
+    /// paiement la précède (raison d'API `payment_date_before_invoice_date`).
+    PaymentBeforeInvoice,
+    /// Le paiement arrive plus de 30 jours après la facture (raison d'API
+    /// `payment_date_outside_window`).
+    PaymentTooLate,
+}
+
+impl InvoiceDateWindow {
+    /// La fenêtre d'une date de paiement `d` : `[d − 30, d + 1]`.
+    pub fn for_payment_date(d: NaiveDate) -> Self {
+        Self {
+            earliest_invoice_date: d - chrono::Duration::days(INVOICE_WINDOW_DAYS_AFTER_INVOICE),
+            latest_invoice_date: d + chrono::Duration::days(PAYMENT_BEFORE_INVOICE_TOLERANCE_DAYS),
+        }
+    }
+
+    /// La fenêtre d'une transaction, sur sa [date de paiement](payment_date).
+    pub fn for_transaction(tx: &BankTransaction) -> Self {
+        Self::for_payment_date(payment_date(tx))
+    }
+
+    /// Une facture datée `invoice_date` est-elle dans la fenêtre ?
+    ///
+    /// # Errors
+    ///
+    /// - [`InvoiceDateRefusal::PaymentBeforeInvoice`] si
+    ///   `invoice_date > latest_invoice_date` ;
+    /// - [`InvoiceDateRefusal::PaymentTooLate`] si
+    ///   `invoice_date < earliest_invoice_date`.
+    pub fn check(&self, invoice_date: NaiveDate) -> Result<(), InvoiceDateRefusal> {
+        if invoice_date > self.latest_invoice_date {
+            return Err(InvoiceDateRefusal::PaymentBeforeInvoice);
+        }
+        if invoice_date < self.earliest_invoice_date {
+            return Err(InvoiceDateRefusal::PaymentTooLate);
+        }
+        Ok(())
+    }
+}
+
 /// Charge les factures candidates pour la réconciliation d'une
 /// transaction bancaire (Story 8-4 §candidate-window).
 ///
@@ -89,7 +205,12 @@ const BANK_TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booki
 /// 1. `company_id` (KF-002 Pattern 1, multi-tenant scoping).
 /// 2. `status = 'validated' AND paid_at IS NULL AND journal_entry_id IS NOT NULL`
 ///    (factures éligibles à la réconciliation v0.1).
-/// 3. `date BETWEEN tx_date - window_days AND tx_date + window_days`.
+/// 3. `date BETWEEN window.earliest_invoice_date AND window.latest_invoice_date`
+///    — la fenêtre de l'acceptation ([`InvoiceDateWindow`], Story 28-7).
+///    Résultat trié par `date ASC, id ASC` (C-28-7-10) **avant** le
+///    `LIMIT 50` : au-delà de 50 candidates, ce sont toujours les plus
+///    récentes qui sont écartées. Un index peut servir cet ordre si
+///    l'optimiseur le choisit ; c'est l'`ORDER BY` qui le garantit.
 /// 4. **Reste dû** `BETWEEN tx_amount - amount_tolerance AND tx_amount + amount_tolerance`
 ///    (#420, Story 25-4-c) — après le HT (#246 : une facture avec TVA ne
 ///    matchait jamais) puis le TTC (une facture réglée en partie ne matchait
@@ -113,9 +234,8 @@ const BANK_TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booki
 pub async fn find_unpaid_invoices_for_window<'e, E>(
     executor: E,
     company_id: i64,
-    tx_date: NaiveDate,
+    window: InvoiceDateWindow,
     tx_amount: Decimal,
-    window_days: i64,
     amount_tolerance: Decimal,
 ) -> Result<Vec<UnpaidInvoiceCandidate>, DbError>
 where
@@ -133,18 +253,17 @@ where
            AND i.status = 'validated' \
            AND i.paid_at IS NULL \
            AND i.journal_entry_id IS NOT NULL \
-           AND i.date BETWEEN DATE_SUB(?, INTERVAL ? DAY) AND DATE_ADD(?, INTERVAL ? DAY) \
+           AND i.date BETWEEN ? AND ? \
          HAVING amount_due BETWEEN ? - ? AND ? + ? \
+         ORDER BY i.date ASC, i.id ASC \
          LIMIT 50",
         due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
         ttc = crate::repositories::invoices::INVOICE_TTC_DERIVED_SQL,
         joins = amount_due_derived_joins(),
     ))
     .bind(company_id)
-    .bind(tx_date)
-    .bind(window_days)
-    .bind(tx_date)
-    .bind(window_days)
+    .bind(window.earliest_invoice_date)
+    .bind(window.latest_invoice_date)
     .bind(tx_amount)
     .bind(amount_tolerance)
     .bind(tx_amount)
@@ -453,4 +572,97 @@ where
     .fetch_optional(executor)
     .await
     .map_err(map_db_error)
+}
+
+#[cfg(test)]
+mod tests {
+    //! Tests purs de la fenêtre de dates (Story 28-7, AC6) — aucune base.
+
+    use super::*;
+    use crate::entities::bank_transaction::BankTransactionStatus;
+
+    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    fn days(n: i64) -> chrono::Duration {
+        chrono::Duration::days(n)
+    }
+
+    fn tx(booking_date: NaiveDate, value_date: Option<NaiveDate>) -> BankTransaction {
+        let at = date(2026, 6, 1).and_hms_opt(0, 0, 0).unwrap();
+        BankTransaction {
+            id: 1,
+            company_id: 1,
+            import_id: 1,
+            bank_account_id: 1,
+            booking_date,
+            value_date,
+            amount: Decimal::new(10_000, 2),
+            currency: "CHF".into(),
+            reference: None,
+            details: String::new(),
+            end_to_end_id: None,
+            transaction_id: None,
+            counterparty_iban: None,
+            counterparty_name: None,
+            status: BankTransactionStatus::Pending,
+            matched_entry_id: None,
+            auto_match_rejected_at: None,
+            version: 1,
+            created_at: at,
+            updated_at: at,
+        }
+    }
+
+    #[test]
+    fn the_window_of_a_payment_date_is_thirty_days_before_to_one_day_after() {
+        let d = date(2026, 6, 15);
+        let w = InvoiceDateWindow::for_payment_date(d);
+        assert_eq!(w.earliest_invoice_date, d - days(30));
+        assert_eq!(w.latest_invoice_date, d + days(1));
+    }
+
+    #[test]
+    fn check_admits_the_bounds_and_refuses_one_day_beyond_each() {
+        let d = date(2026, 6, 15);
+        let w = InvoiceDateWindow::for_payment_date(d);
+        assert_eq!(w.check(d + days(1)), Ok(()), "D + 1");
+        assert_eq!(
+            w.check(d + days(2)),
+            Err(InvoiceDateRefusal::PaymentBeforeInvoice),
+            "D + 2"
+        );
+        assert_eq!(w.check(d), Ok(()), "D");
+        assert_eq!(w.check(d - days(1)), Ok(()), "D − 1");
+        assert_eq!(w.check(d - days(30)), Ok(()), "D − 30");
+        assert_eq!(
+            w.check(d - days(31)),
+            Err(InvoiceDateRefusal::PaymentTooLate),
+            "D − 31"
+        );
+    }
+
+    #[test]
+    fn the_payment_date_is_the_value_date_when_there_is_one() {
+        let booking = date(2026, 6, 15);
+        let value = date(2026, 6, 10);
+        let t = tx(booking, Some(value));
+        assert_eq!(payment_date(&t), value);
+        assert_eq!(
+            InvoiceDateWindow::for_transaction(&t),
+            InvoiceDateWindow::for_payment_date(value)
+        );
+    }
+
+    #[test]
+    fn the_payment_date_falls_back_to_the_booking_date() {
+        let booking = date(2026, 6, 15);
+        let t = tx(booking, None);
+        assert_eq!(payment_date(&t), booking);
+        assert_eq!(
+            InvoiceDateWindow::for_transaction(&t),
+            InvoiceDateWindow::for_payment_date(booking)
+        );
+    }
 }

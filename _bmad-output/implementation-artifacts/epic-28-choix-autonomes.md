@@ -2824,3 +2824,235 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
 
 [#651]: https://github.com/guycorbaz/kesh/issues/651
 [#642]: https://github.com/guycorbaz/kesh/issues/642
+
+---
+
+## Story 28-7 — Une facture postérieure au paiement n'est plus proposée ([#548], P3)
+
+Choix faits à la création de la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
+`28-7-facture-posterieure-paiement.md`.
+
+### C-28-7-1 — L'acceptation fait foi, la proposition s'y aligne
+
+- **Contexte** : deux fenêtres — proposition `F ∈ [B−30, B+30]` sur la date de comptabilisation, acceptation
+  `F ∈ [D−30, D+1]` sur la date de valeur (à défaut de comptabilisation). Il faut en garder une.
+- **Retenu** : la fenêtre de l'acceptation, inchangée (mêmes raisons, mêmes `details`) ; la proposition la reprend.
+  Acompte : pas de modèle dans Kesh, un paiement antérieur de plus d'un jour ne règle pas la facture (rapprochement
+  manuel) ; facture antidatée : plus ancienne, reste dans la fenêtre ; facture postdatée au-delà du lendemain :
+  plus proposée, remède = corriger sa date. Tolérance d'un jour conservée (fuseau, comme `settle_invoice`).
+- **Écartées** : élargir l'acceptation (règlement daté avant sa créance, risque P1, rupture avec le règlement
+  depuis la fiche — `settle_invoice`, `write_off_invoice` —, et heurt avec la CHECK de schéma
+  `chk_invoices_paid_at_after_date`, `DATE(paid_at) >= date - INTERVAL 1 DAY`, migration
+  `20260419000001_invoice_paid_at.sql:32-33`, qui ne se desserre que par une migration — *ajouté en validation
+  P1, F3*) ; garder la proposition et expliquer le refus à l'écran (déjà fait par la 15-5c, C-15-5c-3 :
+  c'est ce que #548 demande de dépasser).
+- **Réversible** : oui (une fonction).
+
+### C-28-7-2 — Une fonction pure partagée, dans `kesh-db`, plutôt qu'une requête ou deux règles alignées
+
+- **Contexte** : « une seule borne partagée » (fichier d'epic). La proposition est du SQL, l'acceptation du Rust.
+- **Retenu** : `InvoiceDateWindow` (bornes calculées en Rust) dans `repositories/reconciliation.rs`, liée au SQL
+  par `BETWEEN ? AND ?` et lue par `accept_one_invoice` via `check`. La requête ne prend plus de `window_days` :
+  aucun appelant ne peut choisir sa fenêtre. `WINDOW_DAYS` quitte `routes/reconciliation.rs`.
+- **Écartées** : `kesh-core` (le module dépend de `BankTransaction`, entité de `kesh-db`, et un module neuf pour
+  quatre éléments élargit le diff) ; garder `DATE_SUB/DATE_ADD` en SQL avec des constantes partagées (deux
+  arithmétiques, l'une SQL l'autre Rust : l'accord tiendrait aux constantes, pas au calcul) ; une méthode sur
+  l'entité `BankTransaction` (touche un fichier d'entité de plus, pour rien).
+- **Réversible** : oui.
+
+### C-28-7-3 — Même date de référence : la date de valeur, à défaut la date de comptabilisation
+
+- **Contexte** : la proposition lisait `booking_date`, l'acceptation `value_date ?? booking_date`.
+- **Retenu** : `payment_date(tx)` = `value_date ?? booking_date` pour les deux — c'est aussi la date du règlement
+  écrit (`paid_at_dt`). Cas couverts par l'AC5 (date de valeur avant et après la date de comptabilisation).
+- **Écartée** : `booking_date` partout (changerait l'acceptation et la date du règlement).
+- **Réversible** : oui.
+
+### C-28-7-4 — Bornes ramenées à la plage d'une colonne `DATE` — **RETIRÉ en validation P1**
+
+⚠️ **Retiré le 2026-10-13** (validation P1, findings F1 et R2 convergents ; décision de l'orchestrateur) : non
+nécessaire à #548 ; ses deux prémisses (« l'ancien SQL rendait `NULL` », « une borne `10000-01-01` risquerait un
+`500` ») n'ont été mesurées nulle part ; et il écartait `check` de l'acceptation actuelle aux extrémités (pour
+`D = 1000-01-15`, une facture `0999-12-20` admise aujourd'hui aurait été refusée). La fenêtre se calcule par
+l'arithmétique ordinaire de chrono, sans ramènement ; une date lue d'une colonne `DATE` ne fait pas déborder
+`NaiveDate`. ~~Le cas d'une transaction datée aux extrémités de la plage `DATE` n'est atteint par aucun chemin du
+produit ; s'il l'était, ce serait une issue à part.~~ *(Affirmation fausse, corrigée en validation P2, F3 : l'import
+CAMT accepte toute année, le cas est atteignable ; angle mort écrit en C-28-7-12. Le retrait du ramènement n'est
+pas rouvert.)* Texte d'origine conservé ci-dessous pour l'historique.
+
+- **Contexte** : l'ancien SQL (`DATE_ADD('9999-12-31', INTERVAL 30 DAY)` → `NULL`) rendait « aucune candidate » pour
+  une date extrême ; une borne calculée en Rust (`10000-01-01`) liée au SQL risquerait une erreur, donc un `500`.
+- **Retenu** : `checked_*_days`, résultat ramené à `[1000-01-01, 9999-12-31]` ; un test unitaire par extrémité.
+- **Écartée** : ignorer (régression théorique, de « vide » à `500`, introduite par la story elle-même).
+- **Réversible** : oui.
+
+### C-28-7-5 — Le libellé du refus perd « même si elle a été proposée »
+
+- **Contexte** : `reconciliation-failed-payment-before-invoice` (15-5c) décrivait #548. Après la story, la raison
+  ne se rencontre plus que par une facture redatée entre l'affichage et l'acceptation, ou par un appel d'API.
+- **Retenu** : même clé, texte raccourci dans les quatre locales et le repli ; doc-comment et commentaire de test
+  réécrits. Aucune clé ajoutée ni retirée.
+- **Écartées** : garder le texte (vrai à la lettre, trompeur dans les faits) ; retirer le libellé dédié (la raison
+  reste atteignable et lisible).
+- **Réversible** : oui.
+
+### C-28-7-6 — #529 non absorbé, démontré non aggravé
+
+- **Contexte** : #529 (P2, paiement plus de 30 jours après la facture) touche la même borne ; il n'est pas dans
+  l'epic.
+- **Retenu** : la borne haute de 30 jours reste où elle est. Démonstration à la fiche (ancienne proposition ∩
+  acceptation ⊆ nouvelle proposition) ; le test de parité fige `F = D−30` (proposée, acceptée) et `F = D−31` (ni
+  l'une ni l'autre). Le CHANGELOG redit que #529 reste ouvert.
+- **Écartée** : élargir la fenêtre à l'échéance (c'est #529, une décision de produit).
+- **Réversible** : sans objet.
+
+### C-28-7-7 — Le règlement depuis la fiche de la facture garde sa propre borne
+
+- **Contexte** : `settle_invoice` et `write_off_invoice` (`invoice_settlements_write.rs`, au sol `:115` et
+  `:489` — le second est le solde par escompte, perte, frais ou arrondi, non « le règlement du reste » comme
+  l'écrivait la création : corrigé en validation P1, R1) portent la même tolérance d'un jour
+  (`settled_on < invoice_date − 1`), sur une date saisie, sans borne haute. La CHECK de schéma
+  `chk_invoices_paid_at_after_date` la double (F3).
+- **Retenu** : non modifiés — sites non résolus assumés, nommés **par leur nom** au doc-comment de
+  `InvoiceDateWindow`, avec la CHECK. Ils ne
+  choisissent pas de facture pour une transaction : hors de #548, et les y brancher étendrait le diff à un
+  troisième fichier de `kesh-db` pour une égalité qui tient déjà.
+- **Écartée** : leur faire lire `PAYMENT_BEFORE_INVOICE_TOLERANCE_DAYS` (DRY plus strict, périmètre plus large ;
+  à reprendre si la tolérance devait changer un jour).
+- **Réversible** : oui.
+
+### C-28-7-8 — Pas de capture d'écran
+
+- **Contexte** : B2 de l'Epic 27 — captures si la story change ce que l'écran affiche.
+- **Retenu** : aucune capture : l'écran des propositions ne change ni de contrôle ni de texte ; seules changent
+  les candidates retenues (couvertes par les tests HTTP) et le libellé d'un refus devenu rare.
+- **Réversible** : oui (une capture se prend en revue si une lentille la juge utile).
+
+### C-28-7-9 — Pas de spec Playwright neuve
+
+- **Contexte** : `CLAUDE.md` — un E2E est le seul test qui voit une valeur traverser la frontière HTTP.
+- **Retenu** : les tests de l'AC4 et de l'AC5 passent par `spawn_app` (requêtes HTTP réelles sur le binaire) ; le
+  changement est serveur seulement, le frontend ne reçoit que moins de candidates. Suite E2E complète au dernier
+  commit de code.
+- **Écartée** : une spec Playwright de parité (même preuve, plus lente, fixtures CAMT datées à construire).
+- **Réversible** : oui.
+
+### C-28-7-10 — `ORDER BY i.date ASC, i.id ASC` avant le `LIMIT 50` de la proposition
+
+*(Ajouté en validation P1, finding F2 et note `ORDER BY` de la lentille R ; décision de l'orchestrateur.)*
+
+- **Contexte** : `find_unpaid_invoices_for_window` tronque à 50 candidates sans `ORDER BY` : au-delà, la
+  troncature dépend du plan. La création l'avait exclu (« hors #548 ») et renvoyé à l'orchestrateur.
+- **Retenu** : `ORDER BY i.date ASC, i.id ASC` — la plus ancienne facture d'abord (celle qu'un débiteur règle
+  d'ordinaire en premier) ; l'index `idx_invoices_company_validated_unpaid_date` permet de servir cet ordre sans
+  tri si l'optimiseur le choisit, ce qui n'est pas établi (aucun plan relevé — *reformulé en validation P2, F5 =
+  R3 : la création de ce choix l'affirmait comme un fait*) ; l'`ORDER BY` le garantit quel que soit le plan ; aucun
+  test ne lit l'ordre du SQL (`propose_matches` retrie) ; et `id ASC` reprend le départage aval
+  `invoice_id ASC` (`kesh-reconciliation/src/matching.rs:104-110`). Le `LIMIT 50` est inchangé, désormais
+  déterministe. Test de dépôt à 52 factures de même reste dû insérées en dates décroissantes ; mutations
+  « `ORDER BY` retiré », « `DESC` », « `id` seul ».
+- **Écartées** : `DESC` (favorise la facture la plus récente, la moins probable d'être celle que le paiement règle) ; « la plus
+  proche de la date de paiement » (exige `D` dans la requête, même défaut) ; priorité au montant exact (meilleure,
+  mais autre décision, ordre sur `amount_due` — écrite en exclusion à la fiche) ; ne rien faire (troncature
+  laissée au plan).
+- **Réversible** : oui (une clause SQL).
+
+### C-28-7-11 — Le manuel décrit l'écran de règlement, plus strict que le serveur
+
+*(Ajouté en validation P2, findings F1 et F2.)*
+
+- **Contexte** : la remédiation P1 faisait écrire au manuel que le règlement depuis la fiche applique « la même
+  tolérance d'un jour avant la facture » — vrai du serveur (`settle_invoice`, `write_off_invoice`), faux de
+  l'écran : `SettleInvoiceDialog.svelte` et `WriteOffDialog.svelte` refusent toute date antérieure à la facture et
+  n'en offrent aucune au sélecteur (`min={invoiceDate}`).
+- **Retenu** : le manuel (AC8) dit ce que voit l'utilisateur — l'écran refuse un règlement daté avant la facture,
+  sans borne de 30 jours après — et ne parle d'aucune tolérance pour ce chemin. Les deux dialogues entrent à
+  l'inventaire (b) comme sites non résolus assumés (tolérance nulle), non au doc-comment Rust de
+  `InvoiceDateWindow`, qui nomme les sites serveur.
+- **Écartées** : aligner les dialogues sur la tolérance du serveur (hors #548, change un écran) ; décrire au
+  manuel la tolérance du serveur (promesse que l'écran ne tient pas).
+- **Réversible** : oui (texte).
+
+### C-28-7-12 — Transaction datée aux extrémités de la plage `DATE` : angle mort écrit, non mesuré
+
+*(Ajouté en validation P2, finding F3 ; corrige la phrase de retrait de C-28-7-4.)*
+
+- **Contexte** : sans ramènement (C-28-7-4 retiré), une transaction datée `9999-12-31` donne
+  `latest = +10000-01-01`, lié au SQL. L'import CAMT accepte toute année (`kesh-import/src/camt053/mod.rs`,
+  `parse_date`, sans borne ; aucune borne à la route d'import). Le dépôt connaît ce mode d'échec
+  (`routes/letterings.rs:507-511` : chrono lit ce que sqlx refuse d'encoder ou que la base lit comme une
+  date invalide) — et sa réponse y fut une **borne** qui refuse la date en 400 (`parse_as_of`), le contraire de
+  l'angle mort accepté ici. Ce que rendait l'ancien SQL (`DATE_ADD('9999-12-31', INTERVAL 30 DAY)`, supposé
+  `NULL`, donc aucune candidate) n'est **pas mesuré**, pas plus que le nouveau comportement, supposé aller de
+  « aucune candidate » à une erreur. Une erreur, si elle se produit, ne porte pas sur une seule ligne : la boucle
+  de `get_proposals` propage le `?` de `find_unpaid_invoices_for_window`, si bien que **toute la réponse de
+  propositions du compte bancaire** échouerait.
+- **Retenu** : écrire le fait à la fiche (AC1, Exclusions) comme angle mort accepté : atteignable, non mesuré,
+  extrême (aucune banque ne date une valeur en 9999). Ni test ni ramènement.
+- **Écartées** : rouvrir le ramènement (décision de l'orchestrateur en P1) ; un test de dépôt
+  `for_payment_date(9999-12-31)` qui asserte `is_ok()` — une mesure utile, mais dont un rouge rouvrirait la
+  question du ramènement en plein développement ; à reprendre en issue si le cas devait se présenter.
+- **Réversible** : oui.
+- *Amendé à l'étape 0 du développement (2026-10-13, passe ciblée P3 de la validation : P3-1 MEDIUM, P3-2 et P3-4
+  LOW) : la phrase « L'ancien SQL rendait `NULL` » affirmait une prémisse que C-28-7-4 déclare non mesurée ; elle
+  est dite supposée. S'y ajoutent la portée d'une erreur (la réponse entière du compte) et l'issue du précédent
+  `letterings.rs` (une borne en 400).*
+
+### C-28-7-13 — Le plafond de 50 candidates n'est décrit ni au CHANGELOG ni au manuel
+
+*(Ajouté en validation P2, findings F8 = R6.)*
+
+- **Contexte** : la remédiation P1 annonçait au CHANGELOG que « les 50 plus anciennes » candidates sont examinées
+  (phrase redondante), alors que le manuel n'a jamais décrit ce plafond.
+- **Retenu** : la phrase est retirée du CHANGELOG (T7) — le geste le plus simple, qui ne touche pas le manuel et
+  n'ouvre aucun écart entre supports. Le comportement reste fixé par l'`ORDER BY` et son test (C-28-7-10).
+- **Écartée** : une demi-phrase au manuel (§ *Algorithme de matching*) et la phrase gardée au CHANGELOG (deux
+  textes de plus pour un cas rare, invisible en deçà de 50 candidates).
+- **Réversible** : oui (texte).
+
+### C-28-7-14 — Le rouge d'abord par les tests HTTP, la fenêtre écrite ensuite
+
+*(Développement, 2026-10-13.)*
+
+- **Contexte** : les tests de l'AC6 portent sur un type qui n'existe pas avant la correction ; ils ne peuvent
+  rougir, ils ne compilent pas. Le rouge doit pourtant précéder le correctif.
+- **Retenu** : un premier commit (`test(28-7)`) ne pose que les deux tests HTTP (AC4, AC5), qui passent par l'API et
+  compilent contre le code non corrigé, et le test d'ordre écrit sur l'**ancienne** signature. AC4 et AC5 y rougissent
+  (journal `kesh-gate-logs/28-7-t1-rouge.log`) ; le test d'ordre y passe déjà. Les tests unitaires et le test de
+  fenêtre réécrit arrivent avec la correction ; ils sont exercés par la campagne de mutations.
+- **Écartées** : un type « dégradé » qui reproduirait l'ancienne fenêtre pour faire rougir les tests unitaires (du
+  code écrit pour être jeté).
+- **Réversible** : sans objet.
+
+### C-28-7-15 — M10 déclarée équivalente au plan observé
+
+*(Développement, 2026-10-13.)*
+
+- **Contexte** : la fiche ne prédisait pas l'issue de M10 (`ORDER BY` retiré).
+- **Retenu** : observée **survivante**, et déjà verte sur le code d'avant la story : sur MariaDB 10.11 de dev, le
+  plan livre les 52 factures du test en `(date, id)` croissants sans `ORDER BY`. Elle est déclarée **équivalente
+  au plan observé**, non au code : l'`ORDER BY` reste la seule garantie, et M13 (`DESC`) comme M14 (`id` seul) sont
+  tuées par le même test, qui lit donc bien l'ordre.
+- **Écartées** : forcer un plan contraire dans le test (`IGNORE INDEX`, au test seulement : il ne mesurerait plus la
+  requête de production).
+- **Réversible** : oui.
+- *Annotation du 2026-10-13 (revue de code P1, E-LOW-1 et E-LOW-2) : aucun `EXPLAIN` n'a été relevé — seul l'**ordre**
+  des résultats l'a été. Lire **« équivalente à l'ordre observé »**, et non « au plan observé ». Le montage du test
+  d'ordre fait désormais traverser par la coupure du `LIMIT 50` un groupe de trois factures de même date ; la
+  mutation M16 (`ORDER BY i.date ASC` sans `i.id`) y survit pour la même raison que M10 — les égalités de date sortent
+  en `id` croissant sans départage explicite — et se déclare équivalente à l'ordre observé au même titre.*
+
+### C-28-7-16 — Deux précisions de test et de manuel au-delà de la fiche
+
+*(Développement, 2026-10-13.)*
+
+- **Contexte** : la fiche prescrit, à l'AC5, `settled_on` au cas (b) seul et, au cas (e), « non proposée » seul ; et
+  laisse la FAQ « aucun match automatique » à sa première puce (« à plus de 30 jours de la date de la facture »).
+- **Retenu** : l'AC5 asserte aussi `settled_on == B` au cas (d) (la date de comptabilisation à défaut de valeur)
+  et le refus `payment_date_before_invoice_date` du cas (e) forcé ; la puce de la FAQ dit « plus de 30 jours
+  **après** la date de la facture », la règle n'étant plus symétrique.
+- **Écartées** : s'en tenir à la lettre de la fiche (la puce de la FAQ serait restée ambiguë dans le sens que la
+  story rend faux).
+- **Réversible** : oui.
+
+[#548]: https://github.com/guycorbaz/kesh/issues/548
