@@ -2,7 +2,8 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
+**in-progress** — validation close le 2026-10-13 (P3 ciblée : 0 MEDIUM, 2 LOW appliqués) ; développement
+(`bmad-dev-story`) en cours. Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
 (rétrospective de l'Epic 27, #641), branche `story/28-2`, worktree `/home/gcorbaz/devel/kesh-28-2`. Port **3035**,
 bases `kesh_282` / `kesh_e2e_282`. Choix consignés au registre de l'epic `epic-28-choix-autonomes.md`
 (§ Story 28-2, versé par union à la validation P2), **C-28-2-1 à C-28-2-29**. 11 AC (AC1 à AC11).
@@ -72,8 +73,10 @@ final compris ; `grep -rn "'error-unexpected'" frontend/src … | grep -v "'Erre
 
 `isApiError` est **extrait** dans `frontend/src/lib/shared/utils/api-error.ts` (sans autre import qu'un `import type`)
 et **réexporté** par `api-client.ts` (`export { isApiError } from './api-error'`) — ses **53** fichiers
-importeurs existants (**166** appels hors tests ; recompté en validation P2, la rédaction antérieure écrivait « ~110 »)
-ne changent pas ; `error-message.ts` l'importe de `api-error.ts`, pour ne pas dépendre des `vi.mock` du client
+importeurs existants (**164** appels hors tests — 166 occurrences de `isApiError(`, dont la déclaration
+`api-client.ts:19` et le doc-comment `notify.ts:89` ; recompté en validation P3, la P2 écrivait « 166 appels », la
+rédaction antérieure « ~110 » ; commande : `git grep -nE "isApiError\(" -- frontend/src | grep -vE "\.test\.ts:" |
+grep -vF "export function isApiError(" | grep -vE "^\S+:[0-9]+:\s*(\*|//)" | wc -l`) ne changent pas ; `error-message.ts` l'importe de `api-error.ts`, pour ne pas dépendre des `vi.mock` du client
 (C-28-2-2).
 
 ### AC2 — Les messages que le client fabrique sont traduits à la source
@@ -360,7 +363,7 @@ Préfixe `error-` : espace de noms global, permis partout par `scripts/lint-i18n
   non-`ApiError` d'un rapport, rendu par `formatError`, B15 ; la branche `REPORT_PERIOD_OUT_OF_FISCAL_YEAR` vérifiée
   préservée). ⚠️ Pour `reports-page.test.ts`, le rejet passe par **`generate()`** — un rapport, p. ex.
   `getBalanceSheet` (`:309`) ou `getGeneralLedger` (`:251`), dont le `catch` appelle `formatError` sans condition
-  (`:254`, `:269`, `:291`, `:335`, et `:473`) — et **non** par un export (`:403`, `:437`, `:505`), qui n'appelle
+  (`:254`, `:269`, `:291`, `:335`) — et **non** par un export (`:403`, `:437`, `:473`, `:505`), qui n'appelle
   `formatError` que pour une `ApiError` porteuse d'un `code` et afficherait sinon un message générique d'export :
   M21 ne rougirait pas. `+page.svelte` reçoit `data` (`fiscalYears`, `companyName`) en prop
   (`reports/+page.svelte:78`) ; `+page.ts` n'a pas à être monté.
@@ -770,3 +773,18 @@ catalogues FTL : union à la fusion, `sitesTotal` **recompté** après rebase, j
     Project Lead.
   - Mutations M26, M27 ajoutées (M1-M27) ; choix C-28-2-25 à C-28-2-29. Passe ciblée P3 :
     `28-2-validate-prompt-p3-ciblee.md` (Haiku, une lentille, diff aplati de cette remédiation).
+- 2026-10-13 — **Validation P3, passe ciblée** (Haiku 5.5, une lentille, diff de `eb9c68c8` ; rapport hors dépôt
+  `kesh-gate-logs/28-2-validate-p3-ciblee.md`) : **0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW**, tous deux nés de la
+  remédiation P2, tous deux vérifiés au sol avant patch. Remédiation :
+  - **P3-1** — AC9, `reports-page.test.ts` : `:473` retiré de la liste des `catch` de `generate()` qui appellent
+    `formatError` sans condition ; il est dans `exportReport` (`:388-484`), gardé par `isApiError(e) && e.code`, et
+    rejoint la liste des exports (`:403`, `:437`, `:473`, `:505`).
+  - **P3-2** — AC1 : « 166 appels » → **164 appels** (166 occurrences de `isApiError(` hors tests, moins la
+    déclaration `api-client.ts:19` et le doc-comment `notify.ts:89`), commande jointe, recomptée à 164. Les entrées
+    passées du registre (C-28-2-2, C-28-2-24) et de ce Change Log (P2, R7) ne sont **pas réécrites** : le registre
+    reçoit une annotation datée (consigne 15).
+  - **Clôture de la validation.** Trend : P1 (Sonnet) **7 MEDIUM** → P2 (Opus) **2 MEDIUM** distincts → P3 ciblée
+    (Haiku) **0 MEDIUM**. La remédiation P3 ne touche aucune ligne de code (fiche et registre seuls) : la boucle est
+    close. **Signal D5** déclaré au Project Lead en P2 (MEDIUM maintenu de P1 à P2, F1 = R2 né de la remédiation P1) :
+    traité par un **retrait de périmètre** (C-28-2-19 retiré, classe C inchangée), non par un découpage. Statut
+    `in-progress`.

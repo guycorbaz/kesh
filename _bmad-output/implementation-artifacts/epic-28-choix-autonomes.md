@@ -673,6 +673,7 @@ supprimé.*
   déplacer `isApiError` sans réexport (~110 importeurs à modifier).
 - **Réversible** : oui.
 - **Révisé en validation P2** : « ~110 importeurs » était faux — **53** fichiers (**166** appels hors tests) (R7).
+- **Annoté en validation P3** (2026-10-13, P3-2) : « 166 appels » comptait 166 **occurrences** de `isApiError(` hors tests, dont la déclaration et un doc-comment — **164 appels** ; commande à la fiche, AC1.
 
 ### C-28-2-3 — Une `Error` ou une valeur inconnue rend le générique traduit, et se journalise
 
@@ -888,6 +889,7 @@ Choix faits à la remédiation de la validation P1 (2026-10-13, Opus 5.5, autono
 - **Écartée** : durcir `isApiError` (changerait l'aiguillage de sites que la story ne touche pas).
 - **Réversible** : oui.
 - **Révisé en validation P2** : « 110 importeurs » était faux — **53** fichiers importent `isApiError` du client (**166** appels hors tests) ; la décision ne change pas (R7).
+- **Annoté en validation P3** (2026-10-13, P3-2) : « 166 appels » comptait 166 **occurrences** de `isApiError(` hors tests, dont la déclaration et un doc-comment — **164 appels** ; commande à la fiche, AC1.
 
 ---
 
