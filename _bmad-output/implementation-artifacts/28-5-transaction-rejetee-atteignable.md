@@ -5,25 +5,29 @@
 **ready-for-dev** (deux clés) — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur
 `5aad8b35`, branche `story/28-5` ; validation **P1** (Sonnet, lentilles R et F : 0 HIGH, 6 MEDIUM, 14 LOW)
 **remédiée** le 2026-10-13, avec **découpage** décidé par l'orchestrateur (C-28-5-17, qui remplace la dérogation
-C-28-5-11) ; validation **P2** à lancer (`28-5-validate-prompt-p2.md`, Opus, R et F).
+C-28-5-11) ; validation **P2** (Opus, lentilles R et F : 0 HIGH, 4 MEDIUM soit 2 distincts, 18 LOW) **remédiée** le
+2026-10-13 (C-28-5-25 à C-28-5-30) ; passe **ciblée P3** à lancer (`28-5-validate-prompt-p3-ciblee.md`, Haiku, une
+lentille sur la seule remédiation P2).
 
 <!-- Issue : #526 (bug, P2). Epic : planning-artifacts/epic-28-recette-v0-13-2.md § 28-5.
-     Choix : C-28-5-1 à C-28-5-24 au registre epic-28-choix-autonomes.md (C-28-5-11 et C-28-5-12 remplacés). -->
+     Choix : C-28-5-1 à C-28-5-30 au registre epic-28-choix-autonomes.md (C-28-5-11, C-28-5-12 et C-28-5-23
+     remplacés). -->
 
 ⛔ **Deux stories, une fiche, deux PR successives** (C-28-5-17, sur les précédents C-26-2-15 et C-28-4-1) :
 
 | Clé au registre de sprint | Contenu | AC | PR |
 |---|---|---|---|
-| **`28-5a-annuler-rejet-serveur`** | route `…/unreject`, champ `autoMatchRejectedAt`, trace d'audit, messages serveur (deux clés, quatre locales), gardes et doc-comments, tests backend, `docs/api-external.md` | AC1 à AC4, AC7 (a), AC9 (a), AC10, AC12 (a), AC13 | **`refs #526`** — ⛔ jamais `closes` |
-| **`28-5b-annuler-rejet-ecran`** | détail d'import (mention, bouton), indication de la page *Réconciliation*, libellé `already-rejected` réécrit, i18n de l'interface, manuel `.tex` + PDF, CHANGELOG, E2E, captures | AC5, AC6, AC7 (b), AC8, AC9 (b), AC11, AC12 (b) | **`closes #526`** |
+| **`28-5a-annuler-rejet-serveur`** | route `…/unreject`, champ `autoMatchRejectedAt`, trace d'audit, messages serveur (deux clés, quatre locales), gardes et doc-comments du serveur, tests backend, `docs/api-external.md` — **aucun fichier frontend** (C-28-5-26) | AC1 à AC4, AC7 (a), AC9 (a), AC10, AC12 (a), AC13 | **`refs #526`** — ⛔ jamais `closes` |
+| **`28-5b-annuler-rejet-ecran`** | détail d'import (mention, bouton), indication de la page *Réconciliation*, libellé `already-rejected` réécrit, i18n de l'interface, doc-comment de `bank-import-deletion.ts`, manuel `.tex` + PDF, CHANGELOG, E2E, captures | AC5, AC6, AC7 (b), AC8, AC9 (b), AC11, AC12 (b) | **`closes #526`** |
 
 **Ordre** : la 28-5a se développe et se fusionne **d'abord** ; la 28-5b part de `origin/main` **après** cette fusion.
 La clé mère `28-5-transaction-rejetee-atteignable` passe au statut `split`. **Aucune release entre les deux PR** :
 entre elles, l'annulation n'existe que par l'API, sans écran, sans manuel ni CHANGELOG — à écrire au Dev Agent Record
-de la 28-5a. ⚠️ **À l'attention de l'orchestrateur** : la 28-5b ne touche pas `routes/reconciliation.rs` ; la 28-6
-peut donc se rebaser sur la 28-5a pour ce fichier, mais elle partage avec la 28-5b `failed-proposal-label.ts` et la
-section `reconciliation-*` des catalogues (cf. § *Régions touchées*) — l'ordre 28-5b / 28-6 est un arbitrage de
-l'orchestrateur, non tranché ici.
+de la 28-5a. **Ordre de l'epic, tranché par l'orchestrateur** (C-28-5-29) : **28-5a, puis 28-6 ∥ 28-5b, puis
+28-7**. La 28-5b ne touche pas `routes/reconciliation.rs` : la 28-6 se rebase sur la 28-5a pour ce fichier (et pour
+`docs/api-external.md`, que la 28-5b ne touche pas) ; elle partage avec la 28-5b `failed-proposal-label.ts`, son
+test `failed-proposal-label.test.ts`, `sitesTotal` de `i18n-keys.test.ts` et la section `reconciliation-*` des
+catalogues (cf. § *Régions touchées*) — **union au rebase**, `sitesTotal` recompté par la seconde fusionnée.
 
 ## Story
 
@@ -88,30 +92,35 @@ manuellement ou l'éclater — au lieu de devoir supprimer et réimporter tout s
 Quatre **paquets** : `kesh-api`, `kesh-db` (**commentaires seulement**), `kesh-i18n`, `frontend`. À la granularité
 de l'exemple du `CLAUDE.md`, **huit** sites de premier niveau. **Plus de cinq : découpage** (C-28-5-17) —
 **28-5a** : `kesh-api/routes/reconciliation`, `kesh-api/routes/bank_imports` (un champ), `kesh-api` socle
-(`lib.rs`, `errors.rs`, `audit_labels.rs`), `kesh-db` (doc), `kesh-i18n` (deux clés serveur), plus un doc-comment
-de `frontend/.../bank-import-deletion.ts` ; **28-5b** : `frontend/features/reconciliation`,
-`frontend/features/bank-import` (un champ de type), `frontend/routes/(app)/bank-import/[id]`, `kesh-i18n` (clés
-d'interface). Chaque partie se teste seule : la 28-5a par ses tests Rust et l'API, la 28-5b sur la route fusionnée.
+(`lib.rs`, `errors.rs`, `audit_labels.rs`), `kesh-db` (doc), `kesh-i18n` (deux clés serveur) — **cinq**, au seuil
+et non au-delà : le doc-comment de `frontend/.../bank-import-deletion.ts`, qui en faisait un sixième, passe à la
+28-5b (C-28-5-26) ; **28-5b** : `frontend/features/reconciliation`, `frontend/features/bank-import` (un champ de
+type et ce doc-comment), `frontend/routes/(app)/bank-import/[id]`, `kesh-i18n` (clés d'interface). Chaque partie se
+teste seule : la 28-5a par ses tests Rust et l'API, la 28-5b sur la route fusionnée. Entre les deux PR, le
+doc-comment frontend est **incomplet** (il ne nomme pas `classify_unreject` parmi les appelants serveur) sans être
+faux.
 
 ### Régions touchées — à l'attention des 28-4, 28-6 et 28-7
 
 | Fichier | Partie | Région | Nature |
 |---|---|---|---|
-| `crates/kesh-api/src/routes/reconciliation.rs` | a | en-tête du module (l. 1-25, une puce) ; **section neuve entre la fin de `cancel_reconciliation_once` (l. 4586) et `#[cfg(test)] mod period_lock_tests` (l. 4588)** ; dans `cancel_reconciliation_once`, la **seule** lecture du compte (l. 4514-4524) remplacée par l'appel à l'auxiliaire qui la reçoit à l'identique (C-28-5-18) — son `match` de conversion (l. 4558-4583) **intouché** ; `conclude_locked_attempt` (l. 4312-4395) : **signature** rendue générique et doc-comment complété, corps intouché ; un `mod unreject_classification_tests` en fin de fichier | `get_proposals`, `accept_*`, `post_reject`, `reject_batch`, `classify_batch_transaction` **intouchés** |
+| `crates/kesh-api/src/routes/reconciliation.rs` | a | en-tête du module (l. 1-25, une puce) ; **section neuve entre la fin de `cancel_reconciliation_once` (l. 4586) et `#[cfg(test)] mod period_lock_tests` (l. 4588)** ; dans `cancel_reconciliation_once`, la **seule** lecture du compte (l. 4514-4524) remplacée par l'appel à l'auxiliaire qui la reçoit à l'identique (C-28-5-18) — son `match` de conversion (l. 4558-4583) **intouché** ; `conclude_locked_attempt` (doc-comment l. 4312, fonction l. 4325-4399) : **signature** rendue générique, doc-comment complété, liaison `Ok(journal_entry_id)` renommée `Ok(value)` et les deux commentaires internes qui nomment ses appelants (l. 4366, l. 4384) complétés — logique et `match` intouchés (C-28-5-28) ; un `mod unreject_classification_tests` en fin de fichier | `get_proposals`, `accept_*`, `post_reject`, `reject_batch`, `classify_batch_transaction` **intouchés** |
 | `crates/kesh-api/src/lib.rs` | a | `comptable_routes`, après la route `…/transactions/{id}/cancel` (l. 676-679) | une route |
 | `crates/kesh-api/src/errors.rs` | a | variante neuve à côté de `ReconciliationTransactionNotPending` (l. 921-930) et son bras (l. 2663-2677) | |
 | `crates/kesh-api/src/audit_labels.rs` | a | `ACTIONS` (l. 155-160) | une ligne |
 | `crates/kesh-api/src/routes/bank_imports.rs` | a | `TransactionResponse` et son `From` (l. 250-288) | un champ |
-| `crates/kesh-api/tests/reconciliation_e2e.rs` | a | **section neuve en fin de fichier** (après l. 7526) | tests B1-B7, B9 |
-| `crates/kesh-api/tests/audit_route_registry.rs` | a | une ligne de registre ; compteurs l. 645, 648, 667, 991, 997 ; doc l. 27, 31-32 | |
+| `crates/kesh-api/tests/reconciliation_e2e.rs` | a | **section neuve en fin de fichier** (après l. 7526) | tests B1-B7, B9, B10 |
+| `crates/kesh-api/tests/audit_route_registry.rs` | a | une ligne de registre ; compteurs l. 645, 648, 667, 991, 997 ; doc l. 27, 31-32 ; point (iv) du doc du module (l. 88-115, après la phrase sur `post_reject`) : l'angle mort d'interblocage de la route neuve (C-28-5-30) | |
 | `crates/kesh-api/tests/textes_coherents.rs` | a | `TABLE` de G9, bloc `errors.rs` (l. 685-735) | une ligne |
 | `crates/kesh-db/src/repositories/reconciliation.rs` | a | doc-comments : en-tête (l. 23-25), `find_by_id_for_account_for_update` (l. 393, « Seul appelant ») | la 28-7 touche `find_unpaid_invoices_for_window` (l. 90-150) : régions disjointes |
-| `crates/kesh-db/src/repositories/bank_imports.rs` | a | doc-comment d’`is_reconciled` (l. 346-355, liste des appelants) | |
-| `frontend/src/lib/features/bank-import/bank-import-deletion.ts` | a | doc-comment l. 12-16 (appelants serveur d'`is_reconciled`) | commentaire seulement |
+| `crates/kesh-db/src/repositories/bank_imports.rs` | a | doc-comment d’`is_reconciled` (l. 338-355 : l'inventaire « clos » des écrivains, l. 338-344, et la liste des appelants, l. 350-355) | |
+| `frontend/src/lib/features/bank-import/bank-import-deletion.ts` | **b** | doc-comment l. 12-16 (appelants serveur d'`is_reconciled`) | commentaire seulement (C-28-5-26) |
 | `crates/kesh-i18n/locales/*/messages.ftl` | a, b | section `reconciliation-*` : a — `reconciliation-errors-transaction-not-rejected`, `audit-log-action-reconciliation-unrejected` ; b — quatre clés d'interface et `reconciliation-failed-already-rejected` **réécrite** (fr-CH l. 1219, de/it/en l. 1156) | la 28-6 y ajoute un libellé : union au rebase |
-| `docs/api-external.md` | a | § *Accepter des propositions* (l. 552, une phrase) ; sous-section neuve après « Annuler un rapprochement bancaire » (l. 554 et suiv.) ; ligne `GET /api/v1/bank-imports/{id}` (l. 575) | la 28-6 ajoute un refus au § l. 536-552 : contigu, union |
+| `docs/api-external.md` | a | § *Accepter des propositions*, paragraphe **« Transaction disparue, rapprochée ou rejetée »** (l. 540, une phrase de renvoi — C-28-5-27) ; sous-section neuve après « Annuler un rapprochement bancaire » (l. 554 et suiv.) ; ligne `GET /api/v1/bank-imports/{id}` (l. 575) | la 28-6 ajoute un refus au § l. 536-552 : contigu, union |
 | `frontend/src/lib/features/reconciliation/failed-proposal-label.ts` | b | repli de `RECONCILIATION_ALREADY_REJECTED` (l. 210-214) | la 28-6 y ajoute un code : union |
-| `frontend/src/lib/shared/i18n-keys.test.ts` | b | `sitesTotal` (l. 601) | recompté, jamais incrémenté |
+| `frontend/src/lib/features/reconciliation/failed-proposal-label.test.ts` | b | V6 | la 28-6 y teste son code : union |
+| `frontend/src/lib/shared/i18n-keys.test.ts` | b | `sitesTotal` (l. 601) | recompté, jamais incrémenté ; la 28-6 le modifie aussi si elle ajoute un `i18nMsg` : **recompté par la seconde fusionnée** |
+| `frontend/src/lib/features/reconciliation/UnrejectTransactionAction.svelte` (neuf) | b | import d'`errorMessageOf` | la 28-2 le déplace d'`api-client.ts:38` vers `error-message.ts` : importer depuis le chemin en vigueur sur `origin/main` au départ de la 28-5b |
 | `docs/manual/fr/user-manual.tex` (+ PDF) | b | § *Accepter ou rejeter les propositions*, puce *Rejeter* (l. 1947) | |
 | `CHANGELOG.md` | b | `## [0.13.3] — Non publié` (créée si absente, par union) | |
 
@@ -145,7 +154,7 @@ aucun champ existant ne change.
 
 | Cas | Réponse |
 |---|---|
-| transaction inexistante, ou d'une autre société (lecture **scopée société**, indiscernables) — hors verrou, ou disparue sous verrou (import supprimé entre-temps) | `404 NOT_FOUND` (`AppError::Database(DbError::NotFound)`, comme `…/cancel`) |
+| transaction inexistante, ou d'une autre société (lecture **scopée société**, indiscernables) — hors verrou, ou disparue sous verrou (import supprimé entre-temps : B10) | `404 NOT_FOUND` (`AppError::Database(DbError::NotFound)`, comme `…/cancel`) |
 | transaction non rejetée (`auto_match_rejected_at` nul) — dont un second appel après un succès | `409 RECONCILIATION_TRANSACTION_NOT_REJECTED`, `details: { bankTransactionId }` |
 | transaction **rapprochée** au sens d'`is_reconciled` (`kesh_db::repositories::bank_imports::is_reconciled`), **même si** son marqueur est posé (état forgé, aucun chemin réel ne le produit) | `409 RECONCILIATION_TRANSACTION_NOT_REJECTED` ; marqueur **intact** |
 | verrou du compte tenu au-delà de `LOCK_TIMEOUT_SECS` | `409 RECONCILIATION_ACCOUNT_LOCKED` (inchangé) |
@@ -154,11 +163,15 @@ Le classement se fait **sous verrou, sur une lecture verrouillante** (`find_by_i
 fonction pure `classify_unreject(row: Option<&BankTransaction>) -> UnrejectOutcome` qui appelle `is_reconciled` —
 **aucun second test de statut** (C-28-5-5). L'`UPDATE` qui suit est scopé `id`, `company_id`, `bank_account_id` ;
 s'il ne touche pas exactement une ligne, la fermeture rend
-`Err(ReconciliationError::Db(DbError::OptimisticLockConflict))` — patron de `post_manual_once` (`:3822-3826`),
-converti en `409 OPTIMISTIC_LOCK` par `conclude_locked_attempt` ; jamais un `204` muet. Ce bras est **inatteignable**
-(la ligne est verrouillée) : sa mutation M13 est déclarée équivalente (C-28-5-19).
+`Err(ReconciliationError::Db(DbError::OptimisticLockConflict))` — patron de `post_manual_once` (`:3822-3826`) ;
+`conclude_locked_attempt` la rend en `AppError::Database(DbError::OptimisticLockConflict)`, et c'est le **mapping
+des erreurs de base** (`errors.rs:2922-2925`) qui en fait un `409 OPTIMISTIC_LOCK_CONFLICT` ; jamais un `204` muet.
+Ce bras est **inatteignable** tant que la lecture est verrouillante (la ligne est verrouillée) : sa mutation M13 est
+déclarée équivalente (C-28-5-19). C'est aussi ce `409` que rendrait une lecture **non** verrouillante sur une
+transaction supprimée pendant l'attente — d'où B10, qui exige le `404` (C-28-5-25).
 
-**AC4 — Rôles et clés.** Consultation → `403` (RBAC de `comptable_routes`) ; Comptable et Administrateur → `204` ;
+**AC4 — Rôles et clés.** Consultation → `403` (RBAC de `comptable_routes`) ; Comptable (B1) et Administrateur (B4)
+→ `204` ;
 clé d'API `read-write` → `204`, la ligne d'audit **nomme la clé** (`actor_type = 'api_key'`, `actor_api_key_id`) ;
 clé `read` → `403 API_KEY_READ_ONLY` (intergiciel existant, non retesté). Route **ouverte aux clés**, comme
 `/reject` et `…/cancel` (C-28-5-6).
@@ -180,14 +193,16 @@ fr-CH, inscrit à la garde G9 — AC10) et `audit-log-action-reconciliation-unre
 
 **AC9 (a) — API.** `docs/api-external.md` : sous-section neuve « Annuler le rejet d'une transaction bancaire » après
 « Annuler un rapprochement bancaire » (l. 554 et suivantes) — route, `204`, effets, tableau des refus de l'AC3 (dont
-le `409 OPTIMISTIC_LOCK` défensif, dit inatteignable), clés `read-write` admises et nommées à l'audit, champ
-`autoMatchRejectedAt` *(depuis la v0.13.3)*, rappel de la limite de `GET …/proposals` ; une phrase au paragraphe du
-rejet en lot (l. 552) qui renvoie à cette sous-section ; et `autoMatchRejectedAt` cité à la ligne
-`GET /api/v1/bank-imports/{id}` (l. 575).
+le `409 OPTIMISTIC_LOCK_CONFLICT` défensif, dit inatteignable), clés `read-write` admises et nommées à l'audit, champ
+`autoMatchRejectedAt` *(depuis la v0.13.3)*, rappel de la limite de `GET …/proposals` ; une phrase au paragraphe
+**« Transaction disparue, rapprochée ou rejetée »** (l. 540, là où est décrit le refus
+`RECONCILIATION_ALREADY_REJECTED`) qui renvoie à cette sous-section (C-28-5-27) ; et `autoMatchRejectedAt` cité à la
+ligne `GET /api/v1/bank-imports/{id}` (l. 575).
 
 **AC10 — Les gardes existantes suivent, et les commentaires disent vrai.**
 - `crates/kesh-api/tests/audit_route_registry.rs` : ligne
-  `("post", "reconciliation::post_unreject_transaction", Traced, SansEcritureAuJournal)` ; compteurs
+  `("post", "reconciliation::post_unreject_transaction", Traced, SansEcritureAuJournal)` ; au point (iv) du doc du
+  module, après la phrase sur `post_reject`, l'angle mort de la route neuve (C-28-5-30) ; compteurs
   **recomptés** — `LIB_ROUTES` 115 → 116 (l. 645), `traced` 109 → 110 (l. 648, message complété « plus l'annulation
   d'un rejet (28-5a, #526) »), `sans_ecriture` 91 → 92 (l. 991, « 90 routes de lib.rs » → 91, l. 992), total
   118 → 119 (l. 667, l. 997) ; doc du module (l. 27, l. 31-32 : « 115 routes », « (118) ») propagée.
@@ -196,15 +211,21 @@ rejet en lot (l. 552) qui renvoie à cette sous-section ; et `autoMatchRejectedA
 - `crates/kesh-api/tests/textes_coherents.rs` (G9, `les_replis_rust_suivent_le_catalogue`, l. 679) : ligne
   `("reconciliation-errors-transaction-not-rejected", 1, &[])` au bloc `crates/kesh-api/src/errors.rs`.
 - Doc-comments : en-tête de `routes/reconciliation.rs` ; `conclude_locked_attempt` (« Conclut une tentative de
-  `post_manual` ou `post_split` » → les trois routes) ; « Seul appelant : `reject_batch` » de
-  `find_by_id_for_account_for_update` et l'en-tête de `repositories/reconciliation.rs` ; la liste des appelants
-  d'`is_reconciled` (`repositories/bank_imports.rs:346-355`) et son reflet dans `bank-import-deletion.ts:12-16`
-  (« écrite deux fois, et seulement deux » reste vrai : `classify_unreject` **appelle** `is_reconciled`).
-- Symptôme grepé après chaque patch (§ *Propagation post-patch*) : `Seul appelant`, `post_manual` ou `post_split`
-  (doc-comments d'appelants), les valeurs `\b115\b`, `\b118\b`, `\b109\b`, `\b91\b`.
+  `post_manual` ou `post_split` » → les trois routes ; et ses deux commentaires internes, « ni `post_manual` ni
+  `post_split` n'ouvrent de savepoint » l. 4366 et « ces routes ne touchent pas aux règles » l. 4384, qui restent
+  vrais pour `unreject` et nomment désormais les trois — C-28-5-28) ; « Seul appelant : `reject_batch` » de
+  `find_by_id_for_account_for_update` et l'en-tête de `repositories/reconciliation.rs` ; le doc-comment
+  d'`is_reconciled` (`repositories/bank_imports.rs:338-355`) — l'inventaire « clos » des écrivains (l. 338-344 :
+  « et l'**annulation du rejet** (`unreject_once`) non plus ») **et** la liste des appelants (l. 350-355) ; son
+  reflet dans `bank-import-deletion.ts:12-16` va à la **28-5b** (C-28-5-26) (« écrite deux fois, et seulement deux »
+  reste vrai : `classify_unreject` **appelle** `is_reconciled`).
+- Symptôme grepé après chaque patch (§ *Propagation post-patch*) : `Seul appelant`, `post_manual` ou `post_split`,
+  `` post_split` n' `` (doc-comments et commentaires d'appelants), `inventaire clos`, les valeurs `\b115\b`,
+  `\b118\b`, `\b109\b`, `\b91\b`.
 
-**AC12 (a) — Mutations.** M1-M8 font rougir au moins un test chacune ; M13 et M14 sont déclarées **équivalentes**
-avec leur preuve, M15 **survivante assumée** avec sa raison (§ Tests, C-28-5-19, C-28-5-23), au Debug Log.
+**AC12 (a) — Mutations.** M1-M8, **M15** et **M17** font rougir au moins un test chacune (M15 : B10, C-28-5-25) ;
+M13 et M14 sont déclarées **équivalentes** avec leur preuve (§ Tests, C-28-5-19), au Debug Log. Aucune survivante
+assumée.
 
 ### Partie b — `28-5b-annuler-rejet-ecran` (PR `closes #526`)
 
@@ -260,13 +281,15 @@ le verrou de gate) et versionné ; contrôle sur le PDF **aplati**, motifs **ins
 
 ```sh
 pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' > "$GATE_LOGS/28-5b-manuel-plat.txt"
-grep -cE "Annuler le rejet" "$GATE_LOGS/28-5b-manuel-plat.txt"                                # ≥ 1
-grep -cE "aucun geste de l.interface|sans aucune action" "$GATE_LOGS/28-5b-manuel-plat.txt"   # 0
+grep -oE "Annuler le rejet" "$GATE_LOGS/28-5b-manuel-plat.txt" | wc -l                                       # ≥ 1
+grep -oE "aucun geste de l.interface|sans aucune action|Ne rejetez donc" "$GATE_LOGS/28-5b-manuel-plat.txt" | wc -l   # 0
 ```
 
-(Au `5aad8b35`, `aucun geste de l.interface` et `sans aucune action` y figurent **une fois chacun**, `Annuler le
-rejet` **zéro** fois — vérifié en validation P1 par `grep -oE` sur le PDF aplati : les deux contrôles rougissent bien
-avant la correction.)
+Le fichier aplati tient sur **une** ligne : `grep -c` y compte des lignes et rend 0 ou 1 ; `grep -o … | wc -l`
+compte les occurrences. (Au `5aad8b35`, `aucun geste de l.interface`, `sans aucune action` et `Ne rejetez donc` y
+figurent **une fois chacun**, `Annuler le rejet` **zéro** fois — vérifié en validation P1 pour les deux premiers
+motifs, puis en validation P2 sur le PDF aplati par les commandes ci-dessus, qui rendent `0` et `3` : les deux
+contrôles rougissent bien avant la correction.)
 
 **AC9 (b) — CHANGELOG.** `CHANGELOG.md` : section `## [0.13.3] — Non publié` (créée si absente, par union —
 précédent C-28-2-12) ; entrée *Ajouté* « Annuler le rejet d'une transaction bancaire, depuis le détail de son import
@@ -310,20 +333,24 @@ test ajouté, soit déclarée **équivalente** avec sa preuve au Debug Log.
       dans `lib.rs`.
 - [ ] **T3 — Gardes et commentaires** (AC7 a, AC10) : registre des routes, `ACTIONS`, G9, deux clés serveur × quatre
       locales, doc-comments ; grep du symptôme.
-- [ ] **T4 — Tests backend** B1-B9 (§ Tests) ; gate ciblé `binary(reconciliation_e2e)` + `audit_route_registry`
-      + `audit_label_registry` + `textes_coherents` + `i18n_e2e` ; **`kesh-db` touché → gate complet** avant tout
-      commit de fin de boucle (règle `CLAUDE.md`).
+- [ ] **T4 — Tests backend** B1-B10 (§ Tests) ; **`kesh-db` touché (un dépôt, même en doc-comment) → gate complet à
+      chaque passe, ciblage interdit** (règle `CLAUDE.md`, § *Pendant une boucle de revue*, exception `kesh-db`) — y
+      compris en cours de boucle de revue.
 - [ ] **T5a — Documentation** (AC9 a) : `docs/api-external.md`.
-- [ ] **T6a — Mutations** (AC12 a) M1-M8, M13-M15, sous verrou ; restauration `git checkout -- <f>` **puis `touch <f>`**.
+- [ ] **T6a — Mutations** (AC12 a) M1-M8, M13-M15, M17, sous verrou ; restauration `git checkout -- <f>` **puis
+      `touch <f>`**.
 - [ ] **T7a — Gate et comptes rendus** : gate complet **et** suite E2E complète au dernier commit de code (verrou de
-      gate, recette de `docs/testing.md`, échecs jugés fichier par fichier) ; Dev Agent Record (dont la phrase
+      gate, recette de `docs/testing.md`, échecs jugés fichier par fichier) ; la 28-5a ne touche **aucun** fichier
+      frontend (C-28-5-26) : aucun gate frontend n'est exigé d'elle — **s'il en touchait un**, ajouter `npm run
+      check`, `lint-i18n-ownership`, `test:unit` et `build` au même commit ; Dev Agent Record (dont la phrase
       « aucune release entre les deux PR »), File List, Change Log ; décomptes recomptés, périmètre déclaré.
 
 ### 28-5b
 
 - [ ] **T0b — Montage** : idem T0a, sur `origin/main` après la fusion de la 28-5a.
 - [ ] **T8 — Frontend** (AC5, AC6) : type, `unrejectTransaction`, `reconciliation-unreject.ts` (`isRejected`),
-      `UnrejectTransactionAction.svelte`, page de détail, indication ; fixtures complétées.
+      `UnrejectTransactionAction.svelte`, page de détail, indication ; fixtures complétées ; doc-comment de
+      `bank-import-deletion.ts:12-16` (appelants serveur d'`is_reconciled`, dont `classify_unreject` — C-28-5-26).
 - [ ] **T9 — i18n** (AC7 b) : quatre clés × quatre locales, `already-rejected` réécrite (quatre locales + repli) ;
       `sitesTotal` recompté.
 - [ ] **T10 — Tests frontend** V1-V6 ; `npm run check`, `lint-i18n-ownership`, `test:unit`, `build`.
@@ -345,15 +372,16 @@ du verrou tenu de `post_accept_returns_409_on_account_lock_contention` l. 1435 ;
 
 | # | Test | Établit |
 |---|---|---|
-| B1 | `unreject_puts_a_rejected_transaction_back_in_the_proposals` | rejet par la route ; `204` ; marqueur `NULL`, `version` +1, `status`/`matched_entry_id` inchangés ; la transaction est dans `GET /proposals` (absente avant) ; **une** ligne `reconciliation.unrejected` dont `previouslyRejectedAt` est **la même chaîne** que l'`autoMatchRejectedAt` lu par `GET /bank-imports/{id}` avant l'annulation ; puis **cycle** (AC13) : `POST /reject` du même id → `rejected[]` le contient, `failed[]` vide, marqueur reposé ; `…/unreject` → `204` |
+| B1 | `unreject_puts_a_rejected_transaction_back_in_the_proposals` | rejet par la route ; `updated_at` **forcé** à une valeur passée au montage (un rejet et son annulation peuvent tomber dans la même milliseconde) ; `204` ; marqueur `NULL`, `version` +1, `updated_at` **postérieur** à la valeur forcée, `status`/`matched_entry_id` inchangés ; nombre de lignes de `journal_entries` et d'`invoice_settlements` de la société **inchangé** (aucune écriture, aucun règlement) ; la transaction est dans `GET /proposals` (absente avant) ; **une** ligne `reconciliation.unrejected` dont `previouslyRejectedAt` est **la même chaîne** que l'`autoMatchRejectedAt` lu par `GET /bank-imports/{id}` avant l'annulation ; puis **cycle** (AC13) : `POST /reject` du même id → `rejected[]` le contient, `failed[]` vide, marqueur reposé ; `…/unreject` → `204` |
 | B2 | `unreject_refuses_a_transaction_that_is_not_rejected` | jamais rejetée → `409` code ; un second appel après succès → `409` ; ni `version` ni `audit_log` ne bougent |
 | B3 | `unreject_refuses_a_reconciled_transaction_even_if_marked` | état **forgé, et dit tel** (`status='reconciled'`, `matched_entry_id`, marqueur posé — patron du test l. 4438) → `409` ; marqueur intact |
-| B4 | `unreject_roles_and_scope` | Consultation → `403` ; autre société → `404` et rien d'écrit (comptes de lignes avant/après, patron l. 4385) |
+| B4 | `unreject_roles_and_scope` | Consultation → `403` ; autre société → `404` et rien d'écrit (comptes de lignes avant/après, patron l. 4385) ; Administrateur → `204` |
 | B5 | `unreject_returns_409_when_the_account_is_locked` | verrou nommé du compte tenu par une autre connexion → `409 RECONCILIATION_ACCOUNT_LOCKED`, marqueur intact |
 | B6 | `an_api_key_unrejects_and_is_named_in_the_audit` | clé `read-write` → `204` ; `actor_type = 'api_key'`, `actor_api_key_id` = la clé |
 | B7 | `the_import_detail_exposes_the_rejection_date` | `GET /bank-imports/{id}` : `autoMatchRejectedAt` chaîne ISO terminée par `Z` pour la rejetée, `null` pour l'autre ; `null` après l'annulation |
 | B8 | `mod unreject_classification_tests` (unitaire, `routes/reconciliation.rs`) | `classify_unreject` : `None` → `NotFound` ; rapprochée marquée → `NotRejected` ; non marquée → `NotRejected` ; rejetée → `Unrejected` |
 | B9 | `a_transaction_whose_rejection_is_undone_can_be_accepted_again` | AC13 : proposition `split` (`setup_accept_split_ctx`) ; rejet ; `POST /accept` → `failed[]` en `RECONCILIATION_ALREADY_REJECTED` ; `…/unreject` → `204` ; `POST /accept` de nouveau → acceptée, `status = 'reconciled'`, marqueur `NULL` |
+| B10 | `unreject_of_a_transaction_deleted_under_the_lock_is_not_found` | AC3, « disparue sous verrou » — **déterministe**, patron de `post_reject_locking_reread_sees_a_deletion_committed_after_the_snapshot` (`reconciliation_e2e.rs:7225-7330`) : rejet ; `pool.begin()` + `DELETE FROM bank_transactions WHERE id = ?` **non validé** (montage asserté : une ligne) ; `…/unreject` lancé dans une tâche ; `kesh_db::test_fixtures::attendre_une_requete_en_cours` sur les motifs **`["bank_transactions", "bank_account_id = ?"]`** — communs au `SELECT … FOR UPDATE` (`bank_tx_by_id_for_account_sql`) **et** à l'`UPDATE` prescrit, absents de la lecture hors verrou (`WHERE id = ? AND company_id = ?`) —, appelée deux fois à 500 ms d'écart (observation durable, C-27-4-26) ; `commit` de la suppression ; **`404 NOT_FOUND`** attendu, et **zéro** ligne `reconciliation.unrejected`. Sous M15, la lecture ordinaire voit encore la ligne, l'`UPDATE` attend le verrou X puis touche 0 ligne → `409 OPTIMISTIC_LOCK_CONFLICT` : rouge sur l'assertion du statut, non sur le montage (C-28-5-25). Doc-comment de B10 : reprendre du test de la 27-4 l'**angle mort de la sonde** (elle voit une requête **en cours**, non une requête **en attente de verrou** — `INNODB_TRX` exige le privilège `PROCESS`, absent sur le poste de dev ; sous M15, la mutation ne survivrait que si la lecture ordinaire durait plus de 500 ms) et la précaution **MariaDB ≥ 11.6** (`innodb_snapshot_isolation`) |
 
 **Frontend (28-5b) — Vitest :**
 
@@ -380,7 +408,8 @@ du verrou tenu de `post_accept_returns_409_on_account_lock_contention` l. 1435 ;
 | M8 | a | `From` : `auto_match_rejected_at: None` | B7 |
 | M13 | a | garde `rows_affected() != 1` retirée | **équivalente** : la ligne est lue `FOR UPDATE` sous verrou, scopée par sa clé primaire ; l'`UPDATE` ne peut toucher qu'elle (C-28-5-19) |
 | M14 | a | `UPDATE` scopé par le seul `id` (sans `company_id` ni `bank_account_id`) | **équivalente** : `id` est la clé primaire, et la ligne a été lue scopée société et compte sous verrou — la portée est déjà établie ; les deux prédicats restent comme défense en profondeur (patron du dépôt) |
-| M15 | a | lecture **non** verrouillante (`find_pending_by_id_for_account`, l. 351) au lieu de `find_by_id_for_account_for_update` | **survivante assumée** : B1-B9 sont séquentiels ; la différence ne se voit que dans l'intervalle entre la relâche du verrou nommé et le `commit` d'un geste concurrent, que rien ne rend déterministe — même angle mort que celui écrit au doc-comment de la lecture (`repositories/reconciliation.rs:385-400`) (C-28-5-23) |
+| M15 | a | lecture **non** verrouillante (`find_pending_by_id_for_account`, l. 351) au lieu de `find_by_id_for_account_for_update` | **B10** : la suppression d'import ne prend pas le verrou nommé, sa transaction entière est la fenêtre, et le test la tient ouverte ; code juste → `404`, M15 → `409 OPTIMISTIC_LOCK_CONFLICT` (C-28-5-25, qui remplace C-28-5-23). M15 garde aussi M13 : l'équivalence de M13 suppose la lecture verrouillante |
+| M17 | a | `UPDATE` : retirer `updated_at = NOW(3)` | B1 |
 | M9 | b | `isRejected` sans `!isReconciled(tx)` | V1 |
 | M10 | b | bouton rendu sans condition `canManage` | V2 |
 | M11 | b | `onUnrejected` non appelé sur échec | V2 |
@@ -398,8 +427,8 @@ du verrou tenu de `post_accept_returns_409_on_account_lock_contention` l. 1435 ;
    victime d'un interblocage, et le rejeu de `…/cancel` n'est pas en jeu.*
 2. `pool.begin()`, `with_account_lock(&mut tx, company_id, bank_account_id, LOCK_TIMEOUT_SECS, …)`.
 3. Dans la fermeture : `find_by_id_for_account_for_update(&mut **tx_inner, company_id, bank_account_id, id).await?`
-   (lecture **courante** et verrouillante — une `SELECT` ordinaire lirait la vue cohérente, cf. son doc-comment) →
-   `classify_unreject`. `NotFound` ou `NotRejected` : `Ok(outcome)` sans rien écrire.
+   (lecture **courante** et verrouillante — une `SELECT` ordinaire lirait la vue cohérente, cf. son doc-comment ; elle
+   attend une suppression d'import en cours puis la voit, d'où le `404` de B10) → `classify_unreject`. `NotFound` ou `NotRejected` : `Ok(outcome)` sans rien écrire.
 4. `Unrejected` : `UPDATE bank_transactions SET auto_match_rejected_at = NULL, updated_at = NOW(3), version = version + 1
    WHERE id = ? AND company_id = ? AND bank_account_id = ?`, erreur rangée par
    `.map_err(|e| ReconciliationError::Db(DbError::Sqlx(e)))?` (patron de `post_manual_once`, `:3800-3820`) ;
@@ -408,10 +437,14 @@ du verrou tenu de `post_accept_returns_409_on_account_lock_contention` l. 1435 ;
    range l'erreur en `ReconciliationError::Db`, `DbError::Sqlx` préservé) ; `details` construit avec le marqueur lu
    au point 3, `.and_utc()`.
 6. Après la fermeture : `conclude_locked_attempt(tx, lock_result, "post_unreject").await?` — l'auxiliaire existant
-   de `post_manual` et `post_split` (`:4312-4395`), dont seule la **signature** devient générique
-   (`lock_result: Result<T, ReconciliationError>` → `Result<T, AppError>`), corps et `match` **inchangés** : il
-   `commit` si la fermeture a réussi (pour un refus, rien n'a été écrit : le `commit` vaut un `rollback`), sinon
-   `rollback` et conversion qui préserve `DbError::Sqlx`. Puis : `Unrejected` → `204` ; `NotFound` →
+   de `post_manual` et `post_split` (doc-comment `:4312`, fonction `:4325-4399`), dont la **signature** devient
+   générique (`lock_result: Result<T, ReconciliationError>` → `Result<T, AppError>`) ; logique et `match`
+   **inchangés**, avec trois retouches de texte seulement (C-28-5-28) : la liaison `Ok(journal_entry_id)` devient
+   `Ok(value)` (le nom serait faux pour `UnrejectOutcome`), et les commentaires internes `:4366` et `:4384`, qui
+   nomment les appelants, nomment les trois. Il `commit` si la fermeture a réussi (pour un refus, rien n'a été
+   écrit : le `commit` vaut un `rollback`), sinon `rollback` et conversion qui préserve `DbError::Sqlx` — un
+   `OptimisticLockConflict` sort en `AppError::Database`, que le mapping de `errors.rs:2922-2925` rend
+   `409 OPTIMISTIC_LOCK_CONFLICT`. Puis : `Unrejected` → `204` ; `NotFound` →
    `AppError::Database(DbError::NotFound)` ; `NotRejected` → `AppError::ReconciliationTransactionNotRejected`.
    **Aucune troisième copie** du `match` de conversion (C-28-5-18) ; celui de `cancel_reconciliation_once` reste tel
    quel.
@@ -420,7 +453,16 @@ du verrou tenu de `post_accept_returns_409_on_account_lock_contention` l. 1435 ;
 qu'**une** ligne de `bank_transactions` puis insère une ligne d'audit (`audit_log` n'a aucune clé étrangère) ; la
 suppression d'un import (27-1) verrouille les lignes de l'import par identifiant croissant **sans** prendre le verrou
 nommé ; la création d'import n'écrit que des lignes neuves ; la restauration d'installation écarte `audit_log` de son
-`DELETE` — aucun cycle n'est possible (C-28-5-4). Le verrou nommé est relâché avant le `commit`
+`DELETE`. **Un cycle reste possible, un seul, et il est nommé** (C-28-5-30) : la **remise à zéro d'onboarding**
+(`kesh_seed::reset_demo`, `POST /onboarding/reset`) prend `audit_log` par une lecture verrouillante **puis**
+supprime `bank_transactions` (`docs/MULTI-TENANT-SCOPING-PATTERNS.md:324`, `kesh-seed/src/lib.rs:576`) — l'ordre
+inverse de l'annulation. Si InnoDB désigne l'annulation comme victime, elle rend un `500` **sans rien de partiel**
+(annulation complète de sa transaction) et la remise à zéro est rejouée ; c'est rare (installation de démonstration
+ou d'avant production) et c'est **le cas même de `post_reject`**, préexistant. Écrit au point (iv) du doc
+d'`audit_route_registry.rs` (AC10). Hors ce cas, aucun cycle à `5aad8b35` ; **à revérifier au rebase sur la 28-4a**,
+dont la fiche fait prendre à `unreject` le verrou `bank_accounts FOR UPDATE` après la ligne de `bank_transactions`
+(W30) — ordre conforme à sa règle, et sans insertion à clé étrangère vers `companies`, mais l'argument devra être
+relu sur le code fusionné. Le verrou nommé est relâché avant le `commit`
 (`kesh-reconciliation/src/mutex.rs`, propriété commune à tous les gestes) : un geste concurrent qui obtient le verrou
 dans cet intervalle bute sur la lecture `FOR UPDATE` et attend le `commit` ; un lot qui aurait classé la ligne avant
 peut la refuser (`RECONCILIATION_ALREADY_REJECTED`) — refus bénin, à relancer, déjà le cas entre tous les gestes.
@@ -432,25 +474,31 @@ obtenu par `grep -rn "auto_match_rejected_at" crates --include=*.rs --include=*.
 `grep -rn "autoMatchRejectedAt\|auto_match_rejected" frontend/src` (vide à `5aad8b35`) ; élargi en validation P1
 (`rejectedAt|wasRejected|was_previously|rejected_at` sur `frontend/src docs crates/kesh-seed` : seul
 `reconciliation.types.ts:104`, `rejectedAt` de `RejectedProposal`, autre objet ; `kesh-seed`, `test_endpoints.rs`,
-`post_restore.rs` : aucune occurrence). **Chaque ligne du grep** figure ci-dessous :
+`post_restore.rs` : aucune occurrence). Le premier grep rend **45 lignes** à `5aad8b35` (recomptées en validation
+P2) ; **chacune** figure ci-dessous — les lignes de code de production par site (la migration `…8_4.sql`, l. 3, 6 et 15, en une ligne), et, dans les deux dernières lignes
+du tableau, ce que le filtre `grep -v /tests/` laisse passer sans que ce soit du code de production (commentaires et
+fixtures `#[cfg(test)]`) :
 
 | Site | Rôle vis-à-vis du marqueur | Après la story |
 |---|---|---|
 | `repositories/reconciliation.rs:182` (`find_pending_transactions_for_account`) | exclut les rejetées des propositions | **voulu** (c'est le sens du rejet) ; l'indication de l'AC6 renvoie au détail |
 | `routes/reconciliation.rs:885` (`classify_batch_transaction`) | refuse une rejetée à l'acceptation et au rejet | voulu ; annuler le rejet la rend de nouveau acceptable (AC13, B9) ; son libellé dit où annuler (AC7 b) |
-| `routes/reconciliation.rs:3357` (`reject_batch`) | **pose** le marqueur | inchangé |
+| `routes/reconciliation.rs:3357`, `:3359` (`reject_batch`) | **pose** le marqueur (`:3357`), sous la garde `auto_match_rejected_at IS NULL` (`:3359`) | inchangé |
+| `routes/reconciliation.rs:3409` (`reject_batch`) | relit le marqueur posé pour rendre `rejectedAt` | inchangé, sans effet sur la classe |
 | `:2540`, `:2992`, `:3803`, `:4260`, `reconciliation_cancel.rs:340` | **remettent** le marqueur à `NULL` | inchangés ; aucun n'est atteignable depuis l'écran pour une rejetée (cf. *Le défaut*) |
 | **route neuve** `…/unreject` | remet à `NULL` | **le chemin de l'interface** |
 | `routes/reconciliation.rs:2565`, `:3033`, `:3750`, `:4224` (`was_previously_rejected`) ; `reconciliation_cancel.rs:400` (`wasPreviouslyRejected`) | lisent le marqueur pour l'**audit** des gestes qui le remettent à `NULL` et de l'annulation | inchangés, sans effet sur la classe ; une transaction dont le rejet a été annulé y lira `false` — exact, puisqu'elle n'est plus rejetée ; l'audit d'`unreject` porte `previouslyRejectedAt` (AC2) |
 | `repositories/bank_imports.rs:37` (`COLUMNS`), `bank_transactions.rs:24`, `repositories/reconciliation.rs:82` (`BANK_TX_COLUMNS`) | listes de colonnes lues | inchangées, sans effet sur la classe |
-| `repositories/bank_imports.rs:330`, `:373`, `:~480` (`rejected_count` de la suppression d'import, 27-1) | comptent les rejetées supprimées avec leur import | inchangés ; vrais (une rejetée reste supprimable avec son import) |
+| `repositories/bank_imports.rs:330`, `:373`, et le comptage `:488-490` qui ne nomme pas la colonne (`rejected_count` de la suppression d'import, 27-1) | comptent les rejetées supprimées avec leur import | inchangés ; vrais (une rejetée reste supprimable avec son import) |
 | `entities/bank_transaction.rs:105` ; `migrations/20260507100001_reconciliation_8_4.sql` ; `test-schema/0001_schema_squash.sql` | définition de la colonne | inchangés |
 | `routes/bank_imports.rs:250` (`TransactionResponse`) | n'exposait pas le marqueur | **résolu** (AC1) |
 | `frontend/src/routes/(app)/bank-import/[id]/+page.svelte` | seul écran qui liste une rejetée | **résolu** (AC5) |
-| `exports/csv_tables.rs:740` | exporte la colonne | déjà résolu (export global) |
+| `exports/csv_tables.rs:740` (en-tête), `:764` (valeur) | exporte la colonne | déjà résolu (export global) |
 | page *Imports précédents* (`BankImportList.svelte`) | ne compte pas les rejetées | **angle mort assumé** : l'utilisateur ouvre l'import d'après la date de la transaction ; un compteur serait du périmètre en plus |
 | colonne *Statut* du détail (`pending` brut) | ne dit pas « rejetée » | **angle mort assumé**, la mention de l'AC5 le dit à côté ; traduction suivie par #339 |
 | liste de la page *Réconciliation* au-delà de 100 lignes | une rejetée annulée, ancienne, n'y reparaît pas | **angle mort assumé, suivi par #649** ; les textes le disent (C-28-5-20) |
+| *Hors code de production* — lignes de **commentaire** : `routes/reconciliation.rs:12`, `:857`, `:2535`, `:3129`, `:3353`, `:3394`, `:3401`, `:3501`, `:4256` ; `repositories/reconciliation.rs:12`, `:163`, `:330`, `:337` | décrivent le marqueur | sans effet sur la classe ; l'en-tête `routes/reconciliation.rs:12` et `repositories/reconciliation.rs:12` reçoivent la puce de la route neuve (AC10) |
+| *Hors code de production* — **fixtures `#[cfg(test)]`** : `kesh-reconciliation/src/matching.rs:208`, `manual.rs:152`, `split.rs:217`, `rules.rs:170` (`auto_match_rejected_at: None`, dans les `#[cfg(test)]` ouverts l. 178, 127, 192, 137) ; `routes/reconciliation.rs:4799` (module de tests) | construisent une transaction de test | sans effet |
 
 ### Textes (quatre locales)
 
@@ -498,9 +546,10 @@ pas », « rejetées comprises ») reste vrai — il l'est, la story ne change p
 
 - `POST /reject` et `POST /accept` (27-4) : codes, ordre, `failed[]` — aucune ligne de leurs fonctions ne change.
 - `…/cancel` : seule sa lecture du compte se déplace dans l'auxiliaire, **mot pour mot** ; son `match` de
-  conversion et tout le reste sont intouchés ; ses tests (l. 3451-4560 de `reconciliation_e2e.rs`) restent verts
+  conversion et tout le reste sont intouchés ; ses tests (l. 3451-4552 de `reconciliation_e2e.rs`) restent verts
   sans modification.
-- `post_manual`, `post_split` : `conclude_locked_attempt` ne change que de signature (générique) ; son corps et le
+- `post_manual`, `post_split` : `conclude_locked_attempt` ne change que de signature (générique), plus le nom de la
+  liaison `Ok(value)` et les deux commentaires d'appelants (C-28-5-28) ; sa logique, son `match` et le
   `DbError::Sqlx` qu'il préserve pour leur rejeu sont intouchés.
 - `TransactionResponse` : champs existants inchangés ; le détail d'import de la 27-1 (`DeleteBankImportAction`,
   `reconciledCount`) ne lit pas le champ neuf.
@@ -510,7 +559,10 @@ pas », « rejetées comprises ») reste vrai — il l'est, la story ne change p
 
 - Issue #526 et ses deux commentaires (lentilles R et F de la 15-5c) ; epic § 28-5 ; #649 (limite de 100).
 - `crates/kesh-api/src/routes/reconciliation.rs` : `reject_batch` `:3338-3462`, `classify_batch_transaction`
-  `:872-897`, `post_manual_once` `:3699-3866`, `conclude_locked_attempt` `:4312-4395`, annulation `:4400-4586`.
+  `:872-897`, `post_manual_once` `:3699-3866`, `conclude_locked_attempt` `:4312-4399` (doc-comment compris),
+  annulation `:4400-4586` ; mapping `DbError::OptimisticLockConflict` → `409 OPTIMISTIC_LOCK_CONFLICT` :
+  `errors.rs:2922-2925`.
+- Test patron de B10 : `reconciliation_e2e.rs:7225-7330` ; sonde `kesh-db/src/test_fixtures.rs:561`.
 - `crates/kesh-db/src/repositories/reconciliation.rs:330-416` ; `repositories/bank_imports.rs:340-358`.
 - `docs/api-external.md:534-575` ; `docs/manual/fr/user-manual.tex:1933-1952`.
 - Fiche de la 28-4 (`story/28-4`, `7a4adf64`) : W30, R8, M33 pour la route `unreject`.
@@ -549,3 +601,29 @@ pas », « rejetées comprises ») reste vrai — il l'est, la story ne change p
   remédiation : **13 AC** (AC1-AC13 ; AC7, AC9 et AC12 en deux volets), tâches T0a-T7a et T0b-T14, **B1-B9**,
   **V1-V6**, **M1-M16**, choix C-28-5-1 à C-28-5-24 ; **six** clés i18n neuves (deux en a, quatre en b) et une
   réécrite, × quatre locales. Validation P2 à lancer (`28-5-validate-prompt-p2.md`, Opus, R et F).
+- 2026-10-13 — **Validation P2** (Opus 5.5, lentilles R et F, rapports `$GATE_LOGS/28-5-validate-p2-{R,F}.md`) :
+  F — 0 HIGH, 2 MEDIUM, 8 LOW ; R — 0 HIGH, 2 MEDIUM, 10 LOW ; soit **4 MEDIUM, 2 distincts** (F1 = R1, F2 = R2,
+  tous deux issus de la remédiation P1) et **18 LOW**, dont cinq recoupements (F4 = R4, F6 = R10, F9 = R3,
+  F10 = R9, F8 ⊃ R5). Remédiation (Opus 5.5, consignes de l'orchestrateur) : **F1 = R1** — le code est
+  `409 OPTIMISTIC_LOCK_CONFLICT`, produit par le mapping des erreurs de base (`errors.rs:2922-2925`) et non par
+  `conclude_locked_attempt` : AC3, AC9 (a), séquence de la route ; au registre, notes à C-28-5-4 et C-28-5-19 ;
+  **F2 = R2** — test **B10** déterministe (patron du test de la 27-4, `DELETE` non validé, sonde, `commit`) : `404`
+  attendu, `409` sous M15, qui passe de « survivante assumée » à « tuée » ; C-28-5-25 remplace C-28-5-23, dont la
+  prémisse d'un angle mort écrit au doc-comment de la lecture était fausse ; AC12 (a), tableau des mutations, AC3.
+  LOW : numéros de ligne de `conclude_locked_attempt` (`:4312-4399`) et du comptage (`:488-490`) (F3) ; inventaire —
+  45 lignes du grep recomptées, `:3359`, `:3409`, `csv_tables.rs:764`, commentaires et fixtures `#[cfg(test)]` en
+  deux lignes (F4 = R4) ; doc-comment de `bank-import-deletion.ts` passé à la 28-5b, la 28-5a à cinq sites sans
+  fichier frontend (F5, C-28-5-26) ; ordre 28-5a, puis 28-6 ∥ 28-5b, puis 28-7 au § *Ordre* de l'epic et à la fiche,
+  régions `sitesTotal` et `failed-proposal-label.test.ts` (F6 = R10, C-28-5-29) ; commentaires internes et liaison
+  de `conclude_locked_attempt` retouchables, motif `` post_split` n' `` au grep (F7, R12, C-28-5-28) ; point (iv)
+  d'`audit_route_registry.rs` et inventaire « clos » d'`is_reconciled` (l. 338-344) dans l'AC10 (F8, R5) ; argument
+  « aucun cycle » nuancé — remise à zéro d'onboarding, `500` rare sans écriture partielle comme `post_reject`, à
+  revérifier au rebase sur la 28-4a (F9 = R3, C-28-5-30) ; contrôle PDF en `grep -o … | wc -l` avec
+  `Ne rejetez donc` (F10 = R9 ; rejoué sur le PDF aplati : `0` et `3`) ; renvoi d'API au paragraphe l. 540 (R6,
+  C-28-5-27) ; T4 en gate complet à chaque passe, T7a sans gate frontend faute de fichier frontend (R7) ; B1 compte
+  `journal_entries` et `invoice_settlements` et vérifie `updated_at` (forcé dans le passé au montage), B4 appelle en
+  Administrateur, mutation **M17** (R8) ; chemin d'import d'`errorMessageOf` qui suit la 28-2 (R11). Registre de
+  sprint et § *Ordre* de l'epic alignés. Recompte après remédiation : **13 AC**, tâches T0a-T7a et T0b-T14,
+  **B1-B10**, **V1-V6**, **M1-M17**, choix C-28-5-1 à C-28-5-30 (C-28-5-11, 12 et 23 remplacés) ; six clés i18n
+  neuves et une réécrite, × quatre locales (inchangé). Passe **ciblée P3** à lancer
+  (`28-5-validate-prompt-p3-ciblee.md`, Haiku, une lentille sur le seul diff de cette remédiation).

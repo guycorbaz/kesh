@@ -1108,8 +1108,11 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
   rejeu. Raisonnement d'interblocage : une ligne de `bank_transactions` verrouillée, puis une insertion d'audit ; la
   suppression d'import (27-1) verrouille ses lignes par identifiant croissant sans le verrou nommé — aucun cycle.
 - **Écartée** : pas de verrou (l'`UPDATE` conditionnel suffirait à l'atomicité, mais ferait échouer en
-  `OPTIMISTIC_LOCK` un geste concurrent qui n'a rien de fautif).
+  `OPTIMISTIC_LOCK_CONFLICT` un geste concurrent qui n'a rien de fautif).
 - **Réversible** : oui.
+- ⚠️ **Validation P2** (2026-10-13) : le code s'écrit `OPTIMISTIC_LOCK_CONFLICT` (`errors.rs:2924`), graphie
+  corrigée ci-dessus (findings F1 = R1) ; « aucun cycle » est **nuancé** par **C-28-5-30** — la remise à zéro
+  d'onboarding en ferme un (F9 = R3).
 
 ### C-28-5-5 — Lecture verrouillante d'abord, classement décisif, un seul code de refus
 
@@ -1214,6 +1217,7 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
   La 28-6 et la 28-7, développées après, rebaseront sur cette fin de fichier. La section `## [0.13.3] — Non publié`
   du CHANGELOG est créée si absente, réunie par union sinon (précédent C-28-2-12).
 - **Réversible** : oui.
+- *Depuis les validations P1 et P2* : B9 et B10 s'y ajoutent (B8 reste unitaire, dans `routes/reconciliation.rs`).
 
 ### Validation P1 de la 28-5 (2026-10-13) — choix C-28-5-17 à C-28-5-24
 
@@ -1254,7 +1258,10 @@ décisions de l'orchestrateur.
 - **Contexte** : l'AC3 prescrivait `tracing::error!` + `AppError::Internal`, alors que la fermeture rend une
   `ReconciliationError` (R2) et que la garde est inatteignable, donc sans mutation tuable (F6).
 - **Retenu** : `Err(ReconciliationError::Db(DbError::OptimisticLockConflict))`, patron de `post_manual_once`
-  (`:3822-3826`), rendu `409 OPTIMISTIC_LOCK` par `conclude_locked_attempt` ; mutation M13 déclarée équivalente (ligne
+  (`:3822-3826`), que `conclude_locked_attempt` rend en `AppError::Database` et que le **mapping des erreurs de
+  base** rend `409 OPTIMISTIC_LOCK_CONFLICT` (`errors.rs:2922-2925`) — *graphie et producteur corrigés en validation
+  P2 (F1 = R1) : la première rédaction écrivait `409 OPTIMISTIC_LOCK`, code que le serveur n'émet pas, et
+  l'attribuait à `conclude_locked_attempt`* ; mutation M13 déclarée équivalente (ligne
   lue `FOR UPDATE` sous verrou par sa clé primaire) ; M14 (portée de l'`UPDATE`) équivalente aussi.
 - **Écartée** : retirer la garde (un `204` muet si un jour la lecture cesse d'être verrouillante).
 - **Réversible** : oui.
@@ -1299,6 +1306,11 @@ décisions de l'orchestrateur.
   écrit au doc-comment de la lecture (Story 27-4).
 - **Écartée** : un test à deux connexions (interleaving non déterministe : un test qui passerait au hasard).
 - **Réversible** : oui.
+- ⛔ **Remplacé** à la validation P2 (2026-10-13) par **C-28-5-25** (F2 = R2). Les trois prémisses étaient fausses :
+  le doc-comment de la lecture (`repositories/reconciliation.rs:385-400`) n'écrit **aucun** angle mort — il dit
+  pourquoi la lecture doit être courante ; la suppression d'import ne prend pas le verrou nommé, si bien que la
+  fenêtre est sa transaction entière, qu'un test tient ouverte ; et un test déterministe sur ce patron existe à la
+  27-4, qui a tué la mutation jumelle M11.
 
 ### C-28-5-24 — Ce qui va dans chaque partie : messages serveur en a, CHANGELOG et interface en b
 
@@ -1307,4 +1319,78 @@ décisions de l'orchestrateur.
   manuel et le CHANGELOG — *Ajouté* (le geste et la route) et *Corrigé* (#526), un geste neuf étant un *Ajouté*
   (précédent 27-1, R9).
 - **Écartée** : CHANGELOG en 28-5a (il annoncerait un geste que l'interface n'offre pas encore).
+- **Réversible** : oui.
+
+### Validation P2 de la 28-5 (2026-10-13) — choix C-28-5-25 à C-28-5-30
+
+Remédiation des rapports `28-5-validate-p2-F.md` et `28-5-validate-p2-R.md` (Opus 5.5), par Opus 5.5, sur les
+consignes de l'orchestrateur. La correction du code `OPTIMISTIC_LOCK_CONFLICT` (F1 = R1) n'est pas un choix : elle
+est portée en note à C-28-5-4 et C-28-5-19.
+
+### C-28-5-25 — Test B10 déterministe : M15 tuée (remplace C-28-5-23)
+
+- **Contexte** : M15 (lecture ordinaire au lieu de `FOR UPDATE`) était déclarée survivante sur un argument faux, et
+  le « disparue sous verrou → `404` » de l'AC3 n'avait aucun test (F2 = R2).
+- **Retenu** : **B10** `unreject_of_a_transaction_deleted_under_the_lock_is_not_found`, patron de
+  `post_reject_locking_reread_sees_a_deletion_committed_after_the_snapshot` (`reconciliation_e2e.rs:7225-7330`) :
+  `DELETE` non validé, `…/unreject` en tâche, sonde `attendre_une_requete_en_cours` sur
+  `["bank_transactions", "bank_account_id = ?"]` (motifs communs au `SELECT … FOR UPDATE` et à l'`UPDATE` prescrit,
+  absents de la lecture hors verrou), deux observations à 500 ms (C-27-4-26), `commit`, puis `404 NOT_FOUND` et
+  aucune trace. Sous M15 : `409 OPTIMISTIC_LOCK_CONFLICT`. M15 passe à « tuée par B10 » ; AC12 (a) n'admet plus de
+  survivante assumée.
+- **Écartées** : sonde sur `["bank_transactions", "FOR UPDATE"]` (sous M15, la sonde n'observerait jamais rien et le
+  test rougirait sur son **montage**, non sur le statut : la mutation serait tuée pour une mauvaise raison) ;
+  garder M15 survivante (argument réfuté).
+- **Réversible** : oui. ⚠️ Mêmes réserves que le test de la 27-4, à reprendre au doc-comment : la sonde voit une
+  requête en cours, non en attente (privilège `PROCESS` absent sur le poste de dev) ; MariaDB ≥ 11.6
+  (`innodb_snapshot_isolation`).
+
+### C-28-5-26 — Le doc-comment de `bank-import-deletion.ts` passe à la 28-5b
+
+- **Contexte** : la 28-5a comptait six sites de premier niveau, dont un doc-comment frontend, au-delà du seuil de
+  cinq qui a motivé le découpage (F5), et ce fichier lui imposait un gate frontend (R7).
+- **Retenu** : la 28-5b, qui touche déjà `frontend/features/bank-import`, complète le doc-comment ; la 28-5a ne
+  touche aucun fichier frontend (cinq sites). Entre les deux PR, le commentaire est incomplet, non faux.
+- **Écartée** : écrire que les modules touchés en commentaire seul ne comptent pas (une exception de plus à la règle
+  de découpage, pour un commentaire).
+- **Réversible** : oui.
+
+### C-28-5-27 — Renvoi de `docs/api-external.md` au paragraphe du refus `ALREADY_REJECTED`
+
+- **Contexte** : la phrase de renvoi était prescrite l. 552 (ordre de tri du rejet), alors que la cause de
+  `RECONCILIATION_ALREADY_REJECTED` est décrite l. 540 (R6).
+- **Retenu** : la phrase va au paragraphe « Transaction disparue, rapprochée ou rejetée » (l. 540), seul.
+- **Écartée** : aux deux paragraphes (une redite).
+- **Réversible** : oui.
+
+### C-28-5-28 — `conclude_locked_attempt` : trois retouches de texte autorisées
+
+- **Contexte** : « corps intouché » figeait la liaison `Ok(journal_entry_id)`, fausse pour `UnrejectOutcome` (R12), et
+  deux commentaires internes qui nomment deux appelants sur trois (l. 4366, 4384 — F7).
+- **Retenu** : liaison renommée `Ok(value)` ; les deux commentaires nomment les trois appelants ; logique et `match`
+  inchangés ; motif `` post_split` n' `` ajouté au grep du symptôme de l'AC10.
+- **Écartée** : laisser les noms (un commentaire faux sur un auxiliaire partagé).
+- **Réversible** : oui.
+
+### C-28-5-29 — Ordre de l'epic : 28-5a, puis 28-6 ∥ 28-5b, puis 28-7 — décision de l'orchestrateur
+
+- **Contexte** : le § *Ordre* de l'epic sérialisait « 28-5, 28-6, 28-7 » sans connaître le découpage ; la fiche
+  laissait l'ordre 28-5b / 28-6 ouvert (F6 = R10).
+- **Retenu** : la 28-5a seule touche `routes/reconciliation.rs` et `docs/api-external.md` : elle passe d'abord ; la
+  28-6 et la 28-5b se développent ensuite en parallèle, avec union au rebase sur `failed-proposal-label.ts`, son
+  test, `sitesTotal` (recompté par la seconde fusionnée) et la section `reconciliation-*` des catalogues ; la 28-7
+  vient après la 28-6.
+- **Réversible** : oui, tant qu'aucune n'est fusionnée.
+
+### C-28-5-30 — Interblocage avec la remise à zéro d'onboarding : nommé, non rejoué
+
+- **Contexte** : l'argument « aucun cycle » (C-28-5-4) omettait `kesh_seed::reset_demo`, qui prend `audit_log` puis
+  `bank_transactions` — l'ordre inverse de l'annulation (R3) ; et il était écrit comme absolu alors que la 28-4a
+  rouvrira la question (F9).
+- **Retenu** : l'angle mort est **écrit** — au point (iv) d'`audit_route_registry.rs` et dans la fiche : victime
+  désignée, l'annulation rend `500` sans rien de partiel, comme `post_reject` (préexistant) ; rare (installation de
+  démonstration ou d'avant production) ; argument à revérifier au rebase sur la 28-4a (W30). Classement
+  `SansEcritureAuJournal` maintenu.
+- **Écartée** : rejouer la route sur 1213 (une enveloppe de rejeu pour un cas que `post_reject`, voisin, assume déjà ;
+  le geste se refait d'un clic).
 - **Réversible** : oui.
