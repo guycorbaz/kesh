@@ -10,6 +10,18 @@
 // aussi.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+/** La valeur fr-CH d'une clé sur une seule ligne du catalogue (patron d'`invoice-cancel.test.ts`). */
+function valeurFr(cle: string): string | undefined {
+	const texte = readFileSync(join('../crates/kesh-i18n/locales', 'fr-CH', 'messages.ftl'), 'utf-8');
+	const prefixe = `${cle} = `;
+	return texte
+		.split('\n')
+		.find((l) => l.startsWith(prefixe))
+		?.slice(prefixe.length);
+}
 
 const calls: string[] = [];
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
@@ -80,6 +92,17 @@ describe('failedProposalLabel', () => {
 		expect(calls).toEqual(['reconciliation-failed-changed-during-batch']);
 		expect(label).toContain('modifiée pendant le traitement');
 		expect(label).not.toContain('déjà réconciliée');
+	});
+
+	// Story 28-5b (#526, AC7 b, V6, C-28-5-21) — le refus d'un lot dit où annuler le rejet, et son
+	// repli égale mot pour mot la valeur fr-CH (apostrophe `’` comprise).
+	it('RECONCILIATION_ALREADY_REJECTED → libellé qui dit où annuler le rejet, repli = fr-CH', () => {
+		const label = failedProposalLabel('RECONCILIATION_ALREADY_REJECTED');
+		expect(calls).toEqual(['reconciliation-failed-already-rejected']);
+		const attendu = valeurFr('reconciliation-failed-already-rejected');
+		expect(attendu).toBeDefined();
+		expect(label).toBe(attendu);
+		expect(label).toContain('Son rejet s’annule depuis le détail de son import (Importer des relevés).');
 	});
 
 	it('RECONCILIATION_ALREADY_RECONCILED avec une autre raison → libellé générique', () => {

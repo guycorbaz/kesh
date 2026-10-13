@@ -813,6 +813,10 @@ reconciliation-cancel-dismiss = Close
 reconciliation-cancel-done = Reconciliation cancelled.
 reconciliation-cancel-entry-link = View the entry
 reconciliation-cancel-column = Reconciliation
+# Story 28-5b (#526) — annuler le rejet d'une transaction, depuis le détail de son import.
+reconciliation-unreject-button = Undo rejection
+reconciliation-unreject-rejected-on = Rejected on { $date }
+reconciliation-unreject-success = Rejection undone: the transaction is offered for reconciliation again; the list shows the 100 most recent pending ones.
 invoice-settle-success-full = Settlement recorded — invoice settled
 invoice-settle-success-partial = Partial settlement recorded
 invoice-error-settled-on-required = Settlement date required
@@ -1146,6 +1150,7 @@ reconciliation-labels-no-candidate = No match
 reconciliation-labels-amount-due-of = remaining out of { $total }
 reconciliation-labels-success-suffix = operation(s) succeeded.
 reconciliation-labels-failed = Partial failures
+reconciliation-labels-rejected-hint = A rejected transaction leaves this list. It remains in the detail of its import (Import statements), where its rejection can be undone if your role allows it.
 # Story 15-5c (#492) — labels for the refusals of a reconciliation batch (`failed[]`).
 reconciliation-failed-account-not-found = A counterpart account cannot be found or is archived.
 reconciliation-failed-account-not-postable = Non-postable account: { $numbers }. A grouping, result or closing account takes no entries: choose a postable account.
@@ -1153,7 +1158,7 @@ reconciliation-failed-account-not-postable-generic = A counterpart account is no
 reconciliation-failed-bank-account-not-configured = The bank account is not linked to any active ledger account: link one under Administration → Bank accounts.
 reconciliation-failed-bank-account-not-found = Bank account not found.
 reconciliation-failed-bank-transaction-not-found = Transaction not found: it was deleted with its import, or does not belong to this bank account.
-reconciliation-failed-already-rejected = This transaction has already been rejected: it is no longer proposed.
+reconciliation-failed-already-rejected = This transaction has already been rejected: it is no longer proposed. Its rejection can be undone from the detail of its import (Import statements).
 reconciliation-failed-changed-during-batch = The transaction changed during processing — reconciled, rejected or deleted by another operation.
 reconciliation-failed-database-error = Database error: try again; if the problem persists, contact support.
 reconciliation-failed-invoice-not-found = Invoice not found.

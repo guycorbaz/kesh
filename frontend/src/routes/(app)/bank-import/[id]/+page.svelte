@@ -3,6 +3,11 @@
   Route /bank-import/[id]. Consomme GET /api/v1/bank-imports/{id}.
   Affiche l'entête (filename, période, soldes, source_format) + table
   des transactions persistées.
+
+  Story 28-5b (#526) — c'est aussi le seul écran qui montre une transaction
+  REJETÉE (elle a quitté la liste de la réconciliation) : colonne
+  *Rapprochement*, mention « Rejetée le … » et, pour l'Admin et le Comptable,
+  *Annuler le rejet* (`UnrejectTransactionAction`).
 -->
 <script lang="ts">
 	import { page } from '$app/state';
@@ -14,6 +19,7 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import CancelReconciliationDialog from '$lib/features/reconciliation/CancelReconciliationDialog.svelte';
 	import DeleteBankImportAction from '$lib/features/bank-import/DeleteBankImportAction.svelte';
+	import UnrejectTransactionAction from '$lib/features/reconciliation/UnrejectTransactionAction.svelte';
 	import { notifySuccess } from '$lib/shared/utils/notify';
 	import { goto } from '$app/navigation';
 
@@ -147,6 +153,7 @@
 									{i18nMsg('reconciliation-cancel-button', 'Annuler le rapprochement')}
 								</button>
 							{/if}
+							<UnrejectTransactionAction {tx} {canManage} onUnrejected={() => void load()} />
 						</td>
 					</tr>
 				{/each}

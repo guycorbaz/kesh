@@ -813,6 +813,10 @@ reconciliation-cancel-dismiss = Schliessen
 reconciliation-cancel-done = Abgleich aufgehoben.
 reconciliation-cancel-entry-link = Buchung anzeigen
 reconciliation-cancel-column = Abgleich
+# Story 28-5b (#526) — annuler le rejet d'une transaction, depuis le détail de son import.
+reconciliation-unreject-button = Ablehnung aufheben
+reconciliation-unreject-rejected-on = Abgelehnt am { $date }
+reconciliation-unreject-success = Ablehnung aufgehoben: Die Transaktion wird wieder zur Abstimmung vorgeschlagen; die Liste zeigt die 100 neuesten offenen Transaktionen.
 invoice-settle-success-full = Zahlung erfasst — Rechnung beglichen
 invoice-settle-success-partial = Teilzahlung erfasst
 invoice-error-settled-on-required = Zahlungsdatum erforderlich
@@ -1146,6 +1150,7 @@ reconciliation-labels-no-candidate = Keine Übereinstimmung
 reconciliation-labels-amount-due-of = Rest von insgesamt { $total }
 reconciliation-labels-success-suffix = Vorgang/Vorgänge erfolgreich.
 reconciliation-labels-failed = Teilfehler
+reconciliation-labels-rejected-hint = Eine abgelehnte Transaktion verlässt diese Liste. Sie bleibt im Detail ihres Imports (Kontoauszüge importieren), wo ihre Ablehnung aufgehoben werden kann, sofern Ihre Rolle es erlaubt.
 # Story 15-5c (#492) — Bezeichnungen der Ablehnungen eines Abgleich-Stapels (`failed[]`).
 reconciliation-failed-account-not-found = Ein Gegenkonto ist nicht auffindbar oder archiviert.
 reconciliation-failed-account-not-postable = Nicht bebuchbares Konto: { $numbers }. Ein Sammel-, Ergebnis- oder Abschlusskonto nimmt keine Buchung auf: Wählen Sie ein bebuchbares Konto.
@@ -1153,7 +1158,7 @@ reconciliation-failed-account-not-postable-generic = Ein Gegenkonto ist nicht be
 reconciliation-failed-bank-account-not-configured = Das Bankkonto ist mit keinem aktiven Buchhaltungskonto verknüpft: Verknüpfen Sie eines unter Administration → Bankkonten.
 reconciliation-failed-bank-account-not-found = Bankkonto nicht gefunden.
 reconciliation-failed-bank-transaction-not-found = Transaktion nicht gefunden: Sie wurde mit ihrem Import gelöscht oder gehört nicht zu diesem Bankkonto.
-reconciliation-failed-already-rejected = Diese Transaktion wurde bereits abgelehnt: Sie wird nicht mehr vorgeschlagen.
+reconciliation-failed-already-rejected = Diese Transaktion wurde bereits abgelehnt: Sie wird nicht mehr vorgeschlagen. Die Ablehnung lässt sich im Detail ihres Imports aufheben (Kontoauszüge importieren).
 reconciliation-failed-changed-during-batch = Die Transaktion wurde während der Verarbeitung geändert – durch einen anderen Vorgang abgeglichen, abgelehnt oder gelöscht.
 reconciliation-failed-database-error = Datenbankfehler: Versuchen Sie es erneut; besteht das Problem weiter, wenden Sie sich an den Support.
 reconciliation-failed-invoice-not-found = Rechnung nicht gefunden.

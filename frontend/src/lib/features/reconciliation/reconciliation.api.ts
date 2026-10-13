@@ -130,3 +130,17 @@ export async function cancelReconciliation(
 		{},
 	);
 }
+
+/**
+ * Story 28-5 (#526) — annule le rejet d'une transaction : elle redevient
+ * proposable à la réconciliation. Aucune écriture comptable ; le geste est
+ * tracé au journal d'audit. Réponse `204` sans corps. Refus : `404`
+ * (introuvable), `409 RECONCILIATION_TRANSACTION_NOT_REJECTED` (non rejetée
+ * ou rapprochée), `409 RECONCILIATION_ACCOUNT_LOCKED`.
+ */
+export async function unrejectTransaction(bankTransactionId: number): Promise<void> {
+	return apiClient.post<void>(
+		`/api/v1/reconciliation/transactions/${bankTransactionId}/unreject`,
+		{},
+	);
+}

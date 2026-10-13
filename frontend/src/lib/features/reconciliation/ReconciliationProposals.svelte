@@ -448,4 +448,14 @@
 			</ul>
 		</div>
 	{/if}
+
+	<!-- Story 28-5b (#526, AC6, C-28-5-10, C-28-5-22) — où retrouver une transaction rejetée.
+	     En fin de section et hors de toute branche : visible liste vide, chargée ou en erreur
+	     (un lot qui rejette la dernière ligne vide la liste). Texte vrai pour tout rôle. -->
+	<p class="mt-4 text-sm text-text-muted" data-testid="reconciliation-rejected-hint">
+		{i18nMsg(
+			'reconciliation-labels-rejected-hint',
+			'Une transaction rejetée quitte cette liste. Elle reste dans le détail de son import (Importer des relevés), où son rejet peut être annulé si votre rôle le permet.',
+		)}
+	</p>
 </section>

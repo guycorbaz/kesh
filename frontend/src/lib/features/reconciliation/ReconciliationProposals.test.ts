@@ -638,3 +638,61 @@ describe('ReconciliationProposals — compte de la banque passé à la modale (S
 		expect((await ledgerPassedToModal()).value).toBe('null');
 	});
 });
+
+// Story 28-5b (#526, AC6, V4) — l'indication « où retrouver une transaction rejetée » est rendue
+// en fin de section, HORS des branches de la liste : un lot qui rejette la dernière ligne vide la
+// liste, et c'est précisément là qu'elle sert.
+describe('ReconciliationProposals — indication des transactions rejetées (Story 28-5b)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	const HINT = 'Une transaction rejetée quitte cette liste.';
+
+	it('liste vide ⇒ l’indication est rendue (mutation M12 : indication dans la branche « liste non vide »)', async () => {
+		mockApi.getProposals.mockResolvedValue({ proposals: [], hasMore: false } satisfies GetProposalsResponse);
+		const { findByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await findByTestId('reconciliation-empty');
+		expect((await findByTestId('reconciliation-rejected-hint')).textContent).toContain(HINT);
+	});
+
+	it('liste non vide ⇒ l’indication est rendue', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithCandidate(1, 101, 1.0)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const { findAllByTestId, getByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await findAllByTestId('reconciliation-row');
+		expect(getByTestId('reconciliation-rejected-hint').textContent).toContain(HINT);
+	});
+
+	it('liste en erreur ⇒ l’indication est rendue', async () => {
+		mockApi.getProposals.mockRejectedValue({ code: 'INTERNAL_ERROR', message: 'Panne.', status: 500 });
+		const { findByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await findByTestId('reconciliation-error');
+		expect((await findByTestId('reconciliation-rejected-hint')).textContent).toContain(HINT);
+	});
+
+	it('avec des échecs partiels ⇒ l’indication vient APRÈS leur bloc', async () => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({
+				proposals: [makeProposalWithCandidate(7, 200, 0.5)],
+				hasMore: false,
+			} satisfies GetProposalsResponse)
+			.mockResolvedValueOnce({ proposals: [], hasMore: false } satisfies GetProposalsResponse);
+		mockApi.rejectProposals.mockResolvedValue({
+			rejected: [],
+			failed: [{ bankTransactionId: 7, errorCode: 'RECONCILIATION_ALREADY_REJECTED', details: null }],
+		} satisfies RejectResponse);
+		const { findByTestId, getByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await fireEvent.click(await findByTestId('tx-checkbox'));
+		await fireEvent.click(getByTestId('reconciliation-reject-btn'));
+		const bloc = await findByTestId('reconciliation-failed');
+		const hint = getByTestId('reconciliation-rejected-hint');
+		expect(bloc.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		// Le refus d'un lot dit désormais où annuler le rejet (AC7 b).
+		expect((await findByTestId('reconciliation-failed-item')).textContent).toContain(
+			'Son rejet s’annule depuis le détail de son import',
+		);
+	});
+});
