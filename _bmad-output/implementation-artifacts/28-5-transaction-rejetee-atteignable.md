@@ -4,8 +4,9 @@
 
 **28-5a : done** (2026-10-13 ; dernier commit de code de production `822ba587`, tests de la revue P1 `9081041c` ;
 revue de code P1 close — Sonnet, lentilles B, E et A : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 5 LOW, remédiation sur les
-seuls tests). *Avant :* **review** (`bmad-dev-story`, Opus 5.5). **28-5b : ready-for-dev** (part de `origin/main`
-après la fusion de la 28-5a).
+seuls tests). *Avant :* **review** (`bmad-dev-story`, Opus 5.5). **28-5b : review** (2026-10-13 ; `bmad-dev-story`,
+Opus 5.5, branche `story/28-5b` sur `origin/main` `eab77cf1` ; dernier commit de code `31df9d74` ; revue de code P1 à
+lancer, `28-5b-review-prompt-p1.md`). *Avant :* ready-for-dev.
 
 *Historique :* **ready-for-dev** (deux clés) — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur
 `5aad8b35`, branche `story/28-5` ; validation **P1** (Sonnet, lentilles R et F : 0 HIGH, 6 MEDIUM, 14 LOW)
@@ -352,20 +353,20 @@ test ajouté, soit déclarée **équivalente** avec sa preuve au Debug Log.
 
 ### 28-5b
 
-- [ ] **T0b — Montage** : idem T0a, sur `origin/main` après la fusion de la 28-5a.
-- [ ] **T8 — Frontend** (AC5, AC6) : type, `unrejectTransaction`, `reconciliation-unreject.ts` (`isRejected`),
+- [x] **T0b — Montage** : idem T0a, sur `origin/main` après la fusion de la 28-5a.
+- [x] **T8 — Frontend** (AC5, AC6) : type, `unrejectTransaction`, `reconciliation-unreject.ts` (`isRejected`),
       `UnrejectTransactionAction.svelte`, page de détail, indication ; fixtures complétées ; doc-comment de
       `bank-import-deletion.ts:12-16` (appelants serveur d'`is_reconciled`, dont `classify_unreject` — C-28-5-26).
-- [ ] **T9 — i18n** (AC7 b) : quatre clés × quatre locales, `already-rejected` réécrite (quatre locales + repli) ;
+- [x] **T9 — i18n** (AC7 b) : quatre clés × quatre locales, `already-rejected` réécrite (quatre locales + repli) ;
       `sitesTotal` recompté.
-- [ ] **T10 — Tests frontend** V1-V6 ; `npm run check`, `lint-i18n-ownership`, `test:unit`, `build`.
-- [ ] **T11 — Documentation** (AC8, AC9 b) : manuel `.tex` + PDF (sous verrou), CHANGELOG.
-- [ ] **T12 — E2E et captures** (AC11) : spec neuve ; **suite E2E complète** au dernier commit de code (verrou de
+- [x] **T10 — Tests frontend** V1-V6 ; `npm run check`, `lint-i18n-ownership`, `test:unit`, `build`.
+- [x] **T11 — Documentation** (AC8, AC9 b) : manuel `.tex` + PDF (sous verrou), CHANGELOG.
+- [x] **T12 — E2E et captures** (AC11) : spec neuve ; **suite E2E complète** au dernier commit de code (verrou de
       gate, recette de `docs/testing.md` à la lettre), échecs jugés fichier par fichier contre
       `docs/testing.md` § *Les échecs attendus* ; six captures ; observer la page *Réconciliation* sous le rôle
       Consultation et le noter au Debug Log (sans corriger : exclu). Gate backend complet au même commit (catalogues).
-- [ ] **T13 — Mutations** (AC12 b) M9-M12, M16 ; restauration `git checkout -- <f>` puis `touch <f>`.
-- [ ] **T14 — Comptes rendus** : comme T7a.
+- [x] **T13 — Mutations** (AC12 b) M9-M12, M16 ; restauration `git checkout -- <f>` puis `touch <f>`.
+- [x] **T14 — Comptes rendus** : comme T7a.
 
 ## Tests
 
@@ -584,6 +585,8 @@ pas », « rejetées comprises ») reste vrai — il l'est, la story ne change p
 28-5a : Claude Opus 5.5 (`bmad-dev-story`, autonomie, worktree `kesh-28-5`, port 3038, bases `kesh_285` /
 `kesh_e2e_285`).
 
+28-5b : Claude Opus 5.5 (`bmad-dev-story`, autonomie, même worktree, branche `story/28-5b`, port 3038, mêmes bases).
+
 ### Debug Log References
 
 Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5a/`.
@@ -650,6 +653,63 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5a/`.
   `kesh-gate-logs/28-5a/` portent désormais ce run (`rebase-gate.out`) ; ceux du `822ba587` ont été écrasés, leurs
   chiffres restent ceux consignés plus haut.
 
+#### 28-5b
+
+Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5b/` ; scripts sous le scratchpad, dossier `28-5b/`
+(`mutations-28-5b.py`, `e2e-cible-28-5b.sh`, `final-gate-28-5b.sh`, ce dernier copié dans les journaux).
+
+- **Étape 0 — numéros de ligne relus contre `eab77cf1`** : `+page.svelte` (colonne *Rapprochement*, bouton
+  d'annulation l. 140), `ReconciliationProposals.svelte` (bloc des échecs partiels l. 432-450), repli
+  `failed-proposal-label.ts:210-214`, catalogues (fr-CH l. 1219, de/it/en l. 1156), `sitesTotal` (l. 607 : **2079**
+  après la 28-2, non 2075), `nav-bank-import` inchangé dans les quatre locales. `errorMessageOf` vit dans
+  `frontend/src/lib/shared/utils/error-message.ts` (28-2) ; le composant l'importe de là.
+- **Rouge d'abord** (`red.log`, tests écrits, code absent) : six fichiers Vitest — **8 tests rouges** et **2 fichiers
+  qui ne se chargent pas** (`reconciliation-unreject.ts` et `UnrejectTransactionAction.svelte` absents : V1, V2),
+  91 verts préexistants. E2E (`red-e2e.log`) : la spec jouée contre le frontend et les catalogues d'`eab77cf1`
+  (restaurés ensuite par `git checkout HEAD --` puis `touch`) — **4 échecs sur 4**, chacun sur la mention ou
+  l'indication absente.
+- **Vert** (`green2.log`) : Vitest sur `features/reconciliation`, `features/bank-import`, `routes/(app)/bank-import`,
+  `shared` : **501 passés, 44 fichiers** ; `lint-i18n-ownership` PASS ; `check` 0 erreur (29 avertissements
+  préexistants). `sitesTotal` : la collecte a rendu **2083** ; recompté par `grep -o "i18nMsg("` aux deux bornes —
+  `UnrejectTransactionAction.svelte` 0 → 3, `ReconciliationProposals.svelte` 18 → 19, `+page.svelte` 4 → 4,
+  `failed-proposal-label.ts` 34 → 34 : +4. Gardes Rust des catalogues (`rust-cible.log`, `package(kesh-i18n)`,
+  `textes_coherents`, `audit_label_registry`) : **65 passés**. E2E ciblé (`cible-e2e.log`) : **4 passés**.
+- **Mutations T13** (`mutations-run.txt`, `mutations/`, sous le verrou de gate ; motif vérifié unique, restauration
+  `git checkout --` puis `touch`, `git status frontend` vide après la campagne) :
+
+  | # | Résultat | Tuée par |
+  |---|---|---|
+  | M9 | tuée | V1 (rapprochée marquée), V3 (les deux cas de la page) |
+  | M10 | tuée | V2 (`canManage=false`), V3 (Consultation) |
+  | M11 | tuée | V2 (échec ⇒ relecture) |
+  | M12 | tuée | V4 (liste vide, liste en erreur, après les échecs partiels) |
+  | M16 | tuée | V1 (champ absent) |
+
+  Aucune survivante.
+- **T12 — observation de la page *Réconciliation* sous Consultation** (scénario 2 de la spec, journal
+  `final-e2e.log`) : la page affiche `reconciliation-error` = **« Accès interdit »** (message traduit, non un `403`
+  brut) et, sous lui, l'indication des rejetées. Non corrigé (*Exclu*) ; à l'orchestrateur de juger s'il faut une
+  issue.
+- **Captures** (`kesh-gate-logs/28-5b-captures/`, run final) : les six prescrites — `detail-rejetee`,
+  `detail-apres-annulation`, `reconciliation-indication`, × `clair|sombre`. ⚠️ **Kesh n'a pas de thème sombre** (aucune
+  règle `prefers-color-scheme` ni classe `dark` sur la page, `Toaster theme="light"`) : les captures « sombre » sont
+  visuellement identiques aux claires. Le même dossier porte aussi `books-lock-capture-{light,dark}.png`, écrites par
+  `error-messages.spec.ts` (28-2) dès que `KESH_E2E_CAPTURES_DIR` est posé — hors de cette story.
+- **PDF** : `make fr` sous le verrou (`make-fr.log`) ; contrôle sur le PDF aplati (`kesh-gate-logs/28-5b-manuel-plat.txt`) :
+  `Annuler le rejet` **1**, `aucun geste de l.interface|sans aucune action|Ne rejetez donc` **0**. Les PDF du manuel
+  d'administration et de la brochure, recompilés sans changement de source, avaient un texte identique
+  (`pdftotext` comparé) : restaurés, non commités.
+- **Gate final au dernier commit de code `31df9d74`** (`final-gate.out`, sous le verrou ; bases `kesh_285` et
+  `kesh_e2e_285` remises à zéro par `DROP`/`CREATE` + migrations + seed, sans redémarrer le conteneur) :
+  - `scripts/test-fast.sh` (`final-testfast.log`) : **3541 passés, 0 échec, 6 ignorés** (inchangé depuis `eab77cf1` :
+    la 28-5b n'ajoute aucun test Rust ; les catalogues touchés sont lus par les gardes, vertes) ;
+  - frontend (`final-frontend.log`) : `check` 0 erreur, 29 avertissements préexistants ; `lint-i18n-ownership` PASS ;
+    `test:unit` **1514 passés, 142 fichiers** (1497 + 17, 140 + 2) ; `build` vert ;
+  - E2E complet (port 3038, `final-e2e.log`) : **273 passés, 7 échecs, 19 ignorés**. Les sept échecs sont
+    nominativement les sept KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`,
+    `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Aucun huitième de
+    pollution. 273 = 269 (`eab77cf1`, gate de la 28-5a rebasée) + les 4 tests neufs. Aucune régression.
+
 ### Completion Notes List
 
 - **28-5a livrée côté serveur** : `POST /api/v1/reconciliation/transactions/{id}/unreject` (Comptable+, clés
@@ -684,6 +744,38 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5a/`.
 - À l'attention de la revue : la sonde de B10 n'observe qu'une requête **en cours** (angle mort repris de la 27-4,
   écrit au doc-comment) ; la 28-4 ajoutera sa garde « compte clos » à `unreject` (W30) — non traitée ici.
 
+#### 28-5b
+
+- **Écran livré** : `UnrejectTransactionAction.svelte` (mention « Rejetée le … » pour tous les rôles, bouton *Annuler
+  le rejet* si `canManage`, désactivé pendant l'appel, succès ⇒ notification + relecture, échec ⇒
+  `notifyError(errorMessageOf(e))` + relecture), monté sur chaque ligne du détail d'import ; `isRejected`
+  (`reconciliation-unreject.ts`, adossé à `isReconciled`, `!= null`) ; `unrejectTransaction` ; indication en fin de
+  section de `ReconciliationProposals.svelte`, hors de toute branche ; repli `RECONCILIATION_ALREADY_REJECTED` réécrit ;
+  `BankTransactionDto.autoMatchRejectedAt` ; doc-comment d'`isReconciled` (appelants serveur, dont `classify_unreject`,
+  et `isRejected` côté écran).
+- **i18n** : quatre clés neuves × quatre locales, une réécrite × quatre ; textes de la fiche, mot pour mot ; libellés de
+  menu entre parenthèses égaux à `nav-bank-import`.
+- **Manuel** : puce *Rejeter* réécrite (texte de la fiche) ; § *Supprimer un import* et *Un refus n'empêche pas les
+  autres* relus, vrais. **CHANGELOG** : *Ajouté* et *Corrigé* dans `## [0.13.3] — Non publié` (C-28-5-40). README,
+  `website/`, manuel d'administration et `docs/api-external.md` : rien à changer (grep de `rejet|reject`).
+- **Décomptes** (périmètre : `eab77cf1` — `origin/main`, 28-5a fusionnée — à `31df9d74` — dernier commit de code) :
+  **17 tests Vitest neufs** (blocs `it` recomptés aux deux bornes : `reconciliation-unreject.test.ts` 0 → 4,
+  `UnrejectTransactionAction.test.ts` 0 → 5, `bank-import-detail-page.test.ts` 2 → 4, `ReconciliationProposals.test.ts`
+  16 → 20, `reconciliation.api.test.ts` 7 → 8, `failed-proposal-label.test.ts` 15 → 16 ; Vitest 1497 → 1514) ; **4
+  tests E2E neufs** (trois `test(`, le premier en boucle sur deux schémas ; E2E 269 → 273) ; **aucun test Rust**.
+  `git diff --stat eab77cf1 31df9d74 -- . ':(exclude)_bmad-output'` : **25 fichiers** (plus deux de `_bmad-output` :
+  registre des choix, registre de sprint). Quatre clés i18n neuves et une réécrite, × quatre locales. Aucune
+  migration, aucun `Cargo.toml`, aucun fichier Rust hors des catalogues.
+- **Écart à la lettre de l'issue, à porter à la PR** (C-28-5-1) : pas de filtre ni d'onglet « Rejetées » sur la page
+  *Réconciliation* ; la transaction rejetée se retrouve dans le détail de son import, et la page le dit.
+- Choix consignés : **C-28-5-36** (utilisateur E2E désactivé, faute de route de suppression), **C-28-5-37** (condition
+  `isRejected` dans le composant), **C-28-5-38** (captures sans auxiliaire partagé, un test par schéma), **C-28-5-39**
+  (limite des 100 dans l'E2E, risque hérité du patron), **C-28-5-40** (CHANGELOG).
+- À l'attention de la revue et de l'orchestrateur : la 28-6 partage `failed-proposal-label.ts`, son test, `sitesTotal`
+  (2083 ici) et la section `reconciliation-*` des catalogues — union au rebase, `sitesTotal` recompté par la seconde
+  fusionnée ; la page *Réconciliation* sous Consultation affiche « Accès interdit » (T12) ; Kesh n'a pas de thème
+  sombre (captures).
+
 ### File List
 
 - `crates/kesh-api/src/routes/reconciliation.rs`
@@ -700,6 +792,34 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5a/`.
 - `docs/api-external.md`
 - `_bmad-output/implementation-artifacts/28-5-transaction-rejetee-atteignable.md`
 - `_bmad-output/implementation-artifacts/28-5a-review-prompt-p1.md` (neuf)
+- `_bmad-output/implementation-artifacts/epic-28-choix-autonomes.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+28-5b :
+
+- `frontend/src/lib/features/reconciliation/UnrejectTransactionAction.svelte` (neuf)
+- `frontend/src/lib/features/reconciliation/UnrejectTransactionAction.test.ts` (neuf)
+- `frontend/src/lib/features/reconciliation/reconciliation-unreject.ts` (neuf)
+- `frontend/src/lib/features/reconciliation/reconciliation-unreject.test.ts` (neuf)
+- `frontend/src/lib/features/reconciliation/reconciliation.api.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation.api.test.ts`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.test.ts`
+- `frontend/src/lib/features/reconciliation/failed-proposal-label.ts`
+- `frontend/src/lib/features/reconciliation/failed-proposal-label.test.ts`
+- `frontend/src/lib/features/bank-import/bank-import.types.ts`
+- `frontend/src/lib/features/bank-import/bank-import-deletion.ts` (doc-comment)
+- `frontend/src/lib/features/bank-import/bank-import-deletion.test.ts` (fixture)
+- `frontend/src/lib/features/bank-import/DeleteBankImportAction.test.ts` (fixture)
+- `frontend/src/routes/(app)/bank-import/[id]/+page.svelte`
+- `frontend/src/routes/(app)/bank-import/[id]/bank-import-detail-page.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`)
+- `frontend/tests/e2e/reconciliation-unreject.spec.ts` (neuf)
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/28-5-transaction-rejetee-atteignable.md`
+- `_bmad-output/implementation-artifacts/28-5b-review-prompt-p1.md` (neuf)
 - `_bmad-output/implementation-artifacts/epic-28-choix-autonomes.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
@@ -810,3 +930,11 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5a/`.
   cas neufs). E2E non rejoué : il a tourné au `822ba587` et aucun commit de production n'a suivi. **Boucle close** —
   la remédiation ne touche aucune ligne de production. Trend : P1 = 1 MEDIUM, 5 LOW → remédiés sur les tests seuls,
   0 au-dessus de LOW. Statut **done**.
+- 2026-10-13 — **Développement de la 28-5b** (`bmad-dev-story`, Opus 5.5, branche `story/28-5b` sur `eab77cf1`) :
+  T0b-T14. Mention « Rejetée le … » et bouton *Annuler le rejet* dans le détail d'import, indication de la page
+  *Réconciliation*, libellé `already-rejected` réécrit, quatre clés × quatre locales, manuel `.tex` + PDF, CHANGELOG,
+  E2E et six captures (commits `7faa60be`, `31df9d74`). V1-V6 rouges avant la correction (8 tests, 2 fichiers), E2E
+  rouge contre l'écran d'`eab77cf1` (4/4) ; mutations M9-M12 et M16 tuées. Gate final au `31df9d74` : nextest
+  3541/3541 (6 ignorés), Vitest 1514/1514, `check` 0 erreur, `lint-i18n-ownership` et `build` verts, E2E 273 passés /
+  7 échecs, les sept KF-029. Choix C-28-5-36 à 40. Statut **review** ; revue de code P1 à lancer
+  (`28-5b-review-prompt-p1.md`, Sonnet, lentilles B, E et A).
