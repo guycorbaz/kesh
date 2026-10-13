@@ -65,9 +65,10 @@ function rejected(partial: Partial<BankTransactionDto> = {}): BankTransactionDto
 		status: 'pending',
 		matchedEntryId: null,
 		// Revue P1 (E-1, A-2) : un autre jour qu'aujourd'hui, pour qu'une date du jour formatée à
-		// la place de celle du rejet se voie ; à 11:00 UTC, le 4 mars reste le 4 mars de UTC-11 à
-		// UTC+12 — la date suit le fuseau du navigateur (C-28-5-15), les tests tournent dans ces
-		// fuseaux.
+		// la place de celle du rejet se voie. La date suit le fuseau du navigateur (C-28-5-15) ; la
+		// suite ne fixe aucun fuseau et tourne dans celui du runner (poste de dev, CI). À 11:00 UTC,
+		// le 4 mars reste le 4 mars de UTC-11 à UTC+12 : l'assertion tient pour tout runner de
+		// cette plage, et rougirait sur un runner en UTC+13 ou UTC+14.
 		autoMatchRejectedAt: '2026-03-04T11:00:00Z',
 		...partial,
 	};

@@ -45,6 +45,10 @@
 	onMount(() => load());
 
 	async function load() {
+		// Story 28-5b, revue P2 (P2-1) — chaque relecture repart d'un état sans erreur : la
+		// bannière masque les lignes, et une relecture réussie après une relecture en échec
+		// (après « Annuler le rejet » ou « Annuler le rapprochement ») doit les rendre.
+		errorMessage = null;
 		const idStr = page.params.id;
 		const id = idStr ? Number(idStr) : NaN;
 		if (!Number.isFinite(id) || id <= 0) {
