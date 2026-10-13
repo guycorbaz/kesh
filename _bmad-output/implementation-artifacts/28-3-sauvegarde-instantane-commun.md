@@ -2,9 +2,10 @@
 
 ## Status
 
-**review** — développement fait le 2026-10-13 (`bmad-dev-story`, Opus 5.5) ; gates complets verts au dernier commit de code
-`90c85099` ; revue de code P1 à lancer : `28-3-review-prompt-p1.md` (Sonnet, lentilles B, E, A). Validation close le
-2026-10-13 (P3 : 0 MEDIUM+, LOW appliqués).
+**done** — revue de code close le 2026-10-13 (P1, Sonnet, lentilles B, E, A : 0 MEDIUM+, 13 LOW bruts, 9 distincts,
+appliqués sans toucher la production, C-28-3-40 à 43) ; gates complets verts sur `629a3b1e`, postérieur au dernier commit de code `6940b560`
+(backend 3526/3526, Vitest 1395/1395, E2E 267 passés + 7 KF-029). Développement fait le 2026-10-13
+(`bmad-dev-story`, Opus 5.5). Validation close le 2026-10-13 (P3 : 0 MEDIUM+, LOW appliqués).
 Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
 (rétrospective de l'Epic 27), branche `story/28-3`, worktree `/home/gcorbaz/devel/kesh-28-3`, port **3036**,
 bases `kesh_283` / `kesh_e2e_283`. Choix consignés au registre de l'epic `epic-28-choix-autonomes.md`
@@ -1061,3 +1062,34 @@ seedées juste avant ; le conteneur MariaDB partagé n'a pas été redémarré) 
   commit de code : backend 3525/3525 (6 ignorés), Vitest 1395/1395, svelte-check 0 erreur, build OK, E2E 265 passés +
   9 échecs de la baseline (7 KF-029, 2 KF-045 matinaux). Statut `review` ; prompt de la revue P1
   `28-3-review-prompt-p1.md` (Sonnet, B/E/A).
+- 2026-10-13 — **Revue de code** (`bmad-code-review`, boucle close à la P1 ; remédiation Opus 5.5, autonomie).
+  Tendance : **P1 (Sonnet, lentilles B, E, A, contexte frais chacune, lecture seule) : 0 CRITICAL, 0 HIGH, 0 MEDIUM,
+  13 LOW bruts** (A 5, B 3, E 5 — recomptés dans les rapports `kesh-gate-logs/28-3-review-p1-{A,B,E}.md`), **9
+  distincts** (A-1 ; A-2 ; A-3 ; A-4 = E2 ; A-5 = E1 = L1 ; E3 ; E4 ; E5 = L2 ; L3). Boucle close sans P2 : aucun
+  finding au-dessus de LOW, et la remédiation ne touche **aucune ligne de production** (`git diff --stat 90c85099..HEAD
+  -- crates/*/src` : `backup.rs` +71 et `export.rs` +7, toutes dans `mod tests`). Remédiation, deux commits :
+  `6940b560` (tests) et `629a3b1e` (fiche, registre, manuels, PDF). Ce qui a été fait :
+  - A-4/E2 → test neuf `echec_du_set_ferme_la_connexion` (AC5 (j), C-28-3-40) ; le refus `1568` d'un
+    `SET TRANSACTION ISOLATION LEVEL` dans une transaction ouverte est désormais **établi** (la forme `READ WRITE` du
+    repli de (d) reste non vérifiée, n'ayant pas servi) ;
+  - E1/L1/A-5 et L3 → sous-chaînes exigées par les gardes (g)(i) et (g)(ii) ; AC1 reformulée sans « inatteignable »
+    (C-28-3-41) ;
+  - E3 → (e) seede une société et asserte `min_required` et `instance_id` (C-28-3-42) ;
+  - E4 → phrase sur les lignes orphelines avant `ADD CONSTRAINT`, au seul manuel qui porte le remède (admin), sans
+    requête de repérage (G18, C-28-3-43) ; E5/L2 → `(issue \#465)` déplacé après « l'une après l'autre » (manuel
+    utilisateur) ; PDF régénérés (`make fr`) et contrôlés aplatis (`28-3-p1-remediation-{admin,user}.flat.txt`) ;
+  - A-1 et A-3 → annotations datées dans l'entrée « Développement », la table des faits et C-28-3-38 (les entrées
+    passées ne sont pas réécrites) ; A-2 → plage du Status portée à C-28-3-43 (dernier choix au registre).
+  Décomptes (périmètre `90c85099..629a3b1e`) : **1 test neuf** (`#[sqlx::test]`), 2 tests renforcés ((e), (g)(i)) et 1
+  garde renforcée ((g)(ii)) ; **mutations P1-MA à P1-ME : 5/5 tuées**, chacune par l'assertion neuve
+  (`kesh-gate-logs/28-3-p1-remediation-mutations.log`) ; (h) rejoué **20/20** (`28-3-h-20-executions.log`) ; choix
+  **C-28-3-40 à 43** (4). Rebase : `origin/main` toujours au kickoff `5aad8b35`, base de la branche — sans objet.
+  **Gates complets** sur `629a3b1e` (bases `kesh_283` et `kesh_e2e_283` supprimées, recréées, migrées — 80
+  migrations — et seedées juste avant, conteneur non redémarré) : backend `scripts/test-fast.sh` — fmt, clippy
+  `-D warnings`, nextest **3526 exécutés, 3526 passés, 6 ignorés** (`Summary [153.619s]`,
+  `28-3-final-gate-backend.log`) ; frontend — svelte-check 0 erreur / 29 avertissements / 5 fichiers,
+  lint-i18n-ownership PASS, Vitest **1395/1395** (134 fichiers), build OK (`28-3-final-gate-frontend.log`) ; E2E
+  complet, port 3036, `/health` `smtpConfigured:true`, 11:56–12:22 UTC : **267 passés, 7 échecs, 19 ignorés**
+  (`28-3-final-e2e-run.out`) — les sept échecs sont les sept KF-029 de `docs/testing.md` § « Les échecs attendus »
+  (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), aucun huitième ; run
+  après 12:00 UTC pour l'essentiel, d'où l'absence des KF-045 ; 0 `Permission denied` au journal backend. Statut `done`.
