@@ -3071,6 +3071,8 @@ pas rouvert.)* Texte d'origine conservé ci-dessous pour l'historique.
 - **Écartées** : cinq stories (cinq cycles de CI pour le même diff) ; deux stories code / documentation (même
   coût de cycle, aucun gain de revue).
 - **Réversible** : oui — sortir un correctif de la branche.
+- *Annotation du 2026-10-14 (validation P1, RF11) : au sens de la règle, trois modules seulement ; la section de
+  dérogation est une précaution, déclarée au Project Lead par l'orchestrateur.*
 
 ### C-28-8-2 — #421 : un rappel daté d'une heure avant l'appel ; les KF nommées par leur numéro actuel
 
@@ -3132,6 +3134,9 @@ pas rouvert.)* Texte d'origine conservé ci-dessous pour l'historique.
   (laisserait croire au bouclement) ; traiter le point voisin ici (un test Vitest sur une page qui n'en a aucun,
   hors du « À faire »).
 - **Réversible** : oui.
+- *Annotation du 2026-10-14 (validation P1, RF3 et RF4) : le bloc se place **entre** celui de la TVA (v0.3) et
+  celui du lettrage (v0.13), non « avant le bloc TVA » ; la réserve dit « le bouclement d'exercice — écritures de
+  clôture, report à nouveau du résultat, transitoires — reste à venir », comme le CHANGELOG de la 0.13.0.*
 
 ### C-28-8-7 — #615 : le listing suit `.env.example`, la prose dit « décommentez »
 
@@ -3147,6 +3152,8 @@ pas rouvert.)* Texte d'origine conservé ci-dessous pour l'historique.
 - **Écartées** : aligner `.env.example` sur le manuel (l'issue permet l'inverse, mais `.env.example` est la source
   copiée par `curl` et tenue par `configuration_transmise.rs`) ; la détection de #578 (hors #615).
 - **Réversible** : oui.
+- *Annotation du 2026-10-14 (validation P1, RF1) : le paragraphe des bases déjà créées avec un gabarit
+  (`admin-manual.tex:248`) gagne les deux chaînes des manuels 0.13.0 à 0.13.2 que la story retire du listing.*
 
 ### C-28-8-8 — CHANGELOG : une puce « Documentation corrigée » pour #595, #612, #615
 

@@ -3,8 +3,8 @@
 ## Status
 
 **ready-for-dev** — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6de5a7ff`
-(`origin/main`, 28-7 fusionnée), branche `story/28-8`, worktree `/home/gcorbaz/devel/kesh-28-8`. Validation : voir
-le Change Log. Choix consignés au registre `epic-28-choix-autonomes.md`, **C-28-8-1 à C-28-8-8**.
+(`origin/main`, 28-7 fusionnée), branche `story/28-8`, worktree `/home/gcorbaz/devel/kesh-28-8`. Validation close en P1
+(Sonnet, une lentille R+F : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 8 LOW — tous remédiés, cf. Change Log). Choix consignés au registre `epic-28-choix-autonomes.md`, **C-28-8-1 à C-28-8-8**.
 
 9 AC, T0-T8. Cinq issues, chacune **entièrement** réglée ou sortie du périmètre : [#421] (KF-051), [#561], [#595],
 [#612], [#615].
@@ -34,7 +34,7 @@ Sources : le tri en lecture seule `/home/gcorbaz/devel/kesh-gate-logs/triage-iss
 |---|---|---|
 | [#421] KF-051 (ex-KF-045) | Le helper `recordManualReminderViaApi` poste `sentAt: \`${today}T12:00:00\`` ; la route refuse une date d'envoi future en la comparant à l'heure **UTC** : avant 12:00 UTC (14:00 en Suisse l'été), midi est futur → `422`, et deux tests rougissent | `frontend/tests/e2e/invoices.spec.ts:262-265` ; `crates/kesh-api/src/routes/dunning_reminders.rs:261` (`if body.sent_at > Utc::now().naive_utc()`) ; tests `:415` « historique des rappels affiché (canal manuel, ligne visible) » et `:439` « axe-core sans violations sur la fiche (badge suspendu + historique) » ; aucune autre garde de date dans `record_manual_reminder` (`:248-335`) |
 | [#421] (doc) | `docs/testing.md` nomme encore ces deux échecs **KF-045** (renumérotée KF-051 le 2026-09-10) et `sidebar-navigation.spec.ts:75` **KF-046** (renumérotée KF-052, #424) | `docs/testing.md:331`, `:360-362`, `:364-372`, `:374`, `:380-383`, `:386-387`, `:390-394` ; `CLAUDE.md:706` (la renumérotation) ; titre de #424 : `[KF-052] sidebar-navigation.spec.ts:75 …` |
-| [#561] | `accounts::delete_all_by_company` n'a **aucun appelant**, tests compris ; son doc-comment dit « (tests) », inexact | `crates/kesh-db/src/repositories/accounts.rs:1134-1158` ; `git grep -n "accounts::delete_all"` → seule une fiche d'archive `_bmad-output` ; les appels non qualifiés `delete_all_by_company(` du dépôt sont tous dans `journal_entries.rs` (sa propre fonction, `:2035`) ou `journal_entry_reversal_e2e.rs:905` (`journal_entries::`) ; les imports `use kesh_db::repositories::{accounts, …}` n'importent que le module |
+| [#561] | `accounts::delete_all_by_company` n'a **aucun appelant**, tests compris ; son doc-comment dit « (tests) », inexact | `crates/kesh-db/src/repositories/accounts.rs:1134-1159` ; `git grep -n "accounts::delete_all"` → seule une fiche d'archive `_bmad-output` ; les appels non qualifiés `delete_all_by_company(` du dépôt sont tous dans `journal_entries.rs` (sa propre fonction, `:2035`) ou `journal_entry_reversal_e2e.rs:905` (`journal_entries::`) ; les imports `use kesh_db::repositories::{accounts, …}` n'importent que le module |
 | [#595] | Les deux listes de refus d'`api-external.md` qui passent par la file commune `settlement_entry_cancel_blocker` omettent `MATCHED_BANK_TRANSACTION` | `docs/api-external.md:526` (annuler le règlement d'une facture fournisseur) et `:534` (annuler une facture fournisseur) — l'issue cite `:426` et « la liste voisine `:434` », relevés sur `056997b0` : ce sont ces deux listes (`git show 056997b0:docs/api-external.md \| sed -n 420,436p`) |
 | [#612] | La brochure range au backlog « Report automatique des soldes de bilan à la clôture d'exercice », livré en v0.8.0 | `docs/manual/fr/marketing-brochure.tex:425-430` ; `CHANGELOG.md:578` (section `[0.8.0]` : « Report à-nouveau automatique … sans aucune écriture de clôture ni de report à passer à la main ») ; `README.md:218` ; `user-manual.tex:737` ; PDF : `pdftotext … \| tr '\n' ' ' \| tr -s ' '` rend « Backlog (Epic 13 à 15) • Report automatique des soldes de bilan à la clôture d'exercice. » |
 | [#615] | Le gabarit `.env` du manuel écrit `MARIADB_ROOT_PASSWORD=<sortie de openssl rand -hex 32>` et `MARIADB_PASSWORD=<autre sortie …>` **décommentés, entre chevrons** ; `.env.example` les laisse **commentés et vides** | `docs/manual/fr/admin-manual.tex:258-263` ; `.env.example:354-372` (`#MARIADB_ROOT_PASSWORD=`, `#MARIADB_PASSWORD=`, consigne « INSTALLATION NEUVE : … décommenter la ligne et y écrire la valeur ») ; PDF : `MARIADB_ROOT_PASSWORD=<sortie de openssl rand -hex 32>` |
@@ -61,9 +61,14 @@ Sources : le tri en lecture seule `/home/gcorbaz/devel/kesh-gate-logs/triage-iss
 - ⚠️ **Le refus est défensif** (C-28-8-5) : les cinq sites qui posent `bank_transactions.matched_entry_id`
   (`routes/reconciliation.rs:2123` `accept_one_invoice`, `:2622` `accept_one_split`, `:3074` `accept_one_rule`,
   `:3901` `post_manual_once`, `:4364` `post_split_once`) rapprochent tous une écriture **qu'ils viennent de créer**
-  (`journal_entries::create_in_tx`), jamais une écriture existante ; aucun ne crée l'écriture de règlement ni
+  (`journal_entries::create_in_tx`, ou `invoice_settlements::create_in_tx` pour `accept_one_invoice`, qui règle une
+  facture **client**), jamais une écriture existante ; aucun ne crée l'écriture de règlement ni
   d'achat d'une facture fournisseur. Aucun geste de Kesh ne rapproche donc aujourd'hui ces écritures d'une
-  transaction : la documentation liste le refus parce que la route le **peut** rendre, et le dit défensif.
+  transaction : la documentation liste le refus parce que la route le **peut** rendre, et le dit défensif. Seul
+  l'import d'installation (`backup.rs`) recopie la colonne telle quelle — il restitue ce qu'une instance Kesh a
+  écrit, donc rien de plus.
+- ⚠️ Sur les deux routes, `bank_accounts::ensure_open_in_tx` (28-4a, `409 BANK_ACCOUNT_CLOSED`) passe **avant**
+  tous ces motifs (`supplier_invoices.rs:1340` pour le règlement) ; son inscription aux listes revient à la 28-4b.
 
 ## Critères d'acceptation
 
@@ -75,7 +80,9 @@ Sources : le tri en lecture seule `/home/gcorbaz/devel/kesh-gate-logs/triage-iss
   reste et dit pourquoi une heure avant (« la route refuse une date future, comparée à l'heure UTC — #421 »).
 - **Jumeaux** : `git grep -nE "T[0-9]{2}:[0-9]{2}:[0-9]{2}" frontend/tests/e2e` et `git grep -n "sentAt"
   frontend/tests/e2e` ne rendent, hors fixtures CAMT, que le site corrigé (relevé au sol : seul `invoices.spec.ts:265`
-  code une heure ; seul ce helper poste `reminders/manual`). Le résultat se copie au Dev Agent Record.
+  code une heure ; seul ce helper poste `reminders/manual`). Le résultat se copie au Dev Agent Record. Le jumeau
+  **côté produit** — la date par défaut d'un rappel saisi à l'écran (`reminder-sent-at.ts`) — est déjà corrigé
+  (#259, `CHANGELOG.md:602`) : à noter au Dev Agent Record, rien à changer.
 - **Preuve** : les deux tests passent rejoués seuls (`npx playwright test invoices.spec.ts -g "historique des
   rappels|badge suspendu \+ historique"`) ; **mutation M1** (`Date.now() + 3_600_000`, date future) les fait rougir
   tous deux en `manual reminder failed: 422` — elle rend le défaut d'origine à toute heure. L'heure UTC du run est
@@ -90,8 +97,9 @@ Dans la § *« Les échecs attendus »* :
   formule) et renvoie à la note historique ;
 - **le tableau** (`:349-362`) perd les deux lignes `invoices.spec.ts:415` et `:439` ; la ligne
   `sidebar-navigation.spec.ts:75` y nomme **KF-052 (#424)** ; une note datée sous le tableau dit le retrait
-  (« 2026-10-13, Story 28-8 : les deux lignes KF-051 (#421, ex-KF-045) sont retirées — le rappel de l'E2E est daté
-  d'une heure avant l'appel ») ;
+  **et** la nature du tableau (« 2026-10-13, Story 28-8 : malgré son intitulé, ce tableau est la liste **vivante** des
+  échecs attendus — il a reçu des lignes après le 2026-08-26 ; les deux lignes KF-051 (#421, ex-KF-045) en sont
+  retirées, le rappel de l'E2E étant daté d'une heure avant l'appel ») ;
 - **le paragraphe ⏰** (`:364-372`) devient une note historique courte, au passé : la cause (midi comparé à l'heure
   UTC), la correction (Story 28-8), et la leçon, conservée — « un test qui dépend de l'heure ne rougit que pour la
   moitié des gens qui le lancent » ;
@@ -107,13 +115,14 @@ Dans la § *« Les échecs attendus »* :
   nominative), en tête du tableau des relevés ou sous la formule.
 
 Preuve : `grep -nE "KF-045|KF-046" docs/testing.md` ne rend plus que le tableau historique du 2026-08-30 et son
-annotation ; `grep -nE "le matin|matinal|10 le matin|8 à 12" docs/testing.md` ne rend que la note historique ;
+annotation ; `grep -nE "le matin|matinal|10 le matin|8 à 12" docs/testing.md` ne rend que la note historique
+**et** le paragraphe KF-052 conservé (« a passé seule le matin du 2026-08-30 », `:376` — un fait daté, juste) ;
 sortie copiée au Dev Agent Record. Aucun autre fichier versionné ne porte le compte « 8 à 12 » ni « 10 le matin »
 (`git grep -nE "8 à 12|10 le matin" -- ':(exclude)_bmad-output'` au sol : `docs/testing.md:331`, `:387` seulement).
 
 **AC3 — #561 : `accounts::delete_all_by_company` est supprimée (C-28-8-4).**
 
-- La fonction et son doc-comment (`accounts.rs:1134-1158`) disparaissent ; rien d'autre ne change dans le fichier,
+- La fonction et son doc-comment (`accounts.rs:1134-1159`, accolade fermante comprise) disparaissent ; rien d'autre ne change dans le fichier,
   hormis un import devenu inutilisé s'il y en a un (clippy le dit).
 - **Preuve d'absence d'appelant, avant suppression** : `git grep -nw "delete_all_by_company"` copié au Dev Agent
   Record, chaque ligne classée (journal_entries, commentaire, archive `_bmad-output`) ; **après** :
@@ -145,11 +154,11 @@ sortie copiée au Dev Agent Record. Aucun autre fichier versionné ne porte le c
 - `marketing-brochure.tex:428` : la puce « Report automatique des soldes de bilan à la clôture d'exercice. » sort
   du bloc *Backlog (Epic 13 à 15)* ; les deux autres puces restent.
 - Un bloc livré, au patron des blocs voisins (*TVA Suisse (Epic 11 \& 18, livré)*, *Lettrage et postes ouverts
-  (Epic 15, v0.13)*), placé **avant** celui de la TVA (ordre des versions) : titre
+  (Epic 15, v0.13)*), placé **entre** celui de la TVA (v0.3) et celui du lettrage (v0.13) — ordre des versions : titre
   `\textbf{\color{keshSuccess}\faCheckCircle\ Report à-nouveau automatique (Epic 14, v0.8, livré)}`, une puce :
   « Report automatique des soldes de bilan d'un exercice à l'autre, calculé en temps réel depuis l'origine : aucune
-  écriture de report à passer. \emph{(Les écritures de bouclement --- affectation du résultat, transitoires --- restent
-  à venir.)} » — la réserve, parce que le bouclement ([#232], ouvert) n'est pas livré et que le CHANGELOG de la
+  écriture de report à passer. \emph{(Le bouclement d'exercice --- écritures de clôture, report à nouveau du résultat,
+  transitoires --- reste à venir.)} » — la réserve, parce que le bouclement ([#232], ouvert) n'est pas livré et que le CHANGELOG de la
   0.13.0 le dit manquant (`CHANGELOG.md:135`).
 - PDF régénéré (`make brochure`, sous le verrou) et contrôlé aplati :
   `pdftotext docs/manual/fr/marketing-brochure.pdf - | tr '\n' ' ' | tr -s ' '` rend le nouveau bloc et ne rend plus
@@ -178,6 +187,14 @@ sortie copiée au Dev Agent Record. Aucun autre fichier versionné ne porte le c
   reste du paragraphe (chevrons acceptés par Compose et MariaDB, avertissement de Kesh pour le seul mot de passe
   applicatif, rien pour root) **reste** : il demeure vrai — une valeur entre chevrons peut encore être écrite à la
   main ou recopiée d'une version antérieure du manuel, et `DATABASE_URL` en porte une (`:267`).
+- **Les bases déjà créées avec le gabarit retiré** (validation P1, RF1) : le paragraphe `:248` nomme les chaînes
+  littérales des manuels **antérieurs à la 0.13.0** (`<mot de passe fort>`, `<mot de passe utilisateur applicatif>`) ;
+  les manuels **0.13.0 à 0.13.2** prescrivaient `<sortie de openssl rand -hex 32>` et `<autre sortie de openssl rand
+  -hex 32>` (`git show v0.13.2:docs/manual/fr/admin-manual.tex | sed -n 260,261p`), que la story retire du listing.
+  Ces deux chaînes s'ajoutent à l'énumération du paragraphe `:248` (« recopiées d'une version antérieure de ce
+  manuel »), avec la même consigne : ne pas les remplacer dans `.env`, changer le mot de passe par le
+  § `sec:mariadb-mdp`. Preuve : `grep -nF "autre sortie de openssl rand" docs/manual/fr/admin-manual.tex` ne rend
+  plus que ce paragraphe.
 - ⚠️ La consigne de la story dit « le gabarit `<…>` est refusé au démarrage (`is_template_placeholder`) » : c'est
   vrai pour `KESH_JWT_SECRET` et `KESH_ADMIN_PASSWORD` seulement (`config.rs:637`, `:670`) ; pour le mot de passe de
   `DATABASE_URL`, `is_template_placeholder` ne fait qu'**avertir** (`config.rs:1458`, `AVERTISSEMENT_MOT_DE_PASSE_GABARIT`)
@@ -193,9 +210,12 @@ puce par union avec les entrées des autres stories :
 
 « **Documentation corrigée.** L'API externe (`docs/api-external.md`) liste désormais le refus
 `MATCHED_BANK_TRANSACTION` de l'annulation d'un paiement fournisseur et de l'annulation d'une facture fournisseur
-([#595]) ; le manuel d'administration présente les mots de passe MariaDB du fichier `.env` commentés, comme
-`.env.example`, et dit quoi y écrire sur une installation neuve ([#615]) ; la brochure range le report automatique
-des soldes de bilan, livré en v0.8.0, parmi les fonctions livrées ([#612]). »
+([#595](https://github.com/guycorbaz/kesh/issues/595)) ; le manuel d'administration présente les mots de passe MariaDB du fichier `.env` commentés, comme
+`.env.example`, et dit quoi y écrire sur une installation neuve ([#615](https://github.com/guycorbaz/kesh/issues/615)) ; la brochure range le report automatique
+des soldes de bilan, livré en v0.8.0, parmi les fonctions livrées ([#612](https://github.com/guycorbaz/kesh/issues/612)). »
+
+⚠️ Liens **en ligne** : le CHANGELOG ne porte aucune définition de lien de référence (`grep -c '^\[#[0-9]*\]:'
+CHANGELOG.md` → 0) ; un `([#595])` nu s'afficherait en clair.
 
 #421 (test) et #561 (code mort) n'ont pas d'entrée : invisibles pour l'utilisateur (C-28-8-8). Aucune autre
 section du CHANGELOG ne change ; aucune section `[0.13.3]` n'est créée en double.
@@ -233,6 +253,11 @@ et le Dev Agent Record copie la sortie. Les sites restés tels quels sont écrit
   sous le verrou. **Attendu** : la liste mise à jour de l'AC2 — les 7 KF-029, la KF-052 éventuelle, 0 à 2 de
   pollution (chacune rejouée seule, verte) — et **ni** `invoices.spec.ts:415` **ni** `:439`, quelle que soit l'heure.
   Tout autre échec est une régression jusqu'à preuve du contraire.
+- **PDF et rebase** (validation P1, RF2) : la 28-1, la 28-3 et la 28-4 touchent aussi `admin-manual.tex` (et son
+  PDF) ; aucune garde ne lit les PDF. Les deux PDF se **régénèrent après le dernier rebase** sur `origin/main`, sous
+  le verrou, et c'est cette version qui se commite ; un conflit sur un PDF ne se résout **jamais** par `--ours` ni
+  `--theirs` — on résout le `.tex` par union, puis on régénère. Même union au rebase pour `docs/testing.md`,
+  `CHANGELOG.md` et `docs/api-external.md`.
 - Le Dev Agent Record ne déclare que ce qui a tourné, avec les chiffres recomptés.
 
 ## Tasks / Subtasks
@@ -258,9 +283,14 @@ et le Dev Agent Record copie la sortie. Les sites restés tels quels sont écrit
 
 ### Dérogation à la règle de découpage
 
-La story touche **plus de cinq modules** : `frontend/tests/e2e`, `docs/testing.md`, `crates/kesh-db`,
-`docs/api-external.md`, `docs/manual/fr` (deux `.tex`, deux PDF), `CHANGELOG.md`. Le critère « scope
-cross-cutting » du § *Règle de splitting préventif* est donc atteint, et la story **n'est pas découpée** :
+La story touche six emplacements : `frontend/tests/e2e`, `docs/testing.md`, `crates/kesh-db`,
+`docs/api-external.md`, `docs/manual/fr` (deux `.tex`, deux PDF), `CHANGELOG.md`. **Au sens de la règle** (crates
+Rust, packages npm, modules métier de premier niveau), ce sont **trois** modules — `kesh-db`, le frontend (tests E2E
+seulement), la documentation — et le critère « scope cross-cutting » du § *Règle de splitting préventif* **n'est pas
+atteint** ; le second critère (non-convergence) ne peut l'être qu'en validation. La section est donc une précaution,
+non une exception codifiée (validation P1, RF11) : si l'on compte chaque document comme un module, elle tient lieu
+de la section `Dérogation règle de splitting` qu'exige l'exception du `CLAUDE.md`, **déclarée au Project Lead par
+le rapport de l'orchestrateur**. Dans les deux lectures, la story **n'est pas découpée** :
 
 - **les cinq correctifs sont indépendants** — aucun ne lit, n'appelle ni ne suppose un autre ; aucun ne change une
   règle métier ; un seul touche du code de production (une suppression sans appelant), un seul un test ;
@@ -295,7 +325,8 @@ pdftotext docs/manual/fr/marketing-brochure.pdf - | tr '\n' ' ' | tr -s ' ' | gr
 - Les relevés datés de `docs/testing.md` gardent leurs chiffres et leurs étiquettes (consigne 15).
 - Les URL `raw.githubusercontent.com/guycorbaz/kesh/v0.13.2/…` du manuel (`:225`, `:236`) : la garde G19 les tient
   égales à `\keshVersion` ; la release les portera au tag — **ne pas** les changer ici.
-- La fin du paragraphe `admin-manual.tex:246` (chevrons acceptés par MariaDB) et le paragraphe `:248` et la procédure du
+- La fin du paragraphe `admin-manual.tex:246` (chevrons acceptés par MariaDB) et le paragraphe `:248` — ce dernier
+  **complété** par l'AC6 (chaînes 0.13.0-0.13.2) et la procédure du
   § `sec:mariadb-mdp` : vrais, inchangés.
 
 ### Exclusions écrites (périmètre minimal)
@@ -324,7 +355,7 @@ pdftotext docs/manual/fr/marketing-brochure.pdf - | tr '\n' ' ' | tr -s ' ' | gr
 5. `docs/manual/fr/` — `marketing-brochure.tex`, `admin-manual.tex` et leurs PDF ;
 6. `CHANGELOG.md` — une puce.
 
-Six : dérogation ci-dessus.
+Six emplacements, trois modules au sens de la règle : cf. § *Dérogation*.
 
 ### Pièges connus du dépôt, applicables ici
 
@@ -334,6 +365,7 @@ Six : dérogation ci-dessus.
 - **`lstlisting` et les accents** : le listing du manuel en porte déjà (« lus à ») ; rester dans les mêmes
   caractères. Un `<` ou `>` dans un `lstlisting` ne s'échappe pas ; dans la prose, `\texttt{<…>}` comme aux lignes
   voisines.
+- **PDF binaires au rebase** : jamais `--ours`/`--theirs` ; régénérer après le dernier rebase (AC9).
 - **Mutation restaurée, binaire périmé** : `git checkout -- f && touch f`.
 - **Édition par l'outil Edit uniquement** (consigne 14).
 - **Données réelles** : aucune donnée de `~/kesh-test/` ni du relevé de Guy dans un fichier, un test ou un commit.
@@ -362,6 +394,26 @@ Six : dérogation ci-dessus.
 
 - **2026-10-13 — fiche créée** (`bmad-create-story`, Opus 5.5, autonomie), sur `6de5a7ff`. 9 AC, T0-T8, une
   mutation (M1), choix C-28-8-1 à 8. Validation P1 à lancer (`28-8-validate-prompt-p1.md`, Sonnet, une lentille R+F).
+- **2026-10-14 — Validation P1** (`28-8-validate-prompt-p1.md`, Sonnet, **une** lentille R+F en contexte frais ;
+  rapport hors dépôt `kesh-gate-logs/28-8-validate-p1.md`). **0 CRITICAL / 0 HIGH / 2 MEDIUM / 8 LOW** (RF1-RF11 ;
+  RF7 est une confirmation assortie d'un numéro de ligne). La lentille confirme : les cinq issues couvertes sans
+  ajout superflu ; zéro appelant d'`accounts::delete_all_by_company`, aucun import rendu inutile ; la chaîne
+  `MATCHED_BANK_TRANSACTION` sur les deux routes, ses rangs, et le décompte 6 → 8 ; M1 rouge à toute heure ; les
+  gardes `textes_coherents.rs` et `configuration_transmise.rs` ne rougissent pas. Remédiation (Opus 5.5), vérifiée
+  au sol avant application (`git show v0.13.{0,1,2}:docs/manual/fr/admin-manual.tex`, `grep -c '^\[#[0-9]*\]:'
+  CHANGELOG.md` → 0) :
+  - **RF1 (MEDIUM)** : AC6 complété — le paragraphe `admin-manual.tex:248` gagne les chaînes gabarit des manuels
+    0.13.0-0.13.2 ; « Ce qui doit être préservé » ajusté ; annotation de C-28-8-7.
+  - **RF2 (MEDIUM)** : AC9 et pièges — PDF régénérés après le dernier rebase, jamais `--ours`/`--theirs` ; union
+    étendue à `docs/testing.md`.
+  - **LOW** : RF3 (bloc entre TVA et lettrage), RF4 (réserve « bouclement — écritures de clôture, report à nouveau,
+    transitoires »), RF5 (preuve grep de l'AC2), RF6 (le tableau est la liste vivante), RF7 (`:1134-1159`), RF8
+    (`invoice_settlements::create_in_tx`, `backup.rs`, `ensure_open_in_tx` avant les motifs), RF9 (jumeau produit
+    `reminder-sent-at.ts`, déjà corrigé par #259), RF10 (liens en ligne au CHANGELOG), RF11 (dérogation : trois
+    modules au sens de la règle, précaution déclarée au Project Lead) ; annotations de C-28-8-1, C-28-8-6.
+  - Propagation : valeurs corrigées grepées dans la fiche et le prompt (`1158`, « avant le bloc », liens nus).
+  - **Clôture** : plus aucun finding au-dessus de LOW ; la remédiation ne touche que la fiche et le registre, aucune
+    ligne de code — la boucle se clôt sans passe ciblée. Statut **ready-for-dev**.
 
 [#232]: https://github.com/guycorbaz/kesh/issues/232
 [#421]: https://github.com/guycorbaz/kesh/issues/421
