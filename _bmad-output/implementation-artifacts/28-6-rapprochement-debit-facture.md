@@ -133,6 +133,9 @@ Le cas `-0.00` **asserte d'abord sa précondition** (`assert!(dec!(-0.00).is_sig
 construite n'était pas un zéro négatif, le cas serait un doublon de 0.00 et passerait à vide. Ce cas n'existe
 qu'ici : `bank_transactions.amount` est `DECIMAL(18,2)`, et la base ne rend jamais un zéro négatif — aucun test
 d'intégration ne peut l'atteindre (C-28-6-12).
+*Annotation du 2026-10-13 (développement, puis revue de code P1, A4)* : `dec!(-0.00)` n'est **pas** un zéro négatif
+(le macro le normalise ; la précondition l'a montré au premier run). Le cas se construit par `Decimal::new(0, 2)` puis
+`set_sign_negative(true)`, précondition inchangée (C-28-6-15).
 
 **AC4 — Ce qui ne change pas, et qui est vérifié.**
 

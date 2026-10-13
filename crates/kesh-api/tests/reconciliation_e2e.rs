@@ -2123,9 +2123,11 @@ async fn get_proposals_paginates_at_100_default(pool: MySqlPool) {
 /// celle du score, et le refus est **exactement**
 /// `RECONCILIATION_TRANSACTION_NOT_CREDIT`. Avant elle, ce test admettait deux
 /// codes (`RECONCILIATION_SCORE_TOO_LOW` ou `BANK_TRANSACTION_NOT_FOUND`) :
-/// le débit n'était arrêté que par le score nul de sa référence `ANY-REF`, et
-/// un débit dont la référence ressemblait à la facture passait la garde de
-/// score — c'est cette tolérance à deux codes qui a laissé #482 ouverte.
+/// ce débit-ci n'était arrêté que par le score nul de sa référence `ANY-REF`,
+/// et une égalité stricte rend désormais visible tout changement de ce refus.
+/// Le cas d'un débit dont la référence et la contrepartie ressemblent à la
+/// facture est celui de
+/// `a_debit_with_a_recognised_reference_never_settles_an_invoice`.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_filters_signed_amount(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -8171,8 +8173,15 @@ async fn unreject_of_a_transaction_deleted_under_the_lock_is_not_found(pool: MyS
 /// Le compteur de numéros d'écriture (`journal_entry_number_sequences`) et
 /// l'en-tête d'écriture sont ce qui s'écrit **avant** la ligne refusée par la
 /// base : sans la garde, seul le `ROLLBACK TO SAVEPOINT` de la proposition les
-/// annule. Ils sont relevés pour que le constat « rien d'écrit » ne repose pas
-/// sur ce seul point de sauvegarde sans le voir.
+/// annule. [`montage_286`] amorce le compteur à une valeur connue, pour que la
+/// comparaison porte sur une valeur et non sur deux listes vides.
+///
+/// ⚠️ Ce relevé est un **filet** contre une écriture qui survivrait au refus :
+/// avec la garde, rien n'est jamais alloué, et sans elle le point de
+/// sauvegarde défait tout — l'état reste égal dans les deux cas (constaté au
+/// rouge). Ce qui prouve la garde, c'est le code du refus ; ce relevé ne rougit
+/// que si une écriture partielle survit (mutation M9 : point de sauvegarde
+/// neutralisé en plus de la garde retirée).
 #[derive(Debug, PartialEq)]
 struct Etat286 {
     journal_entries: i64,
@@ -8260,6 +8269,13 @@ async fn etat_286(pool: &MySqlPool, company_id: i64, tx_id: i64, inv_id: i64) ->
 /// facture et la contrepartie le nom du client : le score de référence (0,40)
 /// et celui du contact (0,10) dépassent la garde de score — c'est le cas de
 /// l'issue.
+///
+/// Deux amorces, pour que les assertions portent sur des valeurs :
+/// - une facture brouillon **avant** la vraie décale les identifiants : la
+///   transaction et sa facture ne portent jamais le même `id`, et un refus qui
+///   rendrait `invoice_id` pour `bankTransactionId` se voit (revue P1, E2) ;
+/// - le compteur de numéros de l'exercice est amorcé à 10 (`INSERT IGNORE` :
+///   un second montage dans la même société ne le remet pas à zéro).
 async fn montage_286(
     pool: &MySqlPool,
     ctx: &CompanyCtx,
@@ -8269,6 +8285,28 @@ async fn montage_286(
 ) -> (i64, i64) {
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
     let inv_date = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
+    insert_invoice(
+        pool,
+        ctx.company_id,
+        ctx.contact_id,
+        &format!("{invoice_number}-DECALAGE"),
+        inv_date,
+        dec!(1.00),
+        "draft",
+        None,
+        None,
+    )
+    .await;
+    let fy_id = insert_fake_fiscal_year(pool, ctx.company_id).await;
+    sqlx::query(
+        "INSERT IGNORE INTO journal_entry_number_sequences \
+         (company_id, fiscal_year_id, next_number) VALUES (?, ?, 10)",
+    )
+    .bind(ctx.company_id)
+    .bind(fy_id)
+    .execute(pool)
+    .await
+    .expect("amorce du compteur de numéros");
     let (inv_id, _) = seed_validated_invoice(
         pool,
         ctx.company_id,
@@ -8299,6 +8337,10 @@ async fn montage_286(
         )],
     )
     .await;
+    assert_ne!(
+        tx_ids[0], inv_id,
+        "montage : transaction et facture d'identifiants distincts"
+    );
     (tx_ids[0], inv_id)
 }
 
@@ -8344,6 +8386,11 @@ async fn a_debit_with_a_recognised_reference_never_settles_an_invoice(pool: MySq
         avant.invoice.unwrap().0,
         None,
         "montage : facture non payée"
+    );
+    assert_eq!(
+        avant.sequences.iter().map(|s| s.1).collect::<Vec<_>>(),
+        vec![10],
+        "montage : compteur de numéros amorcé"
     );
 
     let app = spawn_app(pool.clone()).await;
@@ -8415,6 +8462,29 @@ async fn a_refused_debit_does_not_block_a_valid_payment_in_the_same_batch(pool: 
     let debit_apres = etat_286(&pool, ctx.company_id, debit_tx, debit_inv).await;
     assert_eq!(debit_apres.transaction, debit_avant.transaction);
     assert_eq!(debit_apres.invoice, debit_avant.invoice);
+    // Côté écritures (revue P1, E4) : le lot n'a écrit que l'encaissement — une
+    // écriture de deux lignes, un règlement, un numéro consommé, deux traces
+    // (`reconciliation.accepted`, `invoice.paid`). Un reste du débit (en-tête,
+    // numéro) survivant au refus ferait dépasser ces écarts.
+    assert_eq!(
+        (
+            debit_apres.journal_entries - debit_avant.journal_entries,
+            debit_apres.journal_entry_lines - debit_avant.journal_entry_lines,
+            debit_apres.invoice_settlements - debit_avant.invoice_settlements,
+            debit_apres.traces - debit_avant.traces,
+        ),
+        (1, 2, 1, 2),
+        "seul l'encaissement est écrit : {body}"
+    );
+    assert_eq!(
+        debit_apres
+            .sequences
+            .iter()
+            .map(|s| s.1)
+            .collect::<Vec<_>>(),
+        vec![11],
+        "un seul numéro consommé, par l'encaissement"
+    );
     let settled: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = ?")
             .bind(debit_inv)
@@ -8458,4 +8528,56 @@ async fn a_debit_is_refused_for_its_direction_before_the_invoice_is_read(pool: M
         "rien d'écrit : {body}"
     );
     assert_not_credit_286(&body, tx_id, "debit_transaction", dec!(-100.00));
+}
+
+/// AC1, ordre statut → sens (revue P1, E3) : un débit **rapproché pendant
+/// l'attente du verrou** passe le pré-vol (il était en attente), puis, relu
+/// sous le verrou, rend `RECONCILIATION_ALREADY_RECONCILED` — le statut
+/// (étape 4) précède le sens (étape 4bis). Une garde de sens placée avant le
+/// statut rendrait ici `RECONCILIATION_TRANSACTION_NOT_CREDIT` (mutation M11).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_debit_reconciled_while_waiting_for_the_lock_is_refused_for_its_status(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Statut", "CH4431999123000889012", Role::Comptable).await;
+    let (tx_id, inv_id) = montage_286(&pool, &ctx, "Statut", "INV-STATUT", dec!(-100.00)).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let (mut conn, lock) = hold_account_lock_274(&pool, &ctx).await;
+    let task = spawn_post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/accept",
+        serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [{ "type": "invoice", "bankTransactionId": tx_id, "invoiceId": inv_id }],
+        }),
+    );
+    wait_blocked_on_account_lock_274(&pool, &task).await;
+    sqlx::query("UPDATE bank_transactions SET status = 'reconciled' WHERE id = ?")
+        .bind(tx_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let avant = etat_286(&pool, ctx.company_id, tx_id, inv_id).await;
+    assert_eq!(
+        avant.transaction.0, "reconciled",
+        "montage : rapprochée pendant l'attente"
+    );
+    release_account_lock_274(&mut conn, &lock).await;
+
+    let (st, body) = task.await.unwrap();
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(
+        failed_274(&body),
+        vec![(
+            tx_id,
+            "RECONCILIATION_ALREADY_RECONCILED".to_string(),
+            Value::Null
+        )],
+        "{body}"
+    );
+    assert_eq!(
+        etat_286(&pool, ctx.company_id, tx_id, inv_id).await,
+        avant,
+        "rien d'écrit : {body}"
+    );
 }

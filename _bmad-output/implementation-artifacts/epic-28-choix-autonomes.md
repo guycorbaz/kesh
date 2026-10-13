@@ -2095,6 +2095,11 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 - **Retenu** : vérifié, **pas la même absence** : ils n'écrivent aucun règlement de facture ; un débit y est
   légitime (dépense, remboursement), ce que `rules.rs:8` et `validate_split_balance` (`abs()`) disent déjà ; le nul
   y est déjà refusé (`:2447`, `:2870`, `:3659`, `:4109`).
+- *Annotation du 2026-10-13 (revue de code P1, A3)* : ces numéros, relevés au `5aad8b35`, visaient déjà des lignes
+  voisines et ont bougé depuis. Les sites du refus du nul sont, au `289a7fed` : `accept_one_split` `:2518`,
+  `accept_one_rule` `:2941` (`VALIDATION_ERROR`, `details.reason = "zero_amount_transaction"`), `post_manual` `:3727`,
+  `post_split` `:4177` (`400 VALIDATION_ERROR`) — à retrouver par `grep -n zero_amount_transaction`, le nom de la
+  fonction faisant foi.
 - **Réversible** : oui.
 
 ### C-28-6-6 — Libellé frontend et clé i18n, bien que le refus ne soit pas atteignable depuis l'écran
@@ -2167,6 +2172,9 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 - **Retenu** : `-0.00` reste un cas de l'AC3 (défense en profondeur de la fonction pure), dit inatteignable par la
   base ; le test asserte d'abord `dec!(-0.00).is_sign_negative()` (sans quoi le cas serait un doublon muet de
   0.00) ; mutation M8 — classification par test de signe — tuée par ce cas.
+- *Annotation du 2026-10-13 (revue de code P1, A4)* : la précondition a rougi au premier run — `dec!(-0.00)` n'est
+  **pas** un zéro négatif, le macro le normalise. Le montage est `Decimal::new(0, 2)` + `set_sign_negative(true)` :
+  voir **C-28-6-15**. Le reste de ce choix tient.
 - **Écartées** : retirer le cas (le piège « test de signe » ne serait plus fixé par rien) ; le tester de bout en
   bout (impossible : la base ne le rend pas).
 - **Réversible** : oui.
@@ -2205,5 +2213,24 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 - **Écartées** : supprimer le cas (la défense en profondeur de C-28-6-12 tomberait) ; `Decimal::from_str("-0.00")`
   (comportement de normalisation non vérifié, même risque que le macro).
 - **Réversible** : oui (test seul).
+
+### C-28-6-16 — Remédiation de la revue de code P1 : amorcer les valeurs plutôt que réduire les comptes rendus ; un test de course pour l'ordre statut → sens
+
+- **Contexte** : revue P1 (B, E, A : 0 MEDIUM, 11 LOW). B-LOW-1 = E1 : le compteur de numéros de `Etat286` comparait
+  `[]` à `[]` ; E2 : `bankTransactionId == invoiceId` dans trois montages ; E3 : l'ordre « statut avant sens »
+  n'était tenu par aucun test ; E4 : AC2-4 ne comparait pas les écritures côté débit.
+- **Retenu** : (1) **amorcer** — `montage_286` pose une ligne `journal_entry_number_sequences` à 10 (`INSERT IGNORE`)
+  et une facture brouillon de décalage avant la vraie, et asserte `tx_id != inv_id` ; le doc-comment d'`Etat286`
+  dit en outre ce que le relevé prouve (un filet contre une écriture partielle qui survivrait, non la garde) —
+  mutation **M9** (garde retirée **et** `ROLLBACK TO SAVEPOINT` neutralisé) pour montrer qu'il discrimine ;
+  (2) un **test de course** `a_debit_reconciled_while_waiting_for_the_lock_is_refused_for_its_status` (verrou du compte
+  tenu, transaction passée `reconciled` pendant l'attente) — mutation **M11** (garde avant l'étape 4) ; (3) AC2-4
+  compare les écarts d'écritures, de lignes, de règlements, de traces et de numéros (1, 2, 1, 2 ; 10 → 11) ;
+  mutation **M10** (`invoice_id` passé pour `bank_transaction_id`).
+- **Écartées** : réduire le commentaire et le Dev Agent Record seuls (le relevé serait resté vide ; amorcer coûte une
+  requête) ; une écriture validée réelle pour amorcer le compteur (plus lourd, sans gain : seul le compteur importe) ;
+  déclarer « garde avant le statut » équivalente (elle ne l'est pas : un débit rapproché pendant l'attente du verrou
+  rendrait le code neuf).
+- **Réversible** : oui (tests et commentaires ; aucune ligne de production exécutée ne change).
 
 [#482]: https://github.com/guycorbaz/kesh/issues/482
