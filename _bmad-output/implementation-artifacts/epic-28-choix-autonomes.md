@@ -515,3 +515,67 @@ l'autonomie déléguée par Guy le 2026-10-13 : pas de découpage, remédiation 
   `mariadb`), plus un axe premier : les régressions de la remédiation P2, avec la question « un défaut né de cette
   remédiation est-il un recyclage ? ». Prompt `28-3-validate-prompt-p3.md`.
 - **Réversible** : oui.
+
+## Développement de la Story 28-3 (2026-10-13, Opus 5.5)
+
+### C-28-3-33 — `orphelins` reçoit aussi le pool
+
+- **Contexte** : la fiche prescrit `orphelins(&InstallationExport) -> Vec<String>`, mais le helper lit les clés
+  étrangères dans `information_schema.KEY_COLUMN_USAGE` : il lui faut un exécuteur.
+- **Retenu** : `orphelins(pool: &MySqlPool, export: &InstallationExport)`, lecture du schéma sur le pool du test (le
+  schéma ne change pas pendant le test). L'assertion de montage (la clé de l'import est vue) est dans le helper.
+- **Écartées** : lire les clés dans l'instantané (le helper s'exécute après `finish`) ; une liste de clés écrite en
+  dur (elle ne verrait pas une table neuve).
+- **Réversible** : oui.
+
+### C-28-3-34 — Observateur factorisé en `fn`, montage rendu en tuple, scénario commun
+
+- **Contexte** : (a-défaut), (a-RC) et (b) partagent montage, observateur et attendus ; la preuve `git log -L` vise
+  des `fn`.
+- **Retenu** : cinq helpers `fn` (`monter_import` → `(company_id, import_id)`, `lignes`, `orphelins`,
+  `observateur_qui_supprime` → `impl FnMut(Etape) -> BoxFuture<'static, ()> + Send`, fermeture annotée,
+  `sauvegarder_pendant_suppression`) ; chaque test tient en trois lignes. Aucune `struct` de montage, pour que la
+  preuve par fonction couvre tout.
+- **Réversible** : oui.
+
+### C-28-3-35 — `Etape`, `BoxFuture` et le cœur restent privés au module
+
+- **Contexte** : la fiche dit le cœur « privé » ; rien hors de `backup.rs` n'a besoin de `Etape`.
+- **Retenu** : `enum Etape` et `type BoxFuture` privés, `export_installation_in` privée ; `InstallationExport` et
+  `export_installation` publics. `ReadSnapshot::begin_on` en `pub(crate)`.
+- **Réversible** : oui.
+
+### C-28-3-36 — Le helper lexical de `build_keshbackup` est local à `export.rs`
+
+- **Contexte** : (g)(i) et (g)(ii) découpent le corps d'une fonction de la même façon, dans deux crates ; le helper
+  `code_de_production` de `routes/admin.rs` est privé à son `mod tests`.
+- **Retenu** : une fonction de découpe dans chaque `mod tests` (une quinzaine de lignes), comme le précédent de
+  `routes/admin.rs`. Duplication assumée, de test seulement.
+- **Écartées** : un helper public dans `kesh_db::test_fixtures`, module compilé en production — y mettre une analyse
+  lexicale de sources mêlerait outillage de test et code livré.
+- **Réversible** : oui.
+
+### C-28-3-37 — Garde G18 : le nom de table du remède de moteur est une occurrence assumée
+
+- **Contexte** : le remède du manuel recrée `fk_contact_persons_company … REFERENCES companies(id)` ; la garde G18
+  (`textes_coherents.rs`, une installation = une société) rougit sur le mot `companies`.
+- **Retenu** : fragment assumé `REFERENCES companies(id) ON DELETE CASCADE` (« nom de table », comme le précédent du
+  README), `MULTI_SOCIETE_TOTAL` 16 → 17, commentaire daté.
+- **Écartées** : renvoyer au fichier de migration au lieu d'écrire la requête (remède moins complet, contraire à la
+  validation P3).
+- **Réversible** : oui.
+
+### C-28-3-38 — Le test (h) est gardé ; (d) porte un témoin positif
+
+- **Contexte** : la fiche autorisait à retirer (h) s'il était non déterministe ; (d) n'avait que des lectures
+  « après ».
+- **Retenu** : (h) conservé — 20 exécutions sur 20 vertes. (d1)/(d2) vérifient aussi, **dans** l'instantané, que
+  `@@in_transaction` vaut 1 (sans quoi le 0 d'après ne prouverait rien).
+- **Réversible** : oui.
+
+### C-28-3-39 — T3 et T4 dans un même commit ; M3 par substitution de l'instruction
+
+- **Contexte** : T3 et T4 touchent le même fichier (`export.rs` : garde et en-tête) ; M3 « supprime » le `SET`.
+- **Retenu** : un commit `c00a7f63` pour T3 et T4, dit au Dev Agent Record. M3 remplace la valeur de la constante
+  `SET_ISOLATION` par `DO 0` (instruction neutre) : le chemin de code reste identique, seul l'effet disparaît.
+- **Réversible** : oui.

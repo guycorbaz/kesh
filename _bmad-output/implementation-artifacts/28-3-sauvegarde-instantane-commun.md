@@ -2,7 +2,9 @@
 
 ## Status
 
-**in-progress** — validation close le 2026-10-13 (P3 : 0 MEDIUM+, LOW appliqués) ; développement en cours.
+**review** — développement fait le 2026-10-13 (`bmad-dev-story`, Opus 5.5) ; gates complets verts au dernier commit de code
+`90c85099` ; revue de code P1 à lancer : `28-3-review-prompt-p1.md` (Sonnet, lentilles B, E, A). Validation close le
+2026-10-13 (P3 : 0 MEDIUM+, LOW appliqués).
 Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
 (rétrospective de l'Epic 27), branche `story/28-3`, worktree `/home/gcorbaz/devel/kesh-28-3`, port **3036**,
 bases `kesh_283` / `kesh_e2e_283`. Choix consignés au registre de l'epic `epic-28-choix-autonomes.md`
@@ -500,27 +502,27 @@ frontend : inchangés.
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Montage** (AC —) : bases `kesh_283` et `kesh_e2e_283` (migrations du worktree, seed
+- [x] **T0 — Montage** (AC —) : bases `kesh_283` et `kesh_e2e_283` (migrations du worktree, seed
   `scripts/seed-dev-db.sql`), port `3036`, `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-28-3/target`, `node_modules`
   par `cp -al` depuis le dépôt principal. Gates lourds sous `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock`.
-- [ ] **T1 — Le test rouge d'abord** (AC2 point 1, AC3, AC4, AC5 (a), (b)) : `crates/kesh-db/src/snapshot.rs` avec
+- [x] **T1 — Le test rouge d'abord** (AC2 point 1, AC3, AC4, AC5 (a), (b)) : `crates/kesh-db/src/snapshot.rs` avec
   le `ReadSnapshot` **dégradé** (C-28-3-16 : `begin`, `begin_on`, accès connexion, `finish` ; aucune transaction),
   `pub mod snapshot;` dans `lib.rs` ; les quatre lectures de `backup.rs` sur `&mut ReadSnapshot` ;
   `InstallationExport`, `export_installation` et son cœur observable (sans pool, AC4) ; `build_keshbackup` sur
   `export_installation` et adaptation des quatre tests appelant `export_table` — pour que le **workspace** compile à
   ce commit ; helper `orphelins` ; tests (a-défaut), (a-RC), (b). Exécuter, constater le **rouge** des trois, copier
   la sortie au Dev Agent Record. Commit (`test(28-3): … rouge avant la correction (refs #633)`).
-- [ ] **T2 — L'instantané** (AC1, AC2 point 3 (i)) : côté production, l'intérieur de `ReadSnapshot` seul
+- [x] **T2 — L'instantané** (AC1, AC2 point 3 (i)) : côté production, l'intérieur de `ReadSnapshot` seul
   (`SET TRANSACTION` en protocole texte, `close_on_drop` sur son échec, `Transaction::begin`, `ROLLBACK` de `finish`,
   commentaire de dépendance `#[doc(hidden)]` — C-28-3-19). Côté `mod tests`, tests neufs (c), (d1), (d2), (e), (f),
   (g)(i), (h) ; les tests (a-défaut), (a-RC), (b) et leurs helpers ne changent pas et passent au vert (preuve
   `git log -L` par fonction, sorties vides et `exit=0` copiés, témoin positif, `git diff -U0` en ajouts purs, AC5 (a),
   C-28-3-27).
-- [ ] **T3 — `kesh-api`** (AC2 point 3 (ii), AC3, AC6, AC7) : garde (g)(ii) dans un `mod tests` neuf de
+- [x] **T3 — `kesh-api`** (AC2 point 3 (ii), AC3, AC6, AC7) : garde (g)(ii) dans un `mod tests` neuf de
   `admin_backup/export.rs` ; commentaire `admin.rs:254-262` ; suites de l'AC6 vertes.
-- [ ] **T4 — Propagation** (AC8) : commentaires, grep de propagation copié au Dev Agent Record.
-- [ ] **T5 — Documentation** (AC10, AC11) : manuels, PDF régénérés et contrôlés aplatis, CHANGELOG.
-- [ ] **T6 — Mutations et gates** (AC1-AC12) : campagne M1-M11 (ci-dessous ; M12 retirée, C-28-3-25) ; base remise à zéro **avant** le gate
+- [x] **T4 — Propagation** (AC8) : commentaires, grep de propagation copié au Dev Agent Record.
+- [x] **T5 — Documentation** (AC10, AC11) : manuels, PDF régénérés et contrôlés aplatis, CHANGELOG.
+- [x] **T6 — Mutations et gates** (AC1-AC12) : campagne M1-M11 (ci-dessous ; M12 retirée, C-28-3-25) ; base remise à zéro **avant** le gate
   complet ; gate complet `scripts/test-fast.sh` (**`kesh-db` touché : gate complet même en boucle de revue**) ;
   `npm run check`, `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build` ; **E2E complet au dernier
   commit de code** (aucun écran ne change, mais la règle D7 ne connaît pas d'exception). **Demandé à l'orchestrateur, hors
@@ -815,9 +817,135 @@ assertion `left == right` failed: la sauvegarde doit porter l'import et ses deux
 le défaut de #633. (b) : la suppression faite avant la première lecture est vue (vue prise par requête) — ni import
 ni transactions.
 
+**T2 — vert, même texte de test** (commit `1894bf0c`). Les trois tests passent (`3 passed`). Preuve (C-28-3-27 et
+complément P3), journal `kesh-gate-logs/28-3-preuve-git-log-L.log`, sorties copiées — pour chacune des huit fonctions
+(`monter_import`, `lignes`, `orphelins`, `observateur_qui_supprime`, `sauvegarder_pendant_suppression`, et les trois
+tests), `git log --oneline -L '/fn <f>(/,/^    }$/:crates/kesh-db/src/backup.rs' a914762b..1894bf0c` rend une sortie
+**vide** et `exit=0` ; témoin positif sur `a914762b~1..1894bf0c` : sortie non vide pour chacune (70, 18, 40, 38, 66,
+12, 19 et 11 lignes) ; lignes de départ au commit T2 : 1337, 1403, 1420, 1459, 1495, 1560, 1571, 1588. La plage de
+`orphelins` se termine bien sur son `    }` (dernières lignes du témoin : `violations` puis `    }`). Ajouts purs :
+
+```text
+$ git diff -U0 a914762b 1894bf0c -- crates/kesh-db/src/backup.rs | grep '^@@'
+@@ -1592,0 +1593,234 @@ mod tests {
+```
+
+Un seul hunk, ajout pur après le dernier test (`mod tests` est à la ligne 731 au commit T1) : T2 n'a touché ni les
+trois tests, ni leurs helpers, ni leurs attributs, ni le code de production de `backup.rs` — seul `snapshot.rs` a
+changé côté production.
+
+**Mutations M1-M11 : 11/11 tuées** (journal `kesh-gate-logs/28-3-mutations.log`, sorties `28-3-mut/M<n>.log`, script
+de campagne : motif vérifié unique par `str.count == 1`, M1 par `git apply` du diff T2→T1 de `snapshot.rs`, M6 par un
+fichier préparé dont le diff est copié au journal ; restauration `git checkout -- <fichier>` puis `touch`, arbre
+vérifié propre après chaque mutation ; sous `flock`). Chaque rouge vient de l'assertion attendue :
+
+| # | Rouge attendu | Message observé |
+|---|---|---|
+| M1 | (a-défaut), (a-RC), (b) | les trois (et (c), (d1), (d2), (h)) — orphelins listés |
+| M2 | (b) | `(0, 0)` au lieu de `(1, 2)` |
+| M3 | (a-RC) | `(0, 2)`, deux orphelins |
+| M4 | (f) | `niveau de session modifié` — `"REPEATABLE-READ"` |
+| M5 | (c) | `une écriture dans l'instantané doit être refusée: MySqlQueryResult { rows_affected: 1, … }` |
+| M6 | (d1), (d2) | `la connexion revient au pool en transaction` (et (h) : `finish` ne fait plus de `ROLLBACK`) |
+| M7 | (a-défaut), (a-RC) | `assertion de montage : l'observateur n'a pas supprimé à l'étape ApresTable("bank_transactions")` |
+| M8 | (a-défaut), (a-RC), (b) | `assertion de montage : orphelins() ne voit pas fk_bank_transactions_import (4 clés lues)` |
+| M9 | (e) | `table _kesh_version : moteur Some("MyISAM")` |
+| M10 | (g)(ii) | `` `pool` doit apparaître exactement deux fois `` — corps de `build_keshbackup` imprimé |
+| M11 | (g)(i) | idem, corps de `export_installation` |
+
+**Faits MariaDB tranchés** (serveur de dev `10.11.16-MariaDB`, `@@default_storage_engine = InnoDB`) :
+
+| Fait de la fiche | Verdict | Par |
+|---|---|---|
+| `START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY` accepté, `SERVER_STATUS_IN_TRANS` posé (pas de `BeginFailed`) | **établi** | tous les tests de l'AC5 verts |
+| sous `READ COMMITTED`, `WITH CONSISTENT SNAPSHOT` ne fige pas la vue | **établi** | (a-RC) rouge sous M3 |
+| écriture en `READ ONLY` refusée en `1792` | **établi** | (c) vert (`number() == 1792`), rouge sous M5 |
+| `@@in_transaction` lisible (avec `CAST`) | **établi** | (d1), (d2) verts ; `1` dans l'instantané, `1` après sous M6. Le repli `SET TRANSACTION READ WRITE` → `1568` n'a **pas** servi, et ce fait reste **non vérifié** |
+| `SET TRANSACTION … REPEATABLE READ` sans portée l'emporte sur une session `READ COMMITTED` | **établi** | (a-RC) vert ; le plan B de l'AC1 n'a pas servi |
+| `@@tx_isolation` reflète la session ; `SET TRANSACTION` sans `SESSION` ne la change pas | **établi** | (f) vert, rouge sous M4 |
+| une `DELETE` concurrente n'attend pas la transaction de lecture | **établi** | (a) vert, sans pendre |
+| `KILL` de la connexion → le `ROLLBACK` de `finish` échoue | **établi** | (h) vert, 20 exécutions sur 20 |
+| le `Drop` de `sqlx::Transaction` rend la connexion hors transaction | **établi** | (d2) vert |
+| hors InnoDB, MariaDB n'enregistre pas les clés étrangères ; une clé InnoDB vers une table non InnoDB est refusée | **non vérifié** (aucune exécution) | le manuel prescrit le contrôle `SHOW CREATE TABLE` plutôt que de s'y fier |
+
+**Gates au dernier commit de code `90c85099`** (bases `kesh_283` et `kesh_e2e_283` supprimées, recréées, migrées et
+seedées juste avant ; le conteneur MariaDB partagé n'a pas été redémarré) :
+
+- **Backend** — `scripts/test-fast.sh` complet (fmt + clippy `-D warnings` + nextest), `DATABASE_URL` sur `kesh_283`,
+  sous `flock` : **3525 tests exécutés, 3525 passés, 6 ignorés** (`Summary [154.648s]`), journal
+  `kesh-gate-logs/28-3-gate-backend.log`.
+- **Frontend** — `npm run check` (svelte-check : 0 erreur, 29 avertissements dans 5 fichiers, tous préexistants —
+  la story ne touche aucun fichier frontend), `npm run lint-i18n-ownership` (PASS), `npm run test:unit` (**1395 tests,
+  134 fichiers, tous passés**), `npm run build` (OK), sous `flock`, journal `kesh-gate-logs/28-3-gate-frontend.log`.
+- **E2E complet** — recette de `docs/testing.md` à la lettre, port 3036, base `kesh_e2e_283`, `/health` :
+  `smtpConfigured:true` ; aucun `Permission denied (os error 13)` au journal du backend : **265 passés, 9 échoués,
+  19 ignorés** (10,8 min, run terminé à 11:26 UTC). Les 9 échecs, identifiés un par un : les **7 KF-029** (#97 —
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et
+  les **2 KF-045** (#421 — `invoices.spec.ts:415` « historique des rappels affiché » et `:439` « axe-core sans
+  violations », run avant 12:00 UTC). **Aucun échec hors liste.** Journaux `kesh-gate-logs/28-3-e2e*.log`.
+
 ### Completion Notes List
 
+- **T0** : bases `kesh_283` / `kesh_e2e_283` créées, migrées (migrations du worktree) et seedées ; `node_modules`
+  déjà présent en répertoire réel dans le worktree.
+- **T1** (`a914762b`) : `ReadSnapshot` dégradé, les quatre lectures sur `&mut ReadSnapshot`, `InstallationExport`,
+  `export_installation` et son cœur `export_installation_in` (sans pool, observateur `Etape`), `build_keshbackup` sur
+  `export_installation`, quatre tests existants adaptés (`backup.rs` ×3, `accounts_role_backfill.rs`) ; tests
+  (a-défaut), (a-RC), (b) rouges, sortie copiée ci-dessus.
+- **T2** (`1894bf0c`) : intérieur de `ReadSnapshot` seul (`SET TRANSACTION` en protocole texte, `close_on_drop` sur
+  son échec, `Transaction::begin`, `ROLLBACK` de `finish`, commentaire de dépendance `#[doc(hidden)]`) ; tests neufs
+  (c), (d1), (d2), (e), (f), (g)(i), (h) ; preuve ci-dessus.
+- **T3-T4** (`c00a7f63`, un seul commit : C-28-3-39) : garde (g)(ii) dans un `mod tests` neuf d'`export.rs` ;
+  commentaire du pré-import (`routes/admin.rs`) ; propagation AC8. Greps de propagation au `HEAD` de code, sorties :
+  le premier rend `exports/global.rs:21` (« Lectures successives, sans instantané commun » — **reste**, #465 ouvert,
+  complété d'un renvoi au `ReadSnapshot`) et des mentions **neuves** de `#633` (`export.rs:8, :45, :150`,
+  `routes/admin.rs:259`, `global.rs:26`, `backup.rs:15, :182, :342, :372, :1343`, `snapshot.rs:1`), toutes
+  descriptives de la correction ; les anciennes (`routes/admin.rs:257-258` « lit via le pool (connexions séparées) »,
+  « torn-read », `bank_imports.rs:448`) ont disparu. Le second (`export\.rs:[0-9]+`) ne rend **rien**.
+- **T5** (`90c85099`) : manuel d'administration (phrase « aucun effet de bord » remplacée ; instantané ; avertissement
+  « avant la 0.13.3 » ; limite InnoDB ; `contact_persons` seule exposée ; deux requêtes à base nommée, témoin ≥ 40,
+  `_sqlx_migrations` ; remède avec `SHOW CREATE TABLE` et recréation des deux clés ; `default_storage_engine` ; export
+  global, #465), manuel utilisateur (§ *Exports de souveraineté*), CHANGELOG `## [0.13.3] — Non publié` /
+  `### Corrigé`. PDF régénérés par `make fr` (sous `flock`) : admin 3 passes, utilisateur 3 passes, stables ; le PDF de
+  la brochure, régénéré sans que son `.tex` change, a été restauré (non commité). Contrôles aplatis (journaux
+  `kesh-gate-logs/28-3-{admin,user}-manual.flat.txt`) : « un seul instantané… » — 1 occurrence dans chacun ; « ne vaut
+  que pour les tables InnoDB… » — 1 ; `grep -c "ENGINE <> 'InnoDB'"` → `1` (apostrophe droite conservée par le
+  `lstlisting`) ; « aucun effet de bord » → `0` au PDF et au `.tex` ; `_sqlx_migrations` → 1 ; recréation des clés
+  rendue en entier. **Écart** : la garde G18 (`textes_coherents.rs`) rougissait sur `companies` dans le SQL du remède
+  — fragment assumé ajouté, total 16 → 17 (C-28-3-37) ; grep du nombre `MULTI_SOCIETE_TOTAL` : aucun autre site.
+- **Écarts à la fiche** : `orphelins` reçoit aussi le pool (C-28-3-33) ; observateur et montage factorisés en `fn`
+  (C-28-3-34) ; `Etape`/`BoxFuture`/cœur privés (C-28-3-35) ; helper lexical local à `export.rs` (C-28-3-36) ; (h)
+  gardé, témoin positif dans (d) (C-28-3-38) ; T3 et T4 en un commit, M3 par `DO 0` (C-28-3-39).
+- **Décomptes** (périmètre `a4da521b..90c85099`, recomptés par `git diff … | grep -cE '^\+\s*(#\[sqlx::test|#\[test\])'`) :
+  **11 tests neufs** — 9 `#[sqlx::test]` ((a-défaut), (a-RC), (b), (c), (d1), (d2), (e), (f), (h)) et 2 `#[test]`
+  ((g)(i), (g)(ii)) ; 16 fichiers touchés (dont la fiche et `sprint-status.yaml`), aucun sous `migrations/`,
+  `test-schema/`, ni `Cargo.toml` (AC12).
+- **Incident d'exécution** : pendant l'attente du verrou de gate, un `pkill -f "until ! pgrep -f"` lancé pour arrêter
+  mes propres boucles d'attente a tué aussi le shell qui lançait le premier E2E (le motif figurait dans sa ligne de
+  commande — le piège du point 10 des consignes). Aucun processus d'un autre agent ne portait ce motif ; l'E2E a été
+  relancé tel quel, et c'est son résultat qui est rapporté ci-dessus.
+- **Demandé à l'orchestrateur** (hors agent, non bloquant, T6) : les deux requêtes de moteur de l'AC10 sur la base du
+  NAS **nommée**, en lecture seule, avant la publication de la 0.13.3 — « conforme » exige le témoin ≥ 40 et aucune
+  ligne hors `_sqlx_migrations`. Résultat : *à écrire ici par l'orchestrateur, « conforme / non conforme » seulement*.
+
 ### File List
+
+- `crates/kesh-db/src/snapshot.rs` (neuf)
+- `crates/kesh-db/src/lib.rs`
+- `crates/kesh-db/src/backup.rs`
+- `crates/kesh-db/src/repositories/bank_imports.rs`
+- `crates/kesh-db/tests/accounts_role_backfill.rs`
+- `crates/kesh-api/src/admin_backup/export.rs`
+- `crates/kesh-api/src/routes/admin.rs`
+- `crates/kesh-api/src/exports/global.rs`
+- `crates/kesh-api/tests/textes_coherents.rs`
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/28-3-sauvegarde-instantane-commun.md`
+- `_bmad-output/implementation-artifacts/28-3-review-prompt-p1.md` (neuf)
+- `_bmad-output/implementation-artifacts/epic-28-choix-autonomes.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -906,3 +1034,12 @@ ni transactions.
   (a-RC), (b), (c), (d1), (d2), (e), (f), (g)(i), (g)(ii), (h).
   Tendance de la boucle : P1 Sonnet 3 MEDIUM → P2 Opus 5 MEDIUM (signal D5, recyclage : remédiation par
   simplification, sans découpage) → P3 Sonnet 0 MEDIUM.
+- 2026-10-13 — **Développement** (`bmad-dev-story`, Opus 5.5, autonomie) : T0-T6 faites. Commits `a914762b` (T1 —
+  `ReadSnapshot` dégradé, trois tests rouges, sortie copiée), `1894bf0c` (T2 — l'instantané ; preuve `git log -L`,
+  `exit=0`, témoin, `git diff -U0` en ajout pur), `c00a7f63` (T3-T4), `90c85099` (T5 — manuels, PDF, CHANGELOG, garde
+  G18 16 → 17). 11 tests neufs (9 `#[sqlx::test]`, 2 `#[test]`). Mutations M1-M11 : **11/11 tuées**. Faits MariaDB
+  de la fiche tranchés par les tests et mutations (dix établis, deux non vérifiés : le repli `1568`, inutilisé, et le
+  comportement des clés étrangères hors InnoDB, que le manuel ne suppose pas). Choix C-28-3-33 à 39. Gates au dernier
+  commit de code : backend 3525/3525 (6 ignorés), Vitest 1395/1395, svelte-check 0 erreur, build OK, E2E 265 passés +
+  9 échecs de la baseline (7 KF-029, 2 KF-045 matinaux). Statut `review` ; prompt de la revue P1
+  `28-3-review-prompt-p1.md` (Sonnet, B/E/A).
