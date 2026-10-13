@@ -459,10 +459,11 @@ supprime `bank_transactions` (`docs/MULTI-TENANT-SCOPING-PATTERNS.md:324`, `kesh
 inverse de l'annulation. Si InnoDB désigne l'annulation comme victime, elle rend un `500` **sans rien de partiel**
 (annulation complète de sa transaction) et la remise à zéro est rejouée ; c'est rare (installation de démonstration
 ou d'avant production) et c'est **le cas même de `post_reject`**, préexistant. Écrit au point (iv) du doc
-d'`audit_route_registry.rs` (AC10). Hors ce cas, aucun cycle à `5aad8b35` ; **à revérifier au rebase sur la 28-4a**,
-dont la fiche fait prendre à `unreject` le verrou `bank_accounts FOR UPDATE` après la ligne de `bank_transactions`
-(W30) — ordre conforme à sa règle, et sans insertion à clé étrangère vers `companies`, mais l'argument devra être
-relu sur le code fusionné. Le verrou nommé est relâché avant le `commit`
+d'`audit_route_registry.rs` (AC10). Hors ce cas, aucun cycle à `5aad8b35`. **La garde de la 28-4 ne prendra aucun
+verrou** (C-28-4-21) : la garde « compte clos » qu'elle ajoute à `unreject` (W30) lit la ligne du compte par une
+lecture cohérente non verrouillante, et n'ajoute donc aucun verrou à l'ordre ci-dessus ; l'argument reste à relire
+sur le code fusionné, au rebase sur la 28-4a. *(Corrigé le 2026-10-13, sur note de l'orchestrateur : la phrase
+annonçait un `bank_accounts FOR UPDATE` pris par `unreject` du fait de la 28-4.)* Le verrou nommé est relâché avant le `commit`
 (`kesh-reconciliation/src/mutex.rs`, propriété commune à tous les gestes) : un geste concurrent qui obtient le verrou
 dans cet intervalle bute sur la lecture `FOR UPDATE` et attend le `commit` ; un lot qui aurait classé la ligne avant
 peut la refuser (`RECONCILIATION_ALREADY_REJECTED`) — refus bénin, à relancer, déjà le cas entre tous les gestes.
@@ -651,3 +652,6 @@ pas », « rejetées comprises ») reste vrai — il l'est, la story ne change p
   la formulation de deux tâches et d'un test prescrit, aucun AC ni aucune règle métier : **boucle de validation
   close** — trend P1 → P4 : 6 MEDIUM (5 distincts) → 4 MEDIUM (2 distincts) → 1 MEDIUM → 0 MEDIUM après
   reclassement, 0 HIGH à toutes les passes ; modèles Sonnet, Opus, Haiku, Haiku. Recompte inchangé : 13 AC, B1-B10, V1-V6, M1-M17, C-28-5-1 à C-28-5-30.
+- 2026-10-13 — **Fiche corrigée** (dev 28-5a, sur note de l'orchestrateur) : § *Séquence de la route*, la garde
+  « compte clos » de la 28-4 ne prendra aucun verrou — lecture cohérente non verrouillante (C-28-4-21) ; la phrase
+  qui annonçait un `bank_accounts FOR UPDATE` dans `unreject` est réécrite. Aucun code touché. Choix C-28-5-34.

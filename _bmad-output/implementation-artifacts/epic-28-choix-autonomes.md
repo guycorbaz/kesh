@@ -1421,3 +1421,13 @@ est portée en note à C-28-5-4 et C-28-5-19.
 - **Écartée** : s'en tenir à la lettre de T7a (aucun gate frontend exigé) — une garde Vitest pouvait rougir sans
   fichier frontend modifié.
 - **Réversible** : sans objet.
+
+### C-28-5-34 — La garde « compte clos » de la 28-4 ne verrouille pas le compte : fiche corrigée (28-5a)
+
+- **Contexte** : le § *Séquence de la route* de la fiche annonçait qu'à cause de la 28-4 (W30) `unreject` prendrait
+  `bank_accounts FOR UPDATE` après la ligne de `bank_transactions`. La conception de la 28-4 a changé (C-28-4-21) :
+  la garde lit la ligne du compte par une lecture cohérente non verrouillante. Note de l'orchestrateur, 2026-10-13.
+- **Retenu** : la phrase de la fiche est réécrite (« la garde de la 28-4 ne prendra aucun verrou, cf. C-28-4-21 »),
+  dans un commit de fiche séparé ; le code de la 28-5a n'est pas touché ; la relecture de l'argument d'interblocage
+  au rebase sur la 28-4a reste prescrite.
+- **Réversible** : oui (texte de fiche).
