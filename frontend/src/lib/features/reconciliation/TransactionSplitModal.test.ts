@@ -212,12 +212,16 @@ describe('TransactionSplitModal — soumission rejetée (Story 28-2, B14)', () =
 		vi.restoreAllMocks();
 	});
 
-	async function choisirCompte(r: ReturnType<typeof render>, ligne: number, numero: string) {
-		const rang = await r.findByTestId(`split-row-${ligne}`);
+	async function choisirCompte(
+		findByTestId: (id: string) => Promise<HTMLElement>,
+		ligne: number,
+		numero: string,
+	) {
+		const rang = await findByTestId(`split-row-${ligne}`);
 		const champ = rang.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
 		await fireEvent.focus(champ);
 		const options = await waitFor(() => {
-			const o = Array.from(rang.querySelectorAll('[role="option"]'));
+			const o = Array.from(rang.querySelectorAll<HTMLElement>('[role="option"]'));
 			expect(o.length).toBeGreaterThan(0);
 			return o;
 		});
@@ -236,9 +240,9 @@ describe('TransactionSplitModal — soumission rejetée (Story 28-2, B14)', () =
 			accounts: makeAccounts(),
 			onSuccess: () => {},
 		});
-		await choisirCompte(r, 0, '5000');
+		await choisirCompte(r.findByTestId, 0, '5000');
 		await fireEvent.input(await r.findByTestId('split-amount-0'), { target: { value: '60' } });
-		await choisirCompte(r, 1, '5700');
+		await choisirCompte(r.findByTestId, 1, '5700');
 		await fireEvent.input(await r.findByTestId('split-amount-1'), { target: { value: '40' } });
 		const submit = (await r.findByTestId('split-submit')) as HTMLButtonElement;
 		await waitFor(() => expect(submit.disabled).toBe(false));
