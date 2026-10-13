@@ -1,0 +1,470 @@
+# Story 28.2 : Une erreur d'API ne s'affiche plus « [object Object] » — un utilitaire unique rend le message
+
+## Status
+
+**ready-for-dev** — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
+(rétrospective de l'Epic 27, #641), branche `story/28-2`, worktree `/home/gcorbaz/devel/kesh-28-2`. Port **3035**,
+bases `kesh_282` / `kesh_e2e_282`. Choix consignés au registre `epic-28-choix-autonomes-28-2.md`,
+**C-28-2-1 à C-28-2-14** (à verser par union au registre de l'epic à la fusion). 11 AC (AC1 à AC11).
+Validation P1 à lancer : `28-2-validate-prompt-p1.md` (Sonnet, lentilles R et F). PR : **`closes #520`**.
+
+## Story
+
+**As a** comptable qui utilise Kesh,
+**I want** que toute erreur renvoyée par le serveur s'affiche par son message — traduit dans la langue de
+l'installation —, et qu'une panne imprévue s'affiche par un message générique traduit,
+**so that** je ne lise plus jamais « [object Object] » à la place de la raison du refus, et que je sache quoi
+corriger.
+
+Issue : [#520](https://github.com/guycorbaz/kesh/issues/520) (bug, **P2**), relevée par la remédiation de la passe P1
+de validation de la Story 15-5 (Epic 15). Epic 28 (cible **v0.13.3**, kickoff du 2026-10-13 ; rétrospective de
+l'Epic 27, action B1 : #640, #520, #526, #482, #548). La rétrospective de l'Epic 27 note (§ 9) : *« #520 est un
+inventaire : la règle "inventorier les sites non résolus" s'applique »*.
+
+### Le défaut, au sol
+
+`ApiError` est une **interface** (`frontend/src/lib/shared/types/api.ts:9-14`), pas une sous-classe d'`Error` : le
+client (`api-client.ts`) lève des **objets simples** `{ code, message, details?, status }`. Le motif
+`e instanceof Error ? e.message : String(e)` rend donc `String({…})` = **« [object Object] »** pour toute erreur de
+l'API. La Story 15-5b a créé l'utilitaire `errorMessageOf` (`api-client.ts:30-41`) et l'a posé sur les sept sites du
+module rapprochement (C-15-5b-1) ; elle a laissé, hors module, `settings/+page.svelte:236/:260` — suivi par #520
+(`15-5b-gardes-surfaces-neuves.md:979`).
+
+Trois constats, au sol, à `6f971d76` :
+
+1. **L'issue est en partie périmée.** `reports/+page.svelte:210` (cité par l'issue) est aujourd'hui gardé par
+   `isApiError` (`formatError`, `:196-216`) : il ne rend plus « [object Object] » pour une `ApiError`, mais garde
+   le repli `err instanceof Error ? err.message : String(err)` (`:215`). Les sites du rapprochement cités par l'issue
+   sont traités (15-5b), sauf `ManualMatchModal.svelte:153`, `TransactionSplitModal.svelte:216` et
+   `CancelReconciliationDialog.svelte:60/:97`, qui gardent un repli `String`.
+2. **Quatre sites rendent encore « [object Object] » pour une `ApiError`** (classe A ci-dessous), dont deux que
+   l'issue ne cite pas (`BankProfileList.svelte:19`, `bank-import/profiles/[id]/+page.svelte:25`).
+3. **`errorMessageOf` lui-même n'est ni traduit ni testé** : il rend `err.message` d'une `Error` (texte technique,
+   souvent anglais : « Failed to fetch », « No candidate for txId=5 »), `String(err)` sinon (« [object Object] »
+   pour un objet qui n'est pas une `ApiError`) ; `grep -rn "errorMessageOf" frontend/src --include=*.test.ts` ne rend
+   **rien**. Et les messages que le **client** fabrique (`NETWORK_ERROR`, `TIMEOUT`, `UNKNOWN_ERROR`,
+   `api-client.ts:226-251` et `:288-296`) sont écrits **en français en dur** : un germanophone lit « Impossible de
+   contacter le serveur » — sur chacune des **177** lectures de `e.message`/`err.message`/`error.message` du
+   frontend (`grep -rnE "\b(e|err|error)\.message\b" frontend/src --include=*.svelte --include=*.ts | grep -v "\.test\." | wc -l`),
+   pas seulement sur les sites de cette story.
+
+## Critères d'acceptation
+
+### AC1 — Un utilitaire unique, hors du client HTTP
+
+`errorMessageOf(err: unknown): string` vit dans un module neuf **`frontend/src/lib/shared/utils/error-message.ts`**
+(C-28-2-2), documenté (`///`-équivalent JSDoc, le motif de l'issue cité). Il est **retiré** de `api-client.ts`, qui
+ne le réexporte pas ; ses quatre importeurs l'importent du module neuf. Règles, dans cet ordre :
+
+| entrée | rendu |
+|---|---|
+| `ApiError` (`isApiError`) dont `message` est une chaîne non vide après `trim()` | `err.message`, tel quel (le serveur l'a déjà traduit, `crates/kesh-api/src/errors.rs:31-60`) |
+| `ApiError` dont `message` est vide ou blanc | `i18nMsg('error-unexpected', 'Erreur inattendue.')` |
+| toute autre valeur — `Error`, `TypeError`, `DOMException`, chaîne, nombre, `null`, `undefined`, objet quelconque | `i18nMsg('error-unexpected', 'Erreur inattendue.')`, **et** `console.error('[errorMessageOf]', err)` pour le diagnostic (C-28-2-3) |
+
+⛔ Le rendu n'est **jamais** `'[object Object]'`, jamais la chaîne vide, jamais `'undefined'`/`'null'`.
+⚠️ Le repli `'Erreur inattendue.'` est **exactement** celui des **20** sites existants de `error-unexpected` (point
+final compris ; `grep -rn "'error-unexpected'" frontend/src … | grep -v "'Erreur inattendue.'"` ne rend rien) : `i18n-un-repli-par-cle.test.ts` exige un repli unique par clé.
+
+`isApiError` est **extrait** dans `frontend/src/lib/shared/utils/api-error.ts` (sans autre import qu'un `import type`)
+et **réexporté** par `api-client.ts` (`export { isApiError } from './api-error'`) — les ~110 importeurs existants
+ne changent pas ; `error-message.ts` l'importe de `api-error.ts`, pour ne pas dépendre des `vi.mock` du client
+(C-28-2-2).
+
+### AC2 — Les messages que le client fabrique sont traduits à la source
+
+Dans `api-client.ts`, les trois messages synthétisés par le client passent par `i18nMsg`, **le repli étant le texte
+français actuel, à l'identique** (aucun changement en français, ni avant ni après le chargement du catalogue) :
+
+| code | site actuel | clé | repli |
+|---|---|---|---|
+| `NETWORK_ERROR` | `toFetchApiError`, `:294` | `error-network` | `Impossible de contacter le serveur. Vérifiez votre connexion.` |
+| `TIMEOUT` | `toFetchApiError`, `:293` | `error-timeout` | `Le serveur ne répond pas. Réessayez ultérieurement.` |
+| `UNKNOWN_ERROR` | `parseErrorResponse`, `:228`, `:242` (repli seul), `:250` | `error-server-status` | `Erreur serveur ({ $status })`, `{ status: res.status }` |
+
+Les trois occurrences d'`Erreur serveur (${res.status})` sont factorisées en **une** fonction locale
+(`serverStatusMessage(status)`), soit **un** site `i18nMsg` (DRY ; C-28-2-4). Au site `:242`, seul le **repli** est
+traduit : un `message` présent dans le corps de la réponse est toujours repris tel quel.
+⚠️ Le repli de `error-server-status` porte la variable sous forme **Fluent** `{ $status }`, jamais en gabarit JS
+`` `${status}` `` : `i18n-entrees-a-variables.test.ts` (maillons 1 et 3) le contrôle.
+⚠️ `api-client.ts` importe alors `i18nMsg` de `i18n.svelte.ts`, qui importe déjà `apiClient` : **cycle d'import**.
+Il est bénin (aucun des deux modules n'utilise l'autre au niveau supérieur, seulement à l'appel) — C-28-2-4 ; l'AC10
+le prouve par un test qui charge le catalogue **puis** provoque un `NETWORK_ERROR` réel du client.
+Hors périmètre, écrits au § Angles morts : `SETUP_REQUIRED` (`:407`, `:504`) et `UNAUTHENTICATED` (`:427`, `:521`),
+qui précèdent une redirection (C-28-2-5).
+
+### AC3 — Les quatre sites qui rendent « [object Object] » (classe A) passent par l'utilitaire
+
+| # | site (à `6f971d76`) | avant | après |
+|---|---|---|---|
+| A1 | `routes/(app)/settings/+page.svelte:237` (`submitLock`) | `e instanceof Error ? e.message : String(e)` | `errorMessageOf(e)` |
+| A2 | `routes/(app)/settings/+page.svelte:261` (`submitUnlock`) | idem | `errorMessageOf(e)` |
+| A3 | `lib/features/bank-import/BankProfileList.svelte:19` | `` `Erreur chargement profils : ${String(err)}` `` | `errorMessageOf(err)` |
+| A4 | `routes/(app)/bank-import/profiles/[id]/+page.svelte:25` | `` `Profil introuvable : ${String(err)}` `` | `errorMessageOf(err)` |
+
+Pour A3 et A4, le préfixe français en dur disparaît (C-28-2-6) : le message du serveur (« … introuvable », traduit)
+ou du client (réseau, traduit par l'AC2) se suffit, et « Profil introuvable » était **faux** pour une panne réseau.
+
+### AC4 — Les seize replis `String` / `instanceof Error` (classe B) passent par l'utilitaire
+
+Chaque site ci-dessous traite déjà l'`ApiError`, mais rend `String(x)` (ou `x.message` d'une `Error`) pour tout le
+reste. Remplacement **mécanique** ; les branches spécifiques existantes (codes, drapeaux) sont **préservées**.
+
+| # | site | après |
+|---|---|---|
+| B1 | `routes/(app)/bank-accounts/+page.svelte:76-78` (`baResult.reason`, `Promise.allSettled`) | `loadError = errorMessageOf(baResult.reason)` |
+| B2-B4 | `routes/(app)/bank-accounts/+page.svelte:239`, `:265`, `:281` | `errorMessageOf(err)` |
+| B5 | `lib/features/bank-import/DeleteBankImportAction.svelte:62` (dernière branche) | `errorMsg = errorMessageOf(err)` |
+| B6-B8 | `routes/(app)/settings/api-keys/+page.svelte:63`, `:159`, `:198` | `errorMessageOf(err)` |
+| B9 | `lib/features/reconciliation/CancelReconciliationDialog.svelte:60` | `errorMessageOf(err)` |
+| B10 | `lib/features/reconciliation/CancelReconciliationDialog.svelte:97` | `isApiError(err) ? reconciliationCancelErrorMessage(err) : errorMessageOf(err)` |
+| B11-B12 | `lib/features/bank-accounts/BankAccountJournalLinkForm.svelte:94-99`, `:123-128` | le `if/else` devient `errorMessage = errorMessageOf(err)` |
+| B13 | `lib/features/reconciliation/ManualMatchModal.svelte:150-154` | `else if (isApiError(e)) …; else …` devient `else errorMsg = errorMessageOf(e)` ; la branche `BANK_ACCOUNT_NOT_CONFIGURED` (drapeau `bankNotConfigured`) **reste** |
+| B14 | `lib/features/reconciliation/TransactionSplitModal.svelte:213-217` | idem B13 |
+| B15 | `routes/(app)/reports/+page.svelte:215` (`formatError`) | `return errorMessageOf(err)` ; la branche `REPORT_PERIOD_OUT_OF_FISCAL_YEAR` **reste** |
+| B16 | `lib/shared/utils/api-client.ts:38-41` (`errorMessageOf` lui-même) | supprimé (AC1) |
+
+Les quatre importeurs actuels d'`errorMessageOf` changent d'import, sans autre changement :
+`routes/(app)/reconciliation/rules/+page.svelte:5`, `lib/features/reconciliation/ReconciliationProposals.svelte:22`,
+`lib/features/reconciliation/rules/RulesList.svelte:7`, `lib/features/reconciliation/rules/RuleFormModal.svelte:5`.
+Un import d'`isApiError` qui devient inutilisé est **retiré** (`npm run check` / ESLint le signaleraient).
+
+### AC5 — L'ensemble des sites non résolus est clos, et chaque reste est nommé
+
+À la fin de la story, l'inventaire du § Dev Notes *Inventaire des sites NON RÉSOLUS* est **recompté** depuis la
+source (mêmes commandes), et le Dev Agent Record rend : classe A = 0, classe B = 0 ; classe C (journalisation seule)
+= 3, inchangée, légitime **par critère** ; classe D (affichage réservé aux `ApiError`, rien pour le reste) =
+**angle mort assumé**, comptée, issue de suivi **demandée à l'orchestrateur** (C-28-2-10) ; classe E (repli
+`i18nMsg` générique) conforme, non refactorée.
+
+### AC6 — Une garde de non-régression lit les sources
+
+Test Vitest neuf **`frontend/src/lib/shared/erreurs-en-texte.test.ts`** (modèle : `i18n-libelle-en-dur.test.ts`,
+même préambule « ce qu'elle voit / ce qu'elle ne peut pas voir », C-28-2-7). Il parcourt `src/` (`.svelte`, `.ts`,
+hors `.test.` — `dansLePerimetreDeFichier` d'`i18n-harvest.js`), masque les commentaires (`masquerCommentaires`
+d'`i18n-literal-reader.js`), recueille les **liaisons d'erreur** de chaque fichier — paramètre de `catch (x)` /
+`catch (x: unknown)`, paramètre d'un rappel `.catch((x) => …)` / `.catch(x => …)` / `.catch(function (x) …)` — et
+**échoue en nommant `fichier:ligne`** sur :
+
+| règle | forme interdite | précédent |
+|---|---|---|
+| G1 | `String(<liaison>)` | A1-A4, B2-B16 |
+| G2 | `String(<expr>.reason)` (résultat de `Promise.allSettled`) | B1 |
+| G3 | `instanceof Error ?` (toute expression conditionnelle sur `instanceof Error`) | A1, A2, B13-B15 |
+| G4 | `${<liaison>}` ou `${String(<liaison>)}` dans un gabarit | A3, A4 |
+| G5 | `<liaison> + ''`, `'' + <liaison>` (et guillemets doubles / gabarit vide) | — (forme connue, absente) |
+| G6 | `<liaison>.toString()` | — |
+| G7 | `JSON.stringify(<liaison>` | — |
+
+**Exemption par critère, jamais par entrée** : une occurrence située **dans la liste d'arguments d'un appel
+`console.(log|info|warn|error|debug)(`** (portée calculée par équilibrage des parenthèses, appel multi-ligne
+compris) est permise — journaliser n'est pas afficher (classe C : `hooks.client.ts:23-28`,
+`lib/app/stores/auth.svelte.ts:301`, `lib/shared/utils/api-client.ts:159-163`). Aucune allowlist de fichiers ;
+`error-message.ts` n'en a pas besoin (il ne convertit rien en texte).
+
+**Anti-muet** (le mode d'échec du test muet, CLAUDE.md § E2E) : le test affirme des **planchers** mesurés —
+fichiers parcourus ≥ **300** (317 à `6f971d76`), liaisons d'erreur recueillies ≥ **160** (164 `catch` liés + 5
+rappels `.catch` liés = 169 à `6f971d76`). Le Dev Agent Record recompte les deux valeurs au dernier commit.
+
+**Auto-tests du détecteur** : chaque règle G1-G7 a au moins une **source fictive positive** (le détecteur la
+signale) ; l'exemption `console` a une fictive négative **mono-ligne et multi-ligne** ; une liaison nommée autrement
+que `e`/`err` (`caught`) est vue ; un `String(x)` sur une variable qui **n'est pas** une liaison d'erreur n'est pas
+signalé ; un commentaire contenant `String(err)` n'est pas signalé.
+
+### AC7 — Quatre locales
+
+Trois clés neuves dans les quatre catalogues `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`,
+à côté d'`error-unexpected` (fr-CH `:1733`, autres `:1625`), sous un commentaire `# Story 28-2 — erreurs fabriquées
+par le client (#520)`. Textes au § *Textes proposés* (alignés sur `auth-recovery-error-network`, déjà traduite).
+Préfixe `error-` : espace de noms global, permis partout par `scripts/lint-i18n-ownership.js:16`.
+`loader.rs::parity_between_locales`, `i18n-keys.test.ts`, `i18n-un-repli-par-cle.test.ts`,
+`i18n-entrees-a-variables.test.ts` verts.
+
+### AC8 — Tests unitaires de l'utilitaire et du client
+
+- `frontend/src/lib/shared/utils/error-message.test.ts` (neuf) : une ligne par cas du tableau de l'AC1 — `ApiError`
+  → son message ; `ApiError` message `''` et `'  '` → générique ; `new Error('boom')`, `new TypeError('x')`,
+  `'texte'`, `42`, `null`, `undefined`, `{}`, `{ message: 'm' }` (objet sans `code`/`status`) → générique ; pour
+  chacun, `not.toBe('[object Object]')` et `not.toBe('')` ; `console.error` appelé avec la valeur d'origine pour les
+  non-`ApiError`, **pas** appelé pour une `ApiError` ; **traduction** : catalogue chargé avec
+  `error-unexpected = Unerwarteter Fehler.` → rendu allemand.
+- `frontend/src/lib/shared/utils/api-client.test.ts` (complété) : `fetch` rejeté (`TypeError`) → `ApiError`
+  `NETWORK_ERROR` dont le `message` est le texte du catalogue chargé (allemand) ; `AbortError` → `TIMEOUT` idem ;
+  réponse 502 non JSON, JSON sans `error`, JSON `{ error: { code: 'X' } }` sans message → `error-server-status`
+  interpolé (`502`) ; JSON `{ error: { message: 'm' } }` sans code → `message` `'m'` (repris, non traduit). Sans
+  catalogue : les replis français **à l'identique** de l'avant-story (non-régression FR).
+  ⚠️ Le chargement du catalogue passe par `loadI18nMessages()` avec le `fetch` simulé de
+  `/api/v1/i18n/messages` (ou tout moyen qui n'ajoute pas d'export de production pour les tests).
+
+### AC9 — Tests des écrans de la classe A, et un test par fichier de la classe B
+
+- **A1/A2** : `routes/(app)/settings/settings-page.test.ts` (complété) — `lockBooks` puis `releaseBooksLock`
+  rejetés par une `ApiError` `{ code: 'VALIDATION_ERROR', message: 'La date doit suivre le verrou actuel.', status: 400 }`
+  → `[data-testid="books-lock-error"]` contient ce message et **pas** `[object Object]` ; rejet par
+  `new Error('boom')` → le générique, pas `boom`.
+- **A3** : `lib/features/bank-import/BankProfileList.test.ts` (neuf) — `listBankProfiles` rejeté par une
+  `ApiError` → son message, sans préfixe, sans `[object Object]`.
+- **A4** : `routes/(app)/bank-import/profiles/[id]/profile-page.test.ts` (neuf ; le préfixe `+` est réservé par
+  SvelteKit) — `getBankProfile` rejeté par une `ApiError` 404 → son message.
+- **B** : un test au moins **par fichier** touché de la classe B, sur un rejet **non-`ApiError`**
+  (`new Error('boom')`) → le générique traduit, ni `boom`, ni `Error: boom`, ni `[object Object]` ; dans les
+  fichiers de test existants quand il y en a (`bank-accounts-page.test.ts`, `DeleteBankImportAction.test.ts`,
+  `CancelReconciliationDialog.test.ts`, `BankAccountJournalLinkForm.test.ts`, `ManualMatchModal.test.ts`,
+  `TransactionSplitModal.test.ts`) ; `settings/api-keys` et `reports` n'ont pas de test de page : y créer
+  `api-keys-page.test.ts` et un cas dans le test de rapports existant s'il y en a un, sinon le noter au Dev Agent
+  Record comme couvert par la seule garde AC6 (C-28-2-11).
+- Les tests existants « pas « [object Object] » » du rapprochement (`rules-page.test.ts:35`,
+  `RuleFormModal.test.ts:106`, `RulesList.test.ts:76`, `ReconciliationProposals.test.ts:295-340`) restent verts
+  **sans modification** de leurs assertions.
+
+### AC10 — E2E : l'erreur traverse réellement la frontière HTTP
+
+`frontend/tests/e2e/error-messages.spec.ts` (neuf), par **interception** `page.route` — aucune écriture dans la base
+partagée (C-28-2-8) :
+
+1. *Paramètres* → `POST **/api/v1/companies/current/books-lock` intercepté, réponse `400`
+   `{"error":{"code":"VALIDATION_ERROR","message":"Message de refus de test (28-2)."}}` → saisir une date, cliquer
+   `books-lock-submit` → `books-lock-error` a **exactement** ce texte ; la page ne contient nulle part
+   `[object Object]`.
+2. *Profils bancaires* → `GET **/api/v1/bank-profiles*` interrompu (`route.abort('failed')`), délais de rejeu
+   raccourcis par `window.__KESH_RETRY_DELAYS = [10, 10, 10, 10]` (patron `db-resilience.spec.ts:73`) → la liste
+   affiche le texte de `error-network` **du catalogue servi** (lu par l'API `/api/v1/i18n/messages` dans le test,
+   pas recopié en dur), sans `[object Object]`.
+
+Recette visuelle (action B2 de la rétrospective de l'Epic 27) : le scénario 1 prend une capture de la section
+`settings-books-lock` en thème **clair** et **sombre** (`page.emulateMedia({ colorScheme })`), **avant** le
+correctif (T1, spec rouge) et **après** ; les quatre fichiers vont dans
+`/home/gcorbaz/devel/kesh-gate-logs/28-2-captures/`, **hors dépôt**, et leurs chemins sont cités au Dev Agent
+Record et au prompt de revue P1 (C-28-2-14).
+
+### AC11 — CHANGELOG, manuel, README
+
+- `CHANGELOG.md` : section **`## [0.13.3] — Non publié`** créée au-dessus de `## [0.13.2]` si elle n'existe pas
+  (union avec les branches 28-1 et 28-3 à la fusion, C-28-2-12), rubrique `### Corrigé` : *« Une erreur renvoyée par
+  le serveur ne s'affiche plus « [object Object] » — verrouillage des livres, profils bancaires — : le message du
+  refus est affiché. Une panne imprévue affiche « Erreur inattendue. », et les messages de perte de connexion
+  s'affichent dans la langue de l'installation ([#520](https://github.com/guycorbaz/kesh/issues/520)). »*
+- **Manuel** : aucun texte à changer — `grep -rn "object Object\|Impossible de contacter\|Erreur serveur\|ne répond
+  pas" docs/manual/*/*.tex` ne rend rien à `6f971d76`. Le Dev Agent Record le **recompte** (et sur les PDF aplatis,
+  `pdftotext … - | tr '\n' ' ' | tr -s ' '`) ; un texte neuf du manuel qui décrirait un de ces messages serait à
+  confronter au code.
+- **README / site** : rien (correctif sans fonctionnalité nouvelle).
+
+## Tasks / Subtasks
+
+- [ ] **T0 — Montage** (consignes 6, 8, 11, 13) : bases `kesh_282` / `kesh_e2e_282` (migrations du worktree, seed),
+  `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-28-2/target`, `node_modules` par `cp -al` si absent, port 3035.
+- [ ] **T1 — Tests d'abord, rouges** (AC8, AC9, AC10 scénario 1 + captures « avant ») : écrire
+  `error-message.test.ts`, les cas de `api-client.test.ts`, les tests A1-A4 ; constater le rouge et le noter.
+- [ ] **T2 — `api-error.ts` et `error-message.ts`** (AC1) ; retrait d'`errorMessageOf` d'`api-client.ts`, réexport
+  d'`isApiError` ; quatre importeurs (AC4).
+- [ ] **T3 — Traduction à la source** (AC2) : `serverStatusMessage`, `toFetchApiError` ; trois clés × 4 locales (AC7).
+- [ ] **T4 — Classe A** (AC3), puis **classe B** (AC4), fichier par fichier, un commit par lot cohérent.
+- [ ] **T5 — Garde** `erreurs-en-texte.test.ts` (AC6) avec ses auto-tests ; elle doit **rougir** sur la base de
+  `6f971d76` (le vérifier avant T4 en la posant sur une copie, ou en rejouant M7) puis verdir après T4.
+- [ ] **T6 — Tests de la classe B** (AC9) et E2E scénario 2 (AC10) ; captures « après ».
+- [ ] **T7 — Recomptes** : inventaire (AC5) par les commandes du § Inventaire ; `sitesTotal` et compagnie
+  d'`i18n-keys.test.ts` (§ Pièges) ; planchers de l'AC6.
+- [ ] **T8 — CHANGELOG, manuel** (AC11).
+- [ ] **T9 — Mutations** M1-M20 (§ Mutations), restauration `git checkout -- <f>` + `touch` (mémoire *Mutation
+  restaurée, binaire périmé*).
+- [ ] **T10 — Gates complets au dernier commit de code** (consigne 3, D7) : `npm run check`,
+  `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build` ; `scripts/test-fast.sh` (le catalogue FTL est
+  lu par `kesh-i18n`, `loader.rs::parity_between_locales`) ; E2E complet (8 échecs attendus à juger fichier par
+  fichier, `docs/testing.md` § *Les échecs attendus*). Tous sous `flock …/.gate.lock` (consigne 13).
+
+## Dev Notes
+
+### Inventaire des sites NON RÉSOLUS (ensemble clos), au sol à `6f971d76`
+
+**Définition** : un site *non résolu* est un endroit où une **valeur attrapée** — liaison de `catch`, paramètre de
+rappel `.catch`, `reason` d'un `Promise.allSettled` — dont le type n'est pas prouvé `ApiError` est **convertie en
+texte affiché** : `String(x)`, `` `${x}` ``, `x + ''`, `x.toString()`, `JSON.stringify(x)`, `x instanceof Error ?
+x.message : …`. (`x.message` sur une liaison `unknown` ne compile pas : `frontend/tsconfig.json:12` `"strict": true`
+active `useUnknownInCatchVariables` ; `npm run check` est donc la garde de cette forme-là.)
+
+**Univers** (mesuré par un script d'inventaire de l'auteur, non versionné, qui équilibre les accolades ; ses
+comptes sont reproductibles à la main par les `grep` ci-dessous) : 317 fichiers `.svelte`/`.ts` hors tests sous
+`frontend/src`, **257** instructions `catch` (164 liées, 93 sans liaison — `catch {` ne peut rien convertir),
+**20** rappels `.catch(` dont 5 liés (`mode.svelte.ts:57`, `audit-log/+page.svelte:133`,
+`bank-import/profiles/[id]/+page.svelte:24`, `vat-rates.store.svelte.ts:48`, `InvoiceForm.svelte:351`), et deux
+lectures de `.reason` d'`allSettled` (`journal-entries/[id]/+page.svelte:88`, `bank-accounts/+page.svelte:76-78`).
+
+**Commandes** (depuis `frontend/src`, `F="--include=*.svelte --include=*.ts"`) et sorties :
+
+```sh
+grep -rnE "String\([^)]*(\b(e|err|error|ex|reason|cause)\b|Result\.reason)[^)]*\)" . $F | grep -v "\.test\."   # 26 lignes
+grep -rnE "instanceof Error" . $F | grep -v "\.test\."                                                          # 11 lignes, toutes dans la précédente
+grep -rnE '\$\{(e|err|error|ex|reason)\}' . $F | grep -v "\.test\."                                             # 0
+grep -rnE "\b(e|err|error)\s*\+\s*(''|\"\")" . $F | grep -v "\.test\."                                          # 0
+grep -rnE "\b(e|err|error)\.toString\(\)" . $F | grep -v "\.test\."                                             # 0
+grep -rnE "JSON\.stringify\((e|err|error)\b" . $F | grep -v "\.test\."                                          # 1 : audit-log/+page.svelte:390, `e` = entrée du journal ({#each}), pas une erreur
+grep -rnE "\.catch\(" . $F | grep -v "\.test\."                                                                  # 20
+grep -rnE "\{:catch" . --include=*.svelte                                                                        # 0
+```
+
+Les 26 lignes de la première commande se ventilent en : **3 commentaires** (`api-client.ts:34`, `:36`,
+`ManualMatchModal.svelte:144`), **3 journalisations** (classe C), **20 sites** — 4 de classe A et 16 de classe B :
+
+| classe | définition | sites | sort |
+|---|---|---|---|
+| **A** | `ApiError` rendue « [object Object] » (aucune garde `isApiError` avant la conversion) | A1 `settings/+page.svelte:237`, A2 `:261`, A3 `BankProfileList.svelte:19`, A4 `bank-import/profiles/[id]/+page.svelte:25` | **résolus** (AC3) |
+| **B** | `ApiError` traitée, repli `String`/`instanceof Error` pour le reste (« TypeError: … », « [object Object] » pour un objet) | B1-B16 (AC4) : `bank-accounts/+page.svelte:78`, `:239`, `:265`, `:281` ; `DeleteBankImportAction.svelte:62` ; `settings/api-keys/+page.svelte:63`, `:159`, `:198` ; `CancelReconciliationDialog.svelte:60`, `:97` ; `BankAccountJournalLinkForm.svelte:98`, `:127` ; `ManualMatchModal.svelte:153` ; `TransactionSplitModal.svelte:216` ; `reports/+page.svelte:215` ; `api-client.ts:40` | **résolus** (AC4) |
+| **C** | conversion dans un appel `console.*` — journal, non affiché | `hooks.client.ts:27`, `lib/app/stores/auth.svelte.ts:301`, `lib/shared/utils/api-client.ts:162` | **légitimes par critère** (exemption G de l'AC6) |
+| **D** | affichage réservé aux `ApiError` (`if (isApiError(err)) x = err.message;` sans autre branche) : une valeur d'une autre nature n'affiche **rien** — le « message vide » | ≈ **23** sites, détecteur ci-dessous | **angle mort assumé** (C-28-2-10) |
+| **E** | `isApiError(err) ? err.message : i18nMsg('<générique>', …)` | nombreux (`invoices/[id]`, `dunning`, `projects`, `audit-log`, …) | **conformes** : traduits, jamais « [object Object] » ; non refactorés (registre de la demande) |
+
+**Détecteur de la classe D** (heuristique, à recompter, pas une garde) : `catch` lié dont le corps (commentaires
+retirés) contient `isApiError(` et ne contient **aucun** de `else`, `?`, `errorMessageOf`, `String(`, `i18nMsg`,
+`msg(`, `||`, `throw`. À `6f971d76` il rend **25** lignes, dont **2 faux positifs** vérifiés à la main
+(`lib/shared/utils/notify.ts:88`, exemple de doc-comment ; `invoices/[id]/+page.svelte:884`, qui affiche toujours
+`pdfErrorMessage(err)`) : **23** sites réels, dans `credit-notes` (2), `invoices` (liste 1, fiche 3, édition 1,
+échéancier 1, relances 5), `payment-batches` (5), `supplier-invoices` (liste 2, fiche 2, import 1). ⚠️ Une forme qui
+contient un `?` pour une autre raison lui échappe : le nombre est un **plancher**, pas l'ensemble.
+Pourquoi la classe D n'est pas traitée ici : la cause n'est pas #520 (aucun « [object Object] », aucun texte faux :
+un silence), le cas ne survient que sur une valeur qui n'est pas une `ApiError` (le client convertit toute panne
+réseau et tout refus HTTP en `ApiError` ; restent un corps de **succès** non JSON — `res.json()` qui lève — et une
+erreur de programmation), et la traiter ajouterait **sept** modules métier (règle de découpage préventif).
+→ Issue de suivi à ouvrir par l'orchestrateur : *« [bug] Un `catch` qui n'affiche que les `ApiError` laisse une
+panne imprévue sans message (23 sites) »*, **P3**, renvoyant à cette fiche.
+
+### Angles morts assumés (écrits pour qu'on ne les croie pas couverts)
+
+1. **Classe D** (ci-dessus) — issue de suivi demandée.
+2. **`SETUP_REQUIRED` / `UNAUTHENTICATED`** (`api-client.ts:404-430`, `:501-524`) : messages français en dur, non
+   traduits par l'AC2 ; ils précèdent une redirection (`/onboarding`, `/login`) et ne sont lus par aucun écran
+   connu. Un écran qui afficherait `err.message` à cet instant montrerait « Session expirée » en français (C-28-2-5).
+3. **Littéraux français en dur voisins, hors du sujet** : `'ID invalide'` (`bank-import/profiles/[id]/+page.svelte:15`),
+   le message réseau recopié en dur de `routes/login/+page.svelte:54`, `ResetPasswordForm.svelte:77`,
+   `ForgotPasswordForm.svelte:54` (ces deux-là en repli d'`i18nMsg`, conformes), et les préfixes français de
+   `InvoiceForm.svelte:354-355`, `:379-380`, `:542-543` (`` `… (${err.message})` ``). Dette i18n préexistante,
+   invisible des gardes i18n (le préambule d'`i18n-libelle-en-dur.test.ts` le dit) ; **signalée**, non traitée
+   (C-28-2-13). L'orchestrateur vérifie si une issue la couvre.
+4. **La garde AC6 ne voit pas** : une conversion par une **fonction intermédiaire** (`const f = (x: unknown) =>
+   String(x)` appelée avec une erreur) — elle ne connaît que les liaisons d'erreur, pas le flot ; une conversion
+   **dans le balisage** Svelte (`{String(err)}`) d'une variable d'état qui contiendrait une erreur brute ; un
+   `catch` dont la liaison est **déstructurée** (`catch ({ message })`) — 0 à `6f971d76`
+   (`grep -rnE "catch \(\{" frontend/src` ne rend rien). Ces formes sont écrites dans son préambule.
+
+### État actuel des fichiers modifiés — ce qui doit être préservé
+
+- `api-client.ts` (584 lignes) : le mutex de refresh, le rejeu exponentiel (`DEGRADED_RETRY_DELAYS_MS`,
+  `window.__KESH_RETRY_DELAYS`), `apiHealth.setDegraded/clearDegraded`, la forme `ApiError` (`code`, `status` —
+  `0` pour réseau/délai) sont **inchangés** ; seuls changent les trois textes (AC2), l'extraction d'`isApiError`
+  (réexport) et le retrait d'`errorMessageOf`. Les `code` ne changent pas : `ForgotPasswordForm.svelte:43-56` et
+  `routes/login/+page.svelte:51-54` aiguillent sur `err.code === 'NETWORK_ERROR'`.
+- `i18n.svelte.ts` : inchangé. `i18nMsg` interpole `{ $x }` côté client (`:19-27`) ; avant chargement du catalogue,
+  le repli s'affiche — d'où l'exigence « repli = texte actuel ».
+- `settings/+page.svelte` : `lockError` sert aussi au contrôle « motif obligatoire » (`:249`, `msg(…)`) ; ne pas y
+  toucher. Le test existant `settings-page.test.ts` simule `$lib/features/onboarding/onboarding.svelte` (`i18nMsg`
+  → repli) et `settings.api` (`lockBooks`, `releaseBooksLock` déjà des `vi.fn()`).
+- `ManualMatchModal.svelte` / `TransactionSplitModal.svelte` : le drapeau `bankNotConfigured` (branche
+  `BANK_ACCOUNT_NOT_CONFIGURED`) pilote un lien vers la liaison au plan comptable — à préserver ; le commentaire
+  P-H1 de `ManualMatchModal.svelte:142-146` peut renvoyer à `error-message.ts`.
+- `reports/+page.svelte` `formatError` : la branche `REPORT_PERIOD_OUT_OF_FISCAL_YEAR` (interpolation des bornes)
+  reste ; seule la dernière ligne change. Ses huit appelants (`:253` à `:504`) ne changent pas.
+- `ReconciliationProposals.svelte:206`/`:224` lèvent des `Error` techniques (« No candidate for txId=… ») attrapées
+  à `:230` : elles s'afficheront désormais « Erreur inattendue. » (journalisées) — voulu (C-28-2-3).
+
+### Pièges connus du dépôt, applicables ici
+
+- **`sitesTotal` d'`i18n-keys.test.ts:601`** (2075 à `6f971d76`) compte les sites `i18nMsg` de tout `src/` : l'AC1
+  en ajoute **1** (`error-message.ts`, `error-unexpected`), l'AC2 **3** (`error-network`, `error-timeout`,
+  `error-server-status`) → **2079 attendu**, à **recompter** par la collecte du test (une borne exacte qui rougit
+  fait son travail) ; écrire le delta ventilé dans le commentaire au-dessus de la borne, **sans réécrire les
+  entrées passées** (consigne 15). `sitesNonResolus`, `relais`, `sitesGabarit` : à recompter, a priori inchangés.
+- **`vi.mock('$lib/shared/utils/api-client', …)`** : **18** fichiers de test simulent le client (`grep -rlF
+  "vi.mock('\$lib/shared/utils/api-client'" frontend/src` → 17, plus 1 en guillemets doubles), presque tous **sans**
+  `isApiError` — raison de
+  l'extraction en `api-error.ts` (C-28-2-2). Un composant testé sous un tel mock qui importe `errorMessageOf`
+  obtient le vrai `isApiError`.
+- **Repli unique par clé** (`i18n-un-repli-par-cle.test.ts`) : `error-unexpected` → `'Erreur inattendue.'` (avec
+  point) ; ne pas confondre avec `common-error` → `'Erreur inattendue'` (sans point).
+- **Mutation restaurée, binaire périmé** : après `git checkout -- <f>`, `touch <f>`.
+- **Édition par l'outil Edit uniquement** (consigne 14) : aucun `sed -i`/`perl -pi` sur les seize sites, même
+  « mécaniques ».
+- **Base de gate remise à zéro avant le gate complet** — sur `kesh_282`, jamais par `docker restart` (consigne 2).
+
+### Textes proposés (DE / IT / EN), alignés sur `auth-recovery-error-network`
+
+| clé | fr-CH | de-CH | it-CH | en-CH |
+|---|---|---|---|---|
+| `error-network` | Impossible de contacter le serveur. Vérifiez votre connexion. | Server nicht erreichbar. Überprüfen Sie Ihre Verbindung. | Impossibile contattare il server. Verifica la connessione. | Unable to reach the server. Check your connection. |
+| `error-timeout` | Le serveur ne répond pas. Réessayez ultérieurement. | Der Server antwortet nicht. Versuchen Sie es später erneut. | Il server non risponde. Riprova più tardi. | The server is not responding. Try again later. |
+| `error-server-status` | Erreur serveur ({ $status }) | Serverfehler ({ $status }) | Errore del server ({ $status }) | Server error ({ $status }) |
+
+### Découpage préventif — dérogation
+
+La story touche **six** modules de premier niveau (`shared/utils`, `settings`, `bank-import`, `bank-accounts`,
+`reconciliation`, `reports`) : le critère « plus de cinq modules » est franchi d'un. **Dérogation** (C-28-2-9) : la
+seule logique neuve vit dans `shared/utils` (AC1, AC2, testés seuls) ; les vingt sites sont un remplacement
+**mécanique** d'une expression par un appel, relu fichier par fichier — c'est la forme « story-zéro + rollout » que
+la règle recommande, tenue dans une seule fiche parce que le rollout est d'une ligne par site et que le scinder
+laisserait une garde AC6 rouge sur la sous-story pilote. Risque accepté : une revue qui survolerait les seize
+sites B. Parade : le prompt de revue P1 exige la revue site par site contre le tableau de l'AC4. **Signal déclaré au
+Project Lead** par le rapport de l'agent.
+
+### Mutations (à jouer en T9, chacune doit faire rougir au moins un test nommé)
+
+| # | mutation | doit rougir |
+|---|---|---|
+| M1 | `errorMessageOf` : branche `ApiError` → `String(err)` | `error-message.test.ts` |
+| M2 | `errorMessageOf` : branche « autre » → `err instanceof Error ? err.message : String(err)` | `error-message.test.ts` (cas `Error`, `{}`) + garde G1/G3 |
+| M3 | `errorMessageOf` : message vide d'`ApiError` rendu tel quel | `error-message.test.ts` |
+| M4 | `errorMessageOf` : `console.error` retiré | `error-message.test.ts` |
+| M5 | `toFetchApiError` : `NETWORK_ERROR` → littéral français | `api-client.test.ts` (catalogue allemand) |
+| M6 | `toFetchApiError` : `TIMEOUT` → littéral | `api-client.test.ts` |
+| M7 | `serverStatusMessage` → littéral `` `Erreur serveur (${status})` `` | `api-client.test.ts` |
+| M8 | site `:242` : le `message` du corps ignoré au profit du repli | `api-client.test.ts` (corps sans code) |
+| M9 | A1 rétabli (`e instanceof Error ? e.message : String(e)`) | `settings-page.test.ts`, garde G1/G3, E2E scénario 1 |
+| M10 | A2 rétabli | `settings-page.test.ts`, garde |
+| M11 | A3 rétabli | `BankProfileList.test.ts`, garde G4, E2E scénario 2 |
+| M12 | A4 rétabli | `profile-page.test.ts`, garde G4 |
+| M13 | B1 rétabli (`String(baResult.reason)`) | garde G2, `bank-accounts-page.test.ts` |
+| M14 | B10 rétabli (`… : String(err)`) | garde G1, `CancelReconciliationDialog.test.ts` |
+| M15 | B13 : branche `BANK_ACCOUNT_NOT_CONFIGURED` supprimée | `ManualMatchModal.test.ts` (existant) — préservation |
+| M16 | garde : exemption `console` étendue à tout le fichier | auto-test G (fictive positive hors `console` dans un fichier qui journalise) |
+| M17 | garde : liaisons de rappel `.catch` non recueillies | auto-test `.catch((err) => …${String(err)}…)` + M12 |
+| M18 | garde : parcours pointé sur un dossier vide | plancher « fichiers ≥ 300 » |
+| M19 | `error-network` retiré de `de-CH` | `loader.rs::parity_between_locales` / `i18n-keys.test.ts` |
+| M20 | repli de `error-server-status` en gabarit JS, ou site passant `{ code: … }` | `i18n-entrees-a-variables.test.ts` |
+
+### Fichiers communs avec les branches 28-1 et 28-3 (non mergées)
+
+`CHANGELOG.md` (section 0.13.3), `sprint-status.yaml` (section `epic-28`), `i18n-keys.test.ts` (`sitesTotal`), les
+catalogues FTL : union à la fusion, `sitesTotal` **recompté** après rebase, jamais additionné de confiance.
+
+### Project Structure Notes
+
+- Modules neufs dans `frontend/src/lib/shared/utils/` (emplacement canonique des utilitaires transverses, à côté de
+  `pdf-error.ts`, `notify.ts`) ; garde dans `frontend/src/lib/shared/` (à côté des gardes i18n).
+- Aucun changement backend hors catalogues FTL ; aucune migration ; aucune route ; version Cargo inchangée
+  (`0.13.2`, la release 0.13.3 la portera).
+
+### References
+
+- Issue #520 ; `15-5b-gardes-surfaces-neuves.md:713` (AC14, C-15-5b-1) et `:976-979` (suivi #520).
+- `frontend/src/lib/shared/types/api.ts:9-14` ; `frontend/src/lib/shared/utils/api-client.ts:18-41`, `:221-252`,
+  `:288-296` ; `frontend/src/lib/shared/utils/i18n.svelte.ts:19-27` ; `frontend/src/lib/shared/utils/pdf-error.ts`
+  (patron d'utilitaire d'erreur traduit).
+- `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts` (modèle de garde) ; `i18n-literal-reader.js`
+  (`masquerCommentaires`) ; `i18n-harvest.js:31` (`dansLePerimetreDeFichier`).
+- `CLAUDE.md` § *Inventorier les sites NON RÉSOLUS*, § *Règle de splitting préventif*, § *Test Locally First* (E2E).
+- `epic-27-retro-2026-10-13.md` § 7 (B2 recette visuelle, B3 édition) et § 9 (#520).
+
+## Dev Agent Record
+
+### Agent Model Used
+
+### Debug Log References
+
+### Completion Notes List
+
+- Fiche créée par analyse exhaustive du contexte (bmad-create-story) — guide de développement complet.
+
+### File List
+
+## Change Log
+
+- 2026-10-13 — Fiche créée (bmad-create-story, Opus 5.5, autonomie), sur `6f971d76`. Inventaire : 20 sites non
+  résolus (A 4, B 16), C 3 légitimes, D ≈ 23 assumés, E conformes. Choix C-28-2-1 à C-28-2-14. Statut ready-for-dev.
