@@ -11,7 +11,13 @@
 				outline: "border-border bg-background hover:bg-muted hover:text-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 aria-expanded:bg-muted aria-expanded:text-foreground",
 				secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
 				ghost: "hover:bg-muted hover:text-foreground dark:hover:bg-muted/50 aria-expanded:bg-muted aria-expanded:text-foreground",
-				destructive: "bg-destructive/10 hover:bg-destructive/20 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/20 text-destructive focus-visible:border-destructive/40 dark:hover:bg-destructive/30",
+				// Fond plein (Story 28-1, #640) : le jeton `destructive` n'était pas défini dans le thème,
+				// et l'ancienne variante (fond à 10 %, texte destructive) ne produisait aucune règle — le
+				// bouton se lisait comme du texte. Jetons et ratios WCAG : `app.css` (AC1). La bordure et
+				// l'anneau de focus suivent la couleur de la variante, non le jeton `ring` (absent, #645).
+				// Pas de `dark:` : voir C-28-1-7 (Kesh n'a pas de thème sombre ; le variant `dark` de
+				// Tailwind v4 suit prefers-color-scheme et rendrait le bouton pâle).
+				destructive: "bg-destructive text-destructive-foreground hover:bg-destructive-hover focus-visible:border-destructive focus-visible:ring-destructive/40",
 				link: "text-primary underline-offset-4 hover:underline",
 			},
 			size: {

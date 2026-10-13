@@ -41,6 +41,7 @@
 			<div class="w-24 h-16 rounded bg-primary-light flex items-center justify-center text-white text-sm">P. Light</div>
 			<div class="w-24 h-16 rounded bg-success flex items-center justify-center text-white text-sm">Success</div>
 			<div class="w-24 h-16 rounded bg-error flex items-center justify-center text-white text-sm">Error</div>
+			<div class="w-24 h-16 rounded bg-destructive flex items-center justify-center text-white text-sm">Destructive</div>
 			<div class="w-24 h-16 rounded bg-warning flex items-center justify-center text-white text-sm">Warning</div>
 			<div class="w-24 h-16 rounded bg-info flex items-center justify-center text-white text-sm">Info</div>
 			<div class="w-24 h-16 rounded bg-surface-alt border border-border flex items-center justify-center text-sm">Surface Alt</div>
@@ -66,7 +67,8 @@
 		<div class="flex flex-wrap items-center" style="gap: var(--kesh-gap);">
 			<Button>Default</Button>
 			<Button variant="secondary">Secondary</Button>
-			<Button variant="destructive">Destructive</Button>
+			<Button variant="destructive" data-testid="ds-destructive">Destructive</Button>
+			<Button variant="destructive" disabled data-testid="ds-destructive-disabled">Destructive désactivé</Button>
 			<Button variant="outline">Outline</Button>
 			<Button variant="ghost">Ghost</Button>
 			<Button disabled>Disabled</Button>

@@ -1938,3 +1938,48 @@ Rapports `kesh-gate-logs/28-1-validate-p3-{R,F}.md` (hors dépôt). Bilan au Cha
   un overlay `role="dialog"` maison (`:526-530`), non dans un `Dialog.Root` (P4-1). **R9** : la ligne du doublon est
   `BankImportUpload.svelte:345` ; `:344` est celle de `balanceMismatch` (P4-2).
 - **Réversible** : —.
+
+### C-28-1-37 — `@tailwindcss/node` installé à `4.2.2`, sur un `node_modules` copié (développement)
+
+- **Contexte** : `npm install --save-dev '@tailwindcss/node@^4.2.2'` a résolu la dernière version admise, **4.3.3**,
+  et écrit `^4.3.3` dans `package.json` — exactement la divergence de moteur que C-28-1-35 interdit
+  (`tailwindcss` installé : 4.2.2). Le `node_modules` du worktree, lui, était lié en dur (`cp -al`) au dépôt
+  principal : un `npm install` y aurait réécrit des fichiers partagés.
+- **Retenu** : `node_modules` du worktree remplacé par une **copie** indépendante (`cp -a`), puis
+  `npm install --save-dev '@tailwindcss/node@4.2.2'`, qui écrit `"^4.2.2"` (préfixe par défaut de npm) — le
+  spécificateur de `tailwindcss`. Lockfile : l'entrée racine gagne la ligne, et l'entrée `node_modules/@tailwindcss/node`
+  perd `"license": "MIT"` (normalisation de npm 9.2) ; rien d'autre (`git diff --stat` : 1 insertion, 1 suppression).
+- **Écartée** : garder `^4.3.3` (moteur de la garde ≠ moteur du build ; l'assertion de version aurait rougi) ;
+  monter les trois paquets en 4.3.3 (hors périmètre de #640).
+- **Réversible** : oui.
+
+### C-28-1-38 — Page `/design-system` : l'exemple désactivé est un 25e usage de la variante
+
+- **Contexte** : l'AC9 ajoute `<Button variant="destructive" disabled data-testid="ds-destructive-disabled">` et
+  un carré de palette au-dessus de la section *Boutons* : la fiche compte « 24 usages » au 2026-10-13, et cite
+  `design-system:69` pour l'exemple existant.
+- **Retenu** : 25 usages au `HEAD` de la story (24 + l'exemple désactivé), toujours dans 17 fichiers (`design-system` en
+  porte désormais trois) ; l'exemple existant passe de `:69` à `:70` (carré de palette inséré
+  l. 44). La garde (f) ne compte pas les usages : elle exige seulement qu'aucun ne porte de `class` ; son assertion
+  de montage exige « au moins 24 ».
+- **Réversible** : —.
+
+### C-28-1-39 — Garde AC6 : deux clés lues au sol, table écrite depuis la fiche
+
+- **Contexte** : la table fermée doit être écrite depuis l'inventaire de la fiche, non recopiée de la sortie de la
+  garde (défaut de l'AC7 de l'Epic 23). La fiche nomme les `data-testid` d'`api-keys` et des classes B, D, E en
+  toutes lettres, mais ceux de `bank-accounts:477` et `RulesList:175` seulement par leur forme (`archive-button-{id}`,
+  `delete-button-{id}`).
+- **Retenu** : table écrite depuis la fiche (14 entrées, jetons des classes B à E) ; la première exécution n'a
+  rougi que sur ces deux clés, dont le texte source a été lu au sol (`grep -nF`) : `archive-button-{ba.id}`
+  (`bank-accounts/+page.svelte:479`), `delete-button-{r.id}` (`RulesList.svelte:178`). Aucun autre écart.
+- **Réversible** : —.
+
+### C-28-1-40 — Garde AC7 (4) : l'API de Tailwind se charge, pas de repli
+
+- **Contexte** : la fiche prévoit un repli si `__unstable__loadDesignSystem` ne se charge pas sous Vitest.
+- **Retenu** : chargé sous `// @vitest-environment node` par `await import('@tailwindcss/node')` dans un
+  `beforeAll` (60 s) ; le repli n'est pas écrit (code mort). Premier relevé, avant les jetons : **quatorze** noms non
+  résolus, les treize de la table **et** `destructive` (garde rouge sur ce seul nom) ; après la T1, les treize.
+  Aucun faux positif de prose ou d'attribut SVG au relevé.
+- **Réversible** : oui (le repli s'écrirait si une version future cassait l'API instable).
