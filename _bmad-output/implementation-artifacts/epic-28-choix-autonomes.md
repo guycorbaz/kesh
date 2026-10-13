@@ -999,6 +999,10 @@ Choix faits à la remédiation de la validation P2 (2026-10-13, Opus 5.5, autono
 - **Écartée** : `return errorMessageOf(err)` aussi dans la branche `ApiError` — plus sûr, mais hors du périmètre
   écrit, et la revue P1 en jugera.
 - **Réversible** : oui, une ligne.
+- **Révisé le 2026-10-13, revue de code P1 (B-1 = A-4)** : `return err.message` **supprimé** ; la branche
+  `ApiError` ne garde que le cas `REPORT_PERIOD_OUT_OF_FISCAL_YEAR`, tout le reste tombe sur `errorMessageOf`, qui
+  rend le même texte pour un message non vide et le générique pour un message vide. Deux tests neufs dans
+  `reports-page.test.ts` (message vide ; code de période sans bornes). L'option écartée ci-dessus est donc retenue.
 
 ### C-28-2-34 — Le scénario 2 de l'E2E échoue en le disant si la clé `error-network` n'est pas servie (dev)
 
@@ -1022,4 +1026,40 @@ Choix faits à la remédiation de la validation P2 (2026-10-13, Opus 5.5, autono
   jouée comme **M20b** et **tuée** (maillon 3 d'`i18n-entrees-a-variables`, et `api-client.test.ts`).
 - **Écartée** : étendre `i18n-entrees-a-variables` aux replis en gabarit — elle rougirait sur le site légitime des
   rapports, hors périmètre.
+- **Réversible** : oui.
+
+### C-28-2-36 — G5 relève la liaison opérande ENTIER de tout `+` / `+=` (revue de code P1, E-M1)
+
+- **Contexte** : G5 ne voyait que `x + ''` / `'' + x`. La graphie la plus naturelle du défaut,
+  `'Erreur : ' + err` (« Erreur : [object Object] »), lui échappait, alors que G4 voit `${err}`.
+- **Retenu** : G5 relève `x` quand il est un opérande entier d'un `+` (à gauche, hors `x++`) ou d'un `+` / `+=` (à
+  droite, hors `++x`), quelle que soit l'autre opérande. Un champ de la liaison (`err.message`, `err?.code`,
+  `err[0]`, `err(…)`) n'en relève pas. Auto-tests positifs (chaîne non vide des deux côtés, gabarit, sans blancs,
+  multi-ligne, `+=`) et négatifs (champs chaînés, autre variable, préfixe/suffixe de nom, `++`). Faux positif
+  accepté et écrit au préambule : `+x` unaire, `x + 1` — bruyants, et sans sens sur une erreur. Parcours réel du
+  dépôt : 0 constat neuf.
+- **Écartée** : inscrire la forme aux angles morts (la garde ne fermerait pas la classe qu'elle annonce).
+- **Réversible** : oui.
+
+### C-28-2-37 — `BANK_ACCOUNT_NOT_CONFIGURED` des deux modales garde `errorMsg = e.message` (revue de code P1, B-2)
+
+- **Contexte** : `ManualMatchModal` et `TransactionSplitModal` affichent `e.message` dans leur branche spécifique ;
+  un message vide laisserait le drapeau levé sans texte.
+- **Retenu** : laissé tel quel. Le comportement est celui d'avant la story (branche préservée, AC4) ; le cas du
+  **message vide** d'une `ApiError` relève de la classe D, suivie par **#644**, non d'un « [object Object] ». Trois
+  autres sites, hors du périmètre de la story, ont la même forme (`return err.message` dans une branche `ApiError`,
+  repli traduit sinon) : `export/+page.svelte:28`, `supplier-invoices/import/+page.svelte:301`,
+  `AdminRestorePanel.svelte:84` (grep du symptôme, revue de code P1) — même renvoi à #644.
+- **Écartée** : passer ces branches par `errorMessageOf` — hors périmètre, et le drapeau rend déjà la situation
+  visible.
+- **Réversible** : oui.
+
+### C-28-2-38 — Les sites B2-B4, B7/B8 et B9 reçoivent leur test d'un rejet non-`ApiError` (revue de code P1, E-L5)
+
+- **Contexte** : l'AC9 demandait un test par fichier de la classe B ; plusieurs sites d'un même fichier n'étaient
+  gardés que par G1, qui ne voit pas `(err as Error).message`.
+- **Retenu** : le montage était simple — six tests neufs (création, modification et archivage des comptes
+  bancaires ; création et révocation des clés d'API ; chargement du dialogue d'annulation), chacun constatant
+  l'appel API ; mutations P1-M9 à P1-M14 (`(err as Error).message`) jouées. Les sites B5, B11, B12 restent couverts
+  par le test unique de leur fichier, comme l'AC9 l'admet.
 - **Réversible** : oui.

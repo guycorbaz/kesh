@@ -2,16 +2,11 @@
 
 ## Status
 
-**review** — développement fait le 2026-10-13 (`bmad-dev-story`, Opus 5.5, dernier commit de code `4ff3a11e`) ;
-revue de code P1 à lancer : `28-2-review-prompt-p1.md` (Sonnet, lentilles B, E, A). Validation close le 2026-10-13
-(P3 ciblée : 0 MEDIUM, 2 LOW appliqués). Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6f971d76`
-(rétrospective de l'Epic 27, #641), branche `story/28-2`, worktree `/home/gcorbaz/devel/kesh-28-2`. Port **3035**,
-bases `kesh_282` / `kesh_e2e_282`. Choix consignés au registre de l'epic `epic-28-choix-autonomes.md`
-(§ Story 28-2, versé par union à la validation P2), **C-28-2-1 à C-28-2-29**. 11 AC (AC1 à AC11).
-Validation P1 faite (Sonnet, lentilles R et F : 7 MEDIUM, 11 LOW, remédiés) ; validation P2 faite (Opus, lentilles
-R et F : 3 MEDIUM rapportés, 2 distincts — F1 = R2 et R1 — ; 18 LOW rapportés, 13 distincts ; remédiés) ; passe ciblée P3 à lancer :
-`28-2-validate-prompt-p3-ciblee.md` (Haiku, une lentille, diff de la remédiation P2). PR : **`closes #520`**,
-**`refs #644`** (classe D).
+**review** — revue de code P1 remédiée le 2026-10-13 (1 MEDIUM, 14 LOW ; cf. Change Log) ; passe ciblée P2 à lancer :
+`28-2-review-prompt-p2-ciblee.md` (Haiku, une lentille, diff de la remédiation P1). Validation close (P3 ciblée),
+développement fait (`bmad-dev-story`, Opus 5.5). Branche `story/28-2`, worktree `/home/gcorbaz/devel/kesh-28-2`,
+port **3035**, bases `kesh_282` / `kesh_e2e_282`. Choix consignés au registre `epic-28-choix-autonomes.md`
+(§ Story 28-2), **C-28-2-1 à C-28-2-38**. 11 AC (AC1 à AC11). PR : **`closes #520`**, **`refs #644`** (classe D).
 
 ## Story
 
@@ -210,7 +205,7 @@ exemption `console` appliquée).
 | G2 | `String(<expr>.reason)` (résultat de `Promise.allSettled`) | B1 |
 | G3 | motif `\binstanceof\s+Error\b` (bornes de mot : `instanceof ErrorEvent` n'en relève pas), **tout usage** — ternaire, `if (x instanceof Error)`, **classification comprise** (`err instanceof Error && err.name === 'AbortError'`, qui n'affiche rien, rougit aussi : C-28-2-27) —, dans tout le fichier (C-28-2-18), exemption `console` appliquée. Raison : afficher le `message` d'une `Error` est ce que C-28-2-3 écarte, et la forme peut vivre **hors** d'une portée de liaison — un `.reason` d'`allSettled` (la forme de B1, aujourd'hui écrite avec `String` seul) ou une fonction intermédiaire qui l'emploie (angle mort n° 4) —, ce que seule une recherche à l'échelle du fichier attrape ; une règle qui distinguerait l'affichage de la classification ne serait plus décidable par lecture. Le **message d'échec** de la garde oriente vers `err.name`, `instanceof DOMException` ou `instanceof TypeError` pour classer. À `6f971d76`, 11 lignes (`grep -rnE "\binstanceof\s+Error\b"`, hors tests), dont 2 commentaires : des 9 lignes de code, **6 disparaissent** avec A et B (A1, A2, B13-B16) et **3 restent, exemptées** (classe C, appels `console`) | A1, A2, B13-B16 |
 | G4 | `${<liaison>}` ou `${String(<liaison>)}` dans un gabarit | A3, A4 |
-| G5 | `<liaison> + ''`, `'' + <liaison>` (et guillemets doubles / gabarit vide) | — (forme connue, absente) |
+| G5 | `<liaison> + ''`, `'' + <liaison>` (et guillemets doubles / gabarit vide) — **élargie en revue de code P1 (E-M1, C-28-2-36)** : la liaison opérande entier de tout `+` / `+=`, chaîne non vide comprise (`'Erreur : ' + err`, `err + ' …'`, `m += err`) ; un champ (`err.message + …`) n'en relève pas | — (forme connue, absente) |
 | G6 | `<liaison>.toString()` | — |
 | G7 | `JSON.stringify(<liaison>` | — |
 
@@ -669,7 +664,7 @@ relus un par un —, et le signal **redéclaré au Project Lead**.
 | M16 | garde : exemption `console` étendue à tout le fichier | auto-test G (fictive positive hors `console` dans un fichier qui journalise) |
 | M17 | garde : liaisons de rappel `.catch` non recueillies | auto-tests `.catch` (AC6) + plancher « `.catch` lié ≥ 5 » + M12 |
 | M18 | garde : parcours pointé sur un dossier vide | plancher « fichiers ≥ 310 » |
-| M19 | `error-network` retiré de `de-CH` | `loader.rs::parity_between_locales` / `i18n-keys.test.ts` |
+| M19 | `error-network` retiré de `de-CH` | `loader.rs::parity_between_locales` (`cargo test -p kesh-i18n`) — **constaté** : `i18n-keys.test.ts` reste vert, il ne compare pas les locales (revue de code P1, E-L7) |
 | M20 | repli de `error-server-status` en gabarit JS, ou site passant `{ code: … }` | `i18n-entrees-a-variables.test.ts` |
 | M21 | B15 rétabli (`err instanceof Error ? err.message : String(err)` dans `formatError`) | `reports-page.test.ts` (rejet par `generate()`, AC9), garde G3 (paramètre de fonction : G1 ne le voit pas) |
 | M22 | B6 rétabli (`isApiError(err) ? err.message : String(err)`) | `api-keys-page.test.ts`, garde G1 |
@@ -738,9 +733,11 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/` :
 - **AC5** — inventaire recompté au `HEAD` par les commandes du § Inventaire : la commande `String(…)` rend **5**
   lignes (3 journalisations de classe C + 2 commentaires : `ManualMatchModal.svelte:145`, doc-comment
   `error-message.ts:11`) ; `instanceof Error`, les **mêmes 5** ; gabarits, `+ ''`, `.toString()` : **0**. Classe
-  A = 0, B = 0, C = 3 inchangées (`hooks.client.ts`, `auth.svelte.ts` non touchés). Classe D : non recomptée par le
-  détecteur heuristique (non versionné) ; aucun fichier des quatre modules qui la portent (`credit-notes`,
-  `invoices`, `payment-batches`, `supplier-invoices`) n'est touché — suivie par #644. Classe E : non touchée.
+  A = 0, B = 0, C = 3 inchangées (`hooks.client.ts`, `auth.svelte.ts` non touchés). Classe D : **inchangée par
+  construction** — aucun fichier des quatre modules qui la portent (`credit-notes`, `invoices`, `payment-batches`,
+  `supplier-invoices`) n'est touché (`git diff --name-only 4b31fcac HEAD`, revérifié en revue de code P1, A-2), donc
+  son compte de l'inventaire n'a pas pu bouger ; le détecteur heuristique, non versionné, n'a pas été rejoué —
+  suivie par #644. Classe E : non touchée.
 - **AC6** — garde `erreurs-en-texte.test.ts` ; `blocEquilibre` dans `i18n-literal-reader.js`, `corpsDeFonction`
   devenu son appel en accolades (ses quatre tests verts sans modification, cinq tests neufs en parenthèses).
   **Vérifiée rouge sur les sources de `5aad8b35`** (les fichiers A et B ramenés à la base, garde jouée, puis
@@ -796,7 +793,13 @@ de `error-messages.spec.ts` sont **verts**.
 2 modules, 6 tests Vitest dont la garde, 1 spec E2E —, 32 modifiés dont 4 catalogues et le CHANGELOG) ; **76**
 `it(`/`test(` ajoutés (74 Vitest + 2 E2E) et **2** `it.each` ; 0 test retiré. `sitesTotal` 2075 → **2079**, mesuré
 par la collecte d'`i18n-keys.test.ts` ; `sitesNonResolus`, `relais`, `sitesGabarit` inchangés. Clés : 3 × 4
-(`grep -c` : 3 par catalogue). `isApiError(` : 164 appels hors tests, inchangés par la story (AC1).
+(`grep -c` : 3 par catalogue). `isApiError(` : **164 appels hors tests à `4b31fcac`, 151 au `HEAD` (−13)** — les sites
+A/B qui passent désormais par `errorMessageOf` (bank-accounts 4, api-keys 3, `BankAccountJournalLinkForm` 2,
+`DeleteBankImportAction`, `CancelReconciliationDialog`, `ManualMatchModal`, `TransactionSplitModal` 1 chacun) ; les
+fichiers hors tests qui portent `isApiError(` passent de **55 à 54** (`git grep -l`, mêmes filtres) : le perdent
+`bank-accounts/+page.svelte`, `BankAccountJournalLinkForm.svelte` et `api-client.ts` (qui ne fait plus que le
+réexporter), le gagnent `api-error.ts` et `error-message.ts`. *(Corrigé en revue de code P1, A-1 : la première
+rédaction écrivait « 164, inchangés par la story » ; le rapport A-1 lui-même annonçait 55 → 55, recompté ici à 54.)*
 
 **Recette visuelle (B2)** — captures « avant » (`[object Object]` sous le titre du verrou) et « après » (le message
 du serveur) en clair et en sombre. **Deux constats, hors périmètre, à remonter** : (1) `text-destructive` n'a
@@ -811,7 +814,8 @@ identiques aux claires. L'orchestrateur vérifie si une issue couvre le (1).
    les replis en gabarit.
 2. **G4** voit aussi `${String(<liaison>)}`, d'où un double constat G1 + G4 sur cette forme (C-28-2-32).
 3. **`formatError`** garde `return err.message` dans sa branche `ApiError` : une `ApiError` au message vide y rend
-   `''` et rien ne s'affiche (C-28-2-33) — la fiche dit « seule la dernière ligne change ».
+   `''` et rien ne s'affiche (C-28-2-33) — la fiche dit « seule la dernière ligne change ». **Révisé en revue de
+   code P1 (B-1 = A-4)** : `return err.message` supprimé, `errorMessageOf` couvre le message vide.
 4. **Captures** pilotées par `KESH_E2E_CAPTURES_DIR` / `_TAG` et prises **avant** l'assertion du texte
    (C-28-2-30).
 5. **Le test de `BankProfileList.svelte` couvre `handleDelete` par une `ApiError`** ; la fiche ne demandait pas de
@@ -942,3 +946,46 @@ Modifiés :
   Gates : backend 3514/3514 (6 ignorés) à `5aff1a89` ; frontend complet et E2E complet (267 passés, 9 échecs
   attendus KF-029 ×7 et KF-045 ×2) à `4ff3a11e`. Choix C-28-2-30 à 35. Écarts et constats de recette au Dev Agent
   Record. Statut `review` ; prompt de revue P1 : `28-2-review-prompt-p1.md`.
+- 2026-10-13 — **Revue de code P1** (Sonnet, lentilles B, E, A, sur `4b31fcac..4ff3a11e` ; rapports hors dépôt
+  `kesh-gate-logs/28-2-review-p1-{B,E,A}.md`) : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 14 LOW** (B 3, E 1 + 7, A 4 ; B-1 = A-4,
+  soit 13 LOW distincts). Remédiation (opus 5.5), un commit de code `d514132e`, un seul fichier de production touché
+  (`reports/+page.svelte`) :
+  - **E-M1 (MEDIUM)** — G5 relève la liaison **opérande entier** de tout `+` / `+=`, chaîne non vide comprise
+    (`'Erreur : ' + err`, `err + ' …'`, `m += err`) ; un champ (`err.message`, `err?.code`, `err[0]`) n'en relève pas.
+    Trois auto-tests neufs (positifs, multi-ligne et `+=`, négatifs) ; parcours réel du dépôt : 0 constat neuf
+    (C-28-2-36). Mutations P1-M1 (G5 ramenée à la chaîne vide), P1-M2 (sans refus des champs chaînés) et **P1-M3**
+    (`lockError = 'Erreur : ' + e` dans `settings/+page.svelte`, site A2) : tuées.
+  - **B-1 = A-4** — `formatError` : `return err.message` supprimé, `errorMessageOf` couvre le message vide
+    (C-28-2-33 révisé) ; deux tests neufs (message vide → générique ; code de période sans bornes → message) ; P1-M4
+    tuée.
+  - **B-2** — laissé : branche `BANK_ACCOUNT_NOT_CONFIGURED` préservée, message vide = classe D, #644 (C-28-2-37) ;
+    le grep du symptôme trouve trois autres `return err.message` de même forme hors périmètre, renvoyés à #644.
+  - **B-3** — coût de G3 (classification interdite) écrit au préambule de la garde ; pas de correctif (C-28-2-27).
+  - **E-L1, E-L2** — `error-message.test.ts` : message entouré de blancs rendu tel quel ; aucune journalisation pour
+    une `ApiError` à message vide/blanc/non textuel. P1-M5 (`trim()`), P1-M6 (journalisation) : tuées.
+  - **E-L3** — exemption `console` : fictives « même ligne après l'appel » et « premier argument ». P1-M7
+    (`i > e.debut`), P1-M8 (exemption à l'étendue de lignes) : tuées.
+  - **E-L4** — cinq angles morts ajoutés au préambule (`String(x ?? '')` / `String(x as T)`, `x?.toString()`,
+    `(x as Error).message`, `String(f(y).reason)`, rejet en second argument de `.then`) + le faux positif bruyant
+    de G5 (`+x`, `x + 1`).
+  - **E-L5** — six tests neufs de rejet non-`ApiError` : B2, B3, B4 (comptes bancaires), B7, B8 (clés d'API), B9
+    (chargement du dialogue d'annulation), chacun constatant l'appel API (C-28-2-38). P1-M9 à P1-M14
+    (`(err as Error).message`, que G1 ne voit pas) : tuées.
+  - **E-L6** — titre du scénario 2 de l'E2E : « …affiche le message réseau, jamais [object Object] ».
+  - **E-L7** — tableau des mutations, M19 : `cargo test -p kesh-i18n` (`parity_between_locales`) ; `i18n-keys.test.ts`
+    reste vert.
+  - **A-1** — Dev Agent Record : `isApiError(` hors tests **164 → 151** (−13), fichiers **55 → 54** (recompté : le
+    rapport A-1 annonçait 55 → 55 ; `api-client.ts` ne fait plus que réexporter).
+  - **A-2** — classe D : « inchangée par construction », `git diff --name-only` des quatre modules = 0.
+  - **A-3** — `## Status` réduit à un état unique.
+  - **Mutations** : P1-M1 à P1-M14, **14 / 14 tuées** par le test nommé (journal hors dépôt
+    `kesh-gate-logs/28-2-mutations-p1.log`), restauration `git checkout --` + `touch`, sous le verrou.
+  - **Tests** (périmètre `12ec02c8` → `d514132e`, `frontend`) : **14** `it(` ajoutés, 0 retiré — Vitest 1483 → 1497.
+  - **Gates au dernier commit de code `d514132e`** (bases `kesh_282` / `kesh_e2e_282` reconstruites avant chacun) :
+    `scripts/test-fast.sh` **3514 exécutés, 3514 passés, 6 ignorés** ; `npm run check` 0 erreur, 29 avertissements ;
+    `lint-i18n-ownership` PASS ; `test:unit` **140 fichiers, 1497 tests passés** ; `build` vert ; **E2E complet** (port
+    3035, `smtpConfigured:true`, 0 « Permission denied », lancé à 12:00 UTC) **269 passés, 7 échoués, 19 ignorés** —
+    les 7 de la KF-029 (#97), nominativement ; KF-045 absente (run après midi UTC) ; aucune pollution ; les deux
+    scénarios d'`error-messages.spec.ts` verts.
+  - Passe suivante : **P2 ciblée** (Haiku, une lentille, diff aplati `12ec02c8..HEAD`),
+    `28-2-review-prompt-p2-ciblee.md` — la remédiation touche une ligne de production, la boucle n'est donc pas close.
