@@ -2,7 +2,9 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `5aad8b35`
+**in-progress** — développement commencé le 2026-10-13 (`bmad-dev-story`, Opus 5.5), branche rebasée sur
+`story/28-6` (`8ba4e168`, non encore fusionnée) ; validation close par la passe ciblée P3 (Haiku : 1 MEDIUM,
+7 LOW, remédiés à l'étape 0, cf. Change Log). — Fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `5aad8b35`
 (kickoff de l'Epic 28), branche `story/28-7`, worktree `/home/gcorbaz/devel/kesh-28-7`. Validation P1 faite
 (Sonnet, lentilles R et F : 0 CRITICAL, 0 HIGH, 5 MEDIUM soit 4 distincts, 12 LOW soit 10 distincts — remédiés,
 cf. Change Log) ;
@@ -261,8 +263,9 @@ aux deux bornes, non à supposer.
 - **`:1921`** (paragraphe `\label{sec:facture-posterieure}`, « Une facture proposée peut être refusée à
   l'acceptation ») : réécrit — la proposition applique la même fenêtre que l'acceptation ; une facture datée de
   plus d'un jour après le paiement **n'est plus proposée** (depuis la v0.13.3) ; le refus ne se voit plus que si
-  la facture a été redatée entre-temps ; le règlement saisi depuis la fiche de la facture refuse lui aussi un
-  règlement daté avant la facture — **l'écran** (`SettleInvoiceDialog.svelte`, `WriteOffDialog.svelte`) refuse
+  la facture a été redatée entre-temps ; le règlement saisi depuis la fiche de la facture — ou depuis la page des
+  échéances (`routes/(app)/invoices/due-dates/+page.svelte`, qui monte le même `SettleInvoiceDialog`) — refuse lui
+  aussi un règlement daté avant la facture — **l'écran** (`SettleInvoiceDialog.svelte`, `WriteOffDialog.svelte`) refuse
   toute date antérieure à la date de facture et n'en propose aucune au sélecteur (`min={invoiceDate}`) —, et n'a
   aucune borne de 30 jours après, ce qui reste le contournement de #529 ; l'acompte comme aujourd'hui. **Le
   manuel décrit ce que voit l'utilisateur, l'écran, et ne parle d'aucune tolérance d'un jour pour ce chemin** (le
@@ -313,7 +316,7 @@ observé).**
 | M7 | `check` : `>` remplacé par `>=` sur `latest` | AC6 (`D + 1` → `Ok`), AC4 |
 | M8 | les deux branches de refus échangées dans `accept_one_invoice` | `post_accept_rejects_payment_date_before_invoice_date`, `…_outside_window`, AC4 |
 | M9 | SQL : `BETWEEN ? AND ?` lié dans l'ordre inverse (`latest`, `earliest`) | AC4, `find_unpaid_invoices_filters_by_30_day_window` |
-| M10 | `ORDER BY i.date ASC, i.id ASC` retiré | `find_unpaid_invoices_orders_by_date_then_id_before_limit` — **tuée ou équivalente selon le plan observé au dev** : sans `ORDER BY`, l'ordre livré dépend du plan (index, ou parcours en ordre de clé primaire — qui, sur 52 factures insérées en dates décroissantes, la tuerait) ; aucune issue n'est prédite. Survivante, elle se déclare **équivalente au plan observé**. Dans les deux cas, le résultat et l'ordre relevé sont consignés |
+| M10 | `ORDER BY i.date ASC, i.id ASC` retiré | `find_unpaid_invoices_orders_by_date_then_id_before_limit` — **tuée ou équivalente selon le plan observé au dev** : sans `ORDER BY`, l'ordre livré dépend du plan (index, ou parcours en ordre de clé primaire — un parcours en clé primaire, sur 52 factures insérées en dates décroissantes, la tuerait ; un parcours d'index sur `date` pourrait la laisser survivre) ; le plan n'étant pas connu, l'issue n'est pas prédite. Survivante, elle se déclare **équivalente au plan observé**. Dans les deux cas, le résultat et l'ordre relevé sont consignés |
 | M11 | `accept_one_invoice` lit `InvoiceDateWindow::for_payment_date(bank_transaction.booking_date)` | AC5 (a), (b), (c) (acceptations forcées) |
 | M12 | `let paid_at_candidate = bank_transaction.booking_date;` (le règlement écrit est daté par la comptabilisation) | AC5 (b) (`settled_on == B − 5`) |
 | M13 | `ORDER BY i.date DESC, i.id DESC` | `find_unpaid_invoices_orders_by_date_then_id_before_limit` |
@@ -360,7 +363,8 @@ d'entrée `POST_RESTORE_BACKFILLS`.
   - [ ] Grep des tests de propositions dont une facture serait datée **après** `D + 1` ou **avant** `D − 30`
         (proposition attendue qui disparaîtrait) — `reconciliation_e2e.rs` (lecteurs listés à l'inventaire (c)),
         `reconciliation_rules_e2e.rs`, `frontend/tests/e2e/reconciliation-amount-due.spec.ts` ; aucun lecteur de
-        propositions hors de ces trois fichiers (`rejeu_interblocage_e2e.rs` n'appelle que `POST /accept`) : en
+        propositions hors de ces trois fichiers (`rejeu_interblocage_e2e.rs` n'appelle que `POST /accept` et
+        `POST /manual`, jamais `reconciliation/proposals`) : en
         lister le résultat au Dev Agent Record, même vide.
 - [ ] **T5 — Libellé** (AC7) : quatre `.ftl`, repli (G13), doc-comment et commentaire de test, assertion
       `not.toContain('proposée')` ; commentaire de
@@ -439,9 +443,10 @@ Les fichiers qui citent `bank_transaction` hors `reconciliation.rs` **lisent ou 
 (`reconciliation_cancel.rs`, `settlement_cancellation.rs`, `invoices.rs` — dévalidation), aucun ne **choisit**
 une facture pour une transaction. `vat_report.rs` filtre des factures par période, sans transaction.
 **Ensemble clos : deux sites** — la proposition (`find_unpaid_invoices_for_window`, appelée par `get_proposals`)
-et l'acceptation (`accept_one_invoice`, étape 6). Le frontend ne choisit aucune facture pour une transaction
+et l'acceptation (`accept_one_invoice`, étape 6). Le frontend ne filtre ni ne calcule aucune fenêtre
 (`grep -rn 'WINDOW_DAYS\|window_days\|windowDays' frontend/src` ne rend que `failed-proposal-label.test.ts:214`,
-une fixture) ; il borne en revanche la date de règlement **saisie** (inventaire (b), ajouté en validation P2).
+une fixture) : il transmet à l'acceptation le candidat de tête que le serveur a proposé (sélection groupée,
+`ReconciliationProposals.svelte`, `p.candidates[0]`), que l'acceptation revalide ; il borne en revanche la date de règlement **saisie** (inventaire (b), ajouté en validation P2).
 
 ### Inventaire (b) — les sites non résolus (bornes voisines qui ne liront pas la fenêtre)
 
@@ -468,7 +473,7 @@ frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte:295:				<Input id=
 | `invoice_settlements_write.rs:115` (`settle_invoice`, `:67`) | date de règlement **saisie** ≥ facture − 1 | **non résolu, assumé** (C-28-7-7) : pas de transaction, pas de borne haute ; même tolérance, écrite au doc-comment de la fenêtre |
 | `invoice_settlements_write.rs:489` (`write_off_invoice`, `:429` — le solde par escompte, perte, frais ou arrondi, Story 25-4-d2a) | idem | idem |
 | CHECK `chk_invoices_paid_at_after_date` (`migrations/20260419000001_invoice_paid_at.sql:32-33` ; `test-schema/0001_schema_squash.sql:755`) | `DATE(paid_at) >= date - INTERVAL 1 DAY` | **non résolu, assumé** : borne de schéma, la seule qui ne se desserre que par une migration ; nommée au doc-comment de la fenêtre. C'est elle qui rend l'élargissement de l'acceptation coûteux (C-28-7-1) |
-| `SettleInvoiceDialog.svelte:155` et `:295` ; `WriteOffDialog.svelte:105` et `:211` (frontend, écrans de règlement et de solde depuis la fiche) | date de règlement **saisie** ≥ facture, **sans tolérance** ; le sélecteur n'offre aucune date antérieure (`min={invoiceDate}`) | **non résolu, assumé** (C-28-7-11) : écran plus strict que le serveur, hors #548 ; ne choisit aucune facture pour une transaction. C'est ce que le manuel décrit pour ce chemin (AC8) |
+| `SettleInvoiceDialog.svelte:155` et `:295` ; `WriteOffDialog.svelte:105` et `:211` (frontend, écrans de règlement et de solde depuis la fiche ; `SettleInvoiceDialog` est aussi monté par la page des échéances) | date de règlement **saisie** ≥ facture, **sans tolérance** ; le sélecteur n'offre aucune date antérieure (`min={invoiceDate}`) | **non résolu, assumé** (C-28-7-11) : écran plus strict que le serveur, hors #548 ; ne choisit aucune facture pour une transaction. C'est ce que le manuel décrit pour ce chemin (AC8) |
 | `routes/reconciliation.rs:2470`, `:2879`, `:3747`, `:4221` (`value_date.or(…).unwrap_or(booking_date)`) | **date d'écriture** d'un éclatement, d'un rapprochement manuel, d'une règle | hors classe : n'apparie aucune facture |
 
 ### Inventaire (c) — les tests existants dont le sens pourrait changer
@@ -481,7 +486,8 @@ frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte:295:				<Input id=
   80 `#[sqlx::test]` au total dans le fichier (`grep -c '^#\[sqlx::test'` ; un `grep -c 'sqlx::test'` rend 81, il
   compte le doc-comment de la l. 19), dont les tests qui lisent les propositions (`:614`, `:734`, `:849`, `:899`,
   `:1919`, `:2067`, `:3305`, `:4444`, `:5095`, et le helper `assert_back_to_reconcile`, `:3616`) — T4 en vérifie
-  les dates.
+  les dates. `reconciliation_rules_e2e.rs` lit aussi les propositions (8 occurrences de `reconciliation/proposals`,
+  `grep -c`) : T4 en vérifie les dates de la même façon.
 - Frontend : `failed-proposal-label.test.ts:170-178` (commentaire réécrit, assertion inchangée) ;
   `frontend/tests/e2e/reconciliation-amount-due.spec.ts:78` (« Date de facture dans la fenêtre de 30 jours autour
   du relevé ») — facture au 2026-05-10, relevé au 2026-05-15 : toujours dans la fenêtre ; **le commentaire est
@@ -563,7 +569,30 @@ Cinq, dont deux de texte seulement : pas de découpage.
 
 ### Agent Model Used
 
+Opus 5.5 (`bmad-dev-story`, autonomie).
+
 ### Debug Log References
+
+**T0 — rebase et relevé (2026-10-13).** `story/28-7` rebasée sur `story/28-6` (`8ba4e168`, en revue, non
+fusionnée) : conflits du registre (union, section 28-7 placée après la 28-6) et de `sprint-status.yaml` (union par
+clé, `yaml.safe_load` vert). Bases `kesh_287` et `kesh_e2e_287` créées (80 migrations, seed). Numéros relevés au
+`grep -n` contre le code rebasé (28-5a et 28-6 comprises) — écarts à la fiche, relevée sur `5aad8b35` :
+
+| Cité par la fiche | Au rebase |
+|---|---|
+| `routes/reconciliation.rs:62-64` (`WINDOW_DAYS`) | `:66-68` |
+| `:649-656` (appel de `find_unpaid_invoices_for_window`) | `:654-661` ; boucle `for tx` `:639` |
+| `:741` (`propose_matches`) | `:746` |
+| `:1656-1682` (dates d'`accept_one_invoice`) | `:1723-1749` ; `accept_one_invoice` `:1606`, garde de signe de la 28-6 `:1659`, **avant** l'étape 6 |
+| `paid_at_candidate`, huit sites (`:1656`, `:1660`, `:1673`, `:1740`, `:1911`, `:1917`, `:1961`, `:1994`) | huit sites : `:1723`, `:1727`, `:1740`, `:1807`, `:1978`, `:1984`, `:2028`, `:2061` |
+| `use chrono::{Duration, NaiveDate};` `:30` | `:34` ; `Duration` employé aux seules `:1727` et `:1740` |
+| `repositories/reconciliation.rs:91`, `:135` | `:92` (filtre 3), `:136` (SQL) — fichier non touché par la 28-6 |
+| `failed-proposal-label.ts:224` (repli) | `:226` ; doc-comment `:41` |
+| `failed-proposal-label.test.ts:170-178` | `:172-179` |
+| `user-manual.tex:2787` (FAQ) | `:2792` ; `:1919` et `:1921` inchangées |
+| `messages.ftl` fr-CH `:1233`, autres `:1170` | inchangés |
+| `reconciliation_repository.rs:258` et les dix appels | inchangés (`:306` pour l'appel du test de fenêtre) |
+| CHANGELOG | `## [0.13.3] — Non publié` existe déjà (`:11`) |
 
 ### Completion Notes List
 
@@ -652,3 +681,24 @@ Cinq, dont deux de texte seulement : pas de découpage.
     ajoutée à un test existant (R5).
   - Passe ciblée P3 à lancer : `28-7-validate-prompt-p3-ciblee.md`, **Haiku**, une lentille, sur le diff aplati de
     cette remédiation.
+- **2026-10-13 — Validation P3 ciblée** (`28-7-validate-prompt-p3-ciblee.md`, Haiku, une lentille, sur `git show
+  bbace781` ; rapport hors dépôt `kesh-gate-logs/28-7-validate-p3-ciblee.md`). **0 C / 0 H / 1 M / 7 L.** Les neuf
+  axes du prompt déclarés exercés, trois partiellement (rapport, § *Axes non exercés*). Aucun finding n'est une
+  erreur de catégorie. Origine : P3-1 à P3-7 viennent de la remédiation P2, P3-8 de la conception d'origine. Le
+  MEDIUM vise le registre, non une ligne de code ni une prescription : **la validation est close** (décision de
+  l'orchestrateur), et les huit findings sont remédiés à l'étape 0 du développement :
+  - **P3-1 (MEDIUM)** : C-28-7-12 disait « L'ancien SQL rendait `NULL` » comme un fait, que C-28-7-4 déclare non
+    mesuré ; la prémisse est dite **supposée**, et le choix porte une annotation datée.
+  - **LOW** : P3-2 (C-28-7-12 : une erreur ferait échouer toute la réponse de propositions du compte, le `?` de
+    la boucle de `get_proposals`) ; P3-3 (inventaire (a) : le frontend ne calcule aucune fenêtre, il transmet le
+    candidat de tête, `p.candidates[0]`, que l'acceptation revalide) ; P3-4 (C-28-7-12 : le précédent
+    `letterings.rs` s'est résolu par une borne en 400) ; P3-5 (AC8 et inventaire (b) : `SettleInvoiceDialog` est
+    aussi monté par la page des échéances) ; P3-6 (T4 : `rejeu_interblocage_e2e.rs` appelle `POST /accept` **et**
+    `POST /manual`) ; P3-7 (M10 : la tension « aucune issue prédite » / « la tuerait » levée) ; P3-8 (inventaire
+    (c) : `reconciliation_rules_e2e.rs`, 8 lectures de propositions).
+  - Symptômes grepés (`ancien SQL rendait|ne choisit aucune facture|n'appelle que|aucune issue n'est
+    prédite|depuis la fiche`) dans la fiche, le registre et le fichier d'epic : restent la citation de C-28-7-4
+    (texte retiré, conservé), l'annotation neuve, les entrées des passes passées, et « depuis la fiche » là où il
+    désigne le chemin serveur (`settle_invoice`, `write_off_invoice`), appelé par les deux écrans.
+  - Trend de la validation : P1 5 MEDIUM (4 distincts) → P2 2 MEDIUM → P3 ciblée 1 MEDIUM (rédaction du
+    registre) → close. Modèles : Sonnet, Opus, Haiku.

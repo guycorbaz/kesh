@@ -2983,15 +2983,23 @@ pas rouvert.)* Texte d'origine conservé ci-dessous pour l'historique.
 - **Contexte** : sans ramènement (C-28-7-4 retiré), une transaction datée `9999-12-31` donne
   `latest = +10000-01-01`, lié au SQL. L'import CAMT accepte toute année (`kesh-import/src/camt053/mod.rs`,
   `parse_date`, sans borne ; aucune borne à la route d'import). Le dépôt connaît ce mode d'échec
-  (`routes/letterings.rs:507-511`, 15-1b : chrono lit ce que sqlx refuse d'encoder ou que la base lit comme une
-  date invalide). L'ancien SQL rendait `NULL`, donc aucune candidate ; le nouveau comportement va de « aucune
-  candidate » à une erreur.
+  (`routes/letterings.rs:507-511` : chrono lit ce que sqlx refuse d'encoder ou que la base lit comme une
+  date invalide) — et sa réponse y fut une **borne** qui refuse la date en 400 (`parse_as_of`), le contraire de
+  l'angle mort accepté ici. Ce que rendait l'ancien SQL (`DATE_ADD('9999-12-31', INTERVAL 30 DAY)`, supposé
+  `NULL`, donc aucune candidate) n'est **pas mesuré**, pas plus que le nouveau comportement, supposé aller de
+  « aucune candidate » à une erreur. Une erreur, si elle se produit, ne porte pas sur une seule ligne : la boucle
+  de `get_proposals` propage le `?` de `find_unpaid_invoices_for_window`, si bien que **toute la réponse de
+  propositions du compte bancaire** échouerait.
 - **Retenu** : écrire le fait à la fiche (AC1, Exclusions) comme angle mort accepté : atteignable, non mesuré,
   extrême (aucune banque ne date une valeur en 9999). Ni test ni ramènement.
 - **Écartées** : rouvrir le ramènement (décision de l'orchestrateur en P1) ; un test de dépôt
   `for_payment_date(9999-12-31)` qui asserte `is_ok()` — une mesure utile, mais dont un rouge rouvrirait la
   question du ramènement en plein développement ; à reprendre en issue si le cas devait se présenter.
 - **Réversible** : oui.
+- *Amendé à l'étape 0 du développement (2026-10-13, passe ciblée P3 de la validation : P3-1 MEDIUM, P3-2 et P3-4
+  LOW) : la phrase « L'ancien SQL rendait `NULL` » affirmait une prémisse que C-28-7-4 déclare non mesurée ; elle
+  est dite supposée. S'y ajoutent la portée d'une erreur (la réponse entière du compte) et l'issue du précédent
+  `letterings.rs` (une borne en 400).*
 
 ### C-28-7-13 — Le plafond de 50 candidates n'est décrit ni au CHANGELOG ni au manuel
 
