@@ -795,6 +795,27 @@ les 7 de la **KF-029** (#97 — `mode-expert:26`, `:41`, `onboarding-path-b:65`,
 UTC). **Aucun huitième de pollution** sur ce run ; aucun échec hors liste, rien à rejouer seul. Les deux scénarios
 de `error-messages.spec.ts` sont **verts**.
 
+**Rebase sur `c1667e8a` (Story 28-3 mergée, PR #650), gates au HEAD rebasé `4409a416`.** Les bases `kesh_282` et
+`kesh_e2e_282` ont été reconstruites avant chaque gate, sans redémarrer le conteneur.
+- Conflits, tous dans des artefacts :
+  - `sprint-status.yaml` : les en-têtes des deux côtés sont gardés, la ligne 28-3 vient de `main`, la ligne 28-2 de
+    la branche ;
+  - `epic-28-choix-autonomes.md` : union, avec les sections de `main` puis celles de la 28-2 (43 choix C-28-3 et 38
+    C-28-2) ;
+  - `CHANGELOG.md` : une seule section `[0.13.3] — Non publié`, dont la rubrique `### Corrigé` porte #633 puis #520.
+- Aucun conflit de code, de catalogue ni de PDF. La 28-3 ne touche pas `frontend/`, si bien que `sitesTotal` et les
+  planchers de la garde sont inchangés.
+- Résultats :
+  - `scripts/test-fast.sh` : **3526 exécutés, 3526 passés, 6 ignorés** ;
+  - `npm run check` : 0 erreur, 29 avertissements ;
+  - `lint-i18n-ownership` : PASS ;
+  - `test:unit` : **140 fichiers, 1497 tests passés** ;
+  - `build` : vert ;
+  - **E2E complet** (port 3035, `smtpConfigured:true`, aucune ligne « Permission denied », lancé à 13:08 UTC) :
+    **269 passés, 7 échoués, 19 ignorés**.
+- Les 7 échecs sont nominativement ceux de la KF-029 (#97) : `mode-expert:26`, `:41` ; `onboarding-path-b:65`, `:92` ;
+  `onboarding:57`, `:77`, `:150`. Ni KF-045 ni pollution. Les deux scénarios d'`error-messages.spec.ts` sont verts.
+
 **Décomptes, avec leur périmètre** (`4b31fcac` → `4ff3a11e`, hors `_bmad-output`) : 41 fichiers (`git diff --name-status` : 9 neufs —
 2 modules, 6 tests Vitest dont la garde, 1 spec E2E —, 32 modifiés dont 4 catalogues et le CHANGELOG) ; **76**
 `it(`/`test(` ajoutés (74 Vitest + 2 E2E) et **2** `it.each` ; 0 test retiré. `sitesTotal` 2075 → **2079**, mesuré

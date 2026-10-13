@@ -1,3 +1,4 @@
+# last_updated: 2026-10-13 (117) (28-2 — rebasée sur c1667e8a (28-3 mergée) ; gates au HEAD rebasé : nextest 3526, Vitest 1497, E2E 269 + 7 KF-029 ; 28-2 done ; #520)
 # last_updated: 2026-10-13 (116) (28-3 — revue de code close à la P1 (0 MEDIUM, 13 LOW appliqués sans ligne de production), gates complets verts sur 629a3b1e (nextest 3526, Vitest 1395, E2E 267 + 7 KF-029), statut done ; #633)
 # last_updated: 2026-10-13 (115) (28-3 — développement fait, mutations 11/11, gates complets verts au dernier commit de code 90c85099 (nextest 3525, Vitest 1395, E2E 265 + 9 baseline), statut review, prompt de revue P1 versionné ; #633)
 # last_updated: 2026-10-13 (114) (28-3 — validation close à la P3 (0 MEDIUM), LOW appliqués ; développement commencé, statut in-progress ; T1 : ReadSnapshot dégradé, trois tests rouges consignés)
