@@ -1505,6 +1505,13 @@ transaction lue sans verrou, `find_pending_by_id_for_account`). Gates au HEAD re
 remises à zéro) : **nextest 3596 / 3596, 6 ignorés** ; frontend verts, **Vitest 1547** ; **E2E 273 passés, 7 échecs
 = les 7 KF-029**, 19 ignorés. Registre des routes et G9 verts au gate (la 28-6 n'ajoute aucune route).
 
+**Rebase sur la 28-5b (2026-10-13)** — `origin/main` `d86832f2` (PR #657) : conflits de documentation seulement
+(`sprint-status.yaml` et CHANGELOG, par union ; une seule section `[0.13.3]`, liste du *Corrigé* recollée), aucun sur
+le code, les catalogues ni le PDF ; `sitesTotal` reste à 2084 (la 28-4a ne touche aucune clé du frontend). Gates au HEAD
+rebasé `d89436d7` (sous `flock`, bases `kesh_284` et `kesh_e2e_284` remises à zéro) : **nextest 3596 / 3596, 6
+ignorés** ; frontend verts, **Vitest 146 fichiers, 1566 tests** ; **E2E 277 passés, 7 échecs = les 7 KF-029**, 19
+ignorés.
+
 ### File List
 
 - `CHANGELOG.md`
