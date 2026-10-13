@@ -1045,6 +1045,19 @@ pub async fn post_accept(
     if ba_check.archived {
         return Err(AppError::BankAccountNotFound);
     }
+    // Story 28-4a (#642, R1) — compte clos : chaque proposition en `failed[]`,
+    // `200`, sans lire les transactions ni prendre de verrou (§ Pattern batch).
+    if ba_check.is_closed() {
+        let ids: Vec<i64> = body
+            .proposals
+            .iter()
+            .map(|p| p.bank_transaction_id())
+            .collect();
+        return Ok(Json(AcceptResponse {
+            accepted: Vec::new(),
+            failed: closed_account_failed(&ids, ba_check.id),
+        }));
+    }
 
     // Step 0ter — pré-vol par lot, hors transaction et hors verrou (MP3-3 ;
     // Story 27-4, AC2). Lecture SANS filtre de statut, puis classification de
@@ -3242,6 +3255,16 @@ pub async fn post_reject(
     if ba_check.archived {
         return Err(AppError::BankAccountNotFound);
     }
+    // Story 28-4a (#642, R2) — compte clos : chaque transaction en `failed[]`
+    // (triées, comme le reste de la réponse), `200`, sans verrou.
+    if ba_check.is_closed() {
+        let mut ids = body.bank_transaction_ids.clone();
+        ids.sort_unstable();
+        return Ok(Json(RejectResponse {
+            rejected: Vec::new(),
+            failed: closed_account_failed(&ids, ba_check.id),
+        }));
+    }
 
     // Story 27-1 (AC4-bis, #632) — verrouiller par identifiant CROISSANT, comme
     // la suppression d'un import (`bank_imports::delete_unreconciled_in_tx`) :
@@ -3631,6 +3654,12 @@ pub async fn post_manual(
     .ok_or(AppError::BankAccountNotFound)?;
     if bank_account.archived {
         return Err(AppError::BankAccountNotFound);
+    }
+    // Story 28-4a (#642, R3) — compte clos : `409 BANK_ACCOUNT_CLOSED`.
+    if bank_account.is_closed() {
+        return Err(AppError::BankAccountClosed {
+            bank_account_id: bank_account.id,
+        });
     }
 
     // Step 2 — bank_account.journal_account_id configuré (foundation 8-5a-zero).
@@ -4074,6 +4103,12 @@ pub async fn post_split(
     .ok_or(AppError::BankAccountNotFound)?;
     if bank_account.archived {
         return Err(AppError::BankAccountNotFound);
+    }
+    // Story 28-4a (#642, R4) — compte clos : `409 BANK_ACCOUNT_CLOSED`.
+    if bank_account.is_closed() {
+        return Err(AppError::BankAccountClosed {
+            bank_account_id: bank_account.id,
+        });
     }
 
     // Step 4 — bank_account.journal_account_id configuré (foundation 8-5a-zero).
@@ -4771,6 +4806,11 @@ async fn unreject_once(
 ) -> Result<(), AppError> {
     let bank_account_id =
         bank_account_of_transaction(pool, company_id, bank_transaction_id).await?;
+    // Story 28-4a (#642, R8) — compte clos : refus précoce, AVANT la
+    // classification « pas rejetée » (sur un compte clos, c'est la clôture qui
+    // répond). Lecture neuve, sur le pool, hors transaction : sans effet sur
+    // les verrous ni sur la vue de la transaction qui suit.
+    ensure_bank_account_open(pool, company_id, bank_account_id).await?;
     let mut tx = pool
         .begin()
         .await
@@ -4792,6 +4832,13 @@ async fn unreject_once(
             )
             .await
             .map_err(ReconciliationError::Db)?;
+            // Story 28-4a (#642, W30) — garde non verrouillante APRÈS le
+            // verrou de la ligne (le dernier du chemin, qui n'a aucune lecture
+            // ordinaire hors l'audit), avant la classification et l'écriture ;
+            // règle de placement de `bank_accounts::ensure_open_in_tx`.
+            bank_accounts::ensure_open_in_tx(tx_inner, company_id, bank_account_id)
+                .await
+                .map_err(ReconciliationError::Db)?;
             let outcome = classify_unreject(row.as_ref());
             if outcome != UnrejectOutcome::Unrejected {
                 return Ok(outcome);
@@ -4845,6 +4892,47 @@ async fn unreject_once(
         UnrejectOutcome::NotRejected => Err(AppError::ReconciliationTransactionNotRejected {
             bank_transaction_id,
         }),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Story 28-4a (#642) — compte bancaire clos : pré-vols
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Le `failed[]` d'un lot (acceptation R1, rejet R2) visant un compte **clos** :
+/// une [`FailedProposal`] par transaction, code `BANK_ACCOUNT_CLOSED`,
+/// `details.bankAccountId` — `200`, jamais d'`AppError` globale (§ *Pattern
+/// batch* du `CLAUDE.md`). Les acceptations n'ont aucune garde propre
+/// (`accept_one_*`, C-28-4-14) : sous l'angle mort L1 (#651), c'est ce pré-vol,
+/// lecture fraîche en autocommit, qui les arrête.
+fn closed_account_failed(
+    bank_transaction_ids: &[i64],
+    bank_account_id: i64,
+) -> Vec<FailedProposal> {
+    bank_transaction_ids
+        .iter()
+        .map(|&bank_transaction_id| FailedProposal {
+            bank_transaction_id,
+            error_code: "BANK_ACCOUNT_CLOSED".to_string(),
+            details: Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+        })
+        .collect()
+}
+
+/// Pré-vol R8 de l'annulation de rejet : `409 BANK_ACCOUNT_CLOSED` si le compte
+/// de la transaction est clos. Lecture non verrouillante sur le pool, hors
+/// transaction. Un compte absent (inatteignable : la transaction vient d'être
+/// lue) laisse la suite décider.
+async fn ensure_bank_account_open(
+    pool: &sqlx::MySqlPool,
+    company_id: i64,
+    bank_account_id: i64,
+) -> Result<(), AppError> {
+    match bank_accounts::find_by_id_for_company(pool, company_id, bank_account_id).await? {
+        Some(account) if account.is_closed() => {
+            Err(AppError::BankAccountClosed { bank_account_id })
+        }
+        _ => Ok(()),
     }
 }
 

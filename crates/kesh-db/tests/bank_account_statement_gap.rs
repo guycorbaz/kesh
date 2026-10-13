@@ -151,13 +151,17 @@ async fn tx(
 }
 
 async fn balances(pool: &MySqlPool, seeded: &SeededCompany, id: i64) -> BankAccountBalances {
-    bank_accounts::list_by_company_with_balances(pool, seeded.company_id, true)
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|(b, _)| b.id == id)
-        .expect("compte présent")
-        .1
+    bank_accounts::list_by_company_with_balances(
+        pool,
+        seeded.company_id,
+        bank_accounts::BankAccountListFilter::ALL,
+    )
+    .await
+    .unwrap()
+    .into_iter()
+    .find(|(b, _)| b.id == id)
+    .expect("compte présent")
+    .1
 }
 
 const IBAN_A: &str = "CH9300762011623852957";
@@ -427,9 +431,13 @@ async fn un_compte_de_grand_livre_partage_n_a_pas_d_ecart(pool: MySqlPool) {
         .unwrap();
     entry(&pool, &seeded, ymd(2026, 3, 5), bank, sales, dec!(100)).await;
     import(&pool, &seeded, ba, ymd(2026, 3, 31), Some(dec!(100))).await;
-    let actives = bank_accounts::list_by_company_with_balances(&pool, seeded.company_id, false)
-        .await
-        .unwrap();
+    let actives = bank_accounts::list_by_company_with_balances(
+        &pool,
+        seeded.company_id,
+        bank_accounts::BankAccountListFilter::default(),
+    )
+    .await
+    .unwrap();
     let mine = &actives.iter().find(|(b, _)| b.id == ba).expect("présent").1;
     assert_eq!(mine.ledger_balance_at_statement, None);
     assert_eq!(

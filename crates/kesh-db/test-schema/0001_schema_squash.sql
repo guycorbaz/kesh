@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 80 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 81 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -125,12 +125,14 @@ CREATE TABLE `bank_accounts` (
   `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
   `archived` tinyint(1) NOT NULL DEFAULT 0,
   `description` varchar(60) DEFAULT NULL,
+  `closed_on` date DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `fk_bank_accounts_company` (`company_id`),
   KEY `idx_bank_accounts_journal_account` (`journal_account_id`),
   CONSTRAINT `fk_bank_accounts_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
   CONSTRAINT `chk_bank_accounts_bank_name_nonempty` CHECK (char_length(trim(`bank_name`)) > 0),
-  CONSTRAINT `chk_bank_accounts_iban_nonempty` CHECK (char_length(trim(`iban`)) > 0)
+  CONSTRAINT `chk_bank_accounts_iban_nonempty` CHECK (char_length(trim(`iban`)) > 0),
+  CONSTRAINT `chk_bank_accounts_closed_not_primary` CHECK (`closed_on` is null or `is_primary` = 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `bank_imports`;

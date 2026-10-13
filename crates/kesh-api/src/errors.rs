@@ -899,6 +899,36 @@ pub enum AppError {
     #[error("Compte principal — définir un autre compte comme principal avant d'archiver celui-ci")]
     BankAccountCannotArchivePrimary,
 
+    // ----- Story 28-4a (#642) — le compte bancaire clos -----
+    /// Le compte visé est clos (lecture seule) → `409 BANK_ACCOUNT_CLOSED`,
+    /// `details.bankAccountId`. Produite par les **pré-vols** de route ; les
+    /// chemins de dépôt remontent `DbError::BankAccountClosed` dans
+    /// `AppError::Database`, rendu par la **même** fonction
+    /// (`bank_account_closed_response`).
+    #[error("Compte bancaire clos — lecture seule : id={bank_account_id}")]
+    BankAccountClosed { bank_account_id: i64 },
+
+    /// Réouverture d'un compte qui n'est pas clos → `409 BANK_ACCOUNT_NOT_CLOSED`.
+    #[error("Compte bancaire non clos")]
+    BankAccountNotClosed,
+
+    /// Clôture du compte principal → `412 BANK_ACCOUNT_CANNOT_CLOSE_PRIMARY`.
+    #[error("Compte principal — désigner un autre compte principal avant de le clore")]
+    BankAccountCannotClosePrimary,
+
+    /// Clôture d'un compte qui porte des transactions non rapprochées
+    /// (rejetées comprises) → `412 BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS`,
+    /// `details.pendingCount`.
+    #[error(
+        "Compte bancaire avec {pending_count} transaction(s) non rapprochée(s) — clôture refusée"
+    )]
+    BankAccountHasPendingTransactions { pending_count: i64 },
+
+    /// Clôture d'un compte qui porte un lot de paiement généré, ni confirmé ni
+    /// annulé → `412 BANK_ACCOUNT_HAS_OPEN_PAYMENT_BATCHES`, `details.batchCount`.
+    #[error("Compte bancaire avec {batch_count} lot(s) de paiement ouvert(s) — clôture refusée")]
+    BankAccountHasOpenPaymentBatches { batch_count: i64 },
+
     /// Tentative d'utiliser le CRUD `/api/v1/bank-accounts` pendant
     /// l'onboarding (step < 7) → `412 Precondition Failed`, code
     /// `ONBOARDING_NOT_COMPLETE`. Story v014-1 AC#2 — pendant l'onboarding,
@@ -1146,6 +1176,26 @@ impl From<kesh_report::errors::ReportError> for AppError {
             }
         }
     }
+}
+
+/// `409 BANK_ACCOUNT_CLOSED` — Story 28-4a (#642). **Seul** rendu du refus
+/// « compte clos » : le bras `AppError::BankAccountClosed` (pré-vols de route)
+/// et le bras `DbError::BankAccountClosed` d'`AppError::Database` (chemins de
+/// dépôt) l'appellent tous deux — deux rendus écrits à la main dériveraient.
+pub(crate) fn bank_account_closed_response(bank_account_id: i64) -> Response {
+    let msg = t(
+        "bank-accounts-errors-closed",
+        "Ce compte bancaire est clos : il est en lecture seule. Pour y enregistrer \
+         une opération, rouvrez-le d'abord (Administration → Comptes bancaires).",
+    );
+    let body = serde_json::json!({
+        "error": {
+            "code": "BANK_ACCOUNT_CLOSED",
+            "message": msg,
+            "details": { "bankAccountId": bank_account_id },
+        }
+    });
+    (StatusCode::CONFLICT, Json(body)).into_response()
 }
 
 /// Résumé d'un profil pour le payload `BankCsvProfileNotFound`
@@ -2592,7 +2642,9 @@ impl IntoResponse for AppError {
                     "Le compte bancaire contient des transactions — \
                      archivage refusé pour préserver l'audit comptable. \
                      Les imports dont aucune transaction n'est rapprochée peuvent être \
-                     supprimés (Quotidien → Importer des relevés).",
+                     supprimés (Quotidien → Importer des relevés). Sinon, pour retirer \
+                     le compte de l'usage, clore le compte : il passe en lecture seule \
+                     et garde son historique.",
                 );
                 let body = serde_json::json!({
                     "error": {
@@ -2610,7 +2662,7 @@ impl IntoResponse for AppError {
                 let msg = t(
                     "bank-accounts-errors-cannot-archive-primary",
                     "Le compte principal ne peut pas être archivé tant qu'un \
-                     autre compte non-archivé existe. Définissez d'abord un autre \
+                     autre compte ni archivé ni clos existe. Définissez d'abord un autre \
                      compte comme principal, puis archivez celui-ci.",
                 );
                 build_response(
@@ -2618,6 +2670,65 @@ impl IntoResponse for AppError {
                     "BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY",
                     &msg,
                 )
+            }
+
+            // ----- Story 28-4a (#642) — le compte bancaire clos -----
+            // ⛔ Le pré-vol (ce bras) et le dépôt (`DbError::BankAccountClosed`,
+            // dans `AppError::Database`) rendent par la MÊME fonction.
+            AppError::BankAccountClosed { bank_account_id } => {
+                bank_account_closed_response(bank_account_id)
+            }
+
+            AppError::BankAccountNotClosed => build_response(
+                StatusCode::CONFLICT,
+                "BANK_ACCOUNT_NOT_CLOSED",
+                &t(
+                    "bank-accounts-errors-not-closed",
+                    "Ce compte bancaire n'est pas clos.",
+                ),
+            ),
+
+            AppError::BankAccountCannotClosePrimary => build_response(
+                StatusCode::PRECONDITION_FAILED,
+                "BANK_ACCOUNT_CANNOT_CLOSE_PRIMARY",
+                &t(
+                    "bank-accounts-errors-cannot-close-primary",
+                    "Le compte principal ne peut pas être clos : désignez d'abord \
+                     un autre compte comme principal (c'est lui que porte la QR-facture).",
+                ),
+            ),
+
+            AppError::BankAccountHasPendingTransactions { pending_count } => {
+                let msg = t(
+                    "bank-accounts-errors-has-pending-transactions",
+                    "Ce compte porte des transactions importées qui ne sont pas \
+                     rapprochées. Rapprochez-les, ou supprimez l'import s'il ne \
+                     contient aucune transaction rapprochée, avant de clore le compte.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS",
+                        "message": msg,
+                        "details": { "pendingCount": pending_count },
+                    }
+                });
+                (StatusCode::PRECONDITION_FAILED, Json(body)).into_response()
+            }
+
+            AppError::BankAccountHasOpenPaymentBatches { batch_count } => {
+                let msg = t(
+                    "bank-accounts-errors-has-open-payment-batches",
+                    "Un lot de paiement généré sur ce compte n'est ni confirmé ni \
+                     annulé. Confirmez-le ou annulez-le avant de clore le compte.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_ACCOUNT_HAS_OPEN_PAYMENT_BATCHES",
+                        "message": msg,
+                        "details": { "batchCount": batch_count },
+                    }
+                });
+                (StatusCode::PRECONDITION_FAILED, Json(body)).into_response()
             }
 
             AppError::OnboardingNotComplete => {
@@ -2947,6 +3058,11 @@ impl IntoResponse for AppError {
                     "NOT_FOUND",
                     &t("error-not-found", "Ressource introuvable"),
                 ),
+                // Story 28-4a (#642) — le refus d'un chemin de dépôt sur un
+                // compte clos ; même rendu que le pré-vol de route.
+                DbError::BankAccountClosed { bank_account_id } => {
+                    bank_account_closed_response(bank_account_id)
+                }
                 DbError::OptimisticLockConflict => build_response(
                     StatusCode::CONFLICT,
                     "OPTIMISTIC_LOCK_CONFLICT",

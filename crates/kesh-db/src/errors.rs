@@ -1239,6 +1239,18 @@ pub enum DbError {
     #[error("Configuration manquante : {0}")]
     ConfigurationRequired(String),
 
+    /// Le compte bancaire visé est **clos** (`bank_accounts.closed_on` non nul)
+    /// — Story 28-4a (#642). Un compte clos est en lecture seule : tout chemin
+    /// d'écriture qui le viserait refuse, côté serveur. Mappé vers HTTP `409`
+    /// `BANK_ACCOUNT_CLOSED`, `details.bankAccountId`.
+    ///
+    /// Produite par les gardes du dépôt (`bank_accounts::ensure_open_in_tx`,
+    /// `ensure_open_unarchived_in_tx`, et les instructions verrouillées qui
+    /// lisent `closed_on` au sol) ; la route la remonte en
+    /// `AppError::Database(DbError::BankAccountClosed { … })`.
+    #[error("Compte bancaire clos — lecture seule : id={bank_account_id}")]
+    BankAccountClosed { bank_account_id: i64 },
+
     /// Pool épuisé ou timeout d'acquisition (retry-able côté API → 503).
     #[error("Pool de connexions épuisé ou timeout : {0}")]
     ConnectionUnavailable(String),
@@ -1420,6 +1432,7 @@ impl DbError {
             Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
             Self::OpeningComplementRefused { reason, .. } => reason.code(),
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",
+            Self::BankAccountClosed { .. } => "BANK_ACCOUNT_CLOSED",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",
             Self::InvalidInput(_) => "INVALID_INPUT",
             Self::Invariant(_) => "INVARIANT_VIOLATION",

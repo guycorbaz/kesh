@@ -56,11 +56,27 @@ const TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booking_da
 ///   route, **avant** cet appel (`422 BANK_IMPORT_DUPLICATE_FILE`).
 /// - [`DbError::ForeignKeyViolation`] si `bank_account_id` ou
 ///   `imported_by_user_id` n'existe pas / appartient à une autre company.
+/// - [`DbError::NotFound`] si le compte bancaire est **archivé** (Story 28-4a,
+///   AC6-bis) — l'appelant le traduit en `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` ;
+///   hors ce cas, `NotFound` ne naît que du `fetch_one` de relecture de
+///   l'entête, sur une ligne insérée dans la même transaction (inatteignable).
+/// - [`DbError::BankAccountClosed`] si le compte bancaire est **clos** (Story
+///   28-4a, #642).
 pub async fn create_with_transactions(
     tx: &mut Transaction<'_, MySql>,
     new: NewBankImport,
     transactions: Vec<NewBankTransaction>,
 ) -> Result<(BankImport, Vec<BankTransaction>), DbError> {
+    // Story 28-4a (#642, W22, AC6-bis) — compte archivé ou clos : lecture non
+    // verrouillante en tête de la fonction, avant l'`INSERT` d'entête. Sa
+    // position ne déplace pas la vue : elle est déjà née dans la route (la
+    // recherche de doublons, `find_by_company_and_hash`), et le chemin ne prend
+    // aucun verrou explicite avant ses écritures. D'où l'angle mort L1 (#651)
+    // pour l'import, qui couvre aussi l'analyse du fichier
+    // (`bank_accounts::ensure_open_in_tx`).
+    super::bank_accounts::ensure_open_unarchived_in_tx(tx, new.company_id, new.bank_account_id)
+        .await?;
+
     // Étape 1 : INSERT entête bank_imports.
     let header_result = sqlx::query(
         "INSERT INTO bank_imports \
@@ -494,6 +510,15 @@ pub async fn delete_unreconciled_in_tx(
         .iter()
         .filter(|(_, _, _, rejected)| rejected.is_some())
         .count() as i64;
+
+    // Story 28-4a (#642, W24, C-28-4-24) — compte clos : lecture non
+    // verrouillante APRÈS le comptage de l'étape 3 (le refus du sol
+    // `HasReconciled` passe avant) et AVANT le `DELETE` : entre l'étape 2,
+    // dernier verrou avant la première écriture, et ici, il n'y a que le
+    // comptage en mémoire. Position imposée par « aucune lecture ordinaire
+    // avant le premier verrou » (ci-dessus) et la règle de placement de
+    // `bank_accounts::ensure_open_in_tx`.
+    super::bank_accounts::ensure_open_in_tx(tx, company_id, import.bank_account_id).await?;
 
     // Étape 4 — l'entête ; les transactions suivent par la cascade.
     let deleted = sqlx::query("DELETE FROM bank_imports WHERE id = ? AND company_id = ?")

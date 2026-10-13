@@ -5,7 +5,7 @@
 //! ([`bank_account_display_name`]), règle partagée avec le frontend
 //! (`frontend/src/lib/features/bank-accounts/format.ts`, `bankAccountName`).
 
-use chrono::NaiveDateTime;
+use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 
 /// Compte bancaire persisté en base.
@@ -49,8 +49,28 @@ pub struct BankAccount {
     /// défaut + des mutations post-archivage (PATCH/PUT/DELETE/imports/reco).
     /// v0.1 : pas de UI restoration (L1 limitation v0.1).
     pub archived: bool,
+    /// Story 28-4a (#642) — date de clôture : `None` = compte **ouvert** ;
+    /// `Some(date)` = compte **clos**, en lecture seule (sérialisé `closedOn`,
+    /// `"AAAA-MM-JJ"` ou `null`).
+    ///
+    /// Distinct d'[`archived`](Self::archived) : la clôture retire de l'usage
+    /// un compte qui a servi, garde son historique lisible et se défait
+    /// (réouverture). La date est **informative** — c'est l'état qui garde.
+    /// Un compte clos n'est jamais principal (contrainte
+    /// `chk_bank_accounts_closed_not_primary`).
+    ///
+    /// Écrite **seulement** par `bank_accounts::close_in_tx` et
+    /// `bank_accounts::reopen_in_tx`.
+    pub closed_on: Option<NaiveDate>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+}
+
+impl BankAccount {
+    /// `true` si le compte est clos (Story 28-4a, #642).
+    pub fn is_closed(&self) -> bool {
+        self.closed_on.is_some()
+    }
 }
 
 /// Données de création d'un compte bancaire.
@@ -162,6 +182,7 @@ mod tests {
             journal_account_id: None,
             version: 1,
             archived: false,
+            closed_on: None,
             created_at: now,
             updated_at: now,
         };

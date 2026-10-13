@@ -667,6 +667,7 @@ mod tests {
             journal_account_id: None,
             version: 1,
             archived: false,
+            closed_on: None,
             created_at: chrono::NaiveDateTime::default(),
             updated_at: chrono::NaiveDateTime::default(),
         }

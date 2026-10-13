@@ -318,6 +318,12 @@ pub async fn cancel_in_tx(
     .map_err(map_db_error)?
     .ok_or(DbError::NotFound)?;
 
+    // Story 28-4a (#642, W9) — compte clos : lecture non verrouillante APRÈS
+    // (3), avant les motifs de (4) — « aucune lecture non verrouillante avant
+    // l'étape 3 » (doc ci-dessus) ; règle de placement de
+    // `bank_accounts::ensure_open_in_tx`. Ne lit pas `archived`.
+    super::bank_accounts::ensure_open_in_tx(tx, company_id, bt.bank_account_id).await?;
+
     // (4) Les motifs — forme EXEMPTÉE : le lien existe encore, et la forme
     //     non exemptée refuserait chaque dé-rapprochement sur son propre lien.
     //     Motif LIÉ (`blocker @`), jamais écrit en dur dans l'erreur : le rang

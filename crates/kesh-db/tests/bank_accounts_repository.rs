@@ -4,7 +4,7 @@ use kesh_db::entities::account::AccountType;
 use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{Language, NewAccount, NewBankAccount, NewCompany, OrgType};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::bank_accounts::BankAccountPutFields;
+use kesh_db::repositories::bank_accounts::{BankAccountListFilter, BankAccountPutFields};
 use kesh_db::repositories::company_invoice_settings::ClaimAccounts;
 use kesh_db::repositories::{accounts, bank_accounts, companies};
 use sqlx::MySqlPool;
@@ -88,7 +88,7 @@ async fn list_by_company(pool: MySqlPool) {
     .await
     .unwrap();
 
-    let list = bank_accounts::list_by_company(&pool, company_id, /*include_archived=*/ false)
+    let list = bank_accounts::list_by_company(&pool, company_id, Default::default())
         .await
         .unwrap();
     assert_eq!(list.len(), 1);
@@ -131,7 +131,7 @@ async fn upsert_primary_creates_then_updates(pool: MySqlPool) {
     assert_eq!(updated.id, created.id); // Same row updated
 
     // Only one account in DB
-    let list = bank_accounts::list_by_company(&pool, company_id, /*include_archived=*/ false)
+    let list = bank_accounts::list_by_company(&pool, company_id, Default::default())
         .await
         .unwrap();
     assert_eq!(list.len(), 1);
@@ -857,14 +857,14 @@ async fn archived_invariants_list_by_company_filters_or_includes(pool: MySqlPool
     create_archived_bank_account(&pool, company_id, "CH4431999123000889012").await;
 
     // include_archived=false (défaut UI) : exclut.
-    let active_only = bank_accounts::list_by_company(&pool, company_id, false)
+    let active_only = bank_accounts::list_by_company(&pool, company_id, Default::default())
         .await
         .unwrap();
     assert_eq!(active_only.len(), 1);
     assert!(!active_only[0].archived);
 
     // include_archived=true (export ZIP souveraineté) : retourne tout.
-    let all = bank_accounts::list_by_company(&pool, company_id, true)
+    let all = bank_accounts::list_by_company(&pool, company_id, BankAccountListFilter::ALL)
         .await
         .unwrap();
     assert_eq!(all.len(), 2);
@@ -1616,8 +1616,8 @@ async fn description_hydratee_par_toutes_les_lectures(pool: MySqlPool) {
         .unwrap()
         .unwrap();
     assert_eq!(by_id.description, attendu);
-    for include_archived in [false, true] {
-        let list = bank_accounts::list_by_company(&pool, company_id, include_archived)
+    for filter in [BankAccountListFilter::default(), BankAccountListFilter::ALL] {
+        let list = bank_accounts::list_by_company(&pool, company_id, filter)
             .await
             .unwrap();
         assert_eq!(list[0].description, attendu);

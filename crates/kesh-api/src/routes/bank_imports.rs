@@ -51,6 +51,23 @@ use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 
+/// Traduit l'erreur de `bank_imports::create_with_transactions` aux **deux**
+/// appels de la route (CAMT et CSV) — Story 28-4a (#642, AC6-bis, T-a47).
+///
+/// `DbError::NotFound` → `AppError::BankAccountNotFound` (`404
+/// BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`, celui du pré-vol R7) : au dépôt, il ne
+/// naît que de la garde `ensure_open_unarchived_in_tx` sur un compte archivé
+/// (la relecture d'entête, autre source, est inatteignable). Toute autre
+/// erreur suit `From` — donc `DbError::BankAccountClosed` → `409
+/// BANK_ACCOUNT_CLOSED`. Sans cet appariement, un archivé deviendrait le `404
+/// NOT_FOUND` générique.
+pub(crate) fn import_create_error(e: DbError) -> AppError {
+    match e {
+        DbError::NotFound => AppError::BankAccountNotFound,
+        e => e.into(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // DTOs
 // ---------------------------------------------------------------------------
@@ -971,6 +988,13 @@ pub async fn preview(
     if bank_account.archived {
         return Err(AppError::BankAccountNotFound);
     }
+    // Story 28-4a (#642, R6) — compte clos : refus précoce, sur la ligne que
+    // ce pré-vol lit déjà (pool, autocommit, aucun verrou).
+    if bank_account.is_closed() {
+        return Err(AppError::BankAccountClosed {
+            bank_account_id: bank_account.id,
+        });
+    }
 
     // Story 8-2 — détection format upload.
     let format = detect_import_format(
@@ -1119,6 +1143,14 @@ pub async fn create(
     // Story v014-1 (FINDING-4 Pass 3 Opus) — guard archived anti-énumération.
     if bank_account.archived {
         return Err(AppError::BankAccountNotFound);
+    }
+    // Story 28-4a (#642, R7) — compte clos : refus précoce (pool, autocommit),
+    // qui épargne l'analyse du fichier ; la garde du dépôt
+    // (`create_with_transactions`, W22) rend le même `409`.
+    if bank_account.is_closed() {
+        return Err(AppError::BankAccountClosed {
+            bank_account_id: bank_account.id,
+        });
     }
 
     // Story 8-2 — détection format upload + dispatch CSV.
@@ -1314,8 +1346,9 @@ pub async fn create(
         })
         .collect();
 
-    let (header, _txs) =
-        bank_imports::create_with_transactions(&mut tx, new_import, new_txs).await?;
+    let (header, _txs) = bank_imports::create_with_transactions(&mut tx, new_import, new_txs)
+        .await
+        .map_err(import_create_error)?;
 
     insert_canonical_audit_log(
         &mut tx,
@@ -2201,8 +2234,9 @@ async fn create_csv(
         })
         .collect();
 
-    let (header, _txs) =
-        bank_imports::create_with_transactions(&mut tx, new_import, new_txs).await?;
+    let (header, _txs) = bank_imports::create_with_transactions(&mut tx, new_import, new_txs)
+        .await
+        .map_err(import_create_error)?;
 
     insert_canonical_audit_log(
         &mut tx,
@@ -2224,4 +2258,28 @@ async fn create_csv(
 
     let _ = bank_account; // validé en amont
     Ok((StatusCode::CREATED, Json(import_to_response(header))))
+}
+
+#[cfg(test)]
+mod import_create_error_tests {
+    use super::*;
+
+    /// T-a47 (Story 28-4a, AC6-bis) — l'auxiliaire des deux appels :
+    /// archivé (`NotFound` au dépôt) → `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` ;
+    /// clos → `409 BANK_ACCOUNT_CLOSED` (par `From`).
+    #[test]
+    fn import_create_error_apparie_l_archive_et_laisse_passer_le_clos() {
+        assert!(matches!(
+            import_create_error(DbError::NotFound),
+            AppError::BankAccountNotFound
+        ));
+        assert!(matches!(
+            import_create_error(DbError::BankAccountClosed { bank_account_id: 7 }),
+            AppError::Database(DbError::BankAccountClosed { bank_account_id: 7 })
+        ));
+        assert!(matches!(
+            import_create_error(DbError::OptimisticLockConflict),
+            AppError::Database(DbError::OptimisticLockConflict)
+        ));
+    }
 }

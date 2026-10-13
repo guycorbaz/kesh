@@ -81,9 +81,13 @@ pub async fn create_batch(
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let result = async {
-        // (0) Compte bancaire source : existe, company-scoped, non archivé, journal lié.
-        let bank: Option<(Option<i64>, bool)> = sqlx::query_as(
-            "SELECT journal_account_id, archived FROM bank_accounts \
+        // (0) Compte bancaire source : existe, company-scoped, non archivé, non
+        //     clos, journal lié. Story 28-4a (#642, W17) : `closed_on` ajouté à
+        //     cette lecture non verrouillante existante, seule garde du chemin
+        //     (aucun verrou ajouté, vue inchangée : c'est déjà sa première
+        //     lecture). Angle mort L1 (#651) : `bank_accounts::ensure_open_in_tx`.
+        let bank: Option<(Option<i64>, bool, Option<chrono::NaiveDate>)> = sqlx::query_as(
+            "SELECT journal_account_id, archived, closed_on FROM bank_accounts \
              WHERE id = ? AND company_id = ?",
         )
         .bind(bank_account_id)
@@ -91,11 +95,14 @@ pub async fn create_batch(
         .fetch_optional(&mut *tx)
         .await
         .map_err(map_db_error)?;
-        let (journal_account_id, archived) = bank.ok_or(DbError::NotFound)?;
+        let (journal_account_id, archived, closed_on) = bank.ok_or(DbError::NotFound)?;
         if archived {
             return Err(DbError::IllegalStateTransition(
                 "le compte bancaire source est archivé".into(),
             ));
+        }
+        if closed_on.is_some() {
+            return Err(DbError::BankAccountClosed { bank_account_id });
         }
         let Some(bank_ledger_account_id) = journal_account_id else {
             return Err(DbError::ConfigurationRequired(
@@ -425,22 +432,30 @@ pub async fn confirm_batch(
         }
 
         // (2) Pré-check compte source archivé (pay_in_tx ne le porte pas) [M-FRESH-1].
-        let archived: Option<bool> = sqlx::query_scalar(
-            "SELECT archived FROM bank_accounts WHERE id = ? AND company_id = ?",
+        //     Story 28-4a (#642, W20) : `closed_on` ajouté à cette lecture
+        //     existante — refus précoce ; la garde de chaque facture est celle de
+        //     `pay_in_tx` (W27, sous verrou).
+        let bank: Option<(bool, Option<chrono::NaiveDate>)> = sqlx::query_as(
+            "SELECT archived, closed_on FROM bank_accounts WHERE id = ? AND company_id = ?",
         )
         .bind(batch.bank_account_id)
         .bind(company_id)
         .fetch_optional(&mut *tx)
         .await
         .map_err(map_db_error)?;
-        match archived {
+        match bank {
             None => return Err(DbError::NotFound),
-            Some(true) => {
+            Some((true, _)) => {
                 return Err(DbError::IllegalStateTransition(
                     "le compte bancaire source est archivé".into(),
                 ));
             }
-            Some(false) => {}
+            Some((false, Some(_))) => {
+                return Err(DbError::BankAccountClosed {
+                    bank_account_id: batch.bank_account_id,
+                });
+            }
+            Some((false, None)) => {}
         }
 
         // (3) Régler chaque facture du lot (atomique, pay_in_tx GUARD-FREE).

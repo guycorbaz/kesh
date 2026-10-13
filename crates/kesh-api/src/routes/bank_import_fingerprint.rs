@@ -193,6 +193,7 @@ mod tests {
             journal_account_id: None,
             version: 1,
             archived: false,
+            closed_on: None,
             created_at: ts(1),
             updated_at: ts(1),
         }
