@@ -2036,3 +2036,201 @@ Rapports `kesh-gate-logs/28-1-validate-p3-{R,F}.md` (hors dépôt). Bilan au Cha
 - **Écartée** : `getAnimations()` du seul dialogue (le voile, `Dialog.Overlay`, est un frère et anime aussi) ;
   une seconde analyse bornée au bouton (deux analyses pour une question).
 - **Réversible** : oui.
+---
+
+## Story 28-6 — Le rapprochement refuse de régler une facture client par un débit ([#482])
+
+Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
+`28-6-rapprochement-debit-facture.md`.
+
+### C-28-6-1 — Prémisse de l'issue corrigée : la base refuse l'écriture, le défaut est le refus présenté comme une panne
+
+- **Contexte** : #482 écrit que le rapprochement « écrirait un règlement de montant négatif ». À la lecture,
+  `settlement_journal_lines` pose `debit = montant` (négatif), que `chk_jel_debit_credit_exclusive` /
+  `chk_jel_debit_nonneg` refusent (4025 → `CheckConstraintViolation` → bras `_` de
+  `project_error_to_failed_proposal` → `DATABASE_ERROR`), point de sauvegarde annulé.
+- **Retenu** : la fiche le dit comme **hypothèse** et exige de la constater au rouge (T1), code observé consigné ;
+  si quoi que ce soit était écrit, le défaut serait un P1, à signaler. Priorité P2 maintenue : comportement faux
+  (refus annoncé comme panne, rejeu encouragé), la seule garde étant une contrainte de base.
+- **Écartées** : croire l'issue (P1 implicite) ; ne rien corriger au motif que rien n'est écrit (une contrainte de
+  base n'est pas une règle métier, et le message est faux).
+- **Réversible** : oui. **Demandé à l'orchestrateur** : un commentaire sur #482 après T1, avec le code observé.
+
+### C-28-6-2 — Code dédié `RECONCILIATION_TRANSACTION_NOT_CREDIT`, un seul pour le débit et le nul
+
+- **Contexte** : l'issue demande « un code dédié ». Les autres variantes (`split`, `rule`, `manual`, `split`
+  standalone) refusent déjà le montant nul en `VALIDATION_ERROR` + `zero_amount_transaction`.
+- **Retenu** : un code neuf, `details.reason` = `debit_transaction` | `zero_amount_transaction`, plus
+  `transactionAmount` (forme de `RECONCILIATION_OVERPAYMENT`). Un libellé lisible, un seul code à traiter pour une
+  intégration.
+- **Écartées** : `VALIDATION_ERROR` (libellé « Erreur de validation », muet) ; deux codes distincts (deux libellés
+  pour une seule règle) ; `RECONCILIATION_SCORE_TOO_LOW` (faux : le score n'y est pour rien).
+- **Réversible** : non une fois publié (code de contrat) — d'où le choix avant la v0.13.3.
+
+### C-28-6-3 — La garde dans `accept_one_invoice`, après le statut et avant la facture ; pas au pré-vol
+
+- **Retenu** : sur la transaction **rechargée sous le verrou du compte** (la relecture n'a pas de `FOR UPDATE` ;
+  le verrou est celui du compte bancaire, pris par `post_accept` — précision de la validation P1, F1), entre
+  l'étape 4 et l'étape 5. Les refus du pré-vol (`BANK_TRANSACTION_NOT_FOUND`, `RECONCILIATION_ALREADY_RECONCILED`,
+  `RECONCILIATION_ALREADY_REJECTED`) la précèdent (R6). Le refus ne dépend que
+  de la transaction : il précède la lecture de la facture (`INVOICE_NOT_FOUND`), l'éligibilité et le score.
+- **Amendé en validation P1 (F1, R6)** : la version d'origine disait « sous verrou » sans le nommer, et ne
+  plaçait pas les refus du pré-vol dans l'ordre ; les deux précisions ci-dessus sont celles de la remédiation P1
+  (marqueur ajouté à l'étape 0 du développement, finding P2-2 de la validation P2).
+- **Écartées** : au pré-vol de `post_accept` (dupliquerait la règle, et le pré-vol est commun aux trois variantes,
+  dont deux admettent un débit) ; après le score (laisserait `SCORE_TOO_LOW` répondre pour un débit sans référence).
+- **Réversible** : oui.
+
+### C-28-6-4 — Garde écrite `amount <= Decimal::ZERO`, comparaison et non test de signe
+
+- **Retenu** : même forme que `get_proposals` ; la règle « un règlement de facture exige un encaissement » écrite
+  deux fois, proposition et acceptation, les deux doc-comments se nommant. Le zéro négatif est un nul.
+- **Écartée** : une fonction partagée par `get_proposals` et `accept_one_invoice` (le filtre de `get_proposals`
+  est une ligne dans une boucle de lecture ; l'extraire toucherait une région que la 28-5 lit aussi, sans gain).
+- **Réversible** : oui.
+
+### C-28-6-5 — Aucune garde de sens sur `split`, `rule`, `manual` et l'éclatement standalone
+
+- **Contexte** : l'epic demande de « vérifier les autres `accept_one_*` pour la même absence de garde ».
+- **Retenu** : vérifié, **pas la même absence** : ils n'écrivent aucun règlement de facture ; un débit y est
+  légitime (dépense, remboursement), ce que `rules.rs:8` et `validate_split_balance` (`abs()`) disent déjà ; le nul
+  y est déjà refusé (`:2447`, `:2870`, `:3659`, `:4109`).
+- *Annotation du 2026-10-13 (revue de code P1, A3)* : ces numéros, relevés au `5aad8b35`, visaient déjà des lignes
+  voisines et ont bougé depuis. Les sites du refus du nul sont, au `289a7fed` : `accept_one_split` `:2518`,
+  `accept_one_rule` `:2941` (`VALIDATION_ERROR`, `details.reason = "zero_amount_transaction"`), `post_manual` `:3727`,
+  `post_split` `:4177` (`400 VALIDATION_ERROR`) — à retrouver par `grep -n zero_amount_transaction`, le nom de la
+  fonction faisant foi.
+- **Réversible** : oui.
+
+### C-28-6-6 — Libellé frontend et clé i18n, bien que le refus ne soit pas atteignable depuis l'écran
+
+- **Contexte** : l'écran ne soumet que la candidate proposée, et `get_proposals` ne propose jamais de facture pour
+  un débit. Le code n'apparaîtra donc, en pratique, qu'à une intégration.
+- **Retenu** : un `case` et une clé dans les quatre locales — `failed-proposal-label.test.ts` déclare couvrir tous
+  les codes de `failed[]` (patron de la 15-5c) ; un code sans libellé s'afficherait « Refus non reconnu (CODE) » le
+  jour où l'écran permettrait de choisir une autre candidate. Coût : un `case`, quatre lignes, deux compteurs.
+- **Écartée** : rien côté frontend (périmètre plus étroit, mais l'invariant « tous les codes » deviendrait faux).
+- **Réversible** : oui.
+
+### C-28-6-7 — Pas de capture d'écran
+
+- **Retenu** : la story ne change ce que l'écran affiche dans aucun parcours atteignable (cf. C-28-6-6) ; la règle
+  de recette visuelle de l'epic vise la 28-6 « si elle change ce que l'écran affiche ».
+- **Réversible** : oui.
+
+### C-28-6-8 — Manuels vérifiés, non modifiés
+
+- **Retenu** : `user-manual.tex:1919` (« créditrice, en CHF ») reste vrai ; aucun texte ne promet l'acceptation d'un
+  débit ; le manuel utilisateur n'est pas modifié. Le contrat d'API, lui, est modifié (AC7). Contrôle du PDF aplati
+  par les passes de revue.
+- **Amendé en validation P1 (R1, MEDIUM)** : la version d'origine disait que « le manuel d'administration renvoie à
+  `docs/api-external.md` pour les codes » — faux : `admin-manual.tex:1992-1994` (paragraphe « Intégrations par
+  l'API : les lots de réconciliation », 0.13.2) **nomme** trois codes de `failed[]` et annonce un changement de
+  contrat d'`accept` aux intégrations par clé d'API, avant de renvoyer à `docs/api-external.md`. Ce paragraphe
+  reste vrai après la story ; la ligne que la 0.13.3 lui doit est l'objet de C-28-6-11.
+- **Écartée** : une phrase au manuel utilisateur sur un refus que l'écran ne peut pas produire.
+- **Réversible** : oui.
+
+### C-28-6-9 — Le symétrique (crédit ↔ facture fournisseur) n'existe pas ; les avoirs non plus
+
+- **Retenu** : aucun chemin ne lie une transaction bancaire à une facture fournisseur ni à un avoir (inventaire de la
+  fiche) : rien à refuser, l'absence est écrite. Le remboursement d'un client par un débit passe par l'affectation
+  manuelle, sans lien de facture : catégorie C, pas le défaut de #482.
+- **Réversible** : oui (à reprendre si un rapprochement fournisseur est un jour ajouté).
+
+### C-28-6-10 — Périmètre minimal, exclusions écrites
+
+- **Retenu** : une règle à un site, son libellé, son contrat, son CHANGELOG ; quatre modules de code. Exclus par
+  écrit : pré-vol, autres variantes, harmonisation des codes du nul, `get_proposals`, score, `classify_payment`,
+  manuel utilisateur, captures, bras `_` de `project_error_to_failed_proposal`. *(Validation P1 : « manuels »
+  devient « manuel utilisateur » — le manuel d'administration reçoit une ligne, C-28-6-11.)*
+- **Réversible** : oui.
+
+### C-28-6-11 — Le manuel d'administration nomme le code neuf, dans la section de la 0.13.3 (validation P1, R1)
+
+- **Contexte** : la 0.13.2 a dit aux intégrations par clé d'API, au manuel d'administration, le changement de
+  contrat d'`accept` (codes nommés, renvoi à `docs/api-external.md`). Ce paragraphe a été écrit à la **préparation
+  de release** (`d415e66c`), dans une sous-section « Passer à la 0.13.2 » ouverte par une **story** (27-2,
+  `e04122dc`). La 28-6 change à son tour ce contrat (AC7). Au `5aad8b35`, aucune sous-section « Passer à la
+  0.13.3 » n'existe.
+- **Retenu** : à T5, si la sous-section de la 0.13.3 existe au rebase, la 28-6 y écrit une ligne — paragraphe
+  d'intégrations par l'API, sur le modèle de la 0.13.2 — qui nomme `RECONCILIATION_TRANSACTION_NOT_CREDIT` pour les
+  intégrations par clé d'API, et régénère le PDF (`make fr`, sous `flock`). Sinon, elle ne crée pas la
+  sous-section, et **la préparation de la release v0.13.3 écrit cette ligne** en ouvrant la sous-section : le
+  présent choix est sa consigne, la puce du CHANGELOG (AC8) son entrée. Le Dev Agent Record dit lequel des deux
+  cas s'est produit.
+- **Écartées** : ne rien écrire au manuel d'administration (le précédent de la 0.13.2 laisserait croire aux
+  intégrations que la 0.13.3 ne change pas le contrat d'`accept`) ; ouvrir la sous-section dans la 28-6 (son
+  intitulé et ses consignes de mise à jour — migrations, retour, scripts — relèvent de la version entière, que la
+  préparation de release connaît, non une story isolée).
+- **Réversible** : oui.
+
+### C-28-6-12 — `-0.00` : cas de la seule fonction pure, précondition assertée, mutation M8 (validation P1, F3 = R5)
+
+- **Contexte** : `bank_transactions.amount` est `DECIMAL(18,2)` : un zéro négatif lu d'un CSV s'écrit et se relit
+  `0.00`. La fiche rangeait `-0.00` parmi les cas de la garde comme s'il pouvait l'atteindre.
+- **Retenu** : `-0.00` reste un cas de l'AC3 (défense en profondeur de la fonction pure), dit inatteignable par la
+  base ; le test asserte d'abord `dec!(-0.00).is_sign_negative()` (sans quoi le cas serait un doublon muet de
+  0.00) ; mutation M8 — classification par test de signe — tuée par ce cas.
+- *Annotation du 2026-10-13 (revue de code P1, A4)* : la précondition a rougi au premier run — `dec!(-0.00)` n'est
+  **pas** un zéro négatif, le macro le normalise. Le montage est `Decimal::new(0, 2)` + `set_sign_negative(true)` :
+  voir **C-28-6-15**. Le reste de ce choix tient.
+- **Écartées** : retirer le cas (le piège « test de signe » ne serait plus fixé par rien) ; le tester de bout en
+  bout (impossible : la base ne le rend pas).
+- **Réversible** : oui.
+
+### C-28-6-13 — La divergence du montant nul entre `invoice` et les autres variantes est dite au contrat (validation P1, F4)
+
+- **Contexte** : un nul est refusé en `VALIDATION_ERROR` + `details.reason = "zero_amount_transaction"` pour `split`
+  et `rule` (et en `400` pour le rapprochement manuel et ventilé), en `RECONCILIATION_TRANSACTION_NOT_CREDIT` avec
+  la même `reason` pour une facture (C-28-6-2, C-28-6-5).
+- **Retenu** : une demi-phrase dans `docs/api-external.md` (AC7), pour qu'une intégration qui teste
+  `details.reason` sous `VALIDATION_ERROR` sache que le cas de la facture a un autre code. Pas d'harmonisation
+  (exclusion C-28-6-10 maintenue).
+- **Écartée** : harmoniser les codes (changement de contrat de trois variantes, hors #482).
+- **Réversible** : oui.
+
+### C-28-6-14 — « Aucune garde sur les autres variantes » tenu par quatre tests existants nommés, sans mutation neuve (validation P1, R3)
+
+- **Retenu** : l'AC4 nomme, par variante, un test existant qui accepte un débit et rougirait si une garde de sens y
+  était ajoutée (`accept_with_explicit_split_type_runs_split_flow`,
+  `accept_with_rule_creates_journal_entry_and_increments_count`,
+  `post_manual_creates_journal_entry_and_marks_transaction_reconciled`,
+  `split_creates_journal_entry_with_n_plus_1_lines`) ; la revue de code vérifie qu'ils n'ont pas été modifiés.
+- **Écartée** : une mutation par variante (quatre mutations pour prouver une **absence** de code que la story
+  n'écrit pas ; les tests nommés suffisent à la tenir).
+- **Réversible** : oui.
+
+### C-28-6-15 — Le zéro négatif de l'AC3 se construit par `set_sign_negative`, non par `dec!(-0.00)` (développement)
+
+- **Contexte** : l'AC3 prescrivait `dec!(-0.00)`, avec une précondition `assert!(dec!(-0.00).is_sign_negative())`.
+  Au premier run du module `non_credit_settlement_tests`, **la précondition a rougi** : le macro de
+  `rust_decimal_macros` normalise `-0.00` en un zéro sans signe. Le cas aurait été un doublon de `0.00`, passant à
+  vide — exactement ce que la précondition devait empêcher.
+- **Retenu** : `Decimal::new(0, 2)` puis `set_sign_negative(true)` ; la précondition (`is_sign_negative()` et
+  `is_zero()`) est gardée telle quelle, et un commentaire dit pourquoi le macro n'est pas employé. La mutation M8
+  (test de signe) est jouée sur ce montage.
+- **Écartées** : supprimer le cas (la défense en profondeur de C-28-6-12 tomberait) ; `Decimal::from_str("-0.00")`
+  (comportement de normalisation non vérifié, même risque que le macro).
+- **Réversible** : oui (test seul).
+
+### C-28-6-16 — Remédiation de la revue de code P1 : amorcer les valeurs plutôt que réduire les comptes rendus ; un test de course pour l'ordre statut → sens
+
+- **Contexte** : revue P1 (B, E, A : 0 MEDIUM, 11 LOW). B-LOW-1 = E1 : le compteur de numéros de `Etat286` comparait
+  `[]` à `[]` ; E2 : `bankTransactionId == invoiceId` dans trois montages ; E3 : l'ordre « statut avant sens »
+  n'était tenu par aucun test ; E4 : AC2-4 ne comparait pas les écritures côté débit.
+- **Retenu** : (1) **amorcer** — `montage_286` pose une ligne `journal_entry_number_sequences` à 10 (`INSERT IGNORE`)
+  et une facture brouillon de décalage avant la vraie, et asserte `tx_id != inv_id` ; le doc-comment d'`Etat286`
+  dit en outre ce que le relevé prouve (un filet contre une écriture partielle qui survivrait, non la garde) —
+  mutation **M9** (garde retirée **et** `ROLLBACK TO SAVEPOINT` neutralisé) pour montrer qu'il discrimine ;
+  (2) un **test de course** `a_debit_reconciled_while_waiting_for_the_lock_is_refused_for_its_status` (verrou du compte
+  tenu, transaction passée `reconciled` pendant l'attente) — mutation **M11** (garde avant l'étape 4) ; (3) AC2-4
+  compare les écarts d'écritures, de lignes, de règlements, de traces et de numéros (1, 2, 1, 2 ; 10 → 11) ;
+  mutation **M10** (`invoice_id` passé pour `bank_transaction_id`).
+- **Écartées** : réduire le commentaire et le Dev Agent Record seuls (le relevé serait resté vide ; amorcer coûte une
+  requête) ; une écriture validée réelle pour amorcer le compteur (plus lourd, sans gain : seul le compteur importe) ;
+  déclarer « garde avant le statut » équivalente (elle ne l'est pas : un débit rapproché pendant l'attente du verrou
+  rendrait le code neuf).
+- **Réversible** : oui (tests et commentaires ; aucune ligne de production exécutée ne change).
+
+[#482]: https://github.com/guycorbaz/kesh/issues/482

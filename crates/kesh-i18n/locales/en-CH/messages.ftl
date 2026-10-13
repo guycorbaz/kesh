@@ -1172,6 +1172,7 @@ reconciliation-failed-rule-mismatch = The rule's counterpart account has changed
 reconciliation-failed-rule-no-longer-matches = The rule no longer matches this transaction: it has been changed in the meantime.
 reconciliation-failed-rule-not-found = Rule not found or deactivated.
 reconciliation-failed-score-too-low = The invoice does not match the transaction closely enough to be reconciled.
+reconciliation-failed-transaction-not-credit = This transaction is not an incoming payment (debit or zero amount): it cannot settle a customer invoice.
 reconciliation-failed-transaction-not-pending = This transaction is no longer awaiting reconciliation.
 reconciliation-failed-unknown = Unrecognised refusal ({ $code }).
 reconciliation-cols-tx-date = Date

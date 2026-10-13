@@ -22,6 +22,12 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   lignes les garde. Une sauvegarde prise sous une version antérieure pendant
   que l'on saisissait se refait. L'export global CSV n'en bénéficie pas encore ([#465](https://github.com/guycorbaz/kesh/issues/465)).
 - Une erreur renvoyée par le serveur ne s'affiche plus « [object Object] » — verrouillage des livres, profils bancaires — : le message du refus est affiché. Une panne imprévue affiche « Erreur inattendue. », et les messages de perte de connexion suivent la langue de l'installation une fois la page chargée — ou rechargée — avec une session ouverte ; la page de connexion, et l'interface jusqu'au premier rechargement qui suit une connexion, restent en français ([#520](https://github.com/guycorbaz/kesh/issues/520)).
+- **Un débit ne règle plus une facture client ([#482](https://github.com/guycorbaz/kesh/issues/482)).** L'écran de
+  réconciliation ne proposait jamais de facture pour une sortie d'argent, mais l'API l'acceptait jusqu'à la base,
+  qui refusait l'écriture sous une « erreur de la base de données » invitant à réessayer. Une transaction de débit,
+  ou de montant nul, proposée contre une facture est désormais refusée proposition par proposition, en
+  `RECONCILIATION_TRANSACTION_NOT_CREDIT`, avec un libellé à l'écran. Intégrations par clé d'API : nouveau code,
+  détail dans `docs/api-external.md`.
 
 - **Les boutons d'action destructive se voient ([#640](https://github.com/guycorbaz/kesh/issues/640)).**
   *Supprimer l'import*, les confirmations de suppression, d'archivage, de révocation ou de désactivation

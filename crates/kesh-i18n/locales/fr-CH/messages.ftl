@@ -1235,6 +1235,7 @@ reconciliation-failed-rule-mismatch = Le compte de contrepartie de la règle a c
 reconciliation-failed-rule-no-longer-matches = La règle ne correspond plus à cette transaction : elle a été modifiée entre-temps.
 reconciliation-failed-rule-not-found = Règle introuvable ou désactivée.
 reconciliation-failed-score-too-low = La facture ne correspond pas assez à la transaction pour être rapprochée.
+reconciliation-failed-transaction-not-credit = Cette transaction n’est pas une entrée d’argent (débit ou montant nul) : elle ne peut pas régler une facture client.
 reconciliation-failed-transaction-not-pending = Cette transaction n’est plus en attente de rapprochement.
 reconciliation-failed-unknown = Refus non reconnu ({ $code }).
 reconciliation-cols-tx-date = Date

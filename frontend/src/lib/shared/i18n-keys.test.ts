@@ -604,7 +604,12 @@ const ATTENDU = {
 	// `error-timeout`, `error-server-status` — un seul site pour les trois messages
 	// d'erreur serveur, `serverStatusMessage`). `sitesNonResolus`, `relais`,
 	// `sitesGabarit` inchangés (que des littéraux), mesurés.
-	sitesTotal: 2079,
+	// Story 28-6 (#482) : **2079 → 2080** (+1), mesuré par la collecte de ce test sur la
+	// branche rebasée sur `eab77cf1` (2079 étant sa borne verte) :
+	// `features/reconciliation/failed-proposal-label.ts` gagne un appel
+	// (`reconciliation-failed-transaction-not-credit`). `sitesNonResolus`, `relais`,
+	// `sitesGabarit` inchangés (un littéral), mesurés.
+	sitesTotal: 2080,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

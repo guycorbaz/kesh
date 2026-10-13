@@ -646,6 +646,7 @@ pub async fn get_proposals(
             continue;
         }
         // MP3-1 Pass 3 — sign filter (tx débit → invoices toujours positives).
+        // Même règle à l'acceptation : `refuse_non_credit_settlement` (Story 28-6).
         if tx.amount <= Decimal::ZERO {
             tx_candidates.push((tx, Vec::new()));
             continue;
@@ -1520,6 +1521,52 @@ fn lettering_error_to_failed_proposal(bank_transaction_id: i64, err: DbError) ->
     }
 }
 
+/// Story 28-6 (#482, AC1) — un règlement de facture client exige un
+/// **encaissement** : refuse une transaction de débit ou de montant nul.
+///
+/// Fonction pure, appelée par [`accept_one_invoice`] sur la transaction
+/// **rechargée sous le verrou du compte**. C'est la même règle que le filtre
+/// de [`get_proposals`] (`tx.amount <= Decimal::ZERO` → aucune facture
+/// proposée), écrite une seconde fois parce que `POST /accept` est appelable
+/// directement — par une clé d'API comme par un appel forgé — avec un couple
+/// `(bankTransactionId, invoiceId)` arbitraire. Sans elle, un débit dont la
+/// référence et la contrepartie ressemblaient à la facture (cas exécuté au
+/// rouge de la story) passait la garde de score, et seule une contrainte de la
+/// base (`chk_jel_*`) arrêtait l'écriture : le refus arrivait en
+/// `DATABASE_ERROR`, qui invite au rejeu.
+///
+/// Rend `None` pour un montant strictement positif ; sinon le refus
+/// `RECONCILIATION_TRANSACTION_NOT_CREDIT`, avec `details.reason` =
+/// `debit_transaction` (montant négatif) ou `zero_amount_transaction`, et
+/// `details.transactionAmount` sous la forme du champ homonyme de
+/// `RECONCILIATION_OVERPAYMENT`.
+///
+/// ⚠️ La garde **compare** au zéro, elle ne teste pas le signe : un zéro
+/// négatif (`-0.00`, porté par un `Decimal` mais jamais rendu par la colonne
+/// `DECIMAL(18,2)`) est un montant nul, et `is_sign_negative()` le classerait
+/// en débit (C-28-6-12, C-28-6-15).
+fn refuse_non_credit_settlement(
+    bank_transaction_id: i64,
+    amount: Decimal,
+) -> Option<FailedProposal> {
+    if amount <= Decimal::ZERO {
+        let reason = if amount < Decimal::ZERO {
+            "debit_transaction"
+        } else {
+            "zero_amount_transaction"
+        };
+        return Some(FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_TRANSACTION_NOT_CREDIT".to_string(),
+            details: Some(serde_json::json!({
+                "reason": reason,
+                "transactionAmount": amount,
+            })),
+        });
+    }
+    None
+}
+
 /// Helper interne — traite UNE proposal `type='invoice'` dans son savepoint.
 ///
 /// **C2 Pass 1 code review (TOCTOU fix)** : la BankTransaction est
@@ -1528,6 +1575,13 @@ fn lettering_error_to_failed_proposal(bank_transaction_id: i64, err: DbError) ->
 /// pour fermer la fenêtre TOCTOU. `bank_account_id` est nécessaire
 /// pour scope le SELECT (l'invariant batch « tous les tx du même
 /// bank_account_id » a été validé au pré-flight 0ter).
+///
+/// **Sens de la transaction** (Story 28-6, #482) : aussitôt le statut
+/// `pending` vérifié (étape 4bis), une transaction de débit ou de montant nul
+/// est refusée en `RECONCILIATION_TRANSACTION_NOT_CREDIT`
+/// ([`refuse_non_credit_settlement`]) — **avant** la lecture de la facture,
+/// parce que le refus ne dépend que de la transaction : un débit proposé
+/// contre une facture inexistante rend ce code, non `INVOICE_NOT_FOUND`.
 ///
 /// **Postabilité — pas de garde ici, et c'est voulu** (Story 15-5b, AC6) :
 /// aucun compte de cette écriture ne vient du client. Le compte bancaire est
@@ -1596,6 +1650,16 @@ async fn accept_one_invoice(
             error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
             details: None,
         });
+    }
+
+    // Step 4bis — Story 28-6 (#482) : un débit ou un montant nul ne règle
+    // jamais une facture client. Sur la transaction rechargée sous le verrou
+    // du compte, avant la lecture de la facture : le refus ne dépend que de
+    // la transaction.
+    if let Some(refusal) =
+        refuse_non_credit_settlement(bank_transaction_id, bank_transaction.amount)
+    {
+        return Err(refusal);
     }
 
     // Step 5 — load Invoice via reconciliation_repo helper.
@@ -5147,5 +5211,75 @@ mod unreject_classification_tests {
     fn rejected_row_is_unrejected() {
         let t = tx(BankTransactionStatus::Pending, None, true);
         assert_eq!(classify_unreject(Some(&t)), UnrejectOutcome::Unrejected);
+    }
+}
+
+#[cfg(test)]
+mod non_credit_settlement_tests {
+    //! Story 28-6 (#482, AC3) — la garde de sens d'`accept_one_invoice`.
+    //! Codes et raisons écrits en dur, jamais relus de la production.
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    /// Le refus attendu, champ par champ.
+    fn assert_refused(amount: Decimal, reason: &str) {
+        let refusal = refuse_non_credit_settlement(42, amount)
+            .unwrap_or_else(|| panic!("{amount} devait être refusé"));
+        assert_eq!(
+            refusal.bank_transaction_id, 42,
+            "identifiant reporté tel quel"
+        );
+        assert_eq!(refusal.error_code, "RECONCILIATION_TRANSACTION_NOT_CREDIT");
+        assert_eq!(
+            refusal.details,
+            Some(serde_json::json!({ "reason": reason, "transactionAmount": amount })),
+        );
+    }
+
+    #[test]
+    fn a_debit_is_refused() {
+        assert_refused(dec!(-100.00), "debit_transaction");
+    }
+
+    #[test]
+    fn the_smallest_debit_is_refused() {
+        assert_refused(dec!(-0.01), "debit_transaction");
+    }
+
+    #[test]
+    fn a_zero_amount_is_refused() {
+        assert_refused(dec!(0.00), "zero_amount_transaction");
+    }
+
+    /// Défense en profondeur (C-28-6-12) : la base ne rend jamais `-0.00`,
+    /// mais la fonction ne doit pas le classer en débit.
+    #[test]
+    fn a_negative_zero_is_a_zero_amount_not_a_debit() {
+        // ⚠️ `dec!(-0.00)` ne donne PAS un zéro négatif : le macro le
+        // normalise, et la précondition ci-dessous l'a montré au premier run
+        // (C-28-6-15). Le bit de signe se pose donc explicitement.
+        let mut negative_zero = Decimal::new(0, 2);
+        negative_zero.set_sign_negative(true);
+        // Précondition : sans elle, ce cas serait un doublon de 0.00 et
+        // passerait à vide.
+        assert!(negative_zero.is_sign_negative(), "montage : zéro négatif");
+        assert!(negative_zero.is_zero());
+        assert_refused(negative_zero, "zero_amount_transaction");
+    }
+
+    #[test]
+    fn the_smallest_credit_is_not_refused() {
+        assert!(refuse_non_credit_settlement(42, dec!(0.01)).is_none());
+    }
+
+    #[test]
+    fn an_ordinary_credit_is_not_refused() {
+        assert!(refuse_non_credit_settlement(7, dec!(100.00)).is_none());
+    }
+
+    #[test]
+    fn the_transaction_id_is_carried_as_given() {
+        let refusal = refuse_non_credit_settlement(987_654, dec!(-1.00)).unwrap();
+        assert_eq!(refusal.bank_transaction_id, 987_654);
     }
 }

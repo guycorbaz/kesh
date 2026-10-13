@@ -2,11 +2,12 @@
 //
 // ⚠️ La liste des codes est ÉCRITE EN DUR, et non lue depuis le module : un test qui
 // itérerait sur la table de production serait vert par construction (fiche, § « Tests — ce qui
-// rendrait un test vert sans rien prouver »). Relevé : les 27 littéraux de
+// rendrait un test vert sans rien prouver »). Relevé : les 28 littéraux de
 // `crates/kesh-api/src/routes/reconciliation.rs` + les deux codes de `DbError::error_code()` :
-// `ACCOUNT_NOT_POSTABLE` et `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (Story 15-6b) — 29 codes.
-// Story 15-12b : `LATER_FISCAL_YEAR_CLOSED` est l'un des 27 littéraux ; Story 27-4 :
-// `RECONCILIATION_ALREADY_REJECTED` aussi.
+// `ACCOUNT_NOT_POSTABLE` et `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (Story 15-6b) — 30 codes.
+// Story 15-12b : `LATER_FISCAL_YEAR_CLOSED` est l'un des 28 littéraux ; Story 27-4 :
+// `RECONCILIATION_ALREADY_REJECTED` aussi ; Story 28-6 : `RECONCILIATION_TRANSACTION_NOT_CREDIT`
+// aussi.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -54,6 +55,7 @@ const EXPECTED_KEYS: Record<string, string> = {
 	RECONCILIATION_RULE_NOT_FOUND: 'reconciliation-failed-rule-not-found',
 	RECONCILIATION_SCORE_TOO_LOW: 'reconciliation-failed-score-too-low',
 	RECONCILIATION_SPLIT_IMBALANCE: 'reconciliation-split-error-imbalance',
+	RECONCILIATION_TRANSACTION_NOT_CREDIT: 'reconciliation-failed-transaction-not-credit',
 	RECONCILIATION_TRANSACTION_NOT_PENDING: 'reconciliation-failed-transaction-not-pending',
 	ROUNDING_ACCOUNT_NOT_CONFIGURED: 'error-rounding-account-not-configured',
 	SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT: 'reconciliation-failed-counterparty-is-claim-account',
@@ -65,8 +67,8 @@ describe('failedProposalLabel', () => {
 		calls.length = 0;
 	});
 
-	it('couvre les 29 codes relevés', () => {
-		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(29);
+	it('couvre les 30 codes relevés', () => {
+		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(30);
 	});
 
 	// Story 27-4 (#634, C-27-4-8) — `race_during_update` : la transaction a changé pendant le
