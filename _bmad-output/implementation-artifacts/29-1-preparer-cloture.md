@@ -341,6 +341,9 @@ contrôles à son ouverture et affiche, **au-dessus** du texte de confirmation a
 soit « N point(s) à vérifier » avec la liste courte des contrôles en `attention` et un lien vers le panneau. Le bouton
 *Clôturer* **reste actif** quel que soit le résultat (rien ne bloque, C-29-1-3) ; pendant le chargement il reste
 actif aussi (on ne retarde pas un geste que le serveur accepte) ; un échec de chargement s'affiche sans bloquer.
+**Pendant le chargement**, le rappel affiche le même état d'attente que le panneau (« Lecture des contrôles… ») et
+**jamais** « Aucun point à vérifier » ni « N point(s) à vérifier » : ces deux textes ne s'affichent qu'après la
+réponse (même règle que le panneau, R13 ; P4-1).
 K1 n'a pas de cas visible ici : le bouton *Clôturer* est déjà désactivé quand un antérieur est ouvert (`:408`).
 **Ce que compte « N point(s) »** (C-29-1-19) : les contrôles au statut `attention`, **toutes sévérités**, `info`
 compris — K4 (brouillons), K5 (pièces à compléter) et K7 (exercice suivant absent : les transitoires ne peuvent pas
@@ -453,6 +456,12 @@ exercice M antérieur à N, `close(N+1)` tient M puis demande N, tandis que la c
 réouverture de N+1 (N+1 clos ⇒ N clos, invariant I) ne prend pas N : elle peut changer l'état lu entre la vue et la
 confirmation, et c'est la confirmation qui décide.
 
+*(Validation P4, 2026-10-14, décision de l'orchestrateur — P4-4.)* **Angle mort assumé** : aucune mutation ni aucun
+test ne tue une confirmation **non verrouillante** de N+1 (lecture ordinaire au lieu de `find_open_covering_date`) ;
+M-b3 ne tue que la suppression totale de la confirmation. Ce trou est vérifié **en revue de code** (le doc-comment de
+`reverse_in_tx_inner` le dit) et non par un test ; aucune mutation ni aucun test n'est ajouté pour le couvrir (la
+forme M-b13 a été retirée pour recyclage, C-29-1-27, C-29-1-31).
+
 *(Validation P3, 2026-10-14, décision de l'orchestrateur : le paragraphe consacré à l'état que garde la
 confirmation est retiré, avec la mutation M-b13 qu'il fondait — C-29-1-27.)* M-b3 reste tuée par T-b3, par la
 différence de code d'erreur avec `create_in_tx_inner`, grâce à la prescription de l'AC11.
@@ -541,7 +550,8 @@ cette sous-section. **PDF régénéré**, contrôlé aplati. Propagation à grep
 `crates/` compris (P3 R10) : deux commentaires du code donnent la date du jour comme raison de traverser le verrou de
 période, et deviennent faux pour le geste neuf — `crates/kesh-db/src/repositories/journal_entries.rs` l. 398-402
 (« sa date est celle du jour ») et `crates/kesh-db/src/repositories/companies.rs` l. 909-912 (« celle-ci étant datée
-du jour ») ; ils gagnent l'exception dans le commit de la 29-1b (Tb2) ; la brochure
+du jour »), ainsi que le commentaire de test `crates/kesh-api/tests/period_lock_e2e.rs` l. 367-369 (« la
+contre-passation est datée du **jour** », P4-2) ; ils gagnent l'exception dans le commit de la 29-1b (Tb2) ; la brochure
 (`docs/manual/fr/marketing-brochure.tex` l. 418 : « Le bouclement d'exercice — écritures de clôture, report à
 nouveau du résultat, transitoires — reste à venir ») est corrigée **dans ce commit** — elle annonce « à venir » ce
 qui sera livré, et les écritures de clôture sont écartées par conception — avec son PDF ; le README (l. 47,
@@ -809,7 +819,7 @@ union.
 - T-a12 — Vitest : le panneau (sept lignes, liens, erreur ≠ « rien à signaler », **chargement en attente : l'état
   d'attente, aucune ligne de contrôle ni « rien à signaler »** — P3 R13, `notCheckable` affiché sans compter), le bouton *Préparer la clôture* visible pour le rôle **Consultation** (colonne d'actions rendue, sans
   *Renommer* / *Clôturer* / *Réouvrir*) et pour Admin, le `colspan` de la ligne vide, le rappel du dialogue (compte
-  `info` compris, bouton actif pendant le chargement et après un échec) — dans `fiscal-years-page.test.ts` adapté
+  `info` compris, bouton actif pendant le chargement et après un échec, **texte d'attente pendant le chargement, ni « Aucun point à vérifier » ni « N point(s) »** — P4-1) — dans `fiscal-years-page.test.ts` adapté
   (Ta5) et un test du composant.
 - T-a13 — E2E `fiscal-years.spec.ts` (ajout) : ouvrir *Préparer la clôture* sur un exercice avec une transaction
   pending, voir K2 en attention et le lien vers le rapprochement ; le bouton est présent pour un utilisateur
@@ -908,7 +918,7 @@ union.
 | M-a19 | `closing_checks.rs` : une requête écrite en littéral turbofish coupé par rustfmt, `sqlx::query_as::<_, (i64,)>(` puis `"SELECT … FOR UPDATE"` à la ligne suivante | T-a2 volets (a) et (b) (P2 R4 = F1) |
 | M-a20 | K3 : critère d'activité au grand livre retiré (seuls transactions et relevés comptent) | T-a5 (écriture manuelle sur le compte lié, relevé ancien : `MISSING` attendu) |
 | M-a21 | DTO du tableau de bord : `statement_gap: None` en dur dans le handler de liste | T-a16 (`bank_accounts_e2e.rs`, écart réel attendu) |
-| M-a22 | panneau : « Rien à signaler » affiché sur chaque ligne pendant le chargement | T-a12 (chargement en attente, P3 R13) |
+| M-a22 | panneau : « Rien à signaler » affiché sur chaque ligne pendant le chargement ; **et rappel du dialogue : « Aucun point à vérifier » affiché pendant le chargement** (P4-1) | T-a12 (chargement en attente, P3 R13, panneau et rappel) |
 | M-b1 | `NextFiscalYearStart` daté `today` | T-b1 |
 | M-b2 | lecture du suivant en `ORDER BY start_date DESC` (rend le dernier exercice, non le suivant) — ⚠️ la lecture étant `find_next_after`, partagée avec K7, c'est la mutation M-a11 vue du chemin de la 29-1b | T-b1 (N+2 présent) |
 | M-b3 | confirmation verrouillante retirée, **aucun** contrôle de statut (date et exercice pris de la lecture ordinaire) | T-b3 (le code attendu est `NEXT_FISCAL_YEAR_CLOSED` ; sans confirmation, `create_in_tx_inner` rendrait `FISCAL_YEAR_CLOSED`) — tuée **parce que** l'AC11 interdit de juger le statut sur la lecture ordinaire ; T-b5 (ii) ne la revendique plus (P2 R5 = F3) |
@@ -1117,3 +1127,20 @@ remplace — C-29-1-27.)*
     `closing_checks`.
   - Passe ciblée P4 à lancer : `29-1-validate-prompt-p4-ciblee.md` (Haiku, une lentille, sur le seul diff de cette
     remédiation).
+  - *Annotation datée 2026-10-14 (validation P4, P4-3 ; l'entrée P3 ci-dessus n'est pas réécrite)* : le décompte
+    « 17 findings » se lit **17 entrées, 16 défauts distincts (R1 = F1)** ; les « 3 MEDIUM » se lisent 2 MEDIUM
+    distincts et un doublon.
+- 2026-10-14 — **validation P4 (passe ciblée)** (Haiku 4.5, une lentille « chasseur de régression », sur le seul diff
+  de la remédiation P3 ; rapport `/home/gcorbaz/devel/kesh-gate-logs/29-1-validate-p4-ciblee.md`) : **0 CRITICAL /
+  0 HIGH / 1 MEDIUM / 3 LOW**. Remédiation par Opus 5.5, **documents seulement** (fiche, registre, sprint-status).
+  - **Trend complet** : P1 R 0/0/9/9, F 0/0/3/4 → P2 R 0/1/7/8, F 0/0/5/9 → P3 R 0/0/2/12, F 0/0/1/2 → P4 ciblée
+    0/0/1/3.
+  - **P4-1 (MEDIUM)** : le rappel du dialogue (AC6) affiche, pendant le chargement, l'état d'attente — jamais
+    « Aucun point à vérifier » ni « N point(s) » ; T-a12 l'asserte ; M-a22 s'étend au dialogue. **P4-2** :
+    `period_lock_e2e.rs` l. 367-369 ajouté à la liste de l'AC17 (et à Tb2 par renvoi). **P4-3** : voir l'annotation
+    datée sous l'entrée P3. **P4-4** : décision de l'orchestrateur, consignée comme telle (C-29-1-31) — angle mort
+    écrit à l'AC12, sans mutation ni test.
+  - **Propagation** : `grep -nF "Aucun point à vérifier"` sur la fiche (AC6, AC-parcours, T-a12, M-a22) ; ne restent
+    que des occurrences cohérentes.
+  - **Validation close : la remédiation de la passe ciblée ne touche aucune ligne de production** (fiche, registre et
+    `sprint-status.yaml` seulement). Dev à lancer.

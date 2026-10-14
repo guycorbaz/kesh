@@ -403,3 +403,15 @@
   priverait le mode édition de ses bornes pour une raison qui n'est pas la sienne ; touche un chemin que la story n'a
   pas à toucher).
 - **Réversible** : oui.
+
+### C-29-1-31 — Confirmation non verrouillante de N+1 : angle mort écrit, sans mutation ni test
+
+- **Contexte** : P4-4 — M-b13 retirée (C-29-1-27) ; il ne reste que M-b3 (suppression totale). Une confirmation
+  rendue non verrouillante n'est tuée par aucune mutation ni aucun test (T-b5 (ii) : A attend déjà à l'étape (1)).
+- **Retenu** (décision de l'orchestrateur) : l'écrire comme angle mort à l'AC12, le doc-comment de `reverse_in_tx_inner`
+  le disant, et le vérifier en revue de code. Aucune mutation, aucun test neuf.
+- **Écartées** : rétablir une mutation sur la confirmation (forme M-b13 : recyclée sur trois tours, signal D5).
+- **Réversible** : oui — une mutation pourra être ajoutée si un test de course la tue un jour.
+
+- 2026-10-14 — validation P4 (passe ciblée) remédiée : P4-1 à P4-4, aucune ligne de production touchée ; validation
+  close, dev à lancer.
