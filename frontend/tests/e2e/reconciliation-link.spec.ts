@@ -107,7 +107,14 @@ async function wiredBankAccount(ctx: APIRequestContext): Promise<number> {
 async function settledFromTheInvoice(
 	page: Page,
 	tag: string,
-): Promise<{ bankAccountId: number; importId: number; txId: number; settlementId: number; settled: string }> {
+): Promise<{
+	bankAccountId: number;
+	importId: number;
+	txId: number;
+	settlementId: number;
+	journalEntryId: number;
+	settled: string;
+}> {
 	const unique = `${Date.now()}-${tag}`;
 	const contactName = `Rattache ${unique}`;
 	const contactId = await createContactWithAddressViaApi(page, contactName);
@@ -161,7 +168,14 @@ async function settledFromTheInvoice(
 		const detail = (await (await ctx.get(`/api/v1/bank-imports/${importId}`)).json()) as {
 			transactions: Array<{ id: number }>;
 		};
-		return { bankAccountId, importId, txId: detail.transactions[0].id, settlementId, settled };
+		return {
+			bankAccountId,
+			importId,
+			txId: detail.transactions[0].id,
+			settlementId,
+			journalEntryId,
+			settled,
+		};
 	} finally {
 		await disposeContextSafe(ctx);
 	}
@@ -207,19 +221,25 @@ for (const [colorScheme, suffixe] of [
 
 			await modal.getByTestId('link-submit').click();
 			await expect(modal).toBeHidden();
-			await expect(page.getByTestId('reconciliation-success')).toContainText('1');
+			await expect(page.getByTestId('reconciliation-success')).toHaveText(
+				/^\s*1\s+opération\(s\) réussie\(s\)\.\s*$/,
+			);
 			await expect(ligne).toHaveCount(0);
 
 			// Le rattachement a traversé la frontière HTTP : le détail de l'import le montre.
 			await page.goto(`/bank-import/${d.importId}`);
 			const row = page.locator(`[data-testid="detail-tx-row"][data-tx-id="${d.txId}"]`);
 			await expect(row).toContainText('reconciled');
-			await expect(row.getByTestId('detail-tx-entry-link')).toBeVisible();
+			// Le lien pointe l'écriture DU RÈGLEMENT, pas une autre (revue de code P1, A3).
+			await expect(row.getByTestId('detail-tx-entry-link')).toHaveAttribute(
+				'href',
+				`/journal-entries/${d.journalEntryId}`,
+			);
 			const tx = (await (
 				await ctx.get(`/api/v1/reconciliation/transactions/${d.txId}`)
 			).json()) as { kind: string; matchedEntryId: number | null };
 			expect(tx.kind).toBe('invoice_settlement');
-			expect(tx.matchedEntryId).not.toBeNull();
+			expect(tx.matchedEntryId).toBe(d.journalEntryId);
 		} finally {
 			// Annuler le rapprochement annule aussi le règlement (AC3), puis l'import se supprime.
 			await ctx.post(`/api/v1/reconciliation/transactions/${d.txId}/cancel`, { data: {} });
