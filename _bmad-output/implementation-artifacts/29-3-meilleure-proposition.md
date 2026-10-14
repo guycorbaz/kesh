@@ -2,7 +2,7 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `16eeed21`
+**review** — développement fait le 2026-10-14 (Opus 5.5 ; Dev Agent Record ; revue de code P1 à lancer, `29-3-review-prompt-p1.md`, Sonnet, B/E/A). Fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `16eeed21`
 (kickoff de l'Epic 29), branche `story/29-3`, worktree `/home/gcorbaz/devel/kesh-29-3`. **Validation P1 remédiée**
 le 2026-10-14 (rapports R 0/1/5/7, F 0/0/5/7 ; règle des rangs refondue par décision de l'orchestrateur,
 C-29-3-11) ; **validation P2 remédiée** le 2026-10-14 (Opus, R 0/0/3/6, F 0/0/1/8) ; **passe ciblée P3 remédiée** le
@@ -453,27 +453,27 @@ que disent l'angle mort C-29-3-7 et l'ajout #665 du manuel (AC7). T0 les relit s
 
 ## Tasks / Subtasks
 
-- [ ] T0 — Rebase sur `origin/main` (29-2 mergée) ; relire les lignes citées ; regreper « aucune facture », « score
+- [x] T0 — Rebase sur `origin/main` (29-2 mergée) ; relire les lignes citées ; regreper « aucune facture », « score
   faible », « mieux notée » dans le manuel ; vérifier si la 29-2 a ajouté un `CandidateType`, une source de
   factures, une section `[0.13.4]` du CHANGELOG, des sites `i18nMsg(` (AC1, AC5, AC8) ; si la **29-5** (#668) est
   mergée, relire l'angle mort C-29-3-12, le doc-comment de l'AC1 et la phrase de `api-external.md` (départage) ; si
   la **29-6** (#665) est mergée, relire l'angle mort C-29-3-7 et l'ajout #665 du manuel (AC7).
-- [ ] T1 — Tests d'abord : AC2 (unitaires — rouges par compilation tant que les fonctions n'existent pas) ; AC3 :
+- [x] T1 — Tests d'abord : AC2 (unitaires — rouges par compilation tant que les fonctions n'existent pas) ; AC3 :
   aide `create_rule_ok` dans `reconciliation_e2e.rs`, deux tests HTTP (verts au sol : ils figent l'ordre) ; Vitest
   AC4 — **fabrique de proposition à deux candidates et constructeur de candidate règle**, puis les deux tests
   `[règle, facture]` et `[facture, règle]` ; Vitest AC5 (rouges au sol).
-- [ ] T2 — `candidate_rank`, `order_candidates`, appel dans `get_proposals`, réécriture du commentaire `:722-724`,
+- [x] T2 — `candidate_rank`, `order_candidates`, appel dans `get_proposals`, réécriture du commentaire `:722-724`,
   doc-comments (AC1).
-- [ ] T3 — Test muet : **déplacer** `get_proposals_invoice_candidate_overrides_rule` de `reconciliation_rules_e2e.rs`
+- [x] T3 — Test muet : **déplacer** `get_proposals_invoice_candidate_overrides_rule` de `reconciliation_rules_e2e.rs`
   vers `reconciliation_e2e.rs`, le réécrire avec une facture de reste égal au montant (score ≥ 0,5) et une règle qui
   correspond, asserter l'absence de la règle ; retirer l'original et son en-tête, laisser un renvoi d'une ligne
   (C-29-3-13). Ce n'est pas une retouche : c'est un test neuf, et la fiche le compte comme tel.
-- [ ] T4 — Phrase de l'écran conditionnée à « une ligne a une candidate » + quatre catalogues + `sitesTotal`
+- [x] T4 — Phrase de l'écran conditionnée à « une ligne a une candidate » + quatre catalogues + `sitesTotal`
   recompté + en-tête `.svelte:8` (AC5).
-- [ ] T5 — Manuel (deux sites, quatre ajouts) + PDF contrôlé aplati, ligatures normalisées (AC7) ; CHANGELOG (section
+- [x] T5 — Manuel (deux sites, quatre ajouts) + PDF contrôlé aplati, ligatures normalisées (AC7) ; CHANGELOG (section
   créée ou complétée) et `docs/api-external.md` (AC8).
-- [ ] T6 — Mutations M1-M11 (AC9), M1 (et sa variante) et M6 exécutées et déclarées selon leur résultat.
-- [ ] T7 — E2E neuf + captures clair et sombre (AC6) ; gate complet backend et frontend, E2E complet, au dernier
+- [x] T6 — Mutations M1-M11 (AC9), M1 (et sa variante) et M6 exécutées et déclarées selon leur résultat.
+- [x] T7 — E2E neuf + captures clair et sombre (AC6) ; gate complet backend et frontend, E2E complet, au dernier
   commit de code, sous le verrou ; ne déclarer que ce qui a tourné.
 
 ## Dev Notes
@@ -539,11 +539,128 @@ tests unitaires de `kesh-api`), fmt et clippy workspace ; gate complet + E2E com
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), `bmad-dev-story` en autonomie, le 2026-10-14, worktree `/home/gcorbaz/devel/kesh-29-3`.
+
 ### Debug Log References
+
+Journaux (hors dépôt) : `/home/gcorbaz/devel/kesh-gate-logs/293-test-fast.log`, `293-front.log`, `293-e2e-full.log`,
+`293-mutations.log`, `293-make-fr.log`. Bases `kesh_293` (remise à zéro avant le gate complet) et `kesh_e2e_293`
+(reconstruite avant l'E2E complet), port 3044, `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-29-3/target`.
 
 ### Completion Notes List
 
+**T0 — rebase et zones partagées.** Développement commencé sur la tête de `story/29-2` (`d5df4994`) ; la 29-2 mergée en
+squash sur `main` (`c36f39bc`, #673) pendant le développement, la branche a été **rebasée** par
+`git rebase --onto origin/main d5df4994 story/29-3` (demande de l'orchestrateur), à un point d'arrêt sûr (copie
+propre, campagne de mutations terminée) : dix commits rejoués **sans conflit**, `git diff d5df4994 origin/main` vide
+(contenu de la 29-2 identique), `sprint-status.yaml` relu par `yaml.safe_load`. Zones relues : la 29-2 ne touche ni
+`CandidateType`, ni la passe 4 de `get_proposals`, ni le frontend, ni l'i18n (`sitesTotal` à 2107 au rebase) ; elle a
+créé la section `[0.13.4] — Non publié` du CHANGELOG (« Corrigé ») — complétée ; elle a ajouté un paragraphe **Dates**
+après celui de `api-external.md:549` — la phrase de la 29-3 va à la fin de `:549`, sans conflit ; le manuel : les cinq
+sites de l'inventaire de l'AC7 sont aux mêmes lignes (`:2041`, `:2048`, `:2049`, `:2116`, `:2905`), la 29-2 ayant
+réécrit `:2029`/`:2031`/`:2902` sans les toucher. 29-5 et 29-6 non mergées : angles morts C-29-3-7 et C-29-3-12
+inchangés. Aucun LOW de validation n'était laissé ouvert à T0 (passe ciblée P3 : « aucun refusé »).
+
+**Tests rouges d'abord** (commit `fdc859d7`, avant toute ligne de production) :
+
+- AC2 — rouges par compilation :
+  ```
+  6 error[E0425]: cannot find function `candidate_rank` in this scope
+  1 error[E0425]: cannot find function `order_candidates` in this scope
+  error: could not compile `kesh-api` (lib test) due to 7 previous errors
+  ```
+- AC3 — **verts au sol**, comme prévu (l'ordre atteignable ne change pas, C-29-3-11) :
+  `3 tests run: 3 passed` (`proposals_keep_a_referenced_invoice_before_the_rule`,
+  `get_proposals_invoice_candidate_overrides_rule`, `proposals_put_an_invoice_named_by_the_counterparty_before_the_rule`).
+- Vitest AC4 — verts au sol (l'écran obéissait déjà à l'ordre reçu ; ils comblent l'absence de toute candidate règle
+  dans les tests) ; AC5 — rouge : `× une ligne a une candidate ⇒ la phrase est rendue…` —
+  `TestingLibraryElementError: Unable to find an element by: [data-testid="reconciliation-priority-hint"]`
+  (`Tests 1 failed | 29 passed (30)`). Les tests d'absence (liste vide, erreur, aucune candidate) sont verts au sol
+  par nature.
+
+**Livré** (AC1 à AC9) : `candidate_rank` (`match` exhaustif, sans `_`, rang 0 sur les sous-scores) et
+`order_candidates` (`sort_by_key`, stable), appelée en dernier geste sur `candidates` ; commentaire « AC #114 » réécrit ;
+11 cas unitaires (`candidate_order_tests`) ; `create_rule_ok` et deux aides locales (`single_proposal_candidates_293`,
+`seed_invoice_and_tx_293`) dans `reconciliation_e2e.rs`, deux tests HTTP neufs et le test muet **déplacé** et réécrit
+(facture à 0,5, aucune règle), retiré de `reconciliation_rules_e2e.rs` avec son en-tête « Test 15 », renvoi d'une
+ligne ; Vitest : fabrique `makeProposalWithCandidates`, constructeurs `ruleCandidate`/`invoiceCandidate`, deux tests
+AC4, cinq tests AC5 (dont celui de C-29-3-22) ; phrase de l'écran aux quatre catalogues, mot pour mot de la fiche ;
+`sitesTotal` 2107 → 2108 (collecte du test : `expected 2108 to be 2107` avant la mise à jour ; `grep -o "i18nMsg("`
+sur le composant : 19 aux deux bornes `d5df4994`/`fdc859d7`, 20 après) ; en-tête du composant réécrit ; manuel
+(quatre ajouts, `\label{sec:faq-aucun-match}`), PDF régénéré ; CHANGELOG (« Modifié ») et `api-external.md` ; E2E
+`reconciliation-priority.spec.ts` (deux tests, clair et sombre) et deux captures.
+
+**Contrôle du PDF** (aplati, ligatures normalisées, commande de l'AC7) : « un score conventionnel » 1 ; « porterait ce
+paiement en produit » 1 ; « La page le rappelle au-dessus » 1 ; « refusée en trop-perçu » 1 (0 au sol, `.tex`) ;
+« même une facture de score faible passe devant elle » 1 ; « depuis la fiche de la facture (issue » 0 ;
+`grep -o ".\{40\}665.\{40\}"` : une occurrence, « …ation est refusée en trop-perçu (issue #665) ; • sans
+candidate… » ; renvoi rendu « (§21.4) » ; « ?? » 0 ; césures `[[:alpha:]]-$` : 4.
+
+**Mutations (AC9)** — script de campagne hors dépôt, motif vérifié unique avant écriture, restauration par
+`git checkout -- <fichier>` puis `touch`, sous verrou ; cible : `kesh-api` lib `candidate_order_tests` +
+`reconciliation_e2e` + `reconciliation_rules_e2e` (157 tests), ou le Vitest du composant :
+
+| # | résultat | tests rouges (relevés au journal) |
+|---|---|---|
+| M1 | **équivalente**, comme déclaré (157/157 verts) | — |
+| M1b (appel avant le `push`) | **équivalente**, comme déclaré (157/157) | — |
+| M2 | tuée (4) | cas 5, 6, 10, 11 |
+| M3 | tuée (5) | cas 2, 3, 6, 10, 11 |
+| M4 | tuée (6) | cas 1, 2, 6, 10, 11 ; HTTP `proposals_put_an_invoice_named_by_the_counterparty_before_the_rule` |
+| M5 | tuée (4) | cas 3, 4, 10 ; HTTP `proposals_keep_a_referenced_invoice_before_the_rule` |
+| M6 | tuée (1) | cas 11 |
+| M7 | tuée (8) | cas 1, 2, 3, 4, 6, 11 ; les deux HTTP |
+| M8 | tuée (1) | cas 10 |
+| M9a (sans la condition) | tuée | Vitest « aucune ligne n'a de candidate » |
+| M9b (hors de la branche) | **survivante au premier run**, puis tuée après ajout d'un test (C-29-3-22) | Vitest « rechargement en erreur après une liste à candidates » |
+| M10 | tuée (1) | `get_proposals_invoice_candidate_overrides_rule` |
+| M11 | tuée (4) | cas 5, 6, 10, 11 |
+
+Les listes de rouges sont **exactement** celles que prévoit le tableau de l'AC9, pour chaque mutation. 13 jeux
+(11 mutations, M1 et M9 en deux variantes) : 11 tuées, 2 équivalentes (M1, M1b).
+
+**Gates au dernier commit de code** (`71caa721`, branche rebasée sur `c36f39bc`) :
+
+- `scripts/test-fast.sh` (fmt + clippy + nextest, sous verrou, base remise à zéro) : **3624 tests run: 3624 passed,
+  6 skipped** — 3611 de la 29-2 + 11 unitaires + 3 HTTP − 1 test retiré de `reconciliation_rules_e2e.rs`.
+- Frontend (sous verrou) : `npm run check` 0 erreur, 29 avertissements (tous dans des fichiers non touchés :
+  `BankProfileForm`, `RuleFormModal`, `ManualReminderDialog`, `reports`, `design-system`) ; `lint-i18n-ownership`
+  PASS ; `npm run test:unit` **146 fichiers, 1617 tests** (1610 + 7) ; `npm run build` vert.
+- **E2E complet** (sous verrou, `kesh_e2e_293` reconstruite, port 3044) : **282 passés, 7 échoués, 19 ignorés** — les
+  sept échecs sont les sept KF-029 de `docs/testing.md` § *Les échecs attendus* (`mode-expert:26`, `:41`,
+  `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), aucun autre ; les deux tests neufs passés.
+- Le spec neuf seul, avant le complet : 2 échecs puis 2 (montage — C-29-3-21, C-29-3-20), puis **2 passés**.
+
+**Captures** (`29-3-captures/`) : la phrase est au-dessus de la table, la ligne montre la facture (10 %), sans badge
+*Règle*. L'application n'ayant pas de thème sombre global, le sombre émulé rend comme le clair (C-29-3-25).
+
+**Écart de méthode, déclaré** : les trois tests HTTP neufs ont été **ajoutés en fin de**
+`reconciliation_e2e.rs` par une redirection `cat >> … <<'EOF'` (ajout pur, aucune substitution), et non par l'outil
+d'édition ; toutes les autres modifications de code l'ont été par l'outil d'édition, plus `cargo fmt`.
+
+**Choix ajoutés** : C-29-3-19 à C-29-3-26 (26 au total, `grep -cE '^#{3,4} C-29-3-'`).
+
+**Remarques pour l'orchestrateur** : (1) `reconciliation-amount-due.spec.ts` croit départager par le contact une
+contrepartie qui ne porte pas le nom enregistré (« Pia <nom> ») — le départage annoncé n'a pas lieu (C-29-3-21) ;
+P4 au plus, pas d'issue ouverte par l'agent. (2) À signaler sur #527 : la prémisse « le manuel annonce la meilleure »
+était déjà périmée (fiche, § *Prémisse du manuel*).
+
 ### File List
+
+- `crates/kesh-api/src/routes/reconciliation.rs` — `candidate_rank`, `order_candidates`, appel, commentaire, module
+  `candidate_order_tests`
+- `crates/kesh-api/tests/reconciliation_e2e.rs` — `create_rule_ok`, deux aides, trois tests
+- `crates/kesh-api/tests/reconciliation_rules_e2e.rs` — test muet retiré, renvoi
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` — `reconciliation-labels-priority-hint`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte` — phrase, en-tête
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.test.ts` — fabriques, 7 tests
+- `frontend/src/lib/shared/i18n-keys.test.ts` — `sitesTotal` 2108
+- `frontend/tests/e2e/reconciliation-priority.spec.ts` — neuf
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `docs/api-external.md`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/29-3-captures/reconciliation-priorite-{clair,sombre}.png`
+- `_bmad-output/implementation-artifacts/29-3-meilleure-proposition.md`, `epic-29-choix-autonomes-29-3.md`,
+  `29-3-review-prompt-p1.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -639,3 +756,11 @@ tests unitaires de `kesh-api`), fmt et clippy workspace ; gate complet + E2E com
   - **Validation close : la remédiation de la passe ciblée ne touche aucune ligne de production** (fiche et registre
     seulement ; `git diff --stat` sur `crates frontend docs` : vide).
   - Décomptes inchangés : 9 AC ; T0-T7 ; M1-M11 ; 18 choix (annotés en plus : C-29-3-7, 12, 16).
+
+- **2026-10-14 — Développement** (`bmad-dev-story`, Opus 5.5, autonomie). Rebase sur `main` après le merge de la 29-2
+  (`c36f39bc`), sans conflit. Commits `fdc859d7` (tests rouges d'abord), `1bba5f28` (code), `2f9e00f3` (manuel, PDF,
+  API, CHANGELOG), `ec544621` (test qui tue M9b), `71caa721` (E2E et captures). Gates au dernier commit de code :
+  test-fast **3624/3624**, Vitest **1617** (146 fichiers), check/lint/build verts, E2E **282 passés + 7 KF-029**.
+  Mutations : 13 jeux, 11 tuées, M1 et M1b équivalentes comme déclaré ; M9b survivante au premier run, tuée par un
+  test ajouté (C-29-3-22). Choix C-29-3-19 à 26. Statut `review` ; revue P1 : `29-3-review-prompt-p1.md` (Sonnet,
+  B/E/A).

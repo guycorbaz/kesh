@@ -2,7 +2,7 @@
 
 *Registre propre à la story, à verser par union dans `epic-29-choix-autonomes.md`. Fiche :
 `29-3-meilleure-proposition.md`. Choix faits le 2026-10-14 en autonomie : C-29-3-1 à 10 à la création de la fiche,
-C-29-3-11 à 15 en validation P1 (C-29-3-11 tranché par l'orchestrateur), C-29-3-16 à 18 en validation P2.*
+C-29-3-11 à 15 en validation P1 (C-29-3-11 tranché par l'orchestrateur), C-29-3-16 à 18 en validation P2, C-29-3-19 à 26 au développement.*
 
 ### C-29-3-1 — Une priorité écrite en trois rangs, et non le tri brut par score
 
@@ -259,4 +259,84 @@ C-29-3-11 à 15 en validation P1 (C-29-3-11 tranché par l'orchestrateur), C-29-
 - **Écartées** : (a) écrire le risque sans parade — un échec isolé ferait rougir d'autres specs, d'un run à l'autre,
   loin de sa cause ; (b) une facture d'un autre montant — `createAndValidateInvoiceViaApi` a un TTC fixe, et une aide
   neuve élargirait le périmètre.
+- **Réversible** : oui.
+
+### C-29-3-19 — L'E2E tourne deux fois (clair, sombre), et nettoie en `finally`, pas en `afterAll`
+
+- **Contexte** : développement, AC6. La recette visuelle de l'epic demande une capture claire et une sombre ; le
+  patron du dépôt (`reconciliation-unreject.spec.ts`) fait tourner le scénario une fois par schéma, dans deux tests
+  distincts.
+- **Retenu** : deux tests, chacun avec sa facture, son relevé et sa règle ; le nettoyage prescrit par C-29-3-18
+  (lire le reste dû ; s'il vaut 972,90, régler 972,89 ; supprimer la règle et l'import) est fait dans le `finally`
+  de chaque test — il porte sur les identifiants de ce test, qu'un `afterAll` devrait collecter.
+- **Écartée** : un `afterAll` commun — même effet, avec un état partagé entre les deux tests.
+- **Réversible** : oui.
+
+### C-29-3-20 — L'E2E lie le compte bancaire partagé au grand livre le temps du scénario, puis rend l'état d'origine
+
+- **Contexte** : développement, premier run de l'AC6. Le compte de test `CH44…9012` de la base E2E n'a pas de
+  `journal_account_id` : l'acceptation d'une facture y est refusée en `BANK_ACCOUNT_NOT_CONFIGURED` (constaté). Aucun
+  spec existant n'accepte une facture sur ce compte, et aucun n'attend ce refus (`grep` des specs).
+- **Retenu** : `linkToLedger` le lie à un compte de liquidités `10xx` s'il ne l'est pas, et `restoreJournalLink`
+  rend la valeur d'origine dans le `finally` (vérifié en base après le run : `journal_account_id` revenu à `NULL`).
+- **Écartées** : (a) un compte bancaire propre au spec — un IBAN valide de plus dans la base partagée, que d'autres
+  specs (comptes bancaires) comptent ; (b) laisser le lien posé — un état changé en silence pour les autres specs.
+- **Réversible** : oui.
+
+### C-29-3-21 — L'E2E relit le nom enregistré du contact au lieu de le supposer
+
+- **Contexte** : développement, premier run de l'AC6. `createContactWithAddressViaApi` crée une `Personne`, dont le
+  nom enregistré est « Pia <nom> » (relevé en base) ; une contrepartie « <nom> Regle… » ne contenait donc pas ce nom,
+  le score de contact valait 0, la facture n'était pas candidate et la ligne montrait la règle.
+- **Retenu** : `GET /api/v1/contacts/{id}`, et la contrepartie du relevé porte le nom relu.
+- **Écartée** : écrire « Pia » en dur — une hypothèse sur l'aide, qui se casserait sans le dire.
+- **Réversible** : oui. *(À noter : `reconciliation-amount-due.spec.ts` écrit que sa contrepartie « porte le nom du
+  contact » et compte sur ce score de contact pour départager ; il porte le même nom non composé — son départage par
+  le contact n'a donc pas lieu. Ce spec ne s'appuie pas dessus pour passer ; remarque transmise à l'orchestrateur.)*
+
+### C-29-3-22 — M9b n'est pas équivalente : un Vitest de plus, rechargement en erreur
+
+- **Contexte** : campagne de mutations. M9b (phrase sortie de la branche « liste non vide », placée avant
+  `{#if loading}`) **a survécu** aux tests de l'AC5 : au premier chargement, la condition « une ligne a une
+  candidate » suffit. Mais `load()` ne vide pas `proposals` en cas d'erreur : un rechargement qui échoue après une
+  liste à candidates afficherait la phrase au-dessus du message d'erreur.
+- **Retenu** : test « rechargement en erreur après une liste à candidates ⇒ pas de phrase » (le rechargement qui
+  suit « Accepter » échoue) ; M9b rejouée : tuée.
+- **Écartée** : déclarer M9b équivalente — l'état observable existe.
+- **Réversible** : oui.
+
+### C-29-3-23 — Le renvoi du manuel vers la FAQ passe par un `\label` neuf
+
+- **Contexte** : AC7, ajout de la raison à `:2049` avec renvoi à la FAQ (`:2911`). La sous-section de la FAQ n'avait
+  pas d'étiquette.
+- **Retenu** : `\label{sec:faq-aucun-match}` sur *Une transaction bancaire ne propose aucun match automatique, est-ce
+  normal ?* ; le PDF rend « (§21.4) ».
+- **Écartée** : citer la FAQ par son titre en toutes lettres — plus long, sans lien.
+- **Réversible** : oui.
+
+### C-29-3-24 — L'entrée du CHANGELOG va sous « Modifié », placé avant « Corrigé »
+
+- **Contexte** : AC8. La section `[0.13.4] — Non publié` existait au rebase (créée par la 29-2), avec un seul
+  sous-titre « Corrigé ». La fiche prescrit une entrée `Changed`.
+- **Retenu** : sous-titre français « Modifié » (graphie des sections voisines), placé avant « Corrigé » comme dans la
+  0.13.2 (« Ajouté », « Modifié », « Corrigé »).
+- **Réversible** : oui.
+
+### C-29-3-25 — Les captures sont versées dans `29-3-captures/` ; le sombre émulé rend comme le clair
+
+- **Contexte** : AC6, recette visuelle. L'application n'a pas de thème sombre global (`grep` de
+  `prefers-color-scheme` et `dark:` dans `frontend/src` : quelques classes `dark:` isolées, aucune sur la page de
+  réconciliation) ; la capture en `colorScheme: 'dark'` est donc identique à la claire. C'est le constat, pas un
+  défaut de la story : la phrase emploie le jeton `text-text-muted`, comme l'indication voisine des rejetées.
+- **Retenu** : les deux PNG, `reconciliation-priorite-{clair,sombre}.png`, versés à côté de la fiche
+  (`_bmad-output/implementation-artifacts/29-3-captures/`, 133 Ko au total), données synthétiques seulement.
+- **Réversible** : oui (fichiers à retirer si l'orchestrateur préfère les garder hors dépôt).
+
+### C-29-3-26 — `docs/api-external.md` écrit le départage d'aujourd'hui, et le `make fr` ne verse que le manuel utilisateur
+
+- **Contexte** : AC8 et AC7. La 29-5 (#668) n'est pas mergée au rebase ; `make fr` régénère aussi le manuel
+  d'administration et la brochure, dont les sources n'ont pas bougé (seuls leurs octets de génération diffèrent).
+- **Retenu** : « par identifiant de facture croissant à score égal », à relire au merge de la 29-5 ; les PDF
+  d'administration et de brochure régénérés sont rendus à leur version commitée (`git checkout --`, dans le
+  worktree), seul `user-manual.pdf` est versé — comme la 29-2.
 - **Réversible** : oui.
