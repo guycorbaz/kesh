@@ -12,7 +12,9 @@ consignés au registre `epic-29-choix-autonomes-29-9.md`, **C-29-9-1 à C-29-9-1
 validation des trois premiers correctifs (0/0/0/1, Change Log). Un **quatrième** entre ensuite dans la story, [#678]
 (`bug`, `P4`) — accessibilité de la table de réconciliation —, sous l'**AC11** et la tâche **T10** ; les AC1-AC10 ne
 changent pas, sauf des renvois datés vers l'AC11 (AC8 : CHANGELOG, `sitesTotal` ; AC10 : gates). Choix **C-29-9-19 à
-C-29-9-24** (24 : forme du site, P4-3). Passe ciblée P4 de validation, sur le seul diff de l'amendement : prompt `29-9-validate-prompt-p4-ciblee.md`.
+C-29-9-25** (24 : forme du site, P4-3 ; 25 : repli tenu par V19/V20, P5-1). Passe ciblée P4 (0/0/2/6) puis P5 (0/0/1/5)
+de validation, sur le seul diff de la remédiation précédente, toutes deux remédiées : prompts `29-9-validate-prompt-p4-ciblee.md`
+et `29-9-validate-prompt-p5-ciblee.md`.
 ⚠️ **La clé reste `29-9-trois-petits-correctifs`** (fichier, `sprint-status.yaml`, registre, prompts) : seul le titre
 dit « quatre » (C-29-9-19).
 
@@ -22,7 +24,7 @@ et `P3` — et [#678] — `bug` et `P4`.
 ⛔ **Consigne pour l'orchestrateur — la PR, et elle seule, porte `closes #649 #655 #646 #678`** (corps de la PR ; le dépôt
 merge en squash, et le squash recopie le corps des commits). Les commits de la branche portent **`refs #N`**, jamais
 `closes`/`fixes`, même en prose ou au futur (B4 de la rétrospective 28). Avant la PR : `git log main..HEAD --format=%B
-| grep -niE "\b(close[sd]?|fix(e[sd])?|resolve[sd]?):?\s+#[0-9]+"` doit être vide (la forme sans `#N` rend le substantif
+| grep -niE "\b(close[sd]?|fix(e[sd])?|resolve[sd]?):?\s+(([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+|https://github\.com/\S+/issues/[0-9]+)"` doit être vide (la forme sans `#N` rend le substantif
 « validation close » du commit P3 : un faux positif). Le message de squash se rédige à la main : GitHub y recopie les
 messages des commits, il faut donc y vérifier l'absence de mot-clé hors du seul `closes` voulu. Après merge, `gh issue view <N> --json state`
 pour les quatre.
@@ -289,8 +291,11 @@ suit, `boutons-rouges-inventory.test.ts:231`).
   dossier `reconciliation` : aucune entrée. `npm run lint-i18n-ownership` vert.
 - **Gardes i18n à relancer et qui portent sur ces clés** (validation P1, R6) :
   `frontend/src/lib/shared/i18n-entrees-a-variables.test.ts` (variables `{ $count }`, `{ $max }`, `{ $name }`
-  identiques entre site, repli et **quatre** locales ; repli littéral) ; `i18n-repli-divergent-actif.test.ts` (repli =
-  valeur `fr-CH`, la clé figurant au catalogue) ; `i18n-keys.test.ts` ; `i18n-harvest.test.ts`. Toutes au
+  identiques entre site, repli et **quatre** locales ; repli littéral) ; `i18n-repli-divergent-actif.test.ts` (relève
+  les sites, mais ne **vérifie** « repli = valeur `fr-CH` » que pour une clé à deux replis divergents ou inscrite à
+  `REPLIS_A_SITE_UNIQUE` : les clés neuves de cette story, à site unique et non inscrites, **ne sont pas couvertes** ;
+  pour `reconciliation-labels-more-hidden` et `-more-capped`, l'égalité repli/catalogue n'est gardée par aucun test —
+  angle mort assumé ; l'AC11 la tient par V19/V20) ; `i18n-keys.test.ts` ; `i18n-harvest.test.ts`. Toutes au
   `test:unit` ; leur vert se cite au Dev Agent Record. Hors de portée, relevé au sol : `i18n-un-repli-par-cle.test.ts`
   ne vise que le domaine `supplier-invoices` (en-tête du fichier) ; `crates/kesh-api/tests/textes_coherents.rs`,
   parcouru par la lentille R, n'a aucune garde sur ces phrases.
@@ -474,7 +479,7 @@ commits restent au gate ciblé (validation P2, R1 = F1). **Au dernier commit de 
 `test:unit`, `build`), E2E complet — sous le verrou `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock`. Ne déclarer
 que ce qui a tourné, avec ses chiffres.
 
-*Annotation du 2026-10-14 (amendement #678)* : les mutations M22-M27 et les tests V19-V22 sont ceux de l'AC11 ; ils
+*Annotation du 2026-10-14 (amendement #678)* : les mutations M22-M30 et les tests V19-V23 sont ceux de l'AC11 ; ils
 entrent dans le gate ciblé de T10 et dans les gates complets du dernier commit de code, sans rien changer à ce qui
 précède.
 
@@ -503,20 +508,32 @@ le `<p>` de l'indication, ni sa clé, ni son repli.
 
   de-CH, en-CH, it-CH : traductions fidèles, même registre que `reconciliation-labels-*` voisines (`fr-CH:1262-1316`
   en 29-6) ; les variables sont **les mêmes** dans les quatre locales, le site et le repli (garde
-  `i18n-entrees-a-variables.test.ts`) ; repli = valeur `fr-CH` au caractère près (`i18n-repli-divergent-actif.test.ts`).
+  `i18n-entrees-a-variables.test.ts`) ; repli = valeur `fr-CH` au caractère près : **`i18n-repli-divergent-actif.test.ts`
+  ne le garde pas ici** (`:146`, `parTexte.size > 1` : une clé à site unique est ignorée, et ces deux clés ne sont pas
+  à `REPLIS_A_SITE_UNIQUE`, `:216-233`). C'est donc V19 et V20 qui le tiennent : leur attendu est **lu dans
+  `crates/kesh-i18n/locales/fr-CH/messages.ftl`** (précédents : `UnrejectTransactionAction.test.ts:31`,
+  `ReconciliationProposals.test.ts:672`), jamais écrit en dur — le mock i18n rend le repli, donc un repli divergent
+  rougirait V19/V20 (C-29-9-25).
   Les deux clés sont du dossier `reconciliation` : aucune entrée à `KNOWN_VIOLATIONS`.
 - **Forme du site (C-29-9-24).** **Deux appels `i18nMsg` à clé littérale**, chacun dans une branche d'un ternaire sur
   `p.transaction.counterpartyName` : `counterpartyName ? i18nMsg('reconciliation-labels-select-transaction', '…', { date,
   amount, currency, counterparty }) : i18nMsg('reconciliation-labels-select-transaction-no-counterparty', '…', { date,
-  amount, currency })`. **Jamais** une clé calculée (`i18nMsg(cond ? 'a' : 'b', …)`) : établi au code des gardes
+  amount, currency })` — écriture **schématique** : dans le `{#each proposals as p}` il n'existe pas de variable
+  locale `date`, etc. ; les arguments s'écrivent `{ date: p.transaction.bookingDate, amount: p.transaction.amount,
+  currency: p.transaction.currency, counterparty: p.transaction.counterpartyName }` (le second sans `counterparty`).
+  **Jamais** une clé calculée (`i18nMsg(cond ? 'a' : 'b', …)`) : établi au code des gardes
   (`i18n-entrees-a-variables.test.ts:125` et `i18n-repli-divergent-actif.test.ts:122` :
-  `if (site.arg?.kind !== 'literal') continue;`, lecteur `i18n-literal-reader.js`), les trois gardes (variables
-  repli ↔ catalogue, entre locales, site ↔ repli) ne retiennent **que** les appels dont la clé est littérale ; une clé
-  conditionnelle leur est invisible et ne rougirait jamais. **Contrôle** : un test neuf dans
+  `if (site.arg?.kind !== 'literal') continue;`, lecteur `i18n-literal-reader.js`), les gardes qui lisent
+  les sites (`i18n-entrees-a-variables.test.ts`, maillons repli ↔ catalogue et site ↔ repli, et
+  `i18n-repli-divergent-actif.test.ts`) ne retiennent **que** les appels dont la clé est littérale ; une clé
+  conditionnelle leur est invisible. Deux autres ne sont pas dans ce cas : le maillon « entre locales » de
+  `i18n-entrees-a-variables.test.ts` (`:176-188`) lit le catalogue, non les sites ; et `i18n-keys.test.ts` voit la clé
+  calculée (`site.arg === null`, rangée à `sitesNonResolus`, `:899`, compté exactement) — **M30 le rougit aussi** :
+  `sitesNonResolus` passe de 31 à 32, et le recompte de T5 ne doit pas l'absorber. **Contrôle** : un test neuf dans
   `i18n-entrees-a-variables.test.ts`, à côté de la borne des cinq clés de la 23-5 (qu'on ne modifie pas), « les deux
   entrées à variables de la story 29-9 sont bien relevées » : mêmes `sitesAVariables()`, liste nommée
   `reconciliation-labels-select-transaction` et `reconciliation-labels-select-transaction-no-counterparty` ; il est
-  rouge au sol (clés absentes) et rougit si le site passe en clé calculée (M30). Tâche T10.
+  rouge au sol (clés absentes) et rougit si le site passe en clé calculée (M30). C'est le test **V23**. Tâche T10.
 - Le `data-testid`, le `data-tx-id`, `checked` et `onchange` ne changent pas : les sélecteurs des tests et des E2E
   existants (`[data-testid="tx-checkbox"][data-tx-id=…]`) restent valides.
 - L'en-tête vide de la colonne (`<th class="text-left"></th>`) **ne change pas** : chaque case porte son propre nom,
@@ -573,7 +590,7 @@ le `<p>` de l'indication, ni sa clé, ni son repli.
 correctif et vus rouges, sortie copiée au Dev Agent Record ; le mock i18n du fichier interpole les variables, `:50-55`) :
 
 - V19 deux lignes, l'une avec proposition, l'autre sans (fabriques du fichier) → `getByRole('checkbox', { name })`
-  trouve chacune, `name` = la valeur fr-CH de `reconciliation-labels-select-transaction` remplie des valeurs de la
+  trouve chacune, `name` = la valeur fr-CH **lue dans le catalogue** (C-29-9-25) de `reconciliation-labels-select-transaction` remplie des valeurs de la
   fabrique (sans proposition : `2026-05-15`, `50.00`, `CHF`, `UNKNOWN`). Rouge au sol : aucune case n'a de nom ;
 - V20 deux cas, `counterpartyName: null` **et** `counterpartyName: ''` → le nom est exactement la valeur fr-CH de
   `reconciliation-labels-select-transaction-no-counterparty` remplie (aucune virgule finale) ;
@@ -605,7 +622,7 @@ capture neuve** : rien de visible ne change (C-29-9-22) ; celles de la 29-6 serv
 | M27 | la région enveloppée d'un `{#key selectionHasUnmatched}` (nœud recréé au changement) | V21 |
 | M28 | `aria-atomic="true"` retiré de la région (ou passé à `false`) | V21 |
 | M29 | la règle `counterpartyName ?` remplacée par `counterpartyName != null ?` | V20 (cas `''`) |
-| M30 | les deux appels littéraux remplacés par un seul appel à clé conditionnelle | le test de relevé des deux clés (T10) |
+| M30 | les deux appels littéraux remplacés par un seul appel à clé conditionnelle | V23 (relevé des deux clés), et `i18n-keys.test.ts` (`sitesNonResolus`) |
 
 *Zone partagée avec la 29-6* (§ *Zones partagées*) : le bloc de l'indication (`:316-323`), la case (`:357-363`) et le
 test de position (`:965-986`) sont de la 29-6 ; la 29-9 les **enveloppe** ou leur **ajoute** un attribut, en delta sur
@@ -633,7 +650,7 @@ n'est ajoutée ; les autres messages de l'écran (succès, erreur, bilan des éc
 - [ ] **T3** — #655 (AC5, AC6) : V6-V9 et V13-V17 rouges (V13 l'est au sol : l'effet actuel relit à id égal), puis les
   deux pages ; M7-M10, M13, M15-M17, M19 ; commit `fix(bank-import): … (refs #655)`.
 - [ ] **T4** — #646 (AC7) : V10-V11 rouges, puis le correctif ; M11-M12 ; commit `fix(contacts): … (refs #646)`.
-- [ ] **T10** *(amendement #678 — s'exécute après T4 et avant T5, malgré son numéro)* — AC11 : V19-V22 rouges
+- [ ] **T10** *(amendement #678 — s'exécute après T4 et avant T5, malgré son numéro)* — AC11 : V19-V23 rouges
   (sortie copiée), puis le libellé des cases, la région d'annonce, le test de position de la 29-6 amendé en delta ;
   deux clés ×4 **posées en deux appels `i18nMsg` littéraux** (C-29-9-24) et le test de relevé des deux clés dans
   `i18n-entrees-a-variables.test.ts` (rouge au sol) ; M22-M30 ; captures de `reconciliation-reject-unmatched.spec.ts` relancée comparées à celles de la
@@ -918,3 +935,18 @@ montre que les 100 plus récentes ».
   - Recomptes à la source : **11 AC**, T0-T10 (**11**), **V1-V22** (22, inchangé), **M1-M30** (30 ; +3 : M28-M30),
     choix **C-29-9-1 à 24** (+1). Symptômes grepés : « trois défauts », « −3 », « Trois défauts », liste d'issues sans
     #678 (résidus vivants corrigés ; entrées datées et prompts de validation passés laissés).
+
+- 2026-10-14 — **Validation P5, passe ciblée remédiée** (Opus 5.5 ; une lentille sur la remédiation P4, commit
+  `5d930a20` ; prompt `29-9-validate-prompt-p5-ciblee.md`, rapport `kesh-gate-logs/29-9-validate-p5-ciblee.md`) :
+  **0/0/1/5**. Tous traités, aucun refus ; principe : retirer plutôt qu'ajouter.
+  - P5-1 (MEDIUM) — vérifié au code : `i18n-repli-divergent-actif.test.ts:146` ignore une clé à site unique non
+    inscrite à `REPLIS_A_SITE_UNIQUE` ; l'affirmation « repli = valeur `fr-CH` gardé par cette garde » est retirée de
+    l'AC11 et de l'AC8. AC11 : V19/V20 lisent leur attendu dans le catalogue `fr-CH` (précédents cités) ; AC8 : angle
+    mort assumé (C-29-9-25).
+  - LOW : P5-2 (ce que voit chaque garde, `i18n-keys.test.ts` `sitesNonResolus` rougi aussi par M30) ; P5-3 (M22-M30
+    à l'annotation de l'AC10, Status, epic « quatre fermetures », en-tête de `sprint-status.yaml`) ; P5-4 (test de
+    relevé numéroté V23) ; P5-5 (arguments du site écrits avec les champs de `p.transaction`) ; P5-6 (commande de
+    contrôle élargie aux formes `owner/repo#N` et URL d'issue).
+  - Laissé : entrées datées du Change Log (P1-P4, « V1-V22 », « M22-M27 ») et prompt P4 inchangés, relevés datés.
+  - Recomptes à la source : **11 AC**, T0-T10 (**11**), **V1-V23** (23 ; +1), **M1-M30** (30), choix **C-29-9-1 à 25**
+    (+1). Symptômes grepés : « M22-M27 », « trois gardes », « trois fermetures », « repli-divergent » / `REPLIS_A_SITE_UNIQUE`.

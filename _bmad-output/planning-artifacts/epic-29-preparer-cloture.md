@@ -188,6 +188,9 @@ la fiche dit « quatre ».
 
 - La **29-9** part dans la **v0.13.4** (ajoutée le 2026-10-14) : ses trois fermetures comptent dans le décompte du tag
   (quatre avec #678, amendement du 2026-10-14).
+
+- La **29-9** part dans la **v0.13.4** (ajoutée le 2026-10-14) : ses quatre fermetures (#649, #655, #646, #678 ; #678 ajoutée par
+  l'amendement du 2026-10-14) comptent dans le décompte du tag.
 - **v0.14.0** à la fin de la 29-1 : fonctionnalité nouvelle.
 
 À chaque release : `scripts/prepare-release.sh`, macros des manuels et URL au tag, CHANGELOG daté, recomptes du

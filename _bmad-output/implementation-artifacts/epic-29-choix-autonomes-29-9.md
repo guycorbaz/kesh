@@ -344,3 +344,10 @@
 - **Retenu** : deux appels `i18nMsg` à clé littérale sous un ternaire sur `counterpartyName` ; un test neuf dans `i18n-entrees-a-variables.test.ts` qui nomme les deux clés (mutation M30) ; la borne des cinq clés de la 23-5 n'est pas modifiée.
 - **Écartées** : une clé calculée (invisible aux gardes) ; élargir la borne des cinq clés (elle porte le titre « cinq ») ; ne rien ajouter et le déclarer au Dev Agent Record (la garde resterait muette).
 - **Réversible** : oui.
+
+### C-29-9-25 — #678 : « repli = valeur fr-CH » tenu par V19 et V20, non par la garde générique (P5-1)
+
+- **Contexte** : `i18n-repli-divergent-actif.test.ts:146` ne retient que les clés à deux replis divergents ou inscrites à `REPLIS_A_SITE_UNIQUE` (`:216-233`) ; les deux clés de l'AC11, à site unique, n'y sont pas. La fiche affirmait le contraire (AC11, AC8).
+- **Retenu** : retirer l'affirmation ; V19 et V20 lisent leur attendu dans `crates/kesh-i18n/locales/fr-CH/messages.ftl` (précédents `UnrejectTransactionAction.test.ts:31`, `ReconciliationProposals.test.ts:672`) — le mock i18n rend le repli, un repli divergent rougit donc ces tests. Pour les clés de l'AC8 (`more-hidden`, `more-capped`), l'égalité repli/catalogue n'est gardée par aucun test : angle mort assumé, écrit à l'AC8.
+- **Écartées** : inscrire les clés à `REPLIS_A_SITE_UNIQUE` (liste fermée de la 23-x, hors périmètre, plus coûteux) ; un test d'égalité neuf pour l'AC8 (périmètre).
+- **Réversible** : oui.
