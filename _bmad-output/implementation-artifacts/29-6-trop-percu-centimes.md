@@ -5,10 +5,17 @@
 **ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (kickoff de
 l'Epic 29), branche `story/29-6`, worktree `/home/gcorbaz/devel/kesh-29-6`. Story **ajoutée à l'Epic 29** par
 l'orchestrateur le 2026-10-14 ; sortie dans la **v0.13.4**. Choix consignés au registre propre à la story,
-`epic-29-choix-autonomes-29-6.md`, **C-29-6-1 à C-29-6-15** (à verser par union au registre de l'epic). 10 AC. PR :
+`epic-29-choix-autonomes-29-6.md`, **C-29-6-1 à C-29-6-19** (à verser par union au registre de l'epic). 10 AC. PR :
 **`closes #665`** — dans le titre ou le corps de la PR **seulement**, jamais dans un message de commit, même en prose
 (B4 de la rétrospective 28). Validation P1 faite et remédiée (Sonnet, 0/0/1/9) ; **le périmètre s'étend à l'écran**
-(AC10, décision de l'orchestrateur sur le MEDIUM R1) ; validation P2 à lancer (`29-6-validate-prompt-p2.md`, Opus).
+(AC10, décision de l'orchestrateur sur le MEDIUM R1). Validation P2 faite et remédiée (Opus, 0/0/4/16) ; passe ciblée
+P3 à lancer (`29-6-validate-prompt-p3-ciblee.md`, Haiku, une lentille sur le diff de la remédiation P2).
+
+⚠️ **Angle mort assumé, renvoyé à [#670]** *(validation P2, R2)* : une transaction **rejetée reste `pending`**, compte
+comme non rapprochée et **empêche la clôture du compte bancaire** ; aucun geste ne la rapproche d'un règlement déjà
+saisi depuis la fiche. Le rejet que cette fiche rend possible (AC10) **retire** la transaction de la liste et empêche
+qu'elle soit passée une seconde fois ; il ne la **règle** pas. Les textes prescrits (AC7) le disent ; la 29-6 ne ferme
+pas #670 (l'intégration de #670 à l'epic revient à l'auteur ; la fiche n'en dépend pas, C-29-6-17).
 
 ⚠️ **Dernière de la série 29-2 → 29-3 → 29-5 → 29-6** : elle touche la même requête que la 29-2
 (`find_unpaid_invoices_for_window`) et des textes que la 29-3 écrit sur ce défaut même (§ *Zones partagées*). Le
@@ -22,7 +29,8 @@ numéros de ligne de cette fiche, relevés sur `fcd2ae75`.
 la dépasse de quelques centimes,
 **so that** ce que l'écran propose soit ce qu'il accepte — comme pour les dates depuis la v0.13.3 (#548) —, et que je
 sache, pour un client qui a payé un peu trop, qu'il faut passer par la fiche de la facture — puis rejeter, depuis
-l'écran, la transaction restée sans proposition (AC10).
+l'écran, la transaction restée sans proposition, pour qu'elle ne soit pas passée une seconde fois (AC10 ; elle reste
+en attente, [#670]).
 
 Issue : [#665](https://github.com/guycorbaz/kesh/issues/665) (P2, bug ; relevée pendant la fiche de la 29-3). Epic :
 `_bmad-output/planning-artifacts/epic-29-preparer-cloture.md` § *29-6*. Cible : **v0.13.4**.
@@ -32,7 +40,7 @@ Issue : [#665](https://github.com/guycorbaz/kesh/issues/665) (P2, bug ; relevée
 | Prémisse (#665) | Au code | Verdict |
 |---|---|---|
 | La proposition retient une facture dont le reste dû est à ± 5 centimes du montant (`AMOUNT_TOLERANCE_HUNDREDTHS = 5`) | `crates/kesh-api/src/routes/reconciliation.rs:72` ; `Decimal::new(AMOUNT_TOLERANCE_HUNDREDTHS, 2)` `:637`, passé à `find_unpaid_invoices_for_window` `:656-662` ; `HAVING amount_due BETWEEN ? - ? AND ? + ?` (`crates/kesh-db/src/repositories/reconciliation.rs:257`, binds `:267-270`) | **Exacte** |
-| L'acceptation classe un paiement supérieur au reste dû en `Overpayment`, sauf s'il égale l'arrondi au centime | `classify_payment` (`crates/kesh-db/src/repositories/invoice_settlements.rs:175-184`), appelée par `accept_one_invoice` étape (c) (`routes/reconciliation.rs:1919-1944`) → `RECONCILIATION_OVERPAYMENT` | **Exacte** |
+| L'acceptation classe un paiement supérieur au reste dû en `Overpayment`, sauf s'il égale l'arrondi au centime | `classify_payment` (`crates/kesh-db/src/repositories/invoice_settlements.rs:175-184`), appelée par `accept_one_invoice` étape (c) (`routes/reconciliation.rs:1915-1944` — commentaire dès `:1915`, `match` `:1930-1931` ; validation P2, F7) → `RECONCILIATION_OVERPAYMENT` | **Exacte** |
 | Une transaction qui dépasse la facture de 1 à 5 centimes est proposée, puis refusée | Une facture n'est candidate que si son score total est > 0 (`kesh-reconciliation/src/matching.rs:81`) ; le score de montant est nul hors égalité au centime (`:109-119`) : la facture proposée porte donc une référence ou un nom de client reconnu, passe la garde de score (étape 7bis, `routes/reconciliation.rs:1808`) et tombe sur le trop-perçu. Exemple : 10.02 sur un reste de 10.0050 — **candidate par le calcul** (reste dans `[9.97, 10.07]`, référence reconnue), et **refusée** par le test existant `two_centimes_over_a_half_centime_invoice_is_an_overpayment` (`crates/kesh-api/tests/reconciliation_e2e.rs:5489`), qui n'appelle que `post_accept_one` : il établit le refus, pas la proposition *(validation P1, R6)* | **Exacte** |
 | « Aucun effet comptable : rien ne s'écrit » | Le refus précède toute écriture (`FailedProposal`, pattern batch) | **Exacte** |
 
@@ -63,7 +71,10 @@ l'orchestrateur)* : la ligne d'une transaction sans candidate n'a pas de case à
 (`:237-254`). Après la voie 1, le client qui a payé trop reste sur une ligne « Aucune correspondance » qu'aucun geste
 de l'écran n'écarte — la route `POST /reconciliation/reject` l'accepterait, l'écran ne l'atteint pas. Le même défaut
 vaut pour le contournement de la 29-2 (C-29-2-8, reliquat d'une facture non proposée). **La 29-6 étend donc son
-périmètre** : une ligne sans proposition se coche, pour *Rejeter* seulement (AC10, C-29-6-10).
+périmètre** : une ligne sans proposition se coche ; *Accepter* ne la traite pas — elle se rejette, ou s'impute comme
+aujourd'hui par *Affecter manuellement* ou *Éclater* (AC10, C-29-6-10 ; reformulé à la validation P2, R1/F2 : « pour
+*Rejeter* seulement » excluait à tort ces deux boutons, présents sur la ligne). Rejetée, la transaction **reste en
+attente** et empêche la clôture du compte bancaire : angle mort assumé, [#670] (C-29-6-17).
 
 **Voie 2 — l'acceptation accepte l'écart toléré sur le compte d'arrondi**, comme `SettlesWithRounding` : écriture à
 trois lignes, `D banque (payé) / C créance (reste brut) / C compte d'arrondi (écart)` (`settlement_journal_lines`,
@@ -172,7 +183,7 @@ Dans `crates/kesh-api/src/routes/reconciliation.rs` : le doc-comment d'`AMOUNT_T
 5 centimes ») dit qu'elle borne le seul **paiement partiel** (le reste dû au-dessus de la transaction) et renvoie à
 `least_due_without_overpayment` pour l'autre côté. Le **nom** de la constante est conservé (cité par la fiche 29-3) ;
 la variable locale `amount_tolerance` (`:637`) peut être renommée `underpayment_tolerance`. Le commentaire de
-`accept_one_invoice` étape (c) (`:1919-1927`) reçoit une ligne : la proposition n'offre plus ce que ce garde refuse
+`accept_one_invoice` étape (c) (`:1915-1922`, validation P2, F7) reçoit une ligne : la proposition n'offre plus ce que ce garde refuse
 (#665) ; il ne se rencontre plus que par un appel direct ou une facture modifiée entre les deux.
 
 **AC3 — Rien d'autre ne change.**
@@ -268,17 +279,38 @@ direct), `the_counterparty_refusal_comes_before_the_reconciliation_overpayment` 
   au centime est absorbé sur le compte de différences d'arrondi (formulation au choix du dev, sans chiffre plus fort
   que le code). Une phrase de plus : un client qui a payé **quelques centimes de trop** n'est pas proposé ;
   enregistrez le règlement du reste dû depuis la fiche de la facture, puis **rejetez** la transaction à la
-  réconciliation — cochez sa ligne « Aucune correspondance » et *Rejeter* (geste rendu possible par l'AC10) —, et
-  traitez l'écart (remboursement, ou écriture manuelle) — sans quoi la transaction reste en attente. ⚠️ Le même
-  paragraphe est réécrit par la 29-2 (dates) : au rebase, ne toucher que la condition de montant.
+  réconciliation — cochez sa ligne « Aucune correspondance » et *Rejeter* (geste rendu possible par l'AC10) —, pour
+  qu'elle ne soit pas passée une seconde fois, et traitez l'écart (remboursement, ou écriture manuelle). ⛔ Le texte
+  **ne dit pas** que le rejet règle la transaction ou la sort de l'attente *(validation P2, R2)* : rejetée, elle
+  **reste en attente** dans le détail de son import, compte comme non rapprochée et **empêche la clôture du compte
+  bancaire** (renvoi `\S\ref{sec:clore-compte-bancaire}`, qui le dit déjà, `:1690-1694`) — angle mort [#670], sans
+  numéro d'issue au manuel (C-29-6-17). La phrase d'origine « — sans quoi la transaction reste en attente » est
+  **abandonnée** : elle promettait l'inverse. ⚠️ Le même paragraphe est réécrit par la 29-2 (dates) : au rebase, ne
+  toucher que la condition de montant et la phrase du trop-perçu.
 - **Liste des lignes, `:2050`** (« sans candidate, la ligne indique «~Aucune correspondance~» et n'a pas de case à
-  cocher ») devient : la ligne indique «~Aucune correspondance~» ; sa case ne sert qu'à \emph{Rejeter} — tant qu'une
-  telle ligne est cochée, \emph{Accepter} reste grisé et la page le dit (AC10). Le paragraphe \emph{Rejeter} (`:2057`)
-  et la légende de la capture (`:2025`, « la case à cocher ») restent vrais, relus. La phrase « Chaque ligne cochée est
-  traitée pour elle-même » (`:2062`) reste vraie : *Accepter* n'envoie jamais de ligne sans proposition.
+  cocher ») devient : la ligne indique «~Aucune correspondance~» et porte une case, comme les autres ; \emph{Accepter}
+  ne la traite pas — tant qu'une telle ligne est cochée, il reste grisé et la page le dit (AC10) ; elle se rejette, ou
+  s'impute par \emph{Affecter manuellement} ou \emph{Éclater} *(validation P2, R1/F2 : la rédaction « sa case ne sert
+  qu'à \emph{Rejeter} » excluait ces deux boutons, présents sur toute ligne en attente, `.svelte:371-397`)*.
+- **Paragraphe \emph{Rejeter}, `:2057`** *(validation P2, R3/F3 — la P1 le disait « vrai, relu »)* : « \emph{Rejeter}
+  écarte la proposition » devient : \emph{Rejeter} écarte **la transaction** de la réconciliation — qu'elle ait une
+  proposition ou non — **sans la passer en comptabilité** ; la suite du paragraphe (marquée comme revue, statut
+  «~pending~», *Annuler le rejet*) reste, et reçoit une incise : une transaction rejetée compte comme non rapprochée et
+  empêche la clôture de son compte bancaire (`\S\ref{sec:clore-compte-bancaire}`).
+- La légende de la capture (`:2025`, « la case à cocher ») reste vraie, relue. La phrase « Chaque ligne cochée est
+  traitée pour elle-même » (`:2062`) reste vraie : *Accepter* n'envoie jamais de ligne sans proposition. Le paragraphe
+  de la clôture du compte (`:1690-1694`) reste vrai, relu : il dit déjà qu'une transaction rejetée empêche la clôture.
 - **FAQ, `:2901`** : « Aucune facture validée et non payée n'a un \textbf{reste dû} égal au montant de la transaction
   \textbf{à 5 centimes près} » devient : aucune facture n'a un reste dû **égal au montant, ou supérieur de 5 centimes
   au plus** — un client qui a payé trop, même de quelques centimes, n'est pas proposé.
+- **FAQ, « Que faire ensuite », `:2910`** *(validation P2, R7 ; R1)* : la phrase « La transaction bancaire reste ensuite
+  dans la liste de la réconciliation~: Kesh ne la relie pas au règlement saisi depuis la fiche. » devient : Kesh ne relie
+  pas la transaction au règlement saisi depuis la fiche ; **rejetez-la** (cochez sa ligne, puis \emph{Rejeter}) pour
+  qu'elle ne soit pas passée une seconde fois — rejetée, elle reste en attente dans le détail de son import et empêche
+  la clôture du compte bancaire (`\S\ref{sec:clore-compte-bancaire}`). La consigne voisine « N'utilisez ni
+  \emph{Affecter manuellement} ni \emph{Éclater} » (même puce) reste — c'est pourquoi l'indication de l'écran ne les
+  nomme pas (C-29-6-16). ⚠️ La 29-2 (C-29-2-8) prescrit le même rejet : au rebase, relire si elle a déjà touché cette
+  puce, et ne garder qu'une rédaction.
 - **Les phrases que la 29-3 écrit sur ce défaut** (fiche 29-3, AC7, ligne `:2049` au sol : « une facture que le
   paiement dépasse de quelques centimes est proposée, mais son acceptation est refusée en trop-perçu --- enregistrez
   alors le règlement depuis la fiche de la facture (issue \#665) ») : **retirées** au rebase — elles deviennent
@@ -293,16 +325,22 @@ PDF régénéré (`make fr` dans `docs/manual/`, sous le verrou de gate) et comm
 
 ```sh
 pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' \
-  | sed 's/ﬀ/ff/g;s/ﬁ/fi/g;s/ﬂ/fl/g;s/ﬃ/ffi/g' > /tmp/claude-1000/29-6-manuel.txt
+  | sed "s/ﬀ/ff/g;s/ﬁ/fi/g;s/ﬂ/fl/g;s/ﬃ/ffi/g;s/’/'/g" > /tmp/claude-1000/29-6-manuel.txt
 ```
+
+(`s/’/'/g` : le `.tex` écrit `n'a`, le PDF rend `n’a` — sans cette normalisation, une portion à apostrophe rend 0 sans
+aucune césure ; validation P2, R6.)
 
 - **contrôles positifs** *(validation P1, R2)* : `grep -c` d'une **portion courte** (trois à cinq mots, sans césure
   probable) de **chacune** des phrases neuves — la condition de montant de `:2029`, le contournement de `:2029`, la FAQ
-  `:2901`, la ligne «~Aucune correspondance~» de `:2050` — rend **≥ 1** chacune ; les portions retenues et leurs
-  comptes vont au Dev Agent Record ;
+  `:2901`, la ligne «~Aucune correspondance~» de `:2050`, le paragraphe \emph{Rejeter} de `:2057` et la FAQ `:2910`
+  *(ces deux derniers : validation P2)* — rend **≥ 1** chacune ; les portions retenues et leurs comptes vont au Dev
+  Agent Record ;
 - **contrôles négatifs**, qui ne valent qu'adossés aux positifs (un zéro peut venir d'une césure) :
-  `grep -o "à 5 centimes près"` ne rend plus rien, `grep -o "pas de case à cocher"` non plus, et `grep -o "#665"` ne
-  rend plus que ce que le texte final assume (rien, si le renvoi est retiré).
+  `grep -o "à 5 centimes près"` ne rend plus rien, `grep -o "pas de case à cocher"` non plus, ni
+  `grep -o "écarte la proposition"`, ni `grep -o "sans quoi la transaction reste en attente"`, ni
+  `grep -o "ne sert qu'à"` *(validation P2)* ; et `grep -o "#665"` ne rend plus que ce que le texte final assume (rien,
+  si le renvoi est retiré), `grep -o "670"` rien (C-29-6-17).
 
 Gardes textuelles : `cargo nextest run -E 'binary(textes_coherents)'` vert.
 
@@ -318,8 +356,12 @@ quelques centimes ([#665](https://github.com/guycorbaz/kesh/issues/665)).** Une 
 reste dû valait le montant reçu à 5 centimes près, dans les deux sens ; mais un paiement qui la dépasse est un
 trop-perçu, et son acceptation était refusée. Seuls sont désormais proposés le reste dû exact (à l'arrondi au centime
 près) et un paiement inférieur de 5 centimes au plus, accepté comme règlement partiel. Un client qui a payé trop
-s'enregistre depuis la fiche de la facture ; rejetez ensuite la transaction : une ligne « Aucune correspondance » se
-coche désormais, pour *Rejeter* seulement — *Accepter* reste grisé tant qu'elle est cochée. API : mêmes codes. »
+s'enregistre depuis la fiche de la facture ; rejetez ensuite la transaction, pour qu'elle ne soit pas passée une
+seconde fois : une ligne « Aucune correspondance » se coche désormais — *Accepter* ne la traite pas et reste grisé tant
+qu'elle est cochée. Rejetée, la transaction reste en attente et empêche la clôture du compte bancaire
+([#670](https://github.com/guycorbaz/kesh/issues/670)). API : mêmes codes. » *(Validation P2, R1/R2 : la rédaction
+P1 « pour *Rejeter* seulement » excluait *Affecter manuellement* et *Éclater*, et le rejet n'était pas dit laisser la
+transaction en attente.)*
 
 **AC8 — Mutations (chacune tuée par un test nommé au Dev Agent Record).**
 
@@ -332,15 +374,27 @@ coche désormais, pour *Rejeter* seulement — *Accepter* reste grisé tant qu'e
 | M5 | borne haute liée à `tx_amount` (sans tolérance) | AC5 (`100.0049`, `100.05`) ; AC6 f, g ; `find_unpaid_invoices_filters_amount_within_tolerance` |
 | M6 | `classify_payment` : `paid > raw_due` → `paid >= raw_due` (l'autre lecteur seul) | AC4 (grille : la réciproque cesse de tenir) — preuve que le test lie les deux |
 | M7 | `least_due_without_overpayment` rend `paid - HALF_CENTIME` **arrondi au centime** (`paid` : la borne perd le demi-centime) | AC4 ; AC5 ; AC6 d |
-| M8 | le filtre posé **après** la requête : `HAVING` rendu à l'ancienne borne (`BETWEEN ? - ? AND ? + ?`), puis, en Rust, les lignes rendues filtrées par `classify_payment(tx_amount, amount_due) != Overpayment` | AC5, second test (`find_unpaid_invoices_overpayments_take_no_place_in_the_limit`) — le seul : AC5 premier test, AC6 et AC4 restent verts, c'est ce qui fait la mutation *(validation P1, R4)* |
+| M8 | le filtre posé **après** la requête, **dans `find_unpaid_invoices_for_window`, après le `fetch_all`** (`repositories/reconciliation.rs:271` au sol ; posé dans `get_proposals`, M8 serait indiscernable de M3 au dépôt — validation P2, F6) : `HAVING` rendu à l'ancienne borne (`BETWEEN ? - ? AND ? + ?`), puis, en Rust, les lignes rendues filtrées par `classify_payment(tx_amount, amount_due) != Overpayment` | AC5, second test (`find_unpaid_invoices_overpayments_take_no_place_in_the_limit`) — le seul : AC5 premier test, AC6 et AC4 restent verts, c'est ce qui fait la mutation *(validation P1, R4)* |
 | M9 | la case rendue de nouveau conditionnelle (`{#if p.candidates.length > 0}` autour de l'`<input>`) | AC10, Vitest (case présente sur la ligne sans proposition) ; AC10, E2E |
-| M10 | *Accepter* non grisé quand une ligne sans proposition est cochée (condition retirée du `disabled`) | AC10, Vitest (bouton grisé ; `acceptProposals` jamais appelé) |
-| M11 | l'indication « ne peut qu'être rejetée » rendue sans condition | AC10, Vitest (indication absente quand seules des lignes avec proposition sont cochées) |
+| M10 | *Accepter* non grisé quand une ligne sans proposition est cochée (condition retirée du `disabled`) | AC10, Vitest — **l'assertion sur l'attribut** (`(btn as HTMLButtonElement).disabled === true`) **seule** ; l'assertion « `acceptProposals` jamais appelé » ne la tue pas, la garde de tête d'`onAccept` arrêtant le clic *(validation P2, F1)* |
+| M11 | l'indication « ne peut pas être acceptée » (`reconciliation-unmatched-not-acceptable-hint`) rendue sans condition | AC10, Vitest (indication absente quand seules des lignes avec proposition sont cochées) |
+| M12 | la garde de tête d'`onAccept` retirée (`selectionHasUnmatched` ôté du `return` initial) | AC10, Vitest — `fireEvent.click` sur *Accepter* grisé : ni `reconciliation-error`, ni appel d'`acceptProposals`, la table reste *(validation P2, F1)* |
+| M13 | *Rejeter* grisé quand une ligne sans proposition est cochée (`selectionHasUnmatched` ajouté à son `disabled`) | AC10, Vitest — l'assertion `disabled === false` sur *Rejeter* ; l'assertion « `rejectProposals(17, [2])` appelé » ne la tue pas seule, `fireEvent.click` livrant l'événement à un bouton désactivé *(validation P2, F1)* |
 
 Restauration : `git checkout -- <fichier> && touch <fichier>` (`docs/agents-orchestration.md` § 7). M4 et M7 coïncident
-dans leur effet ; elles diffèrent par le site muté et se déclarent toutes deux. La garde de tête d'`onAccept` (AC10)
-est **défensive** : le bouton grisé la rend inatteignable par l'écran, si bien qu'aucun test ne la tue — elle se
-déclare non éprouvée au Dev Agent Record, comme le `throw` « No candidate » qu'elle précède.
+dans leur effet ; elles diffèrent par le site muté et se déclarent toutes deux.
+
+⚠️ **`fireEvent.click` atteint le gestionnaire d'un bouton désactivé, dans le harnais du dépôt** *(validation P2, F1 —
+la P1 déclarait la garde d'`onAccept` « inatteignable », prescription fausse au code)* : jsdom ne bloque que la
+méthode `click()` d'un contrôle désactivé, pas `dispatchEvent` ; Svelte 5 délègue `onclick` et appelle le gestionnaire
+quand la cible est le bouton lui-même, désactivé ou non (`node_modules/svelte/src/internal/client/dom/elements/events.js`,
+condition `event.target === current_target`). Le dépôt le documente déjà
+(`frontend/src/lib/features/bank-import/DeleteBankImportAction.test.ts:191-194`). Conséquences : un état grisé se prouve
+par **l'attribut** `disabled`, jamais par l'absence d'appel après `fireEvent.click` ; et la garde de tête d'`onAccept`
+est **éprouvable** — sans elle, le clic tombe sur le `throw` « No candidate for txId=… » (`.svelte:205-207`), `errorMsg`
+est posé et la branche `{:else if errorMsg}` (`:270`) remplace la table par `reconciliation-error` : c'est ce que tue
+M12. Seul le `throw` « No candidate », que la garde précède, reste **non éprouvé** (inatteignable tant que la garde
+est là) : il se déclare tel au Dev Agent Record.
 
 **AC9 — Gates.**
 
@@ -352,14 +406,27 @@ le spec neuf de l'AC10 compris, chaque rouge jugé fichier par fichier contre `d
 attendus* ; captures clair et sombre de l'AC10 relues à l'œil et décrites au Dev Agent Record. Le Dev Agent Record ne
 déclare que ce qui a tourné, chiffres recomptés.
 
-**AC10 — Une transaction sans proposition se rejette depuis l'écran (C-29-6-10, C-29-6-11).**
+**AC10 — Une transaction sans proposition se rejette depuis l'écran (C-29-6-10, C-29-6-11, C-29-6-16 à C-29-6-19).**
 
 *Ajouté à la validation P1 (R1), sur décision de l'orchestrateur : sans lui, le geste « régler depuis la fiche, puis
 rejeter la transaction » que prescrivent la 29-6 (AC7) et la 29-2 (C-29-2-8) est impraticable.*
 
 **Établi au code (`fcd2ae75`), et qui ne change pas** :
 
-- `POST /api/v1/reconciliation/reject` ne lit **aucune** candidate : le pré-vol classe chaque transaction par
+- **Quelles lignes sont « sans proposition »** *(validation P2, R1/F3 — la P1 n'écrivait que le trop-perçu)* : toute
+  transaction dont `candidates` est vide, c'est-à-dire, au sol, (i) les **débits** et les transactions **non CHF**,
+  pour lesquels `get_proposals` ne cherche aucune facture (`routes/reconciliation.rs:640-652` : `tx.currency != "CHF"`
+  et `tx.amount <= Decimal::ZERO` → `Vec::new()`), **sans règle** qui les vise — paiements fournisseurs, loyers,
+  frais bancaires ; (ii) les crédits CHF sans facture candidate **ni** règle — dont le client qui a payé trop (#665) et
+  le reliquat d'une facture non proposée (29-2, C-29-2-8). **La case leur est ouverte à toutes**, et c'est voulu : le
+  rejet en masse d'un débit n'a rien de faux (réversible par *Annuler le rejet*), et *Affecter manuellement* et
+  *Éclater*, présents sur toute ligne en attente (`.svelte:371-397`), restent le geste du manuel pour une charge
+  (`user-manual.tex:2911`). D'où l'indication, qui dit ce qui est vrai de la **sélection** (*Accepter* ne la traite
+  pas) et ne pousse vers aucun geste (point 4, C-29-6-16). Une ligne à **règle** seule a `candidates.length > 0` : elle
+  compte comme « avec proposition », acceptable (F5).
+- `POST /api/v1/reconciliation/reject` ne lit **aucune** candidate : après le refus d'un compte archivé (`404`) et
+  le pré-vol du **compte clos** (`routes/reconciliation.rs:3256-3266`, chaque transaction en `failed[]`
+  `BANK_ACCOUNT_CLOSED`, `200` — validation P2, R11), le pré-vol classe chaque transaction par
   `classify_batch_transaction` (`routes/reconciliation.rs:851-901` — absente, rapprochée, déjà rejetée, sinon
   éligible), puis `reject_batch` (`:3431-3550`) pose `auto_match_rejected_at` par `UPDATE … WHERE matched_entry_id IS
   NULL AND auto_match_rejected_at IS NULL`. Chaque refus va dans `failed[]` en `200` (Pattern batch), aucun ne dépend
@@ -370,6 +437,23 @@ rejeter la transaction » que prescrivent la 29-6 (AC7) et la 29-2 (C-29-2-8) es
   `routes/(app)/bank-import/[id]/+page.svelte:160` ; route `post_unreject_transaction`, doc `:4759-4782`) remet
   `auto_match_rejected_at` à `NULL` sans lire de candidate : une transaction sans proposition rejetée par erreur revient
   dans la liste. Le rappel sous la liste (`reconciliation-rejected-hint`, `.svelte:452-460`) reste vrai.
+- **Ce que le rejet ne fait pas — angle mort assumé, [#670]** *(validation P2, R2)* : une transaction rejetée **reste
+  `pending`** (`auto_match_rejected_at` posé, `status` inchangé ; manuel `:2057`), compte comme non rapprochée et
+  **empêche la clôture du compte bancaire** (`crates/kesh-db/src/repositories/bank_accounts.rs:1025`, `status =
+  'pending'` ; manuel `:1690-1694`). Pour le trop-perçu ou le reliquat réglé depuis la fiche, **aucun geste ne la
+  rapproche ensuite** : le règlement de la fiche ne s'y relie pas, *Affecter manuellement* et *Éclater* n'offrent que
+  les classes 5, 6 et 7, et l'import ne se supprime que s'il n'a aucune transaction rapprochée. Le blocage est donc
+  permanent, et la transaction tombera dans le contrôle « transactions bancaires en attente » que la 29-1 prévoit
+  avant le bouclement. **Non résolu par la 29-6**, renvoyé à #670 (bug P2) ; aucun texte prescrit ne dit que le rejet
+  règle la transaction (AC7) — C-29-6-17.
+- **États de la sélection, relevés au code** *(validation P2, F5 ; aucun ne fait accepter une ligne sans
+  proposition)* : (a) `load()` remet `selected` à vide (`.svelte:109`) — après tout lot, affectation ou éclatement
+  réussis, l'indication disparaît ; `proposals` ne change qu'au `load()`, si bien qu'une transaction ne peut pas perdre
+  sa proposition en restant cochée ; (b) sur erreur de `rejectProposals` (`catch`, `:249`), pas de rechargement : la
+  sélection et l'indication restent — juste ; (c) pendant `busy`, les cases ne sont pas désactivées (`:320-326`) mais
+  les items d'`onAccept` sont calculés avant le premier `await` (`:203-226`) ; (d) une ligne à règle seule est « avec
+  proposition ». Le chemin *Accepter* → ligne sans proposition est fermé trois fois : `disabled`, garde de tête,
+  `throw`.
 
 **Ce qui change**, dans `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte` :
 
@@ -379,15 +463,30 @@ rejeter la transaction » que prescrivent la 29-6 (AC7) et la 29-2 (C-29-2-8) es
    ajouté au `disabled` du bouton (`:284`) ; le compteur « Accepter (n) » reste `selected.size`. *Rejeter* (`:293`)
    inchangé : il agit sur toutes les lignes cochées.
 3. **Garde défensive** en tête d'`onAccept` (`:192`) : `if (selected.size === 0 || selectionHasUnmatched) return;` ; le
-   commentaire `:199-202` (« Une tx sans candidate ne peut pas être sélectionnée ») est réécrit : elle peut l'être, pour
-   *Rejeter* ; *Accepter* est grisé et gardé, le `throw` reste en dernier rempart.
-4. **Une indication** sous les boutons, rendue **seulement si** `selectionHasUnmatched` : `<p class="mb-2 text-sm
-   text-text-muted" data-testid="reconciliation-reject-only-hint">`, clé **`reconciliation-labels-reject-only-hint`**,
-   repli = valeur fr-CH mot pour mot :
-   - **fr-CH** : `Une transaction sans correspondance ne peut qu’être rejetée : décochez-la pour accepter les autres.`
-   - **de-CH** : `Eine Transaktion ohne Übereinstimmung kann nur abgelehnt werden: Entfernen Sie die Markierung, um die übrigen zu akzeptieren.`
-   - **it-CH** : `Una transazione senza corrispondenza può solo essere rifiutata: tolga la selezione per accettare le altre.`
-   - **en-CH** : `A transaction with no match can only be rejected: untick it to accept the others.`
+   commentaire `:199-202` (« Une tx sans candidate ne peut pas être sélectionnée ») est réécrit : elle peut l'être
+   (pour *Rejeter*, ou avant *Affecter manuellement* / *Éclater*) ; *Accepter* est grisé et gardé, le `throw` reste en
+   dernier rempart.
+4. **Une indication**, rendue **seulement si** `selectionHasUnmatched`, **dans la rangée des boutons** — dernier
+   enfant du `<div class="mb-4 flex gap-2">` (`:280`), après *Rejeter* —, et non entre la rangée et la table
+   *(validation P2, F4 : un paragraphe qui apparaît au cochage au-dessus de la table la descend d'une ligne sous le
+   pointeur, et le clic suivant peut cocher la ligne voisine, puis *Rejeter* la mauvaise transaction)*. Le `div`
+   reçoit `flex-wrap items-center` ; l'élément : `<p class="text-sm text-text-muted"
+   data-testid="reconciliation-unmatched-not-acceptable-hint">`. À largeur étroite, l'indication peut passer à la
+   ligne et décaler la table : accepté et écrit (C-29-6-18), à vérifier sur les captures. Clé
+   **`reconciliation-labels-unmatched-not-acceptable-hint`** *(renommée à la validation P2, R1/F2 : « reject-only »
+   reproduisait l'erreur du texte)*, repli = valeur fr-CH mot pour mot :
+   - **fr-CH** : `Une transaction sans correspondance ne peut pas être acceptée : décochez-la pour accepter les autres.`
+   - **de-CH** : `Eine Transaktion ohne Übereinstimmung kann nicht akzeptiert werden: Entfernen Sie die Markierung, um die übrigen zu akzeptieren.`
+   - **it-CH** : `Una transazione senza corrispondenza non può essere accettata: tolga la selezione per accettare le altre.`
+   - **en-CH** : `A transaction with no match cannot be accepted: untick it to accept the others.`
+
+   *(Validation P2, R1/F2 : la rédaction P1, « ne peut qu’être rejetée » — de « kann nur abgelehnt werden », it « può
+   solo essere rifiutata », en « can only be rejected » —, était fausse à l'écran : la même ligne porte *Affecter
+   manuellement* et *Éclater*, et pour un débit sans règle elle poussait vers un rejet sans écriture au lieu de
+   l'imputation. Le texte retenu dit la seule vérité de la sélection — *Accepter* ne la traite pas — et **ne nomme
+   aucun autre geste** : pour un paiement de client, la FAQ (`:2910`) interdit précisément *Affecter manuellement* et
+   *Éclater*, si bien qu'une indication qui les proposerait pousserait le cas même de #665 vers un geste faux,
+   C-29-6-16.)*
 
    Termes alignés sur l'écran (`reconciliation-labels-no-candidate`, `-actions-accept`, `-actions-reject`, fr `:1212`,
    `:1252-1253`, de/it/en `:1149`, `:1189-1190`) ; vouvoiement de l'it-CH comme `reconciliation-labels-rejected-hint`
@@ -395,18 +494,43 @@ rejeter la transaction » que prescrivent la 29-6 (AC7) et la 29-2 (C-29-2-8) es
    celle du catalogue fr-CH, relue au voisinage. Gardes : `npm run lint-i18n-ownership`, `i18n-libelle-en-dur.test.ts`,
    parité des quatre catalogues, et `frontend/src/lib/shared/i18n-keys.test.ts`, dont `sitesTotal` (`:634`, 2107 au sol)
    prend **+1** — **recompté à la source au rebase** (la 29-3 en ajoute un au même fichier), avec son commentaire daté.
-5. **L'en-tête du composant** (`:6-12`, « sans checkbox (tx non-sélectionnable) ») est réécrit.
+5. **L'en-tête du composant** (`:6-12`, « sans checkbox (tx non-sélectionnable) ») est réécrit — **dans sa version
+   29-3** : la 29-3 touche `:8`, contenu dans `:6-12` (zones **chevauchantes**, non voisines ; validation P2, F9).
+6. **Ordre des indications** *(validation P2, R9/F4)* : dans la branche « liste non vide », de haut en bas — la rangée
+   des boutons, qui porte en dernier l'indication de la 29-6 ; puis le paragraphe de priorité de la 29-3
+   (`reconciliation-priority-hint`, fiche 29-3 `:286-290`, entre la rangée et la table, rendu dès qu'une ligne a une
+   candidate, donc **sans** dépendre du cochage) ; puis la table. Les deux ne se contredisent pas : liste toute
+   « Aucune correspondance », seule celle de la 29-6 peut paraître.
+
+**Hors du composant** — le commentaire du spec `frontend/tests/e2e/reconciliation-deleted-import.spec.ts:12-14`
+*(validation P2, R4)* — « La **règle d'affectation** qui rend les deux transactions sélectionnables […] pour ne rendre
+sélectionnable aucune transaction d'un autre spec » — devient faux : toute ligne se coche. Réécrit : la règle n'est
+plus nécessaire à la sélection depuis la 29-6 ; elle est **gardée** (le spec reste identique dans ce qu'il éprouve —
+un rejet en lot dont une transaction a disparu) ; le ciblage par `data-tx-id` (`:153-154`) suffit à ne cocher aucune
+transaction d'un autre spec. Aucune ligne de code du spec ne change (C-29-6-19).
 
 **Tests Vitest** (`ReconciliationProposals.test.ts`, rouges d'abord) :
 
 - le test `:179` *shows neutral state for tx without candidates* asserte aujourd'hui **zéro** case : il est **réécrit**
   (une case, `data-tx-id` de la ligne) — c'est le seul test du dépôt qui change de sens (inventaire (c)) ;
-- ligne sans proposition cochée, seule → *Rejeter* appelle `rejectProposals(17, [2])` ; *Accepter* est grisé ;
+- ligne sans proposition cochée, seule → *Rejeter* est **actif** (`(btn as HTMLButtonElement).disabled === false`,
+  qui tue M13) et appelle `rejectProposals(17, [2])` ; *Accepter* est grisé (`disabled === true`, qui tue M10) ;
   l'indication est rendue ;
-- une ligne avec proposition et une sans, toutes deux cochées → *Accepter* grisé, indication rendue ; décocher la ligne
-  sans proposition → *Accepter* actif, indication absente, et *Accepter* envoie la seule ligne avec proposition ;
+- même état, `fireEvent.click` sur *Accepter* grisé → **aucun** `reconciliation-error`, `acceptProposals` non appelé,
+  la table (`tx-checkbox`) toujours présente — tue M12 (garde de tête retirée) ;
+- une ligne avec proposition et une sans, toutes deux cochées → *Accepter* grisé (attribut), indication rendue ;
+  décocher la ligne sans proposition → *Accepter* actif (attribut), indication absente, et *Accepter* envoie la seule
+  ligne avec proposition ;
 - seules des lignes avec proposition cochées → indication **absente** ;
 - repli de l'indication égal au catalogue fr-CH (patron `:661-678`).
+
+La fabrique sans proposition (`makeProposalWithoutCandidate`, `:108-123`) est **créditrice** ; aucun test débiteur
+n'est prescrit : le composant ne lit pas le signe — seule `candidates.length` décide —, si bien qu'un débit sans règle
+s'y comporte à l'identique (validation P2, F3, relevé non bloquant).
+
+⚠️ Un état **grisé ou actif se prouve par l'attribut `disabled`**, jamais par l'absence ou la présence d'un appel après
+`fireEvent.click`, qui livre l'événement à un bouton désactivé (AC8, encadré ; précédent
+`DeleteBankImportAction.test.ts:191-194`) *(validation P2, F1)*.
 
 **E2E Playwright** — `frontend/tests/e2e/reconciliation-reject-unmatched.spec.ts`, neuf, sur le patron de
 `reconciliation-unreject.spec.ts` (relevé **unique** à l'exécution : références, montant, contrepartie réécrits ;
@@ -419,6 +543,13 @@ ligne quitte la liste ; au détail de l'import, « Rejetée le » ; *Annuler le 
 Une fois par schéma (`page.emulateMedia`, `light` / `dark`), deux captures — la ligne cochée avec l'indication, le
 bilan après le rejet — dans `KESH_E2E_CAPTURES_DIR`, sinon la sortie du test, hors dépôt, sans `toHaveScreenshot`. C'est
 le seul test qui voit l'identifiant d'une ligne sans proposition traverser la frontière HTTP jusqu'à `…/reject`.
+**Sélecteurs** *(validation P2, R5)* : la garde `frontend/src/lib/shared/e2e-selecteurs-traduits.test.ts` (allowlist
+décroissante, KF-043 #326) rougit sur tout `getByText('…')` ou `getByRole(…, { name: '…' })` neuf figé sur un libellé
+français ; le spec cible donc par `getByTestId` (`tx-checkbox` + `data-tx-id`, `reconciliation-accept-btn`,
+`reconciliation-reject-btn`, `reconciliation-unmatched-not-acceptable-hint`, `reconciliation-success`, et au détail
+de l'import `detail-tx-row` + `data-tx-id`, `detail-tx-rejected-on`, `detail-tx-unreject`) et vérifie les textes
+(« Aucune correspondance », « Rejetée le ») par `toContainText` sur un élément ciblé par `data-testid`, comme le patron
+(`reconciliation-unreject.spec.ts:146-150`). L'allowlist ne prend **aucune** entrée.
 
 ## Tasks / Subtasks
 
@@ -430,9 +561,10 @@ le seul test qui voit l'identifiant d'une ligne sans proposition traverser la fr
       paramètre, doc-comments.
 - [ ] **T3 — `kesh-api`** (AC2, AC3) : doc-comments de la constante et de l'étape (c), variable locale.
 - [ ] **T3bis — Écran et i18n** (AC10) : case sur toutes les lignes, *Accepter* grisé et gardé, indication, clé dans
-      les quatre catalogues, `sitesTotal` recompté, en-tête du composant ; spec E2E et captures clair et sombre.
-- [ ] **T4 — Manuel FR + PDF, `api-external.md`, CHANGELOG** (AC7), dont le retrait des angles morts #665 de la 29-3
-      et la ligne «~Aucune correspondance~» (`:2050`).
+      les quatre catalogues, `sitesTotal` recompté, en-tête du composant ; commentaire de
+      `reconciliation-deleted-import.spec.ts:12-14` ; spec E2E et captures clair et sombre.
+- [ ] **T4 — Manuel FR + PDF, `api-external.md`, CHANGELOG** (AC7), dont le retrait des angles morts #665 de la 29-3,
+      la ligne «~Aucune correspondance~» (`:2050`), le paragraphe \emph{Rejeter} (`:2057`) et la FAQ (`:2910`).
 - [ ] **T5 — Propagation** : le grep de § *Propagation*, trié à la main, sortie résumée au Dev Agent Record.
 - [ ] **T6 — Mutations** (AC8) et **gates** (AC9) ; Dev Agent Record.
 
@@ -472,6 +604,13 @@ relecture : `grep -rn "rejectProposals\|reconciliation/reject" frontend/src --in
 | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` (dates) | fermé par la 28-7 (et la 29-2 garde une seule borne) | hors classe |
 | `RECONCILIATION_SCORE_TOO_LOW` | score recalculé nul : impossible pour une facture proposée (même calcul) hors course | hors classe |
 
+**Et ce qui reste après le contournement** *(validation P2, R2)* — hors de la classe « refus d'acceptation », mais
+conséquence directe du geste que la fiche prescrit :
+
+| Site non résolu | Pourquoi | Sort |
+|---|---|---|
+| La transaction **rejetée** après un règlement saisi depuis la fiche (trop-perçu de #665 ; reliquat de la 29-2, C-29-2-8) | rejetée, elle reste `pending` (`bank_accounts.rs:1025`) et empêche la clôture du compte bancaire ; aucun geste ne la rapproche d'une écriture déjà passée | **non résolu, assumé, renvoyé à [#670]** (bug P2) ; écrit au manuel (`:2029`, `:2057`, `:2910`) et au CHANGELOG ; à signaler à la 29-1 (contrôle « transactions en attente » avant le bouclement) — C-29-6-17 |
+
 ### Inventaire (c) — les tests existants dont le sens pourrait changer
 
 ```
@@ -497,7 +636,10 @@ P1 *(R5 : la commande rendait deux fichiers que le relevé ne nommait pas)* :
 - **AC10** : un seul test change de sens, `ReconciliationProposals.test.ts:179` (zéro case attendue sur une ligne sans
   proposition) — réécrit par l'AC10. Les autres usages de `tx-checkbox` (`ReconciliationProposals.test.ts:225-699`,
   `reconciliation-deleted-import.spec.ts:153-154`) cochent des lignes **avec** proposition : inchangés. Les tests qui
-  montent une ligne sans proposition (`:135`, `:246`, `:601`) ne comptent pas les cases : inchangés.
+  montent une ligne sans proposition (`:135`, `:246`, `:601`) ne comptent pas les cases : inchangés. **Le commentaire**
+  de `reconciliation-deleted-import.spec.ts:12-14` (la règle « qui rend les deux transactions sélectionnables »)
+  devient faux : réécrit, code du spec inchangé (AC10, C-29-6-19 ; validation P2, R4 — le second grep de § *Propagation*
+  ne cherchait pas `sélectionnable` seul).
 
 - `reconciliation_repository.rs` : tous les appels passent `dec!(0.05)` ou `dec!(0)` ; les factures sont au montant
   exact ou **au-dessus** (100.04, 100.06) — sens inchangé.
@@ -522,9 +664,9 @@ P1 *(R5 : la commande rendait deux fichiers que le relevé ne nommait pas)* :
 | `user-manual.tex` `:2029` | réécrit la condition de **dates** | — | ? | réécrit la condition de **montant** du même paragraphe |
 | `user-manual.tex` `:2049` | — | ajoute la raison de la priorité **et l'angle mort #665** | — | **retire** l'angle mort #665 |
 | `CHANGELOG.md` `[0.13.4]` | crée la section | ajoute | ajoute | ajoute |
-| `frontend/…/ReconciliationProposals.svelte` (AC10) | aucune (C-29-2-6) | en-tête `:8`, indication de priorité **avant la table** dans la branche « liste non vide », rendue si une ligne a une candidate | ? | case `:318-330`, `disabled` d'*Accepter* `:284`, garde et commentaire d'`onAccept` `:192-202`, indication **sous les boutons**, en-tête `:6-12` — **même fichier que la 29-3, zones voisines** : rebase à la main ; les deux indications coexistent (l'une parle de l'ordre, l'autre de la sélection) |
+| `frontend/…/ReconciliationProposals.svelte` (AC10) | aucune (C-29-2-6) | en-tête `:8`, indication de priorité **avant la table** dans la branche « liste non vide », rendue si une ligne a une candidate | ? | case `:318-330`, `disabled` d'*Accepter* `:284`, garde et commentaire d'`onAccept` `:192-202`, indication **dans la rangée des boutons** (`:280`, C-29-6-18), en-tête `:6-12` — **même fichier que la 29-3** : en-tête **chevauchant** (la 29-6 réécrit `:6-12`, qui contient le `:8` de la 29-3 : réécrire la version 29-3), le reste voisin ; rebase à la main. **Ordre fixé** : rangée des boutons (indication 29-6 en dernier), paragraphe de priorité 29-3, table (AC10, point 6 ; validation P2, R9/F4/F9) |
 | `ReconciliationProposals.test.ts`, `i18n-keys.test.ts`, `messages.ftl` ×4 | — | fabriques, tests, une clé, `sitesTotal` +1 | ? | test `:179` réécrit, tests neufs, une clé, `sitesTotal` +1 — **recompter** `sitesTotal` à la source après le rebase sur la 29-3 |
-| Contournement « régler depuis la fiche, puis rejeter » | C-29-2-8 (reliquat d'une facture non proposée) : **garde son texte** et compte sur l'AC10 de la 29-6, mergée avant le tag v0.13.4 | — | — | le rend praticable (AC10) ; le manuel de la 29-2 n'est pas réécrit par la 29-6 |
+| Contournement « régler depuis la fiche, puis rejeter » | C-29-2-8 (reliquat d'une facture non proposée) : **garde son texte** et compte sur l'AC10 de la 29-6, mergée avant le tag v0.13.4 | — | — | le rend praticable (AC10) ; le manuel de la 29-2 n'est pas réécrit par la 29-6, **sauf** si la 29-2 a écrit à la FAQ `:2910` ou au `:2029` que le rejet sort la transaction de l'attente : au rebase, la réserve de [#670] s'y applique (C-29-6-17 ; validation P2, R2) |
 | `docs/api-external.md` `:549-551` | phrase des dates | phrase `:549` | ? | phrase du trop-perçu |
 
 La 29-5 n'a pas de fiche à la date de celle-ci : son périmètre (#668) est le départage à score égal, dans
@@ -542,9 +684,24 @@ grep -rnE "à 5 centimes près|± ?0[.,]05|± ?5 centimes|amount_tolerance|AMOUN
 Et, pour l'AC10, le symptôme « une ligne sans proposition ne se sélectionne pas » sous toutes ses graphies :
 
 ```sh
-grep -rnE "case à cocher|non-sélectionnable|ne peut pas être sélectionnée|sans checkbox|disabled checkbox|candidates\.length > 0|tx-checkbox" \
+grep -rnE "case à cocher|sélectionnable|ne peut pas être sélectionnée|sans checkbox|disabled checkbox|candidates\.length > 0|tx-checkbox" \
   frontend/src frontend/tests docs/manual/fr/*.tex docs/*.md website
 ```
+
+(`sélectionnable` seul, et non plus `non-sélectionnable` : validation P2, R4 — la forme longue manquait le commentaire
+de `reconciliation-deleted-import.spec.ts:12-14`.)
+
+Et le symptôme de la validation P2 — l'indication ou le texte qui fait du rejet le seul geste, ou qui dit que le rejet
+règle la transaction (R1/F2, R2) :
+
+```sh
+grep -rnE "ne peut qu|qu’être rejet|qu'être rejet|reject-only|kann nur abgelehnt|può solo essere|can only be rejected|ne sert qu|pour \*?Rejeter\*? seulement|écarte la proposition|sans quoi la transaction reste en attente|\b670\b" \
+  frontend/src frontend/tests crates/kesh-i18n docs/manual/fr/*.tex docs/api-external.md CHANGELOG.md \
+  _bmad-output/implementation-artifacts/29-6-*.md _bmad-output/implementation-artifacts/epic-29-choix-autonomes-29-6.md
+```
+
+Les occurrences de la fiche et du registre qui **citent** la rédaction d'origine pour la corriger, et les relevés
+datés (entrées de passe, rapports), sont légitimes.
 
 Les occurrences légitimes (le CHANGELOG des versions publiées, **qui ne se réécrit pas** ; le trop-perçu du règlement
 manuel ; l'arrondi à 5 centimes des factures émises) se trient à la main.
@@ -555,7 +712,10 @@ manuel ; l'arrondi à 5 centimes des factures émises) se trient à la main.
 - Le côté du paiement partiel : tolérance de 5 centimes, acceptation en `Ordinary`.
 - L'absence de `ROUND` en SQL ; une seule définition de l'arrondi (`amount_due_to_centime`).
 - Le filtre avant `ORDER BY … LIMIT 50` — gardé par le second test de l'AC5 et la mutation M8.
-- *Accepter* n'envoie **jamais** une ligne sans proposition ; *Rejeter* envoie toutes les lignes cochées (AC10).
+- *Accepter* n'envoie **jamais** une ligne sans proposition ; *Rejeter* envoie toutes les lignes cochées et n'est
+  jamais grisé par une ligne sans proposition (AC10, M13).
+- *Affecter manuellement* et *Éclater* sur toute ligne en attente, avec ou sans proposition (`.svelte:371-397`) ; aucun
+  texte neuf ne les dit indisponibles (validation P2, R1/F2).
 
 ### Exclusions écrites (périmètre minimal)
 
@@ -567,19 +727,30 @@ manuel ; l'arrondi à 5 centimes des factures émises) se trient à la main.
 - **Migration, index** : aucun. **Aucun changement d'API** : ni `…/reject`, ni `…/unreject`, ni `…/accept`.
 - **Accepter une ligne sans proposition** (l'ouvrir sur l'affectation manuelle, par exemple) : non fait — *Affecter
   manuellement* et *Éclater* existent déjà sur chaque ligne (`.svelte:371-397`).
+- **Sortir de l'attente une transaction rejetée** (la rapprocher d'un règlement déjà saisi, ou un statut « écartée »
+  non compté par la clôture du compte) : non fait — [#670], bug P2 ouvert par l'orchestrateur à la validation P2 ;
+  ni mécanique ni de ce périmètre (C-29-6-17).
 
 ### Modules touchés (règle de découpage : au plus cinq)
 
-Recompté à la validation P1, après l'extension de l'AC10 (C-29-6-12) :
+Recompté à la validation P1, après l'extension de l'AC10 (C-29-6-12). **Granularité déclarée à la validation P2**
+*(R8/F8 : la liste mêlait le crate et le module métier)* : **le crate Rust et le paquet npm** — les deux premières
+unités que nomme la règle (« crates Rust, packages npm ») —, la documentation comptée à part par prudence bien
+qu'elle ne soit pas un module au sens de la règle :
 
-1. `kesh-db` — `repositories/invoice_settlements.rs`, `repositories/reconciliation.rs` (+ `tests/reconciliation_repository.rs`) ;
-2. `kesh-api` — `routes/reconciliation.rs` (commentaires) (+ `tests/reconciliation_e2e.rs`) ;
-3. `frontend/src/lib/features/reconciliation` — `ReconciliationProposals.svelte` (+ `.test.ts`), avec ses gardes
-   transverses (`frontend/src/lib/shared/i18n-keys.test.ts`, compteur seul) et le spec E2E neuf ;
-4. `kesh-i18n` — les quatre `messages.ftl` (une clé) ;
+1. `kesh-db` (crate) — `repositories/invoice_settlements.rs`, `repositories/reconciliation.rs` (+ `tests/reconciliation_repository.rs`) ;
+2. `kesh-api` (crate) — `routes/reconciliation.rs` (commentaires) (+ `tests/reconciliation_e2e.rs`) ;
+3. `frontend` (paquet npm) — `src/lib/features/reconciliation/ReconciliationProposals.svelte` (+ `.test.ts`),
+   `src/lib/shared/i18n-keys.test.ts` (compteur seul), `tests/e2e/` (spec neuf, commentaire d'un spec voisin) ;
+4. `kesh-i18n` (crate) — les quatre `messages.ftl` (une clé) ;
 5. documentation — manuel FR (+ PDF), `docs/api-external.md`, `CHANGELOG.md`.
 
-**Cinq : la limite, non dépassée** (« plus de 5 » découpe) — pas de découpage. Le découpage en 29-6a (écran) / 29-6b
+À la granularité du **module métier** (celle des exemples de la règle, `kesh-api/routes/invoices`), on compterait six
+ou sept unités (les deux dépôts de `kesh-db`, `frontend/…/reconciliation`, `frontend/…/shared`, `frontend/tests/e2e`…) ;
+si une passe tient cette granularité pour la bonne, la fiche écrit alors une **dérogation** sur l'argument de
+C-29-6-12 (aucune moitié ne se livre vraie seule), qui ne dépend pas du compte.
+
+**Cinq à la granularité déclarée : la limite, non dépassée** (« plus de 5 » découpe) — pas de découpage. Le découpage en 29-6a (écran) / 29-6b
 (proposition) a été pesé et écarté (C-29-6-12) : les deux moitiés sont indépendantes au code, mais le texte du manuel
 et du CHANGELOG de l'une prescrit le geste de l'autre, si bien qu'aucune ne se livre vraie seule ; et l'AC10 tient en
 un composant, sans API. ⚠️ Toute extension de plus fait dépasser la règle : elle découpe, ou s'écrit en dérogation.
@@ -600,14 +771,18 @@ un composant, sans API. ⚠️ Toute extension de plus fait dépasser la règle 
   borne) ; #527 (29-3, C-29-3-7) ; #529 (29-2) ; #668 (29-5) ; #401 (frais de rappel).
 - `crates/kesh-db/src/repositories/invoice_settlements.rs:128-184`, `:198-…`, `:824-865` ;
   `crates/kesh-db/src/repositories/reconciliation.rs:1-20`, `:201-276` ;
-  `crates/kesh-api/src/routes/reconciliation.rs:69-72`, `:586-662`, `:1808-1817`, `:1919-1985` ;
+  `crates/kesh-api/src/routes/reconciliation.rs:69-72`, `:586-662`, `:1808-1817`, `:1915-1985` ;
   `crates/kesh-db/src/repositories/invoice_settlements_write.rs:215-245` ; `crates/kesh-core/src/types/money.rs:66-71`.
 - `docs/manual/fr/user-manual.tex:971`, `:1308`, `:2025`, `:2029`, `:2049`, `:2050`, `:2057`, `:2062`, `:2330`,
-  `:2901` ; `docs/api-external.md:505`, `:551`.
+  `:2901`, `:2910-2911`, `:1690-1694` ; `docs/api-external.md:505`, `:551`.
 - AC10 : `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte:6-12`, `:192-254`, `:280-330`,
   `:452-460` ; `ReconciliationProposals.test.ts:108-123`, `:179-197`, `:661-678` ;
   `frontend/tests/e2e/reconciliation-unreject.spec.ts` (patron) ; `crates/kesh-api/src/routes/reconciliation.rs:851-901`,
   `:3205-3550`, `:4759-4782` ; `crates/kesh-api/tests/reconciliation_e2e.rs:1560` ; `frontend/src/lib/shared/i18n-keys.test.ts:634`.
+- Validation P2 : `crates/kesh-api/src/routes/reconciliation.rs:640-652`, `:3256-3266` ;
+  `crates/kesh-db/src/repositories/bank_accounts.rs:1025` ; `frontend/src/lib/features/bank-import/DeleteBankImportAction.test.ts:191-194` ;
+  `frontend/src/lib/shared/e2e-selecteurs-traduits.test.ts` ; `frontend/tests/e2e/reconciliation-deleted-import.spec.ts:12-14` ;
+  issue [#670].
 - `docs/agents-orchestration.md` ; `CLAUDE.md` § *Review Iteration Rule*, § *Pattern batch*, § *Test Locally First*.
 
 ## Dev Agent Record
@@ -656,3 +831,47 @@ un composant, sans API. ⚠️ Toute extension de plus fait dépasser la règle 
     **5 modules** (limite, non dépassée, C-29-6-12).
   - Prompt de la validation P2 : `29-6-validate-prompt-p2.md` (Opus, lentilles R et F, axe obligatoire : relire cette
     remédiation, qui étend le périmètre à l'écran).
+- 2026-10-14 — **Validation P2** (Opus 5.5, lentilles R et F, lecture seule ; rapports
+  `kesh-gate-logs/29-6-validate-p2-{R,F}.md`) : **R 0 CRITICAL · 0 HIGH · 2 MEDIUM · 9 LOW ; F 0 · 0 · 2 MEDIUM ·
+  7 LOW** — au total 0/0/4/16, **vingt findings**, dont des convergences (R1 = F2 ; R8 = F8 ; R9 rejoint F4 sur
+  l'ordre des indications ; R3 rejoint F3 sur `:2057`). Trois des quatre MEDIUM viennent de la **remédiation P1**
+  (AC10) ; R2 de la conception d'origine, gardée par elle. Remédiée (Opus 5.5) : **vingt traités, aucun refusé** —
+  une seule correction proposée écartée en faveur d'une autre (R1 (b), version longue de l'indication, C-29-6-16).
+  - **R1 = F2 MEDIUM** — l'indication « ne peut qu'être rejetée » (et ses trois traductions) était fausse : la ligne
+    porte *Affecter manuellement* et *Éclater*, et les lignes sans proposition sont aussi les débits et le non-CHF sans
+    règle (`routes/reconciliation.rs:640-652`). Indication « ne peut pas être acceptée » dans les quatre locales, clé
+    `reconciliation-labels-unmatched-not-acceptable-hint`, `data-testid` `reconciliation-unmatched-not-acceptable-hint`
+    (M11 renommée) ; périmètre réel écrit à l'AC10 (*Établi au code*) ; textes prescrits du manuel (`:2050`, `:2057`,
+    FAQ `:2910`), du CHANGELOG et du fichier d'epic (annoté) corrigés ; C-29-6-10 et C-29-6-11 annotés, C-29-6-16.
+  - **R2 MEDIUM** — une transaction rejetée reste `pending` et bloque la clôture du compte bancaire ; aucun geste ne la
+    rapproche d'un règlement saisi depuis la fiche. **[#670]** (bug P2, ouverte par l'orchestrateur) : écrit comme
+    **angle mort assumé** (statut, AC10, inventaire (b) — tableau neuf —, exclusions, zones partagées pour la 29-2) ;
+    les textes prescrits (`:2029`, `:2057`, `:2910`, CHANGELOG) ne disent plus que le rejet règle la transaction ;
+    contrôles PDF négatifs ajoutés. C-29-6-17. La décision de l'auteur sur l'intégration de #670 à l'epic reste
+    attendue ; la fiche n'en dépend pas.
+  - **F1 MEDIUM** — `fireEvent.click` atteint le gestionnaire d'un bouton désactivé (jsdom, délégation Svelte 5 ;
+    précédent `DeleteBankImportAction.test.ts:191-194`) : M10 n'est tuée que par l'attribut `disabled` ; la garde de
+    tête d'`onAccept` est **éprouvable** — test neuf (`fireEvent.click` sur *Accepter* grisé : ni erreur, ni appel, la
+    table reste) et **M12** ; le test de *Rejeter* asserte `disabled === false` — **M13**. Le paragraphe « aucun test
+    ne la tue » est remplacé par l'encadré de l'AC8 ; seul le `throw` reste non éprouvé.
+  - **LOW** : **R3/F3** paragraphe *Rejeter* `:2057` inventorié (« écarte la transaction », sans écriture), aucun
+    test débiteur requis (le composant ne lit pas le signe) ; **R4** commentaire de
+    `reconciliation-deleted-import.spec.ts:12-14` inventorié, `sélectionnable` seul au second grep, C-29-6-19 ;
+    **R5** garde `e2e-selecteurs-traduits.test.ts` nommée, sélecteurs `getByTestId` + `toContainText` ; **R6**
+    `s/’/'/g` à la normalisation du PDF ; **R7** FAQ `:2910` inventoriée ; **R8 = F8** granularité des modules
+    déclarée (crate / paquet npm : cinq ; au module métier, six ou sept, dérogation à écrire si cette granularité est
+    tenue) ; **R9/F4** indication dans la rangée des boutons, ordre des indications 29-3/29-6 fixé (AC10 points 4 et
+    6), C-29-6-18 ; **R10** commentaire du kickoff d'`epic-29` rétabli (« 29-2..4 ») puis annoté, non réécrit ;
+    **R11** pré-vol du compte clos (`:3256-3266`) cité ; **F5** états de la sélection écrits ; **F6** site de M8
+    (`find_unpaid_invoices_for_window`, après `fetch_all`) ; **F7** `:1915-1944` / `:1915-1922` ; **F9** en-tête du
+    composant chevauchant, réécrit dans sa version 29-3.
+  - Symptômes grepés après correction (troisième grep de § *Propagation*, et `sous les boutons|inatteignable|aucun
+    test ne la tue|1919|11 mutations|C-29-6-1 à 15`) sur la fiche, le registre, le fichier d'epic et
+    `sprint-status.yaml` : restent les citations de la rédaction d'origine que la fiche corrige, les entrées datées
+    (Change Log P1, titre de C-29-6-10, texte retenu de C-29-6-11, annotés) et la ligne P1 de `sprint-status.yaml`.
+  - Recomptes (fiche) : **10 AC**, **8 tâches** (T0 à T6 et T3bis), **13 mutations** (M1 à M13), **19 choix**
+    (C-29-6-1 à C-29-6-19), **5 modules** à la granularité déclarée.
+  - Prompt de la passe ciblée P3 : `29-6-validate-prompt-p3-ciblee.md` (Haiku, une lentille, le seul diff de cette
+    remédiation).
+
+[#670]: https://github.com/guycorbaz/kesh/issues/670

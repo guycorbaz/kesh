@@ -122,6 +122,10 @@ Fiche : `29-6-trop-percu-centimes.md`.*
   release prescrivent ; (c) un bouton *Rejeter* propre à chaque ligne sans proposition — un second chemin vers la même
   route, un libellé et un test de plus pour le même effet.
 - **Réversible** : oui (un composant, une clé).
+- **Annotation du 2026-10-14 (validation P2, R1/F2)** : « pour *Rejeter* seulement », au titre, est inexact — la ligne
+  porte aussi *Affecter manuellement* et *Éclater*, et les lignes sans proposition comprennent les débits et le non-CHF
+  sans règle (`routes/reconciliation.rs:640-652`). Lire : une ligne sans proposition se coche ; *Accepter* ne la traite
+  pas. Le rejet laisse la transaction en attente (#670, C-29-6-17).
 
 ### C-29-6-11 — *Accepter* grisé tant qu'une ligne sans proposition est cochée, et la page le dit
 
@@ -135,6 +139,11 @@ Fiche : `29-6-trop-percu-centimes.md`.*
   (b) grisé sans indication — un bouton inerte sans raison visible ; (c) une case grisée pour *Accepter* seulement —
   une case n'a pas deux états de sélection.
 - **Réversible** : oui.
+- **Annotation du 2026-10-14 (validation P2, R1/F2, F1, F4)** : le texte retenu ci-dessus (« ne peut qu'être
+  rejetée ») et la clé `reconciliation-labels-reject-only-hint` sont **remplacés** : « ne peut pas être acceptée »,
+  clé `reconciliation-labels-unmatched-not-acceptable-hint`, `data-testid` `reconciliation-unmatched-not-acceptable-hint`
+  (C-29-6-16) ; l'indication passe « sous les boutons » → dans la rangée des boutons (C-29-6-18). La garde défensive
+  n'est pas inatteignable en Vitest (`fireEvent.click` atteint un bouton désactivé) : éprouvée par M12.
 
 ### C-29-6-12 — Cinq modules : la limite, pas de découpage
 
@@ -146,6 +155,9 @@ Fiche : `29-6-trop-percu-centimes.md`.*
 - **Écartée** : découper — deux PR, deux boucles de revue, et un ordre de merge imposé pour un texte qui ne vaut
   qu'ensemble.
 - **Réversible** : oui — si une passe de revue étend encore le périmètre, la story découpe ou écrit une dérogation.
+- **Annotation du 2026-10-14 (validation P2, R8/F8)** : granularité déclarée — crate Rust et paquet npm (`kesh-db`,
+  `kesh-api`, `frontend`, `kesh-i18n`, documentation à part) : cinq. Au module métier, six ou sept ; si cette
+  granularité est tenue pour la bonne, la fiche écrit une dérogation sur l'argument ci-dessus.
 
 ### C-29-6-13 — L'invariant « filtre avant `LIMIT 50` » est gardé par un test, pas déclaré
 
@@ -173,4 +185,59 @@ Fiche : `29-6-trop-percu-centimes.md`.*
   l'import, pas la liste), et le mêler brouillerait ce qu'il garde.
 - **Réversible** : oui.
 
+### C-29-6-16 — L'indication dit « ne peut pas être acceptée », et ne nomme aucun autre geste
+
+- **Contexte** : validation P2, R1 et F2 (convergents, MEDIUM) — « ne peut qu'être rejetée » est faux à l'écran : la
+  ligne porte *Affecter manuellement* et *Éclater* ; pour un débit sans règle, le texte poussait vers un rejet sans
+  écriture au lieu de l'imputation.
+- **Retenu** : dire la seule vérité de la sélection — fr-CH « Une transaction sans correspondance ne peut pas être
+  acceptée : décochez-la pour accepter les autres. » (de, it, en au même sens) ; clé
+  `reconciliation-labels-unmatched-not-acceptable-hint`, `data-testid` `reconciliation-unmatched-not-acceptable-hint`.
+- **Écartées** : (a) la version longue de R1 (« …ou imputez-la par *Affecter manuellement* ou *Éclater* ») — pour un
+  paiement de client, la FAQ du manuel (`:2910`) interdit précisément ces deux gestes : l'indication pousserait le cas
+  même de #665 vers une imputation fausse ; les boutons sont d'ailleurs visibles sur la ligne ; (b) garder la clé
+  `…-reject-only-hint` avec un texte neuf — le nom reproduirait l'erreur.
+- **Réversible** : oui (une clé, quatre valeurs).
+
+### C-29-6-17 — La transaction rejetée reste en attente : angle mort assumé, renvoyé à #670
+
+- **Contexte** : validation P2, R2 (MEDIUM) — une transaction rejetée reste `pending`, empêche la clôture du compte
+  bancaire (`bank_accounts.rs:1025`, manuel `:1690-1694`), et aucun geste ne la rapproche d'un règlement saisi depuis la
+  fiche ; le texte prescrit par la P1 (« — sans quoi la transaction reste en attente ») promettait l'inverse.
+  L'orchestrateur a ouvert [#670] (bug P2) ; son intégration à l'epic est une décision attendue de l'auteur.
+- **Retenu** : la 29-6 **ne ferme pas** #670 et n'en dépend pas ; elle l'écrit comme angle mort assumé (statut, AC10,
+  inventaire (b), exclusions) et réécrit les textes prescrits (manuel `:2029`, `:2057`, `:2910`, CHANGELOG) pour ne
+  plus dire que le rejet règle la transaction : il la retire de la liste et empêche qu'elle soit passée une seconde
+  fois ; rejetée, elle reste en attente et empêche la clôture du compte bancaire. Au manuel, **sans numéro d'issue**
+  (renvoi `\S\ref{sec:clore-compte-bancaire}`) ; au CHANGELOG, avec le lien #670.
+- **Écartées** : (a) intégrer #670 à la 29-6 — ni mécanique (geste neuf de rattachement, ou statut neuf compté par la
+  clôture), ni décidé, et la règle de découpage est à sa limite (C-29-6-12) ; (b) attendre la décision sur #670 — la
+  fiche resterait bloquée sur un arbitrage qui ne change pas son code ; (c) un numéro d'issue au manuel — il périme à la
+  fermeture de #670 sans que rien ne le signale.
+- **Réversible** : oui — si #670 est intégrée avant le tag, les phrases d'attente se réécrivent avec elle.
+
+### C-29-6-18 — L'indication se place dans la rangée des boutons
+
+- **Contexte** : validation P2, F4 — un paragraphe qui apparaît au cochage entre les boutons et la table descend la
+  table d'une ligne sous le pointeur ; le clic suivant peut cocher la ligne voisine. R9/F4 : l'ordre avec l'indication
+  de la 29-3 n'était pas fixé.
+- **Retenu** : dernier enfant du `div` des boutons (`flex-wrap items-center`) ; ordre fixé : rangée des boutons,
+  paragraphe de priorité de la 29-3, table. À largeur étroite, un retour à la ligne peut encore décaler la table :
+  accepté, vérifié sur les captures.
+- **Écartées** : (a) réserver la place en permanence (élément vide rendu sans condition) — la mutation M11 et son test
+  (« indication absente ») perdraient leur objet, et une hauteur fixe ne tient pas les quatre longueurs de texte ;
+  (b) l'indication sous la table — loin du bouton grisé qu'elle explique.
+- **Réversible** : oui.
+
+### C-29-6-19 — Le spec `reconciliation-deleted-import` garde sa règle ; seul son commentaire change
+
+- **Contexte** : validation P2, R4 — son commentaire (`:12-14`) dit que la règle d'affectation rend les transactions
+  sélectionnables ; après l'AC10, toute ligne l'est.
+- **Retenu** : réécrire le commentaire (la règle n'est plus nécessaire à la sélection ; le ciblage par `data-tx-id`
+  isole les lignes du spec) ; garder la règle et le code du spec.
+- **Écartée** : retirer la règle — modifie un spec qui éprouve autre chose (un lot dont une transaction a disparu),
+  hors du périmètre minimal, pour un gain nul.
+- **Réversible** : oui.
+
 [#665]: https://github.com/guycorbaz/kesh/issues/665
+[#670]: https://github.com/guycorbaz/kesh/issues/670

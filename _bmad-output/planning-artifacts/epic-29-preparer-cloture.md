@@ -127,7 +127,10 @@ nouvelle (l'absorption sur le compte d'arrondi est écartée, C-29-6-2). **`kesh
 boucle.** Manuel (PDF), `api-external.md`, CHANGELOG. *Étendue à la validation P1 (2026-10-14, décision de
 l'orchestrateur)* : une ligne « Aucune correspondance » se coche, pour *Rejeter* seulement — sans quoi le contournement
 « régler depuis la fiche, puis rejeter la transaction », prescrit par la 29-6 et la 29-2 (C-29-2-8), est impraticable ;
-un écran, une clé i18n, un spec E2E.
+un écran, une clé i18n, un spec E2E. *Annoté à la validation P2 (2026-10-14)* : « pour *Rejeter* seulement » se lit
+« *Accepter* ne la traite pas » — la ligne garde *Affecter manuellement* et *Éclater* (C-29-6-16) ; rejetée, la
+transaction **reste en attente** et empêche la clôture du compte bancaire : angle mort assumé, [#670] (C-29-6-17), à
+connaître de la 29-1 (contrôle « transactions bancaires en attente »).
 
 ## Ordre
 
@@ -181,3 +184,4 @@ Docker Hub (`/health`). Autorisé d'office pour cet epic.
 [#668]: https://github.com/guycorbaz/kesh/issues/668
 
 [#665]: https://github.com/guycorbaz/kesh/issues/665
+[#670]: https://github.com/guycorbaz/kesh/issues/670
