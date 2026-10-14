@@ -2,7 +2,10 @@
 
 ## Status
 
-**ready-for-dev** (deux clés) — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `16eeed21`
+**29-4a : review** (développée le 2026-10-14, commit `e718221b` ; revue de code P1 à lancer) — **29-4b :
+ready-for-dev** (après le merge de la 29-4a).
+
+*Relevé d'origine :* **ready-for-dev** (deux clés) — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `16eeed21`
 (kickoff de l'Epic 29), worktree `/home/gcorbaz/devel/kesh-29-4`, branche `story/29-4`. Validation P1 faite (Sonnet,
 lentilles R et F : 0/0/6/7 et 0/0/2/7) et remédiée le 2026-10-14 ; validation P2 faite (Opus, lentilles R et F :
 0/1/3/6 et 0/1/3/7) et remédiée le même jour — **signal D5 levé** (un HIGH convergent né de la remédiation P1), déclaré
@@ -1155,13 +1158,163 @@ répartition des tests de fenêtre, à écrire au Dev Agent Record.
 
 ## Dev Agent Record
 
+*Partie a seulement (`29-4a-reverification-import-lot`), 2026-10-14. La partie b reste à développer.*
+
 ### Agent Model Used
+
+Opus 5.5 (`bmad-dev-story`, autonomie), worktree `/home/gcorbaz/devel/kesh-29-4`, branche `story/29-4` sur `089fcd80`
+(Stories 29-2 et 29-3 mergées). Commit de code : `e718221b`.
 
 ### Debug Log References
 
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/` : `294-rouge-sol-T2.log` (rouge au sol), `294-gate-1.log` (gate
+interrompu par `clippy`), `294-gate-2.log` (gate complet vert), `294-mutations.log` et `294-M29-*.log` (campagne),
+`294-front-{check,lint,unit,build}.log`, `294-e2e-1.log` et `294-e2e-backend.log` (E2E complet).
+
 ### Completion Notes List
 
+**T0 — établi au code, avant la conception des tests.** Rebase vérifié (`git merge-base --is-ancestor 089fcd80 HEAD`).
+Bases `kesh_294` et `kesh_e2e_294` recréées depuis les migrations du worktree, seed `scripts/seed-dev-db.sql` ; serveur
+`10.11.16-MariaDB`, `@@innodb_snapshot_isolation = 0`. **La sonde `LOCK IN SHARE MODE NOWAIT` se comporte comme la
+fiche le prévoit** — rejoué sur `kesh_294`, deux tables jetables `parent_294` / `enfant_294` (clé étrangère), client
+`mariadb` sous `kesh` : sonde **réussie** quand une transaction A ne tient le parent qu'en partagé **par le contrôle de
+clé étrangère d'un `INSERT`** ; **échec immédiat `ERROR 1205`** dès qu'une transaction C demande l'exclusif du parent
+en file ; réussie de nouveau après les commits. Le même essai **a établi le cas que la P3 n'avait pas essayé** : A,
+détenteur du partagé de clé étrangère, a redemandé `SELECT … LOCK IN SHARE MODE` pendant que C attendait — réponse en
+**0,9 ms**, puis un second `INSERT` enfant en 0,5 ms, sans attente ni interblocage ; C n'a obtenu la ligne qu'au commit
+de A, et y a vu les deux lignes. Aucun repli n'a été nécessaire. Tables supprimées ensuite. **Aucune** lecture
+d'`information_schema.INNODB_TRX` ni du privilège `PROCESS`.
+
+**Tests rouges d'abord** (`294-rouge-sol-T2.log`) — T29a-2, T29a-3, T29a-11, T29a-12 écrits avant le code, contre le
+sol ; les quatre rougissent **à l'étape (5)**, après avoir été vus en attente sur leur `INSERT` (étape (3) passée) :
+
+```
+⛔ l'import commencé avant la clôture devait être refusé — reçu Ok(())
+⛔ l'import commencé avant l'archivage devait être refusé — reçu Ok(())
+⛔ le lot commencé avant l'archivage devait être refusé — reçu Ok(true)
+⛔ le lot commencé avant la clôture devait être refusé — reçu Ok(true)
+Summary [   0.192s] 4 tests run: 0 passed, 4 failed, 59 skipped
+```
+
+Après les appels : `bank_accounts_repository` et `payment_batches_repository`, **63/63**. T29a-6, T29a-7 (l'autre
+ordre), T29a-1 (`EXPLAIN`) et T-a45 étendu ont été écrits **après** les fonctions (ils les appellent) et sont verts du
+premier coup.
+
+**Prémisse P-d (2) — établie au dépôt** par T29a-6 et T29a-7 : sonde de référence réussie (seul l'écrivain tient le
+compte), sonde de file échouée une fois la clôture lancée (demande exclusive en file), revérification rendue `Ok(())`
+sous `timeout` de 2 s, `INSERT` de la transaction `pending` sans attente, puis la clôture rend
+`Refused(PendingTransactions { pending_count: 1 })` (resp. `OpenPaymentBatches { batch_count: 1 }`) — **sans**
+interblocage. « Aucun verrou neuf » tient pour W22 et W17.
+
+**Contingences de T29a-4 et T29a-9 : aucune ne s'est produite.** Les deux tests, premiers du dépôt à monter un cycle
+**à trois** par la file d'attente, sont verts : la victime observée est la clôture (resp. la réouverture) — événement
+`bank_accounts::close` (resp. `::reopen`) capturé, `t2` et `t1` ont obtenu leurs verrous (`.expect`). La réserve (1)
+de l'argument de poids reçoit donc un premier cas favorable ; elle reste écrite comme raisonnée au-delà de ce cas.
+T29a-10 (`PATCH`, cycle à deux) vert, événement `bank_accounts::patch`.
+
+**Table *Position par chemin*, avec les lignes retenues** (sur `e718221b`) :
+
+| Chemin | Garde de tête (vue) | `INSERT` à clé étrangère | Revérification | Suite | Verrou neuf ? | Vue déplacée ? |
+|---|---|---|---|---|---|---|
+| W22 import (CAMT, CSV) | `bank_imports.rs:85` (`ensure_open_unarchived_in_tx`) ; vue née avant, dans la route (`find_by_company_and_hash`) | `bank_imports.rs:90` (`INSERT INTO bank_imports`) | `bank_imports.rs:131`, `recheck_open_unarchived_locked_in_tx` | `bank_imports.rs:151` (`INSERT INTO bank_transactions`) | non (compte S déjà tenu) | non |
+| W17 `create_batch` | `payment_batches.rs:92` (étape (0)) | `payment_batches.rs:146` (`INSERT INTO payment_batches`) | `payment_batches.rs:167`, `recheck_open_unarchived_locked_in_tx`, `NotFound` → `IllegalStateTransition` | `payment_batches.rs:184` (`UPDATE … msg_id`), articles, audit | non | non |
+| clôture | — | — | enveloppe `routes/bank_accounts.rs:1040` → `close_once` (`:1055`), `conclure` (`:1110`) | — | non | non |
+| réouverture | — | — | enveloppe `:1157` → `reopen_once` (`:1167`) | — | non | non |
+| `PATCH` (W13) | — | — | enveloppe `:1255` → `patch_once` (`:1267`) ; `claims_for_target` reste première instruction de la tentative | — | non | non |
+
+SQL et fonctions : `bank_accounts.rs:907` (`RECHECK_OPEN_LOCKED_SQL`), `:913` (`RECHECK_OPEN_UNARCHIVED_LOCKED_SQL`),
+`:999`, `:1038`.
+
+**Gates réellement exécutés, au commit de code `e718221b`** (le commit qui suit ne porte que la fiche, le registre de
+sprint et le prompt de revue) :
+
+- `scripts/test-fast.sh` (fmt + clippy workspace + nextest), sous verrou, base `kesh_294` remise à zéro avant :
+  **3637 passés, 6 ignorés** (`294-gate-2.log`, 155 s). Le premier essai (`294-gate-1.log`) a échoué sur `clippy`
+  (`enum_variant_names` : `Fenetre::SansFenetre`), corrigé avant le commit — écart à la fiche ci-dessous.
+- Frontend, sous verrou : `npm run check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` vert,
+  `test:unit` **1617/1617** (146 fichiers), `build` vert. Frontend non touché par la story.
+- E2E complet, sous verrou, recette de `docs/testing.md` (port 3045, base `kesh_e2e_294` recréée, `KESH_TEST_MODE`
+  des deux côtés) : **282 passés, 7 échecs, 19 ignorés** (11,4 min). Les sept, jugés fichier par fichier contre
+  `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` — **les sept KF-029 (#97)** ; aucun autre.
+
+**Mutations** (`294-mutations.log`, motif vérifié unique, restauration `git checkout --` puis `touch`, arbre vérifié
+propre après la campagne) — **15 jouées, 15 tuées, aucune équivalente** :
+
+| # | Mutation | Tuée par |
+|---|---|---|
+| M29-1 | W22 : appel retiré | T29a-2, T29a-11, T29a-5 |
+| M29-2 | W17 : appel (et conversion) retirés | T29a-3, T29a-12, T29a-5 |
+| M29-3 | `LOCK IN SHARE MODE` retiré de `RECHECK_OPEN_LOCKED_SQL` | T-a45 étendu (seul consommateur en 29-4a ; T29a-2 / T29a-3 appellent la variante — voir M29-3 bis) |
+| M29-3 bis | idem sur `RECHECK_OPEN_UNARCHIVED_LOCKED_SQL` (ajoutée) | T-a45 étendu, T29a-2, T29a-3, T29a-11, T29a-12 |
+| M29-4 | enveloppe de la clôture retirée | T29a-4 |
+| M29-6 | W22 : appel déplacé avant l'`INSERT INTO bank_imports` | T29a-5 (ordre textuel) ; et T29a-2 / T29a-11 — ⚠️ **non** parce que le comportement diffère, mais parce que leur sonde attend la requête `INSERT INTO bank_imports` et voit l'écrivain bloqué sur la revérification : fonctionnellement, le refus aurait lieu (équivalence de la fiche confirmée), la tuerie de ces deux-là dépend du montage |
+| M29-7 | W17 : appel déplacé avant l'`INSERT INTO payment_batches` | T29a-5 ; T29a-3 / T29a-12 par la même dépendance de montage que M29-6 |
+| M29-19 | la variante en `FOR UPDATE` | T-a45 étendu, T29a-6, T29a-7 (le cycle écrivain / clôture) |
+| M29-19 bis | `RECHECK_OPEN_LOCKED_SQL` en `FOR UPDATE` (ajoutée) | T-a45 étendu |
+| M29-20 | enveloppe de la réouverture retirée | T29a-9 |
+| M29-21 | enveloppe du `PATCH` retirée | T29a-10 |
+| M29-22 | `archived` ignoré par le `match` de la variante | T29a-11, T29a-12 (la forme SQL est tenue par T-a45 étendu) |
+| M29-23 | W22 appelle `recheck_open_locked_in_tx` | T29a-11, T29a-5 |
+| M29-23 bis | W17 appelle `recheck_open_locked_in_tx` (ajoutée) | T29a-12, T29a-5 |
+| M29-25 | W17 : conversion retirée | T29a-12 |
+
+**État transitoire assumé, à tenir jusqu'à la 29-4b** (AC9) : la puce du manuel utilisateur (`user-manual.tex`, § *Clore
+un compte bancaire*, « une opération déjà en cours … peut encore aboutir ») et `docs/api-external.md:241` restent écrits
+pour les sept chemins, donc **trop larges** pour l'import et le lot ; ni le manuel ni son PDF ne sont touchés par la
+partie a. **Aucune release entre la PR de la 29-4a et celle de la 29-4b** : la v0.13.4 attend la 29-4b.
+
+**Propagation** (AC9) : `grep -rnE "651|\bL1\b"` et `grep -rnE "par une course|hors de cette fenêtre"` sur `crates docs
+CHANGELOG.md frontend/src website README.md`. Sites triés : réécrits en 29-4a (`bank_imports.rs` tête de
+`create_with_transactions` et son doc-comment, `payment_batches.rs` étape (0), § L1 d'`ensure_open_in_tx` — « Huit
+chemins » refait depuis la liste : **six** —, doc-comment d'`ensure_open_unarchived_in_tx`, `errors.rs`
+(`BankAccountClosed`), `routes/bank_imports.rs` (`import_create_error`), commentaire de la sentinelle
+`routes/bank_accounts.rs`) ; **laissés pour la 29-4b**, comme la fiche le prescrit : `bank_accounts.rs:28` et le renvoi
+« angle mort L1 » du doc-comment d'`ensure_open_unarchived_in_tx`, le registre l. 95 / 121 / 239 / 296,
+`routes/reconciliation.rs:5021` (ex-`:4908`), `bank_accounts_closed_e2e.rs:18` et `:1577`, `user-manual.tex:1750-1751`,
+`docs/api-external.md:241`, `:557`, `:596` ; **laissé, relevé daté** : `CHANGELOG.md:48` (§ 0.13.3). Les autres
+occurrences de `L1` désignent d'autres limitations (sans rapport).
+
+**Écarts à la fiche** (chacun au registre) : W17 testé dans `payment_batches_repository.rs` (C-29-4-23) ; position
+structurée `Position { apres, avant }` (C-29-4-24) ; `Fenetre::SansFenetre` renommée **`Fenetre::Fermee`** (refus
+`clippy::enum_variant_names`, noté au doc-comment de la variante) ; `conclure` partagée, rendu `Internal` de `begin` /
+`commit` inchangé (C-29-4-25) ; rendez-vous sur la demande de `t2` dans T29a-4 / T29a-9 (C-29-4-26) ; tâche d'import
+qui commite sur succès (C-29-4-27) ; trois mutations ajoutées (M29-3 bis, M29-19 bis, M29-23 bis). Points (ii) et
+(iii bis) d'`audit_route_registry.rs` : leurs « sept » de la famille `DbError` inchangés, une phrase ajoutée pour la
+famille `AppError` ; point (vi) recompté sur la branche rebasée : sept au sol (`onboarding::finalize`,
+`update_invoice_settings`, `create_fiscal_year`, `close_fiscal_year`, `onboarding::seed_demo`, `onboarding::reset`,
+`bank_imports::delete`) + trois = **dix**.
+
+**Décomptes** (recomptés, périmètre `089fcd80..e718221b`) : tests neufs **13** — `kesh-db` 8 (T29a-1, -2, -6, -7, -11
+au module `compte_clos` ; T29a-3, -12 dans `payment_batches_repository.rs` ; T-a45 étendu en `mod tests`, test neuf
+`les_reverifications_verrouillent_en_partage`), `kesh-api` 5 (T29a-4, -9, -10 ; T29a-5 et son volet inverse) — soit
+les onze identifiants T29a de la fiche plus le volet inverse de T29a-5 et T-a45 étendu ; choix ajoutés **5**
+(C-29-4-23 à C-29-4-27 ; registre à 27) ; fichiers de production touchés **6** (quatre de code : `bank_accounts.rs`,
+`bank_imports.rs`, `payment_batches.rs`, `routes/bank_accounts.rs` ; deux de doc-comments seuls : `errors.rs`,
+`routes/bank_imports.rs`), conforme à la fiche.
+
+**Demandé à l'orchestrateur** : la revue de code P1 (`29-4a-reverification-import-lot-review-prompt-p1.md`, Opus,
+lentilles B/E/A) ; puis le push et la PR, corps **`refs #651`** — ⛔ ni `closes` ni `fixes`, la 29-4b fermera #651.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/bank_accounts.rs` — deux SQL, deux fonctions de revérification, doc-comments (L1,
+  `ensure_open_unarchived_in_tx`, `close_in_tx`, `reopen_in_tx`, `set_journal_account_id_for_company`), T-a45 étendu
+- `crates/kesh-db/src/repositories/bank_imports.rs` — appel W22, commentaires
+- `crates/kesh-db/src/repositories/payment_batches.rs` — appel W17, conversion de l'archivé, commentaire
+- `crates/kesh-db/src/errors.rs` — doc-comment de `BankAccountClosed`
+- `crates/kesh-api/src/routes/bank_accounts.rs` — `close_once`, `reopen_once`, `patch_once`, `conclure`, doc-comments,
+  commentaire de la sentinelle
+- `crates/kesh-api/src/routes/bank_imports.rs` — doc-comment d'`import_create_error`
+- `crates/kesh-db/tests/bank_accounts_repository.rs` — T29a-1, -2, -6, -7, -11
+- `crates/kesh-db/tests/payment_batches_repository.rs` — T29a-3, -12
+- `crates/kesh-api/tests/rejeu_interblocage_e2e.rs` — T29a-4, -9, -10
+- `crates/kesh-api/tests/bank_account_closed_inventory.rs` — troisième inventaire (T29a-5) et volet inverse
+- `crates/kesh-api/tests/audit_route_registry.rs` — points (ii), (iii bis), (vi), commentaires
+- `CHANGELOG.md` — `[0.13.4]`, `### Corrigé`
+- `_bmad-output/implementation-artifacts/epic-29-choix-autonomes-29-4.md` — C-29-4-23 à C-29-4-27
+- `_bmad-output/implementation-artifacts/29-4a-reverification-import-lot-review-prompt-p1.md` — prompt de la revue P1
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — clé `29-4a-reverification-import-lot` en `review`
 
 ## Change Log
 
@@ -1365,3 +1518,13 @@ fois, sur une garde de test).
     (les relevés datés P3 le gardent, voulu), `LOCK IN SHARE MODE NOWAIT`.
   - **Validation close : la remédiation de la passe ciblée ne touche aucune ligne de production** (fiche et registre
     seulement ; aucun code). La 29-4a et la 29-4b passent en développement, après la 29-3.
+
+### Développement de la 29-4a — 2026-10-14
+
+`bmad-dev-story` (Opus 5.5, autonomie) sur `089fcd80`. T0 établi au code (sonde `LOCK IN SHARE MODE NOWAIT` et redemande
+du partagé de clé étrangère, sur MariaDB 10.11.16, aucun repli) ; quatre tests de fenêtre rouges au sol, puis les deux
+revérifications et leurs appels (W22, W17) ; P-d (2) établie au dépôt (T29a-6, T29a-7) ; trois enveloppes de rejeu,
+victimes observées conformes (T29a-4, T29a-9, T29a-10) ; troisième inventaire du registre (T29a-5, volet inverse).
+Commit de code `e718221b` (`refs #651`). Gates au commit de code : `test-fast.sh` 3637/3637 (6 ignorés), Vitest
+1617/1617, E2E 282 passés + 7 KF-029 ; 15 mutations, 15 tuées. Choix C-29-4-23 à C-29-4-27. Détail au Dev Agent
+Record. Revue de code P1 à lancer : `29-4a-reverification-import-lot-review-prompt-p1.md` (Opus, B/E/A).
