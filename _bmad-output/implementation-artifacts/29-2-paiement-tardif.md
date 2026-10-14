@@ -367,7 +367,7 @@ plus de 30 jours après sa date, une facture à 60 jours. Les 30 jours courent d
 échéance, son dernier rappel (un rappel annulé ne compte pas). Seules les **dates** changent : la facture n'est
 toujours proposée qu'au montant de son reste dû — un paiement qui inclut les frais de rappel ne l'est pas
 ([#401](https://github.com/guycorbaz/kesh/issues/401)). La proposition et l'acceptation appliquent toujours la même
-règle de dates. Un paiement reçu plus de 30 jours après l'échéance et après le dernier rappel n'est toujours pas proposé :
+règle de dates. Un paiement reçu plus de 30 jours après l'échéance et plus de 30 jours après le dernier rappel n'est toujours pas proposé :
 enregistrez-le depuis la fiche de la facture, puis rejetez la transaction. API : mêmes codes et raisons qu'avant ;
 une acceptation refusée en `payment_date_outside_window` peut désormais aboutir. »
 
@@ -672,3 +672,22 @@ Trois : pas de découpage.
     30 jours » (forme juste du reliquat, `:2029` et C-29-2-9), l'entrée P1 ci-dessus (relevé daté, non réécrit) et les
     annotations datées du registre qui citent l'ancienne rédaction. Prochaine passe : **P3 ciblée, Haiku**, une lentille sur le seul diff de cette remédiation
     (`29-2-validate-prompt-p3-ciblee.md`).
+- 2026-10-14 — **Validation P3, passe ciblée** (Haiku 5.5, une lentille sur le diff `e17368f8` ; rapport
+  `kesh-gate-logs/29-2-validate-p3-ciblee.md`) : 0/0/2/3. Remédiée par l'orchestrateur, fiche seule :
+  - **P3-1 (MEDIUM, né de la remédiation P2)** — réel : avec une échéance à D−40 et un rappel à D−5, l'ancre vaut D−5 et
+    le paiement est proposé ; le texte prescrit du CHANGELOG disait le contraire. Corrigé en « plus de 30 jours après
+    l'échéance et plus de 30 jours après le dernier rappel » (`grep -nF "après le dernier rappel"` : seule la ligne
+    prescrite portait la forme fausse ; `:299` et `:313` étaient justes).
+  - **P3-2 (MEDIUM)** — **réfuté comme défaut de la fiche** : les clés 29-5 et 29-6 et leurs paragraphes du fichier d'epic
+    existent sur les branches `story/29-5` et `story/29-6` (`grep -n "29-5"
+    ../kesh-29-5/_bmad-output/planning-artifacts/epic-29-preparer-cloture.md` : l. 10, 107, 115) ; ils rejoignent
+    celle-ci par **union au rebase**, comme toutes les clés de l'epic (consigne 7). La composition de la v0.13.4 se lit
+    au fichier d'epic une fois réuni, non sur cette branche.
+  - **P3-3 (LOW)** — le décompte brut « F 0/0/2/6 » de l'entrée P2 reprend le bilan du rapport F, qui annonce 6 LOW
+    pour 5 titres de LOW ; relevé daté, non réécrit (B4). Les distincts « 2 MEDIUM, 12 LOW » restent justes.
+  - **P3-4 (LOW)** — le titre de la story dit « après l'échéance, ou après un rappel » sans la borne des 30 jours :
+    gardé comme titre (la règle est au § *La règle retenue*), le CHANGELOG prescrit porte la borne.
+  - **P3-5 (LOW)** — le reliquat « plus de 30 jours après l'échéance » suppose E ≥ F, garanti par l'API
+    (`routes/invoices.rs:765`, `:816`) ; le cas g de l'AC5 (E < F) est une fixture hors API, qui éprouve le `GREATEST`.
+  **Validation close** : la remédiation de la passe ciblée ne touche que la fiche, aucune ligne de production
+  (règle de la passe ciblée du `CLAUDE.md`). Trend : P1 1 HIGH / 3 MEDIUM → P2 0 / 3 → P3 ciblée 0 / 1 réel.
