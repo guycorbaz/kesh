@@ -26,6 +26,9 @@
   - (d3) refuser la clôture pendant une écriture, ou documenter la fenêtre : inutile, (c) la ferme ;
   - verrou **exclusif** de l'écrivain : rouvre les cycles écrivain / écrivain de la 28-4 (W9 / W24, W30 / W24).
 - **Réversible** : oui — retirer sept appels et deux enveloppes rétablit la 28-4.
+- *Annotation du 2026-10-14 (remédiation de la validation P1)* : le complément (b) ne porte plus que sur la **clôture**
+  (C-29-4-5 amendé) ; s'y ajoute l'épinglage d'`innodb_snapshot_isolation` (C-29-4-13). Réversible : sept appels, une
+  enveloppe, un réglage de session.
 
 ### C-29-4-2 — Positions : après l'`INSERT` à clé étrangère (W17, W22) ; en dernière acquisition de verrou (annulations)
 
@@ -66,6 +69,12 @@
 - **Écartée** : ne rien faire (un `500` rare sur la clôture) ; rejouer aussi les routes de gestion (aucun cycle neuf ne
   les atteint, C-29-4-2).
 - **Réversible** : oui.
+- *Amendé le 2026-10-14 (validation P1, F5)* : **la réouverture n'est pas rejouée**. Pour qu'elle soit victime d'un cycle
+  à trois, il faudrait un détenteur partagé de la ligne d'un compte **clos** en attente d'une ressource ; toute écriture
+  sur un clos est refusée avant de prendre ce partagé (garde non verrouillante ou lecture sous `FOR UPDATE`), et les
+  gestes permis sur un clos (W21, W30) ne touchent pas la ligne du compte. Point (vi) : sept → **huit** (non neuf) ; le
+  test T29a-4 ne porte que sur la clôture. Écartée : garder les deux comme défense en profondeur (élargit le périmètre
+  minimal sans cas à défendre).
 
 ### C-29-4-6 — Découper en 29-4a (import, lot, rejeu) et 29-4b (annulations, textes)
 
@@ -77,6 +86,10 @@
   l'inventaire de l'AC5 dit `Ouverte("29-4b")` pour les cinq sites restants) ; trois stories (le rejeu seul n'a pas
   d'objet sans la 29-4b ; il est rangé avec la fonction de revérification, même module).
 - **Réversible** : oui.
+- *Annotation du 2026-10-14 (validation P1, R6 = F7)* : « cinq modules, la borne » était un **sous-décompte** — la 29-4b
+  touche aussi des doc-comments de `bank_accounts.rs` et de `routes/reconciliation.rs`. Recompté (fiche, § *Périmètre
+  minimal*) : 29-4a cinq modules de code (`pool` compris, C-29-4-13), 29-4b quatre de code et sept comptée largement ;
+  le découpage reste, la 29-4b porte une dérogation motivée (C-29-4-18).
 
 ### C-29-4-7 — Résidu : un cycle à trois où l'import serait victime
 
@@ -86,6 +99,9 @@
   (prémisse tenue par le dépôt, `rejeu_interblocage_e2e.rs:9-11`), et elle est rejouée. Classe LOW : aucune issue.
 - **Écartée** : rejouer l'import (extraction de ~160 lignes sur deux chemins, CAMT et CSV) — hors périmètre minimal.
 - **Réversible** : oui (une enveloppe à ajouter si le cas se produit).
+- *Amendé le 2026-10-14 (validation P1, F8 b)* : la réserve « et que la transaction la plus légère ne soit pas
+  désignée » décrivait un cas qui n'arrive qu'à égalité de poids ; dans ce cycle, la clôture (une demande en attente,
+  rien d'écrit) est toujours la plus légère. Le résidu est **théorique**, écrit comme tel, sans « à surveiller ».
 
 ### C-29-4-8 — Pas de revérification là où un invariant ou un verrou existant tient
 
@@ -121,4 +137,70 @@
 - **Retenu** : T-b3 sur W25 prouve que le cycle est détecté (`1213`) et rejoué ; pour les quatre autres, la table des
   cycles et les enveloppes existantes (`audit_route_registry.rs`).
 - **Écartée** : cinq tests à trois connexions (coût, sans information neuve).
+- **Réversible** : oui.
+- *Annotation du 2026-10-14* : le test se nomme désormais **T29b-3** (C-29-4-17).
+
+### C-29-4-13 — Épingler `innodb_snapshot_isolation = OFF` par session dans `create_pool`
+
+- **Contexte** (validation P1, R4 = F6 ; décision de l'orchestrateur : la revérification ne doit pas dépendre en silence
+  de ce réglage) : sous `ON` — défaut de MariaDB à partir de la 11.6 —, une lecture verrouillante qui rencontre une
+  version postérieure à la vue rend `ER_CHECKREAD` (1020), dans la course même que la revérification traite. Établi au
+  code : `map_db_error` ignore 1020, qui sort en `DbError::Sqlx` → `500 INTERNAL_ERROR`. Constaté : base de dev
+  `10.11.16`, variable présente, `OFF`. Le dépôt dépend déjà de `OFF` ailleurs (`routes/reconciliation.rs:2166`,
+  `bank_imports.rs:439`). Version du NAS inconnue.
+- **Retenu** : `configurer_session` (appelée par `after_connect`) exécute `SET SESSION innodb_snapshot_isolation = OFF`,
+  en ignorant la seule erreur 1193 (variable inconnue d'un serveur ancien, qui se comporte comme `OFF`) ; test T29a-8
+  (constat de 1020 sous `ON`, puis épinglage) ; mutation M29-5.
+- **Écartées** : (1) traduire 1020 en `BANK_ACCOUNT_CLOSED` sur le chemin de la revérification — faux quand la
+  modification postérieure est un `PATCH` ou un renommage, et ne couvre pas l'`INSERT`, dont le contrôle de clé
+  étrangère est lui aussi une lecture verrouillante (non établi) ; (2) traduire 1020 en rejeu — l'import et la création
+  de lot ne sont pas rejoués (C-29-4-7) ; (3) vérification au démarrage avec refus de démarrer — bloquerait une
+  installation à la montée de version du serveur pour un réglage que l'application peut poser elle-même ;
+  (4) exigence de version au manuel d'administration seule — laisse le `500` à qui ne lit pas le manuel.
+- **Réversible** : oui (une instruction).
+
+### C-29-4-14 — La réouverture n'est pas rejouée
+
+- Voir l'amendement de C-29-4-5 (validation P1, F5). Réversible : oui (une enveloppe).
+
+### C-29-4-15 — L'ensemble des gardes non verrouillantes s'extrait du code, et `FENETRE` lui est égal
+
+- **Contexte** (validation P1, R3) : l'assertion (ii) de l'AC5 sélectionnait les sites par le **texte** des raisons du
+  registre principal — que la 29-4b réécrit —, manquait W20 et rangeait W1-W6 / `accept_one_*`, qui sont des
+  `Invariant`, à `FENETRE`.
+- **Retenu** : `G` = appelants d'`ensure_open_in_tx` / `ensure_open_unarchived_in_tx` ∪ fonctions portant un littéral
+  qui lit `closed_on` `FROM bank_accounts` sans `FOR UPDATE` ni `LOCK IN SHARE MODE` (hors `bank_accounts.rs`) ;
+  assertion d'**égalité** `G` = fonctions de `FENETRE` ; neuf entrées au sol (W9, W17, W20, W22, W24, W25, W28, W29,
+  W30).
+- **Écartées** : un champ `Lecture::{Verrouillante, NonVerrouillante}` ajouté au registre principal (27 entrées à
+  retoucher, et le champ resterait une déclaration, non une extraction) ; la sélection par texte (change de sens à la
+  réécriture d'une raison).
+- **Réversible** : oui.
+
+### C-29-4-16 — La course archivage / import et lot (L5) est nommée, non fermée
+
+- **Contexte** (validation P1, F8 a) : la revérification, partagée avec les annulations, ne lit pas `archived` ; un
+  archivage commité entre la garde de tête de W22 / W17 et leur `INSERT` laisse passer l'écriture sur un compte archivé.
+  Le dépôt nomme déjà cette course pour l'import (« L5 de la route d'archivage », `bank_accounts.rs:866-867`), sans issue.
+- **Retenu** : angle mort écrit (fiche, Dev Notes ; doc-comment de `recheck_open_locked_in_tx`) ; **issue à ouvrir** par
+  l'orchestrateur (course archivage / import et archivage / lot, L5).
+- **Écartée** : une variante `recheck_open_unarchived_locked_in_tx` pour W22 / W17 — hors #651, et non mécanique (W17
+  rend `IllegalStateTransition` pour un archivé, W22 `NotFound` : deux traductions).
+- **Réversible** : oui.
+
+### C-29-4-17 — Identifiants propres à la story : `T29a-n`, `T29b-n`, `M29-n`
+
+- **Contexte** (validation P1, R7) : `T-a1` à `T-a5` existent dans le module `compte_clos` (28-4), `T-b1` à `T-b4` dans
+  `bank-accounts.api.test.ts`, `M1` à `M15` dans les doc-comments de la 28-4.
+- **Retenu** : renumérotation de la fiche ; `T-a31`, `T-a45`, `T-a48`, `T-a49` gardent leur sens (tests de la 28-4).
+- **Réversible** : oui.
+
+### C-29-4-18 — Dérogation à la règle de splitting pour la 29-4b
+
+- **Contexte** (validation P1, R6 = F7) : comptée largement, la 29-4b touche sept modules.
+- **Retenu** : pas de redécoupage ; ce qui dépasse cinq n'est que du texte (deux fichiers à doc-comments seuls, le
+  manuel), le code est un rollout mécanique du patron de la 29-4a ; séparer textes et code ferait vivre plus longtemps
+  des textes faux. Section *Dérogation règle de splitting (29-4b)* de la fiche.
+- **Écartées** : une 29-4c pour les textes ; déplacer en 29-4a la réécriture de `bank_accounts.rs` (fausse tant que les
+  annulations restent ouvertes).
 - **Réversible** : oui.
