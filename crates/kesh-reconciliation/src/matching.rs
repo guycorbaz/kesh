@@ -411,6 +411,41 @@ mod tests {
         assert_eq!(proposals[2].invoice_id, 103);
     }
 
+    /// Story 29-5 (revue P1, B2 = E1) — l'égalité de score « 0,40 + 0,10
+    /// contre 0,50 » entre deux clients différents, affirmée par le
+    /// doc-comment d'`imputation_order`, est posée ici : la facture A est
+    /// désignée par la référence et par son contact (0,40 + 0,10), mais son
+    /// montant diffère ; la facture B est au montant exact seul (0,50). Les
+    /// deux totaux sont égaux **au bit près**, et c'est l'ordre d'imputation
+    /// qui tranche. Premier jeu : B (identifiant le plus grand) passe devant
+    /// parce qu'elle est échue la première, ce que ni l'identifiant ni
+    /// l'ordre de chargement n'expliquent ; second jeu : échéances permutées.
+    #[test]
+    fn propose_matches_ties_between_reference_plus_contact_and_exact_amount() {
+        let tx = make_tx(dec!(100.00), Some("REF-A"), Some("ACME"));
+        let build = |due_a: (u32, u32), due_b: (u32, u32)| {
+            let mut a = make_invoice(201, dec!(90.00), Some("REF-A"), 50);
+            a.due_date = NaiveDate::from_ymd_opt(2026, due_a.0, due_a.1);
+            let mut b = make_invoice(202, dec!(100.00), None, 51);
+            b.due_date = NaiveDate::from_ymd_opt(2026, due_b.0, due_b.1);
+            [
+                cand(a, Some(make_contact(50, "ACME"))),
+                cand(b, Some(make_contact(51, "Autre client"))),
+            ]
+        };
+        let proposals = propose_matches(&tx, &build((6, 30), (5, 12)));
+        assert_eq!(proposals.len(), 2);
+        assert_eq!(
+            proposals[0].score.total, proposals[1].score.total,
+            "0,40 + 0,10 et 0,50 doivent être égaux : sinon l'ordre d'imputation ne tranche plus"
+        );
+        assert_eq!(proposals[0].invoice_id, 202);
+        assert_eq!(proposals[1].invoice_id, 201);
+        let proposals = propose_matches(&tx, &build((5, 12), (6, 30)));
+        assert_eq!(proposals[0].invoice_id, 201);
+        assert_eq!(proposals[1].invoice_id, 202);
+    }
+
     /// Empty candidates → empty proposals.
     #[test]
     fn propose_matches_empty_candidates_returns_empty() {
