@@ -978,3 +978,4 @@ fichier, ceux de la KF-029 (#97) de la liste *Les échecs attendus* : `mode-expe
   **Revue close : la remédiation de la passe ciblée ne touche aucune ligne exécutable de production** — elle change un
   doc-comment d'un fichier de tests, la fiche, le fichier d'epic et `sprint-status.yaml`. Gates finaux : voir
   l'annotation datée du Dev Agent Record (« Gates finaux de la 29-2 »).
+- 2026-10-14 — **Registre versé** par l'orchestrateur : le contenu de `epic-29-choix-autonomes-29-2.md` (C-29-2-1 à 17) est réuni par union dans `epic-29-choix-autonomes.md`, et le fichier propre à la story est retiré ; les renvois ci-dessus et des prompts de passe désignent ce contenu.
