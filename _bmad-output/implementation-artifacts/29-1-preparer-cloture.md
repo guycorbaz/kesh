@@ -941,6 +941,7 @@ union.
 | M-a39 | K4 : `ORDER BY` retiré (et M-a39b : `ORDER BY i.id`) | `t_a7_k4_liste_bornee_et_ordonnee` |
 | M-a40 | K4 : départage `i.id DESC` | `t_a7_k4_liste_bornee_et_ordonnee` |
 | M-a41 | K4 : plafond ignoré (`LIMIT` lié à 2000) | `t_a7_k4_liste_bornee_et_ordonnee` |
+| M-a42 | K6 : borne haute de `DATE_OUTSIDE_ITS_YEAR` (`je.entry_date > ?` → `>= ?`) *(revue P2 ciblée, F2)* | `t_a9_k6_perimetre_de_y_et_bornes` (écriture de Y datée du dernier jour) |
 | M-b1 | `NextFiscalYearStart` daté `today` | T-b1 |
 | M-b2 | lecture du suivant en `ORDER BY start_date DESC` (rend le dernier exercice, non le suivant) — ⚠️ la lecture étant `find_next_after`, partagée avec K7, c'est la mutation M-a11 vue du chemin de la 29-1b | T-b1 (N+2 présent) |
 | M-b3 | confirmation verrouillante retirée, **aucun** contrôle de statut (date et exercice pris de la lecture ordinaire) | T-b3 (le code attendu est `NEXT_FISCAL_YEAR_CLOSED` ; sans confirmation, `create_in_tx_inner` rendrait `FISCAL_YEAR_CLOSED`) — tuée **parce que** l'AC11 interdit de juger le statut sur la lecture ordinaire ; T-b5 (ii) ne la revendique plus (P2 R5 = F3) |
@@ -1178,6 +1179,36 @@ l'afficher changerait une ligne de production.
 **Passe suivante** : passe ciblée P2, `29-1a-review-prompt-p2-ciblee.md` (Haiku, une lentille, sur le seul diff
 `34750f1f..1c15363e`).
 
+**Passe ciblée P2, remédiée** (rapport `kesh-gate-logs/29-1a-review-p2-ciblee.md`, 0/0/2/2 ; commit de code `7b1fd8b8`,
+dernier commit de code de la story) :
+- **F1** : le mécanisme de K3 est décrit exactement — chacun des deux soldes est arrondi au centime *avant* la
+  soustraction — dans la doc du module (`closing_checks.rs`) et au manuel (`user-manual.tex`, PDF régénéré par `make fr`
+  sous verrou, `291a-p2-make-fr.log`, contrôlé aplati : « des livres à 100,004 et un relevé à 99,996 (différence brute
+  0,008) » ×1). Les deux exemples (100,004 / 99,996 → aucun écart ; 100,005 / 100,004 → 0,01) sont **assertés** dans
+  `l_ecart_du_releve_est_arrondi_au_centime` (`bank_accounts.rs`, module `tests`, verts).
+- **F2** : une écriture de Y datée du 31/12/2026 ajoutée à la fixture de `t_a9_k6_perimetre_de_y_et_bornes` (attendue
+  absente) ; **M-a42** (`je.entry_date > ?` → `>= ?`) appliquée, `1 failed` sur ce test (`binary(closing_checks)` :
+  20 passés, 1 échoué), restaurée par `git checkout --` puis `touch`. Cumul des mutations de la 29-1a : 21 exécutées
+  depuis la revue P1 (M-a23 à M-a42, M-a39 en deux formes), 20 tuées, 1 équivalente (M-a33).
+- **F3** : section `## [0.14.0] — Non publié` vide retirée du CHANGELOG (la 29-1b la recréera). **F4** : commentaire de
+  `FiscalYearChecks.svelte` aligné sur « Créer l’exercice suivant ».
+- Aucune ligne exécutable de production changée : le diff de production est un doc-comment, un test de module et un
+  commentaire Svelte.
+
+**Gates au dernier commit de code `7b1fd8b8`** (bases remises à zéro, migrations et seed rejoués ;
+`kesh-gate-logs/291a-p2-*.log`) :
+- `scripts/test-fast.sh` : **3639 passés, 6 ignorés**, vert ;
+- `npm run check` : 0 erreur, 29 avertissements ; `lint-i18n-ownership` : vert ; `npm run test:unit` : **147 fichiers,
+  1633 tests**, verts ; `npm run build` : vert ;
+- **E2E complet** (port 3042, `kesh_e2e_291`) : **282 passés, 8 échecs, 19 ignorés** (12,4 min). Contre `docs/testing.md`
+  § *Les échecs attendus* : les sept de la KF-029 (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`,
+  `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) **plus** `sidebar-navigation.spec.ts:75`, listé (KF-052 ou pollution) :
+  **rejoué seul, il passe** (4/4, `291a-p2-e2e-sidebar.log`) — c'est donc le huitième variable de pollution, non la
+  KF-052 ni une régression. `fiscal-years.spec.ts` : aucun échec.
+
+**Registre versé** : le contenu de `epic-29-choix-autonomes-29-1.md` (à partir de son premier titre) est ajouté à la fin
+de `epic-29-choix-autonomes.md`, précédé de `---` ; le fichier propre est conservé (la 29-1b le complétera).
+
 ### Completion Notes List
 
 - 2026-10-14 — fiche créée (analyse de contexte complète, guide de développement), deux clés `ready-for-dev`.
@@ -1190,6 +1221,8 @@ l'afficher changerait une ligne de production.
   code `7c643eba` (E2E : les sept échecs attendus de la KF-029) ; 21 mutations tuées sur 21, M-a9 équivalente ; clé en
   `review`, revue de code P1 à lancer.
 - 2026-10-14 — revue de code P1 remédiée (tests et mutations, doc-comments, textes) ; passe ciblée P2 à lancer.
+- 2026-10-14 — passe ciblée P2 remédiée (0/0/2/2), revue close, clé `29-1a-controles-prealables` en `done` ; registre
+  versé à celui de l'epic.
 
 ### File List
 
@@ -1393,3 +1426,19 @@ l'afficher changerait une ligne de production.
   l'orchestrateur, C-29-1-43). Rebase sur `c36f39bc` (29-2) d'abord. Gate complet 3639 / 6 ignorés, Vitest 1633, E2E
   283 passés et les 7 échecs de la KF-029, au dernier commit de code `8b5e1a3f` (rejoué sur `1c15363e`). Choix
   C-29-1-43 à 47. Passe ciblée P2 à lancer : `29-1a-review-prompt-p2-ciblee.md` (Haiku).
+- 2026-10-14 — **revue P2 (passe ciblée)** (Haiku 4.5, une lentille « chasseur de régression », sur le seul diff
+  `34750f1f..1c15363e` ; rapport `kesh-gate-logs/29-1a-review-p2-ciblee.md`) : **0 CRITICAL / 0 HIGH / 2 MEDIUM /
+  2 LOW**. Remédiation par Sonnet 5.5, commit de code `7b1fd8b8`.
+  - **Trend complet** : P1 B 0/0/0/3, E 0/0/4/6, A 0/0/1/8 → P2 ciblée 0/0/2/2.
+  - **F1 (MEDIUM)** : mécanisme de l'écart K3 décrit exactement (chaque solde arrondi avant la soustraction), doc du
+    module et manuel, PDF régénéré ; deux exemples assertés au test de `statement_gap`. **F2 (MEDIUM)** : écriture de Y
+    du dernier jour dans la fixture de K6, M-a42 tuée. **F3 (LOW)** : section `[0.14.0]` vide retirée du CHANGELOG.
+    **F4 (LOW)** : commentaire Svelte aligné.
+  - **Propagation** : symptômes grepés sur le worktree (`demi-centime`, `Nouvel exercice`, `0.14.0`) : ne restent que
+    des occurrences sans rapport avec K3 (`invoice_settlements`, `company_invoice_settings`, `pdf.rs`,
+    `admin-manual.tex`) ou propres à la 29-1b.
+  - Gates au dernier commit de code : 3639 / 6 ignorés ; Vitest 1633 ; E2E 282 passés, 8 échecs tous listés (sept
+    KF-029 + `sidebar-navigation.spec.ts:75`, qui passe rejoué seul).
+  - Registre de la story versé dans `epic-29-choix-autonomes.md` (fichier propre conservé).
+  - **Revue close : la remédiation de la passe ciblée ne touche aucune ligne exécutable de production** (un
+    doc-comment, un test de module, un commentaire Svelte, un test d'intégration, le manuel et le CHANGELOG).
