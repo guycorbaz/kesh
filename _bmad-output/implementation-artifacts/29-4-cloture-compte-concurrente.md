@@ -44,7 +44,7 @@ Chaque prémisse est vérifiée **avant** la conception. Deux sont **fausses en 
 | P-a | La garde « compte clos » des chemins d'écriture est une lecture cohérente non verrouillante (C-28-4-21) | **vraie** | `ENSURE_OPEN_SQL` et `ENSURE_OPEN_UNARCHIVED_SQL`, `crates/kesh-db/src/repositories/bank_accounts.rs:750-754`, sans `FOR UPDATE` ni `LOCK IN SHARE MODE` (T-a45, l. 1521-1529) |
 | P-b | Une écriture dont la transaction a pris sa vue avant le commit de la clôture peut encore aboutir | **vraie**, mais la fenêtre se borne à la **naissance de la vue** de l'écrivain, non au « début de sa transaction » (`sqlx::begin()` n'émet qu'un `BEGIN`) | `close_in_tx`, l. 1003-1056 : son seul verrou est la ligne du compte ; un écrivain qui ne tient aucun verrou sur cette ligne ne la fait pas attendre |
 | P-c | Chemins exposés : annulation de rapprochement (W9), création de lot (W17), import CAMT et CSV (W22), suppression d'import (W24), annulation de règlement client (W25) et fournisseur (W29), annulation d'une facture fournisseur payée (W28), **annulation de rejet (W30)** | **fausse pour W30, partielle pour W24** | ci-dessous |
-| P-d | « Un import qui tombe dans la fenêtre laisse des transactions `pending` sur un compte clos » ; « un lot de paiement créé dans la fenêtre reste attaché à ce compte » | **vraie** — et c'est par l'`INSERT` à clé étrangère que ces deux chemins se ferment sans verrou neuf (AC2) | `bank_imports.rs:84` (`INSERT INTO bank_imports`), `payment_batches.rs:144` (`INSERT INTO payment_batches`). Deux prémisses InnoDB, de statut différent : (1) **l'existence** d'un verrou conflictuel avec l'exclusif de la clôture sur la ligne du compte, tenu par l'écrivain après ses `INSERT` — **vérifiée en pratique** par T-a31 de la 28-4 (`bank_accounts_repository.rs:2296`, `une_cloture_attend_un_import_en_cours_puis_le_voit`, qui voit la clôture attendre ; il ne dit ni quel `INSERT` l'a posé, ni son mode) ; (2) **la redemande sans effet** — une lecture `LOCK IN SHARE MODE` par égalité sur la clé primaire, quand l'écrivain tient déjà ce verrou et qu'une clôture **attend déjà** en exclusif, est satisfaite sans file ni attente — **raisonnée** (`lock_rec_lock_slow` teste `lock_rec_has_expl` avant tout contrôle de conflit ; contrôle de clé étrangère et recherche unique sur la clé primaire posent tous deux `LOCK_S \| LOCK_REC_NOT_GAP`), **tant que T29a-6 et T29a-7 (AC3) ne l'ont pas établie**. Si (2) était fausse : la fenêtre resterait fermée (la lecture verrouillante lit le dernier état commité), mais chaque course formerait un cycle écrivain / clôture dont la clôture, rejouée (AC4), serait la victime — « aucun verrou neuf » serait alors à réécrire |
+| P-d | « Un import qui tombe dans la fenêtre laisse des transactions `pending` sur un compte clos » ; « un lot de paiement créé dans la fenêtre reste attaché à ce compte » | **vraie** — et c'est par l'`INSERT` à clé étrangère que ces deux chemins se ferment sans verrou neuf (AC2) | `bank_imports.rs:84` (`INSERT INTO bank_imports`), `payment_batches.rs:144` (`INSERT INTO payment_batches`). Deux prémisses InnoDB, de statut différent : (1) **l'existence** d'un verrou conflictuel avec l'exclusif de la clôture sur la ligne du compte, tenu par l'écrivain après ses `INSERT` — **vérifiée en pratique** par T-a31 de la 28-4 (`bank_accounts_repository.rs:2296`, `une_cloture_attend_un_import_en_cours_puis_le_voit`, qui voit la clôture attendre ; il ne dit ni quel `INSERT` l'a posé, ni son mode) ; (2) **la redemande sans effet** — une lecture `LOCK IN SHARE MODE` par égalité sur la clé primaire, quand l'écrivain tient déjà ce verrou et qu'une clôture **attend déjà** en exclusif, est satisfaite sans file ni attente — **raisonnée** (`lock_rec_lock_slow` teste `lock_rec_has_expl` avant tout contrôle de conflit ; contrôle de clé étrangère et recherche unique sur la clé primaire posent tous deux `LOCK_S \| LOCK_REC_NOT_GAP`), **tant que T29a-6 et T29a-7 (AC3) ne l'ont pas établie** — indice constaté hors dépôt le 2026-10-14 (P3, AC3) : un détenteur partagé qui redemande une lecture `LOCK IN SHARE MODE` pendant qu'un exclusif attend la ligne n'attend pas ; le contrôle de clé étrangère d'un `INSERT` n'a pas été essayé. Si (2) était fausse : la fenêtre resterait fermée (la lecture verrouillante lit le dernier état commité), mais chaque course formerait un cycle écrivain / clôture dont la clôture, rejouée (AC4), serait la victime — « aucun verrou neuf » serait alors à réécrire |
 | P-f | *(prémisse de la fiche, non de l'issue)* Une lecture verrouillante « lit le dernier état commité » | **vraie sous `innodb_snapshot_isolation = OFF` seulement** | Constaté sur la base de dev le 2026-10-14 : `SELECT @@version, @@innodb_snapshot_isolation` rend `10.11.16-MariaDB`, `0`. À partir de MariaDB **11.6**, le défaut passe à `ON` : une lecture verrouillante qui rencontre une version postérieure à la vue ouverte rend `ER_CHECKREAD` (**1020**) — exactement la course que la revérification traite. Le dépôt le sait déjà (`bank_imports.rs:439-446`, `routes/reconciliation.rs:2166-2170`, `reconciliation_e2e.rs:7556`, `:8401`) et ne le traite pas : `map_db_error` ne connaît pas 1020 (`kesh-db/src/errors.rs:1459-1494`), qui sort en `DbError::Sqlx` → `500 INTERNAL_ERROR` (`kesh-api/src/errors.rs:4114-4120`). ⛔ **Non traité par la story** (validation P2, R1 = F1 ; décision de l'orchestrateur) : l'épinglage que la P1 avait placé dans `create_pool` n'aurait atteint aucune connexion — `create_pool` (`kesh-db/src/pool.rs:28`) n'a **aucun appelant**, la production construit son pool dans `kesh-api/src/main.rs:74`, sans `after_connect`. La question (réglages de session du pool réel : `sql_mode`, `time_zone`, `innodb_snapshot_isolation`) est portée par **#669** (bug, P3) ; angle mort écrit (Dev Notes § *Angles morts*). ⚠️ **Version du NAS : inconnue** — `docker-compose.prod.yml:8` et `ci.yml:48` supposent la parité 10.11 avec le paquet MariaDB de Synology, sans relevé ; **fait à constater** par Guy (`SELECT @@version, @@innodb_snapshot_isolation` sur la base du NAS) |
 | P-e | Piste : « ajouter le rejeu sur interblocage de part et d'autre de chaque cycle » | **insuffisante seule** : la fenêtre n'est pas un interblocage, c'est **l'absence de conflit** entre deux transactions. Un rejeu ne ferme rien s'il n'y a d'abord un verrou commun ; il ne sert qu'à neutraliser les cycles que ce verrou crée (C-29-4-1) | — |
 
@@ -95,24 +95,30 @@ lisent `closed_on` sous un `FOR UPDATE` de la ligne, qui lit le dernier état co
 | Réparer les états laissés par la fenêtre de la v0.13.3 (une `pending` ou un lot `generated` sur un compte clos) | Le remède manuel reste (rouvrir, traiter, clore) ; `cancel_batch` (W21) reste la sortie autorisée. Aucune donnée réelle ne le requiert (aucun signalement) |
 | L'inversion `companies` → `bank_accounts` de W8 / W27 contre les routes de gestion (28-4, AC7, « au sol, inchangée ») | Préexistante, non touchée par la story : les routes de gestion ne sont pas rejouées, la story ne les enveloppe pas |
 | Manuels DE / IT / EN | `docs/manual/{de,en,it}/` ne portent qu'un `README.md` |
-| Traiter `innodb_snapshot_isolation` (épinglage de session, ou traduction de 1020) | *(Réécrit en P2, R1 = F1.)* Le seul endroit du dépôt qui pose des réglages de session, `create_pool`, n'a aucun appelant ; poser le réglage sur le pool réel (`main.rs:74`) touche **toute** la base — avec les réglages `sql_mode` et `time_zone` que la doc de `create_pool` décrit et que la production n'a jamais eus. Hors #651, porté par **#669** (P3). Angle mort écrit : sous MariaDB 11.6+, la revérification rendrait `1020` (`500`) dans la course, comme les deux sites préexistants (`routes/reconciliation.rs:2166-2170`, `bank_imports.rs:439-446`) |
+| Traiter `innodb_snapshot_isolation` (épinglage de session, ou traduction de 1020) | *(Réécrit en P2, R1 = F1.)* Le seul endroit du dépôt qui pose des réglages de session, `create_pool`, n'a aucun appelant ; poser le réglage sur le pool réel (`main.rs:74`) touche **toute** la base — avec les réglages `sql_mode` et `time_zone` que la doc de `create_pool` décrit et que la production n'a jamais eus. Hors #651, porté par **#669** (P3). Angle mort écrit : sous MariaDB 11.6+, la revérification rendrait `1020` (`500`) dans la course — du même ordre que deux sites préexistants, sans la même issue : `accept_one_invoice` (`routes/reconciliation.rs:2166-2170`) rendrait `DATABASE_ERROR` dans `failed[]`, en `200` ; `bank_imports.rs:439-446` raisonne l'effet sur la suppression d'import sans dire ce qu'elle rendrait *(rectifié en P3, R6 = F6 b)*. Les points sur 11.6+ (manuel d'administration l. 108 et 2708, `docker-compose.prod.yml:8`, version du NAS) sont versés à #669 (commentaire de l'orchestrateur, P3) |
 | Fermer l'interblocage **préexistant** import ou lot / route de gestion (l'`INSERT` prend le compte en partagé **avant** `companies` ; une route de gestion prend `companies` en exclusif **avant** le compte — F5 de la P2) | Préexistant au sol, non aggravé par la story, ni l'un ni l'autre rejoués : rien ne passe sur un archivé, mais l'une des deux requêtes peut échouer en `500`. Angle mort écrit (Dev Notes) |
 
 **Décompte des modules** (§ *Règle de splitting préventif*), **recompté en P1** (R6 = F7), **puis en P2** (retrait de
-`pool.rs`, R1 = F1 ; deux enveloppes neuves et la variante « archivé » dans des modules déjà comptés) — un module de code est un
+`pool.rs`, R1 = F1 ; deux enveloppes neuves et la variante « archivé » dans des modules déjà comptés), **puis relu en P3**
+(R4 = F4 : la fixture `attendre_un_verrou_en_attente` que la P2 ajoutait à `kesh-db/src/test_fixtures.rs` — module compilé
+en permanence, hors `cfg(test)`, donc de code — portait la 29-4a à **cinq** sans que le décompte le dise ; la P3 la
+**retire**, la sonde existante `sonde_verrou_nowait` la remplaçant, et le chiffre de quatre redevient vrai ; R8 de la P3
+ajoute deux fichiers de doc-comments seuls) — un module de code est un
 fichier de production dont le **code** change ; un fichier dont seuls des doc-comments changent se compte **à part** ;
 les tests, `docs/` et le CHANGELOG aussi :
 
 | | Modules de code | Doc-comments seuls | Documents | Tests |
 |---|---|---|---|---|
-| **29-4a** | `kesh-db` : `repositories/bank_accounts` (deux fonctions et deux SQL neufs), `repositories/bank_imports` (appel), `repositories/payment_batches` (appel et conversion de l'archivé) ; `kesh-api` : `routes/bank_accounts` (trois enveloppes : clôture, réouverture, `PATCH`) — **quatre** | — | `CHANGELOG.md` | `kesh-db/tests/bank_accounts_repository.rs`, `kesh-api/tests/{rejeu_interblocage_e2e,bank_account_closed_inventory,audit_route_registry}.rs` |
+| **29-4a** | `kesh-db` : `repositories/bank_accounts` (deux fonctions et deux SQL neufs), `repositories/bank_imports` (appel), `repositories/payment_batches` (appel et conversion de l'archivé) ; `kesh-api` : `routes/bank_accounts` (trois enveloppes : clôture, réouverture, `PATCH`) — **quatre** | `kesh-db/src/errors.rs:1247-1249`, `kesh-api/src/routes/bank_imports.rs:57-61` (P3, R8) | `CHANGELOG.md` | `kesh-db/tests/bank_accounts_repository.rs`, `kesh-api/tests/{rejeu_interblocage_e2e,bank_account_closed_inventory,audit_route_registry}.rs` |
 | **29-4b** | `kesh-db` : `repositories/reconciliation_cancel`, `repositories/invoice_settlements_write`, `repositories/supplier_invoices`, `repositories/bank_imports` — **quatre** | `kesh-db/src/repositories/bank_accounts.rs` (§ L1, l. 28, 807-823, 863-865), `kesh-api/src/routes/reconciliation.rs:4908` | `docs/manual/fr/user-manual.tex` (+ PDF), `docs/api-external.md`, `CHANGELOG.md` | `kesh-db/tests/{bank_accounts_repository,invoice_settlement,supplier_invoices_repository,reconciliation_cancel}.rs` (répartition au choix du dev), `kesh-api/tests/{rejeu_interblocage_e2e,bank_account_closed_inventory,bank_accounts_closed_e2e}.rs` |
 
 Au total (les deux parties) : **sept** modules de code distincts (`repositories/bank_imports` est dans les deux) — huit
 avant la P2, `pool` compris —, plus de cinq, d'où le découpage (C-29-4-6). La 29-4a en touche **quatre**, sous la borne
 de la règle (qui découpe au-delà de cinq) — la P2 avait montré qu'un épinglage réellement branché sur le pool de
 production l'aurait portée à six (`main.rs`) : le retrait l'éloigne de la borne, aucune dérogation n'est à écrire pour
-elle ; la 29-4b **quatre** de code, mais **sept** si l'on compte
+elle **au décompte de code** ; comptée largement (doc-comments seuls compris, P3), elle touche **six** fichiers de
+production — la dérogation ci-dessous la couvre par le même argument (ce qui dépasse cinq n'est que du texte) ;
+la 29-4b **quatre** de code, mais **sept** si l'on compte
 comme la fiche le faisait avant la P1 (doc-comments et `docs/manual` compris) — plus de cinq : voir § *Dérogation règle de
 splitting*. Le découpage suit aussi le **risque** : la 29-4a n'ajoute aucun verrou d'écrivain ; la 29-4b porte seule le
 verrou neuf et le cycle qu'il crée, et c'est elle que la validation doit relire le plus durement.
@@ -134,6 +140,10 @@ touche sept modules ; elle n'est **pas** redécoupée :
   annulations restent ouvertes.
 - **Risque accepté** : la relecture de la 29-4b se fait au fichier près pour les cinq appels (position contre la table
   *Position par chemin*), et en passes adversariales pour le cycle neuf (T29b-3) seulement.
+- **La 29-4a, comptée largement** (P3, R8) : quatre modules de code et deux fichiers de doc-comments seuls
+  (`kesh-db/src/errors.rs`, `kesh-api/src/routes/bank_imports.rs`), soit six. Elle n'est pas redécoupée pour la même
+  raison : les deux fichiers ajoutés ne changent qu'une phrase de doc-comment que la revérification rend incomplète, et
+  la séparer du code qui la motive ferait vivre un doc-comment faux sur `main`.
 
 ## Critères d'acceptation
 
@@ -155,8 +165,10 @@ Dev Agent Record avec la ligne de code retenue :
    `retry_on_deadlock` / `retry_app_on_deadlock` / `retry_with`), ou passe par un demandeur d'exclusif sur la ligne du
    compte que la story fait rejouer (clôture, réouverture, `PATCH` — AC4) — à deux résidus près, écrits (Dev Notes
    § *Cycles*) : le cycle à trois où l'import, non rejoué, serait victime (théorique, C-29-4-7 — il est le plus lourd du
-   cycle) ; le cycle à quatre où une route de gestion du compte, non rejouée, serait victime à égalité de poids avec la
-   réouverture (quatre gestes concurrents, négligeable — F3 de la P2) ;
+   cycle) ; le cycle à quatre où une route de gestion du compte, non rejouée, serait victime — quel que soit le
+   demandeur d'exclusif en file qu'il traverse (clôture, réouverture, `PATCH`, W8, W27) : à égalité de poids avec la
+   clôture et la réouverture, **victime désignée** quand ce demandeur est le `PATCH`, W8 ou W27, plus lourds qu'elle
+   (quatre gestes concurrents, négligeable — F3 de la P2, réécrit en P3, F2) ;
 3. **Vue** — *aucune naissance de vue déplacée* (critère hérité de l'AC7 de la 28-4) : la story n'ajoute **aucune
    lecture non verrouillante** et ne déplace aucune des gardes non verrouillantes de la 28-4 ; la revérification est
    une lecture **verrouillante**, posée **après** la première lecture non verrouillante de chaque chemin, si bien que la
@@ -209,7 +221,9 @@ celle des annulations jamais. Symétrie exacte des deux gardes de la 28-4, `ENSU
   l'interdit de la poser avant une écriture qui prend un autre verrou, sa dépendance **non épinglée** à
   `innodb_snapshot_isolation = OFF` (sous `ON`, défaut de MariaDB 11.6+, elle rendrait `1020` dans la course — angle mort
   renvoyé à #669), l'argument de poids qui fait des demandeurs d'exclusif les victimes de leurs cycles (F11 de la P2,
-  Dev Notes § *Cycles*), le résidu C-29-4-7, et la raison du choix (C-29-4-1, C-29-4-2).
+  Dev Notes § *Cycles*) **avec ses deux réserves** (P3 : raisonné, établi au dépôt à deux participants seulement — F3 ;
+  sans effet contre une route de gestion en file sur la sentinelle — F2), les deux résidus (C-29-4-7, le cycle à
+  quatre), et la raison du choix (C-29-4-1, C-29-4-2).
 
 **AC2 — L'import (W22) et la création de lot (W17) : la revérification après l'`INSERT` à clé étrangère.**
 
@@ -261,9 +275,11 @@ deux chemins : (1) une transaction `C` exécute `close_in_tx` **sans commiter** 
 verrouillante** préalable dans sa transaction (la recherche de doublons de la route : `find_by_company_and_hash`), afin
 que sa vue naisse **avant** le commit de la clôture, comme en production ; (3) `attendre_une_requete_en_cours(&pool,
 &["INSERT INTO bank_imports"], …)` (resp. `["INSERT INTO payment_batches"]`, `test_fixtures.rs:561`) le voit en attente ;
-(4) `C.commit()` ; (5) l'écrivain doit rendre `DbError::BankAccountClosed` ; sa tâche fait alors `tx.rollback().await`
-**explicite** avant de rendre son résultat (l'abandon par `drop` est asynchrone, `routes/bank_imports.rs:1196-1201`), et
-seulement ensuite le test vérifie qu'aucune ligne `bank_imports` / `bank_transactions` (resp. `payment_batches` /
+(4) `C.commit()` ; (5) l'écrivain doit rendre `DbError::BankAccountClosed` ; pour W22, dont la tâche tient la
+transaction, elle fait alors `tx.rollback().await` **explicite** avant de rendre son résultat (l'abandon par `drop` est
+asynchrone, `routes/bank_imports.rs:1196-1201`) ; pour W17, `create_batch` possède sa transaction
+(`payment_batches.rs:80`) et l'annule lui-même avant de rendre l'erreur (`let _ = tx.rollback().await;`, l. 231 et 236) :
+la tâche n'a rien à faire *(précisé en P3, R10)* ; et seulement ensuite le test vérifie qu'aucune ligne `bank_imports` / `bank_transactions` (resp. `payment_batches` /
 `payment_batch_items`) n'existe. **Rouge au sol** : l'écrivain aboutit. Tests **T29a-2** (W22) et **T29a-3** (W17) ;
 tuent M29-1 et M29-2 (et M29-3 : la lecture redeviendrait celle de la vue). ⚠️ Au sol, l'étape (3) passe aussi
 (l'`INSERT` attend déjà la clôture) : le test rougit à l'étape (5), pour la bonne raison.
@@ -274,7 +290,7 @@ exécute `archive_for_company` sur un compte **sans transaction**, **sans commit
 avant le commit (pour l'import, `find_by_company_and_hash` ; pour le lot, l'étape (0) de `create_batch`, qui lit le
 compte non archivé) ; (3) la sonde le voit en attente sur son `INSERT` ; (4) `A.commit()` ; (5) l'écrivain doit rendre
 `DbError::NotFound` (W22) — resp. `DbError::IllegalStateTransition` (W17, la conversion de l'AC2) —, `rollback`
-explicite, puis aucune ligne écrite. **Rouge au sol** : l'écrivain aboutit sur un compte archivé. Tuent M29-22
+(explicite dans la tâche pour W22, par `create_batch` lui-même pour W17 — R10 de la P3), puis aucune ligne écrite. **Rouge au sol** : l'écrivain aboutit sur un compte archivé. Tuent M29-22
 (`archived` retiré de la variante, SQL ou `match`), M29-23 (W22 ou W17 appelle `recheck_open_locked_in_tx`) et, pour
 T29a-12, M29-25 (conversion retirée : `NotFound` au lieu d'`IllegalStateTransition`).
 
@@ -283,14 +299,33 @@ R5 = F2 de la P1). C'est le seul ordre qui éprouve la prémisse P-d (2), et AC3
 la clôture a déjà commité, plus d'exclusif en file). Patron de T-a31 de la 28-4, prolongé : (1) l'écrivain, dans sa
 transaction, exécute son `INSERT` d'entête (`INSERT INTO bank_imports` — resp. `INSERT INTO payment_batches`) **sans** la
 revérification — **par le SQL de l'`INSERT`**, seule voie une fois la revérification posée (`create_batch` ouvre sa
-propre transaction, `payment_batches.rs:80`) ; (2) la clôture démarre en tâche (`close_in_tx`, **sans** enveloppe de
-rejeu, commit si `Done`) sur une connexion dont la tâche relève d'abord le `CONNECTION_ID()` ; (3) le test attend que la
-transaction de cette connexion soit **en attente de verrou** — une ligne de `information_schema.INNODB_TRX` avec
-`trx_mysql_thread_id` égal à ce `CONNECTION_ID()` et `trx_state = 'LOCK WAIT'`, sondée et bornée à 10 s (fixture neuve,
-`attendre_un_verrou_en_attente`, à côté d'`attendre_une_requete_en_cours`, `kesh-db/src/test_fixtures.rs:561`) —
-*(réécrit en P2, R4 = F7, C-29-4-21 : un délai de 500 ms ne prouvait pas que la demande exclusive était dans la file, et le test
-aurait alors passé à vide sur une prémisse fausse ; la sonde de `INNODB_TRX` établit l'attente au lieu de l'espérer —
-colonnes présentes sous MariaDB 10.11 : raisonné, à vérifier au dev, et l'écrire au Dev Agent Record)* ; (4) l'écrivain
+propre transaction, `payment_batches.rs:80`) ; (1 bis) **garde contre le montage à vide** : la sonde de l'étape (3)
+rend `true` — le seul partagé de l'écrivain ne la fait pas échouer ; (2) la clôture démarre en tâche (`close_in_tx`,
+**sans** enveloppe de rejeu, commit si `Done`) ; (3) le test attend que la demande exclusive de la clôture soit **dans
+la file** de la ligne du compte, par la sonde existante `sonde_verrou_nowait` (`kesh-db/src/test_fixtures.rs:607`)
+appelée en boucle sur une connexion tierce du pool — `sonde_verrou_nowait(&pool, "SELECT id FROM bank_accounts WHERE id
+= ? LOCK IN SHARE MODE NOWAIT", compte)`, tous les 10 ms, bornée à 10 s, la boucle interrompue (échec avec message) si
+la tâche de la clôture se termine sans attendre — jusqu'à ce qu'elle rende `false`. Tant que seul le partagé de
+l'écrivain est tenu, la demande partagée de la sonde est compatible et réussit ; dès que la demande exclusive de la
+clôture est en file, la sonde échoue aussitôt en `1205`, une demande neuve étant jugée contre les demandes en attente
+comme contre les verrous accordés ; et comme rien d'autre ne tient la ligne dans un mode incompatible, ce `false` ne
+peut venir que de la clôture. La boucle est locale au fichier de test : **aucune fixture neuve**, **aucun privilège**
+(la sonde lit `bank_accounts`, que l'utilisateur de dev lit déjà ; ni `information_schema.INNODB_TRX` ni le privilège
+`PROCESS`). *(Réécrit en P2, R4 = F7 : un délai de 500 ms ne prouvait pas que la demande exclusive était dans la file ;
+réécrit à nouveau en P3, R1 = F1, décision de l'orchestrateur, C-29-4-21 annoté : la sonde de `INNODB_TRX` prescrite
+en P2 exige le privilège `PROCESS`, que les droits versionnés de dev ne donnent pas —
+`scripts/mariadb-init/01-dev-grants.sql`, `reconciliation_e2e.rs:7546-7553`.)* **Constaté le 2026-10-14** sur la
+MariaDB de dev (`10.11.16`), base `kesh_294`, table jetable à clé primaire, trois connexions du client `mariadb`
+(utilisateur `kesh`) : la sonde partagée `NOWAIT` **réussit** quand une autre transaction tient la ligne en partagé, et
+**échoue aussitôt en `1205`** dès qu'une troisième y demande l'exclusif en file ; après les deux commits, elle réussit
+de nouveau. Le même essai a vu le détenteur partagé **redemander** son partagé pendant que l'exclusif attendait, sans
+attendre ni interblocage — indice pour P-d (2), sur une lecture `LOCK IN SHARE MODE` et non sur le contrôle de clé
+étrangère d'un `INSERT` : la prémisse reste à établir par T29a-6 et T29a-7. Ce constat est hors dépôt : le dev le
+**rejoue** dans le test et l'écrit au Dev Agent Record. *Repli*, si la sonde ne se comportait pas ainsi sur la branche
+rebasée : le précédent du dépôt (`reconciliation_e2e.rs:7546-7553`) — attente bornée constatée par
+`attendre_une_requete_en_cours`, deux échantillons à 500 ms d'écart, puis l'issue après le commit — avec, écrit au Dev
+Agent Record, le constat que le test ne distingue plus « prémisse vraie » de « montage arrivé trop tôt » ; jamais une
+exigence de privilège. La sonde éprouve du même geste la prémisse « file InnoDB » sur laquelle repose l'AC4 ; (4) l'écrivain
 appelle `recheck_open_unarchived_locked_in_tx` sous `tokio::time::timeout(Duration::from_secs(2), …)` : il **doit**
 rendre `Ok(())` dans le délai ; (4 bis) **W22 seulement** — l'écrivain insère une transaction `pending` de son import
 (`INSERT INTO bank_transactions`, par SQL, sous le même `timeout`), dans l'ordre de production « entête →
@@ -333,7 +368,8 @@ rejoué — F2, cycle à trois W24 / `PATCH` / import (C-29-4-19). Une enveloppe
   en attente derrière `I`) → `I` (import, `A` S par son `INSERT`, `companies` S en attente derrière `M`) → `M` (route de
   gestion, `companies` X en attente derrière `Q`) → `Q` (revérification, `A` S derrière `R`). Quatre gestes
   concurrents : négligeable, mais non « impossible par construction » ; une enveloppe le rend invisible quand la
-  réouverture est la victime (Dev Notes § *Cycles* pour le résidu : `M`, à égalité de poids).
+  réouverture est la victime (Dev Notes § *Cycles* pour le résidu : `M`, à égalité de poids avec la réouverture ou la
+  clôture, victime désignée quand le demandeur en file est le `PATCH`, W8 ou W27 — F2 de la P3).
 - **Le `PATCH` du compte est rejoué** (P2, F2 ; C-29-4-19) : `patch_bank_account_journal_link`
   (`routes/bank_accounts.rs:1142`) → `patch_once` (la transaction : `claims_for_target`, partagés sur
   `company_invoice_settings` ; `set_journal_account_id_for_company`, `FOR UPDATE` du compte, `bank_accounts.rs:462` ;
@@ -358,7 +394,10 @@ rejoué — F2, cycle à trois W24 / `PATCH` / import (C-29-4-19). Une enveloppe
   Elle peut donc fermer un **cycle à trois** (Dev Notes § *Cycles*) ; elle y est la transaction la plus légère (aucune
   écriture, aucun verrou accordé), donc la **victime** désignée — prémisse que le dépôt tient déjà pour établie et sur
   laquelle reposent ses tests de rejeu (`rejeu_interblocage_e2e.rs:9-11`, « InnoDB choisit pour victime la
-  transaction la plus légère »). La rejouer rend ce cas invisible à l'utilisateur.
+  transaction la plus légère »). La rejouer rend ce cas invisible à l'utilisateur. ⚠️ *(P3, F3)* Le dépôt ne l'établit
+  que pour des cycles **à deux** (tous les tests « route victime » du fichier) ; que la victime d'un cycle **à trois**
+  soit le plus léger de tout le cycle, et non de la seule paire qui le ferme, est **raisonné** — T29a-4 et T29a-9 sont
+  les premiers tests à trois, et leur contingence est écrite ci-dessous.
 - `audit_route_registry.rs`, point (vi) du doc-comment (l. 136) : « **sept** routes `SansEcritureAuJournal` sont
   rejouées » → **dix**, et `close_bank_account`, `reopen_bank_account`, `patch_bank_account_journal_link` nommées avec
   leur raison ; leurs classements (`Traced`, `SansEcritureAuJournal`, l. 333, 339, 340) ne changent pas. Sept recomptées
@@ -376,8 +415,12 @@ rejoué — F2, cycle à trois W24 / `PATCH` / import (C-29-4-19). Une enveloppe
   séquence d'origine attendait `T1` en ligne **avant** d'annuler `T2` ; or la victime (la clôture) ne tient rien, son
   annulation ne libère pas `R`, et `T2` — dont la demande partagée est accordée dès que l'exclusif en file disparaît —
   garde `R` : le test se serait bloqué sur lui-même jusqu'au `1205`. Le patron `victime()` (`rejeu_interblocage_e2e.rs:347-372`)
-  ne s'applique pas tel quel : il suppose que la victime **est** la route qui tient la ressource demandée. Séquence
-  réalisable :
+  ne s'applique pas tel quel : il suppose que la victime **est** la route qui tient la ressource demandée. **Montage**
+  *(P3, R2)* : le montage du fichier (`seed_accounting_company`, `spawn_app`, `forge_jwt`) ne termine pas l'onboarding,
+  or `close_bank_account` et `reopen_bank_account` l'exigent (`assert_onboarding_complete`,
+  `routes/bank_accounts.rs:269-275` ; le `PATCH` non) : le test appelle `mark_onboarding_complete(&pool)`
+  (`kesh_db::test_fixtures`), comme `bank_accounts_closed_e2e.rs:162`, sans quoi la route rend l'erreur d'onboarding et
+  jamais le cycle. Séquence réalisable :
   1. `T1` (alourdie) tient la ligne du compte en partagé (`SELECT … FROM bank_accounts WHERE id = ? LOCK IN SHARE MODE`) ;
   2. la clôture (`POST /bank-accounts/{id}/close`) est lancée en tâche et vue en attente (`["FROM bank_accounts",
      "archived = FALSE FOR UPDATE"]`) ;
@@ -396,11 +439,20 @@ rejoué — F2, cycle à trois W24 / `PATCH` / import (C-29-4-19). Une enveloppe
   l'étape (3), `T1` attend `R` sans cycle, et aucun rejeu ne vient à l'étape (5) : le test échoue sur la borne avec un
   message qui le dit. Cela s'écrit alors au Dev Agent Record — la conséquence serait que le rejeu de la clôture n'a pas
   d'objet, non qu'il est nuisible ; le test se réécrit en garde de non-régression de l'enveloppe, sans cycle.
+  ⚠️ **Seconde contingence — une victime autre que la clôture** *(P3, F3)* : si InnoDB désigne `T1` ou `T2` (alourdies)
+  — `T1` reçoit `1213` à l'étape (7), ou `T2` à l'étape (6), et aucun événement `bank_accounts::close` ne vient —, le
+  test rougit, et le Dev Agent Record consigne la victime **observée** (l'erreur rendue à `T1` ou `T2`, le message de
+  rejeu ou son absence). La conséquence est plus large que le test : en production, la victime d'un cycle à trois
+  pourrait être l'import ou une annulation, que la story ne rejoue pas ; l'argument de poids et le résidu C-29-4-7
+  sont alors à réécrire, et le dev le **remonte à l'orchestrateur** avant de poursuivre — la conception n'est pas à
+  refaire d'office.
 - **Test T29a-9** (réouverture, P2) — la séquence de T29a-4 à l'identique, sur un compte **clos** au montage, avec la
   réouverture (`POST /bank-accounts/{id}/reopen`) à la place de la clôture (même motif de sonde : `close_in_tx` et
   `reopen_in_tx` partagent le `FOR UPDATE` de `bank_accounts.rs:931`) ; événement `bank_accounts::reopen` attendu ;
   la réouverture rejouée rend `200`. Tue M29-20 (enveloppe de la réouverture retirée). Le cycle à quatre de F3 n'est
-  **pas** monté : le cycle à trois de la séquence suffit à prouver que la réouverture, victime, est rejouée.
+  **pas** monté : le cycle à trois de la séquence suffit à prouver que la réouverture, victime, est rejouée. Même
+  montage (`mark_onboarding_complete`, R2 de la P3) et mêmes deux contingences que T29a-4, la réouverture à la place de
+  la clôture (F3 de la P3).
 - **Test T29a-10** (`PATCH`, P2) — patron `victime()` (`rejeu_interblocage_e2e.rs:347-372`) tel quel, car le `PATCH`
   **tient** la ressource que la transaction de test demande : `T` (alourdie) tient la ligne du compte (`SELECT … FROM
   bank_accounts WHERE id = ? FOR UPDATE`) ; le `PATCH` (corps avec un `journalAccountId`, pour que `claims_for_target`
@@ -408,9 +460,15 @@ rejoué — F2, cycle à trois W24 / `PATCH` / import (C-29-4-19). Une enveloppe
   "archived = FALSE FOR UPDATE"]`) ; fermeture : `SELECT … FROM company_invoice_settings WHERE company_id = ? FOR
   UPDATE` — cycle à deux ; le `PATCH`, plus léger, est la victime ; `T` obtient sa ligne (`.expect`), annule ; le
   `PATCH` rejoué rend `200`, événement `bank_accounts::patch` capturé. Tue M29-21 (enveloppe du `PATCH` retirée). Le
-  cycle à trois de F2 n'est pas monté (même raison que T29a-9).
+  cycle à trois de F2 n'est pas monté (même raison que T29a-9). **Précondition** *(P3, F5)* : la société porte sa ligne
+  `company_invoice_settings` — `seed_accounting_company` l'insère (`test_fixtures.rs:157`), le fichier est donc servi ;
+  sans elle, le partagé du `PATCH` et l'exclusif de la transaction de test seraient des verrous d'**intervalle**,
+  compatibles entre eux : aucun cycle, et le test échouerait sur l'événement de rejeu pour une raison que sa
+  description ne dit pas.
 - Les points (ii) et (iii bis) du doc-comment d'`audit_route_registry.rs` (l. 56-80, routes « à preuve dynamique »)
-  gagnent les trois routes et leurs tests T29a-4, T29a-9, T29a-10.
+  gagnent les trois routes et leurs tests T29a-4, T29a-9, T29a-10 — par une phrase propre à la famille `AppError`
+  (`retry_app_on_deadlock`) : les « sept » de ces deux points (l. 58-62, l. 73) comptent la famille `DbError` et
+  **restent** sept ; seul le point (vi) passe de sept à dix *(précisé en P3, R9)*.
 
 **AC5 — Le registre statique : l'inventaire clos des gardes non verrouillantes.**
 
@@ -424,8 +482,11 @@ les deux autres), test **T29a-5** :
   de C-28-4-29) **avec le nom appelé** (P2, R2 = F4) ;
 - **extraction des gardes non verrouillantes** (C-29-4-15, R3 de la P1 — depuis le symptôme, non depuis le texte des
   raisons du registre principal) : l'ensemble `G` des fonctions englobantes, hors tests et hors commentaires, dans
-  `kesh-db/src` et `kesh-api/src`, qui (a) appellent `ensure_open_in_tx(` ou `ensure_open_unarchived_in_tx(` (copie
-  masquée), ou (b) portent un **littéral** contenant `closed_on` et `FROM bank_accounts` et ni `FOR UPDATE` ni `LOCK IN
+  `kesh-db/src` et `kesh-api/src`, qui (a) appellent `bank_accounts::ensure_open_in_tx(` ou
+  `bank_accounts::ensure_open_unarchived_in_tx(` (copie masquée ; **qualifiés**, comme l'extraction des appels
+  ci-dessus — la forme `super::bank_accounts::` les contient ; sans préfixe, les deux définitions,
+  `bank_accounts.rs:839` et `:871`, seraient comptées et `G` vaudrait onze — R12 de la P3 ; au sol, les sept appelants
+  sont tous qualifiés), ou (b) portent un **littéral** contenant `closed_on` et `FROM bank_accounts` et ni `FOR UPDATE` ni `LOCK IN
   SHARE MODE` — **hors** `repositories/bank_accounts.rs`, dont les lectures de `closed_on` sont les gardes elles-mêmes
   (vues par (a) chez leurs appelants), les gestes du compte sur lui-même (sous `FOR UPDATE`) et les lectures de détail
   qu'emploient les pré-vols. Au sol, `G` vaut **neuf** fonctions (inventaire de la lentille R de la P1, recoupé ici :
@@ -493,14 +554,20 @@ revérification) : sous `innodb_snapshot_isolation = ON` — défaut de MariaDB 
 verrouillante qui rencontre une version de ligne postérieure à la vue ouverte rend `ER_CHECKREAD` (**1020**) : dans la
 course même qu'elle traite, la revérification rendrait `500 INTERNAL_ERROR` (`map_db_error` ignore 1020,
 `kesh-db/src/errors.rs:1459-1494` ; rendu `kesh-api/src/errors.rs:4114-4120`) — l'écrivain resterait refusé, rien
-d'écrit, mais par un `500` que rien ne distingue d'une panne. **Comme les deux sites préexistants**
-(`routes/reconciliation.rs:2166-2170`, `bank_imports.rs:439-446`), dont les doc-comments ne sont **pas** retouchés par la
-story (« à revoir à la montée de version » reste vrai). Constaté sur la base de dev : `10.11.16`, variable à `OFF` ; les
+d'écrit, mais par un `500` que rien ne distingue d'une panne. **Du même ordre que deux sites préexistants, sans la
+même issue** *(rectifié en P3, R6 = F6 b — la fiche écrivait « comme les deux sites préexistants »)* :
+`accept_one_invoice` (`routes/reconciliation.rs:2166-2170`) rendrait `DATABASE_ERROR` par proposition, dans `failed[]`,
+en `200` ; `bank_imports.rs:439-446` raisonne l'effet sur la suppression d'import (« sans effet sur le code nominal …
+à revoir à la montée de version ») sans dire ce qu'elle rendrait. Leurs doc-comments ne sont pas retouchés **au titre
+de l'AC11** ; `bank_imports.rs:444-445` se réécrit pourtant en 29-4b, pour une autre raison — W24 y ouvre sa vue avant
+la revérification (AC9 ; R3 de la P3). Constaté sur la base de dev : `10.11.16`, variable à `OFF` ; les
 tests `#[sqlx::test]` sur un serveur 11.6+ le signaleraient (T29a-2, T29a-3, comme `reconciliation_e2e.rs:7556` et
-`:8401`). Le texte que l'AC9 prescrit au manuel (« elle est refusée avec le message ci-dessus ») vaut pour le serveur
-que le dépôt suppose (MariaDB 10.11, `docker-compose.prod.yml:8`, `ci.yml:48`) ; **#669** dira s'il faut l'écrire pour
-11.6+. *Fait à constater, hors du dépôt* (inchangé) : la version de MariaDB du NAS et son réglage — question posée à Guy
-par l'orchestrateur ; elle relève désormais de #669.
+`:8401`). Le texte que l'AC9 prescrit au manuel (« elle est refusée avec le message ci-dessus ») vaut sous
+`innodb_snapshot_isolation = OFF` — MariaDB 10.11, celle de la CI (`ci.yml:48`) et de la base de dev. Les points sur
+11.6+ — le manuel d'administration qui annonce « MariaDB 10.11+ » (l. 108) et suggère « 11.5+ » (l. 2708),
+`docker-compose.prod.yml:8` qui admet ces versions, la version et le réglage du serveur du NAS — ont été **versés en
+commentaire à #669** par l'orchestrateur (validation P3, F6 = R5) : la story ne prescrit aucun texte de manuel pour
+11.6+ et ne touche pas le manuel d'administration.
 
 ### Partie b — `29-4b-reverification-annulations`
 
@@ -527,7 +594,9 @@ chemin porte un compte bancaire (mêmes conditions que la garde non verrouillant
   de réconciliation le prenant en tête.
 - **La garde non verrouillante de la 28-4 reste à sa place** à chaque site (refus précoce, ordre des refus de la 28-4 :
   W24 « `HasReconciled` d'abord », motifs d'exercice clos après la garde, etc.). La revérification ne répond que si une
-  clôture a été commitée après la naissance de la vue de l'annulation.
+  clôture a été commitée après la naissance de la vue de l'annulation. Le commentaire de chaque garde
+  (`reconciliation_cancel.rs:320-324`, `invoice_settlements_write.rs:892-894`, `supplier_invoices.rs:1097` et `:1338`,
+  `bank_imports.rs:516-522`) gagne une demi-ligne qui renvoie à la revérification posée plus bas *(P3, R8)*.
 - **Pourquoi cela ferme la fenêtre** : l'annulation tient désormais, de sa revérification à son commit, un verrou
   partagé sur la ligne du compte. (i) Clôture déjà en exclusif : la revérification l'attend, puis lit `closed_on` posé
   → `BankAccountClosed`, transaction abandonnée, rien d'écrit ; (ii) revérification passée d'abord : la clôture attend
@@ -619,7 +688,12 @@ chemin porte un compte bancaire (mêmes conditions que la garde non verrouillant
 - **29-4a** : doc-comments qui décrivent l'import ou la création de lot comme exposés à L1 —
   `bank_imports.rs:72-78`, `payment_batches.rs:85-88` — réécrits (« revérifié sous le verrou de clé étrangère, après
   l'`INSERT`, AC2 de la 29-4 ») ; le § *Angle mort assumé — L1* d'`ensure_open_in_tx` (`bank_accounts.rs:807-823`)
-  retire l'import et la création de lot de ses chemins et renvoie à la revérification ; `CHANGELOG.md`, section
+  retire l'import et la création de lot de ses chemins et renvoie à la revérification — son décompte écrit (« Huit
+  chemins ») se refait depuis la liste qu'il énumère, non depuis le chiffre (R7 de la P3) ; le doc-comment de
+  `DbError::BankAccountClosed` (`kesh-db/src/errors.rs:1247-1249`, « Produite par les gardes du dépôt … ») et celui
+  d'`import_create_error` (`routes/bank_imports.rs:57-61`, `NotFound` « ne naît que de la garde
+  `ensure_open_unarchived_in_tx` ») nomment aussi la revérification `recheck_open_unarchived_locked_in_tx` (R8 de la
+  P3 ; doc-comments seuls, décompte ci-dessus) ; `CHANGELOG.md`, section
   **`## [0.13.4] — Non publié`** (créée, ou complétée **par union** si la 29-2 ou la 29-3 l'ont ouverte), `### Corrigé` :
   « **Un import ou un lot de paiement commencé juste avant la clôture — ou l'archivage — d'un compte bancaire ne passe
   plus sur ce compte** ([#651](https://github.com/guycorbaz/kesh/issues/651)) : il est refusé, et rien n'est
@@ -633,10 +707,13 @@ chemin porte un compte bancaire (mêmes conditions que la garde non verrouillant
   (`routes/bank_accounts.rs:904-907`, « bank_imports n'acquiert pas ce lock — L5 limitation v0.1 documentée »), resté
   littéralement vrai, complété : « … ; la course qu'il laissait est fermée par la revérification de l'import et du lot
   (Story 29-4) » (R2 de la P2). *(Les doc-comments de `create_pool`, `bank_imports.rs:439-446` et
-  `routes/reconciliation.rs:2166-2170` que prescrivait l'AC11 ne se touchent plus : AC11 retiré, #669.)*
+  `routes/reconciliation.rs:2166-2170` que prescrivait l'AC11 ne se touchent plus **au titre de l'AC11** : AC11 retiré,
+  #669 — `bank_imports.rs:444-445` se réécrit en 29-4b pour une autre raison, ci-dessous ; R3 de la P3.)*
   ⚠️ **État transitoire assumé** (R12 a de la P1) : entre le merge de la 29-4a et celui de la 29-4b, la puce du manuel
-  (« pour un import dès l'envoi du fichier — peut encore aboutir »), `docs/api-external.md:241` et le § L1
-  d'`ensure_open_in_tx` restent écrits pour les sept chemins, donc **trop larges** pour l'import et le lot. C'est la
+  (« pour un import dès l'envoi du fichier — peut encore aboutir ») et `docs/api-external.md:241` restent écrits pour
+  les sept chemins, donc **trop larges** pour l'import et le lot ; le § L1 d'`ensure_open_in_tx`, lui, est réécrit en
+  29-4a (ci-dessus) et ne figure plus dans cette liste *(R7 de la P3 : la fiche le disait à la fois réécrit et laissé
+  trop large)*. C'est la
   règle d'inclusion du `CLAUDE.md` (« batched dans la PR de la dernière story » quand plusieurs stories y contribuent) ;
   aucune release ne tombe entre les deux PR (Status). À écrire tel au Dev Agent Record de la 29-4a.
 - **29-4b** :
@@ -648,8 +725,9 @@ chemin porte un compte bancaire (mêmes conditions que la garde non verrouillant
     clôture, fermée par la revérification » — R8 de la P1).
   - `bank_imports.rs:444-445` : « sans effet sur le code nominal (aucune vue n'est ouverte avant les verrous) »
     devient faux pour W24, dont la garde de la 28-4 ouvre la vue avant la revérification — réécrit : la revérification
-    de W24 s'exécute vue ouverte ; sous `innodb_snapshot_isolation = ON` (11.6+) elle rendrait `1020` dans la course,
-    comme les deux sites préexistants — #669 (R4 de la P1 ; réécrit en P2, l'épinglage étant retiré).
+    de W24 s'exécute vue ouverte ; sous `innodb_snapshot_isolation = ON` (11.6+) elle rendrait `1020` (`500`) dans la
+    course — #669 (R4 de la P1 ; réécrit en P2, l'épinglage étant retiré ; « comme les deux sites préexistants » retiré
+    en P3, R6).
   - Registre (`bank_account_closed_inventory.rs`) : les raisons des l. 115, 233, 290 — « sous L1 (#651), le pré-vol
     R1 refuse » devient « I1 ; et le pré-vol R1 refuse un compte clos » ; W21 : « annuler un lot `generated` laissé sur
     un compte clos par la fenêtre de la v0.13.3 (#651, fermée en v0.13.4) » ; **l. 89**, doc de la variante
@@ -681,8 +759,15 @@ chemin porte un compte bancaire (mêmes conditions que la garde non verrouillant
     puce précédente (« **Exception** : l'annulation d'un lot généré… ») reste.
   - `docs/api-external.md:555` (*Compte bancaire clos*, lots d'acceptation et de rejet ; R7 de la P2) : « … ce refus
     n'est atteint que par une course — un lot préparé avant la clôture — ou dans la fenêtre de [#651](…) (note ⁹ du
-    §7) » → « … ce refus n'est atteint que par une course — un lot préparé avant la clôture. » ; la note ⁹ du §7, si
-    elle ne sert plus qu'à cette phrase, se relit au même geste.
+    §7) » → « … ce refus n'est atteint que par une course — un lot préparé avant la clôture. » *(La clause « la note ⁹
+    du §7, si elle ne sert plus qu'à cette phrase, se relit » est retirée en P3, R11 : la note ⁹, l. 235-241, est celle de
+    la clôture, appelée aux l. 220 et 719 ; elle ne dépend pas de cette phrase.)*
+  - `docs/api-external.md:594` (*Annuler le rejet d'une transaction bancaire* ; F7 de la P3) : « Une transaction rejetée
+    comptant comme en attente, la clôture d'un tel compte est elle-même refusée (`412
+    BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS`) ; ce refus n'est donc atteint que par une course (note ⁹ du §7). » → « … ;
+    ce refus n'est donc atteint que sur un compte que la fenêtre de la v0.13.3 a laissé dans cet état ([#651](…), fermée
+    en v0.13.4 ; note ⁹ du §7). » — la course qui remettait une transaction `pending` sur un compte clos (W9, W22) est
+    fermée par la story.
   - `CHANGELOG.md`, `## [0.13.4] — Non publié`, `### Corrigé` : la ligne de la 29-4a **complétée** (par union) : « …
     ni une annulation (rapprochement, règlement client ou fournisseur, facture fournisseur payée), ni la suppression
     d'un import vide : l'opération est refusée, ou se termine avant la clôture, qui en tient compte. La remarque de la
@@ -692,7 +777,9 @@ chemin porte un compte bancaire (mêmes conditions que la garde non verrouillant
     publiée, l. 37) ; la fiche et le registre de la 28-4 (relevés de leurs passes) ; l'issue #651 (l'orchestrateur la
     commente).
 - **Propagation** (§ *Propagation post-patch*, greper la **valeur**) : `grep -rn "651\|\bL1\b" crates docs CHANGELOG.md
-  frontend/src website README.md` à chaque PR, chaque site trié (réécrit, ou laissé avec sa raison) au Dev Agent Record.
+  frontend/src website README.md` à chaque PR, **et la formulation** `grep -rn "par une course\|hors de cette fenêtre"`
+  sur les mêmes chemins (F7 de la P3 : le jeton `651` ne voyait pas `api-external.md:594`), chaque site trié (réécrit,
+  ou laissé avec sa raison) au Dev Agent Record.
 
 **AC10 — Gates (les deux parties : la 29-4a comme la 29-4b ; R13 de la P1).**
 
@@ -719,17 +806,18 @@ chemin porte un compte bancaire (mêmes conditions que la garde non verrouillant
 - [ ] **T2** — Tests de fenêtre T29a-2 (W22) et T29a-3 (W17), et de la course avec l'archivage T29a-11 (W22) et
   T29a-12 (W17), **d'abord** (rouges au sol, journal du rouge au Dev Agent Record), puis l'appel de la variante après
   chaque `INSERT` et la conversion de W17 (AC2, AC3) ; puis T29a-6 et T29a-7 (l'autre ordre, prémisse P-d (2), sonde
-  `attendre_un_verrou_en_attente`) — leur verdict, vert ou rouge, s'écrit au Dev Agent Record et met à jour le libellé
+  `sonde_verrou_nowait` en `LOCK IN SHARE MODE NOWAIT`, en boucle locale au test — P3, R1 = F1) — leur verdict, vert ou rouge, s'écrit au Dev Agent Record et met à jour le libellé
   de P-d.
 - [ ] **T3** — `close_once`, `reopen_once`, `patch_once` et leurs enveloppes (rollback explicite sur refus) ;
   doc-comments des trois routes et de `close_in_tx`, `reopen_in_tx`, `set_journal_account_id_for_company` ; point (vi)
-  d'`audit_route_registry.rs` recompté (sept → dix), points (ii) et (iii bis), commentaire des l. 333 et 336-338 ;
-  T29a-4, T29a-9, T29a-10 (AC4).
+  d'`audit_route_registry.rs` recompté (sept → dix), points (ii) et (iii bis) (une phrase pour la famille `AppError`,
+  leurs « sept » inchangés), commentaire des l. 333 et 336-338 ; T29a-4, T29a-9 (montage `mark_onboarding_complete`),
+  T29a-10 (AC4).
 - [ ] **T4** — Troisième inventaire du registre (T29a-5) : extraction `G`, extraction des appels **avec le nom appelé**,
   `FENETRE` à neuf entrées, `Reverifiee(Variante, …)`, statut `Ouverte("29-4b")` pour les cinq annulations,
   assertions (i) et (i bis), ordre textuel par positions de littéraux, volet inverse (AC5).
-- [ ] **T5** — Doc-comments et CHANGELOG de la partie a (AC9, dont `bank_accounts.rs:866-867` et
-  `routes/bank_accounts.rs:904-907`) ; propagation greppée.
+- [ ] **T5** — Doc-comments et CHANGELOG de la partie a (AC9, dont `bank_accounts.rs:866-867`,
+  `routes/bank_accounts.rs:904-907`, `errors.rs:1247-1249` et `routes/bank_imports.rs:57-61`) ; propagation greppée.
 - [ ] **T6** — Mutations M29-1 à M29-4, M29-6, M29-7, M29-19 à M29-23 et M29-25 ; table *Position par chemin*
   recopiée (lignes W17, W22, clôture, réouverture, `PATCH`) ; gate complet + E2E complet au dernier commit de code ;
   Dev Agent Record (« aucune release avant la 29-4b », état transitoire des textes) ; corps de PR **demandé** à
@@ -745,7 +833,8 @@ chemin porte un compte bancaire (mêmes conditions que la garde non verrouillant
   réserve, ordre textuel étendu par positions de littéraux (AC8) ; T29b-3 (cycle neuf).
 - [ ] **T10** — Textes de L1 (doc-comments dont `bank_accounts.rs:28` et `bank_imports.rs:444-445`, registre dont
   l. 89, `routes/reconciliation.rs:4908`, `bank_accounts_closed_e2e.rs:18` et `:1577`), manuel et PDF contrôlé aplati,
-  `api-external.md` (l. 241 et 555), CHANGELOG complété (AC9) ; propagation greppée.
+  `api-external.md` (l. 241, 555 et 594), commentaires des cinq gardes (AC6), CHANGELOG complété (AC9) ; propagation
+  greppée (jeton et formulation).
 - [ ] **T11** — Mutations M29-8 à M29-18 et M29-24 ; table *Position par chemin* et table des cycles recopiées ; gate
   complet + E2E complet au dernier commit de code ; corps de PR **demandé** : `closes #651` (sur la PR seulement).
 
@@ -843,7 +932,7 @@ demandeurs d'exclusif sur `A` (extraction ci-dessus) et leur sort :
 | réouverture | oui, sur un compte clos — le partagé d'un écrivain que la revérification va refuser (W22, W17 après leur `INSERT`, les annulations par leur revérification) ; cycle à quatre de F3 (AC4) | **oui** (P2, F3) |
 | `PATCH` (W13) | oui — cycle à trois `D → PATCH → I → D` (AC4, F2) | **oui** (P2, F2) |
 | W8, W27 | oui | oui (au sol) |
-| `PUT`, `POST`, archivage | non ici : ils prennent `companies` X **avant** `A`, et tout détenteur partagé de la course tient `companies` S depuis son `INSERT` ou sa contre-passation — ils attendent la sentinelle sans rien tenir sur `A` | non (inutile ici ; voir le résidu du cycle à quatre) |
+| `PUT`, `POST`, archivage | non ici : ils prennent `companies` X **avant** `A`, et tout détenteur partagé de la course tient `companies` S depuis son `INSERT` ou sa contre-passation — ils attendent la sentinelle sans rien tenir sur `A` | non (inutile ici ; voir le résidu du cycle à quatre, où ils sont le `M` en file sur la sentinelle) |
 | restauration (`backup.rs`, `DELETE` des lignes de `bank_accounts` ; F9 de la P2) | oui, en théorie : une annulation en revérification derrière ce `X` ferme un cycle avec elle | l'annulation, plus légère que la restauration (qui a écrit massivement), est la victime, **rejouée** sur les cinq routes |
 
 **L'argument de poids, écrit au lieu d'être invoqué** (F11 de la P2, raisonné) : InnoDB désigne pour victime la
@@ -852,22 +941,35 @@ demande est la **première instruction** (clôture, réouverture) porte deux ver
 en attente) et aucune écriture ; tout autre participant d'un cycle tient au moins un verrou d'enregistrement, son
 intention de table et une demande en attente — trois au moins. Il est donc **strictement** le plus léger de tout cycle où
 il n'entre qu'avec des transactions qui tiennent un verrou d'enregistrement ; le `PATCH`, qui tient déjà les partagés
-des réglages, n'a rien écrit et reste plus léger qu'un import ou une suppression d'import qui ont écrit. Cet argument
-est recopié au doc-comment des deux fonctions de revérification (AC1).
+des réglages, n'a rien écrit et reste plus léger qu'un import ou une suppression d'import qui ont écrit. ⚠️ **Deux
+réserves** *(P3)* : (1) **F3** — le dépôt n'établit la désignation du plus léger que pour des cycles à deux ; qu'InnoDB
+compare **tout** le cycle, et non la seule paire qui le ferme, est raisonné, éprouvé pour la première fois par T29a-4
+et T29a-9 (seconde contingence, AC4) ; (2) **F2** — l'argument ne vaut pas contre une route de gestion `M` en file sur
+la sentinelle `companies` : elle ne tient aucun verrou d'enregistrement (intention de table et demande en attente,
+deux), si bien qu'elle est **à égalité** avec la clôture et la réouverture, et **strictement plus légère** que le
+`PATCH` (qui tient les partagés des réglages), W8 et W27. Cet argument est recopié au doc-comment des deux fonctions de
+revérification (AC1) **avec ces deux réserves** — non sous la forme « strictement le plus léger de tout cycle ».
 
 **Résidus** :
 
 - (C-29-4-7, réécrit en P1, F8 b ; **étendu en P2**, F2) le cycle à trois où l'import (W22, `H` : partagé depuis son
   `INSERT`, en attente de l'intervalle d'`idx_bank_transactions_import` tenu par une suppression d'import W24 = `R`)
   serait désigné victime — que le demandeur d'exclusif soit la clôture ou le `PATCH`. **Théorique** : l'import et la
-  suppression ont écrit, le demandeur d'exclusif non ; il est la victime, rejouée. Écrit au doc-comment de la
+  suppression ont écrit, le demandeur d'exclusif non ; il est la victime, rejouée — sous la réserve F3 de la P3 (choix
+  de la victime sur un cycle entier, raisonné ; seconde contingence de T29a-4). Écrit au doc-comment de la
   revérification, sans « à surveiller » ; aucune issue.
-- (P2, F3) **le cycle à quatre** `Q → R → I → M → Q` (annulation, réouverture, import, route de gestion `M` en attente
-  de la sentinelle) : `R` et `M` n'y tiennent chacun que leur intention de table et leur demande en attente — **poids
-  égaux** (raisonné) ; si InnoDB désigne `M` (`PUT`, `POST` ou `DELETE /bank-accounts`, non rejouée), elle rend `500`,
-  rien d'écrit. Quatre gestes concurrents sur un même compte et une même société : **négligeable**, écrit au
-  doc-comment de la revérification, sans issue. Rejouer les routes de gestion fermerait ce résidu, au prix de trois
-  enveloppes de plus pour un cas que rien n'a montré : écarté (C-29-4-14, annotation de la P2).
+- (P2, F3 ; **réécrit en P3**, F2) **le cycle à quatre** `Q → E → I → M → Q` : une annulation `Q` qui a contre-passé
+  (`companies` S) demande `A` en partagé derrière un demandeur d'exclusif `E` en file ; `E` attend `A` derrière un
+  import `I` (ou un lot) qui tient `A` S par son `INSERT` et demande `companies` S entre ses deux contrôles de clé
+  étrangère ; `I` attend derrière une route de gestion `M` (`PUT`, `POST` ou `DELETE /bank-accounts`) en file sur la
+  sentinelle `companies` X, que `Q` tient en partagé. Le cycle **ne dépend pas de ce qu'est `E`** : il se forme avec
+  la clôture, la réouverture, le `PATCH`, W8 ou W27. `M` n'y tient que son intention de table et sa demande en
+  attente : **à égalité de poids** avec la clôture et la réouverture (raisonné ; InnoDB peut désigner l'une ou
+  l'autre) ; **strictement plus légère**, donc **victime désignée**, quand `E` est le `PATCH` (qui tient les partagés
+  des réglages), W8 ou W27. Désignée, `M`, non rejouée, rend `500`, rien d'écrit. Quatre gestes concurrents sur un
+  même compte et une même société, `I` dans l'intervalle de ses deux contrôles de clé étrangère : **négligeable**,
+  écrit au doc-comment de la revérification, sans issue. Rejouer les routes de gestion fermerait ce résidu, au prix de
+  trois enveloppes de plus pour un cas que rien n'a montré : écarté (C-29-4-14, annotations de la P2 et de la P3).
 
 **Angle mort « PATCH », cycle à trois par `accounts`** (F4 de la P1) — ⛔ **fermé en P2** par le rejeu du `PATCH`
 (C-29-4-19) : une annulation par virement (W25) tient l'exercice ; un règlement interne W8 tient un exclusif sur un
@@ -925,7 +1027,7 @@ La 29-1 ne touche ni la réconciliation ni les comptes bancaires (fichier d'epic
 **Partie a** : T29a-1 `EXPLAIN` des deux revérifications (PRIMARY, `const`) ; T-a45 (28-4) étendu (verrou et `archived`) ;
 T29a-2 fenêtre W22 ; T29a-3 fenêtre W17 ; T29a-4 cycle à trois par la clôture ; T29a-5 registre (troisième inventaire,
 deux sens, ensemble `G`, variante appelée, ordre textuel) et son volet inverse par un cas construit ; T29a-6 et T29a-7
-l'autre ordre (écrivain inséré, clôture **en attente de verrou** établie par `INNODB_TRX`, revérification sans attente —
+l'autre ordre (écrivain inséré, clôture **en file** établie par `sonde_verrou_nowait` en partagé — P3, R1 = F1 —, revérification sans attente —
 prémisse P-d (2)) ; ~~T29a-8~~ *retiré en P2* (AC11, #669) ; T29a-9 cycle à trois par la réouverture ; T29a-10 le
 `PATCH` victime, rejoué ; T29a-11 et T29a-12 la course avec l'archivage (W22, W17). Soit **onze** tests neufs de la
 partie a (T29a-1 à T29a-12, moins T29a-8), plus T-a45 étendu.
@@ -970,9 +1072,10 @@ prise). Un rouge s'y diagnostiquerait quand même avant toute retouche.
 ### Angles morts assumés (à écrire aux doc-comments)
 
 - Le cycle à trois où l'import serait désigné victime (C-29-4-7) — **théorique** depuis la P1 : le demandeur
-  d'exclusif (clôture, ou `PATCH` depuis la P2) y est toujours plus léger.
-- Le cycle à quatre de F3 (P2) où une route de gestion du compte, non rejouée, serait victime à égalité de poids avec la
-  réouverture — négligeable (quatre gestes concurrents).
+  d'exclusif (clôture, ou `PATCH` depuis la P2) y est toujours plus léger (raisonné : réserve F3 de la P3).
+- Le cycle à quatre de F3 (P2, réécrit en P3, F2) où une route de gestion du compte, non rejouée, serait victime —
+  à égalité de poids avec la clôture ou la réouverture, victime désignée quand le demandeur d'exclusif traversé est le
+  `PATCH`, W8 ou W27 — négligeable (quatre gestes concurrents).
 - ~~Le cycle à trois par `accounts` où le `PATCH`, non rejoué, serait victime (F4 de la P1)~~ — **fermé en P2** : le
   `PATCH` est rejoué (C-29-4-19).
 - L'interblocage **préexistant** import ou lot / route de gestion (l'`INSERT` prend le compte en partagé avant
@@ -986,9 +1089,11 @@ prise). Un rouge s'y diagnostiquerait quand même avant toute retouche.
 - ~~La revérification ne lit pas `archived`~~ — **fermé en P2** : la variante de l'import et du lot lit `archived`
   (AC1, AC2, C-29-4-16 renversé) ; aucune issue L5 à ouvrir.
 - **`innodb_snapshot_isolation` non épinglé** (AC11 retiré en P2, R1 = F1) : sous MariaDB 11.6+ (`ON` par défaut), les
-  deux revérifications rendraient `1020` → `500` dans la course qu'elles traitent, comme les deux sites préexistants
-  (`routes/reconciliation.rs:2166-2170`, `bank_imports.rs:439-446`) — rien d'écrit, mais un refus indiscernable d'une
-  panne. Renvoyé à **#669** (réglages de session du pool réel) ; le dépôt suppose MariaDB 10.11 (`OFF`).
+  deux revérifications rendraient `1020` → `500` dans la course qu'elles traitent — rien d'écrit, mais un refus
+  indiscernable d'une panne ; du même ordre que `accept_one_invoice` (`routes/reconciliation.rs:2166-2170`, qui rendrait
+  `DATABASE_ERROR` dans `failed[]`) et que le raisonnement de `bank_imports.rs:439-446` (R6 de la P3). Renvoyé à
+  **#669** (réglages de session du pool réel ; les points sur 11.6+ du manuel d'administration, de
+  `docker-compose.prod.yml` et du NAS y sont versés) ; la CI et la base de dev tournent sous MariaDB 10.11 (`OFF`).
 - Les états laissés par la fenêtre de la v0.13.3 ne sont pas réparés (table *Dehors*).
 
 ### Pièges connus du dépôt, applicables ici
@@ -996,8 +1101,13 @@ prise). Un rouge s'y diagnostiquerait quand même avant toute retouche.
 - `LOCK IN SHARE MODE`, pas `FOR SHARE` (MariaDB 10.11).
 - `attendre_une_requete_en_cours` voit une requête **en cours**, non une requête **bloquée** (leçon de la validation P5
   de la 28-4, T-a49) : chaque test d'entrelacement doit établir l'attente par son **issue** (le résultat après le commit
-  de `C`), pas par la seule sonde — ou par une sonde d'état de verrou (`INNODB_TRX.trx_state = 'LOCK WAIT'`, fixture
-  `attendre_un_verrou_en_attente`, AC3) quand l'issue ne départage rien (T29a-6, T29a-7 ; R4 = F7 de la P2).
+  de `C`), pas par la seule sonde — ou par une sonde de file de verrou quand l'issue ne départage rien (T29a-6,
+  T29a-7 ; R4 = F7 de la P2) : `sonde_verrou_nowait` en `LOCK IN SHARE MODE NOWAIT` sur la ligne tenue en partagé, qui
+  échoue en `1205` dès qu'une demande exclusive est en file (AC3, constaté le 2026-10-14). ⛔ **Pas
+  d'`information_schema.INNODB_TRX`** : elle exige le privilège `PROCESS`, que les droits versionnés de dev ne donnent
+  pas (`scripts/mariadb-init/01-dev-grants.sql` ; `reconciliation_e2e.rs:7546-7553`) — R1 = F1 de la P3. ⚠️ Le conteneur
+  de dev de la station porte, le 2026-10-14, un `GRANT ALL PRIVILEGES ON *.*` à `kesh` qui n'est pas celui du fichier
+  versionné : une sonde à privilège y passerait, et rougirait sur un conteneur rejoué depuis ce fichier. Ne pas s'y fier.
 - Tests de rejeu : alourdir la transaction de test (500 lignes de lest), exiger qu'elle obtienne son verrou (`.expect`),
   capturer le `warn!` de rejeu (`rejeu_interblocage_e2e.rs:5-23`).
 - Mutations : `git checkout -- <fichier>` **puis `touch`** ; base de gate remise à zéro avant tout gate complet.
@@ -1029,7 +1139,7 @@ répartition des tests de fenêtre, à écrire au Dev Agent Record.
   `crates/kesh-api/src/errors.rs:4114-4120` (rendu de `DbError::Sqlx`) ; `crates/kesh-api/tests/common/capture_rejeu.rs`.
 - Rapports de validation de la 29-4 : `/home/gcorbaz/devel/kesh-gate-logs/29-4-validate-p1-R.md` (R1-R13),
   `…-p1-F.md` (F1-F9, table de l'axe obligatoire), `…-p2-R.md` (R1-R10), `…-p2-F.md` (F1-F12, table des verrous et des
-  cycles).
+  cycles), `…-p3-R.md` (R1-R12), `…-p3-F.md` (F1-F7, table des verrous et des cycles).
 
 ## Dev Agent Record
 
@@ -1156,3 +1266,61 @@ répartition des tests de fenêtre, à écrire au Dev Agent Record.
     `issue à ouvrir`, `500 ms`, `L5`, `clôture seule` ; résidus restants : les relevés datés (Change Log de création et
     de la P1, choix d'origine annotés, prompts P1 et P2) et les mentions de la note de retrait, voulues. Prompt de la
     validation P3 : `29-4-cloture-compte-concurrente-validate-prompt-p3.md` (Sonnet).
+- 2026-10-14 — **Validation P3** (Sonnet 5.5, deux lentilles en contexte frais, lecture seule, sur `ffad9a23` ; prompt
+  `29-4-cloture-compte-concurrente-validate-prompt-p3.md`). Lentille R : **0 CRITICAL / 0 HIGH / 1 MEDIUM / 11 LOW**
+  (`kesh-gate-logs/29-4-validate-p3-R.md`, R1-R12) ; lentille F : **0 / 1 / 0 / 6** (`…-p3-F.md`, F1-F7, table des
+  verrous et des cycles fournie). Axes exercés et non exercés déclarés par les deux. Convergences : R1 = F1 (le **même
+  défaut**, classé MEDIUM par R et HIGH par F), R4 = F4, R5 = F6 (a), R6 = F6 (b). **Origine** : R1 = F1, R3, R4 = F4,
+  R5, R6, R8 (deux premiers sites), R9, R11, F2, F5 et T29a-12 de R10 sont nés de la **remédiation P2** ; R7, R12 et
+  T29a-3 de R10 de la remédiation P1 ; R2 (T29a-4), F7 et R8 (commentaires des annulations) de la conception d'origine ;
+  F3 de l'héritage. **Trend** : P1 R 0/0/6/7, F 0/0/2/7 → P2 R 0/1/3/6, F 0/1/3/7 → P3 R 0/0/1/11, F 0/1/0/6. Le HIGH de
+  la P3 naît, comme celui de la P2, du correctif précédent (une prescription de la P2 contredite par deux commentaires
+  du dépôt) : le motif « la remédiation introduit le défaut suivant » est observé une seconde fois, sur un défaut de
+  preuve (un test irréalisable sur le poste du gate), non de conception ; la sévérité totale baisse (8 au-dessus de LOW
+  en P2, 1 défaut en P3). **Remédiation** (Opus 5.5, même jour), décisions de l'orchestrateur consignées comme telles :
+  - **R1 = F1** (MEDIUM / HIGH) — **décision de l'orchestrateur** : la sonde `INNODB_TRX`, qui exige le privilège
+    `PROCESS`, est remplacée par le helper existant `sonde_verrou_nowait` (`SELECT id FROM bank_accounts WHERE id = ?
+    LOCK IN SHARE MODE NOWAIT`, connexion tierce, en boucle locale au test, bornée à 10 s), qui ne demande aucun
+    privilège ; la fixture `attendre_un_verrou_en_attente` est retirée ; garde (1 bis) contre le montage à vide (la
+    sonde réussit avant la clôture). **Établi** le 2026-10-14 sur la MariaDB de dev (`10.11.16`, base `kesh_294`,
+    table jetable `sonde_294`, trois connexions `mariadb` sous `kesh`) : la sonde réussit avec un partagé tenu, échoue
+    aussitôt en `1205` avec un exclusif en file, réussit après les commits ; le détenteur partagé y a redemandé son
+    partagé sans attendre (indice pour P-d (2), écrit à la table des prémisses). Repli écrit (précédent
+    `reconciliation_e2e.rs:7546-7553`). Constaté au passage : le conteneur de dev de la station accorde ce jour
+    `ALL PRIVILEGES ON *.*` à `kesh`, contrairement à `01-dev-grants.sql` — une sonde à privilège y aurait passé ; écrit
+    aux Pièges. AC3, T2, Dev Notes (tests, pièges), C-29-4-21 annoté.
+  - **R4 = F4** — la fixture retirée, la 29-4a revient à **quatre** modules de code ; le « quatre » de la P2 était faux
+    à sa date, d'un module (C-29-4-6 annoté).
+  - **F6 = R5** — **décision de l'orchestrateur** : les points sur MariaDB 11.6+ (manuel d'administration l. 108 et
+    2708, `docker-compose.prod.yml:8`, version du NAS) sont versés en commentaire à **#669** ; la fiche y renvoie
+    (AC11 retiré, table *Dehors*, angles morts) et ne prescrit aucun texte de manuel pour 11.6+. **R6 = F6 (b)** — « comme
+    les deux sites préexistants » rectifié partout où la fiche le prescrit : `accept_one_invoice`
+    (`routes/reconciliation.rs:2166-2170`) rendrait `DATABASE_ERROR` dans `failed[]`, la revérification un `500`.
+  - LOW : **R2** — `mark_onboarding_complete` au montage de T29a-4 et T29a-9. **R3** — `bank_imports.rs:444-445` dit
+    réécrit en 29-4b pour une autre raison que l'AC11 (AC11 retiré, AC9) ; la phrase de l'entrée P2 ci-dessus (« ne se
+    touchent plus ; celui de `bank_imports.rs:444-445` (29-4b) renvoie à #669 ») se lit ainsi : 439-446 non touché au
+    titre de l'AC11, sauf 444-445 au titre de W24. **R7** — le § L1 d'`ensure_open_in_tx`, réécrit en 29-4a, sort de
+    la liste de l'état transitoire ; son décompte « Huit chemins » se refait depuis la liste. **R8** —
+    `errors.rs:1247-1249` et `routes/bank_imports.rs:57-61` à l'AC9 (29-4a, doc-comments seuls : la 29-4a, comptée
+    largement, passe à six fichiers, dérogation étendue — C-29-4-18 annoté) ; commentaires des cinq gardes à l'AC6.
+    **R9** — points (ii) et (iii bis) : une phrase pour la famille `AppError`, leurs « sept » (famille `DbError`)
+    inchangés. **R10** — W17 : `create_batch` annule lui-même ; rollback explicite pour W22 seulement (T29a-3,
+    T29a-12). **R11** — la clause sur la note ⁹ retirée. **R12** — extraction `G` (a) qualifiée (`bank_accounts::`).
+    **F2** — le résidu du cycle à quatre réécrit pour tout demandeur d'exclusif en file (clôture, réouverture,
+    `PATCH`, W8, W27) : `M` à égalité avec la clôture et la réouverture, **victime désignée** contre le `PATCH`, W8 et
+    W27 ; critère volet 2, AC4, § *Cycles*, angles morts, doc-comment prescrit ; C-29-4-14 annoté. **F3** — seconde
+    contingence de T29a-4 et T29a-9 (victime autre que la clôture ou la réouverture : consignée, remontée) ; « raisonné »
+    devant l'argument de poids, recopié au doc-comment avec ses deux réserves ; C-29-4-7 annoté. **F5** — précondition
+    `company_invoice_settings` de T29a-10 écrite. **F7** — `docs/api-external.md:594` ajouté à l'AC9 (29-4b), et la
+    propagation greppe la formulation (« par une course », « hors de cette fenêtre ») en plus du jeton.
+  - **Refusé** : aucun finding.
+  - **Recomptes** (depuis la fiche et le registre) : tests neufs de la partie a **onze** (inchangé) ; partie b **cinq**
+    identifiants (inchangé) ; mutations **24** (inchangé) ; choix **22** (`grep -c '^### C-29-4-'`, aucun neuf ;
+    annotés en P3 : C-29-4-6, -7, -14, -18, -21) ; modules de code : 29-4a **quatre**, 29-4b **quatre**, **sept**
+    distincts ; comptés largement : 29-4a **six**, 29-4b **sept**.
+  - Propagation : greppés sur la fiche et le registre — `INNODB_TRX`, `attendre_un_verrou_en_attente`, `PROCESS`,
+    `LOCK WAIT`, `CONNECTION_ID`, `comme les deux sites`, `égalité`, `strictement`, `toujours plus léger`, `note ⁹`,
+    `par une course`, `58-6`, `quatre modules` ; résidus restants : les relevés datés (Change Log de la P2, annotation P2
+    de C-29-4-6, texte d'origine de C-29-4-21) et les mentions de retrait, voulues. Prompt de la passe ciblée P4 :
+    `29-4-cloture-compte-concurrente-validate-prompt-p4-ciblee.md` (Haiku, une lentille sur le seul diff de cette
+    remédiation).

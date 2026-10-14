@@ -100,6 +100,11 @@
   modules de code (les deux enveloppes neuves et la variante « archivé » vont dans des modules déjà comptés), sept
   distincts au total ; le découpage reste, la dérogation de la 29-4b reste (relue, inchangée), aucune n'est due pour la
   29-4a. Le signal D5 levé en P2 (HIGH né de la remédiation P1) est déclaré au Project Lead (Change Log).
+- *Annotation du 2026-10-14 (validation P3, R4 = F4)* : le « quatre » de l'annotation précédente était faux **à sa
+  date**, d'un module : la fixture `attendre_un_verrou_en_attente` que la même remédiation P2 ajoutait à
+  `kesh-db/src/test_fixtures.rs` (compilé en permanence, hors `cfg(test)`) en faisait cinq. La P3 retire la fixture
+  (C-29-4-21) : la 29-4a touche de nouveau **quatre** modules de code — et, comptée largement, six fichiers de
+  production, deux doc-comments seuls s'ajoutant (R8 de la P3 ; C-29-4-18). Le découpage reste.
 
 ### C-29-4-7 — Résidu : un cycle à trois où l'import serait victime
 
@@ -115,6 +120,11 @@
 - *Annoté le 2026-10-14 (validation P2, F2)* : le même cycle existe avec le `PATCH` du compte à la place de la clôture
   comme demandeur d'exclusif en file ; le `PATCH` est désormais rejoué (C-29-4-19), et l'import, qui a écrit, reste le
   plus lourd : même résidu théorique. L'argument de poids est écrit (fiche, § *Cycles*, F11 de la P2).
+- *Annoté le 2026-10-14 (validation P3, F3)* : « la clôture est toujours la plus légère » est **raisonné** : le dépôt
+  n'établit le choix du plus léger que dans des cycles à deux, et ce cycle-ci en compte trois. Si InnoDB ne comparait
+  que la paire qui ferme le cycle, l'import ou la suppression pourraient être désignés. T29a-4 et T29a-9, premiers
+  tests à trois, portent une seconde contingence (victime observée consignée, remontée à l'orchestrateur) ; le résidu
+  reste écrit théorique sous cette réserve.
 
 ### C-29-4-8 — Pas de revérification là où un invariant ou un verrou existant tient
 
@@ -193,6 +203,13 @@
   ce cycle — `M` y est à égalité de poids avec la réouverture et peut être désignée, `500` sans rien d'écrit ; quatre
   gestes concurrents sur un même compte et une même société, aucun cas observé : trois enveloppes de plus pour un cas
   négligeable, résidu écrit. Réversible : oui (une enveloppe).
+- *Annoté le 2026-10-14 (validation P3, F2 ; décision de l'orchestrateur de garder l'écart)* : le résidu était
+  inventorié pour la seule réouverture. Il se forme avec **tout** demandeur d'exclusif en file sur le compte —
+  clôture, réouverture, `PATCH`, W8, W27 — et `M`, qui ne tient aucun verrou d'enregistrement, est à égalité de poids
+  avec la clôture et la réouverture, **strictement plus légère**, donc victime désignée, contre le `PATCH`, W8 et W27.
+  La décision ne change pas (routes de gestion non rejouées, quatre gestes concurrents, `500` sans rien d'écrit) ;
+  l'inventaire du résidu est réécrit dans la fiche (critère volet 2, AC4, § *Cycles*, angles morts) et au doc-comment
+  prescrit.
 
 ### C-29-4-15 — L'ensemble des gardes non verrouillantes s'extrait du code, et `FENETRE` lui est égal
 
@@ -238,6 +255,10 @@
 - **Écartées** : une 29-4c pour les textes ; déplacer en 29-4a la réécriture de `bank_accounts.rs` (fausse tant que les
   annulations restent ouvertes).
 - **Réversible** : oui.
+- *Annoté le 2026-10-14 (validation P3, R8)* : la 29-4a, comptée largement, touche elle aussi plus de cinq fichiers de
+  production — quatre modules de code et deux fichiers de doc-comments seuls (`kesh-db/src/errors.rs`,
+  `kesh-api/src/routes/bank_imports.rs`), soit six. Même argument, même conclusion : ce qui dépasse cinq n'est qu'une
+  phrase de doc-comment que la revérification rend incomplète ; la fiche étend la section *Dérogation* à la 29-4a.
 
 ### C-29-4-19 — Rejouer le `PATCH` du compte (décision de l'orchestrateur, validation P2)
 
@@ -281,6 +302,22 @@
 - **Écartées** : garder le délai seul (passe à vide sans signal) ; `INNODB_LOCK_WAITS` (même information, une jointure de
   plus) ; écrire seulement au Dev Agent Record que le test ne distingue pas les deux cas.
 - **Réversible** : oui.
+- *Annoté le 2026-10-14 (validation P3, R1 = F1 ; décision de l'orchestrateur)* : **la sonde `INNODB_TRX` est
+  remplacée**. Elle exige le privilège `PROCESS`, que les droits versionnés de l'utilisateur de dev ne donnent pas
+  (`scripts/mariadb-init/01-dev-grants.sql`, deux espaces de noms) — le dépôt le disait deux fois
+  (`reconciliation_e2e.rs:7546-7553`, `:8394-8397`) ; « colonnes présentes : raisonné » visait le mauvais obstacle.
+  **Retenu** : le helper existant `sonde_verrou_nowait` (`test_fixtures.rs:607`), en boucle locale au test, avec
+  `SELECT id FROM bank_accounts WHERE id = ? LOCK IN SHARE MODE NOWAIT` sur une connexion tierce : compatible avec le
+  seul partagé de l'écrivain, il échoue en `1205` dès que la demande exclusive de la clôture est en file. Aucun
+  privilège, aucune fixture neuve — la fixture `attendre_un_verrou_en_attente` est retirée, et la 29-4a revient à quatre
+  modules de code (C-29-4-6). **Établi** le 2026-10-14 sur la MariaDB de dev (`10.11.16`, base `kesh_294`, table
+  jetable, trois connexions) : succès avec un partagé tenu, `1205` aussitôt avec un exclusif en file, succès après les
+  commits ; à rejouer dans le test. **Repli**, si la branche rebasée le contredisait : le précédent
+  `reconciliation_e2e.rs:7546-7553` (attente bornée constatée, issue après le commit) et le constat écrit au Dev Agent
+  Record que le test ne distingue plus les deux cas. **Écartées** : accorder `PROCESS` à l'utilisateur de dev (droit
+  global, contraire à la justification de `01-dev-grants.sql`, hors des modules de la story) ; garder `INNODB_TRX`
+  parce que le conteneur de la station porte, ce jour, un `GRANT ALL PRIVILEGES ON *.*` à `kesh` étranger au fichier
+  versionné (le test passerait ici et rougirait sur un conteneur rejoué).
 
 ### C-29-4-22 — Un seul test « annulation sur un compte archivé » (W25), non cinq
 
