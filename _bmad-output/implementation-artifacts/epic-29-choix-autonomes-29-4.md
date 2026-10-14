@@ -259,6 +259,9 @@
   production — quatre modules de code et deux fichiers de doc-comments seuls (`kesh-db/src/errors.rs`,
   `kesh-api/src/routes/bank_imports.rs`), soit six. Même argument, même conclusion : ce qui dépasse cinq n'est qu'une
   phrase de doc-comment que la revérification rend incomplète ; la fiche étend la section *Dérogation* à la 29-4a.
+- *Annoté le 2026-10-14 (validation P4, L4)* : le « sept » de la 29-4b comptée largement ne suivait aucune règle. Règle
+  énoncée : fichiers de production (code ou doc-comments), sans documents ni tests — 29-4a **six**, 29-4b **six** (quatre
+  de code, deux de doc-comments seuls), **neuf** avec ses trois documents. Conclusion inchangée.
 
 ### C-29-4-19 — Rejouer le `PATCH` du compte (décision de l'orchestrateur, validation P2)
 
@@ -318,6 +321,11 @@
   global, contraire à la justification de `01-dev-grants.sql`, hors des modules de la story) ; garder `INNODB_TRX`
   parce que le conteneur de la station porte, ce jour, un `GRANT ALL PRIVILEGES ON *.*` à `kesh` étranger au fichier
   versionné (le test passerait ici et rougirait sur un conteneur rejoué).
+- *Annoté le 2026-10-14 (validation P4, M1, L1, L5)* : la garde contre le montage à vide est une **sonde de référence
+  entre les étapes (1) et (2)**, avant le lancement de la clôture — placée après, la clôture pouvait déjà être en file et
+  la garde donner un faux rouge ; la forme `LOCK IN SHARE MODE NOWAIT` n'a aucun précédent dans le dépôt (constat hors dépôt
+  seulement), elle s'établit au T0 du développement, repli inchangé ; le motif « 500 ms » du repli se lit à
+  `reconciliation_e2e.rs:7538-7553`.
 
 ### C-29-4-22 — Un seul test « annulation sur un compte archivé » (W25), non cinq
 

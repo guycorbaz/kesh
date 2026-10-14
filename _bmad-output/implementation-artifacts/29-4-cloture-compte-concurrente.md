@@ -116,10 +116,11 @@ Au total (les deux parties) : **sept** modules de code distincts (`repositories/
 avant la P2, `pool` compris —, plus de cinq, d'où le découpage (C-29-4-6). La 29-4a en touche **quatre**, sous la borne
 de la règle (qui découpe au-delà de cinq) — la P2 avait montré qu'un épinglage réellement branché sur le pool de
 production l'aurait portée à six (`main.rs`) : le retrait l'éloigne de la borne, aucune dérogation n'est à écrire pour
-elle **au décompte de code** ; comptée largement (doc-comments seuls compris, P3), elle touche **six** fichiers de
-production — la dérogation ci-dessous la couvre par le même argument (ce qui dépasse cinq n'est que du texte) ;
-la 29-4b **quatre** de code, mais **sept** si l'on compte
-comme la fiche le faisait avant la P1 (doc-comments et `docs/manual` compris) — plus de cinq : voir § *Dérogation règle de
+elle **au décompte de code** ; comptée largement — **règle (P4, L4) : fichiers de production, code ou doc-comments, sans les documents ni les
+tests** —, elle touche **six** fichiers de production — la dérogation ci-dessous la couvre par le même argument (ce qui dépasse cinq n'est que du texte) ;
+la 29-4b **quatre** de code ; comptée largement par la même règle, **six** (quatre de code, deux de doc-comments
+seuls), et **neuf** si l'on y ajoute ses trois documents (`docs/manual`, `docs/api-external.md`, `CHANGELOG.md`) — le
+« sept » de la P1 comptait le manuel sans les deux autres documents et ne suivait aucune règle (P4, L4) — plus de cinq : voir § *Dérogation règle de
 splitting*. Le découpage suit aussi le **risque** : la 29-4a n'ajoute aucun verrou d'écrivain ; la 29-4b porte seule le
 verrou neuf et le cycle qu'il crée, et c'est elle que la validation doit relire le plus durement.
 
@@ -128,7 +129,7 @@ verrou neuf et le cycle qu'il crée, et c'est elle que la validation doit relire
 *(Écrite en P1, R6 = F7 : l'écriture d'origine, « cinq, la borne », était un sous-décompte. Relue en P2 : inchangée —
 le retrait de l'épinglage ne touche que la 29-4a, et le test neuf de la 29-4b, T29b-5, va dans un fichier de tests déjà
 compté.)* Comptée largement, la 29-4b
-touche sept modules ; elle n'est **pas** redécoupée :
+touche six fichiers de production (neuf avec ses documents — P4, L4) ; elle n'est **pas** redécoupée :
 
 - **Ce qui dépasse cinq n'est que du texte** : les deux modules ajoutés au décompte (`bank_accounts.rs`,
   `routes/reconciliation.rs`) n'y changent que des doc-comments, et `docs/manual` est un document. Le code de la 29-4b est
@@ -299,13 +300,16 @@ R5 = F2 de la P1). C'est le seul ordre qui éprouve la prémisse P-d (2), et AC3
 la clôture a déjà commité, plus d'exclusif en file). Patron de T-a31 de la 28-4, prolongé : (1) l'écrivain, dans sa
 transaction, exécute son `INSERT` d'entête (`INSERT INTO bank_imports` — resp. `INSERT INTO payment_batches`) **sans** la
 revérification — **par le SQL de l'`INSERT`**, seule voie une fois la revérification posée (`create_batch` ouvre sa
-propre transaction, `payment_batches.rs:80`) ; (1 bis) **garde contre le montage à vide** : la sonde de l'étape (3)
-rend `true` — le seul partagé de l'écrivain ne la fait pas échouer ; (2) la clôture démarre en tâche (`close_in_tx`,
+propre transaction, `payment_batches.rs:80`) ; (1 bis) **sonde de référence, avant tout lancement de la clôture** *(P4, M1)* : le test appelle une fois la
+sonde de l'étape (3) — elle **doit** rendre `true` (le seul partagé de l'écrivain ne la fait pas échouer), faute de quoi
+le test échoue avec un message de montage ; placée avant l'étape (2), elle ne peut pas être battue par la clôture, dont
+la demande exclusive n'est pas encore en file ; (2) la clôture démarre en tâche (`close_in_tx`,
 **sans** enveloppe de rejeu, commit si `Done`) ; (3) le test attend que la demande exclusive de la clôture soit **dans
 la file** de la ligne du compte, par la sonde existante `sonde_verrou_nowait` (`kesh-db/src/test_fixtures.rs:607`)
 appelée en boucle sur une connexion tierce du pool — `sonde_verrou_nowait(&pool, "SELECT id FROM bank_accounts WHERE id
 = ? LOCK IN SHARE MODE NOWAIT", compte)`, tous les 10 ms, bornée à 10 s, la boucle interrompue (échec avec message) si
-la tâche de la clôture se termine sans attendre — jusqu'à ce qu'elle rende `false`. Tant que seul le partagé de
+la tâche de la clôture se termine sans attendre — jusqu'à ce qu'elle rende `false` (la boucle ne sert qu'à
+attendre ce `false` ; la garde du montage à vide est la sonde de référence de (1 bis), non un premier tour de boucle). Tant que seul le partagé de
 l'écrivain est tenu, la demande partagée de la sonde est compatible et réussit ; dès que la demande exclusive de la
 clôture est en file, la sonde échoue aussitôt en `1205`, une demande neuve étant jugée contre les demandes en attente
 comme contre les verrous accordés ; et comme rien d'autre ne tient la ligne dans un mode incompatible, ce `false` ne
@@ -321,8 +325,14 @@ MariaDB de dev (`10.11.16`), base `kesh_294`, table jetable à clé primaire, tr
 de nouveau. Le même essai a vu le détenteur partagé **redemander** son partagé pendant que l'exclusif attendait, sans
 attendre ni interblocage — indice pour P-d (2), sur une lecture `LOCK IN SHARE MODE` et non sur le contrôle de clé
 étrangère d'un `INSERT` : la prémisse reste à établir par T29a-6 et T29a-7. Ce constat est hors dépôt : le dev le
-**rejoue** dans le test et l'écrit au Dev Agent Record. *Repli*, si la sonde ne se comportait pas ainsi sur la branche
-rebasée : le précédent du dépôt (`reconciliation_e2e.rs:7546-7553`) — attente bornée constatée par
+**rejoue** dans le test et l'écrit au Dev Agent Record. ⚠️ **La forme `LOCK IN SHARE MODE NOWAIT` n'a aucun précédent
+dans le dépôt** — tous les sites existants (`grep -rnF "FOR UPDATE NOWAIT" crates/`) sont en `FOR UPDATE NOWAIT`, aucun en `LOCK IN SHARE MODE NOWAIT`, et le
+doc-comment du helper (`test_fixtures.rs:607`) raisonne l'exclusif ; son comportement n'a été constaté que hors dépôt, sur
+MariaDB 10.11.16 (remédiation P3), et **s'établit au T0 du développement**, avec le repli ci-dessous si elle ne se
+comportait pas ainsi (le helper panique sur toute erreur autre que `1205` : une syntaxe refusée échouerait bruyamment).
+Le doc-comment du helper se généralise à cette occasion (`FOR UPDATE NOWAIT` ou `LOCK IN SHARE MODE NOWAIT` ; `false` =
+`1205`) *(P4, L1)*. *Repli*, si la sonde ne se comportait pas ainsi sur la branche
+rebasée : le précédent du dépôt (`reconciliation_e2e.rs:7538-7553`, le motif « 500 ms » aux l. 7538-7540) — attente bornée constatée par
 `attendre_une_requete_en_cours`, deux échantillons à 500 ms d'écart, puis l'issue après le commit — avec, écrit au Dev
 Agent Record, le constat que le test ne distingue plus « prémisse vraie » de « montage arrivé trop tôt » ; jamais une
 exigence de privilège. La sonde éprouve du même geste la prémisse « file InnoDB » sur laquelle repose l'AC4 ; (4) l'écrivain
@@ -765,8 +775,9 @@ chemin porte un compte bancaire (mêmes conditions que la garde non verrouillant
   - `docs/api-external.md:594` (*Annuler le rejet d'une transaction bancaire* ; F7 de la P3) : « Une transaction rejetée
     comptant comme en attente, la clôture d'un tel compte est elle-même refusée (`412
     BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS`) ; ce refus n'est donc atteint que par une course (note ⁹ du §7). » → « … ;
-    ce refus n'est donc atteint que sur un compte que la fenêtre de la v0.13.3 a laissé dans cet état ([#651](…), fermée
-    en v0.13.4 ; note ⁹ du §7). » — la course qui remettait une transaction `pending` sur un compte clos (W9, W22) est
+    le 409 de l'annulation du rejet n'est donc atteint que sur un compte clos que la fenêtre de la v0.13.3 a laissé
+    dans cet état ([#651](…), fermée en v0.13.4 ; note ⁹ du §7). » *(P4, L2 : « ce refus » désignait ambigument le
+    412 de la clôture ou le 409 de l'annulation.)* — la course qui remettait une transaction `pending` sur un compte clos (W9, W22) est
     fermée par la story.
   - `CHANGELOG.md`, `## [0.13.4] — Non publié`, `### Corrigé` : la ligne de la 29-4a **complétée** (par union) : « …
     ni une annulation (rapprochement, règlement client ou fournisseur, facture fournisseur payée), ni la suppression
@@ -806,7 +817,8 @@ chemin porte un compte bancaire (mêmes conditions que la garde non verrouillant
 - [ ] **T2** — Tests de fenêtre T29a-2 (W22) et T29a-3 (W17), et de la course avec l'archivage T29a-11 (W22) et
   T29a-12 (W17), **d'abord** (rouges au sol, journal du rouge au Dev Agent Record), puis l'appel de la variante après
   chaque `INSERT` et la conversion de W17 (AC2, AC3) ; puis T29a-6 et T29a-7 (l'autre ordre, prémisse P-d (2), sonde
-  `sonde_verrou_nowait` en `LOCK IN SHARE MODE NOWAIT`, en boucle locale au test — P3, R1 = F1) — leur verdict, vert ou rouge, s'écrit au Dev Agent Record et met à jour le libellé
+  `sonde_verrou_nowait` en `LOCK IN SHARE MODE NOWAIT`, en boucle locale au test, avec sa sonde de référence (1 bis) avant le
+  lancement de la clôture — P3, R1 = F1 ; P4, M1) — leur verdict, vert ou rouge, s'écrit au Dev Agent Record et met à jour le libellé
   de P-d.
 - [ ] **T3** — `close_once`, `reopen_once`, `patch_once` et leurs enveloppes (rollback explicite sur refus) ;
   doc-comments des trois routes et de `close_in_tx`, `reopen_in_tx`, `set_journal_account_id_for_company` ; point (vi)
@@ -938,8 +950,8 @@ demandeurs d'exclusif sur `A` (extraction ci-dessus) et leur sort :
 **L'argument de poids, écrit au lieu d'être invoqué** (F11 de la P2, raisonné) : InnoDB désigne pour victime la
 transaction de moindre poids, `undo_no` + nombre de verrous (attentes comprises). Un demandeur d'exclusif dont la
 demande est la **première instruction** (clôture, réouverture) porte deux verrous (l'intention de table et sa demande
-en attente) et aucune écriture ; tout autre participant d'un cycle tient au moins un verrou d'enregistrement, son
-intention de table et une demande en attente — trois au moins. Il est donc **strictement** le plus léger de tout cycle où
+en attente) et aucune écriture ; tout autre participant d'un cycle **hors route de gestion** (`M` n'en tient aucun, réserve (2)) tient au moins un
+verrou d'enregistrement, son intention de table et une demande en attente — trois au moins. Il est donc **strictement** le plus léger de tout cycle où
 il n'entre qu'avec des transactions qui tiennent un verrou d'enregistrement ; le `PATCH`, qui tient déjà les partagés
 des réglages, n'a rien écrit et reste plus léger qu'un import ou une suppression d'import qui ont écrit. ⚠️ **Deux
 réserves** *(P3)* : (1) **F3** — le dépôt n'établit la désignation du plus léger que pour des cycles à deux ; qu'InnoDB
@@ -1324,3 +1336,32 @@ répartition des tests de fenêtre, à écrire au Dev Agent Record.
     de C-29-4-6, texte d'origine de C-29-4-21) et les mentions de retrait, voulues. Prompt de la passe ciblée P4 :
     `29-4-cloture-compte-concurrente-validate-prompt-p4-ciblee.md` (Haiku, une lentille sur le seul diff de cette
     remédiation).
+
+### Validation P4 (passe ciblée) — 2026-10-14
+
+**Passe ciblée** (Haiku 5.5, une lentille, sur le seul diff de la remédiation P3, commits `e1f8e17f` et `540ee118` ;
+prompt `29-4-cloture-compte-concurrente-validate-prompt-p4-ciblee.md`, rapport
+`/home/gcorbaz/devel/kesh-gate-logs/29-4-validate-p4-ciblee.md`) : **CRITICAL 0 / HIGH 0 / MEDIUM 1 / LOW 5**. Chaque
+constat a été vérifié au texte (`grep -nF`) avant d'être traité ; tous sont réels. **Trend complet** : P1 R 0/0/6/7,
+F 0/0/2/7 → P2 R 0/1/3/6, F 0/1/3/7 → P3 R 0/0/1/11, F 0/1/0/6 → **P4 ciblée 0/0/1/5**. Origine du MEDIUM : la garde
+(1 bis) ajoutée par la remédiation P3 (le motif « la remédiation introduit le défaut suivant » se confirme une dernière
+fois, sur une garde de test).
+**Remédiation** (Opus 5.5, même jour) :
+  - **M1** (MEDIUM) — la garde (1 bis) devient une **sonde de référence appelée entre les étapes (1) et (2)**, avant le
+    lancement de la clôture : elle doit rendre `true` (seul l'écrivain tient la ligne en partagé) ; la boucle de
+    l'étape (3) ne sert plus qu'à attendre le `false`. Écrite à l'AC3 (donc pour T29a-6 et T29a-7) et à T2.
+  - **L1** — la fiche écrit que `LOCK IN SHARE MODE NOWAIT` n'a aucun précédent dans le dépôt, que son comportement a été
+    constaté hors dépôt (10.11.16, remédiation P3) et s'établit au T0 du développement, avec le repli déjà écrit ;
+    le doc-comment du helper se généralise.
+  - **L2** — la prescription de `docs/api-external.md:594` nomme « le 409 de l'annulation du rejet ». **L3** — « tout
+    autre participant … hors route de gestion » (Dev Notes, argument de poids). **L4** — la règle du décompte large est
+    énoncée (fichiers de production, code ou doc-comments, sans documents ni tests) : 29-4a six, 29-4b six (neuf avec ses
+    trois documents) ; le « sept » de la 29-4b de la P1 n'obéissait à aucune règle. **L5** — `reconciliation_e2e.rs:7538-7553`
+    cité pour le motif « 500 ms » du repli.
+  - **Refusé** : aucun finding. **Recomptes** (depuis la fiche et le registre) : choix **22**, mutations **24**, T29a
+    **onze**, T29b **cinq**, modules de code 29-4a **quatre** / 29-4b **quatre** / **sept** distincts (inchangés).
+    Les entrées P1 à P3 ci-dessus ne sont pas réécrites : leur « sept » de la 29-4b comptée largement est annoté ici.
+  - Propagation : greppés — `(1 bis)`, `sonde de l'étape (3)`, `ce refus`, `trois au moins`, `sept`, `7546-7553`
+    (les relevés datés P3 le gardent, voulu), `LOCK IN SHARE MODE NOWAIT`.
+  - **Validation close : la remédiation de la passe ciblée ne touche aucune ligne de production** (fiche et registre
+    seulement ; aucun code). La 29-4a et la 29-4b passent en développement, après la 29-3.
