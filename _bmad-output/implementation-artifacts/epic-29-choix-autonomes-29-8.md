@@ -413,7 +413,9 @@ trois premiers sont des **décisions de l'orchestrateur** (« retirer plutôt qu
 
 - **Contexte** : la 29-4a s'est mergée la première ; la 29-8, seconde, inscrit `link_in_tx` au registre `FENETRE`
   (AC2).
-- **Retenu** : `Fenetre::Fermee("I1 : la transaction est pending, la clôture refuse — sous réserve de la 29-4b, comme
+- **Retenu** : `Fenetre::Fermee("I1 : la transaction est pending, la clôture refuse tant qu'elle existe — comme
   l'annulation de rejet")` — la variante que le code nomme `Fermee` (le `SansFenetre` de la fiche, cf. le doc-comment de
-  l'enum) ; l'anti-muet `G` passe de 10 à 11.
+  l'enum) ; l'anti-muet `G` passe de 10 à 11. *Au rebase sur la 29-4b (`12c64c39`)* : la réserve « sous réserve de la
+  29-4b » de la première rédaction est retirée, comme la 29-4b l'a retirée de l'annulation de rejet ; son décompte de
+  sept revérifications est conservé.
 - **Réversible** : oui.
