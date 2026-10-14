@@ -1565,3 +1565,90 @@ fn the_last_acquisition_rule_reports_each_fault_on_built_cases() {
         );
     }
 }
+
+/// T29b-4, volet inverse jeton par jeton (Story 29-4b, #651, revue de code P1,
+/// B-1) — chacune des dix entrées de [`GESTES_VERROUILLANTS_SQL`] et de
+/// [`GESTES_VERROUILLANTS_CODE`] est la cible d'un cas construit : un geste
+/// portant ce seul jeton, placé **après** la revérification, doit rendre
+/// exactement la faute « précède « <jeton> » ». La table des cas est écrite
+/// ici, à part des listes : retirer un jeton d'une liste laisse son cas sans
+/// geste reconnu (« aucun geste verrouillant »), donc rouge ; ajouter un jeton
+/// sans cas rougit le contrôle de couverture. T29a-5 ne le pouvait pas : chaque
+/// revérification de production y est déjà la dernière.
+#[test]
+fn the_last_acquisition_rule_sees_each_locking_token() {
+    let fichier = "kesh-db/src/repositories/supplier_invoices.rs";
+    let registre = [(
+        fichier,
+        "cancel_in_tx",
+        Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
+    )];
+    let recheck = "super::bank_accounts::recheck_open_locked_in_tx(tx, c, b).await?;";
+    // (jeton tel que la faute le nomme, littéral qui le porte seul)
+    let litteraux: [(&str, &str); 5] = [
+        ("INSERT INTO", "INSERT INTO t (a) VALUES (?)"),
+        ("UPDATE", "UPDATE t SET a = 1 WHERE id = ?"),
+        ("DELETE FROM", "DELETE FROM t WHERE id = ?"),
+        ("FOR UPDATE", "SELECT a FROM t WHERE id = ? FOR UPDATE"),
+        (
+            "LOCK IN SHARE MODE",
+            "SELECT a FROM t WHERE id = ? LOCK IN SHARE MODE",
+        ),
+    ];
+    let appels: [&str; 5] = [
+        "reverse_in_tx(",
+        "reverse_owned_in_tx(",
+        "cancel_settlement_in_tx(",
+        "dissolve_invoice_document_group_in_tx(",
+        "dissolve_supplier_invoice_document_group_in_tx(",
+    ];
+    let cas = litteraux
+        .iter()
+        .map(|(jeton, geste)| (*jeton, format!("let _ = \"{geste}\";")))
+        .chain(
+            appels
+                .iter()
+                .map(|appel| (*appel, format!("journal_entries::{appel}tx, c).await?;"))),
+        );
+    let mut joues = 0;
+    for (jeton, geste) in cas {
+        let source = vec![(
+            fichier.to_string(),
+            format!(
+                "pub async fn cancel_in_tx() {{\n\
+                 super::bank_accounts::ensure_open_in_tx(tx, c, b).await?;\n\
+                 let _ = \"SELECT id FROM t WHERE id = ?\";\n\
+                 {recheck}\n\
+                 {geste}\n}}\n"
+            ),
+        )];
+        assert_eq!(
+            fautes_de_la_fenetre(&source, &registre),
+            vec![format!(
+                "(iii) {fichier}::cancel_in_tx : la revérification précède « {jeton} » — elle \
+                 ne serait pas la dernière acquisition de verrou"
+            )],
+            "jeton « {jeton} »"
+        );
+        joues += 1;
+    }
+    assert_eq!(joues, 10, "décompte anti-muet des cas joués");
+    // Couverture, après les cas (un jeton retiré rougit d'abord par son cas) :
+    // chaque entrée des deux listes a son cas, et réciproquement.
+    assert_eq!(
+        GESTES_VERROUILLANTS_SQL
+            .iter()
+            .map(|g| g.trim_end())
+            .collect::<BTreeSet<_>>(),
+        litteraux.iter().map(|(j, _)| *j).collect::<BTreeSet<_>>(),
+        "un jeton SQL sans cas construit (ou un cas sans jeton)"
+    );
+    assert_eq!(
+        GESTES_VERROUILLANTS_CODE
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        appels.iter().copied().collect::<BTreeSet<_>>(),
+        "un appel verrouillant sans cas construit (ou un cas sans appel)"
+    );
+}
