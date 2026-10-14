@@ -393,6 +393,11 @@ sprint, 28-4a : « E2E 273 + 7 KF-029 »).
 du défaut du matin ; la preuve est la mutation (rappel daté une heure **après** l'appel : les deux tests rougissent en
 `manual reminder failed: 422`).
 
+**Preuve directe de la KF-051, 2026-10-14** (Story 28-8) : lancement à **00:05:14 UTC** (avant 12:00 UTC ; base
+`kesh_e2e_288` reconstruite), `invoices.spec.ts` seul : **23 passés / 0 échoué** (le motif inclut
+`supplier-invoices.spec.ts`) ; `:418` « historique des rappels affiché » et `:442` « axe-core sans violations sur la
+fiche » passent. Ils échouaient en `422` à cette heure avant la correction.
+
 Deux relevés du 2026-08-30, base `kesh_e2e` reconstruite, tous deux **212 passés / 11 échoués** :
 
 | run | les 7 fixes | KF-045 | pollution — **change d'identité** |
