@@ -862,6 +862,54 @@ mod tests {
         assert_eq!(classify_payment(dec!(0.01), dec!(0.004)), Overpayment);
     }
 
+    /// Story 29-6 (#665), AC4 — les deux lecteurs du trop-perçu disent la même
+    /// chose : la borne basse de la proposition
+    /// ([`least_due_without_overpayment`]) et le juge de l'acceptation
+    /// ([`classify_payment`]). Grille de restes au dix-millième, de part et
+    /// d'autre de plusieurs montants ; un changement de l'un sans l'autre rougit.
+    #[test]
+    fn least_due_without_overpayment_is_the_exact_overpayment_bound() {
+        let paids = [
+            dec!(0.01),
+            dec!(0.05),
+            dec!(1.00),
+            dec!(10.01),
+            dec!(99.99),
+            dec!(100.00),
+            dec!(123.45),
+            dec!(999999.99),
+        ];
+        let step = dec!(0.0001);
+        let mut checked = 0usize;
+        for paid in paids {
+            let mut raw_due = paid - dec!(0.0700);
+            let last = paid + dec!(0.0700);
+            while raw_due <= last {
+                let admitted = raw_due >= least_due_without_overpayment(paid);
+                let not_overpayment =
+                    classify_payment(paid, raw_due) != PaymentAgainstDue::Overpayment;
+                assert_eq!(
+                    admitted, not_overpayment,
+                    "paid = {paid}, R = {raw_due} : la borne de la proposition et classify_payment divergent"
+                );
+                raw_due += step;
+                checked += 1;
+            }
+        }
+        // 8 montants × 1401 restes : la grille entière a été parcourue.
+        assert_eq!(checked, 8 * 1401);
+        // Écrites en dur, indépendantes de la production.
+        assert_eq!(least_due_without_overpayment(dec!(100.00)), dec!(99.995));
+        assert_ne!(
+            classify_payment(dec!(100.00), dec!(99.9950)),
+            PaymentAgainstDue::Overpayment
+        );
+        assert_eq!(
+            classify_payment(dec!(100.00), dec!(99.9949)),
+            PaymentAgainstDue::Overpayment
+        );
+    }
+
     #[test]
     fn lignes_ecart_au_credit_ou_au_debit() {
         let l = settlement_journal_lines(1, 2, dec!(10.01), dec!(10.0050), Some(3)).unwrap();

@@ -5847,6 +5847,170 @@ async fn two_centimes_over_a_half_centime_invoice_is_an_overpayment(pool: MySqlP
     assert_eq!(settlements_and_paid_at(&pool, inv_id).await, (0, None));
 }
 
+// ============================================================
+// Story 29-6 (#665) — la proposition n'offre plus une facture que le paiement
+// dépasse
+// ============================================================
+
+/// `POST /accept` de tous les couples en un lot ; rend les couples acceptés et,
+/// par transaction refusée, son `errorCode` (Story 29-6). Distinct
+/// d'[`accept_couples_287`], qui asserte que tout refus est un refus de date.
+async fn accept_couples_296(
+    app: &TestApp,
+    ctx: &CompanyCtx,
+    couples: &[(i64, i64)],
+) -> (
+    std::collections::BTreeSet<(i64, i64)>,
+    std::collections::BTreeMap<i64, String>,
+) {
+    let proposals: Vec<Value> = couples
+        .iter()
+        .map(|(tx_id, inv_id)| {
+            serde_json::json!({ "type": "invoice", "bankTransactionId": tx_id, "invoiceId": inv_id })
+        })
+        .collect();
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": proposals,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let accepted = body["accepted"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| {
+            (
+                a["bankTransactionId"].as_i64().unwrap(),
+                a["invoiceId"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    let failed = body["failed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            (
+                f["bankTransactionId"].as_i64().unwrap(),
+                f["errorCode"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    (accepted, failed)
+}
+
+/// Story 29-6 (#665), AC6 — **ce qui est proposé, l'acceptation l'admet**, du
+/// côté du montant. Une facture et une transaction par cas, référencées l'une
+/// à l'autre (score > 0 hors montant exact), montants à 10 CHF d'écart d'un
+/// cas à l'autre ; la transaction vaut la base, le reste dû `base + δ` :
+///
+/// | cas | δ       | proposée | acceptée | refus                        |
+/// |-----|---------|----------|----------|------------------------------|
+/// | a   | −0.05   | non      | non      | `RECONCILIATION_OVERPAYMENT` |
+/// | b   | −0.01   | non      | non      | `RECONCILIATION_OVERPAYMENT` |
+/// | c   | −0.0051 | non      | non      | `RECONCILIATION_OVERPAYMENT` |
+/// | d   | −0.0050 | oui      | oui (écart au crédit de l'arrondi) | —   |
+/// | e   | 0       | oui      | oui      | —                            |
+/// | f   | +0.0049 | oui      | oui (écart au débit de l'arrondi)  | —   |
+/// | g   | +0.05   | oui      | oui (partiel) | —                       |
+/// | h   | +0.06   | non      | oui (partiel, appel direct) | —         |
+///
+/// Avant la story, a, b et c étaient proposés puis refusés.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn proposal_never_offers_an_invoice_the_payment_exceeds(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Trop296", "CH4431999123000889012", Role::Comptable).await;
+    designate_rounding_account(&pool, ctx.company_id).await;
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let cases: [(&str, Decimal); 8] = [
+        ("a", dec!(-0.05)),
+        ("b", dec!(-0.01)),
+        ("c", dec!(-0.0051)),
+        ("d", dec!(-0.0050)),
+        ("e", dec!(0)),
+        ("f", dec!(0.0049)),
+        ("g", dec!(0.05)),
+        ("h", dec!(0.06)),
+    ];
+
+    let mut couples = std::collections::BTreeMap::new();
+    let mut invoices = Vec::new();
+    let mut new_txs = Vec::new();
+    for (i, (name, delta)) in cases.iter().enumerate() {
+        let base = Decimal::new(20_000 + 1_000 * i as i64, 2);
+        let number = format!("INV-296-{name}");
+        let (inv_id, _) = seed_validated_invoice(
+            &pool,
+            ctx.company_id,
+            ctx.contact_id,
+            &number,
+            d,
+            base + delta,
+        )
+        .await;
+        invoices.push((*name, inv_id));
+        new_txs.push(make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            d,
+            Some(d),
+            base,
+            "CHF",
+            &number,
+            Some("Acme Client"),
+        ));
+    }
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("overpayment_296"),
+        d,
+        d,
+        new_txs,
+    )
+    .await;
+    for (i, (name, inv_id)) in invoices.iter().enumerate() {
+        couples.insert(*name, (tx_ids[i], *inv_id));
+    }
+    let set_of = |names: &[&str]| -> std::collections::BTreeSet<(i64, i64)> {
+        names.iter().map(|n| couples[n]).collect()
+    };
+
+    let app = spawn_app(pool).await;
+    let proposed = proposed_couples_287(&app, &ctx).await;
+    let all: Vec<(i64, i64)> = couples.values().copied().collect();
+    let (accepted, failed) = accept_couples_296(&app, &ctx, &all).await;
+
+    assert_eq!(
+        proposed,
+        set_of(&["d", "e", "f", "g"]),
+        "proposés : le reste exact à l'arrondi près, et le paiement partiel de 5 centimes au plus"
+    );
+    assert_eq!(
+        accepted,
+        set_of(&["d", "e", "f", "g", "h"]),
+        "acceptés : tout ce qui n'est pas un trop-perçu"
+    );
+    let expected_failed: std::collections::BTreeMap<i64, String> = ["a", "b", "c"]
+        .iter()
+        .map(|n| (couples[n].0, "RECONCILIATION_OVERPAYMENT".to_string()))
+        .collect();
+    assert_eq!(failed, expected_failed, "a, b, c refusés en trop-perçu");
+    assert!(
+        proposed.is_subset(&accepted),
+        "#665 : ce que l'écran propose, l'acceptation l'admet"
+    );
+}
+
 /// ⛔ **Sans compte d'arrondi utilisable, rien ne s'écrit** — refus
 /// per-proposal (pattern batch), réglage absent puis compte archivé.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
