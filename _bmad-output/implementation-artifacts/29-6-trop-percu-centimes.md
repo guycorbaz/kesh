@@ -2,15 +2,19 @@
 
 ## Status
 
-**review** — développement fait le 2026-10-14 (Opus 5.5), branche rebasée sur `main` `81b1b526` ; revue de code P1 à
-lancer (`29-6-review-prompt-p1.md`, Sonnet, lentilles B/E/A). Historique : fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (kickoff de
+**review** — développement fait le 2026-10-14 (Opus 5.5), branche rebasée sur `main` `81b1b526` ; revue de code P1
+faite (Sonnet, B/E/A, 0/0/1/9) et remédiée (Opus 5.5) ; **passe ciblée P2 à lancer**
+(`29-6-review-prompt-p2-ciblee.md`, Sonnet, une lentille sur le diff de la remédiation P1). Choix **C-29-6-1 à
+C-29-6-27**, versés par union au registre de l'epic (`epic-29-choix-autonomes.md`) à la remédiation P1. Historique : fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (kickoff de
 l'Epic 29), branche `story/29-6`, worktree `/home/gcorbaz/devel/kesh-29-6`. Story **ajoutée à l'Epic 29** par
 l'orchestrateur le 2026-10-14 ; sortie dans la **v0.13.4**. Choix consignés au registre propre à la story,
 `epic-29-choix-autonomes-29-6.md`, **C-29-6-1 à C-29-6-19** (à verser par union au registre de l'epic). 10 AC. PR :
 **`closes #665`** — dans le titre ou le corps de la PR **seulement**, jamais dans un message de commit, même en prose
 (B4 de la rétrospective 28). Validation P1 faite et remédiée (Sonnet, 0/0/1/9) ; **le périmètre s'étend à l'écran**
 (AC10, décision de l'orchestrateur sur le MEDIUM R1). Validation P2 faite et remédiée (Opus, 0/0/4/16) ; passe ciblée
-P3 à lancer (`29-6-validate-prompt-p3-ciblee.md`, Haiku, une lentille sur le diff de la remédiation P2).
+P3 à lancer (`29-6-validate-prompt-p3-ciblee.md`, Haiku, une lentille sur le diff de la remédiation P2). *Annotation
+du 2026-10-14 (revue de code P1, A1) : cette phrase date de la validation ; la passe P3 est faite (0/0/0/4, validation
+close, Change Log).*
 
 ⚠️ **Angle mort assumé, renvoyé à [#670]** *(validation P2, R2)* : une transaction **rejetée reste `pending`**, compte
 comme non rapprochée et **empêche la clôture du compte bancaire** ; aucun geste ne la rapproche d'un règlement déjà
@@ -803,7 +807,11 @@ Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-14.
 Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/` : `29-6-test-fast.log`, `29-6-npm-{check,lint,unit,build}.log`,
 `29-6-e2e.log` (+ `29-6-e2e-backend.log`), `29-6-make-fr.log`, `29-6-mut-{baseline,M1…M8,baseline-front,M9…M13}.log`,
 `29-6-gates-head.txt` (commit et état de l'arbre au lancement des gates finaux). Captures :
-`/tmp/kesh-e2e-296/captures/29-6-*.png` (hors dépôt).
+`/tmp/kesh-e2e-296/captures/29-6-*.png` (hors dépôt). *Annotation du 2026-10-14 (revue de code P1, A2) :
+`29-6-gates-head.txt` porte le hash suivi de la sortie de `git status --short`, vide — ce qui vaut arbre propre, mais
+ne le disait pas ; les gates de la remédiation l'écrivent en clair (`29-6-p1-gates-head.txt`, C-29-6-27).*
+Remédiation de la revue P1 : `29-6-p1-{red,green,repo}.log`, `29-6-p1-mut-{baseline,M14…M17}.log`,
+`29-6-p1-make-fr.log`, `29-6-p1-gates-head.txt`, `29-6-p1-{reset,test-fast,npm-check,npm-lint,npm-unit,npm-build,e2e,e2e-backend}.log`.
 
 ### Completion Notes List
 
@@ -961,6 +969,20 @@ inchangé (C-29-6-23) ; (3) mutations hors verrou (C-29-6-20) ; (4) `R = 99.9950
 - `_bmad-output/implementation-artifacts/29-6-trop-percu-centimes.md`, `epic-29-choix-autonomes-29-6.md`,
   `29-6-review-prompt-p1.md`, `sprint-status.yaml`.
 
+Remédiation de la revue de code P1 (`4b34d45e..`) :
+
+- `crates/kesh-db/src/repositories/reconciliation.rs` — `find_invoices_slightly_overpaid_for_window`, fragment commun
+  `unpaid_invoices_in_window_sql`, en-tête du module.
+- `crates/kesh-api/src/routes/reconciliation.rs` — `get_proposals` : règles lues avant le Pass 2, trop-perçus lus et
+  notés, `rule_masked_by_overpaid_invoice`, closure `with_contacts`.
+- `crates/kesh-api/tests/reconciliation_e2e.rs` — deux tests HTTP et leurs aides ; `crates/kesh-db/tests/reconciliation_repository.rs` —
+  deux tests de dépôt, une aide, un message d'assertion.
+- `crates/kesh-i18n/locales/{de-CH,en-CH,it-CH}/messages.ftl` — commentaire de la clé dans la langue du catalogue.
+- `frontend/tests/e2e/reconciliation-deleted-import.spec.ts` — commentaire.
+- `docs/manual/fr/user-manual.tex`, `user-manual.pdf` ; `docs/api-external.md` ; `CHANGELOG.md`.
+- `_bmad-output/implementation-artifacts/29-6-trop-percu-centimes.md`, `29-6-review-prompt-p2-ciblee.md` (neuf),
+  `epic-29-choix-autonomes.md` (versement), `epic-29-choix-autonomes-29-6.md` (retiré).
+
 ## Change Log
 
 - 2026-10-14 — Fiche créée (`bmad-create-story`, Opus 5.5, autonomie) sur `fcd2ae75`. Prémisses de #665 établies au
@@ -1063,3 +1085,56 @@ inchangé (C-29-6-23) ; (3) mutations hors verrou (C-29-6-20) ; (4) `R = 99.9950
   finaux après le rebase : test-fast 3672/3672 (6 ignorés), Vitest 1645 (147 fichiers), check, lint, build verts, E2E
   287 + 7 échecs attendus (les sept KF-029). Choix C-29-6-20 à 23. Statut `review` ; revue de code P1 :
   `29-6-review-prompt-p1.md` (Sonnet, B/E/A). Détail au Dev Agent Record.
+- 2026-10-14 — **Revue de code P1** (Sonnet 5.5, lentilles B, E, A, lecture seule ; rapports
+  `kesh-gate-logs/29-6-review-p1-{B,E,A}.md`) : **B 0/0/0/3 ; E 0/0/1/2 ; A 0/0/0/4** — au total 0/0/1/9, dix findings
+  dont une convergence (B3 = E3), soit **neuf distincts**. Remédiée (Opus 5.5) : **huit corrigés, un écrit comme limite**
+  (B3 = E3, C-29-6-25), **aucun refusé**.
+  - **E1 MEDIUM** — un client qui a payé 1 à 5 centimes de trop n'avait plus de facture candidate ; si une règle
+    d'affectation correspondait, elle devenait la proposition et *Accepter* passait le paiement en produit, la facture
+    restant due — un faux rattachement muet, **créé par la story** (avant elle, la facture trop-perçue passait devant
+    la règle). **Décision de l'orchestrateur** : corrigé dans la story. Établi au code : la facture ne masquait la
+    règle, avant la story, que si elle portait un indice (`propose_matches` écarte une facture de score nul, et un reste
+    trop-perçu n'a jamais de score de montant). Retenu : `find_invoices_slightly_overpaid_for_window` (reste dû dans
+    `[tx − 0.05 ; tx − 0.005[`, même requête, fragment commun) ; `get_proposals` la lit s'il existe une règle active,
+    note ces factures, et n'applique pas la règle si l'une est retenue — la ligne reste « Aucune correspondance ».
+    Écarté : un drapeau d'existence seul, qui masquerait la règle pour toute facture d'un autre client du même montant
+    (C-29-6-24). Tests rouges sans le correctif, constatés (`29-6-p1-red.log`) :
+    `a_rule_never_replaces_an_invoice_the_payment_slightly_exceeds` — « 100.01 : la facture trop-perçue masque la
+    règle, aucune candidate : [Object {"candidateType": String("rule"), …}] » — et
+    `the_rule_guard_needs_an_invoice_bearing_a_signal` — « la référence de la facture trop-perçue masque la règle :
+    [Object {"candidateType": String("rule"), …}] » (son volet « sans indice, la règle » vert au sol, comme attendu) ;
+    test de dépôt `find_invoices_slightly_overpaid_returns_what_the_lower_bound_excludes`. Manuel (§ *Algorithme de
+    matching*, paragraphe de la règle proposée, liste de l'écran, § *Règles d'affectation automatique*, FAQ), PDF,
+    `api-external.md`, CHANGELOG.
+  - **LOW** : **B1** message d'assertion « ± 0.05 » réécrit ; **B2** FAQ : le demi-centime admis au-dessous, renvoi au
+    § *Algorithme de matching* ; **B3 = E3** limites écrites (C-29-6-25 : libellé de case à clé i18n à variables, région
+    `aria-live` présente avant le changement — ni l'un ni l'autre n'est une ligne ; issue à ouvrir) ; **E2** test
+    `find_unpaid_invoices_bounds_hold_for_a_one_centime_payment` (P = 0.01 : 0.0049 refusé, 0.0050 admis, 0.06 admis,
+    0.07 refusé) ; **A1** statut annoté ; **A2** `29-6-gates-head.txt` annoté, les gates de la remédiation écrivent
+    l'arbre propre en clair (C-29-6-27) ; **A3** commentaires de la clé neuve en allemand, anglais, italien ; **A4**
+    phrase du commentaire de `reconciliation-deleted-import.spec.ts`.
+  - Propagation d'E1 (grep `aucune facture (n'est )?candidate|sinon la règle|otherwise the matching|rule fallback|écarte
+    la règle` sur `crates`, `frontend/src`, `docs`, `website`, README, CHANGELOG) : le manuel portait la condition
+    « aucune facture candidate » en trois endroits (`:2077`, `:2085`, `:2152`) — l'exception y est écrite ; la phrase
+    de priorité de l'écran (29-3, quatre locales) reste simplifiée (C-29-6-26) ; les autres occurrences sont des
+    commentaires de test ou des relevés justes.
+  - **Mutations** (sous `flock`, binaires `reconciliation_repository`, `reconciliation_rules_e2e` et six tests de
+    `reconciliation_e2e`, 75 tests ; baseline 75/75) : **M14** condition de la règle sans le garde — 73/75, rouges les
+    deux tests HTTP ; **M15** garde sur la seule existence d'un trop-perçu, sans score — 74/75, rouge
+    `the_rule_guard_needs_an_invoice_bearing_a_signal` ; **M16** borne `>= ? - ?` → `> ? - ?` — 73/75, rouges le test de
+    dépôt et `a_rule_never_replaces…` (cas 100.05) ; **M17** borne `< ?` → `<= ?` — 74/75, rouge le test de dépôt.
+    **4 mutations, 4 tuées.** Sources restaurées par `git checkout` puis `touch` (`git status` propre après chacune).
+    Une première tentative de M14 a refusé de s'appliquer (motif multi-ligne non unique pour `grep -F`) : rien n'a été
+    écrit, reprise sur un motif d'une ligne.
+  - **Gates** au dernier commit de code (`329e21e3`, arbre propre, `29-6-p1-gates-head.txt`), bases remises à zéro
+    avant le gate et avant l'E2E, le tout sous `flock` : `scripts/test-fast.sh` **3676 passed, 6 skipped**, rc 0
+    (3672 + les 4 tests neufs) ; `npm run check` 0 erreur ; `lint-i18n-ownership` PASS ; `npm run test:unit` **1645
+    passed, 147 fichiers** ; `npm run build` rc 0 ; **E2E complet : 287 passed, 7 failed, 19 skipped** (11,5 min) — les
+    sept KF-029 (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+    `:77`, `:150`), aucun autre. PDF régénéré (`make fr`, `29-6-p1-make-fr.log`), contrôlé aplati : les six phrases
+    neuves présentes une fois chacune, `??` absent.
+  - Décomptes (périmètre `4b34d45e..329e21e3`, recomptés à la source) : `#[sqlx::test]` de `reconciliation_repository.rs`
+    21 → 23, de `reconciliation_e2e.rs` 103 → 105 ; 12 fichiers ; 2 commits. Choix **C-29-6-24 à C-29-6-27** ; le
+    registre de la story est versé au registre de l'epic et retiré.
+  - Prompt de la passe ciblée P2 : `29-6-review-prompt-p2-ciblee.md` (Sonnet, une lentille sur le diff `4b34d45e..HEAD`,
+    rapport `kesh-gate-logs/29-6-review-p2-ciblee.md`). Trend : P1 0/0/1/9.
