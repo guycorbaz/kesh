@@ -44,7 +44,14 @@
 
 	onMount(() => load());
 
+	// Story 29-9 (#655, AC5) — numéro de la dernière lecture lancée. Deux relectures peuvent être
+	// en vol (deux « Annuler le rejet » coup sur coup) : seule la plus récente écrit `detail` et
+	// `errorMessage`, sans quoi la réponse la plus LENTE l'emportait — une erreur ancienne
+	// masquait une page à jour. Patron : `loadGen` de `ReconciliationProposals.svelte`.
+	let loadSeq = 0;
+
 	async function load() {
+		const mySeq = ++loadSeq;
 		// Story 28-5b, revue P2 (P2-1) — chaque relecture repart d'un état sans erreur : la
 		// bannière masque les lignes, et une relecture réussie après une relecture en échec
 		// (après « Annuler le rejet » ou « Annuler le rapprochement ») doit les rendre.
@@ -57,8 +64,11 @@
 			return;
 		}
 		try {
-			detail = await getBankImportDetail(id);
+			const d = await getBankImportDetail(id);
+			if (mySeq !== loadSeq) return; // relecture dépassée par une plus récente
+			detail = d;
 		} catch (err) {
+			if (mySeq !== loadSeq) return;
 			if (isApiError(err)) {
 				errorMessage =
 					err.status === 404 ? 'Import introuvable.' : err.message;
@@ -66,6 +76,9 @@
 				errorMessage = 'Erreur inattendue.';
 			}
 		} finally {
+			// Non gardé (C-29-9-14) : `load()` ne remet jamais `loading` à `true`, et une
+			// relecture ne part que d'une page déjà rendue — un `false` périmé n'a aucun effet.
+			// ⚠️ Le jour où `load()` remettra `loading` à `true`, garder aussi cette ligne.
 			loading = false;
 		}
 	}
