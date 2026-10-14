@@ -1129,3 +1129,40 @@ orpheline du fichier d'epic (ci-dessus).
   rejouées). Gates au `284c1d3b` : test-fast 3732/3732 (6 ignorés), Vitest 1680/1680 (149 fichiers), check, lint,
   build verts ; E2E 291 passés, 7 KF-029, 19 ignorés. Choix C-29-9-26 à 30. Statut `review` ; prompt de la revue de
   code P1 : `29-9-review-prompt-p1.md`.
+
+- **2026-10-15 — Report sur la tête finale de la 29-8** (Opus 5.5, autonomie). La revue de la 29-8 a ajouté cinq
+  commits (`38d5f3fc` … `1261c4bb`, PR #681) ; `git rebase --onto 1261c4bb 4b358373 story/29-9` : 25 commits reportés,
+  dernier commit de code `284c1d3b` → **`3e5dfed8`**. Conflits, tous résolus par union :
+  - `sprint-status.yaml`, aux sept commits qui touchent la clé de la 29-9 : ligne `29-8` de la base (`done`), lignes
+    et en-têtes de la 29-9 de la branche ; contrôlé à chaque arrêt (lignes de la 29-9 identiques au commit reporté,
+    reste identique à `1261c4bb`, `yaml.safe_load`). La base n'ajoute aucun en-tête : 163-165 restent en tête, sans
+    renumérotation ; aucun doublon d'en-tête neuf (les doublons 105 … 140 sont ceux de la base, inchangés).
+  - `docs/api-external.md`, paragraphe *unreject* : l'ajout de la 29-8 (« — et rattachée à un règlement déjà
+    enregistré … ») **et** celui de la 29-9 (« 100 par défaut, 500 au plus ; `hasMore` … », lien #649 retiré).
+  - `user-manual.tex`, puce *Rejeter* : la parenthèse de la 29-9 (« parmi les plus anciennes s'il le faut … ») **et**
+    l'ajout de la 29-8 (« affectée manuellement, éclatée ou rattachée à un règlement déjà enregistré
+    (\S\ref{sec:rattacher-reglement}) »). PDF repris de la base pendant le conflit, puis `touch` du `.tex` et `make fr`
+    (mem-guard, verrou) : stable en 2 passes, commit `d2c64df9`. PDF aplati : phrases de la 29-9 (« Aﬀicher aussi les
+    plus anciennes » ×2, « l’étend à 500 », « rattachées à un règlement », « les 100 plus récentes d’abord », « aucun
+    écran ne permet de la rétablir ») et de la 29-8 (« rattachée à un règlement déjà enregistré (§14.3) », « La fenêtre
+    rappelle la transaction à sa date de paiement ») présentes ; aucun « ?? ».
+  - Sans conflit textuel : `reconciliation.rs`, `messages.ftl` ×4 (`NOT_LINKABLE` de la base, clés de la 29-9) ; fichier
+    d'epic non touché par la base (ligne v0.13.4 unique) ; registres : C-29-8-1 à 41 au registre de l'epic (versés par
+    la base), C-29-9-1 à 30 au registre propre de la 29-9. `sitesTotal` inchangé (2186), Vitest vert.
+  - Contrôle de la résolution : les lignes modifiées de `2157772b..d2c64df9` (PDF exclu) sont celles de
+    `4b358373..1261c4bb`, à deux lignes près — les deux sites réunis à la main ci-dessus, où la ligne d'arrivée porte
+    les deux ajouts (18 fichiers, +1100/−468 des deux côtés).
+  - Tenu sur la nouvelle base : AC11 (région `role="status"` `aria-live="polite"` `aria-atomic="true"`, `aria-label`
+    des cases) et l'avis plafonné qui nomme le rattachement (C-29-9-26, ×4 locales).
+  - **Gates au HEAD reporté `d2c64df9`** (code = `3e5dfed8`), base `kesh_299` remise à zéro dans le même journal
+    (`kesh-gate-logs/299-rebase2-gate.log`) : test-fast **3733/3733** (6 ignorés ; +1 = T17-bis de la 29-8) ; `check`
+    0 erreur (29 avertissements, 5 fichiers) ; `lint-i18n-ownership` PASS ; Vitest **1688/1688**, 149 fichiers (+8 =
+    tests de `LinkSettlementModal` de la 29-8 : six `it` et un `it.each` à deux cas) ; `build` vert. **E2E complet**
+    (`299-rebase2-e2e-complet.log`, base `kesh_e2e_299` remise à zéro, port 3049) : **291 passés, 7 échoués, 19
+    ignorés** — les sept KF-029 (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`,
+    `:150`), ni KF-052 ni pollution.
+  - **Mutations rejouées** (`299-rebase2-mut.log`) : M30 et M30-bis (i18n) tuées ; M6, M18, M20 (`reconciliation.rs`,
+    fusionné automatiquement avec la base) tuées ; arbre restauré (`git checkout` puis `touch`). Aucune mutation ne
+    porte sur un fichier touché par la résolution des conflits (documentation et `sprint-status.yaml` seulement).
+  - Prompt de la revue de code P1 mis à jour : diff `1261c4bb..3e5dfed8` hors `_bmad-output`, PDF contrôlé au HEAD,
+    journaux du report.

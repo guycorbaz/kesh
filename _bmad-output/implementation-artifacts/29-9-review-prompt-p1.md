@@ -4,11 +4,16 @@
 l'orchestrateur (passe complète : Sonnet ou Opus, jamais Haiku — D6 de la rétrospective de l'Epic 25).*
 
 Dépôt (worktree) `/home/gcorbaz/devel/kesh-29-9`, branche `story/29-9`.
-**Le diff à revoir** : `git diff 4b35837328affef2d78ef316e05eb19c0e5a24c3 284c1d3b -- . ':(exclude)_bmad-output'` —
-`4b358373` = tête de `story/29-8` (en revue, non mergée ; elle contient `main` `12c64c39`), sur laquelle la 29-9 est
-rebasée ; `284c1d3b` = **dernier commit de code** (les commits qui le suivent ne portent que la fiche, le registre,
-`sprint-status.yaml` et ce prompt). ⚠️ Pathspec `':(exclude)…'` et **non** `':!…'`. Ce qui vient de la 29-8 (bouton
-*Rattacher à un règlement*, `LinkSettlementModal`, routes de rattachement) **n'est pas** l'objet de la revue.
+**Le diff à revoir** : `git diff 1261c4bb8725fec33f6b7920947ed005ee8bd41b 3e5dfed8 -- . ':(exclude)_bmad-output'` —
+`1261c4bb` = tête **finale** de `story/29-8` (revue close, PR #681 ; elle contient `main` `12c64c39`), sur laquelle la
+29-9 est reportée le 2026-10-15 (elle l'était auparavant sur `4b358373`, tête de la 29-8 avant sa revue) ;
+`3e5dfed8` = **dernier commit de code** (report de `284c1d3b`). Les commits qui le suivent ne portent que la fiche, le
+registre, `sprint-status.yaml`, ce prompt et le **PDF du manuel régénéré après le report** (`d2c64df9`) : le PDF se
+contrôle donc **au HEAD**, pas à `3e5dfed8` (où il est encore celui de la 29-8, repris pendant le conflit). ⚠️ Pathspec
+`':(exclude)…'` et **non** `':!…'`. Ce qui vient de la 29-8 (bouton *Rattacher à un règlement*, `LinkSettlementModal`,
+routes de rattachement, table des refus de `docs/api-external.md`) **n'est pas** l'objet de la revue — sauf aux deux
+sites où le report a réuni les deux côtés à la main (paragraphe *unreject* de `docs/api-external.md`, puce *Rejeter*
+du manuel) : vérifie que chacun porte **et** l'ajout de la 29-8 (« rattachée à un règlement ») **et** celui de la 29-9.
 Fiche : `_bmad-output/implementation-artifacts/29-9-trois-petits-correctifs.md` — AC1 à AC11, tâches T0-T10, V1-V23,
 M1-M30, Dev Notes (*Zones partagées*, *Propagation*, *Ce qui doit être préservé*), et le **Dev Agent Record** (prémisses
 relues après rebase, tests rouges, mutations, gates, écarts). Choix C-29-9-26 à C-29-9-30 au registre
@@ -17,7 +22,7 @@ du dépôt — § « Recompter ses propres comptes rendus », § « Propagation 
 NOMMER le manuel », § « Une passe qui ne déclare pas ses axes exercés ne compte pas », § *Migration breaking policy*
 (aucune migration attendue : à vérifier). Issues : #649, #655, #646, #678 — la PR les fermera par son corps ; **aucun
 mot-clé de fermeture dans un message de commit**, même en prose : à greper avec la commande de la fiche (l. ~25-27),
-`git log 4b358373..HEAD --format=%B | grep -niE "\b(close[sd]?|fix(e[sd])?|resolve[sd]?):?\s+(([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+|https://github\.com/\S+/issues/[0-9]+)"`.
+`git log 1261c4bb..HEAD --format=%B | grep -niE "\b(close[sd]?|fix(e[sd])?|resolve[sd]?):?\s+(([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+|https://github\.com/\S+/issues/[0-9]+)"`.
 
 ⛔ **DONNÉES PERSONNELLES — DÉPÔT PUBLIC.** N'ouvre aucun fichier hors du dépôt et de
 `/home/gcorbaz/devel/kesh-gate-logs/`. Les captures `kesh-gate-logs/299-captures/*.png` sont synthétiques : tu peux
@@ -75,7 +80,8 @@ les ouvrir.
    `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' '` vers
    `/home/gcorbaz/devel/kesh-gate-logs/29-9-review-p1-<lettre>-user-manual-flat.txt` — ⚠️ `pdftotext` rend « ﬀ »
    (ligature : « Aﬀicher ») et « ’ » (apostrophe typographique) : un `grep` sur « Afficher » ou « l'avis » rend un faux
-   négatif. Le PDF est-il celui du HEAD (régénéré après la dernière modification du `.tex`, `52e9318c`) ? Seul
+   négatif. Le PDF est-il celui du HEAD (régénéré en `d2c64df9`, après la dernière modification du `.tex`, `95939a71` — report de `52e9318c` — et la
+   réunion de la puce *Rejeter* au report) ? Seul
    `user-manual.pdf` est versé (C-29-9-29) : les deux autres PDF n'ont-ils vraiment rien à refléter ?
    `docs/api-external.md` (paragraphe *unreject*, « 100 par défaut, 500 au plus ; `hasMore` ») ; CHANGELOG § `[0.13.4]`,
    *Corrigé* : quatre puces (#649, #655, #646, #678) ; `[0.13.3]` **intact**.
@@ -84,7 +90,7 @@ les ouvrir.
    crates/kesh-i18n/locales/*/messages.ftl`), traduites réellement, mêmes variables, replis égaux à fr-CH au caractère
    près (apostrophe droite de « jusqu'à », « d'abord ») ; `KNOWN_VIOLATIONS` (+1, `lint-i18n-ownership.js`) ;
    `sitesTotal` 2180 → 2186 (`i18n-keys.test.ts`) ; le test V23 (`i18n-entrees-a-variables.test.ts`). **Recompte depuis
-   la source** tout décompte du Dev Agent Record (tests neufs par fichier aux **deux** bornes `4b358373` / `284c1d3b`,
+   la source** tout décompte du Dev Agent Record (tests neufs par fichier aux **deux** bornes `1261c4bb` / `3e5dfed8`,
    clés, mutations tuées, chiffres des gates) et vérifie le **périmètre** de chaque nombre.
 
 ## Lentilles
@@ -102,8 +108,10 @@ les ouvrir.
 - **A — Acceptance Auditor : conformité, décomptes, documentation.** Chaque AC (AC1 à AC11) contre le code :
   satisfait, partiel, absent ; V1-V23 et M1-M30 présents et conformes ; les écarts à la fiche sont-ils tous déclarés
   au Dev Agent Record (C-29-9-26 à 30, fixture, V11, PDF, captures « sombre » claires — C-28-1-7) ; les chiffres de
-  gates et d'E2E déclarés correspondent-ils aux journaux `kesh-gate-logs/299-gate-final2.log` et
-  `299-e2e-complet.log` (au dernier commit de code `284c1d3b`) ; les échecs E2E jugés fichier par fichier contre
+  gates et d'E2E déclarés correspondent-ils aux journaux du report :
+  `kesh-gate-logs/299-rebase2-gate.log`, `299-rebase2-npm-*.log` et `299-rebase2-e2e-complet.log` (au HEAD
+  `d2c64df9`, dont le code est celui de `3e5dfed8`) — ceux de `284c1d3b` (`299-gate-final2.log`,
+  `299-e2e-complet.log`) sont des relevés d'avant le report ; les échecs E2E jugés fichier par fichier contre
   `docs/testing.md` § *Les échecs attendus* ; `sprint-status.yaml` : clé `29-9-trois-petits-correctifs` en `review`,
   commentaire daté.
 
