@@ -10,9 +10,12 @@
   29-3 : une facture qui porte un signal d'identité passe devant la règle
   d'affectation ; l'écran ne refait pas cet ordre) — et un
   checkbox au niveau tx. Si la transaction n'a aucune candidate,
-  on affiche « Aucune correspondance » sans checkbox (tx
-  non-sélectionnable). Erreurs partielles affichées en bas via
-  `failed`.
+  on affiche « Aucune correspondance », avec une checkbox comme les
+  autres lignes (Story 29-6, #665, AC10) : elle se coche pour être
+  rejetée, ou avant « Affecter manuellement » / « Éclater » ;
+  « Accepter » ne la traite pas — il est grisé tant qu'une telle ligne
+  est cochée, et la rangée des boutons le dit. Erreurs partielles
+  affichées en bas via `failed`.
 
   Story 15-5c (AC3, #492, choix C38) — chaque refus de `failed[]` est affiché
   par son LIBELLÉ traduit (`failedProposalLabel`) et désigne la transaction par
@@ -185,6 +188,12 @@
 		await load();
 	}
 
+	// Story 29-6 (#665, AC10) — une ligne sans proposition se coche (pour
+	// « Rejeter ») ; « Accepter » ne la traite pas : grisé, gardé, et dit.
+	const selectionHasUnmatched = $derived(
+		proposals.some((p) => selected.has(p.bankTransactionId) && p.candidates.length === 0),
+	);
+
 	function toggle(txId: number) {
 		const next = new Set(selected);
 		if (next.has(txId)) next.delete(txId);
@@ -193,7 +202,7 @@
 	}
 
 	async function onAccept() {
-		if (selected.size === 0) return;
+		if (selected.size === 0 || selectionHasUnmatched) return;
 		busy = true;
 		errorMsg = null;
 		clearBatchReport();
@@ -201,8 +210,10 @@
 		try {
 			// γ refactor — pour chaque txId sélectionné, retrouver la
 			// candidate top-1 (candidates[0]) dans la proposal courante.
-			// Une tx sans candidate ne peut pas être sélectionnée (cf.
-			// disabled checkbox), donc candidates[0] est garanti exister.
+			// Une tx sans candidate peut être sélectionnée (pour « Rejeter »,
+			// ou avant « Affecter manuellement » / « Éclater » ; Story 29-6) :
+			// « Accepter » est alors grisé et la garde de tête l'arrête ; le
+			// `throw` ci-dessous reste le dernier rempart.
 			const items = Array.from(selected).map((txId) => {
 				const p = proposals.find((x) => x.bankTransactionId === txId);
 				if (!p || p.candidates.length === 0) {
@@ -280,11 +291,11 @@
 			)}
 		</p>
 	{:else}
-		<div class="mb-4 flex gap-2">
+		<div class="mb-4 flex flex-wrap items-center gap-2">
 			<button
 				type="button"
 				class="rounded bg-primary px-4 py-2 text-white disabled:opacity-50"
-				disabled={busy || selected.size === 0}
+				disabled={busy || selected.size === 0 || selectionHasUnmatched}
 				onclick={onAccept}
 				data-testid="reconciliation-accept-btn"
 			>
@@ -299,6 +310,17 @@
 			>
 				{i18nMsg('reconciliation-actions-reject', 'Rejeter')}
 			</button>
+			<!-- Story 29-6 (#665, AC10, C-29-6-18) — dans la rangée des boutons, et non entre
+			     elle et la table : un paragraphe apparu au cochage au-dessus de la table la
+			     descendrait sous le pointeur. Ne nomme aucun autre geste (C-29-6-16). -->
+			{#if selectionHasUnmatched}
+				<p class="text-sm text-text-muted" data-testid="reconciliation-unmatched-not-acceptable-hint">
+					{i18nMsg(
+						'reconciliation-labels-unmatched-not-acceptable-hint',
+						'Une transaction sans correspondance ne peut pas être acceptée : décochez-la pour accepter les autres.',
+					)}
+				</p>
+			{/if}
 		</div>
 
 		<!-- Story 29-3 (#527, AC5, C-29-3-14) — la priorité dite à l'écran, seulement si une
@@ -331,15 +353,14 @@
 				{#each proposals as p (p.bankTransactionId)}
 					<tr data-testid="reconciliation-row" data-tx-id={p.bankTransactionId}>
 						<td>
-							{#if p.candidates.length > 0}
-								<input
-									type="checkbox"
-									checked={selected.has(p.bankTransactionId)}
-									onchange={() => toggle(p.bankTransactionId)}
-									data-testid="tx-checkbox"
-									data-tx-id={p.bankTransactionId}
-								/>
-							{/if}
+							<!-- Story 29-6 (#665, AC10) — une case sur toute ligne, avec ou sans proposition. -->
+							<input
+								type="checkbox"
+								checked={selected.has(p.bankTransactionId)}
+								onchange={() => toggle(p.bankTransactionId)}
+								data-testid="tx-checkbox"
+								data-tx-id={p.bankTransactionId}
+							/>
 						</td>
 						<td>{p.transaction.bookingDate}</td>
 						<td class="text-right">{p.transaction.amount} {p.transaction.currency}</td>

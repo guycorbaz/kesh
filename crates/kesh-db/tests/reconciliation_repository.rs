@@ -540,9 +540,11 @@ async fn find_unpaid_invoices_filters_status_validated_and_unpaid(pool: MySqlPoo
     );
 }
 
-/// AC #39 + AC #40 — tolérance amount ± 0.05 CHF. Une invoice à
-/// 100.04 (delta 0.04) est candidate, mais 100.06 (delta 0.06) ne
-/// l'est pas.
+/// AC #39 + AC #40 — tolérance du paiement partiel, 0.05 CHF. Une
+/// invoice à 100.04 (delta 0.04) est candidate, mais 100.06 (delta 0.06)
+/// ne l'est pas. N'éprouve que le côté du reste dû **supérieur** au
+/// paiement ; l'autre côté (trop-perçu) est la borne d'un demi-centime,
+/// `find_unpaid_invoices_excludes_an_invoice_the_payment_exceeds` (Story 29-6).
 #[sqlx::test(migrations = "./test-schema")]
 async fn find_unpaid_invoices_filters_amount_within_tolerance(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
@@ -589,7 +591,245 @@ async fn find_unpaid_invoices_filters_amount_within_tolerance(pool: MySqlPool) {
     assert_eq!(
         ids,
         vec![inv_in],
-        "seule l'invoice à ± 0.05 doit être retournée"
+        "seule l'invoice dont le reste dû dépasse le paiement d'au plus 0.05 doit être retournée"
+    );
+}
+
+/// Story 29-6 (#665), AC5 — la proposition ne charge plus une facture que le
+/// paiement **dépasse** : la borne basse du reste dû est
+/// `least_due_without_overpayment(tx)` (= tx − 0.005), la plus petite valeur
+/// que `classify_payment` n'estime pas trop-perçue ; la borne haute reste
+/// `tx + tolérance` (paiement partiel). Attendu écrit en dur.
+#[sqlx::test(migrations = "./test-schema")]
+async fn find_unpaid_invoices_excludes_an_invoice_the_payment_exceeds(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Acme").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let contact_id = create_test_contact(&pool, company_id, user_id, "Client A").await;
+    let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
+    let je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
+
+    let mut ids_by_due = Vec::new();
+    for due in [
+        dec!(99.95),
+        dec!(99.99),
+        dec!(99.9949),
+        dec!(99.9950),
+        dec!(99.9999),
+        dec!(100.00),
+        dec!(100.0049),
+        dec!(100.05),
+        dec!(100.06),
+    ] {
+        let id = insert_test_invoice(
+            &pool,
+            company_id,
+            contact_id,
+            day,
+            due,
+            "validated",
+            Some(je_id),
+            None,
+        )
+        .await;
+        ids_by_due.push((due, id));
+    }
+    let id_of = |due: Decimal| {
+        ids_by_due
+            .iter()
+            .find(|(d, _)| *d == due)
+            .map(|(_, id)| *id)
+            .unwrap()
+    };
+
+    let candidates = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_payment_date(day),
+        dec!(100.00),
+        dec!(0.05),
+    )
+    .await
+    .expect("find_unpaid_invoices_for_window");
+
+    let ids: Vec<i64> = candidates.iter().map(|c| c.invoice.id).collect();
+    assert_eq!(
+        ids,
+        vec![
+            id_of(dec!(99.9950)),
+            id_of(dec!(99.9999)),
+            id_of(dec!(100.00)),
+            id_of(dec!(100.0049)),
+            id_of(dec!(100.05)),
+        ],
+        "seuls les restes de 99.9950 à 100.05 sont proposés pour 100.00 : \
+         un reste inférieur de plus d'un demi-centime est un trop-perçu (#665)"
+    );
+}
+
+/// Story 29-6 (#665), AC5, second test — le filtre du trop-perçu est **dans la
+/// requête**, avant `ORDER BY … LIMIT 50` (C-29-6-3, C-29-6-13) : cinquante
+/// factures trop-perçues (99.99 pour un paiement de 100.00) puis une valide,
+/// toutes à la même date et sans échéance, la valide ayant le plus grand `id`
+/// (dernière place de l'ordre d'imputation). Un filtre posé après le
+/// `fetch_all` laisserait les cinquante places du `LIMIT 50` aux trop-perçus,
+/// et la valide ne serait jamais lue (mutation M8). Le nombre 50 est celui du
+/// `LIMIT 50` de `find_unpaid_invoices_for_window` : s'il change, ce test suit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn find_unpaid_invoices_overpayments_take_no_place_in_the_limit(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Acme").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let contact_id = create_test_contact(&pool, company_id, user_id, "Client A").await;
+    let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
+    let je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
+
+    for _ in 0..50 {
+        insert_test_invoice(
+            &pool,
+            company_id,
+            contact_id,
+            day,
+            dec!(99.99),
+            "validated",
+            Some(je_id),
+            None,
+        )
+        .await;
+    }
+    let valid = insert_test_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        day,
+        dec!(100.00),
+        "validated",
+        Some(je_id),
+        None,
+    )
+    .await;
+
+    let candidates = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_payment_date(day),
+        dec!(100.00),
+        dec!(0.05),
+    )
+    .await
+    .expect("find_unpaid_invoices_for_window");
+
+    let ids: Vec<i64> = candidates.iter().map(|c| c.invoice.id).collect();
+    assert_eq!(
+        ids,
+        vec![valid],
+        "les trop-perçus ne doivent occuper aucune place du LIMIT 50"
+    );
+}
+
+/// Une société, un client, un exercice, une écriture, et une facture validée
+/// du 2026-05-01 par reste dû (dans l'ordre donné, donc d'`id` croissant).
+/// Rend la date et les `id` des factures. Story 29-6.
+async fn seed_invoices_by_due_296(
+    pool: &MySqlPool,
+    dues: &[Decimal],
+) -> (i64, NaiveDate, Vec<i64>) {
+    let company_id = create_test_company(pool, "Acme").await;
+    let user_id = create_test_user(pool, "alice", company_id).await;
+    let contact_id = create_test_contact(pool, company_id, user_id, "Client A").await;
+    let fy_id = insert_fake_fiscal_year(pool, company_id).await;
+    let je_id = insert_fake_journal_entry(pool, company_id, fy_id).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
+    let mut ids = Vec::new();
+    for due in dues {
+        ids.push(
+            insert_test_invoice(
+                pool,
+                company_id,
+                contact_id,
+                day,
+                *due,
+                "validated",
+                Some(je_id),
+                None,
+            )
+            .await,
+        );
+    }
+    (company_id, day, ids)
+}
+
+/// Story 29-6 (#665), revue de code P1 (E2) — la borne basse au plus petit
+/// paiement, un centime : `least_due_without_overpayment(0.01)` = 0.005. Un
+/// reste de 0.0049 est un trop-perçu, un reste de 0.0050 solde à l'arrondi ;
+/// la borne haute, 0.06, est admise, 0.07 non.
+#[sqlx::test(migrations = "./test-schema")]
+async fn find_unpaid_invoices_bounds_hold_for_a_one_centime_payment(pool: MySqlPool) {
+    let (company_id, day, ids) = seed_invoices_by_due_296(
+        &pool,
+        &[
+            dec!(0.0049),
+            dec!(0.0050),
+            dec!(0.01),
+            dec!(0.06),
+            dec!(0.07),
+        ],
+    )
+    .await;
+
+    let candidates = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_payment_date(day),
+        dec!(0.01),
+        dec!(0.05),
+    )
+    .await
+    .expect("find_unpaid_invoices_for_window");
+
+    let got: Vec<i64> = candidates.iter().map(|c| c.invoice.id).collect();
+    assert_eq!(
+        got,
+        vec![ids[1], ids[2], ids[3]],
+        "pour 0.01 : restes de 0.0050, 0.01 et 0.06 ; 0.0049 est un trop-perçu, 0.07 hors tolérance"
+    );
+}
+
+/// Story 29-6 (#665), revue de code P1 (E1) — les factures que la borne basse
+/// écarte, à 5 centimes près, et elles seules : pour un paiement de 100.00,
+/// les restes de 99.95 (inclus) à 99.9950 (exclu). Les deux listes sont
+/// disjointes et se touchent à 99.9950. Attendu écrit en dur.
+#[sqlx::test(migrations = "./test-schema")]
+async fn find_invoices_slightly_overpaid_returns_what_the_lower_bound_excludes(pool: MySqlPool) {
+    let (company_id, day, ids) = seed_invoices_by_due_296(
+        &pool,
+        &[
+            dec!(99.94),
+            dec!(99.9499),
+            dec!(99.95),
+            dec!(99.99),
+            dec!(99.9949),
+            dec!(99.9950),
+            dec!(100.00),
+        ],
+    )
+    .await;
+
+    let overpaid = reconciliation_repo::find_invoices_slightly_overpaid_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_payment_date(day),
+        dec!(100.00),
+        dec!(0.05),
+    )
+    .await
+    .expect("find_invoices_slightly_overpaid_for_window");
+
+    let got: Vec<i64> = overpaid.iter().map(|c| c.invoice.id).collect();
+    assert_eq!(
+        got,
+        vec![ids[2], ids[3], ids[4]],
+        "pour 100.00 : restes de 99.95, 99.99 et 99.9949 ; 99.9950 est candidat, 99.9499 et 99.94 hors tolérance"
     );
 }
 

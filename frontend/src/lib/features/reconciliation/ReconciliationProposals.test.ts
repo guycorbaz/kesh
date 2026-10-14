@@ -191,9 +191,12 @@ describe('ReconciliationProposals', () => {
 		await findByTestId('reconciliation-row');
 		await findByText(/Aucune correspondance/i);
 
-		// γ refactor : pas de checkbox tx-level pour une tx sans candidate.
+		// Story 29-6 (#665, AC10) — une tx sans candidate porte une case, comme
+		// les autres : elle se coche pour être rejetée (le γ refactor la rendait
+		// non sélectionnable, ce qui rendait le rejet impraticable).
 		const checkboxes = queryAllByTestId('tx-checkbox');
-		expect(checkboxes).toHaveLength(0);
+		expect(checkboxes).toHaveLength(1);
+		expect(checkboxes[0].getAttribute('data-tx-id')).toBe('2');
 	});
 
 	it('selects tx via checkbox and triggers accept with top-1 invoice', async () => {
@@ -849,5 +852,136 @@ describe('ReconciliationProposals — la phrase de priorité (Story 29-3)', () =
 		const { findAllByTestId, queryByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
 		expect(await findAllByTestId('reconciliation-row')).toHaveLength(2);
 		expect(queryByTestId('reconciliation-priority-hint')).toBeNull();
+	});
+});
+
+// Story 29-6 (#665, AC10) — une transaction sans proposition se coche et se rejette ;
+// « Accepter » ne la traite pas : il est grisé, et la rangée des boutons le dit.
+//
+// ⚠️ Un état grisé ou actif se prouve par l'ATTRIBUT `disabled` : `fireEvent.click` livre
+// l'événement à un bouton désactivé (jsdom ne bloque que `click()`, et Svelte 5 délègue
+// `onclick`) — précédent `DeleteBankImportAction.test.ts`.
+describe('ReconciliationProposals — une ligne sans proposition se rejette (Story 29-6)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	const HINT_TESTID = 'reconciliation-unmatched-not-acceptable-hint';
+
+	function checkboxOf(container: HTMLElement, txId: number): HTMLElement {
+		const box = container.querySelector<HTMLElement>(
+			`[data-testid="tx-checkbox"][data-tx-id="${txId}"]`,
+		);
+		if (!box) throw new Error(`pas de case pour la transaction ${txId}`);
+		return box;
+	}
+
+	it('cochée seule ⇒ Rejeter actif et l’envoie, Accepter grisé, indication rendue (M10, M13)', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithoutCandidate(2)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		mockApi.rejectProposals.mockResolvedValue({
+			rejected: [{ bankTransactionId: 2, rejectedAt: '2026-05-15T00:00:00Z' }],
+			failed: [],
+		} satisfies RejectResponse);
+		const { findAllByTestId, getByTestId, container } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+		await findAllByTestId('reconciliation-row');
+		await fireEvent.click(checkboxOf(container, 2));
+
+		const accept = getByTestId('reconciliation-accept-btn') as HTMLButtonElement;
+		const reject = getByTestId('reconciliation-reject-btn') as HTMLButtonElement;
+		expect(accept.disabled).toBe(true);
+		expect(reject.disabled).toBe(false);
+		expect(getByTestId(HINT_TESTID)).not.toBeNull();
+
+		await fireEvent.click(reject);
+		expect(mockApi.rejectProposals).toHaveBeenCalledTimes(1);
+		expect(mockApi.rejectProposals).toHaveBeenCalledWith(17, [2]);
+	});
+
+	it('clic sur Accepter grisé ⇒ ni erreur, ni appel, la table reste (M12 : garde de tête)', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithoutCandidate(2)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const { findAllByTestId, getByTestId, queryByTestId, queryAllByTestId, container } = render(
+			ReconciliationProposals,
+			{ bankAccountId: 17 },
+		);
+		await findAllByTestId('reconciliation-row');
+		await fireEvent.click(checkboxOf(container, 2));
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+
+		expect(queryByTestId('reconciliation-error')).toBeNull();
+		expect(mockApi.acceptProposals).not.toHaveBeenCalled();
+		expect(queryAllByTestId('tx-checkbox')).toHaveLength(1);
+	});
+
+	it('avec et sans proposition cochées ⇒ Accepter grisé ; décocher la seconde ⇒ actif, n’envoie que la première', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithCandidate(1, 101, 1.0), makeProposalWithoutCandidate(2)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		mockApi.acceptProposals.mockResolvedValue({ accepted: [], failed: [] } satisfies AcceptResponse);
+		const { findAllByTestId, getByTestId, queryByTestId, container } = render(
+			ReconciliationProposals,
+			{ bankAccountId: 17 },
+		);
+		await findAllByTestId('reconciliation-row');
+		await fireEvent.click(checkboxOf(container, 1));
+		await fireEvent.click(checkboxOf(container, 2));
+
+		const accept = getByTestId('reconciliation-accept-btn') as HTMLButtonElement;
+		expect(accept.disabled).toBe(true);
+		expect(getByTestId(HINT_TESTID)).not.toBeNull();
+
+		await fireEvent.click(checkboxOf(container, 2));
+		expect((getByTestId('reconciliation-accept-btn') as HTMLButtonElement).disabled).toBe(false);
+		expect(queryByTestId(HINT_TESTID)).toBeNull();
+
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+		expect(mockApi.acceptProposals).toHaveBeenCalledWith(17, [
+			{ type: 'invoice', bankTransactionId: 1, invoiceId: 101 },
+		]);
+	});
+
+	it('seules des lignes avec proposition cochées ⇒ pas d’indication (M11)', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithCandidate(1, 101, 1.0), makeProposalWithoutCandidate(2)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const { findAllByTestId, queryByTestId, container } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+		await findAllByTestId('reconciliation-row');
+		expect(queryByTestId(HINT_TESTID)).toBeNull();
+		await fireEvent.click(checkboxOf(container, 1));
+		expect(queryByTestId(HINT_TESTID)).toBeNull();
+	});
+
+	it('l’indication est dans la rangée des boutons, et son repli égale le catalogue fr-CH', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithoutCandidate(2)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const { findAllByTestId, getByTestId, container } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+		await findAllByTestId('reconciliation-row');
+		await fireEvent.click(checkboxOf(container, 2));
+		const hint = getByTestId(HINT_TESTID);
+		// C-29-6-18 : dernier enfant de la rangée, après « Rejeter ».
+		expect(hint.parentElement).toBe(getByTestId('reconciliation-reject-btn').parentElement);
+		expect(hint.parentElement?.lastElementChild).toBe(hint);
+		const prefixe = 'reconciliation-labels-unmatched-not-acceptable-hint = ';
+		const attendu = readFileSync(join('../crates/kesh-i18n/locales', 'fr-CH', 'messages.ftl'), 'utf-8')
+			.split('\n')
+			.find((l) => l.startsWith(prefixe))
+			?.slice(prefixe.length);
+		expect(attendu).toBeDefined();
+		expect((hint.textContent ?? '').trim()).toBe(attendu);
 	});
 });

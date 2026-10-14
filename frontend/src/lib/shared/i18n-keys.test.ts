@@ -642,7 +642,12 @@ const ATTENDU = {
 	// `routes/(app)/settings/fiscal-years/+page.svelte` +9 (bouton ×2, titre du panneau,
 	// « Fermer », rappel du dialogue ×5). Que des littéraux : les autres compteurs inchangés.
 	// Réunion au rebase de la 29-1a sur la 29-3 (2026-10-14, orchestrateur) : 2107 + 1 + 55 = **2163**.
-	sitesTotal: 2163,
+	// Story 29-6 (#665, AC10) : **2163 → 2164** (+1), recompté le 2026-10-14 par
+	// `grep -o "i18nMsg("` aux deux bornes sur `story/29-6` (sur main `b4abae5d` + la 29-5, qui ne
+	// touche pas ce compteur) : `ReconciliationProposals.svelte` 20 → 21
+	// (`reconciliation-labels-unmatched-not-acceptable-hint`). Un littéral : les autres compteurs
+	// inchangés.
+	sitesTotal: 2164,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

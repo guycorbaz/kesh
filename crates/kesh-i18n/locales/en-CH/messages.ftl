@@ -1207,6 +1207,8 @@ reconciliation-labels-failed = Partial failures
 reconciliation-labels-rejected-hint = A rejected transaction leaves this list. It remains in the detail of its import (Import statements), where its rejection can be undone if your role allows it.
 # Story 29-3 (#527) — the priority of the candidates, stated above the list.
 reconciliation-labels-priority-hint = One proposal is shown per transaction: the best-scored invoice if there is one, otherwise the matching reconciliation rule. A proposed invoice always comes before a rule.
+# Story 29-6 (#665, AC10) — shown in the button row when a line without a proposal is ticked.
+reconciliation-labels-unmatched-not-acceptable-hint = A transaction with no match cannot be accepted: untick it to accept the others.
 # Story 15-5c (#492) — labels for the refusals of a reconciliation batch (`failed[]`).
 reconciliation-failed-account-not-found = A counterpart account cannot be found or is archived.
 reconciliation-failed-account-not-postable = Non-postable account: { $numbers }. A grouping, result or closing account takes no entries: choose a postable account.

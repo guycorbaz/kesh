@@ -117,6 +117,21 @@ LIMIT 50` de `find_unpaid_invoices_for_window` peut en outre écarter une factur
 la 29-5 mergée avant le tag. **`kesh-db` touché : gate complet même en boucle.** Manuel utilisateur : la règle
 d'imputation.
 
+### 29-6 — Une facture qu'un trop-perçu de quelques centimes fait refuser n'est plus proposée ([#665], P2)
+
+*Ajoutée par l'orchestrateur le 2026-10-14, relevée pendant la fiche de la 29-3.* La proposition retient une facture à
+± 5 centimes de son reste dû (`AMOUNT_TOLERANCE_HUNDREDTHS`) ; l'acceptation refuse un paiement qui dépasse le reste dû
+(`classify_payment`, `RECONCILIATION_OVERPAYMENT`). Même famille que #548 (28-7), sur le montant : une seule borne pour
+la proposition et l'acceptation. Voie retenue par la fiche : la proposition écarte le trop-perçu ; aucune écriture
+nouvelle (l'absorption sur le compte d'arrondi est écartée, C-29-6-2). **`kesh-db` touché : gate complet même en
+boucle.** Manuel (PDF), `api-external.md`, CHANGELOG. *Étendue à la validation P1 (2026-10-14, décision de
+l'orchestrateur)* : une ligne « Aucune correspondance » se coche, pour *Rejeter* seulement — sans quoi le contournement
+« régler depuis la fiche, puis rejeter la transaction », prescrit par la 29-6 et la 29-2 (C-29-2-8), est impraticable ;
+un écran, une clé i18n, un spec E2E. *Annoté à la validation P2 (2026-10-14)* : « pour *Rejeter* seulement » se lit
+« *Accepter* ne la traite pas » — la ligne garde *Affecter manuellement* et *Éclater* (C-29-6-16) ; rejetée, la
+transaction **reste en attente** et empêche la clôture du compte bancaire : angle mort assumé, [#670] (C-29-6-17), à
+connaître de la 29-1 (contrôle « transactions bancaires en attente »).
+
 ## Ordre
 
 - **29-1 en parallèle** des trois autres : elle ne touche ni la réconciliation ni les comptes bancaires.
@@ -125,11 +140,16 @@ d'imputation.
 - **29-5 après la 29-3** (2026-10-14) : `kesh-db/repositories/reconciliation.rs` partagé avec la 29-2, phrase d'ordre
   des candidates de `docs/api-external.md` et § du manuel partagés avec la 29-3. Aucune zone commune avec la 29-4 :
   les deux peuvent avancer en parallèle, chacune rebasée sur ce qui est mergé.
+
+- **29-6 après 29-2, 29-3 et 29-5** (ordre de développement 29-2 → 29-3 → 29-5 → 29-6) : même requête de candidates
+  que la 29-2, et des phrases que la 29-3 écrit sur #665 et qu'elle retire.
 - Intégration **sérielle** sur `main`.
 
 ### Releases
 
-- **v0.13.4** dès que 29-2, 29-3, 29-4 et 29-5 sont mergées : Guy les éprouve tout de suite avec ses relevés mensuels.
+- **v0.13.4** dès que 29-1a, 29-2, 29-3, 29-4, 29-5, 29-6, 29-8 et 29-9 sont mergées : Guy les éprouve tout de suite avec ses relevés mensuels.
+
+  29-6, R7)* : Guy les éprouve tout de suite avec ses relevés mensuels.
 - **v0.14.0** à la fin de la 29-1 : fonctionnalité nouvelle.
 
 À chaque release : `scripts/prepare-release.sh`, macros des manuels et URL au tag, CHANGELOG daté, recomptes du
@@ -162,3 +182,6 @@ Docker Hub (`/health`). Autorisé d'office pour cet epic.
 [#529]: https://github.com/guycorbaz/kesh/issues/529
 [#651]: https://github.com/guycorbaz/kesh/issues/651
 [#668]: https://github.com/guycorbaz/kesh/issues/668
+
+[#665]: https://github.com/guycorbaz/kesh/issues/665
+[#670]: https://github.com/guycorbaz/kesh/issues/670
