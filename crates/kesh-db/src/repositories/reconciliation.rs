@@ -24,12 +24,12 @@
 //!   et le montant plus `underpayment_tolerance` (paiement partiel), dans
 //!   l'ordre d'imputation (date d'exigibilité,
 //!   date, `id` croissants ; Story 29-5), 50 au plus.
+//!   **PAS de filtre currency** (S4-1 Pass 4 revert : colonne
+//!   `invoices.currency` n'existe pas v0.1 mono-CHF, cf. L38).
 //! - [`find_invoices_slightly_overpaid_for_window`] : les factures que cette
 //!   borne basse écarte, à `overpayment_tolerance` près — jamais proposées,
 //!   lues pour qu'une règle d'affectation ne prenne pas leur place en silence
-//!   (Story 29-6, #665, revue de code P1).
-//!   **PAS de filtre currency** (S4-1 Pass 4 revert : colonne
-//!   `invoices.currency` n'existe pas v0.1 mono-CHF, cf. L38).
+//!   (Story 29-6, #665, revue de code P1). Pas de filtre currency non plus.
 //! - [`find_pending_transactions_for_account`] : charge les
 //!   transactions `status='pending'` non-rejetées (`auto_match_rejected_at IS NULL`)
 //!   pour un compte donné, multi-tenant scoped, paginées (limit

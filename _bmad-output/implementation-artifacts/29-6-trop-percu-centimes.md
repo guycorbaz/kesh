@@ -2,9 +2,9 @@
 
 ## Status
 
-**review** — développement fait le 2026-10-14 (Opus 5.5), branche rebasée sur `main` `81b1b526` ; revue de code P1
-faite (Sonnet, B/E/A, 0/0/1/9) et remédiée (Opus 5.5) ; **passe ciblée P2 à lancer**
-(`29-6-review-prompt-p2-ciblee.md`, Sonnet, une lentille sur le diff de la remédiation P1). Choix **C-29-6-1 à
+**done** — revue close le 2026-10-14 : revue de code P1 (Sonnet, B/E/A, 0/0/1/9) remédiée, passe ciblée P2 (Sonnet)
+0/0/0/3, LOW traités ; branche rebasée sur `main` `fe404b11` (29-4a). *(Historique :)* développement fait le
+2026-10-14 (Opus 5.5), rebasé sur `main` `81b1b526` ; passe ciblée P2 (`29-6-review-prompt-p2-ciblee.md`). Choix **C-29-6-1 à
 C-29-6-27**, versés par union au registre de l'epic (`epic-29-choix-autonomes.md`) à la remédiation P1. Historique : fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (kickoff de
 l'Epic 29), branche `story/29-6`, worktree `/home/gcorbaz/devel/kesh-29-6`. Story **ajoutée à l'Epic 29** par
 l'orchestrateur le 2026-10-14 ; sortie dans la **v0.13.4**. Choix consignés au registre propre à la story,
@@ -952,6 +952,14 @@ inchangé (C-29-6-23) ; (3) mutations hors verrou (C-29-6-20) ; (4) `R = 99.9950
 `classify_payment` et par l'égalité `least_due_without_overpayment(100.00) == 99.995`, non par une troisième forme ;
 (5) montant E2E tiré entre 90 000 et 99 000 CHF (C-29-6-22).
 
+*Annotation du 2026-10-14 (revue P2 ciblée, LOW-3, non réécrite plus haut)* : (a) la mutation « contacts des
+trop-perçus non chargés » (retrait du `.chain(&slightly_overpaid)` de `routes/reconciliation.rs`, chargement groupé des
+contacts) **n'a pas été jouée** : le registre des mutations s'arrête à M17 ; elle est tuée par raisonnement seulement
+(cas « 100.01, signal par le nom du client seul » de `a_rule_never_replaces_an_invoice_the_payment_slightly_exceeds`),
+non par exécution. (b) La condition « désignée par la référence ou le nom du client » recouvre aussi, comme avant la
+story, un score de référence de 0.5 (préfixe commun de 4 caractères, `matching.rs:161-163`) et un nom contenu dans
+celui de la contrepartie ; **aucun test ne couvre la variante du préfixe**.
+
 ### File List
 
 - `crates/kesh-db/src/repositories/invoice_settlements.rs` — `HALF_CENTIME`, `least_due_without_overpayment`, ligne
@@ -1138,3 +1146,12 @@ Remédiation de la revue de code P1 (`4b34d45e..`) :
     registre de la story est versé au registre de l'epic et retiré.
   - Prompt de la passe ciblée P2 : `29-6-review-prompt-p2-ciblee.md` (Sonnet, une lentille sur le diff `4b34d45e..HEAD`,
     rapport `kesh-gate-logs/29-6-review-p2-ciblee.md`). Trend : P1 0/0/1/9.
+- 2026-10-14 — **Revue de code P2 (passe ciblée, Sonnet 5.5, une lentille, lecture seule ; rapport
+  `kesh-gate-logs/29-6-review-p2-ciblee.md`)** sur le diff `4b34d45e..65e1efb7` : **0 CRITICAL · 0 HIGH · 0 MEDIUM ·
+  3 LOW**. Aucun défaut de production. Traités (Opus 5.5, texte seul, aucune ligne exécutable touchée) : **LOW-1**
+  l'en-tête du module `reconciliation.rs` : « PAS de filtre currency » remontée à la puce de
+  `find_unpaid_invoices_for_window`, la puce neuve dit « pas de filtre currency non plus » ; **LOW-2**
+  `docs/api-external.md` : « dépasse de 1 à 5 centimes » → plage exacte `[0,005 ; 0,05]` (un demi-centime à 5
+  centimes) ; **LOW-3** annotation datée au Dev Agent Record (mutation `.chain` non jouée ; préfixe de 4 caractères non
+  testé) — écrite comme limite, non rejouée, la remédiation ne touchant pas le code. **Trend : P1 B 0/0/0/3, E 0/0/1/2,
+  A 0/0/0/4 → P2 ciblée 0/0/0/3 ; revue close** (la remédiation ne touche aucune ligne de production). Statut `done`.
