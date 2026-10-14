@@ -992,7 +992,8 @@ pub async fn cancel_settlement_in_tx(
     //     verrou — après la dernière écriture, avant l'audit. Posée plus tôt, elle
     //     tiendrait le compte avant `companies` (clé étrangère de la
     //     contre-passation), à rebours des routes de gestion du compte. Voir
-    //     `bank_accounts::recheck_open_locked_in_tx`.
+    //     `bank_accounts::recheck_open_locked_in_tx` (dont son angle mort
+    //     `innodb_snapshot_isolation`).
     if let Some(bank_account_id) = settlement_bank_account_id {
         super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bank_account_id).await?;
     }

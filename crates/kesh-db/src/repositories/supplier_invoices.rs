@@ -1169,9 +1169,11 @@ pub async fn cancel_in_tx(
 
     // (4 bis) Story 29-4b (#651, W28, AC6) — facture payée par virement :
     //     revérification VERROUILLANTE du compte clos (`closed_on` seul, jamais
-    //     `archived`), sur le compte lu en (1), avant que l'`UPDATE` ne le
-    //     détache — en DERNIÈRE acquisition de verrou, après la dernière
-    //     écriture, avant l'audit. Voir `bank_accounts::recheck_open_locked_in_tx`.
+    //     `archived`), sur le compte lu en (1) — valeur de la ligne en mémoire,
+    //     l'`UPDATE` ci-dessus l'ayant remis à `NULL` en base — en DERNIÈRE
+    //     acquisition de verrou, après la dernière écriture, avant l'audit.
+    //     Voir `bank_accounts::recheck_open_locked_in_tx` (dont son angle mort
+    //     `innodb_snapshot_isolation`).
     if let Some(bank_account_id) = inv.settlement_bank_account_id {
         super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bank_account_id).await?;
     }
@@ -1426,7 +1428,8 @@ pub async fn cancel_settlement_in_tx(
     //     revérification VERROUILLANTE du compte clos (`closed_on` seul, jamais
     //     `archived`), sur le compte lu en (1), en DERNIÈRE acquisition de
     //     verrou — après la dernière écriture, avant l'audit. Voir
-    //     `bank_accounts::recheck_open_locked_in_tx`.
+    //     `bank_accounts::recheck_open_locked_in_tx` (dont son angle mort
+    //     `innodb_snapshot_isolation`).
     if let Some(bank_account_id) = inv.settlement_bank_account_id {
         super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bank_account_id).await?;
     }

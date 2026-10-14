@@ -2158,11 +2158,19 @@ async fn bank_account_creation_is_replayed_when_it_is_the_deadlock_victim(pool: 
 /// (quelques lignes écrites contre 500 de lest), est la victime ; la
 /// transaction de test **doit** obtenir l'exercice (`victime()`), puis
 /// annule ; l'annulation rejouée rend `200`, une seule contre-passation.
+/// ⚠️ Cette victime tient au montage, qui alourdit le partenaire : contre un
+/// `settle_invoice` réel, qui n'a rien écrit quand il demande l'exercice, la
+/// victime attendue est `settle_invoice`, rejoué lui aussi (raisonné). Le test
+/// établit la détection du cycle et le rejeu de l'annulation, non la victime
+/// du cas réel.
 ///
 /// **Rouge au sol** : sans revérification, l'annulation n'attend jamais la
-/// ligne du compte — `victime()` échoue sur son montage. Les quatre autres
-/// annulations ferment le même cycle avec des partenaires rejoués (fiche,
-/// § *Cycles*) : un test chacune n'est pas exigé (C-29-4-12).
+/// ligne du compte — `victime()` échoue sur son montage. Trois des quatre
+/// autres annulations (W9, W28, W29) ferment le même cycle avec des
+/// partenaires rejoués (fiche, § *Cycles*) : un test chacune n'est pas exigé
+/// (C-29-4-12). La quatrième, la suppression d'import (W24), ne tient ni
+/// exercice ni `companies` et ne ferme pas ce cycle ; le sien passe par la
+/// file d'attente de la clôture (résidu (a), C-29-4-7).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn settlement_cancellation_recheck_cycle_is_replayed(pool: MySqlPool) {
     let ctx = monter(&pool).await;

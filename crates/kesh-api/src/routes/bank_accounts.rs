@@ -939,9 +939,10 @@ async fn update_once(
 /// ⚠️ **Rejouée sur interblocage** (opération `bank_accounts::archive`, Story
 /// 29-4a, revue de code P1, E-1, #651) ; la transaction vit dans
 /// [`archive_once`]. Même cycle que le `PUT` : la sentinelle `companies` en
-/// exclusif, puis la ligne du compte en exclusif (`archive_for_company`),
-/// contre un import ou un lot qui tient cette ligne en partagé par son
-/// `INSERT` et demande `companies`. Depuis la revérification de l'import et
+/// exclusif, puis la ligne du compte en exclusif (prise depuis la Story 29-4b
+/// par `primary_flag_locked_in_tx`, dans la garde du principal, et redemandée
+/// par `archive_for_company`), contre un import ou un lot qui tient cette
+/// ligne en partagé par son `INSERT` et demande `companies`. Depuis la revérification de l'import et
 /// du lot, aucun d'eux n'aboutit plus sur un compte archivé ; le rejeu ôte à
 /// la course son dernier effet, le `500` de l'archivage. Le pré-vol (`404`,
 /// `409 BANK_ACCOUNT_CLOSED`, sur le pool) reste devant l'enveloppe.
@@ -972,8 +973,9 @@ pub async fn archive_bank_account(
     // rouvrir d'abord. Lu sur ce pré-vol existant (aucun verrou ajouté),
     // AVANT la sentinelle et le décompte : un compte clos qui porte des imports
     // rend `409 BANK_ACCOUNT_CLOSED`, non le `412` dont le message propose la
-    // clôture. Une clôture commitée après ce pré-vol est refusée sous le verrou
-    // d'`archive_for_company`.
+    // clôture. Une clôture commitée après ce pré-vol est refusée par
+    // `archive_for_company`, sous le verrou de la ligne (pris dès
+    // `primary_flag_locked_in_tx`, Story 29-4b).
     if existing.is_closed() {
         return Err(AppError::BankAccountClosed {
             bank_account_id: id,
@@ -989,8 +991,9 @@ pub async fn archive_bank_account(
 }
 
 /// Une tentative de l'archivage : sentinelle `companies`, gardes « fonds »
-/// (transactions, principal et autres comptes actifs), `FOR UPDATE` et
-/// `UPDATE` du compte (`archive_for_company`), trace — conclusion par
+/// (transactions ; principal, sous le `FOR UPDATE` de la ligne pris par
+/// `primary_flag_locked_in_tx` ; autres comptes actifs), puis `UPDATE` du
+/// compte (`archive_for_company`, qui redemande le verrou), trace — conclusion par
 /// [`conclure`] (`rollback` explicite sur refus).
 ///
 /// Story 29-4b (T6-bis, R-2, #651) — `is_primary` est **relu dans chaque

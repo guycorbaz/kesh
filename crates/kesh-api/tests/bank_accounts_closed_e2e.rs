@@ -1758,10 +1758,14 @@ const MOTIFS_REVERIFICATION: [&str; 2] =
 /// T29b-1, le patron (AC7, « fenêtre ») : (1) une clôture `C` tient la ligne
 /// du compte en exclusif, sans commiter ; (2) l'annulation démarre — sa vue
 /// naît à la garde non verrouillante de la 28-4, qui voit le compte ouvert ;
-/// (3) elle est vue **en attente sur sa revérification**, ou terminée (au
-/// sol, elle n'attend pas : la borne de dix secondes n'est pas consommée) ;
-/// (4) `C` commite ; (5) l'issue de l'annulation est rendue — sa transaction
-/// déjà annulée par la tâche si elle a échoué.
+/// (3) elle **doit** être vue en attente sur sa revérification — la sonde
+/// rend `false` si la tâche a fini sans attendre, et cette issue fait
+/// rougir (revue de code P1, E-4/A-9 : sans l'assertion, une annulation
+/// arrivée à sa garde après le commit de `C` aurait été refusée par la garde
+/// de la 28-4 et le test, vert, n'aurait pas éprouvé la revérification ; au
+/// sol, sans revérification, l'annulation finit sans attendre et rougit
+/// ici) ; (4) `C` commite ; (5) l'issue de l'annulation est rendue — sa
+/// transaction déjà annulée par la tâche si elle a échoué.
 async fn annuler_pendant_une_cloture(
     ctx: &Ctx,
     compte: i64,
@@ -1784,12 +1788,20 @@ async fn annuler_pendant_une_cloture(
         "montage : la clôture doit passer — {r:?}"
     );
     let tache = annulation_en_tache(ctx, annulation);
-    let _attend = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+    let attend = kesh_db::test_fixtures::attendre_une_requete_en_cours(
         &ctx.pool,
         &MOTIFS_REVERIFICATION,
         || tache.is_finished(),
     )
     .await;
+    if !attend {
+        cloture.rollback().await.unwrap();
+        panic!(
+            "⛔ l'annulation devait attendre sa revérification derrière la clôture — \
+             finie sans attendre : {:?}",
+            tache.await.expect("tâche d'annulation")
+        );
+    }
     cloture.commit().await.unwrap();
     tache.await.expect("tâche d'annulation")
 }

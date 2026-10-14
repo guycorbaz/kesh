@@ -471,9 +471,12 @@ pub const LOCK_IMPORT_TRANSACTIONS_SQL: &str = "SELECT id, status, matched_entry
 /// postérieure à une vue ouverte rend `ER_CHECKREAD` (1020). Les étapes 1 et 2
 /// n'y sont pas exposées (aucune vue n'est ouverte avant elles) ; la
 /// revérification de l'étape 5, si : elle s'exécute **vue ouverte** (la garde
-/// de la 28-4 l'a fait naître), et une clôture commitée depuis — la course
-/// même qu'elle traite — lui ferait rendre `1020`, que `map_db_error` ne
-/// traduit pas (`500`, rien d'écrit). Non épinglé : porté par #669.
+/// de la 28-4 l'a fait naître), et tout commit sur la ligne du compte depuis —
+/// la clôture, course même qu'elle traite, mais aussi un `PATCH`, un `PUT`,
+/// une bascule du principal ou une réouverture — lui ferait rendre `1020`, que
+/// `map_db_error` ne traduit pas et qu'aucun rejeu ne reprend (`500`, rien
+/// d'écrit). Sans effet sous 10.11. Non épinglé : porté par #669 (voir
+/// `bank_accounts::recheck_open_locked_in_tx`, § *Angle mort*).
 ///
 /// # Angles morts assumés
 ///

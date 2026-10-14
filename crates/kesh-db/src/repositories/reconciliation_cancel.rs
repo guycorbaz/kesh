@@ -269,6 +269,15 @@ pub struct ReconciliationCancellation {
 ///    rejet remis à `NULL` — sans quoi la transaction ne reviendrait jamais
 ///    dans les propositions ;
 /// 6. le règlement annulé, ou l'écriture contre-passée ;
+///
+///    6 bis. la revérification **verrouillante** du compte clos
+///    ([`super::bank_accounts::recheck_open_locked_in_tx`], Story 29-4b, #651),
+///    **dernière acquisition de verrou** : un partagé sur la ligne du compte,
+///    qui attend une clôture en cours. La route l'exécute sous le verrou nommé
+///    du compte (`with_account_lock`, `GET_LOCK`) : cette attente se fait
+///    **en gardant** `GET_LOCK`, si bien que les autres gestes de
+///    réconciliation du même compte échouent pendant ce temps en
+///    `ReconciliationAccountLocked` au bout du délai du verrou nommé ;
 /// 7. l'audit `reconciliation.cancelled`, par `for_actor` (clé API portée).
 ///
 /// ⚠️ Au rang 1, `cancel_settlement_in_tx` refuse **après** que le lien a été
@@ -391,8 +400,18 @@ pub async fn cancel_in_tx(
     //     acquisition de verrou : après toutes les écritures (le règlement
     //     annulé, dont la revérification de W25 sur le compte du règlement —
     //     le même pour un règlement né d'un rapprochement : redemande d'un
-    //     partagé tenu —, ou la contre-passation), avant l'audit. Une clôture
-    //     commitée depuis la naissance de la vue (garde de la 28-4, plus haut)
+    //     partagé tenu —, ou la contre-passation), avant l'audit. ⚠️ Limite :
+    //     « le même compte » tient à la construction de l'acceptation
+    //     (`routes/reconciliation.rs`, `SettlementChoice::BankTransfer` avec le
+    //     compte de l'import), non à une contrainte du schéma. Un règlement
+    //     dont le compte différerait de celui de la transaction (donnée
+    //     héritée ou restaurée — le code ne le produit pas) ferait prendre
+    //     deux partagés neufs sur deux comptes : la revérification de W25 ne
+    //     serait plus la dernière acquisition, et un cycle à quatre (deux
+    //     annulations croisées, deux clôtures en file) deviendrait possible,
+    //     dont les clôtures, les plus légères, seraient victimes et rejouées
+    //     (raisonné, non joué).
+    //     Une clôture commitée depuis la naissance de la vue (garde de la 28-4)
     //     est vue ici ; une clôture qui attend encore voit, à son tour, la
     //     transaction redevenue `pending`. ⚠️ La route exécute ce geste sous le
     //     verrou nommé du compte (`with_account_lock`) : pendant qu'une clôture
@@ -401,7 +420,8 @@ pub async fn cancel_in_tx(
     //     compte échouent en `ReconciliationAccountLocked` au bout du délai.
     //     Aucun cycle mixte (raisonné) : aucun détenteur d'un partagé du compte
     //     ne demande ensuite `GET_LOCK`, les routes de réconciliation le prenant
-    //     en tête. Voir `bank_accounts::recheck_open_locked_in_tx`.
+    //     en tête. Voir `bank_accounts::recheck_open_locked_in_tx` (dont son
+    //     angle mort `innodb_snapshot_isolation`).
     super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bt.bank_account_id).await?;
 
     // (7) L'audit du geste. ⚠️ Pour un règlement client, trois lignes au

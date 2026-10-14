@@ -939,7 +939,13 @@ pub const RECHECK_OPEN_UNARCHIVED_LOCKED_SQL: &str = "SELECT closed_on, archived
 /// **Revérifie**, sous verrou partagé, qu'un compte bancaire n'est pas clos —
 /// Story 29-4 (#651). Rend [`DbError::BankAccountClosed`] si `closed_on` est
 /// non nul, [`DbError::NotFound`] si le compte n'existe pas dans la société,
-/// `Ok(())` sinon. La revérification des **annulations** (W9, W24, W25, W28,
+/// `Ok(())` sinon — le `NotFound` est un bras défensif, **inatteignable par
+/// construction** depuis les annulations : leur garde de tête a déjà lu la
+/// ligne dans la même société, chaque compte revérifié est référencé par une
+/// clé étrangère (`RESTRICT`, le défaut) et aucun geste de l'application ne
+/// supprime une ligne de `bank_accounts` hors de la restauration d'une
+/// sauvegarde, qui vide la table (restauration concurrente d'une annulation :
+/// non analysée ici). La revérification des **annulations** (W9, W24, W25, W28,
 /// W29), qui l'appellent depuis la Story 29-4b, en dernière acquisition de
 /// verrou ; l'import et la création de lot appellent la variante
 /// [`recheck_open_unarchived_locked_in_tx`].
@@ -997,14 +1003,20 @@ pub const RECHECK_OPEN_UNARCHIVED_LOCKED_SQL: &str = "SELECT closed_on, archived
 /// de `M`). Depuis la 29-4b s'y ajoute la revérification d'une annulation,
 /// demande partagée **neuve**, prise en dernier — après `companies` (clé
 /// étrangère de la contre-passation), dans l'ordre des routes de gestion, donc
-/// sans cycle avec elles ; et après l'exercice, d'où le cycle **neuf** compte
+/// sans cycle avec elles ; et, pour les quatre annulations qui tiennent un
+/// exercice (W9, W25, W28, W29 — la suppression d'import, W24, n'en tient
+/// aucun, ni `companies`), après l'exercice, d'où le cycle **neuf** compte
 /// → exercice contre exercice → compte avec un détenteur de l'exclusif du
 /// compte qui demande ensuite l'exercice (`settle_invoice`, `pay_in_tx`),
 /// rejoué des deux côtés (`invoices::settle`, `supplier_invoices::pay`,
 /// `payment_batches::confirm` ; les cinq annulations le sont toutes) —
 /// **mesuré** une fois, pour l'annulation d'un règlement par virement, par
-/// T29b-3 (`rejeu_interblocage_e2e.rs`) : `1213`, l'annulation victime, puis
-/// rejouée. Tous les participants autres que l'écrivain sont
+/// T29b-3 (`rejeu_interblocage_e2e.rs`) : le cycle est détecté (`1213`) et
+/// l'annulation, victime **contre un partenaire que le montage alourdit**
+/// (500 lignes de lest), est rejouée. Contre un `settle_invoice` réel, qui
+/// n'a rien écrit quand il demande l'exercice, la victime attendue est
+/// `settle_invoice`, rejoué lui aussi (raisonné). Tous les participants
+/// autres que l'écrivain sont
 /// rejoués sur interblocage (`retry_app_on_deadlock`, routes
 /// `bank_accounts::close`, `::reopen`, `::patch`, et — revue de code P1, E-1 —
 /// `::create`, `::update`, `::archive`). ⚠️ *Mesuré et supposé* (Story 29-4b,
@@ -1054,11 +1066,16 @@ pub const RECHECK_OPEN_UNARCHIVED_LOCKED_SQL: &str = "SELECT closed_on, archived
 /// que [`map_db_error`] ne traduit pas — non seulement dans la course que la
 /// revérification traite (une clôture), mais après **tout** commit sur la
 /// ligne du compte depuis la vue : `PATCH` du lien comptable, `PUT`, bascule du
-/// principal, clôture puis réouverture. Un import ou un lot légitime,
-/// concurrent d'un tel geste, rendrait alors `500`, rien d'écrit (raisonné ;
-/// si le contrôle de clé étrangère de l'`INSERT` y est lui-même soumis, le
-/// `1020` sort déjà au sol). Le réglage de session du pool réel, et ce rayon
-/// élargi, sont portés par #669.
+/// principal, clôture puis réouverture. Les appelants de cette fonction sont
+/// les cinq annulations (W9, W24, W25, W28, W29) : leur vue naît à la garde
+/// de tête de la 28-4, la revérification vient après toutes leurs écritures,
+/// et tout commit sur la ligne du compte entre les deux leur ferait rendre
+/// `1020` — ni traduit, ni rejoué (ce n'est pas un interblocage `1213`) :
+/// `500`, tout défait (raisonné). L'import et le lot, qui appellent
+/// [`recheck_open_unarchived_locked_in_tx`], sont exposés de même (si le
+/// contrôle de clé étrangère de leur `INSERT` y est lui-même soumis, le
+/// `1020` sort déjà au sol). Sans effet sous MariaDB 10.11. Le réglage de
+/// session du pool réel, et ce rayon, sont portés par #669.
 ///
 /// ⛔ **Interdit** : y faire lire `archived`, ou appeler
 /// [`recheck_open_unarchived_locked_in_tx`] depuis une annulation. Un compte
@@ -1093,7 +1110,8 @@ pub async fn recheck_open_locked_in_tx(
 /// lit `archived` : appelée juste après leur `INSERT` à clé étrangère, elle
 /// redemande un partagé déjà tenu, sans verrou neuf. Elle ferme du même geste
 /// la course archivage / import et archivage / lot : l'archivage prend
-/// l'exclusif de la ligne (`archive_for_company`), que la revérification voit
+/// l'exclusif de la ligne (dès [`primary_flag_locked_in_tx`] depuis la Story
+/// 29-4b, puis [`archive_for_company`]), que la revérification voit
 /// comme elle voit une clôture.
 ///
 /// Même contrat que [`recheck_open_locked_in_tx`] — pourquoi verrouillante,
@@ -1436,8 +1454,19 @@ pub async fn count_transactions_for_bank_account(
 /// Sert la garde « principal + autres comptes actifs » de l'archivage : elle
 /// décidait sur la valeur du pré-vol, lue sur le pool hors transaction, et que
 /// le rejeu de la route réutilisait à chaque tentative ; un transfert de
-/// principal commité entre-temps la faisait décider sur un état périmé. Lue
-/// ici, sous verrou, elle voit le dernier état commité.
+/// principal commité entre-temps la faisait décider sur un état périmé. Ce
+/// qui rend la lecture juste dans le cas joué, c'est d'être faite **dans** la
+/// transaction, après la sentinelle `companies` : les bascules du principal
+/// des routes de gestion (`POST`, `PUT`) passent par cette sentinelle et sont
+/// donc déjà sérialisées avec l'archivage, et la vue de la transaction naît
+/// après elle (au décompte des transactions). Le test de R-2
+/// (`archive_rereads_the_primary_flag_inside_its_transaction`) prouve cette
+/// relecture, **non** le `FOR UPDATE` : un `SELECT` simple au même endroit y
+/// verrait la même valeur (mutation équivalente pour ce test, raisonnée). Le
+/// `FOR UPDATE` avance le verrou de la ligne qu'`archive_for_company` aurait
+/// pris de toute façon, et couvre la seule promotion qui ne prend pas la
+/// sentinelle — l'intégration (`upsert_primary_in_tx`, C-29-4-33) — en lisant
+/// le dernier état commité ; ce cas n'est pas joué.
 ///
 /// **Verrou** : l'exclusif de la ligne du compte — celui
 /// qu'[`archive_for_company`] prend ensuite (sa redemande est sans effet),
