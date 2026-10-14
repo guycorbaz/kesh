@@ -12,7 +12,7 @@ consignés au registre `epic-29-choix-autonomes-29-9.md`, **C-29-9-1 à C-29-9-1
 validation des trois premiers correctifs (0/0/0/1, Change Log). Un **quatrième** entre ensuite dans la story, [#678]
 (`bug`, `P4`) — accessibilité de la table de réconciliation —, sous l'**AC11** et la tâche **T10** ; les AC1-AC10 ne
 changent pas, sauf des renvois datés vers l'AC11 (AC8 : CHANGELOG, `sitesTotal` ; AC10 : gates). Choix **C-29-9-19 à
-C-29-9-23**. Passe ciblée P4 de validation, sur le seul diff de l'amendement : prompt `29-9-validate-prompt-p4-ciblee.md`.
+C-29-9-24** (24 : forme du site, P4-3). Passe ciblée P4 de validation, sur le seul diff de l'amendement : prompt `29-9-validate-prompt-p4-ciblee.md`.
 ⚠️ **La clé reste `29-9-trois-petits-correctifs`** (fichier, `sprint-status.yaml`, registre, prompts) : seul le titre
 dit « quatre » (C-29-9-19).
 
@@ -22,13 +22,15 @@ et `P3` — et [#678] — `bug` et `P4`.
 ⛔ **Consigne pour l'orchestrateur — la PR, et elle seule, porte `closes #649 #655 #646 #678`** (corps de la PR ; le dépôt
 merge en squash, et le squash recopie le corps des commits). Les commits de la branche portent **`refs #N`**, jamais
 `closes`/`fixes`, même en prose ou au futur (B4 de la rétrospective 28). Avant la PR : `git log main..HEAD --format=%B
-| grep -niE "\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b"` doit être vide. Après merge, `gh issue view <N> --json state`
+| grep -niE "\b(close[sd]?|fix(e[sd])?|resolve[sd]?):?\s+#[0-9]+"` doit être vide (la forme sans `#N` rend le substantif
+« validation close » du commit P3 : un faux positif). Le message de squash se rédige à la main : GitHub y recopie les
+messages des commits, il faut donc y vérifier l'absence de mot-clé hors du seul `closes` voulu. Après merge, `gh issue view <N> --json state`
 pour les quatre.
 
 ## Story
 
 **As a** Guy, qui veut que chaque release ait moins d'issues ouvertes que la précédente,
-**I want** fermer trois défauts déjà diagnostiqués, chacun à son minimum,
+**I want** fermer quatre défauts déjà diagnostiqués (le quatrième, #678, ajouté le 2026-10-14), chacun à son minimum,
 **so that** le décompte baisse sans risque : la réconciliation dit qu'il reste des transactions et permet de les voir,
 une page rechargée avec succès ne reste plus masquée par une erreur ancienne, et une personne de contact ne s'efface
 plus d'un clic malheureux.
@@ -491,7 +493,8 @@ le `<p>` de l'indication, ni sa clé, ni son repli.
   telles quelles (chaînes de l'API : `bookingDate`, `amount`, `currency`, `counterpartyName`), sans reformatage, si
   bien que le libellé dit ce que l'œil lit sur la ligne.
 - **Deux clés à variables** (C-29-9-20), choisies par `p.transaction.counterpartyName ?` (une contrepartie vide ou
-  nulle n'est pas nommée — la cellule n'affiche rien non plus, `?? ''`) :
+  nulle n'est pas nommée — la cellule n'affiche rien non plus, `?? ''` ; la règle est la **véracité** de la valeur,
+  pas `!= null`, de sorte que `''` et `null` donnent la même clé) :
 
   | Clé | fr-CH |
   |---|---|
@@ -502,6 +505,18 @@ le `<p>` de l'indication, ni sa clé, ni son repli.
   en 29-6) ; les variables sont **les mêmes** dans les quatre locales, le site et le repli (garde
   `i18n-entrees-a-variables.test.ts`) ; repli = valeur `fr-CH` au caractère près (`i18n-repli-divergent-actif.test.ts`).
   Les deux clés sont du dossier `reconciliation` : aucune entrée à `KNOWN_VIOLATIONS`.
+- **Forme du site (C-29-9-24).** **Deux appels `i18nMsg` à clé littérale**, chacun dans une branche d'un ternaire sur
+  `p.transaction.counterpartyName` : `counterpartyName ? i18nMsg('reconciliation-labels-select-transaction', '…', { date,
+  amount, currency, counterparty }) : i18nMsg('reconciliation-labels-select-transaction-no-counterparty', '…', { date,
+  amount, currency })`. **Jamais** une clé calculée (`i18nMsg(cond ? 'a' : 'b', …)`) : établi au code des gardes
+  (`i18n-entrees-a-variables.test.ts:125` et `i18n-repli-divergent-actif.test.ts:122` :
+  `if (site.arg?.kind !== 'literal') continue;`, lecteur `i18n-literal-reader.js`), les trois gardes (variables
+  repli ↔ catalogue, entre locales, site ↔ repli) ne retiennent **que** les appels dont la clé est littérale ; une clé
+  conditionnelle leur est invisible et ne rougirait jamais. **Contrôle** : un test neuf dans
+  `i18n-entrees-a-variables.test.ts`, à côté de la borne des cinq clés de la 23-5 (qu'on ne modifie pas), « les deux
+  entrées à variables de la story 29-9 sont bien relevées » : mêmes `sitesAVariables()`, liste nommée
+  `reconciliation-labels-select-transaction` et `reconciliation-labels-select-transaction-no-counterparty` ; il est
+  rouge au sol (clés absentes) et rougit si le site passe en clé calculée (M30). Tâche T10.
 - Le `data-testid`, le `data-tx-id`, `checked` et `onchange` ne changent pas : les sélecteurs des tests et des E2E
   existants (`[data-testid="tx-checkbox"][data-tx-id=…]`) restent valides.
 - L'en-tête vide de la colonne (`<th class="text-left"></th>`) **ne change pas** : chaque case porte son propre nom,
@@ -522,7 +537,9 @@ le `<p>` de l'indication, ni sa clé, ni son repli.
 
   La région est rendue **dès le rendu de la liste** (branche « liste non vide », la seule où l'indication a un objet),
   vide tant qu'aucune ligne sans proposition n'est cochée ; son **contenu** suit `selectionHasUnmatched`, le **nœud**
-  reste le même — c'est ce qui rend l'annonce fiable (C-29-9-21). Commentaire au site : #678, pourquoi la région
+  reste le même tant qu'une même liste est affichée, d'une sélection à l'autre — c'est ce qui rend l'annonce fiable
+  (C-29-9-21). Un `load()` (acceptation, rejet, *Afficher aussi…*) pose `loading = true`, remplace toute la liste, donc
+  la région, et vide `selected` (C-29-9-5) : la région est alors recréée, vide, ce qui est voulu. Commentaire au site : #678, pourquoi la région
   englobe le `{#if}` et non l'inverse, et qu'elle ne doit pas entrer dans un `{#key}` ni dans le `{#if}`.
 - **Contrat du `data-testid` de la 29-6 : intact.** `reconciliation-unmatched-not-acceptable-hint` reste sur le `<p>`,
   présent si et seulement si `selectionHasUnmatched` : les assertions de présence et d'absence de Vitest
@@ -535,8 +552,9 @@ le `<p>` de l'indication, ni sa clé, ni son repli.
   *Rejeter*, et le dernier enfant de la rangée = la région. Son intention (C-29-6-18 : dans la rangée, après *Rejeter*)
   et son volet « repli = catalogue fr-CH » restent à l'octet ; le commentaire `// C-29-6-18 …` gagne une ligne qui
   nomme #678. C'est le test V22.
-- **Rendu** : identique à celui de la 29-6. Le `div` est un élément de la rangée `flex-wrap gap-2` ; vide, il n'a ni
-  largeur ni hauteur ; plein, il porte le `<p>` comme la rangée le portait. Vérifié par les captures clair et sombre que
+- **Rendu** : celui de la 29-6, à une nuance près. Le `div` est un élément de la rangée `flex-wrap gap-2` ; vide, il
+  n'a ni largeur ni hauteur, **mais il reçoit l'espacement `gap-2`** après *Rejeter* (un élément flex vide reste un
+  élément flex) et peut, à largeur étroite, ajouter une ligne vide à la rangée repliée ; plein, il porte le `<p>` comme la rangée le portait. Vérifié par les captures clair et sombre que
   produit déjà `reconciliation-reject-unmatched.spec.ts` (relancée, non modifiée), comparées à celles de la 29-6 ; écart
   éventuel déclaré au Dev Agent Record.
 
@@ -557,10 +575,10 @@ correctif et vus rouges, sortie copiée au Dev Agent Record ; le mock i18n du fi
 - V19 deux lignes, l'une avec proposition, l'autre sans (fabriques du fichier) → `getByRole('checkbox', { name })`
   trouve chacune, `name` = la valeur fr-CH de `reconciliation-labels-select-transaction` remplie des valeurs de la
   fabrique (sans proposition : `2026-05-15`, `50.00`, `CHF`, `UNKNOWN`). Rouge au sol : aucune case n'a de nom ;
-- V20 `counterpartyName: null` → le nom est exactement la valeur fr-CH de
+- V20 deux cas, `counterpartyName: null` **et** `counterpartyName: ''` → le nom est exactement la valeur fr-CH de
   `reconciliation-labels-select-transaction-no-counterparty` remplie (aucune virgule finale) ;
 - V21 **la région précède le changement** : au premier rendu de la liste, `getByTestId('reconciliation-selection-status')`
-  existe, porte `role="status"` et `aria-live="polite"`, son texte est vide, l'indication absente ; référence gardée.
+  existe, porte `role="status"`, `aria-live="polite"` et `aria-atomic="true"`, son texte est vide, l'indication absente ; référence gardée.
   Cocher la ligne sans proposition → l'indication est **dans** la région (`region.contains(hint)`), et
   `getByTestId('reconciliation-selection-status')` est **le même nœud** que la référence. Décocher → la région est
   toujours là (même nœud), vide. Rouge au sol : pas de région ;
@@ -585,6 +603,9 @@ capture neuve** : rien de visible ne change (C-29-9-22) ; celles de la 29-6 serv
 | M25 | `role="status"` et `aria-live="polite"` retirés de la région | V21 |
 | M26 | le `<p>` de l'indication sorti de la région, placé après elle | V21, V22 |
 | M27 | la région enveloppée d'un `{#key selectionHasUnmatched}` (nœud recréé au changement) | V21 |
+| M28 | `aria-atomic="true"` retiré de la région (ou passé à `false`) | V21 |
+| M29 | la règle `counterpartyName ?` remplacée par `counterpartyName != null ?` | V20 (cas `''`) |
+| M30 | les deux appels littéraux remplacés par un seul appel à clé conditionnelle | le test de relevé des deux clés (T10) |
 
 *Zone partagée avec la 29-6* (§ *Zones partagées*) : le bloc de l'indication (`:316-323`), la case (`:357-363`) et le
 test de position (`:965-986`) sont de la 29-6 ; la 29-9 les **enveloppe** ou leur **ajoute** un attribut, en delta sur
@@ -614,7 +635,8 @@ n'est ajoutée ; les autres messages de l'écran (succès, erreur, bilan des éc
 - [ ] **T4** — #646 (AC7) : V10-V11 rouges, puis le correctif ; M11-M12 ; commit `fix(contacts): … (refs #646)`.
 - [ ] **T10** *(amendement #678 — s'exécute après T4 et avant T5, malgré son numéro)* — AC11 : V19-V22 rouges
   (sortie copiée), puis le libellé des cases, la région d'annonce, le test de position de la 29-6 amendé en delta ;
-  deux clés ×4 ; M22-M27 ; captures de `reconciliation-reject-unmatched.spec.ts` relancée comparées à celles de la
+  deux clés ×4 **posées en deux appels `i18nMsg` littéraux** (C-29-9-24) et le test de relevé des deux clés dans
+  `i18n-entrees-a-variables.test.ts` (rouge au sol) ; M22-M30 ; captures de `reconciliation-reject-unmatched.spec.ts` relancée comparées à celles de la
   29-6 ; commit `fix(reconciliation): … (refs #678)`. Si la 29-6 n'est pas mergée au moment de T0, T10 attend : sans
   elle, l'indication n'existe pas (C-29-9-23).
 - [ ] **T5** — i18n (AC8) : quatre clés, une réécrite, ×4 ; `sitesTotal` recompté ; `KNOWN_VIOLATIONS` de
@@ -878,3 +900,21 @@ montre que les 100 plus récentes ».
   AC1-AC10 inchangés sur le fond. Modules recomptés : cinq / sept, aucun neuf, dérogation tenue. Choix **C-29-9-19 à
   23**. Recomptes à la source : **11 AC**, T0-T10 (**11**), **V1-V22** (22 ; +4), **M1-M27** (27 ; +6), choix
   **C-29-9-1 à 23** (+5). Passe ciblée P4 à lancer : `29-9-validate-prompt-p4-ciblee.md` (Haiku, une lentille).
+
+- 2026-10-14 — **Validation P4, passe ciblée remédiée** (Opus 5.5 ; Haiku 5.5, une lentille sur l'amendement #678 ;
+  rapport `kesh-gate-logs/29-9-validate-p4-ciblee.md`) : **0/0/2/6**. Tous traités, aucun refus.
+  - P4-1 (MEDIUM) — le corps de la section 29-9 du fichier d'epic dit « −4 issues, −4 bugs, quatre défauts » ; les
+    quatre labels `bug` relevés par `gh issue view` (#649, #655, #646 : `bug,P3` ; #678 : `bug,P4`).
+  - P4-3 (MEDIUM) — établi au code : les trois gardes i18n ne retiennent que les appels à clé littérale
+    (`i18n-entrees-a-variables.test.ts:125`, `i18n-repli-divergent-actif.test.ts:122`). AC11 prescrit la forme (deux
+    appels littéraux sous un ternaire, jamais une clé calculée), un test de relevé des deux clés, M30, T10 (C-29-9-24).
+  - LOW : P4-2 (énoncé « quatre défauts », registre : issues #649, #655, #646, #678) ; P4-4 (rendu : le `div` vide
+    reçoit le `gap-2`, écrit) ; P4-5 (`aria-atomic` dans V21, M28) ; P4-6 (V20 à deux cas `null` et `''`, règle de
+    véracité écrite, M29) ; P4-7 (commande de contrôle des mots-clés en `…:?\s+#[0-9]+`, message de squash à rédiger à
+    la main) ; P4-8 (« même nœud » précisé : d'une sélection à l'autre, un `load()` recrée la région).
+  - Laissé : la consigne du prompt P4 (`29-9-validate-prompt-p4-ciblee.md:88`) garde l'ancienne commande, relevé daté de
+    la passe ; l'annotation de l'epic (l.117) reste un relevé daté. L'observation sans finding sur l'AC9 (cellule
+    contrepartie vide) n'est pas traitée : la fixture CAMT porte `Acme SA`.
+  - Recomptes à la source : **11 AC**, T0-T10 (**11**), **V1-V22** (22, inchangé), **M1-M30** (30 ; +3 : M28-M30),
+    choix **C-29-9-1 à 24** (+1). Symptômes grepés : « trois défauts », « −3 », « Trois défauts », liste d'issues sans
+    #678 (résidus vivants corrigés ; entrées datées et prompts de validation passés laissés).

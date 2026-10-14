@@ -1,7 +1,7 @@
 # Epic 29 — registre des choix autonomes de la Story 29-9
 
 *Registre propre à la story, à verser **par union** au registre de l'epic (`epic-29-choix-autonomes.md`). Fiche :
-`29-9-trois-petits-correctifs.md`. Issues : #649, #655, #646. Relevés sur `fcd2ae75`.*
+`29-9-trois-petits-correctifs.md`. Issues : #649, #655, #646, #678 (#678 ajoutée par l'amendement, C-29-9-19). Relevés sur `fcd2ae75`.*
 
 ---
 
@@ -336,4 +336,11 @@
   attend la 29-6 sur `main` (l'ordre C-29-9-11 l'imposait déjà à toute la story). Numéros de ligne de l'AC11 relus en T0.
 - **Écartées** : renuméroter T5-T9 (casserait les renvois des rapports de validation) ; écrire l'AC11 sur le sol de
   `main` (l'indication n'y existe pas).
+- **Réversible** : oui.
+
+### C-29-9-24 — #678 : deux appels littéraux, un test de relevé, les cinq clés de la 23-5 intactes
+
+- **Contexte** : les trois gardes i18n ne retiennent que les appels à clé littérale (`site.arg?.kind !== 'literal'`) ; une clé choisie par un ternaire à l'intérieur de l'appel leur serait invisible (P4-3).
+- **Retenu** : deux appels `i18nMsg` à clé littérale sous un ternaire sur `counterpartyName` ; un test neuf dans `i18n-entrees-a-variables.test.ts` qui nomme les deux clés (mutation M30) ; la borne des cinq clés de la 23-5 n'est pas modifiée.
+- **Écartées** : une clé calculée (invisible aux gardes) ; élargir la borne des cinq clés (elle porte le titre « cinq ») ; ne rien ajouter et le déclarer au Dev Agent Record (la garde resterait muette).
 - **Réversible** : oui.

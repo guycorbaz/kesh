@@ -146,7 +146,8 @@ migration, un geste humain sans présélection —, et réécrit « puis rejetez
 ### 29-9 — Quatre petits correctifs ([#649], [#655], [#646], P3 ; [#678], P4)
 
 **Ajoutée le 2026-10-14 sur décision de Guy**, pour tenir la règle de release de la v0.13.4 (moins d'issues ouvertes
-qu'au tag v0.13.3) : −3 issues, −3 bugs. Trois défauts indépendants, chacun à son minimum, sur le précédent de la
+qu'au tag v0.13.3) : −4 issues, −4 bugs (#649, #655, #646 et #678 portent tous `bug`, relevé GitHub du 2026-10-14). Quatre défauts
+indépendants, chacun à son minimum, sur le précédent de la
 28-8 (dérogation au découpage écrite dans la fiche) : la réconciliation dit qu'il reste des transactions au-delà des
 100 plus récentes et les montre jusqu'à 500 (frontend, plus un test Rust qui fige le plafond) ; une relecture
 ancienne ne masque plus le détail d'un import, ni la page d'un profil bancaire (défaut latent sur cette dernière) ;
