@@ -821,6 +821,26 @@ describe('ReconciliationProposals — la phrase de priorité (Story 29-3)', () =
 		expect(queryByTestId('reconciliation-priority-hint')).toBeNull();
 	});
 
+	it('rechargement en erreur après une liste à candidates ⇒ pas de phrase (mutation M9b : phrase hors de la branche)', async () => {
+		// Le rechargement qui suit « Accepter » échoue : `proposals` garde les lignes du premier
+		// chargement, et seule la branche « liste non vide » retient la phrase.
+		mockApi.getProposals
+			.mockResolvedValueOnce({
+				proposals: [makeProposalWithCandidate(1, 101, 0.1)],
+				hasMore: false,
+			} satisfies GetProposalsResponse)
+			.mockRejectedValueOnce({ code: 'INTERNAL_ERROR', message: 'Panne.', status: 500 });
+		mockApi.acceptProposals.mockResolvedValue({ accepted: [], failed: [] } satisfies AcceptResponse);
+		const { findByTestId, getByTestId, queryByTestId } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+		await fireEvent.click(await findByTestId('tx-checkbox'));
+		expect(getByTestId('reconciliation-priority-hint')).not.toBeNull();
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+		await findByTestId('reconciliation-error');
+		expect(queryByTestId('reconciliation-priority-hint')).toBeNull();
+	});
+
 	it('aucune ligne n’a de candidate ⇒ pas de phrase (mutation M9)', async () => {
 		mockApi.getProposals.mockResolvedValue({
 			proposals: [makeProposalWithoutCandidate(1), makeProposalWithoutCandidate(2)],
