@@ -45,7 +45,7 @@ describe('ContactPersonsManager — confirmation de la suppression (Story 29-9, 
 	});
 
 	it('V10 — refus ⇒ aucune suppression, la personne reste listée ; la question la nomme (M11)', async () => {
-		const confirmMock = vi.fn(() => false);
+		const confirmMock = vi.fn((_message: string) => false);
 		// jsdom n'implémente pas `window.confirm` (patron `BankProfileList.test.ts`).
 		vi.stubGlobal('confirm', confirmMock);
 		const { findByTestId, getByText } = render(ContactPersonsManager, { contactId: 7 });
@@ -58,7 +58,7 @@ describe('ContactPersonsManager — confirmation de la suppression (Story 29-9, 
 	});
 
 	it('V11 — acceptation ⇒ suppression de la personne, puis liste relue (M12)', async () => {
-		const confirmMock = vi.fn(() => true);
+		const confirmMock = vi.fn((_message: string) => true);
 		vi.stubGlobal('confirm', confirmMock);
 		listMock.mockResolvedValueOnce([PERSONNE]).mockResolvedValue([]);
 		const { findByTestId } = render(ContactPersonsManager, { contactId: 7 });
