@@ -1256,7 +1256,7 @@ reconciliation-errors-invoice-not-eligible = Diese Rechnung ist für den Abgleic
 # Story 28-5a (#526) — refus de l'annulation d'un rejet (409).
 reconciliation-errors-transaction-not-rejected = Diese Transaktion ist nicht abgelehnt: Die Ablehnung wurde möglicherweise bereits aufgehoben, oder sie wurde abgestimmt.
 # Story 29-8 (#670) — refus du rattachement à un règlement (409).
-reconciliation-errors-settlement-not-linkable = Diese Zahlung kann dieser Transaktion nicht zugeordnet werden: Die Transaktion ist keine Gutschrift in CHF, oder die Zahlung liegt auf einem anderen Bankkonto, ihr Betrag stimmt nicht überein, oder sie ist bereits abgestimmt.
+reconciliation-errors-settlement-not-linkable = Diese Zahlung kann dieser Transaktion nicht zugeordnet werden: Die Transaktion ist keine Gutschrift in CHF, oder die Zahlung ist keine Überweisung auf dieses Bankkonto (eine Zahlung bar oder über ein anderes Konto, oder eine Ausbuchung, ist es nicht), ihr Betrag stimmt nicht überein, sie ist bereits abgestimmt, oder sie wurde auf einem früheren Hauptbuchkonto gebucht.
 reconciliation-toast-accept-success = { $count } Transaktion(en) erfolgreich abgeglichen.
 reconciliation-toast-reject-success = { $count } Transaktion(en) erfolgreich abgelehnt.
 

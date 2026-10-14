@@ -1256,7 +1256,7 @@ reconciliation-errors-invoice-not-eligible = This invoice is not eligible for re
 # Story 28-5a (#526) — refus de l'annulation d'un rejet (409).
 reconciliation-errors-transaction-not-rejected = This transaction is not rejected: its rejection may already have been undone, or it has been reconciled.
 # Story 29-8 (#670) — refus du rattachement à un règlement (409).
-reconciliation-errors-settlement-not-linkable = This payment cannot be linked to this transaction: the transaction is not a credit in CHF, or the payment is on another bank account, its amount does not match, or it is already reconciled.
+reconciliation-errors-settlement-not-linkable = This payment cannot be linked to this transaction: the transaction is not a credit in CHF, or the payment is not a transfer to this bank account (a payment in cash or by another account, or a write-off, is not), its amount does not match, it is already reconciled, or it was posted to a former ledger account.
 reconciliation-toast-accept-success = { $count } transaction(s) reconciled successfully.
 reconciliation-toast-reject-success = { $count } transaction(s) rejected successfully.
 

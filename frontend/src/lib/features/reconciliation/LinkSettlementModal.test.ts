@@ -24,12 +24,16 @@ import LinkSettlementModal from './LinkSettlementModal.svelte';
 
 const mockApi = vi.mocked(api);
 
-function proposal(): ReconciliationProposal {
+function proposal(
+	bankTransactionId = 42,
+	bookingDate = '2026-06-18',
+	valueDate: string | null = '2026-06-18',
+): ReconciliationProposal {
 	return {
-		bankTransactionId: 42,
+		bankTransactionId,
 		transaction: {
-			bookingDate: '2026-06-18',
-			valueDate: '2026-06-18',
+			bookingDate,
+			valueDate,
 			amount: '100.03',
 			currency: 'CHF',
 			counterpartyName: 'Dubarde SàRL',
@@ -192,6 +196,160 @@ describe('LinkSettlementModal', () => {
 			expect(radios[0].checked).toBe(false);
 		});
 		expect((getByTestId('link-submit') as HTMLButtonElement).disabled).toBe(true);
+	});
+
+	// Revue de code P1, B3 (C-29-8-38) : les deux autres refus d'une course relisent aussi.
+	it.each([
+		['NOT_FOUND', 404, 'Ressource introuvable.'],
+		['RECONCILIATION_TRANSACTION_NOT_PENDING', 404, 'Transaction déjà réconciliée.'],
+	])('%s au rattachement : la liste est relue', async (code, status, message) => {
+		mockApi.getLinkCandidates
+			.mockResolvedValueOnce({ bankTransactionId: 42, candidates: [candidate(1, '0.00')] })
+			.mockResolvedValueOnce({ bankTransactionId: 42, candidates: [] });
+		mockApi.linkTransaction.mockRejectedValue({ code, message, status });
+		const { findAllByTestId, getByTestId, findByTestId } = mount();
+		await fireEvent.click((await findAllByTestId('link-candidate-radio'))[0]);
+		await fireEvent.click(getByTestId('link-submit'));
+		expect((await findByTestId('link-error')).textContent).toContain(message);
+		await waitFor(() => expect(mockApi.getLinkCandidates).toHaveBeenCalledTimes(2));
+		await findByTestId('link-empty');
+	});
+
+	it('un autre refus ne relit pas la liste', async () => {
+		mockApi.getLinkCandidates.mockResolvedValue({
+			bankTransactionId: 42,
+			candidates: [candidate(1, '0.00')],
+		});
+		mockApi.linkTransaction.mockRejectedValue({
+			code: 'RECONCILIATION_ACCOUNT_LOCKED',
+			message: 'Le compte est verrouillé.',
+			status: 409,
+		});
+		const { findAllByTestId, getByTestId, findByTestId } = mount();
+		await fireEvent.click((await findAllByTestId('link-candidate-radio'))[0]);
+		await fireEvent.click(getByTestId('link-submit'));
+		await findByTestId('link-error');
+		expect(mockApi.getLinkCandidates).toHaveBeenCalledTimes(1);
+	});
+
+	// Revue de code P1, A7 (C-29-8-39) : la date rappelée est celle d'où se comptent les jours.
+	it('le rappel montre la date de valeur, à défaut la date de comptabilisation', async () => {
+		mockApi.getLinkCandidates.mockResolvedValue({ bankTransactionId: 42, candidates: [] });
+		const { getByTestId, rerender, onOpenChange, onSuccess } = mount();
+		const props = (p: ReconciliationProposal) => ({
+			open: true,
+			onOpenChange,
+			proposal: p,
+			onSuccess,
+		});
+		await rerender(props(proposal(42, '2026-06-18', '2026-06-16')));
+		await waitFor(() =>
+			expect(getByTestId('link-tx-summary').textContent).toContain('2026-06-16'),
+		);
+		expect(getByTestId('link-tx-summary').textContent).not.toContain('2026-06-18');
+		await rerender(props(proposal(43, '2026-06-18', null)));
+		await waitFor(() =>
+			expect(getByTestId('link-tx-summary').textContent).toContain('2026-06-18'),
+		);
+	});
+
+	describe('garde de session (revue de code P1, B1/B2/E3, C-29-8-37)', () => {
+		function differe<T>() {
+			let resolve!: (v: T) => void;
+			let reject!: (e: unknown) => void;
+			const promise = new Promise<T>((res, rej) => {
+				resolve = res;
+				reject = rej;
+			});
+			return { promise, resolve, reject };
+		}
+		type Candidats = Awaited<ReturnType<typeof api.getLinkCandidates>>;
+		type Lien = Awaited<ReturnType<typeof api.linkTransaction>>;
+		const reponse = (bankTransactionId: number, ids: number[]): Candidats => ({
+			bankTransactionId,
+			candidates: ids.map((i) => candidate(i, '0.00')),
+		});
+		const lien: Lien = { bankTransactionId: 42, journalEntryId: 201, invoiceId: 9, settlementId: 1 };
+		const ids = (rows: HTMLElement[]) => rows.map((r) => r.dataset.settlementId);
+		/** Laisse s'écouler les continuations des promesses résolues. */
+		const vider = () => new Promise((r) => setTimeout(r, 0));
+
+		it('un chargement périmé ne remplace pas la liste de la transaction courante', async () => {
+			const a = differe<Candidats>();
+			mockApi.getLinkCandidates.mockReturnValueOnce(a.promise).mockResolvedValueOnce(reponse(43, [7]));
+			const { rerender, onOpenChange, onSuccess, findAllByTestId } = mount();
+			await rerender({ open: true, onOpenChange, proposal: proposal(43), onSuccess });
+			await waitFor(() => expect(mockApi.getLinkCandidates).toHaveBeenLastCalledWith(43));
+			expect(ids(await findAllByTestId('link-candidate-row'))).toEqual(['7']);
+			// La réponse de la transaction 42 arrive APRÈS celle de la 43.
+			a.resolve(reponse(42, [1, 2]));
+			await vider();
+			expect(ids(await findAllByTestId('link-candidate-row'))).toEqual(['7']);
+		});
+
+		it('un refus arrivé après réouverture sur une autre transaction ne touche pas la modale', async () => {
+			const envoi = differe<Lien>();
+			mockApi.getLinkCandidates
+				.mockResolvedValueOnce(reponse(42, [1]))
+				.mockResolvedValueOnce(reponse(43, [7]))
+				.mockResolvedValue(reponse(42, [1]));
+			mockApi.linkTransaction.mockReturnValueOnce(envoi.promise);
+			const { rerender, onOpenChange, onSuccess, findAllByTestId, getByTestId, queryByTestId } =
+				mount();
+			await fireEvent.click((await findAllByTestId('link-candidate-radio'))[0]);
+			await fireEvent.click(getByTestId('link-submit'));
+			expect(mockApi.linkTransaction).toHaveBeenCalledWith(42, 1);
+			// Fermée par Échap pendant l'envoi, puis rouverte sur la transaction 43.
+			await rerender({ open: false, onOpenChange, proposal: null, onSuccess });
+			await rerender({ open: true, onOpenChange, proposal: proposal(43), onSuccess });
+			expect(ids(await findAllByTestId('link-candidate-row'))).toEqual(['7']);
+			// La nouvelle session n'hérite pas de l'envoi en cours.
+			expect(
+				((await findAllByTestId('link-candidate-radio'))[0] as HTMLInputElement).disabled,
+			).toBe(false);
+			envoi.reject({
+				code: 'RECONCILIATION_SETTLEMENT_NOT_LINKABLE',
+				message: 'Ce règlement ne peut pas être rattaché à cette transaction.',
+				status: 409,
+			});
+			await vider();
+			// Ni message, ni relecture de la liste de la 42.
+			expect(queryByTestId('link-error')).toBeNull();
+			expect(mockApi.getLinkCandidates).toHaveBeenCalledTimes(2);
+			expect(ids(await findAllByTestId('link-candidate-row'))).toEqual(['7']);
+		});
+
+		it('un succès arrivé après réouverture ne ferme pas la modale courante', async () => {
+			const envoi = differe<Lien>();
+			mockApi.getLinkCandidates
+				.mockResolvedValueOnce(reponse(42, [1]))
+				.mockResolvedValueOnce(reponse(43, [7]));
+			mockApi.linkTransaction.mockReturnValueOnce(envoi.promise);
+			const { rerender, onOpenChange, onSuccess, findAllByTestId, getByTestId } = mount();
+			await fireEvent.click((await findAllByTestId('link-candidate-radio'))[0]);
+			await fireEvent.click(getByTestId('link-submit'));
+			await rerender({ open: false, onOpenChange, proposal: null, onSuccess });
+			await rerender({ open: true, onOpenChange, proposal: proposal(43), onSuccess });
+			await findAllByTestId('link-candidate-row');
+			envoi.resolve(lien);
+			await vider();
+			expect(onSuccess).not.toHaveBeenCalled();
+			expect(onOpenChange).not.toHaveBeenCalled();
+			expect(ids(await findAllByTestId('link-candidate-row'))).toEqual(['7']);
+		});
+
+		it('un succès arrivé après fermeture prévient le parent', async () => {
+			const envoi = differe<Lien>();
+			mockApi.getLinkCandidates.mockResolvedValueOnce(reponse(42, [1]));
+			mockApi.linkTransaction.mockReturnValueOnce(envoi.promise);
+			const { rerender, onOpenChange, onSuccess, findAllByTestId, getByTestId } = mount();
+			await fireEvent.click((await findAllByTestId('link-candidate-radio'))[0]);
+			await fireEvent.click(getByTestId('link-submit'));
+			await rerender({ open: false, onOpenChange, proposal: null, onSuccess });
+			envoi.resolve(lien);
+			await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+			expect(onOpenChange).not.toHaveBeenCalled();
+		});
 	});
 
 	it('les replis des textes égalent le catalogue fr-CH', () => {

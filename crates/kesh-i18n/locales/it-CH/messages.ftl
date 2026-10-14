@@ -1256,7 +1256,7 @@ reconciliation-errors-invoice-not-eligible = Questa fattura non è idonea alla r
 # Story 28-5a (#526) — refus de l'annulation d'un rejet (409).
 reconciliation-errors-transaction-not-rejected = Questa transazione non è rifiutata: il rifiuto potrebbe essere già stato annullato, oppure è stata riconciliata.
 # Story 29-8 (#670) — refus du rattachement à un règlement (409).
-reconciliation-errors-settlement-not-linkable = Questo pagamento non può essere collegato a questa transazione: la transazione non è un accredito in CHF, oppure il pagamento è su un altro conto bancario, il suo importo non corrisponde, oppure è già riconciliato.
+reconciliation-errors-settlement-not-linkable = Questo pagamento non può essere collegato a questa transazione: la transazione non è un accredito in CHF, oppure il pagamento non è un bonifico su questo conto bancario (un pagamento in contanti o tramite altro conto, o un saldo, non lo è), il suo importo non corrisponde, è già riconciliato, oppure è stato registrato su un precedente conto di contabilità generale.
 reconciliation-toast-accept-success = { $count } transazione/i riconciliata/e con successo.
 reconciliation-toast-reject-success = { $count } transazione/i rifiutata/e con successo.
 

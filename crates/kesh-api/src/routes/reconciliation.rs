@@ -5219,14 +5219,19 @@ pub struct LinkResponse {
 /// l'écriture du règlement ; **aucune** écriture, aucun règlement, aucun
 /// lettrage ; trace `reconciliation.linked`.
 ///
-/// Ordre des refus, chacun sans rien écrire : `400 VALIDATION_ERROR` →
-/// `404 NOT_FOUND` (transaction) → pré-vol ([`link_preflight`]) → sous le
-/// verrou nommé du compte, dans [`kesh_db::repositories::reconciliation_link::link_in_tx`] :
-/// `404 NOT_FOUND` (transaction disparue, règlement absent ou d'une autre
-/// société), `404 RECONCILIATION_TRANSACTION_NOT_PENDING`, `409
-/// BANK_ACCOUNT_CLOSED` (garde dans la transaction), `409
-/// RECONCILIATION_SETTLEMENT_NOT_LINKABLE`, `409 OPTIMISTIC_LOCK_CONFLICT`
-/// (défensif) ; et `409 RECONCILIATION_ACCOUNT_LOCKED`.
+/// Ordre des refus, chacun sans rien écrire (le `403` du rôle et de la clé
+/// `read` vient avant, au middleware) : `400 VALIDATION_ERROR` →
+/// `404 NOT_FOUND` (transaction) → pré-vol ([`link_preflight`]) → `409
+/// RECONCILIATION_ACCOUNT_LOCKED` (verrou nommé du compte) → sous ce verrou,
+/// dans [`kesh_db::repositories::reconciliation_link::link_in_tx`] : `404
+/// NOT_FOUND` (transaction disparue), `404
+/// RECONCILIATION_TRANSACTION_NOT_PENDING`, `409
+/// RECONCILIATION_SETTLEMENT_NOT_LINKABLE` (condition 1, avant toute lecture
+/// du règlement), `404 NOT_FOUND` (règlement absent ou d'une autre société),
+/// `409 BANK_ACCOUNT_CLOSED` (garde dans la transaction), `409
+/// RECONCILIATION_SETTLEMENT_NOT_LINKABLE` (conditions 2 à 4), `409
+/// OPTIMISTIC_LOCK_CONFLICT` (défensif). C'est l'ordre de la table de
+/// `docs/api-external.md`.
 ///
 /// ⚠️ **Rejouée sur interblocage** (opération `reconciliation::link`, comme
 /// `post_manual`) bien qu'elle n'écrive rien au journal : classée

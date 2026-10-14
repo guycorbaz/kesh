@@ -1320,7 +1320,7 @@ reconciliation-errors-invoice-not-eligible = Cette facture n'est pas éligible �
 # Story 28-5a (#526) — refus de l'annulation d'un rejet (409).
 reconciliation-errors-transaction-not-rejected = Cette transaction n'est pas rejetée : son rejet a peut-être déjà été annulé, ou elle a été rapprochée.
 # Story 29-8 (#670) — refus du rattachement à un règlement (409).
-reconciliation-errors-settlement-not-linkable = Ce règlement ne peut pas être rattaché à cette transaction : la transaction n'est pas un crédit en CHF, ou le règlement est sur un autre compte bancaire, son montant ne correspond pas, ou il est déjà rapproché.
+reconciliation-errors-settlement-not-linkable = Ce règlement ne peut pas être rattaché à cette transaction : la transaction n'est pas un crédit en CHF, ou le règlement n'est pas un virement sur ce compte bancaire (un règlement par espèces ou autre compte, ou un solde, ne l'est pas), son montant ne correspond pas, il est déjà rapproché, ou il a été passé sur un ancien compte du grand livre.
 reconciliation-toast-accept-success = { $count } transaction(s) réconciliée(s) avec succès.
 reconciliation-toast-reject-success = { $count } transaction(s) rejetée(s) avec succès.
 

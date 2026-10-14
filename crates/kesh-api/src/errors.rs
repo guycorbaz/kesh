@@ -971,9 +971,11 @@ pub enum AppError {
     /// Story 29-8 (#670) — le rattachement
     /// (`POST /reconciliation/transactions/{id}/link`) vise un règlement que la
     /// règle n'admet pas : la transaction n'est pas un crédit en CHF, ou le
-    /// règlement est sur un autre compte bancaire, son montant ne correspond
-    /// pas, ou son écriture est déjà rapprochée — **un seul code** pour les
-    /// conditions 1 à 4 (C-29-8-10). L'écran n'offre que des candidats : ce
+    /// règlement n'est pas un virement sur ce compte bancaire (compte interne
+    /// ou solde compris), son montant ne correspond pas, son écriture est déjà
+    /// rapprochée ou passée sur un ancien compte du grand livre — **un seul
+    /// code** pour les conditions 1 à 4 (C-29-8-10). L'écran n'offre que des
+    /// candidats : ce
     /// refus ne se voit que par une course ou un appel direct ; relire la
     /// liste. → `409 RECONCILIATION_SETTLEMENT_NOT_LINKABLE`,
     /// `details.bankTransactionId` et `details.settlementId`.
@@ -2841,7 +2843,7 @@ impl IntoResponse for AppError {
             } => {
                 let msg = t(
                     "reconciliation-errors-settlement-not-linkable",
-                    "Ce règlement ne peut pas être rattaché à cette transaction : la transaction n'est pas un crédit en CHF, ou le règlement est sur un autre compte bancaire, son montant ne correspond pas, ou il est déjà rapproché.",
+                    "Ce règlement ne peut pas être rattaché à cette transaction : la transaction n'est pas un crédit en CHF, ou le règlement n'est pas un virement sur ce compte bancaire (un règlement par espèces ou autre compte, ou un solde, ne l'est pas), son montant ne correspond pas, il est déjà rapproché, ou il a été passé sur un ancien compte du grand livre.",
                 );
                 let body = serde_json::json!({
                     "error": {

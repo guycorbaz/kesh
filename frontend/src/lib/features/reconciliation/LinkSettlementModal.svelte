@@ -9,7 +9,13 @@
 
   Sur `409 RECONCILIATION_SETTLEMENT_NOT_LINKABLE` (la liste a changé entre l'ouverture et le
   clic), la modale recharge la liste et remet le choix à vide — le message dit « relire la
-  liste », la modale le fait (C-29-8-24).
+  liste », la modale le fait (C-29-8-24). De même sur les deux autres refus d'une course :
+  `404 NOT_FOUND` (règlement annulé depuis la fiche) et `404 RECONCILIATION_TRANSACTION_NOT_PENDING`
+  (transaction rapprochée ailleurs) — revue de code P1, B3 (C-29-8-38).
+
+  Garde de session (revue de code P1, B1/E3, C-29-8-37) : chaque ouverture, fermeture ou
+  changement de transaction ouvre une session neuve ; un chargement ou une soumission lancés
+  dans une session précédente n'agissent jamais sur la modale courante.
 -->
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
@@ -37,8 +43,18 @@
 	let errorMsg = $state('');
 
 	// Garde de génération : une réponse d'un chargement périmé (réouverture, autre
-	// transaction) ne remplace pas la liste courante.
+	// transaction, rechargement plus récent) ne remplace pas la liste courante.
 	let loadGen = 0;
+	// Garde de session : incrémentée à chaque ouverture, fermeture ou changement de
+	// transaction. Ni `$state` ni lue par l'effet : elle ne déclenche rien.
+	let session = 0;
+
+	/** Les refus d'une course : la liste a changé, la modale la relit. */
+	const RELIRE_SUR = new Set([
+		'RECONCILIATION_SETTLEMENT_NOT_LINKABLE',
+		'NOT_FOUND',
+		'RECONCILIATION_TRANSACTION_NOT_PENDING',
+	]);
 
 	async function loadCandidates(txId: number): Promise<void> {
 		const myGen = ++loadGen;
@@ -58,12 +74,19 @@
 		}
 	}
 
-	// À chaque ouverture : remise à zéro et chargement.
+	// À chaque ouverture, fermeture ou changement de transaction : session neuve ;
+	// à l'ouverture, remise à zéro et chargement.
 	$effect(() => {
-		if (open && proposal) {
+		const ouverte = open ? proposal : null;
+		session++;
+		submitting = false;
+		if (ouverte) {
 			errorMsg = '';
 			candidates = [];
-			void loadCandidates(proposal.bankTransactionId);
+			void loadCandidates(ouverte.bankTransactionId);
+		} else {
+			// Un chargement encore en vol ne s'appliquera plus.
+			loadGen++;
 		}
 	});
 
@@ -73,19 +96,28 @@
 	async function handleConfirm() {
 		if (!proposal || selectedId === null) return;
 		const txId = proposal.bankTransactionId;
+		const mySession = session;
 		submitting = true;
 		errorMsg = '';
 		try {
 			await linkTransaction(txId, selectedId);
+			if (mySession !== session) {
+				// La modale a été fermée pendant l'envoi. Le rattachement a eu lieu :
+				// le parent relit sa liste si aucune modale n'est ouverte ; une modale
+				// rouverte entre-temps n'est pas touchée (C-29-8-37).
+				if (!open) onSuccess();
+				return;
+			}
 			onSuccess();
 			onOpenChange(false);
 		} catch (e) {
+			if (mySession !== session) return;
 			errorMsg = errorMessageOf(e);
-			if (isApiError(e) && e.code === 'RECONCILIATION_SETTLEMENT_NOT_LINKABLE') {
+			if (isApiError(e) && RELIRE_SUR.has(e.code)) {
 				await loadCandidates(txId);
 			}
 		} finally {
-			submitting = false;
+			if (mySession === session) submitting = false;
 		}
 	}
 </script>
@@ -101,8 +133,10 @@
 
 		{#if proposal}
 			<div class="text-sm text-text-muted">
+				<!-- La date de paiement (valeur, à défaut comptabilisation) : celle d'où se
+				     comptent les « jours d'écart » (revue de code P1, A7, C-29-8-39). -->
 				<span data-testid="link-tx-summary">
-					{proposal.transaction.bookingDate} — {proposal.transaction.amount}
+					{proposal.transaction.valueDate ?? proposal.transaction.bookingDate} — {proposal.transaction.amount}
 					{proposal.transaction.currency}{#if proposal.transaction.counterpartyName}
 						{' '}— {proposal.transaction.counterpartyName}{/if}
 				</span>
