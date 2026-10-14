@@ -2,7 +2,7 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (kickoff de
+**review** — développement fait le 2026-10-14 (Opus 5.5), rebasé sur `main` `12c64c39` (29-4b comprise) ; revue de code P1 à lancer (`29-8-review-prompt-p1.md`). *Historique :* **ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (kickoff de
 l'Epic 29), branche `story/29-8`, worktree `/home/gcorbaz/devel/kesh-29-8`. Story **ajoutée à l'Epic 29** sur décision
 de Guy (2026-10-14) ; sortie dans la **v0.13.4**. Choix consignés au registre propre à la story,
 `epic-29-choix-autonomes-29-8.md`, **C-29-8-1 à C-29-8-29** (à verser par union au registre de l'epic). 10 AC.
@@ -655,22 +655,22 @@ Aucun fichier sous `crates/kesh-db/migrations/` (le schéma suffit, C-29-8-2) ; 
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Rebase** sur `origin/main` après merge des 29-2, 29-5 et 29-6 ; relire les numéros de ligne de la fiche ; base
+- [x] **T0 — Rebase** sur `origin/main` après merge des 29-2, 29-5 et 29-6 ; relire les numéros de ligne de la fiche ; base
   `kesh_298` et `kesh_e2e_298`, port 3048, `CARGO_TARGET_DIR=<worktree>/target`.
-- [ ] **T1 — Tests rouges** (AC8) : `reconciliation_link_e2e.rs` T1 à T20, unitaires, Vitest — rouges constatés.
-- [ ] **T2 — `kesh-db`** (AC1, AC2, AC7) : `repositories/reconciliation_link.rs` (`transaction_can_be_linked`, la
+- [x] **T1 — Tests rouges** (AC8) : `reconciliation_link_e2e.rs` T1 à T20, unitaires, Vitest — rouges constatés.
+- [x] **T2 — `kesh-db`** (AC1, AC2, AC7) : `repositories/reconciliation_link.rs` (`transaction_can_be_linked`, la
   requête des candidats, `link_in_tx` avec l'ordre des verrous et l'audit), `pub mod` ; doc-comments de l'AC7.
-- [ ] **T3 — `kesh-api`** (AC1, AC2) : deux handlers dans `routes/reconciliation.rs`, routes dans `lib.rs` (groupe
+- [x] **T3 — `kesh-api`** (AC1, AC2) : deux handlers dans `routes/reconciliation.rs`, routes dans `lib.rs` (groupe
   Comptable, à côté de `…/unreject`), `AppError::ReconciliationSettlementNotLinkable`, `audit_labels.rs`,
   `audit_route_registry.rs` (cinq assertions chiffrées, prose chiffrée et point (vi)), `bank_account_closed_inventory.rs`
   (statut `Gardee`, `sites.len()` 31 → 32) ; `FENETRE` de la 29-4 si elle est mergée (AC2).
-- [ ] **T4 — Frontend** (AC4) : `LinkSettlementModal.svelte`, bouton, API, types.
-- [ ] **T5 — i18n** (AC5), quatre locales.
-- [ ] **T6 — Manuel FR + PDF, `api-external.md`, CHANGELOG** (AC6) ; inventaire par symptôme trié (tableau de l'AC6,
+- [x] **T4 — Frontend** (AC4) : `LinkSettlementModal.svelte`, bouton, API, types.
+- [x] **T5 — i18n** (AC5), quatre locales.
+- [x] **T6 — Manuel FR + PDF, `api-external.md`, CHANGELOG** (AC6) ; inventaire par symptôme trié (tableau de l'AC6,
   repris après rebase) ; contrôles négatifs du PDF aplati.
-- [ ] **T7 — Mutations** (AC8, M1 à M19 et les équivalences déclarées), table au Dev Agent Record ; table *Absence
+- [x] **T7 — Mutations** (AC8, M1 à M19 et les équivalences déclarées), table au Dev Agent Record ; table *Absence
   de cycle* recopiée et relue (AC2).
-- [ ] **T8 — E2E + captures** (AC9) ; gates complets (AC10).
+- [x] **T8 — E2E + captures** (AC9) ; gates complets (AC10).
 
 ## Dev Notes
 
@@ -814,11 +814,270 @@ locales), `frontend/src/lib/features/reconciliation` ; plus la documentation (ma
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-14, worktree `/home/gcorbaz/devel/kesh-29-8`, branche `story/29-8`,
+bases `kesh_298` / `kesh_e2e_298`, port 3048, `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-29-8/target`.
+
 ### Debug Log References
+
+Journaux (hors dépôt) : `/home/gcorbaz/devel/kesh-gate-logs/298-*` — `298-red-2.log` (rouge des tests d'intégration),
+`298-vitest-red.log` (rouge Vitest), `298-green-*.log` (gates ciblés), `298-mut-*.log` et `298-mutations-result.txt`
+(campagne, script `298-mutations.py`), `298-make-fr.log`, `298-final-test-fast-run1.log` / `298-final-front-run1.log`
+(premier gate complet, avant le second rebase), `298-final-test-fast.log`, `298-final-front.log`, `298-final-e2e.log` (gates finaux, HEAD rebasé).
 
 ### Completion Notes List
 
+**T0 — Rebase** sur `origin/main` `e889346c` : sept commits de fiche rejoués (`240516d4` → `4af8f8ca`). Conflits sur
+`sprint-status.yaml` (trois commits) et le fichier d'epic (deux commits), résolus par union avec
+`union_sprint.py` / `union_epic.py` : clés de la 29-8 de la branche, les autres de `main` ; l'en-tête de la 29-8
+remonté **au-dessus** de ceux de `main` et renuméroté **(159)** (le n° 135 de la branche, remplacé en fin de fiche par
+le n° 136, ne subsiste qu'en un en-tête) ; dans le fichier d'epic, la puce « 29-8 après la 29-6 » replacée **après**
+celle de la 29-6 (le script l'avait insérée au milieu de la puce 29-2/29-3/29-4), la ligne v0.13.4 unique, le reliquat
+« manuel de la release prescrirait… » retiré. `yaml.safe_load` passe, aucun marqueur de conflit ; fiche et registre de
+la 29-8 identiques à `d4925683` (`git diff --stat` vide). Le reliquat « 29-6, R7)* : Guy les éprouve… » du fichier
+d'epic **préexiste sur `main`** : laissé tel quel. **Second rebase**, en fin de développement, sur `12c64c39` (29-4b) à
+la demande de l'orchestrateur : en-têtes de `sprint-status.yaml` (la 29-8 au-dessus, renumérotée **(161)**) ; registres
+de tests (`audit_route_registry.rs` point (vi) : texte de la 29-4b gardé, phrase de la 29-8 ajoutée ;
+`bank_account_closed_inventory.rs` : doc-comment de T29a-5 à onze sites `G` et **sept** revérifications, raison
+`FENETRE` de `link_in_tx` sans la réserve « sous réserve de la 29-4b », comme celle de l'annulation de rejet) ;
+`CHANGELOG.md` et `api-external.md` réunis (textes de la 29-4b gardés, ajouts de la 29-8 réinsérés) ; PDF repris de
+`main` pendant le conflit puis régénéré (`touch` du `.tex`, `make fr`) et contrôlé aplati : phrases des 29-6 (« ne la
+traite pas »), 29-4b (« Deux précisions. », « ne passe pas sur le compte clos ») et 29-8 présentes, aucun « ?? » ; la
+suppression du registre propre à la 29-4 gardée. La campagne de mutations a tourné **avant** ce rebase et n'a pas été
+rejouée : la 29-4b ne touche aucun des trois fichiers mutés, mais modifie `bank_accounts.rs` (gardes des annulations)
+et cinq lignes de `routes/reconciliation.rs` ; le binaire `reconciliation_link_e2e` est vert au gate du HEAD rebasé.
+
+**Prémisses relues sur `e889346c`** — toutes exactes ; seuls les numéros de ligne ont bougé :
+- les cinq chemins qui posent `matched_entry_id` : `routes/reconciliation.rs:2293`, `:2792`, `:3244`, `:4071`, `:4534`,
+  tous sur une écriture neuve ; `close_in_tx` (`bank_accounts.rs:1215`) compte les `pending`, rejetées comprises ;
+  `ensure_open_in_tx` à `:853` ; `AMOUNT_TOLERANCE_HUNDREDTHS` à `:79`, son site existant à `:731` (inchangé) ;
+- la **29-6** a rendu les lignes « Aucune correspondance » cochables et rejetables, et propose le reste dû exact ou
+  inférieur de 5 centimes ; le client qui a payé quelques centimes de trop s'enregistre depuis la fiche **au reste dû**
+  (la fiche refuse le trop-perçu) : la transaction dépasse alors le règlement de 1 à 5 centimes — la prémisse de l'AC1
+  tient, aucune règle métier ne change ;
+- la **29-1a** est mergée : K2 (`PENDING_BANK_TRANSACTIONS`) existe, l'assertion (5) de T15 est donc écrite ;
+- la **29-4a** est mergée la première : le registre `FENETRE` existe, la 29-8 y inscrit `link_in_tx` (C-29-8-36) ; le
+  point (vi) d'`audit_route_registry.rs` disait déjà **treize** (C-29-8-35) ;
+- `ensure_bank_account_open` ne rend que le clos : le pré-vol commun est `link_preflight` (C-29-8-34).
+
+**Étape 0 — inventaire des conseils de rejet** (`grep -nE 'rejet[a-z]*( ensuite)?( la transaction|-la)|rejetez|rejetée, elle|Rejetée, la'`
+sur `user-manual.tex`, `CHANGELOG.md`, `docs/api-external.md`, puis `rejetez|rejetant|puis rejet` sur tout le dépôt
+hors `_bmad-output`) — sept occurrences vivantes, **toutes réécrites** en « rattachez » :
+
+| Site (après rebase) | Écrit par | Réécriture |
+|---|---|---|
+| `user-manual.tex` *Algorithme de matching*, paiement de plus de 30 jours (« puis rejetez la transaction ») | 29-2 | « puis rattachez la transaction à ce règlement (…) : elle passe rapprochée, sans écriture » |
+| idem, trop-perçu de quelques centimes (« puis rejetez la transaction … cochez sa ligne ») et l'incise « la transaction rejetée reste en attente … » | 29-6 | « rattachez la transaction à ce règlement » ; l'écart affiché et « traitez l'écart » gardés ; l'incise retirée |
+| `sec:facture-posterieure` (« en rejetant ensuite la transaction ») | 29-2 | « en rattachant ensuite la transaction à ce règlement » |
+| imputation à score égal (« puis rejetez la transaction ») | 29-5 | « puis rattachez la transaction à ce règlement » |
+| FAQ « Que faire ensuite », paiement de client (« Kesh ne relie pas … rejetez-la … rejetée, elle reste en attente ») | 29-6 | « Puis rattachez la transaction à ce règlement (…) : elle passe rapprochée, sans écriture » ; « N'utilisez ni *Affecter manuellement* ni *Éclater* » gardé |
+| `CHANGELOG.md` § 0.13.4, entrée #529 (« puis rejetez la transaction ») | 29-2 | « puis rattachez la transaction à ce règlement » |
+| `CHANGELOG.md` § 0.13.4, entrée #665 (« rejetez ensuite la transaction … Rejetée, la transaction reste en attente ») | 29-6 | « rattachez ensuite la transaction à ce règlement » ; la case de la ligne « Aucune correspondance » dite « pour être rejetée » |
+
+Restent, **triées et inchangées** : la description générale du rejet (*Rejeter*, « elle compte comme non rapprochée et
+empêche la clôture de son compte bancaire ») ; la clôture du compte (« une transaction rejetée … compte comme non
+rapprochée », complétée du rattachement) ; la suppression d'import (« une transaction rejetée ne compte pas ») ; le
+rejet d'un virement par la banque (lots de paiement, sans rapport) ; le titre « Accepter ou rejeter les propositions » ;
+le commentaire de `frontend/tests/e2e/reconciliation-reject-unmatched.spec.ts:7` (décrit la 29-6 telle qu'elle a été
+écrite, et le rejet d'une ligne sans proposition reste un geste permis) ; `reconciliation_e2e.rs:7805` (commentaire de
+test sur le rejet d'un autre compte).
+
+**Inventaire du manuel par symptôme (AC6)** — `grep -nE "depuis la fiche|ne la relie pas|ne relie pas|tout seul|reglement-client|rejet|670|crée l'écriture|date de valeur|issue d'un rapprochement|rien ne la relie"`,
+après rebase, chaque site trié :
+- **réécrits** : tuile d'écart `:261-270` (date du règlement, « issue d'un rapprochement ou d'un rattachement ») ;
+  `sec:reglement-client` `:1231` (+ « Si le virement est déjà importé, rattachez ensuite la transaction au règlement ») ;
+  frais de rappel `:1341` (+ L6, « ne se rattache pas », #671 et #401) ; clôture du compte `:1725` (« ou rattachée au
+  règlement saisi depuis la fiche ») ; introduction `:2055` (« sauf dans un cas … se rattache ») ; matching `:2063`,
+  `:2065`, imputation `:2079` (conseils de rejet, ci-dessus) ; ligne « Aucune correspondance » `:2090` (+ *Rattacher à
+  un règlement*) ; « Pour imputer une transaction autrement » `:2100` ; fin de *Réconciliation manuelle* `:2116` (+
+  « puis rattachez-y la transaction ») ; sous-section neuve `:2118-2142` ; *Annuler un rapprochement* (bouton de la
+  fiche, puce « le règlement est retiré aussi ») ; FAQ `:2982` ; glossaire `:3124` ;
+- `:1305` de la fiche (« Ce que réclame un rappel », `:1338` après rebase) : la 29-2 l'a réécrite, **aucun renvoi au
+  règlement depuis la fiche n'y subsiste** — inchangée, comme le prescrivait la fiche ;
+- **inchangés**, motif d'une ligne : `:652` (annulation d'une écriture contre-passée, sans rapport à la banque) ; `:986`
+  (écriture de validation d'une facture) ; `:999-1000` (une facture se règle depuis la fiche ou par rapprochement : vrai) ;
+  `:1378`, `:1380` (dévalidation : annuler d'abord le règlement — vrai, un règlement rattaché ne s'annule qu'après
+  *Annuler le rapprochement*, que dit `:652`) ; `:1464` (refus de dévalidation, vrai) ; `:1561` (note du règlement) ;
+  `:1659` (« L'import ne se déclenche pas tout seul » — boîte de réception, sans rapport) ; `:1677` (facture
+  fournisseur d'origine) ; `:1776`, `:1875`, `:1881` (suppression d'import, rejet, vrais) ; `:2096`, `:2097`, `:2102`
+  (acceptation, rejet général, bilan) ; `:2112` (sélecteur des comptes de l'affectation manuelle) ; `:2268`, `:2376`,
+  `:2403`, `:2592`, `:3003`, `:3015` (renvois au règlement ou à la contre-passation, sans rapport à la transaction
+  bancaire) ; « rien ne la relie au relevé » `:270` reste vrai pour une écriture saisie au journal (L3) ;
+  « tout seul. » `:1231` reste vrai (validation P3, R2).
+
+**PDF** (`make fr` sous le verrou, user-manual 3 passes stables ; admin-manual et brochure régénérés sans changement de
+source, remis à leur version commitée), aplati et normalisé, comptes `grep -oF` : positifs — « rattachez la
+transaction à ce règlement » **4** (matching ×2, imputation, FAQ ; la fiche demandait ≥ 2), « rattachez ensuite la
+transaction au règlement » 1 (`:1231`), « Rattacher une transaction à un règlement » 2 (titre et table des matières),
+« Rattacher à un règlement » 5 (ligne, imputation, matching, sous-section, FAQ), « garde la date du règlement » 1,
+« se rattache à ce règlement, sans écriture » 1 (glossaire), « ou rattachée au règlement » 1, « rattachez-y la
+transaction » 1, « ne se rattache pas » 3 (frais de rappel, sous-section ×2), « en rattachant ensuite la transaction » 1 ;
+négatifs, adossés aux positifs — « ne la relie pas » 0, « ne relie pas la transaction » 0, « rejetez-la » 0,
+« existerait déjà » 0, « date les écritures de rapprochement à la date de valeur. » 0, « puis rejetez » 0 ; relevé
+« tout seul. » 1, « rien ne la relie au relevé » 1 (gardés).
+
+**AC7 — les douze sites** : `bank_accounts.rs` (deux doc-comments : date de valeur sauf l'écriture d'un règlement
+rattaché ; six chemins, le sixième lie une écriture existante, condition 3) ; `reconciliation_cancel.rs` (en-tête : deux
+chemins rendent `InvoiceSettlement` ; doc de la variante) ; `bank_imports.rs:380` (six chemins) ;
+`kesh-db/tests/reconciliation_cancel.rs` (en-tête : le sixième chemin couvert par `reconciliation_link_e2e.rs` T15, ce
+fichier n'en a pas besoin) ; `invoices.rs` (deux doc-comments de tests : « neuve ou, par le rattachement, celle d'un
+règlement ») ; `reconciliation_e2e.rs` (« cinq chemins le remettent à zéro ») ; `bank_account_statement_gap.rs:7` ;
+`user-manual.tex` introduction et *Annuler un rapprochement* (ci-dessus). Les hors-sujet de la fiche restent hors sujet
+(`routes/reconciliation.rs:2268` « cinq sites qui lisent `paid_at IS NULL` », `reconciliation_e2e.rs:3762`, etc.).
+Propagation de la valeur : `grep -rnE "\bcinq\b.*(chemin|site)|quatre chemins|viennent de créer|NEUVE"` ne rend plus
+que les hors-sujet triés et `reconciliation_link.rs` (« Les cinq autres chemins »).
+
+**T1 — tests rouges d'abord.** `reconciliation_link_e2e.rs` (T1 à T20, plus `compte_non_lie_rend_412` et
+`transaction_inexistante_rend_404`) écrit avant toute ligne de production : **23 exécutés, 0 réussi, 23 échoués**
+(`298-red-2.log`), chacun sur l'absence des routes (`404`/`405`), par exemple :
+
+```
+thread 't1_le_rattachement_debloque_la_cloture_du_compte' panicked at crates/kesh-api/tests/reconciliation_link_e2e.rs:543:5:
+assertion `left == right` failed: null
+  left: 404
+ right: 200
+     Summary [   1.000s] 23 tests run: 0 passed, 23 failed, 0 skipped
+```
+
+(Un premier run, `298-red-1.log`, avait révélé un défaut du montage — la dévalidation exige `{ version }`, `422` — corrigé
+avant le run rouge retenu.) Vitest, avant la modale et l'API : **4 échoués / 44** sur les trois fichiers
+(`298-vitest-red.log` : « Failed to resolve import "./LinkSettlementModal.svelte" », « Unable to find an element by:
+[data-testid="link-settlement-button"] » ×2, « getLinkCandidates is not a function », « linkTransaction is not a
+function »). Les deux unitaires de `kesh-db` (`transaction_can_be_linked`, texte unique de la requête) sont nés avec le
+module.
+
+**T2-T5 — réalisé** : `kesh-db/src/repositories/reconciliation_link.rs` (module neuf : `transaction_can_be_linked`,
+`candidates_sql`, `find_link_candidates`, `link_in_tx`, `LinkRequest`, `LinkRefusal`, `Linked`) ; deux handlers,
+`link_preflight`, `link_amount_tolerance`, `link_once` dans `routes/reconciliation.rs` ; routes dans `lib.rs` ;
+`AppError::ReconciliationSettlementNotLinkable` ; `audit_labels.rs` ; registres (`audit_route_registry.rs` : 119 / 113 /
+95 / 122 / 122, recomptés par le test lui-même au gate ; `bank_account_closed_inventory.rs` : statut `Gardee`,
+`sites.len()` 32, `FENETRE` + 1, `G` 11) ; `textes_coherents.rs` (G9) ; `LinkSettlementModal.svelte`, bouton et
+`onLinkSuccess`, API et types ; clés i18n en quatre locales (17 clés `reconciliation-link-*` / `-errors-settlement-not-linkable`
+/ `audit-log-action-reconciliation-linked` par locale, comptées au `.ftl`) ; spec E2E `reconciliation-link.spec.ts`.
+
+**Table *Absence de cycle*** — recopiée et relue contre le code du HEAD :
+
+| Geste | Ordre au code | Avec le rattachement |
+|---|---|---|
+| `link_in_tx` (ce geste) | verrou nommé → `t` (`find_by_id_for_account_for_update`) → `s` (`invoice_settlements … FOR UPDATE`) → `je` (`journal_entries … FOR UPDATE`) → `ensure_open_in_tx` (première lecture ordinaire) → requête de la règle → `UPDATE` → audit | — |
+| `cancel_settlement_in_tx` | facture → `s` → `je ⋈ fy` (`invoice_settlements_write.rs:835`, `:850`, `:881`), puis lectures ordinaires | le rattachement ne prend pas la facture ; il attend `s` sans rien détenir qu'attende le détenteur ; après l'attente, `s` absente → 404 (T16) |
+| `reconciliation_cancel::cancel_in_tx` | `t` → `s` (`classify(…, true)`, `:302`) → facture (`:304`) → `je ⋈ fy` | même `t` d'abord : exclusion mutuelle ; sur deux `t` différents qui visent le même `s`, chacun ne tient que son `t` avant `s`, seul verrou commun : pas de cycle |
+| `accept_one_invoice` / `settle_invoice` | verrou nommé → facture → compte → exercice → insertions | écritures neuves : jamais un `s` ni un `je` existants |
+| `journal_entries::delete_in_tx` / `reverse_in_tx_inner` | `je ⋈ fy` → lignes | le rattachement ne verrouille jamais les lignes ; une écriture de règlement ne se supprime pas (garde de propriété) |
+| `bank_accounts::close_in_tx` | ligne du compte → décomptes ordinaires | le rattachement ne verrouille pas `bank_accounts` ; non commité, la transaction reste `pending` : la clôture refuse ; commité, `ensure_open_in_tx` l'a vu ouvert |
+| suppression d'import | en-tête → transactions par id croissant | le rattachement prend `t` d'abord : exclusion sur `t` |
+
+Aucune correction à la table de la fiche. ⚠️ Le cycle préexistant `reconciliation_cancel` (`s` puis facture) /
+`cancel_settlement_in_tx` (facture puis `s`) est **inchangé** ; le rattachement multiplie les états qui l'exposent, sans
+le créer ni le fermer. L'ordre d'acquisition et la naissance de la vue restent **raisonnés, non prouvés** (C-29-8-25) :
+renvoyés à la revue de code.
+
+**T7 — mutations** (`298-mutations.py`, sous le verrou ; motif vérifié unique, `git checkout -- f` puis `touch f` après
+chacune ; `git status` vide de toute source après la campagne) :
+
+| M | Mutation (forme jouée) | Verdict | Tuée par |
+|---|---|---|---|
+| M1 | `s.settlement_bank_account_id = ?` → `(… OR TRUE)` | tuée | T6 |
+| M2 | `settlement_type = 'bank_transfer'` retiré | **survit — équivalente** (`chk_invoice_settlements_counterparty`) | — |
+| M3 | `NOT EXISTS (…)` → `TRUE` | tuée | T8, T17 |
+| M4 | `<= ?` → `< ?` | tuée | T4 |
+| M5 | borne `>= 0` → `(… OR TRUE)` | tuée | T4, T5 |
+| M6 | `amount > 0` → `>= 0` | tuée (unitaire) | `transaction_can_be_linked_is_a_chf_credit` |
+| M6 (intégration) | même mutation, binaire d'intégration seul | **survit**, comme déclaré (T9 ne la distingue pas) | — |
+| M7 | `auto_match_rejected_at = NULL` retiré de l'`UPDATE` | tuée | T2 |
+| M8 | `AND status = 'pending'` retiré de l'`UPDATE` | **survit — équivalente** (étape 4.1) | — |
+| M8bis | `AND matched_entry_id IS NULL` retiré de l'`UPDATE` | **survit — équivalente** (étape 4.1) | — |
+| M9 | audit retiré | tuée | T1, T2, T3, T12 |
+| M10 | `FOR UPDATE` de l'étape 4.2 (a) retiré | tuée **sur ce run** | T16 — non fiable (chevauchement non garanti, C-29-8-25) |
+| M11 | `gap` retiré de l'`ORDER BY` | tuée | T14 |
+| M12 | bouton affiché sur toute ligne | tuée | Vitest `ReconciliationProposals` (M12) |
+| M13 | présélection du premier candidat | tuée | Vitest `LinkSettlementModal` (×2) |
+| M14 | étape 4.4 déplacée avant 4.2 | tuée | **T11** (le règlement d'une autre société rend alors `409 NOT_LINKABLE` au lieu de `404`) — T17 ne l'a pas tuée sur ce run ; la propriété d'origine (vue née avant l'attente) reste non prouvée, renvoyée à la revue |
+| M15 | `HAVING … > 0` → `HAVING TRUE` | **survit — survivante assumée** (équivalente sauf au centime) | — |
+| M16 | `M` lu sur `invoice_settlements.amount`, table dérivée retirée | tuée | T18 |
+| M17 | `s.company_id = ?` → `(… OR TRUE)` | **survit — équivalente** (étape 4.2 (a), condition 2) | — |
+| M18 | `ABS(…)` retiré | tuée | T14 |
+| M19 | `ensure_open_in_tx` retiré de l'étape 4.3 | tuée | T13 (b) |
+
+Décompte : **21 mutations jouées** (M1 à M19, plus M6 en intégration et M8bis) : **15 tuées**, **6 survivantes** — M2,
+M8, M8bis, M17 équivalentes strictes, M15 survivante assumée, M6 en intégration seule survivante comme prévu (tuée par
+l'unitaire). Aucune mutation n'a cassé la compilation.
+
+**Écarts à la fiche** (aucun ne change une règle métier) : C-29-8-30 (transaction posée par le dépôt dans les tests
+d'intégration), C-29-8-31 (compte du grand livre lié lu au pré-vol), C-29-8-32 (compteur « 1 opération(s)
+réussie(s). » après un rattachement, que l'affectation manuelle n'affiche pas), C-29-8-33 (CHANGELOG sans rubrique
+« Limites connues » ni entrée *Modifié*), C-29-8-34 (`link_preflight`), C-29-8-35 (point (vi) : treize → quatorze),
+C-29-8-36 (`FENETRE`). Hors des AC : T12 vérifie aussi que la clé `read` **lit** les candidats (`200`), ce que
+`docs/api-external.md` affirme. Le premier gate frontend complet (avant le second rebase) a rougi sur l'anti-muet
+`i18n-keys.test.ts` (`sitesTotal` 2164 → 2180, +16, recompté aux deux bornes) : corrigé par le commit `test(29-8): garde i18n` ; l'E2E lancé
+derrière ce gate rouge, sans `frontend/build`, a été **interrompu par PID** avant tout résultat et relancé.
+
+**Gates au HEAD rebasé sur `12c64c39` (code du dernier commit de code, `918f1c5a`)** — base remise à zéro dans le même journal, sous le verrou :
+- `scripts/test-fast.sh` (fmt, clippy `-D warnings`, nextest) sur `kesh_298` remise à zéro : **3730 exécutés, 3730
+  réussis, 6 ignorés** (`298-final-test-fast.log`) ;
+- frontend (`npm run check` 0 erreur / 29 avertissements préexistants, aucun dans les fichiers de la story ;
+  `lint-i18n-ownership` PASS ; `test:unit` **148 fichiers, 1658 tests, tous verts** ; `build` vert)
+  (`298-final-front.log`) ;
+- **E2E complet** (`298-final-e2e.log`, `kesh_e2e_298` remise à zéro, port 3048, recette de `docs/testing.md`) : **289
+  réussis, 7 échoués, 19 ignorés**. Les sept échecs, jugés fichier par fichier contre `docs/testing.md` § *Les échecs
+  attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`,
+  `:150` — **les sept KF-029 (#97)** ; ni KF-052 ni pollution sur ce run (baseline basse, 7). `reconciliation-link.spec.ts`
+  vert, clair et sombre.
+
+Historique des gates, tous déclarés : sur le HEAD **avant** le second rebase — test-fast 3717/3717 deux fois ; un
+premier frontend rouge (`i18n-keys.test.ts`, `sitesTotal` 2164 → 2180), corrigé ; puis frontend 1658/1658 et E2E
+289 réussis + les 7 KF-029 (`298-final-*-run2.log`) ; la recette visuelle de ce run a montré la modale trop étroite
+(en-têtes collés), corrigée par le commit `fix(29-8)` ; un troisième run, sur ce correctif, a été **interrompu par PID**
+pendant l'E2E à la demande de l'orchestrateur (`main` avait reçu la 29-4b) — ses journaux sont `*-run3-avant-rebase.log`,
+non comptés. Les chiffres ci-dessus sont ceux du HEAD rebasé sur `12c64c39`, dont le code est celui du dernier commit de
+code.
+
+**Recette visuelle** : captures `29-8-modale-ecart-clair.png` et `29-8-modale-ecart-sombre.png` dans
+`/home/gcorbaz/devel/kesh-gate-logs/298-captures/` (hors dépôt). Revues : modale lisible, six colonnes espacées, avertissement d'écart visible avant la confirmation. ⚠️ La capture
+« sombre » est rendue en thème **clair** : `page.emulateMedia({ colorScheme: 'dark' })` ne bascule pas le thème de
+l'application dans ce montage — même constat sur les captures sombres de la 29-6 (`29-6-ligne-cochee-sombre.png`) ; la
+recette sombre réelle reste à faire à la main (aucun jeton de couleur neuf : `border-warning`, `bg-warning/10`,
+`text-destructive`, déjà employés ailleurs).
+
+**Issues à ouvrir** : aucune. **Actions demandées à l'orchestrateur** : push et PR de `story/29-8` après la revue, avec
+**`closes #670`** dans le titre ou le corps de la PR seulement ; verser les choix C-29-8-30 à 36 au registre de l'epic
+par union ; inscrire au contrôle de pré-release de la v0.13.4 « 0 conseil de rejet » (C-29-8-29), désormais tenu sur le
+manuel, le CHANGELOG et `api-external.md`.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/reconciliation_link.rs` (neuf)
+- `crates/kesh-db/src/repositories/mod.rs`
+- `crates/kesh-db/src/repositories/bank_accounts.rs` (doc-comments)
+- `crates/kesh-db/src/repositories/bank_imports.rs` (doc-comment)
+- `crates/kesh-db/src/repositories/invoices.rs` (doc-comments de tests)
+- `crates/kesh-db/src/repositories/reconciliation_cancel.rs` (doc-comments)
+- `crates/kesh-db/tests/bank_account_statement_gap.rs` (en-tête)
+- `crates/kesh-db/tests/reconciliation_cancel.rs` (en-tête)
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/audit_labels.rs`
+- `crates/kesh-api/tests/reconciliation_link_e2e.rs` (neuf)
+- `crates/kesh-api/tests/audit_route_registry.rs`
+- `crates/kesh-api/tests/bank_account_closed_inventory.rs`
+- `crates/kesh-api/tests/textes_coherents.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs` (commentaire)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `frontend/src/lib/features/reconciliation/LinkSettlementModal.svelte` (neuf)
+- `frontend/src/lib/features/reconciliation/LinkSettlementModal.test.ts` (neuf)
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.test.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation.api.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation.api.test.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation.types.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/reconciliation-link.spec.ts` (neuf)
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `docs/api-external.md`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/29-8-transaction-reglee-ailleurs.md`,
+  `epic-29-choix-autonomes-29-8.md`, `29-8-review-prompt-p1.md` (neuf), `sprint-status.yaml`,
+  `_bmad-output/planning-artifacts/epic-29-preparer-cloture.md` (rebase)
 
 ## Change Log
 
@@ -930,3 +1189,10 @@ locales), `frontend/src/lib/features/reconciliation` ; plus la documentation (ma
   - ✅ **Validation close : la remédiation ne touche aucune ligne de production** (fiche et registre seulement ; le
     motif « la remédiation introduit le défaut suivant » n'a plus de prise, § *La passe ciblée* du `CLAUDE.md`). Prochaine
     étape : développement, **après la 29-6** (rebase sur les 29-2, 29-5 et 29-6).
+- **2026-10-14** — **Développement** (`bmad-dev-story`, Opus 5.5, autonomie) : rebase sur `e889346c` (29-6 comprise) puis,
+  à la demande de l'orchestrateur, sur `12c64c39` (29-4b comprise) ; prémisses relues, exactes (seuls les numéros de
+  ligne ont bougé) ; T1 à T20 et Vitest vus rouges avant le code ; module `reconciliation_link`, deux routes, modale ;
+  manuel FR, PDF, `api-external.md`, CHANGELOG ; sept conseils de rejet réécrits en « rattachez » ; 21 mutations jouées
+  (15 tuées, 6 survivantes déclarées) ; choix C-29-8-30 à 36 ; gates au HEAD rebasé : test-fast 3730/3730, Vitest
+  1658/1658, E2E 289 réussis + les 7 KF-029. Détail au Dev Agent Record. Revue de code P1 à lancer :
+  `29-8-review-prompt-p1.md` (lentilles B, E, A).

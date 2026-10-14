@@ -4,8 +4,8 @@
 lecture seule stricte. Modèle : **celui qu'indique l'orchestrateur** (passe complète : Sonnet ou Opus, rotation D6 de
 la rétrospective 25 ; Haiku réservé à la passe ciblée de fin de boucle).*
 
-Dépôt `/home/gcorbaz/devel/kesh-29-8`, branche `story/29-8`, rebasée sur `main` `e889346c` (29-2, 29-3, 29-1a, 29-5,
-29-4a et 29-6 mergées). Le code à relire : `git -C /home/gcorbaz/devel/kesh-29-8 diff 4af8f8ca HEAD` (`4af8f8ca` =
+Dépôt `/home/gcorbaz/devel/kesh-29-8`, branche `story/29-8`, rebasée sur `main` `12c64c39` (29-2, 29-3, 29-1a, 29-5,
+29-4a, 29-6 et 29-4b mergées). Le code à relire : `git -C /home/gcorbaz/devel/kesh-29-8 diff 7b7b9143 HEAD` (`7b7b9143` =
 validation close de la fiche après le rebase, dernier commit avant le développement ; ce diff ne contient que la
 29-8). Langue du rapport : français.
 
