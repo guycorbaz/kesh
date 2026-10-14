@@ -27,8 +27,10 @@
 - **Contexte** : #670 propose (a) rattacher, (b) choisir une facture à la réconciliation (#666), (c) un statut
   « écartée ».
 - **Retenu** : (a), restreinte aux lignes `invoice_settlements` de type `bank_transfer` : l'état produit est celui
-  d'une proposition « facture » acceptée, que toutes les gardes en aval traitent déjà (rang 3 de l'annulation,
-  dévalidation, suppression d'import, *Annuler le rapprochement*).
+  d'une proposition « facture » acceptée, que les gardes en aval qui lisent le lien traitent déjà (rang 3 de
+  l'annulation, par le socle de la contre-passation ; suppression d'import ; *Annuler le rapprochement*).
+  *Amendé en validation P1 (R2/F4)* : la dévalidation ne lit pas ce lien — son motif 5 vise l'écriture de vente ; elle
+  est refusée au motif 1 (`Settled`), avant comme après le rattachement.
 - **Écartées** : (b) ne couvre pas la 29-6 (trop-perçu refusé par `classify_payment`) ni les règlements déjà saisis,
   et exige une seconde borne (#548) ; (c) migration breaking et faux rattachement **muet** (une transaction jamais
   comptabilisée sortirait des contrôles de clôture) ; (a) généralisée à toute écriture — *Annuler le rapprochement*
@@ -40,8 +42,8 @@
 
 - **Contexte** : un faux rattachement doit être impossible ou visible.
 - **Retenu** : transaction `pending` crédit CHF ; règlement de la société, `bank_transfer`, **même compte bancaire** ;
-  écriture rapprochée d'aucune transaction ; écart `0 ≤ t.amount − M ≤ 0,05`, `M` lu sur le compte du grand livre
-  actuel du compte bancaire.
+  écriture rapprochée d'aucune transaction ; `M > 0` et écart `0 ≤ t.amount − M ≤ 0,05`, `M` lu sur le compte du grand
+  livre actuel du compte bancaire (*`M > 0` ajouté en validation P1*, C-29-8-18).
 - **Écartée** : comparer `invoice_settlements.amount` (montant réglé, qui peut différer du payé d'un demi-centime
   d'arrondi) — la ligne de banque est l'argent.
 - **Réversible** : oui.
@@ -85,7 +87,7 @@
 
 - **Contexte** : la liste et le refus ne doivent pas diverger.
 - **Retenu** : condition 1 en fonction pure de `kesh-db` ; conditions 2 à 4 en **une** requête, rejouée par le `POST`
-  restreinte à `s.id`. Mutations M1 à M13.
+  restreinte à `s.id`. Mutations M1 à M19 (M14 à M19 ajoutées en validation P1).
 - **Écartée** : un classifieur Rust des motifs à côté de la requête (deux définitions).
 - **Réversible** : oui.
 
@@ -109,16 +111,19 @@
 ### C-29-8-12 — Ordre des verrous imposé, vue née après le dernier
 
 - **Contexte** : B5 de la rétrospective 28 (naissance de la vue).
-- **Retenu** : verrou nommé → `bank_transactions` (`t`) → `invoice_settlements` ⋈ `journal_entries` → lecture
-  courante de `matched_entry_id` → lectures ordinaires. Ordre `s → je` aligné sur `cancel_settlement_in_tx` ; la ligne
-  `invoices` n'est jamais prise. Absence de cycle à justifier au Dev Agent Record.
+- **Retenu** (*amendé en validation P1, F1/F6*) : verrou nommé → `bank_transactions` (`t`) → `invoice_settlements`
+  (`s`) → `journal_entries` (`je`), en **deux instructions** pour `s` puis `je` (l'ordre est écrit, non laissé à
+  l'optimiseur d'un `JOIN`), sans l'exercice → `ensure_open_in_tx` (première lecture ordinaire) → requête des
+  conditions. Ordre `s → je` aligné sur `cancel_settlement_in_tx` ; les lignes `invoices`, `bank_accounts` et
+  `fiscal_years` ne sont jamais prises. Table *Absence de cycle* aux Dev Notes, à recopier au Dev Agent Record.
+- **Écartée** : la lecture courante `matched_entry_id = ? FOR UPDATE` de la première rédaction (C-29-8-17).
 - **Réversible** : oui.
 
 ### C-29-8-13 — *Annuler le rapprochement* d'une transaction rattachée annule le règlement (L1)
 
 - **Contexte** : sans colonne d'origine (C-29-8-2), l'état est indiscernable d'une proposition acceptée.
 - **Retenu** : comportement existant gardé et écrit au manuel ; visible (contre-passation, facture rouverte),
-  réparable, sans erreur comptable. Issue d'évolution demandée (« détacher sans annuler »).
+  réparable, sans erreur comptable. Évolution tracée par **#672** (« détacher sans annuler »).
 - **Écartée** : refuser l'annulation d'une transaction rattachée (indiscernable sans migration).
 - **Réversible** : oui.
 
@@ -146,4 +151,93 @@
 - **Retenu** : quatre modules de code (`kesh-db`, `kesh-api`, `kesh-i18n`, `frontend/…/reconciliation`) plus la
   documentation : une seule story. Les cinq textes qui supposent « une écriture créée par le rapprochement » sont
   inventoriés (AC7) et réécrits.
+- **Réversible** : oui.
+
+---
+
+*Choix C-29-8-17 à C-29-8-24 : remédiation de la validation P1 (2026-10-14), lentilles R (0/0/4/7) et F (0/1/3/5).*
+
+### C-29-8-17 — Aucune lecture verrouillante sur `matched_entry_id` ; l'invariant tient par le verrou du règlement
+
+- **Contexte** : l'étape 4.3 d'origine (`SELECT … WHERE matched_entry_id = ? FOR UPDATE`) devait lire « au courant »
+  la condition 3. Validation P1, F1 (HIGH) : sur un index secondaire non unique, un `FOR UPDATE` sans ligne trouvée
+  pose un verrou d'intervalle ; deux rattachements simultanés dont les écritures tombent dans l'intervalle terminal
+  s'interbloquent à l'`UPDATE` (verrou d'insertion). Et elle est redondante.
+- **Retenu** : étape retirée. L'invariant « une écriture, une transaction » se tient par la lecture ordinaire des
+  conditions **sous le verrou de ligne de `s`** : deux rattachements du même règlement visent deux transactions du
+  même compte (condition 2) ; le second attend `s` jusqu'au **commit** du premier (le verrou nommé, lui, est relâché
+  avant le commit, `mutex.rs:126-132` et `conclude_locked_attempt`) ; sa vue naît après l'attente et voit le lien.
+  Les cinq autres chemins ne lient que des écritures qu'ils créent ; le seul autre écrivain de la colonne la remet à
+  `NULL` sous le même verrou de `s`. `GET_LOCK` ne fait pas naître la vue (aucune table lue ; fiche 28-4:961). Test
+  T17 (course de double rattachement), mutation M14 (requête des conditions avant le verrou de `s`).
+- **Écartées** : garder la lecture en la forçant sur l'index (`FORCE INDEX`) avec un test `EXPLAIN` — le cycle
+  d'intervalle demeure ; une contrainte `UNIQUE (matched_entry_id)` — migration, et hors périmètre minimal.
+- **Réversible** : oui.
+
+### C-29-8-18 — `M > 0` dans la condition 4
+
+- **Contexte** : validation P1, R3 = F2 : avec `M = 0` (règlement sur un ancien compte lié), tout crédit de 1 à
+  5 centimes rendait le règlement candidat à « 0.00 ».
+- **Retenu** : `M > 0` (un règlement par virement débite toujours la banque, `settle_invoice` refuse `amount <= 0`) ;
+  table dérivée par écriture en jointure interne, `HAVING M > 0`. Test T18 (ancien compte lié, crédit de 0.03 et
+  crédit égal), mutations M15 et M16.
+- **Écartée** : `COALESCE(…, 0)` sans condition (laisse passer `M = 0`).
+- **Réversible** : oui.
+
+### C-29-8-19 — `ensure_open_in_tx` dans la transaction, après le dernier verrou
+
+- **Contexte** : validation P1, R9/F8 : un pré-vol seul se classe `Invariant("I1", …)`, non « gardé » ; le
+  précédent `unreject_once` lit la garde dans la transaction.
+- **Retenu** : pré-vol **et** `bank_accounts::ensure_open_in_tx` à l'étape 4.3, première lecture ordinaire, après le
+  verrou de `je` ; statut `Gardee` au `REGISTRE` de `bank_account_closed_inventory.rs`. Test T13 (b) (clôture posée
+  pendant l'attente du verrou nommé), mutation M19. Zone partagée avec la 29-4 (`FENETRE`) : la seconde mergée ajoute
+  la ligne.
+- **Écartée** : pré-vol seul classé `Invariant("I1", …)` — sûr (I1 tient), mais `link_in_tx` serait la seule
+  fonction de rapprochement sans garde en transaction parmi celles qui en ont une voisine.
+- **Réversible** : oui.
+
+### C-29-8-20 — Compte bancaire archivé refusé ; compte du grand livre inactif admis
+
+- **Contexte** : validation P1, R10.5 : `post_manual` refuse les deux ; la fiche n'en disait rien.
+- **Retenu** : archivé → `AppError::BankAccountNotFound` au `GET` et au `POST`, comme `post_manual` ; compte du
+  grand livre inactif **admis** (le rattachement n'y écrit rien). Test T20.
+- **Écartée** : refuser l'inactif (`412`) — il protège une écriture que le rattachement ne passe pas.
+- **Réversible** : oui.
+
+### C-29-8-21 — Exercice clos ou période verrouillée : le rattachement passe
+
+- **Contexte** : validation P1, R10.4.
+- **Retenu** : admis (aucune écriture au journal ; le verrou de `je` ne prend pas l'exercice) ; la conséquence —
+  *Annuler le rapprochement* ensuite refusé `FISCAL_YEAR_CLOSED` — écrite au manuel. Test T19.
+- **Écartée** : refuser (un paiement de décembre rapproché en janvier, une fois décembre clos, resterait bloqué).
+- **Réversible** : oui.
+
+### C-29-8-22 — Sérialisation, tolérance, date de paiement : une seule définition chacune
+
+- **Contexte** : validation P1, R10.1 à R10.3 et F9 (types).
+- **Retenu** : conditions calculées en décimal exact dans la requête ; sortie JSON et audit `rescale(2)` (patron
+  `routes/reconciliation.rs:4274-4283`) ; tolérance liée en `Decimal`, passée en paramètre à `kesh-db` (patron
+  `find_unpaid_invoices_for_window`), la constante restant privée à `routes/reconciliation.rs` ; `payment_date(t)`
+  calculée en Rust et liée en paramètre, la requête triant sur `ABS(DATEDIFF(s.settled_on, ?))`.
+- **Écartées** : rendre la constante publique dans `kesh-db` (deux crates la verraient, une seule la définit
+  aujourd'hui) ; réécrire `COALESCE(value_date, booking_date)` en SQL (seconde définition de la date de paiement) ;
+  trier en Rust après une requête sans `LIMIT`.
+- **Réversible** : oui.
+
+### C-29-8-23 — Angle mort L6 : le paiement qui inclut les frais de rappel
+
+- **Contexte** : validation P1, R4 : le manuel prescrit d'enregistrer le seul montant de la QR-facture quand le client
+  paie « reste dû et frais » ; la transaction dépasse alors le règlement de plus de 5 centimes.
+- **Retenu** : angle mort écrit (Dev Notes L6, manuel `:1308`, CHANGELOG), renvoyé à #671 (commentaire posé par
+  l'orchestrateur) et à #401.
+- **Écartée** : élargir la tolérance ou admettre tout dépassement — hors périmètre minimal, et un dépassement franc
+  doit se justifier par une écriture que le rattachement ne passe pas.
+- **Réversible** : oui.
+
+### C-29-8-24 — Un refus `RECONCILIATION_SETTLEMENT_NOT_LINKABLE` recharge la liste de la modal
+
+- **Contexte** : validation P1, R11 : le message dit « relire la liste », la modal ouverte ne la rechargeait pas.
+- **Retenu** : sur ce `409`, la modal recharge `getLinkCandidates` et remet le choix à vide ; l'échec du chargement
+  s'affiche. Vitest.
+- **Écartée** : fermer la modal (l'utilisateur perdrait le contexte de la transaction).
 - **Réversible** : oui.

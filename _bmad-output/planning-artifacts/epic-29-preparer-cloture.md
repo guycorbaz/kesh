@@ -153,7 +153,8 @@ migration, un geste humain sans présélection —, et réécrit « puis rejetez
 - **29-6 après 29-2, 29-3 et 29-5** (ordre de développement 29-2 → 29-3 → 29-5 → 29-6) : même requête de candidates
   que la 29-2, et des phrases que la 29-3 écrit sur #665 et qu'elle retire.
 - **29-8 après la 29-6** (rebase) : même composant `ReconciliationProposals.svelte`, et elle réécrit des phrases du
-  manuel que la 29-2 et la 29-6 écrivent.
+  manuel que la 29-2 et la 29-6 écrivent. Son ordre par rapport à la 29-4 n'est pas fixé : celle des deux qui se merge
+  la seconde inscrit `link_in_tx` au registre `FENETRE` de la 29-4 (fiche 29-8, AC2).
 - Intégration **sérielle** sur `main`.
 
 ### Releases
