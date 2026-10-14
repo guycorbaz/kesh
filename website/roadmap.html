@@ -332,6 +332,13 @@
 					</div>
 					<p class="text-sm text-slate-400">A bank import none of whose transactions is reconciled can now be <strong class="text-slate-200">deleted, then re-imported</strong> — traced in the audit log. The <strong class="text-slate-200">currency of a statement is read</strong> — an optional Currency column in CSV profiles, the amount&rsquo;s own currency in CAMT.053 — and a statement not in Swiss francs is <strong class="text-slate-200">refused</strong> instead of being booked in CHF without a word. <strong class="text-slate-200">Changing the profile after the preview recomputes it</strong>, and an import whose profile, account or file changed since the preview is refused. A reconciliation batch holding a transaction that has disappeared is processed proposal by proposal instead of failing as a whole. No database migration: going back to v0.13.1 remains possible once the Currency column is removed from profiles.</p>
 				</div>
+				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
+					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+						<h3 class="font-semibold">E28 — Six bugs and closing a bank account <span class="text-slate-500 font-mono text-xs">v0.13.3</span></h3>
+						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
+					</div>
+					<p class="text-sm text-slate-400">A bank account can now be <strong class="text-slate-200">closed</strong>, and reopened: it becomes read-only, its history stays whole, and nothing more can be booked on it. A <strong class="text-slate-200">rejected bank transaction can be put back</strong> among the reconciliation proposals from its import&rsquo;s detail. The installation backup reads all its tables in <strong class="text-slate-200">a single consistent snapshot</strong>. Reconciliation no longer proposes an invoice it would then refuse, and a debit offered against a customer invoice is refused cleanly. An error is never displayed as &ldquo;[object Object]&rdquo; any more, and destructive buttons are visible again. One database migration, which does not raise the minimum version — but going back to v0.13.2 requires restoring the backup taken before the upgrade.</p>
+				</div>
 			</div>
 		</div>
 	</section>

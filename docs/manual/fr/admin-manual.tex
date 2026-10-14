@@ -222,7 +222,7 @@ cd /opt/kesh
 Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.2/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.3/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -233,7 +233,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.2/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.3/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -548,7 +548,7 @@ Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh,
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.2
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.3
 curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
 curl -fsSL "$DEPOT/.env.example" -o .env
 
@@ -1662,13 +1662,13 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.2
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.3
 curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
 curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
 \end{lstlisting}
 
-L'URL désigne l'étiquette d'une version publiée (\keshpath{v0.13.2} ici) : prenez celle de la version que vous installez, la même que l'image de votre compose --- les scripts d'une autre version peuvent attendre d'autres réglages. Ne prenez pas \keshpath{main}, qui peut être en avance sur l'image publiée.
+L'URL désigne l'étiquette d'une version publiée (\keshpath{v0.13.3} ici) : prenez celle de la version que vous installez, la même que l'image de votre compose --- les scripts d'une autre version peuvent attendre d'autres réglages. Ne prenez pas \keshpath{main}, qui peut être en avance sur l'image publiée.
 
 \keshpath{kesh-dump.sh} écrit dans \keshpath{dump/} (forcé en 700) le dump et son empreinte (\keshpath{.sha256}), lisibles de root seul. Il s'arrête à la première erreur ; le dump s'écrit d'abord dans un fichier \keshpath{.tmp}, vérifié (archive intègre, au moins une table, dump complet), puis renommé : un dump raté ou vide ne remplace pas celui de la veille et ne laisse aucun fichier. Un verrou (\keshpath{dump/.verrou}) empêche deux dumps simultanés ; laissé par un arrêt brutal, il se supprime à la main (\keshcommand{rmdir}). Ses réglages, par variables d'environnement, ont pour défauts ceux de ce manuel : \texttt{SAUVEGARDE\_DOSSIER} (\keshpath{/volume1/docker/kesh}), \texttt{SAUVEGARDE\_BASE} (\texttt{kesh}, la base de \texttt{DATABASE\_URL}), \texttt{SAUVEGARDE\_RESEAU} (\keshcommand{frontend}), \texttt{SAUVEGARDE\_IMAGE} (\keshcommand{mariadb:10.11}) ; si votre base porte un autre nom, la commande de la tâche devient :
 
@@ -1980,7 +1980,7 @@ Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (vers
 \subsection{Procédure de mise à jour standard}
 
 \begin{enumerate}
-    \item \textbf{Sauvegarder} la base de données --- avec \keshpath{docker-compose.yml}, le volume \texttt{<projet>\_kesh-mariadb-data} ; sur Synology avec \keshpath{docker-compose.prod.yml}, un dump par \keshpath{kesh-dump.sh} (\S\ref{sec:backup-dsm}) --- (cf. section précédente). \textbf{Pour passer à la 0.13.0 ou à la 0.13.1, cette sauvegarde est le seul retour en arrière possible} : une fois migrée, la base refuse tout binaire antérieur --- 0.12.x après la 0.13.0 (\S\ref{sec:maj-0-13-sans-retour}), 0.13.0 après la 0.13.1 (\S\ref{sec:maj-0-13-1-sans-retour}). La 0.13.2 n'a pas de migration : le retour à la 0.13.1 se fait sans restaurer, à condition d'avoir retiré la colonne Devise des profils CSV (\S\ref{sec:maj-0-13-2-retour}). La 0.13.3 en a une : \textbf{le retour à la 0.13.2 passe par cette sauvegarde} (\S\ref{sec:maj-0-13-3}).
+    \item \textbf{Sauvegarder} la base de données --- avec \keshpath{docker-compose.yml}, le volume \texttt{<projet>\_kesh-mariadb-data} ; sur Synology avec \keshpath{docker-compose.prod.yml}, un dump par \keshpath{kesh-dump.sh} (\S\ref{sec:backup-dsm}) --- (cf. section précédente). \textbf{Pour passer à la 0.13.0 ou à la 0.13.1, cette sauvegarde est le seul retour en arrière possible} : une fois migrée, la base refuse tout binaire antérieur --- 0.12.x après la 0.13.0 (\S\ref{sec:maj-0-13-sans-retour}), 0.13.0 après la 0.13.1 (\S\ref{sec:maj-0-13-1-sans-retour}). La 0.13.2 n'a pas de migration : le retour à la 0.13.1 se fait sans restaurer, à condition d'avoir retiré la colonne Devise des profils CSV (\S\ref{sec:maj-0-13-2-retour}). La 0.13.3 en a une, que la 0.13.2 ne connaît pas et sur laquelle elle refuse de démarrer : \textbf{le retour à la 0.13.2 passe par cette sauvegarde} (\S\ref{sec:maj-0-13-3-retour}).
     \item \textbf{Lire le changelog} de la nouvelle version pour identifier les breaking changes éventuels et les migrations nécessaires.
     \item \textbf{Mettre à jour le fichier compose} --- \textbf{obligatoire pour passer à la 0.13.0} (\S\ref{sec:maj-0-13}) : re-télécharger le compose et y reporter ses adaptations locales, puis vérifier les placeholders de \keshpath{.env} --- dont les lignes \texttt{MARIADB\_ROOT\_PASSWORD} et \texttt{MARIADB\_PASSWORD} : une valeur entre chevrons y est acceptée par Compose, et pour root rien d'autre ne la signale. Sur une base déjà créée, \textbf{ne remplacez pas} ces deux valeurs dans \keshpath{.env} --- ni des chevrons, ni \texttt{kesh\_dev} : la base a gardé celles de sa création, et une valeur neuve n'y change rien (1045 pour Kesh, sauvegarde en échec pour root) ; changez-les par le \S\ref{sec:mariadb-mdp}, \texttt{ALTER USER} d'abord. Pour les versions suivantes : selon le changelog (nouvelles variables, changement d'image).
     \item \textbf{Tirer la nouvelle image} : \keshcommand{docker compose pull kesh-api}.
@@ -2014,8 +2014,35 @@ La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la d
 La 0.13.3 ne demande ni nouveau compose ni nouvelle variable de \keshpath{.env} : on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.13.2, appliquez d'abord la section suivante (\S\ref{sec:maj-0-13-2}).
 
 \begin{sloppypar}
-\textbf{Sauvegardez la base avant la mise à jour} (étape 1 de la procédure, \S\ref{sec:mise-a-jour}). La 0.13.3 ajoute une \textbf{migration} --- la date de clôture d'un compte bancaire, \texttt{bank\_accounts.closed\_on} ---, qui n'est pas breaking : \texttt{kesh\_version\_min\_required} reste à \texttt{0.13.1}. Une base migrée porte pourtant une migration que la 0.13.2 ne connaît pas, et elle ne devrait pas démarrer sur cette base : \textbf{le retour à la 0.13.2 passe par la restauration de la sauvegarde prise avant la mise à jour}.
+\textbf{Sauvegardez la base avant la mise à jour} (étape 1 de la procédure, \S\ref{sec:mise-a-jour}). La 0.13.3 ajoute une \textbf{migration} --- la date de clôture d'un compte bancaire, \texttt{bank\_accounts.closed\_on}, et la contrainte \texttt{chk\_bank\_accounts\_closed\_not\_primary} ---, qui n'est pas breaking : \texttt{kesh\_version\_min\_required} reste à \texttt{0.13.1}. Une base migrée porte pourtant une migration que la 0.13.2 ne connaît pas, et \textbf{la 0.13.2 refuse de démarrer sur cette base} : \textbf{le retour à la 0.13.2 passe par la restauration de la sauvegarde prise avant la mise à jour} (\S\ref{sec:maj-0-13-3-retour}).
 \end{sloppypar}
+
+\paragraph{Retour à la 0.13.2.}\label{sec:maj-0-13-3-retour}\mbox{}\\
+\begin{sloppypar}
+Sur une base migrée, la 0.13.2 s'arrête au démarrage sur \texttt{Échec des migrations : migration 20261013000001 was previously applied but is missing in the resolved migrations}. La version minimale exigée n'y est pour rien : c'est la liste des migrations appliquées qui ne correspond plus. Une sauvegarde d'installation (\keshpath{.keshbackup}) prise sous la 0.13.3 ne s'importe pas non plus dans une 0.13.2 : la colonne \texttt{closed\_on} y est inconnue. Le retour se fait donc par la \textbf{restauration de la sauvegarde prise avant la mise à jour} --- avec \keshpath{docker-compose.yml} le volume, sur Synology le dump, par \keshpath{kesh-restore.sh} (\S\ref{sec:backup-dsm}) ---, et \textbf{ce qui a été saisi depuis est perdu}.
+\end{sloppypar}
+
+\begin{sloppypar}
+En \textbf{dernier recours}, si cette sauvegarde manque ou si les saisies faites depuis comptent davantage, la migration se défait par SQL, Kesh arrêté, dans la base de Kesh (celle que nomme \texttt{DATABASE\_URL} ; avec \keshpath{docker-compose.yml}, par \keshcommand{docker compose exec mariadb mariadb -uroot -p}) :
+\end{sloppypar}
+
+\begin{lstlisting}[language=SQL]
+ALTER TABLE bank_accounts DROP CONSTRAINT chk_bank_accounts_closed_not_primary;
+ALTER TABLE bank_accounts DROP COLUMN closed_on;
+DELETE FROM _sqlx_migrations WHERE version = 20261013000001;
+\end{lstlisting}
+
+\begin{sloppypar}
+La 0.13.2 démarre alors. \textbf{Les comptes clos redeviennent ouverts} : leur date de clôture est perdue, ils reparaissent dans les sélecteurs et acceptent de nouveau des écritures. Notez-les avant le retour (\emph{Afficher les comptes clos}, sur l'écran \emph{Comptes bancaires}). Une remontée ultérieure à la 0.13.3 rejoue la migration : ces comptes sont à clore de nouveau.
+\end{sloppypar}
+
+\paragraph{Intégrations par l'API : un débit contre une facture.}\mbox{}\\
+\begin{sloppypar}
+\textbf{Changement de contrat} pour \texttt{POST /api/v1/reconciliation/accept} : une transaction de débit, ou de montant nul, proposée contre une facture est refusée proposition par proposition, dans \texttt{failed[]}, en \texttt{RECONCILIATION\_TRANSACTION\_NOT\_CREDIT} (\texttt{details.reason} = \texttt{debit\_transaction} ou \texttt{zero\_amount\_transaction}). Elle rendait auparavant, selon le cas, \texttt{RECONCILIATION\_SCORE\_TOO\_LOW} ou \texttt{DATABASE\_ERROR} --- rien n'était écrit, mais ce dernier code invitait au rejeu : une intégration qui rejouait ce refus doit cesser. Le détail est dans \texttt{docs/api-external.md}.
+\end{sloppypar}
+
+\paragraph{Sur Synology : les scripts de sauvegarde.}\mbox{}\\
+\keshpath{kesh-dump.sh} et \keshpath{kesh-restore.sh} sont inchangés depuis la 0.13.1 : rien à re-télécharger si vous avez ceux de la 0.13.1 ou de la 0.13.2. Pour les re-télécharger, prenez-les \textbf{au tag \keshpath{v0.13.3}} (\S\ref{sec:backup-dsm}), la même version que l'image de votre compose.
 
 \paragraph{Intégrations par l'API : les comptes bancaires clos.}\mbox{}\\
 \begin{sloppypar}
@@ -2301,7 +2328,7 @@ docker compose up -d
 # la sauvegarde DB d'avant la mise a jour (cf. section Restauration).
 \end{lstlisting}
 
-Revenir à l'image précédente \textbf{ne défait pas} la réparation de l'installation faite au premier démarrage (\S\ref{sec:reparation-installation}) : les clés révoquées restent révoquées --- aucune ne se réactive ---, et les sociétés provisoires supprimées ne reviennent pas ; seule la restauration de la sauvegarde d'avant la mise à jour les rend. La réparation n'impose elle-même aucune version minimale ; le retour à la version précédente n'est possible que si \textbf{aucune autre} migration de la release ne relève la version minimale exigée --- vérifiez-le au CHANGELOG. Cette condition ne suffit pas toujours : une release qui ajoute une migration ferme vraisemblablement le retour sans restauration, qu'elle relève ou non la version minimale --- c'est le cas de la 0.13.3 (\S\ref{sec:maj-0-13-3}). Pour la 0.13.2, le retour exige en plus que les profils CSV ne lisent plus la colonne Devise (\S\ref{sec:maj-0-13-2}).
+Revenir à l'image précédente \textbf{ne défait pas} la réparation de l'installation faite au premier démarrage (\S\ref{sec:reparation-installation}) : les clés révoquées restent révoquées --- aucune ne se réactive ---, et les sociétés provisoires supprimées ne reviennent pas ; seule la restauration de la sauvegarde d'avant la mise à jour les rend. La réparation n'impose elle-même aucune version minimale ; le retour à la version précédente n'est possible que si \textbf{aucune autre} migration de la release ne relève la version minimale exigée --- vérifiez-le au CHANGELOG. Cette condition ne suffit pas toujours : une release qui ajoute une migration ferme le retour sans restauration, qu'elle relève ou non la version minimale, car la version précédente refuse de démarrer sur une base qui porte une migration qu'elle ne connaît pas --- c'est le cas de la 0.13.3 (\S\ref{sec:maj-0-13-3-retour}). Pour la 0.13.2, le retour exige en plus que les profils CSV ne lisent plus la colonne Devise (\S\ref{sec:maj-0-13-2}).
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Sécurité}
