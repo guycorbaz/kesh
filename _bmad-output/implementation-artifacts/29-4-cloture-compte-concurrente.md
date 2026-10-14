@@ -2,8 +2,8 @@
 
 ## Status
 
-**29-4a : review** (développée le 2026-10-14, commit `e718221b` ; revue de code P1 remédiée le même jour après
-rebase sur `b4abae5d`, commit `bc9cf85e` ; passe ciblée P2 à lancer, `29-4a-review-prompt-p2-ciblee.md`, Sonnet) — **29-4b :
+**29-4a : done** (développée le 2026-10-14, commit `e718221b` ; revue de code P1 remédiée le même jour après
+rebase sur `b4abae5d`, commit `bc9cf85e` ; passe ciblée P2 faite, 0/0/0/5, **revue close** ; cinq points reportés à la 29-4b, T6-bis) — **29-4b :
 ready-for-dev** (après le merge de la 29-4a).
 
 *Relevé d'origine :* **ready-for-dev** (deux clés) — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `16eeed21`
@@ -841,6 +841,23 @@ chemin porte un compte bancaire (mêmes conditions que la garde non verrouillant
 
 ### 29-4b
 
+- [ ] **T6-bis (étape 0, reports de la passe ciblée P2 de la 29-4a, 2026-10-14)** — avant tout autre geste, reprendre
+  les cinq points LOW reportés (`kesh-gate-logs/29-4a-review-p2-ciblee.md`) :
+  **R-1** — T29a-15 joue un cycle **synthétique** (transaction de test en X sur `company_invoice_settings`, route en S
+  dessus après la sentinelle : aucune route réelle ne tient ce verrou en X puis demande `companies`) ; le dire dans le
+  doc-comment du test et au point (vi) d'`audit_route_registry.rs` (« même mécanique de rejeu, la démotion n'est pas
+  jouée »), ou ajouter un quatrième test `isPrimary=true` contre une ligne de compte tenue.
+  **R-2** — `was_primary` est lu au pré-vol (`bank_accounts.rs`, `archive`) et **réutilisé à chaque tentative** de
+  `archive_once` : le relire dans la transaction de chaque tentative (sous le `FOR UPDATE`), avec un test (promotion
+  concurrente du compte entre deux tentatives) ; défaut préexistant que le rejeu élargit.
+  **R-4** — doc-comments de cycles (`create_bank_account`, point (vi), `ensure_*`) : distinguer le **mesuré** du
+  **supposé** — balayage de l'index secondaire `fk_bank_accounts_company` à la démotion du principal (non vérifié par
+  EXPLAIN) et ordre des contrôles de clé étrangère d'InnoDB (note N-1 : squash et migrations ne rangent pas les FK dans
+  le même ordre) ; écrire « raisonné, non mesuré », ou mesurer.
+  **R-5** — mutation du `rollback` de `conclure` sur les trois routes neuves (`conclure` sans `tx.rollback()`), tuée
+  par un test qui sonde le verrou (`sonde_verrou_nowait`), ou déclarée non couverte.
+  **`docs/api-external.md`** (§ *Interblocages*, l. ~746) — la liste des routes rejouées est trop courte : y ajouter
+  `close`, `reopen`, `PATCH`, `PUT`, `DELETE`, `POST /bank-accounts` et `DELETE /bank-imports/{id}`.
 - [ ] **T7** — Partir d'`origin/main` après la fusion de la 29-4a ; relire les numéros de ligne de l'AC6.
 - [ ] **T8** — Tests de fenêtre des cinq annulations (T29b-1) **d'abord** (rouges au sol), puis les cinq appels de
   `recheck_open_locked_in_tx` (AC6, AC7) ; les deux tests de l'autre entrelacement (T29b-2) ; l'annulation sur un compte
@@ -1632,3 +1649,21 @@ registre à 30) ; fichiers de production touchés **4** (`routes/bank_accounts.r
 **Suite** : la remédiation touche du code de production — la boucle n'est pas close. Passe ciblée P2 à lancer :
 `29-4a-review-prompt-p2-ciblee.md` (**Sonnet**, une lentille sur le seul diff de la remédiation, table des verrous des
 trois enveloppes neuves). PR toujours `refs #651`.
+
+### Revue de code P2 (passe ciblée) de la 29-4a — 2026-10-14
+
+**Passe** : Sonnet, une lentille (R) sur le seul diff de la remédiation P1 (`bc9cf85e`), prompt
+`29-4a-review-prompt-p2-ciblee.md`, rapport `kesh-gate-logs/29-4a-review-p2-ciblee.md`. **0/0/0/5** (CRITICAL / HIGH /
+MEDIUM / LOW : R-1 à R-5). **Trend** : P1 B 0/0/2/6, E 0/0/0/4, A 0/0/1/8 → P2 ciblée Sonnet 0/0/0/5. Aucun défaut de
+code de production nouveau dans les trois enveloppes ni dans `create_import_or_roll_back` ; R-2 est préexistant (élargi
+par le rejeu), R-1, R-3, R-4, R-5 naissent de la remédiation P1.
+
+**Traité ici** : R-3 — la ligne #651 du CHANGELOG (§ 0.13.4) ne promet plus l'absence d'erreur interne : après trois
+tentatives d'interblocage, la route rend encore `500`. Seul changement de la remédiation : un `.md`, aucune ligne de code.
+
+**Reporté à la 29-4b (T6-bis, étape 0)** : R-1 (cycle de T29a-15 synthétique), R-2 (`was_primary` à relire dans la
+transaction de chaque tentative d'`archive_once`, avec test), R-4 (doc-comments de cycles : mesuré / supposé), R-5
+(mutation du `rollback` de `conclure`), et la liste des routes rejouées de `docs/api-external.md`.
+
+**Revue close** : la remédiation ne touche aucune ligne de code de production (règle de la passe ciblée). Clé
+`29-4a-reverification-import-lot` : `done`.

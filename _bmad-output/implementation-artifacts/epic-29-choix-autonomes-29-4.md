@@ -438,3 +438,15 @@
   que celle des annulations, sans appelant en 29-4a), M29-19 bis (`RECHECK_OPEN_LOCKED_SQL` en `FOR UPDATE`),
   M29-23 bis (W17 appelle `recheck_open_locked_in_tx`, la variante qui ne lit pas `archived`). Le Dev Agent Record les donnait « chacun au registre » sans qu'ils y soient.
 - **Réversible** : oui.
+
+### C-29-4-31 — Points reportés à la 29-4b par la passe ciblée P2 (annotation du 2026-10-14)
+
+- **Retenu** : la passe ciblée P2 (Sonnet, 0/0/0/5) clôt la revue de la 29-4a ; R-3 est corrigé (CHANGELOG). Sont
+  reportés à la 29-4b, sans toucher au code maintenant (fiche, T6-bis) : R-1 (T29a-15 joue un cycle synthétique, à dire
+  dans le test et au point (vi)), R-2 (`was_primary` lu au pré-vol et réutilisé à chaque tentative d'`archive_once` : à
+  relire dans la transaction de chaque tentative, avec un test — défaut préexistant que le rejeu élargit), R-4
+  (doc-comments de cycles : distinguer mesuré et supposé), R-5 (mutation du `rollback` de `conclure`), et la liste des
+  routes rejouées de `docs/api-external.md`.
+- **Écartée** : corriger R-2 dans la 29-4a — chaque correctif de production rouvrirait la boucle de revue.
+- **Réversible** : oui.
+
