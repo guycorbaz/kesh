@@ -141,6 +141,15 @@ transaction à un règlement client par virement déjà enregistré sur le même
 migration, un geste humain sans présélection —, et réécrit « puis rejetez » en « puis rattachez » dans les textes des
 29-2 et 29-6. **`kesh-db` touché : gate complet en boucle.**
 
+### 29-9 — Trois petits correctifs ([#649], [#655], [#646], P3)
+
+**Ajoutée le 2026-10-14 sur décision de Guy**, pour tenir la règle de release de la v0.13.4 (moins d'issues ouvertes
+qu'au tag v0.13.3) : −3 issues, −3 bugs. Trois défauts indépendants, chacun à son minimum, sur le précédent de la
+28-8 (dérogation au découpage écrite dans la fiche) : la réconciliation dit qu'il reste des transactions au-delà des
+100 plus récentes et les montre jusqu'à 500 (frontend, plus un test Rust qui fige le plafond) ; une relecture
+ancienne ne masque plus le détail d'un import, ni la page d'un profil bancaire (défaut latent sur cette dernière) ;
+la suppression d'une personne de contact demande confirmation. Aucune migration, aucun code de production Rust.
+
 ## Ordre
 
 - **29-1 en parallèle** des trois autres : elle ne touche ni la réconciliation ni les comptes bancaires.
@@ -155,6 +164,9 @@ migration, un geste humain sans présélection —, et réécrit « puis rejetez
 - **29-8 après la 29-6** (rebase) : même composant `ReconciliationProposals.svelte`, et elle réécrit des phrases du
   manuel que la 29-2 et la 29-6 écrivent. Son ordre par rapport à la 29-4 n'est pas fixé : celle des deux qui se merge
   la seconde inscrit `link_in_tx` au registre `FENETRE` de la 29-4 (fiche 29-8, AC2).
+
+- **29-9 en dernier** de la série de la réconciliation : #649 touche `ReconciliationProposals.svelte` et le passage du
+  manuel que modifient la 29-3, la 29-6 et la 29-8 ; elle se rebase après elles.
 - Intégration **sérielle** sur `main`.
 
 ### Releases
@@ -162,6 +174,8 @@ migration, un geste humain sans présélection —, et réécrit « puis rejetez
 - **v0.13.4** dès que 29-1a, 29-2, 29-3, 29-4, 29-5, 29-6, 29-8 et 29-9 sont mergées : Guy les éprouve tout de suite avec ses relevés mensuels.
 
   29-6, R7)* : Guy les éprouve tout de suite avec ses relevés mensuels.
+
+- La **29-9** part dans la **v0.13.4** (ajoutée le 2026-10-14) : ses trois fermetures comptent dans le décompte du tag.
 - **v0.14.0** à la fin de la 29-1 : fonctionnalité nouvelle.
 
 À chaque release : `scripts/prepare-release.sh`, macros des manuels et URL au tag, CHANGELOG daté, recomptes du
@@ -197,3 +211,7 @@ Docker Hub (`/health`). Autorisé d'office pour cet epic.
 
 [#665]: https://github.com/guycorbaz/kesh/issues/665
 [#670]: https://github.com/guycorbaz/kesh/issues/670
+
+[#646]: https://github.com/guycorbaz/kesh/issues/646
+[#649]: https://github.com/guycorbaz/kesh/issues/649
+[#655]: https://github.com/guycorbaz/kesh/issues/655
