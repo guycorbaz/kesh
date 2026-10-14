@@ -8,6 +8,12 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.13.4] — Non publié
+
+### Corrigé
+
+- **Un paiement reçu après l'échéance, ou après un rappel, est proposé à la réconciliation ([#529](https://github.com/guycorbaz/kesh/issues/529)).** Une facture n'était proposée — et acceptée — que si le paiement arrivait au plus 30 jours après **sa date**, si bien qu'un client qui payait à 30 jours net avec un peu de retard, ou après un rappel, n'était jamais reconnu — ni celui qui payait à l'heure, mais plus de 30 jours après sa date, une facture à 60 jours. Les 30 jours courent désormais de la plus tardive des trois dates : la date de la facture, son échéance, son dernier rappel (un rappel annulé ne compte pas). Seules les **dates** changent : la facture n'est toujours proposée qu'au montant de son reste dû — un paiement qui inclut les frais de rappel ne l'est pas ([#401](https://github.com/guycorbaz/kesh/issues/401)). La proposition et l'acceptation appliquent toujours la même règle de dates. Un paiement reçu plus de 30 jours après l'échéance et plus de 30 jours après le dernier rappel n'est toujours pas proposé : enregistrez-le depuis la fiche de la facture, puis rejetez la transaction. API : mêmes codes et raisons qu'avant ; une acceptation refusée en `payment_date_outside_window` peut désormais aboutir.
+
 ## [0.13.3] — 2026-10-14
 
 ⚠️ **Cette version n'est toujours pas destinée à tenir une comptabilité réelle.** Epic 28 : un compte bancaire se **clôt** et se rouvre ; une transaction rejetée se remet parmi les propositions ; la sauvegarde d'installation lit toutes ses tables dans un instantané unique ; la réconciliation ne propose plus une facture qu'elle refuserait, et refuse proprement un débit présenté contre une facture ; une erreur ne s'affiche plus « [object Object] » ; les boutons d'action destructive se voient.

@@ -2791,7 +2791,11 @@ async fn post_accept_rejects_payment_date_outside_window(pool: MySqlPool) {
 // ============================================================
 // Story 28-7 (#548) — la proposition et l'acceptation partagent la fenêtre
 // de dates `InvoiceDateWindow` : `D − 30 ≤ F ≤ D + 1`, `D` étant la date de
-// valeur de la transaction (à défaut sa date de comptabilisation).
+// valeur de la transaction (à défaut sa date de comptabilisation). Depuis la
+// Story 29-2 (#529), la borne basse porte sur la date d'ancrage `A` —
+// `D − 30 ≤ A`, `A` la plus tardive de la date, de l'échéance et du dernier
+// rappel non annulé — et la borne haute reste sur `F` ; pour une facture
+// sans échéance ni rappel, comme celles de cette section, `A = F`.
 // ============================================================
 
 /// Les couples `(transaction, facture)` que `GET /proposals` propose, toutes
@@ -2884,7 +2888,10 @@ async fn accept_couples_287(
 /// tolérance de 0.05 : aucune facture n'est candidate d'une autre transaction).
 /// Ce qui est proposé est exactement ce que l'acceptation admet. Le cas `+2`
 /// est celui de #548 (proposé puis refusé avant la story) ; `+30` le pire cas
-/// de l'ancienne fenêtre `± 30` ; `−30` / `−31` figent la borne de #529.
+/// de l'ancienne fenêtre `± 30` ; `−30` / `−31` figent la borne basse d'une
+/// facture **sans échéance ni rappel**, dont la date d'ancrage est sa date
+/// (Story 29-2 : la borne basse porte sur l'ancre, cf.
+/// `proposal_and_acceptance_share_the_anchor_of_due_date_and_reminders`).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn proposal_and_acceptance_share_the_invoice_date_window(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -3084,6 +3091,242 @@ async fn proposals_use_the_value_date_like_the_acceptance(pool: MySqlPool) {
             "cas {i} : date de l'écriture d'encaissement"
         );
     }
+}
+
+// ============================================================
+// Story 29-2 (#529) — la borne basse s'ancre sur la plus tardive de la date
+// de facture, de l'échéance et du dernier rappel non annulé.
+// ============================================================
+
+/// Pose l'échéance d'une facture (`seed_validated_invoice` la laisse `NULL`).
+async fn set_due_date_292(pool: &MySqlPool, invoice_id: i64, due_date: Option<NaiveDate>) {
+    sqlx::query("UPDATE invoices SET due_date = ? WHERE id = ?")
+        .bind(due_date)
+        .bind(invoice_id)
+        .execute(pool)
+        .await
+        .expect("due_date update");
+}
+
+/// Insère en SQL brut un rappel envoyé le jour `sent_on`, annulé ou non.
+async fn insert_reminder_292(
+    pool: &MySqlPool,
+    company_id: i64,
+    invoice_id: i64,
+    sent_on: NaiveDate,
+    cancelled: bool,
+) {
+    let sent_at = sent_on.and_hms_opt(12, 30, 0).unwrap();
+    sqlx::query(
+        "INSERT INTO invoice_reminders (company_id, invoice_id, level_number, fee_amount, \
+         sent_at, channel, subject, body, cancelled_at) \
+         VALUES (?, ?, 1, 0, ?, 'manual', 'Rappel', 'Rappel de test', ?)",
+    )
+    .bind(company_id)
+    .bind(invoice_id)
+    .bind(sent_at)
+    .bind(cancelled.then_some(sent_at))
+    .execute(pool)
+    .await
+    .expect("invoice_reminder insert");
+}
+
+/// Story 29-2 (#529), AC6 — parité proposition ⇔ acceptation sur les cas a à
+/// k d'AC5 : ce qui est proposé est exactement ce que l'acceptation admet, et
+/// chaque refus porte sa raison.
+///
+/// | cas | `F`  | `E`  | rappels            | attendu                            |
+/// |-----|------|------|--------------------|------------------------------------|
+/// | a   | D−45 | —    | —                  | refus `payment_date_outside_window` |
+/// | b   | D−45 | D−30 | —                  | proposée et acceptée               |
+/// | c   | D−45 | D−31 | —                  | refus `payment_date_outside_window` |
+/// | d   | D−90 | D−60 | D−10               | proposée et acceptée               |
+/// | e   | D−90 | D−60 | D−10 annulé        | refus `payment_date_outside_window` |
+/// | f   | D−90 | D−60 | D−50, D−20         | proposée et acceptée               |
+/// | g   | D−45 | D−50 | —                  | refus `payment_date_outside_window` |
+/// | h   | D+2  | D+32 | —                  | refus `payment_date_before_invoice_date` |
+/// | i   | D−20 | —    | —                  | proposée et acceptée               |
+/// | j   | D−10 | D+20 | —                  | proposée et acceptée               |
+/// | k   | D−45 | D+15 | —                  | proposée et acceptée               |
+///
+/// `D` en plein exercice 2026 : `D − 90` et `D + 32` y restent.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn proposal_and_acceptance_share_the_anchor_of_due_date_and_reminders(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let day = |k: i64| d + TimeDelta::days(k);
+    // (nom, F, E, rappels (décalage, annulé)).
+    type Case = (&'static str, i64, Option<i64>, &'static [(i64, bool)]);
+    let cases: [Case; 11] = [
+        ("a", -45, None, &[]),
+        ("b", -45, Some(-30), &[]),
+        ("c", -45, Some(-31), &[]),
+        ("d", -90, Some(-60), &[(-10, false)]),
+        ("e", -90, Some(-60), &[(-10, true)]),
+        ("f", -90, Some(-60), &[(-50, false), (-20, false)]),
+        ("g", -45, Some(-50), &[]),
+        ("h", 2, Some(32), &[]),
+        ("i", -20, None, &[]),
+        ("j", -10, Some(20), &[]),
+        ("k", -45, Some(15), &[]),
+    ];
+
+    let mut inv_ids = Vec::new();
+    let mut new_txs = Vec::new();
+    for (i, (_, invoice, due, reminders)) in cases.iter().enumerate() {
+        let amount = Decimal::new(30_000 + 1_000 * i as i64, 2);
+        let reference = format!("INV-A{i}");
+        let (inv_id, _) = seed_validated_invoice(
+            &pool,
+            ctx.company_id,
+            ctx.contact_id,
+            &reference,
+            day(*invoice),
+            amount,
+        )
+        .await;
+        set_due_date_292(&pool, inv_id, due.map(day)).await;
+        for &(k, cancelled) in *reminders {
+            insert_reminder_292(&pool, ctx.company_id, inv_id, day(k), cancelled).await;
+        }
+        inv_ids.push(inv_id);
+        new_txs.push(make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            d,
+            Some(d),
+            amount,
+            "CHF",
+            &reference,
+            Some("Acme Client"),
+        ));
+    }
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("anchor_292"),
+        d,
+        d,
+        new_txs,
+    )
+    .await;
+    let couple = |name: &str| {
+        let i = cases.iter().position(|c| c.0 == name).unwrap();
+        (tx_ids[i], inv_ids[i])
+    };
+
+    let app = spawn_app(pool).await;
+    let proposed = proposed_couples_287(&app, &ctx).await;
+    let all: Vec<(i64, i64)> = cases.iter().map(|c| couple(c.0)).collect();
+    let (accepted, failed) = accept_couples_287(&app, &ctx, &all).await;
+
+    assert_eq!(
+        proposed, accepted,
+        "ce qui est proposé doit être exactement ce que l'acceptation admet"
+    );
+    let expected: std::collections::BTreeSet<(i64, i64)> = ["b", "d", "f", "i", "j", "k"]
+        .iter()
+        .map(|n| couple(n))
+        .collect();
+    assert_eq!(proposed, expected, "cas proposés : b, d, f, i, j, k");
+    for (name, reason) in [
+        ("a", "payment_date_outside_window"),
+        ("c", "payment_date_outside_window"),
+        ("e", "payment_date_outside_window"),
+        ("g", "payment_date_outside_window"),
+        ("h", "payment_date_before_invoice_date"),
+    ] {
+        assert_eq!(
+            failed.get(&couple(name).0).map(String::as_str),
+            Some(reason),
+            "cas {name} : raison du refus"
+        );
+    }
+    assert_eq!(failed.len(), 5, "cinq refus exactement : {failed:?}");
+}
+
+/// Story 29-2 (#529), AC6 — le cas de l'issue, bout à bout : une facture à
+/// `D − 45`, échue à `D − 15` (30 jours net, payée avec quinze jours de
+/// retard), est proposée, acceptée, et réglée à la date du paiement.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_payment_after_the_due_date_is_proposed_and_settles_the_invoice(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let (inv_id, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-529",
+        d - TimeDelta::days(45),
+        dec!(529.00),
+    )
+    .await;
+    set_due_date_292(&pool, inv_id, Some(d - TimeDelta::days(15))).await;
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("late_529"),
+        d,
+        d,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            d,
+            Some(d),
+            dec!(529.00),
+            "CHF",
+            "INV-529",
+            Some("Acme Client"),
+        )],
+    )
+    .await;
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={}",
+            ctx.bank_account_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let proposal = body["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["bankTransactionId"].as_i64() == Some(tx_ids[0]))
+        .expect("la transaction est listée");
+    let first = &proposal["candidates"][0];
+    assert_eq!(
+        first["candidateType"].as_str(),
+        Some("invoice"),
+        "{proposal}"
+    );
+    assert_eq!(first["invoiceId"].as_i64(), Some(inv_id), "{proposal}");
+
+    let (accepted, failed) = accept_couples_287(&app, &ctx, &[(tx_ids[0], inv_id)]).await;
+    assert!(failed.is_empty(), "aucun refus : {failed:?}");
+    assert_eq!(accepted.len(), 1);
+
+    let paid_at: Option<NaiveDateTime> =
+        sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+            .bind(inv_id)
+            .fetch_one(&pool)
+            .await
+            .expect("la facture");
+    assert_eq!(
+        paid_at,
+        Some(d.and_hms_opt(0, 0, 0).unwrap()),
+        "paid_at = D"
+    );
 }
 
 // ============================================================

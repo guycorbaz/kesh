@@ -652,7 +652,9 @@ pub async fn get_proposals(
         }
         // Story 28-7 (#548) — la fenêtre de dates de l'acceptation, sur la
         // même date (valeur, à défaut comptabilisation) : une facture
-        // proposée est une facture que `accept_one_invoice` admet.
+        // proposée est une facture que `accept_one_invoice` admet. Story 29-2
+        // (#529) : sa borne basse porte sur la date d'ancrage (date, échéance,
+        // dernier rappel non annulé), même expression des deux côtés.
         let candidates = reconciliation_repo::find_unpaid_invoices_for_window(
             &state.pool,
             current_user.company_id,
@@ -1737,13 +1739,42 @@ async fn accept_one_invoice(
     }
     // Date du règlement écrit : date de valeur, à défaut de comptabilisation.
     let paid_at_candidate = payment_date(&bank_transaction);
-    // Story 28-7 (#548) — la fenêtre de dates que la proposition a déjà
-    // appliquée (`get_proposals`) : le paiement au plus un jour avant la
-    // facture, au plus 30 jours après. Codes, raisons et `details` inchangés
-    // (contrat d'API) ; le refus n'est plus atteint qu'à une facture redatée
-    // entre la proposition et l'acceptation, ou par un appel d'API direct.
-    // Paiement tardif au-delà de 30 jours : #529, rapprochement manuel.
-    match InvoiceDateWindow::for_transaction(&bank_transaction).check(invoice.date) {
+    // Story 29-2 (#529) — la date d'ancrage de la facture (la plus tardive
+    // de sa date, de son échéance et de son dernier rappel non annulé), lue
+    // par la même expression SQL que la proposition. `SELECT` ordinaire, sans
+    // verrou, après la lecture ordinaire de la facture (étape 5) : la vue de
+    // la transaction est déjà née. Course admise : un rappel annulé ou envoyé
+    // entre l'affichage des propositions et l'acceptation déplace l'ancre ;
+    // l'acceptation tranche sur ce qu'elle lit, comme pour une facture
+    // redatée (Story 28-7).
+    let anchor_date =
+        match reconciliation_repo::invoice_payment_anchor_date(&mut **tx, company_id, invoice.id)
+            .await
+        {
+            Ok(Some(a)) => a,
+            Ok(None) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "INVOICE_NOT_FOUND".to_string(),
+                    details: Some(serde_json::json!({ "invoiceId": invoice_id })),
+                });
+            }
+            Err(e) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "DATABASE_ERROR".to_string(),
+                    details: Some(serde_json::json!({ "message": e.to_string() })),
+                });
+            }
+        };
+    // Story 28-7 (#548), Story 29-2 (#529) — la fenêtre de dates que la
+    // proposition a déjà appliquée (`get_proposals`) : le paiement au plus un
+    // jour avant la date de la facture, au plus 30 jours après sa date
+    // d'ancrage. Codes, raisons et `details` inchangés (contrat d'API) ; le
+    // refus n'est plus atteint qu'à une facture redatée, ou dont un rappel a
+    // été annulé, entre la proposition et l'acceptation, ou par un appel
+    // d'API direct.
+    match InvoiceDateWindow::for_transaction(&bank_transaction).check(invoice.date, anchor_date) {
         Ok(()) => {}
         Err(InvoiceDateRefusal::PaymentBeforeInvoice) => {
             return Err(FailedProposal {
