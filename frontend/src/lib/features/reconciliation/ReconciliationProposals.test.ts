@@ -47,6 +47,10 @@ vi.mock('./ManualMatchModal.svelte', async () => ({
 vi.mock('./TransactionSplitModal.svelte', async () => ({
 	default: (await import('./ModalSuccessStub.test.svelte')).default,
 }));
+// Story 29-8 (#670) — la modale de rattachement, même doublure.
+vi.mock('./LinkSettlementModal.svelte', async () => ({
+	default: (await import('./ModalSuccessStub.test.svelte')).default,
+}));
 
 // Mock i18n util pour rendre le composant déterministe (renvoie le
 // fallback fourni en deuxième argument, variables `{ $x }` interpolées).
@@ -983,5 +987,65 @@ describe('ReconciliationProposals — une ligne sans proposition se rejette (Sto
 			?.slice(prefixe.length);
 		expect(attendu).toBeDefined();
 		expect((hint.textContent ?? '').trim()).toBe(attendu);
+	});
+});
+
+// Story 29-8 (#670, AC4, C-29-8-14) — le bouton « Rattacher à un règlement », sur les seules
+// lignes de crédit en CHF (miroir de la condition 1), et le bilan après un rattachement.
+describe('ReconciliationProposals — rattacher à un règlement (Story 29-8)', () => {
+	function ligne(
+		id: number,
+		amount: string,
+		currency = 'CHF',
+	): GetProposalsResponse['proposals'][number] {
+		const p = makeProposalWithoutCandidate(id);
+		return { ...p, transaction: { ...p.transaction, amount, currency } };
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('le bouton est sur une ligne de crédit en CHF, et absent sur un débit, un montant nul ou une autre devise (M12)', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [ligne(1, '100.03'), ligne(2, '-50.00'), ligne(3, '0.00'), ligne(4, '20.00', 'EUR')],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const { findAllByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await findAllByTestId('reconciliation-row');
+		const boutons = await findAllByTestId('link-settlement-button');
+		expect(boutons.map((b) => b.getAttribute('data-tx-id'))).toEqual(['1']);
+	});
+
+	it('un rattachement réussi efface le bilan du lot précédent, recharge et affiche « 1 opération(s) réussie(s). »', async () => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({
+				proposals: [makeProposalWithCandidate(1, 101, 1.0), ligne(2, '100.03')],
+				hasMore: false,
+			} satisfies GetProposalsResponse)
+			.mockResolvedValue({ proposals: [ligne(2, '100.03')], hasMore: false } satisfies GetProposalsResponse);
+		mockApi.rejectProposals.mockResolvedValue({
+			rejected: [],
+			failed: [{ bankTransactionId: 1, errorCode: 'PERIOD_LOCKED', details: null }],
+		} satisfies RejectResponse);
+		const { findAllByTestId, findByTestId, getByTestId, queryByTestId } = render(
+			ReconciliationProposals,
+			{ bankAccountId: 17 },
+		);
+		await fireEvent.click((await findAllByTestId('tx-checkbox'))[0]);
+		await fireEvent.click(getByTestId('reconciliation-reject-btn'));
+		await findByTestId('reconciliation-failed-item');
+
+		const appelsAvant = mockApi.getProposals.mock.calls.length;
+		await fireEvent.click(await findByTestId('link-settlement-button'));
+		await fireEvent.click(await findByTestId('stub-modal-success'));
+		await vi.waitFor(() => {
+			expect(queryByTestId('reconciliation-failed')).toBeNull();
+			expect(getByTestId('reconciliation-success').textContent).toContain('1');
+			expect(getByTestId('reconciliation-success').textContent).toContain(
+				'opération(s) réussie(s).',
+			);
+		});
+		expect(mockApi.getProposals.mock.calls.length).toBeGreaterThan(appelsAvant);
 	});
 });

@@ -17,6 +17,11 @@
   est cochée, et la rangée des boutons le dit. Erreurs partielles
   affichées en bas via `failed`.
 
+  Story 29-8 (#670, AC4) — une ligne de crédit en CHF porte un troisième
+  bouton, « Rattacher à un règlement » (`LinkSettlementModal`) : la
+  transaction se rattache au règlement déjà saisi depuis la fiche de la
+  facture, sans écriture.
+
   Story 15-5c (AC3, #492, choix C38) — chaque refus de `failed[]` est affiché
   par son LIBELLÉ traduit (`failedProposalLabel`) et désigne la transaction par
   sa date, son montant et sa contrepartie, relevés AVANT le rechargement qui
@@ -40,6 +45,7 @@
 	import { failedProposalLabel } from './failed-proposal-label';
 	import ManualMatchModal from './ManualMatchModal.svelte';
 	import TransactionSplitModal from './TransactionSplitModal.svelte';
+	import LinkSettlementModal from './LinkSettlementModal.svelte';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
@@ -56,6 +62,9 @@
 	// Story 8-5a-bis FR48 — split modal state.
 	let splitOpen = $state(false);
 	let splitProposal = $state<ReconciliationProposal | null>(null);
+	// Story 29-8 (#670) — modale « Rattacher à un règlement ».
+	let linkOpen = $state(false);
+	let linkProposal = $state<ReconciliationProposal | null>(null);
 	let accounts = $state<AccountResponse[]>([]);
 	// γ refactor BS1 — checkbox tx-level top-1 only : selected = Set<txId>
 	// (l'invoiceId top-1 est ré-extrait au moment du submit).
@@ -185,6 +194,31 @@
 		clearBatchReport();
 		splitOpen = false;
 		splitProposal = null;
+		await load();
+	}
+
+	/**
+	 * Story 29-8 (#670, AC4) — miroir de la condition 1 du serveur
+	 * (`transaction_can_be_linked`) : seul un crédit en CHF se rattache à un règlement.
+	 */
+	function canLink(p: ReconciliationProposal): boolean {
+		return Number(p.transaction.amount) > 0 && p.transaction.currency === 'CHF';
+	}
+
+	function openLink(p: ReconciliationProposal) {
+		linkProposal = p;
+		linkOpen = true;
+	}
+
+	/**
+	 * Un rattachement réussi ouvre un nouveau bilan : celui du lot précédent est effacé, puis
+	 * le compteur dit l'opération réussie (choix C-29-8-32), et la liste est relue.
+	 */
+	async function onLinkSuccess() {
+		clearBatchReport();
+		lastSuccessCount = 1;
+		linkOpen = false;
+		linkProposal = null;
 		await load();
 	}
 
@@ -430,6 +464,20 @@
 							>
 								{i18nMsg('reconciliation-split-button-label', 'Éclater')}
 							</button>
+							<!-- Story 29-8 (#670, AC4) — rattacher la transaction au règlement déjà
+							     saisi depuis la fiche de la facture : lignes de crédit en CHF seulement. -->
+							{#if canLink(p)}
+								<button
+									type="button"
+									class="ml-2 text-xs text-primary underline disabled:opacity-50"
+									disabled={busy}
+									onclick={() => openLink(p)}
+									data-testid="link-settlement-button"
+									data-tx-id={p.bankTransactionId}
+								>
+									{i18nMsg('reconciliation-link-button-label', 'Rattacher à un règlement')}
+								</button>
+							{/if}
 						</td>
 					</tr>
 				{/each}
@@ -459,6 +507,16 @@
 			proposal={splitProposal}
 			{accounts}
 			onSuccess={onSplitSuccess}
+		/>
+
+		<LinkSettlementModal
+			open={linkOpen}
+			onOpenChange={(v) => {
+				linkOpen = v;
+				if (!v) linkProposal = null;
+			}}
+			proposal={linkProposal}
+			onSuccess={onLinkSuccess}
 		/>
 	{/if}
 

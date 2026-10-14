@@ -6,6 +6,8 @@ import type {
 	AcceptResponse,
 	CancelReconciliationResponse,
 	GetProposalsResponse,
+	LinkCandidatesResponse,
+	LinkResponse,
 	ManualMatchResponse,
 	ReconciliationTransactionResponse,
 	RejectResponse,
@@ -142,5 +144,34 @@ export async function unrejectTransaction(bankTransactionId: number): Promise<vo
 	return apiClient.post<void>(
 		`/api/v1/reconciliation/transactions/${bankTransactionId}/unreject`,
 		{},
+	);
+}
+
+/**
+ * Story 29-8 (#670) — les règlements clients par virement, déjà saisis depuis la fiche de la
+ * facture, auxquels la transaction se rattache : même compte bancaire, montant égal ou
+ * dépassé de 5 centimes au plus, règlement pas encore rapproché. Triés par écart puis par
+ * proximité de date ; rien n'est présélectionné.
+ */
+export async function getLinkCandidates(
+	bankTransactionId: number,
+): Promise<LinkCandidatesResponse> {
+	return apiClient.get<LinkCandidatesResponse>(
+		`/api/v1/reconciliation/transactions/${bankTransactionId}/link-candidates`,
+	);
+}
+
+/**
+ * Story 29-8 (#670) — rattache la transaction au règlement : elle passe rapprochée en
+ * pointant l'écriture du règlement, **sans aucune écriture**. Refus notable :
+ * `409 RECONCILIATION_SETTLEMENT_NOT_LINKABLE` (la liste a changé — la relire).
+ */
+export async function linkTransaction(
+	bankTransactionId: number,
+	settlementId: number,
+): Promise<LinkResponse> {
+	return apiClient.post<LinkResponse>(
+		`/api/v1/reconciliation/transactions/${bankTransactionId}/link`,
+		{ settlementId },
 	);
 }
