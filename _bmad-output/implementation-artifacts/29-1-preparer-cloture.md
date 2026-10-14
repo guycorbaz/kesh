@@ -11,6 +11,9 @@ passe ciblée P4 à lancer (`29-1-validate-prompt-p4-ciblee.md`, Haiku, une lent
 **2026-10-14 — 29-1a développée** (`bmad-dev-story`, Opus 5.5) : clé `29-1a-controles-prealables` en **`review`** ;
 dernier commit de code `7c643eba` ; revue de code P1 à lancer (`29-1a-review-prompt-p1.md`, Sonnet, lentilles B, E,
 A). La 29-1b reste `ready-for-dev`.
+**2026-10-14 — 29-1b développée** (`bmad-dev-story`, Opus 5.5, branche `story/29-1b` depuis `b4abae5d`, la 29-1a
+fusionnée) : clé `29-1b-contre-passation-transitoires` en **`review`** ; dernier commit de code `806598ac` ; revue de
+code P1 à lancer (`29-1b-review-prompt-p1.md`, Opus, lentilles B, E, A).
 
 ⛔ **Deux stories, une fiche, deux PR successives** (C-29-1-1, précédents C-26-2-15 et C-28-4-1) :
 
@@ -660,8 +663,8 @@ livrables de l'ancienne AC19, `api-external.md` et CHANGELOG de la 29-1b, sont �
 
 ### 29-1b
 
-- [ ] **Tb1** — Tests rouges d’abord : T-b1 à T-b9 (AC10-AC15, AC18).
-- [ ] **Tb2** — `ReversalDating`, paramètre de `reverse_in_tx_inner`, étapes (1) et (4) (lecture par
+- [x] **Tb1** — Tests rouges d’abord : T-b1 à T-b9 (AC10-AC15, AC18).
+- [x] **Tb2** — `ReversalDating`, paramètre de `reverse_in_tx_inner`, étapes (1) et (4) (lecture par
       `fiscal_years::find_next_after`, AC3-bis), nouvelles variantes de `DbError`, fonctions publiques
       `reverse_at_next_fiscal_year_start_in_tx` (sur la transaction de l'appelant, comme `reverse_in_tx` l. 2488) et
       `reverse_at_next_fiscal_year_start` (enveloppe pool calquée sur `reverse`, l. 2847) ; doc-comment des verrous
@@ -671,9 +674,9 @@ livrables de l'ancienne AC19, `api-external.md` et CHANGELOG de la 29-1b, sont �
       `companies.rs` l. 909-912 — gagnent l'exception du geste neuf (AC17, P3 R10) ; l'audit `journal_entry.reversed` garde son action **littérale**
       — une action choisie par `match` sur `dating` serait un site indirect neuf pour `audit_label_registry.rs` (P2
       R15).
-- [ ] **Tb3** — Route, handler rejoué, mapping `errors.rs` (replis égaux à fr-CH, garde G9 : **ajouter les deux clés
+- [x] **Tb3** — Route, handler rejoué, mapping `errors.rs` (replis égaux à fr-CH, garde G9 : **ajouter les deux clés
       à la `TABLE` de G9**, avec `NOM`, AC14, P3 R4), registre des routes et ses compteurs (AC13, AC14).
-- [ ] **Tb4** — Frontend : client `reverseJournalEntryAtNextFiscalYearStart`, lecture de la liste des exercices,
+- [x] **Tb4** — Frontend : client `reverseJournalEntryAtNextFiscalYearStart`, lecture de la liste des exercices,
       bouton, motifs, confirmation, refus (AC15). **Test existant à adapter** :
       `frontend/src/routes/(app)/journal-entries/[id]/journal-entry-page.test.ts` l. 34-38 mocke
       `journal-entries.api` par liste d'exports (sans le client neuf) : le compléter. Il **mocke déjà**
@@ -683,12 +686,12 @@ livrables de l'ancienne AC19, `api-external.md` et CHANGELOG de la 29-1b, sont �
       comportements pour T-b8 (succès, échec, en attente). `startEdit` (l. 211-235) **garde sa propre lecture** au
       clic, inchangée : son échec a sa dégradation propre, et la liste a pu changer depuis l'ouverture (C-29-1-30).
       Fichier nommé au Dev Agent Record parmi les tests modifiés.
-- [ ] **Tb5** — i18n ×4 (AC14, AC16) ; gardes G4-bis et G9 de `textes_coherents.rs` (G9 étendue des deux clés, Tb3),
+- [x] **Tb5** — i18n ×4 (AC14, AC16) ; gardes G4-bis et G9 de `textes_coherents.rs` (G9 étendue des deux clés, Tb3),
       lints i18n verts.
-- [ ] **Tb6** — E2E de parcours (AC18).
-- [ ] **Tb7** — Manuel utilisateur + PDF ; brochure + PDF et README ; `api-external.md` (route décrite au § 7, liste des routes rejouées, deux codes) ;
+- [x] **Tb6** — E2E de parcours (AC18).
+- [x] **Tb7** — Manuel utilisateur + PDF ; brochure + PDF et README ; `api-external.md` (route décrite au § 7, liste des routes rejouées, deux codes) ;
       CHANGELOG (AC17) ; gardes G4-bis et G7 vertes.
-- [ ] **Tb8** — Mutations M-b1 à M-b12 ; captures clair et sombre (bouton, confirmation, refus) hors dépôt ; gate
+- [x] **Tb8** — Mutations M-b1 à M-b12 ; captures clair et sombre (bouton, confirmation, refus) hors dépôt ; gate
       complet et E2E complet au dernier commit de code.
 
 ## Dev Notes
@@ -978,7 +981,8 @@ remplace — C-29-1-27.)*
 ### Agent Model Used
 
 29-1a : Opus 5.5 (`bmad-dev-story`, autonomie, worktree `/home/gcorbaz/devel/kesh-29-1`, bases `kesh_291` /
-`kesh_e2e_291`, port 3042). 29-1b : (à remplir).
+`kesh_e2e_291`, port 3042). 29-1b : Opus 5.5 (`bmad-dev-story`, autonomie, même worktree, branche `story/29-1b`,
+mêmes bases et port).
 
 ### Debug Log References
 
@@ -1225,6 +1229,148 @@ doublon, aucune section 0.14.0) ; `sprint-status.yaml` relu (YAML valide). `docs
   ceux de la KF-029 (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
   `:77`, `:150`) ; aucun autre — `sidebar-navigation.spec.ts:75` a passé.
 
+### 29-1b — compte rendu de développement (2026-10-14)
+
+Journaux (hors dépôt) `/home/gcorbaz/devel/kesh-gate-logs/291b-*` : `291b-red.log` et `291b-red-vitest.log` (phase
+rouge), `291b-gate1.log` et `291b-gate2.log` (gates backend intermédiaires), `291b-vitest1.log`,
+`291b-e2e-target1.log` (E2E ciblé), `291b-mutations.log`, `291b-make-fr.log`,
+`291b-final-{summary,backend,check,lint,vitest,e2e}.log` (gate final). Scripts (scratchpad de la session, non versés) :
+`291b-reset-db.sh`, `291b-backend-gate.sh`, `291b-e2e.sh`, `291b-mutations.py`, `291b-final-gate.sh`. Captures :
+`kesh-gate-logs/29-1b-captures/29-1b-*.png`.
+
+**T0** : relu ce que la 29-1a a livré et que la 29-1b réutilise — `fiscal_years::find_next_after` et `NEXT_AFTER_SQL`
+(`start_date > ?`, `ORDER BY start_date ASC LIMIT 1`, sans verrou, sur l'exécuteur reçu) ; appelée telle quelle à
+l'étape (4), sur `&mut **tx`.
+
+**Commits** (branche `story/29-1b`, base `b4abae5d`) : `5c853450` (serveur, catalogues ×4, tests Rust), `806598ac`
+(écran, Vitest, E2E) — **dernier commit de code** —, `64cc5835` (manuel et brochure + PDF, README, `api-external.md`,
+CHANGELOG), puis un commit de comptes rendus (fiche, registre, `sprint-status.yaml`, prompt de revue). Aucun
+`closes` / `fixes` dans les messages (`refs #232` partout).
+
+**Tests rouges d'abord.** Côté serveur, sur un talon (paramètre `dating` ignoré, donc daté du jour ; route et refus
+présents) — `291b-red.log` :
+
+```
+     Summary [   3.455s] 24 tests run: 13 passed, 11 failed, 2959 skipped
+        FAIL  kesh-api::audit_route_registry every_mutating_route_of_lib_is_in_the_registry
+        FAIL  kesh-db repositories::journal_entries::tests::t_b4_la_lecture_de_l_exercice_suivant_suit_le_recensement
+        FAIL  kesh-db::reversal_next_fiscal_year t_b3_exercice_suivant_clos
+        FAIL  kesh-db::reversal_next_fiscal_year t_b3_premier_jour_verrouille
+        FAIL  kesh-db::reversal_next_fiscal_year t_b3_sans_exercice_suivant   (« NextFiscalYearMissing attendu, reçu Ok(… entry_date: 2026-10-14 …) »)
+        FAIL  kesh-db::reversal_next_fiscal_year t_b1_datee_du_premier_jour_de_l_exercice_suivant
+        FAIL  kesh-db::reversal_next_fiscal_year t_b5_i_la_contre_passation_d_abord_puis_la_cloture
+        FAIL  kesh-db::reversal_next_fiscal_year t_b5_ii_la_cloture_d_abord_puis_la_contre_passation   (« NextFiscalYearClosed attendu, reçu Err(FiscalYearInvalid) »)
+        FAIL  kesh-db::reversal_next_fiscal_year t_b6_exercice_suivant_apres_un_trou
+        FAIL  kesh-api::journal_entry_reversal_e2e the_two_refusals_of_the_reversal_at_next_fiscal_year_start
+        FAIL  kesh-api::journal_entry_reversal_e2e the_reversal_at_next_fiscal_year_start_route
+```
+
+Les verts l'étaient par nature : T-b2 (le chemin du jour, déjà juste), `t_b3_les_refus_de_la_contre_passation_restent`
+et `une_ecriture_d_une_autre_societe_est_introuvable` (refus communs aux deux datations), les tests existants du
+registre. ⚠️ **Le rouge de `t_b3_exercice_suivant_clos` venait d'abord de son montage** (l'origine créée sous un N+1
+déjà clos était refusée en `LaterFiscalYearClosed`) : montage corrigé — N+1 clos **après** la création de l'origine —
+avant d'écrire le code. Côté écran, T-b8 rejoué contre la page de `b4abae5d` (copie, `git checkout`, test, copie
+remise, `touch`) — `291b-red-vitest.log` : **10 failed | 8 passed (18)**, les dix cas neufs ; ⚠️ les cas qui attendent
+une **absence** (attente, non contre-passable, Consultation) rougissent par l'attente de l'appel à la liste, que
+l'ancienne page ne faisait pas, non par leur assertion d'absence — leur pouvoir propre est établi par M-b12.
+⚠️ **Écart** : l'E2E T-b9 a été écrit après le code ; il a passé au premier lancement.
+
+**Fichiers de test existants.** Restés **sans modification de leurs tests** (T-b2) — recompte `grep -rln
+"reverse_in_tx\|reverse_owned_in_tx\|/reverse" crates/*/tests/` : `kesh-api/tests/{admin_full_import_e2e,
+filet_bilan_clos_e2e,journal_entry_reversal_e2e,period_lock_e2e}.rs`, `kesh-db/tests/{filet_bilan_clos,
+fiscal_years_repository,invoice_settlement,journal_entries_modification,lettering_documents_backfill,
+lettering_documents,letterings_lexical,letterings,opening_complement_repository,open_items,reconciliation_cancel,
+supplier_invoices_repository}.rs`, et `kesh-db/tests/reversal_next_fiscal_year.rs`, neuf. `git diff --stat b4abae5d
+806598ac` sur ces fichiers ne touche que : `journal_entry_reversal_e2e.rs` (**ajouts seulement** — T-b2 et T-b7, trois
+tests et deux aides, en fin de fichier), `period_lock_e2e.rs` (un **commentaire**, AC17 P4-2) et le fichier neuf.
+**Modifiés** : `audit_route_registry.rs` (entrée et compteurs, AC13), `textes_coherents.rs` (deux clés à la `TABLE` de
+G9), `journal-entry-page.test.ts` (Tb4 : mocks de la liste et de la route neuve, mock d'`i18nMsg` qui remplace les
+variables — C-29-1-56 —, dix cas), `i18n-keys.test.ts` (`sitesTotal` 2163 → 2170, ventilé en commentaire).
+
+**Tests neufs, recomptés aux deux bornes `b4abae5d` → `806598ac`** (`git show <ref>:<f> | grep -cE …`) : Rust **13** —
+`kesh-db/tests/reversal_next_fiscal_year.rs` 0 → 9 `#[sqlx::test]`, `journal_entries.rs` (module) 0 → 1 `#[test]`,
+`kesh-api/tests/journal_entry_reversal_e2e.rs` 53 → 56 ; Vitest **+10** — `journal-entry-page.test.ts` 7 → 17 `it(` ;
+E2E **+2** — `fiscal-year-closing-journey.spec.ts` 0 → 2. Cohérents avec les gates : nextest 3652 → 3665, Vitest
+1640 → 1650 (`main` mesuré au rebase de la 29-1a : 3652 et 1640).
+
+**Gate final** (lancé à `HEAD` = `64cc5835`, qui n'ajoute au dernier commit de code que des documents ; bases
+`kesh_291` / `kesh_e2e_291` remises à zéro d'abord ; `291b-final-*.log`, sous verrou) :
+- `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **3665 passés, 6 ignorés**, vert ;
+- `npm run check` : 0 erreur, 29 avertissements (aucun dans un fichier de la story) ; `npm run lint-i18n-ownership` :
+  vert ; `npm run test:unit` : **147 fichiers, 1650 tests**, verts ; `npm run build` : vert (étape du script E2E) ;
+- **E2E complet** (port 3042, `kesh_e2e_291`) : **287 passés, 7 échecs, 19 ignorés** (12,1 min). Les 7 échecs,
+  fichier par fichier contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — les sept de la **KF-029 (#97)**,
+  aucun autre. `fiscal-year-closing-journey.spec.ts` : 2/2.
+- Intermédiaires : `291b-gate1.log` (backend complet sur l'arbre de travail, **1 échec hors sujet** —
+  `rejeu_interblocage_e2e::the_predicates_and_the_app_envelope_recognise_a_real_deadlock`, `Unknown database
+  '_sqlx_test_…'` : la base éphémère a disparu en cours de run, nettoyée par un autre processus ; le binaire rejoué
+  seul : 11/11 —, puis `291b-gate2.log` : **3665 / 6 ignorés**, vert, avant le commit `5c853450`) ; gates ciblés
+  `binary(reversal_next_fiscal_year)`, `binary(audit_route_registry)`, `binary(textes_coherents)`, `kesh-i18n` ;
+  Vitest de la page (18/18) et des gardes partagées (`src/lib/shared/`, 266/266) ; E2E ciblé
+  (`fiscal-year-closing-journey`, `journal-entries`, `fiscal-years` : **35 passés, 6 ignorés**).
+
+**Mutations** (`291b-mutations.py`, `291b-mutations.log`, sous verrou) — chacune par motif vérifié **unique**,
+restaurée par `git checkout -- <f>` puis `touch <f>` ; **12 exécutées, 12 tuées**, aucune en échec de compilation :
+
+| # | Forme appliquée | Tuée par |
+|---|---|---|
+| M-b1 | `(next.start_date, fy)` → `(Utc::now().date_naive(), fy)` | `t_b1_…`, `t_b3_premier_jour_verrouille`, `t_b5_i_…` |
+| M-b2 | `NEXT_AFTER_SQL` en `ORDER BY start_date DESC` | `t_b1_…` (N+2 présent) |
+| M-b3 | confirmation retirée (`let fy = next.clone();`) | `t_b3_exercice_suivant_clos` ; et `t_b5_ii_…` (sans confirmation, `FiscalYearClosed` au lieu de `NextFiscalYearClosed`) |
+| M-b4 | `Some(id)` → `None` à la création | `t_b1_…`, `t_b3_les_refus_…` |
+| M-b5 | `"dating"` ajouté au JSON du chemin du jour | `the_audit_of_a_reversal_dated_today_is_exactly_the_link` (T-b2) |
+| M-b6 | `NextFiscalYearClosed` → `.ok_or(DbError::FiscalYearInvalid)` | `t_b3_exercice_suivant_clos`, `t_b5_ii_…` |
+| M-b7 | handler sans `retry_on_deadlock` | `every_replayed_route_calls_an_envelope` (registre) |
+| M-b8 | bouton sous `entry.reversable` seul | `journal-entry-page.test.ts` (4 cas) |
+| M-b9 | lecture de l'exercice suivant déplacée avant le recensement | `t_b4_…` |
+| M-b10 | sans suivant : repli sur l'exercice du jour | `t_b3_sans_exercice_suivant` |
+| M-b11 | étape (1) sans le `JOIN fiscal_years fy` verrouillant, exercice lu par une requête séparée sans verrou | `t_b5_ii_…` (aucune attente au motif `"JOIN fiscal_years fy"`, 10 s) |
+| M-b12 | `nextYearReversal` : liste en attente → `missing` | `journal-entry-page.test.ts` (cas « en cours de lecture ») |
+
+⚠️ M-b3 est tuée **aussi** par T-b5 (ii), que la fiche ne revendiquait plus (C-29-1-27) : la vue de A naît après le
+`COMMIT` de B, la confirmation retirée, `create_in_tx_inner` rend `FiscalYearClosed` — c'est la même différence de
+code que T-b3, non une course. T-b5 (i) ne tue rien de la fiche, comme déclaré (test de comportement) ; il rougit sous
+M-b1 parce que la date du jour tombe dans N, clos.
+
+**Recette visuelle** : `29-1b-bouton-{clair,sombre}.png`, `29-1b-confirmation-{clair,sombre}.png`,
+`29-1b-refus-motif-{clair,sombre}.png` (E2E, `KESH_E2E_CAPTURES_DIR`) ; « sombre » identique octet pour octet au
+clair (`cmp`), Kesh n'a pas de thème sombre (C-28-1-7). ⚠️ **Constat** : le dialogue de confirmation a un fond
+**transparent** — la classe `bg-card` n'est définie par aucun jeton du thème (`grep -n card frontend/src/app.css` vide) ;
+défaut **préexistant** sur `main` (dialogues *Contre-passer* et *Supprimer* de la fiche d'écriture,
+`JournalEntryForm.svelte`), que le dialogue unique reprend tel quel. Hors périmètre, et **déjà tracé** : le jeton
+`card` figure dans **#645** (ouverte, « Plusieurs jetons de couleur du thème ne sont pas définis »).
+
+**Manuel** : § *Les transitoires de fin d'exercice* (`\label{sec:transitoires}`), exception au verrou de période,
+renvois depuis *Contre-passer* et *Préparer la clôture* (K7, limite neuve), phrases du § *Exercices dans le désordre* ;
+**PDF régénéré** (`make fr`, sous verrou, `291b-make-fr.log` ; le manuel d'administration, inchangé, n'est pas
+recompilé) et contrôlé aplati — « Les transitoires de fin d'exercice » ×2, « Contre-passer au début de l'exercice
+suivant » ×2, « Kesh ne repère pas une transitoire oubliée » ×1, « Actifs transitoires » ×1, « Passifs transitoires »
+×1, « écriture complémentaire » ×1, « que si cet exercice est clôturé » ×1, « ?? » ×0 (« Sauf la contrepassation… » :
+coupure de mot en fin de ligne, présente). Brochure : PDF régénéré, « transitoires contre-passées » ×1.
+
+**Propagation** : `grep -rn "datée du jour\|daté du jour\|celle du jour" docs/ README.md website/ crates/` — chaque
+résultat restant parle du geste du jour ou d'une annulation ; les trois commentaires nommés par l'AC17
+(`journal_entries.rs`, `companies.rs`, `period_lock_e2e.rs`) portent l'exception. Compteurs du registre :
+`\b(24|118|112|121)\b` regrepés sur `audit_route_registry.rs` et `docs/api-external.md` — plus aucun site
+(C-29-1-55). Clés : `grep -c '^journal-entries-reverse-next-year-\|^error-next-fiscal-year-'` = **9** dans chacune des
+quatre locales.
+
+**Écarts à la fiche** :
+1. T-b9 (E2E) et les Vitest de T-b8 écrits après le code (rouge constaté ensuite pour T-b8, voir plus haut).
+2. Un sixième site de compteur du registre (`examinees, 24`), non nommé par l'AC13 (C-29-1-55).
+3. L'exercice de l'écriture absent de la liste : motif d'indisponibilité, état que l'AC15 ne tranchait pas (C-29-1-48).
+4. Dialogue de confirmation **unique** pour les deux gestes (C-29-1-49) ; le geste du jour garde son texte, son
+   `data-testid` et son comportement d'erreur.
+5. Garde `fy.id != next.id` → `Invariant` (C-29-1-50), que la fiche ne prescrivait pas.
+
+**Issues à ouvrir** : aucune. **Proposé** : un commentaire sur **#645** — effet visible du jeton `card` manquant : les
+dialogues de la fiche d'écriture (*Contre-passer*, *Supprimer*, *Contre-passer au début de l'exercice suivant*) ont un
+fond transparent, le texte de la page transparaît sous la confirmation (capture `29-1b-confirmation-clair.png`).
+**Demandé à l'orchestrateur** : push de `story/29-1b` ; PR « Story 29-1b : contre-passer au début de l'exercice
+suivant (closes #232) » — `closes #232` au **titre et au corps** de la PR seulement ; relire le message de squash ;
+revue de code P1 (`29-1b-review-prompt-p1.md`, Opus, B/E/A).
+
 ### Completion Notes List
 
 - 2026-10-14 — fiche créée (analyse de contexte complète, guide de développement), deux clés `ready-for-dev`.
@@ -1239,6 +1385,9 @@ doublon, aucune section 0.14.0) ; `sprint-status.yaml` relu (YAML valide). `docs
 - 2026-10-14 — revue de code P1 remédiée (tests et mutations, doc-comments, textes) ; passe ciblée P2 à lancer.
 - 2026-10-14 — passe ciblée P2 remédiée (0/0/2/2), revue close, clé `29-1a-controles-prealables` en `done` ; registre
   versé à celui de l'epic.
+- 2026-10-14 — **29-1b développée** : AC10 à AC18 ; gate complet et E2E complet verts à `64cc5835` (dernier commit de
+  code `806598ac` ; E2E : les sept échecs attendus de la KF-029) ; 12 mutations tuées sur 12 ; choix C-29-1-48 à 58 ;
+  clé en `review`, revue de code P1 à lancer.
 
 ### File List
 
@@ -1252,6 +1401,17 @@ doublon, aucune section 0.14.0) ; `sprint-status.yaml` relu (YAML valide). `docs
 `frontend/src/routes/(app)/settings/fiscal-years/+page.svelte`, les tests listés au compte rendu,
 `frontend/tests/e2e/fiscal-years.spec.ts`, `docs/manual/fr/user-manual.{tex,pdf}`, `docs/api-external.md`,
 `CHANGELOG.md` — 38 fichiers hors `_bmad-output` (`git diff --stat fcd2ae75 7c643eba -- . ':(exclude)_bmad-output'`).
+
+**29-1b** — neufs : `crates/kesh-db/tests/reversal_next_fiscal_year.rs`,
+`frontend/src/lib/features/journal-entries/next-year-reversal.ts`, `frontend/tests/e2e/fiscal-year-closing-journey.spec.ts`,
+`frontend/tests/e2e/fixtures/camt053_v04_year_end.xml`. Modifiés : `crates/kesh-db/src/errors.rs`,
+`crates/kesh-db/src/repositories/{journal_entries,companies}.rs`, `crates/kesh-api/src/{errors,lib}.rs`,
+`crates/kesh-api/src/routes/journal_entries.rs`, `crates/kesh-api/tests/{audit_route_registry,journal_entry_reversal_e2e,period_lock_e2e,textes_coherents}.rs`,
+`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`,
+`frontend/src/lib/features/journal-entries/journal-entries.api.ts`, `frontend/src/lib/shared/i18n-keys.test.ts`,
+`frontend/src/routes/(app)/journal-entries/[id]/{+page.svelte,journal-entry-page.test.ts}`,
+`docs/manual/fr/{user-manual,marketing-brochure}.{tex,pdf}`, `docs/api-external.md`, `README.md`, `CHANGELOG.md` —
+29 fichiers hors `_bmad-output` (`git diff --stat b4abae5d 64cc5835 -- . ':(exclude)_bmad-output'`).
 
 ## Change Log
 

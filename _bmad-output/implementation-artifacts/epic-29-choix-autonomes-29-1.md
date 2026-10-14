@@ -559,3 +559,103 @@
   du panneau et du dialogue ; aucune borne ajoutée sans mesure (aucune ligne de production ne change dans cette
   remédiation).
 - **Réversible** : oui.
+
+---
+
+## Story 29-1b — Contre-passer au début de l'exercice suivant (développement, 2026-10-14, Opus 5.5)
+
+### C-29-1-48 — L'exercice de l'écriture absent de la liste : motif « indisponible »
+
+- **Contexte** : l'AC15 tranche cinq états de la liste ; un sixième est possible — la liste lue ne contient pas
+  l'exercice de l'écriture (état incohérent, ou exercice supprimé entre la fiche et la liste).
+- **Retenu** : traité comme une liste illisible (`unavailable`) : motif « La liste des exercices n'a pas pu être lue… »,
+  pas de bouton. On ne sait pas ce qui suit un exercice qu'on ne voit pas.
+- **Écartées** : « aucun exercice ne suit » (faux : on n'en sait rien) ; ni bouton ni motif (contraire à la règle de
+  la page, un bouton absent s'explique).
+- **Réversible** : oui.
+
+### C-29-1-49 — Un seul dialogue de confirmation pour les deux contre-passations
+
+- **Contexte** : la page avait un dialogue « Contre-passer » ; le geste neuf en demande un qui nomme date et exercice.
+- **Retenu** : un seul dialogue (`reverseConfirm = 'today' | 'nextYear' | null`), son titre, son corps et le
+  `data-testid` de son bouton (`reverse-entry-confirm` / `reverse-entry-next-year-confirm`) selon le geste — règle
+  DRY du dépôt. Le mode « exercice suivant » ne s'affiche que si l'exercice suivant est ouvert. Sur un refus, le
+  geste du jour garde son comportement (toast, dialogue ouvert) ; le geste neuf ferme le dialogue et relit la fiche,
+  pour que le motif prenne la place du bouton.
+- **Écartées** : un second dialogue recopié (duplication) ; changer le comportement d'erreur du geste du jour (hors
+  périmètre).
+- **Réversible** : oui.
+
+### C-29-1-50 — Confirmation : l'exercice confirmé doit être celui qu'on a trouvé (`Invariant` sinon)
+
+- **Contexte** : `find_open_covering_date(start_date)` rend l'exercice ouvert qui couvre le premier jour du suivant
+  lu ; par non-chevauchement (`find_overlapping`), c'est lui.
+- **Retenu** : un écart d'identifiant rend `DbError::Invariant` (défaut structurel, 500), non un refus métier. Ce
+  n'est pas un jugement de statut sur la lecture ordinaire (C-29-1-27 tenu) : seul l'identifiant est comparé.
+- **Écartées** : aucune garde (un état impossible passerait en silence) ; `NextFiscalYearClosed` (il dirait faux).
+- **Réversible** : oui.
+
+### C-29-1-51 — La liste des exercices se lit à l'ouverture de la page, pour tous les rôles, sous jeton
+
+- **Retenu** : `loadFiscalYears()` appelé par `loadEntry` (donc aussi après navigation et après un refus), jeton qui
+  écarte une réponse tardive, appel enveloppé par `Promise.resolve().then(…)` et réponse non-tableau traitée en
+  échec — un mock ou un client qui rendrait `undefined` donne le motif d'indisponibilité, jamais une exception.
+  Lue aussi pour Consultation (rien ne s'affiche : coût d'une lecture, simplicité du chemin).
+- **Écartées** : lecture au clic (l'AC15 veut le motif avant le clic) ; lecture réservée aux rôles d'écriture.
+- **Réversible** : oui.
+
+### C-29-1-52 — Le jugement de l'exercice suivant, fonction pure de `features/journal-entries/`
+
+- **Retenu** : `next-year-reversal.ts` (`nextYearReversal(years, fiscalYearId)`) : premier exercice dont `startDate`
+  est postérieure à la fin de celui de l'écriture (ordre lexical des dates ISO), comme `find_next_after`. Sans i18n :
+  la page traduit le motif.
+- **Réversible** : oui.
+
+### C-29-1-53 — E2E de parcours sur des années fixes et passées (2025, 2026)
+
+- **Contexte** : l'AC18 dit N et N+1 ; un relevé CAMT figé a des dates.
+- **Retenu** : N = 2025, N+1 = 2026, relevé du 01.12.2025 au 31.12.2025 — rien ne dépend du jour d'exécution, le
+  fichier se lit tel quel (aucune réécriture d'années).
+- **Écartées** : années dérivées de l'horloge (relevé à réécrire, années futures possibles).
+- **Réversible** : oui.
+
+### C-29-1-54 — Emplacement des tests
+
+- **Retenu** : tests du dépôt dans un fichier neuf, `crates/kesh-db/tests/reversal_next_fiscal_year.rs` ; garde T-b4
+  dans le module de tests de `journal_entries.rs` (elle lit ce source) ; T-b2 et T-b7 **ajoutés** à
+  `journal_entry_reversal_e2e.rs` (ses aides `setup`, `consultation_token`), sans modification des tests existants ;
+  T-b8 dans `journal-entry-page.test.ts` (Tb4).
+- **Réversible** : oui.
+
+### C-29-1-55 — Un sixième compteur du registre des routes, non nommé par la fiche
+
+- **Contexte** : l'AC13 énumérait les sites de `audit_route_registry.rs` à bouger ; le gate a rougi sur un autre,
+  `every_replayed_route_calls_an_envelope` : `examinees, 24` et « les vingt-quatre routes Rejouee ».
+- **Retenu** : 24 → 25 et « vingt-cinq » ; valeurs `\b(24|118|112|121)\b` regrepées sur le fichier et sur
+  `docs/api-external.md` : plus aucun site de compteur.
+- **Réversible** : oui.
+
+### C-29-1-56 — Le mock d'`i18nMsg` du test de page remplace les variables
+
+- **Contexte** : le mock rendait le repli brut ; la confirmation doit nommer date et exercice (T-b8).
+- **Retenu** : les `{ $x }` du repli sont remplacés par les arguments, comme le fait `i18nMsg` ; les cas existants
+  restent verts (aucun ne dépendait du texte brut).
+- **Réversible** : oui.
+
+### C-29-1-57 — Textes du geste : une aide dans le dialogue, le bouton de confirmation réutilisé
+
+- **Retenu** : clés `journal-entries-reverse-next-year-{action, dialog-title, dialog-body, help,
+  reason-unavailable, reason-missing, reason-closed}` (sept, ×4 locales) ; le « libellé d'aide » de l'AC16 est le
+  second paragraphe du dialogue (à quoi sert le geste, ce qui se fige) ; le bouton de confirmation et « Annuler »
+  reprennent `journal-entries-reverse-confirm` / `-cancel`, et le succès `journal-entries-reverse-success`. Le motif
+  « clôturé » de l'écran et le refus serveur `error-next-fiscal-year-closed` ont la même phrase fr-CH, deux clés
+  (l'une d'écran, l'autre du serveur, comme `journal-entries-modify-blocked-later-fiscal-year-closed` /
+  `error-later-fiscal-year-closed`).
+- **Réversible** : oui.
+
+### C-29-1-58 — Brochure : deux points au lieu d'une phrase « à venir »
+
+- **Retenu** : le point « report automatique » ne dit plus « reste à venir », il dit qu'aucune écriture de clôture
+  n'est à passer (le résultat est calculé) ; un point neuf nomme la préparation de la clôture et les transitoires.
+  Les écritures de clôture ne sont pas annoncées (écartées par conception, C-29-1-2).
+- **Réversible** : oui.
