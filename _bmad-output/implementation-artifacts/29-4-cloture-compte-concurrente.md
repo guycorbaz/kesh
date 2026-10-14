@@ -4,8 +4,9 @@
 
 **29-4a : done** (développée le 2026-10-14, commit `e718221b` ; revue de code P1 remédiée le même jour après
 rebase sur `b4abae5d`, commit `bc9cf85e` ; passe ciblée P2 faite, 0/0/0/5, **revue close** ; cinq points reportés à la 29-4b, T6-bis) — **29-4b :
-review** (développée le 2026-10-14 sur `fe404b11`, branche `story/29-4b` ; commits de code `dba87062` — étape 0,
-T6-bis — et `6c8513a6` ; revue de code P1 à lancer, `29-4b-reverification-annulations-review-prompt-p1.md`).
+done** (développée le 2026-10-14 sur `fe404b11`, branche `story/29-4b` ; commits de code `dba87062` — étape 0,
+T6-bis — et `6c8513a6` ; revue de code P1 remédiée, passe ciblée P2 remédiée, **revue close** ; rebasée le
+2026-10-14 sur `e889346c` (29-6), gates finaux rejoués au HEAD rebasé — Change Log, dernière entrée).
 
 *Relevé d'origine :* **ready-for-dev** (deux clés) — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `16eeed21`
 (kickoff de l'Epic 29), worktree `/home/gcorbaz/devel/kesh-29-4`, branche `story/29-4`. Validation P1 faite (Sonnet,
@@ -2002,3 +2003,29 @@ commentaires ; sortie par **retrait**.
 - **Clôture** : la remédiation ne touche que des commentaires et un paragraphe de documentation d'API, aucune ligne
   exécutable ; trend P1 (A 0/0/1/8, B 0/0/1/7, E 0/0/1/5) → P2 ciblée 0/0/1/4 → 0 au-dessus de LOW après retrait.
   Gate complet et E2E rejoués au commit de cette remédiation (fichiers de `kesh-db` touchés).
+
+### 2026-10-14 — Rebase de la 29-4b sur `e889346c` (29-6) et gates finaux au HEAD rebasé ; clé `done`
+
+- **Rebase** : `story/29-4b`, partie de `fe404b11`, rejouée sur `origin/main` `e889346c` (Story 29-6). Sept commits
+  rejoués (`ba32b215` … `047bdcbf`, anciens `dba87062` … `f2aff17c`).
+- **Conflits, réunis par union** : deux seulement.
+  - `docs/manual/fr/user-manual.pdf` (binaire, au rejeu de l'ancien `6c8513a6`) : le PDF de main repris au conflit,
+    puis régénéré par `make fr` (sous verrou et `mem-guard`, 2 passes, stable) depuis le `.tex`, qui avait fusionné
+    sans conflit ; commit `869b4402`. Contrôle du PDF aplati : phrases de la 29-6 présentes (« quelques centimes de
+    trop », « ni facture désignée que le paiement dépasse », « Aucune correspondance » ×3) et de la 29-4b (« Deux
+    précisions », « ne passe pas sur le compte clos », « rouvrir le compte, puis réimporter ») ; aucun « ?? ».
+  - `sprint-status.yaml` (en-têtes `# last_updated`, au rejeu de l'ancien `4862cd0e`) : l'en-tête de la branche,
+    n° 153, renuméroté **159** et placé au-dessus des 153 à 158 de main (29-6) ; les clés ont fusionné seules (29-4b
+    de la branche, 29-6 de main). `yaml.safe_load` sans erreur ; aucun marqueur de conflit dans le worktree.
+  - `CHANGELOG.md`, `docs/api-external.md`, `routes/reconciliation.rs`, `user-manual.tex` : fusion automatique.
+- **Gates au HEAD rebasé `869b4402`** (arbre propre ; `kesh_294` remise à zéro dans le même journal,
+  `kesh-gate-logs/294b-gate-rebase.log`) :
+  - `scripts/test-fast.sh` : fmt, clippy, **3705 tests, 3705 passés, 6 ignorés** (3697 avant le rebase ; +8, ceux de
+    la 29-6).
+  - Frontend : `npm run check` 0 erreur (29 avertissements, préexistants), `lint-i18n-ownership` PASS,
+    `npm run test:unit` **1645 / 1645** (147 fichiers), `npm run build` vert.
+  - E2E complet (backend sur 3045, base `kesh_e2e_294` neuve, répertoires `/tmp/kesh-e2e-294-rb` neufs) :
+    **287 passés, 7 échoués, 19 ignorés** — les sept KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* :
+    `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77` et
+    `:150` ; ni KF-052 ni pollution sur ce run. Journal `kesh-gate-logs/294b-rb-e2e.log`, script `294b-rb-run.sh`.
+- **Clé** `29-4b-reverification-annulations` passée à `done` (en-tête n° 160).
