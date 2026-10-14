@@ -3330,6 +3330,110 @@ async fn a_payment_after_the_due_date_is_proposed_and_settles_the_invoice(pool: 
 }
 
 // ============================================================
+// Story 29-5 (#668) — à score égal, la facture échue la première passe en
+// tête (art. 87 CO).
+// ============================================================
+
+/// Story 29-5 (#668), AC6 — le cas de l'issue, bout à bout. Deux factures du
+/// **même** client, même reste dû, aucune référence dans la transaction
+/// (score égal, 0,60 chacune), créées dans cet ordre : A (`F = D − 20`,
+/// `E = D + 40`, non échue), puis B (`F = D − 5`, `E = D`, échue le jour du
+/// paiement). B passe en tête des candidates bien qu'A ait le plus petit
+/// identifiant ; accepter `candidates[0]` règle B et laisse A due.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn get_proposals_puts_the_due_invoice_first_at_equal_score(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let (a, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-668-A",
+        d - TimeDelta::days(20),
+        dec!(668.00),
+    )
+    .await;
+    set_due_date_292(&pool, a, Some(d + TimeDelta::days(40))).await;
+    let (b, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-668-B",
+        d - TimeDelta::days(5),
+        dec!(668.00),
+    )
+    .await;
+    set_due_date_292(&pool, b, Some(d)).await;
+    assert!(a < b, "montage : A a le plus petit identifiant");
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("tie_668"),
+        d,
+        d,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            d,
+            Some(d),
+            dec!(668.00),
+            "CHF",
+            "",
+            Some("Acme Client"),
+        )],
+    )
+    .await;
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={}",
+            ctx.bank_account_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let proposal = body["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["bankTransactionId"].as_i64() == Some(tx_ids[0]))
+        .expect("la transaction est listée");
+    let candidates = proposal["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 2, "{proposal}");
+    for c in candidates {
+        assert_eq!(c["candidateType"].as_str(), Some("invoice"), "{proposal}");
+        let total = c["score"]["total"].as_f64().unwrap();
+        assert!((total - 0.60).abs() < 1e-10, "score égal : {proposal}");
+    }
+    assert_eq!(
+        candidates[0]["invoiceId"].as_i64(),
+        Some(b),
+        "B, échue, en tête : {proposal}"
+    );
+    assert_eq!(candidates[1]["invoiceId"].as_i64(), Some(a), "{proposal}");
+
+    let (accepted, failed) = accept_couples_287(&app, &ctx, &[(tx_ids[0], b)]).await;
+    assert!(failed.is_empty(), "aucun refus : {failed:?}");
+    assert_eq!(accepted.len(), 1);
+    for (id, paid) in [(b, true), (a, false)] {
+        let paid_at: Option<NaiveDateTime> =
+            sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .expect("la facture");
+        assert_eq!(paid_at.is_some(), paid, "facture {id} réglée : {paid}");
+    }
+}
+
+// ============================================================
 // Story 8-5a-bis Q2 — breaking change POST /accept discriminator type
 // ============================================================
 

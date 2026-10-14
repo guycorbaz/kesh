@@ -1515,3 +1515,267 @@ async fn the_anchor_of_an_invoice_is_scoped_to_its_company(pool: MySqlPool) {
     .unwrap();
     assert!(listed.is_empty(), "pas de candidate sous l'autre société");
 }
+
+// ---------------------------------------------------------------------------
+// Story 29-5 (#668) — l'ordre d'imputation (art. 87 CO) avant le `LIMIT 50`
+// ---------------------------------------------------------------------------
+
+/// Story 29-5, AC4 — la proposition trie ses candidates par **date
+/// d'exigibilité** `X = max(F, E)` croissante, puis `F`, puis `id`, **avant**
+/// le `LIMIT 50` : au-delà de 50, ce sont les factures d'exigibilité la plus
+/// lointaine qui sont écartées, non plus les plus récentes par date.
+///
+/// 51 factures de même reste dû, `D` = 2026-06-15 :
+/// - `fd` : `F = D`, `E = D` — la plus récente, échue le jour du paiement,
+///   de plus petite `X` ;
+/// - `nd` : `F = D + 1`, **sans échéance** — `X = D + 1`, deuxième ; sous la
+///   mutation M9 (`GREATEST` sans `COALESCE`), son `X` vaut `NULL` ;
+/// - quarante-neuf factures `k = 0..48`, plus anciennes (`F` de `D − 30` à
+///   `D − 1`), d'échéances lointaines **distinctes** `E = D + 40 + k`.
+///
+/// Insertion : `nd`, puis les quarante-neuf par `k` décroissant, puis `fd` —
+/// `id ASC` et `(date, id)` divergent tous deux de l'ordre attendu, écrit en
+/// dur par les `k` (jamais par `imputation_order`).
+#[sqlx::test(migrations = "./test-schema")]
+async fn find_unpaid_invoices_orders_by_exigibility_before_limit(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Acme").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let contact_id = create_test_contact(&pool, company_id, user_id, "Client A").await;
+    let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
+    let je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let at = |k: i64| d + chrono::Duration::days(k);
+
+    let insert = |date: NaiveDate| {
+        let pool = pool.clone();
+        async move {
+            insert_test_invoice(
+                &pool,
+                company_id,
+                contact_id,
+                date,
+                dec!(100.00),
+                "validated",
+                Some(je_id),
+                None,
+            )
+            .await
+        }
+    };
+
+    // (F, id) de chaque facture, pour le calcul à la main de l'ancien ordre.
+    let mut inserted: Vec<(NaiveDate, i64)> = Vec::new();
+    let nd = insert(at(1)).await;
+    inserted.push((at(1), nd));
+    let mut by_k = [0i64; 49];
+    for k in (0..49i64).rev() {
+        let f = at(-1 - (k % 30));
+        let id = insert(f).await;
+        set_test_due_date(&pool, id, Some(at(40 + k))).await;
+        by_k[k as usize] = id;
+        inserted.push((f, id));
+    }
+    let fd = insert(d).await;
+    set_test_due_date(&pool, fd, Some(d)).await;
+    inserted.push((d, fd));
+
+    // L'attendu : `fd`, `nd`, puis `k = 0..47` ; `k = 48` est écartée.
+    let mut expected = vec![fd, nd];
+    expected.extend(by_k[..48].iter().copied());
+    // Montage : l'ancien ordre `(date, id)` ne rend pas l'attendu — sinon le
+    // test passerait à vide sous l'ancien `ORDER BY` (mutation M8).
+    let mut by_date_id = inserted.clone();
+    by_date_id.sort();
+    let old: Vec<i64> = by_date_id.iter().take(50).map(|(_, id)| *id).collect();
+    assert_ne!(
+        old, expected,
+        "montage : `(date, id)` ≠ ordre d'exigibilité"
+    );
+
+    let got: Vec<i64> = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_payment_date(d),
+        dec!(100.00),
+        dec!(0.05),
+    )
+    .await
+    .expect("find_unpaid_invoices_for_window")
+    .iter()
+    .map(|c| c.invoice.id)
+    .collect();
+    assert_eq!(
+        got, expected,
+        "la facture échue le jour du paiement, la facture sans échéance, puis les 48 par échéance croissante"
+    );
+    assert!(
+        !got.contains(&by_k[48]),
+        "l'échéance la plus lointaine est écartée"
+    );
+}
+
+/// Story 29-5, AC4 (validation P1, F2 ; mutation M12) — à date d'exigibilité
+/// égale, la date de la facture départage **avant** l'identifiant, et la
+/// coupure du `LIMIT 50` traverse un tel groupe.
+///
+/// 51 factures de même reste dû, `D` = 2026-06-15 : quarante-neuf de
+/// remplissage **sans échéance**, `F = D − 25` ; puis G1 (`F = D − 20`) et G2
+/// (`F = D − 10`), même échéance `E = D + 10`, **G2 insérée avant G1** (plus
+/// petit `id`). Ordre correct `(X, F, id)` : les quarante-neuf, puis G1 ; G2
+/// écartée. Sous `(X, id)`, G2 serait gardée et G1 écartée.
+#[sqlx::test(migrations = "./test-schema")]
+async fn find_unpaid_invoices_orders_same_exigibility_by_invoice_date_before_limit(
+    pool: MySqlPool,
+) {
+    let company_id = create_test_company(&pool, "Acme").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let contact_id = create_test_contact(&pool, company_id, user_id, "Client A").await;
+    let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
+    let je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let at = |k: i64| d + chrono::Duration::days(k);
+
+    let insert = |date: NaiveDate| {
+        let pool = pool.clone();
+        async move {
+            insert_test_invoice(
+                &pool,
+                company_id,
+                contact_id,
+                date,
+                dec!(100.00),
+                "validated",
+                Some(je_id),
+                None,
+            )
+            .await
+        }
+    };
+
+    let g2 = insert(at(-10)).await;
+    set_test_due_date(&pool, g2, Some(at(10))).await;
+    let g1 = insert(at(-20)).await;
+    set_test_due_date(&pool, g1, Some(at(10))).await;
+    let mut fill = Vec::new();
+    for _ in 0..49 {
+        fill.push(insert(at(-25)).await);
+    }
+    assert!(
+        g2 < g1 && g1 < fill[0],
+        "montage : G2, G1, puis le remplissage"
+    );
+
+    let mut expected = fill.clone();
+    expected.push(g1);
+    // Montage : l'ordre `(X, id)`, calculé à la main sur les mêmes entrées —
+    // le remplissage (X = D − 25), puis G2 et G1 (X = D + 10) par `id`.
+    let mut by_x_id = fill.clone();
+    by_x_id.push(g2);
+    assert_ne!(by_x_id, expected, "montage : `(X, id)` ≠ `(X, F, id)`");
+
+    let got: Vec<i64> = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_payment_date(d),
+        dec!(100.00),
+        dec!(0.05),
+    )
+    .await
+    .expect("find_unpaid_invoices_for_window")
+    .iter()
+    .map(|c| c.invoice.id)
+    .collect();
+    assert_eq!(got, expected, "le remplissage, puis G1 (la plus ancienne)");
+    assert!(!got.contains(&g2), "G2, plus récente, est écartée");
+}
+
+/// Story 29-5, AC4 (C-29-5-8) — **parité** des deux écritures de la date
+/// d'exigibilité : l'expression SQL [`INVOICE_EXIGIBILITY_DATE_SQL`] et la
+/// fonction `invoice_exigibility_date`, comparées sur six factures à une
+/// valeur écrite en dur. Le décodage en `NaiveDate` constate aussi que le
+/// `CAST` rend un type que sqlx décode (mutation M9 : un `NULL` n'y passe
+/// pas ; M10 : le cas `E < F`).
+#[sqlx::test(migrations = "./test-schema")]
+async fn exigibility_date_sql_and_rust_agree(pool: MySqlPool) {
+    use kesh_db::repositories::invoices;
+    use kesh_db::repositories::reconciliation::{
+        INVOICE_EXIGIBILITY_DATE_SQL, invoice_exigibility_date,
+    };
+
+    let company_id = create_test_company(&pool, "Acme").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let contact_id = create_test_contact(&pool, company_id, user_id, "Client A").await;
+    let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
+    let je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
+    let ymd = |y: i32, m: u32, j: u32| NaiveDate::from_ymd_opt(y, m, j).unwrap();
+
+    // (nom, F, E, X attendue)
+    let cases = [
+        ("E nulle", ymd(2026, 5, 20), None, ymd(2026, 5, 20)),
+        (
+            "E > F",
+            ymd(2026, 5, 20),
+            Some(ymd(2026, 6, 19)),
+            ymd(2026, 6, 19),
+        ),
+        (
+            "E = F",
+            ymd(2026, 5, 20),
+            Some(ymd(2026, 5, 20)),
+            ymd(2026, 5, 20),
+        ),
+        (
+            "E < F",
+            ymd(2026, 5, 20),
+            Some(ymd(2026, 5, 10)),
+            ymd(2026, 5, 20),
+        ),
+        (
+            "E lointaine",
+            ymd(2026, 5, 20),
+            Some(ymd(2099, 12, 31)),
+            ymd(2099, 12, 31),
+        ),
+        (
+            "F au 1er jour de l'exercice",
+            ymd(2026, 1, 1),
+            None,
+            ymd(2026, 1, 1),
+        ),
+    ];
+    let mut by_id = std::collections::BTreeMap::new();
+    for (name, f, e, x) in cases {
+        let id = insert_test_invoice(
+            &pool,
+            company_id,
+            contact_id,
+            f,
+            dec!(100.00),
+            "validated",
+            Some(je_id),
+            None,
+        )
+        .await;
+        set_test_due_date(&pool, id, e).await;
+        by_id.insert(id, (name, x));
+    }
+
+    let rows: Vec<(i64, NaiveDate)> = sqlx::query_as(&format!(
+        "SELECT i.id, {INVOICE_EXIGIBILITY_DATE_SQL} FROM invoices i \
+         WHERE i.company_id = ? ORDER BY i.id"
+    ))
+    .bind(company_id)
+    .fetch_all(&pool)
+    .await
+    .expect("SELECT de l'exigibilité, décodée en NaiveDate");
+    assert_eq!(rows.len(), by_id.len(), "une ligne par facture");
+    for (id, sql_x) in rows {
+        let (name, x) = by_id[&id];
+        assert_eq!(sql_x, x, "{name} : SQL");
+        let invoice = invoices::find_by_id(&pool, company_id, id)
+            .await
+            .expect("find_by_id")
+            .expect("facture relue");
+        assert_eq!(invoice_exigibility_date(&invoice), x, "{name} : Rust");
+    }
+}

@@ -467,4 +467,156 @@ mod tests {
         // amount 0.50 + ref 0.40 = 0.90.
         assert!((proposals[0].score.total - 0.90).abs() < 1e-10);
     }
+
+    // -----------------------------------------------------------------------
+    // Story 29-5 (#668) — à score égal, l'ordre d'imputation (art. 87 CO)
+    // -----------------------------------------------------------------------
+
+    /// Une date de 2026.
+    fn d(m: u32, j: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, m, j).unwrap()
+    }
+
+    /// Une facture de 100.00 du client 50, datée `f`, d'échéance `e`, sans
+    /// numéro (aucune référence ne la désigne, aucun préfixe commun).
+    fn dated(id: i64, f: NaiveDate, e: Option<NaiveDate>) -> Invoice {
+        let mut invoice = make_invoice(id, dec!(100.00), None, 50);
+        invoice.date = f;
+        invoice.due_date = e;
+        invoice
+    }
+
+    /// Les identifiants proposés, dans l'ordre, pour une transaction de 100.00
+    /// de « ACME » sans référence : chaque facture vaut 0,60 (montant exact et
+    /// contact), le départage seul décide.
+    fn tie_order(invoices: Vec<Invoice>) -> Vec<i64> {
+        let tx = make_tx(dec!(100.00), None, Some("ACME"));
+        let candidates: Vec<_> = invoices
+            .into_iter()
+            .map(|i| cand(i, Some(make_contact(50, "ACME"))))
+            .collect();
+        let proposals = propose_matches(&tx, &candidates);
+        for p in &proposals {
+            assert!((p.score.total - 0.60).abs() < 1e-10, "score égal : 0,60");
+        }
+        proposals.iter().map(|p| p.invoice_id).collect()
+    }
+
+    /// AC5 cas 1 — le cas de l'issue (ligne 1 du tableau) : A non échue, créée
+    /// d'abord ; B échue le jour du paiement. B en tête.
+    #[test]
+    fn ties_put_the_due_invoice_before_a_not_yet_due_older_one() {
+        let a = dated(101, d(5, 26), Some(d(7, 25)));
+        let b = dated(102, d(6, 10), Some(d(6, 15)));
+        assert_eq!(tie_order(vec![a, b]), vec![102, 101]);
+    }
+
+    /// AC5 cas 2 — ligne 2 : B, plus récente, est échue la première.
+    #[test]
+    fn ties_put_the_first_fallen_due_before_an_older_invoice() {
+        let a = dated(101, d(5, 20), Some(d(6, 14)));
+        let b = dated(102, d(5, 25), Some(d(6, 5)));
+        assert_eq!(tie_order(vec![a, b]), vec![102, 101]);
+    }
+
+    /// AC5 cas 3 — ligne 3 : A sans échéance est exigible dès sa date, avant
+    /// B à échéance plus tardive. B, à écarter, porte le plus petit `id`.
+    #[test]
+    fn ties_treat_a_missing_due_date_as_due_on_the_invoice_date() {
+        let b = dated(101, d(5, 25), Some(d(6, 20)));
+        let a = dated(102, d(5, 20), None);
+        assert_eq!(tie_order(vec![b, a]), vec![102, 101]);
+    }
+
+    /// AC5 cas 4 — ligne 4 : même échéance, la plus ancienne (al. 2,
+    /// C-29-5-5). B, la plus récente, porte le plus petit `id` (mutation M6).
+    #[test]
+    fn ties_on_the_same_due_date_keep_the_oldest_invoice() {
+        let b = dated(101, d(5, 25), Some(d(6, 10)));
+        let a = dated(102, d(5, 20), Some(d(6, 10)));
+        assert_eq!(tie_order(vec![b, a]), vec![102, 101]);
+    }
+
+    /// AC5 cas 5 — ligne 5 : une échéance antérieure à la date ne compte pas
+    /// (`X = F`, mutation M4) ; B sans échéance, plus ancienne, en tête.
+    #[test]
+    fn ties_ignore_a_due_date_before_the_invoice_date() {
+        let a = dated(101, d(5, 20), Some(d(5, 10)));
+        let b = dated(102, d(5, 15), None);
+        assert_eq!(tie_order(vec![a, b]), vec![102, 101]);
+    }
+
+    /// AC5 cas 6 — ligne 6 : A sans échéance a ici la **plus grande** `X` ;
+    /// une comparaison d'`Option` (`None` en tête) la mettrait devant
+    /// (mutation M3).
+    #[test]
+    fn ties_put_an_earlier_due_date_before_a_later_invoice_without_due_date() {
+        let a = dated(101, d(6, 1), None);
+        let b = dated(102, d(5, 20), Some(d(5, 25)));
+        assert_eq!(tie_order(vec![a, b]), vec![102, 101]);
+    }
+
+    /// AC5 cas 7 — mêmes dates : l'identifiant départage. Entrée 102 puis
+    /// 101 : `sort_by` étant stable, une clé sans `id` garderait 102 en tête
+    /// (mutation M13).
+    #[test]
+    fn ties_on_same_dates_fall_back_to_invoice_id() {
+        let x = dated(102, d(5, 20), Some(d(6, 19)));
+        let y = dated(101, d(5, 20), Some(d(6, 19)));
+        assert_eq!(tie_order(vec![x, y]), vec![101, 102]);
+    }
+
+    /// AC5 cas 8 — le score reste la première clé (mutation M7). Toutes les
+    /// factures sont du client « ACME », contrepartie de la transaction
+    /// (contact 0,10 chacune) ; les factures non désignées n'ont pas de
+    /// numéro, donc aucune demi-référence.
+    #[test]
+    fn score_still_beats_exigibility() {
+        let acme = || Some(make_contact(50, "ACME"));
+        let score = |p: &MatchProposal| p.score.total;
+
+        // (a) Désignée au montant exact, non échue (1,0) devant une échue non
+        // désignée (0,60).
+        let tx = make_tx(dec!(100.00), Some("INV-2026-001"), Some("ACME"));
+        let due = dated(101, d(5, 1), Some(d(5, 20)));
+        let mut designated = dated(102, d(5, 10), Some(d(7, 30)));
+        designated.invoice_number = Some("INV-2026-001".into());
+        let p = propose_matches(&tx, &[cand(due, acme()), cand(designated, acme())]);
+        assert_eq!(
+            p.iter().map(|p| p.invoice_id).collect::<Vec<_>>(),
+            [102, 101]
+        );
+        assert!((score(&p[0]) - 1.0).abs() < 1e-10);
+        assert!((score(&p[1]) - 0.60).abs() < 1e-10);
+
+        // (b) Sans référence : au montant exact, non échue (0,60) devant une
+        // échue à 3 centimes près (0,10, contact seul).
+        let tx = make_tx(dec!(100.00), None, Some("ACME"));
+        let mut off = dated(101, d(5, 1), Some(d(5, 20)));
+        off.total_amount = dec!(100.03);
+        let exact = dated(102, d(5, 10), Some(d(7, 30)));
+        let p = propose_matches(&tx, &[cand(off, acme()), cand(exact, acme())]);
+        assert_eq!(
+            p.iter().map(|p| p.invoice_id).collect::<Vec<_>>(),
+            [102, 101]
+        );
+        assert!((score(&p[0]) - 0.60).abs() < 1e-10);
+        assert!((score(&p[1]) - 0.10).abs() < 1e-10);
+
+        // (c) La condition de montant de la désignation (AC7) : désignée par
+        // le numéro mais à 3 centimes près, échue (0,50), derrière une facture
+        // non désignée au montant exact, non échue (0,60).
+        let tx = make_tx(dec!(100.00), Some("INV-2026-001"), Some("ACME"));
+        let mut designated_off = dated(101, d(5, 1), Some(d(5, 20)));
+        designated_off.invoice_number = Some("INV-2026-001".into());
+        designated_off.total_amount = dec!(100.03);
+        let exact = dated(102, d(5, 10), Some(d(7, 30)));
+        let p = propose_matches(&tx, &[cand(designated_off, acme()), cand(exact, acme())]);
+        assert_eq!(
+            p.iter().map(|p| p.invoice_id).collect::<Vec<_>>(),
+            [102, 101]
+        );
+        assert!((score(&p[0]) - 0.60).abs() < 1e-10);
+        assert!((score(&p[1]) - 0.50).abs() < 1e-10);
+    }
 }

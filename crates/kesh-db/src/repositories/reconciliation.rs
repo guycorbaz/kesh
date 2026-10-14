@@ -865,4 +865,134 @@ mod tests {
             InvoiceDateWindow::for_payment_date(booking)
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Story 29-5 (#668) — date d'exigibilité et ordre d'imputation
+    // -----------------------------------------------------------------------
+
+    /// Une facture validée de date `f` et d'échéance `e`, le reste à défaut.
+    fn inv(id: i64, f: NaiveDate, e: Option<NaiveDate>) -> Invoice {
+        let at = date(2026, 1, 1).and_hms_opt(0, 0, 0).unwrap();
+        Invoice {
+            id,
+            company_id: 1,
+            contact_id: 1,
+            invoice_number: None,
+            status: "validated".into(),
+            date: f,
+            due_date: e,
+            payment_terms: None,
+            total_amount: Decimal::new(10_000, 2),
+            rounding_amount: Decimal::ZERO,
+            journal_entry_id: Some(1),
+            paid_at: None,
+            emailed_at: None,
+            emailed_to: None,
+            project_id: None,
+            dunning_paused_at: None,
+            dunning_paused_note: None,
+            pdf_storage_path: None,
+            pdf_sha256: None,
+            pdf_frozen_at: None,
+            pdf_language: None,
+            version: 1,
+            created_at: at,
+            updated_at: at,
+        }
+    }
+
+    /// AC4 — `X = max(F, E)`, `E` absente valant `F` : les quatre positions
+    /// de l'échéance par rapport à la date (mutations M2, M4).
+    #[test]
+    fn the_exigibility_date_is_the_later_of_date_and_due_date() {
+        let f = date(2026, 5, 20);
+        assert_eq!(invoice_exigibility_date(&inv(1, f, None)), f, "E nulle");
+        assert_eq!(
+            invoice_exigibility_date(&inv(1, f, Some(date(2026, 6, 19)))),
+            date(2026, 6, 19),
+            "E > F"
+        );
+        assert_eq!(invoice_exigibility_date(&inv(1, f, Some(f))), f, "E = F");
+        assert_eq!(
+            invoice_exigibility_date(&inv(1, f, Some(date(2026, 5, 10)))),
+            f,
+            "E < F"
+        );
+    }
+
+    /// AC4 — les six lignes du tableau d'exemples de la fiche, `D` =
+    /// 2026-06-15 : A créée d'abord (plus petit `id`), l'attendu écrit en dur.
+    /// La sixième tue M3 (comparaison d'`Option`, `None` en tête).
+    #[test]
+    fn the_imputation_order_follows_the_examples_of_the_story() {
+        use std::cmp::Ordering::{Greater, Less};
+        let d = |m: u32, j: u32| date(2026, m, j);
+        // (ligne, A, B, A comparée à B)
+        let rows = [
+            (
+                1,
+                inv(1, d(5, 26), Some(d(7, 25))),
+                inv(2, d(6, 10), Some(d(6, 15))),
+                Greater,
+            ),
+            (
+                2,
+                inv(1, d(5, 20), Some(d(6, 14))),
+                inv(2, d(5, 25), Some(d(6, 5))),
+                Greater,
+            ),
+            (
+                3,
+                inv(1, d(5, 20), None),
+                inv(2, d(5, 25), Some(d(6, 20))),
+                Less,
+            ),
+            (
+                4,
+                inv(1, d(5, 20), Some(d(6, 10))),
+                inv(2, d(5, 25), Some(d(6, 10))),
+                Less,
+            ),
+            (
+                5,
+                inv(1, d(5, 20), Some(d(5, 10))),
+                inv(2, d(5, 15), None),
+                Greater,
+            ),
+            (
+                6,
+                inv(1, d(6, 1), None),
+                inv(2, d(5, 20), Some(d(5, 25))),
+                Greater,
+            ),
+        ];
+        for (row, a, b, expected) in rows {
+            assert_eq!(imputation_order(&a, &b), expected, "ligne {row} : A / B");
+            assert_eq!(
+                imputation_order(&b, &a),
+                expected.reverse(),
+                "ligne {row} : B / A"
+            );
+        }
+    }
+
+    /// AC4 — `X` et `F` égales : l'identifiant départage (mutation M13), et
+    /// l'ordre reste total (une facture égale à elle-même).
+    #[test]
+    fn the_imputation_order_falls_back_to_the_invoice_id() {
+        let f = date(2026, 5, 20);
+        let e = Some(date(2026, 6, 19));
+        assert_eq!(
+            imputation_order(&inv(101, f, e), &inv(102, f, e)),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            imputation_order(&inv(102, f, e), &inv(101, f, e)),
+            std::cmp::Ordering::Greater
+        );
+        assert_eq!(
+            imputation_order(&inv(101, f, e), &inv(101, f, e)),
+            std::cmp::Ordering::Equal
+        );
+    }
 }
