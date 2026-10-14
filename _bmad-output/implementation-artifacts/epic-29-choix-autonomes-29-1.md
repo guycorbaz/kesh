@@ -659,3 +659,62 @@
   n'est à passer (le résultat est calculé) ; un point neuf nomme la préparation de la clôture et les transitoires.
   Les écritures de clôture ne sont pas annoncées (écartées par conception, C-29-1-2).
 - **Réversible** : oui.
+
+## Remédiation de la revue de code P1 de la 29-1b (2026-10-14)
+
+### C-29-1-59 — La confirmation du geste neuf nomme l'écriture ; celle du jour garde son texte
+
+- **Contexte** : B-1 (revue P1) — une confirmation qui ne nomme que la date et l'exercice ne dit pas *quelle* écriture
+  sera contre-passée ; décision de l'orchestrateur : numéro et libellé en plus.
+- **Retenu** : `journal-entries-reverse-next-year-dialog-body` porte `{ $number }` et `{ $description }` (×4 locales,
+  repli Svelte égal à fr-CH). Le dialogue du geste **du jour** (Story 24-4a) n'est pas touché : sa clé est antérieure à
+  la story, et le défaut de navigation qui le rendait dangereux est fermé par C-29-1-60.
+- **Écarté** : nommer l'écriture dans les deux dialogues (élargit la story à un texte de la 24-4a).
+- **Réversible** : oui.
+
+### C-29-1-60 — `loadEntry` ferme toutes les confirmations, suppression comprise
+
+- **Contexte** : B-1 — `reverseConfirm` survivait à une navigation (composant réutilisé), et la confirmation se
+  rouvrait sur l'écriture suivante. `showDeleteConfirm` avait le même défaut (Story 15-8b).
+- **Retenu** : `reverseConfirm = null` et `showDeleteConfirm = false` en tête de `loadEntry`. Le `reverseConfirm = null`
+  du chemin de refus est gardé (il dit l'intention) bien que `loadEntry` le fasse aussi, de façon synchrone : M-b18
+  est donc équivalente, démontrée (cf. Dev Agent Record).
+- **Réversible** : oui.
+
+### C-29-1-61 — Un `page` réactif de test, dans un module `.svelte.ts` voisin du test
+
+- **Contexte** : tester une navigation (B-1, E-3) exige que `page.params.id` change et que le `$effect` de la page se
+  rejoue ; un objet simple dans `vi.mock` ne déclenche rien, et les runes ne vivent que dans un `.svelte.ts`.
+- **Retenu** : `page-state.test-helper.svelte.ts` (un `$state` exporté, muté et jamais réassigné), importé par le seul
+  `journal-entry-page.test.ts` ; `afterEach` remet l'`id` à `7`. SvelteKit ignore ce fichier (pas de préfixe `+`).
+- **Écarté** : un helper partagé sous `src/lib/` (aucun autre test n'en a besoin aujourd'hui).
+- **Réversible** : oui.
+
+### C-29-1-62 — B-2 et B-3 écrits comme limites, sans changement d'écran
+
+- **Contexte** : B-2 (refus `PERIOD_LOCKED` : le bouton revient sans motif, le refus se répète), B-3 (le motif
+  « créez d'abord l'exercice suivant » s'affiche presque toute l'année). Décision de l'orchestrateur : limites écrites.
+- **Retenu** : le manuel (§ *Les transitoires*) dit les deux ; le commentaire du chemin de refus de la page dit B-2.
+- **Écarté** : lire `booksLockedThrough` à l'ouverture (sixième motif, étend l'AC15) ; restreindre le motif aux
+  écritures de fin d'exercice (règle de la page : un bouton absent s'explique).
+- **Réversible** : oui — les deux améliorations restent possibles.
+
+### C-29-1-63 — Brochure : un bloc propre à l'Epic 29, « en cours — à paraître »
+
+- **Contexte** : M1 (revue P1, lentille A) — le point neuf de C-29-1-58 était rangé sous « Epic 14, v0.8, livré », et
+  disait « d'un clic » pour un geste qui en demande deux.
+- **Retenu** : le point est retiré du bloc de l'Epic 14 ; un bloc « Préparer la première clôture (Epic 29, en cours —
+  à paraître) », icône d'attente (`\faClock`, couleur `keshWarning`, comme le *Backlog*), porte deux points marqués
+  « à paraître en v0.13.4 » (contrôles préalables) et « à paraître en v0.14.0 » (transitoires, « depuis la fiche de
+  l'écriture »). Annote C-29-1-58, dont le premier volet (le point « report automatique » sans « à venir ») reste.
+- **Réversible** : oui ; à la release, le bloc passera en `keshSuccess` / « livré ».
+
+### C-29-1-64 — README et site : l'Epic 29 « en cours », rien de promis comme publié
+
+- **Contexte** : E-7 (`website/roadmap.html:43` annonçait comme manquantes des « écritures de clôture » écartées par
+  conception) ; L6 (pas de ligne Epic 29 à la feuille de route du README) ; et la section *Fonctionnalités* du README
+  marquait ✓ deux fonctions qu'aucune image publiée ne porte.
+- **Retenu** : README — ligne « v0.13.4 · v0.14.0 (en cours) | E29 … | 🚧 En cours », et les deux ✓ remplacés par
+  « *(à paraître en v0.13.4)* » / « *(à paraître en v0.14.0)* » ; site — phrase de l'en-tête corrigée (« la préparation
+  de la clôture (#232, epic 29, en cours, non publiée) »), carte E29 « In progress — not yet released ».
+- **Réversible** : oui ; à la release, les marques « à paraître » tombent.
