@@ -692,3 +692,8 @@ montre que les 100 plus récentes ».
 [#646]: https://github.com/guycorbaz/kesh/issues/646
 [#649]: https://github.com/guycorbaz/kesh/issues/649
 [#655]: https://github.com/guycorbaz/kesh/issues/655
+- 2026-10-14 — **Validation P3, passe ciblée** (Haiku 5.5, une lentille sur `13ac02c5` ; rapport
+  `kesh-gate-logs/29-9-validate-p3-ciblee.md`) : 0/0/0/1. **Validation close.** Le LOW est à appliquer à l'étape 0 du
+  développement : P3-1 (l. 506, les citations « 29-3 :549 » et « 29-6 :551 » désignent `docs/api-external.md`, pas les
+  fiches — écrire « `docs/api-external.md:549`, cité par la fiche 29-3 l. 534 », idem 29-6 l. 347). Trend : P1 R 0/0/4/5
+  F 0/0/5/6 → P2 R 0/0/1/8 F 0/0/2/7 → P3 ciblée 0/0/0/1.
