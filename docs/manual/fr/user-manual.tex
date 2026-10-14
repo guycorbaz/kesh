@@ -742,7 +742,7 @@ Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercic
     \item[Factures en brouillon] Des factures client datées dans l'exercice n'ont jamais été validées~: elles ne sont pas en comptabilité. Lien~: la liste des factures, filtrée sur les brouillons de l'exercice.
     \item[Factures fournisseur à compléter] Des pièces importées attendent d'être complétées (\S\ref{sec:import-factures}). Lien~: \emph{Factures fournisseur importées}.
     \item[Écritures incohérentes] Des écritures déséquilibrées, à moins de deux lignes, datées hors de leur exercice, ou appartenant à un autre exercice mais datées dans celui-ci. Chaque écriture listée mène à sa fiche.
-    \item[Exercice suivant] Aucun exercice ne suit celui-ci~: créez-le pour y passer les écritures de l'année qui vient. Lien~: \emph{Nouvel exercice} (administrateur et comptable).
+    \item[Exercice suivant] Aucun exercice ne suit celui-ci~: créez-le pour y passer les écritures de l'année qui vient. Bouton~: \emph{Créer l'exercice suivant}, qui ouvre la création d'un exercice (administrateur et comptable).
 \end{description}
 
 \paragraph{Ce que les contrôles ne disent pas.}
@@ -751,7 +751,10 @@ Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercic
     \item Les \textbf{relevés de fin d'exercice} ne se comparent que pour les relevés CAMT, qui portent un solde~; un fichier CSV n'en porte pas (\S\ref{sec:import-bancaire}). Un compte alimenté par CSV seulement, un compte sans compte de grand livre lié, ou dont le compte lié est partagé avec un autre compte bancaire, est dit « non vérifiable », sans compter comme point à vérifier.
     \item Ce contrôle n'examine que les comptes qui ont, dans l'exercice, une transaction importée, un relevé ou une écriture sur leur compte de grand livre lié --- et ni les comptes archivés, ni ceux clôturés avant le début de l'exercice. Pour un compte clôturé pendant l'exercice, un relevé arrêté à sa date de clôture suffit.
     \item Le relevé comparé est celui qui \textbf{se termine au plus tard le dernier jour de l'exercice}~: un relevé à cheval sur la fin d'année (du 15 au 15, ou une période choisie à l'export) ne compte pas, et le compte reste « relevé arrêté trop tôt » ou « relevé manquant ». Importez un relevé \textbf{arrêté au dernier jour de l'exercice}.
-    \item Un écart inférieur au centime est ignoré, comme sur la page d'accueil, qui lit le même écart.
+    \item L'écart se calcule sur les deux soldes arrondis au centime, un demi-centime s'arrondissant au centime en s'éloignant de zéro~: un écart de moins d'un \textbf{demi}-centime est ignoré~; à partir d'un demi-centime, il s'affiche arrondi au centime (0,005 devient 0,01) --- comme sur la page d'accueil, qui lit le même écart.
+    \item Les \textbf{factures en brouillon} et les \textbf{écritures incohérentes} sont toutes comptées, mais le panneau n'en \textbf{liste que les vingt premières} (par date). Pour les brouillons, le lien ouvre la liste complète~; pour les écritures, les suivantes apparaissent une fois les premières corrigées.
+    \item Seules les \textbf{factures client} en brouillon sont comptées, non les avoirs~: Kesh émet un avoir en une seule étape, sans brouillon (\S\ref{sec:avoirs})~; un avoir en brouillon ne pourrait venir que de données posées hors de Kesh.
+    \item L'\textbf{exercice suivant} est le premier qui commence après la fin de celui-ci, même s'il laisse un trou~: un exercice 2028 créé sans exercice 2027 compte comme suivant d'un exercice 2026, et le contrôle n'a alors rien à signaler.
     \item Les \textbf{écritures incohérentes} ne peuvent provenir que de données héritées ou restaurées~: aucun chemin d'écriture actuel de Kesh n'en produit. Le contrôle ne vérifie pas que le compte de chaque ligne appartient bien au plan comptable du dossier de l'écriture (état que seule une intervention directe en base produirait).
     \item Le panneau lit l'exercice \textbf{à un instant}~: il ne suit pas les saisies concurrentes. Un contrôle sans rien à signaler peut ne plus l'être une seconde plus tard (une transaction importée entre-temps).
 \end{itemize}
@@ -3079,7 +3082,7 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[QR-IBAN] IBAN spécial pour les paiements QR Bill avec référence structurée.
     \item[Réconciliation bancaire] Passage en comptabilité des transactions du relevé bancaire~: Kesh crée l'écriture, en réglant une facture client ou en imputant un compte de contrepartie.
     \item[Référence structurée] Référence numérique unique attachée à un paiement (QRR ou ISO 11649). Kesh produit une référence QRR quand le compte principal porte un QR-IBAN, et aucune sinon.
-    \item[Report à nouveau] Solde d'un compte de bilan reporté d'un exercice sur le suivant à la clôture.
+    \item[Report à nouveau] Solde d'un compte de bilan reporté d'un exercice sur le suivant~; Kesh le calcule automatiquement, que l'exercice précédent soit clôturé ou non, sans écriture de report.
     \item[Sous-compte (auxiliaire)] Compte de détail rattaché à un compte principal (ex. 1100.1 pour un client important).
     \item[TVA] Taxe sur la valeur ajoutée (Loi LTVA, RS 641.20).
 \end{description}
