@@ -953,7 +953,8 @@ async fn lignes_de_lot(pool: &MySqlPool) -> (i64, i64) {
 /// d'écrit.
 ///
 /// **Rouge au sol** à l'étape (5) : le lot `generated` naît sur un compte clos
-/// (I2 défait). Tue M29-2 et M29-3.
+/// (I2 défait). Tue M29-2 et M29-3 bis (M29-3, sur la variante des
+/// annulations, n'est tuée que par T-a45 étendu).
 #[sqlx::test(migrations = "./test-schema")]
 async fn a_batch_started_before_the_closure_is_refused(pool: MySqlPool) {
     let (ctx, facture, v) = monter_la_course(&pool).await;

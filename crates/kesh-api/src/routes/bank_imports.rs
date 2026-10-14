@@ -71,6 +71,29 @@ pub(crate) fn import_create_error(e: DbError) -> AppError {
     }
 }
 
+/// Appelle `bank_imports::create_with_transactions` aux **deux** appels de la
+/// route (CAMT et CSV) et, sur erreur, **annule explicitement** la transaction
+/// avant de rendre [`import_create_error`] — Story 29-4a, revue de code P1
+/// (E-3 = B-6, #651). Le refus de la revérification verrouillante arrive
+/// **après** l'`INSERT` d'entête : la transaction tient une ligne écrite, le
+/// partagé du compte, ceux de `users` et de `companies` ; un abandon implicite
+/// ne les rendrait qu'au retour de la connexion au pool — autant d'attente en
+/// plus pour un demandeur d'exclusif en file (clôture, réouverture, `PATCH`,
+/// route de gestion). Rend la transaction et l'entête sur succès.
+async fn create_import_or_roll_back<'c>(
+    mut tx: sqlx::Transaction<'c, sqlx::MySql>,
+    new_import: NewBankImport,
+    new_txs: Vec<NewBankTransaction>,
+) -> Result<(sqlx::Transaction<'c, sqlx::MySql>, BankImport), AppError> {
+    match bank_imports::create_with_transactions(&mut tx, new_import, new_txs).await {
+        Ok((header, _txs)) => Ok((tx, header)),
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(import_create_error(e))
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // DTOs
 // ---------------------------------------------------------------------------
@@ -1349,9 +1372,7 @@ pub async fn create(
         })
         .collect();
 
-    let (header, _txs) = bank_imports::create_with_transactions(&mut tx, new_import, new_txs)
-        .await
-        .map_err(import_create_error)?;
+    let (mut tx, header) = create_import_or_roll_back(tx, new_import, new_txs).await?;
 
     insert_canonical_audit_log(
         &mut tx,
@@ -2237,9 +2258,7 @@ async fn create_csv(
         })
         .collect();
 
-    let (header, _txs) = bank_imports::create_with_transactions(&mut tx, new_import, new_txs)
-        .await
-        .map_err(import_create_error)?;
+    let (mut tx, header) = create_import_or_roll_back(tx, new_import, new_txs).await?;
 
     insert_canonical_audit_log(
         &mut tx,

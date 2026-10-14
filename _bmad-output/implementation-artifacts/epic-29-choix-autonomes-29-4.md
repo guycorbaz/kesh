@@ -131,6 +131,8 @@
 - **Retenu** : W30, W1-W6 et `accept_one_*` (I1), W20 (`pay_in_tx` sous `FOR UPDATE`, et I2), W8, W27, W13-W15
   (`FOR UPDATE` de la ligne) : aucun appel ; le troisième inventaire du registre les classe `SansFenetre` avec leur
   raison.
+  *Annoté le 2026-10-14 (revue de code P1 de la 29-4a, A-5)* : la variante s'appelle `Fermee` au code
+  (`bank_account_closed_inventory.rs`), renommée au développement (C-29-4-30).
 - **Réversible** : oui.
 
 ### C-29-4-9 — Le critère décidable : trois volets
@@ -210,6 +212,10 @@
   La décision ne change pas (routes de gestion non rejouées, quatre gestes concurrents, `500` sans rien d'écrit) ;
   l'inventaire du résidu est réécrit dans la fiche (critère volet 2, AC4, § *Cycles*, angles morts) et au doc-comment
   prescrit.
+- *Annoté le 2026-10-14 (revue de code P1 de la 29-4a, E-1 ; décision de l'orchestrateur)* : **l'écart est levé** —
+  les routes de gestion (`PUT`, `POST`, archivage) sont rejouées (C-29-4-28). Le résidu se ferme : `M`, désignée,
+  rejoue. Ce qui a fait changer la décision n'est pas le cycle à quatre de la 29-4b mais le cycle **préexistant**
+  `I ↔ M` (et `I → M → E → I`), atteignable dès la 29-4a, où `M` était la victime en `500`.
 
 ### C-29-4-15 — L'ensemble des gardes non verrouillantes s'extrait du code, et `FENETRE` lui est égal
 
@@ -394,4 +400,41 @@
   les comptages, comme prescrit. Un `rollback` inconditionnel aurait rendu les comptages « rien d'écrit » vrais au
   sol aussi, sans rien prouver.
 - **Écartée** : `rollback` inconditionnel.
+- **Réversible** : oui.
+
+### C-29-4-28 — Rejouer les routes de gestion du compte (décision de l'orchestrateur, revue de code P1, E-1)
+
+- **Contexte** : la lentille E a reconstruit au code un cycle **préexistant** qu'aucun texte n'écrivait : un import ou
+  un lot `I` tient la ligne du compte en partagé par le premier contrôle de clé étrangère de son `INSERT` et demande
+  `companies` en partagé (le second) ; une route de gestion `M` (`PUT`, archivage, `POST` qui démote le principal)
+  tient la sentinelle `companies` en exclusif et demande la ligne du compte en exclusif. À deux, `I ↔ M` ; à trois
+  par la file, `I → M → E → I` quand la clôture, la réouverture ou le `PATCH` attend la ligne entre eux. `M`, non
+  rejouée, plus légère que `I` (qui a écrit), en était la victime : `500`, rien d'écrit.
+- **Retenu** : `create_once`, `update_once`, `archive_once` sous `retry_app_on_deadlock` (opérations
+  `bank_accounts::create`, `::update`, `::archive`), sur le patron de la réouverture et du `PATCH`, conclusion par
+  `conclure` ; contrôles de forme, onboarding, `validate_journal_account_id` et le pré-vol de l'archivage devant
+  l'enveloppe. Tests T29a-13 (`PUT`), T29a-14 (archivage), T29a-15 (création), patron `victime()` et capture du rejeu ;
+  mutations M29-26 à M29-28. Point (vi) du registre de rejeu : dix → treize. Résidu de C-29-4-14 fermé.
+- **Écartée** : écrire le cycle comme résidu préexistant sans rejeu (remède de la lentille E).
+- **Réversible** : oui (trois enveloppes).
+
+### C-29-4-29 — La constante de lecture de `closing_checks.rs` entre au troisième inventaire (rebase sur la 29-1a)
+
+- **Contexte** : au rebase sur `b4abae5d`, le troisième inventaire (T29a-5) a vu un site neuf : la constante
+  `EXAMINED_ACCOUNTS_SQL` de `kesh-db/src/repositories/closing_checks.rs` (Story 29-1a) lit `closed_on` de
+  `bank_accounts` sans verrou, hors de toute fonction. Ce n'est pas une garde : la préparation de la clôture d'un
+  exercice liste les comptes à examiner, en lecture seule, et n'écrit rien.
+- **Retenu** : une entrée `Fenetre::Fermee` pour `closing_checks.rs::<hors fonction>`, raison écrite ; décompte
+  anti-muet de `G` : neuf → dix.
+- **Écartée** : exclure le fichier de l'extracteur — une exclusion par fichier rendrait muet tout site futur du
+  même fichier.
+- **Réversible** : oui.
+
+### C-29-4-30 — Écarts du développement à la fiche, versés au registre (revue de code P1, A-5)
+
+- **Retenu, constaté au développement** : la variante `SansFenetre` de la fiche s'appelle `Fermee` au code (le nom
+  dit le statut, non l'absence d'un site) ; trois mutations ajoutées à la campagne de la fiche — M29-3 bis (`LOCK IN
+  SHARE MODE` retiré de `RECHECK_OPEN_UNARCHIVED_LOCKED_SQL`, la variante que W22 et W17 appellent : M29-3 ne visait
+  que celle des annulations, sans appelant en 29-4a), M29-19 bis (`RECHECK_OPEN_LOCKED_SQL` en `FOR UPDATE`),
+  M29-23 bis (W17 appelle `recheck_open_locked_in_tx`, la variante qui ne lit pas `archived`). Le Dev Agent Record les donnait « chacun au registre » sans qu'ils y soient.
 - **Réversible** : oui.

@@ -2431,8 +2431,9 @@ mod compte_clos {
     /// → `BankAccountClosed`, rien d'écrit.
     ///
     /// **Rouge au sol** à l'étape (5) : l'import aboutit sur le compte clos.
-    /// Tue M29-1 (appel retiré) et M29-3 (la revérification redevenue lecture de
-    /// la vue). ⚠️ L'étape (3) passe aussi au sol : l'`INSERT` y attend déjà la
+    /// Tue M29-1 (appel retiré) et M29-3 bis (la revérification de la variante
+    /// « archivé » redevenue lecture de la vue ; M29-3, sur la variante des
+    /// annulations, n'est tuée que par T-a45 étendu). ⚠️ L'étape (3) passe aussi au sol : l'`INSERT` y attend déjà la
     /// clôture.
     #[sqlx::test(migrations = "./test-schema")]
     async fn un_import_commence_avant_la_cloture_est_refuse(pool: MySqlPool) {
