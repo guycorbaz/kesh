@@ -11,10 +11,16 @@
 //!   [`INVOICE_PAYMENT_ANCHOR_SQL`], la plus tardive de sa date, de son
 //!   échéance et de son dernier rappel non annulé, lue par l'acceptation
 //!   au moyen de [`invoice_payment_anchor_date`].
+//! - [`invoice_exigibility_date`], [`imputation_order`] et
+//!   [`INVOICE_EXIGIBILITY_DATE_SQL`] : la **date d'exigibilité** d'une
+//!   facture et l'**ordre d'imputation** qui en découle (art. 87 CO ;
+//!   Story 29-5, #668) — le départage, à score égal, des candidates d'un
+//!   paiement, et l'ordre de la troncature de la proposition.
 //! - [`find_unpaid_invoices_for_window`] : charge les factures
 //!   candidates pour le matching d'une transaction bancaire — filtre
 //!   multi-tenant + [`InvoiceDateWindow`] + tolérance amount
-//!   ± `amount_tolerance`, par `(date, id)` croissants, 50 au plus.
+//!   ± `amount_tolerance`, dans l'ordre d'imputation (date d'exigibilité,
+//!   date, `id` croissants ; Story 29-5), 50 au plus.
 //!   **PAS de filtre currency** (S4-1 Pass 4 revert : colonne
 //!   `invoices.currency` n'existe pas v0.1 mono-CHF, cf. L38).
 //! - [`find_pending_transactions_for_account`] : charge les
@@ -141,16 +147,47 @@ macro_rules! invoice_payment_anchor_join_sql {
     };
 }
 
+/// La **date d'exigibilité** d'une facture, en SQL : `X = max(F, E)`, `F` sa
+/// date, `E` son échéance, `E` absente valant `F` (Story 29-5, #668).
+/// **Prérequis : alias `i` sur `invoices`.** Seconde écriture de
+/// [`invoice_exigibility_date`], tenue d'accord avec elle par le test
+/// `exigibility_date_sql_and_rust_agree` (`tests/reconciliation_repository.rs`).
+///
+/// ⛔ **`COALESCE` obligatoire** : en MariaDB, `GREATEST` rend `NULL` dès
+/// qu'un argument l'est, et un `NULL` trié en `ASC` passe **en tête** — une
+/// facture sans échéance passerait devant toutes les autres (ou, dans
+/// l'ancre, sortirait des candidates, `NULL >= ?` étant faux). Le `GREATEST`
+/// sur `i.date` couvre une échéance antérieure à la date (données d'avant
+/// #245). Le `CAST(… AS DATE)` fait du type rendu une garantie : il est
+/// décodé en `NaiveDate`.
+///
+/// Macro et non `const` seule : `concat!` n'accepte que des littéraux, et la
+/// macro d'ancre de la Story 29-2 la compose (`invoice_payment_anchor_sql!`,
+/// premier terme réservé à cet usage, C-29-2-15). Elle est donc définie
+/// **avant** elle : une `macro_rules!` n'est visible qu'après sa définition
+/// dans le texte.
+macro_rules! invoice_exigibility_date_sql {
+    () => {
+        "CAST(GREATEST(i.date, COALESCE(i.due_date, i.date)) AS DATE)"
+    };
+}
+
+/// `invoice_exigibility_date_sql!` en `const`, pour les requêtes composées
+/// par `format!` (l'`ORDER BY` de [`find_unpaid_invoices_for_window`]).
+pub const INVOICE_EXIGIBILITY_DATE_SQL: &str = invoice_exigibility_date_sql!();
+
 /// La **date d'ancrage** d'une facture, en SQL : `A = max(F, E, R)`, `F`
 /// sa date, `E` son échéance, `R` le jour de son dernier rappel non annulé,
 /// `E` et `R` absents valant `F` (Story 29-2, #529). **Prérequis : alias `i`
 /// sur `invoices` et la jointure [`INVOICE_PAYMENT_ANCHOR_JOIN_SQL`].**
 ///
-/// Elle se compose en deux termes, `GREATEST(<F, E>, <R>)` : le premier,
-/// `GREATEST(i.date, COALESCE(i.due_date, i.date))`, est la date à laquelle
-/// la facture devient **exigible** ; c'est le terme qu'une expression
-/// d'exigibilité commune pourra remplacer sans toucher au second
-/// (C-29-2-15).
+/// Elle se compose en deux termes, `GREATEST(<F, E>, <R>)` : le premier est
+/// la date à laquelle la facture devient **exigible**,
+/// [`INVOICE_EXIGIBILITY_DATE_SQL`] — composée ici par sa macro depuis la
+/// Story 29-5 (#668), à la place de `GREATEST(i.date, COALESCE(i.due_date,
+/// i.date))` qui y était écrit (C-29-2-15) : le `CAST(… AS DATE)` qu'elle
+/// ajoute est l'identité sur une `DATE` jamais `NULL` (`i.date` est
+/// `NOT NULL`), si bien que l'ancre ne change pas.
 ///
 /// ⛔ **Chaque argument porte son `COALESCE`** : en MariaDB, `GREATEST`
 /// rend `NULL` dès qu'un argument est `NULL`, et `NULL >= ?` est faux — une
@@ -179,7 +216,8 @@ macro_rules! invoice_payment_anchor_sql {
     () => {
         concat!(
             "CAST(GREATEST(",
-            "GREATEST(i.date, COALESCE(i.due_date, i.date)), ",
+            invoice_exigibility_date_sql!(),
+            ", ",
             "COALESCE(DATE(rmd.last_sent_at), i.date)",
             ") AS DATE)"
         )
@@ -222,6 +260,77 @@ pub const PAYMENT_BEFORE_INVOICE_TOLERANCE_DAYS: i64 = 1;
 /// l'écriture d'encaissement).
 pub fn payment_date(tx: &BankTransaction) -> NaiveDate {
     tx.value_date.unwrap_or(tx.booking_date)
+}
+
+/// La **date d'exigibilité** d'une facture : `X = max(F, E)`, `F` sa date,
+/// `E` son échéance, `E` absente valant `F` (Story 29-5, #668).
+///
+/// **Le critère légal.** Faute de déclaration du débiteur (art. 86 CO), le
+/// paiement s'impute — en substance, art. 87 CO (RS 220), texte cité d'après
+/// un résumé, Fedlex n'ayant pas été relu à la source — sur la dette
+/// **exigible** ; entre plusieurs, sur celle qui a fait l'objet des
+/// premières poursuites, à défaut sur la dette **échue la première**
+/// (al. 1) ; entre dettes échues en même temps, proportionnellement
+/// (al. 2) ; si aucune n'est échue, sur la moins garantie (al. 3).
+///
+/// **La facture sans échéance** est exigible dès sa date — en substance,
+/// art. 75 CO pour une obligation sans terme —, et Kesh la tient aussi pour
+/// **échue** à cette date : c'est une **convention** (C-29-5-12), non une
+/// lecture du texte. Conséquence : une facture sans échéance datée au plus
+/// tard du jour du paiement compte toujours pour échue, et l'al. 3 ne la vise
+/// jamais. Le `max` couvre une échéance antérieure à la date (données
+/// d'avant #245) : `X = F`.
+///
+/// ⛔ Jamais une comparaison d'`Option<NaiveDate>` : `None < Some(_)` en Rust
+/// placerait une facture **sans** échéance avant toutes les autres.
+///
+/// **Deux écritures** : celle-ci, et [`INVOICE_EXIGIBILITY_DATE_SQL`] pour la
+/// requête ; le test `exigibility_date_sql_and_rust_agree`
+/// (`tests/reconciliation_repository.rs`) les tient d'accord.
+pub fn invoice_exigibility_date(invoice: &Invoice) -> NaiveDate {
+    invoice.date.max(invoice.due_date.unwrap_or(invoice.date))
+}
+
+/// L'**ordre d'imputation** de deux factures candidates d'un même paiement :
+/// [date d'exigibilité](invoice_exigibility_date) `X` croissante, puis date
+/// `F` croissante, puis identifiant croissant (Story 29-5, #668 ; art. 87 CO).
+///
+/// **Pourquoi cela suffit à « d'abord les échues »** : pour un paiement de
+/// date `D`, une facture est échue si `X ≤ D`, non échue si `X > D` ; toute
+/// facture échue a donc une `X` plus petite que toute facture non échue.
+/// Trier par `X` place les échues en tête **sans lire `D`**, puis, parmi
+/// elles, celle échue la première (al. 1). ⚠️ Cette équivalence ne vaut que
+/// tant que l'ordre des **non échues** est lui aussi `X` croissante : qui les
+/// ordonnera un jour autrement (garanties, al. 3) devra réintroduire la date
+/// du paiement dans la clé.
+///
+/// **Choix par défaut, écrits** : parmi les non échues, la plus proche de
+/// son échéance d'abord — l'al. 3 renvoie aux garanties, que Kesh ignore
+/// (C-29-5-5) ; à échéance égale, la plus ancienne, puis l'identifiant — Kesh
+/// propose **une** facture et n'impute pas proportionnellement (al. 2) ;
+/// l'identifiant rend l'ordre total et déterministe.
+///
+/// **Ce que l'ordre ne fait pas** :
+/// - **il ne touche pas au score**, qui reste la première clé de
+///   `propose_matches` (`kesh-reconciliation`). Une facture désignée par la
+///   référence **et** au montant exact passe devant toute facture que la
+///   référence ne désigne pas aussi (art. 86 : la déclaration du débiteur
+///   prime). Le montant pesant plus que la référence (0,50 contre 0,40), une
+///   facture au montant exact **du même client** passe devant une facture
+///   désignée dont le montant diffère de quelques centimes ; celle d'un
+///   **autre** client **peut** y passer — leurs scores peuvent être égaux
+///   (0,40 + 0,10 contre 0,50), et c'est alors cet ordre qui tranche ;
+/// - il ne vaut, en droit, qu'entre dettes d'un **même débiteur** : entre
+///   factures de clients différents que rien ne distingue, c'est un ordre par
+///   défaut (C-29-5-7) — la proposition reste une proposition ;
+/// - il n'impute pas proportionnellement (al. 2), ne lit pas les
+///   **poursuites** (Kesh n'en enregistre aucune) ni les **rappels**, qui
+///   n'en sont pas (C-29-5-3).
+pub fn imputation_order(a: &Invoice, b: &Invoice) -> std::cmp::Ordering {
+    invoice_exigibility_date(a)
+        .cmp(&invoice_exigibility_date(b))
+        .then_with(|| a.date.cmp(&b.date))
+        .then_with(|| a.id.cmp(&b.id))
 }
 
 /// La fenêtre de dates dans laquelle une transaction peut régler une facture
@@ -362,10 +471,21 @@ where
 ///    — la fenêtre de l'acceptation ([`InvoiceDateWindow`], Story 28-7), dont
 ///    la borne basse porte sur la date d'ancrage ([`INVOICE_PAYMENT_ANCHOR_SQL`],
 ///    sur la jointure [`INVOICE_PAYMENT_ANCHOR_JOIN_SQL`] ; Story 29-2, #529).
-///    Résultat trié par `date ASC, id ASC` (C-28-7-10) **avant** le
-///    `LIMIT 50` : au-delà de 50 candidates, ce sont toujours les plus
-///    récentes qui sont écartées. Un index peut servir cet ordre si
-///    l'optimiseur le choisit ; c'est l'`ORDER BY` qui le garantit.
+///    Résultat trié dans l'**ordre d'imputation** ([`imputation_order`] :
+///    [`INVOICE_EXIGIBILITY_DATE_SQL`], puis `date`, puis `id`, croissants ;
+///    Story 29-5, #668 — `date ASC, id ASC` jusque-là, C-28-7-10) **avant**
+///    le `LIMIT 50`, pour que la troncature n'écarte jamais, parmi des
+///    candidates de même score, celle que `propose_matches` placerait en
+///    tête : les deux ordres coïncident, si bien que les candidates gardées
+///    forment un préfixe de l'ordre d'imputation dans chaque classe de score.
+///    ⚠️ La troncature reste aveugle au **score** : une facture désignée par
+///    sa référence peut encore être écartée au-delà de 50 candidates
+///    (C-28-7-10). Ce qui a changé, c'est la victime : au-delà de 50, sont
+///    écartées les factures dont l'**exigibilité est la plus lointaine** —
+///    par exemple une facture désignée, à 60 jours net, derrière cinquante
+///    factures de même reste dû plus tôt exigibles —, et non plus les plus
+///    récentes par date. Même fragilité, autre population. Aucun index ne
+///    sert cet ordre (tri de quelques factures ouvertes de même montant).
 /// 4. **Reste dû** `BETWEEN tx_amount - amount_tolerance AND tx_amount + amount_tolerance`
 ///    (#420, Story 25-4-c) — après le HT (#246 : une facture avec TVA ne
 ///    matchait jamais) puis le TTC (une facture réglée en partie ne matchait
@@ -413,7 +533,7 @@ where
            AND i.date <= ? \
            AND {INVOICE_PAYMENT_ANCHOR_SQL} >= ? \
          HAVING amount_due BETWEEN ? - ? AND ? + ? \
-         ORDER BY i.date ASC, i.id ASC \
+         ORDER BY {INVOICE_EXIGIBILITY_DATE_SQL} ASC, i.date ASC, i.id ASC \
          LIMIT 50",
         due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
         ttc = crate::repositories::invoices::INVOICE_TTC_DERIVED_SQL,

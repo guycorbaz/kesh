@@ -20,13 +20,21 @@
 //!
 //! Score final = pondération sommée ∈ `[0.0..=1.0]`. Les paires
 //! avec `score.total > 0.0` sont retournées triées par
-//! `score.total DESC`. Le caller (`kesh-api`) charge les `Contact`
+//! `score.total DESC`, puis, **à score égal**, par l'ordre d'imputation de
+//! la loi (art. 87 CO, Story 29-5, #668 —
+//! [`kesh_db::repositories::reconciliation::imputation_order`]) : la facture
+//! échue la première passe en tête ; une facture sans échéance est tenue pour
+//! échue dès sa date. Jusqu'à la v0.13.3, le plus petit `invoice_id`
+//! l'emportait. Le score n'en est pas touché : une facture désignée par la
+//! référence et au montant exact garde la tête devant toute facture que la
+//! référence ne désigne pas aussi. Le caller (`kesh-api`) charge les `Contact`
 //! correspondants en parallèle des `Invoice` candidates pour le
 //! scoring contact.
 
 use kesh_db::entities::bank_transaction::BankTransaction;
 use kesh_db::entities::contact::Contact;
 use kesh_db::entities::invoice::Invoice;
+use kesh_db::repositories::reconciliation::imputation_order;
 use rust_decimal::Decimal;
 
 /// Sub-scores et score total pour une proposition de matching.
@@ -54,7 +62,9 @@ pub struct MatchProposal {
 
 /// Calcule les propositions pour UNE transaction bancaire contre N
 /// candidates. Retourne uniquement les paires `score.total > 0.0`,
-/// triées par `score.total DESC`. Pure (zéro I/O).
+/// triées par `score.total DESC`, puis, à score égal, par
+/// [`imputation_order`] des factures (date d'exigibilité, date, `id`
+/// croissants — art. 87 CO, Story 29-5). Pure (zéro I/O).
 ///
 /// Chaque candidat est un triplet `(facture, contact, montant à régler)` — le
 /// **reste dû** de la facture (#420, Story 25-4-c), fourni par le caller (le
@@ -63,7 +73,9 @@ pub fn propose_matches(
     tx: &BankTransaction,
     candidates: &[(Invoice, Option<Contact>, Decimal)],
 ) -> Vec<MatchProposal> {
-    let mut out: Vec<MatchProposal> = candidates
+    // La facture reste à côté de sa proposition le temps du tri (référence,
+    // sans clone) : le départage la lit, `MatchProposal` n'en porte que l'id.
+    let mut out: Vec<(&Invoice, MatchProposal)> = candidates
         .iter()
         .filter_map(|(invoice, contact, amount_to_settle)| {
             let amount_score = amount_score(tx.amount, *amount_to_settle);
@@ -79,31 +91,38 @@ pub fn propose_matches(
             );
             let total = 0.50 * amount_score + 0.40 * reference_score + 0.10 * contact_score;
             if total > 0.0 {
-                Some(MatchProposal {
-                    bank_transaction_id: tx.id,
-                    invoice_id: invoice.id,
-                    score: MatchScore {
-                        total,
-                        amount_score,
-                        reference_score,
-                        contact_score,
+                Some((
+                    invoice,
+                    MatchProposal {
+                        bank_transaction_id: tx.id,
+                        invoice_id: invoice.id,
+                        score: MatchScore {
+                            total,
+                            amount_score,
+                            reference_score,
+                            contact_score,
+                        },
                     },
-                })
+                ))
             } else {
                 None
             }
         })
         .collect();
-    // Tri par score décroissant ; en cas d'égalité, par invoice_id pour
-    // déterminisme (utile aux tests E2E + audit reproductibilité).
-    out.sort_by(|a, b| {
+    // Tri par score décroissant ; à score égal, par l'ordre d'imputation
+    // (art. 87 CO, Story 29-5, #668) : la facture échue la première d'abord,
+    // puis la plus ancienne, puis le plus petit identifiant. L'identifiant
+    // restant la dernière composante, l'ordre est total et déterministe — la
+    // proposition affichée, et acceptée d'un clic, ne dépend pas de l'ordre
+    // de chargement des candidates.
+    out.sort_by(|(inv_a, a), (inv_b, b)| {
         b.score
             .total
             .partial_cmp(&a.score.total)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.invoice_id.cmp(&b.invoice_id))
+            .then_with(|| imputation_order(inv_a, inv_b))
     });
-    out
+    out.into_iter().map(|(_, proposal)| proposal).collect()
 }
 
 fn amount_score(tx_amount: rust_decimal::Decimal, amount_to_settle: rust_decimal::Decimal) -> f64 {
@@ -372,7 +391,9 @@ mod tests {
         assert!((proposals[0].score.total - 0.40).abs() < 1e-10);
     }
 
-    /// Tri par score DESC + tie-break invoice_id ASC.
+    /// Tri par score DESC, puis, à score égal, l'ordre d'imputation (Story
+    /// 29-5) — qui se réduit ici à l'identifiant : `make_invoice` donne même
+    /// date et aucune échéance à 101 et 103.
     #[test]
     fn propose_matches_returns_sorted_desc() {
         let tx = make_tx(dec!(100.00), Some("INV-2026-001"), Some("ACME"));
@@ -383,7 +404,8 @@ mod tests {
             propose_matches(&tx, &[cand(inv1, None), cand(inv2, None), cand(inv3, None)]);
         assert_eq!(proposals.len(), 3);
         // inv2 amount + ref = 0.90, inv1 amount only = 0.50, inv3 amount only = 0.50.
-        // Tri: 102 (0.90), 101 (0.50, tie-break id ASC), 103 (0.50).
+        // Tri: 102 (0.90), 101 (0.50), 103 (0.50) — à score égal, ordre
+        // d'imputation, ici l'id (mêmes dates, aucune échéance).
         assert_eq!(proposals[0].invoice_id, 102);
         assert_eq!(proposals[1].invoice_id, 101);
         assert_eq!(proposals[2].invoice_id, 103);

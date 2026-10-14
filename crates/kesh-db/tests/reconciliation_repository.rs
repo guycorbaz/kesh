@@ -260,7 +260,9 @@ const HASH_X: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123
 /// avant la facture) ne le sont pas. Les deux bornes, de part et d'autre.
 /// Les factures n'ont ni échéance ni rappel : leur date d'ancrage est leur
 /// date (Story 29-2 ; l'ancre est éprouvée par
-/// `the_anchor_is_the_latest_of_date_due_date_and_last_reminder`).
+/// `the_anchor_is_the_latest_of_date_due_date_and_last_reminder`), et leur
+/// date d'exigibilité aussi : l'ordre d'imputation de la Story 29-5 s'y réduit
+/// à `(date, id)`.
 #[sqlx::test(migrations = "./test-schema")]
 async fn find_unpaid_invoices_filters_by_30_day_window(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
@@ -314,6 +316,12 @@ async fn find_unpaid_invoices_filters_by_30_day_window(pool: MySqlPool) {
 /// ordre de clé primaire) ne rend pas les mêmes 50. Trois factures sont datées
 /// `D + 1` : la coupure du `LIMIT 50` **traverse** ce groupe (une retenue, deux
 /// écartées), et c'est le départage `id ASC` qui désigne la retenue.
+///
+/// Depuis la Story 29-5 (#668), la requête trie dans l'ordre d'imputation —
+/// date d'exigibilité, puis `(date, id)` : ces factures n'ayant pas
+/// d'échéance, leur date d'exigibilité est leur date, et l'ordre s'y réduit à
+/// `(date, id)`. L'ordre avec échéances est éprouvé par
+/// `find_unpaid_invoices_orders_by_exigibility_before_limit`.
 #[sqlx::test(migrations = "./test-schema")]
 async fn find_unpaid_invoices_orders_by_date_then_id_before_limit(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;

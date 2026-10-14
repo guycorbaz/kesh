@@ -207,9 +207,9 @@ fn candidate_rank(c: &ReconciliationCandidate) -> u8 {
 ///
 /// Le tri est **stable** (`sort_by_key`, jamais `sort_unstable_by_key`) : à
 /// rang égal, l'ordre reçu de `propose_matches` est conservé — score
-/// décroissant, puis son départage (`invoice_id` croissant au sol ; le
-/// départage à score égal est porté par #668, Story 29-5, que ce tri garde
-/// tel quel). La fonction ne suppose **rien** de l'ordre d'entrée.
+/// décroissant, puis, à score égal, l'ordre d'imputation (art. 87 CO : la
+/// facture échue la première d'abord ; Story 29-5, #668), que ce tri garde
+/// tel quel. La fonction ne suppose **rien** de l'ordre d'entrée.
 ///
 /// ⚠️ Sur les entrées que produit `get_proposals`, elle ne change rien : la
 /// règle y est ajoutée en dernier, et chaque facture qui la côtoie est de
@@ -217,11 +217,12 @@ fn candidate_rank(c: &ReconciliationCandidate) -> u8 {
 /// aux mutations du critère de rang. C'est voulu : l'ordre devient **écrit**,
 /// au lieu d'être l'effet de bord de la place d'un `push`.
 ///
-/// Angles morts, ni aggravés ni réparés : une facture que le paiement dépasse
-/// de 1 à 5 centimes est candidate, reste au rang 0, puis son acceptation est
-/// refusée en `RECONCILIATION_OVERPAYMENT` (#665, Story 29-6) ; le départage à
-/// score égal place la facture de plus petit identifiant en tête, sans égard
-/// à l'exigibilité (#668, Story 29-5).
+/// Angle mort, ni aggravé ni réparé : une facture que le paiement dépasse de
+/// 1 à 5 centimes est candidate, reste au rang 0, puis son acceptation est
+/// refusée en `RECONCILIATION_OVERPAYMENT` (#665, Story 29-6). Le second
+/// angle mort que la Story 29-3 écrivait ici — à score égal, la facture de
+/// plus petit identifiant en tête, sans égard à l'exigibilité (C-29-3-12) —
+/// est résolu par la Story 29-5 (#668).
 fn order_candidates(candidates: &mut [ReconciliationCandidate]) {
     candidates.sort_by_key(candidate_rank);
 }
