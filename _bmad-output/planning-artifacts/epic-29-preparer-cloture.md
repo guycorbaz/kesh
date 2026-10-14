@@ -118,6 +118,22 @@ simplification sans relecture des verrous.
 `CLAUDE.md`, **recompte des issues ouvertes (moins qu'au tag précédent)**, tag annoté, `release.yml`, vérification
 Docker Hub (`/health`). Autorisé d'office pour cet epic.
 
+#### Liste de pré-release de la v0.13.4 — contrôles écrits, à exécuter avant le tag
+
+- ⛔ **29-6 (#665) et 29-8 (#670) mergées.** La 29-2 écrit au manuel et au CHANGELOG « enregistrez le règlement depuis
+  la fiche de la facture, puis rejetez la transaction » ; ce geste est **impraticable** tant que la 29-6 n'a pas rendu
+  rejetable une ligne sans proposition, et la 29-8 doit le remplacer par « puis rattachez ». Contrôle, au moment du
+  tag :
+  ```sh
+  grep -nF 'rejetez la transaction' docs/manual/fr/user-manual.tex
+  grep -nE 'rejet[a-z]* (ensuite )?la transaction' docs/manual/fr/user-manual.tex CHANGELOG.md
+  ```
+  ne doivent plus rendre le conseil de rejet **sans** le rattachement — la seconde commande attrape aussi la
+  variante « en rejetant ensuite la transaction » (`sec:facture-posterieure`) et la phrase du CHANGELOG ; contrôler
+  aussi le PDF aplati (`pdftotext … | tr '\n' ' ' | tr -s ' '`). Faute de quoi, pas de tag. *(Ajouté le 2026-10-14, revue
+  de code P1 de la 29-2, findings B1 = E2 = A1 — décision de l'orchestrateur ; cf. C-29-2-8.)*
+- ⛔ **29-5 (#668) mergée** (départage à score égal, C-29-2-13 de la 29-2).
+
 [#232]: https://github.com/guycorbaz/kesh/issues/232
 [#527]: https://github.com/guycorbaz/kesh/issues/527
 [#529]: https://github.com/guycorbaz/kesh/issues/529

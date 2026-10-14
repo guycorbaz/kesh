@@ -92,6 +92,10 @@ Fiche : `29-2-paiement-tardif.md`.*
 - **Écartée** : changer le départage dans la 29-2 (empiète sur `kesh-reconciliation`, quatrième module ; porté par
   la 29-5).
 - **Réversible** : oui.
+- *(Annotation du 2026-10-14, revue de code P1, finding E6 (LOW) : aucun test ne fait traverser la coupure du
+  `LIMIT 50` par une facture de la fenêtre élargie (`F` ancien, ancre récente), qui passe devant les récentes par le
+  tri `(i.date, i.id)`. **Renvoyé à la 29-5** (#668), qui teste la troncature : un test écrit ici figerait l'ordre
+  que la 29-5 doit remplacer — « les factures échues d'abord » —, et serait réécrit par elle. Aucun test ajouté.)*
 
 ### C-29-2-8 — Le contournement du reliquat est complété au manuel : rejeter la transaction
 
@@ -108,6 +112,13 @@ Fiche : `29-2-paiement-tardif.md`.*
   l'orchestrateur** : la **Story 29-6** (#665), même release v0.13.4, rendra possible le rejet d'une ligne sans
   proposition, et **doit être mergée avant le tag v0.13.4**. La 29-2 ne change pas son code pour cela et garde le texte
   prescrit du manuel.)*
+- *(Annotation du 2026-10-14, revue de code P1, findings B1 = E2 = A1 (MEDIUM) — **décision de l'orchestrateur** :
+  le texte du manuel et du CHANGELOG reste ; la **Story 29-8** (#670) le remplacera par « puis rattachez », la 29-6
+  rendant une ligne sans proposition rejetable. La dépendance de publication, jusqu'ici écrite au seul registre,
+  devient un **contrôle écrit** au fichier d'epic (`epic-29-preparer-cloture.md`, § *Releases*, « Liste de
+  pré-release de la v0.13.4 ») : 29-6 et 29-8 mergées, et `grep -nF 'rejetez la transaction'
+  docs/manual/fr/user-manual.tex` (plus une variante `grep -nE` qui attrape « en rejetant ensuite » et le CHANGELOG)
+  ne rend plus le conseil sans le rattachement. Aucune ligne de code pour ce point.)*
 
 ### C-29-2-9 — Le reliquat (plus de 30 jours après l'échéance, sans rappel) : couvert par #666
 
@@ -211,6 +222,10 @@ Fiche : `29-2-paiement-tardif.md`.*
   `COALESCE(i.due_date, i.date)`, M5 à `GREATEST(i.date, i.due_date)`), le `GREATEST` intérieur exigeant deux
   arguments.
 - **Réversible** : oui.
+- *(Annotation du 2026-10-14, revue de code P1, findings E1 = A2 (MEDIUM) et B2 (LOW) : M14 n'est **pas**
+  équivalente — le repli `i.date` du terme du rappel ne vaut `F` que sans rappel ; une échéance et un rappel non
+  annulé tous deux antérieurs à `F` font tomber l'ancre mutée sous `F`. Cas l ajouté à l'AC5 (fixture SQL : ce jeu
+  est hors API), M14 rejouée et tuée ; doc-comment de `invoice_payment_anchor_sql!` corrigé.)*
 
 ### C-29-2-16 — Un `\label{sec:algorithme-matching}` neuf pour le renvoi du § des rappels
 
@@ -219,6 +234,20 @@ Fiche : `29-2-paiement-tardif.md`.*
 - **Retenu** : poser `\label{sec:algorithme-matching}` (libre au dépôt, `grep -rn algorithme-matching docs/manual`
   vide avant), et y renvoyer depuis `:1305` et la FAQ.
 - **Écartée** : renvoyer à `sec:facture-posterieure` (il traite de la borne haute, pas de l'ancre).
+- **Réversible** : oui.
+
+### C-29-2-17 — Le coût de la dérivée des rappels (`rmd`, toutes sociétés) : angle mort écrit, sans filtre
+
+- **Contexte** : revue de code P1, B3 = E5 (LOW). La dérivée `rmd` n'a pas de `company_id` : elle peut agréger les
+  rappels de toutes les sociétés, une fois par transaction en attente (`get_proposals`). La justesse n'est pas en
+  cause (jointure par `invoice_id`, `i.company_id = ?`, testé).
+- **Retenu** : écrire l'angle mort au doc-comment de `invoice_payment_anchor_join_sql!`. MariaDB 10.11 a
+  `split_materialized=on` (constaté sur `kesh-mariadb-dev`) et peut pousser la jointure dans la dérivée par l'index
+  `idx_invoice_reminders_invoice` ; **non mesuré** (base de la story vide, plan sans valeur).
+- **Écartée** : filtrer par société. Ce n'est pas mécanique : la dérivée ne peut pas référencer `i` (table dérivée,
+  non latérale), le filtre exige un paramètre lié de plus, qui décale l'ordre des `bind` des deux lecteurs
+  (proposition et scalaire) et quitte le patron sans paramètre des jointures du reste dû (C-29-2-12). Sans effet à
+  l'échelle d'une installation à une société.
 - **Réversible** : oui.
 
 [#529]: https://github.com/guycorbaz/kesh/issues/529

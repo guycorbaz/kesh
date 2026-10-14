@@ -665,6 +665,10 @@ Mêmes dix fichiers qu'au sol ; seuls changent les compteurs des deux fichiers q
 existant n'a vu son assertion modifiée ; seul le doc-comment de `proposal_and_acceptance_share_the_invoice_date_window`
 (AC6) et celui de `find_unpaid_invoices_filters_by_30_day_window` (propagation) sont réécrits. Les inventaires
 d'écrivains (`bank_account_closed_inventory.rs`, `letterings_lexical.rs`) sont verts au gate complet.
+*(Annotation du 2026-10-14, revue de code P1, A3 : ce relevé date du commit `8f483388` — `due_date=7` y est exact.
+Rejouée à `d45279f7` et à `729a1dc9`, la même commande rend `reconciliation_repository.rs: … due_date=8`, l'écart
+venant du doc-comment ajouté par `d45279f7`, qui cite `the_anchor_is_the_latest_of_date_due_date_and_last_reminder` ;
+les neuf autres lignes sont identiques. Le relevé n'est pas réécrit.)*
 
 **Documentation (T5).** Manuel FR : `:1305`, `:2029`, `:2031` (deux phrases et la course, C-29-2-14), `:2902` ; un
 `\label{sec:algorithme-matching}` neuf (**C-29-2-16**) porte les renvois. PDF régénéré (`make fr`, sous verrou, 3
@@ -718,6 +722,28 @@ unitaires `reconciliation::tests`, et cinq tests de `reconciliation_e2e` (27 tes
 | M15 (`GROUP BY id`) | tuée, 2 rouges | `the_anchor_is_the_latest_…` (f dédoublée dans le `Vec`), parité 29-2 |
 
 État après la campagne : `git status --short crates` vide.
+
+*(Annotation du 2026-10-14, revue de code P1, E1 = A2 (MEDIUM) et B2 (LOW) : la ligne **M14** ci-dessus est
+**fausse** — M14 n'est pas équivalente. Le repli `i.date` du terme du rappel ne vaut `F` que **sans** rappel ; avec
+une échéance `E < F` **et** un rappel non annulé `R < F`, l'ancre mutée vaut `max(E, R) < F`. Elle survivait faute
+de ce jeu dans les tests, non par équivalence. Cas **l** ajouté à l'AC5 (`F = D − 25`, `E = D − 50`, rappel non
+annulé à `D − 60`, ancre `D − 25`, candidate), posé par fixture SQL directe — l'API refuse une échéance antérieure
+à la date, si bien que ce jeu n'est pas constructible par elle ; un rappel manuel antérieur à la facture, lui,
+l'est. M14 rejouée sur `729a1dc9`, appliquée par Edit (motif unique vérifié), restaurée par `git checkout --` puis
+`touch` : **tuée, 1 rouge** — `the_anchor_is_the_latest_…`, `cas l : ancre`, `left: Some(2026-04-26)` (`D − 50`),
+`right: Some(2026-05-21)` (`D − 25`) ; filtre `binary(reconciliation_repository)` (16 tests) et trois tests de
+`reconciliation_e2e` (`proposal_and_acceptance_share_the_invoice_date_window`, `…_share_the_anchor_of_due_date_and_reminders`,
+`post_accept_rejects_payment_date_outside_window`) — 19 tests run: 18 passed, 1 failed ; journal
+`292-mutations-M14-revue-p1.log`. Le cas de #529 (`a_payment_after_the_due_date_is_proposed_and_settles_the_invoice`)
+n'était pas dans ce filtre. L'assertion
+scalaire rougit la première ; la liste la verrait aussi (ancre mutée hors fenêtre), ce qui n'a pas été rejoué.
+Bilan des mutations après la revue : 21 jouées, **18 tuées, 2 équivalentes** (M12, M13). La campagne d'origine
+n'est pas réécrite.)*
+
+*(Annotation du 2026-10-14, revue de code P1, A4 (LOW) : chaque cas de l'AC5 a un montant propre, si bien que la
+liste assertée vaut `vec![id]` ou `vec![]` ; l'**ordre** `(date, id)` n'y est pas exercé — il l'est par
+`find_unpaid_invoices_orders_by_date_then_id_before_limit`, inchangé. Ce qu'AC5 vise par le `Vec` (les répétitions,
+M15) est tenu.)*
 
 **Gates (AC10)**, au dernier commit de code (`d45279f7`, qui porte les derniers doc-comments), base `kesh_292`
 recréée, migrée et seedée juste avant :

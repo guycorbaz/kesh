@@ -1230,8 +1230,9 @@ struct AnchorCase {
 /// l'acceptation est assertée pour **chaque** cas, candidat ou non : c'est la
 /// seule assertion qui voie l'ancre de g, refusée dans les deux formes (une
 /// ancre qui suivrait l'échéance antérieure à la date — mutation M14bis).
-/// Le cas l (échéance et rappel antérieurs à la date) tue M14 dans les deux
-/// formes : ancre scalaire et liste.
+/// Le cas l (échéance et rappel antérieurs à la date) tue M14 par l'ancre
+/// scalaire, assertée la première ; la liste la verrait aussi (ancre mutée
+/// `D − 50`, hors fenêtre), ce qui n'a pas été rejoué.
 #[sqlx::test(migrations = "./test-schema")]
 async fn the_anchor_is_the_latest_of_date_due_date_and_last_reminder(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
