@@ -10,8 +10,8 @@
  *
  * ⚠️ **Relevés UNIQUES à chaque exécution** (patron de `reconciliation-cancel.spec.ts`) :
  * références, montants et contrepartie réécrits. La **règle d'affectation** porte une
- * contrepartie unique à l'exécution ; elle rendait les deux transactions sélectionnables, ce
- * qu'elle n'est plus nécessaire à faire depuis la Story 29-6 (toute ligne porte une case) — elle
+ * contrepartie unique à l'exécution ; elle rendait les deux transactions sélectionnables, et
+ * n'est plus nécessaire à la sélection depuis la Story 29-6 (toute ligne porte une case) — elle
  * est gardée, le spec éprouvant toujours un rejet en lot dont une transaction a disparu. Le
  * ciblage par `data-tx-id` suffit à ne cocher aucune transaction d'un autre spec. La règle est
  * supprimée en `finally`, avec les deux imports (choix C-27-4-24, C-27-4-41, C-29-6-19).

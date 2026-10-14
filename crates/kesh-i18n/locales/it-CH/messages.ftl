@@ -1207,7 +1207,7 @@ reconciliation-labels-failed = Errori parziali
 reconciliation-labels-rejected-hint = Una transazione rifiutata lascia questo elenco. Resta nel dettaglio della sua importazione (Importa estratti conto), dove il rifiuto si può annullare se il suo ruolo lo consente.
 # Story 29-3 (#527) — la priorità delle proposte, indicata sopra l'elenco.
 reconciliation-labels-priority-hint = Per ogni transazione è mostrata una sola proposta: la fattura con il punteggio migliore, se ce n’è una, altrimenti la regola di assegnazione corrispondente. Una fattura proposta precede sempre una regola.
-# Story 29-6 (#665, AC10) — rendue dans la rangée des boutons quand une ligne sans proposition est cochée.
+# Story 29-6 (#665, AC10) — mostrato nella riga dei pulsanti quando è selezionata una riga senza proposta.
 reconciliation-labels-unmatched-not-acceptable-hint = Una transazione senza corrispondenza non può essere accettata: tolga la selezione per accettare le altre.
 # Story 15-5c (#492) — etichette dei rifiuti di un lotto di riconciliazione (`failed[]`).
 reconciliation-failed-account-not-found = Un conto di contropartita è introvabile o archiviato.
