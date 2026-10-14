@@ -1209,6 +1209,22 @@ dernier commit de code de la story) :
 **Registre versé** : le contenu de `epic-29-choix-autonomes-29-1.md` (à partir de son premier titre) est ajouté à la fin
 de `epic-29-choix-autonomes.md`, précédé de `---` ; le fichier propre est conservé (la 29-1b le complétera).
 
+**Annotation datée du 2026-10-14 — rebase sur la 29-3 (main `089fcd80`).** La branche a été rebasée par
+l'orchestrateur sur `main`, qui porte désormais les Stories 29-2 et 29-3 ; les chiffres ci-dessus datent d'avant ce
+rebase et restent des relevés exacts à leur date. Reprise : `sitesTotal` à **2163** (2107 + 1 + 55) confirmé par
+`i18n-keys.test.ts`, vert ; `## [0.13.4] — Non publié` du CHANGELOG relue (entrées 29-1a, 29-3 et 29-2, sans
+doublon, aucune section 0.14.0) ; `sprint-status.yaml` relu (YAML valide). `docs/manual/fr/user-manual.pdf`
+**régénéré** (`make fr`, sous verrou ; seul ce PDF diffère des PDF commités) : aplati, « score conventionnel » (1),
+« La page le rappelle » (1) et « Préparer la clôture » (4) présents, aucun « ?? ». Gates rejoués après rebase, bases
+`kesh_291` / `kesh_e2e_291` remises à zéro (périmètre : HEAD rebasé, aucun code exécutable modifié par ce commit) :
+
+- `scripts/test-fast.sh` : **3652 passés, 6 ignorés**, vert ;
+- `npm run check` : 0 erreur, 29 avertissements ; `lint-i18n-ownership` : vert ; `npm run test:unit` : **147 fichiers,
+  1640 tests**, verts ; `npm run build` : vert ;
+- **E2E complet** (port 3042) : **285 passés, 7 échecs, 19 ignorés** (11,5 min) ; les sept échecs sont exactement
+  ceux de la KF-029 (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+  `:77`, `:150`) ; aucun autre — `sidebar-navigation.spec.ts:75` a passé.
+
 ### Completion Notes List
 
 - 2026-10-14 — fiche créée (analyse de contexte complète, guide de développement), deux clés `ready-for-dev`.
