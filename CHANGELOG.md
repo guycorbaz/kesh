@@ -8,12 +8,16 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.13.3] — Non publié
+## [0.13.3] — 2026-10-14
+
+⚠️ **Cette version n'est toujours pas destinée à tenir une comptabilité réelle.** Epic 28 : un compte bancaire se **clôt** et se rouvre ; une transaction rejetée se remet parmi les propositions ; la sauvegarde d'installation lit toutes ses tables dans un instantané unique ; la réconciliation ne propose plus une facture qu'elle refuserait, et refuse proprement un débit présenté contre une facture ; une erreur ne s'affiche plus « [object Object] » ; les boutons d'action destructive se voient.
 
 ⚠️ **À faire en passant à la 0.13.3** — le détail est au manuel d'administration, *Passer à la 0.13.3* :
 
-1. **Sauvegarder la base avant la mise à jour**, comme à chaque version. La 0.13.3 ajoute une migration (date de clôture des comptes bancaires), qui ne relève pas `kesh_version_min_required` (il reste à `0.13.1`) ; une base migrée ne devrait pourtant plus démarrer sous la 0.13.2 : **le retour à la 0.13.2 passe par la restauration de cette sauvegarde**.
-2. **Intégrations par clé d'API** : `GET /api/v1/bank-accounts` et `/api/v1/companies/current` ne rendent plus les comptes bancaires **clos** ; `GET /api/v1/bank-accounts?includeClosed=true` les ajoute. Une écriture qui vise un compte clos est refusée en `409 BANK_ACCOUNT_CLOSED` (dans `failed[]` pour les lots de réconciliation). Détail dans `docs/api-external.md`.
+1. **Sauvegarder la base avant la mise à jour**, comme à chaque version — et cette fois elle est **le seul retour simple à la 0.13.2**. La 0.13.3 ajoute une migration, `20261013000001_bank_accounts_closed_on` (colonne `bank_accounts.closed_on`, date de clôture, et contrainte `chk_bank_accounts_closed_not_primary`). Elle ne relève pas `kesh_version_min_required`, qui reste à `0.13.1` ; mais une 0.13.2 **refuse de démarrer** sur une base migrée (`Échec des migrations : migration 20261013000001 was previously applied but is missing in the resolved migrations`), et une sauvegarde d'installation (`.keshbackup`) prise sous la 0.13.3 ne s'importe pas dans une 0.13.2 (colonne `closed_on` inconnue). **Retour à la 0.13.2** : restaurer la sauvegarde prise avant la mise à jour — ce qui a été saisi depuis est perdu. À défaut, en dernier recours et par SQL, retirer la contrainte, la colonne et la ligne `20261013000001` de `_sqlx_migrations` (commandes au manuel d'administration) : la 0.13.2 démarre alors, mais **les comptes clos redeviennent ouverts**, leur date de clôture perdue, et acceptent de nouveau des écritures ; une remontée à la 0.13.3 rejoue la migration, et ces comptes sont à clore de nouveau.
+2. **Intégrations par clé d'API** : `GET /api/v1/bank-accounts` et `/api/v1/companies/current` ne rendent plus les comptes bancaires **clos** ; `GET /api/v1/bank-accounts?includeClosed=true` les ajoute. Une écriture qui vise un compte clos est refusée en `409 BANK_ACCOUNT_CLOSED` (dans `failed[]` pour les lots de réconciliation). Une transaction de débit, ou de montant nul, proposée contre une facture par `POST /api/v1/reconciliation/accept` est refusée dans `failed[]` en `RECONCILIATION_TRANSACTION_NOT_CREDIT`, là où elle rendait selon le cas `RECONCILIATION_SCORE_TOO_LOW` ou `DATABASE_ERROR` ; une intégration qui rejouait ce refus doit cesser. Détail dans `docs/api-external.md`.
+
+Sur Synology, `kesh-dump.sh` et `kesh-restore.sh` sont inchangés depuis la 0.13.1 ; ni le compose ni `.env.example` ne changent.
 
 ### Ajouté
 

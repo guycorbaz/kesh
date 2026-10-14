@@ -1,3 +1,4 @@
+# last_updated: 2026-10-14 (132) (release 0.13.3 préparée — branche chore/release-v0.13.3 : crates 0.13.3 et CHANGELOG daté par prepare-release.sh (pré-vol : 2 exemptions périssables, aucun tag dans leur intervalle), macros des manuels 0.13.3/2026-10-14, URL raw au tag v0.13.3, section « Passer à la 0.13.3 » complétée au manuel d administration (retour à la 0.13.2 par la sauvegarde, SQL en dernier recours ; RECONCILIATION_TRANSACTION_NOT_CREDIT, C-28-6-11), README/site/CLAUDE.md ; une migration (20261013000001), min_required reste 0.13.1 ; epic-28 reste in-progress, rétrospective à faire)
 # last_updated: 2026-10-14 (129) (28-8 — développée, review)
 # last_updated: 2026-10-14 (128) (28-8 — validation close en P1 (Sonnet R+F : 0/0/2/8, remédiés) ; ready-for-dev)
 # last_updated: 2026-10-13 (127) (fiche de la 28-8 — cinq petits correctifs #421 #561 #595 #612 #615 ; validation en cours)
