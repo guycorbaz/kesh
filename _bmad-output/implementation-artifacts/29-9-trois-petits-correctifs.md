@@ -22,6 +22,9 @@ dit « quatre » (C-29-9-19).
 de `story/29-8`, non mergée) ; T0-T10 faits, dernier commit de code `284c1d3b` ; gates complets et E2E complet à ce
 commit (Dev Agent Record). Choix nés du développement : **C-29-9-26 à C-29-9-30**. Revue de code P1 à lancer : prompt
 `29-9-review-prompt-p1.md`.
+*Annotation du 2026-10-15 (report, puis revue P1)* : la branche a été **reportée** sur `1261c4bb` (tête finale de la
+29-8, revue close, PR #681) ; le dernier commit de code est **`3e5dfed8`**, les gates complets et l'E2E complet ont
+été rejoués à `d2c64df9` (journaux `299-rebase2-*`, Change Log). La revue P1 est faite et remédiée (Change Log).
 
 11 AC, T0-T10. Quatre issues, chacune **entièrement** réglée ou sortie du périmètre : [#649], [#655], [#646] — `bug`
 et `P3` — et [#678] — `bug` et `P4`.
@@ -841,7 +844,10 @@ Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/` : `299-t1-cible.log` (tests 
 `299-mut-t4.log`, `299-mut-t10.log`, `299-mut-m30-bis.log` (mutations), `299-make-fr.log` (PDF),
 `299-e2e-cible.log` (trois specs), `299-gate-final.log` (gates au `9a1e5eb0`, `npm run check` rouge),
 `299-gate-final2.log` (gates au dernier commit de code `284c1d3b`), `299-e2e-complet.log` (E2E complet au même
-commit). Scripts et motifs des mutations : `kesh-gate-logs/299-scripts/` (`mutate.py`, `mutcamp.py`, `t3.json`,
+commit). *Annotation du 2026-10-15, report sur `1261c4bb`* : les journaux de référence sont désormais
+`299-rebase2-gate.log`, `299-rebase2-npm-{check,lint-i18n-ownership,test:unit,build}.log`,
+`299-rebase2-e2e-complet.log` (et `-e2e-playwright.log`), `299-rebase2-mut.log`, `299-rebase2-make-fr.log` ; les
+précédents ne valent que pour le commit d'avant le report. *Revue P1* : `299-p1fix-make-fr.log` (PDF régénéré). Scripts et motifs des mutations : `kesh-gate-logs/299-scripts/` (`mutate.py`, `mutcamp.py`, `t3.json`,
 `t4.json`, `t10.json`, `m30.json`, `mut-rust.sh`, `mut-t2.sh`).
 
 ### Completion Notes List
@@ -873,6 +879,11 @@ reportés dans le corps de la fiche) :
 - les deux pages de #655, `ContactPersonsManager` et les catalogues : conformes au constat.
 
 **Tests vus rouges avant le correctif** (sorties dans la conversation de développement ; résumé exact) :
+*Annotation du 2026-10-15, revue P1 (A-7) — écart à l'AC9 (« sortie copiée au Dev Agent Record ») : les sorties
+rouges ne sont **pas** copiées ici, seulement résumées. Les sorties **des tests rouges sous mutation** sont dans les
+journaux `299-mut-t2.log`, `299-mut-t3.log`, `299-mut-t4.log`, `299-mut-t10.log`, `299-mut-rust.log` ; le rouge
+**avant correctif** de T2 à T4 et de T10 n'a, lui, de trace que dans la conversation de développement (aucun journal
+ne le porte).*
 - T2 : V2, V3, V4, V5, V12, V18 rouges (`Unable to find … reconciliation-more` / `…show-older-btn`) ; V1 vert au sol
   (il exige une absence) ;
 - T3 : V6, V7, V8, V9, V13, V14, V15, V16, V17 rouges, chacun sur son symptôme (bannière présente ; lignes rejetées
@@ -896,6 +907,11 @@ reportés dans le corps de la fiche) :
   V23 ; rejouée après T5 : aussi `i18n-keys.test.ts`, « la collecte ne passe pas à vide » et « l'inventaire des sites
   non résolus est borné ») ;
 - M15 rejouée sur la fixture définitive (C-29-9-27) : tuée par V13.
+- *Annotation du 2026-10-15, revue P1 (A-6)* : **M9, M10, M13, M16, M17 et M19 ont tourné sur la `class FakePage`**
+  (`299-mut-t3.log`, 23:50:45), **avant** `85d8d9ea` (23:54:23), qui la remplace par l'objet à accesseurs
+  (C-29-9-27) ; **seule M15 a été rejouée** sur la doublure définitive. Les six autres n'ont **pas** été rejouées
+  depuis : le « toutes tuées » vaut, pour elles, pour un arbre qui n'est pas celui du commit (les deux doublures ont
+  la même sémantique, un `$state.raw` réassigné ; aucun rejeu n'a vérifié l'équivalence).
 ⚠️ **Écart de procédure, sans effet sur les résultats** : la campagne Rust (M6, M18, M20) a tourné **avant** le commit
 de T1 ; sa restauration par `git checkout` a ramené `routes/reconciliation.rs` à HEAD et **effacé les doc-comments**
 non commités de T1, réécrits ensuite à l'identique avant le commit. Les mutations portaient sur du code identique à
@@ -920,7 +936,8 @@ celui du commit (seuls des commentaires diffèrent). Les campagnes suivantes ont
   compté), `bank-import-detail-page.test.ts` 5 → 7 (V6, V7), `profile-page.test.ts` 2 → 9 (V8, V9, V13-V17),
   `ContactPersonsManager.test.ts` 0 → 2 (V10, V11), `i18n-entrees-a-variables.test.ts` 5 → 6 (V23) ;
 - Rust : **+2** (`reconciliation_e2e.rs` 106 → 108) ;
-- E2E : **+2 specs** (73 → 75 fichiers `*.spec.ts`), un test chacune ;
+- E2E : **+2 specs** (73 → 75 fichiers `*.spec.ts` au premier niveau de `frontend/tests/e2e/` ; *annotation du
+  2026-10-15, revue P1* : 74 → 76 en comptant `security/`, le delta est le même), un test chacune ;
 - i18n : **six clés neuves** ×4 (`reconciliation-labels-more-hidden`, `-actions-show-older`, `-labels-more-capped`,
   `-labels-select-transaction`, `-select-transaction-no-counterparty`, `contact-persons-confirm-delete`) et **une
   réécrite** ×4 (`reconciliation-unreject-success`) ; `sitesTotal` **2180 → 2186** (+5 dans
@@ -948,13 +965,24 @@ celui du commit (seuls des commentaires diffèrent). Les campagnes suivantes ont
 aux données près — la région vide n'ajoute aucun écart visible. Aucune capture de la confirmation (dialogue natif,
 C-29-9-10) ; pages de #655 : rendu inchangé.
 
+⚠️ **Écart à l'AC2, déclaré le 2026-10-15 (revue P1, A-2) — saut de défilement (C-29-9-15), capture non prise.**
+Tel qu'il est au code : *Afficher aussi les plus anciennes* ne fait que poser `limit = 500` ; l'`$effect` relance
+`load()`, qui pose `loading = true` ; `{#if loading}` remplace alors la table, l'avis et le bouton par le message
+« Chargement des propositions… », le document se raccourcit et la page remonte ; la réponse revient, `loading`
+retombe, la liste à 500 lignes réapparaît **sans restauration de la position** de défilement. `load()` n'a pas
+changé sur ce point (C-29-9-15). Le saut **n'a pas été observé en séance ni capturé** : l'AC2 exigeait « la capture »
+au Dev Agent Record, elle manque, et les quatre captures `avis-*` ne montrent que l'avis. Le comportement se lit au
+code, il n'a pas été constaté à l'écran.
+
 **Propagation** (grep de la fiche, § *Propagation*) : ne sortent plus « hardcodé 100 », `L24`, « pas de UI dédiée »,
 « Charger plus », « 100 plus récentes au plus », « qui ne montre que les 100 », `issues/649` ; sortent seulement les
 occurrences légitimes attendues (constantes et doc-comments, `reconciliation-unreject-success` ×4 et son repli,
 « les 100 plus récentes d'abord » au manuel, la ligne « score de 100 % » `:2083`, sans rapport). PDF aplati : les
 trois phrases neuves présentes, l'ancienne absente (`grep -c` → 0), « la page le dit » présente.
 
-**Demandes à l'orchestrateur** : la PR (après le merge de la 29-8 et ton `git rebase --onto origin/main 4b358373`),
+**Demandes à l'orchestrateur** : la PR (après le merge de la 29-8 et ton `git rebase --onto origin/main 1261c4bb8725fec33f6b7920947ed005ee8bd41b story/29-9`
+— *corrigé le 2026-10-15, revue P1 (A-1) : la commande d'origine portait `4b358373`, base d'avant le report ; la
+branche repose sur `1261c4bb`, dont l'arbre est identique à `origin/main` `1b136fad`*),
 corps avec `closes #649 #655 #646 #678`, message de squash rédigé à la main ; le commentaire de #655 (défaut latent sur
 la page d'un profil, C-29-9-8) ; la décision sur une issue de pagination au-delà de 500 (C-29-9-3) ; la ligne
 orpheline du fichier d'epic (ci-dessus).
@@ -1166,3 +1194,33 @@ orpheline du fichier d'epic (ci-dessus).
     porte sur un fichier touché par la résolution des conflits (documentation et `sprint-status.yaml` seulement).
   - Prompt de la revue de code P1 mis à jour : diff `1261c4bb..3e5dfed8` hors `_bmad-output`, PDF contrôlé au HEAD,
     journaux du report.
+
+- **2026-10-15 — Revue de code P1** (trois lentilles B, E, A, contexte frais ; rapports
+  `kesh-gate-logs/299-review-p1-{B,E,A}.md`) : **B 0/0/0/5, E 0/0/0/9, A 0/0/2/5** (CRITICAL/HIGH/MEDIUM/LOW). Aucun
+  défaut de code de production ; les deux MEDIUM, de la lentille A, portent sur le compte rendu et le manuel.
+  Décision de l'orchestrateur : **cette remédiation ne change aucune ligne de code de production ni de test** (fiche,
+  manuel et son PDF seulement).
+  - **Corrigé** : A-1 (MEDIUM) la commande de rebase des *Demandes à l'orchestrateur* est
+    `git rebase --onto origin/main 1261c4bb8725fec33f6b7920947ed005ee8bd41b story/29-9` (`1261c4bb` a l'arbre de
+    `origin/main` `1b136fad`) ; la seule autre occurrence de `4b358373` à la suite de `--onto` est l'entrée *Report*
+    ci-dessus, relevé daté et juste à sa date ; A-2 (MEDIUM) le saut de défilement de l'AC2 (C-29-9-15) est déclaré au
+    Dev Agent Record, **capture non prise**, écrit comme écart à l'AC2 ; A-5 = L5 le manuel dit de nouveau la
+    réserve : la puce *Rejeter* (`user-manual.tex:2101`) et la phrase de rattachement d'une transaction rejetée
+    (`:2134`) disent « jusqu'à la 500\textsuperscript{e} transaction en attente », et la puce ajoute qu'au-delà la
+    transaction ne reparaît qu'à mesure que les premières sont traitées (cohérent avec `docs/api-external.md:610`,
+    relu et inchangé) ; PDF régénéré (`299-p1fix-make-fr.log`, 2 passes, stable), seul `user-manual.pdf` bouge ;
+    A-3 (Status et *Debug Log References* connaissent le report et les journaux `299-rebase2-*`) ; A-4 (« 74 → 76 »
+    avec `security/`) ; A-6 (M9, M10, M13, M16, M17, M19 ont tourné sur la `class FakePage`, avant `85d8d9ea` ;
+    seule M15 a été rejouée sur la doublure définitive ; non rejouées ici) ; A-7 (écart : les sorties des rouges
+    sont résumées, journaux nommés).
+  - **Laissé, chacun motivé** : B-1/L1, B-2/L3, B-3, B-4, B-5, L2, L4, L6, L7, L8, L9 — LOW qui demandent du code de
+    production ou de test, exclu de cette remédiation par décision de l'orchestrateur ; ils restent tels que les
+    rapports les décrivent, à reprendre si une passe ultérieure les juge nécessaires.
+  - **Contrôles** : PDF aplati en pipe (`pdftotext … | tr '\n' ' ' | tr -s ' '`) : « jusqu’à la 500e transaction en
+    attente » présent **2 fois** (puce et phrase de rattachement), « ?? » **0**, « la page le dit » ×2 ; gate ciblé
+    `cargo nextest run -E 'binary(textes_coherents)'` (base `kesh_299`, sous verrou et mem-guard) : **15 passés, 0
+    ignoré** (`299-p1fix-textes.log`).
+  - **Écart** : les lentilles E et A ont écrit un fichier aplati du PDF dans `kesh-gate-logs`, hors dépôt (le prompt
+    P1 l'autorisait ; le prompt P2 ne l'autorise plus).
+  - Prompt de la passe ciblée P2 (une lentille, sur le seul diff de cette remédiation) :
+    `29-9-review-prompt-p2-ciblee.md`.
