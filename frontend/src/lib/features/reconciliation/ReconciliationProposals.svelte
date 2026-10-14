@@ -35,6 +35,8 @@
 	import {
 		acceptProposals,
 		getProposals,
+		PROPOSALS_DEFAULT_LIMIT,
+		PROPOSALS_MAX_LIMIT,
 		rejectProposals,
 	} from './reconciliation.api';
 	import type {
@@ -113,14 +115,27 @@
 	// `getProposals` stale (race sur fast account switch).
 	let loadGen = 0;
 
+	// Story 29-9 (#649, AC2) — combien de transactions la liste demande, et s'il en reste
+	// au-delà (`hasMore` du serveur). `limit` part du défaut (100) et ne monte qu'au plafond
+	// (500), par le bouton « Afficher aussi les plus anciennes » ; il tient ensuite pour
+	// tous les rechargements (lot, affectation, éclatement, rattachement). Le `{#key
+	// selectedId}` de `routes/(app)/reconciliation/+page.svelte` remonte ce composant à
+	// chaque changement de compte, ce qui remet `limit` à 100 : ⚠️ retirer ce `{#key}`
+	// exigerait de remettre `limit` à zéro au changement de compte.
+	let limit = $state(PROPOSALS_DEFAULT_LIMIT);
+	let hasMore = $state(false);
+
 	async function load() {
 		const myGen = ++loadGen;
 		loading = true;
 		errorMsg = null;
 		try {
-			const r = await getProposals(bankAccountId);
+			// `limit` est lu ici, avant le premier `await` : l'`$effect` qui appelle `load()` le
+			// suit, si bien que changer `limit` recharge la liste.
+			const r = await getProposals(bankAccountId, limit);
 			if (myGen !== loadGen) return; // stale response, drop
 			proposals = r.proposals;
+			hasMore = r.hasMore;
 			selected = new Set();
 		} catch (e) {
 			if (myGen !== loadGen) return;
@@ -133,6 +148,15 @@
 	$effect(() => {
 		void load();
 	});
+
+	/**
+	 * Story 29-9 (#649, AC2) — porte la liste au plafond. Ne fait QUE poser `limit` : l'`$effect`
+	 * ci-dessus, qui suit `limit`, recharge. ⚠️ Appeler `load()` en plus enverrait deux requêtes.
+	 * Le rechargement vide la sélection, comme tout rechargement.
+	 */
+	function showOlder(): void {
+		limit = PROPOSALS_MAX_LIMIT;
+	}
 
 	// Story 8-5a-base — load accounts une fois (utilisé par le ManualMatchModal,
 	// pré-filtré dans la modal).
@@ -483,6 +507,44 @@
 				{/each}
 			</tbody>
 		</table>
+
+		<!-- Story 29-9 (#649, AC1, AC3) — s'il reste des transactions plus anciennes, l'écran le
+		     dit, immédiatement sous la table et avant les modales. Sous le plafond, un bouton
+		     porte la liste à 500 (grisé pendant un lot, dont le rechargement final relit la
+		     liste) ; au plafond, un avis sans bouton, qui ne conseille pas le rejet (une
+		     transaction rejetée reste en attente et empêche la clôture du compte bancaire). -->
+		{#if hasMore && limit < PROPOSALS_MAX_LIMIT}
+			<div class="mt-3 flex flex-wrap items-center gap-2">
+				<p class="text-sm text-text-muted" data-testid="reconciliation-more">
+					{i18nMsg(
+						'reconciliation-labels-more-hidden',
+						'Seules les { $count } transactions en attente les plus récentes sont affichées : il en reste de plus anciennes.',
+						{ count: proposals.length },
+					)}
+				</p>
+				<button
+					type="button"
+					class="rounded border border-text px-4 py-2 disabled:opacity-50"
+					disabled={busy}
+					onclick={showOlder}
+					data-testid="reconciliation-show-older-btn"
+				>
+					{i18nMsg(
+						'reconciliation-actions-show-older',
+						"Afficher aussi les plus anciennes (jusqu'à { $max } en tout)",
+						{ max: PROPOSALS_MAX_LIMIT },
+					)}
+				</button>
+			</div>
+		{:else if hasMore}
+			<p class="mt-3 text-sm text-text-muted" data-testid="reconciliation-more-capped">
+				{i18nMsg(
+					'reconciliation-labels-more-capped',
+					'Les { $max } transactions en attente les plus récentes sont affichées, le maximum que cette page montre à la fois. Il en reste de plus anciennes : elles apparaîtront à mesure que celles-ci seront acceptées, affectées manuellement, éclatées ou rattachées à un règlement.',
+					{ max: PROPOSALS_MAX_LIMIT },
+				)}
+			</p>
+		{/if}
 
 		<ManualMatchModal
 			open={manualOpen}

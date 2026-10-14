@@ -9,6 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
@@ -1052,5 +1053,135 @@ describe('ReconciliationProposals — rattacher à un règlement (Story 29-8)', 
 			);
 		});
 		expect(mockApi.getProposals.mock.calls.length).toBeGreaterThan(appelsAvant);
+	});
+});
+
+// Story 29-9 (#649, AC1-AC3) — s'il reste des transactions au-delà de la liste (`hasMore`),
+// l'écran le dit et offre de la porter au plafond (500) ; au plafond, un avis sans bouton.
+describe('ReconciliationProposals — la suite de la liste (Story 29-9, #649)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	/** `n` lignes sans proposition, identifiants `from`, `from + 1`, … */
+	function lignes(n: number, from = 1): GetProposalsResponse['proposals'] {
+		return Array.from({ length: n }, (_, i) => makeProposalWithoutCandidate(from + i));
+	}
+
+	it('V1 — hasMore faux ⇒ ni avis, ni bouton, ni avis plafonné', async () => {
+		mockApi.getProposals.mockResolvedValue({ proposals: lignes(3), hasMore: false } satisfies GetProposalsResponse);
+		const { findAllByTestId, queryByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await findAllByTestId('reconciliation-row');
+		expect(queryByTestId('reconciliation-more')).toBeNull();
+		expect(queryByTestId('reconciliation-show-older-btn')).toBeNull();
+		expect(queryByTestId('reconciliation-more-capped')).toBeNull();
+	});
+
+	it('V2 — hasMore vrai ⇒ l’avis dit « 100 », le bouton est là, et la liste a été demandée à 100 (M1)', async () => {
+		mockApi.getProposals.mockResolvedValue({ proposals: lignes(100), hasMore: true } satisfies GetProposalsResponse);
+		const { findByTestId, getByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		const avis = await findByTestId('reconciliation-more');
+		expect(avis.textContent).toContain('100');
+		expect(getByTestId('reconciliation-show-older-btn').textContent).toContain('500');
+		expect(mockApi.getProposals).toHaveBeenCalledWith(17, 100);
+	});
+
+	it('V3 — un clic recharge au plafond, en UNE requête (M2, M3, M5)', async () => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({ proposals: lignes(100), hasMore: true } satisfies GetProposalsResponse)
+			.mockResolvedValue({ proposals: lignes(150), hasMore: false } satisfies GetProposalsResponse);
+		const { findByTestId, findAllByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await fireEvent.click(await findByTestId('reconciliation-show-older-btn'));
+		await vi.waitFor(async () => expect(await findAllByTestId('reconciliation-row')).toHaveLength(150));
+		// Une requête de trop (M3 : le bouton appelle aussi `load()`) part au tick suivant : compter après lui.
+		await tick();
+		expect(mockApi.getProposals).toHaveBeenCalledTimes(2);
+		expect(mockApi.getProposals.mock.calls[1]).toEqual([17, 500]);
+	});
+
+	it('V4 — au plafond, il en reste encore ⇒ avis plafonné, aucun bouton, et il ne conseille pas le rejet (M4)', async () => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({ proposals: lignes(100), hasMore: true } satisfies GetProposalsResponse)
+			.mockResolvedValue({ proposals: lignes(500), hasMore: true } satisfies GetProposalsResponse);
+		const { findByTestId, queryByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await fireEvent.click(await findByTestId('reconciliation-show-older-btn'));
+		const capped = await findByTestId('reconciliation-more-capped');
+		expect(capped.textContent).toContain('500');
+		expect(capped.textContent?.toLowerCase()).not.toContain('rejet');
+		expect(queryByTestId('reconciliation-show-older-btn')).toBeNull();
+		expect(queryByTestId('reconciliation-more')).toBeNull();
+	});
+
+	it('V5 — après le clic, un « Accepter » réussi relit la liste au plafond, pas à 100 (M5)', async () => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({
+				proposals: [makeProposalWithCandidate(1, 101, 1.0), ...lignes(99, 2)],
+				hasMore: true,
+			} satisfies GetProposalsResponse)
+			.mockResolvedValue({
+				proposals: [makeProposalWithCandidate(1, 101, 1.0), ...lignes(149, 2)],
+				hasMore: false,
+			} satisfies GetProposalsResponse);
+		mockApi.acceptProposals.mockResolvedValue({ accepted: [], failed: [] } satisfies AcceptResponse);
+		const { findByTestId, findAllByTestId, getByTestId, container } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+		await fireEvent.click(await findByTestId('reconciliation-show-older-btn'));
+		await vi.waitFor(async () => expect(await findAllByTestId('reconciliation-row')).toHaveLength(150));
+		const box = container.querySelector<HTMLElement>('[data-testid="tx-checkbox"][data-tx-id="1"]');
+		if (!box) throw new Error('pas de case pour la transaction 1');
+		await fireEvent.click(box);
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+		await vi.waitFor(() => expect(mockApi.getProposals).toHaveBeenCalledTimes(3));
+		expect(mockApi.getProposals.mock.calls[2]).toEqual([17, 500]);
+	});
+
+	it('V12 — hasMore retombe après un lot ⇒ ni avis, ni bouton, ni avis plafonné (M14)', async () => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({
+				proposals: [makeProposalWithCandidate(1, 101, 1.0), ...lignes(99, 2)],
+				hasMore: true,
+			} satisfies GetProposalsResponse)
+			.mockResolvedValue({ proposals: lignes(99, 2), hasMore: false } satisfies GetProposalsResponse);
+		mockApi.acceptProposals.mockResolvedValue({ accepted: [], failed: [] } satisfies AcceptResponse);
+		const { findByTestId, findAllByTestId, getByTestId, queryByTestId, container } = render(
+			ReconciliationProposals,
+			{ bankAccountId: 17 },
+		);
+		await findByTestId('reconciliation-more');
+		const box = container.querySelector<HTMLElement>('[data-testid="tx-checkbox"][data-tx-id="1"]');
+		if (!box) throw new Error('pas de case pour la transaction 1');
+		await fireEvent.click(box);
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+		await vi.waitFor(async () => expect(await findAllByTestId('reconciliation-row')).toHaveLength(99));
+		expect(queryByTestId('reconciliation-more')).toBeNull();
+		expect(queryByTestId('reconciliation-show-older-btn')).toBeNull();
+		expect(queryByTestId('reconciliation-more-capped')).toBeNull();
+	});
+
+	it('V18 — pendant un lot, le bouton est grisé et ne relance rien (M21)', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithCandidate(1, 101, 1.0), ...lignes(99, 2)],
+			hasMore: true,
+		} satisfies GetProposalsResponse);
+		let resolveAccept!: (r: AcceptResponse) => void;
+		mockApi.acceptProposals.mockReturnValue(
+			new Promise<AcceptResponse>((resolve) => {
+				resolveAccept = resolve;
+			}),
+		);
+		const { findByTestId, getByTestId, container } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+		await findByTestId('reconciliation-more');
+		const box = container.querySelector<HTMLElement>('[data-testid="tx-checkbox"][data-tx-id="1"]');
+		if (!box) throw new Error('pas de case pour la transaction 1');
+		await fireEvent.click(box);
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+		const btn = getByTestId('reconciliation-show-older-btn') as HTMLButtonElement;
+		expect(btn.disabled).toBe(true);
+		expect(mockApi.getProposals).toHaveBeenCalledTimes(1);
+		resolveAccept({ accepted: [], failed: [] });
+		await vi.waitFor(() => expect(mockApi.getProposals).toHaveBeenCalledTimes(2));
 	});
 });
