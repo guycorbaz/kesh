@@ -623,6 +623,59 @@ fn both_import_calls_map_the_archived_account() {
     }
 }
 
+/// T29b-7 (Story 29-4b, T6-bis, R-5 de la passe ciblée P2 de la 29-4a, #651) —
+/// assertion textuelle sur `routes/bank_accounts.rs`, corps **aplatis** (blancs
+/// retirés) : la conclusion commune `conclure` annule **explicitement** la
+/// transaction sur erreur (`let _ = tx.rollback().await;` puis `Err(e)`), et
+/// chacune des six tentatives rejouées (`create_once`, `update_once`,
+/// `archive_once`, `close_once`, `reopen_once`, `patch_once`) se termine par
+/// `conclure(tx, result).await`. Tue M29-35 (`rollback` retiré de `conclure`).
+///
+/// ⚠️ **Textuel, et c'est un choix** : sans `rollback` explicite, sqlx 0.8.6
+/// (`Transaction::drop`, `sqlx-mysql` `start_rollback`) ne fait que **mettre en
+/// file** le `ROLLBACK`, et la connexion revient au pool par une tâche lancée à
+/// part qui l'envoie (`PoolConnection::drop` → `return_to_pool`, `ping`) : le
+/// verrou est rendu **un peu plus tard**, non jamais. Un test qui sonderait le
+/// verrou après la réponse ferait la course contre cette tâche — vert ou rouge
+/// selon l'ordonnanceur. Que le verrou soit rendu **avant** la réponse n'a donc
+/// pas de test dynamique : déclaré non couvert (fiche 29-4, T6-bis).
+#[test]
+fn bank_account_attempts_roll_back_explicitly() {
+    let chemin = racine_crates().join("kesh-api/src/routes/bank_accounts.rs");
+    let source = std::fs::read_to_string(chemin).expect("routes/bank_accounts.rs");
+    let (_, masque) = decouper(&source);
+    let fns = fonctions(&masque);
+    let aplatir = |de: usize, a: usize| -> String {
+        masque[de..=a]
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect()
+    };
+    let corps_de = |nom: &str| -> String {
+        let trouves: Vec<_> = fns.iter().filter(|(n, _, _)| n == nom).collect();
+        assert_eq!(trouves.len(), 1, "une seule fonction `{nom}`");
+        aplatir(trouves[0].1, trouves[0].2)
+    };
+    let conclure = corps_de("conclure");
+    assert!(
+        conclure.contains("Err(e)=>{let_=tx.rollback().await;Err(e)}"),
+        "la branche d'erreur de `conclure` doit annuler la transaction : {conclure}"
+    );
+    for tentative in [
+        "create_once",
+        "update_once",
+        "archive_once",
+        "close_once",
+        "reopen_once",
+        "patch_once",
+    ] {
+        assert!(
+            corps_de(tentative).ends_with("conclure(tx,result).await}"),
+            "{tentative} doit se conclure par `conclure(tx, result).await`"
+        );
+    }
+}
+
 // ===========================================================================
 // Troisième inventaire — Story 29-4a (#651), AC5 : la fenêtre de la clôture
 // ===========================================================================

@@ -202,7 +202,21 @@
 //!   (`PUT`, archivage ; la création quand elle démote le principal) — la
 //!   route de gestion `M` du cycle ci-dessus, à deux (`I ↔ M`) ou à trois,
 //!   préexistant, dont elle était la victime en `500` (choix C-29-4-28) ;
-//!   tenues par T29a-13, T29a-14 et T29a-15 (même fichier). Treize : dix
+//!   tenues par T29a-13, T29a-14 et T29a-15 (même fichier). ⚠️ *Mesuré et
+//!   supposé* (Story 29-4b, T6-bis, R-1 et R-4) : T29a-13 et T29a-14 jouent
+//!   la forme réelle à deux (la route tient la sentinelle et attend la ligne
+//!   du compte, tenue par la transaction de test) ; **T29a-15 joue un cycle
+//!   synthétique** — la transaction de test tient `company_invoice_settings`
+//!   en exclusif, que la création demande en partagé après la sentinelle ;
+//!   aucune route réelle ne tient ce verrou puis demande `companies` —, même
+//!   mécanique de rejeu, mais **la démotion du principal n'est pas jouée**.
+//!   Restent **raisonnés, non mesurés** : que l'`INSERT` d'un import ou d'un
+//!   lot contrôle sa clé étrangère vers le compte **avant** celle vers
+//!   `companies` (ordre des contrôles d'InnoDB ; le squash et les migrations
+//!   ne déclarent pas ces clés dans le même ordre), et le périmètre de
+//!   l'exclusif de `flip_primary_off_for_company` (balayage de l'index
+//!   `fk_bank_accounts_company`, sans `EXPLAIN` au dépôt — il peut couvrir
+//!   d'autres comptes de la société que l'ancien principal). Treize : dix
 //!   avant la revue de code P1 de la 29-4a, plus ces trois.
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier

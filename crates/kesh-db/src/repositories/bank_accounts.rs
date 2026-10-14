@@ -972,7 +972,7 @@ pub const RECHECK_OPEN_UNARCHIVED_LOCKED_SQL: &str = "SELECT closed_on, archived
 /// jamais la queue. Le cycle atteignable en 29-4a est **préexistant** : un
 /// écrivain `I` (import ou lot) tient la ligne du compte en partagé par le
 /// premier contrôle de clé étrangère de son `INSERT` et demande `companies` en
-/// partagé (le second) ; une route de gestion `M` (`PUT`, archivage, `POST`
+/// partagé (le second ; ordre supposé, ci-dessous) ; une route de gestion `M` (`PUT`, archivage, `POST`
 /// quand il démote le principal) tient la sentinelle `companies` en exclusif
 /// et demande la ligne du compte en exclusif. À deux, `I ↔ M` ; à trois, quand la clôture, la réouverture ou
 /// le `PATCH` est en file sur la ligne entre `I` et `M` : `I → M → E → I`
@@ -981,7 +981,18 @@ pub const RECHECK_OPEN_UNARCHIVED_LOCKED_SQL: &str = "SELECT closed_on, archived
 /// demande partagée neuve. Tous les participants autres que l'écrivain sont
 /// rejoués sur interblocage (`retry_app_on_deadlock`, routes
 /// `bank_accounts::close`, `::reopen`, `::patch`, et — revue de code P1, E-1 —
-/// `::create`, `::update`, `::archive`). InnoDB désigne pour victime
+/// `::create`, `::update`, `::archive`). ⚠️ *Mesuré et supposé* (Story 29-4b,
+/// T6-bis, R-4) : **mesuré** au dépôt — la redemande sans attente (T29a-6,
+/// T29a-7), la victime des cycles à trois par la file (T29a-4, T29a-9), le
+/// cycle à deux `PUT` / archivage contre une ligne de compte tenue (T29a-13,
+/// T29a-14). **Raisonné, non mesuré** : que l'`INSERT` d'`I` contrôle sa clé
+/// étrangère vers le compte **avant** celle vers `companies` (l'ordre de
+/// parcours des clés d'InnoDB ; le squash des tests et les migrations ne les
+/// déclarent pas dans le même ordre) ; et l'exposition du `POST` — sa démotion
+/// (`flip_primary_off_for_company`) balaie l'index `fk_bank_accounts_company`,
+/// et son exclusif peut couvrir d'autres comptes de la société que l'ancien
+/// principal (aucun `EXPLAIN` au dépôt ; T29a-15 joue un cycle synthétique,
+/// non la démotion). InnoDB désigne pour victime
 /// la transaction de moindre poids (écritures et verrous) : la clôture et la
 /// réouverture, dont la demande est la première instruction, ne portent que
 /// l'intention de table et leur demande en attente ; tout autre participant
@@ -1389,6 +1400,40 @@ pub async fn count_transactions_for_bank_account(
     .await
     .map_err(map_db_error)?;
     Ok(row.0)
+}
+
+/// Le drapeau `is_primary` du compte `id`, lu **sous `FOR UPDATE`** dans la
+/// transaction de l'appelant (Story 29-4b, T6-bis, R-2 de la passe ciblée P2
+/// de la 29-4a, #651) — `None` si le compte n'existe pas, appartient à une
+/// autre société ou est archivé (même filtre qu'[`archive_for_company`]).
+///
+/// Sert la garde « principal + autres comptes actifs » de l'archivage : elle
+/// décidait sur la valeur du pré-vol, lue sur le pool hors transaction, et que
+/// le rejeu de la route réutilisait à chaque tentative ; un transfert de
+/// principal commité entre-temps la faisait décider sur un état périmé. Lue
+/// ici, sous verrou, elle voit le dernier état commité.
+///
+/// **Verrou** : l'exclusif de la ligne du compte — celui
+/// qu'[`archive_for_company`] prend ensuite (sa redemande est sans effet),
+/// **avancé** devant la garde. L'appelant tient déjà la sentinelle `companies`
+/// en exclusif : l'ordre « `companies` X, puis compte X » de l'archivage est
+/// inchangé, et entre les deux positions l'archivage ne fait que des lectures
+/// non verrouillantes (le décompte des autres comptes actifs) — aucun verrou
+/// neuf, aucun cycle neuf (raisonné, au code ; non mesuré).
+pub async fn primary_flag_locked_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<bool>, DbError> {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT is_primary FROM bank_accounts \
+         WHERE company_id = ? AND id = ? AND archived = FALSE FOR UPDATE",
+    )
+    .bind(company_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)
 }
 
 /// Compte le nombre d'autres bank_accounts ni archivés ni clos du même company

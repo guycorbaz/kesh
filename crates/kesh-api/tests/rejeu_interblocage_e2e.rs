@@ -2028,9 +2028,10 @@ async fn bank_account_update_is_replayed_when_it_is_the_deadlock_victim(pool: My
 
 /// T29a-14 (Story 29-4a, revue de code P1, E-1, #651) — **l'archivage d'un
 /// compte bancaire, victime, est rejoué**. Même séquence que T29a-13 : la
-/// route tient la sentinelle, attend la ligne du compte
-/// (`archive_for_company`, `FOR UPDATE`), la transaction de test demande la
-/// sentinelle ; l'archivage, plus léger, rejoue et rend `200`. Le pré-vol
+/// route tient la sentinelle, attend la ligne du compte (`FOR UPDATE` de
+/// `primary_flag_locked_in_tx` depuis la 29-4b, R-2 — auparavant celui
+/// d'`archive_for_company`, qui le redemande ensuite), la transaction de test
+/// demande la sentinelle ; l'archivage, plus léger, rejoue et rend `200`. Le pré-vol
 /// (`find_by_id_for_company`, sur le pool, sans verrou) reste devant
 /// l'enveloppe. Tue M29-27.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -2075,6 +2076,15 @@ async fn bank_account_archive_is_replayed_when_it_is_the_deadlock_victim(pool: M
 /// la transaction de test tient en exclusif ; elle demande la sentinelle :
 /// cycle à deux, la création, plus légère, rejoue et rend `201` — un seul
 /// compte créé, une seule entrée d'audit. Tue M29-28.
+///
+/// ⚠️ **Cycle synthétique** (Story 29-4b, T6-bis, R-1 de la passe ciblée P2
+/// de la 29-4a) : aucune route réelle ne tient `company_invoice_settings` en
+/// exclusif puis demande `companies` (`update_invoice_settings` ne prend pas
+/// la sentinelle). Le test prouve la **mécanique** de rejeu de l'enveloppe de
+/// la création — partagée, réelle —, non le cycle que décrit le doc-comment de
+/// `create_bank_account` (un import qui tient la ligne de l'ancien principal,
+/// contre sa démotion par `flip_primary_off_for_company`) : **la démotion
+/// n'est pas jouée**.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn bank_account_creation_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
     let ctx = monter(&pool).await;
