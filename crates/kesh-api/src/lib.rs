@@ -938,6 +938,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/fiscal-years/{id}",
             get(routes::fiscal_years::get_fiscal_year),
         )
+        // Story 29-1a (#232) : contrôles préalables à la clôture, lecture seule
+        // (tout rôle authentifié, clés d'API comprises — comme les rapports).
+        .route(
+            "/api/v1/fiscal-years/{id}/closing-checks",
+            get(routes::fiscal_years::get_closing_checks),
+        )
         // Story 8-1b : lecture imports bancaires (tout rôle authentifié,
         // multi-tenant scoping via current_user.company_id du JWT).
         .route("/api/v1/bank-imports", get(routes::bank_imports::list))

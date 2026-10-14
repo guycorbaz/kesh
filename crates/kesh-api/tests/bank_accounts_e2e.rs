@@ -1257,6 +1257,77 @@ async fn list_bank_accounts_exposes_the_last_statement(pool: MySqlPool) {
     assert_eq!(a["ledgerBalanceAtStatement"], json!("500.0000"));
 }
 
+/// T-a16 (Story 29-1a, AC3, C-29-1-25) — l'écart servi au tableau de bord :
+/// `statementGap` en chaîne pour un écart réel, `null` sans relevé. Mutation
+/// tuée : M-a21 (`statement_gap: None` en dur dans le handler de liste).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn list_bank_accounts_serves_the_statement_gap(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Consultation).await;
+    let fy = insert_fiscal_year_2026(&pool, ctx.company_id).await;
+    let revenue = create_account(
+        &pool,
+        ctx.company_id,
+        ctx.user_id,
+        "3200",
+        "Ventes",
+        AccountType::Revenue,
+    )
+    .await;
+    link(&pool, ctx.bank_account_id, ctx.asset_account_id).await;
+    // Un second compte bancaire, sans relevé.
+    let without = create_bank_account(&pool, ctx.company_id, "CH5604835012345678009").await;
+    insert_entry(
+        &pool,
+        ctx.company_id,
+        fy,
+        1,
+        "2026-03-10",
+        ctx.asset_account_id,
+        revenue,
+        "800.00",
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO bank_imports \
+         (company_id, bank_account_id, filename, file_hash, source_format, period_from, period_to, \
+          closing_balance, transaction_count, imported_by_user_id) \
+         VALUES (?, ?, 'r.xml', REPEAT('d', 64), 'CAMT053', '2026-03-01', '2026-03-31', 1000.00, 0, ?)",
+    )
+    .bind(ctx.company_id)
+    .bind(ctx.bank_account_id)
+    .bind(ctx.user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let app = spawn_app(pool.clone()).await;
+    let body: Value = app
+        .client
+        .get(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let arr = body.as_array().expect("liste");
+    let with = arr
+        .iter()
+        .find(|a| a["id"] == json!(ctx.bank_account_id))
+        .expect("compte relevé");
+    let gap = with["statementGap"].as_str().expect("écart en chaîne");
+    assert_eq!(
+        gap.parse::<rust_decimal::Decimal>().unwrap(),
+        rust_decimal::Decimal::from(-200)
+    );
+    let none = arr
+        .iter()
+        .find(|a| a["id"] == json!(without))
+        .expect("compte sans relevé");
+    assert_eq!(none["statementGap"], Value::Null);
+}
+
 // ============================================================
 // Story 15-5b (AC12, AC16, #427) — compte comptable lié non imputable
 // ============================================================

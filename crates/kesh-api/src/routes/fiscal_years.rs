@@ -3,6 +3,8 @@
 //! Endpoints :
 //! - `GET    /api/v1/fiscal-years`        — liste scopée company (DESC).
 //! - `GET    /api/v1/fiscal-years/{id}`   — détail scopé company.
+//! - `GET    /api/v1/fiscal-years/{id}/closing-checks` — contrôles préalables à
+//!   la clôture, lecture seule, tout rôle (Story 29-1a, #232).
 //! - `POST   /api/v1/fiscal-years`        — création (Comptable+).
 //! - `PUT    /api/v1/fiscal-years/{id}`   — renommage uniquement (Comptable+).
 //! - `POST   /api/v1/fiscal-years/{id}/close` — transition Open→Closed (Comptable+).
@@ -25,10 +27,12 @@ use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::{FiscalYear, FiscalYearStatus, NewFiscalYear};
 use kesh_db::errors::DbError;
+use kesh_db::repositories::closing_checks::{self, ClosingChecks};
 use kesh_db::repositories::fiscal_years::{
     self, FY_NAME_DUPLICATE_KEY, FY_NAME_EMPTY_KEY, FY_NAME_TOO_LONG_KEY, FY_OVERLAP_KEY,
     FY_REOPEN_ALREADY_OPEN_KEY, FY_REOPEN_LIFO_BLOCKED_KEY, REOPEN_MOTIF_MAX,
 };
+use kesh_db::snapshot::ReadSnapshot;
 
 use crate::AppState;
 use crate::errors::{AppError, t};
@@ -219,6 +223,29 @@ pub async fn get_fiscal_year(
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
     Ok(Json(FiscalYearResponse::from(fy)))
+}
+
+/// `GET /api/v1/fiscal-years/{id}/closing-checks` — les contrôles préalables à
+/// la clôture de l'exercice (Story 29-1a, #232) : sept contrôles en lecture
+/// seule, dans l'ordre de `closing_checks` — tout rôle, clés d'API comprises.
+///
+/// Toutes les lectures passent par **un** instantané
+/// ([`kesh_db::snapshot::ReadSnapshot`]) : elles voient la base au même
+/// instant, sans verrou. Le 404 (exercice absent ou d'une autre société,
+/// anti-énumération) est décidé **dans** l'instantané, par le `NotFound` de
+/// `for_fiscal_year`, sans lecture préalable sur le pool. Aucun audit (une
+/// lecture), aucun rejeu (aucune écriture).
+pub async fn get_closing_checks(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<Json<ClosingChecks>, AppError> {
+    let mut snapshot = ReadSnapshot::begin(&state.pool).await?;
+    // Sur l'erreur, l'instantané abandonné est annulé par son `Drop`.
+    let checks =
+        closing_checks::for_fiscal_year(snapshot.conn(), current_user.company_id, id).await?;
+    snapshot.finish().await?;
+    Ok(Json(checks))
 }
 
 /// `POST /api/v1/fiscal-years` — crée un exercice (Comptable+).
