@@ -172,6 +172,10 @@ pub enum PaymentAgainstDue {
 ///
 /// Un reste brut nul ou négatif, ou inférieur au demi-centime (arrondi nul),
 /// refuse tout paiement positif en trop-perçu — limite connue, #490.
+///
+/// Réciproque : [`least_due_without_overpayment`] — la proposition de la
+/// réconciliation ne charge que les factures que cette fonction ne classe pas
+/// en trop-perçu (#665).
 pub fn classify_payment(paid: Decimal, raw_due: Decimal) -> PaymentAgainstDue {
     let rounded = amount_due_to_centime(raw_due);
     if paid == rounded && rounded != raw_due {
@@ -181,6 +185,41 @@ pub fn classify_payment(paid: Decimal, raw_due: Decimal) -> PaymentAgainstDue {
     } else {
         PaymentAgainstDue::Ordinary
     }
+}
+
+/// Le demi-centime, `0.005` — l'écart le plus grand entre un reste brut à
+/// quatre décimales et son arrondi au centime qui ne fait pas un trop-perçu.
+/// `Decimal::from_parts` parce qu'elle est `const` (`Decimal::new` ne l'est
+/// pas, et `dec!` n'est disponible qu'en test).
+const HALF_CENTIME: Decimal = Decimal::from_parts(5, 0, 0, false, 3);
+
+/// Le plus petit reste dû **brut** contre lequel un paiement `paid` n'est
+/// **pas** un trop-perçu : `paid − 0.005` (Story 29-6, #665).
+///
+/// **Qui la lit** : la borne basse du reste dû de
+/// [`crate::repositories::reconciliation::find_unpaid_invoices_for_window`] —
+/// la proposition ne charge ainsi que les factures que l'acceptation
+/// ([`classify_payment`]) admet. La valeur est calculée ici et **liée** à la
+/// requête : la règle de l'arrondi garde une seule définition, pas de `ROUND`
+/// en SQL.
+///
+/// **Démonstration** — pour `R` le reste brut :
+/// `classify_payment(P, R) == Overpayment` ⇔ `P > R` et non
+/// (`P = arrondi(R)` et `arrondi(R) ≠ R`). L'arrondi est `MidpointAwayFromZero`
+/// au centime ([`amount_due_to_centime`]) : pour `R ≥ 0`,
+/// `arrondi(R) = P` ⇔ `R ∈ [P − 0.005 ; P + 0.005[`. Sur `R < P`, l'égalité
+/// `arrondi(R) = P` vaut donc exactement pour `R ∈ [P − 0.005 ; P[`, où
+/// `arrondi(R) ≠ R` est vrai (`R` n'est pas au centime `P`). Reste :
+/// `Overpayment` ⇔ `R < P − 0.005`. Pour `R < 0`, `R < P − 0.005` aussi, et
+/// `classify_payment` rend `Overpayment` : l'équivalence tient.
+///
+/// **Précondition** : `paid > 0`, au centime — la colonne
+/// `bank_transactions.amount` est `DECIMAL(18,2)`, et la proposition ne cherche
+/// de facture que pour un crédit. Hors précondition, l'équivalence n'est pas
+/// promise. Le test `least_due_without_overpayment_is_the_exact_overpayment_bound`
+/// tient le lien entre les deux fonctions sur une grille au dix-millième.
+pub fn least_due_without_overpayment(paid: Decimal) -> Decimal {
+    paid - HALF_CENTIME
 }
 
 /// Les lignes de l'écriture d'un règlement (AC 3) : débit de la contrepartie du

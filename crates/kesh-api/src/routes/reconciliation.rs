@@ -66,9 +66,16 @@ const DEFAULT_PROPOSALS_LIMIT: i64 = 100;
 /// défense anti-DoS contre `?limit=999999`).
 const MAX_PROPOSALS_LIMIT: i64 = 500;
 
-/// Tolérance amount ± `AMOUNT_TOLERANCE` CHF (5 centimes) au repo
-/// — réduit le candidate set sans accepter le mismatch (le helper
+/// Tolérance du **paiement partiel** (5 centimes) au repo : une facture dont
+/// le reste dû dépasse la transaction de 5 centimes au plus est candidate
+/// (acceptée en règlement partiel, la facture reste ouverte pour la
+/// différence). Réduit le candidate set sans accepter le mismatch (le helper
 /// `propose_matches` reste binaire 0/1 sur amount, cf. L17/L21).
+///
+/// L'autre côté — le reste dû **inférieur** à la transaction — n'est pas une
+/// tolérance : c'est la borne du trop-perçu,
+/// `invoice_settlements::least_due_without_overpayment` (un demi-centime,
+/// Story 29-6, #665), lue par `find_unpaid_invoices_for_window`.
 const AMOUNT_TOLERANCE_HUNDREDTHS: i64 = 5;
 
 /// Timeout `GET_LOCK` MariaDB pour les flows accept/reject (5s par
@@ -217,12 +224,11 @@ fn candidate_rank(c: &ReconciliationCandidate) -> u8 {
 /// aux mutations du critère de rang. C'est voulu : l'ordre devient **écrit**,
 /// au lieu d'être l'effet de bord de la place d'un `push`.
 ///
-/// Angle mort, ni aggravé ni réparé : une facture que le paiement dépasse de
-/// 1 à 5 centimes est candidate, reste au rang 0, puis son acceptation est
-/// refusée en `RECONCILIATION_OVERPAYMENT` (#665, Story 29-6). Le second
-/// angle mort que la Story 29-3 écrivait ici — à score égal, la facture de
-/// plus petit identifiant en tête, sans égard à l'exigibilité (C-29-3-12) —
-/// est résolu par la Story 29-5 (#668).
+/// Les deux angles morts que la Story 29-3 écrivait ici sont résolus : une
+/// facture que le paiement dépasse de 1 à 5 centimes n'est plus candidate
+/// (Story 29-6, #665 — la proposition ne charge que ce que `classify_payment`
+/// admet) ; à score égal, la facture échue la première passe en tête, et non
+/// plus celle de plus petit identifiant (C-29-3-12 ; Story 29-5, #668).
 fn order_candidates(candidates: &mut [ReconciliationCandidate]) {
     candidates.sort_by_key(candidate_rank);
 }
@@ -710,7 +716,7 @@ pub async fn get_proposals(
     let mut tx_candidates: Vec<(BankTransaction, Vec<UnpaidInvoiceCandidate>)> =
         Vec::with_capacity(transactions.len());
     let mut distinct_contact_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
-    let amount_tolerance = Decimal::new(AMOUNT_TOLERANCE_HUNDREDTHS, 2);
+    let underpayment_tolerance = Decimal::new(AMOUNT_TOLERANCE_HUNDREDTHS, 2);
     for tx in transactions {
         // A6-2 Pass 6 — currency tx-side guard (mono-CHF v0.1, cf. L38).
         // Skip transactions non-CHF. Défense en profondeur : depuis la
@@ -736,7 +742,7 @@ pub async fn get_proposals(
             current_user.company_id,
             InvoiceDateWindow::for_transaction(&tx),
             tx.amount,
-            amount_tolerance,
+            underpayment_tolerance,
         )
         .await?;
         for cand in &candidates {
@@ -2034,6 +2040,10 @@ async fn accept_one_invoice(
     //     le règlement manuel. Une transaction égale au reste arrondi au centime
     //     solde la facture : le règlement s'enregistre au reste BRUT et l'écart
     //     passe sur le compte de différences d'arrondi.
+    //
+    //     #665 (Story 29-6) : la proposition n'offre plus ce que ce garde
+    //     refuse (`least_due_without_overpayment`) ; il ne se rencontre plus
+    //     que par un appel direct, ou une facture modifiée entre les deux.
     let due_before = invoice_settlements::amount_due(&mut **tx, invoice_id)
         .await
         .map_err(|e| FailedProposal {

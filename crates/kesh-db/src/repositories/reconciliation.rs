@@ -18,8 +18,11 @@
 //!   paiement, et l'ordre de la troncature de la proposition.
 //! - [`find_unpaid_invoices_for_window`] : charge les factures
 //!   candidates pour le matching d'une transaction bancaire — filtre
-//!   multi-tenant + [`InvoiceDateWindow`] + tolérance amount
-//!   ± `amount_tolerance`, dans l'ordre d'imputation (date d'exigibilité,
+//!   multi-tenant + [`InvoiceDateWindow`] + reste dû entre la plus petite
+//!   valeur que l'acceptation n'estime pas trop-perçue
+//!   ([`least_due_without_overpayment`], Story 29-6, #665)
+//!   et le montant plus `underpayment_tolerance` (paiement partiel), dans
+//!   l'ordre d'imputation (date d'exigibilité,
 //!   date, `id` croissants ; Story 29-5), 50 au plus.
 //!   **PAS de filtre currency** (S4-1 Pass 4 revert : colonne
 //!   `invoices.currency` n'existe pas v0.1 mono-CHF, cf. L38).
@@ -58,7 +61,7 @@ use crate::entities::contact::Contact;
 use crate::entities::invoice::Invoice;
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::invoice_settlements::{
-    INVOICE_AMOUNT_DUE_DERIVED_SQL, amount_due_derived_joins,
+    INVOICE_AMOUNT_DUE_DERIVED_SQL, amount_due_derived_joins, least_due_without_overpayment,
 };
 
 // Colonnes Invoice pour SELECT — la liste unique de `repositories::invoices`
@@ -486,11 +489,25 @@ where
 ///    factures de même reste dû plus tôt exigibles —, et non plus les plus
 ///    récentes par date. Même fragilité, autre population. Aucun index ne
 ///    sert cet ordre (tri de quelques factures ouvertes de même montant).
-/// 4. **Reste dû** `BETWEEN tx_amount - amount_tolerance AND tx_amount + amount_tolerance`
-///    (#420, Story 25-4-c) — après le HT (#246 : une facture avec TVA ne
+/// 4. **Reste dû** `BETWEEN least_due_without_overpayment(tx_amount) AND
+///    tx_amount + underpayment_tolerance` (#420, Story 25-4-c ; borne basse,
+///    Story 29-6, #665) — après le HT (#246 : une facture avec TVA ne
 ///    matchait jamais) puis le TTC (une facture réglée en partie ne matchait
-///    jamais son solde). Le reste dû est pris **brut** : la tolérance couvre
-///    l'écart à son arrondi au centime (au plus 0.005). ⛔ Pas de `ROUND` ici :
+///    jamais son solde). Le reste dû est pris **brut**.
+///    - **Borne basse** : le plus petit reste que l'acceptation
+///      (`invoice_settlements::classify_payment`) n'estime pas trop-perçu,
+///      [`least_due_without_overpayment`] — `tx − 0.005`,
+///      l'écart d'arrondi au centime d'un reste à quatre décimales. Un
+///      paiement qui dépasse le reste de plus d'un demi-centime est un
+///      trop-perçu, refusé à l'acceptation : la proposition ne l'offre plus.
+///    - **Borne haute** : `tx + underpayment_tolerance`, un paiement
+///      **partiel** de quelques centimes, accepté en `Ordinary` (la facture
+///      reste ouverte pour la différence).
+///
+///    Le filtre est **dans la requête**, avant `ORDER BY … LIMIT 50` : posé
+///    après coup, des trop-perçus occuperaient des places du `LIMIT 50` et
+///    feraient disparaître une facture valable au-delà (C-29-6-3).
+///    ⛔ Pas de `ROUND` ici : la borne basse est calculée en Rust et **liée** ;
 ///    l'arrondi a UNE définition, `invoice_settlements::amount_due_to_centime`,
 ///    appliquée par l'appelant au score et à l'affichage (Story 25-4-c3-b).
 ///
@@ -511,7 +528,7 @@ pub async fn find_unpaid_invoices_for_window<'e, E>(
     company_id: i64,
     window: InvoiceDateWindow,
     tx_amount: Decimal,
-    amount_tolerance: Decimal,
+    underpayment_tolerance: Decimal,
 ) -> Result<Vec<UnpaidInvoiceCandidate>, DbError>
 where
     E: sqlx::Executor<'e, Database = MySql>,
@@ -532,7 +549,7 @@ where
            AND i.journal_entry_id IS NOT NULL \
            AND i.date <= ? \
            AND {INVOICE_PAYMENT_ANCHOR_SQL} >= ? \
-         HAVING amount_due BETWEEN ? - ? AND ? + ? \
+         HAVING amount_due BETWEEN ? AND ? + ? \
          ORDER BY {INVOICE_EXIGIBILITY_DATE_SQL} ASC, i.date ASC, i.id ASC \
          LIMIT 50",
         due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
@@ -542,10 +559,9 @@ where
     .bind(company_id)
     .bind(window.latest_invoice_date)
     .bind(window.earliest_anchor_date)
+    .bind(least_due_without_overpayment(tx_amount))
     .bind(tx_amount)
-    .bind(amount_tolerance)
-    .bind(tx_amount)
-    .bind(amount_tolerance)
+    .bind(underpayment_tolerance)
     .fetch_all(executor)
     .await
     .map_err(map_db_error)
