@@ -1980,3 +1980,25 @@ la P2) :
 `29-4b-reverification-annulations-review-prompt-p2-ciblee.md` (rapport `kesh-gate-logs/29-4b-review-p2-ciblee.md`).
 La remédiation de la P1 a touché du code de production (commentaires seulement) : la boucle n'est pas close avant
 elle.
+
+### 2026-10-14 — Revue de code P2 (passe ciblée, Sonnet) : 0/0/1/4, remédiée par l'orchestrateur ; revue close
+
+Prompt `29-4b-reverification-annulations-review-prompt-p2-ciblee.md`, rapport `kesh-gate-logs/29-4b-review-p2-ciblee.md`.
+Les cinq findings viennent de la remédiation P1 (récidive « la remédiation introduit le défaut suivant »), tous sur des
+commentaires ; sortie par **retrait**.
+
+- **R-1 (MEDIUM)** : le doc-comment de `primary_flag_locked_in_tx` disait que le `FOR UPDATE` couvre « la seule promotion
+  qui ne prend pas la sentinelle — l'intégration ». Faux : `routes/onboarding.rs:585` prend `lock_company` avant
+  `upsert_primary_in_tx` (`:586`). Phrase retirée, remplacée par le constat ; annotation datée à C-29-4-33.
+- **R-2 (LOW)** : « aucun geste ne supprime une ligne de `bank_accounts` hors de la restauration » — faux,
+  `kesh_seed::reset_demo` vide aussi la table (`TABLES_TO_TRUNCATE`, `backup.rs:79`). Corrigé.
+- **R-4 (LOW)** : `docs/api-external.md:242` — l'annulation d'un autre rapprochement ajoutée aux gestes qui peuvent rendre
+  `409 RECONCILIATION_ACCOUNT_LOCKED`.
+- **R-5 (LOW)** : renvoi à l'angle mort `innodb_snapshot_isolation` (#669) ajouté au site W24 (`bank_imports.rs`).
+- **R-3 (LOW), laissé** : le motif écrit de l'assertion de T29b-1 (et de C-29-4-39) décrit un cas que le montage ne
+  produit pas (la sonde panique à 10 s plutôt que de rendre « borne expirée ») ; l'assertion reste un durcissement juste.
+- Non rejoué par la passe : les mutations M29-8 à M29-12, antérieures à l'assertion neuve de T29b-1 ; par lecture,
+  chacune meurt désormais aussi à cette assertion.
+- **Clôture** : la remédiation ne touche que des commentaires et un paragraphe de documentation d'API, aucune ligne
+  exécutable ; trend P1 (A 0/0/1/8, B 0/0/1/7, E 0/0/1/5) → P2 ciblée 0/0/1/4 → 0 au-dessus de LOW après retrait.
+  Gate complet et E2E rejoués au commit de cette remédiation (fichiers de `kesh-db` touchés).

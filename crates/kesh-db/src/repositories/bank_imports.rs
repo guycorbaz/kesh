@@ -572,7 +572,8 @@ pub async fn delete_unreconciled_in_tx(
     // de verrou — après le `DELETE`, l'audit étant écrit par la route. Elle ne
     // mord que sur un import **vide** : un import qui porte des transactions les
     // a `pending` (aucune n'est rapprochée, étape 3), et la clôture refuse tant
-    // que la suppression n'est pas commitée. Voir
+    // que la suppression n'est pas commitée. Angle mort `innodb_snapshot_isolation`
+    // (MariaDB ≥ 11.6, #669) et détail : voir
     // `bank_accounts::recheck_open_locked_in_tx`.
     super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, import.bank_account_id).await?;
 

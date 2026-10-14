@@ -942,10 +942,9 @@ pub const RECHECK_OPEN_UNARCHIVED_LOCKED_SQL: &str = "SELECT closed_on, archived
 /// `Ok(())` sinon — le `NotFound` est un bras défensif, **inatteignable par
 /// construction** depuis les annulations : leur garde de tête a déjà lu la
 /// ligne dans la même société, chaque compte revérifié est référencé par une
-/// clé étrangère (`RESTRICT`, le défaut) et aucun geste de l'application ne
-/// supprime une ligne de `bank_accounts` hors de la restauration d'une
-/// sauvegarde, qui vide la table (restauration concurrente d'une annulation :
-/// non analysée ici). La revérification des **annulations** (W9, W24, W25, W28,
+/// clé étrangère (`RESTRICT`, le défaut) ; seules la restauration d'une
+/// sauvegarde et la remise à zéro de la démonstration (`kesh_seed::reset_demo`)
+/// vident la table (concurrence avec une annulation : non analysée ici). La revérification des **annulations** (W9, W24, W25, W28,
 /// W29), qui l'appellent depuis la Story 29-4b, en dernière acquisition de
 /// verrou ; l'import et la création de lot appellent la variante
 /// [`recheck_open_unarchived_locked_in_tx`].
@@ -1464,9 +1463,9 @@ pub async fn count_transactions_for_bank_account(
 /// relecture, **non** le `FOR UPDATE` : un `SELECT` simple au même endroit y
 /// verrait la même valeur (mutation équivalente pour ce test, raisonnée). Le
 /// `FOR UPDATE` avance le verrou de la ligne qu'`archive_for_company` aurait
-/// pris de toute façon, et couvre la seule promotion qui ne prend pas la
-/// sentinelle — l'intégration (`upsert_primary_in_tx`, C-29-4-33) — en lisant
-/// le dernier état commité ; ce cas n'est pas joué.
+/// pris de toute façon ; toute promotion de production passe par la
+/// sentinelle, l'onboarding compris (`lock_company` avant
+/// `upsert_primary_in_tx`).
 ///
 /// **Verrou** : l'exclusif de la ligne du compte — celui
 /// qu'[`archive_for_company`] prend ensuite (sa redemande est sans effet),

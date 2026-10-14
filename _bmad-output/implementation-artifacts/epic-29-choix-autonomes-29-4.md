@@ -492,6 +492,12 @@
   relecture **dans la transaction**, non le `FOR UPDATE` : un `SELECT` simple au même endroit y rendrait le même `409`
   (les bascules des routes de gestion sont déjà sérialisées par la sentinelle) ; le `FOR UPDATE` couvre l'intégration
   (`upsert_primary_in_tx`, sans sentinelle), non jouée. Écrit au doc-comment de `primary_flag_locked_in_tx`.
+- *(Annotation du 2026-10-14, passe ciblée P2 de la revue de la 29-4b, R-1.)* **Prémisse fausse, retirée** : l'onboarding
+  prend la sentinelle — `lock_company` (`FOR UPDATE` sur `companies`, `routes/onboarding.rs:585`) avant
+  `upsert_primary_in_tx` (`:586`). Aucune promotion de production n'échappe à la sentinelle ; le motif « écarté » de la
+  lecture non verrouillante (l. 482-483) et la « couverture de l'intégration » ci-dessus ne tiennent donc pas. Le
+  `FOR UPDATE` reste, sans effet de justesse propre (il avance le verrou de la ligne qu'`archive_for_company` prend de
+  toute façon) ; le doc-comment de `primary_flag_locked_in_tx` est corrigé.
 
 ### C-29-4-34 — R-5 : le `rollback` explicite de `conclure` gardé par un test textuel, son effet dynamique déclaré non couvert
 
