@@ -1270,6 +1270,8 @@ reconciliation-labels-failed = Échecs partiels
 reconciliation-labels-rejected-hint = Une transaction rejetée quitte cette liste. Elle reste dans le détail de son import (Importer des relevés), où son rejet peut être annulé si votre rôle le permet.
 # Story 29-3 (#527) — la priorité des candidates, dite au-dessus de la liste.
 reconciliation-labels-priority-hint = Une seule proposition est affichée par transaction : la facture la mieux notée s’il y en a une, sinon la règle d’affectation qui correspond. Une facture proposée passe toujours devant une règle.
+# Story 29-6 (#665, AC10) — rendue dans la rangée des boutons quand une ligne sans proposition est cochée.
+reconciliation-labels-unmatched-not-acceptable-hint = Une transaction sans correspondance ne peut pas être acceptée : décochez-la pour accepter les autres.
 # Story 15-5c (#492) — libellés des refus d'un lot de rapprochement (`failed[]`).
 reconciliation-failed-account-not-found = Un compte de contrepartie est introuvable ou archivé.
 reconciliation-failed-account-not-postable = Compte non imputable : { $numbers }. Un compte de regroupement, de résultat ou de clôture ne reçoit pas d’écriture : choisissez un compte imputable.
