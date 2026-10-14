@@ -351,3 +351,38 @@
 - **Retenu** : retirer l'affirmation ; V19 et V20 lisent leur attendu dans `crates/kesh-i18n/locales/fr-CH/messages.ftl` (précédents `UnrejectTransactionAction.test.ts:31`, `ReconciliationProposals.test.ts:672`) — le mock i18n rend le repli, un repli divergent rougit donc ces tests. Pour les clés de l'AC8 (`more-hidden`, `more-capped`), l'égalité repli/catalogue n'est gardée par aucun test : angle mort assumé, écrit à l'AC8.
 - **Écartées** : inscrire les clés à `REPLIS_A_SITE_UNIQUE` (liste fermée de la 23-x, hors périmètre, plus coûteux) ; un test d'égalité neuf pour l'AC8 (périmètre).
 - **Réversible** : oui.
+
+### C-29-9-26 — #649 : l'avis plafonné et le manuel nomment aussi le rattachement de la 29-8 (développement, 2026-10-15)
+
+- **Contexte** : la fiche, écrite avant la 29-8, énumère trois gestes qui font sortir une transaction de la liste (*accepter, affecter manuellement, éclater*). Sur la base rebasée (`4b358373`), la 29-8 en ajoute un quatrième, *Rattacher à un règlement*, pour les crédits en CHF. Aucune règle métier ne change : c'est l'énumération d'un texte.
+- **Retenu** : `reconciliation-labels-more-capped` ×4 et le paragraphe neuf du manuel ajoutent « ou rattachées à un règlement » (de : « einer Zahlung zugeordnet », en : « linked to a payment », it : « collegate a un pagamento », termes du bouton de la 29-8). Le mot « rejet » reste absent (V4).
+- **Écartées** : le texte de la fiche à la lettre (il dirait faux par omission dès la 29-8 mergée) ; une formule générique « traitées » (moins précise que la liste, qui écarte nommément le rejet).
+- **Réversible** : oui.
+
+### C-29-9-27 — #655 : la doublure de `page` est un objet à accesseurs, pas une classe (développement, 2026-10-15)
+
+- **Contexte** : la fiche prescrit `class FakePage { params = $state.raw(…) }` ; or `i18n-libelle-en-dur.test.ts` (« la prémisse de la limite "méthodes de classe" tient encore — aucune classe dans src/ ») rougit dès qu'une classe entre dans `src/`, fixture de test comprise.
+- **Retenu** : `let params = $state.raw(…)` au module et un objet `fakePage` à accesseur `get`/`set params` — même sémantique (la navigation réassigne un `$state.raw`), vérifiée par M15 rejouée sur la nouvelle fixture (tuée par V13).
+- **Écartées** : garder la classe et exempter le fichier dans la garde (élargir une garde d'une autre story pour une fixture) ; un `$state` profond (ne réassigne pas, M15 survivrait — F4 de la validation P1).
+- **Réversible** : oui.
+
+### C-29-9-28 — #646 : V11 affirme aussi que la question est posée (développement, 2026-10-15)
+
+- **Contexte** : V11 (acceptation ⇒ suppression) décrit le comportement du sol ; écrit tel quel, il était vert avant le correctif, alors que T4 le veut rouge.
+- **Retenu** : V11 vérifie aussi que `confirm` est appelé une fois ; rouge au sol pour cette raison, vert après ; M12 le rougit toujours.
+- **Écartées** : déclarer V11 vert au sol par construction (comme V1, V12) — possible, mais il n'aurait alors rien prouvé de la story.
+- **Réversible** : oui.
+
+### C-29-9-29 — PDF : seul `user-manual.pdf` est versé (développement, 2026-10-15)
+
+- **Contexte** : `make fr` régénère les trois PDF ; `admin-manual.pdf` et `marketing-brochure.pdf` changent d'octets sans que leurs `.tex` aient bougé.
+- **Retenu** : les deux sont restaurés depuis HEAD ; seul le manuel utilisateur, dont le `.tex` change, est commité. Moins de PDF à régénérer au rebase sur la 29-8 et sur `main`.
+- **Écartées** : verser les trois (bruit binaire, conflits de rebase sans contenu).
+- **Réversible** : oui (`make fr`).
+
+### C-29-9-30 — E2E de #649 : un seul import, quatre captures, et le « sombre » est clair (développement, 2026-10-15)
+
+- **Contexte** : la fiche demande les captures clair et sombre des deux états. Importer 501 transactions par schéma doublerait le coût ; et Kesh n'a pas de thème sombre (C-28-1-7, écrit au site de `button.svelte`) : `emulateMedia({ colorScheme: 'dark' })` rend la page claire, comme les captures « sombre » de la 29-6.
+- **Retenu** : un seul import ; chaque état capturé deux fois en basculant `emulateMedia`. Les captures « sombre » sont claires, et c'est déclaré ; la règle B2 (jetons du thème seulement) est tenue au code (`text-text-muted`, `border-text`).
+- **Écartées** : deux scénarios à 501 transactions chacun ; ne capturer qu'en clair (la fiche demande les deux, et le jour d'un thème sombre la spec servira).
+- **Réversible** : oui.

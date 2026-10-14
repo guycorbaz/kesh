@@ -18,6 +18,11 @@ et `29-9-validate-prompt-p5-ciblee.md`.
 ⚠️ **La clé reste `29-9-trois-petits-correctifs`** (fichier, `sprint-status.yaml`, registre, prompts) : seul le titre
 dit « quatre » (C-29-9-19).
 
+**review** — *annotation du 2026-10-15 (développement, Opus 5.5, autonomie)* : branche rebasée sur `4b358373` (tête
+de `story/29-8`, non mergée) ; T0-T10 faits, dernier commit de code `284c1d3b` ; gates complets et E2E complet à ce
+commit (Dev Agent Record). Choix nés du développement : **C-29-9-26 à C-29-9-30**. Revue de code P1 à lancer : prompt
+`29-9-review-prompt-p1.md`.
+
 11 AC, T0-T10. Quatre issues, chacune **entièrement** réglée ou sortie du périmètre : [#649], [#655], [#646] — `bug`
 et `P3` — et [#678] — `bug` et `P4`.
 
@@ -635,35 +640,35 @@ n'est ajoutée ; les autres messages de l'écran (succès, erreur, bilan des éc
 
 ## Tasks / Subtasks
 
-- [ ] **T0** — Montage : `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-29-9/target` ; `node_modules` par `cp -al` depuis le
+- [x] **T0** — Montage : `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-29-9/target` ; `node_modules` par `cp -al` depuis le
   dépôt principal ; bases `kesh_299` et `kesh_e2e_299` (migrations du worktree, `scripts/seed-dev-db.sql`) ; port
   3049. **Rebaser d'abord** sur `main` si la 29-3, la 29-6 ou la 29-8 y sont mergées, puis relire chaque numéro de
   ligne de cette fiche.
-- [ ] **T1** — #649 contrat (AC4) : constantes frontend **et**, dans le même geste, le mock de
+- [x] **T1** — #649 contrat (AC4) : constantes frontend **et**, dans le même geste, le mock de
   `ReconciliationProposals.test.ts` passé à `importOriginal` (AC9, étape 0, en delta ; fichier relancé vert) ;
   commentaire de `reconciliation.types.ts:52-55` ; commentaire de module de `kesh-db` `:18-19` réécrit (AC4) ;
   doc-comments Rust, deux tests Rust ; M6, M18, M20 ; **gate complet à ce commit** (exception *kesh-db*, AC10) ; commit
   `test(29-9): … (refs #649)`.
-- [ ] **T2** — #649 écran (AC1-AC3) : V2-V5 et V18 rouges, puis le correctif ; V1 et V12 exigent une **absence** et
+- [x] **T2** — #649 écran (AC1-AC3) : V2-V5 et V18 rouges, puis le correctif ; V1 et V12 exigent une **absence** et
   sont donc verts au sol par construction — ils se déclarent tels, et V12 vaut par M14 ; M1-M5, M14, M21 ; commit
   `fix(reconciliation): … (refs #649)`.
-- [ ] **T3** — #655 (AC5, AC6) : V6-V9 et V13-V17 rouges (V13 l'est au sol : l'effet actuel relit à id égal), puis les
+- [x] **T3** — #655 (AC5, AC6) : V6-V9 et V13-V17 rouges (V13 l'est au sol : l'effet actuel relit à id égal), puis les
   deux pages ; M7-M10, M13, M15-M17, M19 ; commit `fix(bank-import): … (refs #655)`.
-- [ ] **T4** — #646 (AC7) : V10-V11 rouges, puis le correctif ; M11-M12 ; commit `fix(contacts): … (refs #646)`.
-- [ ] **T10** *(amendement #678 — s'exécute après T4 et avant T5, malgré son numéro)* — AC11 : V19-V23 rouges
+- [x] **T4** — #646 (AC7) : V10-V11 rouges, puis le correctif ; M11-M12 ; commit `fix(contacts): … (refs #646)`.
+- [x] **T10** *(amendement #678 — s'exécute après T4 et avant T5, malgré son numéro)* — AC11 : V19-V23 rouges
   (sortie copiée), puis le libellé des cases, la région d'annonce, le test de position de la 29-6 amendé en delta ;
   deux clés ×4 **posées en deux appels `i18nMsg` littéraux** (C-29-9-24) et le test de relevé des deux clés dans
   `i18n-entrees-a-variables.test.ts` (rouge au sol) ; M22-M30 ; captures de `reconciliation-reject-unmatched.spec.ts` relancée comparées à celles de la
   29-6 ; commit `fix(reconciliation): … (refs #678)`. Si la 29-6 n'est pas mergée au moment de T0, T10 attend : sans
   elle, l'indication n'existe pas (C-29-9-23).
-- [ ] **T5** — i18n (AC8) : quatre clés, une réécrite, ×4 ; `sitesTotal` recompté ; `KNOWN_VIOLATIONS` de
+- [x] **T5** — i18n (AC8) : quatre clés, une réécrite, ×4 ; `sitesTotal` recompté ; `KNOWN_VIOLATIONS` de
   `lint-i18n-ownership.js` (+1) ; inventaire des boutons rouges ; gardes i18n nommées à l'AC8 relancées.
-- [ ] **T6** — Manuel FR, `make fr` sous le verrou, contrôle aplati ; `api-external.md` ; CHANGELOG (quatre puces,
+- [x] **T6** — Manuel FR, `make fr` sous le verrou, contrôle aplati ; `api-external.md` ; CHANGELOG (quatre puces,
   AC11 compris ; manuel inchangé pour #678, C-29-9-22) ; commit `docs(29-9): … (refs #649, refs #646, refs #678)`.
-- [ ] **T7** — E2E (AC9) : deux specs, captures clair et sombre (hors dépôt, chemins au Dev Agent Record) ; le volet
+- [x] **T7** — E2E (AC9) : deux specs, captures clair et sombre (hors dépôt, chemins au Dev Agent Record) ; le volet
   #678 de `reconciliation-show-older.spec.ts` (AC11) ; commit `test(e2e): … (refs #649, refs #646, refs #678)`.
-- [ ] **T8** — Propagation (§ ci-dessous), puis gates complets au dernier commit de code (AC10).
-- [ ] **T9** — Dev Agent Record, File List, Change Log ; statut `review` ; registre de sprint. Rapport : demander le
+- [x] **T8** — Propagation (§ ci-dessous), puis gates complets au dernier commit de code (AC10).
+- [x] **T9** — Dev Agent Record, File List, Change Log ; statut `review` ; registre de sprint. Rapport : demander le
   push, la PR (`closes #649 #655 #646 #678` au corps seulement), le commentaire de #655 (C-29-9-8), et la décision sur une
   issue de pagination au-delà de 500 (C-29-9-3).
 
@@ -826,11 +831,164 @@ montre que les 100 plus récentes ».
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-14/15. Worktree `/home/gcorbaz/devel/kesh-29-9`, bases
+`kesh_299` / `kesh_e2e_299`, port 3049, `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-29-9/target`.
+
 ### Debug Log References
+
+Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/` : `299-t1-cible.log` (tests Rust ciblés), `299-gate-t1.log`
+(gate complet au commit T1, exception *kesh-db*), `299-mut-rust.log`, `299-mut-t2.log`, `299-mut-t3.log`,
+`299-mut-t4.log`, `299-mut-t10.log`, `299-mut-m30-bis.log` (mutations), `299-make-fr.log` (PDF),
+`299-e2e-cible.log` (trois specs), `299-gate-final.log` (gates au `9a1e5eb0`, `npm run check` rouge),
+`299-gate-final2.log` (gates au dernier commit de code `284c1d3b`), `299-e2e-complet.log` (E2E complet au même
+commit). Scripts et motifs des mutations : `kesh-gate-logs/299-scripts/` (`mutate.py`, `mutcamp.py`, `t3.json`,
+`t4.json`, `t10.json`, `m30.json`, `mut-rust.sh`, `mut-t2.sh`).
 
 ### Completion Notes List
 
+**Étape A — rebase sur `4b358373`** (tête de `story/29-8`, qui contient `main` `12c64c39`). Treize commits de fiche
+rejoués ; conflits sur `sprint-status.yaml` (à chaque commit) et sur le fichier d'epic (commits 1, 8, 12), résolus
+par `union_sprint.py` (clés de la 29-9 de la branche, autres de la base) et `union_epic.py` (les deux côtés, ligne
+v0.13.4 unique). Deux défauts de l'union, corrigés au commit `08b57ee7` : les en-têtes de la 29-9 rejoués **sans
+conflit** se sont doublés (le 135 deux fois, deux versions du 136) — ramenés à **164** et **163** en tête ; l'union du
+fichier d'epic a gardé les **versions successives** de lignes que la branche réécrivait (titre « Trois… » et
+« Quatre… », trois variantes de la ligne de release de la 29-9) — seule la dernière est gardée. Fiche et registre de
+la 29-9 **identiques** à `b4794e7c` (`git diff --quiet`), clé de `sprint-status.yaml` identique, `yaml.safe_load`
+vert, aucun marqueur. Non touché : une ligne orpheline du fichier d'epic qui vient de la base (« `29-6, R7)* : Guy
+les éprouve…` », l. ~185, déjà à `4b358373`) — relève de l'orchestrateur.
+
+**Étape B — prémisses relues sur la base.** Exactes sur le fond ; numéros de ligne décalés (lus au code, non
+reportés dans le corps de la fiche) :
+- composant de réconciliation : la case est sur toute ligne (29-6), l'indication est le dernier enfant de la rangée
+  des boutons, `LinkSettlementModal` (29-8) suit les deux autres modales après `</table>` ; la 29-8 ajoute un
+  troisième bouton de ligne (*Rattacher à un règlement*, crédits en CHF) et un quatrième geste qui fait sortir une
+  transaction de la liste — **d'où C-29-9-26** : l'avis plafonné et le manuel le nomment (texte, aucune règle
+  métier) ; le mock du module API de `ReconciliationProposals.test.ts` porte toujours quatre entrées (la modale de
+  la 29-8 est une doublure) ;
+- `routes/reconciliation.rs` : constantes `:62-67`, `has_more` `:93-97`, `limit + 1` `:707`, comparaison `:710` ;
+  commentaire de `kesh-db` à `:35-36` (« hardcodé 100 … L24 », toujours faux) ; le doc-comment de
+  `DEFAULT_PROPOSALS_LIMIT` portait aussi « cf. L24 », retiré ;
+- `docs/api-external.md` : la parenthèse « (100 par défaut) » est au paragraphe *unreject* (`:610`) ;
+- manuel : `:2087` (« au plus ») et `:2099` (parenthèse) ; la phrase de la 29-6 « la page le dit » à `:2092` ;
+- les deux pages de #655, `ContactPersonsManager` et les catalogues : conformes au constat.
+
+**Tests vus rouges avant le correctif** (sorties dans la conversation de développement ; résumé exact) :
+- T2 : V2, V3, V4, V5, V12, V18 rouges (`Unable to find … reconciliation-more` / `…show-older-btn`) ; V1 vert au sol
+  (il exige une absence) ;
+- T3 : V6, V7, V8, V9, V13, V14, V15, V16, V17 rouges, chacun sur son symptôme (bannière présente ; lignes rejetées
+  périmées ; formulaire absent ; message ancien ; `getBankProfile` appelé 2 fois au lieu d'une ; « Chargement… »
+  absent ; « ID invalide » écrasé ; `Banque 5` au lieu de `Banque 6`) ;
+- T4 : V10 et V11 rouges (`confirm` appelé 0 fois) — V11 l'est parce qu'il affirme aussi la question (C-29-9-28) ;
+- T10 : V19 et V20 rouges d'abord sur l'absence de la clé au catalogue, puis, les deux clés posées, sur l'absence du
+  nom accessible (`Unable to find an accessible element with the role "checkbox" and name "Sélectionner la
+  transaction du 2026-05-15, 100.00 CHF, ACME GMBH"`) ; V21 et V22 rouges (pas de région) ; V23 rouge (deux clés non
+  relevées).
+- Rust : `get_proposals_limit_is_capped_at_500` et `get_proposals_limit_500_exact_has_no_more` figent un
+  comportement **déjà** en place : verts au sol, leur pouvoir se prouve par M6, M18, M20.
+
+**Mutations — 30 + 2 rejouées, toutes tuées** (motif vérifié unique, restauration `git checkout -- f` puis `touch f`) :
+- M1 (V2-V5, V12, V18), M2 (V3, V4, V5), M3 (V3, V5), M4 (V4), M5 (V2, V3, V5), M14 (V12), M21 (V18) ;
+- M6 (les deux tests Rust neufs), M18 (`…_500_exact_has_no_more`), M20 (`…_capped_at_500` et
+  `…_paginates_at_100_default`, comme la fiche le prévoit) ;
+- M7 (V6), M8 (V7), M9 (V8), M10 (V9, V16), M13 (V14, V17), M15 (V13), M16 (V15), M17 (V16), M19 (V17) ;
+- M11 (V10), M12 (V11) ;
+- M22 (V19, V20, V23), M23 (V20), M24 (V21), M25 (V21), M26 (V21, V22), M27 (V21), M28 (V21), M29 (V20), M30 (V20,
+  V23 ; rejouée après T5 : aussi `i18n-keys.test.ts`, « la collecte ne passe pas à vide » et « l'inventaire des sites
+  non résolus est borné ») ;
+- M15 rejouée sur la fixture définitive (C-29-9-27) : tuée par V13.
+⚠️ **Écart de procédure, sans effet sur les résultats** : la campagne Rust (M6, M18, M20) a tourné **avant** le commit
+de T1 ; sa restauration par `git checkout` a ramené `routes/reconciliation.rs` à HEAD et **effacé les doc-comments**
+non commités de T1, réécrits ensuite à l'identique avant le commit. Les mutations portaient sur du code identique à
+celui du commit (seuls des commentaires diffèrent). Les campagnes suivantes ont toutes tourné sur un arbre commité.
+
+**Gates.**
+- Commit T1 `affe1dd1` (exception *kesh-db*) : `scripts/test-fast.sh` sur `kesh_299` remise à zéro — fmt, clippy,
+  nextest **3732 passés, 6 ignorés** (`299-gate-t1.log`).
+- Au `9a1e5eb0` (`299-gate-final.log`) : test-fast vert (3732/3732), `test:unit` vert, `build` vert, lint vert,
+  **`npm run check` rouge** — une erreur de type dans `ContactPersonsManager.test.ts` (`vi.fn(() => false)` sans
+  paramètre, `calls[0][0]` sur un tuple vide). Corrigé au `284c1d3b`, qui devient le dernier commit de code.
+- **Au dernier commit de code `284c1d3b`** (`299-gate-final2.log`, sous verrou et mem-guard, base `kesh_299` remise à
+  zéro dans le même journal) : `scripts/test-fast.sh` — fmt, clippy `-D warnings`, nextest **3732 passés, 6
+  ignorés** ; `npm run check` **0 erreur** (29 avertissements, tous dans des fichiers que la story ne touche pas) ;
+  `npm run lint-i18n-ownership` vert ; `npm run test:unit` **1680 passés, 149 fichiers** ; `npm run build` vert.
+- **E2E complet au `284c1d3b`** (`299-e2e-complet.log`) : **291 passés, 7 échoués, 19 ignorés** (11,8 min ; montage de `docs/testing.md`, port 3049, base `kesh_e2e_299` remise à zéro, backend arrêté par PID). Les sept échecs, jugés fichier par fichier contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — les **sept KF-029 (#97)**, ni KF-052 ni pollution ; borne basse de la fourchette 7 à 10. Les deux specs neuves et `reconciliation-reject-unmatched.spec.ts` passent (journal Playwright : `kesh-gate-logs/299-e2e-complet-playwright.log`).
+- Gardes i18n nommées à l'AC8, vertes dans `test:unit` : `i18n-entrees-a-variables.test.ts`,
+  `i18n-repli-divergent-actif.test.ts`, `i18n-keys.test.ts`, `i18n-harvest.test.ts`.
+
+**Décomptes** (périmètre : de `4b358373` au `284c1d3b`, lignes `it(` et `#[sqlx::test` comptées aux deux bornes) :
+- Vitest : **+22** — `ReconciliationProposals.test.ts` 34 → 44 (+10 : V1-V5, V12, V18, V19-V21 ; V22 amendé, non
+  compté), `bank-import-detail-page.test.ts` 5 → 7 (V6, V7), `profile-page.test.ts` 2 → 9 (V8, V9, V13-V17),
+  `ContactPersonsManager.test.ts` 0 → 2 (V10, V11), `i18n-entrees-a-variables.test.ts` 5 → 6 (V23) ;
+- Rust : **+2** (`reconciliation_e2e.rs` 106 → 108) ;
+- E2E : **+2 specs** (73 → 75 fichiers `*.spec.ts`), un test chacune ;
+- i18n : **six clés neuves** ×4 (`reconciliation-labels-more-hidden`, `-actions-show-older`, `-labels-more-capped`,
+  `-labels-select-transaction`, `-select-transaction-no-counterparty`, `contact-persons-confirm-delete`) et **une
+  réécrite** ×4 (`reconciliation-unreject-success`) ; `sitesTotal` **2180 → 2186** (+5 dans
+  `ReconciliationProposals.svelte`, +1 dans `ContactPersonsManager.svelte`), recompté par `grep -o "i18nMsg("` aux
+  deux bornes et égal à la collecte ; `KNOWN_VIOLATIONS` **+1** (dette #30 : `contact-persons-confirm-delete`).
+
+**Écarts à la fiche** (choix au registre) :
+- C-29-9-26 — l'avis plafonné et le manuel nomment aussi « rattachées à un règlement » (29-8) ;
+- C-29-9-27 — la fixture `profile-page-state.svelte.ts` est un objet à accesseurs, pas la `class FakePage`
+  prescrite : `i18n-libelle-en-dur.test.ts` interdit toute classe dans `src/` (vu rouge au gate ciblé) ;
+- C-29-9-28 — V11 affirme aussi que `confirm` est appelé ;
+- C-29-9-29 — seul `user-manual.pdf` est versé (`admin-manual.pdf`, `marketing-brochure.pdf` restaurés : octets
+  régénérés, `.tex` inchangés) ;
+- C-29-9-30 — E2E de #649 : un seul import de 501, chaque état capturé en clair et en « sombre » ; Kesh n'a pas de
+  thème sombre (C-28-1-7), la capture « sombre » est donc claire, comme celles de la 29-6.
+- Le `<p>` de l'indication de la 29-6 est **ré-indenté** d'un cran dans la région (octets de blancs seulement ; clé,
+  repli, classe et `data-testid` inchangés).
+- Manuel `:2045` (fiche) : rédigé en deux temps — « les 100 plus récentes d'abord » dans la phrase, puis un paragraphe
+  après la liste des candidates qui dit l'avis, le bouton, la sélection vidée et l'avis plafonné.
+
+**Recette visuelle.** Captures hors dépôt, `kesh-gate-logs/299-captures/` : `avis-et-bouton-{clair,sombre}.png`,
+`avis-plafonne-{clair,sombre}.png` (jetons du thème : `text-text-muted`, `border-text`), et
+`29-6-ligne-cochee-*`, `29-6-apres-rejet-*` relancées par `reconciliation-reject-unmatched.spec.ts` non modifiée :
+**mêmes dimensions** que celles de la 29-6 (`kesh-gate-logs/298-captures/`, 1008×134 et 1008×92) et même disposition,
+aux données près — la région vide n'ajoute aucun écart visible. Aucune capture de la confirmation (dialogue natif,
+C-29-9-10) ; pages de #655 : rendu inchangé.
+
+**Propagation** (grep de la fiche, § *Propagation*) : ne sortent plus « hardcodé 100 », `L24`, « pas de UI dédiée »,
+« Charger plus », « 100 plus récentes au plus », « qui ne montre que les 100 », `issues/649` ; sortent seulement les
+occurrences légitimes attendues (constantes et doc-comments, `reconciliation-unreject-success` ×4 et son repli,
+« les 100 plus récentes d'abord » au manuel, la ligne « score de 100 % » `:2083`, sans rapport). PDF aplati : les
+trois phrases neuves présentes, l'ancienne absente (`grep -c` → 0), « la page le dit » présente.
+
+**Demandes à l'orchestrateur** : la PR (après le merge de la 29-8 et ton `git rebase --onto origin/main 4b358373`),
+corps avec `closes #649 #655 #646 #678`, message de squash rédigé à la main ; le commentaire de #655 (défaut latent sur
+la page d'un profil, C-29-9-8) ; la décision sur une issue de pagination au-delà de 500 (C-29-9-3) ; la ligne
+orpheline du fichier d'epic (ci-dessus).
+
 ### File List
+
+- `crates/kesh-api/src/routes/reconciliation.rs` (doc-comments seulement)
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-db/src/repositories/reconciliation.rs` (commentaire de module seulement)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.test.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation.api.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation.types.ts`
+- `frontend/src/lib/features/reconciliation/UnrejectTransactionAction.svelte`
+- `frontend/src/routes/(app)/bank-import/[id]/+page.svelte`
+- `frontend/src/routes/(app)/bank-import/[id]/bank-import-detail-page.test.ts`
+- `frontend/src/routes/(app)/bank-import/profiles/[id]/+page.svelte`
+- `frontend/src/routes/(app)/bank-import/profiles/[id]/profile-page.test.ts`
+- `frontend/src/routes/(app)/bank-import/profiles/[id]/profile-page-state.svelte.ts` (neuf)
+- `frontend/src/lib/features/contacts/ContactPersonsManager.svelte`
+- `frontend/src/lib/features/contacts/ContactPersonsManager.test.ts` (neuf)
+- `frontend/src/lib/shared/i18n-entrees-a-variables.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/lib/components/ui/button/boutons-rouges-inventory.test.ts`
+- `frontend/scripts/lint-i18n-ownership.js`
+- `frontend/tests/e2e/reconciliation-show-older.spec.ts` (neuf)
+- `frontend/tests/e2e/contact-persons-delete.spec.ts` (neuf)
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `docs/api-external.md`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/29-9-trois-petits-correctifs.md`, `epic-29-choix-autonomes-29-9.md`,
+  `sprint-status.yaml`, `29-9-review-prompt-p1.md` ; `_bmad-output/planning-artifacts/epic-29-preparer-cloture.md`
+  (rebase)
 
 ## Change Log
 
@@ -964,3 +1122,10 @@ montre que les 100 plus récentes ».
   - Clôture : la remédiation est un retrait de texte et une ligne de statut, aucune ligne de code ni de prescription
     nouvelle ; P4 → P6 n'ont trouvé que des résidus des remédiations précédentes sur les comptes rendus, aucun défaut
     de conception.
+
+- **2026-10-15 — Développement** (Opus 5.5, autonomie, `bmad-dev-story`). Rebase sur `4b358373` (tête de la 29-8),
+  union des registres, en-têtes 163-164. T0-T10 dans l'ordre prescrit (T10 entre T4 et T5) ; dernier commit de code
+  `284c1d3b`. Tests rouges d'abord (V1, V12 : verts au sol, absence exigée) ; M1-M30 toutes tuées (+ M15 et M30
+  rejouées). Gates au `284c1d3b` : test-fast 3732/3732 (6 ignorés), Vitest 1680/1680 (149 fichiers), check, lint,
+  build verts ; E2E 291 passés, 7 KF-029, 19 ignorés. Choix C-29-9-26 à 30. Statut `review` ; prompt de la revue de
+  code P1 : `29-9-review-prompt-p1.md`.
