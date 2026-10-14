@@ -5,8 +5,9 @@
 **ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (`main`
 après le kickoff de l'Epic 29), branche `story/29-5`, worktree `/home/gcorbaz/devel/kesh-29-5`. Story **ajoutée à
 l'Epic 29** par l'orchestrateur le 2026-10-14. Validation P1 faite (Sonnet, lentilles R et F : 0/0/4/4 et
-0/0/2/5) et remédiée le 2026-10-14 ; **validation P2 à lancer** (`29-5-validate-prompt-p2.md`, Opus, lentilles R et
-F). Choix consignés au registre propre à la story, `epic-29-choix-autonomes-29-5.md`,
+0/0/2/5) et remédiée le 2026-10-14 ; validation P2 faite (Opus, lentilles R et F : 0/0/1/10 et 0/0/1/7) et
+remédiée le même jour ; **passe ciblée P3 à lancer** (`29-5-validate-prompt-p3-ciblee.md`, Haiku, une lentille sur
+le diff de la remédiation P2). Choix consignés au registre propre à la story, `epic-29-choix-autonomes-29-5.md`,
 **C-29-5-1 à C-29-5-12** (à verser par union au registre de l'epic). 9 AC. PR : **`closes #668`** — dans le titre ou
 le corps de la PR **seulement**, jamais dans un message de commit (B4 de la rétrospective 28).
 
@@ -58,7 +59,7 @@ toujours pour **échue**, et l'al. 3 (« aucune n'est échue ») ne la vise jama
 | Prémisse (issue #668 et sa rectification ; consigne de l'orchestrateur) | Au code | Verdict |
 |---|---|---|
 | `propose_matches` départage deux factures de même score par `invoice_id` croissant | `crates/kesh-reconciliation/src/matching.rs:97-105` : `b.score.total.partial_cmp(&a.score.total)…then_with(\|\| a.invoice_id.cmp(&b.invoice_id))` | **Vraie** |
-| Une facture désignée par le paiement (référence, numéro) prime déjà par le score | `reference_score` (`matching.rs:121-147`) : 1 si la référence et le numéro se contiennent, 0,5 sur un préfixe commun ≥ 4 ; poids 0,40, **contre 0,50 au montant** (`:80` : `0.50 * amount_score + 0.40 * reference_score + 0.10 * contact_score`), montant **binaire** au centime (`amount_score`, `:109-119`). Une facture désignée a un score **strictement supérieur** à une facture du même client non désignée **si leurs scores de montant sont égaux** (toutes deux au montant exact, ou aucune). Une facture désignée dont le reste dû diffère de quelques centimes (dans la tolérance de 0,05 de la requête) vaut 0,40 ou 0,50 ; une facture non désignée du même client au montant exact vaut 0,60 et **passe devant** | **Vraie sous condition de montant** — non touchée (C-29-5-6) ; la condition est écrite au manuel et au CHANGELOG (AC7, validation P1, R2) |
+| Une facture désignée par le paiement (référence, numéro) prime déjà par le score | `reference_score` (`matching.rs:121-147`) : 1 si la référence et le numéro se contiennent, 0,5 sur un préfixe commun ≥ 4 ; poids 0,40, **contre 0,50 au montant** (`:80` : `0.50 * amount_score + 0.40 * reference_score + 0.10 * contact_score`), montant **binaire** au centime (`amount_score`, `:109-119`). Une facture désignée a un score **strictement supérieur** à une facture du même client non désignée **si leurs scores de montant sont égaux** (toutes deux au montant exact, ou aucune). Une facture désignée dont le reste dû diffère de quelques centimes (dans la tolérance de 0,05 de la requête) vaut 0,40 ou 0,50 ; une facture non désignée du même client au montant exact vaut 0,60 et **passe devant** ; d'un autre client (nom sans rapport avec la contrepartie, aucune demi-référence), elle vaut 0,50 et passe devant la facture désignée à 0,40, mais **égale** celle à 0,50, l'ordre d'imputation tranchant alors (validation P2, R1 et F1) | **Vraie sous condition de montant** — non touchée (C-29-5-6) ; la condition est écrite au manuel et au CHANGELOG (AC7, validation P1, R2) |
 | Le départage se fait aussi par l'`ORDER BY` / `LIMIT 50` de `find_unpaid_invoices_for_window` | `crates/kesh-db/src/repositories/reconciliation.rs:258-259` : `ORDER BY i.date ASC, i.id ASC LIMIT 50`. Il ne départage pas le score — `propose_matches` retrie tout — mais il **choisit quelles** candidates sont scorées : au-delà de 50, les plus récentes **par date** sont écartées, fût-ce celle que l'art. 87 désigne | **Vraie, au sens de la troncature** — et **aggravée par la 29-2** : sa fenêtre ancrée fait entrer, à 30 jours net, les factures jusqu'à `F ≥ D − 60`, et des factures anciennes **non échues** (échéance lointaine) qui, plus anciennes par date, passent devant une facture échue dans l'`ORDER BY` et peuvent la pousser hors des 50. La 29-2 laisse ordre et troncature inchangés et renvoie ce point ici (C-29-2-7, C-29-2-13, § *Zones partagées* de sa fiche, état `e17368f8`). Traité par AC3 : l'ordre SQL devient celui de l'art. 87 (C-29-5-4) |
 | Les données de l'exigibilité sont disponibles au départage | `Invoice` porte `date` (`NaiveDate`) et `due_date` (`Option<NaiveDate>`, nullable — `migrations/20260416000001_invoices.sql:22`) ; le triplet candidat passé à `propose_matches` (`routes/reconciliation.rs:732-746`) contient l'`Invoice` complète | **Vraie** : aucune donnée à ajouter au triplet |
 | « premières poursuites (en Kesh : rappels ?) » | Kesh **n'enregistre aucune poursuite** : `grep -rniE poursuite crates frontend/src -l` rend quatre fichiers, tous du **texte** des rappels — le libellé du dernier niveau, « Dernier rappel avant poursuite » (`crates/kesh-db/src/entities/email_template_defaults.rs:96`, commentaire `:68`), son test (`crates/kesh-api/tests/email_templates_e2e.rs:601`) et deux commentaires du badge du dernier rappel (« poursuite à envisager », `frontend/src/lib/features/reminders/reminders.types.ts:21`, `ReminderTerminalBadge.svelte:5`) ; aucune table, aucune colonne. Un **rappel** est une interpellation (mise en demeure, art. 102 CO), **pas** une poursuite (réquisition de poursuite, LP) | **Corrigée** : un rappel ne vaut pas poursuite ; le critère n'a pas de donnée en Kesh (C-29-5-3) |
@@ -81,8 +82,10 @@ candidates se rangent par
 non échue si `X > D` ; toute facture échue a donc une `X` **plus petite** que toute facture non échue. Trier par `X`
 place les échues en tête **sans lire `D`**, puis, parmi elles, celle **échue la première** (al. 1). Parmi les non
 échues — l'al. 3 renvoie aux garanties, que Kesh ignore —, la plus proche de son échéance passe d'abord : choix par
-défaut écrit (C-29-5-5). Une échéance lointaine, ou mal saisie (2099), passe **derrière** : c'est l'angle mort
-C-29-2-11 de la 29-2, fermé.
+défaut écrit (C-29-5-5). Une échéance lointaine, ou mal saisie (2099), passe **derrière** à score égal : l'angle
+mort C-29-2-11 de la 29-2 est fermé **à score égal** seulement ; la candidature sans limite de temps d'une facture
+non échue ou à échéance lointaine, elle, **reste** (C-29-2-11 : seule candidate, ou mieux notée, elle est toujours
+proposée) (validation P2, R7).
 
 ⚠️ **Conséquence à écrire au doc-comment** : l'équivalence « échues d'abord ⇔ `X` croissante » ne vaut que tant que
 l'ordre des non échues est lui aussi `X` croissante. Qui ordonnera un jour les non échues autrement (garanties,
@@ -102,9 +105,14 @@ Exemples, `D` = 2026-06-15, deux factures du même client, même reste dû, sans
 ### Ce que la règle ne fait pas
 
 - **Elle ne touche pas au score** : une facture désignée par la référence **et** au montant exact garde la tête,
-  échue ou non (art. 86 : la déclaration du débiteur prime l'imputation légale). Le montant pesant plus que la
-  référence (0,50 contre 0,40, `matching.rs:80`), une facture au montant exact passe devant une facture à quelques
-  centimes près — **même désignée par le numéro** —, quelle que soit leur exigibilité (C-29-5-6).
+  échue ou non, devant toute facture que la référence ne désigne pas aussi (art. 86 : la déclaration du débiteur
+  prime l'imputation légale ; `reference_score` est un contenant bidirectionnel, `matching.rs:132`, si bien qu'une
+  référence peut désigner deux factures — validation P2, R3). Le montant pesant plus que la référence (0,50 contre
+  0,40, `matching.rs:80`), une facture **du même client** au montant exact passe devant une facture à quelques
+  centimes près — **même désignée par le numéro** —, quelle que soit leur exigibilité ; une facture d'un **autre**
+  client au montant exact **peut** passer devant elle : leurs scores peuvent être égaux (0,40 + 0,10 contre 0,50,
+  contact au seul client désigné, aucune demi-référence), et c'est alors l'ordre d'imputation qui tranche
+  (C-29-5-6 ; validation P2, R1 et F1).
 - **Elle ne vaut, en droit, qu'entre dettes d'un même débiteur.** À score égal, deux factures de **clients
   différents** que rien ne distingue (montant seul, aucun nom ne correspond) se rangent aussi par `X` : ce n'est plus
   l'art. 87, c'est un ordre par défaut — la proposition reste une proposition (`CLAUDE.md` § *Un appariement
@@ -120,7 +128,12 @@ Exemples, `D` = 2026-06-15, deux factures du même client, même reste dû, sans
 
 **AC1 — La date d'exigibilité a deux écritures, dans un même module, tenues d'accord par un test.**
 
-Dans `crates/kesh-db/src/repositories/reconciliation.rs`, à côté de `payment_date` et d'`InvoiceDateWindow` (C-29-5-8) :
+Dans `crates/kesh-db/src/repositories/reconciliation.rs` (C-29-5-8) — les **fonctions** Rust à côté de
+`payment_date` et d'`InvoiceDateWindow` ; la **macro** `invoice_exigibility_date_sql!` définie **avant**
+`invoice_payment_anchor_sql!` de la 29-2 (une `macro_rules!` n'est visible qu'après sa définition dans le texte : dans
+la forme commitée de la 29-2, `8f483388`, la macro d'ancre est définie à `:163` et développée à `:180` et `:186`,
+avant `payment_date` `:208` — définie près de `payment_date`, la macro d'exigibilité y serait introuvable ; validation
+P2, R4 et F2) :
 
 - `pub fn invoice_exigibility_date(invoice: &Invoice) -> NaiveDate` : `max(invoice.date,
   invoice.due_date.unwrap_or(invoice.date))`. ⛔ Jamais une comparaison d'`Option<NaiveDate>` : `None < Some(_)` en
@@ -138,18 +151,23 @@ Dans `crates/kesh-db/src/repositories/reconciliation.rs`, à côté de `payment_
 - Doc-comments `///` : l'art. 87 (en substance, avec la réserve de la § *Le critère légal*), l'art. 75 pour la
   facture sans échéance **et la convention « exigible = échue » qu'elle impose** (C-29-5-12), l'équivalence « échues
   d'abord ⇔ `X` croissante » et sa condition, les deux écritures et le test qui les tient d'accord (AC4), ce que la
-  règle ne fait pas (score — dont la condition de montant de la désignation —, clients différents, al. 2, al. 3,
-  poursuites).
-- **Si la 29-2 est mergée** (attendu) : son ancre est écrite, sur consigne de l'orchestrateur à son agent de
-  développement (2026-10-14), par un **`macro_rules!` d'ancre** sur les mêmes précédents. La 29-5 **insère** la macro
-  d'exigibilité dans cette macro d'ancre, à la place des deux premiers arguments du `GREATEST` —
-  `concat!("CAST(GREATEST(", invoice_exigibility_date_sql!(), ", COALESCE(DATE(rmd.last_sent_at), i.date)) AS DATE)")`,
+  règle ne fait pas (score — dont la condition de montant de la désignation : une facture au montant exact du même
+  client passe devant une facture désignée à quelques centimes près, celle d'un autre client **peut** y passer (score
+  supérieur ou égal ; à égalité, l'ordre d'imputation tranche — validation P2, R1) —, clients différents, al. 2, al. 3, poursuites).
+- **Si la 29-2 est mergée** (attendu) : son ancre est écrite par un **`macro_rules!` d'ancre** sur les mêmes
+  précédents — forme **commitée** dans la 29-2 (`8f483388`, non mergée à la validation P2), en deux termes :
+  `concat!("CAST(GREATEST(", "GREATEST(i.date, COALESCE(i.due_date, i.date)), ", "COALESCE(DATE(rmd.last_sent_at), i.date)", ") AS DATE)")`,
+  le **premier terme** étant réservé par son doc-comment à « une expression d'exigibilité commune » (C-29-2-15). La
+  29-5 **insère** la macro d'exigibilité dans cette macro d'ancre, **à la place du premier terme (C-29-2-15)** —
+  `concat!("CAST(GREATEST(", invoice_exigibility_date_sql!(), ", ", "COALESCE(DATE(rmd.last_sent_at), i.date)", ") AS DATE)")`,
   forme qu'admet `concat!` (un appel de macro qui rend un littéral, ou un `concat!` de littéraux, s'y développe :
-  précédent `line_ttc_sql!`, `repositories/invoices.rs:186-197`, appelé dans le `concat!` de `INVOICE_TTC_SUBQUERY_SQL`, `:214-216`) —, et la constante d'ancre de la 29-2 reste définie depuis sa macro.
+  précédents `line_ttc_sql!`, `repositories/invoices.rs:186-197`, appelé dans le `concat!` de
+  `INVOICE_TTC_SUBQUERY_SQL`, `:214-216`, et la 29-2 elle-même, qui appelle `invoice_payment_anchor_sql!()` dans le
+  `concat!` de sa requête scalaire, `:184-188`) —, et la constante d'ancre de la 29-2 reste définie depuis sa macro.
   `GREATEST(i.date, COALESCE(i.due_date, i.date))` ne s'écrit donc qu'une fois (règle DRY du `CLAUDE.md`).
-  Équivalence algébrique (`GREATEST` est associatif, et `CAST(GREATEST(a, b) AS DATE)` vaut `GREATEST(a, b)` sur deux
-  `DATE`) ; **aucun test de la 29-2 ne change** — ni assertion, ni nom, ni montage —, et le Dev Agent Record le
-  constate au gate (C-29-5-9). ⚠️ **Si la forme mergée diffère** (constante `&str` sans macro, autre nom, autre ordre
+  Équivalence : substitution du seul premier terme par le même terme enveloppé d'un `CAST(… AS DATE)`, l'identité sur
+  une `DATE` (`i.date` est `NOT NULL`, le terme n'est jamais `NULL`) ; **aucun test de la 29-2 ne change** — ni
+  assertion, ni nom, ni montage —, et le Dev Agent Record le constate au gate (C-29-5-9). ⚠️ **Si la forme mergée diffère** (constante `&str` sans macro, autre nom, autre ordre
   des arguments), la relecture se fait **à T0** : le dev compose sur ce qui est mergé, sans changer la nature de
   l'ancre d'une façon qui toucherait les tests de la 29-2, et l'écrit au Dev Agent Record ; à défaut de composition
   possible, deux écritures tenues d'accord par le test de parité de l'AC4 étendu à l'ancre, déclarées comme écart à
@@ -200,9 +218,13 @@ appels existants — au choix du dev ; **si la 29-2 a déjà ajouté une aide, l
   même reste dû, toutes dans la fenêtre de dates, dont l'ordre d'exigibilité **diverge** de `(date, id)` :
   - la facture **la plus récente échue** (`F = D`, `E = D`, `X = D`) porte la plus petite `X` ;
   - une facture **sans échéance**, **obligatoire** (validation P1, F2 et R8), datée `F = D + 1` (admise par la
-    fenêtre, #548) : `X = D + 1`, donc **deuxième** sous l'ordre correct — et **première** sous M9, où
-    `GREATEST(i.date, i.due_date)` vaut `NULL` et passe en tête en `ASC`. Placée à `F ≤ D`, elle serait en tête sous
-    les deux ordres et ne distinguerait pas M9 ;
+    fenêtre, #548) : `X = D + 1`, donc **deuxième** sous l'ordre correct. Sous M9, où `GREATEST(i.date, i.due_date)`
+    vaut `NULL` pour elle, deux régimes (validation P2, R5 et F3) : **sans** la 29-2, elle passe **première** (un
+    `NULL` trié en `ASC` passe en tête) ; **avec** l'ancre composée (AC1), la mutation passe aussi dans l'ancre, qui
+    vaut `NULL`, et `NULL >= ?` est faux dans le `WHERE` : elle est **exclue** des candidates (liste rendue : la
+    facture `F = D`, puis les quarante-neuf). Rouge dans les deux cas ; le Dev Agent Record écrit le mécanisme
+    **constaté**. Placée à `F ≤ D`, elle serait en tête sous l'ordre correct et sous M9 sans la 29-2, et ne
+    distinguerait pas M9 dans ce régime ;
   - les quarante-neuf autres, plus anciennes (`F` de `D − 30` à `D − 1`, répétitions admises), ont une échéance
     lointaine (`E` = `D + 40` et au-delà, **distinctes**).
 
@@ -238,10 +260,11 @@ appels existants — au choix du dev ; **si la 29-2 a déjà ajouté une aide, l
 date et une échéance (`make_invoice` pose aujourd'hui `date` 2026-05-10 et `due_date: None`, `:227-228`) ; la
 transaction est celle de `make_tx`, **telle quelle** : `propose_matches` ne lit pas la date du paiement (le tri par
 `X` place les échues d'abord sans elle, § *La règle retenue*), si bien que sa `booking_date` est sans effet sur le
-verdict — les dates du tableau se posent telles quelles sur les factures. Les factures de chaque cas ont **même montant, même contact,
-aucune référence** (score égal : 0,60), et sont passées à `propose_matches` dans l'ordre des **`invoice_id`
-croissants avec la facture que la règle doit écarter en premier** — sans quoi l'ancien départage passerait par
-coïncidence :
+verdict — les dates du tableau se posent telles quelles sur les factures. Les factures des cas 1 à 7 ont **même
+montant, même contact, aucune référence** (score égal : 0,60), et sont passées à `propose_matches` dans l'ordre des
+**`invoice_id` croissants, la facture que la règle doit écarter portant le plus petit `id` et venant en premier** —
+sans quoi l'ancien départage passerait par coïncidence —, **sauf le cas 7**, qui entre ses ids dans l'ordre
+**décroissant** pour tuer M13 (validation P2, R10 et F4). Le cas 8 a ses propres scores (ci-dessous) :
 
 1. `ties_put_the_due_invoice_before_a_not_yet_due_older_one` — le cas de l'issue (ligne 1 du tableau) ;
 2. `ties_put_the_first_fallen_due_before_an_older_invoice` (ligne 2 : la plus récente, échue la première) ;
@@ -257,7 +280,15 @@ coïncidence :
    **non échue** passe devant une facture échue non désignée (0,60) ; une facture au **montant exact** non échue
    (0,60) devant une facture échue à 3 centimes près (0,10, contact seul) ; et une facture **désignée** par le numéro
    mais à 3 centimes près (0,50), échue, **derrière** une facture non désignée au montant exact (0,60), non échue — la
-   condition de montant de la désignation, que le manuel écrit (AC7) ;
+   condition de montant de la désignation, que le manuel écrit (AC7). Toutes les factures du cas 8 sont du **même
+   client**, dont le nom est la contrepartie de la transaction (contact 0,10 chacune). ⚠️ Les scores annoncés
+   supposent que les factures **non désignées** n'ont **aucun préfixe commun de 4 caractères** avec la référence de la
+   transaction (`reference_score`, `matching.rs:137-144` ; `normalize` ne retire pas les tirets) : leur
+   `invoice_number` vaut `None` (ou un numéro sans tel préfixe, par exemple `"OTHER"`, comme
+   `propose_matches_returns_sorted_desc`) — avec un numéro de même série (`"INV-2026-002"` contre `"INV-2026-001"`),
+   la demi-référence donnerait 0,20 de plus (0,80 au lieu de 0,60), l'ordre asserté restant juste mais une assertion
+   de `score.total` ne l'étant plus (validation P2, R2 et F4). Le deuxième sous-cas se joue sur une transaction
+   **sans** référence ;
 9. `propose_matches_returns_sorted_desc` (`:377`) et les autres tests existants : verts **sans modification
    d'assertion**. Ce test n'a **pas** des scores distincts (validation P1, R5, F6) : 101 et 103 valent 0,50 chacune
    et sont départagées par l'identifiant ; il reste vert parce que `make_invoice` leur donne même date et aucune
@@ -288,14 +319,19 @@ réglée, A reste due. **Rouge au sol** (A a le plus petit `invoice_id`). `D` en
   date --- est tenue pour due dès sa date. À échéance égale, la plus ancienne. Si aucune n'est échue, Kesh propose
   celle dont l'échéance est la plus proche~; la loi désigne alors la dette la moins garantie, que Kesh ne connaît
   pas. » Puis les limites, brèves : un paiement qui porte le **numéro** d'une facture **et son montant exact** la
-  désigne et passe devant toute autre (score) --- le montant pesant plus que la référence, une autre facture au
-  montant exact passe en revanche devant une facture désignée dont le montant diffère, fût-ce d'un centime ; Kesh ne
+  désigne et passe devant toute facture qu'il ne désigne pas aussi (score) --- le montant pesant plus que la
+  référence, une autre facture au montant exact **peut** en revanche passer devant une facture désignée dont le
+  montant diffère, fût-ce d'un centime, et y passe toujours si elle est du même client ; Kesh ne
   connaît pas les poursuites et ne répartit pas un paiement entre deux factures échues le même jour --- pour imputer
   autrement, enregistrez le règlement depuis la fiche de la facture voulue (`\S\ref{sec:reglement-client}`), puis
   rejetez la transaction (*Rejeter*) ; entre deux clients que rien ne distingue, cet ordre n'est qu'un choix par
   défaut~: vérifiez la proposition. *(Formulation de la limite du score : validation P1, R2 — le score est la somme
   pondérée de `matching.rs:80`, la désignation ne prime donc qu'à montant égal ; l'al. 3, l'ordre entre non échues et
-  le cas `E < F` : R7, F7.)*
+  le cas `E < F` : R7, F7. Validation P2, R1 et F1 : « peut passer devant » et non « passe devant » — une facture
+  d'un autre client au montant exact (0,50) peut égaler une facture désignée à quelques centimes près dont le nom
+  du client correspond (0,40 + 0,10), et l'ordre d'imputation tranche alors ; du même client, elle vaut au moins
+  0,10 de plus. Validation P2, R3 : « toute facture qu'il ne désigne pas aussi », une référence pouvant contenir deux
+  numéros, ou un numéro contenu dans un autre.)*
 - `:2048` (« la facture la mieux notée s'il y en a une ») : ajouter « --- à score égal, celle qu'impute la règle
   ci-dessus » (ou un renvoi équivalent).
 - **Inventaire clos** des phrases du manuel qui décrivent un ordre entre factures candidates : `grep -nE "mieux
@@ -318,16 +354,22 @@ relire si la 29-5, #668, est mergée au rebase) ». ⛔ **Ne remplacer que les d
 fausses** (validation P1, R4 et R6) ; **le reste de la phrase de la 29-3 est conservé** mot pour mot :
 
 - la parenthèse du départage « (identifiant croissant au sol ; à relire si la 29-5, #668, est mergée au rebase) »
-  devient : « (à score égal, par **date d'exigibilité** croissante — `max(date, dueDate)`, l'échéance absente valant
-  la date —, puis date de facture, puis identifiant ; avant la v0.13.4 : identifiant seul) » ;
+  devient : « (à score égal, par **date d'exigibilité** croissante — la plus tardive de la date de la facture
+  (`invoiceDate`) et de son échéance, l'échéance, absente de la réponse, valant la date à défaut —, puis date de
+  facture, puis identifiant ; avant la v0.13.4 : identifiant seul) » (validation P2, R8 : `dueDate` n'est pas un
+  champ de la réponse — la candidate porte `invoiceDate`, `routes/reconciliation.rs:140`, et aucune échéance ; en
+  police de code, un nom de champ absent tromperait l'intégrateur) ;
 - la parenthèse « *(depuis la v0.13.4 ; l'ordre lui-même est celui des versions précédentes)* » devient fausse — la
   29-5 change l'ordre à score égal dans la même version — et devient : « *(depuis la v0.13.4 ; l'ordre des
-  candidates est celui des versions précédentes, sauf entre factures de même score, #668)* ».
+  candidates est celui des versions précédentes, sauf entre factures de même score, et, au-delà de 50 factures
+  ouvertes du même montant, celles qui sont écartées, #668)* » (validation P2, R11 et F7 : la troncature change aussi
+  l'ensemble, AC3).
 
 Si la 29-3 n'a rien écrit à cet endroit au rebase, ajouter une phrase propre après « Les propositions viennent de
 `GET /api/v1/reconciliation/proposals` » : par score décroissant, puis la parenthèse du départage ci-dessus.
-⚠️ **Contrat** : la forme JSON ne change pas ; seul l'ordre des candidates à score égal change — une intégration qui
-prenait `candidates[0]` peut recevoir une autre facture qu'avant.
+⚠️ **Contrat** : la forme JSON ne change pas ; l'ordre des candidates à score égal change, et, au-delà de 50
+factures ouvertes du même montant, l'**ensemble** des candidates aussi (celles qu'écarte la troncature, AC3) — une
+intégration qui prenait `candidates[0]` peut recevoir une autre facture qu'avant (validation P2, R11 et F7).
 
 `CHANGELOG.md`, section `## [0.13.4] — Non publié` (créée par la 29-2 ou la 29-3 ; sinon la créer au-dessus de
 `## [0.13.3] — 2026-10-14`, forme exacte de `scripts/prepare-release.sh`), `### Corrigé` : « **À score égal, la
@@ -337,11 +379,13 @@ la plus anciennement créée, même pas encore échue, devant une facture échue
 la loi impute le paiement (art. 87 CO) : une facture échue avant une facture qui ne l'est pas, et, parmi les échues,
 celle échue la première ; une facture sans échéance est due dès sa date. Un paiement qui porte le numéro d'une
 facture et son montant exact la désigne toujours. API : la forme de `GET /api/v1/reconciliation/proposals` ne change
-pas, l'ordre des candidates à score égal, si. »
+pas, l'ordre des candidates à score égal, si — et, au-delà de 50 factures ouvertes du même montant, celles qui sont
+écartées. »
 
 ⛔ **L'entrée de la 29-3 dans la même section devient fausse** (sa fiche la dit `Changed` ; la rubrique du dépôt est `### Modifié`, `CHANGELOG.md:110`) (validation P1, R4) : elle dit de l'ordre des
 `candidates` qu'il « est désormais écrit et documenté (`docs/api-external.md`) — **il ne change pas** ». Au rebase,
-ces derniers mots deviennent « — il ne change qu'entre factures de même score (voir l'entrée de #668, sous `Corrigé`) » ; le reste de
+ces derniers mots deviennent « — il ne change qu'entre factures de même score, et dans le choix de celles qu'écarte
+la limite de 50 (voir l'entrée de #668, sous `Corrigé`) » ; le reste de
 l'entrée de la 29-3 est conservé. Une entrée d'une version **publiée** ne se réécrit pas ; celle-ci est dans
 `[0.13.4] — Non publié`, et c'est le même tag qui porte les deux stories.
 
@@ -360,11 +404,13 @@ au-dessus de la liste (« la facture la mieux notée s'il y en a une ») reste v
 | M6 | `imputation_order` sans la composante `F` (`(X, id)`) | AC5 cas 4 (entrée : la plus récente avec le plus petit id) |
 | M7 | ordre d'imputation **avant** le score | AC5 cas 8 |
 | M8 | `ORDER BY` rétabli à `i.date ASC, i.id ASC` | AC4 `…_by_exigibility_before_limit` (le test `…_same_exigibility_…` ne la tue **pas** : ses `F` croissent avec `X`, l'ancien ordre y garde aussi G1) |
-| M9 | SQL : `GREATEST(i.date, i.due_date)` sans `COALESCE` | AC4 parité (`NULL` au décodage `NaiveDate`) **et** `…_by_exigibility_before_limit`, par sa facture sans échéance **obligatoire** à `F = D + 1` (première sous M9, deuxième sinon ; validation P1, F2 et R8) |
+| M9 | SQL : `GREATEST(i.date, i.due_date)` sans `COALESCE` | AC4 parité (`NULL` au décodage `NaiveDate`) **et** `…_by_exigibility_before_limit`, par sa facture sans échéance **obligatoire** à `F = D + 1` (deuxième sous l'ordre correct ; sous M9, **première** sans la 29-2, **exclue** par le `WHERE` avec l'ancre composée — validation P1, F2 et R8 ; validation P2, R5 et F3). Avec l'ancre composée rougissent aussi les tests à factures sans échéance (`:261`, `:314`, cas sans échéance de la 29-2) : mécanisme constaté au Dev Agent Record |
 | M10 | SQL : `COALESCE(i.due_date, i.date)` sans `GREATEST` | AC4 parité (cas `E < F`) |
 | M11 | composition de l'ancre 29-2 (AC1, dernier point) : retirer le terme des rappels | tests de la 29-2 (cas d, f de son AC5) — **à constater**, pas à écrire |
 | M12 | SQL : `ORDER BY {X} ASC, i.id ASC` (sans le second critère `i.date`) | AC4 `…_same_exigibility_by_invoice_date_before_limit` (G2 gardée au lieu de G1) — validation P1, F2 : aucun autre test ne l'exerce, `X = F` partout ailleurs |
 | M13 | `imputation_order` sans la composante `id` (`(X, F)`) | AC5 cas 7 (`sort_by` stable : l'ordre d'entrée 102, 101 resterait) ; AC4 unitaire `X`, `F` égales — validation P1, F6 |
+| M14 | SQL : `ORDER BY {X} DESC, i.date ASC, i.id ASC` (M5 côté SQL) | AC4 `…_by_exigibility_before_limit` (les quarante-neuf par `E` décroissante, puis la facture sans échéance ; la facture `F = D` écartée) — validation P2, F5 |
+| M15 | SQL : `ORDER BY {X} ASC, i.date ASC` (sans `i.id`) | **à exécuter et à déclarer** : seul `…_same_exigibility_…` a des égalités `(X, F)` (ses quarante-neuf de remplissage), et leur ordre de sortie suivra vraisemblablement l'ordre de parcours, donc l'`id` — mutation **probablement équivalente**, sans garantie (un tri sous `LIMIT` ne fixe pas l'ordre des égalités). Le Dev Agent Record la déclare **tuée** ou **équivalente**, avec la sortie du run (validation P2, F5) |
 
 Restauration de chaque mutation : `git checkout -- <fichier> && touch <fichier>` (`docs/agents-orchestration.md`
 § 7). Une mutation équivalente se déclare avec sa raison et la sortie du run.
@@ -420,6 +466,7 @@ l'ordre*).
 |---|---|---|
 | Règlement depuis la fiche (`settle_invoice`, `invoice_settlements_write.rs`) | l'utilisateur **désigne** la facture | hors classe : imputation par déclaration (art. 86) — c'est le recours écrit au manuel |
 | Lettrage manuel (`repositories/letterings.rs`) | l'utilisateur choisit les lignes | hors classe |
+| Propositions de lettrage (`kesh-core/src/lettering/proposals.rs`, Story 15-1b) | paires débit/crédit de montants égaux, classées par écart de dates croissant ; Kesh n'écrit rien | hors classe : les lignes de pièce — donc de facture — sont exclues des candidates (R5, `repositories/letterings/open_items.rs:531-532`) ; classement sans rapport avec l'imputation d'un paiement sur une facture (validation P2, F6) |
 | Factures fournisseur et lots pain.001 | paiements **sortants** | hors classe : Kesh y est le débiteur |
 | Troncature `LIMIT 50` sur le **score** (une facture désignée écartée au-delà de 50 candidates) | C-28-7-10 | **non résolu, assumé** (inchangé ; AC3 l'écrit au doc-comment) |
 | Poursuites (al. 1), garanties (al. 3), imputation proportionnelle (al. 2) | aucune donnée en Kesh / une seule proposition | **angles morts écrits** (C-29-5-3, C-29-5-5) |
@@ -464,22 +511,35 @@ réconciliation, fichier par fichier.
 La **valeur** du départage ancien et ses formulations :
 
 ```sh
-grep -rnE "invoice_id ASC|invoice_id croissant|identifiant croissant|plus petit .?invoice_id|départag|tie-break|then_with\(\|\| a\.invoice_id|i\.date ASC, i\.id ASC|\(date, id\)|\(i\.date, i\.id\)|l'ordre de la requête|C-29-2-11|C-29-3-12|#668" \
+grep -rnE "invoice_id ASC|invoice_id croissant|identifiant croissant|plus petit .?invoice_id|départag|tie-break|then_with\(\|\| a\.invoice_id|i\.date ASC, i\.id ASC|date ASC, id ASC|plus récentes|\(date, id\)|\(i\.date, i\.id\)|l'ordre de la requête|C-29-2-11|C-29-3-12|#668" \
   crates frontend/src docs/manual/fr/*.tex docs/api-external.md CHANGELOG.md
 ```
+
+(`date ASC, id ASC` et `plus récentes` ajoutés à la validation P2, R6 : le doc-comment du point 3,
+`repositories/reconciliation.rs:210-212`, écrit l'ordre **sans** alias et dit « ce sont toujours les plus récentes
+qui sont écartées » — faux après l'AC3 ; le test existant `…_orders_by_date_then_id_before_limit` le dit aussi, au
+sol, dans son doc-comment (`tests/reconciliation_repository.rs:304-305`, coupé en fin de ligne : le motif ne le rend
+que par `\(date, id\)`) et son message d'assertion (`:378`, « les deux plus récentes sont écartées », qui reste vrai
+pour ses factures sans échéance). Ni l'un ni l'autre n'était rendu par le motif `i\.date ASC, i\.id ASC`.)
 
 Et les deux phrases de la 29-3 que la 29-5 rend fausses (validation P1, R4), plus la condition de montant de la
 désignation (R2) :
 
 ```sh
-grep -nE "il ne change pas|celui des versions précédentes" CHANGELOG.md docs/api-external.md
-grep -rnE "désigne (et prime|toujours)|prime (déjà )?par le score" docs/manual/fr/user-manual.tex CHANGELOG.md crates/kesh-db/src/repositories/reconciliation.rs crates/kesh-reconciliation/src
+grep -nE "il ne change pas|celui des versions précédentes|seul l'ordre" CHANGELOG.md docs/api-external.md
+grep -rnE "désigne (et prime|toujours)|prime (déjà )?par le score|passe (en revanche )?devant|devant toute autre" docs/manual/fr/user-manual.tex CHANGELOG.md docs/api-external.md crates/kesh-db/src/repositories/reconciliation.rs crates/kesh-reconciliation/src
 ```
+
+(`passe (en revanche )?devant` et `devant toute autre` ajoutés à la validation P2, R1, F1 et R3 : une facture
+d'un **autre** client au montant exact **peut** passer devant une facture désignée à quelques centimes près, elle n'y
+passe pas toujours ; du **même** client, si. Toute phrase qui l'affirme sans condition de client se récrit en
+« peut passer devant » ou se borne au même client.)
 
 Occurrences attendues à trier : doc-comments de la 29-3 (`order_candidates`, cas 8 de son AC2 : « c'est
 `propose_matches` qui a fixé `invoice_id ASC` » → à réécrire), angle mort C-29-3-12 cité au doc-comment de
 `order_candidates` (« départage à score égal, cf. fiche 29-3 » ou #668 → **résolu par la 29-5**), doc-comments de la
-29-2 sur C-29-2-11, docstring et commentaire « tie-break » de `propose_matches_returns_sorted_desc` (`matching.rs:375`,
+29-2 sur C-29-2-11 (→ « fermé **à score égal** par la 29-5 ; la candidature sans limite de temps reste », jamais
+« résolu » — validation P2, R7), docstring et commentaire « tie-break » de `propose_matches_returns_sorted_desc` (`matching.rs:375`,
 `:386`), phrases de la 29-2 sur l'ordre « de la requête, `(i.date, i.id)` » (§ *Inventaire (c)*) ; les entrées
 publiées du CHANGELOG **ne se réécrivent pas** — l'entrée de la 29-3 sous `[0.13.4] — Non publié`, si (AC7).
 
@@ -594,3 +654,46 @@ Quatre, une règle métier unique : pas de découpage.
   (8 neufs, le 9ᵉ les existants), **3 tests neufs** dans `reconciliation_repository.rs`, 4 modules, choix
   **C-29-5-1 à 12**. Symptômes grepés après chaque correction (§ *Propagation*, élargi : `tie-break`,
   `l'ordre de la requête`, `il ne change pas`, `celui des versions précédentes`, `désigne et prime`).
+- 2026-10-14 — **Validation P2** (Opus 5.5, lentilles R et F ; rapports `kesh-gate-logs/29-5-validate-p2-{R,F}.md`) :
+  R **0 CRITICAL / 0 HIGH / 1 MEDIUM / 10 LOW**, F **0 / 0 / 1 / 7** ; le MEDIUM est **convergent** (R1 = F1) et vient
+  de la remédiation P1 (R2). Bilan des findings P1 : tous fermés, sauf R2 rouvert sous une autre forme (le MEDIUM).
+  **Remédiée** (Opus 5.5), tous les findings traités, aucun refusé :
+  - **R1 = F1** (MEDIUM) : « une autre facture au montant exact passe devant une facture désignée dont le montant
+    diffère » est faux pour une facture d'un **autre** client (0,40 + 0,10 contre 0,50 : égalité, l'ordre
+    d'imputation tranche). Écrit « **peut** passer devant », et « toujours si elle est du même client » : manuel
+    prescrit (AC7), § *Ce que la règle ne fait pas*, prémisse, doc-comment prescrit (AC1), C-29-5-6 amendé ; motif
+    `passe (en revanche )?devant` ajouté au grep de § *Propagation* ;
+  - **R3** : « passe devant toute autre » → « devant toute facture qu'il ne désigne pas aussi » (`reference_score`
+    est un contenant bidirectionnel, `matching.rs:132` — le rapport R citait `:135`, relevé à `:132`) ; motif
+    `devant toute autre` ajouté au grep ;
+  - **R4 / F2** : la macro d'exigibilité est définie **avant** `invoice_payment_anchor_sql!` (portée textuelle des
+    `macro_rules!` ; forme commitée de la 29-2, `8f483388` : macro d'ancre `:163`, développée `:180` et `:186`,
+    `payment_date` `:208`), les fonctions à côté de `payment_date` ; insertion « à la place du **premier terme**
+    (C-29-2-15) », forme commitée citée ; contexte de C-29-5-9 rectifié ; C-29-5-8 et C-29-5-11 amendés ;
+  - **R5 / F3** : M9 décrite dans ses deux régimes — sans la 29-2, la facture sans échéance passe première ; avec
+    l'ancre composée, elle est **exclue** par le `WHERE` (`NULL >= ?`) — rouge dans les deux cas, mécanisme constaté
+    au Dev Agent Record (AC4, table des mutations) ;
+  - **R2 / F4 / R10** : AC5 cas 8 — factures non désignées sans préfixe commun de 4 caractères avec la référence
+    (`invoice_number: None` ou `"OTHER"`), toutes du même client ; règle d'entrée « sauf le cas 7 » ;
+  - **F5** : mutations **M14** (`{X} DESC` en SQL, tuée par `…_by_exigibility_before_limit`) et **M15** (`i.id`
+    retiré de l'`ORDER BY`, probablement équivalente, à exécuter et à déclarer avec la sortie du run) ;
+  - **F6** : propositions de lettrage (`kesh-core/src/lettering/proposals.rs`) ajoutées à l'inventaire (b), hors
+    classe (lignes de pièce exclues, R5) ;
+  - **F7 / R11** : la troncature change aussi l'**ensemble** des candidates au-delà de 50 factures du même montant —
+    parenthèse d'API, note de contrat, CHANGELOG et correction de l'entrée de la 29-3 le disent ; motif
+    `seul l'ordre` ajouté au grep ;
+  - **R6** : motifs `date ASC, id ASC` et `plus récentes` ajoutés au grep (doc-comment du point 3,
+    `repositories/reconciliation.rs:210-212`) ; le texte « plus récentes » que R attribuait à un test de la 29-2 est
+    **déjà au sol**, dans le test existant de la 28-7 (`tests/reconciliation_repository.rs:304-305`, `:378`) ;
+  - **R7** : l'angle mort C-29-2-11 est fermé **à score égal** seulement ; la candidature sans limite de temps reste
+    (§ *La règle retenue*, tri du grep) ;
+  - **R8** : parenthèse d'API sans `dueDate` (absent de la réponse ; la candidate porte `invoiceDate`,
+    `routes/reconciliation.rs:140`) ;
+  - **R9 / F8** (commentaire public de #668) : rectifié par l'orchestrateur ; rien dans la fiche.
+
+  Après remédiation : 9 AC, 7 tâches (T0-T6), **15 mutations (M1-M15)**, 6 lignes d'exemple, 9 cas à l'AC5 (8 neufs,
+  le 9ᵉ les existants), 3 tests neufs dans `reconciliation_repository.rs`, 4 modules, choix C-29-5-1 à 12 (6, 8, 9 et
+  11 amendés). Recompté depuis la fiche (`grep -cE '^\| M[0-9]+ \|'` → 15). Symptômes grepés sur la fiche, le
+  registre, l'epic et `sprint-status.yaml` (`passe (en revanche )?devant`, `devant toute autre`, `deux premiers
+  arguments`, `à côté de payment_date`, `dueDate`, `seul l'ordre`, `première sous M9`, `M1-M13`). Suite : **passe
+  ciblée P3** (Haiku, une lentille sur le diff de cette remédiation, `29-5-validate-prompt-p3-ciblee.md`).

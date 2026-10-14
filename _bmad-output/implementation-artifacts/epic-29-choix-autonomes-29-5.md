@@ -67,10 +67,17 @@ Fiche : `29-5-departage-exigibilite.md`.*
 
 - **Contexte** : une désignation par le débiteur (référence, art. 86) prime l'imputation légale ; elle passe par le
   score de référence.
-- **Retenu** : le score n'est pas touché ; l'ordre d'imputation ne départage que des scores égaux. Une facture au
+- **Retenu** : le score n'est pas touché ; l'ordre d'imputation ne départage que des scores égaux. Une facture **du même client** au
   montant exact non échue passe devant une échue à quelques centimes près (score) — **même désignée par le numéro**
   (le montant pèse 0,50, la référence 0,40, `matching.rs:80` ; validation P1, R2 : la désignation ne prime qu'à
   montant égal, ce que le manuel dit). Testé (AC5 cas 8, M7).
+  *Amendé à la validation P2 (R1, F1, R3 ; 2026-10-14)* : la phrase précédente, écrite sans condition de client,
+  est bornée au **même client** ; une facture d'un **autre** client au montant exact **peut** passer devant une facture désignée à quelques
+  centimes près, non toujours — 0,40 + 0,10 (désignée, contact au nom du client) contre 0,50 (montant seul) sont
+  égaux, et l'ordre d'imputation tranche alors. Et la désignation au montant exact ne passe devant que les factures
+  que la référence ne désigne pas **aussi** (`reference_score` est un contenant bidirectionnel). Manuel, § *Ce que la
+  règle ne fait pas* et doc-comment écrits sur ce modèle (« peut passer devant », « toujours si elle est du même
+  client »).
 - **Écartée** : exigibilité avant score — ferait passer une facture échue devant la facture que le paiement nomme.
 - **Réversible** : oui.
 
@@ -91,6 +98,8 @@ Fiche : `29-5-departage-exigibilite.md`.*
 - **Retenu** : `invoice_exigibility_date`, `imputation_order` et `INVOICE_EXIGIBILITY_DATE_SQL` dans
   `kesh-db/src/repositories/reconciliation.rs` ; `kesh-reconciliation` les appelle (il dépend déjà de `kesh-db`) ;
   test de parité SQL ↔ Rust avec valeurs attendues écrites en dur.
+  *Précisé à la validation P2 (R4, F2 ; 2026-10-14)* : les fonctions à côté de `payment_date` ; la macro
+  `invoice_exigibility_date_sql!` définie **avant** la macro d'ancre de la 29-2 (portée textuelle des `macro_rules!`).
 - **Écartées** : (a) méthode sur l'entité `Invoice` — éloigne la fonction de l'expression SQL qu'elle double ;
   (b) rendre `X` dans la requête et l'ajouter au triplet candidat — change la signature de `propose_matches` et ses
   deux appelants.
@@ -98,8 +107,11 @@ Fiche : `29-5-departage-exigibilite.md`.*
 
 ### C-29-5-9 — L'ancre de la 29-2 est récrite en composant l'exigibilité
 
-- **Contexte** : la 29-2 écrit `GREATEST(i.date, COALESCE(i.due_date, i.date), …rappel…)` ; la 29-5 écrit
-  `GREATEST(i.date, COALESCE(i.due_date, i.date))`. Règle DRY du `CLAUDE.md`.
+- **Contexte** : la fiche de la 29-2 prévoyait `GREATEST(i.date, COALESCE(i.due_date, i.date), …rappel…)` ; la 29-5
+  écrit `GREATEST(i.date, COALESCE(i.due_date, i.date))`. Règle DRY du `CLAUDE.md`. *Rectifié à la validation P2
+  (R4)* : la forme **commitée** de la 29-2 (`8f483388`) est en deux termes, `CAST(GREATEST(GREATEST(i.date,
+  COALESCE(i.due_date, i.date)), COALESCE(DATE(rmd.last_sent_at), i.date)) AS DATE)`, le premier réservé à une
+  expression d'exigibilité commune (C-29-2-15).
 - **Retenu** : l'ancre compose l'expression d'exigibilité ; équivalente (`GREATEST` associatif), tests de la 29-2
   verts sans modification d'assertion.
   *Amendé à la validation P1 (F1, 2026-10-14)* : la composition passe par `concat!` — une macro d'exigibilité
@@ -125,8 +137,11 @@ Fiche : `29-5-departage-exigibilite.md`.*
   29-2 la consigne d'écrire l'ancre par `macro_rules!` (2026-10-14).
 - **Retenu** : `macro_rules! invoice_exigibility_date_sql` rendant le littéral
   `CAST(GREATEST(i.date, COALESCE(i.due_date, i.date)) AS DATE)`, plus `pub const INVOICE_EXIGIBILITY_DATE_SQL` qui en
-  dérive pour `format!` ; la macro d'ancre de la 29-2 l'insère par `concat!` à la place des deux premiers arguments
-  de son `GREATEST`. Tests de la 29-2 inchangés. Si la forme mergée diffère, relecture à T0, sans changer la nature
+  dérive pour `format!` ; la macro d'ancre de la 29-2 l'insère par `concat!` à la place du premier terme de son
+  `GREATEST` (C-29-2-15). Tests de la 29-2 inchangés.
+  *Amendé à la validation P2 (R4, F2 ; 2026-10-14)* : « à la place des deux premiers arguments » est devenu « à la
+  place du premier terme » — la forme commitée de la 29-2 (`8f483388`) a isolé ce terme (C-29-2-15) ; la macro d'exigibilité est définie **avant** la
+  macro d'ancre, faute de quoi celle-ci ne la trouverait pas à son développement. Si la forme mergée diffère, relecture à T0, sans changer la nature
   de l'ancre d'une façon qui toucherait ses tests.
 - **Écartées** : (a) ancre devenue `fn -> String` ou `LazyLock<String>` — change sa nature, coûte une allocation, et
   sort du patron du dépôt ; (b) ajouter `const_format` — une dépendance pour une concaténation ; (c) deux écritures
