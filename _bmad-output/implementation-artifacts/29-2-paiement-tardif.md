@@ -2,7 +2,11 @@
 
 ## Status
 
-**review** — revue de code P1 remédiée le 2026-10-14 (2 MEDIUM et 7 LOW distincts, aucun refus ; commits `729a1dc9`,
+**done** — revue close le 2026-10-14 : passe ciblée P2 (Haiku, 0/0/2/3) remédiée, la remédiation ne touchant aucune
+ligne exécutable de production ; gates finaux au Dev Agent Record (annotation « Gates finaux de la 29-2 »). Cf. Change
+Log.
+
+*Statut antérieur :* **review** — revue de code P1 remédiée le 2026-10-14 (2 MEDIUM et 7 LOW distincts, aucun refus ; commits `729a1dc9`,
 `e8b94efc`) : M14 tuée par un cas l neuf, dépendance de la v0.13.4 à la 29-6 et à la 29-8 écrite en contrôle de
 pré-release au fichier d'epic, C-29-2-17 ; gate backend 3611/3611, Vitest 1610 ; aucune ligne de production
 exécutable touchée. Passe ciblée P2 à lancer (`29-2-review-prompt-p2-ciblee.md`, Haiku). Cf. Change Log.
@@ -236,7 +240,8 @@ facture. La liste s'asserte comme un **`Vec` ordonné** — l'ordre de la requê
 comprises**, et non comme un ensemble : une table dérivée qui rendrait une ligne par rappel dédoublerait la facture f,
 et un ensemble (comme le `BTreeSet` de `proposed_couples_287`) avalerait le doublon (M15). Le scalaire est asserté pour
 **chaque** cas, candidat ou non : c'est la seule assertion qui voit l'ancre d'une facture refusée dans les deux formes
-(cas g, M14) :
+(cas g pour M14bis, cas l pour M14 — *annotation du 2026-10-14, revue P2 : la fiche disait « cas g, M14 » ; g ne tue
+pas M14, le repli `i.date` du terme du rappel gardant `F` dans le `GREATEST`, cf. Dev Agent Record*) :
 
 | cas | `F` | `E` | rappels | `A` attendu | candidate |
 |---|---|---|---|---|---|
@@ -403,7 +408,7 @@ Aucun texte de l'écran ne change : **ni clé i18n, ni capture** (C-29-2-6). Le 
 | M11 | scalaire : retirer `i.company_id = ? AND` (et son `.bind(company_id)`) d'`invoice_payment_anchor_date` | cas inter-sociétés (AC5) |
 | M12 | retirer `DATE()` autour de `rmd.last_sent_at` | **équivalente des deux côtés, déclarée** (C-29-2-10) : le `CAST(… AS DATE)` extérieur, présent dans la constante que lisent les deux lecteurs, tronque le maximum, et la troncature est monotone (la date du maximum est le maximum des dates) |
 | M13 | retirer le `CAST(… AS DATE)` | **équivalente si** MariaDB rend déjà un `DATE` (sinon tuée par l'assertion scalaire d'AC5, au décodage) : le Dev Agent Record dit laquelle des deux il a constatée. M12 et M13 appliquées **ensemble** : côté proposition, un `DATETIME` comparé à un `DATE` lié reste du bon côté de la borne (jour `D − 30` à toute heure `≥`, jour `D − 31` `<`) ; côté scalaire, le décodage `NaiveDate` d'un `DATETIME` en décide |
-| M14 | retirer `i.date` du `GREATEST` (garder l'échéance et le rappel) | AC5 g, assertion **scalaire** d'`invoice_payment_anchor_date` (`D − 50` au lieu de `D − 45`) — g est refusé dans les deux formes, ni la liste ni la parité HTTP ne la voient |
+| M14 | retirer `i.date` du `GREATEST` (garder l'échéance et le rappel) | AC5 **l** (échéance `D − 50` antérieure à la date `D − 25`, rappel non annulé `D − 60`), assertion **scalaire** d'`invoice_payment_anchor_date` (`D − 50` au lieu de `D − 25`) — *annotation du 2026-10-14, revue P2 : la fiche écrivait « AC5 g » ; g (sans rappel) ne tue pas M14, le repli `i.date` gardant `F`. M14bis, qui retire aussi ce repli, est tuée par g* |
 | M15 | table dérivée sans agrégation par facture : `GROUP BY invoice_id` → `GROUP BY id` (une ligne par rappel) | AC5 f, liste assertée comme `Vec` ordonné avec ses répétitions (f y paraît deux fois) — un ensemble avalerait le doublon, et le scalaire (`fetch_optional`, première ligne d'un ordre non fixé) ne la tue pas de façon sûre |
 
 Restauration de chaque mutation : `git checkout -- <fichier> && touch <fichier>` (`docs/agents-orchestration.md`
@@ -675,6 +680,13 @@ Rejouée à `d45279f7` et à `729a1dc9`, la même commande rend `reconciliation_
 venant du doc-comment ajouté par `d45279f7`, qui cite `the_anchor_is_the_latest_of_date_due_date_and_last_reminder` ;
 les neuf autres lignes sont identiques. Le relevé n'est pas réécrit.)*
 
+*(Annotation du 2026-10-14, revue P2 ciblée, P2-3 (LOW) : la ligne T4 ci-dessus est restée à `due_date=7`, et
+l'annotation précédente n'a pas dit la valeur courante. Recomptée avec la même commande à `16fce86b` (`crates`
+inchangé depuis `e8b94efc`) : `reconciliation_repository.rs: proposals=15 accept=0 due_date=8 reminders=2` ;
+`reconciliation_e2e.rs` 13/49/9/1, `reconciliation_rules_e2e.rs` 8/5/0/0, `bank_accounts_closed_e2e.rs` 1/3/1/0,
+`invoice_settlement.rs` 0/1/1/0, `invoice_write_off.rs` 2/0/1/0 et les quatre autres fichiers inchangés. La valeur
+à retenir pour `reconciliation_repository.rs` est **8**. Le relevé n'est pas réécrit.)*
+
 **Documentation (T5).** Manuel FR : `:1305`, `:2029`, `:2031` (deux phrases et la course, C-29-2-14), `:2902` ; un
 `\label{sec:algorithme-matching}` neuf (**C-29-2-16**) porte les renvois. PDF régénéré (`make fr`, sous verrou, 3
 passes stables) ; `admin-manual.pdf` et `marketing-brochure.pdf`, régénérés sans changement de source, ont été remis
@@ -744,6 +756,14 @@ n'était pas dans ce filtre. L'assertion
 scalaire rougit la première ; la liste la verrait aussi (ancre mutée hors fenêtre), ce qui n'a pas été rejoué.
 Bilan des mutations après la revue : 21 jouées, **18 tuées, 2 équivalentes** (M12, M13). La campagne d'origine
 n'est pas réécrite.)*
+
+*(Annotation du 2026-10-14, revue P2 ciblée, P2-2 (MEDIUM) : « 21 jouées, 18 tuées, 2 équivalentes » ne faisait pas
+la somme. Recompté depuis `292-mutations-campagne1.log`, `292-mutations-M14bis.log` et
+`292-mutations-M14-revue-p1.log` et depuis le tableau de la campagne : **20 mutations distinctes** (M1 à M8 = 8 ;
+M9a, M9b, M10a, M10b, M10b-appel, M11 = 6 ; M12, M13, M12 + M13, M14, M14bis, M15 = 6), dont, après la revue,
+**18 tuées et 2 équivalentes** (M12, M13) : 18 + 2 = 20. Le « 21 » comptait les **jeux** : M14 a été jouée deux fois,
+équivalente en campagne puis tuée par le cas l. Total correct : 20 mutations, 21 jeux. Même correction au commentaire
+de `sprint-status.yaml`. L'annotation ci-dessus n'est pas réécrite.)*
 
 *(Annotation du 2026-10-14, revue de code P1, A4 (LOW) : chaque cas de l'AC5 a un montant propre, si bien que la
 liste assertée vaut `vec![id]` ou `vec![]` ; l'**ordre** `(date, id)` n'y est pas exercé — il l'est par
@@ -925,3 +945,24 @@ recréée, migrée et seedée juste avant :
   de production exécutable, ni spec E2E, ni frontend ne changent depuis l'E2E complet de `d45279f7` ; seuls des
   commentaires, un test `kesh-db` et le manuel. Mutations après la revue : 21 jouées, 18 tuées, 2 équivalentes.
   Choix : 17 (C-29-2-1 à 17). Prochaine étape : passe ciblée P2, Haiku (`29-2-review-prompt-p2-ciblee.md`).
+- 2026-10-14 — **Revue P2 (passe ciblée)** (Haiku, une lentille — « régressions de la remédiation P1 » —, sur
+  `git diff e5d76144 e8b94efc` ; rapport `kesh-gate-logs/29-2-review-p2-ciblee.md`, axes exercés et non exercés
+  déclarés). Trend : **P1 B 0/0/1/3, E 0/0/2/4, A 0/0/1/3 → P2 ciblée 0/0/2/3** (CRITICAL/HIGH/MEDIUM/LOW). Remédiation
+  (Opus 5.5), aucun finding refusé :
+  - **P2-1 (MEDIUM)** — le corps de la fiche disait encore M14 « tuée par le cas g » (introduction d'AC5 et tableau
+    des mutations) : c'est le **cas l** ; g tue M14bis. Les deux sites corrigés par annotation datée ; grep de `M14`
+    sur la fiche, le registre et le code : les autres occurrences sont déjà exactes ou sont des relevés datés.
+  - **P2-2 (MEDIUM)** — bilan des mutations recompté depuis les journaux (`292-mutations-campagne1.log`,
+    `-M14bis.log`, `-M14-revue-p1.log`) et le tableau : **20 mutations distinctes, 18 tuées + 2 équivalentes (M12, M13)
+    = 20** ; le « 21 » de la passe P1 comptait les **jeux** (M14 jouée deux fois). Annotation datée au Dev Agent
+    Record ; l'entrée de la passe P1 ci-dessus n'est pas réécrite ; commentaire de `sprint-status.yaml` corrigé.
+  - **P2-3 (LOW)** — inventaire (c) recompté à `16fce86b` : `reconciliation_repository.rs … due_date=8` ; annotation
+    datée (périmètre déclaré), relevé T4 non réécrit.
+  - **P2-4 (LOW)** — contrôle de pré-release du fichier d'epic élargi (`rejet(ez|ant|er)[^.]{0,30}(transaction|-la)`,
+    `.tex` et PDF lus aplatis, CHANGELOG limité à la section 0.13.4) ; éprouvé : mêmes sites qu'avant (`.tex` 2,
+    CHANGELOG 1, PDF 2), sans le bruit de `docs/api-external.md` qu'un motif plus large aurait ramené.
+  - **P2-5 (LOW)** — doc-comment de `find_unpaid_invoices_filters_by_30_day_window` reformulé (`D − 31` désigne la
+    date de la facture, non un paiement).
+  **Revue close : la remédiation de la passe ciblée ne touche aucune ligne exécutable de production** — elle change un
+  doc-comment d'un fichier de tests, la fiche, le fichier d'epic et `sprint-status.yaml`. Gates finaux : voir
+  l'annotation datée du Dev Agent Record (« Gates finaux de la 29-2 »).

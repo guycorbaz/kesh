@@ -126,11 +126,16 @@ Docker Hub (`/health`). Autorisé d'office pour cet epic.
   tag :
   ```sh
   grep -nF 'rejetez la transaction' docs/manual/fr/user-manual.tex
-  grep -nE 'rejet[a-z]* (ensuite )?la transaction' docs/manual/fr/user-manual.tex CHANGELOG.md
+  P='rejet(ez|ant|er)[^.]{0,30}(transaction|-la)'
+  tr '\n' ' ' < docs/manual/fr/user-manual.tex | tr -s ' ' | grep -oE "$P"
+  sed -n '/^## \[0.13.4\]/,/^## \[0.13.3\]/p' CHANGELOG.md | grep -oE "$P"
+  pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oE "$P"
   ```
-  ne doivent plus rendre le conseil de rejet **sans** le rattachement — la seconde commande attrape aussi la
-  variante « en rejetant ensuite la transaction » (`sec:facture-posterieure`) et la phrase du CHANGELOG ; contrôler
-  aussi le PDF aplati (`pdftotext … | tr '\n' ' ' | tr -s ' '`). Faute de quoi, pas de tag. *(Ajouté le 2026-10-14, revue
+  ne doivent plus rendre le conseil de rejet **sans** le rattachement — le motif attrape « rejetez la transaction »
+  (`:2029`, CHANGELOG), la variante « en rejetant ensuite la transaction » (`sec:facture-posterieure`) et les
+  formes voisines (« rejetez-la », « rejeter cette transaction »), le `.tex` étant lu aplati pour qu'un retour à la
+  ligne ne coupe pas la phrase ; le PDF aplati est contrôlé par la même commande. Éprouvé sur l'arbre : le `.tex` rend
+  les deux sites, la section 0.13.4 du CHANGELOG un, le PDF les deux. Faute de quoi, pas de tag. *(Ajouté le 2026-10-14, revue
   de code P1 de la 29-2, findings B1 = E2 = A1 — décision de l'orchestrateur ; cf. C-29-2-8.)*
 - ⛔ **29-5 (#668) mergée** (départage à score égal, C-29-2-13 de la 29-2).
 

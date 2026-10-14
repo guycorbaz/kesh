@@ -254,9 +254,9 @@ const HASH_X: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123
 
 /// AC #38, réécrit par la Story 28-7 (#548) — la fenêtre de dates est celle
 /// de l'acceptation, [`InvoiceDateWindow`] : une facture datée de `D − 30`
-/// à `D + 1` est candidate, `D` étant la date de paiement ; `D − 31` (paiement
-/// plus de 30 jours après la facture — ici sa date d'ancrage, cf. ci-dessous)
-/// et `D + 2` (paiement plus d'un jour
+/// à `D + 1` est candidate, `D` étant la date de paiement ; une facture
+/// datée de `D − 31` (paiement plus de 30 jours après sa date d'ancrage,
+/// cf. ci-dessous) et une facture datée de `D + 2` (paiement plus d'un jour
 /// avant la facture) ne le sont pas. Les deux bornes, de part et d'autre.
 /// Les factures n'ont ni échéance ni rappel : leur date d'ancrage est leur
 /// date (Story 29-2 ; l'ancre est éprouvée par
