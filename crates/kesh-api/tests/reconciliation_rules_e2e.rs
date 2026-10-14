@@ -954,55 +954,7 @@ async fn get_proposals_applies_rule_when_no_invoice_candidate(pool: MySqlPool) {
     assert!(candidates.iter().any(|c| c["candidateType"] == "rule"));
 }
 
-// ============================================================
-// Test 15 — AC #114 : strong invoice score override rule
-// ============================================================
-
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn get_proposals_invoice_candidate_overrides_rule(pool: MySqlPool) {
-    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
-    let app = spawn_app(pool.clone()).await;
-    create_rule_ok(
-        &app,
-        &ctx.jwt,
-        json!({
-            "label": "Swisscom",
-            "matchType": "counterparty_contains",
-            "matchValue": "Swisscom",
-            "counterpartyAccountId": ctx.counterparty_account_id,
-        }),
-    )
-    .await;
-    // tx avec montant positif = crédit → propose_matches cherchera invoice.
-    create_pending_bank_tx(
-        &pool,
-        ctx.company_id,
-        ctx.user_id,
-        ctx.bank_account_id,
-        dec!(150.00),
-        "Swisscom Schweiz AG",
-        None,
-        None,
-        "CHF",
-        Some(NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()),
-    )
-    .await;
-    // Pas d'invoice créée — pas d'override possible. Vu que score < 0.5
-    // (aucun candidate invoice), la rule s'applique tout de même.
-    let resp = app
-        .client
-        .get(app.url(&format!(
-            "/api/v1/reconciliation/proposals?bankAccountId={}",
-            ctx.bank_account_id
-        )))
-        .bearer_auth(&ctx.jwt)
-        .send()
-        .await
-        .unwrap();
-    let body: Value = resp.json().await.unwrap();
-    let candidates = body["proposals"][0]["candidates"].as_array().unwrap();
-    assert!(candidates.iter().any(|c| c["candidateType"] == "rule"));
-}
+// Test 15 (AC #114, facture à 0,5 qui écarte la règle) : déplacé et réécrit dans `reconciliation_e2e.rs` (Story 29-3).
 
 // ============================================================
 // Test 16 — AC #115 : highest priority rule wins

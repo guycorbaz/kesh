@@ -11,11 +11,13 @@
  * ⚠️ **Des montants UNIQUES à chaque exécution** : la base est partagée entre
  * specs. Le règlement partiel varie, donc le reste aussi ; le relevé est
  * réécrit (références, montant) comme dans `reconciliation-cancel.spec.ts`.
- * La contrepartie du relevé porte en outre le nom du contact de la facture :
- * si une autre facture de la base partagée tombait sur le même reste, le score
- * de contact départagerait — c'est la NÔTRE qui serait la candidate affichée.
- * (Que le score de montant suffise seul est l'objet des e2e API,
- * `reconciliation_e2e.rs`.)
+ * La contrepartie du relevé reprend le nom SAISI du contact (`Solde <unique>`),
+ * non son nom enregistré (une `Personne` le compose : « Pia Solde <unique> ») :
+ * ce spec ne relit pas ce nom et NE PROUVE PAS que le score de contact
+ * départage une autre facture de même reste. Ce qu'il prouve, c'est que la
+ * facture est candidate sur le reste dû ; l'unicité du reste (montants uniques
+ * à chaque exécution) est ce qui la tient seule. (Que le score de montant
+ * suffise seul est l'objet des e2e API, `reconciliation_e2e.rs`.)
  *
  * Pré-requis : MariaDB up + KESH_TEST_MODE=true (cf. docs/testing.md).
  */

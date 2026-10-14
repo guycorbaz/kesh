@@ -707,3 +707,147 @@ describe('ReconciliationProposals — indication des transactions rejetées (Sto
 		);
 	});
 });
+
+// Story 29-3 (#527) — l'écran obéit à l'ordre reçu (`candidates[0]`), sans le refaire : c'est le
+// serveur qui l'écrit (`order_candidates`). Aucun test ne construisait jusqu'ici une candidate
+// RÈGLE : la branche règle d'`onAccept` et le badge n'étaient éprouvés nulle part (AC4).
+type Candidate = GetProposalsResponse['proposals'][number]['candidates'][number];
+
+function invoiceCandidate(invoiceId: number): Candidate {
+	return makeProposalWithCandidate(0, invoiceId, 0.1).candidates[0];
+}
+
+function ruleCandidate(ruleId: number, counterpartyAccountId: number): Candidate {
+	return {
+		candidateType: 'rule' as const,
+		invoiceId: null,
+		invoiceNumber: null,
+		invoiceAmount: null,
+		invoiceTotalTtc: null,
+		invoiceDate: null,
+		ruleId,
+		ruleLabel: 'Dubois',
+		ruleMatchType: 'counterparty_contains',
+		counterpartyAccountId,
+		counterpartyAccountName: '3000 Ventes',
+		score: { total: 1.0, amountScore: 0.0, referenceScore: 0.0, contactScore: 0.0 },
+	};
+}
+
+function makeProposalWithCandidates(
+	bankTransactionId: number,
+	candidates: Candidate[],
+): GetProposalsResponse['proposals'][number] {
+	return { ...makeProposalWithCandidate(bankTransactionId, 0, 0.1), candidates };
+}
+
+describe('ReconciliationProposals — la candidate affichée et acceptée est candidates[0] (Story 29-3)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockApi.acceptProposals.mockResolvedValue({ accepted: [], failed: [] } satisfies AcceptResponse);
+	});
+
+	async function acceptTheOnlyRow(candidates: Candidate[]) {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithCandidates(42, candidates)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const view = render(ReconciliationProposals, { bankAccountId: 17 });
+		await fireEvent.click(await view.findByTestId('tx-checkbox'));
+		const badge = view.queryByTestId('candidate-rule-badge');
+		await fireEvent.click(view.getByTestId('reconciliation-accept-btn'));
+		expect(mockApi.acceptProposals).toHaveBeenCalledTimes(1);
+		return { badge, items: mockApi.acceptProposals.mock.calls[0][1] };
+	}
+
+	it('[règle, facture] ⇒ badge Règle, et « Accepter » envoie la règle, jamais la facture', async () => {
+		const { badge, items } = await acceptTheOnlyRow([ruleCandidate(9, 3000), invoiceCandidate(101)]);
+		expect(badge).not.toBeNull();
+		expect(items).toEqual([
+			{ type: 'rule', bankTransactionId: 42, ruleId: 9, counterpartyAccountId: 3000 },
+		]);
+	});
+
+	it('[facture, règle] ⇒ pas de badge Règle, et « Accepter » envoie la facture', async () => {
+		const { badge, items } = await acceptTheOnlyRow([invoiceCandidate(101), ruleCandidate(9, 3000)]);
+		expect(badge).toBeNull();
+		expect(items).toEqual([{ type: 'invoice', bankTransactionId: 42, invoiceId: 101 }]);
+	});
+});
+
+// Story 29-3 (#527, AC5) — la page dit, au-dessus de la liste, quelle proposition elle affiche ;
+// seulement si une ligne au moins a une candidate (C-29-3-14).
+describe('ReconciliationProposals — la phrase de priorité (Story 29-3)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	const PRIORITY = 'Une facture proposée passe toujours devant une règle.';
+
+	it('une ligne a une candidate ⇒ la phrase est rendue, avant la table, et son repli égale le catalogue fr-CH', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithoutCandidate(2), makeProposalWithCandidate(1, 101, 0.1)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const { findAllByTestId, getByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await findAllByTestId('reconciliation-row');
+		const hint = getByTestId('reconciliation-priority-hint');
+		const texte = (hint.textContent ?? '').trim();
+		expect(texte).toContain(PRIORITY);
+		expect(
+			hint.compareDocumentPosition(getByTestId('reconciliation-table')) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+		const prefixe = 'reconciliation-labels-priority-hint = ';
+		const attendu = readFileSync(join('../crates/kesh-i18n/locales', 'fr-CH', 'messages.ftl'), 'utf-8')
+			.split('\n')
+			.find((l) => l.startsWith(prefixe))
+			?.slice(prefixe.length);
+		expect(attendu).toBeDefined();
+		expect(texte).toBe(attendu);
+	});
+
+	it('liste vide ⇒ pas de phrase (mutation M9)', async () => {
+		mockApi.getProposals.mockResolvedValue({ proposals: [], hasMore: false } satisfies GetProposalsResponse);
+		const { findByTestId, queryByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await findByTestId('reconciliation-empty');
+		expect(queryByTestId('reconciliation-priority-hint')).toBeNull();
+	});
+
+	it('liste en erreur ⇒ pas de phrase', async () => {
+		mockApi.getProposals.mockRejectedValue({ code: 'INTERNAL_ERROR', message: 'Panne.', status: 500 });
+		const { findByTestId, queryByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await findByTestId('reconciliation-error');
+		expect(queryByTestId('reconciliation-priority-hint')).toBeNull();
+	});
+
+	it('rechargement en erreur après une liste à candidates ⇒ pas de phrase (mutation M9b : phrase hors de la branche)', async () => {
+		// Le rechargement qui suit « Accepter » échoue : `proposals` garde les lignes du premier
+		// chargement, et seule la branche « liste non vide » retient la phrase.
+		mockApi.getProposals
+			.mockResolvedValueOnce({
+				proposals: [makeProposalWithCandidate(1, 101, 0.1)],
+				hasMore: false,
+			} satisfies GetProposalsResponse)
+			.mockRejectedValueOnce({ code: 'INTERNAL_ERROR', message: 'Panne.', status: 500 });
+		mockApi.acceptProposals.mockResolvedValue({ accepted: [], failed: [] } satisfies AcceptResponse);
+		const { findByTestId, getByTestId, queryByTestId } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+		await fireEvent.click(await findByTestId('tx-checkbox'));
+		expect(getByTestId('reconciliation-priority-hint')).not.toBeNull();
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+		await findByTestId('reconciliation-error');
+		expect(queryByTestId('reconciliation-priority-hint')).toBeNull();
+	});
+
+	it('aucune ligne n’a de candidate ⇒ pas de phrase (mutation M9)', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithoutCandidate(1), makeProposalWithoutCandidate(2)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const { findAllByTestId, queryByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		expect(await findAllByTestId('reconciliation-row')).toHaveLength(2);
+		expect(queryByTestId('reconciliation-priority-hint')).toBeNull();
+	});
+});

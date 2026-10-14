@@ -5,7 +5,10 @@
 
   Liste de propositions de réconciliation avec sélection par tx
   (checkbox) + actions batch Accept/Reject. Pour chaque transaction
-  pending, on affiche la candidate top-1 (la mieux scorée) et un
+  pending, on affiche `candidates[0]` — la première dans l'ordre que le
+  serveur a fixé (`order_candidates`, `routes/reconciliation.rs`, Story
+  29-3 : une facture qui porte un signal d'identité passe devant la règle
+  d'affectation ; l'écran ne refait pas cet ordre) — et un
   checkbox au niveau tx. Si la transaction n'a aucune candidate,
   on affiche « Aucune correspondance » sans checkbox (tx
   non-sélectionnable). Erreurs partielles affichées en bas via
@@ -297,6 +300,18 @@
 				{i18nMsg('reconciliation-actions-reject', 'Rejeter')}
 			</button>
 		</div>
+
+		<!-- Story 29-3 (#527, AC5, C-29-3-14) — la priorité dite à l'écran, seulement si une
+		     ligne au moins a une candidate : sans quoi « une seule proposition est affichée »
+		     ne dirait rien de vrai. -->
+		{#if proposals.some((p) => p.candidates.length > 0)}
+			<p class="mb-2 text-sm text-text-muted" data-testid="reconciliation-priority-hint">
+				{i18nMsg(
+					'reconciliation-labels-priority-hint',
+					'Une seule proposition est affichée par transaction : la facture la mieux notée s’il y en a une, sinon la règle d’affectation qui correspond. Une facture proposée passe toujours devant une règle.',
+				)}
+			</p>
+		{/if}
 
 		<table class="w-full table-auto text-sm" data-testid="reconciliation-table">
 			<thead>

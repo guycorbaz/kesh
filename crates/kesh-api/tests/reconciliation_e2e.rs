@@ -9122,3 +9122,238 @@ async fn a_debit_reconciled_while_waiting_for_the_lock_is_refused_for_its_status
         "rien d'écrit : {body}"
     );
 }
+
+// ============================================================
+// Story 29-3 (#527) — la priorité écrite des candidates
+//
+// L'écran n'affiche et n'accepte que `candidates[0]` : l'ordre de la liste
+// est ce que l'utilisateur accepte d'un clic. `order_candidates`
+// (`routes/reconciliation.rs`) l'écrit — une facture qui porte un signal
+// d'identité passe devant la règle d'affectation. Sur les entrées que la
+// route produit, cet ordre est celui d'avant la story : ces tests sont verts
+// au sol et après, ils FIGENT l'ordre et tuent les mutations du critère de
+// rang (M4, M5, M7 de la fiche).
+// ============================================================
+
+/// Crée une règle d'affectation par l'API (`201` attendu). Patron de
+/// `reconciliation_rules_e2e.rs`, dont les aides sont privées au fichier.
+async fn create_rule_ok(app: &TestApp, jwt: &str, body: Value) -> Value {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/rules"))
+        .bearer_auth(jwt)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "création de la règle : 201 attendu");
+    resp.json().await.unwrap()
+}
+
+/// Les candidates de l'unique proposition du compte bancaire de `ctx`.
+async fn single_proposal_candidates_293(app: &TestApp, ctx: &CompanyCtx) -> Vec<Value> {
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={}",
+            ctx.bank_account_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let proposals = body["proposals"].as_array().expect("proposals array");
+    assert_eq!(
+        proposals.len(),
+        1,
+        "une seule transaction en attente : {body}"
+    );
+    proposals[0]["candidates"]
+        .as_array()
+        .expect("candidates array")
+        .clone()
+}
+
+/// Facture de 100.— et transaction créditrice du même jour, en plein exercice
+/// 2026 (C-29-3-10). Rend `(invoice_id, tx_id)`.
+async fn seed_invoice_and_tx_293(
+    pool: &MySqlPool,
+    ctx: &CompanyCtx,
+    invoice_number: &str,
+    tx_amount: Decimal,
+    reference: &str,
+    counterparty: &str,
+) -> (i64, i64) {
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let (inv_id, _) = seed_validated_invoice(
+        pool,
+        ctx.company_id,
+        ctx.contact_id,
+        invoice_number,
+        day,
+        dec!(100.00),
+    )
+    .await;
+    let tx_ids = seed_bank_transactions(
+        pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash(invoice_number),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            tx_amount,
+            "CHF",
+            reference,
+            Some(counterparty),
+        )],
+    )
+    .await;
+    (inv_id, tx_ids[0])
+}
+
+/// ⛔ **Une facture reconnue par le seul nom du client passe devant la règle**,
+/// et « Accepter » la candidate affichée règle la facture (#527).
+///
+/// Montant à un centime du reste dû (score de montant 0), pas de référence,
+/// contrepartie = nom du client (score de contact 1) : total 0,1, sous le
+/// seuil de 0,5 — la règle est donc calculée, et doit venir APRÈS. Accepter
+/// une règle porterait ce paiement en produit : produit compté deux fois,
+/// facture restée due.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn proposals_put_an_invoice_named_by_the_counterparty_before_the_rule(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Dubois", "CH4431999123000889012", Role::Comptable).await;
+    let (_, revenue_id) = account_ids(&pool, ctx.company_id).await;
+    let (inv_id, tx_id) =
+        seed_invoice_and_tx_293(&pool, &ctx, "F-2026-0291", dec!(99.99), "", "Dubois Client").await;
+    let app = spawn_app(pool.clone()).await;
+    create_rule_ok(
+        &app,
+        &ctx.jwt,
+        serde_json::json!({
+            "label": "Dubois",
+            "matchType": "counterparty_contains",
+            "matchValue": "Dubois",
+            "counterpartyAccountId": revenue_id,
+        }),
+    )
+    .await;
+
+    let candidates = single_proposal_candidates_293(&app, &ctx).await;
+    assert_eq!(candidates.len(), 2, "facture et règle : {candidates:?}");
+    assert_eq!(candidates[0]["candidateType"], "invoice", "{candidates:?}");
+    assert_eq!(candidates[0]["invoiceId"], inv_id);
+    assert_eq!(candidates[0]["score"]["total"], 0.1);
+    assert_eq!(candidates[0]["score"]["amountScore"], 0.0);
+    assert_eq!(candidates[0]["score"]["referenceScore"], 0.0);
+    assert_eq!(candidates[0]["score"]["contactScore"], 1.0);
+    assert_eq!(candidates[1]["candidateType"], "rule", "{candidates:?}");
+
+    // L'écran accepte `candidates[0]` : la facture est réglée de 99.99.
+    let body = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+    assert_eq!(
+        body["accepted"].as_array().unwrap().len(),
+        1,
+        "failed = {:?}",
+        body["failed"]
+    );
+    assert_eq!(
+        receivable_balance(&pool, ctx.receivable_account_id).await,
+        dec!(0.01),
+        "règlement partiel : reste dû de 0.01"
+    );
+}
+
+/// ⛔ **Une facture reconnue par sa référence passe devant la règle**, même
+/// quand la contrepartie n'a rien du client (#527).
+///
+/// Référence = numéro (score 1), contrepartie « Garage Bel-Air » contre le
+/// client « Martin Client » (score 0 — ⚠️ un score de contact de 1 porterait le
+/// total à 0,5 exactement, et la règle ne serait plus calculée), montant à un
+/// centime : total 0,4.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn proposals_keep_a_referenced_invoice_before_the_rule(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Martin", "CH4431999123000889012", Role::Comptable).await;
+    let (_, revenue_id) = account_ids(&pool, ctx.company_id).await;
+    let (inv_id, _) = seed_invoice_and_tx_293(
+        &pool,
+        &ctx,
+        "F-2026-0292",
+        dec!(99.99),
+        "F-2026-0292",
+        "Garage Bel-Air",
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+    create_rule_ok(
+        &app,
+        &ctx.jwt,
+        serde_json::json!({
+            "label": "Garage",
+            "matchType": "counterparty_contains",
+            "matchValue": "Garage",
+            "counterpartyAccountId": revenue_id,
+        }),
+    )
+    .await;
+
+    let candidates = single_proposal_candidates_293(&app, &ctx).await;
+    assert_eq!(candidates.len(), 2, "facture et règle : {candidates:?}");
+    assert_eq!(candidates[0]["candidateType"], "invoice", "{candidates:?}");
+    assert_eq!(candidates[0]["invoiceId"], inv_id);
+    assert_eq!(candidates[0]["score"]["referenceScore"], 1.0);
+    assert_eq!(candidates[0]["score"]["contactScore"], 0.0);
+    assert_eq!(candidates[1]["candidateType"], "rule", "{candidates:?}");
+}
+
+/// AC #114 (Story 8-5b) — **une facture qui atteint le seuil de 0,5 écarte la
+/// règle** : elle n'est pas même calculée.
+///
+/// Déplacé de `reconciliation_rules_e2e.rs` (Story 29-3, C-29-3-13) : sous ce
+/// nom, ce test n'y créait **aucune facture** et assertait la présence de la
+/// règle — il n'éprouvait pas ce que son nom annonce (C-29-3-6). Montant égal
+/// au reste dû (score de montant 1, total 0,5), contrepartie visée par la
+/// règle mais étrangère au client.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn get_proposals_invoice_candidate_overrides_rule(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let (_, revenue_id) = account_ids(&pool, ctx.company_id).await;
+    let (inv_id, _) = seed_invoice_and_tx_293(
+        &pool,
+        &ctx,
+        "F-2026-0293",
+        dec!(100.00),
+        "",
+        "Swisscom Schweiz AG",
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+    create_rule_ok(
+        &app,
+        &ctx.jwt,
+        serde_json::json!({
+            "label": "Swisscom",
+            "matchType": "counterparty_contains",
+            "matchValue": "Swisscom",
+            "counterpartyAccountId": revenue_id,
+        }),
+    )
+    .await;
+
+    let candidates = single_proposal_candidates_293(&app, &ctx).await;
+    assert!(
+        candidates.iter().all(|c| c["candidateType"] != "rule"),
+        "une facture à 0,5 écarte la règle : {candidates:?}"
+    );
+    assert_eq!(candidates.len(), 1, "{candidates:?}");
+    assert_eq!(candidates[0]["candidateType"], "invoice");
+    assert_eq!(candidates[0]["invoiceId"], inv_id);
+    assert_eq!(candidates[0]["score"]["total"], 0.5);
+}
