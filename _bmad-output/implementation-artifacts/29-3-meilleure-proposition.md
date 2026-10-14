@@ -5,8 +5,8 @@
 **ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `16eeed21`
 (kickoff de l'Epic 29), branche `story/29-3`, worktree `/home/gcorbaz/devel/kesh-29-3`. **Validation P1 remédiée**
 le 2026-10-14 (rapports R 0/1/5/7, F 0/0/5/7 ; règle des rangs refondue par décision de l'orchestrateur,
-C-29-3-11) ; **validation P2 remédiée** le 2026-10-14 (Opus, R 0/0/3/6, F 0/0/1/8) ; passe ciblée P3 à lancer
-(`29-3-validate-prompt-p3-ciblee.md`, Haiku, une lentille). Choix consignés au
+C-29-3-11) ; **validation P2 remédiée** le 2026-10-14 (Opus, R 0/0/3/6, F 0/0/1/8) ; **passe ciblée P3 remédiée** le
+2026-10-14 (Haiku, une lentille : 0/0/3/6) — **validation close, dev à lancer**. Choix consignés au
 registre propre à la story, `epic-29-choix-autonomes-29-3.md`, **C-29-3-1 à C-29-3-18** (à verser par union au
 registre de l'epic). 9 AC. PR : **`closes #527`** — dans le titre ou le corps de la PR **seulement**, jamais dans un
 message de commit (B4 de la rétrospective 28).
@@ -144,8 +144,10 @@ constat et au renvoi (AC7, C-29-3-16). D'autres refus d'acceptation d'une factur
 documentés à `user-manual.tex:2056`), d'**état comptable** (exercice fermé ou invalide, période verrouillée —
 `FISCAL_YEAR_INVALID`, `PERIOD_LOCKED`), de **course** (facture réglée ou redatée, transaction rapprochée entre
 l'affichage et l'acceptation — `RECONCILIATION_INVOICE_NOT_ELIGIBLE`, `RECONCILIATION_ALREADY_RECONCILED`) ou
-d'**intégrité** (`INVOICE_SALE_ENTRY_MALFORMED`), énumérés à `:2060` :
-ni aggravés ni réparés *(rectifié en validation P2, F9/R9 : « tous de configuration » était trop fort)*.
+d'**intégrité** (`INVOICE_SALE_ENTRY_MALFORMED`) — **le manuel ne documente pas ces trois derniers** (seuls les refus
+de configuration le sont, `:2056`) : ni aggravés ni réparés *(rectifié en validation P2, F9/R9 : « tous de
+configuration » était trop fort ; en passe ciblée P3, P3-3 : le manuel n'énumère pas les refus d'état, de course et
+d'intégrité à `:2060`)*.
 
 ⚠️ **Angle mort écrit (C-29-3-12) — le départage à score égal.** À rang et score égaux, `propose_matches` place la
 facture de plus petit `invoice_id` en tête (`matching.rs:97-105`) — la plus ancienne, sans égard à l'exigibilité. La
@@ -153,8 +155,8 @@ facture de plus petit `invoice_id` en tête (`matching.rs:97-105`) — la plus a
 relancées, ou pas encore échues** — dont des factures anciennes à **échéance lointaine**, candidates sans limite de
 temps : une facture ancienne non échue passera devant une facture échue du même client et du même reste dû. Ce
 départage est porté par **[#668](https://github.com/guycorbaz/kesh/issues/668)** (P2), traité par la **Story 29-5**
-dans la même release v0.13.4 ; son attendu, rectifié au regard de l'art. 87 CO, est : à score égal, les factures
-**échues** d'abord, puis la plus ancienne. **La 29-3 ne le traite pas** : il touche `kesh-reconciliation` (ou la
+dans la même release v0.13.4 ; son attendu, tel que la fiche 29-5 le tranche (art. 87 CO), est : à score égal, la **date
+d'exigibilité** `max(date de facture, échéance)` croissante, puis la date de facture, puis l'identifiant. **La 29-3 ne le traite pas** : il touche `kesh-reconciliation` (ou la
 requête du dépôt), hors périmètre, et `order_candidates` ne réordonne pas à l'intérieur d'un rang (stabilité voulue)
 — elle **conserve** donc tel quel le départage que la 29-5 posera. La 29-3 ne touche pas non plus l'`ORDER BY i.date
 ASC, i.id ASC` ni le `LIMIT 50` de `find_unpaid_invoices_for_window` (`kesh-db` `reconciliation.rs:258-259`) : au-delà
@@ -171,8 +173,9 @@ Dans `crates/kesh-api/src/routes/reconciliation.rs`, à côté des types de rép
 
 - `fn candidate_rank(c: &ReconciliationCandidate) -> u8` — rend 0, 1 ou 2 selon le tableau ci-dessus. Un
   **`match` exhaustif** sur `c.candidate_type` (**aucun bras `_`**) : un variant ajouté plus tard (le choix manuel
-  de #666 pourrait en introduire un ; la 29-2 n'en ajoute pas) ne compile pas sans être classé — c'est aujourd'hui le
-  seul `match` sur `CandidateType` (`grep -rn CandidateType crates/` : définition, champ, deux constructions). Le rang 0 d'une facture se lit sur les **sous-scores**
+  de #666 pourrait en introduire un ; la 29-2 n'en ajoute pas) ne compile pas sans être classé — ce sera le
+  seul `match` sur `CandidateType` (`grep -rn CandidateType crates/` : définition, champ, deux constructions —
+  aucun `match` au sol). Le rang 0 d'une facture se lit sur les **sous-scores**
   `s.amount_score == 1.0 || s.reference_score > 0.0 || s.contact_score > 0.0` — valeurs littérales `1.0`, `0.5`,
   `0.0` posées par `matching.rs`, donc comparables exactement ; **jamais** sur un seuil de `score.total` (C-29-3-3).
 - `fn order_candidates(candidates: &mut [ReconciliationCandidate])` — `candidates.sort_by_key(candidate_rank)`,
@@ -357,7 +360,9 @@ donnerait un faux négatif) :
 puis `grep -c` d'une portion de **chacun des quatre ajouts** — un à `:2041` (score conventionnel), trois à `:2049`
 (la raison, le rappel à l'écran, l'angle mort #665) — → 1 chacun ; « même une facture de score faible passe devant
 elle » → toujours 1 ; et `grep -c "depuis la fiche de la facture (issue"` → 0 (aucun contournement prescrit pour
-#665, C-29-3-16). **Portions courtes**, de trois ou quatre mots : l'aplatissement garde les césures (« réinitia-
+#665, C-29-3-16) ; **contrôle positif en plus** *(passe ciblée P3, P3-7)* : `grep -c "refusée en trop-perçu"` → 1
+après régénération (au sol, avant T5 : 0), et `grep -o ".\{40\}665.\{40\}"` dont les occurrences se relisent une à
+une — le contrôle d'absence ne vise que la graphie exacte. **Portions courtes**, de trois ou quatre mots : l'aplatissement garde les césures (« réinitia-
 lisation », cinq au sol : `pdftotext … | grep -cE "[[:alpha:]]-$"`), si bien qu'une portion à cheval sur une césure
 rend 0 ; une portion qui rend 0 se cherche dans le PDF avant de conclure à son absence *(validation P2, F6)*. Manuels DE/IT/EN : vides (README seuls), rien à faire. Le manuel d'administration ne
 parle pas des candidates (`grep -c candidate docs/manual/fr/admin-manual.tex` → 0 au sol).
@@ -400,7 +405,7 @@ parle pas des candidates (`grep -c candidate docs/manual/fr/admin-manual.tex` �
 | M10 | facture du test muet réparé (AC3) retirée | ce test |
 | M11 | `candidate_rank` : facture sans signal → 0 (le `else 2` devient `else 0` : toute facture au rang 0) | AC2 cas 5, 6, 10, 11 — la mutation qui éprouve le rang 2, argument retenu pour garder la fonction (C-29-3-11) *(ajoutée en validation P2, F5)* |
 
-*(Recalculs : sous M7, le cas 2 reste `[R, f1]`, le cas 4 devient `[R, f1, f2]`, le cas 11 commence par `R` ; le
+*(Recalculs : sous M7, le cas 2 devient `[R, f1]` (attendu `[f1, R]` : rouge), le cas 4 devient `[R, f1, f2]`, le cas 11 commence par `R` ; le
 cas 5 reste vert (`[R, f1]` déjà attendu). Sous M11, le cas 5 sort `[f1, R]`, le cas 6 `[f3, f4, R]`, le cas 11 finit
 par `f50, R`. Sous M4, le cas 8 ne bouge pas — les deux factures passent ensemble au rang 2 — et n'est pas compté ;
 sous M5, le cas 4 rougit parce que `f2(0,0.5,0)` passe seul au rang 2, derrière `R`, `f1` restant au rang 0 par son
@@ -431,15 +436,20 @@ annonçait des zones — frontend, i18n, nouveau `CandidateType` — que la fich
 
 La 29-3 **ne change pas** la forme JSON de `GET /proposals`, ni l'ordre sur les entrées atteignables : une 29-2 qui en
 dépend n'a rien à adapter. ⚠️ **Ce que la fiche 29-2 attend encore de la 29-3, et que la 29-3 ne fait pas** : sa
-version lue le 2026-10-14 écrit, à ses § *Zones partagées* et § *Exclusions écrites*, que la 29-3 touchera
-« l'`ORDER BY` / `LIMIT 50` » et portera « l'ordre des candidates, `LIMIT 50`, départage » ; c'est la **29-5** (#668)
-qui porte le départage (C-29-3-12), et la remarque `LIMIT 50` lui est transmise (C-29-3-17). La fiche 29-2 se corrige
-de son côté pour citer #668 (consigne de l'orchestrateur) ; au rebase, relire ces deux § dans sa version mergée.
+version lue le 2026-10-14 écrit, à son § *Zones partagées*, que « la 29-3 ou la 29-5 toucheront probablement
+l'`ORDER BY` / `LIMIT 50` adjacents » (au conditionnel, à deux voix), et, à son § *Exclusions*, que l'ordre des
+candidates (règle contre facture) revient à la 29-3 (#527) tandis que le **départage à score égal et la troncature
+`LIMIT 50`** reviennent à la **29-5** (#668). La 29-3 ne touche ni l'`ORDER BY` ni le `LIMIT 50` (C-29-3-12,
+C-29-3-17) : la troncature et le départage sont à la 29-5, qui les a pris (son AC3). Au rebase, relire ces deux §
+de la 29-2 dans sa version mergée.
 
-**Zones avec la 29-5 (#668) et la 29-6 (#665)**, même release, fiches non lues (non écrites à la date de celle-ci) :
-la 29-5 touche le départage (`matching.rs:97-105` ou la requête du dépôt) — ce que disent l'angle mort C-29-3-12, le
-doc-comment de l'AC1, la phrase de `api-external.md` (AC8) et le cas 8 de l'AC2 ; la 29-6 touche le trop-perçu —
-ce que disent l'angle mort C-29-3-7 et l'ajout #665 du manuel (AC7). T0 les relit selon l'ordre de merge.
+**Zones avec la 29-5 (#668) et la 29-6 (#665)**, même release, fiches lues le 2026-10-14 (passe ciblée P3) :
+la 29-5 touche le départage (`matching.rs:97-105`) **et** l'`ORDER BY` / `LIMIT 50` de
+`find_unpaid_invoices_for_window` (`kesh-db`, son AC3) — la 29-3 ne touche pas `kesh-db`, l'affirmation tient ; ce que
+disent l'angle mort C-29-3-12, le doc-comment de l'AC1, la phrase de `api-external.md` (AC8, que la 29-5 cite dans sa
+rédaction d'avant la passe P2 de la 29-3 : « par score décroissant puis identifiant croissant ») et le cas 8 de l'AC2
+sont à relire à son merge. La 29-6 touche la même requête et le manuel `:2049` (trop-perçu de quelques centimes) — ce
+que disent l'angle mort C-29-3-7 et l'ajout #665 du manuel (AC7). T0 les relit selon l'ordre de merge.
 
 ## Tasks / Subtasks
 
@@ -612,3 +622,20 @@ tests unitaires de `kesh-api`), fmt et clippy workspace ; gate complet + E2E com
     l'AC3 ; 5 sites du manuel relus, 2 modifiés, 4 ajouts ; 18 choix.
   - Passe ciblée P3 à lancer : Haiku, une lentille, braquée sur le seul diff de cette remédiation
     (`29-3-validate-prompt-p3-ciblee.md`).
+
+- **2026-10-14 — Validation P3 (passe ciblée) remédiée** (Opus 5.5 ; une lentille, Haiku, braquée sur `b41e5b14` ;
+  rapport `kesh-gate-logs/29-3-validate-p3-ciblee.md` : CRITICAL 0, HIGH 0, MEDIUM 3, LOW 6).
+  - **Trend de la validation** : P1 R 0/1/5/7, F 0/0/5/7 → P2 R 0/0/3/6, F 0/0/1/8 → **P3 ciblée 0/0/3/6**.
+  - Tous les constats vérifiés au texte source (`grep -nF`) avant correction ; **aucun refusé**.
+  - **P3-1 MEDIUM** : l'attendu de #668 se cite d'après la fiche 29-5 (date d'exigibilité `max(date, échéance)`
+    croissante, puis date, puis identifiant — art. 87 CO), non d'après le premier commentaire de l'issue.
+  - **P3-2 MEDIUM** : le paragraphe sur la fiche 29-2 réécrit d'après sa version réelle (conditionnel « la 29-3 ou la
+    29-5 », § *Exclusions* : départage et `LIMIT 50` à la 29-5) ; deux citations inexistantes retirées.
+  - **P3-3 MEDIUM** : « énumérés à `:2060` » retiré ; le manuel ne documente pas les refus d'état, de course et
+    d'intégrité.
+  - LOW : **P3-4** (C-29-3-16, raison « caduc » fausse, annotée) ; **P3-5** (« ce sera le seul `match` », aucun au
+    sol) ; **P3-6** (titre de C-29-3-12) ; **P3-7** (contrôle positif du PDF ajouté à l'AC7) ; **P3-8** (note M7 :
+    le cas 2 « devient `[R, f1]`, rouge ») ; **P3-9** (zones 29-5/29-6 d'après leurs fiches).
+  - **Validation close : la remédiation de la passe ciblée ne touche aucune ligne de production** (fiche et registre
+    seulement ; `git diff --stat` sur `crates frontend docs` : vide).
+  - Décomptes inchangés : 9 AC ; T0-T7 ; M1-M11 ; 18 choix (annotés en plus : C-29-3-7, 12, 16).

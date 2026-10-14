@@ -89,6 +89,10 @@ C-29-3-11 à 15 en validation P1 (C-29-3-11 tranché par l'orchestrateur), C-29-
   `user-manual.tex:1308`) — retiré, voir C-29-3-16. Et « tous de configuration » était trop fort : les autres refus
   sont aussi d'état comptable, de course ou d'intégrité (`:2060` du manuel).
 
+- ⚠️ **Annotation du 2026-10-14 (passe ciblée P3, P3-3)** : « les autres refus … sont aussi d'état comptable, de course
+  ou d'intégrité (`:2060` du manuel) » (annotation P2 ci-dessus) est faux pour le manuel : `user-manual.tex:2060` ne
+  les énumère pas, et seuls les refus de **configuration** sont documentés (`:2056`). Les refus d'état, de course et
+  d'intégrité ne sont **pas documentés** au manuel ; ni aggravés ni réparés par la 29-3, ils ne lui sont pas imputés.
 ### C-29-3-8 — `candidate_rank` est un `match` exhaustif, sans bras `_`
 
 - **Contexte** : la 29-2 peut introduire un nouveau type de candidate.
@@ -149,7 +153,7 @@ C-29-3-11 à 15 en validation P1 (C-29-3-11 tranché par l'orchestrateur), C-29-
   contenu dans un autre), et « visible au lettrage » borné au cas où la facture choisie est celle du payeur réel (R7).
 - **Réversible** : oui (une fonction pure, aucune donnée écrite).
 
-### C-29-3-12 — Le départage à score égal par proximité de date : angle mort, issue demandée
+### C-29-3-12 — Le départage à score égal par proximité de date : angle mort, traité par #668 (Story 29-5)
 
 - **Contexte** : C-29-2-7 (fiche voisine non mergée) — la 29-2 fait entrer des factures échues et relancées ; à score
   égal, `propose_matches` place la plus petite `invoice_id` (la plus ancienne) en tête. Un départage par proximité de
@@ -166,6 +170,11 @@ C-29-3-11 à 15 en validation P1 (C-29-3-11 tranché par l'orchestrateur), C-29-
   à échéance lointaine, candidates sans limite de temps (C-29-2-11). La 29-3 ne traite pas ce départage et ne touche
   ni l'`ORDER BY` ni le `LIMIT 50` (C-29-3-17).
 
+- ⚠️ **Annotation du 2026-10-14 (passe ciblée P3, P3-1)** : l'annotation P2 ci-dessus cite l'attendu de #668 d'après
+  son premier commentaire (« échues d'abord, puis la plus ancienne »). La fiche **29-5**, qui le remplace, tranche : à
+  score égal, **date d'exigibilité** `max(date de facture, échéance)` croissante, puis date de facture, puis
+  identifiant (art. 87 CO). C'est cet attendu que la fiche 29-3 cite désormais ; le titre du choix, qui annonçait une
+  « issue demandée », est corrigé (l'issue existe).
 ### C-29-3-13 — Le test muet est déplacé dans `reconciliation_e2e.rs`, non ses aides extraites
 
 - **Contexte** : validation P1, R2/F3 — `get_proposals_invoice_candidate_overrides_rule` vit dans
@@ -222,6 +231,11 @@ C-29-3-11 à 15 en validation P1 (C-29-3-11 tranché par l'orchestrateur), C-29-
   de banque non comptabilisé, pour une durée de vie d'une release (la 29-6 le rend caduc).
 - **Réversible** : oui (une phrase du manuel).
 
+- ⚠️ **Annotation du 2026-10-14 (passe ciblée P3, P3-4)** : la raison de l'écartée, « la 29-6 le rend caduc », est
+  inexacte. La fiche 29-6 garde ce geste (régler le reste dû depuis la fiche, puis **rejeter** la transaction, C-29-6-7)
+  et l'écrit à son propre ajout du manuel (`:2049`) ; par décision de l'orchestrateur, elle rend possible le rejet d'une
+  ligne **sans proposition**. La conclusion tient — la 29-3 n'écrit pas le contournement — mais parce que **la 29-6 le
+  porte**, non parce qu'il serait caduc ; au rebase, la 29-3 s'efface devant ce que la 29-6 livre.
 ### C-29-3-17 — L'`ORDER BY` et le `LIMIT 50` du dépôt restent hors de la 29-3, la remarque va à la 29-5
 
 - **Contexte** : validation P2, R3. La fiche 29-2 (version du 2026-10-14) annonce que la 29-3 « touchera probablement
