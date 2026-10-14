@@ -2,7 +2,8 @@
 
 ## Status
 
-**29-4a : review** (développée le 2026-10-14, commit `e718221b` ; revue de code P1 à lancer) — **29-4b :
+**29-4a : review** (développée le 2026-10-14, commit `e718221b` ; revue de code P1 remédiée le même jour après
+rebase sur `b4abae5d`, commit `bc9cf85e` ; passe ciblée P2 à lancer, `29-4a-review-prompt-p2-ciblee.md`, Sonnet) — **29-4b :
 ready-for-dev** (après le merge de la 29-4a).
 
 *Relevé d'origine :* **ready-for-dev** (deux clés) — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `16eeed21`
@@ -930,7 +931,7 @@ dit donc « un exclusif sur des lignes de comptes, dont `A` » pour ce détenteu
 | W8 `settle_invoice` (virement vers `A`) | [comptes], **exercice** X, `companies` S, `INSERT invoice_settlements` (intervalle de `uq_invoice_settlements_entry`) | **oui** : l'exercice (W9 (3), W25 (2-bis), W28, W29) ; l'intervalle de `uq_invoice_settlements_entry` (W9 « écriture », F13 de la P2 de la 28-4) | **oui** — le cycle F1 de la P1 de la 28-4, et F13 | **oui** : `invoices::settle` ; `reconciliation::cancel`, `invoices::cancel_settlement`, `supplier_invoices::cancel`, `…::cancel_settlement` |
 | W27 `pay_in_tx` (par `pay` ou `confirm_batch`) | [comptes X, `supplier_invoices.rs:808`], **exercice** X, `companies` S | oui : l'exercice | **oui** | **oui** : `supplier_invoices::pay`, `payment_batches::confirm` |
 | W13 `PATCH` | `accounts` en lecture **non verrouillante** (`ensure_postable_if_active_in_tx`), puis l'`UPDATE` (clé étrangère `journal_account_id` → `accounts` S) | non **à deux** : aucune annulation ne tient `accounts` en exclusif (les seuls exclusifs sur `accounts` sont dans `company_invoice_settings` — réglages, TVA, défauts —, `invoice_settlements_write.rs:181` (règlement, compte interne), `supplier_invoices.rs:433` (création) et `:808` (paiement) ; aucun dans la chaîne de contre-passation, `journal_entries.rs` n'en porte aucun ; exclusifs implicites recherchés aussi — `(UPDATE|DELETE FROM|INSERT INTO) accounts` : seuls `accounts.rs`, routes de gestion des comptes, et `credit_notes.rs:479`, hors chaîne — lentille F de la P1). **À trois**, voir l'angle mort « PATCH » et la file d'attente ci-dessous | non à deux ; **à trois, oui** (F4 de la P1, F2 de la P2) | **rejoué depuis la P2** (C-29-4-19) |
-| W14 `PUT`, `POST /bank-accounts`, W15 archivage | `companies` X **avant** `A` ; après `A` : `accounts` S, audit | l'annulation (W9, W25, W28, W29) tient `companies` S **avant** de demander `A` : la route de gestion l'attend sans rien tenir ; W24 ne prend pas `companies`, et la route ne demande rien qu'il tienne | non | — (non rejouées, et n'en ont pas besoin ici) |
+| W14 `PUT`, `POST /bank-accounts`, W15 archivage | `companies` X **avant** `A` ; après `A` : `accounts` S, audit | l'annulation (W9, W25, W28, W29) tient `companies` S **avant** de demander `A` : la route de gestion l'attend sans rien tenir ; W24 ne prend pas `companies`, et la route ne demande rien qu'il tienne | non avec les annulations ; ⚠️ **oui, préexistant, avec l'import et le lot** (revue de code P1, E-1) : entre ses deux contrôles de clé étrangère, l'`INSERT` tient `A` S et demande `companies` S — cycle `I ↔ M` | **rejouées depuis la revue de code P1** (C-29-4-28 ; T29a-13 à T29a-15) |
 | `upsert_primary_in_tx` (onboarding) | — | — | non (et `onboarding::finalize` est rejouée) | — |
 | clôture | **rien** (décomptes non verrouillants, `UPDATE` de la même ligne, audit sans clé étrangère) | — | non à deux ; **à trois**, par la file d'attente (AC4) | la story la fait rejouer (AC4) |
 | réouverture | **rien** | — | non à deux ; **à quatre**, par la file d'attente (F3 de la P2 ; l'argument de la P1, « aucun détenteur partagé réaliste d'un compte clos », était faux) | **rejouée depuis la P2** (C-29-4-14 renversé) |
@@ -947,7 +948,7 @@ demandeurs d'exclusif sur `A` (extraction ci-dessus) et leur sort :
 | réouverture | oui, sur un compte clos — le partagé d'un écrivain que la revérification va refuser (W22, W17 après leur `INSERT`, les annulations par leur revérification) ; cycle à quatre de F3 (AC4) | **oui** (P2, F3) |
 | `PATCH` (W13) | oui — cycle à trois `D → PATCH → I → D` (AC4, F2) | **oui** (P2, F2) |
 | W8, W27 | oui | oui (au sol) |
-| `PUT`, `POST`, archivage | non ici : ils prennent `companies` X **avant** `A`, et tout détenteur partagé de la course tient `companies` S depuis son `INSERT` ou sa contre-passation — ils attendent la sentinelle sans rien tenir sur `A` | non (inutile ici ; voir le résidu du cycle à quatre, où ils sont le `M` en file sur la sentinelle) |
+| `PUT`, `POST`, archivage | ⚠️ **oui** (revue de code P1, E-1 — la P1 de validation disait « non ici », à tort) : ils prennent `companies` X **avant** `A`, mais l'import et le lot, entre les deux contrôles de clé étrangère de leur `INSERT`, tiennent `A` S **sans** tenir encore `companies` S. Cycle préexistant `I ↔ M`, et `I → M → E → I` quand un demandeur d'exclusif `E` (clôture, réouverture, `PATCH`) est en file entre eux — c'est le cycle à trois **atteignable en 29-4a**, celui que T29a-4 et T29a-9 jouent (`t2` = `M`). La revérification de l'import et du lot, redemande d'un partagé tenu, n'y fait jamais la queue (T29a-6, T29a-7) | **oui, depuis la revue de code P1** (C-29-4-28) |
 | restauration (`backup.rs`, `DELETE` des lignes de `bank_accounts` ; F9 de la P2) | oui, en théorie : une annulation en revérification derrière ce `X` ferme un cycle avec elle | l'annulation, plus légère que la restauration (qui a écrit massivement), est la victime, **rejouée** sur les cinq routes |
 
 **L'argument de poids, écrit au lieu d'être invoqué** (F11 de la P2, raisonné) : InnoDB désigne pour victime la
@@ -985,6 +986,9 @@ revérification (AC1) **avec ces deux réserves** — non sous la forme « stric
   même compte et une même société, `I` dans l'intervalle de ses deux contrôles de clé étrangère : **négligeable**,
   écrit au doc-comment de la revérification, sans issue. Rejouer les routes de gestion fermerait ce résidu, au prix de
   trois enveloppes de plus pour un cas que rien n'a montré : écarté (C-29-4-14, annotations de la P2 et de la P3).
+  ⛔ **Fermé en revue de code P1 de la 29-4a** (E-1, décision de l'orchestrateur, C-29-4-28) : les routes de gestion
+  sont rejouées, non pour ce cycle à quatre mais pour le cycle préexistant `I ↔ M`, atteignable dès la 29-4a, dont
+  `M` était la victime en `500` ; le résidu tombe avec lui.
 
 **Angle mort « PATCH », cycle à trois par `accounts`** (F4 de la P1) — ⛔ **fermé en P2** par le rejeu du `PATCH`
 (C-29-4-19) : une annulation par virement (W25) tient l'exercice ; un règlement interne W8 tient un exclusif sur un
@@ -1182,7 +1186,8 @@ clé étrangère d'un `INSERT`** ; **échec immédiat `ERROR 1205`** dès qu'une
 en file ; réussie de nouveau après les commits. Le même essai **a établi le cas que la P3 n'avait pas essayé** : A,
 détenteur du partagé de clé étrangère, a redemandé `SELECT … LOCK IN SHARE MODE` pendant que C attendait — réponse en
 **0,9 ms**, puis un second `INSERT` enfant en 0,5 ms, sans attente ni interblocage ; C n'a obtenu la ligne qu'au commit
-de A, et y a vu les deux lignes. Aucun repli n'a été nécessaire. Tables supprimées ensuite. **Aucune** lecture
+de A, et y a vu les deux lignes *(annoté le 2026-10-14, revue de code P1, A-7 : ces mesures au client `mariadb` ne sont
+pas journalisées)*. Aucun repli n'a été nécessaire. Tables supprimées ensuite. **Aucune** lecture
 d'`information_schema.INNODB_TRX` ni du privilège `PROCESS`.
 
 **Tests rouges d'abord** (`294-rouge-sol-T2.log`) — T29a-2, T29a-3, T29a-11, T29a-12 écrits avant le code, contre le
@@ -1196,7 +1201,8 @@ sol ; les quatre rougissent **à l'étape (5)**, après avoir été vus en atten
 Summary [   0.192s] 4 tests run: 0 passed, 4 failed, 59 skipped
 ```
 
-Après les appels : `bank_accounts_repository` et `payment_batches_repository`, **63/63**. T29a-6, T29a-7 (l'autre
+Après les appels : `bank_accounts_repository` et `payment_batches_repository`, **63/63** *(annoté le 2026-10-14,
+revue de code P1, A-7 : run non journalisé ; le gate complet `294-gate-2.log` le couvre)*. T29a-6, T29a-7 (l'autre
 ordre), T29a-1 (`EXPLAIN`) et T-a45 étendu ont été écrits **après** les fonctions (ils les appellent) et sont verts du
 premier coup.
 
@@ -1228,7 +1234,8 @@ SQL et fonctions : `bank_accounts.rs:907` (`RECHECK_OPEN_LOCKED_SQL`), `:913` (`
 **Gates réellement exécutés, au commit de code `e718221b`** (le commit qui suit ne porte que la fiche, le registre de
 sprint et le prompt de revue) :
 
-- `scripts/test-fast.sh` (fmt + clippy workspace + nextest), sous verrou, base `kesh_294` remise à zéro avant :
+- `scripts/test-fast.sh` (fmt + clippy workspace + nextest), sous verrou, base `kesh_294` remise à zéro avant *(annoté
+  le 2026-10-14, revue de code P1, A-7 : la remise à zéro n'est pas journalisée)* :
   **3637 passés, 6 ignorés** (`294-gate-2.log`, 155 s). Le premier essai (`294-gate-1.log`) a échoué sur `clippy`
   (`enum_variant_names` : `Fenetre::SansFenetre`), corrigé avant le commit — écart à la fiche ci-dessous.
 - Frontend, sous verrou : `npm run check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` vert,
@@ -1275,7 +1282,8 @@ chemins » refait depuis la liste : **six** —, doc-comment d'`ensure_open_unar
 `docs/api-external.md:241`, `:557`, `:596` ; **laissé, relevé daté** : `CHANGELOG.md:48` (§ 0.13.3). Les autres
 occurrences de `L1` désignent d'autres limitations (sans rapport).
 
-**Écarts à la fiche** (chacun au registre) : W17 testé dans `payment_batches_repository.rs` (C-29-4-23) ; position
+**Écarts à la fiche** (chacun au registre — *annoté le 2026-10-14, revue de code P1, A-5 : le renommage `Fermee` et les
+trois mutations ajoutées n'y étaient pas ; versés en C-29-4-30*) : W17 testé dans `payment_batches_repository.rs` (C-29-4-23) ; position
 structurée `Position { apres, avant }` (C-29-4-24) ; `Fenetre::SansFenetre` renommée **`Fenetre::Fermee`** (refus
 `clippy::enum_variant_names`, noté au doc-comment de la variante) ; `conclure` partagée, rendu `Internal` de `begin` /
 `commit` inchangé (C-29-4-25) ; rendez-vous sur la demande de `t2` dans T29a-4 / T29a-9 (C-29-4-26) ; tâche d'import
@@ -1528,3 +1536,99 @@ victimes observées conformes (T29a-4, T29a-9, T29a-10) ; troisième inventaire 
 Commit de code `e718221b` (`refs #651`). Gates au commit de code : `test-fast.sh` 3637/3637 (6 ignorés), Vitest
 1617/1617, E2E 282 passés + 7 KF-029 ; 15 mutations, 15 tuées. Choix C-29-4-23 à C-29-4-27. Détail au Dev Agent
 Record. Revue de code P1 à lancer : `29-4a-reverification-import-lot-review-prompt-p1.md` (Opus, B/E/A).
+
+### Revue de code P1 de la 29-4a — 2026-10-14
+
+**Passe** : Opus, trois lentilles en contexte frais (`29-4a-reverification-import-lot-review-prompt-p1.md`), sur
+`3d7851be`. Rapports `kesh-gate-logs/29-4a-review-p1-{B,E,A}.md` : **B 0/0/2/6, E 0/0/0/4, A 0/0/1/8** (CRITICAL /
+HIGH / MEDIUM / LOW) — 21 findings (8 + 4 + 9), dont trois paires convergentes (A-1 = B-1, B-3 = A-6, E-3 = B-6),
+soit **18 distincts** ; **deux MEDIUM distincts** (A-1 = B-1, B-3), tous deux **d'origine** — aucun ne naît d'une
+remédiation. **Remédiation** (Opus 5.5), commit de code
+`bc9cf85e`, après **rebase** de la branche sur `b4abae5d` (29-1a mergée).
+
+**Rebase** : conflits réunis par union — `sprint-status.yaml` (clés de `main` et de la 29-4, en-têtes de la branche
+renumérotés 145 à 149 au-dessus de la plus haute de `main`, A-9), `CHANGELOG.md` § `[0.13.4]` (les deux entrées de
+`### Corrigé`), `crates/kesh-db/src/repositories/bank_accounts.rs` (`mod tests` : le test de `statement_gap` de la 29-1a
+et `les_reverifications_verrouillent_en_partage`, entiers). **Interaction révélée par le gate ciblé** : le troisième
+inventaire a vu la constante `EXAMINED_ACCOUNTS_SQL` de `closing_checks.rs` (29-1a), lecture de `closed_on` sans verrou
+hors fonction — classée `Fermee` (lecture seule), `G` à dix (C-29-4-29).
+
+**Décisions de l'orchestrateur, appliquées comme telles** :
+
+- **A-1 = B-1 (MEDIUM, convergents)** — les doc-comments nommaient la revérification de l'import et du lot comme la
+  demande partagée en file derrière la clôture, ce que T29a-6 et T29a-7 réfutent. Réécrits d'après ce qui est prouvé
+  (`close_in_tx`, `set_journal_account_id_for_company`, les deux revérifications, `close_bank_account`,
+  `reopen_bank_account`, `patch_bank_account_journal_link`, point (vi)) : la redemande du partagé tenu n'attend pas ;
+  ce qui attend derrière un exclusif en file, c'est une demande **neuve** (l'exclusif d'une route de gestion, le
+  contrôle de clé étrangère d'un second `INSERT`, et en 29-4b la revérification d'une annulation). Cycle atteignable en
+  29-4a, écrit : `I → M → E → I` (import ou lot `I` entre ses deux contrôles de clé étrangère, route de gestion `M` sur
+  la sentinelle, demandeur d'exclusif `E` en file), et `I ↔ M` à deux.
+- **E-1 (LOW, relevé par l'orchestrateur)** — les routes de gestion du compte sont **rejouées** : `create_once`,
+  `update_once`, `archive_once` sous `retry_app_on_deadlock` (`bank_accounts::create`, `::update`, `::archive`), patron
+  de la réouverture et du `PATCH`, `conclure` commune ; T29a-13 (`PUT`), T29a-14 (archivage), T29a-15 (création), patron
+  `victime()` et capture du rejeu ; **rouges d'abord** (`294-rouge-p1-E1.log` : `3 tests run: 0 passed, 3 failed`, les
+  trois en `INTERNAL_ERROR`), verts ensuite (`294-vert-p1-E1.log`, 17/17 du binaire) ; mutations M29-26 à M29-28. Point
+  (vi) d'`audit_route_registry.rs` recompté : dix + trois = **treize** ; points (ii) et (iii bis) : six routes `AppError`
+  à preuve dynamique. Table *Cycles* de la fiche (deux lignes « `PUT`, `POST`, archivage ») et résidu du cycle à quatre
+  annotés ; C-29-4-14 annoté, C-29-4-28. Le commentaire de la sentinelle de l'archivage (« la course … est fermée par la
+  revérification ») est laissé : il dit vrai.
+- **B-3 = A-6 (MEDIUM)** — le volet inverse de T29a-5 éprouve désormais les trois autres fautes de (iii) : « suit
+  `avant` », littéral `apres` absent, littéral `avant` absent, chacune seule, plus un cas de contrôle conforme sans
+  faute ; mutations M29-30 à M29-32.
+- **E-3 = B-6 (LOW)** — `rollback` explicite sur le refus de l'import après son `INSERT` : aide
+  `create_import_or_roll_back` aux deux sites (CAMT, CSV) ; T-a47 réécrit en conséquence (un appel de
+  `create_with_transactions`, dans l'aide ; deux appels de l'aide) ; mutation M29-29.
+- **E-2 (LOW)** — la phrase `innodb_snapshot_isolation` élargie à tout commit sur la ligne du compte depuis la vue, avec
+  renvoi à #669 (commentaire versé par l'orchestrateur).
+- **LOW traités** : A-2 et B-2 (cycles de la 29-4b marqués « à partir de la 29-4b » ; `recheck_open_locked_in_tx` dite
+  sans appelant de production en 29-4a) ; A-3 (M29-3 bis aux doc-comments de T29a-2 et T29a-3) ; A-4 (doc de
+  `sonde_verrou_nowait` généralisé à `LOCK IN SHARE MODE NOWAIT`) ; A-5 (écarts versés au registre, C-29-4-30 ; C-29-4-8
+  annoté) ; A-7 (trois déclarations du Dev Agent Record annotées « non journalisé » — la remise à zéro de cette passe,
+  elle, est journalisée) ; A-8 (`T29a-1` retiré de l'interdit `FOR UPDATE`) ; A-9 (en-têtes renumérotés) ; B-4 (borne
+  haute de W17 : `avant: Some("UPDATE payment_batches SET msg_id")`, mutation M29-33) ; B-5 (« cinq chemins », l'annulation
+  de rejet sortie avec la raison I1 ; « six » du Dev Agent Record laissé, relevé daté) ; B-7 (attente de `t2` exigée à
+  l'étape (3)) ; B-8 (ligne du CHANGELOG mise en forme, phrase API, et la ligne des routes de gestion rejouées) ; E-4
+  (« aucun verrou d'enregistrement accordé », « la redemande passe sans attente »).
+- **Refusé** : aucun.
+
+⚠️ **État transitoire neuf** : `docs/api-external.md` § *Interblocages* ne liste pas les routes du compte bancaire
+désormais rejouées (clôture, réouverture, `PATCH` depuis le développement ; création, `PUT`, archivage depuis cette
+remédiation) — à reprendre en 29-4b avec le reste d'`api-external.md` (la liste est trop **courte**, pas fausse dans
+l'autre sens).
+
+**Mutations** (`kesh-gate-logs/294-mutations-review-p1.log`, script `294-mutations-review-p1.py`, motif vérifié unique,
+restauration `git checkout --` puis `touch`, arbre propre après campagne) — **8 jouées, 8 tuées**, chacune par
+l'assertion attendue (aucune erreur de compilation) :
+
+| # | Mutation | Tuée par |
+|---|---|---|
+| M29-26 | `PUT` : enveloppe retirée | T29a-13 (`INTERNAL_ERROR`) |
+| M29-27 | archivage : enveloppe retirée | T29a-14 (`INTERNAL_ERROR`) |
+| M29-28 | création : enveloppe retirée | T29a-15 (`INTERNAL_ERROR`) |
+| M29-29 | import refusé : `rollback` explicite retiré | T-a47 |
+| M29-30 | inventaire (iii) : faute « suit `avant` » jamais produite | volet inverse de T29a-5 (cas « suit ») |
+| M29-31 | inventaire (iii) : faute « littéral `avant` absent » jamais produite | volet inverse (cas « avant absent ») |
+| M29-32 | inventaire (iii) : faute « littéral `apres` absent » jamais produite | volet inverse (cas « apres absent ») |
+| M29-33 | W17 : revérification déplacée après l'`UPDATE` du `msg_id` | T29a-5 (borne haute neuve) |
+
+**Gates au commit de code `bc9cf85e`** (le commit qui suit ne porte que la fiche, le registre de sprint et le prompt) :
+
+- `scripts/test-fast.sh`, sous verrou, base `kesh_294` **remise à zéro dans le même journal** (`294-gate-review-p1.log`,
+  « RESET_OK » puis le gate) : **3668 passés, 6 ignorés**.
+- Frontend, sous verrou : `npm run check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` vert,
+  `test:unit` **1640/1640** (147 fichiers), `build` vert (`294-p1r-front-*.log`).
+- E2E complet, sous verrou, recette de `docs/testing.md` (port 3045, base `kesh_e2e_294` recréée, backend tué par PID ;
+  `294-p1r-e2e.log`, `294-p1r-e2e-run.log`) : **285 passés, 7 échecs, 19 ignorés** (11,5 min). Les sept, jugés fichier par
+  fichier contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`,
+  `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — **les sept KF-029 (#97)** ; aucun autre.
+
+**Décomptes** (périmètre `daab782f..bc9cf85e`) : tests neufs **3** (T29a-13 à T29a-15 ; attributs de test
+`crates` : 3484 → 3487, `git grep -cE '#\[(sqlx::)?test'` aux deux bornes) ; tests modifiés **4** (volet inverse de T29a-5,
+T29a-5 — décompte de `G` —, T-a47, T29a-10 — aides extraites) et l'aide `cycle_a_trois_par_la_file` (étape (3), qui
+sert T29a-4 et T29a-9) ; choix ajoutés **3** (C-29-4-28 à C-29-4-30 ;
+registre à 30) ; fichiers de production touchés **4** (`routes/bank_accounts.rs`, `routes/bank_imports.rs` : code ;
+`repositories/bank_accounts.rs`, `test_fixtures.rs` : doc-comments seuls).
+
+**Suite** : la remédiation touche du code de production — la boucle n'est pas close. Passe ciblée P2 à lancer :
+`29-4a-review-prompt-p2-ciblee.md` (**Sonnet**, une lentille sur le seul diff de la remédiation, table des verrous des
+trois enveloppes neuves). PR toujours `refs #651`.
