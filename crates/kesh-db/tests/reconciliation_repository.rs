@@ -591,7 +591,7 @@ async fn find_unpaid_invoices_filters_amount_within_tolerance(pool: MySqlPool) {
     assert_eq!(
         ids,
         vec![inv_in],
-        "seule l'invoice à ± 0.05 doit être retournée"
+        "seule l'invoice dont le reste dû dépasse le paiement d'au plus 0.05 doit être retournée"
     );
 }
 
@@ -724,6 +724,112 @@ async fn find_unpaid_invoices_overpayments_take_no_place_in_the_limit(pool: MySq
         ids,
         vec![valid],
         "les trop-perçus ne doivent occuper aucune place du LIMIT 50"
+    );
+}
+
+/// Une société, un client, un exercice, une écriture, et une facture validée
+/// du 2026-05-01 par reste dû (dans l'ordre donné, donc d'`id` croissant).
+/// Rend la date et les `id` des factures. Story 29-6.
+async fn seed_invoices_by_due_296(
+    pool: &MySqlPool,
+    dues: &[Decimal],
+) -> (i64, NaiveDate, Vec<i64>) {
+    let company_id = create_test_company(pool, "Acme").await;
+    let user_id = create_test_user(pool, "alice", company_id).await;
+    let contact_id = create_test_contact(pool, company_id, user_id, "Client A").await;
+    let fy_id = insert_fake_fiscal_year(pool, company_id).await;
+    let je_id = insert_fake_journal_entry(pool, company_id, fy_id).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
+    let mut ids = Vec::new();
+    for due in dues {
+        ids.push(
+            insert_test_invoice(
+                pool,
+                company_id,
+                contact_id,
+                day,
+                *due,
+                "validated",
+                Some(je_id),
+                None,
+            )
+            .await,
+        );
+    }
+    (company_id, day, ids)
+}
+
+/// Story 29-6 (#665), revue de code P1 (E2) — la borne basse au plus petit
+/// paiement, un centime : `least_due_without_overpayment(0.01)` = 0.005. Un
+/// reste de 0.0049 est un trop-perçu, un reste de 0.0050 solde à l'arrondi ;
+/// la borne haute, 0.06, est admise, 0.07 non.
+#[sqlx::test(migrations = "./test-schema")]
+async fn find_unpaid_invoices_bounds_hold_for_a_one_centime_payment(pool: MySqlPool) {
+    let (company_id, day, ids) = seed_invoices_by_due_296(
+        &pool,
+        &[
+            dec!(0.0049),
+            dec!(0.0050),
+            dec!(0.01),
+            dec!(0.06),
+            dec!(0.07),
+        ],
+    )
+    .await;
+
+    let candidates = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_payment_date(day),
+        dec!(0.01),
+        dec!(0.05),
+    )
+    .await
+    .expect("find_unpaid_invoices_for_window");
+
+    let got: Vec<i64> = candidates.iter().map(|c| c.invoice.id).collect();
+    assert_eq!(
+        got,
+        vec![ids[1], ids[2], ids[3]],
+        "pour 0.01 : restes de 0.0050, 0.01 et 0.06 ; 0.0049 est un trop-perçu, 0.07 hors tolérance"
+    );
+}
+
+/// Story 29-6 (#665), revue de code P1 (E1) — les factures que la borne basse
+/// écarte, à 5 centimes près, et elles seules : pour un paiement de 100.00,
+/// les restes de 99.95 (inclus) à 99.9950 (exclu). Les deux listes sont
+/// disjointes et se touchent à 99.9950. Attendu écrit en dur.
+#[sqlx::test(migrations = "./test-schema")]
+async fn find_invoices_slightly_overpaid_returns_what_the_lower_bound_excludes(pool: MySqlPool) {
+    let (company_id, day, ids) = seed_invoices_by_due_296(
+        &pool,
+        &[
+            dec!(99.94),
+            dec!(99.9499),
+            dec!(99.95),
+            dec!(99.99),
+            dec!(99.9949),
+            dec!(99.9950),
+            dec!(100.00),
+        ],
+    )
+    .await;
+
+    let overpaid = reconciliation_repo::find_invoices_slightly_overpaid_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_payment_date(day),
+        dec!(100.00),
+        dec!(0.05),
+    )
+    .await
+    .expect("find_invoices_slightly_overpaid_for_window");
+
+    let got: Vec<i64> = overpaid.iter().map(|c| c.invoice.id).collect();
+    assert_eq!(
+        got,
+        vec![ids[2], ids[3], ids[4]],
+        "pour 100.00 : restes de 99.95, 99.99 et 99.9949 ; 99.9950 est candidat, 99.9499 et 99.94 hors tolérance"
     );
 }
 

@@ -9625,3 +9625,211 @@ async fn get_proposals_invoice_candidate_overrides_rule(pool: MySqlPool) {
     assert_eq!(candidates[0]["invoiceId"], inv_id);
     assert_eq!(candidates[0]["score"]["total"], 0.5);
 }
+
+// ============================================================
+// Story 29-6 (#665), revue de code P1 (E1) — une règle ne remplace jamais en
+// silence une facture que le paiement dépasse de quelques centimes
+//
+// Avant la story, une telle facture était candidate et, portant un indice,
+// passait devant la règle (Story 29-3) : *Accepter* était refusé en
+// trop-perçu, rien ne s'écrivait. La story l'écarte des candidates ; sans
+// garde, la règle devenait la proposition, et *Accepter* portait en produit
+// le paiement d'un client identifié, la facture restant due.
+// ============================================================
+
+/// Les candidates de chaque proposition du compte bancaire de `ctx`, par
+/// identifiant de transaction.
+async fn candidates_by_tx_296(
+    app: &TestApp,
+    ctx: &CompanyCtx,
+) -> std::collections::BTreeMap<i64, Vec<Value>> {
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={}",
+            ctx.bank_account_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    body["proposals"]
+        .as_array()
+        .expect("proposals array")
+        .iter()
+        .map(|p| {
+            (
+                p["bankTransactionId"].as_i64().unwrap(),
+                p["candidates"]
+                    .as_array()
+                    .expect("candidates array")
+                    .clone(),
+            )
+        })
+        .collect()
+}
+
+/// Une facture de 100.— du 2026-05-15 et une transaction créditrice du même
+/// jour par `(montant, référence, contrepartie)`. Rend `(invoice_id, tx_ids)`.
+async fn seed_invoice_and_txs_296(
+    pool: &MySqlPool,
+    ctx: &CompanyCtx,
+    invoice_number: &str,
+    txs: &[(Decimal, &str, &str)],
+) -> (i64, Vec<i64>) {
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let (inv_id, _) = seed_validated_invoice(
+        pool,
+        ctx.company_id,
+        ctx.contact_id,
+        invoice_number,
+        day,
+        dec!(100.00),
+    )
+    .await;
+    let new_txs = txs
+        .iter()
+        .map(|(amount, reference, counterparty)| {
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                *amount,
+                "CHF",
+                reference,
+                Some(counterparty),
+            )
+        })
+        .collect();
+    let tx_ids = seed_bank_transactions(
+        pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash(invoice_number),
+        day,
+        day,
+        new_txs,
+    )
+    .await;
+    (inv_id, tx_ids)
+}
+
+/// ⛔ **Un client identifié par son nom qui a payé 1 à 5 centimes de trop
+/// n'est pas proposé à une règle** : la ligne reste « Aucune correspondance »
+/// (#665, E1 de la revue P1).
+///
+/// Facture de 100.— au client « Dubois Client », règle « contrepartie contient
+/// Dubois ». Transactions de la même contrepartie, sans référence :
+///
+/// | montant | candidates | pourquoi |
+/// |---|---|---|
+/// | 100.00 | la facture seule | montant exact, la facture écarte la règle (score 0,6) |
+/// | 100.01 | aucune | trop-perçu de 1 centime : la facture n'est plus candidate, et masque la règle |
+/// | 100.05 | aucune | trop-perçu de 5 centimes, la borne : idem |
+/// | 100.06 | la règle | trop-perçu de 6 centimes : la facture n'était pas candidate avant la story non plus |
+///
+/// Avant le garde, 100.01 et 100.05 rendaient la règle.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_rule_never_replaces_an_invoice_the_payment_slightly_exceeds(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Dubois", "CH4431999123000889012", Role::Comptable).await;
+    let (_, revenue_id) = account_ids(&pool, ctx.company_id).await;
+    let (inv_id, tx_ids) = seed_invoice_and_txs_296(
+        &pool,
+        &ctx,
+        "F-2026-0296",
+        &[
+            (dec!(100.00), "", "Dubois Client"),
+            (dec!(100.01), "", "Dubois Client"),
+            (dec!(100.05), "", "Dubois Client"),
+            (dec!(100.06), "", "Dubois Client"),
+        ],
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+    let rule = create_rule_ok(
+        &app,
+        &ctx.jwt,
+        serde_json::json!({
+            "label": "Dubois",
+            "matchType": "counterparty_contains",
+            "matchValue": "Dubois",
+            "counterpartyAccountId": revenue_id,
+        }),
+    )
+    .await;
+
+    let by_tx = candidates_by_tx_296(&app, &ctx).await;
+    assert_eq!(by_tx.len(), 4, "{by_tx:?}");
+
+    let exact = &by_tx[&tx_ids[0]];
+    assert_eq!(exact.len(), 1, "100.00 : {exact:?}");
+    assert_eq!(exact[0]["candidateType"], "invoice");
+    assert_eq!(exact[0]["invoiceId"], inv_id);
+
+    for (i, label) in [(1, "100.01"), (2, "100.05")] {
+        assert!(
+            by_tx[&tx_ids[i]].is_empty(),
+            "{label} : la facture trop-perçue masque la règle, aucune candidate : {:?}",
+            by_tx[&tx_ids[i]]
+        );
+    }
+
+    let beyond = &by_tx[&tx_ids[3]];
+    assert_eq!(beyond.len(), 1, "100.06 : {beyond:?}");
+    assert_eq!(beyond[0]["candidateType"], "rule");
+    assert_eq!(beyond[0]["ruleId"], rule["id"]);
+}
+
+/// Le garde ne masque la règle **que si la facture porte un indice**, comme
+/// la présence de la facture le faisait avant la story (`propose_matches`
+/// écarte une facture de score nul) : sans référence ni nom du client, la
+/// règle reste proposée ; avec la référence de la facture, elle ne l'est pas.
+///
+/// Facture de 100.— au client « Martin Client », règle « contrepartie contient
+/// Garage », deux paiements de 100.03 de « Garage Bel-Air » : l'un sans
+/// référence (la facture n'a aucun indice), l'autre portant son numéro.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_rule_guard_needs_an_invoice_bearing_a_signal(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Martin", "CH4431999123000889012", Role::Comptable).await;
+    let (_, revenue_id) = account_ids(&pool, ctx.company_id).await;
+    let (_, tx_ids) = seed_invoice_and_txs_296(
+        &pool,
+        &ctx,
+        "F-2026-0297",
+        &[
+            (dec!(100.03), "", "Garage Bel-Air"),
+            (dec!(100.03), "F-2026-0297", "Garage Bel-Air"),
+        ],
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+    let rule = create_rule_ok(
+        &app,
+        &ctx.jwt,
+        serde_json::json!({
+            "label": "Garage",
+            "matchType": "counterparty_contains",
+            "matchValue": "Garage",
+            "counterpartyAccountId": revenue_id,
+        }),
+    )
+    .await;
+
+    let by_tx = candidates_by_tx_296(&app, &ctx).await;
+    assert_eq!(by_tx.len(), 2, "{by_tx:?}");
+
+    let unrelated = &by_tx[&tx_ids[0]];
+    assert_eq!(unrelated.len(), 1, "sans indice : {unrelated:?}");
+    assert_eq!(unrelated[0]["candidateType"], "rule");
+    assert_eq!(unrelated[0]["ruleId"], rule["id"]);
+
+    assert!(
+        by_tx[&tx_ids[1]].is_empty(),
+        "la référence de la facture trop-perçue masque la règle : {:?}",
+        by_tx[&tx_ids[1]]
+    );
+}

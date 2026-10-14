@@ -712,9 +712,21 @@ pub async fn get_proposals(
         transactions.truncate(limit as usize);
     }
 
+    // Pass 3.5 avancée (Story 29-6, #665, revue P1) : les règles actives sont
+    // lues avant le Pass 2, qui ne cherche les factures trop-perçues que s'il
+    // existe une règle à garder.
+    let active_rules =
+        reconciliation_rules::find_active_for_company(&state.pool, current_user.company_id).await?;
+
     // Pass 2 : per tx, load candidates + accumulate distinct contact_ids.
-    let mut tx_candidates: Vec<(BankTransaction, Vec<UnpaidInvoiceCandidate>)> =
-        Vec::with_capacity(transactions.len());
+    // Le troisième membre : les factures que le paiement dépasse de quelques
+    // centimes (jamais proposées ; lues pour garder la règle, Pass 4).
+    type TxInvoices = (
+        BankTransaction,
+        Vec<UnpaidInvoiceCandidate>,
+        Vec<UnpaidInvoiceCandidate>,
+    );
+    let mut tx_candidates: Vec<TxInvoices> = Vec::with_capacity(transactions.len());
     let mut distinct_contact_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
     let underpayment_tolerance = Decimal::new(AMOUNT_TOLERANCE_HUNDREDTHS, 2);
     for tx in transactions {
@@ -723,13 +735,13 @@ pub async fn get_proposals(
         // Story 27-2, aucun import n'enregistre de transaction non CHF
         // (CAMT et CSV à colonne Devise refusés, CSV sans colonne en CHF).
         if tx.currency != "CHF" {
-            tx_candidates.push((tx, Vec::new()));
+            tx_candidates.push((tx, Vec::new(), Vec::new()));
             continue;
         }
         // MP3-1 Pass 3 — sign filter (tx débit → invoices toujours positives).
         // Même règle à l'acceptation : `refuse_non_credit_settlement` (Story 28-6).
         if tx.amount <= Decimal::ZERO {
-            tx_candidates.push((tx, Vec::new()));
+            tx_candidates.push((tx, Vec::new(), Vec::new()));
             continue;
         }
         // Story 28-7 (#548) — la fenêtre de dates de l'acceptation, sur la
@@ -745,7 +757,28 @@ pub async fn get_proposals(
             underpayment_tolerance,
         )
         .await?;
-        for cand in &candidates {
+        // Story 29-6 (#665, revue de code P1, E1) — les factures que la borne
+        // basse vient d'écarter (le paiement les dépasse de 1 à 5 centimes).
+        // Avant la story, elles étaient candidates et, portant un indice,
+        // passaient devant la règle d'affectation ; sans elles, la règle
+        // deviendrait la proposition, et *Accepter* porterait en produit le
+        // paiement d'un client identifié, la facture restant due. Lues
+        // seulement si une règle existe : sans règle, il n'y a rien à garder.
+        let slightly_overpaid = if active_rules.is_empty() {
+            Vec::new()
+        } else {
+            reconciliation_repo::find_invoices_slightly_overpaid_for_window(
+                &state.pool,
+                current_user.company_id,
+                InvoiceDateWindow::for_transaction(&tx),
+                tx.amount,
+                // La tolérance d'avant la story valait des deux côtés : les
+                // factures qu'elle admettait au-dessous sont celles-ci.
+                underpayment_tolerance,
+            )
+            .await?
+        };
+        for cand in candidates.iter().chain(&slightly_overpaid) {
             // M1 Pass 1 — guard `contact_id > 0` : l'entité Invoice
             // expose `contact_id: i64` (pas `Option<i64>`) avec sentinel
             // 0 = pas de contact lié. Insérer 0 dans le set provoquerait
@@ -754,7 +787,7 @@ pub async fn get_proposals(
                 distinct_contact_ids.insert(cand.invoice.contact_id);
             }
         }
-        tx_candidates.push((tx, candidates));
+        tx_candidates.push((tx, candidates, slightly_overpaid));
     }
 
     // Pass 3 : batch-load contacts (1 query).
@@ -763,10 +796,9 @@ pub async fn get_proposals(
         reconciliation_repo::find_contacts_by_ids(&state.pool, current_user.company_id, &ids_vec)
             .await?;
 
-    // Pass 3.5 (Story 8-5b §rule-application) — pre-load active rules +
-    // accounts_info pour appliquer rule fallback dans Pass 4 (closure sync).
-    let active_rules =
-        reconciliation_rules::find_active_for_company(&state.pool, current_user.company_id).await?;
+    // Pass 3.5 (Story 8-5b §rule-application) — accounts_info pour appliquer
+    // rule fallback dans Pass 4 (closure sync) ; les règles actives sont lues
+    // avant le Pass 2 (Story 29-6).
     let accounts_info_rows: Vec<(i64, String, String, bool)> = sqlx::query_as(
         "SELECT id, number, name, postable FROM accounts WHERE company_id = ? AND active = TRUE",
     )
@@ -809,32 +841,45 @@ pub async fn get_proposals(
     // priorité : une facture qui porte un signal d'identité passe devant elle.
     // ⚠️ L'écran n'affiche et n'accepte que `candidates[0]` — une seule des
     // deux se voit.
+    // Story 29-6 (#665, revue P1) : une facture que le paiement dépasse de
+    // quelques centimes écarte aussi la règle si elle porte un indice, comme
+    // sa présence parmi les candidates le faisait avant la story.
     const INVOICE_OVERRIDE_THRESHOLD: f64 = 0.5;
+    // #420 (25-4-c) : le triplet candidat porte le RESTE DÛ — le TTC
+    // excluait le virement qui soldait une facture réglée en partie.
+    // #476 (25-4-c3-b) : AU CENTIME — un virement de 10.01 sur un reste
+    // de 10.0050 marquait 0 au score de montant.
+    let with_contacts = |invoices: &[UnpaidInvoiceCandidate]| -> Vec<(
+        Invoice,
+        Option<kesh_db::entities::Contact>,
+        rust_decimal::Decimal,
+    )> {
+        invoices
+            .iter()
+            .map(|c| {
+                (
+                    c.invoice.clone(),
+                    contacts_map.get(&c.invoice.contact_id).cloned(),
+                    invoice_settlements::amount_due_to_centime(c.amount_due),
+                )
+            })
+            .collect()
+    };
     let proposals: Vec<ReconciliationProposal> = tx_candidates
         .into_iter()
-        .map(|(tx, candidate_invoices)| {
-            // #420 (25-4-c) : le triplet candidat porte le RESTE DÛ — le TTC
-            // excluait le virement qui soldait une facture réglée en partie.
-            // #476 (25-4-c3-b) : AU CENTIME — un virement de 10.01 sur un reste
-            // de 10.0050 marquait 0 au score de montant.
-            let candidates_with_contacts: Vec<(
-                Invoice,
-                Option<kesh_db::entities::Contact>,
-                rust_decimal::Decimal,
-            )> = candidate_invoices
-                .iter()
-                .map(|c| {
-                    (
-                        c.invoice.clone(),
-                        contacts_map.get(&c.invoice.contact_id).cloned(),
-                        invoice_settlements::amount_due_to_centime(c.amount_due),
-                    )
-                })
-                .collect();
-            let match_proposals = propose_matches(&tx, &candidates_with_contacts);
+        .map(|(tx, candidate_invoices, slightly_overpaid)| {
+            let match_proposals = propose_matches(&tx, &with_contacts(&candidate_invoices));
             let has_strong_invoice_match = match_proposals
                 .iter()
                 .any(|mp| mp.score.total >= INVOICE_OVERRIDE_THRESHOLD);
+            // Story 29-6 (#665, revue de code P1, E1) — une facture que le
+            // paiement dépasse de 1 à 5 centimes n'est plus candidate ; si
+            // elle porte un indice (`propose_matches` ne retient que les
+            // factures de score non nul), elle garde la règle comme elle le
+            // faisait avant la story : la ligne reste « Aucune
+            // correspondance », rien n'est passé en produit.
+            let rule_masked_by_overpaid_invoice =
+                !propose_matches(&tx, &with_contacts(&slightly_overpaid)).is_empty();
 
             let mut candidates: Vec<ReconciliationCandidate> = match_proposals
                 .into_iter()
@@ -879,6 +924,7 @@ pub async fn get_proposals(
             // `candidate_invoices.is_empty()` quand tx.currency != "CHF",
             // mais rules NE PAS hériter du sign filter 8-4 invoice (P-H7).
             if !has_strong_invoice_match
+                && !rule_masked_by_overpaid_invoice
                 && tx.currency == "CHF"
                 && let Some(rule) = kesh_reconciliation::first_matching_rule(
                     &active_rules,

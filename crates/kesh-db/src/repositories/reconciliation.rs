@@ -24,6 +24,10 @@
 //!   et le montant plus `underpayment_tolerance` (paiement partiel), dans
 //!   l'ordre d'imputation (date d'exigibilité,
 //!   date, `id` croissants ; Story 29-5), 50 au plus.
+//! - [`find_invoices_slightly_overpaid_for_window`] : les factures que cette
+//!   borne basse écarte, à `overpayment_tolerance` près — jamais proposées,
+//!   lues pour qu'une règle d'affectation ne prenne pas leur place en silence
+//!   (Story 29-6, #665, revue de code P1).
 //!   **PAS de filtre currency** (S4-1 Pass 4 revert : colonne
 //!   `invoices.currency` n'existe pas v0.1 mono-CHF, cf. L38).
 //! - [`find_pending_transactions_for_account`] : charge les
@@ -533,28 +537,8 @@ pub async fn find_unpaid_invoices_for_window<'e, E>(
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
-    // Alias `i` requis par les tables dérivées du reste dû (`… ON … = i.id`).
-    // Elles n'exposent que `invoice_id` et leur agrégat : les colonnes de
-    // `INVOICE_COLUMNS` restent sans ambiguïté. Filtre en HAVING pour
-    // référencer l'alias `amount_due` sans dupliquer l'expression (SQL
-    // n'autorise pas un alias de SELECT dans le WHERE). L'ancre, elle, se lit
-    // dans le WHERE : elle ne cite que `i` et la table dérivée `rmd`, aucun
-    // alias de SELECT.
-    sqlx::query_as::<_, UnpaidInvoiceCandidate>(&format!(
-        "SELECT {INVOICE_COLUMNS}, {due} AS amount_due, {ttc} AS total_ttc \
-         FROM invoices i {joins} {INVOICE_PAYMENT_ANCHOR_JOIN_SQL} \
-         WHERE i.company_id = ? \
-           AND i.status = 'validated' \
-           AND i.paid_at IS NULL \
-           AND i.journal_entry_id IS NOT NULL \
-           AND i.date <= ? \
-           AND {INVOICE_PAYMENT_ANCHOR_SQL} >= ? \
-         HAVING amount_due BETWEEN ? AND ? + ? \
-         ORDER BY {INVOICE_EXIGIBILITY_DATE_SQL} ASC, i.date ASC, i.id ASC \
-         LIMIT 50",
-        due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
-        ttc = crate::repositories::invoices::INVOICE_TTC_DERIVED_SQL,
-        joins = amount_due_derived_joins(),
+    sqlx::query_as::<_, UnpaidInvoiceCandidate>(&unpaid_invoices_in_window_sql(
+        "amount_due BETWEEN ? AND ? + ?",
     ))
     .bind(company_id)
     .bind(window.latest_invoice_date)
@@ -565,6 +549,84 @@ where
     .fetch_all(executor)
     .await
     .map_err(map_db_error)
+}
+
+/// Story 29-6 (#665, revue de code P1, E1) — les factures que la proposition
+/// **n'offre plus** parce que le paiement les dépasse de quelques centimes :
+/// mêmes filtres 1 à 3 et même ordre que [`find_unpaid_invoices_for_window`],
+/// reste dû `>= tx_amount − overpayment_tolerance` et
+/// `< least_due_without_overpayment(tx_amount)` — exactement celles que la
+/// borne basse d'avant la story (`tx_amount − 0.05`) chargeait et que la
+/// story écarte.
+///
+/// **Elles ne sont jamais proposées.** Leur seul lecteur, `get_proposals`, les
+/// note comme il notait les candidates avant la story et, si l'une porte un
+/// indice (référence liée à son numéro, contrepartie liée au nom de son
+/// client), **n'applique pas la règle d'affectation** à la transaction. Avant
+/// la story, cette facture était candidate et passait devant la règle ; sans
+/// ce garde, la règle deviendrait la proposition, et *Accepter* porterait en
+/// produit le paiement d'un client identifié, la facture restant due — le
+/// faux rattachement muet (`CLAUDE.md`, *Un appariement automatique propose,
+/// il ne crée jamais*). La ligne reste « Aucune correspondance ».
+///
+/// Les deux intervalles du reste dû sont **disjoints** et se touchent à
+/// `least_due_without_overpayment(tx_amount)` : une facture est candidate,
+/// ou lue ici, ou dans aucune des deux listes. 50 au plus, dans l'ordre
+/// d'imputation ; chaque liste a son propre `LIMIT`, celle-ci n'occupe
+/// aucune place de l'autre.
+pub async fn find_invoices_slightly_overpaid_for_window<'e, E>(
+    executor: E,
+    company_id: i64,
+    window: InvoiceDateWindow,
+    tx_amount: Decimal,
+    overpayment_tolerance: Decimal,
+) -> Result<Vec<UnpaidInvoiceCandidate>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    sqlx::query_as::<_, UnpaidInvoiceCandidate>(&unpaid_invoices_in_window_sql(
+        "amount_due >= ? - ? AND amount_due < ?",
+    ))
+    .bind(company_id)
+    .bind(window.latest_invoice_date)
+    .bind(window.earliest_anchor_date)
+    .bind(tx_amount)
+    .bind(overpayment_tolerance)
+    .bind(least_due_without_overpayment(tx_amount))
+    .fetch_all(executor)
+    .await
+    .map_err(map_db_error)
+}
+
+/// La requête commune de [`find_unpaid_invoices_for_window`] et de
+/// [`find_invoices_slightly_overpaid_for_window`] : filtres 1 à 3, ordre
+/// d'imputation, `LIMIT 50` ; seule la condition `having` sur le reste dû
+/// diffère. Les trois premiers `?` sont `company_id`, `latest_invoice_date`
+/// et `earliest_anchor_date` ; ceux de `having` suivent.
+fn unpaid_invoices_in_window_sql(having: &str) -> String {
+    // Alias `i` requis par les tables dérivées du reste dû (`… ON … = i.id`).
+    // Elles n'exposent que `invoice_id` et leur agrégat : les colonnes de
+    // `INVOICE_COLUMNS` restent sans ambiguïté. Filtre en HAVING pour
+    // référencer l'alias `amount_due` sans dupliquer l'expression (SQL
+    // n'autorise pas un alias de SELECT dans le WHERE). L'ancre, elle, se lit
+    // dans le WHERE : elle ne cite que `i` et la table dérivée `rmd`, aucun
+    // alias de SELECT.
+    format!(
+        "SELECT {INVOICE_COLUMNS}, {due} AS amount_due, {ttc} AS total_ttc \
+         FROM invoices i {joins} {INVOICE_PAYMENT_ANCHOR_JOIN_SQL} \
+         WHERE i.company_id = ? \
+           AND i.status = 'validated' \
+           AND i.paid_at IS NULL \
+           AND i.journal_entry_id IS NOT NULL \
+           AND i.date <= ? \
+           AND {INVOICE_PAYMENT_ANCHOR_SQL} >= ? \
+         HAVING {having} \
+         ORDER BY {INVOICE_EXIGIBILITY_DATE_SQL} ASC, i.date ASC, i.id ASC \
+         LIMIT 50",
+        due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
+        ttc = crate::repositories::invoices::INVOICE_TTC_DERIVED_SQL,
+        joins = amount_due_derived_joins(),
+    )
 }
 
 /// Charge les transactions bancaires `pending` non-rejetées pour un
