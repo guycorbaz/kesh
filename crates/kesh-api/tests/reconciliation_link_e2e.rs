@@ -1052,6 +1052,16 @@ async fn t12_roles_cles_et_corps(pool: MySqlPool) {
         .await;
     assert_eq!(s, 403);
     assert_eq!(ctx.etat(tx).await, ("pending".to_string(), None));
+    // La lecture des candidats, elle, est ouverte à la clé en lecture seule.
+    let (s, b) = ctx
+        .req_as(
+            &cle_ro,
+            reqwest::Method::GET,
+            &format!("/api/v1/reconciliation/transactions/{tx}/link-candidates"),
+            None,
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
 
     let (cle_id, cle_rw) = common::create_key_via_http(
         &ctx.app.client,

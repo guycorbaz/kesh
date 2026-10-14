@@ -258,11 +258,14 @@ le solde comptable à cette date diffère du relevé, la tuile affiche l'\textbf
 (solde comptable − relevé) : typiquement un mouvement bancaire pas encore rapproché.
 
 L'écart tient compte des \textbf{dates de valeur} : la banque arrête son relevé par date de
-comptabilisation, Kesh date les écritures de rapprochement à la date de valeur. Un
+comptabilisation, Kesh date les écritures de rapprochement à la date de valeur --- une
+transaction rattachée à un règlement saisi depuis la fiche de la facture
+(\S\ref{sec:rattacher-reglement}) garde la date du règlement, et la correction s'y applique
+de même. Un
 mouvement comptabilisé par la banque le dernier jour du relevé, mais rapproché à une date
 de valeur postérieure, ne crée donc pas d'écart. Trois limites :
 \begin{itemize}
-    \item seule une écriture \textbf{issue d'un rapprochement} est ainsi corrigée : une
+    \item seule une écriture \textbf{issue d'un rapprochement ou d'un rattachement} est ainsi corrigée : une
     écriture saisie à la main pour un mouvement bancaire, à une autre date, apparaît dans
     l'écart — rien ne la relie au relevé ;
     \item quand plusieurs comptes bancaires partagent un même compte du grand livre,
@@ -1225,7 +1228,7 @@ fractionnaire) se règle au \textbf{reste dû arrondi au centime}~: c'est le mon
 dialogue propose. Payer 10.01 une facture de 10.0050 la \textbf{solde}~: l'écriture porte alors
 une \textbf{troisième ligne}, l'écart d'un demi-centime au plus, sur le compte de différences
 d'arrondi désigné dans \emph{Paramètres} → \emph{Facturation}. Sans ce compte, un tel paiement est
-refusé --- un acompte, lui, passe toujours. Le rapprochement bancaire enregistre, lui, ses règlements tout seul.
+refusé --- un acompte, lui, passe toujours. Le rapprochement bancaire enregistre, lui, ses règlements tout seul. Si le virement est déjà importé, rattachez ensuite la transaction au règlement (\S\ref{sec:rattacher-reglement}) --- sans quoi elle reste en attente et empêche la clôture du compte bancaire.
 
 \textbf{La liste des règlements.} La fiche liste chaque règlement --- date, montant, mode --- avec
 un lien vers son écriture.
@@ -1335,7 +1338,7 @@ Depuis la version \textbf{0.7}, l'écran \emph{Factures → Rappels} (réservé 
 \paragraph{Ce que réclame un rappel.} Un rappel réclame ce que le client \textbf{doit encore} : le \textbf{reste dû} de la facture, après ses règlements partiels --- le montant total s'il n'a rien payé. Le courrier annonce ce reste, augmenté des frais de rappel s'il y en a ; à frais nuls, il ne parle pas de frais. Si un règlement est enregistré \textbf{entre l'ouverture de l'aperçu et l'envoi}, l'envoi est \textbf{refusé} : le courrier validé annoncerait un autre montant que la QR-facture jointe. Fermez puis rouvrez l'aperçu, qui reprend le nouveau reste. Le PDF joint n'est pas la facture réémise, c'est un \textbf{rappel}, produit à chaque envoi --- il n'est pas figé comme le PDF de la facture (\S\ref{sec:pdf-fige}) : il en porte le titre, rappelle le numéro de la facture d'origine et, sous le total, ce qui est \textbf{déjà réglé} puis le \textbf{reste à payer} (ces deux lignes n'apparaissent qu'après un règlement). Sa \textbf{QR-facture porte le reste dû}, avec la même référence que la facture. La réconciliation bancaire propose la facture contre un paiement \textbf{du reste dû} --- et de lui seul~: le montant du courrier, frais compris, ne l'est pas (voir l'avertissement ci-dessous) --- reçu \textbf{au plus 30 jours après la plus tardive de ces dates}~: le dernier rappel, l'échéance, la date de la facture~; un rappel \textbf{annulé} ne compte pas (\S\ref{sec:algorithme-matching}). Les \textbf{frais de rappel n'y sont jamais inclus} : ils figurent sur une ligne à part, avec la mention qu'ils ne sont pas compris dans le bulletin de versement.
 
 \begin{keshwarning}
-Les frais de rappel ne sont \textbf{pas comptabilisés} par Kesh. Un client qui paie le montant du courrier (reste dû \emph{et} frais) ne verra pas son versement \textbf{proposé} au rapprochement, puisqu'il dépasse ce qui reste à payer ; saisi comme règlement manuel, il est \textbf{refusé comme trop-perçu}. Seul le montant de la QR-facture s'enregistre (issue \#401).
+Les frais de rappel ne sont \textbf{pas comptabilisés} par Kesh. Un client qui paie le montant du courrier (reste dû \emph{et} frais) ne verra pas son versement \textbf{proposé} au rapprochement, puisqu'il dépasse ce qui reste à payer ; saisi comme règlement manuel, il est \textbf{refusé comme trop-perçu}. Seul le montant de la QR-facture s'enregistre (issue \#401). Et sa transaction, qui dépasse ce règlement de plus de 5 centimes, \textbf{ne se rattache pas} à lui (\S\ref{sec:rattacher-reglement})~: elle reste en attente et empêche la clôture du compte bancaire (issues \#671 et \#401).
 \end{keshwarning}
 
 \begin{keshnote}
@@ -1719,7 +1722,8 @@ Elle est informative~: c'est l'état du compte, non sa date, qui refuse les écr
           supprimez l'import s'il ne contient aucune transaction rapprochée
           (\S\ref{sec:supprimer-import}). Une transaction \textbf{rejetée} à la réconciliation
           compte comme non rapprochée~: elle empêche la clôture tant qu'elle n'est pas
-          rapprochée manuellement ou que son import n'est pas supprimé --- \emph{Annuler le
+          rapprochée manuellement, ou rattachée au règlement saisi depuis la fiche de la
+          facture (\S\ref{sec:rattacher-reglement}), ou que son import n'est pas supprimé --- \emph{Annuler le
           rejet}, dans le détail de son import, la remet parmi les propositions
           (\S\ref{sec:reconciliation})~;
     \item si un \textbf{lot de paiement généré} sur ce compte n'est ni confirmé ni annulé~:
@@ -2048,7 +2052,7 @@ Importez vos relevés bancaires \textbf{au moins une fois par semaine} pour faci
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Réconciliation bancaire}\label{sec:reconciliation}
 
-La réconciliation consiste à passer en comptabilité les transactions bancaires importées. Kesh ne rapproche pas une transaction d'une écriture qui existerait déjà~: il \textbf{crée} l'écriture, soit en réglant une facture client, soit en imputant la transaction à un compte de contrepartie --- par une règle d'affectation, manuellement ou en l'éclatant sur plusieurs comptes.
+La réconciliation consiste à passer en comptabilité les transactions bancaires importées. Kesh \textbf{crée} l'écriture, soit en réglant une facture client, soit en imputant la transaction à un compte de contrepartie --- par une règle d'affectation, manuellement ou en l'éclatant sur plusieurs comptes ---, sauf dans un cas~: une transaction dont le règlement a déjà été enregistré depuis la fiche de la facture se \textbf{rattache} à ce règlement, sans aucune écriture (\S\ref{sec:rattacher-reglement}).
 
 \subsection{Réconciliation automatique}
 
@@ -2056,9 +2060,9 @@ La réconciliation consiste à passer en comptabilité les transactions bancaire
 
 \subsubsection{Algorithme de matching}\label{sec:algorithme-matching}
 
-À l'ouverture de la page de réconciliation, Kesh cherche, pour chaque transaction bancaire en attente (créditrice, en CHF), les factures qui pourraient lui correspondre. Une facture est \textbf{candidate} si elle est validée et pas encore payée, si le paiement --- la \textbf{date de valeur} de la transaction, à défaut sa date de comptabilisation --- tombe \textbf{au plus 30 jours après la plus tardive de ces dates}~: la date de la facture, son échéance, son dernier rappel (un rappel annulé ne compte pas)~; et \textbf{au plus un jour avant la date de la facture}~; et si \textbf{ce qui reste à payer} --- son \textbf{reste dû} : le montant total, moins l'avoir éventuel, moins les règlements déjà enregistrés --- \textbf{n'est pas inférieur au montant} de la transaction et ne le dépasse pas de plus de 5 centimes. Un paiement qui dépasserait le reste dû serait un trop-perçu, refusé~; un paiement un peu inférieur est accepté comme règlement partiel, la facture restant ouverte pour la différence, que l'on solde depuis sa fiche (\S\ref{sec:reglement-client}). Seul l'écart d'arrondi au centime d'un reste à plus de deux décimales --- un demi-centime au plus --- est admis au-dessous~: il passe sur le compte de différences d'arrondi. Un virement qui \textbf{solde} une facture déjà réglée en partie est donc reconnu : la proposition porte sur le reste, pas sur le montant d'origine. Un paiement reçu \textbf{avant l'échéance} est proposé lui aussi, même plus de 30 jours après la facture (des conditions à 60 jours, par exemple), et un paiement reçu dans les 30 jours qui suivent l'échéance, ou le dernier rappel, l'est également. Un paiement reçu \textbf{plus de 30 jours après l'échéance} (ou après la date de la facture, si elle n'a pas d'échéance) et \textbf{sans rappel depuis 30 jours} n'est en revanche \textbf{pas proposé}~: enregistrez alors le règlement depuis la fiche de la facture (\S\ref{sec:reglement-client}), \textbf{puis rejetez la transaction} à la réconciliation (\emph{Rejeter}), pour qu'elle ne soit pas passée une seconde fois. De même, un client qui a payé \textbf{quelques centimes de trop} n'est pas proposé --- ni une règle d'affectation à la place de sa facture, quand la référence du paiement ou le nom du client la désigne~: la ligne reste «~Aucune correspondance~». Enregistrez le règlement du reste dû depuis la fiche de la facture, puis \textbf{rejetez} la transaction à la réconciliation --- cochez sa ligne «~Aucune correspondance~», puis \emph{Rejeter} ---, pour qu'elle ne soit pas passée une seconde fois, et traitez l'écart (remboursement au client, ou écriture manuelle). Dans les deux cas, la transaction rejetée \textbf{reste en attente} dans le détail de son import~: elle compte comme non rapprochée et empêche la clôture du compte bancaire (\S\ref{sec:clore-compte-bancaire}).
+À l'ouverture de la page de réconciliation, Kesh cherche, pour chaque transaction bancaire en attente (créditrice, en CHF), les factures qui pourraient lui correspondre. Une facture est \textbf{candidate} si elle est validée et pas encore payée, si le paiement --- la \textbf{date de valeur} de la transaction, à défaut sa date de comptabilisation --- tombe \textbf{au plus 30 jours après la plus tardive de ces dates}~: la date de la facture, son échéance, son dernier rappel (un rappel annulé ne compte pas)~; et \textbf{au plus un jour avant la date de la facture}~; et si \textbf{ce qui reste à payer} --- son \textbf{reste dû} : le montant total, moins l'avoir éventuel, moins les règlements déjà enregistrés --- \textbf{n'est pas inférieur au montant} de la transaction et ne le dépasse pas de plus de 5 centimes. Un paiement qui dépasserait le reste dû serait un trop-perçu, refusé~; un paiement un peu inférieur est accepté comme règlement partiel, la facture restant ouverte pour la différence, que l'on solde depuis sa fiche (\S\ref{sec:reglement-client}). Seul l'écart d'arrondi au centime d'un reste à plus de deux décimales --- un demi-centime au plus --- est admis au-dessous~: il passe sur le compte de différences d'arrondi. Un virement qui \textbf{solde} une facture déjà réglée en partie est donc reconnu : la proposition porte sur le reste, pas sur le montant d'origine. Un paiement reçu \textbf{avant l'échéance} est proposé lui aussi, même plus de 30 jours après la facture (des conditions à 60 jours, par exemple), et un paiement reçu dans les 30 jours qui suivent l'échéance, ou le dernier rappel, l'est également. Un paiement reçu \textbf{plus de 30 jours après l'échéance} (ou après la date de la facture, si elle n'a pas d'échéance) et \textbf{sans rappel depuis 30 jours} n'est en revanche \textbf{pas proposé}~: enregistrez alors le règlement depuis la fiche de la facture (\S\ref{sec:reglement-client}), \textbf{puis rattachez la transaction à ce règlement} (\emph{Rattacher à un règlement}, \S\ref{sec:rattacher-reglement})~: elle passe rapprochée, sans écriture. De même, un client qui a payé \textbf{quelques centimes de trop} n'est pas proposé --- ni une règle d'affectation à la place de sa facture, quand la référence du paiement ou le nom du client la désigne~: la ligne reste «~Aucune correspondance~». Enregistrez le règlement du reste dû depuis la fiche de la facture, puis \textbf{rattachez la transaction à ce règlement} (\S\ref{sec:rattacher-reglement})~: elle passe rapprochée, sans écriture, et l'écart de quelques centimes, affiché avant la confirmation, reste au compte de la banque --- traitez l'écart (remboursement au client, ou écriture manuelle).
 
-\paragraph{Une facture datée de plus d'un jour après le paiement n'est pas proposée.}\label{sec:facture-posterieure} Un paiement ne peut pas précéder la facture qu'il règle de \textbf{plus d'un jour}. Depuis la version~0.13.3, la proposition applique la même règle que l'acceptation, sur la même date --- la \textbf{date de valeur} de la transaction, à défaut sa date de comptabilisation~: une facture datée de \textbf{plus d'un jour après} le paiement n'est donc plus proposée, et une facture proposée n'est plus refusée parce qu'elle serait postérieure au paiement. Ce refus ne se voit plus que si la facture a été \textbf{redatée} entre l'affichage des propositions et leur acceptation~: la ligne apparaît alors dans les \emph{Échecs partiels} avec le motif «~Le paiement est daté de plus d'un jour avant la facture~». De même, si un \textbf{rappel est annulé} entre l'affichage des propositions et leur acceptation, la date qui fait courir les 30 jours peut reculer, et la facture être refusée pour un paiement trop tardif~: la ligne apparaît dans les \emph{Échecs partiels}, avec le motif générique de la facture non éligible. Le règlement saisi depuis la fiche de la facture, ou depuis la page des échéances, refuse lui aussi un règlement daté avant la facture~: l'écran n'accepte aucune date antérieure à la date de la facture, et son calendrier n'en propose aucune. Il n'a en revanche aucune limite de 30 jours~: c'est par lui qu'on enregistre un paiement que la réconciliation ne propose pas (reçu plus de 30 jours après l'échéance et le dernier rappel) --- en rejetant ensuite la transaction à la réconciliation. Vérifiez la date de la facture~: si le paiement est réellement antérieur --- un acompte, par exemple ---, il ne règle pas cette facture.
+\paragraph{Une facture datée de plus d'un jour après le paiement n'est pas proposée.}\label{sec:facture-posterieure} Un paiement ne peut pas précéder la facture qu'il règle de \textbf{plus d'un jour}. Depuis la version~0.13.3, la proposition applique la même règle que l'acceptation, sur la même date --- la \textbf{date de valeur} de la transaction, à défaut sa date de comptabilisation~: une facture datée de \textbf{plus d'un jour après} le paiement n'est donc plus proposée, et une facture proposée n'est plus refusée parce qu'elle serait postérieure au paiement. Ce refus ne se voit plus que si la facture a été \textbf{redatée} entre l'affichage des propositions et leur acceptation~: la ligne apparaît alors dans les \emph{Échecs partiels} avec le motif «~Le paiement est daté de plus d'un jour avant la facture~». De même, si un \textbf{rappel est annulé} entre l'affichage des propositions et leur acceptation, la date qui fait courir les 30 jours peut reculer, et la facture être refusée pour un paiement trop tardif~: la ligne apparaît dans les \emph{Échecs partiels}, avec le motif générique de la facture non éligible. Le règlement saisi depuis la fiche de la facture, ou depuis la page des échéances, refuse lui aussi un règlement daté avant la facture~: l'écran n'accepte aucune date antérieure à la date de la facture, et son calendrier n'en propose aucune. Il n'a en revanche aucune limite de 30 jours~: c'est par lui qu'on enregistre un paiement que la réconciliation ne propose pas (reçu plus de 30 jours après l'échéance et le dernier rappel) --- en rattachant ensuite la transaction à ce règlement (\S\ref{sec:rattacher-reglement}). Vérifiez la date de la facture~: si le paiement est réellement antérieur --- un acompte, par exemple ---, il ne règle pas cette facture.
 
 Chaque candidate reçoit un score, somme de trois critères :
 
@@ -2072,7 +2076,7 @@ Une candidate dont le score vaut zéro n'est pas proposée.
 
 \paragraph{À score égal, la facture échue la première.}\label{sec:imputation-score-egal} Quand plusieurs factures obtiennent le même score --- typiquement deux factures du même client et du même montant, sans référence dans le paiement ---, Kesh applique la règle d'imputation de la loi (art.~87~CO), dans la mesure où il la connaît~: d'abord une facture \textbf{échue}, et parmi elles celle \textbf{échue la première}~; une facture sans échéance --- ou dont l'échéance précède la date --- est tenue pour échue dès sa date (pour une facture datée du lendemain du paiement, que Kesh admet aussi, cette date est celle de son échéance, et elle n'est donc pas encore échue). À échéance égale, la plus ancienne. Si aucune n'est échue, Kesh propose celle dont l'échéance --- à défaut, la date --- est la plus proche~; la loi désigne alors la dette la moins garantie, que Kesh ne connaît pas.
 
-Cette règle ne départage que des scores égaux. Un paiement qui porte le \textbf{numéro} d'une facture \textbf{et son montant exact} la désigne, et elle passe devant toute facture qu'il ne désigne pas aussi~; le montant pesant plus que la référence, une autre facture au montant exact \textbf{peut} en revanche passer devant une facture désignée dont le montant diffère, fût-ce d'un centime, et y passe toujours si elle est du même client. Kesh ne connaît pas les poursuites et ne répartit pas un paiement entre deux factures échues le même jour~: pour imputer autrement, enregistrez le règlement depuis la fiche de la facture voulue (\S\ref{sec:reglement-client}), puis rejetez la transaction (\emph{Rejeter}). Entre deux clients que rien ne distingue, cet ordre n'est qu'un choix par défaut~: vérifiez la proposition.
+Cette règle ne départage que des scores égaux. Un paiement qui porte le \textbf{numéro} d'une facture \textbf{et son montant exact} la désigne, et elle passe devant toute facture qu'il ne désigne pas aussi~; le montant pesant plus que la référence, une autre facture au montant exact \textbf{peut} en revanche passer devant une facture désignée dont le montant diffère, fût-ce d'un centime, et y passe toujours si elle est du même client. Kesh ne connaît pas les poursuites et ne répartit pas un paiement entre deux factures échues le même jour~: pour imputer autrement, enregistrez le règlement depuis la fiche de la facture voulue (\S\ref{sec:reglement-client}), puis rattachez la transaction à ce règlement (\S\ref{sec:rattacher-reglement}). Entre deux clients que rien ne distingue, cet ordre n'est qu'un choix par défaut~: vérifiez la proposition.
 
 Quand aucune facture n'est candidate, la réconciliation propose à la place la \textbf{règle d'affectation} qui correspond à la transaction, s'il y en a une (\S\ref{sec:regles-affectation})~; elle s'affiche avec un score de 100\,\% --- un score conventionnel, qui n'est pas comparé à celui des factures. Elle n'est \textbf{pas} proposée quand une facture que le paiement dépasse de 5 centimes au plus --- qui n'est pas candidate, \S\ref{sec:algorithme-matching} --- est désignée par la référence du paiement ou le nom de son client~: c'est vraisemblablement ce client qui a payé, et accepter la règle porterait son paiement en produit, la facture restant due. Rien n'est jamais passé en comptabilité sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
 
@@ -2083,7 +2087,7 @@ Quand aucune facture n'est candidate, la réconciliation propose à la place la 
 \begin{itemize}
     \item la candidate affichée est la \textbf{première} que propose Kesh~: la facture la mieux notée s'il y en a une --- à score égal, celle qu'impute la règle de la loi (\S\ref{sec:imputation-score-egal}) ---, avec son numéro et le \textbf{montant qui reste à payer}, au centime --- si la facture est déjà réglée en partie, ce montant est suivi du total d'origine, par exemple «~600, reste dû sur 1000~»~;
     \item une \textbf{règle} n'est affichée, avec le badge \emph{Règle} et la mention «~libellé → compte~», que s'il n'y a \textbf{aucune} facture candidate, ni facture désignée que le paiement dépasse de quelques centimes --- même une facture de score faible passe devant elle~: une facture candidate est rapprochée du paiement par sa référence, le nom de son client ou son montant exact, et accepter une règle à sa place porterait ce paiement en produit, la facture restant due (\S\ref{sec:faq-aucun-match}). La page le rappelle au-dessus de la liste~;
-    \item sans candidate, la ligne indique «~Aucune correspondance~» et porte une case, comme les autres~; \emph{Accepter} ne la traite pas --- tant qu'une telle ligne est cochée, il reste grisé et la page le dit~; elle se rejette, ou s'impute par \emph{Affecter manuellement} ou \emph{Éclater}.
+    \item sans candidate, la ligne indique «~Aucune correspondance~» et porte une case, comme les autres~; \emph{Accepter} ne la traite pas --- tant qu'une telle ligne est cochée, il reste grisé et la page le dit~; elle se rejette, ou s'impute par \emph{Affecter manuellement} ou \emph{Éclater}~; une ligne de crédit en CHF se rattache aussi au règlement déjà saisi depuis la fiche (\emph{Rattacher à un règlement}, \S\ref{sec:rattacher-reglement}).
 \end{itemize}
 
 Cochez les transactions à traiter, puis cliquez sur l'un des deux boutons placés au-dessus de la liste~:
@@ -2093,7 +2097,7 @@ Cochez les transactions à traiter, puis cliquez sur l'un des deux boutons plac�
     \item \emph{Rejeter} écarte \textbf{la transaction} de la réconciliation --- qu'elle ait une proposition ou non --- \textbf{sans la passer en comptabilité}~: elle est marquée comme revue et \textbf{quitte la liste} de la réconciliation. Elle reste dans le \textbf{détail de son import} (\emph{Quotidien} → \emph{Importer des relevés}, liste \emph{Imports précédents}, puis le nom du fichier), avec le statut «~pending~» et la mention «~Rejetée le~\dots~»~; elle compte comme non rapprochée et empêche la clôture de son compte bancaire (\S\ref{sec:clore-compte-bancaire}). Le bouton \emph{Annuler le rejet} de sa ligne la rend de nouveau \textbf{proposable}~: elle revient dans la liste de la réconciliation --- qui ne montre que les 100 plus récentes en attente~: une transaction plus ancienne n'y reparaît qu'une fois les plus récentes traitées ---, où elle peut de nouveau être acceptée, affectée manuellement ou éclatée~; le geste ne passe aucune écriture et s'inscrit au journal d'audit (\emph{Rejet de réconciliation annulé}). Le Comptable et l'Administrateur voient le bouton~; le rôle Consultation voit la mention seule. La page \emph{Réconciliation} le rappelle sous la liste.
 \end{itemize}
 
-Pour imputer une transaction autrement qu'à la candidate affichée, utilisez les boutons de sa ligne~: \emph{Affecter manuellement} ou \emph{Éclater} (ci-dessous).
+Pour imputer une transaction autrement qu'à la candidate affichée, utilisez les boutons de sa ligne~: \emph{Affecter manuellement} ou \emph{Éclater} (ci-dessous) --- ou, pour un crédit en CHF dont le règlement a déjà été saisi depuis la fiche de la facture, \emph{Rattacher à un règlement} (\S\ref{sec:rattacher-reglement}).
 
 \paragraph{Un refus n'empêche pas les autres.} Chaque ligne cochée est traitée pour elle-même~: les transactions acceptées le sont, même si d'autres sont refusées. Kesh affiche le nombre d'opérations réussies puis, sous le titre \emph{Échecs partiels}, chaque transaction refusée --- désignée par sa date, son montant et sa contrepartie --- avec le motif du refus en clair~: période verrouillée, exercice fermé, facture déjà réglée entre-temps, compte non imputable, transaction supprimée avec son import, rapprochée ou rejetée entre-temps (dans un autre onglet, par exemple), etc. Il en va de même pour \emph{Rejeter}. Ce bilan reste affiché même quand le lot a vidé la liste.
 
@@ -2109,7 +2113,35 @@ Si la candidate proposée ne convient pas, ou s'il n'y en a aucune~:
     \item Cliquer sur \emph{Affecter}.
 \end{enumerate}
 
-Kesh passe \textbf{une} écriture entre le compte de la banque et ce compte de contrepartie. L'affectation manuelle ne règle \textbf{pas} une facture~: le compte débiteurs n'est pas proposé. Pour un paiement de client que la réconciliation ne propose pas, enregistrez le règlement depuis la fiche de la facture (\S\ref{sec:reglement-client}).
+Kesh passe \textbf{une} écriture entre le compte de la banque et ce compte de contrepartie. L'affectation manuelle ne règle \textbf{pas} une facture~: le compte débiteurs n'est pas proposé. Pour un paiement de client que la réconciliation ne propose pas, enregistrez le règlement depuis la fiche de la facture (\S\ref{sec:reglement-client}), puis rattachez-y la transaction (\S\ref{sec:rattacher-reglement}).
+
+\subsection{Rattacher une transaction à un règlement déjà enregistré}\label{sec:rattacher-reglement}
+
+\textbf{Quand.} Un paiement de client a été enregistré depuis la fiche de la facture --- ou depuis la page des échéances --- \textbf{par virement, sur ce compte bancaire} (\S\ref{sec:reglement-client}) : le règlement a passé son écriture (Débit banque / Crédit débiteurs), mais rien ne le relie à la transaction du relevé, qui reste en attente. C'est le cas d'un paiement que la réconciliation ne propose pas (reçu plus de 30 jours après l'échéance et le dernier rappel, client qui a payé quelques centimes de trop, imputation choisie à la main). Le rattachement relie la transaction à ce règlement~: elle passe \textbf{rapprochée}, et elle cesse d'empêcher la clôture du compte bancaire (\S\ref{sec:clore-compte-bancaire}) comme d'apparaître parmi les transactions en attente de la préparation de clôture de l'exercice (\S\ref{sec:preparer-cloture}).
+
+\textbf{Le geste.} Sur la ligne de la transaction, \emph{Rattacher à un règlement} (lignes de crédit en CHF seulement). Kesh liste les règlements que la transaction peut rejoindre --- facture, client, date du règlement, montant, écart, jours d'écart ---, du plus petit écart au plus grand, puis du plus proche en date au plus lointain. \textbf{Aucun n'est choisi d'office}~: cochez celui qui correspond, puis \emph{Rattacher}. Le bilan dit «~1 opération(s) réussie(s).~» et la ligne quitte la liste.
+
+\textbf{Les conditions.} Le règlement doit être un virement \textbf{sur le même compte bancaire} que la transaction, d'un montant \textbf{égal} au sien ou \textbf{inférieur de 5 centimes au plus}, et ne pas être déjà rapproché d'une autre transaction. La date ne compte pas~: un règlement saisi le jour où l'on remarque le paiement peut précéder ou suivre la transaction de plusieurs semaines.
+
+\textbf{L'écart.} Quand la transaction dépasse le règlement --- le client a payé 3 centimes de trop, par exemple ---, Kesh l'affiche avant la confirmation~: l'écart reste au compte de la banque, à justifier (remboursement au client, ou écriture manuelle).
+
+\textbf{Aucune écriture.} Le rattachement ne passe aucune écriture, aucun règlement, aucun lettrage~: il relie la transaction au règlement déjà enregistré. Il s'inscrit au journal d'audit (\emph{Transaction rattachée à un règlement}).
+
+\textbf{Une transaction rejetée} se rattache par la même voie~: \emph{Annulez d'abord le rejet} dans le détail de son import, pour qu'elle revienne dans la liste de la réconciliation.
+
+\textbf{Un règlement d'un exercice clôturé} se rattache~: un paiement de décembre rapproché en janvier, une fois décembre clos, n'écrit rien. Mais son rapprochement \textbf{ne s'annule plus} ensuite, comme tout rapprochement d'un exercice clôturé (\S\ref{sec:annuler-rapprochement}).
+
+\textbf{Défaire un rattachement.} \emph{Annuler le rapprochement} (\S\ref{sec:annuler-rapprochement}) défait le lien \textbf{et retire aussi le règlement}, comme pour une proposition acceptée~: la facture est de nouveau à régler. Il n'y a pas de geste qui défasse le seul lien (issue \#672).
+
+\textbf{Ce qui ne se rattache pas} (issue \#671)~:
+\begin{itemize}
+    \item un paiement qui dépasse le règlement de \textbf{plus de 5 centimes} --- c'est le cas du client qui paie le reste dû \emph{et} les frais de rappel (\S\ref{sec:relances-user}, issue \#401)~;
+    \item un règlement saisi sur \textbf{un autre compte bancaire} (le dialogue propose le compte principal)~: annulez-le, puis enregistrez-le de nouveau sur le bon compte~;
+    \item un règlement saisi par \textbf{compte interne}, même sur le compte du grand livre de la banque~: il n'est pas un virement --- même remède~;
+    \item un paiement qui règle \textbf{plusieurs factures} enregistrées séparément~: une transaction se rattache à un seul règlement~;
+    \item une transaction comptabilisée par une \textbf{écriture saisie au journal}, ou par un règlement passé sur un \textbf{ancien} compte du grand livre du compte bancaire~;
+    \item un \textbf{débit}~: le paiement d'une facture fournisseur, ou un lot de paiement, ne se rattache pas.
+\end{itemize}
 
 \subsection{Éclatement d'une transaction (split)}
 
@@ -2163,8 +2195,9 @@ Un rapprochement accepté par erreur --- mauvaise facture, mauvais compte de con
 s'annule. On le fait depuis le \textbf{détail de l'import bancaire} (\emph{Quotidien} → \emph{Importer des relevés}, liste
 \emph{Imports précédents}, puis le nom du fichier)~: chaque transaction rapprochée y porte un lien vers son écriture et un
 bouton \emph{Annuler le rapprochement}. Quand le rapprochement a réglé une \textbf{facture
-client}, le même bouton apparaît aussi sur la fiche de la facture, à côté du règlement qui ne
-peut pas s'annuler seul.
+client}, ou qu'une transaction a été rattachée à son règlement
+(\S\ref{sec:rattacher-reglement}), le même bouton apparaît aussi sur la fiche de la facture, à
+côté du règlement qui ne peut pas s'annuler seul.
 
 Avant de confirmer, Kesh dit ce qui va se passer. À la confirmation~:
 
@@ -2173,7 +2206,9 @@ Avant de confirmer, Kesh dit ce qui va se passer. À la confirmation~:
           --- l'une et l'autre restent au grand livre~;
     \item si le rapprochement avait réglé une facture, son \textbf{règlement est retiré}~: la
           facture redevient à régler (ou partiellement réglée, si d'autres règlements
-          subsistent)~;
+          subsistent). Il en va de même d'une transaction \textbf{rattachée} à un règlement
+          saisi depuis la fiche (\S\ref{sec:rattacher-reglement})~: le règlement est retiré
+          aussi --- aucun geste ne défait le seul lien~;
     \item la transaction redevient \textbf{à rapprocher}, et réapparaît dans la réconciliation,
           prête à être rattachée à la bonne pièce.
 \end{itemize}
@@ -2944,7 +2979,7 @@ Oui, si :
 Que faire ensuite dépend de la transaction~:
 
 \begin{itemize}
-    \item Pour un \textbf{paiement de client}, enregistrez le règlement \textbf{depuis la fiche de la facture} (\emph{Enregistrer un règlement}, \S\ref{sec:reglement-client}). N'utilisez ni \emph{Affecter manuellement} ni \emph{Éclater}~: ils ne proposent que les comptes des classes 5, 6 et 7, et la facture resterait due. Ne créez pas non plus de règle d'affectation pour un paiement de client~: elle porterait le paiement en produit --- le produit serait compté deux fois, et la facture resterait due, sans que rien le signale. Kesh ne relie pas la transaction bancaire au règlement saisi depuis la fiche~: \textbf{rejetez-la} (cochez sa ligne, puis \emph{Rejeter}) pour qu'elle ne soit pas passée une seconde fois --- rejetée, elle reste en attente dans le détail de son import et empêche la clôture du compte bancaire (\S\ref{sec:clore-compte-bancaire}).
+    \item Pour un \textbf{paiement de client}, enregistrez le règlement \textbf{depuis la fiche de la facture} (\emph{Enregistrer un règlement}, \S\ref{sec:reglement-client}). N'utilisez ni \emph{Affecter manuellement} ni \emph{Éclater}~: ils ne proposent que les comptes des classes 5, 6 et 7, et la facture resterait due. Ne créez pas non plus de règle d'affectation pour un paiement de client~: elle porterait le paiement en produit --- le produit serait compté deux fois, et la facture resterait due, sans que rien le signale. Puis rattachez la transaction à ce règlement (\emph{Rattacher à un règlement} sur sa ligne, \S\ref{sec:rattacher-reglement})~: elle passe rapprochée, sans écriture.
     \item Pour une \textbf{charge} diverse, utilisez \emph{Affecter manuellement} ou \emph{Éclater}~; pour une charge récurrente (loyer, abonnement, frais bancaires), créez une règle d'affectation.
 \end{itemize}
 
@@ -3086,7 +3121,7 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[Provision] Charge estimée et comptabilisée d'avance pour un risque ou une dépense future probable.
     \item[QR Bill] Standard suisse 2020+ de facture avec QR code (SIX Group).
     \item[QR-IBAN] IBAN spécial pour les paiements QR Bill avec référence structurée.
-    \item[Réconciliation bancaire] Passage en comptabilité des transactions du relevé bancaire~: Kesh crée l'écriture, en réglant une facture client ou en imputant un compte de contrepartie.
+    \item[Réconciliation bancaire] Passage en comptabilité des transactions du relevé bancaire~: Kesh crée l'écriture, en réglant une facture client ou en imputant un compte de contrepartie~; une transaction dont le règlement a déjà été saisi depuis la fiche de la facture se rattache à ce règlement, sans écriture.
     \item[Référence structurée] Référence numérique unique attachée à un paiement (QRR ou ISO 11649). Kesh produit une référence QRR quand le compte principal porte un QR-IBAN, et aucune sinon.
     \item[Report à nouveau] Solde d'un compte de bilan reporté d'un exercice sur le suivant~; Kesh le calcule automatiquement, que l'exercice précédent soit clôturé ou non, sans écriture de report.
     \item[Sous-compte (auxiliaire)] Compte de détail rattaché à un compte principal (ex. 1100.1 pour un client important).
