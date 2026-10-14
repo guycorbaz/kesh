@@ -267,3 +267,73 @@
 - **Écartée** : `untrack` dans le code dès maintenant — garde qu'aucun test ne peut rougir au sol (même règle que
   C-29-9-14 pour `loading`).
 - **Réversible** : oui.
+
+### C-29-9-19 — #678 entre dans la story ; le titre dit « quatre », la clé reste (amendement du 2026-10-14)
+
+- **Contexte** : décision de l'orchestrateur, après la clôture de la validation (P3 ciblée) : #678 (`bug`, `P4`) touche
+  le même composant que #649, et la règle de release de la v0.13.4 (moins d'issues ouvertes qu'au tag v0.13.3)
+  l'exige. La clé `29-9-trois-petits-correctifs` nomme le fichier de la fiche, la clé de `sprint-status.yaml`, le
+  registre et trois prompts de validation.
+- **Retenu** : AC11 et T10 neufs ; AC1-AC10 inchangés sur le fond, renvois datés seulement. Titre de la fiche
+  « Quatre petits correctifs … des cases sans nom » ; **clé inchangée**, ni fichier renommé, ni clé de sprint changée.
+  Comme pour les trois autres, un #678 fautif sort du périmètre plutôt que de retenir les autres (C-29-9-1).
+- **Écartées** : renommer la clé et le fichier (casserait les renvois des prompts P1-P3, des rapports de validation et
+  du registre, pour un mot) ; une story séparée pour #678 (même composant que #649, même spec E2E, rebase sur la même
+  29-6 : deux branches se marcheraient dessus).
+- **Réversible** : oui.
+
+### C-29-9-20 — #678, libellé de la case : deux clés à variables, les valeurs telles que la ligne les affiche
+
+- **Contexte** : #678 demande un libellé qui nomme la transaction (date, montant, contrepartie). La contrepartie est
+  `string | null` (`reconciliation.types.ts:18`) ; la cellule affiche `?? ''`.
+- **Retenu** : `aria-label` sur la case, deux clés — `reconciliation-labels-select-transaction` (avec `{ $counterparty }`)
+  et `…-no-counterparty` —, choisies par la véracité de `counterpartyName` ; variables `{ $date }`, `{ $amount }`,
+  `{ $currency }` remplies des **chaînes** de l'API, sans reformatage : le libellé dit ce que la ligne montre. L'en-tête
+  vide de la colonne ne change pas.
+- **Écartées** : une seule clé avec une contrepartie vide (libellé terminé par « , ») ; un sélecteur Fluent sur une
+  valeur sentinelle (`[none]`), qu'aucune clé voisine n'emploie ; `aria-labelledby` vers les cellules de la ligne
+  (exigerait des `id` par cellule, et lirait aussi la colonne *Candidate*, que #678 ne demande pas) ; formater date et
+  montant (le libellé dirait autre chose que la ligne) ; un nom de colonne « Sélection » dans l'en-tête (n'identifie
+  pas la transaction).
+- **Réversible** : oui.
+
+### C-29-9-21 — #678, annonce : une région qui englobe le `{#if}` de la 29-6 ; un test de la 29-6 amendé en delta
+
+- **Contexte** : C-29-6-25 l'a écrit : une annonce fiable demande une région présente **avant** le changement. Le
+  `data-testid` de l'indication est éprouvé par présence et absence (Vitest, E2E de la 29-6) et par position (test
+  C-29-6-18 : parent = la rangée, dernier enfant = l'indication).
+- **Retenu** : `<div role="status" aria-live="polite" aria-atomic="true" data-testid="reconciliation-selection-status">`
+  à la place du bloc `{#if}`, l'englobant ; le `<p>` de la 29-6 à l'octet, dedans. Contrat de présence et d'absence
+  intact, E2E de la 29-6 inchangée ; **seul** le test de position change, en delta (ses deux assertions de position
+  suivent l'imbrication ; intention et volet repli à l'octet). V21 prouve que le nœud de la région est le même avant et
+  après le changement (M27).
+- **Écartées** : un `<p>` toujours rendu, vide hors indication (casse `queryByTestId → null` et `toHaveCount(0)` : le
+  contrat que l'orchestrateur demande de garder) ; un `data-testid` conditionnel sur un `<p>` toujours rendu (garde
+  les tests à la lettre mais fait d'un sélecteur de test un indicateur d'état — surprenant pour qui le relira) ;
+  `role="status"` sur la rangée entière (les libellés des boutons entreraient dans l'annonce) ; `role="status"` sur
+  le `<p>` inséré (écarté par C-29-6-25 : pas d'annonce fiable).
+- **Réversible** : oui.
+
+### C-29-9-22 — #678 : ni manuel, ni capture neuve ; un volet E2E dans la spec de #649 ; périmètre borné à l'écran
+
+- **Contexte** : aucun texte visible ne change ; la spec `reconciliation-show-older.spec.ts` de #649 importe 501
+  transactions sans facture, donc toutes sans proposition et cochables (29-6).
+- **Retenu** : manuel inchangé (le PDF régénéré par T6 se contrôle tout de même sur la phrase de la 29-6) ; une puce
+  de CHANGELOG ; volet E2E dans la spec de #649, avant son clic (nom accessible = gabarit fr-CH rempli des textes des
+  cellules ; région présente, puis indication dedans, puis absente) ; témoin visuel : les captures de la spec de la
+  29-6, relancée sans modification. Seules la case de cette table et l'indication de la 29-6 sont revendiquées ; les
+  23 autres cases du frontend (24 sites à `fcd2ae75`), une case « tout cocher » et les autres messages de l'écran
+  restent hors périmètre.
+- **Écartées** : une phrase d'accessibilité au manuel (le manuel ne décrit nulle part les noms accessibles) ; une spec
+  E2E neuve pour #678 (un import de plus pour ce que la spec de #649 offre déjà) ; modifier la spec de la 29-6.
+- **Réversible** : oui.
+
+### C-29-9-23 — #678 dépend de la 29-6 mergée ; T10 se place entre T4 et T5
+
+- **Contexte** : l'indication et la case sur toute ligne sont des ajouts de la 29-6, non mergée le 2026-10-14 ; T5
+  recompte `sitesTotal`, que T10 change.
+- **Retenu** : T10, numéroté à la suite pour ne renuméroter aucune tâche validée, s'exécute après T4 et avant T5 ; il
+  attend la 29-6 sur `main` (l'ordre C-29-9-11 l'imposait déjà à toute la story). Numéros de ligne de l'AC11 relus en T0.
+- **Écartées** : renuméroter T5-T9 (casserait les renvois des rapports de validation) ; écrire l'AC11 sur le sol de
+  `main` (l'indication n'y existe pas).
+- **Réversible** : oui.

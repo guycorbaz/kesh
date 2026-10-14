@@ -143,12 +143,20 @@ migration, un geste humain sans présélection —, et réécrit « puis rejetez
 
 ### 29-9 — Trois petits correctifs ([#649], [#655], [#646], P3)
 
+### 29-9 — Quatre petits correctifs ([#649], [#655], [#646], P3 ; [#678], P4)
+
 **Ajoutée le 2026-10-14 sur décision de Guy**, pour tenir la règle de release de la v0.13.4 (moins d'issues ouvertes
 qu'au tag v0.13.3) : −3 issues, −3 bugs. Trois défauts indépendants, chacun à son minimum, sur le précédent de la
 28-8 (dérogation au découpage écrite dans la fiche) : la réconciliation dit qu'il reste des transactions au-delà des
 100 plus récentes et les montre jusqu'à 500 (frontend, plus un test Rust qui fige le plafond) ; une relecture
 ancienne ne masque plus le détail d'un import, ni la page d'un profil bancaire (défaut latent sur cette dernière) ;
 la suppression d'une personne de contact demande confirmation. Aucune migration, aucun code de production Rust.
+
+*Amendement du 2026-10-14 (décision de l'orchestrateur, après la clôture de la validation)* : un quatrième correctif,
+[#678] (`bug`, P4) — les cases de l'écran de réconciliation reçoivent un libellé accessible qui nomme la transaction,
+et l'indication « ne peut pas être acceptée » de la 29-6 est annoncée (région `aria-live` présente dès le rendu). Même
+composant que #649, après la 29-6. **−4 issues, −4 bugs.** La clé `29-9-trois-petits-correctifs` reste ; le titre de
+la fiche dit « quatre ».
 
 ## Ordre
 
@@ -176,6 +184,9 @@ la suppression d'une personne de contact demande confirmation. Aucune migration,
   29-6, R7)* : Guy les éprouve tout de suite avec ses relevés mensuels.
 
 - La **29-9** part dans la **v0.13.4** (ajoutée le 2026-10-14) : ses trois fermetures comptent dans le décompte du tag.
+
+- La **29-9** part dans la **v0.13.4** (ajoutée le 2026-10-14) : ses trois fermetures comptent dans le décompte du tag
+  (quatre avec #678, amendement du 2026-10-14).
 - **v0.14.0** à la fin de la 29-1 : fonctionnalité nouvelle.
 
 À chaque release : `scripts/prepare-release.sh`, macros des manuels et URL au tag, CHANGELOG daté, recomptes du
@@ -213,5 +224,6 @@ Docker Hub (`/health`). Autorisé d'office pour cet epic.
 [#670]: https://github.com/guycorbaz/kesh/issues/670
 
 [#646]: https://github.com/guycorbaz/kesh/issues/646
+[#678]: https://github.com/guycorbaz/kesh/issues/678
 [#649]: https://github.com/guycorbaz/kesh/issues/649
 [#655]: https://github.com/guycorbaz/kesh/issues/655

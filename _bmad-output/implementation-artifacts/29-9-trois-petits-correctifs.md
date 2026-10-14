@@ -1,4 +1,4 @@
-# Story 29.9 : Trois petits correctifs — la suite de la liste de réconciliation, une bannière périmée, une suppression sans confirmation
+# Story 29.9 : Quatre petits correctifs — la suite de la liste de réconciliation, une bannière périmée, une suppression sans confirmation, des cases sans nom
 
 ## Status
 
@@ -8,14 +8,22 @@ lentilles R et F : 0/0/4/5 et 0/0/5/6) remédiée le 2026-10-14 ; validation P2 
 et 0/0/2/7) remédiée le 2026-10-14 ; passe ciblée P3 à lancer (prompt `29-9-validate-prompt-p3-ciblee.md`). Choix
 consignés au registre `epic-29-choix-autonomes-29-9.md`, **C-29-9-1 à C-29-9-18**.
 
-10 AC, T0-T9. Trois issues, chacune **entièrement** réglée ou sortie du périmètre : [#649], [#655], [#646] — toutes
-`bug` et `P3`.
+*Annotation du 2026-10-14 (amendement #678, décision de l'orchestrateur)* : la passe ciblée P3 a eu lieu et a clos la
+validation des trois premiers correctifs (0/0/0/1, Change Log). Un **quatrième** entre ensuite dans la story, [#678]
+(`bug`, `P4`) — accessibilité de la table de réconciliation —, sous l'**AC11** et la tâche **T10** ; les AC1-AC10 ne
+changent pas, sauf des renvois datés vers l'AC11 (AC8 : CHANGELOG, `sitesTotal` ; AC10 : gates). Choix **C-29-9-19 à
+C-29-9-23**. Passe ciblée P4 de validation, sur le seul diff de l'amendement : prompt `29-9-validate-prompt-p4-ciblee.md`.
+⚠️ **La clé reste `29-9-trois-petits-correctifs`** (fichier, `sprint-status.yaml`, registre, prompts) : seul le titre
+dit « quatre » (C-29-9-19).
 
-⛔ **Consigne pour l'orchestrateur — la PR, et elle seule, porte `closes #649 #655 #646`** (corps de la PR ; le dépôt
+11 AC, T0-T10. Quatre issues, chacune **entièrement** réglée ou sortie du périmètre : [#649], [#655], [#646] — `bug`
+et `P3` — et [#678] — `bug` et `P4`.
+
+⛔ **Consigne pour l'orchestrateur — la PR, et elle seule, porte `closes #649 #655 #646 #678`** (corps de la PR ; le dépôt
 merge en squash, et le squash recopie le corps des commits). Les commits de la branche portent **`refs #N`**, jamais
 `closes`/`fixes`, même en prose ou au futur (B4 de la rétrospective 28). Avant la PR : `git log main..HEAD --format=%B
 | grep -niE "\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b"` doit être vide. Après merge, `gh issue view <N> --json state`
-pour les trois.
+pour les quatre.
 
 ## Story
 
@@ -29,6 +37,10 @@ plus d'un clic malheureux.
 d'issues ouvertes qu'au tag v0.13.3 : 138).
 
 **Effet sur le décompte** (fichier d'epic, § *Le décompte*) : les trois portent `bug` → **−3 issues, −3 bugs**.
+
+*Annotation du 2026-10-14 (amendement #678)* : un quatrième défaut entre dans la story ; #678 porte `bug` aussi →
+**−4 issues, −4 bugs**. Et un lecteur d'écran sait quelle transaction il coche, et entend qu'une ligne sans
+proposition ne peut pas être acceptée.
 
 ## Le constat, au sol (`fcd2ae75`)
 
@@ -45,6 +57,9 @@ d'issues ouvertes qu'au tag v0.13.3 : 138).
 | [#646] (sémantique) | « Supprimer » **archive** : `active = FALSE`, trace `contact_person.archived` ; aucune route ne désarchive | `crates/kesh-db/src/repositories/contact_persons.rs:158` ; `crates/kesh-api/src/routes/contact_persons.rs:295` ; routes `crates/kesh-api/src/lib.rs:426-431`, `:794` (création, modification, suppression, liste) |
 | [#646] (tests) | Le composant n'a **aucun** test Vitest ni E2E ; l'inventaire des boutons rouges écrit « sans confirmation (#646, #648) » | `git grep -ln "ContactPersonsManager\|contact-person-delete" -- frontend` → le composant, la page, `i18n-harvest.test.ts:35`, `boutons-rouges-inventory.test.ts:231-234` |
 | [#646] (manuel) | Le manuel décrit l'ajout de personnes, pas leur suppression | `docs/manual/fr/user-manual.tex:869-874` (`keshnote`) |
+| [#678] cas 1 *(amendement)* | La case de chaque ligne n'a **aucun** libellé accessible (ni `aria-label`, ni `<label>`, ni `aria-labelledby`) ; l'en-tête de sa colonne est vide | `fcd2ae75` : `ReconciliationProposals.svelte:319-327` (case dans `{#if p.candidates.length > 0}`), `<th class="text-left"></th>` de l'en-tête ; fiche 29-6 non mergée, worktree `kesh-29-6` à `d71c506b` : `:356-363` (case sur **toute** ligne) ; `grep -n "aria-label" ReconciliationProposals.svelte` → seul l'en-tête *Actions* (`:310` au sol, `:347` en 29-6) |
+| [#678] cas 2 *(amendement)* | L'indication de la 29-6 est un `<p>` inséré par un `{#if}` : aucune région d'annonce n'existe avant qu'il apparaisse | `kesh-29-6` à `d71c506b` : `:316-323` (`{#if selectionHasUnmatched}` → `<p data-testid="reconciliation-unmatched-not-acceptable-hint">`), dernier enfant de la rangée des boutons `:294-324` ; `grep -n "aria-live\|role=\"status\"" ReconciliationProposals.svelte` → **rien**, au sol comme en 29-6 ; `selectionHasUnmatched` `:193-195` |
+| [#678] (contrats éprouvés) *(amendement)* | Le `data-testid` de l'indication est éprouvé par présence **et** absence, et sa **position** par un test | Vitest (`kesh-29-6`, `ReconciliationProposals.test.ts:864-987`, `describe` de la 29-6) : `getByTestId(HINT_TESTID)` non nul / `queryByTestId(HINT_TESTID)` nul (`:898`, `:939`, `:943`, `:960`, `:962`) ; position `:965-986` (assertions `:977-978`) : `hint.parentElement` = parent de *Rejeter*, `lastElementChild` = l'indication (C-29-6-18) ; E2E `reconciliation-reject-unmatched.spec.ts:160-169` (`toBeVisible`, `toHaveCount(0)`) ; les cases sont éprouvées par `data-testid="tx-checkbox"` et `data-tx-id` (aucune par rôle et nom : `grep -rn "getByRole('checkbox'" frontend/src frontend/tests` → rien) |
 
 ### Les prémisses des issues
 
@@ -68,6 +83,10 @@ d'issues ouvertes qu'au tag v0.13.3 : 138).
   réassigne bien, ce qui suffit à la conclusion, qui ne change pas.
 - **#646 — exacte.** Précision : la suppression est un archivage sans retour possible à l'écran — c'est ce qui rend la
   confirmation utile, et le texte de la confirmation le dit.
+- **#678 — exacte** *(amendement du 2026-10-14)*, sur les deux cas. Précision : le second cas **n'existe qu'avec la
+  29-6** (l'indication est son ajout, #665), non mergée à la date de l'amendement ; le premier existe au sol mais ne
+  touche que les lignes avec proposition, la 29-6 l'étendant à toutes. L'AC11 s'écrit donc sur le composant **tel que
+  la 29-6 le laisse**, et la 29-9 se rebase après elle (C-29-9-11, déjà).
 
 ## Critères d'acceptation
 
@@ -257,7 +276,8 @@ suit, `boutons-rouges-inventory.test.ts:231`).
   seul.
 - `frontend/src/lib/shared/i18n-keys.test.ts` : `sitesTotal` (`:634`, 2107 au sol) se **recompte à la source**
   après le dernier rebase (la 29-3, la 29-6 et la 29-8 en ajoutent), avec une ligne de commentaire datée qui donne les
-  deux bornes et la commande, sur le modèle des lignes `:620-633`.
+  deux bornes et la commande, sur le modèle des lignes `:620-633`. *Annotation du 2026-10-14 (amendement #678)* : le
+  recompte se fait **après** T10, qui ajoute les sites des deux clés de l'AC11.
 - **`frontend/scripts/lint-i18n-ownership.js`** : la clé `contact-persons-confirm-delete` entre dans
   `KNOWN_VIOLATIONS` (ensemble `:22-140` ; bloc `ContactPersonsManager.svelte` `:117-139`, commentaire `:117-124`,
   entrées `:125-139`), **après la ligne `:139`**, à la suite des autres clés de ce composant (validation P2, R5 = F9) :
@@ -292,7 +312,8 @@ suit, `boutons-rouges-inventory.test.ts:231`).
 - **CHANGELOG** : dans la section de la v0.13.4 que porte `main` au moment du rebase (la 29-2 la crée — sinon
   `## [Non publié]`), sous `### Corrigé`, trois puces : la suite de la liste de réconciliation (#649), la bannière
   périmée du détail d'un import (#655), la confirmation de suppression d'une personne de contact (#646). La section
-  `[0.13.3]` ne se touche pas.
+  `[0.13.3]` ne se touche pas. *Annotation du 2026-10-14 (amendement #678)* : **quatre** puces, la quatrième pour #678
+  (AC11).
 - **`boutons-rouges-inventory.test.ts:233`** : motif → `'D — suppression d\'une personne de contact, confirmée (#646) ;
   texte rouge sans bordure (#648)'` (le motif dirait faux sinon ; l'entrée et ses jetons restent).
 
@@ -451,6 +472,128 @@ commits restent au gate ciblé (validation P2, R1 = F1). **Au dernier commit de 
 `test:unit`, `build`), E2E complet — sous le verrou `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock`. Ne déclarer
 que ce qui a tourné, avec ses chiffres.
 
+*Annotation du 2026-10-14 (amendement #678)* : les mutations M22-M27 et les tests V19-V22 sont ceux de l'AC11 ; ils
+entrent dans le gate ciblé de T10 et dans les gates complets du dernier commit de code, sans rien changer à ce qui
+précède.
+
+### #678 — chaque case nomme sa transaction, et l'indication est annoncée *(amendement du 2026-10-14)*
+
+**AC11 — Libellé accessible des cases, région d'annonce présente dès le rendu (C-29-9-20, C-29-9-21, C-29-9-22).**
+
+Écrit **sur le composant tel que la 29-6 le laisse** (worktree `kesh-29-6` à `d71c506b` ; numéros relus en T0 après
+le rebase, comme les autres). Rien de la 29-6 n'est réécrit : ni la case, ni `toggle`, ni `selectionHasUnmatched`, ni
+le `<p>` de l'indication, ni sa clé, ni son repli.
+
+*Le libellé de la case.*
+
+- Chaque `<input type="checkbox" data-testid="tx-checkbox">` (`:357-363` en 29-6) reçoit un `aria-label` qui nomme
+  sa transaction par les trois valeurs que la ligne **affiche** (`:365-367`) — date, montant et devise, contrepartie —,
+  telles quelles (chaînes de l'API : `bookingDate`, `amount`, `currency`, `counterpartyName`), sans reformatage, si
+  bien que le libellé dit ce que l'œil lit sur la ligne.
+- **Deux clés à variables** (C-29-9-20), choisies par `p.transaction.counterpartyName ?` (une contrepartie vide ou
+  nulle n'est pas nommée — la cellule n'affiche rien non plus, `?? ''`) :
+
+  | Clé | fr-CH |
+  |---|---|
+  | `reconciliation-labels-select-transaction` | `Sélectionner la transaction du { $date }, { $amount } { $currency }, { $counterparty }` |
+  | `reconciliation-labels-select-transaction-no-counterparty` | `Sélectionner la transaction du { $date }, { $amount } { $currency }` |
+
+  de-CH, en-CH, it-CH : traductions fidèles, même registre que `reconciliation-labels-*` voisines (`fr-CH:1262-1316`
+  en 29-6) ; les variables sont **les mêmes** dans les quatre locales, le site et le repli (garde
+  `i18n-entrees-a-variables.test.ts`) ; repli = valeur `fr-CH` au caractère près (`i18n-repli-divergent-actif.test.ts`).
+  Les deux clés sont du dossier `reconciliation` : aucune entrée à `KNOWN_VIOLATIONS`.
+- Le `data-testid`, le `data-tx-id`, `checked` et `onchange` ne changent pas : les sélecteurs des tests et des E2E
+  existants (`[data-testid="tx-checkbox"][data-tx-id=…]`) restent valides.
+- L'en-tête vide de la colonne (`<th class="text-left"></th>`) **ne change pas** : chaque case porte son propre nom,
+  ce que l'issue demande ; un nom de colonne n'en dirait pas plus (C-29-9-20).
+
+*La région d'annonce.*
+
+- Dans la rangée des boutons, à la place exacte du bloc `{#if selectionHasUnmatched}…{/if}` (`:316-323` en 29-6), et
+  donc toujours **dernier enfant** de la rangée (C-29-6-18 tenu) :
+
+  ```svelte
+  <div role="status" aria-live="polite" aria-atomic="true" data-testid="reconciliation-selection-status">
+  	{#if selectionHasUnmatched}
+  		<!-- le <p data-testid="reconciliation-unmatched-not-acceptable-hint"> de la 29-6, à l'octet -->
+  	{/if}
+  </div>
+  ```
+
+  La région est rendue **dès le rendu de la liste** (branche « liste non vide », la seule où l'indication a un objet),
+  vide tant qu'aucune ligne sans proposition n'est cochée ; son **contenu** suit `selectionHasUnmatched`, le **nœud**
+  reste le même — c'est ce qui rend l'annonce fiable (C-29-9-21). Commentaire au site : #678, pourquoi la région
+  englobe le `{#if}` et non l'inverse, et qu'elle ne doit pas entrer dans un `{#key}` ni dans le `{#if}`.
+- **Contrat du `data-testid` de la 29-6 : intact.** `reconciliation-unmatched-not-acceptable-hint` reste sur le `<p>`,
+  présent si et seulement si `selectionHasUnmatched` : les assertions de présence et d'absence de Vitest
+  (`ReconciliationProposals.test.ts:898`, `:939`, `:943`, `:960`, `:962` en 29-6) et de l'E2E
+  (`reconciliation-reject-unmatched.spec.ts:160-169` : `toBeVisible`, `toHaveCount(0)`) passent **sans modification**.
+- **Un seul test de la 29-6 change, en delta** (C-29-9-21) : le test de position (`:965-986` en 29-6, « l'indication
+  est dans la rangée des boutons ») affirme `hint.parentElement` = la rangée et `lastElementChild` = l'indication ;
+  l'indication est désormais **dans** la région. Ses deux lignes d'assertion de position (`:977-978`) deviennent :
+  `hint.parentElement` = `getByTestId('reconciliation-selection-status')`, le parent de la région = la rangée de
+  *Rejeter*, et le dernier enfant de la rangée = la région. Son intention (C-29-6-18 : dans la rangée, après *Rejeter*)
+  et son volet « repli = catalogue fr-CH » restent à l'octet ; le commentaire `// C-29-6-18 …` gagne une ligne qui
+  nomme #678. C'est le test V22.
+- **Rendu** : identique à celui de la 29-6. Le `div` est un élément de la rangée `flex-wrap gap-2` ; vide, il n'a ni
+  largeur ni hauteur ; plein, il porte le `<p>` comme la rangée le portait. Vérifié par les captures clair et sombre que
+  produit déjà `reconciliation-reject-unmatched.spec.ts` (relancée, non modifiée), comparées à celles de la 29-6 ; écart
+  éventuel déclaré au Dev Agent Record.
+
+*Textes.*
+
+- Deux clés neuves ×4 (ci-dessus) ; `sitesTotal` de `i18n-keys.test.ts` recompté à la source en T5 (AC8), après T10.
+- **CHANGELOG** : une quatrième puce sous `### Corrigé` de la section de la v0.13.4 (AC8) — sur l'écran de
+  réconciliation, chaque case nomme sa transaction pour un lecteur d'écran, et l'indication « ne peut pas être
+  acceptée » est annoncée (#678).
+- **Manuel : inchangé** (C-29-9-22). Aucun texte **visible** ne change ; le paragraphe que la 29-6 écrit sur
+  l'indication reste vrai. À vérifier dans le PDF régénéré par T6 (contrôle aplati) que la phrase de la 29-6 sur
+  l'indication est toujours présente et toujours exacte.
+
+*Tests Vitest* (`ReconciliationProposals.test.ts`, nouveau `describe` après celui de la 29-6 ; écrits **avant** le
+correctif et vus rouges, sortie copiée au Dev Agent Record ; le mock i18n du fichier interpole les variables, `:50-55`) :
+
+- V19 deux lignes, l'une avec proposition, l'autre sans (fabriques du fichier) → `getByRole('checkbox', { name })`
+  trouve chacune, `name` = la valeur fr-CH de `reconciliation-labels-select-transaction` remplie des valeurs de la
+  fabrique (sans proposition : `2026-05-15`, `50.00`, `CHF`, `UNKNOWN`). Rouge au sol : aucune case n'a de nom ;
+- V20 `counterpartyName: null` → le nom est exactement la valeur fr-CH de
+  `reconciliation-labels-select-transaction-no-counterparty` remplie (aucune virgule finale) ;
+- V21 **la région précède le changement** : au premier rendu de la liste, `getByTestId('reconciliation-selection-status')`
+  existe, porte `role="status"` et `aria-live="polite"`, son texte est vide, l'indication absente ; référence gardée.
+  Cocher la ligne sans proposition → l'indication est **dans** la région (`region.contains(hint)`), et
+  `getByTestId('reconciliation-selection-status')` est **le même nœud** que la référence. Décocher → la région est
+  toujours là (même nœud), vide. Rouge au sol : pas de région ;
+- V22 le test de position de la 29-6, amendé en delta (ci-dessus) ; rouge avant le correctif sur sa nouvelle forme
+  (pas de région), vert après.
+
+*E2E* — dans `reconciliation-show-older.spec.ts` (neuf, AC9 ; ses 501 transactions n'ont aucune facture, donc aucune
+proposition), **avant** le clic sur *Afficher aussi les plus anciennes* : pour la première ligne, le nom accessible de
+sa case (`getByRole('checkbox', { name })`) égale la valeur fr-CH remplie des **textes de ses cellules** date, montant,
+contrepartie ; `reconciliation-selection-status` présent, `aria-live="polite"`, vide ; cocher cette ligne →
+l'indication visible **dans** la région ; décocher → indication absente, région présente. Puis la spec continue
+(AC9). Si une ligne de la spec avait une proposition, viser une ligne sans proposition par `data-tx-id`. **Aucune
+capture neuve** : rien de visible ne change (C-29-9-22) ; celles de la 29-6 servent de témoin (ci-dessus).
+
+*Mutations* (mêmes règles que l'AC10 ; motif vérifié unique, `git checkout -- f && touch f`) :
+
+| # | Mutation | Doit tuer |
+|---|---|---|
+| M22 | `aria-label` retiré de la case | V19 |
+| M23 | toujours la clé avec contrepartie (branche `no-counterparty` retirée) | V20 |
+| M24 | la région déplacée **dans** le `{#if selectionHasUnmatched}` (rendue avec l'indication) | V21 |
+| M25 | `role="status"` et `aria-live="polite"` retirés de la région | V21 |
+| M26 | le `<p>` de l'indication sorti de la région, placé après elle | V21, V22 |
+| M27 | la région enveloppée d'un `{#key selectionHasUnmatched}` (nœud recréé au changement) | V21 |
+
+*Zone partagée avec la 29-6* (§ *Zones partagées*) : le bloc de l'indication (`:316-323`), la case (`:357-363`) et le
+test de position (`:965-986`) sont de la 29-6 ; la 29-9 les **enveloppe** ou leur **ajoute** un attribut, en delta sur
+le texte rebasé, sans rien en retirer.
+
+*Exclusions* : les autres cases à cocher du frontend (`git grep -n 'type="checkbox"' -- frontend/src` → **24** sites
+à `fcd2ae75`, dont un seul dans `features/reconciliation`) ne sont pas revendiquées ; aucune case « tout cocher »
+n'est ajoutée ; les autres messages de l'écran (succès, erreur, bilan des échecs) ne passent pas en région d'annonce
+— #678 ne vise que l'indication de la 29-6 (C-29-9-22).
+
 ## Tasks / Subtasks
 
 - [ ] **T0** — Montage : `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-29-9/target` ; `node_modules` par `cp -al` depuis le
@@ -468,15 +611,20 @@ que ce qui a tourné, avec ses chiffres.
 - [ ] **T3** — #655 (AC5, AC6) : V6-V9 et V13-V17 rouges (V13 l'est au sol : l'effet actuel relit à id égal), puis les
   deux pages ; M7-M10, M13, M15-M17, M19 ; commit `fix(bank-import): … (refs #655)`.
 - [ ] **T4** — #646 (AC7) : V10-V11 rouges, puis le correctif ; M11-M12 ; commit `fix(contacts): … (refs #646)`.
+- [ ] **T10** *(amendement #678 — s'exécute après T4 et avant T5, malgré son numéro)* — AC11 : V19-V22 rouges
+  (sortie copiée), puis le libellé des cases, la région d'annonce, le test de position de la 29-6 amendé en delta ;
+  deux clés ×4 ; M22-M27 ; captures de `reconciliation-reject-unmatched.spec.ts` relancée comparées à celles de la
+  29-6 ; commit `fix(reconciliation): … (refs #678)`. Si la 29-6 n'est pas mergée au moment de T0, T10 attend : sans
+  elle, l'indication n'existe pas (C-29-9-23).
 - [ ] **T5** — i18n (AC8) : quatre clés, une réécrite, ×4 ; `sitesTotal` recompté ; `KNOWN_VIOLATIONS` de
   `lint-i18n-ownership.js` (+1) ; inventaire des boutons rouges ; gardes i18n nommées à l'AC8 relancées.
-- [ ] **T6** — Manuel FR, `make fr` sous le verrou, contrôle aplati ; `api-external.md` ; CHANGELOG ; commit
-  `docs(29-9): … (refs #649, refs #646)`.
-- [ ] **T7** — E2E (AC9) : deux specs, captures clair et sombre (hors dépôt, chemins au Dev Agent Record) ; commit
-  `test(e2e): … (refs #649, refs #646)`.
+- [ ] **T6** — Manuel FR, `make fr` sous le verrou, contrôle aplati ; `api-external.md` ; CHANGELOG (quatre puces,
+  AC11 compris ; manuel inchangé pour #678, C-29-9-22) ; commit `docs(29-9): … (refs #649, refs #646, refs #678)`.
+- [ ] **T7** — E2E (AC9) : deux specs, captures clair et sombre (hors dépôt, chemins au Dev Agent Record) ; le volet
+  #678 de `reconciliation-show-older.spec.ts` (AC11) ; commit `test(e2e): … (refs #649, refs #646, refs #678)`.
 - [ ] **T8** — Propagation (§ ci-dessous), puis gates complets au dernier commit de code (AC10).
 - [ ] **T9** — Dev Agent Record, File List, Change Log ; statut `review` ; registre de sprint. Rapport : demander le
-  push, la PR (`closes #649 #655 #646` au corps seulement), le commentaire de #655 (C-29-9-8), et la décision sur une
+  push, la PR (`closes #649 #655 #646 #678` au corps seulement), le commentaire de #655 (C-29-9-8), et la décision sur une
   issue de pagination au-delà de 500 (C-29-9-3).
 
 ## Dev Notes
@@ -495,13 +643,22 @@ dérogation déclarée. Dans les deux lectures, pas de découpage : les trois co
 indépendants, chacun tient en un ou deux fichiers de production, aucun ne change une règle métier, et la revue se
 fait correctif par correctif (précédent : 28-8, C-28-8-1). Un correctif fautif **sort du périmètre** plutôt que de
 retenir les deux autres. C-29-9-1.
+*Annotation du 2026-10-14 (amendement #678)* : recompte à la source avec l'AC11. #678 touche
+`features/reconciliation` (le composant et son test, déjà comptés pour #649), les catalogues `kesh-i18n` (déjà
+comptés) et le CHANGELOG (documentation, déjà comptée) ; sa spec E2E est celle de #649. **Aucun module neuf** :
+première lecture, **cinq** (frontend, `kesh-api`, `kesh-i18n`, documentation, `kesh-db`) — sous le seuil ; seconde
+lecture, zones du frontend comptées à part, **sept** (`features/reconciliation`, `routes/(app)/bank-import`,
+`features/contacts`, `kesh-api`, `kesh-i18n`, documentation, `kesh-db`) — inchangé, couvert par la même dérogation
+déclarée. Le quatrième correctif est indépendant des trois autres sauf de #649, avec qui il partage le composant et
+la spec E2E, sans partager de ligne (la case et la rangée des boutons pour #678, l'après-`</table>` pour #649). La
+dérogation **tient** ; un correctif fautif, #678 compris, sort du périmètre plutôt que de retenir les autres (C-29-9-19).
 
 ### Zones partagées avec les fiches voisines (non mergées)
 
 | Fiche | Ce qu'elle touche de commun | Ce que fait la 29-9 |
 |---|---|---|
 | 29-3 (#527) | `ReconciliationProposals.svelte` : en-tête `:8`, paragraphe de priorité **avant** la table ; `i18n-keys.test.ts` `sitesTotal` +1 ; manuel `:2025-2060`, dont `:2045-2050`, `:2049`, `:2056` | ajout **après** `</table>` ; `sitesTotal` recompté ; phrase `:2045` réécrite **sur la version 29-3** |
-| 29-6 (#665) | même composant : case sur toutes les lignes, *Accepter* grisé, indication dans la rangée des boutons, garde d'`onAccept` ; s'appuie sur « `load()` vide `selected` » (état (a)) ; manuel `:2050`, `:2056`, **`:2057`** (paragraphe *Rejeter* réécrit : « écarte la transaction, sans écriture »), `:2901`, `:2910-2911` | ne touche ni la case, ni la rangée, ni `onAccept` ; **garde** la remise à vide de `selected` (C-29-9-5) ; à `:2057`, **delta** sur la parenthèse seule (AC8) |
+| 29-6 (#665) | même composant : case sur toutes les lignes, *Accepter* grisé, indication dans la rangée des boutons, garde d'`onAccept` ; s'appuie sur « `load()` vide `selected` » (état (a)) ; manuel `:2050`, `:2056`, **`:2057`** (paragraphe *Rejeter* réécrit : « écarte la transaction, sans écriture »), `:2901`, `:2910-2911` | ne touche ni la case, ni la rangée, ni `onAccept` ; **garde** la remise à vide de `selected` (C-29-9-5) ; à `:2057`, **delta** sur la parenthèse seule (AC8). *Amendement #678 (2026-10-14)* : **touche** désormais la case (un `aria-label` ajouté) et la rangée (le bloc de l'indication enveloppé d'une région d'annonce), et amende en delta le test de position de la 29-6 (`ReconciliationProposals.test.ts:977-978` à `d71c506b`) ; rien de la 29-6 n'est retiré, ni son `data-testid`, ni sa spec E2E (AC11) |
 | 29-8 (#670) | même composant : troisième bouton de ligne, modale `LinkSettlementModal` (fiche 29-8 `:370`, emplacement non prescrit — naturellement après `</table>`, à côté des deux autres) ; manuel `:2021`, **`:2057`** (y garde « une transaction rejetée compte comme non rapprochée »), `:2043-2060` | ne touche pas la ligne de table ; avis et bouton **immédiatement** après `</table>`, avant toute modale, la sienne comprise (AC1 ; validation P2, F8) ; à `:2057`, **delta** sur la parenthèse seule (AC8) |
 | 29-3, 29-6, 29-8 — `docs/api-external.md` | 29-3 `:549` et 29-6 `:551` (§ *Accepter des propositions*) ; 29-8 : ses deux routes en paragraphes « à côté de `…/unreject`, `:594` » (fiche 29-8 `:474`) | `:594`, **en delta** sur la phrase rebasée : la parenthèse « (100 par défaut) » seule, les paragraphes de la 29-8 gardés (validation P2, R6) |
 | 29-8 — `reconciliation.api.ts`, `reconciliation.types.ts` | `getLinkCandidates`, `linkTransaction` et leurs types (fiche 29-8 `:387-388`) | deux constantes et le défaut de `getProposals` ; commentaire de `hasMore` (`.types.ts:52-55`) — ajouts **à côté**, rien de la 29-8 retiré (R6) |
@@ -540,6 +697,9 @@ les PDF, régénérer ; recompter `sitesTotal` à la source.
   import à un autre), **non traité**.
 - **#646** : pas de désarchivage d'une personne, pas de dialogue maison ; l'aspect du bouton relève de #648.
 - **Manuels DE/IT/EN** : vides (`docs/manual/{de,en,it}/`) ; rien à traduire.
+- **#678** *(amendement)* : seules la case de la table de réconciliation et l'indication de la 29-6 ; les 23 autres
+  cases du frontend, une case « tout cocher » et les autres messages de l'écran ne sont pas revendiqués (AC11,
+  *Exclusions* ; C-29-9-22).
 
 ### Propagation — le symptôme à greper après chaque patch
 
@@ -556,6 +716,9 @@ git grep -n "page.params" -- "frontend/src/routes/(app)/bank-import/profiles"   
 git grep -ln "reconciliation.api'" -- frontend/src                                     # mocks du module API (R1/F1)
 git grep -n "onUpdated\|onSuccess=" -- "frontend/src/routes/(app)/bank-import/profiles" # #655 : garde d'onUpdated (P2, F2)
 git grep -n "hardcodé 100" -- crates                                                    # kesh-db réécrit (P2, R1 = F1) : vide
+git grep -n "reconciliation-labels-select-transaction" -- frontend crates/kesh-i18n     # #678 : 2 clés × (site + repli + 4 locales)
+git grep -n "reconciliation-selection-status\|aria-live" -- frontend/src/lib/features/reconciliation frontend/tests/e2e  # #678 : région, test, E2E
+git grep -n "reconciliation-unmatched-not-acceptable-hint" -- frontend                  # #678 : contrat de la 29-6 inchangé (site, Vitest, E2E)
 pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "plus récentes.\{0,200\}"
 pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "personnes de contact.\{0,300\}"
 ```
@@ -601,6 +764,9 @@ montre que les 100 plus récentes ».
 ### References
 
 - [#649], [#655], [#646] (`gh issue view N`, lues le 2026-10-14).
+- [#678] (`gh issue view 678`, lue le 2026-10-14, amendement) ; C-29-6-25 (registre de la 29-6,
+  `kesh-29-6/_bmad-output/implementation-artifacts/epic-29-choix-autonomes.md`) ; composant et tests de la 29-6 lus à
+  `d71c506b`.
 - `crates/kesh-api/src/routes/reconciliation.rs:56-90`, `:578-631` ; `crates/kesh-db/src/repositories/reconciliation.rs:18-19`
   (commentaire de module réécrit), `:276-311` ;
   `crates/kesh-api/tests/reconciliation_e2e.rs:2065-2116`.
@@ -692,8 +858,22 @@ montre que les 100 plus récentes ».
 [#646]: https://github.com/guycorbaz/kesh/issues/646
 [#649]: https://github.com/guycorbaz/kesh/issues/649
 [#655]: https://github.com/guycorbaz/kesh/issues/655
+[#678]: https://github.com/guycorbaz/kesh/issues/678
 - 2026-10-14 — **Validation P3, passe ciblée** (Haiku 5.5, une lentille sur `13ac02c5` ; rapport
   `kesh-gate-logs/29-9-validate-p3-ciblee.md`) : 0/0/0/1. **Validation close.** Le LOW est à appliquer à l'étape 0 du
   développement : P3-1 (l. 506, les citations « 29-3 :549 » et « 29-6 :551 » désignent `docs/api-external.md`, pas les
   fiches — écrire « `docs/api-external.md:549`, cité par la fiche 29-3 l. 534 », idem 29-6 l. 347). Trend : P1 R 0/0/4/5
   F 0/0/5/6 → P2 R 0/0/1/8 F 0/0/2/7 → P3 ciblée 0/0/0/1.
+
+- 2026-10-14 — **Amendement #678** (Opus 5.5, décision de l'orchestrateur), après la clôture de la validation par la
+  P3 ciblée. Un quatrième correctif entre dans la story : [#678] (`bug`, `P4`), cases sans libellé accessible et
+  indication de la 29-6 non annoncée. **AC11** neuf (libellé par case à deux clés à variables ×4, région
+  `role="status"` `aria-live="polite"` présente dès le rendu de la liste et englobant l'indication, contrat du
+  `data-testid` de la 29-6 intact, son test de position amendé en delta) ; tâche **T10** (après T4, avant T5) ; V19-V22,
+  M22-M27 ; E2E ajouté à `reconciliation-show-older.spec.ts`, aucune capture neuve ; manuel inchangé, une puce de
+  CHANGELOG. Prémisses de #678 établies au code (exactes ; le second cas n'existe qu'avec la 29-6). Titre « Quatre
+  petits correctifs », **clé inchangée** `29-9-trois-petits-correctifs`. Renvois datés dans le statut, l'énoncé, AC8
+  (CHANGELOG, `sitesTotal`), AC10, T6, T7, T9, la dérogation, les zones partagées, les exclusions, la propagation ;
+  AC1-AC10 inchangés sur le fond. Modules recomptés : cinq / sept, aucun neuf, dérogation tenue. Choix **C-29-9-19 à
+  23**. Recomptes à la source : **11 AC**, T0-T10 (**11**), **V1-V22** (22 ; +4), **M1-M27** (27 ; +6), choix
+  **C-29-9-1 à 23** (+5). Passe ciblée P4 à lancer : `29-9-validate-prompt-p4-ciblee.md` (Haiku, une lentille).
