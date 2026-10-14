@@ -242,5 +242,45 @@ Fiche : `29-6-trop-percu-centimes.md`.*
   hors du périmètre minimal, pour un gain nul.
 - **Réversible** : oui.
 
+### C-29-6-20 — La campagne de mutations tourne en gates ciblés, hors verrou *(développement)*
+
+- **Contexte** : la consigne commune met la campagne de mutations sous le verrou de gate ; le verrou était tenu par
+  d'autres agents, et chacune des treize mutations y aurait attendu son tour (une première baseline a attendu plus de
+  dix minutes).
+- **Retenu** : chaque mutation est rejouée par un **gate ciblé** — les binaires gardiens nommés au Dev Agent Record
+  (27 tests backend, le fichier Vitest du composant, 36 tests), sous `mem-guard` —, ce que `docs/agents-orchestration.md`
+  § 5 laisse hors verrou. Les gates complets et l'E2E complet, eux, ont tourné sous le verrou.
+- **Écartées** : (a) attendre le verrou pour chaque mutation — treize attentes pour des runs de quelques secondes ;
+  (b) un script qui enchaîne les treize mutations sous un seul verrou — il aurait fallu muter le code par script,
+  ce que la consigne de l'orchestrateur interdit (outil Edit seul).
+- **Réversible** : oui (rejouer la campagne sous verrou).
+
+### C-29-6-21 — La phrase de la 29-2 sur le rejet est réécrite sous la réserve de #670 *(développement)*
+
+- **Contexte** : au § *Algorithme de matching*, la 29-2 écrivait « puis rejetez la transaction […] — sans quoi elle
+  reste en attente, et pourrait être passée une seconde fois », ce qui laisse entendre que le rejet la sort de
+  l'attente ; la zone partagée de la fiche prescrit d'y appliquer la réserve de #670 (C-29-6-17).
+- **Retenu** : « puis rejetez la transaction […], pour qu'elle ne soit pas passée une seconde fois », et une phrase
+  commune aux deux contournements (paiement tardif, trop-perçu) : la transaction rejetée reste en attente et empêche
+  la clôture du compte bancaire.
+- **Écartée** : laisser la phrase de la 29-2 — elle contredirait la phrase neuve de la 29-6 dans le même paragraphe.
+- **Réversible** : oui ; la 29-8 (#670) réécrira de toute façon ces gestes.
+
+### C-29-6-22 — Le montant du spec E2E est tiré entre 90 000 et 99 000 CHF *(développement)*
+
+- **Contexte** : AC10 demande un montant hors de la plage des factures des autres specs. Relevé au développement : les
+  plus grands montants des specs sont de l'ordre de 1 500 CHF (`open-items.spec.ts` tire jusqu'à ~9 000).
+- **Retenu** : `9 000 000 + (Date.now() % 900 000)` centimes. Contrepartie et références uniques de préfixe `REJ296`.
+- **Réversible** : oui.
+
+### C-29-6-23 — Le doc-comment du test de tolérance existant est corrigé, son code non *(développement)*
+
+- **Contexte** : la fiche veut `find_unpaid_invoices_filters_amount_within_tolerance` « vert sans modification » ; son
+  doc-comment disait « tolérance amount ± 0.05 CHF », devenu faux (le grep de propagation l'a trouvé).
+- **Retenu** : le doc-comment dit la tolérance du paiement partiel et renvoie au test neuf du trop-perçu ; le code du
+  test est intact, et il reste vert.
+- **Écartée** : laisser le commentaire faux pour respecter la lettre de « sans modification ».
+- **Réversible** : oui.
+
 [#665]: https://github.com/guycorbaz/kesh/issues/665
 [#670]: https://github.com/guycorbaz/kesh/issues/670

@@ -2,7 +2,8 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (kickoff de
+**review** — développement fait le 2026-10-14 (Opus 5.5), branche rebasée sur `main` `81b1b526` ; revue de code P1 à
+lancer (`29-6-review-prompt-p1.md`, Sonnet, lentilles B/E/A). Historique : fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (kickoff de
 l'Epic 29), branche `story/29-6`, worktree `/home/gcorbaz/devel/kesh-29-6`. Story **ajoutée à l'Epic 29** par
 l'orchestrateur le 2026-10-14 ; sortie dans la **v0.13.4**. Choix consignés au registre propre à la story,
 `epic-29-choix-autonomes-29-6.md`, **C-29-6-1 à C-29-6-19** (à verser par union au registre de l'epic). 10 AC. PR :
@@ -559,20 +560,20 @@ de l'import `detail-tx-row` + `data-tx-id`, `detail-tx-rejected-on`, `detail-tx-
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Rebase** sur `origin/main` (29-2, 29-3, 29-5 mergées) ; relire les numéros de ligne ; regreper
+- [x] **T0 — Rebase** sur `origin/main` (29-2, 29-3, 29-5 mergées) ; relire les numéros de ligne ; regreper
       `#665` dans `crates/`, `docs/`, `CHANGELOG.md` (§ *Zones partagées*).
-- [ ] **T1 — Tests rouges** (AC4, AC5 — ses deux tests —, AC6, AC10 Vitest et E2E) : constater le rouge (compilation
+- [x] **T1 — Tests rouges** (AC4, AC5 — ses deux tests —, AC6, AC10 Vitest et E2E) : constater le rouge (compilation
       pour AC4, assertion pour les autres).
-- [ ] **T2 — `kesh-db`** (AC1, AC2) : `HALF_CENTIME`, `least_due_without_overpayment`, `HAVING`, renommage du
+- [x] **T2 — `kesh-db`** (AC1, AC2) : `HALF_CENTIME`, `least_due_without_overpayment`, `HAVING`, renommage du
       paramètre, doc-comments.
-- [ ] **T3 — `kesh-api`** (AC2, AC3) : doc-comments de la constante et de l'étape (c), variable locale.
-- [ ] **T3bis — Écran et i18n** (AC10) : case sur toutes les lignes, *Accepter* grisé et gardé, indication, clé dans
+- [x] **T3 — `kesh-api`** (AC2, AC3) : doc-comments de la constante et de l'étape (c), variable locale.
+- [x] **T3bis — Écran et i18n** (AC10) : case sur toutes les lignes, *Accepter* grisé et gardé, indication, clé dans
       les quatre catalogues, `sitesTotal` recompté, en-tête du composant ; commentaire de
       `reconciliation-deleted-import.spec.ts:12-14` ; spec E2E et captures clair et sombre.
-- [ ] **T4 — Manuel FR + PDF, `api-external.md`, CHANGELOG** (AC7), dont le retrait des angles morts #665 de la 29-3,
+- [x] **T4 — Manuel FR + PDF, `api-external.md`, CHANGELOG** (AC7), dont le retrait des angles morts #665 de la 29-3,
       la ligne «~Aucune correspondance~» (`:2050`), le paragraphe \emph{Rejeter} (`:2057`) et la FAQ (`:2910`).
-- [ ] **T5 — Propagation** : le grep de § *Propagation*, trié à la main, sortie résumée au Dev Agent Record.
-- [ ] **T6 — Mutations** (AC8) et **gates** (AC9) ; Dev Agent Record.
+- [x] **T5 — Propagation** : le grep de § *Propagation*, trié à la main, sortie résumée au Dev Agent Record.
+- [x] **T6 — Mutations** (AC8) et **gates** (AC9) ; Dev Agent Record.
 
 ## Dev Notes
 
@@ -795,11 +796,170 @@ un composant, sans API. ⚠️ Toute extension de plus fait dépasser la règle 
 
 ### Agent Model Used
 
+Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-14.
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/` : `29-6-test-fast.log`, `29-6-npm-{check,lint,unit,build}.log`,
+`29-6-e2e.log` (+ `29-6-e2e-backend.log`), `29-6-make-fr.log`, `29-6-mut-{baseline,M1…M8,baseline-front,M9…M13}.log`,
+`29-6-gates-head.txt` (commit et état de l'arbre au lancement des gates finaux). Captures :
+`/tmp/kesh-e2e-296/captures/29-6-*.png` (hors dépôt).
 
 ### Completion Notes List
 
+**Montage.** Worktree `/home/gcorbaz/devel/kesh-29-6`, `CARGO_TARGET_DIR=<worktree>/target`, bases `kesh_296` et
+`kesh_e2e_296` créées, migrées (81 migrations, depuis le worktree) et seedées par un script de remise à zéro, rejoué
+avant chaque gate complet ; backend E2E sur le port **3047**, recette de `docs/testing.md` à la lettre, arrêté par PID.
+
+**T0 — étape 0 et zones partagées.** Les quatre LOW de la passe ciblée P3 appliqués (commit `f831a92c` après rebase ;
+Change Log). La branche partait de `main` `b4abae5d` (29-2, 29-3, 29-1a mergées) plus la tête de `story/29-5`
+(`8d3e27a0`). Relu au sol : `find_unpaid_invoices_for_window` porte l'ancre de la 29-2 dans le `WHERE` et l'ordre
+d'imputation de la 29-5 dans l'`ORDER BY` — seuls le `HAVING` et ses binds changent ; la phrase de priorité de la 29-3
+est entre la rangée des boutons et la table, l'indication de la 29-6 s'ajoute en dernier enfant de la rangée (ordre
+C-29-6-18 tenu, vérifié par un test Vitest) ; `sitesTotal` valait **2163** (réunion 29-1a + 29-3) ; le doc-comment
+d'`order_candidates` (29-3) citait l'angle mort #665 : réécrit ; la phrase de la 29-3 au manuel (« Une facture que le
+paiement dépasse de quelques centimes est proposée… (issue \#665) ») est retirée ; la phrase de la 29-2 au § *Algorithme
+de matching* (« — sans quoi elle reste en attente, et pourrait être passée une seconde fois ») promettait que le rejet
+sort la transaction de l'attente : réécrite sous la réserve de #670, comme la zone partagée le prescrit (C-29-6-21) ;
+la phrase de la 29-5 (« puis rejetez la transaction ») ne dit rien de faux : gardée.
+
+**Rebase sur `main` `81b1b526`** (la 29-5 mergée en squash, consigne de l'orchestrateur) :
+`git rebase --onto origin/main 8d3e27a0 story/29-6`, 14 commits rejoués **sans conflit** ; `git diff <ancienne tête>
+HEAD` **vide** (arbres identiques). Le commit « validation close » devient `6f132a98`, la base du prompt de revue P1 est
+corrigée en conséquence (`f662fe6a`). Les gates finaux ci-dessous ont tourné **après** ce rebase.
+
+**T1 — tests rouges, constatés avant le code** (commit `1f571cd2`) :
+
+```
+AC4  error[E0425]: cannot find function `least_due_without_overpayment` in this scope   (compilation rouge)
+AC5  find_unpaid_invoices_excludes_an_invoice_the_payment_exceeds
+       left: [1, 2, 3, 4, 5, 6, 7, 8]      right: [4, 5, 6, 7, 8]
+     find_unpaid_invoices_overpayments_take_no_place_in_the_limit
+       left: [1, 2, …, 50]                 right: [51]
+     find_unpaid_invoices_filters_amount_within_tolerance : PASS (inchangé, attendu)
+AC6  proposal_never_offers_an_invoice_the_payment_exceeds
+       left: {(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6), (7, 7)}
+       right: {(4, 4), (5, 5), (6, 6), (7, 7)}                (a, b, c proposés au sol)
+AC10 Vitest : 5 failed | 31 passed (36) — `:179` réécrit (« expected [] to have a length of 1 but got +0 ») et les
+     quatre tests neufs qui cochent une ligne sans proposition ; le test d'absence de l'indication (M11) passe au sol,
+     comme il se doit.
+AC10 E2E : 2 failed — `expect(caseLigne).toHaveCount(1)` « unexpected value "0" » (spec :156), en clair et en sombre :
+     la ligne « Aucune correspondance » est visible, sans case.
+```
+
+**T2/T3 — code** (`8659470c`, `35758ced`). `HALF_CENTIME` par `Decimal::from_parts(5, 0, 0, false, 3)` ;
+`least_due_without_overpayment` et sa démonstration à côté de `classify_payment`, qui reçoit sa ligne « Réciproque » ;
+`HAVING amount_due BETWEEN ? AND ? + ?`, binds `least_due_without_overpayment(tx)`, `tx`, `underpayment_tolerance` ;
+paramètre renommé ; filtre 4 et en-tête du module réécrits (la phrase « au plus 0.005 » a disparu) ; `WHERE`, `ORDER BY`
+et `LIMIT 50` inchangés. `kesh-api` : doc-comment d'`AMOUNT_TOLERANCE_HUNDREDTHS`, variable locale
+`underpayment_tolerance`, commentaire de l'étape (c), doc-comment d'`order_candidates`. **AC3 vérifié** :
+`git diff main -- crates/kesh-api/src/routes/reconciliation.rs`, lignes hors commentaires : la seule variable locale
+renommée (deux lignes) — `accept_one_invoice` ne change qu'en commentaires. Aucune migration, aucun changement d'API.
+
+**T3bis — écran** : case sur toute ligne, `selectionHasUnmatched` (`$derived`), *Accepter* grisé et gardé en tête
+d'`onAccept`, *Rejeter* inchangé, indication dans la rangée (`flex-wrap items-center`), clé
+`reconciliation-labels-unmatched-not-acceptable-hint` dans les quatre catalogues (valeurs de l'AC10 mot pour mot, repli =
+fr-CH, vérifié par test), en-tête du composant réécrit dans sa version 29-3, commentaire de
+`reconciliation-deleted-import.spec.ts` réécrit (code du spec inchangé, C-29-6-19). `sitesTotal` **2163 → 2164**,
+recompté par `grep -o "i18nMsg("` aux deux bornes : `ReconciliationProposals.svelte` 20 → 21.
+
+**T4 — documentation** (`3bc7e047`). Manuel : condition de montant (`:2059`), contournement du trop-perçu et réserve de
+l'attente (même paragraphe), ligne « Aucune correspondance » (`:2086`), paragraphe *Rejeter* (`:2093`), FAQ (première
+puce et « Que faire ensuite »). PDF régénéré (`make fr`, sous verrou, 3 passes, stable, 0 référence indéfinie) ; seul
+`user-manual.pdf` est commité (les PDF admin et brochure, régénérés sans changement de source, restaurés). Contrôle du
+PDF aplati et normalisé (ligatures, `’`) — **positifs** : « n'est pas inférieur au montant » 1, « ne le dépasse pas de
+plus de 5 centimes » 1, « quelques centimes de trop » 1, « ou supérieur de 5 centimes au plus » 1, « porte une case,
+comme les autres » 1, « il reste grisé et la page le dit » 1, « sans la passer en comptabilité » 1, « qu'elle ait une
+proposition ou non » 1, « cochez sa ligne, puis » 1, « rejetée, elle reste en attente » 1, « la transaction rejetée
+reste en attente » 1 ; **négatifs** : « à 5 centimes près » 0, « pas de case à cocher » 0, « écarte la proposition » 0,
+« sans quoi la transaction reste en attente » 0, « sans quoi elle reste en attente » 0, « ne sert qu'à » 0, « #665 » 0,
+« 670 » 0. `binary(textes_coherents)` : 15/15. `docs/api-external.md` : phrase du demi-centime *(depuis la v0.13.4)*.
+`CHANGELOG.md` : entrée #665 sous `[0.13.4]` → *Corrigé*, texte de l'AC7.
+
+**T5 — propagation** (les trois greps de § *Propagation*, triés à la main). Restent, légitimes : les « trop-perçu » du
+règlement manuel, des restes négatifs hérités, de l'échéancier et du lettrage ; les mentions neuves de la 29-6 ; le
+CHANGELOG des versions publiées ; la phrase de priorité de la 29-3 (`candidates.length > 0`, correcte) ; les
+« sélectionnable » sans rapport (rappels, comptes, presse-papiers). Un résidu corrigé : le doc-comment du test existant
+`find_unpaid_invoices_filters_amount_within_tolerance` disait « ± 0.05 » — borné au paiement partiel, **code du test
+inchangé** (`0f78af3d`, C-29-6-23). `website/` et `README.md` : rien.
+
+**T6 — mutations** (AC8). Chacune appliquée par l'outil Edit sur un motif vérifié unique, rejouée, puis restaurée par
+`git checkout -- <fichier> && touch <fichier>` (`git status` vide constaté après chaque restauration). Backend : 27 tests
+gardiens (`least_due…`, `classification_a_double_borne`, `binary(reconciliation_repository)`, et dans
+`reconciliation_e2e` : AC6, `:5396`, `two_centimes…`, `accept_refuses_an_overpayment…`) — baseline 27/27. Frontend :
+`ReconciliationProposals.test.ts` — baseline 36/36.
+
+| # | Tuée par (tests rouges du run) |
+|---|---|
+| M1 `HALF_CENTIME` → 0.004 | AC4 grille ; AC5 premier ; `a_centime_payment_settles_a_half_centime_invoice_with_a_rounding_line` ; AC6 — 23/27 |
+| M2 → 0.006 | AC4 ; AC5 premier ; AC6 — 24/27 |
+| M3 ancienne borne `? - ?` | AC5 (les deux) ; AC6 — 24/27 |
+| M4 borne basse = `tx` | AC5 premier ; `:5396` ; AC6 — 24/27 |
+| M5 borne haute sans tolérance (`Decimal::ZERO`) | `find_unpaid_invoices_filters_amount_within_tolerance` ; AC5 premier ; AC6 — 24/27 |
+| M6 `paid >= raw_due` | AC4 grille ; `classification_a_double_borne` ; AC6 — 24/27 |
+| M7 borne arrondie au centime | AC4 ; AC5 premier ; `:5396` ; AC6 — 23/27 |
+| M8 ancienne borne + filtre Rust après `fetch_all` | **AC5 second test seul** — 26/27, comme prévu |
+| M9 case conditionnelle | Vitest `:179` et les 4 tests de la ligne sans proposition — 5 failed ; E2E : c'est exactement le rouge constaté en T1 |
+| M10 *Accepter* non grisé | « cochée seule… (M10, M13) », « avec et sans proposition… » — 2 failed |
+| M11 indication sans condition | « seules des lignes avec proposition… (M11) », « avec et sans proposition… » — 2 failed |
+| M12 garde de tête retirée | « clic sur Accepter grisé… (M12) » — 1 failed |
+| M13 *Rejeter* grisé | « cochée seule… (M10, M13) » — 1 failed |
+
+**13 mutations, 13 tuées, aucune équivalente.** Seul le `throw` « No candidate » d'`onAccept`, précédé par la garde,
+reste non éprouvé (inatteignable tant qu'elle est là, AC8). ⚠️ **Écart à la consigne commune** : la campagne a tourné en
+**gates ciblés hors verrou** (les binaires nommés ci-dessus, sous `mem-guard`), non sous `flock` — le verrou était tenu
+par d'autres agents et chaque mutation y aurait attendu son tour ; un gate ciblé est permis hors verrou (C-29-6-20).
+⚠️ **Incident déclaré** : une première application de M1 a eu lieu pendant que la baseline attendait le verrou ; la
+source a été restaurée (`git checkout` + `touch`) **avant** que la baseline ne démarre (son journal n'existait pas encore) :
+la baseline a mesuré le code. Après le rebase, une seconde tentative de M1 a échoué (fichier non relu par l'outil
+Edit) ; le run lancé à vide a été arrêté par PID, aucune mesure n'en est tirée.
+
+**Gates finaux** — au dernier commit de code et de la branche rebasée (`f662fe6a`, arbre propre, `29-6-gates-head.txt`),
+bases remises à zéro avant le gate et avant l'E2E, le tout sous `flock` :
+
+- `scripts/test-fast.sh` (fmt + clippy + nextest) : **3672 passed, 6 skipped**, rc 0 ;
+- `npm run check` rc 0 ; `npm run lint-i18n-ownership` rc 0 ; `npm run test:unit` **1645 passed, 147 fichiers** ;
+  `npm run build` rc 0 ;
+- **E2E complet** : **287 passed, 7 failed, 19 skipped** (11,6 min). Les 7 échecs, jugés fichier par fichier contre
+  `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` — **les sept KF-029 (#97), aucun autre** (ni KF-052, ni pollution sur ce run).
+  `reconciliation-reject-unmatched.spec.ts` (clair, sombre), `reconciliation-deleted-import.spec.ts`,
+  `reconciliation-priority.spec.ts` et `reconciliation-unreject.spec.ts` verts.
+
+**Captures** (relues à l'œil) : `29-6-ligne-cochee-{clair,sombre}.png` — la ligne « Aucune correspondance » cochée,
+*Accepter (1)* grisé, *Rejeter* actif, l'indication sur la même ligne, à droite de *Rejeter*, la table non décalée, les
+boutons *Affecter manuellement* et *Éclater* présents sur la ligne ; `29-6-apres-rejet-{clair,sombre}.png` —
+« 1 opération(s) réussie(s). », plus aucune transaction en attente sur ce compte, l'indication disparue. ⚠️ Les
+captures « sombre » rendent **comme les claires** : l'application n'a aucune variante `dark:`, ce que le dépôt documente
+déjà (`destructive-buttons.spec.ts:15-16`, C-28-1-7) — ce n'est pas un défaut de la story. Non vérifié sur capture :
+le retour à la ligne de l'indication **à largeur étroite** (C-29-6-18) ; les captures sont à la largeur par défaut.
+
+**Décomptes** (périmètre `6f132a98..HEAD`, recomptés à la source) : tests Rust neufs **4** (`invoice_settlements.rs`
+8 → 9 attributs, `reconciliation_repository.rs` 21 → 23, `reconciliation_e2e.rs` 103 → 104) ; Vitest **5 neufs + 1
+réécrit** (`it(` 27 → 32) ; E2E **1 spec neuf, 2 tests** ; **1 clé i18n** × 4 locales ; **21 fichiers** touchés de `6f132a98` à `f662fe6a` (avant ce compte rendu).
+Commits de développement : 8 (`f831a92c` à `f662fe6a`).
+
+**Écarts à la fiche** : (1) phrase de la 29-2 réécrite (C-29-6-21) ; (2) doc-comment d'un test existant corrigé, code
+inchangé (C-29-6-23) ; (3) mutations hors verrou (C-29-6-20) ; (4) `R = 99.9950 admis` de l'AC4 est asserté contre
+`classify_payment` et par l'égalité `least_due_without_overpayment(100.00) == 99.995`, non par une troisième forme ;
+(5) montant E2E tiré entre 90 000 et 99 000 CHF (C-29-6-22).
+
 ### File List
+
+- `crates/kesh-db/src/repositories/invoice_settlements.rs` — `HALF_CENTIME`, `least_due_without_overpayment`, ligne
+  « Réciproque », test AC4.
+- `crates/kesh-db/src/repositories/reconciliation.rs` — `HAVING`, binds, paramètre renommé, doc-comments.
+- `crates/kesh-db/tests/reconciliation_repository.rs` — deux tests AC5, doc-comment du test de tolérance.
+- `crates/kesh-api/src/routes/reconciliation.rs` — doc-comments, variable locale.
+- `crates/kesh-api/tests/reconciliation_e2e.rs` — `accept_couples_296`, test AC6.
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` — une clé.
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`, `.test.ts`.
+- `frontend/src/lib/shared/i18n-keys.test.ts` — `sitesTotal`.
+- `frontend/tests/e2e/reconciliation-reject-unmatched.spec.ts` (neuf), `reconciliation-deleted-import.spec.ts`
+  (commentaire).
+- `docs/manual/fr/user-manual.tex`, `user-manual.pdf` ; `docs/api-external.md` ; `CHANGELOG.md`.
+- `_bmad-output/implementation-artifacts/29-6-trop-percu-centimes.md`, `epic-29-choix-autonomes-29-6.md`,
+  `29-6-review-prompt-p1.md`, `sprint-status.yaml`.
 
 ## Change Log
 
@@ -897,3 +1057,9 @@ un composant, sans API. ⚠️ Toute extension de plus fait dépasser la règle 
   References : `:3257-3267`, `:4910`), P3-2 (« permanent » → « sans geste juste pour un règlement déjà saisi », chemin
   *Annuler le rejet* puis *Affecter manuellement* nommé), P3-3 (annotations datées du statut et de C-29-6-17 :
   #670 = Story 29-8), P3-4 (annotation ci-dessus).
+- 2026-10-14 — **Développement** (`bmad-dev-story`, Opus 5.5, autonomie) : tests rouges constatés puis code (`kesh-db`,
+  `kesh-api` en commentaires, écran et i18n), manuel FR et PDF, API externe, CHANGELOG ; propagation triée ; 13
+  mutations, 13 tuées ; branche rebasée sur `main` `81b1b526` (29-5 mergée), sans conflit, arbre identique ; gates
+  finaux après le rebase : test-fast 3672/3672 (6 ignorés), Vitest 1645 (147 fichiers), check, lint, build verts, E2E
+  287 + 7 échecs attendus (les sept KF-029). Choix C-29-6-20 à 23. Statut `review` ; revue de code P1 :
+  `29-6-review-prompt-p1.md` (Sonnet, B/E/A). Détail au Dev Agent Record.
