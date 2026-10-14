@@ -196,6 +196,9 @@
   ou un relevé à solde daté dans Y). Motif = le premier de `NOT_COMPARABLE` > `NO_BALANCE_STATEMENT` > `MISSING` >
   `ENDS_BEFORE_YEAR_END` > `GAP`. Les deux premiers vont dans une liste `notCheckable`, affichée, **sans effet sur le
   statut** ; les trois suivants font l'`attention`.
+  *(Rectifié en validation P3, 2026-10-14, P3 R5 : la définition de l'activité ci-dessus est **supplantée** par
+  C-29-1-24 — une ligne d'écriture sur le compte de grand livre lié compte aussi ; et la source du motif
+  `NO_BALANCE_STATEMENT` est précisée à la fiche (quatrième `EXISTS`, sans borne de date, P3 R8).)*
 - **Écartées** : un critère `created_at <= Y.end_date` (faux pour une reprise de comptabilité : le compte se crée en
   N+1 et reçoit les relevés de N) ; exclure purement les comptes non vérifiables (« signaler, jamais taire » : on
   dit pourquoi un compte n'est pas contrôlé) ; `NOT_COMPARABLE` en `attention` (alerte permanente pour un partage
@@ -244,6 +247,9 @@
   main (effets de `close`), A (vraie fonction) attend à l'étape (1) puis rend `NEXT_FISCAL_YEAR_CLOSED` — tue M-b3 et
   M-b11. N est le premier exercice. L'AC12 et le doc-comment disent que la **sûreté** repose sur la confirmation
   verrouillante de N+1 ; le verrou de N n'en est qu'une conséquence.
+  *(Rectifié en validation P3, 2026-10-14, P3 R5 : l'ordre (ii) **ne tue plus M-b3** — voir C-29-1-27 ; M-b3 est tuée
+  par T-b3 seul. La mutation M-b11 est réécrite à la fiche : c'est le `JOIN fiscal_years fy` qui sort de la requête
+  verrouillante de l'étape (1), P3 F2.)*
 - **Écartées** : reconstituer à la main les étapes de la contre-passation (précédent du test 13 d — ne tue aucune
   mutation du code) ; ajouter une variante en transaction de `close` (hors périmètre, touche la clôture).
 - **Réversible** : oui.
@@ -328,6 +334,15 @@
   de `FOR UPDATE` / `LOCK IN SHARE MODE` / `FOR SHARE` dans le source hors tests **décommenté** ; `format!` et
   `concat!` en argument de requête sont des non résolus (non interdits ailleurs : un libellé peut s'y construire) ;
   liste close des fonctions externes ; cas de contrôle du détecteur ; mutation M-a19.
+  *(Rectifié en validation P3, 2026-10-14, **décision de l'orchestrateur** — P3 R2, signal D5 au troisième tour sur
+  cette garde : « une forme qui produit un défaut à chaque correction se retire ». T-a2 est **réduite à ses deux
+  volets solides** : (a) tout appel de requête a pour premier argument une constante de `ALL_SQL` ; (b) aucun mot de
+  verrou dans le source décommenté. Les volets (c) — liste close des fonctions externes, que les noms importés par
+  `use` contournaient et qu'aucun cas de contrôle n'exerçait — et (d) — constantes externes sans verrou — **sortent
+  du test**, sans rien qui les remplace : les fonctions de dépôt externes appelées par `closing_checks` sont nommées
+  dans son doc-comment et vérifiées en revue de code, **angle mort assumé** écrit à l'AC2. Conséquence mécanique :
+  `BALANCES_SQL`, `EARLIER_OPEN_SQL` et `NEXT_AFTER_SQL`, rendues `pub(crate)` pour le seul volet (d), redeviennent
+  privées.)*
 - **Écartée** : ajouter des formes à l'énumération (la classe resterait ouverte).
 - **Réversible** : oui.
 
@@ -346,6 +361,15 @@
   qui ne tient pas N), et un test qui tue une mutation sur un état fabriqué ne prouve rien du code réel.
 - **Réversible** : oui (si `close` cesse un jour de verrouiller ses antérieurs, l'état devient atteignable et un ordre
   (iii) devient le bon test).
+- *(Rectifié en validation P3, 2026-10-14, **décision de l'orchestrateur** — P3 R1 = F1, signal D5 au troisième tour
+  sur cette famille (P1 F2 / R14 → P2 R5 = F3 → P3 R1 = F1) : « une forme qui produit un défaut à chaque correction se
+  retire ». Le raisonnement ci-dessus ne regardait qu'un sens de divergence ; la réouverture de N+1, qui ne prend pas
+  N, produit l'autre. **M-b13 est retirée** de la table des mutations, et rien ne la remplace : la fiche ne porte plus
+  aucune affirmation d'équivalence ni d'inatteignabilité à son sujet, ni de « défense en profondeur hors d'atteinte ».
+  Restent : M-b3, tuée par T-b3 ; la prescription de l'AC11 (« le statut de N+1 n'est jugé que par la confirmation
+  verrouillante ») ; et, à l'AC12, la seule phrase que la réouverture de N+1 peut changer l'état lu entre la vue et la
+  confirmation, et que c'est la confirmation qui décide. L'écartée « ordre (iii) » et la réversibilité ci-dessus
+  sont caduques avec M-b13.)*
 
 ### C-29-1-28 — `api-external.md` et CHANGELOG de la 29-1b passent à l'AC17
 
@@ -365,4 +389,17 @@
   du préréglage retirée.
 - **Écartées** : lier 1000 (accepté, mais compte d'impôt préalable par défaut du préréglage) ; enrichir le préréglage
   (touche `test_fixtures.rs` et tous les tests qui le comptent).
+- **Réversible** : oui.
+
+### C-29-1-30 — Fiche d'écriture : la liste des exercices lue à l'ouverture, `startEdit` garde sa propre lecture
+
+- **Contexte** : P3 R7 — le bouton de l'AC15 a besoin de la liste des exercices dès l'ouverture de la page ; le mode
+  édition (`startEdit`, `+page.svelte` l. 211-235) la lit déjà, mais au clic, par `Promise.allSettled`, avec sa
+  dégradation propre (bornes de date absentes, jamais d'enregistrement bloqué).
+- **Retenu** : une lecture neuve à l'ouverture, qui porte ses trois états (chargement, échec, succès) ; `startEdit`
+  **inchangé**, relit au clic. Le mock existant de `journal-entry-page.test.ts` (`listFiscalYears: vi.fn()`, l. 49)
+  reçoit un comportement par défaut (liste vide résolue) et les trois comportements de T-b8.
+- **Écartées** : faire lire à `startEdit` la liste chargée à l'ouverture (elle a pu changer depuis, et son échec
+  priverait le mode édition de ses bornes pour une raison qui n'est pas la sienne ; touche un chemin que la story n'a
+  pas à toucher).
 - **Réversible** : oui.

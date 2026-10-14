@@ -5,8 +5,9 @@
 **ready-for-dev** (deux clés) — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur
 `16eeed21` (kickoff de l'Epic 29), worktree `/home/gcorbaz/devel/kesh-29-1`, branche `story/29-1`. Validation P1
 faite (Sonnet, R 0/0/9/9, F 0/0/3/4 — remédiée, Change Log) ; validation P2 faite (Opus, R 0/1/7/8, F 0/0/5/9 —
-remédiée, Change Log ; **signal D5 levé et déclaré**) ; validation P3 à lancer (`29-1-validate-prompt-p3.md`, Sonnet,
-lentilles R et F).
+remédiée, Change Log ; **signal D5 levé et déclaré**) ; validation P3 faite (Sonnet, R 0/0/2/12, F 0/0/1/2 —
+remédiée, Change Log ; **signal D5 au troisième tour, deux formes retirées** : M-b13, volets (c) et (d) de T-a2) ;
+passe ciblée P4 à lancer (`29-1-validate-prompt-p4-ciblee.md`, Haiku, une lentille).
 
 ⛔ **Deux stories, une fiche, deux PR successives** (C-29-1-1, précédents C-26-2-15 et C-28-4-1) :
 
@@ -108,6 +109,8 @@ est reporté avec la vague 2.
 `bank_accounts`, `fiscal_years`, `journal_entries`), `kesh-api` (`routes/fiscal_years`, `routes/journal_entries`, `lib.rs`,
 `errors.rs`), `kesh-i18n`, frontend (`features/fiscal-years`, `routes/settings/fiscal-years`,
 `routes/journal-entries/[id]`, `features/journal-entries`), `docs/manual` : **plus de cinq** → découpage (C-29-1-1).
+*(Liste complétée par le ⚠️ ci-dessous : l'écart servi au tableau de bord ajoute `routes/bank_accounts`,
+`features/bank-accounts` et `features/homepage`, sans crate neuve — validation P3, R11.)*
 **29-1a** : `kesh-db`, `kesh-api`, `kesh-i18n`, frontend, `docs/manual` = **cinq** au grain de la crate, la borne.
 **29-1b** : les mêmes cinq. Pas de 29-1c : l'affectation du résultat est écartée.
 
@@ -162,7 +165,7 @@ T-a5) :
 | Ordre | Motif | Quand | Liste | Effet sur le statut |
 |---|---|---|---|---|
 | 1 | `NOT_COMPARABLE` | sans compte lié, ou compte lié partagé (`sharing > 1`, comme le tableau de bord — lu sur `BalancesRow::sharing`, AC3) | `notCheckable` | aucun |
-| 2 | `NO_BALANCE_STATEMENT` | aucun `bank_imports` du compte ne porte de solde, **toutes dates** (compte alimenté par CSV seulement) | `notCheckable` | aucun |
+| 2 | `NO_BALANCE_STATEMENT` | aucun `bank_imports` du compte ne porte de solde, **toutes dates** (compte alimenté par CSV seulement) — lu par un **quatrième `EXISTS`**, **sans borne de date**, rendu par la requête de population de `closing_checks` à côté de ses trois `EXISTS` d'activité, sans entrer dans le critère d'examen (constante de `ALL_SQL` : `bank_imports` du compte, même `company_id`, `closing_balance IS NOT NULL`) ; la lecture bornée de l'AC3 ne le dit pas, car elle rend `None` aussi pour un compte dont tous les relevés à solde sont **postérieurs** à Y — celui-là est `MISSING` (P3 R8) | `notCheckable` | aucun |
 | 3 | `MISSING` | le relevé de référence (AC3, borne `Y.end_date`) est absent, ou son `period_to < Y.start_date` | `accounts` | `attention` |
 | 4 | `ENDS_BEFORE_YEAR_END` | son `period_to < MIN(Y.end_date, closed_on)` (la clôture d'un compte clos pendant Y est la borne de ce motif, comparée **en Rust** — la borne SQL reste `Y.end_date` pour tous, R18) | `accounts` | `attention` |
 | 5 | `GAP` | `bank_accounts::statement_gap(&balances)` (AC3) n'est pas `None` | `accounts` | `attention` |
@@ -196,16 +199,14 @@ inventorie les **sites qui ne résolvent pas** (§ *Inventorier les sites NON R�
   `//!`) retirées, le texte mis en majuscules ne contient ni `FOR UPDATE`, ni `LOCK IN SHARE MODE`, ni `FOR SHARE` —
   la doc de module, qui dit justement « aucun `FOR UPDATE` », ne le fait donc pas rougir. (`format!` et `concat!` ne
   sont pas interdits dans tout le module — un libellé peut s'y construire — : comme argument d'une requête, ils sont
-  des non résolus du volet (a), et une `const …: &str` ne peut pas recevoir un `format!`) ;
-- **(c) liste close des fonctions externes.** Les seuls appels hors du module sont `bank_accounts::
-  balances_by_bank_account`, `bank_accounts::statement_gap`, `bank_accounts::is_shared` (AC3),
-  `fiscal_years::find_earliest_earlier_open` et `fiscal_years::find_next_after` (AC3-bis) : le test relève chaque
-  chemin `bank_accounts::…`, `fiscal_years::…`, `super::…`, `crate::repositories::…` du source hors tests et le
-  compare à cette liste (tout chemin absent de la liste rougit, en le nommant ; les types et les `use` se listent à
-  part). Les constantes que ces fonctions exécutent — `BALANCES_SQL` (`bank_accounts.rs`, AC3), `EARLIER_OPEN_SQL` et
-  `NEXT_AFTER_SQL` (`fiscal_years.rs`, AC3-bis), rendues `pub(crate)` pour ce seul test — entrent dans la boucle (d) ;
-- **(d)** chaque constante de `ALL_SQL` et chacune des trois constantes externes, mise en majuscules, ne contient ni
-  `FOR UPDATE`, ni `LOCK IN SHARE MODE`, ni `FOR SHARE`, et commence (après espaces) par `SELECT` ou `WITH`.
+  des non résolus du volet (a), et une `const …: &str` ne peut pas recevoir un `format!`).
+
+La garde n'a **que ces deux volets** (validation P3, décision de l'orchestrateur, C-29-1-26). ⚠️ **Angle mort
+assumé** : les fonctions de dépôt **externes** que `closing_checks` appelle — `bank_accounts::balances_by_bank_account`,
+`bank_accounts::statement_gap`, `bank_accounts::is_shared` (AC3), `fiscal_years::find_earliest_earlier_open` et
+`fiscal_years::find_next_after` (AC3-bis) — et le texte SQL qu'elles exécutent **ne sont pas lus par T-a2** : ils sont
+**nommés dans le doc-comment du module** `closing_checks` (liste écrite à la main) et **vérifiés en revue de code**
+(chacune sans verrou, sur l'exécuteur reçu). Aucun test ne le garantit.
 
 Le `READ ONLY` de l'instantané couvre les écritures ; le comportement de MariaDB 10.11 devant un `SELECT … FOR
 UPDATE` dans une transaction `READ ONLY` **n'a pas été établi** — d'où la garde statique, qui ne dépend pas de lui.
@@ -216,7 +217,8 @@ reste quelle que soit l'issue.
 (`bank_accounts.rs:1392`), seule à savoir corriger l'écart des décalages date de valeur / comptabilisation, est
 **extraite**, avec son passage de la ligne au résultat, en trois éléments de `bank_accounts.rs` :
 
-- `pub(crate) const BALANCES_SQL` — le texte **unique** ; la borne s'ajoute **dans** la table dérivée `st`, **avant**
+- `const BALANCES_SQL`, **privée** (son `pub(crate)` ne servait que le volet (d) de T-a2, retiré en validation P3) —
+  le texte **unique** ; la borne s'ajoute **dans** la table dérivée `st`, **avant**
   le `ROW_NUMBER()` (sinon `rn = 1` désignerait le relevé postérieur, puis serait filtré) : `WHERE company_id = ? AND
   closing_balance IS NOT NULL AND (? IS NULL OR period_to <= ?)`. La liaison s'insère au **troisième** rang, entre
   `agg` et `shared` : `.bind(company_id)` ×2, `.bind(company_id)` (`st`), `.bind(bound)` ×2, `.bind(company_id)` ×2
@@ -267,7 +269,10 @@ seule définition, en Rust ; la seconde, en TypeScript, disparaît :
   construisent un `BankAccountSummary` (`homepage.test.ts`, `HomepageCards.test.ts`, `bank-accounts.api.test.ts`,
   `bank-accounts-page.test.ts`, `BankAccountJournalLinkForm.test.ts`, `payment-batches-page.test.ts` — liste
   recomptée au dev par `grep -rln "ledgerBalanceAtStatement" frontend/src` et nommée au Dev Agent Record) gagnent
-  `statementGap: null` là où le type l'exige ;
+  `statementGap: null` là où le type l'exige ; ⚠️ **un cas de `HomepageCards.test.ts` change d'attente**, non de
+  fabrique seulement (P3 R3) : « affiche le relevé, et l'écart seulement s'il est non nul » (l. 166-188 à
+  `16eeed21`) attend `homepage-bank-gap-1` d'un écart que la carte calculait (`800.0000` contre `1000.00`) — son
+  premier rendu reçoit `statementGap: '-200.00'`, le second (écart nul) garde `statementGap: null` ;
 - `crates/kesh-api/tests/bank_accounts_e2e.rs` : un test **neuf** vérifie `statementGap` dans `GET
   /api/v1/bank-accounts` (écart réel en chaîne, `null` sans relevé) — les tests existants restent sans modification.
 
@@ -278,7 +283,8 @@ absent) : rien à y ajouter. Frontend et backend partent dans la même image : a
 
 **AC3-bis — Les lectures d'exercice partagées, sans copie** (`fiscal_years.rs`, C-29-1-18) :
 
-- `pub(crate) const EARLIER_OPEN_SQL` = le texte de `FIND_EARLIER_OPEN_SQL` **sans** ` FOR UPDATE`, et
+- `const EARLIER_OPEN_SQL` (privée, comme `NEXT_AFTER_SQL` : leur `pub(crate)` ne servait que le volet (d) de T-a2,
+  retiré en validation P3) = le texte de `FIND_EARLIER_OPEN_SQL` **sans** ` FOR UPDATE`, et
   `fn earlier_open_locking_sql() -> String` = `format!("{EARLIER_OPEN_SQL} FOR UPDATE")`, **seule source** du texte
   verrouillant : l'étape (d) de `close` l'exécute (`query_as::<_, FiscalYear>(&earlier_open_locking_sql())`, à la
   place de `FIND_EARLIER_OPEN_SQL` l. 1115), et T-a15 l'appelle — le test voit donc **ce que `close` exécute**, non
@@ -291,7 +297,7 @@ absent) : rien à y ajouter. Frontend et backend partent dans la même image : a
   s'ajoute ni ne se déplace dans `close` ;
 - `pub async fn find_earliest_earlier_open<'e, E>(executor, company_id, start_date) -> Result<Option<FiscalYear>,
   DbError>` : lecture **sans verrou** de ce texte (K1) ;
-- `pub(crate) const NEXT_AFTER_SQL` = « exercice de la société dont `start_date > ?`, `ORDER BY start_date ASC
+- `const NEXT_AFTER_SQL` = « exercice de la société dont `start_date > ?`, `ORDER BY start_date ASC
   LIMIT 1` », et `pub async fn find_next_after<'e, E>(executor, company_id, end_date) -> Result<Option<FiscalYear>,
   DbError>`, **sans verrou** — K7 (29-1a) et l'étape (4) de la contre-passation (29-1b) l'appellent tous deux.
 
@@ -325,6 +331,9 @@ sévérité **lisibles en clair et en sombre** (jetons de thème existants, C-28
 agit : *Rapprochement* (K2), *Comptes bancaires* (K3), *Factures* filtrées sur les brouillons (K4), *Factures
 fournisseur importées* (K5), la fiche de chaque écriture listée (K6), *Nouvel exercice* (K7, Admin/Comptable
 seulement). Erreur de chargement : le panneau le dit (« indisponible ») — jamais « rien à signaler » par défaut.
+**Pendant le chargement**, le panneau affiche un état d'attente (« Lecture des contrôles… ») et **aucune** ligne de
+contrôle — ni *Rien à signaler*, ni compteur (P3 R13 : un « rien à signaler » avant la réponse est la même faute que
+M-a10).
 Montants en `big.js`, formatage suisse du dépôt.
 
 **AC6 — Le rappel dans le dialogue de clôture.** Le dialogue existant (`+page.svelte:575-612`) charge les mêmes
@@ -339,7 +348,7 @@ compris — K4 (brouillons), K5 (pièces à compléter) et K7 (exercice suivant 
 statut, AC1).
 
 **AC7 — Textes.** Clés i18n neuves préfixées **`fiscal-years-checks-`** (titre, bouton, un libellé et un texte d'aide
-par contrôle, motifs de K3 et K6, états, erreur de chargement, rappel du dialogue). ⚠️ Le préfixe est au **pluriel**,
+par contrôle, motifs de K3 et K6, états, attente et erreur de chargement, rappel du dialogue). ⚠️ Le préfixe est au **pluriel**,
 celui du dossier : `frontend/scripts/lint-i18n-ownership.js` déduit la fonctionnalité du dossier
 (`features/fiscal-years/` → `fiscal-years`) et exige `key.startsWith('fiscal-years-')` ; un préfixe singulier
 `fiscal-year-checks-` rougirait dans `FiscalYearChecks.svelte` (c'est la dette #30 des `invoice-*` de
@@ -383,7 +392,9 @@ l'orchestrateur au moment du tag, à rappeler dans le corps de la PR de la 29-1a
 (`journal_entries.rs:2595`) reçoit un paramètre `dating: ReversalDating` (`enum ReversalDating { Today,
 NextFiscalYearStart }`, documenté). **Toutes** les entrées existantes (`reverse`, `reverse_in_tx`,
 `reverse_owned_in_tx`) passent `Today` — **comportement inchangé**, prouvé par les tests existants de la
-contre-passation et des quatre annulations restés verts sans modification. ⛔ Aucune copie de la fonction : la
+contre-passation et des quatre annulations restés verts sans modification, **plus une assertion neuve** de T-b2 sur
+le JSON d'audit du chemin `Today` (le test existant de `journal_entry_reversal_e2e.rs` l. 1120-1146 ne vérifie que la
+**présence** de l'identifiant : il resterait vert si une clé s'ajoutait, P3 R6). ⛔ Aucune copie de la fonction : la
 contre-passation reste « écrite une seule fois » (doc l. 2572).
 
 **AC11 — Ce que `NextFiscalYearStart` fait, à la place de l'étape (4) seulement.**
@@ -406,11 +417,11 @@ contre-passation reste « écrite une seule fois » (doc l. 2572).
 - ⛔ **le statut de N+1 n'est jugé QUE par cette confirmation verrouillante** (C-29-1-27, P2 R5 = F3) : la lecture
   ordinaire `find_next_after` ne sert qu'à **trouver** l'exercice et sa date ; son champ `status` n'est **pas lu**
   par la contre-passation (pas de `if next.status == Closed`, même en défense supplémentaire) — un tel test, placé sur
-  la lecture ordinaire, rendrait la confirmation invisible aux tests (M-b3, M-b13) ;
+  la lecture ordinaire, rendrait la confirmation invisible aux tests (M-b3) ;
 - la suite est **celle de `Today`** : `create_in_tx_inner` avec `entry_date = start_date`, donc **tous** ses refus —
   `PeriodLocked` si `start_date <= books_locked_through`, `LaterFiscalYearClosed` si un exercice postérieur à N+1 est
   clos —, lettrage de l'étape (5), audit `journal_entry.reversed` qui porte en plus `"dating": "nextFiscalYearStart"`
-  (le chemin `Today` garde son JSON actuel, octet pour octet) ;
+  (le chemin `Today` garde son JSON actuel, octet pour octet — prouvé par l'assertion neuve de T-b2, AC10) ;
 - le libellé est celui de la contre-passation (`Contre-passation écriture n° X (Exercice N)` : l'exercice diffère
   toujours) ;
 - origine dans un exercice **clos** : accepté (comme la contre-passation du jour) ; N+1 doit être ouvert.
@@ -429,24 +440,22 @@ mais à **ajouter** à la liste du doc-comment, P2 F L4) sont **de même nature*
 
 **Sur quoi repose la sûreté — à écrire tel quel au doc-comment** (F2) : *une contre-passation n'écrit jamais dans un
 N+1 clos* parce que la date et l'exercice sont **confirmés** par `find_open_covering_date` — lecture
-**verrouillante** de N+1, qui lit l'état validé le plus récent et le tient jusqu'au `COMMIT`. C'est la garde, et
-c'est la seule qu'on invoque : elle ne dépend d'aucun détail de `fiscal_years::close`. Le verrou de N tenu dès
+**verrouillante** de N+1, qui lit l'état validé le plus récent et le tient jusqu'au `COMMIT`. Elle donne le refus
+nommé (`NEXT_FISCAL_YEAR_CLOSED`) et ne dépend d'aucun détail de `fiscal_years::close` ; l'écriture dans un exercice
+clos est de toute façon refusée, en second lieu, par le re-verrou de l'exercice dans `create_in_tx_inner`
+(`journal_entries.rs` l. 333-345, `FISCAL_YEAR_CLOSED`) (P3 F3). Le verrou de N tenu dès
 l'étape (1) en a une **conséquence utile, non une garantie** : comme `close(N+1)` verrouille aujourd'hui ses
 antérieurs en (b') (`fiscal_years.rs` l. 1081-1090, boucle `LIST_EARLIER_SQL … ORDER BY start_date ASC`), la clôture
 de N+1 **attend** une contre-passation en cours — **si N est le premier exercice de la société**. S'il existe un
 exercice M antérieur à N, `close(N+1)` tient M puis demande N, tandis que la contre-passation tient N puis demande M
 (parcours de `find_open_covering_date`, qui part du premier exercice) : c'est le **cycle connu** avec la clôture
 (test 13 d, `fiscal_years_repository.rs` l. 1844-1857), résolu par le rejeu des deux routes — non une attente. La
-réouverture de N+1 (N+1 clos ⇒ N clos, invariant I) ne prend pas N : elle peut changer l'état lu, ce que la
-confirmation verrouillante couvre.
+réouverture de N+1 (N+1 clos ⇒ N clos, invariant I) ne prend pas N : elle peut changer l'état lu entre la vue et la
+confirmation, et c'est la confirmation qui décide.
 
-**Ce que la confirmation garde n'est pas atteignable aujourd'hui — à écrire aussi au doc-comment** (P2 F3) : l'état
-« lecture ordinaire : N+1 ouvert ; lecture verrouillante : N+1 clos » exige qu'une clôture de N+1 se valide entre la
-naissance de la vue de A et sa confirmation. Or `close(N+1)` verrouille N en (b'), et A tient N dès l'étape (1),
-**avant** `reversal_blockers` : soit la clôture attend A, soit A attend la clôture et sa vue naît après le `COMMIT`
-(et s'il existe M < N, c'est le cycle connu). La confirmation est donc une **défense en profondeur**, qui ne dépend
-d'aucun détail de `close` ; aucun test ne la tue **par la course** — T-b3 la tue par la différence de code d'erreur
-avec `create_in_tx_inner` (M-b3), grâce à la prescription de l'AC11.
+*(Validation P3, 2026-10-14, décision de l'orchestrateur : le paragraphe consacré à l'état que garde la
+confirmation est retiré, avec la mutation M-b13 qu'il fondait — C-29-1-27.)* M-b3 reste tuée par T-b3, par la
+différence de code d'erreur avec `create_in_tx_inner`, grâce à la prescription de l'AC11.
 
 **AC13 — La route.** `POST /api/v1/journal-entries/{id}/reverse-at-next-fiscal-year-start`, **sans corps**, montée
 dans `comptable_routes` à côté de `/reverse` (`lib.rs:383`) : Admin et Comptable ; Consultation 403 ; clés
@@ -474,7 +483,10 @@ recommencez. », `details: {fiscalYearName}` — l'exercice **de l'origine**, qu
 pas y être datée. », `details: {fiscalYearId, fiscalYearName}`). Mapping au `match` de `errors.rs` (proche de
 `FiscalYearInvalid`, l. 3988), clés `error-next-fiscal-year-missing` / `-closed` ×4 locales. Les replis Rust des
 deux messages (`errors.rs`) égalent **mot pour mot** la valeur fr-CH (garde G9 `les_replis_rust_suivent_le_catalogue`
-de `textes_coherents.rs`, P2 R15). Les deux codes entrent dans la table d'erreurs de `docs/api-external.md` § 10
+de `textes_coherents.rs`, P2 R15) — ⚠️ G9 ne compare que les clés de sa `TABLE` **fermée** (l. 683 et suiv.) : les
+deux clés y sont **ajoutées**, sous `crates/kesh-api/src/errors.rs`, `("error-next-fiscal-year-missing", 1, NOM)` et
+`("error-next-fiscal-year-closed", 1, NOM)` (`NOM` = `{ $name }` → `{fiscal_year_name}`, l. 680 ; le repli Rust
+nomme donc sa variable `fiscal_year_name`), faute de quoi un repli divergent passerait en silence (P3 R4). Les deux codes entrent dans la table d'erreurs de `docs/api-external.md` § 10
 (l. ~694-728, à côté de `EARLIER_FISCAL_YEAR_OPEN`, P2 R16). Tous les autres refus sont ceux de la contre-passation,
 sans changement (`EntryNotReversable`, `ReversalAccountsArchived`, `PeriodLocked`, `LaterFiscalYearClosed`).
 
@@ -525,7 +537,11 @@ clic » (l. 766), qui énumère les boutons affichés puis refusés dans l'état
 l'exercice suivant* : avec N+1 ouvert suivi d'un exercice clos, le bouton est affiché (AC15) puis refusé en
 `LATER_FISCAL_YEAR_CLOSED` (P2 R16). Le panneau *Préparer la clôture* (§ de la 29-1a) renvoie à
 cette sous-section. **PDF régénéré**, contrôlé aplati. Propagation à greper au même commit (« datée du jour »,
-« contre-passation » : `grep -rn "datée du jour\|daté du jour" docs/ README.md website/`) ; la brochure
+« contre-passation » : `grep -rn "datée du jour\|daté du jour\|celle du jour" docs/ README.md website/ crates/`) —
+`crates/` compris (P3 R10) : deux commentaires du code donnent la date du jour comme raison de traverser le verrou de
+période, et deviennent faux pour le geste neuf — `crates/kesh-db/src/repositories/journal_entries.rs` l. 398-402
+(« sa date est celle du jour ») et `crates/kesh-db/src/repositories/companies.rs` l. 909-912 (« celle-ci étant datée
+du jour ») ; ils gagnent l'exception dans le commit de la 29-1b (Tb2) ; la brochure
 (`docs/manual/fr/marketing-brochure.tex` l. 418 : « Le bouclement d'exercice — écritures de clôture, report à
 nouveau du résultat, transitoires — reste à venir ») est corrigée **dans ce commit** — elle annonce « à venir » ce
 qui sera livré, et les écritures de clôture sont écartées par conception — avec son PDF ; le README (l. 47,
@@ -536,7 +552,14 @@ utilisateur et les quatre `messages.ftl` contre les plans livrés ; une référe
 (garde G7) (P2 R15).
 
 **`docs/api-external.md`** : la route de l'AC13 (liste des routes rejouées, § 10) et les deux codes de l'AC14 (table
-d'erreurs, § 10). **CHANGELOG** : `### Ajouté` (contre-passation au début de l'exercice suivant, pour les
+d'erreurs, § 10) ; **et** une sous-section au § 7, à la suite de celle qui décrit la contre-passation (`### Modifier une
+écriture`, paragraphe « Une écriture refusée se corrige par contre-passation », l. 284), qui **décrit** la route comme
+ses voisines (P3 R14) : `POST /api/v1/journal-entries/{id}/reverse-at-next-fiscal-year-start`, **sans corps**, clés
+`read-write` admises ; la contre-passation est datée du **premier jour de l'exercice qui suit** celui de l'écriture,
+dans cet exercice ; réponse `201` et `JournalEntryResponse`, comme `/reverse` ; refus `409 NEXT_FISCAL_YEAR_MISSING`
+(`details.fiscalYearName`, l'exercice de l'écriture) et `409 NEXT_FISCAL_YEAR_CLOSED` (`details.fiscalYearId`,
+`details.fiscalYearName`), plus ceux de la contre-passation, dont `PERIOD_LOCKED` si ce premier jour est dans la
+période verrouillée et `LATER_FISCAL_YEAR_CLOSED` ; interblocage rejoué par le serveur. **CHANGELOG** : `### Ajouté` (contre-passation au début de l'exercice suivant, pour les
 transitoires), mention #232, dans la section `## [0.14.0] — Non publié` ouverte par la 29-1a (AC9). *(Ces deux
 livrables étaient portés par l'ancienne AC19 ; ils passent ici et restent dans la 29-1b — C-29-1-28.)*
 
@@ -594,7 +617,8 @@ livrables de l'ancienne AC19, `api-external.md` et CHANGELOG de la 29-1b, sont �
       d'une ligne) et consigner l'issue — erreur ou succès — au Dev Agent Record ; la garde T-a2 reste (AC2, P2 F L3).
 - [ ] **Ta2** — `crates/kesh-db/src/repositories/closing_checks.rs` (neuf, `pub mod` dans `repositories/mod.rs`) :
       types `ClosingChecks`, `ClosingCheck`, enums `Severity`, `CheckStatus`, détails par code ; doc de module (les
-      sept contrôles, l'instantané, ce que K5 et K6 ne disent pas) (AC1, AC2).
+      sept contrôles, l'instantané, ce que K5 et K6 ne disent pas, et la **liste des fonctions de dépôt externes**
+      appelées — angle mort de T-a2, vérifié en revue de code) (AC1, AC2).
 - [ ] **Ta3** — Extraction `BALANCES_SQL` / `balances_by_bank_account` / `balances_from_row` dans
       `bank_accounts.rs`, SQL unique avec borne, `BalancesRow` `pub(crate)`, `is_shared` et `statement_gap` (AC3) ;
       `EARLIER_OPEN_SQL`, `earlier_open_locking_sql`, `find_earliest_earlier_open`, `NEXT_AFTER_SQL`,
@@ -618,7 +642,7 @@ livrables de l'ancienne AC19, `api-external.md` et CHANGELOG de la 29-1b, sont �
       `textes_coherents.rs` (numéros de compte cités dans les `messages.ftl`, P2 R15).
 - [ ] **Ta7** — Manuel utilisateur + PDF ; `api-external.md` ; CHANGELOG (AC8, AC9) ; garde G4-bis verte (manuel
       utilisateur, P2 R15).
-- [ ] **Ta8** — Mutations M-a1 à M-a21 (M-a9 déclarée équivalente, non exécutée) ; captures clair et sombre du panneau et du dialogue (hors dépôt,
+- [ ] **Ta8** — Mutations M-a1 à M-a22 (M-a9 déclarée équivalente, non exécutée) ; captures clair et sombre du panneau et du dialogue (hors dépôt,
       `/home/gcorbaz/devel/kesh-gate-logs/29-1a-captures/`) ; gate complet et E2E complet au dernier commit de code.
 
 ### 29-1b
@@ -628,23 +652,30 @@ livrables de l'ancienne AC19, `api-external.md` et CHANGELOG de la 29-1b, sont �
       `fiscal_years::find_next_after`, AC3-bis), nouvelles variantes de `DbError`, fonctions publiques
       `reverse_at_next_fiscal_year_start_in_tx` (sur la transaction de l'appelant, comme `reverse_in_tx` l. 2488) et
       `reverse_at_next_fiscal_year_start` (enveloppe pool calquée sur `reverse`, l. 2847) ; doc-comment des verrous
-      mis à jour, avec la phrase sur la sûreté de l'AC12, la défense en profondeur non atteignable et le cycle de
-      `create` d'un exercice postérieur (AC10-AC12) ; l'audit `journal_entry.reversed` garde son action **littérale**
+      mis à jour, avec la phrase sur la sûreté de l'AC12, la réouverture de N+1 qui peut changer l'état lu (la
+      confirmation décide) et le cycle de `create` d'un exercice postérieur (AC10-AC12) ; les deux commentaires qui
+      donnent la date du jour comme raison de traverser le verrou de période — `journal_entries.rs` l. 398-402 et
+      `companies.rs` l. 909-912 — gagnent l'exception du geste neuf (AC17, P3 R10) ; l'audit `journal_entry.reversed` garde son action **littérale**
       — une action choisie par `match` sur `dating` serait un site indirect neuf pour `audit_label_registry.rs` (P2
       R15).
-- [ ] **Tb3** — Route, handler rejoué, mapping `errors.rs` (replis égaux à fr-CH, garde G9), registre des routes et
-      ses compteurs (AC13, AC14).
+- [ ] **Tb3** — Route, handler rejoué, mapping `errors.rs` (replis égaux à fr-CH, garde G9 : **ajouter les deux clés
+      à la `TABLE` de G9**, avec `NOM`, AC14, P3 R4), registre des routes et ses compteurs (AC13, AC14).
 - [ ] **Tb4** — Frontend : client `reverseJournalEntryAtNextFiscalYearStart`, lecture de la liste des exercices,
       bouton, motifs, confirmation, refus (AC15). **Test existant à adapter** :
       `frontend/src/routes/(app)/journal-entries/[id]/journal-entry-page.test.ts` l. 34-38 mocke
-      `journal-entries.api` par liste d'exports (sans le client neuf) et **ne mocke pas** `fiscal-years.api` — la
-      page appellerait `listFiscalYears` contre le vrai `apiClient` : compléter le premier mock, ajouter celui de
-      `fiscal-years.api` (succès, échec, en attente). Fichier nommé au Dev Agent Record parmi les tests modifiés.
-- [ ] **Tb5** — i18n ×4 (AC14, AC16) ; gardes G4-bis et G9 de `textes_coherents.rs`, lints i18n verts.
+      `journal-entries.api` par liste d'exports (sans le client neuf) : le compléter. Il **mocke déjà**
+      `fiscal-years.api` (l. 49, `listFiscalYears: vi.fn()`, pour le mode édition) mais ce `vi.fn()` rend `undefined`
+      (P3 R7) : le chargement neuf, fait à l'**ouverture** de la page et non au clic, recevrait `undefined` dans chaque
+      cas existant — lui donner un comportement par défaut (liste vide résolue, posée dans le `beforeEach`) et trois
+      comportements pour T-b8 (succès, échec, en attente). `startEdit` (l. 211-235) **garde sa propre lecture** au
+      clic, inchangée : son échec a sa dégradation propre, et la liste a pu changer depuis l'ouverture (C-29-1-30).
+      Fichier nommé au Dev Agent Record parmi les tests modifiés.
+- [ ] **Tb5** — i18n ×4 (AC14, AC16) ; gardes G4-bis et G9 de `textes_coherents.rs` (G9 étendue des deux clés, Tb3),
+      lints i18n verts.
 - [ ] **Tb6** — E2E de parcours (AC18).
-- [ ] **Tb7** — Manuel utilisateur + PDF ; brochure + PDF et README ; `api-external.md` (route et deux codes) ;
+- [ ] **Tb7** — Manuel utilisateur + PDF ; brochure + PDF et README ; `api-external.md` (route décrite au § 7, liste des routes rejouées, deux codes) ;
       CHANGELOG (AC17) ; gardes G4-bis et G7 vertes.
-- [ ] **Tb8** — Mutations M-b1 à M-b13 (M-b13 déclarée équivalente, non exécutée) ; captures clair et sombre (bouton, confirmation, refus) hors dépôt ; gate
+- [ ] **Tb8** — Mutations M-b1 à M-b12 ; captures clair et sombre (bouton, confirmation, refus) hors dépôt ; gate
       complet et E2E complet au dernier commit de code.
 
 ## Dev Notes
@@ -718,12 +749,12 @@ union.
 
 - T-a1 — `for_fiscal_year` rend les sept codes, dans l'ordre de l'AC1, sur une société vierge (tous `ok` sauf K7 si
   aucun suivant).
-- T-a2 — garde statique de l'AC2, **inversée** (C-29-1-26), ses quatre volets : (a) tout site d'appel `query`,
+- T-a2 — garde statique de l'AC2, **inversée** (C-29-1-26), ses **deux** volets : (a) tout site d'appel `query`,
   `query_as`, `query_scalar` du source hors tests — turbofish équilibré et appel coupé par rustfmt compris — a pour
   premier argument une constante de `ALL_SQL`, tout autre site est nommé comme non résolu ; nombre de `const …_SQL`
   = `ALL_SQL.len()` ; (b) aucun `FOR UPDATE` / `LOCK IN SHARE MODE` / `FOR SHARE` dans le source hors tests
-  décommenté ; (c) liste close des fonctions externes appelées ; (d) chaque constante de
-  `ALL_SQL`, `BALANCES_SQL`, `EARLIER_OPEN_SQL`, `NEXT_AFTER_SQL` sans verrou, en `SELECT`/`WITH`. Le test porte
+  décommenté. Les fonctions de dépôt externes et leur SQL sont un **angle mort** de T-a2 (AC2 : nommées au
+  doc-comment du module, vérifiées en revue de code). Le test porte
   aussi un **cas de contrôle** de son détecteur : appliqué à une chaîne de source synthétique qui contient
   `sqlx::query_as::<_, (i64, Option<String>)>(\n "SELECT 1 FOR UPDATE")`, le volet (a) rend un non résolu et le volet
   (b) un mot de verrou — un détecteur qui ne voit pas la forme dominante du dépôt rougit avant de servir.
@@ -738,7 +769,9 @@ union.
   (`created_at`) **après** Y mais portant des transactions de Y : examiné ; compte clos pendant Y mesuré à sa date de
   clôture ; `NOT_COMPARABLE` et `NO_BALANCE_STATEMENT` dans `notCheckable`, **statut `ok`** s'ils sont seuls ;
   **précédence** : un compte sans compte lié **et** sans relevé à solde rend `NOT_COMPARABLE` (non
-  `NO_BALANCE_STATEMENT`), un compte CSV seul rend `NO_BALANCE_STATEMENT` (non `MISSING`) ; autre société absente.
+  `NO_BALANCE_STATEMENT`), un compte CSV seul rend `NO_BALANCE_STATEMENT` (non `MISSING`), un compte lié dont
+  **tous** les relevés à solde sont **postérieurs** à Y, avec une transaction dans Y, rend `MISSING` (non
+  `NO_BALANCE_STATEMENT` : le quatrième `EXISTS`, sans borne, voit ces relevés — P3 R8) ; autre société absente.
   **Activité au grand livre** (C-29-1-24) : compte lié dont le seul relevé à solde est de l'exercice précédent, aucune
   transaction bancaire dans Y, une écriture manuelle datée dans Y sur le compte lié → examiné, `MISSING` ; même compte
   sans cette écriture → absent. **Fixtures des exclusions qui ne passent pas à vide** (P2 R6) : un compte archivé
@@ -748,7 +781,13 @@ union.
   `archived = TRUE` portant un `bank_imports` à `closing_balance` non nul et `period_to` dans Y **et** une
   `bank_transactions` datée dans Y ; compte à `closed_on` antérieur à `Y.start_date` portant une `bank_transactions`
   datée dans Y ; chacun absent des deux listes. Le test vérifie, **avant** d'appeler `for_fiscal_year`, que ces
-  lignes existent (assertion de montage : sans elles, le cas ne prouve rien).
+  lignes existent (assertion de montage : sans elles, le cas ne prouve rien). ⚠️ **Et qu'examiné, le compte serait
+  listé** (P3 R12) : un compte archivé dont le relevé s'arrête au dernier jour de Y, sans écart, ne produirait aucun
+  motif et serait absent **avec ou sans** l'exclusion — M-a4 survivrait encore. Le relevé du compte archivé s'arrête
+  donc **avant** `Y.end_date` (son compte lié, non partagé, le ferait passer en `ENDS_BEFORE_YEAR_END`), et un
+  **cas de contrôle** pose la même fixture avec `archived = FALSE` : ce compte-là figure dans `accounts`, motif
+  `ENDS_BEFORE_YEAR_END`. Le compte clos avant Y, sans `bank_imports`, figurerait, examiné, dans `notCheckable`
+  (`NO_BALANCE_STATEMENT`) : son absence des deux listes est donc distinctive telle quelle.
 - T-a6 — l'extraction (`balances_by_bank_account`, `balances_from_row`, `is_shared`) : les tests existants de
   `list_by_company_with_balances` — `crates/kesh-db/tests/bank_account_statement_gap.rs` et
   `crates/kesh-api/tests/bank_accounts_e2e.rs`, à nommer un par un dans le Dev Agent Record (liste recomptée par
@@ -767,8 +806,8 @@ union.
   avec un antérieur seulement → `attention` (l'antérieur n'est pas un suivant).
 - T-a11 — route : 200 tout rôle (Admin, Comptable, Consultation, PAT `read`), 404 autre société, 401 sans auth ;
   forme JSON (camelCase, montants en chaînes).
-- T-a12 — Vitest : le panneau (sept lignes, liens, erreur ≠ « rien à signaler », `notCheckable` affiché sans
-  compter), le bouton *Préparer la clôture* visible pour le rôle **Consultation** (colonne d'actions rendue, sans
+- T-a12 — Vitest : le panneau (sept lignes, liens, erreur ≠ « rien à signaler », **chargement en attente : l'état
+  d'attente, aucune ligne de contrôle ni « rien à signaler »** — P3 R13, `notCheckable` affiché sans compter), le bouton *Préparer la clôture* visible pour le rôle **Consultation** (colonne d'actions rendue, sans
   *Renommer* / *Clôturer* / *Réouvrir*) et pour Admin, le `colspan` de la ligne vide, le rappel du dialogue (compte
   `info` compris, bouton actif pendant le chargement et après un échec) — dans `fiscal-years-page.test.ts` adapté
   (Ta5) et un test du composant.
@@ -796,7 +835,10 @@ union.
   `crates/kesh-db/tests/reconciliation_cancel.rs`, `crates/kesh-db/tests/invoice_settlement.rs`,
   `crates/kesh-db/tests/supplier_invoices_repository.rs`, `crates/kesh-api/tests/supplier_settlement_cancel_e2e.rs`
   (la liste exacte se recompte au dev par `grep -rln "reverse_in_tx\|reverse_owned_in_tx\|/reverse" crates/*/tests/`
-  et se nomme au Dev Agent Record) ; l'audit du chemin `Today` sans clé `dating`.
+  et se nomme au Dev Agent Record) ; **assertion neuve** (P3 R6) — le seul test d'audit existant
+  (`journal_entry_reversal_e2e.rs` l. 1120-1146) ne vérifie que la **présence** de l'identifiant : un test neuf, ou une
+  assertion ajoutée à côté, exige que `details_json` du chemin `Today`, décodé, **égale exactement**
+  `{"reversalJournalEntryId": <id>}` (objet à une seule clé, `journal_entries.rs` l. 2771-2773 à `16eeed21`).
 - T-b3 — refus : sans suivant (`NEXT_FISCAL_YEAR_MISSING`), suivant clos (`NEXT_FISCAL_YEAR_CLOSED` — état posé par
   SQL direct, l'invariant I empêchant de clore N+1 avec N ouvert par les transitions ; et cas légal : origine dans N
   **clos**, N+1 clos), premier jour verrouillé (`PERIOD_LOCKED`), déjà contre-passée, contre-passation d'une
@@ -848,7 +890,7 @@ union.
 | M-a1 | K2 : `BETWEEN` → `>` sur `start_date` | T-a4 (premier jour) |
 | M-a2 | K2 : retirer le filtre `company_id` | T-a4 (autre société) |
 | M-a3 | K3 : retirer la borne `period_to <= ?` | T-a5 (relevé postérieur) |
-| M-a4 | K3 : ne pas exclure les comptes archivés | T-a5 (compte archivé **avec activité dans Y posée par SQL direct** — sans elle, le critère d'activité l'écarte de lui-même et M-a4 survit, P2 R6) |
+| M-a4 | K3 : ne pas exclure les comptes archivés | T-a5 (compte archivé **avec activité dans Y posée par SQL direct** — sans elle, le critère d'activité l'écarte de lui-même et M-a4 survit, P2 R6 — et relevé arrêté **avant** `Y.end_date`, si bien qu'examiné il serait listé ; cas de contrôle non archivé, P3 R12) |
 | M-a5 | extraction : borne appliquée aussi à `None` (ex. `COALESCE(?, '1970-01-01')`) | T-a6 |
 | M-a6 | K4 : compter `validated` | T-a7 |
 | M-a7 | K6 : `HAVING SUM(debit) <> SUM(credit)` retiré | T-a9 |
@@ -866,19 +908,22 @@ union.
 | M-a19 | `closing_checks.rs` : une requête écrite en littéral turbofish coupé par rustfmt, `sqlx::query_as::<_, (i64,)>(` puis `"SELECT … FOR UPDATE"` à la ligne suivante | T-a2 volets (a) et (b) (P2 R4 = F1) |
 | M-a20 | K3 : critère d'activité au grand livre retiré (seuls transactions et relevés comptent) | T-a5 (écriture manuelle sur le compte lié, relevé ancien : `MISSING` attendu) |
 | M-a21 | DTO du tableau de bord : `statement_gap: None` en dur dans le handler de liste | T-a16 (`bank_accounts_e2e.rs`, écart réel attendu) |
+| M-a22 | panneau : « Rien à signaler » affiché sur chaque ligne pendant le chargement | T-a12 (chargement en attente, P3 R13) |
 | M-b1 | `NextFiscalYearStart` daté `today` | T-b1 |
 | M-b2 | lecture du suivant en `ORDER BY start_date DESC` (rend le dernier exercice, non le suivant) — ⚠️ la lecture étant `find_next_after`, partagée avec K7, c'est la mutation M-a11 vue du chemin de la 29-1b | T-b1 (N+2 présent) |
 | M-b3 | confirmation verrouillante retirée, **aucun** contrôle de statut (date et exercice pris de la lecture ordinaire) | T-b3 (le code attendu est `NEXT_FISCAL_YEAR_CLOSED` ; sans confirmation, `create_in_tx_inner` rendrait `FISCAL_YEAR_CLOSED`) — tuée **parce que** l'AC11 interdit de juger le statut sur la lecture ordinaire ; T-b5 (ii) ne la revendique plus (P2 R5 = F3) |
 | M-b4 | `Some(id)` → `None` (liaison perdue) | T-b1 |
-| M-b5 | audit `dating` ajouté aussi au chemin `Today` | T-b2 |
+| M-b5 | audit `dating` ajouté aussi au chemin `Today` | T-b2 (assertion **neuve** d'égalité exacte du JSON, P3 R6 — le test existant ne la tuerait pas) |
 | M-b6 | `NextFiscalYearClosed` rendu en `FiscalYearInvalid` | T-b3 |
 | M-b7 | route non rejouée | T-b7 (registre) |
 | M-b8 | bouton affiché sans exercice suivant ouvert | T-b8 |
 | M-b9 | lecture du suivant placée avant `reversal_blockers` | T-b4 |
 | M-b10 | exercice suivant absent : repli sur la date du jour au lieu de `NextFiscalYearMissing` | T-b3 (sans suivant : `409 NEXT_FISCAL_YEAR_MISSING` attendu, non une écriture créée) |
-| M-b11 | étape (1) : l'exercice de l'origine lu par une requête **séparée, sans `FOR UPDATE`** (seule l'écriture verrouillée) | T-b5 ordre (ii) (A n'attend plus à l'étape (1) : l'attente au motif `"JOIN fiscal_years fy"` ne se produit pas, le test rougit) |
+| M-b11 | étape (1) : le `JOIN fiscal_years fy` **retiré** de la requête verrouillante (seule l'écriture verrouillée) ; le nom et `end_date` de l'exercice de l'origine lus par une requête **séparée, sans `FOR UPDATE`** — retirer seulement `end_date` du `SELECT` laisserait le `JOIN` verrouillant en place et T-b5 (ii) vert (P3 F2) | T-b5 ordre (ii) (A n'attend plus à l'étape (1) : l'attente au motif `"JOIN fiscal_years fy"` ne se produit pas, le test rougit) |
 | M-b12 | motif de l'AC15 « aucun exercice ne suit » affiché pendant le chargement de la liste | T-b8 (chargement : ni bouton ni motif) |
-| M-b13 | confirmation verrouillante remplacée par un contrôle `next.status == Closed` sur la lecture ordinaire | ⛔ **équivalente, déclarée** (P2 R5 = F3) : elle ne diffère de la confirmation que dans l'état « ordinaire : ouvert ; verrouillante : clos », **inatteignable** tant que `close(N+1)` verrouille N en (b') et que A tient N dès l'étape (1) (AC12) ; un test ne la tuerait qu'en fabriquant un état qu'aucun code de Kesh ne produit. Non exécutée ; c'est la prescription de l'AC11 (« le statut n'est jugé que par la confirmation ») qui l'exclut, et la revue de code la vérifie à la lecture |
+
+*(Validation P3, 2026-10-14, décision de l'orchestrateur : la ligne M-b13 est retirée de cette table, et rien ne la
+remplace — C-29-1-27.)*
 
 ### Project Structure Notes
 
@@ -889,7 +934,7 @@ union.
 ### References
 
 - Issue #232 ; fichier d'epic `planning-artifacts/epic-29-preparer-cloture.md` ; registre
-  `epic-29-choix-autonomes.md` (C-29-0-1 à 3) et `epic-29-choix-autonomes-29-1.md` (C-29-1-1 à 29).
+  `epic-29-choix-autonomes.md` (C-29-0-1 à 3) et `epic-29-choix-autonomes-29-1.md` (C-29-1-1 à 30).
 - Fiches `14-1-cloture-report-des-soldes.md` (modèle virtuel), `14-2-reouvrir-degiger-exercice.md`,
   `14-4-bilan-ouverture-soldes-depart.md`, `25-6-a-tableau-de-bord.md` (écart du relevé), `28-3-sauvegarde-instantane-commun.md` (instantané),
   `28-4-cloture-compte-bancaire.md` (critère de l'AC7, forme de fiche).
@@ -909,6 +954,8 @@ union.
 - 2026-10-14 — validation P1 remédiée (25 findings, Change Log) ; validation P2 à lancer.
 - 2026-10-14 — validation P2 remédiée (30 findings, Change Log), signal D5 levé et déclaré ; AC19 retirée (Story 29-7) ;
   validation P3 à lancer.
+- 2026-10-14 — validation P3 remédiée (17 findings, Change Log), signal D5 au troisième tour : M-b13 et volets (c)/(d)
+  de T-a2 retirés (décisions de l'orchestrateur) ; passe ciblée P4 à lancer.
 
 ### File List
 
@@ -1015,3 +1062,58 @@ union.
     validation P1, non réécrites ; au fichier d'epic, la phrase « la répétition à blanc appartient à la dernière
     sous-story » est annotée (29-7).
   - Validation P3 à lancer : `29-1-validate-prompt-p3.md` (Sonnet, lentilles R et F).
+- 2026-10-14 — **validation P3** (Sonnet 5.5, deux lentilles, contexte frais, lecture seule ; rapports
+  `/home/gcorbaz/devel/kesh-gate-logs/29-1-validate-p3-{R,F}.md`) : **R 0 CRITICAL / 0 HIGH / 2 MEDIUM / 12 LOW**,
+  **F 0 / 0 / 1 / 2** — 3 MEDIUM, 14 LOW, **17 findings** (R1 et F1 désignent le même défaut). Remédiation par
+  Opus 5.5 (session distincte des lentilles), sur les décisions de l'orchestrateur, consignées comme telles.
+  - ⚠️ **Signal D5 au troisième tour, sur deux formes** (§ *Règle de splitting préventif*, amendement D5 — déclaré au
+    Project Lead) : la mutation de la confirmation (P1 F2 / R14 → P2 R5 = F3 → P3 R1 = F1 : l'équivalence de M-b13 ne
+    regardait qu'un sens de divergence, la réouverture de N+1 produit l'autre) et la garde T-a2 (P1 R12 / F3 → P2 R4 =
+    F1 → P3 R2 : le volet (c) laissait passer les noms importés par `use`, et ni (c) ni (d) n'avaient de cas de
+    contrôle). **Décision de l'orchestrateur : « une forme qui produit un défaut à chaque correction se retire. »**
+    Les autres findings sont distincts et ne recyclent rien.
+  - **Retrait 1 — M-b13** (R1 = F1, C-29-1-27 annoté) : la ligne sort de la table des mutations, **rien ne la
+    remplace** ; la fiche ne porte plus aucune affirmation d'équivalence ni d'inatteignabilité à son sujet (le
+    paragraphe « Ce que la confirmation garde n'est pas atteignable aujourd'hui » de l'AC12 est retiré, ainsi que la
+    « défense en profondeur non atteignable » de Tb2). M-b3 reste, tuée par T-b3 ; l'AC11 garde sa prescription ;
+    l'AC12 dit seulement que la réouverture de N+1 peut changer l'état lu entre la vue et la confirmation, et que
+    c'est la confirmation qui décide. Les corrections que proposaient R1 et F1 (ordre (iii) de T-b5, nouveau test)
+    ne sont **pas** reprises : ce serait remplacer la forme retirée par une autre.
+  - **Retrait 2 — volets (c) et (d) de T-a2** (R2, C-29-1-26 annoté) : la garde est réduite à (a) — tout appel de
+    requête a pour premier argument une constante de `ALL_SQL` — et (b) — aucun mot de verrou dans le source
+    décommenté. Les fonctions de dépôt externes appelées par `closing_checks` sont un **angle mort assumé**, écrit à
+    l'AC2 et à T-a2 : nommées dans le doc-comment du module (Ta2), vérifiées en revue de code. La correction que
+    proposait R2 (développer les `use`, cas de contrôle de (c) et (d), mutation neuve) n'est **pas** reprise.
+    Conséquence mécanique : `BALANCES_SQL`, `EARLIER_OPEN_SQL` et `NEXT_AFTER_SQL` redeviennent privées (leur
+    `pub(crate)` ne servait que le volet (d)).
+  - **LOW traités** — R3 : le cas « l'écart seulement s'il est non nul » de `HomepageCards.test.ts` (l. 166-188)
+    nommé, `statementGap: '-200.00'` au premier rendu (AC3). R4 : les deux clés `error-next-fiscal-year-*` ajoutées
+    à la `TABLE` fermée de G9, avec `NOM` (AC14, Tb3, Tb5). R5 : C-29-1-16 (renvoi à C-29-1-24) et C-29-1-20 (renvoi à
+    C-29-1-27, M-b11 réécrite) annotés. R6 : assertion **neuve** de T-b2 — le JSON d'audit du chemin `Today` égale
+    exactement `{"reversalJournalEntryId": …}` — qui fonde « octet pour octet » (AC10, AC11, M-b5). R7 : Tb4 réécrite
+    (le mock de `fiscal-years.api` existe, son `vi.fn()` rend `undefined` : comportement par défaut et trois
+    comportements ; `startEdit` garde sa lecture, C-29-1-30). R8 : source de `NO_BALANCE_STATEMENT` — un quatrième
+    `EXISTS`, sans borne de date, de la requête de population ; cas de T-a5 (relevés tous postérieurs à Y →
+    `MISSING`). R9 : F L9 et G19 ajoutés au commentaire de la clé `29-7-repetition-a-blanc`. R10 : grep de l'AC17
+    étendu à `crates/` (et à « celle du jour »), les deux commentaires `journal_entries.rs` l. 398-402 et
+    `companies.rs` l. 909-912 nommés (AC17, Tb2). R11 : annotation en tête de la clé `29-1b` du registre de sprint ;
+    renvoi de la liste des modules au ⚠️ qui la complète. R12 : la fixture du compte archivé a un relevé arrêté
+    **avant** `Y.end_date`, avec un cas de contrôle non archivé qui le liste (T-a5, M-a4). R13 : état de chargement du
+    panneau (AC5, AC7), cas de T-a12, mutation **M-a22**. R14 : la route décrite au § 7 d'`api-external.md` (date,
+    absence de corps, `201`, refus), AC17 et Tb7. F2 : M-b11 retire le `JOIN fiscal_years fy` de la requête
+    verrouillante de l'étape (1). F3 : « c'est la seule qu'on invoque » remplacé — la confirmation donne le refus
+    nommé, le re-verrou de `create_in_tx_inner` (`journal_entries.rs` l. 333-345) refuse de toute façon l'écriture
+    dans un exercice clos.
+  - **Refusés** : aucun. Non repris par décision de l'orchestrateur : les remèdes proposés par R1, F1 et R2 (voir les
+    deux retraits).
+  - **Décomptes, recomptés depuis la fiche après remédiation** : 19 AC vivants (AC1 à AC18 et AC3-bis), T-a1 à T-a16
+    (16), T-b1 à T-b9 (9), M-a1 à M-a22 (22, dont une équivalente : M-a9), M-b1 à M-b12 (12, aucune équivalente),
+    choix C-29-1-1 à 30 (30 ; C-29-1-16, 20, 26 et 27 annotés en P3, non réécrits).
+  - **Propagation** : symptômes grepés sur le worktree après remédiation — `M-b13`, « équivalente », « atteignable »,
+    « défense en profondeur », « hors d'atteinte », « liste close », `pub(crate)`, « quatre volets », « seule qu'on
+    invoque », « ne mocke pas », « C-29-1-1 à 29 », « M-a1 à M-a21 », « M-b1 à M-b13 » : ne restent que les entrées
+    datées des validations P1 et P2 (non réécrites), les annotations de retrait, M-a9 (équivalence propre, hors
+    retrait) et les `pub(crate)` de `balances_by_bank_account`, `BalancesRow` et `is_shared`, appelés depuis
+    `closing_checks`.
+  - Passe ciblée P4 à lancer : `29-1-validate-prompt-p4-ciblee.md` (Haiku, une lentille, sur le seul diff de cette
+    remédiation).
