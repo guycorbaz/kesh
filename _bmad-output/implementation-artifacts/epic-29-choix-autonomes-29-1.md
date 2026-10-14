@@ -18,6 +18,8 @@
   sous-story, la 29-1b, comme le demande l'orchestrateur.
 - **Écartées** : une story unique (trop large) ; trois stories avec une 29-1c « répétition à blanc » seule
   (documentation sans code, qui se relit avec la 29-1b dont elle décrit les gestes).
+  *(Rectifié en validation P2, 2026-10-14, décision de l'orchestrateur : la répétition à blanc **quitte** la 29-1b et
+  devient la Story 29-7 — C-29-1-23. Le découpage 29-1a / 29-1b tient.)*
 - **Réversible** : oui.
 
 ### C-29-1-2 — Ni écritures de clôture, ni écriture d'affectation du résultat
@@ -162,6 +164,8 @@
 - **Retenu** : un E2E de parcours complet (contrôles, rapprochement, transitoire, contre-passation, bilans N et N+1,
   clôture, réouverture) ; au manuel d'administration, une marche de répétition sur une **instance séparée** à partir
   d'un `.keshbackup`, sans rien rapporter vers la production.
+  *(Rectifié en validation P2, 2026-10-14 : l'E2E de parcours reste dans la 29-1b ; la répétition à blanc en est
+  retirée — Story 29-7, C-29-1-23.)*
 - **Réversible** : oui.
 
 ### C-29-1-14 — Angle mort assumé : une transitoire oubliée n'est pas repérée
@@ -205,6 +209,9 @@
 - **Retenu** : `bank_accounts::statement_gap` (Rust), arrondi par `Money::round_to_centimes` ; le panneau affiche la
   valeur du serveur sans recalcul ; le test Rust reprend les cas de `homepage.test.ts`. Le calcul TypeScript du
   tableau de bord reste (servir son écart depuis le serveur toucherait un sixième module) : **issue demandée**.
+  *(Rectifié en validation P2, 2026-10-14, P2 R8 : l'argument « sixième module » était faux au grain où la fiche
+  compte, et l'issue n'existait pas. Le tableau de bord lit désormais l'écart du serveur — C-29-1-25 ; la seconde
+  définition disparaît, la demande d'issue tombe.)*
 - **Écartées** : recopier `statementGap` dans le panneau (troisième définition) ; comparer sans arrondi.
 - **Réversible** : oui.
 
@@ -253,6 +260,9 @@
   synchronisé ni un dépôt de sources ; chiffrement s'il quitte la machine.
 - **Écartées** : « un autre projet docker-compose » sans plus (non exécutable) ; garder l'export « pour la prochaine
   fois » (un secret qui traîne).
+  *(Caduc en validation P2, 2026-10-14 : l'AC19 est retirée de la fiche — C-29-1-23. Ce choix reste comme trace et
+  comme point de départ de la Story 29-7, qui devra l'éprouver en l'exécutant ; P2 R1 et R2 montrent qu'il ne suffit
+  pas en l'état.)*
 - **Réversible** : oui.
 
 ### C-29-1-22 — Fiche d'écriture : un motif à la place du bouton absent
@@ -264,4 +274,95 @@
   L'échec de la liste ne retire pas *Contre-passer* (du jour).
 - **Écartées** : bouton désactivé (la page refuse les boutons grisés) ; bouton affiché sans liste (la confirmation
   doit nommer la date et l'exercice).
+- **Réversible** : oui.
+
+---
+
+## Choix ajoutés à la remédiation de la validation P2 (2026-10-14, Opus 5.5)
+
+*C-29-1-23 à 26 consignent des **décisions de l'orchestrateur**, transmises dans le prompt de remédiation ; C-29-1-27
+à 29 sont des choix de la remédiation.*
+
+### C-29-1-23 — La répétition à blanc quitte la fiche : Story 29-7 (décision de l'orchestrateur)
+
+- **Contexte** : signal D5 levé en P2 (P1 0 HIGH / 12 MEDIUM → P2 1 HIGH / 12 MEDIUM, 13 des 16 findings R nés de la
+  remédiation P1). L'AC19 a produit un défaut à chaque correction (P1 R8, F5, F7 ; P2 R1 HIGH, R2, F5), dont un qui
+  pouvait faire remplacer la base de production par l'import (sur Synology, le compose de production s'enregistre
+  sous le nom `docker-compose.yml`).
+- **Retenu** : l'AC19, ses tâches et ses textes prescrits du manuel d'administration sont **retirés** — non réécrits ;
+  l'AC19 garde son titre en renvoi. Story **29-7** (doc), clé `29-7-repetition-a-blanc: backlog`, à écrire **en
+  l'exécutant réellement** sur la station avec une sauvegarde synthétique ; cahier des charges : P2 R1, R2 et F5.
+- **Écartées** : une troisième réécriture de la marche dans la fiche (le motif du dépôt : chaque remédiation y
+  produisait le défaut suivant, et seule l'exécution le révèle) ; une 29-1c doc (la marche se relit mieux exécutée
+  qu'adossée à une fiche de code).
+- **Réversible** : oui.
+
+### C-29-1-24 — K3 lit aussi le grand livre (décision de l'orchestrateur)
+
+- **Contexte** : P2 R3 = F2, convergents — un compte mouvementé au grand livre sans import bancaire dans Y échappait
+  à K3, alors que son solde de fin d'année n'est confronté à aucun relevé.
+- **Retenu** : compte examiné s'il a, dans Y, une transaction bancaire, un relevé à solde **ou** une ligne d'écriture
+  sur son compte de grand livre lié ; trois `EXISTS` séparés (jamais `bank_transactions` dans le même `FROM` que les
+  lignes) ; cas de T-a5, mutation M-a20, phrase du manuel écrite telle quelle.
+- **Écartée** : écrire l'angle mort au manuel (« activité bancaire seulement ») — il tait le cas même que K3 doit
+  signaler.
+- **Réversible** : oui.
+
+### C-29-1-25 — Le tableau de bord lit l'écart servi par le serveur (décision de l'orchestrateur)
+
+- **Contexte** : P2 R8 — l'argument « sixième module » de C-29-1-17 était faux au grain de la crate, et l'issue
+  demandée n'existait pas ; deux définitions de l'écart (Rust, TypeScript) restaient.
+- **Retenu** : champ `statement_gap` dans `BankAccountWithBalance`, lu par `bank-accounts.api.ts` ; `statementGap` de
+  `homepage.ts` lit ce champ, `toCentime` disparaît ; les cas d'arrondi passent en Rust (T-a14), test de route et de
+  lecture neufs (T-a16), mutation M-a21. Une seule définition. Aucune crate neuve ; dispersion au grain fin déclarée.
+- **Écartée** : garder le calcul TypeScript et ouvrir une issue (deux définitions qui divergeraient au prochain
+  correctif).
+- **Réversible** : oui.
+
+### C-29-1-26 — T-a2 inversée : inventaire des sites non résolus (décision de l'orchestrateur)
+
+- **Contexte** : P2 R4 = F1 — la garde « aucun `query*("` littéral » manquait le turbofish, l'appel coupé par
+  rustfmt, `r#"…"#`, `concat!` et `format!` : verte sur la forme exacte qu'elle devait interdire.
+- **Retenu** : tout site d'appel de requête du module a pour premier argument une constante de `ALL_SQL` (turbofish
+  sauté en équilibrant les chevrons, source mis sur une ligne) — tout autre site est nommé comme non résolu ; recherche
+  de `FOR UPDATE` / `LOCK IN SHARE MODE` / `FOR SHARE` dans le source hors tests **décommenté** ; `format!` et
+  `concat!` en argument de requête sont des non résolus (non interdits ailleurs : un libellé peut s'y construire) ;
+  liste close des fonctions externes ; cas de contrôle du détecteur ; mutation M-a19.
+- **Écartée** : ajouter des formes à l'énumération (la classe resterait ouverte).
+- **Réversible** : oui.
+
+### C-29-1-27 — M-b3 : le statut de N+1 n'est jugé que par la confirmation ; T-b5 (ii) ne la revendique plus
+
+- **Contexte** : P2 R5 = F3 — une implémentation qui juge `next.status` sur la lecture ordinaire rend
+  `NEXT_FISCAL_YEAR_CLOSED` avec ou sans confirmation, dans T-b3 comme dans T-b5 (ii) ; l'état qui distinguerait la
+  confirmation (« ordinaire : ouvert ; verrouillante : clos ») est inatteignable sous `close` actuel. L'orchestrateur
+  laissait le choix entre un ordre (iii) où B ne tient que N+1 et le retrait de T-b5 (ii) des tueurs de M-b3.
+- **Retenu** : l'AC11 **prescrit** que le statut n'est jugé que par la confirmation verrouillante ; M-b3 (confirmation
+  retirée, aucun contrôle) est tuée par T-b3 seul ; T-b5 (ii) ne tue que M-b11 ; la variante « statut lu sur la
+  lecture ordinaire » est M-b13, **déclarée équivalente**, exclue par la prescription et vérifiée à la lecture en
+  revue de code ; l'AC12 et le doc-comment disent que la confirmation est une défense en profondeur hors d'atteinte de
+  la course.
+- **Écartée** : l'ordre (iii) — il monterait à la main un état qu'aucun code de Kesh ne produit (une clôture de N+1
+  qui ne tient pas N), et un test qui tue une mutation sur un état fabriqué ne prouve rien du code réel.
+- **Réversible** : oui (si `close` cesse un jour de verrouiller ses antérieurs, l'état devient atteignable et un ordre
+  (iii) devient le bon test).
+
+### C-29-1-28 — `api-external.md` et CHANGELOG de la 29-1b passent à l'AC17
+
+- **Contexte** : l'AC19 retirée portait aussi ces deux livrables de la 29-1b.
+- **Retenu** : l'AC17 les porte (route rejouée et deux codes d'erreur au § 10 de `api-external.md` ; entrée
+  `### Ajouté` dans `## [0.14.0] — Non publié`) ; aucune renumérotation des AC (l'AC19 garde son titre en renvoi).
+- **Écartées** : une AC20 neuve (renumérotation inutile) ; les répartir entre AC13 et AC14 (le CHANGELOG n'y a pas sa
+  place).
+- **Réversible** : oui.
+
+### C-29-1-29 — Comptes de l'E2E de parcours créés par l'API à l'étape 0
+
+- **Contexte** : P2 R7 = F4 — le préréglage `with-company-no-fy` ne pose ni compte 1300, ni compte bancaire, et son
+  1100 est le compte débiteurs par défaut, refusé comme compte lié.
+- **Retenu** : la spec crée `1300 Actifs transitoires` et `1020 Banque` (`Asset`, numéros et noms des plans livrés)
+  puis un compte bancaire lié à 1020 ; la charge de l'étape 4 est `4000 Charges CI` ; réserve sur les comptes bancaires
+  du préréglage retirée.
+- **Écartées** : lier 1000 (accepté, mais compte d'impôt préalable par défaut du préréglage) ; enrichir le préréglage
+  (touche `test_fixtures.rs` et tous les tests qui le comptent).
 - **Réversible** : oui.
