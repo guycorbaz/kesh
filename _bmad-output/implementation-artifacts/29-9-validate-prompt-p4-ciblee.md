@@ -15,7 +15,8 @@ Fichiers de la 29-6 utiles : `frontend/src/lib/features/reconciliation/Reconcili
 `_bmad-output/implementation-artifacts/epic-29-choix-autonomes.md` (C-29-6-18, C-29-6-25). L'issue : `gh issue view
 678` (lecture).
 
-**Périmètre : `git show 156a6dea`** (amendement #678), **diff unique** — ne lis pas les commits antérieurs, sauf pour
+**Périmètre : `git diff a844244e b63861aa -- ':!*29-9-validate-prompt-p4-ciblee.md'`** (amendement #678 : `156a6dea`,
+puis la phrase du manuel citée à l'AC11 dans `b63861aa`), **diff unique, aplati** — ne lis pas les commits antérieurs, sauf pour
 vérifier qu'un texte validé n'a pas été réécrit. Fichiers touchés : la fiche
 `_bmad-output/implementation-artifacts/29-9-trois-petits-correctifs.md` (statut, énoncé, constat, prémisses, **AC11**
 neuf, renvois datés dans AC8/AC10, **T10**, T6/T7/T9, dérogation, zones partagées, exclusions, propagation,
@@ -24,7 +25,7 @@ références, Change Log), le registre `_bmad-output/implementation-artifacts/ep
 `_bmad-output/planning-artifacts/epic-29-preparer-cloture.md`.
 
 ⚠️ **Toute vérification de présence ou d'absence se fait par `grep -nF "<chaîne>" <fichier>` sur le fichier FINAL**
-(l'arbre de travail de `kesh-29-9`, égal à `156a6dea` pour ces fichiers ; pour la 29-6, `git -C … show d71c506b:<chemin>
+(l'arbre de travail de `kesh-29-9`, égal à `b63861aa` pour ces fichiers ; pour la 29-6, `git -C … show d71c506b:<chemin>
 | grep -nF "<chaîne>"`), jamais en lisant les numéros de ligne du diff. Un finding qui affirme qu'un texte « manque »
 ou qu'une ligne citée est fausse sans sortie `grep -nF` copiée ne compte pas. **Aucun fichier temporaire** : tout
 passe par des tubes vers la sortie standard.
