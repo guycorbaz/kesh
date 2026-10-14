@@ -68,7 +68,9 @@ Fiche : `29-5-departage-exigibilite.md`.*
 - **Contexte** : une désignation par le débiteur (référence, art. 86) prime l'imputation légale ; elle passe par le
   score de référence.
 - **Retenu** : le score n'est pas touché ; l'ordre d'imputation ne départage que des scores égaux. Une facture au
-  montant exact non échue passe devant une échue à quelques centimes près (score). Testé (AC5 cas 7, M7).
+  montant exact non échue passe devant une échue à quelques centimes près (score) — **même désignée par le numéro**
+  (le montant pèse 0,50, la référence 0,40, `matching.rs:80` ; validation P1, R2 : la désignation ne prime qu'à
+  montant égal, ce que le manuel dit). Testé (AC5 cas 8, M7).
 - **Écartée** : exigibilité avant score — ferait passer une facture échue devant la facture que le paiement nomme.
 - **Réversible** : oui.
 
@@ -100,6 +102,9 @@ Fiche : `29-5-departage-exigibilite.md`.*
   `GREATEST(i.date, COALESCE(i.due_date, i.date))`. Règle DRY du `CLAUDE.md`.
 - **Retenu** : l'ancre compose l'expression d'exigibilité ; équivalente (`GREATEST` associatif), tests de la 29-2
   verts sans modification d'assertion.
+  *Amendé à la validation P1 (F1, 2026-10-14)* : la composition passe par `concat!` — une macro d'exigibilité
+  insérée dans la macro d'ancre de la 29-2 (C-29-5-11) ; aucun test de la 29-2 ne change. Si la forme mergée de la
+  29-2 diffère, relecture à T0.
 - **Écartée** : laisser deux écritures du même sous-terme.
 - **Réversible** : oui.
 
@@ -109,6 +114,36 @@ Fiche : `29-5-departage-exigibilite.md`.*
   d'exigibilité s'y réduit à `(date, id)`.
 - **Retenu** : nom et assertions inchangés, doc-comment complété ; un test neuf porte l'ordre avec échéances.
 - **Écartée** : renommer — bruit de diff sans gain.
+- **Réversible** : oui.
+
+### C-29-5-11 — L'expression d'exigibilité s'écrit par `macro_rules!`, insérée dans la macro d'ancre de la 29-2
+
+- **Contexte** (validation P1, F1) : la composition prescrite par C-29-5-9 est impossible entre deux `const &str` —
+  `concat!` n'accepte que des littéraux, et le dépôt n'a pas `const_format`. Le dépôt a le précédent exact :
+  `columns!` (`repositories/accounts.rs:20-34`), `invoice_columns!` (`repositories/invoices.rs:50-65`),
+  `line_ttc_sql!` appelé dans un `concat!` (`:186-216`). L'orchestrateur a donné à l'agent de développement de la
+  29-2 la consigne d'écrire l'ancre par `macro_rules!` (2026-10-14).
+- **Retenu** : `macro_rules! invoice_exigibility_date_sql` rendant le littéral
+  `CAST(GREATEST(i.date, COALESCE(i.due_date, i.date)) AS DATE)`, plus `pub const INVOICE_EXIGIBILITY_DATE_SQL` qui en
+  dérive pour `format!` ; la macro d'ancre de la 29-2 l'insère par `concat!` à la place des deux premiers arguments
+  de son `GREATEST`. Tests de la 29-2 inchangés. Si la forme mergée diffère, relecture à T0, sans changer la nature
+  de l'ancre d'une façon qui toucherait ses tests.
+- **Écartées** : (a) ancre devenue `fn -> String` ou `LazyLock<String>` — change sa nature, coûte une allocation, et
+  sort du patron du dépôt ; (b) ajouter `const_format` — une dépendance pour une concaténation ; (c) deux écritures
+  tenues par un test de parité — admise seulement en repli si la composition est impossible sur la forme mergée.
+- **Réversible** : oui.
+
+### C-29-5-12 — Une facture sans échéance est tenue pour échue à sa date : convention écrite
+
+- **Contexte** (validation P1, F5) : l'art. 87 al. 1 parle de dette **exigible**, les al. 2 et 3 de dettes **échues**.
+  Pour une facture à échéance, les deux coïncident. Pour une facture sans terme, l'art. 75 la rend exigible dès sa
+  date (texte non relu à la source) ; dire qu'elle est aussi **échue** à cette date est une assimilation, non une
+  lecture du texte.
+- **Retenu** : `X = F` vaut pour les deux notions ; la convention est écrite comme telle au doc-comment et dans la
+  fiche (§ *Le critère légal*), et le manuel dit « tenue pour due dès sa date ». Conséquence : l'al. 3 (« aucune n'est
+  échue ») ne vise jamais, en Kesh, une facture sans échéance datée au plus tard du jour du paiement.
+- **Écartée** : traiter la facture sans échéance comme non échue (al. 3) — elle passerait derrière des factures
+  échues plus récentes, contre l'art. 75, et l'ordre redépendrait de la date du paiement.
 - **Réversible** : oui.
 
 [#668]: https://github.com/guycorbaz/kesh/issues/668
