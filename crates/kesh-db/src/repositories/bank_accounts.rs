@@ -1686,8 +1686,10 @@ pub(crate) struct BalancesRow {
 /// se termine le plus tard (non le dernier importé), et le
 /// solde comptable **à sa date**. ⚠️ Le relevé reflète les mouvements par date
 /// de **comptabilisation bancaire** (`booking_date`), alors que les écritures de
-/// rapprochement sont datées à la date de **valeur** : le solde à la date du
-/// relevé est donc **corrigé** des transactions rapprochées dont les deux dates
+/// rapprochement sont datées à la date de **valeur** — sauf l'écriture d'un
+/// règlement **rattaché** (Story 29-8, #670), datée du règlement ; la
+/// correction lit la date de l'écriture, elle s'y applique de même : le solde à
+/// la date du relevé est donc **corrigé** des transactions rapprochées dont les deux dates
 /// tombent de part et d'autre de `period_to` — `+` le mouvement que leur
 /// écriture porte sur le compte lié quand la banque l'a comptabilisé avant (ou
 /// le jour même) et l'écriture après, `−` dans le cas inverse. On somme la
@@ -1696,10 +1698,14 @@ pub(crate) struct BalancesRow {
 /// transaction **non rapprochée** n'y entre pas — son absence du grand livre est
 /// l'écart à montrer.
 ///
-/// ⚠️ **Invariant supposé : une transaction, une écriture.** Les cinq chemins de
-/// rapprochement (`kesh-api/src/routes/reconciliation.rs`) lient chacun une
-/// écriture qu'ils viennent de créer ; aucune écriture n'est rapprochée de
-/// plusieurs transactions. Si cela changeait, la correction ajouterait la ligne
+/// ⚠️ **Invariant supposé : une transaction, une écriture.** Des six chemins de
+/// rapprochement, cinq (`kesh-api/src/routes/reconciliation.rs`) lient chacun
+/// une écriture qu'ils viennent de créer ; le sixième, le rattachement à un
+/// règlement saisi depuis la fiche (Story 29-8,
+/// [`super::reconciliation_link::link_in_tx`]), lie une écriture **existante**
+/// et tient l'invariant par sa condition 3 (aucune transaction ne pointe déjà
+/// l'écriture), lue sous le verrou de ligne du règlement. Aucune écriture n'est
+/// donc rapprochée de plusieurs transactions. Si cela changeait, la correction ajouterait la ligne
 /// entière de l'écriture là où seule la part d'une transaction franchit la date
 /// du relevé (revue P1, lentille B).
 ///

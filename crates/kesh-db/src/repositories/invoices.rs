@@ -4346,7 +4346,8 @@ mod tests {
     ///
     /// ⚠️ Elle exige un compte bancaire et un import : l'état n'est atteignable
     /// par aucun chemin de l'application (le rapprochement pointe une écriture
-    /// NEUVE, jamais celle de vente), il se construit donc à la main — et c'est
+    /// neuve ou, par le rattachement — Story 29-8 —, celle d'un **règlement**,
+    /// jamais celle de vente), il se construit donc à la main — et c'est
     /// précisément pourquoi la garde existe, la FK étant `ON DELETE SET NULL`.
     async fn insert_stub_bank_transaction(pool: &MySqlPool, company_id: i64, je_id: i64) -> i64 {
         let account_id = sqlx::query(
@@ -4802,8 +4803,10 @@ mod tests {
     }
 
     /// Motif 7 — ÉCRITURE RAPPROCHÉE. ⚠️ L'état se construit à la main : aucun
-    /// chemin de l'application ne rapproche l'écriture de **vente** (les cinq
-    /// sites de `reconciliation.rs` rapprochent une écriture **neuve**). La
+    /// chemin de l'application ne rapproche l'écriture de **vente** (des six
+    /// chemins, les cinq sites de `reconciliation.rs` rapprochent une écriture
+    /// **neuve**, le rattachement de la Story 29-8 l'écriture d'un
+    /// **règlement**). La
     /// garde n'en est pas moins nécessaire — la FK est `ON DELETE SET NULL`, et
     /// sans elle le lien s'effacerait **en silence**.
     #[tokio::test]

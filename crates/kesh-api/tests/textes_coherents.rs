@@ -732,6 +732,8 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("bank-import-errors-preview-stale", 1, &[]),
                 // Story 28-5a (#526) — refus de l'annulation d'un rejet.
                 ("reconciliation-errors-transaction-not-rejected", 1, &[]),
+                // Story 29-8 (#670) — refus du rattachement à un règlement.
+                ("reconciliation-errors-settlement-not-linkable", 1, &[]),
                 // Story 28-4a (#642) — le compte bancaire clos : les cinq clés
                 // neuves, et le message du principal qui ne s'archive pas
                 // (« ni archivé ni clos »).

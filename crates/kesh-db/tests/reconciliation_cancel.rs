@@ -3,7 +3,12 @@
 //! Les cinq chemins réels (acceptation « facture », « éclatement », « règle »,
 //! rapprochement et éclatement manuels), la précédence, l'exemption étroite,
 //! les rôles et l'étanchéité sont exercés par la route, dans
-//! `kesh-api/tests/reconciliation_e2e.rs` et `reconciliation_rules_e2e.rs`.
+//! `kesh-api/tests/reconciliation_e2e.rs` et `reconciliation_rules_e2e.rs`. Le
+//! sixième chemin, le rattachement à un règlement saisi depuis la fiche (Story
+//! 29-8), produit l'état d'une acceptation « facture » : son annulation est
+//! exercée par `kesh-api/tests/reconciliation_link_e2e.rs` (T15), et ce
+//! fichier n'en a pas besoin — la concurrence avec une clôture d'exercice y est
+//! celle du chemin « facture ».
 //! Ici : ce que seule une transaction tenue ouverte peut montrer — la
 //! **concurrence avec une clôture d'exercice**.
 //!

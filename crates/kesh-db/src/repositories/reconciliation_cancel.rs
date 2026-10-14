@@ -8,12 +8,15 @@
 //! par son propre geste d'annulation au rang 3. L'écriture était donc
 //! **définitivement incorrigible**.
 //!
-//! ⛔ **Deux familles d'écritures, et seulement deux.** Des cinq chemins qui
-//! posent `bank_transactions.matched_entry_id` (`routes/reconciliation.rs`),
-//! un seul — l'acceptation d'une proposition « facture » — crée un
-//! **règlement client** (ligne `invoice_settlements`) ; les quatre autres
-//! (éclatement, règle, rapprochement manuel, éclatement manuel) créent une
-//! écriture que **seule la transaction** possède. Le règlement se défait par
+//! ⛔ **Deux familles d'écritures, et seulement deux.** Des six chemins qui
+//! posent `bank_transactions.matched_entry_id`, deux rendent un **règlement
+//! client** (ligne `invoice_settlements`) : l'acceptation d'une proposition
+//! « facture » (`routes/reconciliation.rs`), qui le crée, et le rattachement
+//! d'une transaction au règlement déjà saisi depuis la fiche de la facture
+//! (Story 29-8, [`super::reconciliation_link::link_in_tx`]), qui pointe son
+//! écriture existante. Les quatre autres (éclatement, règle, rapprochement
+//! manuel, éclatement manuel) créent une écriture que **seule la
+//! transaction** possède. Le règlement se défait par
 //! [`invoice_settlements_write::cancel_settlement_in_tx`], **appelé, jamais
 //! réécrit** ; l'écriture propre, par [`journal_entries::reverse_in_tx`].
 //!
@@ -45,7 +48,9 @@ use crate::repositories::{
 /// Ce que possède l'écriture d'un rapprochement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReconciliationKind {
-    /// Un **règlement client** (acceptation d'une proposition « facture »).
+    /// Un **règlement client** (acceptation d'une proposition « facture », ou
+    /// rattachement d'une transaction à un règlement saisi depuis la fiche —
+    /// Story 29-8).
     InvoiceSettlement { invoice_id: i64, settlement_id: i64 },
     /// Une écriture que seule la transaction possède (éclatement, règle,
     /// rapprochement manuel).

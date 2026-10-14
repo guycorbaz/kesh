@@ -1319,6 +1319,8 @@ reconciliation-errors-already-reconciled = Cette transaction est déjà réconci
 reconciliation-errors-invoice-not-eligible = Cette facture n'est pas éligible à la réconciliation.
 # Story 28-5a (#526) — refus de l'annulation d'un rejet (409).
 reconciliation-errors-transaction-not-rejected = Cette transaction n'est pas rejetée : son rejet a peut-être déjà été annulé, ou elle a été rapprochée.
+# Story 29-8 (#670) — refus du rattachement à un règlement (409).
+reconciliation-errors-settlement-not-linkable = Ce règlement ne peut pas être rattaché à cette transaction : la transaction n'est pas un crédit en CHF, ou le règlement est sur un autre compte bancaire, son montant ne correspond pas, ou il est déjà rapproché.
 reconciliation-toast-accept-success = { $count } transaction(s) réconciliée(s) avec succès.
 reconciliation-toast-reject-success = { $count } transaction(s) rejetée(s) avec succès.
 
@@ -1340,6 +1342,23 @@ reconciliation-split-button-label = Éclater
 reconciliation-split-modal-title = Éclater la transaction
 reconciliation-split-balance-indicator = Balance
 reconciliation-split-error-imbalance = L'éclatement n'équilibre pas le montant de la transaction.
+
+# Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
+reconciliation-link-button-label = Rattacher à un règlement
+reconciliation-link-modal-title = Rattacher à un règlement déjà enregistré
+reconciliation-link-no-entry = Le rattachement ne passe aucune écriture : il relie la transaction au règlement déjà enregistré.
+reconciliation-link-loading = Chargement des règlements…
+reconciliation-link-empty = Aucun règlement par virement sur ce compte bancaire, au montant de cette transaction, n'attend de transaction. Enregistrez d'abord le règlement depuis la fiche de la facture, sur ce compte bancaire.
+reconciliation-link-col-invoice = Facture
+reconciliation-link-col-client = Client
+reconciliation-link-col-settled-on = Date du règlement
+reconciliation-link-col-amount = Montant
+reconciliation-link-col-gap = Écart
+reconciliation-link-col-days = Jours d'écart
+reconciliation-link-choose = Choisir ce règlement
+reconciliation-link-gap-warning = La transaction dépasse ce règlement de { $gap } CHF. L'écart reste au compte de la banque : justifiez-le (remboursement au client, ou écriture manuelle).
+reconciliation-link-submit = Rattacher
+reconciliation-link-cancel = Annuler
 
 reconciliation-cols-actions = Actions
 
@@ -2511,6 +2530,7 @@ audit-log-action-bank-profile-updated = Profil bancaire modifié
 audit-log-action-bank-profile-deleted = Profil bancaire supprimé
 audit-log-action-reconciliation-accepted = Réconciliation acceptée
 audit-log-action-reconciliation-cancelled = Rapprochement annulé
+audit-log-action-reconciliation-linked = Transaction rattachée à un règlement
 audit-log-action-reconciliation-rejected = Réconciliation rejetée
 audit-log-action-reconciliation-manual-matched = Réconciliation manuelle effectuée
 audit-log-action-reconciliation-split-applied = Ventilation appliquée
