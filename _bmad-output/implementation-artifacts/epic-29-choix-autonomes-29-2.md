@@ -72,17 +72,25 @@ Fiche : `29-2-paiement-tardif.md`.*
   que le test HTTP fait déjà).
 - **Réversible** : oui.
 
-### C-29-2-7 — Ordre, `LIMIT 50` et départage inchangés ; leur coût accru est transmis à la 29-3
+### C-29-2-7 — Ordre, `LIMIT 50` et départage inchangés ici ; leur coût accru est porté par #668 (Story 29-5)
 
 - **Contexte** : l'ancre fait entrer parmi les candidates des factures échues, relancées, **ou pas encore échues** —
   dont des factures anciennes à échéance lointaine, candidates sans limite de temps (C-29-2-11) ; à score égal,
-  `propose_matches` place la plus ancienne (`invoice_id ASC`) en tête, seule affichée.
-- **Retenu** : ne rien changer à l'ordre ici (29-3, #527, sérialisée après) ; demander à l'orchestrateur de
-  commenter #527 avec le critère de départage par proximité de la date d'ancrage à la date de paiement **et le cas
-  de test** : deux factures de même reste dû, l'une ancienne à échéance lointaine, l'autre récente, la récente en
-  tête. *(Complété le 2026-10-14, validation P1, F3 : la première rédaction ne nommait que les factures « échues et
-  relancées ».)*
-- **Écartée** : changer le départage dans la 29-2 (empiète sur #527, même fichier, story suivante).
+  `propose_matches` place la plus ancienne (`invoice_id ASC`, `matching.rs:104`) en tête, seule affichée. En amont,
+  `ORDER BY i.date ASC, i.id ASC LIMIT 50` (`repositories/reconciliation.rs:258-259`) garde les 50 plus anciennes de
+  même reste dû : des factures anciennes non échues peuvent en pousser dehors une facture échue.
+- **Retenu** : ne rien changer à l'ordre, à la troncature ni au départage ici. Le départage à score égal et la
+  troncature qui le précède sont portés par [#668] (Story 29-5, même release v0.13.4, mergée avant le tag —
+  C-29-2-13), dont l'attendu, rectifié au regard de l'art. 87 CO, est : à score égal, les factures échues d'abord,
+  puis l'ancienneté ; cas de test : deux factures de même reste dû, l'une ancienne à échéance lointaine (non échue),
+  l'autre échue — l'échue en tête. L'ordre règle contre facture reste à la 29-3 (#527).
+  *(Complété le 2026-10-14, validation P1, F3 : la première rédaction ne nommait que les factures « échues et
+  relancées ».)* *(Rectifié le 2026-10-14, validation P2, R1/F1 et F5 — décision de l'orchestrateur, C-29-2-13 : la
+  rédaction de P1 demandait de commenter #527 avec un départage par proximité de date, « la récente en tête » ; la
+  29-3 l'a refusé (C-29-3-12) et ce critère irait contre l'art. 87 CO. Le coût de la troncature `LIMIT 50`, annoncé
+  au titre sans être écrit, est ajouté.)*
+- **Écartée** : changer le départage dans la 29-2 (empiète sur `kesh-reconciliation`, quatrième module ; porté par
+  la 29-5).
 - **Réversible** : oui.
 
 ### C-29-2-8 — Le contournement du reliquat est complété au manuel : rejeter la transaction
@@ -123,13 +131,18 @@ Fiche : `29-2-paiement-tardif.md`.*
   échue ou relancée depuis moins de 30 jours ») était fausse pour les factures **non échues** : `A = E` grand, la
   facture reste candidate de `F − 1` à `E + 30` ; `due_date` n'a pas de borne haute (`routes/invoices.rs:765` ne
   garde que `due_date < date`), une échéance à un an ou une coquille à 2099 la rend candidate sans limite. À score
-  égal, la plus ancienne passe devant (`matching.rs:96-103`, `candidates[0]` seul affiché).
+  égal, la plus ancienne passe devant (`matching.rs:97-106`, départage `:104` ; `candidates[0]` seul affiché).
 - **Retenu** : la phrase de la fiche est réécrite (« échues depuis moins de 30 jours, relancées depuis moins de 30
   jours, ou pas encore échues ; ce dernier ensemble n'est pas borné dans le temps ») ; le risque est un **angle mort
-  écrit**, inhérent à toute prise en compte de l'échéance, que la 29-3 (#527) traite par le départage, avec le cas de
-  test transmis (C-29-2-7).
+  écrit**, inhérent à toute prise en compte de l'échéance, **porté par [#668]** (`bug`, P2) et traité par la Story
+  29-5, même release v0.13.4, mergée avant le tag (C-29-2-13). L'aggravation vaut aussi pour le cas ordinaire : à
+  30 jours net, les candidates passent de `F ≥ D − 30` à `F ≥ D − 60`, et deux mensualités impayées d'un même client,
+  de même reste dû, deviennent candidates ensemble. *(Rectifié le 2026-10-14, validation P2, R1/F1 : la rédaction
+  de P1 disait « que la 29-3 (#527) traite par le départage » ; la 29-3 le refuse (C-29-3-12), et aucune issue n'était
+  citée.)*
 - **Écartées** : (a) borner l'ancre (`LEAST(E, F + n)`) — une règle de plus, arbitraire, qui recréerait le reliquat
-  pour les conditions longues ; (b) traiter le départage ici — empiète sur #527 ; (c) une garde de saisie d'échéance
+  pour les conditions longues ; (b) traiter le départage ici — empiète sur `kesh-reconciliation` (porté par la
+  29-5) ; (c) une garde de saisie d'échéance
   maximale — hors de #529, sans demandeur.
 - **Réversible** : oui.
 
@@ -143,5 +156,35 @@ Fiche : `29-2-paiement-tardif.md`.*
   prend un `company_id` lié là où les jointures du reste dû, patron suivi ici, n'en prennent aucun.
 - **Réversible** : oui.
 
+### C-29-2-13 — Le départage à score égal est porté par #668, Story 29-5, mergée avant le tag v0.13.4 (décision de l'orchestrateur)
+
+- **Contexte** : validation P2, R1 = F1. La fiche et le registre confiaient l'angle mort du faux rattachement
+  (C-29-2-11) à la 29-3 (#527), qui le refuse (C-29-3-12) ; l'issue [#668] le décrit, sans être citée. La 29-2
+  **aggrave** le risque (F1 : candidates de `F ≥ D − 30` à `F ≥ D − 60` à 30 jours net).
+- **Retenu** — **décision de l'orchestrateur, consignée comme telle, non un choix autonome de la fiche** : le départage
+  à score égal est porté par [#668] (`bug`, P2), dont l'attendu a été **rectifié** en commentaire au regard de
+  l'art. 87 CO (paiement sans désignation : dette exigible d'abord, puis la plus ancienne ; à score égal, factures
+  échues d'abord, puis ancienneté). #668 devient la **Story 29-5**, qui sort dans la **même release v0.13.4** que la
+  29-2 : **la 29-5 doit être mergée avant le tag v0.13.4**, si bien qu'aucune release ne livre l'aggravation sans son
+  correctif. La 29-2 ne traite pas le départage. (#665, trop-perçu, devient la Story 29-6 : voisine, citée aux
+  Exclusions.)
+- **Écartées** : (a) traiter le départage dans la 29-2 — quatrième module (`kesh-reconciliation`), règle métier
+  distincte ; (b) le laisser à la 29-3 — refusé par sa fiche ; (c) livrer la 29-2 seule en v0.13.4 — livrerait
+  l'aggravation sans son correctif.
+- **Réversible** : oui (ordre de merge et contenu de release).
+
+### C-29-2-14 — La course « rappel annulé avant l'acceptation » est dite au manuel (`:2031`)
+
+- **Contexte** : validation P2, R3 et F7. `:2031` dit « une facture proposée n'est plus refusée pour sa date » ; la
+  course admise d'AC4 (un rappel annulé entre l'affichage et l'acceptation fait reculer l'ancre) rend de nouveau
+  atteignable `payment_date_outside_window` sur une facture proposée et non redatée.
+- **Retenu** : borner la phrase au refus « avant la facture » et dire, en une phrase, l'autre refus de date que la
+  course rend possible (motif générique des *Échecs partiels*). Aucun test : la course reste écrite au doc-comment
+  (AC4).
+- **Écartées** : (a) taire la course (le manuel promettrait une absence de refus que le code ne tient pas) ; (b) un
+  libellé d'écran propre à ce refus (texte d'écran, i18n, hors du périmètre minimal, C-29-2-6).
+- **Réversible** : oui.
+
 [#529]: https://github.com/guycorbaz/kesh/issues/529
 [#666]: https://github.com/guycorbaz/kesh/issues/666
+[#668]: https://github.com/guycorbaz/kesh/issues/668
