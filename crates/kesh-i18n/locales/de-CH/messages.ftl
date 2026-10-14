@@ -404,7 +404,7 @@ journal-entries-reverse-account-archived = Stornierung nicht möglich — archiv
 # Story 29-1b (#232) — Stornierung zu Beginn des folgenden Geschäftsjahres (Rechnungsabgrenzungen).
 journal-entries-reverse-next-year-action = Zu Beginn des folgenden Geschäftsjahres stornieren
 journal-entries-reverse-next-year-dialog-title = Zu Beginn des folgenden Geschäftsjahres stornieren?
-journal-entries-reverse-next-year-dialog-body = Die Stornobuchung wird auf den { $date } datiert, im Geschäftsjahr „{ $name }“.
+journal-entries-reverse-next-year-dialog-body = Die Stornobuchung der Buchung Nr. { $number } „{ $description }“ wird auf den { $date } datiert, im Geschäftsjahr „{ $name }“.
 journal-entries-reverse-next-year-help = Für Rechnungsabgrenzungen zum Jahresende: Die Gegenbuchung hebt die Abgrenzung am ersten Tag des folgenden Geschäftsjahres auf. Die ursprüngliche Buchung bleibt unverändert; weder sie noch ihre Stornobuchung können danach geändert oder gelöscht werden — ein Fehler wird mit einer ergänzenden Buchung korrigiert.
 journal-entries-reverse-next-year-reason-unavailable = Die Liste der Geschäftsjahre konnte nicht gelesen werden: Laden Sie die Seite neu, um zu Beginn des folgenden Geschäftsjahres zu stornieren.
 journal-entries-reverse-next-year-reason-missing = Um zu Beginn des folgenden Geschäftsjahres zu stornieren, erstellen Sie zuerst das folgende Geschäftsjahr.

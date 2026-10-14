@@ -404,7 +404,7 @@ journal-entries-reverse-account-archived = Impossibile stornare — conto/conti 
 # Story 29-1b (#232) — stornare all'inizio dell'esercizio successivo (ratei e risconti).
 journal-entries-reverse-next-year-action = Stornare all’inizio dell’esercizio successivo
 journal-entries-reverse-next-year-dialog-title = Stornare all’inizio dell’esercizio successivo?
-journal-entries-reverse-next-year-dialog-body = Lo storno sarà datato { $date }, nell’esercizio « { $name } ».
+journal-entries-reverse-next-year-dialog-body = Lo storno della scrittura n. { $number } « { $description } » sarà datato { $date }, nell’esercizio « { $name } ».
 journal-entries-reverse-next-year-help = Per i ratei e i risconti di fine esercizio: la scrittura inversa annulla la rettifica il primo giorno dell’esercizio successivo. La scrittura originale resta intatta; né essa né il suo storno potranno più essere modificati o eliminati — un errore si correggerà con una scrittura complementare.
 journal-entries-reverse-next-year-reason-unavailable = L’elenco degli esercizi non ha potuto essere letto: ricarica la pagina per stornare all’inizio dell’esercizio successivo.
 journal-entries-reverse-next-year-reason-missing = Per stornare all’inizio dell’esercizio successivo, crea prima l’esercizio successivo.

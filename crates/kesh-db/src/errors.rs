@@ -663,8 +663,13 @@ pub enum DbError {
     NextFiscalYearMissing { fiscal_year_name: String },
 
     /// La contre-passation au début de l'exercice suivant est refusée :
-    /// l'exercice qui suit celui de l'écriture est clôturé — ou a disparu
-    /// depuis sa lecture (Story 29-1b, #232). Le refus est rendu par la
+    /// l'exercice qui suit celui de l'écriture est clôturé (Story 29-1b, #232).
+    /// ⚠️ Aucun chemin ne le fait « disparaître » entre la lecture et la
+    /// confirmation : la seule suppression d'exercice (remise à zéro) supprime
+    /// d'abord les écritures, et attend donc le verrou de l'origine tenu depuis
+    /// l'étape (1) (revue P1, B-5). Le nom porté est celui de la lecture
+    /// ordinaire ; un renommage concurrent le rendrait périmé, sans effet sur
+    /// la décision (cosmétique, laissé tel quel). Le refus est rendu par la
     /// **confirmation verrouillante** (`fiscal_years::find_open_covering_date`),
     /// jamais par le statut de la lecture ordinaire qui a trouvé l'exercice.
     /// Mappée vers HTTP **409** `NEXT_FISCAL_YEAR_CLOSED`.

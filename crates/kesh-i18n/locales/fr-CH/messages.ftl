@@ -398,7 +398,7 @@ journal-entries-reverse-account-archived = Impossible de contre-passer — compt
 # Story 29-1b (#232) — contre-passer au début de l'exercice suivant (transitoires).
 journal-entries-reverse-next-year-action = Contre-passer au début de l’exercice suivant
 journal-entries-reverse-next-year-dialog-title = Contre-passer au début de l’exercice suivant ?
-journal-entries-reverse-next-year-dialog-body = La contre-passation sera datée du { $date }, dans l’exercice « { $name } ».
+journal-entries-reverse-next-year-dialog-body = La contre-passation de l’écriture n° { $number } « { $description } » sera datée du { $date }, dans l’exercice « { $name } ».
 journal-entries-reverse-next-year-help = Pour les transitoires de fin d’exercice : l’écriture inverse annule la régularisation au premier jour de l’exercice suivant. L’écriture d’origine reste intacte ; ni elle ni sa contre-passation ne pourront plus être modifiées ni supprimées — une erreur se corrigera par une écriture complémentaire.
 journal-entries-reverse-next-year-reason-unavailable = La liste des exercices n’a pas pu être lue : rechargez la page pour contre-passer au début de l’exercice suivant.
 journal-entries-reverse-next-year-reason-missing = Pour contre-passer au début de l’exercice suivant, créez d’abord l’exercice suivant.

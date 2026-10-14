@@ -2603,7 +2603,7 @@ enum ReversalDating {
 /// l'exercice visé est le **premier exercice de la société dont la date de
 /// début suit la fin de l'exercice de l'origine**, et la date est son premier
 /// jour. Refus propres : [`DbError::NextFiscalYearMissing`] (aucun exercice ne
-/// suit), [`DbError::NextFiscalYearClosed`] (il est clôturé, ou a disparu).
+/// suit), [`DbError::NextFiscalYearClosed`] (il est clôturé).
 ///
 /// ⚠️ Sans autorité (aucune annulation de pièce ne date au début de l'exercice
 /// suivant) : l'étape (1-bis) ne s'exécute pas. Comme [`reverse_in_tx`],
@@ -2685,7 +2685,13 @@ type OriginLine = (i64, i64, Decimal, Decimal, Option<i64>, Option<i64>);
 /// lu avant l'appel : la phrase ne vaut qu'avec sa condition. Le parcours de
 /// `find_open_covering_date` s'arrête au premier jour de l'exercice suivant :
 /// il verrouille **moins** de lignes que celui du jour quand le geste est fait
-/// plus tard (on est en N+2, N+1 encore ouvert), jamais d'autres tables.
+/// plus tard (on est en N+2, N+1 encore ouvert), **davantage** quand il est
+/// fait avant le début de l'exercice suivant (on est encore en N : N+1 et la
+/// clé qui le suit) — même ordre ascendant, même table, jamais d'autres
+/// tables. « Mêmes verrous » vaut donc pour l'**ordre**, non pour l'ensemble ;
+/// les cycles que ce surplus rend possibles (un écrivain qui tient N+1 puis
+/// demande N) sont de la classe connue, et toutes ces routes sont rejouées
+/// (revue P1, E-5).
 ///
 /// **Sur quoi repose la sûreté** : *une contre-passation n'écrit jamais dans un
 /// N+1 clos* parce que la date et l'exercice sont **confirmés** par
@@ -6432,6 +6438,12 @@ mod tests {
     /// suivant (`find_next_after`) apparaît **une fois**, et **après** l'appel
     /// `reversal_blockers(` — la première lecture ordinaire du chemin sans
     /// autorité. La placer avant ferait naître la vue plus tôt. Tue M-b9.
+    ///
+    /// ⚠️ Ce que la garde ne voit pas (revue P1, E-4) : elle ne connaît que le
+    /// **nom** `find_next_after(`. Une autre lecture ordinaire ajoutée avant le
+    /// recensement sous un autre nom (`find_by_id`, un `sqlx::query` direct), ou
+    /// placée **dans** une fonction appelée avant lui, lui échappe — c'est à la
+    /// revue de code de la voir.
     ///
     /// Cas de contrôle : sur un corps synthétique où la lecture précède le
     /// recensement, le détecteur rend bien l'ordre fautif.

@@ -404,7 +404,7 @@ journal-entries-reverse-account-archived = Cannot reverse — archived account(s
 # Story 29-1b (#232) — reverse at the start of the next fiscal year (accruals and deferrals).
 journal-entries-reverse-next-year-action = Reverse at the start of the next fiscal year
 journal-entries-reverse-next-year-dialog-title = Reverse at the start of the next fiscal year?
-journal-entries-reverse-next-year-dialog-body = The reversal will be dated { $date }, in fiscal year "{ $name }".
+journal-entries-reverse-next-year-dialog-body = The reversal of entry no. { $number } "{ $description }" will be dated { $date }, in fiscal year "{ $name }".
 journal-entries-reverse-next-year-help = For year-end accruals and deferrals: the opposite entry cancels the adjustment on the first day of the next fiscal year. The original entry stays untouched; neither it nor its reversal can be changed or deleted afterwards — a mistake is corrected with a complementary entry.
 journal-entries-reverse-next-year-reason-unavailable = The list of fiscal years could not be read: reload the page to reverse at the start of the next fiscal year.
 journal-entries-reverse-next-year-reason-missing = To reverse at the start of the next fiscal year, first create the next fiscal year.

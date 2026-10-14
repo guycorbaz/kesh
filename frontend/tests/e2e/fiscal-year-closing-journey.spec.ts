@@ -26,7 +26,8 @@ import {
  * `camt053_v04_year_end.xml` (01.12.2025 → 31.12.2025, ouverture 0.00, une entrée de
  * 100.00, clôture 100.00). Aucune facture en brouillon ni pièce à compléter (K4, K5).
  *
- * Années fixes et passées : rien ne dépend du jour d'exécution.
+ * Années fixes : rien ne dépend du jour d'exécution (aucun geste daté du jour n'est exercé ;
+ * la régularisation et le relevé sont de 2025, N+1 est 2026 quelle que soit l'année courante).
  */
 
 const CAMT_FIXTURE = path.join(
@@ -122,7 +123,11 @@ async function regularisation(
 	return ((await res.json()) as { id: number }).id;
 }
 
-type Check = { code: string; status: string; details: { accounts?: Array<{ reason?: string }> } };
+type Check = {
+	code: string;
+	status: string;
+	details: { accounts?: Array<{ reason?: string; count?: number }> };
+};
 
 async function checks(ctx: APIRequestContext, fyId: number): Promise<Map<string, Check>> {
 	const res = await ctx.get(`/api/v1/fiscal-years/${fyId}/closing-checks`);
@@ -219,6 +224,8 @@ test('parcours de la première clôture : préparer, régulariser, contre-passer
 		);
 		const avant = await checks(ctx, n);
 		expect(avant.get('PENDING_BANK_TRANSACTIONS')!.status).toBe('attention');
+		// AC18 : K2 en attention, avec UNE transaction en attente (revue P1, L4).
+		expect(avant.get('PENDING_BANK_TRANSACTIONS')!.details.accounts?.[0]?.count).toBe(1);
 		expect(avant.get('BANK_STATEMENT_AT_YEAR_END')!.details.accounts?.[0]?.reason).toBe('GAP');
 		expect(avant.get('EARLIER_FISCAL_YEAR_OPEN')!.status).toBe('ok');
 
@@ -246,12 +253,18 @@ test('parcours de la première clôture : préparer, régulariser, contre-passer
 
 		// 4. La régularisation au 31.12.2025, puis « Contre-passer au début de l'exercice suivant ».
 		const origine = await regularisation(ctx, transitoire, charge);
+		const origineNumber = (
+			(await (await ctx.get(`/api/v1/journal-entries/${origine}`)).json()) as {
+				entryNumber: number;
+			}
+		).entryNumber;
 		await page.goto(`/journal-entries/${origine}`);
 		await expect(page.getByTestId('reverse-entry-next-year')).toBeVisible();
 		await captureBothSchemes(page, testInfo, '29-1b-bouton');
 		await page.getByTestId('reverse-entry-next-year').click();
+		// La confirmation nomme l'écriture, la date et l'exercice (revue P1, B-1).
 		await expect(page.getByTestId('reverse-entry-next-year-dialog-body')).toHaveText(
-			'La contre-passation sera datée du 01.01.2026, dans l’exercice « Exercice 2026 ».',
+			`La contre-passation de l’écriture n° ${origineNumber} « Charge payée d’avance (transitoire) » sera datée du 01.01.2026, dans l’exercice « Exercice 2026 ».`,
 		);
 		await captureBothSchemes(page, testInfo, '29-1b-confirmation');
 		await page.getByTestId('reverse-entry-next-year-confirm').click();
@@ -274,7 +287,9 @@ test('parcours de la première clôture : préparer, régulariser, contre-passer
 		// 6. Clôturer N : le dialogue dit « Aucun point à vérifier ».
 		await page.goto('/settings/fiscal-years');
 		await page.getByTestId(`fiscal-year-close-${n}`).click();
-		await expect(page.getByTestId('fiscal-year-close-checks-none')).toBeVisible();
+		await expect(page.getByTestId('fiscal-year-close-checks-none')).toHaveText(
+			'Aucun point à vérifier.',
+		);
 		await page.getByTestId('fiscal-year-close-confirm').click();
 		await expect(page.getByTestId(`fiscal-year-reopen-${n}`)).toBeVisible();
 		const clos = (await (await ctx.get(`/api/v1/fiscal-years/${n}`)).json()) as { status: string };

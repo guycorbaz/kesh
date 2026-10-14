@@ -129,6 +129,11 @@
 		loading = true;
 		entry = null;
 		errorMsg = '';
+		// Revue P1 de la 29-1b (B-1) — une confirmation ouverte ne survit pas à la
+		// relecture : naviguer (historique) vers une autre écriture la rouvrirait
+		// sur CELLE-LÀ dès sa lecture, et « Confirmer » la contre-passerait.
+		reverseConfirm = null;
+		showDeleteConfirm = false;
 		loadFiscalYears();
 		if (!Number.isFinite(id) || id <= 0) {
 			errorMsg = "Identifiant d'écriture invalide";
@@ -357,9 +362,13 @@
 			toast.error(
 				isApiError(err) ? err.message : i18nMsg('error-unexpected', 'Erreur inattendue.')
 			);
-			// Story 29-1b — un refus de l'exercice suivant (clôturé, ou supprimé
-			// entre-temps) change ce que la fiche doit annoncer : elle se relit, et
-			// le motif prend la place du bouton.
+			// Story 29-1b — un refus de l'exercice suivant (clôturé entre-temps)
+			// change ce que la fiche doit annoncer : elle se relit, et le motif
+			// prend la place du bouton. ⚠️ Un refus du verrou de période
+			// (`PERIOD_LOCKED`) ne change rien de ce que la page lit : le bouton
+			// revient, le refus ne se dit que dans le message (limite écrite au
+			// manuel, revue P1 B-2).
+			// (`loadEntry` ferme aussi la confirmation ; la fermer ici le dit.)
 			if (mode === 'nextYear') {
 				reverseConfirm = null;
 				void loadEntry(id);
@@ -601,8 +610,13 @@
 				>
 					{i18nMsg(
 						'journal-entries-reverse-next-year-dialog-body',
-						'La contre-passation sera datée du { $date }, dans l’exercice « { $name } ».',
-						{ date: formatSwissDate(nextYear.year.startDate), name: nextYear.year.name }
+						'La contre-passation de l’écriture n° { $number } « { $description } » sera datée du { $date }, dans l’exercice « { $name } ».',
+						{
+							number: String(entry.entryNumber),
+							description: entry.description,
+							date: formatSwissDate(nextYear.year.startDate),
+							name: nextYear.year.name
+						}
 					)}
 				</p>
 				<p class="text-sm text-text-muted mb-4">
