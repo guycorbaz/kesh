@@ -683,6 +683,17 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/reconciliation/transactions/{id}/unreject",
             post(routes::reconciliation::post_unreject_transaction),
         )
+        // Story 29-8 (#670) : rattacher une transaction au règlement saisi
+        // depuis la fiche de la facture (Comptable+, clés API d'écriture
+        // admises) — la liste des candidats, puis le rattachement.
+        .route(
+            "/api/v1/reconciliation/transactions/{id}/link-candidates",
+            get(routes::reconciliation::get_link_candidates),
+        )
+        .route(
+            "/api/v1/reconciliation/transactions/{id}/link",
+            post(routes::reconciliation::post_link_transaction),
+        )
         // Story 8-5a-zero : configuration `bank_account.journal_account_id`
         // (Comptable+ pour la mutation, foundation FR45/FR48).
         // Story v014-1 : CRUD complet post-onboarding (POST/PUT/DELETE).

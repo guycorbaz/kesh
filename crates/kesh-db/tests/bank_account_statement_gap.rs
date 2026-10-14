@@ -5,7 +5,9 @@
 //! bancaires rend le solde de clôture du relevé dont la période se termine le
 //! plus tard (non le dernier importé) et le solde comptable à sa date, **corrigé des dates de valeur** (le relevé compte par date de
 //! comptabilisation bancaire, les écritures de rapprochement par date de
-//! valeur). Chaque test nomme la mutation qu'il tue.
+//! valeur — sauf l'écriture d'un règlement rattaché, Story 29-8, datée du
+//! règlement : la correction lit la date de l'écriture et s'y applique de
+//! même). Chaque test nomme la mutation qu'il tue.
 //!
 //! Pré-requis : MariaDB démarré.
 

@@ -24,12 +24,12 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 118 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 119 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (118 routes) ; celui du
-//! REGISTRE est plus large (121), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (119 routes) ; celui du
+//! REGISTRE est plus large (122), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -149,7 +149,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **treize routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **quatorze routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2 — la
 //!   seule des neuf routes d'étape à l'être, cf. (iv)),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
@@ -217,7 +217,15 @@
 //!   l'exclusif de `flip_primary_off_for_company` (balayage de l'index
 //!   `fk_bank_accounts_company`, sans `EXPLAIN` au dépôt — il peut couvrir
 //!   d'autres comptes de la société que l'ancien principal). Treize : dix
-//!   avant la revue de code P1 de la 29-4a, plus ces trois.
+//!   avant la revue de code P1 de la 29-4a, plus ces trois. Et — Story 29-8,
+//!   #670 — `reconciliation::post_link_transaction` (enveloppe `AppError`
+//!   `crate::retry::retry_app_on_deadlock`, opération `reconciliation::link`,
+//!   comme `post_manual`) : le rattachement n'écrit rien au journal, mais il
+//!   verrouille, sous le verrou nommé du compte, la transaction, le règlement
+//!   puis son écriture (`reconciliation_link::link_in_tx`) — l'ordre `s → je`
+//!   de l'annulation d'un règlement, avec laquelle il se dispute le règlement ;
+//!   tenue par sa revue, **aucune preuve dynamique** (aucun test d'interblocage
+//!   forcé, C-29-8-11). Quatorze avec elle.
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit
@@ -382,6 +390,8 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "reconciliation::post_cancel_reconciliation", Traced, Rejouee),
     // Story 28-5a (#526) — `reconciliation.unrejected`.
     ("post", "reconciliation::post_unreject_transaction", Traced, SansEcritureAuJournal),
+    // Story 29-8 (#670) — `reconciliation.linked` ; rejouée (point (vi)).
+    ("post", "reconciliation::post_link_transaction", Traced, SansEcritureAuJournal),
     // Story 29-4a (#651), revue de code P1 (E-1) — la création, le `PUT` et
     // l'archivage : rejoués, victimes possibles du cycle avec un import ou un
     // lot qui tient le compte et attend la sentinelle (point (vi)).
@@ -714,10 +724,10 @@ fn the_registry_partition_is_what_the_story_declares() {
         .filter(|(_, _, s, _)| matches!(s, NoMatter(_)))
         .count();
 
-    assert_eq!(LIB_ROUTES.len(), 118, "l'inventaire porte sur 118 routes");
+    assert_eq!(LIB_ROUTES.len(), 119, "l'inventaire porte sur 119 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 112,
+        traced, 113,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -728,7 +738,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          démonstration (15-7b1, #434), plus le lettrage et le délettrage manuels \
          (15-1a-i, #518), plus la remise à zéro (15-7b2, #434), plus la suppression d'un \
          import non rapproché (27-1, #632), plus l'annulation d'un rejet (28-5a, #526), \
-         plus la clôture et la réouverture d'un compte bancaire (28-4a, #642)"
+         plus la clôture et la réouverture d'un compte bancaire (28-4a, #642), plus le \
+         rattachement d'une transaction à un règlement (29-8, #670)"
     );
     assert_eq!(exempt, 4, "4 routes d'auth (#435)");
     assert_eq!(
@@ -737,7 +748,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        121,
+        122,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1061,13 +1072,14 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 94,
-        "93 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
+        sans_ecriture, 95,
+        "94 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
          import, 27-1 ; l'annulation d'un rejet, 28-5a ; la clôture et la réouverture d'un \
-         compte bancaire, 28-4a), plus /password-reset-token de test_endpoints.rs"
+         compte bancaire, 28-4a ; le rattachement d'une transaction à un règlement, 29-8), \
+         plus /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
-    assert_eq!(tout.len(), 121);
+    assert_eq!(tout.len(), 122);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

@@ -647,7 +647,12 @@ const ATTENDU = {
 	// touche pas ce compteur) : `ReconciliationProposals.svelte` 20 → 21
 	// (`reconciliation-labels-unmatched-not-acceptable-hint`). Un littéral : les autres compteurs
 	// inchangés.
-	sitesTotal: 2164,
+	// Story 29-8 (#670, AC4) : **2164 → 2180** (+16), mesuré par la collecte de ce test et
+	// recompté le 2026-10-14 par `grep -o "i18nMsg("` aux deux bornes (`4af8f8ca` → HEAD de
+	// `story/29-8`) : `ReconciliationProposals.svelte` 21 → 22
+	// (`reconciliation-link-button-label`), `LinkSettlementModal.svelte` 0 → 15 (neuf). Que des
+	// littéraux : les autres compteurs inchangés.
+	sitesTotal: 2180,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -162,3 +162,35 @@ export interface CancelReconciliationResponse {
 	reversalJournalEntryId: number;
 	invoiceId: number | null;
 }
+
+// Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
+
+/** Un règlement client par virement auquel la transaction se rattache. */
+export interface LinkCandidate {
+	settlementId: number;
+	invoiceId: number;
+	invoiceNumber: string | null;
+	contactName: string;
+	settledOn: string;
+	/** Le mouvement du règlement sur le compte de la banque, à deux décimales. */
+	amount: string;
+	/** `transaction − règlement`, à deux décimales, entre 0.00 et 0.05. */
+	gap: string;
+	/** Jours entre le règlement et le paiement (toujours positif). */
+	daysApart: number;
+	journalEntryId: number;
+}
+
+/** `GET /api/v1/reconciliation/transactions/{id}/link-candidates`. */
+export interface LinkCandidatesResponse {
+	bankTransactionId: number;
+	candidates: LinkCandidate[];
+}
+
+/** `POST /api/v1/reconciliation/transactions/{id}/link`. */
+export interface LinkResponse {
+	bankTransactionId: number;
+	journalEntryId: number;
+	invoiceId: number;
+	settlementId: number;
+}

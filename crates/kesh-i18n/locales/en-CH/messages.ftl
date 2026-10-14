@@ -1255,6 +1255,8 @@ reconciliation-errors-already-reconciled = This transaction is already reconcile
 reconciliation-errors-invoice-not-eligible = This invoice is not eligible for reconciliation.
 # Story 28-5a (#526) — refus de l'annulation d'un rejet (409).
 reconciliation-errors-transaction-not-rejected = This transaction is not rejected: its rejection may already have been undone, or it has been reconciled.
+# Story 29-8 (#670) — refus du rattachement à un règlement (409).
+reconciliation-errors-settlement-not-linkable = This payment cannot be linked to this transaction: the transaction is not a credit in CHF, or the payment is not a transfer to this bank account (a payment in cash or by another account, or a write-off, is not), its amount does not match, it is already reconciled, or it was posted to a former ledger account.
 reconciliation-toast-accept-success = { $count } transaction(s) reconciled successfully.
 reconciliation-toast-reject-success = { $count } transaction(s) rejected successfully.
 
@@ -1276,6 +1278,23 @@ reconciliation-split-button-label = Split
 reconciliation-split-modal-title = Split transaction
 reconciliation-split-balance-indicator = Balance
 reconciliation-split-error-imbalance = The split does not balance the transaction amount.
+
+# Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
+reconciliation-link-button-label = Link to a payment
+reconciliation-link-modal-title = Link to a payment already recorded
+reconciliation-link-no-entry = Linking posts no entry: it ties the transaction to the payment already recorded.
+reconciliation-link-loading = Loading payments…
+reconciliation-link-empty = No bank-transfer payment on this bank account, for the amount of this transaction, is waiting for a transaction. First record the payment from the invoice, on this bank account.
+reconciliation-link-col-invoice = Invoice
+reconciliation-link-col-client = Client
+reconciliation-link-col-settled-on = Payment date
+reconciliation-link-col-amount = Amount
+reconciliation-link-col-gap = Difference
+reconciliation-link-col-days = Days apart
+reconciliation-link-choose = Choose this payment
+reconciliation-link-gap-warning = The transaction exceeds this payment by { $gap } CHF. The difference stays on the bank account: account for it (refund to the client, or a manual entry).
+reconciliation-link-submit = Link
+reconciliation-link-cancel = Cancel
 
 reconciliation-cols-actions = Actions
 
@@ -2463,6 +2482,7 @@ audit-log-action-bank-profile-updated = Bank profile updated
 audit-log-action-bank-profile-deleted = Bank profile deleted
 audit-log-action-reconciliation-accepted = Reconciliation accepted
 audit-log-action-reconciliation-cancelled = Reconciliation cancelled
+audit-log-action-reconciliation-linked = Transaction linked to a payment
 audit-log-action-reconciliation-rejected = Reconciliation rejected
 audit-log-action-reconciliation-manual-matched = Manual reconciliation completed
 audit-log-action-reconciliation-split-applied = Transaction split

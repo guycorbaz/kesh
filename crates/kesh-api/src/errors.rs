@@ -968,6 +968,25 @@ pub enum AppError {
     #[error("Transaction bancaire non rejetée : id={bank_transaction_id}")]
     ReconciliationTransactionNotRejected { bank_transaction_id: i64 },
 
+    /// Story 29-8 (#670) — le rattachement
+    /// (`POST /reconciliation/transactions/{id}/link`) vise un règlement que la
+    /// règle n'admet pas : la transaction n'est pas un crédit en CHF, ou le
+    /// règlement n'est pas un virement sur ce compte bancaire (compte interne
+    /// ou solde compris), son montant ne correspond pas, son écriture est déjà
+    /// rapprochée ou passée sur un ancien compte du grand livre — **un seul
+    /// code** pour les conditions 1 à 4 (C-29-8-10). L'écran n'offre que des
+    /// candidats : ce
+    /// refus ne se voit que par une course ou un appel direct ; relire la
+    /// liste. → `409 RECONCILIATION_SETTLEMENT_NOT_LINKABLE`,
+    /// `details.bankTransactionId` et `details.settlementId`.
+    #[error(
+        "Règlement non rattachable : transaction={bank_transaction_id}, règlement={settlement_id}"
+    )]
+    ReconciliationSettlementNotLinkable {
+        bank_transaction_id: i64,
+        settlement_id: i64,
+    },
+
     // ----- Story 8-5a-bis — split FR48 -----
     /// `sum(splits) != tx.amount.abs()` (Decimal exact, pas de tolérance)
     /// → `400 RECONCILIATION_SPLIT_IMBALANCE`. Body `details = {
@@ -2811,6 +2830,29 @@ impl IntoResponse for AppError {
                         "code": "RECONCILIATION_TRANSACTION_NOT_REJECTED",
                         "message": msg,
                         "details": { "bankTransactionId": bank_transaction_id },
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+
+            // Story 29-8 (#670) — rattachement refusé par la règle. Repli égal
+            // mot pour mot au catalogue fr-CH (G9).
+            AppError::ReconciliationSettlementNotLinkable {
+                bank_transaction_id,
+                settlement_id,
+            } => {
+                let msg = t(
+                    "reconciliation-errors-settlement-not-linkable",
+                    "Ce règlement ne peut pas être rattaché à cette transaction : la transaction n'est pas un crédit en CHF, ou le règlement n'est pas un virement sur ce compte bancaire (un règlement par espèces ou autre compte, ou un solde, ne l'est pas), son montant ne correspond pas, il est déjà rapproché, ou il a été passé sur un ancien compte du grand livre.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_SETTLEMENT_NOT_LINKABLE",
+                        "message": msg,
+                        "details": {
+                            "bankTransactionId": bank_transaction_id,
+                            "settlementId": settlement_id,
+                        },
                     }
                 });
                 (StatusCode::CONFLICT, Json(body)).into_response()

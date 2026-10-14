@@ -1255,6 +1255,8 @@ reconciliation-errors-already-reconciled = Diese Transaktion wurde bereits abgeg
 reconciliation-errors-invoice-not-eligible = Diese Rechnung ist für den Abgleich nicht zulässig.
 # Story 28-5a (#526) — refus de l'annulation d'un rejet (409).
 reconciliation-errors-transaction-not-rejected = Diese Transaktion ist nicht abgelehnt: Die Ablehnung wurde möglicherweise bereits aufgehoben, oder sie wurde abgestimmt.
+# Story 29-8 (#670) — refus du rattachement à un règlement (409).
+reconciliation-errors-settlement-not-linkable = Diese Zahlung kann dieser Transaktion nicht zugeordnet werden: Die Transaktion ist keine Gutschrift in CHF, oder die Zahlung ist keine Überweisung auf dieses Bankkonto (eine Zahlung bar oder über ein anderes Konto, oder eine Ausbuchung, ist es nicht), ihr Betrag stimmt nicht überein, sie ist bereits abgestimmt, oder sie wurde auf einem früheren Hauptbuchkonto gebucht.
 reconciliation-toast-accept-success = { $count } Transaktion(en) erfolgreich abgeglichen.
 reconciliation-toast-reject-success = { $count } Transaktion(en) erfolgreich abgelehnt.
 
@@ -1276,6 +1278,23 @@ reconciliation-split-button-label = Aufteilen
 reconciliation-split-modal-title = Transaktion aufteilen
 reconciliation-split-balance-indicator = Saldo
 reconciliation-split-error-imbalance = Die Aufteilung gleicht den Transaktionsbetrag nicht aus.
+
+# Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
+reconciliation-link-button-label = Einer Zahlung zuordnen
+reconciliation-link-modal-title = Einer bereits erfassten Zahlung zuordnen
+reconciliation-link-no-entry = Die Zuordnung bucht nichts: Sie verbindet die Transaktion mit der bereits erfassten Zahlung.
+reconciliation-link-loading = Zahlungen werden geladen…
+reconciliation-link-empty = Keine Überweisungszahlung auf diesem Bankkonto mit dem Betrag dieser Transaktion wartet auf eine Transaktion. Erfassen Sie die Zahlung zuerst auf der Rechnung, auf diesem Bankkonto.
+reconciliation-link-col-invoice = Rechnung
+reconciliation-link-col-client = Kunde
+reconciliation-link-col-settled-on = Zahlungsdatum
+reconciliation-link-col-amount = Betrag
+reconciliation-link-col-gap = Differenz
+reconciliation-link-col-days = Tage Abstand
+reconciliation-link-choose = Diese Zahlung wählen
+reconciliation-link-gap-warning = Die Transaktion übersteigt diese Zahlung um { $gap } CHF. Die Differenz bleibt auf dem Bankkonto: Begründen Sie sie (Rückzahlung an den Kunden oder manuelle Buchung).
+reconciliation-link-submit = Zuordnen
+reconciliation-link-cancel = Abbrechen
 
 reconciliation-cols-actions = Aktionen
 
@@ -2457,6 +2476,7 @@ audit-log-action-bank-profile-updated = Bankprofil aktualisiert
 audit-log-action-bank-profile-deleted = Bankprofil gelöscht
 audit-log-action-reconciliation-accepted = Abstimmung akzeptiert
 audit-log-action-reconciliation-cancelled = Abgleich aufgehoben
+audit-log-action-reconciliation-linked = Transaktion einer Zahlung zugeordnet
 audit-log-action-reconciliation-rejected = Abstimmung abgelehnt
 audit-log-action-reconciliation-manual-matched = Manueller Abgleich durchgeführt
 audit-log-action-reconciliation-split-applied = Transaktion aufgeteilt

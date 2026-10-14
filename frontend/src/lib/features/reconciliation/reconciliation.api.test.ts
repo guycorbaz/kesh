@@ -4,7 +4,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { authState } from '$lib/app/stores/auth.svelte';
 import {
 	acceptProposals,
+	getLinkCandidates,
 	getProposals,
+	linkTransaction,
 	manualMatchTransaction,
 	rejectProposals,
 	splitTransaction,
@@ -99,6 +101,22 @@ describe('reconciliation.api', () => {
 		expect(url).toMatch(/\/api\/v1\/reconciliation\/transactions\/7\/unreject$/);
 		expect(init.method).toBe('POST');
 		expect(JSON.parse(init.body as string)).toEqual({});
+	});
+
+	// Story 29-8 (#670, AC4) — rattacher une transaction au règlement saisi depuis la fiche.
+	it('getLinkCandidates appelle GET /reconciliation/transactions/{id}/link-candidates', async () => {
+		await getLinkCandidates(7);
+		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toMatch(/\/api\/v1\/reconciliation\/transactions\/7\/link-candidates$/);
+		expect(init.method).toBe('GET');
+	});
+
+	it('linkTransaction poste { settlementId } à /reconciliation/transactions/{id}/link', async () => {
+		await linkTransaction(7, 4);
+		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toMatch(/\/api\/v1\/reconciliation\/transactions\/7\/link$/);
+		expect(init.method).toBe('POST');
+		expect(JSON.parse(init.body as string)).toEqual({ settlementId: 4 });
 	});
 
 	// Story 8-5a-base FR45 — manual match.

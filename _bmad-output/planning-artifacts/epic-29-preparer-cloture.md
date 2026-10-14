@@ -132,6 +132,15 @@ un écran, une clé i18n, un spec E2E. *Annoté à la validation P2 (2026-10-14)
 transaction **reste en attente** et empêche la clôture du compte bancaire : angle mort assumé, [#670] (C-29-6-17), à
 connaître de la 29-1 (contrôle « transactions bancaires en attente »).
 
+### 29-8 — Une transaction réglée depuis la fiche se rattache à ce règlement ([#670], P2)
+
+**Ajoutée le 2026-10-14 sur décision de Guy.** Les Stories 29-2 (C-29-2-8) et 29-6 conseillent de régler depuis la
+fiche de la facture puis de **rejeter** la transaction ; or une transaction rejetée reste `pending` et empêche à jamais
+la clôture du compte bancaire (et apparaîtra au contrôle K2 de la 29-1a). La fiche retient le **rattachement** d'une
+transaction à un règlement client par virement déjà enregistré sur le même compte — aucune écriture, aucune
+migration, un geste humain sans présélection —, et réécrit « puis rejetez » en « puis rattachez » dans les textes des
+29-2 et 29-6. **`kesh-db` touché : gate complet en boucle.**
+
 ## Ordre
 
 - **29-1 en parallèle** des trois autres : elle ne touche ni la réconciliation ni les comptes bancaires.
@@ -143,6 +152,9 @@ connaître de la 29-1 (contrôle « transactions bancaires en attente »).
 
 - **29-6 après 29-2, 29-3 et 29-5** (ordre de développement 29-2 → 29-3 → 29-5 → 29-6) : même requête de candidates
   que la 29-2, et des phrases que la 29-3 écrit sur #665 et qu'elle retire.
+- **29-8 après la 29-6** (rebase) : même composant `ReconciliationProposals.svelte`, et elle réécrit des phrases du
+  manuel que la 29-2 et la 29-6 écrivent. Son ordre par rapport à la 29-4 n'est pas fixé : celle des deux qui se merge
+  la seconde inscrit `link_in_tx` au registre `FENETRE` de la 29-4 (fiche 29-8, AC2).
 - Intégration **sérielle** sur `main`.
 
 ### Releases
