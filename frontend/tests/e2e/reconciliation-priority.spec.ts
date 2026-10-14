@@ -17,7 +17,7 @@
  *
  * Ce qui tient la facture hors de portée des autres specs, c'est le reste de 0,01 que laisse
  * l'acceptation. Si le parcours échoue avant, le `finally` règle la facture de 972,89 par l'API,
- * ce qui laisse le même reste (C-29-3-18) ; la règle et l'import sont supprimés. Chaque nettoyage
+ * ce qui laisse le même reste (C-29-3-18) ; la règle est supprimée, l'import aussi s'il n'a rien rapproché (409 sinon, toléré). Chaque nettoyage
  * a son propre `try`, statut vérifié ; l'erreur d'origine n'est jamais masquée.
  *
  * Limite : la ligne est cherchée dans la première page de propositions (`GET /proposals`,
@@ -296,9 +296,14 @@ for (const [colorScheme, suffixe] of [
 			}
 			if (importId !== null) {
 				const id = importId;
-				await step('suppression de l’import', async () =>
-					ok(await ctx.delete(`/api/v1/bank-imports/${id}`), 'suppression de l’import'),
-				);
+				// 409 attendu après un parcours réussi : l'import porte une transaction rapprochée,
+				// que le serveur refuse de supprimer (`BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS`).
+				// L'ancienne suppression, dont le statut n'était pas lu, ne supprimait donc rien
+				// dans ce cas ; elle ne supprime que l'import d'un parcours échoué avant « Accepter ».
+				await step('suppression de l’import', async () => {
+					const res = await ctx.delete(`/api/v1/bank-imports/${id}`);
+					if (res.status() !== 409) ok(res, 'statut');
+				});
 			}
 			if (unlinked !== null) {
 				const original = unlinked;
