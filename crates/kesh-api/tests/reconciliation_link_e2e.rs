@@ -2,7 +2,7 @@
 //! depuis la fiche de la facture (Story 29-8, #670).
 //!
 //! Couvre l'AC3 et la table T1 à T20 de l'AC8 de la fiche
-//! `29-8-transaction-reglee-ailleurs.md` :
+//! `29-8-transaction-reglee-ailleurs.md`, plus T17-bis (revue de code P1, E1) :
 //! `GET /api/v1/reconciliation/transactions/{id}/link-candidates` et
 //! `POST /api/v1/reconciliation/transactions/{id}/link`.
 //!
@@ -1087,6 +1087,12 @@ async fn t12_roles_cles_et_corps(pool: MySqlPool) {
 
 /// T13 (a) — compte clos **avant** le geste (état forgé par SQL : I1 cassé à
 /// dessein) : le pré-vol rend `409 BANK_ACCOUNT_CLOSED`, au `GET` et au `POST`.
+///
+/// Et il passe **avant** le refus « rapprochée » (AC1 ; revue de code P1, A2) :
+/// sur un compte clos, toute transaction est rapprochée (I1) ; une transaction
+/// **rapprochée** d'un compte clos rend donc `409 BANK_ACCOUNT_CLOSED`, et non
+/// `404 RECONCILIATION_TRANSACTION_NOT_PENDING`, au `GET` comme au `POST`. Ce
+/// témoin rougit si l'ordre du pré-vol et du statut s'inverse.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn t13a_compte_clos_avant_le_geste(pool: MySqlPool) {
     let ctx = monter(&pool).await;
@@ -1094,12 +1100,27 @@ async fn t13a_compte_clos_avant_le_geste(pool: MySqlPool) {
     let facture = ctx.facture("2026-06-01").await;
     let (sid, _) = ctx.regler(facture, bank, "108.10", "2026-06-20").await;
     let tx = ctx.transaction(bank, "108.10", "2026-06-20").await;
+    // Le témoin : une seconde transaction, rapprochée par rattachement avant
+    // la clôture.
+    let autre = ctx.facture("2026-06-02").await;
+    let (sid_r, entry_r) = ctx.regler(autre, bank, "108.10", "2026-06-21").await;
+    let rapprochee = ctx.transaction(bank, "108.10", "2026-06-21").await;
+    let (s, b) = ctx.rattacher(rapprochee, sid_r).await;
+    assert_eq!(s, 200, "{b}");
     ctx.clore_sql(bank).await;
     let (s, b) = ctx.candidats(tx).await;
     assert_refus(s, &b, 409, "BANK_ACCOUNT_CLOSED");
     let (s, b) = ctx.rattacher(tx, sid).await;
     assert_refus(s, &b, 409, "BANK_ACCOUNT_CLOSED");
     assert_eq!(ctx.etat(tx).await, ("pending".to_string(), None));
+    let (s, b) = ctx.candidats(rapprochee).await;
+    assert_refus(s, &b, 409, "BANK_ACCOUNT_CLOSED");
+    let (s, b) = ctx.rattacher(rapprochee, sid).await;
+    assert_refus(s, &b, 409, "BANK_ACCOUNT_CLOSED");
+    assert_eq!(
+        ctx.etat(rapprochee).await,
+        ("reconciled".to_string(), Some(entry_r))
+    );
 }
 
 /// T13 (b) — **course forgée** : une connexion tient le verrou nommé du compte,
@@ -1352,6 +1373,90 @@ async fn t17_course_de_double_rattachement(pool: MySqlPool) {
     assert_eq!(liens, 1);
 }
 
+/// T17-bis — **entrelacement forcé** du double rattachement (revue de code P1,
+/// E1) : une connexion `tenue` joue le premier rattachement — elle prend le
+/// verrou de ligne du règlement `s` —, le `POST` de `t2` est **vu en attente**
+/// sur ce verrou (sonde `PROCESSLIST`, comme T13 (b) : sans le privilège
+/// `PROCESS`, qui ne concerne qu'`INNODB_TRX`), puis `tenue` lie `t1` à
+/// l'écriture de `s` et commite. Le `POST` doit rendre `409
+/// RECONCILIATION_SETTLEMENT_NOT_LINKABLE` : sa vue naît **après** l'attente
+/// (étape 4.3), et l'étape 4.4 voit le lien commité. Un seul lien.
+///
+/// Rougit sous M10 (sans `FOR UPDATE` sur `s`, le `POST` n'attend jamais : la
+/// sonde ne le voit pas, et il lie `t2`) et sous M14 (la règle lue avant
+/// l'attente fait naître la vue trop tôt : `200`, deux liens). L'invariant
+/// « un règlement ne se rattache qu'une fois » n'a pas de contrainte `UNIQUE` :
+/// ce test est sa seule garde dynamique.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn t17bis_le_second_rattachement_attend_le_verrou_du_reglement(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let bank = ctx.compte(IBAN_A).await;
+    let facture = ctx.facture("2026-06-01").await;
+    let (s, entry) = ctx.regler(facture, bank, "108.10", "2026-06-20").await;
+    let t1 = ctx.transaction(bank, "108.10", "2026-06-20").await;
+    let t2 = ctx.transaction(bank, "108.10", "2026-06-21").await;
+
+    let mut tenue = pool.begin().await.unwrap();
+    let pris: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE id = ? FOR UPDATE")
+            .bind(s)
+            .fetch_optional(&mut *tenue)
+            .await
+            .unwrap();
+    assert_eq!(pris, Some(s));
+
+    let client = ctx.app.client.clone();
+    let url = ctx
+        .app
+        .url(&format!("/api/v1/reconciliation/transactions/{t2}/link"));
+    let jwt = ctx.jwt.clone();
+    let requete = tokio::spawn(async move {
+        let r = client
+            .post(url)
+            .bearer_auth(jwt)
+            .json(&json!({ "settlementId": s }))
+            .send()
+            .await
+            .unwrap();
+        let st = r.status().as_u16();
+        (st, r.json::<Value>().await.unwrap_or(Value::Null))
+    });
+    // Les motifs nomment la requête de l'étape 4.2 (a), seule à joindre les
+    // deux ; celle de `tenue` est finie (sa connexion est inactive) et la sonde
+    // exclut la sienne.
+    let vu = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &pool,
+        &["invoice_settlements", "FOR UPDATE"],
+        || requete.is_finished(),
+    )
+    .await;
+    if !vu {
+        let (st, b) = requete.await.unwrap();
+        panic!("le POST n'a jamais attendu le verrou du règlement : rendu {st} {b}");
+    }
+    let fait = sqlx::query(
+        "UPDATE bank_transactions SET status = 'reconciled', matched_entry_id = ? WHERE id = ?",
+    )
+    .bind(entry)
+    .bind(t1)
+    .execute(&mut *tenue)
+    .await
+    .unwrap();
+    assert_eq!(fait.rows_affected(), 1);
+    tenue.commit().await.unwrap();
+
+    let (st, b) = requete.await.unwrap();
+    assert_non_rattachable(st, &b);
+    assert_eq!(ctx.etat(t2).await, ("pending".to_string(), None));
+    let liens: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM bank_transactions WHERE matched_entry_id = ?")
+            .bind(entry)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(liens, 1);
+}
+
 /// T18 — ancien compte lié : le règlement a été passé sur le 1020, puis le
 /// compte bancaire a été lié à un autre compte du grand livre. Son mouvement
 /// sur le compte lié actuel est nul : il n'est candidat ni pour (a) 0.03 ni
@@ -1446,6 +1551,13 @@ async fn t20_compte_archive(pool: MySqlPool) {
     assert_refus(s, &b, 404, "BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND");
     assert_eq!(common::audit_count(&pool).await, traces);
     assert_eq!(ctx.etat(tx).await, ("pending".to_string(), None));
+    // Archivé **et** clos : l'archivage passe avant la clôture (ordre du
+    // pré-vol ; revue de code P1, A2).
+    ctx.clore_sql(bank).await;
+    let (s, b) = ctx.candidats(tx).await;
+    assert_refus(s, &b, 404, "BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND");
+    let (s, b) = ctx.rattacher(tx, sid).await;
+    assert_refus(s, &b, 404, "BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND");
 }
 
 /// Le pré-vol rend `412 BANK_ACCOUNT_NOT_CONFIGURED` sur un compte sans compte
