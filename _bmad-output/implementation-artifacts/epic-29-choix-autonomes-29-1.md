@@ -32,6 +32,8 @@
   écriture **manuelle**, déjà possible (débit du compte physique de rôle `RetainedEarnings`, crédit dividendes ou
   réserve) ; sa **présentation** au bilan (compte physique négatif à côté de la ligne calculée positive) est
   perfectible — **demande d'issue** à l'orchestrateur, pour que la fermeture de #232 ne la fasse pas disparaître.
+  *(Validation P1, 2026-10-14 : l'issue existe — **#667**, « Affectation du résultat d'une société — écriture de
+  décision d'assemblée et présentation au bilan », `enhancement`, sans label de priorité à cette date : à poser.)*
 - **Écartées** : écriture d'affectation assistée (double un calcul, ou exige de revoir le modèle 14-1) ; retour à des
   écritures de clôture physiques (décision d'architecture contraire).
 - **Réversible** : oui (une story future peut ajouter l'affectation assistée pour les sociétés).
@@ -59,7 +61,8 @@
   - *comptes d'attente soldés* : Kesh n'en a pas (aucun rôle, drapeau ni compte ; inventaire au code) ; un rôle neuf
     serait une migration breaking (un binaire antérieur ne décode pas un rôle inconnu) — prémisse de #232 corrigée ;
   - *TVA réconciliée* : report assumé des P1 de la TVA (utilisateur non assujetti) ; demande d'issue ou de
-    rattachement au jalon « Vague 2 » ;
+    rattachement au jalon « Vague 2 » *(validation P1, 2026-10-14 : noté en commentaire sur **#398**, jalon « Vague
+    2 », sans issue neuve)* ;
   - *équation du bilan* : K6 en couvre les deux causes (écriture déséquilibrée ; ligne datée dans un exercice et
     rattachée à un autre — le compte de résultat filtre `fiscal_year_id`, le bilan non) ; un contrôle de l'équation
     répéterait K6 sans dire quelle écriture corriger ;
@@ -136,6 +139,10 @@
   de l'exercice suivant se place **après**, au point où `today` est calculé ; `find_open_covering_date` (verrouillante,
   état validé le plus récent) confirme. Angle mort écrit au doc-comment : un exercice **intercalé** créé après la vue
   n'est pas vu.
+  *(Rectifié en validation P1, 2026-10-14, F4 / R14 : « première lecture ordinaire » n'est vrai que **sur ce chemin**,
+  appelé avec `authority = None` ; avec une autorité fournisseur, l'étape (1-bis) est une lecture ordinaire
+  antérieure. La phrase ne s'énonce plus en général — AC11 de la fiche. Et la **sûreté** repose sur la confirmation
+  verrouillante de N+1, non sur le verrou de N — AC12, C-29-1-20.)*
 - **Écartées** : une lecture verrouillante par intervalle pour trouver le suivant (ordre du parcours fixé par
   l'optimiseur, verrous de clé suivante — la doc de `fiscal_years::close` explique pourquoi la clôture y a renoncé).
 - **Réversible** : oui.
@@ -170,4 +177,91 @@
   l'exercice précédent (si clôturé) » ; au code, le report est calculé que l'exercice précédent soit clos ou non.
 - **Retenu** : correction **mécanique** (une parenthèse retirée, une phrase juste), dans le commit du manuel de la
   29-1a (B3 : un défaut voisin mécanique s'intègre).
+- **Réversible** : oui.
+
+---
+
+## Choix ajoutés à la remédiation de la validation P1 (2026-10-14, Opus 5.5)
+
+### C-29-1-16 — K3 : population par l'activité, précédence écrite, comptes non vérifiables sans effet sur le statut
+
+- **Contexte** : P1 R5 — la population d'origine (tout compte non archivé ni clos avant Y) faisait signaler chaque
+  année un compte alimenté par CSV seulement, un compte ouvert après Y et un compte sans mouvement ; la précédence
+  entre « sans relevé » et « non comparable » n'était pas écrite.
+- **Retenu** : compte examiné = non archivé, non clos avant Y, **avec une activité dans Y** (une transaction bancaire
+  ou un relevé à solde daté dans Y). Motif = le premier de `NOT_COMPARABLE` > `NO_BALANCE_STATEMENT` > `MISSING` >
+  `ENDS_BEFORE_YEAR_END` > `GAP`. Les deux premiers vont dans une liste `notCheckable`, affichée, **sans effet sur le
+  statut** ; les trois suivants font l'`attention`.
+- **Écartées** : un critère `created_at <= Y.end_date` (faux pour une reprise de comptabilité : le compte se crée en
+  N+1 et reçoit les relevés de N) ; exclure purement les comptes non vérifiables (« signaler, jamais taire » : on
+  dit pourquoi un compte n'est pas contrôlé) ; `NOT_COMPARABLE` en `attention` (alerte permanente pour un partage
+  légitime d'un compte de grand livre).
+- **Réversible** : oui.
+
+### C-29-1-17 — L'écart du relevé : une seule définition côté serveur, arrondie au centime comme le tableau de bord
+
+- **Contexte** : P1 R6 — les lignes sont en `DECIMAL(19,4)`, le relevé en `DECIMAL(18,2)` ; le tableau de bord arrondit
+  les deux termes au centime (`statementGap`, TypeScript), K3 comparait sans arrondi.
+- **Retenu** : `bank_accounts::statement_gap` (Rust), arrondi par `Money::round_to_centimes` ; le panneau affiche la
+  valeur du serveur sans recalcul ; le test Rust reprend les cas de `homepage.test.ts`. Le calcul TypeScript du
+  tableau de bord reste (servir son écart depuis le serveur toucherait un sixième module) : **issue demandée**.
+- **Écartées** : recopier `statementGap` dans le panneau (troisième définition) ; comparer sans arrondi.
+- **Réversible** : oui.
+
+### C-29-1-18 — Lectures d'exercice partagées : `EARLIER_OPEN_SQL` et `find_next_after`
+
+- **Contexte** : P1 R13 — K1 recopiait le prédicat de `FIND_EARLIER_OPEN_SQL` ; K7 et l'étape (4) de la 29-1b
+  cherchent le même « exercice suivant ».
+- **Retenu** : `fiscal_years.rs` porte le texte sans verrou (`EARLIER_OPEN_SQL`, `NEXT_AFTER_SQL`) et ses lectures
+  (`find_earliest_earlier_open`, `find_next_after`), sur le modèle `OPEN_COVERING_DATE_SQL` ; `close` exécute le
+  même texte suffixé de `FOR UPDATE`, identique octet pour octet (test T-a15). K7 et la contre-passation appellent
+  la même fonction.
+- **Écartées** : deux requêtes voisines dans `closing_checks.rs` et `journal_entries.rs`.
+- **Réversible** : oui.
+
+### C-29-1-19 — Le rappel du dialogue de clôture compte les contrôles `info`
+
+- **Contexte** : P1 R16 — K7 en `info` ferait dire « 1 point à vérifier » tant que N+1 n'existe pas.
+- **Retenu** : tous les `attention` comptent : un exercice suivant absent empêche de contre-passer les transitoires,
+  des brouillons et des pièces à compléter sont des points réels avant une clôture. `notCheckable` ne compte pas.
+- **Écartée** : ne compter que `blocking` / `warning` / `anomaly` (masquerait K4, K5, K7 au moment même où ils
+  servent).
+- **Réversible** : oui.
+
+### C-29-1-20 — T-b5 : la vraie fonction en transaction, deux ordres, N premier exercice
+
+- **Contexte** : P1 F1 / F2 / R14 — « A s'arrête après l'étape (1) » n'était pas montable ; avec un exercice
+  antérieur à N, la clôture de N+1 forme le cycle connu au lieu d'attendre ; aucune mutation n'était tuée par T-b5.
+- **Retenu** : `reverse_at_next_fiscal_year_start_in_tx` public ; ordre (i) A va au bout sans valider, B (`close`)
+  attend en (b') — test de comportement, ne tue aucune mutation (N tenu deux fois), déclaré ; ordre (ii) B monté à la
+  main (effets de `close`), A (vraie fonction) attend à l'étape (1) puis rend `NEXT_FISCAL_YEAR_CLOSED` — tue M-b3 et
+  M-b11. N est le premier exercice. L'AC12 et le doc-comment disent que la **sûreté** repose sur la confirmation
+  verrouillante de N+1 ; le verrou de N n'en est qu'une conséquence.
+- **Écartées** : reconstituer à la main les étapes de la contre-passation (précédent du test 13 d — ne tue aucune
+  mutation du code) ; ajouter une variante en transaction de `close` (hors périmètre, touche la clôture).
+- **Réversible** : oui.
+
+### C-29-1-21 — Répétition à blanc : marche exécutable, et le `.keshbackup` traité comme un secret
+
+- **Contexte** : P1 R8 / F7 — `container_name` et ports littéraux, image `:latest`, compose de production à base
+  externe, SMTP de production qui enverrait de vrais courriels, fichier d'export qui porte condensés de mots de passe,
+  clés API et jetons.
+- **Retenu** : autre machine de préférence ; sinon dossier distinct, copie de `docker-compose.yml` (jamais
+  `docker-compose.prod.yml` avec le `DATABASE_URL` de production), `container_name` et port édités, image épinglée à
+  la version de `/health`, `-p kesh-repetition`, `.env` propre sans `KESH_SMTP_*` ; à la fin, `down -v`, suppression
+  du dossier (avec sa sauvegarde pré-import) **et** du `.keshbackup` exporté ; jamais de dépôt dans un dossier
+  synchronisé ni un dépôt de sources ; chiffrement s'il quitte la machine.
+- **Écartées** : « un autre projet docker-compose » sans plus (non exécutable) ; garder l'export « pour la prochaine
+  fois » (un secret qui traîne).
+- **Réversible** : oui.
+
+### C-29-1-22 — Fiche d'écriture : un motif à la place du bouton absent
+
+- **Contexte** : P1 R9 — la règle de la page (« les boutons sont absents… le motif est affiché à leur place ») ;
+  l'oubli de créer N+1 est le cas d'usage central.
+- **Retenu** : motif traduit selon l'état de la liste des exercices (aucun pendant le chargement ; indisponibilité sur
+  échec ; « créez d'abord l'exercice suivant » ; « l'exercice suivant est clôturé »), Admin/Comptable seulement.
+  L'échec de la liste ne retire pas *Contre-passer* (du jour).
+- **Écartées** : bouton désactivé (la page refuse les boutons grisés) ; bouton affiché sans liste (la confirmation
+  doit nommer la date et l'exercice).
 - **Réversible** : oui.
