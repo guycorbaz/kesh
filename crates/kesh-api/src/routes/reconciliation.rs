@@ -5404,3 +5404,159 @@ mod non_credit_settlement_tests {
         assert_eq!(refusal.bank_transaction_id, 987_654);
     }
 }
+
+/// Story 29-3 (#527) — l'ordre des candidates d'une proposition.
+///
+/// Les entrées et les sorties sont écrites en dur, jamais relues de la
+/// production. Plusieurs entrées (règle en tête, facture sans signal) ne
+/// sortent pas de `get_proposals` : elles éprouvent la règle de
+/// [`order_candidates`], qui ne suppose rien de l'ordre reçu.
+#[cfg(test)]
+mod candidate_order_tests {
+    use super::*;
+
+    /// Facture d'identifiant `id`, sous-scores montant, référence, contact ;
+    /// total = la somme pondérée de `matching.rs`.
+    fn f(id: i64, amount: f64, reference: f64, contact: f64) -> ReconciliationCandidate {
+        ReconciliationCandidate {
+            candidate_type: CandidateType::Invoice,
+            invoice_id: Some(id),
+            invoice_number: Some(format!("F-{id}")),
+            invoice_amount: Some("100".to_string()),
+            invoice_total_ttc: None,
+            invoice_date: None,
+            rule_id: None,
+            rule_label: None,
+            rule_match_type: None,
+            counterparty_account_id: None,
+            counterparty_account_name: None,
+            score: MatchScore {
+                total: 0.50 * amount + 0.40 * reference + 0.10 * contact,
+                amount_score: amount,
+                reference_score: reference,
+                contact_score: contact,
+            },
+        }
+    }
+
+    /// La règle d'affectation, au score conventionnel de 1,0.
+    fn r() -> ReconciliationCandidate {
+        ReconciliationCandidate {
+            candidate_type: CandidateType::Rule,
+            invoice_id: None,
+            invoice_number: None,
+            invoice_amount: None,
+            invoice_total_ttc: None,
+            invoice_date: None,
+            rule_id: Some(7),
+            rule_label: Some("Règle".to_string()),
+            rule_match_type: Some("counterparty_contains".to_string()),
+            counterparty_account_id: Some(3000),
+            counterparty_account_name: Some("3000 Ventes".to_string()),
+            score: MatchScore {
+                total: 1.0,
+                amount_score: 0.0,
+                reference_score: 0.0,
+                contact_score: 0.0,
+            },
+        }
+    }
+
+    /// Identifiant lisible : `Some(id)` d'une facture, `None` de la règle.
+    fn ids(candidates: &[ReconciliationCandidate]) -> Vec<Option<i64>> {
+        candidates.iter().map(|c| c.invoice_id).collect()
+    }
+
+    fn ordered(mut candidates: Vec<ReconciliationCandidate>) -> Vec<Option<i64>> {
+        order_candidates(&mut candidates);
+        ids(&candidates)
+    }
+
+    const R: Option<i64> = None;
+
+    #[test]
+    fn cas_1_the_production_order_is_kept() {
+        assert_eq!(ordered(vec![f(1, 0.0, 0.0, 1.0), r()]), vec![Some(1), R]);
+    }
+
+    #[test]
+    fn cas_2_a_rule_ahead_goes_behind_an_identified_invoice() {
+        assert_eq!(ordered(vec![r(), f(1, 0.0, 0.0, 1.0)]), vec![Some(1), R]);
+    }
+
+    #[test]
+    fn cas_3_input_order_is_kept_within_rank_0() {
+        assert_eq!(
+            ordered(vec![r(), f(1, 0.0, 1.0, 0.0), f(2, 0.0, 0.5, 0.0)]),
+            vec![Some(1), Some(2), R]
+        );
+    }
+
+    #[test]
+    fn cas_4_an_ordered_list_is_unchanged() {
+        assert_eq!(
+            ordered(vec![f(1, 0.0, 0.5, 1.0), f(2, 0.0, 0.5, 0.0), r()]),
+            vec![Some(1), Some(2), R]
+        );
+    }
+
+    #[test]
+    fn cas_5_an_invoice_without_signal_goes_behind_the_rule() {
+        assert_eq!(ordered(vec![f(1, 0.0, 0.0, 0.0), r()]), vec![R, Some(1)]);
+    }
+
+    #[test]
+    fn cas_6_the_three_ranks() {
+        assert_eq!(
+            ordered(vec![r(), f(3, 0.0, 0.0, 1.0), f(4, 0.0, 0.0, 0.0)]),
+            vec![Some(3), R, Some(4)]
+        );
+    }
+
+    #[test]
+    fn cas_7_invoices_alone_with_exact_amount_are_unchanged() {
+        assert_eq!(
+            ordered(vec![f(2, 1.0, 1.0, 0.0), f(1, 1.0, 0.0, 0.0)]),
+            vec![Some(2), Some(1)]
+        );
+    }
+
+    #[test]
+    fn cas_8_equal_scores_within_rank_0_are_not_reordered() {
+        assert_eq!(
+            ordered(vec![f(5, 0.0, 0.0, 1.0), f(3, 0.0, 0.0, 1.0)]),
+            vec![Some(5), Some(3)]
+        );
+    }
+
+    #[test]
+    fn cas_9_a_lone_rule_and_an_empty_list() {
+        assert_eq!(ordered(vec![r()]), vec![R]);
+        assert_eq!(ordered(vec![]), Vec::<Option<i64>>::new());
+    }
+
+    #[test]
+    fn cas_10_candidate_rank_directly() {
+        assert_eq!(candidate_rank(&f(1, 1.0, 0.0, 0.0)), 0);
+        assert_eq!(candidate_rank(&f(1, 0.0, 1.0, 0.0)), 0);
+        assert_eq!(candidate_rank(&f(1, 0.0, 0.5, 0.0)), 0);
+        assert_eq!(candidate_rank(&f(1, 0.0, 0.0, 1.0)), 0);
+        assert_eq!(candidate_rank(&f(1, 0.0, 0.0, 0.0)), 2);
+        assert_eq!(candidate_rank(&r()), 1);
+    }
+
+    /// M6 : 51 éléments — le plafond de 50 factures du dépôt (`LIMIT 50`)
+    /// plus la règle — pour qu'un tri instable ait de quoi se trahir.
+    #[test]
+    fn cas_11_stability_at_a_realistic_size() {
+        let mut input = vec![r()];
+        input.extend((1..=49).rev().map(|id| f(id, 0.0, 0.0, 1.0)));
+        input.push(f(50, 0.0, 0.0, 0.0));
+
+        let mut expected: Vec<Option<i64>> = (1..=49).rev().map(Some).collect();
+        expected.push(R);
+        expected.push(Some(50));
+
+        assert_eq!(ordered(input), expected);
+    }
+}
