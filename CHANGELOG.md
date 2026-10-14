@@ -8,6 +8,12 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.14.0] — Non publié
+
+### Ajouté
+
+- **Contre-passer une écriture au début de l'exercice suivant, pour les transitoires de fin d'exercice** ([#232](https://github.com/guycorbaz/kesh/issues/232)). Une charge payée d'avance, un produit à recevoir ou une facture à recevoir se saisissent au dernier jour de l'exercice, puis, sur la fiche de l'écriture, *Contre-passer au début de l'exercice suivant* crée l'écriture inverse datée du **premier jour de l'exercice qui suit**, dans cet exercice — liée à l'origine et lettrée avec elle, comme toute contre-passation. La confirmation nomme la date et l'exercice. L'exercice suivant doit être créé et ouvert : sinon le bouton n'est pas offert, et la fiche dit pourquoi à sa place. Le premier jour ne doit pas être dans la période verrouillée. Une fois contre-passées, l'écriture et sa contre-passation ne se modifient ni ne se suppriment plus : une erreur se corrige par une écriture complémentaire. ⚠️ Kesh ne repère pas une transitoire que vous auriez oublié de contre-passer (manuel utilisateur, *Les transitoires de fin d'exercice*). Par l'API : `POST /api/v1/journal-entries/{id}/reverse-at-next-fiscal-year-start`, sans corps, clés `read-write` admises ; refus `409 NEXT_FISCAL_YEAR_MISSING` et `409 NEXT_FISCAL_YEAR_CLOSED` (`docs/api-external.md`).
+
 ## [0.13.4] — 2026-10-15
 
 ⚠️ **Cette version n'est toujours pas destinée à tenir une comptabilité réelle.** Epic 29, première partie : la **préparation de la clôture d'un exercice** passe l'exercice en revue en lecture seule — la contre-passation des transitoires à l'ouverture de l'exercice suivant viendra avec la 0.14.0 ; une transaction bancaire se **rattache au règlement** déjà saisi depuis la fiche de la facture ; la réconciliation propose un paiement reçu après l'échéance ou après un rappel, place en tête la facture échue la première, ne propose plus une facture qu'un paiement dépasse de quelques centimes, et dit quelle proposition elle affiche ; un import, un lot ou une annulation commencés juste avant la clôture d'un compte bancaire ne passent plus sur ce compte ; la liste de réconciliation dit qu'il reste des transactions au-delà des 100 plus récentes ; quatre petits correctifs d'écran.
