@@ -295,7 +295,7 @@ suit, `boutons-rouges-inventory.test.ts:231`).
   les sites, mais ne **vérifie** « repli = valeur `fr-CH` » que pour une clé à deux replis divergents ou inscrite à
   `REPLIS_A_SITE_UNIQUE` : les clés neuves de cette story, à site unique et non inscrites, **ne sont pas couvertes** ;
   pour `reconciliation-labels-more-hidden` et `-more-capped`, l'égalité repli/catalogue n'est gardée par aucun test —
-  angle mort assumé ; l'AC11 la tient par V19/V20) ; `i18n-keys.test.ts` ; `i18n-harvest.test.ts`. Toutes au
+  angle mort assumé ; pour les deux clés de l'AC11, V19/V20 lisent leur attendu au catalogue `fr-CH`) ; `i18n-keys.test.ts` ; `i18n-harvest.test.ts`. Toutes au
   `test:unit` ; leur vert se cite au Dev Agent Record. Hors de portée, relevé au sol : `i18n-un-repli-par-cle.test.ts`
   ne vise que le domaine `supplier-invoices` (en-tête du fichier) ; `crates/kesh-api/tests/textes_coherents.rs`,
   parcouru par la lentille R, n'a aucune garde sur ces phrases.
@@ -950,3 +950,17 @@ montre que les 100 plus récentes ».
   - Laissé : entrées datées du Change Log (P1-P4, « V1-V22 », « M22-M27 ») et prompt P4 inchangés, relevés datés.
   - Recomptes à la source : **11 AC**, T0-T10 (**11**), **V1-V23** (23 ; +1), **M1-M30** (30), choix **C-29-9-1 à 25**
     (+1). Symptômes grepés : « M22-M27 », « trois gardes », « trois fermetures », « repli-divergent » / `REPLIS_A_SITE_UNIQUE`.
+- **2026-10-14 — Validation P6 (passe ciblée, Haiku, prompt `29-9-validate-prompt-p6-ciblee.md`) : 0/0/2/4, remédiée par
+  l'orchestrateur ; VALIDATION CLOSE.**
+  - F-1 (MEDIUM) : `sprint-status.yaml` disait encore « C-29-9-19 à 24 » et ne citait pas P5 — corrigé. Le bloc
+    `## Status` de la fiche est un relevé daté que l'annotation de l'amendement prolonge (C-29-9-19 à 25, P4, P5) :
+    laissé tel quel.
+  - F-2 (MEDIUM) : l'AC8 déclarait un angle mort pour `more-hidden`/`more-capped` puis affirmait « l'AC11 la tient par
+    V19/V20 » — faux, V19/V20 ne visent que les deux clés de l'AC11. Affirmation **retirée** (D5 : sortie par
+    retrait), la phrase dit désormais ce que V19/V20 tiennent et pour quelles clés.
+  - LOW laissés : F-3/F-4 (renvois de ligne `:146` → `:141`, plage `:216-233` → `:234` ; sans effet sur la
+    prescription), F-5 (forme `closes:#1` sans espace, que la commande ne rattrape pas — le message de squash se rédige
+    à la main), F-6 (V23 défini en prose à l'AC11 et cité à T10 et M30, absent d'une liste récapitulative).
+  - Clôture : la remédiation est un retrait de texte et une ligne de statut, aucune ligne de code ni de prescription
+    nouvelle ; P4 → P6 n'ont trouvé que des résidus des remédiations précédentes sur les comptes rendus, aucun défaut
+    de conception.
