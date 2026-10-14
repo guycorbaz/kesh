@@ -274,6 +274,9 @@ Ordre des refus — chacun **sans rien écrire** :
   (validation P2, R8 : la condition 1 se rend sous ce code à l'étape 4.1, le message la nomme) — **un seul code** pour les conditions 1 à 4
   (C-29-8-10) : l'écran n'offre que des candidats, ce refus ne se voit que par une course ou un appel direct ;
   relire la liste. Repli d'`errors.rs` égal mot pour mot au catalogue fr-CH (garde G9 de `textes_coherents.rs`).
+  *(Annoté le 2026-10-14, revue de code P1, B5 : le message nomme aussi le règlement par compte interne ou en solde —
+  « n'est pas un virement sur ce compte bancaire » — et le règlement passé sur un ancien compte du grand livre ; code
+  inchangé, quatre locales et repli.)*
 - **Rejeu** : la tentative est enveloppée par `retry_app_on_deadlock` (comme `post_manual`, `:3779-3782`) ; route
   classée `Traced, SansEcritureAuJournal` au registre `audit_route_registry.rs` (C-29-8-11). Ce registre porte des
   **assertions chiffrées** qui rougiront, à mettre à jour (recompte au T0, valeurs de `fcd2ae75`) :
@@ -940,6 +943,8 @@ assertion `left == right` failed: null
 
 (Un premier run, `298-red-1.log`, avait révélé un défaut du montage — la dévalidation exige `{ version }`, `422` — corrigé
 avant le run rouge retenu.) Vitest, avant la modale et l'API : **4 échoués / 44** sur les trois fichiers
+*(annoté le 2026-10-14, revue de code P1, A6 : lire « 4 échoués, 44 réussis (48) » ; `LinkSettlementModal.test.ts`
+a échoué **à l'import**, si bien que ses tests n'ont pas été vus rouges un à un — `298-vitest-red.log:1018`)*
 (`298-vitest-red.log` : « Failed to resolve import "./LinkSettlementModal.svelte" », « Unable to find an element by:
 [data-testid="link-settlement-button"] » ×2, « getLinkCandidates is not a function », « linkTransaction is not a
 function »). Les deux unitaires de `kesh-db` (`transaction_can_be_linked`, texte unique de la requête) sont nés avec le
@@ -1037,11 +1042,78 @@ code.
 l'application dans ce montage — même constat sur les captures sombres de la 29-6 (`29-6-ligne-cochee-sombre.png`) ; la
 recette sombre réelle reste à faire à la main (aucun jeton de couleur neuf : `border-warning`, `bg-warning/10`,
 `text-destructive`, déjà employés ailleurs).
+*(Annoté le 2026-10-14, revue de code P1, A4 : le diagnostic est faux. **Kesh n'a pas de thème sombre** (C-28-1-7,
+`frontend/src/lib/components/ui/button/button.svelte:18`) : la capture « sombre » rend le thème clair, comme attendu ;
+la modale n'emploie aucune classe `dark:`. Il n'y a **aucune recette sombre manuelle** à faire.)*
 
 **Issues à ouvrir** : aucune. **Actions demandées à l'orchestrateur** : push et PR de `story/29-8` après la revue, avec
 **`closes #670`** dans le titre ou le corps de la PR seulement ; verser les choix C-29-8-30 à 36 au registre de l'epic
 par union ; inscrire au contrôle de pré-release de la v0.13.4 « 0 conseil de rejet » (C-29-8-29), désormais tenu sur le
 manuel, le CHANGELOG et `api-external.md`.
+
+#### Remédiation de la revue de code P1 (2026-10-14/15, Opus 5.5)
+
+Commits `38d5f3fc` (tests), `bc752e39` (code et textes), `d2ab107e` (spec E2E, manuel, API externe ; **dernier commit
+de code**), puis ce compte rendu. Diff de la remédiation : `4b358373..HEAD`.
+
+- **A1 / B4** — table des refus de `docs/api-external.md` réécrite dans l'ordre du code, relu au code : `403` (middleware)
+  → `400` → `404` transaction → pré-vol (archivé, clos, `412`) → `404 NOT_PENDING` (fin du `GET`) ; au `POST`, `409
+  ACCOUNT_LOCKED` → `404` transaction disparue → `404 NOT_PENDING` → `409 NOT_LINKABLE` (condition 1, avant le
+  règlement) → `404` règlement → `409 BANK_ACCOUNT_CLOSED` (garde dans la transaction) → `409 NOT_LINKABLE` (conditions
+  2 à 4) → `409 OPTIMISTIC_LOCK_CONFLICT` (défensif). Le doc-comment de `post_link_transaction`, qui plaçait le
+  verrou en dernier et la condition 1 après le règlement, suit le même ordre.
+- **E1 (relevé au-dessus de LOW par l'orchestrateur)** — **T17-bis** (`t17bis_le_second_rattachement_attend_le_verrou_du_reglement`,
+  C-29-8-41) ; vert au gate ciblé (24/24) ; rejoué sous mutation (`298-mutations-p1.py`, motif unique, `git checkout --`
+  puis `touch`, `298-mutations-p1-result.txt`) :
+
+  | M | Verdict | Tuée par |
+  |---|---|---|
+  | M10 (`FOR UPDATE` de 4.2 (a) retiré) | tuée | **T17-bis** (« le POST n'a jamais attendu le verrou du règlement : rendu 200 … », `298-mut-p1-M10.log:56`), T16 |
+  | M14 (4.4 avant 4.2) | tuée | **T17-bis** (`left: 200, right: 409`, `298-mut-p1-M14.log:36-38`), T11 |
+  | M20 (au `GET`, statut lu avant le pré-vol) — A2 | tuée | T13 (a) (`404 RECONCILIATION_TRANSACTION_NOT_PENDING` au lieu de `409`) |
+  | M21 (pré-vol : clos avant archivé) — A2 | tuée | T20 |
+
+  La propriété que C-29-8-25 renvoyait à la revue (la vue du second rattachement naît après l'attente du verrou de
+  `s`) est **désormais prouvée dynamiquement** par T17-bis ; la motivation de C-29-8-25 est annotée (le privilège
+  `PROCESS` ne concerne qu'`INNODB_TRX`).
+- **A2** — T13 (a) porte un témoin **rapproché** sur le compte clos (`409 BANK_ACCOUNT_CLOSED` au `GET` et au `POST`) ;
+  T20 clôt aussi le compte archivé (`404` d'archivage maintenu).
+- **B1 / E3 / B2** — garde de session de la modale (C-29-8-37) ; **B3** — relecture sur `404 NOT_FOUND` et `404
+  NOT_PENDING` (C-29-8-38) ; **A7** — date de paiement rappelée (C-29-8-39). Huit tests Vitest neufs dans
+  `LinkSettlementModal.test.ts` (9 → 17 exécutés), joués contre l'**ancienne** modale (`298-p1-vitest-red.log`) : **6
+  échoués, 11 réussis (17)** — les deux relectures, la date, et trois des quatre tests de session ; le quatrième
+  (« un chargement périmé ne remplace pas la liste ») passe sur l'ancienne modale, dont la garde de chargement existait :
+  il est prouvé par la mutation MF1. Mutations (`298-mutations-p1-front.py`) : **MF1 à MF6, six tuées sur six** (MF1
+  garde de chargement, MF2 refus périmé, MF3 succès périmé, MF4 remise à zéro de `submitting` par l'effet, MF5
+  `RELIRE_SUR`, MF6 date). Non prouvés : la garde du `finally` et le `loadGen++` de la fermeture (C-29-8-37).
+- **A3** — l'E2E asserte le compteur exact (`/^\s*1\s+opération\(s\) réussie\(s\)\.\s*$/`), l'`href` du lien
+  (`/journal-entries/<écriture du règlement>`) et `matchedEntryId === journalEntryId`.
+- **B5** — message `RECONCILIATION_SETTLEMENT_NOT_LINKABLE` élargi (virement sur ce compte bancaire, compte interne ou
+  solde, ancien compte du grand livre) dans les quatre locales, le repli d'`errors.rs` (G9 vert), le doc-comment de la
+  variante et la table des erreurs d'`api-external.md` ; code inchangé, aucune clé neuve (`sitesTotal` inchangé).
+- **B6** — puce *Rejeter* du manuel (`user-manual.tex:2097`) et paragraphe de l'annulation de rejet d'`api-external.md`
+  : le rattachement figure parmi les gestes offerts. Le paragraphe *Le geste* de `sec:rattacher-reglement` dit la date
+  rappelée et la relecture de la liste. PDF régénéré (`make fr` sous le verrou, 2 passes stables, `298-p1-make-fr.log`),
+  aplati : « éclatée ou rattachée à un règlement déjà enregistré » 1, « Kesh le dit et relit la liste » 1, « Rattacher
+  une transaction à un règlement déjà enregistré » 2, « affectée manuellement ou éclatée » 0, « ?? » 0.
+- **E2** — note ⁹ d'`api-external.md` : le rattachement parmi les gestes qui peuvent rendre `409
+  RECONCILIATION_ACCOUNT_LOCKED`. **E4** — angle mort de l'archivage dans la fenêtre du pré-vol, déclaré (C-29-8-40),
+  sans code. **A4**, **A6** — annotations datées ci-dessus ; **A5** — annotation de C-29-8-35. **B7** — déjà déclaré
+  (C-29-8-31), rien.
+- **Propagation** (valeurs grepées sur le dépôt) : ancien message dans les quatre locales — seule la fiche le garde (AC2,
+  annoté) ; `manuellement ou éclatée` / `rapprochée manuellement ou` — les deux sites réécrits ; `annulation d'un autre
+  rapprochement` — un seul site (`api-external.md:242`), complété ; l'ancien ordre de la table — aucune autre copie.
+
+**Gates au dernier commit de code `d2ab107e`** (arbre propre au départ, `298-p1-gates-head.txt`), bases `kesh_298` et
+`kesh_e2e_298` remises à zéro, sous le verrou :
+- `scripts/test-fast.sh` : **3731 exécutés, 3731 réussis, 6 ignorés** (`298-p1-test-fast.log`) — +1, T17-bis ;
+- frontend (`298-p1-front.log`) : `npm run check` 0 erreur, 29 avertissements (inchangés) ; `lint-i18n-ownership` PASS ;
+  `test:unit` **148 fichiers, 1666 tests**, tous verts (+8) ; `build` vert ;
+- **E2E complet** (`298-p1-e2e.log`, port 3048, recette de `docs/testing.md`) : **288 réussis, 8 échoués, 19 ignorés**.
+  Jugés fichier par fichier contre `docs/testing.md` § *Les échecs attendus* : les **sept KF-029** (`mode-expert.spec.ts:26`,
+  `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et
+  `sidebar-navigation.spec.ts:75` — **KF-052 (#424) ou pollution**, non départagés (rejeu isolé non fait) ; 8 est dans
+  la fourchette 7 à 10. `reconciliation-link.spec.ts` vert, clair et sombre.
 
 ### File List
 
@@ -1076,7 +1148,7 @@ manuel, le CHANGELOG et `api-external.md`.
 - `docs/api-external.md`
 - `CHANGELOG.md`
 - `_bmad-output/implementation-artifacts/29-8-transaction-reglee-ailleurs.md`,
-  `epic-29-choix-autonomes-29-8.md`, `29-8-review-prompt-p1.md` (neuf), `sprint-status.yaml`,
+  `epic-29-choix-autonomes-29-8.md`, `29-8-review-prompt-p1.md` (neuf), `29-8-review-prompt-p2-ciblee.md` (neuf, remédiation P1), `sprint-status.yaml`,
   `_bmad-output/planning-artifacts/epic-29-preparer-cloture.md` (rebase)
 
 ## Change Log
@@ -1196,3 +1268,26 @@ manuel, le CHANGELOG et `api-external.md`.
   (15 tuées, 6 survivantes déclarées) ; choix C-29-8-30 à 36 ; gates au HEAD rebasé : test-fast 3730/3730, Vitest
   1658/1658, E2E 289 réussis + les 7 KF-029. Détail au Dev Agent Record. Revue de code P1 à lancer :
   `29-8-review-prompt-p1.md` (lentilles B, E, A).
+- **2026-10-14/15** — **Revue de code P1** (prompt `29-8-review-prompt-p1.md`, trois lentilles, contexte frais,
+  lecture seule) : lentille B **0 CRITICAL / 0 HIGH / 0 MEDIUM / 7 LOW** (B1 à B7), lentille E **0 / 0 / 0 / 4** (E1 à
+  E4), lentille A **0 / 0 / 1 / 6** (A1 MEDIUM, A2 à A7). Recoupements : A1 ⊃ B4 (ordre des refus), B1 = E3 (résultat
+  d'une autre transaction appliqué à la modale), B7 ≈ E4 (a) (déjà C-29-8-31) ; 18 findings rapportés (7 + 4 + 7), 15 distincts.
+  **E1 relevé au-dessus de LOW par l'orchestrateur** (l'invariant « un règlement ne se rattache qu'une fois » n'a ni
+  contrainte `UNIQUE` ni test qui rougisse). Remédiation Opus 5.5, **décisions de l'orchestrateur consignées comme
+  telles** (C-29-8-37, 38, 41) ; **tous remédiés, aucun refusé** ; B7 déjà déclaré, rien :
+  - **A1 / B4** — table des refus réécrite dans l'ordre réel du code, doc-comment de `post_link_transaction` aligné.
+  - **E1** — T17-bis, déterministe (sonde `PROCESSLIST`) ; rouge sous M10 et sous M14, vert sinon ; motivation de
+    C-29-8-25 annotée.
+  - **B1 / E3 / B2** — garde de session de la modale, au chargement et à la soumission, quatre tests ; **B3** —
+    relecture sur `404 NOT_FOUND` et `NOT_PENDING`, deux tests et un témoin ; **A7** — date de paiement rappelée, un
+    test ; mutations MF1 à MF6 tuées.
+  - **A2** — T13 (a) et T20 tiennent l'ordre du pré-vol ; M20 et M21 tuées. **A3** — l'E2E compare le compteur exact et
+    l'écriture du règlement.
+  - **LOW de texte** : B5 (message `NOT_LINKABLE`, quatre locales et repli) ; B6 (manuel `:2097`, PDF régénéré et
+    contrôlé aplati ; API externe) ; E2 (note ⁹) ; E4 (C-29-8-40, sans code) ; A4, A5, A6 (annotations datées, les
+    entrées passées ne sont pas réécrites).
+  - Gates au dernier commit de code `d2ab107e` : test-fast 3731/3731 (6 ignorés), Vitest 1666/1666, E2E 288 réussis,
+    8 échoués (les 7 KF-029 et `sidebar-navigation.spec.ts:75`, KF-052 ou pollution), 19 ignorés. Détail au Dev Agent
+    Record, § *Remédiation de la revue de code P1*.
+  - Choix C-29-8-37 à 41 ajoutés (41 au total). Passe suivante : **P2 ciblée**, une lentille sur `4b358373..HEAD`,
+    prompt `29-8-review-prompt-p2-ciblee.md`.

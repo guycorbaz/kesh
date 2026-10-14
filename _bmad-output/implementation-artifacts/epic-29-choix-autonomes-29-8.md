@@ -283,6 +283,11 @@ trois premiers sont des **décisions de l'orchestrateur** (« retirer plutôt qu
   une autre forme d'observation, que l'orchestrateur a exclue ; garder `INNODB_TRX` (rouge permanent sur le poste de
   dev).
 - **Réversible** : oui (une observation peut être ajoutée par une story ultérieure).
+  *Annoté le 2026-10-14 (revue de code P1, E1, relevé au-dessus de LOW par l'orchestrateur) : la motivation du
+  contexte est inexacte — le privilège `PROCESS` ne concerne qu'`information_schema.INNODB_TRX` ; la sonde
+  `attendre_une_requete_en_cours` lit `PROCESSLIST`, que l'utilisateur `kesh` voit pour ses propres connexions (T13 (b)
+  l'employait déjà). La décision est **levée** pour T17 : un test déterministe T17-bis est ajouté (C-29-8-41) ; T16 et
+  T17 restent tels quels.*
 
 ### C-29-8-26 — T15 ne clôt pas le compte ; la clôture est assertée par T1 *(décision de l'orchestrateur)*
 
@@ -407,6 +412,8 @@ trois premiers sont des **décisions de l'orchestrateur** (« retirer plutôt qu
 - **Retenu** : « quatorze », et une phrase neuve pour la route, « aucune preuve dynamique » ; l'historique « Treize : dix
   avant la revue de code P1 de la 29-4a, plus ces trois » est gardé tel quel. Les quatre assertions chiffrées recomptées
   depuis le registre : 119, 113, 95, 122 et 122.
+  *Annoté le 2026-10-14 (revue de code P1, A5) : lire « les **cinq** assertions chiffrées » — cinq valeurs suivent,
+  comme le disent la fiche (AC2, T3) et le code.*
 - **Réversible** : oui.
 
 ### C-29-8-36 — `FENETRE` : `link_in_tx` entre `Fermee`, `G` passe à onze
@@ -418,4 +425,72 @@ trois premiers sont des **décisions de l'orchestrateur** (« retirer plutôt qu
   l'enum) ; l'anti-muet `G` passe de 10 à 11. *Au rebase sur la 29-4b (`12c64c39`)* : la réserve « sous réserve de la
   29-4b » de la première rédaction est retirée, comme la 29-4b l'a retirée de l'annulation de rejet ; son décompte de
   sept revérifications est conservé.
+- **Réversible** : oui.
+
+## Choix de la remédiation de la revue de code P1 (2026-10-14, Opus 5.5)
+
+*Lentilles B (0/0/0/7), E (0/0/0/4), A (0/0/1/6). E1 relevé au-dessus de LOW par l'orchestrateur ; les décisions 1 à 5
+du prompt de remédiation sont de l'orchestrateur, consignées comme telles.*
+
+### C-29-8-37 — Garde de session de la modale *(décision de l'orchestrateur, B1/E3/B2)*
+
+- **Contexte** : la modale se ferme par Échap ou par le fond pendant l'envoi (seuls les boutons sont grisés) ; une
+  réponse d'une transaction précédente s'appliquait alors à la modale rouverte (message, relecture de la liste d'une
+  autre transaction, fermeture sur succès). La garde de génération du chargement existait, sans test.
+- **Retenu** : un compteur `session`, incrémenté par l'effet à chaque ouverture, fermeture ou changement de
+  transaction ; `handleConfirm` le capture et, s'il a changé, n'écrit ni message ni relecture ni `submitting` ; l'effet
+  remet `submitting` à faux et, à la fermeture, périme le chargement en vol (`loadGen++`). **Un succès périmé prévient
+  le parent seulement si aucune modale n'est ouverte** (`if (!open) onSuccess()`) : le rattachement a eu lieu, la liste
+  doit être relue ; une modale rouverte entre-temps n'est pas fermée. Si elle l'a été sur la **même** transaction, son
+  chargement rendra « déjà rapprochée » : la liste du parent ne sera relue qu'au geste suivant — accepté, la fenêtre
+  est celle d'un aller-retour HTTP. Quatre tests Vitest de session ; mutations MF1 à MF4 tuées.
+- **Écartées** : bloquer la fermeture pendant l'envoi (contredit la demande d'une garde ; la modale doit rester
+  fermable) ; ignorer aussi le succès périmé modale fermée (laisserait la ligne rattachée dans la liste).
+- **Non prouvé** : la garde du `finally` (`if (mySession === session) submitting = false`) et le `loadGen++` de la
+  fermeture n'ont pas de mutation tuée propre (MF4 couvre la remise à zéro par l'effet).
+- **Réversible** : oui.
+
+### C-29-8-38 — La modale relit sa liste sur les trois refus d'une course *(décision de l'orchestrateur, B3)*
+
+- **Contexte** : seul `409 RECONCILIATION_SETTLEMENT_NOT_LINKABLE` relisait ; un règlement annulé depuis la fiche rend
+  `404 NOT_FOUND`, une transaction rapprochée ailleurs `404 RECONCILIATION_TRANSACTION_NOT_PENDING`.
+- **Retenu** : l'ensemble `RELIRE_SUR` des trois codes ; le message du refus reste affiché ; sur `NOT_PENDING`, le
+  chargement relu rend lui-même le refus (`link-load-error`), *Rattacher* grisé. `NOT_FOUND` relit aussi quand c'est la
+  transaction qui a disparu avec son import : le chargement rend alors `404`, sans autre effet. Mutation MF5 tuée.
+- **Écartées** : fermer la modale et recharger le parent sur `NOT_PENDING` (proposé par B3 en variante ; hors de la
+  décision de l'orchestrateur).
+- **Réversible** : oui.
+
+### C-29-8-39 — Le rappel de la transaction montre sa date de paiement (A7)
+
+- **Contexte** : la modale affichait `bookingDate`, alors que `daysApart` se compte depuis la date de paiement (valeur,
+  à défaut comptabilisation, AC1).
+- **Retenu**, au moindre coût : `valueDate ?? bookingDate` — un seul champ, déjà rendu par `GET /proposals` ; le manuel
+  le dit. Mutation MF6 tuée.
+- **Écartées** : afficher les deux dates (une colonne de plus pour un écart rare, et deux dates à distinguer) ; une clé
+  i18n « Date de paiement » (le rappel n'a pas de libellé aujourd'hui).
+- **Réversible** : oui.
+
+### C-29-8-40 — Angle mort déclaré : l'archivage dans la fenêtre du pré-vol (E4)
+
+- **Contexte** : `link_preflight` refuse un compte **archivé**, mais la garde dans la transaction
+  (`ensure_open_in_tx`) ne lit que `closed_on`, et l'archivage ne refuse pas les transactions en attente. Un archivage
+  commité entre le pré-vol et la transaction laisse le rattachement aboutir sur un compte archivé.
+- **Retenu** : **aucun code** ; angle mort déclaré ici et au Dev Agent Record. L'effet est inoffensif : la transaction
+  passe rapprochée, sans écriture, sur un compte qu'un archivage aurait de toute façon laissé avec cette transaction.
+  La fenêtre du lien du grand livre (C-29-8-31) reste celle qu'elle était.
+- **Écartées** : lire `archived` dans `ensure_open_in_tx` (change une fonction partagée par sept revérifications pour
+  un état sans effet comptable).
+- **Réversible** : oui.
+
+### C-29-8-41 — T17-bis : l'entrelacement du double rattachement, forcé et observé *(décision de l'orchestrateur, E1)*
+
+- **Contexte** : l'invariant « un règlement ne se rattache qu'une fois » n'a pas de contrainte `UNIQUE`, et ni T16 ni
+  T17 ne rougissaient à coup sûr si sa garde sautait (M10 tuée par T16 sur un run, M14 par T11 pour une autre raison).
+- **Retenu** : T17-bis — une connexion `tenue` prend `invoice_settlements … FOR UPDATE` ; le `POST` de `t2` est vu en
+  attente par `attendre_une_requete_en_cours(&pool, &["invoice_settlements", "FOR UPDATE"], …)` ; `tenue` lie `t1` à
+  l'écriture du règlement et commite ; le `POST` doit rendre `409 NOT_LINKABLE`, un seul lien. Vu rouge sous M10 (« le
+  POST n'a jamais attendu le verrou du règlement : rendu 200 ») et sous M14 (`200` au lieu de `409`), vert sinon.
+- **Écartées** : une contrainte `UNIQUE` sur `matched_entry_id` (une migration, hors du périmètre d'une remédiation et
+  de la décision de l'orchestrateur, qui demande un test).
 - **Réversible** : oui.
