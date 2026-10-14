@@ -695,8 +695,9 @@ s'annule~: c'est ce que fait la contre-passation, datée du premier jour de cet 
     \item Saisissez l'écriture de régularisation au \textbf{dernier jour} de l'exercice qui se
           termine --- par exemple, au débit de 1300 et au crédit du compte de charge.
     \item Sur sa fiche, cliquez \textbf{Contre-passer au début de l'exercice suivant}. La
-          confirmation nomme la date et l'exercice («~La contre-passation sera datée du
-          01.01.2027, dans l'exercice «~Exercice 2027~».~»).
+          confirmation nomme l'écriture, la date et l'exercice («~La contre-passation de
+          l'écriture n°~42 «~Loyer de janvier payé d'avance~» sera datée du 01.01.2027, dans
+          l'exercice «~Exercice 2027~».~»)~: relisez-la avant de confirmer.
     \item Kesh crée l'écriture inverse, datée du premier jour de l'exercice qui suit celui de
           l'écriture --- même s'il ne commence pas le lendemain ---, liée à l'origine et
           lettrée avec elle comme toute contre-passation (\S\ref{sec:contre-passation}). Au
@@ -706,9 +707,15 @@ s'annule~: c'est ce que fait la contre-passation, datée du premier jour de cet 
 
 \textbf{Ce que Kesh exige.} L'exercice suivant doit être \textbf{créé et ouvert}~: sinon le
 bouton n'est pas offert, et la fiche dit pourquoi à sa place («~créez d'abord l'exercice
-suivant~», ou «~l'exercice suivant est clôturé~»). Son premier jour ne doit pas être dans la
+suivant~», ou «~l'exercice suivant est clôturé~»). Ce motif s'affiche sous \textbf{toute}
+écriture contre-passable tant que l'exercice suivant n'existe pas --- c'est-à-dire, sur
+l'exercice en cours, presque toute l'année~: ce n'est pas un avertissement, seulement
+l'explication du bouton absent. Son premier jour ne doit pas être dans la
 \textbf{période verrouillée} (\S\ref{sec:verrou-periode}), et aucun exercice clôturé ne doit le
-suivre~: ces deux refus viennent à l'enregistrement, avec un message qui dit quoi faire. Les
+suivre~: ces deux refus viennent à l'enregistrement, avec un message qui dit quoi faire.
+\textbf{Le bouton, lui, reste offert}~: pour l'afficher, la fiche ne lit pas la date du verrou
+de période, si bien qu'un refus pour ce motif se répète, à chaque clic, tant que le verrou
+n'est pas reculé. Les
 autres conditions sont celles de la contre-passation~: une écriture de pièce, déjà contre-passée
 ou dont un compte est archivé ne se contre-passe pas plus ainsi.
 
@@ -720,7 +727,7 @@ une \textbf{écriture complémentaire}, passée à la main.
 Rien ne distingue, dans Kesh, une écriture de régularisation d'une autre écriture. Une
 transitoire que vous avez oublié de contre-passer n'est signalée nulle part --- ni à la
 clôture, ni par les contrôles préalables (\S\ref{sec:preparer-cloture}). Contre-passez-les au
-moment où vous les saisissez~: c'est possible dès que l'exercice suivant existe.
+moment où vous les saisissez~: c'est possible dès que l'exercice suivant est créé et ouvert.
 \end{keshwarning}
 
 \subsection{Numérotation}
