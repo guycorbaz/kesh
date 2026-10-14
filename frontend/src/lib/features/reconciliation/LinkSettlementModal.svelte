@@ -91,7 +91,8 @@
 </script>
 
 <Dialog.Root {open} {onOpenChange}>
-	<Dialog.Content data-testid="link-settlement-modal">
+	<!-- Six colonnes : la largeur par défaut (`sm:max-w-sm`) les écrasait (recette visuelle). -->
+	<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-3xl" data-testid="link-settlement-modal">
 		<Dialog.Header>
 			<Dialog.Title>
 				{i18nMsg('reconciliation-link-modal-title', 'Rattacher à un règlement déjà enregistré')}
@@ -103,7 +104,7 @@
 				<span data-testid="link-tx-summary">
 					{proposal.transaction.bookingDate} — {proposal.transaction.amount}
 					{proposal.transaction.currency}{#if proposal.transaction.counterpartyName}
-						— {proposal.transaction.counterpartyName}{/if}
+						{' '}— {proposal.transaction.counterpartyName}{/if}
 				</span>
 			</div>
 
@@ -134,7 +135,10 @@
 				</p>
 			{:else}
 				<div class="mt-2 max-h-80 overflow-x-auto overflow-y-auto">
-					<table class="w-full table-auto text-sm" data-testid="link-candidates-table">
+					<table
+						class="w-full table-auto text-sm [&_td]:px-2 [&_td]:py-1 [&_th]:whitespace-nowrap [&_th]:px-2"
+						data-testid="link-candidates-table"
+					>
 						<thead>
 							<tr>
 								<th class="text-left"><span class="sr-only">{i18nMsg('reconciliation-link-choose', 'Choisir ce règlement')}</span></th>
@@ -161,9 +165,9 @@
 											data-settlement-id={c.settlementId}
 										/>
 									</td>
-									<td>{c.invoiceNumber ?? `#${c.invoiceId}`}</td>
+									<td class="whitespace-nowrap">{c.invoiceNumber ?? `#${c.invoiceId}`}</td>
 									<td>{c.contactName}</td>
-									<td>{c.settledOn}</td>
+									<td class="whitespace-nowrap">{c.settledOn}</td>
 									<td class="text-right">{c.amount}</td>
 									<td class="text-right">{c.gap}</td>
 									<td class="text-right">{c.daysApart}</td>
