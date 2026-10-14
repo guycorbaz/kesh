@@ -2,13 +2,15 @@
 
 ## Status
 
-**review** — développement fait le 2026-10-14 (Opus 5.5 ; Dev Agent Record ; revue de code P1 à lancer, `29-3-review-prompt-p1.md`, Sonnet, B/E/A). Fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `16eeed21`
+**done** — développement fait le 2026-10-14 (Opus 5.5 ; Dev Agent Record) ; **revue de code P1 close le 2026-10-14**
+(Sonnet, B 0/0/0/3, E 0/0/0/4, A 0/0/0/3 ; LOW utiles remédiés, aucune ligne de production touchée ; Change Log).
+Fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `16eeed21`
 (kickoff de l'Epic 29), branche `story/29-3`, worktree `/home/gcorbaz/devel/kesh-29-3`. **Validation P1 remédiée**
 le 2026-10-14 (rapports R 0/1/5/7, F 0/0/5/7 ; règle des rangs refondue par décision de l'orchestrateur,
 C-29-3-11) ; **validation P2 remédiée** le 2026-10-14 (Opus, R 0/0/3/6, F 0/0/1/8) ; **passe ciblée P3 remédiée** le
 2026-10-14 (Haiku, une lentille : 0/0/3/6) — **validation close, dev à lancer**. Choix consignés au
-registre propre à la story, `epic-29-choix-autonomes-29-3.md`, **C-29-3-1 à C-29-3-18** (à verser par union au
-registre de l'epic). 9 AC. PR : **`closes #527`** — dans le titre ou le corps de la PR **seulement**, jamais dans un
+registre propre à la story, `epic-29-choix-autonomes-29-3.md`, **C-29-3-1 à C-29-3-18** (*versé* le 2026-10-14 au
+registre de l'epic, `epic-29-choix-autonomes.md`, avec C-29-3-19 à 27 ; le fichier propre est retiré). 9 AC. PR : **`closes #527`** — dans le titre ou le corps de la PR **seulement**, jamais dans un
 message de commit (B4 de la rétrospective 28).
 
 ⚠️ **Sérialisée derrière la 29-2** (#529), qui touche les mêmes fichiers (§ *Zones partagées avec la 29-2*). Le
@@ -563,6 +565,11 @@ inchangés. Aucun LOW de validation n'était laissé ouvert à T0 (passe ciblée
 
 **Tests rouges d'abord** (commit `fdc859d7`, avant toute ligne de production) :
 
+*(Annotation du 2026-10-14, revue P1 A3 : les sorties « rouges » ci-dessous ont été **relevées en terminal** à
+l'exécution et recopiées ici ; elles ne sont **dans aucun** des journaux `293-*.log` (qui datent du gate complet,
+après le code). Elles ne se rejouent donc que par `git checkout fdc859d7` : le commit existe, la sortie brute n'a pas
+été conservée.)*
+
 - AC2 — rouges par compilation :
   ```
   6 error[E0425]: cannot find function `candidate_rank` in this scope
@@ -640,10 +647,36 @@ d'édition ; toutes les autres modifications de code l'ont été par l'outil d'�
 
 **Choix ajoutés** : C-29-3-19 à C-29-3-26 (26 au total, `grep -cE '^#{3,4} C-29-3-'`).
 
-**Remarques pour l'orchestrateur** : (1) `reconciliation-amount-due.spec.ts` croit départager par le contact une
+**Remarques pour l'orchestrateur** *(1 tranchée le 2026-10-14 : commentaire réécrit, C-29-3-27)* : (1) `reconciliation-amount-due.spec.ts` croit départager par le contact une
 contrepartie qui ne porte pas le nom enregistré (« Pia <nom> ») — le départage annoncé n'a pas lieu (C-29-3-21) ;
 P4 au plus, pas d'issue ouverte par l'agent. (2) À signaler sur #527 : la prémisse « le manuel annonce la meilleure »
 était déjà périmée (fiche, § *Prémisse du manuel*).
+
+**Annotation datée du 2026-10-14 — après la revue de code P1** (gates réexécutés au dernier commit de code
+`b1dee315`, branche `story/29-3`, `kesh_293` remise à zéro puis migrée et seedée, `kesh_e2e_293` reconstruite, tout
+sous verrou ; journaux `kesh-gate-logs/293-p1b-*.log` et `293-p1c-*.log`) :
+
+- `scripts/test-fast.sh` : **3624 tests run: 3624 passed, 6 skipped** (exécuté au commit `786dc0a0`, antérieur à
+  `b1dee315` ; les deux commits suivants ne touchent que `frontend/tests/e2e/`, aucun fichier Rust : le résultat
+  Rust vaut pour `b1dee315`, non rejoué).
+- Frontend au commit `b1dee315` : `npm run check` 0 erreur, 29 avertissements ; `lint-i18n-ownership` PASS ;
+  `npm run test:unit` **146 fichiers, 1617 tests** ; `npm run build` vert.
+- **E2E complet au commit `b1dee315`** : **282 passés, 7 échoués, 19 ignorés** — les sept échecs sont les sept
+  KF-029 de `docs/testing.md` § *Les échecs attendus* (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`,
+  `onboarding:57`, `:77`, `:150`), aucun autre ; `reconciliation-priority` (clair, sombre) et
+  `reconciliation-amount-due` passés, aucun « nettoyage incomplet » rapporté.
+- **Un run intermédiaire (`786dc0a0`, 280 passés, 9 échoués) a rougi les deux tests de `reconciliation-priority`** :
+  le nettoyage, désormais à statut vérifié, a révélé que `DELETE /api/v1/bank-imports/{id}` rend **409**
+  (`BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS`) après un parcours réussi — l'**ancienne suppression de l'import, dont
+  le statut n'était pas lu, ne supprimait donc rien** dans ce cas. Le 409 est maintenant toléré (commentaire dans le
+  spec) ; les autres statuts échouent. Aucune pollution nouvelle : la facture réglée et l'import rapproché restaient
+  déjà.
+- **Chemin de secours du `finally` (règlement de 972,89 si la facture reste due) : toujours non exercé** — les tests
+  passent sans y entrer ; non rejoué en faisant échouer volontairement le spec (A2/E3).
+- **Sources des « rouges d'abord » (A3)** : relevés en terminal, absents des journaux `293-*.log` (cf. annotation en
+  tête de la section).
+- Écart de méthode, déclaré : le correctif du `finally` du spec a été inséré par un script (un `python3 -`), puis
+  complété par l'outil d'édition ; fichier de test, aucune ligne de production.
 
 ### File List
 
@@ -764,3 +797,19 @@ P4 au plus, pas d'issue ouverte par l'agent. (2) À signaler sur #527 : la prém
   Mutations : 13 jeux, 11 tuées, M1 et M1b équivalentes comme déclaré ; M9b survivante au premier run, tuée par un
   test ajouté (C-29-3-22). Choix C-29-3-19 à 26. Statut `review` ; revue P1 : `29-3-review-prompt-p1.md` (Sonnet,
   B/E/A).
+
+- 2026-10-14 — **Revue de code P1** (Sonnet, trois lentilles en contexte frais, lecture seule ; rapports
+  `kesh-gate-logs/29-3-review-p1-{B,E,A}.md`). **Trend : B 0 CRITICAL / 0 HIGH / 0 MEDIUM / 3 LOW ; E 0 / 0 / 0 / 4 ;
+  A 0 / 0 / 0 / 3 — aucun MEDIUM : revue close à la P1.** Remédiation (Opus/Sonnet, **aucune ligne de code de
+  production touchée** : un spec E2E, un en-tête de spec, des comptes rendus) :
+  - **B1 = E3 = A2** : `finally` de `reconciliation-priority.spec.ts` réécrit — chaque nettoyage dans son propre
+    `try`, statuts vérifiés, erreur d'origine jamais masquée ; chemin de secours toujours non exercé (dit). Le statut
+    vérifié a révélé un 409 attendu sur la suppression de l'import (`b1dee315`).
+  - **B2** : phrase de l'en-tête du spec corrigée. **E4** : limite des 100 propositions écrite à l'en-tête.
+    **A3** : sources des « rouges d'abord » dites (terminal, pas de journal).
+  - **Défaut voisin** (`reconciliation-amount-due.spec.ts`) : commentaire réécrit, montage inchangé (C-29-3-27).
+  - **A1, E1, E2, B3** : annotations datées au registre (C-29-3-8, 12, 15), texte d'écran inchangé (rang 2
+    inatteignable ; E1 et E2 écrits comme limites).
+  - Registre de la story **versé** au registre de l'epic (`epic-29-choix-autonomes.md`), fichier propre retiré ;
+    **27 choix** (C-29-3-1 à 27, `grep -cE '^#{3,4} C-29-3-'` sur la section versée).
+  - Gates finaux : voir l'annotation du Dev Agent Record (test-fast 3624, Vitest 1617, E2E 282 + 7 KF-029).
