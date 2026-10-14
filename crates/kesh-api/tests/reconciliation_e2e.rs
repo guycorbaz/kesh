@@ -2791,7 +2791,11 @@ async fn post_accept_rejects_payment_date_outside_window(pool: MySqlPool) {
 // ============================================================
 // Story 28-7 (#548) — la proposition et l'acceptation partagent la fenêtre
 // de dates `InvoiceDateWindow` : `D − 30 ≤ F ≤ D + 1`, `D` étant la date de
-// valeur de la transaction (à défaut sa date de comptabilisation).
+// valeur de la transaction (à défaut sa date de comptabilisation). Depuis la
+// Story 29-2 (#529), la borne basse porte sur la date d'ancrage `A` —
+// `D − 30 ≤ A`, `A` la plus tardive de la date, de l'échéance et du dernier
+// rappel non annulé — et la borne haute reste sur `F` ; pour une facture
+// sans échéance ni rappel, comme celles de cette section, `A = F`.
 // ============================================================
 
 /// Les couples `(transaction, facture)` que `GET /proposals` propose, toutes

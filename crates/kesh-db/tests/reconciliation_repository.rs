@@ -255,7 +255,8 @@ const HASH_X: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123
 /// AC #38, réécrit par la Story 28-7 (#548) — la fenêtre de dates est celle
 /// de l'acceptation, [`InvoiceDateWindow`] : une facture datée de `D − 30`
 /// à `D + 1` est candidate, `D` étant la date de paiement ; `D − 31` (paiement
-/// plus de 30 jours après la facture) et `D + 2` (paiement plus d'un jour
+/// plus de 30 jours après la facture — ici sa date d'ancrage, cf. ci-dessous)
+/// et `D + 2` (paiement plus d'un jour
 /// avant la facture) ne le sont pas. Les deux bornes, de part et d'autre.
 /// Les factures n'ont ni échéance ni rappel : leur date d'ancrage est leur
 /// date (Story 29-2 ; l'ancre est éprouvée par
@@ -1229,6 +1230,8 @@ struct AnchorCase {
 /// l'acceptation est assertée pour **chaque** cas, candidat ou non : c'est la
 /// seule assertion qui voie l'ancre de g, refusée dans les deux formes (une
 /// ancre qui suivrait l'échéance antérieure à la date — mutation M14bis).
+/// Le cas l (échéance et rappel antérieurs à la date) tue M14 dans les deux
+/// formes : ancre scalaire et liste.
 #[sqlx::test(migrations = "./test-schema")]
 async fn the_anchor_is_the_latest_of_date_due_date_and_last_reminder(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
@@ -1326,6 +1329,20 @@ async fn the_anchor_is_the_latest_of_date_due_date_and_last_reminder(pool: MySql
             due: Some(15),
             reminders: &[],
             anchor: 15,
+            candidate: true,
+        },
+        // Revue de code P1 (E1, A2) : échéance **et** rappel non annulé tous
+        // deux antérieurs à la date de la facture — l'ancre est la date. Seul
+        // cas où le `i.date` du premier terme de l'ancre est seul à porter
+        // `F` : sans lui (mutation M14), l'ancre tomberait à `D − 50`, hors
+        // fenêtre. Jeu hors API (une échéance antérieure à la date est refusée
+        // par `routes/invoices.rs`), posé par fixture SQL comme g.
+        AnchorCase {
+            name: "l",
+            invoice: -25,
+            due: Some(-50),
+            reminders: &[(-60, false)],
+            anchor: -25,
             candidate: true,
         },
     ];

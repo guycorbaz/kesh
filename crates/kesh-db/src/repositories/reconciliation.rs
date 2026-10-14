@@ -116,6 +116,15 @@ pub const INVOICE_WINDOW_DAYS_AFTER_INVOICE: i64 = 30;
 /// filtrée par `i.company_id = ?`. Alias `rmd`, distinct de `lt`, `cnt`,
 /// `cl_ttc` et `st`, avec lesquels il cohabite dans la proposition.
 ///
+/// ⚠️ **Coût, angle mort écrit (C-29-2-17)** : le scope porte la justesse,
+/// pas le coût. Sans `company_id` dans le sous-`SELECT`, la dérivée peut
+/// agréger les rappels de **toutes** les sociétés, et la proposition la lit
+/// une fois par transaction en attente. MariaDB peut pousser la jointure
+/// dans la dérivée (`split_materialized`, index
+/// `idx_invoice_reminders_invoice`), sans que cela ait été mesuré ici. Sans
+/// effet à l'échelle d'une installation à une société ; un filtre par
+/// société demanderait un paramètre lié de plus dans les deux lecteurs.
+///
 /// ⚠️ **Site jumeau** de la notion « dernier rappel non annulé » :
 /// `repositories::dunning_eligibility` (`MAX(sent_at) AS last_reminder_at …
 /// cancelled_at IS NULL GROUP BY invoice_id`). Qui change la notion
@@ -148,10 +157,13 @@ macro_rules! invoice_payment_anchor_join_sql {
 /// facture sans échéance ou sans rappel disparaîtrait des candidates. Le
 /// `GREATEST` sur `i.date` couvre une échéance antérieure à la date
 /// (données d'avant #245, la garde de l'API ne portant que sur une paire
-/// modifiée). Aujourd'hui, le repli `i.date` du terme du rappel la couvre
-/// aussi (retirer `i.date` du seul premier terme est une mutation
-/// équivalente, M14) ; le premier terme la porte quand même, parce qu'il
-/// doit valoir l'exigibilité à lui seul.
+/// modifiée). Le repli `i.date` du terme du rappel ne la couvre **pas** à
+/// lui seul : il ne vaut `F` que sans rappel. Une échéance **et** un rappel
+/// non annulé tous deux antérieurs à la date (rien n'interdit un rappel
+/// manuel daté avant la facture) rendraient, sans le `i.date` du premier
+/// terme, une ancre antérieure à `F` — la mutation M14, tuée par le cas l
+/// de `the_anchor_is_the_latest_of_date_due_date_and_last_reminder`. Le
+/// premier terme doit donc valoir l'exigibilité à lui seul.
 ///
 /// `DATE(rmd.last_sent_at)` : `sent_at` est un `DATETIME(6)`, saisi (rappel
 /// manuel) ou UTC (rappel envoyé par e-mail) ; l'écart de fuseau d'un jour
