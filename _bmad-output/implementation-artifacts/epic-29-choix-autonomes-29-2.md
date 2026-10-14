@@ -74,10 +74,14 @@ Fiche : `29-2-paiement-tardif.md`.*
 
 ### C-29-2-7 — Ordre, `LIMIT 50` et départage inchangés ; leur coût accru est transmis à la 29-3
 
-- **Contexte** : l'ancre fait entrer des factures échues et relancées parmi les candidates ; à score égal,
+- **Contexte** : l'ancre fait entrer parmi les candidates des factures échues, relancées, **ou pas encore échues** —
+  dont des factures anciennes à échéance lointaine, candidates sans limite de temps (C-29-2-11) ; à score égal,
   `propose_matches` place la plus ancienne (`invoice_id ASC`) en tête, seule affichée.
 - **Retenu** : ne rien changer à l'ordre ici (29-3, #527, sérialisée après) ; demander à l'orchestrateur de
-  commenter #527 avec le critère de départage par proximité de la date d'ancrage à la date de paiement.
+  commenter #527 avec le critère de départage par proximité de la date d'ancrage à la date de paiement **et le cas
+  de test** : deux factures de même reste dû, l'une ancienne à échéance lointaine, l'autre récente, la récente en
+  tête. *(Complété le 2026-10-14, validation P1, F3 : la première rédaction ne nommait que les factures « échues et
+  relancées ».)*
 - **Écartée** : changer le départage dans la 29-2 (empiète sur #527, même fichier, story suivante).
 - **Réversible** : oui.
 
@@ -91,15 +95,53 @@ Fiche : `29-2-paiement-tardif.md`.*
 - **Écartée** : ouvrir une issue séparée (la phrase vit dans les paragraphes que la story réécrit).
 - **Réversible** : oui.
 
-### C-29-2-9 — Le reliquat (plus de 30 jours après l'échéance, sans rappel) : demande d'évolution à ouvrir
+### C-29-2-9 — Le reliquat (plus de 30 jours après l'échéance, sans rappel) : couvert par #666
 
 - **Contexte** : après la story, un paiement reçu plus de 30 jours après l'échéance et sans rappel depuis 30 jours
   n'est toujours ni proposé ni acceptable à la réconciliation ; la voie 2 de #529 (choisir une facture ouverte à
   l'écran) le couvrirait.
-- **Retenu** : reliquat écrit au manuel avec son contournement complet (C-29-2-8) ; **demande** à l'orchestrateur
-  d'ouvrir une issue `enhancement` « choisir à la main une facture ouverte pour une transaction créditrice »
-  (référence #529), pour qu'aucune limite ne reste sans issue (leçon § 4.3 de la rétrospective 28).
+- **Retenu** : reliquat écrit au manuel avec son contournement complet (C-29-2-8) ; il est couvert par
+  [#666] (« Choisir à la main une facture ouverte pour une transaction bancaire créditrice », `enhancement`, ouverte,
+  « Refs #529 »), pour qu'aucune limite ne reste sans issue (leçon § 4.3 de la rétrospective 28). *(Mis à jour le
+  2026-10-14, validation P1, R6/F6 : la première rédaction demandait l'ouverture de l'issue, faite depuis.)*
 - **Écartée** : l'intégrer ici (C-29-2-2).
 - **Réversible** : oui.
 
+### C-29-2-10 — `CAST(… AS DATE)` autour de l'ancre ; `DATE()` retiré déclaré mutation équivalente
+
+- **Contexte** : validation P1, F4. Aucun `GREATEST` sur des dates n'existe au dépôt ; le type rendu (et son décodage
+  `NaiveDate` par sqlx) n'aurait été établi qu'à la première exécution.
+- **Retenu** : `INVOICE_PAYMENT_ANCHOR_SQL` = `CAST(GREATEST(…) AS DATE)` — le type devient une garantie. Retirer
+  `DATE()` autour de `rmd.last_sent_at` est alors une mutation **équivalente** (M12), déclarée comme telle ; retirer
+  le `CAST` (M13) est équivalente ou tuée selon ce que MariaDB rend, constaté au Dev Agent Record.
+- **Écartée** : se fier au comportement constaté de `GREATEST` sans `CAST` (une constatation, non une garantie).
+- **Réversible** : oui.
+
+### C-29-2-11 — Le faux rattachement par une facture non échue ou à échéance lointaine : angle mort écrit
+
+- **Contexte** : validation P1, F3. La justification d'origine (« l'ancre borne le risque à une facture vivante,
+  échue ou relancée depuis moins de 30 jours ») était fausse pour les factures **non échues** : `A = E` grand, la
+  facture reste candidate de `F − 1` à `E + 30` ; `due_date` n'a pas de borne haute (`routes/invoices.rs:765` ne
+  garde que `due_date < date`), une échéance à un an ou une coquille à 2099 la rend candidate sans limite. À score
+  égal, la plus ancienne passe devant (`matching.rs:96-103`, `candidates[0]` seul affiché).
+- **Retenu** : la phrase de la fiche est réécrite (« échues depuis moins de 30 jours, relancées depuis moins de 30
+  jours, ou pas encore échues ; ce dernier ensemble n'est pas borné dans le temps ») ; le risque est un **angle mort
+  écrit**, inhérent à toute prise en compte de l'échéance, que la 29-3 (#527) traite par le départage, avec le cas de
+  test transmis (C-29-2-7).
+- **Écartées** : (a) borner l'ancre (`LEAST(E, F + n)`) — une règle de plus, arbitraire, qui recréerait le reliquat
+  pour les conditions longues ; (b) traiter le départage ici — empiète sur #527 ; (c) une garde de saisie d'échéance
+  maximale — hors de #529, sans demandeur.
+- **Réversible** : oui.
+
+### C-29-2-12 — « Dernier rappel non annulé » : site jumeau cité, non factorisé
+
+- **Contexte** : validation P1, R7. `dunning_eligibility.rs:80` écrit déjà `MAX(sent_at) … WHERE company_id = ? AND
+  cancelled_at IS NULL GROUP BY invoice_id`.
+- **Retenu** : citer ce site au doc-comment de la jointure neuve et à l'inventaire (b), pour que la notion
+  d'annulation change aux deux endroits ensemble.
+- **Écartée** : factoriser — les agrégats diffèrent (`MAX(level_number)` en plus), et la dérivée de l'éligibilité
+  prend un `company_id` lié là où les jointures du reste dû, patron suivi ici, n'en prennent aucun.
+- **Réversible** : oui.
+
 [#529]: https://github.com/guycorbaz/kesh/issues/529
+[#666]: https://github.com/guycorbaz/kesh/issues/666

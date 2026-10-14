@@ -3,9 +3,11 @@
 ## Status
 
 **ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `16eeed21`
-(kickoff de l'Epic 29), branche `story/29-2`, worktree `/home/gcorbaz/devel/kesh-29-2`. Validation P1 à lancer
-(`29-2-validate-prompt-p1.md`, Sonnet, lentilles R et F). Choix consignés au registre
-`epic-29-choix-autonomes-29-2.md`, **C-29-2-1 à C-29-2-9**. 10 AC. PR : **`closes #529`** (dans le titre ou le corps
+(kickoff de l'Epic 29), branche `story/29-2`, worktree `/home/gcorbaz/devel/kesh-29-2`. Validation P1 faite
+(Sonnet, lentilles R et F : 1 HIGH, 3 MEDIUM et 8 LOW distincts après fusion des doublons, remédiés — cf. Change
+Log) ; validation P2 à
+lancer (`29-2-validate-prompt-p2.md`, Opus, lentilles R et F). Choix consignés au registre
+`epic-29-choix-autonomes-29-2.md`, **C-29-2-1 à C-29-2-12**. 10 AC. PR : **`closes #529`** (dans le titre ou le corps
 de la PR seulement — aucun mot-clé de fermeture dans un message de commit, même en prose : B4 de la rétrospective 28).
 
 ⚠️ **Sérialisée avant la 29-3** (#527, tri des candidates), qui touchera après elle les mêmes zones de
@@ -27,7 +29,7 @@ Issue : [#529](https://github.com/guycorbaz/kesh/issues/529) (P2, bug). Epic :
 
 | Prémisse (#529, 2026-10-08 ; consigne de l'orchestrateur) | Au code | Verdict |
 |---|---|---|
-| « fenêtre de 30 jours **centrée** sur la date de la facture » (`get_proposals`) | Depuis la Story 28-7 (#548), **une seule** fenêtre, `InvoiceDateWindow` (`crates/kesh-db/src/repositories/reconciliation.rs:150-199`) : `D − 30 ≤ F ≤ D + 1`, `D` date de valeur (à défaut de comptabilisation), `F` date de facture. Lue par la proposition (`find_unpaid_invoices_for_window`, `:234-276`, appelée par `routes/reconciliation.rs:658-665`) **et** l'acceptation (`accept_one_invoice`, étape 6, `routes/reconciliation.rs:1738-1764`) | **Périmée** dans la forme ; **le défaut subsiste** : la borne basse est `F ≥ D − 30`, sur la date de la facture, jamais sur son échéance ni ses rappels |
+| « fenêtre de 30 jours **centrée** sur la date de la facture » (`get_proposals`) | Depuis la Story 28-7 (#548), **une seule** fenêtre, `InvoiceDateWindow` (`crates/kesh-db/src/repositories/reconciliation.rs:150-199`) : `D − 30 ≤ F ≤ D + 1`, `D` date de valeur (à défaut de comptabilisation), `F` date de facture. Lue par la proposition (`find_unpaid_invoices_for_window`, `:234-276`, appelée par `routes/reconciliation.rs:656-662`) **et** l'acceptation (`accept_one_invoice`, étape 6, en-tête `routes/reconciliation.rs:1716`, fenêtre `:1740-1765`) | **Périmée** dans la forme ; **le défaut subsiste** : la borne basse est `F ≥ D − 30`, sur la date de la facture, jamais sur son échéance ni ses rappels |
 | « l'écran n'offre aucun moyen de choisir la facture » (*Affecter manuellement*, *Éclater* : classes 5 à 7) | Exact : `ManualMatchModal.svelte:80-90` filtre les classes 5/6/7 ; la ligne n'affiche que `p.candidates[0]` (`ReconciliationProposals.svelte:337-368`) | **Vraie** — et non traitée ici (C-29-2-2) |
 | « le manuel (vers :1126, rappels) **promet** que le rapprochement propose la facture » | Depuis la v0.13.3, `user-manual.tex:1305` dit l'inverse : « ne propose toutefois la facture que si le paiement arrive dans les 30 jours de la date de la facture --- ce qui, après un rappel, est rarement le cas ~: enregistrez alors le règlement depuis la fiche » ; de même `:2029` et `:2902` | **Périmée** : le manuel dit vrai, il décrit le trou. Il change parce que le trou se ferme (AC8) |
 | Le contournement (règlement depuis la fiche) est complet | `settle_invoice`, choix `BankTransfer` (`invoice_settlements_write.rs:130-154`) débite le compte comptable de la banque : la transaction bancaire reste **en attente** ; l'accepter ensuite autrement (règle, affectation) passerait le montant **deux fois** | **Incomplète** : le manuel ne dit pas de **rejeter** la transaction ensuite. Ajout mécanique au paragraphe réécrit (AC8, C-29-2-8) |
@@ -48,6 +50,17 @@ c'est-à-dire : le paiement ne précède pas la facture de plus d'un jour (**inc
 de 30 jours après **la plus tardive** de la date de la facture, de son échéance et de son dernier rappel. Une facture
 sans échéance ni rappel garde exactement la fenêtre d'aujourd'hui (`A = F`).
 
+L'effet ne se borne pas au paiement **en retard** : un paiement reçu **avant** l'échéance mais plus de 30 jours après
+la date de la facture (conditions à 60 jours net, payées à l'heure) n'était pas proposé non plus, et l'est désormais
+(`A = E`, dans le futur ou récente). Le cas le plus courant — paiement **avant** l'échéance, dans les 30 jours de la
+facture — reste proposé ; la borne haute porte **toujours sur `F`**, jamais sur `A` (sans quoi toute facture non
+échue disparaîtrait : mutation M10).
+
+⚠️ **Ce que la règle ne règle pas : le montant.** Elle ne touche qu'aux **dates** ; la facture n'est proposée qu'au
+**montant de son reste dû** (tolérance 0,05). Un client qui paie le montant du courrier de rappel, frais compris
+(#401, `user-manual.tex:1307`), n'est toujours pas proposé ; et un trop-perçu de 1 à 5 centimes est proposé puis
+refusé (#665, divergence de montant entre proposition et acceptation, ouverte, hors périmètre).
+
 Exemples, `D` = 2026-06-15 :
 
 | Facture `F` | Échéance `E` | Dernier rappel `R` | `A` | Proposée et acceptée ? |
@@ -58,6 +71,8 @@ Exemples, `D` = 2026-06-15 :
 | 2026-03-01 | 2026-03-31 | 2026-06-01, **annulé** | 03-31 | non |
 | 2026-03-01 | 2026-03-31 | — | 03-31 | non — reliquat (C-29-2-9) |
 | 2026-06-17 | 2026-07-17 | — | 07-17 | non (`F > D + 1`) — **inchangé**, #548 |
+| 2026-06-05 | 2026-07-05 (30 jours net) | — | 07-05 | **oui** (payé avant l'échéance) — **inchangé** |
+| 2026-04-15 | 2026-06-14 (60 jours net) | — | 06-14 | **oui** (payé à l'heure, plus de 30 jours après la facture) |
 
 **Une seule borne, deux lecteurs** (exigence de l'orchestrateur, #548 non rouvert) : `A` a **une** définition, une
 expression SQL (`INVOICE_PAYMENT_ANCHOR_SQL` sur la jointure `invoice_payment_anchor_joins()`), lue par la
@@ -71,15 +86,20 @@ dû devient candidate **à score égal** (0,5 pour le seul montant) ; `propose_m
 `invoice_id` croissant (`kesh-reconciliation/src/matching.rs:96-103`) — la **plus ancienne** gagne, et c'est la seule
 affichée et acceptée par *Accepter (N)*. Une vieille facture oubliée d'un client capterait le virement d'un autre :
 le **faux rattachement muet** que le `CLAUDE.md` (§ *Un appariement automatique propose, il ne crée jamais*) désigne
-comme le danger. L'ancre sur l'échéance et les rappels borne ce risque à une facture **vivante** — échue depuis moins
-de 30 jours, ou relancée depuis moins de 30 jours.
+comme le danger. L'ancre sur l'échéance et les rappels **réduit** ce risque aux factures dont `A ≥ D − 30` : échues
+depuis moins de 30 jours, relancées depuis moins de 30 jours, **ou pas encore échues**. Ce dernier ensemble **n'est
+pas borné dans le temps** : une facture à échéance lointaine (`due_date` n'a pas de borne haute, la seule garde,
+`routes/invoices.rs:765`, est `due_date < date`) — ou une coquille à 2099 — reste candidate pour tout paiement de même
+reste dû de `F − 1` à `E + 30`, et, à score égal, passe devant une facture plus récente (départage `invoice_id ASC`).
+C'est un **angle mort écrit** (C-29-2-11), propre à toute prise en compte de l'échéance, transmis à la 29-3 (#527)
+avec son cas de test ; la 29-2 ne le crée pas pour les factures sans échéance ni rappel (`A = F`, inchangé).
 
 **Pourquoi pas le choix manuel d'une facture à l'écran** (voie 2 de #529, écartée, C-29-2-2) : elle exige que
 l'acceptation admette ce que la proposition ne propose pas (deux bornes, ce que l'orchestrateur exclut) ou une
 nouvelle voie d'acceptation sans borne, plus un dialogue neuf (liste des factures ouvertes, sélection, i18n quatre
 locales, E2E, captures) : hors du périmètre minimal. Le reliquat qu'elle couvrirait (paiement plus de 30 jours après
-l'échéance **et** sans rappel) est écrit au manuel avec son contournement complet (AC8) ; l'ouverture d'une demande
-d'évolution est **demandée** à l'orchestrateur (C-29-2-9).
+l'échéance **et** sans rappel) est écrit au manuel avec son contournement complet (AC8) ; il est couvert par la
+demande d'évolution [#666](https://github.com/guycorbaz/kesh/issues/666) (C-29-2-9).
 
 ## Critères d'acceptation
 
@@ -94,7 +114,10 @@ Dans `crates/kesh-db/src/repositories/reconciliation.rs` :
   Alias `rmd` : distinct de `lt`, `cnt`, `cl_ttc`, `st` des jointures du reste dû, avec lesquelles il cohabite dans
   la requête de proposition (vérifier par `grep -n ') rmd\| rmd ' crates/kesh-db/src` qu'il est libre).
 - `INVOICE_PAYMENT_ANCHOR_SQL` :
-  `GREATEST(i.date, COALESCE(i.due_date, i.date), COALESCE(DATE(rmd.last_sent_at), i.date))`.
+  `CAST(GREATEST(i.date, COALESCE(i.due_date, i.date), COALESCE(DATE(rmd.last_sent_at), i.date)) AS DATE)`.
+  Le `CAST(… AS DATE)` fait du type rendu une **garantie** plutôt qu'une constatation (C-29-2-10) : aucun
+  `GREATEST` sur des dates n'existe au dépôt (`grep -rn GREATEST crates` : `backup.rs:708`, `:729`, sur des entiers),
+  donc aucun précédent de décodage `NaiveDate` par sqlx sur ce type.
   ⛔ **Chaque argument porte son `COALESCE`** : en MariaDB, `GREATEST` rend `NULL` dès qu'un argument est `NULL`, et
   `NULL >= ?` est faux — une facture sans échéance (`due_date` nullable, `migrations/20260416000001_invoices.sql:22`)
   ou sans rappel **disparaîtrait** des candidates. Le `GREATEST` sur `i.date` couvre aussi une échéance antérieure à la
@@ -104,6 +127,12 @@ Dans `crates/kesh-db/src/repositories/reconciliation.rs` :
   soft d'un Admin retire déjà la ligne du niveau courant, `entities/invoice_reminder.rs:5-7`), pourquoi `DATE(sent_at)`
   (C-29-2-3 : `sent_at` est un `DATETIME(6)` ; un écart de fuseau d'un jour au plus, sans effet mesurable sur une borne
   de 30 jours — angle mort écrit), et **qui le lit** (les deux lecteurs d'AC2).
+- Le doc-comment de la jointure **cite le site jumeau** de la notion « dernier rappel non annulé » :
+  `repositories/dunning_eligibility.rs:80` (`MAX(sent_at) AS last_reminder_at … WHERE company_id = ? AND
+  cancelled_at IS NULL GROUP BY invoice_id`, lu `:128` par `lr.date()`), pour que qui change la notion d'annulation
+  change les deux. Pas de factorisation (C-29-2-12) : les agrégats diffèrent (`MAX(level_number)` en plus là-bas) et
+  la table dérivée de l'éligibilité prend un `company_id` lié, celle-ci aucun (patron des jointures du reste dû, sans
+  paramètre ; la jointure par `invoice_id` porte le scope, la facture étant filtrée par `i.company_id = ?`).
 
 **AC2 — Deux lecteurs, la même expression.**
 
@@ -116,7 +145,12 @@ Dans `crates/kesh-db/src/repositories/reconciliation.rs` :
 - **Acceptation** : une fonction neuve `invoice_payment_anchor_date(executor, company_id, invoice_id) ->
   Result<Option<NaiveDate>, DbError>` rend `SELECT {INVOICE_PAYMENT_ANCHOR_SQL} FROM invoices i {joins} WHERE
   i.company_id = ? AND i.id = ?` — **même constante, même jointure** : aucune seconde écriture de la règle, ni en SQL
-  ni en Rust (C-29-2-4). Scopée société (KF-002) bien que la facture soit déjà chargée sous ce scope.
+  ni en Rust (C-29-2-4). Scopée société (KF-002) bien que la facture soit déjà chargée sous ce scope — et cette portée
+  est **testée** (AC5, facture d'une autre société → `Ok(None)`) et **mutée** (M11) : une garde sans test se retire en
+  silence au prochain refactor.
+- ⛔ **La borne haute reste sur `i.date`**, des deux côtés : `i.date <= ?` dans le `WHERE`, `invoice_date` comparée à
+  `latest_invoice_date` dans `check`. La porter sur l'ancre ferait disparaître toute facture non échue (mutation M10,
+  cas j et k d'AC5).
 
 **AC3 — La fenêtre compare la date de facture ET la date d'ancrage.**
 
@@ -135,13 +169,17 @@ Dans `crates/kesh-db/src/repositories/reconciliation.rs` :
 
 **AC4 — L'acceptation lit l'ancre sous le même verrou, sans rien déplacer.**
 
-Dans `accept_one_invoice` (`routes/reconciliation.rs:1621`), étape 6 (`:1738-1764`) : après les trois gardes
+Dans `accept_one_invoice` (`routes/reconciliation.rs:1621`), étape 6 (en-tête `:1716`, fenêtre `:1740-1765`) : après les trois gardes
 d'éligibilité (`invoice_not_validated`, `invoice_already_paid`, `invoice_journal_entry_not_set`) et **avant**
 `InvoiceDateWindow::check`, lire `invoice_payment_anchor_date(&mut **tx, company_id, invoice.id)` ; `Ok(None)` (facture
 disparue entre les deux lectures) → `INVOICE_NOT_FOUND` avec `details.invoiceId` comme l'étape 5 ; `Err` →
 `DATABASE_ERROR` avec `details.message`, comme les autres lectures de la fonction — **jamais** un `AppError` global
 (§ *Pattern batch* du `CLAUDE.md`).
 
+- ⚠️ **Angle mort assumé** : ces deux issues (`Ok(None)`, `Err`) ne sont **ni testées ni mutées** — la facture vient
+  d'être lue dans la même transaction, et aucun crochet de panne n'existe pour faire échouer la seule seconde lecture.
+  Elles se vérifient à la **revue de code** (lecture des deux bras, `FailedProposal` et jamais `?` vers un `AppError`),
+  et le Dev Agent Record le déclare ainsi.
 - **Contrat d'API inchangé** : mêmes codes, mêmes raisons (`payment_date_before_invoice_date`,
   `payment_date_outside_window`), `details.window_days` = 30. Seul le **sens** de `payment_date_outside_window`
   s'élargit (« plus de 30 jours après la date d'ancrage »), écrit à `docs/api-external.md` (AC8).
@@ -153,7 +191,8 @@ disparue entre les deux lectures) → `INVOICE_NOT_FOUND` avec `details.invoiceI
 - **Course admise** : un rappel annulé (ou envoyé) entre l'affichage des propositions et l'acceptation change `A` ;
   l'acceptation relit `A` dans sa transaction et tranche sur ce qu'elle lit — même statut que la facture redatée de
   la 28-7. Écrit au doc-comment, pas de test.
-- Le commentaire de `:1748-1750` (« Paiement tardif au-delà de 30 jours : #529, rapprochement manuel ») est réécrit.
+- Le commentaire de `:1740-1745` (dont la ligne `:1745`, « Paiement tardif au-delà de 30 jours : #529, rapprochement
+  manuel ») est réécrit.
 - La date du règlement écrit (`paid_at_dt`) reste `payment_date(&bank_transaction)` : **inchangée**.
 
 **AC5 — Tests `kesh-db` (rouges d'abord).**
@@ -161,7 +200,9 @@ disparue entre les deux lectures) → `INVOICE_NOT_FOUND` avec `details.invoiceI
 `crates/kesh-db/src/repositories/reconciliation.rs`, `mod tests` (unitaires) : les deux tests de bornes
 (`:619-643`) récrits sur la nouvelle signature — `check(F, A)` admet `A = D − 30` et refuse `A = D − 31` ;
 `F = D + 1` admis, `F = D + 2` refusé `PaymentBeforeInvoice` **même quand** `A` est dans la fenêtre (ordre des
-refus) ; `F = D + 2` et `A = D − 31` simultanés (impossible si `A ≥ F`, mais `check` est public) → `PaymentBeforeInvoice`.
+refus) ; `F = D + 2` et `A = D − 31` simultanés (impossible si `A ≥ F`, mais `check` est public) → `PaymentBeforeInvoice` ;
+**`check(D − 10, D + 20) == Ok(())`** (facture non échue : l'ancre au-delà de `D + 1` ne déclenche pas
+`PaymentBeforeInvoice` — tue la forme acceptation de M10).
 
 `crates/kesh-db/tests/reconciliation_repository.rs` : un helper `insert_test_reminder(pool, company_id, invoice_id,
 sent_at, cancelled)` (colonnes `NOT NULL` : `level_number ≥ 1`, `fee_amount`, `sent_at`, `channel ∈ {email, manual}`,
@@ -183,9 +224,13 @@ facture :
 | g | D − 45 | D − 50 (échéance antérieure) | — | D − 45 | non (`GREATEST` garde `F`) |
 | h | D + 2 | D + 32 | — | D + 32 | non (`F > D + 1`, #548) |
 | i | D − 20 | `NULL` | — | D − 20 | **oui** (inchangé : `E` nul ne fait pas disparaître) |
+| j | D − 10 | D + 20 | — | D + 20 | **oui** (payé avant l'échéance — le cas le plus courant ; inchangé) |
+| k | D − 45 | D + 15 | — | D + 15 | **oui** (payé avant l'échéance, plus de 30 jours après la facture) |
 
 Plus un cas **inter-factures** : le rappel d'une facture X ne déplace pas l'ancre d'une facture Y (jointure par
-`invoice_id`). Les tests existants du fichier (`:256-313` « 30 day window », `:315+` ordre et `LIMIT 50`) restent
+`invoice_id`). Plus un cas **inter-sociétés** : `invoice_payment_anchor_date(pool, autre_company_id, facture_d)` rend
+`Ok(None)` (la facture du cas d existe, mais dans l'autre société), et `find_unpaid_invoices_for_window` sous l'autre société ne
+la rend pas. Les tests existants du fichier (`:256-313` « 30 day window », `:315+` ordre et `LIMIT 50`) restent
 verts **sans modification d'assertion** — leurs factures n'ont ni échéance ni rappel ; seul le nom du champ renommé
 change là où ils le lisent (aucun, à vérifier au `grep -n earliest_invoice_date crates`).
 
@@ -194,10 +239,11 @@ change là où ils le lisent (aucun, à vérifier au `grep -n earliest_invoice_d
 `crates/kesh-api/tests/reconciliation_e2e.rs` :
 
 - **Parité** : un test neuf sur le patron de `proposal_and_acceptance_share_the_invoice_date_window` (`:2888-2958`)
-  — mêmes helpers `proposed_couples_287` / `accept_couples_287` —, sur les cas a à h d'AC5 (échéance posée par
+  — mêmes helpers `proposed_couples_287` / `accept_couples_287` —, sur les cas a à k d'AC5 (échéance posée par
   `UPDATE invoices SET due_date`, rappels insérés en SQL brut ; `seed_validated_invoice` n'a pas de paramètre
   d'échéance). Assertions : `proposed == accepted`, l'ensemble attendu exact, et pour chaque refus sa raison
-  (`payment_date_outside_window` pour a, c, e, g ; `payment_date_before_invoice_date` pour h). `D` en plein exercice
+  (`payment_date_outside_window` pour a, c, e, g ; `payment_date_before_invoice_date` pour h) ; b, d, f, i, j et k
+  proposés **et** acceptés (j et k tuent les deux formes de M10). `D` en plein exercice
   2026 (`insert_fake_fiscal_year`) ; vérifier que `D − 90` y reste.
 - **Le cas de #529 bout à bout** : transaction à `D`, facture à `D − 45` échue à `D − 15` ; `GET /proposals` la
   propose (`candidateType = invoice`, `invoiceId`), `POST /accept` l'accepte, et la facture est réglée
@@ -208,8 +254,10 @@ change là où ils le lisent (aucun, à vérifier au `grep -n earliest_invoice_d
 
 **AC7 — L'inventaire des tests dont le sens peut changer est clos, et relu au gate.**
 
-Ensemble clos des fichiers qui lisent les propositions ou la fenêtre (§ *Inventaire (c)*) : leurs factures n'ont pas
-d'échéance, sauf `invoice_write_off.rs:81` (`due_date = D()`, égale à la date) — `A = F`, sens inchangé. Le Dev Agent
+Ensemble clos des fichiers qui lisent les propositions ou la fenêtre, **ou acceptent une facture** (§ *Inventaire
+(c)*) : leurs factures n'ont pas d'échéance, ou une échéance égale à la date (`invoice_write_off.rs:81`,
+`due_date = D()` ; `rejeu_interblocage_e2e.rs`, factures créées par l'API sans délai de contact, payées le jour même)
+— `A = F`, sens inchangé. Le Dev Agent
 Record le **revérifie** par la commande de l'inventaire (c) et en copie la sortie. **E2E** : les specs partagent la
 base `kesh_e2e` et y laissent des factures **avec échéance** (contacts « 30 jours net » de `invoices.spec.ts`,
 `api-keys.spec.ts`, `inbox-import.spec.ts`, `invoices_echeancier.spec.ts`) : une facture d'une spec, échue récemment,
@@ -225,11 +273,16 @@ réconciliation au gate E2E.
 - **`:1305`** (§ rappels, « Ce que réclame un rappel ») : « La réconciliation bancaire ne propose toutefois la facture
   que si le paiement arrive dans les 30 jours de la date de la facture --- ce qui, après un rappel, est rarement le
   cas~: enregistrez alors le règlement depuis la fiche » devient : la réconciliation propose la facture si le paiement
-  arrive **au plus 30 jours après le dernier rappel** (ou après l'échéance, ou la date de la facture, la plus tardive
-  des trois) ; un rappel **annulé** ne compte pas ; renvoi à `\S\ref{sec:facture-posterieure}` ou à l'algorithme.
+  **du reste dû** arrive **au plus 30 jours après le dernier rappel** (ou après l'échéance, ou la date de la facture,
+  la plus tardive des trois) ; un rappel **annulé** ne compte pas ; renvoi à `\S\ref{sec:facture-posterieure}` ou à
+  l'algorithme. La condition de **montant** se dit dans la même phrase, ou par un renvoi explicite au `keshwarning`
+  qui suit (`:1307` : le montant du courrier, frais compris, n'est pas proposé — #401) : un lecteur ne doit pas
+  conclure que **tout** paiement après un rappel est proposé. Le `keshwarning` reste tel quel.
 - **`:2029`** (§ *Algorithme de matching*) : « tombe au plus 30 jours après la date de la facture --- sa date, pas son
   échéance --- » devient la règle d'AC1, dite pour l'utilisateur (« au plus 30 jours après la plus tardive de ces
-  dates~: la date de la facture, son échéance, son dernier rappel ») ; la phrase « Un paiement reçu plus de 30 jours
+  dates~: la date de la facture, son échéance, son dernier rappel »), en disant qu'un paiement reçu **avant**
+  l'échéance est proposé lui aussi, même plus de 30 jours après la facture (conditions à 60 jours) ; la condition de
+  montant (le reste dû, à la tolérance près) n'est pas reformulée là où l'algorithme la dit déjà ; la phrase « Un paiement reçu plus de 30 jours
   après la date de la facture --- une facture payée avec retard, ou après un rappel --- n'est en revanche pas
   proposé » devient le **reliquat** : plus de 30 jours après l'échéance **et** sans rappel depuis 30 jours ; le
   remède : enregistrer le règlement depuis la fiche, **puis rejeter la transaction** à la réconciliation
@@ -248,22 +301,30 @@ PDF régénéré (`make fr` dans `docs/manual/`, sous le verrou de gate) et comm
 rend plus rien, et `grep -o "dernier rappel[^.]*"` rend la nouvelle règle. Gardes textuelles :
 `cargo nextest run -E 'binary(textes_coherents)'` vert.
 
-`docs/api-external.md` § *Accepter des propositions de rapprochement* (`:547-567`) : une phrase *(depuis la v0.13.4)* —
-une facture est acceptée si le paiement arrive au plus 30 jours après la plus tardive de sa date, de son échéance et
-de son dernier rappel non annulé, et au plus un jour avant sa date ; au-delà, `RECONCILIATION_INVOICE_NOT_ELIGIBLE`
-avec `payment_date_outside_window` (`window_days` = 30), en deçà `payment_date_before_invoice_date` ; une acceptation
-autrefois refusée pour ce motif peut désormais aboutir (C-29-2-5).
+`docs/api-external.md` § *Accepter des propositions de rapprochement* (`:547-567`) : ce § ne cite aujourd'hui aucune
+raison `payment_date_*` (`grep -c payment_date docs/api-external.md` rend `0`). Les deux raisons sont **en service
+depuis la Story 8-4** (`git log -S payment_date_outside_window` : `22fd6d4a`), et la v0.13.3 (#548) n'a fait
+qu'aligner la proposition sur elles. La phrase à écrire documente donc les deux raisons comme **existantes**, sans
+date d'introduction, et ne date que le changement : la date de facture est refusée en
+`RECONCILIATION_INVOICE_NOT_ELIGIBLE` avec `payment_date_before_invoice_date` si le paiement la précède de plus d'un
+jour, et avec `payment_date_outside_window` (`window_days` = 30) s'il arrive plus de 30 jours après la plus tardive
+de sa date, de son échéance et de son dernier rappel non annulé ; *(depuis la v0.13.4)* **seule cette seconde
+raison change de sens** — elle comptait les 30 jours depuis la seule date de la facture, si bien qu'une acceptation
+autrefois refusée pour ce motif peut désormais aboutir (C-29-2-5). La phrase ne parle que de **dates** : les refus de
+montant (`RECONCILIATION_OVERPAYMENT`, déjà décrit au même §) sont inchangés.
 
 `CHANGELOG.md` : `## [0.13.4] — Non publié` (à créer au-dessus de `## [0.13.3] — 2026-10-14` s'il n'existe pas encore
 au rebase ; sinon y ajouter), section `### Corrigé` : « **Un paiement reçu après l'échéance, ou après un rappel, est
 proposé à la réconciliation ([#529](https://github.com/guycorbaz/kesh/issues/529)).** Une facture n'était proposée
 — et acceptée — que si le paiement arrivait au plus 30 jours après **sa date**, si bien qu'un client qui payait à
-30 jours net avec un peu de retard, ou après un rappel, n'était jamais reconnu. Les 30 jours courent désormais de la
-plus tardive des trois dates : la date de la facture, son échéance, son dernier rappel (un rappel annulé ne compte
-pas). La proposition et l'acceptation appliquent toujours la même règle. Un paiement reçu plus de 30 jours après
-l'échéance, sans rappel depuis, n'est toujours pas proposé : enregistrez-le depuis la fiche de la facture, puis
-rejetez la transaction. API : mêmes codes et raisons qu'avant ; une acceptation refusée en
-`payment_date_outside_window` peut désormais aboutir. »
+30 jours net avec un peu de retard, ou après un rappel, n'était jamais reconnu — ni celui qui payait à l'heure une
+facture à 60 jours. Les 30 jours courent désormais de la plus tardive des trois dates : la date de la facture, son
+échéance, son dernier rappel (un rappel annulé ne compte pas). Seules les **dates** changent : la facture n'est
+toujours proposée qu'au montant de son reste dû — un paiement qui inclut les frais de rappel ne l'est pas
+([#401](https://github.com/guycorbaz/kesh/issues/401)). La proposition et l'acceptation appliquent toujours la même
+règle de dates. Un paiement reçu plus de 30 jours après l'échéance, sans rappel depuis, n'est toujours pas proposé :
+enregistrez-le depuis la fiche de la facture, puis rejetez la transaction. API : mêmes codes et raisons qu'avant ;
+une acceptation refusée en `payment_date_outside_window` peut désormais aboutir. »
 
 Aucun texte de l'écran ne change : **ni clé i18n, ni capture** (C-29-2-6). Le repli de `failed-proposal-label.ts` pour
 `payment_date_outside_window` est le libellé générique (« n'est pas éligible ») et ne cite aucune durée.
@@ -281,6 +342,11 @@ Aucun texte de l'écran ne change : **ni clé i18n, ni capture** (C-29-2-6). Le 
 | M7 | proposition : `{ANCHOR} >= ?` → `{ANCHOR} > ?` | AC5 b |
 | M8 | `check` : tester `PaymentTooLate` avant `PaymentBeforeInvoice` | test unitaire d'ordre (AC5) |
 | M9 | jointure des rappels sur `rmd.invoice_id = i.contact_id` (ou sans `ON` correct) | cas inter-factures (AC5) |
+| M10a | proposition : borne haute sur l'ancre — `AND {ANCHOR} <= ?` à la place de `AND i.date <= ?` | AC5 j, k |
+| M10b | acceptation : `PaymentBeforeInvoice` testé sur `anchor_date` au lieu de `invoice_date` (dans `check`, ou `check(A, A)` à l'appel) | unitaire `check(D − 10, D + 20) == Ok(())` (AC5) ; AC6 parité j, k |
+| M11 | scalaire : retirer `i.company_id = ? AND` (et son `.bind(company_id)`) d'`invoice_payment_anchor_date` | cas inter-sociétés (AC5) |
+| M12 | retirer `DATE()` autour de `rmd.last_sent_at` | **équivalente, déclarée** (C-29-2-10) : le `CAST(… AS DATE)` extérieur tronque le `DATETIME` que rendrait le `GREATEST` ; côté proposition, un `DATETIME` comparé à un `DATE` lié reste du bon côté de la borne (jour `D − 30` à toute heure `≥`, jour `D − 31` `<`) |
+| M13 | retirer le `CAST(… AS DATE)` | **équivalente si** MariaDB rend déjà un `DATE` (sinon tuée par l'assertion scalaire d'AC5, au décodage) : le Dev Agent Record dit laquelle des deux il a constatée |
 
 Restauration de chaque mutation : `git checkout -- <fichier> && touch <fichier>` (`docs/agents-orchestration.md`
 § 7). Une mutation équivalente se déclare avec sa raison.
@@ -295,11 +361,12 @@ Le Dev Agent Record ne déclare que ce qui a tourné, chiffres recomptés.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Tests rouges** (AC5, AC6) : helpers de rappel et d'échéance, cas a à i, inter-factures, parité HTTP, cas
-      de #529 ; constater le rouge (compilation ou assertion) avant T2.
+- [ ] **T1 — Tests rouges** (AC5, AC6) : helpers de rappel et d'échéance, cas a à k, inter-factures, inter-sociétés,
+      unitaires de `check` (dont `check(D − 10, D + 20)`), parité HTTP, cas de #529 ; constater le rouge (compilation
+      ou assertion) avant T2.
 - [ ] **T2 — `kesh-db`** (AC1, AC2, AC3) : jointure et expression d'ancrage, `find_unpaid_invoices_for_window`,
       `invoice_payment_anchor_date`, renommage du champ, `check(F, A)`, doc-comments.
-- [ ] **T3 — `kesh-api`** (AC4) : étape 6 d'`accept_one_invoice` ; commentaire de `get_proposals` (`:655-657`) qui
+- [ ] **T3 — `kesh-api`** (AC4) : étape 6 d'`accept_one_invoice` ; commentaire de `get_proposals` (`:653-655`) qui
       décrit la fenêtre ; aucun autre site (inventaire (a)).
 - [ ] **T4 — Revérifier l'inventaire (c)** (AC7) et copier la sortie au Dev Agent Record.
 - [ ] **T5 — Manuel FR + PDF, `api-external.md`, CHANGELOG** (AC8).
@@ -321,32 +388,48 @@ $ grep -rn 'payment_date_outside_window\|INVOICE_WINDOW_DAYS_AFTER_INVOICE\|earl
 ```
 
 **Ensemble clos : deux sites**, ceux de la 28-7 — la proposition (`find_unpaid_invoices_for_window`, seul appel de
-production `routes/reconciliation.rs:658`) et l'acceptation (`accept_one_invoice`, étape 6). Le score
+production `routes/reconciliation.rs:656`) et l'acceptation (`accept_one_invoice`, étape 6). Le score
 (`kesh-reconciliation/src/matching.rs`) ne lit aucune date. Le frontend ne calcule aucune fenêtre.
 
 ### Inventaire (b) — les sites non résolus (bornes voisines qui ne liront pas l'ancre)
 
 | Site | Ce qu'il borne | Sort |
 |---|---|---|
-| `invoice_settlements_write.rs:115`, `:489` (`settle_invoice`, `write_off_invoice`) | date de règlement saisie ≥ facture − 1, sans borne haute | **non résolu, assumé** (inchangé depuis C-28-7-7) : ne règle pas une transaction ; c'est le contournement du reliquat |
+| `invoice_settlements_write.rs:115`, `:500` (`settle_invoice`, `write_off_invoice`) | date de règlement saisie ≥ facture − 1, sans borne haute | **non résolu, assumé** (inchangé depuis C-28-7-7) : ne règle pas une transaction ; c'est le contournement du reliquat |
 | CHECK `chk_invoices_paid_at_after_date` (`migrations/20260419000001_invoice_paid_at.sql:32-33`) | `DATE(paid_at) >= date − 1` | **non touché** : borne de la date de facture, que la story ne change pas — aucune migration |
 | `SettleInvoiceDialog.svelte`, `WriteOffDialog.svelte` (`min={invoiceDate}`) | date saisie ≥ facture | **non touché**, hors classe |
-| Éligibilité des rappels (`repositories/dunning_eligibility.rs`) | quelles factures relancer | **hors classe** : ne choisit aucune facture pour une transaction ; ne lit pas la fenêtre |
+| Éligibilité des rappels (`repositories/dunning_eligibility.rs`) | quelles factures relancer | **hors classe** : ne choisit aucune facture pour une transaction ; ne lit pas la fenêtre. ⚠️ Mais **écrit la même notion** de « dernier rappel non annulé » (`:80`, `MAX(sent_at) … cancelled_at IS NULL`) : cité au doc-comment de la jointure neuve (AC1, C-29-2-12), non factorisé |
 | `sent_at` des rappels **manuels** (`routes/dunning_reminders.rs:261`, saisi, `≤ now` UTC) et e-mail (`Utc::now`) | date du rappel | **angle mort écrit** (C-29-2-3) : `DATE(sent_at)` mêle une date saisie et une date UTC ; un jour d'écart au plus |
 
 ### Inventaire (c) — les tests existants dont le sens pourrait changer
 
 ```
-$ for f in $(grep -ln 'reconciliation/proposals\|find_unpaid_invoices_for_window' crates/*/tests/*.rs); do echo "$f: proposals=$(grep -c 'reconciliation/proposals\|find_unpaid_invoices_for_window(' $f) due_date=$(grep -c 'due_date\|dueDate' $f) reminders=$(grep -c 'invoice_reminders' $f)"; done
-crates/kesh-api/tests/bank_accounts_closed_e2e.rs: proposals=1 due_date=1 reminders=0
-crates/kesh-api/tests/reconciliation_rules_e2e.rs: proposals=8 due_date=0 reminders=0
-crates/kesh-db/tests/invoice_write_off.rs: proposals=2 due_date=1 reminders=0
-crates/kesh-db/tests/reconciliation_repository.rs: proposals=11 due_date=0 reminders=0
-crates/kesh-api/tests/reconciliation_e2e.rs: proposals=12 due_date=0 reminders=0
+$ for f in $(grep -lE 'reconciliation/proposals|reconciliation/accept|find_unpaid_invoices_for_window|accept_one_invoice' crates/*/tests/*.rs); do echo "$f: proposals=$(grep -cE 'reconciliation/proposals|find_unpaid_invoices_for_window\(' $f) accept=$(grep -cE 'reconciliation/accept|accept_one_invoice' $f) due_date=$(grep -cE 'due_date|dueDate' $f) reminders=$(grep -c 'invoice_reminders' $f)"; done
+crates/kesh-api/tests/bank_accounts_closed_e2e.rs: proposals=1 accept=3 due_date=1 reminders=0
+crates/kesh-api/tests/bank_account_closed_inventory.rs: proposals=0 accept=2 due_date=0 reminders=0
+crates/kesh-api/tests/rejeu_interblocage_e2e.rs: proposals=0 accept=1 due_date=0 reminders=0
+crates/kesh-db/tests/bank_import_delete.rs: proposals=0 accept=1 due_date=0 reminders=0
+crates/kesh-db/tests/invoice_settlement.rs: proposals=0 accept=1 due_date=1 reminders=0
+crates/kesh-api/tests/reconciliation_rules_e2e.rs: proposals=8 accept=5 due_date=0 reminders=0
+crates/kesh-db/tests/reconciliation_repository.rs: proposals=11 accept=0 due_date=0 reminders=0
+crates/kesh-db/tests/invoice_write_off.rs: proposals=2 accept=0 due_date=1 reminders=0
+crates/kesh-api/tests/reconciliation_e2e.rs: proposals=12 accept=49 due_date=0 reminders=0
+crates/kesh-db/tests/letterings_lexical.rs: proposals=0 accept=1 due_date=0 reminders=0
 ```
+
+*(Commande élargie en validation P1, R4 : la première ne partait que de `proposals` et manquait les tests qui
+n'appellent qu'`accept`. Relevé du 2026-10-14 sur `16eeed21`.)*
 
 - `bank_accounts_closed_e2e.rs:451` : `due_date: None` ; `invoice_write_off.rs:81` : `due_date: Some(D())`, égale à
   la date de la facture → `A = F` dans les deux cas, sens inchangé.
+- `rejeu_interblocage_e2e.rs:1517` : **seul** des nouveaux venus à appeler réellement `/reconciliation/accept` ;
+  factures créées par `POST /api/v1/invoices` (`facture_validee`, date = `aujourd_hui()`, contact sans délai :
+  `due_date` = date, `:289-290`), transaction au jour de la facture (`:1439`) → `A = F = D`, sens inchangé.
+- `bank_account_closed_inventory.rs:112`, `:287`, `bank_import_delete.rs:26`, `invoice_settlement.rs:471`,
+  `letterings_lexical.rs:404` : **mentions textuelles** d'`accept_one_invoice` (inventaires lexicaux, doc-comments),
+  aucun appel ; la lecture ajoutée à l'étape 6 n'écrit rien et n'entre dans aucun de ces inventaires (à revérifier au
+  gate, un rouge y signerait le contraire). `invoice_settlement.rs:61` : `due_date: Some(date)`, sans appel
+  d'acceptation.
 - Les helpers SQL bruts (`insert_invoice`, `reconciliation_e2e.rs:337` ; `insert_test_invoice`,
   `reconciliation_repository.rs:155`) n'écrivent pas `due_date` → `NULL` → `A = F`.
 - `reconciliation_rules_e2e.rs` : une règle n'est proposée que sans candidate forte ; aucune échéance → aucune
@@ -382,23 +465,33 @@ publiées — **qui ne se réécrit pas**, l'entrée 0.13.3 citant #529 reste te
 - `find_unpaid_invoices_for_window` (`repositories/reconciliation.rs:234-276`) : la 29-2 change le `WHERE` et les
   jointures ; la 29-3 touchera probablement l'`ORDER BY` / `LIMIT 50` adjacents (C-28-7-10, exclusion de la 28-7 :
   « priorité au montant exact avant le `LIMIT 50` »).
-- `get_proposals`, passe 2 (`routes/reconciliation.rs:655-665`, appel de la fenêtre et son commentaire) et passe 4
-  (`:744-870`, construction et ordre des candidates) : la 29-2 ne touche que le commentaire de la passe 2.
+- `get_proposals`, passe 2 (`routes/reconciliation.rs:653-662`, appel de la fenêtre et son commentaire) et passe 4
+  (`:721-845`, construction et ordre des candidates) : la 29-2 ne touche que le commentaire de la passe 2.
 - `propose_matches` (`kesh-reconciliation/src/matching.rs:96-103`, départage `invoice_id ASC`) : non touché ici ;
-  **la 29-2 rend ce départage plus coûteux** (C-29-2-7) — à score égal, la facture la plus ancienne, désormais
-  possiblement échue et relancée, passe devant une facture récente. Critère à transmettre à la 29-3 : départager les
-  égalités de score par la proximité de la date d'ancrage (ou de la date de facture) à la date de paiement.
+  **la 29-2 rend ce départage plus coûteux** (C-29-2-7, C-29-2-11) — à score égal, la facture la plus ancienne passe
+  devant une facture récente, et elle peut désormais être **échue et relancée**, **ou pas encore échue** : une facture
+  ancienne à **échéance lointaine** (ou mal saisie, à 2099) reste candidate sans limite de temps. Critère à transmettre
+  à la 29-3 : départager les égalités de score par la proximité de la date d'ancrage (ou de la date de facture) à la
+  date de paiement ; **cas de test** à transmettre : deux factures de même reste dû, l'une ancienne à échéance
+  lointaine, l'autre récente — la récente doit passer en tête.
 
 ### Exclusions écrites (périmètre minimal)
 
-- **Choix manuel d'une facture ouverte à l'écran** (voie 2 de #529) : non fait (C-29-2-2) ; demande d'évolution à
-  ouvrir (C-29-2-9).
+- **Choix manuel d'une facture ouverte à l'écran** (voie 2 de #529) : non fait (C-29-2-2) ; reliquat couvert par
+  [#666](https://github.com/guycorbaz/kesh/issues/666) (C-29-2-9).
 - **Montant différent** (frais bancaires déduits, paiement du rappel frais compris — #401) : hors #529, inchangé.
+- **Trop-perçu de 1 à 5 centimes proposé puis refusé** ([#665](https://github.com/guycorbaz/kesh/issues/665), voisine
+  de #548 sur le **montant** : tolérance de 0,05 à la proposition contre `RECONCILIATION_OVERPAYMENT` à
+  l'acceptation) : hors périmètre, ouverte. La 29-2 n'aggrave pas sa règle ; en élargissant les candidates, elle n'en
+  augmente que l'occurrence possible.
 - **Ordre des candidates, `LIMIT 50`, départage** : 29-3 (#527).
 - **Migration, index** : aucun. Les jointures s'appuient sur `idx_invoice_reminders_company_invoice` /
   `idx_invoice_reminders_invoice` ; le filtre `i.date <= ?` garde une plage sur
   `idx_invoices_company_validated_unpaid_date`, sur un ensemble que `paid_at IS NULL` réduit aux factures ouvertes.
-  Pas de mesure de performance exigée (factures ouvertes d'une PME : dizaines).
+  Pas de mesure de performance exigée (factures ouvertes d'une PME : dizaines). La table dérivée `rmd` lit **toute**
+  `invoice_reminders`, sans prédicat poussé (même patron que `lt`, `cnt`, `cl_ttc`, `st`), une fois par
+  transaction en attente (jusqu'à 100) : non bloquant aux volumes d'une PME (F5 de la validation P1, noté sans
+  action).
 - **Frontend, i18n, captures, spec Playwright neuve** : aucun texte ni contrôle de l'écran ne change (C-29-2-6) ; la
   frontière HTTP est exercée par les tests `spawn_app` d'AC6 ; la suite E2E complète tourne au dernier commit de
   code.
@@ -423,10 +516,10 @@ Trois : pas de découpage.
 
 ### References
 
-- Issue #529 ; #548 (Story 28-7, fiche `28-7-facture-posterieure-paiement.md`, C-28-7-1 à 16) ; #482 (28-6) ; #527
+- Issue #529 ; #666 (reliquat, choix manuel) ; #665 (trop-perçu, voisine) ; #548 (Story 28-7, fiche `28-7-facture-posterieure-paiement.md`, C-28-7-1 à 16) ; #482 (28-6) ; #527
   (29-3) ; #401 (frais de rappel).
 - `crates/kesh-db/src/repositories/reconciliation.rs:1-276`, `:590-668` ;
-  `crates/kesh-api/src/routes/reconciliation.rs:586-876`, `:1621-1770` ;
+  `crates/kesh-api/src/routes/reconciliation.rs:586-845`, `:1621-1770` ;
   `crates/kesh-db/src/repositories/invoice_settlements.rs:42-113` (patron des tables dérivées) ;
   `crates/kesh-db/src/entities/invoice_reminder.rs` ; `migrations/20260715000001_invoice_reminders.sql`.
 - `docs/manual/fr/user-manual.tex:1305`, `:2029`, `:2031`, `:2902` ; `docs/api-external.md:547-567`.
@@ -447,3 +540,36 @@ Trois : pas de découpage.
 
 - 2026-10-14 — Fiche créée (`bmad-create-story`, Opus 5.5, autonomie) sur `16eeed21`. Prémisses de #529 et de la
   consigne établies au code (deux périmées : la fenêtre « centrée », la promesse du manuel). Choix C-29-2-1 à 9.
+- 2026-10-14 — **Validation P1** (Sonnet 5.5, deux lentilles en contexte frais, lecture seule ; rapports
+  `kesh-gate-logs/29-2-validate-p1-R.md` et `-F.md`, sur `45f157f7`). Bruts : R 0 CRITICAL / 0 HIGH / 3 MEDIUM /
+  6 LOW, F 0 / 1 / 2 / 3. Après fusion des doublons (F1 = R1, F2 = R2, F6 = R6) : **1 HIGH, 3 MEDIUM, 8 LOW
+  distincts**. Les deux lentilles ont déclaré leurs axes exercés et non exercés. Remédiation (Opus 5.5) :
+  - **F1/R1 (HIGH)** — paiement **avant** l'échéance absent des tableaux, mutation « borne haute sur l'ancre »
+    survivante : cas **j** (`F = D − 10`, `E = D + 20`) et **k** (`F = D − 45`, `E = D + 15`) ajoutés à AC5 et à la
+    parité AC6 ; unitaire `check(D − 10, D + 20) == Ok(())` ; mutations **M10a** (proposition) et **M10b**
+    (acceptation) ; deux lignes au tableau de § *La règle retenue* ; AC2 dit que la borne haute reste sur `i.date` ;
+    manuel (`:2029`) et CHANGELOG prescrits disent que le paiement à l'heure d'une facture à 60 jours est proposé.
+  - **F2/R2 (MEDIUM)** — portée société de la scalaire : cas inter-sociétés (`Ok(None)`) à AC5, mutation **M11**.
+  - **F3 (MEDIUM)** — justification du faux rattachement fausse pour les factures non échues ou à échéance
+    lointaine : phrase réécrite, angle mort écrit (**C-29-2-11**), C-29-2-7 complété, cas de test transmis à la 29-3
+    (§ *Zones partagées*).
+  - **R3 (MEDIUM)** — textes prescrits trop larges : manuel (`:1305`), CHANGELOG et `api-external.md` ne promettent
+    que la **règle de dates**, au montant du reste dû (#401) ; « même règle » devient « même règle de dates » ; #665
+    nommée au § de la règle et aux Exclusions.
+  - **LOW** — F4 : `CAST(… AS DATE)` autour de l'ancre (**C-29-2-10**), M12 (`DATE()` retiré) déclarée équivalente,
+    M13 (`CAST` retiré) équivalente ou tuée selon le constat ; R7 : site jumeau `dunning_eligibility.rs:80` cité à AC1
+    et à l'inventaire (b), non factorisé (**C-29-2-12**) ; R8 : `Ok(None)` / `Err` d'AC4 écrits en angle mort assumé ;
+    R9 : `api-external.md` documente les deux raisons comme existantes et ne date que le changement — ⚠️ la date
+    proposée par R9 (« depuis la v0.13.3 ») est **réfutée** : `git log -S payment_date_outside_window` rend
+    `22fd6d4a` (Story 8-4), la 28-7 n'a fait qu'y aligner la proposition ; R4 : inventaire (c) élargi aux tests qui
+    n'appellent qu'`accept` (cinq fichiers de plus, dont un seul appel réel, `rejeu_interblocage_e2e.rs:1517`, sens
+    inchangé ; sortie recopiée) ; R5 : numéros de ligne recomptés (`:1716`, `:1740-1765`, `:1745`, `:653-655`,
+    `:656-662`, `invoice_settlements_write.rs:500`) et, au passage, la passe 4 de `get_proposals` (`:721-845`, et non
+    `:744-870`) ; R6/F6 : #666 cité (C-29-2-9), #665 aux Exclusions. **F5** (coût de la table dérivée `rmd`) : noté aux
+    Exclusions, sans action — c'est le constat de la lentille elle-même.
+  - **Aucun refus.** Décomptes recomptés depuis la fiche : 10 AC, 7 tâches, 14 lignes de mutation (M1-M9, M10a,
+    M10b, M11, M12, M13), 11 cas d'AC5 (a-k) plus inter-factures et inter-sociétés, 8 lignes d'exemple, 12 choix
+    (C-29-2-1 à 12, dont 10 à 12 neufs, 7 et 9 complétés par annotation datée), 3 modules. Symptômes grepés sur le
+    worktree (« vivante », « demande d'évolution », `a à h`, `M1-M9`, anciens numéros de ligne) : seule reste
+    l'entrée de création ci-dessus, relevé daté qui ne se réécrit pas. Prochaine passe : **P2, Opus**, lentilles R et
+    F (`29-2-validate-prompt-p2.md`), axe obligatoire : relire ce que cette remédiation a écrit.
