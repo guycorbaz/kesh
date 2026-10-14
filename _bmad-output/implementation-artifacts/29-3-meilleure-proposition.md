@@ -487,7 +487,7 @@ tests unitaires de `kesh-api`), fmt et clippy workspace ; gate complet + E2E com
     soit son total. Examinée au code avant application : **aucun défaut du produit démontré** ; une **conséquence
     démontrée** — sur les entrées atteignables, l'ordre est celui d'aujourd'hui (une facture sans signal a un total nul
     et n'est pas candidate, `matching.rs:81`) ; la story écrit, teste, dit et documente cet ordre, sans le changer.
-    Rangs, Story, AC1-AC3, AC5-AC7, AC9 réécrits en conséquence ; C-29-3-1 et C-29-3-3 annotés au registre.
+    Rangs, Story, AC1-AC3, AC5-AC7, AC9 réécrits en conséquence ; C-29-3-1, 3, 4, 6 et 7 annotés au registre (annotations datées, texte d'origine conservé).
   - **R2/F3 MEDIUM** : test muet **déplacé** dans `reconciliation_e2e.rs` et réécrit, décrit comme une tâche (T3,
     C-29-3-13 ; l'extraction des aides de facture vers `tests/common/` écartée).
   - **R3/F4 MEDIUM** : affirmation fausse de l'AC4 retirée ; fabrique à deux candidates et constructeur de règle en
