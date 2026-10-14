@@ -15,9 +15,23 @@ import type {
 	SplitResponse,
 } from './reconciliation.types';
 
+/**
+ * Story 29-9 (#649) — nombre de transactions en attente que `GET /reconciliation/proposals`
+ * rend quand l'écran ne demande rien de plus : reflet de `DEFAULT_PROPOSALS_LIMIT`
+ * (`crates/kesh-api/src/routes/reconciliation.rs`). Les deux valeurs se changent ensemble.
+ */
+export const PROPOSALS_DEFAULT_LIMIT = 100;
+
+/**
+ * Story 29-9 (#649) — le plafond que le serveur applique à `?limit=` : reflet de
+ * `MAX_PROPOSALS_LIMIT` (`crates/kesh-api/src/routes/reconciliation.rs`). Au-delà, le
+ * serveur rend ce plafond et non une erreur ; l'écran ne demande donc jamais plus.
+ */
+export const PROPOSALS_MAX_LIMIT = 500;
+
 export async function getProposals(
 	bankAccountId: number,
-	limit = 100,
+	limit = PROPOSALS_DEFAULT_LIMIT,
 ): Promise<GetProposalsResponse> {
 	const qs = new URLSearchParams();
 	qs.set('bankAccountId', bankAccountId.toString());

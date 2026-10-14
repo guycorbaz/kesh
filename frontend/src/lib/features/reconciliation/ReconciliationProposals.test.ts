@@ -19,7 +19,12 @@ import type {
 
 // Mock du module API : doit être défini AVANT l'import du composant
 // (hoisting Vitest applique vi.mock avant les imports).
-vi.mock('./reconciliation.api', () => ({
+// Story 29-9 (#649, AC9 étape 0) — `importOriginal` : le composant importe aussi les
+// constantes `PROPOSALS_DEFAULT_LIMIT` / `PROPOSALS_MAX_LIMIT`, qu'une fabrique sans
+// l'original n'exporterait pas (Vitest lèverait à l'accès). Les fonctions restent des
+// doublures ; seules les constantes sont les vraies.
+vi.mock('./reconciliation.api', async (importOriginal) => ({
+	...(await importOriginal<typeof import('./reconciliation.api')>()),
 	getProposals: vi.fn(),
 	acceptProposals: vi.fn(),
 	rejectProposals: vi.fn(),

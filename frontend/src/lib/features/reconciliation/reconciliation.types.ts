@@ -50,8 +50,10 @@ export interface ReconciliationProposal {
 export interface GetProposalsResponse {
 	proposals: ReconciliationProposal[];
 	// H6 Pass 1 code review — pagination indicator. true si la query
-	// SQL a renvoyé `limit + 1` lignes côté backend. v0.1 : structure
-	// présente mais pas de UI dédiée (bouton « Charger plus » v0.2).
+	// SQL a renvoyé `limit + 1` lignes côté backend.
+	// Story 29-9 (#649) — l'écran le lit : sous la liste, un avis dit qu'il en
+	// reste et un bouton demande le plafond (`PROPOSALS_MAX_LIMIT`, 500) ; au
+	// plafond, l'avis reste, sans bouton. Pas de pagination au-delà.
 	hasMore: boolean;
 }
 
