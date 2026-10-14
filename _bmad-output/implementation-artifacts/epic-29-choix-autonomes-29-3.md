@@ -16,6 +16,10 @@
   (b) la règle toujours devant — idem ; (c) statu quo et une phrase à l'écran — la règle resterait cachée par une
   facture désignée par le seul nom du client, ce qui est le défaut de l'issue.
 - **Réversible** : oui (une fonction pure, aucune donnée écrite).
+- ⚠️ **Annotation du 2026-10-14 (validation P1, R1 HIGH)** : **rangs remplacés par C-29-3-11** (décision de
+  l'orchestrateur). Le critère du rang 0 n'est plus « montant exact ou référence pleine » mais « tout signal
+  d'identité » ; l'écartée (c) est en partie reprise : l'ordre atteignable reste celui d'aujourd'hui, la story l'écrit
+  et le dit. Le texte ci-dessus est conservé comme relevé de la fiche initiale.
 
 ### C-29-3-2 — L'ordre se fixe au serveur, une seule fois ; le frontend lit `candidates[0]`
 
@@ -31,6 +35,8 @@
 - **Retenu** : `amount_score == 1.0 || reference_score == 1.0`.
 - **Écartée** : `score.total >= 0.4` (équivalent aujourd'hui, mais illisible et fragile à tout changement de poids).
 - **Réversible** : oui.
+- ⚠️ **Annotation du 2026-10-14 (validation P1, C-29-3-11)** : le principe tient (sous-scores, jamais le total) ; la
+  condition devient `amount_score == 1.0 || reference_score > 0.0 || contact_score > 0.0`.
 
 ### C-29-3-4 — La priorité est dite à l'écran par une phrase au-dessus de la liste
 
@@ -42,6 +48,8 @@
   toute branche, comme l'indication des rejets (elle parle des propositions affichées : sans liste, elle ne dit
   rien de vrai).
 - **Réversible** : oui.
+- ⚠️ **Annotation du 2026-10-14 (validation P1)** : condition ajoutée — la phrase ne paraît que si une ligne a une
+  candidate (C-29-3-14) ; formulation refaite (C-29-3-15).
 
 ### C-29-3-5 — Le seuil `INVOICE_OVERRIDE_THRESHOLD = 0.5` reste inchangé
 
@@ -57,6 +65,8 @@
 - **Retenu** : réparation **mécanique** (créer la facture, asserter l'absence de règle) — périmètre minimal respecté
   (B3 de la rétrospective 28).
 - **Réversible** : oui.
+- ⚠️ **Annotation du 2026-10-14 (validation P1, R2/F3)** : « mécanique » était faux — `reconciliation_rules_e2e.rs` n'a
+  aucune aide de facture. Voie retenue : C-29-3-13.
 
 ### C-29-3-7 — Le trop-perçu de quelques centimes proposé puis refusé : issue, pas intégration
 
@@ -69,6 +79,9 @@
 - **Écartée** : intégrer (non mécanique ; conflit avec la 29-2 ; `kesh-db` touché imposerait le gate complet en
   boucle).
 - **Réversible** : oui.
+- ⚠️ **Annotation du 2026-10-14 (validation P1, R7/F6)** : l'issue existe, **#665** (ouverte, P2, bug). Sous C-29-3-11,
+  une telle facture porte toujours un signal (sinon elle n'est pas candidate) : rang 0, toujours devant la règle. Les
+  autres refus d'une facture proposée sont de configuration, déjà au manuel (`user-manual.tex:2056`).
 
 ### C-29-3-8 — `candidate_rank` est un `match` exhaustif, sans bras `_`
 
@@ -89,3 +102,79 @@
   au rebase pour une raison étrangère.
 - **Retenu** : facture et transaction du même jour, en plein exercice 2026 — dans toute fenêtre raisonnable.
 - **Réversible** : oui.
+
+### C-29-3-11 — Une facture qui porte un signal d'identité passe devant la règle (choix de l'orchestrateur)
+
+- **Contexte** : validation P1, R1 HIGH — le rang 2 de C-29-3-1 plaçait la règle devant des factures que le nom du
+  client (0,1) ou un préfixe de référence (0,2, 0,3) rapproche du paiement. Accepter la règle pour un paiement de
+  client le porte en produit : produit compté deux fois, facture restée due, sans signal — le faux rattachement muet
+  du `CLAUDE.md` (*Un appariement automatique propose, il ne crée jamais*), contre lequel le manuel met déjà en garde
+  (`user-manual.tex:2911`). L'argument qui fondait le rang 0 vaut pour toute facture identifiée.
+- **Retenu — choix de l'orchestrateur**, appliqué : rang 0 = facture avec `amount_score == 1.0 ||
+  reference_score > 0.0 || contact_score > 0.0`, quel que soit le total ; rang 1 = la règle ; rang 2 = facture sans
+  aucun signal (reconnue par le seul montant à quelques centimes).
+- **Examen au code avant application** (consigne de l'orchestrateur) : **aucun défaut du produit démontré.** Une
+  **conséquence démontrée** : une facture sans signal a un total nul et n'est pas candidate (`matching.rs:81`) ; quand
+  la règle est calculée, aucune facture n'atteint 0,5, donc aucune n'a un montant exact, donc toutes portent un
+  sous-score de référence ou de contact non nul. **Le rang 2 est vide sur toute entrée atteignable, et l'ordre affiché
+  reste celui d'aujourd'hui.** La story n'ajoute donc aucun changement de comportement : elle écrit l'ordre (fonction
+  pure, testée), le dit à l'écran, le documente pour l'API, et répare un test muet. L'appel `order_candidates` dans
+  `get_proposals` est un mutant équivalent (M1), déclaré tel ; les mutations du **critère** (M4, M5, M7) restent tuées
+  par les tests HTTP.
+- **Risque résiduel nommé** : le faux rattachement symétrique (une contrepartie cliente et visée par une règle, dont le
+  montant tombe à 5 centimes d'une facture ouverte) fait proposer la facture ; c'est l'ordre d'aujourd'hui, visible au
+  lettrage.
+- **Écartées** : (a) le rang 0 de C-29-3-1 (montant exact ou référence pleine) — écarté par l'orchestrateur ;
+  (b) **ne pas écrire de fonction**, un commentaire juste à la place de celui de `:722-724` et les tests HTTP seuls —
+  comportement identique et moins de code ; écartée parce que la priorité resterait un effet de la place du `push`
+  (c'est ce que #527 relève), que le `match` exhaustif force le classement d'un variant que la 29-2 ajouterait
+  (C-29-3-8), et que le rang 2 garde une source future de placer en silence une facture sans indice devant une
+  règle. **Arbitrage réversible, signalé à l'orchestrateur** : si le surcoût (≈ 20 lignes, onze cas unitaires) paraît
+  injustifié pour un ordre inchangé, (b) est l'alternative la plus proche.
+- **Réversible** : oui (une fonction pure, aucune donnée écrite).
+
+### C-29-3-12 — Le départage à score égal par proximité de date : angle mort, issue demandée
+
+- **Contexte** : C-29-2-7 (fiche voisine non mergée) — la 29-2 fait entrer des factures échues et relancées ; à score
+  égal, `propose_matches` place la plus petite `invoice_id` (la plus ancienne) en tête. Un départage par proximité de
+  la date d'ancrage à la date du paiement est proposé.
+- **Retenu** : non intégré ; angle mort écrit à la fiche et au doc-comment ; **issue demandée** à l'orchestrateur.
+- **Écartée** : l'intégrer — non mécanique : la date d'ancrage est définie par la 29-2 (non mergée), le départage vit
+  dans `kesh-reconciliation` (`matching.rs:97-105`), hors périmètre, et `order_candidates` ne réordonne pas à
+  l'intérieur d'un rang (stabilité voulue).
+- **Réversible** : oui.
+
+### C-29-3-13 — Le test muet est déplacé dans `reconciliation_e2e.rs`, non ses aides extraites
+
+- **Contexte** : validation P1, R2/F3 — `get_proposals_invoice_candidate_overrides_rule` vit dans
+  `reconciliation_rules_e2e.rs`, qui n'a aucune aide de facture ; celles-ci (`seed_validated_invoice` et ses
+  dépendances, `:279-440`) sont privées à `reconciliation_e2e.rs`.
+- **Retenu** : déplacer et réécrire le test dans `reconciliation_e2e.rs`, où vivent aussi les deux tests HTTP neufs de
+  l'AC3 ; y ajouter `create_rule_ok` (une dizaine de lignes, patron `reconciliation_rules_e2e.rs:356-370`), dont les
+  trois tests ont besoin ; un renvoi d'une ligne dans l'ancien fichier. Tâche T3, comptée comme test neuf.
+- **Écartées** : (a) extraire les aides de facture vers `tests/common/` — ~150 lignes déplacées, tous les tests du
+  fichier touchés, conflit assuré avec les tests de la 29-2 dans le même fichier ; (b) dupliquer les aides dans
+  `reconciliation_rules_e2e.rs` — contraire au DRY du `CLAUDE.md`.
+- **Réversible** : oui.
+
+### C-29-3-14 — La phrase de l'écran n'apparaît que si une ligne a une candidate
+
+- **Contexte** : validation P1, R10b/F8b — une liste dont toutes les lignes sont « Aucune correspondance » rendrait
+  « une seule proposition est affichée par transaction » sans proposition.
+- **Retenu** : condition `proposals.some((p) => p.candidates.length > 0)` dans la branche « liste non vide » ; un test
+  Vitest et la mutation M9 la tiennent.
+- **Écartée** : la phrase dès que la liste est non vide (C-29-3-4 initial) — texte creux dans ce cas.
+- **Réversible** : oui.
+
+### C-29-3-15 — La phrase de l'écran ne dit rien de plus fort que le code
+
+- **Contexte** : validation P1, R5/F5 — `reference_score` vaut 1 quand la référence et le numéro se contiennent dans
+  un sens **ou** dans l'autre, sans longueur minimale (`matching.rs:132-134`), et 0,5 pour un préfixe commun ; le
+  contact est bidirectionnel aussi (`:148-161`). « Dont le numéro figure dans la référence » était plus étroit que le
+  code.
+- **Retenu** : « une facture passe devant une règle dès que sa référence, le nom de son client ou son montant exact la
+  rapproche du paiement » (et l'équivalent dans les trois autres langues, termes de l'écran : *Zuordnungsregel*,
+  *regola di assegnazione*, *reconciliation rule*).
+- **Écartées** : « dont la référence et le numéro se contiennent l'un l'autre » — exact mais technique, et muet sur le
+  préfixe et le contact ; ajouter une longueur minimale dans `matching.rs` — hors périmètre.
+- **Réversible** : oui (une clé de catalogue).
