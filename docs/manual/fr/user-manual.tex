@@ -2038,7 +2038,7 @@ Chaque candidate reçoit un score, somme de trois critères :
     \item \textbf{Contact} (10\,\%) : le nom de la contrepartie contient celui du client de la facture, ou l'inverse.
 \end{itemize}
 
-Une candidate dont le score vaut zéro n'est pas proposée. Quand aucune facture n'est candidate, la réconciliation propose à la place la \textbf{règle d'affectation} qui correspond à la transaction, s'il y en a une (\S\ref{sec:regles-affectation})~; elle s'affiche avec un score de 100\,\%. Rien n'est jamais passé en comptabilité sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
+Une candidate dont le score vaut zéro n'est pas proposée. Quand aucune facture n'est candidate, la réconciliation propose à la place la \textbf{règle d'affectation} qui correspond à la transaction, s'il y en a une (\S\ref{sec:regles-affectation})~; elle s'affiche avec un score de 100\,\% --- un score conventionnel, qui n'est pas comparé à celui des factures. Rien n'est jamais passé en comptabilité sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
 
 \subsubsection{Accepter ou rejeter les propositions}
 
@@ -2046,7 +2046,7 @@ Une candidate dont le score vaut zéro n'est pas proposée. Quand aucune facture
 
 \begin{itemize}
     \item la candidate affichée est la \textbf{première} que propose Kesh~: la facture la mieux notée s'il y en a une, avec son numéro et le \textbf{montant qui reste à payer}, au centime --- si la facture est déjà réglée en partie, ce montant est suivi du total d'origine, par exemple «~600, reste dû sur 1000~»~;
-    \item une \textbf{règle} n'est affichée, avec le badge \emph{Règle} et la mention «~libellé → compte~», que s'il n'y a \textbf{aucune} facture candidate --- même une facture de score faible passe devant elle~;
+    \item une \textbf{règle} n'est affichée, avec le badge \emph{Règle} et la mention «~libellé → compte~», que s'il n'y a \textbf{aucune} facture candidate --- même une facture de score faible passe devant elle~: une facture candidate est rapprochée du paiement par sa référence, le nom de son client ou son montant exact, et accepter une règle à sa place porterait ce paiement en produit, la facture restant due (\S\ref{sec:faq-aucun-match}). La page le rappelle au-dessus de la liste. Une facture que le paiement \textbf{dépasse de quelques centimes} est proposée elle aussi, mais son acceptation est refusée en trop-perçu (issue \#665)~;
     \item sans candidate, la ligne indique «~Aucune correspondance~» et n'a pas de case à cocher.
 \end{itemize}
 
@@ -2893,7 +2893,7 @@ Vérifiez que la somme des débits égale exactement la somme des crédits (à 1
     \item Consultez les logs d'import (lien \emph{Voir détails} sur l'import) pour identifier d'éventuelles erreurs de parsing.
 \end{itemize}
 
-\subsection{Une transaction bancaire ne propose aucun match automatique, est-ce normal ?}
+\subsection{Une transaction bancaire ne propose aucun match automatique, est-ce normal ?}\label{sec:faq-aucun-match}
 
 Oui, si :
 
