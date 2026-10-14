@@ -25,7 +25,7 @@
 		/** `loading` : requête en cours ; `error` : échec ; `ready` : `checks` reçus. */
 		loadState: 'loading' | 'error' | 'ready';
 		checks: ClosingChecksResponse | null;
-		/** Admin / Comptable : le lien « Nouvel exercice » de K7. */
+		/** Admin / Comptable : le lien « Créer l’exercice suivant » de K7. */
 		onCreateFiscalYear?: () => void;
 	}
 	let { loadState, checks, onCreateFiscalYear }: Props = $props();

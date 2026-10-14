@@ -8,10 +8,6 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.14.0] — Non publié
-
----
-
 ## [0.13.4] — Non publié
 
 ### Ajouté

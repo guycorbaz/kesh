@@ -87,9 +87,13 @@
 //!   fonctionnel ; une borne ne s'ajouterait que sur mesure.
 //! - **K7** rend le **premier** exercice qui commence après la fin de Y, même
 //!   après un trou : un exercice 2028 sans 2027 « suit » 2026, et K7 est `ok`.
-//! - L'écart de K3 est celui de [`bank_accounts::statement_gap`] : les deux
-//!   soldes arrondis au centime, demi loin de zéro — un reste de moins d'un
-//!   demi-centime est nul, un reste d'un demi-centime ou plus compte.
+//! - L'écart de K3 est celui de [`bank_accounts::statement_gap`] : **chacun des
+//!   deux soldes** est arrondi au centime (demi loin de zéro) **avant** la
+//!   soustraction ; l'écart est nul si les deux soldes arrondis sont égaux, et
+//!   sinon exprimé au centime. Ce n'est donc pas un seuil sur la différence
+//!   brute : livres 100,004 et relevé 99,996 (différence brute 0,008) donnent
+//!   un écart nul ; livres 100,005 et relevé 100,004 (différence brute 0,001)
+//!   donnent 0,01.
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;

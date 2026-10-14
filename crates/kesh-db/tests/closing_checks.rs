@@ -1462,7 +1462,8 @@ async fn t_a5_k3_bornes_de_cloture_et_ordre_des_motifs(pool: MySqlPool) {
 /// - écritures déséquilibrées ou à une ligne **hors** de Y (autre exercice,
 ///   datées hors de Y) : absentes ;
 /// - écriture de Y datée de la **veille** de Y : `DATE_OUTSIDE_ITS_YEAR`
-///   (M-a29) ; datée du **premier jour** : rien (M-a30) ;
+///   (M-a29) ; datée du **premier jour** : rien (M-a30) ; datée du
+///   **dernier jour** : rien (M-a42) ;
 /// - écriture d'un autre exercice datée du **premier jour** de Y :
 ///   `OTHER_YEAR_DATED_INSIDE` (M-a31) ; datée de la veille : rien ;
 /// - écriture de Y **sans aucune ligne** : `TOO_FEW_LINES` seul (M-a32).
@@ -1512,6 +1513,8 @@ async fn t_a9_k6_perimetre_de_y_et_bornes(pool: MySqlPool) {
     entry(&pool, c, y25, ymd(2025, 6, 1), &[(a, dec!(2), dec!(0))]).await;
     let eve = balanced(&pool, c, fy, ymd(2025, 12, 31), a, b, dec!(1)).await;
     balanced(&pool, c, fy, ymd(2026, 1, 1), a, b, dec!(1)).await;
+    // Dernier jour de Y : dans l'exercice, donc absent (M-a42, `>` → `>=`).
+    balanced(&pool, c, fy, ymd(2026, 12, 31), a, b, dec!(1)).await;
     let other_first_day = balanced(&pool, c, y25, ymd(2026, 1, 1), a, b, dec!(1)).await;
     balanced(&pool, c, y25, ymd(2025, 12, 31), a, b, dec!(1)).await;
     let no_line = entry(&pool, c, fy, ymd(2026, 3, 1), &[]).await;

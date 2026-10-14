@@ -1653,6 +1653,16 @@ mod tests {
         assert_eq!(statement_gap(&soldes(None, Some("100.00"))), None);
         assert_eq!(statement_gap(&soldes(Some("100.00"), None)), None);
         assert_eq!(statement_gap(&soldes(None, None)), None);
+        // Chaque solde est arrondi avant la soustraction (29-1a, P2 F1) : une
+        // différence brute de 0.008 peut être nulle, une de 0.001 valoir 0.01.
+        assert_eq!(
+            statement_gap(&soldes(Some("100.004"), Some("99.996"))),
+            None
+        );
+        assert_eq!(
+            statement_gap(&soldes(Some("100.005"), Some("100.004"))),
+            Some(dec!(0.01))
+        );
         // L'écart de 0.005 aux livres en DECIMAL(19,4) vaut un centime.
         assert_eq!(
             statement_gap(&soldes(Some("100.005"), Some("100.00"))),
