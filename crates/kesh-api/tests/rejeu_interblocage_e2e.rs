@@ -1662,3 +1662,287 @@ async fn accept_and_settlement_cancel_interleave(pool: MySqlPool) {
         fautes.join("\n")
     );
 }
+
+// ============================================================
+// Story 29-4a (#651, AC4) — clore, rouvrir et lier un compte bancaire
+// ============================================================
+
+/// Un compte bancaire **non principal** de la société (un principal ne se clôt
+/// pas), l'onboarding terminé (la clôture et la réouverture l'exigent,
+/// `assert_onboarding_complete`) ; rend `(id, version)`.
+async fn compte_bancaire(pool: &MySqlPool, ctx: &Contexte) -> (i64, i32) {
+    kesh_db::test_fixtures::mark_onboarding_complete(pool)
+        .await
+        .expect("onboarding");
+    let compte = kesh_db::repositories::bank_accounts::create(
+        pool,
+        kesh_db::entities::NewBankAccount {
+            company_id: ctx.company_id(),
+            bank_name: "Banque du rejeu".into(),
+            iban: "CH4431999123000889012".into(),
+            qr_iban: None,
+            is_primary: false,
+        },
+    )
+    .await
+    .expect("compte bancaire");
+    (compte.id, compte.version)
+}
+
+/// Le **cycle à trois par la file d'attente** de T29a-4 et T29a-9 : `route`
+/// (la clôture ou la réouverture de `compte`, lancée par l'appelant après que
+/// `t1` a pris son partagé) est une demande exclusive **en attente** — elle ne
+/// tient rien.
+///
+/// 1. (appelant) `t1` (alourdie) tient la ligne du compte en partagé ;
+/// 2. la route est vue en attente sur son `FOR UPDATE` ;
+/// 3. `t2` (alourdie) tient la ligne `companies` (`R`) en exclusif, puis
+///    demande la ligne du compte en partagé, **en tâche** : elle attend
+///    derrière la demande exclusive de la route (file InnoDB) ;
+/// 4. `t1` demande `R`, en tâche : cycle `t1 → t2 → route → t1` ;
+/// 5. l'événement de rejeu `operation` est attendu (sondage borné à 10 s) —
+///    c'est l'**issue** qui établit l'attente de `t2` ;
+/// 6. la demande partagée de `t2` est accordée ; `t2` annule et libère `R` ;
+/// 7. `t1` a obtenu `R` (`.expect`) — elle n'était pas la victime ;
+/// 8. `t1` annule ; la route rejouée obtient sa ligne et répond.
+///
+/// ⚠️ Deux contingences (fiche, AC4) : si `t2` n'attend pas derrière la route
+/// (prémisse « file InnoDB » fausse), aucun rejeu ne vient et l'étape (5)
+/// échoue sur sa borne ; si InnoDB désigne `t1` ou `t2` au lieu de la route,
+/// l'une rend `1213` et l'étape (5) échoue aussi — le message nomme les deux
+/// cas.
+async fn cycle_a_trois_par_la_file(
+    pool: &MySqlPool,
+    ctx: &Contexte,
+    capture: &CaptureRejeu,
+    mut t1: Transaction<'static, MySql>,
+    compte: i64,
+    route: tokio::task::JoinHandle<(u16, Value)>,
+    operation: &str,
+) -> (u16, Value) {
+    // (2)
+    let vue = attendre_une_requete_en_cours(
+        pool,
+        &["FROM bank_accounts", "archived = FALSE FOR UPDATE"],
+        || route.is_finished(),
+    )
+    .await;
+    assert!(vue, "la route devait attendre sur la ligne du compte");
+
+    // (3)
+    let mut t2 = transaction_lourde(pool).await;
+    sqlx::query("SELECT id FROM companies WHERE id = ? FOR UPDATE")
+        .bind(ctx.company_id())
+        .fetch_all(&mut *t2)
+        .await
+        .unwrap();
+    let t2 = tokio::spawn(async move {
+        let r = sqlx::query("SELECT id FROM bank_accounts WHERE id = ? LOCK IN SHARE MODE")
+            .bind(compte)
+            .fetch_all(&mut *t2)
+            .await
+            .map(|_| ());
+        (t2, r)
+    });
+    attendre_une_requete_en_cours(
+        pool,
+        &["FROM bank_accounts WHERE id = ? LOCK IN SHARE MODE"],
+        || t2.is_finished(),
+    )
+    .await;
+
+    // (4)
+    let societe = ctx.company_id();
+    let t1_attend = tokio::spawn(async move {
+        let r = sqlx::query("SELECT id FROM companies WHERE id = ? FOR UPDATE")
+            .bind(societe)
+            .fetch_all(&mut *t1)
+            .await
+            .map(|_| ());
+        (t1, r)
+    });
+
+    // (5)
+    let debut = std::time::Instant::now();
+    while !capture.operations().iter().any(|o| o == operation) {
+        assert!(
+            debut.elapsed() < std::time::Duration::from_secs(10),
+            "⛔ aucun rejeu de {operation:?} en 10 s — ou bien la demande partagée de t2 n'a pas \
+             attendu derrière la demande exclusive de la route (prémisse « file InnoDB » fausse), \
+             ou bien InnoDB a désigné t1 ou t2 pour victime (fiche, AC4 : consigner la victime \
+             observée et la remonter). t2 fini : {}, t1 fini : {}",
+            t2.is_finished(),
+            t1_attend.is_finished()
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    capture.exiger_un_rejeu(operation);
+
+    // (6)
+    let (t2, r2) = t2.await.unwrap();
+    r2.expect("t2 ne doit pas être la victime : sa demande partagée est accordée");
+    t2.rollback().await.unwrap();
+
+    // (7) et (8)
+    let (t1, r1) = t1_attend.await.unwrap();
+    r1.expect("t1 doit obtenir R : la victime était la route");
+    t1.rollback().await.unwrap();
+    route.await.unwrap()
+}
+
+/// T29a-4 (Story 29-4a, #651, AC4) — **la clôture, victime d'un cycle à trois
+/// par la file d'attente, est rejouée**. Sans tenir aucun verrou, sa demande
+/// exclusive en attente fait attendre la demande partagée de `t2` derrière
+/// elle ; InnoDB annule la plus légère — la clôture —, qui rejoue et rend
+/// `200`. Tue M29-4 (enveloppe retirée : `500`, pas de témoin de rejeu).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn closing_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (compte, version) = compte_bancaire(&pool, &ctx).await;
+    let capture = CaptureRejeu::installer();
+
+    // (1)
+    let mut t1 = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM bank_accounts WHERE id = ? LOCK IN SHARE MODE")
+        .bind(compte)
+        .fetch_all(&mut *t1)
+        .await
+        .unwrap();
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::POST,
+        &format!("/api/v1/bank-accounts/{compte}/close"),
+        Some(json!({ "version": version, "closedOn": "2026-01-31" })),
+    );
+    let (status, corps) = cycle_a_trois_par_la_file(
+        &pool,
+        &ctx,
+        &capture,
+        t1,
+        compte,
+        route,
+        "bank_accounts::close",
+    )
+    .await;
+
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(corps["closedOn"], "2026-01-31");
+    let audits = compter(
+        &pool,
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'bank_account.closed' AND entity_id = ?",
+        compte,
+    )
+    .await;
+    assert_eq!(audits, 1, "une seule entrée d'audit");
+}
+
+/// T29a-9 (Story 29-4a, #651, AC4) — **la réouverture, victime du même cycle,
+/// est rejouée** : la séquence de T29a-4, sur un compte clos au montage
+/// (`closed_on` posé par SQL), la réouverture à la place de la clôture (même
+/// `FOR UPDATE`, `lock_for_closure`). Le cycle à quatre de la fiche n'est pas
+/// monté : le cycle à trois suffit à prouver que la réouverture, victime, est
+/// rejouée. Tue M29-20.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reopening_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (compte, version) = compte_bancaire(&pool, &ctx).await;
+    sqlx::query("UPDATE bank_accounts SET closed_on = '2026-01-31' WHERE id = ?")
+        .bind(compte)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let capture = CaptureRejeu::installer();
+
+    // (1)
+    let mut t1 = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM bank_accounts WHERE id = ? LOCK IN SHARE MODE")
+        .bind(compte)
+        .fetch_all(&mut *t1)
+        .await
+        .unwrap();
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::POST,
+        &format!("/api/v1/bank-accounts/{compte}/reopen"),
+        Some(json!({ "version": version })),
+    );
+    let (status, corps) = cycle_a_trois_par_la_file(
+        &pool,
+        &ctx,
+        &capture,
+        t1,
+        compte,
+        route,
+        "bank_accounts::reopen",
+    )
+    .await;
+
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert!(corps["closedOn"].is_null(), "{corps}");
+    let audits = compter(
+        &pool,
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'bank_account.reopened' AND entity_id = ?",
+        compte,
+    )
+    .await;
+    assert_eq!(audits, 1, "une seule entrée d'audit");
+}
+
+/// T29a-10 (Story 29-4a, #651, AC4) — **le `PATCH` du compte, victime, est
+/// rejoué**. Patron `victime()` tel quel : le `PATCH` **tient** la ressource
+/// que la transaction de test demandera — les partagés de
+/// `company_invoice_settings` (`claims_for_target`, un `journalAccountId` est
+/// envoyé), première instruction —, puis attend la ligne du compte que tient
+/// la transaction de test en exclusif ; elle demande les réglages en
+/// exclusif : cycle à deux, le `PATCH`, plus léger, est annulé et rejoué,
+/// `200`. Précondition : la ligne `company_invoice_settings` existe
+/// (`seed_accounting_company` l'insère) — sans elle, les deux verrous seraient
+/// d'intervalle, compatibles, et aucun cycle ne se formerait. Tue M29-21.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn bank_link_patch_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (compte, version) = compte_bancaire(&pool, &ctx).await;
+    let reglages = compter(
+        &pool,
+        "SELECT COUNT(*) FROM company_invoice_settings WHERE company_id = ?",
+        ctx.company_id(),
+    )
+    .await;
+    assert_eq!(reglages, 1, "précondition : la ligne des réglages existe");
+    // Un compte de banque imputable, ni débiteurs ni créanciers désigné.
+    let banque: i64 = sqlx::query_scalar(
+        "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+         VALUES (?, '1020', 'Banque', 'Asset', 1, 1) RETURNING id",
+    )
+    .bind(ctx.company_id())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let capture = CaptureRejeu::installer();
+
+    let mut lourde = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM bank_accounts WHERE id = ? FOR UPDATE")
+        .bind(compte)
+        .fetch_all(&mut *lourde)
+        .await
+        .unwrap();
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::PATCH,
+        &format!("/api/v1/bank-accounts/{compte}"),
+        Some(json!({ "journalAccountId": banque, "version": version })),
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["FROM bank_accounts", "archived = FALSE FOR UPDATE"],
+        "SELECT company_id FROM company_invoice_settings WHERE company_id = ? FOR UPDATE",
+        ctx.company_id(),
+    )
+    .await;
+
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(corps["journalAccountId"], banque);
+    capture.exiger_un_rejeu("bank_accounts::patch");
+}

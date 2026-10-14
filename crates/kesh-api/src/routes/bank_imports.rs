@@ -57,7 +57,9 @@ use crate::routes::ListResponse;
 /// `DbError::NotFound` → `AppError::BankAccountNotFound` (`404
 /// BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`, celui du pré-vol R7) : au dépôt, il ne
 /// naît que de la garde `ensure_open_unarchived_in_tx` sur un compte absent,
-/// d'une autre société ou archivé (la relecture d'entête, autre source, est
+/// d'une autre société ou archivé, ou de sa revérification verrouillante
+/// `recheck_open_unarchived_locked_in_tx` sur un compte archivé entre-temps
+/// (Story 29-4a, #651 ; la relecture d'entête, autre source, est
 /// inatteignable). Toute autre
 /// erreur suit `From` — donc `DbError::BankAccountClosed` → `409
 /// BANK_ACCOUNT_CLOSED`. Sans cet appariement, un archivé deviendrait le `404

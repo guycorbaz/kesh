@@ -64,18 +64,24 @@ const TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booking_da
 ///   même transaction (inatteignable).
 /// - [`DbError::BankAccountClosed`] si le compte bancaire est **clos** (Story
 ///   28-4a, #642).
+///
+/// Les deux refus se lisent deux fois : par la garde de tête, non
+/// verrouillante, puis par la revérification verrouillante qui suit l'`INSERT`
+/// d'entête (Story 29-4a, #651, AC2) — une clôture ou un archivage commité
+/// après la naissance de la vue de l'appelant est refusé là, rien d'écrit.
 pub async fn create_with_transactions(
     tx: &mut Transaction<'_, MySql>,
     new: NewBankImport,
     transactions: Vec<NewBankTransaction>,
 ) -> Result<(BankImport, Vec<BankTransaction>), DbError> {
     // Story 28-4a (#642, W22, AC6-bis) — compte archivé ou clos : lecture non
-    // verrouillante en tête de la fonction, avant l'`INSERT` d'entête. Sa
-    // position ne déplace pas la vue : elle est déjà née dans la route (la
-    // recherche de doublons, `find_by_company_and_hash`), et le chemin ne prend
-    // aucun verrou explicite avant ses écritures. D'où l'angle mort L1 (#651)
-    // pour l'import, qui couvre aussi l'analyse du fichier
-    // (`bank_accounts::ensure_open_in_tx`).
+    // verrouillante en tête de la fonction, avant l'`INSERT` d'entête — le
+    // refus précoce. Sa position ne déplace pas la vue : elle est déjà née dans
+    // la route (la recherche de doublons, `find_by_company_and_hash`), et le
+    // chemin ne prend aucun verrou explicite avant ses écritures. Une clôture
+    // ou un archivage commité après la naissance de la vue ne s'y voit pas :
+    // revérifié sous le verrou de clé étrangère, après l'`INSERT` d'entête
+    // (Story 29-4, AC2), ci-dessous.
     super::bank_accounts::ensure_open_unarchived_in_tx(tx, new.company_id, new.bank_account_id)
         .await?;
 
@@ -111,6 +117,23 @@ pub async fn create_with_transactions(
     }
     let import_id = i64::try_from(last_id)
         .map_err(|_| DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX")))?;
+
+    // Story 29-4a (#651, W22, AC2) — revérification verrouillante, archivé
+    // puis clos. L'`INSERT` d'entête vient de poser, par sa clé étrangère, un
+    // verrou partagé sur la ligne du compte, tenu jusqu'au commit : la
+    // revérification le redemande sans en créer (aucun verrou neuf) et lit le
+    // dernier état commité. Une clôture qui tenait la ligne a fait attendre
+    // l'`INSERT`, puis se voit ici ; une clôture qui arrive après attend le
+    // commit de l'import, puis voit ses transactions (I1). Ordre « entête →
+    // revérification → transactions » : la poser avant l'`INSERT` prendrait le
+    // compte avant `companies` (C-29-4-2). `NotFound` (archivé) → `404` par
+    // `import_create_error`, comme la garde de tête.
+    super::bank_accounts::recheck_open_unarchived_locked_in_tx(
+        tx,
+        new.company_id,
+        new.bank_account_id,
+    )
+    .await?;
 
     // Étape 2 : bulk INSERT bank_transactions par chunks de 1000.
     //

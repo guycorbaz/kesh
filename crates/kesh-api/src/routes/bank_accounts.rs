@@ -910,7 +910,8 @@ pub async fn archive_bank_account(
     // Advisory lock sentinel — serialize les mutations CRUD bank_accounts d'un
     // même tenant ET protège contre une création concurrente de
     // bank_transactions via le même chemin (mais bank_imports n'acquiert pas
-    // ce lock — L5 limitation v0.1 documentée).
+    // ce lock — L5 limitation v0.1 documentée) ; la course qu'il laissait est
+    // fermée par la revérification de l'import et du lot (Story 29-4).
     bank_accounts::acquire_company_sentinel_lock(&mut tx, current_user.company_id).await?;
 
     // Guard transactions (AC#8) — DANS la tx, après sentinel lock.
@@ -1006,8 +1007,18 @@ fn closure_refusal_error(refusal: bank_accounts::ClosureRefusal) -> AppError {
 /// ⛔ La route ne lit **rien** dans la transaction avant
 /// `bank_accounts::close_in_tx` : le `FOR UPDATE` de la ligne est sa première
 /// instruction, et c'est ce qui fait voir aux décomptes tout écrivain commité
-/// (voir le doc-comment de `close_in_tx`). Pas de rejeu sur interblocage : un
-/// seul verrou, en tenant rien, la route ne peut pas fermer de cycle.
+/// (voir le doc-comment de `close_in_tx`).
+///
+/// ⚠️ **Rejouée sur interblocage** par [`crate::retry::retry_app_on_deadlock`]
+/// (opération `bank_accounts::close`, Story 29-4a, #651, AC4) ; la transaction
+/// vit dans [`close_once`]. La route ne tient rien **comme détenteur**, mais sa
+/// demande exclusive **en attente** fait attendre derrière elle toute demande
+/// partagée ultérieure sur la ligne du compte — la revérification d'un
+/// écrivain (`bank_accounts::recheck_open_*`). Elle peut ainsi fermer un cycle
+/// à trois (un détenteur partagé du compte attend une ressource que tient un
+/// écrivain en file derrière la clôture), dont elle est la victime désignée,
+/// la plus légère (aucune écriture, aucun verrou accordé). Les contrôles de
+/// forme et l'onboarding restent devant l'enveloppe.
 pub async fn close_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -1031,49 +1042,93 @@ pub async fn close_bank_account(
         ));
     }
 
-    let mut tx = state
-        .pool
+    let version = body.version;
+    let after = crate::retry::retry_app_on_deadlock("bank_accounts::close", || {
+        close_once(&state.pool, &current_user, id, version, closed_on)
+    })
+    .await?;
+    Ok(Json(after))
+}
+
+/// Une tentative de la clôture : ouvre la transaction, appelle
+/// `bank_accounts::close_in_tx` **en première instruction**, trace
+/// `bank_account.closed` dans la même transaction, conclut. Sur refus,
+/// `rollback` explicite **avant** de rendre l'erreur : la transaction tient le
+/// `FOR UPDATE` du compte, qu'un abandon implicite ne rendrait qu'au retour de
+/// la connexion au pool — autant d'attente en plus pour les écrivains en file
+/// derrière la clôture. Les erreurs de dépôt sortent en
+/// `AppError::Database(_)`, visibles du prédicat de rejeu.
+async fn close_once(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    id: i64,
+    version: i32,
+    closed_on: chrono::NaiveDate,
+) -> Result<BankAccount, AppError> {
+    let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
-    let (after, before) = match bank_accounts::close_in_tx(
-        &mut tx,
-        current_user.company_id,
-        id,
-        body.version,
-        closed_on,
-    )
-    .await
-    {
-        Ok(bank_accounts::ClosureOutcome::Done { after, before }) => (after, before),
-        Ok(bank_accounts::ClosureOutcome::Refused(refusal)) => {
-            return Err(closure_refusal_error(refusal));
-        }
-        Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
-        Err(e) => return Err(AppError::Database(e)),
-    };
-
-    let details = serde_json::json!({
-        "bank_account_id": id,
-        "closed_on": after.closed_on,
-        "before": { "closed_on": before.closed_on, "version": before.version },
-        "after": { "closed_on": after.closed_on, "version": after.version },
-    });
-    audit_log::insert_in_tx(
-        &mut tx,
-        NewAuditLogEntry::from_current_user(
-            &current_user,
-            "bank_account.closed",
-            "bank_account",
+    let result = async {
+        let (after, before) = match bank_accounts::close_in_tx(
+            &mut tx,
+            current_user.company_id,
             id,
-            Some(details),
-        ),
-    )
-    .await?;
-    tx.commit()
+            version,
+            closed_on,
+        )
         .await
-        .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
-    Ok(Json(*after))
+        {
+            Ok(bank_accounts::ClosureOutcome::Done { after, before }) => (after, before),
+            Ok(bank_accounts::ClosureOutcome::Refused(refusal)) => {
+                return Err(closure_refusal_error(refusal));
+            }
+            Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
+            Err(e) => return Err(AppError::Database(e)),
+        };
+
+        let details = serde_json::json!({
+            "bank_account_id": id,
+            "closed_on": after.closed_on,
+            "before": { "closed_on": before.closed_on, "version": before.version },
+            "after": { "closed_on": after.closed_on, "version": after.version },
+        });
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::from_current_user(
+                current_user,
+                "bank_account.closed",
+                "bank_account",
+                id,
+                Some(details),
+            ),
+        )
+        .await?;
+        Ok(*after)
+    }
+    .await;
+    conclure(tx, result).await
+}
+
+/// Conclut une tentative de [`close_once`], [`reopen_once`] ou [`patch_once`]
+/// (Story 29-4a) : commit sur succès, `rollback` **explicite** sur erreur avant
+/// de la rendre — la transaction tient le `FOR UPDATE` de la ligne du compte.
+async fn conclure<T>(
+    tx: Transaction<'_, MySql>,
+    result: Result<T, AppError>,
+) -> Result<T, AppError> {
+    match result {
+        Ok(v) => {
+            tx.commit()
+                .await
+                .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
 }
 
 /// Handler `POST /api/v1/bank-accounts/{id}/reopen` — **rouvre** un compte
@@ -1085,6 +1140,15 @@ pub async fn close_bank_account(
 /// **Ordre des refus** : forme (`400`) → `404` (inexistant, autre société,
 /// archivé) → sous verrou : `409 OPTIMISTIC_LOCK_CONFLICT` → `409
 /// BANK_ACCOUNT_NOT_CLOSED`.
+///
+/// ⚠️ **Rejouée sur interblocage** (opération `bank_accounts::reopen`, Story
+/// 29-4a, #651, AC4) ; la transaction vit dans [`reopen_once`]. Comme la
+/// clôture, la réouverture ne tient rien comme détenteur, mais sa demande
+/// exclusive en attente sur la ligne du compte clos fait attendre derrière
+/// elle les demandes partagées ultérieures : un import ou un lot qui a posé
+/// son `INSERT` à clé étrangère (et que la revérification va refuser), ou une
+/// annulation qui revérifie. Elle peut fermer un cycle à trois ou à quatre,
+/// dont elle est la victime — d'où le rejeu.
 pub async fn reopen_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -1095,42 +1159,61 @@ pub async fn reopen_bank_account(
     if body.version < 1 {
         return Err(AppError::Validation("version doit être >= 1".to_string()));
     }
-    let mut tx = state
-        .pool
+    let version = body.version;
+    let after = crate::retry::retry_app_on_deadlock("bank_accounts::reopen", || {
+        reopen_once(&state.pool, &current_user, id, version)
+    })
+    .await?;
+    Ok(Json(after))
+}
+
+/// Une tentative de la réouverture : `bank_accounts::reopen_in_tx` en
+/// première instruction, trace `bank_account.reopened`, conclusion par
+/// [`conclure`] (`rollback` explicite sur refus).
+async fn reopen_once(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    id: i64,
+    version: i32,
+) -> Result<BankAccount, AppError> {
+    let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
-    let (after, before) =
-        match bank_accounts::reopen_in_tx(&mut tx, current_user.company_id, id, body.version).await
-        {
-            Ok(bank_accounts::ClosureOutcome::Done { after, before }) => (after, before),
-            Ok(bank_accounts::ClosureOutcome::Refused(refusal)) => {
-                return Err(closure_refusal_error(refusal));
-            }
-            Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
-            Err(e) => return Err(AppError::Database(e)),
-        };
+    let result =
+        async {
+            let (after, before) =
+                match bank_accounts::reopen_in_tx(&mut tx, current_user.company_id, id, version)
+                    .await
+                {
+                    Ok(bank_accounts::ClosureOutcome::Done { after, before }) => (after, before),
+                    Ok(bank_accounts::ClosureOutcome::Refused(refusal)) => {
+                        return Err(closure_refusal_error(refusal));
+                    }
+                    Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
+                    Err(e) => return Err(AppError::Database(e)),
+                };
 
-    let details = serde_json::json!({
-        "bank_account_id": id,
-        "before": { "closed_on": before.closed_on, "version": before.version },
-        "after": { "closed_on": after.closed_on, "version": after.version },
-    });
-    audit_log::insert_in_tx(
-        &mut tx,
-        NewAuditLogEntry::from_current_user(
-            &current_user,
-            "bank_account.reopened",
-            "bank_account",
-            id,
-            Some(details),
-        ),
-    )
-    .await?;
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
-    Ok(Json(*after))
+            let details = serde_json::json!({
+                "bank_account_id": id,
+                "before": { "closed_on": before.closed_on, "version": before.version },
+                "after": { "closed_on": after.closed_on, "version": after.version },
+            });
+            audit_log::insert_in_tx(
+                &mut tx,
+                NewAuditLogEntry::from_current_user(
+                    current_user,
+                    "bank_account.reopened",
+                    "bank_account",
+                    id,
+                    Some(details),
+                ),
+            )
+            .await?;
+            Ok(*after)
+        }
+        .await;
+    conclure(tx, result).await
 }
 
 /// Handler `PATCH /api/v1/bank-accounts/{id}` — met à jour le
@@ -1145,6 +1228,16 @@ pub async fn reopen_bank_account(
 /// une valeur inchangée court-circuite sans contrôle) → 400
 /// `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` (compte lié **changé** vers le compte
 /// débiteurs ou créanciers désigné).
+///
+/// ⚠️ **Rejouée sur interblocage** (opération `bank_accounts::patch`, Story
+/// 29-4a, #651, AC4) ; la transaction vit dans [`patch_once`]. Sa demande
+/// exclusive de la ligne du compte (`set_journal_account_id_for_company`), en
+/// attente derrière un détenteur partagé, fait attendre les demandes partagées
+/// ultérieures : cycle à trois possible — un import qui a revérifié (partagé
+/// du compte) attend l'intervalle que tient une suppression d'import, le
+/// `PATCH` attend derrière l'import, la suppression revérifie derrière le
+/// `PATCH`. Le `PATCH`, qui n'a rien écrit, y est la victime. La version et
+/// `validate_journal_account_id` (sur le pool) restent devant l'enveloppe.
 pub async fn patch_bank_account_journal_link(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -1164,63 +1257,80 @@ pub async fn patch_bank_account_journal_link(
     )
     .await?;
 
-    let mut tx = state
-        .pool
+    let (journal_account_id, version) = (body.journal_account_id, body.version);
+    let updated = crate::retry::retry_app_on_deadlock("bank_accounts::patch", || {
+        patch_once(&state.pool, &current_user, id, journal_account_id, version)
+    })
+    .await?;
+    Ok(Json(updated))
+}
+
+/// Une tentative du `PATCH` : partagés des réglages (`claims_for_target`, en
+/// première instruction), `FOR UPDATE` du compte et `UPDATE`
+/// (`set_journal_account_id_for_company`), trace `bank_account.updated` si la
+/// version a bougé, conclusion par [`conclure`] (`rollback` explicite sur
+/// refus).
+async fn patch_once(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    id: i64,
+    journal_account_id: Option<i64>,
+    version: i32,
+) -> Result<BankAccount, AppError> {
+    let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
+    let result = async {
+        // Story 15-6c (AC2, AC4) — première instruction de la transaction (le
+        // lien ne prend pas la sentinelle), avant le `FOR UPDATE` de la ligne.
+        let claims =
+            claims_for_target(&mut tx, current_user.company_id, journal_account_id).await?;
 
-    // Story 15-6c (AC2, AC4) — première instruction de la transaction (le lien
-    // ne prend pas la sentinelle), avant le `FOR UPDATE` de la ligne.
-    let claims =
-        claims_for_target(&mut tx, current_user.company_id, body.journal_account_id).await?;
-
-    let (updated, before) = match bank_accounts::set_journal_account_id_for_company(
-        &mut tx,
-        current_user.company_id,
-        id,
-        body.journal_account_id,
-        body.version,
-        &claims,
-    )
-    .await
-    {
-        Ok(pair) => pair,
-        Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
-        Err(e) => return Err(AppError::Database(e)),
-    };
-
-    if updated.version != before.version {
-        let details = serde_json::json!({
-            "bank_account_id": id,
-            "trigger": "journal_account_link",
-            "before": {
-                "journal_account_id": before.journal_account_id,
-                "version": before.version,
-            },
-            "after": {
-                "journal_account_id": updated.journal_account_id,
-                "version": updated.version,
-            },
-        });
-        audit_log::insert_in_tx(
+        let (updated, before) = match bank_accounts::set_journal_account_id_for_company(
             &mut tx,
-            NewAuditLogEntry::from_current_user(
-                &current_user,
-                "bank_account.updated",
-                "bank_account",
-                id,
-                Some(details),
-            ),
+            current_user.company_id,
+            id,
+            journal_account_id,
+            version,
+            &claims,
         )
-        .await?;
-    }
-
-    tx.commit()
         .await
-        .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
+        {
+            Ok(pair) => pair,
+            Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
+            Err(e) => return Err(AppError::Database(e)),
+        };
 
-    Ok(Json(updated))
+        if updated.version != before.version {
+            let details = serde_json::json!({
+                "bank_account_id": id,
+                "trigger": "journal_account_link",
+                "before": {
+                    "journal_account_id": before.journal_account_id,
+                    "version": before.version,
+                },
+                "after": {
+                    "journal_account_id": updated.journal_account_id,
+                    "version": updated.version,
+                },
+            });
+            audit_log::insert_in_tx(
+                &mut tx,
+                NewAuditLogEntry::from_current_user(
+                    current_user,
+                    "bank_account.updated",
+                    "bank_account",
+                    id,
+                    Some(details),
+                ),
+            )
+            .await?;
+        }
+        Ok(updated)
+    }
+    .await;
+    conclure(tx, result).await
 }
 
 #[cfg(test)]

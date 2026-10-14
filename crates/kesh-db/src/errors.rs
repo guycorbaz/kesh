@@ -1246,7 +1246,10 @@ pub enum DbError {
     ///
     /// Produite par les gardes du dépôt (`bank_accounts::ensure_open_in_tx`,
     /// `ensure_open_unarchived_in_tx`, et les instructions verrouillées qui
-    /// lisent `closed_on` au sol) ; la route la remonte en
+    /// lisent `closed_on` au sol) et par la revérification verrouillante de
+    /// l'import et de la création de lot
+    /// (`bank_accounts::recheck_open_unarchived_locked_in_tx`, Story 29-4a,
+    /// #651) ; la route la remonte en
     /// `AppError::Database(DbError::BankAccountClosed { … })`.
     #[error("Compte bancaire clos — lecture seule : id={bank_account_id}")]
     BankAccountClosed { bank_account_id: i64 },

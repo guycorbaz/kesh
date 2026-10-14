@@ -335,3 +335,63 @@
   annulations ; mutation M29-24.
 - **Écartée** : cinq tests fonctionnels (coût, sans information neuve).
 - **Réversible** : oui.
+
+---
+
+*Choix du développement de la 29-4a (`bmad-dev-story`, Opus 5.5, autonomie, 2026-10-14).*
+
+### C-29-4-23 — Répartition des tests de la partie a
+
+- **Contexte** : l'AC3 place les tests de fenêtre au module `compte_clos` de `bank_accounts_repository.rs` ; ceux de
+  W17 exigent une facture fournisseur payable et un compte source lié au grand livre, montage que porte déjà
+  `payment_batches_repository.rs` (`setup`, `make_invoice`).
+- **Retenu** : T29a-1, T29a-2, T29a-6, T29a-7, T29a-11 au module `compte_clos` ; T29a-3 et T29a-12 dans
+  `payment_batches_repository.rs`, qui réutilisent son montage (le compte source y est rendu non principal par SQL,
+  un principal ne se clôt pas). T29a-7 reste au module `compte_clos` : il insère son lot par SQL et n'a besoin
+  d'aucune facture.
+- **Écartée** : recopier le montage fournisseur dans `bank_accounts_repository.rs` (duplication).
+- **Réversible** : oui (déplacement de tests).
+
+### C-29-4-24 — La position d'une revérification, déclarée en structure et non en texte
+
+- **Contexte** : l'AC5 écrit `Reverifiee(Variante, "<position>")` et exige un ordre textuel contrôlé (assertion
+  (iii)).
+- **Retenu** : `Reverifiee(Variante, Position { apres, avant })` — `apres` et `avant` sont des fragments SQL cherchés
+  dans les littéraux de la fonction (aplatis : échappements neutralisés, blancs réduits, majuscules) ; l'appel doit
+  suivre le dernier littéral qui contient `apres` et précéder le premier qui contient `avant`. La position devient
+  l'entrée même de l'assertion, au lieu d'un texte que rien ne relirait. La 29-4b pourra élargir `Position` aux
+  jetons de code et à la « dernière occurrence de tout geste verrouillant » de l'AC8.
+- **Écartée** : une chaîne libre doublée d'une table d'ordre séparée (deux sources pour un fait).
+- **Réversible** : oui.
+
+### C-29-4-25 — Une conclusion commune aux trois tentatives ; `begin` et `commit` gardent leur rendu
+
+- **Contexte** : `close_once`, `reopen_once` et `patch_once` concluent de la même façon (commit, ou `rollback`
+  explicite avant de rendre l'erreur). Le patron `delete_once` rend les erreurs de `begin` / `commit` en
+  `AppError::Database`, les trois routes en `AppError::Internal`.
+- **Retenu** : une fonction `conclure(tx, result)` partagée (DRY) ; le rendu `Internal` de `begin` et `commit`
+  **inchangé** — un `commit` InnoDB ne rend pas d'interblocage (les cycles se détectent à la demande de verrou),
+  et changer le code d'erreur d'une panne de connexion est hors périmètre.
+- **Écartée** : recopier le `match` final trois fois ; aligner sur `delete_once`.
+- **Réversible** : oui.
+
+### C-29-4-26 — T29a-4 et T29a-9 : attendre la demande de `t2` en cours avant que `t1` demande `R`
+
+- **Contexte** : la séquence de l'AC4 enchaîne l'étape (3) (`t2` demande le compte en partagé, en tâche) et
+  l'étape (4) (`t1` demande `R`) sans point de rendez-vous.
+- **Retenu** : entre les deux, `attendre_une_requete_en_cours` sur la requête de `t2` — une aide d'ordonnancement, non
+  une preuve (la sonde voit une requête en cours, non bloquée) ; c'est l'événement de rejeu de l'étape (5) qui
+  établit l'attente, comme la fiche le prescrit. Le cycle se forme dans les deux ordres ; le rendez-vous évite
+  seulement de dépendre de l'ordonnanceur pour que la demande de `t2` parte la première.
+- **Écartée** : un délai fixe.
+- **Réversible** : oui.
+
+### C-29-4-27 — Dans les tests de fenêtre de l'import, la tâche commite sur succès
+
+- **Contexte** : l'AC3 prescrit, pour W22, un `rollback` explicite de la tâche avant les comptages.
+- **Retenu** : la tâche commite si l'import réussit — ce que fait la route — et annule explicitement sinon. Au sol,
+  le test rougit sur l'issue (étape (5), `Ok(())` au lieu du refus) ; sous la story, l'annulation explicite précède
+  les comptages, comme prescrit. Un `rollback` inconditionnel aurait rendu les comptages « rien d'écrit » vrais au
+  sol aussi, sans rien prouver.
+- **Écartée** : `rollback` inconditionnel.
+- **Réversible** : oui.
