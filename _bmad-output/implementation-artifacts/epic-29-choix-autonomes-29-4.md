@@ -29,6 +29,10 @@
 - *Annotation du 2026-10-14 (remédiation de la validation P1)* : le complément (b) ne porte plus que sur la **clôture**
   (C-29-4-5 amendé) ; s'y ajoute l'épinglage d'`innodb_snapshot_isolation` (C-29-4-13). Réversible : sept appels, une
   enveloppe, un réglage de session.
+- *Annotation du 2026-10-14 (remédiation de la validation P2 ; décisions de l'orchestrateur)* : le complément (b) porte
+  désormais sur la **clôture, la réouverture et le `PATCH` du compte** (C-29-4-5, C-29-4-14 renversé, C-29-4-19) ;
+  l'épinglage d'`innodb_snapshot_isolation` est **retiré** (C-29-4-13, #669) ; la revérification a deux variantes
+  (C-29-4-20). Réversible : sept appels, deux fonctions, trois enveloppes.
 
 ### C-29-4-2 — Positions : après l'`INSERT` à clé étrangère (W17, W22) ; en dernière acquisition de verrou (annulations)
 
@@ -75,6 +79,8 @@
   gestes permis sur un clos (W21, W30) ne touchent pas la ligne du compte. Point (vi) : sept → **huit** (non neuf) ; le
   test T29a-4 ne porte que sur la clôture. Écartée : garder les deux comme défense en profondeur (élargit le périmètre
   minimal sans cas à défendre).
+- *Amendé le 2026-10-14 (validation P2, F3 = R9 ; décision de l'orchestrateur)* : l'amendement de la P1 est **renversé**
+  — la réouverture est rejouée (C-29-4-14). Point (vi) : sept → **dix** (clôture, réouverture, `PATCH`).
 
 ### C-29-4-6 — Découper en 29-4a (import, lot, rejeu) et 29-4b (annulations, textes)
 
@@ -90,6 +96,10 @@
   touche aussi des doc-comments de `bank_accounts.rs` et de `routes/reconciliation.rs`. Recompté (fiche, § *Périmètre
   minimal*) : 29-4a cinq modules de code (`pool` compris, C-29-4-13), 29-4b quatre de code et sept comptée largement ;
   le découpage reste, la 29-4b porte une dérogation motivée (C-29-4-18).
+- *Annotation du 2026-10-14 (validation P2, R1 = F1)* : `pool` sort du décompte avec l'AC11 ; la 29-4a touche **quatre**
+  modules de code (les deux enveloppes neuves et la variante « archivé » vont dans des modules déjà comptés), sept
+  distincts au total ; le découpage reste, la dérogation de la 29-4b reste (relue, inchangée), aucune n'est due pour la
+  29-4a. Le signal D5 levé en P2 (HIGH né de la remédiation P1) est déclaré au Project Lead (Change Log).
 
 ### C-29-4-7 — Résidu : un cycle à trois où l'import serait victime
 
@@ -102,6 +112,9 @@
 - *Amendé le 2026-10-14 (validation P1, F8 b)* : la réserve « et que la transaction la plus légère ne soit pas
   désignée » décrivait un cas qui n'arrive qu'à égalité de poids ; dans ce cycle, la clôture (une demande en attente,
   rien d'écrit) est toujours la plus légère. Le résidu est **théorique**, écrit comme tel, sans « à surveiller ».
+- *Annoté le 2026-10-14 (validation P2, F2)* : le même cycle existe avec le `PATCH` du compte à la place de la clôture
+  comme demandeur d'exclusif en file ; le `PATCH` est désormais rejoué (C-29-4-19), et l'import, qui a écrit, reste le
+  plus lourd : même résidu théorique. L'argument de poids est écrit (fiche, § *Cycles*, F11 de la P2).
 
 ### C-29-4-8 — Pas de revérification là où un invariant ou un verrou existant tient
 
@@ -158,10 +171,28 @@
   installation à la montée de version du serveur pour un réglage que l'application peut poser elle-même ;
   (4) exigence de version au manuel d'administration seule — laisse le `500` à qui ne lit pas le manuel.
 - **Réversible** : oui (une instruction).
+- *Annotation du 2026-10-14 (validation P2, R1 = F1, HIGH convergent ; décision de l'orchestrateur)* : **retiré de la
+  story**. `create_pool` n'a **aucun appelant** — la production construit son pool dans `kesh-api/src/main.rs:74`, sans
+  `after_connect`, depuis la Story 1.2 — : le réglage n'aurait atteint aucune connexion, et T29a-8 (b), qui appelait
+  `configurer_session` directement, aurait certifié une prémisse fausse. Retrait plutôt qu'ajout : brancher le réglage
+  sur le pool réel touche toute la base (`sql_mode`, `time_zone` décrits par `create_pool` et jamais appliqués) et
+  ajoute un module à la 29-4a. Sortent : l'AC11, `configurer_session`, T29a-8, M29-5. Question portée par **#669**
+  (bug, P3). Angle mort écrit : sous MariaDB 11.6+, la revérification rendrait `1020` → `500` dans la course, comme les
+  deux sites préexistants. Les écartées (1) à (4) ci-dessus restent écartées pour la story ; #669 les rouvre.
 
 ### C-29-4-14 — La réouverture n'est pas rejouée
 
 - Voir l'amendement de C-29-4-5 (validation P1, F5). Réversible : oui (une enveloppe).
+- *Renversé le 2026-10-14 (validation P2, F3 = R9 ; décision de l'orchestrateur)* : **la réouverture est rejouée**.
+  L'argument de la P1 était faux : « toute écriture sur un clos est refusée **avant** de prendre ce partagé » — W22 et
+  W17 prennent le partagé du compte par leur `INSERT` avant que la revérification les refuse, les annulations le
+  prennent par la revérification ; et une demande partagée attend derrière une demande exclusive **en attente**, celle
+  de la réouverture comprise. Cycle à quatre (raisonné) : annulation → réouverture → import → route de gestion →
+  annulation. Retenu : `reopen_once` et `retry_app_on_deadlock("bank_accounts::reopen", …)`, T29a-9, M29-20.
+  **Écartée** : rejouer aussi les routes de gestion (`PUT`, `POST`, `DELETE /bank-accounts`) pour fermer le résidu de
+  ce cycle — `M` y est à égalité de poids avec la réouverture et peut être désignée, `500` sans rien d'écrit ; quatre
+  gestes concurrents sur un même compte et une même société, aucun cas observé : trois enveloppes de plus pour un cas
+  négligeable, résidu écrit. Réversible : oui (une enveloppe).
 
 ### C-29-4-15 — L'ensemble des gardes non verrouillantes s'extrait du code, et `FENETRE` lui est égal
 
@@ -187,6 +218,9 @@
 - **Écartée** : une variante `recheck_open_unarchived_locked_in_tx` pour W22 / W17 — hors #651, et non mécanique (W17
   rend `IllegalStateTransition` pour un archivé, W22 `NotFound` : deux traductions).
 - **Réversible** : oui.
+- *Renversé le 2026-10-14 (validation P2, R2 = F4 ; décision de l'orchestrateur)* : la course **est fermée**, et la
+  variante écartée est retenue — elle est mécanique aux conditions que la P2 a écrites (C-29-4-20). Plus d'issue L5 à
+  ouvrir ; l'angle mort disparaît de la fiche ; le doc-comment `bank_accounts.rs:866-867` se réécrit en 29-4a.
 
 ### C-29-4-17 — Identifiants propres à la story : `T29a-n`, `T29b-n`, `M29-n`
 
@@ -203,4 +237,56 @@
   des textes faux. Section *Dérogation règle de splitting (29-4b)* de la fiche.
 - **Écartées** : une 29-4c pour les textes ; déplacer en 29-4a la réécriture de `bank_accounts.rs` (fausse tant que les
   annulations restent ouvertes).
+- **Réversible** : oui.
+
+### C-29-4-19 — Rejouer le `PATCH` du compte (décision de l'orchestrateur, validation P2)
+
+- **Contexte** (validation P2, F2) : la revérification de la 29-4b crée un cycle à trois par la file d'attente — un import
+  `I` qui a passé sa revérification tient le compte en partagé et attend l'intervalle d'`idx_bank_transactions_import`
+  tenu par une suppression d'import `D` (W24) ; un `PATCH` du compte demande l'exclusif derrière `I` ; `D`, à sa
+  revérification, attend derrière le `PATCH` en file. Le `PATCH`, qui n'a rien écrit, est le plus léger : victime,
+  `500` sans enveloppe. C'est aussi lui la victime de l'angle mort « PATCH » par `accounts` écrit en P1.
+- **Retenu** : `patch_once` (la transaction du `PATCH` : partagés des réglages, `FOR UPDATE` du compte, audit, commit)
+  enveloppée par `retry_app_on_deadlock("bank_accounts::patch", …)` ; version et `validate_journal_account_id` devant
+  l'enveloppe ; `rollback` explicite sur refus ; test T29a-10 (patron `victime()` : le `PATCH` tient les partagés des
+  réglages que la transaction de test demande) ; mutation M29-21. Ferme le cycle et l'angle mort d'un seul geste.
+- **Écartées** : écrire le cycle comme troisième angle mort (F2, option b : deux angles morts au lieu d'une enveloppe) ;
+  monter le cycle à trois dans le test (le cycle à deux suffit à prouver que la victime est rejouée).
+- **Réversible** : oui (une enveloppe).
+
+### C-29-4-20 — Deux variantes de la revérification ; W17 convertit l'archivé (décision de l'orchestrateur, validation P2)
+
+- **Contexte** (validation P2, R2 = F4) : la revérification de l'import et du lot doit lire `archived` (fermer L5), celle
+  des annulations jamais (un archivé ne se rouvre pas : refuser l'annulation d'un de ses règlements la rendrait
+  définitivement impossible).
+- **Retenu** : `RECHECK_OPEN_LOCKED_SQL` / `recheck_open_locked_in_tx` (annulations) et
+  `RECHECK_OPEN_UNARCHIVED_LOCKED_SQL` / `recheck_open_unarchived_locked_in_tx` (W22, W17), symétrie exacte
+  d'`ENSURE_OPEN_SQL` / `ENSURE_OPEN_UNARCHIVED_SQL` ; ordre « archivé avant clos » ; W22 rend `NotFound` (traduit en
+  `404` par la route, rien à ajouter) ; W17 convertit `NotFound` en `IllegalStateTransition("le compte bancaire source est
+  archivé")` au site d'appel (sûr : la ligne existe après l'`INSERT` à clé étrangère, sa société est contrôlée à
+  l'étape (0)) ; registre `Reverifiee(Variante, …)` et assertion (i bis) en dur pour les annulations.
+- **Écartées** : une seule fonction qui rendrait `archived` à l'appelant (chaque appelant redécide, et une annulation
+  pourrait le lire) ; faire lire `archived` à la fonction partagée (régression : annulations impossibles sur un
+  archivé) ; traduire l'archivé de W17 en `NotFound` (changerait le refus de l'étape (0)).
+- **Réversible** : oui.
+
+### C-29-4-21 — Établir l'attente par `INNODB_TRX`, non par un délai (T29a-6, T29a-7)
+
+- **Contexte** (validation P2, R4 = F7) : dans l'autre ordre, l'issue ne départage pas « prémisse vraie » de « montage
+  arrivé avant que la demande exclusive soit en file » ; un délai de 500 ms l'espérait, et la sonde de requête en cours
+  ne voit pas une requête bloquée (P5 de la 28-4).
+- **Retenu** : la tâche de la clôture relève son `CONNECTION_ID()` ; le test attend une ligne d'`INNODB_TRX` avec
+  `trx_mysql_thread_id` égal et `trx_state = 'LOCK WAIT'`, bornée à 10 s (fixture neuve `attendre_un_verrou_en_attente`).
+  Colonnes présentes sous MariaDB 10.11 : raisonné, à vérifier au dev.
+- **Écartées** : garder le délai seul (passe à vide sans signal) ; `INNODB_LOCK_WAITS` (même information, une jointure de
+  plus) ; écrire seulement au Dev Agent Record que le test ne distingue pas les deux cas.
+- **Réversible** : oui.
+
+### C-29-4-22 — Un seul test « annulation sur un compte archivé » (W25), non cinq
+
+- **Contexte** : les cinq annulations appellent la même fonction `recheck_open_locked_in_tx`.
+- **Retenu** : T29b-5 sur W25 (règlement par virement, compte archivé ensuite — l'archivage ne compte que les
+  `bank_transactions`) ; pour les quatre autres, l'assertion (i bis) du registre, qui interdit en dur la variante aux
+  annulations ; mutation M29-24.
+- **Écartée** : cinq tests fonctionnels (coût, sans information neuve).
 - **Réversible** : oui.
