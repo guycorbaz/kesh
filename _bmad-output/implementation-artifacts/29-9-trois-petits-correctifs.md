@@ -18,7 +18,7 @@ et `29-9-validate-prompt-p5-ciblee.md`.
 ⚠️ **La clé reste `29-9-trois-petits-correctifs`** (fichier, `sprint-status.yaml`, registre, prompts) : seul le titre
 dit « quatre » (C-29-9-19).
 
-**review** — *annotation du 2026-10-15 (développement, Opus 5.5, autonomie)* : branche rebasée sur `4b358373` (tête
+**done** — revue de code close le 2026-10-15 (P1 Opus B/E/A, remédiée sans code ; P2 ciblée Haiku 0/0/0/3) ; choix versés au registre de l epic. Antérieurement : **review** — *annotation du 2026-10-15 (développement, Opus 5.5, autonomie)* : branche rebasée sur `4b358373` (tête
 de `story/29-8`, non mergée) ; T0-T10 faits, dernier commit de code `284c1d3b` ; gates complets et E2E complet à ce
 commit (Dev Agent Record). Choix nés du développement : **C-29-9-26 à C-29-9-30**. Revue de code P1 à lancer : prompt
 `29-9-review-prompt-p1.md`.
@@ -1224,3 +1224,12 @@ orpheline du fichier d'epic (ci-dessus).
     P1 l'autorisait ; le prompt P2 ne l'autorise plus).
   - Prompt de la passe ciblée P2 (une lentille, sur le seul diff de cette remédiation) :
     `29-9-review-prompt-p2-ciblee.md`.
+
+- **2026-10-15 — Revue de code P2 (passe ciblée, Haiku, prompt `29-9-review-prompt-p2-ciblee.md`) : 0/0/0/3 ; revue close.**
+  Rapport `kesh-gate-logs/299-review-p2-T.md`. Périmètre vérifié : `crates` et `frontend` vides au diff de la remédiation.
+  Trend : P1 (B 0/0/0/5, E 0/0/0/9, A 0/0/2/5) → remédiation sans code (5925a680) → P2 ciblée 0/0/0/3 → **0 au-dessus de LOW**.
+  - T-1 (LOW), laissé : `user-manual.tex:~1729` (« la remet parmi les propositions ») — vrai à la lettre (la transaction
+    redevient une proposition), la réserve d'affichage au-delà de 500 est écrite à la puce *Rejeter* et au rattachement.
+  - T-2 (LOW), laissé : une ligne de décompte (« 73 → 75 specs ») réécrite en place plutôt qu'annotée ; contenu juste.
+  - T-3 (LOW), laissé : l'en-tête n° 165 de `sprint-status.yaml` dit « rebasée sur 4b358373 » — relevé daté, juste à sa date.
+  - Registre `epic-29-choix-autonomes-29-9.md` (C-29-9-1 à 30) versé au registre de l'epic et supprimé.
