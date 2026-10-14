@@ -450,3 +450,83 @@
 - **Écartée** : corriger R-2 dans la 29-4a — chaque correctif de production rouvrirait la boucle de revue.
 - **Réversible** : oui.
 
+*Choix du développement de la 29-4b (Opus 5.5, autonomie, 2026-10-14).*
+
+### C-29-4-32 — Les tests de fenêtre des annulations : dans `bank_accounts_closed_e2e.rs`, l'annulation appelée au dépôt
+
+- **Contexte** : AC7 prescrit les tests T29b-1 « au dépôt, patron de l'AC3 », répartition au choix du dev. Les états à
+  annuler (rapprochement `Entry`, règlement par virement, facture fournisseur payée par virement) se construisent par
+  plusieurs routes ; `bank_accounts_closed_e2e.rs` en porte déjà les montages (`Ctx::rapprocher`, `regler`,
+  `payer_fournisseur`).
+- **Retenu** : T29b-1 (cinq tests), T29b-2 (deux) et T29b-5 dans `crates/kesh-api/tests/bank_accounts_closed_e2e.rs`.
+  L'état se pose par les routes, sur un compte ouvert ; l'**annulation s'appelle au dépôt** (la fonction `_in_tx` que la
+  route appelle, énumération `Annulation`), dans une transaction que le test possède — il voit le `DbError` et annule
+  explicitement avant tout comptage ; la clôture concurrente est `close_in_tx`, au dépôt. T29b-5 passe, lui, par la
+  route (l'annulation sur un compte archivé est un comportement de route). T29b-3 dans `rejeu_interblocage_e2e.rs`.
+- **Écartée** : reconstruire ces états au dépôt dans `kesh-db/tests` (trois fichiers, montages de factures, d'écritures
+  et de règlements à dupliquer) ; passer l'annulation par la route dans T29b-1 (l'erreur de dépôt, et le rollback
+  explicite que l'AC3 exige, ne se voient plus).
+- **Réversible** : oui (déplacement de tests).
+
+### C-29-4-33 — R-2 : `is_primary` relu sous un `FOR UPDATE` avancé, par une fonction de dépôt neuve
+
+- **Contexte** : T6-bis, R-2 de la passe ciblée P2 de la 29-4a — la garde « principal + autres comptes actifs » de
+  l'archivage décidait sur le `is_primary` du pré-vol, réutilisé à chaque tentative du rejeu.
+- **Retenu** : `bank_accounts::primary_flag_locked_in_tx` (`SELECT is_primary … AND archived = FALSE FOR UPDATE`),
+  appelée dans `archive_once` juste avant la garde ; `None` → `404 BANK_ACCOUNT_NOT_FOUND`, le refus même
+  qu'`archive_for_company` aurait rendu sur la même ligne. L'exclusif de la ligne, qu'`archive_for_company` prend
+  ensuite, est **avancé** devant la garde : l'ordre « `companies` X puis compte X » est inchangé, et entre les deux
+  positions la tentative ne fait qu'une lecture non verrouillante (raisonné). L'ordre des refus est inchangé
+  (412 transactions → 412 principal → 409 version). Test `archive_rereads_the_primary_flag_inside_its_transaction`
+  (`bank_accounts_e2e.rs`), rouge au sol : `412` au lieu de `409`.
+- **Écartées** : une lecture non verrouillante après la sentinelle (juste tant que toute promotion passe par la
+  sentinelle — l'onboarding `upsert_primary_in_tx` ne la prend pas) ; décider sur le `before.is_primary`
+  d'`archive_for_company` (la garde passerait après le contrôle de version : ordre des refus changé).
+- **Constat** : l'effet au sol est un **mauvais code de refus** (`412` sur un compte qui n'est plus principal), non un
+  archivage indu — le verrou optimiste d'`archive_for_company` refusait déjà un compte dont la version avait bougé.
+- **Réversible** : oui.
+
+### C-29-4-34 — R-5 : le `rollback` explicite de `conclure` gardé par un test textuel, son effet dynamique déclaré non couvert
+
+- **Contexte** : R-5 demandait une mutation de `conclure` sans `rollback`, tuée par un test qui sonde le verrou, ou
+  déclarée non couverte.
+- **Établi au code** (sqlx 0.8.6) : `Transaction::drop` ne fait que mettre le `ROLLBACK` en file
+  (`sqlx-mysql`, `start_rollback`), et `PoolConnection::drop` rend la connexion par une tâche lancée à part
+  (`pool/connection.rs:208`) qui l'envoie (`ping`, `:314`). Sans `rollback` explicite, le verrou est rendu **un peu plus
+  tard** ; un test qui le sonderait après la réponse ferait la course contre cette tâche.
+- **Retenu** : T29b-7 (`bank_account_closed_inventory.rs`), test textuel sur les corps aplatis — `conclure` annule sur
+  erreur, et les six tentatives s'y concluent ; il tue M29-35. Le comportement « verrou rendu avant la réponse » est
+  déclaré non couvert dynamiquement (doc-comment du test, Dev Agent Record).
+- **Écartée** : une sonde après la réponse (verte ou rouge selon l'ordonnanceur).
+- **Réversible** : oui.
+
+### C-29-4-35 — La position « en dernier » des annulations : une variante de `Position`, et deux jetons de plus
+
+- **Contexte** : AC8 étend l'ordre textuel aux annulations (dernier geste verrouillant, avant l'audit) ; le registre de
+  la 29-4a ne connaissait que `Position { apres, avant }` (littéraux).
+- **Retenu** : `Position` devient une énumération — `Litteraux { apres, avant }` (import, lot) et `EnDernier` (les cinq
+  annulations), contrôlée par `fautes_en_dernier` : jetons SQL de la fiche dans les littéraux, appels dans la copie
+  masquée ; un corps sans aucun geste verrouillant est une faute (anti-muet). Aux appels de la fiche
+  (`reverse_in_tx(`, `reverse_owned_in_tx(`, `cancel_settlement_in_tx(`) s'ajoutent les deux dissolutions du lettrage de
+  pièce (`dissolve_invoice_document_group_in_tx(`, `dissolve_supplier_invoice_document_group_in_tx(`), qui écrivent :
+  sans effet sur l'issue (elles précèdent la contre-passation), un angle mort de moins. Volet inverse :
+  `the_last_acquisition_rule_reports_each_fault_on_built_cases` (sept cas).
+- **Écartée** : une variante `Fenetre` de plus (la fiche écrit `Reverifiee(Variante::Clos, …)`).
+- **Réversible** : oui.
+
+### C-29-4-36 — Le paragraphe « Deux limites » du manuel devient « Deux précisions »
+
+- **Contexte** : AC9 remplace la seconde puce (la fenêtre de #651) ; l'intitulé « Deux limites » ne disait plus vrai
+  de cette puce.
+- **Retenu** : « Deux précisions. » ; la première puce (boutons affichés, enregistrement refusé) est inchangée.
+- **Réversible** : oui.
+
+### C-29-4-37 — La moitié W25 de T29b-2 tue aussi M29-13, par son montage
+
+- **Contexte** : la fiche (R5 de la P2) écrit que la moitié W25 ne tue pas M29-13, l'issue de la clôture (`Done`) étant
+  la même sous la mutation.
+- **Retenu** : le patron commun de T29b-2 **exige** que la clôture soit vue en attente sur son `FOR UPDATE` (étape de
+  l'AC7) ; sous M29-13, elle n'attend pas, et le montage échoue — pour les deux moitiés. Dit au doc-comment de la moitié
+  W25 : c'est l'attente, non l'issue, qui distingue.
+- **Réversible** : sans objet (constat).
+
