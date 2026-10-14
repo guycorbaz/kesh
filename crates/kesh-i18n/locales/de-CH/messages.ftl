@@ -1209,6 +1209,9 @@ reconciliation-labels-rejected-hint = Eine abgelehnte Transaktion verlässt dies
 reconciliation-labels-priority-hint = Pro Transaktion wird ein einziger Vorschlag angezeigt: die am besten bewertete Rechnung, falls es eine gibt, sonst die passende Zuordnungsregel. Eine vorgeschlagene Rechnung geht einer Regel immer vor.
 # Story 29-6 (#665, AC10) — in der Schaltflächenzeile angezeigt, wenn eine Zeile ohne Vorschlag markiert ist.
 reconciliation-labels-unmatched-not-acceptable-hint = Eine Transaktion ohne Übereinstimmung kann nicht akzeptiert werden: Entfernen Sie die Markierung, um die übrigen zu akzeptieren.
+# Story 29-9 (#678, AC11) — zugänglicher Name des Kontrollkästchens jeder Zeile: was die Zeile anzeigt.
+reconciliation-labels-select-transaction = Transaktion vom { $date }, { $amount } { $currency }, { $counterparty } auswählen
+reconciliation-labels-select-transaction-no-counterparty = Transaktion vom { $date }, { $amount } { $currency } auswählen
 # Story 15-5c (#492) — Bezeichnungen der Ablehnungen eines Abgleich-Stapels (`failed[]`).
 reconciliation-failed-account-not-found = Ein Gegenkonto ist nicht auffindbar oder archiviert.
 reconciliation-failed-account-not-postable = Nicht bebuchbares Konto: { $numbers }. Ein Sammel-, Ergebnis- oder Abschlusskonto nimmt keine Buchung auf: Wählen Sie ein bebuchbares Konto.

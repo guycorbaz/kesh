@@ -1209,6 +1209,9 @@ reconciliation-labels-rejected-hint = Una transazione rifiutata lascia questo el
 reconciliation-labels-priority-hint = Per ogni transazione è mostrata una sola proposta: la fattura con il punteggio migliore, se ce n’è una, altrimenti la regola di assegnazione corrispondente. Una fattura proposta precede sempre una regola.
 # Story 29-6 (#665, AC10) — mostrato nella riga dei pulsanti quando è selezionata una riga senza proposta.
 reconciliation-labels-unmatched-not-acceptable-hint = Una transazione senza corrispondenza non può essere accettata: tolga la selezione per accettare le altre.
+# Story 29-9 (#678, AC11) — nome accessibile della casella di ogni riga: ciò che la riga mostra.
+reconciliation-labels-select-transaction = Selezionare la transazione del { $date }, { $amount } { $currency }, { $counterparty }
+reconciliation-labels-select-transaction-no-counterparty = Selezionare la transazione del { $date }, { $amount } { $currency }
 # Story 15-5c (#492) — etichette dei rifiuti di un lotto di riconciliazione (`failed[]`).
 reconciliation-failed-account-not-found = Un conto di contropartita è introvabile o archiviato.
 reconciliation-failed-account-not-postable = Conto non registrabile: { $numbers }. Un conto di raggruppamento, di risultato o di chiusura non riceve scritture: scegliere un conto registrabile.

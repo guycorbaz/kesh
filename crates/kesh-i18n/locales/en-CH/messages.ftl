@@ -1209,6 +1209,9 @@ reconciliation-labels-rejected-hint = A rejected transaction leaves this list. I
 reconciliation-labels-priority-hint = One proposal is shown per transaction: the best-scored invoice if there is one, otherwise the matching reconciliation rule. A proposed invoice always comes before a rule.
 # Story 29-6 (#665, AC10) — shown in the button row when a line without a proposal is ticked.
 reconciliation-labels-unmatched-not-acceptable-hint = A transaction with no match cannot be accepted: untick it to accept the others.
+# Story 29-9 (#678, AC11) — accessible name of each line's checkbox: what the line shows.
+reconciliation-labels-select-transaction = Select the transaction of { $date }, { $amount } { $currency }, { $counterparty }
+reconciliation-labels-select-transaction-no-counterparty = Select the transaction of { $date }, { $amount } { $currency }
 # Story 15-5c (#492) — labels for the refusals of a reconciliation batch (`failed[]`).
 reconciliation-failed-account-not-found = A counterpart account cannot be found or is archived.
 reconciliation-failed-account-not-postable = Non-postable account: { $numbers }. A grouping, result or closing account takes no entries: choose a postable account.
