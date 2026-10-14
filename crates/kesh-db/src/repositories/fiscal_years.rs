@@ -1402,11 +1402,12 @@ mod tests {
     /// texte, et une dérive de `EARLIER_OPEN_SQL` changerait leur sens.
     #[test]
     fn le_texte_verrouillant_de_la_cloture_est_inchange() {
-        const ANCIENNE_FIND_EARLIER_OPEN_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+        // Le texte de l'ancienne constante de l'étape (d), retirée à la Story 29-1a.
+        const REFERENCE_FIGEE: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
      FROM fiscal_years \
      WHERE company_id = ? AND start_date < ? AND status = 'Open' \
      ORDER BY start_date ASC LIMIT 1 FOR UPDATE";
-        assert_eq!(earlier_open_locking_sql(), ANCIENNE_FIND_EARLIER_OPEN_SQL);
+        assert_eq!(earlier_open_locking_sql(), REFERENCE_FIGEE);
         // La lecture ordinaire de K1 ne verrouille rien.
         assert!(!EARLIER_OPEN_SQL.to_uppercase().contains("FOR UPDATE"));
         assert!(!NEXT_AFTER_SQL.to_uppercase().contains("FOR UPDATE"));
