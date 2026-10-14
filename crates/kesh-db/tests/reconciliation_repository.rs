@@ -1163,3 +1163,333 @@ async fn find_by_id_for_account_for_update_scopes_without_status_filter(pool: My
     }
     tx.rollback().await.unwrap();
 }
+
+// ---------------------------------------------------------------------------
+// Story 29-2 (#529) — la date d'ancrage : échéance et dernier rappel
+// ---------------------------------------------------------------------------
+
+/// Pose l'échéance d'une facture insérée par [`insert_test_invoice`] (qui la
+/// laisse `NULL`, comme tous ses appels antérieurs à la Story 29-2).
+async fn set_test_due_date(pool: &MySqlPool, invoice_id: i64, due_date: Option<NaiveDate>) {
+    sqlx::query("UPDATE invoices SET due_date = ? WHERE id = ?")
+        .bind(due_date)
+        .bind(invoice_id)
+        .execute(pool)
+        .await
+        .expect("due_date update");
+}
+
+/// Insère un rappel envoyé le jour `sent_on` (à midi), annulé ou non. Les
+/// colonnes `NOT NULL` reçoivent des valeurs synthétiques admises par les
+/// contraintes de `invoice_reminders` (niveau ≥ 1, canal `manual`).
+async fn insert_test_reminder(
+    pool: &MySqlPool,
+    company_id: i64,
+    invoice_id: i64,
+    sent_on: NaiveDate,
+    cancelled: bool,
+) {
+    let sent_at = sent_on.and_hms_opt(12, 30, 0).unwrap();
+    sqlx::query(
+        "INSERT INTO invoice_reminders (company_id, invoice_id, level_number, fee_amount, \
+         sent_at, channel, subject, body, cancelled_at) \
+         VALUES (?, ?, 1, 0, ?, 'manual', 'Rappel', 'Rappel de test', ?)",
+    )
+    .bind(company_id)
+    .bind(invoice_id)
+    .bind(sent_at)
+    .bind(cancelled.then_some(sent_at))
+    .execute(pool)
+    .await
+    .expect("invoice_reminder insert");
+}
+
+/// Un cas de la table d'AC5 : décalages par rapport à `D`.
+struct AnchorCase {
+    name: &'static str,
+    invoice: i64,
+    due: Option<i64>,
+    /// `(décalage, annulé)`, dans l'ordre d'envoi.
+    reminders: &'static [(i64, bool)],
+    anchor: i64,
+    candidate: bool,
+}
+
+/// Story 29-2 (#529), AC5 — la borne basse s'ancre sur la plus tardive de la
+/// date de facture, de l'échéance et du dernier rappel non annulé ; la borne
+/// haute reste sur la date de facture (#548).
+///
+/// Pour chaque cas, montant distinct (aucune facture candidate d'un autre
+/// cas) : la liste rendue par la proposition est assertée comme un `Vec`
+/// **ordonné, répétitions comprises** (une table dérivée qui rendrait une
+/// ligne par rappel dédoublerait f — M15), et l'ancre scalaire de
+/// l'acceptation est assertée pour **chaque** cas, candidat ou non (seule
+/// assertion qui voie g — M14).
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_anchor_is_the_latest_of_date_due_date_and_last_reminder(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Acme").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let contact_id = create_test_contact(&pool, company_id, user_id, "Client A").await;
+    let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
+    let je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
+
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let at = |k: i64| d + chrono::Duration::days(k);
+    let cases = [
+        AnchorCase {
+            name: "a",
+            invoice: -45,
+            due: None,
+            reminders: &[],
+            anchor: -45,
+            candidate: false,
+        },
+        AnchorCase {
+            name: "b",
+            invoice: -45,
+            due: Some(-30),
+            reminders: &[],
+            anchor: -30,
+            candidate: true,
+        },
+        AnchorCase {
+            name: "c",
+            invoice: -45,
+            due: Some(-31),
+            reminders: &[],
+            anchor: -31,
+            candidate: false,
+        },
+        AnchorCase {
+            name: "d",
+            invoice: -90,
+            due: Some(-60),
+            reminders: &[(-10, false)],
+            anchor: -10,
+            candidate: true,
+        },
+        AnchorCase {
+            name: "e",
+            invoice: -90,
+            due: Some(-60),
+            reminders: &[(-10, true)],
+            anchor: -60,
+            candidate: false,
+        },
+        AnchorCase {
+            name: "f",
+            invoice: -90,
+            due: Some(-60),
+            reminders: &[(-50, false), (-20, false)],
+            anchor: -20,
+            candidate: true,
+        },
+        AnchorCase {
+            name: "g",
+            invoice: -45,
+            due: Some(-50),
+            reminders: &[],
+            anchor: -45,
+            candidate: false,
+        },
+        AnchorCase {
+            name: "h",
+            invoice: 2,
+            due: Some(32),
+            reminders: &[],
+            anchor: 32,
+            candidate: false,
+        },
+        AnchorCase {
+            name: "i",
+            invoice: -20,
+            due: None,
+            reminders: &[],
+            anchor: -20,
+            candidate: true,
+        },
+        AnchorCase {
+            name: "j",
+            invoice: -10,
+            due: Some(20),
+            reminders: &[],
+            anchor: 20,
+            candidate: true,
+        },
+        AnchorCase {
+            name: "k",
+            invoice: -45,
+            due: Some(15),
+            reminders: &[],
+            anchor: 15,
+            candidate: true,
+        },
+    ];
+
+    let window = InvoiceDateWindow::for_payment_date(d);
+    for (n, case) in cases.iter().enumerate() {
+        // 101.00, 102.00, … : écarts de 1.00, bien au-delà de la tolérance.
+        let amount = Decimal::new(10_100 + 100 * n as i64, 2);
+        let id = insert_test_invoice(
+            &pool,
+            company_id,
+            contact_id,
+            at(case.invoice),
+            amount,
+            "validated",
+            Some(je_id),
+            None,
+        )
+        .await;
+        set_test_due_date(&pool, id, case.due.map(at)).await;
+        for &(k, cancelled) in case.reminders {
+            insert_test_reminder(&pool, company_id, id, at(k), cancelled).await;
+        }
+
+        let anchor = reconciliation_repo::invoice_payment_anchor_date(&pool, company_id, id)
+            .await
+            .expect("invoice_payment_anchor_date");
+        assert_eq!(anchor, Some(at(case.anchor)), "cas {} : ancre", case.name);
+
+        let listed: Vec<i64> = reconciliation_repo::find_unpaid_invoices_for_window(
+            &pool,
+            company_id,
+            window,
+            amount,
+            dec!(0.05),
+        )
+        .await
+        .expect("find_unpaid_invoices_for_window")
+        .iter()
+        .map(|c| c.invoice.id)
+        .collect();
+        let expected = if case.candidate { vec![id] } else { vec![] };
+        assert_eq!(listed, expected, "cas {} : candidates", case.name);
+    }
+}
+
+/// Story 29-2, AC5 — le rappel d'une facture X ne déplace pas l'ancre d'une
+/// facture Y : la table dérivée des rappels se joint par `invoice_id`
+/// (mutation M9, jointure croisée).
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_reminder_moves_only_the_anchor_of_its_own_invoice(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Acme").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let contact_id = create_test_contact(&pool, company_id, user_id, "Client A").await;
+    let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
+    let je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let at = |k: i64| d + chrono::Duration::days(k);
+
+    let x = insert_test_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        at(-90),
+        dec!(300.00),
+        "validated",
+        Some(je_id),
+        None,
+    )
+    .await;
+    insert_test_reminder(&pool, company_id, x, at(-10), false).await;
+    let y = insert_test_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        at(-45),
+        dec!(400.00),
+        "validated",
+        Some(je_id),
+        None,
+    )
+    .await;
+
+    assert_eq!(
+        reconciliation_repo::invoice_payment_anchor_date(&pool, company_id, y)
+            .await
+            .unwrap(),
+        Some(at(-45)),
+        "Y garde sa propre date"
+    );
+    let listed: Vec<i64> = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_payment_date(d),
+        dec!(400.00),
+        dec!(0.05),
+    )
+    .await
+    .unwrap()
+    .iter()
+    .map(|c| c.invoice.id)
+    .collect();
+    assert_eq!(listed, Vec::<i64>::new(), "Y n'est pas candidate");
+    let listed_x: Vec<i64> = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_payment_date(d),
+        dec!(300.00),
+        dec!(0.05),
+    )
+    .await
+    .unwrap()
+    .iter()
+    .map(|c| c.invoice.id)
+    .collect();
+    assert_eq!(listed_x, vec![x], "X l'est, par son rappel");
+}
+
+/// Story 29-2, AC5 — l'ancre scalaire est scopée société (KF-002) : la
+/// facture d'une société lue sous une autre rend `Ok(None)` (mutation M11), et
+/// la proposition sous l'autre société ne la rend pas.
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_anchor_of_an_invoice_is_scoped_to_its_company(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Acme").await;
+    let other_company_id = create_test_company(&pool, "Autre").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let contact_id = create_test_contact(&pool, company_id, user_id, "Client A").await;
+    let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
+    let je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let at = |k: i64| d + chrono::Duration::days(k);
+
+    // Le cas d d'AC5 : candidate dans sa société.
+    let inv = insert_test_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        at(-90),
+        dec!(500.00),
+        "validated",
+        Some(je_id),
+        None,
+    )
+    .await;
+    set_test_due_date(&pool, inv, Some(at(-60))).await;
+    insert_test_reminder(&pool, company_id, inv, at(-10), false).await;
+
+    assert_eq!(
+        reconciliation_repo::invoice_payment_anchor_date(&pool, company_id, inv)
+            .await
+            .unwrap(),
+        Some(at(-10))
+    );
+    assert_eq!(
+        reconciliation_repo::invoice_payment_anchor_date(&pool, other_company_id, inv)
+            .await
+            .unwrap(),
+        None,
+        "facture d'une autre société : None"
+    );
+    let listed = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        other_company_id,
+        InvoiceDateWindow::for_payment_date(d),
+        dec!(500.00),
+        dec!(0.05),
+    )
+    .await
+    .unwrap();
+    assert!(listed.is_empty(), "pas de candidate sous l'autre société");
+}

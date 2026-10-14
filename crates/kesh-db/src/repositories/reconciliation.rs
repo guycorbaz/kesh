@@ -6,7 +6,11 @@
 //!   facture peut être réglée par une transaction (Story 28-7, #548) —
 //!   seule définition du dépôt, lue par la proposition
 //!   ([`find_unpaid_invoices_for_window`]) **et** par l'acceptation
-//!   (`accept_one_invoice`, `kesh-api`).
+//!   (`accept_one_invoice`, `kesh-api`). Sa borne basse porte sur la
+//!   **date d'ancrage** de la facture (Story 29-2, #529) :
+//!   [`INVOICE_PAYMENT_ANCHOR_SQL`], la plus tardive de sa date, de son
+//!   échéance et de son dernier rappel non annulé, lue par l'acceptation
+//!   au moyen de [`invoice_payment_anchor_date`].
 //! - [`find_unpaid_invoices_for_window`] : charge les factures
 //!   candidates pour le matching d'une transaction bancaire — filtre
 //!   multi-tenant + [`InvoiceDateWindow`] + tolérance amount
@@ -87,12 +91,103 @@ const BANK_TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booki
      counterparty_iban, counterparty_name, status, matched_entry_id, \
      auto_match_rejected_at, version, created_at, updated_at";
 
-/// Un paiement règle une facture au plus **30 jours après** la date de
-/// celle-ci (borne de [`InvoiceDateWindow::earliest_invoice_date`]).
+/// Un paiement règle une facture au plus **30 jours après sa date
+/// d'ancrage** — la plus tardive de sa date, de son échéance et de son
+/// dernier rappel non annulé ([`INVOICE_PAYMENT_ANCHOR_SQL`]) ; borne de
+/// [`InvoiceDateWindow::earliest_anchor_date`].
 ///
-/// Au-delà, le paiement n'est ni proposé ni accepté : c'est la borne de
-/// #529 (paiement tardif), que la Story 28-7 laisse où elle est.
+/// Au-delà, le paiement n'est ni proposé ni accepté. Jusqu'à la Story 29-2
+/// (#529), les 30 jours couraient de la seule date de la facture : un
+/// paiement après l'échéance, ou après un rappel, n'était jamais proposé.
+/// Le nom de la constante reste : c'est le `details.window_days` du contrat
+/// d'API.
 pub const INVOICE_WINDOW_DAYS_AFTER_INVOICE: i64 = 30;
+
+/// La table dérivée du **dernier rappel non annulé** de chaque facture
+/// (alias `rmd`, colonne `last_sent_at`), à placer après `FROM invoices i …`
+/// (Story 29-2, #529). **Prérequis : alias `i` sur `invoices`.**
+///
+/// Un rappel **annulé** (`cancelled_at` posé) n'y compte pas : l'annulation
+/// d'un Admin retire déjà la ligne du niveau courant des rappels
+/// (`entities::invoice_reminder`) ; elle la retire aussi de l'ancre.
+///
+/// Patron des jointures du reste dû (`invoice_settlements`) : sans paramètre
+/// lié ; la jointure par `invoice_id` porte le scope, la facture étant
+/// filtrée par `i.company_id = ?`. Alias `rmd`, distinct de `lt`, `cnt`,
+/// `cl_ttc` et `st`, avec lesquels il cohabite dans la proposition.
+///
+/// ⚠️ **Site jumeau** de la notion « dernier rappel non annulé » :
+/// `repositories::dunning_eligibility` (`MAX(sent_at) AS last_reminder_at …
+/// cancelled_at IS NULL GROUP BY invoice_id`). Qui change la notion
+/// d'annulation change les deux ; elles ne sont pas factorisées (C-29-2-12 :
+/// les agrégats diffèrent, et celle de l'éligibilité prend un `company_id`
+/// lié).
+///
+/// Macro et non `const` : `concat!` n'accepte que des littéraux, et la
+/// requête scalaire d'[`invoice_payment_anchor_date`] s'y compose.
+macro_rules! invoice_payment_anchor_join_sql {
+    () => {
+        "LEFT JOIN (SELECT invoice_id, MAX(sent_at) AS last_sent_at FROM invoice_reminders \
+         WHERE cancelled_at IS NULL GROUP BY invoice_id) rmd ON rmd.invoice_id = i.id"
+    };
+}
+
+/// La **date d'ancrage** d'une facture, en SQL : `A = max(F, E, R)`, `F`
+/// sa date, `E` son échéance, `R` le jour de son dernier rappel non annulé,
+/// `E` et `R` absents valant `F` (Story 29-2, #529). **Prérequis : alias `i`
+/// sur `invoices` et la jointure [`INVOICE_PAYMENT_ANCHOR_JOIN_SQL`].**
+///
+/// Elle se compose en deux termes, `GREATEST(<F, E>, <R>)` : le premier,
+/// `GREATEST(i.date, COALESCE(i.due_date, i.date))`, est la date à laquelle
+/// la facture devient **exigible** ; c'est le terme qu'une expression
+/// d'exigibilité commune pourra remplacer sans toucher au second
+/// (C-29-2-15).
+///
+/// ⛔ **Chaque argument porte son `COALESCE`** : en MariaDB, `GREATEST`
+/// rend `NULL` dès qu'un argument est `NULL`, et `NULL >= ?` est faux — une
+/// facture sans échéance ou sans rappel disparaîtrait des candidates. Le
+/// `GREATEST` sur `i.date` couvre une échéance antérieure à la date
+/// (données d'avant #245, la garde de l'API ne portant que sur une paire
+/// modifiée).
+///
+/// `DATE(rmd.last_sent_at)` : `sent_at` est un `DATETIME(6)`, saisi (rappel
+/// manuel) ou UTC (rappel envoyé par e-mail) ; l'écart de fuseau d'un jour
+/// au plus est un angle mort écrit (C-29-2-3), sans effet mesurable sur une
+/// borne de 30 jours. Le `CAST(… AS DATE)` extérieur fait du type rendu une
+/// garantie (C-29-2-10) : il est décodé en `NaiveDate`.
+///
+/// **Deux lecteurs, une expression** : la proposition
+/// ([`find_unpaid_invoices_for_window`], dans son `WHERE`) et l'acceptation
+/// ([`invoice_payment_anchor_date`], forme scalaire, puis
+/// [`InvoiceDateWindow::check`]).
+macro_rules! invoice_payment_anchor_sql {
+    () => {
+        concat!(
+            "CAST(GREATEST(",
+            "GREATEST(i.date, COALESCE(i.due_date, i.date)), ",
+            "COALESCE(DATE(rmd.last_sent_at), i.date)",
+            ") AS DATE)"
+        )
+    };
+}
+
+/// `invoice_payment_anchor_join_sql!` en `const`, pour les requêtes
+/// composées par `format!`.
+pub const INVOICE_PAYMENT_ANCHOR_JOIN_SQL: &str = invoice_payment_anchor_join_sql!();
+
+/// `invoice_payment_anchor_sql!` en `const`, pour les requêtes composées
+/// par `format!`.
+pub const INVOICE_PAYMENT_ANCHOR_SQL: &str = invoice_payment_anchor_sql!();
+
+/// La requête scalaire d'[`invoice_payment_anchor_date`], assemblée à la
+/// compilation sur les mêmes macros que la proposition.
+const INVOICE_PAYMENT_ANCHOR_SCALAR_SQL: &str = concat!(
+    "SELECT ",
+    invoice_payment_anchor_sql!(),
+    " FROM invoices i ",
+    invoice_payment_anchor_join_sql!(),
+    " WHERE i.company_id = ? AND i.id = ?"
+);
 
 /// Un paiement peut précéder la facture qu'il règle d'**un jour** au plus
 /// (borne de [`InvoiceDateWindow::latest_invoice_date`]).
@@ -114,10 +209,16 @@ pub fn payment_date(tx: &BankTransaction) -> NaiveDate {
     tx.value_date.unwrap_or(tx.booking_date)
 }
 
-/// La fenêtre de dates de facture qu'une transaction peut régler (Story 28-7,
-/// #548) : `D − 30 jours ≤ F ≤ D + 1 jour`, `D` étant la
-/// [date de paiement](payment_date) et `F` la date de la facture, bornes
-/// incluses.
+/// La fenêtre de dates dans laquelle une transaction peut régler une facture
+/// (Story 28-7, #548 ; Story 29-2, #529) : `F ≤ D + 1 jour` **et**
+/// `A ≥ D − 30 jours`, `D` étant la [date de paiement](payment_date), `F` la
+/// date de la facture et `A` sa **date d'ancrage**
+/// ([`INVOICE_PAYMENT_ANCHOR_SQL`] : la plus tardive de `F`, de l'échéance et
+/// du dernier rappel non annulé), bornes incluses. Une facture sans échéance
+/// ni rappel (`A = F`) garde la fenêtre `D − 30 ≤ F ≤ D + 1` de la 28-7.
+///
+/// ⛔ **La borne haute reste sur `F`**, jamais sur `A` : la porter sur l'ancre
+/// ferait disparaître toute facture non échue (paiement avant l'échéance).
 ///
 /// **Une seule définition, deux lecteurs.** La proposition
 /// ([`find_unpaid_invoices_for_window`], appelée par `get_proposals`) et
@@ -132,8 +233,9 @@ pub fn payment_date(tx: &BankTransaction) -> NaiveDate {
 /// règlement daté avant la créance —, romprait l'accord avec le règlement
 /// saisi depuis la fiche de la facture, et se heurterait à la base.
 ///
-/// **Sites qui portent la même borne basse sans lire cette fenêtre** — non
-/// résolus, assumés (C-28-7-7) :
+/// **Sites qui bornent la date de facture par rapport à une date de
+/// paiement sans lire cette fenêtre** — la tolérance d'un jour de la borne
+/// haute, `paiement ≥ F − 1` ; non résolus, assumés (C-28-7-7) :
 /// - `settle_invoice` et `write_off_invoice`
 ///   (`repositories::invoice_settlements_write`, le règlement et le solde par
 ///   escompte, perte, frais ou arrondi) : même tolérance d'un jour sur une
@@ -148,8 +250,9 @@ pub fn payment_date(tx: &BankTransaction) -> NaiveDate {
 /// aux extrémités de cette plage est un angle mort écrit (C-28-7-12).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvoiceDateWindow {
-    /// Date de facture la plus ancienne admise : `D − 30 jours`.
-    pub earliest_invoice_date: NaiveDate,
+    /// Date d'ancrage la plus ancienne admise : `D − 30 jours` (Story 29-2 ;
+    /// `earliest_invoice_date` jusque-là, quand la borne portait sur `F`).
+    pub earliest_anchor_date: NaiveDate,
     /// Date de facture la plus récente admise : `D + 1 jour`.
     pub latest_invoice_date: NaiveDate,
 }
@@ -160,16 +263,18 @@ pub enum InvoiceDateRefusal {
     /// La facture est datée de plus d'un jour **après** le paiement : le
     /// paiement la précède (raison d'API `payment_date_before_invoice_date`).
     PaymentBeforeInvoice,
-    /// Le paiement arrive plus de 30 jours après la facture (raison d'API
-    /// `payment_date_outside_window`).
+    /// Le paiement arrive plus de 30 jours après la date d'ancrage de la
+    /// facture — la plus tardive de sa date, de son échéance et de son
+    /// dernier rappel non annulé (raison d'API `payment_date_outside_window`).
     PaymentTooLate,
 }
 
 impl InvoiceDateWindow {
-    /// La fenêtre d'une date de paiement `d` : `[d − 30, d + 1]`.
+    /// La fenêtre d'une date de paiement `d` : ancre `≥ d − 30`, date de
+    /// facture `≤ d + 1`.
     pub fn for_payment_date(d: NaiveDate) -> Self {
         Self {
-            earliest_invoice_date: d - chrono::Duration::days(INVOICE_WINDOW_DAYS_AFTER_INVOICE),
+            earliest_anchor_date: d - chrono::Duration::days(INVOICE_WINDOW_DAYS_AFTER_INVOICE),
             latest_invoice_date: d + chrono::Duration::days(PAYMENT_BEFORE_INVOICE_TOLERANCE_DAYS),
         }
     }
@@ -179,23 +284,56 @@ impl InvoiceDateWindow {
         Self::for_payment_date(payment_date(tx))
     }
 
-    /// Une facture datée `invoice_date` est-elle dans la fenêtre ?
+    /// Une facture datée `invoice_date`, de date d'ancrage `anchor_date`
+    /// (lue par [`invoice_payment_anchor_date`]), est-elle dans la fenêtre ?
     ///
     /// # Errors
     ///
+    /// Dans cet ordre :
     /// - [`InvoiceDateRefusal::PaymentBeforeInvoice`] si
     ///   `invoice_date > latest_invoice_date` ;
     /// - [`InvoiceDateRefusal::PaymentTooLate`] si
-    ///   `invoice_date < earliest_invoice_date`.
-    pub fn check(&self, invoice_date: NaiveDate) -> Result<(), InvoiceDateRefusal> {
+    ///   `anchor_date < earliest_anchor_date`.
+    pub fn check(
+        &self,
+        invoice_date: NaiveDate,
+        anchor_date: NaiveDate,
+    ) -> Result<(), InvoiceDateRefusal> {
         if invoice_date > self.latest_invoice_date {
             return Err(InvoiceDateRefusal::PaymentBeforeInvoice);
         }
-        if invoice_date < self.earliest_invoice_date {
+        if anchor_date < self.earliest_anchor_date {
             return Err(InvoiceDateRefusal::PaymentTooLate);
         }
         Ok(())
     }
+}
+
+/// La **date d'ancrage** d'une facture ([`INVOICE_PAYMENT_ANCHOR_SQL`]),
+/// sous forme scalaire — la lecture de l'acceptation (`accept_one_invoice`,
+/// `kesh-api`), qui la compare ensuite par [`InvoiceDateWindow::check`]
+/// (Story 29-2, #529).
+///
+/// Même expression, même jointure que la proposition
+/// ([`find_unpaid_invoices_for_window`]) : aucune seconde écriture de la
+/// règle. Scopée société (KF-002) : `Ok(None)` si la facture n'existe pas
+/// dans `company_id`.
+///
+/// `SELECT` ordinaire, **sans** `FOR UPDATE` : ne prend aucun verrou.
+pub async fn invoice_payment_anchor_date<'e, E>(
+    executor: E,
+    company_id: i64,
+    invoice_id: i64,
+) -> Result<Option<NaiveDate>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    sqlx::query_scalar::<_, NaiveDate>(INVOICE_PAYMENT_ANCHOR_SCALAR_SQL)
+        .bind(company_id)
+        .bind(invoice_id)
+        .fetch_optional(executor)
+        .await
+        .map_err(map_db_error)
 }
 
 /// Charge les factures candidates pour la réconciliation d'une
@@ -205,8 +343,10 @@ impl InvoiceDateWindow {
 /// 1. `company_id` (KF-002 Pattern 1, multi-tenant scoping).
 /// 2. `status = 'validated' AND paid_at IS NULL AND journal_entry_id IS NOT NULL`
 ///    (factures éligibles à la réconciliation v0.1).
-/// 3. `date BETWEEN window.earliest_invoice_date AND window.latest_invoice_date`
-///    — la fenêtre de l'acceptation ([`InvoiceDateWindow`], Story 28-7).
+/// 3. `date <= window.latest_invoice_date AND <ancre> >= window.earliest_anchor_date`
+///    — la fenêtre de l'acceptation ([`InvoiceDateWindow`], Story 28-7), dont
+///    la borne basse porte sur la date d'ancrage ([`INVOICE_PAYMENT_ANCHOR_SQL`],
+///    sur la jointure [`INVOICE_PAYMENT_ANCHOR_JOIN_SQL`] ; Story 29-2, #529).
 ///    Résultat trié par `date ASC, id ASC` (C-28-7-10) **avant** le
 ///    `LIMIT 50` : au-delà de 50 candidates, ce sont toujours les plus
 ///    récentes qui sont écartées. Un index peut servir cet ordre si
@@ -245,15 +385,18 @@ where
     // Elles n'exposent que `invoice_id` et leur agrégat : les colonnes de
     // `INVOICE_COLUMNS` restent sans ambiguïté. Filtre en HAVING pour
     // référencer l'alias `amount_due` sans dupliquer l'expression (SQL
-    // n'autorise pas un alias de SELECT dans le WHERE).
+    // n'autorise pas un alias de SELECT dans le WHERE). L'ancre, elle, se lit
+    // dans le WHERE : elle ne cite que `i` et la table dérivée `rmd`, aucun
+    // alias de SELECT.
     sqlx::query_as::<_, UnpaidInvoiceCandidate>(&format!(
         "SELECT {INVOICE_COLUMNS}, {due} AS amount_due, {ttc} AS total_ttc \
-         FROM invoices i {joins} \
+         FROM invoices i {joins} {INVOICE_PAYMENT_ANCHOR_JOIN_SQL} \
          WHERE i.company_id = ? \
            AND i.status = 'validated' \
            AND i.paid_at IS NULL \
            AND i.journal_entry_id IS NOT NULL \
-           AND i.date BETWEEN ? AND ? \
+           AND i.date <= ? \
+           AND {INVOICE_PAYMENT_ANCHOR_SQL} >= ? \
          HAVING amount_due BETWEEN ? - ? AND ? + ? \
          ORDER BY i.date ASC, i.id ASC \
          LIMIT 50",
@@ -262,8 +405,8 @@ where
         joins = amount_due_derived_joins(),
     ))
     .bind(company_id)
-    .bind(window.earliest_invoice_date)
     .bind(window.latest_invoice_date)
+    .bind(window.earliest_anchor_date)
     .bind(tx_amount)
     .bind(amount_tolerance)
     .bind(tx_amount)
@@ -619,28 +762,70 @@ mod tests {
     fn the_window_of_a_payment_date_is_thirty_days_before_to_one_day_after() {
         let d = date(2026, 6, 15);
         let w = InvoiceDateWindow::for_payment_date(d);
-        assert_eq!(w.earliest_invoice_date, d - days(30));
+        assert_eq!(w.earliest_anchor_date, d - days(30));
         assert_eq!(w.latest_invoice_date, d + days(1));
     }
 
+    /// Story 29-2 (#529) — `check(F, A)` : la borne haute porte sur la date de
+    /// facture `F`, la borne basse sur la date d'ancrage `A`. Une facture sans
+    /// échéance ni rappel (`A = F`) garde la fenêtre de la Story 28-7.
     #[test]
     fn check_admits_the_bounds_and_refuses_one_day_beyond_each() {
         let d = date(2026, 6, 15);
         let w = InvoiceDateWindow::for_payment_date(d);
-        assert_eq!(w.check(d + days(1)), Ok(()), "D + 1");
+        // A = F : la fenêtre d'avant la story, inchangée.
+        for (k, expected) in [
+            (1, Ok(())),
+            (2, Err(InvoiceDateRefusal::PaymentBeforeInvoice)),
+            (0, Ok(())),
+            (-1, Ok(())),
+            (-30, Ok(())),
+            (-31, Err(InvoiceDateRefusal::PaymentTooLate)),
+        ] {
+            assert_eq!(
+                w.check(d + days(k), d + days(k)),
+                expected,
+                "F = A = D{k:+}"
+            );
+        }
+        // L'ancre seule porte la borne basse.
+        assert_eq!(w.check(d - days(45), d - days(30)), Ok(()), "A = D − 30");
         assert_eq!(
-            w.check(d + days(2)),
-            Err(InvoiceDateRefusal::PaymentBeforeInvoice),
-            "D + 2"
-        );
-        assert_eq!(w.check(d), Ok(()), "D");
-        assert_eq!(w.check(d - days(1)), Ok(()), "D − 1");
-        assert_eq!(w.check(d - days(30)), Ok(()), "D − 30");
-        assert_eq!(
-            w.check(d - days(31)),
+            w.check(d - days(45), d - days(31)),
             Err(InvoiceDateRefusal::PaymentTooLate),
-            "D − 31"
+            "A = D − 31"
         );
+        // La date de facture seule porte la borne haute, ancre dans la fenêtre.
+        assert_eq!(w.check(d + days(1), d + days(31)), Ok(()), "F = D + 1");
+        assert_eq!(
+            w.check(d + days(2), d + days(32)),
+            Err(InvoiceDateRefusal::PaymentBeforeInvoice),
+            "F = D + 2, A dans la fenêtre"
+        );
+    }
+
+    /// L'ordre des refus : `PaymentBeforeInvoice` d'abord, même quand l'ancre
+    /// est aussi hors de la fenêtre (impossible si `A ≥ F`, mais `check` est
+    /// public) — mutation M8.
+    #[test]
+    fn check_refuses_payment_before_invoice_first() {
+        let d = date(2026, 6, 15);
+        let w = InvoiceDateWindow::for_payment_date(d);
+        assert_eq!(
+            w.check(d + days(2), d - days(31)),
+            Err(InvoiceDateRefusal::PaymentBeforeInvoice)
+        );
+    }
+
+    /// Une facture non échue : l'ancre au-delà de `D + 1` (échéance future)
+    /// ne déclenche pas `PaymentBeforeInvoice` — la borne haute ne lit que la
+    /// date de facture (mutation M10b).
+    #[test]
+    fn check_admits_an_invoice_not_yet_due() {
+        let d = date(2026, 6, 15);
+        let w = InvoiceDateWindow::for_payment_date(d);
+        assert_eq!(w.check(d - days(10), d + days(20)), Ok(()), "cas j");
+        assert_eq!(w.check(d - days(45), d + days(15)), Ok(()), "cas k");
     }
 
     #[test]
