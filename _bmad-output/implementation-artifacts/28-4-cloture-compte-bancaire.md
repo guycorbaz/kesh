@@ -1716,6 +1716,19 @@ ligne de production :
   suivront, sur demande.
 - **Boucle close** : la remédiation ne touche aucune ligne de production (§ *La passe ciblée*).
 
+**Rebase sur la 28-8 (2026-10-14)** — `origin/main` `e073b125` (PR #660), `git rebase origin/main` (la branche partait de
+`6de5a7ff`, sans commit de la 28-4a sous un ancien hash). Conflits : `sprint-status.yaml` (en-têtes, par union, YAML
+relu) ; `docs/api-external.md` (deux lignes de refus des factures fournisseurs où la 28-8 a ajouté
+`MATCHED_BANK_TRANSACTION` : les deux apports gardés) ; PDF du manuel d'administration, **régénérés** à chaque étape
+depuis le `.tex` fusionné, jamais pris d'un côté. CHANGELOG, `docs/testing.md`, `.tex` et catalogues : fusion
+automatique ; une seule section `[0.13.3]` (*Ajouté*, *Corrigé*). PDF des trois manuels régénérés au HEAD final et
+contrôlés aplatis — utilisateur et administration commités (`8fea6417`) ; la brochure, dont la branche ne touche pas la
+source, rend le même texte que `main` et n'est pas commitée. `sitesTotal` 2107 inchangé (collecte verte). **Gate au
+HEAD `8fea6417`** (sous `flock`, bases `kesh_284b` / `kesh_e2e_284b` remises à zéro, journal `28-4b-final-7.txt`) :
+**nextest 3604 / 3604, 6 ignorés** ; `check` 0 erreur (29 avertissements), `lint-i18n-ownership` PASS, **Vitest 146
+fichiers, 1610 tests**, `build` vert ; **E2E complet (port 3041) : 280 passés, 7 échecs, 19 ignorés** — exactement les
+7 KF-029 (#97), borne basse du « 7 à 10 » de `docs/testing.md` mis à jour par la 28-8 ; specs bancaires 12 / 12.
+
 
 **Demandé à l'orchestrateur** : push de `story/28-4b` et PR de la 28-4b, corps en **`closes #642`** et, à côté,
 **`refs #651`** — ⛔ jamais `closes #651` ; aucun commit ne porte « closes » ; revue de code P1 par le prompt
