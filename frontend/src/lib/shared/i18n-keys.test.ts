@@ -636,7 +636,13 @@ const ATTENDU = {
 	// recompté par `grep -o "i18nMsg("` aux deux bornes : `ReconciliationProposals.svelte`
 	// 19 → 20 (`reconciliation-labels-priority-hint`). `sitesNonResolus`, `relais`,
 	// `sitesGabarit` inchangés (un littéral), mesurés.
-	sitesTotal: 2108,
+	// Story 29-1a (#232, « Préparer la clôture ») : **2107 → 2162** (+55), recompté par
+	// `grep -o "i18nMsg("` : `features/fiscal-years/closing-checks-labels.ts` 0 → 20 (neuf),
+	// `features/fiscal-years/FiscalYearChecks.svelte` 0 → 26 (neuf),
+	// `routes/(app)/settings/fiscal-years/+page.svelte` +9 (bouton ×2, titre du panneau,
+	// « Fermer », rappel du dialogue ×5). Que des littéraux : les autres compteurs inchangés.
+	// Réunion au rebase de la 29-1a sur la 29-3 (2026-10-14, orchestrateur) : 2107 + 1 + 55 = **2163**.
+	sitesTotal: 2163,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

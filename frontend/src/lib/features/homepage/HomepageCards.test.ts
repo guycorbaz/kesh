@@ -139,6 +139,7 @@ function account(over: Partial<BankAccountSummary> = {}): BankAccountSummary {
 		statementClosingBalance: null,
 		statementDate: null,
 		ledgerBalanceAtStatement: null,
+		statementGap: null,
 		...over,
 	};
 }
@@ -164,12 +165,15 @@ describe('BankAccountsCard', () => {
 	});
 
 	it('affiche le relevé, et l’écart seulement s’il est non nul', () => {
+		// Story 29-1a (C-29-1-25) : l'écart est servi par le serveur (`statementGap`),
+		// la carte ne le calcule plus — le premier rendu le reçoit.
 		const { unmount } = render(BankAccountsCard, {
 			accounts: [
 				account({
 					statementClosingBalance: '1000.00',
 					statementDate: '2026-03-31',
 					ledgerBalanceAtStatement: '800.0000',
+					statementGap: '-200.00',
 				}),
 			],
 		});

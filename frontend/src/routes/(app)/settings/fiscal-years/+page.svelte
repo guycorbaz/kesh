@@ -4,11 +4,12 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Plus, Pencil, Lock, LockOpen } from '@lucide/svelte';
+	import { Plus, Pencil, Lock, LockOpen, ClipboardCheck } from '@lucide/svelte';
 
 	import {
 		closeFiscalYear,
 		createFiscalYear,
+		getClosingChecks,
 		listFiscalYears,
 		reopenFiscalYear,
 		updateFiscalYear
@@ -16,9 +17,13 @@
 	import {
 		currentYearDefaults,
 		outOfOrderState,
+		pointsToVerify,
 		validateFiscalYearForm
 	} from '$lib/features/fiscal-years/fiscal-years.helpers';
+	import { checkTitle } from '$lib/features/fiscal-years/closing-checks-labels';
+	import FiscalYearChecks from '$lib/features/fiscal-years/FiscalYearChecks.svelte';
 	import type {
+		ClosingChecksResponse,
 		FiscalYearResponse,
 		CreateFiscalYearRequest
 	} from '$lib/features/fiscal-years/fiscal-years.types';
@@ -53,6 +58,21 @@
 	let closeTarget = $state<FiscalYearResponse | null>(null);
 	let closeSubmitting = $state(false);
 	let closeError = $state('');
+
+	// Story 29-1a (#232) — contrôles préalables à la clôture, lus à l'ouverture du
+	// panneau ET à l'ouverture du dialogue de clôture (deux lectures distinctes :
+	// le rappel ne réutilise pas une réponse ancienne). Une réponse arrivée pour un
+	// autre exercice que celui affiché est ignorée (jeton de requête).
+	type ChecksState = 'loading' | 'error' | 'ready';
+	let checksOpen = $state(false);
+	let checksTarget = $state<FiscalYearResponse | null>(null);
+	let checksState = $state<ChecksState>('loading');
+	let checksData = $state<ClosingChecksResponse | null>(null);
+	let checksRequest = 0;
+	let closeChecksState = $state<ChecksState>('loading');
+	let closeChecksData = $state<ClosingChecksResponse | null>(null);
+	let closeChecksRequest = 0;
+	let closePoints = $derived(closeChecksData ? pointsToVerify(closeChecksData) : []);
 
 	// Reopen dialog (Story 14-2 — Admin only, motif obligatoire)
 	/** Borne serveur `REOPEN_MOTIF_MAX` (audit_log.details_json, rétention 10 ans). */
@@ -115,7 +135,8 @@
 	/**
 	 * Story 15-12a (#543) — le **plus ancien** exercice antérieur encore ouvert,
 	 * ou `null`. Sœur de `nearestLaterClosed`, alignée sur la requête serveur de
-	 * la clôture (`FIND_EARLIER_OPEN_SQL`, `ORDER BY start_date ASC LIMIT 1`) :
+	 * la clôture (`EARLIER_OPEN_SQL` de `fiscal_years.rs`, `ORDER BY start_date ASC
+	 * LIMIT 1` — le même texte que lit le contrôle K1 de « Préparer la clôture ») :
 	 * c'est lui qu'il faut clôturer d'abord — en nommer un plus proche enverrait
 	 * l'utilisateur sur un exercice que la même garde refuserait à son tour. Le
 	 * serveur reste l'autorité (409 `EARLIER_FISCAL_YEAR_OPEN`).
@@ -231,11 +252,60 @@
 		}
 	}
 
+	// --- Préparer la clôture (Story 29-1a) ---
+	async function openChecks(fy: FiscalYearResponse): Promise<void> {
+		const request = ++checksRequest;
+		checksTarget = fy;
+		checksData = null;
+		checksState = 'loading';
+		checksOpen = true;
+		try {
+			const data = await getClosingChecks(fy.id);
+			if (request !== checksRequest) return;
+			checksData = data;
+			checksState = 'ready';
+		} catch {
+			if (request !== checksRequest) return;
+			// ⛔ Jamais « rien à signaler » par défaut : l'échec se dit (M-a10).
+			checksState = 'error';
+		}
+	}
+
+	/** K7 : du panneau vers le dialogue de création. */
+	function createFromChecks(): void {
+		checksOpen = false;
+		openCreate();
+	}
+
+	/** Du rappel du dialogue de clôture vers le panneau complet. */
+	function openChecksFromClose(): void {
+		const target = closeTarget;
+		closeOpen = false;
+		if (target) void openChecks(target);
+	}
+
 	// --- Close ---
+	async function loadCloseChecks(fy: FiscalYearResponse): Promise<void> {
+		const request = ++closeChecksRequest;
+		closeChecksData = null;
+		closeChecksState = 'loading';
+		try {
+			const data = await getClosingChecks(fy.id);
+			if (request !== closeChecksRequest) return;
+			closeChecksData = data;
+			closeChecksState = 'ready';
+		} catch {
+			if (request !== closeChecksRequest) return;
+			closeChecksState = 'error';
+		}
+	}
+
 	function openClose(fy: FiscalYearResponse): void {
 		closeTarget = fy;
 		closeError = '';
 		closeOpen = true;
+		// Le rappel se charge sans retarder le geste : le bouton reste actif.
+		void loadCloseChecks(fy);
 	}
 
 	async function submitClose(): Promise<void> {
@@ -368,9 +438,10 @@
 				<Table.Head>{msg('fiscal-year-start-date-label', 'Début')}</Table.Head>
 				<Table.Head>{msg('fiscal-year-end-date-label', 'Fin')}</Table.Head>
 				<Table.Head>{msg('fiscal-year-status-label', 'Statut')}</Table.Head>
-				{#if canMutate}
-					<Table.Head class="text-right">Actions</Table.Head>
-				{/if}
+				<!-- Story 29-1a (AC5) : la colonne est rendue pour TOUS les rôles —
+				     « Préparer la clôture » est une lecture ; les gestes gardent leurs
+				     conditions (`canMutate`, `isAdmin`). -->
+				<Table.Head class="text-right">Actions</Table.Head>
 			</Table.Row>
 		</Table.Header>
 		<Table.Body>
@@ -390,9 +461,21 @@
 							</span>
 						{/if}
 					</Table.Cell>
-					{#if canMutate}
-						<Table.Cell class="text-right">
-							<div class="flex items-center justify-end gap-1">
+					<Table.Cell class="text-right">
+						<div class="flex items-center justify-end gap-1">
+							{#if fy.status === 'Open'}
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									data-testid="fiscal-year-checks-{fy.id}"
+									title={i18nMsg('fiscal-years-checks-button', 'Préparer la clôture')}
+									onclick={() => openChecks(fy)}
+									aria-label="{i18nMsg('fiscal-years-checks-button', 'Préparer la clôture')} {fy.name}"
+								>
+									<ClipboardCheck class="h-4 w-4" aria-hidden="true" />
+								</Button>
+							{/if}
+							{#if canMutate}
 								<Button
 									variant="ghost"
 									size="icon-xs"
@@ -401,10 +484,11 @@
 								>
 									<Pencil class="h-4 w-4" aria-hidden="true" />
 								</Button>
+							{/if}
 								<!-- Un bouton désactivé porte `pointer-events: none` (button.svelte) :
 								     le survol n'atteint pas son `title`. L'infobulle est donc portée
 								     aussi par une enveloppe, qui reçoit le survol (revue P1 15-12a, B-3). -->
-								{#if fy.status === 'Open'}
+								{#if fy.status === 'Open' && canMutate}
 									{@const earlierOpen = earliestEarlierOpen(fy)}
 									{@const closeHint = earlierOpen
 										? i18nMsg(
@@ -452,11 +536,10 @@
 								{/if}
 							</div>
 						</Table.Cell>
-					{/if}
 				</Table.Row>
 			{:else}
 				<Table.Row>
-					<Table.Cell colspan={canMutate ? 5 : 4} class="text-center text-text-muted">
+					<Table.Cell colspan={5} class="text-center text-text-muted">
 						{msg('fiscal-year-list-empty', 'Aucun exercice comptable.')}
 					</Table.Cell>
 				</Table.Row>
@@ -578,6 +661,46 @@
 			<Dialog.Title>
 				{msg('fiscal-year-close-confirmation-title', "Clôturer l'exercice ?")}
 			</Dialog.Title>
+			<!-- Story 29-1a (AC6) — le rappel des contrôles préalables. Il ne bloque
+			     rien : le bouton « Clôturer » reste actif pendant le chargement et après
+			     un échec. ⛔ Ni « Aucun point » ni « N point(s) » avant la réponse (M-a22). -->
+			<div class="rounded-md border border-border p-3 text-sm" data-testid="fiscal-year-close-checks">
+				{#if closeChecksState === 'loading'}
+					<p class="text-text-muted" role="status" data-testid="fiscal-year-close-checks-loading">
+						{i18nMsg('fiscal-years-checks-loading', 'Lecture des contrôles…')}
+					</p>
+				{:else if closeChecksState === 'error'}
+					<p class="text-text-muted" data-testid="fiscal-year-close-checks-error">
+						{i18nMsg(
+							'fiscal-years-checks-reminder-error',
+							'Les contrôles préalables n’ont pas pu être lus. Vous pouvez clôturer quand même, ou les consulter plus tard depuis « Préparer la clôture ».'
+						)}
+					</p>
+				{:else if closePoints.length === 0}
+					<p class="text-success" data-testid="fiscal-year-close-checks-none">
+						{i18nMsg('fiscal-years-checks-reminder-none', 'Aucun point à vérifier.')}
+					</p>
+				{:else}
+					<p class="font-medium text-warning" data-testid="fiscal-year-close-checks-count">
+						{i18nMsg('fiscal-years-checks-reminder-count', '{ $count } point(s) à vérifier :', {
+							count: closePoints.length
+						})}
+					</p>
+					<ul class="ml-4 list-disc text-text">
+						{#each closePoints as point (point.code)}
+							<li data-testid="fiscal-year-close-checks-point-{point.code}">{checkTitle(point.code)}</li>
+						{/each}
+					</ul>
+					<button
+						type="button"
+						class="mt-1 text-xs text-primary underline"
+						data-testid="fiscal-year-close-checks-open-panel"
+						onclick={openChecksFromClose}
+					>
+						{i18nMsg('fiscal-years-checks-reminder-link', 'Voir le détail dans « Préparer la clôture »')}
+					</button>
+				{/if}
+			</div>
 			<Dialog.Description>
 				{#if closeTarget}
 					{i18nMsg(
@@ -608,6 +731,31 @@
 					? msg('closing', 'Clôture…')
 					: msg('fiscal-year-close-confirmation-action', 'Clôturer')}
 			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Dialog : préparer la clôture (Story 29-1a, AC5 — tout rôle, lecture seule) -->
+<Dialog.Root bind:open={checksOpen}>
+	<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-2xl" data-testid="fiscal-year-checks-dialog">
+		<Dialog.Header>
+			<Dialog.Title>
+				{i18nMsg('fiscal-years-checks-title', 'Préparer la clôture — { $name }', {
+					name: checksTarget?.name ?? ''
+				})}
+			</Dialog.Title>
+		</Dialog.Header>
+		<FiscalYearChecks
+			loadState={checksState}
+			checks={checksData}
+			onCreateFiscalYear={canMutate ? createFromChecks : undefined}
+		/>
+		<Dialog.Footer>
+			<Dialog.Close>
+				<Button variant="outline" type="button" data-testid="fiscal-year-checks-close">
+					{i18nMsg('fiscal-years-checks-close', 'Fermer')}
+				</Button>
+			</Dialog.Close>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

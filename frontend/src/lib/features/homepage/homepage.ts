@@ -49,23 +49,17 @@ export function ledgerTotal(accounts: BankAccountSummary[]): LedgerTotal {
 	return { total, partial, shared, any };
 }
 
-/** Arrondi du dépôt : au centime, demi loin de zéro. */
-function toCentime(v: string): Big {
-	return new Big(v).round(2, Big.roundHalfUp);
-}
-
 /**
  * Écart entre le solde comptable à la date du relevé et le relevé, **au
  * centime** (solde comptable − relevé). `null` quand il ne se calcule pas
  * (pas de relevé, pas de compte lié, compte de grand livre partagé) **ou quand
  * il est nul** — seul un écart réel s'affiche.
+ *
+ * Story 29-1a (#232, C-29-1-25) : l'écart est **servi par le serveur**
+ * (`statementGap`, calculé par `bank_accounts::statement_gap` en Rust, qui
+ * porte la règle d'arrondi et ses tests) — une seule définition, partagée avec
+ * le contrôle K3 de la préparation de clôture. Il n'est plus recalculé ici.
  */
 export function statementGap(account: BankAccountSummary): Big | null {
-	if (account.ledgerBalanceAtStatement === null || account.statementClosingBalance === null) {
-		return null;
-	}
-	const gap = toCentime(account.ledgerBalanceAtStatement).minus(
-		toCentime(account.statementClosingBalance),
-	);
-	return gap.eq(0) ? null : gap;
+	return account.statementGap === null ? null : new Big(account.statementGap);
 }

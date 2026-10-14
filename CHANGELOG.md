@@ -8,6 +8,22 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.14.0] — Non publié
+
+### Ajouté
+
+- **Préparer la clôture d'un exercice : sept contrôles en lecture seule** ([#232](https://github.com/guycorbaz/kesh/issues/232)). Sur l'écran *Paramètres → Exercices comptables*, le bouton *Préparer la clôture* d'un exercice ouvert — offert à tous les rôles, Consultation comprise — passe l'exercice en revue : exercice antérieur encore ouvert, transactions bancaires à rapprocher, relevé bancaire de fin d'exercice manquant, arrêté trop tôt ou en écart avec les livres, factures en brouillon, factures fournisseur importées à compléter, écritures incohérentes héritées ou restaurées, exercice suivant absent. Chaque contrôle mène à l'écran où l'on agit. Rien ne bloque : le dialogue de clôture rappelle le résultat sans empêcher de clôturer. Par l'API : `GET /api/v1/fiscal-years/{id}/closing-checks`, clés `read` comprises (`docs/api-external.md`). Limites au manuel utilisateur, *Préparer la clôture* : les pièces à compléter ne sont pas bornées à l'exercice, un compte alimenté par CSV seulement est « non vérifiable ».
+
+### Modifié
+
+- L'écart entre le relevé et les livres de la page d'accueil est désormais calculé par le serveur — même règle d'arrondi au centime, même résultat — et servi par `GET /api/v1/bank-accounts` (champ `statementGap`), le même que lit la préparation de clôture.
+
+### Corrigé
+
+- Manuel utilisateur : les comptes du bilan sont reportés d'un exercice au suivant que l'exercice précédent soit clôturé ou non — le manuel disait « si clôturé ».
+
+---
+
 ## [0.13.4] — Non publié
 
 ### Modifié
