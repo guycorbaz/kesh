@@ -58,7 +58,9 @@
   (le paramètre par défaut de `getProposals` lit la première — DRY), doc-comment qui renvoie à
   `DEFAULT_PROPOSALS_LIMIT` / `MAX_PROPOSALS_LIMIT` ; côté Rust, doc-comments réciproques et **un test d'intégration**
   qui fige le plafond (`limit=1000` sur 501 transactions → 500 rendues, `hasMore` vrai) et le second état de l'écran
-  (`limit=500` sur 150 → 150, `hasMore` faux).
+  (`limit=500` sur 150 → 150, `hasMore` faux). *Annotation du 2026-10-14 (validation P1, F8)* : le second test porte
+  sur **exactement 500** transactions (`limit=500` → 500, `hasMore` faux), pour figer la frontière que 150 laissait
+  libre (`>=` pour `>`) ; il s'appelle `get_proposals_limit_500_exact_has_no_more`.
 - **Écartées** : un champ `limit` effectif dans la réponse (change le contrat de l'API pour un P3) ; déduire le
   plafond de la réponse (`proposals.length < limit demandé`) — juste, mais il faut un clic inutile pour le découvrir.
 - **Réversible** : oui.
@@ -91,6 +93,8 @@
 - **Retenu** : le patron déjà en place dans `ReconciliationProposals.svelte:99-117` (`loadGen`) : `const mySeq =
   ++loadSeq` ; après l'`await`, `detail`, `errorMessage` et `loading` ne s'écrivent que si `mySeq === loadSeq`. La
   remise à `null` en tête (28-5b) reste.
+  *Annotation du 2026-10-14 (validation P1, F7 et R8)* : `loading` sort de la garde — voir C-29-9-14 ; `++loadSeq`
+  est la première instruction de `load()`, avant la branche « Identifiant invalide » (R7).
 - **Écartée** : `AbortController` (l'`apiClient` remplace le `signal` de l'appelant par le sien, `api-client.ts:258-260` ; plus large pour le même effet).
 - **Réversible** : oui.
 
@@ -107,6 +111,12 @@
   (prémisse « même symptôme » → « même défaut, latent »).
 - **Écartée** : sortir le second cas du périmètre (l'issue resterait ouverte pour trois lignes).
 - **Réversible** : oui.
+- *Annotation du 2026-10-14 (validation P1, F4)* : la prémisse « son `$effect` ne se rejoue que si `page.params.id`
+  change » est **fausse au code** — l'effet dépend du signal `page.params`, que SvelteKit réassigne (objet neuf) à
+  chaque navigation dans la route, même à `id` égal (`@sveltejs/kit/src/runtime/client/state.svelte.js:37`,
+  `client.js:1888`). Telle quelle, la correction retenue ci-dessus (`isLoading = true` en tête) aurait démonté le
+  formulaire et perdu une saisie à chaque navigation de ce genre. Le « Retenu » ci-dessus est conservé pour la trace ;
+  il est **remplacé par C-29-9-13** pour la forme de l'effet. Le constat « défaut latent » tient (aucun lien au sol).
 
 ### C-29-9-9 — #655 : la classe n'est pas revendiquée fermée
 
@@ -145,6 +155,60 @@
 - **Contexte** : #649 et #646 changent un parcours ; #655 ne change aucun parcours, et la course qu'il corrige n'est pas
   reproductible de façon déterministe à travers un vrai serveur.
 - **Retenu** : `reconciliation-show-older.spec.ts` (import CAMT synthétique de 101 transactions, bouton, 101e visible)
+  — *corrigé le 2026-10-14 (validation P1, R5)* : la fiche dit, et c'est ce qui vaut, **501** transactions (paliers 100
+  puis 500, avis plafonné), la **150e** absente avant le clic et présente après ; entrées uniques (F11) ;
   et `contact-persons-delete.spec.ts` (refus → la personne reste ; acceptation → elle part, et le serveur ne la rend
   plus). #655 est couvert par Vitest, promesses résolues dans l'ordre inverse.
+- **Réversible** : oui.
+
+### C-29-9-13 — #655, second cas : l'effet du profil dépend d'un `$derived` de l'identifiant (validation P1, F4)
+
+- **Contexte** : `page.params` est un `$state.raw` réassigné par `Object.assign(page, …)` à chaque navigation
+  (`@sveltejs/kit` 2.55.0, `state.svelte.js:37`, `client.js:1888`) ; un effet qui lit `page.params.id` se rejoue donc à
+  `id` égal. `BankProfileForm` initialise ses champs **une fois** depuis `existing` (`BankProfileForm.svelte:46-60`) :
+  à id changé, il doit être remonté ; à id égal, il ne doit **jamais** l'être (saisie en cours). Décision de
+  l'orchestrateur : le geste le plus étroit, sans démontage ni perte de saisie au même id.
+- **Retenu** : `const rawId = $derived(page.params.id)` ; l'effet ne lit que `rawId`. Un `$derived` compare par `===`
+  (`svelte/src/internal/client/reactivity/equality.js:4-6`, Svelte 5.55.1) : à id égal, il garde sa valeur et l'effet
+  ne se rejoue pas. La **chaîne** est dérivée, non le nombre (`NaN !== NaN` relancerait l'effet à chaque navigation
+  sur un id invalide). En tête de l'effet — donc d'un chargement réel — `++loadSeq` (avant la branche « ID
+  invalide »), `errorMessage = null`, `isLoading = true` ; garde de séquence sur `profile`, `errorMessage`,
+  `isLoading`. `isLoading = true` est **gardé** : établi au code qu'il ne s'exécute qu'à id changé, où il est
+  nécessaire. Tests V13 (id égal : un seul appel, saisie intacte), V14, V15, V16 ; fixture qui **réassigne** `params`.
+- **Écartées** : `{#key rawId}` autour du formulaire (démonte aussi, mais c'est l'effet qu'il faut borner, et deux
+  mécanismes pour un) ; `untrack(() => page.params)` (n'exprime pas « l'id seul ») ; ne pas poser `isLoading = true`
+  (le profil 6 s'afficherait avec les champs du 5).
+- **Réversible** : oui.
+
+### C-29-9-14 — #655, premier cas : `loading` du détail d'import n'est pas gardé (validation P1, F7 et R8)
+
+- **Contexte** : la fiche initiale gardait `loading` dans le `finally`. Or `load()` ne remet jamais `loading` à
+  `true`, et les deux déclencheurs de relecture ne sont rendus que dans `{:else if detail}` (`[id]/+page.svelte:96`),
+  donc après la première lecture : un `finally` périmé écrit `false` sur `false`.
+- **Retenu** : garde de séquence sur `detail` et `errorMessage` seulement ; `loading = false` reste nu dans le
+  `finally`, avec un commentaire qui dit pourquoi et qu'il faudra le garder le jour où `load()` le remettra à `true`.
+- **Écartée** : garder `loading` (garde intuable : aucun test ne peut la rougir) ; ajouter `loading = true` à `load()`
+  pour la rendre observable (démonterait les lignes à chaque relecture — un changement d'écran hors de #655).
+- **Réversible** : oui.
+
+### C-29-9-15 — #649 : le saut de défilement au clic est déclaré, non corrigé (validation P1, F9)
+
+- **Contexte** : `{#if loading}` (`ReconciliationProposals.svelte:266-269`) remplace la liste par le message de
+  chargement pendant tout rechargement ; au clic sur *Afficher aussi les plus anciennes*, en bas de page, la page
+  remonte.
+- **Retenu** : déclarer (AC2, Dev Agent Record) ; `load()` inchangé. Le même saut existe déjà après *Accepter* et
+  *Rejeter*.
+- **Écartée** : ne passer `loading` à `true` que si la liste est vide — la liste resterait cliquable pendant un
+  rechargement pour **tous** les déclencheurs (dont un lot en vol), un changement de comportement hors du P3.
+- **Réversible** : oui.
+
+### C-29-9-16 — #649 : le commentaire de module de `kesh-db` n'est pas réécrit (validation P1, R3/F3)
+
+- **Contexte** : `crates/kesh-db/src/repositories/reconciliation.rs:18-19` dit « paginées (limit hardcodé 100 au
+  caller, cf. L24) », trouvé par le grep élargi.
+- **Retenu** : laissé tel quel, cité au Dev Agent Record : le défaut de 100 est bien fixé par la route appelante, et
+  la story ne change aucun code de production Rust — le commentaire reste vrai. Le préciser ferait entrer un
+  repository `kesh-db` dans le diff pour un commentaire, et avec lui l'exception *kesh-db* (gate complet à chaque
+  patch de la boucle de revue).
+- **Écartée** : le réécrire (« défaut 100, plafond 500, fixés par la route »).
 - **Réversible** : oui.
