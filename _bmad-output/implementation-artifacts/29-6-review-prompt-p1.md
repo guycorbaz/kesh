@@ -4,10 +4,10 @@
 lecture seule stricte. Modèle : **Sonnet** pour les trois (passe complète ; rotation D6 de la rétrospective 25 :
 Sonnet ↔ Opus pour les passes complètes, Haiku pour la seule passe ciblée de fin de boucle).*
 
-Dépôt `/home/gcorbaz/devel/kesh-29-6`, branche `story/29-6` (sur `main` `b4abae5d` — 29-2, 29-3 et 29-1a mergées —
-et la tête de `story/29-5`, en PR #676, qui sera mergée en squash avant elle). Le code à relire :
-`git -C /home/gcorbaz/devel/kesh-29-6 diff 92ee18e3 HEAD` (`92ee18e3` = validation close de la fiche, dernier commit
-avant le développement ; ce diff ne contient que la 29-6). Langue du rapport : français.
+Dépôt `/home/gcorbaz/devel/kesh-29-6`, branche `story/29-6`, rebasée sur `main` `81b1b526` (29-2, 29-3, 29-1a et
+29-5 mergées). Le code à relire : `git -C /home/gcorbaz/devel/kesh-29-6 diff 6f132a98 HEAD` (`6f132a98` = validation
+close de la fiche après le rebase, dernier commit avant le développement ; ce diff ne contient que la 29-6). Langue du
+rapport : français.
 
 Fiche : `_bmad-output/implementation-artifacts/29-6-trop-percu-centimes.md` (AC1 à AC10, Dev Agent Record, Change
 Log) ; registre : `_bmad-output/implementation-artifacts/epic-29-choix-autonomes-29-6.md` (C-29-6-1 à 19 de la fiche,
