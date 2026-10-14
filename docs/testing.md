@@ -327,9 +327,9 @@ KESH_BACKEND_URL=http://localhost:3001 npm run test:e2e
 
 ## Les échecs attendus — la suite ne passe PAS au vert, et il faut le savoir
 
-⚠️ **`npm run test:e2e` ne passe PAS au vert, et le nombre d'échecs attendus DÉPEND DE L'HEURE :
-8 l'après-midi, 10 le matin** (relevé du 2026-08-30 : 212 passés / 11 échoués à 10:42 CEST, dont
-un de pollution en plus). Ces échecs sont ATTENDUS.
+⚠️ **`npm run test:e2e` ne passe PAS au vert : le compte attendu est de 7 à 10 échecs, quelle que
+soit l'heure** (formule ci-dessous ; la dépendance à l'heure de la KF-051 a disparu le 2026-10-13,
+Story 28-8 — cf. la note historique sous le tableau). Ces échecs sont ATTENDUS.
 Sans cette liste, la règle du `CLAUDE.md` — « la suite complète tourne en local avant tout
 `git push` » — est **invérifiable** : personne ne peut dire « c'est vert », et chacun doit
 re-dériver à la main quels échecs sont connus. Le risque n'est pas le temps perdu, c'est
@@ -357,34 +357,47 @@ une régression — mais cela ne se conclut qu'après le rejeu isolé, jamais au
 | `onboarding.spec.ts:77` | KF-029 (#97) |
 | `onboarding.spec.ts:150` | KF-029 (#97) |
 | **un huitième, VARIABLE** | pollution d'état entre specs — voir ci-dessous |
-| `invoices.spec.ts:415` | ⏰ **KF-045 (#421)** — seulement **avant 12:00 UTC** — « historique des rappels affiché » *(décalé de :405 par un commit antérieur ; les numéros de ligne dérivent, le **titre** du test fait foi)* |
-| `invoices.spec.ts:439` | ⏰ **KF-045 (#421)** — idem — « axe-core sans violations sur la fiche » *(ex-:429)* |
-| `sidebar-navigation.spec.ts:75` | **KF-046 (#424)** — déterministe, dépend de la route d'atterrissage |
+| `sidebar-navigation.spec.ts:75` | **KF-052 (#424)** — déterministe, dépend de la route d'atterrissage |
 
-⏰ **Les deux dernières ne rougissent QUE le matin, et c'est vérifié.** Le helper poste un rappel
-manuel daté de `${today}T12:00:00`, que la route compare à `Utc::now().naive_utc()`
-(`dunning_reminders.rs:261`, garde « pas de date d'envoi future »). Tant qu'il est plus tôt que
-**12:00 UTC** — soit 14:00 en Suisse l'été —, midi est dans le futur et la route rend **422**.
+*2026-10-13, Story 28-8 : malgré son intitulé, ce tableau est la liste **vivante** des échecs
+attendus — il a reçu des lignes après le 2026-08-26 ; les deux lignes KF-051 (#421, ex-KF-045)
+en sont retirées, le rappel de l'E2E étant daté d'une heure avant l'appel.*
 
-⚠️ **Elles échouent rejouées SEULES**, donc ce n'est pas la pollution du huitième variable ; et
-elles échouent aussi sur `main` avant toute branche en cours (vérifié en worktree sur
-`d2910022`). Le relevé du 2026-08-26 ne les portait pas parce qu'il a été fait l'après-midi.
-**Un test qui dépend de l'heure ne rougit que pour la moitié des gens qui le lancent.**
+⏰ **Note historique — la KF-051 (#421, ex-KF-045), corrigée.** Deux tests,
+`invoices.spec.ts` « historique des rappels affiché » et « axe-core sans violations sur la fiche »,
+ne rougissaient que le matin : le helper postait un rappel manuel daté de `${today}T12:00:00`, que
+la route compare à `Utc::now().naive_utc()` (`dunning_reminders.rs:261`, garde « pas de date d'envoi
+future »), si bien qu'avant **12:00 UTC** midi était futur et la route rendait **422**. Corrigée par
+la Story 28-8 : le helper date le rappel d'une heure avant l'appel. **Un test qui dépend de l'heure
+ne rougit que pour la moitié des gens qui le lancent.**
 
-⚠️ **La KF-046 dépend de l'état, pas de l'heure** : le groupe « Administration » s'auto-ouvre
+⚠️ **La KF-052 dépend de l'état, pas de l'heure** : le groupe « Administration » s'auto-ouvre
 sans persister quand la route active y tombe, et le test suppose le groupe fermé. Elle a **passé
 seule** le matin du 2026-08-30 puis **échoué seule** l'après-midi, sur un frontend `main`
 inchangé — seule la base `kesh_e2e` avait été reconstruite entre les deux.
 
 ⚠️ **Et `sidebar-navigation.spec.ts:75` porte DEUX causes distinctes — seul le rejeu isolé les
-sépare.** Il figure ici comme KF-046 *et* dans le relevé de pollution du 11:06 CEST ci-dessous.
-La KF-046 est **déterministe** et **échoue rejouée seule** ; la pollution **passe rejouée seule**.
+sépare.** Il figure ici comme KF-052 *et* dans le relevé de pollution du 11:06 CEST ci-dessous.
+La KF-052 est **déterministe** et **échoue rejouée seule** ; la pollution **passe rejouée seule**.
 Relevé du 2026-09-11 à 16:23 UTC : le test échoue dans la suite et **passe seul en 828 ms** —
-c'était donc la pollution, pas la KF-046. *Lire la liste nominative ne suffit pas à nommer la
+c'était donc la pollution, pas la KF-052. *Lire la liste nominative ne suffit pas à nommer la
 cause : sur ce test, elle donne deux réponses, et c'est le rejeu qui tranche.*
 
-⇒ **Le compte attendu est `7 + (2 si le run est matinal) + (1 si la KF-046 se déclenche) + 1 à 2
-de pollution`**, soit **8 à 12**.
+⇒ **Le compte attendu est `7 + (1 si la KF-052 se déclenche) + 0 à 2 de pollution`**, soit
+**7 à 10** — la borne basse est 7 parce qu'un run sans aucune pollution est observé (registre de
+sprint, 28-4a : « E2E 273 + 7 KF-029 »).
+
+**Relevé du 2026-10-13** (Story 28-8, 22:33 UTC, après 12:00 UTC ; base `kesh_e2e_288` reconstruite) :
+**277 passés / 7 échoués / 19 ignorés** — les sept KF-029 seuls, ni KF-052 ni pollution ; `invoices.spec.ts`
+« historique des rappels » et « axe-core sur la fiche » passent. Un run après 12:00 UTC ne prouve pas la disparition
+du défaut du matin ; la preuve est la mutation (rappel daté une heure **après** l'appel : les deux tests rougissent en
+`manual reminder failed: 422`).
+
+**Preuve directe de la KF-051, 2026-10-14** (Story 28-8) : lancement à **00:05:14 UTC** (avant 12:00 UTC ; base
+`kesh_e2e_288` reconstruite), `invoices.spec.ts` seul : **23 passés / 0 échoué** (le motif inclut
+`supplier-invoices.spec.ts`) ; `:418` « historique des rappels affiché » et `:442` « axe-core sans violations sur la
+fiche » passent. Ils échouaient en `422` à cette heure avant la correction.
+
 Deux relevés du 2026-08-30, base `kesh_e2e` reconstruite, tous deux **212 passés / 11 échoués** :
 
 | run | les 7 fixes | KF-045 | pollution — **change d'identité** |
@@ -392,6 +405,8 @@ Deux relevés du 2026-08-30, base `kesh_e2e` reconstruite, tous deux **212 pass�
 | 10:42 CEST | ✅ | ✅ | `reconciliation-rules.spec.ts:37`, `reports.spec.ts:306` |
 | 11:06 CEST | ✅ | ✅ | `products.spec.ts:166`, `sidebar-navigation.spec.ts:75` |
 | 16:13 CEST | ✅ | ❌ *(après 12:00 UTC)* | `reminders.spec.ts:146` — plus **KF-046** |
+
+*KF-045 et KF-046 ont été renumérotées KF-051 et KF-052 le 2026-09-10 ; la première est corrigée par la Story 28-8.*
 
 ⚠️ **Les quatre passent rejouées seules.** La pollution n'a donc ni une identité fixe **ni même
 un nombre fixe** — la première rédaction parlait d'« un huitième » au singulier, ce qui était

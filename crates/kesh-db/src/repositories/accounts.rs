@@ -1131,33 +1131,6 @@ pub async fn bulk_create_from_chart_in_tx(
     query.fetch_all(&mut **tx).await.map_err(map_db_error)
 }
 
-/// Supprime tous les comptes d'une company (tests). La remise à zéro
-/// (`kesh_seed::reset_demo`) ne l'emprunte pas : elle vide les tables de
-/// `backup::reset_cleared_tables()` en SQL, dans sa transaction.
-pub async fn delete_all_by_company(pool: &MySqlPool, company_id: i64) -> Result<u64, DbError> {
-    // Supprimer d'abord les enfants (parent_id NOT NULL) puis les parents
-    // En deux passes pour respecter la FK auto-référentielle
-    let mut tx = pool.begin().await.map_err(map_db_error)?;
-
-    // Passe 1 : mettre tous les parent_id à NULL
-    sqlx::query("UPDATE accounts SET parent_id = NULL WHERE company_id = ?")
-        .bind(company_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-
-    // Passe 2 : supprimer tous les comptes
-    let rows = sqlx::query("DELETE FROM accounts WHERE company_id = ?")
-        .bind(company_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_db_error)?
-        .rows_affected();
-
-    tx.commit().await.map_err(map_db_error)?;
-    Ok(rows)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

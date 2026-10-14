@@ -59,6 +59,12 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   emploient d'autres couleurs, elles aussi non définies, et ne changent pas encore : les cadres d'erreur de la
   sauvegarde et de la restauration restent sans couleur, trois cadres d'erreur de l'import bancaire gardent leur
   bordure rouge sans fond ([#645](https://github.com/guycorbaz/kesh/issues/645)).
+- **Documentation corrigée.** L'API externe (`docs/api-external.md`) liste désormais le refus
+  `MATCHED_BANK_TRANSACTION` de l'annulation d'un paiement fournisseur et de l'annulation d'une facture fournisseur
+  ([#595](https://github.com/guycorbaz/kesh/issues/595)) ; le manuel d'administration présente les mots de passe
+  MariaDB du fichier `.env` commentés, comme `.env.example`, et dit quoi y écrire sur une installation neuve
+  ([#615](https://github.com/guycorbaz/kesh/issues/615)) ; la brochure range le report automatique des soldes de
+  bilan, livré en v0.8.0, parmi les fonctions livrées ([#612](https://github.com/guycorbaz/kesh/issues/612)).
 
 ## [0.13.2] — 2026-10-13
 
