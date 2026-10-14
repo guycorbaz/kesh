@@ -2,7 +2,7 @@
 
 ## Status
 
-**review** — développement fait le 2026-10-14 (Opus 5.5), rebasé sur `main` `12c64c39` (29-4b comprise) ; revue de code P1 à lancer (`29-8-review-prompt-p1.md`). *Historique :* **ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (kickoff de
+**done** — revue de code close le 2026-10-15 (P1 Opus B/E/A remédiée, P2 ciblée Sonnet 0/0/0/4) ; choix versés au registre de l epic (`epic-29-choix-autonomes.md`). Antérieurement : développement fait le 2026-10-14 (Opus 5.5), rebasé sur `main` `12c64c39` (29-4b comprise) ; revue de code P1 à lancer (`29-8-review-prompt-p1.md`). *Historique :* **ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (kickoff de
 l'Epic 29), branche `story/29-8`, worktree `/home/gcorbaz/devel/kesh-29-8`. Story **ajoutée à l'Epic 29** sur décision
 de Guy (2026-10-14) ; sortie dans la **v0.13.4**. Choix consignés au registre propre à la story,
 `epic-29-choix-autonomes-29-8.md`, **C-29-8-1 à C-29-8-29** (à verser par union au registre de l'epic). 10 AC.
@@ -1291,3 +1291,21 @@ de code**), puis ce compte rendu. Diff de la remédiation : `4b358373..HEAD`.
     Record, § *Remédiation de la revue de code P1*.
   - Choix C-29-8-37 à 41 ajoutés (41 au total). Passe suivante : **P2 ciblée**, une lentille sur `4b358373..HEAD`,
     prompt `29-8-review-prompt-p2-ciblee.md`.
+
+### 2026-10-15 — Revue de code P2 (passe ciblée, Sonnet) : 0/0/0/4 ; revue close
+
+Prompt `29-8-review-prompt-p2-ciblee.md`, rapport `kesh-gate-logs/298-review-p2-T.md`, sur le seul diff `4b358373..5ff6756b`.
+Sept axes exercés ; aucun rejeu (lecture seule). Trend : P1 (B 0/0/0/7, E 0/0/0/4, A 0/0/1/6 ; E1 relevé par
+l'orchestrateur) → P2 ciblée 0/0/0/4 → **0 au-dessus de LOW, revue close**.
+
+- **T1 (LOW), corrigé par l'orchestrateur** : `docs/api-external.md`, la ligne « compte clos pendant l'attente du verrou »
+  est marquée **défensive** (la clôture refuse tant qu'une transaction est en attente, `api-external.md:239`).
+- **T4 (LOW), corrigé** : même table, la clé `read` (`API_KEY_READ_ONLY`, `middleware/auth.rs:139`) précède le rôle
+  Consultation, comme au code.
+- **T2 (LOW), laissé** : le test Vitest du `404 NOT_PENDING` simule une relecture qui rend une liste vide, là où le `GET`
+  réel rendrait lui aussi `404` (message affiché deux fois) ; comportement sans effet comptable.
+- **T3 (LOW), laissé** : C-29-8-37 ne déclare le succès périmé non remonté au parent que pour la même transaction ; le cas
+  d'une modale rouverte sur une autre transaction a la même conséquence (liste relue au geste suivant).
+- Ces deux corrections ne touchent que de la documentation : gate ciblé `binary(textes_coherents)` rejoué ; le gate
+  complet et l'E2E de `d2ab107e` restent ceux du dernier commit de code.
+- Registre : `epic-29-choix-autonomes-29-8.md` (C-29-8-1 à 41) versé au registre de l'epic et supprimé.

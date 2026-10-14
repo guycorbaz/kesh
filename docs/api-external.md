@@ -635,7 +635,7 @@ Refus, **dans cet ordre** — ceux que marque « `POST` » ne concernent que le 
 
 | Refus | Code | Statut |
 |---|---|---|
-| Rôle Consultation ; clé `read` au `POST` | — ; `API_KEY_READ_ONLY` | `403` |
+| Clé `read` au `POST` ; rôle Consultation | `API_KEY_READ_ONLY` ; — | `403` |
 | `settlementId` absent ou `≤ 0` (`POST`) | `VALIDATION_ERROR` | `400` |
 | Transaction introuvable (ou d'une autre société) | `NOT_FOUND` | `404` |
 | Compte bancaire de la transaction **archivé** | `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` | `404` |
@@ -647,7 +647,7 @@ Refus, **dans cet ordre** — ceux que marque « `POST` » ne concernent que le 
 | Transaction déjà rapprochée (`POST`) | `RECONCILIATION_TRANSACTION_NOT_PENDING` | `404` |
 | Transaction qui n'est pas un crédit en CHF — jugée **avant** le règlement, quel que soit `settlementId` (`POST`) | `RECONCILIATION_SETTLEMENT_NOT_LINKABLE`, `details.bankTransactionId`, `details.settlementId` | `409` |
 | Règlement introuvable ou d'une autre société — annulé depuis la fiche, par exemple (`POST`) | `NOT_FOUND` | `404` |
-| Compte bancaire clos pendant l'attente du verrou (`POST`) | `BANK_ACCOUNT_CLOSED`, `details.bankAccountId` | `409` |
+| Défensif : compte bancaire clos pendant l'attente du verrou — la clôture refuse tant qu'une transaction est en attente (`POST`) | `BANK_ACCOUNT_CLOSED`, `details.bankAccountId` | `409` |
 | La règle n'admet pas le règlement — autre type ou autre compte bancaire, montant, écriture déjà rapprochée ou passée sur un ancien compte du grand livre ; la liste a changé : la relire (`POST`) | `RECONCILIATION_SETTLEMENT_NOT_LINKABLE`, `details.bankTransactionId`, `details.settlementId` | `409` |
 | Défensif, inatteignable : la ligne lue sous verrou n'a pas été écrite (`POST`) | `OPTIMISTIC_LOCK_CONFLICT` | `409` |
 
