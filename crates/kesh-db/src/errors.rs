@@ -655,6 +655,25 @@ pub enum DbError {
         fiscal_year_name: String,
     },
 
+    /// La contre-passation au début de l'exercice suivant est refusée : aucun
+    /// exercice de la société ne commence après la fin de celui de l'écriture
+    /// (Story 29-1b, #232). Porte le nom de l'exercice **de l'origine**, que le
+    /// message nomme. Mappée vers HTTP **409** `NEXT_FISCAL_YEAR_MISSING`.
+    #[error("Aucun exercice ne suit l'exercice {fiscal_year_name} — contre-passation refusée")]
+    NextFiscalYearMissing { fiscal_year_name: String },
+
+    /// La contre-passation au début de l'exercice suivant est refusée :
+    /// l'exercice qui suit celui de l'écriture est clôturé — ou a disparu
+    /// depuis sa lecture (Story 29-1b, #232). Le refus est rendu par la
+    /// **confirmation verrouillante** (`fiscal_years::find_open_covering_date`),
+    /// jamais par le statut de la lecture ordinaire qui a trouvé l'exercice.
+    /// Mappée vers HTTP **409** `NEXT_FISCAL_YEAR_CLOSED`.
+    #[error("Exercice suivant {fiscal_year_name} clôturé — contre-passation refusée")]
+    NextFiscalYearClosed {
+        fiscal_year_id: i64,
+        fiscal_year_name: String,
+    },
+
     /// Un ou plusieurs comptes référencés sont archivés ou n'appartiennent
     /// pas à la company courante. Variante dédiée pour exposer un message
     /// UX clair sans leak du détail interne.
@@ -1386,6 +1405,8 @@ impl DbError {
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::LaterFiscalYearClosed { .. } => "LATER_FISCAL_YEAR_CLOSED",
             Self::EarlierFiscalYearOpen { .. } => "EARLIER_FISCAL_YEAR_OPEN",
+            Self::NextFiscalYearMissing { .. } => "NEXT_FISCAL_YEAR_MISSING",
+            Self::NextFiscalYearClosed { .. } => "NEXT_FISCAL_YEAR_CLOSED",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
             Self::AccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",
             Self::DesignatedAccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",

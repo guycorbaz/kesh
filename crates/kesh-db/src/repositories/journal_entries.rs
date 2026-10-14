@@ -396,10 +396,14 @@ async fn create_in_tx_inner(
     // nommé.
     //
     // ⚠️ **La contre-passation TRAVERSE cette garde, elle ne la contourne pas.**
-    // Elle passe parce que sa date est celle du jour et que la borne est
-    // strictement antérieure à aujourd'hui (garde de `companies::lock_books`) —
-    // non parce qu'elle emprunterait un autre chemin. C'est ce qui rend la
+    // Celle du jour passe parce que sa date est celle du jour et que la borne
+    // est strictement antérieure à aujourd'hui (garde de `companies::lock_books`)
+    // — non parce qu'elle emprunterait un autre chemin. C'est ce qui rend la
     // propriété vraie par construction plutôt que par accident de câblage.
+    // ⚠️ **Exception** (Story 29-1b, #232) : la contre-passation au début de
+    // l'exercice suivant est datée du premier jour de cet exercice, qui peut se
+    // trouver dans la période verrouillée — elle est alors refusée ici, en
+    // `PeriodLocked`, comme toute écriture.
     if let Some(locked_through) = books_locked_through
         && new.entry_date <= locked_through
     {
@@ -2491,7 +2495,7 @@ pub async fn reverse_in_tx(
     id: i64,
     user_id: i64,
 ) -> Result<JournalEntryWithLines, DbError> {
-    reverse_in_tx_inner(tx, company_id, id, user_id, None).await
+    reverse_in_tx_inner(tx, company_id, id, user_id, None, ReversalDating::Today).await
 }
 
 /// Ce qu'un appelant a **qualité** pour lever quand il contre-passe l'écriture
@@ -2562,7 +2566,63 @@ pub async fn reverse_owned_in_tx(
     user_id: i64,
     authority: ReversalAuthority,
 ) -> Result<JournalEntryWithLines, DbError> {
-    reverse_in_tx_inner(tx, company_id, id, user_id, Some(authority)).await
+    reverse_in_tx_inner(
+        tx,
+        company_id,
+        id,
+        user_id,
+        Some(authority),
+        ReversalDating::Today,
+    )
+    .await
+}
+
+/// La **datation** d'une contre-passation — paramètre interne de
+/// [`reverse_in_tx_inner`], la contre-passation unique (Story 29-1b, #232).
+///
+/// ⛔ Ce n'est pas un second chemin : les deux valeurs passent par la **même**
+/// fonction, et ne diffèrent qu'à l'étape (4) — l'exercice et la date de
+/// l'écriture inverse. Liaison, lettrage, refus et audit sont communs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReversalDating {
+    /// Datée **du jour**, dans l'exercice ouvert qui couvre ce jour — la
+    /// contre-passation historique (Story 24-4a), celle de `/reverse` et des
+    /// quatre annulations.
+    Today,
+    /// Datée du **premier jour de l'exercice qui suit** celui de l'origine,
+    /// dans cet exercice — pour les transitoires de fin d'exercice
+    /// (`/reverse-at-next-fiscal-year-start`).
+    NextFiscalYearStart,
+}
+
+/// Contre-passe une écriture **au premier jour de l'exercice qui suit le
+/// sien**, dans une transaction fournie (Story 29-1b, #232).
+///
+/// Même fonction interne que [`reverse_in_tx`] — mêmes verrous dans le même
+/// ordre, mêmes refus, même liaison et même lettrage —, à l'étape (4) près :
+/// l'exercice visé est le **premier exercice de la société dont la date de
+/// début suit la fin de l'exercice de l'origine**, et la date est son premier
+/// jour. Refus propres : [`DbError::NextFiscalYearMissing`] (aucun exercice ne
+/// suit), [`DbError::NextFiscalYearClosed`] (il est clôturé, ou a disparu).
+///
+/// ⚠️ Sans autorité (aucune annulation de pièce ne date au début de l'exercice
+/// suivant) : l'étape (1-bis) ne s'exécute pas. Comme [`reverse_in_tx`],
+/// n'exécute ni `COMMIT` ni rollback : l'appelant possède la transaction.
+pub async fn reverse_at_next_fiscal_year_start_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    user_id: i64,
+) -> Result<JournalEntryWithLines, DbError> {
+    reverse_in_tx_inner(
+        tx,
+        company_id,
+        id,
+        user_id,
+        None,
+        ReversalDating::NextFiscalYearStart,
+    )
+    .await
 }
 
 /// Une ligne de l'origine lue par la contre-passation : `(id, account_id,
@@ -2592,16 +2652,88 @@ type OriginLine = (i64, i64, Decimal, Decimal, Option<i64>, Option<i64>);
 /// écriture peuvent donc s'interbloquer : même défense, le rejeu des routes
 /// de la contre-passation et des quatre annulations (toutes `Rejouee`), et
 /// celui du lettrage.
+///
+/// ⚠️ **Cycle avec la création d'un exercice POSTÉRIEUR** (Story 29-1b, P2 F L4) :
+/// quand un exercice M antérieur à N existe, `fiscal_years::create` d'un
+/// exercice postérieur parcourt les exercices par `find_overlapping`
+/// (`start_date <= ?`) — il prend M puis demande N, que la contre-passation
+/// tient depuis l'étape (1), tandis qu'elle demande M dans le parcours de
+/// `find_open_covering_date`. Cycle déjà présent sur le chemin du jour, de même
+/// nature que les autres, résolu par le même rejeu.
+///
+/// # La datation (Story 29-1b, #232)
+///
+/// `dating` ne change que l'étape (4). [`ReversalDating::Today`] : l'exercice
+/// ouvert du jour, daté du jour. [`ReversalDating::NextFiscalYearStart`] :
+/// l'exercice qui suit celui de l'origine — **trouvé** par une lecture
+/// ordinaire (`fiscal_years::find_next_after`, celle du contrôle K7, sur la
+/// fin d'exercice lue à l'étape (1) par la même requête verrouillante), puis
+/// **confirmé** par `find_open_covering_date` sur son premier jour, qui est la
+/// date de l'écriture inverse. La suite (`create_in_tx_inner` et tous ses
+/// refus — `PeriodLocked`, `LaterFiscalYearClosed` —, le lettrage, l'audit)
+/// est celle du chemin du jour ; l'audit porte en plus `"dating"`.
+///
+/// **Mêmes verrous, dans le même ordre** que le chemin du jour (AC12) :
+/// origine et son exercice (1), lignes de l'origine (2), le parcours de
+/// `find_open_covering_date` (4), puis ceux de `create_in_tx_inner`. La seule
+/// lecture ajoutée est **ordinaire** et placée **après** le recensement des
+/// empêchements : la vue est née au plus tard au recensement — sur le chemin
+/// sans autorité, celui de [`reverse_at_next_fiscal_year_start_in_tx`], **là
+/// exactement**, l'étape (1) étant verrouillante et l'étape (1-bis) ne
+/// s'exécutant pas. ⚠️ Avec une autorité fournisseur, l'étape (1-bis) est une
+/// lecture ordinaire antérieure, et un appelant de [`reverse_in_tx`] a souvent
+/// lu avant l'appel : la phrase ne vaut qu'avec sa condition. Le parcours de
+/// `find_open_covering_date` s'arrête au premier jour de l'exercice suivant :
+/// il verrouille **moins** de lignes que celui du jour quand le geste est fait
+/// plus tard (on est en N+2, N+1 encore ouvert), jamais d'autres tables.
+///
+/// **Sur quoi repose la sûreté** : *une contre-passation n'écrit jamais dans un
+/// N+1 clos* parce que la date et l'exercice sont **confirmés** par
+/// `find_open_covering_date` — lecture **verrouillante** de N+1, qui lit l'état
+/// validé le plus récent et le tient jusqu'au `COMMIT`. Elle donne le refus
+/// nommé (`NEXT_FISCAL_YEAR_CLOSED`) et ne dépend d'aucun détail de
+/// `fiscal_years::close` ; l'écriture dans un exercice clos est de toute façon
+/// refusée, en second lieu, par le re-verrou de l'exercice dans
+/// `create_in_tx_inner` (`FISCAL_YEAR_CLOSED`). Le verrou de N tenu dès
+/// l'étape (1) en a une **conséquence utile, non une garantie** : comme
+/// `close(N+1)` verrouille ses antérieurs à son étape (b'), la clôture de N+1
+/// **attend** une contre-passation en cours — **si N est le premier exercice
+/// de la société**. S'il existe un exercice M antérieur à N, `close(N+1)` tient
+/// M puis demande N, tandis que la contre-passation tient N puis demande M :
+/// c'est le cycle connu avec la clôture, résolu par le rejeu des deux routes —
+/// non une attente. La **réouverture** de N+1 ne prend pas N : elle peut
+/// changer l'état lu entre la vue et la confirmation, et c'est la confirmation
+/// qui décide.
+///
+/// ⛔ **Le statut de N+1 n'est jugé QUE par cette confirmation** (C-29-1-27) :
+/// le `status` de la lecture ordinaire n'est pas lu. ⚠️ **Angle mort assumé,
+/// vérifié en revue de code et non par un test** : aucune mutation ni aucun
+/// test ne tue une confirmation **non verrouillante** (une lecture ordinaire à
+/// la place de `find_open_covering_date`) — seule sa suppression totale l'est
+/// (M-b3).
+///
+/// ⚠️ **Angle mort de l'exercice intercalé** (C-29-1-11) : un exercice créé
+/// **après** la naissance de la vue, entre N et le suivant lu, n'est pas vu —
+/// la contre-passation se daterait au début du suivant lu. Sur le chemin
+/// **pool** ([`reverse_at_next_fiscal_year_start`]), l'intercalé ne peut naître
+/// après la vue qu'au prix d'un plan atypique : sa création parcourt N par
+/// `find_overlapping`, et la contre-passation tient N dès l'étape (1), avant sa
+/// vue — la création l'attend, ou s'est validée avant le verrou, et la vue la
+/// voit. L'angle mort est réel pour [`reverse_at_next_fiscal_year_start_in_tx`],
+/// dont l'appelant a pu lire avant l'appel.
 async fn reverse_in_tx_inner(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
     user_id: i64,
     authority: Option<ReversalAuthority>,
+    dating: ReversalDating,
 ) -> Result<JournalEntryWithLines, DbError> {
-    // (1) Verrou sur l'origine, puis recensement des empêchements.
-    let origin: Option<(i64, i64, String)> = sqlx::query_as(
-        "SELECT je.id, je.entry_number, fy.name \
+    // (1) Verrou sur l'origine, puis recensement des empêchements. La fin de
+    // l'exercice de l'origine (`fy.end_date`) est lue par la MÊME requête — mêmes
+    // lignes verrouillées, aucun verrou ajouté (Story 29-1b, AC11).
+    let origin: Option<(i64, i64, String, NaiveDate)> = sqlx::query_as(
+        "SELECT je.id, je.entry_number, fy.name, fy.end_date \
          FROM journal_entries je \
          JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
          WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
@@ -2611,7 +2743,7 @@ async fn reverse_in_tx_inner(
     .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)?;
-    let (_, entry_number, origin_fy_name) = origin.ok_or(DbError::NotFound)?;
+    let (_, entry_number, origin_fy_name, origin_fy_end) = origin.ok_or(DbError::NotFound)?;
 
     // (1-bis) ⛔ Une autorité fournisseur ne vaut que pour l'écriture de SON
     // rôle — règlement (25-3-a-2) ou achat (25-3-c) — de la facture nommée :
@@ -2722,13 +2854,47 @@ async fn reverse_in_tx_inner(
         )
         .collect();
 
-    // (4) Exercice ouvert du JOUR — verrouillé APRÈS l'exercice de l'origine :
-    // cycle possible avec une clôture ou une création d'exercice, résolu par le
-    // rejeu (doc-comment ci-dessus, Story 15-12a).
-    let today = Utc::now().date_naive();
-    let fy = super::fiscal_years::find_open_covering_date(tx, company_id, today)
-        .await?
-        .ok_or(DbError::FiscalYearInvalid)?;
+    // (4) L'exercice et la date de l'écriture inverse — verrouillés APRÈS
+    // l'exercice de l'origine : cycle possible avec une clôture ou une création
+    // d'exercice, résolu par le rejeu (doc-comment ci-dessus, Story 15-12a).
+    let (entry_date, fy) = match dating {
+        // L'exercice ouvert du JOUR.
+        ReversalDating::Today => {
+            let today = Utc::now().date_naive();
+            let fy = super::fiscal_years::find_open_covering_date(tx, company_id, today)
+                .await?
+                .ok_or(DbError::FiscalYearInvalid)?;
+            (today, fy)
+        }
+        // Story 29-1b (#232) — le premier exercice qui suit celui de l'origine,
+        // TROUVÉ par une lecture ordinaire (placée ici, après le recensement :
+        // la vue ne naît pas plus tôt, garde T-b4), puis CONFIRMÉ par la lecture
+        // verrouillante. ⛔ Le `status` de la lecture ordinaire n'est PAS lu :
+        // seule la confirmation juge l'exercice ouvert (C-29-1-27).
+        ReversalDating::NextFiscalYearStart => {
+            let next = super::fiscal_years::find_next_after(&mut **tx, company_id, origin_fy_end)
+                .await?
+                .ok_or_else(|| DbError::NextFiscalYearMissing {
+                    fiscal_year_name: origin_fy_name.clone(),
+                })?;
+            let fy = super::fiscal_years::find_open_covering_date(tx, company_id, next.start_date)
+                .await?
+                .ok_or_else(|| DbError::NextFiscalYearClosed {
+                    fiscal_year_id: next.id,
+                    fiscal_year_name: next.name.clone(),
+                })?;
+            // Les exercices ne se chevauchent pas (`find_overlapping` à la
+            // création) : l'exercice ouvert qui couvre ce premier jour EST
+            // celui qu'on a trouvé. Autre chose serait un défaut structurel.
+            if fy.id != next.id {
+                return Err(DbError::Invariant(format!(
+                    "contre-passation : l'exercice {} couvre le premier jour de l'exercice {}",
+                    fy.id, next.id
+                )));
+            }
+            (next.start_date, fy)
+        }
+    };
 
     // Le nom de l'exercice DE L'ORIGINE lève l'ambiguïté du numéro, qui
     // REPART À 1 à chaque exercice. Celui de la contre-passation
@@ -2745,7 +2911,7 @@ async fn reverse_in_tx_inner(
         user_id,
         NewJournalEntry {
             company_id,
-            entry_date: today,
+            entry_date,
             journal: Journal::OD,
             description,
             // ⛔ `None` au niveau document : les projets sont repris PAR LIGNE.
@@ -2761,6 +2927,19 @@ async fn reverse_in_tx_inner(
     )
     .await?;
 
+    // ⚠️ L'action reste LITTÉRALE — une action choisie par `match` serait un
+    // site indirect pour `audit_label_registry.rs`. Seuls les détails diffèrent :
+    // le chemin du jour garde son JSON octet pour octet (T-b2), le chemin neuf
+    // y ajoute sa datation (Story 29-1b, AC11).
+    let details = match dating {
+        ReversalDating::Today => serde_json::json!({
+            "reversalJournalEntryId": created.entry.id,
+        }),
+        ReversalDating::NextFiscalYearStart => serde_json::json!({
+            "reversalJournalEntryId": created.entry.id,
+            "dating": "nextFiscalYearStart",
+        }),
+    };
     audit_log::insert_in_tx(
         tx,
         NewAuditLogEntry::user(
@@ -2768,9 +2947,7 @@ async fn reverse_in_tx_inner(
             "journal_entry.reversed".to_string(),
             "journal_entry".to_string(),
             id,
-            Some(serde_json::json!({
-                "reversalJournalEntryId": created.entry.id,
-            })),
+            Some(details),
         ),
     )
     .await?;
@@ -2780,7 +2957,8 @@ async fn reverse_in_tx_inner(
     // forme avec son miroir (même POSITION — `create_in_tx_inner` renumérote
     // `idx + 1`) un groupe `reversal`. Une ligne déjà lettrée garde son groupe,
     // et son miroir reste ouvert : c'est la créance (ou la dette) que la
-    // contre-passation fait renaître. Mode `System` : l'exercice du jour, tenu
+    // contre-passation fait renaître. Mode `System` : l'exercice de l'écriture
+    // inverse (celui du jour, ou celui qui suit l'origine — Story 29-1b), tenu
     // `FOR UPDATE` à l'étape (4), couvre le miroir — aucune règle des périodes
     // sur l'origine, qui peut être close (la contre-passation l'accepte).
     //
@@ -2852,6 +3030,31 @@ pub async fn reverse(
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     match reverse_in_tx(&mut tx, company_id, id, user_id).await {
+        Ok(created) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(created)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
+/// Contre-passe une écriture au premier jour de l'exercice suivant,
+/// transaction comprise (Story 29-1b, #232).
+///
+/// ⚠️ Mince enveloppement de [`reverse_at_next_fiscal_year_start_in_tx`],
+/// calqué sur [`reverse`] : `BEGIN`, appel, `COMMIT`. La route l'appelle sous
+/// `retry_on_deadlock`.
+pub async fn reverse_at_next_fiscal_year_start(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+    user_id: i64,
+) -> Result<JournalEntryWithLines, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    match reverse_at_next_fiscal_year_start_in_tx(&mut tx, company_id, id, user_id).await {
         Ok(created) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(created)
@@ -6210,5 +6413,54 @@ mod tests {
                 other => panic!("{cas} : AccountsNotPostable attendu, obtenu {other:?}"),
             }
         }
+    }
+
+    /// Le corps de `reverse_in_tx_inner`, lu dans ce source même : de sa
+    /// signature à la première accolade fermante en colonne 0.
+    fn corps_de_la_contre_passation(src: &str) -> &str {
+        let debut = src
+            .find("async fn reverse_in_tx_inner(")
+            .expect("signature de reverse_in_tx_inner");
+        let fin = src[debut..]
+            .find("\n}\n")
+            .expect("fin de reverse_in_tx_inner");
+        &src[debut..debut + fin]
+    }
+
+    /// T-b4 (Story 29-1b, AC12) — **la naissance de la vue ne bouge pas** : dans
+    /// le corps de `reverse_in_tx_inner`, la lecture ordinaire de l'exercice
+    /// suivant (`find_next_after`) apparaît **une fois**, et **après** l'appel
+    /// `reversal_blockers(` — la première lecture ordinaire du chemin sans
+    /// autorité. La placer avant ferait naître la vue plus tôt. Tue M-b9.
+    ///
+    /// Cas de contrôle : sur un corps synthétique où la lecture précède le
+    /// recensement, le détecteur rend bien l'ordre fautif.
+    #[test]
+    fn t_b4_la_lecture_de_l_exercice_suivant_suit_le_recensement() {
+        fn ordre(corps: &str) -> (usize, Vec<usize>) {
+            let recensement = corps
+                .find("reversal_blockers(")
+                .expect("appel de reversal_blockers");
+            let lectures = corps
+                .match_indices("find_next_after(")
+                .map(|(i, _)| i)
+                .collect();
+            (recensement, lectures)
+        }
+        let corps = corps_de_la_contre_passation(include_str!("journal_entries.rs"));
+        let (recensement, lectures) = ordre(corps);
+        assert_eq!(lectures.len(), 1, "une seule lecture de l'exercice suivant");
+        assert!(
+            lectures[0] > recensement,
+            "la lecture de l'exercice suivant précède `reversal_blockers` : la vue naîtrait plus tôt"
+        );
+
+        let synthetique =
+            "let n = find_next_after(&mut **tx, c, d); let r = reversal_blockers(tx, c, id);";
+        let (recensement, lectures) = ordre(synthetique);
+        assert!(
+            lectures[0] < recensement,
+            "le détecteur voit l'ordre fautif"
+        );
     }
 }

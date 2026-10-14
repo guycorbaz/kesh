@@ -523,6 +523,45 @@ pub async fn reverse_journal_entry(
     ))
 }
 
+/// POST /api/v1/journal-entries/{id}/reverse-at-next-fiscal-year-start —
+/// contre-passe une écriture au **premier jour de l'exercice qui suit le
+/// sien**, dans cet exercice (Story 29-1b, #232) : les transitoires de fin
+/// d'exercice.
+///
+/// **Sans corps** — `/reverse` n'en accepte pas davantage (C-29-1-10). Même
+/// contre-passation que [`reverse_journal_entry`], à la datation près
+/// (`journal_entries::reverse_at_next_fiscal_year_start`) ; refus propres
+/// `409 NEXT_FISCAL_YEAR_MISSING` et `409 NEXT_FISCAL_YEAR_CLOSED`, les autres
+/// sont ceux de la contre-passation.
+///
+/// ⚠️ **Rejouée sur interblocage**, comme `/reverse` : mêmes verrous, dans le
+/// même ordre, donc mêmes cycles connus.
+pub async fn reverse_journal_entry_at_next_fiscal_year_start(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<(StatusCode, Json<JournalEntryResponse>), AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+
+    let created = kesh_db::retry::retry_on_deadlock(
+        "journal_entries::reverse_at_next_fiscal_year_start",
+        || {
+            journal_entries::reverse_at_next_fiscal_year_start(
+                &state.pool,
+                company.id,
+                id,
+                current_user.user_id,
+            )
+        },
+    )
+    .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(JournalEntryResponse::from(created)),
+    ))
+}
+
 /// Prépare le `NewJournalEntry` d'un `POST` ou d'un `PUT` (Story 15-8a, D4 —
 /// extraite du `POST`, jamais recopiée) : trim et longueur du libellé, borne
 /// de lignes, parse des montants, `accounting::validate`.

@@ -401,6 +401,14 @@ journal-entries-reverse-blocked-settlement = Diese Buchung ist eine Rechnungszah
 journal-entries-reverse-blocked-bank-match = Diese Buchung ist mit einer Banktransaktion abgeglichen: Heben Sie den Abgleich im Detail des Bankimports auf.
 journal-entries-reverse-blocked-account-archived = Ein Konto dieser Buchung wurde archiviert: Reaktivieren Sie es, um stornieren zu können.
 journal-entries-reverse-account-archived = Stornierung nicht möglich — archivierte(s) Konto/Konten: { $detail }. Reaktivieren Sie die betroffenen Konten.
+# Story 29-1b (#232) — Stornierung zu Beginn des folgenden Geschäftsjahres (Rechnungsabgrenzungen).
+journal-entries-reverse-next-year-action = Zu Beginn des folgenden Geschäftsjahres stornieren
+journal-entries-reverse-next-year-dialog-title = Zu Beginn des folgenden Geschäftsjahres stornieren?
+journal-entries-reverse-next-year-dialog-body = Die Stornobuchung wird auf den { $date } datiert, im Geschäftsjahr „{ $name }“.
+journal-entries-reverse-next-year-help = Für Rechnungsabgrenzungen zum Jahresende: Die Gegenbuchung hebt die Abgrenzung am ersten Tag des folgenden Geschäftsjahres auf. Die ursprüngliche Buchung bleibt unverändert; weder sie noch ihre Stornobuchung können danach geändert oder gelöscht werden — ein Fehler wird mit einer ergänzenden Buchung korrigiert.
+journal-entries-reverse-next-year-reason-unavailable = Die Liste der Geschäftsjahre konnte nicht gelesen werden: Laden Sie die Seite neu, um zu Beginn des folgenden Geschäftsjahres zu stornieren.
+journal-entries-reverse-next-year-reason-missing = Um zu Beginn des folgenden Geschäftsjahres zu stornieren, erstellen Sie zuerst das folgende Geschäftsjahr.
+journal-entries-reverse-next-year-reason-closed = Das folgende Geschäftsjahr „{ $name }“ ist abgeschlossen: Die Stornobuchung kann nicht darin datiert werden.
 journal-entries-delete-blocked-reversed = Diese Buchung wurde storniert: Sie kann weder geändert noch gelöscht werden.
 journal-entries-edit-conflict = Diese Buchung wurde inzwischen geändert: Die Detailansicht wurde neu geladen.
 journal-entries-line-account-unusable = Konto archiviert oder nicht bebuchbar — bitte ersetzen
@@ -961,6 +969,9 @@ error-fiscal-year-reopen-motif-too-long = Der Grund der Wiedereröffnung ist zu 
 error-fiscal-year-already-open = Dieses Geschäftsjahr ist bereits offen.
 error-fiscal-year-reopen-blocked = Wiedereröffnung nicht möglich: Ein späteres Geschäftsjahr ist abgeschlossen; öffnen Sie zuerst die späteren abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten.
 error-fiscal-year-close-earlier-open = Schliessen Sie zuerst das Geschäftsjahr „{ $name }“ ab, das älter und noch offen ist: Die Bilanz ist kumulativ, und ein Geschäftsjahr wird erst nach allen vorangehenden abgeschlossen.
+# Story 29-1b (#232) — Stornierung zu Beginn des folgenden Geschäftsjahres.
+error-next-fiscal-year-missing = Auf das Geschäftsjahr „{ $name }“ folgt kein Geschäftsjahr: Erstellen Sie das folgende Geschäftsjahr und versuchen Sie es dann erneut.
+error-next-fiscal-year-closed = Das folgende Geschäftsjahr „{ $name }“ ist abgeschlossen: Die Stornobuchung kann nicht darin datiert werden.
 error-fiscal-year-create-later-closed = Das spätere Geschäftsjahr „{ $name }“ ist abgeschlossen, und seine Bilanz enthält alles, was ihm vorangeht: Vor seinem Beginn kann kein Geschäftsjahr erstellt werden, solange es abgeschlossen ist. Um dieses zu erstellen, eröffnet eine Administratorin oder ein Administrator zuerst die späteren abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten.
 error-fiscal-year-overlap = Dieses Geschäftsjahr überschneidet sich mit einem bestehenden Jahr.
 error-fiscal-year-name-duplicate = Ein Geschäftsjahr mit diesem Namen existiert bereits.

@@ -395,6 +395,14 @@ journal-entries-reverse-blocked-settlement = Cette écriture est un règlement d
 journal-entries-reverse-blocked-bank-match = Cette écriture est rapprochée d'une transaction bancaire : annulez le rapprochement depuis le détail de l'import bancaire.
 journal-entries-reverse-blocked-account-archived = Un compte de cette écriture a été archivé : réactivez-le pour pouvoir la contre-passer.
 journal-entries-reverse-account-archived = Impossible de contre-passer — compte(s) archivé(s) : { $detail }. Réactivez le ou les comptes concernés.
+# Story 29-1b (#232) — contre-passer au début de l'exercice suivant (transitoires).
+journal-entries-reverse-next-year-action = Contre-passer au début de l’exercice suivant
+journal-entries-reverse-next-year-dialog-title = Contre-passer au début de l’exercice suivant ?
+journal-entries-reverse-next-year-dialog-body = La contre-passation sera datée du { $date }, dans l’exercice « { $name } ».
+journal-entries-reverse-next-year-help = Pour les transitoires de fin d’exercice : l’écriture inverse annule la régularisation au premier jour de l’exercice suivant. L’écriture d’origine reste intacte ; ni elle ni sa contre-passation ne pourront plus être modifiées ni supprimées — une erreur se corrigera par une écriture complémentaire.
+journal-entries-reverse-next-year-reason-unavailable = La liste des exercices n’a pas pu être lue : rechargez la page pour contre-passer au début de l’exercice suivant.
+journal-entries-reverse-next-year-reason-missing = Pour contre-passer au début de l’exercice suivant, créez d’abord l’exercice suivant.
+journal-entries-reverse-next-year-reason-closed = L’exercice suivant, « { $name } », est clôturé : la contre-passation ne peut pas y être datée.
 journal-entries-delete-blocked-reversed = Cette écriture a été contre-passée : elle ne peut plus être modifiée ni supprimée.
 journal-entries-edit-conflict = Cette écriture a été modifiée entre-temps : la fiche a été rechargée.
 journal-entries-line-account-unusable = Compte archivé ou non imputable — à remplacer
@@ -1012,6 +1020,9 @@ error-fiscal-year-reopen-motif-too-long = Le motif de réouverture est trop long
 error-fiscal-year-already-open = Cet exercice est déjà ouvert.
 error-fiscal-year-reopen-blocked = Réouverture impossible : un exercice postérieur est clôturé ; rouvrez d’abord les exercices postérieurs clôturés, en commençant par le plus récent.
 error-fiscal-year-close-earlier-open = Clôturez d’abord l’exercice « { $name } », plus ancien et encore ouvert : le bilan est cumulatif, et un exercice ne se clôt qu’après tous ceux qui le précèdent.
+# Story 29-1b (#232) — contre-passation au début de l'exercice suivant.
+error-next-fiscal-year-missing = Aucun exercice ne suit l’exercice « { $name } » : créez l’exercice suivant, puis recommencez.
+error-next-fiscal-year-closed = L’exercice suivant, « { $name } », est clôturé : la contre-passation ne peut pas y être datée.
 error-fiscal-year-create-later-closed = L’exercice « { $name } », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucun exercice ne peut être créé avant sa date de début tant qu’il l’est. Pour créer celui-ci, un administrateur rouvre d’abord les exercices postérieurs clôturés, en commençant par le plus récent.
 error-fiscal-year-overlap = Cet exercice chevauche un exercice existant.
 error-fiscal-year-name-duplicate = Un exercice avec ce nom existe déjà.

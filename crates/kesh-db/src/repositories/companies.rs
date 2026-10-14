@@ -913,6 +913,9 @@ pub const BOOKS_UNLOCK_MOTIF_REQUIRED: &str = "booksUnlockMotifRequired";
 /// c'est-à-dire rendrait les livres incorrigibles le jour même. ⚠️ « Aujourd'hui »
 /// est `Utc::now().date_naive()`, la **même horloge** que la contre-passation :
 /// mélanger les deux réintroduirait l'écart d'un jour sous une autre forme.
+/// ⚠️ La garde ne vaut que pour la contre-passation **du jour** : celle au
+/// début de l'exercice suivant (Story 29-1b, #232) est datée du premier jour de
+/// cet exercice, et reste refusée si ce jour est dans la période verrouillée.
 ///
 /// ⛔ **`through` doit être STRICTEMENT postérieure à la borne courante non
 /// nulle.** Sans cette garde, la séparation par rôle serait contournable *par le
