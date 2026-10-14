@@ -2,7 +2,12 @@
 
 ## Status
 
-**review** — développement fait le 2026-10-14 (`bmad-dev-story`, Opus 5.5) : commits `8f483388` (tests et code) et
+**review** — revue de code P1 remédiée le 2026-10-14 (2 MEDIUM et 7 LOW distincts, aucun refus ; commits `729a1dc9`,
+`e8b94efc`) : M14 tuée par un cas l neuf, dépendance de la v0.13.4 à la 29-6 et à la 29-8 écrite en contrôle de
+pré-release au fichier d'epic, C-29-2-17 ; gate backend 3611/3611, Vitest 1610 ; aucune ligne de production
+exécutable touchée. Passe ciblée P2 à lancer (`29-2-review-prompt-p2-ciblee.md`, Haiku). Cf. Change Log.
+
+*Statut antérieur :* **review** — développement fait le 2026-10-14 (`bmad-dev-story`, Opus 5.5) : commits `8f483388` (tests et code) et
 `d45279f7` (documentation, derniers doc-comments) ; gate backend 3611/3611, Vitest 1610, E2E 279 passés + 8 échecs
 attendus ; 20 mutations jouées (17 tuées dont M14bis, ajoutée ; M12, M13 et M14 équivalentes) ; choix C-29-2-15 et 16,
 annotation de C-29-2-8 ; revue de code P1 à lancer (`29-2-review-prompt-p1.md`, Sonnet, lentilles B/E/A). Cf. Dev
@@ -884,3 +889,39 @@ recréée, migrée et seedée juste avant :
   passés, 8 échecs attendus (7 KF-029 + `sidebar-navigation.spec.ts:75`). Décomptes recomptés depuis les journaux :
   7 tests neufs, 20 mutations jouées (17 tuées, 3 équivalentes), 16 choix (C-29-2-1 à 16). Prochaine étape : revue de
   code P1, Sonnet, lentilles B/E/A (`29-2-review-prompt-p1.md`).
+- 2026-10-14 — **Revue de code P1** (Sonnet, lentilles B, E, A ; rapports
+  `/home/gcorbaz/devel/kesh-gate-logs/29-2-review-p1-{B,E,A}.md`). Bruts : B 0/0/1/3, E 0/0/2/4, A 0/0/1/3
+  (CRITICAL/HIGH/MEDIUM/LOW) — 4 MEDIUM et 10 LOW bruts ; après fusion des doublons (B1 = E2 = A1 ; E1 = A2, B2 sur le
+  même sujet ; B3 = E5) : **2 MEDIUM et 7 LOW distincts**. Remédiation (Opus 5.5) en deux commits, `729a1dc9`
+  (test et commentaires) et `e8b94efc` (manuel et PDF, fichier d'epic, registre, Dev Agent Record) :
+  - **B1 = E2 = A1 (MEDIUM)** — « puis rejetez la transaction » impraticable avant la 29-6. **Décision de
+    l'orchestrateur** : texte gardé (la 29-8, #670, le remplacera par « puis rattachez ») ; dépendance de publication
+    écrite en **contrôle** au fichier d'epic, § *Releases*, « Liste de pré-release de la v0.13.4 » (29-6 et 29-8
+    mergées ; `grep -nF 'rejetez la transaction'` et une variante `grep -nE` qui attrape aussi « en rejetant
+    ensuite » et le CHANGELOG, éprouvées sur l'arbre : trois sites, `:2029`, `:2031`, `CHANGELOG.md:15`).
+    Annotation de C-29-2-8. Aucune ligne de code.
+  - **E1 = A2 (MEDIUM), B2 (LOW)** — M14 déclarée équivalente à tort. Cas **l** ajouté à l'AC5 (fixture SQL directe :
+    échéance antérieure à la date, hors API), M14 rejouée : **tuée, 1 rouge** (Dev Agent Record, annotation datée) ;
+    doc-comment de `invoice_payment_anchor_sql!` corrigé ; annotation de C-29-2-15.
+  - **B3 = E5 (LOW)** — coût de la dérivée `rmd` sans `company_id` : **écrit**, non filtré (le filtre n'est pas
+    mécanique : paramètre lié de plus dans les deux lecteurs) ; doc-comment de la jointure et choix neuf **C-29-2-17**.
+  - **B4 (LOW)** — `:1305` aligné sur la formulation de `:2029` (« au plus 30 jours après la plus tardive de ces
+    dates : le dernier rappel, l'échéance, la date de la facture ») ; PDF régénéré (`make fr`, sous verrou, 2 passes,
+    stable) ; aplati : la phrase neuve 1 fois, « si l'une est plus tardive » 0, `??` 0.
+  - **E3 (LOW)** — en-tête de section `reconciliation_e2e.rs` (28-7) et doc-comment de
+    `find_unpaid_invoices_filters_by_30_day_window` complétés par la borne sur l'ancre. Assertions inchangées.
+  - **E4 (LOW)** — brochure `:167` (« sur une fenêtre de 30 jours ») : triée, **laissée** — juste, la fenêtre reste
+    de 30 jours, comptés depuis l'ancre.
+  - **E6 (LOW)** — coupure du `LIMIT 50` par une facture de la fenêtre élargie : **renvoyée à la 29-5** (#668), qui
+    teste la troncature et remplace l'ordre qu'un test écrit ici figerait (annotation de C-29-2-7).
+  - **A3 (LOW)** — inventaire (c) : `due_date=7` vrai à `8f483388`, `8` depuis `d45279f7` ; annoté, non réécrit.
+  - **A4 (LOW)** — l'ordre du `Vec` de l'AC5 n'est pas exercé (un élément par cas) : écrit au Dev Agent Record.
+  Aucun finding refusé. **Lignes de production** : seuls deux doc-comments de
+  `crates/kesh-db/src/repositories/reconciliation.rs` changent ; **aucune ligne exécutable** (SQL, Rust) n'est
+  touchée. Gates sur `e8b94efc`, base `kesh_292` recréée, migrée et seedée juste avant : `scripts/test-fast.sh` sous
+  verrou **3611 tests run: 3611 passed, 6 skipped** (163,1 s ; le cas l s'ajoute dans un test existant, d'où le même
+  total) ; frontend sous verrou : `npm run check` 0 erreur (29 avertissements, 5 fichiers, préexistants),
+  `lint-i18n-ownership` PASS, Vitest **146 fichiers, 1610 tests**, `npm run build` vert. **E2E non rejoué** : ni code
+  de production exécutable, ni spec E2E, ni frontend ne changent depuis l'E2E complet de `d45279f7` ; seuls des
+  commentaires, un test `kesh-db` et le manuel. Mutations après la revue : 21 jouées, 18 tuées, 2 équivalentes.
+  Choix : 17 (C-29-2-1 à 17). Prochaine étape : passe ciblée P2, Haiku (`29-2-review-prompt-p2-ciblee.md`).
