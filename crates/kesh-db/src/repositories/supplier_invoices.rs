@@ -1094,7 +1094,8 @@ pub async fn cancel_in_tx(
     // verrouillante APRÈS le verrou de l'écriture d'achat et de son exercice,
     // avant les motifs de (2) — « les verrous d'abord, tous, avant toute
     // lecture non verrouillante » (doc ci-dessus) ; règle de placement de
-    // `bank_accounts::ensure_open_in_tx`. Ne lit pas `archived`.
+    // `bank_accounts::ensure_open_in_tx`. Ne lit pas `archived`. Revérifiée sous
+    // verrou après l'étape (4) (Story 29-4b, #651).
     if let Some(bank_account_id) = inv.settlement_bank_account_id {
         super::bank_accounts::ensure_open_in_tx(tx, company_id, bank_account_id).await?;
     }
@@ -1164,6 +1165,15 @@ pub async fn cancel_in_tx(
     .rows_affected();
     if rows == 0 {
         return Err(DbError::OptimisticLockConflict);
+    }
+
+    // (4 bis) Story 29-4b (#651, W28, AC6) — facture payée par virement :
+    //     revérification VERROUILLANTE du compte clos (`closed_on` seul, jamais
+    //     `archived`), sur le compte lu en (1), avant que l'`UPDATE` ne le
+    //     détache — en DERNIÈRE acquisition de verrou, après la dernière
+    //     écriture, avant l'audit. Voir `bank_accounts::recheck_open_locked_in_tx`.
+    if let Some(bank_account_id) = inv.settlement_bank_account_id {
+        super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bank_account_id).await?;
     }
 
     // (5) L'audit du GESTE — seule trace du règlement détaché.
@@ -1335,7 +1345,8 @@ pub async fn cancel_settlement_in_tx(
     // lecture non verrouillante APRÈS (1-bis), avant les motifs de (2) — « la
     // queue lit l'exercice SANS verrou, et le socle ne verrouille l'exercice de
     // l'origine qu'APRÈS » (ci-dessus) ; règle de placement de
-    // `bank_accounts::ensure_open_in_tx`. Ne lit pas `archived`.
+    // `bank_accounts::ensure_open_in_tx`. Ne lit pas `archived`. Revérifiée sous
+    // verrou après l'étape (4) (Story 29-4b, #651).
     if let Some(bank_account_id) = inv.settlement_bank_account_id {
         super::bank_accounts::ensure_open_in_tx(tx, company_id, bank_account_id).await?;
     }
@@ -1409,6 +1420,15 @@ pub async fn cancel_settlement_in_tx(
     .rows_affected();
     if rows == 0 {
         return Err(DbError::OptimisticLockConflict);
+    }
+
+    // (4 bis) Story 29-4b (#651, W29, AC6) — règlement par virement :
+    //     revérification VERROUILLANTE du compte clos (`closed_on` seul, jamais
+    //     `archived`), sur le compte lu en (1), en DERNIÈRE acquisition de
+    //     verrou — après la dernière écriture, avant l'audit. Voir
+    //     `bank_accounts::recheck_open_locked_in_tx`.
+    if let Some(bank_account_id) = inv.settlement_bank_account_id {
+        super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bank_account_id).await?;
     }
 
     // (5) L'audit du GESTE — il garde le lien que la colonne vient de perdre.

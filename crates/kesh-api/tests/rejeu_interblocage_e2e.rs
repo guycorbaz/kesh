@@ -2140,3 +2140,110 @@ async fn bank_account_creation_is_replayed_when_it_is_the_deadlock_victim(pool: 
     .await;
     assert_eq!(comptes, 1, "un seul compte créé");
 }
+
+// ============================================================
+// Story 29-4b (#651, AC8) — le cycle neuf des annulations
+// ============================================================
+
+/// T29b-3 (Story 29-4b, #651, AC8) — **le cycle que la revérification des
+/// annulations crée est détecté (`1213`, non `1205`) et rejoué**. Patron
+/// `victime()` : la transaction de test (alourdie) tient la ligne du compte
+/// bancaire en exclusif — ce que fait `settle_invoice` (W8) à son étape (3) ;
+/// l'annulation d'un règlement **par virement** vers ce compte
+/// (`POST /invoices/{id}/settlements/{sid}/cancel`) tient la facture, le
+/// règlement et l'exercice de son écriture (2-bis), contre-passe, puis attend
+/// la ligne du compte sur sa revérification (`LOCK IN SHARE MODE`, dernière
+/// acquisition) ; la transaction de test demande l'exercice en exclusif :
+/// cycle compte → exercice / exercice → compte. L'annulation, plus légère
+/// (quelques lignes écrites contre 500 de lest), est la victime ; la
+/// transaction de test **doit** obtenir l'exercice (`victime()`), puis
+/// annule ; l'annulation rejouée rend `200`, une seule contre-passation.
+///
+/// **Rouge au sol** : sans revérification, l'annulation n'attend jamais la
+/// ligne du compte — `victime()` échoue sur son montage. Les quatre autres
+/// annulations ferment le même cycle avec des partenaires rejoués (fiche,
+/// § *Cycles*) : un test chacune n'est pas exigé (C-29-4-12).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn settlement_cancellation_recheck_cycle_is_replayed(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    disable_rounding_to_5_centimes(&pool, ctx.company_id())
+        .await
+        .unwrap();
+    let (compte, _) = compte_bancaire(&pool, &ctx).await;
+    let banque = compte_de_banque_imputable(&pool, &ctx).await;
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(banque)
+        .bind(compte)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let capture = CaptureRejeu::installer();
+    let facture = facture_validee(&pool, &ctx, "100.00").await;
+    let (status, corps) = requete(
+        &ctx,
+        reqwest::Method::POST,
+        &format!("/api/v1/invoices/{facture}/settlements"),
+        Some(json!({
+            "settlementType": "bank_transfer",
+            "bankAccountId": compte,
+            "amount": "108.10",
+            "settledOn": aujourd_hui().to_string(),
+        })),
+    )
+    .await;
+    assert_eq!(status, 200, "règlement préalable par virement : {corps}");
+    let (reglement, exercice): (i64, i64) = sqlx::query_as(
+        "SELECT s.id, je.fiscal_year_id FROM invoice_settlements s \
+         JOIN journal_entries je ON je.id = s.journal_entry_id WHERE s.invoice_id = ?",
+    )
+    .bind(facture)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let ecritures_avant = compter(
+        &pool,
+        "SELECT COUNT(*) FROM journal_entries WHERE company_id = ?",
+        ctx.company_id(),
+    )
+    .await;
+
+    let lourde = lourde_tenant_le_compte(&pool, compte).await;
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::POST,
+        &format!("/api/v1/invoices/{facture}/settlements/{reglement}/cancel"),
+        None,
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["SELECT closed_on FROM bank_accounts", "LOCK IN SHARE MODE"],
+        "SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE",
+        exercice,
+    )
+    .await;
+
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    capture.exiger_un_rejeu("invoices::cancel_settlement");
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = ?",
+            facture
+        )
+        .await,
+        0,
+        "le règlement est retiré, une fois"
+    );
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM journal_entries WHERE company_id = ?",
+            ctx.company_id()
+        )
+        .await,
+        ecritures_avant + 1,
+        "une seule contre-passation"
+    );
+}

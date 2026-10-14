@@ -321,7 +321,8 @@ pub async fn cancel_in_tx(
     // Story 28-4a (#642, W9) — compte clos : lecture non verrouillante APRÈS
     // (3), avant les motifs de (4) — « aucune lecture non verrouillante avant
     // l'étape 3 » (doc ci-dessus) ; règle de placement de
-    // `bank_accounts::ensure_open_in_tx`. Ne lit pas `archived`.
+    // `bank_accounts::ensure_open_in_tx`. Ne lit pas `archived`. Revérifiée sous
+    // verrou après l'étape (6) (Story 29-4b, #651).
     super::bank_accounts::ensure_open_in_tx(tx, company_id, bt.bank_account_id).await?;
 
     // (4) Les motifs — forme EXEMPTÉE : le lien existe encore, et la forme
@@ -384,6 +385,24 @@ pub async fn cancel_in_tx(
             (reversal.entry.id, None, None)
         }
     };
+
+    // (6 bis) Story 29-4b (#651, W9, AC6) — revérification VERROUILLANTE du
+    //     compte clos (`closed_on` seul, jamais `archived`), en DERNIÈRE
+    //     acquisition de verrou : après toutes les écritures (le règlement
+    //     annulé, dont la revérification de W25 sur le compte du règlement —
+    //     le même pour un règlement né d'un rapprochement : redemande d'un
+    //     partagé tenu —, ou la contre-passation), avant l'audit. Une clôture
+    //     commitée depuis la naissance de la vue (garde de la 28-4, plus haut)
+    //     est vue ici ; une clôture qui attend encore voit, à son tour, la
+    //     transaction redevenue `pending`. ⚠️ La route exécute ce geste sous le
+    //     verrou nommé du compte (`with_account_lock`) : pendant qu'une clôture
+    //     en file attend derrière un écrivain long, cette revérification attend
+    //     **en gardant** `GET_LOCK`, et les autres gestes de réconciliation du
+    //     compte échouent en `ReconciliationAccountLocked` au bout du délai.
+    //     Aucun cycle mixte (raisonné) : aucun détenteur d'un partagé du compte
+    //     ne demande ensuite `GET_LOCK`, les routes de réconciliation le prenant
+    //     en tête. Voir `bank_accounts::recheck_open_locked_in_tx`.
+    super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bt.bank_account_id).await?;
 
     // (7) L'audit du geste. ⚠️ Pour un règlement client, trois lignes au
     //     total (celle-ci, `invoice.settlement_cancelled`,
