@@ -652,7 +652,14 @@ const ATTENDU = {
 	// `story/29-8`) : `ReconciliationProposals.svelte` 21 → 22
 	// (`reconciliation-link-button-label`), `LinkSettlementModal.svelte` 0 → 15 (neuf). Que des
 	// littéraux : les autres compteurs inchangés.
-	sitesTotal: 2180,
+	// Story 29-9 (#649, #646, #678) : **2180 → 2186** (+6), mesuré par la collecte de ce test et
+	// recompté le 2026-10-15 par `grep -o "i18nMsg("` aux deux bornes (`4b358373`, tête de la
+	// 29-8, → HEAD de `story/29-9`) : `ReconciliationProposals.svelte` 22 → 27
+	// (`reconciliation-labels-more-hidden`, `-actions-show-older`, `-labels-more-capped`,
+	// `-labels-select-transaction`, `-select-transaction-no-counterparty`),
+	// `ContactPersonsManager.svelte` 15 → 16 (`contact-persons-confirm-delete`). Que des
+	// littéraux : les autres compteurs inchangés.
+	sitesTotal: 2186,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

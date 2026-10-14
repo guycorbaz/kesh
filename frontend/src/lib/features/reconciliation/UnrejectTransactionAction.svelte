@@ -47,7 +47,7 @@
 			notifySuccess(
 				i18nMsg(
 					'reconciliation-unreject-success',
-					'Rejet annulé : la transaction est de nouveau proposée à la réconciliation, dont la liste montre les 100 plus récentes en attente.',
+					"Rejet annulé : la transaction est de nouveau proposée à la réconciliation, dont la liste montre d'abord les 100 plus récentes en attente.",
 				),
 			);
 		} catch (err) {

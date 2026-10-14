@@ -816,7 +816,7 @@ reconciliation-cancel-column = Abgleich
 # Story 28-5b (#526) — annuler le rejet d'une transaction, depuis le détail de son import.
 reconciliation-unreject-button = Ablehnung aufheben
 reconciliation-unreject-rejected-on = Abgelehnt am { $date }
-reconciliation-unreject-success = Ablehnung aufgehoben: Die Transaktion wird wieder zur Abstimmung vorgeschlagen; die Liste zeigt die 100 neuesten offenen Transaktionen.
+reconciliation-unreject-success = Ablehnung aufgehoben: Die Transaktion wird wieder zur Abstimmung vorgeschlagen; die Liste zeigt zuerst die 100 neuesten offenen Transaktionen.
 invoice-settle-success-full = Zahlung erfasst — Rechnung beglichen
 invoice-settle-success-partial = Teilzahlung erfasst
 invoice-error-settled-on-required = Zahlungsdatum erforderlich
@@ -1212,6 +1212,9 @@ reconciliation-labels-unmatched-not-acceptable-hint = Eine Transaktion ohne Übe
 # Story 29-9 (#678, AC11) — zugänglicher Name des Kontrollkästchens jeder Zeile: was die Zeile anzeigt.
 reconciliation-labels-select-transaction = Transaktion vom { $date }, { $amount } { $currency }, { $counterparty } auswählen
 reconciliation-labels-select-transaction-no-counterparty = Transaktion vom { $date }, { $amount } { $currency } auswählen
+# Story 29-9 (#649, AC1, AC3) — unter der Liste, wenn ältere Transaktionen bleiben.
+reconciliation-labels-more-hidden = Nur die { $count } neuesten offenen Transaktionen werden angezeigt: Es gibt noch ältere.
+reconciliation-labels-more-capped = Die { $max } neuesten offenen Transaktionen werden angezeigt, das Maximum, das diese Seite auf einmal zeigt. Es gibt noch ältere: Sie erscheinen, sobald diese akzeptiert, manuell zugewiesen, aufgeteilt oder einer Zahlung zugeordnet werden.
 # Story 15-5c (#492) — Bezeichnungen der Ablehnungen eines Abgleich-Stapels (`failed[]`).
 reconciliation-failed-account-not-found = Ein Gegenkonto ist nicht auffindbar oder archiviert.
 reconciliation-failed-account-not-postable = Nicht bebuchbares Konto: { $numbers }. Ein Sammel-, Ergebnis- oder Abschlusskonto nimmt keine Buchung auf: Wählen Sie ein bebuchbares Konto.
@@ -1249,6 +1252,8 @@ reconciliation-cols-candidate = Kandidat
 reconciliation-cols-score = Score
 reconciliation-actions-accept = Akzeptieren
 reconciliation-actions-reject = Ablehnen
+# Story 29-9 (#649, AC1) — bringt die Liste auf das Maximum.
+reconciliation-actions-show-older = Auch die älteren anzeigen (bis zu { $max } insgesamt)
 # H8 Pass 1 code review — 8 kanonische Schlüssel AC #61.
 reconciliation-labels-validate-selected = Auswahl validieren
 reconciliation-labels-reject-selected = Auswahl ablehnen
@@ -1780,6 +1785,8 @@ contact-persons-add = Hinzufügen
 contact-persons-add-error = Die Person konnte nicht hinzugefügt werden
 contact-persons-delete = Löschen
 contact-persons-delete-error = Die Person konnte nicht gelöscht werden
+# Story 29-9 (#646, AC7) — « Löschen » archiviert die Person, und kein Bildschirm stellt sie wieder her.
+contact-persons-confirm-delete = Die Kontaktperson { $name } löschen? Kein Bildschirm erlaubt es, sie wiederherzustellen.
 contact-persons-empty = Keine Kontaktperson.
 contact-persons-hint = nur zur Information
 contact-persons-load-error = Die Kontaktpersonen konnten nicht geladen werden

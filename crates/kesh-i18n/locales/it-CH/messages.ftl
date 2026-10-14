@@ -816,7 +816,7 @@ reconciliation-cancel-column = Riconciliazione
 # Story 28-5b (#526) — annuler le rejet d'une transaction, depuis le détail de son import.
 reconciliation-unreject-button = Annulla il rifiuto
 reconciliation-unreject-rejected-on = Rifiutata il { $date }
-reconciliation-unreject-success = Rifiuto annullato: la transazione è di nuovo proposta per la riconciliazione, il cui elenco mostra le 100 più recenti in sospeso.
+reconciliation-unreject-success = Rifiuto annullato: la transazione è di nuovo proposta per la riconciliazione, il cui elenco mostra prima le 100 più recenti in sospeso.
 invoice-settle-success-full = Pagamento registrato — fattura saldata
 invoice-settle-success-partial = Pagamento parziale registrato
 invoice-error-settled-on-required = Data del pagamento obbligatoria
@@ -1212,6 +1212,9 @@ reconciliation-labels-unmatched-not-acceptable-hint = Una transazione senza corr
 # Story 29-9 (#678, AC11) — nome accessibile della casella di ogni riga: ciò che la riga mostra.
 reconciliation-labels-select-transaction = Selezionare la transazione del { $date }, { $amount } { $currency }, { $counterparty }
 reconciliation-labels-select-transaction-no-counterparty = Selezionare la transazione del { $date }, { $amount } { $currency }
+# Story 29-9 (#649, AC1, AC3) — sotto l'elenco, se restano transazioni più vecchie.
+reconciliation-labels-more-hidden = Sono mostrate solo le { $count } transazioni in sospeso più recenti: ne restano di più vecchie.
+reconciliation-labels-more-capped = Sono mostrate le { $max } transazioni in sospeso più recenti, il massimo che questa pagina mostra alla volta. Ne restano di più vecchie: appariranno man mano che queste saranno accettate, assegnate manualmente, suddivise o collegate a un pagamento.
 # Story 15-5c (#492) — etichette dei rifiuti di un lotto di riconciliazione (`failed[]`).
 reconciliation-failed-account-not-found = Un conto di contropartita è introvabile o archiviato.
 reconciliation-failed-account-not-postable = Conto non registrabile: { $numbers }. Un conto di raggruppamento, di risultato o di chiusura non riceve scritture: scegliere un conto registrabile.
@@ -1249,6 +1252,8 @@ reconciliation-cols-candidate = Candidato
 reconciliation-cols-score = Score
 reconciliation-actions-accept = Accettare
 reconciliation-actions-reject = Rifiutare
+# Story 29-9 (#649, AC1) — porta l'elenco al massimo.
+reconciliation-actions-show-older = Mostra anche le più vecchie (fino a { $max } in tutto)
 # H8 Pass 1 code review — 8 chiavi canoniche AC #61.
 reconciliation-labels-validate-selected = Convalida selezione
 reconciliation-labels-reject-selected = Rifiuta selezione
@@ -1778,6 +1783,8 @@ contact-persons-add = Aggiungi
 contact-persons-add-error = Impossibile aggiungere la persona
 contact-persons-delete = Elimina
 contact-persons-delete-error = Impossibile eliminare la persona
+# Story 29-9 (#646, AC7) — « Elimina » archivia la persona, e nessuna schermata la ripristina.
+contact-persons-confirm-delete = Eliminare la persona di contatto { $name }? Nessuna schermata permette di ripristinarla.
 contact-persons-empty = Nessuna persona di contatto.
 contact-persons-hint = a titolo informativo
 contact-persons-load-error = Impossibile caricare le persone di contatto
