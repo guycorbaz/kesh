@@ -1,0 +1,105 @@
+# Epic 29 — registre des choix autonomes, Story 29-2
+
+*Registre propre à la story 29-2 (#529), à verser par **union** dans `epic-29-choix-autonomes.md` par l'orchestrateur.
+Fiche : `29-2-paiement-tardif.md`.*
+
+---
+
+## Story 29-2 — Un paiement reçu après l'échéance, ou après un rappel, est proposé ([#529])
+
+### C-29-2-1 — Deux prémisses périmées, corrigées dans la fiche
+
+- **Contexte** : #529 (2026-10-08) décrit une fenêtre « centrée sur la date de la facture » ; la consigne dit que le
+  manuel « promet » que le rapprochement propose la facture.
+- **Retenu** : établi au code sur `16eeed21` — depuis la 28-7, la fenêtre est `D − 30 ≤ F ≤ D + 1` (une seule
+  définition, deux lecteurs) ; le défaut subsiste dans sa borne basse, ancrée sur la date de la facture. Le manuel
+  (`user-manual.tex:1305`, `:2029`, `:2902`) dit déjà que le paiement tardif n'est pas proposé et renvoie au règlement
+  depuis la fiche. Il change parce que la règle change, non parce qu'il mentait.
+- **Écartée** : spécifier d'après le texte de l'issue.
+- **Réversible** : sans objet (constat).
+
+### C-29-2-2 — Voie 1 seule : la borne basse s'ancre sur max(date, échéance, dernier rappel)
+
+- **Contexte** : #529 propose deux voies, « et/ou » : une fenêtre qui tient compte de l'échéance et des rappels, ou
+  le choix manuel d'une facture ouverte à l'écran. L'orchestrateur exige une seule borne pour la proposition et
+  l'acceptation (#548 non rouvert).
+- **Retenu** : `A = max(F, E, R)`, la facture est candidate et acceptée si `F ≤ D + 1` et `A ≥ D − 30`. Ferme le cas
+  courant (30 jours net payé en retard, paiement après rappel), garde une seule borne, aucun écran ne change.
+- **Écartées** : (a) le choix manuel à l'écran — deux bornes ou une voie d'acceptation sans borne, plus un dialogue
+  neuf, i18n, E2E, captures : hors du périmètre minimal ; (b) supprimer la borne basse — à score égal, la plus
+  ancienne facture impayée de même montant passe devant (départage `invoice_id ASC`) et est la seule affichée et
+  acceptée en lot : faux rattachement muet ; (c) l'échéance seule, sans les rappels — laisse ouvert le cas « après un
+  rappel » que l'issue et le manuel nomment.
+- **Réversible** : oui (une expression SQL et un paramètre de `check`).
+
+### C-29-2-3 — Les rappels annulés ne comptent pas ; date du rappel = `DATE(sent_at)`
+
+- **Contexte** : `invoice_reminders.cancelled_at` est une annulation soft (Admin, envoi accidentel), déjà exclue du
+  niveau courant ; `sent_at` est un `DATETIME(6)`, UTC pour un e-mail, saisi pour un rappel manuel.
+- **Retenu** : `MAX(sent_at)` des rappels `cancelled_at IS NULL`, ramené à sa date. L'écart de fuseau (un jour au
+  plus) est un angle mort écrit, sans effet mesurable sur une borne de 30 jours.
+- **Écartées** : compter les rappels annulés (un envoi accidentel élargirait la fenêtre) ; convertir le fuseau (aucun
+  fuseau de société n'est modélisé pour cette colonne).
+- **Réversible** : oui.
+
+### C-29-2-4 — Une seule expression SQL de l'ancre, lue en forme jointe et en forme scalaire
+
+- **Contexte** : la proposition filtre en SQL (avant `LIMIT 50`), l'acceptation tranche en Rust sur une facture.
+  Deux écritures de la même règle divergent (précédent du reste dû, #416).
+- **Retenu** : `INVOICE_PAYMENT_ANCHOR_SQL` + `invoice_payment_anchor_joins()` ; la proposition les met dans son
+  `WHERE`, l'acceptation les lit par `invoice_payment_anchor_date` (même constante, `WHERE i.id = ?`). La comparaison
+  à `D` reste `InvoiceDateWindow::check(F, A)` ; la parité est tenue par un test HTTP.
+- **Écartées** : calculer `A` en Rust côté acceptation depuis `invoice.due_date` et une requête du dernier rappel (une
+  seconde définition) ; filtrer en Rust après la requête (le `LIMIT 50` couperait avant le filtre).
+- **Réversible** : oui.
+
+### C-29-2-5 — Contrat d'API inchangé ; l'élargissement s'écrit à `api-external.md`
+
+- **Contexte** : `RECONCILIATION_INVOICE_NOT_ELIGIBLE` / `payment_date_outside_window` / `window_days = 30` sont des
+  valeurs que lit une intégration ; une acceptation refusée hier peut aboutir demain.
+- **Retenu** : mêmes codes, raisons et `details` ; une phrase *(depuis la v0.13.4)* dans
+  `docs/api-external.md` § *Accepter des propositions de rapprochement*, et la mention au CHANGELOG.
+- **Écartée** : ajouter `details.anchorDate` (contrat élargi sans demandeur).
+- **Réversible** : oui.
+
+### C-29-2-6 — Ni frontend, ni i18n, ni capture, ni spec Playwright neuve
+
+- **Contexte** : aucun texte ni contrôle de l'écran ne change ; le libellé de `payment_date_outside_window` est le
+  repli générique, sans durée.
+- **Retenu** : la frontière HTTP est exercée par des tests `spawn_app` (parité, cas de #529 bout à bout) ; la suite
+  E2E complète tourne au dernier commit de code (précédent C-28-7-8, C-28-7-9).
+- **Écartée** : une spec Playwright d'un paiement tardif (montage d'échéance et de rappel en E2E pour une assertion
+  que le test HTTP fait déjà).
+- **Réversible** : oui.
+
+### C-29-2-7 — Ordre, `LIMIT 50` et départage inchangés ; leur coût accru est transmis à la 29-3
+
+- **Contexte** : l'ancre fait entrer des factures échues et relancées parmi les candidates ; à score égal,
+  `propose_matches` place la plus ancienne (`invoice_id ASC`) en tête, seule affichée.
+- **Retenu** : ne rien changer à l'ordre ici (29-3, #527, sérialisée après) ; demander à l'orchestrateur de
+  commenter #527 avec le critère de départage par proximité de la date d'ancrage à la date de paiement.
+- **Écartée** : changer le départage dans la 29-2 (empiète sur #527, même fichier, story suivante).
+- **Réversible** : oui.
+
+### C-29-2-8 — Le contournement du reliquat est complété au manuel : rejeter la transaction
+
+- **Contexte** : un règlement par virement saisi depuis la fiche débite le compte de la banque
+  (`invoice_settlements_write.rs:130-154`) ; la transaction bancaire reste en attente et pourrait être passée une
+  seconde fois. Le manuel n'en dit rien.
+- **Retenu** : ajout mécanique aux paragraphes du manuel réécrits par la story : enregistrer depuis la fiche, **puis
+  rejeter** la transaction.
+- **Écartée** : ouvrir une issue séparée (la phrase vit dans les paragraphes que la story réécrit).
+- **Réversible** : oui.
+
+### C-29-2-9 — Le reliquat (plus de 30 jours après l'échéance, sans rappel) : demande d'évolution à ouvrir
+
+- **Contexte** : après la story, un paiement reçu plus de 30 jours après l'échéance et sans rappel depuis 30 jours
+  n'est toujours ni proposé ni acceptable à la réconciliation ; la voie 2 de #529 (choisir une facture ouverte à
+  l'écran) le couvrirait.
+- **Retenu** : reliquat écrit au manuel avec son contournement complet (C-29-2-8) ; **demande** à l'orchestrateur
+  d'ouvrir une issue `enhancement` « choisir à la main une facture ouverte pour une transaction créditrice »
+  (référence #529), pour qu'aucune limite ne reste sans issue (leçon § 4.3 de la rétrospective 28).
+- **Écartée** : l'intégrer ici (C-29-2-2).
+- **Réversible** : oui.
+
+[#529]: https://github.com/guycorbaz/kesh/issues/529
