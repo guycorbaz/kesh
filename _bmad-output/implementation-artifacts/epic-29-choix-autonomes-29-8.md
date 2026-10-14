@@ -346,3 +346,74 @@ trois premiers sont des **décisions de l'orchestrateur** (« retirer plutôt qu
   voisine, ce que la validation P2 avait déjà payé pour la 29-6) ; durcir « tout seul. » en exigeant la suppression de
   la phrase (elle reste vraie).
 - **Réversible** : oui.
+
+## Choix du développement (2026-10-14, Opus 5.5)
+
+### C-29-8-30 — Montage des tests d'intégration : la transaction par le dépôt, non par un CAMT
+
+- **Contexte** : l'AC8 dit « transaction par import CAMT de fixture synthétique ».
+- **Retenu** : dans `reconciliation_link_e2e.rs`, la transaction est posée par `bank_imports::create_with_transactions`,
+  la fonction que la route d'import appelle — patron de `bank_accounts_closed_e2e.rs` (C-28-4-26) ; facture, validation
+  et règlement passent par les routes. Le geste éprouvé est le rattachement, pas l'analyse d'un relevé ; l'E2E
+  Playwright (AC9), lui, importe un vrai fichier CAMT.
+- **Écartées** : un CAMT par test (vingt fixtures réécrites, sans rien prouver de plus du rattachement).
+- **Réversible** : oui.
+
+### C-29-8-31 — Le compte du grand livre lié est lu au pré-vol, comme `post_manual`
+
+- **Contexte** : la condition 4 lit `M` sur le compte du grand livre **actuel** du compte bancaire ; la fiche ne dit pas
+  où ce compte est lu au `POST`.
+- **Retenu** : `link_preflight` le lit sur le pool (refus `412` s'il manque) et le passe à `link_in_tx`
+  (`LinkRequest::bank_ledger_account_id`), comme `post_manual` passe `bank_ledger_account_id` à sa tentative. Un `PATCH`
+  du lien entre le pré-vol et la transaction ferait lire `M` sur l'ancien compte — qui porte bien la ligne de banque du
+  règlement s'il y fut passé : sans erreur comptable.
+- **Écartées** : relire `journal_account_id` dans la transaction (une lecture ordinaire de plus, à placer après le
+  dernier verrou, pour une course sans effet comptable) ; joindre `bank_accounts` dans la requête (la table dérivée ne
+  pourrait plus se restreindre au compte).
+- **Réversible** : oui.
+
+### C-29-8-32 — Après un rattachement, le bilan dit « 1 opération(s) réussie(s). »
+
+- **Contexte** : l'AC4 dit « compteur 1 opération(s) réussie(s). (même bilan que l'affectation manuelle,
+  `clearBatchReport` d'abord) » et l'AC9 attend ce compteur ; or l'affectation manuelle **efface** le bilan sans afficher
+  de compteur (`onManualSuccess`, test « efface le bilan du lot précédent »).
+- **Retenu** : `onLinkSuccess` appelle `clearBatchReport()` puis pose `lastSuccessCount = 1` — le compteur que les deux
+  AC décrivent ; l'affectation manuelle et l'éclatement restent inchangés.
+- **Écartées** : aligner sur l'affectation manuelle (aucun compteur : contredit l'AC9) ; ajouter le compteur aux deux
+  autres gestes (hors périmètre).
+- **Réversible** : oui.
+
+### C-29-8-33 — CHANGELOG : les limites dans l'entrée, aucune entrée « Modifié »
+
+- **Contexte** : l'AC6 demande *Ajouté*, *Modifié* (le contournement n'est plus « rejeter ») et *Limites connues*.
+- **Retenu** : une entrée *Ajouté* qui porte ses limites connues (L1 à L7, `#671`, `#672`, `#401`) ; les entrées des
+  29-2 et 29-6 de la **même** section `[0.13.4] — Non publié` réécrites en place en « rattachez ». Le conseil de rejet
+  n'a jamais été publié : une entrée *Modifié* annoncerait un changement qu'aucun utilisateur n'a vu. Le dépôt n'a pas
+  de rubrique « Limites connues ».
+- **Écartées** : une rubrique neuve « Limites connues » (hors du format Keep a Changelog suivi par le fichier).
+- **Réversible** : oui.
+
+### C-29-8-34 — Le pré-vol commun s'appelle `link_preflight` ; statut du registre adapté
+
+- **Contexte** : l'AC2 prescrit le statut `Gardee("pré-vol (ensure_bank_account_open) et …")`, forme de
+  `unreject_once` ; or le pré-vol du rattachement rend trois refus (archivé, clos, non lié) qu'`ensure_bank_account_open`
+  ne rend pas (validation P3, R9).
+- **Retenu** : le statut nomme `link_preflight`, la fonction réellement appelée.
+- **Réversible** : oui.
+
+### C-29-8-35 — Le point (vi) d'`audit_route_registry.rs` passe de **treize** à **quatorze**
+
+- **Contexte** : la fiche, relevée sur `fcd2ae75`, prescrivait « sept → huit » ; la 29-4a l'a depuis porté à treize.
+- **Retenu** : « quatorze », et une phrase neuve pour la route, « aucune preuve dynamique » ; l'historique « Treize : dix
+  avant la revue de code P1 de la 29-4a, plus ces trois » est gardé tel quel. Les quatre assertions chiffrées recomptées
+  depuis le registre : 119, 113, 95, 122 et 122.
+- **Réversible** : oui.
+
+### C-29-8-36 — `FENETRE` : `link_in_tx` entre `Fermee`, `G` passe à onze
+
+- **Contexte** : la 29-4a s'est mergée la première ; la 29-8, seconde, inscrit `link_in_tx` au registre `FENETRE`
+  (AC2).
+- **Retenu** : `Fenetre::Fermee("I1 : la transaction est pending, la clôture refuse — sous réserve de la 29-4b, comme
+  l'annulation de rejet")` — la variante que le code nomme `Fermee` (le `SansFenetre` de la fiche, cf. le doc-comment de
+  l'enum) ; l'anti-muet `G` passe de 10 à 11.
+- **Réversible** : oui.
