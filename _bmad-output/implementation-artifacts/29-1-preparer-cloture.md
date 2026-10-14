@@ -922,6 +922,25 @@ union.
 | M-a20 | K3 : critère d'activité au grand livre retiré (seuls transactions et relevés comptent) | T-a5 (écriture manuelle sur le compte lié, relevé ancien : `MISSING` attendu) |
 | M-a21 | DTO du tableau de bord : `statement_gap: None` en dur dans le handler de liste | T-a16 (`bank_accounts_e2e.rs`, écart réel attendu) |
 | M-a22 | panneau : « Rien à signaler » affiché sur chaque ligne pendant le chargement ; **et rappel du dialogue : « Aucun point à vérifier » affiché pendant le chargement** (P4-1) | T-a12 (chargement en attente, P3 R13, panneau et rappel) |
+| M-a23 | page : garde du jeton retirée au succès de `openChecks` *(revue de code P1, E1 = A1 ; M-a23 à M-a41 ajoutées par la remédiation)* | `fiscal-years-page.test.ts` (réponse tardive réussie, panneau) |
+| M-a24 | page : garde du jeton retirée à l'échec de `openChecks` | `fiscal-years-page.test.ts` (réponse tardive en échec, panneau) |
+| M-a25 | page : garde du jeton retirée au succès de `loadCloseChecks` | `fiscal-years-page.test.ts` (réponse tardive réussie, rappel) |
+| M-a26 | page : garde du jeton retirée à l'échec de `loadCloseChecks` | `fiscal-years-page.test.ts` (réponse tardive en échec, rappel) |
+| M-a27 | K6 : `UNBALANCED` non borné aux écritures de Y | `t_a9_k6_perimetre_de_y_et_bornes` |
+| M-a28 | K6 : `TOO_FEW_LINES` non borné aux écritures de Y | `t_a9_k6_perimetre_de_y_et_bornes` |
+| M-a29 | K6 : `DATE_OUTSIDE_ITS_YEAR` sans la borne basse (`entry_date < ?` neutralisé) | `t_a9_k6_perimetre_de_y_et_bornes` (veille de Y) |
+| M-a30 | K6 : `entry_date < ?` → `<=` | `t_a9_k6_perimetre_de_y_et_bornes` (premier jour de Y) |
+| M-a31 | K6 : `OTHER_YEAR_DATED_INSIDE` borné `> Y.start_date` | `t_a9_k6_perimetre_de_y_et_bornes` (premier jour de Y) |
+| M-a32 | K6 : `COALESCE(l.n, 0) < 2` → `l.n < 2` | `t_a9_k6_perimetre_de_y_et_bornes` (écriture sans ligne) |
+| M-a33 | K6 : `WHERE` de population élargi (`… OR TRUE`) | ⛔ **équivalente, démontrée** (C-29-1-44) : chaque drapeau porte sa condition sur Y, le `HAVING` écarte toute écriture hors population |
+| M-a34 | K3 : `closed_on >= ?` → `>` | `t_a5_k3_bornes_de_cloture_et_ordre_des_motifs` (clos le premier jour de Y) |
+| M-a35 | K3 : `measured_through` sans `min(Y.end_date)` | `t_a5_k3_bornes_de_cloture_et_ordre_des_motifs` (clos après Y) |
+| M-a36 | K3 : motifs 4 et 5 permutés | `t_a5_k3_bornes_de_cloture_et_ordre_des_motifs` (arrêté trop tôt et en écart), `t_a6_…` |
+| M-a37 | `NEXT_AFTER_SQL` : portée société neutralisée | `t_a10_k7_exercice_suivant` (exercice d'une autre société) |
+| M-a38 | `EARLIER_OPEN_SQL` : portée société neutralisée | `t_a3_k1_…` (antérieur ouvert d'une autre société), `close_ignores_the_open_years_of_another_company` |
+| M-a39 | K4 : `ORDER BY` retiré (et M-a39b : `ORDER BY i.id`) | `t_a7_k4_liste_bornee_et_ordonnee` |
+| M-a40 | K4 : départage `i.id DESC` | `t_a7_k4_liste_bornee_et_ordonnee` |
+| M-a41 | K4 : plafond ignoré (`LIMIT` lié à 2000) | `t_a7_k4_liste_bornee_et_ordonnee` |
 | M-b1 | `NextFiscalYearStart` daté `today` | T-b1 |
 | M-b2 | lecture du suivant en `ORDER BY start_date DESC` (rend le dernier exercice, non le suivant) — ⚠️ la lecture étant `find_next_after`, partagée avec K7, c'est la mutation M-a11 vue du chemin de la 29-1b | T-b1 (N+2 présent) |
 | M-b3 | confirmation verrouillante retirée, **aucun** contrôle de statut (date et exercice pris de la lecture ordinaire) | T-b3 (le code attendu est `NEXT_FISCAL_YEAR_CLOSED` ; sans confirmation, `create_in_tx_inner` rendrait `FISCAL_YEAR_CLOSED`) — tuée **parce que** l'AC11 interdit de juger le statut sur la lecture ordinaire ; T-b5 (ii) ne la revendique plus (P2 R5 = F3) |
@@ -1089,6 +1108,76 @@ clôture — contrôles préalables (refs #232) », **jamais** `closes` (le mess
 rappeler dans le corps de la PR que l'entrée du CHANGELOG est sous `[0.14.0] — Non publié` et passe en 0.13.4 si ce tag
 suit la fusion (AC9) ; revue de code P1 (`29-1a-review-prompt-p1.md`).
 
+### 29-1a — remédiation de la revue de code P1 (2026-10-14)
+
+*Annotations datées 2026-10-14 sur le compte rendu ci-dessus, qui n'est pas réécrit :*
+- *Le rebase de `story/29-1` sur `origin/main` (`c36f39bc`, Story 29-2) a changé les identifiants : `ae6d9419` →
+  `7b74c14c`, `bf5f8238` → `76e3a8fd`, `7c643eba` → `49da014a`, `32598e69` → `34750f1f`. Conflits réunis par union
+  (`sprint-status.yaml` à chaque commit ; CHANGELOG, les deux sections ; PDF du manuel, régénéré ensuite).*
+- *F2 (revue P1, lentille A) : « `grep -rn "toCentime" frontend/src` → 0 » était inexact — ce grep rend deux lignes,
+  `frontend/src/lib/features/bank-accounts/format.ts:35` et `:39` (`toCentimeNumber`, autre fonction, légitime). Ce qui
+  valait 0, c'est le jeton `toCentime(` : `grep -rnF "toCentime(" frontend/src` → 0.*
+
+**Commits** : `8b5e1a3f` (tests et doc-comments — **dernier commit de code**), `1c15363e` (CHANGELOG, `api-external.md`,
+manuel `.tex` et PDF), puis ce compte rendu. **Aucune ligne exécutable de production n'a changé** : sur
+`git diff -U0 34750f1f 1c15363e -- crates/kesh-db/src frontend/src/lib frontend/src/routes ':(exclude)*.test.ts'`, toute
+ligne ajoutée ou retirée est un commentaire (filtre `grep -vE '^[+-]\s*//'` : sortie vide).
+
+**Tests neufs**, recomptés aux deux bornes `34750f1f` → `8b5e1a3f` (`git show <ref>:<f> | grep -c …`) :
+`crates/kesh-db/tests/closing_checks.rs` 18 → **21** `#[sqlx::test]` (`t_a5_k3_bornes_de_cloture_et_ordre_des_motifs`,
+`t_a9_k6_perimetre_de_y_et_bornes`, `t_a7_k4_liste_bornee_et_ordonnee`) et deux tests étendus (`t_a3_…` : antérieur
+ouvert d'une autre société ; `t_a10_…` : exercice suivant d'une autre société) ; `fiscal-years-page.test.ts` 22 → **26**
+`it(` (bloc « Jeton de requête »). Écrits contre un code déjà juste : ils passent au premier lancement, et ce sont les
+mutations qui établissent qu'ils mordent.
+
+**Mutations rejouées** (`291a-p1-mut-front.py` / `291a-p1-mut-back.py`, scratchpad ; journaux
+`kesh-gate-logs/291a-p1-mutations-{front,back}.log`), chacune par motif vérifié unique, restaurée par
+`git checkout -- <f>` puis `touch`, sous verrou : **20 exécutées** (M-a23 à M-a41, M-a39 en deux formes), **19
+tuées**, **1 équivalente** (M-a33, démontrée, C-29-1-44) :
+
+| # | Tuée par |
+|---|---|
+| M-a23, M-a24, M-a25, M-a26 | chacune par **son** cas du bloc « Jeton de requête » (`1 failed | 27 passed`) |
+| M-a27 à M-a32 | `t_a9_k6_perimetre_de_y_et_bornes` |
+| M-a33 | survit (`77 passed`) — équivalente : chaque drapeau porte sa condition sur Y |
+| M-a34, M-a35 | `t_a5_k3_bornes_de_cloture_et_ordre_des_motifs` |
+| M-a36 | `t_a5_k3_bornes_de_cloture_et_ordre_des_motifs`, `t_a6_la_borne_designe_le_releve_precedent` |
+| M-a37 | `t_a10_k7_exercice_suivant` |
+| M-a38 | `t_a3_k1_le_plus_ancien_anterieur_ouvert`, `close_ignores_the_open_years_of_another_company` |
+| M-a39, M-a39b, M-a40, M-a41 | `t_a7_k4_liste_bornee_et_ordonnee` |
+
+Portée société d'`EARLIER_OPEN_SQL` (E4) : déjà tenue par `close_ignores_the_open_years_of_another_company` (Story
+15-12a, texte partagé avec `close`), et désormais aussi par `t_a3_…` — M-a38 rougit les deux.
+
+**Gate complet au dernier commit de code** (rejoué sur `1c15363e`, qui n'ajoute que des documents ; bases remises à
+zéro d'abord ; `kesh-gate-logs/291a-p1-final-*.log`) :
+- `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **3639 passés, 6 ignorés**, vert (3629 au P1 + 3
+  tests neufs + ceux de la 29-2 apportés par le rebase) ;
+- `npm run check` : 0 erreur, 29 avertissements ; `npm run lint-i18n-ownership` : vert ; `npm run test:unit` : **147
+  fichiers, 1633 tests**, verts (1629 + 4) ; `npm run build` : vert ;
+- **E2E complet** (port 3042, `kesh_e2e_291`) : **283 passés, 7 échecs, 19 ignorés** (11,5 min). Les 7 échecs, fichier
+  par fichier contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — les sept de la KF-029 (#97), aucun
+  autre. `fiscal-years.spec.ts` : 9/9.
+- Gates ciblés intermédiaires : Vitest du fichier de la page (28/28), `binary(closing_checks)` (21/21),
+  `binary(textes_coherents)` (15/15), clippy du workspace.
+
+**Manuel** : PDF régénéré (`make fr`, sous verrou, `291a-p1-make-fr.log`) et contrôlé aplati — « Créer l’exercice
+suivant » ×1, « liste que les vingt premières » ×1, « non les avoirs » ×1, « même s’il laisse un trou » ×1, « sans
+écriture de report » ×1 ; « Un écart inférieur au centime » ×0 ; « à la clôture. » ×0.
+
+**Findings traités** (rapports `kesh-gate-logs/29-1a-review-p1-{B,E,A}.md`) — MEDIUM : E1 = A1 (jeton), E2 = A1 (K3),
+E3 = A1 (K6), E4 (portée société) : **tests et mutations, aucun changement de production**. LOW : B-1 (avoirs, C-29-1-45),
+B-2 = E LOW-4 = F7 (formes de T-a2, C-29-1-46), B-3 = E LOW-5 (coût de K6, C-29-1-47), E LOW-1 = A1 (K4 ordre et
+plafond : test), E LOW-2 = F9 (troncature au manuel et à l'API), E LOW-3 (demi-centime), E LOW-6 (K7 après un trou),
+F2 (annotation ci-dessus), F3 (glossaire), F4 (bouton K7 au manuel), F5 (`///` des types publics, forme JSON
+inchangée), F6 (`sprint-status.yaml`), F8 (v0.13.4, C-29-1-43). **Refusé** : aucun. **Non fait, et dit** : la
+troncature n'est pas dite **à l'écran** (F9 la classait « amélioration, pas écart ») — le manuel et l'API la disent ;
+l'afficher changerait une ligne de production.
+
+**Passe suivante** : passe ciblée P2, `29-1a-review-prompt-p2-ciblee.md` (Haiku, une lentille, sur le seul diff
+`34750f1f..1c15363e`).
+
 ### Completion Notes List
 
 - 2026-10-14 — fiche créée (analyse de contexte complète, guide de développement), deux clés `ready-for-dev`.
@@ -1100,6 +1189,7 @@ suit la fusion (AC9) ; revue de code P1 (`29-1a-review-prompt-p1.md`).
 - 2026-10-14 — **29-1a développée** : AC1 à AC9 et AC3-bis ; gate complet et E2E complet verts au dernier commit de
   code `7c643eba` (E2E : les sept échecs attendus de la KF-029) ; 21 mutations tuées sur 21, M-a9 équivalente ; clé en
   `review`, revue de code P1 à lancer.
+- 2026-10-14 — revue de code P1 remédiée (tests et mutations, doc-comments, textes) ; passe ciblée P2 à lancer.
 
 ### File List
 
@@ -1295,3 +1385,11 @@ suit la fusion (AC9) ; revue de code P1 (`29-1a-review-prompt-p1.md`).
   bornes) ; gate complet (3629 / 6 ignorés ; Vitest 1629) et E2E complet (283 passés, les 7 échecs attendus de la
   KF-029) au dernier commit de code ; 21 mutations exécutées, 21 tuées, M-a9 équivalente ; choix C-29-1-32 à 42 ;
   six écarts déclarés au Dev Agent Record. Revue de code P1 à lancer : `29-1a-review-prompt-p1.md` (Sonnet, B, E, A).
+- 2026-10-14 — **revue de code P1 remédiée** (Opus 5.5 ; rapports `kesh-gate-logs/29-1a-review-p1-{B,E,A}.md`, trois
+  lentilles Sonnet) : B 0/0/0/3, E 0/0/4/6, A 0/0/1/8. Les MEDIUM convergeaient — le code est juste, des tests
+  manquaient — : **tests et mutations seulement**, **aucune ligne exécutable de production changée** (doc-comments
+  seuls). 3 tests Rust neufs et 2 étendus, 4 Vitest neufs ; 20 mutations rejouées, 19 tuées, M-a33 équivalente
+  (C-29-1-44). LOW en texte : manuel (PDF régénéré), note ¹⁰, doc du module. La 29-1a part en **v0.13.4** (décision de
+  l'orchestrateur, C-29-1-43). Rebase sur `c36f39bc` (29-2) d'abord. Gate complet 3639 / 6 ignorés, Vitest 1633, E2E
+  283 passés et les 7 échecs de la KF-029, au dernier commit de code `8b5e1a3f` (rejoué sur `1c15363e`). Choix
+  C-29-1-43 à 47. Passe ciblée P2 à lancer : `29-1a-review-prompt-p2-ciblee.md` (Haiku).

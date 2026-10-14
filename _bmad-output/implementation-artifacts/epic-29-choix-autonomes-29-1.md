@@ -514,3 +514,48 @@
 - **Retenu** : les deux autres PDF, recompilés sans changement de source, sont restaurés (`git checkout --`) : leur
   différence n'était que de compilation.
 - **Réversible** : oui.
+
+### C-29-1-43 — La 29-1a part dans la v0.13.4 (décision de l'orchestrateur, revue de code P1)
+
+- **Contexte** : l'AC9 plaçait l'entrée sous `## [0.14.0] — Non publié` et prévoyait son passage en 0.13.4 si ce tag
+  suivait la fusion (F8 de la revue P1). L'orchestrateur a tranché : la 29-1a part dans la **v0.13.4** ; la 29-1b
+  reste en v0.14.0.
+- **Retenu** : l'entrée (Ajouté, Modifié, Corrigé) passe sous `## [0.13.4] — Non publié`, après celle de la 29-2 dans
+  `### Corrigé` ; la note ¹⁰ d'`api-external.md` dit « Depuis la v0.13.4 ». La section `## [0.14.0] — Non publié`
+  reste, **vide**, pour la 29-1b — à vérifier avant le tag v0.13.4 (une section vide publiée avec la 0.13.4).
+- **Réversible** : oui, déplacement de texte.
+
+### C-29-1-44 — M-a33 (population de K6 élargie) déclarée équivalente
+
+- **Contexte** : la revue P1 (E3) demandait que les écritures incohérentes **hors** de Y ne sortent pas. La mutation
+  qui élargit le `WHERE` de population (`… OR TRUE`) **survit** au test neuf.
+- **Retenu** : équivalente, démontrée : chacun des quatre drapeaux porte déjà sa condition sur Y (`fiscal_year_id = Y`
+  pour trois, `entry_date BETWEEN` pour le quatrième) ; une écriture hors population a ses quatre drapeaux à zéro et
+  le `HAVING` l'écarte. Le `WHERE` n'est qu'un filtre de lignes. Écrit au doc-comment d'`INCONSISTENT_SQL`. Ce qui
+  tient la promesse « hors de Y, rien ne sort », ce sont les gardes des drapeaux — M-a27 et M-a28, tuées.
+- **Réversible** : sans objet (aucun code changé).
+
+### C-29-1-45 — Avoirs en brouillon (B-1) : limite écrite, pas de K4-bis
+
+- **Contexte** : K4 ne lit que `invoices` ; `credit_notes` a un statut `draft` dans sa contrainte.
+- **Retenu** : aucune lecture neuve. `credit_notes::create` insère directement au statut `issued` (une seule étape,
+  DC5) : aucun chemin de l'application ne produit un avoir `draft`. La limite est écrite au manuel, à la note ¹⁰ et
+  au doc du module.
+- **Écarté** : un K4-bis (contrôle neuf : changement de contrat de l'API, pour un état inatteignable).
+- **Réversible** : oui.
+
+### C-29-1-46 — Formes que T-a2 ne voit pas (B-2 = E LOW-4 = F7) : écrites, garde non élargie
+
+- **Contexte** : `query_with`, macros `query!`, `QueryBuilder`, `raw_sql`, `Executor` sur chaîne, alias, mot de
+  verrou coupé par une continuation de chaîne : la doc du module disait « toute requête ».
+- **Retenu** (consigne de l'orchestrateur) : la doc du module dit exactement ce que la garde lit et liste ces formes
+  comme angle mort vérifié en revue ; la garde n'est pas élargie — sa forme a été réduite à deux volets en validation
+  (C-29-1-27), l'élargir rouvrirait ce débat.
+- **Réversible** : oui.
+
+### C-29-1-47 — Coût de K6 (B-3 = E LOW-5) : écrit, non borné
+
+- **Retenu** : le doc du module dit que la table dérivée agrège tout le grand livre de la société, à chaque ouverture
+  du panneau et du dialogue ; aucune borne ajoutée sans mesure (aucune ligne de production ne change dans cette
+  remédiation).
+- **Réversible** : oui.
