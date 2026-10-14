@@ -2,9 +2,11 @@
 
 ## Status
 
-**review** — développement fait le 2026-10-14 (Opus 5.5, `bmad-dev-story`), rebasé sur `main` `089fcd80` (29-2 et
-29-3 mergées) ; gates complets verts après le rebase (Dev Agent Record) ; **revue de code P1 à lancer**
-(`29-5-review-prompt-p1.md`, Sonnet, lentilles B/E/A). Choix C-29-5-1 à 17.
+**done** — revue de code P1 close le 2026-10-14 (Sonnet, lentilles B/E/A : 0/0/0/2, 0/0/0/3, 0/0/0/2, aucun
+MEDIUM) ; LOW remédiés sans toucher une ligne de production ; branche rebasée sur `main` `b4abae5d` (29-1a mergée) ;
+gates finaux au Change Log. Choix C-29-5-1 à 17, versés au registre de l'epic (`epic-29-choix-autonomes.md`).
+
+*Avant la revue* : développement fait le 2026-10-14 (Opus 5.5, `bmad-dev-story`), rebasé sur `main` `089fcd80`.
 
 *Historique* : fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (`main`
 après le kickoff de l'Epic 29), branche `story/29-5`, worktree `/home/gcorbaz/devel/kesh-29-5`. Story **ajoutée à
@@ -630,7 +632,10 @@ ci-dessous ont tourné **après** ce rebase, sur `a637e3fa` (dernier commit de c
 - **Ancre de la 29-2** : forme mergée identique à la forme commitée que la fiche prévoyait — `macro_rules!
   invoice_payment_anchor_sql`, `concat!` en deux termes, premier terme réservé (C-29-2-15). Composition faite comme
   prescrit (AC1) : `invoice_exigibility_date_sql!()` à la place du premier terme, macro définie **avant**
-  `invoice_payment_anchor_join_sql!` et la macro d'ancre. Aucun test de la 29-2 n'a changé (ni assertion, ni nom, ni
+  `invoice_payment_anchor_join_sql!` et la macro d'ancre. *[Annotation du 2026-10-14, revue P1 (A1) : l'emplacement
+  est inexact à cette date — au code, `macro_rules!` : `invoice_payment_anchor_join_sql!` `:143`,
+  `invoice_exigibility_date_sql!` `:169`, `invoice_payment_anchor_sql!` `:215` ; l'exigibilité est définie **après**
+  la jointure, qui ne l'emploie pas, et avant la macro d'ancre, qui l'appelle — seule exigence de l'AC1.]* Aucun test de la 29-2 n'a changé (ni assertion, ni nom, ni
   montage) : constaté au gate, les quatre tests d'ancre de `reconciliation_repository.rs` et les deux de
   `reconciliation_e2e.rs` sont verts.
 - **Inventaire (c), `Vec` ordonnés de la 29-2** : `grep -n "assert_eq!(ids\|vec!\[" tests/reconciliation_repository.rs`
@@ -870,3 +875,26 @@ cas 8 que la fiche nommait). Choix ajoutés : **C-29-5-13 à C-29-5-17**.
   survivante (déclarée) ; `test-fast` 3639/3639, Vitest 1617, E2E 281 + 8 attendus (7 KF-029 + `sidebar:75`).
   Choix **C-29-5-13 à 17**. Écarts : C-29-5-13 (forme mergée de la phrase de la 29-3), M15. Suite : **revue de
   code P1** (Sonnet, B/E/A, `29-5-review-prompt-p1.md`).
+- 2026-10-14 — **Revue de code P1** (Sonnet, lentilles B, E, A ; rapports `kesh-gate-logs/29-5-review-p1-{B,E,A}.md`,
+  prompt `29-5-review-prompt-p1.md`) : B **0 CRITICAL / 0 HIGH / 0 MEDIUM / 2 LOW**, E **0 / 0 / 0 / 3**, A **0 / 0 / 0 / 2**.
+  **Revue close à la P1** (aucun MEDIUM) ; LOW remédiés, aucune ligne de production exécutable touchée :
+  - **B2 = E1** : test `propose_matches_ties_between_reference_plus_contact_and_exact_amount`
+    (`kesh-reconciliation/src/matching.rs`) — deux clients, A désignée par référence + contact (0,40 + 0,10) au montant
+    différent, B au montant exact seul (0,50) ; totaux égaux assertés, ordre d'imputation tranchant dans les deux sens ;
+  - **B1 = E3** : manuel (`sec:imputation-score-egal`, PDF régénéré et contrôlé aplati) et CHANGELOG disent le cas
+    `F = D + 1` (facture sans échéance datée du lendemain du paiement : pas encore échue) et que la date tient lieu
+    d'échéance entre non échues ;
+  - **A2** : CHANGELOG — « la règle d'imputation de la loi (art. 87 CO), dans la mesure où Kesh la connaît », poursuites
+    et garanties non enregistrées ;
+  - **A1** : annotation datée du Dev Agent Record (emplacement de la macro) ;
+  - **E2** (M15 survivante, coupure du `LIMIT 50` à travers un groupe `(X, F)`) : déjà déclarée au Dev Agent Record,
+    laissée telle quelle.
+  Branche **rebasée sur `main` `b4abae5d`** (29-1a) : conflits réunis à la main dans `sprint-status.yaml` (en-têtes et
+  clés des deux côtés), `CHANGELOG.md` (entrée de la 29-3 de `main` retirée au profit de sa forme rectifiée par cette
+  story, aucun doublon) et `user-manual.pdf` (régénéré) ; registre versé à `epic-29-choix-autonomes.md` (les mentions
+  de `epic-29-choix-autonomes-29-5.md` des prompts passés sont des relevés datés, laissées). **Gates finaux sur la
+  branche rebasée** (base remise à zéro, périmètre : `main` `b4abae5d` à `HEAD`) : `scripts/test-fast.sh` fmt + clippy +
+  nextest **3668/3668** (6 ignorés) ; `npm run check` 0 erreur ; `lint-i18n-ownership` PASS ; Vitest **1640/1640**
+  (147 fichiers) ; `npm run build` ; E2E complet **284 passés, 8 échecs, 19 ignorés**, les huit de la liste de
+  `docs/testing.md` (`mode-expert:26` et `:41`, `onboarding-path-b:65` et `:92`, `onboarding:57`, `:77` et `:150` —
+  KF-029 ; `sidebar-navigation:75` — KF-052), aucun hors liste.
