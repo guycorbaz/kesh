@@ -798,6 +798,18 @@ recréée, migrée et seedée juste avant :
 - `_bmad-output/implementation-artifacts/epic-29-choix-autonomes-29-2.md` (C-29-2-15, C-29-2-16, annotation de
   C-29-2-8), `29-2-review-prompt-p1.md`, cette fiche, `sprint-status.yaml`.
 
+*(Annotation du 2026-10-14, **Gates finaux de la 29-2**, au dernier commit de code — `3b3466c1`, dont seul le
+doc-comment d'un test `kesh-db` est du code, et aucune ligne exécutable de production : bases `kesh_292` et
+`kesh_e2e_292` recréées, migrées (81 migrations) et seedées juste avant, tous les gates sous le verrou commun.
+`scripts/test-fast.sh` : fmt et clippy `-D warnings` verts, nextest **3611 tests run: 3611 passed, 6 skipped**
+(141,8 s ; journal `292-gate-backend-final.log`). Frontend : `npm run check` 0 erreur et 29 avertissements (5 fichiers,
+préexistants), `lint-i18n-ownership` PASS, Vitest **146 fichiers, 1610 tests passés**, `npm run build` vert (journal
+`292-gate-frontend-final.log`). E2E complet (recette de `docs/testing.md`, port 3043, backend arrêté par PID ensuite ;
+journal `292-e2e-final.log`) : **280 passés, 7 échoués, 19 ignorés** (11,4 min). Les sept échecs sont, fichier par
+fichier, ceux de la KF-029 (#97) de la liste *Les échecs attendus* : `mode-expert.spec.ts:26` et `:41`,
+`onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77` et `:150` ; ni `sidebar-navigation.spec.ts:75`
+(KF-052), ni pollution : aucun échec hors liste, donc aucun rejeu isolé requis.)*
+
 ## Change Log
 
 - 2026-10-14 — Fiche créée (`bmad-create-story`, Opus 5.5, autonomie) sur `16eeed21`. Prémisses de #529 et de la
