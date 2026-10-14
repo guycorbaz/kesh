@@ -15,7 +15,9 @@ P3 à lancer (`29-6-validate-prompt-p3-ciblee.md`, Haiku, une lentille sur le di
 comme non rapprochée et **empêche la clôture du compte bancaire** ; aucun geste ne la rapproche d'un règlement déjà
 saisi depuis la fiche. Le rejet que cette fiche rend possible (AC10) **retire** la transaction de la liste et empêche
 qu'elle soit passée une seconde fois ; il ne la **règle** pas. Les textes prescrits (AC7) le disent ; la 29-6 ne ferme
-pas #670 (l'intégration de #670 à l'epic revient à l'auteur ; la fiche n'en dépend pas, C-29-6-17).
+pas #670 (l'intégration de #670 à l'epic revient à l'auteur ; la fiche n'en dépend pas, C-29-6-17). *Annotation du
+2026-10-14 (passe ciblée P3, P3-3) : décidé par Guy — #670 est la **Story 29-8** de l'Epic 29, qui remplacera au
+manuel « puis rejetez la transaction » par « puis rattachez ».*
 
 ⚠️ **Dernière de la série 29-2 → 29-3 → 29-5 → 29-6** : elle touche la même requête que la 29-2
 (`find_unpaid_invoices_for_window`) et des textes que la 29-3 écrit sur ce défaut même (§ *Zones partagées*). Le
@@ -425,7 +427,8 @@ rejeter la transaction » que prescrivent la 29-6 (AC7) et la 29-2 (C-29-2-8) es
   pas) et ne pousse vers aucun geste (point 4, C-29-6-16). Une ligne à **règle** seule a `candidates.length > 0` : elle
   compte comme « avec proposition », acceptable (F5).
 - `POST /api/v1/reconciliation/reject` ne lit **aucune** candidate : après le refus d'un compte archivé (`404`) et
-  le pré-vol du **compte clos** (`routes/reconciliation.rs:3256-3266`, chaque transaction en `failed[]`
+  le pré-vol du **compte clos** (`routes/reconciliation.rs:3257-3267`, helper `closed_account_failed` `:4910` — relevé
+  de la passe ciblée P3, P3-1 ; chaque transaction en `failed[]`
   `BANK_ACCOUNT_CLOSED`, `200` — validation P2, R11), le pré-vol classe chaque transaction par
   `classify_batch_transaction` (`routes/reconciliation.rs:851-901` — absente, rapprochée, déjà rejetée, sinon
   éligible), puis `reject_batch` (`:3431-3550`) pose `auto_match_rejected_at` par `UPDATE … WHERE matched_entry_id IS
@@ -442,8 +445,11 @@ rejeter la transaction » que prescrivent la 29-6 (AC7) et la 29-2 (C-29-2-8) es
   **empêche la clôture du compte bancaire** (`crates/kesh-db/src/repositories/bank_accounts.rs:1025`, `status =
   'pending'` ; manuel `:1690-1694`). Pour le trop-perçu ou le reliquat réglé depuis la fiche, **aucun geste ne la
   rapproche ensuite** : le règlement de la fiche ne s'y relie pas, *Affecter manuellement* et *Éclater* n'offrent que
-  les classes 5, 6 et 7, et l'import ne se supprime que s'il n'a aucune transaction rapprochée. Le blocage est donc
-  permanent, et la transaction tombera dans le contrôle « transactions bancaires en attente » que la 29-1 prévoit
+  les classes 5, 6 et 7, et l'import ne se supprime que s'il n'a aucune transaction rapprochée. Le blocage reste donc
+  **sans geste juste pour un règlement déjà saisi** : le seul chemin qui le lève — *Annuler le rejet*, puis *Affecter
+  manuellement* ou *Éclater* (classes 5, 6 et 7, manuel `:1690-1694`) — passe une écriture fausse, le produit étant
+  déjà comptabilisé par le règlement de la fiche *(passe ciblée P3, P3-2 : « permanent » était trop absolu)* ; et la
+  transaction tombera dans le contrôle « transactions bancaires en attente » que la 29-1 prévoit
   avant le bouclement. **Non résolu par la 29-6**, renvoyé à #670 (bug P2) ; aucun texte prescrit ne dit que le rejet
   règle la transaction (AC7) — C-29-6-17.
 - **États de la sélection, relevés au code** *(validation P2, F5 ; aucun ne fait accepter une ligne sans
@@ -779,7 +785,7 @@ un composant, sans API. ⚠️ Toute extension de plus fait dépasser la règle 
   `:452-460` ; `ReconciliationProposals.test.ts:108-123`, `:179-197`, `:661-678` ;
   `frontend/tests/e2e/reconciliation-unreject.spec.ts` (patron) ; `crates/kesh-api/src/routes/reconciliation.rs:851-901`,
   `:3205-3550`, `:4759-4782` ; `crates/kesh-api/tests/reconciliation_e2e.rs:1560` ; `frontend/src/lib/shared/i18n-keys.test.ts:634`.
-- Validation P2 : `crates/kesh-api/src/routes/reconciliation.rs:640-652`, `:3256-3266` ;
+- Validation P2 : `crates/kesh-api/src/routes/reconciliation.rs:640-652`, `:3257-3267`, `:4910` (P3-1) ;
   `crates/kesh-db/src/repositories/bank_accounts.rs:1025` ; `frontend/src/lib/features/bank-import/DeleteBankImportAction.test.ts:191-194` ;
   `frontend/src/lib/shared/e2e-selecteurs-traduits.test.ts` ; `frontend/tests/e2e/reconciliation-deleted-import.spec.ts:12-14` ;
   issue [#670].
@@ -883,3 +889,11 @@ un composant, sans API. ⚠️ Toute extension de plus fait dépasser la règle 
   décision : elle est la **Story 29-8**, décision de Guy du 2026-10-14 — annotation datée, entrée P2 non réécrite) ;
   P3-4 (Change Log P2 : dix-neuf findings traités, un — F3 — déclaré non bloquant ; annotation datée). Trend : P1
   0/0/1/9 → P2 0/0/4/16 → P3 ciblée 0/0/0/4.
+  - *Annotation du 2026-10-14 (P3-4), à l'entrée P2 ci-dessus, non réécrite* : « vingt traités, aucun refusé » se lit
+    **dix-neuf traités, un déclaré non bloquant** (F3, volet « test débiteur » : le composant ne lit pas le signe,
+    AC10). *(P3-1)* : la plage `:3256-3266` de l'entrée P2 se lit `:3257-3267` (et `:4910` pour l'helper) ; corrigée
+    dans le corps vivant de la fiche.
+- 2026-10-14 — **Étape 0 du développement** (Opus 5.5) : les quatre LOW de la passe ciblée P3 appliqués — P3-1 (AC10 et
+  References : `:3257-3267`, `:4910`), P3-2 (« permanent » → « sans geste juste pour un règlement déjà saisi », chemin
+  *Annuler le rejet* puis *Affecter manuellement* nommé), P3-3 (annotations datées du statut et de C-29-6-17 :
+  #670 = Story 29-8), P3-4 (annotation ci-dessus).

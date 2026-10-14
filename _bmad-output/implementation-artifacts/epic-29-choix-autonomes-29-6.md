@@ -215,6 +215,9 @@ Fiche : `29-6-trop-percu-centimes.md`.*
   fiche resterait bloquée sur un arbitrage qui ne change pas son code ; (c) un numéro d'issue au manuel — il périme à la
   fermeture de #670 sans que rien ne le signale.
 - **Réversible** : oui — si #670 est intégrée avant le tag, les phrases d'attente se réécrivent avec elle.
+- *Annotation du 2026-10-14 (passe ciblée P3, P3-3)* : la décision n'est plus attendue — Guy a intégré #670 à l'Epic 29
+  comme **Story 29-8**, qui réécrira « puis rejetez la transaction » en « puis rattachez ». La 29-6 garde ses textes ;
+  la 29-8 les remplace.
 
 ### C-29-6-18 — L'indication se place dans la rangée des boutons
 
