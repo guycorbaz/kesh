@@ -25,7 +25,9 @@
 //! refuse en [`DbError::BankAccountClosed`]. Gestes : [`close_in_tx`],
 //! [`reopen_in_tx`]. Gardes des autres dépôts : [`ensure_open_in_tx`],
 //! [`ensure_open_unarchived_in_tx`] — leur doc-comment porte la règle de la
-//! garde, sa règle de placement, les trois invariants et l'angle mort L1.
+//! garde, sa règle de placement, les trois invariants et la fenêtre de la
+//! clôture, fermée par la revérification ([`recheck_open_locked_in_tx`],
+//! [`recheck_open_unarchived_locked_in_tx`] ; Story 29-4, #651).
 //! [`set_journal_account_id_for_company`], [`update_for_company`] et
 //! [`archive_for_company`] refusent un compte clos dans leur `FOR UPDATE`
 //! existant, après leur contrôle de version.
@@ -814,27 +816,42 @@ const ENSURE_OPEN_UNARCHIVED_SQL: &str =
 /// - **I3** — un compte clos n'est jamais principal : **structurel**, contrainte
 ///   `chk_bank_accounts_closed_not_primary`.
 ///
-/// # Angle mort assumé — L1 ([#651](https://github.com/guycorbaz/kesh/issues/651))
+/// # La fenêtre de la clôture — fermée par la revérification (Story 29-4, [#651](https://github.com/guycorbaz/kesh/issues/651))
 ///
 /// La garde est non verrouillante : elle lit l'instantané de sa transaction.
-/// Une écriture dont la transaction a pris sa **vue cohérente** avant le commit
-/// d'une clôture peut donc encore aboutir sur le compte qu'on clôt — fenêtre
-/// « du début de la transaction de l'écrivain à la validation de la clôture ».
-/// Cinq chemins : annulation de rapprochement, suppression d'import, annulation
-/// de règlement client et fournisseur, annulation d'une facture fournisseur
-/// payée. L'annulation de rejet n'y est pas : la transaction rejetée est
-/// `pending`, et la clôture refuse un compte qui en porte (I1 ; troisième
-/// inventaire de `bank_account_closed_inventory.rs`, revue de code P1 de la
-/// 29-4a, B-5). **L'import (CAMT et CSV) et la création de lot
-/// n'y sont plus** depuis la Story 29-4a : leur garde de tête est revérifiée
-/// sous le verrou de clé étrangère que pose leur `INSERT`
-/// ([`recheck_open_unarchived_locked_in_tx`]), ce qui ferme leur fenêtre ; les
-/// annulations suivent en 29-4b ([`recheck_open_locked_in_tx`]).
-/// Conséquence : **une opération réelle de plus** sur un compte clos (I1
-/// défait pour ce compte jusqu'au traitement), **aucune erreur comptable**.
-/// Remède à la main : rouvrir, traiter (rapprocher ou supprimer l'import,
-/// confirmer ou annuler le lot — `cancel_batch` n'est pas gardé), clore à
-/// nouveau. **Classe P2** par la grille du `CLAUDE.md`. Tracée par **#651**.
+/// Seule, elle laissait passer une écriture dont la transaction avait pris sa
+/// **vue cohérente** avant le commit d'une clôture : rien ne sérialisait
+/// l'écrivain et la clôture, qui ne prend que sa propre ligne en exclusif
+/// (l'angle mort L1 de la Story 28-4, tracé par #651 jusqu'à la v0.13.3). Sept
+/// chemins y étaient exposés ; chacun est désormais **revérifié** sous un
+/// verrou partagé de la ligne du compte, qui entre en conflit avec l'exclusif
+/// de la clôture — ou bien la clôture est commitée et la revérification la
+/// voit, ou bien la revérification passe d'abord et la clôture attend le
+/// commit de l'écrivain, puis voit ce qu'il a écrit :
+///
+/// - l'**import** (CAMT et CSV) et la **création de lot** (Story 29-4a) —
+///   [`recheck_open_unarchived_locked_in_tx`], juste après leur `INSERT` à clé
+///   étrangère : le partagé est déjà tenu, la redemande ne crée rien ;
+/// - les **annulations** — de rapprochement, de règlement client et
+///   fournisseur, d'une facture fournisseur payée — et la **suppression
+///   d'un import** (vide : un import qui porte des transactions les a
+///   `pending`, et la clôture refuse) (Story 29-4b) —
+///   [`recheck_open_locked_in_tx`], en **dernière acquisition de verrou**,
+///   après leur dernière écriture, avant l'audit.
+///
+/// La garde reste en tête de chaque chemin : elle donne le refus précoce et
+/// l'ordre des refus de la 28-4 ; la revérification ne répond que dans la
+/// course. Sans fenêtre **par invariant**, sans revérification : l'annulation
+/// de rejet (la transaction rejetée est `pending`, la clôture refuse un compte
+/// qui en porte — I1 ; troisième inventaire de
+/// `bank_account_closed_inventory.rs`) ; les acceptations de propositions, le
+/// rejet, le rapprochement manuel et ventilé (même raison, I1). Sans fenêtre
+/// **par verrou** : le règlement et le paiement fournisseur par virement, qui
+/// lisent le compte sous `FOR UPDATE`. Les états qu'a pu laisser la fenêtre
+/// jusqu'à la v0.13.3 (une transaction `pending` ou un lot `generated` sur un
+/// compte clos) ne sont pas réparés d'office : rouvrir, traiter (rapprocher
+/// ou supprimer l'import, confirmer ou annuler le lot — `cancel_batch` n'est
+/// pas gardé), clore à nouveau.
 ///
 /// ⛔ **Interdit** : faire lire `archived` à cette fonction, ou appeler
 /// [`ensure_open_unarchived_in_tx`] depuis une annulation. Un compte archivé
@@ -874,8 +891,8 @@ pub async fn ensure_open_in_tx(
 /// 28-4a (#642, AC6-bis).
 ///
 /// Même contrat que [`ensure_open_in_tx`] — lecture cohérente **non
-/// verrouillante**, règle de la garde, règle de placement, angle mort L1
-/// (#651) : voir sa documentation. L'appelant traduit `NotFound` en `404
+/// verrouillante**, règle de la garde, règle de placement, fenêtre de la
+/// clôture fermée par la revérification (#651) : voir sa documentation. L'appelant traduit `NotFound` en `404
 /// BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` (`import_create_error` de la route
 /// d'import). La course archivage / import (L5 de la route d'archivage), que
 /// cette lecture non verrouillante ne ferme pas, est fermée par la
@@ -922,10 +939,15 @@ pub const RECHECK_OPEN_UNARCHIVED_LOCKED_SQL: &str = "SELECT closed_on, archived
 /// **Revérifie**, sous verrou partagé, qu'un compte bancaire n'est pas clos —
 /// Story 29-4 (#651). Rend [`DbError::BankAccountClosed`] si `closed_on` est
 /// non nul, [`DbError::NotFound`] si le compte n'existe pas dans la société,
-/// `Ok(())` sinon. Destinée aux **annulations** (W9, W24, W25, W28, W29), qui
-/// l'appelleront à partir de la Story 29-4b — en 29-4a, elle n'a **aucun
-/// appelant de production** ; l'import et la création de lot appellent la
-/// variante [`recheck_open_unarchived_locked_in_tx`].
+/// `Ok(())` sinon — le `NotFound` est un bras défensif, **inatteignable par
+/// construction** depuis les annulations : leur garde de tête a déjà lu la
+/// ligne dans la même société, chaque compte revérifié est référencé par une
+/// clé étrangère (`RESTRICT`, le défaut) ; seules la restauration d'une
+/// sauvegarde et la remise à zéro de la démonstration (`kesh_seed::reset_demo`)
+/// vident la table (concurrence avec une annulation : non analysée ici). La revérification des **annulations** (W9, W24, W25, W28,
+/// W29), qui l'appellent depuis la Story 29-4b, en dernière acquisition de
+/// verrou ; l'import et la création de lot appellent la variante
+/// [`recheck_open_unarchived_locked_in_tx`].
 ///
 /// # Pourquoi une lecture verrouillante (C-29-4-1, C-29-4-2)
 ///
@@ -933,7 +955,7 @@ pub const RECHECK_OPEN_UNARCHIVED_LOCKED_SQL: &str = "SELECT closed_on, archived
 /// transaction : une clôture commitée après la naissance de cette vue ne s'y
 /// voit pas, et la clôture, qui ne prend que sa propre ligne en exclusif, ne
 /// rencontrait aucun verrou de l'écrivain — rien ne les sérialisait (L1 de la
-/// Story 28-4). Une lecture **verrouillante** lit le dernier état commité, et
+/// Story 28-4, jusqu'à la v0.13.3). Une lecture **verrouillante** lit le dernier état commité, et
 /// son verrou **partagé** sur la ligne du compte entre en conflit avec
 /// l'exclusif de la clôture : ou bien la clôture est commitée, et la
 /// revérification la voit ; ou bien la revérification passe d'abord, et la
@@ -972,16 +994,42 @@ pub const RECHECK_OPEN_UNARCHIVED_LOCKED_SQL: &str = "SELECT closed_on, archived
 /// jamais la queue. Le cycle atteignable en 29-4a est **préexistant** : un
 /// écrivain `I` (import ou lot) tient la ligne du compte en partagé par le
 /// premier contrôle de clé étrangère de son `INSERT` et demande `companies` en
-/// partagé (le second) ; une route de gestion `M` (`PUT`, archivage, `POST`
+/// partagé (le second ; ordre supposé, ci-dessous) ; une route de gestion `M` (`PUT`, archivage, `POST`
 /// quand il démote le principal) tient la sentinelle `companies` en exclusif
 /// et demande la ligne du compte en exclusif. À deux, `I ↔ M` ; à trois, quand la clôture, la réouverture ou
 /// le `PATCH` est en file sur la ligne entre `I` et `M` : `I → M → E → I`
 /// (T29a-4 et T29a-9 en jouent la forme, la transaction `t2` y tenant le rôle
-/// de `M`). À partir de la 29-4b s'y ajoute la revérification d'une annulation,
-/// demande partagée neuve. Tous les participants autres que l'écrivain sont
+/// de `M`). Depuis la 29-4b s'y ajoute la revérification d'une annulation,
+/// demande partagée **neuve**, prise en dernier — après `companies` (clé
+/// étrangère de la contre-passation), dans l'ordre des routes de gestion, donc
+/// sans cycle avec elles ; et, pour les quatre annulations qui tiennent un
+/// exercice (W9, W25, W28, W29 — la suppression d'import, W24, n'en tient
+/// aucun, ni `companies`), après l'exercice, d'où le cycle **neuf** compte
+/// → exercice contre exercice → compte avec un détenteur de l'exclusif du
+/// compte qui demande ensuite l'exercice (`settle_invoice`, `pay_in_tx`),
+/// rejoué des deux côtés (`invoices::settle`, `supplier_invoices::pay`,
+/// `payment_batches::confirm` ; les cinq annulations le sont toutes) —
+/// **mesuré** une fois, pour l'annulation d'un règlement par virement, par
+/// T29b-3 (`rejeu_interblocage_e2e.rs`) : le cycle est détecté (`1213`) et
+/// l'annulation, victime **contre un partenaire que le montage alourdit**
+/// (500 lignes de lest), est rejouée. Contre un `settle_invoice` réel, qui
+/// n'a rien écrit quand il demande l'exercice, la victime attendue est
+/// `settle_invoice`, rejoué lui aussi (raisonné). Tous les participants
+/// autres que l'écrivain sont
 /// rejoués sur interblocage (`retry_app_on_deadlock`, routes
 /// `bank_accounts::close`, `::reopen`, `::patch`, et — revue de code P1, E-1 —
-/// `::create`, `::update`, `::archive`). InnoDB désigne pour victime
+/// `::create`, `::update`, `::archive`). ⚠️ *Mesuré et supposé* (Story 29-4b,
+/// T6-bis, R-4) : **mesuré** au dépôt — la redemande sans attente (T29a-6,
+/// T29a-7), la victime des cycles à trois par la file (T29a-4, T29a-9), le
+/// cycle à deux `PUT` / archivage contre une ligne de compte tenue (T29a-13,
+/// T29a-14). **Raisonné, non mesuré** : que l'`INSERT` d'`I` contrôle sa clé
+/// étrangère vers le compte **avant** celle vers `companies` (l'ordre de
+/// parcours des clés d'InnoDB ; le squash des tests et les migrations ne les
+/// déclarent pas dans le même ordre) ; et l'exposition du `POST` — sa démotion
+/// (`flip_primary_off_for_company`) balaie l'index `fk_bank_accounts_company`,
+/// et son exclusif peut couvrir d'autres comptes de la société que l'ancien
+/// principal (aucun `EXPLAIN` au dépôt ; T29a-15 joue un cycle synthétique,
+/// non la démotion). InnoDB désigne pour victime
 /// la transaction de moindre poids (écritures et verrous) : la clôture et la
 /// réouverture, dont la demande est la première instruction, ne portent que
 /// l'intention de table et leur demande en attente ; tout autre participant
@@ -1017,11 +1065,16 @@ pub const RECHECK_OPEN_UNARCHIVED_LOCKED_SQL: &str = "SELECT closed_on, archived
 /// que [`map_db_error`] ne traduit pas — non seulement dans la course que la
 /// revérification traite (une clôture), mais après **tout** commit sur la
 /// ligne du compte depuis la vue : `PATCH` du lien comptable, `PUT`, bascule du
-/// principal, clôture puis réouverture. Un import ou un lot légitime,
-/// concurrent d'un tel geste, rendrait alors `500`, rien d'écrit (raisonné ;
-/// si le contrôle de clé étrangère de l'`INSERT` y est lui-même soumis, le
-/// `1020` sort déjà au sol). Le réglage de session du pool réel, et ce rayon
-/// élargi, sont portés par #669.
+/// principal, clôture puis réouverture. Les appelants de cette fonction sont
+/// les cinq annulations (W9, W24, W25, W28, W29) : leur vue naît à la garde
+/// de tête de la 28-4, la revérification vient après toutes leurs écritures,
+/// et tout commit sur la ligne du compte entre les deux leur ferait rendre
+/// `1020` — ni traduit, ni rejoué (ce n'est pas un interblocage `1213`) :
+/// `500`, tout défait (raisonné). L'import et le lot, qui appellent
+/// [`recheck_open_unarchived_locked_in_tx`], sont exposés de même (si le
+/// contrôle de clé étrangère de leur `INSERT` y est lui-même soumis, le
+/// `1020` sort déjà au sol). Sans effet sous MariaDB 10.11. Le réglage de
+/// session du pool réel, et ce rayon, sont portés par #669.
 ///
 /// ⛔ **Interdit** : y faire lire `archived`, ou appeler
 /// [`recheck_open_unarchived_locked_in_tx`] depuis une annulation. Un compte
@@ -1056,7 +1109,8 @@ pub async fn recheck_open_locked_in_tx(
 /// lit `archived` : appelée juste après leur `INSERT` à clé étrangère, elle
 /// redemande un partagé déjà tenu, sans verrou neuf. Elle ferme du même geste
 /// la course archivage / import et archivage / lot : l'archivage prend
-/// l'exclusif de la ligne (`archive_for_company`), que la revérification voit
+/// l'exclusif de la ligne (dès [`primary_flag_locked_in_tx`] depuis la Story
+/// 29-4b, puis [`archive_for_company`]), que la revérification voit
 /// comme elle voit une clôture.
 ///
 /// Même contrat que [`recheck_open_locked_in_tx`] — pourquoi verrouillante,
@@ -1389,6 +1443,51 @@ pub async fn count_transactions_for_bank_account(
     .await
     .map_err(map_db_error)?;
     Ok(row.0)
+}
+
+/// Le drapeau `is_primary` du compte `id`, lu **sous `FOR UPDATE`** dans la
+/// transaction de l'appelant (Story 29-4b, T6-bis, R-2 de la passe ciblée P2
+/// de la 29-4a, #651) — `None` si le compte n'existe pas, appartient à une
+/// autre société ou est archivé (même filtre qu'[`archive_for_company`]).
+///
+/// Sert la garde « principal + autres comptes actifs » de l'archivage : elle
+/// décidait sur la valeur du pré-vol, lue sur le pool hors transaction, et que
+/// le rejeu de la route réutilisait à chaque tentative ; un transfert de
+/// principal commité entre-temps la faisait décider sur un état périmé. Ce
+/// qui rend la lecture juste dans le cas joué, c'est d'être faite **dans** la
+/// transaction, après la sentinelle `companies` : les bascules du principal
+/// des routes de gestion (`POST`, `PUT`) passent par cette sentinelle et sont
+/// donc déjà sérialisées avec l'archivage, et la vue de la transaction naît
+/// après elle (au décompte des transactions). Le test de R-2
+/// (`archive_rereads_the_primary_flag_inside_its_transaction`) prouve cette
+/// relecture, **non** le `FOR UPDATE` : un `SELECT` simple au même endroit y
+/// verrait la même valeur (mutation équivalente pour ce test, raisonnée). Le
+/// `FOR UPDATE` avance le verrou de la ligne qu'`archive_for_company` aurait
+/// pris de toute façon ; toute promotion de production passe par la
+/// sentinelle, l'onboarding compris (`lock_company` avant
+/// `upsert_primary_in_tx`).
+///
+/// **Verrou** : l'exclusif de la ligne du compte — celui
+/// qu'[`archive_for_company`] prend ensuite (sa redemande est sans effet),
+/// **avancé** devant la garde. L'appelant tient déjà la sentinelle `companies`
+/// en exclusif : l'ordre « `companies` X, puis compte X » de l'archivage est
+/// inchangé, et entre les deux positions l'archivage ne fait que des lectures
+/// non verrouillantes (le décompte des autres comptes actifs) — aucun verrou
+/// neuf, aucun cycle neuf (raisonné, au code ; non mesuré).
+pub async fn primary_flag_locked_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<bool>, DbError> {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT is_primary FROM bank_accounts \
+         WHERE company_id = ? AND id = ? AND archived = FALSE FOR UPDATE",
+    )
+    .bind(company_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)
 }
 
 /// Compte le nombre d'autres bank_accounts ni archivés ni clos du même company

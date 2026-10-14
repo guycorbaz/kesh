@@ -891,7 +891,8 @@ pub async fn cancel_settlement_in_tx(
     // lecture non verrouillante APRÈS (2-bis), avant les motifs de (3) —
     // l'instantané « ne se fige qu'à sa première lecture non verrouillante,
     // qui vient APRÈS » le verrou (2-bis) (ci-dessus) ; règle de placement de
-    // `bank_accounts::ensure_open_in_tx`. Ne lit pas `archived`.
+    // `bank_accounts::ensure_open_in_tx`. Ne lit pas `archived`. Revérifiée sous
+    // verrou après l'étape (6) (Story 29-4b, #651).
     if let Some(bank_account_id) = settlement_bank_account_id {
         super::bank_accounts::ensure_open_in_tx(tx, company_id, bank_account_id).await?;
     }
@@ -983,6 +984,18 @@ pub async fn cancel_settlement_in_tx(
             "annulation de règlement : la facture n'a pas pu être marquée modifiée (version)"
                 .into(),
         ));
+    }
+
+    // (6 bis) Story 29-4b (#651, W25, AC6) — règlement par virement :
+    //     revérification VERROUILLANTE du compte clos (`closed_on` seul, jamais
+    //     `archived` : un archivé ne se rouvre pas), en DERNIÈRE acquisition de
+    //     verrou — après la dernière écriture, avant l'audit. Posée plus tôt, elle
+    //     tiendrait le compte avant `companies` (clé étrangère de la
+    //     contre-passation), à rebours des routes de gestion du compte. Voir
+    //     `bank_accounts::recheck_open_locked_in_tx` (dont son angle mort
+    //     `innodb_snapshot_isolation`).
+    if let Some(bank_account_id) = settlement_bank_account_id {
+        super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bank_account_id).await?;
     }
 
     // (7) L'audit du GESTE. ⚠️ La contre-passation a déjà écrit

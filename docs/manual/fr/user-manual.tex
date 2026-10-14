@@ -1766,7 +1766,7 @@ le compte utilisable. Il ne redevient pas compte principal. La clôture et la r�
 inscrites au journal d'audit (\emph{Compte bancaire clos}, \emph{Compte bancaire rouvert}), la
 réouverture avec la date de clôture levée.
 
-\paragraph{Deux limites.}
+\paragraph{Deux précisions.}
 \begin{itemize}
     \item Les boutons \emph{Supprimer l'import}, \emph{Annuler le rapprochement} et
           \emph{Annuler le rejet} (détail d'un import), \emph{Annuler le règlement} (fiche d'une
@@ -1775,12 +1775,12 @@ réouverture avec la date de clôture levée.
           qui est refusé, avec le message «~Ce compte bancaire est clos : il est
           en lecture seule. Pour y enregistrer une opération, rouvrez d'abord le compte
           (Administration → Comptes bancaires).~»
-    \item Une \textbf{opération déjà en cours} au moment de la clôture --- dans un autre onglet
-          ou par une intégration, et pour un import \textbf{dès l'envoi du fichier} --- peut
-          encore aboutir sur le compte (issue \#651). Le refus des écritures vaut donc
-          \textbf{hors de cette fenêtre}. Si cela arrive~: rouvrir le compte, traiter
-          l'opération (rapprocher les transactions importées, par exemple), puis le clore à
-          nouveau.
+    \item Une opération \textbf{déjà en cours} au moment de la clôture --- dans un autre
+          onglet ou par une intégration --- ne passe pas sur le compte clos~: ou bien elle se
+          termine \textbf{avant}, et la clôture en tient compte (elle peut alors être refusée,
+          par exemple si l'opération a remis une transaction à rapprocher), ou bien elle est
+          \textbf{refusée} avec le message ci-dessus. Pour un import, le refus peut venir après
+          l'analyse du relevé~: rouvrir le compte, puis réimporter.
 \end{itemize}
 
 \paragraph{Clôture et archivage.} L'archivage retire un compte des sélecteurs et de l'usage

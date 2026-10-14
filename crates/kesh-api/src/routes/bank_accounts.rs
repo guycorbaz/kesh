@@ -580,7 +580,12 @@ pub async fn list_bank_accounts(
 /// un lot qui tient la ligne d'un compte en partagé par son `INSERT` et
 /// demande `companies` ferme un cycle avec elle quand elle démote ce compte
 /// principal — préexistant ; plus légère que l'écrivain, elle en était la
-/// victime, en `500`. Les contrôles de forme, l'onboarding et
+/// victime, en `500`. ⚠️ Raisonné, non mesuré (Story 29-4b, T6-bis, R-4) : la
+/// démotion balaie l'index `fk_bank_accounts_company`, son exclusif peut
+/// couvrir d'autres comptes de la société (aucun `EXPLAIN` au dépôt), et
+/// l'ordre des contrôles de clé étrangère de l'`INSERT` d'un import est
+/// supposé ; T29a-15 joue un cycle synthétique, non la démotion. Les
+/// contrôles de forme, l'onboarding et
 /// `validate_journal_account_id` (sur le pool) restent devant l'enveloppe.
 pub async fn create_bank_account(
     State(state): State<AppState>,
@@ -758,7 +763,8 @@ async fn create_once(
 /// [`update_once`]. Le `PUT` tient la sentinelle `companies` en exclusif puis
 /// demande la ligne du compte en exclusif (`update_for_company`) : un import
 /// ou un lot qui tient cette ligne en partagé par le premier contrôle de clé
-/// étrangère de son `INSERT` et demande `companies` (le second) ferme un
+/// étrangère de son `INSERT` et demande `companies` (le second — ordre des
+/// contrôles supposé, non mesuré : voir `recheck_open_locked_in_tx`) ferme un
 /// cycle avec lui — à deux, ou à trois par la file quand la clôture, la
 /// réouverture ou le `PATCH` attend la ligne entre eux. Préexistant ; plus
 /// léger que l'écrivain, le `PUT` en était la victime, en `500`. Les contrôles
@@ -933,9 +939,10 @@ async fn update_once(
 /// ⚠️ **Rejouée sur interblocage** (opération `bank_accounts::archive`, Story
 /// 29-4a, revue de code P1, E-1, #651) ; la transaction vit dans
 /// [`archive_once`]. Même cycle que le `PUT` : la sentinelle `companies` en
-/// exclusif, puis la ligne du compte en exclusif (`archive_for_company`),
-/// contre un import ou un lot qui tient cette ligne en partagé par son
-/// `INSERT` et demande `companies`. Depuis la revérification de l'import et
+/// exclusif, puis la ligne du compte en exclusif (prise depuis la Story 29-4b
+/// par `primary_flag_locked_in_tx`, dans la garde du principal, et redemandée
+/// par `archive_for_company`), contre un import ou un lot qui tient cette
+/// ligne en partagé par son `INSERT` et demande `companies`. Depuis la revérification de l'import et
 /// du lot, aucun d'eux n'aboutit plus sur un compte archivé ; le rejeu ôte à
 /// la course son dernier effet, le `500` de l'archivage. Le pré-vol (`404`,
 /// `409 BANK_ACCOUNT_CLOSED`, sur le pool) reste devant l'enveloppe.
@@ -966,32 +973,39 @@ pub async fn archive_bank_account(
     // rouvrir d'abord. Lu sur ce pré-vol existant (aucun verrou ajouté),
     // AVANT la sentinelle et le décompte : un compte clos qui porte des imports
     // rend `409 BANK_ACCOUNT_CLOSED`, non le `412` dont le message propose la
-    // clôture. Une clôture commitée après ce pré-vol est refusée sous le verrou
-    // d'`archive_for_company`.
+    // clôture. Une clôture commitée après ce pré-vol est refusée par
+    // `archive_for_company`, sous le verrou de la ligne (pris dès
+    // `primary_flag_locked_in_tx`, Story 29-4b).
     if existing.is_closed() {
         return Err(AppError::BankAccountClosed {
             bank_account_id: id,
         });
     }
 
-    let (was_primary, version) = (existing.is_primary, body.version);
+    let version = body.version;
     let updated = crate::retry::retry_app_on_deadlock("bank_accounts::archive", || {
-        archive_once(&state.pool, &current_user, id, was_primary, version)
+        archive_once(&state.pool, &current_user, id, version)
     })
     .await?;
     Ok(Json(updated))
 }
 
 /// Une tentative de l'archivage : sentinelle `companies`, gardes « fonds »
-/// (transactions, principal et autres comptes actifs), `FOR UPDATE` et
-/// `UPDATE` du compte (`archive_for_company`), trace — conclusion par
-/// [`conclure`] (`rollback` explicite sur refus). `was_primary` vient du
-/// pré-vol, hors enveloppe, comme avant le rejeu.
+/// (transactions ; principal, sous le `FOR UPDATE` de la ligne pris par
+/// `primary_flag_locked_in_tx` ; autres comptes actifs), puis `UPDATE` du
+/// compte (`archive_for_company`, qui redemande le verrou), trace — conclusion par
+/// [`conclure`] (`rollback` explicite sur refus).
+///
+/// Story 29-4b (T6-bis, R-2, #651) — `is_primary` est **relu dans chaque
+/// tentative**, sous le `FOR UPDATE` de la ligne
+/// (`bank_accounts::primary_flag_locked_in_tx`), et non plus pris au pré-vol :
+/// le pré-vol, hors transaction, et le rejeu, qui le réutilisait à chaque
+/// tentative, laissaient la garde décider sur un état périmé (test
+/// `archive_rereads_the_primary_flag_inside_its_transaction`).
 async fn archive_once(
     pool: &sqlx::MySqlPool,
     current_user: &CurrentUser,
     id: i64,
-    was_primary: bool,
     version: i32,
 ) -> Result<BankAccount, AppError> {
     let mut tx = pool
@@ -1019,7 +1033,14 @@ async fn archive_once(
             });
         }
 
-        // Guard primary + autres comptes actifs (AC#9 / AC#10) — DANS la tx.
+        // Guard primary + autres comptes actifs (AC#9 / AC#10) — DANS la tx, sur
+        // `is_primary` lu sous le `FOR UPDATE` de la ligne (Story 29-4b, R-2).
+        // Compte absent ou archivé entre-temps : 404, le refus même
+        // qu'`archive_for_company` aurait rendu sur la même ligne.
+        let was_primary =
+            bank_accounts::primary_flag_locked_in_tx(&mut tx, current_user.company_id, id)
+                .await?
+                .ok_or(AppError::BankAccountNotFound)?;
         if was_primary {
             let others =
                 bank_accounts::count_other_active_for_company(&mut tx, current_user.company_id, id)
@@ -1106,7 +1127,8 @@ fn closure_refusal_error(refusal: bank_accounts::ClosureRefusal) -> AppError {
 /// lot, redemande d'un partagé déjà tenu, qui passe (T29a-6, T29a-7). Cycle
 /// atteignable en 29-4a, préexistant : un import ou un lot `I` tient la ligne
 /// en partagé par le premier contrôle de clé étrangère de son `INSERT` et
-/// demande `companies` (le second) ; une route de gestion `M` (`PUT`,
+/// demande `companies` (le second — ordre des contrôles supposé, non mesuré :
+/// voir `recheck_open_locked_in_tx`) ; une route de gestion `M` (`PUT`,
 /// archivage) tient la sentinelle `companies` et demande la ligne en exclusif,
 /// en file derrière la clôture — `I → M → clôture → I` (à partir de la 29-4b,
 /// la revérification d'une annulation ajoute ses propres cycles). La clôture y

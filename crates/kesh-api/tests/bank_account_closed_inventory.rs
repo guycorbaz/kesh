@@ -92,8 +92,8 @@ enum Statut {
     /// L'écriture ne porte aucun compte bancaire, ou porte un compte neuf.
     SansCompteBancaire(&'static str),
     /// Ne fait que **sortir** de l'état qu'un invariant interdit sur un compte
-    /// clos, laissé sans garde pour réparer ce que l'angle mort L1 (#651) a
-    /// laissé passer.
+    /// clos, laissé sans garde pour réparer ce que la fenêtre de la clôture
+    /// (#651, fermée en v0.13.4) a pu laisser passer jusqu'à la v0.13.3.
     SortieAutorisee(&'static str),
 }
 
@@ -118,7 +118,7 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
         "accept_one_invoice",
         Statut::Invariant(
             "I1",
-            "transaction pending dans l'état commité jusqu'au commit du lot ; sous L1 (#651), le pré-vol R1 refuse",
+            "transaction pending dans l'état commité jusqu'au commit du lot ; et le pré-vol R1 refuse un compte clos",
         ),
     ),
     (
@@ -238,7 +238,7 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
         "kesh-db/src/repositories/payment_batches.rs",
         "cancel_batch",
         Statut::SortieAutorisee(
-            "annuler un lot generated laissé par L1 (#651) : le geste qui en fait sortir (C-28-4-23)",
+            "annuler un lot generated laissé sur un compte clos par la fenêtre de la v0.13.3 (#651, fermée en v0.13.4) : le geste qui en fait sortir (C-28-4-23)",
         ),
     ),
     // --- kesh-db : imports bancaires ------------------------------------
@@ -295,7 +295,7 @@ const APPELANTS_REGLEMENT: &[(&str, &str, Statut)] = &[
         "accept_one_invoice",
         Statut::Invariant(
             "I1",
-            "transaction pending dans l'état commité jusqu'au commit du lot ; sous L1 (#651), le pré-vol R1 refuse",
+            "transaction pending dans l'état commité jusqu'au commit du lot ; et le pré-vol R1 refuse un compte clos",
         ),
     ),
     (
@@ -623,13 +623,67 @@ fn both_import_calls_map_the_archived_account() {
     }
 }
 
+/// T29b-7 (Story 29-4b, T6-bis, R-5 de la passe ciblée P2 de la 29-4a, #651) —
+/// assertion textuelle sur `routes/bank_accounts.rs`, corps **aplatis** (blancs
+/// retirés) : la conclusion commune `conclure` annule **explicitement** la
+/// transaction sur erreur (`let _ = tx.rollback().await;` puis `Err(e)`), et
+/// chacune des six tentatives rejouées (`create_once`, `update_once`,
+/// `archive_once`, `close_once`, `reopen_once`, `patch_once`) se termine par
+/// `conclure(tx, result).await`. Tue M29-35 (`rollback` retiré de `conclure`).
+///
+/// ⚠️ **Textuel, et c'est un choix** : sans `rollback` explicite, sqlx 0.8.6
+/// (`Transaction::drop`, `sqlx-mysql` `start_rollback`) ne fait que **mettre en
+/// file** le `ROLLBACK`, et la connexion revient au pool par une tâche lancée à
+/// part qui l'envoie (`PoolConnection::drop` → `return_to_pool`, `ping`) : le
+/// verrou est rendu **un peu plus tard**, non jamais. Un test qui sonderait le
+/// verrou après la réponse ferait la course contre cette tâche — vert ou rouge
+/// selon l'ordonnanceur. Que le verrou soit rendu **avant** la réponse n'a donc
+/// pas de test dynamique : déclaré non couvert (fiche 29-4, T6-bis).
+#[test]
+fn bank_account_attempts_roll_back_explicitly() {
+    let chemin = racine_crates().join("kesh-api/src/routes/bank_accounts.rs");
+    let source = std::fs::read_to_string(chemin).expect("routes/bank_accounts.rs");
+    let (_, masque) = decouper(&source);
+    let fns = fonctions(&masque);
+    let aplatir = |de: usize, a: usize| -> String {
+        masque[de..=a]
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect()
+    };
+    let corps_de = |nom: &str| -> String {
+        let trouves: Vec<_> = fns.iter().filter(|(n, _, _)| n == nom).collect();
+        assert_eq!(trouves.len(), 1, "une seule fonction `{nom}`");
+        aplatir(trouves[0].1, trouves[0].2)
+    };
+    let conclure = corps_de("conclure");
+    assert!(
+        conclure.contains("Err(e)=>{let_=tx.rollback().await;Err(e)}"),
+        "la branche d'erreur de `conclure` doit annuler la transaction : {conclure}"
+    );
+    for tentative in [
+        "create_once",
+        "update_once",
+        "archive_once",
+        "close_once",
+        "reopen_once",
+        "patch_once",
+    ] {
+        assert!(
+            corps_de(tentative).ends_with("conclure(tx,result).await}"),
+            "{tentative} doit se conclure par `conclure(tx, result).await`"
+        );
+    }
+}
+
 // ===========================================================================
-// Troisième inventaire — Story 29-4a (#651), AC5 : la fenêtre de la clôture
+// Troisième inventaire — Story 29-4a (#651), AC5, étendu en 29-4b (AC8) : la
+// fenêtre de la clôture
 // ===========================================================================
 //
 // La garde « compte clos » de la Story 28-4 est une lecture **non
 // verrouillante** : une écriture dont la vue est née avant le commit d'une
-// clôture pouvait encore passer (L1, #651). La Story 29-4 la complète d'une
+// clôture pouvait encore passer (L1, #651, jusqu'à la v0.13.3). La Story 29-4 la complète d'une
 // **revérification verrouillante** (`bank_accounts::recheck_open_locked_in_tx`
 // pour les annulations, `bank_accounts::recheck_open_unarchived_locked_in_tx`
 // pour l'import et la création de lot). Cet inventaire tient, dans les deux
@@ -640,12 +694,17 @@ fn both_import_calls_map_the_archived_account() {
 //
 // ✅ Ce qu'il voit : la présence de l'appel et sa variante ; l'ensemble `G` ;
 // l'ordre textuel de l'appel par rapport aux littéraux SQL de la fonction
-// (positions de la copie masquée et de `Litteral.debut`, mêlées).
+// (positions de la copie masquée et de `Litteral.debut`, mêlées) — pour
+// l'import et le lot, entre deux littéraux nommés ; pour les cinq annulations
+// (Story 29-4b, AC8), après le dernier geste verrouillant et avant l'audit
+// (`Position::EnDernier`).
 //
 // ⚠️ Ce qu'il ne voit pas (angles morts assumés) : que la revérification
 // **s'exécute** (affaire des tests d'entrelacement, T29a-2, -3, -6, -7, -11,
-// -12) ; une écriture faite par une fonction appelée **après** l'appel, que
-// l'ordre textuel d'une seule fonction ne suit pas ; une lecture non
+// -12, T29b-1, T29b-2) ; une écriture faite par une fonction appelée
+// **après** l'appel, que l'ordre textuel d'une seule fonction ne suit pas, ni
+// un geste verrouillant appelé sous un nom absent de
+// `GESTES_VERROUILLANTS_CODE` ; une lecture non
 // verrouillante de `closed_on` dont le SQL ne porte pas littéralement `FROM
 // bank_accounts` (requête assemblée, `format!`) ; une garde appelée sans le
 // préfixe `bank_accounts::` (importée par `use`) ; les **pré-vols** de route sur
@@ -676,18 +735,58 @@ impl Variante {
     }
 }
 
-/// Où l'appel doit se trouver dans la source de sa fonction : **après** le
-/// (dernier) littéral SQL qui contient `apres`, et **avant** le (premier)
-/// littéral qui contient `avant` s'il est donné. Fragments comparés sur le
-/// texte du littéral aplati (échappements neutralisés, blancs réduits,
-/// majuscules).
+/// Où l'appel doit se trouver dans la source de sa fonction.
 #[derive(Debug)]
-struct Position {
-    apres: &'static str,
-    avant: Option<&'static str>,
+enum Position {
+    /// L'import et le lot (29-4a) : **après** le (dernier) littéral SQL qui
+    /// contient `apres` — l'`INSERT` à clé étrangère qui a posé le partagé
+    /// du compte —, et **avant** le (premier) littéral qui contient `avant`
+    /// s'il est donné. Fragments comparés sur le texte du littéral aplati
+    /// (échappements neutralisés, blancs réduits, majuscules).
+    Litteraux {
+        apres: &'static str,
+        avant: Option<&'static str>,
+    },
+    /// Les annulations (Story 29-4b, AC8, T29b-4) : en **dernière
+    /// acquisition de verrou** — l'appel suit la dernière occurrence, dans le
+    /// corps de la fonction, de tout geste qui prend un verrou (les jetons
+    /// SQL de [`GESTES_VERROUILLANTS_SQL`], lus dans les **littéraux** ; les
+    /// appels de [`GESTES_VERROUILLANTS_CODE`], lus dans la **copie
+    /// masquée**), et précède `audit_log::insert_in_tx(` quand la fonction en
+    /// porte un.
+    EnDernier,
 }
 
+/// Les gestes verrouillants d'un littéral SQL, pour [`Position::EnDernier`]
+/// (texte aplati, majuscules ; `UPDATE ` porte son espace, `FOR UPDATE` est
+/// listé à part).
+const GESTES_VERROUILLANTS_SQL: [&str; 5] = [
+    "INSERT INTO",
+    "UPDATE ",
+    "DELETE FROM",
+    "FOR UPDATE",
+    "LOCK IN SHARE MODE",
+];
+
+/// Les appels verrouillants des annulations, pour [`Position::EnDernier`] :
+/// la contre-passation (`reverse_in_tx(`, `reverse_owned_in_tx(`), le
+/// règlement annulé de W9 (`cancel_settlement_in_tx(`) — la liste de la fiche
+/// —, et la dissolution du lettrage de pièce, ajoutée au développement (elle
+/// écrit, et précède toujours la contre-passation : sans effet sur l'issue,
+/// elle ferme un angle mort de plus). ⚠️ **Angle mort** : un geste
+/// verrouillant appelé sous un nom absent de cette liste, ou un SQL assemblé
+/// hors littéral, n'est pas suivi.
+const GESTES_VERROUILLANTS_CODE: [&str; 5] = [
+    "reverse_in_tx(",
+    "reverse_owned_in_tx(",
+    "cancel_settlement_in_tx(",
+    "dissolve_invoice_document_group_in_tx(",
+    "dissolve_supplier_invoice_document_group_in_tx(",
+];
+
 /// Le statut d'une fonction de `G` au regard de la fenêtre de la clôture.
+/// Depuis la Story 29-4b, aucune fenêtre n'est plus ouverte : la variante
+/// transitoire `Ouverte` de la 29-4a est retirée avec ses derniers sites.
 #[derive(Debug)]
 enum Fenetre {
     /// La revérification est appelée dans la fonction, par cette variante, à
@@ -697,9 +796,6 @@ enum Fenetre {
     /// verrou) est écrite. (Le `SansFenetre` de la fiche : `clippy` refuse une
     /// variante qui finit par le nom de son type.)
     Fermee(&'static str),
-    /// Fenêtre encore ouverte, fermée par la story nommée. ⛔ Transitoire :
-    /// la 29-4b retire la variante avec ses derniers sites.
-    Ouverte(&'static str),
 }
 
 /// Les cinq annulations (W9, W24, W25, W28, W29) : leur revérification ne lit
@@ -736,7 +832,7 @@ const FENETRE: &[(&str, &str, Fenetre)] = &[
         "create_with_transactions",
         Fenetre::Reverifiee(
             Variante::ClosOuArchive,
-            Position {
+            Position::Litteraux {
                 apres: "INSERT INTO bank_imports",
                 avant: Some("INSERT INTO bank_transactions"),
             },
@@ -749,7 +845,7 @@ const FENETRE: &[(&str, &str, Fenetre)] = &[
             Variante::ClosOuArchive,
             // Borne haute (revue de code P1, B-4) : avant le premier
             // `UPDATE` du lot, donc avant ses articles.
-            Position {
+            Position::Litteraux {
                 apres: "INSERT INTO payment_batches",
                 avant: Some("UPDATE payment_batches SET msg_id"),
             },
@@ -766,7 +862,7 @@ const FENETRE: &[(&str, &str, Fenetre)] = &[
         "kesh-api/src/routes/reconciliation.rs",
         "unreject_once",
         Fenetre::Fermee(
-            "I1 (la transaction rejetée est pending, la clôture refuse), sous réserve de la 29-4b — W9 peut encore remettre une transaction pending sur un compte clos",
+            "I1 : la transaction rejetée est pending, la clôture refuse tant qu'elle existe",
         ),
     ),
     (
@@ -779,30 +875,32 @@ const FENETRE: &[(&str, &str, Fenetre)] = &[
             "lecture seule : la préparation de la clôture d'un exercice liste les comptes à examiner, ce n'est pas une garde et rien n'est écrit — aucune fenêtre",
         ),
     ),
+    // Story 29-4b (#651, AC6, AC8) — les cinq annulations : `closed_on` seul
+    // (`Variante::Clos`, tenu aussi par (i bis)), en dernière acquisition.
     (
         "kesh-db/src/repositories/reconciliation_cancel.rs",
         "cancel_in_tx",
-        Fenetre::Ouverte("29-4b"),
+        Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
     ),
     (
         "kesh-db/src/repositories/bank_imports.rs",
         "delete_unreconciled_in_tx",
-        Fenetre::Ouverte("29-4b"),
+        Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
     ),
     (
         "kesh-db/src/repositories/invoice_settlements_write.rs",
         "cancel_settlement_in_tx",
-        Fenetre::Ouverte("29-4b"),
+        Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
     ),
     (
         "kesh-db/src/repositories/supplier_invoices.rs",
         "cancel_in_tx",
-        Fenetre::Ouverte("29-4b"),
+        Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
     ),
     (
         "kesh-db/src/repositories/supplier_invoices.rs",
         "cancel_settlement_in_tx",
-        Fenetre::Ouverte("29-4b"),
+        Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
     ),
 ];
 
@@ -969,9 +1067,12 @@ fn fautes_de_la_fenetre(
     }
 
     // (iii)
-    let litteraux: Vec<(String, Vec<lexique::Litteral>)> = sources
+    let decoupes: Vec<(String, Vec<lexique::Litteral>, String)> = sources
         .iter()
-        .map(|(f, s)| (f.clone(), decouper(s).0))
+        .map(|(f, s)| {
+            let (lits, masque) = decouper(s);
+            (f.clone(), lits, masque)
+        })
         .collect();
     for a in &appels {
         let Some((_, _, Fenetre::Reverifiee(_, pos))) = registre
@@ -980,7 +1081,7 @@ fn fautes_de_la_fenetre(
         else {
             continue;
         };
-        let Some((_, lits)) = litteraux.iter().find(|(f, _)| *f == a.fichier) else {
+        let Some((_, lits, masque)) = decoupes.iter().find(|(f, _, _)| *f == a.fichier) else {
             continue;
         };
         let dans_le_corps: Vec<(usize, String)> = lits
@@ -988,24 +1089,31 @@ fn fautes_de_la_fenetre(
             .filter(|l| l.debut >= a.corps.0 && l.debut <= a.corps.1)
             .map(|l| (l.debut, aplatir(&l.texte)))
             .collect();
-        let apres = dans_le_corps
+        let (apres, avant) = match pos {
+            Position::Litteraux { apres, avant } => (*apres, *avant),
+            Position::EnDernier => {
+                fautes.extend(fautes_en_dernier(a, &dans_le_corps, masque));
+                continue;
+            }
+        };
+        let dernier_apres = dans_le_corps
             .iter()
-            .filter(|(_, t)| t.contains(&aplatir(pos.apres)))
+            .filter(|(_, t)| t.contains(&aplatir(apres)))
             .map(|(d, _)| *d)
             .max();
-        match apres {
+        match dernier_apres {
             None => fautes.push(format!(
                 "(iii) {}::{} : aucun littéral « {} » dans la fonction",
-                a.fichier, a.fonction, pos.apres
+                a.fichier, a.fonction, apres
             )),
             Some(d) if a.position < d => fautes.push(format!(
                 "(iii) {}::{} : la revérification précède « {} » — elle prendrait un verrou \
                  explicite avant l'`INSERT`, à une position que l'analyse n'a pas faite",
-                a.fichier, a.fonction, pos.apres
+                a.fichier, a.fonction, apres
             )),
             Some(_) => {}
         }
-        if let Some(avant) = pos.avant {
+        if let Some(avant) = avant {
             let premier = dans_le_corps
                 .iter()
                 .filter(|(_, t)| t.contains(&aplatir(avant)))
@@ -1023,6 +1131,63 @@ fn fautes_de_la_fenetre(
                 Some(_) => {}
             }
         }
+    }
+    fautes
+}
+
+/// (iii) pour [`Position::EnDernier`] (Story 29-4b, AC8, T29b-4) : la
+/// revérification `a` doit suivre le **dernier** geste verrouillant du corps —
+/// jetons SQL dans les littéraux (`dans_le_corps`, positions
+/// `Litteral.debut`), appels dans la copie masquée (`masque`, chaînes et
+/// commentaires effacés), positions mêlées —, et précéder le premier
+/// `audit_log::insert_in_tx(` du corps s'il y en a un. Un corps sans aucun
+/// geste verrouillant est lui-même une faute : la règle n'y prouverait rien.
+fn fautes_en_dernier(
+    a: &AppelReverification,
+    dans_le_corps: &[(usize, String)],
+    masque: &str,
+) -> Vec<String> {
+    let mut fautes = Vec::new();
+    let mut dernier: Option<(usize, &str)> = None;
+    let mut garder = |p: usize, geste: &'static str| {
+        if dernier.is_none_or(|(q, _)| p > q) {
+            dernier = Some((p, geste));
+        }
+    };
+    for (d, t) in dans_le_corps {
+        for g in GESTES_VERROUILLANTS_SQL {
+            if t.contains(g) {
+                garder(*d, g);
+            }
+        }
+    }
+    let corps = &masque[a.corps.0..=a.corps.1];
+    for g in GESTES_VERROUILLANTS_CODE {
+        for (p, _) in corps.match_indices(g) {
+            garder(a.corps.0 + p, g);
+        }
+    }
+    match dernier {
+        None => fautes.push(format!(
+            "(iii) {}::{} : aucun geste verrouillant dans la fonction",
+            a.fichier, a.fonction
+        )),
+        Some((p, g)) if a.position < p => fautes.push(format!(
+            "(iii) {}::{} : la revérification précède « {} » — elle ne serait pas la \
+             dernière acquisition de verrou",
+            a.fichier,
+            a.fonction,
+            g.trim_end()
+        )),
+        Some(_) => {}
+    }
+    if let Some(q) = corps.find("audit_log::insert_in_tx(")
+        && a.position > a.corps.0 + q
+    {
+        fautes.push(format!(
+            "(iii) {}::{} : la revérification suit « audit_log::insert_in_tx( »",
+            a.fichier, a.fonction
+        ));
     }
     fautes
 }
@@ -1051,28 +1216,33 @@ fn ecarts_fenetre(
 /// T29a-5 (Story 29-4a, #651, AC5) — le troisième inventaire, sur les sources
 /// de production : aucune faute, et des décomptes anti-muets (`G` à dix
 /// sites — les neuf fonctions de la fiche et, depuis le rebase sur la 29-1a,
-/// la constante `EXAMINED_ACCOUNTS_SQL` de `closing_checks.rs` —, deux appels
-/// de revérification en 29-4a).
+/// la constante `EXAMINED_ACCOUNTS_SQL` de `closing_checks.rs` —, sept appels
+/// de revérification depuis la 29-4b : l'import et le lot, plus les cinq
+/// annulations). T29b-4 (Story 29-4b, AC8) : les cinq annulations y sont
+/// `Reverifiee(Variante::Clos, Position::EnDernier)`, et leur position est
+/// contrôlée par (iii) — [`fautes_en_dernier`].
 #[test]
 fn every_unlocked_closed_account_guard_is_rechecked_or_justified() {
     let sources = sources_lues();
     let fautes = fautes_de_la_fenetre(&sources, FENETRE);
     assert!(
         fautes.is_empty(),
-        "⛔ fenêtre de la clôture (Story 29-4, AC5) :\n{}",
+        "⛔ fenêtre de la clôture (Story 29-4, AC5, AC8) :\n{}",
         fautes.join("\n")
     );
     for (f, n, statut) in FENETRE {
         let raison = match statut {
-            Fenetre::Fermee(r) | Fenetre::Ouverte(r) => r,
-            Fenetre::Reverifiee(_, p) => p.apres,
+            Fenetre::Fermee(r) => r,
+            Fenetre::Reverifiee(_, Position::Litteraux { apres, .. }) => apres,
+            Fenetre::Reverifiee(_, Position::EnDernier) => "en dernier",
         };
         assert!(!raison.trim().is_empty(), "{f}::{n} : raison vide");
     }
     for annulation in ANNULATIONS {
         assert!(
-            FENETRE.iter().any(|(f, n, _)| (*f, *n) == annulation),
-            "l'annulation {annulation:?} doit figurer au registre FENETRE"
+            FENETRE.iter().any(|(f, n, s)| (*f, *n) == annulation
+                && matches!(s, Fenetre::Reverifiee(Variante::Clos, Position::EnDernier))),
+            "l'annulation {annulation:?} doit être revérifiée en dernier (Variante::Clos)"
         );
     }
     // Anti-muet : un extracteur qui cesserait de voir rendrait un registre
@@ -1085,8 +1255,8 @@ fn every_unlocked_closed_account_guard_is_rechecked_or_justified() {
     );
     assert_eq!(
         appels_de_reverification(&sources).len(),
-        2,
-        "deux revérifications en 29-4a (import, lot)"
+        7,
+        "sept revérifications depuis la 29-4b (import, lot, cinq annulations)"
     );
 }
 
@@ -1139,7 +1309,7 @@ fn the_window_inventory_reports_each_fault_on_built_cases() {
             "create_with_transactions",
             Fenetre::Reverifiee(
                 Variante::ClosOuArchive,
-                Position {
+                Position::Litteraux {
                     apres: "INSERT INTO bank_imports",
                     avant: Some("INSERT INTO bank_transactions"),
                 },
@@ -1148,13 +1318,7 @@ fn the_window_inventory_reports_each_fault_on_built_cases() {
         (
             "kesh-db/src/repositories/reconciliation_cancel.rs",
             "cancel_in_tx",
-            Fenetre::Reverifiee(
-                Variante::Clos,
-                Position {
-                    apres: "UPDATE",
-                    avant: None,
-                },
-            ),
+            Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
         ),
         (
             "kesh-db/src/repositories/bank_imports.rs",
@@ -1197,13 +1361,7 @@ fn the_window_inventory_reports_each_fault_on_built_cases() {
     let declare_archive = [(
         "kesh-db/src/repositories/reconciliation_cancel.rs",
         "cancel_in_tx",
-        Fenetre::Reverifiee(
-            Variante::ClosOuArchive,
-            Position {
-                apres: "UPDATE",
-                avant: None,
-            },
-        ),
+        Fenetre::Reverifiee(Variante::ClosOuArchive, Position::EnDernier),
     )];
     let fautes = fautes_de_la_fenetre(&sources[1..], &declare_archive);
     assert!(
@@ -1239,7 +1397,10 @@ fn the_window_inventory_reports_each_fault_on_built_cases() {
         [(
             fichier,
             "create_with_transactions",
-            Fenetre::Reverifiee(Variante::ClosOuArchive, Position { apres, avant }),
+            Fenetre::Reverifiee(
+                Variante::ClosOuArchive,
+                Position::Litteraux { apres, avant },
+            ),
         )]
     };
     let conforme = || {
@@ -1285,5 +1446,209 @@ fn the_window_inventory_reports_each_fault_on_built_cases() {
         vec![format!(
             "(iii) {fichier}::create_with_transactions : aucun littéral « DELETE FROM absente » dans la fonction"
         )],
+    );
+}
+
+/// T29b-4, volet inverse (Story 29-4b, #651, AC8) — la règle « en dernière
+/// acquisition de verrou » des annulations rougit sur chaque source construite
+/// qui la viole, et sur elle seule : une revérification qui précède un
+/// **littéral** verrouillant (`DELETE FROM`, la forme de W24 ; `UPDATE `,
+/// celle de W28 et W29), un **appel** verrouillant (`reverse_owned_in_tx(`,
+/// `cancel_settlement_in_tx(`, la forme de W9 et W25), qui **suit** l'audit,
+/// ou un corps sans aucun geste verrouillant ; le cas de contrôle conforme ne
+/// rend aucune faute — un commentaire et une chaîne qui nomment un **appel**
+/// verrouillant après la revérification n'y comptent pas (copie masquée ; les
+/// jetons SQL, eux, se lisent dans les littéraux). Tue, avec T29a-5, M29-14 à
+/// M29-18.
+#[test]
+fn the_last_acquisition_rule_reports_each_fault_on_built_cases() {
+    let fichier = "kesh-db/src/repositories/supplier_invoices.rs";
+    let source = |corps: &str| {
+        vec![(
+            fichier.to_string(),
+            format!(
+                "pub async fn cancel_in_tx() {{\n\
+                 super::bank_accounts::ensure_open_in_tx(tx, c, b).await?;\n\
+                 {corps}\n}}\n"
+            ),
+        )]
+    };
+    let registre = [(
+        fichier,
+        "cancel_in_tx",
+        Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
+    )];
+    let faute = |suite: &str| format!("(iii) {fichier}::cancel_in_tx : {suite}");
+    let recheck = "super::bank_accounts::recheck_open_locked_in_tx(tx, c, b).await?;";
+    let cas: [(&str, String, Vec<String>); 7] = [
+        (
+            "contrôle",
+            format!(
+                "let _ = \"SELECT id FROM t WHERE id = ? FOR UPDATE\";\n\
+                 journal_entries::reverse_owned_in_tx(tx, c, e, u, x).await?;\n\
+                 let _ = \"UPDATE supplier_invoices SET a = 1 WHERE id = ?\";\n\
+                 {recheck}\n\
+                 // reverse_in_tx( — commentaire : ignoré\n\
+                 let _ = \"reverse_owned_in_tx( dans une chaîne : ignoré\";\n\
+                 audit_log::insert_in_tx(tx, e).await?;"
+            ),
+            vec![],
+        ),
+        (
+            "précède un UPDATE",
+            format!(
+                "journal_entries::reverse_owned_in_tx(tx, c, e, u, x).await?;\n\
+                 {recheck}\n\
+                 let _ = \"UPDATE supplier_invoices SET a = 1 WHERE id = ?\";"
+            ),
+            vec![faute(
+                "la revérification précède « UPDATE » — elle ne serait pas la dernière \
+                 acquisition de verrou",
+            )],
+        ),
+        (
+            "précède un DELETE FROM",
+            format!(
+                "let _ = \"SELECT id FROM t WHERE id = ? FOR UPDATE\";\n\
+                 {recheck}\n\
+                 let _ = \"DELETE FROM bank_imports WHERE id = ?\";"
+            ),
+            vec![faute(
+                "la revérification précède « DELETE FROM » — elle ne serait pas la dernière \
+                 acquisition de verrou",
+            )],
+        ),
+        (
+            "précède la contre-passation",
+            format!(
+                "let _ = \"UPDATE t SET a = 1 WHERE id = ?\";\n\
+                 {recheck}\n\
+                 journal_entries::reverse_owned_in_tx(tx, c, e, u, x).await?;"
+            ),
+            vec![faute(
+                "la revérification précède « reverse_owned_in_tx( » — elle ne serait pas la \
+                 dernière acquisition de verrou",
+            )],
+        ),
+        (
+            "précède le règlement annulé",
+            format!(
+                "let _ = \"UPDATE t SET a = 1 WHERE id = ?\";\n\
+                 {recheck}\n\
+                 invoice_settlements_write::cancel_settlement_in_tx(tx, c, i, s, u).await?;"
+            ),
+            vec![faute(
+                "la revérification précède « cancel_settlement_in_tx( » — elle ne serait pas \
+                 la dernière acquisition de verrou",
+            )],
+        ),
+        (
+            "suit l'audit",
+            format!(
+                "let _ = \"UPDATE t SET a = 1 WHERE id = ?\";\n\
+                 audit_log::insert_in_tx(tx, e).await?;\n\
+                 {recheck}"
+            ),
+            vec![faute("la revérification suit « audit_log::insert_in_tx( »")],
+        ),
+        (
+            "aucun geste verrouillant",
+            format!("let _ = \"SELECT id FROM t WHERE id = ?\";\n{recheck}"),
+            vec![faute("aucun geste verrouillant dans la fonction")],
+        ),
+    ];
+    for (nom, corps, attendues) in cas {
+        assert_eq!(
+            fautes_de_la_fenetre(&source(&corps), &registre),
+            attendues,
+            "cas {nom}"
+        );
+    }
+}
+
+/// T29b-4, volet inverse jeton par jeton (Story 29-4b, #651, revue de code P1,
+/// B-1) — chacune des dix entrées de [`GESTES_VERROUILLANTS_SQL`] et de
+/// [`GESTES_VERROUILLANTS_CODE`] est la cible d'un cas construit : un geste
+/// portant ce seul jeton, placé **après** la revérification, doit rendre
+/// exactement la faute « précède « <jeton> » ». La table des cas est écrite
+/// ici, à part des listes : retirer un jeton d'une liste laisse son cas sans
+/// geste reconnu (« aucun geste verrouillant »), donc rouge ; ajouter un jeton
+/// sans cas rougit le contrôle de couverture. T29a-5 ne le pouvait pas : chaque
+/// revérification de production y est déjà la dernière.
+#[test]
+fn the_last_acquisition_rule_sees_each_locking_token() {
+    let fichier = "kesh-db/src/repositories/supplier_invoices.rs";
+    let registre = [(
+        fichier,
+        "cancel_in_tx",
+        Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
+    )];
+    let recheck = "super::bank_accounts::recheck_open_locked_in_tx(tx, c, b).await?;";
+    // (jeton tel que la faute le nomme, littéral qui le porte seul)
+    let litteraux: [(&str, &str); 5] = [
+        ("INSERT INTO", "INSERT INTO t (a) VALUES (?)"),
+        ("UPDATE", "UPDATE t SET a = 1 WHERE id = ?"),
+        ("DELETE FROM", "DELETE FROM t WHERE id = ?"),
+        ("FOR UPDATE", "SELECT a FROM t WHERE id = ? FOR UPDATE"),
+        (
+            "LOCK IN SHARE MODE",
+            "SELECT a FROM t WHERE id = ? LOCK IN SHARE MODE",
+        ),
+    ];
+    let appels: [&str; 5] = [
+        "reverse_in_tx(",
+        "reverse_owned_in_tx(",
+        "cancel_settlement_in_tx(",
+        "dissolve_invoice_document_group_in_tx(",
+        "dissolve_supplier_invoice_document_group_in_tx(",
+    ];
+    let cas = litteraux
+        .iter()
+        .map(|(jeton, geste)| (*jeton, format!("let _ = \"{geste}\";")))
+        .chain(
+            appels
+                .iter()
+                .map(|appel| (*appel, format!("journal_entries::{appel}tx, c).await?;"))),
+        );
+    let mut joues = 0;
+    for (jeton, geste) in cas {
+        let source = vec![(
+            fichier.to_string(),
+            format!(
+                "pub async fn cancel_in_tx() {{\n\
+                 super::bank_accounts::ensure_open_in_tx(tx, c, b).await?;\n\
+                 let _ = \"SELECT id FROM t WHERE id = ?\";\n\
+                 {recheck}\n\
+                 {geste}\n}}\n"
+            ),
+        )];
+        assert_eq!(
+            fautes_de_la_fenetre(&source, &registre),
+            vec![format!(
+                "(iii) {fichier}::cancel_in_tx : la revérification précède « {jeton} » — elle \
+                 ne serait pas la dernière acquisition de verrou"
+            )],
+            "jeton « {jeton} »"
+        );
+        joues += 1;
+    }
+    assert_eq!(joues, 10, "décompte anti-muet des cas joués");
+    // Couverture, après les cas (un jeton retiré rougit d'abord par son cas) :
+    // chaque entrée des deux listes a son cas, et réciproquement.
+    assert_eq!(
+        GESTES_VERROUILLANTS_SQL
+            .iter()
+            .map(|g| g.trim_end())
+            .collect::<BTreeSet<_>>(),
+        litteraux.iter().map(|(j, _)| *j).collect::<BTreeSet<_>>(),
+        "un jeton SQL sans cas construit (ou un cas sans jeton)"
+    );
+    assert_eq!(
+        GESTES_VERROUILLANTS_CODE
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        appels.iter().copied().collect::<BTreeSet<_>>(),
+        "un appel verrouillant sans cas construit (ou un cas sans appel)"
     );
 }

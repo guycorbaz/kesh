@@ -5075,8 +5075,9 @@ async fn unreject_once(
 /// une [`FailedProposal`] par transaction, code `BANK_ACCOUNT_CLOSED`,
 /// `details.bankAccountId` — `200`, jamais d'`AppError` globale (§ *Pattern
 /// batch* du `CLAUDE.md`). Les acceptations n'ont aucune garde propre
-/// (`accept_one_*`, C-28-4-14) : sous l'angle mort L1 (#651), c'est ce pré-vol,
-/// lecture fraîche en autocommit, qui les arrête.
+/// (`accept_one_*`, C-28-4-14) : sur un compte clos que la fenêtre de la
+/// v0.13.3 (#651, fermée en v0.13.4) aurait laissé avec une transaction en
+/// attente, c'est ce pré-vol, lecture fraîche en autocommit, qui les arrête.
 fn closed_account_failed(
     bank_transaction_ids: &[i64],
     bank_account_id: i64,

@@ -978,6 +978,102 @@ async fn delete_primary_with_other_active_returns_412(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY");
 }
 
+/// Story 29-4b (T6-bis, R-2 de la passe ciblée P2 de la 29-4a, #651) — la
+/// garde « principal + autres comptes actifs » de l'archivage décide sur
+/// l'état **lu dans sa transaction**, sous le `FOR UPDATE` de la ligne, non
+/// sur le `is_primary` du pré-vol (lu sur le pool, hors transaction, et que
+/// le rejeu réutilisait à chaque tentative).
+///
+/// Montage : `B` est principal au pré-vol ; une transaction de test `T` tient
+/// la sentinelle `companies` ; l'archivage de `B` est lancé, fait son pré-vol
+/// (`is_primary = TRUE`), puis attend la sentinelle ; `T` transfère alors le
+/// statut de principal à `A` comme le ferait `flip_primary_off_for_company`
+/// (les deux versions augmentent) et commite. L'archivage reprend : `B` n'est
+/// plus principal, et sa version a bougé.
+///
+/// **Au sol** (garde sur la valeur du pré-vol) : `412
+/// BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY` — refus d'un compte qui n'est plus
+/// principal. **Attendu** : la garde relit `is_primary = FALSE` et passe, puis
+/// le verrou optimiste d'`archive_for_company` refuse en `409
+/// OPTIMISTIC_LOCK_CONFLICT`, le seul refus juste (le compte a changé depuis
+/// que le client l'a lu). Rien n'est archivé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn archive_rereads_the_primary_flag_inside_its_transaction(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let a = ctx.bank_account_id;
+    let b = create_bank_account(&pool, ctx.company_id, "CH3908704016075473007").await;
+    // `B` principal, `A` actif non principal.
+    sqlx::query("UPDATE bank_accounts SET is_primary = (id = ?) WHERE company_id = ?")
+        .bind(b)
+        .bind(ctx.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let version_b = read_bank_account_version(&pool, b).await;
+
+    // `T` tient la sentinelle de la société.
+    let mut t = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM companies WHERE id = ? FOR UPDATE")
+        .bind(ctx.company_id)
+        .fetch_one(&mut *t)
+        .await
+        .unwrap();
+
+    let client = app.client.clone();
+    let url = app.url(&format!("/api/v1/bank-accounts/{b}"));
+    let jwt = ctx.jwt.clone();
+    let archivage = tokio::spawn(async move {
+        client
+            .delete(url)
+            .bearer_auth(&jwt)
+            .json(&json!({ "version": version_b }))
+            .send()
+            .await
+            .unwrap()
+    });
+    // Le pré-vol a eu lieu (il précède la sentinelle) ; l'archivage attend.
+    assert!(
+        kesh_db::test_fixtures::attendre_une_requete_en_cours(
+            &pool,
+            &["FROM companies WHERE id", "FOR UPDATE"],
+            || archivage.is_finished(),
+        )
+        .await,
+        "⛔ montage : l'archivage devait attendre la sentinelle tenue par T"
+    );
+
+    // Transfert du principal, comme `flip_primary_off_for_company` + `PUT`.
+    sqlx::query(
+        "UPDATE bank_accounts SET is_primary = (id = ?), version = version + 1 \
+         WHERE company_id = ? AND id IN (?, ?)",
+    )
+    .bind(a)
+    .bind(ctx.company_id)
+    .bind(a)
+    .bind(b)
+    .execute(&mut *t)
+    .await
+    .unwrap();
+    t.commit().await.unwrap();
+
+    let resp = archivage.await.unwrap();
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        (status.as_u16(), body["error"]["code"].as_str()),
+        (409, Some("OPTIMISTIC_LOCK_CONFLICT")),
+        "⛔ la garde du principal doit relire is_primary dans sa transaction : {body}"
+    );
+    let archived: bool = sqlx::query_scalar("SELECT archived FROM bank_accounts WHERE id = ?")
+        .bind(b)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(!archived, "⛔ rien ne doit être archivé");
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_primary_unique_is_allowed_ac10(pool: MySqlPool) {
     complete_onboarding(&pool).await;

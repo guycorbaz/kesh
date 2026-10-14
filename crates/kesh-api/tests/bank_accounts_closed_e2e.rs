@@ -15,8 +15,8 @@
 //! le geste refusé, la clôture et la réouverture passent par HTTP. Les lignes
 //! dont l'état contredit un invariant (une transaction `pending` ou un lot
 //! `generated` sur un compte clos : I1, I2) **cassent l'invariant à dessein**
-//! — `closed_on` posé par SQL direct, comme l'angle mort L1 (#651) le
-//! produirait —, et rouvrent par la route.
+//! — `closed_on` posé par SQL direct, comme l'aurait fait la fenêtre de #651
+//! jusqu'à la v0.13.3 —, et rouvrent par la route.
 //!
 //! Pré-requis : MariaDB démarré.
 #![allow(clippy::too_many_arguments)]
@@ -1574,8 +1574,8 @@ async fn lots_de_paiement_refuses(pool: MySqlPool) {
 }
 
 /// W21 (`SortieAutorisee`, C-28-4-23) — l'annulation d'un lot `generated`
-/// reste permise sur un compte clos : c'est le geste qui répare ce que L1 a
-/// laissé passer.
+/// reste permise sur un compte clos : c'est le geste qui répare ce que la
+/// fenêtre de #651 a pu laisser passer jusqu'à la v0.13.3.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn annuler_un_lot_reste_permis_sur_un_compte_clos(pool: MySqlPool) {
     let ctx = monter(&pool).await;
@@ -1660,4 +1660,421 @@ async fn les_gestes_qui_creent_refusent_l_archive(pool: MySqlPool) {
     );
     assert_eq!(etat(&ctx).await, avant_cle);
     assert_eq!(avant[..9], avant_cle[..9], "aucune écriture métier");
+}
+
+// ============================================================
+// Story 29-4b (#651, AC7) — la fenêtre des cinq annulations
+// ============================================================
+//
+// ⚠️ **Montage** (choix C-29-4-32) : l'état à annuler se pose par les routes,
+// comme plus haut, sur un compte **ouvert** ; l'annulation, elle, s'appelle
+// **au dépôt** (la fonction `_in_tx` que la route appelle), dans une
+// transaction que le test possède : il en voit l'erreur de dépôt et l'annule
+// **explicitement** avant tout comptage. La clôture concurrente est
+// `close_in_tx`, au dépôt, sans commit tant que le test ne le décide pas.
+
+/// Une annulation, appelée au dépôt.
+#[derive(Debug, Clone, Copy)]
+enum Annulation {
+    /// W9 — `reconciliation_cancel::cancel_in_tx`, par la transaction bancaire.
+    Rapprochement(i64),
+    /// W24 — `bank_imports::delete_unreconciled_in_tx`, par l'import.
+    Import(i64),
+    /// W25 — `invoice_settlements_write::cancel_settlement_in_tx`.
+    Reglement { facture: i64, reglement: i64 },
+    /// W28 — `supplier_invoices::cancel_in_tx` (facture payée par virement).
+    FactureFournisseur(i64),
+    /// W29 — `supplier_invoices::cancel_settlement_in_tx`.
+    ReglementFournisseur(i64),
+}
+
+impl Annulation {
+    async fn executer(
+        self,
+        tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+        company_id: i64,
+        user_id: i64,
+    ) -> Result<(), kesh_db::errors::DbError> {
+        use kesh_db::repositories::{invoice_settlements_write, reconciliation_cancel};
+        match self {
+            Annulation::Rapprochement(t) => {
+                reconciliation_cancel::cancel_in_tx(tx, company_id, t, user_id, None)
+                    .await
+                    .map(|_| ())
+            }
+            Annulation::Import(i) => {
+                match bank_imports::delete_unreconciled_in_tx(tx, company_id, i).await? {
+                    bank_imports::DeleteBankImportOutcome::Deleted(_) => Ok(()),
+                    autre => panic!("montage : suppression d'import — {autre:?}"),
+                }
+            }
+            Annulation::Reglement { facture, reglement } => {
+                invoice_settlements_write::cancel_settlement_in_tx(
+                    tx, company_id, facture, reglement, user_id,
+                )
+                .await
+                .map(|_| ())
+            }
+            Annulation::FactureFournisseur(f) => {
+                supplier_invoices::cancel_in_tx(tx, company_id, f, user_id)
+                    .await
+                    .map(|_| ())
+            }
+            Annulation::ReglementFournisseur(f) => {
+                supplier_invoices::cancel_settlement_in_tx(tx, company_id, f, user_id)
+                    .await
+                    .map(|_| ())
+            }
+        }
+    }
+}
+
+/// L'annulation, en tâche, dans sa propre transaction : commit si elle
+/// aboutit, `rollback` **explicite** sinon (un abandon par `drop` est
+/// asynchrone et laisserait les comptages dépendre de l'ordonnancement).
+fn annulation_en_tache(
+    ctx: &Ctx,
+    annulation: Annulation,
+) -> tokio::task::JoinHandle<Result<(), kesh_db::errors::DbError>> {
+    let (pool, company_id, user_id) =
+        (ctx.pool.clone(), ctx.company_id(), ctx.seeded.admin_user_id);
+    tokio::spawn(async move {
+        let mut tx = pool.begin().await.unwrap();
+        let r = annulation.executer(&mut tx, company_id, user_id).await;
+        if r.is_ok() {
+            tx.commit().await.unwrap();
+        } else {
+            tx.rollback().await.unwrap();
+        }
+        r
+    })
+}
+
+/// Le motif de la revérification des annulations
+/// (`bank_accounts::RECHECK_OPEN_LOCKED_SQL`) dans la liste des processus.
+const MOTIFS_REVERIFICATION: [&str; 2] =
+    ["SELECT closed_on FROM bank_accounts", "LOCK IN SHARE MODE"];
+
+/// T29b-1, le patron (AC7, « fenêtre ») : (1) une clôture `C` tient la ligne
+/// du compte en exclusif, sans commiter ; (2) l'annulation démarre — sa vue
+/// naît à la garde non verrouillante de la 28-4, qui voit le compte ouvert ;
+/// (3) elle **doit** être vue en attente sur sa revérification — la sonde
+/// rend `false` si la tâche a fini sans attendre, et cette issue fait
+/// rougir (revue de code P1, E-4/A-9 : sans l'assertion, une annulation
+/// arrivée à sa garde après le commit de `C` aurait été refusée par la garde
+/// de la 28-4 et le test, vert, n'aurait pas éprouvé la revérification ; au
+/// sol, sans revérification, l'annulation finit sans attendre et rougit
+/// ici) ; (4) `C` commite ; (5) l'issue de l'annulation est rendue — sa
+/// transaction déjà annulée par la tâche si elle a échoué.
+async fn annuler_pendant_une_cloture(
+    ctx: &Ctx,
+    compte: i64,
+    annulation: Annulation,
+) -> Result<(), kesh_db::errors::DbError> {
+    use kesh_db::repositories::bank_accounts::ClosureOutcome;
+    let v = ctx.version(compte).await as i32;
+    let mut cloture = ctx.pool.begin().await.unwrap();
+    let r = bank_accounts::close_in_tx(
+        &mut cloture,
+        ctx.company_id(),
+        compte,
+        v,
+        NaiveDate::from_ymd_opt(2026, 1, 31).unwrap(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        matches!(r, ClosureOutcome::Done { .. }),
+        "montage : la clôture doit passer — {r:?}"
+    );
+    let tache = annulation_en_tache(ctx, annulation);
+    let attend = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &ctx.pool,
+        &MOTIFS_REVERIFICATION,
+        || tache.is_finished(),
+    )
+    .await;
+    if !attend {
+        cloture.rollback().await.unwrap();
+        panic!(
+            "⛔ l'annulation devait attendre sa revérification derrière la clôture — \
+             finie sans attendre : {:?}",
+            tache.await.expect("tâche d'annulation")
+        );
+    }
+    cloture.commit().await.unwrap();
+    tache.await.expect("tâche d'annulation")
+}
+
+/// L'issue attendue de T29b-1 : refus `BankAccountClosed` sur `compte`, rien
+/// d'écrit (instantané [`etat`] inchangé), le compte clos.
+async fn exiger_le_refus(
+    ctx: &Ctx,
+    compte: i64,
+    avant: [i64; 10],
+    r: Result<(), kesh_db::errors::DbError>,
+    geste: &str,
+) {
+    assert!(
+        matches!(
+            r,
+            Err(kesh_db::errors::DbError::BankAccountClosed { bank_account_id })
+                if bank_account_id == compte
+        ),
+        "⛔ {geste} commencée avant la clôture devait être refusée — reçu {r:?}"
+    );
+    assert_eq!(etat(ctx).await, avant, "{geste} : rien d'écrit");
+    assert!(ctx.closed_on(compte).await.is_some(), "le compte est clos");
+}
+
+/// T29b-1 (W9) — l'annulation d'un rapprochement de type `Entry` (la
+/// transaction rapprochée, aucune `pending` : la clôture passe). **Rouge au
+/// sol** : l'annulation aboutit et remet une transaction `pending` sur le
+/// compte qu'on clôt. Tue M29-8.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn la_fenetre_de_l_annulation_d_un_rapprochement_est_fermee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.compte(IBAN_RELEVE, false).await;
+    let (_, t) = ctx.import_pending(a, "-12.00", "f9").await;
+    ctx.rapprocher(a, t).await;
+    let avant = etat(&ctx).await;
+    let r = annuler_pendant_une_cloture(&ctx, a, Annulation::Rapprochement(t)).await;
+    exiger_le_refus(&ctx, a, avant, r, "l'annulation du rapprochement").await;
+}
+
+/// T29b-1 (W24) — la suppression d'un import **vide** (la seule fenêtre de
+/// W24 : un import qui porte des transactions les a `pending`, et la clôture
+/// refuse). **Rouge au sol** : l'import disparaît d'un compte clos. Tue
+/// M29-9.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn la_fenetre_de_la_suppression_d_un_import_vide_est_fermee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.compte(IBAN_RELEVE, false).await;
+    let import: i64 = sqlx::query(
+        "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
+         source_format, period_from, period_to, transaction_count, imported_by_user_id) \
+         VALUES (?, ?, 'vide.xml', ?, 'CAMT053_V04', '2026-01-01', '2026-01-31', 0, ?)",
+    )
+    .bind(ctx.company_id())
+    .bind(a)
+    .bind(format!("{:0>64}", "f24"))
+    .bind(ctx.seeded.admin_user_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let avant = etat(&ctx).await;
+    let r = annuler_pendant_une_cloture(&ctx, a, Annulation::Import(import)).await;
+    exiger_le_refus(&ctx, a, avant, r, "la suppression de l'import vide").await;
+}
+
+/// T29b-1 (W25) — l'annulation d'un règlement client par virement. **Rouge au
+/// sol** : le règlement est annulé sur un compte clos. Tue M29-10.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn la_fenetre_de_l_annulation_d_un_reglement_client_est_fermee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.compte(IBAN_RELEVE, false).await;
+    let facture = ctx.facture_validee().await;
+    let (s, b) = ctx.regler(facture, a).await;
+    assert_eq!(s, 200, "règlement : {b}");
+    let reglement: i64 =
+        sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(facture)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let avant = etat(&ctx).await;
+    let r =
+        annuler_pendant_une_cloture(&ctx, a, Annulation::Reglement { facture, reglement }).await;
+    exiger_le_refus(&ctx, a, avant, r, "l'annulation du règlement").await;
+}
+
+/// T29b-1 (W28) — l'annulation d'une facture fournisseur payée par virement.
+/// **Rouge au sol**. Tue M29-11.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn la_fenetre_de_l_annulation_d_une_facture_fournisseur_payee_est_fermee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.compte(IBAN_RELEVE, false).await;
+    let f = ctx.facture_fournisseur().await;
+    let (s, b) = ctx.payer_fournisseur(f, a).await;
+    assert_eq!(s, 200, "paiement : {b}");
+    let avant = etat(&ctx).await;
+    let r = annuler_pendant_une_cloture(&ctx, a, Annulation::FactureFournisseur(f)).await;
+    exiger_le_refus(&ctx, a, avant, r, "l'annulation de la facture payée").await;
+}
+
+/// T29b-1 (W29) — l'annulation du règlement d'une facture fournisseur par
+/// virement. **Rouge au sol**. Tue M29-12.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn la_fenetre_de_l_annulation_d_un_reglement_fournisseur_est_fermee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.compte(IBAN_RELEVE, false).await;
+    let f = ctx.facture_fournisseur().await;
+    let (s, b) = ctx.payer_fournisseur(f, a).await;
+    assert_eq!(s, 200, "paiement : {b}");
+    let avant = etat(&ctx).await;
+    let r = annuler_pendant_une_cloture(&ctx, a, Annulation::ReglementFournisseur(f)).await;
+    exiger_le_refus(&ctx, a, avant, r, "l'annulation du règlement fournisseur").await;
+}
+
+/// T29b-2, le patron (AC7, « autre entrelacement ») : l'annulation, appelée
+/// dans une transaction de test **non commitée**, a passé sa revérification
+/// (elle tient la ligne du compte en partagé) ; la clôture, lancée en tâche,
+/// **doit** être vue en attente sur son `FOR UPDATE` ; au commit de
+/// l'annulation, la clôture rend son issue.
+async fn clore_apres_une_annulation(
+    ctx: &Ctx,
+    compte: i64,
+    annulation: Annulation,
+) -> kesh_db::repositories::bank_accounts::ClosureOutcome {
+    use kesh_db::repositories::bank_accounts::ClosureOutcome;
+    let mut tx = ctx.pool.begin().await.unwrap();
+    annulation
+        .executer(&mut tx, ctx.company_id(), ctx.seeded.admin_user_id)
+        .await
+        .expect("l'annulation, sur un compte ouvert, passe");
+    let v = ctx.version(compte).await as i32;
+    let (pool, company_id) = (ctx.pool.clone(), ctx.company_id());
+    let cloture = tokio::spawn(async move {
+        let mut c = pool.begin().await.unwrap();
+        let r = bank_accounts::close_in_tx(
+            &mut c,
+            company_id,
+            compte,
+            v,
+            NaiveDate::from_ymd_opt(2026, 1, 31).unwrap(),
+        )
+        .await;
+        if matches!(r, Ok(ClosureOutcome::Done { .. })) {
+            c.commit().await.unwrap();
+        } else {
+            c.rollback().await.unwrap();
+        }
+        r
+    });
+    let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &ctx.pool,
+        &["FROM bank_accounts", "archived = FALSE FOR UPDATE"],
+        || cloture.is_finished(),
+    )
+    .await;
+    assert!(
+        vue,
+        "⛔ la clôture devait attendre l'annulation, qui tient le compte en partagé — reçu {:?}",
+        cloture.await.map(|r| r.map(|_| ()))
+    );
+    tx.commit().await.unwrap();
+    cloture.await.expect("tâche de clôture").expect("clôture")
+}
+
+/// T29b-2 (W9) — l'annulation d'un rapprochement passée d'abord : la clôture
+/// attend son commit, puis voit la transaction redevenue `pending` et refuse
+/// (`412 BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS` à la route). Tue M29-13
+/// (revérification non verrouillante : la clôture n'attendrait pas, et
+/// rendrait `Done` sur la vue d'avant l'annulation).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn une_cloture_attend_l_annulation_d_un_rapprochement_puis_la_voit(pool: MySqlPool) {
+    use kesh_db::repositories::bank_accounts::{ClosureOutcome, ClosureRefusal};
+    let ctx = monter(&pool).await;
+    let a = ctx.compte(IBAN_RELEVE, false).await;
+    let (_, t) = ctx.import_pending(a, "-12.00", "e9").await;
+    ctx.rapprocher(a, t).await;
+    let r = clore_apres_une_annulation(&ctx, a, Annulation::Rapprochement(t)).await;
+    assert!(
+        matches!(
+            r,
+            ClosureOutcome::Refused(ClosureRefusal::PendingTransactions { pending_count: 1 })
+        ),
+        "⛔ la clôture devait voir la transaction redevenue pending — reçu {r:?}"
+    );
+    assert!(ctx.closed_on(a).await.is_none(), "le compte reste ouvert");
+}
+
+/// T29b-2 (W25) — l'annulation d'un règlement passée d'abord : la clôture
+/// attend son commit, puis passe — l'annulation a eu lieu sur un compte
+/// encore ouvert, l'ordre juste. ⚠️ L'issue seule ne distingue pas une
+/// revérification non verrouillante (M29-13 : la clôture, qui ne compte ni
+/// règlements ni écritures, rendrait `Done` aussi) ; c'est l'**attente** de la
+/// clôture, exigée par le montage, qui la distingue.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn une_cloture_attend_l_annulation_d_un_reglement_puis_passe(pool: MySqlPool) {
+    use kesh_db::repositories::bank_accounts::ClosureOutcome;
+    let ctx = monter(&pool).await;
+    let a = ctx.compte(IBAN_RELEVE, false).await;
+    let facture = ctx.facture_validee().await;
+    let (s, b) = ctx.regler(facture, a).await;
+    assert_eq!(s, 200, "règlement : {b}");
+    let reglement: i64 =
+        sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(facture)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let r = clore_apres_une_annulation(&ctx, a, Annulation::Reglement { facture, reglement }).await;
+    assert!(
+        matches!(r, ClosureOutcome::Done { .. }),
+        "⛔ la clôture devait passer après l'annulation — reçu {r:?}"
+    );
+    assert_eq!(
+        ctx.compter(&format!(
+            "SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = {facture}"
+        ))
+        .await,
+        0,
+        "le règlement est annulé"
+    );
+}
+
+/// T29b-5 (AC7, W25) — **une annulation sur un compte archivé passe**,
+/// revérification comprise : la revérification des annulations ne lit que
+/// `closed_on`, jamais `archived` (un compte archivé ne se rouvre pas ;
+/// refuser l'annulation d'un de ses règlements la rendrait définitivement
+/// impossible). Montage : règlement par virement vers `A`, puis `A` archivé
+/// par la route (l'archivage ne compte que les transactions bancaires).
+/// Tue M29-24 (W25 appelle la variante « archivé » : `NotFound`, `404`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn une_annulation_de_reglement_passe_sur_un_compte_archive(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.compte(IBAN_RELEVE, false).await;
+    let facture = ctx.facture_validee().await;
+    let (s, b) = ctx.regler(facture, a).await;
+    assert_eq!(s, 200, "règlement : {b}");
+    let reglement: i64 =
+        sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(facture)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let v = ctx.version(a).await;
+    let (s, b) = ctx
+        .req(
+            reqwest::Method::DELETE,
+            &format!("/api/v1/bank-accounts/{a}"),
+            Some(json!({ "version": v })),
+        )
+        .await;
+    assert_eq!(
+        (s, b["archived"].clone()),
+        (200, json!(true)),
+        "archivage : {b}"
+    );
+
+    let (s, b) = ctx
+        .post(
+            &format!("/api/v1/invoices/{facture}/settlements/{reglement}/cancel"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(
+        s, 200,
+        "⛔ l'annulation sur un compte archivé doit passer : {b}"
+    );
+    assert_eq!(
+        ctx.compter(&format!(
+            "SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = {facture}"
+        ))
+        .await,
+        0,
+        "le règlement est annulé"
+    );
 }

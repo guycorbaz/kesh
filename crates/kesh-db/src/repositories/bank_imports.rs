@@ -445,7 +445,11 @@ pub const LOCK_IMPORT_TRANSACTIONS_SQL: &str = "SELECT id, status, matched_entry
 ///    seconde requête — > 0 ⇒ `HasReconciled`, sans rien écrire ;
 /// 4. `DELETE` de l'entête (`rows_affected() != 1` ⇒ `NotFound`) ; les
 ///    transactions partent par `fk_bank_transactions_import … ON DELETE
-///    CASCADE`, sans `DELETE` explicite.
+///    CASCADE`, sans `DELETE` explicite ;
+/// 5. revérification **verrouillante** du compte clos
+///    (`bank_accounts::recheck_open_locked_in_tx`, Story 29-4b, #651), en
+///    dernière acquisition de verrou — la vue, elle, est née à la garde non
+///    verrouillante de la 28-4, entre les étapes 3 et 4.
 ///
 /// Le verrou de l'entête n'est pas nécessaire à la correction (le contrôle de
 /// `rows_affected()` suffit contre une seconde suppression) : il fixe l'ordre
@@ -464,9 +468,15 @@ pub const LOCK_IMPORT_TRANSACTIONS_SQL: &str = "SELECT id, status, matched_entry
 /// Ce raisonnement sur les lectures verrouillantes vaut sous **MariaDB 10.11**
 /// (`docker-compose.yml`, CI). Avec `innodb_snapshot_isolation` (actif par
 /// défaut depuis 11.6), une lecture verrouillante qui rencontre une version
-/// postérieure à une vue ouverte rend `ER_CHECKREAD` (1020) — sans effet sur le
-/// code nominal (aucune vue n'est ouverte avant les verrous), à revoir à la
-/// montée de version.
+/// postérieure à une vue ouverte rend `ER_CHECKREAD` (1020). Les étapes 1 et 2
+/// n'y sont pas exposées (aucune vue n'est ouverte avant elles) ; la
+/// revérification de l'étape 5, si : elle s'exécute **vue ouverte** (la garde
+/// de la 28-4 l'a fait naître), et tout commit sur la ligne du compte depuis —
+/// la clôture, course même qu'elle traite, mais aussi un `PATCH`, un `PUT`,
+/// une bascule du principal ou une réouverture — lui ferait rendre `1020`, que
+/// `map_db_error` ne traduit pas et qu'aucun rejeu ne reprend (`500`, rien
+/// d'écrit). Sans effet sous 10.11. Non épinglé : porté par #669 (voir
+/// `bank_accounts::recheck_open_locked_in_tx`, § *Angle mort*).
 ///
 /// # Angles morts assumés
 ///
@@ -542,7 +552,8 @@ pub async fn delete_unreconciled_in_tx(
     // dernier verrou avant la première écriture, et ici, il n'y a que le
     // comptage en mémoire. Position imposée par « aucune lecture ordinaire
     // avant le premier verrou » (ci-dessus) et la règle de placement de
-    // `bank_accounts::ensure_open_in_tx`.
+    // `bank_accounts::ensure_open_in_tx`. Revérifiée sous verrou après le
+    // `DELETE` (Story 29-4b, #651).
     super::bank_accounts::ensure_open_in_tx(tx, company_id, import.bank_account_id).await?;
 
     // Étape 4 — l'entête ; les transactions suivent par la cascade.
@@ -555,6 +566,16 @@ pub async fn delete_unreconciled_in_tx(
     if deleted.rows_affected() != 1 {
         return Ok(DeleteBankImportOutcome::NotFound);
     }
+
+    // Étape 5 — Story 29-4b (#651, W24, AC6) : revérification VERROUILLANTE du
+    // compte clos (`closed_on` seul, jamais `archived`), en DERNIÈRE acquisition
+    // de verrou — après le `DELETE`, l'audit étant écrit par la route. Elle ne
+    // mord que sur un import **vide** : un import qui porte des transactions les
+    // a `pending` (aucune n'est rapprochée, étape 3), et la clôture refuse tant
+    // que la suppression n'est pas commitée. Angle mort `innodb_snapshot_isolation`
+    // (MariaDB ≥ 11.6, #669) et détail : voir
+    // `bank_accounts::recheck_open_locked_in_tx`.
+    super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, import.bank_account_id).await?;
 
     Ok(DeleteBankImportOutcome::Deleted(DeletedBankImport {
         import,
