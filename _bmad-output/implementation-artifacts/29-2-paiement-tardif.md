@@ -2,7 +2,13 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `16eeed21`
+**review** — développement fait le 2026-10-14 (`bmad-dev-story`, Opus 5.5) : commits `8f483388` (tests et code) et
+`d45279f7` (documentation, derniers doc-comments) ; gate backend 3611/3611, Vitest 1610, E2E 279 passés + 8 échecs
+attendus ; 20 mutations jouées (17 tuées dont M14bis, ajoutée ; M12, M13 et M14 équivalentes) ; choix C-29-2-15 et 16,
+annotation de C-29-2-8 ; revue de code P1 à lancer (`29-2-review-prompt-p1.md`, Sonnet, lentilles B/E/A). Cf. Dev
+Agent Record.
+
+*Statut antérieur :* **ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `16eeed21`
 (kickoff de l'Epic 29), branche `story/29-2`, worktree `/home/gcorbaz/devel/kesh-29-2`. Validation P1 faite
 (Sonnet, lentilles R et F : 1 HIGH, 3 MEDIUM et 8 LOW distincts après fusion des doublons, remédiés — cf. Change
 Log) ; validation P2 faite (Opus, lentilles R et F : 2 MEDIUM et 12 LOW distincts après fusion, remédiés — cf.
@@ -408,17 +414,17 @@ Le Dev Agent Record ne déclare que ce qui a tourné, chiffres recomptés.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Tests rouges** (AC5, AC6) : helpers de rappel et d'échéance, cas a à k, inter-factures, inter-sociétés,
+- [x] **T1 — Tests rouges** (AC5, AC6) : helpers de rappel et d'échéance, cas a à k, inter-factures, inter-sociétés,
       unitaires de `check` (dont `check(D − 10, D + 20)`), parité HTTP, cas de #529 ; constater le rouge (compilation
       ou assertion) avant T2.
-- [ ] **T2 — `kesh-db`** (AC1, AC2, AC3) : jointure et expression d'ancrage, `find_unpaid_invoices_for_window`,
+- [x] **T2 — `kesh-db`** (AC1, AC2, AC3) : jointure et expression d'ancrage, `find_unpaid_invoices_for_window`,
       `invoice_payment_anchor_date`, renommage du champ, `check(F, A)`, doc-comments.
-- [ ] **T3 — `kesh-api`** (AC4) : étape 6 d'`accept_one_invoice` ; commentaire de `get_proposals` (`:653-655`) qui
+- [x] **T3 — `kesh-api`** (AC4) : étape 6 d'`accept_one_invoice` ; commentaire de `get_proposals` (`:653-655`) qui
       décrit la fenêtre ; aucun autre site (inventaire (a)).
-- [ ] **T4 — Revérifier l'inventaire (c)** (AC7) et copier la sortie au Dev Agent Record.
-- [ ] **T5 — Manuel FR + PDF, `api-external.md`, CHANGELOG** (AC8).
-- [ ] **T6 — Propagation** : le grep de § *Propagation*, trié à la main, sortie résumée au Dev Agent Record.
-- [ ] **T7 — Mutations** (AC9) et **gates** (AC10) ; Dev Agent Record.
+- [x] **T4 — Revérifier l'inventaire (c)** (AC7) et copier la sortie au Dev Agent Record.
+- [x] **T5 — Manuel FR + PDF, `api-external.md`, CHANGELOG** (AC8).
+- [x] **T6 — Propagation** : le grep de § *Propagation*, trié à la main, sortie résumée au Dev Agent Record.
+- [x] **T7 — Mutations** (AC9) et **gates** (AC10) ; Dev Agent Record.
 
 ## Dev Notes
 
@@ -585,11 +591,161 @@ Trois : pas de découpage.
 
 ### Agent Model Used
 
+Opus 5.5 (`bmad-dev-story`, autonomie), worktree `/home/gcorbaz/devel/kesh-29-2`, base `fcd2ae75` ; bases
+`kesh_292` (gate) et `kesh_e2e_292` (E2E), port 3043, `CARGO_TARGET_DIR` du worktree.
+
 ### Debug Log References
+
+Journaux (hors dépôt) : `/home/gcorbaz/devel/kesh-gate-logs/292-red-api.log`, `292-red-db.log` (rouges),
+`292-mutations-campagne1.log` et `292-mutations-M14bis.log` (mutations), `292-gate-backend.log`,
+`292-gate-frontend.log`, `292-make-fr.log`, `292-e2e.log` et `292-e2e-backend.log`.
 
 ### Completion Notes List
 
+**Tests rouges d'abord (T1), constatés avant le code.**
+
+- `kesh-api` (le test compile contre l'ancien code ; rouge à l'assertion), 4 tests filtrés, 2 rouges :
+  ```
+  a_payment_after_the_due_date_is_proposed_and_settles_the_invoice … panicked at reconciliation_e2e.rs:3304:5:
+    {"bankTransactionId":1,"candidates":[],…}   left: None   right: Some("invoice")
+  proposal_and_acceptance_share_the_anchor_of_due_date_and_reminders … panicked at reconciliation_e2e.rs:3229:5:
+    cas proposés : b, d, f, i, j, k
+      left: {(9, 9), (10, 10)}
+     right: {(2, 2), (4, 4), (6, 6), (9, 9), (10, 10), (11, 11)}
+  Summary 4 tests run: 2 passed, 2 failed
+  ```
+  (avant la story, seuls i et j sont proposés — et `proposed == accepted` passait déjà : la 28-7 tient la parité ;
+  c'est l'ensemble qui change.)
+- `kesh-db` : rouge à la compilation (fonction et champ absents, `check` à un argument) :
+  ```
+  error[E0425]: cannot find function `invoice_payment_anchor_date` in module `reconciliation_repo` (×4)
+  error[E0609]: no field `earliest_anchor_date` on type `reconciliation::InvoiceDateWindow`
+  error[E0061]: this method takes 1 argument but 2 arguments were supplied
+  ```
+
+**Implémentation (T2, T3).** Écart de forme à AC1, consigné **C-29-2-15** (consigne de l'orchestrateur) : l'ancre et
+sa jointure sont des `macro_rules!` (`invoice_payment_anchor_sql!`, `invoice_payment_anchor_join_sql!`), dont dérivent
+les `const` `INVOICE_PAYMENT_ANCHOR_SQL` et `INVOICE_PAYMENT_ANCHOR_JOIN_SQL` ; la requête scalaire est assemblée par
+`concat!` sur les mêmes macros. L'ancre s'écrit en deux termes,
+`CAST(GREATEST(GREATEST(i.date, COALESCE(i.due_date, i.date)), COALESCE(DATE(rmd.last_sent_at), i.date)) AS DATE)` —
+équivalente au `GREATEST` à trois termes de la fiche —, le premier terme étant l'**exigibilité** que la 29-5 remplacera
+par sa macro. Fonction de jointure de la fiche (`invoice_payment_anchor_joins()`) : non créée, la constante suffit (une
+seule table dérivée). Proposition : `AND i.date <= ? AND {INVOICE_PAYMENT_ANCHOR_SQL} >= ?`, jointure placée après
+`amount_due_derived_joins()` ; statut, `HAVING`, `ORDER BY i.date ASC, i.id ASC`, `LIMIT 50` inchangés. Champ renommé
+`earliest_anchor_date` ; `check(invoice_date, anchor_date)`. Acceptation : lecture ajoutée entre les trois gardes
+d'éligibilité et `check` ; `Ok(None)` → `INVOICE_NOT_FOUND` (`details.invoiceId`), `Err` → `DATABASE_ERROR`
+(`details.message`), tous deux en `FailedProposal`, aucun `?`. **Angle mort assumé (AC4)** : ces deux bras ne sont ni
+testés ni mutés ; ils se vérifient à la revue de code.
+
+**Verrous et naissance de la vue (B5).** `invoice_payment_anchor_date` est un `SELECT` ordinaire sans `FOR UPDATE`
+(`reconciliation.rs:325`, doc). Ordre dans `accept_one_invoice` (`grep -n`) :
+```
+1637:    let bank_transaction = match reconciliation_repo::find_pending_by_id_for_account(   ← lecture ordinaire (suffixe "")
+1682:    let invoice = match reconciliation_repo::find_invoice_by_id_for_company(
+1711:        contacts_repo::find_by_id_in_company(&mut **tx, invoice.contact_id, company_id)
+1751:        match reconciliation_repo::invoice_payment_anchor_date(&mut **tx, company_id, invoice.id)
+```
+La première lecture ordinaire du chemin (`find_pending_by_id_for_account`, `bank_tx_by_id_for_account_sql("")`) fait
+naître la vue ; la lecture ajoutée vient trois lectures après et ne prend aucun verrou.
+
+**Inventaire (c) revérifié (T4)**, même commande que § *Inventaire (c)* :
+```
+crates/kesh-api/tests/bank_account_closed_inventory.rs: proposals=0 accept=2 due_date=0 reminders=0
+crates/kesh-api/tests/bank_accounts_closed_e2e.rs: proposals=1 accept=3 due_date=1 reminders=0
+crates/kesh-api/tests/rejeu_interblocage_e2e.rs: proposals=0 accept=1 due_date=0 reminders=0
+crates/kesh-api/tests/reconciliation_e2e.rs: proposals=13 accept=49 due_date=9 reminders=1
+crates/kesh-api/tests/reconciliation_rules_e2e.rs: proposals=8 accept=5 due_date=0 reminders=0
+crates/kesh-db/tests/bank_import_delete.rs: proposals=0 accept=1 due_date=0 reminders=0
+crates/kesh-db/tests/invoice_settlement.rs: proposals=0 accept=1 due_date=1 reminders=0
+crates/kesh-db/tests/invoice_write_off.rs: proposals=2 accept=0 due_date=1 reminders=0
+crates/kesh-db/tests/letterings_lexical.rs: proposals=0 accept=1 due_date=0 reminders=0
+crates/kesh-db/tests/reconciliation_repository.rs: proposals=15 accept=0 due_date=7 reminders=2
+```
+Mêmes dix fichiers qu'au sol ; seuls changent les compteurs des deux fichiers qui portent les tests neufs. Aucun test
+existant n'a vu son assertion modifiée ; seul le doc-comment de `proposal_and_acceptance_share_the_invoice_date_window`
+(AC6) et celui de `find_unpaid_invoices_filters_by_30_day_window` (propagation) sont réécrits. Les inventaires
+d'écrivains (`bank_account_closed_inventory.rs`, `letterings_lexical.rs`) sont verts au gate complet.
+
+**Documentation (T5).** Manuel FR : `:1305`, `:2029`, `:2031` (deux phrases et la course, C-29-2-14), `:2902` ; un
+`\label{sec:algorithme-matching}` neuf (**C-29-2-16**) porte les renvois. PDF régénéré (`make fr`, sous verrou, 3
+passes stables) ; `admin-manual.pdf` et `marketing-brochure.pdf`, régénérés sans changement de source, ont été remis
+à leur version commitée. Contrôle aplati :
+```
+sa date, pas son échéance : 0
+pas de son échéance : 0
+30 jours de la date de la facture : 0
+aucune limite de 30 jours après la facture : 0
+n.est plus refusée pour sa date : 0
+30 jours après la date de la facture : 0
+```
+et `grep -o "dernier rappel[^.]*"` rend cinq passages neufs (§ rappels, algorithme ×2, `sec:facture-posterieure`,
+FAQ). Brochure `:167` triée, **non modifiée** (la fenêtre reste de 30 jours). `docs/api-external.md` : paragraphe
+**Dates** neuf. `CHANGELOG.md` : `## [0.13.4] — Non publié`, `### Corrigé`, texte prescrit d'AC8 tel quel. Aucun
+fichier frontend, aucune clé i18n, aucune capture (C-29-2-6). Garde `textes_coherents` : verte au gate complet.
+
+**Propagation (T6).** `grep -rnE` de § *Propagation* (sans les jetons `30 jours`/`window_days`, trop larges, triés à
+part) : restent les mentions neuves de la story, la phrase du reliquat (« plus de 30 jours après l'échéance », juste),
+et l'entrée 0.13.3 du CHANGELOG (`:74-75`, relevé daté d'une version publiée, **non réécrit**). Le doc-comment de
+`find_unpaid_invoices_filters_by_30_day_window` (« paiement plus de 30 jours après la facture ») a été précisé
+(factures sans échéance ni rappel). `failed-proposal-label.ts:55` ne cite que les noms de raison : inchangé.
+
+**Mutations (T7, AC9)** — 20 jouées (les 19 lignes de la campagne, dont la combinaison M12 + M13 et la variante
+M10b-appel, puis M14bis) : 17 tuées, 3 équivalentes ; script hors dépôt (scratchpad de la session), motif vérifié unique avant écriture,
+restauration `git checkout -- <fichier> && touch <fichier>` après chacune ; filtre : `binary(reconciliation_repository)`,
+unitaires `reconciliation::tests`, et cinq tests de `reconciliation_e2e` (27 tests).
+
+| # | Résultat | Tuée par |
+|---|---|---|
+| M1 (exigibilité réduite à `i.date`) | tuée, 3 rouges | `the_anchor_is_the_latest_…` (kesh-db), parité 29-2, cas de #529 |
+| M2 (terme du rappel retiré) | tuée, 4 rouges | `the_anchor_is_the_latest_…`, `a_reminder_moves_only_…`, `the_anchor_of_an_invoice_is_scoped_…`, parité 29-2 |
+| M3 (`cancelled_at IS NULL` retiré) | tuée, 2 rouges | `the_anchor_is_the_latest_…` (e), parité 29-2 |
+| M4 (`MAX` → `MIN`) | tuée, 2 rouges | `the_anchor_is_the_latest_…` (f), parité 29-2 |
+| M5 (`COALESCE(i.due_date, i.date)` → `i.due_date`) | tuée, 13 rouges | dont `the_anchor_is_the_latest_…` et tous les tests de fenêtre sans échéance |
+| M6 (acceptation : `check(F, F)`) | tuée, 2 rouges | parité 29-2, cas de #529 |
+| M7 (`>=` → `>`) | tuée, 5 rouges | `the_anchor_is_the_latest_…` (b), `find_unpaid_invoices_filters_by_30_day_window`, `find_unpaid_invoices_orders_by_date_then_id_before_limit`, parités 28-7 et 29-2 |
+| M8 (ordre des refus inversé) | tuée, 1 rouge | `check_refuses_payment_before_invoice_first` |
+| M9a (`ON rmd.invoice_id = i.contact_id`) | tuée, 3 rouges | `the_anchor_is_the_latest_…`, `a_reminder_moves_only_…`, parité 29-2 |
+| M9b (`ON 1 = 1`, jointure croisée) | tuée, 3 rouges | idem |
+| M10a (borne haute sur l'ancre, proposition) | tuée, 2 rouges | `the_anchor_is_the_latest_…` (j, k), parité 29-2 |
+| M10b (borne haute sur `anchor_date` dans `check`) | tuée, 4 rouges | les trois unitaires de `check`, parité 29-2 |
+| M10b-appel (`check(A, A)` à l'appel) | tuée, 1 rouge | parité 29-2 |
+| M11 (scalaire sans `company_id`, prédicat et `bind`) | tuée, 1 rouge | `the_anchor_of_an_invoice_is_scoped_to_its_company` |
+| M12 (`DATE()` retiré) | **équivalente**, 27/27 verts | le `CAST(… AS DATE)` extérieur tronque le maximum (troncature monotone) — comme déclaré (C-29-2-10) |
+| M13 (`CAST` retiré) | **équivalente constatée**, 27/27 verts | MariaDB rend déjà un `DATE` (`GREATEST` de `DATE` et de `DATE()`) |
+| M12 + M13 | tuée, 8 rouges | décodage : `mismatched types; Rust type NaiveDate (as SQL type DATE) is not compatible with SQL type DATETIME` |
+| M14 (`i.date` retiré du premier terme) | **équivalente, démontrée** — 27/27 verts | ⚠️ **écart à la fiche** : le repli `i.date` du terme du rappel (`COALESCE(DATE(rmd.last_sent_at), i.date)`) garde `F` dans le `GREATEST` ; la fiche (« tuée par g, scalaire `D − 50` ») se trompait, et la forme à trois termes de la fiche aurait la même équivalence. Remplacée par **M14bis** |
+| M14bis (`i.date` retiré du premier terme **et** repli du rappel sur l'échéance) | tuée, 1 rouge | `the_anchor_is_the_latest_…`, assertion **scalaire** du cas g (seule à la voir, comme la fiche le prévoyait pour M14) |
+| M15 (`GROUP BY id`) | tuée, 2 rouges | `the_anchor_is_the_latest_…` (f dédoublée dans le `Vec`), parité 29-2 |
+
+État après la campagne : `git status --short crates` vide.
+
+**Gates (AC10)**, au dernier commit de code (`d45279f7`, qui porte les derniers doc-comments), base `kesh_292`
+recréée, migrée et seedée juste avant :
+
+- `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest), sous verrou : **3611 tests run: 3611 passed,
+  6 skipped** (166,8 s). Recompte : 3604 au sol + 7 neufs (2 unitaires `check_refuses_payment_before_invoice_first`,
+  `check_admits_an_invoice_not_yet_due` ; 3 `kesh-db` ; 2 `kesh-api`) = 3611.
+- Frontend, sous verrou : `npm run check` 0 erreur (29 avertissements, 5 fichiers — préexistants) ;
+  `lint-i18n-ownership` PASS ; `npm run test:unit` **146 fichiers, 1610 tests** verts ; `npm run build` vert.
+- E2E complet, sous verrou, base `kesh_e2e_292` recréée, port 3043, recette de `docs/testing.md` : **279 passed,
+  8 failed, 19 skipped** (11,1 min). Les 8, fichier par fichier contre § *Les échecs attendus* : les **7 KF-029**
+  (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et
+  `sidebar-navigation.spec.ts:75` (KF-052 ou pollution — **non rejoué seul**, les deux causes sont dans la liste).
+  Compte dans la fourchette 7 à 10. **Aucune spec de réconciliation, de rappels ni de factures en échec** (AC7).
+
 ### File List
+
+- `crates/kesh-db/src/repositories/reconciliation.rs` — macros et constantes de l'ancre, `InvoiceDateWindow`
+  (champ renommé, `check(F, A)`), `invoice_payment_anchor_date`, `find_unpaid_invoices_for_window`, doc-comments,
+  unitaires.
+- `crates/kesh-db/tests/reconciliation_repository.rs` — helpers `set_test_due_date`, `insert_test_reminder` ; trois
+  tests neufs ; un doc-comment précisé.
+- `crates/kesh-api/src/routes/reconciliation.rs` — étape 6 d'`accept_one_invoice` ; commentaire de `get_proposals`.
+- `crates/kesh-api/tests/reconciliation_e2e.rs` — helpers `set_due_date_292`, `insert_reminder_292` ; deux tests
+  neufs ; doc-comment du test de parité de la 28-7.
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`, `docs/api-external.md`, `CHANGELOG.md`.
+- `_bmad-output/implementation-artifacts/epic-29-choix-autonomes-29-2.md` (C-29-2-15, C-29-2-16, annotation de
+  C-29-2-8), `29-2-review-prompt-p1.md`, cette fiche, `sprint-status.yaml`.
 
 ## Change Log
 
@@ -691,3 +847,14 @@ Trois : pas de découpage.
     (`routes/invoices.rs:765`, `:816`) ; le cas g de l'AC5 (E < F) est une fixture hors API, qui éprouve le `GREATEST`.
   **Validation close** : la remédiation de la passe ciblée ne touche que la fiche, aucune ligne de production
   (règle de la passe ciblée du `CLAUDE.md`). Trend : P1 1 HIGH / 3 MEDIUM → P2 0 / 3 → P3 ciblée 0 / 1 réel.
+- 2026-10-14 — **Développement** (`bmad-dev-story`, Opus 5.5, autonomie) sur `fcd2ae75` : commits `8f483388` (tests
+  rouges puis code, `kesh-db` et `kesh-api`) et `d45279f7` (manuel FR et PDF, `api-external.md`, CHANGELOG 0.13.4,
+  registre, prompt de revue P1, doc-comments). Deux consignes de l'orchestrateur reçues en cours : ancre écrite par
+  `macro_rules!` pour que la 29-5 y insère l'exigibilité (**C-29-2-15**) ; rejet d'une ligne sans proposition livré par
+  la 29-6, mergée avant le tag (annotation de **C-29-2-8**, texte du manuel gardé). Label neuf
+  `sec:algorithme-matching` (**C-29-2-16**). Écart à la fiche : **M14 est équivalente** (le repli `i.date` du terme du
+  rappel garde `F`) — la fiche la disait tuée par le cas g ; remplacée par M14bis, tuée par l'assertion scalaire de g.
+  Gates au dernier commit de code : backend 3611/3611 (6 ignorés), Vitest 1610/1610, check/lint/build verts, E2E 279
+  passés, 8 échecs attendus (7 KF-029 + `sidebar-navigation.spec.ts:75`). Décomptes recomptés depuis les journaux :
+  7 tests neufs, 20 mutations jouées (17 tuées, 3 équivalentes), 16 choix (C-29-2-1 à 16). Prochaine étape : revue de
+  code P1, Sonnet, lentilles B/E/A (`29-2-review-prompt-p1.md`).
