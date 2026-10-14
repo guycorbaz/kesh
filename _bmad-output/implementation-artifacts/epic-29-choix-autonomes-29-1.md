@@ -415,3 +415,102 @@
 
 - 2026-10-14 — validation P4 (passe ciblée) remédiée : P4-1 à P4-4, aucune ligne de production touchée ; validation
   close, dev à lancer.
+
+## Choix du développement de la 29-1a (2026-10-14, Opus 5.5, `bmad-dev-story`)
+
+### C-29-1-32 — `balances_from_row` passe `pub(crate)`
+
+- **Contexte** : l'AC3 écrit `fn balances_from_row` (privée) ; or K3, dans `closing_checks`, doit passer d'une
+  `BalancesRow` à des `BankAccountBalances` pour appeler `statement_gap` et lire `statement_date`.
+- **Retenu** : `pub(crate)`, comme `balances_by_bank_account`, `BalancesRow` et `is_shared`. Le `match` reste écrit une
+  seule fois.
+- **Écartées** : faire rendre des `BankAccountBalances` à `balances_by_bank_account` (K3 perdrait `is_shared`, qui lit
+  la ligne) ; recopier le `match` dans `closing_checks` (DRY).
+- **Réversible** : oui.
+
+### C-29-1-33 — `count` de K1 et K7 : 1 en `attention`, 0 sinon
+
+- **Contexte** : la fiche donne un `count` à chaque contrôle ; K1 (antérieur ouvert) et K7 (suivant absent) n'ont pas
+  de liste à compter.
+- **Retenu** : `count` = nombre de points relevés ; pour K1 et K7, `1` quand le contrôle est en `attention`, `0` sinon.
+  Écrit au doc-comment du module et à `api-external.md`.
+- **Écartées** : `count` facultatif (forme JSON variable selon le code) ; compter les antérieurs ouverts (le panneau
+  n'en nomme qu'un, le plus ancien).
+- **Réversible** : oui (changement de contrat à annoncer).
+
+### C-29-1-34 — K4 : libellé = nom du contact, lien par facture et lien filtré
+
+- **Contexte** : « le libellé est celui de la liste des factures » ; un brouillon n'a pas de numéro, la liste l'affiche
+  par son contact (`invoiceNumber ?? contactName`).
+- **Retenu** : `label` = `contacts.name` ; chaque brouillon mène à `/invoices/{id}` ; le lien du contrôle ouvre
+  `/invoices?status=draft&dateFrom=…&dateTo=…`, filtres que la liste lit déjà dans l'URL. `date` ajoutée à chaque
+  élément (affichée au format suisse).
+- **Réversible** : oui.
+
+### C-29-1-35 — T-a2 : le volet (a) lit aussi le source décommenté
+
+- **Contexte** : l'AC2 retire les lignes de commentaire pour le volet (b) seulement. La doc du module cite `query*` en
+  prose.
+- **Retenu** : les deux volets lisent le source hors tests **décommenté** (lignes dont le premier non-blanc est `//`) ;
+  un site n'est d'ailleurs compté que si le mot est suivi de `::<` ou de `(`. Un appel en commentaire n'est pas du code.
+- **Écartée** : le volet (a) sur le source brut — un commentaire citant `query(` rougirait sans défaut.
+- **Réversible** : oui.
+
+### C-29-1-36 — K7 : le lien « Créer l'exercice suivant » ouvre le dialogue de création de la même page
+
+- **Contexte** : l'AC5 demande un lien *Nouvel exercice* (Admin / Comptable) ; la création est un dialogue de la page
+  des exercices, sans route propre.
+- **Retenu** : un bouton du panneau ferme le panneau et ouvre ce dialogue ; absent pour Consultation
+  (`onCreateFiscalYear` non fourni).
+- **Réversible** : oui.
+
+### C-29-1-37 — Le rappel du dialogue de clôture fait sa propre lecture
+
+- **Contexte** : l'AC6 dit « charge les mêmes contrôles à son ouverture ».
+- **Retenu** : une lecture à chaque ouverture du dialogue (jamais la réponse du panneau, qui peut dater) ; un jeton de
+  requête écarte une réponse arrivée pour un autre exercice ; le lien « Voir le détail » ferme le dialogue de clôture et
+  ouvre le panneau, qui relit.
+- **Réversible** : oui.
+
+### C-29-1-38 — K6 en une requête à drapeaux, liste tronquée en Rust
+
+- **Retenu** : une ligne par écriture de la population (écritures de Y, ou datées dans Y), un drapeau `CAST(… AS
+  SIGNED)` par motif, `HAVING` sur leur disjonction ; `count` = nombre de lignes (écritures distinctes par
+  construction), `countByReason` sommé en Rust, liste tronquée à 20 dans l'ordre `entry_date, id`. Les totaux de
+  lignes sont agrégés dans une table dérivée bornée à la société.
+- **Écartées** : une requête par motif puis déduplication en Rust (quatre lectures, dédoublonnage à écrire).
+- **Réversible** : oui.
+
+### C-29-1-39 — E2E T-a13 sur le préréglage `with-company`, captures « sombre » = clair
+
+- **Retenu** : la spec `fiscal-years.spec.ts` réutilise son préréglage (`with-company`, exercice 2020-2030) et le relevé
+  CAMT synthétique `camt053_v04_minimal.xml` réécrit (une transaction en attente, IBAN de test) ; captures du panneau et
+  du rappel en `light` et `dark` dans `kesh-gate-logs/29-1a-captures/`. Kesh n'a pas de thème sombre (C-28-1-7) : les
+  captures « sombres » sont identiques octet pour octet aux claires (`cmp`), ce que la recette constate.
+- **Réversible** : oui.
+
+### C-29-1-40 — Trois formulations reprises pour les gardes de rédaction
+
+- **Contexte** : au gate, G8 / G8-bis (`kesh-i18n`, verbe « rouvrir » en fr-CH sans ordre ni borne), G11 (allemand :
+  « Schliessen » nu réservé aux panneaux) et G18 (`textes_coherents`, « autre société » au manuel) ont rougi sur des
+  textes neufs.
+- **Retenu** : « fermez ce panneau, puis ouvrez-le de nouveau » (fr-CH et repli) ; « Öffnen Sie dieses Fenster später
+  erneut » (de-CH) ; au manuel, la limite de K6 dit « le compte de chaque ligne appartient bien au plan comptable du
+  dossier de l'écriture » au lieu de « une autre société ». Les gardes ne sont pas touchées.
+- **Réversible** : oui.
+
+### C-29-1-41 — `api-external.md` : une ligne « Exercices comptables » et la note ¹⁰
+
+- **Contexte** : le tableau des ressources n'avait pas de ligne d'exercices ; l'AC3 disait « rien à ajouter » pour les
+  champs du relevé.
+- **Retenu** : la ligne (lectures, écritures ouvertes aux clés, réouverture fermée — `ensure_not_pat`, vérifié au code)
+  et la note ¹⁰ (forme, codes, ordre, remarque sur K5) ; la note nomme `statementGap` comme le même écart, en une
+  phrase.
+- **Réversible** : oui.
+
+### C-29-1-42 — PDF du manuel d'administration et de la brochure non commités
+
+- **Contexte** : `make fr` régénère les trois PDF ; seules les sources du manuel utilisateur ont changé.
+- **Retenu** : les deux autres PDF, recompilés sans changement de source, sont restaurés (`git checkout --`) : leur
+  différence n'était que de compilation.
+- **Réversible** : oui.

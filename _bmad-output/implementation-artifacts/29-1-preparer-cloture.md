@@ -8,6 +8,9 @@ faite (Sonnet, R 0/0/9/9, F 0/0/3/4 — remédiée, Change Log) ; validation P2 
 remédiée, Change Log ; **signal D5 levé et déclaré**) ; validation P3 faite (Sonnet, R 0/0/2/12, F 0/0/1/2 —
 remédiée, Change Log ; **signal D5 au troisième tour, deux formes retirées** : M-b13, volets (c) et (d) de T-a2) ;
 passe ciblée P4 à lancer (`29-1-validate-prompt-p4-ciblee.md`, Haiku, une lentille).
+**2026-10-14 — 29-1a développée** (`bmad-dev-story`, Opus 5.5) : clé `29-1a-controles-prealables` en **`review`** ;
+dernier commit de code `7c643eba` ; revue de code P1 à lancer (`29-1a-review-prompt-p1.md`, Sonnet, lentilles B, E,
+A). La 29-1b reste `ready-for-dev`.
 
 ⛔ **Deux stories, une fiche, deux PR successives** (C-29-1-1, précédents C-26-2-15 et C-28-4-1) :
 
@@ -622,22 +625,22 @@ livrables de l'ancienne AC19, `api-external.md` et CHANGELOG de la 29-1b, sont �
 
 ### 29-1a
 
-- [ ] **Ta1** — Tests rouges d’abord : T-a1 à T-a16 (AC1-AC6, AC3-bis). En T0, **mesurer** le comportement de
+- [x] **Ta1** — Tests rouges d’abord : T-a1 à T-a16 (AC1-AC6, AC3-bis). En T0, **mesurer** le comportement de
       MariaDB 10.11 devant `SELECT 1 FROM fiscal_years LIMIT 1 FOR UPDATE` exécuté sur `ReadSnapshot::conn()` (un test
       d'une ligne) et consigner l'issue — erreur ou succès — au Dev Agent Record ; la garde T-a2 reste (AC2, P2 F L3).
-- [ ] **Ta2** — `crates/kesh-db/src/repositories/closing_checks.rs` (neuf, `pub mod` dans `repositories/mod.rs`) :
+- [x] **Ta2** — `crates/kesh-db/src/repositories/closing_checks.rs` (neuf, `pub mod` dans `repositories/mod.rs`) :
       types `ClosingChecks`, `ClosingCheck`, enums `Severity`, `CheckStatus`, détails par code ; doc de module (les
       sept contrôles, l'instantané, ce que K5 et K6 ne disent pas, et la **liste des fonctions de dépôt externes**
       appelées — angle mort de T-a2, vérifié en revue de code) (AC1, AC2).
-- [ ] **Ta3** — Extraction `BALANCES_SQL` / `balances_by_bank_account` / `balances_from_row` dans
+- [x] **Ta3** — Extraction `BALANCES_SQL` / `balances_by_bank_account` / `balances_from_row` dans
       `bank_accounts.rs`, SQL unique avec borne, `BalancesRow` `pub(crate)`, `is_shared` et `statement_gap` (AC3) ;
       `EARLIER_OPEN_SQL`, `earlier_open_locking_sql`, `find_earliest_earlier_open`, `NEXT_AFTER_SQL`,
       `find_next_after` dans `fiscal_years.rs`, `FIND_EARLIER_OPEN_SQL` retirée et son nom propagé aux doc-comments
       l. 868 et 999 et au commentaire de la page l. 118 (AC3-bis).
-- [ ] **Ta4** — Route et handler `get_closing_checks` dans `routes/fiscal_years.rs`, DTO camelCase, montage
+- [x] **Ta4** — Route et handler `get_closing_checks` dans `routes/fiscal_years.rs`, DTO camelCase, montage
       `lib.rs` (AC4) ; champ `statement_gap` de `BankAccountWithBalance` (`routes/bank_accounts.rs`) et son test neuf
       dans `bank_accounts_e2e.rs` (AC3, T-a16).
-- [ ] **Ta5** — Frontend : types et client `fiscal-years.api.ts` (`getClosingChecks`), composant
+- [x] **Ta5** — Frontend : types et client `fiscal-years.api.ts` (`getClosingChecks`), composant
       `FiscalYearChecks.svelte` dans `features/fiscal-years/`, colonne d'actions rendue pour tous les rôles, bouton
       et dialogue dans la page, rappel du dialogue de clôture (AC5, AC6). **Test existant à adapter** :
       `frontend/src/routes/(app)/settings/fiscal-years/fiscal-years-page.test.ts` l. 42-48 mocke
@@ -648,11 +651,11 @@ livrables de l'ancienne AC19, `api-external.md` et CHANGELOG de la 29-1b, sont �
       `homepage.ts::statementGap` lit le champ, `toCentime` supprimé ; `homepage.test.ts` (cas d'arrondi remplacés par
       un test de lecture) et les fabriques de `BankAccountSummary` adaptées — fichiers nommés au Dev Agent Record parmi
       les tests modifiés.
-- [ ] **Ta6** — i18n ×4 (AC7) ; gardes à garder vertes : `lint-i18n-ownership`, `i18n-keys.test.ts`, G4-bis de
+- [x] **Ta6** — i18n ×4 (AC7) ; gardes à garder vertes : `lint-i18n-ownership`, `i18n-keys.test.ts`, G4-bis de
       `textes_coherents.rs` (numéros de compte cités dans les `messages.ftl`, P2 R15).
-- [ ] **Ta7** — Manuel utilisateur + PDF ; `api-external.md` ; CHANGELOG (AC8, AC9) ; garde G4-bis verte (manuel
+- [x] **Ta7** — Manuel utilisateur + PDF ; `api-external.md` ; CHANGELOG (AC8, AC9) ; garde G4-bis verte (manuel
       utilisateur, P2 R15).
-- [ ] **Ta8** — Mutations M-a1 à M-a22 (M-a9 déclarée équivalente, non exécutée) ; captures clair et sombre du panneau et du dialogue (hors dépôt,
+- [x] **Ta8** — Mutations M-a1 à M-a22 (M-a9 déclarée équivalente, non exécutée) ; captures clair et sombre du panneau et du dialogue (hors dépôt,
       `/home/gcorbaz/devel/kesh-gate-logs/29-1a-captures/`) ; gate complet et E2E complet au dernier commit de code.
 
 ### 29-1b
@@ -954,9 +957,137 @@ remplace — C-29-1-27.)*
 
 ### Agent Model Used
 
-(à remplir par `bmad-dev-story`)
+29-1a : Opus 5.5 (`bmad-dev-story`, autonomie, worktree `/home/gcorbaz/devel/kesh-29-1`, bases `kesh_291` /
+`kesh_e2e_291`, port 3042). 29-1b : (à remplir).
 
 ### Debug Log References
+
+Journaux (hors dépôt) `/home/gcorbaz/devel/kesh-gate-logs/291a-*` : `291a-red.log` (phase rouge), `291a-gate1.log`
+(gate backend intermédiaire), `291a-vitest1.log`, `291a-e2e-target1.log`, `291a-mutations.log` (deux passes),
+`291a-final-{summary,backend,check,lint,vitest,build,e2e}.log` (gate final au dernier commit de code). Scripts
+(scratchpad de la session, non versés) : `291a-reset-db.sh`, `291a-e2e.sh`, `291a-mutations.py`,
+`291a-final-gate.sh`. Captures : `kesh-gate-logs/29-1a-captures/`.
+
+### 29-1a — compte rendu de développement (2026-10-14)
+
+**Commits** (branche `story/29-1`, base `fcd2ae75`) : `ae6d9419` (serveur), `bf5f8238` (écran, i18n, documentation),
+`7c643eba` (T-a15 : constante renommée) — **dernier commit de code** — puis un commit de comptes rendus (fiche,
+registre, `sprint-status.yaml`, prompt de revue).
+
+**T0 (AC2, mesure)** : MariaDB 10.11.16 **refuse** `SELECT 1 FROM fiscal_years LIMIT 1 FOR UPDATE` sur
+`ReadSnapshot::conn()` — erreur **1792** (`Cannot execute statement in a READ ONLY transaction`, SQLSTATE `25006`),
+mesuré au client `mariadb` puis fixé par le test `t0_un_verrou_dans_l_instantane_est_refuse_par_le_serveur`. La garde
+statique T-a2 reste, comme prescrit.
+
+**Tests rouges d'abord** — constatés sur un talon (`for_fiscal_year` rendant `NotFound`, `statement_gap` rendant
+`None`), sortie de `291a-red.log` :
+
+```
+     Summary [   1.449s] 22 tests run: 4 passed, 18 failed, 1201 skipped
+        PASS  kesh-db repositories::fiscal_years::tests::le_texte_verrouillant_de_la_cloture_est_inchange
+        PASS  kesh-db repositories::closing_checks::tests::t_a2_le_detecteur_voit_la_forme_dominante
+        PASS  kesh-db::closing_checks un_exercice_d_une_autre_societe_est_introuvable
+        PASS  kesh-db::closing_checks t0_un_verrou_dans_l_instantane_est_refuse_par_le_serveur
+        FAIL  kesh-db repositories::bank_accounts::tests::l_ecart_du_releve_est_arrondi_au_centime
+        FAIL  kesh-db repositories::closing_checks::tests::t_a2_aucune_requete_hors_all_sql_et_aucun_verrou
+        FAIL  kesh-db::closing_checks t_a1 … t_a10 (16 tests : « called `Result::unwrap()` on an `Err` value: NotFound »)
+```
+
+Les quatre verts le sont par nature (T-a15 : non-régression d'une factorisation déjà faite ; le cas de contrôle du
+détecteur ; le `NotFound` attendu ; la mesure T0). ⚠️ **Écart** : T-a11 (`closing_checks_e2e.rs`), T-a16
+(`bank_accounts_e2e.rs`), les Vitest de T-a12 et l'E2E T-a13 ont été écrits **après** le code qu'ils couvrent ; leur
+pouvoir de détection est établi par les mutations M-a21 (T-a16), M-a10 et M-a22 (T-a12), non par une phase rouge.
+
+**Fichiers de test existants** — restés **sans modification** (AC3, T-a6) : `crates/kesh-db/tests/bank_account_statement_gap.rs`
+(recompte `grep -rln "list_by_company_with_balances\|/api/v1/bank-accounts" crates/*/tests/` : ce fichier,
+`crates/kesh-api/tests/api_keys_e2e.rs`, `bank_accounts_closed_e2e.rs`, `bank_accounts_e2e.rs` — et
+`crates/kesh-db/tests/closing_checks.rs`, neuf ; `git diff --stat fcd2ae75 7c643eba` sur ces fichiers ne montre que
+`bank_accounts_e2e.rs`, **+71 lignes sans suppression** — T-a16 ajouté — et le fichier neuf).
+**Modifiés** (Ta5) : `fiscal-years-page.test.ts` (mock `getClosingChecks`, dix cas neufs) ; `homepage.test.ts` (les
+quatre cas d'arrondi partis en Rust, deux cas de lecture du champ) ; `HomepageCards.test.ts` (fabrique, et le cas
+« l'écart seulement s'il est non nul » reçoit `statementGap: '-200.00'`) ; fabriques complétées de `statementGap: null`
+dans `bank-accounts.api.test.ts` (plus deux assertions), `bank-accounts-page.test.ts`,
+`BankAccountJournalLinkForm.test.ts`, `payment-batches-page.test.ts` (liste recomptée par `grep -rln
+"ledgerBalanceAtStatement" frontend/src`) ; bornes des gardes `i18n-keys.test.ts` (`sitesTotal` 2107 → 2162) et
+`i18n-libelle-en-dur.test.ts` (63 → 68 candidates, `conforme` 49 → 54), ventilées dans leurs commentaires.
+
+**Tests neufs, recomptés aux deux bornes `fcd2ae75` → `7c643eba`** (`git show <ref>:<f> | grep -cE …`) : Rust
+**25** — `kesh-db/tests/closing_checks.rs` 0 → 18, `closing_checks.rs` (module) 0 → 2, `bank_accounts.rs` 1 → 2,
+`fiscal_years.rs` 0 → 1, `kesh-api/tests/closing_checks_e2e.rs` 0 → 2, `bank_accounts_e2e.rs` 42 → 43 ; Vitest **+19**
+— `FiscalYearChecks.test.ts` 0 → 11, `fiscal-years-page.test.ts` 12 → 22, `homepage.test.ts` 10 → 8 ; E2E **+3**
+exécutés — `fiscal-years.spec.ts` 6 → 8 déclarations `test(`, dont une boucle clair / sombre (6 → 9 exécutés).
+Cohérents avec les gates : nextest 3604 → 3629, Vitest 1610 → 1629.
+
+**Gate final au dernier commit de code `7c643eba`** (bases remises à zéro d'abord ; `291a-final-*.log`) :
+- `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **3629 passés, 6 ignorés**, vert ;
+- `npm run check` : 0 erreur, 29 avertissements, **aucun** dans un fichier de la story ;
+- `npm run lint-i18n-ownership` : vert ; `npm run test:unit` : **147 fichiers, 1629 tests**, verts ; `npm run build` :
+  vert ;
+- **E2E complet** (`npm run test:e2e`, port 3042, base `kesh_e2e_291`) : **283 passés, 7 échecs, 19 ignorés** (11,4 min).
+  Les 7 échecs, fichier par fichier contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — les sept de la **KF-029 (#97)**,
+  aucun autre ; ni huitième variable, ni KF-052 sur ce run. `fiscal-years.spec.ts` : 9/9 dans le run complet (et 9/9 au
+  gate ciblé, `291a-e2e-target1.log`).
+- Gates ciblés intermédiaires : `291a-gate1.log` (backend complet sur `ae6d9419`, 3629 / 6 ignorés), Vitest complet
+  (`291a-vitest1.log`, trois gardes de décompte rouges, corrigées), gardes `kesh-i18n` et `textes_coherents`
+  (55 / 55 après reformulation, C-29-1-40).
+
+**Mutations** (`291a-mutations.py`, journal `291a-mutations.log`) — chacune par motif vérifié **unique**, restaurée par
+`git checkout -- <f>` puis `touch <f>` ; **21 exécutées, 21 tuées**, M-a9 déclarée équivalente (fiche), non exécutée :
+
+| # | Tuée par |
+|---|---|
+| M-a1, M-a2, M-a12 | `t_a4_k2_transactions_en_attente` |
+| M-a3 | `t_a5_k3_motifs_et_borne`, `t_a6_…`, `t_a5_k3_non_verifiables_et_precedence` |
+| M-a4 | `t_a5_k3_population_des_comptes_examines` |
+| M-a5 | `t_a6_la_borne_designe_le_releve_precedent` et quatre tests de `bank_account_statement_gap.rs` |
+| M-a6, M-a13 | `t_a7_k4_brouillons` |
+| M-a7, M-a8, M-a14 | `t_a9_k6_ecritures_incoherentes` |
+| M-a10 | `FiscalYearChecks.test.ts` (échec « indisponible ») et `fiscal-years-page.test.ts` |
+| M-a11 | `t_a10_k7_exercice_suivant` |
+| M-a15 | `t_a5_k3_non_verifiables_et_precedence` |
+| M-a16 | `l_ecart_du_releve_est_arrondi_au_centime` (T-a14), `t_a5_k3_ecart_au_centime` |
+| M-a17 | `t_a5_k3_population_…`, `t_a5_k3_activite_au_grand_livre` |
+| M-a18 | `t_a3_k1_le_plus_ancien_anterieur_ouvert`, `le_texte_verrouillant_de_la_cloture_est_inchange` |
+| M-a19 | `t_a2_aucune_requete_hors_all_sql_et_aucun_verrou` |
+| M-a20 | `t_a5_k3_activite_au_grand_livre` |
+| M-a21 | `list_bank_accounts_serves_the_statement_gap` (T-a16) |
+| M-a22 (a : panneau, b : rappel) | `FiscalYearChecks.test.ts`, `fiscal-years-page.test.ts` (chargement en attente) |
+
+⚠️ Première passe : M-a3, M-a5, M-a18 **non appliquées** (motif trouvé deux fois — un doc-comment, la référence figée
+de T-a15) ; M-a19 en échec de **compilation** (`query_as::<_, …>` d'une requête non exécutée ne s'infère pas), donc
+**non comptée** comme tuée. Seconde passe, motifs précisés et turbofish `<sqlx::MySql, (i64,)>` : les quatre tuées par
+un test, `exit 100`.
+
+**Recette visuelle** : `29-1a-panneau-{clair,sombre}.png` et `29-1a-rappel-cloture-{clair,sombre}.png` (E2E T-a13) ;
+les « sombres » sont **identiques octet pour octet** aux claires (`cmp`) — Kesh n'a pas de thème sombre (C-28-1-7,
+C-29-1-39).
+
+**Manuel** : § *Préparer la clôture* (`\label{sec:preparer-cloture}`), phrase « si clôturé » corrigée, marche de
+clôture, résumé annuel ; **PDF régénéré** (`make fr`, sous verrou) et contrôlé aplati — « Préparer la clôture » ×4,
+« se termine au plus tard le dernier jour de l’exercice » ×2, « arrêté au dernier jour de l’exercice »,
+« ne sont pas bornées à l’exercice », « que celui-ci soit clôturé ou non », « autre société » ×0. Les PDF du manuel
+d'administration et de la brochure, recompilés sans changement de source, sont restaurés (C-29-1-42).
+
+**Propagation** : `grep -rnF "FIND_EARLIER_OPEN_SQL" crates frontend/src docs` → 0 (la référence figée de T-a15
+renommée en `REFERENCE_FIGEE`, commit `7c643eba`) ; `grep -rn "toCentime" frontend/src` → 0 ; replis du frontend
+égaux aux valeurs fr-CH : 55 appels comparés, 0 écart ; 53 clés × 4 locales (`grep -c '^fiscal-years-checks-'`).
+
+**Écarts à la fiche** :
+1. Tests écrits après le code (voir *Tests rouges d'abord*).
+2. Le module de tests de `closing_checks.rs` (garde T-a2) a été **ajouté en fin de fichier par `cat >>`** (ajout,
+   aucune substitution de motif) — la consigne veut l'outil d'édition seulement. Le contenu a été relu et compilé.
+3. `balances_from_row` est `pub(crate)` (C-29-1-32), l'AC3 l'écrivait privée.
+4. Dans `+page.svelte`, le bloc des boutons *Clôturer* / *Réouvrir* garde une tabulation de trop après le déplacement
+   (cosmétique, sans effet au rendu ; une tentative de réindentation par l'outil d'édition n'a pas trouvé le motif).
+5. `api-external.md` reçoit une ligne *Exercices comptables* au tableau des ressources et nomme `statementGap` dans la
+   note ¹⁰ (C-29-1-41) ; l'AC3 disait « rien à y ajouter » pour les champs du relevé.
+6. Trois formulations reprises pour G8 / G8-bis, G11 et G18 (C-29-1-40).
+
+**Issues à ouvrir** : aucune. **Demandé à l'orchestrateur** : push de `story/29-1`, PR « Story 29-1a : préparer la
+clôture — contrôles préalables (refs #232) », **jamais** `closes` (le message de squash se relit avant merge) ;
+rappeler dans le corps de la PR que l'entrée du CHANGELOG est sous `[0.14.0] — Non publié` et passe en 0.13.4 si ce tag
+suit la fusion (AC9) ; revue de code P1 (`29-1a-review-prompt-p1.md`).
 
 ### Completion Notes List
 
@@ -966,8 +1097,22 @@ remplace — C-29-1-27.)*
   validation P3 à lancer.
 - 2026-10-14 — validation P3 remédiée (17 findings, Change Log), signal D5 au troisième tour : M-b13 et volets (c)/(d)
   de T-a2 retirés (décisions de l'orchestrateur) ; passe ciblée P4 à lancer.
+- 2026-10-14 — **29-1a développée** : AC1 à AC9 et AC3-bis ; gate complet et E2E complet verts au dernier commit de
+  code `7c643eba` (E2E : les sept échecs attendus de la KF-029) ; 21 mutations tuées sur 21, M-a9 équivalente ; clé en
+  `review`, revue de code P1 à lancer.
 
 ### File List
+
+**29-1a** — neufs : `crates/kesh-db/src/repositories/closing_checks.rs`, `crates/kesh-db/tests/closing_checks.rs`,
+`crates/kesh-api/tests/closing_checks_e2e.rs`, `frontend/src/lib/features/fiscal-years/FiscalYearChecks.svelte`,
+`FiscalYearChecks.test.ts`, `closing-checks-labels.ts`, `closing-checks.test-fixtures.ts`. Modifiés :
+`crates/kesh-db/src/repositories/{bank_accounts,fiscal_years,mod}.rs`, `crates/kesh-api/src/lib.rs`,
+`crates/kesh-api/src/routes/{fiscal_years,bank_accounts}.rs`, `crates/kesh-api/tests/bank_accounts_e2e.rs`,
+`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`, `frontend/src/lib/features/fiscal-years/fiscal-years.{api,types,helpers}.ts`,
+`frontend/src/lib/features/bank-accounts/bank-accounts.api.ts`, `frontend/src/lib/features/homepage/homepage.ts`,
+`frontend/src/routes/(app)/settings/fiscal-years/+page.svelte`, les tests listés au compte rendu,
+`frontend/tests/e2e/fiscal-years.spec.ts`, `docs/manual/fr/user-manual.{tex,pdf}`, `docs/api-external.md`,
+`CHANGELOG.md` — 38 fichiers hors `_bmad-output` (`git diff --stat fcd2ae75 7c643eba -- . ':(exclude)_bmad-output'`).
 
 ## Change Log
 
@@ -1144,3 +1289,9 @@ remplace — C-29-1-27.)*
     que des occurrences cohérentes.
   - **Validation close : la remédiation de la passe ciblée ne touche aucune ligne de production** (fiche, registre et
     `sprint-status.yaml` seulement). Dev à lancer.
+- 2026-10-14 — **développement de la 29-1a** (Opus 5.5, `bmad-dev-story`, autonomie) : commits `ae6d9419`,
+  `bf5f8238`, `7c643eba` (dernier commit de code), puis comptes rendus. AC1 à AC9 et AC3-bis livrés ; tests rouges
+  constatés sur talon (18 rouges, 4 verts par nature) ; 25 tests Rust, 19 Vitest et 3 E2E neufs (recomptés aux deux
+  bornes) ; gate complet (3629 / 6 ignorés ; Vitest 1629) et E2E complet (283 passés, les 7 échecs attendus de la
+  KF-029) au dernier commit de code ; 21 mutations exécutées, 21 tuées, M-a9 équivalente ; choix C-29-1-32 à 42 ;
+  six écarts déclarés au Dev Agent Record. Revue de code P1 à lancer : `29-1a-review-prompt-p1.md` (Sonnet, B, E, A).
