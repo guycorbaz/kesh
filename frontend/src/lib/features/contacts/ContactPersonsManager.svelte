@@ -73,9 +73,24 @@
 		}
 	}
 
-	async function removePerson(id: number) {
+	/**
+	 * Story 29-9 (#646, AC7) — « Supprimer » archive la personne (`active = FALSE`), et aucun
+	 * écran ne la rétablit : la suppression demande donc confirmation, en nommant la personne.
+	 * Un refus n'appelle rien et ne change ni la liste ni le message d'erreur.
+	 */
+	async function removePerson(p: ContactPerson) {
+		if (
+			!window.confirm(
+				i18nMsg(
+					'contact-persons-confirm-delete',
+					'Supprimer la personne de contact { $name } ? Aucun écran ne permet de la rétablir.',
+					{ name: `${p.firstName} ${p.lastName}` },
+				),
+			)
+		)
+			return;
 		try {
-			await deleteContactPerson(id);
+			await deleteContactPerson(p.id);
 			await load();
 		} catch {
 			error = i18nMsg('contact-persons-delete-error', 'Impossible de supprimer la personne');
@@ -112,7 +127,7 @@
 					<button
 						type="button"
 						class="text-red-600 hover:underline"
-						onclick={() => removePerson(p.id)}
+						onclick={() => removePerson(p)}
 						data-testid={`contact-person-delete-${p.id}`}
 					>
 						{i18nMsg('contact-persons-delete', 'Supprimer')}
