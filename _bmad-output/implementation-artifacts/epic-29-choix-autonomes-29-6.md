@@ -16,6 +16,8 @@ Fiche : `29-6-trop-percu-centimes.md`.*
   règlement partiel accepté. Le doc-comment de `find_unpaid_invoices_for_window` (« la tolérance couvre l'écart à son
   arrondi au centime, au plus 0.005 ») est faux depuis l'origine (0,05 contre 0,005) : réécrit par l'AC2.
 - **Réversible** : sans objet (constat).
+- *Annotation du 2026-10-14, validation P1 (R6)* : « faux depuis l'origine » était inexact — la phrase date de
+  `eecf40cb` (Story 25-4-c), la tolérance de 0,05 de `22fd6d4a` (Story 8-4) : faux **depuis son écriture**.
 
 ### C-29-6-2 — Voie 1 : la proposition écarte le trop-perçu ; voie 2 écartée
 
@@ -72,6 +74,8 @@ Fiche : `29-6-trop-percu-centimes.md`.*
 - **Retenu** : le frontend ne change pas ; la frontière HTTP est exercée par le test `spawn_app` d'AC6 ; l'E2E complet
   tourne au dernier commit de code.
 - **Réversible** : sans objet.
+- *Annotation du 2026-10-14, validation P1 (R1)* : **remplacé en partie par C-29-6-10** — l'écran change (une case,
+  une clé i18n, un spec E2E et ses captures). Le libellé de `RECONCILIATION_OVERPAYMENT` reste, lui, inchangé.
 
 ### C-29-6-7 — Le contournement écrit au manuel : régler le reste dû, puis rejeter la transaction
 
@@ -81,6 +85,9 @@ Fiche : `29-6-trop-percu-centimes.md`.*
   réconciliation, et de traiter l'écart (remboursement ou écriture manuelle) — même forme que le contournement de la
   29-2 (C-29-2-8).
 - **Réversible** : oui (texte).
+- *Annotation du 2026-10-14, validation P1 (R1)* : le geste était **impraticable** à l'écran (aucune case sur une ligne
+  sans proposition) ; il le devient par C-29-6-10. Le texte du manuel nomme désormais la case de la ligne «~Aucune
+  correspondance~».
 
 ### C-29-6-8 — Les angles morts #665 écrits par la 29-3 se retirent au rebase
 
@@ -96,6 +103,74 @@ Fiche : `29-6-trop-percu-centimes.md`.*
 - **Contexte** : décision de l'orchestrateur du 2026-10-14 ; #665 relevée pendant la fiche de la 29-3.
 - **Retenu** : clé `29-6-trop-percu-centimes` sous `epic-29` ; paragraphe « 29-6 » au fichier d'epic (§ *Les stories*,
   § *Ordre*, § *Releases*) ; ordre de développement 29-2 → 29-3 → 29-5 → 29-6.
+- **Réversible** : oui.
+
+### C-29-6-10 — Le périmètre s'étend à l'écran : une ligne sans proposition se coche, pour *Rejeter* seulement
+
+- **Contexte** : validation P1, MEDIUM R1, **vérifié au code par l'orchestrateur** — une ligne « Aucune correspondance »
+  n'a pas de case (`ReconciliationProposals.svelte:318-330`) et `onReject` n'agit que sur les lignes cochées : le geste
+  « régler depuis la fiche, puis rejeter la transaction », prescrit par la 29-6 (AC7) et par la 29-2 (C-29-2-8), est
+  impraticable. **Décision de l'orchestrateur** (consignée comme telle) : la 29-6 étend son périmètre pour rendre ce
+  rejet possible ; *Accepter* reste sans effet ou désactivé pour une telle ligne.
+- **Retenu** : AC10. Établi au code d'abord : `POST /reconciliation/reject` ne lit aucune candidate (pré-vol
+  `classify_batch_transaction`, `UPDATE` de `reject_batch`), ses refus vont dans `failed[]` en `200` ; le test
+  `post_reject_marks_transactions_as_manually_reviewed` rejette déjà des transactions sans facture ; *Annuler le rejet*
+  (28-5b) ne lit pas non plus de candidate. Donc **aucun changement d'API** — l'écran seul change.
+- **Écartées** : (a) écrire au manuel que la transaction reste en attente, sans geste (correction (a) de R1) — laisse
+  une ligne qu'aucun geste n'écarte, et la 29-2 avec un contournement faux ; (b) ouvrir une issue `enhancement` et ne
+  prescrire le geste qu'après (correction (b) de R1) — reporte hors de la v0.13.4 un geste que deux stories de la même
+  release prescrivent ; (c) un bouton *Rejeter* propre à chaque ligne sans proposition — un second chemin vers la même
+  route, un libellé et un test de plus pour le même effet.
+- **Réversible** : oui (un composant, une clé).
+
+### C-29-6-11 — *Accepter* grisé tant qu'une ligne sans proposition est cochée, et la page le dit
+
+- **Contexte** : une fois la case ouverte à toute ligne, *Accepter* doit ne rien faire de faux pour une ligne sans
+  proposition. Au sol, `onAccept` lève « No candidate » (`:205-207`), affiché en erreur.
+- **Retenu** : `disabled` dès que la sélection contient une ligne sans proposition, garde défensive en tête
+  d'`onAccept`, et une indication sous les boutons (« ne peut qu'être rejetée : décochez-la pour accepter les autres »),
+  clé `reconciliation-labels-reject-only-hint` dans les quatre catalogues. Le compteur reste `selected.size`.
+- **Écartées** : (a) *Accepter* n'envoie que les lignes avec proposition et ignore les autres — le plus simple au code,
+  mais **silencieux** : la ligne cochée ne bouge pas et rien ne dit pourquoi, et le compteur « Accepter (n) » mentirait ;
+  (b) grisé sans indication — un bouton inerte sans raison visible ; (c) une case grisée pour *Accepter* seulement —
+  une case n'a pas deux états de sélection.
+- **Réversible** : oui.
+
+### C-29-6-12 — Cinq modules : la limite, pas de découpage
+
+- **Contexte** : la règle de splitting préventif découpe une story qui touche **plus de cinq** modules. Avec l'AC10 :
+  `kesh-db`, `kesh-api`, `frontend/…/reconciliation`, `kesh-i18n`, documentation.
+- **Retenu** : cinq, non dépassé ; pas de découpage. La 29-6a (écran) / 29-6b (proposition) a été pesée : les deux
+  moitiés sont indépendantes au code, mais le manuel et le CHANGELOG de la proposition prescrivent le geste de l'écran —
+  aucune ne se livre vraie seule, et l'AC10 tient en un composant sans API.
+- **Écartée** : découper — deux PR, deux boucles de revue, et un ordre de merge imposé pour un texte qui ne vaut
+  qu'ensemble.
+- **Réversible** : oui — si une passe de revue étend encore le périmètre, la story découpe ou écrit une dérogation.
+
+### C-29-6-13 — L'invariant « filtre avant `LIMIT 50` » est gardé par un test, pas déclaré
+
+- **Contexte** : validation P1, R4 — aucun test ne tuait un filtre déplacé en Rust après la requête.
+- **Retenu** : un second test de dépôt (50 factures trop-perçues puis une valide, la dernière en `(date, id)`) et la
+  mutation M8.
+- **Écartée** : déclarer l'invariant non gardé — c'est le motif même qui a écarté l'alternative Rust (C-29-6-3) ;
+  laisser sans garde la raison d'un choix, c'est laisser le choix se défaire en silence.
+- **Réversible** : oui.
+
+### C-29-6-14 — La v0.13.4 réunit 29-2, 29-3, 29-4, 29-5 et 29-6
+
+- **Contexte** : validation P1, R7 — le fichier d'epic (§ *Releases*) omettait la 29-5, la clé `epic-29` du registre
+  disait « 29-2..4 ».
+- **Retenu** : composition donnée par l'orchestrateur, écrite au fichier d'epic et au commentaire de `epic-29`.
+- **Réversible** : oui.
+
+### C-29-6-15 — Un spec E2E neuf, sur le patron de `reconciliation-unreject.spec.ts`
+
+- **Contexte** : l'AC10 change ce qu'un utilisateur peut cocher et envoyer ; seul un E2E voit l'identifiant d'une ligne
+  sans proposition traverser la frontière HTTP.
+- **Retenu** : `reconciliation-reject-unmatched.spec.ts`, relevé unique, rejet puis *Annuler le rejet*, captures clair et
+  sombre hors dépôt.
+- **Écartée** : ajouter un scénario au spec de la 28-5b — il rejette par l'API à dessein (il éprouve le détail de
+  l'import, pas la liste), et le mêler brouillerait ce qu'il garde.
 - **Réversible** : oui.
 
 [#665]: https://github.com/guycorbaz/kesh/issues/665

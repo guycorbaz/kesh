@@ -124,7 +124,10 @@ d'imputation.
 (`classify_payment`, `RECONCILIATION_OVERPAYMENT`). Même famille que #548 (28-7), sur le montant : une seule borne pour
 la proposition et l'acceptation. Voie retenue par la fiche : la proposition écarte le trop-perçu ; aucune écriture
 nouvelle (l'absorption sur le compte d'arrondi est écartée, C-29-6-2). **`kesh-db` touché : gate complet même en
-boucle.** Manuel (PDF), `api-external.md`, CHANGELOG ; aucun écran.
+boucle.** Manuel (PDF), `api-external.md`, CHANGELOG. *Étendue à la validation P1 (2026-10-14, décision de
+l'orchestrateur)* : une ligne « Aucune correspondance » se coche, pour *Rejeter* seulement — sans quoi le contournement
+« régler depuis la fiche, puis rejeter la transaction », prescrit par la 29-6 et la 29-2 (C-29-2-8), est impraticable ;
+un écran, une clé i18n, un spec E2E.
 
 ## Ordre
 
@@ -142,6 +145,8 @@ boucle.** Manuel (PDF), `api-external.md`, CHANGELOG ; aucun écran.
 ### Releases
 
 - **v0.13.4** dès que 29-1a, 29-2, 29-3, 29-4, 29-5, 29-6, 29-8 et 29-9 sont mergées : Guy les éprouve tout de suite avec ses relevés mensuels.
+
+  29-6, R7)* : Guy les éprouve tout de suite avec ses relevés mensuels.
 - **v0.14.0** à la fin de la 29-1 : fonctionnalité nouvelle.
 
 À chaque release : `scripts/prepare-release.sh`, macros des manuels et URL au tag, CHANGELOG daté, recomptes du
