@@ -4,9 +4,9 @@
 
 **ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (`main`,
 kickoff de l'Epic 29), branche `story/29-9`, worktree `/home/gcorbaz/devel/kesh-29-9`. Validation P1 (Sonnet,
-lentilles R et F : 0/0/4/5 et 0/0/5/6) remédiée le 2026-10-14 ; validation P2 à lancer (prompt
-`29-9-validate-prompt-p2.md`). Choix consignés au registre `epic-29-choix-autonomes-29-9.md`, **C-29-9-1 à
-C-29-9-16**.
+lentilles R et F : 0/0/4/5 et 0/0/5/6) remédiée le 2026-10-14 ; validation P2 (Opus, lentilles R et F : 0/0/1/8
+et 0/0/2/7) remédiée le 2026-10-14 ; passe ciblée P3 à lancer (prompt `29-9-validate-prompt-p3-ciblee.md`). Choix
+consignés au registre `epic-29-choix-autonomes-29-9.md`, **C-29-9-1 à C-29-9-18**.
 
 10 AC, T0-T9. Trois issues, chacune **entièrement** réglée ou sortie du périmètre : [#649], [#655], [#646] — toutes
 `bug` et `P3`.
@@ -40,7 +40,7 @@ d'issues ouvertes qu'au tag v0.13.3 : 138).
 | [#649] (test) | Le défaut de 100 et `hasMore = true` sont testés ; le **plafond** de 500 ne l'est pas | `crates/kesh-api/tests/reconciliation_e2e.rs:2065-2116` (`get_proposals_paginates_at_100_default`, 150 transactions) ; `grep -n "limit=" crates/kesh-api/tests/reconciliation_e2e.rs` → aucun appel avec `limit` |
 | [#655] cas 1 | `load()` du détail d'import n'a **aucune** garde de séquence : la réponse la plus lente l'emporte | `frontend/src/routes/(app)/bank-import/[id]/+page.svelte:47-70` ; relectures lancées par `UnrejectTransactionAction` (`:160`) et `CancelReconciliationDialog` (`:176`) ; le patron de garde existe à côté : `ReconciliationProposals.svelte:99-117` (`loadGen`) |
 | [#655] cas 2 | `bank-import/profiles/[id]/+page.svelte` ne remet jamais `errorMessage` à `null` ni `isLoading` à `true` ; aucune garde de séquence | même fichier, l. 11 (déclaration), 16 et 28 (écritures), 44 (lecture) ; l'`$effect` `:13-31` |
-| [#655] cas 2 (dépendance de l'effet) | L'effet lit `page.params.id` ; or SvelteKit **réassigne** `page.params` (objet neuf) à chaque navigation, même quand l'`id` ne change pas | `node_modules/@sveltejs/kit/src/runtime/client/state.svelte.js:37` (`params = $state.raw({})`), `client.js:1888` (`Object.assign(page, navigation_result.props.page)`), `@sveltejs/kit` 2.55.0 ; `$derived` compare par `===` (`svelte/src/internal/client/reactivity/equality.js:4-6`, Svelte 5.55.1) ; `BankProfileForm.svelte:46-60` initialise son état **une fois** depuis `existing` (validation P1, F4) |
+| [#655] cas 2 (dépendance de l'effet) | L'effet lit `page.params.id` ; or SvelteKit **réassigne** `page.params` (objet neuf) à chaque navigation où `page_changed` est vrai — URL, erreur, formulaire ou données changés —, donc même quand l'`id` ne change pas (une *query string*, des données relues) ; sinon `props.page = clone_page(page)` garde la référence (validation P2, F5) | `node_modules/@sveltejs/kit/src/runtime/client/state.svelte.js:37` (`params = $state.raw({})`), `client.js:763-768` (`page_changed`), `:770-772` (`props.page` neuf, `params` compris), `:707` (`clone_page(page)` sinon), `:1888` (`Object.assign(page, navigation_result.props.page)`), `@sveltejs/kit` 2.55.0 ; `$derived` compare par `===` (`svelte/src/internal/client/reactivity/equality.js:4-6`, Svelte 5.55.1) ; `BankProfileForm.svelte:46-60` initialise son état **une fois** depuis `existing` (validation P1, F4) |
 | [#646] | *Supprimer* une personne de contact appelle `deleteContactPerson` sans confirmation | `frontend/src/lib/features/contacts/ContactPersonsManager.svelte:76-83` (`removePerson`), bouton `:112-119` (`contact-person-delete-{id}`) ; le composant est rendu dans le dialogue d'édition (`routes/(app)/contacts/+page.svelte:1097-1100`, dans `Dialog.Root` `:811`) |
 | [#646] (sémantique) | « Supprimer » **archive** : `active = FALSE`, trace `contact_person.archived` ; aucune route ne désarchive | `crates/kesh-db/src/repositories/contact_persons.rs:158` ; `crates/kesh-api/src/routes/contact_persons.rs:295` ; routes `crates/kesh-api/src/lib.rs:426-431`, `:794` (création, modification, suppression, liste) |
 | [#646] (tests) | Le composant n'a **aucun** test Vitest ni E2E ; l'inventaire des boutons rouges écrit « sans confirmation (#646, #648) » | `git grep -ln "ContactPersonsManager\|contact-person-delete" -- frontend` → le composant, la page, `i18n-harvest.test.ts:35`, `boutons-rouges-inventory.test.ts:231-234` |
@@ -63,6 +63,9 @@ d'issues ouvertes qu'au tag v0.13.3 : 138).
   latent), mais un `isLoading = true` en tête d'un tel effet démonterait le formulaire et **perdrait une saisie en
   cours** à chaque navigation de ce genre. D'où AC6 réécrit : l'effet ne dépend plus que de l'identifiant, par un
   `$derived` (C-29-9-13).
+  *Précision du 2026-10-14 (validation P2, F5)* : « à **toute** navigation » est trop large — la réassignation n'a lieu
+  que si `page_changed` est vrai (`client.js:763-772`) ; une navigation à `id` égal qui change l'URL ou les données
+  réassigne bien, ce qui suffit à la conclusion, qui ne change pas.
 - **#646 — exacte.** Précision : la suppression est un archivage sans retour possible à l'écran — c'est ce qui rend la
   confirmation utile, et le texte de la confirmation le dit.
 
@@ -72,13 +75,18 @@ d'issues ouvertes qu'au tag v0.13.3 : 138).
 
 **AC1 — S'il en reste, l'écran le dit et offre la suite (C-29-9-2).**
 
-Dans `ReconciliationProposals.svelte`, branche « liste non vide », **après `</table>`** (`:401`) et avant
-`<ManualMatchModal` (`:403`) :
+Dans `ReconciliationProposals.svelte`, branche « liste non vide », **immédiatement après `</table>`** (`:401`),
+**avant toute instance de modale** : celles du sol (`<ManualMatchModal` `:403`, `<TransactionSplitModal`) et la
+`LinkSettlementModal` que la 29-8 ajoute à ce composant sans en prescrire l'emplacement (fiche 29-8 `:370`, T4) — son
+emplacement naturel est le même, à côté des deux autres. Au rebase (T0), l'avis et le bouton se placent donc entre
+`</table>` et la première modale, quelle qu'elle soit (validation P2, F8 ; C-29-9-11 annoté) :
 
 - si `hasMore` est vrai **et** `limit < PROPOSALS_MAX_LIMIT` : un paragraphe `data-testid="reconciliation-more"`
   (`reconciliation-labels-more-hidden`, `{ $count }` = `proposals.length`) et un bouton
   `data-testid="reconciliation-show-older-btn"` (`reconciliation-actions-show-older`, `{ $max }` =
-  `PROPOSALS_MAX_LIMIT`), désactivé pendant `busy` ;
+  `PROPOSALS_MAX_LIMIT`), `disabled={busy}` — pendant un lot (*Accepter*, *Rejeter*), la liste reste affichée
+  (`busy` passe à `true` `:194`/`:239`, `loading` seulement au `load()` final), et un clic rechargerait la liste au
+  milieu du lot ; V18 et M21 le prouvent (validation P2, R8) ;
 - si `hasMore` est faux : rien (ni avis, ni bouton).
 
 Style : celui des boutons secondaires voisins (`rounded border border-text px-4 py-2`, comme *Rejeter* `:290-298`),
@@ -119,16 +127,29 @@ fiche 29-6, #670).
   structure présente mais pas de UI dédiée (bouton « Charger plus » v0.2) ») est réécrit comme celui du Rust — ce
   que fait l'écran depuis la 29-9 (avis, bouton jusqu'au plafond, avis plafonné) ; il ne parle plus de « Charger
   plus » (validation P1, R3/F3).
-- **Occurrence triée, non réécrite** : `crates/kesh-db/src/repositories/reconciliation.rs:18-19` (« paginées (limit
-  hardcodé 100 au caller, cf. L24) ») reste vrai après la story — le défaut de 100 est fixé par la route appelante, et
-  aucun code de production Rust ne change ; le préciser ferait entrer un repository `kesh-db` dans le diff pour un
-  commentaire, et avec lui l'exception *kesh-db* du gate ciblé (C-29-9-16). Cité au Dev Agent Record.
+- **Commentaire de module `kesh-db` réécrit en T1** (décision de l'orchestrateur, validation P2, R1 = F1 ; C-29-9-16
+  annoté) : `crates/kesh-db/src/repositories/reconciliation.rs:18-19` (« paginées (limit hardcodé 100 au caller, cf.
+  L24) ») est **faux depuis la Story 8-4** (`22fd6d4a`, le commit même qui l'a écrit) — l'appelant ne code pas 100 en
+  dur : la route prend `?limit=`, 100 par défaut, 500 au plus (`routes/reconciliation.rs:598-602`), et passe
+  `limit + 1` au repository (`:622-626`) ; après la story, l'écran demande lui-même 500. Il devient : « paginées
+  (`limit` fourni par la route : défaut 100, plafond 500, sentinelle `limit + 1` pour `hasMore` — cf.
+  `DEFAULT_PROPOSALS_LIMIT` / `MAX_PROPOSALS_LIMIT`, `kesh-api/src/routes/reconciliation.rs`) ». Le renvoi `L24`
+  (limitation « pas de UI » de la 8-4, que la 29-9 lève) disparaît. C'est un **commentaire** : aucun code de production
+  Rust ne change, l'affirmation du point précédent tient.
+  ⚠️ **Conséquence : `kesh-db` entre dans le diff**, et avec lui l'exception *kesh-db* de CLAUDE.md (« dès qu'un
+  **patch** touche … un repository, le ciblage est interdit »). Elle vaut pour **le commit qui touche ce fichier** —
+  celui de T1 — et pour lui seul : ce commit-là passe le gate complet ; les commits suivants, qui ne touchent pas
+  `kesh-db`, reviennent au gate ciblé. Si une passe de revue retouche ce fichier, son patch reprend le gate complet
+  (AC10). Un module de plus au sens de la règle de découpage (§ *Dérogation*).
 - Tests neufs dans `crates/kesh-api/tests/reconciliation_e2e.rs`, à côté de `get_proposals_paginates_at_100_default`,
   même décor (`setup_company`, `make_new_tx`, `seed_bank_transactions`) :
   `get_proposals_limit_is_capped_at_500` — 501 transactions, `?limit=1000` → **500** rendues, `hasMore` **vrai** ; et
   `get_proposals_limit_500_exact_has_no_more` — **exactement 500** transactions, `?limit=500` → **500**, `hasMore`
-  **faux** (le second état de l'écran, pris **à la frontière** : une sentinelle décalée — `>=` pour `>`, ou
-  `limit` pour `limit + 1` — y rougit ; validation P1, F8).
+  **faux** (le second état de l'écran, pris **à la frontière** : `>=` pour `>` y rougit, M18 ; validation P1, F8).
+  ⚠️ La mutation `limit` pour `limit + 1` (M20) **ne** le rougit **pas** — 500 lignes lues sur 500, `500 > 500` est faux,
+  `hasMore` faux comme attendu — : elle est tuée par le test **à 501** (`get_proposals_limit_is_capped_at_500` : 500
+  lues, `hasMore` faux au lieu de vrai) et par `get_proposals_paginates_at_100_default` (validation P2, R2 = F3 ; la
+  phrase de la P1 qui la lui attribuait était fausse).
 
 ### #655 — une relecture ancienne ne masque plus une page à jour
 
@@ -157,7 +178,8 @@ correction ne démonte jamais le formulaire ni ne perd une saisie en cours au m�
   l'effet lit `rawId` (puis `Number(rawId)`), **jamais** `page.params`. Un `$derived` d'une **chaîne** compare par
   `===` (`equality.js:4-6`) : la réassignation de `page.params` à `id` égal le recalcule à la même valeur, et
   l'effet ne se rejoue pas. ⚠️ Dériver la chaîne, **pas** `Number(page.params.id)` : `NaN !== NaN`, si bien qu'un
-  identifiant invalide relancerait l'effet à chaque navigation.
+  identifiant invalide relancerait l'effet à chaque réassignation de `page.params` (navigation où `page_changed` est
+  vrai, `client.js:763-772`).
 - **En tête de l'effet** — donc au début d'un chargement **réel**, puisqu'il ne se rejoue qu'à `id` changé :
   `const mySeq = ++loadSeq` en **première** instruction, **avant** la branche `!Number.isFinite(id)` (une réponse
   ancienne encore en vol ne doit pas écraser « ID invalide » ; validation P1, R7), puis `errorMessage = null` et
@@ -170,9 +192,37 @@ correction ne démonte jamais le formulaire ni ne perd une saisie en cours au m�
   que si `mySeq === loadSeq` — une réponse plus ancienne, succès comme échec, est ignorée en entier.
 - ⚠️ Pas de boucle : l'effet lit `rawId` et le compteur (variable non réactive) ; il écrit `errorMessage`,
   `isLoading`, `profile`, qu'il ne lit pas.
+- **Ce que l'effet exécute aussi : la partie synchrone de `getBankProfile(id)`** (validation P2, F6 ; C-29-9-18).
+  « L'effet ne dépend que de l'identifiant » suppose qu'elle ne lit aucun signal. C'est vrai au sol : `request` →
+  `buildHeaders` → `fetchWithRetry` → `fetchWithTimeout` ne lisent aucun `$state` avant le premier `await`
+  (`bank-profile.api.ts:19-21`, `api-client.ts:181-199`, `:267-280`, `:329-336`, `:392-399`). Mais V13 mocke l'API et
+  ne verrait pas une lecture synchrone d'`authState` qui y entrerait un jour (l'effet se relancerait au renouvellement
+  du jeton, et `isLoading = true` perdrait la saisie). **Retenu : un commentaire au site** qui écrit cette dépendance
+  et dit le remède (`untrack(() => getBankProfile(id))`) ; **pas** d'`untrack` dans le code — garde qu'aucun test ne
+  peut rougir, même règle que C-29-9-14.
+- **`onUpdated` reçoit la même garde** (décision de l'orchestrateur, validation P2, F2 ; C-29-9-17). Au sol
+  (`:33-35`), `onUpdated(updated)` écrit `profile` sans condition. Scénario, possible dès qu'un lien mènera d'un profil
+  à un autre : sur 5, *Mettre à jour* part (`BankProfileForm.svelte:113-114`, `existing.id` = 5 lu **avant** l'`await`) ;
+  navigation vers 6, le formulaire de 5 est démonté mais `handleSubmit` continue ; 6 se charge, un formulaire neuf
+  s'initialise sur p6 ; la sauvegarde de 5 se termine, `onSuccess(p5)` → `profile = p5` ; le formulaire monté reçoit
+  `existing` = p5 mais garde les champs de 6 (initialisés une fois, `:46-60`) ; la sauvegarde suivante écrit les valeurs
+  de 6 **dans le profil 5**. Correctif : une sauvegarde qui se termine après une navigation vers un autre profil
+  n'écrit plus `profile`.
+  ⚠️ **Forme de la garde, établie au code** : un numéro de séquence capturé dans une fermeture passée au formulaire
+  (`onSuccess={onUpdatedFor(seq)}`) **ne tient pas**, parce que le formulaire lit ses props **en direct** : Svelte
+  5.55.1 compile `let { existing, onSuccess } = $props()` suivi d'un appel après `await` en
+  `$$props.onSuccess?.($$props.existing)` (compilation d'un composant d'essai, 2026-10-14, hors dépôt) — le formulaire
+  démonté de 5 appellerait le gestionnaire **courant**, celui de 6, et la garde passerait. La garde se pose donc
+  **dans** `onUpdated`, évaluée à l'appel, sur l'identité du chargement courant :
+  `if (updated.id !== Number(rawId)) return;` puis `profile = updated`. C'est l'équivalent, pour une écriture que la
+  page ne lance pas elle-même, du `mySeq === loadSeq` du chargement : est ignorée toute écriture qui ne relève plus du
+  profil affiché. Retour de 6 à 5 avant la fin de la sauvegarde de 5 : la réponse est acceptée, et c'est juste (même
+  profil, valeurs enregistrées). Si V17 montrait une autre lecture des props, le dire au Dev Agent Record avant de
+  changer de forme.
 - Commentaire au site : défaut latent au sol (aucun lien d'un profil à l'autre), corrigé pour le jour où il y en aura
   un ; pourquoi `$derived` de la chaîne (réassignation de `page.params`, `NaN`) ; pourquoi `isLoading = true` est
-  sans effet à id égal et nécessaire à id changé.
+  sans effet à id égal et nécessaire à id changé ; la dépendance synchrone de `getBankProfile` (C-29-9-18) ; pourquoi
+  la garde d'`onUpdated` porte sur l'identifiant et non sur une fermeture (C-29-9-17).
 
 ### #646 — une personne de contact ne s'efface pas sans confirmation
 
@@ -209,7 +259,8 @@ suit, `boutons-rouges-inventory.test.ts:231`).
   après le dernier rebase (la 29-3, la 29-6 et la 29-8 en ajoutent), avec une ligne de commentaire datée qui donne les
   deux bornes et la commande, sur le modèle des lignes `:620-633`.
 - **`frontend/scripts/lint-i18n-ownership.js`** : la clé `contact-persons-confirm-delete` entre dans
-  `KNOWN_VIOLATIONS` (`:117-133`), à la suite des autres clés de `ContactPersonsManager.svelte` :
+  `KNOWN_VIOLATIONS` (ensemble `:22-140` ; bloc `ContactPersonsManager.svelte` `:117-139`, commentaire `:117-124`,
+  entrées `:125-139`), **après la ligne `:139`**, à la suite des autres clés de ce composant (validation P2, R5 = F9) :
   `'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-confirm-delete',` — le lint compare le
   préfixe `contact` au dossier `contacts` (dette #30), et le rougirait sinon. La dette #30 s'accroît d'**une** entrée,
   écrite comme telle au Dev Agent Record (validation P1, R2/F2). Les trois clés `reconciliation-*` sont dans le
@@ -236,6 +287,8 @@ suit, `boutons-rouges-inventory.test.ts:231`).
   - PDF régénéré (`make fr` dans `docs/manual/`, **sous le verrou**), contrôlé aplati (§ *Propagation*).
 - **`docs/api-external.md:594`** : « (100 par défaut) » → « (100 par défaut, 500 au plus ; `hasMore` vaut `true` s'il
   en reste) » ; le lien #649 est retiré (l'issue sera close) ; le reste de la phrase, vrai pour l'API, ne change pas.
+  **En delta** sur le texte rebasé : la 29-8 ajoute ses deux routes en paragraphes à côté de `…/unreject` (`:594`),
+  qui restent à l'octet (zones partagées ; validation P2, R6).
 - **CHANGELOG** : dans la section de la v0.13.4 que porte `main` au moment du rebase (la 29-2 la crée — sinon
   `## [Non publié]`), sous `### Corrigé`, trois puces : la suite de la liste de réconciliation (#649), la bannière
   périmée du détail d'un import (#655), la confirmation de suppression d'une personne de contact (#646). La section
@@ -248,19 +301,34 @@ suit, `boutons-rouges-inventory.test.ts:231`).
 Vitest (écrits **avant** le correctif et vus rouges, sortie copiée au Dev Agent Record) :
 
 - `ReconciliationProposals.test.ts` (patrons du fichier : `mockApi.getProposals`, `satisfies GetProposalsResponse`) :
-  - ⛔ **Étape 0, avant V1-V5 — le mock du module API** (validation P1, R1/F1). La fabrique
+  - ⛔ **Étape 0, avant les tests neufs (V1-V5, V12, V18) — le mock du module API** (validation P1, R1/F1). La fabrique
     `vi.mock('./reconciliation.api', () => ({ getProposals: vi.fn(), … }))` (`:22-27`) n'exporte pas les constantes
     neuves : dès que le composant importe `PROPOSALS_DEFAULT_LIMIT`/`PROPOSALS_MAX_LIMIT`, Vitest lève à l'accès
-    (« No "…" export is defined on the mock ») et **tout** le fichier rougit, sans rapport avec son objet. Elle
-    devient `vi.mock('./reconciliation.api', async (importOriginal) => ({ ...(await importOriginal<typeof
-    import('./reconciliation.api')>()), getProposals: vi.fn(), acceptProposals: vi.fn(), rejectProposals: vi.fn(),
-    manualMatchTransaction: vi.fn() }))` — les quatre fonctions restent des `vi.fn()`, les constantes sont les vraies.
+    (« No "…" export is defined on the mock ») et **tout** le fichier rougit, sans rapport avec son objet. **Geste en
+    delta, sur la fabrique telle que `main` la porte au rebase** (validation P2, R6) : elle passe à
+    `vi.mock('./reconciliation.api', async (importOriginal) => ({ ...(await importOriginal<typeof
+    import('./reconciliation.api')>()), /* les vi.fn() de la fabrique rebasée, tous gardés */ }))` — chaque entrée que
+    la fabrique porte au rebase reste un `vi.fn()` (au sol, quatre : `getProposals`, `acceptProposals`,
+    `rejectProposals`, `manualMatchTransaction` ; la 29-8 en ajoute, `getLinkCandidates`/`linkTransaction`, fiche 29-8
+    `:387`, `:550`), les constantes sont les vraies. Ne **jamais** recopier une fabrique complète de cette fiche : ce
+    serait effacer les entrées d'une fiche voisine.
     Ce changement se fait **en premier**, avec les constantes de l'AC4 (T1), et le fichier existant se relance **vert**
-    avant d'écrire V1 : ainsi V1-V5 rougissent pour la **bonne** raison (le comportement absent), et la sortie copiée
-    au Dev Agent Record le montre. Seul ce fichier mocke `./reconciliation.api` pour un composant qui importera les
-    constantes (`git grep -ln "reconciliation.api'" -- frontend/src`, relu par les deux lentilles). Si `importOriginal`
-    se révèle impossible (import réel qui casse le montage), repli : loger les deux constantes dans un module sans I/O
-    `reconciliation.limits.ts`, non mocké, réexporté par `reconciliation.api.ts` — à déclarer au Dev Agent Record.
+    avant d'écrire les tests neufs : ainsi V2-V5 rougissent pour la **bonne** raison (le comportement absent), et la
+    sortie copiée au Dev Agent Record le montre ; V1 et V12, qui exigent une **absence**, sont verts au sol (T2 ;
+    validation P2, F7). Seul ce fichier mocke `./reconciliation.api` pour un composant qui importera les constantes
+    (`git grep -ln "reconciliation.api'" -- frontend/src`, relu par les deux lentilles).
+    **Dépendance neuve, à savoir d'avance** (validation P2, R4) : au sol, ce fichier de test ne charge **pas**
+    `api-client` — les deux modales sont des doublures (`:44-49`), `error-message.ts` n'importe que `./api-error`, les
+    API des comptes sont mockées. `importOriginal` de `./reconciliation.api` fait entrer `api-client.ts` et ses imports :
+    `$lib/app/stores/auth.svelte` (qui crée un `BroadcastChannel` dès son chargement, `auth.svelte.ts:34-36`, toléré
+    absent sous jsdom), `api-health.svelte`, et `i18n.svelte` (mocké dans ce fichier, `:53`). Risque faible —
+    `bank-import-page.test.ts:19-20` charge déjà le vrai `api-client` par `importOriginal` —, mais un échec au
+    chargement du fichier se lit d'abord là.
+    Si `importOriginal` se révèle impossible (import réel qui casse le montage), repli : loger les deux constantes dans
+    un module sans I/O `reconciliation.limits.ts`, non mocké, et **`ReconciliationProposals.svelte` importe les
+    constantes directement depuis `./reconciliation.limits`** — une réexportation par `reconciliation.api.ts` reste
+    possible pour les autres lecteurs, mais le composant qui passerait par elle traverserait le module mocké, et l'échec
+    « No "…" export » reviendrait (validation P2, R4). Repli à déclarer au Dev Agent Record.
   - V1 `hasMore: false` → ni `reconciliation-more`, ni bouton, ni `reconciliation-more-capped` ;
   - V2 `hasMore: true` (100 lignes) → avis avec « 100 », bouton présent ; `getProposals` appelé avec `(id, 100)` ;
   - V3 clic → liste de la seconde réponse rendue, **puis** `await tick()`, **puis seulement** l'assertion :
@@ -271,6 +339,9 @@ Vitest (écrits **avant** le correctif et vus rouges, sortie copiée au Dev Agen
   - V5 après le clic, un *Accepter* réussi recharge avec `(id, 500)` (pas 100) ;
   - V12 `hasMore` **retombe** : premier chargement `hasMore: true`, *Accepter* réussi, relecture `hasMore: false` → ni
     `reconciliation-more`, ni bouton, ni `reconciliation-more-capped` (validation P1, F6) ;
+  - V18 **bouton désactivé pendant un lot** : premier chargement `hasMore: true`, une ligne cochée, `acceptProposals`
+    **différé** (promesse tenue par le test), clic *Accepter* → `reconciliation-show-older-btn` porte `disabled` et
+    `getProposals` n'a été appelé qu'une fois ; puis la promesse se résout (validation P2, R8) ;
   - aucun test existant ne vérifie les arguments de `getProposals` (`grep -n "toHaveBeenCalledWith"
     ReconciliationProposals.test.ts` au sol : aucun sur `getProposals`) ; `reconciliation.api.test.ts` vérifie l'URL
     (`limit=100` par défaut) et reste vert.
@@ -299,6 +370,14 @@ Vitest (écrits **avant** le correctif et vus rouges, sortie copiée au Dev Agen
     « Chargement… » toujours affiché, aucun champ « Banque 5 » ; puis 6 réussit → « Banque 6 » (validation P1, R8) ;
   - V16 **identifiant invalide après une lecture lente** : id 5 lent, puis `{ id: 'abc' }` → « ID invalide » ; 5
     échoue ensuite → « ID invalide » reste (validation P1, R7) ;
+  - V17 **sauvegarde tardive après navigation** (validation P2, F2) : la fabrique de
+    `$lib/features/bank-import/bank-profile.api` gagne `updateBankProfile: (id, req) => updateMock(id, req)` (et
+    `createBankProfile: vi.fn()`, jamais appelé, pour que le module mocké reste complet — le formulaire importe les deux,
+    `BankProfileForm.svelte:11-14`) ; id 5 en succès (« Banque 5 », fabrique de profil **complète** : le formulaire lit
+    `existing.columnMapping`, `:34-62`), `updateMock` **différé**, envoi du formulaire (`fireEvent.submit` sur
+    `bank-import-profile-form`) ; `fakePage.params = { id: '6' }`, 6 en succès (« Banque 6 ») ; **puis** la sauvegarde
+    de 5 se résout avec p5 → le champ montre « Banque 6 », et un second envoi appelle `updateMock` avec **6** en premier
+    argument (sous M19 : 5) ;
   - les deux tests existants restent verts. Si la fixture réactive se révèle impossible sous Vitest, le dire au Dev
     Agent Record avec l'erreur, et **ne pas** déclarer AC6 prouvé.
 - `ContactPersonsManager.test.ts` (neuf ; `vi.stubGlobal('confirm', …)`, patron `BankProfileList.test.ts:57-58`) :
@@ -354,13 +433,20 @@ Mutations (motif vérifié unique avant écriture ; restauration `git checkout -
 | M15 | l'effet du profil relit `page.params.id` au lieu de `rawId` (`$derived` contourné) | V13 |
 | M16 | profil : `isLoading = false` écrit **hors** de la garde de séquence, dans le `.then` et le `.catch` | V15 |
 | M17 | profil : `const mySeq = ++loadSeq` placé **après** la branche `!Number.isFinite(id)` | V16 |
-| M18 | `has_more = transactions.len() as i64 >= limit` (Rust, `routes/reconciliation.rs:627`) | `get_proposals_limit_500_exact_has_no_more` |
+| M18 | `has_more = transactions.len() as i64 >= limit` (Rust, `routes/reconciliation.rs:628`) | `get_proposals_limit_500_exact_has_no_more` |
+| M19 | profil : garde `updated.id !== Number(rawId)` retirée d'`onUpdated` | V17 |
+| M20 | `limit + 1` → `limit` dans l'appel du repository (Rust, `routes/reconciliation.rs:625`) | `get_proposals_limit_is_capped_at_500`, `get_proposals_paginates_at_100_default` |
+| M21 | `disabled={busy}` retiré du bouton `reconciliation-show-older-btn` | V18 |
 
 M15 n'est tuée que parce que la fixture **réassigne** `params` (comme SvelteKit) : avec un `$state` profond dont seul
 `id` bougerait, l'effet ne se rejouerait pas à id égal, mutation ou non — c'est ce que F4 a relevé. M18 et M6
-sont des mutations temporaires de production Rust, restaurées par `git checkout -- f && touch f` comme les autres.
+sont des mutations temporaires de production Rust, restaurées par `git checkout -- f && touch f` comme les autres ; M20
+aussi.
 
-Gates : gate ciblé entre les passes ; **au dernier commit de code** : `scripts/test-fast.sh` complet sur base
+Gates : gate ciblé entre les passes ; **exception *kesh-db*** : le commit de T1, qui réécrit le commentaire de
+`crates/kesh-db/src/repositories/reconciliation.rs:18-19`, passe le **gate complet** (`scripts/test-fast.sh` sur
+`kesh_299` remise à zéro) — à ce commit-là seulement, et à tout patch de revue qui retoucherait ce fichier ; les autres
+commits restent au gate ciblé (validation P2, R1 = F1). **Au dernier commit de code** : `scripts/test-fast.sh` complet sur base
 `kesh_299` remise à zéro (migrations du worktree, seed), frontend complet (`check`, `lint-i18n-ownership`,
 `test:unit`, `build`), E2E complet — sous le verrou `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock`. Ne déclarer
 que ce qui a tourné, avec ses chiffres.
@@ -372,13 +458,15 @@ que ce qui a tourné, avec ses chiffres.
   3049. **Rebaser d'abord** sur `main` si la 29-3, la 29-6 ou la 29-8 y sont mergées, puis relire chaque numéro de
   ligne de cette fiche.
 - [ ] **T1** — #649 contrat (AC4) : constantes frontend **et**, dans le même geste, le mock de
-  `ReconciliationProposals.test.ts` passé à `importOriginal` (AC9, étape 0 ; fichier relancé vert) ; commentaire de
-  `reconciliation.types.ts:52-55` ; doc-comments Rust, deux tests Rust ; M6, M18 ; commit `test(29-9): … (refs #649)`.
-- [ ] **T2** — #649 écran (AC1-AC3) : V2-V5 rouges, puis le correctif ; V1 et V12 exigent une **absence** et sont
-  donc verts au sol par construction — ils se déclarent tels, et V12 vaut par M14 ; M1-M5, M14 ; commit
+  `ReconciliationProposals.test.ts` passé à `importOriginal` (AC9, étape 0, en delta ; fichier relancé vert) ;
+  commentaire de `reconciliation.types.ts:52-55` ; commentaire de module de `kesh-db` `:18-19` réécrit (AC4) ;
+  doc-comments Rust, deux tests Rust ; M6, M18, M20 ; **gate complet à ce commit** (exception *kesh-db*, AC10) ; commit
+  `test(29-9): … (refs #649)`.
+- [ ] **T2** — #649 écran (AC1-AC3) : V2-V5 et V18 rouges, puis le correctif ; V1 et V12 exigent une **absence** et
+  sont donc verts au sol par construction — ils se déclarent tels, et V12 vaut par M14 ; M1-M5, M14, M21 ; commit
   `fix(reconciliation): … (refs #649)`.
-- [ ] **T3** — #655 (AC5, AC6) : V6-V9 et V13-V16 rouges (V13 l'est au sol : l'effet actuel relit à id égal), puis les
-  deux pages ; M7-M10, M13, M15-M17 ; commit `fix(bank-import): … (refs #655)`.
+- [ ] **T3** — #655 (AC5, AC6) : V6-V9 et V13-V17 rouges (V13 l'est au sol : l'effet actuel relit à id égal), puis les
+  deux pages ; M7-M10, M13, M15-M17, M19 ; commit `fix(bank-import): … (refs #655)`.
 - [ ] **T4** — #646 (AC7) : V10-V11 rouges, puis le correctif ; M11-M12 ; commit `fix(contacts): … (refs #646)`.
 - [ ] **T5** — i18n (AC8) : quatre clés, une réécrite, ×4 ; `sitesTotal` recompté ; `KNOWN_VIOLATIONS` de
   `lint-i18n-ownership.js` (+1) ; inventaire des boutons rouges ; gardes i18n nommées à l'AC8 relancées.
@@ -400,7 +488,10 @@ bank-import`, `features/contacts` ; (2) `kesh-api` — deux doc-comments et deux
 (3) les catalogues `kesh-i18n` ; (4) la documentation (manuel, PDF, `api-external.md`, CHANGELOG). **Quatre**, sous
 la limite de cinq : le critère « scope cross-cutting » n'est pas atteint. Si l'on compte chaque zone du frontend
 comme un module, on en compte six : la section tient alors lieu de la `Dérogation règle de splitting`, **déclarée au
-Project Lead par le rapport de l'orchestrateur**. Dans les deux lectures, pas de découpage : les trois correctifs sont
+Project Lead par le rapport de l'orchestrateur**. *Annotation du 2026-10-14 (validation P2, R1 = F1)* : la réécriture
+du commentaire de module de `kesh-db` (AC4) ajoute un module, (5) `kesh-db` — **un commentaire**, aucun code. Cinq dans
+la première lecture, ce qui reste sous le seuil (« plus de 5 ») ; sept dans la seconde, couverte par la même
+dérogation déclarée. Dans les deux lectures, pas de découpage : les trois correctifs sont
 indépendants, chacun tient en un ou deux fichiers de production, aucun ne change une règle métier, et la revue se
 fait correctif par correctif (précédent : 28-8, C-28-8-1). Un correctif fautif **sort du périmètre** plutôt que de
 retenir les deux autres. C-29-9-1.
@@ -411,12 +502,21 @@ retenir les deux autres. C-29-9-1.
 |---|---|---|
 | 29-3 (#527) | `ReconciliationProposals.svelte` : en-tête `:8`, paragraphe de priorité **avant** la table ; `i18n-keys.test.ts` `sitesTotal` +1 ; manuel `:2025-2060`, dont `:2045-2050`, `:2049`, `:2056` | ajout **après** `</table>` ; `sitesTotal` recompté ; phrase `:2045` réécrite **sur la version 29-3** |
 | 29-6 (#665) | même composant : case sur toutes les lignes, *Accepter* grisé, indication dans la rangée des boutons, garde d'`onAccept` ; s'appuie sur « `load()` vide `selected` » (état (a)) ; manuel `:2050`, `:2056`, **`:2057`** (paragraphe *Rejeter* réécrit : « écarte la transaction, sans écriture »), `:2901`, `:2910-2911` | ne touche ni la case, ni la rangée, ni `onAccept` ; **garde** la remise à vide de `selected` (C-29-9-5) ; à `:2057`, **delta** sur la parenthèse seule (AC8) |
-| 29-8 (#670) | même composant : troisième bouton de ligne, modale ; manuel `:2021`, **`:2057`** (y garde « une transaction rejetée compte comme non rapprochée »), `:2043-2060` | ne touche pas la ligne de table ; à `:2057`, **delta** sur la parenthèse seule (AC8) |
+| 29-8 (#670) | même composant : troisième bouton de ligne, modale `LinkSettlementModal` (fiche 29-8 `:370`, emplacement non prescrit — naturellement après `</table>`, à côté des deux autres) ; manuel `:2021`, **`:2057`** (y garde « une transaction rejetée compte comme non rapprochée »), `:2043-2060` | ne touche pas la ligne de table ; avis et bouton **immédiatement** après `</table>`, avant toute modale, la sienne comprise (AC1 ; validation P2, F8) ; à `:2057`, **delta** sur la parenthèse seule (AC8) |
+| 29-3, 29-6, 29-8 — `docs/api-external.md` | 29-3 `:549` et 29-6 `:551` (§ *Accepter des propositions*) ; 29-8 : ses deux routes en paragraphes « à côté de `…/unreject`, `:594` » (fiche 29-8 `:474`) | `:594`, **en delta** sur la phrase rebasée : la parenthèse « (100 par défaut) » seule, les paragraphes de la 29-8 gardés (validation P2, R6) |
+| 29-8 — `reconciliation.api.ts`, `reconciliation.types.ts` | `getLinkCandidates`, `linkTransaction` et leurs types (fiche 29-8 `:387-388`) | deux constantes et le défaut de `getProposals` ; commentaire de `hasMore` (`.types.ts:52-55`) — ajouts **à côté**, rien de la 29-8 retiré (R6) |
+| 29-3, 29-6, 29-8 — `ReconciliationProposals.test.ts` | fabriques et tests neufs (29-3 `:532`, 29-8 `:550`) ; la 29-6 réécrit le test `:179` (fiche 29-6 `:636`) ; la 29-8 peut ajouter des entrées au mock du module API | mock passé à `importOriginal` **en delta** sur la fabrique rebasée, toutes ses entrées gardées (AC9, étape 0 ; R6) ; tests neufs à la suite |
 
 **Recensement au sol** (`grep -noE "user-manual\.tex:?[0-9]{3,4}(-[0-9]+)?|:2057|:2045|:2050|:2901|:2910"` sur les
 trois fiches, 2026-10-14, validation P1 R4) : `:2057` est édité par **trois** fiches (29-6, 29-8, 29-9), `:2045` par
 deux (29-3, 29-9) ; `:869-874` par la 29-9 seule. L'emplacement « après `</table>` » n'est prescrit par aucune des trois (le rappel `reconciliation-rejected-hint`
 que garde la 29-6 est plus bas, `.svelte:455`, hors de la branche liste non vide).
+*Précision du 2026-10-14 (validation P2, F8)* : « prescrit par aucune » reste vrai à la lettre, mais la 29-8 instancie
+une modale sans dire où, et son emplacement naturel est ce même point ; d'où la règle de l'AC1 — l'avis et le bouton
+d'abord, les modales ensuite, quelle que soit la fiche qui les a posées.
+
+Les numéros de ligne des fiches voisines cités dans ce tableau sont ceux du 2026-10-14 (validation P2) : ces fiches
+évoluent, et T0 les relit.
 
 **Ordre** : la 29-9 se rebase et se merge **après** les trois (C-29-9-11). Au rebase : jamais `--ours`/`--theirs` sur
 les PDF, régénérer ; recompter `sitesTotal` à la source.
@@ -454,20 +554,37 @@ git grep -n "sans confirmation" -- frontend/src docs                            
 git grep -n "contact-persons-confirm-delete" -- frontend crates/kesh-i18n                # #646 : site, repli, 4 locales, KNOWN_VIOLATIONS
 git grep -n "page.params" -- "frontend/src/routes/(app)/bank-import/profiles"           # #655 : l'effet ne relit plus page.params (rawId seul)
 git grep -ln "reconciliation.api'" -- frontend/src                                     # mocks du module API (R1/F1)
+git grep -n "onUpdated\|onSuccess=" -- "frontend/src/routes/(app)/bank-import/profiles" # #655 : garde d'onUpdated (P2, F2)
+git grep -n "hardcodé 100" -- crates                                                    # kesh-db réécrit (P2, R1 = F1) : vide
 pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "plus récentes.\{0,200\}"
 pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "personnes de contact.\{0,300\}"
 ```
 
-Les occurrences légitimes (le CHANGELOG `[0.13.3]`, la valeur 100 des constantes, `kesh-db/src/repositories/reconciliation.rs:19`
-— C-29-9-16) se trient à la main et se citent au Dev Agent Record.
+Les occurrences légitimes se trient à la main et se citent au Dev Agent Record. Liste attendue **après** la story
+(validation P2, R9) :
+
+- le CHANGELOG `[0.13.3]` (publié) ;
+- la valeur 100 des constantes (`PROPOSALS_DEFAULT_LIMIT`, `DEFAULT_PROPOSALS_LIMIT`) et des doc-comments qui les
+  nomment, dont le commentaire de module de `kesh-db` réécrit (« défaut 100, plafond 500 ») ;
+- la clé réécrite `reconciliation-unreject-success`, dans ses **quatre** traductions (« montre **d'abord** les 100 plus
+  récentes… », « first », « zuerst », « prima »), et son repli `UnrejectTransactionAction.svelte:49-50` ;
+- la phrase neuve du manuel à `:2045` (« les 100 plus récentes d'abord ») et son reflet dans le PDF.
+
+Ce qui ne doit **plus** sortir : `L24` et « hardcodé 100 » (`kesh-db` réécrit, C-29-9-16), « pas de UI dédiée » et
+« Charger plus » (doc-comment Rust et `reconciliation.types.ts` réécrits), « 100 plus récentes au plus » et « qui ne
+montre que les 100 plus récentes ».
 
 ### Pièges connus du dépôt, applicables ici
 
 - **Effet qui suit `limit`** (AC2) : poser `limit` puis appeler `load()` double la requête ; V3 l'attrape.
-- **`page.params` est réassigné à chaque navigation** (AC6) : un effet qui lit `page.params.id` se rejoue à id égal ;
+- **`page.params` est réassigné à chaque navigation où `page_changed` est vrai** — URL, erreur, formulaire ou données
+  changés, `client.js:763-772` (AC6) : un effet qui lit `page.params.id` se rejoue à id égal ;
   dériver la **chaîne** (`$derived(page.params.id)`), pas le nombre (`NaN !== NaN`). V13 l'attrape.
 - **Mock par fabrique sans `importOriginal`** : un export neuf du module mocké est absent du mock et fait lever
-  Vitest à l'accès ; `ReconciliationProposals.test.ts` (AC9, étape 0).
+  Vitest à l'accès ; `ReconciliationProposals.test.ts` (AC9, étape 0) — et `profile-page.test.ts`, dont la fabrique
+  de `bank-profile.api` doit gagner `updateBankProfile` (et `createBankProfile`) pour V17.
+- **Un composant Svelte 5 lit ses props en direct** (`$$props.x` à chaque accès, même démonté) : un numéro de séquence
+  capturé dans une fermeture passée en prop ne garde rien (AC6, C-29-9-17).
 - **Fallbacks Svelte = valeur `fr-CH`**, au caractère près (apostrophe typographique ou droite : copier celle du
   `.ftl`).
 - **Marques d'isolation Fluent** : `i18nMsg` les consomme avec la variable (`i18n.svelte.ts:22-27`) ; ne pas les
@@ -484,10 +601,11 @@ Les occurrences légitimes (le CHANGELOG `[0.13.3]`, la valeur 100 des constante
 ### References
 
 - [#649], [#655], [#646] (`gh issue view N`, lues le 2026-10-14).
-- `crates/kesh-api/src/routes/reconciliation.rs:56-90`, `:578-631` ; `crates/kesh-db/src/repositories/reconciliation.rs:276-311` ;
+- `crates/kesh-api/src/routes/reconciliation.rs:56-90`, `:578-631` ; `crates/kesh-db/src/repositories/reconciliation.rs:18-19`
+  (commentaire de module réécrit), `:276-311` ;
   `crates/kesh-api/tests/reconciliation_e2e.rs:2065-2116`.
 - `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`, `reconciliation.api.ts:16-26`,
-  `reconciliation.types.ts:52-55`, `ReconciliationProposals.test.ts:22-27` (mock) ; `frontend/scripts/lint-i18n-ownership.js:117-133`.
+  `reconciliation.types.ts:52-55`, `ReconciliationProposals.test.ts:22-27` (mock) ; `frontend/scripts/lint-i18n-ownership.js:117-139`.
 - `frontend/src/routes/(app)/bank-import/[id]/+page.svelte`, `bank-import-detail-page.test.ts:171-217` ;
   `frontend/src/routes/(app)/bank-import/profiles/[id]/+page.svelte`, `profile-page.test.ts`.
 - `frontend/src/lib/features/contacts/ContactPersonsManager.svelte` ; `BankProfileList.svelte:30`,
@@ -539,6 +657,37 @@ Les occurrences légitimes (le CHANGELOG `[0.13.3]`, la valeur 100 des constante
     sites : deux doc-comments Rust prescrits, `reconciliation.types.ts:54` désormais prescrit, `kesh-db` trié) ;
     `101` dans fiche et registre (C-29-9-12 seul, corrigé) ; `ne se rejoue que si` (fiche et registre, annotés) ;
     `111-119`, `291-299` (aucun résidu).
+
+- 2026-10-14 — **Validation P2 remédiée** (Opus 5.5 ; passe Opus, lentilles R et F, rapports
+  `kesh-gate-logs/29-9-validate-p2-{R,F}.md`). Bilan de la passe : R **0/0/1/8**, F **0/0/2/7**, soit 18 findings dont
+  quatre paires convergentes (R1=F1, R2=F3, R3=F4, R5=F9) : **14 défauts distincts**, 2 MEDIUM et 12 LOW. Tendance :
+  P1 6 MEDIUM → P2 2 MEDIUM. **Tous traités, aucun refus** ; décisions de l'orchestrateur consignées comme telles.
+  - R1 = F1 (MEDIUM, **décision de l'orchestrateur**) — le commentaire de module `kesh-db/src/repositories/
+    reconciliation.rs:18-19`, faux depuis la 8-4, est **réécrit en T1** (AC4) ; C-29-9-16 annoté et renversé.
+    `kesh-db` entre dans le diff pour un commentaire : l'exception *kesh-db* ne vaut que pour le commit de T1 (et un
+    patch de revue qui retoucherait ce fichier), gate complet à ce commit-là (AC10, T1) ; module de plus déclaré
+    (§ *Dérogation*, C-29-9-1 annoté).
+  - F2 (MEDIUM, **décision de l'orchestrateur**) — `onUpdated` gardé (AC6, C-29-9-17), V17, M19. ⚠️ La décision dit
+    « la même garde de séquence que le chargement » ; sa forme littérale (numéro capturé dans une fermeture passée au
+    formulaire) ne tient pas, le formulaire lisant ses props en direct (`$$props.onSuccess`, établi par compilation d'un
+    composant d'essai sous Svelte 5.55.1). La garde est donc évaluée à l'appel, sur l'identifiant courant
+    (`updated.id !== Number(rawId)`) — même effet voulu : une sauvegarde qui finit après une navigation vers un autre
+    profil n'écrit plus `profile`. Signalé à l'orchestrateur.
+  - LOW : R2 = F3 (la mutation `limit` pour `limit + 1` n'est pas tuée par le test à 500 mais par celui à 501 ; phrase
+    corrigée, mutation inscrite M20) ; R3 = F4 (`:627` → `:628`) ; R4 (repli `reconciliation.limits.ts` : import direct
+    par le composant ; `importOriginal` fait entrer `api-client` et ses imports, écrit à l'étape 0) ; R5 = F9
+    (`KNOWN_VIOLATIONS` : bloc `:117-139`, insertion après `:139`, deux sites) ; R6 (trois zones partagées ajoutées :
+    `api-external.md`, `reconciliation.api.ts`/`.types.ts`, `ReconciliationProposals.test.ts` ; étape 0 et `:594` en
+    delta sur le texte rebasé) ; R7 (`sprint-status.yaml` : « 1 à 18 ») ; R8 (bouton désactivé pendant un lot : V18,
+    M21) ; R9 (liste des occurrences légitimes attendues après la story, et de celles qui ne doivent plus sortir) ; F5
+    (`page_changed`, `client.js:763-772` : formulation exacte, cinq sites vivants corrigés, deux annotations datées) ;
+    F6 (commentaire au site plutôt qu'`untrack`, C-29-9-18) ; F7 (V1 et V12 verts au sol, « V2-V5 rougissent ») ; F8
+    (avis et bouton immédiatement après `</table>`, avant toute modale dont celle de la 29-8 ; C-29-9-11 annoté).
+  - Recomptes à la source après remédiation : 10 AC, T0-T9 (10), **V1-V18** (18 ; +2 : V17, V18), **M1-M21** (21 ;
+    +3 : M19-M21), choix **C-29-9-1 à 18** (+2 : 17, 18). Symptômes grepés : `chaque navigation|toute navigation`
+    (fiche et registre ; sites vivants corrigés, entrées datées annotées, Change Log P1 laissé) ; `:627`, `117-133`
+    (aucun résidu vivant) ; `reste vrai` (registre C-29-9-16, annoté et renversé) ; `V1-V5` (étape 0 corrigée ; Change
+    Log P1 laissé) ; `C-29-9-1 à 12` (`sprint-status.yaml`, corrigé).
 
 [#646]: https://github.com/guycorbaz/kesh/issues/646
 [#649]: https://github.com/guycorbaz/kesh/issues/649

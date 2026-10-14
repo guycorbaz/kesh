@@ -19,6 +19,8 @@
   29-8, pour le même diff).
 - **Réversible** : oui — un correctif fautif sort du périmètre (son issue reste ouverte) plutôt que de retenir les deux
   autres.
+- *Annotation du 2026-10-14 (validation P2, R1 = F1)* : la réécriture du commentaire de module de `kesh-db`
+  (C-29-9-16) ajoute un cinquième module — un commentaire, aucun code ; cinq reste sous le seuil (« plus de 5 »).
 
 ### C-29-9-2 — #649 : un seul palier, « jusqu'à 500 », et non un « Charger plus » par cent
 
@@ -117,6 +119,9 @@
   `client.js:1888`). Telle quelle, la correction retenue ci-dessus (`isLoading = true` en tête) aurait démonté le
   formulaire et perdu une saisie à chaque navigation de ce genre. Le « Retenu » ci-dessus est conservé pour la trace ;
   il est **remplacé par C-29-9-13** pour la forme de l'effet. Le constat « défaut latent » tient (aucun lien au sol).
+  *Précision du 2026-10-14 (validation P2, F5)* : « à chaque navigation » est trop large — à chaque navigation où
+  `page_changed` est vrai (`client.js:763-772`), ce qui comprend une navigation à `id` égal qui change l'URL ou les
+  données ; la conclusion ne change pas.
 
 ### C-29-9-9 — #655 : la classe n'est pas revendiquée fermée
 
@@ -149,6 +154,10 @@
 - **Retenu** : la 29-9 se rebase après elles et se merge en dernier ; son ajout à l'écran se place **après la table**
   (`</table>`, `:401`), zone qu'aucune des trois ne touche. Elle part dans la v0.13.4.
 - **Réversible** : oui.
+- *Annotation du 2026-10-14 (validation P2, F8)* : « zone qu'aucune des trois ne touche » n'est pas établi pour la
+  29-8, qui ajoute une `LinkSettlementModal` à ce composant sans en prescrire l'emplacement (fiche 29-8 `:370`) — son
+  emplacement naturel est après `</table>`, à côté des deux autres modales. Règle retenue (AC1) : au rebase, l'avis et
+  le bouton se placent **immédiatement** après `</table>`, avant toute instance de modale, la sienne comprise.
 
 ### C-29-9-12 — Tests de bout en bout : deux specs neuves, aucun pour #655
 
@@ -163,15 +172,16 @@
 
 ### C-29-9-13 — #655, second cas : l'effet du profil dépend d'un `$derived` de l'identifiant (validation P1, F4)
 
-- **Contexte** : `page.params` est un `$state.raw` réassigné par `Object.assign(page, …)` à chaque navigation
-  (`@sveltejs/kit` 2.55.0, `state.svelte.js:37`, `client.js:1888`) ; un effet qui lit `page.params.id` se rejoue donc à
+- **Contexte** : `page.params` est un `$state.raw` réassigné par `Object.assign(page, …)` à chaque navigation où
+  `page_changed` est vrai — URL, erreur, formulaire ou données changés (`@sveltejs/kit` 2.55.0, `state.svelte.js:37`,
+  `client.js:763-772`, `:1888` ; sinon `clone_page(page)`, `:707`, garde la référence — précisé en validation P2, F5) ; un effet qui lit `page.params.id` se rejoue donc à
   `id` égal. `BankProfileForm` initialise ses champs **une fois** depuis `existing` (`BankProfileForm.svelte:46-60`) :
   à id changé, il doit être remonté ; à id égal, il ne doit **jamais** l'être (saisie en cours). Décision de
   l'orchestrateur : le geste le plus étroit, sans démontage ni perte de saisie au même id.
 - **Retenu** : `const rawId = $derived(page.params.id)` ; l'effet ne lit que `rawId`. Un `$derived` compare par `===`
   (`svelte/src/internal/client/reactivity/equality.js:4-6`, Svelte 5.55.1) : à id égal, il garde sa valeur et l'effet
-  ne se rejoue pas. La **chaîne** est dérivée, non le nombre (`NaN !== NaN` relancerait l'effet à chaque navigation
-  sur un id invalide). En tête de l'effet — donc d'un chargement réel — `++loadSeq` (avant la branche « ID
+  ne se rejoue pas. La **chaîne** est dérivée, non le nombre (`NaN !== NaN` relancerait l'effet à chaque
+  réassignation de `page.params` sur un id invalide). En tête de l'effet — donc d'un chargement réel — `++loadSeq` (avant la branche « ID
   invalide »), `errorMessage = null`, `isLoading = true` ; garde de séquence sur `profile`, `errorMessage`,
   `isLoading`. `isLoading = true` est **gardé** : établi au code qu'il ne s'exécute qu'à id changé, où il est
   nécessaire. Tests V13 (id égal : un seul appel, saisie intacte), V14, V15, V16 ; fixture qui **réassigne** `params`.
@@ -211,4 +221,49 @@
   repository `kesh-db` dans le diff pour un commentaire, et avec lui l'exception *kesh-db* (gate complet à chaque
   patch de la boucle de revue).
 - **Écartée** : le réécrire (« défaut 100, plafond 500, fixés par la route »).
+- **Réversible** : oui.
+- *Annotation du 2026-10-14 (validation P2, R1 = F1) — **décision de l'orchestrateur : le « Retenu » ci-dessus est
+  renversé**, conservé pour la trace.* Les deux raisons étaient fausses. (1) « Le commentaire reste vrai » : il est
+  faux **depuis la Story 8-4** (`22fd6d4a`, le commit qui l'a écrit) — l'appelant ne code pas 100 en dur, la route
+  prend `?limit=` de 1 à 500, 100 par défaut (`routes/reconciliation.rs:598-602`), et passe `limit + 1` (`:622-626`) ;
+  après la story, l'écran demande lui-même 500. Un site du symptôme de #649 était donc trié sur un motif faux.
+  (2) « L'exception *kesh-db* : gate complet à chaque patch de la boucle » : surestimée — CLAUDE.md dit « dès qu'un
+  **patch** touche … un repository » ; elle vaut pour **le commit qui touche ce fichier**, celui de T1, et pour un
+  patch de revue qui le retoucherait, pas pour toute la boucle. **Retenu désormais** : le commentaire est **réécrit en
+  T1** (« `limit` fourni par la route : défaut 100, plafond 500, sentinelle `limit + 1` pour `hasMore` »), le renvoi
+  `L24` disparaît ; gate complet au commit de T1 ; aucun code de production Rust ne change. **Écartée** désormais : le
+  laisser comme angle mort assumé (un commentaire faux qu'on sait faux, pour éviter un gate).
+
+### C-29-9-17 — #655, second cas : `onUpdated` gardé, sur l'identifiant courant et non sur une fermeture (validation P2, F2)
+
+- **Contexte** : `bank-import/profiles/[id]/+page.svelte:33-35`, `onUpdated(updated)` écrit `profile` sans condition.
+  Une sauvegarde du profil 5 qui se termine après une navigation vers 6 (et après la lecture de 6) écrit `profile = p5` ;
+  le formulaire monté garde les champs de 6 (initialisés une fois, `BankProfileForm.svelte:46-60`) mais `existing` = p5,
+  et la sauvegarde suivante écrit les valeurs de 6 dans le profil 5. Latent, comme le reste du second cas (aucun lien
+  d'un profil à l'autre au sol). **Décision de l'orchestrateur** : `onUpdated` reçoit la même garde de séquence que le
+  chargement — une sauvegarde qui finit après une navigation vers un autre profil n'écrit plus `profile`.
+- **Retenu** : la garde se pose **dans** `onUpdated`, évaluée à l'appel : `if (updated.id !== Number(rawId)) return;`
+  puis `profile = updated`. C'est la forme que prend la décision de l'orchestrateur pour une écriture que la page ne
+  lance pas elle-même : la page ignore toute écriture qui ne relève plus du profil affiché, comme `mySeq === loadSeq`
+  ignore une lecture périmée. Test V17, mutation M19.
+- **Écartées** : un numéro de séquence capturé dans une fermeture passée au formulaire (`onSuccess={onUpdatedFor(seq)}`)
+  — **ne tient pas** : Svelte 5.55.1 compile `let { existing, onSuccess } = $props()` suivi d'un appel après `await` en
+  `$$props.onSuccess?.($$props.existing)` (compilation d'un composant d'essai, 2026-10-14, hors dépôt), si bien que le
+  formulaire démonté de 5 appellerait le gestionnaire **courant**, celui de 6, et que la garde passerait ; modifier
+  `BankProfileForm` pour qu'il capture l'identifiant au départ de la sauvegarde (hors des deux sites de #655) ; sortir
+  le site du périmètre (C-29-9-9) — l'orchestrateur a tranché pour la garde.
+- **Conséquence assumée** : retour de 6 à 5 avant la fin de la sauvegarde de 5 → la réponse est acceptée ; c'est juste
+  (même profil, valeurs enregistrées), et une garde strictement séquentielle l'aurait refusée sans gain.
+- **Réversible** : oui.
+
+### C-29-9-18 — #655, second cas : la dépendance synchrone de `getBankProfile` s'écrit au site, sans `untrack` (validation P2, F6)
+
+- **Contexte** : « l'effet ne dépend que de l'identifiant » (C-29-9-13) suppose aussi que la partie synchrone de
+  `getBankProfile(id)` ne lit aucun signal. Vrai au sol (`request` → `buildHeaders` → `fetchWithRetry` →
+  `fetchWithTimeout`, `api-client.ts:181-199`, `:267-280`, `:329-336`, `:392-399`) ; V13 mocke l'API et ne le verrait
+  pas changer.
+- **Retenu** : un commentaire au site qui écrit cette dépendance et nomme le remède (`untrack(() => getBankProfile(id))`)
+  pour le jour où une lecture réactive entrerait dans `request`.
+- **Écartée** : `untrack` dans le code dès maintenant — garde qu'aucun test ne peut rougir au sol (même règle que
+  C-29-9-14 pour `loading`).
 - **Réversible** : oui.
