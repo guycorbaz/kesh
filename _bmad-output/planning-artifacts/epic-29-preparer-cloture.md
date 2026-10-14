@@ -141,8 +141,6 @@ transaction à un règlement client par virement déjà enregistré sur le même
 migration, un geste humain sans présélection —, et réécrit « puis rejetez » en « puis rattachez » dans les textes des
 29-2 et 29-6. **`kesh-db` touché : gate complet en boucle.**
 
-### 29-9 — Trois petits correctifs ([#649], [#655], [#646], P3)
-
 ### 29-9 — Quatre petits correctifs ([#649], [#655], [#646], P3 ; [#678], P4)
 
 **Ajoutée le 2026-10-14 sur décision de Guy**, pour tenir la règle de release de la v0.13.4 (moins d'issues ouvertes
@@ -183,11 +181,6 @@ la fiche dit « quatre ».
 - **v0.13.4** dès que 29-1a, 29-2, 29-3, 29-4, 29-5, 29-6, 29-8 et 29-9 sont mergées : Guy les éprouve tout de suite avec ses relevés mensuels.
 
   29-6, R7)* : Guy les éprouve tout de suite avec ses relevés mensuels.
-
-- La **29-9** part dans la **v0.13.4** (ajoutée le 2026-10-14) : ses trois fermetures comptent dans le décompte du tag.
-
-- La **29-9** part dans la **v0.13.4** (ajoutée le 2026-10-14) : ses trois fermetures comptent dans le décompte du tag
-  (quatre avec #678, amendement du 2026-10-14).
 
 - La **29-9** part dans la **v0.13.4** (ajoutée le 2026-10-14) : ses quatre fermetures (#649, #655, #646, #678 ; #678 ajoutée par
   l'amendement du 2026-10-14) comptent dans le décompte du tag.
