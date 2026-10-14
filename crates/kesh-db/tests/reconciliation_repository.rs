@@ -540,9 +540,11 @@ async fn find_unpaid_invoices_filters_status_validated_and_unpaid(pool: MySqlPoo
     );
 }
 
-/// AC #39 + AC #40 — tolérance amount ± 0.05 CHF. Une invoice à
-/// 100.04 (delta 0.04) est candidate, mais 100.06 (delta 0.06) ne
-/// l'est pas.
+/// AC #39 + AC #40 — tolérance du paiement partiel, 0.05 CHF. Une
+/// invoice à 100.04 (delta 0.04) est candidate, mais 100.06 (delta 0.06)
+/// ne l'est pas. N'éprouve que le côté du reste dû **supérieur** au
+/// paiement ; l'autre côté (trop-perçu) est la borne d'un demi-centime,
+/// `find_unpaid_invoices_excludes_an_invoice_the_payment_exceeds` (Story 29-6).
 #[sqlx::test(migrations = "./test-schema")]
 async fn find_unpaid_invoices_filters_amount_within_tolerance(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
