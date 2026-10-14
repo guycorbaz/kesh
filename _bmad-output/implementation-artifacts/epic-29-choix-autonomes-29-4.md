@@ -485,6 +485,13 @@
 - **Constat** : l'effet au sol est un **mauvais code de refus** (`412` sur un compte qui n'est plus principal), non un
   archivage indu — le verrou optimiste d'`archive_for_company` refusait déjà un compte dont la version avait bougé.
 - **Réversible** : oui.
+- *(Annotation du 2026-10-14, revue de code P1 de la 29-4b, A-5 et B-2.)* **Écart à la prescription** : T6-bis
+  demandait « une promotion concurrente du compte **entre deux tentatives** » ; le cas joué est une **démotion**
+  commitée entre le **pré-vol** et la **première** tentative (l'archivage attend la sentinelle). Le correctif est le
+  même (relecture dans chaque tentative) ; le cas « entre deux tentatives » n'est pas joué. Et le test prouve la
+  relecture **dans la transaction**, non le `FOR UPDATE` : un `SELECT` simple au même endroit y rendrait le même `409`
+  (les bascules des routes de gestion sont déjà sérialisées par la sentinelle) ; le `FOR UPDATE` couvre l'intégration
+  (`upsert_primary_in_tx`, sans sentinelle), non jouée. Écrit au doc-comment de `primary_flag_locked_in_tx`.
 
 ### C-29-4-34 — R-5 : le `rollback` explicite de `conclure` gardé par un test textuel, son effet dynamique déclaré non couvert
 
@@ -529,4 +536,29 @@
   l'AC7) ; sous M29-13, elle n'attend pas, et le montage échoue — pour les deux moitiés. Dit au doc-comment de la moitié
   W25 : c'est l'attente, non l'issue, qui distingue.
 - **Réversible** : sans objet (constat).
+
+### C-29-4-38 — Le volet inverse « en dernier », jeton par jeton : une table de cas écrite à part des listes
+
+- **Contexte** : revue de code P1 de la 29-4b, B-1 (MEDIUM) — le volet inverse de T29b-4 n'éprouvait que quatre des dix
+  jetons de `GESTES_VERROUILLANTS_SQL` et `GESTES_VERROUILLANTS_CODE` ; retirer l'un des six autres laissait tout vert.
+- **Retenu** : `the_last_acquisition_rule_sees_each_locking_token` — une table de cas (cinq littéraux, cinq appels)
+  **écrite dans le test, indépendamment des listes**, un geste du seul jeton après la revérification, faute exacte
+  « précède « <jeton> » » exigée ; décompte anti-muet (dix cas) ; puis contrôle de couverture dans les deux sens (chaque
+  entrée des listes a son cas). Retirer un jeton d'une liste rougit **par son cas** (« aucun geste verrouillant ») ;
+  ajouter un jeton sans cas rougit par la couverture. Prouvé : M-B1a (`INSERT INTO`) et M-B1b (`reverse_in_tx(`)
+  tuées (`294b-mutations.log`).
+- **Écartée** : boucler sur les listes elles-mêmes pour construire les cas — retirer un jeton retirerait son cas, et le
+  test resterait vert.
+- **Réversible** : oui.
+
+### C-29-4-39 — T29b-1 exige que l'annulation soit vue en attente
+
+- **Contexte** : revue de code P1 de la 29-4b, E-4 et A-9 — `annuler_pendant_une_cloture` ignorait le résultat
+  d'`attendre_une_requete_en_cours`, qui rend `false` quand la tâche a fini sans attendre (et panique à dix secondes).
+- **Retenu** : `false` fait rougir (la clôture est d'abord annulée, puis le test échoue en citant l'issue de
+  l'annulation). Au code corrigé, l'annulation **doit** attendre : la clôture tient l'exclusif de la ligne que la
+  revérification demande. Le doc-comment du patron ne dit plus « ou terminée ».
+- **Écartée** : `attend || tache.is_finished()` (l'issue « finie sans attendre » est précisément celle où la garde de
+  tête, non la revérification, aurait pu refuser).
+- **Réversible** : oui.
 
