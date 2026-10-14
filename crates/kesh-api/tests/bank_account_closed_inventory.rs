@@ -20,6 +20,12 @@
 //! (C-28-4-14) ; tout appel `invoice_settlements::create_in_tx(` hors tests
 //! exige donc un statut au [`APPELANTS_REGLEMENT`], diff dans les deux sens.
 //!
+//! Troisième inventaire, **la fenêtre de la clôture** (Story 29-4a, #651,
+//! AC5) : l'ensemble clos des fonctions qui portent une garde non
+//! verrouillante du compte clos, chacune revérifiée sous verrou (variante et
+//! position contrôlées) ou sans fenêtre par une raison écrite, au [`FENETRE`]
+//! — voir la section qui lui est consacrée, en fin de fichier.
+//!
 //! ⛔ **Ce que le test n'établit pas** : que la garde **s'exécute** — c'est
 //! l'affaire des tests de l'AC6 (`bank_accounts_closed_e2e.rs`). Il ferme le
 //! mode d'échec « un écrivain ajouté demain contourne la clôture sans que rien
@@ -150,7 +156,9 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
     // --- kesh-api : comptes bancaires -----------------------------------
     (
         "kesh-api/src/routes/bank_accounts.rs",
-        "create_bank_account",
+        // Story 29-4a, revue de code P1 (E-1) : l'`INSERT` vit dans la
+        // tentative rejouée, non plus dans le handler.
+        "create_once",
         Statut::SansCompteBancaire("compte neuf, ouvert"),
     ),
     // --- kesh-db : comptes bancaires ------------------------------------
@@ -557,10 +565,14 @@ fn the_diff_reports_both_directions_on_a_built_case() {
     assert_eq!(sans_site, ["x.rs::disparue"]);
 }
 
-/// T-a47 (AC6-bis) — assertion textuelle sur la route d'import : exactement
-/// deux appels `bank_imports::create_with_transactions(`, chacun suivi de
-/// `.await.map_err(import_create_error)` dans la source **aplatie** (blancs et
-/// sauts de ligne retirés : `rustfmt` peut rompre la chaîne).
+/// T-a47 (AC6-bis) — assertion textuelle sur la route d'import, dans la source
+/// **aplatie** (blancs et sauts de ligne retirés : `rustfmt` peut rompre la
+/// chaîne). Depuis la revue de code P1 de la 29-4a (E-3 = B-6) : exactement
+/// **un** appel `bank_imports::create_with_transactions(`, dans l'aide
+/// `create_import_or_roll_back`, dont la branche d'erreur annule
+/// explicitement la transaction puis rend `import_create_error` ; et
+/// exactement **deux** appels de l'aide (CAMT et CSV), chacun suivi de
+/// `.await?`. Tue M29-29 (`rollback` retiré de la branche d'erreur).
 #[test]
 fn both_import_calls_map_the_archived_account() {
     let chemin = racine_crates().join("kesh-api/src/routes/bank_imports.rs");
@@ -581,14 +593,697 @@ fn both_import_calls_map_the_archived_account() {
         .collect();
     let appel = "bank_imports::create_with_transactions(";
     let n = aplati.matches(appel).count();
-    assert_eq!(n, 2, "deux appels attendus (CAMT et CSV), {n} trouvés");
-    for (p, _) in aplati.match_indices(appel) {
-        let suite = &aplati[p..];
+    assert_eq!(
+        n, 1,
+        "un appel attendu (l'aide create_import_or_roll_back), {n} trouvés"
+    );
+    let p = aplati.find(appel).expect("appel");
+    let suite = &aplati[p..];
+    let fin = suite.find("}}}").expect("fin du match de l'aide");
+    assert!(
+        suite[..fin].contains("Err(e)=>{let_=tx.rollback().await;Err(import_create_error(e))"),
+        "la branche d'erreur de l'aide doit annuler la transaction puis rendre \
+         import_create_error : {}",
+        &suite[..fin]
+    );
+    let aide = "create_import_or_roll_back(tx,";
+    let m = aplati.matches(aide).count();
+    assert_eq!(
+        m, 2,
+        "deux appels de l'aide attendus (CAMT et CSV), {m} trouvés"
+    );
+    for (q, _) in aplati.match_indices(aide) {
+        let suite = &aplati[q..];
         let fin = suite.find(';').expect("fin d'instruction");
         assert!(
-            suite[..fin].contains(".await.map_err(import_create_error)?"),
-            "un appel de create_with_transactions sans import_create_error : {}",
+            suite[..fin].ends_with(").await?"),
+            "un appel de l'aide sans `.await?` : {}",
             &suite[..fin]
         );
     }
+}
+
+// ===========================================================================
+// Troisième inventaire — Story 29-4a (#651), AC5 : la fenêtre de la clôture
+// ===========================================================================
+//
+// La garde « compte clos » de la Story 28-4 est une lecture **non
+// verrouillante** : une écriture dont la vue est née avant le commit d'une
+// clôture pouvait encore passer (L1, #651). La Story 29-4 la complète d'une
+// **revérification verrouillante** (`bank_accounts::recheck_open_locked_in_tx`
+// pour les annulations, `bank_accounts::recheck_open_unarchived_locked_in_tx`
+// pour l'import et la création de lot). Cet inventaire tient, dans les deux
+// sens, l'ensemble clos `G` des fonctions qui portent une garde non
+// verrouillante — extrait depuis le **symptôme**, non depuis les raisons du
+// registre principal —, et exige que chacune soit revérifiée (avec la bonne
+// variante, à la bonne position), ou sans fenêtre par une raison écrite.
+//
+// ✅ Ce qu'il voit : la présence de l'appel et sa variante ; l'ensemble `G` ;
+// l'ordre textuel de l'appel par rapport aux littéraux SQL de la fonction
+// (positions de la copie masquée et de `Litteral.debut`, mêlées).
+//
+// ⚠️ Ce qu'il ne voit pas (angles morts assumés) : que la revérification
+// **s'exécute** (affaire des tests d'entrelacement, T29a-2, -3, -6, -7, -11,
+// -12) ; une écriture faite par une fonction appelée **après** l'appel, que
+// l'ordre textuel d'une seule fonction ne suit pas ; une lecture non
+// verrouillante de `closed_on` dont le SQL ne porte pas littéralement `FROM
+// bank_accounts` (requête assemblée, `format!`) ; une garde appelée sans le
+// préfixe `bank_accounts::` (importée par `use`) ; les **pré-vols** de route sur
+// le pool (`is_closed()` dans `routes/bank_imports.rs`,
+// `routes/reconciliation.rs`, `routes/bank_accounts.rs`), hors transaction, que
+// suit chacun une garde ou un invariant du registre principal.
+
+/// La revérification appelée — Story 29-4 (#651, AC1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Variante {
+    /// `recheck_open_locked_in_tx` : `closed_on` seul — les annulations, qui ne
+    /// refusent jamais un compte archivé (il ne se rouvre pas).
+    Clos,
+    /// `recheck_open_unarchived_locked_in_tx` : archivé puis clos — l'import et
+    /// la création de lot.
+    ClosOuArchive,
+}
+
+impl Variante {
+    /// Le nom appelé, qualifié comme les sites l'écrivent (la forme
+    /// `super::bank_accounts::` le contient). Aucun des deux n'est préfixe de
+    /// l'autre.
+    fn appel(self) -> &'static str {
+        match self {
+            Variante::Clos => "bank_accounts::recheck_open_locked_in_tx(",
+            Variante::ClosOuArchive => "bank_accounts::recheck_open_unarchived_locked_in_tx(",
+        }
+    }
+}
+
+/// Où l'appel doit se trouver dans la source de sa fonction : **après** le
+/// (dernier) littéral SQL qui contient `apres`, et **avant** le (premier)
+/// littéral qui contient `avant` s'il est donné. Fragments comparés sur le
+/// texte du littéral aplati (échappements neutralisés, blancs réduits,
+/// majuscules).
+#[derive(Debug)]
+struct Position {
+    apres: &'static str,
+    avant: Option<&'static str>,
+}
+
+/// Le statut d'une fonction de `G` au regard de la fenêtre de la clôture.
+#[derive(Debug)]
+enum Fenetre {
+    /// La revérification est appelée dans la fonction, par cette variante, à
+    /// cette position.
+    Reverifiee(Variante, Position),
+    /// Pas de fenêtre — fermée par construction : la raison (invariant ou
+    /// verrou) est écrite. (Le `SansFenetre` de la fiche : `clippy` refuse une
+    /// variante qui finit par le nom de son type.)
+    Fermee(&'static str),
+    /// Fenêtre encore ouverte, fermée par la story nommée. ⛔ Transitoire :
+    /// la 29-4b retire la variante avec ses derniers sites.
+    Ouverte(&'static str),
+}
+
+/// Les cinq annulations (W9, W24, W25, W28, W29) : leur revérification ne lit
+/// **jamais** `archived` — un compte archivé ne se rouvre pas, refuser
+/// l'annulation d'un de ses règlements la rendrait définitivement impossible.
+/// Écrit en dur pour que la déclaration du registre ne puisse pas dériver.
+const ANNULATIONS: [(&str, &str); 5] = [
+    (
+        "kesh-db/src/repositories/reconciliation_cancel.rs",
+        "cancel_in_tx",
+    ),
+    (
+        "kesh-db/src/repositories/bank_imports.rs",
+        "delete_unreconciled_in_tx",
+    ),
+    (
+        "kesh-db/src/repositories/invoice_settlements_write.rs",
+        "cancel_settlement_in_tx",
+    ),
+    (
+        "kesh-db/src/repositories/supplier_invoices.rs",
+        "cancel_in_tx",
+    ),
+    (
+        "kesh-db/src/repositories/supplier_invoices.rs",
+        "cancel_settlement_in_tx",
+    ),
+];
+
+/// Le troisième registre : une ligne par fonction de `G`.
+const FENETRE: &[(&str, &str, Fenetre)] = &[
+    (
+        "kesh-db/src/repositories/bank_imports.rs",
+        "create_with_transactions",
+        Fenetre::Reverifiee(
+            Variante::ClosOuArchive,
+            Position {
+                apres: "INSERT INTO bank_imports",
+                avant: Some("INSERT INTO bank_transactions"),
+            },
+        ),
+    ),
+    (
+        "kesh-db/src/repositories/payment_batches.rs",
+        "create_batch",
+        Fenetre::Reverifiee(
+            Variante::ClosOuArchive,
+            // Borne haute (revue de code P1, B-4) : avant le premier
+            // `UPDATE` du lot, donc avant ses articles.
+            Position {
+                apres: "INSERT INTO payment_batches",
+                avant: Some("UPDATE payment_batches SET msg_id"),
+            },
+        ),
+    ),
+    (
+        "kesh-db/src/repositories/payment_batches.rs",
+        "confirm_batch",
+        Fenetre::Fermee(
+            "chaque facture par pay_in_tx, compte lu sous FOR UPDATE ; et I2 (aucun lot generated sur un compte clos)",
+        ),
+    ),
+    (
+        "kesh-api/src/routes/reconciliation.rs",
+        "unreject_once",
+        Fenetre::Fermee(
+            "I1 (la transaction rejetée est pending, la clôture refuse), sous réserve de la 29-4b — W9 peut encore remettre une transaction pending sur un compte clos",
+        ),
+    ),
+    (
+        // Story 29-1a (#232), entrée au rebase de la 29-4a sur `b4abae5d` :
+        // la constante `EXAMINED_ACCOUNTS_SQL` lit `closed_on` sans verrou,
+        // hors de toute fonction (C-29-4-29).
+        "kesh-db/src/repositories/closing_checks.rs",
+        "<hors fonction>",
+        Fenetre::Fermee(
+            "lecture seule : la préparation de la clôture d'un exercice liste les comptes à examiner, ce n'est pas une garde et rien n'est écrit — aucune fenêtre",
+        ),
+    ),
+    (
+        "kesh-db/src/repositories/reconciliation_cancel.rs",
+        "cancel_in_tx",
+        Fenetre::Ouverte("29-4b"),
+    ),
+    (
+        "kesh-db/src/repositories/bank_imports.rs",
+        "delete_unreconciled_in_tx",
+        Fenetre::Ouverte("29-4b"),
+    ),
+    (
+        "kesh-db/src/repositories/invoice_settlements_write.rs",
+        "cancel_settlement_in_tx",
+        Fenetre::Ouverte("29-4b"),
+    ),
+    (
+        "kesh-db/src/repositories/supplier_invoices.rs",
+        "cancel_in_tx",
+        Fenetre::Ouverte("29-4b"),
+    ),
+    (
+        "kesh-db/src/repositories/supplier_invoices.rs",
+        "cancel_settlement_in_tx",
+        Fenetre::Ouverte("29-4b"),
+    ),
+];
+
+/// Le texte d'un littéral, aplati pour la comparaison : échappements
+/// neutralisés (la continuation de ligne `\` comprise), blancs réduits à une
+/// espace, majuscules.
+fn aplatir(texte: &str) -> String {
+    neutraliser_echappements(texte)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_uppercase()
+}
+
+/// L'ensemble `G` : les fonctions, hors tests et hors commentaires, qui (a)
+/// appellent une garde non verrouillante **qualifiée**
+/// (`bank_accounts::ensure_open_in_tx(` ou `…ensure_open_unarchived_in_tx(`),
+/// ou (b) portent un littéral qui lit `closed_on` `FROM bank_accounts` sans
+/// `FOR UPDATE` ni `LOCK IN SHARE MODE` — hors `repositories/bank_accounts.rs`,
+/// dont ces lectures sont les gardes elles-mêmes (vues par (a) chez leurs
+/// appelants), les gestes du compte sur lui-même et les lectures de détail.
+fn gardes_non_verrouillantes(sources: &[(String, String)]) -> BTreeSet<(String, String)> {
+    let mut g = BTreeSet::new();
+    for (fichier, source) in sources {
+        for garde in [
+            "bank_accounts::ensure_open_in_tx(",
+            "bank_accounts::ensure_open_unarchived_in_tx(",
+        ] {
+            g.extend(appels(fichier, source, garde));
+        }
+        if fichier == "kesh-db/src/repositories/bank_accounts.rs" {
+            continue;
+        }
+        let (litteraux, masque) = decouper(source);
+        let tests = blocs_de_test(&masque);
+        let fns = fonctions(&masque);
+        for l in litteraux {
+            if tests.iter().any(|(de, a)| l.debut >= *de && l.debut <= *a) {
+                continue;
+            }
+            let t = aplatir(&l.texte);
+            if t.contains("CLOSED_ON")
+                && t.contains("FROM BANK_ACCOUNTS")
+                && !t.contains("FOR UPDATE")
+                && !t.contains("LOCK IN SHARE MODE")
+            {
+                let fonction = fonction_englobante(&fns, l.debut)
+                    .map_or("<hors fonction>".to_string(), |(nom, _, _)| nom.clone());
+                g.insert((fichier.clone(), fonction));
+            }
+        }
+    }
+    g
+}
+
+/// Un appel de revérification : fichier, fonction englobante, variante,
+/// position dans la source, et bornes du corps de la fonction.
+struct AppelReverification {
+    fichier: String,
+    fonction: String,
+    variante: Variante,
+    position: usize,
+    corps: (usize, usize),
+}
+
+/// Les appels de revérification d'un ensemble de sources, hors tests et hors
+/// commentaires (copie masquée).
+fn appels_de_reverification(sources: &[(String, String)]) -> Vec<AppelReverification> {
+    let mut out = Vec::new();
+    for (fichier, source) in sources {
+        let (_, masque) = decouper(source);
+        let tests = blocs_de_test(&masque);
+        let fns = fonctions(&masque);
+        for variante in [Variante::Clos, Variante::ClosOuArchive] {
+            let appel = variante.appel();
+            for (p, _) in masque.match_indices(appel) {
+                if tests.iter().any(|(de, a)| p >= *de && p <= *a) {
+                    continue;
+                }
+                let Some((nom, de, a)) = fonction_englobante(&fns, p) else {
+                    out.push(AppelReverification {
+                        fichier: fichier.clone(),
+                        fonction: "<hors fonction>".to_string(),
+                        variante,
+                        position: p,
+                        corps: (p, p),
+                    });
+                    continue;
+                };
+                out.push(AppelReverification {
+                    fichier: fichier.clone(),
+                    fonction: nom.clone(),
+                    variante,
+                    position: p,
+                    corps: (*de, *a),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Toutes les fautes du troisième inventaire, pour un ensemble de sources et
+/// un registre : (i) les couples (fonction, variante) appelés égalent ceux des
+/// `Reverifiee` ; (i bis) une annulation ne déclare que `Variante::Clos` ;
+/// (ii) `G` égale les fonctions du registre, dans les deux sens ; (iii) chaque
+/// appel est à sa position, par rapport aux littéraux de sa fonction.
+fn fautes_de_la_fenetre(
+    sources: &[(String, String)],
+    registre: &[(&str, &str, Fenetre)],
+) -> Vec<String> {
+    let mut fautes = Vec::new();
+    let appels = appels_de_reverification(sources);
+
+    // (i)
+    let vus: BTreeSet<(String, String, Variante)> = appels
+        .iter()
+        .map(|a| (a.fichier.clone(), a.fonction.clone(), a.variante))
+        .collect();
+    let declares: BTreeSet<(String, String, Variante)> = registre
+        .iter()
+        .filter_map(|(f, n, s)| match s {
+            Fenetre::Reverifiee(v, _) => Some((f.to_string(), n.to_string(), *v)),
+            _ => None,
+        })
+        .collect();
+    for (f, n, v) in vus.difference(&declares) {
+        fautes.push(format!(
+            "(i) {f}::{n} appelle la revérification {v:?} sans l'avoir déclarée au registre"
+        ));
+    }
+    for (f, n, v) in declares.difference(&vus) {
+        fautes.push(format!(
+            "(i) {f}::{n} est déclarée revérifiée par {v:?}, et ne l'appelle pas"
+        ));
+    }
+
+    // (i bis)
+    for (f, n, s) in registre {
+        if let Fenetre::Reverifiee(v, _) = s
+            && ANNULATIONS.contains(&(f, n))
+            && *v != Variante::Clos
+        {
+            fautes.push(format!(
+                "(i bis) {f}::{n} est une annulation : seule Variante::Clos y est permise \
+                 (un compte archivé ne se rouvre pas), déclaré {v:?}"
+            ));
+        }
+    }
+
+    // (ii)
+    let g = gardes_non_verrouillantes(sources);
+    let (non_classes, sans_garde) = ecarts_fenetre(&g, registre);
+    for c in non_classes {
+        fautes.push(format!(
+            "(ii) {c} porte une garde non verrouillante du compte clos sans statut au registre \
+             FENETRE"
+        ));
+    }
+    for c in sans_garde {
+        fautes.push(format!(
+            "(ii) {c} figure au registre FENETRE sans garde non verrouillante"
+        ));
+    }
+
+    // (iii)
+    let litteraux: Vec<(String, Vec<lexique::Litteral>)> = sources
+        .iter()
+        .map(|(f, s)| (f.clone(), decouper(s).0))
+        .collect();
+    for a in &appels {
+        let Some((_, _, Fenetre::Reverifiee(_, pos))) = registre
+            .iter()
+            .find(|(f, n, _)| *f == a.fichier && *n == a.fonction)
+        else {
+            continue;
+        };
+        let Some((_, lits)) = litteraux.iter().find(|(f, _)| *f == a.fichier) else {
+            continue;
+        };
+        let dans_le_corps: Vec<(usize, String)> = lits
+            .iter()
+            .filter(|l| l.debut >= a.corps.0 && l.debut <= a.corps.1)
+            .map(|l| (l.debut, aplatir(&l.texte)))
+            .collect();
+        let apres = dans_le_corps
+            .iter()
+            .filter(|(_, t)| t.contains(&aplatir(pos.apres)))
+            .map(|(d, _)| *d)
+            .max();
+        match apres {
+            None => fautes.push(format!(
+                "(iii) {}::{} : aucun littéral « {} » dans la fonction",
+                a.fichier, a.fonction, pos.apres
+            )),
+            Some(d) if a.position < d => fautes.push(format!(
+                "(iii) {}::{} : la revérification précède « {} » — elle prendrait un verrou \
+                 explicite avant l'`INSERT`, à une position que l'analyse n'a pas faite",
+                a.fichier, a.fonction, pos.apres
+            )),
+            Some(_) => {}
+        }
+        if let Some(avant) = pos.avant {
+            let premier = dans_le_corps
+                .iter()
+                .filter(|(_, t)| t.contains(&aplatir(avant)))
+                .map(|(d, _)| *d)
+                .min();
+            match premier {
+                None => fautes.push(format!(
+                    "(iii) {}::{} : aucun littéral « {avant} » dans la fonction",
+                    a.fichier, a.fonction
+                )),
+                Some(d) if a.position > d => fautes.push(format!(
+                    "(iii) {}::{} : la revérification suit « {avant} »",
+                    a.fichier, a.fonction
+                )),
+                Some(_) => {}
+            }
+        }
+    }
+    fautes
+}
+
+/// Le diff ensembliste de (ii), dans les deux sens : `(fonctions de G sans
+/// statut, entrées du registre hors de G)`.
+fn ecarts_fenetre(
+    g: &BTreeSet<(String, String)>,
+    registre: &[(&str, &str, Fenetre)],
+) -> (Vec<String>, Vec<String>) {
+    let classes: BTreeSet<(String, String)> = registre
+        .iter()
+        .map(|(f, n, _)| (f.to_string(), n.to_string()))
+        .collect();
+    (
+        g.difference(&classes)
+            .map(|(f, n)| format!("{f}::{n}"))
+            .collect(),
+        classes
+            .difference(g)
+            .map(|(f, n)| format!("{f}::{n}"))
+            .collect(),
+    )
+}
+
+/// T29a-5 (Story 29-4a, #651, AC5) — le troisième inventaire, sur les sources
+/// de production : aucune faute, et des décomptes anti-muets (`G` à dix
+/// sites — les neuf fonctions de la fiche et, depuis le rebase sur la 29-1a,
+/// la constante `EXAMINED_ACCOUNTS_SQL` de `closing_checks.rs` —, deux appels
+/// de revérification en 29-4a).
+#[test]
+fn every_unlocked_closed_account_guard_is_rechecked_or_justified() {
+    let sources = sources_lues();
+    let fautes = fautes_de_la_fenetre(&sources, FENETRE);
+    assert!(
+        fautes.is_empty(),
+        "⛔ fenêtre de la clôture (Story 29-4, AC5) :\n{}",
+        fautes.join("\n")
+    );
+    for (f, n, statut) in FENETRE {
+        let raison = match statut {
+            Fenetre::Fermee(r) | Fenetre::Ouverte(r) => r,
+            Fenetre::Reverifiee(_, p) => p.apres,
+        };
+        assert!(!raison.trim().is_empty(), "{f}::{n} : raison vide");
+    }
+    for annulation in ANNULATIONS {
+        assert!(
+            FENETRE.iter().any(|(f, n, _)| (*f, *n) == annulation),
+            "l'annulation {annulation:?} doit figurer au registre FENETRE"
+        );
+    }
+    // Anti-muet : un extracteur qui cesserait de voir rendrait un registre
+    // « vert » vide.
+    assert_eq!(
+        gardes_non_verrouillantes(&sources).len(),
+        10,
+        "G : neuf fonctions au sol de la 29-4a, plus la constante de lecture de \
+         closing_checks.rs (29-1a, entrée au rebase)"
+    );
+    assert_eq!(
+        appels_de_reverification(&sources).len(),
+        2,
+        "deux revérifications en 29-4a (import, lot)"
+    );
+}
+
+/// T29a-5, volet inverse — chaque assertion du troisième inventaire rougit sur
+/// une source construite : une garde non verrouillante sans entrée (ii), une
+/// entrée sans garde (ii), un appel avant l'`INSERT` (iii), une annulation qui
+/// appelle la variante « archivé » (i), une annulation déclarée avec la
+/// variante « archivé » (i bis), une revérification déclarée et absente (i) ;
+/// et — revue de code P1 (B-3 = A-6) — les trois autres fautes de (iii) : une
+/// revérification qui **suit** la borne `avant`, un littéral `apres` absent, un
+/// littéral `avant` absent, chacune seule sur une source dont le cas de
+/// contrôle conforme ne rend **aucune** faute.
+/// Sans quoi un extracteur qui ne voit rien ferait passer le registre à vide.
+#[test]
+fn the_window_inventory_reports_each_fault_on_built_cases() {
+    let import = (
+        "kesh-db/src/repositories/bank_imports.rs".to_string(),
+        r#"
+        pub async fn create_with_transactions() {
+            super::bank_accounts::ensure_open_unarchived_in_tx(tx, c, b).await?;
+            super::bank_accounts::recheck_open_unarchived_locked_in_tx(tx, c, b).await?;
+            let _ = "INSERT INTO bank_imports (a) VALUES (?)";
+            let _ = "INSERT INTO bank_transactions (a) VALUES (?)";
+        }
+        fn nouvelle() { bank_accounts::ensure_open_in_tx(tx, c, b).await?; }
+        fn lecture() { let _ = "SELECT closed_on FROM bank_accounts \
+                               WHERE id = ?"; }
+        fn verrouillee() { let _ = "SELECT closed_on FROM bank_accounts WHERE id = ? FOR UPDATE"; }
+        #[cfg(test)]
+        mod tests { fn t() { bank_accounts::ensure_open_in_tx(tx, c, b); } }
+        "#
+        .to_string(),
+    );
+    let annulation = (
+        "kesh-db/src/repositories/reconciliation_cancel.rs".to_string(),
+        r#"
+        pub async fn cancel_in_tx() {
+            super::bank_accounts::ensure_open_in_tx(tx, c, b).await?;
+            // bank_accounts::recheck_open_locked_in_tx( — commentaire : ignoré
+            let _ = "UPDATE bank_transactions SET status = 'pending' WHERE id = ?";
+            super::bank_accounts::recheck_open_unarchived_locked_in_tx(tx, c, b).await?;
+        }
+        "#
+        .to_string(),
+    );
+    let sources = vec![import, annulation];
+    let registre = [
+        (
+            "kesh-db/src/repositories/bank_imports.rs",
+            "create_with_transactions",
+            Fenetre::Reverifiee(
+                Variante::ClosOuArchive,
+                Position {
+                    apres: "INSERT INTO bank_imports",
+                    avant: Some("INSERT INTO bank_transactions"),
+                },
+            ),
+        ),
+        (
+            "kesh-db/src/repositories/reconciliation_cancel.rs",
+            "cancel_in_tx",
+            Fenetre::Reverifiee(
+                Variante::Clos,
+                Position {
+                    apres: "UPDATE",
+                    avant: None,
+                },
+            ),
+        ),
+        (
+            "kesh-db/src/repositories/bank_imports.rs",
+            "disparue",
+            Fenetre::Fermee("cas construit"),
+        ),
+    ];
+
+    let g = gardes_non_verrouillantes(&sources);
+    let noms: Vec<&str> = g.iter().map(|(_, n)| n.as_str()).collect();
+    assert_eq!(
+        noms,
+        [
+            "create_with_transactions",
+            "lecture",
+            "nouvelle",
+            "cancel_in_tx"
+        ],
+        "G : appels qualifiés et littéral non verrouillant, ni le verrouillé ni le test"
+    );
+
+    let fautes = fautes_de_la_fenetre(&sources, &registre);
+    let attendues = [
+        "(i) kesh-db/src/repositories/reconciliation_cancel.rs::cancel_in_tx appelle la revérification ClosOuArchive",
+        "(i) kesh-db/src/repositories/reconciliation_cancel.rs::cancel_in_tx est déclarée revérifiée par Clos",
+        "(ii) kesh-db/src/repositories/bank_imports.rs::nouvelle porte une garde",
+        "(ii) kesh-db/src/repositories/bank_imports.rs::lecture porte une garde",
+        "(ii) kesh-db/src/repositories/bank_imports.rs::disparue figure au registre",
+        "(iii) kesh-db/src/repositories/bank_imports.rs::create_with_transactions : la revérification précède « INSERT INTO bank_imports »",
+    ];
+    for a in attendues {
+        assert!(
+            fautes.iter().any(|f| f.starts_with(a)),
+            "faute attendue absente : {a}\nfautes : {fautes:#?}"
+        );
+    }
+    assert_eq!(fautes.len(), attendues.len(), "fautes : {fautes:#?}");
+
+    // (i bis), sur la déclaration seule.
+    let declare_archive = [(
+        "kesh-db/src/repositories/reconciliation_cancel.rs",
+        "cancel_in_tx",
+        Fenetre::Reverifiee(
+            Variante::ClosOuArchive,
+            Position {
+                apres: "UPDATE",
+                avant: None,
+            },
+        ),
+    )];
+    let fautes = fautes_de_la_fenetre(&sources[1..], &declare_archive);
+    assert!(
+        fautes.iter().any(|f| f.starts_with("(i bis)")),
+        "(i bis) attendue : {fautes:#?}"
+    );
+
+    // (iii), les bornes (revue de code P1, B-3 = A-6) : une source par
+    // position, une entrée par borne, chaque cas rendant **exactement** la
+    // faute attendue — et le cas de contrôle conforme, aucune.
+    let fichier = "kesh-db/src/repositories/bank_imports.rs";
+    let source = |corps: &str| {
+        vec![(
+            fichier.to_string(),
+            format!(
+                "pub async fn create_with_transactions() {{\n\
+                 super::bank_accounts::ensure_open_unarchived_in_tx(tx, c, b).await?;\n\
+                 {corps}\n}}\n"
+            ),
+        )]
+    };
+    let entre = source(
+        "let _ = \"INSERT INTO bank_imports (a) VALUES (?)\";\n\
+         super::bank_accounts::recheck_open_unarchived_locked_in_tx(tx, c, b).await?;\n\
+         let _ = \"INSERT INTO bank_transactions (a) VALUES (?)\";",
+    );
+    let apres_les_transactions = source(
+        "let _ = \"INSERT INTO bank_imports (a) VALUES (?)\";\n\
+         let _ = \"INSERT INTO bank_transactions (a) VALUES (?)\";\n\
+         super::bank_accounts::recheck_open_unarchived_locked_in_tx(tx, c, b).await?;",
+    );
+    let entree = |apres: &'static str, avant: Option<&'static str>| {
+        [(
+            fichier,
+            "create_with_transactions",
+            Fenetre::Reverifiee(Variante::ClosOuArchive, Position { apres, avant }),
+        )]
+    };
+    let conforme = || {
+        entree(
+            "INSERT INTO bank_imports",
+            Some("INSERT INTO bank_transactions"),
+        )
+    };
+    let exiger = |nom: &str,
+                  sources: &[(String, String)],
+                  registre: &[(&str, &str, Fenetre)],
+                  attendues: Vec<String>| {
+        assert_eq!(
+            fautes_de_la_fenetre(sources, registre),
+            attendues,
+            "cas {nom}"
+        );
+    };
+    exiger("contrôle", &entre, &conforme(), vec![]);
+    exiger(
+        "suit « avant »",
+        &apres_les_transactions,
+        &conforme(),
+        vec![format!(
+            "(iii) {fichier}::create_with_transactions : la revérification suit « INSERT INTO bank_transactions »"
+        )],
+    );
+    exiger(
+        "littéral « apres » absent",
+        &entre,
+        &entree(
+            "INSERT INTO lignes_absentes",
+            Some("INSERT INTO bank_transactions"),
+        ),
+        vec![format!(
+            "(iii) {fichier}::create_with_transactions : aucun littéral « INSERT INTO lignes_absentes » dans la fonction"
+        )],
+    );
+    exiger(
+        "littéral « avant » absent",
+        &entre,
+        &entree("INSERT INTO bank_imports", Some("DELETE FROM absente")),
+        vec![format!(
+            "(iii) {fichier}::create_with_transactions : aucun littéral « DELETE FROM absente » dans la fonction"
+        )],
+    );
 }

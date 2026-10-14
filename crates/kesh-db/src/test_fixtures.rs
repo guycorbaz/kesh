@@ -592,11 +592,15 @@ pub async fn attendre_une_requete_en_cours(
 }
 
 /// **Sonde de verrou** (Story 15-5d) : exécute `sql` — une lecture verrouillante
-/// `… WHERE id = ? FOR UPDATE NOWAIT` —, en autocommit, sur une connexion du
-/// pool, avec `id` lié.
+/// `… WHERE id = ? FOR UPDATE NOWAIT` ou, depuis la Story 29-4a (#651),
+/// `… WHERE id = ? LOCK IN SHARE MODE NOWAIT` —, en autocommit, sur une
+/// connexion du pool, avec `id` lié.
 ///
 /// Rend `true` si la sonde **réussit** (la ligne n'est tenue par personne dans
-/// un mode incompatible), `false` si elle échoue **aussitôt** sur un verrou —
+/// un mode incompatible avec celui de la sonde — pour la forme partagée, ni en
+/// exclusif accordé, ni par une demande exclusive **en file** : c'est ce qui en
+/// fait la sonde de file de T29a-6 et T29a-7), `false` si elle échoue
+/// **aussitôt** sur un verrou —
 /// sous MariaDB 10.11, `NOWAIT` contre une ligne tenue rend **`1205`** (*Lock
 /// wait timeout exceeded*, mesuré en T0 de la Story 15-5d ; et non le `3572` de
 /// MySQL). Toute autre erreur fait **paniquer** : une sonde qui échoue pour

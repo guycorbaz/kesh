@@ -83,9 +83,11 @@ pub async fn create_batch(
     let result = async {
         // (0) Compte bancaire source : existe, company-scoped, non archivé, non
         //     clos, journal lié. Story 28-4a (#642, W17) : `closed_on` ajouté à
-        //     cette lecture non verrouillante existante, seule garde du chemin
-        //     (aucun verrou ajouté, vue inchangée : c'est déjà sa première
-        //     lecture). Angle mort L1 (#651) : `bank_accounts::ensure_open_in_tx`.
+        //     cette lecture non verrouillante existante (aucun verrou ajouté,
+        //     vue inchangée : c'est déjà sa première lecture) — le refus
+        //     précoce. Une clôture ou un archivage commité après la naissance
+        //     de la vue est revérifié sous le verrou de clé étrangère, après
+        //     l'`INSERT` du lot (Story 29-4, AC2), étape (2).
         let bank: Option<(Option<i64>, bool, Option<chrono::NaiveDate>)> = sqlx::query_as(
             "SELECT journal_account_id, archived, closed_on FROM bank_accounts \
              WHERE id = ? AND company_id = ?",
@@ -153,6 +155,29 @@ pub async fn create_batch(
         .await
         .map_err(map_db_error)?
         .last_insert_id() as i64;
+
+        // Story 29-4a (#651, W17, AC2) — revérification verrouillante, archivé
+        // puis clos, sous le verrou partagé que l'`INSERT` du lot vient de
+        // poser sur la ligne du compte par sa clé étrangère (redemandé sans
+        // verrou neuf ; lit le dernier état commité). Avant l'`UPDATE` du
+        // `msg_id` et les articles. Conversion : après l'`INSERT` à clé
+        // étrangère la ligne existe, et sa société a été contrôlée à l'étape
+        // (0) — un `NotFound` n'y veut plus dire qu'« archivé », d'où le refus
+        // même de l'étape (0).
+        match super::bank_accounts::recheck_open_unarchived_locked_in_tx(
+            &mut tx,
+            company_id,
+            bank_account_id,
+        )
+        .await
+        {
+            Err(DbError::NotFound) => {
+                return Err(DbError::IllegalStateTransition(
+                    "le compte bancaire source est archivé".into(),
+                ));
+            }
+            r => r?,
+        }
 
         let msg_id = format!("KESH-{batch_id:012}");
         let payment_info_id = format!("PMT-{batch_id:012}");

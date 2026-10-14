@@ -2347,4 +2347,394 @@ mod compte_clos {
             "le compte reste ouvert"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Story 29-4a (#651) — la revérification verrouillante de l'import
+    // -----------------------------------------------------------------------
+
+    /// L'empreinte de fichier que [`importer`] écrit pour `hash`.
+    fn empreinte(hash: &str) -> String {
+        format!("{hash:0>64}")
+    }
+
+    /// Lance en tâche un import dont la **vue naît avant** l'écriture, comme en
+    /// production : la recherche de doublons de la route
+    /// (`find_by_company_and_hash`, lecture non verrouillante) précède
+    /// `create_with_transactions` dans la même transaction. La tâche commite
+    /// si l'import réussit (ce que fait la route), et l'annule **explicitement**
+    /// sinon — un abandon par `drop` est asynchrone (`routes/bank_imports.rs`)
+    /// et laisserait les comptages suivants dépendre de l'ordonnancement.
+    fn import_en_tache(
+        pool: &MySqlPool,
+        company_id: i64,
+        bank_account_id: i64,
+        user_id: i64,
+        hash: &'static str,
+    ) -> tokio::task::JoinHandle<Result<(), DbError>> {
+        let p = pool.clone();
+        tokio::spawn(async move {
+            let mut tx = p.begin().await.unwrap();
+            let doublon =
+                bank_imports::find_by_company_and_hash(&mut *tx, company_id, &empreinte(hash))
+                    .await
+                    .unwrap();
+            assert!(doublon.is_none(), "montage : aucun doublon");
+            let r = importer(&mut tx, company_id, bank_account_id, user_id, hash).await;
+            if r.is_ok() {
+                tx.commit().await.unwrap();
+            } else {
+                tx.rollback().await.unwrap();
+            }
+            r
+        })
+    }
+
+    /// Attend que la tâche soit vue sur la requête `motif`, ou panique avec son
+    /// issue si elle a fini sans attendre.
+    async fn attendre_l_ecrivain<T: std::fmt::Debug>(
+        pool: &MySqlPool,
+        motif: &str,
+        tache: &mut tokio::task::JoinHandle<T>,
+    ) {
+        let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(pool, &[motif], || {
+            tache.is_finished()
+        })
+        .await;
+        if !vue {
+            panic!(
+                "l'écrivain a fini sans attendre sur « {motif} » : {:?}",
+                tache.await
+            );
+        }
+    }
+
+    /// Les lignes d'import écrites (entêtes, transactions).
+    async fn lignes_d_import(pool: &MySqlPool) -> (i64, i64) {
+        let entetes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bank_imports")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        let transactions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bank_transactions")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        (entetes, transactions)
+    }
+
+    /// T29a-2 (Story 29-4a, #651, AC3) — **la fenêtre de l'import est fermée**.
+    /// Une clôture tient la ligne du compte en exclusif sans commiter ; un
+    /// import dont la vue est née **avant** son commit (recherche de doublons)
+    /// passe la garde non verrouillante de tête — le compte y est ouvert —,
+    /// puis attend sur son `INSERT` d'entête (clé étrangère vers le compte).
+    /// Au commit de la clôture, l'`INSERT` passe, et la revérification
+    /// verrouillante qui le suit lit le dernier état commité : `closed_on` posé
+    /// → `BankAccountClosed`, rien d'écrit.
+    ///
+    /// **Rouge au sol** à l'étape (5) : l'import aboutit sur le compte clos.
+    /// Tue M29-1 (appel retiré) et M29-3 bis (la revérification de la variante
+    /// « archivé » redevenue lecture de la vue ; M29-3, sur la variante des
+    /// annulations, n'est tuée que par T-a45 étendu). ⚠️ L'étape (3) passe aussi au sol : l'`INSERT` y attend déjà la
+    /// clôture.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn un_import_commence_avant_la_cloture_est_refuse(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let user_id = create_test_user(&pool, company_id, "u").await;
+        let autre = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+        let v = version(&pool, autre).await;
+
+        // (1) La clôture tient la ligne du compte en exclusif.
+        let mut cloture = pool.begin().await.unwrap();
+        let r = bank_accounts::close_in_tx(&mut cloture, company_id, autre, v, ymd(2026, 1, 31))
+            .await
+            .unwrap();
+        assert!(matches!(r, ClosureOutcome::Done { .. }), "{r:?}");
+
+        // (2) et (3) L'import démarre, vue née avant le commit, et attend.
+        let mut import = import_en_tache(&pool, company_id, autre, user_id, "a");
+        attendre_l_ecrivain(&pool, "INSERT INTO bank_imports", &mut import).await;
+
+        // (4) La clôture commite.
+        cloture.commit().await.unwrap();
+
+        // (5) L'import est refusé, rien d'écrit.
+        let r = import.await.expect("tâche d'import");
+        assert!(
+            matches!(r, Err(DbError::BankAccountClosed { bank_account_id }) if bank_account_id == autre),
+            "⛔ l'import commencé avant la clôture devait être refusé — reçu {r:?}"
+        );
+        assert_eq!(lignes_d_import(&pool).await, (0, 0), "rien d'écrit");
+    }
+
+    /// T29a-11 (Story 29-4a, #651, AC3) — **la course archivage / import est
+    /// fermée** (L5 de la route d'archivage). Même patron que T29a-2,
+    /// l'archivage à la place de la clôture : une transaction prend la
+    /// sentinelle `companies` (comme la route) et archive un compte sans
+    /// transaction, sans commiter ; l'import, vue née avant, attend sur son
+    /// `INSERT` ; au commit de l'archivage, la revérification lit `archived =
+    /// TRUE` → `NotFound` (que la route traduit en `404
+    /// BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`), rien d'écrit.
+    ///
+    /// **Rouge au sol** : l'import aboutit sur un compte archivé. Tue M29-22
+    /// (`archived` retiré de la variante) et M29-23 (l'import appelle la
+    /// revérification des annulations, qui ne lit pas `archived`).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn un_import_commence_avant_l_archivage_est_refuse(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let user_id = create_test_user(&pool, company_id, "u").await;
+        let autre = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+        let v = version(&pool, autre).await;
+
+        // (1) L'archivage, sous la sentinelle, sans commiter.
+        let mut archivage = pool.begin().await.unwrap();
+        bank_accounts::acquire_company_sentinel_lock(&mut archivage, company_id)
+            .await
+            .unwrap();
+        bank_accounts::archive_for_company(&mut archivage, company_id, autre, v)
+            .await
+            .unwrap();
+
+        // (2) et (3) L'import démarre, vue née avant le commit, et attend.
+        let mut import = import_en_tache(&pool, company_id, autre, user_id, "a");
+        attendre_l_ecrivain(&pool, "INSERT INTO bank_imports", &mut import).await;
+
+        // (4) L'archivage commite.
+        archivage.commit().await.unwrap();
+
+        // (5) L'import est refusé comme sur un compte inexistant, rien d'écrit.
+        let r = import.await.expect("tâche d'import");
+        assert!(
+            matches!(r, Err(DbError::NotFound)),
+            "⛔ l'import commencé avant l'archivage devait être refusé — reçu {r:?}"
+        );
+        assert_eq!(lignes_d_import(&pool).await, (0, 0), "rien d'écrit");
+    }
+
+    /// T29a-1 (Story 29-4a, #651, AC1) — la forme du verrou : chacune des deux
+    /// revérifications est une **égalité sur la clé primaire** (`key =
+    /// PRIMARY`, accès `const`) — un verrou d'enregistrement partagé sans
+    /// intervalle, celui que pose un `INSERT` à clé étrangère vers le compte.
+    /// L'`EXPLAIN` exige des valeurs : chaque `?` de la constante est remplacé,
+    /// dans l'ordre, par l'identifiant du compte puis de la société, et le
+    /// test vérifie qu'il n'en reste aucun.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn les_reverifications_lisent_la_cle_primaire(pool: MySqlPool) {
+        use sqlx::Row;
+        let company_id = create_test_company(&pool).await;
+        let compte = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+        for sql in [
+            bank_accounts::RECHECK_OPEN_LOCKED_SQL,
+            bank_accounts::RECHECK_OPEN_UNARCHIVED_LOCKED_SQL,
+        ] {
+            let lie =
+                sql.replacen('?', &compte.to_string(), 1)
+                    .replacen('?', &company_id.to_string(), 1);
+            assert!(!lie.contains('?'), "un `?` reste à lier : {lie}");
+            let lignes = sqlx::query(&format!("EXPLAIN {lie}"))
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+            assert_eq!(lignes.len(), 1, "{sql}");
+            let cle: Option<String> = lignes[0].try_get("key").unwrap();
+            let acces: Option<String> = lignes[0].try_get("type").unwrap();
+            assert_eq!(cle.as_deref(), Some("PRIMARY"), "{sql}");
+            assert_eq!(acces.as_deref(), Some("const"), "{sql}");
+        }
+    }
+
+    /// La sonde de file de T29a-6 et T29a-7 : une lecture partagée `NOWAIT` de
+    /// la ligne du compte, sur une connexion tierce. Elle réussit tant que la
+    /// ligne n'est tenue qu'en partagé, et échoue aussitôt (`1205`) dès qu'une
+    /// demande **exclusive** est en file — une demande neuve est jugée contre
+    /// les demandes en attente comme contre les verrous accordés (établi en T0
+    /// de la Story 29-4a sur MariaDB 10.11.16). Aucun privilège : ni
+    /// `information_schema.INNODB_TRX` ni `PROCESS`.
+    const SONDE_PARTAGEE: &str =
+        "SELECT id FROM bank_accounts WHERE id = ? LOCK IN SHARE MODE NOWAIT";
+
+    /// La clôture de `compte`, en tâche, **sans enveloppe de rejeu** (un
+    /// interblocage doit se voir) ; commite si elle aboutit.
+    fn cloture_en_tache(
+        pool: &MySqlPool,
+        company_id: i64,
+        compte: i64,
+        v: i32,
+    ) -> tokio::task::JoinHandle<Result<ClosureOutcome, DbError>> {
+        let p = pool.clone();
+        tokio::spawn(async move {
+            let mut tx = p.begin().await.unwrap();
+            let r =
+                bank_accounts::close_in_tx(&mut tx, company_id, compte, v, ymd(2026, 1, 31)).await;
+            if matches!(r, Ok(ClosureOutcome::Done { .. })) {
+                tx.commit().await.unwrap();
+            }
+            r
+        })
+    }
+
+    /// Étapes (1 bis) à (3) de T29a-6 et T29a-7 : la sonde de référence — avant
+    /// tout lancement de la clôture, elle **doit** réussir (seul l'écrivain
+    /// tient la ligne, en partagé), faute de quoi le montage ne prouverait
+    /// rien —, puis la clôture lancée, puis la sonde en boucle (10 ms, bornée à
+    /// 10 s) jusqu'à ce qu'elle échoue : la demande exclusive de la clôture est
+    /// alors **dans la file** de la ligne. Interrompue si la clôture finit sans
+    /// attendre.
+    async fn cloture_en_file(
+        pool: &MySqlPool,
+        company_id: i64,
+        compte: i64,
+    ) -> tokio::task::JoinHandle<Result<ClosureOutcome, DbError>> {
+        assert!(
+            kesh_db::test_fixtures::sonde_verrou_nowait(pool, SONDE_PARTAGEE, compte).await,
+            "montage : la sonde de référence doit réussir quand seul l'écrivain tient le compte \
+             en partagé"
+        );
+        let v = version(pool, compte).await;
+        let mut cloture = cloture_en_tache(pool, company_id, compte, v);
+        let debut = std::time::Instant::now();
+        while kesh_db::test_fixtures::sonde_verrou_nowait(pool, SONDE_PARTAGEE, compte).await {
+            if cloture.is_finished() {
+                panic!(
+                    "la clôture a fini sans attendre l'écrivain : {:?}",
+                    (&mut cloture).await
+                );
+            }
+            assert!(
+                debut.elapsed() < std::time::Duration::from_secs(10),
+                "la demande exclusive de la clôture n'a pas été vue en file"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        cloture
+    }
+
+    /// T29a-6 (Story 29-4a, #651, AC3) — **l'autre ordre, import** : l'écrivain
+    /// a inséré son entête (verrou partagé du compte par la clé étrangère), une
+    /// clôture est **en file** derrière lui en exclusif, puis l'écrivain
+    /// revérifie. La prémisse P-d (2) : la redemande d'un partagé déjà tenu est
+    /// satisfaite **sans attente** même derrière un exclusif en file — sinon
+    /// InnoDB verrait un cycle écrivain / clôture. L'écrivain insère ensuite sa
+    /// transaction `pending` (ordre de production « entête → revérification →
+    /// transactions ») et commite ; la clôture, servie après, voit la `pending`
+    /// et refuse. Si la redemande se mettait en file, la clôture (plus légère,
+    /// non rejouée ici) rendrait `1213` à l'étape (6), ou l'écrivain l'erreur à
+    /// l'étape (4). Tue M29-19 pour la variante (revérification en `FOR
+    /// UPDATE` : la demande exclusive d'un détenteur partagé derrière un
+    /// exclusif en file attend — cycle).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn un_import_insere_reverifie_sans_attendre_la_cloture_en_file(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let user_id = create_test_user(&pool, company_id, "u").await;
+        let autre = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+
+        // (1) L'entête, par le SQL de l'`INSERT`, sans revérification.
+        let mut ecrivain = pool.begin().await.unwrap();
+        let import_id = sqlx::query(
+            "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
+             source_format, period_from, period_to, transaction_count, imported_by_user_id) \
+             VALUES (?, ?, 'releve.xml', ?, 'CAMT053_V04', '2026-01-01', '2026-01-31', 1, ?)",
+        )
+        .bind(company_id)
+        .bind(autre)
+        .bind(empreinte("a"))
+        .bind(user_id)
+        .execute(&mut *ecrivain)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+
+        // (1 bis) à (3) La clôture, en file derrière le partagé de l'écrivain.
+        let cloture = cloture_en_file(&pool, company_id, autre).await;
+
+        // (4) La revérification passe sans attendre.
+        let r = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            bank_accounts::recheck_open_unarchived_locked_in_tx(&mut ecrivain, company_id, autre),
+        )
+        .await;
+        assert!(
+            matches!(r, Ok(Ok(()))),
+            "⛔ P-d (2) : la redemande du partagé tenu devait passer sans attente — reçu {r:?}"
+        );
+
+        // (4 bis) La transaction `pending` de l'import, même prémisse.
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            sqlx::query(
+                "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, \
+                 booking_date, amount, currency, details) \
+                 VALUES (?, ?, ?, '2026-01-15', -15.00, 'CHF', 'Frais')",
+            )
+            .bind(company_id)
+            .bind(import_id)
+            .bind(autre)
+            .execute(&mut *ecrivain),
+        )
+        .await
+        .expect("l'`INSERT` des transactions ne doit pas attendre")
+        .unwrap();
+
+        // (5) L'écrivain commite ; (6) la clôture voit la `pending` et refuse.
+        ecrivain.commit().await.unwrap();
+        let r = cloture.await.expect("tâche de clôture");
+        assert!(
+            matches!(
+                r,
+                Ok(ClosureOutcome::Refused(
+                    ClosureRefusal::PendingTransactions { pending_count: 1 }
+                ))
+            ),
+            "⛔ la clôture devait voir l'import commité, sans interblocage — reçu {r:?}"
+        );
+    }
+
+    /// T29a-7 (Story 29-4a, #651, AC3) — **l'autre ordre, lot** : patron de
+    /// T29a-6, l'`INSERT INTO payment_batches` (un lot `generated`) à la place
+    /// de l'entête d'import. La revérification passe sans attendre derrière la
+    /// clôture en file ; au commit de l'écrivain, la clôture voit le lot
+    /// ouvert (I2) et refuse.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn un_lot_insere_reverifie_sans_attendre_la_cloture_en_file(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let autre = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+
+        // (1) Le lot, par le SQL de l'`INSERT`, sans revérification.
+        let mut ecrivain = pool.begin().await.unwrap();
+        sqlx::query(
+            "INSERT INTO payment_batches (company_id, bank_account_id, status, \
+             requested_execution_date, msg_id, payment_info_id) \
+             VALUES (?, ?, 'generated', '2026-02-01', 'M', 'P')",
+        )
+        .bind(company_id)
+        .bind(autre)
+        .execute(&mut *ecrivain)
+        .await
+        .unwrap();
+
+        // (1 bis) à (3) La clôture, en file derrière le partagé de l'écrivain.
+        let cloture = cloture_en_file(&pool, company_id, autre).await;
+
+        // (4) La revérification passe sans attendre.
+        let r = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            bank_accounts::recheck_open_unarchived_locked_in_tx(&mut ecrivain, company_id, autre),
+        )
+        .await;
+        assert!(
+            matches!(r, Ok(Ok(()))),
+            "⛔ P-d (2) : la redemande du partagé tenu devait passer sans attente — reçu {r:?}"
+        );
+
+        // (5) L'écrivain commite ; (6) la clôture voit le lot et refuse.
+        ecrivain.commit().await.unwrap();
+        let r = cloture.await.expect("tâche de clôture");
+        assert!(
+            matches!(
+                r,
+                Ok(ClosureOutcome::Refused(
+                    ClosureRefusal::OpenPaymentBatches { batch_count: 1 }
+                ))
+            ),
+            "⛔ la clôture devait voir le lot commité, sans interblocage — reçu {r:?}"
+        );
+    }
 }

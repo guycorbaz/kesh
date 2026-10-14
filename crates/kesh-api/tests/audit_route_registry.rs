@@ -62,8 +62,20 @@
 //!   d'un exercice, enveloppe `kesh_db::retry`). Pour la famille `AppError`, le test 1 éprouve
 //!   le prédicat et l'enveloppe, et le test 8 le chemin propre aux routes à
 //!   verrou nommé sur `reconciliation::manual` (1213 levé sous le verrou,
-//!   `match` du handler, `RELEASE_LOCK`, `rollback`, nouvelle tentative) ; pour
-//!   les autres routes, c'est la revue fichier par fichier.
+//!   `match` du handler, `RELEASE_LOCK`, `rollback`, nouvelle tentative) ; et —
+//!   Story 29-4a, #651 — six routes `SansEcritureAuJournal` de la famille
+//!   `AppError` (`retry_app_on_deadlock`) le prouvent dynamiquement :
+//!   `bank_accounts::close_bank_account`, `reopen_bank_account`,
+//!   `patch_bank_account_journal_link` et — revue de code P1, E-1 —
+//!   `update_bank_account`, `archive_bank_account`, `create_bank_account`, par
+//!   `closing_is_replayed_when_it_is_the_deadlock_victim`,
+//!   `reopening_is_replayed_when_it_is_the_deadlock_victim`,
+//!   `bank_link_patch_is_replayed_when_it_is_the_deadlock_victim`,
+//!   `bank_account_update_is_replayed_when_it_is_the_deadlock_victim`,
+//!   `bank_account_archive_is_replayed_when_it_is_the_deadlock_victim` et
+//!   `bank_account_creation_is_replayed_when_it_is_the_deadlock_victim`
+//!   (T29a-4, T29a-9, T29a-10, T29a-13, T29a-14, T29a-15) ; pour les autres
+//!   routes, c'est la revue fichier par fichier.
 //! - **(iii)** une enveloppe appelée par une fonction auxiliaire du handler : le
 //!   nom doit figurer dans le corps du handler lui-même — c'est la forme exigée.
 //! - **(iii bis)** — **angle mort assumé** (revue P1, B-4 = E-2) — que
@@ -77,7 +89,11 @@
 //!   `accept_replays_the_batch_when_it_is_the_deadlock_victim`
 //!   (`reconciliation_e2e.rs`) pour `reconciliation::accept` ;
 //!   `the_put_replays_a_deadlock_it_lost` (`journal_entry_reversal_e2e.rs`,
-//!   15-8a) pour `journal_entries::update`. Pour toutes les autres routes
+//!   15-8a) pour `journal_entries::update` ; et, pour la famille `AppError`
+//!   des routes `SansEcritureAuJournal` rejouées, la clôture, la réouverture, le
+//!   `PATCH`, le `PUT`, l'archivage et la création d'un compte bancaire (Story
+//!   29-4a, T29a-4, T29a-9, T29a-10, T29a-13, T29a-14, T29a-15 du même
+//!   fichier). Pour toutes les autres routes
 //!   `Rejouee` — dont `reconciliation::split` et
 //!   `imported_supplier_invoices::complete`, les deux autres fonctions « une
 //!   tentative » extraites par la 15-5e2, et `journal_entries::delete`
@@ -133,7 +149,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **sept routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **treize routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2 — la
 //!   seule des neuf routes d'étape à l'être, cf. (iv)),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
@@ -164,7 +180,30 @@
 //!   `bank_imports::delete`) : un lot d'acceptation verrouille plusieurs
 //!   transactions du même import dans l'ordre des propositions, la suppression
 //!   par identifiant croissant — un cycle est possible (choix C-27-1-2) ; tenue
-//!   par sa revue, aucune preuve dynamique.
+//!   par sa revue, aucune preuve dynamique. Et — Story 29-4a, #651 —
+//!   `bank_accounts::close_bank_account`, `bank_accounts::reopen_bank_account`
+//!   et `bank_accounts::patch_bank_account_journal_link` (enveloppe `AppError`,
+//!   opérations `bank_accounts::close`, `::reopen`, `::patch`) : chacune
+//!   demande l'exclusif de la ligne du compte, et sa demande **en attente**
+//!   derrière un détenteur partagé fait attendre toute demande **neuve** de la
+//!   ligne — l'exclusif d'une route de gestion qui tient la sentinelle
+//!   `companies`, ou la transaction `t2` de T29a-4 ; non la revérification de
+//!   l'import et du lot, redemande d'un partagé tenu, qui passe (T29a-6,
+//!   T29a-7). Le cycle à trois atteignable en 29-4a est `I → M → E → I` : un
+//!   import ou un lot `I` tient le compte en partagé par son `INSERT` et
+//!   demande `companies`, que tient la route de gestion `M`, en file derrière
+//!   `E` ; `E` y est la victime désignée, la plus légère (choix C-29-4-5,
+//!   C-29-4-14, C-29-4-19) ; tenues par T29a-4, T29a-9 et T29a-10
+//!   (`rejeu_interblocage_e2e.rs`). Et — même story, revue de code P1, E-1 —
+//!   `bank_accounts::update_bank_account`, `archive_bank_account` et
+//!   `create_bank_account` (enveloppe `AppError`, opérations
+//!   `bank_accounts::update`, `::archive`, `::create`) : chacune tient la
+//!   sentinelle `companies` en exclusif puis demande la ligne d'un compte
+//!   (`PUT`, archivage ; la création quand elle démote le principal) — la
+//!   route de gestion `M` du cycle ci-dessus, à deux (`I ↔ M`) ou à trois,
+//!   préexistant, dont elle était la victime en `500` (choix C-29-4-28) ;
+//!   tenues par T29a-13, T29a-14 et T29a-15 (même fichier). Treize : dix
+//!   avant la revue de code P1 de la 29-4a, plus ces trois.
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit
@@ -329,13 +368,18 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "reconciliation::post_cancel_reconciliation", Traced, Rejouee),
     // Story 28-5a (#526) — `reconciliation.unrejected`.
     ("post", "reconciliation::post_unreject_transaction", Traced, SansEcritureAuJournal),
+    // Story 29-4a (#651), revue de code P1 (E-1) — la création, le `PUT` et
+    // l'archivage : rejoués, victimes possibles du cycle avec un import ou un
+    // lot qui tient le compte et attend la sentinelle (point (vi)).
     ("post", "bank_accounts::create_bank_account", Traced, SansEcritureAuJournal),
+    // Story 29-4a (#651) — le lien du compte : rejoué, victime possible d'un
+    // cycle par la file d'attente de la ligne du compte (point (vi)).
     ("patch", "bank_accounts::patch_bank_account_journal_link", Traced, SansEcritureAuJournal),
     ("put", "bank_accounts::update_bank_account", Traced, SansEcritureAuJournal),
     ("delete", "bank_accounts::archive_bank_account", Traced, SansEcritureAuJournal),
-    // Story 28-4a (#642) — clore et rouvrir un compte bancaire : un seul verrou
-    // (la ligne du compte, en première instruction), en tenant rien — aucune
-    // enveloppe de rejeu (C-28-4-21).
+    // Story 28-4a (#642) — clore et rouvrir un compte bancaire. Story 29-4a
+    // (#651) : rejouées, chacune victime possible d'un cycle par la file
+    // d'attente de la ligne du compte (point (vi)).
     ("post", "bank_accounts::close_bank_account", Traced, SansEcritureAuJournal),
     ("post", "bank_accounts::reopen_bank_account", Traced, SansEcritureAuJournal),
     ("post", "reconciliation_rules::post_create", Traced, SansEcritureAuJournal),

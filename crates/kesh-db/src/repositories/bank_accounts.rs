@@ -444,6 +444,16 @@ pub async fn upsert_primary_in_tx(
 /// (`company_invoice_settings::claim_accounts_in_share_mode`) ;
 /// [`ClaimAccounts::default`](super::company_invoice_settings::ClaimAccounts)
 /// quand la cible est `NULL` (dé-liaison : ni lecture ni verrou).
+///
+/// ⚠️ **Cycles** (Story 29-4a, #651) : la demande exclusive de la ligne, en
+/// attente derrière un détenteur partagé (un import ou un lot après son
+/// `INSERT`), fait attendre derrière elle les demandes **neuves** de la ligne
+/// — l'exclusif d'une route de gestion qui tient la sentinelle `companies`
+/// que l'écrivain attend (cycle `I → M → PATCH → I`), et, à partir de la
+/// 29-4b, la revérification d'une annulation ; la revérification de l'import
+/// et du lot, redemande d'un partagé tenu, n'y attend jamais (T29a-6,
+/// T29a-7). Le `PATCH`, qui n'a rien écrit, peut être la victime d'un tel
+/// cycle par la file d'attente. La route est rejouée (`bank_accounts::patch`).
 pub async fn set_journal_account_id_for_company(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
@@ -809,18 +819,22 @@ const ENSURE_OPEN_UNARCHIVED_SQL: &str =
 /// La garde est non verrouillante : elle lit l'instantané de sa transaction.
 /// Une écriture dont la transaction a pris sa **vue cohérente** avant le commit
 /// d'une clôture peut donc encore aboutir sur le compte qu'on clôt — fenêtre
-/// « du début de la transaction de l'écrivain à la validation de la clôture ;
-/// pour un import, elle couvre donc aussi l'analyse du fichier ». Huit chemins :
-/// annulation de rapprochement, création de lot, import CAMT et CSV,
-/// suppression d'import, annulation de règlement client et fournisseur,
-/// annulation d'une facture fournisseur payée, annulation de rejet.
-/// Conséquence : **une opération réelle de plus** sur un compte clos (I1 ou I2
+/// « du début de la transaction de l'écrivain à la validation de la clôture ».
+/// Cinq chemins : annulation de rapprochement, suppression d'import, annulation
+/// de règlement client et fournisseur, annulation d'une facture fournisseur
+/// payée. L'annulation de rejet n'y est pas : la transaction rejetée est
+/// `pending`, et la clôture refuse un compte qui en porte (I1 ; troisième
+/// inventaire de `bank_account_closed_inventory.rs`, revue de code P1 de la
+/// 29-4a, B-5). **L'import (CAMT et CSV) et la création de lot
+/// n'y sont plus** depuis la Story 29-4a : leur garde de tête est revérifiée
+/// sous le verrou de clé étrangère que pose leur `INSERT`
+/// ([`recheck_open_unarchived_locked_in_tx`]), ce qui ferme leur fenêtre ; les
+/// annulations suivent en 29-4b ([`recheck_open_locked_in_tx`]).
+/// Conséquence : **une opération réelle de plus** sur un compte clos (I1
 /// défait pour ce compte jusqu'au traitement), **aucune erreur comptable**.
 /// Remède à la main : rouvrir, traiter (rapprocher ou supprimer l'import,
 /// confirmer ou annuler le lot — `cancel_batch` n'est pas gardé), clore à
-/// nouveau. **Classe P2** par la grille du `CLAUDE.md`, dette assumée et
-/// motivée : la fermer exige une garde verrouillante, c'est-à-dire les cycles
-/// que la conception a écartés. Tracée par **#651**.
+/// nouveau. **Classe P2** par la grille du `CLAUDE.md`. Tracée par **#651**.
 ///
 /// ⛔ **Interdit** : faire lire `archived` à cette fonction, ou appeler
 /// [`ensure_open_unarchived_in_tx`] depuis une annulation. Un compte archivé
@@ -863,8 +877,10 @@ pub async fn ensure_open_in_tx(
 /// verrouillante**, règle de la garde, règle de placement, angle mort L1
 /// (#651) : voir sa documentation. L'appelant traduit `NotFound` en `404
 /// BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` (`import_create_error` de la route
-/// d'import). Ne ferme pas la course archivage / import (L5 de la route
-/// d'archivage) : la lecture d'`archived` est non verrouillante.
+/// d'import). La course archivage / import (L5 de la route d'archivage), que
+/// cette lecture non verrouillante ne ferme pas, est fermée par la
+/// revérification de l'import, [`recheck_open_unarchived_locked_in_tx`]
+/// (Story 29-4).
 ///
 /// ⛔ **Interdit** : l'appeler depuis une annulation (un archivé ne se rouvre
 /// pas), ou y ajouter un verrou.
@@ -879,6 +895,190 @@ pub async fn ensure_open_unarchived_in_tx(
         .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?;
+    match row {
+        None | Some((_, true)) => Err(DbError::NotFound),
+        Some((Some(_), false)) => Err(DbError::BankAccountClosed { bank_account_id }),
+        Some((None, false)) => Ok(()),
+    }
+}
+
+/// SQL de [`recheck_open_locked_in_tx`] — **lecture verrouillante partagée**
+/// par égalité sur la clé primaire : verrou d'enregistrement partagé, sans
+/// intervalle — celui-là même que pose un `INSERT` à clé étrangère vers
+/// `bank_accounts(id)`. Ne lit **que** `closed_on`, jamais `archived`.
+/// ⛔ `LOCK IN SHARE MODE`, jamais `FOR SHARE` (erreur de syntaxe sur MariaDB
+/// 10.11) ni `FOR UPDATE` (T-a45 le contrôle ; `FOR SHARE` ferait aussi
+/// échouer l'`EXPLAIN` de T29a-1, qui ne voit pas `FOR UPDATE`). Publique et cachée
+/// pour que les tests de `tests/` la lisent (`EXPLAIN`).
+#[doc(hidden)]
+pub const RECHECK_OPEN_LOCKED_SQL: &str =
+    "SELECT closed_on FROM bank_accounts WHERE id = ? AND company_id = ? LOCK IN SHARE MODE";
+
+/// SQL de [`recheck_open_unarchived_locked_in_tx`] — même verrou, plus
+/// `archived`.
+#[doc(hidden)]
+pub const RECHECK_OPEN_UNARCHIVED_LOCKED_SQL: &str = "SELECT closed_on, archived FROM bank_accounts WHERE id = ? AND company_id = ? LOCK IN SHARE MODE";
+
+/// **Revérifie**, sous verrou partagé, qu'un compte bancaire n'est pas clos —
+/// Story 29-4 (#651). Rend [`DbError::BankAccountClosed`] si `closed_on` est
+/// non nul, [`DbError::NotFound`] si le compte n'existe pas dans la société,
+/// `Ok(())` sinon. Destinée aux **annulations** (W9, W24, W25, W28, W29), qui
+/// l'appelleront à partir de la Story 29-4b — en 29-4a, elle n'a **aucun
+/// appelant de production** ; l'import et la création de lot appellent la
+/// variante [`recheck_open_unarchived_locked_in_tx`].
+///
+/// # Pourquoi une lecture verrouillante (C-29-4-1, C-29-4-2)
+///
+/// La garde de tête ([`ensure_open_in_tx`]) lit l'instantané de la
+/// transaction : une clôture commitée après la naissance de cette vue ne s'y
+/// voit pas, et la clôture, qui ne prend que sa propre ligne en exclusif, ne
+/// rencontrait aucun verrou de l'écrivain — rien ne les sérialisait (L1 de la
+/// Story 28-4). Une lecture **verrouillante** lit le dernier état commité, et
+/// son verrou **partagé** sur la ligne du compte entre en conflit avec
+/// l'exclusif de la clôture : ou bien la clôture est commitée, et la
+/// revérification la voit ; ou bien la revérification passe d'abord, et la
+/// clôture attend le commit de l'écrivain, puis voit ce qu'il a écrit. Partagé,
+/// non exclusif : deux écrivains ne se gênent pas entre eux. La garde de tête
+/// **reste** : elle donne le refus précoce et l'ordre des refus de la 28-4.
+///
+/// # La règle de position (critère de la story, volet 1)
+///
+/// ⛔ Le verrou que pose la revérification est **déjà tenu** par la transaction
+/// au point où il est demandé — l'import et la création de lot l'appellent
+/// juste après leur `INSERT` à clé étrangère vers le compte, qui a posé ce
+/// partagé : InnoDB le trouve tenu, et la redemande passe **sans attente**,
+/// même derrière un exclusif en file (T29a-6, T29a-7) — **ou bien** (les
+/// annulations, à partir de la 29-4b) il est la **dernière acquisition de
+/// verrou** de la transaction : seules le suivent l'insertion d'audit (`audit_log`, sans clé
+/// étrangère) et des lectures non verrouillantes — à une borne près : les
+/// deux sous-`SELECT` sur `users` de l'`INSERT` d'audit, dont le caractère
+/// verrouillant n'est pas établi, inoffensifs puisque aucun chemin ne tient
+/// `users` en exclusif en attendant `bank_accounts`. ⛔ **Interdit** de la poser
+/// **avant** une écriture qui prend un autre verrou : elle y serait une demande
+/// **neuve**, qui attend derrière un exclusif en file, et, pour une annulation,
+/// le compte serait tenu avant `companies` (clé étrangère des écritures), dans
+/// l'ordre inverse des routes de gestion du compte — le cycle que la Story
+/// 28-4 a écarté. Pour l'import et le lot, l'argument d'ordre ne distingue
+/// rien : leur `INSERT` prend déjà le compte avant `companies` (revue de code
+/// P1, E-1) ; ce qui fixe leur position, c'est la redemande d'un verrou déjà
+/// tenu. Posée après la première lecture non verrouillante du chemin, elle ne
+/// déplace aucune naissance de vue (volet 3).
+///
+/// # Les cycles, et l'argument de poids (raisonné)
+///
+/// Une demande **neuve** attend derrière une demande exclusive **en attente**
+/// sur la même ligne — non la redemande d'un partagé déjà tenu, qui passe
+/// (T29a-6, T29a-7) : la revérification de l'import et du lot ne fait donc
+/// jamais la queue. Le cycle atteignable en 29-4a est **préexistant** : un
+/// écrivain `I` (import ou lot) tient la ligne du compte en partagé par le
+/// premier contrôle de clé étrangère de son `INSERT` et demande `companies` en
+/// partagé (le second) ; une route de gestion `M` (`PUT`, archivage, `POST`
+/// quand il démote le principal) tient la sentinelle `companies` en exclusif
+/// et demande la ligne du compte en exclusif. À deux, `I ↔ M` ; à trois, quand la clôture, la réouverture ou
+/// le `PATCH` est en file sur la ligne entre `I` et `M` : `I → M → E → I`
+/// (T29a-4 et T29a-9 en jouent la forme, la transaction `t2` y tenant le rôle
+/// de `M`). À partir de la 29-4b s'y ajoute la revérification d'une annulation,
+/// demande partagée neuve. Tous les participants autres que l'écrivain sont
+/// rejoués sur interblocage (`retry_app_on_deadlock`, routes
+/// `bank_accounts::close`, `::reopen`, `::patch`, et — revue de code P1, E-1 —
+/// `::create`, `::update`, `::archive`). InnoDB désigne pour victime
+/// la transaction de moindre poids (écritures et verrous) : la clôture et la
+/// réouverture, dont la demande est la première instruction, ne portent que
+/// l'intention de table et leur demande en attente ; tout autre participant
+/// hors route de gestion tient au moins un verrou d'enregistrement de plus.
+/// ⚠️ Deux réserves : (1) le dépôt n'établit la désignation du plus léger que
+/// pour des cycles **à deux** — qu'InnoDB compare tout le cycle est raisonné,
+/// éprouvé par T29a-4 et T29a-9 ; (2) l'argument ne vaut pas contre une route
+/// de gestion (`PUT`, `POST`, `DELETE /bank-accounts`) : en file sur la
+/// sentinelle `companies`, elle ne tient aucun verrou d'enregistrement, à
+/// égalité de poids avec la clôture et la réouverture, plus légère que le
+/// `PATCH`, `settle_invoice` ou `pay_in_tx` — sans conséquence depuis qu'elle
+/// est rejouée (revue de code P1, E-1) : quelle que soit la victime désignée
+/// parmi elles, elle rejoue.
+///
+/// **Résidus** : (a) (29-4b) le cycle à trois où l'import (partagé sur le
+/// compte depuis son `INSERT`, en attente de l'intervalle que tient une
+/// suppression d'import qui revérifie) serait désigné victime au lieu du
+/// demandeur d'exclusif — théorique : l'import et la suppression ont écrit, le
+/// demandeur d'exclusif non (C-29-4-7) ; (b) **fermé** en revue de code P1
+/// (E-1) — le cycle à quatre annulation → demandeur d'exclusif en file →
+/// import (entre ses deux contrôles de clé étrangère) → route de gestion en
+/// file sur la sentinelle → annulation, où la route de gestion, alors non
+/// rejouée, pouvait être désignée et rendre `500` sans rien écrire : elle est
+/// désormais rejouée, comme dans le cycle `I ↔ M` ci-dessus (C-29-4-14,
+/// annoté).
+///
+/// # Angle mort — `innodb_snapshot_isolation`, non épinglé (#669)
+///
+/// « Lit le dernier état commité » vaut sous `innodb_snapshot_isolation =
+/// OFF`, défaut de MariaDB 10.11 (CI, base de dev). À partir de MariaDB
+/// **11.6**, le défaut passe à `ON` : une lecture verrouillante qui rencontre
+/// une version de la ligne postérieure à la vue rend `ER_CHECKREAD` (1020),
+/// que [`map_db_error`] ne traduit pas — non seulement dans la course que la
+/// revérification traite (une clôture), mais après **tout** commit sur la
+/// ligne du compte depuis la vue : `PATCH` du lien comptable, `PUT`, bascule du
+/// principal, clôture puis réouverture. Un import ou un lot légitime,
+/// concurrent d'un tel geste, rendrait alors `500`, rien d'écrit (raisonné ;
+/// si le contrôle de clé étrangère de l'`INSERT` y est lui-même soumis, le
+/// `1020` sort déjà au sol). Le réglage de session du pool réel, et ce rayon
+/// élargi, sont portés par #669.
+///
+/// ⛔ **Interdit** : y faire lire `archived`, ou appeler
+/// [`recheck_open_unarchived_locked_in_tx`] depuis une annulation. Un compte
+/// archivé peut porter des règlements et des lots, et **il ne se rouvre
+/// pas** : refuser l'annulation d'un de ses règlements la rendrait
+/// définitivement impossible (même interdit qu'[`ensure_open_in_tx`]).
+pub async fn recheck_open_locked_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    bank_account_id: i64,
+) -> Result<(), DbError> {
+    let row: Option<(Option<chrono::NaiveDate>,)> = sqlx::query_as(RECHECK_OPEN_LOCKED_SQL)
+        .bind(bank_account_id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    match row {
+        None => Err(DbError::NotFound),
+        Some((Some(_),)) => Err(DbError::BankAccountClosed { bank_account_id }),
+        Some((None,)) => Ok(()),
+    }
+}
+
+/// **Revérifie**, sous verrou partagé, qu'un compte bancaire n'est ni
+/// **archivé** ([`DbError::NotFound`], l'erreur d'un compte inexistant) ni
+/// **clos** ([`DbError::BankAccountClosed`]) — dans l'ordre « archivé avant
+/// clos » de la garde de tête [`ensure_open_unarchived_in_tx`] ; Story 29-4a
+/// (#651, AC1). La revérification de l'**import**
+/// (`bank_imports::create_with_transactions`, W22) et de la **création de lot**
+/// (`payment_batches::create_batch`, W17), seuls chemins dont la garde de tête
+/// lit `archived` : appelée juste après leur `INSERT` à clé étrangère, elle
+/// redemande un partagé déjà tenu, sans verrou neuf. Elle ferme du même geste
+/// la course archivage / import et archivage / lot : l'archivage prend
+/// l'exclusif de la ligne (`archive_for_company`), que la revérification voit
+/// comme elle voit une clôture.
+///
+/// Même contrat que [`recheck_open_locked_in_tx`] — pourquoi verrouillante,
+/// règle de position, cycles et argument de poids, résidus, angle mort
+/// `innodb_snapshot_isolation` (#669) : voir sa documentation. Lire `archived`
+/// ne change ni le verrou ni les cycles : même égalité sur la clé primaire,
+/// même verrou d'enregistrement.
+///
+/// ⛔ **Interdit** : l'appeler depuis une annulation (un archivé ne se rouvre
+/// pas).
+pub async fn recheck_open_unarchived_locked_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    bank_account_id: i64,
+) -> Result<(), DbError> {
+    let row: Option<(Option<chrono::NaiveDate>, bool)> =
+        sqlx::query_as(RECHECK_OPEN_UNARCHIVED_LOCKED_SQL)
+            .bind(bank_account_id)
+            .bind(company_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
     match row {
         None | Some((_, true)) => Err(DbError::NotFound),
         Some((Some(_), false)) => Err(DbError::BankAccountClosed { bank_account_id }),
@@ -993,7 +1193,19 @@ async fn write_closed_on(
 /// compte jusqu'à son commit — la clôture l'attend, puis ses décomptes voient
 /// ce qu'il a commité (T-a31). Chemin **neuf** : son seul verrou est celui de
 /// sa propre ligne, sans autre verrou tenu ni demandé ensuite (l'audit n'a
-/// aucune clé étrangère) — il ne peut fermer aucun cycle.
+/// aucune clé étrangère) — **comme détenteur**, il ne peut fermer aucun cycle.
+/// ⚠️ **En attente**, si (Story 29-4a, #651) : sa demande exclusive fait
+/// attendre derrière elle toute demande **neuve** de la ligne — l'exclusif
+/// d'une route de gestion (`PUT`, archivage) qui tient la sentinelle
+/// `companies`, ou le contrôle de clé étrangère de l'`INSERT` d'un second
+/// écrivain, et, à partir de la 29-4b, la revérification d'une annulation.
+/// La revérification de l'import et du lot
+/// ([`recheck_open_unarchived_locked_in_tx`]), redemande d'un partagé déjà
+/// tenu, n'y attend jamais (T29a-6, T29a-7). Cycle atteignable en 29-4a : un
+/// import ou un lot `I` tient la ligne en partagé par son `INSERT` et attend
+/// `companies`, que tient une route de gestion `M` en file derrière la
+/// clôture — `I → M → clôture → I`, dont la clôture, la plus légère, est la
+/// victime ; d'où le rejeu de la route (`bank_accounts::close`).
 ///
 /// ⚠️ La date est **informative** : ni bornée, ni contrôlée contre les dates
 /// des transactions (C-28-4-3). Angle mort : la cohérence d'une sauvegarde
@@ -1062,7 +1274,10 @@ pub async fn close_in_tx(
 ///
 /// Ordre des refus : [`DbError::NotFound`] (inexistant, autre société,
 /// archivé) → [`DbError::OptimisticLockConflict`] →
-/// [`ClosureRefusal::NotClosed`]. Même verrou unique que [`close_in_tx`].
+/// [`ClosureRefusal::NotClosed`]. Même verrou unique que [`close_in_tx`] —
+/// et, comme lui, victime possible d'un cycle par la file d'attente quand sa
+/// demande exclusive attend derrière un détenteur partagé (Story 29-4a, #651) :
+/// la route est rejouée (`bank_accounts::reopen`).
 pub async fn reopen_in_tx(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
@@ -1668,5 +1883,28 @@ mod tests {
             statement_gap(&soldes(Some("100.005"), Some("100.00"))),
             Some(dec!(0.01))
         );
+    }
+
+    /// T-a45 étendu (Story 29-4a, #651, AC1) — les deux **revérifications**
+    /// verrouillent, et en **partagé** seulement : `LOCK IN SHARE MODE`, ni
+    /// `FOR UPDATE` (une demande exclusive d'un détenteur partagé, derrière une
+    /// clôture en file, fermerait un cycle avec elle) ni `FOR SHARE` (refusé
+    /// par MariaDB 10.11). Celle des annulations ne lit pas `archived`, celle
+    /// de l'import et du lot le lit. Tue M29-3, M29-19 et M29-22 dans leur
+    /// forme SQL.
+    #[test]
+    fn les_reverifications_verrouillent_en_partage() {
+        for sql in [RECHECK_OPEN_LOCKED_SQL, RECHECK_OPEN_UNARCHIVED_LOCKED_SQL] {
+            let haut = sql.to_uppercase();
+            assert!(
+                haut.contains("LOCK IN SHARE MODE"),
+                "verrou partagé : {sql}"
+            );
+            for interdit in ["FOR UPDATE", "FOR SHARE"] {
+                assert!(!haut.contains(interdit), "{interdit} interdit : {sql}");
+            }
+        }
+        assert!(!RECHECK_OPEN_LOCKED_SQL.contains("archived"));
+        assert!(RECHECK_OPEN_UNARCHIVED_LOCKED_SQL.contains("archived"));
     }
 }

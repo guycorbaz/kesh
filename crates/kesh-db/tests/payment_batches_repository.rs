@@ -878,3 +878,147 @@ async fn confirm_batch_rolls_back_the_invoices_settled_before_the_refused_one(po
         .unwrap();
     assert_eq!(status, "generated");
 }
+
+// ===========================================================================
+// Story 29-4a (#651) — la revérification verrouillante de la création de lot
+// ===========================================================================
+
+/// Montage des courses de W17 : le contexte, une facture payable, et le compte
+/// source rendu **non principal** (un principal ne se clôt pas) ; rend sa
+/// version.
+async fn monter_la_course(pool: &MySqlPool) -> (Ctx, i64, i32) {
+    let ctx = setup(pool).await;
+    let facture = make_invoice(pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(100.00)).await;
+    sqlx::query("UPDATE bank_accounts SET is_primary = FALSE WHERE id = ?")
+        .bind(ctx.bank_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    let version: i32 = sqlx::query_scalar("SELECT version FROM bank_accounts WHERE id = ?")
+        .bind(ctx.bank_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    (ctx, facture, version)
+}
+
+/// Lance `create_batch` en tâche (il possède sa transaction, et l'annule
+/// lui-même sur erreur), puis attend qu'il soit vu sur son `INSERT INTO
+/// payment_batches` — sa vue est née à l'étape (0), lecture non verrouillante
+/// du compte. Panique avec l'issue si la tâche a fini sans attendre.
+async fn lot_en_attente(
+    pool: &MySqlPool,
+    ctx: &Ctx,
+    facture: i64,
+) -> tokio::task::JoinHandle<Result<payment_batches::CreateBatchOutcome, DbError>> {
+    let p = pool.clone();
+    let nouveau = new_batch(ctx, vec![facture]);
+    let user = ctx.seeded.admin_user_id;
+    let tache = tokio::spawn(async move { payment_batches::create_batch(&p, nouveau, user).await });
+    let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        pool,
+        &["INSERT INTO payment_batches"],
+        || tache.is_finished(),
+    )
+    .await;
+    if !vue {
+        panic!(
+            "la création du lot a fini sans attendre : {:?}",
+            tache.await.map(|r| r.map(|o| o.batch.is_some()))
+        );
+    }
+    tache
+}
+
+/// Lots et articles écrits.
+async fn lignes_de_lot(pool: &MySqlPool) -> (i64, i64) {
+    let lots: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM payment_batches")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let articles: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM payment_batch_items")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    (lots, articles)
+}
+
+/// T29a-3 (Story 29-4a, #651, AC3) — **la fenêtre de la création de lot est
+/// fermée**. Une clôture tient la ligne du compte source en exclusif sans
+/// commiter ; `create_batch` lit le compte ouvert à son étape (0) (sa vue naît
+/// là, avant le commit), valide la facture, puis attend sur son `INSERT INTO
+/// payment_batches` (clé étrangère vers le compte). Au commit de la clôture,
+/// l'`INSERT` passe, et la revérification verrouillante lit `closed_on` posé →
+/// `BankAccountClosed` ; `create_batch` annule lui-même sa transaction, rien
+/// d'écrit.
+///
+/// **Rouge au sol** à l'étape (5) : le lot `generated` naît sur un compte clos
+/// (I2 défait). Tue M29-2 et M29-3 bis (M29-3, sur la variante des
+/// annulations, n'est tuée que par T-a45 étendu).
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_batch_started_before_the_closure_is_refused(pool: MySqlPool) {
+    let (ctx, facture, v) = monter_la_course(&pool).await;
+    let company_id = ctx.seeded.company_id;
+
+    // (1) La clôture tient la ligne du compte en exclusif.
+    let mut cloture = pool.begin().await.unwrap();
+    let r = bank_accounts::close_in_tx(&mut cloture, company_id, ctx.bank_id, v, d(2026, 6, 30))
+        .await
+        .unwrap();
+    assert!(
+        matches!(r, bank_accounts::ClosureOutcome::Done { .. }),
+        "{r:?}"
+    );
+
+    // (2) et (3) La création du lot démarre et attend sur son `INSERT`.
+    let lot = lot_en_attente(&pool, &ctx, facture).await;
+
+    // (4) La clôture commite.
+    cloture.commit().await.unwrap();
+
+    // (5) Le lot est refusé, rien d'écrit.
+    let r = lot.await.expect("tâche du lot").map(|o| o.batch.is_some());
+    assert!(
+        matches!(r, Err(DbError::BankAccountClosed { bank_account_id }) if bank_account_id == ctx.bank_id),
+        "⛔ le lot commencé avant la clôture devait être refusé — reçu {r:?}"
+    );
+    assert_eq!(lignes_de_lot(&pool).await, (0, 0), "rien d'écrit");
+}
+
+/// T29a-12 (Story 29-4a, #651, AC3) — **la course archivage / lot est fermée**.
+/// Même patron que T29a-3, l'archivage (sous la sentinelle `companies`, comme
+/// la route) à la place de la clôture. La revérification lit `archived = TRUE`
+/// et rend `NotFound`, que `create_batch` convertit en
+/// `IllegalStateTransition` — le refus même de son étape (0) pour un compte
+/// archivé (AC2). Rien d'écrit.
+///
+/// **Rouge au sol** : le lot naît sur un compte archivé. Tue M29-22, M29-23 et
+/// M29-25 (conversion retirée : `NotFound` au lieu d'`IllegalStateTransition`).
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_batch_started_before_the_archiving_is_refused(pool: MySqlPool) {
+    let (ctx, facture, v) = monter_la_course(&pool).await;
+    let company_id = ctx.seeded.company_id;
+
+    // (1) L'archivage, sous la sentinelle, sans commiter.
+    let mut archivage = pool.begin().await.unwrap();
+    bank_accounts::acquire_company_sentinel_lock(&mut archivage, company_id)
+        .await
+        .unwrap();
+    bank_accounts::archive_for_company(&mut archivage, company_id, ctx.bank_id, v)
+        .await
+        .unwrap();
+
+    // (2) et (3) La création du lot démarre et attend sur son `INSERT`.
+    let lot = lot_en_attente(&pool, &ctx, facture).await;
+
+    // (4) L'archivage commite.
+    archivage.commit().await.unwrap();
+
+    // (5) Le lot est refusé par le refus de l'étape (0), rien d'écrit.
+    let r = lot.await.expect("tâche du lot").map(|o| o.batch.is_some());
+    assert!(
+        matches!(&r, Err(DbError::IllegalStateTransition(m)) if m.contains("archivé")),
+        "⛔ le lot commencé avant l'archivage devait être refusé — reçu {r:?}"
+    );
+    assert_eq!(lignes_de_lot(&pool).await, (0, 0), "rien d'écrit");
+}

@@ -571,6 +571,17 @@ pub async fn list_bank_accounts(
 /// compte débiteurs ou créanciers désigné, contrôlé dans la transaction,
 /// sous le verrou partagé des réglages). Un refus ne crée rien et ne démote
 /// aucun principal.
+///
+/// ⚠️ **Rejouée sur interblocage** (opération `bank_accounts::create`, Story
+/// 29-4a, revue de code P1, E-1, #651) ; la transaction vit dans
+/// [`create_once`]. Comme le `PUT` et l'archivage, la création tient la
+/// sentinelle `companies` en exclusif avant de prendre d'autres verrous (les
+/// partagés des réglages, l'ancien principal qu'elle démote) : un import ou
+/// un lot qui tient la ligne d'un compte en partagé par son `INSERT` et
+/// demande `companies` ferme un cycle avec elle quand elle démote ce compte
+/// principal — préexistant ; plus légère que l'écrivain, elle en était la
+/// victime, en `500`. Les contrôles de forme, l'onboarding et
+/// `validate_journal_account_id` (sur le pool) restent devant l'enveloppe.
 pub async fn create_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -578,12 +589,7 @@ pub async fn create_bank_account(
 ) -> Result<(StatusCode, Json<BankAccount>), AppError> {
     assert_onboarding_complete(&state.pool).await?;
 
-    let ValidatedBankInput {
-        bank_name,
-        description,
-        iban,
-        qr_iban,
-    } = validate_bank_input(
+    let input = validate_bank_input(
         &body.bank_name,
         body.description.as_deref(),
         &body.iban,
@@ -597,115 +603,137 @@ pub async fn create_bank_account(
     )
     .await?;
 
-    let mut tx = state
-        .pool
+    let (is_primary, journal_account_id) = (body.is_primary, body.journal_account_id);
+    let inserted = crate::retry::retry_app_on_deadlock("bank_accounts::create", || {
+        create_once(
+            &state.pool,
+            &current_user,
+            &input,
+            is_primary,
+            journal_account_id,
+        )
+    })
+    .await?;
+    Ok((StatusCode::CREATED, Json(inserted)))
+}
+
+/// Une tentative de la création : sentinelle `companies`, refus du compte de
+/// créance, démotion de l'ancien principal, `INSERT`, traces — conclusion par
+/// [`conclure`] (`rollback` explicite sur refus). Chaque tentative clone ce
+/// qu'elle consomme de `input`.
+async fn create_once(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    input: &ValidatedBankInput,
+    is_primary: bool,
+    journal_account_id: Option<i64>,
+) -> Result<BankAccount, AppError> {
+    let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
+    let result = async {
+        // Advisory lock sentinel (L5 mitigation — FINDING-9 Pass 3 Opus).
+        bank_accounts::acquire_company_sentinel_lock(&mut tx, current_user.company_id).await?;
 
-    // Advisory lock sentinel (L5 mitigation — FINDING-9 Pass 3 Opus).
-    bank_accounts::acquire_company_sentinel_lock(&mut tx, current_user.company_id).await?;
+        // Story 15-6c (AC3) — un compte bancaire ne se lie pas au compte de
+        // créance désigné. Premier verrou après la sentinelle, avant la démotion
+        // de l'ancien principal : un refus ne crée rien et ne démote rien.
+        if let Some(account_id) = journal_account_id {
+            let claims = company_invoice_settings::claim_accounts_in_share_mode(
+                &mut tx,
+                current_user.company_id,
+            )
+            .await?;
+            bank_accounts::refuse_if_ledger_is_claim_account(
+                &mut tx,
+                current_user.company_id,
+                account_id,
+                &claims,
+            )
+            .await?;
+        }
 
-    // Story 15-6c (AC3) — un compte bancaire ne se lie pas au compte de
-    // créance désigné. Premier verrou après la sentinelle, avant la démotion
-    // de l'ancien principal : un refus ne crée rien et ne démote rien.
-    if let Some(account_id) = body.journal_account_id {
-        let claims = company_invoice_settings::claim_accounts_in_share_mode(
-            &mut tx,
-            current_user.company_id,
+        // Si is_primary=true et un autre primary existe → flip silencieux atomique.
+        // L'INSERT n'a pas encore d'id, on passe -1 comme excluded_id sentinel
+        // (les ids MariaDB AUTO_INCREMENT sont toujours > 0 — F8 Pass 1 code review,
+        // plus défensif que 0 qui pourrait coïncider avec un id dans des fixtures
+        // pathologiques avec `AUTO_INCREMENT=0`).
+        let demoted_primary = if is_primary {
+            bank_accounts::flip_primary_off_for_company(&mut tx, current_user.company_id, -1)
+                .await
+                .map_err(AppError::Database)?
+        } else {
+            None
+        };
+
+        // INSERT du nouveau compte.
+        let new = NewBankAccount {
+            company_id: current_user.company_id,
+            bank_name: input.bank_name.clone(),
+            iban: input.iban.clone(),
+            qr_iban: input.qr_iban.clone(),
+            is_primary,
+        };
+
+        let result = sqlx::query(
+            "INSERT INTO bank_accounts (company_id, bank_name, description, iban, qr_iban, is_primary, journal_account_id) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
-        .await?;
-        bank_accounts::refuse_if_ledger_is_claim_account(
-            &mut tx,
-            current_user.company_id,
-            account_id,
-            &claims,
-        )
-        .await?;
-    }
+        .bind(new.company_id)
+        .bind(&new.bank_name)
+        .bind(&input.description)
+        .bind(&new.iban)
+        .bind(&new.qr_iban)
+        .bind(new.is_primary)
+        .bind(journal_account_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?;
 
-    // Si is_primary=true et un autre primary existe → flip silencieux atomique.
-    // L'INSERT n'a pas encore d'id, on passe -1 comme excluded_id sentinel
-    // (les ids MariaDB AUTO_INCREMENT sont toujours > 0 — F8 Pass 1 code review,
-    // plus défensif que 0 qui pourrait coïncider avec un id dans des fixtures
-    // pathologiques avec `AUTO_INCREMENT=0`).
-    let demoted_primary = if body.is_primary {
-        bank_accounts::flip_primary_off_for_company(&mut tx, current_user.company_id, -1)
+        let new_id = i64::try_from(result.last_insert_id())
+            .map_err(|_| AppError::Internal("last_insert_id overflow".into()))?;
+
+        let inserted = bank_accounts::find_by_id_in_tx(&mut tx, current_user.company_id, new_id)
             .await
-            .map_err(AppError::Database)?
-    } else {
-        None
-    };
+            .map_err(AppError::Database)?;
 
-    // INSERT du nouveau compte.
-    let new = NewBankAccount {
-        company_id: current_user.company_id,
-        bank_name,
-        iban,
-        qr_iban,
-        is_primary: body.is_primary,
-    };
+        // Audit log primary_transition sur l'ancien primary démoté, puis création.
+        if let Some((updated_old, before_old)) = demoted_primary.as_ref() {
+            audit_primary_transition(
+                &mut tx,
+                current_user.user_id,
+                current_user.api_key_id,
+                updated_old,
+                before_old,
+                new_id,
+            )
+            .await?;
+        }
 
-    let result = sqlx::query(
-        "INSERT INTO bank_accounts (company_id, bank_name, description, iban, qr_iban, is_primary, journal_account_id) \
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
-    )
-    .bind(new.company_id)
-    .bind(&new.bank_name)
-    .bind(&description)
-    .bind(&new.iban)
-    .bind(&new.qr_iban)
-    .bind(new.is_primary)
-    .bind(body.journal_account_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?;
-
-    let new_id = i64::try_from(result.last_insert_id())
-        .map_err(|_| AppError::Internal("last_insert_id overflow".into()))?;
-
-    let inserted = bank_accounts::find_by_id_in_tx(&mut tx, current_user.company_id, new_id)
-        .await
-        .map_err(AppError::Database)?;
-
-    // Audit log primary_transition sur l'ancien primary démoté, puis création.
-    if let Some((updated_old, before_old)) = demoted_primary.as_ref() {
-        audit_primary_transition(
+        let details = serde_json::json!({
+            "bank_account_id": new_id,
+            "description": inserted.description,
+            "is_primary": inserted.is_primary,
+            "iban_present": true,
+            "qr_iban_present": inserted.qr_iban.is_some(),
+            "journal_account_id": inserted.journal_account_id,
+        });
+        audit_log::insert_in_tx(
             &mut tx,
-            current_user.user_id,
-            current_user.api_key_id,
-            updated_old,
-            before_old,
-            new_id,
+            NewAuditLogEntry::from_current_user(
+                current_user,
+                "bank_account.created",
+                "bank_account",
+                new_id,
+                Some(details),
+            ),
         )
         .await?;
+        Ok(inserted)
     }
-
-    let details = serde_json::json!({
-        "bank_account_id": new_id,
-        "description": inserted.description,
-        "is_primary": inserted.is_primary,
-        "iban_present": true,
-        "qr_iban_present": inserted.qr_iban.is_some(),
-        "journal_account_id": inserted.journal_account_id,
-    });
-    audit_log::insert_in_tx(
-        &mut tx,
-        NewAuditLogEntry::from_current_user(
-            &current_user,
-            "bank_account.created",
-            "bank_account",
-            new_id,
-            Some(details),
-        ),
-    )
-    .await?;
-
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
-
-    Ok((StatusCode::CREATED, Json(inserted)))
+    .await;
+    conclure(tx, result).await
 }
 
 /// Handler `PUT /api/v1/bank-accounts/{id}` — édition complète v014-1
@@ -724,6 +752,18 @@ pub async fn create_bank_account(
 /// (compte lié **changé** vers le compte débiteurs ou créanciers désigné). Un
 /// refus abandonne la transaction : l'ancien principal, s'il avait été démoté,
 /// le reste.
+///
+/// ⚠️ **Rejouée sur interblocage** (opération `bank_accounts::update`, Story
+/// 29-4a, revue de code P1, E-1, #651) ; la transaction vit dans
+/// [`update_once`]. Le `PUT` tient la sentinelle `companies` en exclusif puis
+/// demande la ligne du compte en exclusif (`update_for_company`) : un import
+/// ou un lot qui tient cette ligne en partagé par le premier contrôle de clé
+/// étrangère de son `INSERT` et demande `companies` (le second) ferme un
+/// cycle avec lui — à deux, ou à trois par la file quand la clôture, la
+/// réouverture ou le `PATCH` attend la ligne entre eux. Préexistant ; plus
+/// léger que l'écrivain, le `PUT` en était la victime, en `500`. Les contrôles
+/// de forme, l'onboarding et `validate_journal_account_id` (sur le pool)
+/// restent devant l'enveloppe.
 pub async fn update_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -736,12 +776,7 @@ pub async fn update_bank_account(
         return Err(AppError::Validation("version doit être >= 1".to_string()));
     }
 
-    let ValidatedBankInput {
-        bank_name,
-        description,
-        iban,
-        qr_iban,
-    } = validate_bank_input(
+    let input = validate_bank_input(
         &body.bank_name,
         body.description.as_deref(),
         &body.iban,
@@ -756,108 +791,136 @@ pub async fn update_bank_account(
     )
     .await?;
 
-    let mut tx = state
-        .pool
+    let (is_primary, journal_account_id, version) =
+        (body.is_primary, body.journal_account_id, body.version);
+    let updated = crate::retry::retry_app_on_deadlock("bank_accounts::update", || {
+        update_once(
+            &state.pool,
+            &current_user,
+            id,
+            &input,
+            is_primary,
+            journal_account_id,
+            version,
+        )
+    })
+    .await?;
+    Ok(Json(updated))
+}
+
+/// Une tentative du `PUT` : sentinelle `companies`, partagés des réglages
+/// (`claims_for_target`), démotion de l'ancien principal, `FOR UPDATE` et
+/// `UPDATE` du compte (`update_for_company`), traces — conclusion par
+/// [`conclure`] (`rollback` explicite sur refus). Chaque tentative clone ce
+/// qu'elle consomme de `input`.
+async fn update_once(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    id: i64,
+    input: &ValidatedBankInput,
+    is_primary: bool,
+    journal_account_id: Option<i64>,
+    version: i32,
+) -> Result<BankAccount, AppError> {
+    let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
+    let result = async {
+        bank_accounts::acquire_company_sentinel_lock(&mut tx, current_user.company_id).await?;
 
-    bank_accounts::acquire_company_sentinel_lock(&mut tx, current_user.company_id).await?;
+        // Story 15-6c (AC2, AC4) — les comptes de créance, premier verrou après la
+        // sentinelle ; la comparaison se fait dans le dépôt, sous le verrou de la
+        // ligne, seulement si le compte lié change.
+        let claims =
+            claims_for_target(&mut tx, current_user.company_id, journal_account_id).await?;
 
-    // Story 15-6c (AC2, AC4) — les comptes de créance, premier verrou après la
-    // sentinelle ; la comparaison se fait dans le dépôt, sous le verrou de la
-    // ligne, seulement si le compte lié change.
-    let claims =
-        claims_for_target(&mut tx, current_user.company_id, body.journal_account_id).await?;
+        // Si l'utilisateur veut promouvoir ce compte primary, flip l'éventuel
+        // ancien (avant l'UPDATE de notre row, dans la même tx).
+        let demoted_primary = if is_primary {
+            bank_accounts::flip_primary_off_for_company(&mut tx, current_user.company_id, id)
+                .await
+                .map_err(AppError::Database)?
+        } else {
+            None
+        };
 
-    // Si l'utilisateur veut promouvoir ce compte primary, flip l'éventuel
-    // ancien (avant l'UPDATE de notre row, dans la même tx).
-    let demoted_primary = if body.is_primary {
-        bank_accounts::flip_primary_off_for_company(&mut tx, current_user.company_id, id)
-            .await
-            .map_err(AppError::Database)?
-    } else {
-        None
-    };
+        let new = NewBankAccount {
+            company_id: current_user.company_id,
+            bank_name: input.bank_name.clone(),
+            iban: input.iban.clone(),
+            qr_iban: input.qr_iban.clone(),
+            is_primary,
+        };
 
-    let new = NewBankAccount {
-        company_id: current_user.company_id,
-        bank_name,
-        iban,
-        qr_iban,
-        is_primary: body.is_primary,
-    };
-
-    let (updated, before) = match bank_accounts::update_for_company(
-        &mut tx,
-        current_user.company_id,
-        id,
-        &new,
-        BankAccountPutFields {
-            journal_account_id: body.journal_account_id,
-            description: description.as_deref(),
-        },
-        body.version,
-        &claims,
-    )
-    .await
-    {
-        Ok(pair) => pair,
-        Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
-        Err(e) => return Err(AppError::Database(e)),
-    };
-
-    if let Some((updated_old, before_old)) = demoted_primary.as_ref() {
-        audit_primary_transition(
+        let (updated, before) = match bank_accounts::update_for_company(
             &mut tx,
-            current_user.user_id,
-            current_user.api_key_id,
-            updated_old,
-            before_old,
+            current_user.company_id,
             id,
+            &new,
+            BankAccountPutFields {
+                journal_account_id,
+                description: input.description.as_deref(),
+            },
+            version,
+            &claims,
+        )
+        .await
+        {
+            Ok(pair) => pair,
+            Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
+            Err(e) => return Err(AppError::Database(e)),
+        };
+
+        if let Some((updated_old, before_old)) = demoted_primary.as_ref() {
+            audit_primary_transition(
+                &mut tx,
+                current_user.user_id,
+                current_user.api_key_id,
+                updated_old,
+                before_old,
+                id,
+            )
+            .await?;
+        }
+
+        let details = serde_json::json!({
+            "bank_account_id": id,
+            "trigger": "full_update",
+            "before": {
+                "bank_name": before.bank_name,
+                "description": before.description,
+                "iban_present": true,
+                "qr_iban_present": before.qr_iban.is_some(),
+                "is_primary": before.is_primary,
+                "journal_account_id": before.journal_account_id,
+                "version": before.version,
+            },
+            "after": {
+                "bank_name": updated.bank_name,
+                "description": updated.description,
+                "iban_present": true,
+                "qr_iban_present": updated.qr_iban.is_some(),
+                "is_primary": updated.is_primary,
+                "journal_account_id": updated.journal_account_id,
+                "version": updated.version,
+            },
+        });
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::from_current_user(
+                current_user,
+                "bank_account.updated",
+                "bank_account",
+                id,
+                Some(details),
+            ),
         )
         .await?;
+        Ok(updated)
     }
-
-    let details = serde_json::json!({
-        "bank_account_id": id,
-        "trigger": "full_update",
-        "before": {
-            "bank_name": before.bank_name,
-            "description": before.description,
-            "iban_present": true,
-            "qr_iban_present": before.qr_iban.is_some(),
-            "is_primary": before.is_primary,
-            "journal_account_id": before.journal_account_id,
-            "version": before.version,
-        },
-        "after": {
-            "bank_name": updated.bank_name,
-            "description": updated.description,
-            "iban_present": true,
-            "qr_iban_present": updated.qr_iban.is_some(),
-            "is_primary": updated.is_primary,
-            "journal_account_id": updated.journal_account_id,
-            "version": updated.version,
-        },
-    });
-    audit_log::insert_in_tx(
-        &mut tx,
-        NewAuditLogEntry::from_current_user(
-            &current_user,
-            "bank_account.updated",
-            "bank_account",
-            id,
-            Some(details),
-        ),
-    )
-    .await?;
-
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
-
-    Ok(Json(updated))
+    .await;
+    conclure(tx, result).await
 }
 
 /// Handler `DELETE /api/v1/bank-accounts/{id}` — soft-delete (archive) v014-1
@@ -866,6 +929,16 @@ pub async fn update_bank_account(
 /// AC#8 : refus 412 BANK_ACCOUNT_HAS_TRANSACTIONS si transactions existent.
 /// AC#9 : refus 412 BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY si primary + autres.
 /// AC#10 : autorisé pour primary unique (cas dégénéré).
+///
+/// ⚠️ **Rejouée sur interblocage** (opération `bank_accounts::archive`, Story
+/// 29-4a, revue de code P1, E-1, #651) ; la transaction vit dans
+/// [`archive_once`]. Même cycle que le `PUT` : la sentinelle `companies` en
+/// exclusif, puis la ligne du compte en exclusif (`archive_for_company`),
+/// contre un import ou un lot qui tient cette ligne en partagé par son
+/// `INSERT` et demande `companies`. Depuis la revérification de l'import et
+/// du lot, aucun d'eux n'aboutit plus sur un compte archivé ; le rejeu ôte à
+/// la course son dernier effet, le `500` de l'archivage. Le pré-vol (`404`,
+/// `409 BANK_ACCOUNT_CLOSED`, sur le pool) reste devant l'enveloppe.
 pub async fn archive_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -901,75 +974,92 @@ pub async fn archive_bank_account(
         });
     }
 
-    let mut tx = state
-        .pool
+    let (was_primary, version) = (existing.is_primary, body.version);
+    let updated = crate::retry::retry_app_on_deadlock("bank_accounts::archive", || {
+        archive_once(&state.pool, &current_user, id, was_primary, version)
+    })
+    .await?;
+    Ok(Json(updated))
+}
+
+/// Une tentative de l'archivage : sentinelle `companies`, gardes « fonds »
+/// (transactions, principal et autres comptes actifs), `FOR UPDATE` et
+/// `UPDATE` du compte (`archive_for_company`), trace — conclusion par
+/// [`conclure`] (`rollback` explicite sur refus). `was_primary` vient du
+/// pré-vol, hors enveloppe, comme avant le rejeu.
+async fn archive_once(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    id: i64,
+    was_primary: bool,
+    version: i32,
+) -> Result<BankAccount, AppError> {
+    let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
+    let result = async {
+        // Advisory lock sentinel — serialize les mutations CRUD bank_accounts d'un
+        // même tenant ET protège contre une création concurrente de
+        // bank_transactions via le même chemin (mais bank_imports n'acquiert pas
+        // ce lock — L5 limitation v0.1 documentée) ; la course qu'il laissait est
+        // fermée par la revérification de l'import et du lot (Story 29-4).
+        bank_accounts::acquire_company_sentinel_lock(&mut tx, current_user.company_id).await?;
 
-    // Advisory lock sentinel — serialize les mutations CRUD bank_accounts d'un
-    // même tenant ET protège contre une création concurrente de
-    // bank_transactions via le même chemin (mais bank_imports n'acquiert pas
-    // ce lock — L5 limitation v0.1 documentée).
-    bank_accounts::acquire_company_sentinel_lock(&mut tx, current_user.company_id).await?;
-
-    // Guard transactions (AC#8) — DANS la tx, après sentinel lock.
-    let tx_count =
-        bank_accounts::count_transactions_for_bank_account(&mut tx, current_user.company_id, id)
-            .await?;
-    if tx_count > 0 {
-        return Err(AppError::BankAccountHasTransactions {
-            transaction_count: tx_count,
-        });
-    }
-
-    // Guard primary + autres comptes actifs (AC#9 / AC#10) — DANS la tx.
-    if existing.is_primary {
-        let others =
-            bank_accounts::count_other_active_for_company(&mut tx, current_user.company_id, id)
-                .await?;
-        if others > 0 {
-            return Err(AppError::BankAccountCannotArchivePrimary);
-        }
-        // others == 0 : primary unique → autorisé (AC#10).
-    }
-
-    let (updated, before) = match bank_accounts::archive_for_company(
-        &mut tx,
-        current_user.company_id,
-        id,
-        body.version,
-    )
-    .await
-    {
-        Ok(pair) => pair,
-        Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
-        Err(e) => return Err(AppError::Database(e)),
-    };
-
-    let details = serde_json::json!({
-        "bank_account_id": id,
-        "before": { "archived": before.archived, "version": before.version },
-        "after": { "archived": updated.archived, "version": updated.version },
-        "was_primary": before.is_primary,
-    });
-    audit_log::insert_in_tx(
-        &mut tx,
-        NewAuditLogEntry::from_current_user(
-            &current_user,
-            "bank_account.archived",
-            "bank_account",
+        // Guard transactions (AC#8) — DANS la tx, après sentinel lock.
+        let tx_count = bank_accounts::count_transactions_for_bank_account(
+            &mut tx,
+            current_user.company_id,
             id,
-            Some(details),
-        ),
-    )
-    .await?;
+        )
+        .await?;
+        if tx_count > 0 {
+            return Err(AppError::BankAccountHasTransactions {
+                transaction_count: tx_count,
+            });
+        }
 
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
+        // Guard primary + autres comptes actifs (AC#9 / AC#10) — DANS la tx.
+        if was_primary {
+            let others =
+                bank_accounts::count_other_active_for_company(&mut tx, current_user.company_id, id)
+                    .await?;
+            if others > 0 {
+                return Err(AppError::BankAccountCannotArchivePrimary);
+            }
+            // others == 0 : primary unique → autorisé (AC#10).
+        }
 
-    Ok(Json(updated))
+        let (updated, before) =
+            match bank_accounts::archive_for_company(&mut tx, current_user.company_id, id, version)
+                .await
+            {
+                Ok(pair) => pair,
+                Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
+                Err(e) => return Err(AppError::Database(e)),
+            };
+
+        let details = serde_json::json!({
+            "bank_account_id": id,
+            "before": { "archived": before.archived, "version": before.version },
+            "after": { "archived": updated.archived, "version": updated.version },
+            "was_primary": before.is_primary,
+        });
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::from_current_user(
+                current_user,
+                "bank_account.archived",
+                "bank_account",
+                id,
+                Some(details),
+            ),
+        )
+        .await?;
+        Ok(updated)
+    }
+    .await;
+    conclure(tx, result).await
 }
 
 /// Traduit le refus d'une clôture ou d'une réouverture (Story 28-4a, #642).
@@ -1006,8 +1096,24 @@ fn closure_refusal_error(refusal: bank_accounts::ClosureRefusal) -> AppError {
 /// ⛔ La route ne lit **rien** dans la transaction avant
 /// `bank_accounts::close_in_tx` : le `FOR UPDATE` de la ligne est sa première
 /// instruction, et c'est ce qui fait voir aux décomptes tout écrivain commité
-/// (voir le doc-comment de `close_in_tx`). Pas de rejeu sur interblocage : un
-/// seul verrou, en tenant rien, la route ne peut pas fermer de cycle.
+/// (voir le doc-comment de `close_in_tx`).
+///
+/// ⚠️ **Rejouée sur interblocage** par [`crate::retry::retry_app_on_deadlock`]
+/// (opération `bank_accounts::close`, Story 29-4a, #651, AC4) ; la transaction
+/// vit dans [`close_once`]. La route ne tient rien **comme détenteur**, mais sa
+/// demande exclusive **en attente** fait attendre derrière elle toute demande
+/// **neuve** de la ligne du compte — non la revérification de l'import et du
+/// lot, redemande d'un partagé déjà tenu, qui passe (T29a-6, T29a-7). Cycle
+/// atteignable en 29-4a, préexistant : un import ou un lot `I` tient la ligne
+/// en partagé par le premier contrôle de clé étrangère de son `INSERT` et
+/// demande `companies` (le second) ; une route de gestion `M` (`PUT`,
+/// archivage) tient la sentinelle `companies` et demande la ligne en exclusif,
+/// en file derrière la clôture — `I → M → clôture → I` (à partir de la 29-4b,
+/// la revérification d'une annulation ajoute ses propres cycles). La clôture y
+/// est la victime désignée, la plus légère (aucune écriture, aucun verrou
+/// d'enregistrement accordé) — raisonné pour un cycle à plus de deux, éprouvé
+/// par T29a-4. Les contrôles de forme et l'onboarding restent devant
+/// l'enveloppe.
 pub async fn close_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -1031,49 +1137,95 @@ pub async fn close_bank_account(
         ));
     }
 
-    let mut tx = state
-        .pool
+    let version = body.version;
+    let after = crate::retry::retry_app_on_deadlock("bank_accounts::close", || {
+        close_once(&state.pool, &current_user, id, version, closed_on)
+    })
+    .await?;
+    Ok(Json(after))
+}
+
+/// Une tentative de la clôture : ouvre la transaction, appelle
+/// `bank_accounts::close_in_tx` **en première instruction**, trace
+/// `bank_account.closed` dans la même transaction, conclut. Sur refus,
+/// `rollback` explicite **avant** de rendre l'erreur : la transaction tient le
+/// `FOR UPDATE` du compte, qu'un abandon implicite ne rendrait qu'au retour de
+/// la connexion au pool — autant d'attente en plus pour les écrivains en file
+/// derrière la clôture. Les erreurs de dépôt sortent en
+/// `AppError::Database(_)`, visibles du prédicat de rejeu.
+async fn close_once(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    id: i64,
+    version: i32,
+    closed_on: chrono::NaiveDate,
+) -> Result<BankAccount, AppError> {
+    let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
-    let (after, before) = match bank_accounts::close_in_tx(
-        &mut tx,
-        current_user.company_id,
-        id,
-        body.version,
-        closed_on,
-    )
-    .await
-    {
-        Ok(bank_accounts::ClosureOutcome::Done { after, before }) => (after, before),
-        Ok(bank_accounts::ClosureOutcome::Refused(refusal)) => {
-            return Err(closure_refusal_error(refusal));
-        }
-        Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
-        Err(e) => return Err(AppError::Database(e)),
-    };
-
-    let details = serde_json::json!({
-        "bank_account_id": id,
-        "closed_on": after.closed_on,
-        "before": { "closed_on": before.closed_on, "version": before.version },
-        "after": { "closed_on": after.closed_on, "version": after.version },
-    });
-    audit_log::insert_in_tx(
-        &mut tx,
-        NewAuditLogEntry::from_current_user(
-            &current_user,
-            "bank_account.closed",
-            "bank_account",
+    let result = async {
+        let (after, before) = match bank_accounts::close_in_tx(
+            &mut tx,
+            current_user.company_id,
             id,
-            Some(details),
-        ),
-    )
-    .await?;
-    tx.commit()
+            version,
+            closed_on,
+        )
         .await
-        .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
-    Ok(Json(*after))
+        {
+            Ok(bank_accounts::ClosureOutcome::Done { after, before }) => (after, before),
+            Ok(bank_accounts::ClosureOutcome::Refused(refusal)) => {
+                return Err(closure_refusal_error(refusal));
+            }
+            Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
+            Err(e) => return Err(AppError::Database(e)),
+        };
+
+        let details = serde_json::json!({
+            "bank_account_id": id,
+            "closed_on": after.closed_on,
+            "before": { "closed_on": before.closed_on, "version": before.version },
+            "after": { "closed_on": after.closed_on, "version": after.version },
+        });
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::from_current_user(
+                current_user,
+                "bank_account.closed",
+                "bank_account",
+                id,
+                Some(details),
+            ),
+        )
+        .await?;
+        Ok(*after)
+    }
+    .await;
+    conclure(tx, result).await
+}
+
+/// Conclut une tentative de [`close_once`], [`reopen_once`], [`patch_once`]
+/// et — revue de code P1, E-1 — de [`create_once`], [`update_once`],
+/// [`archive_once`] (Story 29-4a) : commit sur succès, `rollback`
+/// **explicite** sur erreur avant de la rendre — la transaction tient le
+/// `FOR UPDATE` de la ligne du compte, ou la sentinelle `companies`.
+async fn conclure<T>(
+    tx: Transaction<'_, MySql>,
+    result: Result<T, AppError>,
+) -> Result<T, AppError> {
+    match result {
+        Ok(v) => {
+            tx.commit()
+                .await
+                .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
 }
 
 /// Handler `POST /api/v1/bank-accounts/{id}/reopen` — **rouvre** un compte
@@ -1085,6 +1237,19 @@ pub async fn close_bank_account(
 /// **Ordre des refus** : forme (`400`) → `404` (inexistant, autre société,
 /// archivé) → sous verrou : `409 OPTIMISTIC_LOCK_CONFLICT` → `409
 /// BANK_ACCOUNT_NOT_CLOSED`.
+///
+/// ⚠️ **Rejouée sur interblocage** (opération `bank_accounts::reopen`, Story
+/// 29-4a, #651, AC4) ; la transaction vit dans [`reopen_once`]. Comme la
+/// clôture, la réouverture ne tient rien comme détenteur, mais sa demande
+/// exclusive en attente sur la ligne du compte clos fait attendre derrière
+/// elle les demandes **neuves** de la ligne. Cycle atteignable en 29-4a : un
+/// import ou un lot `I` dont la vue précède la clôture a posé son `INSERT` à
+/// clé étrangère (partagé du compte) et demande `companies`, que tient une
+/// route de gestion `M` en file derrière la réouverture — `I → M →
+/// réouverture → I` ; sa revérification, qui le refusera, ne fait pas la
+/// queue (T29a-6, T29a-7). À partir de la 29-4b, une annulation qui revérifie
+/// ajoute le cycle à quatre de la fiche. La réouverture en est la victime —
+/// d'où le rejeu.
 pub async fn reopen_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -1095,42 +1260,61 @@ pub async fn reopen_bank_account(
     if body.version < 1 {
         return Err(AppError::Validation("version doit être >= 1".to_string()));
     }
-    let mut tx = state
-        .pool
+    let version = body.version;
+    let after = crate::retry::retry_app_on_deadlock("bank_accounts::reopen", || {
+        reopen_once(&state.pool, &current_user, id, version)
+    })
+    .await?;
+    Ok(Json(after))
+}
+
+/// Une tentative de la réouverture : `bank_accounts::reopen_in_tx` en
+/// première instruction, trace `bank_account.reopened`, conclusion par
+/// [`conclure`] (`rollback` explicite sur refus).
+async fn reopen_once(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    id: i64,
+    version: i32,
+) -> Result<BankAccount, AppError> {
+    let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
-    let (after, before) =
-        match bank_accounts::reopen_in_tx(&mut tx, current_user.company_id, id, body.version).await
-        {
-            Ok(bank_accounts::ClosureOutcome::Done { after, before }) => (after, before),
-            Ok(bank_accounts::ClosureOutcome::Refused(refusal)) => {
-                return Err(closure_refusal_error(refusal));
-            }
-            Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
-            Err(e) => return Err(AppError::Database(e)),
-        };
+    let result =
+        async {
+            let (after, before) =
+                match bank_accounts::reopen_in_tx(&mut tx, current_user.company_id, id, version)
+                    .await
+                {
+                    Ok(bank_accounts::ClosureOutcome::Done { after, before }) => (after, before),
+                    Ok(bank_accounts::ClosureOutcome::Refused(refusal)) => {
+                        return Err(closure_refusal_error(refusal));
+                    }
+                    Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
+                    Err(e) => return Err(AppError::Database(e)),
+                };
 
-    let details = serde_json::json!({
-        "bank_account_id": id,
-        "before": { "closed_on": before.closed_on, "version": before.version },
-        "after": { "closed_on": after.closed_on, "version": after.version },
-    });
-    audit_log::insert_in_tx(
-        &mut tx,
-        NewAuditLogEntry::from_current_user(
-            &current_user,
-            "bank_account.reopened",
-            "bank_account",
-            id,
-            Some(details),
-        ),
-    )
-    .await?;
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
-    Ok(Json(*after))
+            let details = serde_json::json!({
+                "bank_account_id": id,
+                "before": { "closed_on": before.closed_on, "version": before.version },
+                "after": { "closed_on": after.closed_on, "version": after.version },
+            });
+            audit_log::insert_in_tx(
+                &mut tx,
+                NewAuditLogEntry::from_current_user(
+                    current_user,
+                    "bank_account.reopened",
+                    "bank_account",
+                    id,
+                    Some(details),
+                ),
+            )
+            .await?;
+            Ok(*after)
+        }
+        .await;
+    conclure(tx, result).await
 }
 
 /// Handler `PATCH /api/v1/bank-accounts/{id}` — met à jour le
@@ -1145,6 +1329,19 @@ pub async fn reopen_bank_account(
 /// une valeur inchangée court-circuite sans contrôle) → 400
 /// `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` (compte lié **changé** vers le compte
 /// débiteurs ou créanciers désigné).
+///
+/// ⚠️ **Rejouée sur interblocage** (opération `bank_accounts::patch`, Story
+/// 29-4a, #651, AC4) ; la transaction vit dans [`patch_once`]. Sa demande
+/// exclusive de la ligne du compte (`set_journal_account_id_for_company`), en
+/// attente derrière un détenteur partagé, fait attendre les demandes neuves de
+/// la ligne : en 29-4a, l'exclusif d'une route de gestion `M` qui tient la
+/// sentinelle `companies` qu'attend un import ou un lot `I` (`I → M → PATCH →
+/// I`) ; à partir de la 29-4b, aussi le cycle à trois par l'intervalle — un
+/// import (partagé du compte) attend l'intervalle que tient une suppression
+/// d'import, le `PATCH` attend derrière l'import, la suppression revérifie
+/// derrière le `PATCH`. Le `PATCH`, qui n'a rien écrit, peut y être la victime.
+/// La version et `validate_journal_account_id` (sur le pool) restent devant
+/// l'enveloppe.
 pub async fn patch_bank_account_journal_link(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -1164,63 +1361,80 @@ pub async fn patch_bank_account_journal_link(
     )
     .await?;
 
-    let mut tx = state
-        .pool
+    let (journal_account_id, version) = (body.journal_account_id, body.version);
+    let updated = crate::retry::retry_app_on_deadlock("bank_accounts::patch", || {
+        patch_once(&state.pool, &current_user, id, journal_account_id, version)
+    })
+    .await?;
+    Ok(Json(updated))
+}
+
+/// Une tentative du `PATCH` : partagés des réglages (`claims_for_target`, en
+/// première instruction), `FOR UPDATE` du compte et `UPDATE`
+/// (`set_journal_account_id_for_company`), trace `bank_account.updated` si la
+/// version a bougé, conclusion par [`conclure`] (`rollback` explicite sur
+/// refus).
+async fn patch_once(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    id: i64,
+    journal_account_id: Option<i64>,
+    version: i32,
+) -> Result<BankAccount, AppError> {
+    let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
+    let result = async {
+        // Story 15-6c (AC2, AC4) — première instruction de la transaction (le
+        // lien ne prend pas la sentinelle), avant le `FOR UPDATE` de la ligne.
+        let claims =
+            claims_for_target(&mut tx, current_user.company_id, journal_account_id).await?;
 
-    // Story 15-6c (AC2, AC4) — première instruction de la transaction (le lien
-    // ne prend pas la sentinelle), avant le `FOR UPDATE` de la ligne.
-    let claims =
-        claims_for_target(&mut tx, current_user.company_id, body.journal_account_id).await?;
-
-    let (updated, before) = match bank_accounts::set_journal_account_id_for_company(
-        &mut tx,
-        current_user.company_id,
-        id,
-        body.journal_account_id,
-        body.version,
-        &claims,
-    )
-    .await
-    {
-        Ok(pair) => pair,
-        Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
-        Err(e) => return Err(AppError::Database(e)),
-    };
-
-    if updated.version != before.version {
-        let details = serde_json::json!({
-            "bank_account_id": id,
-            "trigger": "journal_account_link",
-            "before": {
-                "journal_account_id": before.journal_account_id,
-                "version": before.version,
-            },
-            "after": {
-                "journal_account_id": updated.journal_account_id,
-                "version": updated.version,
-            },
-        });
-        audit_log::insert_in_tx(
+        let (updated, before) = match bank_accounts::set_journal_account_id_for_company(
             &mut tx,
-            NewAuditLogEntry::from_current_user(
-                &current_user,
-                "bank_account.updated",
-                "bank_account",
-                id,
-                Some(details),
-            ),
+            current_user.company_id,
+            id,
+            journal_account_id,
+            version,
+            &claims,
         )
-        .await?;
-    }
-
-    tx.commit()
         .await
-        .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
+        {
+            Ok(pair) => pair,
+            Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
+            Err(e) => return Err(AppError::Database(e)),
+        };
 
-    Ok(Json(updated))
+        if updated.version != before.version {
+            let details = serde_json::json!({
+                "bank_account_id": id,
+                "trigger": "journal_account_link",
+                "before": {
+                    "journal_account_id": before.journal_account_id,
+                    "version": before.version,
+                },
+                "after": {
+                    "journal_account_id": updated.journal_account_id,
+                    "version": updated.version,
+                },
+            });
+            audit_log::insert_in_tx(
+                &mut tx,
+                NewAuditLogEntry::from_current_user(
+                    current_user,
+                    "bank_account.updated",
+                    "bank_account",
+                    id,
+                    Some(details),
+                ),
+            )
+            .await?;
+        }
+        Ok(updated)
+    }
+    .await;
+    conclure(tx, result).await
 }
 
 #[cfg(test)]
