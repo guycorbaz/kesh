@@ -875,3 +875,11 @@ un composant, sans API. ⚠️ Toute extension de plus fait dépasser la règle 
     remédiation).
 
 [#670]: https://github.com/guycorbaz/kesh/issues/670
+- 2026-10-14 — **Validation P3, passe ciblée** (Haiku 5.5, une lentille sur le diff `2410c8a2..e20a418e` ; rapport
+  `kesh-gate-logs/29-6-validate-p3-ciblee.md`) : 0/0/0/4. **Validation close.** Les quatre LOW sont à appliquer à
+  l'étape 0 du développement : P3-1 (`reconciliation.rs:3257-3267` et `:4910` au lieu de `:3256-3266`) ; P3-2
+  (« le blocage est donc permanent » → « sans geste juste pour un règlement déjà saisi », et nommer le chemin *Annuler le
+  rejet* puis *Affecter manuellement*, qui lève le blocage au prix d'une écriture fausse) ; P3-3 (#670 n'attend plus de
+  décision : elle est la **Story 29-8**, décision de Guy du 2026-10-14 — annotation datée, entrée P2 non réécrite) ;
+  P3-4 (Change Log P2 : dix-neuf findings traités, un — F3 — déclaré non bloquant ; annotation datée). Trend : P1
+  0/0/1/9 → P2 0/0/4/16 → P3 ciblée 0/0/0/4.
