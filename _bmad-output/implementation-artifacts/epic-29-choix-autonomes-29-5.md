@@ -164,4 +164,55 @@ Fiche : `29-5-departage-exigibilite.md`.*
   échues plus récentes, contre l'art. 75, et l'ordre redépendrait de la date du paiement.
 - **Réversible** : oui.
 
+### C-29-5-13 — `api-external.md` : la forme mergée de la 29-3 n'a pas la parenthèse prévue (développement, T0)
+
+- **Contexte** : la fiche prescrivait de remplacer la parenthèse « (identifiant croissant au sol ; à relire si la
+  29-5, #668, est mergée au rebase) » ; la phrase mergée de la 29-3 (`docs/api-external.md:549`) porte à la place
+  « par score décroissant, puis par identifiant de facture croissant à score égal ».
+- **Retenu** : remplacer ce seul segment « puis par identifiant de facture croissant à score égal » par la parenthèse
+  prescrite (date d'exigibilité, `invoiceDate`, échéance absente de la réponse, puis date, puis identifiant ; avant la
+  v0.13.4 : identifiant seul) ; la parenthèse « l'ordre lui-même est celui des versions précédentes » remplacée
+  comme prescrit ; le reste de la phrase de la 29-3 conservé mot pour mot.
+- **Écartée** : ajouter la parenthèse en laissant « identifiant croissant à score égal » — deux ordres contradictoires.
+- **Réversible** : oui.
+
+### C-29-5-14 — Manuel : un paragraphe titré et un label neuf pour la règle
+
+- **Contexte** : AC7 laisse le placement au choix rédactionnel (« après » la phrase du score nul, ou paragraphe
+  propre).
+- **Retenu** : la phrase « Une candidate dont le score vaut zéro… » reste seule ; suivent un `\paragraph{À score égal,
+  la facture échue la première.}` (`\label{sec:imputation-score-egal}`), un paragraphe de limites (« Cette règle ne
+  départage que des scores égaux. … »), puis le paragraphe de la règle d'affectation, inchangé. La phrase de `:2048`
+  renvoie à ce label (« à score égal, celle qu'impute la règle de la loi (§…) »). Le `\paragraph` n'étant pas
+  numéroté, le renvoi rend le numéro de la sous-section *Algorithme de matching* (§14.1.1 au PDF).
+- **Écartée** : prolonger le paragraphe existant — il mêlait déjà score nul et règle d'affectation.
+- **Réversible** : oui.
+
+### C-29-5-15 — `propose_matches` trie des paires `(&Invoice, MatchProposal)`
+
+- **Contexte** : AC2 laisse au dev la façon de garder la facture à côté de la proposition le temps du tri.
+- **Retenu** : une référence `&Invoice` empruntée au tableau des candidates, sans clone ; `sort_by` (stable), puis
+  `map` vers `MatchProposal`. Signature et forme JSON inchangées. `kesh-reconciliation` dépendait déjà de `kesh-db`.
+- **Écartées** : indices dans le tableau (moins lisible) ; clone des factures (coût inutile, smoke de 500 000
+  scores).
+- **Réversible** : oui.
+
+### C-29-5-16 — `make fr` régénère trois PDF ; seul celui du manuel utilisateur est commité
+
+- **Contexte** : `make fr` reconstruit aussi le manuel d'administration et la brochure, dont les sources n'ont pas
+  changé ; leurs PDF ne diffèrent que par la date de génération.
+- **Retenu** : `git checkout -- docs/manual/fr/admin-manual.pdf docs/manual/fr/marketing-brochure.pdf` dans le
+  worktree ; seul `user-manual.pdf` est commité.
+- **Écartée** : commiter trois PDF dont deux sans changement de contenu — bruit de diff et de revue.
+- **Réversible** : oui.
+
+### C-29-5-17 — Le doc-comment d'`order_candidates` déclare résolu l'angle mort C-29-3-12
+
+- **Contexte** : la 29-3 y écrivait deux angles morts, dont « à score égal, la facture de plus petit identifiant en
+  tête, sans égard à l'exigibilité (#668, Story 29-5) ».
+- **Retenu** : la description du tri hérité devient « score décroissant, puis, à score égal, l'ordre d'imputation
+  (art. 87 CO) » ; l'angle mort est dit **résolu par la Story 29-5**, l'autre (#665) reste. Aucune ligne de code de
+  `routes/reconciliation.rs` ne change.
+- **Réversible** : oui.
+
 [#668]: https://github.com/guycorbaz/kesh/issues/668
