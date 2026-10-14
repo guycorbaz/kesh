@@ -4,9 +4,9 @@
 lecture seule stricte. Modèle : **Sonnet** pour les trois (passe complète ; rotation D6 de la rétrospective 25 :
 Sonnet ↔ Opus pour les passes complètes, Haiku pour la seule passe ciblée de fin de boucle).*
 
-Dépôt `/home/gcorbaz/devel/kesh-29-5`, branche `story/29-5` (rebasée sur la tête de `story/29-3`, elle-même sur
-`main` `c36f39bc`, la 29-2 mergée). Le code à relire : `git -C /home/gcorbaz/devel/kesh-29-5 diff 7983d76b HEAD`
-(`7983d76b` = validation close de la fiche, dernier commit avant le développement). Langue du rapport : français.
+Dépôt `/home/gcorbaz/devel/kesh-29-5`, branche `story/29-5` (rebasée sur `main` `089fcd80`, la 29-2 et la 29-3
+mergées). Le code à relire : `git -C /home/gcorbaz/devel/kesh-29-5 diff 7dc44a1a HEAD`
+(`7dc44a1a` = validation close de la fiche, dernier commit avant le développement). Langue du rapport : français.
 
 Fiche : `_bmad-output/implementation-artifacts/29-5-departage-exigibilite.md` (AC1 à AC9, Dev Agent Record) ;
 registre : `_bmad-output/implementation-artifacts/epic-29-choix-autonomes-29-5.md` (C-29-5-1 à 12 de la fiche, les

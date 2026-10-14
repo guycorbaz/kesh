@@ -2,7 +2,11 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (`main`
+**review** — développement fait le 2026-10-14 (Opus 5.5, `bmad-dev-story`), rebasé sur `main` `089fcd80` (29-2 et
+29-3 mergées) ; gates complets verts après le rebase (Dev Agent Record) ; **revue de code P1 à lancer**
+(`29-5-review-prompt-p1.md`, Sonnet, lentilles B/E/A). Choix C-29-5-1 à 17.
+
+*Historique* : fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (`main`
 après le kickoff de l'Epic 29), branche `story/29-5`, worktree `/home/gcorbaz/devel/kesh-29-5`. Story **ajoutée à
 l'Epic 29** par l'orchestrateur le 2026-10-14. Validation P1 faite (Sonnet, lentilles R et F : 0/0/4/4 et
 0/0/2/5) et remédiée le 2026-10-14 ; validation P2 faite (Opus, lentilles R et F : 0/0/1/10 et 0/0/1/7) et
@@ -427,19 +431,19 @@ recomptés.
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Rebase** sur `origin/main` (29-2 et 29-3 mergées) ; relire les lignes citées ; regreper au § *Zones
+- [x] **T0 — Rebase** sur `origin/main` (29-2 et 29-3 mergées) ; relire les lignes citées ; regreper au § *Zones
       partagées* (forme mergée de l'ancre 29-2 — macro d'ancre attendue, AC1 —, phrase d'ordre de la 29-3 dans
       `api-external.md` et sa parenthèse « l'ordre lui-même est celui des versions précédentes », entrée de la 29-3
       à la section `[0.13.4]` du CHANGELOG et ses mots « il ne change pas », phrases du manuel). **Relire
       explicitement les `Vec` ordonnés des tests de la 29-2** (fiche 29-2 AC5 et M15, validation P1 R3) : leur
       ordre attendu est celui de la requête, que la 29-5 change de `(i.date, i.id)` en `(X, F, id)` — voir
       § *Inventaire (c)*.
-- [ ] **T1 — Tests rouges** (AC4, AC5, AC6) : constater le rouge (compilation ou assertion) avant T2.
-- [ ] **T2 — `kesh-db`** (AC1, AC3) : fonction, ordre, constante SQL, `ORDER BY`, composition de l'ancre, doc-comments.
-- [ ] **T3 — `kesh-reconciliation`** (AC2).
-- [ ] **T4 — Manuel FR + PDF, `api-external.md`, CHANGELOG** (AC7).
-- [ ] **T5 — Propagation** : le grep de § *Propagation*, trié à la main, sortie résumée au Dev Agent Record.
-- [ ] **T6 — Mutations** (AC8) et **gates** (AC9) ; Dev Agent Record.
+- [x] **T1 — Tests rouges** (AC4, AC5, AC6) : constater le rouge (compilation ou assertion) avant T2.
+- [x] **T2 — `kesh-db`** (AC1, AC3) : fonction, ordre, constante SQL, `ORDER BY`, composition de l'ancre, doc-comments.
+- [x] **T3 — `kesh-reconciliation`** (AC2).
+- [x] **T4 — Manuel FR + PDF, `api-external.md`, CHANGELOG** (AC7).
+- [x] **T5 — Propagation** : le grep de § *Propagation*, trié à la main, sortie résumée au Dev Agent Record.
+- [x] **T6 — Mutations** (AC8) et **gates** (AC9) ; Dev Agent Record.
 
 ## Dev Notes
 
@@ -606,11 +610,163 @@ Quatre, une règle métier unique : pas de découpage.
 
 ### Agent Model Used
 
+Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-14.
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/` : `295-mutations.log` (campagne M1-M15),
+`295-m9-replay.log` (rejeu de M9, mécanisme), `295-make-fr.log`, `295-gate.log`, `295-test-fast.log`,
+`295-frontend.log`, `295-e2e.log`, `295-e2e-backend.log`.
 
 ### Completion Notes List
 
+**T0 — Rebase et relecture des zones partagées.** Le développement a commencé sur la tête de `story/29-3`
+(`1ae4884b`, la 29-2 mergée sur `main` `c36f39bc`) ; la 29-3 mergée en squash (`089fcd80`, #674), la branche a été
+rebasée par `git rebase --onto origin/main 1ae4884b story/29-5` (consigne de l'orchestrateur) : onze commits
+rejoués **sans conflit**, `git diff 1ae4884b origin/main` vide (contenu de la 29-3 identique). Tous les gates
+ci-dessous ont tourné **après** ce rebase, sur `a637e3fa` (dernier commit de code : `18c82679`, la documentation ;
+`63fffc47`, le code). Relu :
+
+- **Ancre de la 29-2** : forme mergée identique à la forme commitée que la fiche prévoyait — `macro_rules!
+  invoice_payment_anchor_sql`, `concat!` en deux termes, premier terme réservé (C-29-2-15). Composition faite comme
+  prescrit (AC1) : `invoice_exigibility_date_sql!()` à la place du premier terme, macro définie **avant**
+  `invoice_payment_anchor_join_sql!` et la macro d'ancre. Aucun test de la 29-2 n'a changé (ni assertion, ni nom, ni
+  montage) : constaté au gate, les quatre tests d'ancre de `reconciliation_repository.rs` et les deux de
+  `reconciliation_e2e.rs` sont verts.
+- **Inventaire (c), `Vec` ordonnés de la 29-2** : `grep -n "assert_eq!(ids\|vec!\[" tests/reconciliation_repository.rs`
+  relu. `the_anchor_is_the_latest_of_date_due_date_and_last_reminder` : un montant par cas, liste d'**au plus une**
+  facture. `a_reminder_moves_only_the_anchor_of_its_own_invoice` (le cas inter-factures) : X et Y ont des montants
+  distincts (300.00, 400.00), chaque liste porte une seule facture. `the_anchor_of_an_invoice_is_scoped_to_its_company` :
+  `is_empty`. **Aucune liste à plusieurs factures distinctes : aucune assertion de la 29-2 ne change d'ordre**,
+  l'exception de l'inventaire (c) n'a pas servi. Aucune phrase de la 29-2 ne dit « l'ordre de la requête,
+  `(i.date, i.id)` » (grep vide).
+- **29-3, `api-external.md:549`** : la forme mergée **diffère** de celle que la fiche citait — pas de parenthèse
+  « (identifiant croissant au sol ; …) », mais « par score décroissant, puis par identifiant de facture croissant à
+  score égal ». Seul ce segment a été remplacé par la parenthèse prescrite ; la parenthèse « l'ordre lui-même est
+  celui des versions précédentes » remplacée comme prescrit (C-29-5-13, écart déclaré).
+- **29-3, CHANGELOG** : entrée sous `### Modifié` (`CHANGELOG.md:15`), « — **il ne change pas** » remplacé par la
+  formule prescrite, le reste conservé.
+- **29-3, `order_candidates`** (`routes/reconciliation.rs:208-227`) : doc-comment réécrit (départage hérité, angle
+  mort C-29-3-12 déclaré résolu ; C-29-5-17) ; aucune ligne de code de la route ne change.
+- **Manuel** : inventaire clos `grep -nE "mieux notée|score égal|la plus ancienne|plus petit|identifiant croissant"`
+  — au rebase, `:2048` (complétée), `:2109`, `:2116` (règles, hors sujet) ; après la story, `:2043` et `:2054` (les
+  ajouts de la 29-5), `:2115`, `:2122` (règles).
+- **Commentaire `matching.rs:97-98`** (« utile aux tests E2E + audit reproductibilité », passe ciblée P3 de la
+  validation) : réécrit — l'ordre est total parce que l'identifiant reste la dernière composante, et la proposition
+  affichée ne dépend pas de l'ordre de chargement.
+
+**T1 — Tests rouges** (commit `1c9b57f1`, avant tout code de production) :
+
+- `kesh-db` : rouge **par compilation** — `error[E0425]: cannot find function invoice_exigibility_date` (×4) et
+  `imputation_order` (×5) dans `mod tests` ; `error[E0432]: unresolved imports
+  …::INVOICE_EXIGIBILITY_DATE_SQL, …::invoice_exigibility_date` dans `tests/reconciliation_repository.rs`.
+- `kesh-reconciliation` : rouge **par assertion**, six tests, chacun `left: [101, 102]` / `right: [102, 101]` :
+  `ties_put_the_due_invoice_before_a_not_yet_due_older_one`, `ties_put_the_first_fallen_due_before_an_older_invoice`,
+  `ties_treat_a_missing_due_date_as_due_on_the_invoice_date`, `ties_on_the_same_due_date_keep_the_oldest_invoice`,
+  `ties_ignore_a_due_date_before_the_invoice_date`, `ties_put_an_earlier_due_date_before_a_later_invoice_without_due_date`.
+  Verts au sol, comme attendu : `ties_on_same_dates_fall_back_to_invoice_id` (cas 7, pour M13) et
+  `score_still_beats_exigibility` (cas 8, pour M7).
+- `kesh-api` : `get_proposals_puts_the_due_invoice_first_at_equal_score` rouge **par assertion** au sol —
+  `reconciliation_e2e.rs:3415`, `left: Some(1)` / `right: Some(2)` (A, plus petit identifiant, en tête).
+
+**T2 — `kesh-db`** (`63fffc47`) : `invoice_exigibility_date`, `imputation_order` (à côté de `payment_date`),
+`invoice_exigibility_date_sql!` rendant le littéral exact `CAST(GREATEST(i.date, COALESCE(i.due_date, i.date)) AS
+DATE)` et `INVOICE_EXIGIBILITY_DATE_SQL`, définis avant la macro d'ancre ; ancre composée ; `ORDER BY
+{INVOICE_EXIGIBILITY_DATE_SQL} ASC, i.date ASC, i.id ASC` avant le `LIMIT 50` inchangé ; doc-comments (art. 87 en
+substance, art. 75 et convention C-29-5-12, équivalence et sa condition, deux écritures et leur test, ce que l'ordre
+ne fait pas, la victime de la troncature) ; en-tête du module. Doc-comments des deux tests existants complétés
+(C-29-5-10, noms et assertions inchangés).
+
+**T3 — `kesh-reconciliation`** : tri par paires `(&Invoice, MatchProposal)` (C-29-5-15), score en première clé,
+`imputation_order` en seconde ; signature et forme JSON inchangées ; doc-comments du module et de la fonction ;
+docstring et commentaire de `propose_matches_returns_sorted_desc` réécrits (assertions inchangées).
+
+**T4 — Documentation** (`18c82679`) : manuel FR (paragraphe titré `\label{sec:imputation-score-egal}`, paragraphe
+des limites, renvoi depuis `:2054` ; C-29-5-14), `api-external.md:549` (C-29-5-13), CHANGELOG `[0.13.4]` (entrée
+#668 sous *Corrigé*, entrée #527 rectifiée). `make fr` sous verrou (`295-make-fr.log` : trois PDF stables, 3/3/2
+passes) ; seul `user-manual.pdf` commité (C-29-5-16). Contrôle du PDF aplati, ligatures normalisées : « échue la
+première » → **2** ; « art. 87 CO » présent (graphie `art. 87 CO`) ; renvoi « celle qu'impute la règle de la loi
+(§14.1.1) » résolu. Gardes textuelles : `cargo nextest run -E 'binary(textes_coherents)'` → **15/15**.
+
+**T5 — Propagation.** Grep de § *Propagation* (motif complet) rejoué après le code et après la documentation.
+Occurrences restantes, triées : les ajouts de la 29-5 eux-mêmes ; `routes/reconciliation.rs:3332`, `:3534`,
+`reconciliation_e2e.rs:1707`, `:1732`, `:1837`, `api-external.md:569`, `CHANGELOG.md:123` (rejet en lot **par
+identifiant croissant**, autre sujet) ; « les 100 plus récentes » (liste des transactions, `messages.ftl:867`,
+`UnrejectTransactionAction.svelte:50`, manuel `:2051`, `:2063`, `CHANGELOG.md:35`, `api-external.md:596` — autre
+sujet) ; `tests/reconciliation_repository.rs:310`, `:318`, `:351`, `:359`, `:387`, `:390` (test de la 28-7, vrai pour
+ses factures sans échéance, nom gardé, doc-comment complété — C-29-5-10). Les deux greps des phrases de la 29-3 et
+de la désignation : seules occurrences, les phrases prescrites (`api-external.md:549`, « celui des versions
+précédentes, sauf entre factures de même score » ; `CHANGELOG.md:20`, « la désigne toujours », conditionné au montant
+exact) et les doc-comments de la 29-5, chacun borné (« du même client », « peut y passer ») ; l'entrée publiée
+`CHANGELOG.md:259` n'est pas touchée.
+
+**T6 — Mutations** (AC8 ; `295-mutations.log`, une campagne sous verrou ; motif vérifié unique — « occurrences du
+motif = 1 » pour chacune —, restauration `git checkout -- <fichier> && touch <fichier>`, `git status` propre en fin
+de campagne ; filtre : `package(kesh-reconciliation) | binary(reconciliation_repository) | (package(kesh-db) &
+test(/repositories::reconciliation::tests/)) | binary(reconciliation_e2e)`, 167 tests par jeu) :
+
+| # | Résultat | Tests rouges (extrait du journal) |
+|---|---|---|
+| M1 | **tuée** (7) | AC5 cas 1-6 ; AC6 `get_proposals_puts_the_due_invoice_first_at_equal_score` |
+| M2 | **tuée** (6) | AC5 cas 1, 2 ; unitaires `the_exigibility_date_is_…`, `the_imputation_order_follows_…` ; parité ; AC6 |
+| M3 | **tuée** (2) | AC5 cas 6 ; unitaire `the_imputation_order_follows_…` (ligne 6) — ni cas 3 ni cas 5, comme prévu |
+| M4 | **tuée** (4) | AC5 cas 5 ; deux unitaires ; parité |
+| M5 | **tuée** (7) | AC5 cas 1, 2, 3, 5, 6 ; unitaire du tableau ; AC6 |
+| M6 | **tuée** (1) | AC5 cas 4 |
+| M7 | **tuée** (2) | AC5 cas 8 ; `propose_matches_returns_sorted_desc` |
+| M8 | **tuée** (1) | `find_unpaid_invoices_orders_by_exigibility_before_limit` |
+| M9 | **tuée** (58) | parité (`ColumnDecode … UnexpectedNullError`) ; `…_by_exigibility_before_limit` ; et tout test dont une facture n'a pas d'échéance — 58 en tout : 12 de `reconciliation_repository` (ces deux compris), 46 de `reconciliation_e2e` |
+| M10 | **tuée** (2) | parité ; `the_anchor_is_the_latest_of_date_due_date_and_last_reminder` (29-2, cas g et l) |
+| M11 | **tuée** (4) | tests de la 29-2 : `the_anchor_is_…`, `a_reminder_moves_only_…`, `the_anchor_of_an_invoice_is_scoped_…`, `proposal_and_acceptance_share_the_anchor_…` |
+| M12 | **tuée** (1) | `find_unpaid_invoices_orders_same_exigibility_by_invoice_date_before_limit` |
+| M13 | **tuée** (2) | AC5 cas 7 ; unitaire `the_imputation_order_falls_back_to_the_invoice_id` |
+| M14 | **tuée** (4) | les quatre tests d'ordre de `reconciliation_repository` (dont `…_by_exigibility_…` et `…_same_exigibility_…`) |
+| M15 | **survivante** | 167/167 verts |
+
+**M9, mécanisme constaté** (rejeu ciblé, `295-m9-replay.log`) : avec l'ancre composée, la facture sans échéance à
+`F = D + 1` (id 1) est **exclue** des candidates — liste rendue `[51, 50, …, 2]` contre `[51, 1, 50, …, 3]` attendue :
+`NULL >= ?` est faux dans le `WHERE` (régime « avec la 29-2 » de l'AC4). Le même effet explique les 56 autres rouges :
+toute facture sans échéance disparaît de la proposition.
+
+**M15, survivante, déclarée équivalente en pratique et non démontrée en général** : seul
+`…_same_exigibility_…` a des égalités `(X, F)` (ses quarante-neuf de remplissage) ; MariaDB les a rendues dans
+l'ordre de l'`id` sans la clé `i.id` (167/167 verts), vraisemblablement l'ordre de parcours. Un tri sous `LIMIT` ne
+fixe pas l'ordre des égalités : la clé `i.id` reste, pour le garantir. Aucun test ne peut forcer MariaDB à rendre
+ces égalités autrement de façon reproductible ; l'angle mort est assumé.
+
+Bilan : **15 mutations, 14 tuées, 1 survivante (M15)**.
+
+**Gates** (`295-gate.log`, sous verrou, après le rebase, sur `a637e3fa`) :
+
+- base `kesh_295` remise à zéro (supprimée, recréée, 81 migrations du worktree, seed) avant le gate complet ;
+- `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **3639 exécutés, 3639 réussis, 6 ignorés** —
+  3624 de la 29-3 (son registre) + 15 tests neufs (`git diff 7dc44a1a HEAD -- crates | grep -cE
+  '^\+\s*#\[(test|sqlx::test)'` → 15 ; 3 unitaires `kesh-db`, 3 d'intégration `kesh-db`, 8 `kesh-reconciliation`,
+  1 `kesh-api`) ;
+- frontend : `npm run check`, `lint-i18n-ownership`, `test:unit` (**146 fichiers, 1617 tests**), `build` — verts ;
+  aucun fichier frontend modifié ;
+- E2E complet (base `kesh_e2e_295` recréée, port 3046, recette de `docs/testing.md`, `/health` version 0.13.3) :
+  **281 réussis, 8 échoués, 19 ignorés**. Les huit, fichier par fichier contre `docs/testing.md` § *Les échecs
+  attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+  `:77`, `:150` (KF-029, #97) ; `sidebar-navigation.spec.ts:75` (KF-052, #424, ou le huitième variable). **Aucune
+  spec de réconciliation ne rougit.** Backend arrêté par son PID en fin de gate.
+
+**Écarts à la fiche** : C-29-5-13 (forme mergée de la phrase de la 29-3 dans `api-external.md`) ; M15 survivante (la
+fiche la prévoyait « probablement équivalente ») ; M7 tue aussi `propose_matches_returns_sorted_desc` (en plus du
+cas 8 que la fiche nommait). Choix ajoutés : **C-29-5-13 à C-29-5-17**.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/reconciliation.rs` — fonctions, macro, constante, ancre composée, `ORDER BY`,
+  doc-comments, trois tests unitaires.
+- `crates/kesh-db/tests/reconciliation_repository.rs` — trois tests d'intégration, deux doc-comments complétés.
+- `crates/kesh-reconciliation/src/matching.rs` — tri, doc-comments, huit tests, docstring et commentaire d'un test
+  existant.
+- `crates/kesh-api/src/routes/reconciliation.rs` — doc-comment d'`order_candidates` seul.
+- `crates/kesh-api/tests/reconciliation_e2e.rs` — un test HTTP.
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`, `docs/api-external.md`, `CHANGELOG.md`.
+- `_bmad-output/implementation-artifacts/29-5-departage-exigibilite.md`, `epic-29-choix-autonomes-29-5.md`,
+  `29-5-review-prompt-p1.md`, `sprint-status.yaml`.
 
 ## Change Log
 
@@ -707,3 +863,10 @@ Quatre, une règle métier unique : pas de découpage.
   l'inventaire (c) dite). Hors périmètre relevé : le commentaire « utile aux tests E2E » est à `matching.rs:97-98`
   (préexistant, à corriger au dev). **Validation close** : la remédiation de la passe ciblée ne touche aucune ligne de
   production. Trend : P1 0/0/6/9 → P2 0/0/2/17 (1 MEDIUM distinct) → P3 ciblée 0/0/2/4.
+- 2026-10-14 — **Développement** (`bmad-dev-story`, Opus 5.5, autonomie). Tests rouges d'abord (`1c9b57f1` :
+  compilation pour `kesh-db`, assertion pour six tests de `kesh-reconciliation` et le test HTTP), puis le code
+  (`63fffc47`), la documentation et le PDF (`18c82679`), le registre et le prompt de revue P1 (`a637e3fa`) ;
+  rebasé sur `main` `089fcd80` (29-3 en squash) sans conflit. 15 tests neufs ; 15 mutations, 14 tuées, M15
+  survivante (déclarée) ; `test-fast` 3639/3639, Vitest 1617, E2E 281 + 8 attendus (7 KF-029 + `sidebar:75`).
+  Choix **C-29-5-13 à 17**. Écarts : C-29-5-13 (forme mergée de la phrase de la 29-3), M15. Suite : **revue de
+  code P1** (Sonnet, B/E/A, `29-5-review-prompt-p1.md`).
