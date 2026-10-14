@@ -7,6 +7,8 @@ relevé par mois**. L'epic part du choix fait avec Guy à la rétrospective de l
 
 ⚠️ **Contrepartie BMAD des issues** — chaque issue tient le détail, cet epic le périmètre. Il se clôt quand les quatre
 issues ci-dessous sont fermées et les deux versions publiées.
+*(Complété le 2026-10-14 : un quatrième P2 de la réconciliation, [#668], entre dans l'epic avec la story 29-5 — l'epic
+se clôt donc sur **cinq** issues.)*
 
 ## Ce que le bouclement n'est plus, et ce qu'il reste à faire
 
@@ -104,16 +106,30 @@ a écartés (rapports de validation P2 et P3 de la 28-4) ; piste : rejeu sur int
 de la 28-4** : aucune naissance de vue déplacée. Story à risque : validation complète Opus et Sonnet, pas de
 simplification sans relecture des verrous.
 
+### 29-5 — À score égal, la facture échue la première passe en tête ([#668], P2)
+
+**Ajoutée le 2026-10-14** par l'orchestrateur, pendant les fiches 29-2 et 29-3 qui l'ont relevée hors de leur
+périmètre. `propose_matches` départage deux factures de même score par `invoice_id` : la plus anciennement créée
+gagne, même pas encore échue, devant une facture échue. La 29-2 **aggrave** le défaut — sa fenêtre élargie fait entrer
+des candidates jusqu'à `F ≥ D − 60` à 30 jours net, et des factures non échues à échéance lointaine — ; l'`ORDER BY …
+LIMIT 50` de `find_unpaid_invoices_for_window` peut en outre écarter une facture échue au profit d'anciennes non
+échues. Critère : **art. 87 CO** (dette exigible, puis échue la première). Les deux sortent dans la **même v0.13.4**,
+la 29-5 mergée avant le tag. **`kesh-db` touché : gate complet même en boucle.** Manuel utilisateur : la règle
+d'imputation.
+
 ## Ordre
 
 - **29-1 en parallèle** des trois autres : elle ne touche ni la réconciliation ni les comptes bancaires.
 - **29-2, puis 29-3, puis 29-4**, en série : `routes/reconciliation.rs` pour les deux premières, les chemins d'écriture
   des comptes bancaires pour la troisième. Chacune se merge avant que la suivante soit rebasée.
+- **29-5 après la 29-3** (2026-10-14) : `kesh-db/repositories/reconciliation.rs` partagé avec la 29-2, phrase d'ordre
+  des candidates de `docs/api-external.md` et § du manuel partagés avec la 29-3. Aucune zone commune avec la 29-4 :
+  les deux peuvent avancer en parallèle, chacune rebasée sur ce qui est mergé.
 - Intégration **sérielle** sur `main`.
 
 ### Releases
 
-- **v0.13.4** dès que 29-2, 29-3 et 29-4 sont mergées : Guy les éprouve tout de suite avec ses relevés mensuels.
+- **v0.13.4** dès que 29-2, 29-3, 29-4 et 29-5 sont mergées : Guy les éprouve tout de suite avec ses relevés mensuels.
 - **v0.14.0** à la fin de la 29-1 : fonctionnalité nouvelle.
 
 À chaque release : `scripts/prepare-release.sh`, macros des manuels et URL au tag, CHANGELOG daté, recomptes du
@@ -145,3 +161,4 @@ Docker Hub (`/health`). Autorisé d'office pour cet epic.
 [#527]: https://github.com/guycorbaz/kesh/issues/527
 [#529]: https://github.com/guycorbaz/kesh/issues/529
 [#651]: https://github.com/guycorbaz/kesh/issues/651
+[#668]: https://github.com/guycorbaz/kesh/issues/668
