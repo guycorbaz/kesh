@@ -4,11 +4,17 @@
   archivage, toggle archivés, affichage solde).
   Story 26-2a (#622) — description optionnelle : saisie (création, édition),
   nom du compte dans le tableau par `bankAccountName`.
+  Story 28-4b (#642) — clore et rouvrir un compte bancaire : bascule des clos
+  (masqués par défaut, C-28-4-13), badge « Clos le … », seule action « Rouvrir »
+  sur une ligne close, « Clore » désactivé sur le principal, dialogue de clôture
+  (date locale préremplie, avertissement d'un solde comptable non nul, C-28-4-6).
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
+	import { isApiError } from '$lib/shared/utils/api-error';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { withCurrentAccount, withoutAccountIds } from '$lib/features/accounts/account-options';
@@ -22,10 +28,14 @@
 		createBankAccount,
 		updateBankAccount,
 		archiveBankAccount,
+		closeBankAccount,
+		reopenBankAccount,
 		type BankAccountSummary,
 		type NewBankAccountPayload,
 		type UpdateBankAccountPayload,
 	} from '$lib/features/bank-accounts/bank-accounts.api';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
+	import { todayLocal } from '$lib/features/open-items/open-items';
 	import {
 		BANK_ACCOUNT_DESCRIPTION_MAX,
 		bankAccountName,
@@ -42,6 +52,8 @@
 	let loading = $state(true);
 	let loadError = $state<string | null>(null);
 	let includeArchived = $state(false);
+	// Story 28-4b (#642, C-28-4-13) — les comptes clos sont masqués par défaut.
+	let includeClosed = $state(false);
 
 	// UI state — modes d'édition. Un seul mode actif à la fois.
 	type Mode =
@@ -49,7 +61,9 @@
 		| { kind: 'create' }
 		| { kind: 'edit-full'; id: number }
 		| { kind: 'edit-journal'; id: number }
-		| { kind: 'archive-confirm'; id: number };
+		| { kind: 'archive-confirm'; id: number }
+		| { kind: 'close-confirm'; id: number }
+		| { kind: 'reopen-confirm'; id: number };
 	let mode = $state<Mode>({ kind: 'none' });
 	let submitting = $state(false);
 
@@ -63,15 +77,47 @@
 	let formVersion = $state(0);
 	let formError = $state<string | null>(null);
 
+	// Story 28-4b — dialogues de clôture et de réouverture. Le refus du serveur
+	// s'affiche DANS le dialogue (là où l'on a agi), par `errorMessageOf`.
+	let closeDate = $state('');
+	let closeError = $state<string | null>(null);
+	let reopenError = $state<string | null>(null);
+	// Story 28-4b (passe ciblée P2, M1) — vrai quand `reload()` a refermé un mode dont le
+	// compte visé n'est plus dans la liste relue (voir `closeOrphanMode`).
+	let staleNotice = $state(false);
+
+	/**
+	 * Story 28-4b (passe ciblée P2, M1) — ferme la classe « mode orphelin » là où elle
+	 * naît : à la fin de `reload()`, et nulle part ailleurs. Un mode qui vise un compte —
+	 * `edit-full`, `edit-journal`, `archive-confirm`, `close-confirm`, `reopen-confirm`, soit
+	 * tous ceux qui portent un `id` — et dont le compte n'est plus dans la liste relue (clos
+	 * ou archivé ailleurs, ou masqué par une bascule) se referme, avec un message neutre :
+	 * sans quoi son dialogue disparaissait avec la ligne et le mode, resté ouvert, masquait
+	 * les actions de toutes les lignes. `create` ne vise aucun compte : il reste ouvert.
+	 *
+	 * Les gestes qui retirent eux-mêmes leur compte de la liste (archivage, clôture,
+	 * réouverture) referment leur mode AVANT de recharger : la garde ne parle pas d'un geste
+	 * réussi.
+	 */
+	function closeOrphanMode() {
+		const cible = 'id' in mode ? mode.id : null;
+		if (cible !== null && !bankAccounts.some((b) => b.id === cible)) {
+			closeForm();
+			staleNotice = true;
+		}
+	}
+
 	async function reload() {
 		const [baResult, accResult, settingsResult] = await Promise.allSettled([
-			listBankAccounts(includeArchived),
+			listBankAccounts(includeArchived, includeClosed),
 			fetchAccounts(false),
 			getInvoiceSettings(),
 		]);
 		if (baResult.status === 'fulfilled') {
 			bankAccounts = baResult.value;
 			loadError = null;
+			staleNotice = false;
+			closeOrphanMode();
 		} else {
 			loadError = errorMessageOf(baResult.reason);
 		}
@@ -174,9 +220,50 @@
 		mode = { kind: 'archive-confirm', id };
 	}
 
+	/** Story 28-4b — ouvre le dialogue de clôture, date préremplie à la date LOCALE du jour. */
+	function openCloseConfirm(id: number) {
+		closeDate = todayLocal();
+		closeError = null;
+		mode = { kind: 'close-confirm', id };
+	}
+
+	function openReopenConfirm(id: number) {
+		reopenError = null;
+		mode = { kind: 'reopen-confirm', id };
+	}
+
 	function closeForm() {
 		mode = { kind: 'none' };
+		closeError = null;
+		reopenError = null;
 		resetForm();
+	}
+
+	/**
+	 * Story 28-4b (C-28-4-6) — vrai si le solde comptable du compte lié est connu
+	 * et non nul : le dialogue de clôture **avertit**, il ne bloque pas (une
+	 * écriture de virement ou de frais peut suivre la clôture).
+	 */
+	function hasNonZeroBalance(ba: BankAccountSummary): boolean {
+		return ba.currentBalance !== null && !new Big(ba.currentBalance).eq(0);
+	}
+
+	/**
+	 * Story 28-4b (AC11, C-28-4-46) — un compte archivé ou clos s'affiche atténué.
+	 * L'atténuation porte sur les cellules de DONNÉES, non sur la ligne : `opacity`
+	 * ne se défait pas dans un enfant, et l'action « Rouvrir » d'un compte clos doit
+	 * rester pleinement lisible.
+	 */
+	function dimClass(ba: BankAccountSummary): string {
+		return ba.archived || ba.closedOn !== null ? 'opacity-50' : '';
+	}
+
+	/** Story 28-4b (AC11) — pourquoi « Clore » est désactivé sur le principal (`title` et aide). */
+	function primaryCloseHint(): string {
+		return i18nMsg(
+			'bank-accounts-close-primary-hint',
+			"Le compte principal ne se clôt pas : désignez d'abord un autre compte principal.",
+		);
 	}
 
 	/**
@@ -273,13 +360,102 @@
 			if (!ba) return;
 			await archiveBankAccount(id, ba.version);
 			toast.success(i18nMsg('bank-accounts-toast-archive-success', 'Compte bancaire archivé.'));
-			await reload();
+			// Mode refermé AVANT le rechargement : le compte archivé quitte la liste, et
+			// `closeOrphanMode` ne doit pas annoncer un geste réussi comme un changement.
 			closeForm();
+			await reload();
 		} catch (err) {
 			toast.error(errorMessageOf(err));
 		} finally {
 			submitting = false;
 		}
+	}
+
+	/**
+	 * Story 28-4b (#642, AC11) — clôt le compte. Les refus du serveur (`412`
+	 * principal, transactions non rapprochées, lot généré ; `409` version) restent
+	 * affichés dans le dialogue, par leur message traduit.
+	 */
+	async function confirmClose(id: number) {
+		const ba = bankAccounts.find((b) => b.id === id);
+		if (!ba) return;
+		submitting = true;
+		closeError = null;
+		try {
+			await closeBankAccount(id, ba.version, closeDate);
+			toast.success(
+				includeClosed
+					? i18nMsg('bank-accounts-toast-close-success', 'Compte bancaire clos.')
+					: i18nMsg(
+							'bank-accounts-toast-close-success-hidden',
+							'Compte clos. Affichez les comptes clos pour le retrouver.',
+						),
+			);
+			closeForm(); // avant le rechargement, comme l'archivage (`closeOrphanMode`)
+			await reload();
+		} catch (err) {
+			closeError = errorMessageOf(err);
+			await refreshAfterVersionConflict(err);
+		} finally {
+			submitting = false;
+		}
+	}
+
+	/** Story 28-4b (#642, AC11) — rouvre un compte clos ; il ne redevient pas principal. */
+	async function confirmReopen(id: number) {
+		const ba = bankAccounts.find((b) => b.id === id);
+		if (!ba) return;
+		submitting = true;
+		reopenError = null;
+		try {
+			await reopenBankAccount(id, ba.version);
+			toast.success(i18nMsg('bank-accounts-toast-reopen-success', 'Compte bancaire rouvert.'));
+			closeForm(); // avant le rechargement, comme l'archivage (`closeOrphanMode`)
+			await reload();
+		} catch (err) {
+			reopenError = errorMessageOf(err);
+			await refreshAfterVersionConflict(err);
+		} finally {
+			submitting = false;
+		}
+	}
+
+	/**
+	 * Story 28-4b (revue P1, B-2) — après un `409 OPTIMISTIC_LOCK_CONFLICT`, la liste est
+	 * relue : le dialogue reste ouvert avec son message, et le second essai part avec la
+	 * version relue au lieu de rejouer la périmée. Si le compte n'est plus dans la liste
+	 * relue (clos ailleurs, clos masqués ici), `closeOrphanMode` referme le dialogue avec
+	 * un message (passe ciblée P2, M1). Les autres refus ne rechargent rien.
+	 */
+	async function refreshAfterVersionConflict(err: unknown): Promise<void> {
+		if (isApiError(err) && err.code === 'OPTIMISTIC_LOCK_CONFLICT') await reload();
+	}
+
+	/**
+	 * Une bascule (archivés, clos) recharge la liste sous un indicateur de chargement.
+	 * Story 28-4b : elle ne referme RIEN elle-même (passe ciblée P2, L1) — un mode dont le
+	 * compte disparaît de la liste relue est refermé par `closeOrphanMode`, à la fin de
+	 * `reload()` ; un formulaire de création, ou un mode dont le compte reste visible, est
+	 * conservé avec sa saisie.
+	 *
+	 * ⚠️ Angle mort assumé (B-3) : un `reload()` lancé par une clôture ou une réouverture
+	 * réussie et celui d'une bascule cliquée pendant ce temps ne sont pas ordonnés — la
+	 * dernière réponse arrivée gagne (fenêtre d'un aller-retour réseau ; même schéma que la
+	 * bascule des archivés d'avant la 28-4b). Un nouveau clic sur la bascule rétablit la
+	 * liste attendue.
+	 */
+	async function toggleAndReload(flip: () => void) {
+		flip();
+		loading = true;
+		try {
+			await reload();
+		} finally {
+			loading = false;
+		}
+	}
+
+	async function handleToggleClosed() {
+		await toggleAndReload(() => (includeClosed = !includeClosed));
 	}
 
 	function handleJournalUpdated(updated: BankAccountSummary) {
@@ -290,13 +466,7 @@
 	async function handleToggleArchived() {
 		// F18 Pass 1 code review : indicateur de chargement pendant le reload
 		// pour feedback UX cohérent avec onMount.
-		includeArchived = !includeArchived;
-		loading = true;
-		try {
-			await reload();
-		} finally {
-			loading = false;
-		}
+		await toggleAndReload(() => (includeArchived = !includeArchived));
 	}
 </script>
 
@@ -326,6 +496,15 @@
 				? i18nMsg('bank-accounts-actions-hide-archived', 'Masquer les archivés')
 				: i18nMsg('bank-accounts-actions-show-archived', 'Afficher les archivés')}
 		</Button>
+		<Button
+			variant="ghost"
+			onclick={handleToggleClosed}
+			data-testid="toggle-closed"
+		>
+			{includeClosed
+				? i18nMsg('bank-accounts-actions-hide-closed', 'Masquer les comptes clos')
+				: i18nMsg('bank-accounts-actions-show-closed', 'Afficher les comptes clos')}
+		</Button>
 		<Button onclick={openCreate} data-testid="create-bank-account-button" disabled={mode.kind === 'create'}>
 			{i18nMsg('bank-accounts-actions-create', 'Nouveau compte bancaire')}
 		</Button>
@@ -340,6 +519,15 @@
 	{:else if loadError}
 		<p class="text-red-600" role="alert" data-testid="load-error">{loadError}</p>
 	{:else}
+		{#if staleNotice}
+			<!-- Story 28-4b (passe ciblée P2, M1) — un mode a été refermé par `closeOrphanMode`. -->
+			<p class="mb-4 rounded border border-warning bg-warning-soft p-2 text-sm text-text" role="status" data-testid="bank-accounts-stale-notice">
+				{i18nMsg(
+					'bank-accounts-notice-stale',
+					"Le compte visé n'est plus affiché : il a été modifié entre-temps, ou il est désormais masqué. L'action en cours a été refermée.",
+				)}
+			</p>
+		{/if}
 		<!-- Formulaire création inline -->
 		{#if mode.kind === 'create'}
 			<form
@@ -415,8 +603,29 @@
 
 		<!-- Liste -->
 		{#if bankAccounts.length === 0}
+			<!-- Story 28-4b (revue P1, A-L6) — une bascule au moins masque des comptes : le
+			     message dit où les trouver (une société dont les seuls comptes restants sont
+			     clos voyait « Aucun compte bancaire configuré » sur l'écran de gestion). -->
 			<p class="text-text-muted" data-testid="bank-accounts-empty">
-				{i18nMsg('bank-accounts-labels-empty', 'Aucun compte bancaire configuré.')}
+				<!-- Passe ciblée P2 (L2) : le message ne nomme que ce qui reste masqué. -->
+				{#if includeClosed && includeArchived}
+					{i18nMsg('bank-accounts-labels-empty', 'Aucun compte bancaire configuré.')}
+				{:else if includeClosed}
+					{i18nMsg(
+						'bank-accounts-labels-empty-hidden-archived',
+						'Aucun compte bancaire à afficher. Les comptes archivés éventuels sont masqués : affichez-les par « Afficher les archivés ».',
+					)}
+				{:else if includeArchived}
+					{i18nMsg(
+						'bank-accounts-labels-empty-hidden-closed',
+						'Aucun compte bancaire à afficher. Les comptes clos éventuels sont masqués : affichez-les par « Afficher les comptes clos ».',
+					)}
+				{:else}
+					{i18nMsg(
+						'bank-accounts-labels-empty-hidden',
+						'Aucun compte bancaire ouvert. Les comptes clos ou archivés éventuels sont masqués : affichez-les par les boutons ci-dessus.',
+					)}
+				{/if}
 			</p>
 		{:else}
 			<table class="w-full text-sm" data-testid="bank-accounts-list">
@@ -431,8 +640,8 @@
 				</thead>
 				<tbody>
 					{#each bankAccounts as ba (ba.id)}
-						<tr class="border-b border-border {ba.archived ? 'opacity-50' : ''}" data-testid="bank-account-row-{ba.id}">
-							<td class="py-2 pr-4">
+						<tr class="border-b border-border" data-testid="bank-account-row-{ba.id}">
+							<td class="py-2 pr-4 {dimClass(ba)}">
 								<span data-testid="bank-account-name-{ba.id}">{bankAccountName(ba)}</span>
 								{#if ba.isPrimary}
 									<span class="ml-2 rounded bg-primary-light/20 px-1.5 py-0.5 text-xs text-primary" data-testid="primary-badge-{ba.id}">
@@ -444,16 +653,33 @@
 										{i18nMsg('bank-accounts-labels-archived-badge', 'Archivé')}
 									</span>
 								{/if}
+								{#if ba.closedOn !== null}
+									<span class="ml-2 rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-700" data-testid="closed-badge-{ba.id}">
+										{i18nMsg('bank-accounts-labels-closed-badge', 'Clos le { $date }', {
+											date: formatSwissDate(ba.closedOn),
+										})}
+									</span>
+								{/if}
 							</td>
-							<td class="py-2 pr-4 font-mono text-xs" title={ba.iban}>{ba.iban}</td>
-							<td class="py-2 pr-4 text-right font-mono" data-testid="balance-cell-{ba.id}">
+							<td class="py-2 pr-4 font-mono text-xs {dimClass(ba)}" title={ba.iban}>{ba.iban}</td>
+							<td class="py-2 pr-4 text-right font-mono {dimClass(ba)}" data-testid="balance-cell-{ba.id}">
 								{formatBalance(ba.currentBalance)}
 							</td>
-							<td class="py-2 pr-4" data-testid="journal-account-cell-{ba.id}">
+							<td class="py-2 pr-4 {dimClass(ba)}" data-testid="journal-account-cell-{ba.id}">
 								{accountLabel(ba.journalAccountId)}
 							</td>
 							<td class="py-2 whitespace-nowrap">
-								{#if !ba.archived && mode.kind === 'none'}
+								{#if !ba.archived && mode.kind === 'none' && ba.closedOn !== null}
+									<!-- Story 28-4b — un compte clos n'offre qu'une action : le rouvrir. -->
+									<button
+										type="button"
+										class="rounded border border-border px-2 py-1 text-xs"
+										onclick={() => openReopenConfirm(ba.id)}
+										data-testid="reopen-{ba.id}"
+									>
+										{i18nMsg('bank-accounts-actions-reopen', 'Rouvrir')}
+									</button>
+								{:else if !ba.archived && mode.kind === 'none'}
 									<button
 										type="button"
 										class="rounded border border-border px-2 py-1 text-xs"
@@ -478,6 +704,23 @@
 									>
 										{i18nMsg('bank-accounts-actions-archive', 'Archiver')}
 									</button>
+									<!-- Story 28-4b — « Clore » ouvre un dialogue ; désactivé sur le
+									     principal (le serveur le refuse de toute façon, 412). -->
+									<button
+										type="button"
+										class="ml-1 rounded border border-border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+										onclick={() => openCloseConfirm(ba.id)}
+										disabled={ba.isPrimary}
+										title={ba.isPrimary ? primaryCloseHint() : undefined}
+										data-testid="close-{ba.id}"
+									>
+										{i18nMsg('bank-accounts-actions-close', 'Clore')}
+									</button>
+									{#if ba.isPrimary}
+										<p class="mt-1 text-xs text-text-muted whitespace-normal" data-testid="close-primary-hint-{ba.id}">
+											{primaryCloseHint()}
+										</p>
+									{/if}
 								{/if}
 							</td>
 						</tr>
@@ -586,6 +829,81 @@
 												{i18nMsg('bank-accounts-actions-confirm-archive', 'Archiver')}
 											</Button>
 											<Button type="button" variant="ghost" onclick={closeForm} data-testid="archive-cancel-button">
+												{i18nMsg('bank-accounts-actions-cancel', 'Annuler')}
+											</Button>
+										</div>
+									</div>
+								</td>
+							</tr>
+						{/if}
+						<!-- Story 28-4b (#642, AC11) — dialogue de clôture inline -->
+						{#if mode.kind === 'close-confirm' && mode.id === ba.id}
+							<tr>
+								<td colspan="5" class="py-3">
+									<div class="rounded border border-border bg-surface-alt p-4" data-testid="close-confirm">
+										<h2 class="mb-2 text-base font-semibold">
+											{i18nMsg('bank-accounts-close-dialog-title', 'Clore ce compte bancaire ?')}
+										</h2>
+										<p class="text-sm">
+											{i18nMsg(
+												'bank-accounts-close-dialog-body',
+												"Le compte passe en lecture seule : plus aucun import, rapprochement, règlement ni lot de paiement ne s'y enregistre. Son historique reste entier et consultable (imports, écritures, rapports, export). Vous pourrez le rouvrir.",
+											)}
+										</p>
+										<div class="mt-3 max-w-xs">
+											<label for="close-date" class="block text-sm font-medium text-text mb-1">
+												{i18nMsg('bank-accounts-close-dialog-date', 'Date de clôture')}
+											</label>
+											<Input id="close-date" type="date" bind:value={closeDate} data-testid="close-date" />
+										</div>
+										{#if hasNonZeroBalance(ba) && ba.currentBalance !== null}
+											<p class="mt-3 rounded border border-warning bg-warning-soft p-2 text-sm text-text" role="note" data-testid="close-balance-warning">
+												{i18nMsg(
+													'bank-accounts-close-dialog-balance-warning',
+													'Le solde comptable du compte lié est de { $amount } : vérifiez-le avant de clore (écriture de virement ou de frais).',
+													{ amount: formatChfBalance(ba.currentBalance) },
+												)}
+											</p>
+										{/if}
+										{#if closeError}
+											<p class="mt-3 text-sm text-red-600" role="alert" data-testid="close-error">{closeError}</p>
+										{/if}
+										<div class="mt-4 flex gap-2">
+											<Button
+												onclick={() => confirmClose(ba.id)}
+												disabled={submitting || closeDate === ''}
+												data-testid="close-confirm-button"
+												variant="destructive"
+											>
+												{i18nMsg('bank-accounts-close-dialog-confirm', 'Clore le compte')}
+											</Button>
+											<Button type="button" variant="outline" onclick={closeForm} data-testid="close-cancel-button">
+												{i18nMsg('bank-accounts-actions-cancel', 'Annuler')}
+											</Button>
+										</div>
+									</div>
+								</td>
+							</tr>
+						{/if}
+						<!-- Story 28-4b (#642, AC11) — dialogue de réouverture inline -->
+						{#if mode.kind === 'reopen-confirm' && mode.id === ba.id}
+							<tr>
+								<td colspan="5" class="py-3">
+									<div class="rounded border border-border bg-surface-alt p-4" data-testid="reopen-confirm">
+										<p class="text-sm">
+											{i18nMsg(
+												'bank-accounts-reopen-dialog-body',
+												"Rouvrir ce compte bancaire ? Il redevient utilisable pour les imports, les rapprochements et les règlements ; il ne redevient pas compte principal.",
+											)}
+										</p>
+										{#if reopenError}
+											<p class="mt-3 text-sm text-red-600" role="alert" data-testid="reopen-error">{reopenError}</p>
+										{/if}
+										<div class="mt-3 flex gap-2">
+											<Button onclick={() => confirmReopen(ba.id)} disabled={submitting} data-testid="reopen-confirm-button">
+												{i18nMsg('bank-accounts-actions-reopen', 'Rouvrir')}
+											</Button>
+											<Button type="button" variant="outline" onclick={closeForm} data-testid="reopen-cancel-button">
 												{i18nMsg('bank-accounts-actions-cancel', 'Annuler')}
 											</Button>
 										</div>

@@ -9,6 +9,10 @@
 // Story 25-6-a (#389) — les montants restent des chaînes décimales (`big.js`
 // pour tout calcul) ; trois champs du relevé CAMT.053 portant un solde de
 // clôture dont la période se termine le plus tard (`period_to`) (et non du dernier importé).
+//
+// Story 28-4b (#642) — clôture d'un compte bancaire : `closedOn`, second booléen
+// `includeClosed` de `listBankAccounts` (C-28-4-20), `closeBankAccount` et
+// `reopenBankAccount`.
 
 import { apiClient } from '$lib/shared/utils/api-client';
 
@@ -28,6 +32,12 @@ export interface BankAccountSummary {
 	version: number;
 	/** Story v014-1 — true si soft-deleted (archivé). */
 	archived: boolean;
+	/**
+	 * Story 28-4b (#642) — date de clôture `AAAA-MM-JJ` d'un compte **clos** (en
+	 * lecture seule, historique conservé, réversible), `null` s'il est ouvert. La
+	 * date est informative : c'est l'état qui garde (C-28-4-3).
+	 */
+	closedOn: string | null;
 	/**
 	 * Story v014-1 T5 — **solde comptable** calculé serveur-side depuis
 	 * journal_entry_lines (pas le solde bancaire). `null` si `journal_account_id`
@@ -69,6 +79,8 @@ interface BankAccountSummaryRaw {
 	journalAccountId: number | null;
 	version: number;
 	archived: boolean;
+	// Story 28-4b — absent d'un serveur antérieur à la 0.13.3 : rendu `null`.
+	closedOn?: string | null;
 	currentBalance: string | null;
 	lastTransactionDate: string | null;
 	// Absents des réponses de mutation (POST/PUT/PATCH/DELETE rendent un compte nu).
@@ -88,6 +100,7 @@ function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
 		journalAccountId: raw.journalAccountId,
 		version: raw.version,
 		archived: raw.archived,
+		closedOn: raw.closedOn ?? null,
 		currentBalance: raw.currentBalance ?? null,
 		lastTransactionDate: raw.lastTransactionDate,
 		statementClosingBalance: raw.statementClosingBalance ?? null,
@@ -100,14 +113,66 @@ function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
  * GET /api/v1/bank-accounts — liste les bank_accounts de la company
  * courante (multi-tenant scoping serveur-side via JWT).
  *
+ * Par défaut, ni archivés ni clos : c'est la liste des comptes où l'on peut
+ * **écrire** (sélecteurs d'import, de règlement, de lot ; tuile de l'accueil).
+ *
  * @param includeArchived Si `true`, inclut aussi les comptes archivés (toggle UI).
+ * @param includeClosed Story 28-4b (#642, C-28-4-20) — si `true`, inclut aussi
+ *   les comptes clos (bascule de l'écran *Comptes bancaires* ; réglages de
+ *   facturation, alignés sur le serveur qui compte un compte clos comme lié à
+ *   son compte comptable, C-28-4-7). Second booléen et non objet d'options :
+ *   les appelants existants (`listBankAccounts()`, `listBankAccounts(false)`)
+ *   gardent leur sens et leur code.
  */
-export async function listBankAccounts(includeArchived = false): Promise<BankAccountSummary[]> {
-	const path = includeArchived
-		? '/api/v1/bank-accounts?includeArchived=true'
-		: '/api/v1/bank-accounts';
+export async function listBankAccounts(
+	includeArchived = false,
+	includeClosed = false,
+): Promise<BankAccountSummary[]> {
+	const params = new URLSearchParams();
+	if (includeArchived) params.set('includeArchived', 'true');
+	if (includeClosed) params.set('includeClosed', 'true');
+	const query = params.toString();
+	const path = query === '' ? '/api/v1/bank-accounts' : `/api/v1/bank-accounts?${query}`;
 	const raw = await apiClient.get<BankAccountSummaryRaw[]>(path);
 	return raw.map(parseBankAccount);
+}
+
+/**
+ * POST /api/v1/bank-accounts/{id}/close — **clôt** un compte bancaire
+ * (Story 28-4a/28-4b, #642 ; Comptable+). Le compte passe en lecture seule :
+ * plus rien ne s'y enregistre, son historique reste lisible ; réversible par
+ * {@link reopenBankAccount}.
+ *
+ * Refus (message traduit par le serveur, à afficher par `errorMessageOf`) :
+ * `412 BANK_ACCOUNT_CANNOT_CLOSE_PRIMARY`, `412 BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS`,
+ * `412 BANK_ACCOUNT_HAS_OPEN_PAYMENT_BATCHES`, `409 OPTIMISTIC_LOCK_CONFLICT`,
+ * `409 BANK_ACCOUNT_CLOSED` (déjà clos), `404` (archivé, inexistant).
+ *
+ * @param closedOn Date de clôture `AAAA-MM-JJ`, informative ; l'écran l'envoie
+ *   toujours (préremplie à la date **locale** du jour).
+ */
+export async function closeBankAccount(
+	id: number,
+	version: number,
+	closedOn: string,
+): Promise<BankAccountSummary> {
+	const raw = await apiClient.post<BankAccountSummaryRaw>(`/api/v1/bank-accounts/${id}/close`, {
+		version,
+		closedOn,
+	});
+	return parseBankAccount(raw);
+}
+
+/**
+ * POST /api/v1/bank-accounts/{id}/reopen — **rouvre** un compte bancaire clos
+ * (Story 28-4a/28-4b, #642 ; Comptable+). Le compte ne redevient pas principal.
+ * Refus : `409 BANK_ACCOUNT_NOT_CLOSED`, `409 OPTIMISTIC_LOCK_CONFLICT`, `404`.
+ */
+export async function reopenBankAccount(id: number, version: number): Promise<BankAccountSummary> {
+	const raw = await apiClient.post<BankAccountSummaryRaw>(`/api/v1/bank-accounts/${id}/reopen`, {
+		version,
+	});
+	return parseBankAccount(raw);
 }
 
 /**

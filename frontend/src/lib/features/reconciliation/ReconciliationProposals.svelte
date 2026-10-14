@@ -142,8 +142,8 @@
 	// d'où l'absence de garde de génération (choix C-15-6-28). ⚠️ Retirer ce `{#key}` exigerait
 	// la garde. Repli `null` — aucun filtrage, la garde serveur de `POST /reconciliation/manual`
 	// tranche — pendant le chargement, en cas d'échec (ignoré sans message, comme le chargement
-	// des comptes ci-dessus), et si le compte bancaire est absent de la liste (archivé) ou non
-	// lié.
+	// des comptes ci-dessus), et si le compte bancaire est absent de la liste (archivé, ou
+	// clos depuis la Story 28-4b : `listBankAccounts()` n'en rend aucun des deux) ou non lié.
 	let bankLedgerAccountId = $state<number | null>(null);
 	$effect(() => {
 		const mountedBankAccountId = bankAccountId;

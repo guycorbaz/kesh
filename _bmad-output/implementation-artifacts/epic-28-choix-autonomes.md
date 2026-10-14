@@ -2822,6 +2822,211 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
 - **Écartées** : laisser la base refuser (`500`).
 - **Réversible** : oui.
 
+*Choix C-28-4-36 à C-28-4-46 : développement de la 28-4b (2026-10-13, Opus 5.5, autonomie).*
+
+### C-28-4-36 — T-b12 : deux niveaux de preuve, choisis par écran
+
+- **Contexte** : l'AC12 veut un E2E qui vérifie l'absence d'un compte clos dans six sélecteurs et la tuile. Deux
+  sélecteurs n'apparaissent que sur une pièce dans un état précis : le paiement d'une facture fournisseur
+  **ouverte** (`pay-bank-account`) et le règlement depuis l'échéancier (une facture échue à régler).
+- **Retenu** : preuve au **DOM** pour la tuile, l'import, la réconciliation, le lot de paiement et le règlement d'une
+  facture client (facture créée et validée par l'API, dialogue ouvert) ; preuve à la **réponse consommée** par
+  l'écran (`GET /api/v1/bank-accounts`, intercepté au chargement) pour l'échéancier et la fiche d'une facture
+  fournisseur — l'AC12 dit précisément que ces écrans ne changent pas de code et que leur **source** exclut les
+  clos. Présence vérifiée de même après réouverture.
+- **Écartées** : fabriquer une facture fournisseur et une facture échue pour ces deux dialogues (montage plus long,
+  pour un sélecteur qui affiche la liste reçue telle quelle) ; s'en tenir à l'API (ne prouve rien des écrans).
+- **Réversible** : oui (test).
+
+### C-28-4-37 — Les refus de la clôture et de la réouverture s'affichent dans le dialogue
+
+- **Contexte** : l'archivage affiche son refus en toast. Les refus de la clôture (`412` principal, transactions non
+  rapprochées, lot généré) disent quoi faire avant de recommencer.
+- **Retenu** : `role="alert"` dans le dialogue (`close-error`, `reopen-error`), par `errorMessageOf` ; le dialogue
+  reste ouvert.
+- **Écartée** : toast (disparaît avant d'être lu, et sépare le refus du geste).
+- **Réversible** : oui.
+
+### C-28-4-38 — « Clore » de la ligne en bouton neutre ; « Clore le compte » en `destructive`
+
+- **Contexte** : consigne de l'orchestrateur — le bouton de clôture emploie la variante `destructive` (28-1), sans
+  classe ajoutée ; la garde (f) de `boutons-rouges-inventory.test.ts` et l'inventaire clos des boutons rouges.
+- **Retenu** : le déclencheur de ligne (`close-{id}`) est un bouton bordé neutre, comme *Lier* et *Modifier* : il
+  ouvre un dialogue et ne fait rien d'irréversible ; la confirmation (`close-confirm-button`) est
+  `<Button variant="destructive">` sans classe. Aucune entrée neuve à l'inventaire des boutons rouges. *Rouvrir* est
+  un bouton par défaut ; *Annuler* des deux dialogues est `outline` (AC11).
+- **Écartées** : déclencheur rouge comme *Archiver* (il faudrait une entrée de classe C à l'inventaire, pour un geste
+  réversible) ; confirmation sans `destructive` (contraire à la consigne).
+- **Réversible** : oui.
+
+### C-28-4-39 — Quatre clés d'écran exemptées de G8 et G8-bis : « rouvrir » vise un compte bancaire
+
+- **Contexte** : G8 / G8-bis (`kesh-i18n/src/loader.rs`) exigent l'ordre et la borne de toute valeur fr-CH qui
+  prescrit de « rouvrir » — ils visent l'exercice. Quatre clés neuves contiennent le verbe :
+  `bank-accounts-actions-reopen`, `bank-accounts-close-dialog-body`, `bank-accounts-reopen-dialog-body`,
+  `reconciliation-failed-bank-account-closed` (recensées par `grep -E "[Rr]ouvr|[Rr]éouv"`).
+- **Retenu** : inscrites aux deux listes `EXEMPTEES` (11 → 15), motif « autre objet », sur le précédent de
+  `bank-accounts-errors-closed` (C-28-4-32). L'assertion « une exemption doit rester au domaine » les tient.
+- **Écartées** : éviter le verbe (l'interface doit dire *Rouvrir*) ; élargir les gardes.
+- **Réversible** : oui.
+
+### C-28-4-40 — `todayLocal` et `formatSwissDate` réutilisés, non recopiés
+
+- **Contexte** : le dialogue préremplit la date **locale** du jour, le badge affiche la date au format suisse.
+- **Retenu** : `todayLocal` (`features/open-items/open-items.ts`, C-15-1c-5 — jamais l'UTC) et `formatSwissDate`
+  (`features/reports/reports.api.ts`, déjà importé par l'accueil et les soldes de départ). Import entre domaines,
+  comme ces deux précédents.
+- **Écartées** : une copie locale (DRY) ; déplacer les deux fonctions dans `shared/` (refactor hors périmètre).
+- **Réversible** : oui.
+
+### C-28-4-41 — Captures d'écran par la spec E2E, sous `KESH_CAPTURES_DIR`
+
+- **Contexte** : l'AC17 veut des captures clair et sombre, hors dépôt.
+- **Retenu** : le parcours T-b13 enregistre ses écrans si `KESH_CAPTURES_DIR` est posé (`page.emulateMedia`,
+  `colorScheme` clair puis sombre) ; sans la variable, la spec ne capture rien. Dossier :
+  `kesh-gate-logs/28-4b-captures/`.
+- **Écartée** : un script Playwright hors `testDir` (la configuration ne le lancerait pas).
+- **Réversible** : oui.
+
+### C-28-4-42 — Le manuel ne nomme pas « annuler le rejet » : l'écran de la 28-5b n'est pas sur la branche
+
+- **Contexte** : l'AC14 demande de nommer la voie « annuler le rejet » de la 28-5 **si elle est mergée**. La route
+  (28-5a) l'est ; l'écran (28-5b) est en cours de fusion, absent de `story/28-4b`.
+- **Retenu** : le manuel dit qu'une transaction rejetée empêche la clôture tant qu'elle n'est pas rapprochée
+  manuellement ou que son import n'est pas supprimé ; `docs/api-external.md` nomme `unreject` (la route existe). Au
+  rebase sur une `main` qui porte la 28-5b, ajouter la voie à l'écran — action écrite au Dev Agent Record.
+- **Écartée** : décrire un bouton absent de l'écran livré.
+- **Réversible** : oui.
+- *Annotation du 2026-10-13 (rebase sur `4687af69`, qui porte la 28-5b)* : l'action est faite — la condition « aucune
+  transaction non rapprochée » du manuel nomme désormais *Annuler le rejet* (détail de l'import, renvoi à la
+  réconciliation).
+
+### C-28-4-43 — Renvoi de l'import corrigé : `sec:comptes-bancaires`, non `sec:ajout-compte`
+
+- **Contexte** : la phrase de l'import (`user-manual.tex`, « comptes bancaires non archivés déclarés dans
+  Administration → Comptes bancaires ») renvoyait à `sec:ajout-compte`, « Ajout d'un compte » du **plan comptable**.
+- **Retenu** : renvoi à `sec:comptes-bancaires`, et à `sec:clore-compte-bancaire` pour un compte clos — la phrase est
+  réécrite par l'AC14 de toute façon.
+- **Réversible** : oui.
+
+### C-28-4-44 — La spec E2E crée ses propres comptes de liquidités (1021, 1022)
+
+- **Contexte** : le plan du seed `with-company` n'a que deux comptes d'actif, `1000` et `1100` — ce dernier est le
+  compte débiteurs désigné, qu'un compte bancaire ne peut pas lier (et que le règlement écarte).
+- **Retenu** : la spec crée au besoin `1021` et `1022` (actif, imputables) et y lie ses deux comptes bancaires,
+  IBAN de test propres à la spec.
+- **Écartée** : lier au compte débiteurs (refusé) ; ne pas lier (la tuile, le lot et le règlement ne proposent qu'un
+  compte lié).
+- **Réversible** : oui (test).
+
+### C-28-4-45 — Apostrophes : droites pour `bank-accounts-*`, typographiques pour `reconciliation-*`
+
+- **Contexte** : le catalogue fr-CH emploie l'apostrophe droite dans l'espace `bank-accounts-*` (« d'abord ») et
+  l'apostrophe typographique dans `reconciliation-failed-*`.
+- **Retenu** : chaque clé neuve suit son espace ; le libellé de la réconciliation dit « rouvrez d’abord le compte »
+  (C-28-4-27), les clés de l'écran « désignez d'abord ».
+- **Réversible** : oui.
+
+### C-28-4-46 — L'atténuation d'une ligne close porte sur ses cellules de données, non sur la ligne
+
+- **Contexte** : recette visuelle (captures AC17) — l'AC11 veut la ligne close « atténuée comme une archivée »
+  (`opacity-50` sur le `<tr>`). Une archivée n'a pas d'action ; une close en a une, *Rouvrir*, qui sortait elle aussi
+  à 50 % et se lisait à peine. `opacity` ne se défait pas dans un enfant.
+- **Retenu** : `opacity-50` sur les quatre cellules de données (banque, IBAN, solde, compte lié), par `dimClass`,
+  pour une archivée comme pour une close ; la cellule d'actions reste pleine. Rendu d'une archivée inchangé. T-b5
+  l'assert (cellule de solde atténuée, cellule de *Rouvrir* et ligne non).
+- **Écartée** : garder l'atténuation sur la ligne (action illisible).
+- **Réversible** : oui.
+
+*Choix C-28-4-47 à C-28-4-50 : remédiation de la revue de code P1 de la 28-4b (2026-10-14, Opus 5.5, autonomie, sur
+consigne de l'orchestrateur).*
+
+### C-28-4-47 — L'action de clôture qualifiée en italien et en anglais ; une garde pour les quatre locales (A-M1)
+
+- **Contexte** : `Chiudi` et `Close` nus sont les verbes du panneau (glossaire, KF-041) ; la 28-4b les avait pris pour
+  *Clore*. G11 ne voit que l'allemand et l'exercice ; le glossaire n'avait pas l'entrée promise par C-28-4-32.
+- **Retenu** : `bank-accounts-actions-close` = **Chiudi il conto** / **Close account** (la confirmation disait déjà
+  « Chiudi il conto » / « Close the account ») ; *Riapri* / *Reopen* inchangés (ce ne sont pas des verbes de panneau) ;
+  deux entrées au glossaire (clore / clos ; rouvrir) ; garde **G11-bis**
+  `la_cloture_d_un_compte_bancaire_ne_parle_pas_comme_un_panneau` : dans les quatre locales, les deux clés d'action
+  de la clôture diffèrent du verbe nu et de toute valeur de panneau. Rouge avant le correctif (it-CH), verte après.
+- **Angle mort écrit au doc-comment** : domaine **nommé** (deux clés), non découvert ; critère de panneau par
+  suffixe de clé (`-close`), que porte `bank-accounts-actions-close`, d'où son retrait explicite.
+- **Écartées** : « Estingui » (vocabulaire bancaire juste, mais absent du catalogue, où les messages serveur de la
+  28-4a disent « chiuso ») ; « Mark as closed » (plus long, sans précédent).
+- **Réversible** : oui.
+
+### C-28-4-48 — Une bascule referme le mode ouvert ; un conflit de version recharge la liste (B-1 = E-4, B-2)
+
+- **Contexte** : masquer les clos pendant le dialogue de réouverture laissait un mode orphelin qui masquait les
+  actions de toutes les lignes ; un `409 OPTIMISTIC_LOCK_CONFLICT` laissait le dialogue rejouer la version périmée.
+- **Retenu** : les deux bascules passent par `toggleAndReload`, qui appelle `closeForm()` d'abord (production,
+  voulu par l'orchestrateur) ; après un conflit de **version** seulement, `refreshAfterVersionConflict` relit la
+  liste, le dialogue restant ouvert avec son message. Les autres refus ne rechargent pas : un `409
+  BANK_ACCOUNT_CLOSED` (déjà clos) ferait disparaître la ligne sous le dialogue.
+- **Angle mort écrit (B-3)** : un `reload()` de geste réussi et celui d'une bascule concurrente ne sont pas ordonnés.
+- **Écartée** : refermer le mode quand son `id` manque après `reload()` (plus général, mais efface le message d'un
+  refus que l'utilisateur n'a pas encore lu).
+- **Réversible** : oui.
+- *Annotation du 2026-10-14 (passe ciblée P2, M1 et L1)* : **remplacé en partie par C-28-4-51**. L'option écartée était
+  la bonne : la correction par site laissait la classe ouverte (le conflit de version reproduisait le mode orphelin),
+  et l'objection — le message du refus perdu — se lève par un message neutre. `toggleAndReload` n'appelle plus
+  `closeForm()` ; `refreshAfterVersionConflict` reste.
+
+### C-28-4-49 — Liste vide : un message qui renvoie aux bascules tant qu'une des deux masque des comptes (A-L6)
+
+- **Contexte** : une société dont les seuls comptes restants sont clos voyait « Aucun compte bancaire configuré »
+  sur l'écran de gestion.
+- **Retenu** : clé neuve `bank-accounts-labels-empty-hidden` (quatre locales) — « Aucun compte bancaire ouvert. Les
+  comptes clos ou archivés éventuels sont masqués : affichez-les par les boutons ci-dessus. » — tant que l'une des
+  deux bascules masque ; le message d'origine quand les deux affichent. « Éventuels » : l'écran ne sait pas s'il en
+  existe (aucune requête de plus).
+- **Écartée** : interroger aussi `includeClosed=true` pour savoir s'il existe des clos (une requête par chargement
+  pour un cas rare).
+- **Réversible** : oui.
+
+### C-28-4-50 — La date locale prouvée par une horloge figée et un fuseau épinglé (E-1)
+
+- **Contexte** : remplacer `todayLocal()` par la date UTC restait vert hors de 00 h - 02 h à Zurich.
+- **Retenu** : test de page — `vi.useFakeTimers({ toFake: ['Date'] })`, `vi.setSystemTime(2026-10-13T22:30Z)`,
+  `process.env.TZ = 'Europe/Zurich'` (Node relit le fuseau à chaque calcul) ; le test vérifie d'abord son propre
+  montage (jour local 14, jour UTC 13), puis la date préremplie `2026-10-14`. Mutation M33 (date UTC) : à tuer.
+- **Écartée** : un `vi.mock` de `todayLocal` (prouverait l'appel, non la date).
+- **Réversible** : oui (test).
+- *Annotation du 2026-10-14* : la mutation a été jouée sous le nom **P1-M1** (la M33 existe déjà dans la 28-4a), tuée.
+
+*Choix C-28-4-51 à C-28-4-52 : remédiation de la passe ciblée P2 de la 28-4b (2026-10-14, Opus 5.5, sur décision de
+l'orchestrateur).*
+
+### C-28-4-51 — La classe « mode orphelin » fermée à la fin de `reload()` (M1, L1)
+
+- **Contexte** : passe ciblée P2, M1 — la remédiation B-1 corrigeait un site (la bascule) ; le conflit de version
+  (B-2) recréait le défaut quand le compte relu n'était plus dans la liste. L1 : la bascule effaçait un formulaire de
+  création, qui ne vise aucun compte.
+- **Retenu** : `closeOrphanMode`, appelé par `reload()` après la relecture de la liste, et nulle part ailleurs : tout
+  mode qui porte un `id` (`edit-full`, `edit-journal`, `archive-confirm`, `close-confirm`, `reopen-confirm`, soit tous
+  les modes sauf `none` et `create`, inventaire tenu par le type `Mode`) dont le compte manque se referme, avec un
+  message neutre `bank-accounts-notice-stale` (quatre locales). `toggleAndReload` n'appelle plus `closeForm()`. Les
+  trois gestes qui retirent eux-mêmes leur compte (archivage, clôture, réouverture réussis) referment leur mode
+  **avant** de recharger, pour que la garde ne présente pas un geste réussi comme un changement survenu ailleurs. Le
+  message s'efface au rechargement suivant.
+- **Écartées** : une garde par site (la cause du défaut) ; une clé existante (aucune ne disait « n'est plus
+  affiché »).
+- **Réversible** : oui.
+- *Annotation du 2026-10-14 (passe ciblée P3)* : deux angles morts assumés, sans production — **L2**, le message
+  survit à l'ouverture d'une autre action jusqu'à la relecture suivante ; **L3**, une bascule perd la sélection non
+  enregistrée de *Lier au plan comptable* (`edit-journal`, état interne du composant démonté par `{#if loading}`),
+  comme sur `origin/main` : non régressif. La détection n'a lieu qu'**au rechargement** (bascule, conflit de version),
+  le manuel le dit.
+
+### C-28-4-52 — Liste vide : trois messages, selon la bascule active (L2)
+
+- **Contexte** : passe ciblée P2, L2 — une seule bascule active, le message nommait « clos ou archivés ».
+- **Retenu** : `bank-accounts-labels-empty-hidden` (les deux masqués), `-hidden-archived` (seuls les archivés),
+  `-hidden-closed` (seuls les clos), `bank-accounts-labels-empty` (rien de masqué) — quatre locales ; complète
+  C-28-4-49.
+- **Réversible** : oui.
+
 [#651]: https://github.com/guycorbaz/kesh/issues/651
 [#642]: https://github.com/guycorbaz/kesh/issues/642
 

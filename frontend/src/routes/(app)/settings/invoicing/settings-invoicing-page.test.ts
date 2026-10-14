@@ -36,9 +36,13 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 // Story 15-6c (#474, AC8) : la page lit les comptes bancaires pour écarter des
 // menus débiteurs et créanciers les comptes qui y sont liés. Par défaut, aucun
 // compte bancaire : les tests existants gardent leur sens.
-const listBankAccountsMock = vi.fn<() => Promise<Array<{ journalAccountId: number | null }>>>();
+// Story 28-4b (#642, T-b10) : les arguments sont transmis au mock, pour que le
+// test du second paramètre (`includeClosed`) les voie.
+const listBankAccountsMock =
+	vi.fn<(includeArchived?: boolean, includeClosed?: boolean) => Promise<Array<{ journalAccountId: number | null }>>>();
 vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
-	listBankAccounts: () => listBankAccountsMock(),
+	listBankAccounts: (includeArchived?: boolean, includeClosed?: boolean) =>
+		listBankAccountsMock(includeArchived, includeClosed),
 }));
 
 import Page from './+page.svelte';
@@ -335,6 +339,16 @@ describe('Paramètres → Facturation — comptes liés à un compte bancaire (S
 		const vatPayable = container.querySelector('[id$="-vat-payable"]') as HTMLSelectElement;
 		expect(optionValues(vatRecoverable)).toContain('1');
 		expect(optionValues(vatPayable)).toContain('11');
+	});
+
+	// Story 28-4b (#642, AC12, T-b10, C-28-4-7) — le serveur compte un compte bancaire
+	// CLOS comme lié à son compte comptable (`first_active_bank_account_linked_to`) :
+	// l'écran demande donc aussi les clos (second paramètre), sans les archivés.
+	it('demande les comptes bancaires clos, non les archivés (includeClosed = true)', async () => {
+		const { findByTestId } = render(Page);
+		await findByTestId('settings-payable-account');
+		expect(listBankAccountsMock).toHaveBeenCalledTimes(1);
+		expect(listBankAccountsMock).toHaveBeenCalledWith(false, true);
 	});
 
 	it('comptes bancaires illisibles : pas de filtre, page affichée', async () => {

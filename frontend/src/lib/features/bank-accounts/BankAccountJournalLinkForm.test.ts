@@ -55,6 +55,7 @@ function makeBankAccount(journalAccountId: number | null): BankAccountSummary {
 		journalAccountId,
 		version: 3,
 		archived: false,
+		closedOn: null,
 		currentBalance: null,
 		statementClosingBalance: null,
 		statementDate: null,

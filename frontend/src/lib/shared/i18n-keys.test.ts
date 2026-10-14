@@ -616,7 +616,22 @@ const ATTENDU = {
 	// n'ajoute aucun site. Sur sa branche (borne `eab77cf1`, 2079) : 2083 ; fusionnée en SECONDE,
 	// après la 28-6 (C-28-5-29), rebasée sur `5629acc2` (2080) : **2084**, recompté par la collecte.
 	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des littéraux), mesurés.
-	sitesTotal: 2084,
+	// Story 28-4b (#642) : **+19**, mesuré par la collecte de ce test sur `story/28-4b`
+	// (2080 → 2099 sur la borne `92087366`), recompté par
+	// `grep -o "i18nMsg(" <fichier> | wc -l` aux deux bornes :
+	// `routes/(app)/bank-accounts/+page.svelte` 51 → 69 (+18 : bascule des clos ×2, badge,
+	// « Rouvrir », « Clore », aide du principal, toasts ×3, dialogue de clôture ×6, dialogue
+	// de réouverture ×3) et `features/reconciliation/failed-proposal-label.ts` 35 → 36 (+1 :
+	// `reconciliation-failed-bank-account-closed`). `sitesNonResolus`, `relais`,
+	// `sitesGabarit` inchangés (que des littéraux), mesurés. Rebasée sur `4687af69` (28-4a et
+	// 28-5b, 2084) : **2103**, mesuré par la collecte de ce test sur la branche rebasée.
+	// Revue de code P1 de la 28-4b (A-L6) : **2103 → 2104** (+1, `bank-accounts/+page.svelte`
+	// 69 → 70 : `bank-accounts-labels-empty-hidden`), mesuré par la collecte et par
+	// `grep -o "i18nMsg("`. `sitesNonResolus`, `relais`, `sitesGabarit` inchangés.
+	// Passe ciblée P2 de la 28-4b (M1, L2) : **2104 → 2107** (+3, `bank-accounts/+page.svelte`
+	// 70 → 73 : `bank-accounts-notice-stale`, `-labels-empty-hidden-archived`, `-hidden-closed`),
+	// mesuré par la collecte et par `grep -o "i18nMsg("`. Les autres compteurs inchangés.
+	sitesTotal: 2107,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

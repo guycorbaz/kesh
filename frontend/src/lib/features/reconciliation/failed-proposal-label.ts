@@ -6,8 +6,8 @@
  * FailedProposal per-proposal* du `CLAUDE.md` ; seul leur affichage est traduit. Patron :
  * `failedItemLabel` (`payment-batches/payment-batch-helpers.ts`).
  *
- * **Les 30 codes** sont ceux que `crates/kesh-api/src/routes/reconciliation.rs` peut poser dans
- * `failed[]` : les 28 littéraux relevés par
+ * **Les 31 codes** sont ceux que `crates/kesh-api/src/routes/reconciliation.rs` peut poser dans
+ * `failed[]` : les 29 littéraux relevés par
  * `grep -ohE 'error_code: "[A-Z_]+"' crates/kesh-api/src/routes/reconciliation.rs | sort -u`,
  * plus les deux codes posés par `DbError::error_code()` (seules formes non littérales du
  * fichier) : `ACCOUNT_NOT_POSTABLE` et, depuis la Story 15-6b (#474),
@@ -26,9 +26,11 @@
  * `RECONCILIATION_ALREADY_REJECTED` : une
  * transaction rejetée refusée par le pré-vol d'un lot (auparavant, le lot entier était refusé
  * en `400`). Depuis la Story 28-5b (#526), son libellé dit où annuler le rejet : le détail de
- * l'import de la transaction. Depuis la Story 28-6 (#482), le littéral ajouté en dernier, qui
- * porte le compte à 28, est `RECONCILIATION_TRANSACTION_NOT_CREDIT` : un débit ou un montant nul
- * proposé contre une facture (un seul libellé pour ses deux `details.reason`).
+ * l'import de la transaction. Depuis la Story 28-6 (#482), le littéral qui porte le compte à
+ * 28 est `RECONCILIATION_TRANSACTION_NOT_CREDIT` : un débit ou un montant nul proposé contre une
+ * facture (un seul libellé pour ses deux `details.reason`). Depuis la Story 28-4b (#642), le
+ * littéral ajouté en dernier, qui porte le compte à 29, est `BANK_ACCOUNT_CLOSED` : les pré-vols
+ * R1 et R2 d'un lot dont le compte bancaire est clos (Story 28-4a).
  *
  * ⚠️ **Cinq codes seulement lisent leur `details`** : `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`
  * (Story 15-6b), pour son `role` — le compte de banque lié au compte débiteurs et le compte
@@ -140,6 +142,13 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 				'Un compte de contrepartie n’est pas imputable : un compte de regroupement, de résultat ou de clôture ne reçoit pas d’écriture. Choisissez un compte imputable.'
 			);
 		}
+		// Story 28-4b (#642, AC13) — compte clos (pré-vols R1, R2 de la 28-4a) ; atteignable
+		// par une course seulement (compte clos dans un autre onglet). Texte de C-28-4-27.
+		case 'BANK_ACCOUNT_CLOSED':
+			return i18nMsg(
+				'reconciliation-failed-bank-account-closed',
+				'Le compte bancaire est clos : il est en lecture seule. Pour y enregistrer une opération, rouvrez d’abord le compte (Administration → Comptes bancaires).'
+			);
 		case 'BANK_ACCOUNT_NOT_CONFIGURED':
 			return i18nMsg(
 				'reconciliation-failed-bank-account-not-configured',
