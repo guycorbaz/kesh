@@ -4,6 +4,7 @@
 
 import { apiClient } from '$lib/shared/utils/api-client';
 import type {
+	ClosingChecksResponse,
 	CreateFiscalYearRequest,
 	FiscalYearResponse,
 	ReopenFiscalYearRequest,
@@ -41,4 +42,13 @@ export async function reopenFiscalYear(
 	req: ReopenFiscalYearRequest
 ): Promise<FiscalYearResponse> {
 	return apiClient.post<FiscalYearResponse>(`/api/v1/fiscal-years/${id}/reopen`, req);
+}
+
+/**
+ * Story 29-1a (#232) — les contrôles préalables à la clôture de l'exercice
+ * (lecture seule, tout rôle). Ils ne bloquent rien : la clôture reste
+ * l'autorité.
+ */
+export async function getClosingChecks(id: number): Promise<ClosingChecksResponse> {
+	return apiClient.get<ClosingChecksResponse>(`/api/v1/fiscal-years/${id}/closing-checks`);
 }

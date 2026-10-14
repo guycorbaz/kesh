@@ -63,6 +63,13 @@ export interface BankAccountSummary {
 	 * bancaires partagent le compte de grand livre.
 	 */
 	ledgerBalanceAtStatement: string | null;
+	/**
+	 * Story 29-1a (#232) — écart livres − relevé, **calculé par le serveur**
+	 * (`bank_accounts::statement_gap`, au centime, demi loin de zéro) : chaîne
+	 * décimale, `null` s'il est nul ou ne se calcule pas. Seule définition de
+	 * l'écart ; le frontend ne le recalcule pas.
+	 */
+	statementGap: string | null;
 }
 
 /**
@@ -87,6 +94,7 @@ interface BankAccountSummaryRaw {
 	statementClosingBalance?: string | null;
 	statementDate?: string | null;
 	ledgerBalanceAtStatement?: string | null;
+	statementGap?: string | null;
 }
 
 function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
@@ -106,6 +114,7 @@ function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
 		statementClosingBalance: raw.statementClosingBalance ?? null,
 		statementDate: raw.statementDate ?? null,
 		ledgerBalanceAtStatement: raw.ledgerBalanceAtStatement ?? null,
+		statementGap: raw.statementGap ?? null,
 	};
 }
 

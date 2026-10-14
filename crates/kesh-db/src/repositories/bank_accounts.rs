@@ -1332,10 +1332,16 @@ pub struct BankAccountBalances {
     pub ledger_balance_at_statement: Option<rust_decimal::Decimal>,
 }
 
-/// Agrégats d'un compte bancaire, lus en une requête (voir
-/// [`list_by_company_with_balances`]).
+/// Agrégats d'un compte bancaire, lus en une requête ([`BALANCES_SQL`], par
+/// [`balances_by_bank_account`] ; voir [`list_by_company_with_balances`]).
+///
+/// `pub(crate)` parce que [`balances_by_bank_account`] la rend au contrôle K3
+/// de la préparation de clôture (`closing_checks`, Story 29-1a) : une
+/// `pub(crate) fn` qui rend un type privé déclencherait `private_interfaces`.
+/// Ses champs restent privés : on les lit par [`balances_from_row`] et
+/// [`is_shared`].
 #[derive(Debug, sqlx::FromRow)]
-struct BalancesRow {
+pub(crate) struct BalancesRow {
     bank_account_id: i64,
     balance: Option<rust_decimal::Decimal>,
     last_entry_date: Option<chrono::NaiveDate>,
@@ -1400,8 +1406,29 @@ pub async fn list_by_company_with_balances(
         return Ok(Vec::new());
     }
 
-    let rows: Vec<BalancesRow> = sqlx::query_as(
-        "SELECT ba.id AS bank_account_id, \
+    let by_bank_account = balances_by_bank_account(pool, company_id, None).await?;
+
+    Ok(accounts
+        .into_iter()
+        .map(|b| {
+            let balances = balances_from_row(b.journal_account_id, by_bank_account.get(&b.id));
+            (b, balances)
+        })
+        .collect())
+}
+
+/// Le texte **unique** des agrégats par compte bancaire (voir
+/// [`list_by_company_with_balances`], § *Forme*) — extrait à la Story 29-1a
+/// (#232, AC3) pour que le contrôle K3 de la préparation de clôture lise
+/// **la même** requête, bornée.
+///
+/// **La borne du relevé de référence** : `(? IS NULL OR period_to <= ?)`, posée
+/// **dans** la table dérivée `st`, **avant** le `ROW_NUMBER()` — sinon `rn = 1`
+/// désignerait le relevé postérieur à la borne, puis serait filtré, et le
+/// compte n'aurait plus de relevé du tout. Sans borne (`NULL`), le résultat est
+/// celui d'avant la story. La correction des dates de valeur est relative à
+/// `st.period_to` : elle reste juste pour un relevé antérieur.
+const BALANCES_SQL: &str = "SELECT ba.id AS bank_account_id, \
                 agg.balance, agg.last_entry_date, \
                 st.closing_balance, st.period_to, \
                 CASE WHEN st.period_to IS NULL OR ba.journal_account_id IS NULL THEN NULL ELSE \
@@ -1454,6 +1481,7 @@ pub async fn list_by_company_with_balances(
                                        ORDER BY period_to DESC, imported_at DESC, id DESC) AS rn \
              FROM bank_imports \
              WHERE company_id = ? AND closing_balance IS NOT NULL \
+               AND (? IS NULL OR period_to <= ?) \
          ) st ON st.bank_account_id = ba.id AND st.rn = 1 \
          LEFT JOIN ( \
              SELECT journal_account_id, COUNT(*) AS n \
@@ -1461,56 +1489,103 @@ pub async fn list_by_company_with_balances(
              WHERE company_id = ? AND journal_account_id IS NOT NULL \
              GROUP BY journal_account_id \
          ) shared ON shared.journal_account_id = ba.journal_account_id \
-         WHERE ba.company_id = ?",
-    )
-    .bind(company_id) // agg : je.company_id
-    .bind(company_id) // agg : bornée aux comptes liés de la société
-    .bind(company_id) // st
-    .bind(company_id) // shared
-    .bind(company_id) // ba.company_id
-    .fetch_all(pool)
-    .await
-    .map_err(map_db_error)?;
+         WHERE ba.company_id = ?";
 
-    let by_bank_account: std::collections::HashMap<i64, BalancesRow> =
-        rows.into_iter().map(|r| (r.bank_account_id, r)).collect();
+/// Les agrégats de [`BALANCES_SQL`] pour **tous** les comptes bancaires de la
+/// société (archivés et clos compris), indexés par `bank_account_id`, sur
+/// l'exécuteur reçu — une connexion du pool, ou celle d'un instantané
+/// (`closing_checks`). **Sans verrou.**
+///
+/// `statement_bound` : `None` = le relevé à solde dont la période se termine le
+/// plus tard (tableau de bord) ; `Some(d)` = le plus tardif de ceux dont
+/// `period_to <= d` (contrôle K3, borne = dernier jour de l'exercice).
+pub(crate) async fn balances_by_bank_account<'e, E>(
+    executor: E,
+    company_id: i64,
+    statement_bound: Option<chrono::NaiveDate>,
+) -> Result<std::collections::HashMap<i64, BalancesRow>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    let rows: Vec<BalancesRow> = sqlx::query_as(BALANCES_SQL)
+        .bind(company_id) // agg : je.company_id
+        .bind(company_id) // agg : bornée aux comptes liés de la société
+        .bind(company_id) // st : company_id
+        .bind(statement_bound) // st : `? IS NULL`
+        .bind(statement_bound) // st : `period_to <= ?`
+        .bind(company_id) // shared
+        .bind(company_id) // ba.company_id
+        .fetch_all(executor)
+        .await
+        .map_err(map_db_error)?;
+    Ok(rows.into_iter().map(|r| (r.bank_account_id, r)).collect())
+}
 
-    Ok(accounts
-        .into_iter()
-        .map(|b| {
-            let balances = match (b.journal_account_id, by_bank_account.get(&b.id)) {
-                (Some(_), Some(r)) => {
-                    // Le partage se compte sur TOUS les comptes de la société,
-                    // archivés compris : la réponse ne dépend pas d'`include_archived`.
-                    let shared = r.sharing.unwrap_or(1) > 1;
-                    let ledger_balance_at_statement = match (
-                        r.ledger_at,
-                        r.booked_before_entered_after,
-                        r.booked_after_entered_before,
-                    ) {
-                        (Some(at), Some(plus), Some(minus)) if !shared => Some(at + plus - minus),
-                        _ => None,
-                    };
-                    BankAccountBalances {
-                        // Compte lié sans aucune ligne → 0 (comportement v014-1).
-                        current_balance: Some(r.balance.unwrap_or(rust_decimal::Decimal::ZERO)),
-                        last_transaction_date: r.last_entry_date,
-                        statement_closing_balance: r.closing_balance,
-                        statement_date: r.period_to,
-                        ledger_balance_at_statement,
-                    }
-                }
-                // Sans compte lié : ni solde comptable ni écart ; le relevé reste.
-                (None, Some(r)) => BankAccountBalances {
-                    statement_closing_balance: r.closing_balance,
-                    statement_date: r.period_to,
-                    ..Default::default()
-                },
-                (_, None) => BankAccountBalances::default(),
+/// Le partage du compte de grand livre lié : **plusieurs** comptes bancaires de
+/// la société (archivés compris) le désignent. Même critère que
+/// [`balances_from_row`] ; le contrôle K3 en tire le motif `NOT_COMPARABLE`,
+/// que [`BankAccountBalances`] ne distingue pas d'un compte sans relevé.
+pub(crate) fn is_shared(row: Option<&BalancesRow>) -> bool {
+    row.is_some_and(|r| r.sharing.unwrap_or(1) > 1)
+}
+
+/// Passage d'une ligne de [`BALANCES_SQL`] aux soldes d'un compte bancaire —
+/// le seul endroit qui sache combiner `ledger_at`, `booked_before_entered_after`
+/// et `booked_after_entered_before` (correction des dates de valeur, voir
+/// [`list_by_company_with_balances`]).
+pub(crate) fn balances_from_row(
+    journal_account_id: Option<i64>,
+    row: Option<&BalancesRow>,
+) -> BankAccountBalances {
+    match (journal_account_id, row) {
+        (Some(_), Some(r)) => {
+            // Le partage se compte sur TOUS les comptes de la société,
+            // archivés compris : la réponse ne dépend pas d'`include_archived`.
+            let shared = is_shared(Some(r));
+            let ledger_balance_at_statement = match (
+                r.ledger_at,
+                r.booked_before_entered_after,
+                r.booked_after_entered_before,
+            ) {
+                (Some(at), Some(plus), Some(minus)) if !shared => Some(at + plus - minus),
+                _ => None,
             };
-            (b, balances)
-        })
-        .collect())
+            BankAccountBalances {
+                // Compte lié sans aucune ligne → 0 (comportement v014-1).
+                current_balance: Some(r.balance.unwrap_or(rust_decimal::Decimal::ZERO)),
+                last_transaction_date: r.last_entry_date,
+                statement_closing_balance: r.closing_balance,
+                statement_date: r.period_to,
+                ledger_balance_at_statement,
+            }
+        }
+        // Sans compte lié : ni solde comptable ni écart ; le relevé reste.
+        (None, Some(r)) => BankAccountBalances {
+            statement_closing_balance: r.closing_balance,
+            statement_date: r.period_to,
+            ..Default::default()
+        },
+        (_, None) => BankAccountBalances::default(),
+    }
+}
+
+/// **L'écart** entre le relevé et les livres, une seule définition côté
+/// serveur (Story 29-1a, #232, C-29-1-17 et C-29-1-25) : servi au tableau de
+/// bord (`statementGap` de `GET /api/v1/bank-accounts`) et lu par le contrôle
+/// K3 de la préparation de clôture.
+///
+/// `None` si l'un des deux termes manque (`ledger_balance_at_statement` ou
+/// `statement_closing_balance`) ; sinon `livres − relevé`, chacun **arrondi au
+/// centime** d'abord (`Money::round_to_centimes`, demi loin de zéro) — les
+/// lignes du grand livre sont en `DECIMAL(19,4)`, le relevé en
+/// `DECIMAL(18,2)` : sans cet arrondi, un reste de `0.0030` passerait pour un
+/// écart. `None` aussi quand l'écart est nul.
+pub fn statement_gap(b: &BankAccountBalances) -> Option<rust_decimal::Decimal> {
+    use kesh_core::types::Money;
+    let ledger = Money::new(b.ledger_balance_at_statement?).round_to_centimes();
+    let statement = Money::new(b.statement_closing_balance?).round_to_centimes();
+    let gap = ledger.amount() - statement.amount();
+    (!gap.is_zero()).then_some(gap)
 }
 
 #[cfg(test)]
@@ -1537,5 +1612,61 @@ mod tests {
         // rouvre pas : refuser l'annulation la rendrait impossible).
         assert!(!ENSURE_OPEN_SQL.contains("archived"));
         assert!(ENSURE_OPEN_UNARCHIVED_SQL.contains("archived"));
+    }
+
+    fn soldes(livres: Option<&str>, releve: Option<&str>) -> BankAccountBalances {
+        BankAccountBalances {
+            ledger_balance_at_statement: livres.map(|s| s.parse().unwrap()),
+            statement_closing_balance: releve.map(|s| s.parse().unwrap()),
+            ..Default::default()
+        }
+    }
+
+    /// T-a14 (Story 29-1a, AC3) — `statement_gap`, l'écart servi au tableau de
+    /// bord et lu par K3. Les quatre premiers cas sont ceux de `homepage.test.ts`
+    /// l. 57-80 à `16eeed21`, repris à l'identique : ils y étaient le test de
+    /// la règle TypeScript, qui disparaît. Mutation tuée : M-a16 (écart brut,
+    /// sans arrondi — le cas `100.0049` / `100.00` rendrait `0.0049`).
+    #[test]
+    fn l_ecart_du_releve_est_arrondi_au_centime() {
+        use rust_decimal_macros::dec;
+        // 800.0000 aux livres contre 1000.00 au relevé : écart de -200.
+        assert_eq!(
+            statement_gap(&soldes(Some("800.0000"), Some("1000.00"))),
+            Some(dec!(-200))
+        );
+        // Un reste inférieur au demi-centime n'est pas un écart.
+        assert_eq!(
+            statement_gap(&soldes(Some("100.0049"), Some("100.00"))),
+            None
+        );
+        // Le demi-centime s'arrondit loin de zéro : 100.005 → 100.01.
+        assert_eq!(
+            statement_gap(&soldes(Some("100.005"), Some("100.01"))),
+            None
+        );
+        assert_eq!(
+            statement_gap(&soldes(Some("-100.005"), Some("-100.01"))),
+            None
+        );
+        // Un terme absent : pas d'écart calculable.
+        assert_eq!(statement_gap(&soldes(None, Some("100.00"))), None);
+        assert_eq!(statement_gap(&soldes(Some("100.00"), None)), None);
+        assert_eq!(statement_gap(&soldes(None, None)), None);
+        // Chaque solde est arrondi avant la soustraction (29-1a, P2 F1) : une
+        // différence brute de 0.008 peut être nulle, une de 0.001 valoir 0.01.
+        assert_eq!(
+            statement_gap(&soldes(Some("100.004"), Some("99.996"))),
+            None
+        );
+        assert_eq!(
+            statement_gap(&soldes(Some("100.005"), Some("100.004"))),
+            Some(dec!(0.01))
+        );
+        // L'écart de 0.005 aux livres en DECIMAL(19,4) vaut un centime.
+        assert_eq!(
+            statement_gap(&soldes(Some("100.005"), Some("100.00"))),
+            Some(dec!(0.01))
+        );
     }
 }

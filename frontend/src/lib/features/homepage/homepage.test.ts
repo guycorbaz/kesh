@@ -22,6 +22,7 @@ function account(over: Partial<BankAccountSummary> = {}): BankAccountSummary {
 		statementClosingBalance: null,
 		statementDate: null,
 		ledgerBalanceAtStatement: null,
+		statementGap: null,
 		...over,
 	};
 }
@@ -54,32 +55,33 @@ describe('ledgerTotal', () => {
 	});
 });
 
+// Story 29-1a (#232, C-29-1-25, T-a16) — l'écart est calculé par le serveur
+// (`bank_accounts::statement_gap`) ; ses cas d'arrondi sont partis en Rust
+// (T-a14, `crates/kesh-db/src/repositories/bank_accounts.rs`), à l'identique.
+// Ici, seule la LECTURE du champ se vérifie : aucun recalcul.
 describe('statementGap', () => {
-	it('rend l’écart solde comptable − relevé', () => {
+	it('lit l’écart servi par le serveur, sans le recalculer', () => {
 		const g = statementGap(
-			account({ ledgerBalanceAtStatement: '800.0000', statementClosingBalance: '1000.00' }),
+			// Livres et relevé égaux, mais le serveur dit -200.00 : c'est lui qui fait foi.
+			account({
+				ledgerBalanceAtStatement: '1000.00',
+				statementClosingBalance: '1000.00',
+				statementGap: '-200.00',
+			}),
 		);
-		expect(g?.toString()).toBe('-200');
+		expect(g?.eq(-200)).toBe(true);
 	});
 
-	it('un écart sous le centime n’en est pas un', () => {
+	it('sans écart servi, aucun écart — même si livres et relevé diffèrent', () => {
 		expect(
-			statementGap(account({ ledgerBalanceAtStatement: '100.0049', statementClosingBalance: '100.00' })),
+			statementGap(
+				account({
+					ledgerBalanceAtStatement: '800.0000',
+					statementClosingBalance: '1000.00',
+					statementGap: null,
+				}),
+			),
 		).toBeNull();
-	});
-
-	it('arrondit à mi-chemin loin de zéro, pas à l’arrondi bancaire', () => {
-		// Arrondi bancaire : 100.005 → 100.00, d'où un faux écart de −0.01.
-		expect(
-			statementGap(account({ ledgerBalanceAtStatement: '100.005', statementClosingBalance: '100.01' })),
-		).toBeNull();
-		expect(
-			statementGap(account({ ledgerBalanceAtStatement: '-100.005', statementClosingBalance: '-100.01' })),
-		).toBeNull();
-	});
-
-	it('sans relevé ou sans solde à sa date, pas d’écart', () => {
-		expect(statementGap(account({ statementClosingBalance: '10.00' }))).toBeNull();
 	});
 });
 

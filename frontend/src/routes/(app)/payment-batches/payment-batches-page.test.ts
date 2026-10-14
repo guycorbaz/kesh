@@ -43,6 +43,7 @@ function compte(id: number, description: string | null): BankAccountSummary {
 		statementClosingBalance: null,
 		statementDate: null,
 		ledgerBalanceAtStatement: null,
+		statementGap: null,
 	};
 }
 

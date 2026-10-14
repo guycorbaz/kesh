@@ -83,6 +83,8 @@ Fiche d'abord **d'inventaire** : ce que la clôture et le report font aujourd'hu
 attendu (à confirmer par la fiche) : **29-1a contrôles préalables** (lecture seule, écran et API) → **29-1b
 transitoires et contre-passation** → éventuellement **29-1c affectation du résultat**. Manuels (PDF), i18n quatre
 locales, E2E de parcours. La répétition à blanc (manuel d'administration) appartient à la dernière sous-story.
+*(Rectifié le 2026-10-14, validation P2 de la 29-1, décision de l'orchestrateur : la répétition à blanc quitte la 29-1b
+et devient la **Story 29-7** (doc), écrite en l'exécutant réellement sur la station — C-29-1-23.)*
 
 ### 29-2 — Un paiement reçu tard est proposé, ou se rapproche à la main ([#529], P2)
 

@@ -180,6 +180,11 @@ pub struct BankAccountWithBalance {
     /// sans relevé, sans compte lié, ou si plusieurs comptes bancaires partagent
     /// le compte de grand livre.
     pub ledger_balance_at_statement: Option<Decimal>,
+    /// Story 29-1a (#232, C-29-1-25) — l'écart entre les livres et le relevé,
+    /// `bank_accounts::statement_gap`, au centime ; `null` si nul ou non
+    /// calculable. Seule définition de l'écart : la page d'accueil l'affiche
+    /// sans le recalculer, le contrôle K3 de la préparation de clôture le lit.
+    pub statement_gap: Option<Decimal>,
 }
 
 // ===========================================================================
@@ -540,6 +545,7 @@ pub async fn list_bank_accounts(
         .into_iter()
         .map(|(account, balances)| BankAccountWithBalance {
             account,
+            statement_gap: bank_accounts::statement_gap(&balances),
             current_balance: balances.current_balance,
             last_transaction_date: balances.last_transaction_date,
             statement_closing_balance: balances.statement_closing_balance,

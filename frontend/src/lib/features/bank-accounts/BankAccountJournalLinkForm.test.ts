@@ -60,6 +60,7 @@ function makeBankAccount(journalAccountId: number | null): BankAccountSummary {
 		statementClosingBalance: null,
 		statementDate: null,
 		ledgerBalanceAtStatement: null,
+		statementGap: null,
 		lastTransactionDate: null,
 	};
 }

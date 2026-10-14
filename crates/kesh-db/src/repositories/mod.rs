@@ -11,6 +11,7 @@ pub mod bank_accounts;
 pub mod bank_imports;
 pub mod bank_profiles;
 pub mod bank_transactions;
+pub mod closing_checks;
 pub mod companies;
 pub mod company_dunning_settings;
 pub mod company_invoice_settings;

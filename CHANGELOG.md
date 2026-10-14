@@ -10,13 +10,19 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.13.4] — Non publié
 
+### Ajouté
+
+- **Préparer la clôture d'un exercice : sept contrôles en lecture seule** ([#232](https://github.com/guycorbaz/kesh/issues/232)). Sur l'écran *Paramètres → Exercices comptables*, le bouton *Préparer la clôture* d'un exercice ouvert — offert à tous les rôles, Consultation comprise — passe l'exercice en revue : exercice antérieur encore ouvert, transactions bancaires à rapprocher, relevé bancaire de fin d'exercice manquant, arrêté trop tôt ou en écart avec les livres, factures en brouillon, factures fournisseur importées à compléter, écritures incohérentes héritées ou restaurées, exercice suivant absent. Chaque contrôle mène à l'écran où l'on agit. Rien ne bloque : le dialogue de clôture rappelle le résultat sans empêcher de clôturer. Par l'API : `GET /api/v1/fiscal-years/{id}/closing-checks`, clés `read` comprises (`docs/api-external.md`). Limites au manuel utilisateur, *Préparer la clôture* : les pièces à compléter ne sont pas bornées à l'exercice, un compte alimenté par CSV seulement est « non vérifiable ».
+
 ### Modifié
 
 - **La page de réconciliation dit, au-dessus de la liste, quelle proposition elle affiche ([#527](https://github.com/guycorbaz/kesh/issues/527)).** Une seule proposition est affichée par transaction : la facture la mieux notée s'il y en a une, sinon la règle d'affectation qui correspond — et une facture proposée passe toujours devant une règle, puisque accepter la règle porterait le paiement du client en produit, la facture restant due. Cet ordre était déjà celui de Kesh ; il est désormais écrit, et dit. API : pour les intégrations par clé d'API, l'ordre des `candidates` de `GET /api/v1/reconciliation/proposals` est désormais écrit et documenté (`docs/api-external.md`) — **il ne change pas**.
+- L'écart entre le relevé et les livres de la page d'accueil est désormais calculé par le serveur — même règle d'arrondi au centime, même résultat — et servi par `GET /api/v1/bank-accounts` (champ `statementGap`), le même que lit la préparation de clôture.
 
 ### Corrigé
 
 - **Un paiement reçu après l'échéance, ou après un rappel, est proposé à la réconciliation ([#529](https://github.com/guycorbaz/kesh/issues/529)).** Une facture n'était proposée — et acceptée — que si le paiement arrivait au plus 30 jours après **sa date**, si bien qu'un client qui payait à 30 jours net avec un peu de retard, ou après un rappel, n'était jamais reconnu — ni celui qui payait à l'heure, mais plus de 30 jours après sa date, une facture à 60 jours. Les 30 jours courent désormais de la plus tardive des trois dates : la date de la facture, son échéance, son dernier rappel (un rappel annulé ne compte pas). Seules les **dates** changent : la facture n'est toujours proposée qu'au montant de son reste dû — un paiement qui inclut les frais de rappel ne l'est pas ([#401](https://github.com/guycorbaz/kesh/issues/401)). La proposition et l'acceptation appliquent toujours la même règle de dates. Un paiement reçu plus de 30 jours après l'échéance et plus de 30 jours après le dernier rappel n'est toujours pas proposé : enregistrez-le depuis la fiche de la facture, puis rejetez la transaction. API : mêmes codes et raisons qu'avant ; une acceptation refusée en `payment_date_outside_window` peut désormais aboutir.
+- Manuel utilisateur : les comptes du bilan sont reportés d'un exercice au suivant que l'exercice précédent soit clôturé ou non — le manuel disait « si clôturé ».
 
 ## [0.13.3] — 2026-10-14
 

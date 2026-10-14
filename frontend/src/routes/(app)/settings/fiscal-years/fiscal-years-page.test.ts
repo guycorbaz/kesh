@@ -39,16 +39,22 @@ const listFiscalYearsMock = vi.fn<() => Promise<FiscalYearResponse[]>>();
 const reopenFiscalYearMock = vi.fn();
 const closeFiscalYearMock = vi.fn();
 const createFiscalYearMock = vi.fn();
+// Story 29-1a (Ta5) — le mock est fait PAR LISTE D'EXPORTS : sans cette entrée,
+// `getClosingChecks` serait `undefined` dans la page.
+const getClosingChecksMock = vi.fn<(id: number) => Promise<ClosingChecksResponse>>();
 vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({
 	listFiscalYears: () => listFiscalYearsMock(),
 	reopenFiscalYear: (id: number, req: { motif: string }) => reopenFiscalYearMock(id, req),
 	closeFiscalYear: (id: number) => closeFiscalYearMock(id),
 	createFiscalYear: (req: unknown) => createFiscalYearMock(req),
 	updateFiscalYear: vi.fn(),
+	getClosingChecks: (id: number) => getClosingChecksMock(id),
 }));
 
 import Page from './+page.svelte';
 import { notifyError } from '$lib/shared/utils/notify';
+import type { ClosingChecksResponse } from '$lib/features/fiscal-years/fiscal-years.types';
+import { closingChecks } from '$lib/features/fiscal-years/closing-checks.test-fixtures';
 
 function fy(overrides: Partial<FiscalYearResponse>): FiscalYearResponse {
 	return {
@@ -70,6 +76,8 @@ beforeEach(() => {
 	reopenFiscalYearMock.mockResolvedValue(fy({ status: 'Open' }));
 	closeFiscalYearMock.mockReset();
 	createFiscalYearMock.mockReset();
+	getClosingChecksMock.mockReset();
+	getClosingChecksMock.mockResolvedValue(closingChecks());
 	vi.mocked(notifyError).mockReset();
 });
 
@@ -330,5 +338,257 @@ describe('bandeau « exercices dans le désordre » (état hérité)', () => {
 		render(Page);
 		await screen.findByTestId('fiscal-year-table');
 		expect(screen.queryByTestId('fiscal-year-out-of-order')).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story 29-1a (#232, AC5, AC6, T-a12) — « Préparer la clôture » et le rappel
+// ---------------------------------------------------------------------------
+
+/** Une promesse qu'on résout ou rejette à la main (chargement en attente). */
+function deferred<T>() {
+	let resolve!: (v: T) => void;
+	let reject!: (e: unknown) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, resolve, reject };
+}
+
+describe('Préparer la clôture — bouton et colonne d’actions (AC5)', () => {
+	it('Consultation : colonne d’actions rendue, « Préparer la clôture » seul', async () => {
+		authState.login({ userId: '3', username: 'lecture', role: 'Consultation', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([
+			fy({ id: 1, status: 'Open' }),
+			fy({ id: 2, name: 'Exercice 2025', startDate: '2025-01-01', endDate: '2025-12-31', status: 'Closed' }),
+		]);
+		render(Page);
+		expect(await screen.findByTestId('fiscal-year-checks-1')).toBeTruthy();
+		expect(screen.getByText('Actions')).toBeTruthy();
+		// Un exercice clos n'a pas de bouton ; aucun geste réservé n'apparaît.
+		expect(screen.queryByTestId('fiscal-year-checks-2')).toBeNull();
+		expect(screen.queryByTestId('fiscal-year-close-1')).toBeNull();
+		expect(screen.queryByLabelText(/Renommer/)).toBeNull();
+		expect(screen.queryByTestId('fiscal-year-reopen-2')).toBeNull();
+	});
+
+	it('Admin : « Préparer la clôture » à côté des gestes existants', async () => {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([fy({ id: 1, status: 'Open' })]);
+		render(Page);
+		expect(await screen.findByTestId('fiscal-year-checks-1')).toBeTruthy();
+		expect(screen.getByTestId('fiscal-year-close-1')).toBeTruthy();
+		expect(screen.getByLabelText(/Renommer Exercice 2026/)).toBeTruthy();
+	});
+
+	it('Consultation : la ligne « aucun exercice » couvre les cinq colonnes', async () => {
+		authState.login({ userId: '3', username: 'lecture', role: 'Consultation', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([]);
+		render(Page);
+		const cell = await screen.findByText('Aucun exercice comptable.');
+		expect(cell.getAttribute('colspan')).toBe('5');
+	});
+});
+
+describe('Préparer la clôture — le panneau (AC5)', () => {
+	it('chargement : l’état d’attente seul ; puis les sept lignes', async () => {
+		authState.login({ userId: '3', username: 'lecture', role: 'Consultation', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([fy({ id: 1, status: 'Open' })]);
+		const d = deferred<ClosingChecksResponse>();
+		getClosingChecksMock.mockReturnValue(d.promise);
+		render(Page);
+		await fireEvent.click(await screen.findByTestId('fiscal-year-checks-1'));
+		expect(await screen.findByTestId('fiscal-year-checks-loading')).toBeTruthy();
+		expect(screen.queryByTestId('fiscal-year-checks-list')).toBeNull();
+		expect(screen.queryByText('Rien à signaler')).toBeNull();
+		expect(getClosingChecksMock).toHaveBeenCalledWith(1);
+		d.resolve(closingChecks());
+		const list = await screen.findByTestId('fiscal-year-checks-list');
+		expect(list.querySelectorAll('[data-testid^="fiscal-year-checks-row-"]')).toHaveLength(7);
+	});
+
+	it('échec : « indisponible », jamais « Rien à signaler »', async () => {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([fy({ id: 1, status: 'Open' })]);
+		getClosingChecksMock.mockRejectedValue({ code: 'INTERNAL', status: 500, message: 'boom' });
+		render(Page);
+		await fireEvent.click(await screen.findByTestId('fiscal-year-checks-1'));
+		expect(await screen.findByTestId('fiscal-year-checks-error')).toBeTruthy();
+		expect(screen.queryByText('Rien à signaler')).toBeNull();
+	});
+});
+
+describe('Rappel dans le dialogue de clôture (AC6)', () => {
+	async function openCloseDialog() {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([fy({ id: 1, status: 'Open' })]);
+		render(Page);
+		await fireEvent.click(await screen.findByTestId('fiscal-year-close-1'));
+		return (await screen.findByTestId('fiscal-year-close-confirm')) as HTMLButtonElement;
+	}
+
+	it('chargement : texte d’attente, ni « Aucun point » ni « point(s) » ; bouton actif (M-a22)', async () => {
+		const d = deferred<ClosingChecksResponse>();
+		getClosingChecksMock.mockReturnValue(d.promise);
+		const confirm = await openCloseDialog();
+		expect(await screen.findByTestId('fiscal-year-close-checks-loading')).toBeTruthy();
+		const rappel = screen.getByTestId('fiscal-year-close-checks').textContent ?? '';
+		expect(rappel).not.toMatch(/Aucun point à vérifier/);
+		expect(rappel).not.toMatch(/point\(s\) à vérifier/);
+		expect(confirm.disabled).toBe(false);
+		d.resolve(closingChecks());
+		expect(await screen.findByTestId('fiscal-year-close-checks-none')).toBeTruthy();
+	});
+
+	it('compte les contrôles en attention, `info` compris (C-29-1-19)', async () => {
+		getClosingChecksMock.mockResolvedValue(
+			closingChecks({
+				DRAFT_INVOICES: { status: 'attention', count: 2, details: { invoices: [] } },
+				NEXT_FISCAL_YEAR: { status: 'attention', count: 1, details: { fiscalYear: null } },
+			}),
+		);
+		const confirm = await openCloseDialog();
+		const count = await screen.findByTestId('fiscal-year-close-checks-count');
+		expect(count.textContent).toMatch(/2 point\(s\) à vérifier/);
+		expect(screen.getByTestId('fiscal-year-close-checks-point-DRAFT_INVOICES').textContent).toBe(
+			'Factures en brouillon',
+		);
+		expect(screen.getByTestId('fiscal-year-close-checks-point-NEXT_FISCAL_YEAR')).toBeTruthy();
+		expect(confirm.disabled).toBe(false);
+	});
+
+	it('les comptes non vérifiables de K3 ne comptent pas', async () => {
+		getClosingChecksMock.mockResolvedValue(
+			closingChecks({
+				BANK_STATEMENT_AT_YEAR_END: {
+					details: {
+						accounts: [],
+						notCheckable: [{ bankAccountId: 6, name: 'Poste', reason: 'NO_BALANCE_STATEMENT' }],
+					},
+				},
+			}),
+		);
+		await openCloseDialog();
+		expect(await screen.findByTestId('fiscal-year-close-checks-none')).toBeTruthy();
+	});
+
+	it('échec : dit sans bloquer', async () => {
+		getClosingChecksMock.mockRejectedValue({ code: 'INTERNAL', status: 500, message: 'boom' });
+		const confirm = await openCloseDialog();
+		expect(await screen.findByTestId('fiscal-year-close-checks-error')).toBeTruthy();
+		expect(screen.queryByTestId('fiscal-year-close-checks-none')).toBeNull();
+		expect(confirm.disabled).toBe(false);
+	});
+
+	it('le lien du rappel ouvre le panneau', async () => {
+		getClosingChecksMock.mockResolvedValue(
+			closingChecks({ DRAFT_INVOICES: { status: 'attention', count: 1, details: { invoices: [] } } }),
+		);
+		await openCloseDialog();
+		await fireEvent.click(await screen.findByTestId('fiscal-year-close-checks-open-panel'));
+		expect(await screen.findByTestId('fiscal-year-checks-list')).toBeTruthy();
+		expect(getClosingChecksMock).toHaveBeenCalledTimes(2);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Revue de code P1 de la 29-1a (E1 = A1) — le jeton de requête (C-29-1-37) :
+// une réponse arrivée APRÈS une demande plus récente est ignorée, qu'elle
+// réussisse ou qu'elle échoue. Chaque cas tue la mutation qui retire l'une des
+// quatre gardes `if (request !== …Request) return;` (M-a23 à M-a26).
+// ---------------------------------------------------------------------------
+
+/** Laisse s'écouler les micro-tâches et un tour de rendu. */
+async function flush(): Promise<void> {
+	await new Promise((r) => setTimeout(r, 0));
+	await new Promise((r) => setTimeout(r, 0));
+}
+
+/** Réponse reconnaissable : un brouillon en attention, que la réponse récente n'a pas. */
+const stale = () =>
+	closingChecks({ DRAFT_INVOICES: { status: 'attention', count: 3, details: { invoices: [] } } });
+
+describe('Jeton de requête — une réponse tardive est ignorée (C-29-1-37)', () => {
+	const deuxOuverts = () => [
+		fy({ id: 1, status: 'Open' }),
+		fy({ id: 2, name: 'Exercice 2025', startDate: '2025-01-01', endDate: '2025-12-31', status: 'Open' }),
+	];
+
+	/** Panneau ouvert sur 2026 (réponse A en attente), fermé, rouvert sur 2025 (réponse B). */
+	async function deuxPanneaux() {
+		authState.login({ userId: '3', username: 'lecture', role: 'Consultation', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue(deuxOuverts());
+		const a = deferred<ClosingChecksResponse>();
+		const b = deferred<ClosingChecksResponse>();
+		getClosingChecksMock.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
+		render(Page);
+		await fireEvent.click(await screen.findByTestId('fiscal-year-checks-1'));
+		await fireEvent.click(await screen.findByTestId('fiscal-year-checks-close'));
+		await fireEvent.click(await screen.findByTestId('fiscal-year-checks-2'));
+		expect(getClosingChecksMock.mock.calls).toEqual([[1], [2]]);
+		return { a, b };
+	}
+
+	it('panneau : la réponse tardive RÉUSSIE de l’exercice précédent ne remplace pas la plus récente (M-a23)', async () => {
+		const { a, b } = await deuxPanneaux();
+		b.resolve(closingChecks());
+		expect(await screen.findByTestId('fiscal-year-checks-list')).toBeTruthy();
+		expect(screen.queryByTestId('fiscal-year-checks-link-DRAFT_INVOICES')).toBeNull();
+		a.resolve(stale());
+		await flush();
+		expect(screen.getByTestId('fiscal-year-checks-list')).toBeTruthy();
+		expect(screen.queryByTestId('fiscal-year-checks-link-DRAFT_INVOICES')).toBeNull();
+		expect(screen.getByTestId('fiscal-year-checks-status-DRAFT_INVOICES').textContent).toContain(
+			'Rien à signaler',
+		);
+	});
+
+	it('panneau : la réponse tardive en ÉCHEC de l’exercice précédent ne remplace pas la plus récente (M-a24)', async () => {
+		const { a, b } = await deuxPanneaux();
+		b.resolve(closingChecks());
+		expect(await screen.findByTestId('fiscal-year-checks-list')).toBeTruthy();
+		a.reject({ code: 'INTERNAL', status: 500, message: 'boom' });
+		await flush();
+		expect(screen.queryByTestId('fiscal-year-checks-error')).toBeNull();
+		expect(screen.getByTestId('fiscal-year-checks-list')).toBeTruthy();
+	});
+
+	/** Dialogue de clôture ouvert (réponse 1 en attente), annulé, rouvert (réponse 2). */
+	async function deuxRappels() {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([fy({ id: 1, status: 'Open' })]);
+		const first = deferred<ClosingChecksResponse>();
+		const second = deferred<ClosingChecksResponse>();
+		getClosingChecksMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+		render(Page);
+		await fireEvent.click(await screen.findByTestId('fiscal-year-close-1'));
+		await screen.findByTestId('fiscal-year-close-checks-loading');
+		await fireEvent.click(screen.getByText('Annuler'));
+		await waitFor(() => expect(screen.queryByTestId('fiscal-year-close-confirm')).toBeNull());
+		await fireEvent.click(screen.getByTestId('fiscal-year-close-1'));
+		await screen.findByTestId('fiscal-year-close-checks-loading');
+		expect(getClosingChecksMock).toHaveBeenCalledTimes(2);
+		return { first, second };
+	}
+
+	it('rappel : la réponse tardive RÉUSSIE de l’ouverture précédente ne remplace pas la plus récente (M-a25)', async () => {
+		const { first, second } = await deuxRappels();
+		second.resolve(closingChecks());
+		expect(await screen.findByTestId('fiscal-year-close-checks-none')).toBeTruthy();
+		first.resolve(stale());
+		await flush();
+		expect(screen.getByTestId('fiscal-year-close-checks-none')).toBeTruthy();
+		expect(screen.queryByTestId('fiscal-year-close-checks-count')).toBeNull();
+	});
+
+	it('rappel : la réponse tardive en ÉCHEC de l’ouverture précédente ne remplace pas la plus récente (M-a26)', async () => {
+		const { first, second } = await deuxRappels();
+		second.resolve(closingChecks());
+		expect(await screen.findByTestId('fiscal-year-close-checks-none')).toBeTruthy();
+		first.reject({ code: 'INTERNAL', status: 500, message: 'boom' });
+		await flush();
+		expect(screen.queryByTestId('fiscal-year-close-checks-error')).toBeNull();
+		expect(screen.getByTestId('fiscal-year-close-checks-none')).toBeTruthy();
 	});
 });

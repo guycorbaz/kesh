@@ -2,7 +2,12 @@
  * Helpers pour les exercices comptables (Story 3.7).
  */
 
-import type { CreateFiscalYearRequest, FiscalYearResponse } from './fiscal-years.types';
+import type {
+	ClosingCheck,
+	ClosingChecksResponse,
+	CreateFiscalYearRequest,
+	FiscalYearResponse
+} from './fiscal-years.types';
 
 /**
  * Longueur maximale du nom d'un exercice (cohérent avec la colonne DB
@@ -98,4 +103,15 @@ export function outOfOrderState(fiscalYears: FiscalYearResponse[]): OutOfOrderSt
 	}
 	// `latest` est postérieur à `open` : `closed` existe toujours ici.
 	return closed === null ? null : { open, closed, latest };
+}
+
+/**
+ * Story 29-1a (#232, AC6, C-29-1-19) — les « points à vérifier » du rappel du
+ * dialogue de clôture : les contrôles au statut `attention`, **toutes
+ * sévérités**, `info` compris (brouillons, pièces à compléter, exercice
+ * suivant absent). Les comptes « non vérifiables » de K3 n'en sont pas : ils
+ * ne changent pas le statut, que le serveur calcule.
+ */
+export function pointsToVerify(checks: ClosingChecksResponse): ClosingCheck[] {
+	return checks.checks.filter((c) => c.status === 'attention');
 }

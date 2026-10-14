@@ -725,15 +725,45 @@ Un exercice comptable est une période sur laquelle s'établissent les comptes a
     \item \textbf{Type} : Standard / Court / Long / Décalé.
 \end{itemize}
 
-Le nouvel exercice s'ouvre vide. Les comptes du bilan sont automatiquement reportés depuis le bilan de clôture de l'exercice précédent (si clôturé).
+Le nouvel exercice s'ouvre vide. Les comptes du bilan y sont automatiquement reportés depuis l'exercice précédent, que celui-ci soit clôturé ou non~: le report est calculé depuis l'origine, à chaque lecture du bilan.
 
 Un exercice \textbf{ne se crée pas avant un exercice clôturé} (depuis la v0.13.0)~: si un exercice dont la date de début est postérieure à celle demandée est déjà clôturé, Kesh refuse la création et nomme cet exercice --- son bilan, cumulatif, reprendrait tout ce que le nouvel exercice contiendrait. Pour créer malgré tout un exercice antérieur, un administrateur rouvre d'abord les exercices clôturés postérieurs, en commençant par le plus récent.
+
+\subsection{Préparer la clôture}\label{sec:preparer-cloture}
+
+Avant de clôturer --- et à tout moment de l'année ---, le bouton \emph{Préparer la clôture} d'un exercice ouvert (\emph{Paramètres} → \emph{Exercices comptables}, colonne \emph{Actions}) ouvre un panneau qui passe l'exercice en revue~: sept \textbf{contrôles préalables}, chacun avec son état --- \emph{Rien à signaler}, ou ce qui reste à faire --- et un lien vers l'écran où l'on agit. Le panneau est offert à \textbf{tous les rôles}, Consultation comprise~: il ne fait que lire.
+
+Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercice antérieur encore ouvert. Le dialogue de clôture en rappelle le résultat au-dessus de sa confirmation (« Aucun point à vérifier », ou la liste des points), sans empêcher de clôturer --- une clôture se défait d'ailleurs par une réouverture motivée (\S\ref{sec:reouverture-exercice}).
+
+\begin{description}
+    \item[Exercices antérieurs] Un exercice plus ancien est encore ouvert~: le panneau nomme le plus ancien, qu'il faut clôturer d'abord. C'est le seul contrôle qui bloque, et c'est la clôture elle-même qui bloque (le bouton \emph{Clôturer} est alors désactivé).
+    \item[Transactions bancaires à rapprocher] Des transactions importées, datées (date de comptabilisation bancaire) dans l'exercice, attendent leur rapprochement --- y compris celles que vous avez écartées des propositions. Lien~: \emph{Réconciliation bancaire} (\S\ref{sec:reconciliation}).
+    \item[Relevés bancaires de fin d'exercice] Pour chaque compte bancaire, le relevé qui \textbf{se termine au plus tard le dernier jour de l'exercice} est comparé aux livres~: relevé manquant, relevé arrêté trop tôt, ou écart entre le solde du relevé et le solde comptable à sa date. Lien~: \emph{Comptes bancaires}.
+    \item[Factures en brouillon] Des factures client datées dans l'exercice n'ont jamais été validées~: elles ne sont pas en comptabilité. Lien~: la liste des factures, filtrée sur les brouillons de l'exercice.
+    \item[Factures fournisseur à compléter] Des pièces importées attendent d'être complétées (\S\ref{sec:import-factures}). Lien~: \emph{Factures fournisseur importées}.
+    \item[Écritures incohérentes] Des écritures déséquilibrées, à moins de deux lignes, datées hors de leur exercice, ou appartenant à un autre exercice mais datées dans celui-ci. Chaque écriture listée mène à sa fiche.
+    \item[Exercice suivant] Aucun exercice ne suit celui-ci~: créez-le pour y passer les écritures de l'année qui vient. Bouton~: \emph{Créer l'exercice suivant}, qui ouvre la création d'un exercice (administrateur et comptable).
+\end{description}
+
+\paragraph{Ce que les contrôles ne disent pas.}
+\begin{itemize}
+    \item Les \textbf{factures fournisseur à compléter} ne sont pas bornées à l'exercice~: une pièce importée n'a pas de date comptable, seulement sa date d'import. Toutes sont comptées.
+    \item Les \textbf{relevés de fin d'exercice} ne se comparent que pour les relevés CAMT, qui portent un solde~; un fichier CSV n'en porte pas (\S\ref{sec:import-bancaire}). Un compte alimenté par CSV seulement, un compte sans compte de grand livre lié, ou dont le compte lié est partagé avec un autre compte bancaire, est dit « non vérifiable », sans compter comme point à vérifier.
+    \item Ce contrôle n'examine que les comptes qui ont, dans l'exercice, une transaction importée, un relevé ou une écriture sur leur compte de grand livre lié --- et ni les comptes archivés, ni ceux clôturés avant le début de l'exercice. Pour un compte clôturé pendant l'exercice, un relevé arrêté à sa date de clôture suffit.
+    \item Le relevé comparé est celui qui \textbf{se termine au plus tard le dernier jour de l'exercice}~: un relevé à cheval sur la fin d'année (du 15 au 15, ou une période choisie à l'export) ne compte pas, et le compte reste « relevé arrêté trop tôt » ou « relevé manquant ». Importez un relevé \textbf{arrêté au dernier jour de l'exercice}.
+    \item L'écart se calcule après avoir arrondi \textbf{chacun des deux soldes} (livres et relevé) au centime, un demi-centime s'arrondissant en s'éloignant de zéro~; un écart nul après cet arrondi n'est pas signalé, tout autre l'est au centime près. Ce n'est donc pas un seuil sur la différence brute~: des livres à 100,004 et un relevé à 99,996 (différence brute 0,008) ne donnent aucun écart, des livres à 100,005 et un relevé à 100,004 (différence brute 0,001) donnent 0,01 --- comme sur la page d'accueil, qui lit le même écart.
+    \item Les \textbf{factures en brouillon} et les \textbf{écritures incohérentes} sont toutes comptées, mais le panneau n'en \textbf{liste que les vingt premières} (par date). Pour les brouillons, le lien ouvre la liste complète~; pour les écritures, les suivantes apparaissent une fois les premières corrigées.
+    \item Seules les \textbf{factures client} en brouillon sont comptées, non les avoirs~: Kesh émet un avoir en une seule étape, sans brouillon (\S\ref{sec:avoirs})~; un avoir en brouillon ne pourrait venir que de données posées hors de Kesh.
+    \item L'\textbf{exercice suivant} est le premier qui commence après la fin de celui-ci, même s'il laisse un trou~: un exercice 2028 créé sans exercice 2027 compte comme suivant d'un exercice 2026, et le contrôle n'a alors rien à signaler.
+    \item Les \textbf{écritures incohérentes} ne peuvent provenir que de données héritées ou restaurées~: aucun chemin d'écriture actuel de Kesh n'en produit. Le contrôle ne vérifie pas que le compte de chaque ligne appartient bien au plan comptable du dossier de l'écriture (état que seule une intervention directe en base produirait).
+    \item Le panneau lit l'exercice \textbf{à un instant}~: il ne suit pas les saisies concurrentes. Un contrôle sans rien à signaler peut ne plus l'être une seconde plus tard (une transaction importée entre-temps).
+\end{itemize}
 
 \subsection{Clôture d'un exercice}
 
 \keshscreenshot{exercice-cloture.png}{Écran de clôture d'un exercice comptable.}  % TODO capture: ecran cloture exercice
 
-\emph{Administration} → \emph{Exercices comptables} → sélectionner l'exercice → \emph{Clôturer}.
+\emph{Administration} → \emph{Exercices comptables} → sélectionner l'exercice → \emph{Clôturer}. Le dialogue de confirmation rappelle d'abord le résultat des contrôles préalables (\S\ref{sec:preparer-cloture}), sans bloquer la clôture.
 
 Les exercices se clôturent \textbf{dans l'ordre} (depuis la v0.13.0)~: un exercice ne se clôture qu'après \textbf{tous ceux qui le précèdent}. Tant qu'un exercice antérieur est encore ouvert, le bouton \emph{Clôturer} est désactivé, et son infobulle nomme l'exercice à clôturer d'abord --- le plus ancien encore ouvert~; Kesh refuse de même la clôture demandée par l'API. Le bilan étant cumulatif depuis l'origine, clôturer un exercice en laissant ouvert un exercice antérieur laisserait son bilan changer après coup.
 
@@ -2989,7 +3019,7 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
 
 \paragraph{Annuelle (1--2 jours)}
 \begin{itemize}
-    \item Clôture de l'exercice (génération bilan, P\&L, balance définitifs).
+    \item Contrôles préalables (\emph{Préparer la clôture}, \S\ref{sec:preparer-cloture}), puis clôture de l'exercice (génération bilan, P\&L, balance définitifs).
     \item Génération de l'export ZIP de souveraineté.
     \item Archivage légal 10 ans.
     \item Création du nouvel exercice.
@@ -3052,7 +3082,7 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[QR-IBAN] IBAN spécial pour les paiements QR Bill avec référence structurée.
     \item[Réconciliation bancaire] Passage en comptabilité des transactions du relevé bancaire~: Kesh crée l'écriture, en réglant une facture client ou en imputant un compte de contrepartie.
     \item[Référence structurée] Référence numérique unique attachée à un paiement (QRR ou ISO 11649). Kesh produit une référence QRR quand le compte principal porte un QR-IBAN, et aucune sinon.
-    \item[Report à nouveau] Solde d'un compte de bilan reporté d'un exercice sur le suivant à la clôture.
+    \item[Report à nouveau] Solde d'un compte de bilan reporté d'un exercice sur le suivant~; Kesh le calcule automatiquement, que l'exercice précédent soit clôturé ou non, sans écriture de report.
     \item[Sous-compte (auxiliaire)] Compte de détail rattaché à un compte principal (ex. 1100.1 pour un client important).
     \item[TVA] Taxe sur la valeur ajoutée (Loi LTVA, RS 641.20).
 \end{description}

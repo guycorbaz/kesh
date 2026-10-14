@@ -132,6 +132,7 @@ describe('bank-accounts.api — champs du relevé dont la période se termine le
 				statementClosingBalance: '1000.00',
 				statementDate: '2026-03-31',
 				ledgerBalanceAtStatement: '1000.0000',
+				statementGap: '-200.00',
 			},
 		]);
 		const [a] = await listBankAccounts();
@@ -139,6 +140,8 @@ describe('bank-accounts.api — champs du relevé dont la période se termine le
 		expect(a.statementClosingBalance).toBe('1000.00');
 		expect(a.statementDate).toBe('2026-03-31');
 		expect(a.ledgerBalanceAtStatement).toBe('1000.0000');
+		// Story 29-1a — l'écart servi par le serveur passe tel quel.
+		expect(a.statementGap).toBe('-200.00');
 	});
 
 	it('une réponse de mutation sans ces champs les rend à null', async () => {
@@ -157,6 +160,7 @@ describe('bank-accounts.api — champs du relevé dont la période se termine le
 		expect(a.statementClosingBalance).toBeNull();
 		expect(a.statementDate).toBeNull();
 		expect(a.ledgerBalanceAtStatement).toBeNull();
+		expect(a.statementGap).toBeNull();
 	});
 
 	// Story 26-2a (#622) — la description est mappée telle quelle ; absente

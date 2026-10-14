@@ -110,6 +110,7 @@ const bankAccount: BankAccountSummary = {
 	statementClosingBalance: null,
 	statementDate: null,
 	ledgerBalanceAtStatement: null,
+	statementGap: null,
 };
 
 describe('page des comptes bancaires — compte lié devenu non imputable (Story 15-5b, AC13)', () => {

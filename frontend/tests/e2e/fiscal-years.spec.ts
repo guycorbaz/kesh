@@ -1,4 +1,7 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type TestInfo } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { seedTestState, clearAuthStorage, authedApiContext, disposeContextSafe } from './helpers/test-state';
 
 /**
@@ -399,5 +402,150 @@ test.describe('AC #22 — fallback toast actionnable', () => {
 		// Assertion 3 : clic action → navigation paramètres (même behavior helper).
 		await toast.getByRole('button', { name: /Ouvrir Paramètres/i }).click();
 		await expect(page).toHaveURL(/\/settings\/fiscal-years/);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story 29-1a (#232, T-a13) — « Préparer la clôture »
+//
+// Le seul test qui voit les contrôles traverser la frontière HTTP jusqu'au panneau. Le
+// relevé CAMT synthétique (IBAN de test) est réécrit, unique à chaque exécution, et
+// supprimé en `finally` ; l'utilisateur Consultation est désactivé (pas de route de
+// suppression). Recette visuelle : panneau et rappel du dialogue de clôture, capturés
+// en clair et en sombre (`page.emulateMedia`) dans `KESH_E2E_CAPTURES_DIR` s'il est
+// posé, sinon dans la sortie du test — hors dépôt, sans référence de comparaison.
+// ---------------------------------------------------------------------------
+
+const CAMT_FIXTURE = path.join(
+	path.dirname(fileURLToPath(import.meta.url)),
+	'fixtures',
+	'camt053_v04_minimal.xml',
+);
+const TEST_IBAN = 'CH4431999123000889012';
+
+function capturePath(testInfo: TestInfo, name: string): string {
+	const dossier = process.env.KESH_E2E_CAPTURES_DIR;
+	return dossier ? path.join(dossier, `${name}.png`) : testInfo.outputPath(`${name}.png`);
+}
+
+/** Compte bancaire de test (créé s'il manque), puis un relevé d'une transaction en attente. */
+async function importPendingTransaction(
+	ctx: import('@playwright/test').APIRequestContext,
+	tag: string,
+): Promise<number> {
+	type Ba = { id: number; iban: string };
+	const find = async (): Promise<Ba | undefined> =>
+		((await (await ctx.get('/api/v1/bank-accounts')).json()) as Ba[]).find((b) => b.iban === TEST_IBAN);
+	let ba = await find();
+	if (!ba) {
+		const res = await ctx.post('/api/v1/bank-accounts', {
+			data: { bankName: 'UBS Test', iban: TEST_IBAN, qrIban: null, isPrimary: true },
+		});
+		expect(res.ok(), `bank-account create: ${res.status()}`).toBeTruthy();
+		ba = await find();
+	}
+	const unique = `${Date.now()}-${tag}`;
+	let xml = fs.readFileSync(CAMT_FIXTURE, 'utf8');
+	for (const [from, to] of [
+		['STMT-2026-05-001', `STMT-CHECKS-${unique}`],
+		['BANK-TX-42', `BANK-TX-CHECKS-${unique}`],
+		['E2E-2026-05-001', `E2E-CHECKS-${unique}`],
+	]) {
+		expect(xml.includes(from), `fixture : « ${from} » introuvable`).toBeTruthy();
+		xml = xml.replace(from, to);
+	}
+	const imported = await ctx.post('/api/v1/bank-imports', {
+		multipart: {
+			bankAccountId: ba!.id.toString(),
+			file: { name: `checks-${unique}.xml`, mimeType: 'application/xml', buffer: Buffer.from(xml, 'utf8') },
+			confirmBalanceMismatch: 'true',
+			confirmDuplicateFile: 'true',
+		},
+	});
+	expect(imported.status(), await imported.text()).toBe(201);
+	return ((await imported.json()) as { id: number }).id;
+}
+
+test.describe('Préparer la clôture (Story 29-1a)', () => {
+	for (const [colorScheme, suffixe] of [
+		['light', 'clair'],
+		['dark', 'sombre'],
+	] as const) {
+		test(`panneau (${suffixe}) : la transaction en attente est signalée, avec le lien vers le rapprochement`, async ({
+			page,
+		}, testInfo) => {
+			await page.emulateMedia({ colorScheme });
+			// Fenêtre haute : la capture montre le panneau entier, sans défilement.
+			await page.setViewportSize({ width: 1280, height: 2000 });
+			await login(page);
+			const ctx = await authedApiContext(page);
+			let importId: number | null = null;
+			try {
+				importId = await importPendingTransaction(ctx, suffixe);
+				const fys = (await (await ctx.get('/api/v1/fiscal-years')).json()) as Array<{ id: number }>;
+				const fyId = fys[0].id;
+				await page.goto('/settings/fiscal-years');
+
+				await page.getByTestId(`fiscal-year-checks-${fyId}`).click();
+				const dialog = page.getByTestId('fiscal-year-checks-dialog');
+				const k2 = dialog.getByTestId('fiscal-year-checks-row-PENDING_BANK_TRANSACTIONS');
+				await expect(k2).toHaveAttribute('data-status', 'attention');
+				await expect(k2).toContainText('en attente de rapprochement');
+				await expect(dialog.getByTestId('fiscal-year-checks-link-PENDING_BANK_TRANSACTIONS')).toHaveAttribute(
+					'href',
+					'/reconciliation',
+				);
+				await expect(dialog.locator('[data-testid^="fiscal-year-checks-row-"]')).toHaveCount(7);
+				await dialog.screenshot({ path: capturePath(testInfo, `29-1a-panneau-${suffixe}`) });
+				await dialog.getByTestId('fiscal-year-checks-close').click();
+
+				// Le rappel du dialogue de clôture compte le point ; le bouton reste actif.
+				await page.getByTestId(`fiscal-year-close-${fyId}`).click();
+				const rappel = page.getByTestId('fiscal-year-close-checks');
+				await expect(rappel.getByTestId('fiscal-year-close-checks-count')).toContainText('point(s) à vérifier');
+				await expect(rappel.getByTestId('fiscal-year-close-checks-point-PENDING_BANK_TRANSACTIONS')).toBeVisible();
+				await expect(page.getByTestId('fiscal-year-close-confirm')).toBeEnabled();
+				await page
+					.locator('[role="dialog"]')
+					.filter({ has: rappel })
+					.screenshot({ path: capturePath(testInfo, `29-1a-rappel-cloture-${suffixe}`) });
+			} finally {
+				if (importId !== null) await ctx.delete(`/api/v1/bank-imports/${importId}`);
+				await disposeContextSafe(ctx);
+			}
+		});
+	}
+
+	test('rôle Consultation : « Préparer la clôture » est offert, sans geste réservé', async ({ page }) => {
+		await login(page);
+		const ctx = await authedApiContext(page);
+		const username = `consult-checks-${Date.now()}`;
+		let userId: number | null = null;
+		try {
+			const created = await ctx.post('/api/v1/users', {
+				data: { username, password: 'MotDePasse12345', role: 'Consultation' },
+			});
+			expect(created.ok(), `create user failed: ${created.status()}`).toBeTruthy();
+			userId = ((await created.json()) as { id: number }).id;
+			const fys = (await (await ctx.get('/api/v1/fiscal-years')).json()) as Array<{ id: number }>;
+			const fyId = fys[0].id;
+
+			await clearAuthStorage(page);
+			await page.goto('/login');
+			await page.fill('#username', username);
+			await page.fill('#password', 'MotDePasse12345');
+			await page.click('button[type="submit"]');
+			await expect(page).toHaveURL('/');
+			await page.goto('/settings/fiscal-years');
+			await page.getByTestId(`fiscal-year-checks-${fyId}`).click();
+			await expect(
+				page.getByTestId('fiscal-year-checks-dialog').locator('[data-testid^="fiscal-year-checks-row-"]'),
+			).toHaveCount(7);
+			await expect(page.getByTestId(`fiscal-year-close-${fyId}`)).toHaveCount(0);
+		} finally {
+			// Le contexte d'API reste celui de l'administrateur, ouvert avant le changement de session.
+			if (userId !== null) await ctx.put(`/api/v1/users/${userId}/disable`);
+			await disposeContextSafe(ctx);
+		}
 	});
 });

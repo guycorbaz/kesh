@@ -178,18 +178,36 @@ const LIST_EARLIER_SQL: &str = "SELECT id FROM fiscal_years \
 const LOCK_EARLIER_BY_ID_SQL: &str =
     "SELECT id FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE";
 
-/// Étape (d) de [`close`] : le **plus ancien** exercice antérieur **ouvert**, en
-/// lecture **verrouillante** — donc sur l'état validé le plus récent, non sur la
-/// vue fixée à l'étape (a). C'est elle qui rend le verdict
-/// [`DbError::EarlierFiscalYearOpen`].
-///
-/// ⚠️ Porte aussi le texte `ORDER BY start_date ASC` … `FOR UPDATE` que les
-/// tests de la Story 15-8a attendent pour [`FIND_LATER_CLOSED_SQL`] : aucune
-/// clôture ne tourne pendant leurs attentes (vérifié, Story 15-12a T0).
-const FIND_EARLIER_OPEN_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+/// Le **plus ancien** exercice antérieur **ouvert** — texte **sans verrou**,
+/// partagé par l'étape (d) de [`close`] (qui y ajoute `FOR UPDATE`, par
+/// [`earlier_open_locking_sql`]) et par [`find_earliest_earlier_open`] (lecture
+/// ordinaire du contrôle K1 de la préparation de clôture, Story 29-1a, #232) :
+/// un seul texte, jamais deux requêtes qui finiraient par diverger (C-29-1-18).
+const EARLIER_OPEN_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
      FROM fiscal_years \
      WHERE company_id = ? AND start_date < ? AND status = 'Open' \
-     ORDER BY start_date ASC LIMIT 1 FOR UPDATE";
+     ORDER BY start_date ASC LIMIT 1";
+
+/// Étape (d) de [`close`] : [`EARLIER_OPEN_SQL`] en lecture **verrouillante** —
+/// donc sur l'état validé le plus récent, non sur la vue fixée à l'étape (a).
+/// C'est elle qui rend le verdict [`DbError::EarlierFiscalYearOpen`]. **Seule
+/// source** du texte verrouillant : `close` l'exécute, et le test T-a15 la
+/// compare à l'ancienne constante — il voit donc ce que `close` exécute.
+///
+/// ⚠️ Rend, octet pour octet, le texte qu'exécutait `close` avant la Story
+/// 29-1a, qui porte aussi le `ORDER BY start_date ASC` … `FOR UPDATE` que les
+/// tests de la Story 15-8a attendent pour [`FIND_LATER_CLOSED_SQL`] : aucune
+/// clôture ne tourne pendant leurs attentes (vérifié, Story 15-12a T0).
+fn earlier_open_locking_sql() -> String {
+    format!("{EARLIER_OPEN_SQL} FOR UPDATE")
+}
+
+/// Le premier exercice de la société qui **commence après** une date — texte
+/// sans verrou de [`find_next_after`].
+const NEXT_AFTER_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+     FROM fiscal_years \
+     WHERE company_id = ? AND start_date > ? \
+     ORDER BY start_date ASC LIMIT 1";
 
 // --- Story 3.7 — clés Invariant namespacées (Pass 2 HP2-M4) ---
 
@@ -865,8 +883,8 @@ pub async fn find_later_closed_in_tx(
 /// ⚠️ Les tests de concurrence de la Story 15-8a reconnaissent la requête
 /// verrouillante à son texte (`attendre_une_requete_en_cours`, motifs
 /// `ORDER BY start_date ASC` et `FOR UPDATE`) : le changer, c'est changer leurs
-/// motifs. Depuis la Story 15-12a, [`FIND_EARLIER_OPEN_SQL`] porte aussi ce
-/// texte ; les attentes de la 15-8a restent sans ambiguïté tant qu'aucune
+/// motifs. Depuis la Story 15-12a, le texte verrouillant de l'étape (d) de
+/// [`close`] ([`earlier_open_locking_sql`]) porte aussi ce texte ; les attentes de la 15-8a restent sans ambiguïté tant qu'aucune
 /// clôture ne tourne pendant elles (vérifié en T0 ; sinon, passer au motif
 /// `"start_date > "`).
 const FIND_LATER_CLOSED_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
@@ -899,6 +917,49 @@ pub async fn find_later_closed(
         .bind(company_id)
         .bind(start_date)
         .fetch_optional(conn)
+        .await
+        .map_err(map_db_error)
+}
+
+/// Le **plus ancien** exercice ouvert de la société qui commence avant
+/// `start_date`, **sans verrou** — le contrôle K1 de la préparation de clôture
+/// (Story 29-1a, #232, `closing_checks`). Même texte que l'étape (d) de
+/// [`close`], moins le `FOR UPDATE` ([`EARLIER_OPEN_SQL`]) : l'écran annonce ce
+/// que la clôture refuserait, la clôture reste l'autorité.
+pub async fn find_earliest_earlier_open<'e, E>(
+    executor: E,
+    company_id: i64,
+    start_date: NaiveDate,
+) -> Result<Option<FiscalYear>, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    sqlx::query_as::<_, FiscalYear>(EARLIER_OPEN_SQL)
+        .bind(company_id)
+        .bind(start_date)
+        .fetch_optional(executor)
+        .await
+        .map_err(map_db_error)
+}
+
+/// Le **premier** exercice de la société dont `start_date > end_date` — tous
+/// statuts, **sans verrou** ([`NEXT_AFTER_SQL`], `ORDER BY start_date ASC LIMIT
+/// 1`). Le contrôle K7 de la préparation de clôture (Story 29-1a, #232) et
+/// l'étape (4) de la contre-passation au début de l'exercice suivant (Story
+/// 29-1b) l'appellent tous deux (C-29-1-18). Le `status` rendu est celui de la
+/// vue de l'appelant : un chemin d'écriture le confirme sous verrou.
+pub async fn find_next_after<'e, E>(
+    executor: E,
+    company_id: i64,
+    end_date: NaiveDate,
+) -> Result<Option<FiscalYear>, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    sqlx::query_as::<_, FiscalYear>(NEXT_AFTER_SQL)
+        .bind(company_id)
+        .bind(end_date)
+        .fetch_optional(executor)
         .await
         .map_err(map_db_error)
 }
@@ -996,7 +1057,7 @@ pub async fn list_by_company(
 ///   depuis (a) → `NotFound` ; Y clos → « déjà clos »
 ///   (`IllegalStateTransition`) ;
 /// - **(d)** **relecture verrouillante** du plus ancien antérieur ouvert
-///   (`FIND_EARLIER_OPEN_SQL`) : lecture verrouillante, donc sur l'état
+///   (`earlier_open_locking_sql()`) : lecture verrouillante, donc sur l'état
 ///   **validé le plus récent**, non sur la vue fixée en (a). C'est elle qui rend
 ///   le verdict [`DbError::EarlierFiscalYearOpen`] — l'invariant I en dépend,
 ///   quel que soit le plan ;
@@ -1112,7 +1173,7 @@ pub async fn close(
 
     // (d) Relecture verrouillante : le plus ancien antérieur ouvert, sur l'état
     // validé le plus récent.
-    let earliest_open = sqlx::query_as::<_, FiscalYear>(FIND_EARLIER_OPEN_SQL)
+    let earliest_open = sqlx::query_as::<_, FiscalYear>(&earlier_open_locking_sql())
         .bind(company_id)
         .bind(target.start_date)
         .fetch_optional(&mut *tx)
@@ -1328,4 +1389,27 @@ async fn fetch_fiscal_year_in_tx(
 
     fy_opt
         .ok_or_else(|| DbError::Invariant(format!("fiscal_year {id} introuvable après opération")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// T-a15 (Story 29-1a, AC3-bis) — `earlier_open_locking_sql()`, la fonction
+    /// même que l'étape (d) de [`close`] exécute, rend **octet pour octet** le
+    /// texte d'avant la factorisation. La référence est recopiée ici, figée :
+    /// les motifs des tests de concurrence 15-8a et 15-12a reconnaissent ce
+    /// texte, et une dérive de `EARLIER_OPEN_SQL` changerait leur sens.
+    #[test]
+    fn le_texte_verrouillant_de_la_cloture_est_inchange() {
+        // Le texte de l'ancienne constante de l'étape (d), retirée à la Story 29-1a.
+        const REFERENCE_FIGEE: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+     FROM fiscal_years \
+     WHERE company_id = ? AND start_date < ? AND status = 'Open' \
+     ORDER BY start_date ASC LIMIT 1 FOR UPDATE";
+        assert_eq!(earlier_open_locking_sql(), REFERENCE_FIGEE);
+        // La lecture ordinaire de K1 ne verrouille rien.
+        assert!(!EARLIER_OPEN_SQL.to_uppercase().contains("FOR UPDATE"));
+        assert!(!NEXT_AFTER_SQL.to_uppercase().contains("FOR UPDATE"));
+    }
 }

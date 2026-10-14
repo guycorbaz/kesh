@@ -221,8 +221,16 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * *(Fusion du 2026-10-11 : les deux déclarations — `bankAccountOptionLabel` de la 26-2a et
  * `csvLineErrorLabel` de la 26-1 — ont été ajoutées chacune sur 61 ; elles s'additionnent :
  * 63 candidates, `conforme` 49.)*
+ *
+ * ⚠️ **63 → 68, et les cinq déclarations sont NOMMÉES** (Story 29-1a, #232 — « Préparer la
+ * clôture ») : `notCheckableText` et `entryReasonText` (`lib/features/fiscal-years/
+ * closing-checks-labels.ts`), `severityLabel`, `statementText` et `pendingText`
+ * (`lib/features/fiscal-years/FiscalYearChecks.svelte`). Chaque branche délègue à `i18nMsg`
+ * (clés `fiscal-years-checks-*`) : aucun littéral, donc `conforme` **49 → 54** ; `ecartee` ne
+ * bouge pas. *Identifiées en cherchant les suffixes `Label`, `Text`, `Display` dans les
+ * fichiers de la story ; `checkTitle` et `checkHelp` n'en portent pas.*
  */
-const CANDIDATES_ATTENDUES = 63;
+const CANDIDATES_ATTENDUES = 68;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -739,7 +747,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 49 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 54 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);
