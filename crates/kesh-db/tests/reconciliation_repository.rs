@@ -257,6 +257,9 @@ const HASH_X: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123
 /// à `D + 1` est candidate, `D` étant la date de paiement ; `D − 31` (paiement
 /// plus de 30 jours après la facture) et `D + 2` (paiement plus d'un jour
 /// avant la facture) ne le sont pas. Les deux bornes, de part et d'autre.
+/// Les factures n'ont ni échéance ni rappel : leur date d'ancrage est leur
+/// date (Story 29-2 ; l'ancre est éprouvée par
+/// `the_anchor_is_the_latest_of_date_due_date_and_last_reminder`).
 #[sqlx::test(migrations = "./test-schema")]
 async fn find_unpaid_invoices_filters_by_30_day_window(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
@@ -1223,8 +1226,9 @@ struct AnchorCase {
 /// cas) : la liste rendue par la proposition est assertée comme un `Vec`
 /// **ordonné, répétitions comprises** (une table dérivée qui rendrait une
 /// ligne par rappel dédoublerait f — M15), et l'ancre scalaire de
-/// l'acceptation est assertée pour **chaque** cas, candidat ou non (seule
-/// assertion qui voie g — M14).
+/// l'acceptation est assertée pour **chaque** cas, candidat ou non : c'est la
+/// seule assertion qui voie l'ancre de g, refusée dans les deux formes (une
+/// ancre qui suivrait l'échéance antérieure à la date — mutation M14bis).
 #[sqlx::test(migrations = "./test-schema")]
 async fn the_anchor_is_the_latest_of_date_due_date_and_last_reminder(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;

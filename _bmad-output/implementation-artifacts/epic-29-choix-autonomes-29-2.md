@@ -102,6 +102,12 @@ Fiche : `29-2-paiement-tardif.md`.*
   rejeter** la transaction.
 - **Écartée** : ouvrir une issue séparée (la phrase vit dans les paragraphes que la story réécrit).
 - **Réversible** : oui.
+- *(Annotation du 2026-10-14, développement — information de l'orchestrateur : le geste prescrit est aujourd'hui
+  **impraticable à l'écran** — une ligne « Aucune correspondance » n'a pas de case à cocher
+  (`ReconciliationProposals.svelte`, l. 318-330), et *Rejeter* n'agit que sur les lignes cochées. **Décision de
+  l'orchestrateur** : la **Story 29-6** (#665), même release v0.13.4, rendra possible le rejet d'une ligne sans
+  proposition, et **doit être mergée avant le tag v0.13.4**. La 29-2 ne change pas son code pour cela et garde le texte
+  prescrit du manuel.)*
 
 ### C-29-2-9 — Le reliquat (plus de 30 jours après l'échéance, sans rappel) : couvert par #666
 
@@ -183,6 +189,36 @@ Fiche : `29-2-paiement-tardif.md`.*
   (AC4).
 - **Écartées** : (a) taire la course (le manuel promettrait une absence de refus que le code ne tient pas) ; (b) un
   libellé d'écran propre à ce refus (texte d'écran, i18n, hors du périmètre minimal, C-29-2-6).
+- **Réversible** : oui.
+
+### C-29-2-15 — L'ancre est écrite par `macro_rules!`, en deux termes, pour que la 29-5 y insère l'exigibilité
+
+- **Contexte** : consigne de l'orchestrateur au développement. La Story 29-5 (#668) réécrira l'ancre à partir d'une
+  expression d'**exigibilité** `max(date, échéance)`. Deux `const &str` ne se composent pas (`concat!` n'accepte que
+  des littéraux ; le dépôt n'a pas `const_format`).
+- **Retenu** : l'ancre et sa jointure sont des `macro_rules!` (`invoice_payment_anchor_sql!`,
+  `invoice_payment_anchor_join_sql!`), sur le patron de `accounts.rs` (`columns!`) et `invoices.rs`
+  (`invoice_columns!`) ; les `const` `INVOICE_PAYMENT_ANCHOR_SQL` et `INVOICE_PAYMENT_ANCHOR_JOIN_SQL` en dérivent pour
+  les requêtes `format!`, et la requête scalaire de l'acceptation est assemblée par `concat!` sur les mêmes macros.
+  L'ancre s'écrit `CAST(GREATEST(GREATEST(i.date, COALESCE(i.due_date, i.date)), COALESCE(DATE(rmd.last_sent_at),
+  i.date)) AS DATE)` — équivalente au `GREATEST` à trois termes de la fiche (`GREATEST` est associatif) —, dont le
+  premier terme, sur sa propre ligne du `concat!`, est **l'exigibilité** : la 29-5 le remplace par l'appel de sa
+  macro, sans toucher au terme du rappel, ni aux tests (qui n'assertent que des dates).
+- **Écartées** : (a) un `const` à trois termes (non composable sans copie) ; (b) définir dès ici la macro
+  d'exigibilité (préempterait le nom et la place que la 29-5 choisira, et ferait conflit au rebase) ; (c) ajouter
+  `const_format` (dépendance neuve pour une seule composition).
+- **Conséquence pour les mutations** : M1, M5 et M14 portent sur le premier terme (M1 le réduit à `i.date`, M14 à
+  `COALESCE(i.due_date, i.date)`, M5 à `GREATEST(i.date, i.due_date)`), le `GREATEST` intérieur exigeant deux
+  arguments.
+- **Réversible** : oui.
+
+### C-29-2-16 — Un `\label{sec:algorithme-matching}` neuf pour le renvoi du § des rappels
+
+- **Contexte** : AC8 demande, à `:1305`, un renvoi « à `\S\ref{sec:facture-posterieure}` ou à l'algorithme » ; le
+  § *Algorithme de matching* n'avait pas de label, et c'est lui qui dit la règle.
+- **Retenu** : poser `\label{sec:algorithme-matching}` (libre au dépôt, `grep -rn algorithme-matching docs/manual`
+  vide avant), et y renvoyer depuis `:1305` et la FAQ.
+- **Écartée** : renvoyer à `sec:facture-posterieure` (il traite de la borne haute, pas de l'ancre).
 - **Réversible** : oui.
 
 [#529]: https://github.com/guycorbaz/kesh/issues/529

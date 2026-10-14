@@ -148,7 +148,10 @@ macro_rules! invoice_payment_anchor_join_sql {
 /// facture sans échéance ou sans rappel disparaîtrait des candidates. Le
 /// `GREATEST` sur `i.date` couvre une échéance antérieure à la date
 /// (données d'avant #245, la garde de l'API ne portant que sur une paire
-/// modifiée).
+/// modifiée). Aujourd'hui, le repli `i.date` du terme du rappel la couvre
+/// aussi (retirer `i.date` du seul premier terme est une mutation
+/// équivalente, M14) ; le premier terme la porte quand même, parce qu'il
+/// doit valoir l'exigibilité à lui seul.
 ///
 /// `DATE(rmd.last_sent_at)` : `sent_at` est un `DATETIME(6)`, saisi (rappel
 /// manuel) ou UTC (rappel envoyé par e-mail) ; l'écart de fuseau d'un jour
