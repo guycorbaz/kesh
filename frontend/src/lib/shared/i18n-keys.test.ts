@@ -659,7 +659,13 @@ const ATTENDU = {
 	// `-labels-select-transaction`, `-select-transaction-no-counterparty`),
 	// `ContactPersonsManager.svelte` 15 → 16 (`contact-persons-confirm-delete`). Que des
 	// littéraux : les autres compteurs inchangés.
-	sitesTotal: 2186,
+	// Story 29-1b (#232, contre-passer au début de l'exercice suivant) : **+7**, écrit
+	// « 2163 → 2170 » sur sa base, mesuré par la collecte de ce test et recompté par
+	// `grep -o "i18nMsg("` aux deux bornes : `routes/(app)/journal-entries/[id]/+page.svelte`
+	// 20 → 27 (bouton, titre, corps et aide du dialogue, trois motifs). Que des littéraux : les
+	// autres compteurs inchangés. Réunion au rebase de la 29-1b sur la v0.13.4 (2026-10-15) :
+	// 2186 + 7 = **2193**.
+	sitesTotal: 2193,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

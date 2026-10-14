@@ -13,6 +13,8 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import { authState } from '$lib/app/stores/auth.svelte';
 import type { JournalEntryDetailResponse } from '$lib/features/journal-entries/journal-entries.types';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
+import { goto } from '$app/navigation';
 
 vi.mock('$app/environment', () => ({ browser: true }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
@@ -23,18 +25,25 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 /** Les clés demandées par la page, pour prouver la clé et non le seul repli. */
 const keysAsked = vi.hoisted(() => new Set<string>());
 vi.mock('$lib/features/onboarding/onboarding.svelte', () => ({
-	i18nMsg: (key: string, fallback: string) => {
+	// Story 29-1b — les variables `{ $x }` du repli sont remplacées, comme le
+	// fait le vrai `i18nMsg` : la confirmation doit NOMMER la date et l'exercice.
+	i18nMsg: (key: string, fallback: string, args?: Record<string, string | number>) => {
 		keysAsked.add(key);
-		return fallback;
+		return fallback.replace(/\{ \$(\w+) \}/g, (m, k: string) =>
+			args && k in args ? String(args[k]) : m
+		);
 	}
 }));
-vi.mock('svelte-sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock('svelte-sonner', () => ({ toast: toastMock }));
 
 const getJournalEntryMock = vi.fn<() => Promise<JournalEntryDetailResponse>>();
+const reverseNextYearMock = vi.fn<(id: number) => Promise<{ id: number }>>();
 vi.mock('$lib/features/journal-entries/journal-entries.api', () => ({
 	getJournalEntry: () => getJournalEntryMock(),
 	deleteJournalEntry: vi.fn(),
-	reverseJournalEntry: vi.fn()
+	reverseJournalEntry: vi.fn(),
+	reverseJournalEntryAtNextFiscalYearStart: (id: number) => reverseNextYearMock(id)
 }));
 const fetchAccountsMock = vi.fn<() => Promise<AccountResponse[]>>();
 vi.mock('$lib/features/accounts/accounts.api', () => ({
@@ -46,7 +55,13 @@ vi.mock('$lib/features/projects/projects.api', () => ({
 			{ id: 3, code: 'P1', name: 'Projet un', parentId: null, active: true }
 		])
 }));
-vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({ listFiscalYears: vi.fn() }));
+// Story 29-1b (P3 R7) — la page lit la liste des exercices à son OUVERTURE : le
+// mock rend par défaut une liste vide résolue (posée dans `beforeEach`), et les
+// cas de T-b8 lui donnent succès, échec ou attente.
+const listFiscalYearsMock = vi.fn<() => Promise<FiscalYearResponse[]>>();
+vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({
+	listFiscalYears: () => listFiscalYearsMock()
+}));
 vi.mock('$lib/features/settings/settings.api', () => ({ fetchCompanyCurrent: vi.fn() }));
 vi.mock('$lib/features/invoices/invoices.api', () => ({ getInvoiceSettings: vi.fn() }));
 
@@ -114,6 +129,7 @@ async function renderEntry(e: JournalEntryDetailResponse) {
 
 beforeEach(() => {
 	fetchAccountsMock.mockResolvedValue([]);
+	listFiscalYearsMock.mockResolvedValue([]);
 	authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
 });
 
@@ -246,5 +262,164 @@ describe('fiche d’écriture — motif `ENTRY_LETTERED` (15-1c-ii, test 2)', ()
 		await renderEntry(lettered());
 		expect(screen.queryByTestId('modification-blocked-reason')).toBeNull();
 		expect(screen.getByTestId('entry-line-lettering-1').querySelector('a')?.textContent).toBe('AB');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story 29-1b (#232) — T-b8 : « Contre-passer au début de l'exercice suivant »
+// ---------------------------------------------------------------------------
+
+function fy(
+	id: number,
+	name: string,
+	startDate: string,
+	endDate: string,
+	status: 'Open' | 'Closed' = 'Open'
+): FiscalYearResponse {
+	return {
+		id,
+		companyId: 1,
+		name,
+		startDate,
+		endDate,
+		status,
+		createdAt: '2026-01-01T00:00:00',
+		updatedAt: '2026-01-01T00:00:00'
+	};
+}
+
+/** L'exercice de l'écriture (`fiscalYearId: 1` dans `entry()`). */
+const N = fy(1, 'Exercice 2026', '2026-01-01', '2026-12-31');
+
+const BUTTON = 'reverse-entry-next-year';
+const REASON = 'reverse-entry-next-year-reason';
+
+/** Rend la fiche, puis laisse la lecture des exercices aboutir. */
+async function renderWithYears(e: JournalEntryDetailResponse) {
+	const r = await renderEntry(e);
+	await waitFor(() => expect(listFiscalYearsMock).toHaveBeenCalled());
+	// Une micro-tâche de plus : la réponse de la liste est appliquée après l'appel.
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	return r;
+}
+
+describe('fiche d’écriture — contre-passer au début de l’exercice suivant (29-1b, T-b8)', () => {
+	it('liste en cours de lecture : ni bouton ni motif (M-b12)', async () => {
+		listFiscalYearsMock.mockReturnValue(new Promise(() => {}));
+		await renderWithYears(entry());
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.queryByTestId(REASON)).toBeNull();
+		// « Contre-passer » (du jour) ne dépend pas de la liste.
+		expect(screen.getByTestId('reverse-entry')).toBeTruthy();
+	});
+
+	it('échec de la liste : le motif d’indisponibilité, et « Contre-passer » reste', async () => {
+		listFiscalYearsMock.mockRejectedValue(new Error('réseau'));
+		await renderWithYears(entry());
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.getByTestId(REASON).textContent?.trim()).toBe(
+			'La liste des exercices n’a pas pu être lue : rechargez la page pour contre-passer au début de l’exercice suivant.'
+		);
+		expect(screen.getByTestId('reverse-entry')).toBeTruthy();
+		expect(keysAsked.has('journal-entries-reverse-next-year-reason-unavailable')).toBe(true);
+	});
+
+	it('aucun exercice ne suit : le motif le dit (un antérieur n’est pas un suivant)', async () => {
+		listFiscalYearsMock.mockResolvedValue([fy(9, 'Exercice 2025', '2025-01-01', '2025-12-31'), N]);
+		await renderWithYears(entry());
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.getByTestId(REASON).textContent?.trim()).toBe(
+			'Pour contre-passer au début de l’exercice suivant, créez d’abord l’exercice suivant.'
+		);
+	});
+
+	it('l’exercice suivant est clôturé : le motif le nomme (M-b8)', async () => {
+		listFiscalYearsMock.mockResolvedValue([
+			N,
+			fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31', 'Closed')
+		]);
+		await renderWithYears(entry());
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.getByTestId(REASON).textContent?.trim()).toBe(
+			'L’exercice suivant, « Exercice 2027 », est clôturé : la contre-passation ne peut pas y être datée.'
+		);
+	});
+
+	it('l’exercice suivant est ouvert : le bouton, sans motif ; la confirmation nomme la date et l’exercice', async () => {
+		// Désordre voulu, et un N+2 : c'est le PREMIER suivant qui compte.
+		listFiscalYearsMock.mockResolvedValue([
+			fy(3, 'Exercice 2028', '2028-01-01', '2028-12-31'),
+			N,
+			fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31')
+		]);
+		await renderWithYears(entry());
+		expect(screen.queryByTestId(REASON)).toBeNull();
+		screen.getByTestId(BUTTON).click();
+		await waitFor(() =>
+			expect(screen.getByTestId('reverse-entry-next-year-dialog-body').textContent?.trim()).toBe(
+				'La contre-passation sera datée du 01.01.2027, dans l’exercice « Exercice 2027 ».'
+			)
+		);
+		expect(screen.getByTestId('reverse-entry-next-year-confirm')).toBeTruthy();
+	});
+
+	it('confirmer appelle la route neuve et ouvre l’écriture créée', async () => {
+		listFiscalYearsMock.mockResolvedValue([N, fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31')]);
+		reverseNextYearMock.mockResolvedValue({ id: 99 });
+		await renderWithYears(entry());
+		screen.getByTestId(BUTTON).click();
+		await waitFor(() => expect(screen.getByTestId('reverse-entry-next-year-confirm')).toBeTruthy());
+		screen.getByTestId('reverse-entry-next-year-confirm').click();
+		await waitFor(() => expect(goto).toHaveBeenCalledWith('/journal-entries/99'));
+		expect(reverseNextYearMock).toHaveBeenCalledWith(7);
+	});
+
+	it('un refus s’affiche traduit, jamais « [object Object] » (#520)', async () => {
+		listFiscalYearsMock.mockResolvedValue([N, fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31')]);
+		reverseNextYearMock.mockRejectedValue({
+			code: 'NEXT_FISCAL_YEAR_CLOSED',
+			status: 409,
+			message: 'L’exercice suivant, « Exercice 2027 », est clôturé : la contre-passation ne peut pas y être datée.'
+		});
+		await renderWithYears(entry());
+		screen.getByTestId(BUTTON).click();
+		await waitFor(() => expect(screen.getByTestId('reverse-entry-next-year-confirm')).toBeTruthy());
+		screen.getByTestId('reverse-entry-next-year-confirm').click();
+		await waitFor(() => expect(toastMock.error).toHaveBeenCalled());
+		const shown = String(toastMock.error.mock.calls[0][0]);
+		expect(shown).toBe(
+			'L’exercice suivant, « Exercice 2027 », est clôturé : la contre-passation ne peut pas y être datée.'
+		);
+		expect(shown).not.toContain('[object Object]');
+	});
+
+	it('écriture non contre-passable, aucun suivant : ni bouton ni motif', async () => {
+		listFiscalYearsMock.mockResolvedValue([N]);
+		await renderWithYears(
+			entry({ reversable: false, reversalBlockedBy: 'ALREADY_REVERSED', reversedByEntryId: 8 })
+		);
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.queryByTestId(REASON)).toBeNull();
+	});
+
+	it('écriture non contre-passable, suivant ouvert : ni bouton ni motif', async () => {
+		listFiscalYearsMock.mockResolvedValue([N, fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31')]);
+		await renderWithYears(
+			entry({ reversable: false, reversalBlockedBy: 'ALREADY_REVERSED', reversedByEntryId: 8 })
+		);
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.queryByTestId(REASON)).toBeNull();
+	});
+
+	it('rôle Consultation : ni bouton ni motif (C-15-8-14)', async () => {
+		await authState.logout();
+		authState.login({ userId: '2', username: 'lecteur', role: 'Consultation', expiresIn: 3600 });
+		for (const years of [[N, fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31')], [N]]) {
+			listFiscalYearsMock.mockResolvedValue(years);
+			const { unmount } = await renderWithYears(entry());
+			expect(screen.queryByTestId(BUTTON)).toBeNull();
+			expect(screen.queryByTestId(REASON)).toBeNull();
+			unmount();
+		}
 	});
 });

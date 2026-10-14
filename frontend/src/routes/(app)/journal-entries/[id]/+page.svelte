@@ -7,8 +7,15 @@
 	import {
 		deleteJournalEntry,
 		getJournalEntry,
-		reverseJournalEntry
+		reverseJournalEntry,
+		reverseJournalEntryAtNextFiscalYearStart
 	} from '$lib/features/journal-entries/journal-entries.api';
+	import {
+		nextYearReversal,
+		type FiscalYearsState,
+		type NextYearReversal
+	} from '$lib/features/journal-entries/next-year-reversal';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import type { JournalEntryDetailResponse } from '$lib/features/journal-entries/journal-entries.types';
 	import {
 		MODIFICATION_LABEL_IN_MESSAGE,
@@ -31,9 +38,24 @@
 	import LetteringCodeLink from '$lib/features/open-items/LetteringCodeLink.svelte';
 
 	let entry = $state<JournalEntryDetailResponse | null>(null);
-	/** Story 24-4a (#380) — contre-passation. */
-	let showReverseConfirm = $state(false);
+	/**
+	 * Story 24-4a (#380) — contre-passation ; Story 29-1b (#232) — au début de
+	 * l'exercice suivant. Le dialogue de confirmation est UN, son geste dit
+	 * lequel : `null` fermé.
+	 */
+	let reverseConfirm = $state<'today' | 'nextYear' | null>(null);
 	let reversing = $state(false);
+	/**
+	 * Story 29-1b (#232) — la liste des exercices, lue à l'OUVERTURE de la page
+	 * (non au clic) pour savoir si le bouton s'offre : `null` en cours, `'error'`
+	 * en échec. Le jeton écarte la réponse tardive d'une écriture quittée.
+	 * ⚠️ `startEdit` garde sa propre lecture, au clic : la liste a pu changer.
+	 */
+	let fiscalYears = $state<FiscalYearsState>(null);
+	let fiscalYearsToken = 0;
+	let nextYear = $derived<NextYearReversal>(
+		entry ? nextYearReversal(fiscalYears, entry.fiscalYearId) : { kind: 'loading' }
+	);
 	/** Story 15-8b (#532) — suppression, dans le cadre de la modification. */
 	let showDeleteConfirm = $state(false);
 	let deleting = $state(false);
@@ -60,10 +82,54 @@
 		void loadEntry(id);
 	});
 
+	/** Lit la liste des exercices (Story 29-1b), sans retarder la fiche. */
+	function loadFiscalYears() {
+		const token = ++fiscalYearsToken;
+		fiscalYears = null;
+		// `Promise.resolve().then` : un appel qui lève ou rend autre chose qu'une
+		// promesse finit en échec lisible, jamais en exception de la page.
+		Promise.resolve()
+			.then(() => listFiscalYears())
+			.then(
+				(years) => {
+					if (token === fiscalYearsToken) fiscalYears = Array.isArray(years) ? years : 'error';
+				},
+				() => {
+					if (token === fiscalYearsToken) fiscalYears = 'error';
+				}
+			);
+	}
+
+	/** Le motif affiché à la place du bouton absent (AC15), `''` s'il n'y en a pas. */
+	function nextYearReason(state: NextYearReversal): string {
+		switch (state.kind) {
+			case 'unavailable':
+				return i18nMsg(
+					'journal-entries-reverse-next-year-reason-unavailable',
+					'La liste des exercices n’a pas pu être lue : rechargez la page pour contre-passer au début de l’exercice suivant.'
+				);
+			case 'missing':
+				return i18nMsg(
+					'journal-entries-reverse-next-year-reason-missing',
+					'Pour contre-passer au début de l’exercice suivant, créez d’abord l’exercice suivant.'
+				);
+			case 'closed':
+				return i18nMsg(
+					'journal-entries-reverse-next-year-reason-closed',
+					'L’exercice suivant, « { $name } », est clôturé : la contre-passation ne peut pas y être datée.',
+					{ name: state.year.name }
+				);
+			case 'loading':
+			case 'open':
+				return '';
+		}
+	}
+
 	async function loadEntry(id: number) {
 		loading = true;
 		entry = null;
 		errorMsg = '';
+		loadFiscalYears();
 		if (!Number.isFinite(id) || id <= 0) {
 			errorMsg = "Identifiant d'écriture invalide";
 			loading = false;
@@ -274,12 +340,16 @@
 	}
 
 	async function confirmReverse() {
-		if (!entry || reversing) return;
+		const mode = reverseConfirm;
+		if (!entry || reversing || !mode) return;
 		reversing = true;
 		try {
-			const created = await reverseJournalEntry(entry.id);
+			const created =
+				mode === 'nextYear'
+					? await reverseJournalEntryAtNextFiscalYearStart(entry.id)
+					: await reverseJournalEntry(entry.id);
 			toast.success(i18nMsg('journal-entries-reverse-success', 'Écriture contre-passée'));
-			showReverseConfirm = false;
+			reverseConfirm = null;
 			await goto(`/journal-entries/${created.id}`);
 		} catch (err) {
 			// Le serveur porte le message traduit ET le chemin de correction :
@@ -287,6 +357,13 @@
 			toast.error(
 				isApiError(err) ? err.message : i18nMsg('error-unexpected', 'Erreur inattendue.')
 			);
+			// Story 29-1b — un refus de l'exercice suivant (clôturé, ou supprimé
+			// entre-temps) change ce que la fiche doit annoncer : elle se relit, et
+			// le motif prend la place du bouton.
+			if (mode === 'nextYear') {
+				reverseConfirm = null;
+				void loadEntry(id);
+			}
 		} finally {
 			reversing = false;
 		}
@@ -331,9 +408,23 @@
 					<Button
 						variant="outline"
 						data-testid="reverse-entry"
-						onclick={() => (showReverseConfirm = true)}
+						onclick={() => (reverseConfirm = 'today')}
 					>
 						{i18nMsg('journal-entries-reverse-action', 'Contre-passer')}
+					</Button>
+				{/if}
+				<!-- Story 29-1b (#232) — mêmes conditions que « Contre-passer », et un
+				     exercice suivant OUVERT dans la liste ; sinon, le motif plus bas. -->
+				{#if entry.reversable && nextYear.kind === 'open'}
+					<Button
+						variant="outline"
+						data-testid="reverse-entry-next-year"
+						onclick={() => (reverseConfirm = 'nextYear')}
+					>
+						{i18nMsg(
+							'journal-entries-reverse-next-year-action',
+							'Contre-passer au début de l’exercice suivant'
+						)}
 					</Button>
 				{/if}
 			</div>
@@ -350,6 +441,11 @@
 			{#if !entry.reversable && entry.reversalBlockedBy}
 				<p class="text-sm text-text-muted" data-testid="reverse-blocked-reason">
 					{blockedMessage(entry)}
+				</p>
+			{/if}
+			{#if entry.reversable && nextYearReason(nextYear)}
+				<p class="text-sm text-text-muted" data-testid="reverse-entry-next-year-reason">
+					{nextYearReason(nextYear)}
 				</p>
 			{/if}
 		</div>
@@ -480,8 +576,9 @@
 	</table>
 {/if}
 
-<!-- Confirmation de contre-passation — Story 24-4a (#380). -->
-{#if showReverseConfirm && entry}
+<!-- Confirmation de contre-passation — Story 24-4a (#380) ; au début de
+     l'exercice suivant — Story 29-1b (#232), qui nomme la date et l'exercice. -->
+{#if entry && (reverseConfirm === 'today' || (reverseConfirm === 'nextYear' && nextYear.kind === 'open'))}
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
 		role="dialog"
@@ -490,27 +587,55 @@
 		aria-describedby="reverse-confirm-desc"
 	>
 		<div class="bg-card border border-border rounded-lg p-6 max-w-md mx-4 shadow-lg">
-			<h2 id="reverse-confirm-title" class="text-lg font-semibold mb-2">
-				{i18nMsg('journal-entries-reverse-dialog-title', 'Contre-passer cette écriture ?')}
-			</h2>
-			<p id="reverse-confirm-desc" class="text-sm text-text-muted mb-4">
-				{i18nMsg(
-					'journal-entries-reverse-dialog-body',
-					"Kesh créera une écriture inverse à la date du jour. L'écriture d'origine reste intacte dans ses montants, ses comptes, sa date et son libellé — seules ses lignes reçoivent, le cas échéant, la marque de lettrage qui les apparie à l'écriture inverse : c'est la correction qui doit se voir, pas disparaître."
-				)}
-			</p>
+			{#if nextYear.kind === 'open' && reverseConfirm === 'nextYear'}
+				<h2 id="reverse-confirm-title" class="text-lg font-semibold mb-2">
+					{i18nMsg(
+						'journal-entries-reverse-next-year-dialog-title',
+						'Contre-passer au début de l’exercice suivant ?'
+					)}
+				</h2>
+				<p
+					id="reverse-confirm-desc"
+					class="text-sm mb-2"
+					data-testid="reverse-entry-next-year-dialog-body"
+				>
+					{i18nMsg(
+						'journal-entries-reverse-next-year-dialog-body',
+						'La contre-passation sera datée du { $date }, dans l’exercice « { $name } ».',
+						{ date: formatSwissDate(nextYear.year.startDate), name: nextYear.year.name }
+					)}
+				</p>
+				<p class="text-sm text-text-muted mb-4">
+					{i18nMsg(
+						'journal-entries-reverse-next-year-help',
+						'Pour les transitoires de fin d’exercice : l’écriture inverse annule la régularisation au premier jour de l’exercice suivant. L’écriture d’origine reste intacte ; ni elle ni sa contre-passation ne pourront plus être modifiées ni supprimées — une erreur se corrigera par une écriture complémentaire.'
+					)}
+				</p>
+			{:else}
+				<h2 id="reverse-confirm-title" class="text-lg font-semibold mb-2">
+					{i18nMsg('journal-entries-reverse-dialog-title', 'Contre-passer cette écriture ?')}
+				</h2>
+				<p id="reverse-confirm-desc" class="text-sm text-text-muted mb-4">
+					{i18nMsg(
+						'journal-entries-reverse-dialog-body',
+						"Kesh créera une écriture inverse à la date du jour. L'écriture d'origine reste intacte dans ses montants, ses comptes, sa date et son libellé — seules ses lignes reçoivent, le cas échéant, la marque de lettrage qui les apparie à l'écriture inverse : c'est la correction qui doit se voir, pas disparaître."
+					)}
+				</p>
+			{/if}
 			<div class="flex justify-end gap-2">
 				<Button
 					type="button"
 					variant="outline"
-					onclick={() => (showReverseConfirm = false)}
+					onclick={() => (reverseConfirm = null)}
 					disabled={reversing}
 				>
 					{i18nMsg('journal-entries-reverse-cancel', 'Annuler')}
 				</Button>
 				<Button
 					type="button"
-					data-testid="reverse-entry-confirm"
+					data-testid={reverseConfirm === 'nextYear'
+						? 'reverse-entry-next-year-confirm'
+						: 'reverse-entry-confirm'}
 					onclick={confirmReverse}
 					disabled={reversing}
 				>
