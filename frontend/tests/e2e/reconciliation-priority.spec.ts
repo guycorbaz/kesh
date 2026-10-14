@@ -16,8 +16,15 @@
  *   0,1 (contact), la règle correspond.
  *
  * Ce qui tient la facture hors de portée des autres specs, c'est le reste de 0,01 que laisse
- * l'acceptation. Si le parcours échoue avant, le `finally` la règle de 972,89 par l'API, ce qui
- * laisse le même reste (C-29-3-18) ; la règle et l'import sont supprimés.
+ * l'acceptation. Si le parcours échoue avant, le `finally` règle la facture de 972,89 par l'API,
+ * ce qui laisse le même reste (C-29-3-18) ; la règle et l'import sont supprimés. Chaque nettoyage
+ * a son propre `try`, statut vérifié ; l'erreur d'origine n'est jamais masquée.
+ *
+ * Limite : la ligne est cherchée dans la première page de propositions (`GET /proposals`,
+ * 100 transactions au plus, lues par identifiant croissant). Si d'autres specs laissaient plus de
+ * 100 transactions en attente sur le compte de test partagé, la transaction neuve en sortirait et
+ * `candidate-top-1` n'apparaîtrait jamais (délai de 10 s, sans diagnostic propre) — aucun cas
+ * constaté à ce jour.
  *
  * # Recette visuelle
  *
@@ -119,9 +126,10 @@ async function restoreJournalLink(ctx: APIRequestContext, original: BankAccount)
 	const list = (await (await ctx.get('/api/v1/bank-accounts')).json()) as BankAccount[];
 	const current = list.find((b) => b.id === original.id);
 	if (current) {
-		await ctx.put(`/api/v1/bank-accounts/${original.id}`, {
+		const res = await ctx.put(`/api/v1/bank-accounts/${original.id}`, {
 			data: { ...current, journalAccountId: original.journalAccountId },
 		});
+		if (!res.ok()) throw new Error(`restauration du lien : statut ${res.status()}`);
 	}
 }
 
@@ -157,6 +165,7 @@ for (const [colorScheme, suffixe] of [
 		let ruleId: number | null = null;
 		let importId: number | null = null;
 		let unlinked: BankAccount | null = null;
+		let parcoursReussi = false;
 		try {
 			const baId = await bankAccountId(ctx);
 			unlinked = await linkToLedger(ctx, baId);
@@ -238,34 +247,68 @@ for (const [colorScheme, suffixe] of [
 			await expect(row).toHaveCount(0);
 			await expect(page.getByTestId('reconciliation-failed')).toHaveCount(0);
 			expect(await amountDue(ctx, invoiceId)).toBe(0.01);
+			parcoursReussi = true;
 		} finally {
+			// Chaque nettoyage dans son propre `try` : l'échec de l'un n'empêche pas les suivants, et
+			// l'erreur d'origine du parcours n'est jamais masquée (un `throw` dans un `finally`
+			// l'écraserait). Les échecs de nettoyage sont rapportés, et ne font échouer le test que
+			// si le parcours lui-même a réussi.
+			const cleanupFailures: string[] = [];
+			const step = async (label: string, run: () => Promise<void>): Promise<void> => {
+				try {
+					await run();
+				} catch (e) {
+					cleanupFailures.push(`${label} : ${e instanceof Error ? e.message : String(e)}`);
+				}
+			};
+			const ok = (res: { ok(): boolean; status(): number }, what: string): void => {
+				if (!res.ok()) throw new Error(`${what} : statut ${res.status()}`);
+			};
 			// C-29-3-18 — une facture restée due à 972,90 serait candidate À MONTANT EXACT pour
 			// toute transaction de 972,90 d'un autre spec : la régler laisse le même reste de 0,01.
-			if ((await amountDue(ctx, invoiceId)) === 972.9) {
-				const cash = (
-					(await (await ctx.get('/api/v1/accounts')).json()) as Array<{
-						id: number;
-						number: string;
-						accountType: string;
-						active: boolean;
-						postable: boolean;
-					}>
-				).find((a) => a.active && a.postable && a.accountType === 'Asset' && a.number.startsWith('10'));
-				if (cash) {
-					await ctx.post(`/api/v1/invoices/${invoiceId}/settlements`, {
-						data: {
-							settlementType: 'internal_account',
-							accountId: cash.id,
-							amount: '972.89',
-							settledOn: '2026-05-15',
-						},
-					});
-				}
+			await step('règlement de secours', async () => {
+				if ((await amountDue(ctx, invoiceId)) !== 972.9) return;
+				const accountsRes = await ctx.get('/api/v1/accounts');
+				ok(accountsRes, 'lecture des comptes');
+				const cash = ((await accountsRes.json()) as Array<{
+					id: number;
+					number: string;
+					accountType: string;
+					active: boolean;
+					postable: boolean;
+				}>).find((a) => a.active && a.postable && a.accountType === 'Asset' && a.number.startsWith('10'));
+				if (!cash) throw new Error('aucun compte de liquidités imputable');
+				const settled = await ctx.post(`/api/v1/invoices/${invoiceId}/settlements`, {
+					data: {
+						settlementType: 'internal_account',
+						accountId: cash.id,
+						amount: '972.89',
+						settledOn: '2026-05-15',
+					},
+				});
+				ok(settled, 'règlement de secours');
+			});
+			if (ruleId !== null) {
+				const id = ruleId;
+				await step('suppression de la règle', async () =>
+					ok(await ctx.delete(`/api/v1/reconciliation/rules/${id}`), 'suppression de la règle'),
+				);
 			}
-			if (ruleId !== null) await ctx.delete(`/api/v1/reconciliation/rules/${ruleId}`);
-			if (importId !== null) await ctx.delete(`/api/v1/bank-imports/${importId}`);
-			if (unlinked !== null) await restoreJournalLink(ctx, unlinked);
-			await disposeContextSafe(ctx);
+			if (importId !== null) {
+				const id = importId;
+				await step('suppression de l’import', async () =>
+					ok(await ctx.delete(`/api/v1/bank-imports/${id}`), 'suppression de l’import'),
+				);
+			}
+			if (unlinked !== null) {
+				const original = unlinked;
+				await step('restauration du lien du compte bancaire', () => restoreJournalLink(ctx, original));
+			}
+			await step('libération du contexte', () => disposeContextSafe(ctx));
+			if (cleanupFailures.length > 0) {
+				console.warn(`[reconciliation-priority] nettoyage incomplet : ${cleanupFailures.join(' ; ')}`);
+				if (parcoursReussi) throw new Error(`nettoyage incomplet : ${cleanupFailures.join(' ; ')}`);
+			}
 		}
 	});
 }
