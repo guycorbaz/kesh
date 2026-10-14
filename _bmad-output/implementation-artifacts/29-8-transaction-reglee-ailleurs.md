@@ -5,16 +5,17 @@
 **ready-for-dev** — fiche créée le 2026-10-14 en autonomie (`bmad-create-story`, Opus 5.5), sur `fcd2ae75` (kickoff de
 l'Epic 29), branche `story/29-8`, worktree `/home/gcorbaz/devel/kesh-29-8`. Story **ajoutée à l'Epic 29** sur décision
 de Guy (2026-10-14) ; sortie dans la **v0.13.4**. Choix consignés au registre propre à la story,
-`epic-29-choix-autonomes-29-8.md`, **C-29-8-1 à C-29-8-28** (à verser par union au registre de l'epic). 10 AC.
+`epic-29-choix-autonomes-29-8.md`, **C-29-8-1 à C-29-8-29** (à verser par union au registre de l'epic). 10 AC.
 Validation P1 faite (Sonnet, lentilles R et F : 0/0/4/7 et 0/1/3/5), remédiée le 2026-10-14 ; validation P2 faite
-(Opus : 0/0/5/5 et 0/0/5/6), remédiée le 2026-10-14 (Change Log, **signal D5 déclaré**) ; validation P3 à lancer
-(`29-8-validate-prompt-p3.md`, Sonnet, lentilles R et F). PR : **`closes #670`** — dans le titre
+(Opus : 0/0/5/5 et 0/0/5/6), remédiée le 2026-10-14 (Change Log, **signal D5 déclaré**) ; validation P3 faite
+(Sonnet : R 0/0/2/7, F 0/0/0/7), remédiée le 2026-10-14 — **validation close** (Change Log : la remédiation ne touche aucune ligne
+de production). PR : **`closes #670`** — dans le titre
 ou le corps de la PR **seulement**, jamais dans un message de commit, même en prose (B4 de la rétrospective 28).
 
 ⚠️ **Dernière de la série de la réconciliation** : elle touche `ReconciliationProposals.svelte` (comme l'AC10 de la
-29-6), `routes/reconciliation.rs` (comme les 29-2, 29-3, 29-6) et réécrit des phrases du manuel que **la 29-2 et la
+29-6), `routes/reconciliation.rs` (comme les 29-2, 29-3, 29-6) et réécrit des phrases du manuel que **les 29-2, 29-5 et
 29-6 écrivent** (« … puis rejetez la transaction »). Le développement **commence par un rebase** sur `origin/main` une
-fois la 29-6 mergée, et **relit tous les numéros de ligne** de cette fiche, relevés sur `fcd2ae75` (§ *Zones
+fois les 29-2, 29-5 et 29-6 mergées, et **relit tous les numéros de ligne** de cette fiche, relevés sur `fcd2ae75` (§ *Zones
 partagées*).
 
 ## Story
@@ -113,11 +114,15 @@ depuis par `PATCH /bank-accounts/{id}`) vérifierait `0 ≤ t.amount ≤ 0,05` p
 (`settle_invoice` refuse `amount <= 0`, `invoice_settlements_write.rs:76`) : `M > 0` n'écarte aucun cas réel. La somme se fait par une table
 dérivée **par écriture**, en **jointure interne** sur les lignes du compte lié actuel : une écriture sans ligne sur ce
 compte ne produit **aucune** ligne (ni `COALESCE` à 0, ni `NULL` qui passerait un test mal écrit) — **c'est cette
-jointure qui écarte le cas `M = 0` de l'ancien compte lié** (T18). Le `HAVING M > 0` qui la complète ne décide que
-d'une écriture **qui a** des lignes sur le compte lié et dont la somme est ≤ 0, ce qu'aucun état atteignable ne
-produit (la contrepartie d'un virement est débitée du payé, `invoice_settlements.rs:205-211` ; la créance ne peut pas
-devenir compte lié, `routes/bank_accounts.rs:426-433` ; le compte d'arrondi est de charge ou de produit) : défense en
-profondeur, et la mutation qui le retire est **déclarée équivalente** (M15, validation P2 R2 = F2).
+jointure qui écarte le cas `M = 0` de l'ancien compte lié** (T18). Le `HAVING M > 0` qui la complète ne décide que d'une écriture **qui a** des lignes sur le compte lié actuel et dont la
+somme est ≤ 0, ce qu'**aucun état courant** ne produit (la contrepartie d'un virement est débitée du payé,
+`invoice_settlements.rs:205-211` ; le compte d'arrondi est de charge ou de produit). Un état rare existe pourtant : le
+compte de créance de l'écriture de vente n'est plus celui des réglages, puis la banque lui est liée (le refus du lien
+ne compare qu'aux comptes de créance **actuels**, `refuse_if_ledger_is_claim_account`,
+`repositories/bank_accounts.rs:1273-1288`) : `M < 0`, et `écart = t − M > t`, donc `écart > 0,05` dès que le règlement
+dépasse quelques centimes. **L'équivalence tient donc sauf au centime** (règlement de moins de 5 centimes) : M15 est
+déclarée **survivante assumée**, défense en profondeur non tuée par un test (validation P3, R4 = F1 ; elle était
+« équivalente » en validation P2, R2 = F2).
 
 **Pourquoi un écart, et dans ce sens seulement** (C-29-8-5). La 29-2 rattache à montant égal (`écart = 0`). La 29-6
 fait enregistrer **le montant dû** depuis la fiche quand le client a payé 1 à 5 centimes de trop — la fiche refuse le
@@ -202,11 +207,15 @@ rattachement n'écrit rien ; `M` se lit sur `journal_account_id` quel que soit s
   tri sont **dans la requête**, avant `LIMIT` (leçon C-29-6-3 : un filtre posé après coup laisse des lignes occuper le
   `LIMIT`).
 - Transaction inexistante ou d'une autre société → `404 NOT_FOUND` (anti-énumération). Transaction rapprochée →
-  `404 RECONCILIATION_TRANSACTION_NOT_PENDING` (code existant, `errors.rs:2783-2797`). Le `GET` applique **le même
-  pré-vol** que le `POST` (étapes 2 et 3 de l'AC2, mêmes fonctions, C-29-8-27 ; validation P2, R9 = F10) : compte
+  `404 RECONCILIATION_TRANSACTION_NOT_PENDING` (code existant, `errors.rs:2783-2797`), rendu **après** le pré-vol ci-dessous. Le `GET` applique **le même
+  pré-vol** que le `POST` (étapes 2 et 3 de l'AC2, **une seule fonction privée** que les deux handlers appellent,
+  C-29-8-27 ; validation P2, R9 = F10 ; P3, R9 = F6) : compte
   bancaire archivé → `AppError::BankAccountNotFound` (comme `post_manual`, C-29-8-20) ; clos → `409
   BANK_ACCOUNT_CLOSED` ; sans compte du grand livre lié → `412 BANK_ACCOUNT_NOT_CONFIGURED` — la liste n'offre jamais
-  ce que le `POST` refuserait, et ne tait pas la cause sous une liste vide. Transaction de débit, nulle ou hors CHF →
+  ce que le `POST` refuserait, et ne tait pas la cause sous une liste vide. **Ordre des refus du `GET`, identique à
+  celui du `POST`** : 404 inexistante ou d'une autre société → archivé → clos → 412 non lié → 404 rapprochée ; sur un
+  compte clos, I1 fait que toute transaction est rapprochée, et un ordre inverse rendrait `404` au `GET` et `409` au
+  `POST` pour le même objet. Transaction de débit, nulle ou hors CHF →
   `200` et `candidates: []` (la condition 1 est fausse : rien n'est rattachable).
 - **Une seule définition** (C-29-8-9) : la condition 1 est une fonction pure de `kesh-db`
   (`transaction_can_be_linked(&BankTransaction) -> bool`) ; les conditions 2 à 4 sont **une** requête de
@@ -229,7 +238,9 @@ Ordre des refus — chacun **sans rien écrire** :
    `routes/reconciliation.rs:4696-4710`) ;
 3. compte bancaire archivé → `AppError::BankAccountNotFound` (comme `post_manual`, C-29-8-20) ; clos → `409
    BANK_ACCOUNT_CLOSED` (`ensure_bank_account_open`, `:4928-4939`) — **pré-vol** sur le pool, hors transaction ; sans
-   compte du grand livre lié → `412 BANK_ACCOUNT_NOT_CONFIGURED` ;
+   compte du grand livre lié → `412 BANK_ACCOUNT_NOT_CONFIGURED` — **une** fonction privée, `link_preflight`, appelée par
+   les deux handlers dans cet ordre (archivé, clos, non lié), avant toute lecture de statut : aucune fonction existante
+   ne rend les trois refus (`ensure_bank_account_open` ne rend que le clos, `_ => Ok(())` sinon ; validation P3, R9) ;
 4. **sous le verrou nommé du compte** (`with_account_lock`, comme `post_manual`, `:3798-…`), dans une transaction
    neuve, l'ordre des lectures est **imposé** (B5 de la rétrospective 28 — aucune naissance de vue avant le dernier
    verrou) :
@@ -241,7 +252,7 @@ Ordre des refus — chacun **sans rien écrire** :
       = ? AND company_id = ? FOR UPDATE` — même ordre `s → je` que `cancel_settlement_in_tx`
       (`invoice_settlements_write.rs:846-891`, deux instructions elles aussi), **sans** l'exercice : le rattachement
       n'écrit rien au journal et ne doit pas faire attendre une clôture d'exercice (C-29-8-21) ;
-   3. `super::bank_accounts::ensure_open_in_tx(company_id, t.bank_account_id)` — appel **qualifié** (validation P2,
+   3. `super::bank_accounts::ensure_open_in_tx(tx, company_id, t.bank_account_id)` — appel **qualifié** (validation P2,
       F11 : l'ensemble `G` de la 29-4 s'extrait des appels qualifiés ; un `use` suivi d'un appel nu sortirait
       `link_in_tx` de `G` et ferait rougir son égalité sans motif lisible) —, garde **dans la transaction**, première
       lecture ordinaire, donc **après le dernier verrou** (règle de placement de `ensure_open_in_tx`,
@@ -276,7 +287,9 @@ Ordre des refus — chacun **sans rien écrire** :
   preuve dynamique », `:163-167`) — les « sept routes » de `:59` et `:73` sont celles qui **ont** une preuve
   dynamique, autre décompte, inchangé (validation P2, R6). **La prose chiffrée** du même fichier suit les assertions
   (validation P2, R6 = F9) : `:27` et `:31` (« 118 routes » → 119), `:32` (« plus large (121) » → 122), le message de
-  `:659` (« 118 routes » → 119), le message de `:1007` (« 93 routes de lib.rs » → 94, et la liste qu'il énumère
+  `:659` (« 118 routes » → 119), le message de l'assertion `traced` (`:662-675`, qui énumère un à un les ajouts menant
+  à 112, jusqu'à « la clôture et la réouverture d'un compte bancaire (28-4a, #642) » : il nomme le rattachement, comme
+  celui de `:1007` — validation P3, R7), le message de `:1007` (« 93 routes de lib.rs » → 94, et la liste qu'il énumère
   nomme le rattachement). Et `bank_account_closed_inventory.rs:491` : `assert_eq!(sites.len(), 31, …)` (anti-muet)
   passe à **32** avec le `UPDATE` de `link_in_tx`, et son commentaire (`:488-490`, « W1-W30 … plus
   `write_closed_on` ») nomme le site neuf.
@@ -402,20 +415,33 @@ Clés `reconciliation-link-*` (bouton, titre, colonnes, phrase permanente, avert
 part du **symptôme** et non d'une liste (validation P1, R1 ; motif élargi en validation P2, R5 et F5) : `grep -nE
 "depuis la fiche|ne la relie pas|ne relie pas|tout seul|reglement-client|rejet|670|crée l'écriture|date de
 valeur|issue d'un rapprochement|rien ne la relie" docs/manual/fr/user-manual.tex`, après rebase, chaque site trié au
-Dev Agent Record (réécrit, ou inchangé avec sa raison). Triés dès la fiche, sur `fcd2ae75` **et d'après la fiche 29-6
-telle qu'elle est** (`3495aca1`, validation close — la 29-8 se rebase sur ses textes, non sur ceux de `fcd2ae75`,
-validation P2, R3) :
+Dev Agent Record (réécrit, ou inchangé avec sa raison).
+
+⚠️ **Les conseils de rejet se cherchent par le symptôme, au rebase — la fiche ne recopie plus les phrases des fiches
+voisines** (décision de l'orchestrateur, validation P3, R1 ; C-29-8-29), car elles bougent (la 29-2 a déjà supprimé la
+phrase de `:1305` que cette fiche prescrivait de compléter). À l'étape T0, **après** le rebase sur les 29-2, 29-5 et
+29-6 mergées : `grep -nE 'rejet[a-z]*( ensuite)?( la transaction|-la)' docs/manual/fr/user-manual.tex CHANGELOG.md`,
+**et toute forme voisine trouvée** (« en rejetant ensuite la transaction », « rejetez-la », « rejetée, elle reste en
+attente »). Chaque occurrence qui conseille de rejeter une transaction **réglée depuis la fiche de la facture** est
+réécrite en « rattachez » (renvoi `\S\ref{sec:rattacher-reglement}`) ; les autres occurrences (description générale du
+rejet, rejet d'une transaction sans règlement) sont **triées et écrites** au Dev Agent Record, avec leur raison. Sites
+connus au jour de la fiche, **non prescrits ici** : `:2029`, `:2031`, `:1305` et `CHANGELOG.md:15` (29-2),
+`29-5-departage-exigibilite.md:326-327` (29-5), la FAQ `:2911`, `:2050`, `:2057` et l'entrée de CHANGELOG (29-6).
+Le tableau ci-dessous ne garde que les **sites propres à la 29-8** ; il renvoie à ce grep pour le reste. Le contrôle de
+pré-release de la v0.13.4 (fichier d'epic) doit rendre **0 conseil de rejet** après la 29-8.
+
+Sites propres à la 29-8, triés dès la fiche (sur `fcd2ae75`) :
 
 | Site | Ce qu'il dit | À faire |
 |---|---|---|
-| `:2911` (FAQ « Que faire ensuite », puce *paiement de client*) | sur `fcd2ae75` : « … **Kesh ne la relie pas** au règlement saisi depuis la fiche. » ; **réécrite par la 29-6** (sa fiche, AC7, `:306-312`) en « Kesh ne relie pas la transaction au règlement saisi depuis la fiche ; **rejetez-la** (cochez sa ligne, puis \emph{Rejeter}) pour qu'elle ne soit pas passée une seconde fois — rejetée, elle reste en attente dans le détail de son import et empêche la clôture du compte bancaire (\S\ref{sec:clore-compte-bancaire}). » | **faux** après la 29-8, dans ses deux formes : la 29-8 en fait « … puis **rattachez** la transaction à ce règlement (\S\ref{sec:rattacher-reglement}) : elle passe rapprochée, sans écriture. » ; l'incise « rejetée, elle reste en attente … » est **retirée** (elle ne décrivait que le contournement) ; la consigne voisine « N'utilisez ni \emph{Affecter manuellement} ni \emph{Éclater} » **reste** |
-| `:2050` (liste des lignes, « Aucune correspondance ») | sur `fcd2ae75` : « … n'a pas de case à cocher » ; **réécrite par la 29-6** (sa fiche, `:290-294`) en « … elle se rejette, ou s'impute par \emph{Affecter manuellement} ou \emph{Éclater} » | **incomplet** après la 29-8 (l'énumération des gestes de la ligne omet le troisième bouton) : + « ; une ligne de crédit en CHF se rattache aussi au règlement déjà saisi depuis la fiche (\emph{Rattacher à un règlement}, \S\ref{sec:rattacher-reglement}) » |
+| `:2911` (FAQ « Que faire ensuite », puce *paiement de client*) | un conseil de **rejet** (sur `fcd2ae75` : « Kesh ne la relie pas » ; réécrit par la 29-6) | **faux** après la 29-8 : le conseil devient « … puis **rattachez** la transaction à ce règlement (\S\ref{sec:rattacher-reglement}) : elle passe rapprochée, sans écriture. » ; l'incise « rejetée, elle reste en attente … » est **retirée** ; la consigne « N'utilisez ni \emph{Affecter manuellement} ni \emph{Éclater} » **reste** — texte exact relevé après rebase (grep ci-dessus) |
+| `:2050` (liste des lignes, « Aucune correspondance ») | l'énumération des gestes de la ligne (rejeter ; *Affecter manuellement* ; *Éclater*), telle que la 29-6 l'a réécrite | **incomplète** après la 29-8 (elle omet le troisième bouton) : + « ; une ligne de crédit en CHF se rattache aussi au règlement déjà saisi depuis la fiche (\emph{Rattacher à un règlement}, \S\ref{sec:rattacher-reglement}) » |
 | `:259-267` (tuile d'écart du tableau de bord, *dates de valeur*) | « Kesh date les écritures de rapprochement à la date de valeur » ; « seule une écriture **issue d'un rapprochement** est ainsi corrigée : une écriture saisie à la main … — rien ne la relie au relevé » | **incomplet** après la 29-8 (validation P2, F5) : une transaction rattachée pointe l'écriture du règlement, datée du **jour du règlement** (`settled_on`), non de la valeur, et la correction s'y applique (`bank_accounts.rs:1414-1435`) : + « — une transaction rattachée à un règlement saisi depuis la fiche (\S\ref{sec:rattacher-reglement}) garde la date du règlement, et la correction s'y applique de même » ; la puce : « issue d'un rapprochement **ou d'un rattachement** » ; « rien ne la relie au relevé » reste vrai pour une écriture saisie au journal (L3) |
 | `:3053` (glossaire, *Réconciliation bancaire*) | « Kesh crée l'écriture, en réglant une facture client ou en imputant un compte de contrepartie. » | **incomplet** après la 29-8 (validation P2, R5 ; même affirmation que `:2021`) : + « ; une transaction dont le règlement a déjà été saisi depuis la fiche de la facture se rattache à ce règlement, sans écriture. » |
 | `:1198` (`sec:reglement-client`, le point d'entrée du flux) | « Le rapprochement bancaire enregistre, lui, ses règlements tout seul. » | **incomplet** : + « Si le virement est déjà importé, rattachez ensuite la transaction au règlement (\S\ref{sec:rattacher-reglement}) — sans quoi elle reste en attente et empêche la clôture du compte bancaire. » |
-| `:1305` (« Ce que réclame un rappel ») | « … enregistrez alors le règlement depuis la fiche de la facture » | + « , puis rattachez-y la transaction (\S\ref{sec:rattacher-reglement}) » ; dans aucune fiche des 29-2 et 29-6 |
+| `:1305` (« Ce que réclame un rappel ») | **la 29-2 a réécrit cette phrase** (elle supprime « enregistrez alors le règlement depuis la fiche de la facture ») | **par le grep** ci-dessus : n'ajouter « , puis rattachez-y la transaction (\S\ref{sec:rattacher-reglement}) » que si un renvoi au règlement depuis la fiche **subsiste** après rebase |
 | `:1308` (avertissement des frais de rappel, #401) | le paiement « reste dû **et** frais » est refusé comme trop-perçu ; « seul le montant de la QR-facture s'enregistre » | + l'angle mort **L6** : sa transaction dépasse le règlement de plus de 5 centimes, elle **ne se rattache pas** et reste en attente (issues #671, #401) |
-| `:2029` (algorithme de matching : paiement de plus de 30 jours ; trop-perçu de quelques centimes) | « … enregistrez alors le règlement depuis la fiche de la facture » ; réécrit par la 29-2 (C-29-2-8, « puis rejeter ») et par la 29-6 (sa fiche, `:274-289` : « … puis **rejetez** la transaction à la réconciliation — cochez sa ligne « Aucune correspondance » et \emph{Rejeter} —, pour qu'elle ne soit pas passée une seconde fois, et traitez l'écart », avec l'incise « rejetée, elle reste en attente … empêche la clôture du compte bancaire ») | les deux gestes deviennent « … puis **rattachez** la transaction à ce règlement (\S\ref{sec:rattacher-reglement}) » (« et traitez l'écart » reste) ; l'incise est **retirée** |
+| `:2029` (algorithme de matching : paiement de plus de 30 jours ; trop-perçu de quelques centimes) | des conseils de rejet (29-2, 29-6) | **par le grep** ci-dessus : « rattachez » ; l'incise « rejetée, elle reste en attente … » **retirée** ; « et traitez l'écart » (29-6) reste |
 | `:2076` (fin de *Réconciliation manuelle*) | « Pour un paiement de client que la réconciliation ne propose pas, enregistrez le règlement depuis la fiche » | + « , puis rattachez-y la transaction » |
 | `:1840` (suppression d'import) | « une transaction **rejetée** … ne compte pas » | **inchangé** : reste vrai ; une transaction rattachée compte comme rapprochée, ce que dit déjà la phrase suivante |
 | `:1431` (refus de dévalidation) | « annulez d'abord le règlement, un paiement rapproché ne devant pas pointer dans le vide » | **inchangé** : vrai ; un règlement rattaché ne s'annule qu'après *Annuler le rapprochement*, que dit déjà `:649` |
@@ -434,19 +460,14 @@ validation P2, R3) :
   rattache, mais son rapprochement ne s'annule plus ensuite (\S\ref{sec:annuler-rapprochement}, C-29-8-21) ; ce qu'on
   ne peut pas rattacher (L2 à L7, dont le paiement qui inclut les frais de rappel et le règlement saisi par
   « compte interne » sur le compte du grand livre de la banque).
-- **Les sites du tableau ci-dessus** (`:2911`, `:2050`, `:2029`, `:259-267`, `:3053`, `:1198`, `:1305`, `:1308`,
-  `:2076`) : chacun réécrit comme le dit le tableau.
-- **Les phrases « … puis rejetez la transaction »** écrites par la 29-2 (C-29-2-8 : paragraphe de l'algorithme de
-  matching, reliquat de plus de 30 jours) et par la 29-6 (sa fiche, AC7 : contournement du trop-perçu de `:2029`,
-  FAQ `:2911`) : le geste prescrit devient « … puis **rattachez** la transaction à ce règlement
-  (\S\ref{sec:rattacher-reglement}) ». L'incise « rejetée, elle reste en attente … et empêche la clôture du compte
-  bancaire » — écrite **sans** numéro d'issue : la 29-6 n'écrit pas « 670 » au manuel (C-29-6-17, contrôle
-  `grep -o "670"` vide de sa fiche) — est **retirée** là où elle ne décrit plus que le contournement (`:2029`,
-  `:2911`) ; la description générale du rejet (`:2057`, incise de la 29-6 « une transaction rejetée compte comme non
-  rapprochée et empêche la clôture de son compte bancaire ») **reste** : elle est vraie de tout rejet. L'indication
-  de l'écran de la 29-6 (« Une transaction sans correspondance ne peut pas être acceptée : décochez-la pour accepter
-  les autres. ») ne nomme aucun geste et reste vraie : inchangée.
-  Ces phrases sont couvertes par l'inventaire par symptôme du début de l'AC6 (motif `rejet|ne relie pas` compris).
+- **Les sites du tableau ci-dessus** (`:2911`, `:2050`, `:259-267`, `:3053`, `:1198`, `:1308`, `:2076`) : chacun
+  réécrit comme le dit le tableau ; `:2029` et `:1305` par le grep.
+- **Les conseils de rejet** (« … puis rejetez la transaction » et formes voisines) écrits par les 29-2, 29-5 et 29-6 :
+  inventaire **par le symptôme** au rebase (grep du début de l'AC6), non recopié ici. L'incise « rejetée, elle reste en
+  attente … et empêche la clôture du compte bancaire » est retirée là où elle ne décrit plus que le contournement ; la
+  description **générale** du rejet (`:2057`, « une transaction rejetée compte comme non rapprochée et empêche la
+  clôture de son compte bancaire ») **reste** : elle est vraie de tout rejet, et l'indication de l'écran de la 29-6
+  (« … décochez-la pour accepter les autres. ») ne nomme aucun geste.
 - **`:1689-1694`** (clôture du compte) : « … tant qu'elle n'est pas rapprochée manuellement ou que son import n'est
   pas supprimé » + « ou **rattachée** au règlement saisi depuis la fiche de la facture
   (\S\ref{sec:rattacher-reglement}) ».
@@ -458,14 +479,22 @@ validation P2, R3) :
   29-6 (ligatures et apostrophe : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | sed
   "s/ﬀ/ff/g;s/ﬁ/fi/g;s/ﬂ/fl/g;s/ﬃ/ffi/g;s/’/'/g"`), comptes par `grep -oF` (chaîne fixe : en motif, le point de
   « tout seul. » prend n'importe quel caractère et compte « tout seul~: » de `:1626`) :
-  - **positifs** — une portion courte de **chaque** phrase neuve rend **≥ 1** : « rattachez la transaction » (`:2911`,
-    `:2029`, `:1198`), « Rattacher une transaction à un règlement » (titre de la sous-section), « Rattacher à un
-    règlement » (`:2050`), « garde la date du règlement » (`:259-267`), « se rattache à ce règlement, sans écriture »
-    (`:3053`), « ou rattachée au règlement » (`:1689-1694`) ; portions et comptes au Dev Agent Record ;
+  - **positifs, par site** (validation P3, R3) — chaque phrase neuve a **sa** portion, relevée au Dev Agent Record avec
+    son compte ; une chaîne partagée par plusieurs sites ne prouve que leur somme, et se compte comme telle :
+    « rattachez la transaction à ce règlement » **≥ 2** (FAQ `:2911` et `:2029` — plus tout site que le grep du début
+    de l'AC6 réécrit avec la même formule) ; « rattachez ensuite la transaction au règlement » **≥ 1** (`:1198`) ;
+    « Rattacher une transaction à un règlement » ≥ 1 (titre de la sous-section) ; « Rattacher à un règlement » ≥ 1
+    (`:2050`) ; « garde la date du règlement » ≥ 1 (`:259-267`) ; « se rattache à ce règlement, sans écriture » ≥ 1
+    (`:3053` ; l'introduction `:2021` emploie « sauf » et sa propre portion, fixée à la rédaction) ; « ou rattachée au
+    règlement » ≥ 1 (`:1689-1694`) ; « rattachez-y la transaction » ≥ 1 (`:2076` ; `:1305` seulement si le grep le
+    réécrit) ; « ne se rattache pas » ≥ 1 (`:1308`, L6) ;
   - **négatifs**, qui ne valent qu'adossés aux positifs (un zéro peut venir d'une césure) — rendent **0** : « ne la
-    relie pas », « ne relie pas la transaction », « rejetez-la », « existerait déjà », « tout seul. », « date les
-    écritures de rapprochement à la date de valeur. » (la phrase reçoit son incise) ; et aucune occurrence de « puis
-    rejetez » liée à un règlement saisi depuis la fiche (tri au Dev Agent Record) ;
+    relie pas », « ne relie pas la transaction », « rejetez-la », « existerait déjà », « date les écritures de
+    rapprochement à la date de valeur. » — la phrase **se poursuit** par l'incise après un tiret, sans point entre
+    « valeur » et l'incise (`:259-267` : la ponctuation est écrite ici, validation P3, R2) ; et aucune occurrence de
+    « puis rejetez » liée à un règlement saisi depuis la fiche (tri au Dev Agent Record). ⚠️ « tout seul. » n'est **pas**
+    un négatif : `:1198` garde sa phrase « Le rapprochement bancaire enregistre, lui, ses règlements tout seul. », que
+    l'implémentation fidèle conserve (validation P3, R2) — il reste au seul relevé « ce qui doit encore y être » ;
   - **relevé sur `fcd2ae75`** (remédiation P2, aplati et normalisé, `grep -oF`) : « ne la relie pas » 1, « tout
     seul. » 1, « Kesh crée l'écriture, en réglant » 1, « date les écritures de rapprochement » 1, « rien ne la relie
     au relevé » 1, « existerait déjà » 1, « ne relie pas la transaction » 0 et « rejetez-la » 0 — ces deux dernières
@@ -478,8 +507,9 @@ rattachée, et le paragraphe **« Interblocages : les écritures au journal sont
 R7) : la route `POST /reconciliation/transactions/{id}/link` y entre, à côté des exercices, comme route qui n'écrit
 pas au journal mais est rejouée — sans quoi elle tomberait sous « Une autre route peut, rarement, rendre `500` »
 (`:732`), faux pour elle. `CHANGELOG.md`, section 0.13.4 (créée par les stories précédentes) : *Ajouté* — le
-rattachement (#670) ; *Modifié* — le contournement de la 29-2 et de la 29-6 n'est plus « rejeter » mais
-« rattacher » ; l'entrée de la 29-6 **dans la même section** (« … rejetez ensuite la transaction … Rejetée, la
+rattachement (#670) ; *Modifié* — le contournement des 29-2, 29-5 et 29-6 n'est plus « rejeter » mais
+« rattacher » (chaque entrée de la section qui conseille de rejeter, trouvée par le grep de l'AC6, se réécrit) ;
+l'entrée de la 29-6 **dans la même section** (« … rejetez ensuite la transaction … Rejetée, la
 transaction reste en attente et empêche la clôture du compte bancaire ([#670]) », sa fiche `:355-362`) se **réécrit**
 en « rattachez » plutôt que d'être contredite par l'entrée suivante de la même version ; *Limites connues* — les
 angles morts L1 à L7, avec leurs issues (`refs #671`, `refs #672`, #401 ; jamais `closes`).
@@ -489,20 +519,23 @@ angles morts L1 à L7, avec leurs issues (`refs #671`, `refs #672`, #401 ; jamai
 Relevé par `grep -rnE "cinq chemins|viennent de créer|existerait déjà|une transaction, une écriture|\bcinq\b.*(chemin|site)|écriture \*?\*?(neuve|NEUVE)|crée l'écriture|acceptation d'une proposition|datées? à la date de"`
 sur `crates`, `docs/manual/fr/*.tex`, `docs/api-external.md` (`fcd2ae75`), motif **élargi** en validation P1 (R7) puis
 en validation P2 (R5, F5 : les trois derniers termes) — plus `grep -rnB1 "^ *///.*NEUVE"` pour la coupure de ligne de
-`invoices.rs:4348-4349` que le motif mono-ligne manque. **Neuf** sites, chacun réécrit (le sixième chemin, ses
+`invoices.rs:4348-4349` que le motif mono-ligne manque. **Douze** sites (neuf du relevé initial, plus trois ajoutés en validation P3, R6), chacun réécrit (le sixième chemin, ses
 conditions) ou déclaré inchangé avec sa raison au Dev Agent Record :
 
 | Site | Ce qu'il dit | À faire |
 |---|---|---|
 | `crates/kesh-db/src/repositories/bank_accounts.rs:1379-1383` | « Les cinq chemins … lient chacun une écriture qu'ils viennent de créer » | six chemins ; le rattachement lie une écriture **existante**, l'invariant « une écriture, une transaction » est tenu par la condition 3 |
 | `crates/kesh-db/src/repositories/reconciliation_cancel.rs:11-18` | « Des cinq chemins … un seul crée un règlement client » | deux chemins rendent `InvoiceSettlement` : l'acceptation « facture » et le rattachement |
-| `crates/kesh-db/src/repositories/reconciliation_cancel.rs:47-48` (doc-comment de la variante `InvoiceSettlement`) | « Un **règlement client** (acceptation d'une proposition « facture ») » | + « , ou rattachement d'une transaction à un règlement saisi depuis la fiche » (validation P2, R5) |
+| `crates/kesh-db/src/repositories/reconciliation_cancel.rs:48` (doc-comment de la variante `InvoiceSettlement`) | « Un **règlement client** (acceptation d'une proposition « facture ») » | + « , ou rattachement d'une transaction à un règlement saisi depuis la fiche » (validation P2, R5) |
 | `crates/kesh-db/src/repositories/bank_accounts.rs:1367-1370` | « les écritures de rapprochement sont datées à la date de **valeur** » | + « — sauf l'écriture d'un règlement rattaché, datée du règlement ; la correction lit la date de l'écriture, elle s'y applique de même » (validation P2, F5) |
 | `crates/kesh-db/src/repositories/bank_imports.rs:357` | « les cinq chemins qui rapprochent posent les deux colonnes ensemble » | six ; le rattachement aussi |
 | `crates/kesh-db/tests/reconciliation_cancel.rs:3` | « Les cinq chemins réels » | ajouter le rattachement ou dire pourquoi le test n'en a pas besoin (couvert par AC3) |
 | `docs/manual/fr/user-manual.tex:2021` | « Kesh ne rapproche pas … existerait déjà » | AC6 |
 | `crates/kesh-db/src/repositories/invoices.rs:4348-4349` (doc-comment de test, `insert_stub_bank_transaction`) | « le rapprochement pointe une écriture **NEUVE**, jamais celle de vente » | « jamais celle de vente » reste vrai, « NEUVE » devient faux : « … une écriture neuve ou, par le rattachement, celle d'un **règlement**, jamais celle de vente » |
 | `crates/kesh-db/src/repositories/invoices.rs:4805-4806` (doc-comment de test, motif 7) | « les cinq sites de `reconciliation.rs` rapprochent une écriture **neuve** » | idem : six chemins, dont le rattachement à l'écriture d'un règlement ; aucun ne rapproche l'écriture de vente |
+| `crates/kesh-api/tests/reconciliation_e2e.rs:4739` (commentaire de test) | « aucun chemin réel ne laisse le marqueur sur une transaction rapprochée — **quatre** chemins le remettent à zéro » | cinq : le rattachement remet aussi `auto_match_rejected_at = NULL` dans son `UPDATE` (validation P3, R6) |
+| `crates/kesh-db/tests/bank_account_statement_gap.rs:7` | « les écritures de rapprochement par date de [valeur] » | jumeau de `bank_accounts.rs:1367-1370` : même réserve — l'écriture d'un règlement rattaché est datée du règlement (validation P3, R6) |
+| `docs/manual/fr/user-manual.tex:2129` | « Quand le rapprochement a réglé une facture client, le même bouton apparaît aussi sur la fiche » | reste vrai du rattachement mais ne le dit pas : + « ou qu'une transaction a été rattachée à son règlement » (renvoi à la puce *Annuler un rapprochement*) (validation P3, R6) |
 
 Les autres lignes que rend le motif élargi sont **hors sujet**, triées ici : `routes/reconciliation.rs:2098` et
 `tests/reconciliation_e2e.rs:3415` (« cinq sites qui lisent `paid_at IS NULL` », autre inventaire) ;
@@ -523,7 +556,7 @@ Intégration (`reconciliation_link_e2e.rs`, `#[sqlx::test(migrations = "../kesh-
 
 | # | Cas | Attendu |
 |---|---|---|
-| T1 | règlement fiche = montant, même compte, compte bancaire **non principal** dont c'est la seule transaction en attente | avant : `POST /bank-accounts/{id}/close` → `412 BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS` ; 1 candidat `gap 0.00` ; `POST` 200 ; `reconciled`, `matched_entry_id` = écriture du règlement ; aucun `journal_entries` neuf ; audit `reconciliation.linked` aux détails de l'AC2 ; après : la clôture **réussit** — le défaut de #670 (déplacé de T15, C-29-8-26) |
+| T1 | règlement fiche = montant, même compte, compte bancaire **non principal** dont c'est la seule transaction en attente | avant : `POST /bank-accounts/{id}/close` → `412 BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS` ; 1 candidat `gap 0.00` ; `POST` 200 ; `reconciled`, `matched_entry_id` = écriture du règlement ; aucun `journal_entries` neuf ; audit `reconciliation.linked` aux détails de l'AC2 ; après : la clôture **réussit** — le défaut de #670 (déplacé de T15, C-29-8-26) ; **états préservés** (AC3, validation P3, R5) : nombre de `invoice_settlements` de la société, reste dû et `paid_at` de la facture inchangés (lecture avant/après), et `GET /reconciliation/transactions/{id}` rend `kind = "invoice_settlement"`, `invoiceId`, `cancellable = true` |
 | T2 | transaction rejetée | candidate ; `POST` 200 ; `auto_match_rejected_at` à `NULL` ; `was_previously_rejected: true` |
 | T3 | cas 29-6 : transaction 100.03, règlement 100.00 | candidat `gap 0.03` ; `POST` 200 ; audit `gap: "0.03"` |
 | T4 | écart 0.05 / 0.06 | candidat / absent ; `POST` 409 `RECONCILIATION_SETTLEMENT_NOT_LINKABLE` pour 0.06 |
@@ -535,9 +568,9 @@ Intégration (`reconciliation_link_e2e.rs`, `#[sqlx::test(migrations = "../kesh-
 | T10 | transaction déjà rapprochée | `GET` et `POST` 404 `RECONCILIATION_TRANSACTION_NOT_PENDING` |
 | T11 | transaction ou règlement d'une autre société | 404, rien d'écrit |
 | T12 | rôles : Consultation 403 ; clé lecture seule refusée, clé `read-write` admise et nommée à l'audit | — |
-| T13 | compte clos : (a) clôture posée par SQL **avant** le `GET` et le `POST` → 409 `BANK_ACCOUNT_CLOSED` du pré-vol, aux deux (C-29-8-27) ; (b) **course** : une connexion tient le verrou nommé du compte (`GET_LOCK` du même nom), le `POST` est vu bloqué dessus (modèle `wait_blocked_on_account_lock_274`, `reconciliation_e2e.rs:6869-6875`), la clôture est posée par SQL, le verrou relâché → 409 `BANK_ACCOUNT_CLOSED` de `ensure_open_in_tx` (étape 4.3), transaction `pending` | — |
+| T13 | compte clos : (a) clôture posée par SQL **avant** le `GET` et le `POST` → 409 `BANK_ACCOUNT_CLOSED` du pré-vol, aux deux (C-29-8-27) ; (b) **course** : une connexion tient le verrou nommé du compte (`GET_LOCK` du même nom), le `POST` est vu bloqué dessus (modèle `wait_blocked_on_account_lock_274`, `reconciliation_e2e.rs:6869-6875`), la clôture est posée par SQL, le verrou relâché → 409 `BANK_ACCOUNT_CLOSED` de `ensure_open_in_tx` (étape 4.3), transaction `pending`. ⚠️ **État forgé** : une clôture réelle refuserait (`412`, I1 : `close_in_tx` compte la `pending` sous le verrou du compte) ; le test exerce la garde, non une course atteignable — elle ne sert en réel que dans la fenêtre L1 de #651 (validation P3, F4) | — |
 | T14 | tri, trois candidats dont les **couples** sont écrits : A écart 0.00, réglé **40 jours avant** la date de paiement ; B écart 0.00, réglé **3 jours après** ; C écart 0.02, réglé **1 jour** après | ordre B, A, C ; `daysApart` 3, 40, 1 (jamais négatif) |
-| T15 | AC3, sur un compte bancaire **non principal** que le test **ne clôt pas** (la clôture est assertée par T1, C-29-8-26) ; facture portant deux règlements **par virement sur ce même compte** : `s` (à rattacher) et le témoin `w` (acompte, jamais rattaché). Assertions **dans cet ordre** (validation P2, R4 = F4) : (1) dévalidation `409 INVOICE_HAS_SETTLEMENTS` (préservation, avant) ; (2) rattachement de `t` à `s` ; (3) annulation de `s` depuis la fiche → `409 MATCHED_BANK_TRANSACTION`, **puis** annulation de `w` depuis la fiche → succès ; (4) dévalidation toujours `409 INVOICE_HAS_SETTLEMENTS` (préservation, après) ; (5) K2 si la 29-1 est mergée ; (6) **en dernier** — il supprime `s` (`invoice_settlements_write.rs:946`) — `POST …/cancel` : contre-passation, facture de nouveau à régler, `t` de nouveau `pending` | — |
+| T15 | AC3, sur un compte bancaire que le test **ne clôt pas** (la clôture est assertée par T1, C-29-8-26 ; aucune exigence « non principal » ici, validation P3, F5) ; facture portant deux règlements **par virement sur ce même compte** : `s` (à rattacher) et le témoin `w` (acompte, jamais rattaché). Assertions **dans cet ordre** (validation P2, R4 = F4) : (1) dévalidation `409 INVOICE_HAS_SETTLEMENTS` (préservation, avant) ; (2) rattachement de `t` à `s` ; (3) annulation de `s` depuis la fiche → `409 MATCHED_BANK_TRANSACTION`, **puis** annulation de `w` depuis la fiche → succès ; (4) dévalidation toujours `409 INVOICE_HAS_SETTLEMENTS` (préservation, après) ; (5) K2 si la 29-1 est mergée ; (6) **en dernier** — il supprime `s` (`invoice_settlements_write.rs:946`) — `POST …/cancel` : contre-passation, facture de nouveau à régler, `t` de nouveau `pending` | — |
 | T16 | **course réelle** entre l'annulation de `s` depuis la fiche et le rattachement de `t` à `s`, lancés ensemble (`tokio::join!`) | **exactement l'un** réussit, et l'état final est l'un des deux états cohérents : soit annulation `200`, rattachement `404`, `t` `pending` et `matched_entry_id` nul ; soit rattachement `200`, annulation `409 MATCHED_BANK_TRANSACTION`, `s` présent et `t` rapprochée de son écriture. ⚠️ Ce que T16 **ne prouve pas** (C-29-8-25) : l'attente du perdant ni l'ordre d'acquisition — rien n'observe l'attente ; si les deux requêtes ne se chevauchent pas, la seconde voit le résultat de la première par simple succession, et le test passe aussi |
 | T17 | **course de double rattachement** (validation P1, F3 ; observation retirée en validation P2, R1 = F1) : deux transactions `t1`, `t2` du même compte, un règlement `s` ; `POST /…/t1/link {s}` et `POST /…/t2/link {s}` lancés ensemble (`tokio::join!`) | **exactement un** `200`, l'autre `409 RECONCILIATION_SETTLEMENT_NOT_LINKABLE` ; en base, **une seule** transaction pointe l'écriture de `s`, l'autre reste `pending`, `matched_entry_id` nul. ⚠️ Ce que T17 **ne prouve pas** (C-29-8-25) : l'ordre d'acquisition (`t` → `s` → `je`, puis la vue) ni que le perdant a attendu le verrou de `s` — les deux requêtes passent par le même verrou nommé, relâché avant le commit, et la fenêtre de chevauchement est étroite ; sans chevauchement, le second voit le lien par simple succession. **Renvoyé à la revue de code** (doc-comment de `link_in_tx`, table *Absence de cycle*) |
 | T18 | **ancien compte lié** (R3/F2) : règlement `s` saisi, puis `PATCH /bank-accounts/{id}` change le compte du grand livre lié ; (a) transaction de 0.03 ; (b) transaction égale au montant de `s` | (a) et (b) : `s` absent des candidats ; `POST` 409 |
@@ -561,14 +594,14 @@ RECONCILIATION_SETTLEMENT_NOT_LINKABLE` → liste rechargée et choix remis à v
 | M5 | borne basse `0 ≤ écart` retirée | T5 |
 | M6 | `amount > 0` → `amount >= 0` dans `transaction_can_be_linked` | unitaire seulement — T9 ne la distingue pas : une transaction à 0.00 a `écart = −M < 0`, exclue par la borne basse, même `[]` et même 409 (validation P2, R10 = F7) |
 | M7 | `auto_match_rejected_at = NULL` retiré de l'`UPDATE` | T2 |
-| M8 | `AND status = 'pending'` retiré de l'`UPDATE` | T10 (sous verrou) ou déclarée équivalente avec raison |
+| M8 | `AND status = 'pending'` retiré de l'`UPDATE` | **équivalente** (ci-dessous : l'étape 4.1 refuse avant l'`UPDATE`, T10 ne l'atteint pas) |
 | M9 | audit retiré | T1 |
 | M10 | `FOR UPDATE` de l'étape 4.2 (a) retiré | T16, T17 — **si** les deux requêtes se chevauchent, ce que rien ne garantit (C-29-8-25) : une survie se déclare « non tuée de façon fiable » au Dev Agent Record et renvoie à la revue de code |
 | M11 | tri : `gap` retiré de l'`ORDER BY` | T14 (C, plus proche, passerait premier) |
 | M12 | bouton affiché sur une ligne de débit | Vitest |
 | M13 | présélection du premier candidat | Vitest |
 | M14 | la requête de l'étape 4.4 déplacée **avant** l'étape 4.2 (vue née avant l'attente) | T17 — même réserve que M10 |
-| M15 | `HAVING M > 0` retiré | **équivalente** (ci-dessous) |
+| M15 | `HAVING M > 0` retiré | **survivante assumée** (ci-dessous ; équivalente sauf au centime) |
 | M16 | `M` lu sur `invoice_settlements.amount` au lieu des lignes du compte lié actuel (la variante écartée de C-29-8-4) | T18 (b) ; la variante « filtre de compte retiré » rend `M = 0` (écriture équilibrée) et tombe sous T1 |
 | M17 | `s.company_id = ?` retiré de la requête | **équivalente** (ci-dessous) |
 | M18 | `ABS(…)` retiré de `daysApart` (signé) | T14 (A, à −40, passerait avant B) |
@@ -585,7 +618,7 @@ modification, `journal_entries.rs:1453-1456` ; la suppression, `:1825-1831` ; la
 `:2265-2270`) avant toute écriture, lien ou pas : le verrou n'aligne que l'ordre, déclaré survivant avec cette raison
 (validation P2, F6 — la raison P1, « qu'aucun chemin ne fait aujourd'hui », était fausse).
 
-**Déclarées équivalentes en validation P2** (R2 = F2 / F3, décision de l'orchestrateur : la raison au code, **aucun
+**Déclarées équivalentes ou survivantes en validation P2** (R2 = F2 / F3, décision de l'orchestrateur : la raison au code, **aucun
 décor construit pour les tuer**) :
 
 - **M2** (`settlement_type = 'bank_transfer'` retiré) — la contrainte `chk_invoice_settlements_counterparty`
@@ -593,12 +626,16 @@ décor construit pour les tuer**) :
   règlement `internal_account` ou `write_off` : la condition 2 (`settlement_bank_account_id = t.bank_account_id`) est
   fausse pour eux (`NULL = x`), avec ou sans le filtre de type. Aucun décor ne la tue sans violer le `CHECK`.
 - **M15** (`HAVING M > 0` retiré) — la **jointure interne** sur les lignes du compte lié actuel écarte déjà l'écriture
-  sans ligne sur ce compte (T18 (a)) ; le `HAVING` ne décide que d'une somme ≤ 0, qu'aucun état atteignable ne produit
-  (§ *Pourquoi `M > 0`*). Défense en profondeur.
+  sans ligne sur ce compte (T18 (a)) ; le `HAVING` ne décide que d'une somme ≤ 0, qu'aucun état courant ne produit
+  (§ *Pourquoi `M > 0`*). **Survivante assumée, non équivalente à la lettre** (validation P3, R4 = F1) : l'état rare
+  du compte de créance d'une vente antérieure, lié à la banque, donne `M < 0` ; le `HAVING` ne le distingue que d'un
+  règlement de moins de 5 centimes. Aucun test ni décor.
 - **M17** (`s.company_id = ?` retiré) — au `POST`, l'étape 4.2 (a) filtre `WHERE id = ? AND company_id = ?` et rend
   404 **avant** la requête ; au `GET` comme au `POST`, la condition 2 lie `s` au compte bancaire de `t`, et un
   règlement ne naît que sur un compte bancaire de sa société (`invoice_settlements_write.rs:137-142`, `WHERE id = ? AND
   company_id = ?`). Seul un règlement forgé en SQL la distinguerait. T11 reste un test d'IDOR, non sa tueuse.
+- **Décompte** (validation P3, R8 = F2) : **quatre** mutations sans test tueur — M2, M8, M17 équivalentes strictes, M15
+  survivante assumée ; M1 est tuée.
 - **M1** reste **tuée** par T6, au prix d'une ligne de montage (deux comptes bancaires liés au même compte du grand
   livre, partage admis au sol, `bank_accounts.rs:1438-1491`) : c'est le seul cas où la condition 2 porte la décision,
   et un faux rattachement réel s'il manquait.
@@ -618,7 +655,7 @@ Aucun fichier sous `crates/kesh-db/migrations/` (le schéma suffit, C-29-8-2) ; 
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Rebase** sur `origin/main` après merge de la 29-6 ; relire les numéros de ligne de la fiche ; base
+- [ ] **T0 — Rebase** sur `origin/main` après merge des 29-2, 29-5 et 29-6 ; relire les numéros de ligne de la fiche ; base
   `kesh_298` et `kesh_e2e_298`, port 3048, `CARGO_TARGET_DIR=<worktree>/target`.
 - [ ] **T1 — Tests rouges** (AC8) : `reconciliation_link_e2e.rs` T1 à T20, unitaires, Vitest — rouges constatés.
 - [ ] **T2 — `kesh-db`** (AC1, AC2, AC7) : `repositories/reconciliation_link.rs` (`transaction_can_be_linked`, la
@@ -707,13 +744,13 @@ ordinaires. Relevé sur `fcd2ae75`, **raisonné, non exécuté** :
 l'exposent (une transaction rattachée s'annule par la première, son règlement par la seconde), sans le créer ni le
 fermer : à écrire tel quel au Dev Agent Record.
 
-### Zones partagées avec les 29-2, 29-6 et 29-1 (fiches non mergées, lues en lecture seule)
+### Zones partagées avec les 29-2, 29-5, 29-6 et 29-1 (fiches non mergées, lues en lecture seule)
 
 | Zone | 29-2 | 29-6 | 29-8 |
 |---|---|---|---|
 | `ReconciliationProposals.svelte` | — | AC10 : case sur une ligne sans proposition, *Accepter* grisé, indication | troisième bouton de ligne, modal ; **ne touche pas** la case ni l'indication |
 | Indication fr-CH de la 29-6 « Une transaction sans correspondance ne peut pas être acceptée : décochez-la pour accepter les autres. » (rédaction de sa validation P2, fiche 29-6 `:478`) | — | AC10 | **inchangée** : elle ne dit que ce qui est vrai de la sélection et ne nomme aucun geste (C-29-6-16) ; les boutons de ligne restent offerts |
-| Manuel : « puis rejetez la transaction » | C-29-2-8, `:314`, `:324` de sa fiche | AC7, `:274-345` de sa fiche (`:2029`, `:2050`, `:2057`, FAQ `:2910-2911` ; aucun « 670 » au manuel, C-29-6-17) ; CHANGELOG `:355-362` | réécrit en « rattachez » ; `:2050` complété ; `:2057` inchangé (AC6) |
+| Manuel : « puis rejetez la transaction » (et formes voisines) — inventaire **par le grep** de l'AC6, au rebase ; la **29-5** y entre aussi (`29-5-departage-exigibilite.md:326-327`, paragraphe de l'algorithme de matching) | C-29-2-8, `:314`, `:324` de sa fiche | AC7, `:274-345` de sa fiche (`:2029`, `:2050`, `:2057`, FAQ `:2910-2911` ; aucun « 670 » au manuel, C-29-6-17) ; CHANGELOG `:355-362` | réécrit en « rattachez » ; `:2050` complété ; `:2057` inchangé (AC6) |
 | `routes/reconciliation.rs` | fenêtre de dates | borne basse du reste dû | deux handlers neufs, aucune ligne de la proposition ni de l'acceptation |
 | K2 (29-1a) | — | — | aucune ligne ; la transaction rattachée en sort par son statut (assertion à T15 si la 29-1 est mergée) |
 | `bank_account_closed_inventory.rs`, `audit_route_registry.rs` (29-4) | — | — | la 29-4 ajoute le troisième inventaire `FENETRE` et des compteurs : `link_in_tx` y entre, par celle des deux stories qui se merge la seconde (AC2) ; l'ordre de l'epic (« 29-8 après la 29-6 », « 29-2, puis 29-3, puis 29-4 ») ne fixe pas leur ordre relatif |
@@ -726,7 +763,7 @@ fermer : à écrire tel quel au Dev Agent Record.
 - `reconciliation.linked` : `audit_labels.rs`, quatre `.ftl`, `api-external.md` (si l'audit y est listé), tests ;
 - `ne la relie pas`, `tout seul`, `depuis la fiche` dans le manuel `.tex` **et** le PDF aplati (AC6) ;
 - **la valeur**, non la formulation (validation P2, R6) : `grep -nE "\b(118|121|112|9[34])\b|\bsept\b"
-  crates/kesh-api/tests/audit_route_registry.rs` (cinq assertions, prose `:27`, `:31`, `:32`, messages `:659` et
+  crates/kesh-api/tests/audit_route_registry.rs` (cinq assertions, prose `:27`, `:31`, `:32`, messages `:659`, `:662-675` et
   `:1007`, point (vi) `sept` → `huit` ; les « sept » de `:59` et `:73`, autre décompte, restent) et `grep -nE
   "\b3[01]\b" crates/kesh-api/tests/bank_account_closed_inventory.rs` (`sites.len()` 31 → 32, commentaire `:488-490`) ;
 - `ne relie pas la transaction`, `rejetez-la`, `crée l'écriture`, `date de valeur`, `issue d'un rapprochement`,
@@ -864,3 +901,32 @@ locales), `frontend/src/lib/features/reconciliation` ; plus la documentation (ma
     M2, M15, M17 équivalentes), 28 choix (C-29-8-25 à 28 ajoutés), 9 sites à l'AC7, 13 lignes au tableau du manuel,
     angles morts L1 à L7.
   - Validation P3 à lancer : `29-8-validate-prompt-p3.md` (Sonnet, lentilles R et F).
+- **2026-10-14** — **Validation P3** (Sonnet, contexte frais, lecture seule ; prompt `29-8-validate-prompt-p3.md`) :
+  lentille R **0 CRITICAL / 0 HIGH / 2 MEDIUM / 7 LOW** (R1 à R9), lentille F **0 / 0 / 0 / 7** (F1 à F7). Trend :
+  P1 R 0/0/4/7, F 0/1/3/5 → P2 R 0/0/5/5, F 0/0/5/6 → **P3 R 0/0/2/7, F 0/0/0/7**. Recoupements : R4 = F1 (M15), R8 = F2
+  (M8), R9 = F6 (ordre du `GET`) ; 16 findings rapportés, 13 distincts. **Tous remédiés, aucun refusé** (remédiation
+  Opus 5.5, fiche et registre seulement) :
+  - **Décisions de l'orchestrateur, consignées comme telles** — **R1** (MEDIUM) : l'inventaire des conseils de rejet se
+    fait **par le symptôme, au rebase**, la fiche ne recopie plus les phrases des fiches voisines (C-29-8-29) ; la 29-5
+    entre aux zones partagées ; le contrôle de pré-release de la v0.13.4 (fichier d'epic) doit rendre 0 conseil de rejet
+    après la 29-8 — **à inscrire par l'orchestrateur au fichier d'epic**, que cette passe ne touche pas. **R2** (MEDIUM) :
+    le contrôle négatif « tout seul. » est retiré ; la ponctuation de l'incise de `:259-267` est écrite.
+  - **LOW** : R3 (positifs du PDF par site, formulations exactes, comptes des chaînes partagées) ; **R4 = F1** (M15 :
+    citation rectifiée `repositories/bank_accounts.rs:1273-1288`, « aucun état atteignable » remplacé par « aucun état
+    courant » et la borne réelle — l'équivalence tient sauf au centime —, M15 déclarée **survivante assumée**, annotation
+    au registre) ; R5 (T1 porte les trois états préservés de l'AC3) ; R6 (AC7 à **douze** sites : `reconciliation_e2e.rs:4739`,
+    `bank_account_statement_gap.rs:7`, `user-manual.tex:2129`) ; R7 (message de l'assertion `traced`, `:662-675`) ;
+    **R8 = F2** (M8 déclarée équivalente dans la table ; annotation datée du décompte du Change Log P2 : « dont M2, M15, M17
+    équivalentes » se lit **quatre mutations sans test tueur — M2, M8, M17 équivalentes, M15 survivante assumée** ; le
+    relevé P2 n'est pas réécrit) ; **R9 = F6** (ordre des refus du `GET` identique à celui du `POST`, une fonction privée
+    `link_preflight` commune, annotation de C-29-8-27) ; **F3** (`ensure_open_in_tx(tx, company_id, …)`) ; **F4** (T13 (b)
+    est un état forgé : une clôture réelle refuserait, I1) ; **F5** (exigence « non principal » de T15 retirée, annotation
+    de C-29-8-26) ; **F7** (`reconciliation_cancel.rs:48`).
+  - Symptômes grepés après correction (fiche et registre) : `tout seul`, `47-48`, `mêmes fonctions`, `non principal`,
+    `puis rejetez`, `aucun état atteignable`, `ensure_open_in_tx(`, `équivalente`.
+  - Recomptés depuis la fiche et le registre après remédiation : 10 AC, 9 tâches (T0-T8), 20 tests d'intégration (T1-T20),
+    19 mutations (M1-M19), 29 choix (C-29-8-29 ajouté), 12 sites à l'AC7, 13 lignes au tableau du manuel, angles morts
+    L1 à L7.
+  - ✅ **Validation close : la remédiation ne touche aucune ligne de production** (fiche et registre seulement ; le
+    motif « la remédiation introduit le défaut suivant » n'a plus de prise, § *La passe ciblée* du `CLAUDE.md`). Prochaine
+    étape : développement, **après la 29-6** (rebase sur les 29-2, 29-5 et 29-6).

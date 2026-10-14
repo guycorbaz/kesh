@@ -147,6 +147,10 @@
   manuel, ses incises ne portent **aucun** « 670 » (C-29-6-17) — seule son entrée de CHANGELOG le porte. La fiche 29-8
   (AC6) cite désormais ces textes tels qu'ils sont ; le retrait des incises vaut pour l'incise « rejetée, elle reste en
   attente … » de `:2029` et de la FAQ, et pour « ([#670]) » de l'entrée de CHANGELOG de la 29-6.*
+  *Annoté le 2026-10-14 (validation P3, R1) : la fiche ne recopie plus les phrases prescrites par les fiches voisines
+  (elles bougent : la 29-2 a supprimé la phrase de `:1305`, et réécrit `:2031`, `CHANGELOG.md:15`; la 29-5 prescrit le
+  même conseil, `29-5-departage-exigibilite.md:326-327`). L'inventaire des conseils de rejet se fait au rebase, par le
+  symptôme — voir C-29-8-29.*
 - **Écartée** : laisser les deux gestes au manuel (le rejet ne règle pas #670).
 - **Réversible** : oui.
 
@@ -192,6 +196,12 @@
   *Annoté le 2026-10-14 (validation P2, R2 = F2) : dans la forme retenue, c'est la **jointure interne** qui écarte
   l'écriture sans ligne sur le compte lié ; le `HAVING M > 0` ne décide que d'une somme ≤ 0, qu'aucun état atteignable
   ne produit — M15 est déclarée **équivalente** (fiche, AC8), non tuée par T18 (a).*
+  *Annoté le 2026-10-14 (validation P3, R4 = F1) : la raison est rectifiée. « Aucun état atteignable » était faux à la
+  lettre — le refus du lien de la banque à un compte de créance (`repositories/bank_accounts.rs:1273-1288`, et non
+  `routes/bank_accounts.rs:426-433`, qui est le contrôle du type de compte) ne compare qu'aux comptes de créance des
+  réglages **actuels** : le compte de créance d'une vente antérieure peut être lié, `M < 0`. Le `HAVING` ne le distingue
+  que d'un règlement de moins de 5 centimes (`écart > 0,05` sinon) : M15 est une **survivante assumée**, équivalente
+  sauf au centime, sans test.*
 - **Écartée** : `COALESCE(…, 0)` sans condition (laisse passer `M = 0`).
 - **Réversible** : oui.
 
@@ -286,6 +296,8 @@ trois premiers sont des **décisions de l'orchestrateur** (« retirer plutôt qu
   de #670 — passe à **T1**, compte non principal.
 - **Écartées** : clore puis rouvrir le compte dans T15 (deux gestes de plus, et la réouverture n'est pas l'objet) ;
   deux décors dans T15.
+  *Annoté le 2026-10-14 (validation P3, F5) : l'exigence « compte non principal » de T15 est retirée — sa raison d'être
+  (un principal ne se clôt pas) est passée à T1 ; T15 n'a plus à imposer un second compte bancaire.*
 - **Réversible** : oui.
 
 ### C-29-8-27 — Le `GET` des candidats applique le pré-vol du `POST`
@@ -295,6 +307,11 @@ trois premiers sont des **décisions de l'orchestrateur** (« retirer plutôt qu
 - **Retenu** : mêmes fonctions de pré-vol au `GET` (archivé → `BankAccountNotFound`, clos → `409
   BANK_ACCOUNT_CLOSED`, non lié → `412 BANK_ACCOUNT_NOT_CONFIGURED`) ; T13 (a) asserte le `GET` aussi.
 - **Écartée** : `200` et `[]` — la modal afficherait « Aucun règlement … » et tairait la cause.
+  *Annoté le 2026-10-14 (validation P3, R9 = F6) : « mêmes fonctions » était inexact — aucune fonction existante ne
+  rend les trois refus (`ensure_bank_account_open` ne rend que le clos, `_ => Ok(())` sinon). Le dev écrit **une**
+  fonction privée `link_preflight`, appelée par les deux handlers, dans l'ordre archivé, clos, non lié, avant toute
+  lecture de statut ; l'ordre des refus du `GET` est celui du `POST` (404 inexistante, archivé, clos, 412, puis 404
+  rapprochée), faute de quoi un compte clos rendrait `404` au `GET` et `409` au `POST`.*
 - **Réversible** : oui.
 
 ### C-29-8-28 — Angle mort L7 : règlement par compte interne sur le compte du grand livre de la banque *(décision de l'orchestrateur)*
@@ -308,4 +325,24 @@ trois premiers sont des **décisions de l'orchestrateur** (« retirer plutôt qu
   par T6, au prix d'une ligne de montage (compte du grand livre partagé).
 - **Écartées** : admettre ce règlement au rattachement (élargit la condition 2 hors du périmètre minimal) ; construire
   des décors forgés en SQL pour tuer M2, M15, M17.
+- **Réversible** : oui.
+
+### C-29-8-29 — Inventaire des conseils de rejet par le symptôme, au rebase ; retrait du contrôle négatif « tout seul. » *(décision de l'orchestrateur)*
+
+- **Contexte** : validation P3, R1 (MEDIUM) : le tableau de l'AC6 décrivait une 29-2 périmée (sa fiche réelle supprime
+  la phrase de `:1305`, réécrit `:2031` en « en rejetant ensuite la transaction », et son entrée de CHANGELOG, ligne 15,
+  dit « puis rejetez la transaction ») et ignorait la 29-5 (`29-5-departage-exigibilite.md:326-327`, même conseil).
+  R2 (MEDIUM) : le contrôle négatif « tout seul. » = 0 contredisait `:1198`, qui garde la phrase.
+- **Retenu** : la fiche cesse de recopier les phrases des fiches voisines. L'AC6 prescrit, à l'étape 0 et **après** rebase
+  sur les 29-2, 29-5 et 29-6 mergées, `grep -nE 'rejet[a-z]*( ensuite)?( la transaction|-la)'
+  docs/manual/fr/user-manual.tex CHANGELOG.md` et toute forme voisine ; chaque conseil de rejeter une transaction réglée
+  depuis la fiche de la facture est réécrit en « rattachez », les autres occurrences sont triées et écrites. Le tableau du
+  manuel ne garde que les sites propres à la 29-8 (glossaire, tuile d'écart, introduction, FAQ, `:1198`, `:1308`,
+  `:2076`, `:2050`) et renvoie au grep pour `:2029` et `:1305`. La 29-5 entre aux zones partagées. Le contrôle de
+  pré-release de la v0.13.4 (fichier d'epic) doit rendre **0 conseil de rejet** après la 29-8. Le contrôle négatif
+  « tout seul. » est **retiré** (il rougirait sur une implémentation fidèle) ; il reste au relevé « ce qui doit encore y
+  être ».
+- **Écartées** : mettre à jour le tableau d'après la 29-2 réelle (il se périmerait au prochain commit d'une fiche
+  voisine, ce que la validation P2 avait déjà payé pour la 29-6) ; durcir « tout seul. » en exigeant la suppression de
+  la phrase (elle reste vraie).
 - **Réversible** : oui.
