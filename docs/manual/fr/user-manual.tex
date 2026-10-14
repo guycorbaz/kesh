@@ -2068,14 +2068,20 @@ Chaque candidate reçoit un score, somme de trois critères :
     \item \textbf{Contact} (10\,\%) : le nom de la contrepartie contient celui du client de la facture, ou l'inverse.
 \end{itemize}
 
-Une candidate dont le score vaut zéro n'est pas proposée. Quand aucune facture n'est candidate, la réconciliation propose à la place la \textbf{règle d'affectation} qui correspond à la transaction, s'il y en a une (\S\ref{sec:regles-affectation})~; elle s'affiche avec un score de 100\,\% --- un score conventionnel, qui n'est pas comparé à celui des factures. Rien n'est jamais passé en comptabilité sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
+Une candidate dont le score vaut zéro n'est pas proposée.
+
+\paragraph{À score égal, la facture échue la première.}\label{sec:imputation-score-egal} Quand plusieurs factures obtiennent le même score --- typiquement deux factures du même client et du même montant, sans référence dans le paiement ---, Kesh applique la règle d'imputation de la loi (art.~87~CO), dans la mesure où il la connaît~: d'abord une facture \textbf{échue}, et parmi elles celle \textbf{échue la première}~; une facture sans échéance --- ou dont l'échéance précède la date --- est tenue pour échue dès sa date. À échéance égale, la plus ancienne. Si aucune n'est échue, Kesh propose celle dont l'échéance est la plus proche~; la loi désigne alors la dette la moins garantie, que Kesh ne connaît pas.
+
+Cette règle ne départage que des scores égaux. Un paiement qui porte le \textbf{numéro} d'une facture \textbf{et son montant exact} la désigne, et elle passe devant toute facture qu'il ne désigne pas aussi~; le montant pesant plus que la référence, une autre facture au montant exact \textbf{peut} en revanche passer devant une facture désignée dont le montant diffère, fût-ce d'un centime, et y passe toujours si elle est du même client. Kesh ne connaît pas les poursuites et ne répartit pas un paiement entre deux factures échues le même jour~: pour imputer autrement, enregistrez le règlement depuis la fiche de la facture voulue (\S\ref{sec:reglement-client}), puis rejetez la transaction (\emph{Rejeter}). Entre deux clients que rien ne distingue, cet ordre n'est qu'un choix par défaut~: vérifiez la proposition.
+
+Quand aucune facture n'est candidate, la réconciliation propose à la place la \textbf{règle d'affectation} qui correspond à la transaction, s'il y en a une (\S\ref{sec:regles-affectation})~; elle s'affiche avec un score de 100\,\% --- un score conventionnel, qui n'est pas comparé à celui des factures. Rien n'est jamais passé en comptabilité sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
 
 \subsubsection{Accepter ou rejeter les propositions}
 
 \emph{Mensuel} → \emph{Réconciliation}, puis choisir le compte bancaire. La page liste les transactions \textbf{en attente} de ce compte --- les 100 plus récentes au plus ---, une par ligne, avec leur date, leur montant, leur contrepartie, et \textbf{une} candidate~:
 
 \begin{itemize}
-    \item la candidate affichée est la \textbf{première} que propose Kesh~: la facture la mieux notée s'il y en a une, avec son numéro et le \textbf{montant qui reste à payer}, au centime --- si la facture est déjà réglée en partie, ce montant est suivi du total d'origine, par exemple «~600, reste dû sur 1000~»~;
+    \item la candidate affichée est la \textbf{première} que propose Kesh~: la facture la mieux notée s'il y en a une --- à score égal, celle qu'impute la règle de la loi (\S\ref{sec:imputation-score-egal}) ---, avec son numéro et le \textbf{montant qui reste à payer}, au centime --- si la facture est déjà réglée en partie, ce montant est suivi du total d'origine, par exemple «~600, reste dû sur 1000~»~;
     \item une \textbf{règle} n'est affichée, avec le badge \emph{Règle} et la mention «~libellé → compte~», que s'il n'y a \textbf{aucune} facture candidate --- même une facture de score faible passe devant elle~: une facture candidate est rapprochée du paiement par sa référence, le nom de son client ou son montant exact, et accepter une règle à sa place porterait ce paiement en produit, la facture restant due (\S\ref{sec:faq-aucun-match}). La page le rappelle au-dessus de la liste. Une facture que le paiement \textbf{dépasse de quelques centimes} est proposée elle aussi, mais son acceptation est refusée en trop-perçu (issue \#665)~;
     \item sans candidate, la ligne indique «~Aucune correspondance~» et n'a pas de case à cocher.
 \end{itemize}
