@@ -108,7 +108,7 @@ Exemples, `D` = 2026-06-15, deux factures du même client, même reste dû, sans
   échue ou non, devant toute facture que la référence ne désigne pas aussi (art. 86 : la déclaration du débiteur
   prime l'imputation légale ; `reference_score` est un contenant bidirectionnel, `matching.rs:132`, si bien qu'une
   référence peut désigner deux factures — validation P2, R3). Le montant pesant plus que la référence (0,50 contre
-  0,40, `matching.rs:80`), une facture **du même client** au montant exact passe devant une facture à quelques
+  0,40, `matching.rs:80`), une facture **du même client que la facture désignée** au montant exact passe devant une facture à quelques
   centimes près — **même désignée par le numéro** —, quelle que soit leur exigibilité ; une facture d'un **autre**
   client au montant exact **peut** passer devant elle : leurs scores peuvent être égaux (0,40 + 0,10 contre 0,50,
   contact au seul client désigné, aucune demi-référence), et c'est alors l'ordre d'imputation qui tranche
@@ -316,7 +316,7 @@ réglée, A reste due. **Rouge au sol** (A a le plus petit `invoice_id`). `D` en
   score --- typiquement deux factures du même client et du même montant, sans référence dans le paiement ---, Kesh
   applique la règle d'imputation de la loi (art.~87~CO), dans la mesure où il la connaît~: d'abord une facture
   **échue**, et parmi elles celle **échue la première**~; une facture sans échéance --- ou dont l'échéance précède la
-  date --- est tenue pour due dès sa date. À échéance égale, la plus ancienne. Si aucune n'est échue, Kesh propose
+  date --- est tenue pour échue dès sa date. À échéance égale, la plus ancienne. Si aucune n'est échue, Kesh propose
   celle dont l'échéance est la plus proche~; la loi désigne alors la dette la moins garantie, que Kesh ne connaît
   pas. » Puis les limites, brèves : un paiement qui porte le **numéro** d'une facture **et son montant exact** la
   désigne et passe devant toute facture qu'il ne désigne pas aussi (score) --- le montant pesant plus que la
@@ -361,8 +361,8 @@ fausses** (validation P1, R4 et R6) ; **le reste de la phrase de la 29-3 est con
   police de code, un nom de champ absent tromperait l'intégrateur) ;
 - la parenthèse « *(depuis la v0.13.4 ; l'ordre lui-même est celui des versions précédentes)* » devient fausse — la
   29-5 change l'ordre à score égal dans la même version — et devient : « *(depuis la v0.13.4 ; l'ordre des
-  candidates est celui des versions précédentes, sauf entre factures de même score, et, au-delà de 50 factures
-  ouvertes du même montant, celles qui sont écartées, #668)* » (validation P2, R11 et F7 : la troncature change aussi
+  candidates est celui des versions précédentes, sauf entre factures de même score ; au-delà de 50 factures ouvertes
+  du même montant, l'ensemble des candidates retenues peut aussi changer, #668)* » (validation P2, R11 et F7 : la troncature change aussi
   l'ensemble, AC3).
 
 Si la 29-3 n'a rien écrit à cet endroit au rebase, ajouter une phrase propre après « Les propositions viennent de
@@ -379,8 +379,8 @@ la plus anciennement créée, même pas encore échue, devant une facture échue
 la loi impute le paiement (art. 87 CO) : une facture échue avant une facture qui ne l'est pas, et, parmi les échues,
 celle échue la première ; une facture sans échéance est due dès sa date. Un paiement qui porte le numéro d'une
 facture et son montant exact la désigne toujours. API : la forme de `GET /api/v1/reconciliation/proposals` ne change
-pas, l'ordre des candidates à score égal, si — et, au-delà de 50 factures ouvertes du même montant, celles qui sont
-écartées. »
+pas ; l'ordre des candidates ne change qu'à score égal, et, au-delà de 50 factures ouvertes du même montant,
+l'ensemble des candidates retenues peut changer. »
 
 ⛔ **L'entrée de la 29-3 dans la même section devient fausse** (sa fiche la dit `Changed` ; la rubrique du dépôt est `### Modifié`, `CHANGELOG.md:110`) (validation P1, R4) : elle dit de l'ordre des
 `candidates` qu'il « est désormais écrit et documenté (`docs/api-external.md`) — **il ne change pas** ». Au rebase,
@@ -697,3 +697,13 @@ Quatre, une règle métier unique : pas de découpage.
   registre, l'epic et `sprint-status.yaml` (`passe (en revanche )?devant`, `devant toute autre`, `deux premiers
   arguments`, `à côté de payment_date`, `dueDate`, `seul l'ordre`, `première sous M9`, `M1-M13`). Suite : **passe
   ciblée P3** (Haiku, une lentille sur le diff de cette remédiation, `29-5-validate-prompt-p3-ciblee.md`).
+- 2026-10-14 — **Validation P3, passe ciblée** (Haiku 5.5, une lentille sur le diff `688d00b4` ; rapport
+  `kesh-gate-logs/29-5-validate-p3-ciblee.md`) : 0/0/2/4. Remédiée par l'orchestrateur, fiche et registre seuls :
+  P3-1 (C-29-5-6 : « ne passe devant que » trop étroit, une désignée exacte passe aussi devant une désignée à montant
+  différent — rectifié par annotation datée) ; P3-2 (phrase sans verbe du CHANGELOG prescrit, réécrite : « l'ordre des
+  candidates ne change qu'à score égal, et, au-delà de 50 factures ouvertes du même montant, l'ensemble des candidates
+  retenues peut changer ») ; P3-3 (« du même client que la facture désignée ») ; P3-4 (parenthèse d'API : l'ensemble
+  n'est plus rangé sous l'ordre) ; P3-5 (« tenue pour échue dès sa date ») ; P3-6 (C-29-5-9 : exception de
+  l'inventaire (c) dite). Hors périmètre relevé : le commentaire « utile aux tests E2E » est à `matching.rs:97-98`
+  (préexistant, à corriger au dev). **Validation close** : la remédiation de la passe ciblée ne touche aucune ligne de
+  production. Trend : P1 0/0/6/9 → P2 0/0/2/17 (1 MEDIUM distinct) → P3 ciblée 0/0/2/4.

@@ -74,8 +74,10 @@ Fiche : `29-5-departage-exigibilite.md`.*
   *Amendé à la validation P2 (R1, F1, R3 ; 2026-10-14)* : la phrase précédente, écrite sans condition de client,
   est bornée au **même client** ; une facture d'un **autre** client au montant exact **peut** passer devant une facture désignée à quelques
   centimes près, non toujours — 0,40 + 0,10 (désignée, contact au nom du client) contre 0,50 (montant seul) sont
-  égaux, et l'ordre d'imputation tranche alors. Et la désignation au montant exact ne passe devant que les factures
-  que la référence ne désigne pas **aussi** (`reference_score` est un contenant bidirectionnel). Manuel, § *Ce que la
+  égaux, et l'ordre d'imputation tranche alors. Et la désignation au montant exact passe devant toute facture que la
+  référence ne désigne pas **aussi**, comme devant une facture désignée à montant différent ; entre deux factures
+  désignées au montant exact, l'ordre d'imputation tranche (`reference_score` est un contenant bidirectionnel).
+  *(Rectifié le 2026-10-14, passe ciblée P3, P3-1 : la phrase disait « ne passe devant que », trop étroit.)* Manuel, § *Ce que la
   règle ne fait pas* et doc-comment écrits sur ce modèle (« peut passer devant », « toujours si elle est du même
   client »).
 - **Écartée** : exigibilité avant score — ferait passer une facture échue devant la facture que le paiement nomme.
@@ -113,7 +115,8 @@ Fiche : `29-5-departage-exigibilite.md`.*
   COALESCE(i.due_date, i.date)), COALESCE(DATE(rmd.last_sent_at), i.date)) AS DATE)`, le premier réservé à une
   expression d'exigibilité commune (C-29-2-15).
 - **Retenu** : l'ancre compose l'expression d'exigibilité ; équivalente (`GREATEST` associatif), tests de la 29-2
-  verts sans modification d'assertion.
+  verts sans modification d'assertion *(sauf l'exception de l'inventaire (c) : une assertion d'ordre que la 29-5 change
+  est réécrite et déclarée — passe ciblée P3, P3-6)*.
   *Amendé à la validation P1 (F1, 2026-10-14)* : la composition passe par `concat!` — une macro d'exigibilité
   insérée dans la macro d'ancre de la 29-2 (C-29-5-11) ; aucun test de la 29-2 ne change. Si la forme mergée de la
   29-2 diffère, relecture à T0.
