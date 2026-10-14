@@ -491,3 +491,104 @@ describe('Rappel dans le dialogue de clôture (AC6)', () => {
 		expect(getClosingChecksMock).toHaveBeenCalledTimes(2);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Revue de code P1 de la 29-1a (E1 = A1) — le jeton de requête (C-29-1-37) :
+// une réponse arrivée APRÈS une demande plus récente est ignorée, qu'elle
+// réussisse ou qu'elle échoue. Chaque cas tue la mutation qui retire l'une des
+// quatre gardes `if (request !== …Request) return;` (M-a23 à M-a26).
+// ---------------------------------------------------------------------------
+
+/** Laisse s'écouler les micro-tâches et un tour de rendu. */
+async function flush(): Promise<void> {
+	await new Promise((r) => setTimeout(r, 0));
+	await new Promise((r) => setTimeout(r, 0));
+}
+
+/** Réponse reconnaissable : un brouillon en attention, que la réponse récente n'a pas. */
+const stale = () =>
+	closingChecks({ DRAFT_INVOICES: { status: 'attention', count: 3, details: { invoices: [] } } });
+
+describe('Jeton de requête — une réponse tardive est ignorée (C-29-1-37)', () => {
+	const deuxOuverts = () => [
+		fy({ id: 1, status: 'Open' }),
+		fy({ id: 2, name: 'Exercice 2025', startDate: '2025-01-01', endDate: '2025-12-31', status: 'Open' }),
+	];
+
+	/** Panneau ouvert sur 2026 (réponse A en attente), fermé, rouvert sur 2025 (réponse B). */
+	async function deuxPanneaux() {
+		authState.login({ userId: '3', username: 'lecture', role: 'Consultation', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue(deuxOuverts());
+		const a = deferred<ClosingChecksResponse>();
+		const b = deferred<ClosingChecksResponse>();
+		getClosingChecksMock.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
+		render(Page);
+		await fireEvent.click(await screen.findByTestId('fiscal-year-checks-1'));
+		await fireEvent.click(await screen.findByTestId('fiscal-year-checks-close'));
+		await fireEvent.click(await screen.findByTestId('fiscal-year-checks-2'));
+		expect(getClosingChecksMock.mock.calls).toEqual([[1], [2]]);
+		return { a, b };
+	}
+
+	it('panneau : la réponse tardive RÉUSSIE de l’exercice précédent ne remplace pas la plus récente (M-a23)', async () => {
+		const { a, b } = await deuxPanneaux();
+		b.resolve(closingChecks());
+		expect(await screen.findByTestId('fiscal-year-checks-list')).toBeTruthy();
+		expect(screen.queryByTestId('fiscal-year-checks-link-DRAFT_INVOICES')).toBeNull();
+		a.resolve(stale());
+		await flush();
+		expect(screen.getByTestId('fiscal-year-checks-list')).toBeTruthy();
+		expect(screen.queryByTestId('fiscal-year-checks-link-DRAFT_INVOICES')).toBeNull();
+		expect(screen.getByTestId('fiscal-year-checks-status-DRAFT_INVOICES').textContent).toContain(
+			'Rien à signaler',
+		);
+	});
+
+	it('panneau : la réponse tardive en ÉCHEC de l’exercice précédent ne remplace pas la plus récente (M-a24)', async () => {
+		const { a, b } = await deuxPanneaux();
+		b.resolve(closingChecks());
+		expect(await screen.findByTestId('fiscal-year-checks-list')).toBeTruthy();
+		a.reject({ code: 'INTERNAL', status: 500, message: 'boom' });
+		await flush();
+		expect(screen.queryByTestId('fiscal-year-checks-error')).toBeNull();
+		expect(screen.getByTestId('fiscal-year-checks-list')).toBeTruthy();
+	});
+
+	/** Dialogue de clôture ouvert (réponse 1 en attente), annulé, rouvert (réponse 2). */
+	async function deuxRappels() {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([fy({ id: 1, status: 'Open' })]);
+		const first = deferred<ClosingChecksResponse>();
+		const second = deferred<ClosingChecksResponse>();
+		getClosingChecksMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+		render(Page);
+		await fireEvent.click(await screen.findByTestId('fiscal-year-close-1'));
+		await screen.findByTestId('fiscal-year-close-checks-loading');
+		await fireEvent.click(screen.getByText('Annuler'));
+		await waitFor(() => expect(screen.queryByTestId('fiscal-year-close-confirm')).toBeNull());
+		await fireEvent.click(screen.getByTestId('fiscal-year-close-1'));
+		await screen.findByTestId('fiscal-year-close-checks-loading');
+		expect(getClosingChecksMock).toHaveBeenCalledTimes(2);
+		return { first, second };
+	}
+
+	it('rappel : la réponse tardive RÉUSSIE de l’ouverture précédente ne remplace pas la plus récente (M-a25)', async () => {
+		const { first, second } = await deuxRappels();
+		second.resolve(closingChecks());
+		expect(await screen.findByTestId('fiscal-year-close-checks-none')).toBeTruthy();
+		first.resolve(stale());
+		await flush();
+		expect(screen.getByTestId('fiscal-year-close-checks-none')).toBeTruthy();
+		expect(screen.queryByTestId('fiscal-year-close-checks-count')).toBeNull();
+	});
+
+	it('rappel : la réponse tardive en ÉCHEC de l’ouverture précédente ne remplace pas la plus récente (M-a26)', async () => {
+		const { first, second } = await deuxRappels();
+		second.resolve(closingChecks());
+		expect(await screen.findByTestId('fiscal-year-close-checks-none')).toBeTruthy();
+		first.reject({ code: 'INTERNAL', status: 500, message: 'boom' });
+		await flush();
+		expect(screen.queryByTestId('fiscal-year-close-checks-error')).toBeNull();
+		expect(screen.getByTestId('fiscal-year-close-checks-none')).toBeTruthy();
+	});
+});

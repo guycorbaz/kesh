@@ -28,8 +28,22 @@
 //! lectures voient la base **au même instant**, l'exercice Y compris (lu ici,
 //! par [`FISCAL_YEAR_SQL`], non sur le pool) ; l'instantané est `READ ONLY`.
 //! Aucune lecture ne verrouille. La garde statique T-a2 (tests du module)
-//! vérifie que **toute** requête de ce module a pour texte une constante de
-//! [`ALL_SQL`], et qu'aucun mot de verrou n'y figure.
+//! vérifie que tout appel `query`, `query_as` ou `query_scalar` de ce module —
+//! suivi de `(` ou d'un turbofish `::<…>(` — a pour premier argument une
+//! constante de [`ALL_SQL`] (volet a), et qu'aucun mot de verrou n'est écrit en
+//! littéral dans le source décommenté (volet b).
+//!
+//! ⚠️ **Formes que T-a2 ne voit pas** (revue de code P1, B-2 = F7 ; la garde
+//! n'est pas élargie, sa forme ayant été réduite à deux volets en validation,
+//! C-29-1-27) : `query_with`, `query_as_with`, `query_scalar_with`,
+//! `query_unchecked` et toute forme dont le mot est suivi d'un caractère
+//! d'identifiant ; les macros `query!`, `query_as!`, `query_scalar!` ;
+//! `QueryBuilder`, `sqlx::raw_sql` ; les méthodes d'`Executor` appelées sur une
+//! chaîne (`execute("…")`, `fetch_*("…")`) ; un alias (`use sqlx::query as q`) ;
+//! et, au volet (b), un mot de verrou coupé par une continuation de chaîne
+//! (`"… FOR \` puis `UPDATE"` à la ligne suivante). Aucune n'est employée dans
+//! ce module ; leur absence se vérifie **en revue de code**, comme celle des
+//! verrous des fonctions externes ci-dessous.
 //!
 //! ⚠️ **Angle mort assumé de T-a2** : les fonctions de dépôt **externes**
 //! appelées ici — et le SQL qu'elles exécutent — ne sont pas lues par la
@@ -55,10 +69,27 @@
 //!   CSV seulement est **non vérifiable** (`notCheckable`), sans effet sur le
 //!   statut. Le relevé de référence est celui qui **se termine au plus tard le
 //!   dernier jour de Y** : un relevé à cheval sur la fin d'année ne compte pas.
+//! - **K4** ne compte que les factures **client** (`invoices`) : un avoir
+//!   (`credit_notes`) en brouillon n'est pas examiné. Kesh émet un avoir en une
+//!   seule étape, au statut `issued` ; un avoir `draft` ne peut venir que de
+//!   données posées hors de l'application (revue de code P1, B-1).
+//! - **K4 et K6** comptent **tous** les points (`count`), mais n'en listent que
+//!   les [`MAX_LISTED`] premiers, par date puis par `id` ; le manuel le dit, et
+//!   seul K4 a un lien vers la liste complète.
 //! - **K6** ne peut signaler que des données héritées ou restaurées : aucun
 //!   chemin d'écriture actuel n'en produit (l'équilibre est vérifié après
 //!   l'INSERT) ; il ne couvre pas une ligne dont le compte appartient à une
 //!   autre société que l'écriture.
+//! - **Coût de K6** (revue de code P1, B-3) : la table dérivée des totaux de
+//!   lignes agrège **tout** le grand livre de la société, non les seules
+//!   écritures de la population ; le coût croît avec l'historique, à chaque
+//!   ouverture du panneau et du dialogue de clôture (deux lectures). Sans effet
+//!   fonctionnel ; une borne ne s'ajouterait que sur mesure.
+//! - **K7** rend le **premier** exercice qui commence après la fin de Y, même
+//!   après un trou : un exercice 2028 sans 2027 « suit » 2026, et K7 est `ok`.
+//! - L'écart de K3 est celui de [`bank_accounts::statement_gap`] : les deux
+//!   soldes arrondis au centime, demi loin de zéro — un reste de moins d'un
+//!   demi-centime est nul, un reste d'un demi-centime ou plus compte.
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
@@ -69,206 +100,318 @@ use crate::entities::{FiscalYear, FiscalYearStatus, bank_account::bank_account_d
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::{bank_accounts, fiscal_years};
 
-/// Les contrôles d'un exercice.
+/// Les contrôles d'un exercice — la réponse de
+/// `GET /api/v1/fiscal-years/{id}/closing-checks`, sérialisée en camelCase.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClosingChecks {
+    /// Identifiant de l'exercice examiné (Y).
     pub fiscal_year_id: i64,
+    /// Nom de Y.
     pub fiscal_year_name: String,
+    /// Premier jour de Y.
     pub start_date: NaiveDate,
+    /// Dernier jour de Y.
     pub end_date: NaiveDate,
+    /// **Toujours sept** contrôles, dans l'ordre de l'AC1 (table de la doc du
+    /// module).
     pub checks: Vec<ClosingCheck>,
 }
 
-/// Un contrôle.
+/// Un contrôle : son code, sa sévérité, son statut, le nombre de points relevés
+/// et ses détails.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClosingCheck {
+    /// Code stable — c'est **lui** qui dit au client comment lire `details`.
     pub code: CheckCode,
+    /// Sévérité, fixe par code.
     pub severity: Severity,
+    /// `ok` ou `attention`.
     pub status: CheckStatus,
+    /// Nombre de points relevés (voir la doc du module) ; pour K1 et K7, `1` en
+    /// `attention`, `0` sinon. Jamais borné, même quand la liste l'est.
     pub count: i64,
+    /// Détails propres au code.
     pub details: CheckDetails,
 }
 
-/// Code stable.
+/// Code stable d'un contrôle, sérialisé en SCREAMING_SNAKE_CASE ; un code neuf
+/// serait un changement de contrat de l'API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CheckCode {
+    /// K1 — un exercice antérieur est ouvert.
     EarlierFiscalYearOpen,
+    /// K2 — transactions bancaires en attente, datées dans Y.
     PendingBankTransactions,
+    /// K3 — relevé bancaire de fin d'exercice.
     BankStatementAtYearEnd,
+    /// K4 — factures client en brouillon, datées dans Y.
     DraftInvoices,
+    /// K5 — pièces fournisseur importées à compléter (non borné à Y).
     ImportedSupplierInvoicesToComplete,
+    /// K6 — écritures incohérentes.
     InconsistentEntries,
+    /// K7 — l'exercice qui suit Y.
     NextFiscalYear,
 }
 
-/// Sévérité.
+/// Sévérité d'un contrôle, sérialisée en minuscules. Seul `blocking` (K1)
+/// correspond à un refus réel, celui de la clôture ; rien ne bloque ici.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
+    /// La clôture refuse tant que le point demeure (K1).
     Blocking,
+    /// À vérifier avant de clôturer (K2, K3).
     Warning,
+    /// Pour information (K4, K5, K7).
     Info,
+    /// Données incohérentes, héritées ou restaurées (K6).
     Anomaly,
 }
 
-/// Statut.
+/// Statut d'un contrôle, sérialisé en minuscules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CheckStatus {
+    /// Rien à signaler (pour K7 : un exercice suit).
     Ok,
+    /// Au moins un point relevé.
     Attention,
 }
 
-/// Détails.
+/// Détails d'un contrôle, sérialisés **sans étiquette** (`untagged`) : le JSON
+/// ne porte que le contenu de la variante. ⚠️ K1 et K7 ont la **même forme**
+/// (`{ "fiscalYear": … | null }`) : le client les distingue par
+/// [`ClosingCheck::code`], jamais par la forme des détails.
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub enum CheckDetails {
+    /// K1.
     EarlierFiscalYearOpen(EarlierOpenDetails),
+    /// K2.
     PendingBankTransactions(PendingDetails),
+    /// K3.
     BankStatementAtYearEnd(StatementDetails),
+    /// K4.
     DraftInvoices(DraftDetails),
+    /// K5 (objet vide).
     ImportedSupplierInvoicesToComplete(ImportedDetails),
+    /// K6.
     InconsistentEntries(InconsistentDetails),
+    /// K7.
     NextFiscalYear(NextFiscalYearDetails),
 }
 
+/// Un exercice nommé (K1).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FiscalYearRef {
+    /// Identifiant de l'exercice.
     pub id: i64,
+    /// Nom de l'exercice.
     pub name: String,
 }
 
+/// Détails de K1.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EarlierOpenDetails {
+    /// Le **plus ancien** exercice antérieur ouvert, ou `None` (JSON `null`).
     pub fiscal_year: Option<FiscalYearRef>,
 }
 
+/// K2 : les transactions en attente d'un compte bancaire.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingByAccount {
+    /// Identifiant du compte bancaire.
     pub bank_account_id: i64,
+    /// Nom affiché du compte (banque et description).
     pub name: String,
+    /// Transactions `pending` datées dans Y.
     pub count: i64,
+    /// Parmi elles, celles que l'utilisateur a écartées des propositions.
     pub rejected_count: i64,
 }
 
+/// Détails de K2.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingDetails {
+    /// Un élément par compte qui a au moins une transaction en attente.
     pub accounts: Vec<PendingByAccount>,
 }
 
+/// K3 : motif d'un compte en défaut (motifs 3 à 5 de la table de précédence).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum StatementReason {
+    /// Le relevé à solde retenu — celui qui se termine au plus tard le dernier
+    /// jour de Y — manque, ou se termine avant Y.
     Missing,
+    /// Relevé arrêté avant `MIN(Y.end_date, closed_on)`.
     EndsBeforeYearEnd,
+    /// Écart entre le relevé et les livres à sa date.
     Gap,
 }
 
+/// K3 : motif d'un compte examiné mais **non vérifiable** (motifs 1 et 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum NotCheckableReason {
+    /// Sans compte de grand livre lié, ou compte lié partagé.
     NotComparable,
+    /// Aucun relevé à solde, toutes dates (CSV seulement).
     NoBalanceStatement,
 }
 
+/// K3 : un compte en défaut, avec les montants qui le montrent (chaînes
+/// décimales en JSON).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatementIssue {
+    /// Identifiant du compte bancaire.
     pub bank_account_id: i64,
+    /// Nom affiché du compte.
     pub name: String,
+    /// Le premier motif qui s'applique.
     pub reason: StatementReason,
+    /// Date de fin du relevé retenu, s'il y en a un.
     pub statement_date: Option<NaiveDate>,
+    /// Solde final de ce relevé.
     pub statement_closing_balance: Option<Decimal>,
+    /// Solde comptable du compte lié à cette date.
     pub ledger_balance_at_statement: Option<Decimal>,
+    /// Écart arrondi au centime ([`bank_accounts::statement_gap`]), `None` s'il
+    /// est nul ou ne se calcule pas.
     pub gap: Option<Decimal>,
 }
 
+/// K3 : un compte examiné mais non vérifiable — sans effet sur le statut.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotCheckable {
+    /// Identifiant du compte bancaire.
     pub bank_account_id: i64,
+    /// Nom affiché du compte.
     pub name: String,
+    /// Pourquoi il n'est pas vérifiable.
     pub reason: NotCheckableReason,
 }
 
+/// Détails de K3.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatementDetails {
+    /// Les comptes en défaut — `count` en est le nombre.
     pub accounts: Vec<StatementIssue>,
+    /// Les comptes examinés mais non vérifiables.
     pub not_checkable: Vec<NotCheckable>,
 }
 
+/// K4 : une facture en brouillon.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DraftInvoiceRef {
+    /// Identifiant de la facture.
     pub id: i64,
+    /// Libellé : le nom du contact (un brouillon n'a pas de numéro).
     pub label: String,
+    /// Date de la facture.
     pub date: NaiveDate,
 }
 
+/// Détails de K4.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DraftDetails {
+    /// Au plus [`MAX_LISTED`] brouillons, par date puis par `id`.
     pub invoices: Vec<DraftInvoiceRef>,
 }
 
+/// Détails de K5 : objet vide, le compte suffit.
 #[derive(Debug, Clone, Serialize)]
 pub struct ImportedDetails {}
 
+/// K6 : motif d'une écriture incohérente.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EntryReason {
+    /// Écriture de Y dont les totaux débit et crédit diffèrent.
     Unbalanced,
+    /// Écriture de Y à moins de deux lignes (zéro compris).
     TooFewLines,
+    /// Écriture de Y datée hors de Y.
     DateOutsideItsYear,
+    /// Écriture d'un autre exercice datée dans Y.
     OtherYearDatedInside,
 }
 
+/// K6 : nombre d'écritures par motif, sérialisé en SCREAMING_SNAKE_CASE
+/// (`UNBALANCED`, …) — les clés sont les codes de [`EntryReason`]. Une
+/// écriture peut compter sous deux motifs : la somme peut dépasser `count`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct CountByReason {
+    /// [`EntryReason::Unbalanced`].
     pub unbalanced: i64,
+    /// [`EntryReason::TooFewLines`].
     pub too_few_lines: i64,
+    /// [`EntryReason::DateOutsideItsYear`].
     pub date_outside_its_year: i64,
+    /// [`EntryReason::OtherYearDatedInside`].
     pub other_year_dated_inside: i64,
 }
 
+/// K6 : une écriture incohérente.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InconsistentEntry {
+    /// Identifiant de l'écriture.
     pub id: i64,
+    /// Numéro de l'écriture dans son exercice.
     pub entry_number: i64,
+    /// Date de l'écriture.
     pub entry_date: NaiveDate,
+    /// Nom de l'exercice **de l'écriture** (qui peut ne pas être Y).
     pub fiscal_year_name: String,
+    /// Ses motifs, dans l'ordre de [`EntryReason`].
     pub reasons: Vec<EntryReason>,
 }
 
+/// Détails de K6.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InconsistentDetails {
+    /// Décompte par motif, sur **toutes** les écritures relevées.
     pub count_by_reason: CountByReason,
+    /// Au plus [`MAX_LISTED`] écritures, par date puis par `id`.
     pub entries: Vec<InconsistentEntry>,
 }
 
+/// K7 : l'exercice qui suit Y.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NextFiscalYearRef {
+    /// Identifiant de l'exercice.
     pub id: i64,
+    /// Nom de l'exercice.
     pub name: String,
+    /// Son premier jour.
     pub start_date: NaiveDate,
+    /// Son statut (ouvert ou clos).
     pub status: FiscalYearStatus,
 }
 
+/// Détails de K7.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NextFiscalYearDetails {
+    /// Le premier exercice qui commence après la fin de Y — même après un
+    /// trou —, ou `None` (JSON `null`).
     pub fiscal_year: Option<NextFiscalYearRef>,
 }
 
@@ -341,6 +484,12 @@ const IMPORTED_SQL: &str = "SELECT CAST(COUNT(*) AS SIGNED) FROM imported_suppli
 /// K6 : les écritures incohérentes, une ligne par écriture, un drapeau par
 /// motif. Population : les écritures **de Y** et celles **datées dans Y**. Les
 /// totaux des lignes sont agrégés dans une table dérivée bornée à la société.
+///
+/// Le `WHERE` de population n'est qu'un **filtre de lignes** : chaque drapeau
+/// porte déjà sa propre condition sur Y (exercice ou date), si bien qu'une
+/// écriture hors population a ses quatre drapeaux à zéro et serait écartée par
+/// le `HAVING`. L'élargir ne change donc pas le résultat — mutation M-a33,
+/// équivalente (revue de code P1).
 const INCONSISTENT_SQL: &str = "SELECT je.id, je.entry_number, je.entry_date, fy.name AS fiscal_year_name, \
             CAST(je.fiscal_year_id = ? AND COALESCE(l.total_debit, 0) <> COALESCE(l.total_credit, 0) AS SIGNED) \
               AS unbalanced, \

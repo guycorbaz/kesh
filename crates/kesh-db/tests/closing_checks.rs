@@ -347,7 +347,8 @@ async fn un_exercice_d_une_autre_societe_est_introuvable(pool: MySqlPool) {
 // T-a3 — K1
 // ---------------------------------------------------------------------------
 
-/// T-a3 — deux antérieurs ouverts : le **plus ancien** (M-a18) ; tous clos : ok.
+/// T-a3 — deux antérieurs ouverts : le **plus ancien** (M-a18) ; tous clos : ok,
+/// même si une autre société a un antérieur ouvert (M-a38).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn t_a3_k1_le_plus_ancien_anterieur_ouvert(pool: MySqlPool) {
     let seeded = company(&pool).await;
@@ -389,6 +390,19 @@ async fn t_a3_k1_le_plus_ancien_anterieur_ouvert(pool: MySqlPool) {
             .await
             .unwrap();
     }
+    // Revue de code P1 (E4, M-a38) : un antérieur OUVERT d'une autre société
+    // n'est pas un antérieur — la portée société d'`EARLIER_OPEN_SQL`, texte
+    // partagé avec l'étape (d) de `close`.
+    let other = seed_stub_company_only(&pool).await.unwrap();
+    fiscal_year(
+        &pool,
+        other,
+        "Autre 2023",
+        ymd(2023, 1, 1),
+        ymd(2023, 12, 31),
+        "Open",
+    )
+    .await;
     let k = checks(&pool, c, seeded.fiscal_year_id).await;
     let k1 = find(&k, CheckCode::EarlierFiscalYearOpen);
     assert_eq!((k1.status, k1.count), (CheckStatus::Ok, 0));
@@ -1272,7 +1286,8 @@ async fn t_a9_k6_liste_bornee(pool: MySqlPool) {
 // ---------------------------------------------------------------------------
 
 /// T-a10 — sans suivant : `attention` ; avec N+1 et N+2 : `ok` et les données
-/// de **N+1** (M-a11) ; un antérieur seul n'est pas un suivant.
+/// de **N+1** (M-a11) ; un antérieur seul n'est pas un suivant, ni l'exercice
+/// d'une autre société (M-a37).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn t_a10_k7_exercice_suivant(pool: MySqlPool) {
     let seeded = company(&pool).await;
@@ -1287,9 +1302,26 @@ async fn t_a10_k7_exercice_suivant(pool: MySqlPool) {
         "Closed",
     )
     .await;
+    // Revue de code P1 (E4, M-a37) : l'exercice qui suit Y chez une AUTRE
+    // société n'est pas un suivant — la portée société de `NEXT_AFTER_SQL` ;
+    // sans elle, K7 serait `ok` et nommerait l'exercice d'une autre société.
+    let other = seed_stub_company_only(&pool).await.unwrap();
+    fiscal_year(
+        &pool,
+        other,
+        "Autre 2027",
+        ymd(2027, 1, 1),
+        ymd(2027, 12, 31),
+        "Open",
+    )
+    .await;
     let k = checks(&pool, c, fy).await;
     let k7 = find(&k, CheckCode::NextFiscalYear);
     assert_eq!((k7.status, k7.count), (CheckStatus::Attention, 1));
+    match &k7.details {
+        CheckDetails::NextFiscalYear(d) => assert!(d.fiscal_year.is_none(), "{d:?}"),
+        other => panic!("{other:?}"),
+    }
 
     let y28 = fiscal_year(
         &pool,
@@ -1320,6 +1352,247 @@ async fn t_a10_k7_exercice_suivant(pool: MySqlPool) {
                 (n.id, n.name.as_str(), n.start_date),
                 (y27, "Exercice 2027", ymd(2027, 1, 1))
             );
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Revue de code P1 (2026-10-14) — bornes et périmètres que T-a5, T-a7 et T-a9
+// n'encadraient pas (E2, E3, LOW-1 = A1). Le code n'a pas changé : ces tests
+// prouvent ce qu'il faisait déjà, et nomment chacun la mutation qu'il tue.
+// ---------------------------------------------------------------------------
+
+/// K3 — trois cas aux bornes (E2) :
+/// - compte clos **le premier jour** de Y, avec activité ce jour-là : examiné
+///   (`closed_on >= Y.start`, M-a34) — son seul relevé à solde précède Y, donc
+///   `MISSING` ;
+/// - compte clos **après** Y, relevé conforme au dernier jour : rien à signaler —
+///   la mesure s'arrête à `MIN(Y.end_date, closed_on)` (M-a35) ;
+/// - relevé arrêté **trop tôt et** en écart avec les livres : le motif 4
+///   `ENDS_BEFORE_YEAR_END` l'emporte sur le motif 5 `GAP`, l'écart restant servi
+///   (M-a36).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn t_a5_k3_bornes_de_cloture_et_ordre_des_motifs(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let c = seeded.company_id;
+    let fy = seeded.fiscal_year_id;
+    let sales = seeded.accounts["3000"];
+
+    let (first_day, _, fd_imp) =
+        linked_with_statement(&pool, &seeded, "1061", ymd(2025, 12, 15), dec!(0)).await;
+    bank_tx(
+        &pool,
+        c,
+        first_day,
+        fd_imp,
+        ymd(2026, 1, 1),
+        dec!(7),
+        "pending",
+        false,
+    )
+    .await;
+    sqlx::query("UPDATE bank_accounts SET closed_on = '2026-01-01' WHERE id = ?")
+        .bind(first_day)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (after, after_l, _) =
+        linked_with_statement(&pool, &seeded, "1062", ymd(2026, 12, 31), dec!(100)).await;
+    balanced(&pool, c, fy, ymd(2026, 6, 1), after_l, sales, dec!(100)).await;
+    sqlx::query("UPDATE bank_accounts SET closed_on = '2027-03-31' WHERE id = ?")
+        .bind(after)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (early_gap, _, _) =
+        linked_with_statement(&pool, &seeded, "1063", ymd(2026, 11, 30), dec!(100)).await;
+
+    // Assertions de montage.
+    let closed: Vec<(i64, Option<NaiveDate>)> =
+        sqlx::query_as("SELECT id, closed_on FROM bank_accounts WHERE id IN (?, ?) ORDER BY id")
+            .bind(first_day)
+            .bind(after)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        closed,
+        vec![
+            (first_day, Some(ymd(2026, 1, 1))),
+            (after, Some(ymd(2027, 3, 31)))
+        ]
+    );
+
+    let k = checks(&pool, c, fy).await;
+    let d = statements(find(&k, CheckCode::BankStatementAtYearEnd));
+    assert_eq!(
+        reasons_of(d, first_day),
+        Some(StatementReason::Missing),
+        "clos le premier jour de Y, examiné (M-a34) : {d:?}"
+    );
+    assert_eq!(
+        reasons_of(d, after),
+        None,
+        "clos après Y, mesuré au dernier jour de Y (M-a35) : {d:?}"
+    );
+    assert_eq!(not_checkable_of(d, after), None);
+    let e = d
+        .accounts
+        .iter()
+        .find(|a| a.bank_account_id == early_gap)
+        .expect("relevé arrêté trop tôt");
+    assert_eq!(
+        (e.reason, e.statement_date, e.gap),
+        (
+            StatementReason::EndsBeforeYearEnd,
+            Some(ymd(2026, 11, 30)),
+            Some(dec!(-100))
+        ),
+        "le motif 4 avant le motif 5 (M-a36)"
+    );
+    assert_eq!(d.accounts.len(), 2, "{d:?}");
+}
+
+/// K6 — périmètre « de Y » des motifs et bornes de jour (E3) :
+/// - écritures d'un **autre** exercice, datées **dans** Y, déséquilibrée ou à
+///   une ligne : le seul motif `OTHER_YEAR_DATED_INSIDE` (M-a27, M-a28) ;
+/// - écritures déséquilibrées ou à une ligne **hors** de Y (autre exercice,
+///   datées hors de Y) : absentes ;
+/// - écriture de Y datée de la **veille** de Y : `DATE_OUTSIDE_ITS_YEAR`
+///   (M-a29) ; datée du **premier jour** : rien (M-a30) ;
+/// - écriture d'un autre exercice datée du **premier jour** de Y :
+///   `OTHER_YEAR_DATED_INSIDE` (M-a31) ; datée de la veille : rien ;
+/// - écriture de Y **sans aucune ligne** : `TOO_FEW_LINES` seul (M-a32).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn t_a9_k6_perimetre_de_y_et_bornes(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let c = seeded.company_id;
+    let fy = seeded.fiscal_year_id;
+    let a = seeded.accounts["1000"];
+    let b = seeded.accounts["3000"];
+    let y25 = fiscal_year(
+        &pool,
+        c,
+        "Exercice 2025",
+        ymd(2025, 1, 1),
+        ymd(2025, 12, 31),
+        "Open",
+    )
+    .await;
+    let y27 = fiscal_year(
+        &pool,
+        c,
+        "Exercice 2027",
+        ymd(2027, 1, 1),
+        ymd(2027, 12, 31),
+        "Open",
+    )
+    .await;
+
+    let other_unbalanced = entry(
+        &pool,
+        c,
+        y27,
+        ymd(2026, 6, 1),
+        &[(a, dec!(10), dec!(0)), (b, dec!(0), dec!(9))],
+    )
+    .await;
+    let other_single = entry(&pool, c, y27, ymd(2026, 7, 1), &[(a, dec!(2), dec!(0))]).await;
+    entry(
+        &pool,
+        c,
+        y27,
+        ymd(2027, 2, 1),
+        &[(a, dec!(10), dec!(0)), (b, dec!(0), dec!(9))],
+    )
+    .await;
+    entry(&pool, c, y25, ymd(2025, 6, 1), &[(a, dec!(2), dec!(0))]).await;
+    let eve = balanced(&pool, c, fy, ymd(2025, 12, 31), a, b, dec!(1)).await;
+    balanced(&pool, c, fy, ymd(2026, 1, 1), a, b, dec!(1)).await;
+    let other_first_day = balanced(&pool, c, y25, ymd(2026, 1, 1), a, b, dec!(1)).await;
+    balanced(&pool, c, y25, ymd(2025, 12, 31), a, b, dec!(1)).await;
+    let no_line = entry(&pool, c, fy, ymd(2026, 3, 1), &[]).await;
+
+    // Assertion de montage : l'écriture sans ligne n'en a aucune.
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entry_lines WHERE entry_id = ?")
+        .bind(no_line)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 0, "montage : écriture sans ligne");
+
+    let k = checks(&pool, c, fy).await;
+    let k6 = find(&k, CheckCode::InconsistentEntries);
+    assert_eq!((k6.status, k6.count), (CheckStatus::Attention, 5));
+    match &k6.details {
+        CheckDetails::InconsistentEntries(d) => {
+            let r = &d.count_by_reason;
+            assert_eq!(
+                (
+                    r.unbalanced,
+                    r.too_few_lines,
+                    r.date_outside_its_year,
+                    r.other_year_dated_inside
+                ),
+                (0, 1, 1, 3),
+                "{r:?}"
+            );
+            let got: Vec<(i64, Vec<EntryReason>)> = d
+                .entries
+                .iter()
+                .map(|e| (e.id, e.reasons.clone()))
+                .collect();
+            assert_eq!(
+                got,
+                vec![
+                    (eve, vec![EntryReason::DateOutsideItsYear]),
+                    (other_first_day, vec![EntryReason::OtherYearDatedInside]),
+                    (no_line, vec![EntryReason::TooFewLines]),
+                    (other_unbalanced, vec![EntryReason::OtherYearDatedInside]),
+                    (other_single, vec![EntryReason::OtherYearDatedInside]),
+                ]
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// K4 — la liste est bornée à 20 et suit l'ordre `date, id` (LOW-1 = A1) :
+/// 21 brouillons insérés en dates **décroissantes** (l'ordre d'insertion n'est
+/// pas celui des dates), puis deux de plus au 1er janvier (départage par `id`).
+/// `count` = 23, la liste = les 20 premiers par date puis par id (M-a39 : ordre
+/// retiré ; M-a40 : départage inversé ; M-a41 : plafond ignoré).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn t_a7_k4_liste_bornee_et_ordonnee(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let c = seeded.company_id;
+    let ct = contact(&pool, c, "Client K4").await;
+    let mut by_day: Vec<(u32, i64)> = Vec::new();
+    for day in (1..=21).rev() {
+        let id = invoice(&pool, c, ct, ymd(2026, 1, day), "draft", None).await;
+        by_day.push((day, id));
+    }
+    let tie1 = invoice(&pool, c, ct, ymd(2026, 1, 1), "draft", None).await;
+    let tie2 = invoice(&pool, c, ct, ymd(2026, 1, 1), "draft", None).await;
+    by_day.push((1, tie1));
+    by_day.push((1, tie2));
+    by_day.sort();
+    let attendus: Vec<i64> = by_day.iter().take(20).map(|(_, id)| *id).collect();
+    // Montage : l'ordre d'insertion n'est pas l'ordre attendu.
+    let mut par_id = attendus.clone();
+    par_id.sort();
+    assert_ne!(par_id, attendus, "montage : id et dates en désordre");
+
+    let k = checks(&pool, c, seeded.fiscal_year_id).await;
+    let k4 = find(&k, CheckCode::DraftInvoices);
+    assert_eq!((k4.status, k4.count), (CheckStatus::Attention, 23));
+    match &k4.details {
+        CheckDetails::DraftInvoices(d) => {
+            let ids: Vec<i64> = d.invoices.iter().map(|i| i.id).collect();
+            assert_eq!(ids, attendus);
         }
         other => panic!("{other:?}"),
     }
