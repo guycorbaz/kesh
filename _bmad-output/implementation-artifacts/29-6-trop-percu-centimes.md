@@ -1155,3 +1155,12 @@ Remédiation de la revue de code P1 (`4b34d45e..`) :
   centimes) ; **LOW-3** annotation datée au Dev Agent Record (mutation `.chain` non jouée ; préfixe de 4 caractères non
   testé) — écrite comme limite, non rejouée, la remédiation ne touchant pas le code. **Trend : P1 B 0/0/0/3, E 0/0/1/2,
   A 0/0/0/4 → P2 ciblée 0/0/0/3 ; revue close** (la remédiation ne touche aucune ligne de production). Statut `done`.
+- 2026-10-14 — **Rebase sur `main` `fe404b11` (29-4a) et gates finaux** (dernier commit de code : `a7d9474c`, les
+  commits suivants ne portent que de la documentation). Un seul conflit : `epic-29-choix-autonomes.md` (registres des
+  29-4 et 29-6, réunis ; la 29-4 d'abord) ; `sprint-status.yaml` fusionné sans conflit, en-têtes renumérotés 153 à 158
+  au-dessus du 152 de `main` ; CHANGELOG § 0.13.4, fichier d'epic et PDF sans conflit (aucun commit de `main` n'a touché
+  le manuel depuis `81b1b526`, PDF non régénéré, contrôlé aplati : phrases des 29-1a, 29-3, 29-5, 29-6 présentes, aucun
+  `??`). Bases remises à zéro, sous verrou : `scripts/test-fast.sh` **3692 passed, 6 skipped** ; `npm run check`,
+  `lint-i18n-ownership`, `build` verts, Vitest **1645 passed (147 fichiers)** ; E2E complet **287 passed, 7 failed,
+  19 skipped (11,6 min)** — les sept KF-029 (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150`), aucun autre.
