@@ -546,9 +546,10 @@ le `<p>` de l'indication, ni sa clé, ni son repli.
 - **CHANGELOG** : une quatrième puce sous `### Corrigé` de la section de la v0.13.4 (AC8) — sur l'écran de
   réconciliation, chaque case nomme sa transaction pour un lecteur d'écran, et l'indication « ne peut pas être
   acceptée » est annoncée (#678).
-- **Manuel : inchangé** (C-29-9-22). Aucun texte **visible** ne change ; le paragraphe que la 29-6 écrit sur
-  l'indication reste vrai. À vérifier dans le PDF régénéré par T6 (contrôle aplati) que la phrase de la 29-6 sur
-  l'indication est toujours présente et toujours exacte.
+- **Manuel : inchangé** (C-29-9-22). Aucun texte **visible** ne change ; la phrase que la 29-6 écrit sur la case et
+  l'indication (`user-manual.tex:2086` à `d71c506b` : « porte une case, comme les autres~; \emph{Accepter} ne la traite
+  pas --- tant qu'une telle ligne est cochée, il reste grisé et la page le dit ») reste vraie. À vérifier dans le PDF
+  régénéré par T6 (contrôle aplati, `grep -o "la page le dit.\{0,80\}"`) qu'elle est toujours présente.
 
 *Tests Vitest* (`ReconciliationProposals.test.ts`, nouveau `describe` après celui de la 29-6 ; écrits **avant** le
 correctif et vus rouges, sortie copiée au Dev Agent Record ; le mock i18n du fichier interpole les variables, `:50-55`) :
