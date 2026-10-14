@@ -1151,6 +1151,8 @@ reconciliation-labels-amount-due-of = residuo su { $total }
 reconciliation-labels-success-suffix = operazione/i riuscita/e.
 reconciliation-labels-failed = Errori parziali
 reconciliation-labels-rejected-hint = Una transazione rifiutata lascia questo elenco. Resta nel dettaglio della sua importazione (Importa estratti conto), dove il rifiuto si può annullare se il suo ruolo lo consente.
+# Story 29-3 (#527) — la priorità delle proposte, indicata sopra l'elenco.
+reconciliation-labels-priority-hint = Per ogni transazione è mostrata una sola proposta: la fattura con il punteggio migliore, se ce n’è una, altrimenti la regola di assegnazione corrispondente. Una fattura proposta precede sempre una regola.
 # Story 15-5c (#492) — etichette dei rifiuti di un lotto di riconciliazione (`failed[]`).
 reconciliation-failed-account-not-found = Un conto di contropartita è introvabile o archiviato.
 reconciliation-failed-account-not-postable = Conto non registrabile: { $numbers }. Un conto di raggruppamento, di risultato o di chiusura non riceve scritture: scegliere un conto registrabile.

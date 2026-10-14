@@ -631,7 +631,12 @@ const ATTENDU = {
 	// Passe ciblée P2 de la 28-4b (M1, L2) : **2104 → 2107** (+3, `bank-accounts/+page.svelte`
 	// 70 → 73 : `bank-accounts-notice-stale`, `-labels-empty-hidden-archived`, `-hidden-closed`),
 	// mesuré par la collecte et par `grep -o "i18nMsg("`. Les autres compteurs inchangés.
-	sitesTotal: 2107,
+	// Story 29-3 (#527, AC5) : **2107 → 2108** (+1), mesuré par la collecte de ce test sur
+	// `story/29-3` (rebasée sur la 29-2, `d5df4994`, qui ne touche pas le frontend : 2107) et
+	// recompté par `grep -o "i18nMsg("` aux deux bornes : `ReconciliationProposals.svelte`
+	// 19 → 20 (`reconciliation-labels-priority-hint`). `sitesNonResolus`, `relais`,
+	// `sitesGabarit` inchangés (un littéral), mesurés.
+	sitesTotal: 2108,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

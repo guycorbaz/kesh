@@ -151,6 +151,81 @@ pub struct ReconciliationCandidate {
     pub score: MatchScore,
 }
 
+/// Story 29-3 (#527) — le **rang** d'une candidate dans la priorité écrite
+/// de [`order_candidates`] : 0 passe devant 1, qui passe devant 2.
+///
+/// | rang | candidate |
+/// |---|---|
+/// | 0 | facture qui porte un **signal d'identité** : montant égal au centime, référence liée à son numéro, ou contrepartie liée au nom de son client — quel que soit son score total |
+/// | 1 | la règle d'affectation (une au plus) |
+/// | 2 | facture **sans aucun signal** |
+///
+/// **Pourquoi le signal, et non le score.** Une règle ne sait rien des
+/// factures ouvertes : l'accepter pour le paiement d'un client identifié
+/// porte ce paiement en **produit** — produit compté deux fois, facture
+/// restée due, rappel envoyé à un client qui a payé, et rien ne le signale.
+/// C'est le faux rattachement **muet** (`CLAUDE.md`, *Un appariement
+/// automatique propose, il ne crée jamais*). Le tri brut par score est écarté :
+/// le `1.0` de la règle est une **convention**, pas une mesure, et le comparer
+/// aux scores des factures ferait passer la règle devant toute facture faible
+/// — c'est-à-dire devant des paiements de clients identifiés.
+///
+/// Le rang 0 se lit sur les **sous-scores**, jamais sur un seuil du total :
+/// `matching.rs` n'y pose que les littéraux `1.0`, `0.5` et `0.0`, comparables
+/// exactement.
+///
+/// ⚠️ **Le rang 2 est inatteignable aujourd'hui** : les trois sous-scores sont
+/// positifs ou nuls, et `propose_matches` écarte une facture de total nul —
+/// toute facture candidate porte donc un signal. Il existe pour qu'une source
+/// future de factures (un choix manuel, #666 ; un score de montant à gradient,
+/// la décision L17 de `matching.rs`) ne puisse pas placer **en silence** une
+/// facture sans indice devant une règle.
+///
+/// Le `match` est **exhaustif, sans bras `_`** : un variant ajouté à
+/// [`CandidateType`] ne compile pas sans être classé ici.
+fn candidate_rank(c: &ReconciliationCandidate) -> u8 {
+    match c.candidate_type {
+        CandidateType::Invoice => {
+            let s = &c.score;
+            if s.amount_score == 1.0 || s.reference_score > 0.0 || s.contact_score > 0.0 {
+                0
+            } else {
+                2
+            }
+        }
+        CandidateType::Rule => 1,
+    }
+}
+
+/// Story 29-3 (#527) — ordonne les candidates d'une proposition selon la
+/// priorité écrite de [`candidate_rank`] : une facture qui porte un signal
+/// d'identité passe **toujours** devant la règle d'affectation.
+///
+/// L'écran n'affiche et n'accepte que `candidates[0]` (une seule candidate
+/// visible par ligne, KF-026 #76) : cet ordre est ce que l'utilisateur
+/// accepte d'un clic, et la page le dit au-dessus de la liste.
+///
+/// Le tri est **stable** (`sort_by_key`, jamais `sort_unstable_by_key`) : à
+/// rang égal, l'ordre reçu de `propose_matches` est conservé — score
+/// décroissant, puis son départage (`invoice_id` croissant au sol ; le
+/// départage à score égal est porté par #668, Story 29-5, que ce tri garde
+/// tel quel). La fonction ne suppose **rien** de l'ordre d'entrée.
+///
+/// ⚠️ Sur les entrées que produit `get_proposals`, elle ne change rien : la
+/// règle y est ajoutée en dernier, et chaque facture qui la côtoie est de
+/// rang 0. Son effet ne s'observe qu'aux tests de `candidate_order_tests` et
+/// aux mutations du critère de rang. C'est voulu : l'ordre devient **écrit**,
+/// au lieu d'être l'effet de bord de la place d'un `push`.
+///
+/// Angles morts, ni aggravés ni réparés : une facture que le paiement dépasse
+/// de 1 à 5 centimes est candidate, reste au rang 0, puis son acceptation est
+/// refusée en `RECONCILIATION_OVERPAYMENT` (#665, Story 29-6) ; le départage à
+/// score égal place la facture de plus petit identifiant en tête, sans égard
+/// à l'exigibilité (#668, Story 29-5).
+fn order_candidates(candidates: &mut [ReconciliationCandidate]) {
+    candidates.sort_by_key(candidate_rank);
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AcceptResponse {
@@ -721,9 +796,12 @@ pub async fn get_proposals(
         .collect();
 
     // Pass 4 : score per-tx + rule fallback + build response.
-    // AC #114 (Pass 2 Q8) : un invoice candidate avec score ≥ 0.5 prime
-    // sur les rules ; en dessous, rule + invoice coexistent (les 2
-    // s'affichent). Aucun invoice candidate → rule en fallback seul.
+    // AC #114 (Pass 2 Q8) : une facture candidate de score ≥ 0.5 écarte la
+    // règle, qui n'est pas même calculée. En dessous, la règle qui correspond
+    // rejoint la liste, et `order_candidates` (Story 29-3, #527) fixe la
+    // priorité : une facture qui porte un signal d'identité passe devant elle.
+    // ⚠️ L'écran n'affiche et n'accepte que `candidates[0]` — une seule des
+    // deux se voit.
     const INVOICE_OVERRIDE_THRESHOLD: f64 = 0.5;
     let proposals: Vec<ReconciliationProposal> = tx_candidates
         .into_iter()
@@ -825,6 +903,10 @@ pub async fn get_proposals(
                     },
                 });
             }
+
+            // Story 29-3 (#527) — la priorité écrite, DERNIER geste sur
+            // `candidates` : l'écran affiche et accepte `candidates[0]`.
+            order_candidates(&mut candidates);
 
             ReconciliationProposal {
                 bank_transaction_id: tx.id,
