@@ -142,6 +142,11 @@
 - **Retenu** : la 29-8, développée après elles, réécrit ces phrases (manuel, CHANGELOG, `api-external.md` s'il y a
   lieu) et retire les incises « (#670) » devenues fausses. L'indication de l'écran de la 29-6 reste (elle parle des
   boutons de lot).
+  *Annoté le 2026-10-14 (validation P2, R3) : la 29-6, à sa validation P2, a réécrit elle-même la FAQ (« Kesh ne relie
+  pas la transaction … ; rejetez-la »), complété `:2050` et rédigé l'indication « ne peut pas être acceptée » ; au
+  manuel, ses incises ne portent **aucun** « 670 » (C-29-6-17) — seule son entrée de CHANGELOG le porte. La fiche 29-8
+  (AC6) cite désormais ces textes tels qu'ils sont ; le retrait des incises vaut pour l'incise « rejetée, elle reste en
+  attente … » de `:2029` et de la FAQ, et pour « ([#670]) » de l'entrée de CHANGELOG de la 29-6.*
 - **Écartée** : laisser les deux gestes au manuel (le rejet ne règle pas #670).
 - **Réversible** : oui.
 
@@ -170,6 +175,9 @@
   Les cinq autres chemins ne lient que des écritures qu'ils créent ; le seul autre écrivain de la colonne la remet à
   `NULL` sous le même verrou de `s`. `GET_LOCK` ne fait pas naître la vue (aucune table lue ; fiche 28-4:961). Test
   T17 (course de double rattachement), mutation M14 (requête des conditions avant le verrou de `s`).
+  *Annoté le 2026-10-14 (validation P2, R1 = F1 ; C-29-8-25) : T17 n'observe plus l'attente — il n'asserte que le
+  résultat d'une course ; l'ordre d'acquisition et la naissance de la vue sont renvoyés à la revue de code, et M14 n'est
+  tuée que si les deux requêtes se chevauchent.*
 - **Écartées** : garder la lecture en la forçant sur l'index (`FORCE INDEX`) avec un test `EXPLAIN` — le cycle
   d'intervalle demeure ; une contrainte `UNIQUE (matched_entry_id)` — migration, et hors périmètre minimal.
 - **Réversible** : oui.
@@ -181,6 +189,9 @@
 - **Retenu** : `M > 0` (un règlement par virement débite toujours la banque, `settle_invoice` refuse `amount <= 0`) ;
   table dérivée par écriture en jointure interne, `HAVING M > 0`. Test T18 (ancien compte lié, crédit de 0.03 et
   crédit égal), mutations M15 et M16.
+  *Annoté le 2026-10-14 (validation P2, R2 = F2) : dans la forme retenue, c'est la **jointure interne** qui écarte
+  l'écriture sans ligne sur le compte lié ; le `HAVING M > 0` ne décide que d'une somme ≤ 0, qu'aucun état atteignable
+  ne produit — M15 est déclarée **équivalente** (fiche, AC8), non tuée par T18 (a).*
 - **Écartée** : `COALESCE(…, 0)` sans condition (laisse passer `M = 0`).
 - **Réversible** : oui.
 
@@ -240,4 +251,61 @@
 - **Retenu** : sur ce `409`, la modal recharge `getLinkCandidates` et remet le choix à vide ; l'échec du chargement
   s'affiche. Vitest.
 - **Écartée** : fermer la modal (l'utilisateur perdrait le contexte de la transaction).
+- **Réversible** : oui.
+
+---
+
+*Choix C-29-8-25 à C-29-8-28 : remédiation de la validation P2 (2026-10-14), lentilles R (0/0/5/5) et F (0/0/5/6). Les
+trois premiers sont des **décisions de l'orchestrateur** (« retirer plutôt qu'ajouter »), consignées comme telles.*
+
+### C-29-8-25 — L'observation de l'attente est retirée de T16 et T17 *(décision de l'orchestrateur)*
+
+- **Contexte** : validation P2, R1 = F1 (MEDIUM, né de la remédiation P1) : T17 prescrivait d'observer le `POST`
+  bloqué sur le verrou de ligne par `information_schema.INNODB_TRX`, que l'utilisateur de dev (`kesh`, sans privilège
+  `PROCESS`, `scripts/mariadb-init/01-dev-grants.sql`) ne peut pas lire ; T16 renvoyait à la même observation.
+- **Retenu** : **retirer** l'observation, ne la remplacer par **aucune** autre. T17 asserte le seul résultat d'une
+  course réelle (deux rattachements concurrents du même règlement, `tokio::join!` : exactement un `200`, l'autre
+  `409 RECONCILIATION_SETTLEMENT_NOT_LINKABLE`, un seul lien en base) ; T16 de même, entre l'annulation du règlement
+  depuis la fiche et le rattachement (exactement l'un réussit, état final cohérent). Ce qu'ils ne prouvent pas —
+  l'ordre d'acquisition, l'attente du perdant, le moment où naît la vue — est écrit à la fiche et **renvoyé à la revue
+  de code** ; M10 et M14 ne sont tuées que si les requêtes se chevauchent (une survie se déclare au Dev Agent Record).
+- **Écartées** : la sonde `attendre_une_requete_en_cours` sur la requête de l'étape 4.2 (a) (proposée par R1 et F1) —
+  une autre forme d'observation, que l'orchestrateur a exclue ; garder `INNODB_TRX` (rouge permanent sur le poste de
+  dev).
+- **Réversible** : oui (une observation peut être ajoutée par une story ultérieure).
+
+### C-29-8-26 — T15 ne clôt pas le compte ; la clôture est assertée par T1 *(décision de l'orchestrateur)*
+
+- **Contexte** : validation P2, R4 = F4 : un compte clos fait rendre `409 BANK_ACCOUNT_CLOSED` à toute annulation qui
+  suit, avant ses propres motifs (`reconciliation_cancel.rs:325`, `invoice_settlements_write.rs:896`) ; un compte
+  principal ne se clôt pas (`bank_accounts.rs:1016-1019`) ; `…/cancel` supprime le règlement
+  (`invoice_settlements_write.rs:946`).
+- **Retenu** : T15 opère sur un compte **non principal** qu'il ne clôt pas, assertions dans un ordre écrit (dévalidation
+  avant ; rattachement ; refus `MATCHED_BANK_TRANSACTION` puis témoin annulé ; dévalidation après ; K2 ; `…/cancel` en
+  dernier) ; le témoin est un acompte **par virement sur le même compte**. La clôture refusée puis réussie — le défaut
+  de #670 — passe à **T1**, compte non principal.
+- **Écartées** : clore puis rouvrir le compte dans T15 (deux gestes de plus, et la réouverture n'est pas l'objet) ;
+  deux décors dans T15.
+- **Réversible** : oui.
+
+### C-29-8-27 — Le `GET` des candidats applique le pré-vol du `POST`
+
+- **Contexte** : validation P2, R9 = F10 (LOW) : l'AC1 promettait « la liste n'offre jamais ce que le `POST`
+  refuserait » sans prescrire au `GET` le compte clos ni le compte sans compte du grand livre lié.
+- **Retenu** : mêmes fonctions de pré-vol au `GET` (archivé → `BankAccountNotFound`, clos → `409
+  BANK_ACCOUNT_CLOSED`, non lié → `412 BANK_ACCOUNT_NOT_CONFIGURED`) ; T13 (a) asserte le `GET` aussi.
+- **Écartée** : `200` et `[]` — la modal afficherait « Aucun règlement … » et tairait la cause.
+- **Réversible** : oui.
+
+### C-29-8-28 — Angle mort L7 : règlement par compte interne sur le compte du grand livre de la banque *(décision de l'orchestrateur)*
+
+- **Contexte** : validation P2, F3 : `settle_invoice` admet un règlement `internal_account` dont le compte est celui du
+  grand livre de la banque ; son écriture débite la banque, mais il n'est pas un virement.
+- **Retenu** : non rattachable (condition 2), angle mort **L7** écrit (Dev Notes, sous-section neuve du manuel,
+  CHANGELOG), même remède que L5 (annuler et refaire par virement), versé à #671 par l'orchestrateur ; **aucun test
+  neuf**. Dans le même mouvement, M2 est déclarée équivalente (contrainte `chk_invoice_settlements_counterparty`),
+  M15 (jointure interne) et M17 (filtre société de l'étape 4.2 (a)) aussi, sans décor pour les tuer ; M1 reste tuée
+  par T6, au prix d'une ligne de montage (compte du grand livre partagé).
+- **Écartées** : admettre ce règlement au rattachement (élargit la condition 2 hors du périmètre minimal) ; construire
+  des décors forgés en SQL pour tuer M2, M15, M17.
 - **Réversible** : oui.
