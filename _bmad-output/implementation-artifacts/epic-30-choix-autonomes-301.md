@@ -330,3 +330,38 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
 - **Retenu** : le dialogue (et ses tests) dans la 30-1b, qui touche déjà `features/reconciliation` et produit le premier
   rapprochement fournisseur ; 30-1a et 30-1b à cinq modules.
 - **Écartée** : une dérogation à la règle de découpage, ou une troisième sous-story pour une ligne de rejeu.
+
+---
+
+## Remédiation de la validation P3 — 2026-10-15 (arbitrages de l'orchestrateur)
+
+### C-30-1-34 — Le règlement fournisseur en attente de rapprochement bloque la ligne
+
+- **Contexte** : arbitrage — une facture payée par la confirmation d'un lot du même compte, dont l'écriture n'est
+  rapprochée de rien, doit faire que la ligne ne propose rien. Au code, l'origine « par le lot » n'est pas reconnaissable
+  (`payment_batch_items` ne pointe aucune écriture ; un lot confirmé peut avoir été suivi d'une annulation et d'un
+  règlement direct).
+- **Retenu** : critère sur le risque — règlement par virement depuis ce compte, au montant exact, écriture non
+  rapprochée, datée à ±30 jours du débit — quelle qu'en soit l'origine ; le dernier lot confirmé du compte est rapporté à
+  la `notice` s'il existe.
+- **Écartées** : le lot seul (critère invérifiable) ; aucune borne de dates (un vieux règlement non rapproché bloquerait
+  à jamais les débits du même montant).
+- **Réversible** : oui (constante de ±30 jours).
+
+### C-30-1-35 — L'acceptation fournisseur rejoue la garde de la proposition
+
+- **Retenu** : `supplier_payment_hold(…)`, une fonction, lue par `get_proposals` et par l'étape 3 (d) de l'acceptation,
+  en lectures verrouillantes après le verrou du compte ; refus `RECONCILIATION_SUPPLIER_PAYMENT_HOLD`.
+- **Écartée** : la garde à la proposition seulement (appel direct, écran périmé).
+- **Hors** : l'acceptation d'une **règle** (L7, issue demandée).
+
+### C-30-1-36 — `POST /payment-batches` : liste vide court-circuitée, 500 identifiants au plus
+
+- **Retenu** : aucun `SELECT … IN ()` sur une liste vide (sortie `200` d'aujourd'hui) ; borne de 500 à la route (`400`).
+- **Réversible** : oui.
+
+### C-30-1-37 — Les `notice` ne conseillent jamais de confirmer un lot
+
+- **Retenu** : « si cette transaction est le paiement de ce lot, annulez le lot ; sinon, affectez à la main » ; pour un
+  paiement déjà au grand livre, « n'affectez pas cette transaction » (#671).
+- **Écartée** : « confirmez le lot » (mène à L1, une charge comptée deux fois).
