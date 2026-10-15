@@ -339,6 +339,13 @@
 					</div>
 					<p class="text-sm text-slate-400">A bank account can now be <strong class="text-slate-200">closed</strong>, and reopened: it becomes read-only, its history stays whole, and nothing more can be booked on it. A <strong class="text-slate-200">rejected bank transaction can be put back</strong> among the reconciliation proposals from its import&rsquo;s detail. The installation backup reads all its tables in <strong class="text-slate-200">a single consistent snapshot</strong>. Reconciliation no longer proposes an invoice it would then refuse, and a debit offered against a customer invoice is refused cleanly. An error is never displayed as &ldquo;[object Object]&rdquo; any more, and destructive buttons are visible again. One database migration, which does not raise the minimum version — but going back to v0.13.2 requires restoring the backup taken before the upgrade.</p>
 				</div>
+				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
+					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+						<h3 class="font-semibold">E29 — Preparing the first year-end closing, part one <span class="text-slate-500 font-mono text-xs">v0.13.4</span></h3>
+						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
+					</div>
+					<p class="text-sm text-slate-400"><strong class="text-slate-200">Preparing a fiscal year&rsquo;s closing</strong>: seven read-only checks — bank transactions still to reconcile, missing year-end statement, draft invoices, imported bills to complete, inconsistent entries — each leading to the screen where to act. A bank transaction can be <strong class="text-slate-200">linked to the payment already recorded</strong> on the invoice, without a new entry. Reconciliation now proposes a payment received <strong class="text-slate-200">after the due date or a reminder</strong>, puts the invoice that fell due first at the top on equal score (art. 87 CO), no longer proposes an invoice a payment exceeds by a few cents, and says which proposal it shows. An import, a payment batch or a cancellation started just before a bank account is closed no longer lands on it. The reconciliation list says when older transactions remain beyond the 100 most recent. No database migration: going back to v0.13.3 only takes its image. Automatic reversal of accruals at the opening of the next year follows in v0.14.0.</p>
+				</div>
 			</div>
 		</div>
 	</section>
