@@ -142,6 +142,23 @@ describe('Documents à traiter', () => {
 		await waitFor(() => expect(queryByTestId('imported-preview-panel')).toBeNull());
 	});
 
+	it('l’aperçu ouvert ne relit pas le document quand la liste se recharge (fonction de lecture stable, M-a17)', async () => {
+		// Deux lectures de la liste, deux objets distincts pour la même ligne.
+		listImportedMock
+			.mockResolvedValueOnce([{ ...SANS_QR }])
+			.mockResolvedValueOnce([{ ...SANS_QR }]);
+		triggerMock.mockResolvedValue({ accepted: [], failed: [], warnings: [] });
+		fetchDocMock.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
+		const { findByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('imported-preview'));
+		await findByTestId('document-preview-image');
+		await fireEvent.click(await findByTestId('inbox-import-trigger'));
+		await waitFor(() => expect(listImportedMock).toHaveBeenCalledTimes(2));
+		await findByTestId('inbox-import-report');
+		await findByTestId('document-preview-image');
+		expect(fetchDocMock).toHaveBeenCalledTimes(1);
+	});
+
 	it('le rapport dit « sans QR-code » ou « QR illisible » pour un document accepté sans QR', async () => {
 		listImportedMock.mockResolvedValue([]);
 		const report: InboxImportReport = {
@@ -168,7 +185,7 @@ describe('Documents à traiter', () => {
 		expect(lines[0].textContent).toMatch(/sans\.png.*sans QR-code/s);
 		expect(lines[1].textContent).toMatch(/abime\.png.*QR illisible/s);
 		expect(lines[1].textContent).toMatch(/Montant du QR hors des limites admises/);
-		expect(lines[1].textContent).toMatch(/saisissez-les à la main/);
+		expect(lines[1].textContent).toMatch(/la facture créée sera sans IBAN ni référence/);
 	});
 
 	it('« Retirer de la liste » demande confirmation, puis retire la ligne', async () => {

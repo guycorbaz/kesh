@@ -129,4 +129,53 @@ describe('DocumentPreview', () => {
 		expect(created).toEqual(['blob:doc-1', 'blob:doc-2']);
 		await waitFor(() => expect(revoked).toEqual(['blob:doc-1']));
 	});
+
+	/** Une lecture dont le test choisit le moment de la fin. */
+	function deferred(): {
+		promise: Promise<Blob>;
+		resolve: (b: Blob) => void;
+		reject: (e: unknown) => void;
+	} {
+		let resolve!: (b: Blob) => void;
+		let reject!: (e: unknown) => void;
+		const promise = new Promise<Blob>((res, rej) => {
+			resolve = res;
+			reject = rej;
+		});
+		return { promise, resolve, reject };
+	}
+
+	it('course : la lecture du document précédent, finie APRÈS le changement, n’est ni affichée ni convertie en URL (M-a16)', async () => {
+		const a = deferred();
+		const { findByTestId, queryByTestId, rerender } = render(DocumentPreview, {
+			load: () => a.promise,
+			fileName: 'a.png',
+		});
+		// On change de document pendant que la lecture de A est en cours.
+		await rerender({ load: () => Promise.resolve(blob('application/pdf')), fileName: 'b.pdf' });
+		await findByTestId('document-preview-frame');
+		expect(created).toEqual(['blob:doc-1']);
+		// A finit maintenant : ni URL créée (elle ne serait jamais révoquée), ni A affiché.
+		a.resolve(blob('image/png'));
+		await a.promise;
+		await new Promise((r) => setTimeout(r, 0));
+		expect(created).toEqual(['blob:doc-1']);
+		expect(queryByTestId('document-preview-image')).toBeNull();
+		expect((await findByTestId('document-preview-frame')).getAttribute('src')).toBe('blob:doc-1');
+	});
+
+	it('course : l’échec tardif de la lecture du document précédent n’efface pas l’aperçu du suivant (M-a16b)', async () => {
+		const a = deferred();
+		const { findByTestId, queryByTestId, rerender } = render(DocumentPreview, {
+			load: () => a.promise,
+			fileName: 'a.pdf',
+		});
+		await rerender({ load: () => Promise.resolve(blob('image/png')), fileName: 'b.png' });
+		await findByTestId('document-preview-image');
+		a.reject({ code: 'SOURCE_DOCUMENT_GONE', status: 410, message: 'gone' });
+		await a.promise.catch(() => {});
+		await new Promise((r) => setTimeout(r, 0));
+		expect(queryByTestId('document-preview-gone')).toBeNull();
+		expect(queryByTestId('document-preview-image')).not.toBeNull();
+	});
 });

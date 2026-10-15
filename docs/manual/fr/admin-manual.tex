@@ -859,7 +859,7 @@ Kesh importe les documents fournisseurs (PDF ou images PNG, JPEG) déposés dans
 dossier, cherche un Swiss QR Code côté serveur et place chaque document dans la liste
 « Documents à traiter ». Depuis la 0.14.0, \textbf{tout document entre}, avec ou sans
 QR-code~: un document sans QR, ou dont le QR est inexploitable, entre sans les données
-du QR, à saisir à la main. Restent refusés (sous-dossier \texttt{failed/})~: un type hors
+du QR~; la facture qui en naît est sans IBAN ni référence. Restent refusés (sous-dossier \texttt{failed/})~: un type hors
 PDF/PNG/JPEG ou dont le contenu ne correspond pas à l'extension, une image illisible, un
 fichier trop volumineux, un lien symbolique, un doublon, une erreur de lecture. Deux
 dossiers sont à configurer, montés en volumes persistants (cf. \texttt{docker-compose}) :

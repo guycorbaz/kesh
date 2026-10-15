@@ -16,7 +16,8 @@
 //! (contrainte `chk_imported_si_qr_all_or_nothing`) : « le document porte un
 //! QR » se lit [`ImportedSupplierInvoice::has_qr`]. Un QR décodé mais qui ne
 //! tient pas dans les colonnes ([`check_scanned_fits_columns`]) laisse entrer
-//! le document **sans** ses données QR, à saisir à la main.
+//! le document **sans** ses données QR : la facture complétée naît sans IBAN
+//! ni référence.
 
 use kesh_qrbill::validation::{amount_max, amount_min};
 use kesh_qrbill::{ScannedQrBill, ScannedReference};

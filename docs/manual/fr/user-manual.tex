@@ -1730,8 +1730,9 @@ Chaque ligne de la liste porte le nom du fichier, sa date d'import et un badge~:
     \item \textbf{QR-facture}, avec le créancier, le montant et la référence lus dans le QR~;
     \item \textbf{Sans QR-code}~: le document n'en porte pas, ou son QR n'a pas pu être
           exploité (illisible, montant hors des limites admises, valeur trop longue). Le
-          document est alors accepté \textbf{sans les données du QR}~: IBAN, référence et
-          montant se saisissent à la main.
+          document est alors accepté \textbf{sans les données du QR}~: la facture qui en
+          naît n'a ni IBAN ni référence, et son montant est celui des lignes que vous
+          saisissez.
 \end{itemize}
 
 Trois gestes par document~:

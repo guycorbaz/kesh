@@ -443,7 +443,7 @@
 								({importErrorLabel(a.qrError)}){/if}.
 							{i18nMsg(
 								'imported-supplier-invoices-qr-unreadable-hint',
-								'Document accepté sans les données du QR : saisissez-les à la main.',
+								'Document accepté sans les données du QR : la facture créée sera sans IBAN ni référence.',
 							)}
 						{:else}
 							{i18nMsg('imported-supplier-invoices-report-no-qr', 'sans QR-code')}
