@@ -1,3 +1,4 @@
+# last_updated: 2026-10-15 (167) (release 0.13.4 préparée — branche chore/release-0.13.4 : crates 0.13.4 et CHANGELOG daté par prepare-release.sh (pré-vol : 2 exemptions périssables, aucun tag dans leur intervalle), macros des manuels 0.13.4/2026-10-15, URL raw au tag v0.13.4, section « Passer à la 0.13.4 » au manuel d administration (aucune migration : retour à la 0.13.3 par l image), README/site/CLAUDE.md ; ligne orpheline « 29-6, R7)* » retirée du fichier d epic ; epic-29 reste in-progress (29-1b, 29-7))
 # last_updated: 2026-10-15 (166) (29-9 reportée sur 1261c4bb (tête finale de la 29-8) ; gates et E2E rejoués ; revue de code P1 à lancer ; refs #649 #655 #646 #678)
 # last_updated: 2026-10-15 (165) (29-9 développée → review ; rebasée sur 4b358373 (29-8) ; revue de code P1 à lancer ; refs #649 #655 #646 #678)
 # last_updated: 2026-10-14 (164) (29-9 — amendement #678 : quatrième correctif, AC11 ; passes ciblées P4 et P5 de validation remédiées)

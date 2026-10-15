@@ -180,8 +180,6 @@ la fiche dit « quatre ».
 
 - **v0.13.4** dès que 29-1a, 29-2, 29-3, 29-4, 29-5, 29-6, 29-8 et 29-9 sont mergées : Guy les éprouve tout de suite avec ses relevés mensuels.
 
-  29-6, R7)* : Guy les éprouve tout de suite avec ses relevés mensuels.
-
 - La **29-9** part dans la **v0.13.4** (ajoutée le 2026-10-14) : ses quatre fermetures (#649, #655, #646, #678 ; #678 ajoutée par
   l'amendement du 2026-10-14) comptent dans le décompte du tag.
 - **v0.14.0** à la fin de la 29-1 : fonctionnalité nouvelle.
