@@ -839,6 +839,8 @@ Symptômes grepés sur la fiche, le registre et le prompt (valeurs : `22`, `505-
 AC1 à AC24, AC6-bis, AC9-bis, AC12-bis), **23 tâches**, **33 mutations** (M-a1 à M-a12, M-b1 à M-b11, M-c1 à M-c10),
 dont **trois déclarées équivalentes** (M-a11, M-b2, M-c7), **neuf parcours E2E**, **21 choix** (C-30-2-1 à 21 ; C-30-2-6
 et 7 amendés, C-30-2-10 complété, C-30-2-20 et 21 neufs). Le prompt P1, relevé daté, n'est pas modifié.
+*(Annotation du 2026-10-15, validation P2 — F1-1, R1 : M-a11 n'était **pas** équivalente à cette date, le montant
+n'étant borné par personne ; voir l'entrée suivante.)*
 
 ### 2026-10-15 — Validation P2 (Opus, lentilles R et F) et sa remédiation
 
