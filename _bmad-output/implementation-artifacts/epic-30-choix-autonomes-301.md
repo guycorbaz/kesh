@@ -335,18 +335,17 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
 
 ## Remédiation de la validation P3 — 2026-10-15 (arbitrages de l'orchestrateur)
 
-### C-30-1-34 — Le règlement fournisseur en attente de rapprochement bloque la ligne
+### C-30-1-34 — RETIRÉ (P4) — ~~Le règlement fournisseur en attente de rapprochement bloque la ligne~~
 
-- **Contexte** : arbitrage — une facture payée par la confirmation d'un lot du même compte, dont l'écriture n'est
-  rapprochée de rien, doit faire que la ligne ne propose rien. Au code, l'origine « par le lot » n'est pas reconnaissable
-  (`payment_batch_items` ne pointe aucune écriture ; un lot confirmé peut avoir été suivi d'une annulation et d'un
-  règlement direct).
-- **Retenu** : critère sur le risque — règlement par virement depuis ce compte, au montant exact, écriture non
-  rapprochée, datée à ±30 jours du débit — quelle qu'en soit l'origine ; le dernier lot confirmé du compte est rapporté à
-  la `notice` s'il existe.
-- **Écartées** : le lot seul (critère invérifiable) ; aucune borne de dates (un vieux règlement non rapproché bloquerait
-  à jamais les débits du même montant).
-- **Réversible** : oui (constante de ±30 jours).
+- **Ce qu'il disait (P3)** : une facture payée par virement depuis le compte, au montant exact, dont l'écriture de
+  règlement n'est rapprochée de rien, à ±30 jours du débit, effaçait toute proposition de la ligne (notice
+  « paiement en attente de rapprochement ») et faisait refuser l'acceptation.
+- **Retiré le 2026-10-15, décision de l'orchestrateur après la P4** : il sur-bloquait (une mensualité payée depuis la
+  fiche bloquait le débit de la suivante), ne laissait aucun geste sûr à l'écran, ajoutait des lectures verrouillantes
+  aux cycles neufs, et chaque passe y trouvait un double comptage nouveau. Le risque **préexiste** à la 30-1 (v0.13.4 :
+  une règle peut déjà affecter ce débit) et relève de **#671** : il redevient l'angle mort **L1**, écrit au manuel avec
+  le geste sûr (annuler le paiement depuis la fiche, puis accepter la facture dans la réconciliation ; sinon ne pas
+  utiliser la règle).
 
 ### C-30-1-35 — L'acceptation fournisseur rejoue la garde de la proposition
 
@@ -354,6 +353,8 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
   en lectures verrouillantes après le verrou du compte ; refus `RECONCILIATION_SUPPLIER_PAYMENT_HOLD`.
 - **Écartée** : la garde à la proposition seulement (appel direct, écran périmé).
 - **Hors** : l'acceptation d'une **règle** (L7, issue demandée).
+- *Annotation du 2026-10-15* : l'acceptation d'une règle est **intégrée** par C-30-1-38 (aucune issue) ; la garde
+  ne porte plus, depuis la P4, que sur le lot du compte, en lecture ordinaire (C-30-1-39).
 
 ### C-30-1-36 — `POST /payment-batches` : liste vide court-circuitée, 500 identifiants au plus
 
@@ -373,3 +374,21 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
   Le masquage par une facture candidate n'est pas rejoué (priorité, non interdiction). Aucun module ajouté.
 - **Écartée** : une issue séparée (même route, même fichier).
 - **Changement de contrat client**, écrit à `api-external.md` et au CHANGELOG.
+
+---
+
+## Simplification après la validation P4 — 2026-10-15 (décision de l'orchestrateur)
+
+### C-30-1-39 — On ne découpe pas, on simplifie : une fonction, des lectures ordinaires, une garde de moins
+
+- **Contexte** : signal de recyclage — la classe « double comptage » revenait à chaque passe sous une forme née de nos
+  propres gardes (P3, amendement AC-b17).
+- **Retenu** : (1) retrait de C-30-1-34 ; (2) aucune lecture verrouillante neuve pour le masquage, ni à la proposition,
+  ni à l'acceptation (d), ni dans `accept_one_rule` — la tolérance « ce qui est commis après la vue n'est pas vu » est
+  écrite ; (3) une seule fonction source du critère « lot `generated` du compte au montant exact »
+  (`find_open_supplier_invoice_in_account_batch`), trois lecteurs ; (4) `accept_one_rule` rejoue, en lectures
+  ordinaires, le lot du compte et `has_strong_invoice_match` pour un débit, la condition de la 29-6 pour un crédit
+  (`RECONCILIATION_RULE_MASKED`) ; l'imputation délibérée passe par *Affecter manuellement*.
+- **Écartées** : un nouveau découpage (le défaut n'était pas la largeur mais la prolifération des gardes) ; garder la
+  garde de C-30-1-34 en la resserrant (aurait encore demandé un geste sûr à l'écran et une borne arbitraire).
+- **Réversible** : oui.
