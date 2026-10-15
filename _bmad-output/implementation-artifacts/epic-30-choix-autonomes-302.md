@@ -105,6 +105,13 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   (validation P1, R1)** : la recherche serveur est un « OU » de mots et `rank` ne filtre pas ; une fonction pure
   `proposeSuppliers` filtre d'abord (tous les mots du plus court des deux noms, formes juridiques et mots de liaison
   retirés, figurent dans l'autre), puis classe. Un fournisseur qui ne partage que « Sàrl » n'est plus proposé.
+  **Amendé de nouveau le 2026-10-15 (validation P2, R7, arbitrage de l'orchestrateur : le rappel avant la précision)** :
+  deux sources dans l'ordre — les fournisseurs dont une facture passée porte l'IBAN ou le QR-IBAN du créancier (lecture
+  neuve `GET /imported-supplier-invoices/{id}/supplier-candidates`, l'IBAN lu sur le document), puis le nom par une clé
+  normalisée (`supplierNameKey` : trémas développés `ae`/`oe`/`ue`, accents repliés, ponctuation en espaces, formes
+  juridiques retirées comme suites de mots, mots de liaison retirés) avec égalité ou inclusion d'ensembles de mots ;
+  trois au plus, motif affiché, aucun présélectionné. La règle « tous les mots du plus court » de la P1 n'était pas
+  décidable (tokenisation, mesure) et écartait « Dubarde Sàrl Genève » et « Mueller AG ».
 - **Écartées** : présélectionner le premier (un enregistrement sans regarder rattacherait au mauvais fournisseur) ;
   un appariement par IBAN (les contacts ne portent pas d'IBAN).
 - **Réversible** : oui.
@@ -187,7 +194,7 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
 - **Angle mort** : un document avec QR détaché peut servir à créer une seconde facture ; geste humain, dit au manuel.
 - **Réversible** : oui.
 
-### C-30-2-14 — Les deux lectures du document s'ouvrent à tout rôle authentifié
+### C-30-2-14 — La lecture du document d'une facture s'ouvre à tout rôle authentifié *(titre corrigé le 2026-10-15, validation P2, L1 : il disait « les deux lectures », contre son propre Retenu)*
 
 - **Contexte** : `GET /imported-supplier-invoices/{id}/source-document` et `GET /supplier-invoices/{id}/source-document`
   sont montées parmi les routes Comptable+ (`lib.rs:506-513`), alors que la facture et l'écriture se lisent par tout
@@ -255,18 +262,23 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
 
 ### C-30-2-20 — Les coordonnées de paiement se valident dans la conversion commune, pour les deux routes
 
-- **Contexte** : validation P1 (F6, R14). `POST /supplier-invoices` ne valide ni l'IBAN (somme de contrôle), ni
-  l'exclusivité IBAN / QR-IBAN, ni la cohérence QRR : `create_in_tx` insère tel quel
-  (`repositories/supplier_invoices.rs:340-343`, `:526-539`). La complétion sans QR (AC12) aurait hérité du trou, et un
-  QR-IBAN saisi à la main atterrit en `creditorIban`. Arbitrage de l'orchestrateur : prescrire la validation.
-- **Retenu** : AC12-bis — la conversion commune (AC13) valide, pour `POST /supplier-invoices` **et** la complétion sans
-  QR (un seul chemin) : IBAN valide et non QR en `creditorIban`, QR-IBAN valide en `creditorQrIban`, pas les deux, QRR
-  ⇔ QR-IBAN, QRR valide ; valeurs enregistrées normalisées ; refus `400 INVALID_PAYMENT_DETAILS` (`details.field`,
-  `details.reason`). Fonctions existantes de `kesh-qrbill::validation` (`validate_iban`, `validate_qr_iban`,
-  `validate_qrr`, `normalize_iban`). À l'écran, `isQrIban` route la saisie. La création manuelle refuse désormais ce
-  qu'elle acceptait : `### Modifié` au CHANGELOG ; les factures existantes ne changent pas.
-- **Écartées** : écrire « aucun contrôle, comme aujourd'hui » en angle mort (une dette sans issue est interdite) ;
-  valider la seule complétion (deux chemins pour une même saisie).
+- **Contexte** : validation P1 (F6, R14). `POST /supplier-invoices` ne valide ni l'IBAN, ni l'exclusivité IBAN /
+  QR-IBAN, ni la cohérence QRR : `create_in_tx` insère tel quel (`repositories/supplier_invoices.rs:340-343`,
+  `:526-539`). Arbitrage de l'orchestrateur : prescrire la validation.
+- **Retenu** (réécrit le 2026-10-15 après la validation P2 — F1-3, F1-4, R6, arbitrage de l'orchestrateur ; la première
+  rédaction s'appuyait sur `kesh_qrbill::validation::validate_iban`, qui n'accepte que CH/LI à 21 caractères et aurait
+  refusé tout IBAN étranger) : AC12-bis — un seul type par côté. Serveur : `kesh_core::types::Iban` (international,
+  MOD-97) pour `creditorIban`, qui ne doit pas être un QR-IBAN ; `kesh_core::types::QrIban` (CH/LI, QR-IID 30000-31999)
+  pour `creditorQrIban` ; pas les deux. QR-IBAN ⇒ référence QRR obligatoire et valide (`validate_qrr`) ; IBAN ordinaire
+  ou absent ⇒ référence libre ou SCOR (≤ 64), jamais de forme QRR (27 chiffres une fois les espaces retirés). Espaces
+  normalisés, chaîne vide ou blanche = absente, valeurs stockées normalisées. Refus `400 INVALID_PAYMENT_DETAILS`
+  (`details.field`, `details.reason`). Frontend : la fonction existante `qrIbanHasValidQrIid`
+  (`bank-accounts/+page.svelte:276`) extraite et partagée, complétée de la condition CH/LI. Effet sur la création
+  manuelle écrit tel quel au CHANGELOG : refus d'un IBAN faux, d'un QR-IBAN mal placé, des deux ensemble, d'un QR-IBAN
+  sans QRR valide, d'une forme QRR sans QR-IBAN ; un IBAN étranger valide et une référence libre restent acceptés.
+- **Écartées** : `kesh_qrbill::validation::validate_iban` (CH/LI seulement : régression silencieuse pour les
+  fournisseurs étrangers) ; « aucun contrôle, comme aujourd'hui » en angle mort (dette sans issue interdite) ; valider
+  la seule complétion (deux chemins pour une même saisie).
 - **Réversible** : oui.
 
 ### C-30-2-21 — Le rattachement ne lit pas le lien existant : l'unicité refuse
@@ -281,4 +293,19 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   Tests sans rejeu (fonctions `_once`) : deux factures différentes, deux succès ; même facture, un `409`.
 - **Écartées** : lecture ordinaire après les deux verrous (correcte aussi, mais un second chemin pour le même refus et
   une mutation équivalente de plus) ; garder la lecture verrouillante (verrou d'intervalle).
+- **Réversible** : oui.
+
+### C-30-2-22 — Le contrôle pur couvre longueur, plage et domaine, avant l'archivage ; filet des contraintes CHECK
+
+- **Contexte** : validation P2 (F1-1, R1, R2, R3). Le montant du QR n'est borné par personne (`parser.rs:145`) ; le type
+  d'adresse est pris sans contrôle (`parser.rs:120`) et une valeur hors `K`/`S` viole `chk_imported_si_address_type`,
+  que l'import ne capte pas : 500 sur tout le run, fichier resté dans l'inbox, chaque import suivant en échec (défaut
+  d'origine) ; le contrôle de la P1 était décrit comme une fonction de `NewImportedSupplierInvoice`, construite **après**
+  l'archivage, tout en se disant « avant l'archivage ».
+- **Retenu** : une fonction pure de `ScannedQrBill`, appelée avant l'archivage, vérifie longueur (en caractères), plage
+  du montant (`amount_min`..`amount_max`, deux décimales) et domaine (`creditor_address_type`) ; un QR qui échoue entre
+  sans ses données (`unreadable`). Un filet `CheckConstraintViolation` rejoint `DataLengthOrRange` à l'`INSERT`
+  (`failed[]`, jamais 500). Le cas « nom de fichier trop long » est retiré : inatteignable (`NAME_MAX` = 255 octets).
+- **Écartées** : laisser le filet seul décider (un QR exploitable en partie perdrait le document) ; garder un test de
+  nom trop long (impossible à monter).
 - **Réversible** : oui.
