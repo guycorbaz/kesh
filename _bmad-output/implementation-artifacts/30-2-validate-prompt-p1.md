@@ -6,7 +6,7 @@ lentilles (la fiche a été écrite par Opus).*
 
 Dépôt `/home/gcorbaz/devel/kesh-30-2`, branche `story/30-2` (base `15686d55`, kickoff de l'Epic 30).
 Fiche : `_bmad-output/implementation-artifacts/30-2-documents-factures-fournisseur.md` (une fiche, **trois** stories :
-30-2a AC1-AC9, 30-2b AC10-AC17, 30-2c AC18-AC23). Registre de la story :
+30-2a AC1-AC9, 30-2b AC10-AC17, 30-2c AC18-AC24). Registre de la story :
 `_bmad-output/implementation-artifacts/epic-30-choix-autonomes-302.md` (C-30-2-1 à 19). Epic :
 `_bmad-output/planning-artifacts/epic-30-factures-fournisseur.md` § 30-2 ; registre de l'epic
 `epic-30-choix-autonomes.md` (C-30-0-1 à 3). Issue #685 — **conception de Guy, elle fait foi** (`gh api
@@ -31,7 +31,7 @@ Tracking Rule) ; `docs/agents-orchestration.md`.
 2. **Périmètre et découpage** : chaque AC se rattache-t-il à un point du parcours de #685 ? Le décompte des modules
    par sous-story tient-il ? Chaque sous-story est-elle livrable et testable seule (en particulier : après la 30-2a,
    un document sans QR se complète-t-il vraiment par le formulaire existant ?) Une exclusion (table *Dehors*,
-   C-30-2-13, C-30-2-16) qui laisserait #685 fermée sans que sa demande soit tenue est au moins **HIGH**.
+   C-30-2-16) qui laisserait #685 fermée sans que sa demande soit tenue est au moins **HIGH**.
 3. **Migration** (P1-P8) : la migration de l'AC4 est-elle correctement qualifiée breaking ? `MODIFY COLUMN … NULL`
    sur MariaDB 10.11 conserve-t-il types, `CHARSET` et `COLLATE` tels qu'écrits ? La contrainte « tout ou rien »
    est-elle exprimable telle quelle (comparaison de booléens `IS NULL`) ? Le remplacement de l'index par une unicité
@@ -43,10 +43,10 @@ Tracking Rule) ; `docs/agents-orchestration.md`.
    (l. 1712-1741), § saisie d'une facture fournisseur (`sec:saisie-facture-fournisseur`, l. 1568), contrôle K5
    (l. 801, 808) ; `docs/manual/fr/admin-manual.tex` (l. 793, 1456, 1599 : sauvegarde de `KESH_DOCUMENTS_DIR`). Ce que
    le manuel dit **aujourd'hui** est-il vrai au code ? Ce que les AC9, AC17 et AC23 prescrivent d'écrire sera-t-il vrai
-   au code que la fiche prescrit (dont les angles morts : pas de détachement, #503, limite des propositions) ?
+   au code que la fiche prescrit (dont les angles morts : seconde facture après détachement, #503, limite des propositions) ?
    Contrôle aussi le **PDF**, aplati vers la **sortie standard seulement** :
    `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' '` — jamais vers un fichier.
-5. **Recomptes** : 23 AC, T-a0 à T-a9, T-b1 à T-b7, T-c1 à T-c6, M-a1 à M-a10, M-b1 à M-b8, M-c1 à M-c8, huit parcours
+5. **Recomptes** : 24 AC, T-a0 à T-a9, T-b1 à T-b7, T-c1 à T-c6, M-a1 à M-a10, M-b1 à M-b8, M-c1 à M-c10, neuf parcours
    E2E, C-30-2-1 à 19, chaque numéro de ligne cité — recompte depuis la source.
 
 ## Lentilles
@@ -71,13 +71,14 @@ Tracking Rule) ; `docs/agents-orchestration.md`.
   - **Sécurité** : la CSP élargie à `blob:` (`img-src`, `frame-src`) ouvre-t-elle une surface (contenu actif d'un PDF
     dans une `<iframe>` de même origine, image piégée, `X-Content-Type-Options` absent) ? Le type MIME servi vient-il
     toujours de l'extension de la liste blanche ? La lecture ouverte à tout rôle (C-30-2-14) reste-t-elle bornée à la
-    société ? Le rattachement (AC19) est-il protégé contre l'IDOR des deux côtés (staging et facture) ? Les bornes de
+    société ? Le rattachement (AC19) et le détachement (AC24) sont-ils protégés contre l'IDOR des deux côtés (staging et facture) ? Les bornes de
     l'import (taille, pages, liens symboliques, traversée) restent-elles intactes quand un document sans QR est
     accepté — en particulier le chemin `PDF_RENDER_ERROR`, qui couvre aussi « pdfium absent » et « cap de pages » ?
   - **Verrous et naissance de la vue** (axe B5 de la rétrospective 28) : relis `complete_import_once`
     (`crates/kesh-api/src/routes/imported_supplier_invoices.rs`), `discard_import`, la réactivation de
     `inbox_import.rs`, `supplier_invoices::pay_in_tx` et les annulations de facture et de règlement. L'ordre staging
-    puis facture de l'AC19 forme-t-il un cycle avec un chemin existant ? L'étape 3 (lecture verrouillante d'un
+    puis facture de l'AC19 forme-t-il un cycle avec un chemin existant ou avec le détachement (AC24, verrou du seul
+    document) ? L'étape 3 (lecture verrouillante d'un
     document déjà lié) est-elle réalisable sans verrou d'intervalle inattendu sur l'index d'unicité de
     `supplier_invoice_id` (et ce verrou peut-il bloquer une complétion concurrente) ? La complétion étendue (corps de
     création, C-30-2-10) change-t-elle l'ordre ou la nature des lectures dans sa transaction ?

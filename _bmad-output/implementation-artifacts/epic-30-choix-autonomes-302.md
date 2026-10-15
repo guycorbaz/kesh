@@ -163,11 +163,20 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   depuis la liste des documents (deux entrées pour un même geste ; l'utilisateur part de la facture qui lui manque).
 - **Réversible** : oui.
 
-### C-30-2-13 — Pas de détachement dans cette story
+### C-30-2-13 — Le détachement entre dans la 30-2c, au plus simple (décision de l'orchestrateur, 2026-10-15)
 
-- **Contexte** : un document joint par erreur ne se détache pas.
-- **Retenu** : limite écrite au manuel et dans la fiche ; issue demandée à l'orchestrateur (`enhancement`, P3).
-- **Écartées** : livrer « Détacher » (retour `to_complete`, audit, écran) — non demandé, non mécanique.
+- **Contexte** : un document joint par erreur ne se détachait pas. La fiche proposait d'en faire une limite avec une
+  issue ; l'orchestrateur l'a refusé : une dette sans issue est interdite (rétrospective 28), et ouvrir l'issue
+  casserait la règle de release (marge d'une issue au tag v0.14.0).
+- **Retenu** : AC24 — « Détacher le document » sur la fiche de la facture (Comptable+, confirmation),
+  `DELETE /supplier-invoices/{id}/source-document` : le document repasse `to_complete` avec `supplier_invoice_id =
+  NULL` et revient dans « Documents à traiter » ; la facture, ses lignes et ses écritures sont inchangées ; audit
+  `imported_supplier_invoice.detached` ; tout statut de facture. La transaction ne verrouille que la ligne du document
+  (pas de cycle avec le rattachement, AC19). Vérifié au code : aucune contrainte ne lie `status` et
+  `supplier_invoice_id`, la réactivation écrit déjà ce `NULL`, l'unicité de l'AC4 admet plusieurs `NULL`.
+- **Écartées** : limite écrite avec issue (refusée, ci-dessus) ; supprimer le document au détachement (contre
+  C-30-2-5) ; refuser le détachement d'une facture payée (le lien n'a aucun effet comptable).
+- **Angle mort** : un document avec QR détaché peut servir à créer une seconde facture ; geste humain, dit au manuel.
 - **Réversible** : oui.
 
 ### C-30-2-14 — Les deux lectures du document s'ouvrent à tout rôle authentifié

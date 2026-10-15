@@ -12,7 +12,7 @@ lancer (`30-2-validate-prompt-p1.md`, **Sonnet**, lentilles R et F).
 |---|---|---|---|
 | **`30-2a-documents-sans-qr`** | la migration (colonnes QR facultatives, « tout ou rien », unicité de `supplier_invoice_id`, `min_required` 0.14.0) ; l'import accepte un document sans QR ou au QR illisible ; la liste « Documents à traiter » avec aperçu (composant et CSP) et « Retirer de la liste » ; la complétion d'un document sans QR par le formulaire existant ; export CSV ; contrôle K5 | AC1 à AC9 | **`refs #685`** — ⛔ jamais `closes` |
 | **`30-2b-creation-cote-a-cote`** | le formulaire extrait en composant ; la page `/supplier-invoices/new`, seule ou à côté du document ; coordonnées QR verrouillées ; corps de complétion = corps de création, projet compris ; fournisseur proposé, ou créé sans quitter la page | AC10 à AC17 | **`refs #685`** |
-| **`30-2c-document-joint-et-consulte`** | joindre un document après coup ; la fiche de la facture et le détail de l'écriture montrent le document ; lecture ouverte à tout rôle authentifié ; E2E de parcours complet ; manuel, CHANGELOG et `api-external.md` complétés | AC18 à AC23 | **`closes #685`** |
+| **`30-2c-document-joint-et-consulte`** | joindre un document après coup, le **détacher** (décision de l'orchestrateur, C-30-2-13) ; la fiche de la facture et le détail de l'écriture montrent le document ; lecture ouverte à tout rôle authentifié ; E2E de parcours complet ; manuel, CHANGELOG et `api-external.md` complétés | AC18 à AC24 | **`closes #685`** |
 
 **Ordre** : la 30-2a part d'`origin/main` **après le merge de la 30-1** (C-30-0-3) ; la 30-2b après le merge de la
 30-2a ; la 30-2c après celui de la 30-2b. Aucune release entre elles : la v0.14.0 attend la 30-2c (C-30-0-1). La clé
@@ -78,7 +78,6 @@ Epic : `_bmad-output/planning-artifacts/epic-30-factures-fournisseur.md` § 30-2
 | Hors périmètre | Raison | Suite |
 |---|---|---|
 | Inclusion des documents dans `.keshbackup` | #503, non mécanique | signalée (C-30-2-16) ; manuel utilisateur renvoie à la sauvegarde de `KESH_DOCUMENTS_DIR` |
-| Détacher un document joint | non demandé, non mécanique | limite écrite ; issue demandée (C-30-2-13) |
 | Plusieurs pages / plusieurs documents par facture | #685, « plus tard » | — |
 | Dépôt par le navigateur ; import automatique du dossier | #685 ; #459 | — |
 | Pièces jointes sur une écriture quelconque | #235 | — |
@@ -236,7 +235,7 @@ CHANGELOG complété. i18n quatre locales.
 **AC18 — La fiche de la facture sait si elle a un document.** `SupplierInvoiceResponse` gagne `sourceDocument:
 { originalFilename, mimeType, byteSize } | null` (lecture du staging `completed` lié, bornée à la société). La fiche
 affiche « Voir le document » (aperçu AC6 dans un panneau) **seulement** s'il existe ; sinon « Joindre un document »
-(Comptable+) — plus de bouton qui rend 404.
+(Comptable+) — plus de bouton qui rend 404. Quand il existe, la fiche offre aussi « Détacher le document » (AC24).
 
 **AC19 — Joindre après coup.** `POST /api/v1/supplier-invoices/{id}/source-document` `{ importedSupplierInvoiceId }`
 (Comptable+, ouverte aux clés `read-write` comme `…/complete`), en une transaction rejouée sur interblocage :
@@ -267,9 +266,37 @@ lectures (`lib.rs`, bloc l. 868-875) ; `GET /imported-supplier-invoices/{id}/sou
 (C-30-2-14). Test : le rôle Consultation lit le document d'une facture, reçoit 403 sur celui d'un document à traiter.
 
 **AC23 — E2E de parcours, captures, documentation de clôture.** Voir § *E2E de parcours* ; captures clair et sombre ;
-manuel FR (joindre après coup, consultation depuis l'écriture, limite « pas de détachement », renvoi #503), PDF
+manuel FR (joindre après coup, détacher, consultation depuis l'écriture, renvoi #503), PDF
 régénéré et contrôlé aplati ; `api-external.md` (route neuve, `sourceDocument` des deux réponses, rôle de la lecture) ;
 CHANGELOG ; `README.md` « Fonctionnalités » si la saisie des factures fournisseur y est décrite.
+
+**AC24 — Détacher le document** (décision de l'orchestrateur, C-30-2-13). Sur la fiche d'une facture fournisseur qui
+a un document, « Détacher le document » (Comptable+, confirmation : « Détacher ce document ? Il reviendra dans les
+documents à traiter ; la facture et son écriture ne changent pas. ») appelle
+`DELETE /api/v1/supplier-invoices/{id}/source-document` (Comptable+, clés `read-write` comme le rattachement), en une
+transaction rejouée sur interblocage :
+1. `SELECT … FROM imported_supplier_invoices WHERE supplier_invoice_id = ? AND company_id = ? AND status =
+   'completed' FOR UPDATE` → `404 SOURCE_DOCUMENT_NOT_FOUND` (code existant) si aucune ligne — facture inconnue,
+   d'une autre société ou sans document ;
+2. `UPDATE … SET status = 'to_complete', supplier_invoice_id = NULL WHERE id = ? AND company_id = ? AND status =
+   'completed'` (fonction `detach_in_tx` du dépôt, garde de statut dans le `WHERE`, 0 ligne = erreur interne) ;
+3. audit `imported_supplier_invoice.detached` (`supplier_invoice_id`, `original_filename`).
+Tout statut de facture accepté (ouverte, payée, annulée) — comme le rattachement ; la facture, ses lignes, son écriture
+d'achat et de règlement **ne sont pas touchées** ; aucun fichier n'est supprimé ; le document réapparaît dans la liste
+avec ses données QR. Après succès, la fiche affiche « Joindre un document ».
+**Vérifié au code (`15686d55`)** : rien ne lie `status` et `supplier_invoice_id` en base (seuls `chk_imported_si_status`
+et la clé étrangère `ON DELETE SET NULL`, `20260629000001_imported_supplier_invoices.sql:65-67`) ; la réactivation
+écrit déjà `supplier_invoice_id = NULL` (`reactivate_to_complete`, `repositories/imported_supplier_invoices.rs:247-258`) ;
+l'unicité de l'AC4 admet plusieurs `NULL` ; `find_by_supplier_invoice_id_scoped` (l. 157-171) ne filtre pas le statut
+et ne retrouve plus la ligne détachée ; aucun statut de facture n'intervient dans le lien.
+**Verrous** : la transaction ne verrouille **que** la ligne du document, jamais la facture. Avec le rattachement
+(staging neuf, puis facture, puis lecture verrouillante de l'ancien document — AC19), aucun cycle : le détachement
+ne demande rien de ce que tient le rattachement ; le rattachement attend le détachement à son étape 3, puis voit la
+facture libre. Un détachement qui verrouillerait la facture **après** le document formerait un cycle avec AC19 :
+interdit (M-c10).
+**Angle mort assumé** : un document détaché d'une facture **avec QR** peut être « Créer une facture » une seconde fois
+— une seconde facture pour la même pièce, la première restant. Geste humain explicite ; le manuel le dit (annuler la
+facture fausse d'abord).
 
 ## Tasks / Subtasks
 
@@ -303,14 +330,16 @@ CHANGELOG ; `README.md` « Fonctionnalités » si la saisie des factures fournis
 
 - [ ] **T-c1** Tests rouges : rattachement (succès, 404, 409 ×2, autre société, facture payée), concurrence (deux
   rattachements sur la même facture : un seul gagne ; rattachement contre complétion du même document : un seul
-  gagne), `sourceDocument` des deux réponses, RBAC de la lecture.
-- [ ] **T-c2** Dépôt `kesh-db` : `attach_to_supplier_invoice_in_tx`, lecture du document d'une facture et d'une écriture.
-- [ ] **T-c3** Route, réponses, déplacement de la lecture (AC18, AC19, AC21, AC22) ; registre des routes mutantes
+  gagne), `sourceDocument` des deux réponses, RBAC de la lecture ; détachement (succès sur facture ouverte et payée, 404
+  sans document ou autre société, document revenu `to_complete` et listé, facture et écritures inchangées, audit,
+  rattachement concurrent du détachement sur la même facture : pas d'interblocage).
+- [ ] **T-c2** Dépôt `kesh-db` : `attach_to_supplier_invoice_in_tx`, `detach_in_tx`, lecture du document d'une facture et d'une écriture.
+- [ ] **T-c3** Routes (rattacher, détacher), réponses, déplacement de la lecture (AC18, AC19, AC21, AC22, AC24) ; registre des routes mutantes
   (`audit_route_registry.rs`, compteurs recomptés), registre des libellés d'audit (`crates/kesh-api/tests/audit_label_registry.rs`) pour
-  l'action neuve `imported_supplier_invoice.attached`.
-- [ ] **T-c4** Fiche de la facture, sélecteur, page de l'écriture (AC18, AC20, AC21).
+  les actions neuves `imported_supplier_invoice.attached` et `.detached`.
+- [ ] **T-c4** Fiche de la facture (dont « Détacher le document » et sa confirmation), sélecteur, page de l'écriture (AC18, AC20, AC21, AC24).
 - [ ] **T-c5** i18n, manuel, PDF, `api-external.md`, CHANGELOG, README (AC23).
-- [ ] **T-c6** E2E de parcours complets (E1 à E6) ; captures ; mutations M-c1 à M-c8 ; gate complet et E2E complet au dernier commit de code.
+- [ ] **T-c6** E2E de parcours complets (E1 à E7) ; captures ; mutations M-c1 à M-c10 ; gate complet et E2E complet au dernier commit de code.
 
 ## Dev Notes
 
@@ -340,6 +369,7 @@ d'`inbox-import.spec.ts:126-140`, qui lit `KESH_INBOX_DIR`) :
 | E4 | facture **sans** document depuis *Enregistrer une facture* → la fiche propose « Joindre un document » | b (vérifié en c) |
 | E5 | sur la facture de E4 → *Joindre un document* → choisir un document à traiter → la fiche le montre, la liste ne l'a plus | c |
 | E6 | depuis l'écriture d'achat de E1 → lien vers la facture et « Voir le document » | c |
+| E7 | sur la facture de E5 → *Détacher le document* → la fiche propose de nouveau « Joindre un document », le document revient dans « Documents à traiter », l'écriture d'achat ne montre plus de document | c |
 
 ⚠️ **Le PDF dans une `<iframe>` ne se rend pas en Chromium sans tête** (pas de visionneuse) : l'E2E d'un PDF vérifie
 l'`<iframe>`, son `src` en `blob:` et le type du blob, non le rendu ; les **captures** se font sur un PNG. Le montage
@@ -376,10 +406,13 @@ worktree en a besoin). Une **régression** se juge contre la liste des échecs a
 | M-c6 | la lecture du document reste Comptable+ | AC22 |
 | M-c7 | ordre des verrous inversé (facture puis staging) | test de concurrence rattachement/complétion — sinon équivalente, à dire |
 | M-c8 | « Voir le document » affiché sans document | Vitest de la fiche |
+| M-c9 | le détachement laisse `supplier_invoice_id` renseigné (seul le statut change) | AC24 (la fiche montre encore le document ; `find_by_supplier_invoice_id_scoped` le retrouve) + E7 |
+| M-c10 | le détachement verrouille la facture après le document | test de concurrence détachement/rattachement d'AC24 — sinon équivalente, à dire |
 
 ### Angles morts assumés (à écrire aux doc-comments et au manuel)
 
-- Pas de détachement (C-30-2-13). Un document joint à tort reste joint ; l'audit en garde la trace.
+- Détacher un document d'une facture avec QR permet d'en créer une seconde facture (AC24) : la première n'est ni
+  annulée ni signalée.
 - `.keshbackup` n'emporte pas les documents (#503) ; un document restauré sans son fichier répond 410, l'aperçu le dit.
 - Un QR que rien ne décode (image floue) laisse un document « sans QR-code » : la saisie se fait à la main.
 - Les propositions de fournisseur héritent de la limite du socle 22-2a (classement d'une fenêtre de 20, sans tri de
@@ -437,3 +470,12 @@ Docs : `docs/manual/fr/user-manual.tex` (+ PDF), `docs/api-external.md`, `docs/m
 Inventaire au code sur `15686d55` (dix prémisses, dont P-d à corriger et P-f, P-g fausses aujourd'hui) ; découpage en
 trois sous-stories (C-30-2-1) ; migration breaking (C-30-2-2, C-30-2-3) ; 23 AC, 22 tâches (T-a0 à T-a9, T-b1 à T-b7,
 T-c1 à T-c6), 26 mutations (M-a1 à M-a10, M-b1 à M-b8, M-c1 à M-c8), huit parcours E2E ; 19 choix au registre.
+
+### 2026-10-15 — Amendement : le détachement entre dans la 30-2c (décision de l'orchestrateur)
+
+Une dette sans issue est interdite (rétrospective 28) et l'ouvrir casserait la règle de release (marge d'une issue) :
+« Détacher le document » entre dans la 30-2c au plus simple (C-30-2-13 réécrit). Ajouts : **AC24** (route `DELETE
+/supplier-invoices/{id}/source-document`, verrou de la seule ligne du document, vérifications au code), T-c1 à T-c6
+complétées, **E7**, **M-c9** et **M-c10**, manuel et i18n. Ligne « Détacher » retirée de la table *Dehors* ; angle mort
+remplacé. Décomptes vivants : **24 AC**, 22 tâches, **28 mutations** (M-c1 à M-c10), **neuf parcours E2E** (l'entrée
+de création ci-dessus, datée, garde les siens).
