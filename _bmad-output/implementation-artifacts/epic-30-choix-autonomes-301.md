@@ -323,6 +323,8 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
 
 - **Retenu** : tri lot du compte, montant exact, imputation ; plafond 200 ; liste pleine = masquante ; exécutée pour
   tout débit CHF, règle active ou non (P2, F6, R4, R-L5).
+- *Annotation du 2026-10-15 (P5)* : **amendé par C-30-1-39** — la requête masquante n'a plus d'indicateur de lot ; tri :
+  montant exact d'abord, puis l'ordre d'imputation ; le lot du compte est une fonction à part.
 
 ### C-30-1-33 — Le dialogue d'annulation passe à la 30-1b
 
@@ -355,6 +357,9 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
 - **Hors** : l'acceptation d'une **règle** (L7, issue demandée).
 - *Annotation du 2026-10-15* : l'acceptation d'une règle est **intégrée** par C-30-1-38 (aucune issue) ; la garde
   ne porte plus, depuis la P4, que sur le lot du compte, en lecture ordinaire (C-30-1-39).
+- *Annotation du 2026-10-15 (P5)* : le corps ci-dessus (« lectures verrouillantes », `supplier_payment_hold`) est
+  **périmé** — la garde (d) est la fonction du lot du compte en lecture ordinaire (C-30-1-39), et une garde (e) neuve
+  porte la référence d'une facture payée (C-30-1-40).
 
 ### C-30-1-36 — `POST /payment-batches` : liste vide court-circuitée, 500 identifiants au plus
 
@@ -366,6 +371,8 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
 - **Retenu** : « si cette transaction est le paiement de ce lot, annulez le lot ; sinon, affectez à la main » ; pour un
   paiement déjà au grand livre, « n'affectez pas cette transaction » (#671).
 - **Écartée** : « confirmez le lot » (mène à L1, une charge comptée deux fois).
+- *Annotation du 2026-10-15 (P5)* : la seconde `notice` (« paiement déjà au grand livre ») est **retirée** avec
+  C-30-1-34 ; une `notice` neuve, `reference_of_paid_supplier_invoice`, vient de C-30-1-40 ; aucune ne cite d'issue.
 
 ### C-30-1-38 — L'acceptation d'une règle rejoue le masquage (ex-L7, décision de l'orchestrateur, 2026-10-15)
 
@@ -378,6 +385,9 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
 ---
 
 ## Simplification après la validation P4 — 2026-10-15 (décision de l'orchestrateur)
+- *Annotation du 2026-10-15 (P5)* : **amendé par C-30-1-39 et C-30-1-40** — pour un débit, le rejeu porte sur le lot
+  du compte, `has_strong_invoice_match` (facture candidate, donc rejouée) et la référence d'une facture payée ; ni
+  `supplier_payment_hold` ni les masquantes à indice ne sont rejoués.
 
 ### C-30-1-39 — On ne découpe pas, on simplifie : une fonction, des lectures ordinaires, une garde de moins
 
@@ -392,3 +402,26 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
 - **Écartées** : un nouveau découpage (le défaut n'était pas la largeur mais la prolifération des gardes) ; garder la
   garde de C-30-1-34 en la resserrant (aurait encore demandé un geste sûr à l'écran et une borne arbitraire).
 - **Réversible** : oui.
+
+---
+
+## Remédiation de la validation P5 — 2026-10-15 (arbitrages de l'orchestrateur)
+
+### C-30-1-40 — La référence d'une facture déjà payée bloque la ligne (garde précise, lecture ordinaire)
+
+- **Contexte** : P5, F1 = R1-6 — la 30-1b proposerait la mensualité voisine ouverte, de même montant, pour le débit
+  d'une facture déjà payée (depuis la fiche ou par un lot) : un double comptage que la 30-1 crée.
+- **Retenu** : si la référence de la transaction (égalité normalisée, au moins 6 caractères) désigne une facture
+  fournisseur **payée** de la société, la ligne ne propose rien et le dit (`notice` `reference_of_paid_supplier_invoice`) ;
+  la même fonction est rejouée à l'acceptation d'une facture (raison `reference_of_paid_invoice`) et d'une règle (raison
+  `paid_invoice_reference`). La forme **sans référence** reste l'angle mort L1, écrite avec le geste sûr complet (en
+  attente, clôture du compte gênée jusqu'à #671, exercice clos : aucun geste) — acceptée par l'orchestrateur, portée au
+  Project Lead.
+- **Écartées** : rétablir C-30-1-34 (critère sans référence, sur-blocage) ; laisser la proposition voisine sans garde.
+- **Réversible** : oui.
+
+### C-30-1-41 — `excluding` retiré ; contacts des masquantes chargés, par tranches de 500
+
+- **Retenu** : la fonction du lot n'a plus de paramètre `excluding` (aucun autre usage ; (c) couvre la facture acceptée) ;
+  les contacts des factures masquantes entrent dans le lot de chargement, découpé par tranches de 500
+  (`MAX_IN_CLAUSE_IDS`) ; `accept_one_rule` note avec la même carte de contacts.

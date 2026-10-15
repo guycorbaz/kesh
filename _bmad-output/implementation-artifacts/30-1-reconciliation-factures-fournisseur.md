@@ -6,11 +6,11 @@
 l'Epic 30), branche `story/30-1`, worktree `/home/gcorbaz/devel/kesh-30-1`. **Découpée** (§ *Découpage*) en deux
 sous-stories tenues dans cette fiche, comme la 29-1 et la 29-4 : **30-1a** (le dé-rapprochement sait défaire un
 règlement fournisseur) **puis** 30-1b (proposer et accepter). Choix consignés au registre propre à la story,
-`epic-30-choix-autonomes-301.md`, **C-30-1-1 à C-30-1-39** (à verser par union au registre de l'epic). Validation P1
+`epic-30-choix-autonomes-301.md`, **C-30-1-1 à C-30-1-41** (à verser par union au registre de l'epic). Validation P1
 faite (Sonnet : F 0/2/4/5, R 0/2/7/9), remédiée le 2026-10-15 ; validation P2 faite (Opus : F 0/1/5/11, R 0/0/5/16),
 remédiée le 2026-10-15 ; validation P3 faite (Sonnet : F 0/0/5/6, R 0/0/6/6), remédiée le 2026-10-15 ; validation P4 faite (Opus : F 0/0/7/6, R 0/1/5/7),
-**simplifiée** le 2026-10-15 (signal de recyclage déclaré) ; validation P5 (passe complète, Sonnet) à lancer :
-`30-1-validate-prompt-p5.md`.
+**simplifiée** le 2026-10-15 (signal de recyclage déclaré) ; validation P5 faite (Sonnet : F 0/1/4/4, R 0/0/2/6),
+remédiée le 2026-10-15 ; validation P6 **ciblée** (Haiku) à lancer : `30-1-validate-prompt-p6-ciblee.md`.
 
 PR : **`closes #686`** dans le titre ou le corps de la PR de la **30-1b seulement** — jamais dans un message de commit,
 même en prose ou au futur (B4 de la rétrospective 28) ; la PR de la 30-1a porte `refs #686`.
@@ -456,13 +456,30 @@ par un test de parité (patron `exigibility_date_sql_and_rust_agree`).
 6. ordre d'imputation (`X`, `invoice_date`, `id` croissants) **avant** `LIMIT 50`.
 
 **Le lot du compte — une seule fonction source** (P4, F6, arbitrage de l'orchestrateur) :
-`find_open_supplier_invoice_in_account_batch(executor, company_id, bank_account_id, amount, excluding:
-Option<i64>) -> Option<(supplier_invoice_id, supplier_invoice_number, payment_batch_id)>` — la facture fournisseur
-**ouverte**, au montant **exact**, engagée dans un lot `generated` **dont `pb.bank_account_id` est le compte de la
-transaction**, la première de l'ordre d'imputation (`LIMIT 1` : un test d'existence, rien n'est coupé), hors
-`excluding`. **Lecture ordinaire.** Ses trois lecteurs : la proposition (AC-b5, première ligne), l'acceptation d'une
-facture (AC-b6, étape 3 (d), `excluding` = la facture acceptée, que (c) couvre déjà) et l'acceptation d'une règle
-(AC-b17). Aucun autre texte ne décide de ce critère.
+`find_open_supplier_invoice_in_account_batch(executor, company_id, bank_account_id, amount) -> Option<(supplier_invoice_id,
+supplier_invoice_number, payment_batch_id)>` — la facture fournisseur **ouverte**, au montant **exact**, engagée dans un
+lot `generated` **dont `pb.bank_account_id` est le compte de la transaction**, la première de l'ordre d'imputation
+(`LIMIT 1` : un test d'existence, rien n'est coupé). **Lecture ordinaire.** Ses trois lecteurs : la proposition (AC-b5,
+première ligne), l'acceptation d'une facture (AC-b6, étape 3 (d)) et l'acceptation d'une règle (AC-b17). Aucun autre
+texte ne décide de ce critère. *(Le paramètre `excluding` de la P4 est **retiré** en P5 — F4 = R1-3 : il n'avait pas
+d'autre usage ; la facture acceptée, si elle est dans un lot, est déjà refusée par (c), en lecture verrouillante. Seul
+effet de son retrait : sur une vue périmée — lot **annulé** après sa naissance —, (d) pourrait refuser la facture
+acceptée en se nommant elle-même ; refus sûr, la proposition suivante se relit.)*
+
+**La référence d'une facture déjà payée — une seule fonction source** (P5, F1 = R1-6, arbitrage de l'orchestrateur) :
+`find_paid_supplier_invoice_by_reference(executor, company_id, tx_reference_normalized) -> Option<(supplier_invoice_id,
+supplier_invoice_number)>` — une facture fournisseur **payée** (`status = 'paid'`) de la société dont la référence de
+paiement **ou** le numéro est **égal** à la référence de la transaction, selon les règles d'égalité normalisée de
+l'AC-b1 : `coalesce(reference, end_to_end_id, transaction_id)` de la transaction, retrait de tous les blancs, majuscules,
+**au moins 6 caractères alphanumériques** (en deçà, la fonction n'est pas appelée) ; côté facture, la même
+normalisation en SQL (`UPPER(REGEXP_REPLACE(…, '[[:space:]]', ''))`, MariaDB 10.11), sur `payment_reference` et
+`supplier_invoice_number`. **Lecture ordinaire**, `LIMIT 1` (s'il y en a plusieurs, la plus récente) ; aucun compte ni
+montant n'entre au critère : la référence, entière, **désigne** la facture (art. 86 CO) — c'est le débit de **cette**
+facture, déjà payée. Ses trois lecteurs sont ceux de la fonction du lot (AC-b5, AC-b6 (e), AC-b17). Coût : une requête
+de plus par débit **qui porte une référence** d'au moins 6 caractères ; sans index sur l'expression normalisée, par
+`idx_supplier_invoices_company_status` (factures `paid` de la société) — mesuré au développement, écrit au doc-comment.
+⚠️ **Ce qu'elle ne couvre pas** : un débit **sans** référence (ou à référence courte) d'une facture déjà payée — la
+mensualité voisine ouverte de même montant reste alors proposée (L1, forme sans référence, écrite).
 
 **Les factures masquantes** : `find_supplier_invoices_masking(executor, company_id, amount)` — les factures
 fournisseur **ouvertes** de la société dont le TTC est à **0,05 au plus** du débit, **sans borne de dates**, tri
@@ -483,14 +500,19 @@ par la fiche (AC-b17) et par la 29-6.
 rendue par la fonction du lot si le lot est **du compte** et le montant exact ; lot d'un autre compte → absente de la
 fonction du lot ; lot `confirmed` ou `cancelled` → candidate si ouverte), T-b9 (TTC `100.0040` contre débit `100.00` →
 absente des candidates, présente des masquantes), T-b10 (`LIMIT 50` après l'ordre), T-b42 (201 factures ouvertes sans
-indice à 0,05 près : liste pleine → règle masquée).
+indice à 0,05 près : liste pleine → règle masquée), **T-b48** (fonction de la référence : facture payée dont la référence
+de paiement, puis le numéro, égalent la référence de la transaction aux blancs et à la casse près → rendue ; facture
+ouverte ou annulée, référence de 5 caractères, égalité partielle → absente).
 
 **AC-b4 — La proposition : un débit, des factures fournisseur ; jamais de croisement (#482).**
 Dans `get_proposals` :
 - un **crédit** CHF garde **exactement** le chemin actuel (factures client) ; il ne reçoit **jamais** de facture
   fournisseur ;
 - un **débit** CHF reçoit les candidates de l'AC-b3, notées par `propose_matches`, contacts chargés dans le **même** lot
-  que les contacts clients ; il ne reçoit **jamais** de facture client ;
+  que les contacts clients — ceux des candidates **et des factures masquantes** (P5, F5), puisque l'indice « fournisseur »
+  se lit sur eux ; le lot de contacts est **découpé par tranches de 500** identifiants (`find_contacts_by_ids` refuse
+  au-delà de `MAX_IN_CLAUSE_IDS`, `repositories/reconciliation.rs:692`, `:747` — P5, R1-7) ; il ne reçoit **jamais** de
+  facture client ;
 - un montant nul ne reçoit aucune facture (ni client ni fournisseur) ;
 - `CandidateType` gagne `SupplierInvoice` (sérialisé `supplier_invoice`) ; `ReconciliationCandidate` gagne
   `supplier_invoice_id: Option<i64>` et `contact_name: Option<String>` (rempli pour les **deux** sortes de factures,
@@ -510,6 +532,7 @@ Ce que la ligne propose, selon ce critère écrit, **dans cet ordre** :
 | Situation | Effet sur la ligne | Ce que montre la ligne |
 |---|---|---|
 | une facture ouverte au montant **exact** est engagée dans un lot `generated` **du compte de la transaction** (fonction du lot, AC-b3) | **aucune proposition** : ni facture candidate, ni règle — la sûreté prime sur la commodité (arbitrage de l'orchestrateur, P2 F1) | la **raison** : `notice` `supplier_invoice_in_payment_batch` ; *Accepter* grisé |
+| la référence de la transaction désigne une facture fournisseur **déjà payée** (fonction de la référence, AC-b3) | **aucune proposition** : ni facture, ni règle — ce débit est celui de cette facture, et toute proposition le compterait deux fois (P5, F1 = R1-6, arbitrage de l'orchestrateur) | la **raison** : `notice` `reference_of_paid_supplier_invoice` ; *Accepter* grisé |
 | une facture masquante (AC-b3) au montant **exact**, non candidate (hors fenêtre, ou dans un lot d'un **autre** compte) | masque la **règle** si elle porte un indice | « Aucune correspondance » s'il n'y a pas de candidate (patron 29-6) |
 | une facture masquante à **0,05 au plus**, non exacte | masque la **règle** si elle porte un indice | idem |
 | liste masquante **pleine** (200) | masque la **règle** | idem |
@@ -531,16 +554,20 @@ ou par la confirmation d'un lot — dont le paiement n'est rapproché d'aucune t
 être proposée pour son débit, comme en v0.13.4. C'est l'angle mort **L1**, préexistant, territoire de #671 ; le manuel
 dit le geste sûr (AC-b13).
 
-`ReconciliationProposal` gagne `notice: Option<ProposalNotice>` (additif), `ProposalNotice { code:
-"supplier_invoice_in_payment_batch", supplier_invoice_id, supplier_invoice_number (nullable), payment_batch_id }` —
-posé dès que la fonction du lot rend une facture, **candidates ou non** (elles sont alors retirées).
+`ReconciliationProposal` gagne `notice: Option<ProposalNotice>` (additif), `ProposalNotice { code,
+supplier_invoice_id, supplier_invoice_number (nullable), payment_batch_id (nullable) }`, `code` ∈ {
+`supplier_invoice_in_payment_batch`, `reference_of_paid_supplier_invoice` } — posé dès que l'une des deux fonctions rend
+une facture, **candidates ou non** (elles sont alors retirées) ; si les deux, la référence prime (elle désigne).
 *Tests* : T-b14 (`candidate_order_tests` : fournisseur à signal devant la règle), T-b15 (règle écartée par une facture
 fournisseur candidate), T-b16 (règle gardée — ligne vide — par une facture presque au montant désignée par sa référence
 ou son fournisseur ; règle proposée sans indice), T-b35 (facture exacte en lot `generated` du compte : aucune
 proposition, `notice` posée avec facture et lot, même sans indice et **sans règle active**), T-b36 (facture exacte hors
 fenêtre : règle masquée avec indice, proposée sans indice), **T-b41** (deux mensualités du même fournisseur et du même
 montant, la première en lot `generated` du compte, la seconde ouverte dans la fenêtre : **aucune** proposition, `notice`
-sur la première ; même décor avec le lot sur un **autre** compte : la seconde est proposée).
+sur la première ; même décor avec le lot sur un **autre** compte : la seconde est proposée), **T-b49** (janvier payé
+depuis la fiche, février ouvert au même montant : un débit portant la référence QR de janvier → **aucune** proposition,
+`notice` `reference_of_paid_supplier_invoice` ; le même débit **sans** référence → février **proposé** — l'angle mort L1,
+forme sans référence, asserté tel quel ; une référence de 5 caractères égale au numéro → pas de garde).
 
 **AC-b6 — L'acceptation : la proposition `supplier_invoice`.**
 `AcceptProposalInput` gagne `#[serde(rename = "supplier_invoice")] SupplierInvoice { bank_transaction_id,
@@ -565,13 +592,15 @@ cas) ; pour ce cas, `invoice_id = 0` (la sentinelle de `split` et `rule`, C-30-1
    (c) appartenance à un lot `generated`, lecture **verrouillante** (`LOCK IN SHARE MODE`) → `InGeneratedBatch {
    payment_batch_id }` (AC-b8) ;
    (d) **la même garde que la proposition** (P3, F6 = R5 ; simplifiée en P4, C-30-1-39) : la fonction du lot du compte
-   (AC-b3), `excluding` = la facture acceptée, en **lecture ordinaire** — une **autre** facture ouverte au montant
+   (AC-b3), en **lecture ordinaire** — une **autre** facture ouverte au montant
    exact engagée dans un lot `generated` de ce compte → `HeldByPaymentBatch { supplier_invoice_id, payment_batch_id }`.
    Sans elle, un appel d'API direct, ou un écran chargé avant la création du lot (deux onglets), réglerait février avec
    le débit de janvier — le faux rattachement que la proposition efface. ⚠️ **Tolérance écrite** : en lecture
    ordinaire, (d) voit la vue née à l'étape 1 ; un lot commis **après** n'est pas vu — la même tolérance que la
    proposition et que l'AC-b17. (d) n'ajoute **aucun** verrou : l'ordre des verrous de l'acceptation reste celui de
    (a), (b), (c) et de `pay_in_tx_as` ;
+   (e) **la référence d'une facture déjà payée** (P5, arbitrage) : la fonction de l'AC-b3, lecture ordinaire →
+   `HeldByPaidReference { supplier_invoice_id }` ;
 4. fenêtre (AC-b2) sur la facture **verrouillée** ;
 5. **montant** : `|tx.amount| ≠ total_amount` → `RECONCILIATION_AMOUNT_MISMATCH` (`details.amountDue`,
    `details.transactionAmount`) ; le score est recalculé (`propose_matches`, valeur absolue) pour la trace et la
@@ -612,6 +641,7 @@ F3 = R1). Une fonction `supplier_payment_error_to_failed_proposal`,
 | étape 3 | `BankAccountNotConfigured` | `BANK_ACCOUNT_NOT_CONFIGURED` | `{ bankAccountId }` |
 | étape 3 | `InGeneratedBatch` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `{ reason: "supplier_invoice_in_payment_batch", paymentBatchId }` |
 | étape 3 (d) | `HeldByPaymentBatch` | `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` (neuf, libellé ×4) | `{ reason: "other_invoice_in_payment_batch", supplierInvoiceId, paymentBatchId }` |
+| étape 3 (e) | `HeldByPaidReference` | `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` | `{ reason: "reference_of_paid_invoice", supplierInvoiceId }` (libellé ×4) |
 | étape 6 | `SettlementCounterpartyIsClaimAccount` | (son code) | `claim_account_failed_proposal(…, Some(bank_account_id))` — rôle `counterparty`, `claim = "payable"` |
 | étape 6 | `InactiveOrInvalidAccounts` (compte créanciers de l'écriture d'achat, ou compte du grand livre de la banque, désactivé depuis l'achat : `journal_entries.rs:166`) | `INACTIVE_OR_INVALID_ACCOUNTS` (`err.error_code()`, code canonique existant) | — |
 | étape 6 | `FiscalYearInvalid` | `FISCAL_YEAR_INVALID` | `{ valueDate }` |
@@ -638,7 +668,8 @@ mixte client + fournisseur + règle : succès partiel, ordre de `failed[]`), T-b
 atteignable par décor, dont `INACTIVE_OR_INVALID_ACCOUNTS`), T-b20 (`200` partiel, jamais `4xx/5xx` pour un refus par
 proposition), **T-b45** (appel d'API direct : `supplier_invoice` février accepté pour le débit de janvier, janvier en lot
 `generated` du compte → `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` / `other_invoice_in_payment_batch`, rien écrit ; lot sur
-un **autre** compte → acceptée).
+un **autre** compte → acceptée), **T-b50** (API directe : février accepté pour un débit qui porte la référence de janvier,
+payé → `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` / `reference_of_paid_invoice`, rien écrit).
 
 **AC-b7 — Le sens de la transaction, une seule fonction (DRY).**
 `refuse_non_credit_settlement` (`:1705-1729`) devient `refuse_wrong_direction(bank_transaction_id, amount,
@@ -666,8 +697,9 @@ R9).
 `idx_payment_batch_items_invoice` (`20260628000002_payment_batches.sql:59`) au point `supplier_invoice_id = <facture>`,
 tenu **jusqu'au commit du lot d'acceptation**. Un `create_batch` d'**autres** factures dont un article tombe dans cet
 intervalle (le plus souvent l'intervalle de queue : facture récente) **attend** la fin du lot d'acceptation ; sur le
-**même** compte, il attendait déjà au verrou du compte (AC-b10, C3). Aucun cycle par l'intervalle seul : l'acceptation ne
-demande rien que tienne ce `create_batch` (sauf C1, rejoué).
+**même** compte, il attendait déjà au verrou du compte (AC-b10, C3). Le seul cycle qui passe par cet intervalle est **C1 / C7**, rejoué des deux
+côtés : la proposition 1 tient l'intervalle, un `create_batch` (de ce compte ou d'un autre) qui a déjà pris la facture
+`b` y attend l'insertion de son article, et la proposition 2 demande `b` (P5, R1-4).
 *Test* : T-b22 (course : vue de la transaction d'acceptation née, `create_batch` validé sur une seconde connexion,
 puis acceptation → refus `supplier_invoice_in_payment_batch`, rien écrit ; **rouge** avec une lecture ordinaire —
 mutation M-b8).
@@ -760,8 +792,12 @@ rouge).
   `reconciliation-labels-notice-supplier-invoice-in-batch` : « La facture fournisseur { $invoice } de ce montant figure
   dans le lot de paiement n° { $batch } en cours sur ce compte. Si cette transaction est le paiement de ce lot, annulez
   le lot : la facture vous sera alors proposée ici. Sinon, affectez la transaction à la main. » ; `{ $invoice }` = le
-  numéro, à défaut `#id` — numéro nullable, P2 F-L7. *(La seconde `notice` de la P3, « paiement en attente de
-  rapprochement », est retirée en P4 avec son critère, C-30-1-34.)*
+  numéro, à défaut `#id` — numéro nullable, P2 F-L7 ; et
+  `reconciliation-labels-notice-reference-of-paid-supplier-invoice` (P5) : « La référence de cette transaction est celle
+  de la facture fournisseur { $invoice }, déjà payée. Rien n'est proposé : toute affectation compterait ce paiement deux
+  fois. Si cette facture doit être réglée par la réconciliation, annulez d'abord son paiement depuis sa fiche. » — sans
+  numéro d'issue. *(La `notice` « paiement en attente de rapprochement » de la P3 est retirée en P4 avec son critère,
+  C-30-1-34.)*
 - *Accepter* construit `{ type: 'supplier_invoice', bankTransactionId, supplierInvoiceId }` ;
 - l'avis de priorité (`reconciliation-labels-priority-hint`, `messages.ftl:1283`) est réécrit : « Une seule proposition
   est affichée par transaction : pour un crédit, la facture client la mieux notée, pour un débit, la facture fournisseur
@@ -775,10 +811,10 @@ redeviendra à rapprocher. » (quatre locales ; `{ $invoice }` = `supplierInvoic
 - libellés neufs : `RECONCILIATION_TRANSACTION_NOT_DEBIT`, `SUPPLIER_INVOICE_NOT_FOUND` (neuf **pour la réconciliation** :
   le code existe déjà comme refus d'un lot, `payment_batches.rs:330`, libellé « Facture introuvable »,
   `payment-batch-helpers.ts:88` — le libellé de la réconciliation peut le reprendre, P2 R-L16),
-  `RECONCILIATION_AMOUNT_MISMATCH`, `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` (AC-b6 (d), raison
-  `other_invoice_in_payment_batch`), `RECONCILIATION_RULE_MASKED` (AC-b17, trois raisons : `payment_batch`,
-  `invoice_candidate`, `invoice_slightly_overpaid` — le libellé lit la raison et le dit ; le remède : *Affecter
-  manuellement*, ou traiter la facture), et la raison
+  `RECONCILIATION_AMOUNT_MISMATCH`, `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` (AC-b6 (d) et (e), raisons
+  `other_invoice_in_payment_batch` et `reference_of_paid_invoice`), `RECONCILIATION_RULE_MASKED` (AC-b17, quatre
+  raisons : `payment_batch`, `invoice_candidate`, `paid_invoice_reference`, `invoice_slightly_overpaid` — le libellé lit
+  la raison et le dit ; le remède : *Affecter manuellement*, ou traiter la facture), et la raison
   `supplier_invoice_in_payment_batch` (le remède : annuler le lot, ou affecter à la main — jamais « confirmer ») ;
 - `INACTIVE_OR_INVALID_ACCOUNTS` : la clé globale `error-inactive-accounts` existe (`messages.ftl:307`), mais
   `failed-proposal-label.ts` n'a **aucun** bras pour ce code (P3, R2 : `grep -nF INACTIVE_OR_INVALID_ACCOUNTS
@@ -798,7 +834,8 @@ redeviendra à rapprocher. » (quatre locales ; `{ $invoice }` = `supplierInvoic
 élargi à `supplier_settlement`, `supplierInvoiceId` et `supplierInvoiceNumber` de la vue).
 *Tests* : Vitest T-b26 (rendu du candidat fournisseur, du candidat client inchangé), T-b27 (corps d'*Accepter* pour
 les quatre types), T-b28 (libellés neufs), T-b38 (libellés lus sur `details` : `claim`, `tolerance_days`, repli),
-T-b39 (la `notice` affichée à la place d'une candidate, *Accepter* grisé, le texte ne contient pas « confirmez »), **T-b40** (dialogue d'annulation, trois `kind`,
+T-b39 (chacune des deux `notice` affichée à la place d'une candidate, *Accepter* grisé, aucun texte ne contient
+« confirmez » ni un numéro d'issue), **T-b40** (dialogue d'annulation, trois `kind`,
 repli `#id` ; ex-T-a9, déplacé avec le dialogue).
 
 **AC-b12 — E2E de parcours (la recette) et captures.**
@@ -834,20 +871,31 @@ parcours de la 30-1b les couvre de bout en bout, et le dialogue est couvert par 
     jours, lot de paiement en cours exclu et signalé sur la ligne, les factures qui gardent la règle — critère de
     l'AC-b5) ;
   - § *Accepter ou rejeter* (`:2140-2150` la candidate affichée ; `:2156`, l'*Accepter (N)* qui décrit « Débit banque /
-    Crédit débiteurs » — à compléter par `D créanciers / C banque` pour une facture fournisseur ; les deux lignes qui
-    dit pourquoi rien n'est proposé : lot en cours ; et qu'une **règle** peut désormais être refusée à l'acceptation —
+    Crédit débiteurs » — à compléter par `D créanciers / C banque` pour une facture fournisseur ; la ligne qui dit
+    pourquoi rien n'est proposé : lot en cours, ou référence d'une facture déjà payée ; et qu'une **règle** peut désormais être refusée à l'acceptation —
     `RECONCILIATION_RULE_MASKED` —, l'imputation délibérée passant par *Affecter manuellement*, P4 F7) ;
   - **FAQ** *Aucune correspondance* (`sec:faq-aucun-match`) : `:3034` « La transaction est un débit, ou n'est pas en
     CHF : seules les transactions créditrices en CHF reçoivent une facture candidate », fausse dès la 30-1b — réécrite
     (un débit reçoit des factures fournisseur ; il n'en reçoit pas d'une facture client) ; « Que faire ensuite »
     (`:3040-3045`) gagne la branche « paiement de fournisseur » (saisir la facture ouverte, puis l'accepter ici ; ne pas
     affecter par une règle le débit d'une facture déjà payée — L1) (P3, R3) ;
-  - **L1, le geste sûr**, au § *Régler une facture fournisseur* et à la FAQ : « Si cette dépense est déjà réglée depuis
-    la fiche de la facture, ou par la confirmation d'un lot de paiement, n'acceptez pas pour son débit la règle
-    d'affectation que la réconciliation proposerait : la charge serait comptée deux fois. Kesh ne sait pas encore
-    rapprocher ce débit du paiement enregistré (#671) ; la transaction reste en attente. Si vous préférez la régler par
-    la réconciliation, annulez le paiement depuis la fiche de la facture : elle vous sera alors proposée ici. » (C-30-1-34
-    retiré ; le numéro d'issue au manuel seulement, jamais à l'écran) ;
+  - **L1, le geste sûr**, au § *Régler une facture fournisseur* et à la FAQ (P5, F1 b, F10 ; acceptée par
+    l'orchestrateur, portée au Project Lead) : « Si cette dépense est déjà réglée depuis la fiche de la facture, ou par
+    la confirmation d'un lot de paiement, n'acceptez **rien** de ce que la réconciliation propose pour son débit — ni la
+    règle d'affectation, ni une **autre facture du même montant** (la mensualité suivante, typiquement) : la charge ou le
+    paiement seraient comptés deux fois. Quand le débit porte la référence de la facture payée, Kesh le reconnaît et ne
+    propose rien ; sans référence, il ne le peut pas. Kesh ne sait pas encore rapprocher ce débit du paiement enregistré
+    (#671) : la transaction reste **en attente**, et empêche la clôture du compte bancaire et figure parmi les
+    transactions à rapprocher de la préparation de clôture, tant que ce rapprochement n'existe pas. Pour la régler par la
+    réconciliation, annulez le paiement depuis la fiche de la facture : elle vous sera alors proposée ici — sauf si
+    l'exercice du paiement est **clos** : l'annulation est alors refusée, et il n'y a pas d'autre geste. » (le numéro
+    d'issue au manuel seulement, jamais à l'écran) ;
+  - **`:3089`** (« Comment annuler quoi ») : « Rapprochement bancaire : il s'annule depuis le détail de l'import
+    bancaire, ou depuis la fiche de la facture qu'il a réglée » — faux pour une facture **fournisseur**, dont la fiche n'a
+    pas le dialogue : « … ou depuis la fiche de la facture **client** qu'il a réglée » (P5, R1-2) ;
+  - **`:2244`** (§ *Règles d'affectation*) : « une règle ne s'applique que quand aucune facture n'est candidate… » —
+    complété pour un débit (facture fournisseur à 0,05 près, lot du compte, référence d'une facture payée : rien n'est
+    proposé) et pour l'acceptation (`RECONCILIATION_RULE_MASKED`) (P5, R1-2) ;
   - § *Annuler un rapprochement* (`:2252`, le paiement fournisseur retiré, la facture redevenue ouverte) ;
   - § *Régler une facture fournisseur* (`:1586`) : « ou laisser la réconciliation la régler » ; **`paidAt`** : la fiche
     affiche la date du paiement (la date saisie), et la confirmation d'un lot sa date de paiement ; la liste des motifs
@@ -856,9 +904,10 @@ parcours de la 30-1b les couvre de bout en bout, et le dialogue est couvert par 
   Les manuels DE/IT/EN : noter « à traduire » si l'écart existe (règle du dépôt).
 - **`docs/api-external.md`** : `POST /reconciliation/accept` (`:572-580`, type `supplier_invoice`, codes et raisons
   neufs, `details.tolerance_days`, `supplierInvoiceId` de `accepted[]`), `GET /reconciliation/proposals` (candidate
-  `supplier_invoice`, `supplierInvoiceId`, `contactName`, `notice` et ses deux codes, la priorité, les factures qui
+  `supplier_invoice`, `supplierInvoiceId`, `contactName`, `notice` et ses deux codes (`supplier_invoice_in_payment_batch`, `reference_of_paid_supplier_invoice`), la priorité, les factures qui
   masquent la règle, les lignes qui ne proposent rien), les codes `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` et
-  `RECONCILIATION_RULE_MASKED` (raisons, détails, et le **changement de contrat** des règles côté client), les
+  `RECONCILIATION_RULE_MASKED` (raisons, détails, et le **changement de contrat** des règles, **des deux côtés** — crédit
+  et débit —, avec le renvoi vers `POST /reconciliation/manual`, P5 R1-5), **L1 et sa forme sans référence**, les
   **changements** (un débit reçoit désormais des factures fournisseur ; « un débit ne règle jamais une facture » devient
   « jamais une facture **client** ») ; **`paidAt`** de `POST /supplier-invoices/{id}/pay` et de la confirmation d'un lot
   (date du paiement à minuit, au lieu de l'heure de l'enregistrement — P1 R9) ; `:366` (événements de lettrage : la
@@ -906,28 +955,36 @@ produit) deux fois. **Correction**, dans le même fichier : après la revérific
 (`:3119-3126`) et avant toute écriture, `accept_one_rule` rejoue, **en lectures ordinaires**, par **les mêmes
 fonctions** que `get_proposals` (DRY, une fonction `rule_mask_for(tx, …)` lue par les deux) :
 - **débit** : (a) la fonction du lot du compte (AC-b3) → raison `payment_batch` ; (b) `has_strong_invoice_match` sur les
-  candidates fournisseur de la fenêtre (même requête, même `propose_matches`, même seuil 0,5 que la proposition) →
-  raison `invoice_candidate` ;
+  candidates fournisseur de la fenêtre (même requête, même `propose_matches`, même seuil 0,5 que la proposition, et
+  **la même carte de contacts**, chargée pour les factures qu'elle note — P5, F5) → raison `invoice_candidate` ; (c) la
+  fonction de la référence d'une facture payée (AC-b3) → raison `paid_invoice_reference` ;
 - **crédit** : la condition de la 29-6 — une facture que le paiement dépasse de 1 à 5 centimes
   (`find_invoices_slightly_overpaid_for_window`) et qui porte un indice (`propose_matches` non vide sur elle, comme à la
   proposition ; P4 F : sur ces factures, `amount_score` vaut 0, « non vide » vaut donc « indice ») → raison
   `invoice_slightly_overpaid`.
 Refus **par proposition** : `RECONCILIATION_RULE_MASKED` (neuf), `details.reason` ∈ { `payment_batch`,
-`invoice_candidate`, `invoice_slightly_overpaid` }, avec `invoiceId` ou `supplierInvoiceId`, et `paymentBatchId` pour un
+`invoice_candidate`, `paid_invoice_reference`, `invoice_slightly_overpaid` }, avec `invoiceId` ou `supplierInvoiceId`, et `paymentBatchId` pour un
 lot. **L'imputation délibérée** d'une transaction malgré une facture reste possible par *Affecter manuellement*
-(`POST /reconciliation/manual`) ou *Éclater* — non par la règle. ⚠️ **Non rejoués**, et écrits au doc-comment : côté
-client, le masquage par une facture **candidate** (comportement d'aujourd'hui, inchangé) ; côté fournisseur, le
-masquage par une facture presque au montant ou hors fenêtre portant un indice (la règle est seulement non proposée).
+(`POST /reconciliation/manual`) ou *Éclater* — non par la règle. ⚠️ **Non rejoués — inventaire clos** (P5, F6), écrits au doc-comment et au manuel : côté **client**, le masquage par une
+facture **candidate** — comportement d'aujourd'hui, gardé pour ne rien retirer à un client existant, alors que le côté
+débit, neuf, n'a pas d'acceptation antérieure à préserver (P5, R1-8) ; côté **fournisseur**, quatre formes que la
+proposition masque sans les refuser à l'acceptation : la facture presque au montant portant un indice, la facture
+exacte hors fenêtre portant un indice, la facture exacte dans un lot d'un **autre** compte portant un indice, et la
+**liste pleine** de 200. Une règle ne se refuse donc à l'acceptation que dans **quatre** cas : `payment_batch`,
+`invoice_candidate`, `paid_invoice_reference` (débit), `invoice_slightly_overpaid` (crédit).
 Lectures ordinaires : un lot ou une facture commis après la naissance de la vue de la transaction du lot ne sont pas vus
-— même tolérance que la proposition. ⚠️ **Changement de contrat côté client** : une acceptation de règle autrefois
-réussie est désormais refusée dans le cas de la 29-6 — écrit à `api-external.md` (§ `POST /reconciliation/accept`) et
+— même tolérance que la proposition. ⚠️ **Changement de contrat, des deux côtés** (P5, R1-5) : une acceptation de
+règle autrefois réussie est désormais refusée — crédit : le cas de la 29-6 ; débit : les trois cas ci-dessus (un débit
+n'avait aucune facture en v0.13.4) ; l'intégration garde *Affecter manuellement*, unitaire — écrit à `api-external.md` (§ `POST /reconciliation/accept`) et
 au CHANGELOG (*Modifié*). Modules : `routes/reconciliation` et `repositories/reconciliation`, déjà dans la 30-1b —
 **aucun module ajouté** (toujours 5).
 *Tests* : **T-b46** (API directe, crédit : règle acceptée alors qu'une facture client dépassée de 3 centimes porte la
 référence → `RECONCILIATION_RULE_MASKED` / `invoice_slightly_overpaid`, rien écrit ; sans indice → la règle passe),
 **T-b47** (API directe, débit : facture fournisseur en lot `generated` du compte → `payment_batch` ; facture fournisseur
-ouverte **candidate**, saisie après le chargement de la proposition → `invoice_candidate` ; rien écrit ; sans facture →
-la règle passe). Mutation **M-b30** (rejeu du masquage retiré de `accept_one_rule`).
+ouverte **candidate**, saisie après le chargement de la proposition → `invoice_candidate` ; référence d'une facture
+payée → `paid_invoice_reference` ; rien écrit ; sans facture → la règle passe). T-b46 gagne un second décor : facture
+client dépassée de 3 centimes désignée **par le seul nom** du client → refus (la carte de contacts du rejeu, P5 F5 ;
+mutation M-b33). Mutation **M-b30** (rejeu du masquage retiré de `accept_one_rule`).
 
 **AC-b16 — Un règlement fournisseur porte la date du paiement (décision de l'orchestrateur, C-30-1-25).**
 `pay_in_tx_as`, étape (6) (`supplier_invoices.rs:905-907`) : `paid_at = <payment_date> 00:00:00` (la même forme que
@@ -1000,12 +1057,12 @@ T-b31 (lot confirmé avec un `payment_date` passé → `paid_at` = cette date). 
 - [ ] T12 — Brancher `story/30-1b` depuis `main` après le merge de la 30-1a ; relire les numéros de ligne.
 - [ ] T13 (AC-b1) — tests rouges T-b1 à T-b3, T-b37 ; traits, généricité, valeur absolue, renommage ; tous les tests de
   `matching.rs` verts sans toucher leurs assertions.
-- [ ] T14 (AC-b2, b3) — tests rouges T-b4 à T-b10, T-b42 (`crates/kesh-db/tests/reconciliation_repository.rs`) ;
+- [ ] T14 (AC-b2, b3) — tests rouges T-b4 à T-b10, T-b42, T-b48 (`crates/kesh-db/tests/reconciliation_repository.rs`) ;
   fenêtre, traduction commune des refus de dates, requêtes.
-- [ ] T15 (AC-b4, b5) — tests rouges T-b11 à T-b16, T-b35, T-b36, T-b41 ; `get_proposals`, `candidate_rank`, masquage,
+- [ ] T15 (AC-b4, b5) — tests rouges T-b11 à T-b16, T-b35, T-b36, T-b41, T-b49 ; `get_proposals`, `candidate_rank`, masquage,
   `notice`.
-- [ ] T16 (AC-b6, b7, b8, b9, b17) — tests rouges T-b17 à T-b23, T-b45 (acceptation directe refusée par la garde (d)),
-  T-b46, T-b47 (règle acceptée par l'API, masquage rejoué) ; `rule_mask_for` ; `lock_for_bank_settlement_in_tx`, `pay_in_tx_as`,
+- [ ] T16 (AC-b6, b7, b8, b9, b17) — tests rouges T-b17 à T-b23, T-b45, T-b50 (acceptation directe refusée par les gardes
+  (d) et (e)), T-b46, T-b47 (règle acceptée par l'API, masquage rejoué) ; `rule_mask_for` ; `lock_for_bank_settlement_in_tx`, `pay_in_tx_as`,
   `accept_one_supplier_invoice`, `refuse_wrong_direction`, inventaire des refus recopié au Dev Agent Record.
 - [ ] T17 (AC-b10) — T-b24, T-b25, T-b34 ; table des verrous recopiée au Dev Agent Record avec les lignes réelles.
 - [ ] T18 (AC-b11) — écran, dialogue, libellés, types ; Vitest T-b26 à T-b28, T-b38 à T-b40.
@@ -1068,8 +1125,8 @@ rebase), manuel § *Factures fournisseurs*, CHANGELOG, catalogues i18n, `helpers
 
 ### Tests (récapitulatif)
 
-30-1a : T-a1 à T-a17 sauf T-a9 (déplacé en T-b40) = **16** (15 Rust, 1 Vitest : T-a10). 30-1b : T-b1 à T-b47 sauf T-b43 et T-b44 (retirés en P4) = **45**
-(39 Rust, 6 Vitest : T-b26, T-b27, T-b28, T-b38, T-b39, T-b40) et l'E2E de l'AC-b12 (**trois** tests). Décors
+30-1a : T-a1 à T-a17 sauf T-a9 (déplacé en T-b40) = **16** (15 Rust, 1 Vitest : T-a10). 30-1b : T-b1 à T-b50 sauf T-b43 et T-b44 (retirés en P4) = **48**
+(42 Rust, 6 Vitest : T-b26, T-b27, T-b28, T-b38, T-b39, T-b40) et l'E2E de l'AC-b12 (**trois** tests). Décors
 **synthétiques** ; aucune donnée réelle (`docs/agents-orchestration.md` § 8). Concurrence par `sonde_verrou_nowait` /
 `attendre_une_requete_en_cours` (`test_fixtures.rs:561`, `:611`), **jamais** `information_schema.INNODB_TRX` (piège
 connu des consignes).
@@ -1115,19 +1172,34 @@ connu des consignes).
 | M-a9 | verrouillage de tête de `create_batch` dans l'ordre de la requête (non croissant) | T-a16 |
 | M-b27 | étape 3 (b) sans `FOR UPDATE` (lecture ordinaire du compte) | T-b34 — réécrite en P4 : sans le verrou de (b), les articles sont lus en S **avant** que le compte soit pris (par `pay_in_tx_as`), l'ordre même de M-b23 ; la garde (d), en lecture ordinaire, ne dépend plus de ce verrou (C-30-1-39) |
 | ~~M-b28~~ | ~~règlement en attente de rapprochement : la ligne garde ses propositions~~ — **retirée** avec le critère (C-30-1-34, P4) | — |
-| M-b29 | garde (d) de l'acceptation retirée, ou appelée avec `excluding = None` | T-b45 |
+| M-b29 | garde (d) de l'acceptation retirée (`excluding` retiré en P5) | T-b45 |
 | M-b30 | rejeu du masquage retiré de `accept_one_rule` (AC-b17) | T-b46, T-b47 |
+| M-b31 | garde de la référence d'une facture payée absente de la proposition | T-b49 |
+| M-b32 | garde (e) de l'acceptation d'une facture retirée | T-b50 |
+| M-b33 | rejeu de `accept_one_rule` sans la carte de contacts (indice par le nom perdu) | T-b46, second décor |
+| M-b34 | référence d'une facture payée comparée sans la longueur minimale de 6 | T-b49 (référence de 5 caractères) |
 
 Le `status = 'paid'` du classement (AC-a1) n'est pas muté : équivalent (tout écrivain qui quitte `paid` remet la
 colonne à `NULL`, P1 F10). Une mutation qui survit se tue par un test ajouté, ou se déclare **équivalente** avec la
 raison, au Dev Agent Record.
 
+**Tests de non-régression, sans mutation dédiée** (P5, F8 — écrit, pour que « tuée » reste vérifiable) : T-a6 (course
+dé-rapprochement ↔ annulation de la facture : établit l'absence d'état mixte, aucune ligne neuve ne la décide), T-b5
+(parité SQL/Rust de l'exigibilité : garde de dérive), T-b10 (`LIMIT 50` après l'ordre : patron hérité), T-b24 (le refus
+vient de `pay_in_tx_as`, inchangé), T-b25 (I1 protège, la fiche le dit), T-b38 (libellés lus sur `details`) ; T-b42
+(liste pleine) est tué par M-b12 étendue à « la liste pleine ne masque pas ».
+
 ### Angles morts assumés (à écrire aux doc-comments et au manuel)
 
 - **L1 — Débit d'une facture déjà payée, depuis sa fiche ou par la confirmation d'un lot** : la facture est `paid`,
-  non proposée ; la transaction reste en attente, et une règle d'affectation peut la proposer — l'accepter compterait la
-  charge deux fois. **Préexistant** (v0.13.4 : la même règle peut déjà affecter ce débit), territoire de **#671**
-  (première et quatrième puces). La garde de la P3 (C-30-1-34) est **retirée** en P4 : elle sur-bloquait (une
+  non proposée ; la transaction reste en attente, et deux propositions peuvent la compter deux fois : (i) la **règle**
+  d'affectation — **préexistant** (v0.13.4) ; (ii) **créé par la 30-1b** (P5, F1 = R1-6) : une **autre facture ouverte
+  du même montant**, typiquement la mensualité suivante, dans la fenêtre. **Réduit en P5** : quand le débit porte la
+  référence (≥ 6 caractères) de la facture payée, la ligne ne propose rien et le dit (AC-b5, `notice`
+  `reference_of_paid_supplier_invoice`) ; **reste** la forme **sans référence**, acceptée par l'orchestrateur et portée
+  au Project Lead, écrite au manuel, à `api-external.md` et au CHANGELOG avec le geste sûr complet (AC-b13 : la
+  transaction reste en attente et gêne la clôture du compte jusqu'à #671 ; exercice clos : aucun geste). Territoire de
+  **#671** (première et quatrième puces). La garde de la P3 (C-30-1-34) est **retirée** en P4 : elle sur-bloquait (une
   mensualité payée depuis la fiche bloquait le débit de la suivante), sans geste sûr à l'écran, et chaque passe y
   trouvait un double comptage neuf. Le manuel dit le geste sûr (AC-b13) ; l'écran ne dit rien.
 - **L9 — Débit collectif d'un lot** (P4, F-L4) : le pain.001 n'émet pas `BtchBookg` ; la banque débite souvent le total
@@ -1395,3 +1467,35 @@ verrouillantes de (d) ; amendement : AC-b17). **Décision de l'orchestrateur : o
   sans M-a2 équivalente, M-a6 et M-b28 retirées), choix C-30-1-1 à **39** ; libellés : **37** codes (31 + cinq
   littéraux neufs + `INACTIVE_OR_INVALID_ACCOUNTS`). Modules : 30-1a **5**, 30-1b **5** (au seuil, quatre fichiers hors
   décompte déclarés).
+
+### Validation P5 — 2026-10-15
+
+Sonnet, deux lentilles (rapports `kesh-gate-logs/301-validate-p5-{F,R}.md`, sur `300e1bb8`) : **F 0/1/4/4**, **R
+0/0/2/6**. La simplification tient : aucun cycle neuf, aucun défaut rouvert. Chaque finding vérifié au code ; **aucun
+réfuté**. Remédiation, arbitrages de l'orchestrateur :
+- **F1 (HIGH) = R1-6** — la 30-1b proposait la mensualité voisine ouverte pour le débit d'une facture déjà payée.
+  (a) Garde précise, **lecture ordinaire** : la référence de la transaction (égalité normalisée, ≥ 6 caractères) désigne
+  une facture fournisseur **payée** → la ligne ne propose rien (`notice` `reference_of_paid_supplier_invoice`) ; la même
+  fonction (`find_paid_supplier_invoice_by_reference`) est rejouée à l'acceptation d'une facture (étape 3 (e), raison
+  `reference_of_paid_invoice`) et d'une règle (raison `paid_invoice_reference`) ; libellés ×4 ; T-b48, T-b49, T-b50,
+  T-b47 étendu ; M-b31, M-b32, M-b34. (b) La forme **sans référence** est écrite à L1 (manuel, `api-external.md`,
+  CHANGELOG) avec le geste sûr complet (F10 : en attente, clôture du compte gênée jusqu'à #671 ; exercice clos : aucun
+  geste) — acceptée par l'orchestrateur, portée au Project Lead. T-b49 asserte la forme sans référence telle quelle.
+- **F2, F3, F7, R1-1** — résidus purgés : `:837` (« la ligne qui dit… »), `:859` (deux codes de `notice`, nommés) ;
+  registre : C-30-1-32, C-30-1-35, C-30-1-37, C-30-1-38 annotés et datés.
+- **F4 = R1-3** — `excluding` retiré (aucun autre usage) ; M-b29 réduite ; l'effet de bord (vue périmée) écrit.
+- **F5 / R1-7** — contacts des masquantes chargés dans le lot, par tranches de 500 ; `accept_one_rule` note avec la même
+  carte ; T-b46 second décor (indice par le nom) ; M-b33.
+- **R1-2** — `user-manual.tex:3089` et `:2244` à l'AC-b13.
+- **R1-4** (AC-b8 : le seul cycle par l'intervalle est C1/C7, rejoué), **R1-5** (changement de contrat des deux côtés,
+  renvoi à `POST /reconciliation/manual`), **R1-8** (asymétrie crédit/débit justifiée), **F6** (inventaire clos des
+  formes non rejouées : quatre refus seulement), **F8** (tests de non-régression nommés, sans mutation dédiée).
+- ⚠️ **Portée de la remédiation, dite à l'orchestrateur** : la garde (a) ajoute du **comportement** au-delà de quelques
+  lignes — une requête neuve (normalisation SQL par `REGEXP_REPLACE`), une `notice` neuve, deux raisons de refus, trois
+  points d'appel, des libellés en quatre locales et un passage de manuel. Une passe **complète** est recommandée plutôt
+  que la passe ciblée demandée ; le prompt ciblé est écrit quand même (`30-1-validate-prompt-p6-ciblee.md`).
+- Décomptes, recomptés par `grep` sur la fiche : **26** AC (9 + 17), **24** tâches, **64** tests nommés (T-a1 à a17 sauf
+  a9 = 16 ; T-b1 à b50 sauf b43, b44 = 48 ; 7 Vitest) plus l'E2E à trois tests, **43** lignes de mutation (40 à
+  exécuter : sans M-a2 équivalente, M-a6 et M-b28 retirées), choix C-30-1-1 à **41** ; libellés : **37** codes (les
+  raisons neuves n'ajoutent aucun code). Modules : 30-1a **5**, 30-1b **5** (la garde vit dans `repositories/reconciliation`
+  et `routes/reconciliation`).
