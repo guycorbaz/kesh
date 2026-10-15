@@ -56,10 +56,13 @@
 //! - **(ii)** que le 1213 **atteint** le prédicat : le volet (c) est statique —
 //!   il voit l'appel, pas le chemin de l'erreur ; une conversion faite dans la
 //!   fermeture le passerait. Seuls les tests 2 à 5, 7, 9 et 10 de
-//!   `rejeu_interblocage_e2e.rs` le prouvent dynamiquement, pour sept routes de
+//!   `rejeu_interblocage_e2e.rs` le prouvent dynamiquement, pour huit routes de
 //!   la famille `DbError` (quatre qui écrivent au journal, l'enregistrement des
 //!   réglages de facturation, et — Story 15-12a — la clôture et la création
-//!   d'un exercice, enveloppe `kesh_db::retry`). Pour la famille `AppError`, le test 1 éprouve
+//!   d'un exercice, enveloppe `kesh_db::retry` ; et — Story 30-1a, #686 — la
+//!   création d'un lot de paiement, `payment_batches::create_payment_batch`,
+//!   par `payment_batch_creation_is_replayed_when_it_is_the_deadlock_victim`,
+//!   T-a14). Pour la famille `AppError`, le test 1 éprouve
 //!   le prédicat et l'enveloppe, et le test 8 le chemin propre aux routes à
 //!   verrou nommé sur `reconciliation::manual` (1213 levé sous le verrou,
 //!   `match` du handler, `RELEASE_LOCK`, `rollback`, nouvelle tentative) ; et —
@@ -82,9 +85,10 @@
 //!   l'enveloppe **enveloppe l'écriture** : le volet (c) est vrai dès qu'un
 //!   appel de ce nom figure dans le corps. Un handler `Rejouee` qui
 //!   envelopperait une lecture et ferait l'écriture hors de la fermeture
-//!   resterait vert. Ont une preuve dynamique : les sept routes des tests 2 à
+//!   resterait vert. Ont une preuve dynamique : les huit routes des tests 2 à
 //!   5, 7, 9 et 10 de `rejeu_interblocage_e2e.rs` (dont `close_fiscal_year` et
-//!   `create_fiscal_year`, Story 15-12a) et `reconciliation::manual` (test 8 du
+//!   `create_fiscal_year`, Story 15-12a) et de son test T-a14
+//!   (`create_payment_batch`, Story 30-1a), et `reconciliation::manual` (test 8 du
 //!   même fichier, Story 15-5e2) ;
 //!   `accept_replays_the_batch_when_it_is_the_deadlock_victim`
 //!   (`reconciliation_e2e.rs`) pour `reconciliation::accept` ;
@@ -149,7 +153,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **quatorze routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **quinze routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2 — la
 //!   seule des neuf routes d'étape à l'être, cf. (iv)),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
@@ -225,7 +229,13 @@
 //!   puis son écriture (`reconciliation_link::link_in_tx`) — l'ordre `s → je`
 //!   de l'annulation d'un règlement, avec laquelle il se dispute le règlement ;
 //!   tenue par sa revue, **aucune preuve dynamique** (aucun test d'interblocage
-//!   forcé, C-29-8-11). Quatorze avec elle.
+//!   forcé, C-29-8-11). Quatorze avec elle. Et — Story 30-1a, #686, AC-a8 —
+//!   `payment_batches::create_payment_batch` (enveloppe `DbError`
+//!   `kesh_db::retry::retry_on_deadlock`, opération `payment_batches::create`,
+//!   comme la confirmation) : la création d'un lot n'écrit rien au journal,
+//!   mais la Story 30-1b ouvre un cycle entre elle et l'acceptation de
+//!   plusieurs propositions (verrous facture → compte → articles) ; tenue par
+//!   T-a14 (`rejeu_interblocage_e2e.rs`). Quinze avec elle.
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit

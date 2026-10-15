@@ -150,22 +150,42 @@ pub struct ListPaymentBatchesQuery {
 // ---------------------------------------------------------------------------
 
 /// `POST /api/v1/payment-batches` — créer un lot (Comptable+). `{batch, failed}`.
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 30-1a, #686, AC-a8) par l'enveloppe
+/// `DbError` [`kesh_db::retry::retry_on_deadlock`], comme la confirmation : la
+/// Story 30-1b ouvre un cycle entre une acceptation de plusieurs propositions
+/// et la création d'un lot (verrous facture → compte → articles), dont la
+/// victime finirait sinon en `500`. Rejeu **sûr** : tout se fait dans une
+/// transaction, une tentative ne rend `Err` qu'annulée, aucun fichier n'est
+/// écrit (le pain.001 est produit au `GET`) — aucun double lot.
+///
+/// **Borne** : plus de [`MAX_IN_CLAUSE_IDS`] identifiants, comptés sur la
+/// longueur **brute** de `supplierInvoiceIds` (avant dédoublonnage), est un
+/// `400 VALIDATION_ERROR`, avant toute lecture — le verrouillage de tête du
+/// dépôt lie un paramètre par identifiant.
+///
+/// [`MAX_IN_CLAUSE_IDS`]: kesh_db::repositories::reconciliation::MAX_IN_CLAUSE_IDS
 pub async fn create_payment_batch(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreatePaymentBatchRequest>,
 ) -> Result<(StatusCode, Json<CreatePaymentBatchResponse>), AppError> {
+    let max = kesh_db::repositories::reconciliation::MAX_IN_CLAUSE_IDS;
+    if req.supplier_invoice_ids.len() > max {
+        return Err(AppError::Validation(format!(
+            "un lot de paiement ne peut pas dépasser {max} factures"
+        )));
+    }
     let company = get_company_for(&current_user, &state.pool).await?;
-    let outcome = payment_batches::create_batch(
-        &state.pool,
-        kesh_db::entities::NewPaymentBatch {
-            company_id: company.id,
-            bank_account_id: req.bank_account_id,
-            requested_execution_date: req.requested_execution_date,
-            supplier_invoice_ids: req.supplier_invoice_ids,
-        },
-        current_user.user_id,
-    )
+    let new = kesh_db::entities::NewPaymentBatch {
+        company_id: company.id,
+        bank_account_id: req.bank_account_id,
+        requested_execution_date: req.requested_execution_date,
+        supplier_invoice_ids: req.supplier_invoice_ids,
+    };
+    let outcome = kesh_db::retry::retry_on_deadlock("payment_batches::create", || {
+        payment_batches::create_batch(&state.pool, new.clone(), current_user.user_id)
+    })
     .await?;
 
     let batch = outcome
