@@ -289,3 +289,44 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
 - 30-1a : `reconciliation_cancel`, `supplier_invoices`, `routes/reconciliation`, `routes/payment_batches`,
   `features/reconciliation` = 5 ; 30-1b : `matching`, `repositories/reconciliation`, `supplier_invoices`,
   `routes/reconciliation`, `features/reconciliation` = 5. Au seuil, sans nouveau découpage ; signal déclaré.
+
+---
+
+## Remédiation de la validation P2 — 2026-10-15 (arbitrages de l'orchestrateur)
+
+### C-30-1-14 (amendé une seconde fois) — Lot `generated` du compte : rien n'est proposé
+
+- **Retenu** : une facture fournisseur ouverte au montant exact, engagée dans un lot `generated` **du compte de la
+  transaction**, efface toute proposition de la ligne (facture et règle) et pose la `notice` ; un lot d'un autre compte
+  ne masque que la règle, et seulement avec un indice. La sûreté prime sur la commodité (P2, F1, F2).
+- **Écartée** : ne masquer que la règle (le paiement du lot proposé contre la mensualité suivante, puis la confirmation
+  du lot : un débit, deux règlements).
+
+### C-30-1-12 (amendé une seconde fois) — La référence de paiement est un texte libre
+
+- **Retenu** : même normalisation et même longueur minimale (6 alphanumériques) que le numéro (P2, R3).
+
+### C-30-1-30 — Les conventions de `details` du refus fournisseur
+
+- **Retenu** : montant de la transaction tel quel (négatif), TTC positif ; casse de chaque famille existante (P2, R-L4).
+
+### C-30-1-31 — `create_batch` verrouille ses factures avant toute lecture (défaut préexistant intégré)
+
+- **Contexte** : deux créations de lot concurrentes mettaient la même facture dans deux lots `generated` (vue née à la
+  lecture ordinaire du compte, avant le verrou de la facture) — double paiement (P2, F-L11, R-L7) ; arbitrage : intégrer
+  à la 30-1a, qui touche déjà `create_batch`, si mécanique.
+- **Retenu** : `SELECT … FOR UPDATE` des factures demandées par identifiant croissant, en tête ; la lecture du compte et
+  les lectures d'appartenance après. Jugé mécanique.
+- **Réversible** : oui.
+
+### C-30-1-32 — Requête masquante sans troncature qui coupe la facture qui bloque
+
+- **Retenu** : tri lot du compte, montant exact, imputation ; plafond 200 ; liste pleine = masquante ; exécutée pour
+  tout débit CHF, règle active ou non (P2, F6, R4, R-L5).
+
+### C-30-1-33 — Le dialogue d'annulation passe à la 30-1b
+
+- **Contexte** : l'AC-a9 portait la 30-1a à six modules.
+- **Retenu** : le dialogue (et ses tests) dans la 30-1b, qui touche déjà `features/reconciliation` et produit le premier
+  rapprochement fournisseur ; 30-1a et 30-1b à cinq modules.
+- **Écartée** : une dérogation à la règle de découpage, ou une troisième sous-story pour une ligne de rejeu.

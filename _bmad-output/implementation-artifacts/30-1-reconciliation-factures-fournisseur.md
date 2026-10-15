@@ -6,9 +6,9 @@
 l'Epic 30), branche `story/30-1`, worktree `/home/gcorbaz/devel/kesh-30-1`. **Découpée** (§ *Découpage*) en deux
 sous-stories tenues dans cette fiche, comme la 29-1 et la 29-4 : **30-1a** (le dé-rapprochement sait défaire un
 règlement fournisseur) **puis** 30-1b (proposer et accepter). Choix consignés au registre propre à la story,
-`epic-30-choix-autonomes-301.md`, **C-30-1-1 à C-30-1-29** (à verser par union au registre de l'epic). Validation P1
-faite (Sonnet : F 0/2/4/5, R 0/2/7/9), remédiée le 2026-10-15 ; validation P2 (passe complète, Opus) à lancer :
-`30-1-validate-prompt-p2.md`.
+`epic-30-choix-autonomes-301.md`, **C-30-1-1 à C-30-1-33** (à verser par union au registre de l'epic). Validation P1
+faite (Sonnet : F 0/2/4/5, R 0/2/7/9), remédiée le 2026-10-15 ; validation P2 faite (Opus : F 0/1/5/11, R 0/0/5/16),
+remédiée le 2026-10-15 ; validation P3 (passe complète, Sonnet) à lancer : `30-1-validate-prompt-p3.md`.
 
 PR : **`closes #686`** dans le titre ou le corps de la PR de la **30-1b seulement** — jamais dans un message de commit,
 même en prose ou au futur (B4 de la rétrospective 28) ; la PR de la 30-1a porte `refs #686`.
@@ -64,7 +64,7 @@ jamais rapproché d'une facture **client**).
 
 | Fait | Au code |
 |---|---|
-| Entité : `status` `open` / `paid` / `cancelled` ; `total_amount` = **TTC**, `DECIMAL(19,4)` ; `supplier_invoice_number` (libre, nullable) ; `payment_reference` (QRR/SCOR, `VARCHAR(64)`) ; `invoice_date`, `due_date` ; colonnes `settlement_*` posées au paiement ; **aucune colonne de devise** (mono-CHF) | `entities/supplier_invoice.rs:17-48` ; migration `20260628000001_supplier_invoices.sql:27-66` |
+| Entité : `status` `open` / `paid` / `cancelled` ; `total_amount` = **TTC**, `DECIMAL(19,4)` ; `supplier_invoice_number` (libre, nullable) ; `payment_reference` (`VARCHAR(64)` : QRR/SCOR à l'import d'un QR, **texte libre** à la saisie manuelle — corrigé en P2, R3) ; `invoice_date`, `due_date` ; colonnes `settlement_*` posées au paiement ; **aucune colonne de devise** (mono-CHF) | `entities/supplier_invoice.rs:17-48` ; migration `20260628000001_supplier_invoices.sql:27-66` |
 | **Aucune route de modification** d'une facture fournisseur (création, paiement, annulation, annulation du règlement, pièce jointe) : date, échéance et TTC sont **immuables** une fois la facture saisie | `kesh-api/src/lib.rs:467-511` |
 | Le TTC est `Σ HT + Σ TVA` ; la TVA est arrondie au centime par ligne, mais `line_total = quantité × prix unitaire` n'est **pas** arrondi : un TTC à plus de deux décimales est **possible** | `supplier_invoices.rs:109-168` ; `kesh-core/src/accounting/vat.rs:40-44` |
 | **Le règlement est binaire** : toujours le TTC entier, jamais partiel ; il n'existe pas de reste dû fournisseur | `supplier_invoices.rs:713-990` |
@@ -107,16 +107,20 @@ jamais rapproché d'une facture **client**).
 
 La story touche **plus de cinq modules** : `kesh-reconciliation/matching`, `kesh-db/repositories/reconciliation`,
 `kesh-db/repositories/supplier_invoices`, `kesh-db/repositories/reconciliation_cancel`,
-`kesh-api/routes/reconciliation`, `kesh-api/routes/payment_batches` (rejeu de la création d'un lot, AC-a8),
+`kesh-api/routes/reconciliation`, `kesh-db/repositories/payment_batches` et `kesh-api/routes/payment_batches` (la
+création d'un lot : verrous et rejeu, AC-a8, AC-a9),
 `frontend/src/lib/features/reconciliation` (plus les catalogues i18n, le manuel et `api-external.md`). Découpée, dans
 **cet ordre**, sur le patron « story-zéro puis rollout » :
 
 | Sous-story | Clé | Objet | Modules de code |
 |---|---|---|---|
-| **30-1a** | `30-1a-annuler-rapprochement-fournisseur` | le dé-rapprochement sait **défaire un règlement fournisseur** (classement, motifs exemptés, annulation appelée), la vue le dit ; préalables de la 30-1b : le texte commun « rapproché » rendu vrai des deux côtés, la création d'un lot rejouée sur interblocage | `repositories/reconciliation_cancel`, `repositories/supplier_invoices` (une fonction de lecture ajoutée), `routes/reconciliation` (vue et `…/cancel`), `routes/payment_batches` (une enveloppe de rejeu), `features/reconciliation` (`CancelReconciliationDialog`) — **5** |
-| **30-1b** | `30-1b-proposer-accepter-fournisseur` | la proposition et l'acceptation des factures fournisseur pour un débit, `paid_at` à la date du paiement | `kesh-reconciliation/matching`, `repositories/reconciliation`, `repositories/supplier_invoices` (chemin de paiement), `routes/reconciliation`, `features/reconciliation` (`ReconciliationProposals`, libellés) — **5** |
+| **30-1a** | `30-1a-annuler-rapprochement-fournisseur` | le dé-rapprochement sait **défaire un règlement fournisseur** (classement, motifs exemptés, annulation appelée), la vue le dit ; préalables de la 30-1b : le texte commun « rapproché » rendu vrai des deux côtés, la création d'un lot rejouée sur interblocage **et** verrouillant ses factures avant toute lecture (AC-a9, défaut préexistant intégré) | `repositories/reconciliation_cancel`, `repositories/supplier_invoices` (une fonction de lecture ajoutée), `repositories/payment_batches` (`create_batch`), `routes/reconciliation` (vue et `…/cancel`), `routes/payment_batches` (une enveloppe de rejeu) — **5** |
+| **30-1b** | `30-1b-proposer-accepter-fournisseur` | la proposition et l'acceptation des factures fournisseur pour un débit, `paid_at` à la date du paiement ; le dialogue *Annuler le rapprochement* pour un règlement fournisseur | `kesh-reconciliation/matching`, `repositories/reconciliation`, `repositories/supplier_invoices` (chemin de paiement), `routes/reconciliation`, `features/reconciliation` (`ReconciliationProposals`, `CancelReconciliationDialog`, libellés) — **5** |
 
-Hors décompte, dans les deux : `kesh-i18n` (catalogues), `kesh-api/src/errors.rs` (un texte de repli), les tests et
+Le dialogue *Annuler le rapprochement* passe de la 30-1a à la 30-1b (C-30-1-33) : rien ne produit un rapprochement
+fournisseur avant la 30-1b, et sans ce déplacement l'intégration de l'AC-a9 portait la 30-1a à six modules. Hors
+décompte, dans les deux : `kesh-i18n` (catalogues), `kesh-api/src/errors.rs` (un texte de repli),
+`frontend/src/lib/shared/utils/settlement-cancel-blocked.ts` (un texte de repli, P2 R-L8), les tests et
 `helpers/api-fixtures.ts`. Chaque sous-story est **au seuil** (5), non au-delà : signal déclaré au Project Lead, sans
 nouveau découpage (C-30-1-27).
 
@@ -224,7 +228,9 @@ règlement rapproché ouvert — la forme non exemptée rendrait `MATCHED_BANK_T
 Ordre du geste pour le bras fournisseur : verrou nommé (route) → `bank_transactions` (`t`) X → `supplier_invoices` X
 (par l'index de `settlement_journal_entry_id`, `fk_supplier_invoices_settlement_je`) → `journal_entries` + `fiscal_years`
 X → garde non verrouillante du compte clos → … → revérification verrouillante du compte (dernière acquisition). ⛔
-**Aucune lecture non verrouillante avant l'étape 3**, y compris pour le classement fournisseur.
+**Aucune lecture non verrouillante avant l'étape 3**, y compris pour le classement fournisseur. Le bras fournisseur
+verrouille la facture **avant** l'écriture, comme `cancel_settlement_in_tx` (facture → écriture) : même ordre que le
+geste qu'il appelle.
 
 - **Plan épinglé** : la lecture verrouillante doit passer par l'index de `settlement_journal_entry_id` ; un plan par
   `idx_supplier_invoices_company_status` verrouillerait **toutes** les factures payées de la société. Le test T-a12
@@ -236,15 +242,19 @@ X → garde non verrouillante du compte clos → … → revérification verroui
   `settlement_journal_entry_id`) tient l'intervalle de queue : un `pay_in_tx` concurrent (étape 6, `UPDATE … SET
   settlement_journal_entry_id = <écriture neuve>`) **attend** la fin du dé-rapprochement. Même coût que la lecture de
   `invoice_settlements` sur un `Entry` aujourd'hui. Cycle possible avec le verrou de l'exercice (`pay_in_tx` tient
-  l'exercice par `create_in_tx` avant son `UPDATE`, le dé-rapprochement tient l'intervalle avant l'exercice) : **rejoué
-  des deux côtés** (`retry_app_on_deadlock` pour le dé-rapprochement, `retry_on_deadlock` pour `pay`, `retry_with`
-  pour l'acceptation, `retry_on_deadlock` pour `confirm`).
-*Tests* : T-a6 (course : `cancel_settlement_in_tx` depuis la fiche contre le dé-rapprochement de la même transaction —
-l'un aboutit, l'autre est refusé ou rejoué, jamais d'état mixte), **T-a11** (dé-rapprochement d'un règlement fournisseur
-rapproché **pendant** `fiscal_years::close` de l'exercice du règlement, sonde `attendre_une_requete_en_cours` : refus
-`ReconciliationNotCancellable` (exercice clos), rien écrit — c'est lui qui tue M-a5, la lecture de classement sans
-`FOR UPDATE` qui ferait naître la vue avant le verrou de l'exercice), T-a12 (plan). Sondes `sonde_verrou_nowait` /
-`attendre_une_requete_en_cours`, **jamais** `INNODB_TRX`.
+  l'exercice par `find_open_covering_date … FOR UPDATE`, `fiscal_years.rs:758`, avant son `UPDATE` ; le
+  dé-rapprochement tient l'intervalle avant l'exercice) : **rejoué des deux côtés** (`retry_app_on_deadlock` pour le
+  dé-rapprochement, `retry_on_deadlock` pour `pay`, `retry_with` pour l'acceptation, `retry_on_deadlock` pour `confirm`).
+*Tests* : T-a6 (course : dé-rapprochement d'un règlement fournisseur rapproché contre `supplier_invoices::cancel_in_tx`
+de la **même** facture, qui **détache** le règlement — l'un attend l'autre au verrou de la facture ; issues admises :
+dé-rapprochement puis annulation de la facture `open`, ou annulation (règlement détaché, transaction toujours
+rapprochée) puis dé-rapprochement classé `Entry` qui contre-passe le règlement détaché ; jamais d'état mixte, rien
+d'écrit par le perdant s'il est refusé. ⚠️ Réorienté en P2 (F-L9) : la course contre `cancel_settlement_in_tx` était
+verte par construction, la fiche refusant toujours au rang 3 ou au rang 1), **T-a11** (dé-rapprochement d'un règlement
+fournisseur rapproché **pendant** `fiscal_years::close` de l'exercice du règlement, sonde
+`attendre_une_requete_en_cours` : refus `ReconciliationNotCancellable` (exercice clos), rien écrit — c'est lui qui tue
+M-a5, la lecture de classement sans `FOR UPDATE` qui ferait naître la vue avant le verrou de l'exercice), T-a12 (plan).
+Sondes `sonde_verrou_nowait` / `attendre_une_requete_en_cours`, **jamais** `INNODB_TRX`.
 
 **AC-a5 — La vue et la réponse disent le fournisseur.**
 `GET /reconciliation/transactions/{id}` : `kind` peut valoir `supplier_settlement` ; deux champs **ajoutés**,
@@ -254,35 +264,74 @@ facture **client** (nuls pour un règlement fournisseur). `POST …/cancel` : ch
 nuls). Contrat **additif** : aucun champ existant ne change de sens (C-30-1-8).
 *Tests* : T-a7 (forme JSON des trois cas), T-a8 (audit).
 
-**AC-a6 — L'écran et le texte « rapproché », vrais des deux côtés.**
-`CancelReconciliationDialog.svelte` : pour `kind === 'supplier_settlement'`, le texte de confirmation
-`reconciliation-cancel-confirm-supplier-invoice` — « Une écriture inverse datée d'aujourd'hui sera passée, le paiement
-de la facture fournisseur { $invoice } sera retiré et la facture redeviendra ouverte, à payer ; la transaction
-redeviendra à rapprocher. » (quatre locales). `reconciliation.types.ts` : `kind` élargi, champs ajoutés.
+**AC-a6 — Le texte « rapproché », vrai des deux côtés.**
 Le motif `MATCHED_BANK_TRANSACTION` de l'annulation d'un règlement a **un** texte, commun au client et au fournisseur,
-lu par le serveur (`kesh-api/src/errors.rs:3736-3739`, repli) et par l'écran (`settlement-cancel-blocked.ts:51`,
-`messages.ftl:851` et ses trois jumeaux `:803`). Il dit aujourd'hui « depuis **cette fiche** ou le détail de l'import »,
-faux sur la fiche fournisseur, qui n'a pas le dialogue. **Réécrit** (C-30-1-11 amendé) : « Ce règlement est rapproché
-d'une transaction bancaire : annulez d'abord le rapprochement, depuis le détail de l'import bancaire — ou, pour une
-facture client, depuis sa fiche. » — quatre locales, repli serveur et repli de l'écran identiques
-(la clé est **ajoutée** à `les_replis_rust_suivent_le_catalogue`, `textes_coherents.rs:679-700`, qui compare les replis
-de `errors.rs` au catalogue mais ne la porte pas aujourd'hui). Aucune clé propre au fournisseur : le test « la queue est RÉUTILISÉE »
-(`settlement-cancel.test.ts:22-32`) reste vrai tel quel.
-*Tests* : Vitest T-a9 (dialogue, trois `kind`), T-a10 (le texte commun, sur la fiche fournisseur et la fiche client),
-T-a13 (`textes_coherents.rs::les_replis_rust_suivent_le_catalogue`, clé ajoutée : repli serveur = catalogue fr-CH).
+lu par l'écran (`frontend/src/lib/shared/utils/settlement-cancel-blocked.ts:51`, `messages.ftl:851` et ses trois
+jumeaux `:803`) — c'est par la **vue** de la fiche (`settlementCancelBlockedBy`) que l'utilisateur le voit. Il dit
+aujourd'hui « depuis **cette fiche** ou le détail de l'import », faux sur la fiche fournisseur, qui n'a pas le dialogue.
+**Réécrit** (C-30-1-11 amendé) : « Ce règlement est rapproché d'une transaction bancaire : annulez d'abord le
+rapprochement, depuis le détail de l'import bancaire — ou, pour une facture client, depuis sa fiche. » — quatre
+locales, repli de l'écran, et repli serveur `kesh-api/src/errors.rs:3736-3739` aligné. ⚠️ Ce bras serveur de
+`SettlementNotCancellable` est **inatteignable** (`errors.rs:3703` : « Seuls les rangs que le GESTE refuse lui-même
+arrivent ici » ; les deux `cancel_settlement_in_tx` ne refusent eux-mêmes que les rangs 1, 2 et 2 bis) : au clic, le
+rang 3 vient du socle, texte `journal-entries-reverse-blocked-bank-match`, déjà vrai. Le repli serveur est aligné
+pour que les deux replis du même code ne divergent pas (P2, R-L2) — non parce qu'un client d'API le lirait. La clé est
+**ajoutée** à `les_replis_rust_suivent_le_catalogue` (`textes_coherents.rs:679-700`), qui compare les replis de
+`errors.rs` au catalogue mais ne la porte pas aujourd'hui. Aucune clé propre au fournisseur : le test « la queue est
+RÉUTILISÉE » (`settlement-cancel.test.ts:22-32`) reste vrai tel quel. Le commentaire `errors.rs:4237-4238` (« Aucun
+rapprochement ne règle une facture fournisseur : le motif ne peut pas naître ici ») devient faux par sa raison :
+**réécrit** — le motif reste inatteignable parce que le classement fournisseur exige `status = 'paid'` (P2, R-L1).
+Le **dialogue** *Annuler le rapprochement* et son texte fournisseur relèvent de la 30-1b (AC-b11, C-30-1-33).
+*Tests* : Vitest T-a10 (le texte commun, sur la fiche fournisseur et la fiche client), T-a13
+(`textes_coherents.rs::les_replis_rust_suivent_le_catalogue`, clé ajoutée : repli serveur = catalogue fr-CH).
 
 **AC-a7 — Contrat écrit.**
 `docs/api-external.md` § *Annuler un rapprochement* (`:596-612`) : `kind = supplier_settlement`, les champs ajoutés,
-« pour une facture fournisseur, retire son paiement » ; la mention « depuis la v0.14.0 ». Le manuel et le CHANGELOG
+« pour une facture fournisseur, retire son paiement » ; la mention « depuis la v0.14.0 » ; `:788` (AC-a8). Le manuel et le CHANGELOG
 sont écrits par la 30-1b (rien ne produit cet état avant elle ; C-30-1-9).
 
 **AC-a8 — La création d'un lot de paiement est rejouée sur interblocage (préalable de la 30-1b, C-30-1-28).**
 `POST /payment-batches` (`kesh-api/src/routes/payment_batches.rs:159`) passe par
 `kesh_db::retry::retry_on_deadlock("payment_batches::create", …)`, comme `confirm` (`:251`). Motif : la 30-1b ouvre un
 cycle acceptation ↔ `create_batch` inhérent à un lot d'acceptation de plusieurs propositions (AC-b10, cycle C1) ; sans
-rejeu, la victime `create_batch` finirait en `500` sans rapport visible. `api-external.md` § lots : « un interblocage
-transitoire est rejoué par le serveur ». Le développement vérifie comment le rejeu de `confirm` est couvert par les tests
-et applique le même patron ; s'il ne l'est par aucun test, le dire au Dev Agent Record (rejeu non provoqué).
+rejeu, la victime `create_batch` finirait en `500` sans rapport visible. Rejeu **sûr**, vérifié en P2 (F5, R) : tout est
+dans une transaction (`pool.begin()` … `commit()`), le `msg_id` dérive de l'identifiant dans la transaction, aucun
+fichier n'est écrit (le pain.001 est produit au `GET`), `NewPaymentBatch` est `Clone` — une tentative ne rend `Err`
+qu'annulée, aucun double lot.
+**Textes et registres à mettre en accord** (P2, R2 et F5) :
+- `docs/api-external.md:788` (§ *Interblocages*) dit « L'import d'un relevé (`POST /bank-imports`) et la création d'un
+  lot de paiement **ne sont pas rejoués** » : retirer la création d'un lot de cette phrase et ajouter `POST
+  /payment-batches` aux routes qui rejouent (« depuis la v0.14.0 ») ; il n'existe **pas** de « § lots » ;
+- `crates/kesh-api/tests/audit_route_registry.rs` : la route (`:360`, `SansEcritureAuJournal`) entre au point **(vi)**
+  du doc-comment (`:152`, « **quatorze** routes `SansEcritureAuJournal` sont rejouées » → **quinze**, recompté) et,
+  prouvée par T-a14, aux preuves dynamiques **(iii bis)** (`:81`).
+*Test* : **T-a14**, sur le patron `bank_account_creation_is_replayed_when_it_is_the_deadlock_victim`
+(`crates/kesh-api/tests/rejeu_interblocage_e2e.rs:2089`, aide `victime` `:347`) : la création d'un lot victime d'un
+interblocage est rejouée, et **un seul** lot existe à la fin. Mutation M-a8 (enveloppe retirée).
+
+**AC-a9 — Deux créations de lot ne mettent plus la même facture dans deux lots `generated` (défaut préexistant,
+intégré sur décision de l'orchestrateur, C-30-1-31).**
+Au sol, `create_batch` (`payment_batches.rs:69-200`) fait d'abord une lecture **ordinaire** du compte (étape (0),
+`:92` — la vue naît), puis, par facture, `FOR UPDATE` (`:321`) et l'appartenance à un lot `generated` par une lecture
+**ordinaire** (`:340-348`). Deux `create_batch` concurrents sur la même facture : le second attend le verrou de la
+facture, puis lit l'appartenance dans **sa** vue, née avant le commit du premier — il ne voit pas l'article, et la
+facture entre dans **deux** lots `generated`, deux fichiers pain.001 : **double paiement** (P2, F-L11 = R-L7).
+**Correction** : avant l'étape (0), `create_batch` verrouille **toutes** les factures demandées, dédoublonnées, **par
+identifiant croissant** (`SELECT id FROM supplier_invoices WHERE company_id = ? AND id IN (…) ORDER BY id FOR UPDATE`) ;
+l'étape (0) et les lectures d'appartenance viennent **après** : la vue naît après le dernier verrou de facture, et voit
+tout lot commité par un concurrent qui tenait l'une d'elles. L'ordre croissant supprime aussi l'interblocage de deux
+lots aux factures croisées. L'ordre des verrous reste facture → compte (clé étrangère de l'`INSERT payment_batches`) →
+articles, celui de la table de l'AC-b10. Sorties inchangées : `failed[]` garde l'ordre de la requête et ses codes
+(`ALREADY_IN_GENERATED_BATCH` pour le second). ⚠️ Prix : une facture absente ou d'une autre société dans la requête pose
+un verrou d'intervalle sur la clé primaire ; écrit au doc-comment. **Mécanique** : un `SELECT` ajouté en tête, aucune
+autre ligne déplacée que la première lecture du compte, qui passe après lui ; le doc-comment de l'étape (0) (« c'est
+déjà sa première lecture ») est réécrit.
+*Test* : **T-a15** (course au niveau du dépôt, trois connexions : (1) une connexion tient la facture `FOR UPDATE` ;
+(2) `create_batch` A démarre et se bloque sur la facture (`attendre_une_requete_en_cours`) ; (3) `create_batch` B
+démarre et se bloque derrière A — **au sol**, B a déjà fait sa lecture ordinaire du compte, sa vue est née ; (4) la
+connexion (1) relâche, A crée son lot et commite, B obtient la facture. Attendu : B refuse la facture
+(`ALREADY_IN_GENERATED_BATCH`, `batch: None` si c'est la seule) ; **rouge au sol**, où B crée un second lot). Mutation M-a7 (le
+verrouillage en tête retiré).
 
 ### Partie b — `30-1b-proposer-accepter-fournisseur`
 
@@ -298,28 +347,37 @@ et applique le même patron ; s'il ne l'est par aucun test, le dire au Dev Agent
   …)`, ou équivalent écrit au contrat du trait) : un débit est stocké **négatif** (`kesh-import/src/camt053/mod.rs:627`,
   `sign.apply`) et le TTC est positif ; comparé signé, `amount_score` vaudrait 0 pour tout débit (P1 : R1, F2). Le chemin
   crédit ne change pas (montants déjà positifs ; montant nul : aucune candidate, garde amont) : score client **au bit
-  près**.
+  près**. ⚠️ Conséquence écrite (P2, F-L4) : la note ne distingue plus le sens ; la garde #482 repose sur les filtres
+  amont (`routes/reconciliation.rs:749-752` et son jumeau fournisseur) et sur `refuse_wrong_direction` à l'acceptation —
+  testés par T-b11, T-b12, T-b21. Un montant orienté par sorte de document a été considéré et écarté par l'arbitrage de
+  la P1 (valeur absolue dans la fonction générique).
 - **Référence, client** : `Invoice` garde **exactement** la règle actuelle (`coalesce(reference, end_to_end_id,
   transaction_id)` contre `invoice_number`, containment, demi-score de préfixe).
-- **Référence, fournisseur** (C-30-1-12 amendé) : le **maximum** de deux **égalités normalisées**, jamais de
+- **Référence, fournisseur** (C-30-1-12, amendé deux fois) : le **maximum** de deux **égalités normalisées**, jamais de
   containment ni de préfixe, contre le **même** `coalesce(reference, end_to_end_id, transaction_id)` de la transaction ;
-  normalisation appliquée **aux deux côtés** : retrait de tous les blancs, majuscules.
-  (a) `payment_reference` (QRR/SCOR) égale → `1.0` ;
-  (b) `supplier_invoice_number` égal → `1.0`, **seulement s'il compte au moins 6 caractères alphanumériques**
-  après normalisation ; plus court (« 1 », « 12 », « 2026 ») → `0.0`. Un numéro fournisseur est un texte libre : contenu
-  dans une référence QR de 27 chiffres, il donnerait un faux indice.
-  **Ce que cela garantit** : aucun indice de référence fournisseur ne naît d'une coïncidence partielle ; un faux indice
-  ne peut donc jamais **départager contre l'ordre d'imputation** (art. 87 CO, 29-5). Seule une désignation **entière**
-  par le payeur — la référence QR, ou le numéro complet d'au moins 6 caractères — fait passer une facture devant une
-  autre de même montant : c'est la déclaration du débiteur (art. 86 CO), qui prime l'imputation légale, comme côté client.
-- `MatchProposal.invoice_id` est renommé `document_id` (champ interne ; `grep -rn MatchProposal crates` → `matching.rs`
-  et `lib.rs:33` seulement, revérifié en P1).
+  normalisation appliquée **aux deux côtés** : retrait de tous les blancs, majuscules ; chaque valeur ne compte que si
+  elle a **au moins 6 caractères alphanumériques** après normalisation :
+  (a) `payment_reference` égale → `1.0`. ⚠️ Ce n'est **pas** toujours une référence QRR/SCOR : c'est un **texte libre**
+  à la saisie manuelle (`supplier-invoices/+page.svelte:331`, aucun contrôle à `POST /supplier-invoices`,
+  `routes/supplier_invoices.rs:245`, `:348`) ; seul l'import d'un QR la garantit structurée
+  (`imported_supplier_invoices.rs:211-216`). D'où la même borne que le numéro (P2, R3) ;
+  (b) `supplier_invoice_number` égal → `1.0`.
+  Une valeur plus courte (« 1 », « 12 », « Loyer ») → `0.0`.
+  **Ce que cela garantit** — pour les indices de **référence** seulement : aucun ne naît d'une coïncidence partielle ou
+  d'une valeur courte, donc aucun ne départage **contre l'ordre d'imputation** (art. 87 CO, 29-5) ; seule une désignation
+  **entière** par le payeur (référence ou numéro complet d'au moins 6 caractères) fait passer une facture devant une
+  autre de même montant : la déclaration du débiteur (art. 86 CO). ⚠️ L'indice de **contact** (0,10, containment
+  bidirectionnel, `matching.rs:167-182`) départage encore deux factures de même montant de **fournisseurs différents**,
+  comme côté client (P2, R-L12) ; entre deux factures du **même** fournisseur, il est égal et ne départage pas.
+- `MatchProposal.invoice_id` est renommé `document_id` (champ interne) : le **type** n'est lu que par `matching.rs` et
+  `lib.rs:33`, le **champ** aussi par `routes/reconciliation.rs:895` (`mp.invoice_id`, P2 F-L1), déjà dans le périmètre.
 - **Tous** les tests existants de `matching.rs` passent **sans modification de leurs assertions** (les constructeurs
   de fixtures peuvent changer de signature).
-*Tests* : T-b1 (sur une transaction **négative** : `amount_score = 1.0` ; référence QR avec et sans blancs, en
-minuscules ; maximum des deux), T-b2 (préfixe commun de zéros, référence de paiement contenue → 0), T-b3 (départage
-fournisseur par exigibilité), T-b37 (numéro fournisseur : égal et ≥ 6 → 1 ; égal et < 6 → 0 ; contenu → 0 ; deux
-factures de même montant, l'une au numéro court contenu dans la référence : l'ordre d'imputation tient).
+*Tests* : T-b1 (sur une transaction **négative** : `amount_score = 1.0` ; référence de paiement de 27 chiffres avec et
+sans blancs, en minuscules ; maximum des deux), T-b2 (préfixe commun de zéros, référence de paiement contenue → 0),
+T-b3 (départage fournisseur par exigibilité), T-b37 (numéro **et** référence de paiement : égal et ≥ 6 → 1 ; égal et
+< 6 → 0 ; contenu → 0 ; deux factures de même montant, l'une au numéro court contenu dans la référence : l'ordre
+d'imputation tient).
 
 **AC-b2 — La fenêtre de dates fournisseur, écrite et tranchée (C-30-1-13).**
 Une seule définition étendue : `InvoiceDateWindow` gagne un constructeur `for_supplier_payment_date(d)` (et
@@ -341,12 +399,13 @@ Une seule définition étendue : `InvoiceDateWindow` gagne un constructeur `for_
 refusal, window)` ; `RECONCILIATION_INVOICE_NOT_ELIGIBLE` avec `details.reason` = `payment_date_before_invoice_date`
 (+ `details.tolerance_days` : 1 client, 7 fournisseur — champ **ajouté**, additif) ou `payment_date_outside_window`
 (+ `details.window_days` : 30 client, 365 fournisseur). Côté client, `reason` et `window_days` **inchangés**. Expression
-SQL de `X` : `GREATEST(si.invoice_date, COALESCE(si.due_date, si.invoice_date))`, tenue d'accord avec la fonction Rust
+SQL de `X` : `CAST(GREATEST(si.invoice_date, COALESCE(si.due_date, si.invoice_date)) AS DATE)` — le `CAST` du patron
+client (`repositories/reconciliation.rs:180`, type rendu garanti `NaiveDate`, P2 R-L13) —, tenue d'accord avec la fonction Rust
 par un test de parité (patron `exigibility_date_sql_and_rust_agree`).
 *Tests* : T-b4 (bornes incluses et exclues des deux côtés, `due_date` nulle, échéance antérieure à la date), T-b5
 (parité SQL/Rust), T-b6 (facture saisie aujourd'hui, datée et échue un an avant le paiement moins un jour → proposée).
 
-**AC-b3 — Les candidates fournisseur et les factures qui masquent la règle (C-30-1-5, C-30-1-14 amendé).**
+**AC-b3 — Les candidates fournisseur et les factures qui masquent (C-30-1-5, C-30-1-14 amendé deux fois, C-30-1-32).**
 `repositories/reconciliation.rs` : `find_open_supplier_invoices_for_window(executor, company_id, window, amount)` —
 `amount` = valeur absolue du débit :
 1. `company_id` ;
@@ -359,15 +418,23 @@ par un test de parité (patron `exigibility_date_sql_and_rust_agree`).
 5. fenêtre de l'AC-b2 ;
 6. ordre d'imputation (`X`, `invoice_date`, `id` croissants) **avant** `LIMIT 50`.
 
-Une seconde fonction, `find_supplier_invoices_masking_rule(executor, company_id, window, amount)`, rend les factures
-fournisseur **ouvertes** de la société dont le TTC est à **0,05 au plus** du débit et qui **ne sont pas** candidates
-(au moins un des filtres 3, 4 ou 5 les écarte), **sans borne de dates**, ordre d'imputation, `LIMIT 50`, avec pour
-chacune : `in_generated_batch` (et l'identifiant du lot), `exact_amount`, `in_window`. Jamais proposées ; lues pour
-l'AC-b5. Les deux fonctions partagent le texte SQL de base (patron `unpaid_invoices_in_window_sql`) ; un test garde
-qu'aucune facture n'est rendue par les deux.
+Une seconde fonction, `find_supplier_invoices_masking(executor, company_id, window, amount, bank_account_id)`, rend les
+factures fournisseur **ouvertes** de la société dont le TTC est à **0,05 au plus** du débit et qui **ne sont pas**
+candidates (au moins un des filtres 3, 4 ou 5 les écarte), **sans borne de dates**, avec pour chacune :
+`in_generated_batch_of_account` (engagée dans un lot `generated` **dont `pb.bank_account_id` est le compte de la
+transaction**, et l'identifiant de ce lot), `in_generated_batch` (de n'importe quel compte), `exact_amount`, `in_window`.
+⛔ **Aucune troncature ne peut couper la facture qui bloque** (P2 : F6, R4) : tri `in_generated_batch_of_account DESC,
+exact_amount DESC`, puis l'ordre d'imputation ; plafond **200** ; une liste **pleine** (200 rendues) est traitée comme
+**masquante** par prudence (la règle n'est pas proposée), et le doc-comment le dit. Jamais proposées ; lues pour
+l'AC-b5. ⚠️ Elle s'exécute **pour tout débit CHF**, qu'une règle active existe ou non — à la différence de la 29-6, qui
+ne lit ses factures masquantes que s'il y a une règle (`routes/reconciliation.rs:773`) : la `notice` d'un lot doit
+s'afficher même sans règle (P2, R-L5). Les deux fonctions partagent le texte SQL de base (patron
+`unpaid_invoices_in_window_sql`) ; un test garde qu'aucune facture n'est rendue par les deux.
 *Tests* : T-b7 (les six filtres, chacun par un cas qui le viole seul), T-b8 (lot `generated` → absente des candidates,
-présente des masquantes avec son lot ; lot `confirmed` ou `cancelled` → candidate si ouverte), T-b9 (TTC `100.0040`
-contre débit `100.00` → absente des candidates, présente des masquantes), T-b10 (`LIMIT 50` après l'ordre).
+présente des masquantes avec son lot et son compte ; lot `confirmed` ou `cancelled` → candidate si ouverte), T-b9 (TTC
+`100.0040` contre débit `100.00` → absente des candidates, présente des masquantes), T-b10 (`LIMIT 50` après l'ordre),
+T-b42 (201 factures ouvertes sans indice à 0,05 près, dont une, la plus récente, en lot `generated` du compte : elle est
+rendue en tête ; liste pleine → règle masquée).
 
 **AC-b4 — La proposition : un débit, des factures fournisseur ; jamais de croisement (#482).**
 Dans `get_proposals` :
@@ -383,37 +450,44 @@ Dans `get_proposals` :
 *Tests* : T-b11 (débit → fournisseur seulement, même si une facture client a le même montant, le même numéro et le même
 contact ; `amount_score = 1.0`), T-b12 (crédit → client seulement, symétrique), T-b13 (forme JSON du candidat).
 
-**AC-b5 — La priorité écrite, étendue ; aucun double comptage muet (principe de la 29-6).**
+**AC-b5 — La priorité écrite, étendue ; aucun double comptage muet, aucun faux rattachement (principe de la 29-6).**
 `candidate_rank` (`routes/reconciliation.rs:199-210`) : bras **explicite** `CandidateType::SupplierInvoice`, même règle
 que `Invoice` (rang 0 si signal, 2 sinon) ; le `match` reste **sans `_`**. Une facture fournisseur candidate a
 `amount_score = 1` (filtre 3 et valeur absolue de l'AC-b1), donc un score ≥ 0,5 : elle **écarte la règle**
 (`has_strong_invoice_match`).
 
-La règle d'affectation est aussi **masquée** par une facture **masquante** (AC-b3), selon ce critère écrit — sans quoi
-*Accepter* porterait en charge un débit dont la facture saisie et ouverte compte déjà la charge, et, pour un lot, la
-confirmation créditerait la banque une seconde fois :
+Les factures **masquantes** (AC-b3) décident de ce que la ligne propose, selon ce critère écrit, **dans cet ordre** :
 
-| Facture masquante | Masque la règle ? | Ce que montre la ligne |
+| Facture masquante | Effet sur la ligne | Ce que montre la ligne |
 |---|---|---|
-| montant **exact**, engagée dans un lot `generated` | **toujours** (le débit est vraisemblablement le paiement du lot) | une **raison visible** : `notice` (ci-dessous) |
-| montant **exact**, hors fenêtre, hors lot | **si elle porte un indice** (référence ou fournisseur : `reference_score > 0` ou `contact_score > 0`) | « Aucune correspondance » (patron 29-6) |
-| montant à **0,05 au plus**, non exact (dans ou hors fenêtre, dans ou hors lot) | **si elle porte un indice** | « Aucune correspondance » |
-| toute autre, sans indice | non : la règle est proposée | la règle |
+| montant **exact**, engagée dans un lot `generated` **du compte de la transaction** | **aucune proposition** : ni facture candidate, ni règle — la sûreté prime sur la commodité (arbitrage de l'orchestrateur, P2 F1) | la **raison** : `notice` (ci-dessous) ; *Accepter* grisé |
+| montant **exact**, engagée dans un lot `generated` d'un **autre** compte | comme la ligne « si indice » ci-dessous (le débit de ce compte ne peut pas être le paiement de ce lot — P2 F2) | — |
+| montant **exact**, hors fenêtre, hors lot | masque la **règle** si elle porte un indice (`reference_score > 0` ou `contact_score > 0`) | « Aucune correspondance » s'il n'y a pas de candidate (patron 29-6) |
+| montant à **0,05 au plus**, non exact (dans ou hors fenêtre, dans ou hors lot) | masque la **règle** si elle porte un indice | idem |
+| liste **pleine** (200, AC-b3) | masque la **règle** | idem |
+| toute autre, sans indice | aucun : la règle est proposée s'il n'y a pas de candidate | la règle |
 
-Le critère « indice » évite le sur-blocage : un débit du même montant qu'une facture ouverte d'un **autre** fournisseur,
-sans référence ni nom commun, garde sa règle. Le lot bloque sans indice, parce que la facture est déjà engagée dans un
-paiement transmis à la banque et que l'erreur coûterait un double paiement ; la raison est visible, et l'utilisateur
-peut toujours *Affecter manuellement*.
+**Pourquoi la première ligne efface aussi les candidates** (P2, F1, cas nominal des charges mensuelles) : le loyer de
+janvier et celui de février, même fournisseur, même montant ; janvier part dans un lot pain.001 ; la banque débite
+janvier. Sans cette ligne, février serait candidat et *Accepter* le réglerait avec le débit de janvier ; la
+confirmation du lot réglerait ensuite janvier — un seul débit, deux règlements, février « payé » sans l'être. Le débit
+de ce compte, au montant exact d'une facture qu'un lot de ce compte a transmise à la banque, est **vraisemblablement**
+ce paiement : Kesh ne propose rien et le dit. L'utilisateur confirme ou annule le lot, ou affecte à la main.
+
+**Pourquoi l'indice ailleurs** : un débit du même montant qu'une facture ouverte d'un **autre** fournisseur, sans
+référence ni nom commun, garde sa règle — pas de sur-blocage.
 
 `ReconciliationProposal` gagne `notice: Option<ProposalNotice>` (additif), `ProposalNotice { code:
-"supplier_invoice_in_payment_batch", supplier_invoice_id, supplier_invoice_number, payment_batch_id }` — posé quand une
-facture masquante exacte est dans un lot `generated` et qu'il n'y a **aucune** candidate (la plus ancienne par l'ordre
-d'imputation s'il y en a plusieurs).
+"supplier_invoice_in_payment_batch", supplier_invoice_id, supplier_invoice_number (nullable), payment_batch_id }` —
+posé dès qu'une facture masquante de la première ligne existe, **candidates ou non** (elles sont alors retirées) ; s'il
+y en a plusieurs, la première de l'ordre d'imputation.
 *Tests* : T-b14 (`candidate_order_tests` : fournisseur à signal devant la règle), T-b15 (règle écartée par une facture
 fournisseur candidate), T-b16 (règle gardée — ligne vide — par une facture presque au montant désignée par sa référence
-ou son fournisseur ; règle proposée sans indice), T-b35 (facture exacte en lot `generated` : règle absente, `notice`
-posé avec facture et lot, même sans indice), T-b36 (facture exacte hors fenêtre : règle masquée avec indice, proposée
-sans indice).
+ou son fournisseur ; règle proposée sans indice), T-b35 (facture exacte en lot `generated` du compte : aucune
+proposition, `notice` posée avec facture et lot, même sans indice et **sans règle active**), T-b36 (facture exacte hors
+fenêtre : règle masquée avec indice, proposée sans indice), **T-b41** (deux mensualités du même fournisseur et du même
+montant, la première en lot `generated` du compte, la seconde ouverte dans la fenêtre : **aucune** proposition, `notice`
+sur la première ; même décor avec le lot sur un **autre** compte : la seconde est proposée).
 
 **AC-b6 — L'acceptation : la proposition `supplier_invoice`.**
 `AcceptProposalInput` gagne `#[serde(rename = "supplier_invoice")] SupplierInvoice { bank_transaction_id,
@@ -459,14 +533,18 @@ transaction `reconciled` pointant cette écriture ; deux audits (`reconciliation
 
 **Inventaire clos des refus** (refait en P1 sur `pay_in_tx`, `create_in_tx_inner`, `validate_lines_accounts_in_tx`,
 `letterings::sync_supplier_invoice_in_tx`) — aucun n'escalade en `AppError` (§ *Pattern batch*). L'étape 3 lève
-**toute** ambiguïté de `NotFound` et d'`IllegalStateTransition` : facture et compte y sont lus et verrouillés, si bien
-qu'à l'étape 6 ces variantes ne peuvent plus venir que du **projet** (l'exercice est trouvé par
-`find_open_covering_date` sous verrou avant `create_in_tx`). Une fonction `supplier_payment_error_to_failed_proposal`,
+**toute** ambiguïté de `NotFound` et d'`IllegalStateTransition` : facture et compte y sont lus et verrouillés, et
+l'exercice est trouvé par `find_open_covering_date … FOR UPDATE` avant `create_in_tx` ; et le règlement ne valide
+**aucun** projet (lignes à `project_id: None`, `supplier_invoices.rs:875`, `:881` ; projet de document non revalidé,
+`journal_entries.rs:300-303`, testé par `pay_succeeds_when_project_archived_after_tagging`). À l'étape 6, ces deux
+variantes sont donc **inatteignables** : des invariants rompus, classés `INTERNAL_ERROR` — et non par
+`project_error_to_failed_proposal`, qui les rendrait `PROJECT_NOT_FOUND` / `PROJECT_ARCHIVED` à tort (corrigé en P2,
+F3 = R1). Une fonction `supplier_payment_error_to_failed_proposal`,
 `match` sur les variantes **nommées** ci-dessous plus un bras final `other → DATABASE_ERROR` :
 
 | Source | Erreur | `errorCode` | `details` |
 |---|---|---|---|
-| étape 3 | `NotFound` | `SUPPLIER_INVOICE_NOT_FOUND` (neuf) — indiscernable d'une facture d'une autre société | `{ supplierInvoiceId }` |
+| étape 3 | `NotFound` | `SUPPLIER_INVOICE_NOT_FOUND` (neuf pour la réconciliation ; existe pour les lots) — indiscernable d'une facture d'une autre société | `{ supplierInvoiceId }` |
 | étape 3 | `NotOpen` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `{ reason: "supplier_invoice_not_open" }` |
 | étape 3 | `BankAccountNotFound` | `BANK_ACCOUNT_NOT_FOUND` | — |
 | étape 3 | `BankAccountClosed` | `BANK_ACCOUNT_CLOSED` | `{ bankAccountId }` |
@@ -478,13 +556,20 @@ qu'à l'étape 6 ces variantes ne peuvent plus venir que du **projet** (l'exerci
 | étape 6 | `FiscalYearClosed`, `DateOutsideFiscalYear` (`create_in_tx_inner`) — inatteignables après `find_open_covering_date` sous verrou, **classés quand même** | `FISCAL_YEAR_INVALID` | `{ valueDate }` |
 | étape 6 | `PeriodLocked` | `PERIOD_LOCKED` | `period_locked_failed_proposal` (projet de la facture) |
 | étape 6 | `LaterFiscalYearClosed` | `LATER_FISCAL_YEAR_CLOSED` | `later_fiscal_year_closed_failed_proposal` |
-| étape 6 | `NotFound`, `IllegalStateTransition` (projet seulement, cf. ci-dessus) | ceux de `project_error_to_failed_proposal` | |
+| étape 6 | `NotFound`, `IllegalStateTransition` — inatteignables (cf. ci-dessus) | `INTERNAL_ERROR` (précédé de `tracing::error!`) | — |
 | étape 6 | `OptimisticLockConflict` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `{ reason: "race_during_update" }` |
 | étape 6 | `Invariant`, erreurs structurelles du lettrage | `INTERNAL_ERROR` (précédé de `tracing::error!`) | — |
 | toutes | autre (`Sqlx`…) | `DATABASE_ERROR` | `{ message }` — un interblocage est rejoué par `accept_batch` |
 
 ⚠️ L'inventaire se **refait au développement** depuis le code et se recopie au Dev Agent Record : une variante
 atteignable non classée est un finding.
+
+**Conventions de `details`** (P2, R-L4) : `transactionAmount` = le montant de la transaction **tel quel** (négatif pour
+un débit), comme les refus client ; `amountDue` = le TTC (positif) ; l'audit `reconciliation.accepted` porte
+`paid_amount` = le TTC réglé (positif) et `transaction_amount` = le montant tel quel. Casse : celle de chaque famille
+existante — `snake_case` pour les clés de raison de dates (`window_days`, `tolerance_days`) et pour l'audit,
+`camelCase` pour les identifiants (`supplierInvoiceId`, `paymentBatchId`, `bankAccountId`), comme `details.invoiceId`
+d'aujourd'hui.
 *Tests* : T-b17 (acceptation nominale : état complet en base — facture, écriture et ses deux lignes, date, exercice,
 lettrage, transaction, deux audits, `score.total ≥ 0.5` ; TTC de la facture = crédit de l'écriture d'achat), T-b18 (lot
 mixte client + fournisseur + règle : succès partiel, ordre de `failed[]`), T-b19 (un test par ligne du tableau
@@ -497,7 +582,9 @@ expected: SettlementDirection)` — `Credit` pour une facture client, `Debit` po
 **code, raisons et `details` strictement inchangés** (`RECONCILIATION_TRANSACTION_NOT_CREDIT`, `debit_transaction` /
 `zero_amount_transaction`) ; côté fournisseur, `RECONCILIATION_TRANSACTION_NOT_DEBIT`, `credit_transaction` /
 `zero_amount_transaction`. Comparaison **au zéro**, jamais par `is_sign_negative()` (`-0.00`, C-28-6-12).
-*Tests* : `non_credit_settlement_tests` (`:5729-5804`) inchangés et verts ; T-b21 (débit attendu : crédit, zéro,
+*Tests* : `non_credit_settlement_tests` (`:5729-5804`) : `refuse_non_credit_settlement` est **gardée** comme enveloppe
+d'une ligne de `refuse_wrong_direction(…, Credit)`, si bien que leurs appels directs (`:5738`, `:5784`, `:5789`,
+`:5794`) et leurs assertions restent inchangés (P2, R-L3) ; T-b21 (débit attendu : crédit, zéro,
 `-0.00`).
 
 **AC-b8 — La garde du lot de paiement est verrouillante (naissance de la vue).**
@@ -542,7 +629,10 @@ textes `:243`, `:867`, qui restent vrais par l'enveloppe) et `crates/kesh-db/tes
 | `create_batch` | compte (lecture ordinaire) → chaque facture X (`validate_invoice_for_batch`, `payment_batches.rs:321`) → `INSERT payment_batches` (compte S par clé étrangère, `:146`) → revérification du compte S → `INSERT payment_batch_items` (intention d'insertion) ; **rejoué** depuis la 30-1a (AC-a8) |
 | `confirm_batch` | `payment_batches` X (`:444`) → par facture : `pay_in_tx` (facture X → compte X → exercice …) → `UPDATE payment_batches` ; rejoué (`:251`) |
 | Dé-rapprochement (30-1a) | `GET_LOCK(compte)` → `bank_transactions` X → `invoice_settlements` X ou `supplier_invoices` X (intervalle si rien) → (client : `invoices` X) → écriture + exercice X → compte (lecture) → … → compte S (dernière acquisition) ; rejoué |
-| Clôture du compte (`bank_accounts::close_in_tx`) | compte X → décomptes de transactions `pending` et de lots `generated` (`bank_accounts.rs:1289`, `:1304`) |
+| Clôture du compte (`bank_accounts::close_in_tx`) | compte X → décomptes de transactions `pending` et de lots `generated` (`bank_accounts.rs:1289`, `:1304`) ; rejouée (`routes/bank_accounts.rs:1163`) |
+| Règlement client depuis la fiche (`settle_invoice`) et son annulation | facture X → compte `FOR UPDATE` (`invoice_settlements_write.rs:138`) → exercice → … ; rejoués (`routes/invoices.rs:1282`, `:1497`) |
+| `supplier_invoices::cancel_in_tx`, `cancel_settlement_in_tx` (fiche fournisseur) | facture X → écriture + exercice X → compte (lecture, puis revérification S) ; rejoués (`routes/supplier_invoices.rs:419`, `:451`) |
+| `POST /bank-imports` | `INSERT` d'entête (clé étrangère S sur le compte), sans verrou antérieur ; **non rejoué** — attend le compte X pendant un lot d'acceptation qui contient une proposition fournisseur ; aucun cycle établi (P2, R-L6) |
 | Clôture d'exercice (`fiscal_years::close`) | lectures des exercices, puis verrous des **exercices** seulement — ni facture, ni compte, ni transaction (à revérifier au développement, `fiscal_years.rs:1115`) |
 
 Cycles, chacun avec sa victime et son rejeu :
@@ -559,8 +649,11 @@ Cycles, chacun avec sa victime et son rejeu :
   `innodb_lock_wait_timeout`, 50 s par défaut, un `1205` non rejoué — prix écrit). C'est l'arbitrage de la P1 (F1) :
   le compte est verrouillé **avant** la lecture des articles.
 - **C4 — lot mixte, promotion** : une proposition client tient le compte S (clé étrangère), une proposition fournisseur
-  suivante le demande X ; une clôture du compte en file (X) ferme le cycle de promotion. Rejoué côté acceptation ; le
-  développement vérifie que la route de clôture du compte l'est aussi, et l'écrit.
+  suivante le demande X ; une clôture du compte en file (X) ferme le cycle de promotion. Rejoué des deux côtés
+  (acceptation ; clôture, `routes/bank_accounts.rs:1163`, vérifié en P2).
+- **C7 — entre comptes** : deux lots d'acceptation sur deux comptes, ou un dé-rapprochement sur A contre un lot sur B (le
+  verrou nommé est par compte), peuvent se croiser sur une facture ou un exercice ; tous les participants sont rejoués
+  (P2, F-L2). La table ci-dessus ne prétend pas énumérer les cycles **préexistants** sans participant neuf.
 - **C5 — `pay` (fiche) ↔ lot d'acceptation** : même forme que C1 (la fiche prend la facture puis le compte) ; rejoué
   des deux côtés.
 - **C6 — dé-rapprochement `Entry` ↔ `pay_in_tx`** : AC-a4 (intervalle de `fk_supplier_invoices_settlement_je` contre
@@ -573,8 +666,16 @@ Cycles, chacun avec sa victime et son rejeu :
 pendant l'acceptation : ⚠️ la clôture refuse tant qu'une transaction est `pending` (I1), donc elle échoue en `412` ou
 attend — le test établit qu'aucun règlement ne passe sur un compte clos, **pas** que la garde de `pay_in_tx` s'exécute :
 c'est I1 qui protège ; la branche `BANK_ACCOUNT_CLOSED` n'est atteinte que par le pré-vol R1), T-b34 (course
-acceptation d'une proposition ↔ `create_batch` d'une autre facture du même compte : `create_batch` attend puis aboutit,
-aucun interblocage — rouge si les articles sont lus avant le compte, M-b23).
+**au niveau du dépôt, sans enveloppe de rejeu** — le rejeu des deux côtés rendrait la mutation verte —, décor où
+l'identifiant `b` de la facture du lot est **supérieur** à `a` (celle de l'acceptation) et à tout `supplier_invoice_id`
+déjà présent dans `payment_batch_items`, si bien que l'article de `b` tombe dans l'intervalle de queue verrouillé pour
+`a` ; chorégraphie forcée par sondes (P2, F4 = R5) : (1) une troisième connexion tient le compte `FOR UPDATE` ; (2)
+`create_batch(b)` démarre, tient `b` et se bloque sur la clé étrangère du compte (`attendre_une_requete_en_cours`) ; (3)
+l'acceptation de `a` démarre et se bloque sur le compte (sonde) ; (4) la troisième connexion relâche. Code prescrit :
+l'acceptation n'a pas lu les articles au point (3), `create_batch` (premier en file) obtient le compte en S, insère son
+article, commite ; l'acceptation passe ensuite, voit le lot de `b` sans rapport avec `a`, et aboutit ; **aucun 1213**.
+Mutant M-b23 : l'acceptation tient déjà l'intervalle au point (3) ; `create_batch` bute sur l'intervalle → **1213**,
+rouge).
 
 **AC-b11 — L'écran.**
 `ReconciliationProposals.svelte` :
@@ -583,30 +684,40 @@ aucun interblocage — rouge si les articles sont lus avant le compte, M-b23).
   (`invoiceNumber`, à défaut `#id`) et le montant ; `data-testid="candidate-top-1"`, `data-candidate-type=
   "supplier_invoice"`, `data-supplier-invoice-id` ;
 - une candidate `invoice` s'affiche **comme aujourd'hui** (C-30-1-15) ;
-- une ligne sans candidate qui porte un `notice` l'affiche à la place de « Aucune correspondance »
+- une ligne qui porte un `notice` l'affiche **à la place** de toute proposition
   (`reconciliation-labels-notice-supplier-invoice-in-batch` : « La facture fournisseur { $invoice } de ce montant figure
-  dans le lot de paiement n° { $batch } en cours : confirmez ou annulez le lot. » ; `data-testid="proposal-notice"`) ;
+  dans le lot de paiement n° { $batch } en cours sur ce compte : confirmez ou annulez le lot, ou affectez la transaction
+  à la main. » ; `{ $invoice }` = le numéro, à défaut `#id` — numéro nullable, P2 F-L7 ; `data-testid="proposal-notice"`) ;
   *Accepter* reste grisé pour elle, comme pour toute ligne sans candidate ;
 - *Accepter* construit `{ type: 'supplier_invoice', bankTransactionId, supplierInvoiceId }` ;
 - l'avis de priorité (`reconciliation-labels-priority-hint`, `messages.ftl:1283`) est réécrit : « Une seule proposition
   est affichée par transaction : pour un crédit, la facture client la mieux notée, pour un débit, la facture fournisseur
   la mieux notée, s'il y en a une, sinon la règle d'affectation qui correspond. Une facture proposée passe toujours
   devant une règle. » (quatre locales).
+`CancelReconciliationDialog.svelte` (déplacé de la 30-1a, C-30-1-33) : pour `kind === 'supplier_settlement'`, le texte
+`reconciliation-cancel-confirm-supplier-invoice` — « Une écriture inverse datée d'aujourd'hui sera passée, le paiement
+de la facture fournisseur { $invoice } sera retiré et la facture redeviendra ouverte, à payer ; la transaction
+redeviendra à rapprocher. » (quatre locales ; `{ $invoice }` = `supplierInvoiceNumber`, à défaut `#supplierInvoiceId`).
 `failed-proposal-label.ts` :
-- libellés neufs : `RECONCILIATION_TRANSACTION_NOT_DEBIT`, `SUPPLIER_INVOICE_NOT_FOUND`, `RECONCILIATION_AMOUNT_MISMATCH`,
-  `INACTIVE_OR_INVALID_ACCOUNTS` (s'il n'a pas déjà son libellé global `error-*`, à vérifier), et la raison
-  `supplier_invoice_in_payment_batch` (le remède : confirmer ou annuler le lot) ;
+- libellés neufs : `RECONCILIATION_TRANSACTION_NOT_DEBIT`, `SUPPLIER_INVOICE_NOT_FOUND` (neuf **pour la réconciliation** :
+  le code existe déjà comme refus d'un lot, `payment_batches.rs:330`, libellé « Facture introuvable »,
+  `payment-batch-helpers.ts:88` — le libellé de la réconciliation peut le reprendre, P2 R-L16),
+  `RECONCILIATION_AMOUNT_MISMATCH`, et la raison `supplier_invoice_in_payment_batch` (le remède : confirmer ou annuler le
+  lot) ; `INACTIVE_OR_INVALID_ACCOUNTS` a déjà son libellé global `error-inactive-accounts` (`messages.ftl:307`,
+  vérifié en P2), réutilisé ;
 - `payment_date_before_invoice_date` : le libellé lit `details.tolerance_days` (repli 1) — « Le paiement est daté de
   plus de { $days } jour(s) avant la facture… » ; le texte client reste vrai (P1 R6) ;
 - `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` : le libellé lit aussi `details.claim` — `payable` → « … lié au compte
   **créanciers** de la facture », `receivable` → le texte actuel (P1 R6) ;
 - le doc-comment (« Les 31 codes », « Cinq codes seulement lisent leur `details` ») **et** le test
   `failed-proposal-label.test.ts:11`, `:84-85` (`toHaveLength(31)`) recomptés depuis la source par la commande qu'ils
-  citent (au moins 34 : trois littéraux neufs, plus `INACTIVE_OR_INVALID_ACCOUNTS` s'il entre par `error_code()`).
-`reconciliation.types.ts` : types étendus (`notice`, `supplierInvoiceId`, `contactName`, le type d'acceptation).
+  citent (34 attendus : trois littéraux neufs ; `INACTIVE_OR_INVALID_ACCOUNTS` entre par `error_code()` — recompter).
+`reconciliation.types.ts` : types étendus (`notice`, `supplierInvoiceId`, `contactName`, le type d'acceptation, `kind`
+élargi à `supplier_settlement`, `supplierInvoiceId` et `supplierInvoiceNumber` de la vue).
 *Tests* : Vitest T-b26 (rendu du candidat fournisseur, du candidat client inchangé), T-b27 (corps d'*Accepter* pour
 les quatre types), T-b28 (libellés neufs), T-b38 (libellés lus sur `details` : `claim`, `tolerance_days`, repli),
-T-b39 (`notice` affiché, *Accepter* grisé).
+T-b39 (`notice` affiché à la place d'une candidate, *Accepter* grisé), **T-b40** (dialogue d'annulation, trois `kind`,
+repli `#id` ; ex-T-a9, déplacé avec le dialogue).
 
 **AC-b12 — E2E de parcours (la recette) et captures.**
 `frontend/tests/e2e/reconciliation-supplier.spec.ts`, montants et références **uniques** par exécution (patron
@@ -622,7 +733,11 @@ T-b39 (`notice` affiché, *Accepter* grisé).
    d'écriture : lettrée ; détail de l'import : transaction rapprochée ;
 5. détail de l'import → *Annuler le rapprochement* → le texte de confirmation fournisseur → confirmer → transaction à
    rapprocher, facture **ouverte** à nouveau ; la ligne revient dans la réconciliation.
-Un second test : un **crédit** du même montant ne propose **pas** la facture fournisseur.
+Un deuxième test : un **crédit** du même montant ne propose **pas** la facture fournisseur. Un troisième, **sans QR**
+(fichier d'epic, § *Indispensable* : « avec QR, sans QR ») : facture saisie sans référence de paiement, débit sans
+référence, désigné par le montant et le nom du fournisseur → proposée, acceptée, payée (P2, R-L10). La variante « sans
+document » relève de la 30-2 (création de la facture) : pour la réconciliation, une facture saisie sans document est
+une facture fournisseur ouverte comme une autre.
 Captures **clair et sombre** (`page.emulateMedia`) de la ligne proposée et du dialogue d'annulation, dans
 `KESH_E2E_CAPTURES_DIR`, hors dépôt ; une capture par schéma va au manuel (`docs/manual/fr/screenshots/`), si la
 section en porte une.
@@ -649,7 +764,9 @@ parcours de la 30-1b les couvre de bout en bout, et le dialogue est couvert par 
   `supplier_invoice`, `supplierInvoiceId`, `contactName`, `notice`, la priorité, les factures qui masquent la règle), les
   **changements** (un débit reçoit désormais des factures fournisseur ; « un débit ne règle jamais une facture » devient
   « jamais une facture **client** ») ; **`paidAt`** de `POST /supplier-invoices/{id}/pay` et de la confirmation d'un lot
-  (date du paiement à minuit, au lieu de l'heure de l'enregistrement — P1 R9) ; § lots : la création rejouée (AC-a8).
+  (date du paiement à minuit, au lieu de l'heure de l'enregistrement — P1 R9) ; `:366` (événements de lettrage : la
+  clé figure aussi au lettrage d'une facture **fournisseur** réglée par la réconciliation, `documentType` du fournisseur
+  — P2, F-L6 = R-L11). La phrase de `:788` est traitée par la 30-1a (AC-a8).
 - **i18n quatre locales** pour chaque clé neuve ou réécrite ; `npm run lint-i18n-ownership` vert.
 - **CHANGELOG** `## [0.14.0] — Non publié` : `### Ajouté`, une entrée pour #686 (le processus, l'annulation, les
   limites — montant exact, fenêtre, lot exclu et signalé —, la mention API) ; `### Corrigé`, la date du paiement d'une
@@ -669,6 +786,10 @@ parcours de la 30-1b les couvre de bout en bout, et le dialogue est couvert par 
   identiques à ceux d'une facture absente, rien écrit), T-b33 (rôle Consultation → `403`).
 - `audit_labels.rs` / `audit_label_registry.rs` si une action ou un champ d'audit affiché change ; `textes_coherents.rs`
   (AC-a6) ; toute liste fermée de codes de `failed[]` (Rust ou TypeScript) recomptée.
+- **Doc-comments qui comptent « six chemins » qui rapprochent** — sept après la 30-1b (l'acceptation fournisseur crée
+  son écriture, comme les cinq premiers) : `reconciliation_cancel.rs:11`, `bank_imports.rs:380`, `bank_accounts.rs:1701`
+  (ce dernier énonce l'invariant « une transaction, une écriture », dont le chemin neuf hérite) ; `grep -rnF "six
+  chemins" crates` refait (P2, F-L3).
 
 **AC-b15 — Aucune migration.**
 Ni table, ni colonne, ni index, ni contrainte : `ls crates/kesh-db/migrations/*.sql | wc -l` reste à **81**,
@@ -730,35 +851,37 @@ T-b31 (lot confirmé avec un `payment_date` passé → `paid_at` = cette date). 
   rouge (le bras `Entry` refuse : `OWNED_BY_SUPPLIER_INVOICE`).
 - [ ] T2 (AC-a1, a4) — `ReconciliationKind::SupplierSettlement`, `classify`, doc-comments (ordre, coût de l'intervalle).
 - [ ] T3 (AC-a3) — `supplier_settlement_cancel_blocker_unlinking` ajoutée ; l'existante en devient l'enveloppe.
-- [ ] T4 (AC-a2) — bras de l'étape (6) ; audit.
+- [ ] T4 (AC-a2, a6) — bras de l'étape (6) ; audit ; commentaire `errors.rs:4237-4238` réécrit.
 - [ ] T5 (AC-a5) — route de la vue et de `…/cancel` ; T-a7, T-a8 (`crates/kesh-api/tests/reconciliation_e2e.rs`).
 - [ ] T6 (AC-a4) — T-a6, T-a11 (courses), T-a12 (plan).
-- [ ] T7 (AC-a6) — dialogue, types, i18n ×4 ; Vitest T-a9.
-- [ ] T8 (AC-a6) — texte commun « rapproché » : quatre locales, repli serveur (`errors.rs:3736-3739`), repli de l'écran
+- [ ] T7 (AC-a6) — texte commun « rapproché » : quatre locales, repli serveur (`errors.rs:3736-3739`), repli de l'écran
   (`settlement-cancel-blocked.ts:51`) ; T-a10 (Vitest), T-a13 (`textes_coherents.rs`).
-- [ ] T9 (AC-a8) — rejeu de la création d'un lot ; patron du rejeu de `confirm`.
-- [ ] T10 (AC-a7, a8) — `api-external.md`.
-- [ ] T11 — mutations M-a1 à M-a6 **sous le verrou de gate** ; gate complet et Vitest complet au dernier commit de code.
+- [ ] T8 (AC-a8) — rejeu de la création d'un lot ; T-a14 ; `audit_route_registry.rs` (vi) et (iii bis).
+- [ ] T9 (AC-a9) — `create_batch` verrouille ses factures par identifiant croissant avant toute lecture ; T-a15.
+- [ ] T10 (AC-a7, a8) — `api-external.md` (§ *Annuler un rapprochement*, `:788` *Interblocages*).
+- [ ] T11 — mutations M-a1 à M-a8 (M-a2 équivalente déclarée, M-a6 retirée) **sous le verrou de gate** ; gate complet
+  et Vitest complet au dernier commit de code.
 
 ### 30-1b
 
 - [ ] T12 — Brancher `story/30-1b` depuis `main` après le merge de la 30-1a ; relire les numéros de ligne.
 - [ ] T13 (AC-b1) — tests rouges T-b1 à T-b3, T-b37 ; traits, généricité, valeur absolue, renommage ; tous les tests de
   `matching.rs` verts sans toucher leurs assertions.
-- [ ] T14 (AC-b2, b3) — tests rouges T-b4 à T-b10 (`crates/kesh-db/tests/reconciliation_repository.rs`) ; fenêtre,
-  traduction commune des refus de dates, requêtes.
-- [ ] T15 (AC-b4, b5) — tests rouges T-b11 à T-b16, T-b35, T-b36 ; `get_proposals`, `candidate_rank`, masquage, `notice`.
+- [ ] T14 (AC-b2, b3) — tests rouges T-b4 à T-b10, T-b42 (`crates/kesh-db/tests/reconciliation_repository.rs`) ;
+  fenêtre, traduction commune des refus de dates, requêtes.
+- [ ] T15 (AC-b4, b5) — tests rouges T-b11 à T-b16, T-b35, T-b36, T-b41 ; `get_proposals`, `candidate_rank`, masquage,
+  `notice`.
 - [ ] T16 (AC-b6, b7, b8, b9) — tests rouges T-b17 à T-b23 ; `lock_for_bank_settlement_in_tx`, `pay_in_tx_as`,
   `accept_one_supplier_invoice`, `refuse_wrong_direction`, inventaire des refus recopié au Dev Agent Record.
 - [ ] T17 (AC-b10) — T-b24, T-b25, T-b34 ; table des verrous recopiée au Dev Agent Record avec les lignes réelles.
-- [ ] T18 (AC-b11) — écran, libellés, types ; Vitest T-b26 à T-b28, T-b38, T-b39.
+- [ ] T18 (AC-b11) — écran, dialogue, libellés, types ; Vitest T-b26 à T-b28, T-b38 à T-b40.
 - [ ] T19 (AC-b16) — tests rouges T-b29 à T-b31 ; `paid_at` lié ; inventaire des lecteurs refait et recopié au Dev Agent
   Record.
-- [ ] T20 (AC-b14) — registres, T-b32, T-b33.
-- [ ] T21 (AC-b12) — E2E et captures ; helper `createSupplierInvoiceViaApi`.
+- [ ] T20 (AC-b14) — registres, doc-comments « six chemins », T-b32, T-b33.
+- [ ] T21 (AC-b12) — E2E (trois tests) et captures ; helper `createSupplierInvoiceViaApi`.
 - [ ] T22 (AC-b13) — manuel + PDF (`make fr` dans `docs/manual/`, sous le verrou), `api-external.md`, i18n, CHANGELOG,
   README.
-- [ ] T23 — mutations M-b1 à M-b23 sous le verrou ; gate complet, Vitest complet **et E2E complet au dernier commit de
+- [ ] T23 — mutations M-b1 à M-b26 sous le verrou ; gate complet, Vitest complet **et E2E complet au dernier commit de
   code** (`flock`, recette de `docs/testing.md` à la lettre, port 3051, bases `kesh_301` / `kesh_e2e_301`).
 
 ---
@@ -811,30 +934,33 @@ rebase), manuel § *Factures fournisseurs*, CHANGELOG, catalogues i18n, `helpers
 
 ### Tests (récapitulatif)
 
-30-1a : T-a1 à T-a13 (11 Rust, 2 Vitest : T-a9, T-a10). 30-1b : T-b1 à T-b39 (34 Rust, 5 Vitest : T-b26, T-b27,
-T-b28, T-b38, T-b39) et l'E2E de l'AC-b12 (deux tests). Décors **synthétiques** ; aucune donnée réelle
-(`docs/agents-orchestration.md` § 8). Concurrence par `sonde_verrou_nowait` / `attendre_une_requete_en_cours`
-(`test_fixtures.rs:561`, `:611`), **jamais** `information_schema.INNODB_TRX` (piège connu des consignes).
+30-1a : T-a1 à T-a15 sauf T-a9 (déplacé en T-b40) = **14** (13 Rust, 1 Vitest : T-a10). 30-1b : T-b1 à T-b42 = **42**
+(36 Rust, 6 Vitest : T-b26, T-b27, T-b28, T-b38, T-b39, T-b40) et l'E2E de l'AC-b12 (**trois** tests). Décors
+**synthétiques** ; aucune donnée réelle (`docs/agents-orchestration.md` § 8). Concurrence par `sonde_verrou_nowait` /
+`attendre_une_requete_en_cours` (`test_fixtures.rs:561`, `:611`), **jamais** `information_schema.INNODB_TRX` (piège
+connu des consignes).
 
 ### Mutations (à exécuter sous `flock`, restaurées par `git checkout -- f && touch f`)
 
 | # | Mutation | Test qui doit la tuer |
 |---|---|---|
 | M-a1 | `classify` sans le bras fournisseur | T-a1, T-a2 |
-| M-a2 | bras fournisseur classé avant `invoice_settlements` (inversion) | **équivalente déclarée** (P1, F10 et R-L2) : une écriture ne peut être à la fois `invoice_settlements.journal_entry_id` et `settlement_journal_entry_id` ; seule l'empreinte de verrou d'intervalle diffère. Non exécutée |
+| M-a2 | bras fournisseur classé avant `invoice_settlements` (inversion) | **équivalente déclarée** (P1, F10 et R-L2 ; confirmée en P2) : une écriture ne peut être à la fois `invoice_settlements.journal_entry_id` et `settlement_journal_entry_id` ; seule l'empreinte de verrou d'intervalle diffère. Non exécutée |
 | M-a3 | `cancel_blocker` fournisseur en forme **non** exemptée (`None`) | T-a5 |
 | M-a4 | étape (6) fournisseur par `reverse_in_tx` au lieu de `cancel_settlement_in_tx` | T-a2 |
-| M-a5 | lecture de classement fournisseur **sans** `FOR UPDATE` | T-a11 (et non T-a6, que la mutation ne fait pas rougir — P1, F4) |
-| M-a6 | dialogue : texte client pour `supplier_settlement` | T-a9 |
+| M-a5 | lecture de classement fournisseur **sans** `FOR UPDATE` | T-a11 (et non T-a6 — P1, F4) |
+| ~~M-a6~~ | ~~dialogue : texte client pour `supplier_settlement`~~ — **retirée** avec le dialogue, devenue M-b26 | — |
+| M-a7 | `create_batch` sans le verrouillage des factures en tête (AC-a9) | T-a15 |
+| M-a8 | rejeu de `create_batch` retiré (AC-a8) | T-a14 |
 | M-b1 | `propose_matches` fournisseur sans la référence de paiement | T-b1 |
 | M-b2 | référence de paiement par containment au lieu d'égalité | T-b2 |
 | M-b3 | blancs non retirés | T-b1 |
 | M-b4 | borne haute `+1` au lieu de `+7` (ou inverse) | T-b4 |
-| M-b5 | borne basse sur `F` au lieu de `X` | T-b4, T-b6 |
-| M-b6 | filtre de lot `generated` retiré de la requête | T-b8 |
+| M-b5 | borne basse sur `F` au lieu de `X` | T-b4, cas **échéance postérieure à la date**, `F` hors fenêtre et `X` dedans (P2 F-L5 : T-b6 a `X = F` et ne la tue pas) |
+| M-b6 | filtre de lot `generated` retiré de la requête des candidates | T-b8 |
 | M-b7 | égalité de montant remplacée par la tolérance client | T-b9 |
 | M-b8 | appartenance au lot par lecture **ordinaire** | T-b22 |
-| M-b9 | débit envoyé aussi aux factures client (garde #482) | T-b11 |
+| M-b9 | `|amount|` d'un débit envoyé à `find_unpaid_invoices_for_window` (garde #482) — ⚠️ le simple retrait de la garde `:749` est **équivalent** (la requête client reçoit un montant négatif et ne rend rien, P2 R-L14) | T-b11 |
 | M-b10 | crédit envoyé aussi aux factures fournisseur | T-b12 |
 | M-b11 | `candidate_rank` : fournisseur en rang 2 | T-b14 |
 | M-b12 | facture presque au montant avec indice ne masque pas la règle | T-b16 |
@@ -845,10 +971,13 @@ T-b28, T-b38, T-b39) et l'E2E de l'AC-b12 (deux tests). Décors **synthétiques*
 | M-b17 | majuscules non appliquées à la normalisation | T-b1 |
 | M-b18 | filtre `status = 'open'` retiré (AC-b3) | T-b7 |
 | M-b19 | `BankTransfer` avec un compte autre que celui de l'import | T-b17 |
-| M-b20 | facture exacte en lot `generated` ne masque pas la règle | T-b35 |
+| M-b20 | facture exacte en lot `generated` du compte ne bloque pas la ligne | T-b35 |
 | M-b21 | facture exacte hors fenêtre, avec indice, ne masque pas la règle | T-b36 |
-| M-b22 | numéro fournisseur par containment, ou sans longueur minimale | T-b37 |
-| M-b23 | articles du lot lus **avant** le verrou du compte | T-b34 |
+| M-b22 | numéro ou référence de paiement par containment, ou sans longueur minimale | T-b37 |
+| M-b23 | articles du lot lus **avant** le verrou du compte | T-b34 (chorégraphie de l'AC-b10) |
+| M-b24 | lot `generated` du compte : la règle masquée mais les candidates **gardées** | T-b41 |
+| M-b25 | lot `generated` d'un **autre** compte traité comme du compte (sur-blocage) | T-b41 (second décor) |
+| M-b26 | dialogue : texte client pour `supplier_settlement` | T-b40 |
 
 Le `status = 'paid'` du classement (AC-a1) n'est pas muté : équivalent (tout écrivain qui quitte `paid` remet la
 colonne à `NULL`, P1 F10). Une mutation qui survit se tue par un test ajouté, ou se déclare **équivalente** avec la
@@ -856,9 +985,11 @@ raison, au Dev Agent Record.
 
 ### Angles morts assumés (à écrire aux doc-comments et au manuel)
 
-- **L1 — Débit déjà payé depuis la fiche** : la facture est `paid`, non proposée ; la transaction reste en attente, et
-  une règle d'affectation peut la proposer — accepter la règle compterait la charge deux fois. Tracé par **#671**
-  (première puce) ; le manuel le dit (« réglez la facture par la réconciliation plutôt que depuis la fiche »).
+- **L1 — Débit déjà payé depuis la fiche, ou par un lot déjà confirmé** : la facture est `paid`, non proposée ; la
+  transaction reste en attente, et une règle d'affectation peut la proposer — accepter la règle compterait la charge
+  deux fois. Le cas du lot **confirmé** (P2, R-L15) est le même. Tracé par **#671** (première et quatrième puces) ; le
+  manuel le dit (« réglez la facture par la réconciliation plutôt que depuis la fiche ; après la confirmation d'un lot,
+  n'acceptez pas une règle pour son débit »).
 - **L2 — TTC à plus de deux décimales** (C-30-1-26) — tracé par **#687** : jamais proposé ; la facture se règle depuis la
   fiche, qui écrit alors une ligne de banque à plus de deux décimales. Origine : `line_total = quantité × prix
   unitaire` sans arrondi (`supplier_invoices.rs:389`, `:415`) — et **aucune** limite d'échelle à la création
@@ -874,6 +1005,9 @@ raison, au Dev Agent Record.
 - **L4 — Le nom de contrepartie d'un débit** (`camt053/mod.rs:459-474`) : non vérifié sur relevé réel ; poids 0,10.
 - **L5 — Facture masquante au-delà de 0,05** (frais bancaires plus élevés, escompte) : la règle reste proposée ; même
   borne que la 29-6, écrite au manuel.
+- **L6 — `paidAt` affiché brut** sur la fiche fournisseur (`supplier-invoices/[id]/+page.svelte:393` : après la 30-1b,
+  « 2026-06-20T00:00:00 ») : cosmétique, préexistant (avant : l'heure de la saisie, brute aussi) ; hors des modules de la
+  30-1b — **issue demandée** (P4, P2 F-L10).
 
 ### Pièges connus du dépôt, applicables ici
 
@@ -893,6 +1027,8 @@ raison, au Dev Agent Record.
 - `paid_at` : intégré à la 30-1b (AC-b16), pas d'issue.
 - TTC fournisseur à plus de deux décimales : **#687** (ouverte par l'orchestrateur).
 - #671 : commentée par l'orchestrateur (apport de la 30-1a).
+- Même facture dans deux lots `generated` (`create_batch`) : **intégré** à la 30-1a (AC-a9), pas d'issue.
+- `paidAt` affiché brut sur la fiche fournisseur (L6) : **issue demandée** (P4, cosmétique).
 
 ### Project Structure Notes
 
@@ -990,3 +1126,42 @@ Remédiation (arbitrages de l'orchestrateur compris) :
   tests nommés (T-a1 à a13, T-b1 à b39 ; 7 Vitest) plus l'E2E à deux tests, **29** mutations (6 + 23, dont une
   équivalente déclarée), choix C-30-1-1 à **29** (C-30-1-28, 29 neufs ; 11, 12, 14 amendés). Modules recomptés : 30-1a
   **5**, 30-1b **5** (C-30-1-27, au seuil).
+
+### Validation P2 — 2026-10-15
+
+Opus, deux lentilles en contexte frais (rapports `kesh-gate-logs/301-validate-p2-{F,R}.md`, sur `f53fa0f2`) :
+**F 0/1/5/11**, **R 0/0/5/16** — presque tout né de la remédiation P1. Chaque finding vérifié au code (`grep -nF`,
+`sed -n`) avant patch ; **aucun réfuté**. Remédiation, arbitrages de l'orchestrateur compris :
+- **F1 (HIGH)** — un lot `generated` du compte de la transaction, au montant exact : la ligne ne propose **rien** (ni
+  facture, ni règle) et affiche la `notice` (AC-b5) ; T-b41 (deux mensualités), M-b24.
+- **F2** — masquage par lot restreint au compte du lot (`in_generated_batch_of_account`) ; un lot d'un autre compte
+  retombe dans la ligne « si indice » ; M-b25.
+- **F6 = R4** — requête masquante triée lot du compte, puis montant exact, puis imputation ; plafond 200, liste pleine
+  traitée comme masquante ; exécutée sans règle active (R-L5) ; T-b42.
+- **F3 = R1** — étape 6 : `NotFound` / `IllegalStateTransition` inatteignables (le règlement ne valide aucun projet) →
+  `INTERNAL_ERROR`, et non `PROJECT_*`.
+- **F4 = R5** — T-b34 au niveau du dépôt sans rejeu, ordre des identifiants dans l'intervalle de queue, chorégraphie
+  forcée par sondes ; M-b23 tuable.
+- **F5 = R2** — T-a14 (rejeu de `create_batch`, patron `rejeu_interblocage_e2e.rs:2089`) ; `audit_route_registry.rs` (vi)
+  quatorze → quinze et (iii bis) ; `api-external.md:788` corrigé (il n'y a pas de « § lots ») ; M-a8.
+- **F-L11 = R-L7** — même facture dans deux lots `generated` : **intégré** à la 30-1a (AC-a9) — `create_batch` verrouille
+  ses factures par identifiant croissant avant toute lecture ; jugé **mécanique** (un `SELECT … FOR UPDATE` en tête, la
+  première lecture du compte passe après) ; T-a15, M-a7.
+- **R3** — `payment_reference` est un texte libre à la saisie : prémisse corrigée ; même normalisation et même longueur
+  minimale (6) que le numéro ; T-b37 étendu.
+- **Module** : l'AC-a9 portait la 30-1a à six modules ; le dialogue *Annuler le rapprochement* passe à la 30-1b
+  (C-30-1-33 ; T-a9 → T-b40, M-a6 → M-b26). Recompte : 30-1a **5**, 30-1b **5**, au seuil.
+- LOW traités : F-L1 (champ `mp.invoice_id`), F-L2 = R-L6 (table complétée, C4 levé, C7), F-L3 (« six chemins »,
+  AC-b14), F-L4 (conséquence de la valeur absolue écrite), F-L5 (M-b5 et son cas), F-L6 = R-L11 (`api-external.md:366`),
+  F-L7 (repli `#id`), F-L9 (T-a6 réorienté), F-L10 (L6, issue demandée), R-L1 (`errors.rs:4237`), R-L2 (bras serveur
+  inatteignable, justification réécrite), R-L3 (enveloppe `refuse_non_credit_settlement`), R-L4 (conventions de
+  `details`), R-L8 (repli de l'écran hors décompte), R-L9 (recomptes ci-dessous et au `sprint-status`), R-L10 (E2E sans
+  QR), R-L12 (garantie restreinte à la référence), R-L13 (`CAST … AS DATE`), R-L14 (M-b9 redéfinie), R-L15 (lot
+  confirmé dans L1), R-L16 (`SUPPLIER_INVOICE_NOT_FOUND` existe pour les lots). Non retenu : F-L8 (le bras serveur est
+  inatteignable, R-L2).
+- *Annotation datée, entrée P1* : son décompte « 11, 12, 14 amendés » omettait C-30-1-16 (maintenu) et C-30-1-27
+  (recompté) ; l'entrée n'est pas réécrite.
+- Décomptes, recomptés par `grep` sur la fiche : **25** AC (9 + 16), **24** tâches (T0 à T23), **56** tests nommés
+  (T-a1 à a15 sauf a9 = 14 ; T-b1 à b42 = 42 ; 7 Vitest) plus l'E2E à trois tests, **34** lignes de mutation (M-a1 à a8,
+  M-b1 à b26 : 32 à exécuter, M-a2 équivalente, M-a6 retirée), choix C-30-1-1 à **33** (30 à 33 neufs ; 12 et 14
+  amendés). Modules : 5 et 5.
