@@ -11396,3 +11396,101 @@ async fn an_accepted_supplier_invoice_is_undone_by_cancelling_the_reconciliation
     let back = &proposals_301b(&c, c.f.bank_account_id).await[&t];
     assert_eq!(back["candidates"][0]["supplierInvoiceId"], sid, "{back}");
 }
+
+/// T-b42 par la route (AC-b3, AC-b5) — **la liste masquante pleine masque la
+/// règle**, par prudence : 200 factures fournisseur ouvertes à 3 centimes du
+/// débit, sans indice (ni référence ni fournisseur commun), et la règle n'est
+/// pas proposée ; 199, et elle l'est. Factures insérées en SQL brut (le
+/// pipeline d'achat n'est pas l'objet ; une écriture d'achat factice suffit à
+/// la clé étrangère). Tue la mutation « la liste pleine ne masque pas »
+/// (extension de M-b12).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_full_masking_list_masks_the_rule(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let je = insert_fake_journal_entry(&pool, c.seeded.company_id, c.seeded.fiscal_year_id).await;
+    let insert = |n: i64| {
+        let pool = pool.clone();
+        let company = c.seeded.company_id;
+        let supplier = c.f.supplier_id;
+        async move {
+            for _ in 0..n {
+                sqlx::query(
+                    "INSERT INTO supplier_invoices (company_id, contact_id, status, invoice_date, \
+                     total_amount, purchase_journal_entry_id) \
+                     VALUES (?, ?, 'open', '2026-06-01', 60.03, ?)",
+                )
+                .bind(company)
+                .bind(supplier)
+                .bind(je)
+                .execute(&pool)
+                .await
+                .expect("facture masquante");
+            }
+        }
+    };
+    insert(199).await;
+    let tx = tx_301b(&pool, &c, dec!(-60.00), None, Some("Paiement divers")).await;
+    rule_301b(&c, "Paiement").await;
+    let candidates = proposals_301b(&c, c.f.bank_account_id).await[&tx]["candidates"].clone();
+    assert_eq!(
+        candidates[0]["candidateType"], "rule",
+        "199 factures sans indice : la règle reste proposée — {candidates}"
+    );
+    insert(1).await;
+    assert_eq!(
+        proposals_301b(&c, c.f.bank_account_id).await[&tx]["candidates"],
+        serde_json::json!([]),
+        "200 factures : la liste est pleine, la règle est masquée"
+    );
+}
+
+/// T-b4 à l'acceptation (AC-b2) — la borne basse porte sur l'**exigibilité**
+/// `max(F, échéance)`, à l'acceptation comme à la proposition : une facture
+/// datée de 400 jours avant le paiement, échue 300 jours avant, est proposée
+/// **et** acceptée ; une facture datée de 7 jours **après** le paiement aussi
+/// (borne haute incluse). Tue la mutation « fenêtre de l'acceptation sur `F` »
+/// (M-b5, volet Rust).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_acceptance_window_reads_the_exigibility(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let d = day_301b(6, 15);
+    let (old, _) = fournisseur_rapproche::facture_ouverte(
+        &pool,
+        &c.seeded,
+        c.f,
+        None,
+        None,
+        d - chrono::Duration::days(400),
+        Some(d - chrono::Duration::days(300)),
+        dec!(31.00),
+    )
+    .await;
+    let (late, _) = fournisseur_rapproche::facture_ouverte(
+        &pool,
+        &c.seeded,
+        c.f,
+        None,
+        None,
+        d + chrono::Duration::days(7),
+        None,
+        dec!(32.00),
+    )
+    .await;
+    let t_old = tx_301b(&pool, &c, dec!(-31.00), None, None).await;
+    let t_late = tx_301b(&pool, &c, dec!(-32.00), None, None).await;
+    let by_tx = proposals_301b(&c, c.f.bank_account_id).await;
+    assert_eq!(by_tx[&t_old]["candidates"][0]["supplierInvoiceId"], old);
+    assert_eq!(by_tx[&t_late]["candidates"][0]["supplierInvoiceId"], late);
+    let body = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([
+            supplier_prop_301b(t_old, old),
+            supplier_prop_301b(t_late, late)
+        ]),
+    )
+    .await;
+    assert_eq!(body["failed"], serde_json::json!([]), "{body}");
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 2);
+}
