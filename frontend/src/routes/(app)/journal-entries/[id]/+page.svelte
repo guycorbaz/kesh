@@ -364,10 +364,13 @@
 			);
 			// Story 29-1b — un refus de l'exercice suivant (clôturé entre-temps)
 			// change ce que la fiche doit annoncer : elle se relit, et le motif
-			// prend la place du bouton. ⚠️ Un refus du verrou de période
-			// (`PERIOD_LOCKED`) ne change rien de ce que la page lit : le bouton
-			// revient, le refus ne se dit que dans le message (limite écrite au
-			// manuel, revue P1 B-2).
+			// prend la place du bouton. ⚠️ Ces deux refus-ci ne changent rien de
+			// ce que la page lit : celui du verrou de période (`PERIOD_LOCKED`) et
+			// celui d'un exercice clôturé au-delà du suivant
+			// (`LATER_FISCAL_YEAR_CLOSED`, la fiche ne connaît que le premier
+			// exercice suivant). Le bouton revient, le refus ne se dit que dans le
+			// message (limite écrite au manuel, revue P1 B-2 ; passe ciblée P2,
+			// LOW-2).
 			// (`loadEntry` ferme aussi la confirmation ; la fermer ici le dit.)
 			if (mode === 'nextYear') {
 				reverseConfirm = null;

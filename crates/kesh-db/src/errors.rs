@@ -665,9 +665,10 @@ pub enum DbError {
     /// La contre-passation au début de l'exercice suivant est refusée :
     /// l'exercice qui suit celui de l'écriture est clôturé (Story 29-1b, #232).
     /// ⚠️ Aucun chemin ne le fait « disparaître » entre la lecture et la
-    /// confirmation : la seule suppression d'exercice (remise à zéro) supprime
-    /// d'abord les écritures, et attend donc le verrou de l'origine tenu depuis
-    /// l'étape (1) (revue P1, B-5). Le nom porté est celui de la lecture
+    /// confirmation : les seules suppressions d'exercice (remise à zéro, import
+    /// d'installation) vident d'abord les écritures — ordre enfants vers parents
+    /// de `backup::TABLES_TO_TRUNCATE` —, et attendent donc le verrou de
+    /// l'origine tenu depuis l'étape (1) (revue P1, B-5 ; passe ciblée P2, LOW-1). Le nom porté est celui de la lecture
     /// ordinaire ; un renommage concurrent le rendrait périmé, sans effet sur
     /// la décision (cosmétique, laissé tel quel). Le refus est rendu par la
     /// **confirmation verrouillante** (`fiscal_years::find_open_covering_date`),
