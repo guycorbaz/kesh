@@ -222,12 +222,12 @@
 								<p>
 									{i18nMsg(
 										'fiscal-years-checks-k5-attention',
-										'{ $count } pièce(s) importée(s) à compléter, toutes dates confondues.',
+										'{ $count } document(s) à traiter, toutes dates confondues.',
 										{ count: check.count }
 									)}
 								</p>
 								<a class="text-xs text-primary underline" href="/supplier-invoices/import" data-testid="fiscal-year-checks-link-{check.code}">
-									{i18nMsg('fiscal-years-checks-k5-link', 'Ouvrir les factures fournisseur importées')}
+									{i18nMsg('fiscal-years-checks-k5-link', 'Ouvrir les documents à traiter')}
 								</a>
 							{:else if check.code === 'INCONSISTENT_ENTRIES'}
 								<p>

@@ -180,37 +180,50 @@ async fn complete_import_once(
         }
 
         // (3) Devise — CHF UNIQUEMENT en v0.4 (F-OPUS-1, décision Guy 2026-06-30).
-        if staging.currency != "CHF" {
+        //     Story 30-2a (C-30-2-19) : le contrôle ne vaut que pour un document
+        //     AVEC QR ; sans QR, aucune devise n'est lue, la facture est en CHF
+        //     comme toute facture fournisseur saisie.
+        if let Some(currency) = staging.currency.as_deref()
+            && currency != "CHF"
+        {
             return Err(AppError::ImportCompletionRejected {
                 error_code: "CURRENCY_NOT_SUPPORTED",
                 message: format!(
-                    "Devise non supportée en v0.4 (CHF uniquement) : '{}'. Écartez la facture et saisissez-la manuellement.",
-                    staging.currency
+                    "Devise non supportée (CHF uniquement) : '{currency}'. Retirez le document de la liste."
                 ),
-                details: Some(serde_json::json!({ "currency": staging.currency })),
+                details: Some(serde_json::json!({ "currency": currency })),
             });
         }
 
         // (4) Routage IBAN (F9) + cohérence QRR ↔ QR-IBAN (SIX SPC 2.2).
-        let (creditor_iban, creditor_qr_iban) = if staging.is_qr_iban {
-            if staging.reference_type != "QRR" {
-                return Err(iban_reference_mismatch(
-                    "Un QR-IBAN exige une référence QRR.",
-                ));
+        //     Story 30-2a (AC7) : un document sans QR n'a ni IBAN ni référence —
+        //     aucun routage, la facture naît sans coordonnées de paiement.
+        let (creditor_iban, creditor_qr_iban) = match staging.creditor_iban.clone() {
+            None => (None, None),
+            Some(iban) => {
+                let reference_is_qrr = staging.reference_type.as_deref() == Some("QRR");
+                if staging.is_qr_iban == Some(true) {
+                    if !reference_is_qrr {
+                        return Err(iban_reference_mismatch(
+                            "Un QR-IBAN exige une référence QRR.",
+                        ));
+                    }
+                    (None, Some(iban))
+                } else {
+                    if reference_is_qrr {
+                        return Err(iban_reference_mismatch(
+                            "Une référence QRR exige un QR-IBAN.",
+                        ));
+                    }
+                    (Some(iban), None)
+                }
             }
-            (None, Some(staging.creditor_iban.clone()))
-        } else {
-            if staging.reference_type == "QRR" {
-                return Err(iban_reference_mismatch(
-                    "Une référence QRR exige un QR-IBAN.",
-                ));
-            }
-            (Some(staging.creditor_iban.clone()), None)
         };
 
-        // (5) Mapping payment_reference (C5-1) : QRR/SCOR → valeur, sinon None.
-        let payment_reference = match staging.reference_type.as_str() {
-            "QRR" | "SCOR" => staging.reference_value.clone(),
+        // (5) Mapping payment_reference (C5-1) : QRR/SCOR → valeur, sinon None
+        //     (dont un document sans QR : `reference_type` absent).
+        let payment_reference = match staging.reference_type.as_deref() {
+            Some("QRR" | "SCOR") => staging.reference_value.clone(),
             _ => None,
         };
 
@@ -227,7 +240,8 @@ async fn complete_import_once(
             })
             .collect();
 
-        // (6) Réconciliation montant (F2) : si le QR porte un montant, exiger
+        // (6) Réconciliation montant (F2) : si le QR porte un montant (jamais un
+        //     document sans QR, dont `amount` est `None` — Story 30-2a), exiger
         //     l'égalité EXACTE Σ lignes TTC == staging.amount (pleine précision,
         //     PAS round2 — garantit total_amount == staging.amount ==
         //     expected_payment_amount par construction, F-OPUS-2). Σ TTC calculé
@@ -333,6 +347,8 @@ fn iban_reference_mismatch(message: &str) -> AppError {
 
 /// Écarte une facture importée `to_complete` → `discarded` (Comptable+). Le
 /// justificatif archivé est **conservé** (v0.4). FOR UPDATE + garde statut.
+/// Story 30-2a : c'est le geste « Retirer de la liste » de l'écran « Documents
+/// à traiter » ; un nouveau dépôt du même fichier le réactive.
 pub async fn discard_import(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -373,7 +389,9 @@ pub async fn discard_import(
                     "creditor_name": staging.creditor_name,
                     "amount": staging.amount,
                     "currency": staging.currency,
-                    "iban_present": !staging.creditor_iban.is_empty(),
+                    // Story 30-2a (AC7) : lu sur l'`Option`, non plus sur une
+                    // chaîne — un document sans QR trace `false`.
+                    "iban_present": staging.creditor_iban.is_some(),
                     "is_qr_iban": staging.is_qr_iban,
                 })),
             ),

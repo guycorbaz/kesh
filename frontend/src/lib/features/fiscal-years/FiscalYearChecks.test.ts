@@ -148,16 +148,19 @@ describe('FiscalYearChecks — contenus et liens', () => {
 		expect(screen.getByText('Dubarde SàRL').getAttribute('href')).toBe('/invoices/9');
 	});
 
-	it('K5 : lien vers les factures fournisseur importées', () => {
+	it('K5 : lien vers les documents à traiter (Story 30-2a : textes neufs, lien inchangé)', () => {
 		render(FiscalYearChecks, {
 			loadState: 'ready',
 			checks: closingChecks({
 				IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE: { status: 'attention', count: 2 }
 			})
 		});
-		expect(
-			screen.getByTestId('fiscal-year-checks-link-IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE').getAttribute('href')
-		).toBe('/supplier-invoices/import');
+		const link = screen.getByTestId(
+			'fiscal-year-checks-link-IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE'
+		);
+		expect(link.getAttribute('href')).toBe('/supplier-invoices/import');
+		expect(link.textContent).toMatch(/Ouvrir les documents à traiter/);
+		expect(screen.getByText(/2 document\(s\) à traiter, toutes dates confondues/)).toBeTruthy();
 	});
 
 	it('K6 : chaque écriture mène à sa fiche, avec ses motifs', () => {

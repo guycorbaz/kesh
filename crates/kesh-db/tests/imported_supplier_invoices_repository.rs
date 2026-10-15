@@ -41,19 +41,19 @@ fn new_invoice(company_id: i64, file_hash: &str) -> NewImportedSupplierInvoice {
         original_filename: "facture.pdf".into(),
         mime_type: "application/pdf".into(),
         byte_size: 4096,
-        creditor_iban: "CH4431999123000889012".into(),
-        is_qr_iban: true,
-        creditor_address_type: "K".into(),
-        creditor_name: "Robert Schneider SA".into(),
+        creditor_iban: Some("CH4431999123000889012".into()),
+        is_qr_iban: Some(true),
+        creditor_address_type: Some("K".into()),
+        creditor_name: Some("Robert Schneider SA".into()),
         creditor_line1: Some("Rue du Lac 1268".into()),
         creditor_line2: Some("2501 Biel".into()),
         creditor_postal_code: None,
         creditor_town: None,
-        creditor_country: "CH".into(),
-        reference_type: "QRR".into(),
+        creditor_country: Some("CH".into()),
+        reference_type: Some("QRR".into()),
         reference_value: Some("210000000003139471430009017".into()),
         amount: Some(dec!(199.95)),
-        currency: "CHF".into(),
+        currency: Some("CHF".into()),
         unstructured_message: Some("Facture test".into()),
         billing_information: None,
     }
@@ -74,17 +74,47 @@ async fn create_then_find_by_id_scoped_roundtrip(pool: MySqlPool) {
     // Champs persistés.
     assert_eq!(created.company_id, company_id);
     assert_eq!(created.file_hash, "hash-roundtrip");
-    assert_eq!(created.creditor_iban, "CH4431999123000889012");
-    assert!(created.is_qr_iban);
+    assert_eq!(
+        created.creditor_iban.as_deref(),
+        Some("CH4431999123000889012")
+    );
+    assert_eq!(created.is_qr_iban, Some(true));
     assert_eq!(created.amount, Some(dec!(199.95)));
-    assert_eq!(created.reference_type, "QRR");
+    assert_eq!(created.reference_type.as_deref(), Some("QRR"));
 
     let fetched = repo::find_by_id_scoped(&pool, company_id, created.id)
         .await
         .expect("find ok")
         .expect("row present");
     assert_eq!(fetched.id, created.id);
-    assert_eq!(fetched.creditor_name, "Robert Schneider SA");
+    assert_eq!(
+        fetched.creditor_name.as_deref(),
+        Some("Robert Schneider SA")
+    );
+}
+
+/// Story 30-2a (AC1, AC4) — un document sans QR (`without_qr`) s'insère par le
+/// dépôt et se relit avec ses champs QR à `None`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_without_qr_roundtrip(pool: MySqlPool) {
+    use kesh_db::entities::imported_supplier_invoice::DocumentMeta;
+    let company_id = create_test_company(&pool, "Sans QR SA").await;
+    let new = NewImportedSupplierInvoice::without_qr(
+        company_id,
+        DocumentMeta {
+            storage_path: "sansqr.png".into(),
+            original_filename: "ticket.png".into(),
+            sha256: "hash-sans-qr".into(),
+            mime_type: "image/png".into(),
+            byte_size: 10,
+        },
+    );
+    let created = repo::create(&pool, &new).await.expect("create sans QR");
+    assert!(!created.has_qr());
+    assert_eq!(created.creditor_name, None);
+    assert_eq!(created.currency, None);
+    assert_eq!(created.is_qr_iban, None);
+    assert_eq!(created.original_filename, "ticket.png");
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -207,4 +237,112 @@ async fn list_by_status_is_scoped_and_filtered(pool: MySqlPool) {
         .await
         .expect("list completed");
     assert!(a_completed.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Story 30-2a (AC4) — colonnes QR facultatives, « tout ou rien », unicité du
+// lien vers la facture. En SQL brut : c'est la contrainte de la base qui est
+// sous test, non le code qui la respecte.
+// ---------------------------------------------------------------------------
+
+/// Les sept colonnes « tout ou rien » et leur valeur d'un document avec QR.
+const QR_COLUMNS: [(&str, &str); 7] = [
+    ("creditor_iban", "'CH9300762011623852957'"),
+    ("is_qr_iban", "0"),
+    ("creditor_address_type", "'K'"),
+    ("creditor_name", "'Fournisseur SA'"),
+    ("creditor_country", "'CH'"),
+    ("reference_type", "'NON'"),
+    ("currency", "'CHF'"),
+];
+
+/// `INSERT` d'une ligne de staging dont la colonne `null_column` (ou aucune, ou
+/// toutes) est laissée à `NULL`, les autres renseignées.
+fn staging_insert_sql(company_id: i64, hash: &str, null_columns: &[&str]) -> String {
+    let cols: Vec<&str> = QR_COLUMNS.iter().map(|(c, _)| *c).collect();
+    let vals: Vec<&str> = QR_COLUMNS
+        .iter()
+        .map(|(c, v)| if null_columns.contains(c) { "NULL" } else { *v })
+        .collect();
+    format!(
+        "INSERT INTO imported_supplier_invoices \
+         (company_id, file_hash, storage_path, original_filename, mime_type, byte_size, {}) \
+         VALUES ({company_id}, '{hash}', '{hash}.png', 'doc.png', 'image/png', 10, {})",
+        cols.join(", "),
+        vals.join(", ")
+    )
+}
+
+/// Un document sans QR (les sept à `NULL`) s'insère ; une ligne dont **une
+/// seule** des sept est `NULL` est refusée, pour chacune des sept — sans quoi
+/// une contrainte amputée d'une colonne (M-a5) survivrait.
+#[sqlx::test(migrations = "./test-schema")]
+async fn qr_columns_are_all_or_nothing(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Tout ou rien SA").await;
+    let all: Vec<&str> = QR_COLUMNS.iter().map(|(c, _)| *c).collect();
+
+    sqlx::query(&staging_insert_sql(company_id, "all-null", &all))
+        .execute(&pool)
+        .await
+        .expect("un document sans QR : les sept colonnes à NULL");
+    sqlx::query(&staging_insert_sql(company_id, "none-null", &[]))
+        .execute(&pool)
+        .await
+        .expect("un document avec QR : les sept renseignées");
+
+    for (column, _) in QR_COLUMNS {
+        let err = sqlx::query(&staging_insert_sql(
+            company_id,
+            &format!("one-null-{column}"),
+            &[column],
+        ))
+        .execute(&pool)
+        .await
+        .expect_err(&format!("{column} seule à NULL doit être refusée"));
+        let msg = err.to_string();
+        assert!(
+            msg.contains("chk_imported_si_qr_all_or_nothing"),
+            "{column} seule à NULL : refus attendu par la contrainte « tout ou rien », reçu {msg}"
+        );
+    }
+}
+
+/// Une facture fournisseur n'a qu'un document : `supplier_invoice_id` est
+/// unique ; plusieurs `NULL` restent permis.
+#[sqlx::test(migrations = "./test-schema")]
+async fn supplier_invoice_id_is_unique(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Unicité SA").await;
+    // Connexion dédiée : la facture 999999 n'existe pas, la clé étrangère est
+    // levée le temps des deux INSERT — c'est l'unicité qui est sous test.
+    let mut conn = pool.acquire().await.unwrap();
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    for hash in ["n1", "n2"] {
+        sqlx::query(&staging_insert_sql(company_id, hash, &[]))
+            .execute(&mut *conn)
+            .await
+            .expect("plusieurs NULL permis");
+    }
+    sqlx::query(
+        "UPDATE imported_supplier_invoices SET supplier_invoice_id = 999999 WHERE file_hash = 'n1'",
+    )
+    .execute(&mut *conn)
+    .await
+    .expect("premier lien");
+    let err = sqlx::query(
+        "UPDATE imported_supplier_invoices SET supplier_invoice_id = 999999 WHERE file_hash = 'n2'",
+    )
+    .execute(&mut *conn)
+    .await
+    .expect_err("un second document lié à la même facture doit être refusé");
+    assert!(
+        err.to_string().contains("uq_imported_supplier_invoice"),
+        "refus attendu par uq_imported_supplier_invoice, reçu {err}"
+    );
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
 }

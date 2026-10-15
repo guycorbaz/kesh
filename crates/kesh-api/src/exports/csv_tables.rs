@@ -149,6 +149,12 @@ fn fmt_bool(b: bool) -> String {
     if b { "true".into() } else { "false".into() }
 }
 
+/// Format `Option<bool>` → `"true"` / `"false"` ou chaîne vide si `None`
+/// (Story 30-2a : `is_qr_iban` d'un document sans QR).
+fn fmt_opt_bool(b: Option<bool>) -> String {
+    b.map(fmt_bool).unwrap_or_default()
+}
+
 // ===========================================================================
 // 16 serializers (ordre §scope-tables)
 // ===========================================================================
@@ -1604,21 +1610,23 @@ pub fn serialize_imported_supplier_invoices_csv<W: Write>(
             txt(i.original_filename.clone()),
             txt(i.mime_type.clone()),
             i.byte_size.to_string(),
-            txt(i.creditor_iban.clone()),
-            fmt_bool(i.is_qr_iban),
-            txt(i.creditor_address_type.clone()),
-            txt(i.creditor_name.clone()),
+            // Story 30-2a : les sept colonnes QR d'un document sans QR sont
+            // `None` — cellule vide, jamais `None`/`null` littéral.
+            fmt_opt_str(&i.creditor_iban),
+            fmt_opt_bool(i.is_qr_iban),
+            fmt_opt_str(&i.creditor_address_type),
+            fmt_opt_str(&i.creditor_name),
             // Adresse « combinée » (type K) : toute l'adresse tient dans ces
             // deux lignes, NPA et localité restant vides (revue P1).
             fmt_opt_str(&i.creditor_line1),
             fmt_opt_str(&i.creditor_line2),
             fmt_opt_str(&i.creditor_postal_code),
             fmt_opt_str(&i.creditor_town),
-            txt(i.creditor_country.clone()),
-            txt(i.reference_type.clone()),
+            fmt_opt_str(&i.creditor_country),
+            fmt_opt_str(&i.reference_type),
             fmt_opt_str(&i.reference_value),
             fmt_opt_decimal(i.amount),
-            txt(i.currency.clone()),
+            fmt_opt_str(&i.currency),
             fmt_opt_str(&i.unstructured_message),
             fmt_opt_str(&i.billing_information),
             i.version.to_string(),
@@ -2250,6 +2258,64 @@ mod tests {
             header.contains("creditor_name;creditor_line1;creditor_line2;creditor_postal_code"),
             "{header}"
         );
+    }
+
+    /// Story 30-2a (AC4) — un document **sans QR** sort avec des cellules
+    /// vides pour ses colonnes QR, jamais `None` ni `null` littéral (tue M-a10).
+    #[test]
+    fn serialize_imported_supplier_invoices_csv_cellules_vides_sans_qr() {
+        let ts = naive_dt(2026, 10, 15, 8, 0, 0);
+        let row = ImportedSupplierInvoice {
+            id: 7,
+            company_id: 1,
+            status: "to_complete".into(),
+            supplier_invoice_id: None,
+            file_hash: "abc".into(),
+            storage_path: "abc.png".into(),
+            original_filename: "ticket.png".into(),
+            mime_type: "image/png".into(),
+            byte_size: 10,
+            creditor_iban: None,
+            is_qr_iban: None,
+            creditor_address_type: None,
+            creditor_name: None,
+            creditor_line1: None,
+            creditor_line2: None,
+            creditor_postal_code: None,
+            creditor_town: None,
+            creditor_country: None,
+            reference_type: None,
+            reference_value: None,
+            amount: None,
+            currency: None,
+            unstructured_message: None,
+            billing_information: None,
+            version: 1,
+            created_at: ts,
+            updated_at: ts,
+        };
+        let mut buf = Vec::new();
+        serialize_imported_supplier_invoices_csv(&[row], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(b';')
+            .from_reader(text.as_bytes());
+        let headers: Vec<String> = rdr.headers().unwrap().iter().map(String::from).collect();
+        let record = rdr.records().next().unwrap().unwrap();
+        for column in [
+            "creditor_iban",
+            "is_qr_iban",
+            "creditor_address_type",
+            "creditor_name",
+            "creditor_country",
+            "reference_type",
+            "amount",
+            "currency",
+        ] {
+            let pos = headers.iter().position(|h| h == column).expect(column);
+            assert_eq!(&record[pos], "", "{column} : cellule vide attendue");
+        }
+        assert!(!text.contains("None") && !text.contains("null"), "{text}");
     }
 
     /// ⛔ **Garde d'exhaustivité des COLONNES** (Story 25-5-a, revue P2).

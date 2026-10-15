@@ -6,6 +6,18 @@
 //! (`to_complete`). Le fichier traité avec succès est supprimé de l'inbox ; en
 //! échec il est déplacé dans `<inbox>/failed/`.
 //!
+//! ## Documents sans QR (Story 30-2a, #685)
+//! Tout PDF ou image valide entre dans la liste « Documents à traiter », **avec
+//! ou sans** QR-code. Le rapport dit, par fichier accepté, `qr` : `present`
+//! (données QR stockées), `none` (aucun QR trouvé) ou `unreadable` (QR trouvé
+//! mais inexploitable — code d'origine en `qrError` : `INVALID_SPC_PAYLOAD`,
+//! `INVALID_IBAN`, `PDF_RENDER_ERROR`, `FIELD_TOO_LONG`,
+//! `QR_AMOUNT_OUT_OF_RANGE`). Un document `none` ou `unreadable` entre sans
+//! aucune donnée QR (la facture complétée naît sans IBAN ni référence).
+//! Restent des échecs `failed[]` : type
+//! hors liste blanche ou octets incohérents, image non décodable, taille, lien
+//! symbolique, doublon, erreur de lecture.
+//!
 //! ## Pattern batch (CLAUDE.md, §FailedProposal)
 //! Retourne `{ accepted, failed, warnings }` avec **HTTP 200** : aucune erreur
 //! per-fichier n'escalade en `AppError` global. Les seules `AppError` globales
@@ -41,17 +53,24 @@ use crate::document_storage::{self, mime_for_ext};
 use crate::errors::AppError;
 use crate::qr_decode::{self, DecodeConfig, DecodeError};
 use kesh_db::entities::audit_log::NewAuditLogEntry;
-use kesh_db::entities::imported_supplier_invoice::NewImportedSupplierInvoice;
+use kesh_db::entities::imported_supplier_invoice::{
+    NewImportedSupplierInvoice, check_scanned_fits_columns,
+};
 use kesh_db::errors::{DbError, map_db_error};
 use kesh_db::repositories::{audit_log, imported_supplier_invoices};
 
 // --- Catalogue des `error_code` per-fichier (constantes canoniques) ----------
+//
+// Story 30-2a : `NO_QR_CODE_FOUND` n'existe plus (un document sans QR est
+// accepté) ; `INVALID_SPC_PAYLOAD`, `INVALID_IBAN`, `PDF_RENDER_ERROR` et
+// `FIELD_TOO_LONG` ne sortent plus en `failed[]` mais en `qrError` d'un
+// document accepté — sauf `INVALID_SPC_PAYLOAD` et `FIELD_TOO_LONG`, gardés
+// comme codes des deux filets de l'`INSERT`.
 
 const ERR_UNSUPPORTED_FILE_TYPE: &str = "UNSUPPORTED_FILE_TYPE";
 const ERR_FILE_TOO_LARGE: &str = "FILE_TOO_LARGE";
 const ERR_SYMLINK_REJECTED: &str = "SYMLINK_REJECTED";
 const ERR_DUPLICATE: &str = "DUPLICATE";
-const ERR_NO_QR_CODE_FOUND: &str = "NO_QR_CODE_FOUND";
 const ERR_INVALID_SPC_PAYLOAD: &str = "INVALID_SPC_PAYLOAD";
 const ERR_INVALID_IBAN: &str = "INVALID_IBAN";
 const ERR_PDF_RENDER_ERROR: &str = "PDF_RENDER_ERROR";
@@ -82,6 +101,26 @@ pub struct InboxImportReport {
 pub struct AcceptedFile {
     pub imported_supplier_invoice_id: i64,
     pub file_name: String,
+    /// Story 30-2a — ce que le document apporte de son QR.
+    pub qr: QrStatus,
+    /// Code du QR inexploitable, seulement quand `qr` vaut `unreadable`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qr_error: Option<&'static str>,
+}
+
+/// Story 30-2a (AC1, AC2) — état du QR d'un document accepté, au rapport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum QrStatus {
+    /// QR lu et stocké : la ligne porte ses données.
+    #[serde(rename = "present")]
+    Present,
+    /// Aucun QR trouvé : la ligne n'a aucune donnée QR.
+    #[serde(rename = "none")]
+    Absent,
+    /// QR trouvé mais inexploitable : la ligne n'a aucune donnée QR, et le
+    /// rapport porte le code d'origine (`qrError`).
+    #[serde(rename = "unreadable")]
+    Unreadable,
 }
 
 /// Échec per-fichier (identifiant business = `file_name`, jamais d'index positionnel).
@@ -98,7 +137,11 @@ pub struct FailedFile {
 /// déplacement `failed/`) est fait **dans** `process_one_file` ; ce type ne porte
 /// que la ligne de rapport à agréger.
 enum FileOutcome {
-    Accepted(i64),
+    Accepted {
+        id: i64,
+        qr: QrStatus,
+        qr_error: Option<&'static str>,
+    },
     Failed {
         error_code: &'static str,
         details: Option<serde_json::Value>,
@@ -239,9 +282,11 @@ async fn process_inbox(
         )
         .await?
         {
-            FileOutcome::Accepted(id) => report.accepted.push(AcceptedFile {
+            FileOutcome::Accepted { id, qr, qr_error } => report.accepted.push(AcceptedFile {
                 imported_supplier_invoice_id: id,
                 file_name,
+                qr,
+                qr_error,
             }),
             FileOutcome::Failed {
                 error_code,
@@ -466,7 +511,17 @@ async fn process_one_file(
                     .await
                     .map_err(|e| AppError::Database(map_db_error(e)))?;
                 remove_inbox_file(path);
-                return Ok(FileOutcome::Accepted(existing.id));
+                // Story 30-2a — le rapport dit ce que porte la ligne STOCKÉE :
+                // un QR inexploitable n'a pas été stocké, il redevient `none`.
+                return Ok(FileOutcome::Accepted {
+                    id: existing.id,
+                    qr: if existing.has_qr() {
+                        QrStatus::Present
+                    } else {
+                        QrStatus::Absent
+                    },
+                    qr_error: None,
+                });
             }
             // Rien réactivé : la transaction n'a rien à valider.
             let _ = tx.rollback().await;
@@ -492,22 +547,31 @@ async fn process_one_file(
     } else {
         qr_decode::decode_spc_from_image_bytes(&bytes)
     };
-    let scanned = match decode_result {
-        Ok(Some(s)) => s,
-        Ok(None) => {
+    // (6-bis) Story 30-2a (AC1, AC2) — un document sans QR, ou dont le QR est
+    // inexploitable, ENTRE sans ses données QR. Le contrôle pur des colonnes
+    // (`check_scanned_fits_columns`) tranche AVANT l'archivage : un QR lisible
+    // mais qui ne tient pas dans le staging (longueur, montant) ne refuse plus
+    // le document. Seule une image non décodable reste un refus (C-30-2-4) — le
+    // plus souvent corrompue ; angle mort assumé : la crate `image` refuse aussi
+    // quelques images qu'un navigateur afficherait (plus de
+    // `MAX_IMAGE_DIMENSION` pixels de côté, variantes JPEG peu courantes).
+    let (scanned, qr, qr_error) = match decode_result {
+        Ok(Some(s)) => match check_scanned_fits_columns(&s) {
+            Ok(()) => (Some(s), QrStatus::Present, None),
+            Err(mismatch) => (None, QrStatus::Unreadable, Some(mismatch.code())),
+        },
+        Ok(None) => (None, QrStatus::Absent, None),
+        Err(DecodeError::ImageDecode(_)) => {
             return dispose_failed(
                 path,
                 failed_dir,
                 file_name,
                 &disambig,
-                ERR_NO_QR_CODE_FOUND,
+                ERR_UNSUPPORTED_FILE_TYPE,
                 None,
             );
         }
-        Err(e) => {
-            let code = map_decode_error(&e);
-            return dispose_failed(path, failed_dir, file_name, &disambig, code, None);
-        }
+        Err(e) => (None, QrStatus::Unreadable, Some(map_decode_error(&e))),
     };
 
     // (7) Archivage du justificatif (12-5b) — nom = `{sha256hex}.{ext}`.
@@ -527,8 +591,12 @@ async fn process_one_file(
         }
     };
 
-    // (8) Staging : INSERT imported_supplier_invoices (status='to_complete').
-    let new = NewImportedSupplierInvoice::from_scanned(company_id, &scanned, doc);
+    // (8) Staging : INSERT imported_supplier_invoices (status='to_complete'),
+    //     avec ou sans données QR (les sept colonnes « tout ou rien »).
+    let new = match &scanned {
+        Some(s) => NewImportedSupplierInvoice::from_scanned(company_id, s, doc),
+        None => NewImportedSupplierInvoice::without_qr(company_id, doc),
+    };
 
     // ⚠️ Story 25-1b — la transaction est ouverte ICI, autour de la SEULE étape
     // d'insertion, et non en tête de la fonction : le pool est à 5 connexions,
@@ -554,8 +622,11 @@ async fn process_one_file(
                     dispose_failed(path, failed_dir, file_name, &disambig, ERR_DUPLICATE, None)
                 }
                 DbError::DataLengthOrRange(_) => {
-                    // Champ QR tiers sur-long (hors SIX 2.2) → échec par-fichier
-                    // propre (D2). ⛔ Le fichier archivé n'est PAS supprimé : nommé
+                    // FILET (Story 30-2a) : le contrôle pur des colonnes, fait
+                    // avant l'archivage, rend cette branche inatteignable tant
+                    // qu'il est juste — elle reste pour qu'un défaut du contrôle
+                    // donne un échec par-fichier propre (D2), non un 500 global.
+                    // ⛔ Le fichier archivé n'est PAS supprimé : nommé
                     // par son contenu, il peut être partagé — justificatif d'une
                     // autre société, ou PDF de facture figé (Story 25-6-b) au même
                     // octet près. Un orphelin est inoffensif ; une suppression à
@@ -566,6 +637,24 @@ async fn process_one_file(
                         file_name,
                         &disambig,
                         ERR_FIELD_TOO_LONG,
+                        None,
+                    )
+                }
+                DbError::CheckConstraintViolation(_) => {
+                    // FILET (Story 30-2a, défense en profondeur) : aucune
+                    // contrainte CHECK n'est atteignable depuis `from_scanned`
+                    // ou `without_qr` (type d'adresse normalisé, type de
+                    // référence borné par le parseur, taille > 0 par les octets
+                    // magiques, « tout ou rien » par construction). Sans cette
+                    // branche, une violation sortirait de TOUT l'import en
+                    // `400 CHECK_CONSTRAINT_VIOLATION`. Même traitement que le
+                    // filet précédent : fichier archivé conservé.
+                    dispose_failed(
+                        path,
+                        failed_dir,
+                        file_name,
+                        &disambig,
+                        ERR_INVALID_SPC_PAYLOAD,
                         None,
                     )
                 }
@@ -603,14 +692,17 @@ async fn process_one_file(
             "imported_supplier_invoice.created",
             "imported_supplier_invoice",
             inserted.id,
+            // Story 30-2a (AC1) — même forme de détails avec ou sans QR : les
+            // clés du QR sont présentes, à `null` pour un document sans QR.
             Some(serde_json::json!({
                 "original_filename": inserted.original_filename,
+                "qr_present": inserted.has_qr(),
                 "creditor_name": inserted.creditor_name,
                 "amount": inserted.amount,
                 "currency": inserted.currency,
                 "reference_type": inserted.reference_type,
                 // Jamais l'IBAN lui-même : seulement sa présence.
-                "iban_present": !inserted.creditor_iban.is_empty(),
+                "iban_present": inserted.creditor_iban.is_some(),
                 "is_qr_iban": inserted.is_qr_iban,
             })),
         ),
@@ -621,7 +713,11 @@ async fn process_one_file(
         .map_err(|e| AppError::Database(map_db_error(e)))?;
 
     remove_inbox_file(path);
-    Ok(FileOutcome::Accepted(inserted.id))
+    Ok(FileOutcome::Accepted {
+        id: inserted.id,
+        qr,
+        qr_error,
+    })
 }
 
 // --- Helpers -----------------------------------------------------------------
@@ -653,6 +749,9 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// `ImageDecode` → `UNSUPPORTED_FILE_TYPE` : le magic-bytes a déjà filtré les
 /// non-images ; à ce stade, format reconnu mais corrompu/non décodable (PAS
 /// `FILE_READ_ERROR`, réservé aux I/O — le contenu a déjà été lu).
+///
+/// Story 30-2a : `ImageDecode` est un refus (`failed[]`, traité avant l'appel) ;
+/// les trois autres codes sont le `qrError` d'un document accepté sans QR.
 fn map_decode_error(e: &DecodeError) -> &'static str {
     match e {
         DecodeError::ImageDecode(_) => ERR_UNSUPPORTED_FILE_TYPE,

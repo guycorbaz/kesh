@@ -144,8 +144,16 @@ const PREFIXES = [
  *
  * ⚠️ **289 → 291, +2 nommées** (revue de code P1 de la 15-1c-i) : `open-items-accounts-error` et
  * `open-items-no-account` (74 clés `open-items-*` au FTL fr-CH, recompté par `grep -c`).
+ *
+ * ⚠️ **291 → 302, +11 nommées** (Story 30-2a, #685) — clés `imported-supplier-invoices-*`
+ * neuves et demandées : `-imported-on`, `-badge-qr`, `-badge-no-qr`, `-preview`,
+ * `-preview-close`, `-report-no-qr`, `-report-qr-unreadable`, `-qr-unreadable-hint` (page
+ * « Documents à traiter ») et `-preview-loading`, `-preview-error`, `-preview-download`
+ * (`DocumentPreview.svelte`). `-doc-gone`, déjà relevée, gagne un second site au même repli ;
+ * `-error-qr-amount-out-of-range` passe par la carte `IMPORT_ERROR_LABELS`, non par un
+ * littéral, et n'entre pas.
  */
-const CLES_RELEVEES = 291;
+const CLES_RELEVEES = 302;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

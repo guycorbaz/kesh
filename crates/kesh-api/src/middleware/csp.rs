@@ -21,10 +21,22 @@ use axum::http::HeaderValue;
 use axum::middleware::Next;
 use axum::response::Response;
 
+/// Politique des pages HTML.
+///
+/// Story 30-2a (AC6, C-30-2-6) — l'aperçu d'un document lit ses octets par
+/// `apiClient.getBlob` (qui gère le rafraîchissement du jeton) et les affiche
+/// par une URL `blob:` : en `<img>` (PNG, JPEG, d'où `img-src … blob:`) ou en
+/// `<iframe>` (PDF, d'où `frame-src 'self' blob:`). `object-src 'self' blob:`
+/// est **explicite** et non hérité de `default-src` : le document `blob:` d'une
+/// `<iframe>` hérite de la CSP de la page, et la visionneuse PDF du navigateur
+/// peut y passer par un objet embarqué. `default-src`, `script-src` et
+/// `frame-ancestors` ne changent pas.
 const CSP_VALUE: &str = "default-src 'self'; \
     script-src 'self' 'unsafe-inline'; \
     style-src 'self' 'unsafe-inline'; \
-    img-src 'self' data:; \
+    img-src 'self' data: blob:; \
+    frame-src 'self' blob:; \
+    object-src 'self' blob:; \
     font-src 'self' data:; \
     connect-src 'self'; \
     frame-ancestors 'none'; \
@@ -51,4 +63,45 @@ pub async fn csp_html(request: Request, next: Next) -> Response {
         );
     }
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CSP_VALUE;
+
+    /// Directive `name` de la politique, valeurs comprises (`None` si absente).
+    fn directive(name: &str) -> Option<&'static str> {
+        CSP_VALUE
+            .split(';')
+            .map(str::trim)
+            .find(|d| d.split_whitespace().next() == Some(name))
+    }
+
+    /// Story 30-2a (AC6) — la valeur est figée directive par directive.
+    /// L'aperçu d'un document passe par une URL `blob:` : `img-src` (PNG, JPEG),
+    /// `frame-src` (PDF dans une `<iframe>`) et `object-src` (visionneuse PDF du
+    /// navigateur, objet embarqué du document `blob:` qui hérite de la CSP de la
+    /// page) l'autorisent **explicitement** ; `default-src`, `script-src` et
+    /// `frame-ancestors` ne changent pas (bornes d'AC6-bis). Tue M-a8.
+    #[test]
+    fn csp_value_is_pinned_and_allows_blob_previews() {
+        assert_eq!(directive("default-src"), Some("default-src 'self'"));
+        assert_eq!(
+            directive("script-src"),
+            Some("script-src 'self' 'unsafe-inline'")
+        );
+        assert_eq!(directive("img-src"), Some("img-src 'self' data: blob:"));
+        assert_eq!(directive("frame-src"), Some("frame-src 'self' blob:"));
+        assert_eq!(directive("object-src"), Some("object-src 'self' blob:"));
+        assert_eq!(directive("frame-ancestors"), Some("frame-ancestors 'none'"));
+        assert_eq!(
+            CSP_VALUE
+                .split(';')
+                .map(str::trim)
+                .filter(|d| !d.is_empty())
+                .count(),
+            11,
+            "onze directives : toute directive ajoutée ou retirée se déclare ici"
+        );
+    }
 }

@@ -40,6 +40,19 @@ export async function discardImport(id: number): Promise<void> {
 	return apiClient.post(`/api/v1/imported-supplier-invoices/${id}/discard`, {});
 }
 
+/**
+ * Lit le document d'une importée en `Blob` (Story 30-2a, aperçu). Même chemin que le
+ * téléchargement — `apiClient.getBlob`, qui gère le 401-refresh —, sans l'enregistrer :
+ * l'aperçu en fait une URL `blob:` (C-30-2-6). Le type du blob vient du `Content-Type`
+ * de la réponse, lui-même dérivé de l'extension à l'import, jamais du contenu.
+ */
+export async function fetchImportedSourceDocument(id: number): Promise<Blob> {
+	const response = await apiClient.getBlob(
+		`/api/v1/imported-supplier-invoices/${id}/source-document`,
+	);
+	return response.blob();
+}
+
 /** Télécharge le justificatif d'une importée (avant complétion). Pattern A (gère 401-refresh). */
 export async function downloadImportedSourceDocument(id: number): Promise<void> {
 	const response = await apiClient.getBlob(

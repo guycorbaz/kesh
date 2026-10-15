@@ -26,7 +26,7 @@ export function checkTitle(code: ClosingCheckCode): string {
 		case 'DRAFT_INVOICES':
 			return i18nMsg('fiscal-years-checks-k4-title', 'Factures en brouillon');
 		case 'IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE':
-			return i18nMsg('fiscal-years-checks-k5-title', 'Factures fournisseur à compléter');
+			return i18nMsg('fiscal-years-checks-k5-title', 'Documents fournisseur à traiter');
 		case 'INCONSISTENT_ENTRIES':
 			return i18nMsg('fiscal-years-checks-k6-title', 'Écritures incohérentes');
 		case 'NEXT_FISCAL_YEAR':
@@ -60,7 +60,7 @@ export function checkHelp(code: ClosingCheckCode): string {
 		case 'IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE':
 			return i18nMsg(
 				'fiscal-years-checks-k5-help',
-				'Les pièces importées qui attendent d’être complétées, toutes dates confondues.'
+				'Les documents fournisseur qui attendent d’être traités, toutes dates confondues.'
 			);
 		case 'INCONSISTENT_ENTRIES':
 			return i18nMsg(

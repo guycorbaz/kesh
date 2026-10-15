@@ -798,14 +798,14 @@ Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercic
     \item[Transactions bancaires à rapprocher] Des transactions importées, datées (date de comptabilisation bancaire) dans l'exercice, attendent leur rapprochement --- y compris celles que vous avez écartées des propositions. Lien~: \emph{Réconciliation bancaire} (\S\ref{sec:reconciliation}).
     \item[Relevés bancaires de fin d'exercice] Pour chaque compte bancaire, le relevé qui \textbf{se termine au plus tard le dernier jour de l'exercice} est comparé aux livres~: relevé manquant, relevé arrêté trop tôt, ou écart entre le solde du relevé et le solde comptable à sa date. Lien~: \emph{Comptes bancaires}.
     \item[Factures en brouillon] Des factures client datées dans l'exercice n'ont jamais été validées~: elles ne sont pas en comptabilité. Lien~: la liste des factures, filtrée sur les brouillons de l'exercice.
-    \item[Factures fournisseur à compléter] Des pièces importées attendent d'être complétées (\S\ref{sec:import-factures}). Lien~: \emph{Factures fournisseur importées}.
+    \item[Documents fournisseur à traiter] Des documents déposés dans le dossier d'import, avec ou sans QR-code, attendent d'être complétés ou retirés de la liste (\S\ref{sec:import-factures}). Lien~: \emph{Ouvrir les documents à traiter}.
     \item[Écritures incohérentes] Des écritures déséquilibrées, à moins de deux lignes, datées hors de leur exercice, ou appartenant à un autre exercice mais datées dans celui-ci. Chaque écriture listée mène à sa fiche.
     \item[Exercice suivant] Aucun exercice ne suit celui-ci~: créez-le pour y passer les écritures de l'année qui vient --- et pour contre-passer vos transitoires au début de cet exercice (\S\ref{sec:transitoires}). Bouton~: \emph{Créer l'exercice suivant}, qui ouvre la création d'un exercice (administrateur et comptable).
 \end{description}
 
 \paragraph{Ce que les contrôles ne disent pas.}
 \begin{itemize}
-    \item Les \textbf{factures fournisseur à compléter} ne sont pas bornées à l'exercice~: une pièce importée n'a pas de date comptable, seulement sa date d'import. Toutes sont comptées.
+    \item Les \textbf{documents fournisseur à traiter} ne sont pas bornés à l'exercice~: un document importé n'a pas de date comptable, seulement sa date d'import. Tous sont comptés --- y compris un document qui n'est pas une facture, tant qu'il n'est pas retiré de la liste.
     \item Les \textbf{relevés de fin d'exercice} ne se comparent que pour les relevés CAMT, qui portent un solde~; un fichier CSV n'en porte pas (\S\ref{sec:import-bancaire}). Un compte alimenté par CSV seulement, un compte sans compte de grand livre lié, ou dont le compte lié est partagé avec un autre compte bancaire, est dit « non vérifiable », sans compter comme point à vérifier.
     \item Ce contrôle n'examine que les comptes qui ont, dans l'exercice, une transaction importée, un relevé ou une écriture sur leur compte de grand livre lié --- et ni les comptes archivés, ni ceux clôturés avant le début de l'exercice. Pour un compte clôturé pendant l'exercice, un relevé arrêté à sa date de clôture suffit.
     \item Le relevé comparé est celui qui \textbf{se termine au plus tard le dernier jour de l'exercice}~: un relevé à cheval sur la fin d'année (du 15 au 15, ou une période choisie à l'export) ne compte pas, et le compte reste « relevé arrêté trop tôt » ou « relevé manquant ». Importez un relevé \textbf{arrêté au dernier jour de l'exercice}.
@@ -1709,36 +1709,77 @@ lot confirmé qui la contient. Dans ce cas, corrigez par un nouveau règlement d
 fiche, jamais par un nouveau lot.
 \end{keshwarning}
 
-\subsection{Importer des factures depuis un dossier}
+\subsection{Documents à traiter}
 \label{sec:import-factures}
 
-Kesh peut lire, sans saisie de votre part, les factures fournisseurs suisses porteuses
-d'un \textbf{QR-facture} (Swiss QR Code) déposées dans le dossier d'import (voir le
-manuel administrateur pour sa configuration). L'import ne se déclenche pas tout seul~:
-vous le lancez depuis l'écran décrit ci-dessous.
+Les factures fournisseurs se déposent, en PDF ou en image (PNG, JPEG), dans le dossier
+d'import (voir le manuel administrateur pour sa configuration). \textbf{Tout document y
+entre}, qu'il porte un \textbf{QR-facture} (Swiss QR Code) ou non~: une facture ancienne,
+un reçu, un document scanné sans QR trouvent leur place dans la même liste.
+L'import ne se déclenche pas tout seul~: vous le lancez depuis l'écran décrit ci-dessous.
 
-\emph{Quotidien} → \emph{Importer des factures}, puis \textbf{« Importer le
-dossier »}. Kesh lit chaque fichier (PDF ou image), décode le QR côté serveur,
-archive une copie du justificatif, et crée des factures fournisseurs
-\textbf{« à compléter »} (coordonnées de paiement pré-remplies depuis le QR). Un
-rapport indique les fichiers acceptés, en échec et les avertissements.
+\emph{Quotidien} → \emph{Documents à traiter}, puis \textbf{« Importer le dossier »}.
+Kesh lit chaque fichier, cherche un QR côté serveur, archive le document et le place dans
+la liste \textbf{« Documents à traiter »}. Le fichier \textbf{quitte le dossier dès
+l'import}~: il est conservé par Kesh, non plus dans le dossier. Un rapport indique les
+documents importés --- avec la mention \emph{sans QR-code} ou \emph{QR illisible} pour ceux
+qui entrent sans les données d'un QR ---, les fichiers en échec et les avertissements.
 
-Pour chaque facture importée, cliquez sur \textbf{« Compléter »} : choisissez le
-fournisseur et saisissez les lignes (compte de charge, TVA). Kesh vérifie que le
-total TTC \textbf{correspond exactement} au montant du QR avant de créer la
-facture fournisseur définitive (ensuite réglable comme ci-dessus). La complétion
-crée cette facture par le même chemin que la saisie~: elle est refusée de la même
-façon si le compte créanciers ou la TVA récupérable des réglages n'est pas
-imputable (\S\ref{sec:saisie-facture-fournisseur}), et la facture importée reste
-\emph{à compléter}. Vous pouvez
-aussi \textbf{écarter} une entrée, et \textbf{consulter le justificatif d'origine}
-depuis la fiche de la facture (« Voir la facture d'origine »).
+Chaque ligne de la liste porte le nom du fichier, sa date d'import et un badge~:
+\begin{itemize}
+    \item \textbf{QR-facture}, avec le créancier, le montant et la référence lus dans le QR~;
+    \item \textbf{Sans QR-code}~: le document n'en porte pas, ou son QR n'a pas pu être
+          exploité (illisible, montant hors des limites admises, valeur trop longue). Le
+          document est alors accepté \textbf{sans les données du QR}~: la facture qui en
+          naît n'a ni IBAN ni référence, et son montant est celui des lignes que vous
+          saisissez.
+\end{itemize}
+
+Quatre gestes par document~:
+\begin{description}
+    \item[Aperçu] affiche le document sous sa ligne --- l'image, ou le PDF dans la
+          visionneuse du navigateur. Un document dont le fichier n'a pas été restauré
+          (sauvegarde, voir plus bas) l'est dit.
+    \item[Télécharger] enregistre le fichier sous son nom d'origine --- utile pour une
+          image, qui ne s'enregistre pas depuis l'aperçu.
+    \item[Compléter] crée la facture fournisseur~: choisissez le fournisseur et saisissez
+          les lignes (compte de charge, TVA). Pour un document avec QR, Kesh vérifie que le
+          total TTC \textbf{correspond exactement} au montant du QR, et reprend IBAN et
+          référence du QR. Pour un document sans QR, aucun de ces contrôles~: la facture est
+          en CHF, et naît sans IBAN ni référence. La complétion crée cette facture par le
+          même chemin que la saisie~: elle est refusée de la même façon si le compte
+          créanciers ou la TVA récupérable des réglages n'est pas imputable
+          (\S\ref{sec:saisie-facture-fournisseur}), et le document reste dans la liste.
+    \item[Retirer de la liste] pour un document qui n'est pas une facture, ou un doublon.
+          Kesh demande confirmation~; le fichier reste conservé, et le déposer de nouveau
+          le fait revenir dans la liste.
+\end{description}
+Le document d'une facture complétée reste consultable depuis la fiche de la facture
+(« Voir le document »).
+
+\paragraph{Ce qui reste refusé.} Un fichier qui n'est ni un PDF ni une image PNG ou JPEG
+(ou dont le contenu ne correspond pas à l'extension), une image illisible, un fichier trop
+volumineux, un lien symbolique, un fichier déjà importé ou illisible~: il est déplacé dans
+le sous-dossier \texttt{failed/} du dossier d'import, et le rapport en donne la raison.
+Une image que Kesh ne sait pas décoder est refusée comme \emph{type non pris en charge},
+même si votre navigateur l'affiche~: c'est le cas d'une image de plus de 10\,000 pixels
+de côté, et de certaines variantes peu courantes du format JPEG. Convertissez-la (PNG,
+ou JPEG ordinaire), ou déposez-la en PDF.
 
 \begin{keshnote}
-Seules les factures en \textbf{CHF} sont acceptées à la complétion dans cette
-version. Le justificatif importé reste consultable même après création de la
-facture.
+Seules les factures en \textbf{CHF} sont acceptées à la complétion d'un document avec QR
+dans cette version~: un QR en euros se retire de la liste. Tout document déposé est
+conservé et compte dans la préparation de clôture (\S\ref{sec:preparer-cloture}) tant qu'il
+n'est ni complété ni retiré de la liste.
 \end{keshnote}
+
+\begin{keshwarning}
+\textbf{La sauvegarde \texttt{.keshbackup} n'emporte pas les documents}~: elle ne contient
+que leur trace, pas le fichier (\href{https://github.com/guycorbaz/kesh/issues/503}{\#503}).
+Après une restauration, un document dont le fichier manque répond « Le document n'a pas été
+restauré ». Sauvegardez aussi le dossier des documents (\texttt{KESH\_DOCUMENTS\_DIR}), comme
+le décrit le manuel administrateur.
+\end{keshwarning}
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Comptes bancaires}\label{sec:comptes-bancaires}

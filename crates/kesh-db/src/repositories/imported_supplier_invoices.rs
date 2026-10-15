@@ -21,11 +21,13 @@ const FIND_BY_ID_SQL: &str =
 /// # Errors
 /// - [`DbError::UniqueConstraintViolation`] si `(company_id, file_hash)` existe
 ///   déjà (doublon — mappé `DUPLICATE` par le service 12-5c).
-/// - Autre [`DbError`] si un champ QR non conforme dépasse la largeur de sa
-///   colonne (un QR tiers hors SIX 2.2 : nom > 70, message > 140, etc.). Le
-///   parseur 12-5a ne borne pas les longueurs ; la validation/normalisation des
-///   champs sur-longs et le mapping en échec **par-fichier** (vs 500 global)
-///   relèvent de la couche d'ingestion 12-5c. Voir dette déférée code-review M2.
+/// - [`DbError::DataLengthOrRange`] si un champ QR dépasse la largeur de sa
+///   colonne, et [`DbError::CheckConstraintViolation`] si une contrainte CHECK
+///   est violée (dont « tout ou rien » des sept colonnes QR). Depuis la Story
+///   30-2a, l'import contrôle le QR **avant** l'insertion
+///   (`entities::imported_supplier_invoice::check_scanned_fits_columns`) et
+///   construit la ligne par `from_scanned` ou `without_qr`, qui respectent la
+///   contrainte par construction : ces deux erreurs ne sont plus que des filets.
 pub async fn create(
     pool: &MySqlPool,
     new: &NewImportedSupplierInvoice,

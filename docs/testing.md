@@ -219,6 +219,26 @@ ensemble : `documents` n'apparaît qu'une fois `inbox` réglé, chaque erreur ma
 qu'elle existe, et l'écart se lisait comme une régression de branche : 182 passés contre les 183
 déclarés à l'implémentation.)*
 
+**Le runner lit ces deux dossiers lui-même, et ne saute plus rien** (Story 30-2a, #685).
+`inbox-import.spec.ts` et `supplier-documents.spec.ts` déposent leurs fichiers dans le dossier
+d'import et vérifient l'archivage : ils lisent `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR` **dans
+l'environnement du runner**, avec pour défauts **ceux de la recette ci-dessus**
+(`/tmp/kesh-e2e/inbox`, `/tmp/kesh-e2e/documents` — module `tests/e2e/helpers/inbox.ts`). La
+recette suivie à la lettre suffit donc, sans variable côté runner ; un backend lancé avec d'autres
+dossiers (un worktree a les siens, `docs/agents-orchestration.md` § 4) exige de passer **les mêmes
+valeurs** au runner. Les deux specs n'ont **aucun `test.skip`** — le fallback « skip » qui laissait
+`inbox-import.spec.ts` se taire sans `KESH_INBOX_DIR` a disparu :
+
+- un dossier absent ou non inscriptible fait **échouer** le `beforeAll`, message nommant la
+  variable et le chemin ;
+- une **poignée de main** dépose un fichier sonde, lance l'import, et échoue avec « le runner et
+  le backend n'utilisent pas le même KESH_INBOX_DIR » si la sonde n'est pas dans `accepted[]`.
+
+Les fixtures sont synthétiques (les deux PNG à QR de `fixtures/`, un PNG et un PDF minimaux en
+constantes du module) ; chaque parcours dépose sa propre copie, rendue unique par un suffixe après
+la fin logique du fichier. Le bloc de recette du `CLAUDE.md` n'a pas changé : la recette est la
+même.
+
 **Le build du frontend n'est pas facultatif** : sans lui, `KESH_STATIC_DIR` pointe sur un répertoire vide et chaque navigation rend un 404 que rien n'explique.
 
 ⚠️ **La suite E2E ne s'exécute QU'EN FRANÇAIS, et c'est un angle mort du dispositif.** Le seed

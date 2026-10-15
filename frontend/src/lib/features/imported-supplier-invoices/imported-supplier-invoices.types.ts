@@ -8,7 +8,15 @@ import type { SupplierInvoiceResponse } from '$lib/features/supplier-invoices/su
 
 export type ImportedStatus = 'to_complete' | 'completed' | 'discarded';
 
-/** Facture importée en staging (coordonnées QR parsées + lien justificatif). */
+/**
+ * Document à traiter en staging (coordonnées QR parsées + lien du document).
+ *
+ * Story 30-2a : un document **sans** QR (ou au QR inexploitable) entre aussi ; ses
+ * champs QR sont alors tous `null`. Les sept champs `creditorIban`, `isQrIban`,
+ * `creditorAddressType`, `creditorName`, `creditorCountry`, `referenceType` et
+ * `currency` sont `null` ensemble ou renseignés ensemble : « le document porte un
+ * QR » se lit `creditorIban !== null` (cf. `hasQr`).
+ */
 export interface ImportedSupplierInvoice {
 	id: number;
 	companyId: number;
@@ -19,22 +27,22 @@ export interface ImportedSupplierInvoice {
 	originalFilename: string;
 	mimeType: string;
 	byteSize: number;
-	creditorIban: string;
-	isQrIban: boolean;
+	creditorIban: string | null;
+	isQrIban: boolean | null;
 	/** 'K' (combinée) ou 'S' (structurée). */
-	creditorAddressType: string;
-	creditorName: string;
+	creditorAddressType: string | null;
+	creditorName: string | null;
 	creditorLine1: string | null;
 	creditorLine2: string | null;
 	creditorPostalCode: string | null;
 	creditorTown: string | null;
-	creditorCountry: string;
+	creditorCountry: string | null;
 	/** 'QRR' | 'SCOR' | 'NON'. */
-	referenceType: string;
+	referenceType: string | null;
 	referenceValue: string | null;
-	/** Montant TTC du QR (`null` = montant ouvert). */
+	/** Montant TTC du QR (`null` = montant ouvert, ou document sans QR). */
 	amount: string | null;
-	currency: string;
+	currency: string | null;
 	unstructuredMessage: string | null;
 	billingInformation: string | null;
 	version: number;
@@ -42,10 +50,25 @@ export interface ImportedSupplierInvoice {
 	updatedAt: string;
 }
 
+/** Le document porte-t-il des données QR ? (Story 30-2a.) */
+export function hasQr(row: ImportedSupplierInvoice): boolean {
+	return row.creditorIban !== null;
+}
+
+/**
+ * Ce que le document apporte de son QR, au rapport d'import (Story 30-2a) :
+ * `present` (données stockées), `none` (aucun QR), `unreadable` (QR trouvé mais
+ * inexploitable — code en `qrError`, aucune donnée stockée).
+ */
+export type QrStatus = 'present' | 'none' | 'unreadable';
+
 /** Fichier importé avec succès dans le rapport batch. */
 export interface AcceptedFile {
 	importedSupplierInvoiceId: number;
 	fileName: string;
+	qr: QrStatus;
+	/** Présent seulement quand `qr` vaut `unreadable`. */
+	qrError?: string;
 }
 
 /** Échec per-fichier (identifiant business = `fileName`, `errorCode` constante). */

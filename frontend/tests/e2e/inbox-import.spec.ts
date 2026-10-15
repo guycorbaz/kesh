@@ -1,40 +1,43 @@
 import { expect, test } from '@playwright/test';
 import { promises as fs } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
 	seedTestState,
 	clearAuthStorage,
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
+import {
+	INBOX_DIR,
+	assertInboxDirsUsable,
+	deposit,
+	inboxHandshake,
+	readFixture,
+	token,
+	uniqueCopy,
+} from './helpers/inbox';
 
 /**
- * Tests E2E — Import de factures fournisseurs depuis un dossier (Story 12.5d, #194).
+ * Tests E2E — « Documents à traiter » : l'import du dossier (Story 12.5d, #194 ; écran
+ * renommé par la Story 30-2a, #685).
  *
  * Flux UI consommant les endpoints livrés par 12-5c. Le pipeline d'import lui-même
- * (décodage QR, sécurité) est couvert par les 16 tests d'intégration backend
- * `inbox_import_e2e.rs` — ici on valide l'écran, le rapport, la liste, la
- * complétion, l'écart et le download.
+ * (décodage QR, sécurité, documents sans QR) est couvert par les tests d'intégration
+ * backend `inbox_import_e2e.rs` — ici on valide l'écran, le rapport, la liste, la
+ * complétion, le retrait et le téléchargement.
  *
- * **Seed du round-trip (DC-d4)** : le test dépose une fixture QR PNG pré-commitée
- * (`fixtures/spc_e2e_invoice.png`, image → rxing, pas de pdfium) dans le dossier
- * inbox du serveur de test, puis déclenche l'import réel. Le chemin inbox est lu
- * via `process.env.KESH_INBOX_DIR` — le harness doit démarrer le backend avec
- * cette variable pointant un dossier inscriptible par le runner (ex.
- * `KESH_INBOX_DIR=/tmp/kesh-e2e-inbox`). Si la variable est absente, les
- * scénarios dépendant de l'import réel sont `skip` (fallback documenté DC-d4).
+ * **Seed du round-trip (DC-d4)** : le test dépose une copie de la fixture QR PNG
+ * pré-commitée (`fixtures/spc_e2e_invoice.png`, image → rxing, pas de pdfium) dans le
+ * dossier d'import du serveur de test, puis déclenche l'import réel.
+ *
+ * ⚠️ Story 30-2a : **plus de `test.skip`**. Le dossier se lit dans `helpers/inbox.ts`, avec
+ * pour défaut celui de la recette documentée (`/tmp/kesh-e2e/inbox`) ; un dossier absent
+ * fait échouer le `beforeAll` en le nommant, un backend qui en lit un autre fait échouer la
+ * poignée de main. Le fallback « skip » de DC-d4 laissait la spec se taire.
  */
-
-const INBOX_DIR = process.env.KESH_INBOX_DIR;
-const FIXTURE = path.join(
-	path.dirname(fileURLToPath(import.meta.url)),
-	'fixtures',
-	'spc_e2e_invoice.png',
-);
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
+	await assertInboxDirsUsable();
 });
 
 test.afterEach(async ({ page }) => {
@@ -105,47 +108,41 @@ async function ensureConfigAndExpense(page: import('@playwright/test').Page): Pr
 	}
 }
 
-test.describe('Import de factures depuis un dossier', () => {
+test.describe('Documents à traiter — import du dossier', () => {
 	test('écran accessible, import sur dossier vide → rapport sans erreur', async ({ page }) => {
 		await login(page);
-		// Vider l'inbox si on connaît son chemin (sinon le dossier par défaut est
-		// supposé vide en environnement de test).
-		if (INBOX_DIR) {
-			await fs.rm(INBOX_DIR, { recursive: true, force: true }).catch(() => {});
-			await fs.mkdir(INBOX_DIR, { recursive: true });
-		}
+		// Vider le dossier d'import : l'écran doit rester vide après un import à vide.
+		await fs.rm(INBOX_DIR, { recursive: true, force: true }).catch(() => {});
+		await fs.mkdir(INBOX_DIR, { recursive: true });
 		await page.goto('/supplier-invoices/import');
-		await expect(page.getByRole('heading', { level: 1 })).toContainText(/Importer/i);
+		await expect(page.getByRole('heading', { level: 1 })).toContainText('Documents à traiter');
 
 		await page.getByTestId('inbox-import-trigger').click();
-		// Le rapport s'affiche (0 créée sur dossier vide), pas de crash.
+		// Le rapport s'affiche (0 document sur dossier vide), pas de crash.
 		await expect(page.getByTestId('inbox-import-report')).toBeVisible();
 		await expect(page.getByTestId('imported-empty')).toBeVisible();
 	});
 
 	test('round-trip : import fixture → liste → download → complétion', async ({ page }) => {
-		test.skip(
-			!INBOX_DIR,
-			'KESH_INBOX_DIR non défini — round-trip import réel ignoré (DC-d4 fallback ; pipeline couvert par inbox_import_e2e.rs).',
-		);
 		await login(page);
+		await inboxHandshake(page);
 		const expenseAccountId = await ensureConfigAndExpense(page);
 		const supplierId = await createSupplier(page);
 
-		// Déposer la fixture QR PNG dans l'inbox du serveur de test.
-		await fs.mkdir(INBOX_DIR!, { recursive: true });
-		await fs.copyFile(FIXTURE, path.join(INBOX_DIR!, `e2e-${Date.now()}.png`));
+		// Déposer une copie unique de la fixture QR PNG dans le dossier du serveur de test.
+		const name = `e2e-${token()}.png`;
+		await deposit(name, uniqueCopy(await readFixture('spc_e2e_invoice.png'), 'png'));
 
 		await page.goto('/supplier-invoices/import');
 		await page.getByTestId('inbox-import-trigger').click();
 		await expect(page.getByTestId('inbox-import-report')).toBeVisible();
 
-		// L'importée apparaît dans la liste.
-		const row = page.getByTestId('imported-row').first();
+		// Le document apparaît dans la liste, avec son QR.
+		const row = page.getByTestId('imported-row').filter({ hasText: name });
 		await expect(row).toBeVisible();
 		await expect(row).toContainText('Fournisseur E2E SA');
 
-		// Download du justificatif (le fichier vient d'être archivé → pas de 410).
+		// Download du document (le fichier vient d'être archivé → pas de 410).
 		const downloadPromise = page.waitForEvent('download');
 		await row.getByTestId('imported-download').click();
 		await downloadPromise;
@@ -162,41 +159,30 @@ test.describe('Import de factures depuis un dossier', () => {
 		await row.locator('select').nth(2).selectOption(String(expenseAccountId)); // compte de charge
 		await row.getByTestId('imported-complete-submit').click();
 
-		// La ligne disparaît du worklist (complétée), on reste sur l'écran d'import.
+		// Le document quitte la liste (complété), on reste sur l'écran.
 		await expect(page).toHaveURL(/\/supplier-invoices\/import$/);
-		await expect(page.getByTestId('imported-row')).toHaveCount(0);
+		await expect(page.getByTestId('imported-row').filter({ hasText: name })).toHaveCount(0);
 	});
 
-	test('écarter une importée → disparaît de la liste', async ({ page }) => {
-		test.skip(
-			!INBOX_DIR,
-			'KESH_INBOX_DIR non défini — round-trip import réel ignoré (DC-d4 fallback).',
-		);
+	test('retirer un document de la liste → disparaît', async ({ page }) => {
 		await login(page);
 
-		// Fixture au contenu distinct (hash différent → pas de DUPLICATE avec le
-		// round-trip qui a complété la première fixture).
-		await fs.mkdir(INBOX_DIR!, { recursive: true });
-		await fs.copyFile(
-			path.join(path.dirname(FIXTURE), 'spc_e2e_discard.png'),
-			path.join(INBOX_DIR!, `e2e-discard-${Date.now()}.png`),
-		);
+		// Fixture au contenu distinct (QR différent de celui du round-trip).
+		const name = `e2e-discard-${token()}.png`;
+		await deposit(name, uniqueCopy(await readFixture('spc_e2e_discard.png'), 'png'));
 
 		await page.goto('/supplier-invoices/import');
 		await page.getByTestId('inbox-import-trigger').click();
 		await expect(page.getByTestId('inbox-import-report')).toBeVisible();
 
-		const row = page
-			.getByTestId('imported-row')
-			.filter({ hasText: 'Fournisseur Discard SA' });
+		const row = page.getByTestId('imported-row').filter({ hasText: name });
 		await expect(row).toBeVisible();
+		await expect(row).toContainText('Fournisseur Discard SA');
 
 		// La confirmation `confirm()` du navigateur est acceptée automatiquement.
 		page.once('dialog', (d) => d.accept());
 		await row.getByTestId('imported-discard').click();
 
-		await expect(
-			page.getByTestId('imported-row').filter({ hasText: 'Fournisseur Discard SA' }),
-		).toHaveCount(0);
+		await expect(page.getByTestId('imported-row').filter({ hasText: name })).toHaveCount(0);
 	});
 });
