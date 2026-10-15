@@ -17,6 +17,7 @@ code P1 à lancer (`29-1b-review-prompt-p1.md`, Opus, lentilles B, E, A).
 **2026-10-14 — 29-1b : revue de code P1 remédiée** (Opus 5.5 ; B 0/0/0/5, E 0/0/1/6, A 0/0/1/7) ; branche rebasée sur
 `81b1b526` (29-5) ; dernier commit de code `05f44ecc` ; passe ciblée P2 à lancer (`29-1b-review-prompt-p2-ciblee.md`,
 Sonnet, une lentille).
+**2026-10-15 — 29-1b `done`** : passe ciblée P2 (Sonnet) 0/0/0/4, LOW-1 et LOW-2 traités (texte seul), LOW-3 et LOW-4 laissés ; branche reportée sur la v0.13.4 (`fc84b8a7`), dernier commit de code `697d6754` ; gates au HEAD : test-fast 3746 / 6 ignorés, Vitest 1705 / 149 fichiers, E2E 293 passés + les 7 KF-029.
 
 ⛔ **Deux stories, une fiche, deux PR successives** (C-29-1-1, précédents C-26-2-15 et C-28-4-1) :
 
@@ -1763,3 +1764,44 @@ modifiés en plus : `website/roadmap.html` ; 16 fichiers hors `_bmad-output` au 
   - Gates au dernier commit de code : test-fast 3681 / 6 ignorés ; Vitest 1657 ; E2E 287 passés + les 7 KF-029.
   - **La remédiation touche des lignes exécutables de production** (page, catalogues) : passe ciblée P2 à lancer
     (`29-1b-review-prompt-p2-ciblee.md`, Sonnet, une lentille).
+- 2026-10-15 — **passe ciblée P2 de la 29-1b** (Sonnet, une lentille, sur la remédiation P1 ; rapport
+  `kesh-gate-logs/29-1b-review-p2-ciblee.md`) : **0 CRITICAL / 0 HIGH / 0 MEDIUM / 4 LOW**. Trend : P1 B 0/0/0/5,
+  E 0/0/1/6, A 0/0/1/7 → P2 ciblée 0/0/0/4. **Revue close.**
+  - **LOW-1** (doc-comment de `NextFiscalYearClosed`, « la seule suppression d'exercice ») : les deux suppressions
+    nommées (remise à zéro, import d'installation). **LOW-2** (limite « le refus se répète ») : le manuel (§ *Les
+    transitoires*) et le commentaire du chemin de refus de `+page.svelte` citent `PERIOD_LOCKED` **et**
+    `LATER_FISCAL_YEAR_CLOSED`. Symptômes grepés (`seule suppression d`, `reste offert`, `PERIOD_LOCKED` dans la
+    page) : aucun autre site hors relevés datés. **LOW-3** (dette de test) et **LOW-4** (`break-words`, une ligne de
+    production) laissés, comme le rapport le propose. Aucune ligne exécutable de production touchée (un doc-comment
+    Rust, un commentaire Svelte, le manuel). C-29-1-69.
+- 2026-10-15 — **report sur la v0.13.4** (`git rebase origin/main`, `fc84b8a7` = tag `v0.13.4` ; main avait reçu
+  29-4a, 29-6, 29-4b, 29-8, 29-9 et la release) :
+  - **Aucune migration** dans la 29-1b : P1–P8 sans objet, `min_required` inchangé, crates laissées à 0.13.4.
+  - Conflits : `audit_route_registry.rs` — la 29-8 et la 29-1b ajoutaient chacune une route : **120 / 114 / 123**,
+    rejouées 25, en-tête du module aligné (C-29-1-66) ; `i18n-keys.test.ts` — `sitesTotal` 2186 + 7 = **2193**
+    (C-29-1-67) ; **CHANGELOG** — section `## [0.14.0] — Non publié` (forme exigée par `prepare-release.sh`) au-dessus de
+    `[0.13.4] — 2026-10-15` de main, intacte ; l'en-tête `[0.13.4] — Non publié` de la branche retiré (C-29-1-65) ;
+    `api-external.md` — paragraphe des interblocages de main (rattachement 29-8 compris) plus la route neuve ;
+    README, site, brochure — ce qui est publié en v0.13.4 (contrôles, ✅) séparé de ce qui paraît en v0.14.0
+    (transitoires, 🚧 ; ligne README et carte du site neuves ; bloc de la brochure « en cours », contrôles « livré en
+    v0.13.4 ») (C-29-1-68) ; `sprint-status.yaml` par union, en-têtes de la branche renumérotés 168, 169, puis 170 ;
+    PDF repris de main pendant les conflits, puis régénérés (`make fr`, journal `291b-rebase-make-fr.log`) ; le PDF
+    d'administration, au texte aplati identique, rendu à main.
+  - PDF aplatis contrôlés : aucun « ?? » ; phrases de la 29-1b présentes (« Les transitoires de fin d'exercice »,
+    « ces deux refus se répètent », « Kesh ne repère pas une transitoire oubliée ») ; phrases des stories de la 0.13.4
+    présentes (« Rattacher une transaction à un règlement », « 100 plus récentes », « Préparer la clôture ») ;
+    brochure : « (livré en v0.13.4) », « (à paraître en v0.14.0) ». `.tex` du manuel : seules les lignes réécrites par
+    la 29-1b quittent le texte de main (5 lignes).
+  - Gates au dernier commit de code `697d6754` (base `kesh_291b` remise à zéro dans le même journal) : test-fast
+    **3746 passés / 6 ignorés** ; `npm run check` 0 erreur, 29 avertissements, `lint-i18n-ownership`
+    PASS, Vitest **1705 / 149 fichiers**, build vert ; **E2E complet** (`kesh_e2e_291b`, port 3051, `/health` 0.13.4) :
+    **293 passés, 7 échecs, 19 ignorés** — les sept de la KF-029 de `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; les deux parcours de
+    `fiscal-year-closing-journey.spec.ts` verts. Journaux `kesh-gate-logs/291b-rb-*.log`.
+  - Mutations rejouées sur les fichiers touchés par les conflits ou par LOW-2 (journal `291b-rb-mutations.log`) :
+    **M-b7** (handler sans `retry_on_deadlock`) tuée par `every_replayed_route_calls_an_envelope` sur le registre
+    réuni (ligne de base 11/11 verte consignée) ; **M-b17** (`void loadEntry(id)` retiré du refus du geste neuf) tuée
+    par « un refus du geste neuf ferme la confirmation et relit la fiche » (24/25). Restaurées par `git checkout` +
+    `touch`.
+  - Registre `epic-29-choix-autonomes-29-1.md` versé par union dans `epic-29-choix-autonomes.md` (C-29-1-48 à 69,
+    absents ; 1 à 47 identiques) puis retiré. Clé `29-1b-contre-passation-transitoires` : **`done`**.

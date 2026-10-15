@@ -1231,6 +1231,214 @@ C-29-3-11 à 15 en validation P1 (C-29-3-11 tranché par l'orchestrateur), C-29-
 
 ---
 
+## Story 29-1b — Contre-passer au début de l'exercice suivant (développement, 2026-10-14, Opus 5.5)
+
+### C-29-1-48 — L'exercice de l'écriture absent de la liste : motif « indisponible »
+
+- **Contexte** : l'AC15 tranche cinq états de la liste ; un sixième est possible — la liste lue ne contient pas
+  l'exercice de l'écriture (état incohérent, ou exercice supprimé entre la fiche et la liste).
+- **Retenu** : traité comme une liste illisible (`unavailable`) : motif « La liste des exercices n'a pas pu être lue… »,
+  pas de bouton. On ne sait pas ce qui suit un exercice qu'on ne voit pas.
+- **Écartées** : « aucun exercice ne suit » (faux : on n'en sait rien) ; ni bouton ni motif (contraire à la règle de
+  la page, un bouton absent s'explique).
+- **Réversible** : oui.
+
+### C-29-1-49 — Un seul dialogue de confirmation pour les deux contre-passations
+
+- **Contexte** : la page avait un dialogue « Contre-passer » ; le geste neuf en demande un qui nomme date et exercice.
+- **Retenu** : un seul dialogue (`reverseConfirm = 'today' | 'nextYear' | null`), son titre, son corps et le
+  `data-testid` de son bouton (`reverse-entry-confirm` / `reverse-entry-next-year-confirm`) selon le geste — règle
+  DRY du dépôt. Le mode « exercice suivant » ne s'affiche que si l'exercice suivant est ouvert. Sur un refus, le
+  geste du jour garde son comportement (toast, dialogue ouvert) ; le geste neuf ferme le dialogue et relit la fiche,
+  pour que le motif prenne la place du bouton.
+- **Écartées** : un second dialogue recopié (duplication) ; changer le comportement d'erreur du geste du jour (hors
+  périmètre).
+- **Réversible** : oui.
+
+### C-29-1-50 — Confirmation : l'exercice confirmé doit être celui qu'on a trouvé (`Invariant` sinon)
+
+- **Contexte** : `find_open_covering_date(start_date)` rend l'exercice ouvert qui couvre le premier jour du suivant
+  lu ; par non-chevauchement (`find_overlapping`), c'est lui.
+- **Retenu** : un écart d'identifiant rend `DbError::Invariant` (défaut structurel, 500), non un refus métier. Ce
+  n'est pas un jugement de statut sur la lecture ordinaire (C-29-1-27 tenu) : seul l'identifiant est comparé.
+- **Écartées** : aucune garde (un état impossible passerait en silence) ; `NextFiscalYearClosed` (il dirait faux).
+- **Réversible** : oui.
+
+### C-29-1-51 — La liste des exercices se lit à l'ouverture de la page, pour tous les rôles, sous jeton
+
+- **Retenu** : `loadFiscalYears()` appelé par `loadEntry` (donc aussi après navigation et après un refus), jeton qui
+  écarte une réponse tardive, appel enveloppé par `Promise.resolve().then(…)` et réponse non-tableau traitée en
+  échec — un mock ou un client qui rendrait `undefined` donne le motif d'indisponibilité, jamais une exception.
+  Lue aussi pour Consultation (rien ne s'affiche : coût d'une lecture, simplicité du chemin).
+- **Écartées** : lecture au clic (l'AC15 veut le motif avant le clic) ; lecture réservée aux rôles d'écriture.
+- **Réversible** : oui.
+
+### C-29-1-52 — Le jugement de l'exercice suivant, fonction pure de `features/journal-entries/`
+
+- **Retenu** : `next-year-reversal.ts` (`nextYearReversal(years, fiscalYearId)`) : premier exercice dont `startDate`
+  est postérieure à la fin de celui de l'écriture (ordre lexical des dates ISO), comme `find_next_after`. Sans i18n :
+  la page traduit le motif.
+- **Réversible** : oui.
+
+### C-29-1-53 — E2E de parcours sur des années fixes et passées (2025, 2026)
+
+- **Contexte** : l'AC18 dit N et N+1 ; un relevé CAMT figé a des dates.
+- **Retenu** : N = 2025, N+1 = 2026, relevé du 01.12.2025 au 31.12.2025 — rien ne dépend du jour d'exécution, le
+  fichier se lit tel quel (aucune réécriture d'années).
+- **Écartées** : années dérivées de l'horloge (relevé à réécrire, années futures possibles).
+- **Réversible** : oui.
+
+### C-29-1-54 — Emplacement des tests
+
+- **Retenu** : tests du dépôt dans un fichier neuf, `crates/kesh-db/tests/reversal_next_fiscal_year.rs` ; garde T-b4
+  dans le module de tests de `journal_entries.rs` (elle lit ce source) ; T-b2 et T-b7 **ajoutés** à
+  `journal_entry_reversal_e2e.rs` (ses aides `setup`, `consultation_token`), sans modification des tests existants ;
+  T-b8 dans `journal-entry-page.test.ts` (Tb4).
+- **Réversible** : oui.
+
+### C-29-1-55 — Un sixième compteur du registre des routes, non nommé par la fiche
+
+- **Contexte** : l'AC13 énumérait les sites de `audit_route_registry.rs` à bouger ; le gate a rougi sur un autre,
+  `every_replayed_route_calls_an_envelope` : `examinees, 24` et « les vingt-quatre routes Rejouee ».
+- **Retenu** : 24 → 25 et « vingt-cinq » ; valeurs `\b(24|118|112|121)\b` regrepées sur le fichier et sur
+  `docs/api-external.md` : plus aucun site de compteur.
+- **Réversible** : oui.
+
+### C-29-1-56 — Le mock d'`i18nMsg` du test de page remplace les variables
+
+- **Contexte** : le mock rendait le repli brut ; la confirmation doit nommer date et exercice (T-b8).
+- **Retenu** : les `{ $x }` du repli sont remplacés par les arguments, comme le fait `i18nMsg` ; les cas existants
+  restent verts (aucun ne dépendait du texte brut).
+- **Réversible** : oui.
+
+### C-29-1-57 — Textes du geste : une aide dans le dialogue, le bouton de confirmation réutilisé
+
+- **Retenu** : clés `journal-entries-reverse-next-year-{action, dialog-title, dialog-body, help,
+  reason-unavailable, reason-missing, reason-closed}` (sept, ×4 locales) ; le « libellé d'aide » de l'AC16 est le
+  second paragraphe du dialogue (à quoi sert le geste, ce qui se fige) ; le bouton de confirmation et « Annuler »
+  reprennent `journal-entries-reverse-confirm` / `-cancel`, et le succès `journal-entries-reverse-success`. Le motif
+  « clôturé » de l'écran et le refus serveur `error-next-fiscal-year-closed` ont la même phrase fr-CH, deux clés
+  (l'une d'écran, l'autre du serveur, comme `journal-entries-modify-blocked-later-fiscal-year-closed` /
+  `error-later-fiscal-year-closed`).
+- **Réversible** : oui.
+
+### C-29-1-58 — Brochure : deux points au lieu d'une phrase « à venir »
+
+- **Retenu** : le point « report automatique » ne dit plus « reste à venir », il dit qu'aucune écriture de clôture
+  n'est à passer (le résultat est calculé) ; un point neuf nomme la préparation de la clôture et les transitoires.
+  Les écritures de clôture ne sont pas annoncées (écartées par conception, C-29-1-2).
+- **Réversible** : oui.
+
+## Remédiation de la revue de code P1 de la 29-1b (2026-10-14)
+
+### C-29-1-59 — La confirmation du geste neuf nomme l'écriture ; celle du jour garde son texte
+
+- **Contexte** : B-1 (revue P1) — une confirmation qui ne nomme que la date et l'exercice ne dit pas *quelle* écriture
+  sera contre-passée ; décision de l'orchestrateur : numéro et libellé en plus.
+- **Retenu** : `journal-entries-reverse-next-year-dialog-body` porte `{ $number }` et `{ $description }` (×4 locales,
+  repli Svelte égal à fr-CH). Le dialogue du geste **du jour** (Story 24-4a) n'est pas touché : sa clé est antérieure à
+  la story, et le défaut de navigation qui le rendait dangereux est fermé par C-29-1-60.
+- **Écarté** : nommer l'écriture dans les deux dialogues (élargit la story à un texte de la 24-4a).
+- **Réversible** : oui.
+
+### C-29-1-60 — `loadEntry` ferme toutes les confirmations, suppression comprise
+
+- **Contexte** : B-1 — `reverseConfirm` survivait à une navigation (composant réutilisé), et la confirmation se
+  rouvrait sur l'écriture suivante. `showDeleteConfirm` avait le même défaut (Story 15-8b).
+- **Retenu** : `reverseConfirm = null` et `showDeleteConfirm = false` en tête de `loadEntry`. Le `reverseConfirm = null`
+  du chemin de refus est gardé (il dit l'intention) bien que `loadEntry` le fasse aussi, de façon synchrone : M-b18
+  est donc équivalente, démontrée (cf. Dev Agent Record).
+- **Réversible** : oui.
+
+### C-29-1-61 — Un `page` réactif de test, dans un module `.svelte.ts` voisin du test
+
+- **Contexte** : tester une navigation (B-1, E-3) exige que `page.params.id` change et que le `$effect` de la page se
+  rejoue ; un objet simple dans `vi.mock` ne déclenche rien, et les runes ne vivent que dans un `.svelte.ts`.
+- **Retenu** : `page-state.test-helper.svelte.ts` (un `$state` exporté, muté et jamais réassigné), importé par le seul
+  `journal-entry-page.test.ts` ; `afterEach` remet l'`id` à `7`. SvelteKit ignore ce fichier (pas de préfixe `+`).
+- **Écarté** : un helper partagé sous `src/lib/` (aucun autre test n'en a besoin aujourd'hui).
+- **Réversible** : oui.
+
+### C-29-1-62 — B-2 et B-3 écrits comme limites, sans changement d'écran
+
+- **Contexte** : B-2 (refus `PERIOD_LOCKED` : le bouton revient sans motif, le refus se répète), B-3 (le motif
+  « créez d'abord l'exercice suivant » s'affiche presque toute l'année). Décision de l'orchestrateur : limites écrites.
+- **Retenu** : le manuel (§ *Les transitoires*) dit les deux ; le commentaire du chemin de refus de la page dit B-2.
+- **Écarté** : lire `booksLockedThrough` à l'ouverture (sixième motif, étend l'AC15) ; restreindre le motif aux
+  écritures de fin d'exercice (règle de la page : un bouton absent s'explique).
+- **Réversible** : oui — les deux améliorations restent possibles.
+
+### C-29-1-63 — Brochure : un bloc propre à l'Epic 29, « en cours — à paraître »
+
+- **Contexte** : M1 (revue P1, lentille A) — le point neuf de C-29-1-58 était rangé sous « Epic 14, v0.8, livré », et
+  disait « d'un clic » pour un geste qui en demande deux.
+- **Retenu** : le point est retiré du bloc de l'Epic 14 ; un bloc « Préparer la première clôture (Epic 29, en cours —
+  à paraître) », icône d'attente (`\faClock`, couleur `keshWarning`, comme le *Backlog*), porte deux points marqués
+  « à paraître en v0.13.4 » (contrôles préalables) et « à paraître en v0.14.0 » (transitoires, « depuis la fiche de
+  l'écriture »). Annote C-29-1-58, dont le premier volet (le point « report automatique » sans « à venir ») reste.
+- **Réversible** : oui ; à la release, le bloc passera en `keshSuccess` / « livré ».
+
+### C-29-1-64 — README et site : l'Epic 29 « en cours », rien de promis comme publié
+
+- **Contexte** : E-7 (`website/roadmap.html:43` annonçait comme manquantes des « écritures de clôture » écartées par
+  conception) ; L6 (pas de ligne Epic 29 à la feuille de route du README) ; et la section *Fonctionnalités* du README
+  marquait ✓ deux fonctions qu'aucune image publiée ne porte.
+- **Retenu** : README — ligne « v0.13.4 · v0.14.0 (en cours) | E29 … | 🚧 En cours », et les deux ✓ remplacés par
+  « *(à paraître en v0.13.4)* » / « *(à paraître en v0.14.0)* » ; site — phrase de l'en-tête corrigée (« la préparation
+  de la clôture (#232, epic 29, en cours, non publiée) »), carte E29 « In progress — not yet released ».
+- **Réversible** : oui ; à la release, les marques « à paraître » tombent.
+
+## Report de la 29-1b sur la v0.13.4 (2026-10-15, Opus 5.5)
+
+### C-29-1-65 — CHANGELOG : la section `## [0.14.0] — Non publié` au-dessus de `[0.13.4]` datée
+
+- **Contexte** : la 29-1b écrivait ses entrées sous `## [0.14.0] — Non publié` puis `## [0.13.4] — Non publié` ; la
+  release a daté `[0.13.4] — 2026-10-15`. Les entrées de la 29-1b ne doivent pas rester dans une version publiée.
+- **Retenu** : la forme `## [X.Y.Z] — Non publié`, la seule que `scripts/prepare-release.sh` (pré-vol (0a), lignes
+  237-261) reconnaît et date ; une `## [Unreleased]` ferait échouer son pré-vol. Section `[0.14.0]` de la branche,
+  puis la section `[0.13.4]` datée de main, intacte ; l'en-tête `[0.13.4] — Non publié` de la branche est retiré.
+- **Écarté** : `## [Unreleased]` (forme Keep a Changelog, inconnue du script).
+- **Réversible** : oui.
+
+### C-29-1-66 — Registre d'audit des routes : 120 / 114 / 123, union des deux ajouts
+
+- **Contexte** : la 29-8 (rattachement) et la 29-1b ajoutaient chacune une route à `lib.rs` ; les deux côtés
+  écrivaient 119 / 113 / 122.
+- **Retenu** : 120 routes d'inventaire, 114 tracées, 123 au registre (`tout.len()` compris), rejouées 25 (24 de main
+  plus la 29-1b ; le rattachement est `SansEcritureAuJournal`, 95 inchangé) ; en-tête du module aligné (120 / 123).
+  Le test recompte depuis la source, il juge.
+- **Réversible** : oui.
+
+### C-29-1-67 — Compteur `sitesTotal` : 2186 + 7 = 2193
+
+- **Contexte** : `i18n-keys.test.ts` — main en 2186 (29-6, 29-8, 29-9), la branche écrivait 2163 → 2170.
+- **Retenu** : l'apport de la 29-1b (+7, `+page.svelte` de la fiche d'écriture) ajouté au total de main, la
+  généalogie de la branche gardée, annotée « écrit 2163 → 2170 sur sa base ». La collecte du test juge.
+- **Réversible** : oui.
+
+### C-29-1-68 — README, site, brochure : ce qui est publié en v0.13.4, ce qui paraît en v0.14.0
+
+- **Contexte** : C-29-1-63 et C-29-1-64 prévoyaient que les marques « à paraître » tomberaient à la release ; la
+  v0.13.4 a publié les contrôles préalables (29-1a), pas les transitoires.
+- **Retenu** : README — la ligne de feuille de route `v0.13.4 (correctif)` de main (✅ Publiée) est gardée, une ligne
+  `v0.14.0 (en cours)` (« seconde partie » : les transitoires ; la 29-7 dite « à écrire ») est ajoutée en 🚧 ; dans *Fonctionnalités*,
+  le texte de main pour les contrôles (✓) et les transitoires marquées « *(à paraître en v0.14.0)* ». Site — la carte
+  E29 « part one » publiée de main gardée, une carte « part two, v0.14.0, In progress — not yet released » ajoutée ;
+  l'en-tête dit les contrôles livrés en v0.13.4 et la contre-passation à venir en v0.14.0. Brochure — le bloc
+  Epic 29 reste « en cours » (`keshWarning`), les contrôles « livré en v0.13.4 », les transitoires « à paraître en
+  v0.14.0 ».
+- **Écarté** : passer le bloc de la brochure en `keshSuccess` (l'epic reste ouvert).
+- **Réversible** : oui ; à la v0.14.0, les marques « à paraître » tombent.
+
+### C-29-1-69 — LOW-1 et LOW-2 de la passe ciblée P2 : texte seul
+
+- **Retenu** : LOW-1 — le doc-comment de `NextFiscalYearClosed` nomme les deux suppressions d'exercice (remise à zéro,
+  import d'installation, `backup::TABLES_TO_TRUNCATE` enfants vers parents). LOW-2 — le manuel (§ *Les transitoires*)
+  et le commentaire du chemin de refus de la page citent les deux refus qui laissent le bouton offert
+  (`PERIOD_LOCKED`, `LATER_FISCAL_YEAR_CLOSED`). LOW-3 (tests manquants) et LOW-4 (`break-words`, une ligne de
+  production) laissés, comme le rapport le propose.
+- **Réversible** : oui.
+
 ## Story 29-5 — À score égal, la facture échue la première passe en tête ([#668])
 
 ### C-29-5-1 — La story entre dans l'Epic 29 et sort avec la 29-2
