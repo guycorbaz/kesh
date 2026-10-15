@@ -615,7 +615,10 @@ clôturé.
 
 \begin{keshwarning}[title={\faExclamationTriangle\ Ce que le verrou n'empêche pas, et c'est voulu}]
 \textbf{Une écriture d'une période verrouillée reste corrigeable par contre-passation.} La
-contre-passation est datée du \textbf{jour}, donc après le verrou~: elle passe. Le verrou arrête
+contre-passation est datée du \textbf{jour}, donc après le verrou~: elle passe. \emph{Sauf la
+contre-passation au début de l'exercice suivant}, réservée aux transitoires~: elle est datée du
+premier jour de cet exercice, et refusée si ce jour est dans la période verrouillée
+(\S\ref{sec:transitoires}). Le verrou arrête
 ce qui \textbf{entre dans le passé}, jamais ce qui \textbf{corrige depuis le présent}. C'est
 cette distinction qui empêche le verrou de rendre vos livres incorrigibles --- et c'est pourquoi
 Kesh refuse de poser une borne à la date du jour ou dans le futur.
@@ -632,7 +635,8 @@ second une borne mobile à l'intérieur d'un exercice ouvert.
 
 Sur la fiche d'une écriture, le bouton \textbf{Contre-passer} crée l'\textbf{écriture
 inverse} --- mêmes comptes, débit et crédit échangés --- à la date du jour, dans l'exercice
-ouvert. \textbf{L'écriture d'origine n'est pas modifiée} --- ni ses montants, ni ses comptes,
+ouvert (pour une transitoire de fin d'exercice, le bouton voisin la date du premier jour de
+l'exercice suivant, \S\ref{sec:transitoires}). \textbf{L'écriture d'origine n'est pas modifiée} --- ni ses montants, ni ses comptes,
 ni sa date, ni son libellé~: les deux restent visibles au grand livre, et chacune renvoie à
 l'autre depuis sa fiche. Seule marque posée sur l'origine~: ses lignes sur un compte
 lettrable encore ouvertes sont \textbf{lettrées} avec leur miroir dans l'écriture inverse
@@ -675,6 +679,57 @@ verrou \textbf{plus fin} que l'exercice existe aussi~: le verrou de période arr
 à la date de votre choix --- le trimestre TVA déclaré, par exemple
 (\S\ref{sec:verrou-periode}).
 \end{keshnote}
+
+\subsubsection{Les transitoires de fin d'exercice}\label{sec:transitoires}
+
+Une \textbf{transitoire} rattache à l'exercice qui se termine ce qui lui appartient mais se
+paie, ou s'encaisse, dans le suivant~: une \textbf{charge payée d'avance} (le loyer de janvier
+réglé en décembre) ou un \textbf{produit à recevoir} s'inscrivent à l'actif, au compte 1300
+« Actifs transitoires »~; une \textbf{facture à recevoir} (une charge de décembre facturée en
+janvier) ou un produit encaissé d'avance, au passif, au compte 2300 « Passifs transitoires »
+--- les deux comptes des plans livrés. Au début de l'exercice suivant, la régularisation
+s'annule~: c'est ce que fait la contre-passation, datée du premier jour de cet exercice.
+
+\textbf{La marche.}
+\begin{enumerate}
+    \item Saisissez l'écriture de régularisation au \textbf{dernier jour} de l'exercice qui se
+          termine --- par exemple, au débit de 1300 et au crédit du compte de charge.
+    \item Sur sa fiche, cliquez \textbf{Contre-passer au début de l'exercice suivant}. La
+          confirmation nomme l'écriture, la date et l'exercice («~La contre-passation de
+          l'écriture n°~42 «~Loyer de janvier payé d'avance~» sera datée du 01.01.2027, dans
+          l'exercice «~Exercice 2027~».~»)~: relisez-la avant de confirmer.
+    \item Kesh crée l'écriture inverse, datée du premier jour de l'exercice qui suit celui de
+          l'écriture --- même s'il ne commence pas le lendemain ---, liée à l'origine et
+          lettrée avec elle comme toute contre-passation (\S\ref{sec:contre-passation}). Au
+          bilan de l'exercice qui se termine, la transitoire figure~; au bilan du suivant,
+          dès son premier jour, elle est soldée.
+\end{enumerate}
+
+\textbf{Ce que Kesh exige.} L'exercice suivant doit être \textbf{créé et ouvert}~: sinon le
+bouton n'est pas offert, et la fiche dit pourquoi à sa place («~créez d'abord l'exercice
+suivant~», ou «~l'exercice suivant est clôturé~»). Ce motif s'affiche sous \textbf{toute}
+écriture contre-passable tant que l'exercice suivant n'existe pas --- c'est-à-dire, sur
+l'exercice en cours, presque toute l'année~: ce n'est pas un avertissement, seulement
+l'explication du bouton absent. Son premier jour ne doit pas être dans la
+\textbf{période verrouillée} (\S\ref{sec:verrou-periode}), et aucun exercice clôturé ne doit le
+suivre~: ces deux refus viennent à l'enregistrement, avec un message qui dit quoi faire.
+\textbf{Le bouton, lui, reste offert}~: pour l'afficher, la fiche ne lit ni la date du verrou
+de période ni les exercices qui suivent le premier exercice suivant, si bien que ces deux refus
+se répètent, à chaque clic, tant que le verrou n'est pas reculé ou que l'exercice clôturé qui
+vient après n'est pas rouvert. Les
+autres conditions sont celles de la contre-passation~: une écriture de pièce, déjà contre-passée
+ou dont un compte est archivé ne se contre-passe pas plus ainsi.
+
+\textbf{Ce qui se fige.} Une fois contre-passées, l'écriture et sa contre-passation \textbf{ne
+se modifient ni ne se suppriment plus}. Une erreur de montant ou de compte se corrige alors par
+une \textbf{écriture complémentaire}, passée à la main.
+
+\begin{keshwarning}[title={\faExclamationTriangle\ Kesh ne repère pas une transitoire oubliée}]
+Rien ne distingue, dans Kesh, une écriture de régularisation d'une autre écriture. Une
+transitoire que vous avez oublié de contre-passer n'est signalée nulle part --- ni à la
+clôture, ni par les contrôles préalables (\S\ref{sec:preparer-cloture}). Contre-passez-les au
+moment où vous les saisissez~: c'est possible dès que l'exercice suivant est créé et ouvert.
+\end{keshwarning}
 
 \subsection{Numérotation}
 
@@ -745,7 +800,7 @@ Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercic
     \item[Factures en brouillon] Des factures client datées dans l'exercice n'ont jamais été validées~: elles ne sont pas en comptabilité. Lien~: la liste des factures, filtrée sur les brouillons de l'exercice.
     \item[Factures fournisseur à compléter] Des pièces importées attendent d'être complétées (\S\ref{sec:import-factures}). Lien~: \emph{Factures fournisseur importées}.
     \item[Écritures incohérentes] Des écritures déséquilibrées, à moins de deux lignes, datées hors de leur exercice, ou appartenant à un autre exercice mais datées dans celui-ci. Chaque écriture listée mène à sa fiche.
-    \item[Exercice suivant] Aucun exercice ne suit celui-ci~: créez-le pour y passer les écritures de l'année qui vient. Bouton~: \emph{Créer l'exercice suivant}, qui ouvre la création d'un exercice (administrateur et comptable).
+    \item[Exercice suivant] Aucun exercice ne suit celui-ci~: créez-le pour y passer les écritures de l'année qui vient --- et pour contre-passer vos transitoires au début de cet exercice (\S\ref{sec:transitoires}). Bouton~: \emph{Créer l'exercice suivant}, qui ouvre la création d'un exercice (administrateur et comptable).
 \end{description}
 
 \paragraph{Ce que les contrôles ne disent pas.}
@@ -760,6 +815,7 @@ Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercic
     \item L'\textbf{exercice suivant} est le premier qui commence après la fin de celui-ci, même s'il laisse un trou~: un exercice 2028 créé sans exercice 2027 compte comme suivant d'un exercice 2026, et le contrôle n'a alors rien à signaler.
     \item Les \textbf{écritures incohérentes} ne peuvent provenir que de données héritées ou restaurées~: aucun chemin d'écriture actuel de Kesh n'en produit. Le contrôle ne vérifie pas que le compte de chaque ligne appartient bien au plan comptable du dossier de l'écriture (état que seule une intervention directe en base produirait).
     \item Le panneau lit l'exercice \textbf{à un instant}~: il ne suit pas les saisies concurrentes. Un contrôle sans rien à signaler peut ne plus l'être une seconde plus tard (une transaction importée entre-temps).
+    \item Aucun contrôle ne repère une \textbf{transitoire oubliée}~: une écriture de régularisation que vous n'avez pas contre-passée au début de l'exercice suivant ne se distingue d'aucune autre (\S\ref{sec:transitoires}).
 \end{itemize}
 
 \subsection{Clôture d'un exercice}
@@ -794,9 +850,9 @@ On rouvre les exercices \textbf{du plus récent vers l'ancien} : si un exercice 
 
 Les exercices se clôturant désormais dans l'ordre, un exercice ouvert ne peut plus précéder un exercice clôturé. Des données plus anciennes --- une installation mise à jour, une sauvegarde restaurée --- peuvent pourtant porter cet état. Kesh le tolère sans le réparer d'office, et l'écran \emph{Exercices comptables} l'affiche dans un \textbf{bandeau d'avertissement}, visible de tous les rôles~: il nomme l'exercice ouvert le plus ancien, l'exercice clôturé qui le suit, et l'exercice clôturé le plus récent.
 
-Tant que l'ordre n'est pas rétabli, \textbf{rien ne s'enregistre} dans l'exercice ouvert concerné~: ni saisie, ni validation ou règlement de facture, ni paiement fournisseur, ni complément des soldes de départ, ni dévalidation, ni modification, ni suppression. Le bilan étant cumulatif, chacune de ces écritures changerait le bilan de l'exercice clôturé qui le suit. Le refus nomme cet exercice. Une contre-passation, datée du jour, n'est refusée que si l'exercice du jour est lui-même suivi d'un exercice clôturé.
+Tant que l'ordre n'est pas rétabli, \textbf{rien ne s'enregistre} dans l'exercice ouvert concerné~: ni saisie, ni validation ou règlement de facture, ni paiement fournisseur, ni complément des soldes de départ, ni dévalidation, ni modification, ni suppression. Le bilan étant cumulatif, chacune de ces écritures changerait le bilan de l'exercice clôturé qui le suit. Le refus nomme cet exercice. Une contre-passation, datée du jour, n'est refusée que si l'exercice du jour est lui-même suivi d'un exercice clôturé~; une contre-passation au début de l'exercice suivant (\S\ref{sec:transitoires}), que si \textbf{cet} exercice est clôturé ou suivi d'un exercice clôturé.
 
-\textbf{Des boutons offerts, puis refusés au clic.} Dans cet état, l'écran ne prévoit pas toujours le refus~: les boutons \emph{Annuler} d'un règlement client, d'un rapprochement bancaire, d'un paiement ou d'une facture fournisseur, et \emph{Contre-passer} sur une écriture, restent affichés, et le complément des soldes de départ reste proposé. Le clic est alors refusé, avec un message qui nomme l'exercice clôturé~: rien n'a été enregistré. Rétablissez l'ordre ci-dessous, puis recommencez (issue \#568).
+\textbf{Des boutons offerts, puis refusés au clic.} Dans cet état, l'écran ne prévoit pas toujours le refus~: les boutons \emph{Annuler} d'un règlement client, d'un rapprochement bancaire, d'un paiement ou d'une facture fournisseur, et \emph{Contre-passer} sur une écriture, restent affichés --- de même \emph{Contre-passer au début de l'exercice suivant} quand cet exercice, ouvert, est suivi d'un exercice clôturé ---, et le complément des soldes de départ reste proposé. Le clic est alors refusé, avec un message qui nomme l'exercice clôturé~: rien n'a été enregistré. Rétablissez l'ordre ci-dessous, puis recommencez (issue \#568).
 
 Pour rétablir l'ordre, \textbf{dans cet ordre}~:
 

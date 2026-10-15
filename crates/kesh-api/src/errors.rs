@@ -3531,6 +3531,53 @@ impl IntoResponse for AppError {
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
                 }
+                // Story 29-1b (#232) — la contre-passation au début de l'exercice
+                // suivant, refusée faute d'exercice suivant. 409, comme
+                // `EARLIER_FISCAL_YEAR_OPEN` : l'état des exercices, à corriger
+                // sur l'écran des exercices. `details.fiscalYearName` nomme
+                // l'exercice DE L'ÉCRITURE, celui que le message cite.
+                DbError::NextFiscalYearMissing { fiscal_year_name } => {
+                    let fallback = format!(
+                        "Aucun exercice ne suit l’exercice « {fiscal_year_name} » : créez l’exercice suivant, puis recommencez."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("name", fiscal_year_name.clone());
+                    let message = t_args("error-next-fiscal-year-missing", &fallback, &args);
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "NEXT_FISCAL_YEAR_MISSING",
+                            "message": message,
+                            "details": {
+                                "fiscalYearName": fiscal_year_name,
+                            },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // Story 29-1b (#232) — l'exercice suivant est clôturé : refus
+                // rendu par la confirmation verrouillante de la contre-passation.
+                DbError::NextFiscalYearClosed {
+                    fiscal_year_id,
+                    fiscal_year_name,
+                } => {
+                    let fallback = format!(
+                        "L’exercice suivant, « {fiscal_year_name} », est clôturé : la contre-passation ne peut pas y être datée."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("name", fiscal_year_name.clone());
+                    let message = t_args("error-next-fiscal-year-closed", &fallback, &args);
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "NEXT_FISCAL_YEAR_CLOSED",
+                            "message": message,
+                            "details": {
+                                "fiscalYearId": fiscal_year_id,
+                                "fiscalYearName": fiscal_year_name,
+                            },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
                 // Story 25-2-b-1 (#440) — la dévalidation refusée.
                 //
                 // ⛔ **Un code par motif**, jamais le générique : les trois

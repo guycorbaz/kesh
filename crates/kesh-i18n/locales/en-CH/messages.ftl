@@ -401,6 +401,14 @@ journal-entries-reverse-blocked-settlement = This entry is an invoice settlement
 journal-entries-reverse-blocked-bank-match = This entry is reconciled with a bank transaction: undo the reconciliation from the bank import detail.
 journal-entries-reverse-blocked-account-archived = An account of this entry has been archived: reactivate it to be able to reverse.
 journal-entries-reverse-account-archived = Cannot reverse — archived account(s): { $detail }. Reactivate the accounts concerned.
+# Story 29-1b (#232) — reverse at the start of the next fiscal year (accruals and deferrals).
+journal-entries-reverse-next-year-action = Reverse at the start of the next fiscal year
+journal-entries-reverse-next-year-dialog-title = Reverse at the start of the next fiscal year?
+journal-entries-reverse-next-year-dialog-body = The reversal of entry no. { $number } "{ $description }" will be dated { $date }, in fiscal year "{ $name }".
+journal-entries-reverse-next-year-help = For year-end accruals and deferrals: the opposite entry cancels the adjustment on the first day of the next fiscal year. The original entry stays untouched; neither it nor its reversal can be changed or deleted afterwards — a mistake is corrected with a complementary entry.
+journal-entries-reverse-next-year-reason-unavailable = The list of fiscal years could not be read: reload the page to reverse at the start of the next fiscal year.
+journal-entries-reverse-next-year-reason-missing = To reverse at the start of the next fiscal year, first create the next fiscal year.
+journal-entries-reverse-next-year-reason-closed = The next fiscal year, "{ $name }", is closed: the reversal cannot be dated in it.
 journal-entries-delete-blocked-reversed = This entry has been reversed: it can no longer be modified or deleted.
 journal-entries-edit-conflict = This entry was modified in the meantime: the page has been reloaded.
 journal-entries-line-account-unusable = Account archived or not postable — replace it
@@ -961,6 +969,9 @@ error-fiscal-year-reopen-motif-too-long = The reason for reopening is too long (
 error-fiscal-year-already-open = This fiscal year is already open.
 error-fiscal-year-reopen-blocked = Cannot reopen: a later fiscal year is closed; first reopen the later closed fiscal years, starting with the most recent.
 error-fiscal-year-close-earlier-open = First close fiscal year "{ $name }", which is earlier and still open: the balance sheet is cumulative, and a fiscal year can only be closed after all those before it.
+# Story 29-1b (#232) — reversal at the start of the next fiscal year.
+error-next-fiscal-year-missing = No fiscal year follows fiscal year "{ $name }": create the next fiscal year, then try again.
+error-next-fiscal-year-closed = The next fiscal year, "{ $name }", is closed: the reversal cannot be dated in it.
 error-fiscal-year-create-later-closed = The later fiscal year "{ $name }" is closed, and its balance sheet includes everything before it: no fiscal year can be created before its start date while it is closed. To create this one, an administrator first reopens the later closed fiscal years, starting with the most recent.
 error-fiscal-year-overlap = This fiscal year overlaps with an existing one.
 error-fiscal-year-name-duplicate = A fiscal year with this name already exists.

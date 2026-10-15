@@ -367,7 +367,9 @@ async fn le_seuil_du_verrou_est_inclusif(pool: MySqlPool) {
 /// ⛔ Le « ou celle du jour » n'est pas un excès de prudence. La
 /// contre-passation est datée du **jour** et le seuil est **inclusif** : une
 /// borne posée à la date du jour refuserait toute correction faite le même
-/// jour, en violation de l'AC 5 et de l'invariant I2.
+/// jour, en violation de l'AC 5 et de l'invariant I2. *(Sauf la contre-passation
+/// au début de l'exercice suivant, Story 29-1b : datée du premier jour de cet
+/// exercice, elle est refusée si ce jour est dans la période verrouillée.)*
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn une_borne_future_ou_du_jour_est_refusee(pool: MySqlPool) {
     let (app, token, _company_id, _fy) = setup(&pool).await;

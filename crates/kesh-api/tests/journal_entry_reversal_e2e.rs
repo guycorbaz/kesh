@@ -3673,3 +3673,195 @@ async fn reversal_lettering_is_audited_by_the_reverser(pool: MySqlPool) {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Story 29-1b (#232) — contre-passer au début de l'exercice suivant
+// ---------------------------------------------------------------------------
+
+/// T-b2 (Story 29-1b, AC10) — l'audit du chemin **du jour** garde son JSON,
+/// **exactement** : un objet à la seule clé `reversalJournalEntryId`.
+///
+/// ⛔ `reverse_writes_an_audit_entry` ne vérifie que la **présence** de
+/// l'identifiant : il resterait vert si la datation s'ajoutait aussi à ce
+/// chemin. Tue M-b5.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_audit_of_a_reversal_dated_today_is_exactly_the_link(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let origin = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+
+    let (status, created) = post_reverse(&app, &token, origin).await;
+    assert_eq!(status, 201);
+    let details: String = sqlx::query_scalar(
+        "SELECT CAST(details_json AS CHAR) FROM audit_log \
+         WHERE action = 'journal_entry.reversed' AND entity_id = ?",
+    )
+    .bind(origin)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&details).unwrap(),
+        json!({ "reversalJournalEntryId": created["id"].as_i64().unwrap() })
+    );
+}
+
+/// L'exercice qui suit l'année courante, créé par le dépôt (comme l'écran).
+async fn next_year(pool: &MySqlPool, company_id: i64) -> i64 {
+    let annee = annee_courante() + 1;
+    fiscal_years::create(
+        pool,
+        1,
+        NewFiscalYear {
+            company_id,
+            name: format!("Exercice {annee}"),
+            start_date: NaiveDate::from_ymd_opt(annee, 1, 1).unwrap(),
+            end_date: NaiveDate::from_ymd_opt(annee, 12, 31).unwrap(),
+        },
+    )
+    .await
+    .expect("exercice suivant")
+    .id
+}
+
+async fn post_reverse_next_year(
+    app: &TestApp,
+    token: &str,
+    id: i64,
+) -> (reqwest::StatusCode, Value) {
+    let resp = app
+        .client
+        .post(app.url(&format!(
+            "/api/v1/journal-entries/{id}/reverse-at-next-fiscal-year-start"
+        )))
+        .header("Authorization", auth(token))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    (status, resp.json().await.unwrap_or(Value::Null))
+}
+
+/// T-b7 (Story 29-1b, AC13) — la route : `201` daté du premier jour de
+/// l'exercice suivant, dans cet exercice, lié à l'origine ; Consultation `403`
+/// (et la même écriture passe ensuite pour l'administrateur) ; écriture d'une
+/// autre société ou inconnue `404` ; clé `read-write` admise. Le rejeu est tenu
+/// par le registre (`audit_route_registry.rs`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_reversal_at_next_fiscal_year_start_route(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let next = next_year(&pool, company_id).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let origin = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+
+    let readonly = consultation_token(&app, &pool).await;
+    let (status, _) = post_reverse_next_year(&app, &readonly, origin).await;
+    assert_eq!(status, 403, "Consultation ne contre-passe pas");
+
+    let (status, body) = post_reverse_next_year(&app, &token, origin).await;
+    assert_eq!(status, 201, "corps : {body}");
+    assert_eq!(
+        body["entryDate"],
+        format!("{}-01-01", annee_courante() + 1),
+        "premier jour de l'exercice suivant"
+    );
+    assert_eq!(body["fiscalYearId"], next);
+    assert_eq!(body["reversesEntryId"], origin);
+
+    // Une écriture d'une AUTRE société, dont l'exercice a lui aussi un suivant
+    // ouvert : le 404 vient de l'appartenance, non d'un refus d'état.
+    let autre_company: i64 = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         SELECT CONCAT(name, ' ter'), address, org_type, accounting_language, instance_language \
+         FROM companies WHERE id = ?",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let annee = annee_courante();
+    let autre_fy = fiscal_years::create(
+        &pool,
+        1,
+        NewFiscalYear {
+            company_id: autre_company,
+            name: "Exercice autre".into(),
+            start_date: NaiveDate::from_ymd_opt(annee, 1, 1).unwrap(),
+            end_date: NaiveDate::from_ymd_opt(annee, 12, 31).unwrap(),
+        },
+    )
+    .await
+    .expect("exercice de l'autre société");
+    next_year(&pool, autre_company).await;
+    let ad = make_account(&pool, autre_company, "6000", AccountType::Expense).await;
+    let ac = make_account(&pool, autre_company, "1020", AccountType::Asset).await;
+    let etranger = make_entry(&pool, autre_company, autre_fy.id, ad, ac, (None, None)).await;
+    for id in [999_999_i64, etranger] {
+        let (status, _) = post_reverse_next_year(&app, &token, id).await;
+        assert_eq!(status, 404, "id {id}");
+    }
+
+    // Une clé `read-write` contre-passe, comme sur `/reverse`.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/settings/api-keys"))
+        .bearer_auth(&token)
+        .json(&json!({ "name": "integration-29-1b", "scope": "read-write" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "création de clé");
+    let cle = resp.json::<Value>().await.unwrap()["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let second = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+    let (status, body) = post_reverse_next_year(&app, &cle, second).await;
+    assert_eq!(status, 201, "clé read-write : {body}");
+}
+
+/// T-b7 (Story 29-1b, AC14) — les deux refus neufs, `409`, traduits, avec leurs
+/// `details` : sans exercice suivant (l'exercice de l'écriture nommé), puis
+/// l'exercice suivant clos (posé par SQL : l'invariant I l'interdit tant que
+/// l'exercice de l'écriture est ouvert).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_two_refusals_of_the_reversal_at_next_fiscal_year_start(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let origin = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+    let nom = format!("Exercice {}", annee_courante());
+
+    let (status, body) = post_reverse_next_year(&app, &token, origin).await;
+    assert_eq!(status, 409);
+    assert_eq!(body["error"]["code"], "NEXT_FISCAL_YEAR_MISSING");
+    assert_eq!(body["error"]["details"]["fiscalYearName"], nom.as_str());
+    assert_eq!(
+        body["error"]["message"],
+        format!(
+            "Aucun exercice ne suit l’exercice « {nom} » : créez l’exercice suivant, puis recommencez."
+        )
+    );
+
+    let next = next_year(&pool, company_id).await;
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(next)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let suivant = format!("Exercice {}", annee_courante() + 1);
+    let (status, body) = post_reverse_next_year(&app, &token, origin).await;
+    assert_eq!(status, 409);
+    assert_eq!(body["error"]["code"], "NEXT_FISCAL_YEAR_CLOSED");
+    assert_eq!(body["error"]["details"]["fiscalYearId"], next);
+    assert_eq!(body["error"]["details"]["fiscalYearName"], suivant.as_str());
+    assert_eq!(
+        body["error"]["message"],
+        format!(
+            "L’exercice suivant, « {suivant} », est clôturé : la contre-passation ne peut pas y être datée."
+        )
+    );
+}

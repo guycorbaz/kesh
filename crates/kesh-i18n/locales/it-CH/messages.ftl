@@ -401,6 +401,14 @@ journal-entries-reverse-blocked-settlement = Questa scrittura è un pagamento di
 journal-entries-reverse-blocked-bank-match = Questa scrittura è riconciliata con una transazione bancaria: annulla la riconciliazione dal dettaglio dell'importazione bancaria.
 journal-entries-reverse-blocked-account-archived = Un conto di questa scrittura è stato archiviato: riattivatelo per poterla stornare.
 journal-entries-reverse-account-archived = Impossibile stornare — conto/conti archiviato/i: { $detail }. Riattivate i conti interessati.
+# Story 29-1b (#232) — stornare all'inizio dell'esercizio successivo (ratei e risconti).
+journal-entries-reverse-next-year-action = Stornare all’inizio dell’esercizio successivo
+journal-entries-reverse-next-year-dialog-title = Stornare all’inizio dell’esercizio successivo?
+journal-entries-reverse-next-year-dialog-body = Lo storno della scrittura n. { $number } « { $description } » sarà datato { $date }, nell’esercizio « { $name } ».
+journal-entries-reverse-next-year-help = Per i ratei e i risconti di fine esercizio: la scrittura inversa annulla la rettifica il primo giorno dell’esercizio successivo. La scrittura originale resta intatta; né essa né il suo storno potranno più essere modificati o eliminati — un errore si correggerà con una scrittura complementare.
+journal-entries-reverse-next-year-reason-unavailable = L’elenco degli esercizi non ha potuto essere letto: ricarica la pagina per stornare all’inizio dell’esercizio successivo.
+journal-entries-reverse-next-year-reason-missing = Per stornare all’inizio dell’esercizio successivo, crea prima l’esercizio successivo.
+journal-entries-reverse-next-year-reason-closed = L’esercizio successivo, « { $name } », è chiuso: lo storno non può esservi datato.
 journal-entries-delete-blocked-reversed = Questa scrittura è stata stornata: non può più essere modificata né eliminata.
 journal-entries-edit-conflict = Questa scrittura è stata modificata nel frattempo: la scheda è stata ricaricata.
 journal-entries-line-account-unusable = Conto archiviato o non imputabile — da sostituire
@@ -961,6 +969,9 @@ error-fiscal-year-reopen-motif-too-long = Il motivo della riapertura è troppo l
 error-fiscal-year-already-open = Questo esercizio è già aperto.
 error-fiscal-year-reopen-blocked = Riapertura impossibile: un esercizio successivo è chiuso; riapri prima gli esercizi successivi chiusi, cominciando dal più recente.
 error-fiscal-year-close-earlier-open = Chiudi prima l’esercizio « { $name } », più vecchio e ancora aperto: il bilancio è cumulativo, e un esercizio si chiude solo dopo tutti quelli che lo precedono.
+# Story 29-1b (#232) — storno all'inizio dell'esercizio successivo.
+error-next-fiscal-year-missing = Nessun esercizio segue l’esercizio « { $name } »: crea l’esercizio successivo, poi riprova.
+error-next-fiscal-year-closed = L’esercizio successivo, « { $name } », è chiuso: lo storno non può esservi datato.
 error-fiscal-year-create-later-closed = L’esercizio successivo « { $name } » è chiuso, e il suo bilancio riprende tutto ciò che lo precede: nessun esercizio può essere creato prima della sua data d’inizio finché lo è. Per crearlo, un amministratore riapre prima gli esercizi successivi chiusi, cominciando dal più recente.
 error-fiscal-year-overlap = Questo esercizio si sovrappone a un esercizio esistente.
 error-fiscal-year-name-duplicate = Un esercizio con questo nome esiste già.

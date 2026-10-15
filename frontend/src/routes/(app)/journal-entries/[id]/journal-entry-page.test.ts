@@ -13,28 +13,43 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import { authState } from '$lib/app/stores/auth.svelte';
 import type { JournalEntryDetailResponse } from '$lib/features/journal-entries/journal-entries.types';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
+import { goto } from '$app/navigation';
 
 vi.mock('$app/environment', () => ({ browser: true }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$app/state', () => ({ page: { params: { id: '7' } } }));
+// Revue P1 de la 29-1b (B-1, E-3) — `page` réactif : changer `pageState.params.id`
+// simule une navigation d'une écriture à l'autre (même composant, autre paramètre).
+vi.mock('$app/state', async () => ({
+	page: (await import('./page-state.test-helper.svelte')).pageState
+}));
+import { pageState } from './page-state.test-helper.svelte';
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 	i18nMsg: (_key: string, fallback: string) => fallback
 }));
 /** Les clés demandées par la page, pour prouver la clé et non le seul repli. */
 const keysAsked = vi.hoisted(() => new Set<string>());
 vi.mock('$lib/features/onboarding/onboarding.svelte', () => ({
-	i18nMsg: (key: string, fallback: string) => {
+	// Story 29-1b — les variables `{ $x }` du repli sont remplacées, comme le
+	// fait le vrai `i18nMsg` : la confirmation doit NOMMER la date et l'exercice.
+	i18nMsg: (key: string, fallback: string, args?: Record<string, string | number>) => {
 		keysAsked.add(key);
-		return fallback;
+		return fallback.replace(/\{ \$(\w+) \}/g, (m, k: string) =>
+			args && k in args ? String(args[k]) : m
+		);
 	}
 }));
-vi.mock('svelte-sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock('svelte-sonner', () => ({ toast: toastMock }));
 
 const getJournalEntryMock = vi.fn<() => Promise<JournalEntryDetailResponse>>();
+const reverseNextYearMock = vi.fn<(id: number) => Promise<{ id: number }>>();
+const reverseTodayMock = vi.fn<(id: number) => Promise<{ id: number }>>();
 vi.mock('$lib/features/journal-entries/journal-entries.api', () => ({
 	getJournalEntry: () => getJournalEntryMock(),
 	deleteJournalEntry: vi.fn(),
-	reverseJournalEntry: vi.fn()
+	reverseJournalEntry: (id: number) => reverseTodayMock(id),
+	reverseJournalEntryAtNextFiscalYearStart: (id: number) => reverseNextYearMock(id)
 }));
 const fetchAccountsMock = vi.fn<() => Promise<AccountResponse[]>>();
 vi.mock('$lib/features/accounts/accounts.api', () => ({
@@ -46,7 +61,13 @@ vi.mock('$lib/features/projects/projects.api', () => ({
 			{ id: 3, code: 'P1', name: 'Projet un', parentId: null, active: true }
 		])
 }));
-vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({ listFiscalYears: vi.fn() }));
+// Story 29-1b (P3 R7) — la page lit la liste des exercices à son OUVERTURE : le
+// mock rend par défaut une liste vide résolue (posée dans `beforeEach`), et les
+// cas de T-b8 lui donnent succès, échec ou attente.
+const listFiscalYearsMock = vi.fn<() => Promise<FiscalYearResponse[]>>();
+vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({
+	listFiscalYears: () => listFiscalYearsMock()
+}));
 vi.mock('$lib/features/settings/settings.api', () => ({ fetchCompanyCurrent: vi.fn() }));
 vi.mock('$lib/features/invoices/invoices.api', () => ({ getInvoiceSettings: vi.fn() }));
 
@@ -114,12 +135,14 @@ async function renderEntry(e: JournalEntryDetailResponse) {
 
 beforeEach(() => {
 	fetchAccountsMock.mockResolvedValue([]);
+	listFiscalYearsMock.mockResolvedValue([]);
 	authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
 });
 
 afterEach(async () => {
 	await authState.logout();
 	vi.clearAllMocks();
+	pageState.params.id = '7';
 });
 
 describe('fiche d’écriture — colonne « Lettrage » (15-1c-ii, test 1)', () => {
@@ -246,5 +269,315 @@ describe('fiche d’écriture — motif `ENTRY_LETTERED` (15-1c-ii, test 2)', ()
 		await renderEntry(lettered());
 		expect(screen.queryByTestId('modification-blocked-reason')).toBeNull();
 		expect(screen.getByTestId('entry-line-lettering-1').querySelector('a')?.textContent).toBe('AB');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story 29-1b (#232) — T-b8 : « Contre-passer au début de l'exercice suivant »
+// ---------------------------------------------------------------------------
+
+function fy(
+	id: number,
+	name: string,
+	startDate: string,
+	endDate: string,
+	status: 'Open' | 'Closed' = 'Open'
+): FiscalYearResponse {
+	return {
+		id,
+		companyId: 1,
+		name,
+		startDate,
+		endDate,
+		status,
+		createdAt: '2026-01-01T00:00:00',
+		updatedAt: '2026-01-01T00:00:00'
+	};
+}
+
+/** L'exercice de l'écriture (`fiscalYearId: 1` dans `entry()`). */
+const N = fy(1, 'Exercice 2026', '2026-01-01', '2026-12-31');
+
+const BUTTON = 'reverse-entry-next-year';
+const REASON = 'reverse-entry-next-year-reason';
+
+/** Rend la fiche, puis laisse la lecture des exercices aboutir. */
+async function renderWithYears(e: JournalEntryDetailResponse) {
+	const r = await renderEntry(e);
+	await waitFor(() => expect(listFiscalYearsMock).toHaveBeenCalled());
+	// Une micro-tâche de plus : la réponse de la liste est appliquée après l'appel.
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	return r;
+}
+
+describe('fiche d’écriture — contre-passer au début de l’exercice suivant (29-1b, T-b8)', () => {
+	it('liste en cours de lecture : ni bouton ni motif (M-b12)', async () => {
+		listFiscalYearsMock.mockReturnValue(new Promise(() => {}));
+		await renderWithYears(entry());
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.queryByTestId(REASON)).toBeNull();
+		// « Contre-passer » (du jour) ne dépend pas de la liste.
+		expect(screen.getByTestId('reverse-entry')).toBeTruthy();
+	});
+
+	it('échec de la liste : le motif d’indisponibilité, et « Contre-passer » reste', async () => {
+		listFiscalYearsMock.mockRejectedValue(new Error('réseau'));
+		await renderWithYears(entry());
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.getByTestId(REASON).textContent?.trim()).toBe(
+			'La liste des exercices n’a pas pu être lue : rechargez la page pour contre-passer au début de l’exercice suivant.'
+		);
+		expect(screen.getByTestId('reverse-entry')).toBeTruthy();
+		expect(keysAsked.has('journal-entries-reverse-next-year-reason-unavailable')).toBe(true);
+	});
+
+	it('aucun exercice ne suit : le motif le dit (un antérieur n’est pas un suivant)', async () => {
+		listFiscalYearsMock.mockResolvedValue([fy(9, 'Exercice 2025', '2025-01-01', '2025-12-31'), N]);
+		await renderWithYears(entry());
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.getByTestId(REASON).textContent?.trim()).toBe(
+			'Pour contre-passer au début de l’exercice suivant, créez d’abord l’exercice suivant.'
+		);
+	});
+
+	it('l’exercice suivant est clôturé : le motif le nomme (M-b8)', async () => {
+		listFiscalYearsMock.mockResolvedValue([
+			N,
+			fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31', 'Closed')
+		]);
+		await renderWithYears(entry());
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.getByTestId(REASON).textContent?.trim()).toBe(
+			'L’exercice suivant, « Exercice 2027 », est clôturé : la contre-passation ne peut pas y être datée.'
+		);
+	});
+
+	it('l’exercice suivant est ouvert : le bouton, sans motif ; la confirmation nomme l’écriture, la date et l’exercice', async () => {
+		// Désordre voulu, et un N+2 : c'est le PREMIER suivant qui compte.
+		listFiscalYearsMock.mockResolvedValue([
+			fy(3, 'Exercice 2028', '2028-01-01', '2028-12-31'),
+			N,
+			fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31')
+		]);
+		await renderWithYears(entry());
+		expect(screen.queryByTestId(REASON)).toBeNull();
+		screen.getByTestId(BUTTON).click();
+		await waitFor(() =>
+			expect(screen.getByTestId('reverse-entry-next-year-dialog-body').textContent?.trim()).toBe(
+				'La contre-passation de l’écriture n° 12 « Acompte » sera datée du 01.01.2027, dans l’exercice « Exercice 2027 ».'
+			)
+		);
+		expect(screen.getByTestId('reverse-entry-next-year-confirm')).toBeTruthy();
+	});
+
+	it('confirmer appelle la route neuve et ouvre l’écriture créée', async () => {
+		listFiscalYearsMock.mockResolvedValue([N, fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31')]);
+		reverseNextYearMock.mockResolvedValue({ id: 99 });
+		await renderWithYears(entry());
+		screen.getByTestId(BUTTON).click();
+		await waitFor(() => expect(screen.getByTestId('reverse-entry-next-year-confirm')).toBeTruthy());
+		screen.getByTestId('reverse-entry-next-year-confirm').click();
+		await waitFor(() => expect(goto).toHaveBeenCalledWith('/journal-entries/99'));
+		expect(reverseNextYearMock).toHaveBeenCalledWith(7);
+	});
+
+	it('un refus s’affiche traduit, jamais « [object Object] » (#520)', async () => {
+		listFiscalYearsMock.mockResolvedValue([N, fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31')]);
+		reverseNextYearMock.mockRejectedValue({
+			code: 'NEXT_FISCAL_YEAR_CLOSED',
+			status: 409,
+			message: 'L’exercice suivant, « Exercice 2027 », est clôturé : la contre-passation ne peut pas y être datée.'
+		});
+		await renderWithYears(entry());
+		screen.getByTestId(BUTTON).click();
+		await waitFor(() => expect(screen.getByTestId('reverse-entry-next-year-confirm')).toBeTruthy());
+		screen.getByTestId('reverse-entry-next-year-confirm').click();
+		await waitFor(() => expect(toastMock.error).toHaveBeenCalled());
+		const shown = String(toastMock.error.mock.calls[0][0]);
+		expect(shown).toBe(
+			'L’exercice suivant, « Exercice 2027 », est clôturé : la contre-passation ne peut pas y être datée.'
+		);
+		expect(shown).not.toContain('[object Object]');
+	});
+
+	it('écriture non contre-passable, aucun suivant : ni bouton ni motif', async () => {
+		listFiscalYearsMock.mockResolvedValue([N]);
+		await renderWithYears(
+			entry({ reversable: false, reversalBlockedBy: 'ALREADY_REVERSED', reversedByEntryId: 8 })
+		);
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.queryByTestId(REASON)).toBeNull();
+	});
+
+	it('écriture non contre-passable, suivant ouvert : ni bouton ni motif', async () => {
+		listFiscalYearsMock.mockResolvedValue([N, fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31')]);
+		await renderWithYears(
+			entry({ reversable: false, reversalBlockedBy: 'ALREADY_REVERSED', reversedByEntryId: 8 })
+		);
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.queryByTestId(REASON)).toBeNull();
+	});
+
+	it('rôle Consultation : ni bouton ni motif (C-15-8-14)', async () => {
+		await authState.logout();
+		authState.login({ userId: '2', username: 'lecteur', role: 'Consultation', expiresIn: 3600 });
+		for (const years of [[N, fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31')], [N]]) {
+			listFiscalYearsMock.mockResolvedValue(years);
+			const { unmount } = await renderWithYears(entry());
+			expect(screen.queryByTestId(BUTTON)).toBeNull();
+			expect(screen.queryByTestId(REASON)).toBeNull();
+			unmount();
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Revue de code P1 de la 29-1b — navigation, geste du jour, relecture, jeton
+// ---------------------------------------------------------------------------
+
+/** N+1 ouvert, la situation où les deux gestes sont offerts. */
+const N1 = fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31');
+
+/** Le repli du dialogue du geste DU JOUR (Story 24-4a), tel que la page l'affiche. */
+const TODAY_BODY =
+	"Kesh créera une écriture inverse à la date du jour. L'écriture d'origine reste intacte dans ses montants, ses comptes, sa date et son libellé — seules ses lignes reçoivent, le cas échéant, la marque de lettrage qui les apparie à l'écriture inverse : c'est la correction qui doit se voir, pas disparaître.";
+
+/** Navigue (historique) vers l'écriture 5 : même composant, autre paramètre. */
+async function navigateToEntry5() {
+	getJournalEntryMock.mockResolvedValue(
+		entry({ id: 5, entryNumber: 10, description: 'Loyer' })
+	);
+	pageState.params.id = '5';
+	await waitFor(() => expect(screen.getByText('Écriture n°10')).toBeTruthy());
+	await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+describe('fiche d’écriture — revue de code P1 de la 29-1b', () => {
+	it('« Contre-passer » (du jour) avec un suivant ouvert : le texte du jour, la route du jour (E-1)', async () => {
+		listFiscalYearsMock.mockResolvedValue([N, N1]);
+		reverseTodayMock.mockResolvedValue({ id: 98 });
+		await renderWithYears(entry());
+		// Les deux gestes sont offerts : c'est bien la situation où l'un pourrait
+		// emprunter le texte de l'autre.
+		expect(screen.getByTestId(BUTTON)).toBeTruthy();
+		screen.getByTestId('reverse-entry').click();
+		await waitFor(() => expect(screen.getByTestId('reverse-entry-confirm')).toBeTruthy());
+		expect(screen.queryByTestId('reverse-entry-next-year-dialog-body')).toBeNull();
+		expect(screen.queryByTestId('reverse-entry-next-year-confirm')).toBeNull();
+		expect(document.getElementById('reverse-confirm-title')?.textContent?.trim()).toBe(
+			'Contre-passer cette écriture ?'
+		);
+		expect(document.getElementById('reverse-confirm-desc')?.textContent?.trim()).toBe(TODAY_BODY);
+		screen.getByTestId('reverse-entry-confirm').click();
+		await waitFor(() => expect(goto).toHaveBeenCalledWith('/journal-entries/98'));
+		expect(reverseTodayMock).toHaveBeenCalledWith(7);
+		expect(reverseNextYearMock).not.toHaveBeenCalled();
+	});
+
+	it('naviguer vers une autre écriture ferme la confirmation : elle ne se rouvre pas sur celle-là (B-1)', async () => {
+		listFiscalYearsMock.mockResolvedValue([N, N1]);
+		await renderWithYears(entry());
+		screen.getByTestId(BUTTON).click();
+		await waitFor(() =>
+			expect(screen.getByTestId('reverse-entry-next-year-dialog-body')).toBeTruthy()
+		);
+		await navigateToEntry5();
+		// La fiche 5 est lue, son suivant est ouvert : le bouton est là…
+		expect(screen.getByTestId(BUTTON)).toBeTruthy();
+		// … mais aucune confirmation n'est ouverte, ni pour 7 ni pour 5.
+		expect(screen.queryByRole('dialog')).toBeNull();
+		expect(screen.queryByTestId('reverse-entry-next-year-dialog-body')).toBeNull();
+		expect(reverseNextYearMock).not.toHaveBeenCalled();
+	});
+
+	it('naviguer ferme aussi la confirmation du geste du jour et celle de la suppression (B-1)', async () => {
+		listFiscalYearsMock.mockResolvedValue([N, N1]);
+		await renderWithYears(entry());
+		screen.getByTestId('reverse-entry').click();
+		await waitFor(() => expect(screen.getByTestId('reverse-entry-confirm')).toBeTruthy());
+		await navigateToEntry5();
+		expect(screen.queryByTestId('reverse-entry-confirm')).toBeNull();
+
+		screen.getByTestId('delete-entry').click();
+		await waitFor(() => expect(screen.getByTestId('delete-entry-confirm')).toBeTruthy());
+		getJournalEntryMock.mockResolvedValue(entry());
+		pageState.params.id = '7';
+		await waitFor(() => expect(screen.getByText('Écriture n°12')).toBeTruthy());
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(screen.queryByTestId('delete-entry-confirm')).toBeNull();
+		expect(screen.queryByRole('dialog')).toBeNull();
+	});
+
+	it('un refus du geste neuf ferme la confirmation et relit la fiche : le motif prend la place du bouton (E-2, L3)', async () => {
+		// Première lecture : N+1 ouvert ; relecture après le refus : N+1 clos.
+		listFiscalYearsMock
+			.mockResolvedValueOnce([N, N1])
+			.mockResolvedValue([N, fy(2, 'Exercice 2027', '2027-01-01', '2027-12-31', 'Closed')]);
+		reverseNextYearMock.mockRejectedValue({
+			code: 'NEXT_FISCAL_YEAR_CLOSED',
+			status: 409,
+			message: 'L’exercice suivant, « Exercice 2027 », est clôturé : la contre-passation ne peut pas y être datée.'
+		});
+		await renderWithYears(entry());
+		expect(getJournalEntryMock).toHaveBeenCalledTimes(1);
+		screen.getByTestId(BUTTON).click();
+		await waitFor(() => expect(screen.getByTestId('reverse-entry-next-year-confirm')).toBeTruthy());
+		screen.getByTestId('reverse-entry-next-year-confirm').click();
+		await waitFor(() => expect(toastMock.error).toHaveBeenCalled());
+		await waitFor(() =>
+			expect(screen.getByTestId(REASON).textContent?.trim()).toBe(
+				'L’exercice suivant, « Exercice 2027 », est clôturé : la contre-passation ne peut pas y être datée.'
+			)
+		);
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.queryByRole('dialog')).toBeNull();
+		expect(getJournalEntryMock).toHaveBeenCalledTimes(2);
+		expect(listFiscalYearsMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('l’exercice de l’écriture absent de la liste : le motif d’indisponibilité, non « créez l’exercice » (C-29-1-48, L3)', async () => {
+		listFiscalYearsMock.mockResolvedValue([N1]);
+		await renderWithYears(entry());
+		expect(screen.queryByTestId(BUTTON)).toBeNull();
+		expect(screen.getByTestId(REASON).textContent?.trim()).toBe(
+			'La liste des exercices n’a pas pu être lue : rechargez la page pour contre-passer au début de l’exercice suivant.'
+		);
+	});
+
+	it('jeton : la liste d’une écriture quittée, arrivée en retard EN ÉCHEC, n’écrase pas la suivante (E-3, B-4)', async () => {
+		let rejectFirst!: (e: unknown) => void;
+		listFiscalYearsMock
+			.mockReturnValueOnce(
+				new Promise<FiscalYearResponse[]>((_, reject) => {
+					rejectFirst = reject;
+				})
+			)
+			.mockResolvedValue([N, N1]);
+		await renderEntry(entry());
+		await navigateToEntry5();
+		expect(screen.getByTestId(BUTTON)).toBeTruthy();
+		rejectFirst(new Error('réponse tardive'));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(screen.getByTestId(BUTTON)).toBeTruthy();
+		expect(screen.queryByTestId(REASON)).toBeNull();
+	});
+
+	it('jeton : la liste d’une écriture quittée, arrivée en retard EN SUCCÈS, n’écrase pas la suivante (E-3, B-4)', async () => {
+		let resolveFirst!: (years: FiscalYearResponse[]) => void;
+		listFiscalYearsMock
+			.mockReturnValueOnce(
+				new Promise<FiscalYearResponse[]>((resolve) => {
+					resolveFirst = resolve;
+				})
+			)
+			.mockResolvedValue([N, N1]);
+		await renderEntry(entry());
+		await navigateToEntry5();
+		expect(screen.getByTestId(BUTTON)).toBeTruthy();
+		// La réponse tardive ne connaît pas N+1 : appliquée, elle ôterait le bouton.
+		resolveFirst([N]);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(screen.getByTestId(BUTTON)).toBeTruthy();
+		expect(screen.queryByTestId(REASON)).toBeNull();
 	});
 });

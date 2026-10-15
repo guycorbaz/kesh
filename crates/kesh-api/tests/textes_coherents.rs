@@ -700,6 +700,10 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("error-lettering-is-document", 1, &[]),
                 ("error-fiscal-year-create-later-closed", 1, NOM),
                 ("error-later-fiscal-year-closed", 1, NOM),
+                // Story 29-1b (#232) — les deux refus de la contre-passation au
+                // début de l'exercice suivant.
+                ("error-next-fiscal-year-missing", 1, NOM),
+                ("error-next-fiscal-year-closed", 1, NOM),
                 // Story 27-1 (#632) — revue de code P1, E4 : les trois
                 // replis neufs ou modifiés de la suppression d'import.
                 ("error-api-key-operation-forbidden", 1, &[]),

@@ -383,6 +383,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/journal-entries/{id}/reverse",
             post(routes::journal_entries::reverse_journal_entry),
         )
+        // Story 29-1b (#232) — contre-passation au premier jour de l'exercice
+        // suivant (transitoires). Même rang que `/reverse` : Admin et Comptable.
+        .route(
+            "/api/v1/journal-entries/{id}/reverse-at-next-fiscal-year-start",
+            post(routes::journal_entries::reverse_journal_entry_at_next_fiscal_year_start),
+        )
         // Story 15-1a-i (#518) — lettrage manuel : poser et retirer la marque.
         // ⛔ Sous `comptable_routes`, AVANT son `route_layer` : Consultation ne
         // lettre ni ne délettre (403). La lecture est en `authenticated_routes`.

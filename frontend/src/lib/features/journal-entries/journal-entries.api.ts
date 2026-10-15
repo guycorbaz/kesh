@@ -50,6 +50,24 @@ export async function reverseJournalEntry(id: number): Promise<JournalEntryRespo
 	return apiClient.post<JournalEntryResponse>(`/api/v1/journal-entries/${id}/reverse`, {});
 }
 
+/**
+ * Contre-passe une écriture **au premier jour de l'exercice qui suit le sien**,
+ * dans cet exercice (Story 29-1b, #232) — les transitoires de fin d'exercice.
+ *
+ * Même contre-passation que {@link reverseJournalEntry}, à la date près. Le
+ * serveur reste l'autorité : `409 NEXT_FISCAL_YEAR_MISSING` (aucun exercice ne
+ * suit), `409 NEXT_FISCAL_YEAR_CLOSED` (il est clôturé), et les refus de la
+ * contre-passation, dont `PERIOD_LOCKED`.
+ */
+export async function reverseJournalEntryAtNextFiscalYearStart(
+	id: number
+): Promise<JournalEntryResponse> {
+	return apiClient.post<JournalEntryResponse>(
+		`/api/v1/journal-entries/${id}/reverse-at-next-fiscal-year-start`,
+		{}
+	);
+}
+
 export async function createJournalEntry(
 	req: CreateJournalEntryRequest
 ): Promise<JournalEntryResponse> {

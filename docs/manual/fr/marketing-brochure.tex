@@ -415,7 +415,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 \textbf{\color{keshSuccess}\faCheckCircle\ Report à-nouveau automatique (Epic 14, v0.8, livré)}
 
 \begin{itemize}
-    \item Report automatique des soldes de bilan d'un exercice à l'autre, calculé en temps réel depuis l'origine : aucune écriture de report à passer. \emph{(Le bouclement d'exercice --- écritures de clôture, report à nouveau du résultat, transitoires --- reste à venir.)}
+    \item Report automatique des soldes de bilan d'un exercice à l'autre, calculé en temps réel depuis l'origine : aucune écriture de report ni de clôture à passer --- le résultat de l'exercice et le résultat reporté sont calculés au bilan.
 \end{itemize}
 
 \vspace{0.4cm}
@@ -426,6 +426,15 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
     \item Les postes ouverts d'un compte de tiers à une date : ce qui reste ouvert, ligne à ligne, et dont le total égale le solde du compte.
     \item Lettrage manuel, avec des rapprochements proposés --- Kesh propose, vous lettrez ; délettrage à l'écran.
     \item Pièces lettrées d'office : facture client soldée, facture fournisseur payée, contre-passation.
+\end{itemize}
+
+\vspace{0.4cm}
+
+\textbf{\color{keshWarning}\faClock\ Préparer la première clôture (Epic 29, en cours)}
+
+\begin{itemize}
+    \item Sept contrôles préalables à la clôture, en lecture seule (rapprochement bancaire, relevé de fin d'exercice, brouillons, écritures incohérentes\ldots). \emph{(livré en v0.13.4)}
+    \item Les transitoires contre-passées depuis la fiche de l'écriture, datées du premier jour de l'exercice suivant. \emph{(à paraître en v0.14.0)}
 \end{itemize}
 
 \vspace{0.4cm}
