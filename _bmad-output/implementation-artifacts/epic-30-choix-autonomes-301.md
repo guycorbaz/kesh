@@ -447,3 +447,70 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
   perdu, M-b33).
 - **Réversible** : oui.
 - *Complété le 2026-10-15 (P6, R10)* : *Contexte*, *Écartées* et *Réversible* ajoutés, au gabarit des entrées voisines.
+
+---
+
+## Développement de la 30-1a — 2026-10-15 (agent de développement, Opus 5.5)
+
+### C-30-1-42 — Un interblocage est une troisième issue de la course T-a6 ; le test joue les gestes dans l'enveloppe de rejeu de leurs routes
+
+- **Contexte** : l'AC-a4 prévoyait, pour la course dé-rapprochement ↔ annulation de la même facture, que « l'un attend
+  l'autre au verrou de la facture ». Constaté au développement (`1213`) : la lecture verrouillante du classement passe
+  par l'index `fk_supplier_invoices_settlement_je` et en tient l'enregistrement **avant** la ligne ; l'annulation de la
+  facture tient la ligne par sa clé primaire, puis réécrit `settlement_journal_entry_id` et demande l'enregistrement
+  d'index. Cycle, victime le dé-rapprochement (la plus légère), qui n'a rien écrit.
+- **Retenu** : le cycle est le prix déjà assumé côté client (étape 2 de `cancel_in_tx` : la ligne de règlement avant la
+  facture), avec le même remède — les deux routes **rejouent** (`retry_app_on_deadlock` pour le dé-rapprochement,
+  `retry_on_deadlock` pour `POST /supplier-invoices/{id}/cancel`, vérifié au code). T-a6 joue chaque geste dans
+  l'enveloppe `DbError` du dépôt, comme ses routes, et asserte le même état final des deux issues rejouées. Le cycle est
+  écrit au doc-comment de `classify`.
+- **Écartées** : verrouiller la facture par sa clé primaire avant le classement (l'identifiant n'est pas connu avant la
+  lecture par l'index) ; une lecture ordinaire pour trouver l'identifiant (interdite avant l'étape 3 : elle ferait
+  naître la vue avant le verrou de l'exercice — M-a5) ; un test sans rejeu (il rougissait sur un cycle que les routes
+  rattrapent).
+- **Réversible** : oui.
+
+### C-30-1-43 — `link_bank_transaction_for_test` vit dans `tests/support/`, non dans `test_fixtures.rs`
+
+- **Contexte** : la fiche (T1) plaçait l'aide dans `crates/kesh-db/src/test_fixtures.rs`. L'inventaire des écrivains d'une
+  ligne rattachée à un compte bancaire (`kesh-api/tests/bank_account_closed_inventory.rs`, Story 28-4a) balaie `src/`,
+  fixtures comprises : le gate a rougi (`every_bank_account_writer_is_classified`, écrivain non classé).
+- **Retenu** : l'aide passe dans `crates/kesh-db/tests/support/fournisseur_rapproche.rs` (inclus par `#[path]` dans
+  `reconciliation_cancel.rs` et `reconciliation_e2e.rs`), avec le montage du règlement fournisseur rapproché. Le compteur
+  de sites de l'inventaire (32) ne bouge pas : la 30-1b, qui le porte à 33 avec `pay_in_tx_as` (AC-b9), reste juste.
+- **Écartées** : classer une aide de test au registre des écrivains de production (statut sans objet, compteur décalé
+  pour la 30-1b).
+- **Réversible** : oui.
+
+### C-30-1-44 — `FORCE INDEX (PRIMARY)` au verrouillage de tête du lot ; le classement fournisseur sans indice
+
+- **Contexte** : l'AC-a9 demandait un plan `range` sur `PRIMARY`, ou à défaut `FORCE INDEX (PRIMARY)` écrit et justifié.
+  Constaté (T-a12 étendu, quatre factures) : l'optimiseur de MariaDB 10.11 choisit l'index **couvrant**
+  `idx_supplier_invoices_company_date` (il porte `id`), qui verrouillerait toutes les factures de la société dans un
+  autre ordre.
+- **Retenu** : `FORCE INDEX (PRIMARY)` dans `lock_invoices_sql`, justifié au doc-comment ; T-a12 asserte `PRIMARY` et
+  `range`. Le classement fournisseur (AC-a4) garde un plan libre : T-a12 constate `fk_supplier_invoices_settlement_je`
+  sur trois factures payées, trois runs ; l'égalité sur l'écriture de règlement est la plus sélective dès qu'il y a plus
+  d'une facture payée, et sur une seule le mauvais plan ne verrouillerait qu'elle.
+- **Écartées** : un indice aussi sur le classement (une seconde dépendance au nom d'un index, sans défaut constaté).
+- **Réversible** : oui.
+
+### C-30-1-45 — La 30-1a est développée sur la branche `story/30-1` du worktree assigné
+
+- **Contexte** : T0 prescrivait une branche `story/30-1a` depuis `main` ; l'orchestrateur a assigné le worktree
+  `kesh-30-1`, branche `story/30-1` (qui porte la fiche et sa validation).
+- **Retenu** : la consigne de l'orchestrateur ; les commits portent le préfixe `(30-1a)`. La 30-1b suivra dans une story
+  distincte, après la revue et le merge de la 30-1a.
+- **Réversible** : sans objet.
+
+### C-30-1-46 — Placement et forme de trois tests
+
+- **T-a17** va dans `crates/kesh-api/tests/supplier_settlement_cancel_e2e.rs`, le fichier qui teste déjà
+  `POST /payment-batches` par la route (aucun fichier propre aux lots n'existe), dont il réutilise le montage.
+- **T-a11** joue la clôture par son effet (`status = 'Closed'` dans une transaction tenue ouverte), patron de
+  `a_concurrent_close_waits_for_the_unreconciliation` : la clôture réelle exige un exercice suivant et des écritures de
+  bouclement que le montage n'a pas, et c'est le verrou de la ligne `fiscal_years` qui est en jeu.
+- **T-a1** : ses trois classements sont le règlement fournisseur, l'écriture propre et le règlement détaché ; le
+  classement client est tenu par les tests de route existants (`cancelling_an_invoice_reconciliation_undoes_everything`).
+- **Écartées** : un fichier de tests neuf pour T-a17 (harnais recopié une fois de plus).
+- **Réversible** : oui.

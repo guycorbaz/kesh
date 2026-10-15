@@ -12,7 +12,9 @@ remédiée le 2026-10-15 ; validation P3 faite (Sonnet : F 0/0/5/6, R 0/0/6/6), 
 **simplifiée** le 2026-10-15 (signal de recyclage déclaré) ; validation P5 faite (Sonnet : F 0/1/4/4, R 0/0/2/6),
 remédiée le 2026-10-15 ; validation P6 faite (passe complète, Sonnet : F 0/1/3/5, R 0/1/3/6), remédiée le 2026-10-15
 par le **retrait** de la garde ajoutée en P5 (C-30-1-40, signal de recyclage) ; validation P7 **ciblée** (Haiku) à
-lancer : `30-1-validate-prompt-p7-ciblee.md`.
+lancer : `30-1-validate-prompt-p7-ciblee.md`. *(2026-10-15 : P7 faite, validation terminée — Change Log.)*
+**30-1a développée le 2026-10-15, en `review`** (Dev Agent Record ; revue de code P1 : `30-1a-review-prompt-p1.md`) ;
+30-1b `ready-for-dev`, après le merge de la 30-1a.
 
 PR : **`closes #686`** dans le titre ou le corps de la PR de la **30-1b seulement** — jamais dans un message de commit,
 même en prose ou au futur (B4 de la rétrospective 28) ; la PR de la 30-1a porte `refs #686`.
@@ -1271,14 +1273,147 @@ Aucun fichier neuf hors tests, fixture E2E et spec E2E ; aucun crate neuf ; aucu
 
 ### Agent Model Used
 
+30-1a : Claude Opus 5.5 (agent de développement, autonomie), 2026-10-15. Branche `story/30-1` du worktree
+`kesh-30-1` (C-30-1-45), bases `kesh_301a` / `kesh_e2e_301a`, port 3051, cible `kesh-30-1/target`.
+
 ### Debug Log References
+
+Journaux (hors dépôt) : `/home/gcorbaz/devel/kesh-gate-logs/301a-*.log` — rouges `301a-rouge-T1.log`,
+`301a-rouge-lots.log` ; gates `301a-gate1.log`, `301a-gate2.log`, `301a-gate3-backend.log`, `301a-gate3-frontend.log` ;
+mutations `301a-mutations.log`, `301a-mutation-M-a9-bis.log` ; E2E `301a-e2e.log`.
 
 ### Completion Notes List
 
 - Fiche créée par analyse exhaustive du code (`bmad-create-story`, mode création, autonomie) — guide de développement
   complet.
 
+#### 30-1a — développement (2026-10-15)
+
+**Tests rouges d'abord** (sorties copiées, avant le code de production) :
+
+```
+# T-a1 à T-a6, T-a11 — nextest -E 'binary(reconciliation_cancel)' (301a-rouge-T1.log)
+FAIL the_view_says_a_reconciled_supplier_settlement_is_cancellable   left: Some("entry") right: Some("supplier_settlement")
+FAIL the_classification_knows_the_supplier_settlement                left: Some("entry") right: Some("supplier_settlement")
+FAIL unreconciling_a_supplier_settlement_undoes_it
+     ⛔ … doit aboutir: EntryNotReversable { blocker: OwnedBySupplierInvoice, document_id: Some(1), document_label: Some("FF-30-1A") }
+FAIL unreconciliation_and_invoice_cancellation_race_without_a_mixed_state  (le dé-rapprochement finit sans attendre la facture)
+PASS a_closed_year_refuses_the_supplier_unreconciliation   (T-a4 : vert au sol — le bras « écriture propre » refuse aussi l'exercice clos)
+PASS a_supplier_unreconciliation_waits_for_a_concurrent_close (T-a11 : vert au sol, même raison ; il tue M-a5)
+Summary 8 tests run: 4 passed, 4 failed
+
+# T-a14 à T-a17 (301a-rouge-lots.log)
+FAIL two_concurrent_batches_never_take_the_same_invoice   ⛔ la même facture dans deux lots generated — left: 2 right: 1
+FAIL crossed_batches_do_not_deadlock   A : Err(… number: 1213, "Deadlock found …"), B : Ok(true)
+FAIL payment_batch_creation_is_replayed_when_it_is_the_deadlock_victim   left: 500 right: 200 ({"error":{"code":"INTERNAL_ERROR"…}})
+FAIL create_batch_bounds_its_list   501 identifiants, même répétés — left: 200 right: 400
+Summary 4 tests run: 0 passed, 4 failed
+```
+
+T-a10 (Vitest), T-a13 et T-a12 ont été écrits **après** le changement qu'ils gardent (texte, constante SQL) ; leur
+rouge est établi par mutation : MT-1 (ancien texte rétabli dans le repli de l'écran) rougit T-a10, MT-2 (ancien texte
+dans le repli serveur) rougit T-a13 ; T-a12 a rougi de lui-même au premier run sur le plan de la création de lot (voir
+C-30-1-44).
+
+**Ce qui est livré**, par AC :
+
+- **AC-a1, AC-a4** — `ReconciliationKind::SupplierSettlement { supplier_invoice_id }` (code `supplier_settlement`) ;
+  `classify` lit `SUPPLIER_SETTLEMENT_CLASSIFY_SQL` après `invoice_settlements`, dans la même forme (`FOR UPDATE` si
+  verrouillante) ; règlement détaché → `entry`. Doc-comments : ordre des bras, coût de l'intervalle, cycle avec
+  `pay_in_tx` (rejoué), et le **second cycle constaté** contre l'annulation de la facture (C-30-1-42). Plan libre,
+  vérifié par T-a12 (`fk_supplier_invoices_settlement_je`).
+- **AC-a2** — étape (6) : `supplier_invoices::cancel_settlement_in_tx` appelée ; `ReconciliationCancellation` gagne
+  `supplier_invoice_id`.
+- **AC-a3** — `supplier_settlement_cancel_blocker_unlinking` ajoutée ; l'existante en est l'enveloppe (`None`), signature
+  inchangée ; `cancel_blocker` appelle la forme exemptée pour `bt.id`. Aucune seconde précédence.
+- **AC-a5** — vue : `supplierInvoiceId`, `supplierInvoiceNumber` ; `…/cancel` : `supplierInvoiceId` ; audit
+  `reconciliation.cancelled` : `supplierInvoiceId` (`invoiceId`, `settlementId` nuls). Contrat additif.
+- **AC-a6** — texte « rapproché » réécrit (fr-CH, de-CH, it-CH, en-CH, repli serveur `errors.rs`, repli de l'écran) ;
+  clé ajoutée à `les_replis_rust_suivent_le_catalogue` ; commentaire `errors.rs` (« inatteignable ») réécrit par sa vraie
+  raison. Grep de la valeur ancienne (`cette fiche ou le détail`, `this record or`, `diesem Beleg oder`,
+  `questa scheda o`) : plus aucune occurrence hors `_bmad-output/` (mentions de la fiche).
+- **AC-a7** — `docs/api-external.md` : § *Annuler un rapprochement bancaire* (`supplier_settlement`, champs ajoutés,
+  « retire son paiement », audit), paragraphe des lots (borne de 500, liste vide, double lot), § *Interblocages*
+  (`POST /payment-batches` rejoue). CHANGELOG `## [0.14.0] — Non publié` : *Modifié* (borne) et *Corrigé* (double lot,
+  lots croisés, rejeu). Manuel : rien (réservé à la 30-1b) ; aucun passage du manuel n'est rendu faux par la 30-1a
+  (grep du texte « rapproché » : absent du manuel).
+- **AC-a8** — `POST /payment-batches` dans `retry_on_deadlock("payment_batches::create", …)` ;
+  `audit_route_registry.rs` : (ii) sept → huit, (iii bis) sept → huit avec T-a14, (vi) quatorze → quinze et phrase finale
+  « Quinze avec elle » ; classification `SansEcritureAuJournal` inchangée.
+- **AC-a9** — `create_batch` verrouille ses factures dédoublonnées par identifiant croissant avant toute lecture
+  (`lock_invoices_sql`, `FORCE INDEX (PRIMARY)`, C-30-1-44) ; liste vide court-circuitée ; borne de 500 à la route
+  (`MAX_IN_CLAUSE_IDS`, longueur brute, `400 VALIDATION_ERROR`). Aide `attendre_des_requetes_en_cours` (la forme à un
+  témoin en devient l'enveloppe).
+
+**Tests ajoutés** (périmètre `62af52d6..82f0424e`, recomptés par `grep -c '#\[sqlx::test'` aux deux bornes) : **13**
+tests Rust et **1** Vitest — `reconciliation_cancel.rs` 2 → 9 (T-a1 ; T-a2 et T-a3 en un test ; T-a4 ; T-a5 ; T-a6 ;
+T-a11 ; T-a12), `payment_batches_repository.rs` 16 → 19 (T-a12 étendu, T-a15, T-a16), `reconciliation_e2e.rs` 108 → 109
+(T-a7 et T-a8 en un test, plus les champs neufs assertés nuls dans deux tests existants), `rejeu_interblocage_e2e.rs`
+18 → 19 (T-a14), `supplier_settlement_cancel_e2e.rs` 8 → 9 (T-a17), `settlement-cancel-blocked.test.ts` 6 → 7 (T-a10) ;
+T-a13 est une clé ajoutée à un test existant. Les 16 tests nommés de la fiche (T-a1 à T-a17 sauf T-a9) sont tous couverts.
+
+**Mutations** (sous `flock`, restaurées par `git checkout -- f && touch f` ; `301a-mutations.log`) :
+
+| # | Appliquée comme | Résultat | Tuée par |
+|---|---|---|---|
+| M-a1 | `classify` : `match None::<i64>` à la place du résultat fournisseur (la requête reste) | tuée | T-a1, T-a2, T-a5 |
+| M-a2 | — | équivalente déclarée (fiche), non exécutée | — |
+| M-a3 | `cancel_blocker` fournisseur en forme non exemptée (`None`) | tuée | T-a5, T-a7 (route) |
+| M-a4 | étape (6) fournisseur par `reverse_in_tx` | tuée | T-a2 |
+| M-a5 | lecture de classement fournisseur sans `FOR UPDATE` | tuée | T-a11 (et `a_concurrent_close_waits_for_the_unreconciliation`, sur une écriture propre) |
+| M-a6 | — | retirée (fiche) | — |
+| M-a7 | verrouillage de tête désactivé (`if false && …`) | tuée | T-a15, T-a16 |
+| M-a8 | rejeu retiré (`retry_on_deadlock_with(…, 1, …)`) | tuée | T-a14 |
+| M-a9 | verrous de tête un par un, dans l'ordre de la requête | **survivante** au premier passage, puis **tuée 3/3** après renforcement de T-a16 (sonde `NOWAIT` : la facture 2 libre pendant l'attente de la 1) | T-a16 |
+| MT-1 | ancien texte dans le repli de l'écran | tuée | T-a10 |
+| MT-2 | ancien texte dans le repli serveur | tuée | T-a13 |
+
+M-a9 : l'interblocage seul ne la tuait pas — MariaDB 10.11 n'a pas octroyé la facture 1 au premier arrivé dans ce run,
+et l'hypothèse « octroi en file » de la fiche n'est donc pas tenue pour acquise (doc-comment de T-a16).
+
+**Gates exécutés** (base `kesh_301a` remise à zéro avant chacun) :
+
+- avant le commit `04fe84a5` : `scripts/test-fast.sh --ci` — **3754 réussis, 6 ignorés** (un premier essai avait rougi
+  sur `every_bank_account_writer_is_classified`, d'où C-30-1-43) ;
+- avant le commit `42df4638` : `scripts/test-fast.sh --ci` — **3759 réussis, 6 ignorés** ;
+- au dernier commit de code `82f0424e` (arbre identique) : `scripts/test-fast.sh --ci` — **3759 réussis, 6 ignorés** ;
+  `npm run check` — 0 erreur, 29 avertissements (5 fichiers) ; `npm run lint-i18n-ownership` — PASS ; `npm run test:unit` —
+  **149 fichiers, 1706 tests réussis** ; `npm run build` — vert ;
+- E2E complet au dernier commit de code `82f0424e` (recette de `docs/testing.md`, port 3051, base `kesh_e2e_301a`
+  recréée et migrée, sous le verrou) : **293 réussis, 7 échecs, 19 ignorés** (11,8 min). Les sept échecs, jugés fichier
+  par fichier contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — exactement les sept de la KF-029
+  (#97) ; ni la KF-052 ni l'échec variable ne se sont déclenchés. Aucune régression.
+
+**Écarts à la fiche** (registre) : C-30-1-42 (la course T-a6 admet un interblocage rejoué), C-30-1-43
+(`link_bank_transaction_for_test` dans `tests/support/`), C-30-1-44 (`FORCE INDEX (PRIMARY)` constaté nécessaire),
+C-30-1-45 (branche `story/30-1`), C-30-1-46 (placement de T-a17, forme de T-a11 et de T-a1) ; T-a16 renforcé (M-a9).
+
 ### File List
+
+30-1a (`62af52d6..82f0424e`) :
+
+- `crates/kesh-db/src/repositories/reconciliation_cancel.rs`
+- `crates/kesh-db/src/repositories/supplier_invoices.rs`
+- `crates/kesh-db/src/repositories/payment_batches.rs`
+- `crates/kesh-db/src/test_fixtures.rs`
+- `crates/kesh-db/tests/support/fournisseur_rapproche.rs` (neuf)
+- `crates/kesh-db/tests/reconciliation_cancel.rs`
+- `crates/kesh-db/tests/payment_batches_repository.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/src/routes/payment_batches.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-api/tests/rejeu_interblocage_e2e.rs`
+- `crates/kesh-api/tests/supplier_settlement_cancel_e2e.rs`
+- `crates/kesh-api/tests/textes_coherents.rs`
+- `crates/kesh-api/tests/audit_route_registry.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/lib/shared/utils/settlement-cancel-blocked.ts`
+- `frontend/src/lib/shared/utils/settlement-cancel-blocked.test.ts`
+- `docs/api-external.md`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/30-1-reconciliation-factures-fournisseur.md`,
+  `epic-30-choix-autonomes-301.md`, `30-1a-review-prompt-p1.md` (neuf), `sprint-status.yaml`
 
 ---
 
@@ -1553,4 +1688,15 @@ même qui avait fait retirer C-30-1-34 en P4. Décision de l'orchestrateur : **r
   en P5), chacune sur-bloquant. Réponse retenue : ni découpage ni garde supplémentaire, mais **simplification** (P4) puis
   **retrait** (P6) ; le cas reste l'angle mort L1, écrit au manuel avec son geste sûr, et relève de #671. Trois des
   défauts HIGH (P4 R1, P5 F1, P6 F1/R1) sont nés d'arbitrages de l'orchestrateur — leçon pour la rétrospective.
+
+### Développement de la 30-1a — 2026-10-15
+
+Opus 5.5, autonomie. Trois commits : `04fe84a5` (le dé-rapprochement défait un règlement fournisseur, AC-a1 à a6),
+`42df4638` (la création d'un lot verrouille ses factures en tête et rejoue un interblocage, AC-a7 à a9), `82f0424e`
+(T-a16 renforcé après la survie de M-a9). Tests rouges constatés avant le code (Dev Agent Record) ; 13 tests Rust et 1
+Vitest ajoutés ; mutations M-a1, M-a3, M-a4, M-a5, M-a7, M-a8 tuées, M-a9 tuée après renforcement, MT-1 et MT-2 (rouge
+de T-a10 et T-a13) tuées. Trois constats du développement qui corrigent la fiche : la course T-a6 admet un
+interblocage rejoué (C-30-1-42) ; le plan du verrouillage de tête exige `FORCE INDEX (PRIMARY)` (C-30-1-44) ; l'octroi
+des verrous « en file » n'est pas garanti (T-a16). Choix C-30-1-42 à C-30-1-46. Prompt de revue de code P1 :
+`30-1a-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
 
