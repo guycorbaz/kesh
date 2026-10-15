@@ -31,7 +31,7 @@
  * Pré-requis : MariaDB up + KESH_TEST_MODE=true (cf. docs/testing.md).
  */
 
-import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -44,6 +44,7 @@ import {
 import {
 	createContactWithAddressViaApi,
 	createAndValidateInvoiceViaApi,
+	wiredBankAccountViaApi,
 } from './helpers/api-fixtures';
 
 const FIXTURE = path.join(
@@ -69,37 +70,6 @@ async function login(page: Page): Promise<void> {
 	await expect(page).toHaveURL('/');
 }
 
-/** Le compte bancaire du relevé, créé au besoin et câblé sur un compte du grand livre. */
-async function wiredBankAccount(ctx: APIRequestContext): Promise<number> {
-	type Ba = { id: number; iban: string; version: number; journalAccountId: number | null };
-	const findAccount = async (): Promise<Ba | undefined> => {
-		const list = await ctx.get('/api/v1/bank-accounts');
-		expect(list.ok()).toBeTruthy();
-		return ((await list.json()) as Ba[]).find((b) => b.iban === TEST_IBAN);
-	};
-	let ba = await findAccount();
-	if (!ba) {
-		const res = await ctx.post('/api/v1/bank-accounts', {
-			data: { bankName: 'UBS Test', iban: TEST_IBAN, qrIban: null, isPrimary: true },
-		});
-		expect(res.ok(), `bank-account create: ${res.status()}`).toBeTruthy();
-		ba = await findAccount();
-	}
-	if (ba!.journalAccountId === null) {
-		const accounts = (await (await ctx.get('/api/v1/accounts')).json()) as Array<{
-			id: number;
-			number: string;
-		}>;
-		const ledger = accounts.find((a) => a.number === '1000');
-		expect(ledger, 'compte 1000 du préréglage').toBeTruthy();
-		const wired = await ctx.patch(`/api/v1/bank-accounts/${ba!.id}`, {
-			data: { journalAccountId: ledger!.id, version: ba!.version },
-		});
-		expect(wired.ok(), `bank-account wiring: ${wired.status()}`).toBeTruthy();
-	}
-	return ba!.id;
-}
-
 /**
  * Le décor : une facture réglée par virement depuis la fiche, et un relevé dont la
  * transaction dépasse ce règlement de 3 centimes.
@@ -121,7 +91,7 @@ async function settledFromTheInvoice(
 	const invoiceId = await createAndValidateInvoiceViaApi(page, contactId, '2026-05-10');
 	const ctx = await authedApiContext(page);
 	try {
-		const bankAccountId = await wiredBankAccount(ctx);
+		const bankAccountId = await wiredBankAccountViaApi(page, TEST_IBAN);
 		const cents = 10000 + (Date.now() % 30000);
 		const settled = (cents / 100).toFixed(2);
 		const res = await ctx.post(`/api/v1/invoices/${invoiceId}/settlements`, {

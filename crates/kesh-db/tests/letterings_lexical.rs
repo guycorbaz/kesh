@@ -593,15 +593,16 @@ fn ecrivains_du_reglement_fournisseur(source: &str) -> Vec<(String, bool, bool)>
 
 /// AC8 (part ii) — chacun des trois `UPDATE supplier_invoices …
 /// settlement_journal_entry_id` de production est dans une fonction qui
-/// synchronise le lettrage après lui (`pay_in_tx`) ou qui le dissout avant de
-/// contre-passer (les deux annulations). Un site neuf rougit en se nommant.
+/// synchronise le lettrage après lui (`pay_in_tx_as`, le corps de `pay_in_tx`
+/// depuis la Story 30-1b) ou qui le dissout avant de contre-passer (les deux
+/// annulations). Un site neuf rougit en se nommant.
 #[test]
 fn supplier_settlement_writers_sync_or_dissolve() {
     let mut fautes = Vec::new();
     let mut ecrivains = Vec::new();
     for (fichier, source) in sources_de_production() {
         for (nom, synchronise, dissout) in ecrivains_du_reglement_fournisseur(&source) {
-            let attendu = if nom == "pay_in_tx" {
+            let attendu = if nom == "pay_in_tx_as" {
                 synchronise
             } else {
                 dissout
@@ -628,7 +629,7 @@ fn supplier_settlement_writers_sync_or_dissolve() {
         [
             "kesh-db/src/repositories/supplier_invoices.rs::cancel_in_tx",
             "kesh-db/src/repositories/supplier_invoices.rs::cancel_settlement_in_tx",
-            "kesh-db/src/repositories/supplier_invoices.rs::pay_in_tx",
+            "kesh-db/src/repositories/supplier_invoices.rs::pay_in_tx_as",
         ],
         "les trois écrivains connus — un site neuf se nomme ici"
     );

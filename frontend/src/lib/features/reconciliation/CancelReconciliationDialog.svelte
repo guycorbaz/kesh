@@ -3,6 +3,8 @@
 
   ⛔ UN SEUL composant, pour deux pages : le détail d'un import bancaire et la
   fiche facture client (à côté d'un règlement refusé au motif « rapproché »).
+  Trois genres de rapprochement (Story 30-1b) : règlement client, règlement
+  fournisseur (`supplier_settlement`), écriture propre.
   Premier dialogue partagé entre deux pages : la 25-3-a-1 confirme DANS la page.
 
   Contrat : `bankTransactionId`, `open`, `onClose()`, `onSuccess(result)`.
@@ -79,6 +81,15 @@
 				'reconciliation-cancel-confirm-invoice',
 				"Une écriture inverse datée d'aujourd'hui sera passée, le règlement de la facture { $invoice } sera retiré et la facture redeviendra à régler ; la transaction redeviendra à rapprocher.",
 				{ invoice: view.invoiceNumber ?? String(view.invoiceId ?? '') },
+			);
+		}
+		// Story 30-1b (#686, AC-b11) — un règlement fournisseur : son paiement est retiré
+		// et la facture redevient ouverte, à payer.
+		if (view?.kind === 'supplier_settlement') {
+			return i18nMsg(
+				'reconciliation-cancel-confirm-supplier-invoice',
+				"Une écriture inverse datée d'aujourd'hui sera passée, le paiement de la facture fournisseur { $invoice } sera retiré et la facture redeviendra ouverte, à payer ; la transaction redeviendra à rapprocher.",
+				{ invoice: view.supplierInvoiceNumber ?? `#${view.supplierInvoiceId ?? ''}` },
 			);
 		}
 		return i18nMsg(

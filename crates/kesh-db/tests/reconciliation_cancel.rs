@@ -13,11 +13,14 @@
 //! **concurrence avec une clôture d'exercice**.
 //!
 //! **Story 30-1a (#686)** — le **règlement fournisseur** rapproché, que rien
-//! ne produit avant la 30-1b : son état est posé par
+//! ne produisait avant la 30-1b : son état est posé par
 //! `support/fournisseur_rapproche.rs` (règlement par le vrai chemin, lien en
 //! SQL), et le dé-rapprochement est exercé ici au dépôt — classement, état
 //! final, grand livre, motifs, courses et plan de la lecture verrouillante. La
-//! forme JSON et l'audit le sont par la route (`reconciliation_e2e.rs`).
+//! forme JSON et l'audit le sont par la route (`reconciliation_e2e.rs`). Le
+//! septième chemin, l'acceptation d'une facture fournisseur (Story 30-1b),
+//! produit cet état ; son aller et retour est exercé par la route
+//! (`an_accepted_supplier_invoice_is_undone_by_cancelling_the_reconciliation`).
 //!
 //! Pré-requis : MariaDB démarré.
 

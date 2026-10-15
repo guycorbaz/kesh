@@ -9,6 +9,11 @@
 // `RECONCILIATION_ALREADY_REJECTED` aussi ; Story 28-6 : `RECONCILIATION_TRANSACTION_NOT_CREDIT`
 // aussi. Story 28-4b (#642, AC13) : `BANK_ACCOUNT_CLOSED` (pré-vols R1 et R2 de la 28-4a) —
 // 29 littéraux, recomptés par `grep -oE 'error_code: "[A-Z_]+"' … | sort -u | wc -l` ; 31 codes.
+// Story 30-1b (#686) : cinq littéraux neufs — `RECONCILIATION_TRANSACTION_NOT_DEBIT`,
+// `SUPPLIER_INVOICE_NOT_FOUND`, `RECONCILIATION_AMOUNT_MISMATCH`,
+// `RECONCILIATION_SUPPLIER_PAYMENT_HOLD`, `RECONCILIATION_RULE_MASKED` (34, recomptés par la même
+// commande) — et un troisième code de `DbError::error_code()`, `INACTIVE_OR_INVALID_ACCOUNTS` :
+// 37 codes.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -51,6 +56,7 @@ const EXPECTED_KEYS: Record<string, string> = {
 	BANK_TRANSACTION_NOT_FOUND: 'reconciliation-failed-bank-transaction-not-found',
 	DATABASE_ERROR: 'reconciliation-failed-database-error',
 	FISCAL_YEAR_INVALID: 'error-fiscal-year-invalid',
+	INACTIVE_OR_INVALID_ACCOUNTS: 'error-inactive-accounts',
 	INTERNAL_ERROR: 'error-internal',
 	INVOICE_NOT_FOUND: 'reconciliation-failed-invoice-not-found',
 	INVOICE_SALE_ENTRY_MALFORMED: 'reconciliation-failed-invoice-sale-entry-malformed',
@@ -59,20 +65,25 @@ const EXPECTED_KEYS: Record<string, string> = {
 	PROJECT_ARCHIVED: 'reconciliation-failed-project-archived',
 	PROJECT_NOT_FOUND: 'reconciliation-failed-project-not-found',
 	RECONCILIATION_ALREADY_RECONCILED: 'reconciliation-errors-already-reconciled',
+	RECONCILIATION_AMOUNT_MISMATCH: 'reconciliation-failed-amount-mismatch',
 	RECONCILIATION_ALREADY_REJECTED: 'reconciliation-failed-already-rejected',
 	RECONCILIATION_CURRENCY_MISMATCH: 'reconciliation-failed-currency-mismatch',
 	RECONCILIATION_FISCAL_YEAR_CLOSED: 'error-fiscal-year-invalid',
 	RECONCILIATION_INVOICE_NOT_ELIGIBLE: 'reconciliation-errors-invoice-not-eligible',
 	RECONCILIATION_OVERPAYMENT: 'reconciliation-failed-overpayment',
+	RECONCILIATION_RULE_MASKED: 'reconciliation-failed-rule-masked',
 	RECONCILIATION_RULE_MISMATCH: 'reconciliation-failed-rule-mismatch',
 	RECONCILIATION_RULE_NO_LONGER_MATCHES: 'reconciliation-failed-rule-no-longer-matches',
 	RECONCILIATION_RULE_NOT_FOUND: 'reconciliation-failed-rule-not-found',
 	RECONCILIATION_SCORE_TOO_LOW: 'reconciliation-failed-score-too-low',
 	RECONCILIATION_SPLIT_IMBALANCE: 'reconciliation-split-error-imbalance',
+	RECONCILIATION_SUPPLIER_PAYMENT_HOLD: 'reconciliation-failed-supplier-payment-hold',
 	RECONCILIATION_TRANSACTION_NOT_CREDIT: 'reconciliation-failed-transaction-not-credit',
+	RECONCILIATION_TRANSACTION_NOT_DEBIT: 'reconciliation-failed-transaction-not-debit',
 	RECONCILIATION_TRANSACTION_NOT_PENDING: 'reconciliation-failed-transaction-not-pending',
 	ROUNDING_ACCOUNT_NOT_CONFIGURED: 'error-rounding-account-not-configured',
 	SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT: 'reconciliation-failed-counterparty-is-claim-account',
+	SUPPLIER_INVOICE_NOT_FOUND: 'reconciliation-failed-invoice-not-found',
 	VALIDATION_ERROR: 'error-validation',
 };
 
@@ -81,8 +92,8 @@ describe('failedProposalLabel', () => {
 		calls.length = 0;
 	});
 
-	it('couvre les 31 codes relevés', () => {
-		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(31);
+	it('couvre les 37 codes relevés', () => {
+		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(37);
 	});
 
 	// Story 28-4b (#642, AC13) — le refus d'un compte clos (compte clos dans un autre
@@ -212,6 +223,9 @@ describe('failedProposalLabel', () => {
 			reason: 'payment_date_before_invoice_date',
 		});
 		expect(calls).toEqual(['reconciliation-failed-payment-before-invoice']);
+		// Story 30-1b : le nombre de jours est lu sur `details.tolerance_days`, repli 1 (ici
+		// absent : un refus d'avant le champ).
+		// Revue de code P1 de la 30-1b (A5/B2) : un jour garde le libellé d'avant, cité au manuel.
 		expect(label).toContain('plus d’un jour avant la facture');
 		expect(label).not.toContain('proposée');
 	});
@@ -256,6 +270,127 @@ describe('failedProposalLabel', () => {
 	])('RECONCILIATION_INVOICE_NOT_ELIGIBLE (%s) garde le libellé générique', (_cas, details) => {
 		failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE', details);
 		expect(calls).toEqual(['reconciliation-errors-invoice-not-eligible']);
+	});
+
+	// ---------------------------------------------------------------------------------------
+	// Story 30-1b (#686) — T-b28 (libellés neufs) et T-b38 (libellés lus sur `details`)
+	// ---------------------------------------------------------------------------------------
+
+	it('T-b38 — payment_date_before_invoice_date lit tolerance_days : 7 pour un fournisseur', () => {
+		const label = failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE', {
+			reason: 'payment_date_before_invoice_date',
+			tolerance_days: 7,
+		});
+		expect(calls).toEqual(['reconciliation-failed-payment-before-invoice-days']);
+		expect(label).toContain('plus de 7 jours avant la facture');
+	});
+
+	it('T-b38 — tolerance_days 1 explicite ⇒ le libellé d’un jour', () => {
+		const label = failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE', {
+			reason: 'payment_date_before_invoice_date',
+			tolerance_days: 1,
+		});
+		expect(calls).toEqual(['reconciliation-failed-payment-before-invoice']);
+		expect(label).toBe(valeurFr('reconciliation-failed-payment-before-invoice'));
+	});
+
+	it.each([
+		['absent', { reason: 'payment_date_before_invoice_date' }],
+		['non entier', { reason: 'payment_date_before_invoice_date', tolerance_days: 1.5 }],
+		['chaîne', { reason: 'payment_date_before_invoice_date', tolerance_days: '7' }],
+		['nul ou négatif', { reason: 'payment_date_before_invoice_date', tolerance_days: 0 }],
+	])('T-b38 — tolerance_days %s ⇒ repli 1', (_cas, details) => {
+		expect(failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE', details)).toContain(
+			'plus d’un jour',
+		);
+	});
+
+	it('T-b38 — SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT, claim payable : le compte créanciers', () => {
+		const label = failedProposalLabel('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT', {
+			bankAccountId: 3,
+			accountId: 9,
+			accountNumber: '2000',
+			claim: 'payable',
+			role: 'counterparty',
+		});
+		expect(calls).toEqual(['reconciliation-failed-counterparty-is-payable-account']);
+		expect(label).toContain('créanciers');
+		expect(label).not.toContain('débiteurs');
+	});
+
+	it('T-b38 — claim receivable : le compte débiteurs, comme avant', () => {
+		failedProposalLabel('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT', {
+			claim: 'receivable',
+			role: 'counterparty',
+		});
+		expect(calls).toEqual(['reconciliation-failed-counterparty-is-claim-account']);
+	});
+
+	it('T-b28 — supplier_invoice_in_payment_batch : annuler le lot ou affecter à la main, jamais « confirmer »', () => {
+		const label = failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE', {
+			reason: 'supplier_invoice_in_payment_batch',
+			paymentBatchId: 4,
+		});
+		expect(calls).toEqual(['reconciliation-failed-supplier-invoice-in-batch']);
+		expect(label).toContain('annulez le lot');
+		expect(label.toLowerCase()).not.toContain('confirm');
+	});
+
+	// Revue de code P1 de la 30-1b (INFO de la lentille A) : le geste juste, raison par raison,
+	// est de traiter la facture — l'accepter (débit) ou rattacher la transaction à son règlement
+	// (crédit) ; « Affecter manuellement » n'est conseillé que sous condition, sans quoi il
+	// compterait la charge ou le produit deux fois (encadré L1 du manuel).
+	it.each([
+		['payment_batch', 'reconciliation-failed-rule-masked-payment-batch', 'lot de paiement', 'acceptez ici la facture proposée'],
+		['invoice_candidate', 'reconciliation-failed-rule-masked-invoice-candidate', 'facture fournisseur ouverte', 'acceptez la facture proposée'],
+		['invoice_slightly_overpaid', 'reconciliation-failed-rule-masked-overpaid', 'quelques centimes', 'rattachez-y la transaction'],
+		[undefined, 'reconciliation-failed-rule-masked', 'une facture correspond', 'traitez la facture'],
+	])('T-b28 — RECONCILIATION_RULE_MASKED (%s) ⇒ %s', (reason, key, contenu, geste) => {
+		const label = failedProposalLabel(
+			'RECONCILIATION_RULE_MASKED',
+			reason === undefined ? undefined : { reason },
+		);
+		expect(calls).toEqual([key]);
+		expect(label).toContain(contenu);
+		expect(label).toContain(geste);
+		expect(label).toContain('N’utilisez « Affecter manuellement » que si');
+		expect(label.toLowerCase()).not.toContain('confirm');
+	});
+
+	it.each([
+		['RECONCILIATION_TRANSACTION_NOT_DEBIT', 'facture fournisseur'],
+		['RECONCILIATION_AMOUNT_MISMATCH', 'total exact'],
+		['RECONCILIATION_SUPPLIER_PAYMENT_HOLD', 'Annulez le lot'],
+	])('T-b28 — %s : libellé dédié', (code, contenu) => {
+		expect(failedProposalLabel(code)).toContain(contenu);
+	});
+
+	it('T-b28 — les replis des clés neuves égalent le catalogue fr-CH', () => {
+		const cas: [string, unknown, Record<string, string>?][] = [
+			['RECONCILIATION_TRANSACTION_NOT_DEBIT', undefined],
+			['RECONCILIATION_AMOUNT_MISMATCH', undefined],
+			['RECONCILIATION_SUPPLIER_PAYMENT_HOLD', undefined],
+			['RECONCILIATION_RULE_MASKED', { reason: 'payment_batch' }],
+			['RECONCILIATION_RULE_MASKED', { reason: 'invoice_candidate' }],
+			['RECONCILIATION_RULE_MASKED', { reason: 'invoice_slightly_overpaid' }],
+			['RECONCILIATION_RULE_MASKED', undefined],
+			['RECONCILIATION_INVOICE_NOT_ELIGIBLE', { reason: 'supplier_invoice_in_payment_batch' }],
+			['SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT', { claim: 'payable' }],
+			['INACTIVE_OR_INVALID_ACCOUNTS', undefined],
+		];
+		for (const [code, details] of cas) {
+			calls.length = 0;
+			const label = failedProposalLabel(code, details);
+			const attendu = valeurFr(calls[0]);
+			expect(attendu, calls[0]).toBeDefined();
+			expect(label, code).toBe(attendu);
+		}
+		calls.length = 0;
+		const label = failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE', {
+			reason: 'payment_date_before_invoice_date',
+			tolerance_days: 7,
+		});
+		expect(label).toBe(valeurFr(calls[0])?.replace('{ $days }', '7'));
 	});
 });
 

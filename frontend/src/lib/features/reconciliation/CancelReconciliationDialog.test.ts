@@ -32,6 +32,8 @@ function view(partial: Partial<ReconciliationTransactionResponse>): Reconciliati
 		kind: 'entry',
 		invoiceId: null,
 		invoiceNumber: null,
+		supplierInvoiceId: null,
+		supplierInvoiceNumber: null,
 		cancellable: true,
 		cancelBlockedBy: null,
 		cancelBlockedLabel: null,
@@ -59,6 +61,7 @@ describe('CancelReconciliationDialog', () => {
 			bankTransaction: { id: 42, status: 'pending', matchedEntryId: null },
 			reversalJournalEntryId: 9,
 			invoiceId: null,
+			supplierInvoiceId: null,
 		};
 		mockApi.cancelReconciliation.mockResolvedValue(result);
 		const onSuccess = vi.fn();
@@ -134,5 +137,48 @@ describe('CancelReconciliationDialog — échec imprévu à la confirmation (Sto
 		expect(mockApi.getReconciliationTransaction).toHaveBeenCalledWith(42);
 		expect(erreur.textContent).toContain('Erreur inattendue.');
 		expect(erreur.textContent).not.toContain('boom');
+	});
+});
+
+// Story 30-1b (#686, AC-b11) — T-b40 (ex-T-a9) : les trois genres de rapprochement, et le
+// repli `#id` d'une facture fournisseur sans numéro.
+describe('CancelReconciliationDialog — règlement fournisseur (Story 30-1b, T-b40)', () => {
+	async function texte(partial: Partial<ReconciliationTransactionResponse>) {
+		mockApi.getReconciliationTransaction.mockResolvedValue(view(partial));
+		const { findByTestId } = monter();
+		const t = (await findByTestId('reconciliation-cancel-confirm-text')).textContent ?? '';
+		cleanup();
+		return t;
+	}
+
+	it('supplier_settlement ⇒ le texte fournisseur, qui nomme la facture (M-b26 : texte client)', async () => {
+		const t = await texte({
+			kind: 'supplier_settlement',
+			supplierInvoiceId: 31,
+			supplierInvoiceNumber: 'FF-2026-0042',
+		});
+		expect(t).toContain('facture fournisseur FF-2026-0042');
+		expect(t).toContain('redeviendra ouverte, à payer');
+		expect(t).not.toContain('redeviendra à régler');
+	});
+
+	it('supplier_settlement sans numéro ⇒ repli #id', async () => {
+		const t = await texte({
+			kind: 'supplier_settlement',
+			supplierInvoiceId: 31,
+			supplierInvoiceNumber: null,
+		});
+		expect(t).toContain('facture fournisseur #31');
+	});
+
+	it('les trois genres donnent trois textes distincts', async () => {
+		const client = await texte({ kind: 'invoice_settlement', invoiceId: 5, invoiceNumber: 'F-1' });
+		const fournisseur = await texte({
+			kind: 'supplier_settlement',
+			supplierInvoiceId: 31,
+			supplierInvoiceNumber: 'FF-1',
+		});
+		const ecriture = await texte({ kind: 'entry' });
+		expect(new Set([client, fournisseur, ecriture]).size).toBe(3);
 	});
 });

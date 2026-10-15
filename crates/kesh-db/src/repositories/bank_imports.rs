@@ -377,8 +377,9 @@ pub struct DeletedBankImport {
 /// **ou** `matched_entry_id IS NOT NULL`.
 ///
 /// Elle s'appuie sur l'inventaire clos des écrivains de `bank_transactions` :
-/// les six chemins qui rapprochent — dont le rattachement à un règlement saisi
-/// depuis la fiche (Story 29-8) — posent les deux colonnes ensemble, le seul
+/// les sept chemins qui rapprochent — dont le rattachement à un règlement saisi
+/// depuis la fiche (Story 29-8) et l'acceptation d'une facture fournisseur
+/// (Story 30-1b) — posent les deux colonnes ensemble, le seul
 /// qui les retire (`reconciliation_cancel::cancel_in_tx`) les retire ensemble,
 /// et le **rejet** (`reject_batch`) ne touche aucune des deux — une transaction
 /// rejetée n'est donc **pas** rapprochée —, et l'**annulation du rejet**

@@ -28,6 +28,15 @@
   suit le lot (la transaction acceptée ou rejetée n'est plus dans la liste
   ensuite). Le compteur et les *Échecs partiels* restent affichés même quand
   le lot a vidé la liste.
+
+  Story 30-1b (#686, AC-b11) — un débit reçoit des factures FOURNISSEUR
+  (`candidateType = 'supplier_invoice'`) : badge « Facture fournisseur », nom
+  du fournisseur, numéro (à défaut `#id`) et montant ; « Accepter » envoie
+  `{ type: 'supplier_invoice', bankTransactionId, supplierInvoiceId }`. Une
+  ligne qui porte un `notice` l'affiche À LA PLACE de toute proposition ;
+  « Accepter » reste grisé pour elle, comme pour toute ligne sans candidate.
+  Le texte de l'avis ne conseille jamais de confirmer le lot (qui compterait la
+  dépense deux fois) et ne cite aucun numéro d'issue.
 -->
 <script lang="ts">
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
@@ -293,6 +302,14 @@
 						invoiceId: c.invoiceId,
 					};
 				}
+				// Story 30-1b (#686) — une facture fournisseur, pour un débit.
+				if (c.candidateType === 'supplier_invoice' && c.supplierInvoiceId !== null) {
+					return {
+						type: 'supplier_invoice' as const,
+						bankTransactionId: txId,
+						supplierInvoiceId: c.supplierInvoiceId,
+					};
+				}
 				throw new Error(`Invalid candidate for txId=${txId}`);
 			});
 			const r = await acceptProposals(bankAccountId, items);
@@ -397,7 +414,7 @@
 			<p class="mb-2 text-sm text-text-muted" data-testid="reconciliation-priority-hint">
 				{i18nMsg(
 					'reconciliation-labels-priority-hint',
-					'Une seule proposition est affichée par transaction : la facture la mieux notée s’il y en a une, sinon la règle d’affectation qui correspond. Une facture proposée passe toujours devant une règle.',
+					'Une seule proposition est affichée par transaction : pour un crédit, la facture client la mieux notée, pour un débit, la facture fournisseur la mieux notée, s’il y en a une, sinon la règle d’affectation qui correspond. Une facture proposée passe toujours devant une règle.',
 				)}
 			</p>
 		{/if}
@@ -456,7 +473,24 @@
 						<td>{p.transaction.bookingDate}</td>
 						<td class="text-right">{p.transaction.amount} {p.transaction.currency}</td>
 						<td>{p.transaction.counterpartyName ?? ''}</td>
-						{#if p.candidates.length === 0}
+						{#if p.notice}
+							<!-- Story 30-1b (#686, AC-b5, AC-b11) — la ligne ne propose rien, et dit pourquoi. -->
+							<td
+								colspan="2"
+								class="text-text-muted"
+								data-testid="proposal-notice"
+								data-notice-code={p.notice.code}
+							>
+								{i18nMsg(
+									'reconciliation-labels-notice-supplier-invoice-in-batch',
+									'La facture fournisseur { $invoice } de ce montant figure dans le lot de paiement n° { $batch } en cours sur ce compte. Si cette transaction est le paiement de ce lot, annulez le lot : la facture vous sera alors proposée ici. Sinon, affectez la transaction à la main.',
+									{
+										invoice: p.notice.supplierInvoiceNumber ?? `#${p.notice.supplierInvoiceId}`,
+										batch: p.notice.paymentBatchId,
+									},
+								)}
+							</td>
+						{:else if p.candidates.length === 0}
 							<td colspan="2" class="text-text-muted">
 								{i18nMsg('reconciliation-labels-no-candidate', 'Aucune correspondance')}
 							</td>
@@ -478,6 +512,23 @@
 										{p.candidates[0].ruleLabel ?? `#${p.candidates[0].ruleId}`}
 										→ {p.candidates[0].counterpartyAccountName ??
 											`#${p.candidates[0].counterpartyAccountId}`}
+									</span>
+								{:else if p.candidates[0].candidateType === 'supplier_invoice'}
+									<!-- Story 30-1b (#686, AC-b11) — une facture fournisseur, pour un débit. -->
+									<span
+										class="mr-1 inline-block rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900"
+										data-testid="candidate-supplier-invoice-badge"
+									>
+										{i18nMsg('reconciliation-labels-supplier-invoice-badge', 'Facture fournisseur')}
+									</span>
+									<span
+										data-testid="candidate-top-1"
+										data-candidate-type="supplier_invoice"
+										data-supplier-invoice-id={p.candidates[0].supplierInvoiceId}
+									>
+										{#if p.candidates[0].contactName}{p.candidates[0].contactName} — {/if}{p.candidates[0]
+											.invoiceNumber ?? `#${p.candidates[0].supplierInvoiceId}`}
+										({p.candidates[0].invoiceAmount})
 									</span>
 								{:else}
 									<span data-testid="candidate-top-1" data-candidate-type="invoice" data-invoice-id={p.candidates[0].invoiceId}>

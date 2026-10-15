@@ -5272,10 +5272,11 @@ async fn cancel_reconciliation_roles_scope_and_head(pool: MySqlPool) {
 /// dans les propositions, qui écartent toute transaction marquée rejetée.
 /// ⚠️ **État FORGÉ, et dit tel** : aucun chemin réel ne laisse le marqueur sur
 /// une transaction rapprochée — cinq chemins le remettent à zéro (dont le
-/// rattachement à un règlement, Story 29-8), et le
-/// chemin « facture » refuse une transaction rejetée dès son contrôle
-/// préalable (`failed[]`, `RECONCILIATION_ALREADY_REJECTED` depuis la Story
-/// 27-4 ; un `400` du lot entier auparavant). La remise à zéro du geste est
+/// rattachement à un règlement, Story 29-8), et les
+/// chemins « facture » et « facture fournisseur » (Story 30-1b) refusent une
+/// transaction rejetée dès leur contrôle préalable commun (`failed[]`,
+/// `RECONCILIATION_ALREADY_REJECTED` depuis la Story 27-4 ; un `400` du lot
+/// entier auparavant). La remise à zéro du geste est
 /// donc une **défense** ; sans ce test, l'oublier ne rougirait nulle part.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn a_previously_rejected_transaction_comes_back_to_the_proposals(pool: MySqlPool) {
@@ -10021,4 +10022,1479 @@ async fn the_rule_guard_needs_an_invoice_bearing_a_signal(pool: MySqlPool) {
         "la référence de la facture trop-perçue masque la règle : {:?}",
         by_tx[&tx_ids[1]]
     );
+}
+
+// ============================================================
+// Story 30-1b (#686) — la réconciliation propose et règle les factures
+// fournisseur pour un débit
+//
+// Décor commun : `seed_accounting_company` (exercice 2020-2030 ouvert, comptes
+// 1000, 1100, 2000, 3000, 4000), `fournisseur_rapproche::preparer` (créanciers
+// 2000, le fournisseur « Fournisseur rapproché SA », le compte bancaire de
+// l'import lié au 1100). Décor synthétique.
+// ============================================================
+
+/// Le nom du fournisseur du décor (`fournisseur_rapproche::preparer`).
+const SUPPLIER_301B: &str = "Fournisseur rapproché SA";
+
+struct Ctx301b {
+    seeded: kesh_db::test_fixtures::SeededCompany,
+    f: fournisseur_rapproche::Fournisseur,
+    app: TestApp,
+    jwt: String,
+}
+
+async fn setup_301b(pool: &MySqlPool) -> Ctx301b {
+    let seeded = kesh_db::test_fixtures::seed_accounting_company(pool)
+        .await
+        .expect("seed");
+    let f = fournisseur_rapproche::preparer(pool, &seeded).await;
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(seeded.admin_user_id, "Admin", seeded.company_id);
+    Ctx301b {
+        seeded,
+        f,
+        app,
+        jwt,
+    }
+}
+
+fn day_301b(m: u32, d: u32) -> NaiveDate {
+    NaiveDate::from_ymd_opt(2026, m, d).unwrap()
+}
+
+/// Une transaction en attente sur le compte de l'import, du 2026-06-15 (date de
+/// valeur égale).
+async fn tx_301b(
+    pool: &MySqlPool,
+    c: &Ctx301b,
+    amount: Decimal,
+    reference: Option<&str>,
+    counterparty: Option<&str>,
+) -> i64 {
+    fournisseur_rapproche::transaction_en_attente(
+        pool,
+        &c.seeded,
+        c.f.bank_account_id,
+        day_301b(6, 15),
+        Some(day_301b(6, 15)),
+        amount,
+        reference,
+        counterparty,
+    )
+    .await
+}
+
+/// Une facture fournisseur ouverte du fournisseur du décor ; rend son id.
+async fn supplier_invoice_301b(
+    pool: &MySqlPool,
+    c: &Ctx301b,
+    number: Option<&str>,
+    reference: Option<&str>,
+    date: NaiveDate,
+    amount: Decimal,
+) -> i64 {
+    fournisseur_rapproche::facture_ouverte(
+        pool, &c.seeded, c.f, number, reference, date, None, amount,
+    )
+    .await
+    .0
+}
+
+/// Les propositions du compte `bank_account_id`, par transaction.
+async fn proposals_301b(
+    c: &Ctx301b,
+    bank_account_id: i64,
+) -> std::collections::BTreeMap<i64, Value> {
+    let resp = c
+        .app
+        .client
+        .get(c.app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={bank_account_id}"
+        )))
+        .bearer_auth(&c.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    body["proposals"]
+        .as_array()
+        .expect("proposals")
+        .iter()
+        .map(|p| (p["bankTransactionId"].as_i64().unwrap(), p.clone()))
+        .collect()
+}
+
+/// `POST /reconciliation/accept` (200 attendu : un refus par proposition reste
+/// un succès HTTP).
+async fn accept_301b(c: &Ctx301b, auth: &str, bank_account_id: i64, proposals: Value) -> Value {
+    let resp = c
+        .app
+        .client
+        .post(c.app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(auth)
+        .json(&serde_json::json!({
+            "bankAccountId": bank_account_id,
+            "proposals": proposals,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "pattern batch : 200");
+    resp.json().await.unwrap()
+}
+
+fn supplier_prop_301b(tx_id: i64, supplier_invoice_id: i64) -> Value {
+    serde_json::json!({
+        "type": "supplier_invoice",
+        "bankTransactionId": tx_id,
+        "supplierInvoiceId": supplier_invoice_id,
+    })
+}
+
+/// Le refus unique d'un lot d'une seule proposition fournisseur.
+async fn refusal_301b(c: &Ctx301b, tx_id: i64, supplier_invoice_id: i64) -> (String, Value) {
+    let body = accept_301b(
+        c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([supplier_prop_301b(tx_id, supplier_invoice_id)]),
+    )
+    .await;
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 0, "{body}");
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["bankTransactionId"], tx_id);
+    (
+        failed[0]["errorCode"].as_str().unwrap().to_string(),
+        failed[0]["details"].clone(),
+    )
+}
+
+/// Une règle « contrepartie contient `value` » vers le compte de charges 4000.
+async fn rule_301b(c: &Ctx301b, value: &str) -> Value {
+    create_rule_ok(
+        &c.app,
+        &c.jwt,
+        serde_json::json!({
+            "label": value,
+            "matchType": "counterparty_contains",
+            "matchValue": value,
+            "counterpartyAccountId": c.seeded.accounts["4000"],
+        }),
+    )
+    .await
+}
+
+/// Une facture **client** validée de la société du décor, dont l'écriture de
+/// vente porte `D 1000 / C 3000` (la créance n'est pas le compte de la banque,
+/// 1100) ; rend `(facture, contact)`.
+async fn client_invoice_301b(
+    pool: &MySqlPool,
+    c: &Ctx301b,
+    contact_name: &str,
+    number: &str,
+    date: NaiveDate,
+    amount: Decimal,
+) -> (i64, i64) {
+    let contact_id = create_contact(
+        pool,
+        c.seeded.company_id,
+        c.seeded.admin_user_id,
+        contact_name,
+    )
+    .await;
+    let je_id = insert_fake_journal_entry(pool, c.seeded.company_id, c.seeded.fiscal_year_id).await;
+    let inv_id = insert_invoice(
+        pool,
+        c.seeded.company_id,
+        contact_id,
+        number,
+        date,
+        amount,
+        "validated",
+        Some(je_id),
+        None,
+    )
+    .await;
+    for (order, account, debit, credit) in [
+        (1, c.seeded.accounts["1000"], amount, Decimal::ZERO),
+        (2, c.seeded.accounts["3000"], Decimal::ZERO, amount),
+    ] {
+        sqlx::query(
+            "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(je_id)
+        .bind(account)
+        .bind(order)
+        .bind(debit)
+        .bind(credit)
+        .execute(pool)
+        .await
+        .expect("ligne de l'écriture de vente");
+    }
+    (inv_id, contact_id)
+}
+
+/// T-b11 et T-b13 (AC-b4) — **un débit ne reçoit que des factures
+/// fournisseur**, même quand une facture client a le même montant, le même
+/// numéro et un client du même nom ; la note compare la valeur absolue
+/// (`amountScore = 1`). Forme JSON de la candidate fournisseur.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_debit_is_offered_supplier_invoices_only(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let sid = supplier_invoice_301b(
+        &pool,
+        &c,
+        Some("FF-30-1B-11"),
+        None,
+        day_301b(6, 1),
+        dec!(250.00),
+    )
+    .await;
+    client_invoice_301b(
+        &pool,
+        &c,
+        SUPPLIER_301B,
+        "FF-30-1B-11",
+        day_301b(6, 1),
+        dec!(250.00),
+    )
+    .await;
+    let tx = tx_301b(
+        &pool,
+        &c,
+        dec!(-250.00),
+        Some("FF-30-1B-11"),
+        Some(SUPPLIER_301B),
+    )
+    .await;
+
+    let by_tx = proposals_301b(&c, c.f.bank_account_id).await;
+    let p = &by_tx[&tx];
+    assert_eq!(p["notice"], Value::Null, "{p}");
+    let candidates = p["candidates"].as_array().unwrap();
+    assert_eq!(
+        candidates.len(),
+        1,
+        "fournisseur seulement : {candidates:?}"
+    );
+    let cand = &candidates[0];
+    assert_eq!(cand["candidateType"], "supplier_invoice");
+    assert_eq!(cand["supplierInvoiceId"], sid);
+    assert_eq!(cand["invoiceId"], Value::Null);
+    assert_eq!(cand["invoiceNumber"], "FF-30-1B-11");
+    assert_eq!(cand["invoiceAmount"], "250");
+    assert_eq!(cand["invoiceTotalTtc"], Value::Null);
+    assert_eq!(cand["invoiceDate"], "2026-06-01");
+    assert_eq!(cand["contactName"], SUPPLIER_301B);
+    assert_eq!(cand["ruleId"], Value::Null);
+    assert_eq!(cand["score"]["amountScore"], 1.0, "valeur absolue");
+    assert_eq!(cand["score"]["referenceScore"], 1.0);
+    assert_eq!(cand["score"]["contactScore"], 1.0);
+    assert_eq!(cand["score"]["total"], 1.0);
+}
+
+/// T-b12 (AC-b4) — **un crédit ne reçoit jamais de facture fournisseur**,
+/// symétrique de T-b11 ; la candidate client porte désormais `contactName`
+/// (C-30-1-15) et `supplierInvoiceId` nul.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_credit_is_never_offered_a_supplier_invoice(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    supplier_invoice_301b(
+        &pool,
+        &c,
+        Some("FF-30-1B-12"),
+        None,
+        day_301b(6, 1),
+        dec!(250.00),
+    )
+    .await;
+    let (inv_id, _) = client_invoice_301b(
+        &pool,
+        &c,
+        "Client Durand",
+        "FF-30-1B-12",
+        day_301b(6, 1),
+        dec!(250.00),
+    )
+    .await;
+    let tx = tx_301b(
+        &pool,
+        &c,
+        dec!(250.00),
+        Some("FF-30-1B-12"),
+        Some(SUPPLIER_301B),
+    )
+    .await;
+
+    let by_tx = proposals_301b(&c, c.f.bank_account_id).await;
+    let candidates = by_tx[&tx]["candidates"].as_array().unwrap().clone();
+    assert_eq!(candidates.len(), 1, "client seulement : {candidates:?}");
+    assert_eq!(candidates[0]["candidateType"], "invoice");
+    assert_eq!(candidates[0]["invoiceId"], inv_id);
+    assert_eq!(candidates[0]["supplierInvoiceId"], Value::Null);
+    assert_eq!(candidates[0]["contactName"], "Client Durand");
+}
+
+/// T-b15 (AC-b5) — une facture fournisseur candidate (au montant exact, donc
+/// de score ≥ 0,5) **écarte la règle** d'affectation.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_supplier_candidate_sets_the_rule_aside(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let sid = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 1), dec!(90.00)).await;
+    let tx = tx_301b(&pool, &c, dec!(-90.00), None, Some("Paiement divers")).await;
+    rule_301b(&c, "Paiement").await;
+
+    let candidates = proposals_301b(&c, c.f.bank_account_id).await[&tx]["candidates"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(candidates.len(), 1, "{candidates:?}");
+    assert_eq!(candidates[0]["candidateType"], "supplier_invoice");
+    assert_eq!(candidates[0]["supplierInvoiceId"], sid);
+}
+
+/// T-b16 (AC-b5) — une facture fournisseur **presque au montant** (0,03 de
+/// plus), jamais candidate, **garde la règle** si elle porte un indice : la
+/// référence (son numéro) ou le fournisseur (la contrepartie contient son
+/// nom) — la ligne reste vide. Sans indice, la règle est proposée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_nearly_exact_supplier_invoice_with_a_hint_masks_the_rule(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    supplier_invoice_301b(
+        &pool,
+        &c,
+        Some("FF-1B16"),
+        None,
+        day_301b(6, 1),
+        dec!(100.03),
+    )
+    .await;
+    let by_reference = tx_301b(
+        &pool,
+        &c,
+        dec!(-100.00),
+        Some("FF-1B16"),
+        Some("Paiement divers"),
+    )
+    .await;
+    let by_name = tx_301b(
+        &pool,
+        &c,
+        dec!(-100.00),
+        None,
+        Some("Paiement Fournisseur rapproché SA"),
+    )
+    .await;
+    let no_hint = tx_301b(&pool, &c, dec!(-100.00), None, Some("Paiement divers")).await;
+    let rule = rule_301b(&c, "Paiement").await;
+
+    let by_tx = proposals_301b(&c, c.f.bank_account_id).await;
+    for (tx, label) in [(by_reference, "référence"), (by_name, "fournisseur")] {
+        assert_eq!(
+            by_tx[&tx]["candidates"],
+            serde_json::json!([]),
+            "indice par {label} : la règle est masquée"
+        );
+        assert_eq!(by_tx[&tx]["notice"], Value::Null);
+    }
+    let candidates = by_tx[&no_hint]["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 1, "{candidates:?}");
+    assert_eq!(candidates[0]["candidateType"], "rule");
+    assert_eq!(candidates[0]["ruleId"], rule["id"]);
+}
+
+/// T-b35 (AC-b5, première ligne) — une facture ouverte au montant **exact**,
+/// engagée dans un lot `generated` **du compte**, efface la ligne : ni
+/// candidate ni règle, même sans indice et sans règle active ; la `notice` dit
+/// la facture et le lot.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_exact_supplier_invoice_in_a_batch_of_the_account_blocks_the_line(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let sid = supplier_invoice_301b(
+        &pool,
+        &c,
+        Some("FF-LOT-35"),
+        None,
+        day_301b(6, 1),
+        dec!(300.00),
+    )
+    .await;
+    let batch =
+        fournisseur_rapproche::lot_genere(&pool, &c.seeded, c.f.bank_account_id, vec![sid]).await;
+    let tx = tx_301b(&pool, &c, dec!(-300.00), None, Some("Paiement divers")).await;
+
+    let check = |p: &Value| {
+        assert_eq!(p["candidates"], serde_json::json!([]), "{p}");
+        assert_eq!(
+            p["notice"]["code"], "supplier_invoice_in_payment_batch",
+            "{p}"
+        );
+        assert_eq!(p["notice"]["supplierInvoiceId"], sid);
+        assert_eq!(p["notice"]["supplierInvoiceNumber"], "FF-LOT-35");
+        assert_eq!(p["notice"]["paymentBatchId"], batch);
+    };
+    check(&proposals_301b(&c, c.f.bank_account_id).await[&tx]);
+    rule_301b(&c, "Paiement").await;
+    check(&proposals_301b(&c, c.f.bank_account_id).await[&tx]);
+}
+
+/// T-b36 (AC-b5) — une facture au montant **exact** mais **hors fenêtre**
+/// (datée de plus de 7 jours après le paiement) n'est pas candidate ; elle
+/// masque la règle si elle porte un indice, pas sinon.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_exact_supplier_invoice_out_of_window_masks_the_rule_only_with_a_hint(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    supplier_invoice_301b(
+        &pool,
+        &c,
+        Some("FF-HORS-36"),
+        None,
+        day_301b(7, 1),
+        dec!(200.00),
+    )
+    .await;
+    let hinted = tx_301b(
+        &pool,
+        &c,
+        dec!(-200.00),
+        Some("FF-HORS-36"),
+        Some("Paiement divers"),
+    )
+    .await;
+    let plain = tx_301b(&pool, &c, dec!(-200.00), None, Some("Paiement divers")).await;
+    rule_301b(&c, "Paiement").await;
+
+    let by_tx = proposals_301b(&c, c.f.bank_account_id).await;
+    assert_eq!(by_tx[&hinted]["candidates"], serde_json::json!([]));
+    let candidates = by_tx[&plain]["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 1, "{candidates:?}");
+    assert_eq!(candidates[0]["candidateType"], "rule");
+}
+
+/// T-b41 (AC-b5) — **les mensualités** : janvier et février, même fournisseur,
+/// même montant ; janvier dans un lot `generated`. Pour un débit du compte du
+/// lot, **aucune** proposition (février serait réglé par le débit de janvier),
+/// la `notice` nomme janvier. Le lot sur un **autre** compte : février est
+/// proposé pour un débit de ce compte-ci.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn monthly_invoices_and_a_batch_of_the_account(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let other_bank = fournisseur_rapproche::autre_compte(&pool, &c.seeded).await;
+    let jan = supplier_invoice_301b(&pool, &c, None, None, day_301b(5, 25), dec!(1500.00)).await;
+    let feb = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 5), dec!(1500.00)).await;
+    let batch = fournisseur_rapproche::lot_genere(&pool, &c.seeded, other_bank, vec![jan]).await;
+
+    // Débit sur le compte du lot : rien n'est proposé.
+    let on_batch_account = fournisseur_rapproche::transaction_en_attente(
+        &pool,
+        &c.seeded,
+        other_bank,
+        day_301b(6, 15),
+        Some(day_301b(6, 15)),
+        dec!(-1500.00),
+        None,
+        Some(SUPPLIER_301B),
+    )
+    .await;
+    let p = &proposals_301b(&c, other_bank).await[&on_batch_account];
+    assert_eq!(p["candidates"], serde_json::json!([]), "{p}");
+    assert_eq!(p["notice"]["supplierInvoiceId"], jan);
+    assert_eq!(p["notice"]["supplierInvoiceNumber"], Value::Null);
+    assert_eq!(p["notice"]["paymentBatchId"], batch);
+
+    // Débit sur l'autre compte : février est proposé.
+    let elsewhere = tx_301b(&pool, &c, dec!(-1500.00), None, Some(SUPPLIER_301B)).await;
+    let p = &proposals_301b(&c, c.f.bank_account_id).await[&elsewhere];
+    assert_eq!(p["notice"], Value::Null, "{p}");
+    let candidates = p["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 1, "{candidates:?}");
+    assert_eq!(candidates[0]["supplierInvoiceId"], feb);
+}
+
+/// T-b17 et T-b30 (AC-b6, AC-b16) — **l'acceptation nominale** : facture
+/// payée, au compte de l'import, `paid_at` = date de **valeur** de la
+/// transaction ; écriture `D créanciers / C banque` du TTC, datée de la date
+/// de paiement, journal Banque, dans l'exercice ouvert ; lettrage `document` ;
+/// transaction rapprochée de l'écriture ; deux audits ; score ≥ 0,5. La
+/// facture est datée et échue trois mois avant le paiement, et **saisie**
+/// aujourd'hui (l'usage de Guy).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accepting_a_supplier_invoice_pays_letters_and_reconciles(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let qrr = "210000000003139471430009017";
+    let (sid, purchase_je) = fournisseur_rapproche::facture_ouverte(
+        &pool,
+        &c.seeded,
+        c.f,
+        Some("FF-1B17"),
+        Some(qrr),
+        day_301b(3, 1),
+        Some(day_301b(3, 31)),
+        dec!(480.00),
+    )
+    .await;
+    let tx = fournisseur_rapproche::transaction_en_attente(
+        &pool,
+        &c.seeded,
+        c.f.bank_account_id,
+        day_301b(6, 15),
+        Some(day_301b(6, 14)),
+        dec!(-480.00),
+        Some(qrr),
+        Some(SUPPLIER_301B),
+    )
+    .await;
+    let proposed = &proposals_301b(&c, c.f.bank_account_id).await[&tx]["candidates"][0];
+    assert_eq!(proposed["supplierInvoiceId"], sid, "{proposed}");
+
+    let body = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([supplier_prop_301b(tx, sid)]),
+    )
+    .await;
+    assert_eq!(body["failed"], serde_json::json!([]), "{body}");
+    let accepted = &body["accepted"][0];
+    assert_eq!(accepted["bankTransactionId"], tx);
+    assert_eq!(accepted["supplierInvoiceId"], sid);
+    assert_eq!(accepted["invoiceId"], 0, "sentinelle hors facture client");
+    assert!(
+        accepted["score"]["total"].as_f64().unwrap() >= 0.5,
+        "{accepted}"
+    );
+    let je = accepted["journalEntryId"].as_i64().unwrap();
+
+    // La facture.
+    let (status, stype, sbank, sje, paid_at): (String, String, i64, i64, NaiveDateTime) =
+        sqlx::query_as(
+            "SELECT status, settlement_type, settlement_bank_account_id, \
+             settlement_journal_entry_id, paid_at FROM supplier_invoices WHERE id = ?",
+        )
+        .bind(sid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!((status.as_str(), stype.as_str()), ("paid", "bank_transfer"));
+    assert_eq!(sbank, c.f.bank_account_id, "le compte de l'import");
+    assert_eq!(sje, je);
+    assert_eq!(
+        paid_at,
+        day_301b(6, 14).and_hms_opt(0, 0, 0).unwrap(),
+        "paid_at = la date de valeur (T-b30)"
+    );
+
+    // L'écriture de règlement.
+    let (entry_date, journal, fy): (NaiveDate, String, i64) = sqlx::query_as(
+        "SELECT entry_date, journal, fiscal_year_id FROM journal_entries WHERE id = ?",
+    )
+    .bind(je)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(entry_date, day_301b(6, 14));
+    assert_eq!(journal, "Banque");
+    assert_eq!(fy, c.seeded.fiscal_year_id);
+    let mut lines = entry_lines(&pool, je).await;
+    lines.sort();
+    let mut expected = vec![
+        (c.seeded.accounts["2000"], dec!(480.00), dec!(0)),
+        (c.seeded.accounts["1100"], dec!(0), dec!(480.00)),
+    ];
+    expected.sort();
+    assert_eq!(lines, expected, "D créanciers / C banque du TTC");
+    let purchase_credit: Decimal = sqlx::query_scalar(
+        "SELECT credit FROM journal_entry_lines WHERE entry_id = ? AND credit > 0",
+    )
+    .bind(purchase_je)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(purchase_credit, dec!(480.00), "TTC = crédit de l'achat");
+
+    // Le lettrage `document` : l'achat et le règlement, une même clé.
+    let keys: Vec<Option<i64>> = sqlx::query_scalar(
+        "SELECT lettering_key FROM journal_entry_lines \
+         WHERE account_id = ? AND entry_id IN (?, ?)",
+    )
+    .bind(c.seeded.accounts["2000"])
+    .bind(purchase_je)
+    .bind(je)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(keys.len(), 2);
+    assert!(
+        keys[0].is_some() && keys[0] == keys[1],
+        "lettrées : {keys:?}"
+    );
+
+    // La transaction.
+    let (tx_status, matched): (String, Option<i64>) =
+        sqlx::query_as("SELECT status, matched_entry_id FROM bank_transactions WHERE id = ?")
+            .bind(tx)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((tx_status.as_str(), matched), ("reconciled", Some(je)));
+
+    // Les deux audits.
+    let details: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'reconciliation.accepted' \
+         AND entity_id = ?",
+    )
+    .bind(tx)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(details["supplier_invoice_id"], sid, "{details}");
+    assert_eq!(details["journal_entry_id"], je);
+    assert_eq!(details["purchase_journal_entry_id"], purchase_je);
+    assert_eq!(details["batch_size"], 1);
+    assert_eq!(details["paid_amount"], "480.00", "{details}");
+    let paid_audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'supplier_invoice.paid' AND entity_id = ?",
+    )
+    .bind(sid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(paid_audits, 1);
+}
+
+/// T-b30 (AC-b16), second cas — sans date de valeur, `paid_at` et l'écriture
+/// prennent la date de **comptabilisation**.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accepting_without_value_date_uses_the_booking_date(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let sid = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 1), dec!(55.00)).await;
+    let tx = fournisseur_rapproche::transaction_en_attente(
+        &pool,
+        &c.seeded,
+        c.f.bank_account_id,
+        day_301b(6, 12),
+        None,
+        dec!(-55.00),
+        None,
+        None,
+    )
+    .await;
+    let body = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([supplier_prop_301b(tx, sid)]),
+    )
+    .await;
+    assert_eq!(body["failed"], serde_json::json!([]), "{body}");
+    let paid_at: NaiveDateTime =
+        sqlx::query_scalar("SELECT paid_at FROM supplier_invoices WHERE id = ?")
+            .bind(sid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(paid_at, day_301b(6, 12).and_hms_opt(0, 0, 0).unwrap());
+}
+
+/// T-b18 et T-b20 (AC-b6) — **lot mixte** : une facture client (crédit), une
+/// facture fournisseur (débit), une règle, une facture fournisseur absente et
+/// une facture client absente. Succès partiel en `200`, `failed[]` dans
+/// l'ordre des propositions reçues.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_mixed_batch_settles_clients_suppliers_and_rules(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let (inv_id, _) = client_invoice_301b(
+        &pool,
+        &c,
+        "Client Mixte",
+        "CL-1B18",
+        day_301b(6, 1),
+        dec!(70.00),
+    )
+    .await;
+    let credit = tx_301b(&pool, &c, dec!(70.00), Some("CL-1B18"), None).await;
+    let sid = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 1), dec!(45.00)).await;
+    let debit = tx_301b(&pool, &c, dec!(-45.00), None, None).await;
+    let rule = rule_301b(&c, "Abonnement").await;
+    let ruled = tx_301b(&pool, &c, dec!(-12.00), None, Some("Abonnement mensuel")).await;
+    let missing_supplier = tx_301b(&pool, &c, dec!(-13.00), None, None).await;
+    let missing_client = tx_301b(&pool, &c, dec!(14.00), None, None).await;
+
+    let body = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([
+            supplier_prop_301b(missing_supplier, 999_999),
+            { "type": "invoice", "bankTransactionId": credit, "invoiceId": inv_id },
+            supplier_prop_301b(debit, sid),
+            { "type": "invoice", "bankTransactionId": missing_client, "invoiceId": 999_999 },
+            { "type": "rule", "bankTransactionId": ruled, "ruleId": rule["id"],
+              "counterpartyAccountId": c.seeded.accounts["4000"] },
+        ]),
+    )
+    .await;
+    let accepted: Vec<i64> = body["accepted"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["bankTransactionId"].as_i64().unwrap())
+        .collect();
+    assert_eq!(accepted, vec![credit, debit, ruled], "{body}");
+    let failed: Vec<(i64, String)> = body["failed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            (
+                f["bankTransactionId"].as_i64().unwrap(),
+                f["errorCode"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        failed,
+        vec![
+            (missing_supplier, "SUPPLIER_INVOICE_NOT_FOUND".to_string()),
+            (missing_client, "INVOICE_NOT_FOUND".to_string()),
+        ]
+    );
+    assert_eq!(body["accepted"][0]["supplierInvoiceId"], Value::Null);
+    assert_eq!(body["accepted"][1]["supplierInvoiceId"], sid);
+}
+
+/// T-b19 (AC-b6, AC-b7) — **un refus par ligne du tableau atteignable par
+/// décor**, chacun en `200` et `failed[]`, rien d'écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn each_supplier_refusal_lands_in_failed(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+
+    // Sens : un crédit, un montant nul.
+    let sid = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 1), dec!(10.00)).await;
+    let credit = tx_301b(&pool, &c, dec!(10.00), None, None).await;
+    let (code, details) = refusal_301b(&c, credit, sid).await;
+    assert_eq!(code, "RECONCILIATION_TRANSACTION_NOT_DEBIT");
+    assert_eq!(details["reason"], "credit_transaction");
+    assert_eq!(details["transactionAmount"], "10.00");
+    let zero = tx_301b(&pool, &c, dec!(0.00), None, None).await;
+    let (code, details) = refusal_301b(&c, zero, sid).await;
+    assert_eq!(code, "RECONCILIATION_TRANSACTION_NOT_DEBIT");
+    assert_eq!(details["reason"], "zero_amount_transaction");
+
+    // Facture absente.
+    let debit = tx_301b(&pool, &c, dec!(-10.00), None, None).await;
+    let (code, details) = refusal_301b(&c, debit, 999_999).await;
+    assert_eq!(code, "SUPPLIER_INVOICE_NOT_FOUND");
+    assert_eq!(details, serde_json::json!({ "supplierInvoiceId": 999_999 }));
+
+    // Montant différent.
+    let short = tx_301b(&pool, &c, dec!(-9.00), None, None).await;
+    let (code, details) = refusal_301b(&c, short, sid).await;
+    assert_eq!(code, "RECONCILIATION_AMOUNT_MISMATCH");
+    // Le TTC tel que la base le porte (`DECIMAL(19,4)`), comme le `amountDue`
+    // brut des refus client ; le montant de la transaction tel quel (négatif).
+    assert_eq!(details["amountDue"], "10.0000");
+    assert_eq!(details["transactionAmount"], "-9.00");
+
+    // Fenêtre : facture datée de plus de 7 jours après le paiement, puis
+    // exigible depuis plus d'un an.
+    let late_invoice =
+        supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 23), dec!(11.00)).await;
+    let t = tx_301b(&pool, &c, dec!(-11.00), None, None).await;
+    let (code, details) = refusal_301b(&c, t, late_invoice).await;
+    assert_eq!(code, "RECONCILIATION_INVOICE_NOT_ELIGIBLE");
+    assert_eq!(details["reason"], "payment_date_before_invoice_date");
+    assert_eq!(details["tolerance_days"], 7);
+    let old_invoice = supplier_invoice_301b(
+        &pool,
+        &c,
+        None,
+        None,
+        NaiveDate::from_ymd_opt(2025, 6, 14).unwrap(),
+        dec!(12.00),
+    )
+    .await;
+    let t = tx_301b(&pool, &c, dec!(-12.00), None, None).await;
+    let (code, details) = refusal_301b(&c, t, old_invoice).await;
+    assert_eq!(code, "RECONCILIATION_INVOICE_NOT_ELIGIBLE");
+    assert_eq!(details["reason"], "payment_date_outside_window");
+    assert_eq!(details["window_days"], 365);
+
+    // Facture déjà payée.
+    let paid = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 1), dec!(13.00)).await;
+    kesh_db::repositories::supplier_invoices::pay(
+        &pool,
+        c.seeded.company_id,
+        paid,
+        kesh_db::entities::SettlementChoice::InternalAccount {
+            account_id: c.seeded.accounts["1000"],
+        },
+        day_301b(6, 2),
+        c.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    let t = tx_301b(&pool, &c, dec!(-13.00), None, None).await;
+    let (code, details) = refusal_301b(&c, t, paid).await;
+    assert_eq!(code, "RECONCILIATION_INVOICE_NOT_ELIGIBLE");
+    assert_eq!(details["reason"], "supplier_invoice_not_open");
+
+    // En lot `generated` (d'un autre compte : la garde (c) seule).
+    let other_bank = fournisseur_rapproche::autre_compte(&pool, &c.seeded).await;
+    let in_batch = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 1), dec!(14.00)).await;
+    let batch =
+        fournisseur_rapproche::lot_genere(&pool, &c.seeded, other_bank, vec![in_batch]).await;
+    let t = tx_301b(&pool, &c, dec!(-14.00), None, None).await;
+    let (code, details) = refusal_301b(&c, t, in_batch).await;
+    assert_eq!(code, "RECONCILIATION_INVOICE_NOT_ELIGIBLE");
+    assert_eq!(details["reason"], "supplier_invoice_in_payment_batch");
+    assert_eq!(details["paymentBatchId"], batch);
+
+    // Exercice : aucun exercice ne couvre 2031.
+    let in_2031 = supplier_invoice_301b(
+        &pool,
+        &c,
+        None,
+        None,
+        NaiveDate::from_ymd_opt(2030, 12, 20).unwrap(),
+        dec!(15.00),
+    )
+    .await;
+    let t = fournisseur_rapproche::transaction_en_attente(
+        &pool,
+        &c.seeded,
+        c.f.bank_account_id,
+        NaiveDate::from_ymd_opt(2031, 1, 10).unwrap(),
+        None,
+        dec!(-15.00),
+        None,
+        None,
+    )
+    .await;
+    let (code, details) = refusal_301b(&c, t, in_2031).await;
+    assert_eq!(code, "FISCAL_YEAR_INVALID");
+    assert_eq!(details["valueDate"], "2031-01-10");
+
+    // Verrou de période, posé après la saisie de la facture.
+    let locked = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 1), dec!(16.00)).await;
+    sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+        .bind(day_301b(6, 30))
+        .bind(c.seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let t = tx_301b(&pool, &c, dec!(-16.00), None, None).await;
+    let (code, details) = refusal_301b(&c, t, locked).await;
+    assert_eq!(code, "PERIOD_LOCKED");
+    assert_eq!(details["lockedThrough"], "2026-06-30");
+    sqlx::query("UPDATE companies SET books_locked_through = NULL WHERE id = ?")
+        .bind(c.seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Compte de banque sans compte au grand livre.
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = NULL WHERE id = ?")
+        .bind(c.f.bank_account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let t = tx_301b(&pool, &c, dec!(-10.00), None, None).await;
+    let (code, details) = refusal_301b(&c, t, sid).await;
+    assert_eq!(code, "BANK_ACCOUNT_NOT_CONFIGURED");
+    assert_eq!(details["bankAccountId"], c.f.bank_account_id);
+
+    // Compte de banque = compte créanciers (2000) : refus de la contrepartie.
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(c.seeded.accounts["2000"])
+        .bind(c.f.bank_account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (code, details) = refusal_301b(&c, t, sid).await;
+    assert_eq!(code, "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT");
+    assert_eq!(details["claim"], "payable", "{details}");
+    assert_eq!(details["bankAccountId"], c.f.bank_account_id);
+
+    // Compte de banque au grand livre désactivé depuis l'achat.
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(c.seeded.accounts["1000"])
+        .bind(c.f.bank_account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(c.seeded.accounts["1000"])
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (code, _) = refusal_301b(&c, t, sid).await;
+    assert_eq!(code, "INACTIVE_OR_INVALID_ACCOUNTS");
+
+    // Aucun refus n'écrit : aucune écriture au journal Banque (le paiement
+    // du montage passe par un compte interne, journal OD), aucune transaction
+    // rapprochée.
+    let bank_entries: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entries WHERE company_id = ? AND journal = 'Banque'",
+    )
+    .bind(c.seeded.company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(bank_entries, 0, "aucune écriture de règlement");
+    let reconciled: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM bank_transactions WHERE status <> 'pending'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(reconciled, 0, "aucune transaction rapprochée");
+}
+
+/// T-b45 (AC-b6 (d)) — **l'appel d'API direct** : février, accepté pour le
+/// débit de janvier pendant que janvier est dans un lot `generated` du compte,
+/// est refusé `RECONCILIATION_SUPPLIER_PAYMENT_HOLD`, rien d'écrit ; le même
+/// lot sur un autre compte : février est accepté.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_direct_acceptance_is_held_by_the_batch_of_the_account(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let jan = supplier_invoice_301b(&pool, &c, None, None, day_301b(5, 25), dec!(800.00)).await;
+    let feb = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 5), dec!(800.00)).await;
+    let batch =
+        fournisseur_rapproche::lot_genere(&pool, &c.seeded, c.f.bank_account_id, vec![jan]).await;
+    let t = tx_301b(&pool, &c, dec!(-800.00), None, None).await;
+    let (code, details) = refusal_301b(&c, t, feb).await;
+    assert_eq!(code, "RECONCILIATION_SUPPLIER_PAYMENT_HOLD");
+    assert_eq!(details["reason"], "other_invoice_in_payment_batch");
+    assert_eq!(details["supplierInvoiceId"], jan);
+    assert_eq!(details["paymentBatchId"], batch);
+    let status: String = sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(feb)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "open", "rien d'écrit");
+
+    // Le lot annulé et recréé sur un autre compte : février passe.
+    sqlx::query("UPDATE payment_batches SET status = 'cancelled' WHERE id = ?")
+        .bind(batch)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let other_bank = fournisseur_rapproche::autre_compte(&pool, &c.seeded).await;
+    fournisseur_rapproche::lot_genere(&pool, &c.seeded, other_bank, vec![jan]).await;
+    let body = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([supplier_prop_301b(t, feb)]),
+    )
+    .await;
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 1, "{body}");
+}
+
+/// T-b23 (AC-b9) — **une clé d'API `read-write`** accepte, et la clé figure
+/// dans `supplier_invoice.paid`, `reconciliation.accepted` et
+/// `lettering.created`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_api_key_accepts_a_supplier_invoice_and_is_named_everywhere(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let sid = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 1), dec!(33.00)).await;
+    let t = tx_301b(&pool, &c, dec!(-33.00), None, None).await;
+    let resp = c
+        .app
+        .client
+        .post(c.app.url("/api/v1/settings/api-keys"))
+        .bearer_auth(&c.jwt)
+        .json(&serde_json::json!({ "name": "rw", "scope": "read-write" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let key: Value = resp.json().await.unwrap();
+    let key_id = key["id"].as_i64().unwrap();
+    let body = accept_301b(
+        &c,
+        key["key"].as_str().unwrap(),
+        c.f.bank_account_id,
+        serde_json::json!([supplier_prop_301b(t, sid)]),
+    )
+    .await;
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 1, "{body}");
+    for action in [
+        "supplier_invoice.paid",
+        "reconciliation.accepted",
+        "lettering.created",
+    ] {
+        let (actor_type, actor_key): (String, Option<i64>) =
+            sqlx::query_as("SELECT actor_type, actor_api_key_id FROM audit_log WHERE action = ?")
+                .bind(action)
+                .fetch_one(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("{action} : {e}"));
+        assert_eq!(
+            (actor_type.as_str(), actor_key),
+            ("api_key", Some(key_id)),
+            "{action}"
+        );
+    }
+}
+
+/// T-b24 (AC-b10) — **la fiche et la réconciliation règlent la même facture**,
+/// lancées ensemble (`tokio::join!`) : l'une aboutit, l'autre est refusée ; une
+/// seule écriture de règlement. ⚠️ Rien ne force le chevauchement : selon
+/// l'ordonnancement, les deux requêtes se suivent ou se croisent, et l'assertion
+/// vaut dans tous les ordres — le test établit « un seul règlement », il ne
+/// prouve la course que lorsqu'elle a lieu (revue de code P1 de la 30-1b, E2 ;
+/// la course forcée par sonde est celle de T-b34).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_record_and_the_reconciliation_settle_the_same_invoice_once(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let sid = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 1), dec!(66.00)).await;
+    let t = tx_301b(&pool, &c, dec!(-66.00), None, None).await;
+    let record = c
+        .app
+        .client
+        .post(c.app.url(&format!("/api/v1/supplier-invoices/{sid}/pay")))
+        .bearer_auth(&c.jwt)
+        .json(&serde_json::json!({
+            "settlementType": "bank_transfer",
+            "bankAccountId": c.f.bank_account_id,
+            "paymentDate": "2026-06-15",
+        }))
+        .send();
+    let reco = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([supplier_prop_301b(t, sid)]),
+    );
+    let (record, reco) = tokio::join!(record, reco);
+    let record_ok = record.unwrap().status() == 200;
+    let reco_ok = reco["accepted"].as_array().unwrap().len() == 1;
+    assert!(
+        record_ok ^ reco_ok,
+        "exactement un règlement : fiche {record_ok}, réconciliation {reco}"
+    );
+    if !reco_ok {
+        assert_eq!(
+            reco["failed"][0]["details"]["reason"],
+            "supplier_invoice_not_open"
+        );
+    }
+    let settlements: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'supplier_invoice.paid' AND entity_id = ?",
+    )
+    .bind(sid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(settlements, 1);
+}
+
+/// T-b25 (AC-b10) — **la clôture du compte pendant l'acceptation** : aucun
+/// règlement ne passe sur un compte clos. ⚠️ C'est l'invariant I1 qui protège
+/// (la clôture refuse tant qu'une transaction est en attente), non la garde
+/// du compte clos de l'étape 3.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn closing_the_account_during_an_acceptance_never_settles_on_a_closed_account(
+    pool: MySqlPool,
+) {
+    let c = setup_301b(&pool).await;
+    kesh_db::test_fixtures::mark_onboarding_complete(&pool)
+        .await
+        .unwrap();
+    let sid = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 1), dec!(77.00)).await;
+    let t = tx_301b(&pool, &c, dec!(-77.00), None, None).await;
+    let version: i32 = sqlx::query_scalar("SELECT version FROM bank_accounts WHERE id = ?")
+        .bind(c.f.bank_account_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let close = c
+        .app
+        .client
+        .post(c.app.url(&format!(
+            "/api/v1/bank-accounts/{}/close",
+            c.f.bank_account_id
+        )))
+        .bearer_auth(&c.jwt)
+        .json(&serde_json::json!({ "version": version, "closedOn": "2026-06-30" }))
+        .send();
+    let reco = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([supplier_prop_301b(t, sid)]),
+    );
+    let (close, reco) = tokio::join!(close, reco);
+    let close_status = close.unwrap().status().as_u16();
+    let accepted = reco["accepted"].as_array().unwrap().len() == 1;
+    let (closed_on, status): (Option<NaiveDate>, String) = sqlx::query_as(
+        "SELECT ba.closed_on, si.status FROM bank_accounts ba, supplier_invoices si \
+         WHERE ba.id = ? AND si.id = ?",
+    )
+    .bind(c.f.bank_account_id)
+    .bind(sid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(accepted, status == "paid");
+    if close_status == 200 {
+        // La clôture n'a pu passer qu'une fois la transaction rapprochée.
+        assert!(closed_on.is_some());
+        assert!(accepted, "clôture admise : l'acceptation l'a précédée");
+    } else {
+        assert!(closed_on.is_none(), "statut de clôture {close_status}");
+        assert!(accepted, "{reco}");
+    }
+}
+
+/// T-b32 (AC-b14, IDOR) — une facture fournisseur **d'une autre société** :
+/// `SUPPLIER_INVOICE_NOT_FOUND`, `details` identiques à ceux d'une facture
+/// absente, rien d'écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_supplier_invoice_of_another_company_is_not_found(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let foreign_company = create_company(&pool, "Autre société").await;
+    let foreign_user = create_user(&pool, "autre_user", Role::Admin, foreign_company).await;
+    let foreign_contact = sqlx::query(
+        "INSERT INTO contacts (company_id, contact_type, name, is_client, is_supplier) \
+         VALUES (?, 'Entreprise', 'Fournisseur étranger', FALSE, TRUE)",
+    )
+    .bind(foreign_company)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let fy = insert_fake_fiscal_year(&pool, foreign_company).await;
+    let je = insert_fake_journal_entry(&pool, foreign_company, fy).await;
+    let foreign = sqlx::query(
+        "INSERT INTO supplier_invoices (company_id, contact_id, status, invoice_date, \
+         total_amount, purchase_journal_entry_id) VALUES (?, ?, 'open', '2026-06-01', 20.00, ?)",
+    )
+    .bind(foreign_company)
+    .bind(foreign_contact)
+    .bind(je)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let _ = foreign_user;
+    let t = tx_301b(&pool, &c, dec!(-20.00), None, None).await;
+    let (code, details) = refusal_301b(&c, t, foreign).await;
+    assert_eq!(code, "SUPPLIER_INVOICE_NOT_FOUND");
+    assert_eq!(details, serde_json::json!({ "supplierInvoiceId": foreign }));
+    let (absent_code, absent) = refusal_301b(&c, t, foreign + 1000).await;
+    assert_eq!(absent_code, code);
+    assert_eq!(
+        absent.as_object().unwrap().keys().collect::<Vec<_>>(),
+        details.as_object().unwrap().keys().collect::<Vec<_>>(),
+        "mêmes champs qu'une facture absente"
+    );
+    let status: String = sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(foreign)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "open");
+}
+
+/// T-b33 (AC-b14) — le rôle Consultation ne peut pas accepter : `403`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_consultation_role_cannot_accept_a_supplier_invoice(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let sid = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 1), dec!(21.00)).await;
+    let t = tx_301b(&pool, &c, dec!(-21.00), None, None).await;
+    let viewer = create_user(
+        &pool,
+        "lecteur_301b",
+        Role::Consultation,
+        c.seeded.company_id,
+    )
+    .await;
+    let jwt = forge_jwt(viewer, "Consultation", c.seeded.company_id);
+    let resp = c
+        .app
+        .client
+        .post(c.app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&jwt)
+        .json(&serde_json::json!({
+            "bankAccountId": c.f.bank_account_id,
+            "proposals": [supplier_prop_301b(t, sid)],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403);
+}
+
+/// T-b46 (AC-b17) — **l'acceptation d'une règle rejoue le masquage**, crédit :
+/// une facture client que le paiement dépasse de 3 centimes et qui porte la
+/// référence → `RECONCILIATION_RULE_MASKED` / `invoice_slightly_overpaid`, rien
+/// d'écrit ; second décor, désignée par le **seul nom** du client (la carte de
+/// contacts du rejeu, M-b33) ; sans indice, la règle passe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accepting_a_rule_replays_the_masking_on_a_credit(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let rule = rule_301b(&c, "Recette").await;
+    let rule_prop = |tx: i64| {
+        serde_json::json!({
+            "type": "rule", "bankTransactionId": tx, "ruleId": rule["id"],
+            "counterpartyAccountId": c.seeded.accounts["4000"],
+        })
+    };
+    let (inv_id, _) = client_invoice_301b(
+        &pool,
+        &c,
+        "Client Duval",
+        "CL-1B46",
+        day_301b(6, 1),
+        dec!(100.00),
+    )
+    .await;
+    let by_ref = tx_301b(
+        &pool,
+        &c,
+        dec!(100.03),
+        Some("CL-1B46"),
+        Some("Recette Bel-Air"),
+    )
+    .await;
+    let by_name = tx_301b(&pool, &c, dec!(100.03), None, Some("Recette Client Duval")).await;
+    let plain = tx_301b(&pool, &c, dec!(100.03), None, Some("Recette Bel-Air")).await;
+
+    for tx in [by_ref, by_name] {
+        let body = accept_301b(
+            &c,
+            &c.jwt,
+            c.f.bank_account_id,
+            serde_json::json!([rule_prop(tx)]),
+        )
+        .await;
+        assert_eq!(body["accepted"], serde_json::json!([]), "{body}");
+        assert_eq!(body["failed"][0]["errorCode"], "RECONCILIATION_RULE_MASKED");
+        assert_eq!(
+            body["failed"][0]["details"]["reason"],
+            "invoice_slightly_overpaid"
+        );
+        assert_eq!(body["failed"][0]["details"]["invoiceId"], inv_id);
+        assert_eq!(tx_status(&pool, tx).await, "pending", "rien d'écrit");
+    }
+    let body = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([rule_prop(plain)]),
+    )
+    .await;
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 1, "{body}");
+}
+
+/// T-b47 (AC-b17) — **l'acceptation d'une règle rejoue le masquage**, débit :
+/// une facture fournisseur au montant exact en lot `generated` du compte →
+/// `payment_batch` ; une facture fournisseur ouverte **candidate**, saisie
+/// après le chargement de la proposition → `invoice_candidate` ; rien
+/// d'écrit ; sans facture, la règle passe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accepting_a_rule_replays_the_masking_on_a_debit(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let rule = rule_301b(&c, "Abonnement").await;
+    let rule_prop = |tx: i64| {
+        serde_json::json!({
+            "type": "rule", "bankTransactionId": tx, "ruleId": rule["id"],
+            "counterpartyAccountId": c.seeded.accounts["4000"],
+        })
+    };
+    let in_batch = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 1), dec!(40.00)).await;
+    let batch =
+        fournisseur_rapproche::lot_genere(&pool, &c.seeded, c.f.bank_account_id, vec![in_batch])
+            .await;
+    let held = tx_301b(&pool, &c, dec!(-40.00), None, Some("Abonnement")).await;
+    let body = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([rule_prop(held)]),
+    )
+    .await;
+    assert_eq!(
+        body["failed"][0]["errorCode"], "RECONCILIATION_RULE_MASKED",
+        "{body}"
+    );
+    assert_eq!(body["failed"][0]["details"]["reason"], "payment_batch");
+    assert_eq!(body["failed"][0]["details"]["supplierInvoiceId"], in_batch);
+    assert_eq!(body["failed"][0]["details"]["paymentBatchId"], batch);
+
+    let candidate_tx = tx_301b(&pool, &c, dec!(-41.00), None, Some("Abonnement")).await;
+    let candidate = supplier_invoice_301b(&pool, &c, None, None, day_301b(6, 1), dec!(41.00)).await;
+    let body = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([rule_prop(candidate_tx)]),
+    )
+    .await;
+    assert_eq!(
+        body["failed"][0]["errorCode"], "RECONCILIATION_RULE_MASKED",
+        "{body}"
+    );
+    assert_eq!(body["failed"][0]["details"]["reason"], "invoice_candidate");
+    assert_eq!(body["failed"][0]["details"]["supplierInvoiceId"], candidate);
+    for tx in [held, candidate_tx] {
+        assert_eq!(tx_status(&pool, tx).await, "pending", "rien d'écrit");
+    }
+
+    let free = tx_301b(&pool, &c, dec!(-42.00), None, Some("Abonnement")).await;
+    let body = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([rule_prop(free)]),
+    )
+    .await;
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 1, "{body}");
+}
+
+/// Le parcours de la recette, côté serveur (AC-b12) : une facture acceptée par
+/// la réconciliation est **défaite** par *Annuler le rapprochement* — la vue
+/// dit `supplier_settlement`, la facture redevient ouverte, la transaction à
+/// rapprocher, et la ligne revient aux propositions. L'état n'est plus posé en
+/// SQL (30-1a) : il est produit par l'acceptation.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_accepted_supplier_invoice_is_undone_by_cancelling_the_reconciliation(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let sid = supplier_invoice_301b(
+        &pool,
+        &c,
+        Some("FF-ALLER-RETOUR"),
+        None,
+        day_301b(6, 1),
+        dec!(95.00),
+    )
+    .await;
+    let t = tx_301b(&pool, &c, dec!(-95.00), Some("FF-ALLER-RETOUR"), None).await;
+    let body = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([supplier_prop_301b(t, sid)]),
+    )
+    .await;
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 1, "{body}");
+    let (st, view) = get_reco(&c.app, &c.jwt, t).await;
+    assert_eq!(st, 200);
+    assert_eq!(view["kind"], "supplier_settlement", "{view}");
+    assert_eq!(view["supplierInvoiceId"], sid);
+    let (st, done) = cancel_reco(&c.app, &c.jwt, t).await;
+    assert_eq!(st, 200, "{done}");
+    let status: String = sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(sid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "open");
+    let back = &proposals_301b(&c, c.f.bank_account_id).await[&t];
+    assert_eq!(back["candidates"][0]["supplierInvoiceId"], sid, "{back}");
+}
+
+/// T-b42 par la route (AC-b3, AC-b5) — **la liste masquante pleine masque la
+/// règle**, par prudence : 200 factures fournisseur ouvertes à 3 centimes du
+/// débit, sans indice (ni référence ni fournisseur commun), et la règle n'est
+/// pas proposée ; 199, et elle l'est. Factures insérées en SQL brut (le
+/// pipeline d'achat n'est pas l'objet ; une écriture d'achat factice suffit à
+/// la clé étrangère). Tue la mutation « la liste pleine ne masque pas »
+/// (extension de M-b12).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_full_masking_list_masks_the_rule(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let je = insert_fake_journal_entry(&pool, c.seeded.company_id, c.seeded.fiscal_year_id).await;
+    let insert = |n: i64| {
+        let pool = pool.clone();
+        let company = c.seeded.company_id;
+        let supplier = c.f.supplier_id;
+        async move {
+            for _ in 0..n {
+                sqlx::query(
+                    "INSERT INTO supplier_invoices (company_id, contact_id, status, invoice_date, \
+                     total_amount, purchase_journal_entry_id) \
+                     VALUES (?, ?, 'open', '2026-06-01', 60.03, ?)",
+                )
+                .bind(company)
+                .bind(supplier)
+                .bind(je)
+                .execute(&pool)
+                .await
+                .expect("facture masquante");
+            }
+        }
+    };
+    insert(199).await;
+    let tx = tx_301b(&pool, &c, dec!(-60.00), None, Some("Paiement divers")).await;
+    rule_301b(&c, "Paiement").await;
+    let candidates = proposals_301b(&c, c.f.bank_account_id).await[&tx]["candidates"].clone();
+    assert_eq!(
+        candidates[0]["candidateType"], "rule",
+        "199 factures sans indice : la règle reste proposée — {candidates}"
+    );
+    insert(1).await;
+    assert_eq!(
+        proposals_301b(&c, c.f.bank_account_id).await[&tx]["candidates"],
+        serde_json::json!([]),
+        "200 factures : la liste est pleine, la règle est masquée"
+    );
+}
+
+/// T-b4 à l'acceptation (AC-b2) — la borne basse porte sur l'**exigibilité**
+/// `max(F, échéance)`, à l'acceptation comme à la proposition : une facture
+/// datée de 400 jours avant le paiement, échue 300 jours avant, est proposée
+/// **et** acceptée ; une facture datée de 7 jours **après** le paiement aussi
+/// (borne haute incluse). Tue la mutation « fenêtre de l'acceptation sur `F` »
+/// (M-b5, volet Rust).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_acceptance_window_reads_the_exigibility(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let d = day_301b(6, 15);
+    let (old, _) = fournisseur_rapproche::facture_ouverte(
+        &pool,
+        &c.seeded,
+        c.f,
+        None,
+        None,
+        d - chrono::Duration::days(400),
+        Some(d - chrono::Duration::days(300)),
+        dec!(31.00),
+    )
+    .await;
+    let (late, _) = fournisseur_rapproche::facture_ouverte(
+        &pool,
+        &c.seeded,
+        c.f,
+        None,
+        None,
+        d + chrono::Duration::days(7),
+        None,
+        dec!(32.00),
+    )
+    .await;
+    let t_old = tx_301b(&pool, &c, dec!(-31.00), None, None).await;
+    let t_late = tx_301b(&pool, &c, dec!(-32.00), None, None).await;
+    let by_tx = proposals_301b(&c, c.f.bank_account_id).await;
+    assert_eq!(by_tx[&t_old]["candidates"][0]["supplierInvoiceId"], old);
+    assert_eq!(by_tx[&t_late]["candidates"][0]["supplierInvoiceId"], late);
+    let body = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([
+            supplier_prop_301b(t_old, old),
+            supplier_prop_301b(t_late, late)
+        ]),
+    )
+    .await;
+    assert_eq!(body["failed"], serde_json::json!([]), "{body}");
+    assert_eq!(body["accepted"].as_array().unwrap().len(), 2);
 }

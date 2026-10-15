@@ -8,24 +8,26 @@
 //! par son propre geste d'annulation au rang 3. L'écriture était donc
 //! **définitivement incorrigible**.
 //!
-//! ⛔ **Trois familles d'écritures, et seulement trois.** Des six chemins qui
+//! ⛔ **Trois familles d'écritures, et seulement trois.** Des sept chemins qui
 //! posent `bank_transactions.matched_entry_id`, deux rendent un **règlement
 //! client** (ligne `invoice_settlements`) : l'acceptation d'une proposition
 //! « facture » (`routes/reconciliation.rs`), qui le crée, et le rattachement
 //! d'une transaction au règlement déjà saisi depuis la fiche de la facture
 //! (Story 29-8, [`super::reconciliation_link::link_in_tx`]), qui pointe son
-//! écriture existante. Les quatre autres (éclatement, règle, rapprochement
-//! manuel, éclatement manuel) créent une écriture que **seule la
-//! transaction** possède. Le règlement se défait par
-//! [`invoice_settlements_write::cancel_settlement_in_tx`], **appelé, jamais
-//! réécrit** ; l'écriture propre, par [`journal_entries::reverse_in_tx`].
+//! écriture existante. Un seul rend un **règlement fournisseur** : l'acceptation
+//! d'une proposition « facture fournisseur » (Story 30-1b), qui le crée. Les
+//! quatre autres (éclatement, règle, rapprochement manuel, éclatement manuel)
+//! créent une écriture que **seule la transaction** possède. Le règlement
+//! client se défait par [`invoice_settlements_write::cancel_settlement_in_tx`],
+//! **appelé, jamais réécrit** ; l'écriture propre, par
+//! [`journal_entries::reverse_in_tx`].
 //!
 //! ⛔ **La troisième : le règlement fournisseur** (Story 30-1a, #686) — une
 //! écriture de règlement que pointent les colonnes `settlement_*` d'une facture
-//! fournisseur **payée**. Aucun chemin ne la rapproche avant la Story 30-1b
-//! (l'acceptation d'une facture fournisseur pour un débit) ; ce geste sait la
-//! défaire **d'abord**, pour qu'à aucun commit un tel rapprochement ne soit
-//! produisible sans être défaisable. Elle se défait par
+//! fournisseur **payée**. Le seul chemin qui la rapproche est l'acceptation
+//! d'une facture fournisseur pour un débit (Story 30-1b) ; ce geste a su la
+//! défaire **d'abord** (30-1a), pour qu'à aucun commit un tel rapprochement ne
+//! soit produisible sans être défaisable. Elle se défait par
 //! [`supplier_invoices::cancel_settlement_in_tx`], **appelé, jamais réécrit**.
 //! Un règlement **détaché** (facture payée puis annulée, colonnes à `NULL`) n'a
 //! plus de propriétaire : il est classé écriture propre et contre-passé.

@@ -2961,3 +2961,34 @@ mod compte_bancaire_clos {
         );
     }
 }
+
+/// T-b29 (Story 30-1b, #686, AC-b16) — le paiement depuis la fiche pose
+/// `paid_at` à la **date du paiement** saisie (minuit), et non à l'heure de
+/// l'enregistrement : la même date que l'écriture de règlement.
+#[sqlx::test(migrations = "./test-schema")]
+async fn pay_sets_paid_at_to_the_payment_date(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let created = supplier_invoices::create(
+        &pool,
+        one_line(&ctx, dec!(100.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    let account_id = ctx.seeded.accounts["1000"];
+    let paid = supplier_invoices::pay(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        SettlementChoice::InternalAccount { account_id },
+        d(2026, 6, 20),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        paid.invoice.paid_at,
+        Some(d(2026, 6, 20).and_hms_opt(0, 0, 0).unwrap()),
+        "paid_at = la date du paiement, à minuit"
+    );
+}

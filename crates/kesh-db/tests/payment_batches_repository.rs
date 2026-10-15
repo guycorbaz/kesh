@@ -1231,3 +1231,366 @@ async fn crossed_batches_do_not_deadlock(pool: MySqlPool) {
     };
     assert_eq!(ordre, attendu);
 }
+
+// ---------------------------------------------------------------------------
+// Story 30-1b (#686) — le règlement d'une facture fournisseur par la
+// réconciliation : les verrous et les refus de l'étape 3 (AC-b6, AC-b8,
+// AC-b10), et la date du paiement (AC-b16)
+// ---------------------------------------------------------------------------
+
+use kesh_db::repositories::supplier_invoices::{LockedForSettlement, SupplierSettlementRefusal};
+
+/// `lock_for_bank_settlement_in_tx` dans une transaction neuve, puis `ROLLBACK`.
+async fn refus_301b(
+    pool: &MySqlPool,
+    ctx: &Ctx,
+    invoice_id: i64,
+    bank_id: i64,
+    amount: Decimal,
+) -> Result<LockedForSettlement, SupplierSettlementRefusal> {
+    let mut tx = pool.begin().await.unwrap();
+    let r = supplier_invoices::lock_for_bank_settlement_in_tx(
+        &mut tx,
+        ctx.seeded.company_id,
+        invoice_id,
+        bank_id,
+        amount,
+    )
+    .await
+    .expect("aucune erreur de base");
+    tx.rollback().await.unwrap();
+    r
+}
+
+/// Les refus de l'étape 3 d'`accept_one_supplier_invoice` (AC-b6), chacun par
+/// un décor qui le provoque seul : facture absente ou d'une autre société
+/// (`NotFound`, indiscernables), non ouverte, compte bancaire absent ou
+/// archivé, clos, sans compte au grand livre, facture en lot `generated`
+/// (`InGeneratedBatch`, tout compte), autre facture au montant exact en lot
+/// `generated` **de ce compte** (`HeldByPaymentBatch`, garde (d)).
+#[sqlx::test(migrations = "./test-schema")]
+async fn lock_for_bank_settlement_refuses_each_case(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let ok = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(100.00)).await;
+    let locked = refus_301b(&pool, &ctx, ok, ctx.bank_id, dec!(100.00))
+        .await
+        .expect("admise");
+    assert_eq!(locked.invoice.id, ok);
+    assert_eq!(locked.invoice.status, "open");
+
+    assert!(matches!(
+        refus_301b(&pool, &ctx, 999_999, ctx.bank_id, dec!(100.00)).await,
+        Err(SupplierSettlementRefusal::NotFound)
+    ));
+    // La facture `ok`, demandée au nom d'une autre société : indiscernable
+    // d'une facture absente.
+    let other_company = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Autre SA', 'Rue 3', 'Pme', 'FR', 'FR')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let mut other_tx = pool.begin().await.unwrap();
+    assert!(matches!(
+        supplier_invoices::lock_for_bank_settlement_in_tx(
+            &mut other_tx,
+            other_company,
+            ok,
+            ctx.bank_id,
+            dec!(100.00),
+        )
+        .await
+        .unwrap(),
+        Err(SupplierSettlementRefusal::NotFound)
+    ));
+    other_tx.rollback().await.unwrap();
+
+    let paid = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(100.00)).await;
+    supplier_invoices::pay(
+        &pool,
+        ctx.seeded.company_id,
+        paid,
+        SettlementChoice::BankTransfer {
+            bank_account_id: ctx.bank_id,
+        },
+        d(2026, 6, 20),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        refus_301b(&pool, &ctx, paid, ctx.bank_id, dec!(100.00)).await,
+        Err(SupplierSettlementRefusal::NotOpen { status }) if status == "paid"
+    ));
+
+    assert!(matches!(
+        refus_301b(&pool, &ctx, ok, 999_999, dec!(100.00)).await,
+        Err(SupplierSettlementRefusal::BankAccountNotFound)
+    ));
+    let set_bank = |sql: &'static str| {
+        let pool = pool.clone();
+        let id = ctx.bank_id;
+        async move {
+            sqlx::query(sql).bind(id).execute(&pool).await.unwrap();
+        }
+    };
+    set_bank("UPDATE bank_accounts SET journal_account_id = NULL WHERE id = ?").await;
+    assert!(matches!(
+        refus_301b(&pool, &ctx, ok, ctx.bank_id, dec!(100.00)).await,
+        Err(SupplierSettlementRefusal::BankAccountNotConfigured)
+    ));
+    set_bank("UPDATE bank_accounts SET is_primary = FALSE, closed_on = '2026-06-30' WHERE id = ?")
+        .await;
+    assert!(matches!(
+        refus_301b(&pool, &ctx, ok, ctx.bank_id, dec!(100.00)).await,
+        Err(SupplierSettlementRefusal::BankAccountClosed)
+    ));
+    set_bank("UPDATE bank_accounts SET archived = TRUE WHERE id = ?").await;
+    assert!(matches!(
+        refus_301b(&pool, &ctx, ok, ctx.bank_id, dec!(100.00)).await,
+        Err(SupplierSettlementRefusal::BankAccountNotFound)
+    ));
+    sqlx::query(
+        "UPDATE bank_accounts SET archived = FALSE, closed_on = NULL, journal_account_id = ? \
+         WHERE id = ?",
+    )
+    .bind(ctx.seeded.accounts["1100"])
+    .bind(ctx.bank_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // En lot `generated` : refusée, quel que soit le compte du lot.
+    let held = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(80.00)).await;
+    let batch =
+        payment_batches::create_batch(&pool, new_batch(&ctx, vec![held]), ctx.seeded.admin_user_id)
+            .await
+            .unwrap()
+            .batch
+            .unwrap()
+            .batch
+            .id;
+    assert!(matches!(
+        refus_301b(&pool, &ctx, held, ctx.bank_id, dec!(80.00)).await,
+        Err(SupplierSettlementRefusal::InGeneratedBatch { payment_batch_id }) if payment_batch_id == batch
+    ));
+    // (d) — une AUTRE facture au même montant, ouverte, pour le débit d'un
+    // montant qu'une facture du lot du compte porte : refusée.
+    let other_same = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(80.00)).await;
+    assert!(matches!(
+        refus_301b(&pool, &ctx, other_same, ctx.bank_id, dec!(80.00)).await,
+        Err(SupplierSettlementRefusal::HeldByPaymentBatch { supplier_invoice_id, payment_batch_id })
+            if supplier_invoice_id == held && payment_batch_id == batch
+    ));
+    // Le même débit sur un autre compte n'est pas retenu par ce lot.
+    let other_bank = bank_accounts::create(
+        &pool,
+        NewBankAccount {
+            company_id: ctx.seeded.company_id,
+            bank_name: "Autre banque".into(),
+            iban: "CH4431999123000889012".into(),
+            qr_iban: None,
+            is_primary: false,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(ctx.seeded.accounts["1100"])
+        .bind(other_bank)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        refus_301b(&pool, &ctx, other_same, other_bank, dec!(80.00))
+            .await
+            .is_ok(),
+        "lot d'un autre compte : admise"
+    );
+}
+
+/// T-b22 (AC-b8) — **la garde du lot est verrouillante**. La vue de la
+/// transaction d'acceptation est née (une lecture ordinaire) ; un
+/// `create_batch` de la facture est validé sur une autre connexion ; puis
+/// l'acceptation verrouille la facture : elle doit voir le lot (refus
+/// `InGeneratedBatch`) et ne rien écrire. Rouge avec une lecture ordinaire
+/// des articles (M-b8) : la vue, née avant, ne voit pas le lot.
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_payment_batch_guard_reads_past_the_view(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(150.00)).await;
+
+    let mut acceptance = pool.begin().await.unwrap();
+    let _: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM payment_batch_items")
+        .fetch_one(&mut *acceptance)
+        .await
+        .unwrap();
+    let batch =
+        payment_batches::create_batch(&pool, new_batch(&ctx, vec![inv]), ctx.seeded.admin_user_id)
+            .await
+            .unwrap()
+            .batch
+            .expect("lot créé sur l'autre connexion")
+            .batch
+            .id;
+
+    let r = supplier_invoices::lock_for_bank_settlement_in_tx(
+        &mut acceptance,
+        ctx.seeded.company_id,
+        inv,
+        ctx.bank_id,
+        dec!(150.00),
+    )
+    .await
+    .unwrap();
+    assert!(
+        matches!(r, Err(SupplierSettlementRefusal::InGeneratedBatch { payment_batch_id }) if payment_batch_id == batch),
+        "⛔ le lot validé après la naissance de la vue doit être vu : {:?}",
+        r.map(|l| l.invoice.id)
+    );
+    acceptance.rollback().await.unwrap();
+}
+
+/// T-b34 (AC-b10, C3) — **une acceptation et un `create_batch` sur le même
+/// compte ne s'interbloquent pas**, au niveau du dépôt, sans enveloppe de
+/// rejeu. Décor : `a` (l'acceptation) puis `b` (le lot), `b > a`, aucun article
+/// existant — l'article de `b` tombe dans l'intervalle de queue de `a` ; le TTC
+/// de `b` diffère du débit (sinon la garde (d) refuserait).
+///
+/// Chorégraphie forcée par sondes : (1) une troisième connexion tient le compte
+/// `FOR UPDATE` ; (2) `create_batch(b)` tient `b` et se bloque sur la clé
+/// étrangère du compte ; (3) l'acceptation de `a` se bloque sur le compte ;
+/// (4) la troisième relâche. Le code prescrit n'a pas lu les articles au point
+/// (3) : aucun `1213`, les deux aboutissent. Mutant M-b23 (articles lus avant
+/// le compte) : l'acceptation tient l'intervalle au point (3), l'insertion de
+/// l'article de `b` l'attend, et elle attend le compte que `b` tient — `1213`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn an_acceptance_and_a_batch_creation_on_the_same_account_do_not_deadlock(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let a = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("A"), dec!(120.00)).await;
+    let b = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("B"), dec!(70.00)).await;
+    assert!(b > a);
+
+    // (1) La troisième connexion tient le compte.
+    let mut tiers = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM bank_accounts WHERE id = ? FOR UPDATE")
+        .bind(ctx.bank_id)
+        .fetch_one(&mut *tiers)
+        .await
+        .unwrap();
+
+    // (2) `create_batch(b)` démarre et se bloque sur la clé étrangère du compte.
+    let p = pool.clone();
+    let nouveau = new_batch(&ctx, vec![b]);
+    let user = ctx.seeded.admin_user_id;
+    let lot = tokio::spawn(async move { payment_batches::create_batch(&p, nouveau, user).await });
+    assert!(
+        kesh_db::test_fixtures::attendre_une_requete_en_cours(
+            &pool,
+            &["INSERT INTO payment_batches"],
+            || lot.is_finished(),
+        )
+        .await,
+        "la création du lot doit attendre le compte"
+    );
+
+    // (3) L'acceptation de `a` démarre et se bloque sur le compte.
+    let p = pool.clone();
+    let company_id = ctx.seeded.company_id;
+    let bank_id = ctx.bank_id;
+    let acceptation = tokio::spawn(async move {
+        let mut tx = p.begin().await.map_err(kesh_db::errors::map_db_error)?;
+        let locked = supplier_invoices::lock_for_bank_settlement_in_tx(
+            &mut tx,
+            company_id,
+            a,
+            bank_id,
+            dec!(120.00),
+        )
+        .await?;
+        let locked = match locked {
+            Ok(l) => l,
+            Err(refus) => panic!("acceptation refusée : {refus:?}"),
+        };
+        supplier_invoices::pay_in_tx_as(
+            &mut tx,
+            company_id,
+            locked.invoice.id,
+            SettlementChoice::BankTransfer {
+                bank_account_id: bank_id,
+            },
+            d(2026, 6, 25),
+            kesh_db::repositories::letterings::Actor {
+                user_id: user,
+                api_key_id: None,
+            },
+        )
+        .await?;
+        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
+        Ok::<(), DbError>(())
+    });
+    assert!(
+        kesh_db::test_fixtures::attendre_une_requete_en_cours(
+            &pool,
+            &[supplier_invoices::BANK_SETTLEMENT_ACCOUNT_LOCK_MARKER],
+            || acceptation.is_finished(),
+        )
+        .await,
+        "l'acceptation doit attendre le compte"
+    );
+
+    // (4) La troisième relâche.
+    tiers.rollback().await.unwrap();
+
+    let lot = lot.await.unwrap();
+    let acceptation = acceptation.await.unwrap();
+    assert!(
+        lot.is_ok() && acceptation.is_ok(),
+        "⛔ aucun interblocage attendu : lot {:?}, acceptation {:?}",
+        lot.as_ref().map(|o| o.batch.is_some()),
+        acceptation
+    );
+    assert!(lot.unwrap().batch.is_some(), "le lot de b est créé");
+    let (inv, _) = supplier_invoices::get(&pool, ctx.seeded.company_id, a)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(inv.status, "paid", "a est réglée");
+}
+
+/// T-b31 (AC-b16) — la confirmation d'un lot pose `paid_at` à la **date de
+/// paiement** qu'elle reçoit (minuit), non à l'heure de la confirmation.
+#[sqlx::test(migrations = "./test-schema")]
+async fn confirming_a_batch_sets_paid_at_to_the_payment_date(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(64.00)).await;
+    let batch =
+        payment_batches::create_batch(&pool, new_batch(&ctx, vec![inv]), ctx.seeded.admin_user_id)
+            .await
+            .unwrap()
+            .batch
+            .unwrap()
+            .batch
+            .id;
+    payment_batches::confirm_batch(
+        &pool,
+        ctx.seeded.company_id,
+        batch,
+        d(2026, 7, 2),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    let (paid, _) = supplier_invoices::get(&pool, ctx.seeded.company_id, inv)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        paid.paid_at,
+        Some(d(2026, 7, 2).and_hms_opt(0, 0, 0).unwrap()),
+        "paid_at = la date de paiement du lot, à minuit"
+    );
+}

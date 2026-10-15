@@ -168,3 +168,116 @@ export async function createJournalEntryViaApi(
 		await disposeContextSafe(ctx);
 	}
 }
+
+/**
+ * Story 30-1b (#686) — le compte bancaire du relevé `iban`, créé au besoin et câblé sur le
+ * compte `1000` du grand livre. Rend son id. Partagé par `reconciliation-link.spec.ts` et
+ * `reconciliation-supplier.spec.ts` (revue de code P1 de la 30-1b, A1 : la copie locale de
+ * la première a été retirée).
+ */
+export async function wiredBankAccountViaApi(page: Page, iban: string): Promise<number> {
+	const ctx = await authedApiContext(page);
+	try {
+		type Ba = { id: number; iban: string; version: number; journalAccountId: number | null };
+		const find = async (): Promise<Ba | undefined> => {
+			const list = await ctx.get('/api/v1/bank-accounts');
+			expect(list.ok()).toBeTruthy();
+			return ((await list.json()) as Ba[]).find((b) => b.iban === iban);
+		};
+		let ba = await find();
+		if (!ba) {
+			const res = await ctx.post('/api/v1/bank-accounts', {
+				data: { bankName: 'UBS Test', iban, qrIban: null, isPrimary: true },
+			});
+			expect(res.ok(), `bank-account create: ${res.status()}`).toBeTruthy();
+			ba = await find();
+		}
+		if (ba!.journalAccountId === null) {
+			const accounts = (await (await ctx.get('/api/v1/accounts')).json()) as Array<{
+				id: number;
+				number: string;
+			}>;
+			const ledger = accounts.find((a) => a.number === '1000');
+			expect(ledger, 'compte 1000 du préréglage').toBeTruthy();
+			const wired = await ctx.patch(`/api/v1/bank-accounts/${ba!.id}`, {
+				data: { journalAccountId: ledger!.id, version: ba!.version },
+			});
+			expect(wired.ok(), `bank-account wiring: ${wired.status()}`).toBeTruthy();
+		}
+		return ba!.id;
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+/**
+ * Story 30-1b (#686) — un fournisseur et une facture fournisseur **ouverte** d'une ligne
+ * (sans TVA) de `amount`, créés par l'API (patron de `payment-batches.spec.ts`). Le compte
+ * créanciers est désigné aux réglages s'il ne l'est pas (le seed `with-company` ne le désigne
+ * pas). `paymentReference` et `number` sont facultatifs (la facture « sans QR » n'en porte
+ * aucun). Rend `{ supplierId, supplierInvoiceId }`.
+ */
+export async function createSupplierInvoiceViaApi(
+	page: Page,
+	opts: {
+		supplierName: string;
+		number: string | null;
+		paymentReference: string | null;
+		invoiceDate: string;
+		dueDate: string | null;
+		amount: string;
+	},
+): Promise<{ supplierId: number; supplierInvoiceId: number }> {
+	const ctx = await authedApiContext(page);
+	try {
+		const accounts = (await (await ctx.get('/api/v1/accounts')).json()) as Array<{
+			id: number;
+			number: string;
+			accountType: string;
+			active: boolean;
+			postable: boolean;
+		}>;
+		const payable = accounts.find((a) => a.number === '2000');
+		const expense = accounts.find((a) => a.accountType === 'Expense' && a.active && a.postable);
+		expect(payable && expense, 'comptes 2000 et de charge').toBeTruthy();
+		const settings = await (await ctx.get('/api/v1/company/invoice-settings')).json();
+		if (settings.defaultPayableAccountId == null) {
+			const put = await ctx.put('/api/v1/company/invoice-settings', {
+				data: { ...settings, defaultPayableAccountId: payable!.id },
+			});
+			expect(put.ok(), `compte créanciers : ${put.status()}`).toBeTruthy();
+		}
+		const supRes = await ctx.post('/api/v1/contacts', {
+			data: {
+				contactType: 'Entreprise',
+				name: opts.supplierName,
+				isClient: false,
+				isSupplier: true,
+			},
+		});
+		expect(supRes.ok(), `fournisseur : ${supRes.status()}`).toBeTruthy();
+		const supplierId = (await supRes.json()).id as number;
+		const invRes = await ctx.post('/api/v1/supplier-invoices', {
+			data: {
+				contactId: supplierId,
+				supplierInvoiceNumber: opts.number,
+				invoiceDate: opts.invoiceDate,
+				dueDate: opts.dueDate,
+				paymentReference: opts.paymentReference,
+				lines: [
+					{
+						description: 'Fourniture',
+						quantity: '1',
+						unitPrice: opts.amount,
+						vatRate: '0',
+						expenseAccountId: expense!.id,
+					},
+				],
+			},
+		});
+		expect(invRes.ok(), `facture fournisseur : ${invRes.status()} ${await invRes.text()}`).toBeTruthy();
+		return { supplierId, supplierInvoiceId: (await invRes.json()).id as number };
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}

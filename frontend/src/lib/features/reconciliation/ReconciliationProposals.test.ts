@@ -95,6 +95,8 @@ function makeProposalWithCandidate(
 			{
 				candidateType: 'invoice' as const,
 				invoiceId,
+				supplierInvoiceId: null,
+				contactName: null,
 				invoiceNumber: `INV-2026-${invoiceId}`,
 				invoiceAmount: amounts.invoiceAmount,
 				invoiceTotalTtc: amounts.invoiceTotalTtc,
@@ -112,6 +114,7 @@ function makeProposalWithCandidate(
 				},
 			},
 		],
+		notice: null,
 	};
 }
 
@@ -130,6 +133,7 @@ function makeProposalWithoutCandidate(
 			counterpartyName: 'UNKNOWN',
 		},
 		candidates: [],
+		notice: null,
 	};
 }
 
@@ -219,6 +223,7 @@ describe('ReconciliationProposals', () => {
 				{
 					bankTransactionId: 42,
 					invoiceId: 101,
+					supplierInvoiceId: null,
 					journalEntryId: 999,
 					score: {
 						total: 1.0,
@@ -438,6 +443,7 @@ describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)'
 				{
 					bankTransactionId: 1,
 					invoiceId: 101,
+					supplierInvoiceId: null,
 					journalEntryId: 9,
 					score: { total: 1.0, amountScore: 1.0, referenceScore: 1.0, contactScore: 0.0 },
 				},
@@ -513,6 +519,7 @@ describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)'
 				{
 					bankTransactionId: 1,
 					invoiceId: 101,
+					supplierInvoiceId: null,
 					journalEntryId: 9,
 					score: { total: 1.0, amountScore: 1.0, referenceScore: 1.0, contactScore: 0.0 },
 				},
@@ -559,6 +566,7 @@ describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)'
 				{
 					bankTransactionId: 1,
 					invoiceId: 101,
+					supplierInvoiceId: null,
 					journalEntryId: 9,
 					score: { total: 1.0, amountScore: 1.0, referenceScore: 1.0, contactScore: 0.0 },
 				},
@@ -734,6 +742,8 @@ function ruleCandidate(ruleId: number, counterpartyAccountId: number): Candidate
 	return {
 		candidateType: 'rule' as const,
 		invoiceId: null,
+		supplierInvoiceId: null,
+		contactName: null,
 		invoiceNumber: null,
 		invoiceAmount: null,
 		invoiceTotalTtc: null,
@@ -1291,5 +1301,169 @@ describe('ReconciliationProposals — cases nommées et indication annoncée (St
 		expect(getByTestId(REGION_TESTID)).toBe(region);
 		expect((region.textContent ?? '').trim()).toBe('');
 		expect(queryByTestId(HINT_TESTID)).toBeNull();
+	});
+});
+
+// ============================================================
+// Story 30-1b (#686, AC-b11) — les factures fournisseur d'un débit
+// ============================================================
+
+/** Une candidate facture fournisseur. */
+function supplierCandidate(
+	supplierInvoiceId: number,
+	invoiceNumber: string | null,
+	contactName: string | null,
+): Candidate {
+	return {
+		candidateType: 'supplier_invoice' as const,
+		invoiceId: null,
+		supplierInvoiceId,
+		contactName,
+		invoiceNumber,
+		invoiceAmount: '480',
+		invoiceTotalTtc: null,
+		invoiceDate: '2026-03-01',
+		ruleId: null,
+		ruleLabel: null,
+		ruleMatchType: null,
+		counterpartyAccountId: null,
+		counterpartyAccountName: null,
+		score: { total: 1.0, amountScore: 1.0, referenceScore: 1.0, contactScore: 1.0 },
+	};
+}
+
+/** Une ligne de débit qui ne propose rien et porte la `notice` du lot du compte. */
+function noticeRow(
+	bankTransactionId: number,
+	supplierInvoiceNumber: string | null,
+): GetProposalsResponse['proposals'][number] {
+	const p = makeProposalWithoutCandidate(bankTransactionId);
+	return {
+		...p,
+		transaction: { ...p.transaction, amount: '-300' },
+		notice: {
+			code: 'supplier_invoice_in_payment_batch',
+			supplierInvoiceId: 77,
+			supplierInvoiceNumber,
+			paymentBatchId: 12,
+		},
+	};
+}
+
+describe('ReconciliationProposals — factures fournisseur (Story 30-1b)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockApi.acceptProposals.mockResolvedValue({ accepted: [], failed: [] } satisfies AcceptResponse);
+	});
+
+	// T-b26 — la candidate fournisseur : badge, fournisseur, numéro (à défaut #id), montant ;
+	// la candidate client reste rendue comme avant.
+	it('T-b26 — rend la candidate fournisseur (badge, fournisseur, numéro, montant) et la client inchangée', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [
+				makeProposalWithCandidates(1, [supplierCandidate(55, 'FF-2026-17', 'Garage Bel-Air SA')]),
+				makeProposalWithCandidates(2, [supplierCandidate(56, null, null)]),
+				makeProposalWithCandidate(3, 101, 1.0),
+			],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const { findAllByTestId, container } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await findAllByTestId('reconciliation-row');
+		const row = (id: number) =>
+			container.querySelector<HTMLElement>(`[data-testid="reconciliation-row"][data-tx-id="${id}"]`)!;
+
+		const first = row(1).querySelector('[data-testid="candidate-top-1"]')!;
+		expect(first.getAttribute('data-candidate-type')).toBe('supplier_invoice');
+		expect(first.getAttribute('data-supplier-invoice-id')).toBe('55');
+		expect(first.textContent).toContain('Garage Bel-Air SA');
+		expect(first.textContent).toContain('FF-2026-17');
+		expect(first.textContent).toContain('480');
+		expect(row(1).querySelector('[data-testid="candidate-supplier-invoice-badge"]')?.textContent).toContain(
+			'Facture fournisseur',
+		);
+
+		const second = row(2).querySelector('[data-testid="candidate-top-1"]')!;
+		expect(second.textContent).toContain('#56');
+
+		const client = row(3).querySelector('[data-testid="candidate-top-1"]')!;
+		expect(client.getAttribute('data-candidate-type')).toBe('invoice');
+		expect(client.getAttribute('data-invoice-id')).toBe('101');
+		expect(client.textContent).toContain('INV-2026-101');
+		expect(row(3).querySelector('[data-testid="candidate-supplier-invoice-badge"]')).toBeNull();
+	});
+
+	// T-b27 — le corps d'« Accepter » pour chaque type de candidate (facture client, règle,
+	// facture fournisseur), dans un même lot, dans l'ordre de la sélection.
+	it('T-b27 — « Accepter » envoie le type de chaque candidate, fournisseur compris', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [
+				makeProposalWithCandidates(1, [supplierCandidate(55, 'FF-1', 'Garage')]),
+				makeProposalWithCandidates(2, [invoiceCandidate(101)]),
+				makeProposalWithCandidates(3, [ruleCandidate(9, 3000)]),
+			],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const view = render(ReconciliationProposals, { bankAccountId: 17 });
+		const boxes = await view.findAllByTestId('tx-checkbox');
+		for (const b of boxes) await fireEvent.click(b);
+		await fireEvent.click(view.getByTestId('reconciliation-accept-btn'));
+		expect(mockApi.acceptProposals).toHaveBeenCalledTimes(1);
+		expect(mockApi.acceptProposals.mock.calls[0][0]).toBe(17);
+		expect(mockApi.acceptProposals.mock.calls[0][1]).toEqual([
+			{ type: 'supplier_invoice', bankTransactionId: 1, supplierInvoiceId: 55 },
+			{ type: 'invoice', bankTransactionId: 2, invoiceId: 101 },
+			{ type: 'rule', bankTransactionId: 3, ruleId: 9, counterpartyAccountId: 3000 },
+		]);
+	});
+
+	// T-b39 — la `notice` est affichée À LA PLACE d'une proposition ; « Accepter » est grisé ;
+	// le texte ne conseille pas de confirmer le lot et ne cite aucun numéro d'issue ; le numéro
+	// de facture manquant est remplacé par #id.
+	it('T-b39 — la notice remplace la proposition, Accepter grisé, sans « confirmez » ni numéro d’issue', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [noticeRow(5, 'FF-LOT-1'), noticeRow(6, null)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const view = render(ReconciliationProposals, { bankAccountId: 17 });
+		const notices = await view.findAllByTestId('proposal-notice');
+		expect(notices).toHaveLength(2);
+		expect(notices[0].getAttribute('data-notice-code')).toBe('supplier_invoice_in_payment_batch');
+		expect(notices[0].textContent).toContain('FF-LOT-1');
+		expect(notices[0].textContent).toContain('n° 12');
+		expect(notices[1].textContent).toContain('#77');
+		for (const n of notices) {
+			const texte = (n.textContent ?? '').toLowerCase();
+			expect(texte).not.toContain('confirm');
+			expect(texte).not.toMatch(/#\d{3,}/);
+			expect(texte).toContain('annulez le lot');
+		}
+		expect(view.queryAllByTestId('candidate-top-1')).toHaveLength(0);
+		expect(view.queryByText('Aucune correspondance')).toBeNull();
+		await fireEvent.click(view.getAllByTestId('tx-checkbox')[0]);
+		expect(view.getByTestId('reconciliation-accept-btn').hasAttribute('disabled')).toBe(true);
+		expect(view.getByTestId('reconciliation-reject-btn').hasAttribute('disabled')).toBe(false);
+	});
+
+	it('T-b39 — le repli de la notice et celui de la priorité égalent le catalogue fr-CH', () => {
+		const texte = readFileSync(
+			join('../crates/kesh-i18n/locales', 'fr-CH', 'messages.ftl'),
+			'utf-8',
+		);
+		const source = readFileSync(
+			join('src/lib/features/reconciliation', 'ReconciliationProposals.svelte'),
+			'utf-8',
+		);
+		for (const cle of [
+			'reconciliation-labels-notice-supplier-invoice-in-batch',
+			'reconciliation-labels-priority-hint',
+			'reconciliation-labels-supplier-invoice-badge',
+		]) {
+			const valeur = texte
+				.split('\n')
+				.find((l) => l.startsWith(`${cle} = `))
+				?.slice(cle.length + 3);
+			expect(valeur, cle).toBeDefined();
+			expect(source).toContain(`'${valeur}'`);
+		}
 	});
 });

@@ -41,6 +41,7 @@ function makeProposal(amount: string = '-10700.00'): ReconciliationProposal {
 			counterpartyName: 'BATCH SALARIES',
 		},
 		candidates: [],
+		notice: null,
 	};
 }
 

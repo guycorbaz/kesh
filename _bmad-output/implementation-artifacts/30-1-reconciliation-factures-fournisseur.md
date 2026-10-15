@@ -2,11 +2,15 @@
 
 ## Status
 
-**30-1a done** (revue de code close en P1, 2026-10-15) ; **30-1b ready-for-dev**. Registre : C-30-1-1 à 46. — Fiche créée le 2026-10-15 en autonomie (`bmad-create-story`, Opus 5.5), sur `15686d55` (kickoff de
+**30-1a done** (revue de code terminée en P1, 2026-10-15) ; **30-1b review** (développée le 2026-10-15, branche
+`story/30-1b`, reportée sur `f1508653` (30-2a) ; revue de code P1 faite et remédiée ; passe ciblée P2 à lancer :
+`30-1b-review-prompt-p2-ciblee.md`). Registre : C-30-1-1 à 64. *(Les phrases d'état ci-dessous sont celles de leur
+date : validation, puis 30-1a.)* — Fiche créée le 2026-10-15 en autonomie (`bmad-create-story`, Opus 5.5), sur `15686d55` (kickoff de
 l'Epic 30), branche `story/30-1`, worktree `/home/gcorbaz/devel/kesh-30-1`. **Découpée** (§ *Découpage*) en deux
 sous-stories tenues dans cette fiche, comme la 29-1 et la 29-4 : **30-1a** (le dé-rapprochement sait défaire un
 règlement fournisseur) **puis** 30-1b (proposer et accepter). Choix consignés au registre propre à la story,
-`epic-30-choix-autonomes-301.md`, **C-30-1-1 à C-30-1-41** (à verser par union au registre de l'epic). Validation P1
+`epic-30-choix-autonomes-301.md`, **C-30-1-1 à C-30-1-41** à la validation, **C-30-1-1 à C-30-1-64** depuis la revue
+de code P1 de la 30-1b (à verser par union au registre de l'epic). Validation P1
 faite (Sonnet : F 0/2/4/5, R 0/2/7/9), remédiée le 2026-10-15 ; validation P2 faite (Opus : F 0/1/5/11, R 0/0/5/16),
 remédiée le 2026-10-15 ; validation P3 faite (Sonnet : F 0/0/5/6, R 0/0/6/6), remédiée le 2026-10-15 ; validation P4 faite (Opus : F 0/0/7/6, R 0/1/5/7),
 **simplifiée** le 2026-10-15 (signal de recyclage déclaré) ; validation P5 faite (Sonnet : F 0/1/4/4, R 0/0/2/6),
@@ -14,7 +18,8 @@ remédiée le 2026-10-15 ; validation P6 faite (passe complète, Sonnet : F 0/1/
 par le **retrait** de la garde ajoutée en P5 (C-30-1-40, signal de recyclage) ; validation P7 **ciblée** (Haiku) à
 lancer : `30-1-validate-prompt-p7-ciblee.md`. *(2026-10-15 : P7 faite, validation terminée — Change Log.)*
 **30-1a développée le 2026-10-15, en `review`** (Dev Agent Record ; revue de code P1 : `30-1a-review-prompt-p1.md`) ;
-30-1b `ready-for-dev`, après le merge de la 30-1a.
+30-1b `ready-for-dev`, après le merge de la 30-1a. *(Périmé : la 30-1a est mergée — `fecc8566` —, la 30-1b est
+développée et en revue ; voir la première phrase.)*
 
 PR : **`closes #686`** dans le titre ou le corps de la PR de la **30-1b seulement** — jamais dans un message de commit,
 même en prose ou au futur (B4 de la rétrospective 28) ; la PR de la 30-1a porte `refs #686`.
@@ -1049,25 +1054,25 @@ T-b31 (lot confirmé avec un `payment_date` passé → `paid_at` = cette date). 
 
 ### 30-1b
 
-- [ ] T12 — Brancher `story/30-1b` depuis `main` après le merge de la 30-1a ; relire les numéros de ligne.
-- [ ] T13 (AC-b1) — tests rouges T-b1 à T-b3, T-b37 ; traits, généricité, valeur absolue, renommage ; tous les tests de
+- [x] T12 — Brancher `story/30-1b` depuis `main` après le merge de la 30-1a ; relire les numéros de ligne.
+- [x] T13 (AC-b1) — tests rouges T-b1 à T-b3, T-b37 ; traits, généricité, valeur absolue, renommage ; tous les tests de
   `matching.rs` verts sans toucher leurs assertions.
-- [ ] T14 (AC-b2, b3) — tests rouges T-b4 à T-b10, T-b42 (`crates/kesh-db/tests/reconciliation_repository.rs`) ;
+- [x] T14 (AC-b2, b3) — tests rouges T-b4 à T-b10, T-b42 (`crates/kesh-db/tests/reconciliation_repository.rs`) ;
   fenêtre, traduction commune des refus de dates, requêtes.
-- [ ] T15 (AC-b4, b5) — tests rouges T-b11 à T-b16, T-b35, T-b36, T-b41 ; `get_proposals`, `candidate_rank`, masquage,
+- [x] T15 (AC-b4, b5) — tests rouges T-b11 à T-b16, T-b35, T-b36, T-b41 ; `get_proposals`, `candidate_rank`, masquage,
   `notice`.
-- [ ] T16 (AC-b6, b7, b8, b9, b17) — tests rouges T-b17 à T-b23, T-b45 (acceptation directe refusée par la garde (d)),
+- [x] T16 (AC-b6, b7, b8, b9, b17) — tests rouges T-b17 à T-b23, T-b45 (acceptation directe refusée par la garde (d)),
   T-b46, T-b47 (règle acceptée par l'API, masquage rejoué) ; `rule_mask_for` ; `lock_for_bank_settlement_in_tx`, `pay_in_tx_as`,
   `accept_one_supplier_invoice`, `refuse_wrong_direction`, inventaire des refus recopié au Dev Agent Record.
-- [ ] T17 (AC-b10) — T-b24, T-b25, T-b34 ; table des verrous recopiée au Dev Agent Record avec les lignes réelles.
-- [ ] T18 (AC-b11) — écran, dialogue, libellés, types ; Vitest T-b26 à T-b28, T-b38 à T-b40.
-- [ ] T19 (AC-b16) — tests rouges T-b29 à T-b31 ; `paid_at` lié ; inventaire des lecteurs refait et recopié au Dev Agent
+- [x] T17 (AC-b10) — T-b24, T-b25, T-b34 ; table des verrous recopiée au Dev Agent Record avec les lignes réelles.
+- [x] T18 (AC-b11) — écran, dialogue, libellés, types ; Vitest T-b26 à T-b28, T-b38 à T-b40.
+- [x] T19 (AC-b16) — tests rouges T-b29 à T-b31 ; `paid_at` lié ; inventaire des lecteurs refait et recopié au Dev Agent
   Record.
-- [ ] T20 (AC-b14) — registres, doc-comments « six chemins », T-b32, T-b33.
-- [ ] T21 (AC-b12) — E2E (trois tests) et captures ; helper `createSupplierInvoiceViaApi`.
-- [ ] T22 (AC-b13) — manuel + PDF (`make fr` dans `docs/manual/`, sous le verrou), `api-external.md`, i18n, CHANGELOG,
+- [x] T20 (AC-b14) — registres, doc-comments « six chemins », T-b32, T-b33.
+- [x] T21 (AC-b12) — E2E (trois tests) et captures ; helper `createSupplierInvoiceViaApi`.
+- [x] T22 (AC-b13) — manuel + PDF (`make fr` dans `docs/manual/`, sous le verrou), `api-external.md`, i18n, CHANGELOG,
   README.
-- [ ] T23 — mutations M-b1 à M-b30 et M-b33 (M-b28 retirée) sous le verrou ; gate complet, Vitest complet **et E2E complet au dernier commit de
+- [x] T23 — mutations M-b1 à M-b30 et M-b33 (M-b28 retirée) sous le verrou ; gate complet, Vitest complet **et E2E complet au dernier commit de
   code** (`flock`, recette de `docs/testing.md` à la lettre, port 3051, bases `kesh_301` / `kesh_e2e_301`).
 
 ---
@@ -1208,7 +1213,9 @@ vient de `pay_in_tx_as`, inchangé), T-b25 (I1 protège, la fiche le dit), T-b38
   d'un lot de plusieurs factures, qui n'égale aucune facture : aucune candidate, la règle peut être proposée — même
   remède que L1 (#671, quatrième puce).
 - **L10 — Affecter manuellement et Éclater ne rejouent aucune garde** (P4, R12) : délibéré — ce sont les gestes
-  d'imputation volontaire que l'AC-b17 désigne ; le manuel le dit.
+  d'imputation volontaire que l'AC-b17 désigne ; le manuel le dit. *(Depuis la revue de code P1, C-30-1-62 : les
+  libellés de `RECONCILIATION_RULE_MASKED` ne les conseillent plus que pour une transaction qui ne règle aucune facture
+  saisie ; le geste nommé d'abord est de traiter la facture.)*
 - **L2 — TTC à plus de deux décimales** (C-30-1-26) — tracé par **#687** : jamais proposé ; la facture se règle depuis la
   fiche, qui écrit alors une ligne de banque à plus de deux décimales. Origine : `line_total = quantité × prix
   unitaire` sans arrondi (`supplier_invoices.rs:389`, `:415`) — et **aucune** limite d'échelle à la création
@@ -1231,6 +1238,15 @@ vient de `pay_in_tx_as`, inchangé), T-b25 (I1 protège, la fiche le dit), T-b38
   reste seulement l'acceptation délibérée d'une règle contre une facture **candidate**, inchangée (AC-b17).
 - **L8 — La `notice` ne cite qu'une facture** : quand une candidate à signal est effacée par un lot du compte (AC-b5,
   première ligne), la `notice` ne dit pas qu'une autre facture de ce montant existait (P3, F11) — pur confort.
+- **L11 — La garde (d) peut nommer la facture acceptée elle-même** (revue de code P1, E1 ; C-30-1-64) : un lot du compte
+  contenant la facture X, annulé **après** la naissance de la vue de l'acceptation, n'est plus vu par (c), verrouillante,
+  mais l'est encore par (d), en lecture ordinaire (tolérance C-30-1-39) : le refus `RECONCILIATION_SUPPLIER_PAYMENT_HOLD`
+  porte alors `supplierInvoiceId` = X. Refus spurieux, sans écriture, qui passe au rejeu. Non fermé : il faudrait rendre
+  `excluding` (C-30-1-41).
+- **L12 — Un lot oublié retient tout débit de son montant** (revue de code P1, E4) : la recherche du lot du compte n'a
+  **aucune borne de dates** ; un lot `generated` jamais transmis ni annulé fait afficher la `notice` — ni facture ni
+  règle — pour **tout** débit du même montant sur ce compte, indéfiniment. C'est la sûreté voulue (AC-b5) ; l'issue
+  (annuler le lot) est écrite au manuel, § *Un lot de paiement en cours sur ce compte*, et la `notice` nomme le lot.
 
 ### Pièges connus du dépôt, applicables ici
 
@@ -1273,6 +1289,9 @@ Aucun fichier neuf hors tests, fixture E2E et spec E2E ; aucun crate neuf ; aucu
 
 ### Agent Model Used
 
+30-1b : Claude Opus 5.5 (agent de développement, autonomie), 2026-10-15, branche `story/30-1b`, bases `kesh_301b` /
+`kesh_e2e_301b`, port 3051.
+
 30-1a : Claude Opus 5.5 (agent de développement, autonomie), 2026-10-15. Branche `story/30-1` du worktree
 `kesh-30-1` (C-30-1-45), bases `kesh_301a` / `kesh_e2e_301a`, port 3051, cible `kesh-30-1/target`.
 
@@ -1280,7 +1299,10 @@ Aucun fichier neuf hors tests, fixture E2E et spec E2E ; aucun crate neuf ; aucu
 
 Journaux (hors dépôt) : `/home/gcorbaz/devel/kesh-gate-logs/301a-*.log` — rouges `301a-rouge-T1.log`,
 `301a-rouge-lots.log` ; gates `301a-gate1.log`, `301a-gate2.log`, `301a-gate3-backend.log`, `301a-gate3-frontend.log` ;
-mutations `301a-mutations.log`, `301a-mutation-M-a9-bis.log` ; E2E `301a-e2e.log`.
+mutations `301a-mutations.log`, `301a-mutation-M-a9-bis.log` ; E2E `301a-e2e.log`. 30-1b : rouges
+`301b-rouge-{matching,depot,paid-at,api,vitest}.log` ; gates `301b-gate{1,2,3-backend,3-frontend}.log`,
+`301b-vitest2.log` ; mutations `301b-mutations.log` ; manuel `301b-make-fr.log` ; E2E `301b-e2e.log` ; captures
+`301b-captures/30-1b-*.png`.
 
 ### Completion Notes List
 
@@ -1389,6 +1411,296 @@ et l'hypothèse « octroi en file » de la fiche n'est donc pas tenue pour acqui
 (`link_bank_transaction_for_test` dans `tests/support/`), C-30-1-44 (`FORCE INDEX (PRIMARY)` constaté nécessaire),
 C-30-1-45 (branche `story/30-1`), C-30-1-46 (placement de T-a17, forme de T-a11 et de T-a1) ; T-a16 renforcé (M-a9).
 
+#### 30-1b — développement (2026-10-15)
+
+Branche `story/30-1b` du worktree `kesh-30-1`, créée depuis `origin/main` `fecc8566` (la 30-1a mergée) ; bases
+`kesh_301b` / `kesh_e2e_301b`, port 3051, cible `kesh-30-1/target`. Deux commits de code : `0f1b7d74` (le code, les
+tests Rust et Vitest, i18n, registres) et `3b3bc13b` (deux tests de route ajoutés, l'E2E de parcours, le manuel et son
+PDF, `api-external.md`, CHANGELOG, README).
+
+**Tests rouges d'abord** (sorties copiées, avant le code de production ; journaux `301b-rouge-*.log`) :
+
+```
+# T-b1, T-b2, T-b3, T-b37 — cargo test -p kesh-reconciliation --lib matching (301b-rouge-matching.log)
+error[E0308]: mismatched types              (propose_matches n'accepte pas une SupplierInvoice)
+error[E0609]: no field `document_id` on type `&matching::MatchProposal`
+error: could not compile `kesh-reconciliation` (lib test) due to 5 previous errors
+
+# T-b4 à T-b10, T-b42, T-b5, T-b6 — dépôt (301b-rouge-depot.log)
+5 error[E0425]: cannot find function `find_open_supplier_invoices_for_window` in module `reconciliation_repo`
+3 error[E0425]: cannot find function `find_open_supplier_invoice_in_account_batch` …
+2 error[E0425]: cannot find function `find_supplier_invoices_masking` …
+5 error[E0599]: no associated function or constant named `for_supplier_payment_date` found for struct `InvoiceDateWindow`
+1 error[E0609]: no field `tolerance_days` …   1 error[E0609]: no field `window_days` …
+
+# T-b29 — supplier_invoices_repository (301b-rouge-paid-at.log) : rouge au comportement
+FAIL pay_sets_paid_at_to_the_payment_date
+  left: Some(2026-10-15T15:25:21.010)   right: Some(2026-06-20T00:00:00)
+# T-b22, T-b31, T-b34, refus de l'étape 3 — payment_batches_repository
+4 error[E0425]: cannot find function `lock_for_bank_settlement_in_tx` in module `supplier_invoices`
+1 error[E0425]: cannot find function `pay_in_tx_as` …   1 error[E0432]: unresolved imports … `SupplierSettlementRefusal`
+
+# Tests de route — reconciliation_e2e, par l'API d'avant le code (301b-rouge-api.log) : rouges au comportement
+19 des 20 tests neufs FAIL — ex. :
+  accepting_a_supplier_invoice_pays_letters_and_reconciles     left: Null  right: 1   (aucune candidate pour un débit)
+  accepting_without_value_date_uses_the_booking_date           left: 400   right: 200 (type `supplier_invoice` inconnu)
+  an_exact_supplier_invoice_in_a_batch_of_the_account_…        left: Null  right: "supplier_invoice_in_payment_batch"
+  an_exact_supplier_invoice_out_of_window_masks_the_rule_…     left: [règle proposée]  right: []
+  accepting_a_rule_replays_the_masking_on_a_credit             la règle acceptée (accepted: [1]), right: []
+  accepting_a_rule_replays_the_masking_on_a_debit              left: Null  right: "RECONCILIATION_RULE_MASKED"
+PASS a_consultation_role_cannot_accept_a_supplier_invoice      (T-b33 : la garde de rôle existe déjà — non-régression)
+```
+
+Les tests de l'écran (T-b26, T-b27, T-b28, T-b38, T-b39, T-b40) ont été écrits avec le code ; leur rouge est établi
+**après coup**, en remettant chaque fichier de production dans sa version de `fecc8566` (`301b-rouge-vitest.log`) :
+`ReconciliationProposals.svelte` → 5 rouges (T-b26, T-b27, T-b39 ×2, et la phrase de priorité) ;
+`failed-proposal-label.ts` → 21 rouges (T-b28, T-b38, les six codes neufs de la table) ;
+`CancelReconciliationDialog.svelte` → 3 rouges (T-b40). Les deux tests de route ajoutés (C-30-1-59) l'ont été pour des
+mutations qui survivaient : leur rouge est celui de M-b12e et M-b5r (tableau ci-dessous).
+
+**Ce qui est livré**, par AC :
+
+- **AC-b1** — `PayableDocument` (`kesh-db/src/repositories/reconciliation.rs`), implémenté pour `Invoice` et
+  `SupplierInvoice` ; `invoice_exigibility_date` et `imputation_order` génériques (le test d'accord
+  `exigibility_date_sql_and_rust_agree` inchangé et vert). `MatchableDocument` (`kesh-reconciliation/src/matching.rs`) :
+  la référence client inchangée, la référence fournisseur par **égalité normalisée** (blancs retirés, majuscules, six
+  caractères alphanumériques au moins) sur `payment_reference` puis `supplier_invoice_number`. Montant comparé en
+  **valeur absolue**. `MatchProposal.invoice_id` → `document_id` (C-30-1-47). Les 22 tests précédents de `matching.rs`
+  verts sans changer un attendu. *(Corrigé le 2026-10-15, revue de code P1, A2 : « 26 » était écrit — le total à HEAD ;
+  `git show fecc8566:crates/kesh-reconciliation/src/matching.rs | grep -cE '#\[(sqlx::)?test'` rend 22.)*
+- **AC-b2** — `InvoiceDateWindow::for_supplier_payment_date` / `for_supplier_transaction` (D + 7, exigibilité ≥ D −
+  365), `tolerance_days` et `window_days` portés par la fenêtre (C-30-1-48) ; `SUPPLIER_INVOICE_EXIGIBILITY_DATE_SQL`
+  (parité : `supplier_exigibility_date_sql_and_rust_agree`) ; `date_refusal_failed_proposal` commune, lue par
+  `accept_one_invoice` (son `details` gagne `tolerance_days`) et par l'acceptation fournisseur.
+- **AC-b3** — `find_open_supplier_invoices_for_window`, `find_open_supplier_invoice_in_account_batch` (la seule
+  fonction du critère du lot du compte, trois lecteurs), `find_supplier_invoices_masking` (0,05, plafond 200, exact
+  d'abord) ; `find_contacts_by_ids_chunked` (C-30-1-49) ; `SUPPLIER_INVOICE_COLUMNS_SI` (C-30-1-51).
+- **AC-b4, AC-b5** — `get_proposals` : un crédit garde son chemin, un débit reçoit les factures fournisseur, un montant
+  nul aucune facture ; `CandidateType::SupplierInvoice`, `supplier_invoice_id`, `contact_name` (les deux sortes) ;
+  `notice` (`supplier_invoice_in_payment_batch`) qui efface la ligne ; masquage de la règle par les candidates, les
+  masquantes non candidates portant un indice (`bears_identity_hint`, sur les sous-scores) et la liste pleine ;
+  `candidate_rank` : bras explicite `SupplierInvoice`, sans `_`.
+- **AC-b6** — `AcceptProposalInput::SupplierInvoice`, pré-vol `supplierInvoiceId > 0`, message de l'extracteur,
+  `AcceptedProposal.supplier_invoice_id` ; `accept_one_supplier_invoice` dans l'ordre de la fiche (étapes 1 à 8,
+  `routes/reconciliation.rs:3199-3407`) ; `supplier_invoices::lock_for_bank_settlement_in_tx` (`supplier_invoices.rs:1125`).
+- **AC-b7** — `refuse_wrong_direction(…, SettlementDirection)` ; `refuse_non_credit_settlement` en est l'enveloppe
+  d'une ligne, ses tests inchangés ; codes écrits au site de construction (C-30-1-54).
+- **AC-b8** — étape (c) en `LOCK IN SHARE MODE` après la facture et le compte ; `in_generated_batch` des vues inchangé.
+- **AC-b9** — `pay_in_tx_as` (corps unique : audit `for_actor`, lettrage avec la clé) ; `pay_in_tx` enveloppe d'une
+  ligne, `pay` et `confirm_batch` inchangés.
+- **AC-b10** — table des verrous ci-dessous ; T-b24, T-b25, T-b34.
+- **AC-b11** — écran (badge, fournisseur, numéro ou `#id`, montant ; `notice` à la place d'une proposition ; corps
+  d'*Accepter*), avis de priorité réécrit, dialogue d'annulation (`supplier_settlement`, repli `#id`), types TS (dont
+  `kind = supplier_settlement` : le LOW E7 de la revue de la 30-1a, traité), `failed-proposal-label.ts` (**37** codes :
+  34 littéraux recomptés par `grep -ohE 'error_code: "[A-Z_]+"' … | sort -u | wc -l`, plus `ACCOUNT_NOT_POSTABLE`,
+  `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `INACTIVE_OR_INVALID_ACCOUNTS` posés par `error_code()`).
+- **AC-b12** — `frontend/tests/e2e/reconciliation-supplier.spec.ts` (trois tests), aides `createSupplierInvoiceViaApi`
+  et `wiredBankAccountViaApi` (C-30-1-60) ; captures en clair (C-30-1-56).
+- **AC-b13** — manuel FR (§ *Réconciliation bancaire* : intro, *Un débit : les factures fournisseur* et le lot du
+  compte, masquage de la règle, encadré *Dépense déjà réglée par un autre chemin* (L1, toutes les formes, le geste sûr),
+  *Accepter ou rejeter*, *Application des règles*, *Annuler un rapprochement* ; § *Régler une facture fournisseur* :
+  la réconciliation, la date du paiement, le motif « rapproché » ; FAQ *Aucune correspondance* ; *Comment annuler quoi* ;
+  *Rattacher* ; glossaire), PDF régénéré (`make fr` sous verrou ; les PDF admin et brochure, régénérés à l'identique du
+  texte, remis à leur état) ; `docs/api-external.md` (§ *Factures fournisseur pour un débit*, corps et `accepted[]`,
+  « jamais une facture **client** », `tolerance_days`, lettrage) ; i18n ×4 (12 clés neuves, 2 réécrites) ; CHANGELOG
+  `## [0.14.0]` (*Ajouté*, *Modifié*, *Corrigé*) ; README. Manuels DE/IT/EN : aucune traduction n'existe (README des
+  dossiers), rien à marquer.
+- **AC-b14** — `bank_account_closed_inventory.rs` (`accept_one_supplier_invoice` classé, `pay_in_tx_as`, compteur
+  32 → 33) ; `letterings_lexical.rs` (`pay_in_tx_as`) ; T-b32, T-b33 dans `reconciliation_e2e.rs` ; doc-comments
+  « sept chemins » (`reconciliation_cancel.rs`, `bank_imports.rs`, `bank_accounts.rs`, et deux mentions de tests) ;
+  `i18n-keys.test.ts` `sitesTotal` 2193 → 2206 (recompté). `audit_labels` : aucune action neuve.
+- **AC-b15** — aucune migration : `ls crates/kesh-db/migrations/*.sql | wc -l` = 81.
+- **AC-b16** — `paid_at` lié à `payment_date` minuit ; T-b29, T-b30, T-b31.
+- **AC-b17** — `rule_mask_for` (pur) et `load_rule_mask` (C-30-1-50), rejoués à l'étape 7 bis de `accept_one_rule`.
+
+**Inventaire des refus de l'acceptation fournisseur** (refait depuis le code, `supplier_settlement_refusal_failed_proposal`
+`routes/reconciliation.rs:3013`, `supplier_payment_error_to_failed_proposal` `:3082`) :
+
+| Source | Erreur | `errorCode` | `details` |
+|---|---|---|---|
+| étape 1 | transaction absente | `BANK_TRANSACTION_NOT_FOUND` | — |
+| étape 1 | non `pending` | `RECONCILIATION_ALREADY_RECONCILED` | — |
+| étape 2 | crédit, montant nul | `RECONCILIATION_TRANSACTION_NOT_DEBIT` | `reason`, `transactionAmount` |
+| étape 3 | `NotFound` | `SUPPLIER_INVOICE_NOT_FOUND` | `supplierInvoiceId` |
+| étape 3 | `NotOpen` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `reason = supplier_invoice_not_open` |
+| étape 3 | `BankAccountNotFound` | `BANK_ACCOUNT_NOT_FOUND` | — |
+| étape 3 | `BankAccountClosed` | `BANK_ACCOUNT_CLOSED` | `bankAccountId` |
+| étape 3 | `BankAccountNotConfigured` | `BANK_ACCOUNT_NOT_CONFIGURED` | `bankAccountId` |
+| étape 3 | `InGeneratedBatch` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `reason = supplier_invoice_in_payment_batch`, `paymentBatchId` |
+| étape 3 (d) | `HeldByPaymentBatch` | `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` | `reason = other_invoice_in_payment_batch`, `supplierInvoiceId`, `paymentBatchId` |
+| étape 3 | erreur de base | par `supplier_payment_error_to_failed_proposal` (→ `DATABASE_ERROR`) | `message` |
+| étape 4 | fenêtre | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `payment_date_before_invoice_date` + `tolerance_days` 7 / `payment_date_outside_window` + `window_days` 365 |
+| étape 5 | montant | `RECONCILIATION_AMOUNT_MISMATCH` | `amountDue` (brut, C-30-1-52), `transactionAmount` |
+| étape 6 | `SettlementCounterpartyIsClaimAccount` | (son code) | `claim_account_failed_proposal(…, Some(bank_account_id))` |
+| étape 6 | `InactiveOrInvalidAccounts` | `INACTIVE_OR_INVALID_ACCOUNTS` | — |
+| étape 6 | `FiscalYearInvalid`, `FiscalYearClosed`, `DateOutsideFiscalYear` | `FISCAL_YEAR_INVALID` | `valueDate` |
+| étape 6 | `PeriodLocked` | `PERIOD_LOCKED` | `period_locked_failed_proposal` (projet de la facture) |
+| étape 6 | `LaterFiscalYearClosed` | `LATER_FISCAL_YEAR_CLOSED` | `later_fiscal_year_closed_failed_proposal` |
+| étape 6 | `BankAccountClosed`, `ConfigurationRequired` (défensifs, C-30-1-54) | `BANK_ACCOUNT_CLOSED`, `BANK_ACCOUNT_NOT_CONFIGURED` | `bankAccountId` |
+| étape 6 | `OptimisticLockConflict` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `reason = race_during_update` |
+| étape 6 | `NotFound`, `IllegalStateTransition`, `Invariant`, dix erreurs structurelles du lettrage *(« onze » écrit jusqu'au 2026-10-15 : `Invariant` compté deux fois — revue de code P1, A3)* | `INTERNAL_ERROR` (après `tracing::error!`) | — |
+| étape 6 | autre | `DATABASE_ERROR` | `message` |
+| étape 6 | écriture de règlement absente après le paiement (invariant) | `INTERNAL_ERROR` | — |
+| étape 7 | `UPDATE` sans ligne | `RECONCILIATION_ALREADY_RECONCILED` | `reason = race_during_update` |
+| 7, 8 | erreur de base | `DATABASE_ERROR` | `message` |
+
+Aucune n'escalade en `AppError`. Atteints par un décor de test (T-b19, T-b45, T-b32, T-b24) : `NOT_DEBIT` (crédit, zéro),
+`SUPPLIER_INVOICE_NOT_FOUND` (absente, autre société), `AMOUNT_MISMATCH`, les deux raisons de dates, `not_open`,
+`in_payment_batch`, `SUPPLIER_PAYMENT_HOLD`, `FISCAL_YEAR_INVALID`, `PERIOD_LOCKED`, `BANK_ACCOUNT_NOT_CONFIGURED`,
+`SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `INACTIVE_OR_INVALID_ACCOUNTS`. Non atteints par décor, dits tels :
+`BANK_ACCOUNT_CLOSED` et `BANK_ACCOUNT_NOT_FOUND` à l'étape 3 (le pré-vol de la route les refuse avant : `200` +
+`BANK_ACCOUNT_CLOSED` par proposition, `404` pour un compte archivé ; atteints au dépôt par
+`lock_for_bank_settlement_refuses_each_case`), `LATER_FISCAL_YEAR_CLOSED` (exige un exercice postérieur clos, que le
+décor de `seed_accounting_company` — un exercice 2020-2030 — n'offre pas ; même constructeur que le chemin client),
+`race_during_update` et les invariants.
+
+**Table des verrous, avec les lignes réelles** (`3b3bc13b`) :
+
+| Chemin | Ordre | Lignes |
+|---|---|---|
+| Acceptation fournisseur | `GET_LOCK(compte)` (`accept_once`) → lecture ordinaire de `t` (**naissance de la vue**, `reconciliation.rs:3215`) → facture `FOR UPDATE` (`supplier_invoices.rs:1133`) → compte `FOR UPDATE` (`:1150`, macro `:1064`) → articles `LOCK IN SHARE MODE` (`:1168-1172`) → garde (d), lecture ordinaire (`:1185`) → `pay_in_tx_as` : facture (`:774`) et compte (`:809`) redemandés, exercice (`:902`), écriture, `UPDATE supplier_invoices` (`:957`), lettrage (`:984`) → `UPDATE bank_transactions` (`reconciliation.rs:3355`) |
+| Acceptation d'une règle | inchangé au sol ; le rejeu (`reconciliation.rs:4053`, `load_rule_mask` `:468`) n'ajoute que des lectures ordinaires |
+| Création d'un lot, confirmation, fiche, dé-rapprochement, clôture du compte | inchangés (30-1a et antérieurs) |
+
+Les cycles C1 à C7 de l'AC-b10 sont ceux de la fiche ; T-b34 constate l'absence de cycle de C3 (aucun `1213`, M-b23 le
+fait apparaître), T-b24 l'issue unique de C5, T-b25 la protection par I1.
+
+**Mutations** (sous le verrou, restaurées par `git checkout -- f && touch f` ; `301b-mutations.log`) — 32 exécutées,
+**32 tuées**, aucune survivante :
+
+| # | Appliquée comme | Tuée par |
+|---|---|---|
+| M-b1 | la référence de paiement ignorée (`if false ||`) | T-b1 (2 tests de `matching`) |
+| M-b2 | égalité → inclusion mutuelle | T-b2, T-b37 |
+| M-b3 | blancs non retirés | T-b1 |
+| M-b17 | majuscules non appliquées | T-b1 |
+| M-b22 | longueur minimale 1 | T-b37 |
+| M-b16 | montant comparé signé | T-b1… (4 tests de `matching`), T-b11 |
+| M-b4 | tolérance 7 → 1 | T-b4 (pur), T-b7 |
+| M-b5 | borne basse de la requête sur `F` | T-b7 |
+| M-b5r *(ajoutée)* | fenêtre de l'acceptation sur `F` | `the_acceptance_window_reads_the_exigibility` |
+| M-b6 | filtre du lot `generated` retiré | T-b8 |
+| M-b7 | égalité → tolérance 0,05 | T-b9 |
+| M-b18 | filtre `status = 'open'` retiré | T-b7 |
+| M-b25 | lot de tout compte traité comme du compte | T-b8, T-b41 |
+| M-b8 | articles en lecture ordinaire | T-b22 |
+| M-b23 | articles lus avant le verrou du compte | T-b34 (l'assertion « aucun interblocage », l. 1550) |
+| M-b27 | compte sans `FOR UPDATE` | T-b34 — par la sonde : l'acceptation ne s'arrête plus au compte, la sonde du verrou du compte expire au bout de 10 s (`FAIL [10.132s]`) ; la mutation est tuée par la chorégraphie, non par un `1213` |
+| M-b29 | garde (d) retirée | T-b45, `lock_for_bank_settlement_refuses_each_case` |
+| M-b14 | audit `supplier_invoice.paid` sans la clé | T-b23 |
+| M-b15 | `paid_at = CURRENT_TIMESTAMP(3)` | T-b29, T-b30 (deux tests) |
+| M-b9 | débit envoyé, en valeur absolue, aux factures client | T-b11 |
+| M-b10 | crédit envoyé aux factures fournisseur | T-b12 |
+| M-b11 | fournisseur au rang 2 | T-b14 |
+| M-b12 | presque au montant avec indice ne masque pas | T-b16 |
+| M-b12e *(ajoutée, l'extension de la fiche)* | la liste pleine ne masque pas | `a_full_masking_list_masks_the_rule` |
+| M-b13 | `is_sign_negative()` | T-b21 |
+| M-b19 | règlement sur un autre compte | T-b17 |
+| M-b20 | lot du compte ignoré par la proposition | T-b35, T-b41 |
+| M-b21 | facture exacte hors fenêtre ne masque pas | T-b36 |
+| M-b24 | lot du compte : candidates gardées | T-b35, T-b41 |
+| M-b30 | rejeu retiré de `accept_one_rule` | T-b46, T-b47 |
+| M-b33 | rejeu sans la carte de contacts | T-b46 (second décor) |
+| M-b26 | dialogue : texte client pour `supplier_settlement` | T-b40 (3 Vitest) |
+
+M-b28 : retirée (fiche). Les tests sans mutation dédiée de la fiche (T-b5, T-b10, T-b24, T-b25, T-b38) sont verts.
+
+**Inventaire des lecteurs de `supplier_invoices.paid_at`**, refait sur `3b3bc13b` (`grep -rln supplier_invoices
+crates/*/src | xargs grep -n paid_at`, `grep -rn paidAt frontend/src`) : réponse de la fiche
+(`routes/supplier_invoices.rs:80`, `:147`) et son affichage (`supplier-invoices/[id]/+page.svelte:393`), export CSV
+(`csv_tables.rs:1215`, `:1241`), audits d'annulation (`supplier_invoices.rs:1419`, `:1697`), liste de sauvegarde
+(`:1814`) ; écrivains : `pay_in_tx_as` (`:959`), les deux annulations (`:1385`, `:1661`, à `NULL`). Identique à la fiche ;
+aucun rapport ni lettrage ne le lit.
+
+**Tests ajoutés** (périmètre `fecc8566..3b3bc13b`, recomptés par `grep -cE '#\[(sqlx::)?test'` aux deux bornes) :
+**44** tests Rust — `matching.rs` 22 → 26, `repositories/reconciliation.rs` 9 → 10, `reconciliation_repository.rs`
+25 → 32, `payment_batches_repository.rs` 19 → 23, `supplier_invoices_repository.rs` 56 → 57, `routes/reconciliation.rs`
+38 → 43, `reconciliation_e2e.rs` 109 → 131 — dont deux hors fiche (C-30-1-59) ; 28 Vitest (mesurés à l'exécution :
+1706 → 1734) ; 3 E2E. Les 45 tests nommés de la partie b (T-b1 à T-b47 sauf T-b43 et T-b44) sont tous couverts.
+
+**Gates exécutés** :
+
+- avant le commit `0f1b7d74` : `scripts/test-fast.sh --ci` (base `kesh_301b` remise à zéro) — **3801 réussis, 6
+  ignorés** ; un premier essai (`301b-gate1.log`, même résultat) tournait sur un arbre antérieur aux derniers remaniements
+  des refus, il ne compte pas. `npm run test:unit` à ce point : 1 rouge, la garde anti-muet `sitesTotal` de
+  `i18n-keys.test.ts` (2206 contre 2193), recomptée et corrigée avant le commit ;
+- au dernier commit de code `3b3bc13b` (arbre propre hors `_bmad-output`, `301b-gate3-*.log`) :
+  `scripts/test-fast.sh --ci` — **3803 réussis, 6 ignorés** ; `npm run check` — 0 erreur, 29 avertissements (5 fichiers,
+  comme à la 30-1a) ; `npm run lint-i18n-ownership` — PASS ; `npm run test:unit` — **149 fichiers, 1734 tests
+  réussis** ; `npm run build` — vert ;
+- E2E complet au même commit (recette de `docs/testing.md`, port 3051, base `kesh_e2e_301b` recréée et migrée, sous le
+  verrou ; `301b-e2e.log`) : **295 réussis, 8 échecs, 19 ignorés** (11,3 min). Les huit échecs, jugés fichier par fichier
+  contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`,
+  `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — les sept de la KF-029 (#97) — et `sidebar-navigation.spec.ts:75`, la
+  KF-052 (#424). Les trois tests de `reconciliation-supplier.spec.ts` sont verts. Aucune régression.
+- Manuel : `make fr` sous le verrou (`301b-make-fr.log`), PDF stable en trois passes ; contrôle aplati :
+  `pdftotext … | tr '\n' ' ' | tr -s ' '` rend « Un débit : les factures fournisseur. Depuis la version 0.14.0 … » et
+  l'encadré « Dépense déjà réglée par un autre chemin », sans « ?? ».
+
+**Écarts à la fiche** (registre) : C-30-1-47 (accès renommés, annotation de type), C-30-1-48 (jours portés par la
+fenêtre), C-30-1-51 (seconde liste de colonnes), C-30-1-52 (`amountDue` brut), C-30-1-53 (sonde du verrou), C-30-1-54
+(deux bras défensifs), C-30-1-56 (captures en clair, aucune au manuel), C-30-1-57 (libellé client réécrit), C-30-1-58
+(repli de `RULE_MASKED`), C-30-1-59 (deux tests ajoutés), C-30-1-60 (aides E2E non factorisées dans les specs
+existantes).
+
+#### 30-1b — report sur la 30-2a et remédiation de la revue de code P1 (2026-10-15)
+
+**Report.** `git rebase origin/main` (`f1508653`, la 30-2a : migration breaking `20261015000001`, crates à 0.14.0,
+`min_required` 0.14.0). Trois conflits, résolus par union : `i18n-keys.test.ts` (`sitesTotal` : 2205 de la 30-2a + 13 de
+la 30-1b = 2218, **mesuré** par la collecte du test au report), `CHANGELOG.md` § [0.14.0] (*Modifié* : les entrées des deux
+stories ; bandeau « À faire » de la 30-2a gardé en tête, une phrase ajoutée au point 2 sur `RECONCILIATION_RULE_MASKED`),
+`sprint-status.yaml` (en-tête renuméroté 173 → 176, clés 30-2* de `main`, clé 30-1b de la branche). Le PDF du manuel
+utilisateur (conflit binaire) a été **régénéré** sur le `.tex` fusionné sans conflit (`make user` sous verrou). Commits
+reportés : `cdd4c900`, `888cf5e6`, `a83ad2c4`. Bases `kesh_301b` et `kesh_e2e_301b` recréées : **82 migrations**.
+
+**Remédiation** (commit de code `90815ca8`), décisions de l'orchestrateur :
+
+- **A1 (MEDIUM)** — `reconciliation-link.spec.ts` importe `wiredBankAccountViaApi`, sa copie locale est retirée ;
+  `payment-batches.spec.ts` ne porte pas la même aide (C-30-1-60 annoté : dette soldée).
+- **INFO A (I2)** — libellés de `RECONCILIATION_RULE_MASKED` réécrits raison par raison (C-30-1-62), quatre locales et
+  repli ; manuel (*Application des règles*), `api-external.md`, CHANGELOG, commentaire de l'étape 7 bis alignés ; L10 annoté.
+- **A5 / B2** — deux clés (C-30-1-61) : « plus d'un jour » rétabli **mot pour mot** (texte de `fecc8566`, quatre locales,
+  `diff` vide) ; `…-days` pour une tolérance de plus d'un jour. La citation du manuel redevient exacte. `sitesTotal`
+  2218 → 2219.
+- **A6** — manuel : exigibilité « la plus tardive de sa date et de son échéance ». **A7** — `api-external.md` : `amountDue`
+  à quatre décimales. **A2, A3** — décomptes du Dev Agent Record corrigés par annotation datée. **A4** — en-tête *Status*.
+- **B1** — `contact_for_score` (C-30-1-63) : lecture partagée, garde `contact_id <= 0` des deux côtés, erreur rendue en
+  `DATABASE_ERROR`. **B3** — majuscule allemande levée par la réécriture du libellé. **B6** — coquille
+  (`reconciliation_cancel.rs`). **E2** — doc-comment de T-b24. **E4** — manuel, une phrase sur le lot oublié ; L12.
+- **Laissés, écrits** (C-30-1-64) : E1 (L11), E3, B4, B5.
+
+**Tests** (périmètre `a83ad2c4..90815ca8`) : aucun test Rust ajouté ; Vitest `failed-proposal-label.test.ts` : un cas
+ajouté à la table `RULE_MASKED` (raison absente) et un test `tolerance_days` 1 explicite — **88** tests dans le fichier,
+mesurés à l'exécution ; assertions des libellés de jours et de masquage réécrites.
+
+**Mutations** (sous le verrou, restaurées par `git checkout -- f && touch f` ; `301b-p1rem-mutations.log`) :
+
+| # | Appliquée comme | Résultat |
+|---|---|---|
+| M-r1 | branche d'un jour retirée (`if (false)`) | **tuée** — 6 tests rouges |
+| M-r2 | repli `invoice_candidate` remis à l'ancien conseil | **tuée** — 2 tests rouges (geste, égalité au catalogue) |
+| M-r3 | `contact_for_score` : erreur avalée (`Ok(None)`) | **non exécutée** : aucun test ne provoque d'erreur de base sur cette lecture (pas d'injection de faute au dépôt) — dit tel quel |
+| M-r4 | garde `contact_id <= 0` retirée | **équivalente, démontrée** : aucun contact d'id ≤ 0 (`AUTO_INCREMENT` dès 1), la lecture rend `None` |
+
+**Gates exécutés au dernier commit de code `90815ca8`** (base `kesh_301b` remise à zéro ; `301b-p1rem-gate-*.log`) :
+`scripts/test-fast.sh --ci` — **3824 réussis, 6 ignorés** (3803 de la 30-1b + les tests de la 30-2a reçus au report ;
+aucun test Rust ajouté par la remédiation) ; `npm run check` — 0 erreur, 29 avertissements (5 fichiers, inchangé) ;
+`npm run lint-i18n-ownership` — PASS ; `npm run test:unit` — **151 fichiers, 1752 tests réussis** ; `npm run build` —
+vert. Avant : `cargo fmt --check` et `cargo clippy --workspace --all-targets -D warnings` verts.
+
+**E2E complet** au même commit (port 3051, base `kesh_e2e_301b` recréée, 82 migrations, `/health` 0.14.0 ; sous le
+verrou) : un premier passage (`301b-p1rem-e2e-run1-montage.log`) rend 9 échecs, dont `inbox-import.spec.ts:112` et
+`supplier-documents.spec.ts:65` — **erreur de montage de mon script** : `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`
+n'étaient pas passés au **runner** (message explicite de `helpers/inbox.ts:88`, exigence de la recette). Relancé, montage
+corrigé (`301b-p1rem-e2e.log`) : **301 réussis, 7 échecs, 17 ignorés** (12,1 min). Les sept échecs, jugés fichier par
+fichier contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`,
+`onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — la KF-029 (#97). Les cinq tests de
+`reconciliation-link.spec.ts` et `reconciliation-supplier.spec.ts` verts. Aucune régression.
+
+**Manuel** : `make user` sous verrou (`301b-p1rem-make.log`), PDF stable en deux passes ; contrôle aplati :
+« la plus tardive de sa date et de son échéance — sa date seule », « Un lot oublié — fichier généré mais jamais transmis
+à la banque — retient », « ne convient que si la transaction ne règle aucune facture saisie » ; aucun « ?? ».
+
 ### File List
 
 30-1a (`62af52d6..82f0424e`) :
@@ -1414,6 +1726,26 @@ C-30-1-45 (branche `story/30-1`), C-30-1-46 (placement de T-a17, forme de T-a11 
 - `docs/api-external.md`, `CHANGELOG.md`
 - `_bmad-output/implementation-artifacts/30-1-reconciliation-factures-fournisseur.md`,
   `epic-30-choix-autonomes-301.md`, `30-1a-review-prompt-p1.md` (neuf), `sprint-status.yaml`
+
+30-1b (`fecc8566..3b3bc13b`) :
+
+- `crates/kesh-reconciliation/src/matching.rs`, `crates/kesh-reconciliation/src/lib.rs`
+- `crates/kesh-db/src/repositories/reconciliation.rs`, `supplier_invoices.rs`, `reconciliation_cancel.rs`,
+  `bank_accounts.rs`, `bank_imports.rs` (doc-comments « sept chemins »)
+- `crates/kesh-db/tests/reconciliation_repository.rs`, `payment_batches_repository.rs`,
+  `supplier_invoices_repository.rs`, `reconciliation_cancel.rs`, `letterings_lexical.rs`,
+  `support/fournisseur_rapproche.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`, `bank_account_closed_inventory.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/lib/features/reconciliation/` : `ReconciliationProposals.svelte`, `CancelReconciliationDialog.svelte`,
+  `failed-proposal-label.ts`, `reconciliation.types.ts` et les tests `ReconciliationProposals.test.ts`,
+  `CancelReconciliationDialog.test.ts`, `failed-proposal-label.test.ts`, `LinkSettlementModal.test.ts`,
+  `ManualMatchModal.test.ts`, `TransactionSplitModal.test.ts` ; `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/reconciliation-supplier.spec.ts` (neuf), `frontend/tests/e2e/helpers/api-fixtures.ts`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`, `docs/api-external.md`, `CHANGELOG.md`, `README.md`
+- `_bmad-output/implementation-artifacts/30-1-reconciliation-factures-fournisseur.md`,
+  `epic-30-choix-autonomes-301.md`, `30-1b-review-prompt-p1.md` (neuf), `sprint-status.yaml`
 
 ---
 
@@ -1711,4 +2043,49 @@ des verrous « en file » n'est pas garanti (T-a16). Choix C-30-1-42 à C-30-1-4
   `supplier_invoices.settlement_journal_entry_id` : impossible par construction), E3, E4, E6 (borne 500 recopiée dans la
   route), E7 (`kind = supplier_settlement` inconnu du type TS avant la 30-1b — **à traiter par la 30-1b**), E8, E9, A2,
   A3, A4. A1 (en-tête Status) corrigé par ce commit.
+
+### Développement de la 30-1b — 2026-10-15
+
+Opus 5.5, autonomie, branche `story/30-1b`. Deux commits de code : `0f1b7d74` (proposer, accepter, `paid_at`, rejeu du
+masquage, écran, i18n, registres) et `3b3bc13b` (deux tests de route, E2E de parcours, manuel et PDF, API, CHANGELOG,
+README). Tests rouges constatés avant le code (Dev Agent Record) ; 44 tests Rust, 28 Vitest et 3 E2E ajoutés ;
+32 mutations exécutées (M-b1 à M-b33 sauf M-b28, plus M-b5r et M-b12e), **toutes tuées** ; gate complet 3803/3803
+(6 ignorés), Vitest 1734/1734, E2E 295 réussis et les 8 échecs attendus (KF-029 ×7, KF-052) au dernier commit de code.
+Choix C-30-1-47 à C-30-1-60 ; LOW E7 de la revue de la 30-1a traité (`kind = supplier_settlement` au type TS et au
+dialogue). Prompt de revue de code P1 : `30-1b-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
+
+### Revue de code P1 de la 30-1b — 2026-10-15 — remédiée, passe ciblée P2 à lancer
+
+- Trois lentilles Sonnet sur `fecc8566..9bae3668` (auteur Opus) : **B 0/0/0/6**, **E 0/0/0/4 (+3 INFO)**,
+  **A 0/0/1/6 (+2 INFO)**. Rapports : `kesh-gate-logs/301b-review-p1-{B,E,A}.md`. Trend : P1 = 1 MEDIUM (A1).
+- **Report** sur `f1508653` (30-2a) avant la remédiation : conflits `i18n-keys.test.ts`, `CHANGELOG.md`, `sprint-status.yaml`
+  et PDF, résolus par union (Dev Agent Record).
+- **Remédiation** (`90815ca8`), décisions de l'orchestrateur : A1 (aide E2E partagée, C-30-1-60 soldé) ; INFO A2 → libellés
+  de `RECONCILIATION_RULE_MASKED` réécrits raison par raison (C-30-1-62) ; A5/B2 (deux clés, « plus d'un jour » rétabli,
+  C-30-1-61) ; A6, A7, A2, A3, A4 ; B1 (`contact_for_score`, erreur propagée, C-30-1-63), B3, B6 ; E2, E4 (manuel, L12).
+  **LOW laissés et écrits** (C-30-1-64) : E1 (L11), E3, B4, B5 ; INFO E5, E6 sans suite.
+- Gates au dernier commit de code : nextest 3824/3824 (6 ignorés), Vitest 1752/1752, check 0 erreur, lint i18n PASS,
+  build vert ; E2E 301 réussis + les 7 de la KF-029 (premier passage écarté : montage du runner incomplet, écrit) ;
+  mutations M-r1, M-r2 tuées, M-r4 équivalente, M-r3 non exécutable (écrit).
+- La remédiation touche du code de production (`routes/reconciliation.rs`, libellés) : la boucle n'est pas close.
+  Passe suivante : **P2 ciblée, Haiku**, sur `a83ad2c4..HEAD` — `30-1b-review-prompt-p2-ciblee.md`, rapport
+  `kesh-gate-logs/301b-review-p2-T.md`.
+
+### Revue de code P2 ciblée de la 30-1b — 2026-10-15 — revue terminée
+
+- Passe ciblée P2 (Haiku, lentille T, `a83ad2c4..62ed3a32`) : **0/0/3/3**. Traitement par l'orchestrateur :
+  - **M1 confirmé et corrigé** : la doc et l'attribut `#[allow(clippy::too_many_arguments)]` d'`accept_one_supplier_invoice`
+    s'étaient rattachés à `contact_for_score` (insertion de la remédiation P1). Le bloc `contact_for_score` est
+    déplacé avant la doc d'`accept_one_supplier_invoice` — aucun changement de comportement ; `cargo fmt --check` et
+    `cargo clippy -p kesh-api --all-targets -D warnings` verts ; gate et E2E de `90815ca8` valables (déplacement de
+    texte seul).
+  - **M2 reclassé LOW** : le libellé `invoice_candidate` est conditionnel (« acceptez la facture proposée **si ce débit
+    la règle** » ; « Affecter manuellement » seulement « si ce débit ne règle **aucune facture saisie** »). Dans le cas
+    L1 (débit d'une facture déjà réglée ailleurs), aucune des deux conditions n'est remplie : le texte dit déjà de ne
+    rien faire. Un renvoi explicite à L1 au manuel serait un plus, non une correction.
+  - **M3 reclassé LOW** : le chemin d'erreur de `contact_for_score` est un `map_err` vers `DATABASE_ERROR`, sans
+    injection de faute possible dans le dépôt (M-r3 non exécutable, déclaré) ; le risque d'une régression muette est
+    nul au regard du `?` qui le porte. Pas de dette ouverte.
+- **Revue de la 30-1b terminée** : P1 Sonnet B 0/0/0/6, E 0/0/0/4, A 0/0/1/6 → remédiée → P2 ciblée Haiku 0/0/1/5 après
+  reclassement, M1 corrigé.
 

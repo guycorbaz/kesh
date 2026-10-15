@@ -671,7 +671,16 @@ const ATTENDU = {
 	// badges, aperçu et sa fermeture, deux mentions du rapport, l'aide du QR illisible),
 	// `DocumentPreview.svelte` 0 → 4 (chargement, 410, erreur, lien « Télécharger »). Que des
 	// littéraux : les autres compteurs inchangés.
-	sitesTotal: 2205,
+	// Story 30-1b (#686, factures fournisseur d'un débit) : **+13**, recompté le 2026-10-15 par
+	// `grep -o "i18nMsg("` aux deux bornes (`fecc8566` → HEAD de `story/30-1b`) :
+	// `ReconciliationProposals.svelte` 27 → 29 (badge *Facture fournisseur*, `notice` du lot),
+	// `CancelReconciliationDialog.svelte` 6 → 7 (texte du règlement fournisseur),
+	// `failed-proposal-label.ts` 36 → 46 (dix libellés). Que des littéraux. Réunion au report de
+	// la 30-1b sur la 30-2a (2026-10-15) : 2205 + 13 = **2218**, mesuré par la collecte de ce test.
+	// Revue de code P1 de la 30-1b (A5/B2) : **2218 → 2219** (+1) — `failed-proposal-label.ts`
+	// 46 → 47, la clé `reconciliation-failed-payment-before-invoice-days` (plus d'un jour) à
+	// côté de celle d'un jour. Littéral : les autres compteurs inchangés.
+	sitesTotal: 2219,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -39,6 +39,7 @@ function proposal(
 			counterpartyName: 'Dubarde SàRL',
 		},
 		candidates: [],
+		notice: null,
 	};
 }
 
