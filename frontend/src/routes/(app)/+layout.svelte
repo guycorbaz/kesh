@@ -79,8 +79,9 @@
 					href: '/supplier-invoices',
 				},
 				{
+					// Story 30-2a (C-30-2-18) : « Documents à traiter », l'URL ne change pas.
 					i18nKey: 'nav-supplier-invoices-import',
-					fallback: 'Importer des factures',
+					fallback: 'Documents à traiter',
 					href: '/supplier-invoices/import',
 				},
 				{
@@ -89,7 +90,8 @@
 					href: '/payment-batches',
 				},
 				// ⚠️ Le français PRÉCISE, sur arbitrage de Guy : « Importer » seul était ambigu à
-				// deux lignes de « Importer des factures ». Aucun terme n'était attesté au catalogue.
+				// deux lignes de « Importer des factures » (libellé de la ligne voisine jusqu'à la
+				// 0.13.x, devenu « Documents à traiter »). Aucun terme n'était attesté au catalogue.
 				{
 					i18nKey: 'nav-bank-import',
 					fallback: 'Importer des relevés',

@@ -582,6 +582,15 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
          header_row_count, Story 26-1) : une sauvegarde antérieure restaure la colonne à son \
          DEFAULT 'positive', qui est la sémantique des profils d'avant.",
     ),
+    (
+        20261015000001,
+        ExemptionBasis::Durable,
+        "UPDATE sur _kesh_version (bump kesh_version_min_required), table système jamais \
+         restaurée. Le reste de la migration est du DDL pur (sept colonnes QR rendues \
+         facultatives, contrainte « tout ou rien », unicité de supplier_invoice_id, Story \
+         30-2a) : les lignes d'une sauvegarde antérieure portent toutes un QR et satisfont la \
+         contrainte telles quelles ; aucune valeur n'est à recalculer.",
+    ),
 ];
 
 /// Rejoue les backfills du registre canonique dans la transaction de restore.
@@ -1202,9 +1211,11 @@ mod tests {
         // ⚠️ **17 → 18 (Story 26-1, #620)** : `20261011000001`, le bump
         // `kesh_version_min_required` à 0.13.1 — `Durable`, patron de
         // `20261009000001` (table système jamais restaurée, DDL pur sinon).
+        // ⚠️ **18 → 19 (Story 30-2a, #685)** : `20261015000001`, le bump
+        // `kesh_version_min_required` à 0.14.0 — `Durable`, même patron.
         assert_eq!(
             EXEMPT_MIGRATIONS.len(),
-            18,
+            19,
             "le registre d'exemptions a changé de taille : déclarer le fondement de l'entrée \
              neuve (Durable, ou PerishableSince(<borne>) si elle argumente sur un fait daté), \
              puis bumper ce nombre."

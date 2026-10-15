@@ -345,3 +345,75 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   libellé adapté dans les quatre locales, Vitest, mutation M-c12.
 - **Écartées** : une issue séparée (la marge d'issues au tag est d'une seule) ; un formateur neuf (DRY).
 - **Réversible** : oui.
+
+---
+
+*Choix du développement de la 30-2a (2026-10-15, Opus 5.5, autonomie), sur `5b566378`, branche `story/30-2`.*
+
+### C-30-2-24 — Le téléchargement reste à côté de l'aperçu
+
+- **Contexte** : AC5 énumère trois gestes par ligne (Aperçu, Compléter, Retirer de la liste) ; la page portait aussi
+  « Voir le justificatif », qui **télécharge** le document, et `inbox-import.spec.ts` l'exerce. Un PDF s'affiche dans la
+  visionneuse du navigateur, qui sait l'enregistrer ; une image, non.
+- **Retenu** : le bouton reste, libellé « Télécharger » (clé `imported-supplier-invoices-view-doc`, texte changé dans les
+  quatre locales — le mot « justificatif » sort du vocabulaire, AC8). `DocumentPreview` garde son lien « Télécharger »
+  pour les seuls types qu'il n'affiche pas (AC6).
+- **Écartées** : retirer le bouton (une image ne s'enregistrerait plus qu'au clic droit, et la couverture E2E du
+  téléchargement disparaîtrait) ; un lien de téléchargement dans tout aperçu (AC6 le réserve aux autres types).
+- **Réversible** : oui.
+
+### C-30-2-25 — Le contrôle pur du QR vit dans l'entité, et rend un type, non une chaîne
+
+- **Contexte** : AC2 prescrit une fonction pure de `ScannedQrBill`, appelée avant l'archivage ; les largeurs de colonnes
+  sont un savoir de `kesh-db`, les codes `qrError` un savoir du rapport d'import.
+- **Retenu** : `check_scanned_fits_columns(&ScannedQrBill) -> Result<(), QrColumnsMismatch>` dans
+  `kesh-db/src/entities/imported_supplier_invoice.rs`, à côté de `from_scanned` et de `without_qr` ;
+  `QrColumnsMismatch::{FieldTooLong { column }, AmountOutOfRange}` et sa méthode `code()` (`FIELD_TOO_LONG`,
+  `QR_AMOUNT_OUT_OF_RANGE`). Les deux filets de l'`INSERT` gardent les codes prescrits (`DataLengthOrRange` →
+  `FIELD_TOO_LONG`, `CheckConstraintViolation` → `INVALID_SPC_PAYLOAD`, AC2).
+- **Écartées** : la fonction dans `inbox_import.rs` (les largeurs y seraient recopiées loin du schéma) ; un `&'static str`
+  nu (la colonne en défaut se perdrait, et un test ne pourrait pas la nommer).
+- **Réversible** : oui.
+
+### C-30-2-26 — Le vocabulaire du journal d'activité suit l'écran ; les messages d'erreur du serveur, non
+
+- **Contexte** : AC8 fait inventorier les jetons « importée », « complét », « écart » dans les quatre locales ; les
+  libellés d'audit (`audit-log-action-imported-supplier-invoice-*`, `audit-log-entity-*`) disaient « Facture importée
+  créée / complétée / écartée / réactivée ». Les messages d'`AppError` du serveur (`errors.rs`, « Facture importée
+  introuvable ») ne sont pas affichés par la page, qui traduit le code ; et la 30-1a modifie `errors.rs` en parallèle.
+- **Retenu** : les cinq libellés d'audit passent au vocabulaire du document (« Document importé », « Document traité
+  (facture créée) », « Document retiré de la liste », « Document remis dans la liste », entité « Document fournisseur »),
+  dans les quatre locales. `errors.rs` n'est pas touché ; le message de `CURRENCY_NOT_SUPPORTED`, construit dans la route,
+  devient « … Retirez le document de la liste. » (AC7).
+- **Écartées** : garder « Facture importée » au journal (le journal nommerait « facture » un document qui n'en est pas
+  une) ; réécrire les messages de `errors.rs` (conflit avec la 30-1a, sans effet à l'écran).
+- **Réversible** : oui.
+
+### C-30-2-27 — Le développement part de `story/30-2`, avant le merge de la 30-1a
+
+- **Contexte** : T-a0 et C-30-0-3 font partir la 30-2a d'`origin/main` **après** le merge de la 30-1 ; l'orchestrateur a
+  lancé le développement en parallèle de la 30-1a, et demandera un rebase après son merge.
+- **Retenu** : développement sur `story/30-2` (`5b566378`) ; T-a0 reste à faire au rebase. La 30-1a n'ajoute aucune
+  migration : l'horodatage `20261015000001` reste le plus récent, et les dix crates n'étaient pas à 0.14.0 — la 30-2a les
+  y porte. Conflits probables écrits au Dev Agent Record.
+- **Écartées** : attendre le merge (consigne de l'orchestrateur).
+- **Réversible** : oui (rebase).
+
+### C-30-2-28 — Les dossiers E2E du worktree sont nommés par la clé, et passés au runner
+
+- **Contexte** : le spec lit `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR` avec pour défauts ceux de la recette
+  (`/tmp/kesh-e2e/…`) ; d'autres agents peuvent monter la même recette au même moment, dans les mêmes dossiers.
+- **Retenu** : le montage du worktree emploie `/tmp/kesh-e2e-302a/{inbox,documents,backup}`, passés au backend **et** au
+  runner (consigne « fichiers temporaires nommés par ta clé ») ; les défauts du spec restent ceux de la recette.
+- **Écartées** : les dossiers par défaut (un import d'un autre agent prendrait mes fichiers, et inversement).
+- **Réversible** : oui.
+
+### C-30-2-29 — Ce qui revient à la 30-2b et à la 30-2c n'est pas écrit d'avance
+
+- **Contexte** : AC9-bis demande, au *Passer à la 0.14.0* et au bandeau du CHANGELOG, la validation des coordonnées de
+  paiement (`INVALID_PAYMENT_DETAILS`, « à compléter par la 30-2b ») et la lecture du document ouverte aux clés `read`
+  (30-2c) ; rien de cela n'est livré par la 30-2a.
+- **Retenu** : la 30-2a n'écrit que ce qu'elle livre (champs nullables, `qr`/`qrError`, disparition de
+  `NO_QR_CODE_FOUND`) ; les deux points s'ajouteront avec leur code. Écart à la fiche déclaré au Dev Agent Record.
+- **Écartées** : annoncer au manuel un comportement absent du code (le manuel dirait faux jusqu'au merge de la 30-2b).
+- **Réversible** : oui.

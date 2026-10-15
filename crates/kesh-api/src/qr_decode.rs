@@ -6,9 +6,11 @@
 //!
 //! On retient le **premier** payload commençant par `SPC\n0200` (multi-QR par
 //! page, multi-page tentés dans l'ordre) puis on le parse via `parse_spc_payload`
-//! (12-5a). Le mapping des erreurs vers les `error_code` HTTP
-//! (`PDF_RENDER_ERROR`, `INVALID_SPC_PAYLOAD`, `INVALID_IBAN`, `NO_QR_CODE_FOUND`)
-//! est consommé en 12-5c ; ce module expose une erreur typée.
+//! (12-5a). Le mapping des erreurs vers les codes du rapport d'import
+//! (`PDF_RENDER_ERROR`, `INVALID_SPC_PAYLOAD`, `INVALID_IBAN`) est consommé par
+//! `inbox_import` ; ce module expose une erreur typée. Depuis la Story 30-2a,
+//! « aucun QR » (`Ok(None)`) et ces trois erreurs font entrer le document SANS
+//! données QR (`qr: "none"` / `"unreadable"`) ; seule `ImageDecode` le refuse.
 
 use std::sync::Mutex;
 

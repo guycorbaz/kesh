@@ -247,17 +247,20 @@ async fn other_company_jwt(pool: &MySqlPool) -> String {
 // ============================================================
 
 /// Rasterise un payload SPC en PNG via le writer rxing (dép runtime kesh-api).
+///
+/// Story 30-2a (P4, F6) — le payload est encodé en **UTF-8 avec ECI** : sans
+/// l'indication `CharacterSet`, un nom accentué serait relu en Latin-1 ou en
+/// Shift_JIS, et le test du nom de 70 caractères accentués rougirait pour une
+/// mauvaise raison.
 fn qr_png_from_payload(payload: &str) -> Vec<u8> {
     use rxing::{BarcodeFormat, EncodeHints, Writer};
     let writer = rxing::qrcode::QRCodeWriter {};
+    let hints = EncodeHints {
+        CharacterSet: Some("UTF-8".to_string()),
+        ..EncodeHints::default()
+    };
     let matrix = writer
-        .encode_with_hints(
-            payload,
-            &BarcodeFormat::QR_CODE,
-            512,
-            512,
-            &EncodeHints::default(),
-        )
+        .encode_with_hints(payload, &BarcodeFormat::QR_CODE, 512, 512, &hints)
         .expect("encode QR");
     let w = matrix.getWidth();
     let h = matrix.getHeight();
@@ -275,9 +278,29 @@ fn qr_png_from_payload(payload: &str) -> Vec<u8> {
     png
 }
 
+// Index des lignes du payload SPC 0200 que les tests substituent (ordre SIX,
+// identique aux constantes privées `L_*` de `kesh-qrbill/src/parser.rs`).
+const SPC_LINE_IBAN: usize = 3;
+const SPC_LINE_NAME: usize = 5;
+const SPC_LINE_COUNTRY: usize = 10;
+const SPC_LINE_AMOUNT: usize = 18;
+const SPC_LINE_CURRENCY: usize = 19;
+const SPC_LINE_EPD: usize = 30;
+
 /// PNG d'une facture QR standard (IBAN non-QR, référence None, montant `amount`).
 /// `name` permet d'injecter un nom créancier sur-long pour le test D2.
 fn qr_invoice_png(amount: Decimal, name: &str) -> Vec<u8> {
+    let amount = amount.to_string();
+    qr_invoice_png_with(&[(SPC_LINE_AMOUNT, &amount), (SPC_LINE_NAME, name)])
+}
+
+/// PNG d'une facture QR dont des lignes du payload sont **substituées après**
+/// `build_payload` — Story 30-2a (AC2), généralisation de la substitution du
+/// nom (`NAMEPLACEHOLDER`) à toute ligne : montant, pays, devise, IBAN, trailer.
+/// `build_payload` validerait ces valeurs et refuserait de générer ; le parseur
+/// 12-5a, lui, ne borne ni les longueurs, ni le montant, ni le pays, ni la
+/// devise — c'est exactement ce que le contrôle pur de l'import doit rattraper.
+fn qr_invoice_png_with(overrides: &[(usize, &str)]) -> Vec<u8> {
     let data = QrBillData {
         creditor_iban: "CH9300762011623852957".into(),
         creditor: Address {
@@ -290,20 +313,37 @@ fn qr_invoice_png(amount: Decimal, name: &str) -> Vec<u8> {
             country: "CH".into(),
         },
         ultimate_debtor: None,
-        amount: Some(amount),
+        amount: Some(dec!(20.00)),
         currency: Currency::Chf,
         reference: Reference::None,
         unstructured_message: Some("Facture test".into()),
         billing_information: None,
     };
     // build_payload valide les longueurs (nom ≤ 70) ; on génère avec un token
-    // court puis on substitue le nom dans le payload (le parseur 12-5a ne borne
-    // pas les longueurs → le test D2 fait échouer l'INSERT staging en aval).
-    let payload = build_payload(&data)
-        .unwrap()
-        .replace("NAMEPLACEHOLDER", name);
-    qr_png_from_payload(&payload)
+    // court puis on substitue les lignes demandées dans le payload.
+    let payload = build_payload(&data).unwrap();
+    let mut lines: Vec<String> = payload.split('\n').map(str::to_string).collect();
+    for (index, value) in overrides {
+        lines[*index] = (*value).to_string();
+    }
+    qr_png_from_payload(&lines.join("\n"))
 }
+
+/// PDF minimal d'une page de texte, écrit à la main, **sans** QR (Story 30-2a,
+/// fixture synthétique). Selon la présence de pdfium sur la station, l'import
+/// le lit sans QR (`none`) ou ne peut le rendre (`unreadable`,
+/// `PDF_RENDER_ERROR`) : les deux sont une acceptation sans données QR.
+const PDF_SANS_QR: &[u8] = b"%PDF-1.4\n\
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n\
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n\
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 4 0 R \
+/Resources << /Font << /F1 5 0 R >> >> >> endobj\n\
+4 0 obj << /Length 44 >> stream\n\
+BT /F1 12 Tf 20 50 Td (Pas une facture) Tj ET\n\
+endstream endobj\n\
+5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n\
+trailer << /Root 1 0 R >>\n\
+%%EOF\n";
 
 /// PNG blanc 64×64 sans aucun QR.
 fn blank_png() -> Vec<u8> {
@@ -338,19 +378,19 @@ async fn seed_staging(
         original_filename: "facture.png".into(),
         mime_type: "image/png".into(),
         byte_size: 1234,
-        creditor_iban: "CH9300762011623852957".into(),
-        is_qr_iban,
-        creditor_address_type: "K".into(),
-        creditor_name: name.into(),
+        creditor_iban: Some("CH9300762011623852957".into()),
+        is_qr_iban: Some(is_qr_iban),
+        creditor_address_type: Some("K".into()),
+        creditor_name: Some(name.into()),
         creditor_line1: Some("Rue du Lac 1268".into()),
         creditor_line2: Some("2501 Biel".into()),
         creditor_postal_code: None,
         creditor_town: None,
-        creditor_country: "CH".into(),
-        reference_type: reference_type.into(),
+        creditor_country: Some("CH".into()),
+        reference_type: Some(reference_type.into()),
         reference_value: reference_value.map(|s| s.to_string()),
         amount,
-        currency: currency.into(),
+        currency: Some(currency.into()),
         unstructured_message: None,
         billing_information: None,
     };
@@ -408,63 +448,555 @@ async fn import_creates_staging_and_archives(pool: MySqlPool) {
             .await
             .unwrap();
     assert_eq!(items.len(), 1);
-    assert_eq!(items[0].currency, "CHF");
+    assert_eq!(items[0].currency.as_deref(), Some("CHF"));
     assert_eq!(items[0].amount, Some(dec!(100.00)));
     // Fichier inbox supprimé, justificatif archivé présent.
     assert!(!app.inbox.join("facture1.png").exists());
     assert!(app.documents.join(&items[0].storage_path).exists());
 }
 
+/// Lance un run d'import et rend le rapport (HTTP 200 exigé).
+async fn run_import(app: &TestApp, jwt: &str) -> Value {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/inbox-import"))
+        .bearer_auth(jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "un run d'import rend toujours 200");
+    resp.json().await.unwrap()
+}
+
+/// L'entrée `accepted[]` d'un fichier, désignée par son nom (identifiant
+/// business, jamais un index) ; échoue en citant le rapport si elle manque.
+fn accepted_entry<'a>(report: &'a Value, file_name: &str) -> &'a Value {
+    report["accepted"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["fileName"] == file_name)
+        .unwrap_or_else(|| panic!("{file_name} absent de accepted[] : {report}"))
+}
+
+/// Détails JSON de la dernière trace `action` d'une pièce importée.
+async fn audit_details(pool: &MySqlPool, entity_id: i64, action: &str) -> Value {
+    let raw: Option<Vec<u8>> = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE entity_type = 'imported_supplier_invoice' \
+         AND entity_id = ? AND action = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(entity_id)
+    .bind(action)
+    .fetch_one(pool)
+    .await
+    .unwrap_or_else(|e| panic!("trace {action} absente pour {entity_id} : {e}"));
+    serde_json::from_slice(&raw.expect("détails présents")).expect("json valide")
+}
+
+/// Les sept colonnes QR « tout ou rien » d'une ligne de staging, lues en SQL
+/// brut (indépendamment de l'entité) : `true` si toutes sont `NULL`.
+async fn qr_columns_all_null(pool: &MySqlPool, id: i64) -> bool {
+    let n: i64 = sqlx::query_scalar(
+        "SELECT (creditor_iban IS NULL) + (is_qr_iban IS NULL) + \
+         (creditor_address_type IS NULL) + (creditor_name IS NULL) + \
+         (creditor_country IS NULL) + (reference_type IS NULL) + (currency IS NULL) \
+         FROM imported_supplier_invoices WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    n == 7
+}
+
+/// Story 30-2a (AC1, AC3) — sens changé : le PNG **sans** QR n'est plus un
+/// échec, il entre dans la liste sans données QR. Les deux refus de type
+/// (extension hors liste blanche, octets magiques incohérents) restent.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn import_rejects_unsupported_type_and_no_qr(pool: MySqlPool) {
+async fn import_rejects_unsupported_type_and_accepts_no_qr(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
     // (a) Extension hors liste blanche → UNSUPPORTED_FILE_TYPE (check extension).
     std::fs::write(app.inbox.join("notes.txt"), b"pas une image").unwrap();
-    // (b) Image PNG valide mais sans QR → NO_QR_CODE_FOUND.
+    // (b) Image PNG valide mais sans QR → ACCEPTÉE, `qr: "none"` (AC1).
     std::fs::write(app.inbox.join("blank.png"), blank_png()).unwrap();
     // (c) Extension permise (.pdf) MAIS magic bytes incohérents (contenu PNG) →
     //     UNSUPPORTED_FILE_TYPE via `magic_matches` (AA1 — chemin magic-bytes testé).
     std::fs::write(app.inbox.join("fake.pdf"), blank_png()).unwrap();
 
-    let body: Value = app
-        .client
-        .post(app.url("/api/v1/inbox-import"))
-        .bearer_auth(&ctx.jwt)
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let body = run_import(&app, &ctx.jwt).await;
 
     let failed = body["failed"].as_array().unwrap();
-    assert_eq!(failed.len(), 3);
-    let codes: Vec<&str> = failed
-        .iter()
-        .map(|f| f["errorCode"].as_str().unwrap())
-        .collect();
-    // Deux UNSUPPORTED_FILE_TYPE : un par extension (notes.txt), un par magic bytes
-    // (fake.pdf — extension valide, contenu PNG).
-    assert_eq!(
-        codes
+    assert_eq!(failed.len(), 2, "{body}");
+    assert!(
+        failed
             .iter()
-            .filter(|c| **c == "UNSUPPORTED_FILE_TYPE")
-            .count(),
-        2
+            .all(|f| f["errorCode"] == "UNSUPPORTED_FILE_TYPE"),
+        "{body}"
     );
-    assert!(codes.contains(&"NO_QR_CODE_FOUND"));
     // Le magic-mismatch est bien rattaché au bon fichier (identifiant business).
     let fake = failed
         .iter()
         .find(|f| f["fileName"] == "fake.pdf")
         .expect("fake.pdf dans failed[]");
     assert_eq!(fake["errorCode"], "UNSUPPORTED_FILE_TYPE");
-    // Les trois déplacés dans failed/.
+    // Le PNG sans QR est accepté, sans code d'erreur QR.
+    let blank = accepted_entry(&body, "blank.png");
+    assert_eq!(blank["qr"], "none", "{body}");
+    assert!(blank.get("qrError").is_none(), "{body}");
+    // Seuls les deux refus sont déplacés dans failed/.
     assert_eq!(
         std::fs::read_dir(app.inbox.join("failed")).unwrap().count(),
-        3
+        2
     );
+}
+
+/// Story 30-2a (AC1) — un PNG sans QR entre en `to_complete`, les sept colonnes
+/// QR à `NULL` ; il est archivé et quitte le dossier ; la trace de création a
+/// la même forme qu'avec QR, ses clés présentes à `null`, `iban_present: false`
+/// (tue M-a1 et M-a15).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_accepts_png_without_qr(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let png = blank_png();
+    std::fs::write(app.inbox.join("ticket.png"), &png).unwrap();
+
+    let body = run_import(&app, &ctx.jwt).await;
+    assert!(body["failed"].as_array().unwrap().is_empty(), "{body}");
+    let entry = accepted_entry(&body, "ticket.png");
+    assert_eq!(entry["qr"], "none");
+    assert!(entry.get("qrError").is_none(), "{body}");
+    let id = entry["importedSupplierInvoiceId"].as_i64().unwrap();
+
+    assert_eq!(staging_status(&pool, id).await, "to_complete");
+    assert!(
+        qr_columns_all_null(&pool, id).await,
+        "sept colonnes QR à NULL"
+    );
+    let (amount_null, reference_null, line1_null): (bool, bool, bool) = sqlx::query_as(
+        "SELECT amount IS NULL, reference_value IS NULL, creditor_line1 IS NULL \
+         FROM imported_supplier_invoices WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(amount_null && reference_null && line1_null);
+
+    // Archivé sous son empreinte, supprimé du dossier d'entrée.
+    use sha2::Digest;
+    let archived = app
+        .documents
+        .join(format!("{:x}.png", sha2::Sha256::digest(&png)));
+    assert!(archived.exists(), "document archivé");
+    assert!(!app.inbox.join("ticket.png").exists(), "dossier vidé");
+
+    let details = audit_details(&pool, id, "imported_supplier_invoice.created").await;
+    assert_eq!(details["qr_present"], json!(false), "{details}");
+    assert_eq!(details["iban_present"], json!(false), "{details}");
+    for key in [
+        "creditor_name",
+        "amount",
+        "currency",
+        "reference_type",
+        "is_qr_iban",
+    ] {
+        assert!(
+            details.get(key).is_some_and(Value::is_null),
+            "clé {key} présente à null : {details}"
+        );
+    }
+    assert_eq!(details["original_filename"], "ticket.png");
+}
+
+/// Story 30-2a (AC1, AC2) — un document avec QR garde exactement son
+/// comportement : `qr: "present"`, données stockées, trace `qr_present: true`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_with_qr_reports_present(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    std::fs::write(
+        app.inbox.join("qr.png"),
+        qr_invoice_png(dec!(100.00), "Robert SA"),
+    )
+    .unwrap();
+    let body = run_import(&app, &ctx.jwt).await;
+    let entry = accepted_entry(&body, "qr.png");
+    assert_eq!(entry["qr"], "present", "{body}");
+    assert!(entry.get("qrError").is_none(), "{body}");
+    let id = entry["importedSupplierInvoiceId"].as_i64().unwrap();
+    let details = audit_details(&pool, id, "imported_supplier_invoice.created").await;
+    assert_eq!(details["qr_present"], json!(true), "{details}");
+    assert_eq!(details["iban_present"], json!(true), "{details}");
+    assert_eq!(details["creditor_name"], "Robert SA");
+}
+
+/// Story 30-2a (AC1) — un PDF sans QR entre lui aussi, sans données QR. Selon
+/// pdfium, le rapport dit `none` ou `unreadable` (`PDF_RENDER_ERROR`) : le test
+/// n'exige que l'acceptation et l'absence de données QR.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_accepts_pdf_without_qr(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    std::fs::write(app.inbox.join("lettre.pdf"), PDF_SANS_QR).unwrap();
+    let body = run_import(&app, &ctx.jwt).await;
+    assert!(body["failed"].as_array().unwrap().is_empty(), "{body}");
+    let entry = accepted_entry(&body, "lettre.pdf");
+    match entry["qr"].as_str() {
+        Some("none") => assert!(entry.get("qrError").is_none(), "{body}"),
+        Some("unreadable") => assert_eq!(entry["qrError"], "PDF_RENDER_ERROR", "{body}"),
+        other => panic!("qr inattendu {other:?} : {body}"),
+    }
+    let id = entry["importedSupplierInvoiceId"].as_i64().unwrap();
+    assert!(qr_columns_all_null(&pool, id).await);
+}
+
+/// Story 30-2a (AC2) — un QR décodé mais inexploitable (payload SPC invalide,
+/// IBAN invalide) n'empêche pas l'entrée : `unreadable`, code d'origine en
+/// `qrError`, aucune donnée QR stockée (tue M-a2).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_unreadable_qr_is_accepted_without_qr_data(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    std::fs::write(
+        app.inbox.join("spc.png"),
+        qr_invoice_png_with(&[(SPC_LINE_EPD, "XXX")]),
+    )
+    .unwrap();
+    std::fs::write(
+        app.inbox.join("iban.png"),
+        qr_invoice_png_with(&[(SPC_LINE_IBAN, "CH0000000000000000000")]),
+    )
+    .unwrap();
+    let body = run_import(&app, &ctx.jwt).await;
+    assert!(body["failed"].as_array().unwrap().is_empty(), "{body}");
+    for (file, code) in [
+        ("spc.png", "INVALID_SPC_PAYLOAD"),
+        ("iban.png", "INVALID_IBAN"),
+    ] {
+        let entry = accepted_entry(&body, file);
+        assert_eq!(entry["qr"], "unreadable", "{body}");
+        assert_eq!(entry["qrError"], code, "{body}");
+        let id = entry["importedSupplierInvoiceId"].as_i64().unwrap();
+        assert!(qr_columns_all_null(&pool, id).await, "{file}");
+    }
+}
+
+/// Story 30-2a (AC2) — longueurs comptées en **caractères** : un nom accentué
+/// de 70 caractères entre avec ses données, nom stocké égal (tue M-a12) ; de 71,
+/// il entre sans (`FIELD_TOO_LONG`, tue M-a4) ; un pays de trois lettres aussi.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_field_too_long_is_accepted_without_qr_data(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let name70 = "é".repeat(70);
+    let name71 = "é".repeat(71);
+    std::fs::write(
+        app.inbox.join("n70.png"),
+        qr_invoice_png(dec!(20.00), &name70),
+    )
+    .unwrap();
+    std::fs::write(
+        app.inbox.join("n71.png"),
+        qr_invoice_png(dec!(21.00), &name71),
+    )
+    .unwrap();
+    std::fs::write(
+        app.inbox.join("pays.png"),
+        qr_invoice_png_with(&[(SPC_LINE_COUNTRY, "CHE")]),
+    )
+    .unwrap();
+    std::fs::write(
+        app.inbox.join("devise.png"),
+        qr_invoice_png_with(&[(SPC_LINE_CURRENCY, "CHFX")]),
+    )
+    .unwrap();
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/inbox-import"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        200,
+        "succès partiel reste HTTP 200 (PAS 500)"
+    );
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["failed"].as_array().unwrap().is_empty(), "{body}");
+
+    let n70 = accepted_entry(&body, "n70.png");
+    assert_eq!(n70["qr"], "present", "{body}");
+    let id70 = n70["importedSupplierInvoiceId"].as_i64().unwrap();
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT creditor_name FROM imported_supplier_invoices WHERE id = ?")
+            .bind(id70)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored.as_deref(), Some(name70.as_str()), "nom stocké égal");
+
+    for file in ["n71.png", "pays.png", "devise.png"] {
+        let entry = accepted_entry(&body, file);
+        assert_eq!(entry["qr"], "unreadable", "{file} : {body}");
+        assert_eq!(entry["qrError"], "FIELD_TOO_LONG", "{file} : {body}");
+        let id = entry["importedSupplierInvoiceId"].as_i64().unwrap();
+        assert!(qr_columns_all_null(&pool, id).await, "{file}");
+    }
+}
+
+/// Story 30-2a (AC2) — le montant du QR est borné par le contrôle pur :
+/// `amount_min..=amount_max`, deux décimales significatives. Hors bornes, le
+/// document entre sans ses données (`QR_AMOUNT_OUT_OF_RANGE`, tue M-a11 par ses
+/// deux volets) ; `20.000` et un montant vide gardent leurs données.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_amount_out_of_range_is_accepted_without_qr_data(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let cases_out = [
+        ("seize.png", "1234567890123456.00"),
+        ("negatif.png", "-5.00"),
+        ("nul.png", "0.00"),
+        ("decimales.png", "20.005"),
+    ];
+    for (file, amount) in cases_out {
+        std::fs::write(
+            app.inbox.join(file),
+            qr_invoice_png_with(&[(SPC_LINE_AMOUNT, amount), (SPC_LINE_NAME, file)]),
+        )
+        .unwrap();
+    }
+    std::fs::write(
+        app.inbox.join("trois-zeros.png"),
+        qr_invoice_png_with(&[(SPC_LINE_AMOUNT, "20.000")]),
+    )
+    .unwrap();
+    std::fs::write(
+        app.inbox.join("ouvert.png"),
+        qr_invoice_png_with(&[(SPC_LINE_AMOUNT, ""), (SPC_LINE_NAME, "Ouvert SA")]),
+    )
+    .unwrap();
+
+    let body = run_import(&app, &ctx.jwt).await;
+    assert!(body["failed"].as_array().unwrap().is_empty(), "{body}");
+    for (file, _) in cases_out {
+        let entry = accepted_entry(&body, file);
+        assert_eq!(entry["qr"], "unreadable", "{file} : {body}");
+        assert_eq!(
+            entry["qrError"], "QR_AMOUNT_OUT_OF_RANGE",
+            "{file} : {body}"
+        );
+        let id = entry["importedSupplierInvoiceId"].as_i64().unwrap();
+        assert!(qr_columns_all_null(&pool, id).await, "{file}");
+    }
+    let zeros = accepted_entry(&body, "trois-zeros.png");
+    assert_eq!(zeros["qr"], "present", "{body}");
+    let open = accepted_entry(&body, "ouvert.png");
+    assert_eq!(open["qr"], "present", "{body}");
+    let open_id = open["importedSupplierInvoiceId"].as_i64().unwrap();
+    let (amount_null, name): (bool, Option<String>) = sqlx::query_as(
+        "SELECT amount IS NULL, creditor_name FROM imported_supplier_invoices WHERE id = ?",
+    )
+    .bind(open_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(amount_null, "montant ouvert : NULL, données gardées");
+    assert_eq!(name.as_deref(), Some("Ouvert SA"));
+}
+
+/// Story 30-2a (prérequis des copies E2E) — un PNG à QR suffixé d'octets
+/// après son bloc `IEND` reste décodé : les copies uniques des parcours E2E
+/// reposent sur ce suffixe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_png_with_suffix_after_iend_still_decoded(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let mut png = qr_invoice_png(dec!(30.00), "Suffixe SA");
+    png.extend_from_slice(b"kesh-e2e-copie-0123456789abcdef");
+    std::fs::write(app.inbox.join("suffixe.png"), &png).unwrap();
+    let body = run_import(&app, &ctx.jwt).await;
+    let entry = accepted_entry(&body, "suffixe.png");
+    assert_eq!(entry["qr"], "present", "{body}");
+}
+
+/// Story 30-2a (AC3) — une image aux octets magiques valides mais au corps
+/// tronqué reste refusée (`UNSUPPORTED_FILE_TYPE`, dans `failed/`) : tue M-a3.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_corrupt_png_is_still_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let png = blank_png();
+    std::fs::write(app.inbox.join("casse.png"), &png[..png.len() / 2]).unwrap();
+    let body = run_import(&app, &ctx.jwt).await;
+    assert!(body["accepted"].as_array().unwrap().is_empty(), "{body}");
+    assert_eq!(body["failed"][0]["fileName"], "casse.png", "{body}");
+    assert_eq!(body["failed"][0]["errorCode"], "UNSUPPORTED_FILE_TYPE");
+    assert_eq!(
+        std::fs::read_dir(app.inbox.join("failed")).unwrap().count(),
+        1
+    );
+}
+
+/// Story 30-2a (AC3) — un document sans QR déposé deux fois est un doublon ;
+/// retiré puis redéposé, il est réactivé avec `qr: "none"`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_no_qr_duplicate_and_reactivation(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let png = blank_png();
+    std::fs::write(app.inbox.join("a.png"), &png).unwrap();
+    let b1 = run_import(&app, &ctx.jwt).await;
+    let id = accepted_entry(&b1, "a.png")["importedSupplierInvoiceId"]
+        .as_i64()
+        .unwrap();
+
+    std::fs::write(app.inbox.join("b.png"), &png).unwrap();
+    let b2 = run_import(&app, &ctx.jwt).await;
+    assert_eq!(b2["failed"][0]["fileName"], "b.png", "{b2}");
+    assert_eq!(b2["failed"][0]["errorCode"], "DUPLICATE", "{b2}");
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/imported-supplier-invoices/{id}/discard")))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 204);
+
+    std::fs::write(app.inbox.join("c.png"), &png).unwrap();
+    let b3 = run_import(&app, &ctx.jwt).await;
+    let entry = accepted_entry(&b3, "c.png");
+    assert_eq!(entry["importedSupplierInvoiceId"].as_i64(), Some(id));
+    assert_eq!(entry["qr"], "none", "{b3}");
+    assert_eq!(staging_status(&pool, id).await, "to_complete");
+}
+
+/// Story 30-2a (AC2) — la réactivation d'un document avec QR dit `present`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_reactivation_with_qr_reports_present(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let png = qr_invoice_png(dec!(40.00), "Reactive SA");
+    std::fs::write(app.inbox.join("r1.png"), &png).unwrap();
+    let b1 = run_import(&app, &ctx.jwt).await;
+    let id = accepted_entry(&b1, "r1.png")["importedSupplierInvoiceId"]
+        .as_i64()
+        .unwrap();
+    sqlx::query("UPDATE imported_supplier_invoices SET status='discarded' WHERE id=?")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    std::fs::write(app.inbox.join("r2.png"), &png).unwrap();
+    let b2 = run_import(&app, &ctx.jwt).await;
+    let entry = accepted_entry(&b2, "r2.png");
+    assert_eq!(entry["qr"], "present", "{b2}");
+}
+
+/// Story 30-2a (AC4, AC5) — la liste rend les champs QR d'un document sans QR
+/// à `null`, sans 500.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn list_returns_nulls_for_document_without_qr(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    std::fs::write(app.inbox.join("liste.png"), blank_png()).unwrap();
+    run_import(&app, &ctx.jwt).await;
+    let resp = app
+        .client
+        .get(app.url("/api/v1/imported-supplier-invoices?status=to_complete"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let items: Value = resp.json().await.unwrap();
+    let item = items
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["originalFilename"] == "liste.png")
+        .unwrap_or_else(|| panic!("liste.png absent : {items}"));
+    for key in [
+        "creditorIban",
+        "isQrIban",
+        "creditorAddressType",
+        "creditorName",
+        "creditorCountry",
+        "referenceType",
+        "currency",
+        "amount",
+    ] {
+        assert!(item[key].is_null(), "{key} à null : {item}");
+    }
+}
+
+/// Story 30-2a (AC7) — un document sans QR se complète : ni contrôle de devise
+/// (tue M-a7), ni routage IBAN, ni contrôle de montant ; facture sans IBAN, ni
+/// référence, ni montant attendu.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn complete_document_without_qr(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    std::fs::write(app.inbox.join("sansqr.png"), blank_png()).unwrap();
+    let report = run_import(&app, &ctx.jwt).await;
+    let id = accepted_entry(&report, "sansqr.png")["importedSupplierInvoiceId"]
+        .as_i64()
+        .unwrap();
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/imported-supplier-invoices/{id}/complete")))
+        .bearer_auth(&ctx.jwt)
+        .json(&complete_body(
+            ctx.supplier_id,
+            ctx.seeded.accounts["4000"],
+            dec!(1),
+            dec!(73.40),
+            dec!(0),
+        ))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(status, 200, "{body}");
+    assert!(body["creditorIban"].is_null(), "{body}");
+    assert!(body["creditorQrIban"].is_null(), "{body}");
+    assert!(body["paymentReference"].is_null(), "{body}");
+    assert!(body["expectedPaymentAmount"].is_null(), "{body}");
+    assert_eq!(body["totalAmount"], "73.4000");
+    assert_eq!(staging_status(&pool, id).await, "completed");
+}
+
+/// Story 30-2a (AC7) — le retrait d'un document sans QR trace
+/// `iban_present: false` (le test historique ne vérifiait que la présence de
+/// la clé) : tue M-a6.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn discard_document_without_qr_traces_iban_absent(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    std::fs::write(app.inbox.join("retrait.png"), blank_png()).unwrap();
+    let report = run_import(&app, &ctx.jwt).await;
+    let id = accepted_entry(&report, "retrait.png")["importedSupplierInvoiceId"]
+        .as_i64()
+        .unwrap();
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/imported-supplier-invoices/{id}/discard")))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 204);
+    let details = audit_details(&pool, id, "imported_supplier_invoice.discarded").await;
+    assert_eq!(details["iban_present"], json!(false), "{details}");
+    assert!(details["creditor_name"].is_null(), "{details}");
+    assert_eq!(details["original_filename"], "retrait.png");
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -610,43 +1142,6 @@ async fn import_file_too_large_and_directory_ignored(pool: MySqlPool) {
     assert_eq!(failed.len(), 1);
     assert_eq!(failed[0]["errorCode"], "FILE_TOO_LARGE");
     assert_eq!(failed[0]["fileName"], "big.png");
-}
-
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn import_field_too_long_returns_failed_not_500(pool: MySqlPool) {
-    let ctx = setup(&pool).await;
-    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
-    // Nom créancier > 70 chars (QR tiers non conforme SIX 2.2) → 1406 → FIELD_TOO_LONG.
-    let long_name = "X".repeat(100);
-    let png = qr_invoice_png(dec!(20.00), &long_name);
-    std::fs::write(app.inbox.join("long.png"), &png).unwrap();
-    // Story 25-6-b (revue P1) : un fichier du même contenu existe déjà sous
-    // `KESH_DOCUMENTS_DIR` — un PDF figé, ou le justificatif d'une autre
-    // société. L'échec de cet import ne doit pas le supprimer.
-    use sha2::Digest;
-    let archived = app
-        .documents
-        .join(format!("{:x}.png", sha2::Sha256::digest(&png)));
-    std::fs::write(&archived, &png).unwrap();
-
-    let resp = app
-        .client
-        .post(app.url("/api/v1/inbox-import"))
-        .bearer_auth(&ctx.jwt)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        resp.status(),
-        200,
-        "succès partiel reste HTTP 200 (PAS 500)"
-    );
-    let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["failed"][0]["errorCode"], "FIELD_TOO_LONG");
-    assert!(
-        archived.exists(),
-        "un fichier archivé partagé (nommé par son contenu) ne doit jamais être supprimé"
-    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

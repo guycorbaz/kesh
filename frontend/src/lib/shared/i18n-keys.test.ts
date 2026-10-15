@@ -665,7 +665,13 @@ const ATTENDU = {
 	// 20 → 27 (bouton, titre, corps et aide du dialogue, trois motifs). Que des littéraux : les
 	// autres compteurs inchangés. Réunion au rebase de la 29-1b sur la v0.13.4 (2026-10-15) :
 	// 2186 + 7 = **2193**.
-	sitesTotal: 2193,
+	// Story 30-2a (#685, documents à traiter) : **2193 → 2205** (+12), mesuré par la collecte de
+	// ce test et recompté par `grep -o "i18nMsg("` aux deux bornes (`5b566378` → HEAD de
+	// `story/30-2`) : `supplier-invoices/import/+page.svelte` 52 → 60 (date d'import, deux
+	// badges, aperçu et sa fermeture, deux mentions du rapport, l'aide du QR illisible),
+	// `DocumentPreview.svelte` 0 → 4 (chargement, 410, erreur, lien « Télécharger »). Que des
+	// littéraux : les autres compteurs inchangés.
+	sitesTotal: 2205,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
@@ -713,8 +719,10 @@ const MOTIFS_DYNAMIQUES: Record<string, readonly string[]> = {
 	],
 	'imported-supplier-invoices-error-': [
 		'unsupported-file-type', 'file-too-large', 'symlink-rejected', 'duplicate',
-		'no-qr-code-found', 'invalid-spc-payload', 'invalid-iban', 'pdf-render-error',
-		'file-read-error', 'field-too-long'
+		// Story 30-2a : `no-qr-code-found` retiré (un document sans QR est accepté),
+		// `qr-amount-out-of-range` ajouté (code `qrError` du contrôle du montant).
+		'invalid-spc-payload', 'invalid-iban', 'pdf-render-error',
+		'file-read-error', 'field-too-long', 'qr-amount-out-of-range'
 	],
 	// ⚠️ angle mort assumé — valeurs produites par le backend Rust, déclarées APRÈS
 	// transformation (`info.replace(/_/g, '-')`), donc en tirets et non en snake_case.

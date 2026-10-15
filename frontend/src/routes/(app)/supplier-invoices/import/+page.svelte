@@ -4,19 +4,33 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { notifySuccess, notifyError, notifyWarning } from '$lib/shared/utils/notify';
+	/**
+	 * « Documents à traiter » — Story 12.5d, refondue par la Story 30-2a (#685).
+	 *
+	 * Tout PDF ou image déposé dans le dossier d'import y entre, avec ou sans QR-code.
+	 * Chaque ligne porte un badge (« QR-facture » avec créancier, montant et référence,
+	 * ou « Sans QR-code »), un **aperçu** (`DocumentPreview`), « Compléter » (formulaire
+	 * en ligne, inchangé en 30-2a) et « Retirer de la liste » (l'ancien *Écarter* : la
+	 * ligne passe `discarded`, le fichier reste conservé ; un nouveau dépôt la réactive).
+	 * L'URL reste `/supplier-invoices/import` (liens de la préparation de clôture, K5).
+	 */
 	import {
 		triggerInboxImport,
 		listImported,
 		completeImport,
 		discardImport,
 		downloadImportedSourceDocument,
+		fetchImportedSourceDocument,
 	} from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.api';
-	import type {
-		ImportedSupplierInvoice,
-		InboxImportReport,
-		CompleteImportLineRequest,
+	import {
+		hasQr,
+		type ImportedSupplierInvoice,
+		type InboxImportReport,
+		type CompleteImportLineRequest,
 	} from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.types';
 	import { importErrorLabel } from '$lib/features/imported-supplier-invoices/error-label';
+	import DocumentPreview from '$lib/features/imported-supplier-invoices/DocumentPreview.svelte';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { listContacts } from '$lib/features/contacts/contacts.api';
 	import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
@@ -32,6 +46,28 @@
 
 	let report = $state<InboxImportReport | null>(null);
 	let importing = $state(false);
+
+	// Aperçu : un document à la fois, sous sa ligne.
+	let previewId = $state<number | null>(null);
+	// Une fonction de lecture STABLE par document : une closure recréée à chaque rendu
+	// relancerait la lecture (et révoquerait l'URL affichée) à chaque mise à jour.
+	const previewLoaders = new Map<number, () => Promise<Blob>>();
+	function previewLoader(id: number): () => Promise<Blob> {
+		let loader = previewLoaders.get(id);
+		if (!loader) {
+			loader = () => fetchImportedSourceDocument(id);
+			previewLoaders.set(id, loader);
+		}
+		return loader;
+	}
+	function togglePreview(id: number) {
+		previewId = previewId === id ? null : id;
+	}
+
+	/** Date d'import (`createdAt`, horodatage naïf) au format suisse. */
+	function importDate(row: ImportedSupplierInvoice): string {
+		return formatSwissDate(row.createdAt.slice(0, 10));
+	}
 
 	// Référentiels du formulaire de complétion.
 	let suppliers = $state<ContactResponse[]>([]);
@@ -270,7 +306,7 @@
 			case 'CURRENCY_NOT_SUPPORTED':
 				return i18nMsg(
 					'imported-supplier-invoices-err-currency',
-					'Devise non supportée (CHF uniquement en v0.4).',
+					'Devise non supportée (CHF uniquement). Retirez le document de la liste.',
 				);
 			case 'IBAN_REFERENCE_MISMATCH':
 				return i18nMsg(
@@ -288,10 +324,10 @@
 			case 'IMPORT_NOT_PENDING_COMPLETION':
 				return i18nMsg(
 					'imported-supplier-invoices-err-not-pending',
-					'Cette facture a déjà été complétée ou écartée.',
+					'Ce document a déjà été traité ou retiré de la liste.',
 				);
 			case 'IMPORTED_INVOICE_NOT_FOUND':
-				return i18nMsg('imported-supplier-invoices-err-not-found', 'Facture importée introuvable.');
+				return i18nMsg('imported-supplier-invoices-err-not-found', 'Document introuvable.');
 			case 'FISCAL_YEAR_INVALID':
 				return i18nMsg(
 					'imported-supplier-invoices-err-fiscal-year',
@@ -302,12 +338,13 @@
 		}
 	}
 
+	/** « Retirer de la liste » (C-30-2-5) : l'ancien *Écarter*, fichier conservé. */
 	async function discard(row: ImportedSupplierInvoice) {
 		if (
 			!confirm(
 				i18nMsg(
 					'imported-supplier-invoices-discard-confirm',
-					'Écarter cette facture importée ? Le fichier justificatif reste conservé.',
+					'Retirer ce document de la liste ? Le fichier reste conservé.',
 				),
 			)
 		) {
@@ -317,23 +354,24 @@
 			await discardImport(row.id);
 			toComplete = toComplete.filter((r) => r.id !== row.id);
 			if (completingId === row.id) completingId = null;
-			notifySuccess(i18nMsg('imported-supplier-invoices-discarded', 'Facture écartée.'));
+			if (previewId === row.id) previewId = null;
+			notifySuccess(i18nMsg('imported-supplier-invoices-discarded', 'Document retiré de la liste.'));
 		} catch (err) {
 			if (isApiError(err) && err.code === 'IMPORT_NOT_PENDING_COMPLETION') {
 				notifyWarning(
 					i18nMsg(
 						'imported-supplier-invoices-discard-conflict',
-						'Cette facture a déjà été complétée ou écartée par une autre session.',
+						'Ce document a déjà été traité ou retiré de la liste par une autre session.',
 					),
 				);
 				await safeReloadList();
 			} else if (isApiError(err) && err.code === 'IMPORTED_INVOICE_NOT_FOUND') {
-				notifyWarning(i18nMsg('imported-supplier-invoices-err-not-found', 'Facture importée introuvable.'));
+				notifyWarning(i18nMsg('imported-supplier-invoices-err-not-found', 'Document introuvable.'));
 				await safeReloadList();
 			} else {
 				notifyError(
 					(isApiError(err) && err.message) ||
-						i18nMsg('imported-supplier-invoices-discard-failed', 'Impossible d’écarter la facture.'),
+						i18nMsg('imported-supplier-invoices-discard-failed', 'Impossible de retirer le document de la liste.'),
 				);
 			}
 		}
@@ -345,10 +383,10 @@
 		} catch (err) {
 			if (isApiError(err) && err.code === 'SOURCE_DOCUMENT_GONE') {
 				notifyWarning(
-					i18nMsg('imported-supplier-invoices-doc-gone', 'Le justificatif n’a pas été restauré.'),
+					i18nMsg('imported-supplier-invoices-doc-gone', 'Le document n’a pas été restauré.'),
 				);
 			} else if (isApiError(err) && err.code === 'IMPORTED_INVOICE_NOT_FOUND') {
-				notifyWarning(i18nMsg('imported-supplier-invoices-err-not-found', 'Facture importée introuvable.'));
+				notifyWarning(i18nMsg('imported-supplier-invoices-err-not-found', 'Document introuvable.'));
 			} else {
 				notifyError(
 					(isApiError(err) && err.message) ||
@@ -369,12 +407,12 @@
 </script>
 
 <svelte:head>
-	<title>{i18nMsg('imported-supplier-invoices-title', 'Importer des factures')} — Kesh</title>
+	<title>{i18nMsg('imported-supplier-invoices-title', 'Documents à traiter')} — Kesh</title>
 </svelte:head>
 
 <div class="mb-6 flex items-center justify-between">
 	<h1 class="text-2xl font-semibold">
-		{i18nMsg('imported-supplier-invoices-title', 'Importer des factures')}
+		{i18nMsg('imported-supplier-invoices-title', 'Documents à traiter')}
 	</h1>
 	<button
 		class="rounded bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-60"
@@ -391,10 +429,29 @@
 {#if report}
 	<div class="mb-6 rounded border border-border p-4" data-testid="inbox-import-report">
 		<p class="text-sm font-medium">
-			{i18nMsg('imported-supplier-invoices-report-accepted', '{$n} facture(s) importée(s).', {
+			{i18nMsg('imported-supplier-invoices-report-accepted', '{$n} document(s) importé(s).', {
 				n: report.accepted.length,
 			})}
 		</p>
+		{#if report.accepted.some((a) => a.qr !== 'present')}
+			<ul class="mt-1 space-y-1 text-sm">
+				{#each report.accepted.filter((a) => a.qr !== 'present') as a (a.importedSupplierInvoiceId)}
+					<li data-testid="inbox-import-accepted-row">
+						<span class="font-mono">{a.fileName}</span> —
+						{#if a.qr === 'unreadable'}
+							{i18nMsg('imported-supplier-invoices-report-qr-unreadable', 'QR illisible')}{#if a.qrError}
+								({importErrorLabel(a.qrError)}){/if}.
+							{i18nMsg(
+								'imported-supplier-invoices-qr-unreadable-hint',
+								'Document accepté sans les données du QR : saisissez-les à la main.',
+							)}
+						{:else}
+							{i18nMsg('imported-supplier-invoices-report-no-qr', 'sans QR-code')}
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		{/if}
 		{#if report.failed.length > 0}
 			<div class="mt-3">
 				<p class="text-sm font-medium text-destructive">
@@ -422,7 +479,7 @@
 {/if}
 
 <h2 class="mb-3 text-lg font-medium">
-	{i18nMsg('imported-supplier-invoices-to-complete', 'Factures à compléter')}
+	{i18nMsg('imported-supplier-invoices-to-complete', 'Documents à traiter')}
 </h2>
 
 {#if loading}
@@ -431,7 +488,7 @@
 	<p class="text-sm text-destructive">{errorMsg}</p>
 {:else if toComplete.length === 0}
 	<p class="text-sm text-text-muted" data-testid="imported-empty">
-		{i18nMsg('imported-supplier-invoices-empty', 'Aucune facture à compléter.')}
+		{i18nMsg('imported-supplier-invoices-empty', 'Aucun document à traiter.')}
 	</p>
 {:else}
 	<ul class="space-y-4" data-testid="imported-list">
@@ -439,19 +496,46 @@
 			<li class="rounded border border-border p-4" data-testid="imported-row">
 				<div class="flex flex-wrap items-start justify-between gap-3">
 					<div class="text-sm">
-						<div class="font-medium">{row.creditorName}</div>
-						<div class="text-text-muted">{row.creditorIban}</div>
+						<div class="font-medium" data-testid="imported-file-name">{row.originalFilename}</div>
 						<div class="text-text-muted">
-							{i18nMsg('imported-supplier-invoices-amount', 'Montant')}: {fmt(row.amount)}
-							{row.currency}
-							{#if row.referenceValue}
-								· {i18nMsg('imported-supplier-invoices-reference', 'Réf.')}: <span class="font-mono"
-									>{row.referenceValue}</span
-								>
-							{/if}
+							{i18nMsg('imported-supplier-invoices-imported-on', 'Importé le {$date}', {
+								date: importDate(row),
+							})}
 						</div>
+						{#if hasQr(row)}
+							<div class="mt-1" data-testid="imported-badge-qr">
+								<span class="rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+									>{i18nMsg('imported-supplier-invoices-badge-qr', 'QR-facture')}</span
+								>
+								<span class="ml-1">{row.creditorName}</span>
+								<span class="text-text-muted">
+									· {i18nMsg('imported-supplier-invoices-amount', 'Montant')}: {fmt(row.amount)}
+									{row.currency}
+									{#if row.referenceValue}
+										· {i18nMsg('imported-supplier-invoices-reference', 'Réf.')}: <span
+											class="font-mono">{row.referenceValue}</span
+										>
+									{/if}
+								</span>
+							</div>
+						{:else}
+							<div class="mt-1" data-testid="imported-badge-no-qr">
+								<span class="rounded bg-muted px-2 py-0.5 text-xs font-medium"
+									>{i18nMsg('imported-supplier-invoices-badge-no-qr', 'Sans QR-code')}</span
+								>
+							</div>
+						{/if}
 					</div>
-					<div class="flex gap-2">
+					<div class="flex flex-wrap gap-2">
+						<button
+							class="rounded border px-3 py-1 text-sm"
+							data-testid="imported-preview"
+							aria-expanded={previewId === row.id}
+							onclick={() => togglePreview(row.id)}
+							>{previewId === row.id
+								? i18nMsg('imported-supplier-invoices-preview-close', 'Fermer l’aperçu')
+								: i18nMsg('imported-supplier-invoices-preview', 'Aperçu')}</button
+						>
 						<button
 							class="rounded bg-primary px-3 py-1 text-sm text-primary-foreground disabled:opacity-60"
 							data-testid="imported-complete-open"
@@ -462,16 +546,23 @@
 							class="rounded border px-3 py-1 text-sm disabled:opacity-60"
 							data-testid="imported-discard"
 							disabled={saving}
-							onclick={() => discard(row)}>{i18nMsg('imported-supplier-invoices-discard', 'Écarter')}</button
+							onclick={() => discard(row)}
+							>{i18nMsg('imported-supplier-invoices-discard', 'Retirer de la liste')}</button
 						>
 						<button
 							class="rounded border px-3 py-1 text-sm text-primary"
 							data-testid="imported-download"
 							onclick={() => downloadJustif(row)}
-							>{i18nMsg('imported-supplier-invoices-view-doc', 'Voir le justificatif')}</button
+							>{i18nMsg('imported-supplier-invoices-view-doc', 'Télécharger')}</button
 						>
 					</div>
 				</div>
+
+				{#if previewId === row.id}
+					<div class="mt-4" data-testid="imported-preview-panel">
+						<DocumentPreview load={previewLoader(row.id)} fileName={row.originalFilename} />
+					</div>
+				{/if}
 
 				{#if completingId === row.id}
 					{@const target = targetAmount(row.id)}
@@ -487,7 +578,7 @@
 							<p class="rounded border border-warning bg-warning-soft p-2 text-sm">
 								{i18nMsg(
 									'imported-supplier-invoices-subcentime',
-									'Le montant du QR ({$amount}) contient des sous-centimes — impossible à atteindre par des lignes centime-exactes. Recommandation : écarter cette facture.',
+									'Le montant du QR ({$amount}) contient des sous-centimes — impossible à atteindre par des lignes centime-exactes. Recommandation : retirer ce document de la liste.',
 									{ amount: target ?? '' },
 								)}
 							</p>

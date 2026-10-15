@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 81 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 82 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -571,19 +571,19 @@ CREATE TABLE `imported_supplier_invoices` (
   `original_filename` varchar(255) NOT NULL,
   `mime_type` varchar(100) NOT NULL,
   `byte_size` bigint(20) NOT NULL,
-  `creditor_iban` varchar(34) NOT NULL,
-  `is_qr_iban` tinyint(1) NOT NULL,
-  `creditor_address_type` char(1) NOT NULL,
-  `creditor_name` varchar(70) NOT NULL,
+  `creditor_iban` varchar(34) DEFAULT NULL,
+  `is_qr_iban` tinyint(1) DEFAULT NULL,
+  `creditor_address_type` char(1) DEFAULT NULL,
+  `creditor_name` varchar(70) DEFAULT NULL,
   `creditor_line1` varchar(70) DEFAULT NULL,
   `creditor_line2` varchar(70) DEFAULT NULL,
   `creditor_postal_code` varchar(16) DEFAULT NULL,
   `creditor_town` varchar(35) DEFAULT NULL,
-  `creditor_country` char(2) NOT NULL,
-  `reference_type` varchar(8) NOT NULL,
+  `creditor_country` char(2) DEFAULT NULL,
+  `reference_type` varchar(8) DEFAULT NULL,
   `reference_value` varchar(40) DEFAULT NULL,
   `amount` decimal(19,4) DEFAULT NULL,
-  `currency` varchar(3) NOT NULL,
+  `currency` varchar(3) DEFAULT NULL,
   `unstructured_message` varchar(140) DEFAULT NULL,
   `billing_information` varchar(140) DEFAULT NULL,
   `version` int(11) NOT NULL DEFAULT 1,
@@ -591,14 +591,15 @@ CREATE TABLE `imported_supplier_invoices` (
   `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_imported_company_hash` (`company_id`,`file_hash`),
+  UNIQUE KEY `uq_imported_supplier_invoice` (`supplier_invoice_id`),
   KEY `idx_imported_company_status` (`company_id`,`status`),
-  KEY `idx_imported_supplier_invoice` (`supplier_invoice_id`),
   CONSTRAINT `fk_imported_si_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
   CONSTRAINT `fk_imported_si_supplier_invoice` FOREIGN KEY (`supplier_invoice_id`) REFERENCES `supplier_invoices` (`id`) ON DELETE SET NULL,
   CONSTRAINT `chk_imported_si_status` CHECK (`status` in ('to_complete','completed','discarded')),
   CONSTRAINT `chk_imported_si_address_type` CHECK (`creditor_address_type` in ('K','S')),
   CONSTRAINT `chk_imported_si_reference_type` CHECK (`reference_type` in ('QRR','SCOR','NON')),
-  CONSTRAINT `chk_imported_si_byte_size_positive` CHECK (`byte_size` > 0)
+  CONSTRAINT `chk_imported_si_byte_size_positive` CHECK (`byte_size` > 0),
+  CONSTRAINT `chk_imported_si_qr_all_or_nothing` CHECK (`creditor_iban` is null = (`is_qr_iban` is null) and `creditor_iban` is null = (`creditor_address_type` is null) and `creditor_iban` is null = (`creditor_name` is null) and `creditor_iban` is null = (`creditor_country` is null) and `creditor_iban` is null = (`reference_type` is null) and `creditor_iban` is null = (`currency` is null))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `invoice_lines`;
@@ -1164,4 +1165,4 @@ CREATE TABLE `vat_rates` (
 -- Ligne d'installation, RELEVÉE dans la base migrée (jamais codée en dur :
 -- chaque bump P2 de kesh_version_min_required la déplace).
 INSERT INTO `_kesh_version` (`id`, `kesh_version_min_required`, `kesh_version_last_applied`)
-VALUES (1, '0.13.1', '0.1.0');
+VALUES (1, '0.14.0', '0.1.0');

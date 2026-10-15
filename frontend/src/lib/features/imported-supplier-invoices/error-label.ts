@@ -30,12 +30,15 @@ export const IMPORT_ERROR_LABELS: Record<string, [string, string]> = {
 	FILE_TOO_LARGE: ['file-too-large', 'Fichier trop volumineux'],
 	SYMLINK_REJECTED: ['symlink-rejected', 'Lien symbolique rejeté'],
 	DUPLICATE: ['duplicate', 'Déjà importé (doublon)'],
-	NO_QR_CODE_FOUND: ['no-qr-code-found', 'Aucune QR-facture détectée'],
+	// Story 30-2a : `NO_QR_CODE_FOUND` n'existe plus — un document sans QR est accepté.
+	// Les codes suivants sont aussi le `qrError` d'un document accepté sans les données
+	// de son QR (`qr: "unreadable"`) ; `QR_AMOUNT_OUT_OF_RANGE` n'existe que là.
 	INVALID_SPC_PAYLOAD: ['invalid-spc-payload', 'QR illisible (format non SPC)'],
 	INVALID_IBAN: ['invalid-iban', 'IBAN créancier invalide'],
 	PDF_RENDER_ERROR: ['pdf-render-error', 'PDF illisible'],
 	FILE_READ_ERROR: ['file-read-error', 'Lecture du fichier impossible'],
 	FIELD_TOO_LONG: ['field-too-long', 'Un champ du QR dépasse la longueur autorisée'],
+	QR_AMOUNT_OUT_OF_RANGE: ['qr-amount-out-of-range', 'Montant du QR hors des limites admises'],
 };
 
 /** Libellé traduit d'un `errorCode` d'import ; repli sur le code brut si inconnu. */
