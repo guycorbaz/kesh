@@ -192,3 +192,42 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
 - **Retenu** : clé parente `split`, deux clés filles `ready-for-dev` (patron 29-1, 29-4 ; une clé parente
   `ready-for-dev` puis `done` serait comptée en plus de ses filles).
 - **Réversible** : oui.
+
+---
+
+## Amendement de l'orchestrateur — 2026-10-15
+
+### C-30-1-25 — `paid_at` = date du paiement, intégré à la 30-1b (amende C-30-1-19)
+
+- **Contexte** : décision de l'orchestrateur — le défaut est sur le chemin même qu'emprunte *Accepter* (`pay_in_tx`),
+  et le `CLAUDE.md` veut qu'un défaut découvert dans le flux d'une story liée s'y corrige.
+- **Retenu** : `paid_at = payment_date` à minuit, lié en paramètre, pour tous les appelants (fiche : `paymentDate`
+  obligatoire saisi ; acceptation : date de paiement de la transaction ; lot : date de confirmation reçue). Aucune
+  migration, factures existantes inchangées. Lecteurs inventoriés (fiche, export CSV, deux audits, sauvegarde) ; aucun
+  rapport, échéancier, poste ouvert ni lettrage.
+- **Écartée** : la limiter à la réconciliation (deux sens de `paid_at` pour une même colonne).
+- **Réversible** : oui.
+
+### C-30-1-26 — TTC à plus de deux décimales : angle mort L2, issue à ouvrir
+
+- **Contexte** : l'orchestrateur demandait d'intégrer la correction si elle était mécanique (« arrondir à la saisie,
+  comme côté client »).
+- **Constat** : la prémisse est fausse ; le client n'arrondit pas à la saisie (quantité et prix bornés à 4 décimales,
+  `line_total` arrondi à 4 décimales), il traite l'écart au **règlement** (reste dû au centime, ligne d'arrondi, #476).
+  Côté fournisseur, aucune borne d'échelle à la création.
+- **Retenu** : non mécanique (arrondir à la création change HT/TVA saisis et la complétion des pièces importées ;
+  régler avec une ligne d'arrondi refond `pay_in_tx`) ; L2 écrit, issue à ouvrir. Une correction côté serveur
+  (création) resterait compatible avec la 30-2b.
+- **Réversible** : oui.
+
+### C-30-1-20 (amendé) — l'acteur par `pay_in_tx_as`, `pay_in_tx` garde sa signature
+
+- **Retenu** : le corps passe dans `pay_in_tx_as(…, actor)` ; `pay_in_tx` devient son enveloppe ; `payment_batches.rs`
+  n'est pas touché.
+- **Réversible** : oui.
+
+### C-30-1-27 — Recompte des modules de la 30-1b : 5, pas de nouveau découpage
+
+- **Retenu** : `matching`, `repositories/reconciliation`, `repositories/supplier_invoices`, `routes/reconciliation`,
+  `features/reconciliation` = 5 ; la règle découpe au-delà de 5.
+- **Réversible** : oui.

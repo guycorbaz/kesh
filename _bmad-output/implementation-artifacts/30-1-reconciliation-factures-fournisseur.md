@@ -6,7 +6,7 @@
 l'Epic 30), branche `story/30-1`, worktree `/home/gcorbaz/devel/kesh-30-1`. **Découpée** (§ *Découpage*) en deux
 sous-stories tenues dans cette fiche, comme la 29-1 et la 29-4 : **30-1a** (le dé-rapprochement sait défaire un
 règlement fournisseur) **puis** 30-1b (proposer et accepter). Choix consignés au registre propre à la story,
-`epic-30-choix-autonomes-301.md`, **C-30-1-1 à C-30-1-24** (à verser par union au registre de l'epic). Validation P1 à
+`epic-30-choix-autonomes-301.md`, **C-30-1-1 à C-30-1-27** (à verser par union au registre de l'epic). Validation P1 à
 lancer : `30-1-validate-prompt-p1.md`.
 
 PR : **`closes #686`** dans le titre ou le corps de la PR de la **30-1b seulement** — jamais dans un message de commit,
@@ -95,7 +95,7 @@ jamais rapproché d'une facture **client**).
 |---|---|
 | « la réconciliation ne propose de factures que pour les crédits » | **Exacte** (`routes/reconciliation.rs:749-752`) |
 | « un débit n'a ni proposition de facture fournisseur, ni *Rattacher à un règlement* » | **Exacte** (`transaction_can_be_linked`, `reconciliation_link.rs:77-79` ; bouton `canLink`, `ReconciliationProposals.svelte`) |
-| « *Accepter* … exactement ce que fait le règlement depuis la fiche par virement » | **Exacte à une réserve près** : `pay_in_tx` pose `paid_at` à l'heure de la saisie, pas à la date du paiement (C-30-1-19) |
+| « *Accepter* … exactement ce que fait le règlement depuis la fiche par virement » | **Exacte à une réserve près** : `pay_in_tx` pose `paid_at` à l'heure de la saisie, pas à la date du paiement — défaut du chemin même qu'emprunte *Accepter*, **corrigé par la 30-1b** (AC-b16, C-30-1-25) |
 | « montant égal au **reste dû** » | **À préciser** : il n'y a **pas** de reste dû fournisseur ; le règlement est binaire, du TTC entier (C-30-1-5) |
 | « *Annuler le rapprochement* défait le règlement, comme côté client » | **Fausse aujourd'hui** : `classify` ne connaît que `invoice_settlements` ; une écriture de règlement fournisseur rapprochée serait classée `Entry`, et `reverse_in_tx` refuserait une écriture possédée par un règlement fournisseur — **défait par rien** (C-30-1-2 ; c'est l'objet de la 30-1a) |
 | « une seule proposition affichée, l'ordre de priorité écrit (#527) » | **Exacte**, à étendre (`candidate_rank`, AC-b5) |
@@ -161,8 +161,10 @@ les textes (écran, manuel, `api-external.md`, i18n ×4, CHANGELOG).
 - **Un paiement qui règle plusieurs factures fournisseur** (#671, troisième puce).
 - **Les lots pain.001** : un lot confirmé règle ses factures par `pay_in_tx` ; son débit unique au relevé relève de
   #671 (quatrième puce). La 30-1b ne propose **jamais** une facture engagée dans un lot `generated` (AC-b3).
-- **`paid_at` à la date du paiement** (C-30-1-19) : défaut voisin préexistant, **à ouvrir en issue** (§ *Issues à
-  ouvrir*).
+- **`paid_at` à la date du paiement** : **intégré** à la 30-1b par décision de l'orchestrateur (2026-10-15 ;
+  AC-b16, C-30-1-25, qui amende C-30-1-19) — c'est le chemin même qu'emprunte *Accepter*.
+- **TTC fournisseur à plus de deux décimales** (L2, C-30-1-26) : la correction n'est pas mécanique ; angle mort
+  écrit, issue à ouvrir.
 - **Le dialogue *Annuler le rapprochement* sur la fiche fournisseur** (symétrique de `InvoiceSettlements.svelte`) :
   non (C-30-1-11) ; la fiche fournisseur dit où le faire.
 
@@ -419,11 +421,13 @@ de transaction).
 puis acceptation → refus `supplier_invoice_in_payment_batch`, rien écrit ; **rouge** avec une lecture ordinaire —
 mutation M-b8).
 
-**AC-b9 — `pay_in_tx` porte l'acteur (DRY).**
-`pay_in_tx` remplace `user_id: i64` par `actor: letterings::Actor` (`letterings.rs:202`) : l'audit
-`supplier_invoice.paid` passe par `NewAuditLogEntry::for_actor`, le lettrage reçoit la clé. Appelants mis à jour —
-`pay` (`Actor { user_id, api_key_id: None }`), `confirm_batch` (`payment_batches.rs:496`, idem), le nouveau chemin
-(la clé de la requête). Comportement de `pay` et `confirm_batch` **inchangé**.
+**AC-b9 — Le règlement porte l'acteur (DRY), sans toucher `payment_batches`.**
+Le corps de `pay_in_tx` passe dans `pay_in_tx_as(tx, company_id, id, choice, payment_date, actor: letterings::Actor)`
+(`letterings.rs:202`) : l'audit `supplier_invoice.paid` passe par `NewAuditLogEntry::for_actor`, le lettrage reçoit la
+clé. `pay_in_tx` garde **sa signature** et devient une enveloppe d'une ligne (`Actor { user_id, api_key_id: None }`) :
+`pay` et `confirm_batch` (`payment_batches.rs:496`) ne changent pas — `payment_batches.rs` n'est **pas** touché
+(C-30-1-20 amendé, recompte des modules C-30-1-27). Le nouveau chemin appelle `pay_in_tx_as` avec la clé de la
+requête. Un seul corps : aucun jumeau.
 *Test* : T-b23 (acceptation par une clé `read-write` : la clé figure dans `supplier_invoice.paid`,
 `reconciliation.accepted` et `lettering.created`).
 
@@ -511,6 +515,41 @@ Ni table, ni colonne, ni index, ni contrainte : `ls crates/kesh-db/migrations/*.
 `kesh_version_min_required` à 0.13.1. Si le développement découvre qu'un index manque à la requête de l'AC-b3, il
 l'**écrit** comme angle mort mesuré, il n'ajoute pas de migration sans retour à la fiche.
 
+**AC-b16 — Un règlement fournisseur porte la date du paiement (décision de l'orchestrateur, C-30-1-25).**
+`pay_in_tx_as`, étape (6) (`supplier_invoices.rs:905-907`) : `paid_at = <payment_date> 00:00:00` (la même forme que
+le client, `routes/reconciliation.rs:1995-1996` : `and_time(NaiveTime::from_hms_opt(0,0,0))`), **lié en paramètre**,
+au lieu de `CURRENT_TIMESTAMP(3)`. Pour **tous** les appelants, une seule définition :
+- *Accepter* (30-1b) : la date de paiement de la transaction (`payment_date(tx)` : valeur, à défaut comptabilisation) ;
+- la fiche (`POST /supplier-invoices/{id}/pay`) : le `paymentDate` **obligatoire** du corps
+  (`PaySupplierInvoiceRequest.payment_date: NaiveDate`, `routes/supplier_invoices.rs:256-284`), saisi par
+  l'utilisateur (champ date, aujourd'hui par défaut, `supplier-invoices/[id]/+page.svelte:59`, `:371`) — la date même
+  de l'écriture de règlement ;
+- la confirmation d'un lot (`confirm_batch`, `payment_batches.rs:432-503`) : le `payment_date` qu'elle reçoit — la date
+  de l'écriture de règlement du lot. ⚠️ **Changement visible** : jusqu'ici, l'heure de la confirmation.
+Aucune contrainte ne s'y oppose : `chk_supplier_invoices_paid_has_settlement` (migration
+`20260628000001_supplier_invoices.sql:73`) n'exige que `paid_at IS NOT NULL` ; il n'existe aucun
+`chk_*paid_at_after_date` fournisseur (à revérifier au développement). **Aucune migration** ; les factures déjà payées
+gardent leur `paid_at` (rien n'est réécrit ; l'écart est dit au CHANGELOG).
+
+**Lecteurs de `supplier_invoices.paid_at`, inventaire clos** (`grep -rln supplier_invoices crates/*/src | xargs grep -n
+paid_at`, `grep -rn paidAt frontend/src`, relevé sur `15686d55`) :
+
+| Lecteur | Site | Effet |
+|---|---|---|
+| réponse de la fiche (`SupplierInvoiceResponse.paid_at`) et son affichage « Facture réglée. <paidAt> » | `routes/supplier_invoices.rs:80`, `:147` ; `supplier-invoices/[id]/+page.svelte:393` | affiche la date du paiement (minuit) au lieu de l'heure de la saisie — c'est le but |
+| export CSV `supplier_invoices.csv`, colonne `paid_at` | `kesh-api/src/exports/csv_tables.rs:1215`, `:1241` | idem ; format inchangé |
+| audits `supplier_invoice.cancelled` (`paidAt`) et `supplier_invoice.settlement_cancelled` | `supplier_invoices.rs:1190`, `:1449` | portent la date du paiement |
+| sauvegarde / restauration, listes `list_all_by_company` | `supplier_invoices.rs:1566` | colonne recopiée telle quelle |
+| contrainte `chk_supplier_invoices_paid_has_settlement` | migration `:73` | non nul : tenu |
+
+**Aucun** rapport, échéancier, poste ouvert ni lettrage ne lit `supplier_invoices.paid_at` : le lettrage, les postes
+ouverts et le grand livre lisent les **dates des écritures** (`entry_date`, déjà la date du paiement) ; l'échéancier
+(`dunning`, `open-items`) ne vise que les factures **client**. À revérifier au développement par les mêmes `grep`,
+élargis à `kesh-report`, `kesh-seed` et `frontend/src`.
+*Tests* : T-b29 (fiche : `paymentDate` antérieur de 40 jours → `paid_at` = cette date à minuit, rouge au sol), T-b30
+(acceptation : `paid_at` = date de valeur de la transaction ; date de comptabilisation si la date de valeur manque),
+T-b31 (lot confirmé avec un `payment_date` passé → `paid_at` = cette date). Mutation M-b15.
+
 **Clés de `sprint-status.yaml`** (C-30-1-24) : la clé parente `30-1-reconciliation-factures-fournisseur` passe `split`
 (patron 29-1, 29-4), deux clés filles `30-1a-annuler-rapprochement-fournisseur` et
 `30-1b-proposer-accepter-fournisseur` passent `ready-for-dev`.
@@ -549,11 +588,13 @@ l'**écrit** comme angle mort mesuré, il n'ajoute pas de migration sans retour 
   `accept_one_supplier_invoice`, `refuse_wrong_direction`, inventaire des refus recopié au Dev Agent Record.
 - [ ] T15 (AC-b10) — T-b24, T-b25.
 - [ ] T16 (AC-b11) — écran, libellés, types, Vitest T-b26 à T-b28.
+- [ ] T16-bis (AC-b16) — tests rouges T-b29 à T-b31 ; `paid_at` lié ; inventaire des lecteurs refait et recopié au
+  Dev Agent Record ; CHANGELOG (*Corrigé* : la date affichée d'un paiement fournisseur).
 - [ ] T17 (AC-b14) — registres.
 - [ ] T18 (AC-b12) — E2E et captures ; helper `createSupplierInvoiceViaApi`.
 - [ ] T19 (AC-b13) — manuel + PDF (`make fr` dans `docs/manual/`, sous le verrou), `api-external.md`, i18n, CHANGELOG,
   README.
-- [ ] T20 — mutations M-b1 à M-b14 sous le verrou ; gate complet, Vitest complet **et E2E complet au dernier commit de
+- [ ] T20 — mutations M-b1 à M-b15 sous le verrou ; gate complet, Vitest complet **et E2E complet au dernier commit de
   code** (`flock`, recette de `docs/testing.md` à la lettre, port 3051, bases `kesh_301` / `kesh_e2e_301`).
 
 ---
@@ -604,7 +645,7 @@ rebase), manuel § *Factures fournisseurs*, CHANGELOG, catalogues i18n, `helpers
 
 ### Tests (récapitulatif)
 
-30-1a : T-a1 à T-a10 (8 Rust, 2 Vitest). 30-1b : T-b1 à T-b28 (25 Rust, 3 Vitest) et l'E2E de l'AC-b12 (deux tests).
+30-1a : T-a1 à T-a10 (8 Rust, 2 Vitest). 30-1b : T-b1 à T-b31 (28 Rust, 3 Vitest) et l'E2E de l'AC-b12 (deux tests).
 Décors **synthétiques** ; aucune donnée réelle (`docs/agents-orchestration.md` § 8). Concurrence par
 `sonde_verrou_nowait` / `attendre_une_requete_en_cours` (`test_fixtures.rs:561`, `:611`), **jamais**
 `information_schema.INNODB_TRX` (piège connu des consignes).
@@ -632,7 +673,8 @@ Décors **synthétiques** ; aucune donnée réelle (`docs/agents-orchestration.m
 | M-b11 | `candidate_rank` : fournisseur en rang 2 | T-b14 |
 | M-b12 | « presque au montant » ne masque pas la règle | T-b16 |
 | M-b13 | `refuse_wrong_direction` : `is_sign_negative()` | T-b21 (`-0.00`) |
-| M-b14 | `pay_in_tx` audit par `user` au lieu de `for_actor` | T-b23 |
+| M-b14 | `pay_in_tx_as` audit par `user` au lieu de `for_actor` | T-b23 |
+| M-b15 | `paid_at = CURRENT_TIMESTAMP(3)` rétabli | T-b29, T-b30 |
 
 Une mutation qui survit se tue par un test ajouté, ou se déclare **équivalente** avec la raison, au Dev Agent Record.
 
@@ -641,12 +683,23 @@ Une mutation qui survit se tue par un test ajouté, ou se déclare **équivalent
 - **L1 — Débit déjà payé depuis la fiche** : la facture est `paid`, non proposée ; la transaction reste en attente, et
   une règle d'affectation peut la proposer — accepter la règle compterait la charge deux fois. Tracé par **#671**
   (première puce) ; le manuel le dit (« réglez la facture par la réconciliation plutôt que depuis la fiche »).
-- **L2 — TTC à plus de deux décimales** : jamais proposé ; la facture se règle depuis la fiche. Rare (prix unitaire à
-  plus de deux décimales). Issue demandée (§ *Issues à ouvrir*).
+- **L2 — TTC à plus de deux décimales** (C-30-1-26) : jamais proposé ; la facture se règle depuis la fiche, qui écrit
+  alors une ligne de banque à plus de deux décimales. Origine : `line_total = quantité × prix unitaire` sans arrondi
+  (`supplier_invoices.rs:389`, `:415`) — et **aucune** limite d'échelle à la création fournisseur (ni `scale_within` ni
+  `MAX_DECIMAL_SCALE` dans `routes/supplier_invoices.rs` ni `routes/imported_supplier_invoices.rs`), alors que le
+  client borne quantité et prix à 4 décimales (`routes/invoices.rs:482-501`, `limits.rs:28`) et arrondit `line_total`
+  à 4 décimales (`repositories/invoices.rs:456-459`). ⚠️ **Le client n'évite pas un TTC sous le centime** : il le
+  **traite au règlement**, par le reste dû arrondi au centime et une troisième ligne sur le compte de différences
+  d'arrondi (#476, `classify_payment` / `settlement_journal_lines`). La correction fournisseur n'est donc pas
+  « arrondir à la saisie comme le client » : soit refuser ou arrondir à la création (change le HT et la TVA saisis,
+  écarte des factures légitimes — 3 × 0.333 —, et doit aussi couvrir la complétion d'une pièce importée), soit régler
+  avec une ligne d'arrondi (troisième ligne, compte d'arrondi, lettrage — refonte de `pay_in_tx`). Ni l'une ni l'autre
+  n'est mécanique. **Issue à ouvrir** (§ *Issues à ouvrir*). Si elle est traitée côté serveur (création), elle reste
+  compatible avec la 30-2b, qui refait le **formulaire** de création.
 - **L3 — Écart de frais bancaires** (débit = TTC + frais) : non proposé, la règle masquée si l'écart ≤ 0,05 et un
   indice, sinon rien. Hors périmètre (pas de règlement partiel fournisseur).
 - **L4 — Le nom de contrepartie d'un débit** (`camt053/mod.rs:459-474`) : non vérifié sur relevé réel ; poids 0,10.
-- **L5 — `paid_at`** = heure de la saisie (C-30-1-19).
+- ~~L5 — `paid_at`~~ : corrigé par l'AC-b16 (C-30-1-25).
 
 ### Pièges connus du dépôt, applicables ici
 
@@ -663,8 +716,7 @@ Une mutation qui survit se tue par un test ajouté, ou se déclare **équivalent
 
 ### Issues à ouvrir (demandées à l'orchestrateur)
 
-1. **`paid_at` d'une facture fournisseur = heure de la saisie, pas date du paiement** (`supplier_invoices.rs:907`) —
-   P3 (la fiche affiche une date fausse pour un paiement antidaté ; aucune écriture fausse). Vu à la fiche 30-1.
+1. ~~`paid_at`~~ : intégré à la 30-1b (AC-b16), pas d'issue.
 2. **TTC fournisseur à plus de deux décimales** : un paiement depuis la fiche écrit une ligne de banque à quatre
    décimales ; la réconciliation ne le propose jamais (L2) — P3.
 
@@ -705,5 +757,23 @@ Aucun fichier neuf hors tests, fixture E2E et spec E2E ; aucun crate neuf ; aucu
 Fiche créée (Opus 5.5) sur `15686d55`. Prémisses de #686 établies : quatre exactes, une à préciser (pas de reste dû
 fournisseur), une **fausse** (le dé-rapprochement ne sait pas défaire un règlement fournisseur) — d'où le découpage
 30-1a (annulation d'abord) → 30-1b. #671 laissée ouverte (non mécanique). 22 AC (7 + 15), 21 tâches (T0 à T20), 38
-tests nommés (T-a1 à T-a10, T-b1 à T-b28) plus un E2E de parcours à deux tests, 20 mutations (6 + 14). Choix C-30-1-1 à
+tests nommés (T-a1 à T-a10, T-b1 à T-b28) plus un E2E de parcours à deux tests, 20 mutations (6 + 14).
+*(Valeurs à la création ; amendées le même jour, voir l'entrée suivante.)* Choix C-30-1-1 à
 C-30-1-24 (recomptés par `grep` sur cette fiche et le registre).
+
+### Amendement de l'orchestrateur — 2026-10-15
+
+Deux défauts du chemin de *Accepter* (`pay_in_tx`), signalés par la fiche :
+- **`paid_at`** : intégré à la 30-1b (AC-b16, T16-bis, T-b29 à T-b31, M-b15 ; C-30-1-25). Lecteurs inventoriés : réponse
+  et affichage de la fiche, export CSV, deux audits, sauvegarde ; aucun rapport, échéancier, poste ouvert ni lettrage.
+  Changement visible pour la confirmation d'un lot (date du paiement au lieu de l'heure de confirmation).
+- **TTC à plus de deux décimales** : origine établie (aucune limite d'échelle à la création fournisseur, `line_total`
+  non arrondi) ; la prémisse « le client arrondit à la saisie » est **fausse** — le client traite l'écart au règlement
+  (#476). Correction non mécanique : angle mort L2, **issue à ouvrir** (C-30-1-26).
+- `pay_in_tx` garde sa signature (enveloppe de `pay_in_tx_as`) : `payment_batches.rs` n'est plus touché (AC-b9 ;
+  C-30-1-20 amendé).
+- **Recompte des modules de la 30-1b** (C-30-1-27) : `kesh-reconciliation/matching`, `kesh-db/repositories/
+  reconciliation`, `kesh-db/repositories/supplier_invoices`, `kesh-api/routes/reconciliation`,
+  `frontend/src/lib/features/reconciliation` = **5** — au seuil, non au-delà (`> 5`) ; aucun nouveau découpage.
+- Décomptes : **23** AC (7 + 16), **22** tâches (T0 à T20 + T16-bis), **41** tests nommés (T-a1 à a10, T-b1 à b31 ;
+  5 Vitest), **21** mutations (6 + 15), choix C-30-1-1 à **27**.

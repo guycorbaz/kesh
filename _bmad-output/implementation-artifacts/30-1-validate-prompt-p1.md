@@ -7,7 +7,7 @@ complètes Sonnet ↔ Opus ; Haiku réservé à une passe ciblée de fin de bouc
 Dépôt `/home/gcorbaz/devel/kesh-30-1`, branche `story/30-1` (base `15686d55`, kickoff de l'Epic 30).
 Fiche : `_bmad-output/implementation-artifacts/30-1-reconciliation-factures-fournisseur.md` (commit `53d8c593`) —
 **une fiche, deux sous-stories** (30-1a puis 30-1b).
-Registre : `_bmad-output/implementation-artifacts/epic-30-choix-autonomes-301.md` (C-30-1-1 à 24) ; registre de l'epic
+Registre : `_bmad-output/implementation-artifacts/epic-30-choix-autonomes-301.md` (C-30-1-1 à 27, dont l'amendement de l'orchestrateur : C-30-1-25 à 27) ; registre de l'epic
 `epic-30-choix-autonomes.md` (C-30-0-1 à 3). Epic : `_bmad-output/planning-artifacts/epic-30-factures-fournisseur.md`
 § *30-1*. Issues, en lecture : `gh api repos/guycorbaz/kesh/issues/686`, `…/671`, `…/482`.
 Fiches de référence (lecture seule) : `29-8-transaction-reglee-ailleurs.md`, `29-6-trop-percu-centimes.md`,
@@ -66,9 +66,15 @@ verrous **et** naissance de la vue ; § 4.3 : aucune dette assumée sans issue).
    `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' '` (⛔ jamais vers un fichier). Même exigence pour
    `docs/api-external.md` (`:572-612`), le CHANGELOG `## [0.14.0] — Non publié` et le README prescrits. Une promesse que
    le code ne tiendrait pas est au moins **MEDIUM**.
-9. **Recomptes** : chaque nombre et numéro de ligne de la fiche se recompte depuis la source — AC (22 = 7 + 15), tâches
-   (21, T0 à T20), tests (38 = T-a1 à a10 + T-b1 à b28, dont 5 Vitest), mutations (20 = 6 + 14), choix (24), modules par
-   sous-story, migrations (81).
+9. **Recomptes** : chaque nombre et numéro de ligne de la fiche se recompte depuis la source — AC (23 = 7 + 16), tâches
+   (22, T0 à T20 + T16-bis), tests (41 = T-a1 à a10 + T-b1 à b31, dont 5 Vitest), mutations (21 = 6 + 15), choix (27),
+   modules de la 30-1b (5, C-30-1-27 — `payment_batches.rs` réellement intouché ?), migrations (81).
+10. **`paid_at` (AC-b16, C-30-1-25)** : l'inventaire des lecteurs de `supplier_invoices.paid_at` est-il clos (refais
+   les `grep` sur `crates/*/src`, `kesh-report`, `kesh-seed`, `frontend/src`, la sauvegarde et la restauration) ? Une
+   contrainte, un rapport ou un tri qui supposerait `paid_at ≥ created_at` ou « heure réelle » ? Le changement pour la
+   confirmation d'un lot est-il dit (CHANGELOG, manuel, `api-external.md`) ? Et **L2** (C-30-1-26) : la conclusion
+   « non mécanique » est-elle juste — le client traite-t-il bien l'écart au règlement et non à la saisie ? Une
+   correction mécanique manquée est **MEDIUM**.
 
 ## Lentilles
 
