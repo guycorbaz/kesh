@@ -633,6 +633,8 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
   Vitest existant, qui cherchait « plus d’un jour », lit désormais « plus de 1 jour(s) ».
 - **Écartées** : deux clés (client, fournisseur) ; garder « un jour » en dur (faux pour 7).
 - **Réversible** : oui.
+- *(2026-10-15, revue de code P1 — A5, B2 : **remplacé par C-30-1-61**. « plus de 1 jour(s) » était un recul de
+  lisibilité du chemin client et rendait inexacte la citation du manuel.)*
 
 ### C-30-1-58 — `RECONCILIATION_RULE_MASKED` : un libellé de repli pour une raison inconnue
 
@@ -660,4 +662,66 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
   pas réécrites dans cette story (une spec qui passe, hors du périmètre de la 30-1b). Dette de duplication écrite ici ;
   la factorisation se fera au premier geste qui touche l'une des deux.
 - **Écartées** : réécrire deux specs vertes sans autre raison (risque sans gain pour la recette).
+- **Réversible** : oui.
+- *(2026-10-15, revue de code P1 — A1, décision de l'orchestrateur : **dette soldée pour `wiredBankAccountViaApi`**.
+  `reconciliation-link.spec.ts` l'importe, sa copie locale `wiredBankAccount` est retirée. `payment-batches.spec.ts` ne
+  porte **pas** la même aide : son décor prend le premier compte bancaire déjà câblé, ou en crée un sur un autre IBAN par
+  `PUT`, et désigne le compte créanciers — un autre geste, que la lentille A tenait elle-même pour défendable ; il reste
+  tel quel.)*
+
+### C-30-1-61 — Le libellé « paiement antérieur à la facture » : deux clés, un jour et plusieurs jours
+
+- **Contexte** : revue de code P1, A5 et B2 — C-30-1-57 faisait dire « plus de 1 jour(s) » à l'écran client et rendait
+  inexacte la citation du manuel (« plus d'un jour »). Un sélecteur Fluent (`{ $days -> [one] … *[other] … }`) ne
+  fonctionne pas ici : le serveur pré-résout les messages **sans argument** (`i18n.svelte.ts`), le sélecteur n'atteint pas
+  l'écran.
+- **Retenu** : `reconciliation-failed-payment-before-invoice` reprend **mot pour mot** son texte de `fecc8566` (« plus
+  d'un jour ») et sert `tolerance_days` = 1 et tout repli ; `reconciliation-failed-payment-before-invoice-days` (« plus de
+  { $days } jours ») sert une tolérance de plus d'un jour (7 pour un fournisseur). Quatre locales ; `sitesTotal`
+  2218 → 2219.
+- **Écartées** : le sélecteur Fluent (inopérant) ; garder « jour(s) ».
+- **Réversible** : oui.
+
+### C-30-1-62 — `RECONCILIATION_RULE_MASKED` : le geste juste, raison par raison
+
+- **Contexte** : revue de code P1, INFO de la lentille A — les quatre libellés conseillaient « Affecter manuellement »
+  sans condition. Pour une facture qui correspond vraiment, ce geste compte la charge ou le produit deux fois ; l'encadré
+  L1 du manuel le défend déjà pour une dépense déjà réglée.
+- **Retenu** : `invoice_candidate` — recharger la page et **accepter la facture proposée** si ce débit la règle ;
+  `payment_batch` — si la transaction est le paiement du lot, l'annuler puis accepter la facture proposée ;
+  `invoice_slightly_overpaid` — enregistrer le règlement depuis la fiche de la facture, puis y rattacher la transaction
+  (le geste du manuel, § *Algorithme*) ; générique — recharger et traiter la facture. Chaque libellé finit par « N'utilisez
+  « Affecter manuellement » que si [la transaction] ne règle aucune facture saisie » — cohérent avec L1 : un débit qui
+  règle une facture déjà payée « règle une facture saisie », le geste lui reste donc interdit. Repli, quatre locales,
+  manuel (*Application des règles*), `api-external.md`, CHANGELOG et commentaire de l'étape 7 bis alignés.
+- **Écartées** : garder « Affecter manuellement » en alternative libre.
+- **Réversible** : oui.
+
+### C-30-1-63 — La lecture du contact de l'acceptation, partagée et sans erreur avalée
+
+- **Contexte** : revue de code P1, B1 (et I1, E7) — `accept_one_supplier_invoice` recopiait la lecture du contact
+  d'`accept_one_invoice`, sans sa garde `contact_id > 0`, et les deux avalaient une erreur de base (`unwrap_or(None)`).
+  Côté client, un score de contact ramené à zéro par l'erreur pouvait se changer en refus `score_zero_no_match` trompeur.
+- **Retenu** : `contact_for_score` (routes) — garde `contact_id <= 0` puis lecture ; une erreur rend `DATABASE_ERROR` par
+  proposition, comme les autres lectures de l'acceptation (un interblocage y est repris par le rejeu du lot). Les deux
+  acceptations l'appellent.
+- **Écartées** : garder l'avalement avec un `tracing::warn!` (l'erreur resterait sans effet visible) ; factoriser sans
+  changer le comportement.
+- **Test** : aucun test ne provoque une erreur de base sur cette lecture (pas d'injection de faute dans le dépôt) ; la
+  propagation est vérifiée à la lecture. La garde `<= 0` est équivalente à son absence (aucun contact d'id 0 ou négatif :
+  `AUTO_INCREMENT` dès 1) — elle épargne une lecture, elle ne change aucun résultat.
+- **Réversible** : oui.
+
+### C-30-1-64 — Constats LOW de la revue de code P1 laissés, et pourquoi
+
+- **E1** (la garde (d) peut nommer la facture acceptée elle-même, vue périmée) : laissé. L'écarter demande de rendre à
+  `find_open_supplier_invoice_in_account_batch` le paramètre `excluding` retiré en P5 (C-30-1-41) — trois lecteurs, et
+  avec `LIMIT 1` un filtre posé après coup masquerait une autre facture retenue : ce n'est pas une ligne. Refus spurieux,
+  sans écriture, rejouable ; écrit en L11 de la fiche.
+- **E3** (montant comparé au `total_amount`, règlement posté pour la ligne de crédit de l'achat) : laissé ; aucun chemin
+  ne les fait diverger (la création pose la ligne de crédit au total) — garde défensive sans cas.
+- **B4** (`MatchProposal.invoice_id` → `document_id`, clé JSON `documentId`) : laissé ; aucun consommateur JSON de cette
+  structure (les routes reconstruisent leur réponse) et `kesh-reconciliation` n'est pas publié (seul `kesh-import` l'est).
+- **B5** (`NotOpen { status }` non lu) : laissé ; le libellé générique « n'est pas éligible » suffit au geste, un statut
+  dans `details` serait un ajout de contrat sans demande.
 - **Réversible** : oui.
