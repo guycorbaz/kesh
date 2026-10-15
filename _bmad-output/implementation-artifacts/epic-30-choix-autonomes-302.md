@@ -270,12 +270,17 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   refusé tout IBAN étranger) : AC12-bis — un seul type par côté. Serveur : `kesh_core::types::Iban` (international,
   MOD-97) pour `creditorIban`, qui ne doit pas être un QR-IBAN ; `kesh_core::types::QrIban` (CH/LI, QR-IID 30000-31999)
   pour `creditorQrIban` ; pas les deux. QR-IBAN ⇒ référence QRR obligatoire et valide (`validate_qrr`) ; IBAN ordinaire
-  ou absent ⇒ référence libre ou SCOR (≤ 64), jamais de forme QRR (27 chiffres une fois les espaces retirés). Espaces
-  normalisés, chaîne vide ou blanche = absente, valeurs stockées normalisées. Refus `400 INVALID_PAYMENT_DETAILS`
+  ou absent ⇒ référence en texte libre (≤ 64), **27 chiffres compris** *(amendé le 2026-10-15, validation P3, F3-3 : la
+  P2 refusait une « forme QRR » sans QR-IBAN, ce qui rejetait l'ancienne référence BVR/ESR d'une facture ancienne sans
+  bénéfice en aval)*. Normalisation par **une** fonction par côté, qui retire tous les blancs Unicode (insécables
+  compris) des IBAN *(amendé en P3, R3 = F3-7 : `Iban::new` n'ôte que l'espace ASCII)* ; chaîne vide ou blanche =
+  absente ; valeurs stockées normalisées. Sept motifs de refus, chacun avec son libellé dans les quatre locales (P3, R4).
+  L'effet sur la création manuelle se décrit exactement : table des pays et longueur par pays d'`Iban::new` (des pays
+  absents, refusés), lot pain.001 limité à CH/LI (existant). Refus `400 INVALID_PAYMENT_DETAILS`
   (`details.field`, `details.reason`). Frontend : la fonction existante `qrIbanHasValidQrIid`
   (`bank-accounts/+page.svelte:276`) extraite et partagée, complétée de la condition CH/LI. Effet sur la création
   manuelle écrit tel quel au CHANGELOG : refus d'un IBAN faux, d'un QR-IBAN mal placé, des deux ensemble, d'un QR-IBAN
-  sans QRR valide, d'une forme QRR sans QR-IBAN ; un IBAN étranger valide et une référence libre restent acceptés.
+  sans QRR valide ; un IBAN étranger valide (pays de la table) et une référence libre restent acceptés.
 - **Écartées** : `kesh_qrbill::validation::validate_iban` (CH/LI seulement : régression silencieuse pour les
   fournisseurs étrangers) ; « aucun contrôle, comme aujourd'hui » en angle mort (dette sans issue interdite) ; valider
   la seule complétion (deux chemins pour une même saisie).
@@ -294,6 +299,13 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
 - **Écartées** : lecture ordinaire après les deux verrous (correcte aussi, mais un second chemin pour le même refus et
   une mutation équivalente de plus) ; garder la lecture verrouillante (verrou d'intervalle).
 - **Réversible** : oui.
+- **Amendé le 2026-10-15 (validation P3, R2 = F3-1, relevé de l'orchestrateur)** : les deux validations soupçonnaient
+  le contrôle de doublon d'InnoDB de poser seul un verrou sur le successeur. **Mesuré au banc** (MariaDB 10.11.16 de dev,
+  `REPEATABLE-READ`, tables jetables `inv` / `doc` à `inv_id NULL UNIQUE` et clé étrangère ; A verrouille doc 1 puis inv X
+  et écrit le lien sans valider, B fait de même sur doc 2 et inv Y ; couples (10, 20), (20, 10), (30, 10), (10, 30), avec
+  et sans liens existants 15 et 25) : B aboutit chaque fois en moins de 0,35 s. Test « B sous 5 s » gardé. **Bascule
+  écrite** si le test rougit au développement : sérialisation par la sentinelle `companies … FOR UPDATE` en tête de
+  transaction (patron de `supplier_invoices::create_in_tx`), test réécrit sur l'ordre d'événements.
 
 ### C-30-2-22 — Le contrôle pur couvre longueur, plage et domaine, avant l'archivage ; filet des contraintes CHECK
 
@@ -302,10 +314,24 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   que l'import ne capte pas : 500 sur tout le run, fichier resté dans l'inbox, chaque import suivant en échec (défaut
   d'origine) ; le contrôle de la P1 était décrit comme une fonction de `NewImportedSupplierInvoice`, construite **après**
   l'archivage, tout en se disant « avant l'archivage ».
-- **Retenu** : une fonction pure de `ScannedQrBill`, appelée avant l'archivage, vérifie longueur (en caractères), plage
-  du montant (`amount_min`..`amount_max`, deux décimales) et domaine (`creditor_address_type`) ; un QR qui échoue entre
+- **Retenu** : une fonction pure de `ScannedQrBill`, appelée avant l'archivage, vérifie longueur (en caractères) et plage
+  du montant (`amount_min`..`amount_max`, deux décimales significatives) ; *(le contrôle de domaine de
+  `creditor_address_type` d'abord retenu est **retiré le 2026-10-15**, validation P3, R1 HIGH = F3-2 : `from_scanned`
+  normalise déjà tout type ≠ `S` en `K`, `imported_supplier_invoice.rs:117-128`, test l. 256 — le « défaut d'origine »
+  n'existait pas, et un `CheckConstraintViolation` rend 400, non 500 ; arbitrage P2 de l'orchestrateur pris pour acquis
+  sans vérification, reconnu par lui)* ; un QR qui échoue entre
   sans ses données (`unreadable`). Un filet `CheckConstraintViolation` rejoint `DataLengthOrRange` à l'`INSERT`
-  (`failed[]`, jamais 500). Le cas « nom de fichier trop long » est retiré : inatteignable (`NAME_MAX` = 255 octets).
+  (`failed[]`) — défense en profondeur, sans test, aucune contrainte CHECK n'étant atteignable. Le cas « nom de fichier trop long » est retiré : inatteignable (`NAME_MAX` = 255 octets).
 - **Écartées** : laisser le filet seul décider (un QR exploitable en partie perdrait le document) ; garder un test de
   nom trop long (impossible à monter).
+- **Réversible** : oui.
+
+### C-30-2-23 — La date de règlement s'affiche formatée (décision de l'orchestrateur, 2026-10-15)
+
+- **Contexte** : constat de la 30-1 — la fiche d'une facture fournisseur payée affiche `paidAt` brut
+  (« 2026-06-20T00:00:00 », `supplier-invoices/[id]/+page.svelte:393`) ; avec la 30-1, `paid_at` devient la date du
+  paiement à minuit.
+- **Retenu** : AC25, dans la 30-2c — `formatSwissDate` existant (`reports.api.ts:193`) sur les dix premiers caractères,
+  libellé adapté dans les quatre locales, Vitest, mutation M-c12.
+- **Écartées** : une issue séparée (la marge d'issues au tag est d'une seule) ; un formateur neuf (DRY).
 - **Réversible** : oui.
