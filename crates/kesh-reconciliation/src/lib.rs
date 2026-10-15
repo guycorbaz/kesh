@@ -30,7 +30,7 @@ pub mod split;
 
 pub use errors::ReconciliationError;
 pub use manual::build_journal_entry_for_counterparty;
-pub use matching::{MatchProposal, MatchScore, propose_matches};
+pub use matching::{MatchProposal, MatchScore, MatchableDocument, propose_matches};
 pub use mutex::with_account_lock;
 pub use rules::{first_matching_rule, rule_matches};
 pub use split::{SplitDetail, SplitImbalance, build_split_journal_entry, validate_split_balance};

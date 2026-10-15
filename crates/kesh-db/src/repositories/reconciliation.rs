@@ -30,6 +30,12 @@
 //!   borne basse écarte, à `overpayment_tolerance` près — jamais proposées,
 //!   lues pour qu'une règle d'affectation ne prenne pas leur place en silence
 //!   (Story 29-6, #665, revue de code P1). Pas de filtre currency non plus.
+//! - [`find_open_supplier_invoices_for_window`],
+//!   [`find_open_supplier_invoice_in_account_batch`],
+//!   [`find_supplier_invoices_masking`] : les factures **fournisseur** d'un
+//!   débit — candidates, facture du lot en cours sur le compte, factures qui
+//!   masquent la règle (Story 30-1b, #686) ; [`PayableDocument`] rend
+//!   l'exigibilité et l'ordre d'imputation communs aux deux sortes de factures.
 //! - [`find_pending_transactions_for_account`] : charge les
 //!   transactions `status='pending'` non-rejetées (`auto_match_rejected_at IS NULL`)
 //!   pour un compte donné, multi-tenant scoped, paginées (`limit` fourni
@@ -65,6 +71,7 @@ use std::collections::HashMap;
 use crate::entities::bank_transaction::BankTransaction;
 use crate::entities::contact::Contact;
 use crate::entities::invoice::Invoice;
+use crate::entities::supplier_invoice::SupplierInvoice;
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::invoice_settlements::{
     INVOICE_AMOUNT_DUE_DERIVED_SQL, amount_due_derived_joins, least_due_without_overpayment,
@@ -296,8 +303,55 @@ pub fn payment_date(tx: &BankTransaction) -> NaiveDate {
 /// **Deux écritures** : celle-ci, et [`INVOICE_EXIGIBILITY_DATE_SQL`] pour la
 /// requête ; le test `exigibility_date_sql_and_rust_agree`
 /// (`tests/reconciliation_repository.rs`) les tient d'accord.
-pub fn invoice_exigibility_date(invoice: &Invoice) -> NaiveDate {
-    invoice.date.max(invoice.due_date.unwrap_or(invoice.date))
+///
+/// **Générique depuis la Story 30-1b** (#686, AC-b1) : la même règle vaut
+/// pour une facture fournisseur ([`PayableDocument`]), sans changer son
+/// résultat pour une facture client.
+pub fn invoice_exigibility_date<D: PayableDocument + ?Sized>(document: &D) -> NaiveDate {
+    let date = document.document_date();
+    date.max(document.due_date().unwrap_or(date))
+}
+
+/// Un document qu'un paiement peut régler : une facture client ([`Invoice`])
+/// ou une facture fournisseur ([`SupplierInvoice`]) — Story 30-1b (#686,
+/// AC-b1).
+///
+/// Il ne porte que ce que lisent l'[exigibilité](invoice_exigibility_date) et
+/// l'[ordre d'imputation](imputation_order) : l'identifiant, la date et
+/// l'échéance. Une seule règle pour les deux sortes de factures (DRY) : le
+/// paiement d'un fournisseur s'impute comme celui d'un client (art. 87 CO).
+pub trait PayableDocument {
+    /// L'identifiant du document dans sa table (`invoices.id` ou
+    /// `supplier_invoices.id`) — le dernier départage de l'ordre d'imputation.
+    fn document_id(&self) -> i64;
+    /// La date du document (`invoices.date`, `supplier_invoices.invoice_date`).
+    fn document_date(&self) -> NaiveDate;
+    /// L'échéance, s'il y en a une.
+    fn due_date(&self) -> Option<NaiveDate>;
+}
+
+impl PayableDocument for Invoice {
+    fn document_id(&self) -> i64 {
+        self.id
+    }
+    fn document_date(&self) -> NaiveDate {
+        self.date
+    }
+    fn due_date(&self) -> Option<NaiveDate> {
+        self.due_date
+    }
+}
+
+impl PayableDocument for SupplierInvoice {
+    fn document_id(&self) -> i64 {
+        self.id
+    }
+    fn document_date(&self) -> NaiveDate {
+        self.invoice_date
+    }
+    fn due_date(&self) -> Option<NaiveDate> {
+        self.due_date
+    }
 }
 
 /// L'**ordre d'imputation** de deux factures candidates d'un même paiement :
@@ -335,11 +389,14 @@ pub fn invoice_exigibility_date(invoice: &Invoice) -> NaiveDate {
 /// - il n'impute pas proportionnellement (al. 2), ne lit pas les
 ///   **poursuites** (Kesh n'en enregistre aucune) ni les **rappels**, qui
 ///   n'en sont pas (C-29-5-3).
-pub fn imputation_order(a: &Invoice, b: &Invoice) -> std::cmp::Ordering {
+///
+/// **Générique depuis la Story 30-1b** ([`PayableDocument`]) : deux factures
+/// fournisseur de même note se départagent par la même règle.
+pub fn imputation_order<D: PayableDocument + ?Sized>(a: &D, b: &D) -> std::cmp::Ordering {
     invoice_exigibility_date(a)
         .cmp(&invoice_exigibility_date(b))
-        .then_with(|| a.date.cmp(&b.date))
-        .then_with(|| a.id.cmp(&b.id))
+        .then_with(|| a.document_date().cmp(&b.document_date()))
+        .then_with(|| a.document_id().cmp(&b.document_id()))
 }
 
 /// La fenêtre de dates dans laquelle une transaction peut régler une facture
@@ -381,14 +438,44 @@ pub fn imputation_order(a: &Invoice, b: &Invoice) -> std::cmp::Ordering {
 /// Aucune borne n'est ramenée à la plage d'une colonne `DATE` : `check`
 /// compare exactement ce que comparait l'acceptation. Une transaction datée
 /// aux extrémités de cette plage est un angle mort écrit (C-28-7-12).
+///
+/// **La fenêtre fournisseur** (Story 30-1b, #686, AC-b2, C-30-1-13) : la même
+/// structure et le même [`check`](Self::check), d'autres bornes —
+/// `F ≤ D + 7 jours` ([`SUPPLIER_PAYMENT_BEFORE_INVOICE_TOLERANCE_DAYS`] : un
+/// achat payé en ligne dont la facture est émise à l'expédition) et
+/// `X ≥ D − 365 jours` ([`SUPPLIER_INVOICE_WINDOW_DAYS_AFTER_EXIGIBILITY`]),
+/// `X` étant la date d'**exigibilité** `max(F, échéance)`
+/// ([`SUPPLIER_INVOICE_EXIGIBILITY_DATE_SQL`], [`invoice_exigibility_date`]) —
+/// une facture fournisseur n'a pas de rappel. Construite par
+/// [`for_supplier_payment_date`](Self::for_supplier_payment_date). ⛔ Elle ne
+/// lit jamais `created_at` ni la date du jour : la facture peut être **saisie**
+/// des mois après le paiement, c'est l'usage nominal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvoiceDateWindow {
     /// Date d'ancrage la plus ancienne admise : `D − 30 jours` (Story 29-2 ;
-    /// `earliest_invoice_date` jusque-là, quand la borne portait sur `F`).
+    /// `earliest_invoice_date` jusque-là, quand la borne portait sur `F`) ;
+    /// pour une facture fournisseur, l'exigibilité la plus ancienne admise,
+    /// `D − 365 jours`.
     pub earliest_anchor_date: NaiveDate,
-    /// Date de facture la plus récente admise : `D + 1 jour`.
+    /// Date de facture la plus récente admise : `D + 1 jour` (fournisseur :
+    /// `D + 7 jours`).
     pub latest_invoice_date: NaiveDate,
+    /// La tolérance de la borne haute, en jours (1 client, 7 fournisseur) —
+    /// le `details.tolerance_days` du refus `payment_date_before_invoice_date`
+    /// (Story 30-1b).
+    pub tolerance_days: i64,
+    /// La largeur de la borne basse, en jours (30 client, 365 fournisseur) —
+    /// le `details.window_days` du refus `payment_date_outside_window`.
+    pub window_days: i64,
 }
+
+/// Un paiement fournisseur peut précéder sa facture de **sept jours** au plus
+/// (Story 30-1b, AC-b2) : un achat payé en ligne, facturé à l'expédition.
+pub const SUPPLIER_PAYMENT_BEFORE_INVOICE_TOLERANCE_DAYS: i64 = 7;
+
+/// Un paiement fournisseur règle une facture au plus **un an après son
+/// exigibilité** (Story 30-1b, AC-b2), y compris à cheval sur deux exercices.
+pub const SUPPLIER_INVOICE_WINDOW_DAYS_AFTER_EXIGIBILITY: i64 = 365;
 
 /// Pourquoi une facture sort de l'[`InvoiceDateWindow`] d'une transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -406,15 +493,42 @@ impl InvoiceDateWindow {
     /// La fenêtre d'une date de paiement `d` : ancre `≥ d − 30`, date de
     /// facture `≤ d + 1`.
     pub fn for_payment_date(d: NaiveDate) -> Self {
-        Self {
-            earliest_anchor_date: d - chrono::Duration::days(INVOICE_WINDOW_DAYS_AFTER_INVOICE),
-            latest_invoice_date: d + chrono::Duration::days(PAYMENT_BEFORE_INVOICE_TOLERANCE_DAYS),
-        }
+        Self::with_days(
+            d,
+            PAYMENT_BEFORE_INVOICE_TOLERANCE_DAYS,
+            INVOICE_WINDOW_DAYS_AFTER_INVOICE,
+        )
     }
 
     /// La fenêtre d'une transaction, sur sa [date de paiement](payment_date).
     pub fn for_transaction(tx: &BankTransaction) -> Self {
         Self::for_payment_date(payment_date(tx))
+    }
+
+    /// La fenêtre **fournisseur** d'une date de paiement `d` (Story 30-1b,
+    /// AC-b2) : exigibilité `≥ d − 365`, date de facture `≤ d + 7`.
+    pub fn for_supplier_payment_date(d: NaiveDate) -> Self {
+        Self::with_days(
+            d,
+            SUPPLIER_PAYMENT_BEFORE_INVOICE_TOLERANCE_DAYS,
+            SUPPLIER_INVOICE_WINDOW_DAYS_AFTER_EXIGIBILITY,
+        )
+    }
+
+    /// La fenêtre fournisseur d'une transaction, sur sa
+    /// [date de paiement](payment_date).
+    pub fn for_supplier_transaction(tx: &BankTransaction) -> Self {
+        Self::for_supplier_payment_date(payment_date(tx))
+    }
+
+    /// Une seule construction des bornes, pour les deux sortes de factures.
+    fn with_days(d: NaiveDate, tolerance_days: i64, window_days: i64) -> Self {
+        Self {
+            earliest_anchor_date: d - chrono::Duration::days(window_days),
+            latest_invoice_date: d + chrono::Duration::days(tolerance_days),
+            tolerance_days,
+            window_days,
+        }
     }
 
     /// Une facture datée `invoice_date`, de date d'ancrage `anchor_date`
@@ -631,6 +745,206 @@ fn unpaid_invoices_in_window_sql(having: &str) -> String {
     )
 }
 
+// ---------------------------------------------------------------------------
+// Story 30-1b (#686) — les factures fournisseur d'un débit
+// ---------------------------------------------------------------------------
+//
+// Trois lectures, **ordinaires** toutes trois (aucun verrou, C-30-1-39), pour
+// chaque débit CHF de la page de propositions — trois requêtes par débit, sur
+// `idx_supplier_invoices_company_status` (les factures `open` de la société),
+// le prédicat de montant n'étant pas indexé : négligeable à l'échelle d'une
+// personne ou d'une PME. Ce qu'elles partagent : le `FROM supplier_invoices si`
+// et l'expression d'exigibilité [`SUPPLIER_INVOICE_EXIGIBILITY_DATE_SQL`],
+// donc l'ordre d'imputation.
+//
+// - [`find_open_supplier_invoices_for_window`] : les **candidates** ;
+// - [`find_open_supplier_invoice_in_account_batch`] : la facture qui
+//   **bloque** la ligne — engagée dans un lot de paiement en cours sur le
+//   compte de la transaction ;
+// - [`find_supplier_invoices_masking`] : les factures qui **masquent** la
+//   règle d'affectation sans être proposées.
+//
+// ⛔ Aucune ne lit les factures **payées** : une garde « dépense déjà réglée
+// par un autre chemin » sur-bloque (une mensualité payée bloquerait le débit
+// de la suivante) ; ce cas est l'angle mort L1, territoire de #671
+// (C-30-1-34 et C-30-1-40, retirés).
+
+/// La **date d'exigibilité** d'une facture fournisseur, en SQL :
+/// `max(F, échéance)`, l'échéance absente valant `F` (Story 30-1b, AC-b2).
+/// **Prérequis : alias `si` sur `supplier_invoices`.** Seconde écriture de
+/// [`invoice_exigibility_date`] sur une [`SupplierInvoice`], tenue d'accord
+/// avec elle par `supplier_exigibility_date_sql_and_rust_agree`
+/// (`tests/reconciliation_repository.rs`). Même forme que
+/// [`INVOICE_EXIGIBILITY_DATE_SQL`] : `COALESCE` obligatoire (`GREATEST` rend
+/// `NULL` dès qu'un argument l'est), `CAST(… AS DATE)` pour un type rendu
+/// garanti.
+pub const SUPPLIER_INVOICE_EXIGIBILITY_DATE_SQL: &str =
+    "CAST(GREATEST(si.invoice_date, COALESCE(si.due_date, si.invoice_date)) AS DATE)";
+
+/// La facture fournisseur engagée dans un lot `generated` (`EXISTS` de
+/// [`find_open_supplier_invoices_for_window`], prédicat de jointure de
+/// [`find_open_supplier_invoice_in_account_batch`]).
+const SUPPLIER_INVOICE_IN_GENERATED_BATCH_SQL: &str = "SELECT 1 FROM payment_batch_items pbi \
+     JOIN payment_batches pb ON pb.id = pbi.payment_batch_id \
+     WHERE pbi.supplier_invoice_id = si.id AND pb.status = 'generated'";
+
+/// L'ordre d'imputation, en SQL, des factures fournisseur
+/// ([`imputation_order`] : exigibilité, date, `id` croissants).
+fn supplier_imputation_order_sql() -> String {
+    format!("{SUPPLIER_INVOICE_EXIGIBILITY_DATE_SQL} ASC, si.invoice_date ASC, si.id ASC")
+}
+
+/// Les factures fournisseur **candidates** au règlement d'un débit de valeur
+/// absolue `amount` (Story 30-1b, #686, AC-b3), 50 au plus :
+///
+/// 1. `company_id` (KF-002) ;
+/// 2. `status = 'open'` ;
+/// 3. `total_amount = amount` — égalité **exacte** en décimal
+///    (`DECIMAL(19,4)` contre `DECIMAL(18,2)`) : le règlement fournisseur est
+///    binaire, du TTC entier (C-30-1-5). Un TTC à plus de deux décimales n'est
+///    jamais candidat (angle mort L2, #687) ;
+/// 4. **jamais** une facture engagée dans un lot de paiement `generated` (le
+///    fichier pain.001 est peut-être déjà à la banque) ;
+/// 5. la fenêtre fournisseur de l'[`InvoiceDateWindow`]
+///    (`for_supplier_transaction`) : `F ≤ D + 7` et exigibilité `≥ D − 365` ;
+/// 6. l'**ordre d'imputation** avant le `LIMIT 50`, comme les factures client.
+pub async fn find_open_supplier_invoices_for_window<'e, E>(
+    executor: E,
+    company_id: i64,
+    window: InvoiceDateWindow,
+    amount: Decimal,
+) -> Result<Vec<SupplierInvoice>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    use super::supplier_invoices::SUPPLIER_INVOICE_COLUMNS_SI;
+    sqlx::query_as::<_, SupplierInvoice>(&format!(
+        "SELECT {SUPPLIER_INVOICE_COLUMNS_SI} FROM supplier_invoices si \
+         WHERE si.company_id = ? AND si.status = 'open' AND si.total_amount = ? \
+           AND NOT EXISTS ({SUPPLIER_INVOICE_IN_GENERATED_BATCH_SQL}) \
+           AND si.invoice_date <= ? AND {SUPPLIER_INVOICE_EXIGIBILITY_DATE_SQL} >= ? \
+         ORDER BY {order} LIMIT 50",
+        order = supplier_imputation_order_sql(),
+    ))
+    .bind(company_id)
+    .bind(amount)
+    .bind(window.latest_invoice_date)
+    .bind(window.earliest_anchor_date)
+    .fetch_all(executor)
+    .await
+    .map_err(map_db_error)
+}
+
+/// La facture fournisseur engagée dans un lot de paiement en cours sur le
+/// compte de la transaction : rendue par
+/// [`find_open_supplier_invoice_in_account_batch`] (Story 30-1b, AC-b3).
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct SupplierInvoiceInAccountBatch {
+    pub supplier_invoice_id: i64,
+    /// Le numéro de la facture chez le fournisseur, s'il y en a un.
+    pub supplier_invoice_number: Option<String>,
+    pub payment_batch_id: i64,
+}
+
+/// **La** fonction source du critère « une facture fournisseur **ouverte**, au
+/// montant **exact**, est engagée dans un lot `generated` **de ce compte** »
+/// (Story 30-1b, #686, AC-b3, C-30-1-39) — la première dans l'ordre
+/// d'imputation (`LIMIT 1` : un test d'existence, rien n'est coupé).
+///
+/// **Pourquoi ce critère efface toute la ligne** (AC-b5) : le loyer de janvier
+/// et celui de février, même fournisseur, même montant ; janvier part dans un
+/// lot pain.001 et la banque débite janvier. Février serait candidat, et
+/// *Accepter* le réglerait avec le débit de janvier — puis la confirmation du
+/// lot réglerait janvier : un seul débit, deux règlements. Kesh ne propose
+/// rien et le dit (`notice`).
+///
+/// **Trois lecteurs, aucun autre texte ne décide de ce critère** : la
+/// proposition (`get_proposals`), l'acceptation d'une facture fournisseur
+/// (`supplier_invoices::lock_for_bank_settlement_in_tx`, étape (d)) et
+/// l'acceptation d'une règle (`accept_one_rule`, rejeu du masquage).
+///
+/// **Lecture ordinaire** : un lot commis après la naissance de la vue de la
+/// transaction appelante n'est pas vu — tolérance écrite (C-30-1-39).
+pub async fn find_open_supplier_invoice_in_account_batch<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_id: i64,
+    amount: Decimal,
+) -> Result<Option<SupplierInvoiceInAccountBatch>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    sqlx::query_as::<_, SupplierInvoiceInAccountBatch>(&format!(
+        "SELECT si.id AS supplier_invoice_id, si.supplier_invoice_number, \
+                pb.id AS payment_batch_id \
+         FROM supplier_invoices si \
+         JOIN payment_batch_items pbi ON pbi.supplier_invoice_id = si.id \
+         JOIN payment_batches pb ON pb.id = pbi.payment_batch_id \
+         WHERE si.company_id = ? AND si.status = 'open' AND si.total_amount = ? \
+           AND pb.company_id = si.company_id AND pb.status = 'generated' \
+           AND pb.bank_account_id = ? \
+         ORDER BY {order} LIMIT 1",
+        order = supplier_imputation_order_sql(),
+    ))
+    .bind(company_id)
+    .bind(amount)
+    .bind(bank_account_id)
+    .fetch_optional(executor)
+    .await
+    .map_err(map_db_error)
+}
+
+/// L'écart au plus duquel une facture fournisseur ouverte **masque** la règle
+/// d'affectation d'un débit (5 centimes, la borne de la Story 29-6 ; au-delà,
+/// angle mort L5).
+pub fn supplier_masking_tolerance() -> Decimal {
+    Decimal::new(5, 2)
+}
+
+/// Le plafond de [`find_supplier_invoices_masking`]. Une liste **pleine**
+/// (autant de lignes rendues) est tenue pour **masquante** par prudence : la
+/// règle n'est pas proposée.
+pub const SUPPLIER_MASKING_LIMIT: i64 = 200;
+
+/// Les factures fournisseur qui **masquent** la règle d'affectation d'un débit
+/// de valeur absolue `amount` (Story 30-1b, #686, AC-b3, AC-b5) : **ouvertes**,
+/// TTC à [`supplier_masking_tolerance`] au plus du débit, **sans borne de
+/// dates** ni jointure aux lots (une ligne par facture) ; le montant exact
+/// d'abord, puis l'ordre d'imputation ; [`SUPPLIER_MASKING_LIMIT`] au plus.
+///
+/// **Jamais proposées.** L'appelant (`get_proposals`) en retire les candidates
+/// (par identifiant) et, si l'une des autres porte un **indice** — référence ou
+/// fournisseur, lus sur les sous-scores —, ne propose pas la règle : sans cela,
+/// *Accepter* la règle porterait en charge un paiement que l'utilisateur va
+/// rattacher à la facture (patron de la 29-6). Lues pour **tout** débit CHF,
+/// qu'une règle active existe ou non.
+pub async fn find_supplier_invoices_masking<'e, E>(
+    executor: E,
+    company_id: i64,
+    amount: Decimal,
+) -> Result<Vec<SupplierInvoice>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    use super::supplier_invoices::SUPPLIER_INVOICE_COLUMNS_SI;
+    let tolerance = supplier_masking_tolerance();
+    sqlx::query_as::<_, SupplierInvoice>(&format!(
+        "SELECT {SUPPLIER_INVOICE_COLUMNS_SI} FROM supplier_invoices si \
+         WHERE si.company_id = ? AND si.status = 'open' \
+           AND si.total_amount BETWEEN ? AND ? \
+         ORDER BY (si.total_amount = ?) DESC, {order} LIMIT ?",
+        order = supplier_imputation_order_sql(),
+    ))
+    .bind(company_id)
+    .bind(amount - tolerance)
+    .bind(amount + tolerance)
+    .bind(amount)
+    .bind(SUPPLIER_MASKING_LIMIT)
+    .fetch_all(executor)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Charge les transactions bancaires `pending` non-rejetées pour un
 /// compte donné, scopées multi-tenant, paginées via `limit`.
 ///
@@ -710,6 +1024,26 @@ where
     }
     let rows = q.fetch_all(executor).await.map_err(map_db_error)?;
     Ok(rows.into_iter().map(|c| (c.id, c)).collect())
+}
+
+/// [`find_contacts_by_ids`] **par tranches** de [`MAX_IN_CLAUSE_IDS`]
+/// identifiants (Story 30-1b, #686, P5 R1-7) : la proposition réunit en un
+/// lot les contacts des factures client et fournisseur de jusqu'à 500
+/// transactions, au-delà de la borne d'une seule clause `IN`. Les doublons
+/// sont retirés avant le découpage ; l'identifiant `0` (aucun contact) aussi.
+pub async fn find_contacts_by_ids_chunked(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    ids: &[i64],
+) -> Result<HashMap<i64, Contact>, DbError> {
+    let unique: std::collections::BTreeSet<i64> =
+        ids.iter().copied().filter(|&id| id > 0).collect();
+    let unique: Vec<i64> = unique.into_iter().collect();
+    let mut out = HashMap::with_capacity(unique.len());
+    for chunk in unique.chunks(MAX_IN_CLAUSE_IDS) {
+        out.extend(find_contacts_by_ids(&mut *conn, company_id, chunk).await?);
+    }
+    Ok(out)
 }
 
 /// Helper inline pour charger une `Invoice` par id scopée multi-tenant.
@@ -1041,6 +1375,62 @@ mod tests {
         let w = InvoiceDateWindow::for_payment_date(d);
         assert_eq!(w.check(d - days(10), d + days(20)), Ok(()), "cas j");
         assert_eq!(w.check(d - days(45), d + days(15)), Ok(()), "cas k");
+    }
+
+    /// T-b4 (Story 30-1b, AC-b2) — la fenêtre **fournisseur** : `F ≤ D + 7`
+    /// et `X ≥ D − 365`, `X = max(F, échéance)`, bornes incluses ; `check`
+    /// est celui du client, réutilisé tel quel. Les nombres de jours de la
+    /// fenêtre sont portés par elle, pour le refus (`tolerance_days`,
+    /// `window_days`).
+    #[test]
+    fn the_supplier_window_is_seven_days_before_to_one_year_after_exigibility() {
+        let d = date(2026, 6, 15);
+        let w = InvoiceDateWindow::for_supplier_payment_date(d);
+        assert_eq!(w.latest_invoice_date, d + days(7));
+        assert_eq!(w.earliest_anchor_date, d - days(365));
+        assert_eq!(w.tolerance_days, 7);
+        assert_eq!(w.window_days, 365);
+        // Le client garde ses nombres.
+        let c = InvoiceDateWindow::for_payment_date(d);
+        assert_eq!((c.tolerance_days, c.window_days), (1, 30));
+
+        let x = |f: NaiveDate, e: Option<NaiveDate>| f.max(e.unwrap_or(f));
+        let cases = [
+            ("F = D + 7", d + days(7), None, Ok(())),
+            (
+                "F = D + 8",
+                d + days(8),
+                None,
+                Err(InvoiceDateRefusal::PaymentBeforeInvoice),
+            ),
+            ("X = D − 365, échéance nulle", d - days(365), None, Ok(())),
+            (
+                "X = D − 366",
+                d - days(366),
+                None,
+                Err(InvoiceDateRefusal::PaymentTooLate),
+            ),
+            (
+                "F hors fenêtre, échéance postérieure dedans",
+                d - days(400),
+                Some(d - days(300)),
+                Ok(()),
+            ),
+            (
+                "échéance antérieure à la date : X = F",
+                d - days(366),
+                Some(d - days(380)),
+                Err(InvoiceDateRefusal::PaymentTooLate),
+            ),
+        ];
+        for (name, f, e, expected) in cases {
+            assert_eq!(w.check(f, x(f, e)), expected, "{name}");
+        }
+        assert_eq!(
+            InvoiceDateWindow::for_supplier_transaction(&tx(d, Some(d - days(2)))),
+            InvoiceDateWindow::for_supplier_payment_date(d - days(2)),
+            "la date de valeur, à défaut de comptabilisation"
+        );
     }
 
     #[test]

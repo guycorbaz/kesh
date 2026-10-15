@@ -277,3 +277,154 @@ pub async fn solde(pool: &MySqlPool, company_id: i64, account_id: i64) -> Decima
     .await
     .unwrap()
 }
+
+// ---------------------------------------------------------------------------
+// Story 30-1b (#686) — l'état produit par la réconciliation elle-même
+// ---------------------------------------------------------------------------
+
+/// L'IBAN de créancier des factures du décor (synthétique), qui les rend
+/// éligibles à un lot de paiement.
+pub const IBAN_CREANCIER: &str = "CH5604835012345678009";
+
+/// Une facture fournisseur **ouverte** de `montant` (sans TVA), datée `jour`,
+/// d'échéance `echeance`, portant `numero` et la référence de paiement
+/// `reference` ; rend `(facture, écriture d'achat)`.
+#[allow(clippy::too_many_arguments)]
+pub async fn facture_ouverte(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    f: Fournisseur,
+    numero: Option<&str>,
+    reference: Option<&str>,
+    jour: NaiveDate,
+    echeance: Option<NaiveDate>,
+    montant: Decimal,
+) -> (i64, i64) {
+    let created = supplier_invoices::create(
+        pool,
+        NewSupplierInvoice {
+            company_id: seeded.company_id,
+            contact_id: f.supplier_id,
+            supplier_invoice_number: numero.map(String::from),
+            invoice_date: jour,
+            due_date: echeance,
+            creditor_iban: Some(IBAN_CREANCIER.into()),
+            creditor_qr_iban: None,
+            payment_reference: reference.map(String::from),
+            expected_payment_amount: None,
+            project_id: None,
+            lines: vec![NewSupplierInvoiceLine {
+                description: "Fourniture".into(),
+                quantity: dec!(1),
+                unit_price: montant,
+                vat_rate: dec!(0),
+                expense_account_id: seeded.accounts["4000"],
+            }],
+        },
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("facture fournisseur ouverte");
+    (
+        created.invoice.id,
+        created.invoice.purchase_journal_entry_id,
+    )
+}
+
+/// Une transaction **en attente** de `montant` (signé : négatif pour un débit)
+/// sur le compte `bank_account_id`, comptabilisée le `jour`, de date de valeur
+/// `valeur`, portant `reference` et la contrepartie `contrepartie`.
+#[allow(clippy::too_many_arguments)]
+pub async fn transaction_en_attente(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    bank_account_id: i64,
+    jour: NaiveDate,
+    valeur: Option<NaiveDate>,
+    montant: Decimal,
+    reference: Option<&str>,
+    contrepartie: Option<&str>,
+) -> i64 {
+    let import_id = sqlx::query(
+        "INSERT INTO bank_imports \
+         (company_id, bank_account_id, filename, file_hash, source_format, period_from, \
+          period_to, imported_by_user_id) \
+         VALUES (?, ?, 'releve.xml', SHA2(UUID(), 256), 'camt053', ?, ?, ?)",
+    )
+    .bind(seeded.company_id)
+    .bind(bank_account_id)
+    .bind(jour)
+    .bind(jour)
+    .bind(seeded.admin_user_id)
+    .execute(pool)
+    .await
+    .expect("import")
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO bank_transactions \
+         (company_id, import_id, bank_account_id, booking_date, value_date, amount, currency, \
+          reference, details, counterparty_name) \
+         VALUES (?, ?, ?, ?, ?, ?, 'CHF', ?, 'Paiement', ?)",
+    )
+    .bind(seeded.company_id)
+    .bind(import_id)
+    .bind(bank_account_id)
+    .bind(jour)
+    .bind(valeur)
+    .bind(montant)
+    .bind(reference)
+    .bind(contrepartie)
+    .execute(pool)
+    .await
+    .expect("transaction en attente")
+    .last_insert_id() as i64
+}
+
+/// Un lot de paiement `generated` sur `bank_account_id` qui engage les
+/// factures `factures` (par le vrai chemin, `payment_batches::create_batch`) ;
+/// rend l'identifiant du lot.
+pub async fn lot_genere(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    bank_account_id: i64,
+    factures: Vec<i64>,
+) -> i64 {
+    let outcome = kesh_db::repositories::payment_batches::create_batch(
+        pool,
+        kesh_db::entities::NewPaymentBatch {
+            company_id: seeded.company_id,
+            bank_account_id,
+            requested_execution_date: NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
+            supplier_invoice_ids: factures,
+        },
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("création du lot");
+    assert!(outcome.failed.is_empty(), "montage : {:?}", outcome.failed);
+    outcome.batch.expect("lot créé").batch.id
+}
+
+/// Un second compte bancaire de la société, lié au compte `1100` du grand
+/// livre.
+pub async fn autre_compte(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
+    let bank = bank_accounts::create(
+        pool,
+        NewBankAccount {
+            company_id: seeded.company_id,
+            bank_name: "Autre banque".into(),
+            iban: "CH4431999123000889012".into(),
+            qr_iban: None,
+            is_primary: false,
+        },
+    )
+    .await
+    .expect("second compte bancaire");
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(seeded.accounts["1100"])
+        .bind(bank.id)
+        .execute(pool)
+        .await
+        .expect("lien au grand livre");
+    bank.id
+}

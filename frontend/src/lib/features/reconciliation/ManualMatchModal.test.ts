@@ -44,6 +44,7 @@ function makeProposal(): ReconciliationProposal {
 			counterpartyName: 'ACME GMBH',
 		},
 		candidates: [],
+		notice: null,
 	};
 }
 

@@ -31,11 +31,99 @@
 //! correspondants en parallèle des `Invoice` candidates pour le
 //! scoring contact.
 
+//!
+//! **Factures fournisseur** (Story 30-1b, #686, AC-b1) : la même fonction note
+//! les deux sortes de factures, par le trait [`MatchableDocument`] — qui ne
+//! fournit que la **note de référence**, propre à chaque sorte. Le montant de
+//! la transaction est comparé en **valeur absolue** : un débit est stocké
+//! négatif, le TTC d'une facture fournisseur est positif. Le chemin client est
+//! inchangé au bit près (montants déjà positifs). ⚠️ La note ne distingue donc
+//! plus le sens : la garde #482 (un débit ne règle jamais une facture client,
+//! un crédit jamais une facture fournisseur) repose sur les filtres en amont
+//! (`get_proposals`) et sur `refuse_wrong_direction` à l'acceptation.
+
 use kesh_db::entities::bank_transaction::BankTransaction;
 use kesh_db::entities::contact::Contact;
 use kesh_db::entities::invoice::Invoice;
-use kesh_db::repositories::reconciliation::imputation_order;
+use kesh_db::entities::supplier_invoice::SupplierInvoice;
+use kesh_db::repositories::reconciliation::{PayableDocument, imputation_order};
 use rust_decimal::Decimal;
+
+/// Un document que [`propose_matches`] sait noter : une facture client ou une
+/// facture fournisseur (Story 30-1b, #686, AC-b1).
+///
+/// Le montant et le contact se notent de la même façon pour les deux ; seule
+/// la **référence** diffère :
+/// - [`Invoice`] garde **exactement** la règle d'avant la story — containment
+///   bidirectionnel de `coalesce(reference, end_to_end_id, transaction_id)`
+///   contre `invoice_number`, demi-score si préfixe commun ≥ 4 ;
+/// - [`SupplierInvoice`] : le **maximum de deux égalités normalisées** contre
+///   la même valeur de la transaction — la référence de paiement
+///   (`payment_reference`, QRR/SCOR à l'import d'un QR, texte libre à la
+///   saisie) et le numéro de la facture (`supplier_invoice_number`) ; blancs
+///   retirés, majuscules, des deux côtés ; une valeur de moins de **six**
+///   caractères alphanumériques ne compte pas. Jamais de containment ni de
+///   préfixe (C-30-1-12) : seule une désignation **entière** par le payeur
+///   (art. 86 CO) fait passer une facture devant une autre de même montant ;
+///   une coïncidence partielle ou une valeur courte (« 1 », « Loyer ») ne
+///   départage jamais contre l'ordre d'imputation (art. 87 CO).
+pub trait MatchableDocument: PayableDocument {
+    /// La note de référence (`0.0`, `0.5` ou `1.0`) du document contre la
+    /// transaction.
+    fn reference_score(&self, tx: &BankTransaction) -> f64;
+}
+
+impl MatchableDocument for Invoice {
+    fn reference_score(&self, tx: &BankTransaction) -> f64 {
+        reference_score(
+            tx.reference.as_deref(),
+            tx.end_to_end_id.as_deref(),
+            tx.transaction_id.as_deref(),
+            self.invoice_number.as_deref(),
+        )
+    }
+}
+
+impl MatchableDocument for SupplierInvoice {
+    fn reference_score(&self, tx: &BankTransaction) -> f64 {
+        let tx_value = supplier_normalize(coalesce(
+            tx.reference.as_deref(),
+            tx.end_to_end_id.as_deref(),
+            tx.transaction_id.as_deref(),
+        ));
+        let designates = |value: Option<&str>| {
+            let v = supplier_normalize(value.unwrap_or(""));
+            is_whole_designation(&v) && v == tx_value
+        };
+        if designates(self.payment_reference.as_deref())
+            || designates(self.supplier_invoice_number.as_deref())
+        {
+            1.0
+        } else {
+            0.0
+        }
+    }
+}
+
+/// Nombre minimal de caractères alphanumériques d'une référence ou d'un numéro
+/// de facture fournisseur pour qu'il désigne la facture (Story 30-1b, C-30-1-12).
+const SUPPLIER_DESIGNATION_MIN_ALNUM: usize = 6;
+
+/// Normalisation fournisseur : **tous** les blancs retirés, majuscules — une
+/// QRR s'écrit par groupes de cinq chiffres sur la facture, d'un seul tenant
+/// au relevé.
+fn supplier_normalize(s: &str) -> String {
+    s.chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .to_uppercase()
+}
+
+/// Une valeur normalisée désigne-t-elle une facture à elle seule ? Au moins
+/// [`SUPPLIER_DESIGNATION_MIN_ALNUM`] caractères alphanumériques.
+fn is_whole_designation(normalized: &str) -> bool {
+    normalized.chars().filter(|c| c.is_alphanumeric()).count() >= SUPPLIER_DESIGNATION_MIN_ALNUM
+}
 
 /// Sub-scores et score total pour une proposition de matching.
 ///
@@ -52,11 +140,15 @@ pub struct MatchScore {
 }
 
 /// Proposition de matching d'une transaction bancaire vers une facture.
+///
+/// `document_id` (champ interne, `invoice_id` jusqu'à la Story 30-1b) est
+/// l'identifiant de la facture **client ou fournisseur** notée : la sorte se
+/// lit sur le type des candidates passées à [`propose_matches`].
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MatchProposal {
     pub bank_transaction_id: i64,
-    pub invoice_id: i64,
+    pub document_id: i64,
     pub score: MatchScore,
 }
 
@@ -67,24 +159,23 @@ pub struct MatchProposal {
 /// croissants — art. 87 CO, Story 29-5). Pure (zéro I/O).
 ///
 /// Chaque candidat est un triplet `(facture, contact, montant à régler)` — le
-/// **reste dû** de la facture (#420, Story 25-4-c), fourni par le caller (le
-/// crate reste pur) et comparé au montant de la transaction bancaire.
-pub fn propose_matches(
+/// **reste dû** de la facture client (#420, Story 25-4-c), le **TTC** d'une
+/// facture fournisseur (règlement binaire, Story 30-1b) —, fourni par le
+/// caller (le crate reste pur) et comparé à la **valeur absolue** du montant
+/// de la transaction bancaire (AC-b1).
+pub fn propose_matches<D: MatchableDocument>(
     tx: &BankTransaction,
-    candidates: &[(Invoice, Option<Contact>, Decimal)],
+    candidates: &[(D, Option<Contact>, Decimal)],
 ) -> Vec<MatchProposal> {
     // La facture reste à côté de sa proposition le temps du tri (référence,
     // sans clone) : le départage la lit, `MatchProposal` n'en porte que l'id.
-    let mut out: Vec<(&Invoice, MatchProposal)> = candidates
+    let mut out: Vec<(&D, MatchProposal)> = candidates
         .iter()
         .filter_map(|(invoice, contact, amount_to_settle)| {
-            let amount_score = amount_score(tx.amount, *amount_to_settle);
-            let reference_score = reference_score(
-                tx.reference.as_deref(),
-                tx.end_to_end_id.as_deref(),
-                tx.transaction_id.as_deref(),
-                invoice.invoice_number.as_deref(),
-            );
+            // ⛔ Valeur absolue (Story 30-1b, AC-b1) : un débit est négatif.
+            // Comparé signé, `amount_score` vaudrait 0 pour tout débit.
+            let amount_score = amount_score(tx.amount.abs(), *amount_to_settle);
+            let reference_score = invoice.reference_score(tx);
             let contact_score = contact_score(
                 tx.counterparty_name.as_deref(),
                 contact.as_ref().map(|c| c.name.as_str()),
@@ -95,7 +186,7 @@ pub fn propose_matches(
                     invoice,
                     MatchProposal {
                         bank_transaction_id: tx.id,
-                        invoice_id: invoice.id,
+                        document_id: invoice.document_id(),
                         score: MatchScore {
                             total,
                             amount_score,
@@ -120,7 +211,7 @@ pub fn propose_matches(
             .total
             .partial_cmp(&a.score.total)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| imputation_order(inv_a, inv_b))
+            .then_with(|| imputation_order(*inv_a, *inv_b))
     });
     out.into_iter().map(|(_, proposal)| proposal).collect()
 }
@@ -406,9 +497,9 @@ mod tests {
         // inv2 amount + ref = 0.90, inv1 amount only = 0.50, inv3 amount only = 0.50.
         // Tri: 102 (0.90), 101 (0.50), 103 (0.50) — à score égal, ordre
         // d'imputation, ici l'id (mêmes dates, aucune échéance).
-        assert_eq!(proposals[0].invoice_id, 102);
-        assert_eq!(proposals[1].invoice_id, 101);
-        assert_eq!(proposals[2].invoice_id, 103);
+        assert_eq!(proposals[0].document_id, 102);
+        assert_eq!(proposals[1].document_id, 101);
+        assert_eq!(proposals[2].document_id, 103);
     }
 
     /// Story 29-5 (revue P1, B2 = E1) — l'égalité de score « 0,40 + 0,10
@@ -439,18 +530,18 @@ mod tests {
             proposals[0].score.total, proposals[1].score.total,
             "0,40 + 0,10 et 0,50 doivent être égaux : sinon l'ordre d'imputation ne tranche plus"
         );
-        assert_eq!(proposals[0].invoice_id, 202);
-        assert_eq!(proposals[1].invoice_id, 201);
+        assert_eq!(proposals[0].document_id, 202);
+        assert_eq!(proposals[1].document_id, 201);
         let proposals = propose_matches(&tx, &build((5, 12), (6, 30)));
-        assert_eq!(proposals[0].invoice_id, 201);
-        assert_eq!(proposals[1].invoice_id, 202);
+        assert_eq!(proposals[0].document_id, 201);
+        assert_eq!(proposals[1].document_id, 202);
     }
 
     /// Empty candidates → empty proposals.
     #[test]
     fn propose_matches_empty_candidates_returns_empty() {
         let tx = make_tx(dec!(100.00), Some("REF"), Some("ACME"));
-        let proposals = propose_matches(&tx, &[]);
+        let proposals = propose_matches::<Invoice>(&tx, &[]);
         assert!(proposals.is_empty());
     }
 
@@ -556,7 +647,7 @@ mod tests {
         for p in &proposals {
             assert!((p.score.total - 0.60).abs() < 1e-10, "score égal : 0,60");
         }
-        proposals.iter().map(|p| p.invoice_id).collect()
+        proposals.iter().map(|p| p.document_id).collect()
     }
 
     /// AC5 cas 1 — le cas de l'issue (ligne 1 du tableau) : A non échue, créée
@@ -640,7 +731,7 @@ mod tests {
         designated.invoice_number = Some("INV-2026-001".into());
         let p = propose_matches(&tx, &[cand(due, acme()), cand(designated, acme())]);
         assert_eq!(
-            p.iter().map(|p| p.invoice_id).collect::<Vec<_>>(),
+            p.iter().map(|p| p.document_id).collect::<Vec<_>>(),
             [102, 101]
         );
         assert!((score(&p[0]) - 1.0).abs() < 1e-10);
@@ -654,7 +745,7 @@ mod tests {
         let exact = dated(102, d(5, 10), Some(d(7, 30)));
         let p = propose_matches(&tx, &[cand(off, acme()), cand(exact, acme())]);
         assert_eq!(
-            p.iter().map(|p| p.invoice_id).collect::<Vec<_>>(),
+            p.iter().map(|p| p.document_id).collect::<Vec<_>>(),
             [102, 101]
         );
         assert!((score(&p[0]) - 0.60).abs() < 1e-10);
@@ -670,10 +761,238 @@ mod tests {
         let exact = dated(102, d(5, 10), Some(d(7, 30)));
         let p = propose_matches(&tx, &[cand(designated_off, acme()), cand(exact, acme())]);
         assert_eq!(
-            p.iter().map(|p| p.invoice_id).collect::<Vec<_>>(),
+            p.iter().map(|p| p.document_id).collect::<Vec<_>>(),
             [102, 101]
         );
         assert!((score(&p[0]) - 0.60).abs() < 1e-10);
         assert!((score(&p[1]) - 0.50).abs() < 1e-10);
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 30-1b (#686) — les factures fournisseur, pour un débit
+    // -----------------------------------------------------------------------
+
+    use kesh_db::entities::SupplierInvoice;
+
+    /// Une facture fournisseur ouverte de `total` (TTC), du fournisseur 60,
+    /// datée du 2026-05-10 sans échéance.
+    fn make_supplier_invoice(
+        id: i64,
+        total: Decimal,
+        number: Option<&str>,
+        payment_reference: Option<&str>,
+    ) -> SupplierInvoice {
+        SupplierInvoice {
+            id,
+            company_id: 100,
+            contact_id: 60,
+            supplier_invoice_number: number.map(String::from),
+            status: "open".to_string(),
+            invoice_date: NaiveDate::from_ymd_opt(2026, 5, 10).unwrap(),
+            due_date: None,
+            total_amount: total,
+            creditor_iban: None,
+            creditor_qr_iban: None,
+            payment_reference: payment_reference.map(String::from),
+            expected_payment_amount: None,
+            project_id: None,
+            purchase_journal_entry_id: 999,
+            settlement_type: None,
+            settlement_bank_account_id: None,
+            settlement_account_id: None,
+            settlement_journal_entry_id: None,
+            paid_at: None,
+            version: 1,
+            created_at: NaiveDateTime::default(),
+            updated_at: NaiveDateTime::default(),
+        }
+    }
+
+    /// Le triplet candidat d'une facture fournisseur : le montant comparé est
+    /// son TTC (le règlement fournisseur est binaire, C-30-1-5).
+    fn supplier_cand(invoice: SupplierInvoice) -> (SupplierInvoice, Option<Contact>, Decimal) {
+        let amount = invoice.total_amount;
+        (invoice, None, amount)
+    }
+
+    /// La note d'une seule facture fournisseur contre une transaction.
+    fn supplier_score(tx: &BankTransaction, invoice: SupplierInvoice) -> Option<MatchScore> {
+        propose_matches(tx, &[supplier_cand(invoice)])
+            .first()
+            .map(|p| p.score)
+    }
+
+    /// T-b1 (AC-b1) — sur une transaction **négative** (un débit), le montant
+    /// se compare en valeur absolue : `amount_score = 1.0`. La référence de
+    /// paiement se compare **normalisée** des deux côtés (blancs retirés,
+    /// majuscules) : une QRR de 27 chiffres écrite avec ou sans blancs, une
+    /// SCOR en minuscules ; la note de référence est le **maximum** des deux
+    /// égalités (référence de paiement, numéro de facture).
+    #[test]
+    fn a_debit_scores_a_supplier_invoice_on_absolute_amount_and_normalized_reference() {
+        let qrr = "21 00000 00003 13947 14300 09017";
+        // QRR avec blancs côté facture, sans blancs côté transaction.
+        let tx = make_tx(dec!(-1234.50), Some("210000000003139471430009017"), None);
+        let s = supplier_score(
+            &tx,
+            make_supplier_invoice(1, dec!(1234.50), None, Some(qrr)),
+        )
+        .expect("proposée");
+        assert!(
+            (s.amount_score - 1.0).abs() < 1e-10,
+            "montant en valeur absolue"
+        );
+        assert!((s.reference_score - 1.0).abs() < 1e-10, "QRR normalisée");
+        assert!((s.total - 0.90).abs() < 1e-10);
+
+        // Sens inverse : les blancs sont du côté de la transaction.
+        let tx = make_tx(dec!(-1234.50), Some(qrr), None);
+        let s = supplier_score(
+            &tx,
+            make_supplier_invoice(1, dec!(1234.50), None, Some("210000000003139471430009017")),
+        )
+        .expect("proposée");
+        assert!(
+            (s.reference_score - 1.0).abs() < 1e-10,
+            "blancs côté transaction"
+        );
+
+        // SCOR en minuscules côté transaction.
+        let tx = make_tx(dec!(-80.00), Some("rf18 5390 0754 7034"), None);
+        let s = supplier_score(
+            &tx,
+            make_supplier_invoice(1, dec!(80.00), None, Some("RF18539007547034")),
+        )
+        .expect("proposée");
+        assert!(
+            (s.reference_score - 1.0).abs() < 1e-10,
+            "SCOR en minuscules"
+        );
+
+        // Maximum des deux : la référence de paiement diffère, le numéro est égal.
+        let tx = make_tx(dec!(-80.00), Some("FACT-2026-0042"), None);
+        let s = supplier_score(
+            &tx,
+            make_supplier_invoice(
+                1,
+                dec!(80.00),
+                Some("fact-2026-0042"),
+                Some("RF18539007547034"),
+            ),
+        )
+        .expect("proposée");
+        assert!((s.reference_score - 1.0).abs() < 1e-10, "le numéro suffit");
+
+        // Ni l'un ni l'autre : montant seul.
+        let tx = make_tx(dec!(-80.00), Some("AUTRE-REF-99"), None);
+        let s = supplier_score(
+            &tx,
+            make_supplier_invoice(
+                1,
+                dec!(80.00),
+                Some("FACT-2026-0042"),
+                Some("RF18539007547034"),
+            ),
+        )
+        .expect("proposée au montant");
+        assert!((s.reference_score - 0.0).abs() < 1e-10);
+        assert!((s.total - 0.50).abs() < 1e-10);
+    }
+
+    /// T-b2 (AC-b1) — jamais de containment ni de préfixe côté fournisseur :
+    /// deux QRR qui partagent un long préfixe de zéros, ou une référence de
+    /// paiement **contenue** dans celle de la transaction, ne notent rien.
+    #[test]
+    fn a_supplier_reference_needs_equality_not_prefix_nor_containment() {
+        let tx = make_tx(dec!(-50.00), Some("000000000000000000000012345"), None);
+        let s = supplier_score(
+            &tx,
+            make_supplier_invoice(1, dec!(50.00), None, Some("000000000000000000000067890")),
+        )
+        .expect("proposée au montant");
+        assert!(
+            (s.reference_score - 0.0).abs() < 1e-10,
+            "préfixe commun : 0"
+        );
+
+        let tx = make_tx(dec!(-50.00), Some("XX210000000003139471430009017YY"), None);
+        let s = supplier_score(
+            &tx,
+            make_supplier_invoice(1, dec!(50.00), None, Some("210000000003139471430009017")),
+        )
+        .expect("proposée au montant");
+        assert!((s.reference_score - 0.0).abs() < 1e-10, "contenue : 0");
+    }
+
+    /// T-b3 (AC-b1) — deux factures fournisseur de même montant, sans indice :
+    /// l'ordre d'imputation (exigibilité, date, `id`) départage, comme pour
+    /// une facture client.
+    #[test]
+    fn supplier_ties_follow_the_imputation_order() {
+        let tx = make_tx(dec!(-100.00), None, None);
+        let mut later = make_supplier_invoice(101, dec!(100.00), None, None);
+        later.due_date = Some(d(7, 30));
+        let mut sooner = make_supplier_invoice(102, dec!(100.00), None, None);
+        sooner.due_date = Some(d(6, 10));
+        let p = propose_matches(&tx, &[supplier_cand(later), supplier_cand(sooner)]);
+        assert_eq!(
+            p.iter().map(|p| p.document_id).collect::<Vec<_>>(),
+            [102, 101],
+            "la facture échue la première passe en tête"
+        );
+    }
+
+    /// T-b37 (AC-b1) — le numéro **et** la référence de paiement : égal et
+    /// d'au moins six caractères → 1 ; égal mais plus court → 0 ; contenu → 0.
+    /// Une facture au numéro court contenu dans la référence de la transaction
+    /// ne passe pas devant l'ordre d'imputation.
+    #[test]
+    fn a_supplier_designation_is_a_whole_value_of_at_least_six_characters() {
+        let score_of = |tx_ref: &str, number: Option<&str>, pay_ref: Option<&str>| {
+            let tx = make_tx(dec!(-20.00), Some(tx_ref), None);
+            supplier_score(&tx, make_supplier_invoice(1, dec!(20.00), number, pay_ref))
+                .expect("proposée au montant")
+                .reference_score
+        };
+        assert_eq!(
+            score_of("ABC123", Some("abc 123"), None),
+            1.0,
+            "numéro de 6"
+        );
+        assert_eq!(score_of("12345", Some("12345"), None), 0.0, "numéro de 5");
+        assert_eq!(
+            score_of("LOYER", None, Some("Loyer")),
+            0.0,
+            "référence courte"
+        );
+        assert_eq!(
+            score_of("RF99ABCDEF", None, Some("rf99 abcdef")),
+            1.0,
+            "référence de 10"
+        );
+        assert_eq!(
+            score_of("FACTURE-ABC123-X", Some("ABC123"), None),
+            0.0,
+            "numéro contenu"
+        );
+        assert_eq!(
+            score_of("ABC123", None, Some("ABC1234")),
+            0.0,
+            "référence qui contient"
+        );
+
+        // Deux factures de même montant : A au numéro court « 1 », contenu dans
+        // la référence de la transaction, échue plus tard ; B sans numéro,
+        // échue plus tôt. B passe devant.
+        let tx = make_tx(dec!(-20.00), Some("REF1"), None);
+        let mut a = make_supplier_invoice(101, dec!(20.00), Some("1"), None);
+        a.due_date = Some(d(7, 30));
+        let mut b = make_supplier_invoice(102, dec!(20.00), None, None);
+        b.due_date = Some(d(6, 10));
+        let p = propose_matches(&tx, &[supplier_cand(a), supplier_cand(b)]);
+        assert_eq!(
+            p.iter().map(|p| p.document_id).collect::<Vec<_>>(),
+            [102, 101]
+        );
     }
 }

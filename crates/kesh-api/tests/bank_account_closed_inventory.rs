@@ -131,6 +131,14 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
         "accept_one_rule",
         Statut::Invariant("I1", "transaction pending ; pré-vol R1"),
     ),
+    // Story 30-1b (#686, AC-b14) — l'acceptation d'une facture fournisseur.
+    (
+        "kesh-api/src/routes/reconciliation.rs",
+        "accept_one_supplier_invoice",
+        Statut::Gardee(
+            "compte de l'import tenu FOR UPDATE à l'étape 3 (b) de lock_for_bank_settlement_in_tx, closed_on lu dans l'instruction verrouillée ; et le pré-vol R1",
+        ),
+    ),
     (
         "kesh-api/src/routes/reconciliation.rs",
         "reject_batch",
@@ -272,7 +280,9 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
     ),
     (
         "kesh-db/src/repositories/supplier_invoices.rs",
-        "pay_in_tx",
+        // Story 30-1b (AC-b9) : le corps de `pay_in_tx` est passé dans
+        // `pay_in_tx_as` ; `pay_in_tx` en est l'enveloppe d'une ligne.
+        "pay_in_tx_as",
         Statut::Gardee("closed_on, archived lus dans le FOR UPDATE du compte, étape (3)"),
     ),
     (
@@ -503,9 +513,10 @@ fn every_bank_account_writer_is_classified() {
     }
     // Anti-muet : le nombre de sites vus (W1-W30 de la fiche, plus
     // `write_closed_on`, l'écrivain neuf de la story, plus l'`UPDATE` de
-    // `reconciliation_link::link_in_tx`, Story 29-8). Un détecteur qui
-    // cesserait de voir rendrait un registre « vert » vide.
-    assert_eq!(sites.len(), 32, "sites vus :\n{}", detail.join("\n"));
+    // `reconciliation_link::link_in_tx`, Story 29-8, plus l'`UPDATE` de
+    // `accept_one_supplier_invoice`, Story 30-1b). Un détecteur qui cesserait
+    // de voir rendrait un registre « vert » vide.
+    assert_eq!(sites.len(), 33, "sites vus :\n{}", detail.join("\n"));
 }
 
 /// Second inventaire (AC8, C-28-4-22) — chaque appelant du créateur de

@@ -2,7 +2,8 @@
 //!
 //! - `GET /api/v1/reconciliation/proposals?bankAccountId={id}&limit={n}` —
 //!   liste les propositions de matching pour les transactions `pending`
-//!   du compte. Read-only, **pas de mutex**.
+//!   du compte. Read-only, **pas de mutex**. Un crédit reçoit des factures
+//!   client, un débit des factures fournisseur (Story 30-1b, #686).
 //! - `POST /api/v1/reconciliation/accept` — accepte un batch de
 //!   propositions sous mutex. Body : `{ bankAccountId, proposals:
 //!   [{ bankTransactionId, invoiceId }] }`. Partial success via
@@ -38,9 +39,10 @@ use kesh_db::entities::invoice::Invoice;
 use kesh_db::errors::{ClaimSide, DbError};
 use kesh_db::repositories::invoice_settlements::{ClaimSubject, GapAccountRole, PaymentAgainstDue};
 use kesh_db::repositories::reconciliation::{
-    INVOICE_WINDOW_DAYS_AFTER_INVOICE, InvoiceDateRefusal, InvoiceDateWindow,
-    UnpaidInvoiceCandidate, payment_date,
+    InvoiceDateRefusal, InvoiceDateWindow, SupplierInvoiceInAccountBatch, UnpaidInvoiceCandidate,
+    invoice_exigibility_date, payment_date,
 };
+use kesh_db::repositories::supplier_invoices::{self, SupplierSettlementRefusal};
 use kesh_db::repositories::{
     accounts as accounts_repo, audit_log, bank_accounts, company_invoice_settings,
     contacts as contacts_repo, fiscal_years, invoice_settlements, journal_entries, letterings,
@@ -109,7 +111,31 @@ pub struct ReconciliationProposal {
     pub bank_transaction_id: i64,
     pub transaction: TransactionSummary,
     pub candidates: Vec<ReconciliationCandidate>,
+    /// Story 30-1b (#686, AC-b5) — pourquoi la ligne ne propose **rien**,
+    /// quand c'est une décision et non une absence : `null` sinon (champ
+    /// additif). Posée, elle va de pair avec `candidates` vide.
+    pub notice: Option<ProposalNotice>,
 }
+
+/// Story 30-1b (#686, AC-b5) — l'avis d'une ligne qui ne propose rien. Un
+/// seul code : `supplier_invoice_in_payment_batch` — une facture fournisseur
+/// ouverte au montant **exact** du débit est engagée dans un lot de paiement
+/// en cours **sur ce compte** ; proposer une autre facture (ou une règle)
+/// risquerait de régler deux fois une même dépense.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProposalNotice {
+    /// Le code de l'avis (`supplier_invoice_in_payment_batch`).
+    pub code: &'static str,
+    pub supplier_invoice_id: i64,
+    /// Le numéro de la facture chez le fournisseur ; nullable (l'écran affiche
+    /// alors `#id`).
+    pub supplier_invoice_number: Option<String>,
+    pub payment_batch_id: i64,
+}
+
+/// Le code de l'unique [`ProposalNotice`] (Story 30-1b).
+pub const NOTICE_SUPPLIER_INVOICE_IN_PAYMENT_BATCH: &str = "supplier_invoice_in_payment_batch";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -126,12 +152,15 @@ pub struct TransactionSummary {
 }
 
 /// Story 8-5b §api-response-shapes Pass 1 P-H6 — discriminator candidate
-/// type. `Invoice` héritée 8-4 ; `Rule` nouveau 8-5b.
+/// type. `Invoice` héritée 8-4 ; `Rule` nouveau 8-5b ; `SupplierInvoice`
+/// (sérialisé `supplier_invoice`), Story 30-1b (#686) : une facture
+/// fournisseur, proposée pour un **débit** seulement.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CandidateType {
     Invoice,
     Rule,
+    SupplierInvoice,
 }
 
 #[derive(Debug, Serialize)]
@@ -141,7 +170,17 @@ pub struct ReconciliationCandidate {
     /// selon ce type.
     pub candidate_type: CandidateType,
     // ----- Invoice candidate fields -----
+    /// La facture **client** ; `None` pour une facture fournisseur et une règle.
     pub invoice_id: Option<i64>,
+    /// Story 30-1b — la facture **fournisseur** ; `None` sinon. Pour une
+    /// facture fournisseur, les champs `invoice_*` qui suivent portent son
+    /// numéro (`supplier_invoice_number`), son TTC au centime, sa date ;
+    /// `invoice_total_ttc` est `None` (le règlement fournisseur est binaire).
+    pub supplier_invoice_id: Option<i64>,
+    /// Story 30-1b (C-30-1-15) — le nom du client ou du fournisseur de la
+    /// facture, rempli pour les **deux** sortes de factures ; `None` pour une
+    /// règle, ou si le contact est introuvable.
+    pub contact_name: Option<String>,
     pub invoice_number: Option<String>,
     /// Montant à régler de la facture : son **reste dû** (#420, Story 25-4-c),
     /// le montant comparé à la transaction — le TTC tant que rien n'est réglé.
@@ -196,18 +235,35 @@ pub struct ReconciliationCandidate {
 ///
 /// Le `match` est **exhaustif, sans bras `_`** : un variant ajouté à
 /// [`CandidateType`] ne compile pas sans être classé ici.
+///
+/// Story 30-1b (#686, AC-b5) : une facture **fournisseur** suit la même règle
+/// qu'une facture client — elle ne côtoie jamais une facture client (un débit
+/// ne reçoit que des factures fournisseur, un crédit que des factures client).
 fn candidate_rank(c: &ReconciliationCandidate) -> u8 {
     match c.candidate_type {
-        CandidateType::Invoice => {
-            let s = &c.score;
-            if s.amount_score == 1.0 || s.reference_score > 0.0 || s.contact_score > 0.0 {
-                0
-            } else {
-                2
-            }
-        }
+        CandidateType::Invoice => invoice_rank(&c.score),
+        CandidateType::SupplierInvoice => invoice_rank(&c.score),
         CandidateType::Rule => 1,
     }
+}
+
+/// Le rang d'une facture (client ou fournisseur) : 0 si elle porte un signal
+/// d'identité, 2 sinon — cf. [`candidate_rank`].
+fn invoice_rank(s: &MatchScore) -> u8 {
+    if s.amount_score == 1.0 || bears_identity_hint(s) {
+        0
+    } else {
+        2
+    }
+}
+
+/// Une facture porte-t-elle un **indice** d'identité hors du montant — une
+/// référence liée à son numéro (ou, pour un fournisseur, à sa référence de
+/// paiement), une contrepartie liée au nom de son contact ? Lu sur les
+/// **sous-scores**, jamais sur le total : une facture au montant exact a un
+/// total ≥ 0,5 sans aucun indice (Story 30-1b, AC-b5, P3 R11).
+fn bears_identity_hint(s: &MatchScore) -> bool {
+    s.reference_score > 0.0 || s.contact_score > 0.0
 }
 
 /// Story 29-3 (#527) — ordonne les candidates d'une proposition selon la
@@ -239,6 +295,224 @@ fn order_candidates(candidates: &mut [ReconciliationCandidate]) {
     candidates.sort_by_key(candidate_rank);
 }
 
+// ============================================================
+// Story 30-1b (#686) — les documents d'une transaction, et le masquage de la
+// règle d'affectation, partagés par la proposition et l'acceptation
+// ============================================================
+
+/// Ce que `get_proposals` a chargé pour une transaction (Story 30-1b, AC-b4).
+enum TxDocuments {
+    /// Transaction non CHF, ou de montant nul : aucune facture.
+    Nothing,
+    /// Un **crédit** : les factures client candidates, et celles que le
+    /// paiement dépasse de quelques centimes (Story 29-6, jamais proposées).
+    Client {
+        candidates: Vec<UnpaidInvoiceCandidate>,
+        slightly_overpaid: Vec<UnpaidInvoiceCandidate>,
+    },
+    /// Un **débit** : les factures fournisseur candidates, celles qui masquent
+    /// la règle, et la facture du lot en cours sur le compte (AC-b3).
+    Supplier {
+        candidates: Vec<kesh_db::entities::SupplierInvoice>,
+        masking: Vec<kesh_db::entities::SupplierInvoice>,
+        account_batch: Option<SupplierInvoiceInAccountBatch>,
+    },
+}
+
+/// Les triplets `(facture, contact, montant à régler)` de `propose_matches`
+/// pour des factures **client** : le montant est le **reste dû** (#420)
+/// **au centime** (#476).
+fn client_triples(
+    invoices: &[UnpaidInvoiceCandidate],
+    contacts: &HashMap<i64, kesh_db::entities::Contact>,
+) -> Vec<(Invoice, Option<kesh_db::entities::Contact>, Decimal)> {
+    invoices
+        .iter()
+        .map(|c| {
+            (
+                c.invoice.clone(),
+                contacts.get(&c.invoice.contact_id).cloned(),
+                invoice_settlements::amount_due_to_centime(c.amount_due),
+            )
+        })
+        .collect()
+}
+
+/// Les triplets de `propose_matches` pour des factures **fournisseur**
+/// (Story 30-1b) : le montant est le **TTC** — le règlement est binaire
+/// (C-30-1-5) ; un TTC à plus de deux décimales n'égale jamais un relevé
+/// (angle mort L2, #687).
+fn supplier_triples(
+    invoices: &[kesh_db::entities::SupplierInvoice],
+    contacts: &HashMap<i64, kesh_db::entities::Contact>,
+) -> Vec<(
+    kesh_db::entities::SupplierInvoice,
+    Option<kesh_db::entities::Contact>,
+    Decimal,
+)> {
+    invoices
+        .iter()
+        .map(|s| {
+            (
+                s.clone(),
+                contacts.get(&s.contact_id).cloned(),
+                s.total_amount,
+            )
+        })
+        .collect()
+}
+
+/// Une facture candidate atteint-elle le seuil (0,5) qui écarte la règle
+/// d'affectation (AC #114 de la Story 8-5b) ?
+fn has_strong_invoice_match(matches: &[kesh_reconciliation::MatchProposal]) -> bool {
+    const INVOICE_OVERRIDE_THRESHOLD: f64 = 0.5;
+    matches
+        .iter()
+        .any(|mp| mp.score.total >= INVOICE_OVERRIDE_THRESHOLD)
+}
+
+/// Ce qui **défend une règle d'affectation** contre son acceptation (Story
+/// 30-1b, #686, AC-b17) : la raison de `RECONCILIATION_RULE_MASKED`.
+#[derive(Debug, Clone, PartialEq)]
+enum RuleMask {
+    /// Débit — une facture fournisseur ouverte au montant exact est engagée
+    /// dans un lot `generated` du compte (raison `payment_batch`).
+    PaymentBatch {
+        supplier_invoice_id: i64,
+        payment_batch_id: i64,
+    },
+    /// Débit — une facture fournisseur **candidate** (raison
+    /// `invoice_candidate`).
+    InvoiceCandidate { supplier_invoice_id: i64 },
+    /// Crédit — une facture client que le paiement dépasse de 1 à 5 centimes,
+    /// et qui porte un indice (raison `invoice_slightly_overpaid`, Story 29-6).
+    InvoiceSlightlyOverpaid { invoice_id: i64 },
+}
+
+/// **Le** critère, partagé par la proposition (`get_proposals`) et
+/// l'acceptation d'une règle (`accept_one_rule`), des trois cas où une
+/// facture défend la règle (Story 30-1b, AC-b17, DRY). Pure : l'appelant
+/// fournit ce qu'il a lu — la facture du lot du compte, les notes des
+/// candidates fournisseur, les notes des factures client que le paiement
+/// dépasse de quelques centimes (non vide ⇔ indice : leur score de montant
+/// est nul, AC-b17).
+///
+/// ⚠️ **Inventaire clos de ce que l'acceptation ne rejoue pas** (P5, F6),
+/// propre à la proposition : côté client, le masquage par une facture
+/// **candidate** (`has_strong_invoice_match`) — comportement d'avant la
+/// story, gardé pour ne rien retirer à un client existant ; côté
+/// fournisseur, la facture presque au montant portant un indice, la facture
+/// exacte hors fenêtre portant un indice, la facture exacte dans un lot d'un
+/// **autre** compte portant un indice, et la liste masquante pleine. Ni
+/// l'une ni l'autre ne lit les factures **payées** (L1, #671).
+fn rule_mask_for(
+    account_batch: Option<&SupplierInvoiceInAccountBatch>,
+    supplier_matches: &[kesh_reconciliation::MatchProposal],
+    overpaid_matches: &[kesh_reconciliation::MatchProposal],
+) -> Option<RuleMask> {
+    if let Some(held) = account_batch {
+        return Some(RuleMask::PaymentBatch {
+            supplier_invoice_id: held.supplier_invoice_id,
+            payment_batch_id: held.payment_batch_id,
+        });
+    }
+    if has_strong_invoice_match(supplier_matches) {
+        return Some(RuleMask::InvoiceCandidate {
+            supplier_invoice_id: supplier_matches[0].document_id,
+        });
+    }
+    overpaid_matches
+        .first()
+        .map(|mp| RuleMask::InvoiceSlightlyOverpaid {
+            invoice_id: mp.document_id,
+        })
+}
+
+/// Le refus `RECONCILIATION_RULE_MASKED` d'une règle défendue (AC-b17).
+fn rule_masked_failed_proposal(bank_transaction_id: i64, mask: &RuleMask) -> FailedProposal {
+    let details = match mask {
+        RuleMask::PaymentBatch {
+            supplier_invoice_id,
+            payment_batch_id,
+        } => serde_json::json!({
+            "reason": "payment_batch",
+            "supplierInvoiceId": supplier_invoice_id,
+            "paymentBatchId": payment_batch_id,
+        }),
+        RuleMask::InvoiceCandidate {
+            supplier_invoice_id,
+        } => serde_json::json!({
+            "reason": "invoice_candidate",
+            "supplierInvoiceId": supplier_invoice_id,
+        }),
+        RuleMask::InvoiceSlightlyOverpaid { invoice_id } => serde_json::json!({
+            "reason": "invoice_slightly_overpaid",
+            "invoiceId": invoice_id,
+        }),
+    };
+    FailedProposal {
+        bank_transaction_id,
+        error_code: "RECONCILIATION_RULE_MASKED".to_string(),
+        details: Some(details),
+    }
+}
+
+/// Le **rejeu du masquage** à l'acceptation d'une règle (Story 30-1b, #686,
+/// AC-b17) : relit, **en lectures ordinaires**, par les mêmes fonctions de
+/// dépôt que `get_proposals`, ce que [`rule_mask_for`] juge — pour un débit,
+/// la facture du lot du compte et les candidates fournisseur de la fenêtre
+/// (notées avec la même carte de contacts, `find_contacts_by_ids_chunked`) ;
+/// pour un crédit, les factures client que le paiement dépasse de 1 à 5
+/// centimes. Un lot ou une facture commis après la naissance de la vue de la
+/// transaction du lot ne sont pas vus : même tolérance que la proposition.
+async fn load_rule_mask(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    bank_account_id: i64,
+    bt: &BankTransaction,
+) -> Result<Option<RuleMask>, DbError> {
+    if bt.currency != "CHF" || bt.amount.is_zero() {
+        return Ok(None);
+    }
+    if bt.amount < Decimal::ZERO {
+        let amount = bt.amount.abs();
+        let account_batch = reconciliation_repo::find_open_supplier_invoice_in_account_batch(
+            &mut **tx,
+            company_id,
+            bank_account_id,
+            amount,
+        )
+        .await?;
+        if account_batch.is_some() {
+            return Ok(rule_mask_for(account_batch.as_ref(), &[], &[]));
+        }
+        let candidates = reconciliation_repo::find_open_supplier_invoices_for_window(
+            &mut **tx,
+            company_id,
+            InvoiceDateWindow::for_supplier_transaction(bt),
+            amount,
+        )
+        .await?;
+        let ids: Vec<i64> = candidates.iter().map(|s| s.contact_id).collect();
+        let contacts =
+            reconciliation_repo::find_contacts_by_ids_chunked(tx, company_id, &ids).await?;
+        let matches = propose_matches(bt, &supplier_triples(&candidates, &contacts));
+        return Ok(rule_mask_for(None, &matches, &[]));
+    }
+    let overpaid = reconciliation_repo::find_invoices_slightly_overpaid_for_window(
+        &mut **tx,
+        company_id,
+        InvoiceDateWindow::for_transaction(bt),
+        bt.amount,
+        Decimal::new(AMOUNT_TOLERANCE_HUNDREDTHS, 2),
+    )
+    .await?;
+    let ids: Vec<i64> = overpaid.iter().map(|c| c.invoice.contact_id).collect();
+    let contacts = reconciliation_repo::find_contacts_by_ids_chunked(tx, company_id, &ids).await?;
+    let matches = propose_matches(bt, &client_triples(&overpaid, &contacts));
+    Ok(rule_mask_for(None, &[], &matches))
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AcceptResponse {
@@ -250,7 +524,12 @@ pub struct AcceptResponse {
 #[serde(rename_all = "camelCase")]
 pub struct AcceptedProposal {
     pub bank_transaction_id: i64,
+    /// La facture client réglée ; `0` (sentinelle) pour `split`, `rule` et
+    /// `supplier_invoice`.
     pub invoice_id: i64,
+    /// Story 30-1b (#686, AC-b6) — la facture fournisseur réglée ; `null`
+    /// hors du type `supplier_invoice` (champ additif).
+    pub supplier_invoice_id: Option<i64>,
     pub journal_entry_id: i64,
     pub score: MatchScore,
 }
@@ -573,6 +852,13 @@ pub enum AcceptProposalInput {
         rule_id: i64,
         counterparty_account_id: i64,
     },
+    /// Story 30-1b (#686, AC-b6) — le règlement d'une facture fournisseur
+    /// **ouverte** par un **débit** : `accept_one_supplier_invoice`.
+    #[serde(rename = "supplier_invoice", rename_all = "camelCase")]
+    SupplierInvoice {
+        bank_transaction_id: i64,
+        supplier_invoice_id: i64,
+    },
 }
 
 impl AcceptProposalInput {
@@ -590,6 +876,10 @@ impl AcceptProposalInput {
                 ..
             }
             | AcceptProposalInput::Rule {
+                bank_transaction_id,
+                ..
+            }
+            | AcceptProposalInput::SupplierInvoice {
                 bank_transaction_id,
                 ..
             } => *bank_transaction_id,
@@ -633,7 +923,7 @@ where
             Err(rej) => {
                 let message = match &rej {
                     JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
-                        "corps JSON malformé ou champ `type` requis manquant — valeurs acceptées v0.1 : [\"invoice\", \"split\", \"rule\"]".to_string()
+                        "corps JSON malformé ou champ `type` requis manquant — valeurs acceptées : [\"invoice\", \"split\", \"rule\", \"supplier_invoice\"]".to_string()
                     }
                     JsonRejection::MissingJsonContentType(_) => {
                         "Content-Type attendu : application/json".to_string()
@@ -725,14 +1015,11 @@ pub async fn get_proposals(
         reconciliation_rules::find_active_for_company(&state.pool, current_user.company_id).await?;
 
     // Pass 2 : per tx, load candidates + accumulate distinct contact_ids.
-    // Le troisième membre : les factures que le paiement dépasse de quelques
-    // centimes (jamais proposées ; lues pour garder la règle, Pass 4).
-    type TxInvoices = (
-        BankTransaction,
-        Vec<UnpaidInvoiceCandidate>,
-        Vec<UnpaidInvoiceCandidate>,
-    );
-    let mut tx_candidates: Vec<TxInvoices> = Vec::with_capacity(transactions.len());
+    // Un crédit lit les factures client et celles que le paiement dépasse de
+    // quelques centimes (jamais proposées ; lues pour garder la règle,
+    // Pass 4) ; un débit, les factures fournisseur (Story 30-1b).
+    let mut tx_candidates: Vec<(BankTransaction, TxDocuments)> =
+        Vec::with_capacity(transactions.len());
     let mut distinct_contact_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
     let underpayment_tolerance = Decimal::new(AMOUNT_TOLERANCE_HUNDREDTHS, 2);
     for tx in transactions {
@@ -741,15 +1028,61 @@ pub async fn get_proposals(
         // Story 27-2, aucun import n'enregistre de transaction non CHF
         // (CAMT et CSV à colonne Devise refusés, CSV sans colonne en CHF).
         if tx.currency != "CHF" {
-            tx_candidates.push((tx, Vec::new(), Vec::new()));
+            tx_candidates.push((tx, TxDocuments::Nothing));
             continue;
         }
-        // MP3-1 Pass 3 — sign filter (tx débit → invoices toujours positives).
-        // Même règle à l'acceptation : `refuse_non_credit_settlement` (Story 28-6).
-        if tx.amount <= Decimal::ZERO {
-            tx_candidates.push((tx, Vec::new(), Vec::new()));
+        // Un montant nul ne reçoit aucune facture, ni client ni fournisseur
+        // (Story 30-1b, AC-b4) ; la règle reste calculée pour lui (P-H7).
+        if tx.amount.is_zero() {
+            tx_candidates.push((tx, TxDocuments::Nothing));
             continue;
         }
+        // Story 30-1b (#686, AC-b4) — un DÉBIT reçoit les factures
+        // fournisseur, jamais une facture client (#482). Trois lectures
+        // ordinaires (AC-b3) : les candidates de la fenêtre fournisseur, les
+        // factures qui masquent la règle, la facture du lot en cours sur ce
+        // compte.
+        if tx.amount < Decimal::ZERO {
+            let amount = tx.amount.abs();
+            let candidates = reconciliation_repo::find_open_supplier_invoices_for_window(
+                &state.pool,
+                current_user.company_id,
+                InvoiceDateWindow::for_supplier_transaction(&tx),
+                amount,
+            )
+            .await?;
+            let masking = reconciliation_repo::find_supplier_invoices_masking(
+                &state.pool,
+                current_user.company_id,
+                amount,
+            )
+            .await?;
+            let account_batch = reconciliation_repo::find_open_supplier_invoice_in_account_batch(
+                &state.pool,
+                current_user.company_id,
+                query.bank_account_id,
+                amount,
+            )
+            .await?;
+            // Les contacts des candidates ET des masquantes : l'indice
+            // « fournisseur » d'une facture masquante se lit sur eux (P5, F5).
+            for si in candidates.iter().chain(&masking) {
+                if si.contact_id > 0 {
+                    distinct_contact_ids.insert(si.contact_id);
+                }
+            }
+            tx_candidates.push((
+                tx,
+                TxDocuments::Supplier {
+                    candidates,
+                    masking,
+                    account_batch,
+                },
+            ));
+            continue;
+        }
+        // Un CRÉDIT garde exactement le chemin d'avant la Story 30-1b : les
+        // factures client ; il ne reçoit jamais de facture fournisseur.
         // Story 28-7 (#548) — la fenêtre de dates de l'acceptation, sur la
         // même date (valeur, à défaut comptabilisation) : une facture
         // proposée est une facture que `accept_one_invoice` admet. Story 29-2
@@ -793,14 +1126,32 @@ pub async fn get_proposals(
                 distinct_contact_ids.insert(cand.invoice.contact_id);
             }
         }
-        tx_candidates.push((tx, candidates, slightly_overpaid));
+        tx_candidates.push((
+            tx,
+            TxDocuments::Client {
+                candidates,
+                slightly_overpaid,
+            },
+        ));
     }
 
-    // Pass 3 : batch-load contacts (1 query).
+    // Pass 3 : batch-load contacts — clients et fournisseurs en un même lot,
+    // découpé par tranches de `MAX_IN_CLAUSE_IDS` (Story 30-1b, P5 R1-7 : 500
+    // débits peuvent porter plus de 500 contacts).
     let ids_vec: Vec<i64> = distinct_contact_ids.into_iter().collect();
-    let contacts_map =
-        reconciliation_repo::find_contacts_by_ids(&state.pool, current_user.company_id, &ids_vec)
-            .await?;
+    let contacts_map = {
+        let mut conn = state
+            .pool
+            .acquire()
+            .await
+            .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+        reconciliation_repo::find_contacts_by_ids_chunked(
+            &mut conn,
+            current_user.company_id,
+            &ids_vec,
+        )
+        .await?
+    };
 
     // Pass 3.5 (Story 8-5b §rule-application) — accounts_info pour appliquer
     // rule fallback dans Pass 4 (closure sync) ; les règles actives sont lues
@@ -850,87 +1201,163 @@ pub async fn get_proposals(
     // Story 29-6 (#665, revue P1) : une facture que le paiement dépasse de
     // quelques centimes écarte aussi la règle si elle porte un indice, comme
     // sa présence parmi les candidates le faisait avant la story.
-    const INVOICE_OVERRIDE_THRESHOLD: f64 = 0.5;
-    // #420 (25-4-c) : le triplet candidat porte le RESTE DÛ — le TTC
-    // excluait le virement qui soldait une facture réglée en partie.
-    // #476 (25-4-c3-b) : AU CENTIME — un virement de 10.01 sur un reste
-    // de 10.0050 marquait 0 au score de montant.
-    let with_contacts = |invoices: &[UnpaidInvoiceCandidate]| -> Vec<(
-        Invoice,
-        Option<kesh_db::entities::Contact>,
-        rust_decimal::Decimal,
-    )> {
-        invoices
-            .iter()
-            .map(|c| {
-                (
-                    c.invoice.clone(),
-                    contacts_map.get(&c.invoice.contact_id).cloned(),
-                    invoice_settlements::amount_due_to_centime(c.amount_due),
-                )
-            })
-            .collect()
-    };
+    //
+    // Story 30-1b (#686, AC-b5) — pour un DÉBIT : une facture fournisseur du
+    // lot en cours sur ce compte efface la ligne (`notice`) ; sinon les
+    // candidates fournisseur, puis la règle, que masque aussi une facture
+    // fournisseur non candidate portant un indice (`find_supplier_invoices_masking`).
+    // ⛔ Rien ne lit ici les factures déjà payées : l'angle mort L1 (#671).
+    let contact_name_of = |contact_id: i64| contacts_map.get(&contact_id).map(|c| c.name.clone());
     let proposals: Vec<ReconciliationProposal> = tx_candidates
         .into_iter()
-        .map(|(tx, candidate_invoices, slightly_overpaid)| {
-            let match_proposals = propose_matches(&tx, &with_contacts(&candidate_invoices));
-            let has_strong_invoice_match = match_proposals
-                .iter()
-                .any(|mp| mp.score.total >= INVOICE_OVERRIDE_THRESHOLD);
-            // Story 29-6 (#665, revue de code P1, E1) — une facture que le
-            // paiement dépasse de 1 à 5 centimes n'est plus candidate ; si
-            // elle porte un indice (`propose_matches` ne retient que les
-            // factures de score non nul), elle garde la règle comme elle le
-            // faisait avant la story : la ligne reste « Aucune
-            // correspondance », rien n'est passé en produit.
-            let rule_masked_by_overpaid_invoice =
-                !propose_matches(&tx, &with_contacts(&slightly_overpaid)).is_empty();
+        .map(|(tx, documents)| {
+            let mut candidates: Vec<ReconciliationCandidate> = Vec::new();
+            let mut notice: Option<ProposalNotice> = None;
+            // La règle est-elle défendue par une facture ? (les critères
+            // partagés avec l'acceptation d'une règle passent par
+            // `rule_mask_for`, AC-b17 ; les autres sont propres à la proposition).
+            let mut rule_masked = false;
+            match documents {
+                TxDocuments::Nothing => {}
+                TxDocuments::Supplier {
+                    candidates: supplier_invoices,
+                    masking,
+                    account_batch,
+                } => {
+                    if let Some(held) = account_batch {
+                        // AC-b5, première ligne : ni candidate, ni règle — la
+                        // sûreté prime sur la commodité. La raison est dite.
+                        notice = Some(ProposalNotice {
+                            code: NOTICE_SUPPLIER_INVOICE_IN_PAYMENT_BATCH,
+                            supplier_invoice_id: held.supplier_invoice_id,
+                            supplier_invoice_number: held.supplier_invoice_number,
+                            payment_batch_id: held.payment_batch_id,
+                        });
+                    } else {
+                        let matches = propose_matches(
+                            &tx,
+                            &supplier_triples(&supplier_invoices, &contacts_map),
+                        );
+                        rule_masked = rule_mask_for(None, &matches, &[]).is_some();
+                        // Les masquantes non candidates : la liste pleine
+                        // masque par prudence ; sinon, un indice (référence
+                        // ou fournisseur) suffit — jamais le montant seul.
+                        let candidate_ids: std::collections::HashSet<i64> =
+                            supplier_invoices.iter().map(|s| s.id).collect();
+                        let rest: Vec<kesh_db::entities::SupplierInvoice> = masking
+                            .iter()
+                            .filter(|s| !candidate_ids.contains(&s.id))
+                            .cloned()
+                            .collect();
+                        let masking_full =
+                            masking.len() as i64 >= reconciliation_repo::SUPPLIER_MASKING_LIMIT;
+                        rule_masked = rule_masked
+                            || masking_full
+                            || propose_matches(&tx, &supplier_triples(&rest, &contacts_map))
+                                .iter()
+                                .any(|mp| bears_identity_hint(&mp.score));
+                        candidates = matches
+                            .into_iter()
+                            .filter_map(|mp| {
+                                let si =
+                                    supplier_invoices.iter().find(|s| s.id == mp.document_id)?;
+                                Some(ReconciliationCandidate {
+                                    candidate_type: CandidateType::SupplierInvoice,
+                                    invoice_id: None,
+                                    supplier_invoice_id: Some(si.id),
+                                    contact_name: contact_name_of(si.contact_id),
+                                    invoice_number: si.supplier_invoice_number.clone(),
+                                    // Le TTC au centime : le règlement
+                                    // fournisseur est binaire, pas de reste dû.
+                                    invoice_amount: Some(
+                                        invoice_settlements::amount_due_to_centime(si.total_amount)
+                                            .normalize()
+                                            .to_string(),
+                                    ),
+                                    invoice_total_ttc: None,
+                                    invoice_date: Some(si.invoice_date),
+                                    rule_id: None,
+                                    rule_label: None,
+                                    rule_match_type: None,
+                                    counterparty_account_id: None,
+                                    counterparty_account_name: None,
+                                    score: mp.score,
+                                })
+                            })
+                            .collect();
+                    }
+                }
+                TxDocuments::Client {
+                    candidates: candidate_invoices,
+                    slightly_overpaid,
+                } => {
+                    let match_proposals =
+                        propose_matches(&tx, &client_triples(&candidate_invoices, &contacts_map));
+                    // AC #114 : une facture client de score ≥ 0,5 écarte la règle.
+                    // Story 29-6 (#665, revue de code P1, E1) — une facture que le
+                    // paiement dépasse de 1 à 5 centimes n'est plus candidate ; si
+                    // elle porte un indice (`propose_matches` ne retient que les
+                    // factures de score non nul), elle garde la règle comme elle le
+                    // faisait avant la story : la ligne reste « Aucune
+                    // correspondance », rien n'est passé en produit. Les deux
+                    // critères passent par `rule_mask_for` (Story 30-1b) ; seul le
+                    // second est rejoué à l'acceptation d'une règle (AC-b17).
+                    let overpaid_matches =
+                        propose_matches(&tx, &client_triples(&slightly_overpaid, &contacts_map));
+                    rule_masked = has_strong_invoice_match(&match_proposals)
+                        || rule_mask_for(None, &[], &overpaid_matches).is_some();
 
-            let mut candidates: Vec<ReconciliationCandidate> = match_proposals
-                .into_iter()
-                .filter_map(|mp| {
-                    let cand = candidate_invoices
-                        .iter()
-                        .find(|c| c.invoice.id == mp.invoice_id)?;
-                    let inv = &cand.invoice;
-                    Some(ReconciliationCandidate {
-                        candidate_type: CandidateType::Invoice,
-                        invoice_id: Some(inv.id),
-                        invoice_number: inv.invoice_number.clone(),
-                        // #420 (25-4-c) : montant affiché dans l'UI candidats
-                        // = reste dû, la grandeur comparée à la tx (après le
-                        // HT, #246, puis le TTC, qui affichait 1 000 pour un
-                        // solde de 600). Le TTC ne suit que si les deux diffèrent.
-                        // #476 (25-4-c3-b) : l'un et l'autre AU CENTIME, comparés
-                        // comme affichés — « 10.005 » ne se lit sur aucun relevé.
-                        invoice_amount: Some(
-                            invoice_settlements::amount_due_to_centime(cand.amount_due)
-                                .normalize()
-                                .to_string(),
-                        ),
-                        invoice_total_ttc: {
-                            let due = invoice_settlements::amount_due_to_centime(cand.amount_due);
-                            let ttc = invoice_settlements::amount_due_to_centime(cand.total_ttc);
-                            (due != ttc).then(|| ttc.normalize().to_string())
-                        },
-                        invoice_date: Some(inv.date),
-                        rule_id: None,
-                        rule_label: None,
-                        rule_match_type: None,
-                        counterparty_account_id: None,
-                        counterparty_account_name: None,
-                        score: mp.score,
-                    })
-                })
-                .collect();
+                    candidates = match_proposals
+                        .into_iter()
+                        .filter_map(|mp| {
+                            let cand = candidate_invoices
+                                .iter()
+                                .find(|c| c.invoice.id == mp.document_id)?;
+                            let inv = &cand.invoice;
+                            Some(ReconciliationCandidate {
+                                candidate_type: CandidateType::Invoice,
+                                invoice_id: Some(inv.id),
+                                supplier_invoice_id: None,
+                                contact_name: contact_name_of(inv.contact_id),
+                                invoice_number: inv.invoice_number.clone(),
+                                // #420 (25-4-c) : montant affiché dans l'UI candidats
+                                // = reste dû, la grandeur comparée à la tx (après le
+                                // HT, #246, puis le TTC, qui affichait 1 000 pour un
+                                // solde de 600). Le TTC ne suit que si les deux diffèrent.
+                                // #476 (25-4-c3-b) : l'un et l'autre AU CENTIME, comparés
+                                // comme affichés — « 10.005 » ne se lit sur aucun relevé.
+                                invoice_amount: Some(
+                                    invoice_settlements::amount_due_to_centime(cand.amount_due)
+                                        .normalize()
+                                        .to_string(),
+                                ),
+                                invoice_total_ttc: {
+                                    let due =
+                                        invoice_settlements::amount_due_to_centime(cand.amount_due);
+                                    let ttc =
+                                        invoice_settlements::amount_due_to_centime(cand.total_ttc);
+                                    (due != ttc).then(|| ttc.normalize().to_string())
+                                },
+                                invoice_date: Some(inv.date),
+                                rule_id: None,
+                                rule_label: None,
+                                rule_match_type: None,
+                                counterparty_account_id: None,
+                                counterparty_account_name: None,
+                                score: mp.score,
+                            })
+                        })
+                        .collect();
+                }
+            }
 
             // Story 8-5b rule fallback. Currency CHF only (Pass 3 R1
             // currency filter cohérent L38) — déjà filtré au Pass 2 via
             // `candidate_invoices.is_empty()` quand tx.currency != "CHF",
             // mais rules NE PAS hériter du sign filter 8-4 invoice (P-H7).
-            if !has_strong_invoice_match
-                && !rule_masked_by_overpaid_invoice
+            // Story 30-1b : jamais sur une ligne qui porte une `notice`.
+            if notice.is_none()
+                && !rule_masked
                 && tx.currency == "CHF"
                 && let Some(rule) = kesh_reconciliation::first_matching_rule(
                     &active_rules,
@@ -945,6 +1372,8 @@ pub async fn get_proposals(
                 candidates.push(ReconciliationCandidate {
                     candidate_type: CandidateType::Rule,
                     invoice_id: None,
+                    supplier_invoice_id: None,
+                    contact_name: None,
                     invoice_number: None,
                     invoice_amount: None,
                     invoice_total_ttc: None,
@@ -977,6 +1406,7 @@ pub async fn get_proposals(
                     counterparty_name: tx.counterparty_name.clone(),
                 },
                 candidates,
+                notice,
             }
         })
         .collect();
@@ -1117,6 +1547,17 @@ pub async fn post_accept(
                 if *invoice_id <= 0 {
                     return Err(AppError::Validation(
                         "invoiceId doit être strictement positif (type='invoice')".into(),
+                    ));
+                }
+            }
+            AcceptProposalInput::SupplierInvoice {
+                supplier_invoice_id,
+                ..
+            } => {
+                if *supplier_invoice_id <= 0 {
+                    return Err(AppError::Validation(
+                        "supplierInvoiceId doit être strictement positif (type='supplier_invoice')"
+                            .into(),
                     ));
                 }
             }
@@ -1593,6 +2034,24 @@ async fn accept_one(
             )
             .await
         }
+        AcceptProposalInput::SupplierInvoice {
+            bank_transaction_id,
+            supplier_invoice_id,
+        } => {
+            accept_one_supplier_invoice(
+                tx,
+                company_id,
+                bank_account_id,
+                letterings::Actor {
+                    user_id,
+                    api_key_id: actor_api_key_id,
+                },
+                *bank_transaction_id,
+                *supplier_invoice_id,
+                batch_size,
+            )
+            .await
+        }
     }
 }
 
@@ -1702,26 +2161,98 @@ fn lettering_error_to_failed_proposal(bank_transaction_id: i64, err: DbError) ->
 /// négatif (`-0.00`, porté par un `Decimal` mais jamais rendu par la colonne
 /// `DECIMAL(18,2)`) est un montant nul, et `is_sign_negative()` le classerait
 /// en débit (C-28-6-12, C-28-6-15).
+///
+/// Depuis la Story 30-1b, enveloppe d'une ligne de [`refuse_wrong_direction`]
+/// (sens `Credit`) : code, raisons et `details` strictement inchangés.
 fn refuse_non_credit_settlement(
     bank_transaction_id: i64,
     amount: Decimal,
 ) -> Option<FailedProposal> {
-    if amount <= Decimal::ZERO {
-        let reason = if amount < Decimal::ZERO {
-            "debit_transaction"
-        } else {
+    refuse_wrong_direction(bank_transaction_id, amount, SettlementDirection::Credit)
+}
+
+/// Le sens qu'un règlement attend de la transaction bancaire (Story 30-1b,
+/// #686, AC-b7) : un **crédit** pour une facture client (un encaissement), un
+/// **débit** pour une facture fournisseur (un décaissement).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettlementDirection {
+    Credit,
+    Debit,
+}
+
+/// **Une seule** garde de sens pour les deux sortes de factures (Story 30-1b,
+/// #686, AC-b7, DRY) : rend `None` si le montant est du sens attendu, sinon le
+/// refus — `RECONCILIATION_TRANSACTION_NOT_CREDIT` (client : raisons
+/// `debit_transaction`, `zero_amount_transaction`) ou
+/// `RECONCILIATION_TRANSACTION_NOT_DEBIT` (fournisseur : raisons
+/// `credit_transaction`, `zero_amount_transaction`), avec
+/// `details.transactionAmount` tel quel.
+///
+/// ⚠️ Comparaison **au zéro**, jamais par `is_sign_negative()` : un zéro
+/// négatif (`-0.00`) est un montant nul (C-28-6-12).
+///
+/// Chaque code est écrit **au site de construction** (`error_code: "…"`),
+/// forme que recompte le doc-comment de `failed-proposal-label.ts`.
+fn refuse_wrong_direction(
+    bank_transaction_id: i64,
+    amount: Decimal,
+    expected: SettlementDirection,
+) -> Option<FailedProposal> {
+    let details = |opposite_reason: &str| {
+        let reason = if amount.is_zero() {
             "zero_amount_transaction"
+        } else {
+            opposite_reason
         };
-        return Some(FailedProposal {
+        Some(serde_json::json!({
+            "reason": reason,
+            "transactionAmount": amount,
+        }))
+    };
+    match expected {
+        SettlementDirection::Credit if amount > Decimal::ZERO => None,
+        SettlementDirection::Credit => Some(FailedProposal {
             bank_transaction_id,
             error_code: "RECONCILIATION_TRANSACTION_NOT_CREDIT".to_string(),
-            details: Some(serde_json::json!({
-                "reason": reason,
-                "transactionAmount": amount,
-            })),
-        });
+            details: details("debit_transaction"),
+        }),
+        SettlementDirection::Debit if amount < Decimal::ZERO => None,
+        SettlementDirection::Debit => Some(FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_TRANSACTION_NOT_DEBIT".to_string(),
+            details: details("credit_transaction"),
+        }),
     }
-    None
+}
+
+/// La traduction **commune** d'un refus de la fenêtre de dates en
+/// `FailedProposal` (Story 30-1b, #686, AC-b2, DRY) — pour une facture client
+/// (`accept_one_invoice`) comme pour une facture fournisseur
+/// (`accept_one_supplier_invoice`) : `RECONCILIATION_INVOICE_NOT_ELIGIBLE`,
+/// `details.reason` = `payment_date_before_invoice_date` (avec
+/// `tolerance_days`, champ ajouté par la 30-1b : 1 client, 7 fournisseur) ou
+/// `payment_date_outside_window` (avec `window_days` : 30 client, 365
+/// fournisseur). Les nombres de jours sont lus sur la fenêtre elle-même.
+fn date_refusal_failed_proposal(
+    bank_transaction_id: i64,
+    refusal: InvoiceDateRefusal,
+    window: InvoiceDateWindow,
+) -> FailedProposal {
+    let details = match refusal {
+        InvoiceDateRefusal::PaymentBeforeInvoice => serde_json::json!({
+            "reason": "payment_date_before_invoice_date",
+            "tolerance_days": window.tolerance_days,
+        }),
+        InvoiceDateRefusal::PaymentTooLate => serde_json::json!({
+            "reason": "payment_date_outside_window",
+            "window_days": window.window_days,
+        }),
+    };
+    FailedProposal {
+        bank_transaction_id,
+        error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
+        details: Some(details),
+    }
 }
 
 /// Helper interne — traite UNE proposal `type='invoice'` dans son savepoint.
@@ -1915,25 +2446,15 @@ async fn accept_one_invoice(
     // refus n'est plus atteint qu'à une facture redatée, ou dont un rappel a
     // été annulé, entre la proposition et l'acceptation, ou par un appel
     // d'API direct.
-    match InvoiceDateWindow::for_transaction(&bank_transaction).check(invoice.date, anchor_date) {
-        Ok(()) => {}
-        Err(InvoiceDateRefusal::PaymentBeforeInvoice) => {
-            return Err(FailedProposal {
-                bank_transaction_id,
-                error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
-                details: Some(serde_json::json!({ "reason": "payment_date_before_invoice_date" })),
-            });
-        }
-        Err(InvoiceDateRefusal::PaymentTooLate) => {
-            return Err(FailedProposal {
-                bank_transaction_id,
-                error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
-                details: Some(serde_json::json!({
-                    "reason": "payment_date_outside_window",
-                    "window_days": INVOICE_WINDOW_DAYS_AFTER_INVOICE,
-                })),
-            });
-        }
+    // Story 30-1b : la traduction du refus est commune aux deux sortes de
+    // factures ; `details` gagne seulement `tolerance_days` (additif).
+    let window = InvoiceDateWindow::for_transaction(&bank_transaction);
+    if let Err(refusal) = window.check(invoice.date, anchor_date) {
+        return Err(date_refusal_failed_proposal(
+            bank_transaction_id,
+            refusal,
+            window,
+        ));
     }
     let sale_entry_id = invoice.journal_entry_id.unwrap();
 
@@ -2477,6 +2998,409 @@ async fn accept_one_invoice(
     Ok(AcceptedProposal {
         bank_transaction_id,
         invoice_id,
+        supplier_invoice_id: None,
+        journal_entry_id,
+        score,
+    })
+}
+
+// ============================================================
+// Story 30-1b (#686) — accepter une facture fournisseur
+// ============================================================
+
+/// Un refus de [`supplier_invoices::lock_for_bank_settlement_in_tx`] (étape 3
+/// d'[`accept_one_supplier_invoice`]) en `FailedProposal` (AC-b6).
+fn supplier_settlement_refusal_failed_proposal(
+    bank_transaction_id: i64,
+    bank_account_id: i64,
+    supplier_invoice_id: i64,
+    refusal: SupplierSettlementRefusal,
+) -> FailedProposal {
+    // Chaque code au site de construction (`error_code: "…"`), pour le
+    // décompte de `failed-proposal-label.ts`.
+    match refusal {
+        // Indiscernable d'une facture d'une autre société (KF-002).
+        SupplierSettlementRefusal::NotFound => FailedProposal {
+            bank_transaction_id,
+            error_code: "SUPPLIER_INVOICE_NOT_FOUND".to_string(),
+            details: Some(serde_json::json!({ "supplierInvoiceId": supplier_invoice_id })),
+        },
+        SupplierSettlementRefusal::NotOpen { .. } => FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
+            details: Some(serde_json::json!({ "reason": "supplier_invoice_not_open" })),
+        },
+        SupplierSettlementRefusal::BankAccountNotFound => FailedProposal {
+            bank_transaction_id,
+            error_code: "BANK_ACCOUNT_NOT_FOUND".to_string(),
+            details: None,
+        },
+        SupplierSettlementRefusal::BankAccountClosed => FailedProposal {
+            bank_transaction_id,
+            error_code: "BANK_ACCOUNT_CLOSED".to_string(),
+            details: Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+        },
+        SupplierSettlementRefusal::BankAccountNotConfigured => FailedProposal {
+            bank_transaction_id,
+            error_code: "BANK_ACCOUNT_NOT_CONFIGURED".to_string(),
+            details: Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+        },
+        SupplierSettlementRefusal::InGeneratedBatch { payment_batch_id } => FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
+            details: Some(serde_json::json!({
+                "reason": "supplier_invoice_in_payment_batch",
+                "paymentBatchId": payment_batch_id,
+            })),
+        },
+        SupplierSettlementRefusal::HeldByPaymentBatch {
+            supplier_invoice_id: held,
+            payment_batch_id,
+        } => FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_SUPPLIER_PAYMENT_HOLD".to_string(),
+            details: Some(serde_json::json!({
+                "reason": "other_invoice_in_payment_batch",
+                "supplierInvoiceId": held,
+                "paymentBatchId": payment_batch_id,
+            })),
+        },
+    }
+}
+
+/// Une erreur du règlement (`pay_in_tx_as`, étape 6 d'[`accept_one_supplier_invoice`],
+/// ou une erreur de base de l'étape 3) en `FailedProposal` — **jamais** une
+/// erreur globale (§ *Pattern batch*). Inventaire clos (AC-b6, refait au
+/// développement et recopié au Dev Agent Record) : les variantes **nommées**,
+/// puis un bras final `DATABASE_ERROR`.
+///
+/// ⛔ `NotFound` et `IllegalStateTransition` sont **inatteignables** à
+/// l'étape 6 — facture et compte sont lus et verrouillés à l'étape 3,
+/// l'exercice trouvé sous verrou avant l'écriture, et le règlement ne valide
+/// aucun projet : des invariants rompus, classés `INTERNAL_ERROR`, et non par
+/// `project_error_to_failed_proposal`, qui les rendrait `PROJECT_*` à tort.
+fn supplier_payment_error_to_failed_proposal(
+    bank_transaction_id: i64,
+    bank_account_id: i64,
+    project_id: Option<i64>,
+    value_date: NaiveDate,
+    err: DbError,
+) -> FailedProposal {
+    let internal = |err: &DbError| {
+        tracing::error!("règlement fournisseur par la réconciliation : invariant rompu : {err}");
+        FailedProposal {
+            bank_transaction_id,
+            error_code: "INTERNAL_ERROR".to_string(),
+            details: None,
+        }
+    };
+    match &err {
+        DbError::SettlementCounterpartyIsClaimAccount { .. } => {
+            claim_account_failed_proposal(bank_transaction_id, err, Some(bank_account_id))
+        }
+        DbError::InactiveOrInvalidAccounts => FailedProposal {
+            bank_transaction_id,
+            error_code: err.error_code().to_string(),
+            details: None,
+        },
+        DbError::FiscalYearInvalid | DbError::FiscalYearClosed | DbError::DateOutsideFiscalYear => {
+            FailedProposal {
+                bank_transaction_id,
+                error_code: "FISCAL_YEAR_INVALID".to_string(),
+                details: Some(serde_json::json!({ "valueDate": value_date })),
+            }
+        }
+        DbError::PeriodLocked {
+            locked_through,
+            attempted,
+        } => period_locked_failed_proposal(
+            bank_transaction_id,
+            project_id,
+            *locked_through,
+            *attempted,
+        ),
+        DbError::LaterFiscalYearClosed {
+            fiscal_year_id,
+            fiscal_year_name,
+        } => later_fiscal_year_closed_failed_proposal(
+            bank_transaction_id,
+            project_id,
+            *fiscal_year_id,
+            fiscal_year_name,
+        ),
+        // Défensifs : l'étape 3 tient le compte en exclusif et l'a refusé
+        // avant, s'il était clos ou sans compte au grand livre.
+        DbError::BankAccountClosed { .. } => FailedProposal {
+            bank_transaction_id,
+            error_code: "BANK_ACCOUNT_CLOSED".to_string(),
+            details: Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+        },
+        DbError::ConfigurationRequired(_) => FailedProposal {
+            bank_transaction_id,
+            error_code: "BANK_ACCOUNT_NOT_CONFIGURED".to_string(),
+            details: Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+        },
+        DbError::OptimisticLockConflict => FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
+            details: Some(serde_json::json!({ "reason": "race_during_update" })),
+        },
+        DbError::NotFound
+        | DbError::IllegalStateTransition(_)
+        | DbError::Invariant(_)
+        | DbError::LetteringConcurrentChange
+        | DbError::LetteringLineAlreadyLettered { .. }
+        | DbError::LetteringUnbalanced { .. }
+        | DbError::LetteringAccountNotLetterable
+        | DbError::LetteringAccountsDiffer
+        | DbError::LetteringTooFewLines
+        | DbError::LetteringTooManyLines { .. }
+        | DbError::LetteringAllLinesInClosedPeriods
+        | DbError::LetteringLineOwnedByDocument { .. }
+        | DbError::LetteringIsDocument => internal(&err),
+        other => FailedProposal {
+            bank_transaction_id,
+            error_code: "DATABASE_ERROR".to_string(),
+            details: Some(serde_json::json!({ "message": other.to_string() })),
+        },
+    }
+}
+
+/// Story 30-1b (#686, AC-b6) — traite UNE proposition `type='supplier_invoice'`
+/// dans son `SAVEPOINT` : le **débit** `bank_transaction_id` règle la facture
+/// fournisseur **ouverte** `supplier_invoice_id`.
+///
+/// Le règlement a **une** définition, celle de la fiche et des lots
+/// ([`supplier_invoices::pay_in_tx_as`], appelé, jamais réécrit — C-30-1-10) ;
+/// ce que la réconciliation ajoute, dans cet ordre :
+///
+/// 1. la transaction rechargée (lecture ordinaire : **naissance de la vue**),
+///    `pending` ;
+/// 2. le **sens** : un crédit ou un montant nul est refusé
+///    (`RECONCILIATION_TRANSACTION_NOT_DEBIT`), avant toute lecture de la
+///    facture ([`refuse_wrong_direction`]) ;
+/// 3. les **verrous et l'éligibilité**, en `kesh-db` :
+///    [`supplier_invoices::lock_for_bank_settlement_in_tx`] — facture, compte,
+///    lot verrouillant, garde (d) du lot du compte ;
+/// 4. la **fenêtre** fournisseur sur la facture verrouillée (`F ≤ D + 7`,
+///    exigibilité `≥ D − 365`, [`date_refusal_failed_proposal`]) ;
+/// 5. le **montant** : `|tx| = TTC` exactement, sinon
+///    `RECONCILIATION_AMOUNT_MISMATCH` ; le score est recalculé pour la trace
+///    et la réponse — ≥ 0,5 puisque l'égalité vient d'être vérifiée ; aucune
+///    garde de score (C-30-1-16) ;
+/// 6. le **règlement** (`pay_in_tx_as`, virement depuis le compte de
+///    l'import, daté de la date de paiement, acteur et clé d'API compris) ;
+/// 7. le **lien** de la transaction (`… AND status = 'pending' AND version = ?`) ;
+/// 8. l'audit `reconciliation.accepted` (`for_actor`).
+///
+/// ⛔ Aucune garde « dépense déjà réglée par un autre chemin » : l'angle mort
+/// L1 (#671).
+#[allow(clippy::too_many_arguments)]
+async fn accept_one_supplier_invoice(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    bank_account_id: i64,
+    actor: letterings::Actor,
+    bank_transaction_id: i64,
+    supplier_invoice_id: i64,
+    batch_size: i64,
+) -> Result<AcceptedProposal, FailedProposal> {
+    let database_error = |e: &dyn std::fmt::Display| FailedProposal {
+        bank_transaction_id,
+        error_code: "DATABASE_ERROR".to_string(),
+        details: Some(serde_json::json!({ "message": e.to_string() })),
+    };
+
+    // (1) La transaction, rechargée sous le verrou du compte.
+    let bank_transaction = match reconciliation_repo::find_pending_by_id_for_account(
+        &mut **tx,
+        company_id,
+        bank_account_id,
+        bank_transaction_id,
+    )
+    .await
+    {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "BANK_TRANSACTION_NOT_FOUND".to_string(),
+                details: None,
+            });
+        }
+        Err(e) => return Err(database_error(&e)),
+    };
+    if bank_transaction.status != BankTransactionStatus::Pending {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
+            details: None,
+        });
+    }
+
+    // (2) Le sens : un débit, jamais un crédit ni un montant nul (#482).
+    if let Some(refusal) = refuse_wrong_direction(
+        bank_transaction_id,
+        bank_transaction.amount,
+        SettlementDirection::Debit,
+    ) {
+        return Err(refusal);
+    }
+    let amount = bank_transaction.amount.abs();
+    let value_date = payment_date(&bank_transaction);
+
+    // (3) Verrous et éligibilité.
+    let invoice = match supplier_invoices::lock_for_bank_settlement_in_tx(
+        tx,
+        company_id,
+        supplier_invoice_id,
+        bank_account_id,
+        amount,
+    )
+    .await
+    {
+        Ok(Ok(locked)) => locked.invoice,
+        Ok(Err(refusal)) => {
+            return Err(supplier_settlement_refusal_failed_proposal(
+                bank_transaction_id,
+                bank_account_id,
+                supplier_invoice_id,
+                refusal,
+            ));
+        }
+        Err(e) => {
+            return Err(supplier_payment_error_to_failed_proposal(
+                bank_transaction_id,
+                bank_account_id,
+                None,
+                value_date,
+                e,
+            ));
+        }
+    };
+
+    // (4) La fenêtre fournisseur, sur la facture verrouillée.
+    let window = InvoiceDateWindow::for_supplier_transaction(&bank_transaction);
+    if let Err(refusal) = window.check(invoice.invoice_date, invoice_exigibility_date(&invoice)) {
+        return Err(date_refusal_failed_proposal(
+            bank_transaction_id,
+            refusal,
+            window,
+        ));
+    }
+
+    // (5) Le montant : le règlement est binaire, du TTC entier (C-30-1-5).
+    if amount != invoice.total_amount {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_AMOUNT_MISMATCH".to_string(),
+            details: Some(serde_json::json!({
+                "amountDue": invoice.total_amount,
+                "transactionAmount": bank_transaction.amount,
+            })),
+        });
+    }
+    let contact = contacts_repo::find_by_id_in_company(&mut **tx, invoice.contact_id, company_id)
+        .await
+        .unwrap_or(None);
+    let score = propose_matches(
+        &bank_transaction,
+        &[(invoice.clone(), contact, invoice.total_amount)],
+    )
+    .first()
+    .map(|p| p.score)
+    .unwrap_or(MatchScore {
+        total: 0.0,
+        amount_score: 0.0,
+        reference_score: 0.0,
+        contact_score: 0.0,
+    });
+
+    // (6) Le règlement — le geste de la fiche, appelé.
+    let paid = match supplier_invoices::pay_in_tx_as(
+        tx,
+        company_id,
+        invoice.id,
+        kesh_db::entities::SettlementChoice::BankTransfer { bank_account_id },
+        value_date,
+        actor,
+    )
+    .await
+    {
+        Ok(p) => p.invoice,
+        Err(e) => {
+            return Err(supplier_payment_error_to_failed_proposal(
+                bank_transaction_id,
+                bank_account_id,
+                invoice.project_id,
+                value_date,
+                e,
+            ));
+        }
+    };
+    let Some(journal_entry_id) = paid.settlement_journal_entry_id else {
+        tracing::error!(
+            "règlement fournisseur sans écriture de règlement : {}",
+            paid.id
+        );
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "INTERNAL_ERROR".to_string(),
+            details: None,
+        });
+    };
+
+    // (7) Le lien de la transaction.
+    let linked = sqlx::query(
+        "UPDATE bank_transactions \
+         SET matched_entry_id = ?, status = 'reconciled', updated_at = NOW(3), version = version + 1 \
+         WHERE id = ? AND company_id = ? AND status = 'pending' AND version = ?",
+    )
+    .bind(journal_entry_id)
+    .bind(bank_transaction_id)
+    .bind(company_id)
+    .bind(bank_transaction.version)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| database_error(&e))?;
+    if linked.rows_affected() != 1 {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
+            details: Some(serde_json::json!({ "reason": "race_during_update" })),
+        });
+    }
+
+    // (8) L'audit du rapprochement ; `supplier_invoice.paid` est écrit par
+    //     `pay_in_tx_as`.
+    audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry::for_actor(
+            actor.user_id,
+            actor.api_key_id,
+            "reconciliation.accepted",
+            "bank_transaction",
+            bank_transaction_id,
+            Some(serde_json::json!({
+                "type": "supplier_invoice",
+                "bank_transaction_id": bank_transaction_id,
+                "supplier_invoice_id": invoice.id,
+                "score": score,
+                "batch_size": batch_size,
+                "journal_entry_id": journal_entry_id,
+                "purchase_journal_entry_id": invoice.purchase_journal_entry_id,
+                "paid_amount": amount,
+                "transaction_amount": bank_transaction.amount,
+            })),
+        ),
+    )
+    .await
+    .map_err(|e| database_error(&e))?;
+
+    Ok(AcceptedProposal {
+        bank_transaction_id,
+        invoice_id: 0,
+        supplier_invoice_id: Some(invoice.id),
         journal_entry_id,
         score,
     })
@@ -2869,6 +3793,7 @@ async fn accept_one_split(
         // Pour un split, pas d'invoice ciblée — sentinel 0 (la structure
         // est commune avec invoice flow).
         invoice_id: 0,
+        supplier_invoice_id: None,
         journal_entry_id,
         score: MatchScore {
             total: 0.0,
@@ -3125,6 +4050,30 @@ async fn accept_one_rule(
         });
     }
 
+    // Step 7 bis — Story 30-1b (#686, AC-b17) : le rejeu du masquage. La
+    // proposition n'offre pas la règle quand une facture la défend ; un appel
+    // d'API direct, ou un écran chargé avant la saisie de la facture dans un
+    // autre onglet, l'accepterait et compterait la charge (ou le produit)
+    // deux fois. Lectures ordinaires, mêmes fonctions que `get_proposals`
+    // (`load_rule_mask`, `rule_mask_for`), avant toute écriture. Trois cas
+    // seulement : `payment_batch`, `invoice_candidate` (débit),
+    // `invoice_slightly_overpaid` (crédit) ; l'imputation délibérée passe par
+    // `POST /reconciliation/manual` ou l'éclatement. ⚠️ Changement de contrat
+    // des deux côtés : une acceptation autrefois réussie est refusée.
+    match load_rule_mask(tx, company_id, bank_account_id, &bt).await {
+        Ok(None) => {}
+        Ok(Some(mask)) => {
+            return Err(rule_masked_failed_proposal(bank_transaction_id, &mask));
+        }
+        Err(e) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "DATABASE_ERROR".to_string(),
+                details: Some(serde_json::json!({ "message": e.to_string() })),
+            });
+        }
+    }
+
     // Step 8 — tx.amount != 0 (helper panic guard 8-5a-base).
     if bt.amount.is_zero() {
         return Err(FailedProposal {
@@ -3366,6 +4315,7 @@ async fn accept_one_rule(
         bank_transaction_id,
         // Sentinel invoice_id=0 (dette transverse 8-5a-bis BH-H1 v0.2).
         invoice_id: 0,
+        supplier_invoice_id: None,
         journal_entry_id,
         // Pass 1 code review LOW EC9 fix : score.total = 1.0 cohérent
         // avec celui exposé par get_proposals pour candidate type=rule
@@ -5824,6 +6774,8 @@ mod candidate_order_tests {
         ReconciliationCandidate {
             candidate_type: CandidateType::Invoice,
             invoice_id: Some(id),
+            supplier_invoice_id: None,
+            contact_name: None,
             invoice_number: Some(format!("F-{id}")),
             invoice_amount: Some("100".to_string()),
             invoice_total_ttc: None,
@@ -5847,6 +6799,8 @@ mod candidate_order_tests {
         ReconciliationCandidate {
             candidate_type: CandidateType::Rule,
             invoice_id: None,
+            supplier_invoice_id: None,
+            contact_name: None,
             invoice_number: None,
             invoice_amount: None,
             invoice_total_ttc: None,
@@ -5961,5 +6915,82 @@ mod candidate_order_tests {
         expected.push(Some(50));
 
         assert_eq!(ordered(input), expected);
+    }
+
+    /// Une facture fournisseur d'identifiant `id` : `invoice_id` reste nul,
+    /// l'identifiant lisible des tests est porté par `supplier_invoice_id`.
+    fn s(id: i64, amount: f64, reference: f64, contact: f64) -> ReconciliationCandidate {
+        let mut c = f(id, amount, reference, contact);
+        c.candidate_type = CandidateType::SupplierInvoice;
+        c.invoice_id = None;
+        c.supplier_invoice_id = Some(id);
+        c
+    }
+
+    /// T-b14 (Story 30-1b, AC-b5) — une facture **fournisseur** suit la
+    /// priorité écrite d'une facture client : à signal, devant la règle
+    /// (M-b11) ; sans signal, derrière.
+    #[test]
+    fn t_b14_a_supplier_invoice_with_a_signal_goes_before_the_rule() {
+        let order = |input: Vec<ReconciliationCandidate>| {
+            let mut v = input;
+            order_candidates(&mut v);
+            v.iter()
+                .map(|c| c.supplier_invoice_id.or(c.invoice_id))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(order(vec![r(), s(9, 1.0, 0.0, 0.0)]), vec![Some(9), R]);
+        assert_eq!(order(vec![r(), s(9, 0.0, 0.0, 1.0)]), vec![Some(9), R]);
+        assert_eq!(order(vec![s(9, 0.0, 0.0, 0.0), r()]), vec![R, Some(9)]);
+        assert_eq!(candidate_rank(&s(9, 1.0, 1.0, 0.0)), 0);
+        assert_eq!(candidate_rank(&s(9, 0.0, 0.0, 0.0)), 2);
+    }
+}
+
+/// Story 30-1b (#686, AC-b7) — T-b21 : la garde de sens côté **fournisseur**
+/// (`refuse_wrong_direction`, sens `Debit`). Codes et raisons en dur.
+#[cfg(test)]
+mod debit_settlement_tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    fn refused(amount: Decimal) -> Option<FailedProposal> {
+        refuse_wrong_direction(42, amount, SettlementDirection::Debit)
+    }
+
+    fn assert_refused(amount: Decimal, reason: &str) {
+        let refusal = refused(amount).unwrap_or_else(|| panic!("{amount} devait être refusé"));
+        assert_eq!(refusal.bank_transaction_id, 42);
+        assert_eq!(refusal.error_code, "RECONCILIATION_TRANSACTION_NOT_DEBIT");
+        assert_eq!(
+            refusal.details,
+            Some(serde_json::json!({ "reason": reason, "transactionAmount": amount })),
+        );
+    }
+
+    #[test]
+    fn a_credit_is_refused() {
+        assert_refused(dec!(100.00), "credit_transaction");
+        assert_refused(dec!(0.01), "credit_transaction");
+    }
+
+    #[test]
+    fn a_zero_amount_is_refused() {
+        assert_refused(dec!(0.00), "zero_amount_transaction");
+    }
+
+    /// `-0.00` est un montant nul, pas un débit (M-b13 : `is_sign_negative()`).
+    #[test]
+    fn a_negative_zero_is_a_zero_amount_not_a_debit() {
+        let mut negative_zero = Decimal::new(0, 2);
+        negative_zero.set_sign_negative(true);
+        assert!(negative_zero.is_sign_negative(), "montage : zéro négatif");
+        assert_refused(negative_zero, "zero_amount_transaction");
+    }
+
+    #[test]
+    fn a_debit_is_not_refused() {
+        assert!(refused(dec!(-0.01)).is_none());
+        assert!(refused(dec!(-1500.00)).is_none());
     }
 }

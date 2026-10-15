@@ -6,13 +6,21 @@
  * FailedProposal per-proposal* du `CLAUDE.md` ; seul leur affichage est traduit. Patron :
  * `failedItemLabel` (`payment-batches/payment-batch-helpers.ts`).
  *
- * **Les 31 codes** sont ceux que `crates/kesh-api/src/routes/reconciliation.rs` peut poser dans
- * `failed[]` : les 29 littéraux relevés par
+ * **Les 37 codes** sont ceux que `crates/kesh-api/src/routes/reconciliation.rs` peut poser dans
+ * `failed[]` : les 34 littéraux relevés par
  * `grep -ohE 'error_code: "[A-Z_]+"' crates/kesh-api/src/routes/reconciliation.rs | sort -u`,
- * plus les deux codes posés par `DbError::error_code()` (seules formes non littérales du
- * fichier) : `ACCOUNT_NOT_POSTABLE` et, depuis la Story 15-6b (#474),
- * `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`. Un code apparu depuis retombe sur le repli, qui **montre le code brut** : mieux vaut
- * un code qu'une case vide.
+ * plus les trois codes posés par `DbError::error_code()` (seules formes non littérales du
+ * fichier) : `ACCOUNT_NOT_POSTABLE`, depuis la Story 15-6b (#474)
+ * `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, et depuis la Story 30-1b (#686)
+ * `INACTIVE_OR_INVALID_ACCOUNTS` (le règlement d'une facture fournisseur). Un code apparu depuis
+ * retombe sur le repli, qui **montre le code brut** : mieux vaut un code qu'une case vide.
+ *
+ * Story 30-1b (#686) — cinq littéraux neufs, qui portent le compte de 29 à 34 :
+ * `RECONCILIATION_TRANSACTION_NOT_DEBIT` (un crédit ou un montant nul proposé contre une facture
+ * fournisseur), `SUPPLIER_INVOICE_NOT_FOUND` (même libellé que la facture client),
+ * `RECONCILIATION_AMOUNT_MISMATCH` (le règlement fournisseur est du total exact),
+ * `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` (une autre facture du même montant dans un lot en
+ * cours sur ce compte) et `RECONCILIATION_RULE_MASKED` (une facture défend la règle).
  *
  * ⚠️ **Clés réutilisées** (choix C37, étendu par C-15-5c-1) : quand un message existant convient
  * mot pour mot et sans variable, il est lu tel quel au lieu d'être recopié — `error-*` (espace
@@ -32,13 +40,18 @@
  * littéral ajouté en dernier, qui porte le compte à 29, est `BANK_ACCOUNT_CLOSED` : les pré-vols
  * R1 et R2 d'un lot dont le compte bancaire est clos (Story 28-4a).
  *
- * ⚠️ **Cinq codes seulement lisent leur `details`** : `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`
+ * ⚠️ **Six codes seulement lisent leur `details`** : `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`
  * (Story 15-6b), pour son `role` — le compte de banque lié au compte débiteurs et le compte
- * d'arrondi désigné qui l'est n'appellent pas le même remède ; `ACCOUNT_NOT_POSTABLE` (AC2), pour
- * nommer les comptes ; `LATER_FISCAL_YEAR_CLOSED` (Story 15-12b, #543), pour nommer l'exercice
- * postérieur clos (`details.fiscalYearName`, repli sans nom si le champ manque) ; et
- * `RECONCILIATION_INVOICE_NOT_ELIGIBLE`, pour la seule raison
- * `payment_date_before_invoice_date` (revue de code P1, E1 — choix C-15-5c-3). Depuis la
+ * d'arrondi désigné qui l'est n'appellent pas le même remède — et, depuis la Story 30-1b, pour sa
+ * `claim` (`payable` : le compte **créanciers** d'une facture fournisseur) ;
+ * `ACCOUNT_NOT_POSTABLE` (AC2), pour nommer les comptes ; `LATER_FISCAL_YEAR_CLOSED`
+ * (Story 15-12b, #543), pour nommer l'exercice postérieur clos (`details.fiscalYearName`, repli
+ * sans nom si le champ manque) ; `RECONCILIATION_RULE_MASKED` (Story 30-1b), pour sa raison
+ * (`payment_batch`, `invoice_candidate`, `invoice_slightly_overpaid`) ; et
+ * `RECONCILIATION_INVOICE_NOT_ELIGIBLE`, pour deux raisons : `payment_date_before_invoice_date`
+ * (revue de code P1, E1 — choix C-15-5c-3), dont le libellé lit `details.tolerance_days`
+ * depuis la Story 30-1b (1 jour client, 7 jours fournisseur ; repli 1), et
+ * `supplier_invoice_in_payment_batch` (Story 30-1b). Depuis la
  * Story 28-7 (#548), la proposition et l'acceptation partagent la même fenêtre de dates
  * (`InvoiceDateWindow`, `kesh-db`) : une facture datée de plus d'un jour après le paiement
  * n'est plus proposée, et cette raison ne se rencontre plus que si la facture a été redatée
@@ -50,10 +63,11 @@
  *
  * ⚠️ **Plusieurs causes sous un libellé unique — limite assumée (choix C32, C37)** :
  * - `PERIOD_LOCKED` porte `lockedThrough` et `attempted`, que le libellé ne lit pas ;
- * - `RECONCILIATION_INVOICE_NOT_ELIGIBLE` porte six raisons dans `details.reason`
+ * - `RECONCILIATION_INVOICE_NOT_ELIGIBLE` porte huit raisons dans `details.reason`
  *   (`invoice_not_validated`, `invoice_already_paid`, `invoice_journal_entry_not_set`,
  *   `payment_date_before_invoice_date`, `payment_date_outside_window`,
- *   `race_during_update`) : une seule a son libellé, les cinq autres partagent
+ *   `race_during_update`, et depuis la Story 30-1b `supplier_invoice_not_open`,
+ *   `supplier_invoice_in_payment_batch`) : deux ont leur libellé, les six autres partagent
  *   « n'est pas éligible » ;
  * - `VALIDATION_ERROR` porte six raisons sur huit sites (`splits_count_out_of_range`,
  *   `split_description_too_long`, `split_amount_not_positive`, `split_amount_scale_too_high`,
@@ -105,6 +119,27 @@ export function failureRole(details: unknown): string | null {
 }
 
 /**
+ * Créance d'un `details` de la forme `{ claim: "<receivable|payable>" }` (Story 15-6b, lu
+ * depuis la Story 30-1b), ou `null` pour toute autre forme.
+ */
+export function failureClaim(details: unknown): string | null {
+	if (typeof details !== 'object' || details === null) return null;
+	const claim = (details as { claim?: unknown }).claim;
+	return typeof claim === 'string' ? claim : null;
+}
+
+/**
+ * La tolérance, en jours, d'un refus `payment_date_before_invoice_date`
+ * (`details.tolerance_days`, Story 30-1b : 1 pour une facture client, 7 pour une facture
+ * fournisseur) ; repli `1` — la valeur d'avant le champ.
+ */
+export function toleranceDays(details: unknown): number {
+	if (typeof details !== 'object' || details === null) return 1;
+	const days = (details as { tolerance_days?: unknown }).tolerance_days;
+	return typeof days === 'number' && Number.isInteger(days) && days > 0 ? days : 1;
+}
+
+/**
  * Nom de l'exercice d'un `details` de la forme `{ fiscalYearName: "<nom>" }` (refus
  * `LATER_FISCAL_YEAR_CLOSED`, Story 15-12b), ou `null` pour toute autre forme ou un nom vide.
  * Même prudence que `rejectedAccountNumbers` : `details` est typé `unknown`.
@@ -118,8 +153,8 @@ export function fiscalYearName(details: unknown): string | null {
 /**
  * Libellé traduit d'un `errorCode` de `failed[]`. `details` n'est lu que pour
  * `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `ACCOUNT_NOT_POSTABLE`, `LATER_FISCAL_YEAR_CLOSED`,
- * `RECONCILIATION_INVOICE_NOT_ELIGIBLE` et `RECONCILIATION_ALREADY_RECONCILED` ; un code inconnu
- * rend un repli qui cite le code.
+ * `RECONCILIATION_INVOICE_NOT_ELIGIBLE`, `RECONCILIATION_ALREADY_RECONCILED` et
+ * `RECONCILIATION_RULE_MASKED` ; un code inconnu rend un repli qui cite le code.
  */
 export function failedProposalLabel(code: string, details?: unknown): string {
 	switch (code) {
@@ -173,7 +208,14 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 			return i18nMsg('error-fiscal-year-invalid', 'Aucun exercice ouvert ne couvre cette date.');
 		case 'INTERNAL_ERROR':
 			return i18nMsg('error-internal', 'Erreur interne');
+		// Story 30-1b (#686, P3 R2) — un compte de l'écriture de règlement désactivé (le compte
+		// créanciers de l'achat, ou le compte du grand livre de la banque) : la clé globale.
+		case 'INACTIVE_OR_INVALID_ACCOUNTS':
+			return i18nMsg('error-inactive-accounts', 'Un ou plusieurs comptes sont archivés ou invalides.');
 		case 'INVOICE_NOT_FOUND':
+		// Story 30-1b — la facture fournisseur absente ou d'une autre société : même libellé que
+		// la facture client (P2 R-L16).
+		case 'SUPPLIER_INVOICE_NOT_FOUND':
 			return i18nMsg('reconciliation-failed-invoice-not-found', 'Facture introuvable.');
 		case 'INVOICE_SALE_ENTRY_MALFORMED':
 			return i18nMsg(
@@ -230,17 +272,72 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 				'reconciliation-failed-currency-mismatch',
 				'Seules les transactions en CHF peuvent être rapprochées d’une facture ou d’une règle.'
 			);
-		case 'RECONCILIATION_INVOICE_NOT_ELIGIBLE':
-			if (failureReason(details) === 'payment_date_before_invoice_date') {
+		case 'RECONCILIATION_INVOICE_NOT_ELIGIBLE': {
+			const reason = failureReason(details);
+			if (reason === 'payment_date_before_invoice_date') {
+				// Story 30-1b — la tolérance est lue sur `details.tolerance_days` (1 jour pour une
+				// facture client, 7 pour une facture fournisseur) ; repli 1.
 				return i18nMsg(
 					'reconciliation-failed-payment-before-invoice',
-					'Le paiement est daté de plus d’un jour avant la facture : il ne peut pas la régler.'
+					'Le paiement est daté de plus de { $days } jour(s) avant la facture : il ne peut pas la régler.',
+					{ days: toleranceDays(details) }
+				);
+			}
+			// Story 30-1b (#686, AC-b6) — la facture fournisseur est dans un lot de paiement en
+			// cours. Le remède : annuler le lot, ou affecter à la main — jamais « confirmer ».
+			if (reason === 'supplier_invoice_in_payment_batch') {
+				return i18nMsg(
+					'reconciliation-failed-supplier-invoice-in-batch',
+					'Cette facture fournisseur figure dans un lot de paiement en cours : annulez le lot si cette transaction en est le paiement, sinon affectez la transaction à la main.'
 				);
 			}
 			return i18nMsg(
 				'reconciliation-errors-invoice-not-eligible',
 				"Cette facture n'est pas éligible à la réconciliation."
 			);
+		}
+		// Story 30-1b (#686, AC-b6) — le règlement fournisseur est binaire : le débit doit
+		// égaler le TTC de la facture.
+		case 'RECONCILIATION_AMOUNT_MISMATCH':
+			return i18nMsg(
+				'reconciliation-failed-amount-mismatch',
+				'Le montant de la transaction diffère du total de la facture fournisseur : un paiement fournisseur règle le total exact.'
+			);
+		// Story 30-1b (#686, AC-b6 (d)) — une AUTRE facture du même montant est dans un lot en
+		// cours sur ce compte : ce débit est peut-être le paiement de ce lot.
+		case 'RECONCILIATION_SUPPLIER_PAYMENT_HOLD':
+			return i18nMsg(
+				'reconciliation-failed-supplier-payment-hold',
+				'Une autre facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte : cette transaction en est peut-être le paiement. Annulez le lot si c’est le cas, sinon affectez la transaction à la main.'
+			);
+		// Story 30-1b (#686, AC-b17) — une facture défend la règle : l'accepter compterait la
+		// charge (ou le produit) deux fois. La raison dit laquelle ; le remède est l'imputation
+		// délibérée (« Affecter manuellement ») ou le traitement de la facture.
+		case 'RECONCILIATION_RULE_MASKED': {
+			const reason = failureReason(details);
+			if (reason === 'payment_batch') {
+				return i18nMsg(
+					'reconciliation-failed-rule-masked-payment-batch',
+					'La règle n’est pas appliquée : une facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte. Annulez le lot si cette transaction en est le paiement, sinon utilisez « Affecter manuellement ».'
+				);
+			}
+			if (reason === 'invoice_candidate') {
+				return i18nMsg(
+					'reconciliation-failed-rule-masked-invoice-candidate',
+					'La règle n’est pas appliquée : une facture fournisseur ouverte correspond à cette transaction. Rechargez la page pour la voir proposée, ou utilisez « Affecter manuellement ».'
+				);
+			}
+			if (reason === 'invoice_slightly_overpaid') {
+				return i18nMsg(
+					'reconciliation-failed-rule-masked-overpaid',
+					'La règle n’est pas appliquée : une facture client que ce paiement dépasse de quelques centimes lui correspond. Traitez la facture, ou utilisez « Affecter manuellement ».'
+				);
+			}
+			return i18nMsg(
+				'reconciliation-failed-rule-masked',
+				'La règle n’est pas appliquée : une facture correspond à cette transaction. Traitez la facture, ou utilisez « Affecter manuellement ».'
+			);
+		}
 		case 'RECONCILIATION_OVERPAYMENT':
 			return i18nMsg(
 				'reconciliation-failed-overpayment',
@@ -273,6 +370,12 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 				'reconciliation-failed-transaction-not-credit',
 				'Cette transaction n’est pas une entrée d’argent (débit ou montant nul) : elle ne peut pas régler une facture client.'
 			);
+		// Story 30-1b (#686, AC-b7) — le symétrique fournisseur.
+		case 'RECONCILIATION_TRANSACTION_NOT_DEBIT':
+			return i18nMsg(
+				'reconciliation-failed-transaction-not-debit',
+				'Cette transaction n’est pas une sortie d’argent (crédit ou montant nul) : elle ne peut pas régler une facture fournisseur.'
+			);
 		case 'RECONCILIATION_TRANSACTION_NOT_PENDING':
 			return i18nMsg(
 				'reconciliation-failed-transaction-not-pending',
@@ -291,6 +394,14 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 				return i18nMsg(
 					'reconciliation-failed-rounding-account-is-claim-account',
 					'Le compte d’arrondi désigné est le compte débiteurs de la facture : un administrateur doit en désigner un autre dans Paramètres → Facturation.'
+				);
+			}
+			// Story 30-1b (P1 R6) — pour une facture fournisseur, la dette est au compte
+			// créanciers (`details.claim = "payable"`).
+			if (failureClaim(details) === 'payable') {
+				return i18nMsg(
+					'reconciliation-failed-counterparty-is-payable-account',
+					'Le compte bancaire est lié au compte créanciers de la facture : reliez-le à son propre compte de banque.'
 				);
 			}
 			return i18nMsg(

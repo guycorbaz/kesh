@@ -1698,9 +1698,10 @@ pub(crate) struct BalancesRow {
 /// transaction **non rapprochée** n'y entre pas — son absence du grand livre est
 /// l'écart à montrer.
 ///
-/// ⚠️ **Invariant supposé : une transaction, une écriture.** Des six chemins de
-/// rapprochement, cinq (`kesh-api/src/routes/reconciliation.rs`) lient chacun
-/// une écriture qu'ils viennent de créer ; le sixième, le rattachement à un
+/// ⚠️ **Invariant supposé : une transaction, une écriture.** Des sept chemins de
+/// rapprochement, six (`kesh-api/src/routes/reconciliation.rs`, dont
+/// l'acceptation d'une facture fournisseur, Story 30-1b) lient chacun une
+/// écriture qu'ils viennent de créer ; le septième, le rattachement à un
 /// règlement saisi depuis la fiche (Story 29-8,
 /// [`super::reconciliation_link::link_in_tx`]), lie une écriture **existante**
 /// et tient l'invariant par sa condition 3 (aucune transaction ne pointe déjà

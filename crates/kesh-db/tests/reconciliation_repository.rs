@@ -2027,3 +2027,528 @@ async fn exigibility_date_sql_and_rust_agree(pool: MySqlPool) {
         assert_eq!(invoice_exigibility_date(&invoice), x, "{name} : Rust");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Story 30-1b (#686) — les factures fournisseur d'un débit (AC-b2, AC-b3)
+// ---------------------------------------------------------------------------
+
+/// Une facture fournisseur insérée en SQL brut (le pipeline d'achat n'est pas
+/// l'objet du test) : `status` `open`, `paid` (règlement factice posé, pour la
+/// contrainte `chk_supplier_invoices_paid_has_settlement`) ou `cancelled`.
+#[allow(clippy::too_many_arguments)]
+async fn insert_supplier_invoice(
+    pool: &MySqlPool,
+    company_id: i64,
+    contact_id: i64,
+    je_id: i64,
+    number: Option<&str>,
+    invoice_date: NaiveDate,
+    due_date: Option<NaiveDate>,
+    total: Decimal,
+    status: &str,
+) -> i64 {
+    let paid = status == "paid";
+    sqlx::query(
+        "INSERT INTO supplier_invoices (company_id, contact_id, supplier_invoice_number, status, \
+         invoice_date, due_date, total_amount, purchase_journal_entry_id, settlement_type, \
+         settlement_journal_entry_id, paid_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(company_id)
+    .bind(contact_id)
+    .bind(number)
+    .bind(status)
+    .bind(invoice_date)
+    .bind(due_date)
+    .bind(total)
+    .bind(je_id)
+    .bind(paid.then_some("bank_transfer"))
+    .bind(paid.then_some(je_id))
+    .bind(paid.then(|| invoice_date.and_hms_opt(0, 0, 0).unwrap()))
+    .execute(pool)
+    .await
+    .expect("supplier_invoice insert")
+    .last_insert_id() as i64
+}
+
+/// Un lot de paiement de `status` sur `bank_account_id`, qui engage la facture
+/// fournisseur `supplier_invoice_id` ; rend l'identifiant du lot.
+async fn insert_payment_batch(
+    pool: &MySqlPool,
+    company_id: i64,
+    bank_account_id: i64,
+    supplier_invoice_id: i64,
+    status: &str,
+) -> i64 {
+    let batch_id = sqlx::query(
+        "INSERT INTO payment_batches (company_id, bank_account_id, status, \
+         requested_execution_date, total_amount, msg_id, payment_info_id) \
+         VALUES (?, ?, ?, '2026-06-01', 1, CONCAT('MSG-', UUID_SHORT()), CONCAT('PMT-', UUID_SHORT()))",
+    )
+    .bind(company_id)
+    .bind(bank_account_id)
+    .bind(status)
+    .execute(pool)
+    .await
+    .expect("payment_batch insert")
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO payment_batch_items (payment_batch_id, supplier_invoice_id, position, \
+         end_to_end_id, amount) VALUES (?, ?, 1, CONCAT('E2E-', UUID_SHORT()), 1)",
+    )
+    .bind(batch_id)
+    .bind(supplier_invoice_id)
+    .execute(pool)
+    .await
+    .expect("payment_batch_item insert");
+    batch_id
+}
+
+/// Le décor commun : une société, un fournisseur, un compte bancaire, une
+/// écriture d'achat factice. Rend `(company, contact, bank_account, je)`.
+async fn seed_supplier_301b(pool: &MySqlPool) -> (i64, i64, i64, i64) {
+    let company_id = create_test_company(pool, "Acme").await;
+    let user_id = create_test_user(pool, "alice", company_id).await;
+    let contact_id = create_test_contact(pool, company_id, user_id, "Fournisseur SA").await;
+    let bank_account_id = create_test_bank_account(pool, company_id, "CH9300762011623852957").await;
+    let fy_id = insert_fake_fiscal_year(pool, company_id).await;
+    let je_id = insert_fake_journal_entry(pool, company_id, fy_id).await;
+    (company_id, contact_id, bank_account_id, je_id)
+}
+
+fn ids_of(rows: &[kesh_db::entities::SupplierInvoice]) -> Vec<i64> {
+    rows.iter().map(|s| s.id).collect()
+}
+
+/// T-b7 (AC-b3) — les six filtres des candidates fournisseur, chacun par un
+/// cas qui le viole seul : société, statut `open`, montant **exact**, lot
+/// `generated` (T-b8), fenêtre (borne haute `F ≤ D + 7`, borne basse sur
+/// l'exigibilité `X ≥ D − 365` — l'échéance postérieure à la date compte :
+/// M-b5), ordre d'imputation.
+#[sqlx::test(migrations = "./test-schema")]
+async fn supplier_candidates_apply_each_filter(pool: MySqlPool) {
+    let (company_id, contact_id, _bank, je_id) = seed_supplier_301b(&pool).await;
+    let (other_company, other_contact, _, other_je) = {
+        let c = create_test_company(&pool, "Autre").await;
+        let u = create_test_user(&pool, "bob", c).await;
+        let ct = create_test_contact(&pool, c, u, "Fournisseur B").await;
+        let fy = insert_fake_fiscal_year(&pool, c).await;
+        (c, ct, 0, insert_fake_journal_entry(&pool, c, fy).await)
+    };
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let days = chrono::Duration::days;
+    let amount = dec!(250.00);
+    let ins = |num: &'static str,
+               f: NaiveDate,
+               e: Option<NaiveDate>,
+               t: Decimal,
+               st: &'static str| {
+        let pool = pool.clone();
+        async move {
+            insert_supplier_invoice(&pool, company_id, contact_id, je_id, Some(num), f, e, t, st)
+                .await
+        }
+    };
+    let ok_recent = ins("OK-RECENT", d - days(10), None, amount, "open").await;
+    let ok_due_late = ins(
+        "OK-ECHEANCE",
+        d - days(400),
+        Some(d - days(300)),
+        amount,
+        "open",
+    )
+    .await;
+    let ok_upper = ins("OK-D+7", d + days(7), None, amount, "open").await;
+    let ok_lower = ins("OK-D-365", d - days(365), None, amount, "open").await;
+    let _paid = ins("PAYEE", d - days(10), None, amount, "paid").await;
+    let _cancelled = ins("ANNULEE", d - days(10), None, amount, "cancelled").await;
+    let _other_amount = ins("AUTRE-MONTANT", d - days(10), None, dec!(250.01), "open").await;
+    let _too_new = ins("D+8", d + days(8), None, amount, "open").await;
+    let _too_old = ins("D-366", d - days(366), None, amount, "open").await;
+    let _due_before = ins(
+        "ECHEANCE-AVANT",
+        d - days(366),
+        Some(d - days(380)),
+        amount,
+        "open",
+    )
+    .await;
+    let _foreign = insert_supplier_invoice(
+        &pool,
+        other_company,
+        other_contact,
+        other_je,
+        Some("AUTRE-SOCIETE"),
+        d - days(10),
+        None,
+        amount,
+        "open",
+    )
+    .await;
+
+    let rows = reconciliation_repo::find_open_supplier_invoices_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_supplier_payment_date(d),
+        amount,
+    )
+    .await
+    .expect("candidates");
+    // Ordre d'imputation : X croissante (D − 365, D − 300, D − 10, D + 7).
+    assert_eq!(
+        ids_of(&rows),
+        vec![ok_lower, ok_due_late, ok_recent, ok_upper],
+        "seules les quatre factures admises, dans l'ordre d'imputation"
+    );
+}
+
+/// T-b8 (AC-b3) — une facture engagée dans un lot `generated` n'est jamais
+/// candidate ; la fonction du lot du compte la rend si le lot est **du
+/// compte** et le montant exact ; un lot d'un autre compte n'y figure pas ;
+/// un lot `confirmed` ou `cancelled` laisse la facture candidate (si ouverte).
+#[sqlx::test(migrations = "./test-schema")]
+async fn supplier_candidates_and_the_payment_batch_of_the_account(pool: MySqlPool) {
+    let (company_id, contact_id, bank, je_id) = seed_supplier_301b(&pool).await;
+    let other_bank = create_test_bank_account(&pool, company_id, "CH5604835012345678009").await;
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let f = d - chrono::Duration::days(20);
+    let amount = dec!(99.90);
+    let in_generated = insert_supplier_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        je_id,
+        Some("LOT-GEN"),
+        f,
+        None,
+        amount,
+        "open",
+    )
+    .await;
+    let batch = insert_payment_batch(&pool, company_id, bank, in_generated, "generated").await;
+    let in_confirmed = insert_supplier_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        je_id,
+        Some("LOT-CONF"),
+        f,
+        None,
+        amount,
+        "open",
+    )
+    .await;
+    insert_payment_batch(&pool, company_id, bank, in_confirmed, "confirmed").await;
+    let in_cancelled = insert_supplier_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        je_id,
+        Some("LOT-ANN"),
+        f,
+        None,
+        amount,
+        "open",
+    )
+    .await;
+    insert_payment_batch(&pool, company_id, bank, in_cancelled, "cancelled").await;
+
+    let window = InvoiceDateWindow::for_supplier_payment_date(d);
+    let rows = reconciliation_repo::find_open_supplier_invoices_for_window(
+        &pool, company_id, window, amount,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        ids_of(&rows),
+        vec![in_confirmed, in_cancelled],
+        "lot generated exclu"
+    );
+
+    let held = reconciliation_repo::find_open_supplier_invoice_in_account_batch(
+        &pool, company_id, bank, amount,
+    )
+    .await
+    .unwrap()
+    .expect("lot du compte, montant exact");
+    assert_eq!(held.supplier_invoice_id, in_generated);
+    assert_eq!(held.supplier_invoice_number.as_deref(), Some("LOT-GEN"));
+    assert_eq!(held.payment_batch_id, batch);
+    assert!(
+        reconciliation_repo::find_open_supplier_invoice_in_account_batch(
+            &pool, company_id, other_bank, amount
+        )
+        .await
+        .unwrap()
+        .is_none(),
+        "lot d'un autre compte : absent"
+    );
+    assert!(
+        reconciliation_repo::find_open_supplier_invoice_in_account_batch(
+            &pool,
+            company_id,
+            bank,
+            dec!(99.91)
+        )
+        .await
+        .unwrap()
+        .is_none(),
+        "montant non exact : absent"
+    );
+}
+
+/// T-b9 (AC-b3) — un TTC à plus de deux décimales (`100.0040`) n'égale jamais
+/// un débit au centime (`100.00`) : absent des candidates, présent des
+/// factures masquantes (0,05 au plus). L'angle mort L2 (#687).
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_supplier_ttc_under_the_centime_is_masking_not_candidate(pool: MySqlPool) {
+    let (company_id, contact_id, _bank, je_id) = seed_supplier_301b(&pool).await;
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let id = insert_supplier_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        je_id,
+        Some("SOUS-CENTIME"),
+        d,
+        None,
+        dec!(100.0040),
+        "open",
+    )
+    .await;
+    let far = insert_supplier_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        je_id,
+        Some("LOIN"),
+        d,
+        None,
+        dec!(100.06),
+        "open",
+    )
+    .await;
+    let rows = reconciliation_repo::find_open_supplier_invoices_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_supplier_payment_date(d),
+        dec!(100.00),
+    )
+    .await
+    .unwrap();
+    assert!(rows.is_empty(), "jamais candidate");
+    let masking =
+        reconciliation_repo::find_supplier_invoices_masking(&pool, company_id, dec!(100.00))
+            .await
+            .unwrap();
+    assert_eq!(
+        ids_of(&masking),
+        vec![id],
+        "masquante ; 100.06 au-delà de 0,05"
+    );
+    let _ = far;
+}
+
+/// T-b10 (AC-b3) — `LIMIT 50` **après** l'ordre d'imputation : 52 factures de
+/// même montant, les deux dernières créées étant les plus tôt exigibles ;
+/// elles sont dans les 50 rendues, en tête.
+#[sqlx::test(migrations = "./test-schema")]
+async fn supplier_candidates_are_limited_after_the_imputation_order(pool: MySqlPool) {
+    let (company_id, contact_id, _bank, je_id) = seed_supplier_301b(&pool).await;
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    for k in 0..50 {
+        insert_supplier_invoice(
+            &pool,
+            company_id,
+            contact_id,
+            je_id,
+            None,
+            d - chrono::Duration::days(k),
+            None,
+            dec!(10.00),
+            "open",
+        )
+        .await;
+    }
+    let early_a = insert_supplier_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        je_id,
+        None,
+        d - chrono::Duration::days(200),
+        None,
+        dec!(10.00),
+        "open",
+    )
+    .await;
+    let early_b = insert_supplier_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        je_id,
+        None,
+        d - chrono::Duration::days(199),
+        None,
+        dec!(10.00),
+        "open",
+    )
+    .await;
+    let rows = reconciliation_repo::find_open_supplier_invoices_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_supplier_payment_date(d),
+        dec!(10.00),
+    )
+    .await
+    .unwrap();
+    assert_eq!(rows.len(), 50);
+    assert_eq!(&ids_of(&rows)[..2], &[early_a, early_b]);
+}
+
+/// T-b42 (AC-b3) et l'ordre de la liste masquante — 201 factures ouvertes à
+/// 0,05 près : la liste est pleine (200 rendues), le montant **exact** d'abord,
+/// puis l'ordre d'imputation, sans borne de dates.
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_masking_list_is_full_at_200_and_puts_the_exact_amount_first(pool: MySqlPool) {
+    let (company_id, contact_id, _bank, je_id) = seed_supplier_301b(&pool).await;
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    for k in 0..200 {
+        insert_supplier_invoice(
+            &pool,
+            company_id,
+            contact_id,
+            je_id,
+            None,
+            d - chrono::Duration::days(k),
+            None,
+            dec!(40.03),
+            "open",
+        )
+        .await;
+    }
+    // Exacte, et datée de dix ans plus tôt : aucune borne de dates.
+    let exact = insert_supplier_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        je_id,
+        None,
+        NaiveDate::from_ymd_opt(2016, 1, 1).unwrap(),
+        None,
+        dec!(40.00),
+        "open",
+    )
+    .await;
+    let masking =
+        reconciliation_repo::find_supplier_invoices_masking(&pool, company_id, dec!(40.00))
+            .await
+            .unwrap();
+    assert_eq!(
+        masking.len() as i64,
+        reconciliation_repo::SUPPLIER_MASKING_LIMIT,
+        "liste pleine"
+    );
+    assert_eq!(masking[0].id, exact, "le montant exact d'abord");
+}
+
+/// T-b5 (AC-b2) — **parité** des deux écritures de l'exigibilité fournisseur :
+/// [`SUPPLIER_INVOICE_EXIGIBILITY_DATE_SQL`] et `invoice_exigibility_date`
+/// sur une `SupplierInvoice`, contre une valeur écrite en dur (patron
+/// `exigibility_date_sql_and_rust_agree`).
+#[sqlx::test(migrations = "./test-schema")]
+async fn supplier_exigibility_date_sql_and_rust_agree(pool: MySqlPool) {
+    use kesh_db::repositories::reconciliation::{
+        SUPPLIER_INVOICE_EXIGIBILITY_DATE_SQL, invoice_exigibility_date,
+    };
+    use kesh_db::repositories::supplier_invoices;
+
+    let (company_id, contact_id, _bank, je_id) = seed_supplier_301b(&pool).await;
+    let ymd = |y: i32, m: u32, j: u32| NaiveDate::from_ymd_opt(y, m, j).unwrap();
+    let cases = [
+        ("E nulle", ymd(2026, 5, 20), None, ymd(2026, 5, 20)),
+        (
+            "E > F",
+            ymd(2026, 5, 20),
+            Some(ymd(2026, 6, 19)),
+            ymd(2026, 6, 19),
+        ),
+        (
+            "E = F",
+            ymd(2026, 5, 20),
+            Some(ymd(2026, 5, 20)),
+            ymd(2026, 5, 20),
+        ),
+        (
+            "E < F",
+            ymd(2026, 5, 20),
+            Some(ymd(2026, 5, 10)),
+            ymd(2026, 5, 20),
+        ),
+    ];
+    let mut by_id = std::collections::BTreeMap::new();
+    for (name, f, e, x) in cases {
+        let id = insert_supplier_invoice(
+            &pool,
+            company_id,
+            contact_id,
+            je_id,
+            None,
+            f,
+            e,
+            dec!(1.00),
+            "open",
+        )
+        .await;
+        by_id.insert(id, (name, x));
+    }
+    let rows: Vec<(i64, NaiveDate)> = sqlx::query_as(&format!(
+        "SELECT si.id, {SUPPLIER_INVOICE_EXIGIBILITY_DATE_SQL} FROM supplier_invoices si \
+         WHERE si.company_id = ? ORDER BY si.id"
+    ))
+    .bind(company_id)
+    .fetch_all(&pool)
+    .await
+    .expect("exigibilité décodée en NaiveDate");
+    assert_eq!(rows.len(), by_id.len());
+    for (id, sql_x) in rows {
+        let (name, x) = by_id[&id];
+        assert_eq!(sql_x, x, "{name} : SQL");
+        let (inv, _) = supplier_invoices::get(&pool, company_id, id)
+            .await
+            .unwrap()
+            .expect("relue");
+        assert_eq!(invoice_exigibility_date(&inv), x, "{name} : Rust");
+    }
+}
+
+/// T-b6 (AC-b2) — l'usage de Guy : une facture **saisie aujourd'hui**, datée
+/// et échue un an moins un jour avant le paiement, est proposée — la fenêtre
+/// ne lit jamais `created_at`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_supplier_invoice_entered_long_after_the_payment_is_a_candidate(pool: MySqlPool) {
+    let (company_id, contact_id, _bank, je_id) = seed_supplier_301b(&pool).await;
+    let d = NaiveDate::from_ymd_opt(2025, 3, 10).unwrap();
+    let f = d - chrono::Duration::days(364);
+    let id = insert_supplier_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        je_id,
+        Some("ANCIENNE"),
+        f,
+        Some(f),
+        dec!(75.00),
+        "open",
+    )
+    .await;
+    let rows = reconciliation_repo::find_open_supplier_invoices_for_window(
+        &pool,
+        company_id,
+        InvoiceDateWindow::for_supplier_payment_date(d),
+        dec!(75.00),
+    )
+    .await
+    .unwrap();
+    assert_eq!(ids_of(&rows), vec![id]);
+}

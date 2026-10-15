@@ -35,6 +35,17 @@ const FIND_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, supplier_invoi
     settlement_account_id, settlement_journal_entry_id, paid_at, version, created_at, updated_at \
     FROM supplier_invoices WHERE id = ? AND company_id = ?";
 
+/// Les colonnes de [`SupplierInvoice`], préfixées de l'alias `si`, pour les
+/// requêtes qui joignent d'autres tables (la réconciliation, Story 30-1b) —
+/// même liste et même ordre que [`FIND_SCOPED_SQL`]. Qui ajoute un champ à
+/// l'entité l'ajoute aux deux.
+pub const SUPPLIER_INVOICE_COLUMNS_SI: &str = "si.id, si.company_id, si.contact_id, \
+    si.supplier_invoice_number, si.status, si.invoice_date, si.due_date, si.total_amount, \
+    si.creditor_iban, si.creditor_qr_iban, si.payment_reference, si.expected_payment_amount, \
+    si.project_id, si.purchase_journal_entry_id, si.settlement_type, \
+    si.settlement_bank_account_id, si.settlement_account_id, si.settlement_journal_entry_id, \
+    si.paid_at, si.version, si.created_at, si.updated_at";
+
 const LINE_COLUMNS: &str = "id, supplier_invoice_id, position, description, quantity, unit_price, \
     vat_rate, line_total, expense_account_id, created_at";
 
@@ -710,6 +721,9 @@ pub async fn pay(
 /// `payment_batches::confirm_batch` (qui appelle N fois dans UNE transaction
 /// atomique, pendant que le lot est encore `generated` — d'où l'absence de
 /// guard lot ici, sinon la confirmation se self-bloquerait).
+///
+/// Enveloppe d'une ligne de [`pay_in_tx_as`] (Story 30-1b, AC-b9) : l'acteur
+/// est l'utilisateur, sans clé d'API — `pay` et `confirm_batch` ne changent pas.
 pub async fn pay_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -718,8 +732,43 @@ pub async fn pay_in_tx(
     payment_date: chrono::NaiveDate,
     user_id: i64,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
+    pay_in_tx_as(
+        tx,
+        company_id,
+        id,
+        choice,
+        payment_date,
+        letterings::Actor {
+            user_id,
+            api_key_id: None,
+        },
+    )
+    .await
+}
+
+/// Le corps du règlement d'une facture fournisseur, **avec son acteur**
+/// (Story 30-1b, #686, AC-b9) : l'audit `supplier_invoice.paid` passe par
+/// [`NewAuditLogEntry::for_actor`] et le lettrage reçoit la clé d'API. Un seul
+/// corps pour la fiche, la confirmation d'un lot ([`pay_in_tx`]) et
+/// l'acceptation de la réconciliation (`accept_one_supplier_invoice`, qui
+/// passe la clé de la requête) : aucun jumeau.
+///
+/// **`paid_at` est la date du paiement** (`payment_date` à minuit, Story
+/// 30-1b, AC-b16, C-30-1-25) — la date même de l'écriture de règlement —, et
+/// non plus l'heure de l'enregistrement (`CURRENT_TIMESTAMP(3)` jusqu'à la
+/// v0.13.4). Même forme que le règlement client. Les factures déjà payées
+/// gardent leur `paid_at` : rien n'est réécrit.
+pub async fn pay_in_tx_as(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    choice: SettlementChoice,
+    payment_date: chrono::NaiveDate,
+    actor: letterings::Actor,
+) -> Result<SupplierInvoiceWithLines, DbError> {
     use crate::entities::{Journal, NewJournalEntry};
     use crate::repositories::{fiscal_years, journal_entries};
+    let user_id = actor.user_id;
 
     // (1) Verrou facture + garde statut.
     let inv = sqlx::query_as::<_, SupplierInvoice>(&format!("{FIND_SCOPED_SQL} FOR UPDATE"))
@@ -900,17 +949,21 @@ pub async fn pay_in_tx(
     )
     .await?;
 
-    // (6) UPDATE facture → paid.
+    // (6) UPDATE facture → paid. `paid_at` = la date du paiement à minuit
+    //     (Story 30-1b, AC-b16), liée en paramètre.
+    let paid_at = payment_date
+        .and_time(chrono::NaiveTime::from_hms_opt(0, 0, 0).expect("minuit est une heure valide"));
     let rows = sqlx::query(
         "UPDATE supplier_invoices SET status = 'paid', settlement_type = ?, \
          settlement_bank_account_id = ?, settlement_account_id = ?, \
-         settlement_journal_entry_id = ?, paid_at = CURRENT_TIMESTAMP(3), version = version + 1 \
+         settlement_journal_entry_id = ?, paid_at = ?, version = version + 1 \
          WHERE id = ? AND company_id = ? AND version = ? AND status = 'open'",
     )
     .bind(settlement_type)
     .bind(bank_account_id)
     .bind(internal_account_id)
     .bind(je.entry.id)
+    .bind(paid_at)
     .bind(id)
     .bind(company_id)
     .bind(inv.version)
@@ -928,19 +981,9 @@ pub async fn pay_in_tx(
     //     paiement n'est jamais refusé à cause du lettrage (compte non lettrable,
     //     périodes closes : abstention) ; une erreur structurelle se propage et
     //     annule le paiement — dans `confirm_batch`, le lot entier.
-    letterings::sync_supplier_invoice_in_tx(
-        tx,
-        company_id,
-        id,
-        fy.id,
-        letterings::Actor {
-            user_id,
-            api_key_id: None,
-        },
-    )
-    .await?;
+    letterings::sync_supplier_invoice_in_tx(tx, company_id, id, fy.id, actor).await?;
 
-    // (7) Relire + audit.
+    // (7) Relire + audit — l'acteur, clé d'API comprise (Story 30-1b, AC-b9).
     let updated = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
         .bind(id)
         .bind(company_id)
@@ -950,10 +993,11 @@ pub async fn pay_in_tx(
     let inv_lines = fetch_lines(tx, id).await?;
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry::user(
+        NewAuditLogEntry::for_actor(
             user_id,
-            "supplier_invoice.paid".to_string(),
-            "supplier_invoice".to_string(),
+            actor.api_key_id,
+            "supplier_invoice.paid",
+            "supplier_invoice",
             id,
             Some(serde_json::json!({
                 "settlementType": settlement_type,
@@ -968,6 +1012,191 @@ pub async fn pay_in_tx(
         invoice: updated,
         lines: inv_lines,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Story 30-1b (#686) — régler une facture fournisseur par la réconciliation
+// ---------------------------------------------------------------------------
+
+/// La facture fournisseur **verrouillée** et admise au règlement par une
+/// transaction bancaire : rendue par [`lock_for_bank_settlement_in_tx`].
+#[derive(Debug, Clone)]
+pub struct LockedForSettlement {
+    /// La facture, lue sous `FOR UPDATE` (statut `open`).
+    pub invoice: SupplierInvoice,
+}
+
+/// Pourquoi une facture fournisseur ne peut pas être réglée par une
+/// transaction bancaire du compte (Story 30-1b, #686, AC-b6, étape 3). Chaque
+/// variante devient un refus **par proposition** dans `failed[]`
+/// (`kesh-api`, `supplier_payment_error_to_failed_proposal`), jamais une
+/// erreur globale (§ *Pattern batch* du `CLAUDE.md`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SupplierSettlementRefusal {
+    /// Facture absente **ou d'une autre société** — indiscernables (KF-002).
+    NotFound,
+    /// Facture non ouverte (`paid`, `cancelled`).
+    NotOpen { status: String },
+    /// Compte bancaire absent, d'une autre société ou archivé.
+    BankAccountNotFound,
+    /// Compte bancaire clos (`closed_on` posé).
+    BankAccountClosed,
+    /// Compte bancaire sans compte au grand livre.
+    BankAccountNotConfigured,
+    /// La facture est engagée dans un lot de paiement `generated` (tout
+    /// compte) : le fichier pain.001 est peut-être déjà à la banque.
+    InGeneratedBatch { payment_batch_id: i64 },
+    /// Une **autre** facture ouverte, au montant exact, est engagée dans un lot
+    /// `generated` de ce compte — la garde (d), la même que la proposition.
+    HeldByPaymentBatch {
+        supplier_invoice_id: i64,
+        payment_batch_id: i64,
+    },
+}
+
+/// Le texte qui distingue, dans `PROCESSLIST`, la lecture verrouillante du
+/// compte de [`lock_for_bank_settlement_in_tx`] — la sonde des tests de course
+/// (`test_fixtures::attendre_une_requete_en_cours`). Macro, pour que la sonde
+/// et la requête n'aient qu'une écriture ; le `FOR UPDATE` y figure, pour que
+/// l'inventaire des gardes du compte clos
+/// (`kesh-api/tests/bank_account_closed_inventory.rs`) ne lise pas ce
+/// fragment comme une lecture non verrouillante de `closed_on`.
+macro_rules! bank_settlement_account_lock_marker {
+    () => {
+        "closed_on, archived AS bank_settlement_lock FROM bank_accounts \
+         WHERE id = ? AND company_id = ? FOR UPDATE"
+    };
+}
+
+/// Cf. [`bank_settlement_account_lock_marker!`] — publique pour les tests.
+pub const BANK_SETTLEMENT_ACCOUNT_LOCK_MARKER: &str = bank_settlement_account_lock_marker!();
+
+/// L'étape (b) de [`lock_for_bank_settlement_in_tx`] : le compte de l'import,
+/// en exclusif.
+const BANK_SETTLEMENT_ACCOUNT_LOCK_SQL: &str = concat!(
+    "SELECT journal_account_id, ",
+    bank_settlement_account_lock_marker!()
+);
+
+/// **Verrous et éligibilité** du règlement d'une facture fournisseur par une
+/// transaction bancaire du compte `bank_account_id` (Story 30-1b, #686, AC-b6
+/// étape 3, AC-b8, AC-b10), dans la transaction de l'acceptation, **avant**
+/// [`pay_in_tx_as`]. `amount` est la valeur absolue de la transaction
+/// rechargée ; seule la garde (d) la lit.
+///
+/// Dans **cet ordre de verrous** — celui de `pay_in_tx` et de `create_batch` :
+/// facture, puis compte, puis articles de lot :
+///
+/// - **(a)** la facture `FOR UPDATE` → absente ou d'une autre société :
+///   [`SupplierSettlementRefusal::NotFound`] ; non `open` : `NotOpen` ;
+/// - **(b)** le compte bancaire de l'import `FOR UPDATE` → absent ou archivé :
+///   `BankAccountNotFound` ; clos : `BankAccountClosed` ; sans compte lié :
+///   `BankAccountNotConfigured`. Le compte est pris **avant** la lecture des
+///   articles (arbitrage de la P1) : une acceptation et un `create_batch` du
+///   même compte se sérialisent au compte, sans interblocage (C3) ;
+/// - **(c)** l'appartenance de la facture à un lot `generated`, en **lecture
+///   verrouillante** (`LOCK IN SHARE MODE`) → `InGeneratedBatch`. ⛔ Une
+///   lecture ordinaire lirait la vue de la transaction, **déjà née** (lecture
+///   de la transaction bancaire, ou proposition précédente du lot) : un
+///   `create_batch` validé entre-temps serait invisible — il verrouille la
+///   facture sans la modifier —, et la facture serait réglée ici **puis payée
+///   une seconde fois** par la banque sur le fichier pain.001. Valable en
+///   MariaDB 10.11 (`innodb_snapshot_isolation = OFF`, #669). ⚠️ Sans article,
+///   la lecture pose un **intervalle** partagé sur
+///   `idx_payment_batch_items_invoice`, tenu jusqu'au commit du lot
+///   d'acceptation : un `create_batch` d'**autres** factures dont un article y
+///   tombe attend ; le seul cycle qui passe par là est C7 (entre comptes),
+///   rejoué des deux côtés. [`in_generated_batch`], lu par les vues, reste non
+///   verrouillant ;
+/// - **(d)** la **même garde que la proposition** :
+///   [`reconciliation::find_open_supplier_invoice_in_account_batch`], en
+///   **lecture ordinaire** — une autre facture ouverte au montant exact,
+///   engagée dans un lot `generated` de ce compte → `HeldByPaymentBatch`. Sans
+///   elle, un appel d'API direct, ou un écran chargé avant la création du lot,
+///   réglerait février avec le débit de janvier. ⚠️ Tolérance écrite : un lot
+///   commis après la naissance de la vue n'est pas vu ; (d) n'ajoute aucun
+///   verrou.
+///
+/// Les verrous (a) et (b) sont redemandés par [`pay_in_tx_as`], déjà tenus.
+/// Une erreur de base est rendue en `Err` ; un refus, en `Ok(Err(_))`.
+///
+/// [`reconciliation::find_open_supplier_invoice_in_account_batch`]:
+///     super::reconciliation::find_open_supplier_invoice_in_account_batch
+pub async fn lock_for_bank_settlement_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    supplier_invoice_id: i64,
+    bank_account_id: i64,
+    amount: Decimal,
+) -> Result<Result<LockedForSettlement, SupplierSettlementRefusal>, DbError> {
+    // (a) La facture.
+    let invoice = sqlx::query_as::<_, SupplierInvoice>(&format!("{FIND_SCOPED_SQL} FOR UPDATE"))
+        .bind(supplier_invoice_id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    let Some(invoice) = invoice else {
+        return Ok(Err(SupplierSettlementRefusal::NotFound));
+    };
+    if invoice.status != "open" {
+        return Ok(Err(SupplierSettlementRefusal::NotOpen {
+            status: invoice.status,
+        }));
+    }
+
+    // (b) Le compte bancaire de l'import.
+    let account: Option<(Option<i64>, Option<chrono::NaiveDate>, bool)> =
+        sqlx::query_as(BANK_SETTLEMENT_ACCOUNT_LOCK_SQL)
+            .bind(bank_account_id)
+            .bind(company_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+    match account {
+        None | Some((_, _, true)) => {
+            return Ok(Err(SupplierSettlementRefusal::BankAccountNotFound));
+        }
+        Some((_, Some(_), _)) => return Ok(Err(SupplierSettlementRefusal::BankAccountClosed)),
+        Some((None, None, false)) => {
+            return Ok(Err(SupplierSettlementRefusal::BankAccountNotConfigured));
+        }
+        Some((Some(_), None, false)) => {}
+    }
+
+    // (c) L'appartenance à un lot `generated`, en lecture verrouillante.
+    let in_batch: Option<i64> = sqlx::query_scalar(
+        "SELECT pb.id FROM payment_batch_items pbi \
+         JOIN payment_batches pb ON pb.id = pbi.payment_batch_id \
+         WHERE pbi.supplier_invoice_id = ? AND pb.status = 'generated' LIMIT 1 \
+         LOCK IN SHARE MODE",
+    )
+    .bind(supplier_invoice_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if let Some(payment_batch_id) = in_batch {
+        return Ok(Err(SupplierSettlementRefusal::InGeneratedBatch {
+            payment_batch_id,
+        }));
+    }
+
+    // (d) La garde de la proposition : une autre facture du lot du compte.
+    if let Some(held) = super::reconciliation::find_open_supplier_invoice_in_account_batch(
+        &mut **tx,
+        company_id,
+        bank_account_id,
+        amount,
+    )
+    .await?
+    {
+        return Ok(Err(SupplierSettlementRefusal::HeldByPaymentBatch {
+            supplier_invoice_id: held.supplier_invoice_id,
+            payment_batch_id: held.payment_batch_id,
+        }));
+    }
+
+    Ok(Ok(LockedForSettlement { invoice }))
 }
 
 // ---------------------------------------------------------------------------

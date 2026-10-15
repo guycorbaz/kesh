@@ -19,13 +19,19 @@ export interface TransactionSummary {
 }
 
 // Story 8-5b — discriminator candidate_type. Les fields invoice/rule
-// sont Some/None selon ce type.
-export type CandidateType = 'invoice' | 'rule';
+// sont Some/None selon ce type. Story 30-1b (#686) : `supplier_invoice`, une
+// facture fournisseur proposée pour un débit.
+export type CandidateType = 'invoice' | 'rule' | 'supplier_invoice';
 
 export interface ReconciliationCandidate {
 	candidateType: CandidateType;
 	// Invoice candidate fields
+	/** La facture client ; `null` pour une facture fournisseur et une règle. */
 	invoiceId: number | null;
+	/** Story 30-1b — la facture fournisseur ; `null` sinon. */
+	supplierInvoiceId: number | null;
+	/** Story 30-1b — le nom du client ou du fournisseur ; `null` pour une règle. */
+	contactName: string | null;
 	invoiceNumber: string | null;
 	/** Montant à régler : le reste dû de la facture (Story 25-4-c, #420). */
 	invoiceAmount: string | null;
@@ -41,10 +47,24 @@ export interface ReconciliationCandidate {
 	score: MatchScore;
 }
 
+/**
+ * Story 30-1b (#686, AC-b5) — pourquoi une ligne ne propose rien. Un seul code : une
+ * facture fournisseur ouverte du montant exact du débit est dans un lot de paiement en cours
+ * sur ce compte.
+ */
+export interface ProposalNotice {
+	code: 'supplier_invoice_in_payment_batch';
+	supplierInvoiceId: number;
+	supplierInvoiceNumber: string | null;
+	paymentBatchId: number;
+}
+
 export interface ReconciliationProposal {
 	bankTransactionId: number;
 	transaction: TransactionSummary;
 	candidates: ReconciliationCandidate[];
+	/** Story 30-1b — posée, elle va de pair avec `candidates` vide. */
+	notice: ProposalNotice | null;
 }
 
 export interface GetProposalsResponse {
@@ -73,7 +93,9 @@ export type AcceptProposalInput =
 			bankTransactionId: number;
 			ruleId: number;
 			counterpartyAccountId: number;
-	  };
+	  }
+	// Story 30-1b (#686) — régler une facture fournisseur par un débit.
+	| { type: 'supplier_invoice'; bankTransactionId: number; supplierInvoiceId: number };
 
 export interface SplitProposalLine {
 	counterpartyAccountId: number;
@@ -85,7 +107,10 @@ export interface SplitProposalLine {
 
 export interface AcceptedProposal {
 	bankTransactionId: number;
+	/** `0` hors d'une facture client. */
 	invoiceId: number;
+	/** Story 30-1b — la facture fournisseur réglée ; `null` sinon. */
+	supplierInvoiceId: number | null;
 	journalEntryId: number;
 	score: MatchScore;
 }
@@ -146,10 +171,16 @@ export interface ReconciliationTransactionResponse {
 	currency: string;
 	bookingDate: string;
 	matchedEntryId: number | null;
-	/** `invoice_settlement` ou `entry` ; `null` si la transaction n'est pas rapprochée. */
-	kind: 'invoice_settlement' | 'entry' | null;
+	/**
+	 * `invoice_settlement`, `supplier_settlement` (Story 30-1a, un règlement fournisseur) ou
+	 * `entry` ; `null` si la transaction n'est pas rapprochée.
+	 */
+	kind: 'invoice_settlement' | 'supplier_settlement' | 'entry' | null;
 	invoiceId: number | null;
 	invoiceNumber: string | null;
+	/** Story 30-1a — la facture fournisseur réglée, si `kind = supplier_settlement`. */
+	supplierInvoiceId: number | null;
+	supplierInvoiceNumber: string | null;
 	cancellable: boolean;
 	cancelBlockedBy: ReconciliationCancelCode | null;
 	/** Numéro du compte archivé (rang 4). */
@@ -163,6 +194,8 @@ export interface CancelReconciliationResponse {
 	bankTransaction: { id: number; status: string; matchedEntryId: number | null };
 	reversalJournalEntryId: number;
 	invoiceId: number | null;
+	/** Story 30-1a — la facture fournisseur dont le paiement a été retiré. */
+	supplierInvoiceId: number | null;
 }
 
 // Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
