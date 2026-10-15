@@ -1253,6 +1253,25 @@ pub async fn supplier_settlement_cancel_blocker(
     company_id: i64,
     supplier_invoice_id: i64,
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
+    supplier_settlement_cancel_blocker_unlinking(conn, company_id, supplier_invoice_id, None).await
+}
+
+/// [`supplier_settlement_cancel_blocker`], avec l'**exemption étroite** du
+/// rang 3 pour la transaction bancaire `unlinking` que l'on dé-rapproche
+/// (Story 30-1a, #686, AC-a3) — patron exact de
+/// [`super::invoice_settlements_write::settlement_cancel_blocker_unlinking`] ;
+/// cf. [`super::settlement_cancellation::settlement_entry_cancel_blocker`].
+///
+/// ⛔ Le rang 1 n'est écrit qu'ici : le dé-rapprochement d'un règlement
+/// fournisseur ([`super::reconciliation_cancel::cancel_in_tx`]) l'appelle, il
+/// ne le recopie pas. Les annulations du règlement depuis la fiche passent
+/// `None` (par l'enveloppe) : leur comportement est inchangé.
+pub async fn supplier_settlement_cancel_blocker_unlinking(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    supplier_invoice_id: i64,
+    unlinking: Option<i64>,
+) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
     let row: Option<(String, Option<i64>)> = sqlx::query_as(
         "SELECT status, settlement_journal_entry_id FROM supplier_invoices \
          WHERE id = ? AND company_id = ?",
@@ -1274,7 +1293,7 @@ pub async fn supplier_settlement_cancel_blocker(
         )));
     };
     super::settlement_cancellation::settlement_entry_cancel_blocker(
-        conn, company_id, entry_id, None,
+        conn, company_id, entry_id, unlinking,
     )
     .await
 }

@@ -685,6 +685,9 @@ fn les_replis_rust_suivent_le_catalogue() {
             "crates/kesh-api/src/errors.rs",
             &[
                 ("settlement-cancel-blocked-fiscal-year-closed", 1, &[]),
+                // Story 30-1a (#686, AC-a6, T-a13) — le texte « rapproché »,
+                // vrai sur la fiche client comme sur la fiche fournisseur.
+                ("settlement-cancel-blocked-bank-match", 1, &[]),
                 ("reconciliation-cancel-blocked-fiscal-year-closed", 1, &[]),
                 (
                     "supplier-invoices-cancel-blocked-fiscal-year-closed",

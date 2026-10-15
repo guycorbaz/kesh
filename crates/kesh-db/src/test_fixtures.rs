@@ -561,6 +561,23 @@ pub async fn seed_contact_and_product(
 pub async fn attendre_une_requete_en_cours(
     pool: &MySqlPool,
     motifs: &[&str],
+    interrompre: impl FnMut() -> bool,
+) -> bool {
+    attendre_des_requetes_en_cours(pool, motifs, 1, interrompre).await
+}
+
+/// [`attendre_une_requete_en_cours`], qui attend **au moins `au_moins`**
+/// requêtes en cours portant tous les `motifs` — Story 30-1a (#686, AC-a9).
+///
+/// ⚠️ **Pourquoi compter** : deux transactions qui attendent le **même**
+/// verrou par le **même** texte préparé (deux `create_batch` sur une facture)
+/// sont indiscernables par les motifs ; la forme à un seul témoin rend vrai dès
+/// la première, avant que la seconde ait démarré, et le test mesurerait alors
+/// un ordre qu'il n'a pas forcé.
+pub async fn attendre_des_requetes_en_cours(
+    pool: &MySqlPool,
+    motifs: &[&str],
+    au_moins: i64,
     mut interrompre: impl FnMut() -> bool,
 ) -> bool {
     let mut sql = String::from(
@@ -580,12 +597,12 @@ pub async fn attendre_une_requete_en_cours(
             q = q.bind(*m);
         }
         let n = q.fetch_one(pool).await.expect("liste des processus");
-        if n > 0 {
+        if n >= au_moins {
             return true;
         }
         assert!(
             debut.elapsed() < std::time::Duration::from_secs(10),
-            "aucune requête contenant {motifs:?} n'a été vue en cours"
+            "moins de {au_moins} requête(s) contenant {motifs:?} vue(s) en cours"
         );
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }

@@ -46,10 +46,12 @@ export function settlementCancelTailMessage(
         "settlement-cancel-blocked-lettering-closed",
         "Ce règlement est lettré avec sa facture, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du dernier règlement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est suivi d'un exercice clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
       );
+    // Story 30-1a (#686, AC-a6) — un texte vrai sur les DEUX fiches : la fiche
+    // fournisseur n'a pas le dialogue « Annuler le rapprochement ».
     case "MATCHED_BANK_TRANSACTION":
       return i18nMsg(
         "settlement-cancel-blocked-bank-match",
-        "Ce règlement est rapproché d'une transaction bancaire : annulez d'abord le rapprochement, depuis cette fiche ou le détail de l'import bancaire.",
+        "Ce règlement est rapproché d'une transaction bancaire : annulez d'abord le rapprochement, depuis le détail de l'import bancaire — ou, pour une facture client, depuis sa fiche.",
       );
     case "ACCOUNT_ARCHIVED": {
       const base = i18nMsg(

@@ -800,7 +800,7 @@ invoices-write-off-sub-centime = The fraction of a centime is posted to the roun
 invoices-write-off-success = Remainder written off — invoice paid
 settlement-cancel-blocked-fiscal-year-closed = This settlement belongs to a closed fiscal year: before it can be cancelled, an administrator must reopen the closed fiscal years down to this one, starting with the most recent.
 settlement-cancel-blocked-lettering-closed = This settlement is matched with its invoice, and all lines of this matching group are in a closed period: it is fixed. Before it can be cancelled, take the most recent date of the matching group (usually that of the last settlement): if it falls under the period lock, an administrator must move the lock back before it; and if its fiscal year is followed by a closed fiscal year, or is closed itself, the administrator must reopen the closed fiscal years down to this one, starting with the most recent.
-settlement-cancel-blocked-bank-match = This settlement is reconciled with a bank transaction: undo the reconciliation first, from this record or the bank import detail.
+settlement-cancel-blocked-bank-match = This settlement is reconciled with a bank transaction: undo the reconciliation first, from the bank import detail — or, for a customer invoice, from its record.
 settlement-cancel-blocked-account-archived = An account of this settlement has been archived: reactivate it to be able to cancel the settlement.
 settlement-cancel-blocked-no-fiscal-year = No open fiscal year covers today's date: create it to be able to cancel this settlement.
 # Story 25-3-b (#418) — annuler un rapprochement : ses motifs et son dialogue.

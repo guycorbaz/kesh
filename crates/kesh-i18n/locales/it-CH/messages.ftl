@@ -800,7 +800,7 @@ invoices-write-off-sub-centime = La frazione di centesimo è registrata sul cont
 invoices-write-off-success = Residuo saldato — fattura pagata
 settlement-cancel-blocked-fiscal-year-closed = Questo pagamento appartiene a un esercizio chiuso: per poterlo annullare, un amministratore deve riaprire gli esercizi chiusi fino a questo esercizio, cominciando dal più recente.
 settlement-cancel-blocked-lettering-closed = Questo pagamento è abbinato alla sua fattura, e tutte le righe di questo abbinamento sono in un periodo chiuso: è bloccato. Per poterlo annullare, considerate la data più recente dell'abbinamento (in genere quella dell'ultimo pagamento): se cade nel blocco di periodo, un amministratore deve riportare il blocco prima di essa; e se il suo esercizio è seguito da un esercizio chiuso, o è chiuso esso stesso, deve riaprire gli esercizi chiusi fino a questo esercizio, cominciando dal più recente.
-settlement-cancel-blocked-bank-match = Questo pagamento è riconciliato con una transazione bancaria: annulla prima la riconciliazione, da questa scheda o dal dettaglio dell'importazione bancaria.
+settlement-cancel-blocked-bank-match = Questo pagamento è riconciliato con una transazione bancaria: annulla prima la riconciliazione, dal dettaglio dell'importazione bancaria — oppure, per una fattura cliente, dalla sua scheda.
 settlement-cancel-blocked-account-archived = Un conto di questo pagamento è stato archiviato: riattivalo per poter annullare il pagamento.
 settlement-cancel-blocked-no-fiscal-year = Nessun esercizio aperto copre la data di oggi: crealo per poter annullare questo pagamento.
 # Story 25-3-b (#418) — annuler un rapprochement : ses motifs et son dialogue.
