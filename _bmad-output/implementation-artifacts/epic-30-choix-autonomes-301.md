@@ -514,3 +514,150 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
   classement client est tenu par les tests de route existants (`cancelling_an_invoice_reconciliation_undoes_everything`).
 - **Écartées** : un fichier de tests neuf pour T-a17 (harnais recopié une fois de plus).
 - **Réversible** : oui.
+
+---
+
+## Développement de la 30-1b — 2026-10-15 (agent de développement, Opus 5.5)
+
+### C-30-1-47 — `MatchProposal.document_id` : les accès des tests renommés, une annotation de type ajoutée
+
+- **Contexte** : l'AC-b1 renomme le champ `invoice_id` en `document_id` et exige que les tests de `matching.rs` passent
+  « sans modification de leurs assertions ». Neuf assertions lisent `proposals[i].invoice_id` ou `p.invoice_id`, et
+  `propose_matches(&tx, &[])` ne s'infère plus une fois la fonction générique.
+- **Retenu** : l'accès au champ est renommé (`.document_id`) — la valeur comparée et l'attendu ne bougent pas — et le
+  test de la liste vide écrit `propose_matches::<Invoice>(&tx, &[])`. Aucun attendu n'est touché.
+- **Écartées** : garder le nom `invoice_id` pour une facture fournisseur (le champ mentirait) ; un alias.
+- **Réversible** : oui.
+
+### C-30-1-48 — La fenêtre porte ses nombres de jours
+
+- **Contexte** : `date_refusal_failed_proposal(bank_transaction_id, refusal, window)` (AC-b2) doit écrire
+  `tolerance_days` (1 / 7) et `window_days` (30 / 365), que la fenêtre ne portait pas (seulement ses deux dates).
+- **Retenu** : `InvoiceDateWindow` gagne `tolerance_days` et `window_days`, posés par un constructeur unique
+  (`with_days`) que partagent `for_payment_date` et `for_supplier_payment_date`. `check` est inchangé. Aucun site
+  hors du fichier ne construit la structure par littéral (vérifié par `grep`).
+- **Écartées** : passer les deux nombres en paramètres du refus (deux sources pour une même règle) ; deux types de
+  fenêtre.
+- **Réversible** : oui.
+
+### C-30-1-49 — `find_contacts_by_ids_chunked` au dépôt, lu par la proposition et par le rejeu
+
+- **Contexte** : P5 R1-7 — le lot de contacts doit être découpé par tranches de 500 ; le rejeu de `accept_one_rule`
+  doit noter « avec la même carte de contacts ».
+- **Retenu** : une fonction de dépôt, `find_contacts_by_ids_chunked(conn, company_id, ids)` (doublons et `0` retirés,
+  tranches de `MAX_IN_CLAUSE_IDS`), appelée par `get_proposals` (sur une connexion du pool) et par `load_rule_mask`
+  (dans la transaction du lot). Elle découpe aussi le lot des contacts **clients** — sans effet sous 500.
+- **Écartées** : un découpage écrit dans la route (deux copies).
+- **Réversible** : oui.
+
+### C-30-1-50 — Le masquage partagé : `rule_mask_for` (pur) et `load_rule_mask` (lecture)
+
+- **Contexte** : AC-b17 — « les mêmes fonctions que `get_proposals` (DRY, une fonction `rule_mask_for(tx, …)` lue
+  par les deux) ». La proposition masque plus de cas que l'acceptation n'en rejoue (inventaire clos, P5 F6).
+- **Retenu** : `rule_mask_for(lot du compte, notes des candidates fournisseur, notes des factures client trop-perçues)
+  -> Option<RuleMask>`, pure, qui décide des **trois** cas rejoués ; `get_proposals` l'appelle (et ajoute ses cas
+  propres : facture client candidate, masquantes fournisseur non candidates, liste pleine) ; `load_rule_mask` relit,
+  en lectures ordinaires et par les mêmes fonctions de dépôt, ce que `rule_mask_for` juge, pour `accept_one_rule`.
+  `has_strong_invoice_match`, `client_triples`, `supplier_triples` et `bears_identity_hint` sont des fonctions
+  communes.
+- **Écartées** : une seule fonction asynchrone qui charge et décide pour les deux (la proposition charge par lot, pas
+  transaction par transaction) ; dupliquer les critères dans `accept_one_rule`.
+- **Réversible** : oui.
+
+### C-30-1-51 — `SUPPLIER_INVOICE_COLUMNS_SI`, une seconde liste des colonnes
+
+- **Contexte** : les trois requêtes de l'AC-b3 lisent `SupplierInvoice` sur l'alias `si` ; la seule liste existante,
+  `FIND_SCOPED_SQL`, est une requête entière, sans alias.
+- **Retenu** : une constante publique `SUPPLIER_INVOICE_COLUMNS_SI` dans `supplier_invoices.rs`, à côté de
+  `FIND_SCOPED_SQL`, avec la consigne « qui ajoute un champ à l'entité l'ajoute aux deux ». `FIND_SCOPED_SQL` n'est
+  pas réécrite (fichier partagé avec la 30-2, diff minimal).
+- **Écartées** : `si.*` (colonnes ajoutées plus tard lues sans le dire) ; réécrire `FIND_SCOPED_SQL` sur la constante.
+- **Réversible** : oui.
+
+### C-30-1-52 — `amountDue` d'un refus de montant : le TTC tel que la base le porte
+
+- **Contexte** : `RECONCILIATION_AMOUNT_MISMATCH` porte `details.amountDue` (AC-b6) ; le TTC est un `DECIMAL(19,4)`.
+- **Retenu** : la valeur brute (`"10.0000"`), comme le `amountDue` brut de `RECONCILIATION_OVERPAYMENT` côté client ;
+  un TTC à plus de deux décimales (L2) reste lisible tel quel.
+- **Écartées** : arrondir au centime (un TTC sous le centime y paraîtrait égal au débit).
+- **Réversible** : oui.
+
+### C-30-1-53 — La sonde de verrou du compte : un fragment de requête qui porte son `FOR UPDATE`
+
+- **Contexte** : T-b34 doit voir l'acceptation bloquée sur le compte (`attendre_une_requete_en_cours`) ; la lecture
+  verrouillante de `lock_for_bank_settlement_in_tx` avait le même texte que celle de `pay_in_tx`. Un fragment
+  distinctif sans `FOR UPDATE`, défini hors fonction, a fait rougir l'inventaire des gardes du compte clos
+  (`every_unlocked_closed_account_guard_is_rechecked_or_justified` : « lecture non verrouillante de `closed_on` »).
+- **Retenu** : une macro `bank_settlement_account_lock_marker!` (`… archived AS bank_settlement_lock FROM
+  bank_accounts WHERE id = ? AND company_id = ? FOR UPDATE`), source unique de la requête et de la constante de sonde
+  `BANK_SETTLEMENT_ACCOUNT_LOCK_MARKER`.
+- **Écartées** : exempter le fragment au registre `FENETRE` (une exemption pour une chaîne de test) ; une sonde sur le
+  texte de `pay_in_tx` (indiscernable).
+- **Réversible** : oui.
+
+### C-30-1-54 — Le classement des erreurs du règlement : deux bras défensifs de plus
+
+- **Contexte** : l'inventaire de l'AC-b6 classe les erreurs de `pay_in_tx_as` ; `BankAccountClosed` et
+  `ConfigurationRequired` y sont inatteignables (l'étape 3 tient le compte en exclusif et les a refusés avant).
+- **Retenu** : `supplier_payment_error_to_failed_proposal` les classe quand même (`BANK_ACCOUNT_CLOSED`,
+  `BANK_ACCOUNT_NOT_CONFIGURED`), plutôt que de les laisser tomber dans `DATABASE_ERROR` ; inventaire recopié au Dev
+  Agent Record. Les codes de refus sont écrits **au site de construction** (`error_code: "…"`), forme que recompte
+  `failed-proposal-label.ts` — un premier jet en tuple les cachait au décompte (et `RECONCILIATION_TRANSACTION_NOT_CREDIT`
+  avec eux), corrigé avant le commit.
+- **Réversible** : oui.
+
+### C-30-1-55 — Placement et regroupement des tests
+
+- **Retenu** : les tests de verrouillage au dépôt (T-b22, T-b34, refus de l'étape 3, T-b31) dans
+  `payment_batches_repository.rs`, qui a les aides de lot ; T-b29 dans `supplier_invoices_repository.rs` ; les tests de
+  route dans `reconciliation_e2e.rs` (T-b32 et T-b33 y sont prescrits), avec des aides de montage dans
+  `tests/support/fournisseur_rapproche.rs` (`facture_ouverte`, `transaction_en_attente`, `lot_genere`,
+  `autre_compte`). Regroupés : T-b11 et T-b13 ; T-b17 et le premier cas de T-b30 ; T-b18 et T-b20 ; T-b4 a un volet pur
+  (`reconciliation.rs`) et un volet de requête (T-b7). Deux tests **ajoutés** (C-30-1-59).
+- **Réversible** : oui.
+
+### C-30-1-56 — Captures : schéma clair seulement, hors dépôt ; le manuel garde ses emplacements
+
+- **Contexte** : AC-b12 demande des captures clair et sombre, et une capture au manuel « si la section en porte une ».
+  Kesh n'a pas de thème sombre (C-28-1-7, rappelé par l'orchestrateur) ; toutes les captures du manuel sont des
+  emplacements (`_placeholder.png`, `% TODO capture`).
+- **Retenu** : deux captures en clair (la ligne proposée, le dialogue d'annulation) dans `KESH_E2E_CAPTURES_DIR` ;
+  aucune image versée au manuel.
+- **Réversible** : oui.
+
+### C-30-1-57 — Le libellé « paiement antérieur à la facture » lit ses jours, client compris
+
+- **Contexte** : AC-b11 — « le libellé lit `details.tolerance_days` (repli 1) ». Le texte d'une seule clé sert les deux
+  sortes de factures.
+- **Retenu** : « Le paiement est daté de plus de { $days } jour(s) avant la facture… » dans les quatre locales ; le test
+  Vitest existant, qui cherchait « plus d’un jour », lit désormais « plus de 1 jour(s) ».
+- **Écartées** : deux clés (client, fournisseur) ; garder « un jour » en dur (faux pour 7).
+- **Réversible** : oui.
+
+### C-30-1-58 — `RECONCILIATION_RULE_MASKED` : un libellé de repli pour une raison inconnue
+
+- **Retenu** : trois libellés par raison (`payment_batch`, `invoice_candidate`, `invoice_slightly_overpaid`) et une clé
+  générique `reconciliation-failed-rule-masked` pour toute autre raison, plutôt que d'attribuer d'office le texte d'une
+  des trois.
+- **Réversible** : oui.
+
+### C-30-1-59 — Deux tests ajoutés à la fiche, pour deux mutations qui auraient survécu
+
+- **Contexte** : la mutation « la liste pleine ne masque pas » (extension de M-b12 que la fiche prévoit tuée par T-b42)
+  n'était éprouvée que par le dépôt (T-b42 vérifie que 200 lignes sont rendues, pas que la route en tire le masquage) ;
+  la fenêtre de l'**acceptation** sur l'exigibilité (`window.check(F, X)`) n'était éprouvée par aucun décor où `F` sort
+  de la fenêtre et `X` y reste (M-b5 ne visait que la requête).
+- **Retenu** : `a_full_masking_list_masks_the_rule` (199 factures : règle proposée ; 200 : masquée) et
+  `the_acceptance_window_reads_the_exigibility` (facture datée de D − 400 et échue à D − 300, facture datée de D + 7 :
+  proposées **et** acceptées) ; mutations nommées M-b12e et M-b5r au Dev Agent Record.
+- **Réversible** : oui.
+
+### C-30-1-60 — Les aides E2E neuves ne remplacent pas les copies des autres specs
+
+- **Contexte** : `createSupplierInvoiceViaApi` reprend le patron de `payment-batches.spec.ts` et
+  `wiredBankAccountViaApi` celui de `reconciliation-link.spec.ts`, qui gardent leurs copies locales.
+- **Retenu** : les deux aides vont dans `helpers/api-fixtures.ts` pour la spec neuve ; les deux specs existantes ne sont
+  pas réécrites dans cette story (une spec qui passe, hors du périmètre de la 30-1b). Dette de duplication écrite ici ;
+  la factorisation se fera au premier geste qui touche l'une des deux.
+- **Écartées** : réécrire deux specs vertes sans autre raison (risque sans gain pour la recette).
+- **Réversible** : oui.
