@@ -2374,18 +2374,9 @@ async fn accept_one_invoice(
     };
 
     // Step 5bis — load Contact si invoice.contact_id valid (MP6-1 Pass 6).
-    // M1 Pass 1 — guard `contact_id > 0` : sentinel 0 = pas de contact lié.
-    // M7 Pass 1 — utilisation directe de `contacts_repo::find_by_id_in_company`
-    // (Executor générique, helper dupliqué `find_contact_by_id_for_company`
-    // supprimé du `reconciliation_repo`).
-    // Sur erreur DB, contact = None → score contact = 0.0 (graceful).
-    let contact = if invoice.contact_id > 0 {
-        contacts_repo::find_by_id_in_company(&mut **tx, invoice.contact_id, company_id)
-            .await
-            .unwrap_or(None)
-    } else {
-        None
-    };
+    // Lecture partagée avec l'acceptation fournisseur (`contact_for_score`).
+    let contact =
+        contact_for_score(tx, company_id, invoice.contact_id, bank_transaction_id).await?;
 
     // Step 6 — éligibilité invoice (HP3-3 Pass 3 + HP4-2 Pass 4 enum 4 reasons).
     if invoice.status != "validated" {
@@ -3196,6 +3187,34 @@ fn supplier_payment_error_to_failed_proposal(
 /// ⛔ Aucune garde « dépense déjà réglée par un autre chemin » : l'angle mort
 /// L1 (#671).
 #[allow(clippy::too_many_arguments)]
+/// Le contact d'une facture — client ou fournisseur —, lu pour le seul calcul du
+/// score de l'acceptation (`accept_one_invoice`, `accept_one_supplier_invoice`).
+///
+/// `contact_id <= 0` : aucun contact lié (sentinelle 0, M1 Pass 1), aucune
+/// lecture. Une erreur de base n'est **plus avalée** (revue de code P1 de la
+/// 30-1b, B1 — elle rendait un score de contact nul, que la garde de score
+/// minimal du chemin client pouvait changer en refus `score_zero_no_match`
+/// trompeur) : elle rend `DATABASE_ERROR` par proposition, comme toute autre
+/// lecture de l'acceptation ; un interblocage y est repris par le rejeu du lot
+/// (le point de sauvegarde perdu rend `TransactionAborted`).
+async fn contact_for_score(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    contact_id: i64,
+    bank_transaction_id: i64,
+) -> Result<Option<kesh_db::entities::Contact>, FailedProposal> {
+    if contact_id <= 0 {
+        return Ok(None);
+    }
+    contacts_repo::find_by_id_in_company(&mut **tx, contact_id, company_id)
+        .await
+        .map_err(|e| FailedProposal {
+            bank_transaction_id,
+            error_code: "DATABASE_ERROR".to_string(),
+            details: Some(serde_json::json!({ "message": e.to_string() })),
+        })
+}
+
 async fn accept_one_supplier_invoice(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -3300,9 +3319,8 @@ async fn accept_one_supplier_invoice(
             })),
         });
     }
-    let contact = contacts_repo::find_by_id_in_company(&mut **tx, invoice.contact_id, company_id)
-        .await
-        .unwrap_or(None);
+    let contact =
+        contact_for_score(tx, company_id, invoice.contact_id, bank_transaction_id).await?;
     let score = propose_matches(
         &bank_transaction,
         &[(invoice.clone(), contact, invoice.total_amount)],
@@ -4057,8 +4075,10 @@ async fn accept_one_rule(
     // deux fois. Lectures ordinaires, mêmes fonctions que `get_proposals`
     // (`load_rule_mask`, `rule_mask_for`), avant toute écriture. Trois cas
     // seulement : `payment_batch`, `invoice_candidate` (débit),
-    // `invoice_slightly_overpaid` (crédit) ; l'imputation délibérée passe par
-    // `POST /reconciliation/manual` ou l'éclatement. ⚠️ Changement de contrat
+    // `invoice_slightly_overpaid` (crédit). Le geste attendu est de traiter la
+    // facture (l'accepter, ou rattacher la transaction à son règlement) ;
+    // `POST /reconciliation/manual` ou l'éclatement ne conviennent qu'à une
+    // transaction qui ne règle aucune facture saisie. ⚠️ Changement de contrat
     // des deux côtés : une acceptation autrefois réussie est refusée.
     match load_rule_mask(tx, company_id, bank_account_id, &bt).await {
         Ok(None) => {}

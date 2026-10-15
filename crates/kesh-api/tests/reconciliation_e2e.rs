@@ -11043,9 +11043,13 @@ async fn an_api_key_accepts_a_supplier_invoice_and_is_named_everywhere(pool: MyS
     }
 }
 
-/// T-b24 (AC-b10) — **la fiche et la réconciliation règlent la même facture en
-/// même temps** : l'une aboutit, l'autre est refusée ; une seule écriture de
-/// règlement.
+/// T-b24 (AC-b10) — **la fiche et la réconciliation règlent la même facture**,
+/// lancées ensemble (`tokio::join!`) : l'une aboutit, l'autre est refusée ; une
+/// seule écriture de règlement. ⚠️ Rien ne force le chevauchement : selon
+/// l'ordonnancement, les deux requêtes se suivent ou se croisent, et l'assertion
+/// vaut dans tous les ordres — le test établit « un seul règlement », il ne
+/// prouve la course que lorsqu'elle a lieu (revue de code P1 de la 30-1b, E2 ;
+/// la course forcée par sonde est celle de T-b34).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn the_record_and_the_reconciliation_settle_the_same_invoice_once(pool: MySqlPool) {
     let c = setup_301b(&pool).await;

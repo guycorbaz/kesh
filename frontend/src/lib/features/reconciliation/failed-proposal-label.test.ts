@@ -225,7 +225,8 @@ describe('failedProposalLabel', () => {
 		expect(calls).toEqual(['reconciliation-failed-payment-before-invoice']);
 		// Story 30-1b : le nombre de jours est lu sur `details.tolerance_days`, repli 1 (ici
 		// absent : un refus d'avant le champ).
-		expect(label).toContain('plus de 1 jour(s) avant la facture');
+		// Revue de code P1 de la 30-1b (A5/B2) : un jour garde le libellé d'avant, cité au manuel.
+		expect(label).toContain('plus d’un jour avant la facture');
 		expect(label).not.toContain('proposée');
 	});
 
@@ -280,8 +281,17 @@ describe('failedProposalLabel', () => {
 			reason: 'payment_date_before_invoice_date',
 			tolerance_days: 7,
 		});
+		expect(calls).toEqual(['reconciliation-failed-payment-before-invoice-days']);
+		expect(label).toContain('plus de 7 jours avant la facture');
+	});
+
+	it('T-b38 — tolerance_days 1 explicite ⇒ le libellé d’un jour', () => {
+		const label = failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE', {
+			reason: 'payment_date_before_invoice_date',
+			tolerance_days: 1,
+		});
 		expect(calls).toEqual(['reconciliation-failed-payment-before-invoice']);
-		expect(label).toContain('plus de 7 jour(s) avant la facture');
+		expect(label).toBe(valeurFr('reconciliation-failed-payment-before-invoice'));
 	});
 
 	it.each([
@@ -291,7 +301,7 @@ describe('failedProposalLabel', () => {
 		['nul ou négatif', { reason: 'payment_date_before_invoice_date', tolerance_days: 0 }],
 	])('T-b38 — tolerance_days %s ⇒ repli 1', (_cas, details) => {
 		expect(failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE', details)).toContain(
-			'plus de 1 jour(s)',
+			'plus d’un jour',
 		);
 	});
 
@@ -326,15 +336,24 @@ describe('failedProposalLabel', () => {
 		expect(label.toLowerCase()).not.toContain('confirm');
 	});
 
+	// Revue de code P1 de la 30-1b (INFO de la lentille A) : le geste juste, raison par raison,
+	// est de traiter la facture — l'accepter (débit) ou rattacher la transaction à son règlement
+	// (crédit) ; « Affecter manuellement » n'est conseillé que sous condition, sans quoi il
+	// compterait la charge ou le produit deux fois (encadré L1 du manuel).
 	it.each([
-		['payment_batch', 'reconciliation-failed-rule-masked-payment-batch', 'lot de paiement'],
-		['invoice_candidate', 'reconciliation-failed-rule-masked-invoice-candidate', 'facture fournisseur ouverte'],
-		['invoice_slightly_overpaid', 'reconciliation-failed-rule-masked-overpaid', 'quelques centimes'],
-	])('T-b28 — RECONCILIATION_RULE_MASKED (%s) ⇒ %s', (reason, key, contenu) => {
-		const label = failedProposalLabel('RECONCILIATION_RULE_MASKED', { reason });
+		['payment_batch', 'reconciliation-failed-rule-masked-payment-batch', 'lot de paiement', 'acceptez ici la facture proposée'],
+		['invoice_candidate', 'reconciliation-failed-rule-masked-invoice-candidate', 'facture fournisseur ouverte', 'acceptez la facture proposée'],
+		['invoice_slightly_overpaid', 'reconciliation-failed-rule-masked-overpaid', 'quelques centimes', 'rattachez-y la transaction'],
+		[undefined, 'reconciliation-failed-rule-masked', 'une facture correspond', 'traitez la facture'],
+	])('T-b28 — RECONCILIATION_RULE_MASKED (%s) ⇒ %s', (reason, key, contenu, geste) => {
+		const label = failedProposalLabel(
+			'RECONCILIATION_RULE_MASKED',
+			reason === undefined ? undefined : { reason },
+		);
 		expect(calls).toEqual([key]);
 		expect(label).toContain(contenu);
-		expect(label).toContain('« Affecter manuellement »');
+		expect(label).toContain(geste);
+		expect(label).toContain('N’utilisez « Affecter manuellement » que si');
 		expect(label.toLowerCase()).not.toContain('confirm');
 	});
 

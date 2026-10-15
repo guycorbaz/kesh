@@ -171,7 +171,9 @@ export async function createJournalEntryViaApi(
 
 /**
  * Story 30-1b (#686) — le compte bancaire du relevé `iban`, créé au besoin et câblé sur le
- * compte `1000` du grand livre (patron de `reconciliation-link.spec.ts`). Rend son id.
+ * compte `1000` du grand livre. Rend son id. Partagé par `reconciliation-link.spec.ts` et
+ * `reconciliation-supplier.spec.ts` (revue de code P1 de la 30-1b, A1 : la copie locale de
+ * la première a été retirée).
  */
 export async function wiredBankAccountViaApi(page: Page, iban: string): Promise<number> {
 	const ctx = await authedApiContext(page);

@@ -14,7 +14,7 @@
 //! « facture » (`routes/reconciliation.rs`), qui le crée, et le rattachement
 //! d'une transaction au règlement déjà saisi depuis la fiche de la facture
 //! (Story 29-8, [`super::reconciliation_link::link_in_tx`]), qui pointe son
-//! écriture existante. Un rend un **règlement fournisseur** : l'acceptation
+//! écriture existante. Un seul rend un **règlement fournisseur** : l'acceptation
 //! d'une proposition « facture fournisseur » (Story 30-1b), qui le crée. Les
 //! quatre autres (éclatement, règle, rapprochement manuel, éclatement manuel)
 //! créent une écriture que **seule la transaction** possède. Le règlement

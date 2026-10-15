@@ -677,7 +677,10 @@ const ATTENDU = {
 	// `CancelReconciliationDialog.svelte` 6 → 7 (texte du règlement fournisseur),
 	// `failed-proposal-label.ts` 36 → 46 (dix libellés). Que des littéraux. Réunion au report de
 	// la 30-1b sur la 30-2a (2026-10-15) : 2205 + 13 = **2218**, mesuré par la collecte de ce test.
-	sitesTotal: 2218,
+	// Revue de code P1 de la 30-1b (A5/B2) : **2218 → 2219** (+1) — `failed-proposal-label.ts`
+	// 46 → 47, la clé `reconciliation-failed-payment-before-invoice-days` (plus d'un jour) à
+	// côté de celle d'un jour. Littéral : les autres compteurs inchangés.
+	sitesTotal: 2219,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

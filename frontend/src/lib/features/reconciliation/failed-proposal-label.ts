@@ -276,11 +276,21 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 			const reason = failureReason(details);
 			if (reason === 'payment_date_before_invoice_date') {
 				// Story 30-1b — la tolérance est lue sur `details.tolerance_days` (1 jour pour une
-				// facture client, 7 pour une facture fournisseur) ; repli 1.
+				// facture client, 7 pour une facture fournisseur) ; repli 1. Deux clés et non un
+				// sélecteur Fluent : le serveur pré-résout les messages sans argument, un
+				// `{ $days -> … }` n'atteindrait pas l'écran. Un jour garde le libellé d'avant
+				// (« plus d'un jour »), cité au manuel (revue de code P1, A5/B2).
+				const days = toleranceDays(details);
+				if (days === 1) {
+					return i18nMsg(
+						'reconciliation-failed-payment-before-invoice',
+						'Le paiement est daté de plus d’un jour avant la facture : il ne peut pas la régler.'
+					);
+				}
 				return i18nMsg(
-					'reconciliation-failed-payment-before-invoice',
-					'Le paiement est daté de plus de { $days } jour(s) avant la facture : il ne peut pas la régler.',
-					{ days: toleranceDays(details) }
+					'reconciliation-failed-payment-before-invoice-days',
+					'Le paiement est daté de plus de { $days } jours avant la facture : il ne peut pas la régler.',
+					{ days }
 				);
 			}
 			// Story 30-1b (#686, AC-b6) — la facture fournisseur est dans un lot de paiement en
@@ -311,31 +321,34 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 				'Une autre facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte : cette transaction en est peut-être le paiement. Annulez le lot si c’est le cas, sinon affectez la transaction à la main.'
 			);
 		// Story 30-1b (#686, AC-b17) — une facture défend la règle : l'accepter compterait la
-		// charge (ou le produit) deux fois. La raison dit laquelle ; le remède est l'imputation
-		// délibérée (« Affecter manuellement ») ou le traitement de la facture.
+		// charge (ou le produit) deux fois. La raison dit laquelle, et le geste juste : traiter la
+		// facture — l'accepter ici (débit), rattacher la transaction à son règlement (crédit).
+		// « Affecter manuellement » n'est conseillé que si la transaction ne règle aucune facture
+		// saisie : sinon il compterait la dépense deux fois (encadré L1 du manuel ; revue de
+		// code P1 de la 30-1b, INFO de la lentille A).
 		case 'RECONCILIATION_RULE_MASKED': {
 			const reason = failureReason(details);
 			if (reason === 'payment_batch') {
 				return i18nMsg(
 					'reconciliation-failed-rule-masked-payment-batch',
-					'La règle n’est pas appliquée : une facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte. Annulez le lot si cette transaction en est le paiement, sinon utilisez « Affecter manuellement ».'
+					'La règle n’est pas appliquée : une facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte. Si cette transaction en est le paiement, annulez le lot, puis acceptez ici la facture proposée. N’utilisez « Affecter manuellement » que si ce débit ne règle aucune facture saisie.'
 				);
 			}
 			if (reason === 'invoice_candidate') {
 				return i18nMsg(
 					'reconciliation-failed-rule-masked-invoice-candidate',
-					'La règle n’est pas appliquée : une facture fournisseur ouverte correspond à cette transaction. Rechargez la page pour la voir proposée, ou utilisez « Affecter manuellement ».'
+					'La règle n’est pas appliquée : une facture fournisseur ouverte correspond à cette transaction. Rechargez la page et acceptez la facture proposée si ce débit la règle. N’utilisez « Affecter manuellement » que si ce débit ne règle aucune facture saisie.'
 				);
 			}
 			if (reason === 'invoice_slightly_overpaid') {
 				return i18nMsg(
 					'reconciliation-failed-rule-masked-overpaid',
-					'La règle n’est pas appliquée : une facture client que ce paiement dépasse de quelques centimes lui correspond. Traitez la facture, ou utilisez « Affecter manuellement ».'
+					'La règle n’est pas appliquée : une facture client que ce paiement dépasse de quelques centimes lui correspond. Enregistrez le règlement depuis la fiche de la facture, puis rattachez-y la transaction. N’utilisez « Affecter manuellement » que si ce paiement ne règle aucune facture.'
 				);
 			}
 			return i18nMsg(
 				'reconciliation-failed-rule-masked',
-				'La règle n’est pas appliquée : une facture correspond à cette transaction. Traitez la facture, ou utilisez « Affecter manuellement ».'
+				'La règle n’est pas appliquée : une facture correspond à cette transaction. Rechargez la page et traitez la facture. N’utilisez « Affecter manuellement » que si cette transaction ne règle aucune facture saisie.'
 			);
 		}
 		case 'RECONCILIATION_OVERPAYMENT':
