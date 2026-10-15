@@ -85,8 +85,12 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   `apiClient.getBlob`, qui gère le rafraîchissement du jeton (cookie httpOnly) ; une `<iframe>` pointée sur l'URL de
   l'API ne le gère pas et afficherait un 401 brut à l'expiration du jeton.
 - **Retenu** : le composant de prévisualisation lit le document par `apiClient.getBlob`, en fait une URL `blob:`
-  (révoquée à la destruction), l'affiche en `<img>` (PNG, JPEG) ou en `<iframe>` (PDF) ; la CSP gagne `blob:` dans
-  `img-src` et une directive `frame-src 'self' blob:`. Aucun changement du `Content-Disposition` de l'API.
+  (révoquée à la destruction), l'affiche en `<img>` (PNG, JPEG) ou en `<iframe>` (PDF), et pour tout autre type un
+  simple lien de téléchargement ; la CSP gagne `blob:` dans `img-src` et deux directives **explicites**,
+  `frame-src 'self' blob:` et `object-src 'self' blob:` (validation P1, F5/R6 : `object-src` ne reste pas hérité de
+  `default-src`). Aucun changement du `Content-Disposition` de l'API. **Amendé le 2026-10-15 (validation P1)** : aucun
+  E2E ne voit un PDF s'afficher (Chromium sans tête n'a pas de visionneuse) ; un relevé dans un vrai navigateur à
+  fenêtre est exigé au Dev Agent Record (AC6-bis), et la CSP se corrige s'il échoue.
 - **Écartées** : `<iframe src="/api/v1/…/source-document">` avec un `Content-Disposition: inline` (401 brut à
   l'expiration, pas d'état d'erreur maîtrisé) ; un rendu pdf.js embarqué (dépendance lourde pour un aperçu).
 - **Réversible** : oui.
@@ -97,7 +101,10 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
 - **Retenu** : à partir du nom du créancier du QR, jusqu'à trois fournisseurs actifs proposés, chacun avec un bouton
   « Retenir » ; la liste déroulante reste vide tant que l'utilisateur n'a pas retenu ou choisi. Recherche et
   classement réutilisent le socle des contacts (`listContacts({ search, isSupplier: true })` puis
-  `normalizeTerm`/`rank`, `features/contacts/duplicate-probe.ts`). Sans QR, aucune proposition.
+  `normalizeTerm`/`rank`, `features/contacts/duplicate-probe.ts`). Sans QR, aucune proposition. **Amendé le 2026-10-15
+  (validation P1, R1)** : la recherche serveur est un « OU » de mots et `rank` ne filtre pas ; une fonction pure
+  `proposeSuppliers` filtre d'abord (tous les mots du plus court des deux noms, formes juridiques et mots de liaison
+  retirés, figurent dans l'autre), puis classe. Un fournisseur qui ne partage que « Sàrl » n'est plus proposé.
 - **Écartées** : présélectionner le premier (un enregistrement sans regarder rattacherait au mauvais fournisseur) ;
   un appariement par IBAN (les contacts ne portent pas d'IBAN).
 - **Réversible** : oui.
@@ -131,10 +138,11 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
 
 - **Contexte** : `CompleteImportRequest` (`routes/imported_supplier_invoices.rs`) double
   `CreateSupplierInvoiceRequest` (`routes/supplier_invoices.rs:238`) moins les champs de paiement et le projet
-  (« extension future → None », l. 270).
+  (« extension future → None », l. 269).
 - **Retenu** : `complete_import` désérialise `CreateSupplierInvoiceRequest` ; la construction de `NewSupplierInvoice`
   est extraite en une fonction commune aux deux routes ; `project_id` est honoré. Compatible avec les clients
-  actuels (champs ajoutés optionnels).
+  actuels (champs ajoutés optionnels). Cette fonction porte aussi la validation des coordonnées de paiement
+  (C-30-2-20).
 - **Écartées** : garder deux types (règle DRY).
 - **Réversible** : oui.
 
@@ -182,7 +190,7 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
 ### C-30-2-14 — Les deux lectures du document s'ouvrent à tout rôle authentifié
 
 - **Contexte** : `GET /imported-supplier-invoices/{id}/source-document` et `GET /supplier-invoices/{id}/source-document`
-  sont montées parmi les routes Comptable+ (`lib.rs:505-512`), alors que la facture et l'écriture se lisent par tout
+  sont montées parmi les routes Comptable+ (`lib.rs:506-513`), alors que la facture et l'écriture se lisent par tout
   rôle authentifié (`lib.rs:868-875`). « Consultable depuis la facture et depuis son écriture » échouerait en 403 pour
   le rôle Consultation.
 - **Retenu** : `GET /supplier-invoices/{id}/source-document` rejoint les lectures (tout rôle authentifié, toujours
@@ -243,4 +251,34 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
 - **Retenu** : le contrôle ne s'applique qu'à un document avec QR ; sans QR, la facture est en CHF comme toute
   facture fournisseur saisie.
 - **Écartées** : demander une devise (les factures fournisseur sont en CHF seulement).
+- **Réversible** : oui.
+
+### C-30-2-20 — Les coordonnées de paiement se valident dans la conversion commune, pour les deux routes
+
+- **Contexte** : validation P1 (F6, R14). `POST /supplier-invoices` ne valide ni l'IBAN (somme de contrôle), ni
+  l'exclusivité IBAN / QR-IBAN, ni la cohérence QRR : `create_in_tx` insère tel quel
+  (`repositories/supplier_invoices.rs:340-343`, `:526-539`). La complétion sans QR (AC12) aurait hérité du trou, et un
+  QR-IBAN saisi à la main atterrit en `creditorIban`. Arbitrage de l'orchestrateur : prescrire la validation.
+- **Retenu** : AC12-bis — la conversion commune (AC13) valide, pour `POST /supplier-invoices` **et** la complétion sans
+  QR (un seul chemin) : IBAN valide et non QR en `creditorIban`, QR-IBAN valide en `creditorQrIban`, pas les deux, QRR
+  ⇔ QR-IBAN, QRR valide ; valeurs enregistrées normalisées ; refus `400 INVALID_PAYMENT_DETAILS` (`details.field`,
+  `details.reason`). Fonctions existantes de `kesh-qrbill::validation` (`validate_iban`, `validate_qr_iban`,
+  `validate_qrr`, `normalize_iban`). À l'écran, `isQrIban` route la saisie. La création manuelle refuse désormais ce
+  qu'elle acceptait : `### Modifié` au CHANGELOG ; les factures existantes ne changent pas.
+- **Écartées** : écrire « aucun contrôle, comme aujourd'hui » en angle mort (une dette sans issue est interdite) ;
+  valider la seule complétion (deux chemins pour une même saisie).
+- **Réversible** : oui.
+
+### C-30-2-21 — Le rattachement ne lit pas le lien existant : l'unicité refuse
+
+- **Contexte** : validation P1 (F1, R10). L'étape 3 prévue (lecture verrouillante d'un document déjà lié, sur l'index
+  d'unicité) pose un verrou d'intervalle quand aucune ligne n'existe — le cas nominal — et fait s'interbloquer deux
+  rattachements vers deux factures voisines ; le rejeu le masquerait. Arbitrage de l'orchestrateur : la voie la plus
+  simple.
+- **Retenu** : plus de lecture préalable ; après les verrous du staging et de la facture (clés primaires), l'`UPDATE`
+  de `mark_completed` rencontre l'unicité de `supplier_invoice_id`, dont la violation se traduit en
+  `409 SOURCE_DOCUMENT_ALREADY_ATTACHED`. La transaction ne fait aucune lecture ordinaire (aucun instantané n'y naît).
+  Tests sans rejeu (fonctions `_once`) : deux factures différentes, deux succès ; même facture, un `409`.
+- **Écartées** : lecture ordinaire après les deux verrous (correcte aussi, mais un second chemin pour le même refus et
+  une mutation équivalente de plus) ; garder la lecture verrouillante (verrou d'intervalle).
 - **Réversible** : oui.
