@@ -67,7 +67,7 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   accepter aussi l'image non décodable (le navigateur ne l'afficherait pas davantage).
   *(Corrigé le 2026-10-15, revue de code P1 de la 30-2a, B3 = E6 : la justification est fausse en partie. La crate
   `image` refuse des images que Chromium et Firefox affichent — JPEG CMYK ou à codage arithmétique, certaines variantes
-  12 bits — et toute image de plus de 10 000 pixels de côté (`MAX_IMAGE_DIMENSION`, `qr_decode.rs`) ; elles partent
+  12 bits *(annoté le 2026-10-15, passe ciblée P2, T1 : le refus du JPEG CMYK n'est pas établi — `image` 0.25 et `zune-jpeg` le convertissent en RVB ; le manuel ne le cite plus)* — et toute image de plus de 10 000 pixels de côté (`MAX_IMAGE_DIMENSION`, `qr_decode.rs`) ; elles partent
   dans `failed/` sous `UNSUPPORTED_FILE_TYPE`, code qui ne dit pas pourquoi. Le refus est maintenu — il couvre le cas
   courant, l'image réellement corrompue ou tronquée —, mais comme **angle mort assumé**, écrit à la fiche, et non plus
   comme un cas sans perte.)*

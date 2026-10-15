@@ -1465,3 +1465,15 @@ Gate complet au dernier commit de code (`ed796c02`) : nextest 3780/3780 (6 ignor
 check, lint et build verts ; E2E 297 passés, 8 échecs attendus (7 KF-029 + KF-052), 17 ignorés. Trend : P1 = 2 MEDIUM →
 remédiés ; **passe ciblée P2** à lancer (`30-2a-review-prompt-p2-ciblee.md`, Haiku, une lentille, diff
 `75020c01..HEAD`), la remédiation touchant du code de production (un texte d'écran et des commentaires).
+
+### Revue de code P2 ciblée de la 30-2a — 2026-10-15 — revue terminée
+
+- Passe ciblée P2 (Haiku, lentille T, diff `75020c01..232b946e`) : **0/0/1/2**. T1 (MEDIUM) : le manuel, un commentaire
+  de `inbox_import.rs` et C-30-2-4 affirmaient que la crate `image` refuse un JPEG CMJN ; la lecture du code (`image`
+  0.25.10, `zune-jpeg` 0.5.15) dit le contraire. **Corrigé par l'orchestrateur** sans essai d'exécution : l'exemple
+  CMJN est retiré (manuel `.tex` et PDF régénéré, commentaire, registre annoté) ; restent les images de plus de
+  10 000 pixels et « certaines variantes peu courantes du format JPEG ». Les mentions CMJN aux lignes de la remédiation
+  P1 ci-dessus (l. 901, 1159, 1169) se lisent avec cette correction. T2 et T3 (LOW) laissés.
+- Le correctif ne touche aucun comportement : un commentaire Rust et des textes. **La revue de la 30-2a est terminée**
+  (P1 Sonnet B 0/0/0/5, E 0/0/2/5, A 0/0/0/8 → P2 ciblée Haiku 0/0/1/2, T1 corrigé).
+

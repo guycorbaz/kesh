@@ -553,8 +553,8 @@ async fn process_one_file(
     // mais qui ne tient pas dans le staging (longueur, montant) ne refuse plus
     // le document. Seule une image non décodable reste un refus (C-30-2-4) — le
     // plus souvent corrompue ; angle mort assumé : la crate `image` refuse aussi
-    // quelques images qu'un navigateur afficherait (JPEG CMYK, plus de
-    // `MAX_IMAGE_DIMENSION` pixels de côté).
+    // quelques images qu'un navigateur afficherait (plus de
+    // `MAX_IMAGE_DIMENSION` pixels de côté, variantes JPEG peu courantes).
     let (scanned, qr, qr_error) = match decode_result {
         Ok(Some(s)) => match check_scanned_fits_columns(&s) {
             Ok(()) => (Some(s), QrStatus::Present, None),
