@@ -275,7 +275,8 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   ou absent ⇒ référence en texte libre (≤ 64), **27 chiffres compris** *(amendé le 2026-10-15, validation P3, F3-3 : la
   P2 refusait une « forme QRR » sans QR-IBAN, ce qui rejetait l'ancienne référence BVR/ESR d'une facture ancienne sans
   bénéfice en aval)*. Normalisation par **une** fonction par côté, qui retire tous les blancs Unicode (insécables
-  compris) des IBAN *(amendé en P3, R3 = F3-7 : `Iban::new` n'ôte que l'espace ASCII)* ; chaîne vide ou blanche =
+  compris) des IBAN *(amendé en P3, R3 = F3-7 : `Iban::new` n'ôte que l'espace ASCII ; précisé le 2026-10-15, P4 F4 et P5
+  T5 : l'ensemble retiré est `White_Space` d'Unicode plus U+200B et U+FEFF, la même liste des deux côtés — AC12-bis)* ; chaîne vide ou blanche =
   absente ; valeurs stockées normalisées. Sept motifs de refus, chacun avec son libellé dans les quatre locales (P3, R4).
   L'effet sur la création manuelle se décrit exactement : table des pays et longueur par pays d'`Iban::new` (des pays
   absents, refusés), lot pain.001 limité à CH/LI (existant). Refus `400 INVALID_PAYMENT_DETAILS`

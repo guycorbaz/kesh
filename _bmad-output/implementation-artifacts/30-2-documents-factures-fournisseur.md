@@ -147,7 +147,7 @@ données — aucun en `failed[]`. Ces QR se fabriquent en **généralisant** la 
 **après** `build_payload` (`crates/kesh-api/tests/inbox_import_e2e.rs:302-305`, jeton `NAMEPLACEHOLDER`) : même procédé
 pour le montant, le pays et la devise, que `validate` (`kesh-qrbill/src/generator.rs:14-15`) refuserait avant génération
 — pas de second helper (DRY). Le PNG est encodé en **UTF-8 avec ECI** (indication `CharacterSet` de `rxing`, aujourd'hui
-`EncodeHints::default()`, l. 252-258), faute de quoi un accent relu en Latin-1 ou Shift_JIS ferait rougir le test pour
+`EncodeHints::default()`, l. 259), faute de quoi un accent relu en Latin-1 ou Shift_JIS ferait rougir le test pour
 une mauvaise raison (P4, F6).
 **Filets** : la branche `DbError::DataLengthOrRange` reste, sans test qui l'atteigne une fois le contrôle complet ; une
 branche `DbError::CheckConstraintViolation` est **ajoutée** au même endroit, avec le même traitement (`failed[]`,
@@ -276,7 +276,8 @@ complétée », `messages.ftl:2536`) ; texte prescrit pour `fiscal-years-checks-
 attendent d'être traités, toutes dates confondues. » ; le repli de `frontend/src/lib/features/fiscal-years/closing-checks-labels.ts:63`
 suit. **Codes `qrError`** (L7) : l'écran affiche, pour un document `unreadable`, « QR illisible » suivi du libellé de
 `qrError` par les clés existantes `imported-supplier-invoices-error-invalid-spc-payload`, `-invalid-iban`,
-`-pdf-render-error`, `-field-too-long` (`error-label.ts`) — elles gardent un usage ; seule `no-qr-code-found` est retirée,
+`-pdf-render-error`, `-field-too-long` (`error-label.ts`) — elles gardent un usage —, plus la clé **neuve**
+`-qr-amount-out-of-range` (AC2 ; liste normative, P5 T1) ; seule `no-qr-code-found` est retirée,
 et la constante `ERR_NO_QR_CODE_FOUND` (`inbox_import.rs:54`) est **supprimée** : un document sans QR porte
 `qr: "none"` sans `qrError`, et une constante morte ferait rougir `clippy -D warnings`.
 Les libellés des sept motifs de `INVALID_PAYMENT_DETAILS` (AC12-bis, quatre locales) relèvent de la 30-2b. Les
@@ -556,8 +557,8 @@ Le corps transactionnel est exposé sans `COMMIT` (`attach_in_tx`, dépôt) pour
   | Chemin | Ordre des verrous | Cycle avec le rattachement ? |
   |---|---|---|
   | rattachement (bascule) | staging X → facture X → `companies` X → entrée d'unicité | — |
-  | complétion (`complete_import_once`) | staging X → `companies` X si projet (`validate_taggable_in_tx`) → `companies` S (clé étrangère des écritures, `supplier_invoices.rs:291-293`) | non : même document → sérialisés sur le staging, avant `companies` ; autre document → aucune ressource commune avant `companies` |
-  | `pay_in_tx`, `cancel_in_tx`, `cancel_settlement_in_tx` | facture X (`supplier_invoices.rs:724`, `:1071`, `:1314`) → `companies` S (clé étrangère) | non : même facture → sérialisés sur la facture, avant `companies` |
+  | complétion (`complete_import_once`) | staging X → `companies` X si projet (`validate_taggable_in_tx`) → `companies` S (verrous partagés pris par l'insertion de l'écriture, `journal_entries::create_in_tx` — décrits au doc-comment `supplier_invoices.rs:291-293`) | non : même document → sérialisés sur le staging, avant `companies` ; autre document → aucune ressource commune avant `companies` |
+  | `pay_in_tx`, `cancel_in_tx`, `cancel_settlement_in_tx` | facture X (`supplier_invoices.rs:725`, `:1071`, `:1314`) → pour `pay_in_tx`, compte bancaire X (`bank_accounts … FOR UPDATE`, l. 759-761) → `companies` S (insertion de l'écriture, `journal_entries::create_in_tx`) | non : même facture → sérialisés sur la facture, avant `companies` ; le rattachement ne touche pas `bank_accounts` |
   | détachement (AC24) | entrée du document (unicité, puis clé primaire) | non : ne demande ni facture ni `companies` |
   | acceptation de la 30-1 | à relever au Dev Agent Record après le merge de la 30-1 | à établir |
 
@@ -630,7 +631,7 @@ finie** — l'`UPDATE` ne peut être retenu que par le verrou que tient D ; en c
 constate depuis une autre connexion que la ligne de S_old est bien verrouillée par D ; D valide ; la tâche aboutit sous
 5 s, **en succès**, sans interblocage ni `409`. ⛔ Ni `information_schema.INNODB_TRX` ni `INNODB_LOCK_WAITS` : ils
 exigent le privilège `PROCESS`, que l'utilisateur `kesh` n'a pas (`scripts/mariadb-init/01-dev-grants.sql` ; piège déjà
-rencontré, `crates/kesh-api/tests/reconciliation_e2e.rs:7546`). La remédiation P3 se fiait à un délai fixe de 300 ms,
+rencontré, `crates/kesh-api/tests/reconciliation_e2e.rs:8139-8141`). La remédiation P3 se fiait à un délai fixe de 300 ms,
 qui ne distinguait pas une attente de verrou d'une tâche simplement lente (P4, F3 = R5). Tranché : ce comportement est attendu (l'`UPDATE` du rattachement attend le verrou de l'entrée tenue par D, puis
 la trouve marquée supprimée). La mutation **M-c9** (le détachement laisse le lien) le fait rougir (`409` au lieu du
 succès) ; le volet « attend » est une propriété du moteur, mesurée, sans mutation (déclaré). Si le test rougit sur le code
@@ -1109,3 +1110,46 @@ Valeurs grepées (`300 ms`, `is_finished`, `:271`, `:356`, `en tête`, `INNODB_T
 Décomptes vivants, recomptés : **28 AC**, **23 tâches**, **39 mutations** (M-a1 à M-a15 sauf M-a13 ; M-b1 à M-b13 ;
 M-c1 à M-c12), dont **trois déclarées équivalentes** (M-a14, M-b2, M-c7), **neuf parcours E2E**, **23 choix**
 (C-30-2-4, 7, 21 et 22 annotés).
+
+### 2026-10-15 — Passe ciblée P5 (Haiku) et note de synthèse de la boucle de validation
+
+**P5** : `kesh-gate-logs/302-validate-p5-T.md`, une lentille sur le diff `6e8d1266..fd781d07` : **0/0/0/5**. Les cinq LOW
+corrigés : T1 (clé `-qr-amount-out-of-range` ajoutée à la liste d'AC8, tenue pour normative), T2 (citation du piège
+`PROCESS` : `reconciliation_e2e.rs:8139-8141`, non `:7546` — la même citation fausse figure dans les consignes communes
+de l'epic), T3 (tableau de l'AC19 : `:725`, verrou du compte bancaire de `pay_in_tx`, verrou partagé de `companies`
+attribué à `journal_entries::create_in_tx`), T4 (`EncodeHints::default()`, l. 259), T5 (registre C-30-2-20 aligné sur
+l'ensemble de caractères de la fiche). La remédiation ne touche aucune ligne de code de production (la story n'est pas
+développée) : **validation terminée**.
+
+**Synthèse de la boucle** (chiffres repris des rapports, `kesh-gate-logs/302-validate-p{1..5}-*.md`) :
+
+| Passe | Modèle | Lentilles | C/H/M/L |
+|---|---|---|---|
+| P1 | Sonnet | R 0/0/11/9 · F 0/0/7/6 | 0/0/18/15 |
+| P2 | Opus | R 0/0/8/13 · F 0/0/5/8 | 0/0/13/21 |
+| P3 | Sonnet | R 0/1/3/12 · F 0/0/3/12 | 0/1/6/24 |
+| P4 | Opus | R 0/0/2/13 · F 0/0/1/7 | 0/0/3/20 |
+| P5 (ciblée) | Haiku | T 0/0/0/5 | 0/0/0/5 |
+
+Rotation Sonnet ↔ Opus pour les passes complètes, Haiku pour la seule passe ciblée (D6).
+
+- **Signal de découpage** (§ *Règle de splitting préventif*) **levé en P2** (MEDIUM → MEDIUM) **et en P3** (MEDIUM →
+  HIGH), **non suivi**, au titre de l'amendement D5 : les défauts n'étaient pas recyclés, mais **nés des remédiations
+  précédentes** — douze MEDIUM sur treize en P2, le seul HIGH de P3 — et chacun distinct ; la fiche est déjà découpée en
+  trois sous-stories de cinq modules au plus. La sévérité maximale est ensuite redescendue (P4 MEDIUM, P5 LOW).
+- **Le faux défaut d'origine de la P2** : « un type d'adresse hors K/S rend 500 sur tout l'import » (R2 de la P2),
+  accepté sur arbitrage de l'orchestrateur sans relecture de `from_scanned`, a fait ajouter un contrôle, un test, une
+  mutation (M-a13) et une ligne `### Corrigé`. La P3 l'a réfuté (R1 HIGH = F3-2 : `from_scanned` normalise déjà,
+  `imported_supplier_invoice.rs:117-128`, et la violation rendrait 400) ; l'orchestrateur a retiré son arbitrage, tout
+  a été retiré et les entrées datées annotées. *Une prémisse d'arbitrage se vérifie au code comme un finding.*
+- **Le banc InnoDB** : deux validations (P2 F1-6, P3 R2 = F3-1) soupçonnaient le contrôle de doublon d'un index unique
+  de faire attendre deux rattachements vers deux factures différentes. L'orchestrateur l'a **mesuré** sur MariaDB
+  10.11.16 (`REPEATABLE-READ`, tables jetables, quatre couples, avec et sans liens existants) : aucune attente
+  (< 0,35 s). Le relevé est à l'AC19 et à C-30-2-21, avec la bascule (sentinelle `companies` après staging et facture,
+  corrigée en P4) si le test rougit au développement.
+- **Remède refusé** : la sonde `INNODB_TRX` proposée en P4 (F3, R5) exige le privilège `PROCESS` ; remplacée par
+  `attendre_une_requete_en_cours` et `sonde_verrou_nowait`.
+- **Motif** : la sévérité s'est déplacée, à chaque passe, vers ce que la remédiation précédente venait d'écrire.
+
+Décomptes finaux, recomptés : **28 AC**, **23 tâches**, **39 mutations** dont **trois déclarées équivalentes**, **neuf
+parcours E2E**, **23 choix**. Le développement de la 30-2a attend le merge de la 30-1 (T-a0).
