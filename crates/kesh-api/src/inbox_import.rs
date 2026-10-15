@@ -551,8 +551,10 @@ async fn process_one_file(
     // inexploitable, ENTRE sans ses données QR. Le contrôle pur des colonnes
     // (`check_scanned_fits_columns`) tranche AVANT l'archivage : un QR lisible
     // mais qui ne tient pas dans le staging (longueur, montant) ne refuse plus
-    // le document. Seule une image non décodable reste un refus — le navigateur
-    // ne l'afficherait pas davantage (C-30-2-4).
+    // le document. Seule une image non décodable reste un refus (C-30-2-4) — le
+    // plus souvent corrompue ; angle mort assumé : la crate `image` refuse aussi
+    // quelques images qu'un navigateur afficherait (JPEG CMYK, plus de
+    // `MAX_IMAGE_DIMENSION` pixels de côté).
     let (scanned, qr, qr_error) = match decode_result {
         Ok(Some(s)) => match check_scanned_fits_columns(&s) {
             Ok(()) => (Some(s), QrStatus::Present, None),

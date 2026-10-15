@@ -1735,11 +1735,13 @@ Chaque ligne de la liste porte le nom du fichier, sa date d'import et un badge~:
           saisissez.
 \end{itemize}
 
-Trois gestes par document~:
+Quatre gestes par document~:
 \begin{description}
     \item[Aperçu] affiche le document sous sa ligne --- l'image, ou le PDF dans la
           visionneuse du navigateur. Un document dont le fichier n'a pas été restauré
           (sauvegarde, voir plus bas) l'est dit.
+    \item[Télécharger] enregistre le fichier sous son nom d'origine --- utile pour une
+          image, qui ne s'enregistre pas depuis l'aperçu.
     \item[Compléter] crée la facture fournisseur~: choisissez le fournisseur et saisissez
           les lignes (compte de charge, TVA). Pour un document avec QR, Kesh vérifie que le
           total TTC \textbf{correspond exactement} au montant du QR, et reprend IBAN et
@@ -1759,6 +1761,10 @@ Le document d'une facture complétée reste consultable depuis la fiche de la fa
 (ou dont le contenu ne correspond pas à l'extension), une image illisible, un fichier trop
 volumineux, un lien symbolique, un fichier déjà importé ou illisible~: il est déplacé dans
 le sous-dossier \texttt{failed/} du dossier d'import, et le rapport en donne la raison.
+Une image que Kesh ne sait pas décoder est refusée comme \emph{type non pris en charge},
+même si votre navigateur l'affiche~: c'est le cas d'un JPEG en couleurs CMJN ou d'une
+image de plus de 10\,000 pixels de côté. Convertissez-la (PNG, ou JPEG en RVB), ou
+déposez-la en PDF.
 
 \begin{keshnote}
 Seules les factures en \textbf{CHF} sont acceptées à la complétion d'un document avec QR
