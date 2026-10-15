@@ -798,7 +798,7 @@ Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercic
     \item[Transactions bancaires à rapprocher] Des transactions importées, datées (date de comptabilisation bancaire) dans l'exercice, attendent leur rapprochement --- y compris celles que vous avez écartées des propositions. Lien~: \emph{Réconciliation bancaire} (\S\ref{sec:reconciliation}).
     \item[Relevés bancaires de fin d'exercice] Pour chaque compte bancaire, le relevé qui \textbf{se termine au plus tard le dernier jour de l'exercice} est comparé aux livres~: relevé manquant, relevé arrêté trop tôt, ou écart entre le solde du relevé et le solde comptable à sa date. Lien~: \emph{Comptes bancaires}.
     \item[Factures en brouillon] Des factures client datées dans l'exercice n'ont jamais été validées~: elles ne sont pas en comptabilité. Lien~: la liste des factures, filtrée sur les brouillons de l'exercice.
-    \item[Documents fournisseur à traiter] Des documents déposés dans le dossier d'import, avec ou sans QR-code, attendent d'être complétés ou retirés de la liste (\S\ref{sec:import-factures}). Lien~: \emph{Ouvrir les documents à traiter}.
+    \item[Documents fournisseur à traiter] Des documents déposés dans le dossier d'import, avec ou sans QR-code, attendent qu'une facture en soit créée, ou d'être retirés de la liste (\S\ref{sec:import-factures}). Lien~: \emph{Ouvrir les documents à traiter}.
     \item[Écritures incohérentes] Des écritures déséquilibrées, à moins de deux lignes, datées hors de leur exercice, ou appartenant à un autre exercice mais datées dans celui-ci. Chaque écriture listée mène à sa fiche.
     \item[Exercice suivant] Aucun exercice ne suit celui-ci~: créez-le pour y passer les écritures de l'année qui vient --- et pour contre-passer vos transitoires au début de cet exercice (\S\ref{sec:transitoires}). Bouton~: \emph{Créer l'exercice suivant}, qui ouvre la création d'un exercice (administrateur et comptable).
 \end{description}
@@ -1567,13 +1567,50 @@ paiement à charger dans votre e-banking. Ces écrans sont dans le menu
 \subsection{Saisir une facture fournisseur}
 \label{sec:saisie-facture-fournisseur}
 
-\emph{Quotidien} → \emph{Factures fournisseurs} → \emph{Nouvelle facture}. Renseigner
-le fournisseur (un contact marqué « fournisseur »), la date, l'échéance
-éventuelle, les coordonnées de paiement (IBAN créancier, référence QR/ISR le cas
-échéant) et les lignes (description, montant, compte de charge, taux de TVA
-applicable — l'impôt préalable est comptabilisé automatiquement). À la validation,
-Kesh passe l'écriture d'achat (charge + TVA préalable au débit, dette fournisseur
-au crédit).
+\emph{Quotidien} → \emph{Factures fournisseurs} → \textbf{« Enregistrer une facture »}
+ouvre la page de saisie (réservée aux rôles qui peuvent créer~; les autres n'y voient
+rien à saisir). Renseigner le fournisseur (un contact marqué « fournisseur »), la date,
+l'échéance éventuelle, les coordonnées de paiement (IBAN ou QR-IBAN du créancier,
+référence, montant attendu --- toutes facultatives), le projet analytique éventuel et les
+lignes (description, montant, compte de charge, taux de TVA applicable --- l'impôt
+préalable est comptabilisé automatiquement). Le bouton \emph{Scanner une QR-facture}
+pré-remplit IBAN, référence et montant depuis une image de la QR-facture. À
+l'enregistrement, Kesh passe l'écriture d'achat (charge + TVA préalable au débit, dette
+fournisseur au crédit) et ouvre la fiche de la facture créée. Pour créer la facture
+d'un document reçu dans le dossier d'import, voir \S\ref{sec:import-factures}~: la même
+saisie s'y fait à côté du document.
+
+Le fournisseur n'existe pas encore~? \textbf{« Nouveau fournisseur »} ouvre un panneau
+sur la page même~: type (entreprise par défaut), nom, adresse. Kesh signale les contacts
+au nom proche déjà enregistrés --- il ne bloque rien, deux fournisseurs peuvent porter des
+noms voisins. \emph{Créer le fournisseur} l'enregistre et le sélectionne~; la saisie de la
+facture, lignes comprises, est conservée. Une erreur (numéro IDE déjà pris, par exemple)
+s'affiche dans le panneau sans rien perdre~; \emph{Annuler} ne crée rien.
+
+\paragraph{Les coordonnées de paiement sont contrôlées.} Depuis la version 0.14.0, Kesh
+vérifie à l'enregistrement --- ici comme pour un document à traiter sans QR-code~:
+\begin{itemize}
+    \item l'\textbf{IBAN}~: format, code pays connu de Kesh, longueur propre à ce pays,
+          chiffres de contrôle. Un IBAN étranger valide est accepté. Les espaces, y compris
+          insécables, sont retirés~; un champ vide vaut « pas d'IBAN »~;
+    \item un \textbf{QR-IBAN} (IBAN suisse ou liechtensteinois réservé aux QR-factures)
+          est reconnu à la saisie et exige une \textbf{référence QRR} valide (27 chiffres,
+          que vous pouvez saisir par groupes de cinq)~; à l'inverse, un IBAN ordinaire ne
+          peut pas être enregistré comme QR-IBAN~;
+    \item avec un IBAN ordinaire ou sans IBAN, la \textbf{référence} est un texte libre de
+          64 caractères au plus --- une ancienne référence BVR de 27 chiffres y est
+          acceptée.
+\end{itemize}
+Une valeur refusée est signalée \textbf{sous le champ}, avec la raison, sans que la
+saisie soit perdue.
+
+\begin{keshnote}
+Un IBAN d'un pays que la table intégrée de Kesh ne connaît pas (certains pays d'Afrique de
+l'Ouest ou Madagascar, par exemple) est refusé, même s'il est valide. Et un IBAN étranger
+accepté ici reste refusé à la création d'un lot de paiement pain.001, qui n'accepte que des
+IBAN suisses ou liechtensteinois (\S\ref{sec:paiements-fournisseurs})~: une telle facture se règle par un
+règlement direct depuis sa fiche.
+\end{keshnote}
 
 La dette fournisseur est portée au \textbf{compte créanciers} désigné dans
 \emph{Paramètres} → \emph{Facturation} (section \emph{Comptes par défaut}), et
@@ -1748,9 +1785,9 @@ Chaque ligne de la liste porte le nom du fichier, sa date d'import et un badge~:
     \item \textbf{QR-facture}, avec le créancier, le montant et la référence lus dans le QR~;
     \item \textbf{Sans QR-code}~: le document n'en porte pas, ou son QR n'a pas pu être
           exploité (illisible, montant hors des limites admises, valeur trop longue). Le
-          document est alors accepté \textbf{sans les données du QR}~: la facture qui en
-          naît n'a ni IBAN ni référence, et son montant est celui des lignes que vous
-          saisissez.
+          document est alors accepté \textbf{sans les données du QR}~: en créant la
+          facture, vous saisissez vous-même l'IBAN et la référence, et son montant est
+          celui des lignes que vous saisissez.
 \end{itemize}
 
 Quatre gestes par document~:
@@ -1760,20 +1797,51 @@ Quatre gestes par document~:
           (sauvegarde, voir plus bas) l'est dit.
     \item[Télécharger] enregistre le fichier sous son nom d'origine --- utile pour une
           image, qui ne s'enregistre pas depuis l'aperçu.
-    \item[Compléter] crée la facture fournisseur~: choisissez le fournisseur et saisissez
-          les lignes (compte de charge, TVA). Pour un document avec QR, Kesh vérifie que le
-          total TTC \textbf{correspond exactement} au montant du QR, et reprend IBAN et
-          référence du QR. Pour un document sans QR, aucun de ces contrôles~: la facture est
-          en CHF, et naît sans IBAN ni référence. La complétion crée cette facture par le
-          même chemin que la saisie~: elle est refusée de la même façon si le compte
-          créanciers ou la TVA récupérable des réglages n'est pas imputable
-          (\S\ref{sec:saisie-facture-fournisseur}), et le document reste dans la liste.
+    \item[Créer une facture] ouvre la page de saisie \textbf{à côté du document}~: l'aperçu
+          à gauche, le formulaire à droite (l'un sous l'autre sur un écran étroit). Le
+          document reste sous vos yeux pendant toute la saisie. Voir ci-dessous.
     \item[Retirer de la liste] pour un document qui n'est pas une facture, ou un doublon.
           Kesh demande confirmation~; le fichier reste conservé, et le déposer de nouveau
           le fait revenir dans la liste.
 \end{description}
-Le document d'une facture complétée reste consultable depuis la fiche de la facture
+Le document d'une facture créée reste consultable depuis la fiche de la facture
 (« Voir le document »).
+
+\paragraph{Créer la facture d'un document.} Le formulaire est celui de la saisie
+(\S\ref{sec:saisie-facture-fournisseur}), à deux différences près~:
+\begin{itemize}
+    \item \textbf{Document avec QR-facture}~: l'IBAN (ou le QR-IBAN), la référence et le
+          montant du QR sont affichés \textbf{en lecture seule} --- ils viennent du
+          document et ne se modifient pas. Kesh compare en direct le total TTC des lignes
+          au montant du QR, signale un écart, et refuse l'enregistrement tant que le total
+          ne \textbf{correspond pas exactement}. Le scan d'image n'est pas proposé.
+    \item \textbf{Document sans QR}~: tout se saisit, IBAN, référence et montant attendu
+          compris, et se contrôle comme une saisie ordinaire~; la facture est en CHF.
+\end{itemize}
+Pour un document avec QR, Kesh \textbf{propose} jusqu'à trois fournisseurs~: d'abord ceux
+dont une facture passée porte le même IBAN (« même IBAN »), puis ceux dont le nom est
+proche de celui du créancier (« nom proche » --- formes juridiques comme SA, Sàrl, GmbH et
+accents ignorés, « Müller » rapproché de « Mueller »). \textbf{Aucun n'est choisi d'office}~:
+cliquez \emph{Retenir} sur le bon, choisissez-en un autre dans la liste, ou créez-le par
+\emph{Nouveau fournisseur} (le nom et, pour une adresse structurée du QR, l'adresse sont
+pré-remplis). Sans QR, rien n'est proposé.
+
+\begin{keshwarning}
+\textbf{Une proposition n'est qu'une proposition.} Son absence ne prouve pas que le
+fournisseur n'existe pas (« Muller », sans tréma ni \emph{e}, n'est pas rapproché de
+« Müller »~; les mots de moins de trois lettres ne sont pas cherchés~; la recherche ne lit
+qu'une vingtaine de contacts)~; et sa présence ne prouve pas que c'est le bon --- deux
+sociétés d'un même groupe aux noms presque identiques sont toutes deux proposées.
+Vérifiez avant de retenir.
+\end{keshwarning}
+
+À l'enregistrement, le document quitte la liste et l'écran ouvre la fiche de la facture
+créée. Un refus --- total différent du QR, coordonnée de paiement invalide (sous le champ
+concerné), compte créanciers ou TVA récupérable non imputable
+(\S\ref{sec:saisie-facture-fournisseur}), exercice fermé, document traité entre-temps
+dans une autre session --- s'affiche sans perdre la saisie, et le document reste dans la
+liste. Un lien vers un document qui n'est plus à traiter affiche « Ce document n'est plus à
+traiter. » et renvoie à la liste.
 
 \paragraph{Ce qui reste refusé.} Un fichier qui n'est ni un PDF ni une image PNG ou JPEG
 (ou dont le contenu ne correspond pas à l'extension), une image illisible, un fichier trop
@@ -1785,10 +1853,10 @@ de côté, et de certaines variantes peu courantes du format JPEG. Convertissez-
 ou JPEG ordinaire), ou déposez-la en PDF.
 
 \begin{keshnote}
-Seules les factures en \textbf{CHF} sont acceptées à la complétion d'un document avec QR
-dans cette version~: un QR en euros se retire de la liste. Tout document déposé est
-conservé et compte dans la préparation de clôture (\S\ref{sec:preparer-cloture}) tant qu'il
-n'est ni complété ni retiré de la liste.
+Seules les factures en \textbf{CHF} sont acceptées à la création de la facture d'un
+document avec QR dans cette version~: un QR en euros se retire de la liste. Tout document
+déposé est conservé et compte dans la préparation de clôture (\S\ref{sec:preparer-cloture})
+tant qu'aucune facture n'en est créée et qu'il n'est pas retiré de la liste.
 \end{keshnote}
 
 \begin{keshwarning}

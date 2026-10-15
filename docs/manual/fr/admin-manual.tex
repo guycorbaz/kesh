@@ -859,7 +859,9 @@ Kesh importe les documents fournisseurs (PDF ou images PNG, JPEG) déposés dans
 dossier, cherche un Swiss QR Code côté serveur et place chaque document dans la liste
 « Documents à traiter ». Depuis la 0.14.0, \textbf{tout document entre}, avec ou sans
 QR-code~: un document sans QR, ou dont le QR est inexploitable, entre sans les données
-du QR~; la facture qui en naît est sans IBAN ni référence. Restent refusés (sous-dossier \texttt{failed/})~: un type hors
+du QR~; l'IBAN et la référence de la facture se saisissent alors à la main, et se
+contrôlent (manuel utilisateur, \emph{Saisir une facture fournisseur}). La facture se crée
+à côté du document, sur la page de saisie. Restent refusés (sous-dossier \texttt{failed/})~: un type hors
 PDF/PNG/JPEG ou dont le contenu ne correspond pas à l'extension, une image illisible, un
 fichier trop volumineux, un lien symbolique, un doublon, une erreur de lecture. Deux
 dossiers sont à configurer, montés en volumes persistants (cf. \texttt{docker-compose}) :
@@ -2031,7 +2033,11 @@ La 0.14.0 ne demande ni nouveau compose ni nouvelle variable de \keshpath{.env} 
 
 \paragraph{Intégrations par l'API.}\mbox{}\\
 \begin{sloppypar}
-Les champs du QR de \texttt{GET /api/v1/imported-supplier-invoices} --- \texttt{creditorIban}, \texttt{isQrIban}, \texttt{creditorAddressType}, \texttt{creditorName}, \texttt{creditorCountry}, \texttt{referenceType}, \texttt{currency} --- deviennent \textbf{nullables} : ils sont \texttt{null} ensemble pour un document sans QR. Un client qui les lit comme des chaînes casse. Le rapport de \texttt{POST /api/v1/inbox-import} porte, pour chaque fichier accepté, \texttt{qr} (\texttt{present}, \texttt{none} ou \texttt{unreadable}) et, pour un QR inexploitable, \texttt{qrError}~; \texttt{NO\_QR\_CODE\_FOUND} n'existe plus, et \texttt{INVALID\_SPC\_PAYLOAD}, \texttt{INVALID\_IBAN}, \texttt{PDF\_RENDER\_ERROR} et \texttt{FIELD\_TOO\_LONG} ne sortent plus en \texttt{failed[]} : le document est accepté sans les données du QR. Le détail est dans \texttt{docs/api-external.md}.
+Les champs du QR de \texttt{GET /api/v1/imported-supplier-invoices} --- \texttt{creditorIban}, \texttt{isQrIban}, \texttt{creditorAddressType}, \texttt{creditorName}, \texttt{creditorCountry}, \texttt{referenceType}, \texttt{currency} --- deviennent \textbf{nullables} : ils sont \texttt{null} ensemble pour un document sans QR. Un client qui les lit comme des chaînes casse. Le rapport de \texttt{POST /api/v1/inbox-import} porte, pour chaque fichier accepté, \texttt{qr} (\texttt{present}, \texttt{none} ou \texttt{unreadable}) et, pour un QR inexploitable, \texttt{qrError}~; \texttt{NO\_QR\_CODE\_FOUND} n'existe plus, et \texttt{INVALID\_SPC\_PAYLOAD}, \texttt{INVALID\_IBAN}, \texttt{PDF\_RENDER\_ERROR} et \texttt{FIELD\_TOO\_LONG} ne sortent plus en \texttt{failed[]} : le document est accepté sans les données du QR.
+\end{sloppypar}
+
+\begin{sloppypar}
+\texttt{POST /api/v1/supplier-invoices} \textbf{valide désormais les coordonnées de paiement} et refuse en \texttt{400 INVALID\_PAYMENT\_DETAILS} (\texttt{details.field}, \texttt{details.reason}) : un IBAN dont le format, le code pays (absent de la table intégrée de Kesh), la longueur pour son pays ou la somme de contrôle est invalide ; un QR-IBAN dans \texttt{creditorIban} ; un IBAN ordinaire dans \texttt{creditorQrIban} ; les deux ensemble ; un QR-IBAN sans référence QRR valide ; une référence de plus de 64 caractères. Il \textbf{accepte toujours} un IBAN étranger valide d'un pays de la table, et toute référence libre de 64 caractères au plus, 27 chiffres compris ; les blancs (insécables compris) sont retirés des IBAN, un champ vide vaut absent. Les factures existantes ne changent pas. La complétion d'un document, \texttt{POST /api/v1/imported-supplier-invoices/\{id\}/complete}, reçoit désormais \textbf{le corps de} \texttt{POST /api/v1/supplier-invoices} (projet compris ; un client qui n'envoie pas les champs ajoutés reste accepté) : sans QR, elle applique la même validation ; avec QR, elle refuse en \texttt{400 QR\_FIELDS\_FROM\_DOCUMENT} un corps qui porte IBAN, QR-IBAN, référence ou montant attendu. \texttt{GET /api/v1/imported-supplier-invoices/\{id\}/supplier-candidates} est \textbf{nouveau}. Le détail est dans \texttt{docs/api-external.md}.
 \end{sloppypar}
 
 \subsubsection{Passer à la 0.13.4}\label{sec:maj-0-13-4}
