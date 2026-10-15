@@ -5,7 +5,7 @@ rétro 25) : P1 Sonnet → P2 Opus → P3 Sonnet → **P4 Opus**, pour les deux 
 
 Dépôt `/home/gcorbaz/devel/kesh-30-1`, branche `story/30-1` (base `15686d55`). Fiche :
 `_bmad-output/implementation-artifacts/30-1-reconciliation-factures-fournisseur.md` (HEAD de la branche) — **une fiche,
-deux sous-stories** (30-1a puis 30-1b). Registre : `epic-30-choix-autonomes-301.md` (C-30-1-1 à 37). Epic :
+deux sous-stories** (30-1a puis 30-1b). Registre : `epic-30-choix-autonomes-301.md` (C-30-1-1 à 38). Epic :
 `_bmad-output/planning-artifacts/epic-30-factures-fournisseur.md` § *30-1*. Issues, en lecture : `gh api
 repos/guycorbaz/kesh/issues/686`, `…/671`, `…/687`, `…/669`, `…/482`. Rapports des passes précédentes (lecture) :
 `/home/gcorbaz/devel/kesh-gate-logs/301-validate-p{1,2,3}-{F,R}.md` ; les remédiations sont les entrées « Validation
@@ -38,11 +38,17 @@ Puis cherche le défaut que chaque prescription neuve introduit :
 - **AC-a9 révisé** — liste vide court-circuitée, borne de 500 (contrat de `POST /payment-batches` : un client qui envoie
   davantage aujourd'hui ?), plan épinglé (`WHERE id IN (…) AND company_id = ?` parcourt-il bien `PRIMARY` ?), aide
   `attendre_des_requetes_en_cours`, T-a15 et T-a16 rouges au sol par leur chorégraphie ?
-- **Libellés** (AC-b11) — décompte 36, bras `INACTIVE_OR_INVALID_ACCOUNTS`, deux `notice` en quatre locales, clés à
+- **AC-b17 (ex-L7)** — `accept_one_rule` rejoue le masquage : les fonctions sont-elles réellement **les mêmes** que
+  celles de `get_proposals` (DRY), et la condition de la 29-6 rejouée est-elle identique (`propose_matches` non vide sur
+  les factures dépassées de 1 à 5 centimes) ? Lectures et naissance de la vue dans `accept_one_rule` ; ordre des
+  verrous inchangé ? Changement de contrat client (une acceptation de règle autrefois réussie, désormais refusée) : dit à
+  `api-external.md` et au CHANGELOG ? Le maintien de l'acceptation d'une règle contre une facture **candidate** est-il
+  un faux rattachement muet ? T-b46, T-b47 et M-b30 tuables ? La 30-1b reste-t-elle à 5 modules ?
+- **Libellés** (AC-b11) — décompte 37, bras `INACTIVE_OR_INVALID_ACCOUNTS`, deux `notice` en quatre locales, clés à
   variante ; `lint-i18n-ownership` ?
 - **Manuel** (AC-b13) — FAQ `:3034`, `:3040-3045`, `:2156` : ce que la fiche prescrit sera-t-il vrai ?
-- **Recomptes** : 25 AC, 24 tâches, 60 tests nommés (7 Vitest) plus un E2E à trois tests, 38 lignes de mutation (35 à
-  exécuter), 37 choix ; modules 5 et 5 « au seuil » avec quatre fichiers hors décompte — recompte chacun.
+- **Recomptes** : 26 AC, 24 tâches, 62 tests nommés (7 Vitest) plus un E2E à trois tests, 39 lignes de mutation (36 à
+  exécuter), 38 choix ; modules 5 et 5 « au seuil » avec quatre fichiers hors décompte — recompte chacun.
 
 Un défaut introduit par la remédiation est au moins **MEDIUM** ; un faux rattachement ou un double comptage muet, ou un
 cycle non rejoué, est **HIGH**.

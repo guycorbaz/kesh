@@ -6,7 +6,7 @@
 l'Epic 30), branche `story/30-1`, worktree `/home/gcorbaz/devel/kesh-30-1`. **Découpée** (§ *Découpage*) en deux
 sous-stories tenues dans cette fiche, comme la 29-1 et la 29-4 : **30-1a** (le dé-rapprochement sait défaire un
 règlement fournisseur) **puis** 30-1b (proposer et accepter). Choix consignés au registre propre à la story,
-`epic-30-choix-autonomes-301.md`, **C-30-1-1 à C-30-1-37** (à verser par union au registre de l'epic). Validation P1
+`epic-30-choix-autonomes-301.md`, **C-30-1-1 à C-30-1-38** (à verser par union au registre de l'epic). Validation P1
 faite (Sonnet : F 0/2/4/5, R 0/2/7/9), remédiée le 2026-10-15 ; validation P2 faite (Opus : F 0/1/5/11, R 0/0/5/16),
 remédiée le 2026-10-15 ; validation P3 faite (Sonnet : F 0/0/5/6, R 0/0/6/6), remédiée le 2026-10-15 ; validation P4
 (passe complète, Opus) à lancer : `30-1-validate-prompt-p4.md`.
@@ -799,9 +799,9 @@ redeviendra à rapprocher. » (quatre locales ; `{ $invoice }` = `supplierInvoic
   **créanciers** de la facture », `receivable` → le texte actuel (P1 R6) ;
 - le doc-comment (« Les 31 codes », « Cinq codes seulement lisent leur `details` ») **et** le test
   `failed-proposal-label.test.ts:11`, `:84-85` (`toHaveLength(31)`, `EXPECTED_KEYS`) recomptés depuis la source par la
-  commande qu'ils citent : **36** attendus — 31 + quatre littéraux neufs (`RECONCILIATION_TRANSACTION_NOT_DEBIT`,
-  `SUPPLIER_INVOICE_NOT_FOUND`, `RECONCILIATION_AMOUNT_MISMATCH`, `RECONCILIATION_SUPPLIER_PAYMENT_HOLD`) + un code par
-  `error_code()` (`INACTIVE_OR_INVALID_ACCOUNTS`). *(La P3 comptait 35, avant le code de l'AC-b6 (d) ; à recompter au
+  commande qu'ils citent : **37** attendus — 31 + cinq littéraux neufs (`RECONCILIATION_TRANSACTION_NOT_DEBIT`,
+  `SUPPLIER_INVOICE_NOT_FOUND`, `RECONCILIATION_AMOUNT_MISMATCH`, `RECONCILIATION_SUPPLIER_PAYMENT_HOLD`,
+  `RECONCILIATION_RULE_MASKED`) + un code par `error_code()` (`INACTIVE_OR_INVALID_ACCOUNTS`). *(La P3 comptait 35, avant le code de l'AC-b6 (d) ; à recompter au
   développement.)*
 `reconciliation.types.ts` : types étendus (`notice`, `supplierInvoiceId`, `contactName`, le type d'acceptation, `kind`
 élargi à `supplier_settlement`, `supplierInvoiceId` et `supplierInvoiceNumber` de la vue).
@@ -896,6 +896,37 @@ Ni table, ni colonne, ni index, ni contrainte : `ls crates/kesh-db/migrations/*.
 qu'un index manque à la requête de l'AC-b3, il l'**écrit** comme angle mort mesuré, il n'ajoute pas de migration sans
 retour à la fiche.
 
+**AC-b17 — L'acceptation d'une règle rejoue le masquage (ex-L7, intégré sur décision de l'orchestrateur, C-30-1-38).**
+La proposition n'offre pas la règle quand une facture masquante ou un paiement en attente le défend (AC-b5 ; côté
+client, la 29-6 : `rule_masked_by_overpaid_invoice`, `routes/reconciliation.rs:880-887`), mais `accept_one_rule`
+(`:2912`) ne revérifie aucun de ces critères : un appel d'API direct, ou un écran périmé, accepte la règle et compte la
+charge (ou le produit) deux fois. **Correction**, dans le même fichier : après la revérification `rule_matches` de
+l'étape 7 (`:3119-3126`) et avant toute écriture, `accept_one_rule` rejoue le masquage par **les mêmes fonctions** que
+`get_proposals` (DRY — extraites en une fonction `rule_mask_for(tx, …)` lue par les deux) :
+- **crédit** (client) : la condition de la 29-6 — une facture que le paiement dépasse de 1 à 5 centimes
+  (`find_invoices_slightly_overpaid_for_window`) et qui porte un indice (`propose_matches` non vide sur elle, comme à la
+  proposition) → refus ;
+- **débit** (fournisseur) : `supplier_payment_hold` (lot `generated` du compte au montant exact ; paiement en attente de
+  rapprochement) **ou** une facture masquante portant un indice, ou une liste masquante pleine (AC-b3, AC-b5) → refus.
+⚠️ Le masquage par une facture **candidate** (`has_strong_invoice_match`, score ≥ 0,5) n'est **pas** rejoué : la
+proposition le traite comme une priorité, non comme une interdiction — accepter délibérément une règle contre une
+facture candidate reste possible par l'API, comme aujourd'hui (écrit au doc-comment).
+Lectures : celles de la proposition, ordinaires, dans la vue de la transaction du lot ; pour `supplier_payment_hold`, la
+forme **verrouillante** de l'AC-b6 (d), qui voit le dernier état commité (un lot créé après la naissance de la vue
+compris). La règle ne prend pas le verrou du compte : un lot ou un règlement commis **après** cette lecture n'est pas
+vu — même tolérance que la proposition, écrite au doc-comment. Refus **par proposition** : `RECONCILIATION_RULE_MASKED` (neuf), `details.reason` ∈ {
+`invoice_slightly_overpaid`, `supplier_invoice_near_amount`, `other_invoice_in_payment_batch`,
+`supplier_payment_awaiting_reconciliation`, `masking_list_full` }, avec `invoiceId` ou `supplierInvoiceId` et
+`paymentBatchId` selon le cas ; libellé ×4 dans `failed-proposal-label.ts` (décompte **37**). ⚠️ **Changement de
+contrat côté client** : une acceptation de règle autrefois réussie est désormais refusée dans ces cas — écrit à
+`api-external.md` (§ `POST /reconciliation/accept`) et au CHANGELOG (*Modifié*). Modules : `routes/reconciliation` et
+`repositories/reconciliation`, déjà dans la 30-1b — **aucun module ajouté** (toujours 5).
+*Tests* : **T-b46** (API directe, crédit : règle acceptée alors qu'une facture client dépassée de 3 centimes porte la
+référence → `RECONCILIATION_RULE_MASKED` / `invoice_slightly_overpaid`, rien écrit ; sans indice → la règle passe),
+**T-b47** (API directe, débit : facture fournisseur en lot `generated` du compte → `other_invoice_in_payment_batch` ;
+paiement en attente → `supplier_payment_awaiting_reconciliation` ; facture presque au montant avec indice →
+`supplier_invoice_near_amount` ; rien écrit). Mutation **M-b30** (rejeu du masquage retiré de `accept_one_rule`).
+
 **AC-b16 — Un règlement fournisseur porte la date du paiement (décision de l'orchestrateur, C-30-1-25).**
 `pay_in_tx_as`, étape (6) (`supplier_invoices.rs:905-907`) : `paid_at = <payment_date> 00:00:00` (la même forme que
 le client, `routes/reconciliation.rs:1995-1996` : `and_time(NaiveTime::from_hms_opt(0,0,0))`), **lié en paramètre**,
@@ -971,7 +1002,8 @@ T-b31 (lot confirmé avec un `payment_date` passé → `paid_at` = cette date). 
   fenêtre, traduction commune des refus de dates, requêtes.
 - [ ] T15 (AC-b4, b5) — tests rouges T-b11 à T-b16, T-b35, T-b36, T-b41, T-b44 ; `get_proposals`, `candidate_rank`, masquage,
   `notice`.
-- [ ] T16 (AC-b6, b7, b8, b9) — tests rouges T-b17 à T-b23, T-b45 (acceptation directe refusée par la garde (d)) ; `lock_for_bank_settlement_in_tx`, `pay_in_tx_as`,
+- [ ] T16 (AC-b6, b7, b8, b9, b17) — tests rouges T-b17 à T-b23, T-b45 (acceptation directe refusée par la garde (d)),
+  T-b46, T-b47 (règle acceptée par l'API, masquage rejoué) ; `rule_mask_for` ; `lock_for_bank_settlement_in_tx`, `pay_in_tx_as`,
   `accept_one_supplier_invoice`, `refuse_wrong_direction`, inventaire des refus recopié au Dev Agent Record.
 - [ ] T17 (AC-b10) — T-b24, T-b25, T-b34 ; table des verrous recopiée au Dev Agent Record avec les lignes réelles.
 - [ ] T18 (AC-b11) — écran, dialogue, libellés, types ; Vitest T-b26 à T-b28, T-b38 à T-b40.
@@ -1034,8 +1066,8 @@ rebase), manuel § *Factures fournisseurs*, CHANGELOG, catalogues i18n, `helpers
 
 ### Tests (récapitulatif)
 
-30-1a : T-a1 à T-a16 sauf T-a9 (déplacé en T-b40) = **15** (14 Rust, 1 Vitest : T-a10). 30-1b : T-b1 à T-b45 = **45**
-(39 Rust, 6 Vitest : T-b26, T-b27, T-b28, T-b38, T-b39, T-b40) et l'E2E de l'AC-b12 (**trois** tests). Décors
+30-1a : T-a1 à T-a16 sauf T-a9 (déplacé en T-b40) = **15** (14 Rust, 1 Vitest : T-a10). 30-1b : T-b1 à T-b47 = **47**
+(41 Rust, 6 Vitest : T-b26, T-b27, T-b28, T-b38, T-b39, T-b40) et l'E2E de l'AC-b12 (**trois** tests). Décors
 **synthétiques** ; aucune donnée réelle (`docs/agents-orchestration.md` § 8). Concurrence par `sonde_verrou_nowait` /
 `attendre_une_requete_en_cours` (`test_fixtures.rs:561`, `:611`), **jamais** `information_schema.INNODB_TRX` (piège
 connu des consignes).
@@ -1082,6 +1114,7 @@ connu des consignes).
 | M-b27 | étape 3 (b) sans `FOR UPDATE` (lecture ordinaire du compte) | **non tuable, déclarée** (P3, F10) : la clôture du compte refuse tant que la transaction est `pending` (I1) — aucun test ne distingue l'attente au verrou du refus `412` ; le verrou sert l'ordre des verrous (AC-b10, C3) et la garde (d), dont M-b29 couvre l'effet. Non exécutée |
 | M-b28 | règlement en attente de rapprochement : la ligne garde ses propositions | T-b44 |
 | M-b29 | garde (d) de l'acceptation retirée | T-b45 |
+| M-b30 | rejeu du masquage retiré de `accept_one_rule` (AC-b17) | T-b46, T-b47 |
 
 Le `status = 'paid'` du classement (AC-a1) n'est pas muté : équivalent (tout écrivain qui quitte `paid` remet la
 colonne à `NULL`, P1 F10). Une mutation qui survit se tue par un test ajouté, ou se déclare **équivalente** avec la
@@ -1112,11 +1145,9 @@ raison, au Dev Agent Record.
   borne que la 29-6, écrite au manuel.
 - **L6 — `paidAt` affiché brut** sur la fiche fournisseur (`supplier-invoices/[id]/+page.svelte:393` : après la 30-1b,
   « 2026-06-20T00:00:00 ») : cosmétique, préexistant (avant : l'heure de la saisie, brute aussi) ; hors des modules de la
-  30-1b — **issue demandée** (P4, P2 F-L10).
-- **L7 — Acceptation d'une règle par l'API, sans garde de masquage** : la proposition n'offre pas la règle quand une
-  facture masquante ou un règlement en attente le défend (AC-b5), mais `accept_one_rule` ne revérifie pas ce critère —
-  ni pour le client (la 29-6 masque à la proposition seulement), ni pour le fournisseur. Un appel direct, ou un écran
-  périmé, peut encore accepter la règle. Préexistant côté client ; **issue demandée** (P2, client et fournisseur).
+  30-1b — **déjà intégré à la 30-2c (AC25)**, sur décision de l'orchestrateur : pas d'issue.
+- ~~L7 — Acceptation d'une règle par l'API, sans garde de masquage~~ : **intégré** à la 30-1b (AC-b17, C-30-1-38) ;
+  reste seulement l'acceptation délibérée d'une règle contre une facture **candidate**, inchangée (AC-b17).
 - **L8 — La `notice` ne cite qu'une facture** : quand une candidate à signal est effacée par un lot du compte (AC-b5,
   première ligne), la `notice` ne dit pas qu'une autre facture de ce montant existait (P3, F11) — pur confort.
 
@@ -1139,8 +1170,8 @@ raison, au Dev Agent Record.
 - TTC fournisseur à plus de deux décimales : **#687** (ouverte par l'orchestrateur).
 - #671 : commentée par l'orchestrateur (apport de la 30-1a).
 - Même facture dans deux lots `generated` (`create_batch`) : **intégré** à la 30-1a (AC-a9), pas d'issue.
-- `paidAt` affiché brut sur la fiche fournisseur (L6) : **issue demandée** (P4, cosmétique).
-- Acceptation d'une règle par l'API sans revérifier le masquage (L7, client et fournisseur) : **issue demandée** (P2).
+- `paidAt` affiché brut sur la fiche fournisseur (L6) : intégré à la **30-2c (AC25)**, pas d'issue.
+- Acceptation d'une règle par l'API sans revérifier le masquage (ex-L7) : intégré à la 30-1b (AC-b17), pas d'issue.
 
 ### Project Structure Notes
 
@@ -1314,3 +1345,12 @@ le règlement par virement de ce compte, au montant exact, non rapproché, à ±
 - Décomptes, recomptés par `grep` sur la fiche : **25** AC (9 + 16), **24** tâches, **60** tests nommés (T-a1 à a16 sauf
   a9 = 15 ; T-b1 à b45 = 45 ; 7 Vitest) plus l'E2E à trois tests, **38** lignes de mutation (M-a1 à a9, M-b1 à b29 : 35
   à exécuter, M-a2 équivalente, M-a6 retirée, M-b27 non tuable déclarée), choix C-30-1-1 à **37**.
+
+### Amendement de l'orchestrateur après la P3 — 2026-10-15
+
+- **L6** (`paidAt` brut) : déjà intégré à la 30-2c (AC25) — cité, pas d'issue.
+- **L7** : intégré à la 30-1b (AC-b17, C-30-1-38) — `accept_one_rule` rejoue le masquage (client : 29-6 ; fournisseur :
+  `supplier_payment_hold` et les masquantes) et refuse en `RECONCILIATION_RULE_MASKED` ; T-b46, T-b47, M-b30 ;
+  changement de contrat client écrit. Même fichier et même dépôt de requêtes : **30-1b toujours à 5 modules**.
+- Décomptes : **26** AC (9 + 17), **24** tâches, **62** tests nommés (15 + 47 ; 7 Vitest) plus l'E2E à trois tests,
+  **39** lignes de mutation (36 à exécuter), choix C-30-1-1 à **38** ; libellés : 37 codes.

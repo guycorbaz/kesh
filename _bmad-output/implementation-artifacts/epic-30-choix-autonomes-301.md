@@ -365,3 +365,11 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
 - **Retenu** : « si cette transaction est le paiement de ce lot, annulez le lot ; sinon, affectez à la main » ; pour un
   paiement déjà au grand livre, « n'affectez pas cette transaction » (#671).
 - **Écartée** : « confirmez le lot » (mène à L1, une charge comptée deux fois).
+
+### C-30-1-38 — L'acceptation d'une règle rejoue le masquage (ex-L7, décision de l'orchestrateur, 2026-10-15)
+
+- **Retenu** : `accept_one_rule` rejoue, par les fonctions de la proposition, le masquage de la 29-6 (crédit) et celui
+  de la 30-1b (débit : `supplier_payment_hold`, masquantes à indice, liste pleine) ; refus `RECONCILIATION_RULE_MASKED`.
+  Le masquage par une facture candidate n'est pas rejoué (priorité, non interdiction). Aucun module ajouté.
+- **Écartée** : une issue séparée (même route, même fichier).
+- **Changement de contrat client**, écrit à `api-external.md` et au CHANGELOG.
