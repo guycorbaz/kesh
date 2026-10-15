@@ -4696,11 +4696,17 @@ async fn conclude_locked_attempt<T>(
 pub struct ReconciliationTransactionResponse {
     #[serde(flatten)]
     pub transaction: crate::routes::bank_imports::TransactionResponse,
-    /// `invoice_settlement` ou `entry` ; `None` si la transaction n'est pas
-    /// rapprochée.
+    /// `invoice_settlement`, `supplier_settlement` (Story 30-1a) ou `entry` ;
+    /// `None` si la transaction n'est pas rapprochée.
     pub kind: Option<&'static str>,
+    /// La facture **client** réglée — nulle pour un règlement fournisseur.
     pub invoice_id: Option<i64>,
     pub invoice_number: Option<String>,
+    /// La facture **fournisseur** réglée, pour `supplier_settlement` seulement
+    /// (Story 30-1a, AC-a5 : champs ajoutés, contrat additif).
+    pub supplier_invoice_id: Option<i64>,
+    /// Le numéro (celui du fournisseur, libre et nullable) de cette facture.
+    pub supplier_invoice_number: Option<String>,
     pub cancellable: bool,
     /// Code du premier motif qui refuse l'annulation.
     pub cancel_blocked_by: Option<&'static str>,
@@ -4728,20 +4734,22 @@ pub async fn get_reconciliation_transaction(
     )
     .await?
     .ok_or(AppError::Database(DbError::NotFound))?;
-    let (invoice_id, kind) = match view.kind {
-        Some(k @ kesh_db::repositories::reconciliation_cancel::ReconciliationKind::InvoiceSettlement {
-            invoice_id,
-            ..
-        }) => (Some(invoice_id), Some(k.code())),
-        Some(k) => (None, Some(k.code())),
-        None => (None, None),
+    use kesh_db::repositories::reconciliation_cancel::ReconciliationKind;
+    let (invoice_id, supplier_invoice_id) = match view.kind {
+        Some(ReconciliationKind::InvoiceSettlement { invoice_id, .. }) => (Some(invoice_id), None),
+        Some(ReconciliationKind::SupplierSettlement {
+            supplier_invoice_id,
+        }) => (None, Some(supplier_invoice_id)),
+        Some(ReconciliationKind::Entry) | None => (None, None),
     };
     let hit = view.cancel_blocker;
     Ok(Json(ReconciliationTransactionResponse {
         transaction: view.bank_transaction.into(),
-        kind,
+        kind: view.kind.map(ReconciliationKind::code),
         invoice_id,
         invoice_number: view.invoice_number,
+        supplier_invoice_id,
+        supplier_invoice_number: view.supplier_invoice_number,
         cancellable: hit.is_none(),
         cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
         cancel_blocked_label: hit.as_ref().and_then(|h| h.2.clone()),
@@ -4759,6 +4767,9 @@ pub struct CancelReconciliationResponse {
     pub reversal_journal_entry_id: i64,
     /// La facture dont le règlement a été retiré, pour un règlement client.
     pub invoice_id: Option<i64>,
+    /// La facture fournisseur dont le paiement a été retiré, pour un
+    /// règlement fournisseur (Story 30-1a, AC-a5 : champ ajouté).
+    pub supplier_invoice_id: Option<i64>,
 }
 
 /// `POST /api/v1/reconciliation/transactions/{id}/cancel` — annule un
@@ -4830,6 +4841,7 @@ async fn cancel_reconciliation_once(
                 bank_transaction: done.bank_transaction.into(),
                 reversal_journal_entry_id: done.reversal_journal_entry_id,
                 invoice_id: done.invoice_id,
+                supplier_invoice_id: done.supplier_invoice_id,
             })
         }
         Err(e) => {

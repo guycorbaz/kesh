@@ -9,6 +9,9 @@
 //! (`kesh-db/tests/supplier_invoices_repository.rs`) ; ici, ce qui ne se voit
 //! qu'à travers HTTP : les champs de lecture, les rôles, les codes d'erreur.
 //!
+//! Story 30-1a (#686, AC-a9, T-a17) — les bornes de `POST /payment-batches` :
+//! une liste vide ne crée aucun lot, plus de 500 identifiants est un `400`.
+//!
 //! Pré-requis : MariaDB démarré.
 
 use std::net::SocketAddr;
@@ -784,4 +787,64 @@ async fn cancel_blocked_by_closed_lettering(pool: MySqlPool) {
         .unwrap();
     assert_eq!(status, "paid", "la facture reste payée");
     assert_eq!(document_group::lignes_du_groupe(&pool, cle).await, 2);
+}
+
+/// T-a17 (Story 30-1a, #686, AC-a9) — **les bornes de la création d'un lot,
+/// par la route**. Une liste vide : `200`, aucun lot, `failed` vide — la sortie
+/// d'avant la story, que le verrouillage de tête ne doit pas transformer en
+/// `500` (`IN ()` est une erreur de syntaxe). Plus de 500 identifiants, comptés
+/// sur la longueur **brute** de la liste, avant dédoublonnage : `400
+/// VALIDATION_ERROR`, avant toute lecture. 500 exactement : la route traite.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn create_batch_bounds_its_list(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let id = open_invoice_with_iban(&pool, &seeded).await;
+    let ledger = ledger_1020(&pool, &seeded).await;
+    let bank_id = bank_linked_to(&pool, &seeded, ledger).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let creer = |ids: Vec<i64>| {
+        json!({
+            "bankAccountId": bank_id,
+            "requestedExecutionDate": "2026-07-01",
+            "supplierInvoiceIds": ids,
+        })
+    };
+
+    let resp = post(&app, &token, "/api/v1/payment-batches", creer(vec![])).await;
+    assert_eq!(resp.status(), 200, "liste vide");
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["batch"].is_null(), "aucun lot : {body}");
+    assert_eq!(body["failed"], json!([]), "{body}");
+
+    let resp = post(
+        &app,
+        &token,
+        "/api/v1/payment-batches",
+        creer(vec![id; 501]),
+    )
+    .await;
+    assert_eq!(resp.status(), 400, "501 identifiants, même répétés");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{body}");
+    let lots: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM payment_batches")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(lots, 0, "rien d'écrit");
+
+    let resp = post(
+        &app,
+        &token,
+        "/api/v1/payment-batches",
+        creer(vec![id; 500]),
+    )
+    .await;
+    assert_eq!(resp.status(), 200, "500 : la route traite");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["batch"]["items"].as_array().map(Vec::len),
+        Some(1),
+        "{body}"
+    );
 }

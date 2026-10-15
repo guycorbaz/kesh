@@ -3733,9 +3733,14 @@ impl IntoResponse for AppError {
                             "settlement-cancel-blocked-lettering-closed",
                             "Ce règlement est lettré avec sa facture, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du dernier règlement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est suivi d'un exercice clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
                         ),
+                        // ⚠️ Inatteignable : aucun des deux gestes
+                        // d'annulation d'un règlement ne refuse lui-même ce
+                        // rang (le socle le refuse au clic, avec son texte).
+                        // Aligné sur le catalogue pour que les deux replis du
+                        // même code ne divergent pas (Story 30-1a, AC-a6).
                         SettlementCancelBlocker::MatchedBankTransaction => (
                             "settlement-cancel-blocked-bank-match",
-                            "Ce règlement est rapproché d'une transaction bancaire : annulez d'abord le rapprochement, depuis cette fiche ou le détail de l'import bancaire.",
+                            "Ce règlement est rapproché d'une transaction bancaire : annulez d'abord le rapprochement, depuis le détail de l'import bancaire — ou, pour une facture client, depuis sa fiche.",
                         ),
                         SettlementCancelBlocker::AccountArchived => (
                             "settlement-cancel-blocked-account-archived",
@@ -4234,8 +4239,10 @@ fn reconciliation_cancel_blocked_text(
             "reconciliation-cancel-blocked-written-off",
             "Le reste de la facture de ce rapprochement a été soldé : annulez d'abord le solde.",
         ),
-        // Aucun rapprochement ne règle une facture fournisseur : le motif ne
-        // peut pas naître ici ; le `match` reste exhaustif.
+        // Inatteignable : le classement ne reconnaît un règlement fournisseur
+        // que sur une facture `paid`, verrouillée par sa lecture (Story 30-1a,
+        // AC-a1) — le rang 1 ne peut donc pas naître ici ; le `match` reste
+        // exhaustif.
         SettlementCancelBlocker::SupplierInvoiceNotPaid => (
             "supplier-invoices-settlement-cancel-blocked-not-paid",
             "Cette facture fournisseur n'est pas payée : il n'y a pas de règlement à annuler.",

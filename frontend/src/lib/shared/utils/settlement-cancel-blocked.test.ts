@@ -13,8 +13,21 @@ vi.mock("./i18n.svelte", () => ({
 
 import { settlementCancelTailMessage } from "./settlement-cancel-blocked";
 import { invoiceSettlementCancelMessage } from "$lib/features/invoices/settlement-cancel";
+import { supplierSettlementCancelMessage } from "$lib/features/supplier-invoices/settlement-cancel";
 
 describe("motifs d’annulation d’un règlement", () => {
+  it("T-a10 (Story 30-1a, AC-a6) — « rapproché » : un texte vrai sur la fiche fournisseur, qui n’a pas le dialogue, comme sur la fiche client (mutation : « depuis cette fiche » rétabli)", () => {
+    const attendu =
+      "Ce règlement est rapproché d'une transaction bancaire : annulez d'abord le rapprochement, depuis le détail de l'import bancaire — ou, pour une facture client, depuis sa fiche.";
+    expect(
+      supplierSettlementCancelMessage("MATCHED_BANK_TRANSACTION", null),
+    ).toBe(attendu);
+    expect(invoiceSettlementCancelMessage("MATCHED_BANK_TRANSACTION", null)).toBe(
+      attendu,
+    );
+    expect(attendu).not.toContain("cette fiche");
+  });
+
   it("chaque code de la queue a son propre texte (mutation : deux codes confondus)", () => {
     const textes = new Set(
       (

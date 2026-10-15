@@ -8,7 +8,7 @@
 //! par son propre geste d'annulation au rang 3. L'écriture était donc
 //! **définitivement incorrigible**.
 //!
-//! ⛔ **Deux familles d'écritures, et seulement deux.** Des six chemins qui
+//! ⛔ **Trois familles d'écritures, et seulement trois.** Des six chemins qui
 //! posent `bank_transactions.matched_entry_id`, deux rendent un **règlement
 //! client** (ligne `invoice_settlements`) : l'acceptation d'une proposition
 //! « facture » (`routes/reconciliation.rs`), qui le crée, et le rattachement
@@ -19,6 +19,16 @@
 //! transaction** possède. Le règlement se défait par
 //! [`invoice_settlements_write::cancel_settlement_in_tx`], **appelé, jamais
 //! réécrit** ; l'écriture propre, par [`journal_entries::reverse_in_tx`].
+//!
+//! ⛔ **La troisième : le règlement fournisseur** (Story 30-1a, #686) — une
+//! écriture de règlement que pointent les colonnes `settlement_*` d'une facture
+//! fournisseur **payée**. Aucun chemin ne la rapproche avant la Story 30-1b
+//! (l'acceptation d'une facture fournisseur pour un débit) ; ce geste sait la
+//! défaire **d'abord**, pour qu'à aucun commit un tel rapprochement ne soit
+//! produisible sans être défaisable. Elle se défait par
+//! [`supplier_invoices::cancel_settlement_in_tx`], **appelé, jamais réécrit**.
+//! Un règlement **détaché** (facture payée puis annulée, colonnes à `NULL`) n'a
+//! plus de propriétaire : il est classé écriture propre et contre-passé.
 //!
 //! ⛔ **Le lien d'abord, la contre-passation ensuite.** Remettre
 //! `matched_entry_id` à `NULL` dans la même transaction, **avant** de
@@ -42,7 +52,7 @@ use crate::repositories::settlement_cancellation::{
     SettlementCancelHit, settlement_entry_cancel_blocker,
 };
 use crate::repositories::{
-    audit_log, bank_transactions, invoice_settlements_write, journal_entries,
+    audit_log, bank_transactions, invoice_settlements_write, journal_entries, supplier_invoices,
 };
 
 /// Ce que possède l'écriture d'un rapprochement.
@@ -52,8 +62,13 @@ pub enum ReconciliationKind {
     /// rattachement d'une transaction à un règlement saisi depuis la fiche —
     /// Story 29-8).
     InvoiceSettlement { invoice_id: i64, settlement_id: i64 },
+    /// Un **règlement fournisseur** : l'écriture de règlement d'une facture
+    /// fournisseur `paid` (Story 30-1a, #686). Il n'y a pas de seconde ligne :
+    /// la facture **est** la ligne de règlement.
+    SupplierSettlement { supplier_invoice_id: i64 },
     /// Une écriture que seule la transaction possède (éclatement, règle,
-    /// rapprochement manuel).
+    /// rapprochement manuel) — ou un règlement fournisseur **détaché** de sa
+    /// facture annulée.
     Entry,
 }
 
@@ -62,16 +77,65 @@ impl ReconciliationKind {
     pub fn code(self) -> &'static str {
         match self {
             Self::InvoiceSettlement { .. } => "invoice_settlement",
+            Self::SupplierSettlement { .. } => "supplier_settlement",
             Self::Entry => "entry",
         }
     }
 }
 
-/// Classe l'écriture liée `entry_id` : un règlement client la porte-t-il ?
+/// La lecture qui reconnaît un **règlement fournisseur** (Story 30-1a, AC-a1),
+/// sans son éventuel ` FOR UPDATE` — publique pour le test de son plan
+/// (`EXPLAIN`, T-a12).
+///
+/// ⚠️ **Le plan doit passer par l'index de la clé étrangère**
+/// `fk_supplier_invoices_settlement_je` : en forme verrouillante, un parcours
+/// par `idx_supplier_invoices_company_status` verrouillerait **toutes** les
+/// factures payées de la société. Le test du plan l'asserte.
+///
+/// `status = 'paid'` : une facture qui quitte `paid` remet la colonne à `NULL`
+/// (annulation du règlement, annulation de la facture) — le filtre ne fait que
+/// le redire, et un règlement détaché reste ainsi une écriture propre.
+pub const SUPPLIER_SETTLEMENT_CLASSIFY_SQL: &str = "SELECT id FROM supplier_invoices \
+     WHERE company_id = ? AND settlement_journal_entry_id = ? AND status = 'paid'";
+
+/// Classe l'écriture liée `entry_id` : un règlement client la porte-t-il, puis
+/// un règlement fournisseur ? Sinon, c'est une écriture propre.
 ///
 /// `for_update` : le geste la lit en **verrouillant** — cf. [`cancel_in_tx`],
 /// étape 2 : une lecture non verrouillante à cet endroit figerait l'instantané
-/// de la transaction AVANT le verrou de l'exercice.
+/// de la transaction AVANT le verrou de l'exercice. Les deux bras ont la
+/// **même** forme (verrouillante ou non).
+///
+/// ⚠️ **Ordre des bras, et son coût** (Story 30-1a, AC-a1, AC-a4) : règlement
+/// client, puis règlement fournisseur, puis écriture propre. Une écriture ne
+/// peut pas être à la fois l'une et l'autre ; l'ordre ne change que
+/// l'empreinte des verrous. Le bras fournisseur n'est lu qu'après un échec du
+/// bras client, donc pour un rapprochement fournisseur ou une écriture propre ;
+/// sur une écriture propre, la lecture verrouillante qui ne trouve rien pose un
+/// **verrou d'intervalle** sur `fk_supplier_invoices_settlement_je` — même
+/// coût que la lecture de `invoice_settlements` sur une écriture propre. Une
+/// écriture propre récente (identifiant supérieur à tous les
+/// `settlement_journal_entry_id`) tient l'intervalle de queue : un `pay_in_tx`
+/// concurrent (étape 6, `UPDATE … SET settlement_journal_entry_id = <écriture
+/// neuve>`) **attend** la fin du dé-rapprochement. Cycle possible avec le
+/// verrou de l'exercice (`pay_in_tx` le tient par
+/// `fiscal_years::find_open_covering_date … FOR UPDATE` avant son `UPDATE` ; le
+/// dé-rapprochement tient l'intervalle avant l'exercice, étape 3) : **rejoué
+/// des deux côtés** — `retry_app_on_deadlock` pour le dé-rapprochement,
+/// `retry_on_deadlock` pour le paiement depuis la fiche et pour la
+/// confirmation d'un lot.
+///
+/// ⚠️ **Second cycle, constaté au développement** (Story 30-1a, T-a6,
+/// C-30-1-42) : la lecture verrouillante passe par l'index secondaire et tient
+/// son enregistrement **avant** la ligne de la facture. Un geste qui tient la
+/// facture par sa **clé primaire** puis réécrit `settlement_journal_entry_id`
+/// — l'annulation de la facture (`supplier_invoices::cancel_in_tx`, qui
+/// détache le règlement) — demande ensuite cet enregistrement : `1213`. C'est
+/// le prix déjà assumé côté client (étape 2 de [`cancel_in_tx`] : la ligne de
+/// règlement avant la facture), et le même remède : les deux routes
+/// **rejouent**, et l'issue rejouée est cohérente — dé-rapprochement puis
+/// annulation d'une facture `open`, ou annulation puis dé-rapprochement d'un
+/// règlement détaché (écriture propre).
 async fn classify(
     conn: &mut MySqlConnection,
     company_id: i64,
@@ -90,10 +154,26 @@ async fn classify(
         .fetch_optional(&mut *conn)
         .await
         .map_err(map_db_error)?;
-    Ok(match row {
-        Some((settlement_id, invoice_id)) => ReconciliationKind::InvoiceSettlement {
+    if let Some((settlement_id, invoice_id)) = row {
+        return Ok(ReconciliationKind::InvoiceSettlement {
             invoice_id,
             settlement_id,
+        });
+    }
+    // Story 30-1a (#686, AC-a1) — le règlement fournisseur, dans la MÊME forme.
+    let sql = format!(
+        "{SUPPLIER_SETTLEMENT_CLASSIFY_SQL}{}",
+        if for_update { " FOR UPDATE" } else { "" }
+    );
+    let supplier: Option<i64> = sqlx::query_scalar(&sql)
+        .bind(company_id)
+        .bind(entry_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(map_db_error)?;
+    Ok(match supplier {
+        Some(supplier_invoice_id) => ReconciliationKind::SupplierSettlement {
+            supplier_invoice_id,
         },
         None => ReconciliationKind::Entry,
     })
@@ -136,7 +216,9 @@ async fn find(
 /// ⛔ **Une seule précédence, pas de jumeau** : rang 0 ici
 /// (`BankTransactionNotReconciled`) ; pour un règlement client, le rang 1 et la
 /// queue par [`invoice_settlements_write::settlement_cancel_blocker_unlinking`] ;
-/// pour une écriture propre, la queue commune directement. Dans les deux cas,
+/// pour un règlement fournisseur (Story 30-1a), le rang 1 et la queue par
+/// [`supplier_invoices::supplier_settlement_cancel_blocker_unlinking`] ;
+/// pour une écriture propre, la queue commune directement. Dans les trois cas,
 /// avec l'**exemption étroite** du rang 3 pour **cette** transaction — c'est
 /// elle qu'on défait —, une autre transaction pointant la même écriture restant
 /// un refus.
@@ -168,6 +250,17 @@ async fn cancel_blocker(
             )
             .await
         }
+        ReconciliationKind::SupplierSettlement {
+            supplier_invoice_id,
+        } => {
+            supplier_invoices::supplier_settlement_cancel_blocker_unlinking(
+                conn,
+                company_id,
+                supplier_invoice_id,
+                Some(bt.id),
+            )
+            .await
+        }
         ReconciliationKind::Entry => {
             settlement_entry_cancel_blocker(conn, company_id, entry_id, Some(bt.id)).await
         }
@@ -184,8 +277,28 @@ pub struct ReconciliationView {
     pub kind: Option<ReconciliationKind>,
     /// Le numéro de la facture réglée, pour un règlement client.
     pub invoice_number: Option<String>,
+    /// Le numéro (celui du fournisseur, libre) de la facture fournisseur
+    /// réglée, pour un règlement fournisseur (Story 30-1a).
+    pub supplier_invoice_number: Option<String>,
     /// Le premier motif qui refuse l'annulation, ou `None`.
     pub cancel_blocker: Option<SettlementCancelHit>,
+}
+
+/// Le numéro (nullable) d'une pièce, par `sql` (`… WHERE id = ? AND
+/// company_id = ?`), dans l'instantané de la vue.
+async fn number_of(
+    conn: &mut MySqlConnection,
+    sql: &str,
+    id: i64,
+    company_id: i64,
+) -> Result<Option<String>, DbError> {
+    Ok(sqlx::query_scalar::<_, Option<String>>(sql)
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(map_db_error)?
+        .flatten())
 }
 
 /// Lit une transaction et sa vue d'annulation dans une transaction de lecture
@@ -202,32 +315,45 @@ pub async fn get_view(
         Err(DbError::NotFound) => return Ok(None),
         Err(e) => return Err(e),
     };
-    let (kind, invoice_number) = if bt.status == BankTransactionStatus::Reconciled {
-        let kind = classify(&mut tx, company_id, matched_entry(&bt)?, false).await?;
-        let number = match kind {
-            ReconciliationKind::InvoiceSettlement { invoice_id, .. } => {
-                sqlx::query_scalar::<_, Option<String>>(
-                    "SELECT invoice_number FROM invoices WHERE id = ? AND company_id = ?",
-                )
-                .bind(invoice_id)
-                .bind(company_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(map_db_error)?
-                .flatten()
+    let (kind, invoice_number, supplier_invoice_number) =
+        if bt.status == BankTransactionStatus::Reconciled {
+            let kind = classify(&mut tx, company_id, matched_entry(&bt)?, false).await?;
+            match kind {
+                ReconciliationKind::InvoiceSettlement { invoice_id, .. } => {
+                    let number = number_of(
+                        &mut tx,
+                        "SELECT invoice_number FROM invoices WHERE id = ? AND company_id = ?",
+                        invoice_id,
+                        company_id,
+                    )
+                    .await?;
+                    (Some(kind), number, None)
+                }
+                ReconciliationKind::SupplierSettlement {
+                    supplier_invoice_id,
+                } => {
+                    let number = number_of(
+                        &mut tx,
+                        "SELECT supplier_invoice_number FROM supplier_invoices \
+                         WHERE id = ? AND company_id = ?",
+                        supplier_invoice_id,
+                        company_id,
+                    )
+                    .await?;
+                    (Some(kind), None, number)
+                }
+                ReconciliationKind::Entry => (Some(kind), None, None),
             }
-            ReconciliationKind::Entry => None,
+        } else {
+            (None, None, None)
         };
-        (Some(kind), number)
-    } else {
-        (None, None)
-    };
     let blocker = cancel_blocker(&mut tx, company_id, &bt).await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(Some(ReconciliationView {
         bank_transaction: bt,
         kind,
         invoice_number,
+        supplier_invoice_number,
         cancel_blocker: blocker,
     }))
 }
@@ -241,6 +367,9 @@ pub struct ReconciliationCancellation {
     pub reversal_journal_entry_id: i64,
     /// La facture dont le règlement a été retiré, pour un règlement client.
     pub invoice_id: Option<i64>,
+    /// La facture fournisseur dont le paiement a été retiré, pour un règlement
+    /// fournisseur (Story 30-1a).
+    pub supplier_invoice_id: Option<i64>,
 }
 
 /// Annule le rapprochement de `bank_transaction_id` **dans une transaction
@@ -260,7 +389,13 @@ pub struct ReconciliationCancellation {
 ///    règlement annulé au même instant depuis la fiche facture et depuis
 ///    l'import — l'interblocage (1213) est alors rejoué par la route du
 ///    dé-rapprochement, et côté fiche facture par celle de l'annulation du
-///    règlement (Story 15-5e1, #463) ;
+///    règlement (Story 15-5e1, #463). **Règlement fournisseur** (Story 30-1a,
+///    AC-a4) : la lecture verrouillante du classement verrouille la ligne
+///    `supplier_invoices` — c'est **la** ligne de règlement du fournisseur, il
+///    n'y en a pas de seconde à verrouiller ensuite —, par l'index de
+///    `settlement_journal_entry_id` ; la facture est ainsi tenue **avant**
+///    l'écriture, comme dans `supplier_invoices::cancel_settlement_in_tx`
+///    (facture → écriture) : même ordre que le geste appelé ;
 /// 3. verrou de l'écriture **et de son exercice** avant de juger — sans lui,
 ///    une clôture validée entre la lecture du rang 2 et la contre-passation
 ///    passerait inaperçue (leçon de la revue de la 25-3-a-1) ;
@@ -273,7 +408,10 @@ pub struct ReconciliationCancellation {
 /// 5. le lien défait, **avant** toute contre-passation, et le marqueur de
 ///    rejet remis à `NULL` — sans quoi la transaction ne reviendrait jamais
 ///    dans les propositions ;
-/// 6. le règlement annulé, ou l'écriture contre-passée ;
+/// 6. le règlement annulé — client par
+///    [`invoice_settlements_write::cancel_settlement_in_tx`], fournisseur par
+///    [`supplier_invoices::cancel_settlement_in_tx`] (Story 30-1a), **appelés,
+///    jamais réécrits** —, ou l'écriture contre-passée ;
 ///
 ///    6 bis. la revérification **verrouillante** du compte clos
 ///    ([`super::bank_accounts::recheck_open_locked_in_tx`], Story 29-4b, #651),
@@ -307,7 +445,9 @@ pub async fn cancel_in_tx(
     let entry_id = matched_entry(&bt)?;
 
     // (2) Classement par lecture VERROUILLANTE (la ligne de règlement), puis
-    //     verrou de la facture. ⛔ Aucune lecture non verrouillante avant (3).
+    //     verrou de la facture client. ⛔ Aucune lecture non verrouillante
+    //     avant (3). Pour un règlement fournisseur (Story 30-1a), la ligne
+    //     verrouillée par le classement EST la facture : rien de plus à tenir.
     let kind = classify(tx, company_id, entry_id, true).await?;
     if let ReconciliationKind::InvoiceSettlement { invoice_id, .. } = kind {
         sqlx::query("SELECT id FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE")
@@ -372,8 +512,15 @@ pub async fn cancel_in_tx(
         return Err(DbError::OptimisticLockConflict);
     }
 
-    // (6) Le règlement annulé — geste de la 25-3-a-1, appelé —, ou l'écriture
+    // (6) Le règlement annulé — geste de la 25-3-a-1 (client) ou de la
+    //     25-3-a-2 (fournisseur, Story 30-1a), appelé —, ou l'écriture
     //     contre-passée.
+    let supplier_invoice_id = match kind {
+        ReconciliationKind::SupplierSettlement {
+            supplier_invoice_id,
+        } => Some(supplier_invoice_id),
+        _ => None,
+    };
     let (reversal_journal_entry_id, invoice_id, settlement_id) = match kind {
         ReconciliationKind::InvoiceSettlement {
             invoice_id,
@@ -392,6 +539,13 @@ pub async fn cancel_in_tx(
                 Some(invoice_id),
                 Some(settlement_id),
             )
+        }
+        ReconciliationKind::SupplierSettlement {
+            supplier_invoice_id: id,
+        } => {
+            let done =
+                supplier_invoices::cancel_settlement_in_tx(tx, company_id, id, user_id).await?;
+            (done.reversal_journal_entry_id, None, None)
         }
         ReconciliationKind::Entry => {
             let reversal =
@@ -415,7 +569,11 @@ pub async fn cancel_in_tx(
     //     serait plus la dernière acquisition, et un cycle à quatre (deux
     //     annulations croisées, deux clôtures en file) deviendrait possible,
     //     dont les clôtures, les plus légères, seraient victimes et rejouées
-    //     (raisonné, non joué).
+    //     (raisonné, non joué). Règlement fournisseur (Story 30-1a) : même
+    //     limite — la revérification de W29 porte sur
+    //     `settlement_bank_account_id`, le compte de l'import pour
+    //     l'acceptation de la 30-1b (même construction) ; avant elle, seul un
+    //     état posé par un test rapproche un règlement fournisseur.
     //     Une clôture commitée depuis la naissance de la vue (garde de la 28-4)
     //     est vue ici ; une clôture qui attend encore voit, à son tour, la
     //     transaction redevenue `pending`. ⚠️ La route exécute ce geste sous le
@@ -431,7 +589,10 @@ pub async fn cancel_in_tx(
 
     // (7) L'audit du geste. ⚠️ Pour un règlement client, trois lignes au
     //     total (celle-ci, `invoice.settlement_cancelled`,
-    //     `journal_entry.reversed`) : chacune nomme son objet.
+    //     `journal_entry.reversed`) : chacune nomme son objet. Pour un
+    //     règlement fournisseur (Story 30-1a, AC-a5), `supplierInvoiceId` est
+    //     posé, `invoiceId` et `settlementId` restent nuls — contrat additif ;
+    //     le geste appelé écrit `supplier_invoice.settlement_cancelled`.
     audit_log::insert_in_tx(
         tx,
         NewAuditLogEntry::for_actor(
@@ -446,6 +607,7 @@ pub async fn cancel_in_tx(
                 "reversalJournalEntryId": reversal_journal_entry_id,
                 "invoiceId": invoice_id,
                 "settlementId": settlement_id,
+                "supplierInvoiceId": supplier_invoice_id,
                 "amount": bt.amount,
                 "wasPreviouslyRejected": bt.auto_match_rejected_at.is_some(),
             })),
@@ -458,6 +620,7 @@ pub async fn cancel_in_tx(
         bank_transaction,
         reversal_journal_entry_id,
         invoice_id,
+        supplier_invoice_id,
     })
 }
 

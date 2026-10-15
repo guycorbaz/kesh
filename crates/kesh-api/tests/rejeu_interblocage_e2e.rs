@@ -2255,3 +2255,127 @@ async fn settlement_cancellation_recheck_cycle_is_replayed(pool: MySqlPool) {
         "une seule contre-passation"
     );
 }
+
+// ============================================================
+// Story 30-1a (#686, AC-a8) — la création d'un lot de paiement
+// ============================================================
+
+/// T-a14 (Story 30-1a, #686, AC-a8) — **la création d'un lot de paiement,
+/// victime, est rejouée**. Patron `victime()` : la transaction de test
+/// (alourdie) tient la ligne du compte bancaire source en exclusif ; la route
+/// tient la facture (verrouillage de tête, ou lecture verrouillante de la
+/// validation au sol), puis attend le compte sur l'`INSERT INTO
+/// payment_batches` (clé étrangère) ; la transaction de test demande la
+/// facture : cycle à deux, la création, plus légère, est annulée. Sans rejeu,
+/// elle rend `500` ; rejouée, `200` — **un seul** lot, un seul article, une
+/// seule entrée d'audit : une tentative ne rend `Err` qu'annulée, et le
+/// fichier pain.001 n'est produit qu'au `GET`. Tue M-a8.
+///
+/// ⚠️ Cycle **synthétique**, comme T29a-15 : il prouve la mécanique du rejeu de
+/// la création. Le cycle réel que la 30-1b ouvre (une acceptation de plusieurs
+/// propositions contre une création de lot, AC-b10, C1) n'est pas joué ici.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn payment_batch_creation_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let fournisseur = contact(&pool, &ctx, "Fournisseur du lot", true).await;
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_payable_account_id = ? WHERE company_id = ?",
+    )
+    .bind(ctx.compte("2000"))
+    .bind(ctx.company_id())
+    .execute(&pool)
+    .await
+    .unwrap();
+    let facture = kesh_db::repositories::supplier_invoices::create(
+        &pool,
+        kesh_db::entities::NewSupplierInvoice {
+            company_id: ctx.company_id(),
+            contact_id: fournisseur,
+            supplier_invoice_number: Some("FF-LOT".into()),
+            invoice_date: aujourd_hui(),
+            due_date: None,
+            creditor_iban: Some("CH5604835012345678009".into()),
+            creditor_qr_iban: None,
+            payment_reference: None,
+            expected_payment_amount: None,
+            project_id: None,
+            lines: vec![kesh_db::entities::NewSupplierInvoiceLine {
+                description: "Fournitures".into(),
+                quantity: rust_decimal::Decimal::ONE,
+                unit_price: rust_decimal::Decimal::new(5000, 2),
+                vat_rate: rust_decimal::Decimal::ZERO,
+                expense_account_id: ctx.compte("4000"),
+            }],
+        },
+        ctx.societe.admin_user_id,
+    )
+    .await
+    .expect("facture fournisseur")
+    .invoice
+    .id;
+    let (compte, _) = compte_bancaire(&pool, &ctx).await;
+    let banque = compte_de_banque_imputable(&pool, &ctx).await;
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(banque)
+        .bind(compte)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let capture = CaptureRejeu::installer();
+
+    let lourde = lourde_tenant_le_compte(&pool, compte).await;
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::POST,
+        "/api/v1/payment-batches",
+        Some(json!({
+            "bankAccountId": compte,
+            "requestedExecutionDate": aujourd_hui().to_string(),
+            "supplierInvoiceIds": [facture],
+        })),
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["INSERT INTO payment_batches"],
+        "SELECT id FROM supplier_invoices WHERE id = ? FOR UPDATE",
+        facture,
+    )
+    .await;
+
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert!(corps["batch"].is_object(), "un lot créé : {corps}");
+    capture.exiger_un_rejeu("payment_batches::create");
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM payment_batches WHERE company_id = ?",
+            ctx.company_id()
+        )
+        .await,
+        1,
+        "un seul lot"
+    );
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM payment_batch_items WHERE supplier_invoice_id = ?",
+            facture
+        )
+        .await,
+        1,
+        "un seul article"
+    );
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'payment_batch.generated' \
+             AND user_id = ?",
+            ctx.societe.admin_user_id
+        )
+        .await,
+        1,
+        "une seule entrée d'audit"
+    );
+}

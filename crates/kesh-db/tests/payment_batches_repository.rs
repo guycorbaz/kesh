@@ -1022,3 +1022,212 @@ async fn a_batch_started_before_the_archiving_is_refused(pool: MySqlPool) {
     );
     assert_eq!(lignes_de_lot(&pool).await, (0, 0), "rien d'écrit");
 }
+
+// ===========================================================================
+// Story 30-1a (#686, AC-a9) — la création d'un lot verrouille ses factures en
+// tête, par identifiant croissant
+// ===========================================================================
+
+/// Les motifs **communs** au sol et après la correction (fiche, AC-a9, P4
+/// F-L2) : la lecture verrouillante d'une facture par `validate_invoice_for_batch`
+/// comme le verrouillage de tête portent tous deux ces deux fragments.
+const ATTENTE_SUR_FACTURE: [&str; 2] = ["FROM supplier_invoices", "FOR UPDATE"];
+
+/// Une connexion qui tient la facture `id` en exclusif.
+async fn tenir_facture(pool: &MySqlPool, id: i64) -> sqlx::Transaction<'static, sqlx::MySql> {
+    let mut tenue = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM supplier_invoices WHERE id = ? FOR UPDATE")
+        .bind(id)
+        .fetch_one(&mut *tenue)
+        .await
+        .unwrap();
+    tenue
+}
+
+/// Lance `create_batch` sur `ids` en tâche, puis attend de voir **au moins
+/// `en_attente`** requêtes bloquées sur une facture (la sonde qui compte : deux
+/// créations attendent sur le même texte préparé).
+async fn lot_bloque_sur_facture(
+    pool: &MySqlPool,
+    ctx: &Ctx,
+    ids: Vec<i64>,
+    en_attente: i64,
+) -> tokio::task::JoinHandle<Result<payment_batches::CreateBatchOutcome, DbError>> {
+    let p = pool.clone();
+    let nouveau = new_batch(ctx, ids);
+    let user = ctx.seeded.admin_user_id;
+    let tache = tokio::spawn(async move { payment_batches::create_batch(&p, nouveau, user).await });
+    let vue = kesh_db::test_fixtures::attendre_des_requetes_en_cours(
+        pool,
+        &ATTENTE_SUR_FACTURE,
+        en_attente,
+        || tache.is_finished(),
+    )
+    .await;
+    if !vue {
+        panic!(
+            "la création du lot a fini sans attendre la facture : {:?}",
+            tache.await.map(|r| r.map(|o| o.batch.is_some()))
+        );
+    }
+    tache
+}
+
+/// T-a15 (AC-a9) — **deux créations de lot simultanées ne mettent jamais la
+/// même facture dans deux lots `generated`** (deux fichiers pain.001 : un
+/// double paiement). Une connexion tient la facture ; A démarre et se bloque ;
+/// B démarre et se bloque à son tour (la sonde attend DEUX requêtes) ; la
+/// connexion relâche, A crée son lot et commite, B obtient la facture.
+///
+/// **Rouge au sol** : B a fait sa lecture ordinaire du compte (étape (0))
+/// **avant** de se bloquer — sa vue est née ; il lit l'appartenance à un lot
+/// dans cette vue, ne voit pas l'article de A, et crée un second lot. Après la
+/// correction, B verrouille la facture **avant** toute lecture : sa vue naît
+/// après le commit de A, et il refuse `ALREADY_IN_GENERATED_BATCH`. Tue M-a7.
+///
+/// Cas ajouté : une liste vide ne crée aucun lot et ne rend aucun refus (le
+/// verrouillage de tête est court-circuité : `IN ()` est une erreur de syntaxe).
+#[sqlx::test(migrations = "./test-schema")]
+async fn two_concurrent_batches_never_take_the_same_invoice(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let facture = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(100.00)).await;
+
+    let tenue = tenir_facture(&pool, facture).await;
+    let a = lot_bloque_sur_facture(&pool, &ctx, vec![facture], 1).await;
+    let b = lot_bloque_sur_facture(&pool, &ctx, vec![facture], 2).await;
+    tenue.rollback().await.unwrap();
+
+    let a = a.await.unwrap().expect("A");
+    let b = b.await.unwrap().expect("B");
+    let crees = [&a, &b].iter().filter(|o| o.batch.is_some()).count();
+    assert_eq!(
+        crees, 1,
+        "⛔ la même facture dans deux lots generated : A {:?}, B {:?}",
+        a.failed, b.failed
+    );
+    let refuse = if a.batch.is_some() { &b } else { &a };
+    assert_eq!(refuse.failed.len(), 1, "{:?}", refuse.failed);
+    assert_eq!(refuse.failed[0].error_code, "ALREADY_IN_GENERATED_BATCH");
+    assert_eq!(lignes_de_lot(&pool).await, (1, 1));
+
+    // Liste vide : ni lot, ni refus, ni erreur.
+    let vide =
+        payment_batches::create_batch(&pool, new_batch(&ctx, vec![]), ctx.seeded.admin_user_id)
+            .await
+            .expect("liste vide");
+    assert!(vide.batch.is_none() && vide.failed.is_empty(), "{vide:?}");
+}
+
+/// T-a12 étendu (AC-a9) — **le plan du verrouillage de tête** est un parcours
+/// de la clé primaire (`range` sur `PRIMARY`) : les verrous suivent l'ordre du
+/// parcours, croissant ; un parcours par `idx_supplier_invoices_company_status`
+/// verrouillerait toutes les factures de la société, dans un autre ordre. Le
+/// décor en porte quatre, pour que l'index de la société ne soit pas écarté
+/// par accident. Chaque `?` est remplacé, dans l'ordre, et le test vérifie qu'il
+/// n'en reste aucun.
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_head_lock_of_a_batch_scans_the_primary_key(pool: MySqlPool) {
+    use sqlx::Row;
+    let ctx = setup(&pool).await;
+    let mut ids = Vec::new();
+    for prix in [dec!(10.00), dec!(20.00), dec!(30.00), dec!(40.00)] {
+        ids.push(make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), prix).await);
+    }
+    let cibles = [ids[0], ids[2]];
+    let mut lie = payment_batches::lock_invoices_sql(cibles.len());
+    for id in cibles {
+        lie = lie.replacen('?', &id.to_string(), 1);
+    }
+    lie = lie.replacen('?', &ctx.seeded.company_id.to_string(), 1);
+    assert!(!lie.contains('?'), "un `?` reste à lier : {lie}");
+    let lignes = sqlx::query(&format!("EXPLAIN {lie}"))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(lignes.len(), 1, "{lie}");
+    let cle: Option<String> = lignes[0].try_get("key").unwrap();
+    let acces: Option<String> = lignes[0].try_get("type").unwrap();
+    assert_eq!(cle.as_deref(), Some("PRIMARY"), "{lie}");
+    assert_eq!(acces.as_deref(), Some("range"), "{lie}");
+}
+
+/// T-a16 (AC-a9) — **deux lots aux factures croisées ne s'interbloquent pas**,
+/// au niveau du dépôt, **sans rejeu**. (1) Une connexion C tient la facture 1 ;
+/// (2) A = {1, 2} démarre et se bloque sur 1 sans rien tenir ; (3) B = {2, 1}
+/// démarre — **au sol**, B tient 2 et se bloque sur 1 — ; la sonde attend deux
+/// requêtes ; (4) C relâche : A, premier en file, obtient 1, puis demande 2,
+/// que tient B → **1213 au sol**. Après la correction, B trie {1, 2} et attend 1
+/// sans rien tenir : aucun interblocage, A crée le lot des deux factures, B les
+/// refuse toutes deux.
+///
+/// ⛔ **Ce qui tue M-a9, déterministe** : pendant que A et B attendent la
+/// facture 1, la facture 2 doit être **libre** — personne ne tient une facture
+/// avant celles d'identifiant inférieur. Une sonde `NOWAIT` le vérifie ; au sol
+/// et sous M-a9 (verrous dans l'ordre de la requête), B tient 2 et la sonde
+/// échoue. *Constaté à la campagne de mutations* : l'interblocage seul ne
+/// suffisait pas à tuer M-a9 — MariaDB 10.11 n'a pas toujours octroyé la
+/// facture 1 au premier arrivé (A), et quand B l'obtient, aucun cycle ne se
+/// forme. L'hypothèse « octroi en file » de la fiche n'est donc pas tenue pour
+/// acquise ; l'absence d'interblocage reste vérifiée, en complément.
+#[sqlx::test(migrations = "./test-schema")]
+async fn crossed_batches_do_not_deadlock(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let un = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R1"), dec!(100.00)).await;
+    let deux = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R2"), dec!(50.00)).await;
+    assert!(un < deux, "montage : identifiants croissants");
+
+    let tenue = tenir_facture(&pool, un).await;
+    let a = lot_bloque_sur_facture(&pool, &ctx, vec![un, deux], 1).await;
+    let b = lot_bloque_sur_facture(&pool, &ctx, vec![deux, un], 2).await;
+    let deux_libre = kesh_db::test_fixtures::sonde_verrou_nowait(
+        &pool,
+        "SELECT id FROM supplier_invoices WHERE id = ? FOR UPDATE NOWAIT",
+        deux,
+    )
+    .await;
+    tenue.rollback().await.unwrap();
+    assert!(
+        deux_libre,
+        "⛔ une création de lot tient la facture {deux} en attendant la facture {un} : \
+         les factures ne sont pas verrouillées par identifiant croissant"
+    );
+
+    let a = a.await.unwrap();
+    let b = b.await.unwrap();
+    let (a, b) = match (a, b) {
+        (Ok(a), Ok(b)) => (a, b),
+        (a, b) => panic!(
+            "⛔ interblocage entre deux lots aux factures croisées — A : {:?}, B : {:?}",
+            a.map(|o| o.batch.is_some()),
+            b.map(|o| o.batch.is_some())
+        ),
+    };
+    let (cree, refuse) = if a.batch.is_some() {
+        (&a, &b)
+    } else {
+        (&b, &a)
+    };
+    assert_eq!(cree.batch.as_ref().map(|l| l.items.len()), Some(2));
+    assert!(refuse.batch.is_none());
+    assert_eq!(refuse.failed.len(), 2, "{:?}", refuse.failed);
+    assert!(
+        refuse
+            .failed
+            .iter()
+            .all(|f| f.error_code == "ALREADY_IN_GENERATED_BATCH"),
+        "{:?}",
+        refuse.failed
+    );
+    // `failed[]` garde l'ordre de la requête de B.
+    let ordre: Vec<i64> = refuse
+        .failed
+        .iter()
+        .map(|f| f.supplier_invoice_id)
+        .collect();
+    let attendu = if std::ptr::eq(refuse, &b) {
+        vec![deux, un]
+    } else {
+        vec![un, deux]
+    };
+    assert_eq!(ordre, attendu);
+}

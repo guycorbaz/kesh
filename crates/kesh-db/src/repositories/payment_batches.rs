@@ -64,8 +64,55 @@ async fn fetch_items(pool: &MySqlPool, batch_id: i64) -> Result<Vec<PaymentBatch
     .map_err(map_db_error)
 }
 
+/// Le verrouillage de tête de [`create_batch`] pour `n` factures (`n ≥ 1`) :
+/// `n` marqueurs pour les identifiants, puis la société — public pour le test
+/// de son plan (`EXPLAIN`, Story 30-1a, T-a12).
+///
+/// ⛔ **Les verrous InnoDB suivent l'ordre du PARCOURS, pas l'`ORDER BY`** : le
+/// plan voulu est un parcours de la clé primaire (`range` sur `PRIMARY`), qui
+/// verrouille dans l'ordre croissant des identifiants. **Épinglé par
+/// `FORCE INDEX (PRIMARY)`** : sans lui, l'optimiseur de MariaDB 10.11 choisit
+/// un index **couvrant** de la société (`idx_supplier_invoices_company_date`,
+/// qui porte `id`) — constaté au développement sur quatre factures —, qui
+/// verrouillerait toutes les factures de la société, dans un autre ordre. Le
+/// test du plan (T-a12) le vérifie.
+pub fn lock_invoices_sql(n: usize) -> String {
+    format!(
+        "SELECT id FROM supplier_invoices FORCE INDEX (PRIMARY) \
+         WHERE id IN ({}) AND company_id = ? ORDER BY id FOR UPDATE",
+        vec!["?"; n].join(", ")
+    )
+}
+
 /// Crée un lot de paiement (génération). Pattern batch : chaque facture est
 /// validée indépendamment ; les valides forment le lot `generated`.
+///
+/// ⛔ **Story 30-1a (#686, AC-a9) — les factures d'abord, toutes, par
+/// identifiant croissant, avant toute lecture.** Deux créations concurrentes
+/// sur la même facture : sans ce verrou de tête, la seconde faisait sa lecture
+/// ordinaire du compte (étape (0)) — sa vue naissait —, attendait la facture,
+/// puis lisait son appartenance à un lot dans cette vue d'avant le commit de la
+/// première : la facture entrait dans **deux** lots `generated`, deux fichiers
+/// pain.001, un double paiement. Désormais la vue naît après le dernier verrou
+/// de facture, et voit tout lot commité par un concurrent qui tenait l'une
+/// d'elles. L'ordre croissant supprime aussi l'interblocage de deux lots aux
+/// factures croisées. L'ordre des verrous reste facture → compte (clé
+/// étrangère de l'`INSERT payment_batches`) → articles.
+///
+/// ⚠️ **Prix** : un identifiant **absent** pose un verrou d'intervalle sur la
+/// clé primaire ; un identifiant **existant d'une autre société** pose un
+/// verrou d'**enregistrement** sur sa ligne (parcours de `PRIMARY` en
+/// `REPEATABLE READ`, le filtre de société s'appliquant après) — préexistant,
+/// la lecture verrouillante par facture de la validation faisant de même.
+///
+/// ⚠️ La garde repose sur « une lecture postérieure au dernier verrou voit le
+/// dernier état commité » : vrai en MariaDB 10.11 (`innodb_snapshot_isolation
+/// = OFF`) ; l'angle mort 11.6+ est tracé par #669.
+///
+/// Une liste **vide** ne pose aucun verrou (`IN ()` est une erreur de syntaxe)
+/// et garde sa sortie : aucun lot, aucun refus. La route borne la liste à
+/// [`super::reconciliation::MAX_IN_CLAUSE_IDS`] identifiants ; au-delà de
+/// 65 535, la limite des paramètres liés rendrait une erreur de protocole.
 pub async fn create_batch(
     pool: &MySqlPool,
     new: NewPaymentBatch,
@@ -81,13 +128,32 @@ pub async fn create_batch(
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
     let result = async {
+        // (−1) Story 30-1a (#686, AC-a9) — toutes les factures demandées,
+        //      dédoublonnées, verrouillées par identifiant croissant AVANT toute
+        //      lecture ordinaire (doc ci-dessus). Liste vide : aucun verrou.
+        let mut a_verrouiller = supplier_invoice_ids.clone();
+        a_verrouiller.sort_unstable();
+        a_verrouiller.dedup();
+        if !a_verrouiller.is_empty() {
+            let sql = lock_invoices_sql(a_verrouiller.len());
+            let mut q = sqlx::query(&sql);
+            for id in &a_verrouiller {
+                q = q.bind(id);
+            }
+            q.bind(company_id)
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
+        }
+
         // (0) Compte bancaire source : existe, company-scoped, non archivé, non
         //     clos, journal lié. Story 28-4a (#642, W17) : `closed_on` ajouté à
-        //     cette lecture non verrouillante existante (aucun verrou ajouté,
-        //     vue inchangée : c'est déjà sa première lecture) — le refus
-        //     précoce. Une clôture ou un archivage commité après la naissance
-        //     de la vue est revérifié sous le verrou de clé étrangère, après
-        //     l'`INSERT` du lot (Story 29-4, AC2), étape (2).
+        //     cette lecture non verrouillante existante (aucun verrou ajouté) —
+        //     le refus précoce. C'est la PREMIÈRE lecture ordinaire de la
+        //     transaction : la vue naît ici, après le verrouillage de tête des
+        //     factures (Story 30-1a, AC-a9). Une clôture ou un archivage commité
+        //     après la naissance de la vue est revérifié sous le verrou de clé
+        //     étrangère, après l'`INSERT` du lot (Story 29-4, AC2), étape (2).
         let bank: Option<(Option<i64>, bool, Option<chrono::NaiveDate>)> = sqlx::query_as(
             "SELECT journal_account_id, archived, closed_on FROM bank_accounts \
              WHERE id = ? AND company_id = ?",
@@ -265,7 +331,9 @@ pub async fn create_batch(
 }
 
 /// Valide une facture pour inclusion dans un lot. Verrouille la facture
-/// (`FOR UPDATE`, sérialise vs pay/cancel/autre lot). Retourne `Ok(Accepted)`
+/// (`FOR UPDATE`, sérialise vs pay/cancel/autre lot) — depuis la Story 30-1a,
+/// redemande d'un verrou déjà tenu par le verrouillage de tête de
+/// [`create_batch`], qui seul fixe l'ordre. Retourne `Ok(Accepted)`
 /// ou `Err(PaymentBatchFailedItem)` (échec métier per-facture), ou un `DbError`
 /// (échec infra → propage).
 ///

@@ -46,6 +46,8 @@ use sqlx::MySqlPool;
 
 #[path = "../../kesh-db/tests/support/document_group.rs"]
 mod document_group;
+#[path = "../../kesh-db/tests/support/fournisseur_rapproche.rs"]
+mod fournisseur_rapproche;
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 const TEST_ADMIN_PASSWORD: &str = "e2e-test-admin-password";
@@ -4479,12 +4481,16 @@ async fn cancelling_an_invoice_reconciliation_undoes_everything(pool: MySqlPool)
     assert_eq!(view["kind"], "invoice_settlement");
     assert_eq!(view["invoiceId"], inv_id);
     assert_eq!(view["invoiceNumber"], "INV-2026-001");
+    // Story 30-1a (AC-a5, T-a7) — les champs fournisseur, ajoutés, restent nuls.
+    assert_eq!(view["supplierInvoiceId"], Value::Null, "got {view:?}");
+    assert_eq!(view["supplierInvoiceNumber"], Value::Null, "got {view:?}");
     assert_eq!(view["matchedEntryId"], entry_id);
     assert_eq!(view["cancellable"], true, "got {view:?}");
 
     let (st, done) = cancel_reco(&app, &ctx.jwt, tx_id).await;
     assert_eq!(st, 200, "got {done:?}");
     assert_eq!(done["invoiceId"], inv_id);
+    assert_eq!(done["supplierInvoiceId"], Value::Null, "got {done:?}");
     assert_eq!(done["bankTransaction"]["status"], "pending");
     let reversal_id = done["reversalJournalEntryId"].as_i64().unwrap();
     assert_back_to_reconcile(
@@ -4636,11 +4642,15 @@ async fn cancelling_a_manual_reconciliation_reverses_its_entry(pool: MySqlPool) 
     assert_eq!(st, 200);
     assert_eq!(view["kind"], "entry");
     assert_eq!(view["invoiceId"], Value::Null);
+    // Story 30-1a (AC-a5, T-a7) — les champs fournisseur, ajoutés, restent nuls.
+    assert_eq!(view["supplierInvoiceId"], Value::Null, "got {view:?}");
+    assert_eq!(view["supplierInvoiceNumber"], Value::Null, "got {view:?}");
     assert_eq!(view["cancellable"], true, "got {view:?}");
 
     let (st, done) = cancel_reco(&app, &ctx.jwt, tx_id).await;
     assert_eq!(st, 200, "got {done:?}");
     assert_eq!(done["invoiceId"], Value::Null);
+    assert_eq!(done["supplierInvoiceId"], Value::Null, "got {done:?}");
     let reversal_id = done["reversalJournalEntryId"].as_i64().unwrap();
     assert_back_to_reconcile(
         &pool,
@@ -4698,6 +4708,102 @@ async fn manual_reconciled(
         .unwrap();
     assert_eq!(resp.status(), 200, "got {:?}", resp.text().await);
     tx_id
+}
+
+/// T-a7 et T-a8 (Story 30-1a, #686, AC-a5) — **un règlement fournisseur
+/// rapproché, par la route** : la vue dit `supplier_settlement`, porte la
+/// facture fournisseur (`supplierInvoiceId`, `supplierInvoiceNumber`) et laisse
+/// nuls les champs de la facture **client** ; l'annulation rend
+/// `supplierInvoiceId` ; l'audit `reconciliation.cancelled` porte
+/// `kind = supplier_settlement` et `supplierInvoiceId`, `invoiceId` et
+/// `settlementId` nuls. Contrat additif : aucun champ existant ne change de
+/// sens. Décor : règlement par le vrai chemin, lien posé en SQL — aucun chemin
+/// ne le produit avant la 30-1b (`support/fournisseur_rapproche.rs`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancelling_a_supplier_reconciliation_by_the_route(pool: MySqlPool) {
+    let seeded = kesh_db::test_fixtures::seed_accounting_company(&pool)
+        .await
+        .expect("seed");
+    let f = fournisseur_rapproche::preparer(&pool, &seeded).await;
+    let r = fournisseur_rapproche::reglement_rapproche(
+        &pool,
+        &seeded,
+        f,
+        "FF-ROUTE-1",
+        NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+        dec!(240.00),
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(seeded.admin_user_id, "Admin", seeded.company_id);
+
+    let (st, view) = get_reco(&app, &jwt, r.bank_transaction_id).await;
+    assert_eq!(st, 200, "got {view:?}");
+    assert_eq!(view["kind"], "supplier_settlement", "got {view:?}");
+    assert_eq!(view["supplierInvoiceId"], r.supplier_invoice_id);
+    assert_eq!(view["supplierInvoiceNumber"], "FF-ROUTE-1");
+    assert_eq!(view["invoiceId"], Value::Null, "aucune facture client");
+    assert_eq!(view["invoiceNumber"], Value::Null, "aucune facture client");
+    assert_eq!(view["matchedEntryId"], r.settlement_entry_id);
+    assert_eq!(view["cancellable"], true, "got {view:?}");
+    assert_eq!(view["cancelBlockedBy"], Value::Null, "got {view:?}");
+
+    let (st, done) = cancel_reco(&app, &jwt, r.bank_transaction_id).await;
+    assert_eq!(st, 200, "got {done:?}");
+    assert_eq!(done["supplierInvoiceId"], r.supplier_invoice_id);
+    assert_eq!(done["invoiceId"], Value::Null);
+    assert_eq!(done["bankTransaction"]["status"], "pending");
+    let reversal_id = done["reversalJournalEntryId"].as_i64().unwrap();
+    assert_back_to_reconcile(
+        &pool,
+        &app,
+        &jwt,
+        f.bank_account_id,
+        r.bank_transaction_id,
+        r.settlement_entry_id,
+        reversal_id,
+    )
+    .await;
+    let status: String = sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(r.supplier_invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        status, "open",
+        "la facture fournisseur est de nouveau à payer"
+    );
+
+    // T-a8 — l'audit du geste, et celui du geste appelé.
+    let details: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'reconciliation.cancelled' \
+         AND entity_id = ?",
+    )
+    .bind(r.bank_transaction_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(details["kind"], "supplier_settlement", "{details}");
+    assert_eq!(
+        details["supplierInvoiceId"], r.supplier_invoice_id,
+        "{details}"
+    );
+    assert_eq!(details["invoiceId"], Value::Null, "{details}");
+    assert_eq!(details["settlementId"], Value::Null, "{details}");
+    assert_eq!(
+        details["matchedEntryId"], r.settlement_entry_id,
+        "{details}"
+    );
+    assert_eq!(details["reversalJournalEntryId"], reversal_id, "{details}");
+    let appele: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'supplier_invoice.settlement_cancelled' \
+         AND entity_id = ?",
+    )
+    .bind(r.supplier_invoice_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(appele, 1, "le geste appelé écrit sa propre ligne");
 }
 
 /// ⛔ **Chemin « éclatement manuel »** (`POST /split`).
