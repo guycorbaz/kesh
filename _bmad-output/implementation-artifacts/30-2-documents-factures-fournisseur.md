@@ -92,7 +92,7 @@ Epic : `_bmad-output/planning-artifacts/epic-30-factures-fournisseur.md` § 30-2
 | Sous-story | Modules | Nombre |
 |---|---|---|
 | 30-2a | `kesh-db` (migration, squash de test, entité, `post_restore`), `kesh-api` (import, routes du staging, CSP, export CSV), `kesh-i18n`, frontend (liste, aperçu, K5), docs | 5 |
-| 30-2b | `kesh-api` (complétion), frontend (formulaire, page, contacts), `kesh-i18n`, docs | 4 |
+| 30-2b | `kesh-db` (lecture des fournisseurs par IBAN, AC14 — ajoutée en P2), `kesh-api` (complétion, validation, route `supplier-candidates`), frontend (formulaire, page, contacts), `kesh-i18n`, docs | 5 |
 | 30-2c | `kesh-db` (dépôt : rattachement, lecture du document d'une écriture), `kesh-api` (routes, réponses), frontend (fiche, écriture), `kesh-i18n`, docs | 5 |
 
 ## Critères d'acceptation
