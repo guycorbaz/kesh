@@ -1158,10 +1158,17 @@ async fn the_head_lock_of_a_batch_scans_the_primary_key(pool: MySqlPool) {
 /// requêtes ; (4) C relâche : A, premier en file, obtient 1, puis demande 2,
 /// que tient B → **1213 au sol**. Après la correction, B trie {1, 2} et attend 1
 /// sans rien tenir : aucun interblocage, A crée le lot des deux factures, B les
-/// refuse toutes deux. Tue M-a9.
+/// refuse toutes deux.
 ///
-/// ⚠️ Hypothèse écrite : MariaDB 10.11 octroie les verrous **en file**, dans
-/// l'ordre d'arrivée (A avant B sur la facture 1).
+/// ⛔ **Ce qui tue M-a9, déterministe** : pendant que A et B attendent la
+/// facture 1, la facture 2 doit être **libre** — personne ne tient une facture
+/// avant celles d'identifiant inférieur. Une sonde `NOWAIT` le vérifie ; au sol
+/// et sous M-a9 (verrous dans l'ordre de la requête), B tient 2 et la sonde
+/// échoue. *Constaté à la campagne de mutations* : l'interblocage seul ne
+/// suffisait pas à tuer M-a9 — MariaDB 10.11 n'a pas toujours octroyé la
+/// facture 1 au premier arrivé (A), et quand B l'obtient, aucun cycle ne se
+/// forme. L'hypothèse « octroi en file » de la fiche n'est donc pas tenue pour
+/// acquise ; l'absence d'interblocage reste vérifiée, en complément.
 #[sqlx::test(migrations = "./test-schema")]
 async fn crossed_batches_do_not_deadlock(pool: MySqlPool) {
     let ctx = setup(&pool).await;
@@ -1172,7 +1179,18 @@ async fn crossed_batches_do_not_deadlock(pool: MySqlPool) {
     let tenue = tenir_facture(&pool, un).await;
     let a = lot_bloque_sur_facture(&pool, &ctx, vec![un, deux], 1).await;
     let b = lot_bloque_sur_facture(&pool, &ctx, vec![deux, un], 2).await;
+    let deux_libre = kesh_db::test_fixtures::sonde_verrou_nowait(
+        &pool,
+        "SELECT id FROM supplier_invoices WHERE id = ? FOR UPDATE NOWAIT",
+        deux,
+    )
+    .await;
     tenue.rollback().await.unwrap();
+    assert!(
+        deux_libre,
+        "⛔ une création de lot tient la facture {deux} en attendant la facture {un} : \
+         les factures ne sont pas verrouillées par identifiant croissant"
+    );
 
     let a = a.await.unwrap();
     let b = b.await.unwrap();
