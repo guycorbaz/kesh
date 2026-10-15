@@ -2070,3 +2070,22 @@ dialogue). Prompt de revue de code P1 : `30-1b-review-prompt-p1.md` (Sonnet, len
 - La remédiation touche du code de production (`routes/reconciliation.rs`, libellés) : la boucle n'est pas close.
   Passe suivante : **P2 ciblée, Haiku**, sur `a83ad2c4..HEAD` — `30-1b-review-prompt-p2-ciblee.md`, rapport
   `kesh-gate-logs/301b-review-p2-T.md`.
+
+### Revue de code P2 ciblée de la 30-1b — 2026-10-15 — revue terminée
+
+- Passe ciblée P2 (Haiku, lentille T, `a83ad2c4..62ed3a32`) : **0/0/3/3**. Traitement par l'orchestrateur :
+  - **M1 confirmé et corrigé** : la doc et l'attribut `#[allow(clippy::too_many_arguments)]` d'`accept_one_supplier_invoice`
+    s'étaient rattachés à `contact_for_score` (insertion de la remédiation P1). Le bloc `contact_for_score` est
+    déplacé avant la doc d'`accept_one_supplier_invoice` — aucun changement de comportement ; `cargo fmt --check` et
+    `cargo clippy -p kesh-api --all-targets -D warnings` verts ; gate et E2E de `90815ca8` valables (déplacement de
+    texte seul).
+  - **M2 reclassé LOW** : le libellé `invoice_candidate` est conditionnel (« acceptez la facture proposée **si ce débit
+    la règle** » ; « Affecter manuellement » seulement « si ce débit ne règle **aucune facture saisie** »). Dans le cas
+    L1 (débit d'une facture déjà réglée ailleurs), aucune des deux conditions n'est remplie : le texte dit déjà de ne
+    rien faire. Un renvoi explicite à L1 au manuel serait un plus, non une correction.
+  - **M3 reclassé LOW** : le chemin d'erreur de `contact_for_score` est un `map_err` vers `DATABASE_ERROR`, sans
+    injection de faute possible dans le dépôt (M-r3 non exécutable, déclaré) ; le risque d'une régression muette est
+    nul au regard du `?` qui le porte. Pas de dette ouverte.
+- **Revue de la 30-1b terminée** : P1 Sonnet B 0/0/0/6, E 0/0/0/4, A 0/0/1/6 → remédiée → P2 ciblée Haiku 0/0/1/5 après
+  reclassement, M1 corrigé.
+

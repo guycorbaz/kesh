@@ -3157,6 +3157,34 @@ fn supplier_payment_error_to_failed_proposal(
     }
 }
 
+/// Le contact d'une facture — client ou fournisseur —, lu pour le seul calcul du
+/// score de l'acceptation (`accept_one_invoice`, `accept_one_supplier_invoice`).
+///
+/// `contact_id <= 0` : aucun contact lié (sentinelle 0, M1 Pass 1), aucune
+/// lecture. Une erreur de base n'est **plus avalée** (revue de code P1 de la
+/// 30-1b, B1 — elle rendait un score de contact nul, que la garde de score
+/// minimal du chemin client pouvait changer en refus `score_zero_no_match`
+/// trompeur) : elle rend `DATABASE_ERROR` par proposition, comme toute autre
+/// lecture de l'acceptation ; un interblocage y est repris par le rejeu du lot
+/// (le point de sauvegarde perdu rend `TransactionAborted`).
+async fn contact_for_score(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    contact_id: i64,
+    bank_transaction_id: i64,
+) -> Result<Option<kesh_db::entities::Contact>, FailedProposal> {
+    if contact_id <= 0 {
+        return Ok(None);
+    }
+    contacts_repo::find_by_id_in_company(&mut **tx, contact_id, company_id)
+        .await
+        .map_err(|e| FailedProposal {
+            bank_transaction_id,
+            error_code: "DATABASE_ERROR".to_string(),
+            details: Some(serde_json::json!({ "message": e.to_string() })),
+        })
+}
+
 /// Story 30-1b (#686, AC-b6) — traite UNE proposition `type='supplier_invoice'`
 /// dans son `SAVEPOINT` : le **débit** `bank_transaction_id` règle la facture
 /// fournisseur **ouverte** `supplier_invoice_id`.
@@ -3187,34 +3215,6 @@ fn supplier_payment_error_to_failed_proposal(
 /// ⛔ Aucune garde « dépense déjà réglée par un autre chemin » : l'angle mort
 /// L1 (#671).
 #[allow(clippy::too_many_arguments)]
-/// Le contact d'une facture — client ou fournisseur —, lu pour le seul calcul du
-/// score de l'acceptation (`accept_one_invoice`, `accept_one_supplier_invoice`).
-///
-/// `contact_id <= 0` : aucun contact lié (sentinelle 0, M1 Pass 1), aucune
-/// lecture. Une erreur de base n'est **plus avalée** (revue de code P1 de la
-/// 30-1b, B1 — elle rendait un score de contact nul, que la garde de score
-/// minimal du chemin client pouvait changer en refus `score_zero_no_match`
-/// trompeur) : elle rend `DATABASE_ERROR` par proposition, comme toute autre
-/// lecture de l'acceptation ; un interblocage y est repris par le rejeu du lot
-/// (le point de sauvegarde perdu rend `TransactionAborted`).
-async fn contact_for_score(
-    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
-    company_id: i64,
-    contact_id: i64,
-    bank_transaction_id: i64,
-) -> Result<Option<kesh_db::entities::Contact>, FailedProposal> {
-    if contact_id <= 0 {
-        return Ok(None);
-    }
-    contacts_repo::find_by_id_in_company(&mut **tx, contact_id, company_id)
-        .await
-        .map_err(|e| FailedProposal {
-            bank_transaction_id,
-            error_code: "DATABASE_ERROR".to_string(),
-            details: Some(serde_json::json!({ "message": e.to_string() })),
-        })
-}
-
 async fn accept_one_supplier_invoice(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
