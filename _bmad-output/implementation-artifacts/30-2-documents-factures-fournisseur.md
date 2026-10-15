@@ -2,6 +2,9 @@
 
 ## Status
 
+**30-2a : review** (développée le 2026-10-15, `09c0057b` + `af0d2eb4`, revue de code P1 à lancer —
+`30-2a-review-prompt-p1.md` ; rebase sur le merge de la 30-1a à faire, T-a0). **30-2b, 30-2c : ready-for-dev.**
+
 **ready-for-dev** (trois clés) — fiche créée le 2026-10-15 en autonomie (`bmad-create-story`, Opus 5.5), sur
 `15686d55` (kickoff de l'Epic 30), worktree `/home/gcorbaz/devel/kesh-30-2`, branche `story/30-2`. Validation P1
 faite (Sonnet, lentilles R et F : 0/0/11/9 et 0/0/7/6) et remédiée le 2026-10-15 ; validation P2 faite (Opus, R et F :
@@ -659,7 +662,7 @@ chaîne brute ; `paidAt` absent : la phrase sans date. Mutation **M-c12** (`paid
 ### 30-2a
 
 - [ ] **T-a0** Rebase sur `origin/main` après le merge de la 30-1 ; relire la dernière migration et la version des crates.
-- [ ] **T-a1** Tests rouges d'abord (AC1-AC3, AC7) dans `crates/kesh-api/tests/inbox_import_e2e.rs` et les tests du
+- [x] **T-a1** Tests rouges d'abord (AC1-AC3, AC7) dans `crates/kesh-api/tests/inbox_import_e2e.rs` et les tests du
   staging : PNG sans QR, PDF sans QR (accepté `none` **ou** `unreadable` selon pdfium : le test n'exige que
   l'acceptation et l'absence de données QR), QR invalide, champ trop long (nom accentué 70 / 71 caractères, pays de
   trois lettres), montant hors plage (16 chiffres entiers, négatif, `20.005` ; `20.000` accepté avec ses données) —
@@ -675,15 +678,15 @@ chaîne brute ; `paidAt` absent : la phrase sans date. Mutation **M-c12** (`paid
   `DataLengthOrRange` et `CheckConstraintViolation` ne sont plus atteints que par un défaut du contrôle). La garantie
   reste portée par le code des branches d'échec post-archivage (`inbox_import.rs:550-570`, aucune ne supprime le
   fichier) et par la course `UniqueConstraintViolation`, sans test — angle mort écrit au § *Angles morts*.
-- [ ] **T-a2** Migration, squash, audit P5, P6, P7, bump `min_required` et crates (AC4).
-- [ ] **T-a3** Entité et dépôt en `Option`, `without_qr`, contrôle des longueurs, import (AC1-AC3), complétion et retrait (AC7), export CSV.
-- [ ] **T-a4** CSP et son test (AC6) ; relevé dans un vrai navigateur (AC6-bis), consigné au Dev Agent Record.
-- [ ] **T-a5** `DocumentPreview.svelte` + Vitest (image, PDF, autre type, 410, erreur, révocation) ; liste, badge, rapport, retrait (AC5) ;
+- [x] **T-a2** Migration, squash, audit P5, P6, P7, bump `min_required` et crates (AC4).
+- [x] **T-a3** Entité et dépôt en `Option`, `without_qr`, contrôle des longueurs, import (AC1-AC3), complétion et retrait (AC7), export CSV.
+- [x] **T-a4** CSP et son test (AC6) ; relevé dans un vrai navigateur (AC6-bis), consigné au Dev Agent Record.
+- [x] **T-a5** `DocumentPreview.svelte` + Vitest (image, PDF, autre type, 410, erreur, révocation) ; liste, badge, rapport, retrait (AC5) ;
   gardes frontend touchées (§ *Gardes existantes*).
-- [ ] **T-a6** Textes et i18n (AC8) ; K5.
-- [ ] **T-a7** E2E (§ E2E, E1-a, E2-a, E3) ; module `helpers/inbox.ts` ; `inbox-import.spec.ts` adapté (titre, libellés, plus de `test.skip`) ; `docs/testing.md` mis à jour (répertoires lus par le spec, défauts, échec bruyant ; bloc du `CLAUDE.md` inchangé, constaté) ; captures clair et sombre de la liste et de l'aperçu.
-- [ ] **T-a8** Manuels utilisateur et administrateur, PDF, `README.md:44`, `api-external.md` (section créée), CHANGELOG et son bandeau (AC9, AC9-bis).
-- [ ] **T-a9** Mutations M-a1 à M-a15 sauf M-a13, retirée en P3 (sous le verrou de gate ; M-a14 déclarée équivalente ; M-a5 portée sur migration et squash) ; gate complet (`kesh-db` touché : gate complet même en boucle) ; E2E complet au dernier commit de code.
+- [x] **T-a6** Textes et i18n (AC8) ; K5.
+- [x] **T-a7** E2E (§ E2E, E1-a, E2-a, E3) ; module `helpers/inbox.ts` ; `inbox-import.spec.ts` adapté (titre, libellés, plus de `test.skip`) ; `docs/testing.md` mis à jour (répertoires lus par le spec, défauts, échec bruyant ; bloc du `CLAUDE.md` inchangé, constaté) ; captures clair et sombre de la liste et de l'aperçu.
+- [x] **T-a8** Manuels utilisateur et administrateur, PDF, `README.md:44`, `api-external.md` (section créée), CHANGELOG et son bandeau (AC9, AC9-bis).
+- [x] **T-a9** Mutations M-a1 à M-a15 sauf M-a13, retirée en P3 (sous le verrou de gate ; M-a14 déclarée équivalente ; M-a5 portée sur migration et squash) ; gate complet (`kesh-db` touché : gate complet même en boucle) ; E2E complet au dernier commit de code.
 
 ### 30-2b
 
@@ -928,11 +931,205 @@ Docs : `docs/manual/fr/user-manual.tex` (+ PDF), `docs/api-external.md`, `docs/m
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), autonomie, 2026-10-15 — **30-2a seulement** (la 30-2b et la 30-2c ne sont pas commencées).
+Worktree `/home/gcorbaz/devel/kesh-30-2`, branche `story/30-2`, partie de `5b566378` ; bases `kesh_302a` et
+`kesh_e2e_302a`, port 3052, `CARGO_TARGET_DIR` du worktree, dossiers E2E `/tmp/kesh-e2e-302a/`.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/` : `302a-rouges.log` (tests rouges), `302a-gate1.log` (premier gate
+backend complet), `302a-mutations.log` (campagne), `302a-e2e-cible.log`, `302a-ac6bis.log` et captures
+`302a-ac6bis/*.png` (relevé AC6-bis), `302a-make.log` (PDF), `302a-final-*.log` et `302a-e2e-complet.log` (gate final).
 
 ### Completion Notes List
 
+**Commits** : `09c0057b` feat(30-2a) — code, tests, i18n, migration (dernier commit de code) ; `af0d2eb4` docs(30-2a) —
+manuels et PDF, CHANGELOG, API, README, `.env.example` ; puis le commit de cette fiche, du registre, de
+`sprint-status.yaml` et du prompt de revue.
+
+**T-a0 — non fait, différé (C-30-2-27).** Développé sur `story/30-2` en parallèle de la 30-1a, à la demande de
+l'orchestrateur. Constat : la 30-1a n'ajoute aucune migration (`20261013000001` était la dernière de `main`, d'où
+l'horodatage `20261015000001`), et les dix crates étaient à 0.13.4 : la 30-2a les porte à 0.14.0. **Conflits probables
+au rebase sur le merge de la 30-1a** : `CHANGELOG.md` (§ `[0.14.0] — Non publié` — la 30-1a y ajoute ses entrées ; le
+bandeau *À faire* de la 30-2a doit rester en tête de section, entrées réunies par union), `sprint-status.yaml` (lignes
+`30-1*` et `30-2a`, union), `docs/api-external.md` (sections voisines), `docs/manual/fr/*.tex` et **leurs PDF** (à
+régénérer après résolution des `.tex`), `crates/kesh-api/src/errors.rs` (**non touché** par la 30-2a — C-30-2-26 —,
+donc pas de conflit attendu), `Cargo.toml` des dix crates **et `Cargo.lock`** si la 30-1a a bumpé une version, les
+registres de choix (`epic-30-choix-autonomes*.md`, union), les compteurs i18n (`i18n-keys.test.ts` `sitesTotal`,
+`i18n-un-repli-par-cle.test.ts`) si la 30-1a a ajouté des sites `i18nMsg` ou des clés du domaine — **à recompter**, non
+à additionner. `crates/kesh-reconciliation/Cargo.toml` n'est touché que pour sa version (P2-bis).
+
+**Prérequis d'environnement constaté** : le MariaDB de dev (conteneur redémarré, script d'init monté depuis
+`kesh-chore-tmpfs`) n'avait pas les droits du fichier versionné `scripts/mariadb-init/01-dev-grants.sql` (ni
+`\_sqlx\_test%`, ni `kesh%`) : les deux `GRANT` du fichier ont été réappliqués par root (`mariadb < 01-dev-grants.sql`),
+sans redémarrage du conteneur.
+
+**Tests rouges d'abord (T-a1)** — relevé `302a-rouges.log`, avant tout code, sur `5b566378` + les tests seuls :
+`38 tests run: 22 passed, 16 failed`. Extraits copiés :
+
+```
+FAIL kesh-api middleware::csp::tests::csp_value_is_pinned_and_allows_blob_previews
+  left: Some("img-src 'self' data:")   right: Some("img-src 'self' data: blob:")
+FAIL import_accepts_png_without_qr
+  {"accepted":[],"failed":[{"errorCode":"NO_QR_CODE_FOUND","fileName":"ticket.png"}],"warnings":[]}
+FAIL import_accepts_pdf_without_qr
+  {"accepted":[],"failed":[{"errorCode":"PDF_RENDER_ERROR","fileName":"lettre.pdf"}],"warnings":[]}
+FAIL import_unreadable_qr_is_accepted_without_qr_data
+  {"accepted":[],"failed":[{"errorCode":"INVALID_IBAN","fileName":"iban.png"},{"errorCode":"INVALID_SPC_PAYLOAD","fileName":"spc.png"}],…}
+FAIL import_field_too_long_is_accepted_without_qr_data
+  {"accepted":[{"fileName":"n70.png",…}],"failed":[{"errorCode":"FIELD_TOO_LONG","fileName":"pays.png"},{"errorCode":"FIELD_TOO_LONG","fileName":"n71.png"}],…}
+FAIL import_amount_out_of_range_is_accepted_without_qr_data
+  {"accepted":[ouvert, trois-zeros, decimales, nul, negatif],"failed":[{"errorCode":"FIELD_TOO_LONG","fileName":"seize.png"}],…}
+FAIL import_with_qr_reports_present / import_png_with_suffix_after_iend_still_decoded / import_reactivation_with_qr_reports_present
+  left: Null  right: "present"
+FAIL qr_columns_are_all_or_nothing
+  Database(… number: 1048, message: "Column 'creditor_iban' cannot be null")
+FAIL supplier_invoice_id_is_unique
+  un second document lié à la même facture doit être refusé: MySqlQueryResult { rows_affected: 1, … }
+```
+
+Les sept autres rouges (`complete_document_without_qr`, `discard_document_without_qr_traces_iban_absent`,
+`import_no_qr_duplicate_and_reactivation`, `import_rejects_unsupported_type_and_accepts_no_qr`,
+`list_returns_nulls_for_document_without_qr`) tombent sur le même `NO_QR_CODE_FOUND`. Relevé utile au passage : avant
+la story, `20.005`, `0.00` et `-5.00` entraient **avec** leurs données, et un montant de 16 chiffres sortait en
+`FIELD_TOO_LONG` (1264 → `DataLengthOrRange`). `import_corrupt_png_is_still_rejected` était déjà vert (AC3 tenu avant).
+Les tests Vitest du composant d'aperçu sont neufs avec lui (fichier absent avant) ; le test de la CSP n'existait pas
+(`grep -n "mod tests" csp.rs` → 0).
+
+**Migration (T-a2)** — essayée **avant toute base persistante** sur une base fraîche et sur une copie peuplée de
+`kesh_302a` (seed + une ligne `completed` liée à une facture, une `to_complete`, une `discarded` ; lignes synthétiques),
+deux bases jetables supprimées ensuite : `Applied 20261015000001` les deux fois, lignes et lien conservés,
+`uq_imported_supplier_invoice` en place, `idx_imported_supplier_invoice` disparu, `min_required` = `0.14.0`. Puis
+appliquée à `kesh_302a`, reconstruite à neuf avant chaque gate. Squash régénéré (`scripts/regen-test-schema.sh` :
+82 migrations, 40 tables, `_kesh_version = (1, '0.14.0', '0.1.0')`). MariaDB relit la contrainte sans parenthèses
+(`creditor_iban is null = (…)`) : même sémantique, prouvée par `qr_columns_are_all_or_nothing` monté sur le squash.
+P5 : ligne d'audit, **82** = 82 lignes = `ls … | wc -l`, partition **10 + 72 + 0** recomptée par `grep -cE`. P6 :
+`migrations_upgrade_path.rs` 81/47 → **82/48** (frontière 34) ; les autres sites résolvent par version. Test neuf
+`imported_documents_without_qr_preserves_existing_rows` (par version, assertion de montage). P7 : `EXEMPT_MIGRATIONS`
+18 → **19** (`Durable`). P8 : checksum inscrit à `migrations.sha384`. Tests de version portés à 0.14.0
+(`downgrade_protection_*`, `migrations_kesh_version_initial_row`) ; `downgrade_protection_refuses_0_13_0` devient
+`…_refuses_0_13_4`. Dix crates à 0.14.0, `Cargo.lock` régénéré par le build.
+
+**Inventaire clos des lecteurs (AC4)** — `grep -rn "creditor_iban\|is_qr_iban\|creditor_address_type\|creditor_name\|creditor_country\|reference_type\|\.currency" crates/kesh-api/src frontend/src`
+rend 22 fichiers ; ceux du staging sont `inbox_import.rs`, `routes/imported_supplier_invoices.rs`,
+`exports/csv_tables.rs` (partie `imported_supplier_invoices`), `qr_decode.rs` (doc-comment) et la page d'import ; les
+autres (`supplier_invoices.rs`, `bank_imports.rs`, `reconciliation.rs`, `invoice_pdf_service.rs`, `credit_notes.rs`,
+`bank_profiles.rs`, écrans de banque et de réconciliation) lisent d'autres tables. Les consommateurs des types du
+staging (`grep -rln "ImportedSupplierInvoice\b\|imported-supplier-invoices.types"`) sont tous repris. `closing_checks.rs`
+et `exports_global_e2e.rs` insèrent en SQL brut : rien à reprendre, ils compilent et passent. `admin_full_import_e2e.rs`
+n'a aucun usage (correction L4 de la fiche, confirmée).
+
+**Écarts à la fiche** :
+
+- T-a0 différé (ci-dessus, C-30-2-27).
+- Bouton *Télécharger* gardé à côté de l'aperçu (C-30-2-24).
+- AC9-bis : le *Passer à la 0.14.0* et le bandeau du CHANGELOG **n'annoncent pas** `INVALID_PAYMENT_DETAILS` (30-2b)
+  ni la lecture du document par les clés `read` (30-2c) — la 30-2a n'écrit que ce qu'elle livre (C-30-2-29) ; à
+  compléter par les deux sous-stories.
+- AC8 : libellés du journal d'activité passés au vocabulaire du document ; messages d'`errors.rs` non touchés
+  (C-30-2-26). `-view-doc` devient « Télécharger », `-view-source` « Voir le document », `-no-source-doc` et
+  `-source-doc-gone` sans « justificatif ». Conservés, écrits ici : `imported-supplier-invoices-complete`
+  « Compléter » (AC5 : 30-2a), `-completed` « Facture créée. », `-save` « Créer une facture », `-mismatch` « écart à
+  corriger » (écart de montant, non *Écarter*), les entrées historiques du CHANGELOG (v0.4.0) et les commentaires
+  datés du catalogue fr-CH (l. 2277) et du menu (`+layout.svelte:93`, complété).
+- Le PDF sans QR des tests est une constante (Rust `PDF_SANS_QR`, TypeScript `helpers/inbox.ts`) ; pour le relevé
+  AC6-bis, il est écrit depuis la même constante dans le dossier d'import de test, non versé à `fixtures/`.
+- Le pilotage de Firefox (AC6-bis) passe par geckodriver (WebDriver) : Playwright ne pilote pas le Firefox de la
+  station.
+- Section `.env.example` : commentaire mis au vocabulaire neuf (aucune variable ne change).
+
+**Choix ajoutés au registre** : C-30-2-24 à C-30-2-29.
+
+**Relevé AC6-bis — l'aperçu dans de vrais navigateurs à fenêtre** (binaire construit, CSP servie par lui :
+`img-src 'self' data: blob:; frame-src 'self' blob:; object-src 'self' blob:`, autres directives inchangées ;
+fixtures synthétiques `spc_e2e_invoice.png` et le PDF « Pas une facture ») — script `302a-ac6bis/releve.mjs` du
+scratchpad, journal `302a-ac6bis.log`, captures `/home/gcorbaz/devel/kesh-gate-logs/302a-ac6bis/*.png` :
+
+| Navigateur | Thème | PNG | PDF |
+|---|---|---|---|
+| Chromium 147.0.7727.15 (Playwright, `headless: false`) | clair, sombre | affiché (`naturalWidth` 512) | **affiché** — visionneuse Chrome, page « Pas une facture » (capture) ; document du cadre `application/pdf`, URL `blob:` |
+| Google Chrome 155.0.8059.79 (station) | clair, sombre | affiché | **affiché** (idem) |
+| Firefox 157.0.1 (station, geckodriver) | clair, sombre | affiché | **affiché** — pdf.js dans le cadre (capture), document privilégié |
+
+Aucun message de CSP en console ; seul message d'erreur relevé : `401` de la lecture de session **avant** la connexion,
+sans rapport. Ni la CSP ni son test n'ont eu à être corrigés. ⚠️ **« Sombre »** : Kesh n'a pas de thème sombre
+(C-28-1-7) ; la page reste claire, seule la préférence du navigateur change — même constat qu'à la 29-9. La
+visionneuse de Chrome titre le document par l'UUID de l'URL `blob:`, non par son nom : un « Enregistrer » depuis la
+visionneuse proposerait ce nom ; le bouton *Télécharger* de la ligne garde le nom d'origine.
+
+**Mutations (T-a9)** — campagne sous le verrou de gate, `302a-mutations.log`, motifs littéraux vérifiés uniques
+(`muter.pl`), restauration `git checkout -- f && touch f` (et `touch` de `kesh-db/src/lib.rs` et du binaire de test
+pour les mutations de migration et de squash, embarquées à la compilation) ; aucune erreur de compilation dans le
+journal (`grep -c "error\[E"` → 0) :
+
+| Mutation | Verdict | Tuée par |
+|---|---|---|
+| M-a1 `Ok(None)` → `failed` `NO_QR_CODE_FOUND` | tuée | 6 tests dont `import_accepts_png_without_qr` |
+| M-a2 erreurs de décodage → `failed` | tuée | `import_unreadable_qr_…`, `import_accepts_pdf_without_qr` |
+| M-a3 `ImageDecode` accepté | tuée | `import_corrupt_png_is_still_rejected` |
+| M-a4 contrôle de longueur retiré | tuée | `import_field_too_long_…`, test d'entité |
+| M-a5 contrainte amputée de `currency`, migration **et** squash | tuée | `qr_columns_are_all_or_nothing` |
+| M-a5x la même, migration seule | tuée | `test_schema_guard` (`squash_matches_real_schema_structure`, `published_migrations_keep_their_checksums`) |
+| M-a6 `iban_present` vrai au retrait | tuée | `discard_document_without_qr_traces_iban_absent` |
+| M-a7 contrôle de devise sans QR (`.or(Some(""))`) | tuée | `complete_document_without_qr` |
+| M-a8 / M-a8b CSP sans `blob:` (`frame-src` / `object-src`) | tuées | `csp_value_is_pinned_and_allows_blob_previews` |
+| M-a9 URL non révoquée | tuée | Vitest `DocumentPreview` (deux tests) |
+| M-a10 CSV `None` littéral | tuée | `serialize_imported_supplier_invoices_csv_cellules_vides_sans_qr` |
+| M-a11a plage du montant retirée / M-a11b décimales retirées | tuées | `import_amount_out_of_range_…` et test d'entité, chacune |
+| M-a12 longueur en octets | tuée | `import_field_too_long_…` (nom de 70 « é »), test d'entité |
+| M-a14a / M-a14b filet `DataLengthOrRange` / `CheckConstraintViolation` retiré | **survivantes — équivalentes, déclarées** par la fiche : aucun des deux filets n'est atteignable une fois le contrôle pur juste |
+| M-a15 `iban_present` vrai à la création | tuée | `import_accepts_png_without_qr` |
+
+M-a13 n'existe plus (retirée en P3). Bilan : **16 tuées sur 18 jouées**, les deux survivantes étant M-a14, déclarée
+équivalente.
+
+**Tests neufs** — recomptés par `grep -cE '#\[(sqlx::)?test'` / `grep -cE "^\s*it\("` aux deux bornes `5b566378` →
+`09c0057b` : `inbox_import_e2e.rs` 17 → 29 (+12, et deux réécrits : `…_accepts_no_qr`, `…_is_accepted_without_qr_data`),
+`imported_supplier_invoices_repository.rs` 7 → 10 (+3), entité 3 → 6 (+3), `migrations_upgrade_path.rs` 13 → 14 (+1, et
+un renommé), `csp.rs` 0 → 1, `csv_tables.rs` 19 → 20 : **+21 Rust**. Vitest : `DocumentPreview.test.ts` 0 → 8,
+`import-page.test.ts` 0 → 5 (**+13**), `FiscalYearChecks.test.ts` 11 → 11 (un test étendu). E2E :
+`supplier-documents.spec.ts` 0 → 3 (E1-a, E2-a, E3), `inbox-import.spec.ts` 3 → 3 (adaptés, plus de `test.skip`).
+
+**Gates** — premier gate backend complet, sur le code de `09c0057b` : `scripts/test-fast.sh` vert, **3767 passés,
+6 ignorés** (`302a-gate1.log`). E2E ciblé (deux specs du dossier d'import) : **6/6** (`302a-e2e-cible.log`).
+
+**Gate final et E2E complet**, au HEAD `af0d2eb4` (dont le code est celui de `09c0057b`, dernier commit de code), sous
+le verrou, base `kesh_302a` remise à zéro avant (`302a-final-*.log`) : `scripts/test-fast.sh` (fmt, clippy
+`-D warnings`, nextest) **3767 passés, 6 ignorés** ; `npm run check` **0 erreur** (29 avertissements, aucun dans un
+fichier de la story) ; `npm run lint-i18n-ownership` **PASS** ; `npm run test:unit` **1718 passés, 151 fichiers** ;
+`npm run build` vert. E2E complet (`302a-e2e-complet.log`, recette de `docs/testing.md`, port 3052, base
+`kesh_e2e_302a` remise à zéro, dossiers `/tmp/kesh-e2e-302a/` passés au backend et au runner) : **298 passés,
+7 échoués, 17 ignorés** — les sept échecs sont, fichier par fichier, les sept KF-029 (#97) de `docs/testing.md`
+§ *Les échecs attendus* (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+`onboarding.spec.ts:57`, `:77`, `:150`) ; aucune régression. Les 17 ignorés au lieu des 19 de la 29-9 : les deux
+`test.skip` d'`inbox-import.spec.ts` ont disparu (ses trois tests tournent).
+
 ### File List
+
+30-2a, `git diff --name-status 5b566378 af0d2eb4` (58 fichiers ; A = ajouté) :
+
+- Migration et schéma : `crates/kesh-db/migrations/20261015000001_imported_documents_without_qr.sql` (A),
+  `crates/kesh-db/migrations.sha384`, `crates/kesh-db/test-schema/0001_schema_squash.sql`,
+  `docs/migrations-idempotence-audit.md`, `crates/kesh-db/src/post_restore.rs`.
+- Versions : `crates/{kesh-api,kesh-core,kesh-db,kesh-i18n,kesh-import,kesh-payment,kesh-qrbill,kesh-reconciliation,kesh-report,kesh-seed}/Cargo.toml`, `Cargo.lock`.
+- Backend : `crates/kesh-db/src/entities/imported_supplier_invoice.rs`,
+  `crates/kesh-db/src/repositories/imported_supplier_invoices.rs`, `crates/kesh-api/src/inbox_import.rs`,
+  `crates/kesh-api/src/qr_decode.rs` (doc-comment), `crates/kesh-api/src/routes/imported_supplier_invoices.rs`,
+  `crates/kesh-api/src/middleware/csp.rs`, `crates/kesh-api/src/exports/csv_tables.rs`.
+- Tests Rust : `crates/kesh-api/tests/inbox_import_e2e.rs`, `crates/kesh-db/tests/imported_supplier_invoices_repository.rs`,
+  `crates/kesh-db/tests/migrations_upgrade_path.rs`, `crates/kesh-db/tests/migrations_fresh_install.rs`.
+- i18n : `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`.
+- Frontend : `frontend/src/lib/features/imported-supplier-invoices/{DocumentPreview.svelte (A), DocumentPreview.test.ts (A), error-label.ts, imported-supplier-invoices.api.ts, imported-supplier-invoices.types.ts}`,
+  `frontend/src/routes/(app)/supplier-invoices/import/{+page.svelte, import-page.test.ts (A)}`,
+  `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte`, `frontend/src/routes/(app)/+layout.svelte`,
+  `frontend/src/lib/features/fiscal-years/{FiscalYearChecks.svelte, FiscalYearChecks.test.ts, closing-checks-labels.ts}`,
+  `frontend/src/lib/shared/{i18n-keys.test.ts, i18n-un-repli-par-cle.test.ts}`.
+- E2E : `frontend/tests/e2e/helpers/inbox.ts` (A), `frontend/tests/e2e/supplier-documents.spec.ts` (A),
+  `frontend/tests/e2e/inbox-import.spec.ts`, `docs/testing.md`.
+- Documentation : `docs/manual/fr/{user-manual,admin-manual}.{tex,pdf}`, `docs/api-external.md`, `CHANGELOG.md`,
+  `README.md`, `.env.example`.
+- BMAD : `_bmad-output/implementation-artifacts/epic-30-choix-autonomes-302.md`, cette fiche,
+  `sprint-status.yaml`, `30-2a-review-prompt-p1.md` (A).
 
 ## Change Log
 
@@ -1153,3 +1350,15 @@ Rotation Sonnet ↔ Opus pour les passes complètes, Haiku pour la seule passe c
 
 Décomptes finaux, recomptés : **28 AC**, **23 tâches**, **39 mutations** dont **trois déclarées équivalentes**, **neuf
 parcours E2E**, **23 choix**. Le développement de la 30-2a attend le merge de la 30-1 (T-a0).
+
+### 2026-10-15 — Développement de la 30-2a (Opus 5.5, autonomie)
+
+`bmad-dev-story` sur la **30-2a seulement**, en parallèle de la 30-1a (C-30-2-27 : T-a0, le rebase, reste à faire après
+son merge). Commits `09c0057b` (code, dernier commit de code) et `af0d2eb4` (documentation et PDF). Tests rouges
+d'abord (16 rouges sur 38), migration breaking essayée sur une base fraîche et une base peuplée avant toute base
+persistante, campagne M-a1 à M-a15 (16 tuées sur 18 jouées, M-a14a et M-a14b survivantes — équivalentes déclarées),
+relevé AC6-bis dans Chromium 147, Chrome 155 et Firefox 157 à fenêtre (PNG et PDF affichés partout, CSP inchangée par
+le relevé). Gate final au HEAD : nextest 3767/3767 (6 ignorés), Vitest 1718/1718 (151 fichiers), check, lint et build
+verts ; E2E 298 passés + les 7 KF-029 (17 ignorés). Choix C-30-2-24 à 29. Le détail est au Dev Agent Record. Statut de
+la clé `30-2a-documents-sans-qr` : `review` ; revue de code P1 à lancer (`30-2a-review-prompt-p1.md`, Sonnet, lentilles
+B, E, A).
