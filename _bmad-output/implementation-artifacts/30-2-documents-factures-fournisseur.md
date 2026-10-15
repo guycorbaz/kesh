@@ -2,10 +2,12 @@
 
 ## Status
 
-**30-2a : review** (développée le 2026-10-15, `09c0057b` + `af0d2eb4`, revue de code P1 à lancer —
-`30-2a-review-prompt-p1.md` ; rebase sur le merge de la 30-1a à faire, T-a0). **30-2b, 30-2c : ready-for-dev.**
+**30-2a : review** (développée le 2026-10-15 ; reportée sur `fecc8566`, merge de la 30-1a — T-a0 fait ; revue de
+code P1 faite — B 0/0/0/5, E 0/0/2/5, A 0/0/0/8 — et remédiée le 2026-10-15 ; **passe ciblée P2** à lancer,
+`30-2a-review-prompt-p2-ciblee.md`, Haiku). **30-2b, 30-2c : ready-for-dev.**
 
-**ready-for-dev** (trois clés) — fiche créée le 2026-10-15 en autonomie (`bmad-create-story`, Opus 5.5), sur
+*Historique de la validation (paragraphe écrit avant le développement ; la passe ciblée P5 qu'il annonce « à lancer » a
+été faite le 2026-10-15 — 0/0/0/5, validation terminée, cf. Change Log) :* **ready-for-dev** (trois clés) — fiche créée le 2026-10-15 en autonomie (`bmad-create-story`, Opus 5.5), sur
 `15686d55` (kickoff de l'Epic 30), worktree `/home/gcorbaz/devel/kesh-30-2`, branche `story/30-2`. Validation P1
 faite (Sonnet, lentilles R et F : 0/0/11/9 et 0/0/7/6) et remédiée le 2026-10-15 ; validation P2 faite (Opus, R et F :
 0/0/8/13 et 0/0/5/8) et remédiée le même jour ; validation P3 faite (Sonnet, R et F : 0/1/3/12 et 0/0/3/12) et remédiée
@@ -890,6 +892,15 @@ mutée s'y enregistrerait (P8). Les tests de comportement montent le squash sur 
   pertinence côté serveur, #315) : **l'absence de proposition ne prouve pas l'absence du fournisseur, et sa présence
   ne prouve pas que c'est le bon** (deux sociétés d'un groupe aux noms presque identiques restent éligibles).
 - Inbox unique par instance (L8, #199), inchangé.
+- *(Ajouté le 2026-10-15, revue de code P1 de la 30-2a, B1 = E4.)* La **date d'import** affichée est la date **UTC**
+  de `created_at` (connexion en `time_zone = '+00:00'`, `crates/kesh-db/src/pool.rs`) : un document importé entre
+  minuit et 1 h (hiver) ou 2 h (été) heure suisse s'affiche « Importé le » la veille. Aucun formatage UTC → local
+  n'existe côté écran (le journal d'activité lit l'horodatage naïf comme local, autre forme du même écart) ; non
+  corrigé ici.
+- *(Ajouté le 2026-10-15, revue de code P1 de la 30-2a, B3 = E6.)* Une image que la crate `image` ne décode pas est
+  refusée en `UNSUPPORTED_FILE_TYPE` même si un navigateur l'afficherait — JPEG CMJN ou à codage arithmétique, image
+  de plus de `MAX_IMAGE_DIMENSION` (10 000) pixels de côté ; le manuel le dit (§ *Ce qui reste refusé*) et C-30-2-4
+  est annoté.
 
 ### Pièges connus du dépôt, applicables ici
 
@@ -947,7 +958,8 @@ backend complet), `302a-mutations.log` (campagne), `302a-e2e-cible.log`, `302a-a
 manuels et PDF, CHANGELOG, API, README, `.env.example` ; puis le commit de cette fiche, du registre, de
 `sprint-status.yaml` et du prompt de revue.
 
-**T-a0 — non fait, différé (C-30-2-27).** Développé sur `story/30-2` en parallèle de la 30-1a, à la demande de
+**T-a0 — non fait, différé (C-30-2-27).** *(Fait le 2026-10-15 après la revue P1 : report sur `fecc8566`, cf.
+« Report et remédiation de la revue de code P1 » plus bas.)* Développé sur `story/30-2` en parallèle de la 30-1a, à la demande de
 l'orchestrateur. Constat : la 30-1a n'ajoute aucune migration (`20261013000001` était la dernière de `main`, d'où
 l'horodatage `20261015000001`), et les dix crates étaient à 0.13.4 : la 30-2a les porte à 0.14.0. **Conflits probables
 au rebase sur le merge de la 30-1a** : `CHANGELOG.md` (§ `[0.14.0] — Non publié` — la 30-1a y ajoute ses entrées ; le
@@ -988,7 +1000,8 @@ FAIL supplier_invoice_id_is_unique
   un second document lié à la même facture doit être refusé: MySqlQueryResult { rows_affected: 1, … }
 ```
 
-Les sept autres rouges (`complete_document_without_qr`, `discard_document_without_qr_traces_iban_absent`,
+Les cinq autres rouges *(« sept » jusqu'au 2026-10-15, corrigé à la revue de code P1, A1 : 11 extraits + 5 = 16, le
+total du journal)* (`complete_document_without_qr`, `discard_document_without_qr_traces_iban_absent`,
 `import_no_qr_duplicate_and_reactivation`, `import_rejects_unsupported_type_and_accepts_no_qr`,
 `list_returns_nulls_for_document_without_qr`) tombent sur le même `NO_QR_CODE_FOUND`. Relevé utile au passage : avant
 la story, `20.005`, `0.00` et `-5.00` entraient **avec** leurs données, et un montant de 16 chiffres sortait en
@@ -1103,6 +1116,70 @@ fichier de la story) ; `npm run lint-i18n-ownership` **PASS** ; `npm run test:un
 § *Les échecs attendus* (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
 `onboarding.spec.ts:57`, `:77`, `:150`) ; aucune régression. Les 17 ignorés au lieu des 19 de la 29-9 : les deux
 `test.skip` d'`inbox-import.spec.ts` ont disparu (ses trois tests tournent).
+
+#### Report et remédiation de la revue de code P1 (2026-10-15, Opus 5.5, autonomie)
+
+**Report (T-a0)** — `git rebase --onto origin/main 15686d55` : la branche part désormais de `fecc8566` (PR #688, 30-1a
+squashée, qui contient le kickoff). Les hashes cités plus haut sont ceux d'avant le report : `09c0057b` → `6c5ac015`
+(dernier commit de code d'origine), `af0d2eb4` → `d385ea6a`, `48bd0cd9` → `adb20154`. Conflits, tous résolus par union :
+`sprint-status.yaml` à chaque commit qui le touchait (lignes `30-1*` prises de `main`, lignes `30-2*` de la branche ;
+en-tête : les deux lignes de la branche renumérotées 171 → 173 et 172 → 174, au-dessus de la 172 de `main` — commit
+`75020c01`) ; `CHANGELOG.md` § `[0.14.0]` (bandeau *À faire* de la 30-2a en tête, *Modifié* réuni, *Corrigé* de la
+30-1a gardé). Sans conflit : `docs/api-external.md` (sections distinctes), manuels (la 30-1a n'en touche aucun), i18n
+(la 30-1a change une valeur par locale, ni clé ni site `i18nMsg` du domaine ; compteurs vérifiés par les gardes au
+gate, verts), `audit_route_registry.rs`, `errors.rs`, `Cargo.toml` (la 30-1a ne bumpe rien). La 30-1a n'ajoute aucune
+migration : `20261015000001` reste la dernière ; P5 82 fichiers = 82 lignes d'audit ; P6/P7 verts au gate.
+
+**Remédiation** — commits `75f3bdcd` (code : E1, E2, A6/E3) et `ed796c02` (documentation et PDF) :
+
+- **E1** (MEDIUM) : `-qr-unreadable-hint` dit « … : la facture créée sera sans IBAN ni référence » dans les quatre
+  locales et le repli ; `user-manual.tex` (§ *Documents à traiter*) et `admin-manual.tex` (§ `sec:inbox-import`) ne
+  promettent plus de saisie de l'IBAN et de la référence ; doc-comments de `inbox_import.rs` et de l'entité alignés.
+  Valeur grepée sur le worktree (`saisissez-les|à saisir à la main|se saisissent à la main|von Hand|a mano|by hand`) :
+  ne reste que la fiche (AC de spécification des trois sous-stories) ; le CHANGELOG disait déjà « sans IBAN ni
+  référence ». La 30-2b réécrira ces textes quand la saisie existera.
+- **E2** (MEDIUM) : deux tests Vitest de course dans `DocumentPreview.test.ts` (lecture du document précédent résolue,
+  puis rejetée, **après** le changement de document) ; **A6/E3** : un test de `import-page.test.ts` qui recharge la
+  liste (import) aperçu ouvert et exige une seule lecture du document. Mutations sous le verrou
+  (`302a-mutations-p1.log`), motifs uniques vérifiés, restauration `git checkout -- f && touch f` :
+  M-a16 (garde `cancelled` du `.then` retirée) **tuée** (`[blob:doc-1, blob:doc-2]` au lieu de `[blob:doc-1]`) ;
+  M-a16b (garde du `.catch`) **tuée** (le « non restauré » du document précédent s'affiche) ; M-a17 (`previewLoader`
+  sans cache) **tuée** (`fetchDocMock` appelé 2 fois).
+- **A1** : « sept autres rouges » → cinq, annoté. **A3** : « Quatre gestes », *Télécharger* décrit. **A8** : § *Status*
+  à jour, le paragraphe de validation daté. **A4/A5/E7/B5** : `admin-manual.tex` (export d'installation) dit
+  « documents fournisseur importés » ; la brochure ajoute « depuis la v0.14.0, tout document y entre, avec ou sans
+  QR-code » ; le glossaire annote ses trois lignes (`-discard`, `-view-doc`, `-doc-gone`). **Conservés, déclarés ici**
+  (AC8 ; consigne de la remédiation : textes seulement) : les doc-comments de `imported-supplier-invoices.api.ts` et ses
+  noms de repli de fichier `justificatif-import-${id}` / `justificatif-${id}` (code), les doc-comments de
+  `supplier-invoices/[id]/+page.svelte:220-222` et de `import/+page.ts:8`, les messages d'`AppError` d'`errors.rs`
+  (C-30-2-26), `closing_checks.rs:13`, l'en-tête de `routes/imported_supplier_invoices.rs`, `admin-manual.tex:1561`
+  (commentaire d'un script).
+- **B1 = E4** : date d'import UTC — angle mort écrit (§ *Angles morts assumés*) ; non corrigé : aucun formatage
+  UTC → local n'existe côté écran. **B3 = E6** : C-30-2-4 annoté au registre, commentaire de `inbox_import.rs`
+  corrigé, angle mort écrit, et le manuel dit le refus (§ *Ce qui reste refusé* : JPEG CMJN, plus de 10 000 pixels).
+- **A2** : commentaire de la migration (« cinq » colonnes déjà facultatives, elles sont huit) **laissé** : le fichier
+  est appliqué à des bases que ce worktree ne voit pas toutes (bases d'autres agents ou de l'orchestrateur ayant tourné
+  la branche), où P8 ferait refuser le démarrage ; le gain serait un commentaire. La précision est à la ligne d'audit
+  (`docs/migrations-idempotence-audit.md`). **A7** : aucun journal de l'essai manuel de la migration n'a été versé ; ce
+  qui fait foi, ce sont `imported_documents_without_qr_preserves_existing_rows` et `migrations_fresh_install`, verts.
+- **LOW laissés** : B2 (`previewLoaders` jamais purgé, sans effet mesurable), B4 (`import_accepts_pdf_without_qr`
+  accepte deux issues selon la présence de pdfium), E5 (aucun aller-retour de sauvegarde avec une ligne sans QR).
+
+**PDF** : `make fr` sous le verrou (`302a-make-p1.log`), trois PDF régénérés ; phrases relues au PDF aplati (« la
+facture qui en naît n'a ni IBAN ni référence », « Quatre gestes par document », « JPEG en couleurs CMJN », « documents
+fournisseur importés, PDF », brochure « tout document y entre, avec ou sans QR-code ») ; « se saisissent à la main » :
+0 occurrence.
+
+**Gate complet au dernier commit de code** (`ed796c02`, dont le code est celui de `75f3bdcd`), sous le verrou, bases
+`kesh_302a` et `kesh_e2e_302a` remises à zéro (`302a-p1rem-*.log`) : `scripts/test-fast.sh` **3780 passés,
+6 ignorés** (3767 de la 30-2a, plus ceux de la 30-1a) ; `npm run check` 0 erreur ; `lint-i18n-ownership` PASS ;
+`npm run test:unit` **1722 passés, 151 fichiers** (1718 + 1 de la 30-1a + 3 neufs) ; `npm run build` vert. E2E
+complet, port 3052 : **297 passés, 8 échoués, 17 ignorés** — les sept KF-029 (#97) (`mode-expert.spec.ts:26`, `:41`,
+`onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et `sidebar-navigation.spec.ts:75`
+(KF-052, #424, `localStorage` à `null`), tous dans `docs/testing.md` § *Les échecs attendus* ; aucune régression.
+
+**Tests neufs de la remédiation** (de `75020c01` à `75f3bdcd`, `grep -cE "^\s*it\("`) : `DocumentPreview.test.ts`
+8 → 10, `import-page.test.ts` 5 → 6 (**+3 Vitest**) ; aucun test Rust.
 
 ### File List
 
@@ -1362,3 +1439,29 @@ le relevé). Gate final au HEAD : nextest 3767/3767 (6 ignorés), Vitest 1718/17
 verts ; E2E 298 passés + les 7 KF-029 (17 ignorés). Choix C-30-2-24 à 29. Le détail est au Dev Agent Record. Statut de
 la clé `30-2a-documents-sans-qr` : `review` ; revue de code P1 à lancer (`30-2a-review-prompt-p1.md`, Sonnet, lentilles
 B, E, A).
+
+### 2026-10-15 — Revue de code P1 de la 30-2a (Sonnet, lentilles B, E, A), report sur `main` et remédiation (Opus 5.5)
+
+Rapports : `/home/gcorbaz/devel/kesh-gate-logs/302a-review-p1-{B,E,A}.md` — **B 0/0/0/5, E 0/0/2/5, A 0/0/0/8**
+(CRITICAL/HIGH/MEDIUM/LOW), aucun finding réfuté. Avant la remédiation, report de la branche sur `fecc8566` (30-1a
+mergée, T-a0) : conflits de `sprint-status.yaml` et du CHANGELOG résolus par union.
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| E1 | MEDIUM | texte « QR illisible » (4 locales, repli) et deux manuels : plus de saisie promise ; facture « sans IBAN ni référence » |
+| E2 | MEDIUM | deux tests de course de l'aperçu ; M-a16, M-a16b tuées |
+| E3 = A6 | LOW | test de stabilité de `previewLoader` ; M-a17 tuée |
+| A1 | LOW | « sept » → cinq, annoté |
+| A2 | LOW | migration laissée (P8), précision à la ligne d'audit |
+| A3 | LOW | « Quatre gestes », *Télécharger* au manuel |
+| A4, A5, E7, B5 | LOW | admin-manual, brochure, glossaire ; sites conservés déclarés au Record |
+| A7 | LOW | le test fait foi, écrit au Record |
+| A8 | LOW | § *Status* à jour |
+| B1 = E4 | LOW | angle mort « date UTC » écrit, non corrigé |
+| B3 = E6 | LOW | C-30-2-4 annoté, commentaire et manuel corrigés, angle mort écrit |
+| B2, B4, E5 | LOW | laissés |
+
+Gate complet au dernier commit de code (`ed796c02`) : nextest 3780/3780 (6 ignorés), Vitest 1722/1722 (151 fichiers),
+check, lint et build verts ; E2E 297 passés, 8 échecs attendus (7 KF-029 + KF-052), 17 ignorés. Trend : P1 = 2 MEDIUM →
+remédiés ; **passe ciblée P2** à lancer (`30-2a-review-prompt-p2-ciblee.md`, Haiku, une lentille, diff
+`75020c01..HEAD`), la remédiation touchant du code de production (un texte d'écran et des commentaires).
