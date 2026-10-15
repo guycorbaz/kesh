@@ -58,7 +58,8 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   envoient le fichier dans `failed/`, comme `NO_QR_CODE_FOUND`. Le parcours voulu fait entrer tout document PDF ou
   image ; la saisie à la main couvre un QR inexploitable.
 - **Retenu** : ces cinq cas donnent un document **accepté sans données QR**, avec au rapport `qr: "none"` (aucun QR)
-  ou `qr: "unreadable"` et le code d'origine en `qrError`. Le champ trop long se détecte **avant** l'insertion
+  ou `qr: "unreadable"` et le code d'origine en `qrError` *(précisé le 2026-10-15, validation P4, R2 : « le code d'origine
+  du décodage, ou le code du contrôle pur » — `FIELD_TOO_LONG`, `QR_AMOUNT_OUT_OF_RANGE`)*. Le champ trop long se détecte **avant** l'insertion
   (longueurs des colonnes contrôlées sur la valeur à insérer) ; la branche `DataLengthOrRange` reste en filet. Restent
   refusés comme aujourd'hui : type hors liste blanche ou octets incohérents, image non décodable
   (`ImageDecode` → `UNSUPPORTED_FILE_TYPE`), taille, lien symbolique, doublon, erreur de lecture.
@@ -113,7 +114,8 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   trois au plus, motif affiché, aucun présélectionné. La règle « tous les mots du plus court » de la P1 n'était pas
   décidable (tokenisation, mesure) et écartait « Dubarde Sàrl Genève » et « Mueller AG ».
 - **Écartées** : présélectionner le premier (un enregistrement sans regarder rattacherait au mauvais fournisseur) ;
-  un appariement par IBAN (les contacts ne portent pas d'IBAN).
+  un appariement par IBAN (les contacts ne portent pas d'IBAN) *(écartée levée le 2026-10-15 par l'amendement P2 ci-dessus :
+  l'IBAN se lit sur les factures passées, non sur les contacts)*.
 - **Réversible** : oui.
 
 ### C-30-2-8 — Le fournisseur se crée dans un panneau de la page, au minimum
@@ -305,9 +307,13 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   et écrit le lien sans valider, B fait de même sur doc 2 et inv Y ; couples (10, 20), (20, 10), (30, 10), (10, 30), avec
   et sans liens existants 15 et 25) : B aboutit chaque fois en moins de 0,35 s. Test « B sous 5 s » gardé. **Bascule
   écrite** si le test rougit au développement : sérialisation par la sentinelle `companies … FOR UPDATE` en tête de
-  transaction (patron de `supplier_invoices::create_in_tx`), test réécrit sur l'ordre d'événements.
+  transaction (patron de `supplier_invoices::create_in_tx`), test réécrit sur l'ordre d'événements. *(Corrigé le
+  2026-10-15, validation P4, F1 = R1 : `create_in_tx` ne prend la sentinelle que pour une facture à projet, et une
+  sentinelle en tête formait des cycles avec la complétion et le règlement ; la bascule prend
+  `bank_accounts::acquire_company_sentinel_lock` **après** le staging et la facture, avant l'`UPDATE` — ordre staging →
+  facture → `companies`, tableau des chemins à l'AC19.)*
 
-### C-30-2-22 — Le contrôle pur couvre longueur, plage et domaine, avant l'archivage ; filet des contraintes CHECK
+### C-30-2-22 — Le contrôle pur couvre longueur, plage et domaine, avant l'archivage ; filet des contraintes CHECK *(titre à lire « longueur et plage » depuis le 2026-10-15, validation P3 : le domaine est retiré ; le contexte ci-dessous, « 500 sur tout le run … défaut d'origine », était faux à sa date — voir le Retenu)*
 
 - **Contexte** : validation P2 (F1-1, R1, R2, R3). Le montant du QR n'est borné par personne (`parser.rs:145`) ; le type
   d'adresse est pris sans contrôle (`parser.rs:120`) et une valeur hors `K`/`S` viole `chk_imported_si_address_type`,
@@ -321,7 +327,10 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   n'existait pas, et un `CheckConstraintViolation` rend 400, non 500 ; arbitrage P2 de l'orchestrateur pris pour acquis
   sans vérification, reconnu par lui)* ; un QR qui échoue entre
   sans ses données (`unreadable`). Un filet `CheckConstraintViolation` rejoint `DataLengthOrRange` à l'`INSERT`
-  (`failed[]`) — défense en profondeur, sans test, aucune contrainte CHECK n'étant atteignable. Le cas « nom de fichier trop long » est retiré : inatteignable (`NAME_MAX` = 255 octets).
+  (`failed[]`) — défense en profondeur, sans test, aucune contrainte CHECK n'étant atteignable.
+  *(Précisé le 2026-10-15, validation P4, R2 = F5 : un code `qrError` neuf, `QR_AMOUNT_OUT_OF_RANGE`, un seul pour la
+  plage et les décimales, libellé ×4 ; le contrôle ne porte que sur un montant présent ; tout document `unreadable` dit
+  à l'écran qu'il est accepté sans les données du QR.)* Le cas « nom de fichier trop long » est retiré : inatteignable (`NAME_MAX` = 255 octets).
 - **Écartées** : laisser le filet seul décider (un QR exploitable en partie perdrait le document) ; garder un test de
   nom trop long (impossible à monter).
 - **Réversible** : oui.

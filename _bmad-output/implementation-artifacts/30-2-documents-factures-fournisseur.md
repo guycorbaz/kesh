@@ -6,7 +6,8 @@
 `15686d55` (kickoff de l'Epic 30), worktree `/home/gcorbaz/devel/kesh-30-2`, branche `story/30-2`. Validation P1
 faite (Sonnet, lentilles R et F : 0/0/11/9 et 0/0/7/6) et remédiée le 2026-10-15 ; validation P2 faite (Opus, R et F :
 0/0/8/13 et 0/0/5/8) et remédiée le même jour ; validation P3 faite (Sonnet, R et F : 0/1/3/12 et 0/0/3/12) et remédiée
-le même jour ; validation P4 à lancer (`30-2-validate-prompt-p4.md`, **Opus**, lentilles R et F, passe complète).
+le même jour ; validation P4 faite (Opus, R et F : 0/0/2/13 et 0/0/1/7) et remédiée le même jour ; **passe ciblée P5** à
+lancer (`30-2-validate-prompt-p5-ciblee.md`, **Haiku**, une lentille, sur le seul diff de la remédiation P4).
 
 ⛔ **Trois stories, une fiche, trois PR successives** (C-30-2-1) :
 
@@ -104,7 +105,9 @@ cohérents, taille sous la borne) **sans** QR-code dans `KESH_INBOX_DIR`, When *
 archivé, supprimé du dossier, inséré en `to_complete` avec les sept colonnes QR à `NULL` (`amount`,
 `reference_value`, adresse et messages à `NULL`) ; le rapport le porte dans `accepted[]` avec `qr: "none"` ; l'audit
 `imported_supplier_invoice.created` porte `qr_present: false` et ses clés `creditor_name`, `amount`, `currency`,
-`reference_type` **présentes à `null`** (même forme de détails qu'un document avec QR ; le test l'asserte clé par clé).
+`reference_type` **présentes à `null`**, et `iban_present: false` (aujourd'hui calculé `!creditor_iban.is_empty()`,
+`inbox_import.rs:613`, devient `creditor_iban.is_some()`) — même forme de détails qu'un document avec QR ; le test
+l'asserte clé par clé (mutation M-a6 côté retrait, M-a15 côté création).
 
 **AC2 — Un QR inexploitable n'empêche pas l'entrée.** `INVALID_SPC_PAYLOAD`, `INVALID_IBAN`, `PDF_RENDER_ERROR` et un QR
 dont une valeur ne tient pas dans sa colonne donnent le même résultat qu'AC1, avec `qr: "unreadable"` et
@@ -128,12 +131,24 @@ colonnes contraintes que remplit le QR** (C-30-2-22) :
   l. 256), et `reference_type` est borné par le parseur (`parser.rs:155-164`). *(La remédiation P2 avait ajouté ici un
   contrôle de domaine contre un « défaut d'origine » — 500 sur tout le run — qui n'existe pas ; retiré en P3, voir le
   Change Log.)*
-Tests : nom accentué de 70 caractères accepté avec ses données, de 71 accepté sans (`qrError: "FIELD_TOO_LONG"`) ;
-pays de trois lettres ; montant à 16 chiffres entiers, montant négatif ou nul, montant `20.005` refusé et `20.000`
-accepté avec ses données — chacun accepté, aucun en `failed[]`. Ces QR **ne se fabriquent pas** avec `qr_invoice_png`
-(`crates/kesh-api/tests/inbox_import_e2e.rs:281-307`), qui passe par `build_payload` et donc par `validate`
-(`kesh-qrbill/src/generator.rs:14-15`) : T-a1 écrit un helper **« payload brut »** qui substitue les lignes du texte SPC
-puis appelle `qr_png_from_payload` (l. ~255-275).
+Le contrôle de plage ne porte que sur un montant **présent** : un QR à montant vide (« open amount », `parser.rs:140-141`)
+garde ses données, comme aujourd'hui.
+**Codes `qrError`** (P4, R2) : `FIELD_TOO_LONG` pour toute longueur dépassée (pays et devise compris) ;
+**`QR_AMOUNT_OUT_OF_RANGE`** — code neuf, un seul pour la plage et les décimales — pour le montant ; les codes du
+décodage (`INVALID_SPC_PAYLOAD`, `INVALID_IBAN`, `PDF_RENDER_ERROR`) inchangés. Libellé neuf ×4
+`imported-supplier-invoices-error-qr-amount-out-of-range` (« Montant du QR hors des limites admises »), ajouté à la carte
+d'`error-label.ts` (sans quoi il tomberait dans le repli « Échec de l'import », l. 45) ; et, pour **tout** document
+`unreadable`, l'écran dit que le document est **accepté sans les données du QR**, à saisir à la main (clé
+`imported-supplier-invoices-qr-unreadable-hint`, ×4). `api-external.md` documente la liste des codes de `qrError`.
+Tests, chacun **asserte `qrError`** : nom accentué de 70 caractères accepté avec ses données et **nom stocké égal** au nom
+injecté, de 71 accepté sans (`FIELD_TOO_LONG`) ; pays de trois lettres (`FIELD_TOO_LONG`) ; montant à 16 chiffres entiers,
+montant négatif ou nul, montant `20.005` (`QR_AMOUNT_OUT_OF_RANGE`) ; `20.000` et montant vide acceptés avec leurs
+données — aucun en `failed[]`. Ces QR se fabriquent en **généralisant** la substitution que fait déjà `qr_invoice_png`
+**après** `build_payload` (`crates/kesh-api/tests/inbox_import_e2e.rs:302-305`, jeton `NAMEPLACEHOLDER`) : même procédé
+pour le montant, le pays et la devise, que `validate` (`kesh-qrbill/src/generator.rs:14-15`) refuserait avant génération
+— pas de second helper (DRY). Le PNG est encodé en **UTF-8 avec ECI** (indication `CharacterSet` de `rxing`, aujourd'hui
+`EncodeHints::default()`, l. 252-258), faute de quoi un accent relu en Latin-1 ou Shift_JIS ferait rougir le test pour
+une mauvaise raison (P4, F6).
 **Filets** : la branche `DbError::DataLengthOrRange` reste, sans test qui l'atteigne une fois le contrôle complet ; une
 branche `DbError::CheckConstraintViolation` est **ajoutée** au même endroit, avec le même traitement (`failed[]`,
 `INVALID_SPC_PAYLOAD`, fichier archivé non supprimé) — défense en profondeur, sans test : aucune contrainte CHECK n'est
@@ -159,7 +174,10 @@ la dernière migration de `main` au moment du développement — la 30-1 peut en
 - **un seul `ALTER TABLE imported_supplier_invoices`** portant, dans cet ordre : les sept `MODIFY COLUMN … NULL`
   (chacun réécrit la définition complète : type d'origine, `NULL`, sans `DEFAULT`) ; `ADD CONSTRAINT
   chk_imported_si_qr_all_or_nothing CHECK ((creditor_iban IS NULL) = (is_qr_iban IS NULL) AND …)` sur les sept ;
-  `ADD CONSTRAINT uq_imported_supplier_invoice UNIQUE (supplier_invoice_id)` (plusieurs `NULL` permis) **puis**
+  `ADD CONSTRAINT uq_imported_supplier_invoice UNIQUE (supplier_invoice_id)` (plusieurs `NULL` permis ; elle **ne peut
+  pas** échouer en 1062 sur une base peuplée : `mark_completed`, seul écrivain du lien, n'est appelé que par la
+  complétion avec la facture qu'elle vient de créer, `repositories/imported_supplier_invoices.rs:183-187`, et la
+  réactivation remet le lien à `NULL`, l. 247-258 — argument recopié au doc-comment de la migration) **puis**
   `DROP INDEX idx_imported_supplier_invoice`. L'unicité doit exister avant la suppression : l'ancien index porte la
   clé étrangère `fk_imported_si_supplier_invoice`, et MariaDB refuse de supprimer le dernier index d'une clé étrangère
   (erreur 1553 — précédents `20260714000002_email_templates_reminder.sql:28-34`, qui ajoute puis supprime, et
@@ -220,7 +238,8 @@ chemin des captures (sous `$GATE_LOGS`, jamais au dépôt si elles montrent autr
 bloqué, la CSP se corrige **et** le test de `csp.rs` avec elle, puis le contrôle se refait — **dans ces bornes** : seules
 `img-src`, `frame-src` et `object-src` peuvent gagner `blob:` ; `default-src`, `script-src` et `frame-ancestors` ne
 changent pas ; aucun attribut `sandbox` sur l'`<iframe>` n'est un remède (il bloque la visionneuse). Hors de ces bornes,
-le constat va au rapport et la décision à l'orchestrateur. Sans ce relevé, la 30-2a
+le constat va au rapport et la décision à l'orchestrateur. **Première hypothèse à tester** si l'aperçu est bloqué : le
+`frame-ancestors 'none'` (`csp.rs:30`) hérité par le document `blob:` de l'`<iframe>` — hors des bornes, il se rapporte. Sans ce relevé, la 30-2a
 n'est pas `done`.
 
 **AC7 — Compléter un document sans QR** (formulaire existant de la page d'import, corps inchangé en 30-2a) : pas de
@@ -330,18 +349,21 @@ les deux écrans — une seule définition côté frontend (C-30-2-20) ; la sais
 **AC12-bis — Les coordonnées de paiement se valident à un seul endroit** (C-30-2-20, arbitrages de l'orchestrateur P2 et
 P3). La conversion commune de l'AC13 contrôle, pour **les deux routes** (`POST /supplier-invoices` et la complétion sans
 QR — un seul chemin, c'est voulu), avec les types existants de `kesh-core` — une seule définition côté serveur :
-- **Normalisation d'abord, une seule fois par côté** : côté serveur, une fonction `normalize_payment_field` retire
-  **tous les blancs Unicode** (`char::is_whitespace` : espace, tabulation, espace insécable U+00A0, espace fine U+202F —
-  un IBAN collé d'un PDF en porte) avant `Iban::new`, qui n'ôte lui-même que l'espace ASCII
-  (`crates/kesh-core/src/types/iban.rs:136`) et refuse tout non-ASCII ; une chaîne vide ou faite de blancs vaut
-  **absente** (pour AC11 comme ici). Côté écran, la même règle vit dans **une** fonction du module partagé
-  `lib/shared/utils/iban.ts` (`normalizeIban`, `\s` en JavaScript couvre ces blancs), employée par la classification
-  QR-IBAN et par l'envoi.
+- **Normalisation d'abord, une seule fois par côté, sur un ensemble de caractères écrit** (P4, F4 : `\s` en JavaScript
+  et `char::is_whitespace` en Rust ne coïncident pas — U+FEFF dans l'un, U+0085 dans l'autre) : sont retirés **les
+  caractères `White_Space` d'Unicode plus U+200B (espace de largeur nulle) et U+FEFF (BOM)** — espace, tabulation,
+  U+00A0, U+202F compris. Côté serveur, `normalize_payment_field` (`c.is_whitespace() || c == '\u{200B}' || c ==
+  '\u{FEFF}'`) avant `Iban::new`, qui n'ôte lui-même que l'espace ASCII (`crates/kesh-core/src/types/iban.rs:136`) et
+  refuse tout non-ASCII ; côté écran, `normalizeIban` du module partagé `lib/shared/utils/iban.ts`
+  (`/[\s\u0085\u200B]/g`, `\s` couvrant déjà U+FEFF), employée par la classification QR-IBAN et par l'envoi. Un test de
+  chaque côté porte **la même liste** de caractères (U+0020, U+0009, U+00A0, U+202F, U+0085, U+200B, U+FEFF). Une chaîne
+  vide ou faite de ces caractères vaut **absente** (pour AC11 comme ici).
 - **`creditorIban`** : `kesh_core::types::Iban::new` (`iban.rs:135`) — format, ASCII seul, **code pays présent dans la
   table intégrée** `IBAN_LENGTHS` (`iban.rs:13-101`) et **longueur propre à ce pays**, somme de contrôle MOD-97 — **et**
   pas un QR-IBAN (`QrIban::new` doit échouer) ;
 - **`creditorQrIban`** : `kesh_core::types::QrIban::new` (`qr_iban.rs:38`) — IBAN CH ou LI dont le QR-IID (positions 5
-  à 9) est dans 30000-31999 ;
+  à 9) est dans 30000-31999 ; une valeur qui n'est **pas un IBAN valide** (`Iban::new` échoue, propagé l. 39) rend
+  `INVALID_IBAN` sur `field: creditorQrIban`, un IBAN valide hors plage QR rend `NOT_A_QR_IBAN` (deux tests) ;
 - les deux ne sont pas renseignés ensemble ;
 - **référence** — une seule règle de type (arbitrage P3, F3-3) : avec un QR-IBAN, elle est **obligatoire** et doit
   passer `kesh_qrbill::validation::validate_qrr` (`validation.rs:141`) une fois ses blancs retirés ; avec un IBAN
@@ -364,7 +386,7 @@ contrôle est invalide ; un QR-IBAN dans `creditorIban` ; un IBAN ordinaire dans
 un QR-IBAN sans référence QRR valide ; une référence de plus de 64 caractères. Il **accepte toujours** un IBAN étranger
 valide d'un pays de la table, et toute référence libre de 64 caractères au plus, 27 chiffres compris ; les blancs (y
 compris insécables) sont retirés des IBAN, un champ vide vaut absent. Les factures existantes ne changent pas. ⚠️ **Pays
-absents de la table** (`iban.rs:13-101`, « à vérifier contre le document officiel "IBAN Registry" » — par exemple `CI`, `BF`, `BJ`, `ML`,
+absents de la table** (`iban.rs:13-101`, dont le commentaire, l. 11-12, dit : « Les entrées doivent être vérifiées contre le document officiel "IBAN Registry" … » — par exemple `CI`, `BF`, `BJ`, `ML`,
 `NE`, `TG`, `MG`) : un IBAN valide de ces pays, accepté aujourd'hui, sera refusé — angle mort écrit, et dit au CHANGELOG.
 ⚠️ **Lot de paiement** : un IBAN étranger accepté à la saisie reste refusé à la création d'un lot pain.001, qui
 n'accepte que CH/LI (`crates/kesh-db/src/repositories/payment_batches.rs:359`, `kesh_qrbill::validation::validate_iban`) — comportement existant, à dire au manuel.
@@ -388,12 +410,15 @@ reste accepté (test).
 
 **AC14 — Fournisseur proposé** (arbitrage de l'orchestrateur : le **rappel** avant la précision — rien n'est présélectionné et
 trois candidats au plus s'affichent ; C-30-2-7). Avec QR seulement ; sans QR, rien n'est proposé. Deux sources, dans cet
-ordre, sans doublon, **trois au plus** au total :
+ordre, sans doublon, **trois au plus** au total — *sans QR, aucune donnée d'où proposer (ni nom ni IBAN du créancier) :
+d'où « avec QR seulement » ; un document sans QR se rattache par la liste ou par la création en ligne* :
 1. **par IBAN** : les fournisseurs actifs qui ont déjà une facture fournisseur portant l'IBAN ou le QR-IBAN du créancier
    (les contacts n'ont pas d'IBAN ; seules les factures en portent : `supplier_invoices.creditor_iban`,
    `creditor_qr_iban`). Lecture neuve `GET /api/v1/imported-supplier-invoices/{id}/supplier-candidates` (Comptable+,
    bornée à la société) : l'IBAN est lu **sur le document**, jamais passé dans l'URL ; comparaison sur la forme
-   normalisée des deux côtés (`REPLACE(UPPER(…), ' ', '')`, les factures antérieures à l'AC12-bis pouvant porter des
+   normalisée des deux côtés (`REPLACE` successifs de l'espace, de U+00A0 et de U+202F sur `UPPER(…)` — les autres blancs
+   de l'ensemble d'AC12-bis ne sont pas retirés en SQL : une facture antérieure qui en porterait n'est pas retrouvée,
+   perte de rappel écrite en angle mort ; les factures antérieures à l'AC12-bis pouvant porter des
    espaces) ; factures **annulées exclues** ; contacts archivés ou non fournisseurs exclus ; ordre `MAX(invoice_date) DESC`
    puis `contacts.id` ; **`LIMIT 3`** dans la requête ; réponse `200 { candidates: ContactResponse[] }`, liste vide pour un
    document sans QR ; `404 IMPORTED_INVOICE_NOT_FOUND` pour un document inconnu ou d'une autre société (patron de la
@@ -516,12 +541,28 @@ Le corps transactionnel est exposé sans `COMMIT` (`attach_in_tx`, dépôt) pour
   WHERE id = 1;` sans valider ; connexion B : la même chose sur `doc` 2 et `inv` Y. Couples (X, Y) essayés : (10, 20),
   (20, 10), (30, 10), (10, 30), **avec et sans** liens déjà présents dans l'index (15, 25) : B aboutit **chaque fois en
   moins de 0,35 s**, aucune attente. Le test « B sous 5 s » est donc gardé tel quel.
+- Le banc ne reproduit pas tout le schéma réel (l'`UPDATE` réel touche aussi `status`, donc
+  `idx_imported_company_status`, et la table porte `fk_imported_si_company`) : c'est le **test déterministe sur le vrai
+  schéma** qui fait foi.
 - **Bascule écrite, si le test rougit au développement** sur le code non muté (version ou réglage différent du banc) :
-  le rattachement se **sérialise par société** — première instruction de la transaction `SELECT id FROM companies WHERE
-  id = ? FOR UPDATE` (sentinelle déjà employée par `supplier_invoices::create_in_tx`, `repositories/supplier_invoices.rs:271`
-  et `:356`), avant le staging ; ordre des verrous réécrit (société, staging, facture) ; le test devient « B aboutit
-  après le `COMMIT` de A, sans interblocage ni `409` » ; M-c11 se redéfinit sur l'ordre d'événements. La bascule et son
-  motif s'écrivent au Dev Agent Record et au registre.
+  le rattachement se **sérialise par société** par la primitive existante
+  `bank_accounts::acquire_company_sentinel_lock` (`repositories/bank_accounts.rs:1613`, `SELECT id FROM companies WHERE id
+  = ? FOR UPDATE`), prise **après** le staging et la facture et **avant** l'`UPDATE` — ordre staging → facture →
+  `companies` → entrée d'unicité. *(Correction P4, F1 = R1 : la P3 la plaçait en tête et la disait « déjà employée par
+  `create_in_tx` » ; `create_in_tx` ne la prend que pour une facture à projet, par `projects::validate_taggable_in_tx`,
+  `projects.rs:101`, appelé l. 361-362, et une sentinelle en tête formait deux cycles.)* Ordre de chaque chemin, sous la
+  bascule :
+
+  | Chemin | Ordre des verrous | Cycle avec le rattachement ? |
+  |---|---|---|
+  | rattachement (bascule) | staging X → facture X → `companies` X → entrée d'unicité | — |
+  | complétion (`complete_import_once`) | staging X → `companies` X si projet (`validate_taggable_in_tx`) → `companies` S (clé étrangère des écritures, `supplier_invoices.rs:291-293`) | non : même document → sérialisés sur le staging, avant `companies` ; autre document → aucune ressource commune avant `companies` |
+  | `pay_in_tx`, `cancel_in_tx`, `cancel_settlement_in_tx` | facture X (`supplier_invoices.rs:724`, `:1071`, `:1314`) → `companies` S (clé étrangère) | non : même facture → sérialisés sur la facture, avant `companies` |
+  | détachement (AC24) | entrée du document (unicité, puis clé primaire) | non : ne demande ni facture ni `companies` |
+  | acceptation de la 30-1 | à relever au Dev Agent Record après le merge de la 30-1 | à établir |
+
+  Le test devient « B aboutit après le `COMMIT` de A, sans interblocage ni `409` » ; M-c11 se redéfinit sur l'ordre
+  d'événements ; M-c7 reste équivalente. La bascule et son motif s'écrivent au Dev Agent Record et au registre.
 - deux vers la même facture, appelés `attach_source_document_once` : un succès, un `409 SOURCE_DOCUMENT_ALREADY_ATTACHED` ;
 - rattachement contre complétion du même document : un seul gagne.
 
@@ -582,10 +623,15 @@ d'intervalle que pose la lecture verrouillante sur une clé **absente** — chem
 demande rien de ce que tient le rattachement ; le contrôle d'unicité de l'`UPDATE` du rattachement attend l'ancienne
 ligne que tient le détachement, puis, celui-ci validé (lien remis à `NULL`), aboutit. **Test qui le prouve, avec mesure
 de l'attente** (sans rejeu) : une transaction D détache S_old de X par `detach_in_tx` **sans valider** ;
-`attach_source_document_once` de S_new à X est lancé dans une tâche ; **300 ms plus tard, la tâche n'est pas finie**
-(`JoinHandle::is_finished() == false` — c'est la mesure de l'attente, la sonde de `PROCESSLIST` ne distinguant pas une
-requête en cours d'une requête en attente) ; D valide ; la tâche aboutit sous 5 s, **en succès**, sans interblocage ni
-`409`. Tranché : ce comportement est attendu (l'`UPDATE` du rattachement attend le verrou de l'entrée tenue par D, puis
+`attach_source_document_once` de S_new à X est lancé dans une tâche ; la sonde existante
+`attendre_une_requete_en_cours` (`crates/kesh-db/src/test_fixtures.rs:561`, motifs `UPDATE imported_supplier_invoices` et
+`supplier_invoice_id`) voit l'`UPDATE` du rattachement **en cours** dans `PROCESSLIST`, puis la tâche est constatée **non
+finie** — l'`UPDATE` ne peut être retenu que par le verrou que tient D ; en complément, `sonde_verrou_nowait` (l. 611)
+constate depuis une autre connexion que la ligne de S_old est bien verrouillée par D ; D valide ; la tâche aboutit sous
+5 s, **en succès**, sans interblocage ni `409`. ⛔ Ni `information_schema.INNODB_TRX` ni `INNODB_LOCK_WAITS` : ils
+exigent le privilège `PROCESS`, que l'utilisateur `kesh` n'a pas (`scripts/mariadb-init/01-dev-grants.sql` ; piège déjà
+rencontré, `crates/kesh-api/tests/reconciliation_e2e.rs:7546`). La remédiation P3 se fiait à un délai fixe de 300 ms,
+qui ne distinguait pas une attente de verrou d'une tâche simplement lente (P4, F3 = R5). Tranché : ce comportement est attendu (l'`UPDATE` du rattachement attend le verrou de l'entrée tenue par D, puis
 la trouve marquée supprimée). La mutation **M-c9** (le détachement laisse le lien) le fait rougir (`409` au lieu du
 succès) ; le volet « attend » est une propriété du moteur, mesurée, sans mutation (déclaré). Si le test rougit sur le code
 non muté (interblocage), arrêt et rapport à l'orchestrateur — l'affirmation ne s'écrit pas au manuel. Un détachement qui verrouillerait la facture **après** le document formerait un cycle avec AC19 :
@@ -601,7 +647,9 @@ fournisseur payée affiche aujourd'hui `paidAt` brut (« Facture réglée. 2026-
 `routes/(app)/supplier-invoices/[id]/+page.svelte:393`, `{invoice.paidAt ?? ''}`) ; avec la 30-1, `paid_at` devient la
 date du paiement à minuit. L'écran affiche la **date** au format suisse existant, `formatSwissDate`
 (`frontend/src/lib/features/reports/reports.api.ts:193`, `AAAA-MM-JJ` → `JJ.MM.AAAA`), appliqué aux dix premiers
-caractères (« Facture réglée le 20.06.2026. » — libellé `supplier-invoices-paid-info` adapté, quatre locales). Vitest
+caractères — **deux clés**, quatre locales : `supplier-invoices-paid-info` (« Facture réglée. ») sans date, et
+`supplier-invoices-paid-info-on` (« Facture réglée le { $date }. ») avec date ; une seule clé à variable rendrait
+« Facture réglée le . » sans date (P4, R7). Vitest
 de la page (patron `supplier-settlement-page.test.ts`) : `paidAt = "2026-06-20T00:00:00"` rend `20.06.2026` et jamais la
 chaîne brute ; `paidAt` absent : la phrase sans date. Mutation **M-c12** (`paidAt` affiché brut) tuée par ce Vitest.
 
@@ -634,7 +682,7 @@ chaîne brute ; `paidAt` absent : la phrase sans date. Mutation **M-c12** (`paid
 - [ ] **T-a6** Textes et i18n (AC8) ; K5.
 - [ ] **T-a7** E2E (§ E2E, E1-a, E2-a, E3) ; module `helpers/inbox.ts` ; `inbox-import.spec.ts` adapté (titre, libellés, plus de `test.skip`) ; `docs/testing.md` mis à jour (répertoires lus par le spec, défauts, échec bruyant ; bloc du `CLAUDE.md` inchangé, constaté) ; captures clair et sombre de la liste et de l'aperçu.
 - [ ] **T-a8** Manuels utilisateur et administrateur, PDF, `README.md:44`, `api-external.md` (section créée), CHANGELOG et son bandeau (AC9, AC9-bis).
-- [ ] **T-a9** Mutations M-a1 à M-a14 sauf M-a13, retirée en P3 (sous le verrou de gate ; M-a14 déclarée équivalente ; M-a5 portée sur migration et squash) ; gate complet (`kesh-db` touché : gate complet même en boucle) ; E2E complet au dernier commit de code.
+- [ ] **T-a9** Mutations M-a1 à M-a15 sauf M-a13, retirée en P3 (sous le verrou de gate ; M-a14 déclarée équivalente ; M-a5 portée sur migration et squash) ; gate complet (`kesh-db` touché : gate complet même en boucle) ; E2E complet au dernier commit de code.
 
 ### 30-2b
 
@@ -645,7 +693,8 @@ chaîne brute ; `paidAt` absent : la phrase sans date. Mutation **M-c12** (`paid
   espaces insécables accepté, IBAN allemand accepté, valeur enregistrée normalisée, réponse de `complete` qui porte `sourceDocument` (en 30-2c).
 - [ ] **T-b2** `CreateSupplierInvoiceRequest` partagé, conversion commune et validation par `kesh_core::types::{Iban, QrIban}` et `validate_qrr` (AC12, AC12-bis, AC13) ; IBAN et références factices des tests et du seed remplacés par des valeurs synthétiques valides ; route `GET /imported-supplier-invoices/{id}/supplier-candidates` et son test Rust (AC14), registre des routes.
 - [ ] **T-b3** `SupplierInvoiceForm.svelte` extrait ; Vitest du composant (champs verrouillés avec QR, total, erreurs).
-- [ ] **T-b4** Page `/supplier-invoices/new` (AC10) ; liste et page d'import reliées ; formulaires en ligne retirés et
+- [ ] **T-b4** Page `/supplier-invoices/new` (AC10 ; Vitest des états « document inconnu, d'une autre société ou plus à
+  traiter », « chargement », « erreur de lecture ») ; liste et page d'import reliées ; formulaires en ligne retirés et
   leurs clés i18n orphelines retirées (AC8) ; `supplier-invoice-scan.spec.ts`, `supplier-invoices.spec.ts`,
   `inbox-import.spec.ts` (complétion en ligne) et `boutons-rouges-inventory.test.ts` adaptés (§ *Gardes existantes*).
 - [ ] **T-b5** `supplierNameKey`, `searchTermsFor` et `proposeSuppliers` (pures, Vitest des cas d'AC14), extraction de `qrIbanHasValidQrIid` dans `lib/shared/utils/iban.ts` (avec CH/LI, Vitest) employée par `bank-accounts` et le formulaire, panneau de création (AC12, AC14, AC15).
@@ -668,7 +717,8 @@ chaîne brute ; `paidAt` absent : la phrase sans date. Mutation **M-c12** (`paid
 - [ ] **T-c3** Routes (rattacher, détacher), réponses, déplacement de la lecture (AC18, AC19, AC21, AC22, AC24) ; registre des routes mutantes
   (`audit_route_registry.rs`, compteurs recomptés), registre des libellés d'audit (`crates/kesh-api/tests/audit_label_registry.rs`) pour
   les actions neuves `imported_supplier_invoice.attached` et `.detached`.
-- [ ] **T-c4** Fiche de la facture (dont « Détacher le document » et sa confirmation), sélecteur, page de l'écriture
+- [ ] **T-c4** Fiche de la facture (dont « Détacher le document » et sa confirmation), sélecteur (Vitest : montant QR à
+  côté du total, liste vide), page de l'écriture
   (AC18, AC20, AC21, AC24, AC25) ; `supplier-settlement-page.test.ts:66` (mock du module `imported-supplier-invoices.api`) adapté.
 - [ ] **T-c5** i18n, manuel, PDF, `api-external.md`, CHANGELOG, README (AC23).
 - [ ] **T-c6** E2E de parcours complets (E1 à E7) ; captures ; mutations M-c1 à M-c12 (M-c7 déclarée équivalente ; M-c2 portée sur migration et squash) ; gate complet et E2E complet au dernier commit de code.
@@ -686,8 +736,8 @@ chaîne brute ; `paidAt` absent : la phrase sans date. Mutation **M-c12** (`paid
   `spc_e2e_invoice.png` et `spc_e2e_discard.png` (versionnés, à QR) ; le PNG **sans** QR et le PDF **sans** QR sont
   **générés par le code de test**, sans fichier binaire ni interpréteur : en TypeScript, des constantes d'octets dans
   `frontend/tests/e2e/helpers/inbox.ts` (un PNG minimal valide de quelques pixels, un PDF minimal d'une page de texte
-  écrit à la main, `%PDF-1.4` … `%%EOF`) ; en Rust, les mêmes constantes ou le crate `image` déjà présent
-  (`qr_decode.rs`) dans les tests. Le PNG corrompu se fabrique en tronquant le PNG minimal.
+  écrit à la main, `%PDF-1.4` … `%%EOF`) ; en Rust, le helper existant **`blank_png()`**
+  (`crates/kesh-api/tests/inbox_import_e2e.rs:309`) pour le PNG sans QR, et la même constante PDF. Le PNG corrompu se fabrique en tronquant le PNG minimal.
 - **Test SQL de la contrainte « tout ou rien »** : **sept** `INSERT`, chacun laissant **une seule** des sept colonnes à
   `NULL` (les six autres renseignées), tous refusés — sans quoi M-a5 (contrainte amputée d'une colonne) survit.
 
@@ -737,8 +787,11 @@ fois sur le PNG à QR — c'est un test Rust de T-a1, préalable. Attribution : 
 `spc_e2e_invoice.png` **chacun** ; E2-a et E2 : une copie du PNG sans QR chacun ; E3 : une copie du PDF sans QR (le test
 n'asserte pas le badge d'un PDF : `none` ou `unreadable` selon pdfium, les deux acceptés) ; E5 : une copie du PNG sans
 QR ; **E7 : une seconde copie du PNG sans QR**, déposée et importée dans le test, pour joindre un **autre** document
-après le détachement ; E6 : une copie de `spc_e2e_invoice.png`. Le fournisseur proposé d'E1 est créé
-par l'API au début du test, au **nom exact** du créancier de la fixture.
+après le détachement ; E6 : une copie de `spc_e2e_discard.png` (QR distinct de celui d'E1). Le fournisseur proposé d'E1 est créé
+par l'API au début du test, au **nom exact** du créancier de la fixture. E1 et E6 emploient des fixtures à QR
+**distinctes** — E6 une copie de `spc_e2e_discard.png` — pour qu'une facture d'E6 au même IBAN n'ajoute pas un
+candidat « même IBAN » à E1 ; et E1 clique *Retenir* sur la proposition **désignée par son nom**, jamais sur la
+première.
 
 **Indépendance.** Chaque parcours prépare son état **par l'API** (import, complétion, création de facture) et se rejoue
 seul — E6 prépare sa propre facture à document au lieu de lire celle d'E1. Seul le bloc E4 → E5 → E7 (une même facture,
@@ -781,8 +834,9 @@ mutée s'y enregistrerait (P8). Les tests de comportement montent le squash sur 
 | M-a9 | `DocumentPreview` ne révoque pas l'URL | Vitest |
 | M-a10 | export CSV écrit `None`/`null` littéral | test `csv_tables.rs` |
 | M-a14 | l'un des deux filets de l'import (`DataLengthOrRange`, `CheckConstraintViolation`) retiré | **équivalente, déclarée** : aucun n'est atteignable une fois le contrôle pur juste (AC2) — elle couvre les deux filets |
-| M-a11 | le contrôle pur ne borne plus le montant (plage ou décimales) | T-a1 : montant à 16 chiffres entiers accepté **sans** données QR — sous la mutation, `1264` → `DataLengthOrRange` → `failed[]` |
-| M-a12 | le contrôle de longueur compte en octets (`len()`) | AC2 (nom accentué de 70 caractères accepté avec ses données) |
+| M-a11 | le contrôle pur ne borne plus le montant (plage ou décimales) | T-a1 : le montant à 16 chiffres entiers (volet plage) **et** `20.005` (volet décimales) acceptés **sans** données, `qrError: QR_AMOUNT_OUT_OF_RANGE` — sous la mutation, le premier tombe en `failed[]` (`1264`), le second entre avec ses données |
+| M-a12 | le contrôle de longueur compte en octets (`len()`) | AC2 (nom accentué de 70 caractères accepté avec ses données, nom stocké égal) |
+| M-a15 | `iban_present` calculé `true` à la création d'un document sans QR | T-a1 : audit `imported_supplier_invoice.created` d'un document sans QR, `iban_present: false` |
 | M-b1 | un corps avec IBAN est accepté pour un document avec QR | AC11 |
 | M-b2 | le corps l'emporte sur le QR (IBAN du corps enregistré) | **équivalente isolément, déclarée** : la garde de M-b1 refuse tout corps qui porte ces champs ; seule la paire M-b1 + M-b2 est observable, et M-b1 la tue |
 | M-b3 | `project_id` ignoré à la complétion | AC13 |
@@ -822,6 +876,7 @@ mutée s'y enregistrerait (P8). Les tests de comportement montent le squash sur 
   caractères ne sont pas cherchés par le serveur.
 - Un IBAN valide d'un pays absent de la table de Kesh (`iban.rs:13-101`) est refusé à la saisie (AC12-bis) ; un IBAN
   étranger accepté reste refusé par le lot pain.001 (comportement existant).
+- La recherche par IBAN de `supplier-candidates` ne retire en SQL que l'espace, U+00A0 et U+202F (AC14).
 - Le montant attendu saisi à la main (`expectedPaymentAmount`, sans QR) n'est validé ni en signe, ni en échelle, ni
   contre le total (comportement existant de `create_in_tx`).
 - Tout PDF ou image déposé est désormais archivé sous `KESH_DOCUMENTS_DIR` (jusqu'à `KESH_INBOX_MAX_FILE_BYTES` par
@@ -1019,3 +1074,38 @@ Valeurs et symptômes grepés (`500`, `M-a13`, `Corrigé`, `QRR_WITHOUT_QR_IBAN`
 (AC1 à AC25, AC6-bis, AC9-bis, AC12-bis), **23 tâches**, **38 mutations** (M-a1 à M-a14 sauf M-a13, retirée ; M-b1 à
 M-b13 ; M-c1 à M-c12), dont **trois déclarées équivalentes** (M-a14, M-b2, M-c7), **neuf parcours E2E**, **23 choix**
 (C-30-2-1 à 23 ; C-30-2-20, 21 et 22 amendés, C-30-2-23 neuf).
+
+### 2026-10-15 — Validation P4 (Opus, lentilles R et F) et sa remédiation
+
+Rapports : `kesh-gate-logs/302-validate-p4-R.md` (**0/0/2/13**) et `302-validate-p4-F.md` (**0/0/1/7**), sur `6e8d1266`.
+La boucle converge (sévérité maximale MEDIUM, trois MEDIUM dont deux convergents). Chaque finding vérifié au code. **Un
+remède refusé** (arbitrage de l'orchestrateur) : la sonde `INNODB_TRX` proposée par F3 et R5 exige le privilège
+`PROCESS`, que l'utilisateur `kesh` n'a pas — le finding est accepté, son remède remplacé.
+
+| Finding | Sév. | Remède |
+|---|---|---|
+| F1 = R1 | M | bascule d'AC19 corrigée : fausse citation de `create_in_tx` retirée ; sentinelle par `bank_accounts::acquire_company_sentinel_lock` prise **après** le staging et la facture, avant l'`UPDATE` ; tableau de l'ordre des verrous de chaque chemin (complétion avec ou sans projet, `pay`/`cancel`/`cancel_settlement`, détachement, 30-1 à relever) ; C-30-2-21 annoté |
+| R2 (+ F5) | M | code `qrError` neuf `QR_AMOUNT_OUT_OF_RANGE` (plage et décimales), libellé ×4 et entrée d'`error-label.ts`, mention « accepté sans les données du QR » pour tout `unreadable`, `api-external.md`, chaque test asserte `qrError` ; montant **présent** seulement, montant vide accepté avec ses données ; C-30-2-4 et C-30-2-22 annotés |
+| F3 = R5 | L | remède remplacé : `attendre_une_requete_en_cours` et `sonde_verrou_nowait` (`test_fixtures.rs:561`, `:611`) au lieu de 300 ms ; `INNODB_TRX` interdit (privilège `PROCESS`) |
+| F2 | L | citation de la sentinelle : `bank_accounts.rs:1613`, `projects.rs:101` |
+| F4 | L | ensemble de caractères écrit, commun aux deux côtés (`White_Space` + U+200B + U+FEFF), même liste testée de chaque côté |
+| F6 | L | PNG de test encodé en UTF-8 avec ECI ; nom stocké asserté égal |
+| F7 | L | AC6-bis : `frame-ancestors` hérité, première hypothèse |
+| F8 | L | AC4 : pourquoi l'unicité ne peut pas échouer sur une base peuplée, aussi au doc-comment de la migration |
+| R3 | L | M-a11 tuée par ses deux volets (16 chiffres et `20.005`) |
+| R4 | L | substitution existante de `qr_invoice_png` généralisée (DRY) ; `blank_png()` nommé |
+| R6 | L | registre : titre et contexte de C-30-2-22, écartée de C-30-2-7 annotés |
+| R7 | L | AC25 en deux clés (`-paid-info`, `-paid-info-on`) |
+| R8 | L | `REPLACE` SQL de l'espace, U+00A0 et U+202F ; le reste en angle mort |
+| R9 | L | AC1 : `iban_present: false` à la création ; mutation **M-a15** |
+| R10 | L | le test sur le vrai schéma fait foi, le banc étant partiel |
+| R11 | L | `creditorQrIban` non IBAN → `INVALID_IBAN`, IBAN hors plage QR → `NOT_A_QR_IBAN`, deux tests |
+| R12 | L | AC14 : motif de « avec QR seulement » écrit |
+| R13 | L | Vitest des états d'AC10 et d'AC20 (T-b4, T-c4) |
+| R14 | L | E6 sur `spc_e2e_discard.png` (QR distinct d'E1) ; *Retenir* désigné par le nom |
+| R15 | L | citation littérale d'`iban.rs:11-12` ; `sprint-status.yaml` (en-tête, clés 30-2a et 30-2b) |
+
+Valeurs grepées (`300 ms`, `is_finished`, `:271`, `:356`, `en tête`, `INNODB_TRX`, `M-a1 à M-a14`, `spc_e2e_invoice` d'E6).
+Décomptes vivants, recomptés : **28 AC**, **23 tâches**, **39 mutations** (M-a1 à M-a15 sauf M-a13 ; M-b1 à M-b13 ;
+M-c1 à M-c12), dont **trois déclarées équivalentes** (M-a14, M-b2, M-c7), **neuf parcours E2E**, **23 choix**
+(C-30-2-4, 7, 21 et 22 annotés).
