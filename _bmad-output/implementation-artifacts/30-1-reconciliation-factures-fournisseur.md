@@ -737,8 +737,8 @@ Cycles, chacun avec sa victime et son rejeu :
 - **C4 — lot mixte, promotion** : une proposition client tient le compte S (clé étrangère), une proposition fournisseur
   suivante le demande X ; une clôture du compte en file (X) ferme le cycle de promotion. Rejoué des deux côtés
   (acceptation ; clôture, `routes/bank_accounts.rs:1163`, vérifié en P2).
-- **C7 — entre comptes** : deux lots d'acceptation sur deux comptes, ou un dé-rapprochement sur A contre un lot sur B (le
-  verrou nommé est par compte), peuvent se croiser sur une facture ou un exercice ; tous les participants sont rejoués
+- **C7 — entre comptes** : deux lots d'acceptation sur deux comptes, un dé-rapprochement sur A contre un lot sur B, ou un
+  `create_batch` sur un autre compte qui croise l'intervalle d'une facture (AC-b8) (le verrou nommé est par compte), peuvent se croiser sur une facture ou un exercice ; tous les participants sont rejoués
   (P2, F-L2). La table ci-dessus ne prétend pas énumérer les cycles **préexistants** sans participant neuf.
 - **C5 — `pay` (fiche) ↔ lot d'acceptation** : même forme que C1 (la fiche prend la facture puis le compte) ; rejoué
   des deux côtés.
@@ -868,7 +868,7 @@ parcours de la 30-1b les couvre de bout en bout, et le dialogue est couvert par 
     confirmation d'un lot de paiement, ou facture payée puis annulée dont le paiement est resté au grand livre —,
     n'acceptez **rien** de ce que la réconciliation propose pour son débit : ni la règle d'affectation, ni une **autre
     facture du même montant** (la mensualité suivante, typiquement) ; n'utilisez pas non plus *Affecter manuellement*
-    ni *Éclater*, qui ne proposent que des comptes de charges et de produits. Dans chacun de ces cas, la dépense ou le
+    ni *Éclater*, qui ne proposent que des comptes des classes 5, 6 et 7 (charges et produits). Dans chacun de ces cas, la dépense ou le
     paiement seraient comptés deux fois. Kesh ne reconnaît pas ce débit, même quand il porte la référence de la facture
     payée, et ne sait pas encore le rapprocher du paiement enregistré (#671) : laissez la transaction **en attente** —
     elle empêche la clôture du compte bancaire et figure parmi les transactions à rapprocher de la préparation de
@@ -1537,3 +1537,20 @@ même qui avait fait retirer C-30-1-34 en P4. Décision de l'orchestrateur : **r
   l'E2E à trois tests, **40** lignes de mutation (37 à exécuter : sans M-a2 équivalente, M-a6 et M-b28 retirées), choix
   C-30-1-1 à **41** (C-30-1-34 et C-30-1-40 retirés, gardés au registre), libellés : **37** codes (inchangé : les raisons
   retirées n'en portaient aucun). Modules : 30-1a **5**, 30-1b **5** (inchangé).
+
+### Validation P7 ciblée — 2026-10-15 — validation terminée
+
+- Passe ciblée P7 (Haiku, une lentille, diff `d249e528..ad0e4393`) : **0/0/1/2**. T1 (« `REGEXP` » nommé dans
+  C-30-1-40 retiré) **reclassé LOW par l'orchestrateur** : c'est l'énoncé de la raison du retrait (coût non indexé),
+  non un résidu de la garde. T2 (texte prescrit au manuel : « classes 5, 6 et 7 ») et T3 (C7 nomme `create_batch`)
+  corrigés par l'orchestrateur. Aucune ligne de code de production n'est en jeu : la boucle se termine.
+- **Synthèse de la boucle de validation** (sévérités CRITICAL/HIGH/MEDIUM/LOW, lentilles R et F) :
+  P1 Sonnet R 0/2/7/9, F 0/2/4/5 → P2 Opus R 0/0/5/16, F 0/1/5/11 → P3 Sonnet R 0/0/6/6, F 0/0/5/6 →
+  P4 Opus R 0/1/5/7, F 0/0/7/6 → P5 Sonnet R 0/0/2/6, F 0/1/4/4 → P6 Opus R 0/1/3/6, F 0/1/3/5 →
+  P7 ciblée Haiku 0/0/0/3 (après reclassement). Sept passes sur huit.
+- **Signal de découpage et de recyclage** levé en P4 et P6, déclaré au Project Lead : la classe « dépense déjà réglée
+  par un autre chemin » revenait sous une forme neuve à chaque garde ajoutée (C-30-1-34 en P3, la garde de référence
+  en P5), chacune sur-bloquant. Réponse retenue : ni découpage ni garde supplémentaire, mais **simplification** (P4) puis
+  **retrait** (P6) ; le cas reste l'angle mort L1, écrit au manuel avec son geste sûr, et relève de #671. Trois des
+  défauts HIGH (P4 R1, P5 F1, P6 F1/R1) sont nés d'arbitrages de l'orchestrateur — leçon pour la rétrospective.
+
