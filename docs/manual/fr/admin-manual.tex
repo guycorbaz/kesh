@@ -785,12 +785,12 @@ hexadécimal).
     \bottomrule
 \end{tabularx}
 
-\paragraph{Import de factures depuis un dossier (\S\ref{sec:inbox-import}).}\mbox{}\\
+\paragraph{Documents à traiter : import depuis un dossier (\S\ref{sec:inbox-import}).}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
     \midrule
-    KESH\_DOCUMENTS\_DIR & Archivage des justificatifs importés \textbf{et des PDF de factures émises} (\texttt{\{sha256\}.\{ext\}}, hors DB) --- \textbf{à sauvegarder}. & \texttt{/data/documents} \\
+    KESH\_DOCUMENTS\_DIR & Archivage des \textbf{documents fournisseur} importés (avec ou sans QR-code, depuis la 0.14.0) \textbf{et des PDF de factures émises} (\texttt{\{sha256\}.\{ext\}}, hors DB) --- \textbf{à sauvegarder}. & \texttt{/data/documents} \\
     KESH\_INBOX\_DIR & Dossier inbox scruté à l'import. & \texttt{/data/inbox} \\
     KESH\_INBOX\_MAX\_FILE\_BYTES & Taille max d'un fichier inbox (octets). Borne [1, 524288000]. & \texttt{26214400} \\
     KESH\_INBOX\_MAX\_FILES\_PER\_RUN & Fichiers par déclenchement d'import. Borne [1, 10000]. & \texttt{200} \\
@@ -852,13 +852,17 @@ d'hôte : ce montage n'a pas de ligne dans le tableau.\par\noindent
     \bottomrule
 \end{tabularx}
 
-\subsubsection{Import de factures depuis un dossier}
+\subsubsection{Documents à traiter : import depuis un dossier}
 \label{sec:inbox-import}
 
-Kesh peut importer des factures fournisseurs (PDF ou images porteurs d'un Swiss
-QR Code) déposées dans un dossier, décoder le QR côté serveur et créer des
-factures « à compléter ». Deux dossiers sont à configurer, montés en volumes
-persistants (cf. \texttt{docker-compose}) :
+Kesh importe les documents fournisseurs (PDF ou images PNG, JPEG) déposés dans un
+dossier, cherche un Swiss QR Code côté serveur et place chaque document dans la liste
+« Documents à traiter ». Depuis la 0.14.0, \textbf{tout document entre}, avec ou sans
+QR-code~: un document sans QR, ou dont le QR est inexploitable, entre sans les données
+du QR, à saisir à la main. Restent refusés (sous-dossier \texttt{failed/})~: un type hors
+PDF/PNG/JPEG ou dont le contenu ne correspond pas à l'extension, une image illisible, un
+fichier trop volumineux, un lien symbolique, un doublon, une erreur de lecture. Deux
+dossiers sont à configurer, montés en volumes persistants (cf. \texttt{docker-compose}) :
 
 \begin{itemize}
     \item \texttt{KESH\_INBOX\_DIR} (défaut \texttt{/data/inbox}) — le dossier où
@@ -869,8 +873,11 @@ persistants (cf. \texttt{docker-compose}) :
     archivée fait foi) ; les fichiers en échec sont déplacés dans le
     sous-dossier \texttt{failed/}.
     \item \texttt{KESH\_DOCUMENTS\_DIR} (défaut \texttt{/data/documents}) — le
-    dossier d'archivage des justificatifs (copies des fichiers importés, nommées
-    \texttt{\{sha256\}.\{ext\}}) \textbf{et des PDF de factures émises} : depuis la
+    dossier d'archivage des \textbf{documents fournisseur} (copies des fichiers
+    importés, nommées \texttt{\{sha256\}.\{ext\}}~; depuis la 0.14.0, tout document
+    déposé y entre, avec ou sans QR, et en devient la majeure partie --- jusqu'à
+    \texttt{KESH\_INBOX\_MAX\_FILE\_BYTES} par fichier, retiré de la liste ou non)
+    \textbf{et des PDF de factures émises} : depuis la
     v0.12.1, le PDF d'une facture est figé au premier téléchargement ou envoi et
     conservé ici (\texttt{\{sha256\}.pdf}). Ce sont des \textbf{pièces à conserver},
     que la base ne contient pas : ce dossier \textbf{doit être sauvegardé avec la
@@ -1453,7 +1460,7 @@ La sauvegarde régulière de l'instance Kesh est \textbf{critique} pour deux rai
 
 \begin{itemize}
     \item \textbf{Quotidienne} : \keshcommand{mariadb-dump} complet, conservé 30 jours, stocké en local + offsite (cloud).
-    \item \textbf{Quotidienne, avec la base} : copie du répertoire des documents (\texttt{KESH\_DOCUMENTS\_DIR}, monté depuis \keshpath{./documents} avec \keshpath{docker-compose.prod.yml} ; avec \keshpath{docker-compose.yml}, depuis le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé) --- il porte les \textbf{PDF des factures émises}, que ni le dump ni l'export ne contiennent (cf. \S\ref{sec:pdf-factures-sauvegarde}).
+    \item \textbf{Quotidienne, avec la base} : copie du répertoire des documents (\texttt{KESH\_DOCUMENTS\_DIR}, monté depuis \keshpath{./documents} avec \keshpath{docker-compose.prod.yml} ; avec \keshpath{docker-compose.yml}, depuis le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé) --- il porte les \textbf{documents fournisseur} importés (depuis la 0.14.0, tout document déposé, avec ou sans QR~: la majeure partie du dossier) et les \textbf{PDF des factures émises}, que ni le dump ni l'export ne contiennent (cf. \S\ref{sec:pdf-factures-sauvegarde}, issue \#503).
     \item \textbf{Avec le répertoire du compose} : le dossier \keshpath{./backup}, où Kesh écrit la sauvegarde de sécurité prise avant chaque import d'installation, est dans le périmètre du répertoire du compose --- il contient des \textbf{secrets} (\S\ref{sec:backup-ui-keshbackup}).
     \item \textbf{Hebdomadaire} : snapshot du volume Docker \keshpath{/var/lib/docker/volumes/<projet>\_kesh-mariadb-data} (volume \texttt{kesh-mariadb-data} de \keshpath{docker-compose.yml}, préfixé du nom du projet) (gel cohérent via \keshcommand{docker compose stop} puis snapshot, ou via LVM/ZFS).
     \item \textbf{Mensuelle} : export ZIP de souveraineté (Story 9-2b) de la société, depuis l'interface utilisateur.
@@ -1596,7 +1603,7 @@ Hyper Backup est l'outil principal Synology pour les backups versionnés vers st
     \item Lancer Hyper Backup → \textbf{+ Tâche de sauvegarde de données} → choisir la destination (ex. \emph{Synology C2 Backup} pour offsite managé, \emph{S3 Storage} pour AWS/Wasabi/Backblaze, \emph{Dossier local} pour HDD USB attaché au NAS).
     \item Cocher les dossiers à backup :
         \begin{itemize}
-            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} --- le compose, \keshpath{.env}, \keshpath{log/}, \keshpath{inbox/}, \keshpath{documents/}, \keshpath{backup/}, les deux fichiers d'identifiants (\keshpath{kesh-dump.cnf}, \keshpath{kesh-restore.cnf}), les deux scripts et le dossier \keshpath{dump/}, où la tâche planifiée dépose le \textbf{dump de la base} (\keshpath{kesh\_pre\_backup.sql.gz}). La base elle-même n'est pas dans ce dossier : seul ce dump l'y fait entrer. \keshpath{documents/} porte les PDF des factures émises (\S\ref{sec:pdf-factures-sauvegarde}) ; avec \keshpath{docker-compose.yml}, c'est le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé --- à ajouter alors à la tâche de sauvegarde. \keshpath{backup/} (sauvegarde de sécurité prise avant chaque import d'installation), \keshpath{dump/} et \keshpath{avant-restauration/} (dumps de sécurité de \keshpath{kesh-restore.sh}) contiennent des \textbf{secrets} --- condensés des mots de passe, jetons de session --- : d'où leurs droits réservés à root et le chiffrement client-side ci-dessous (\S\ref{sec:backup-ui-keshbackup}). À restaurer avec la base.
+            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} --- le compose, \keshpath{.env}, \keshpath{log/}, \keshpath{inbox/}, \keshpath{documents/}, \keshpath{backup/}, les deux fichiers d'identifiants (\keshpath{kesh-dump.cnf}, \keshpath{kesh-restore.cnf}), les deux scripts et le dossier \keshpath{dump/}, où la tâche planifiée dépose le \textbf{dump de la base} (\keshpath{kesh\_pre\_backup.sql.gz}). La base elle-même n'est pas dans ce dossier : seul ce dump l'y fait entrer. \keshpath{documents/} porte les documents fournisseur importés --- la majeure partie du dossier depuis la 0.14.0 --- et les PDF des factures émises (\S\ref{sec:pdf-factures-sauvegarde}) ; avec \keshpath{docker-compose.yml}, c'est le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé --- à ajouter alors à la tâche de sauvegarde. \keshpath{backup/} (sauvegarde de sécurité prise avant chaque import d'installation), \keshpath{dump/} et \keshpath{avant-restauration/} (dumps de sécurité de \keshpath{kesh-restore.sh}) contiennent des \textbf{secrets} --- condensés des mots de passe, jetons de session --- : d'où leurs droits réservés à root et le chiffrement client-side ci-dessous (\S\ref{sec:backup-ui-keshbackup}). À restaurer avec la base.
         \end{itemize}
     \item \emph{Facultatif} : cocher l'application \textbf{Container Manager} dans \emph{Applications} pour sauvegarder la configuration des projets --- \textbf{à vérifier d'abord} sur votre NAS : voir la note sur l'arrêt possible des applications sauvegardées, plus bas. La sauvegarde de Kesh n'en dépend pas : le compose et \keshpath{.env} sont dans le dossier coché ci-dessus.
     \item Activer le \textbf{chiffrement client-side} (mot de passe différent du KESH\_JWT\_SECRET, stocké séparément offline — la perte de ce mot de passe rend les backups illisibles).
@@ -2008,6 +2015,24 @@ L'opération s'inscrit au journal d'audit sous \emph{Réparation de l'installati
 La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la durée de session plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Si le journal du serveur porte « réparation de l'installation au démarrage » suivi d'une erreur, voir la section \emph{Dépannage}.
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
+
+\subsubsection{Passer à la 0.14.0}\label{sec:maj-0-14-0}
+
+La 0.14.0 ne demande ni nouveau compose ni nouvelle variable de \keshpath{.env} : on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.13.4, appliquez d'abord la section suivante (\S\ref{sec:maj-0-13-4}).
+
+\begin{sloppypar}
+\textbf{Sauvegardez avant la mise à jour} (étape 1 de la procédure, \S\ref{sec:mise-a-jour}) : la base (dump, ou volume avec \keshpath{docker-compose.yml}), une sauvegarde d'installation \keshpath{.keshbackup} \textbf{et le dossier des documents} (\texttt{KESH\_DOCUMENTS\_DIR}), que le \keshpath{.keshbackup} n'emporte pas (issue \#503). La 0.14.0 ajoute une \textbf{migration breaking} : les données du QR-code d'un document importé deviennent facultatives, pour qu'un document \textbf{sans QR-code} entre dans la liste « Documents à traiter ». \texttt{kesh\_version\_min\_required} passe à \texttt{0.14.0}.
+\end{sloppypar}
+
+\paragraph{Retour à la 0.13.x.}\label{sec:maj-0-14-0-retour}\mbox{}\\
+\begin{sloppypar}
+\textbf{Une fois la 0.14.0 démarrée, aucune 0.13.x ne démarre plus sur la base} : elle refuse de démarrer en nommant la version minimale exigée, et une sauvegarde d'installation prise sous la 0.14.0 ne s'importe pas non plus dans une 0.13.x. Un binaire 0.13.x lirait les données du QR comme toujours présentes, et un seul document sans QR ferait échouer la liste des documents et l'export. Le retour se fait par la \textbf{restauration de la sauvegarde prise avant la mise à jour} --- avec \keshpath{docker-compose.yml} le volume, sur Synology le dump, par \keshpath{kesh-restore.sh} (\S\ref{sec:backup-dsm}) ---, et \textbf{ce qui a été saisi depuis est perdu}.
+\end{sloppypar}
+
+\paragraph{Intégrations par l'API.}\mbox{}\\
+\begin{sloppypar}
+Les champs du QR de \texttt{GET /api/v1/imported-supplier-invoices} --- \texttt{creditorIban}, \texttt{isQrIban}, \texttt{creditorAddressType}, \texttt{creditorName}, \texttt{creditorCountry}, \texttt{referenceType}, \texttt{currency} --- deviennent \textbf{nullables} : ils sont \texttt{null} ensemble pour un document sans QR. Un client qui les lit comme des chaînes casse. Le rapport de \texttt{POST /api/v1/inbox-import} porte, pour chaque fichier accepté, \texttt{qr} (\texttt{present}, \texttt{none} ou \texttt{unreadable}) et, pour un QR inexploitable, \texttt{qrError}~; \texttt{NO\_QR\_CODE\_FOUND} n'existe plus, et \texttt{INVALID\_SPC\_PAYLOAD}, \texttt{INVALID\_IBAN}, \texttt{PDF\_RENDER\_ERROR} et \texttt{FIELD\_TOO\_LONG} ne sortent plus en \texttt{failed[]} : le document est accepté sans les données du QR. Le détail est dans \texttt{docs/api-external.md}.
+\end{sloppypar}
 
 \subsubsection{Passer à la 0.13.4}\label{sec:maj-0-13-4}
 
