@@ -231,3 +231,61 @@ Registre propre à la story (`docs/agents-orchestration.md` § 1) ; l'orchestrat
 - **Retenu** : `matching`, `repositories/reconciliation`, `repositories/supplier_invoices`, `routes/reconciliation`,
   `features/reconciliation` = 5 ; la règle découpe au-delà de 5.
 - **Réversible** : oui.
+
+---
+
+## Remédiation de la validation P1 — 2026-10-15 (arbitrages de l'orchestrateur)
+
+### C-30-1-12 (amendé) — Référence fournisseur : deux égalités normalisées
+
+- **Retenu** : `payment_reference` **et** `supplier_invoice_number` comparés par **égalité** après retrait des blancs et
+  mise en majuscules, des deux côtés, contre `coalesce(reference, end_to_end_id, transaction_id)` ; le numéro ne compte
+  que s'il a au moins 6 caractères alphanumériques. Aucun containment, aucun préfixe : aucun faux indice ne départage
+  contre l'ordre d'imputation ; seule une désignation entière (art. 86 CO) le fait.
+- **Écartée** : la règle client (containment, préfixe) sur un numéro libre et court (P1, R8).
+
+### C-30-1-14 (amendé) — Le critère de masquage de la règle
+
+- **Retenu** : une facture fournisseur ouverte à 0,05 près du débit, non candidate, masque la règle si elle porte un
+  indice (référence ou fournisseur) ; au montant **exact** et engagée dans un lot `generated`, elle la masque
+  **toujours**, avec une raison visible (`notice`) ; sans borne de dates.
+- **Écartées** : ne pas masquer (double comptage muet, et double paiement pour le lot — P1 R2, F3) ; masquer sans
+  indice hors lot (sur-blocage : tout débit d'un montant égal à une facture d'un autre fournisseur).
+- **Réversible** : oui.
+
+### C-30-1-11 (amendé) — Un texte commun vrai des deux côtés, plutôt qu'une clé propre
+
+- **Retenu** : le texte `settlement-cancel-blocked-bank-match` (catalogues, repli serveur, repli de l'écran) dit « depuis
+  le détail de l'import bancaire — ou, pour une facture client, depuis sa fiche » ; il est ainsi vrai pour l'écran **et**
+  pour un client d'API (P1, R-L1 : le repli serveur disait aussi « cette fiche »).
+- **Écartée** : une clé propre au fournisseur (l'écran seul corrigé, le serveur resté faux).
+
+### C-30-1-16 (maintenu) — Pas de garde de score
+
+- **Contexte** : son énoncé (« ≥ 0,5 par construction ») était faux sur un montant signé (P1, R1/F2).
+- **Retenu** : la note compare la valeur absolue (AC-b1) ; l'énoncé, corrigé, tient — l'égalité est vérifiée juste
+  avant ; T-b17 l'asserte, M-b16 la viole.
+
+### C-30-1-28 — La création d'un lot de paiement est rejouée sur interblocage, dans la 30-1a
+
+- **Contexte** : un lot d'acceptation de plusieurs propositions prend le compte (par `pay_in_tx`) avant les factures
+  suivantes ; `create_batch` prend une facture avant le compte : cycle inhérent (C1). `create_batch` n'était pas rejoué.
+- **Retenu** : `retry_on_deadlock("payment_batches::create", …)`, comme `confirm` ; dans la 30-1a, pour précéder le
+  chemin qui ouvre le cycle.
+- **Écartées** : supprimer le cycle (impossible : `pay_in_tx` verrouille le compte, et les propositions sont
+  séquentielles) ; le laisser (`500` sans rapport visible sur la génération d'un fichier pain.001).
+- **Réversible** : oui.
+
+### C-30-1-29 — Ordre des verrous de l'acceptation fournisseur : facture → compte → articles du lot
+
+- **Contexte** : arbitrage de l'orchestrateur sur F1/R7.
+- **Retenu** : le compte bancaire `FOR UPDATE` avant la lecture verrouillante des articles, dans l'ordre de `pay_in_tx`
+  et de `create_batch` : une proposition seule ne ferme aucun cycle avec `create_batch` (C3) ; la table complète des
+  chemins et des cycles est écrite à l'AC-b10 ; l'intervalle sur `idx_payment_batch_items_invoice` est dit (AC-b8).
+- **Réversible** : oui.
+
+### C-30-1-27 (recompté) — Modules après la P1
+
+- 30-1a : `reconciliation_cancel`, `supplier_invoices`, `routes/reconciliation`, `routes/payment_batches`,
+  `features/reconciliation` = 5 ; 30-1b : `matching`, `repositories/reconciliation`, `supplier_invoices`,
+  `routes/reconciliation`, `features/reconciliation` = 5. Au seuil, sans nouveau découpage ; signal déclaré.
