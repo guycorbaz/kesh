@@ -366,6 +366,58 @@ where
     .map_err(map_db_error)
 }
 
+/// Forme normalisée d'une colonne d'IBAN en SQL : majuscules, puis retrait de
+/// l'espace, de U+00A0 et de U+202F — les seuls blancs retirés côté base
+/// (Story 30-2b, AC14). Une facture antérieure à la validation de l'AC12-bis
+/// peut porter des espaces ; les autres blancs de l'ensemble de l'AC12-bis ne
+/// sont pas retirés ici, perte de rappel écrite en angle mort.
+fn iban_sql_key(column: &str) -> String {
+    format!("REPLACE(REPLACE(REPLACE(UPPER({column}), ' ', ''), '\u{00A0}', ''), '\u{202F}', '')")
+}
+
+/// Story 30-2b (AC14, C-30-2-7) — les fournisseurs **actifs** de la société dont
+/// une facture fournisseur **non annulée** porte cet IBAN, dans
+/// `creditor_iban` ou `creditor_qr_iban`. Les contacts ne portent pas d'IBAN :
+/// seules les factures passées le connaissent.
+///
+/// `iban` est attendu **normalisé** (sans blancs, en majuscules) ; la colonne
+/// l'est par [`iban_sql_key`]. Ordre : la facture la plus récente d'abord
+/// (`MAX(invoice_date) DESC`), puis `contacts.id` ; `limit` en SQL.
+///
+/// ⚠️ Le `WHERE` sur une expression n'est pas indexable : balayage des factures
+/// de la société, acceptable à l'échelle visée. ⚠️ Lecture seule, **sans**
+/// verrou — elle sert une proposition, jamais une décision : l'écran ne
+/// présélectionne rien (« un appariement propose, il ne crée jamais »).
+pub async fn find_suppliers_by_invoice_iban(
+    pool: &MySqlPool,
+    company_id: i64,
+    iban: &str,
+    limit: i64,
+) -> Result<Vec<Contact>, DbError> {
+    let sql = format!(
+        "SELECT {COLUMNS} FROM contacts \
+         JOIN (SELECT si.contact_id, MAX(si.invoice_date) AS last_invoice_date \
+               FROM supplier_invoices si \
+               WHERE si.company_id = ? AND si.status <> 'cancelled' \
+                 AND ({} = ? OR {} = ?) \
+               GROUP BY si.contact_id) m ON m.contact_id = contacts.id \
+         WHERE contacts.company_id = ? AND contacts.active = TRUE AND contacts.is_supplier = TRUE \
+         ORDER BY m.last_invoice_date DESC, contacts.id \
+         LIMIT ?",
+        iban_sql_key("si.creditor_iban"),
+        iban_sql_key("si.creditor_qr_iban"),
+    );
+    sqlx::query_as::<_, Contact>(&sql)
+        .bind(company_id)
+        .bind(iban)
+        .bind(iban)
+        .bind(company_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+        .map_err(map_db_error)
+}
+
 /// Liste simple (non paginée) — usage interne / tests.
 #[allow(dead_code)]
 pub async fn list_by_company(
@@ -1501,6 +1553,51 @@ mod tests {
             result.items.iter().any(|c| c.name.contains("Zwahlen")),
             "le doublon exact DOIT être dans la fenêtre : c'est ce que `limit: 20` achète, et ce que `limit: 5` perdrait"
         );
+
+        cleanup_test_contacts(&pool, company_id).await;
+    }
+
+    /// Story 30-2b (AC14) — la recherche que compose `searchTermsFor` pour un
+    /// créancier « Müller » (`mueller müller muller`, un « OU » de mots) rend les
+    /// trois graphies : la collation de `contacts.name` confond `ü` et `u`, et la
+    /// variante `mueller` ramène la forme développée. Le classement et le filtre
+    /// d'éligibilité se prouvent côté TypeScript (`supplier-proposals.test.ts`).
+    #[tokio::test]
+    async fn search_terms_for_mueller_find_the_three_spellings() {
+        let pool = test_pool().await;
+        let company_id = get_company_id(&pool).await;
+        let admin_user_id = get_admin_user_id(&pool).await;
+        cleanup_test_contacts(&pool, company_id).await;
+
+        for nom in [
+            "TestContact Müller AG",
+            "TestContact Mueller AG",
+            "TestContact Muller SA",
+        ] {
+            create(&pool, admin_user_id, new_contact(company_id, nom))
+                .await
+                .unwrap();
+        }
+
+        let result = list_by_company_paginated(
+            &pool,
+            company_id,
+            ContactListQuery {
+                search: Some("mueller müller muller".into()),
+                limit: 20,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        for nom in ["Müller AG", "Mueller AG", "Muller SA"] {
+            assert!(
+                result.items.iter().any(|c| c.name.ends_with(nom)),
+                "{nom} absent : {:?}",
+                result.items.iter().map(|c| &c.name).collect::<Vec<_>>()
+            );
+        }
 
         cleanup_test_contacts(&pool, company_id).await;
     }

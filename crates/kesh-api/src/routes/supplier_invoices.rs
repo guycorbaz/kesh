@@ -249,6 +249,208 @@ pub struct CreateSupplierInvoiceRequest {
     pub lines: Vec<CreateSupplierInvoiceLineRequest>,
 }
 
+// ---------------------------------------------------------------------------
+// Story 30-2b (#685) — un seul corps, une seule conversion, une seule validation
+// ---------------------------------------------------------------------------
+
+/// Longueur maximale d'une référence de paiement libre — colonne
+/// `supplier_invoices.payment_reference VARCHAR(64)`.
+const PAYMENT_REFERENCE_MAX_CHARS: usize = 64;
+
+/// Retire d'une coordonnée de paiement l'ensemble de blancs **écrit** de
+/// l'AC12-bis : les caractères `White_Space` d'Unicode (`char::is_whitespace` —
+/// espace, tabulation, U+00A0, U+202F, U+0085… compris) plus U+200B (espace de
+/// largeur nulle) et U+FEFF (BOM).
+///
+/// ⚠️ La même liste est tenue côté écran par `normalizeIban`
+/// (`frontend/src/lib/shared/utils/iban.ts`), et un test de chaque côté porte
+/// les mêmes sept caractères : `\s` en JavaScript et `is_whitespace` en Rust ne
+/// coïncident pas d'eux-mêmes. `Iban::new` n'ôte que l'espace ASCII et refuse
+/// tout non-ASCII : sans cette normalisation, un IBAN collé depuis un PDF (avec
+/// des insécables) serait refusé.
+pub(crate) fn normalize_payment_field(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| !(c.is_whitespace() || *c == '\u{200B}' || *c == '\u{FEFF}'))
+        .collect()
+}
+
+/// Une coordonnée de paiement **présente** : sa forme normalisée n'est pas vide.
+/// Une chaîne vide ou faite de blancs vaut absente (AC11, AC12-bis).
+fn present(raw: Option<&str>) -> Option<&str> {
+    raw.filter(|s| !normalize_payment_field(s).is_empty())
+}
+
+/// Les coordonnées de paiement validées et normalisées d'une facture.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PaymentDetails {
+    pub creditor_iban: Option<String>,
+    pub creditor_qr_iban: Option<String>,
+    pub payment_reference: Option<String>,
+}
+
+fn invalid(field: &'static str, reason: &'static str) -> AppError {
+    AppError::InvalidPaymentDetails { field, reason }
+}
+
+/// Valide les coordonnées de paiement saisies (AC12-bis, C-30-2-20) — **seule**
+/// définition côté serveur, appelée par la conversion commune des deux routes.
+///
+/// - `creditorIban` : `kesh_core::types::Iban` (format, ASCII, pays de la table
+///   intégrée et longueur propre à ce pays, MOD-97), et **pas** un QR-IBAN ;
+/// - `creditorQrIban` : `kesh_core::types::QrIban` (IBAN CH/LI, QR-IID
+///   30000-31999) — une valeur qui n'est pas un IBAN rend `INVALID_IBAN`, un IBAN
+///   hors plage QR `NOT_A_QR_IBAN` ;
+/// - pas les deux ensemble ;
+/// - référence : avec un QR-IBAN, **obligatoire** et QRR valide
+///   (`validate_qrr`, blancs retirés) ; sinon texte libre rogné de 64
+///   caractères au plus, 27 chiffres compris (ancienne référence BVR/ESR) —
+///   jamais de refus « forme QRR ».
+///
+/// Valeurs rendues normalisées (`Iban::as_str`, QRR sans blancs, texte rogné).
+pub(crate) fn validate_payment_details(
+    creditor_iban: Option<&str>,
+    creditor_qr_iban: Option<&str>,
+    payment_reference: Option<&str>,
+) -> Result<PaymentDetails, AppError> {
+    use kesh_core::errors::CoreError;
+    use kesh_core::types::{Iban, QrIban};
+
+    let iban = present(creditor_iban).map(normalize_payment_field);
+    let qr_iban = present(creditor_qr_iban).map(normalize_payment_field);
+    let reference = present(payment_reference);
+
+    if iban.is_some() && qr_iban.is_some() {
+        return Err(invalid("creditorIban", "BOTH_IBANS"));
+    }
+
+    let creditor_iban = match iban {
+        None => None,
+        Some(raw) => {
+            let parsed = Iban::new(&raw).map_err(|_| invalid("creditorIban", "INVALID_IBAN"))?;
+            if QrIban::new(parsed.as_str()).is_ok() {
+                return Err(invalid("creditorIban", "QR_IBAN_IN_IBAN_FIELD"));
+            }
+            Some(parsed.as_str().to_string())
+        }
+    };
+
+    let creditor_qr_iban = match qr_iban {
+        None => None,
+        Some(raw) => match QrIban::new(&raw) {
+            Ok(q) => Some(q.as_str().to_string()),
+            Err(CoreError::InvalidIban(_)) => {
+                return Err(invalid("creditorQrIban", "INVALID_IBAN"));
+            }
+            Err(_) => return Err(invalid("creditorQrIban", "NOT_A_QR_IBAN")),
+        },
+    };
+
+    let payment_reference = if creditor_qr_iban.is_some() {
+        let qrr = reference
+            .map(normalize_payment_field)
+            .ok_or_else(|| invalid("paymentReference", "QRR_REQUIRED"))?;
+        kesh_qrbill::validation::validate_qrr(&qrr)
+            .map_err(|_| invalid("paymentReference", "INVALID_QRR"))?;
+        Some(qrr)
+    } else {
+        match reference {
+            None => None,
+            Some(r) => {
+                let trimmed = r.trim();
+                if trimmed.chars().count() > PAYMENT_REFERENCE_MAX_CHARS {
+                    return Err(invalid("paymentReference", "REFERENCE_TOO_LONG"));
+                }
+                Some(trimmed.to_string())
+            }
+        }
+    };
+
+    Ok(PaymentDetails {
+        creditor_iban,
+        creditor_qr_iban,
+        payment_reference,
+    })
+}
+
+/// D'où viennent les coordonnées de paiement de la facture créée.
+pub(crate) enum PaymentSource {
+    /// Du corps, validées par [`validate_payment_details`] : `POST
+    /// /supplier-invoices` et la complétion d'un document **sans** QR.
+    Body,
+    /// Du QR-code du document (complétion d'un document **avec** QR) : lues sur
+    /// la ligne de staging **verrouillée**, déjà validées au décodage. Le corps
+    /// ne doit en porter aucune (AC11, `QR_FIELDS_FROM_DOCUMENT`).
+    Document {
+        payment: PaymentDetails,
+        expected_payment_amount: Option<Decimal>,
+    },
+}
+
+impl CreateSupplierInvoiceRequest {
+    /// Vrai si le corps porte l'une des quatre coordonnées que fournit un QR
+    /// (une chaîne vide ou blanche vaut absente).
+    fn carries_payment_fields(&self) -> bool {
+        present(self.creditor_iban.as_deref()).is_some()
+            || present(self.creditor_qr_iban.as_deref()).is_some()
+            || present(self.payment_reference.as_deref()).is_some()
+            || self.expected_payment_amount.is_some()
+    }
+
+    /// La conversion **commune** des deux routes (AC13, C-30-2-10) : `POST
+    /// /supplier-invoices` et `POST /imported-supplier-invoices/{id}/complete`
+    /// construisent leur `NewSupplierInvoice` ici, projet compris, et nulle part
+    /// ailleurs. Porte la validation de l'AC12-bis (source [`PaymentSource::Body`])
+    /// et le refus `QR_FIELDS_FROM_DOCUMENT` (source [`PaymentSource::Document`]).
+    pub(crate) fn to_new_supplier_invoice(
+        &self,
+        company_id: i64,
+        source: PaymentSource,
+    ) -> Result<kesh_db::entities::NewSupplierInvoice, AppError> {
+        let (payment, expected_payment_amount) = match source {
+            PaymentSource::Body => (
+                validate_payment_details(
+                    self.creditor_iban.as_deref(),
+                    self.creditor_qr_iban.as_deref(),
+                    self.payment_reference.as_deref(),
+                )?,
+                self.expected_payment_amount,
+            ),
+            PaymentSource::Document {
+                payment,
+                expected_payment_amount,
+            } => {
+                if self.carries_payment_fields() {
+                    return Err(AppError::QrFieldsFromDocument);
+                }
+                (payment, expected_payment_amount)
+            }
+        };
+        Ok(kesh_db::entities::NewSupplierInvoice {
+            company_id,
+            contact_id: self.contact_id,
+            supplier_invoice_number: self.supplier_invoice_number.clone(),
+            invoice_date: self.invoice_date,
+            due_date: self.due_date,
+            creditor_iban: payment.creditor_iban,
+            creditor_qr_iban: payment.creditor_qr_iban,
+            payment_reference: payment.payment_reference,
+            expected_payment_amount,
+            project_id: self.project_id,
+            lines: self
+                .lines
+                .iter()
+                .map(|l| kesh_db::entities::NewSupplierInvoiceLine {
+                    description: l.description.clone(),
+                    quantity: l.quantity,
+                    unit_price: l.unit_price,
+                    vat_rate: l.vat_rate,
+                    expense_account_id: l.expense_account_id,
+                })
+                .collect(),
+        })
+    }
+}
+
 /// Requête de règlement binaire. `settlementType` = `bank_transfer` (→ `bankAccountId`)
 /// ou `internal_account` (→ `accountId`).
 #[derive(Deserialize)]
@@ -337,29 +539,8 @@ pub async fn create_supplier_invoice(
     Json(req): Json<CreateSupplierInvoiceRequest>,
 ) -> Result<(StatusCode, Json<SupplierInvoiceResponse>), AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let new = kesh_db::entities::NewSupplierInvoice {
-        company_id: company.id,
-        contact_id: req.contact_id,
-        supplier_invoice_number: req.supplier_invoice_number,
-        invoice_date: req.invoice_date,
-        due_date: req.due_date,
-        creditor_iban: req.creditor_iban,
-        creditor_qr_iban: req.creditor_qr_iban,
-        payment_reference: req.payment_reference,
-        expected_payment_amount: req.expected_payment_amount,
-        project_id: req.project_id,
-        lines: req
-            .lines
-            .into_iter()
-            .map(|l| kesh_db::entities::NewSupplierInvoiceLine {
-                description: l.description,
-                quantity: l.quantity,
-                unit_price: l.unit_price,
-                vat_rate: l.vat_rate,
-                expense_account_id: l.expense_account_id,
-            })
-            .collect(),
-    };
+    // Story 30-2b (AC12-bis, AC13) : conversion commune, coordonnées validées.
+    let new = req.to_new_supplier_invoice(company.id, PaymentSource::Body)?;
     let created = kesh_db::retry::retry_on_deadlock("supplier_invoices::create", || {
         supplier_invoices::create(&state.pool, new.clone(), current_user.user_id)
     })

@@ -15,6 +15,9 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { isApiError } from '$lib/shared/utils/api-error';
+	// Story 30-2b (C-30-2-20) : la classification QR-IBAN est partagée avec le
+	// formulaire de facture fournisseur — une seule définition côté écran.
+	import { qrIbanHasValidQrIid } from '$lib/shared/utils/iban';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { withCurrentAccount, withoutAccountIds } from '$lib/features/accounts/account-options';
@@ -264,20 +267,6 @@
 			'bank-accounts-close-primary-hint',
 			"Le compte principal ne se clôt pas : désignez d'abord un autre compte principal.",
 		);
-	}
-
-	/**
-	 * #155 — un QR-IBAN valide porte une QR-IID (positions 5–9 de l'IBAN) dans
-	 * la plage 30000–31999. On valide côté client pour afficher un message
-	 * actionnable (« laissez ce champ vide ») plutôt que l'erreur backend
-	 * technique « QR-IID … hors plage … ». Cas le plus fréquent : l'utilisateur
-	 * recopie son IBAN normal (ex. BCV, IID 00767) dans ce champ optionnel.
-	 */
-	function qrIbanHasValidQrIid(value: string): boolean {
-		const normalized = value.replace(/\s+/g, '').toUpperCase();
-		if (normalized.length < 9) return false;
-		const iid = Number(normalized.slice(4, 9));
-		return Number.isInteger(iid) && iid >= 30000 && iid <= 31999;
 	}
 
 	/**

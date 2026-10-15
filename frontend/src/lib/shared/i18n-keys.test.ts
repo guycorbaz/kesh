@@ -680,7 +680,16 @@ const ATTENDU = {
 	// Revue de code P1 de la 30-1b (A5/B2) : **2218 → 2219** (+1) — `failed-proposal-label.ts`
 	// 46 → 47, la clé `reconciliation-failed-payment-before-invoice-days` (plus d'un jour) à
 	// côté de celle d'un jour. Littéral : les autres compteurs inchangés.
-	sitesTotal: 2219,
+	// Story 30-2b (#685, création côte à côte) : **+32**, écrit « 2205 → 2237 » sur sa base, mesuré par la collecte
+	// de ce test et recompté par `perl -0ne '…/i18nMsg\s*\(/g'` (appels multi-lignes compris,
+	// fichiers `.test.ts` exclus) : **+86** dans les six fichiers neufs
+	// (`SupplierInvoiceForm.svelte`, `SupplierCreatePanel.svelte`, `supplier-invoice-form.ts`,
+	// `routes/(app)/supplier-invoices/new/+page.svelte` ; `supplier-proposals.ts` et
+	// `shared/utils/iban.ts` n'en ont aucun) et **−54** dans les fichiers suivis (les deux
+	// formulaires en ligne retirés de la liste et de la page d'import). Que des littéraux : les
+	// autres compteurs inchangés. Réunion au report de la 30-2b sur la 30-1b (2026-10-15) :
+	// 2219 + 32 = **2251**, mesuré par la collecte de ce test.
+	sitesTotal: 2251,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

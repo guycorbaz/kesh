@@ -507,6 +507,12 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/imported-supplier-invoices/{id}/source-document",
             get(routes::imported_supplier_invoices::get_imported_source_document),
         )
+        // Story 30-2b (AC14) : fournisseurs proposés par l'IBAN du document —
+        // lecture, Comptable+ comme le reste du dossier d'import.
+        .route(
+            "/api/v1/imported-supplier-invoices/{id}/supplier-candidates",
+            get(routes::imported_supplier_invoices::get_supplier_candidates),
+        )
         .route(
             "/api/v1/supplier-invoices/{id}/source-document",
             get(routes::imported_supplier_invoices::get_supplier_invoice_source_document),

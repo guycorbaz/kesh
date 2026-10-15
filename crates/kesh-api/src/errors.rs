@@ -1098,6 +1098,29 @@ pub enum AppError {
         details: Option<serde_json::Value>,
     },
 
+    /// Story 30-2b (AC12-bis, C-30-2-20) — coordonnées de paiement refusées par
+    /// la conversion commune de `POST /supplier-invoices` et de la complétion
+    /// sans QR → `400 INVALID_PAYMENT_DETAILS`, `details: { field, reason }`.
+    ///
+    /// `field` ∈ {`creditorIban`, `creditorQrIban`, `paymentReference`} ;
+    /// `reason` est un **code** (sept motifs : `INVALID_IBAN`,
+    /// `QR_IBAN_IN_IBAN_FIELD`, `NOT_A_QR_IBAN`, `BOTH_IBANS`, `QRR_REQUIRED`,
+    /// `INVALID_QRR`, `REFERENCE_TOO_LONG`), jamais une phrase : l'écran affiche
+    /// le libellé du motif sous le champ nommé.
+    #[error("Coordonnées de paiement invalides [{field} : {reason}]")]
+    InvalidPaymentDetails {
+        field: &'static str,
+        reason: &'static str,
+    },
+
+    /// Story 30-2b (AC11, C-30-2-9) — la complétion d'un document **avec** QR
+    /// reçoit un corps qui porte IBAN, QR-IBAN, référence ou montant attendu :
+    /// ces valeurs viennent du document et ne se modifient pas →
+    /// `400 QR_FIELDS_FROM_DOCUMENT`. Un écart silencieux entre ce qui a été
+    /// saisi et ce qui est enregistré serait muet.
+    #[error("Coordonnées de paiement fournies pour un document à QR-code")]
+    QrFieldsFromDocument,
+
     /// Contrôle de forme refusé sur `POST /api/v1/opening-balances/complete`
     /// (Story 25-7, #445) → **400** avec un code `OPENING_COMPLEMENT_*` par
     /// cause (aucune ligne, trop de lignes, montant, compte en double).
@@ -3036,6 +3059,29 @@ impl IntoResponse for AppError {
                 )
                     .into_response()
             }
+
+            AppError::InvalidPaymentDetails { field, reason } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "INVALID_PAYMENT_DETAILS",
+                        "message": t(
+                            "error-invalid-payment-details",
+                            "Coordonnées de paiement invalides.",
+                        ),
+                        "details": { "field": field, "reason": reason }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
+
+            AppError::QrFieldsFromDocument => build_response(
+                StatusCode::BAD_REQUEST,
+                "QR_FIELDS_FROM_DOCUMENT",
+                &t(
+                    "error-qr-fields-from-document",
+                    "Les coordonnées de paiement viennent du QR-code du document : elles ne se saisissent pas.",
+                ),
+            ),
 
             AppError::OpeningComplementInvalid {
                 error_code,

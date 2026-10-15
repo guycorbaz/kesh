@@ -23,6 +23,9 @@ error-account-has-entries = Ce compte porte { $count } écriture(s) : changer so
 error-foreign-key = Référence invalide
 error-journal-entry-linked-to-invoice = Cette écriture comptable a été générée par une facture validée et ne peut pas être supprimée directement. Dévalidez d'abord la facture concernée, ou corrigez-la par un avoir.
 error-check-constraint = Valeur invalide
+# Story 30-2b (#685) — coordonnées de paiement d'une facture fournisseur (AC11, AC12-bis).
+error-invalid-payment-details = Coordonnées de paiement invalides.
+error-qr-fields-from-document = Les coordonnées de paiement viennent du QR-code du document : elles ne se saisissent pas.
 error-illegal-state = Transition d'état interdite
 error-invoice-unvalidate-blocked-settled = Cette facture porte un règlement, même partiel : annulez-le d'abord.
 error-credit-note-blocked-settled = Cette facture porte un règlement, même partiel : annulez-le d'abord pour pouvoir émettre un avoir.
@@ -2121,11 +2124,8 @@ error-invoice-pdf-header-overflow = L'en-tête du document ne tient pas sur la p
 # depuis la source : `grep -cE '^(imported-)?supplier-invoices-'` moins la préexistante `-title`.
 # ⚠️ `-col-total` (TTC) et `-line-total` (HT) sont DEUX clés depuis cette story : elles n'en
 # faisaient qu'une, pour deux grandeurs différentes, et c'est la traduction qui l'aurait activé.
-imported-supplier-invoices-add-line = Ajouter une ligne
 imported-supplier-invoices-amount = Montant
-imported-supplier-invoices-complete = Compléter
 imported-supplier-invoices-completed = Facture créée.
-imported-supplier-invoices-completed-hint = Facture #{$id} enregistrée.
 imported-supplier-invoices-completed-reload-failed = Import effectué, mais la liste n’a pas pu être rechargée — actualisez la page.
 imported-supplier-invoices-discard = Retirer de la liste
 imported-supplier-invoices-discard-confirm = Retirer ce document de la liste ? Le fichier reste conservé.
@@ -2135,29 +2135,12 @@ imported-supplier-invoices-discarded = Document retiré de la liste.
 imported-supplier-invoices-doc-failed = Téléchargement impossible.
 imported-supplier-invoices-doc-gone = Le document n’a pas été restauré.
 imported-supplier-invoices-empty = Aucun document à traiter.
-imported-supplier-invoices-err-amount = Le total des lignes ({$actual}) ne correspond pas au montant du QR ({$expected}).
-imported-supplier-invoices-err-currency = Devise non supportée (CHF uniquement). Retirez le document de la liste.
-imported-supplier-invoices-err-fiscal-year = Aucun exercice ouvert ne couvre cette date.
-imported-supplier-invoices-err-form = Vérifiez le fournisseur, la date et chaque ligne (description, montants, compte de charge).
-imported-supplier-invoices-err-generic = Erreur inattendue.
-imported-supplier-invoices-err-iban-ref = Incohérence entre l’IBAN et la référence QRR.
 imported-supplier-invoices-err-not-found = Document introuvable.
-imported-supplier-invoices-err-not-pending = Ce document a déjà été traité ou retiré de la liste.
 imported-supplier-invoices-error-unknown = Échec de l’import ({$code})
-imported-supplier-invoices-field-date = Date de facture
-imported-supplier-invoices-field-due = Échéance
-imported-supplier-invoices-field-number = N° facture fournisseur
-imported-supplier-invoices-field-supplier = Fournisseur
 imported-supplier-invoices-import = Importer le dossier
 imported-supplier-invoices-import-failed = Erreur inattendue lors de l’import.
 imported-supplier-invoices-import-running = Un import est déjà en cours. Réessayez dans quelques instants.
 imported-supplier-invoices-importing = Import en cours…
-imported-supplier-invoices-line-account = Compte
-imported-supplier-invoices-line-desc = Description
-imported-supplier-invoices-line-qty = Qté
-imported-supplier-invoices-line-ht = PU HT
-imported-supplier-invoices-lines = Lignes
-imported-supplier-invoices-mismatch = écart à corriger
 imported-supplier-invoices-no-source-doc = Cette facture n’a pas de document.
 imported-supplier-invoices-reference = Réf.
 imported-supplier-invoices-reload-failed = La liste n’a pas pu être rechargée — actualisez la page.
@@ -2166,9 +2149,6 @@ imported-supplier-invoices-report-failed = {$n} échec(s) :
 imported-supplier-invoices-save = Créer une facture
 imported-supplier-invoices-source-doc-failed = Téléchargement impossible.
 imported-supplier-invoices-source-doc-gone = Le document n’a pas été restauré.
-imported-supplier-invoices-subcentime = Le montant du QR ({$amount}) contient des sous-centimes — impossible à atteindre par des lignes centime-exactes. Recommandation : retirer ce document de la liste.
-imported-supplier-invoices-sum-ttc = Total TTC des lignes
-imported-supplier-invoices-target = cible QR
 imported-supplier-invoices-title = Documents à traiter
 imported-supplier-invoices-to-complete = Documents à traiter
 imported-supplier-invoices-view-doc = Télécharger
@@ -2196,7 +2176,7 @@ imported-supplier-invoices-preview-error = Le document n’a pas pu être affich
 imported-supplier-invoices-preview-download = Télécharger
 imported-supplier-invoices-report-no-qr = sans QR-code
 imported-supplier-invoices-report-qr-unreadable = QR illisible
-imported-supplier-invoices-qr-unreadable-hint = Document accepté sans les données du QR : la facture créée sera sans IBAN ni référence.
+imported-supplier-invoices-qr-unreadable-hint = Document accepté sans les données du QR : en créant la facture, saisissez l’IBAN et la référence à la main.
 supplier-invoices-add-line = Ajouter une ligne
 supplier-invoices-cancel = Annuler la facture
 supplier-invoices-cancel-confirm = Annuler cette facture ? Une écriture inverse de l'achat, datée d'aujourd'hui, sera passée au grand livre.
@@ -2241,7 +2221,6 @@ supplier-invoices-field-project = Projet analytique (optionnel)
 supplier-invoices-field-qr-iban = QR-IBAN (optionnel)
 supplier-invoices-field-reference = Référence (optionnel)
 supplier-invoices-field-supplier = Fournisseur
-supplier-invoices-form-close = Fermer
 supplier-invoices-line-account = Compte
 supplier-invoices-line-desc = Description
 supplier-invoices-line-ht = HT
@@ -2272,6 +2251,63 @@ supplier-invoices-scan-too-large = Image trop volumineuse (max 15 Mo).
 supplier-invoices-status-open = Ouverte
 supplier-invoices-status-paid = Payée
 supplier-invoices-status-cancelled = Annulée
+# Story 30-2b (#685) — la facture se crée à côté du document (page `/supplier-invoices/new`,
+# composant `SupplierInvoiceForm`). Les 23 clés du formulaire de complétion en ligne de la page
+# d'import (`imported-supplier-invoices-add-line`, `-complete`, `-completed-hint`, `-err-*` sauf
+# `-err-not-found`, `-field-*`, `-line-*`, `-lines`, `-mismatch`, `-subcentime`, `-sum-ttc`,
+# `-target`) et `supplier-invoices-form-close` sont retirées avec lui ; celles qui servent encore
+# renaissent ici sous le préfixe du composant (`lint-i18n-ownership`).
+supplier-invoices-new-title = Nouvelle facture fournisseur
+supplier-invoices-new-forbidden = Votre rôle ne permet pas de saisir une facture fournisseur.
+supplier-invoices-new-load-error = La page n’a pas pu être chargée.
+supplier-invoices-back-to-list = Revenir aux factures fournisseurs
+supplier-invoices-back-to-documents = Revenir aux documents à traiter
+supplier-invoices-doc-not-pending = Ce document n’est plus à traiter.
+supplier-invoices-qr-locked = Coordonnées lues sur le QR-code du document : elles ne se modifient pas.
+supplier-invoices-qr-field-iban = IBAN
+supplier-invoices-qr-field-qr-iban = QR-IBAN
+supplier-invoices-qr-field-amount = Montant du QR
+supplier-invoices-subcentime = Le montant du QR ({$amount}) contient des sous-centimes — impossible à atteindre par des lignes centime-exactes. Recommandation : retirer ce document de la liste.
+supplier-invoices-sum-ttc = Total TTC des lignes
+supplier-invoices-target = montant du QR
+supplier-invoices-mismatch = écart à corriger
+supplier-invoices-proposed = Proposé : {$name}
+supplier-invoices-proposed-iban = même IBAN
+supplier-invoices-proposed-name = nom proche
+supplier-invoices-proposed-retain = Retenir
+supplier-invoices-new-supplier = Nouveau fournisseur
+supplier-invoices-new-supplier-type = Type
+supplier-invoices-new-supplier-type-company = Entreprise
+supplier-invoices-new-supplier-type-person = Personne
+supplier-invoices-new-supplier-name = Nom
+supplier-invoices-new-supplier-first-name = Prénom
+supplier-invoices-new-supplier-last-name = Nom de famille
+supplier-invoices-new-supplier-street = Rue
+supplier-invoices-new-supplier-building = N°
+supplier-invoices-new-supplier-postal-code = NPA
+supplier-invoices-new-supplier-city = Localité
+supplier-invoices-new-supplier-country = Pays
+supplier-invoices-new-supplier-proches = Des contacts au nom proche existent déjà — vérifiez avant de créer :
+supplier-invoices-new-supplier-create = Créer le fournisseur
+supplier-invoices-new-supplier-created = Fournisseur créé et sélectionné.
+supplier-invoices-new-supplier-err-name = Le nom est requis.
+supplier-invoices-err-generic = Erreur inattendue.
+supplier-invoices-err-qr-fields = Les coordonnées de paiement viennent du QR-code du document : elles ne se saisissent pas.
+supplier-invoices-err-amount = Le total des lignes ({$actual}) ne correspond pas au montant du QR ({$expected}).
+supplier-invoices-err-currency = Devise non supportée (CHF uniquement). Retirez le document de la liste.
+supplier-invoices-err-iban-ref = Incohérence entre l’IBAN et la référence QRR du QR-code.
+supplier-invoices-err-not-pending = Ce document a déjà été traité ou retiré de la liste.
+supplier-invoices-err-doc-not-found = Document introuvable.
+supplier-invoices-err-fiscal-year = Aucun exercice ouvert ne couvre cette date.
+# Les sept motifs de `INVALID_PAYMENT_DETAILS` (AC12-bis), affichés sous le champ nommé.
+supplier-invoices-payment-error-invalid-iban = IBAN invalide : vérifiez le code pays, la longueur et les chiffres de contrôle.
+supplier-invoices-payment-error-qr-iban-in-iban-field = Cet IBAN est un QR-IBAN : il s’emploie avec une référence QRR.
+supplier-invoices-payment-error-not-a-qr-iban = Cet IBAN n’est pas un QR-IBAN.
+supplier-invoices-payment-error-both-ibans = Indiquez un IBAN ou un QR-IBAN, pas les deux.
+supplier-invoices-payment-error-qrr-required = Un QR-IBAN exige une référence QRR (27 chiffres).
+supplier-invoices-payment-error-invalid-qrr = Référence QRR invalide : 27 chiffres, dont un chiffre de contrôle.
+supplier-invoices-payment-error-reference-too-long = Référence trop longue : 64 caractères au plus.
+supplier-invoices-payment-error-generic = Coordonnées de paiement invalides.
 
 # Story 23-3b (#316) — les libellés en dur que la garde `i18n-libelle-en-dur.test.ts` révèle.
 # 18 clés neuves ; 10 autres sites du correctif RÉUTILISENT des clés existantes et déjà

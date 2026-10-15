@@ -85,23 +85,10 @@ export interface InboxImportReport {
 	warnings: string[];
 }
 
-/** Ligne du formulaire de complétion (décimaux en string, calcul big.js). */
-export interface CompleteImportLineRequest {
-	description: string;
-	quantity: string;
-	unitPrice: string;
-	vatRate: string;
-	expenseAccountId: number;
-}
-
-/** Corps de `POST /imported-supplier-invoices/{id}/complete`. */
-export interface CompleteImportRequest {
-	contactId: number;
-	invoiceDate: string;
-	supplierInvoiceNumber?: string | null;
-	dueDate?: string | null;
-	lines: CompleteImportLineRequest[];
-}
-
-/** La complétion retourne la facture fournisseur réelle créée (12-2). */
+/**
+ * Corps de `POST /imported-supplier-invoices/{id}/complete` : depuis la Story 30-2b
+ * (AC13), **celui de** `POST /supplier-invoices` — `CreateSupplierInvoiceRequest`. Avec
+ * QR, il ne porte aucune coordonnée de paiement (`QR_FIELDS_FROM_DOCUMENT`).
+ * La complétion retourne la facture fournisseur réelle créée, relue comme par le GET.
+ */
 export type CompleteImportResponse = SupplierInvoiceResponse;
