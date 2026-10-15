@@ -137,6 +137,8 @@ const KNOWN_VIOLATIONS = new Set([
   'src/lib/features/contacts/ContactPersonsManager.svelte:contact-form-email',
   'src/lib/features/contacts/ContactPersonsManager.svelte:contact-form-phone',
   'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-add',
+  // Story 29-9 (#646) — la confirmation de la suppression ; même dette #30 (+1 entrée).
+  'src/lib/features/contacts/ContactPersonsManager.svelte:contact-persons-confirm-delete',
 ]);
 
 function extractFeatureFromPath(filePath) {

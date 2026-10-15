@@ -35,6 +35,8 @@
 	import {
 		acceptProposals,
 		getProposals,
+		PROPOSALS_DEFAULT_LIMIT,
+		PROPOSALS_MAX_LIMIT,
 		rejectProposals,
 	} from './reconciliation.api';
 	import type {
@@ -113,14 +115,27 @@
 	// `getProposals` stale (race sur fast account switch).
 	let loadGen = 0;
 
+	// Story 29-9 (#649, AC2) — combien de transactions la liste demande, et s'il en reste
+	// au-delà (`hasMore` du serveur). `limit` part du défaut (100) et ne monte qu'au plafond
+	// (500), par le bouton « Afficher aussi les plus anciennes » ; il tient ensuite pour
+	// tous les rechargements (lot, affectation, éclatement, rattachement). Le `{#key
+	// selectedId}` de `routes/(app)/reconciliation/+page.svelte` remonte ce composant à
+	// chaque changement de compte, ce qui remet `limit` à 100 : ⚠️ retirer ce `{#key}`
+	// exigerait de remettre `limit` à zéro au changement de compte.
+	let limit = $state(PROPOSALS_DEFAULT_LIMIT);
+	let hasMore = $state(false);
+
 	async function load() {
 		const myGen = ++loadGen;
 		loading = true;
 		errorMsg = null;
 		try {
-			const r = await getProposals(bankAccountId);
+			// `limit` est lu ici, avant le premier `await` : l'`$effect` qui appelle `load()` le
+			// suit, si bien que changer `limit` recharge la liste.
+			const r = await getProposals(bankAccountId, limit);
 			if (myGen !== loadGen) return; // stale response, drop
 			proposals = r.proposals;
+			hasMore = r.hasMore;
 			selected = new Set();
 		} catch (e) {
 			if (myGen !== loadGen) return;
@@ -133,6 +148,15 @@
 	$effect(() => {
 		void load();
 	});
+
+	/**
+	 * Story 29-9 (#649, AC2) — porte la liste au plafond. Ne fait QUE poser `limit` : l'`$effect`
+	 * ci-dessus, qui suit `limit`, recharge. ⚠️ Appeler `load()` en plus enverrait deux requêtes.
+	 * Le rechargement vide la sélection, comme tout rechargement.
+	 */
+	function showOlder(): void {
+		limit = PROPOSALS_MAX_LIMIT;
+	}
 
 	// Story 8-5a-base — load accounts une fois (utilisé par le ManualMatchModal,
 	// pré-filtré dans la modal).
@@ -347,14 +371,23 @@
 			<!-- Story 29-6 (#665, AC10, C-29-6-18) — dans la rangée des boutons, et non entre
 			     elle et la table : un paragraphe apparu au cochage au-dessus de la table la
 			     descendrait sous le pointeur. Ne nomme aucun autre geste (C-29-6-16). -->
-			{#if selectionHasUnmatched}
-				<p class="text-sm text-text-muted" data-testid="reconciliation-unmatched-not-acceptable-hint">
-					{i18nMsg(
-						'reconciliation-labels-unmatched-not-acceptable-hint',
-						'Une transaction sans correspondance ne peut pas être acceptée : décochez-la pour accepter les autres.',
-					)}
-				</p>
-			{/if}
+			<!-- Story 29-9 (#678, AC11, C-29-9-21) — l'indication vit dans une région d'annonce
+			     rendue DÈS le rendu de la liste, vide tant qu'aucune ligne sans proposition n'est
+			     cochée : un lecteur d'écran n'annonce que ce qui CHANGE dans une région déjà
+			     présente, et une région insérée avec son contenu se tairait. La région englobe le
+			     `{#if}`, et non l'inverse ; elle ne doit entrer ni dans un `{#key}` ni dans le
+			     `{#if}`, sans quoi son nœud serait recréé au changement. Dernier enfant de la
+			     rangée (C-29-6-18 tenu). -->
+			<div role="status" aria-live="polite" aria-atomic="true" data-testid="reconciliation-selection-status">
+				{#if selectionHasUnmatched}
+					<p class="text-sm text-text-muted" data-testid="reconciliation-unmatched-not-acceptable-hint">
+						{i18nMsg(
+							'reconciliation-labels-unmatched-not-acceptable-hint',
+							'Une transaction sans correspondance ne peut pas être acceptée : décochez-la pour accepter les autres.',
+						)}
+					</p>
+				{/if}
+			</div>
 		</div>
 
 		<!-- Story 29-3 (#527, AC5, C-29-3-14) — la priorité dite à l'écran, seulement si une
@@ -388,10 +421,34 @@
 					<tr data-testid="reconciliation-row" data-tx-id={p.bankTransactionId}>
 						<td>
 							<!-- Story 29-6 (#665, AC10) — une case sur toute ligne, avec ou sans proposition. -->
+							<!-- Story 29-9 (#678, AC11, C-29-9-20, C-29-9-24) — la case nomme sa transaction
+							     par ce que la ligne affiche, tel quel. Deux appels à clé LITTÉRALE : une clé
+							     calculée échapperait aux gardes i18n (i18n-entrees-a-variables.test.ts). Une
+							     contrepartie vide ou nulle n'est pas nommée (la cellule n'affiche rien). -->
 							<input
 								type="checkbox"
 								checked={selected.has(p.bankTransactionId)}
 								onchange={() => toggle(p.bankTransactionId)}
+								aria-label={p.transaction.counterpartyName
+									? i18nMsg(
+											'reconciliation-labels-select-transaction',
+											'Sélectionner la transaction du { $date }, { $amount } { $currency }, { $counterparty }',
+											{
+												date: p.transaction.bookingDate,
+												amount: p.transaction.amount,
+												currency: p.transaction.currency,
+												counterparty: p.transaction.counterpartyName,
+											},
+										)
+									: i18nMsg(
+											'reconciliation-labels-select-transaction-no-counterparty',
+											'Sélectionner la transaction du { $date }, { $amount } { $currency }',
+											{
+												date: p.transaction.bookingDate,
+												amount: p.transaction.amount,
+												currency: p.transaction.currency,
+											},
+										)}
 								data-testid="tx-checkbox"
 								data-tx-id={p.bankTransactionId}
 							/>
@@ -483,6 +540,44 @@
 				{/each}
 			</tbody>
 		</table>
+
+		<!-- Story 29-9 (#649, AC1, AC3) — s'il reste des transactions plus anciennes, l'écran le
+		     dit, immédiatement sous la table et avant les modales. Sous le plafond, un bouton
+		     porte la liste à 500 (grisé pendant un lot, dont le rechargement final relit la
+		     liste) ; au plafond, un avis sans bouton, qui ne conseille pas le rejet (une
+		     transaction rejetée reste en attente et empêche la clôture du compte bancaire). -->
+		{#if hasMore && limit < PROPOSALS_MAX_LIMIT}
+			<div class="mt-3 flex flex-wrap items-center gap-2">
+				<p class="text-sm text-text-muted" data-testid="reconciliation-more">
+					{i18nMsg(
+						'reconciliation-labels-more-hidden',
+						'Seules les { $count } transactions en attente les plus récentes sont affichées : il en reste de plus anciennes.',
+						{ count: proposals.length },
+					)}
+				</p>
+				<button
+					type="button"
+					class="rounded border border-text px-4 py-2 disabled:opacity-50"
+					disabled={busy}
+					onclick={showOlder}
+					data-testid="reconciliation-show-older-btn"
+				>
+					{i18nMsg(
+						'reconciliation-actions-show-older',
+						"Afficher aussi les plus anciennes (jusqu'à { $max } en tout)",
+						{ max: PROPOSALS_MAX_LIMIT },
+					)}
+				</button>
+			</div>
+		{:else if hasMore}
+			<p class="mt-3 text-sm text-text-muted" data-testid="reconciliation-more-capped">
+				{i18nMsg(
+					'reconciliation-labels-more-capped',
+					'Les { $max } transactions en attente les plus récentes sont affichées, le maximum que cette page montre à la fois. Il en reste de plus anciennes : elles apparaîtront à mesure que celles-ci seront acceptées, affectées manuellement, éclatées ou rattachées à un règlement.',
+					{ max: PROPOSALS_MAX_LIMIT },
+				)}
+			</p>
+		{/if}
 
 		<ManualMatchModal
 			open={manualOpen}

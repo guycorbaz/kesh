@@ -816,7 +816,7 @@ reconciliation-cancel-column = Reconciliation
 # Story 28-5b (#526) — annuler le rejet d'une transaction, depuis le détail de son import.
 reconciliation-unreject-button = Undo rejection
 reconciliation-unreject-rejected-on = Rejected on { $date }
-reconciliation-unreject-success = Rejection undone: the transaction is offered for reconciliation again; the list shows the 100 most recent pending ones.
+reconciliation-unreject-success = Rejection undone: the transaction is offered for reconciliation again; the list first shows the 100 most recent pending ones.
 invoice-settle-success-full = Settlement recorded — invoice settled
 invoice-settle-success-partial = Partial settlement recorded
 invoice-error-settled-on-required = Settlement date required
@@ -1209,6 +1209,12 @@ reconciliation-labels-rejected-hint = A rejected transaction leaves this list. I
 reconciliation-labels-priority-hint = One proposal is shown per transaction: the best-scored invoice if there is one, otherwise the matching reconciliation rule. A proposed invoice always comes before a rule.
 # Story 29-6 (#665, AC10) — shown in the button row when a line without a proposal is ticked.
 reconciliation-labels-unmatched-not-acceptable-hint = A transaction with no match cannot be accepted: untick it to accept the others.
+# Story 29-9 (#678, AC11) — accessible name of each line's checkbox: what the line shows.
+reconciliation-labels-select-transaction = Select the transaction of { $date }, { $amount } { $currency }, { $counterparty }
+reconciliation-labels-select-transaction-no-counterparty = Select the transaction of { $date }, { $amount } { $currency }
+# Story 29-9 (#649, AC1, AC3) — below the list, when older transactions remain.
+reconciliation-labels-more-hidden = Only the { $count } most recent pending transactions are shown: there are older ones.
+reconciliation-labels-more-capped = The { $max } most recent pending transactions are shown, the most this page shows at once. There are older ones: they will appear as these are accepted, assigned manually, split or linked to a payment.
 # Story 15-5c (#492) — labels for the refusals of a reconciliation batch (`failed[]`).
 reconciliation-failed-account-not-found = A counterpart account cannot be found or is archived.
 reconciliation-failed-account-not-postable = Non-postable account: { $numbers }. A grouping, result or closing account takes no entries: choose a postable account.
@@ -1246,6 +1252,8 @@ reconciliation-cols-candidate = Candidate
 reconciliation-cols-score = Score
 reconciliation-actions-accept = Accept
 reconciliation-actions-reject = Reject
+# Story 29-9 (#649, AC1) — brings the list to its maximum.
+reconciliation-actions-show-older = Also show the older ones (up to { $max } in all)
 # H8 Pass 1 code review — 8 canonical keys AC #61.
 reconciliation-labels-validate-selected = Validate selection
 reconciliation-labels-reject-selected = Reject selection
@@ -1782,6 +1790,8 @@ contact-persons-add = Add
 contact-persons-add-error = Could not add the contact person
 contact-persons-delete = Delete
 contact-persons-delete-error = Could not delete the contact person
+# Story 29-9 (#646, AC7) — « Delete » archives the person, and no screen restores them.
+contact-persons-confirm-delete = Delete the contact person { $name }? No screen lets you restore them.
 contact-persons-empty = No contact person.
 contact-persons-hint = for information only
 contact-persons-load-error = Could not load the contact persons

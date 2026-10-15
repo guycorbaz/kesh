@@ -202,6 +202,19 @@ describe('entrées Fluent à variables', () => {
 		expect(attendues.filter((c) => !vues.has(c))).toEqual([]);
 	});
 
+	// Story 29-9 (#678, V23, C-29-9-24) — le libellé des cases de la réconciliation se choisit
+	// entre deux clés selon la contrepartie. Les deux appels doivent rester à clé LITTÉRALE :
+	// une clé calculée (`i18nMsg(cond ? 'a' : 'b', …)`) échapperait aux trois maillons ci-dessus,
+	// qui ne retiennent que les sites littéraux — et ce test le verrait (mutation M30).
+	it('les deux entrées à variables de la story 29-9 sont bien relevées', () => {
+		const vues = new Set(sitesAVariables().map((s) => s.cle));
+		const attendues = [
+			'reconciliation-labels-select-transaction',
+			'reconciliation-labels-select-transaction-no-counterparty',
+		];
+		expect(attendues.filter((c) => !vues.has(c))).toEqual([]);
+	});
+
 	// Maillon 1+2+3 réunis : le rendu réel, celui que l'utilisateur lit.
 	it('aucun placeholder ne survit au rendu, dans les quatre locales', () => {
 		const rendre = (raw: string, args: Record<string, string | number>) =>

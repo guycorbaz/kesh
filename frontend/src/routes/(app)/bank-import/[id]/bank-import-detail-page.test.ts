@@ -205,3 +205,79 @@ describe('page détail d’import — la transaction rejetée (Story 28-5b, #526
 		expect(queryByTestId('detail-tx-rejected-on')).toBeNull();
 	});
 });
+
+// Story 29-9 (#655, AC5) — deux relectures en vol : c'est la PLUS RÉCENTE qui fait foi, même si
+// la plus ancienne répond après elle. Sans garde de séquence, la réponse la plus lente l'emportait.
+describe('page détail d’import — une relecture ancienne ne masque pas la page (Story 29-9, #655)', () => {
+	type Deferred = {
+		promise: Promise<BankImportDetailResponse>;
+		resolve: (d: BankImportDetailResponse) => void;
+		reject: (e: unknown) => void;
+	};
+	function deferred(): Deferred {
+		let resolve!: Deferred['resolve'];
+		let reject!: Deferred['reject'];
+		const promise = new Promise<BankImportDetailResponse>((res, rej) => {
+			resolve = res;
+			reject = rej;
+		});
+		return { promise, resolve, reject };
+	}
+
+	/**
+	 * Monte la page sur deux lignes rejetées, lance deux « Annuler le rejet », et rend les deux
+	 * relectures en vol : `ancienne` (la première partie) et `recente`.
+	 */
+	async function deuxRelecturesEnVol() {
+		role.value = 'Comptable';
+		const base = detailTroisLignes();
+		const deuxRejetees: BankImportDetailResponse = {
+			...base,
+			transactions: [base.transactions[0], { ...base.transactions[0], id: 2 }],
+		};
+		const apres: BankImportDetailResponse = {
+			...deuxRejetees,
+			transactions: deuxRejetees.transactions.map((t) => ({ ...t, autoMatchRejectedAt: null })),
+		};
+		const ancienne = deferred();
+		const recente = deferred();
+		getMock
+			.mockResolvedValueOnce(deuxRejetees)
+			.mockReturnValueOnce(ancienne.promise)
+			.mockReturnValueOnce(recente.promise);
+		const resolvers: Array<() => void> = [];
+		unrejectMock.mockImplementation(() => new Promise<void>((r) => resolvers.push(r)));
+
+		const view = render(Page);
+		const boutons = await view.findAllByTestId('detail-tx-unreject');
+		await fireEvent.click(boutons[0]);
+		await fireEvent.click(boutons[1]);
+		await waitFor(() => expect(resolvers).toHaveLength(2));
+		resolvers[0]();
+		await waitFor(() => expect(getMock).toHaveBeenCalledTimes(2));
+		resolvers[1]();
+		await waitFor(() => expect(getMock).toHaveBeenCalledTimes(3));
+		return { view, ancienne, recente, deuxRejetees, apres };
+	}
+
+	it('V6 — la plus récente réussit, puis la plus ancienne échoue ⇒ aucune bannière, les lignes de la plus récente (M7)', async () => {
+		const { view, ancienne, recente, apres } = await deuxRelecturesEnVol();
+		recente.resolve(apres);
+		await waitFor(() => expect(view.queryByTestId('detail-tx-rejected-on')).toBeNull());
+		ancienne.reject({ code: 'INTERNAL_ERROR', message: 'Panne ancienne.', status: 500 });
+		await new Promise((r) => setTimeout(r, 0));
+		expect(view.queryByTestId('bank-import-detail-error')).toBeNull();
+		expect(await view.findAllByTestId('detail-tx-row')).toHaveLength(2);
+		expect(view.queryByTestId('detail-tx-rejected-on')).toBeNull();
+	});
+
+	it('V7 — la plus récente réussit, puis la plus ancienne réussit avec des données périmées ⇒ les lignes restent celles de la plus récente (M8)', async () => {
+		const { view, ancienne, recente, deuxRejetees, apres } = await deuxRelecturesEnVol();
+		recente.resolve(apres);
+		await waitFor(() => expect(view.queryByTestId('detail-tx-rejected-on')).toBeNull());
+		ancienne.resolve(deuxRejetees);
+		await new Promise((r) => setTimeout(r, 0));
+		expect(view.queryByTestId('detail-tx-rejected-on')).toBeNull();
+		expect(await view.findAllByTestId('detail-tx-row')).toHaveLength(2);
+	});
+});

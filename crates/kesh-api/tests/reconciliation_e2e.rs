@@ -2116,6 +2116,88 @@ async fn get_proposals_paginates_at_100_default(pool: MySqlPool) {
     );
 }
 
+/// Story 29-9 (#649) — `n` transactions `pending` d'un jour chacune, en remontant depuis le
+/// 2026-05-15, montants et références distincts ; puis `GET /proposals` avec la query
+/// `extra_query` (`&limit=…`). Rend (nombre de propositions, `hasMore`).
+async fn seed_pending_and_get_proposals(
+    pool: MySqlPool,
+    n: i64,
+    extra_query: &str,
+) -> (usize, Value) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let new_txs: Vec<NewBankTransaction> = (0..n)
+        .map(|i| {
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day - chrono::Duration::days(i),
+                Some(day - chrono::Duration::days(i)),
+                Decimal::new(1000 + i, 2),
+                "CHF",
+                &format!("REF-{i}"),
+                None,
+            )
+        })
+        .collect();
+    seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash(&format!("pagination-{n}")),
+        day - chrono::Duration::days(n - 1),
+        day,
+        new_txs,
+    )
+    .await;
+
+    let app = spawn_app(pool).await;
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={}{extra_query}",
+            ctx.bank_account_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    (
+        body["proposals"].as_array().unwrap().len(),
+        body["hasMore"].clone(),
+    )
+}
+
+/// Story 29-9 (#649, AC4) — le plafond de `?limit=` est figé : l'écran demande 500 au plus
+/// (`PROPOSALS_MAX_LIMIT`, frontend) et compte sur le serveur pour ne jamais en rendre plus.
+/// 501 transactions, `?limit=1000` → 500 rendues, `hasMore` vrai.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn get_proposals_limit_is_capped_at_500(pool: MySqlPool) {
+    let (count, has_more) = seed_pending_and_get_proposals(pool, 501, "&limit=1000").await;
+    assert_eq!(
+        count, 500,
+        "le plafond serveur est 500, quel que soit `limit`"
+    );
+    assert_eq!(has_more, Value::Bool(true), "501 > 500 : il en reste une");
+}
+
+/// Story 29-9 (#649, AC4) — le second état de l'écran, pris à la frontière : exactement 500
+/// transactions, `?limit=500` → 500 rendues, `hasMore` faux (l'avis plafonné ne s'affiche
+/// pas quand il n'en reste aucune).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn get_proposals_limit_500_exact_has_no_more(pool: MySqlPool) {
+    let (count, has_more) = seed_pending_and_get_proposals(pool, 500, "&limit=500").await;
+    assert_eq!(count, 500);
+    assert_eq!(
+        has_more,
+        Value::Bool(false),
+        "500 sur 500 : il n'en reste aucune"
+    );
+}
+
 /// AC #66 — sign filter : une transaction de débit (`-100.00`) ne règle
 /// jamais une facture, même proposée directement à `POST /accept`.
 ///

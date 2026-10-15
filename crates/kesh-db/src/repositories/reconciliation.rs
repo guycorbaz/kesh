@@ -32,8 +32,10 @@
 //!   (Story 29-6, #665, revue de code P1). Pas de filtre currency non plus.
 //! - [`find_pending_transactions_for_account`] : charge les
 //!   transactions `status='pending'` non-rejetées (`auto_match_rejected_at IS NULL`)
-//!   pour un compte donné, multi-tenant scoped, paginées (limit
-//!   hardcodé 100 au caller, cf. L24).
+//!   pour un compte donné, multi-tenant scoped, paginées (`limit` fourni
+//!   par la route : défaut 100, plafond 500, sentinelle `limit + 1` pour
+//!   `hasMore` — cf. `DEFAULT_PROPOSALS_LIMIT` / `MAX_PROPOSALS_LIMIT`,
+//!   `kesh-api/src/routes/reconciliation.rs`).
 //! - [`find_contacts_by_ids`] : batch-load Contacts par liste d'IDs
 //!   (M5 Pass 1 + MP4-3 Pass 4 — évite N×M queries dans le handler
 //!   GET proposals 4-pass architecture).

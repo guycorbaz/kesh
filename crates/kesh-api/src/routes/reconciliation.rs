@@ -59,11 +59,15 @@ use crate::AppState;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 
-/// Limite de résultats par défaut pour `GET /proposals` (cf. L24).
+/// Limite de résultats par défaut pour `GET /proposals`. Reflet frontend :
+/// `PROPOSALS_DEFAULT_LIMIT` (`frontend/src/lib/features/reconciliation/
+/// reconciliation.api.ts`, Story 29-9) — les deux valeurs se changent ensemble.
 const DEFAULT_PROPOSALS_LIMIT: i64 = 100;
 
 /// Cap maximum de la query param `limit` (M9 Pass 1 code review —
-/// défense anti-DoS contre `?limit=999999`).
+/// défense anti-DoS contre `?limit=999999`). Reflet frontend :
+/// `PROPOSALS_MAX_LIMIT` (`reconciliation.api.ts`, Story 29-9), que l'écran
+/// demande au plus. Figé par `get_proposals_limit_is_capped_at_500`.
 const MAX_PROPOSALS_LIMIT: i64 = 500;
 
 /// Tolérance du **paiement partiel** (5 centimes) au repo : une facture dont
@@ -91,9 +95,11 @@ const LOCK_TIMEOUT_SECS: u32 = 5;
 pub struct GetProposalsResponse {
     pub proposals: Vec<ReconciliationProposal>,
     /// Indique si la query SQL a renvoyé `limit + 1` lignes (H6 Pass 1
-    /// code review). Permet au frontend v0.2 d'afficher un bouton
-    /// « Charger plus » sans probe count séparé. v0.1 : structure
-    /// présente mais pas de UI dédiée.
+    /// code review), sans probe count séparé. Depuis la Story 29-9 (#649),
+    /// l'écran de réconciliation le lit : un avis sous la liste dit qu'il
+    /// reste des transactions plus anciennes, et un bouton redemande la liste
+    /// au plafond (`MAX_PROPOSALS_LIMIT`) ; au plafond, l'avis reste, sans
+    /// bouton.
     pub has_more: bool,
 }
 

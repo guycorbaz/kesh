@@ -230,7 +230,7 @@ const ATTENDU: Record<string, { jetons: string[]; motif: string }> = {
 	// ou un lien (angle mort 11, #648).
 	'lib/features/contacts/ContactPersonsManager.svelte#{`contact-person-delete-${p.id}`}': {
 		jetons: ['text-red-600'],
-		motif: 'D — suppression d\'une personne de contact, sans confirmation (#646, #648)',
+		motif: 'D — suppression d\'une personne de contact, confirmée (#646) ; texte rouge sans bordure (#648)',
 	},
 	'lib/features/bank-import/BankProfileList.svelte#bank-import-profile-delete-button': {
 		jetons: ['text-error'],

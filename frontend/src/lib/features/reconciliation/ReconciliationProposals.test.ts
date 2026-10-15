@@ -9,6 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
@@ -19,7 +20,12 @@ import type {
 
 // Mock du module API : doit être défini AVANT l'import du composant
 // (hoisting Vitest applique vi.mock avant les imports).
-vi.mock('./reconciliation.api', () => ({
+// Story 29-9 (#649, AC9 étape 0) — `importOriginal` : le composant importe aussi les
+// constantes `PROPOSALS_DEFAULT_LIMIT` / `PROPOSALS_MAX_LIMIT`, qu'une fabrique sans
+// l'original n'exporterait pas (Vitest lèverait à l'accès). Les fonctions restent des
+// doublures ; seules les constantes sont les vraies.
+vi.mock('./reconciliation.api', async (importOriginal) => ({
+	...(await importOriginal<typeof import('./reconciliation.api')>()),
 	getProposals: vi.fn(),
 	acceptProposals: vi.fn(),
 	rejectProposals: vi.fn(),
@@ -978,8 +984,13 @@ describe('ReconciliationProposals — une ligne sans proposition se rejette (Sto
 		await fireEvent.click(checkboxOf(container, 2));
 		const hint = getByTestId(HINT_TESTID);
 		// C-29-6-18 : dernier enfant de la rangée, après « Rejeter ».
-		expect(hint.parentElement).toBe(getByTestId('reconciliation-reject-btn').parentElement);
-		expect(hint.parentElement?.lastElementChild).toBe(hint);
+		// Story 29-9 (#678, V22) : l'indication est désormais DANS la région d'annonce, qui est
+		// elle-même le dernier enfant de la rangée.
+		const region = getByTestId('reconciliation-selection-status');
+		const rangee = getByTestId('reconciliation-reject-btn').parentElement;
+		expect(hint.parentElement).toBe(region);
+		expect(region.parentElement).toBe(rangee);
+		expect(rangee?.lastElementChild).toBe(region);
 		const prefixe = 'reconciliation-labels-unmatched-not-acceptable-hint = ';
 		const attendu = readFileSync(join('../crates/kesh-i18n/locales', 'fr-CH', 'messages.ftl'), 'utf-8')
 			.split('\n')
@@ -1047,5 +1058,238 @@ describe('ReconciliationProposals — rattacher à un règlement (Story 29-8)', 
 			);
 		});
 		expect(mockApi.getProposals.mock.calls.length).toBeGreaterThan(appelsAvant);
+	});
+});
+
+// Story 29-9 (#649, AC1-AC3) — s'il reste des transactions au-delà de la liste (`hasMore`),
+// l'écran le dit et offre de la porter au plafond (500) ; au plafond, un avis sans bouton.
+describe('ReconciliationProposals — la suite de la liste (Story 29-9, #649)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	/** `n` lignes sans proposition, identifiants `from`, `from + 1`, … */
+	function lignes(n: number, from = 1): GetProposalsResponse['proposals'] {
+		return Array.from({ length: n }, (_, i) => makeProposalWithoutCandidate(from + i));
+	}
+
+	it('V1 — hasMore faux ⇒ ni avis, ni bouton, ni avis plafonné', async () => {
+		mockApi.getProposals.mockResolvedValue({ proposals: lignes(3), hasMore: false } satisfies GetProposalsResponse);
+		const { findAllByTestId, queryByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await findAllByTestId('reconciliation-row');
+		expect(queryByTestId('reconciliation-more')).toBeNull();
+		expect(queryByTestId('reconciliation-show-older-btn')).toBeNull();
+		expect(queryByTestId('reconciliation-more-capped')).toBeNull();
+	});
+
+	it('V2 — hasMore vrai ⇒ l’avis dit « 100 », le bouton est là, et la liste a été demandée à 100 (M1)', async () => {
+		mockApi.getProposals.mockResolvedValue({ proposals: lignes(100), hasMore: true } satisfies GetProposalsResponse);
+		const { findByTestId, getByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		const avis = await findByTestId('reconciliation-more');
+		expect(avis.textContent).toContain('100');
+		expect(getByTestId('reconciliation-show-older-btn').textContent).toContain('500');
+		expect(mockApi.getProposals).toHaveBeenCalledWith(17, 100);
+	});
+
+	it('V3 — un clic recharge au plafond, en UNE requête (M2, M3, M5)', async () => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({ proposals: lignes(100), hasMore: true } satisfies GetProposalsResponse)
+			.mockResolvedValue({ proposals: lignes(150), hasMore: false } satisfies GetProposalsResponse);
+		const { findByTestId, findAllByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await fireEvent.click(await findByTestId('reconciliation-show-older-btn'));
+		await vi.waitFor(async () => expect(await findAllByTestId('reconciliation-row')).toHaveLength(150));
+		// Une requête de trop (M3 : le bouton appelle aussi `load()`) part au tick suivant : compter après lui.
+		await tick();
+		expect(mockApi.getProposals).toHaveBeenCalledTimes(2);
+		expect(mockApi.getProposals.mock.calls[1]).toEqual([17, 500]);
+	});
+
+	it('V4 — au plafond, il en reste encore ⇒ avis plafonné, aucun bouton, et il ne conseille pas le rejet (M4)', async () => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({ proposals: lignes(100), hasMore: true } satisfies GetProposalsResponse)
+			.mockResolvedValue({ proposals: lignes(500), hasMore: true } satisfies GetProposalsResponse);
+		const { findByTestId, queryByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await fireEvent.click(await findByTestId('reconciliation-show-older-btn'));
+		const capped = await findByTestId('reconciliation-more-capped');
+		expect(capped.textContent).toContain('500');
+		expect(capped.textContent?.toLowerCase()).not.toContain('rejet');
+		expect(queryByTestId('reconciliation-show-older-btn')).toBeNull();
+		expect(queryByTestId('reconciliation-more')).toBeNull();
+	});
+
+	it('V5 — après le clic, un « Accepter » réussi relit la liste au plafond, pas à 100 (M5)', async () => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({
+				proposals: [makeProposalWithCandidate(1, 101, 1.0), ...lignes(99, 2)],
+				hasMore: true,
+			} satisfies GetProposalsResponse)
+			.mockResolvedValue({
+				proposals: [makeProposalWithCandidate(1, 101, 1.0), ...lignes(149, 2)],
+				hasMore: false,
+			} satisfies GetProposalsResponse);
+		mockApi.acceptProposals.mockResolvedValue({ accepted: [], failed: [] } satisfies AcceptResponse);
+		const { findByTestId, findAllByTestId, getByTestId, container } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+		await fireEvent.click(await findByTestId('reconciliation-show-older-btn'));
+		await vi.waitFor(async () => expect(await findAllByTestId('reconciliation-row')).toHaveLength(150));
+		const box = container.querySelector<HTMLElement>('[data-testid="tx-checkbox"][data-tx-id="1"]');
+		if (!box) throw new Error('pas de case pour la transaction 1');
+		await fireEvent.click(box);
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+		await vi.waitFor(() => expect(mockApi.getProposals).toHaveBeenCalledTimes(3));
+		expect(mockApi.getProposals.mock.calls[2]).toEqual([17, 500]);
+	});
+
+	it('V12 — hasMore retombe après un lot ⇒ ni avis, ni bouton, ni avis plafonné (M14)', async () => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({
+				proposals: [makeProposalWithCandidate(1, 101, 1.0), ...lignes(99, 2)],
+				hasMore: true,
+			} satisfies GetProposalsResponse)
+			.mockResolvedValue({ proposals: lignes(99, 2), hasMore: false } satisfies GetProposalsResponse);
+		mockApi.acceptProposals.mockResolvedValue({ accepted: [], failed: [] } satisfies AcceptResponse);
+		const { findByTestId, findAllByTestId, getByTestId, queryByTestId, container } = render(
+			ReconciliationProposals,
+			{ bankAccountId: 17 },
+		);
+		await findByTestId('reconciliation-more');
+		const box = container.querySelector<HTMLElement>('[data-testid="tx-checkbox"][data-tx-id="1"]');
+		if (!box) throw new Error('pas de case pour la transaction 1');
+		await fireEvent.click(box);
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+		await vi.waitFor(async () => expect(await findAllByTestId('reconciliation-row')).toHaveLength(99));
+		expect(queryByTestId('reconciliation-more')).toBeNull();
+		expect(queryByTestId('reconciliation-show-older-btn')).toBeNull();
+		expect(queryByTestId('reconciliation-more-capped')).toBeNull();
+	});
+
+	it('V18 — pendant un lot, le bouton est grisé et ne relance rien (M21)', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithCandidate(1, 101, 1.0), ...lignes(99, 2)],
+			hasMore: true,
+		} satisfies GetProposalsResponse);
+		let resolveAccept!: (r: AcceptResponse) => void;
+		mockApi.acceptProposals.mockReturnValue(
+			new Promise<AcceptResponse>((resolve) => {
+				resolveAccept = resolve;
+			}),
+		);
+		const { findByTestId, getByTestId, container } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+		await findByTestId('reconciliation-more');
+		const box = container.querySelector<HTMLElement>('[data-testid="tx-checkbox"][data-tx-id="1"]');
+		if (!box) throw new Error('pas de case pour la transaction 1');
+		await fireEvent.click(box);
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+		const btn = getByTestId('reconciliation-show-older-btn') as HTMLButtonElement;
+		expect(btn.disabled).toBe(true);
+		expect(mockApi.getProposals).toHaveBeenCalledTimes(1);
+		resolveAccept({ accepted: [], failed: [] });
+		await vi.waitFor(() => expect(mockApi.getProposals).toHaveBeenCalledTimes(2));
+	});
+});
+
+// Story 29-9 (#678, AC11) — chaque case nomme sa transaction pour un lecteur d'écran, et
+// l'indication « ne peut pas être acceptée » (Story 29-6) vit dans une région d'annonce
+// présente DÈS le rendu de la liste : une région insérée avec son contenu n'est pas annoncée.
+describe('ReconciliationProposals — cases nommées et indication annoncée (Story 29-9, #678)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	const HINT_TESTID = 'reconciliation-unmatched-not-acceptable-hint';
+	const REGION_TESTID = 'reconciliation-selection-status';
+
+	/** La valeur fr-CH d'une clé, lue au catalogue (C-29-9-25) et remplie de `args`. */
+	function libelleFr(cle: string, args: Record<string, string>): string {
+		const prefixe = `${cle} = `;
+		const brut = readFileSync(join('../crates/kesh-i18n/locales', 'fr-CH', 'messages.ftl'), 'utf-8')
+			.split('\n')
+			.find((l) => l.startsWith(prefixe))
+			?.slice(prefixe.length);
+		if (brut === undefined) throw new Error(`clé absente du catalogue fr-CH : ${cle}`);
+		return brut.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => args[k] ?? '');
+	}
+
+	function sansContrepartie(id: number, counterpartyName: string | null) {
+		const p = makeProposalWithoutCandidate(id);
+		return { ...p, transaction: { ...p.transaction, counterpartyName } };
+	}
+
+	it('V19 — chaque case porte le nom de sa transaction : date, montant et devise, contrepartie (M22)', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithCandidate(1, 101, 1.0), makeProposalWithoutCandidate(2)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const { findAllByTestId, getByRole } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await findAllByTestId('reconciliation-row');
+		const avec = getByRole('checkbox', {
+			name: libelleFr('reconciliation-labels-select-transaction', {
+				date: '2026-05-15',
+				amount: '100.00',
+				currency: 'CHF',
+				counterparty: 'ACME GMBH',
+			}),
+		});
+		expect(avec.getAttribute('data-tx-id')).toBe('1');
+		const sans = getByRole('checkbox', {
+			name: libelleFr('reconciliation-labels-select-transaction', {
+				date: '2026-05-15',
+				amount: '50.00',
+				currency: 'CHF',
+				counterparty: 'UNKNOWN',
+			}),
+		});
+		expect(sans.getAttribute('data-tx-id')).toBe('2');
+	});
+
+	it('V20 — sans contrepartie (null ou vide), le nom ne la mentionne pas, sans virgule finale (M23, M29)', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [sansContrepartie(3, null), sansContrepartie(4, '')],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const { findAllByTestId, container } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await findAllByTestId('reconciliation-row');
+		const attendu = libelleFr('reconciliation-labels-select-transaction-no-counterparty', {
+			date: '2026-05-15',
+			amount: '50.00',
+			currency: 'CHF',
+		});
+		expect(attendu.trim().endsWith(',')).toBe(false);
+		for (const id of [3, 4]) {
+			const box = container.querySelector(`[data-testid="tx-checkbox"][data-tx-id="${id}"]`);
+			expect(box?.getAttribute('aria-label')).toBe(attendu);
+		}
+	});
+
+	it('V21 — la région d’annonce précède le changement : même nœud, vide, puis l’indication en elle (M24-M28)', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithCandidate(1, 101, 1.0), makeProposalWithoutCandidate(2)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const { findAllByTestId, getByTestId, queryByTestId, container } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+		await findAllByTestId('reconciliation-row');
+		const region = getByTestId(REGION_TESTID);
+		expect(region.getAttribute('role')).toBe('status');
+		expect(region.getAttribute('aria-live')).toBe('polite');
+		expect(region.getAttribute('aria-atomic')).toBe('true');
+		expect((region.textContent ?? '').trim()).toBe('');
+		expect(queryByTestId(HINT_TESTID)).toBeNull();
+
+		const box = container.querySelector<HTMLElement>('[data-testid="tx-checkbox"][data-tx-id="2"]');
+		if (!box) throw new Error('pas de case pour la transaction 2');
+		await fireEvent.click(box);
+		const hint = getByTestId(HINT_TESTID);
+		expect(getByTestId(REGION_TESTID)).toBe(region);
+		expect(region.contains(hint)).toBe(true);
+
+		await fireEvent.click(box);
+		expect(getByTestId(REGION_TESTID)).toBe(region);
+		expect((region.textContent ?? '').trim()).toBe('');
+		expect(queryByTestId(HINT_TESTID)).toBeNull();
 	});
 });
