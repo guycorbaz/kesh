@@ -2,7 +2,7 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-15 en autonomie (`bmad-create-story`, Opus 5.5), sur `15686d55` (kickoff de
+**30-1a done** (revue de code close en P1, 2026-10-15) ; **30-1b ready-for-dev**. Registre : C-30-1-1 à 46. — Fiche créée le 2026-10-15 en autonomie (`bmad-create-story`, Opus 5.5), sur `15686d55` (kickoff de
 l'Epic 30), branche `story/30-1`, worktree `/home/gcorbaz/devel/kesh-30-1`. **Découpée** (§ *Découpage*) en deux
 sous-stories tenues dans cette fiche, comme la 29-1 et la 29-4 : **30-1a** (le dé-rapprochement sait défaire un
 règlement fournisseur) **puis** 30-1b (proposer et accepter). Choix consignés au registre propre à la story,
@@ -1699,4 +1699,16 @@ de T-a10 et T-a13) tuées. Trois constats du développement qui corrigent la fic
 interblocage rejoué (C-30-1-42) ; le plan du verrouillage de tête exige `FORCE INDEX (PRIMARY)` (C-30-1-44) ; l'octroi
 des verrous « en file » n'est pas garanti (T-a16). Choix C-30-1-42 à C-30-1-46. Prompt de revue de code P1 :
 `30-1a-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
+
+### Revue de code P1 de la 30-1a — 2026-10-15 — revue terminée
+
+- Trois lentilles Sonnet sur `62af52d6..82f0424e` (auteur Opus) : **B 0/0/0/4**, **E 0/0/0/9 (+1 INFO)**, **A 0/0/0/4**.
+  Aucun finding au-dessus de LOW : la boucle se termine en P1 (Review Iteration Rule). Rapports :
+  `kesh-gate-logs/301a-review-p1-{B,E,A}.md`.
+- LOW **laissés tels quels**, décision de l'orchestrateur — les corriger toucherait du code après le dernier gate complet
+  et l'E2E, pour un gain mineur : B1 (T-a2 compare à `Utc::now()` relevé après coup, flake possible à minuit), B2, B3,
+  B4/E5 (verrous de tête pris avant le refus du compte, brièvement, documenté), E1, E2 (pas d'unicité sur
+  `supplier_invoices.settlement_journal_entry_id` : impossible par construction), E3, E4, E6 (borne 500 recopiée dans la
+  route), E7 (`kind = supplier_settlement` inconnu du type TS avant la 30-1b — **à traiter par la 30-1b**), E8, E9, A2,
+  A3, A4. A1 (en-tête Status) corrigé par ce commit.
 
