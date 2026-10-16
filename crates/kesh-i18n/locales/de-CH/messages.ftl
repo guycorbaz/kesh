@@ -29,11 +29,11 @@ error-credit-note-blocked-settled = Diese Rechnung weist eine — auch nur teilw
 error-settlement-counterparty-is-receivable = Das Konto { $account } ist das Debitorenkonto dieser Rechnung: Eine Zahlung muss die Forderung auf ein anderes Konto ausbuchen (Bank, Kasse, Verrechnung…).
 error-settlement-counterparty-is-payable = Das Konto { $account } ist das Kreditorenkonto dieser Rechnung: Eine Zahlung muss die Schuld über ein anderes Konto tilgen (Bank, Kasse, Verrechnung…).
 error-settlement-counterparty-is-payable-in-batch = Das Bankkonto dieses Stapels ist mit dem Konto { $account } verknüpft, dem Kreditorenkonto der Rechnung { $invoice }: Der Stapel kann nicht bestätigt werden. Verknüpfen Sie das Bankkonto mit seinem eigenen Bankkonto in der Buchhaltung und bestätigen Sie erneut, oder stornieren Sie den Stapel und begleichen Sie die Rechnung über ihre Detailansicht.
-error-settlement-rounding-account-is-receivable = Das Konto { $account }, in den Einstellungen als Konto für Rundungsdifferenzen festgelegt, ist das Debitorenkonto dieser Rechnung: Eine Administratorin oder ein Administrator muss unter Einstellungen → Fakturierung ein anderes Konto festlegen.
-error-settlement-write-off-account-is-receivable = Das Konto { $account }, in den Einstellungen als Konto dieser Ausbuchungsart festgelegt, ist das Debitorenkonto dieser Rechnung: Eine Administratorin oder ein Administrator muss unter Einstellungen → Fakturierung ein anderes Konto festlegen.
-error-settlement-vat-payable-account-is-receivable = Das Konto { $account }, in den Einstellungen als Konto für geschuldete MWST festgelegt, ist das Debitorenkonto dieser Rechnung: Eine Administratorin oder ein Administrator muss unter Einstellungen → Fakturierung ein anderes Konto festlegen.
-error-bank-account-ledger-is-receivable = Das Konto { $account } ist das unter Einstellungen → Fakturierung festgelegte Debitorenkonto: Ein Bankkonto muss mit seinem eigenen Bankkonto in der Buchhaltung verknüpft werden.
-error-bank-account-ledger-is-payable = Das Konto { $account } ist das unter Einstellungen → Fakturierung festgelegte Kreditorenkonto: Ein Bankkonto muss mit seinem eigenen Bankkonto in der Buchhaltung verknüpft werden.
+error-settlement-rounding-account-is-receivable = Das Konto { $account }, in den Einstellungen als Konto für Rundungsdifferenzen festgelegt, ist das Debitorenkonto dieser Rechnung: Eine Administratorin oder ein Administrator muss unter Administration → Fakturierung ein anderes Konto festlegen.
+error-settlement-write-off-account-is-receivable = Das Konto { $account }, in den Einstellungen als Konto dieser Ausbuchungsart festgelegt, ist das Debitorenkonto dieser Rechnung: Eine Administratorin oder ein Administrator muss unter Administration → Fakturierung ein anderes Konto festlegen.
+error-settlement-vat-payable-account-is-receivable = Das Konto { $account }, in den Einstellungen als Konto für geschuldete MWST festgelegt, ist das Debitorenkonto dieser Rechnung: Eine Administratorin oder ein Administrator muss unter Administration → Fakturierung ein anderes Konto festlegen.
+error-bank-account-ledger-is-receivable = Das Konto { $account } ist das unter Administration → Fakturierung festgelegte Debitorenkonto: Ein Bankkonto muss mit seinem eigenen Bankkonto in der Buchhaltung verknüpft werden.
+error-bank-account-ledger-is-payable = Das Konto { $account } ist das unter Administration → Fakturierung festgelegte Kreditorenkonto: Ein Bankkonto muss mit seinem eigenen Bankkonto in der Buchhaltung verknüpft werden.
 error-claim-account-linked-to-bank-account-receivable = Das Konto { $account } ist mit dem Bankkonto { $bank } verknüpft: Es kann nicht als Debitorenkonto dienen.
 error-claim-account-linked-to-bank-account-payable = Das Konto { $account } ist mit dem Bankkonto { $bank } verknüpft: Es kann nicht als Kreditorenkonto dienen.
 error-invoice-unvalidate-blocked-credited = Diese Rechnung wurde durch eine Gutschrift korrigiert, die bereits die Korrektur darstellt.
@@ -310,16 +310,16 @@ error-account-not-postable = { $count ->
    *[other] Die Konten { $numbers } sind nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonten): Wählen Sie bebuchbare Konten.
 }
 error-designated-account-not-postable = { $count ->
-    [one] Das unter Einstellungen → Fakturierung festgelegte Konto { $numbers } ist nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonto): Eine Administratorin oder ein Administrator muss dort stattdessen ein bebuchbares Konto festlegen.
-   *[other] Die unter Einstellungen → Fakturierung festgelegten Konten { $numbers } sind nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonten): Eine Administratorin oder ein Administrator muss dort stattdessen bebuchbare Konten festlegen.
+    [one] Das unter Administration → Fakturierung festgelegte Konto { $numbers } ist nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonto): Eine Administratorin oder ein Administrator muss dort stattdessen ein bebuchbares Konto festlegen.
+   *[other] Die unter Administration → Fakturierung festgelegten Konten { $numbers } sind nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonten): Eine Administratorin oder ein Administrator muss dort stattdessen bebuchbare Konten festlegen.
 }
-error-rounding-account-not-configured = Diese Zahlung begleicht die Rechnung auf den Rappen genau, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung.
-error-rounding-account-not-configured-issuance = Der Gesamtbetrag dieses Belegs ist auf 5 Rappen gerundet, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung.
-error-write-off-account-not-configured-discount = Es ist kein verwendbares Skontokonto festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung, Abschnitt Restbetrag ausbuchen.
-error-write-off-account-not-configured-bank-fees = Es ist kein verwendbares Konto für Bankgebühren festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung, Abschnitt Restbetrag ausbuchen.
-error-write-off-account-not-configured-bad-debt = Es ist kein verwendbares Konto für Verluste aus Forderungen festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung, Abschnitt Restbetrag ausbuchen.
-error-write-off-account-not-configured-rounding = Es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung.
-error-invoice-below-minimum = Der Gesamtbetrag dieser Rechnung, CHF { $total }, liegt unter dem unter Einstellungen → Fakturierung festgelegten Mindestbetrag von CHF { $minimum }.
+error-rounding-account-not-configured = Diese Zahlung begleicht die Rechnung auf den Rappen genau, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Administration → Fakturierung.
+error-rounding-account-not-configured-issuance = Der Gesamtbetrag dieses Belegs ist auf 5 Rappen gerundet, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Administration → Fakturierung.
+error-write-off-account-not-configured-discount = Es ist kein verwendbares Skontokonto festgelegt: Wählen Sie eines unter Administration → Fakturierung, Abschnitt Restbetrag ausbuchen.
+error-write-off-account-not-configured-bank-fees = Es ist kein verwendbares Konto für Bankgebühren festgelegt: Wählen Sie eines unter Administration → Fakturierung, Abschnitt Restbetrag ausbuchen.
+error-write-off-account-not-configured-bad-debt = Es ist kein verwendbares Konto für Verluste aus Forderungen festgelegt: Wählen Sie eines unter Administration → Fakturierung, Abschnitt Restbetrag ausbuchen.
+error-write-off-account-not-configured-rounding = Es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Administration → Fakturierung.
+error-invoice-below-minimum = Der Gesamtbetrag dieser Rechnung, CHF { $total }, liegt unter dem unter Administration → Fakturierung festgelegten Mindestbetrag von CHF { $minimum }.
 
 # Ertragskonto pro Rechnungsposition (Story 16-1a, #152)
 invoice-line-account-subject-line = Position { $line }
@@ -339,7 +339,7 @@ journal-entry-open = Detailansicht öffnen
 
 # Assistent Vorsteuer-Einkauf (Story 18-1c)
 vat-purchase-title = MWST-Einkaufsassistent
-vat-purchase-config-required = Konfigurieren Sie das Vorsteuerkonto unter Einstellungen → Fakturierung, um den Assistenten zu verwenden.
+vat-purchase-config-required = Konfigurieren Sie das Vorsteuerkonto unter Administration → Fakturierung, um den Assistenten zu verwenden.
 vat-purchase-no-rates = Kein MWST-Satz konfiguriert — siehe Einstellungen → MWST-Sätze.
 vat-purchase-charge-account = Aufwandskonto
 vat-purchase-ht = Betrag exkl. MWST
@@ -788,8 +788,8 @@ invoices-write-off-error-date-before-invoice = Das Datum der Ausbuchung darf nic
 invoices-write-off-error-date-required = Datum der Ausbuchung erforderlich
 invoices-write-off-help-no-vat = Ohne MWST-Korrektur.
 invoices-write-off-help-vat = Die geschuldete MWST wird anteilig nach den Sätzen der Rechnung korrigiert.
-invoices-write-off-missing-nature-account = Für diese Art ist kein Konto festgelegt: Bitten Sie eine Administratorin oder einen Administrator, es unter Einstellungen → Fakturierung zu wählen.
-invoices-write-off-missing-rounding-account = Dieser Restbetrag enthält einen Rappenbruchteil, der auf das Konto für Rundungsdifferenzen geht — keines ist festgelegt: Bitten Sie eine Administratorin oder einen Administrator, es unter Einstellungen → Fakturierung zu wählen.
+invoices-write-off-missing-nature-account = Für diese Art ist kein Konto festgelegt: Bitten Sie eine Administratorin oder einen Administrator, es unter Administration → Fakturierung zu wählen.
+invoices-write-off-missing-rounding-account = Dieser Restbetrag enthält einen Rappenbruchteil, der auf das Konto für Rundungsdifferenzen geht — keines ist festgelegt: Bitten Sie eine Administratorin oder einen Administrator, es unter Administration → Fakturierung zu wählen.
 invoices-write-off-nature-bad-debt = Debitorenverlust
 invoices-write-off-nature-bank-fees = Bankgebühren
 invoices-write-off-nature-discount = Gewährtes Skonto
@@ -880,7 +880,7 @@ invoice-pdf-error-empty = Das empfangene PDF ist leer.
 # Story 2.6 — Onboarding: Invoice Settings Pre-fill
 config-incomplete-title = Konfiguration unvollständig
 config-incomplete-link = Konfigurieren Sie die Abrechnungskonten
-invoice-settings-required = Konfigurieren Sie zunächst die Abrechnungskonten in den Einstellungen
+invoice-settings-required = Konfigurieren Sie zunächst die Abrechnungskonten unter Administration → Fakturierung
 
 # === Story 3.7 — Geschäftsjahresverwaltung (DE-CH) ===
 
@@ -1251,7 +1251,7 @@ reconciliation-failed-currency-mismatch = Nur Transaktionen in CHF können mit e
 reconciliation-failed-overpayment = Der Betrag der Transaktion übersteigt den offenen Betrag der Rechnung.
 reconciliation-failed-counterparty-is-claim-account = Das Bankkonto ist mit dem Debitorenkonto der Rechnung verknüpft: Verknüpfen Sie es mit seinem eigenen Bankkonto in der Buchhaltung.
 reconciliation-failed-counterparty-is-payable-account = Das Bankkonto ist mit dem Kreditorenkonto der Rechnung verknüpft: Verknüpfen Sie es mit seinem eigenen Bankkonto in der Buchhaltung.
-reconciliation-failed-rounding-account-is-claim-account = Das festgelegte Konto für Rundungsdifferenzen ist das Debitorenkonto der Rechnung: Eine Administratorin oder ein Administrator muss unter Einstellungen → Fakturierung ein anderes festlegen.
+reconciliation-failed-rounding-account-is-claim-account = Das festgelegte Konto für Rundungsdifferenzen ist das Debitorenkonto der Rechnung: Eine Administratorin oder ein Administrator muss unter Administration → Fakturierung ein anderes festlegen.
 reconciliation-failed-payment-before-invoice = Die Zahlung liegt mehr als einen Tag vor dem Rechnungsdatum: Sie kann die Rechnung nicht begleichen.
 reconciliation-failed-payment-before-invoice-days = Die Zahlung liegt mehr als { $days } Tage vor dem Rechnungsdatum: Sie kann die Rechnung nicht begleichen.
 reconciliation-failed-rule-mismatch = Das Gegenkonto der Regel hat sich geändert: Laden Sie die Seite neu.
@@ -1969,7 +1969,7 @@ invoice-project-current = Aktuelles Projekt
 invoice-project-none = — Keines
 invoice-line-revenue-account-default = { $account } (Standard der Firma)
 invoice-lines-revenue-account-invalid = Ungültiges Ertragskonto auf den folgenden Zeilen: { $lines }
-invoice-default-revenue-account-unusable = Das Standard-Ertragskonto der Firma ist nicht mehr verwendbar (archiviert, nicht buchbar oder unerwarteter Typ). Zeilen, die ihm folgen, können nicht validiert werden — korrigieren Sie es unter Einstellungen → Fakturierung oder wählen Sie pro Zeile ein Konto.
+invoice-default-revenue-account-unusable = Das Standard-Ertragskonto der Firma ist nicht mehr verwendbar (archiviert, nicht buchbar oder unerwarteter Typ). Zeilen, die ihm folgen, können nicht validiert werden — korrigieren Sie es unter Administration → Fakturierung oder wählen Sie pro Zeile ein Konto.
 common-account-default-suffix = (Standard)
 invoice-line-aria-line = Zeile { $n }
 
@@ -2005,7 +2005,7 @@ error-invoice-pdf-header-overflow = Der Dokumentkopf passt nicht auf die Seite. 
 error-configuration-required = Unvollständige Konfiguration: Richten Sie die Rechnungseinstellungen ein, bevor Sie validieren.
 error-fiscal-year-invalid = Kein offenes Geschäftsjahr deckt dieses Datum ab.
 invoice-error-already-validated = Diese Rechnung ist bereits validiert.
-invoice-error-configuration-required = Richten Sie die Standardkonten unter Einstellungen > Fakturierung ein, bevor Sie eine Rechnung validieren.
+invoice-error-configuration-required = Richten Sie die Standardkonten unter Administration → Fakturierung ein, bevor Sie eine Rechnung validieren.
 invoice-error-configuration-required-non-admin = Bitten Sie Ihren Administrator, die Standardkonten für die Fakturierung einzurichten.
 invoice-error-fiscal-year-invalid = Kein offenes Geschäftsjahr deckt das Rechnungsdatum ab.
 invoice-journal-entry-description = Rechnung { $invoiceNumber } - { $contactName }

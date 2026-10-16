@@ -29,11 +29,11 @@ error-credit-note-blocked-settled = This invoice carries a payment, even a parti
 error-settlement-counterparty-is-receivable = Account { $account } is this invoice's receivables account: a payment must move the receivable to another account (bank, cash, offset…).
 error-settlement-counterparty-is-payable = Account { $account } is this invoice's payables account: a payment must settle the debt through another account (bank, cash, offset…).
 error-settlement-counterparty-is-payable-in-batch = This batch's bank account is linked to account { $account }, the payables account of invoice { $invoice }: the batch cannot be confirmed. Link the bank account to its own bank ledger account and confirm again, or cancel the batch and pay the invoice from its page.
-error-settlement-rounding-account-is-receivable = Account { $account }, designated in the settings as the rounding differences account, is this invoice's receivables account: an administrator must designate another account in Settings → Invoicing.
-error-settlement-write-off-account-is-receivable = Account { $account }, designated in the settings as the account for this write-off nature, is this invoice's receivables account: an administrator must designate another account in Settings → Invoicing.
-error-settlement-vat-payable-account-is-receivable = Account { $account }, designated in the settings as the VAT payable account, is this invoice's receivables account: an administrator must designate another account in Settings → Invoicing.
-error-bank-account-ledger-is-receivable = Account { $account } is the receivables account designated in Settings → Invoicing: a bank account must be linked to its own bank ledger account.
-error-bank-account-ledger-is-payable = Account { $account } is the payables account designated in Settings → Invoicing: a bank account must be linked to its own bank ledger account.
+error-settlement-rounding-account-is-receivable = Account { $account }, designated in the settings as the rounding differences account, is this invoice's receivables account: an administrator must designate another account in Administration → Invoicing.
+error-settlement-write-off-account-is-receivable = Account { $account }, designated in the settings as the account for this write-off nature, is this invoice's receivables account: an administrator must designate another account in Administration → Invoicing.
+error-settlement-vat-payable-account-is-receivable = Account { $account }, designated in the settings as the VAT payable account, is this invoice's receivables account: an administrator must designate another account in Administration → Invoicing.
+error-bank-account-ledger-is-receivable = Account { $account } is the receivables account designated in Administration → Invoicing: a bank account must be linked to its own bank ledger account.
+error-bank-account-ledger-is-payable = Account { $account } is the payables account designated in Administration → Invoicing: a bank account must be linked to its own bank ledger account.
 error-claim-account-linked-to-bank-account-receivable = Account { $account } is linked to bank account { $bank }: it cannot serve as the receivables account.
 error-claim-account-linked-to-bank-account-payable = Account { $account } is linked to bank account { $bank }: it cannot serve as the payables account.
 error-invoice-unvalidate-blocked-credited = This invoice is credited by a credit note, which is already the correction.
@@ -310,16 +310,16 @@ error-account-not-postable = { $count ->
    *[other] Accounts { $numbers } are not postable (grouping, result or closing accounts): choose postable accounts.
 }
 error-designated-account-not-postable = { $count ->
-    [one] Account { $numbers }, designated in Settings → Invoicing, is not postable (grouping, result or closing account): an administrator must designate a postable account there instead.
-   *[other] Accounts { $numbers }, designated in Settings → Invoicing, are not postable (grouping, result or closing accounts): an administrator must designate postable accounts there instead.
+    [one] Account { $numbers }, designated in Administration → Invoicing, is not postable (grouping, result or closing account): an administrator must designate a postable account there instead.
+   *[other] Accounts { $numbers }, designated in Administration → Invoicing, are not postable (grouping, result or closing accounts): an administrator must designate postable accounts there instead.
 }
-error-rounding-account-not-configured = This payment settles the invoice to the centime, but no usable rounding-difference account is designated: choose one in Settings → Invoicing.
-error-rounding-account-not-configured-issuance = The total of this document is rounded to 5 centimes, but no usable rounding-difference account is designated: choose one in Settings → Invoicing.
-error-write-off-account-not-configured-discount = No usable discount account is designated: choose one in Settings → Invoicing, section Writing off the remainder.
-error-write-off-account-not-configured-bank-fees = No usable bank fees account is designated: choose one in Settings → Invoicing, section Writing off the remainder.
-error-write-off-account-not-configured-bad-debt = No usable bad debt losses account is designated: choose one in Settings → Invoicing, section Writing off the remainder.
-error-write-off-account-not-configured-rounding = No usable rounding differences account is designated: choose one in Settings → Invoicing.
-error-invoice-below-minimum = The total of this invoice, CHF { $total }, is below the minimum amount set in Settings → Invoicing, CHF { $minimum }.
+error-rounding-account-not-configured = This payment settles the invoice to the centime, but no usable rounding-difference account is designated: choose one in Administration → Invoicing.
+error-rounding-account-not-configured-issuance = The total of this document is rounded to 5 centimes, but no usable rounding-difference account is designated: choose one in Administration → Invoicing.
+error-write-off-account-not-configured-discount = No usable discount account is designated: choose one in Administration → Invoicing, section Writing off the remainder.
+error-write-off-account-not-configured-bank-fees = No usable bank fees account is designated: choose one in Administration → Invoicing, section Writing off the remainder.
+error-write-off-account-not-configured-bad-debt = No usable bad debt losses account is designated: choose one in Administration → Invoicing, section Writing off the remainder.
+error-write-off-account-not-configured-rounding = No usable rounding differences account is designated: choose one in Administration → Invoicing.
+error-invoice-below-minimum = The total of this invoice, CHF { $total }, is below the minimum amount set in Administration → Invoicing, CHF { $minimum }.
 
 # Per-line revenue account (Story 16-1a, #152)
 invoice-line-account-subject-line = Line { $line }
@@ -339,7 +339,7 @@ journal-entry-open = Open details
 
 # VAT purchase assistant (Story 18-1c)
 vat-purchase-title = VAT purchase assistant
-vat-purchase-config-required = Configure the input VAT account in Settings → Invoicing to use the assistant.
+vat-purchase-config-required = Configure the input VAT account in Administration → Invoicing to use the assistant.
 vat-purchase-no-rates = No VAT rate configured — see Settings → VAT rates.
 vat-purchase-charge-account = Expense account
 vat-purchase-ht = Amount excl. VAT
@@ -788,8 +788,8 @@ invoices-write-off-error-date-before-invoice = The write-off date cannot be earl
 invoices-write-off-error-date-required = Write-off date required
 invoices-write-off-help-no-vat = No VAT correction.
 invoices-write-off-help-vat = The VAT due is corrected in proportion to the invoice rates.
-invoices-write-off-missing-nature-account = No account is designated for this kind: ask an administrator to choose one in Settings → Invoicing.
-invoices-write-off-missing-rounding-account = This remainder carries a fraction of a centime, which goes to the rounding differences account — none is designated: ask an administrator to choose one in Settings → Invoicing.
+invoices-write-off-missing-nature-account = No account is designated for this kind: ask an administrator to choose one in Administration → Invoicing.
+invoices-write-off-missing-rounding-account = This remainder carries a fraction of a centime, which goes to the rounding differences account — none is designated: ask an administrator to choose one in Administration → Invoicing.
 invoices-write-off-nature-bad-debt = Bad debt loss
 invoices-write-off-nature-bank-fees = Bank fees
 invoices-write-off-nature-discount = Discount granted
@@ -880,7 +880,7 @@ invoice-pdf-error-empty = Received PDF is empty.
 # Story 2.6 — Onboarding: Invoice Settings Pre-fill
 config-incomplete-title = Configuration incomplete
 config-incomplete-link = Configure invoicing accounts
-invoice-settings-required = Please configure the invoicing accounts in settings first
+invoice-settings-required = Please configure the invoicing accounts in Administration → Invoicing first
 
 # === Story 3.7 — Fiscal Years (EN-CH) ===
 
@@ -1251,7 +1251,7 @@ reconciliation-failed-currency-mismatch = Only CHF transactions can be reconcile
 reconciliation-failed-overpayment = The transaction amount exceeds the amount due on the invoice.
 reconciliation-failed-counterparty-is-claim-account = The bank account is linked to the invoice's receivables account: link it to its own bank ledger account.
 reconciliation-failed-counterparty-is-payable-account = The bank account is linked to the invoice's payables account: link it to its own bank ledger account.
-reconciliation-failed-rounding-account-is-claim-account = The designated rounding account is the invoice's receivables account: an administrator must designate another one in Settings → Invoicing.
+reconciliation-failed-rounding-account-is-claim-account = The designated rounding account is the invoice's receivables account: an administrator must designate another one in Administration → Invoicing.
 reconciliation-failed-payment-before-invoice = The payment is dated more than one day before the invoice: it cannot settle this invoice.
 reconciliation-failed-payment-before-invoice-days = The payment is dated more than { $days } days before the invoice: it cannot settle this invoice.
 reconciliation-failed-rule-mismatch = The rule's counterpart account has changed: reload the page.
@@ -1974,7 +1974,7 @@ invoice-project-current = Current project
 invoice-project-none = — None
 invoice-line-revenue-account-default = { $account } (company default)
 invoice-lines-revenue-account-invalid = Invalid revenue account on the following lines: { $lines }
-invoice-default-revenue-account-unusable = The company default revenue account is no longer usable (archived, not postable, or unexpected type). Lines following it cannot be validated — fix it in Settings → Invoicing, or pick an account on each line.
+invoice-default-revenue-account-unusable = The company default revenue account is no longer usable (archived, not postable, or unexpected type). Lines following it cannot be validated — fix it in Administration → Invoicing, or pick an account on each line.
 common-account-default-suffix = (default)
 invoice-line-aria-line = line { $n }
 
@@ -2012,7 +2012,7 @@ error-invoice-pdf-header-overflow = The document header does not fit on the page
 error-configuration-required = Incomplete configuration: set up the invoicing settings before validating.
 error-fiscal-year-invalid = No open fiscal year covers this date.
 invoice-error-already-validated = This invoice is already validated.
-invoice-error-configuration-required = Set up the default accounts under Settings > Invoicing before validating an invoice.
+invoice-error-configuration-required = Set up the default accounts under Administration → Invoicing before validating an invoice.
 invoice-error-configuration-required-non-admin = Ask your administrator to set up the default invoicing accounts.
 invoice-error-fiscal-year-invalid = No open fiscal year covers the invoice date.
 invoice-journal-entry-description = Invoice { $invoiceNumber } - { $contactName }

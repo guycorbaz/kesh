@@ -29,11 +29,11 @@ error-credit-note-blocked-settled = Cette facture porte un règlement, même par
 error-settlement-counterparty-is-receivable = Le compte { $account } est le compte débiteurs de cette facture : un règlement doit faire sortir la créance vers un autre compte (banque, caisse, compensation…).
 error-settlement-counterparty-is-payable = Le compte { $account } est le compte créanciers de cette facture : un règlement doit éteindre la dette par un autre compte (banque, caisse, compensation…).
 error-settlement-counterparty-is-payable-in-batch = Le compte bancaire de ce lot est lié au compte { $account }, le compte créanciers de la facture { $invoice } : le lot ne peut pas être confirmé. Reliez le compte bancaire à son propre compte de banque puis confirmez de nouveau, ou annulez le lot et réglez la facture depuis sa fiche.
-error-settlement-rounding-account-is-receivable = Le compte { $account }, désigné dans les réglages comme compte de différences d'arrondi, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Paramètres → Facturation.
-error-settlement-write-off-account-is-receivable = Le compte { $account }, désigné dans les réglages comme compte de cette nature de solde, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Paramètres → Facturation.
-error-settlement-vat-payable-account-is-receivable = Le compte { $account }, désigné dans les réglages comme compte de TVA due, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Paramètres → Facturation.
-error-bank-account-ledger-is-receivable = Le compte { $account } est le compte débiteurs désigné dans Paramètres → Facturation : un compte bancaire doit être lié à son propre compte de banque.
-error-bank-account-ledger-is-payable = Le compte { $account } est le compte créanciers désigné dans Paramètres → Facturation : un compte bancaire doit être lié à son propre compte de banque.
+error-settlement-rounding-account-is-receivable = Le compte { $account }, désigné dans les réglages comme compte de différences d'arrondi, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Administration → Facturation.
+error-settlement-write-off-account-is-receivable = Le compte { $account }, désigné dans les réglages comme compte de cette nature de solde, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Administration → Facturation.
+error-settlement-vat-payable-account-is-receivable = Le compte { $account }, désigné dans les réglages comme compte de TVA due, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Administration → Facturation.
+error-bank-account-ledger-is-receivable = Le compte { $account } est le compte débiteurs désigné dans Administration → Facturation : un compte bancaire doit être lié à son propre compte de banque.
+error-bank-account-ledger-is-payable = Le compte { $account } est le compte créanciers désigné dans Administration → Facturation : un compte bancaire doit être lié à son propre compte de banque.
 error-claim-account-linked-to-bank-account-receivable = Le compte { $account } est lié au compte bancaire { $bank } : il ne peut pas servir de compte débiteurs.
 error-claim-account-linked-to-bank-account-payable = Le compte { $account } est lié au compte bancaire { $bank } : il ne peut pas servir de compte créanciers.
 error-invoice-unvalidate-blocked-credited = Cette facture est créditée par un avoir, qui en est déjà la correction.
@@ -310,16 +310,16 @@ error-account-not-postable = { $count ->
    *[other] Les comptes { $numbers } ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : choisissez des comptes imputables.
 }
 error-designated-account-not-postable = { $count ->
-    [one] Le compte { $numbers }, désigné dans Paramètres → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à sa place un compte imputable.
-   *[other] Les comptes { $numbers }, désignés dans Paramètres → Facturation, ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à leur place des comptes imputables.
+    [one] Le compte { $numbers }, désigné dans Administration → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à sa place un compte imputable.
+   *[other] Les comptes { $numbers }, désignés dans Administration → Facturation, ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à leur place des comptes imputables.
 }
-error-rounding-account-not-configured = Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.
-error-rounding-account-not-configured-issuance = Le total de cette pièce est arrondi à 5 centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.
-error-write-off-account-not-configured-discount = Aucun compte d'escompte utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation, section Solde du reste.
-error-write-off-account-not-configured-bank-fees = Aucun compte de frais bancaires utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation, section Solde du reste.
-error-write-off-account-not-configured-bad-debt = Aucun compte de pertes sur créances utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation, section Solde du reste.
-error-write-off-account-not-configured-rounding = Aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.
-error-invoice-below-minimum = Le total de cette facture, CHF { $total }, est inférieur au montant minimum fixé dans Paramètres → Facturation, CHF { $minimum }.
+error-rounding-account-not-configured = Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Administration → Facturation.
+error-rounding-account-not-configured-issuance = Le total de cette pièce est arrondi à 5 centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Administration → Facturation.
+error-write-off-account-not-configured-discount = Aucun compte d'escompte utilisable n'est désigné : choisissez-en un dans Administration → Facturation, section Solde du reste.
+error-write-off-account-not-configured-bank-fees = Aucun compte de frais bancaires utilisable n'est désigné : choisissez-en un dans Administration → Facturation, section Solde du reste.
+error-write-off-account-not-configured-bad-debt = Aucun compte de pertes sur créances utilisable n'est désigné : choisissez-en un dans Administration → Facturation, section Solde du reste.
+error-write-off-account-not-configured-rounding = Aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Administration → Facturation.
+error-invoice-below-minimum = Le total de cette facture, CHF { $total }, est inférieur au montant minimum fixé dans Administration → Facturation, CHF { $minimum }.
 
 # Compte de produit par ligne de facture (Story 16-1a, #152)
 invoice-line-account-subject-line = Ligne { $line }
@@ -339,7 +339,7 @@ journal-entry-open = Ouvrir la fiche
 
 # Assistant TVA achat (Story 18-1c)
 vat-purchase-title = Assistant TVA achat
-vat-purchase-config-required = Configurez le compte d'impôt préalable dans Paramètres → Facturation pour utiliser l'assistant.
+vat-purchase-config-required = Configurez le compte d'impôt préalable dans Administration → Facturation pour utiliser l'assistant.
 vat-purchase-no-rates = Aucun taux de TVA configuré — voir Paramètres → Taux de TVA.
 vat-purchase-charge-account = Compte de charge
 vat-purchase-ht = Montant HT
@@ -644,7 +644,7 @@ invoice-validate-confirm-body = Une fois validée, cette facture sera immuable, 
 invoice-validate-success = Facture validée — { $invoiceNumber }
 invoice-validate-success-body = La facture { $invoiceNumber } est désormais validée et immuable. L'écriture comptable associée a été générée.
 invoice-error-fiscal-year-invalid = Aucun exercice ouvert ne couvre la date de la facture.
-invoice-error-configuration-required = Configurez les comptes par défaut dans Paramètres > Facturation avant de valider une facture.
+invoice-error-configuration-required = Configurez les comptes par défaut dans Administration → Facturation avant de valider une facture.
 invoice-error-configuration-required-non-admin = Demandez à votre administrateur de configurer les comptes par défaut de facturation.
 invoice-error-already-validated = Cette facture est déjà validée.
 invoice-number-label = Numéro
@@ -836,8 +836,8 @@ invoices-write-off-error-date-before-invoice = La date du solde ne peut être an
 invoices-write-off-error-date-required = Date du solde obligatoire
 invoices-write-off-help-no-vat = Sans correction de TVA.
 invoices-write-off-help-vat = La TVA due est corrigée au prorata des taux de la facture.
-invoices-write-off-missing-nature-account = Aucun compte n'est désigné pour cette nature : demandez à un administrateur de le choisir dans Paramètres → Facturation.
-invoices-write-off-missing-rounding-account = Ce reste porte une fraction de centime, qui va au compte de différences d'arrondi — aucun n'est désigné : demandez à un administrateur de le choisir dans Paramètres → Facturation.
+invoices-write-off-missing-nature-account = Aucun compte n'est désigné pour cette nature : demandez à un administrateur de le choisir dans Administration → Facturation.
+invoices-write-off-missing-rounding-account = Ce reste porte une fraction de centime, qui va au compte de différences d'arrondi — aucun n'est désigné : demandez à un administrateur de le choisir dans Administration → Facturation.
 invoices-write-off-nature-bad-debt = Perte sur débiteur
 invoices-write-off-nature-bank-fees = Frais bancaires
 invoices-write-off-nature-discount = Escompte accordé
@@ -931,7 +931,7 @@ invoice-pdf-error-empty = Le PDF reçu est vide.
 # Story 2.6 — Onboarding: Invoice Settings Pre-fill
 config-incomplete-title = Configuration incomplète
 config-incomplete-link = Configurez les comptes de facturation
-invoice-settings-required = Configurez d'abord les comptes de facturation dans les paramètres
+invoice-settings-required = Configurez d'abord les comptes de facturation dans Administration → Facturation
 
 # === Story 3.7 — Gestion des exercices comptables (FR-CH) ===
 
@@ -1314,7 +1314,7 @@ reconciliation-failed-currency-mismatch = Seules les transactions en CHF peuvent
 reconciliation-failed-overpayment = Le montant de la transaction dépasse le reste dû de la facture.
 reconciliation-failed-counterparty-is-claim-account = Le compte bancaire est lié au compte débiteurs de la facture : reliez-le à son propre compte de banque.
 reconciliation-failed-counterparty-is-payable-account = Le compte bancaire est lié au compte créanciers de la facture : reliez-le à son propre compte de banque.
-reconciliation-failed-rounding-account-is-claim-account = Le compte d’arrondi désigné est le compte débiteurs de la facture : un administrateur doit en désigner un autre dans Paramètres → Facturation.
+reconciliation-failed-rounding-account-is-claim-account = Le compte d’arrondi désigné est le compte débiteurs de la facture : un administrateur doit en désigner un autre dans Administration → Facturation.
 reconciliation-failed-payment-before-invoice = Le paiement est daté de plus d’un jour avant la facture : il ne peut pas la régler.
 reconciliation-failed-payment-before-invoice-days = Le paiement est daté de plus de { $days } jours avant la facture : il ne peut pas la régler.
 reconciliation-failed-rule-mismatch = Le compte de contrepartie de la règle a changé : rechargez la page.
@@ -2080,7 +2080,7 @@ invoice-project-current = Projet actuel
 invoice-project-none = — Aucun
 invoice-line-revenue-account-default = { $account } (défaut société)
 invoice-lines-revenue-account-invalid = Compte de produit invalide sur les lignes suivantes : { $lines }
-invoice-default-revenue-account-unusable = Le compte de produit par défaut de la société n'est plus utilisable (archivé, non imputable ou de type inattendu). Les lignes qui le suivent ne pourront pas être validées — corrigez-le dans Paramètres → Facturation, ou choisissez un compte sur chaque ligne.
+invoice-default-revenue-account-unusable = Le compte de produit par défaut de la société n'est plus utilisable (archivé, non imputable ou de type inattendu). Les lignes qui le suivent ne pourront pas être validées — corrigez-le dans Administration → Facturation, ou choisissez un compte sur chaque ligne.
 common-account-default-suffix = (défaut)
 invoice-line-aria-line = ligne { $n }
 

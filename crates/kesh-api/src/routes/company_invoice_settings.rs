@@ -105,7 +105,7 @@ pub struct UpdateInvoiceSettingsRequest {
     pub credit_note_number_format: Option<String>,
     /// Story 12.2 — compte créanciers. **Absent du corps : préservé** (Story
     /// 15-5b, #521, choix C25 — patron du compte d'arrondi) : l'écran
-    /// *Paramètres → Facturation* ne l'envoie pas, et chaque enregistrement
+    /// *Administration → Facturation* ne l'envoie pas, et chaque enregistrement
     /// l'effaçait, si bien que la saisie d'une facture fournisseur échouait
     /// ensuite en `ConfigurationRequired`. **Présent à `null` : effacé.**
     #[serde(default, deserialize_with = "crate::helpers::double_option")]

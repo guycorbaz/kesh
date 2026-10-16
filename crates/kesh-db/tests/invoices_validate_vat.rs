@@ -844,7 +844,7 @@ mod arrondi_5_centimes {
     ///
     /// **Modifié délibérément par la Story 15-6a** (AC6, choix C-15-6-25) : le
     /// refus était `RoundingAccountNotConfigured { Issuance }`, dont le message
-    /// renvoie à *Paramètres → Facturation* — remède faux, l'avoir ne lisant plus
+    /// renvoie à *Administration → Facturation* — remède faux, l'avoir ne lisant plus
     /// ce réglage (#523). Il est désormais `CreditNoteAccountsArchived`, qui
     /// NOMME le compte à réactiver — celui que la vente a mouvementé. Le refus
     /// vient du verrou des comptes de l'avoir, AVANT la séquence : aucun numéro

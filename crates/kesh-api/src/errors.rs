@@ -3850,7 +3850,7 @@ impl IntoResponse for AppError {
                         .to_string()
                     };
                     let fallback = format!(
-                        "Le total de cette facture, CHF {}, est inférieur au montant minimum fixé dans Paramètres → Facturation, CHF {}.",
+                        "Le total de cette facture, CHF {}, est inférieur au montant minimum fixé dans Administration → Facturation, CHF {}.",
                         money(total),
                         money(minimum)
                     );
@@ -3948,11 +3948,11 @@ impl IntoResponse for AppError {
                     let count = accounts.len();
                     let fallback = if count == 1 {
                         format!(
-                            "Le compte {numbers}, désigné dans Paramètres → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à sa place un compte imputable."
+                            "Le compte {numbers}, désigné dans Administration → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à sa place un compte imputable."
                         )
                     } else {
                         format!(
-                            "Les comptes {numbers}, désignés dans Paramètres → Facturation, ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à leur place des comptes imputables."
+                            "Les comptes {numbers}, désignés dans Administration → Facturation, ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à leur place des comptes imputables."
                         )
                     };
                     account_not_postable_response(
@@ -3969,11 +3969,11 @@ impl IntoResponse for AppError {
                     let (key, fallback) = match context {
                         kesh_db::errors::RoundingContext::Payment => (
                             "error-rounding-account-not-configured",
-                            "Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.",
+                            "Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Administration → Facturation.",
                         ),
                         kesh_db::errors::RoundingContext::Issuance => (
                             "error-rounding-account-not-configured-issuance",
-                            "Le total de cette pièce est arrondi à 5 centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.",
+                            "Le total de cette pièce est arrondi à 5 centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Administration → Facturation.",
                         ),
                     };
                     build_response(
@@ -3988,19 +3988,19 @@ impl IntoResponse for AppError {
                     let (key, fallback) = match nature {
                         "discount" => (
                             "error-write-off-account-not-configured-discount",
-                            "Aucun compte d'escompte utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation, section Solde du reste.",
+                            "Aucun compte d'escompte utilisable n'est désigné : choisissez-en un dans Administration → Facturation, section Solde du reste.",
                         ),
                         "bank_fees" => (
                             "error-write-off-account-not-configured-bank-fees",
-                            "Aucun compte de frais bancaires utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation, section Solde du reste.",
+                            "Aucun compte de frais bancaires utilisable n'est désigné : choisissez-en un dans Administration → Facturation, section Solde du reste.",
                         ),
                         "bad_debt" => (
                             "error-write-off-account-not-configured-bad-debt",
-                            "Aucun compte de pertes sur créances utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation, section Solde du reste.",
+                            "Aucun compte de pertes sur créances utilisable n'est désigné : choisissez-en un dans Administration → Facturation, section Solde du reste.",
                         ),
                         _ => (
                             "error-write-off-account-not-configured-rounding",
-                            "Aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.",
+                            "Aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Administration → Facturation.",
                         ),
                     };
                     build_response(
@@ -4370,19 +4370,19 @@ fn settlement_counterparty_message(
         (SettlementAccountRole::Rounding, _) => (
             "error-settlement-rounding-account-is-receivable",
             format!(
-                "Le compte {account}, désigné dans les réglages comme compte de différences d'arrondi, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Paramètres → Facturation."
+                "Le compte {account}, désigné dans les réglages comme compte de différences d'arrondi, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Administration → Facturation."
             ),
         ),
         (SettlementAccountRole::WriteOffNature, _) => (
             "error-settlement-write-off-account-is-receivable",
             format!(
-                "Le compte {account}, désigné dans les réglages comme compte de cette nature de solde, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Paramètres → Facturation."
+                "Le compte {account}, désigné dans les réglages comme compte de cette nature de solde, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Administration → Facturation."
             ),
         ),
         (SettlementAccountRole::VatPayable, _) => (
             "error-settlement-vat-payable-account-is-receivable",
             format!(
-                "Le compte {account}, désigné dans les réglages comme compte de TVA due, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Paramètres → Facturation."
+                "Le compte {account}, désigné dans les réglages comme compte de TVA due, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Administration → Facturation."
             ),
         ),
     };
@@ -4417,14 +4417,14 @@ fn claim_configuration_response(
             "BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT",
             "error-bank-account-ledger-is-receivable",
             format!(
-                "Le compte {account} est le compte débiteurs désigné dans Paramètres → Facturation : un compte bancaire doit être lié à son propre compte de banque."
+                "Le compte {account} est le compte débiteurs désigné dans Administration → Facturation : un compte bancaire doit être lié à son propre compte de banque."
             ),
         ),
         (None, ClaimSide::Payable) => (
             "BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT",
             "error-bank-account-ledger-is-payable",
             format!(
-                "Le compte {account} est le compte créanciers désigné dans Paramètres → Facturation : un compte bancaire doit être lié à son propre compte de banque."
+                "Le compte {account} est le compte créanciers désigné dans Administration → Facturation : un compte bancaire doit être lié à son propre compte de banque."
             ),
         ),
         (Some((_, bank_label)), ClaimSide::Receivable) => {
@@ -5297,7 +5297,7 @@ mod tests {
     }
 
     /// Story 15-6b (AC2) — la clé suit le RÔLE : un compte désigné renvoie à
-    /// Paramètres → Facturation, jamais à « banque, caisse ».
+    /// Administration → Facturation, jamais à « banque, caisse ».
     #[tokio::test]
     async fn settlement_counterparty_message_follows_the_role() {
         use kesh_db::errors::{ClaimSide, SettlementAccountRole};
@@ -5312,7 +5312,10 @@ mod tests {
             assert_eq!(body["error"]["details"]["role"], role.as_str());
             let msg = body["error"]["message"].as_str().unwrap();
             assert!(msg.contains(marker), "{role:?} : {msg}");
-            assert!(msg.contains("Paramètres → Facturation"), "{role:?} : {msg}");
+            assert!(
+                msg.contains("Administration → Facturation"),
+                "{role:?} : {msg}"
+            );
             assert!(!msg.contains("banque, caisse"), "{role:?} : {msg}");
         }
         let resp = AppError::from(claim_refusal(

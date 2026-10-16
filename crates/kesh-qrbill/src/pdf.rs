@@ -268,7 +268,7 @@ const META_MAX_CHARS: usize = 32;
 /// ⚠️ **Le débordement des autres lignes est un problème réel, distinct, et
 /// ANTÉRIEUR à cette story — suivi dans l'issue #293.** Le numéro de facture
 /// n'est pas « borné par le schéma de numérotation » : ce schéma est un champ
-/// libre de l'écran *Paramètres → Facturation*, et `invoice_format` le laisse
+/// libre de l'écran *Administration → Facturation*, et `invoice_format` le laisse
 /// rendre jusqu'à `MAX_RENDERED_LEN = 64` caractères — soit plus que les 50 du
 /// numéro de client. `origin_reference` est un numéro de facture, donc de même
 /// classe. Le traiter demande une borne PROPRE à ces lignes, plus haute, et un
