@@ -2,7 +2,7 @@
  * Story 25-4-e (#495) — un montant minimum configurable sous lequel une facture
  * n'est pas émise.
  *
- * Fixer un seuil de 500.00 dans Paramètres → Facturation, tenter de valider un
+ * Fixer un seuil de 500.00 dans Administration → Facturation, tenter de valider un
  * brouillon de 100.00 (taux 0 %, total déjà rond : aucun compte d'arrondi requis),
  * voir le refus nommant les deux montants, puis effacer le seuil. Le test remet le
  * seuil à vide à la fin : la base est partagée entre specs.

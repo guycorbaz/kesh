@@ -397,7 +397,7 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 		case 'ROUNDING_ACCOUNT_NOT_CONFIGURED':
 			return i18nMsg(
 				'error-rounding-account-not-configured',
-				"Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation."
+				"Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Administration → Facturation."
 			);
 		case 'SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT':
 			// Story 15-6b (#474) : l'écriture serait `D 1100 / C 1100`. Deux remèdes selon le
@@ -406,7 +406,7 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 			if (failureRole(details) === 'rounding') {
 				return i18nMsg(
 					'reconciliation-failed-rounding-account-is-claim-account',
-					'Le compte d’arrondi désigné est le compte débiteurs de la facture : un administrateur doit en désigner un autre dans Paramètres → Facturation.'
+					'Le compte d’arrondi désigné est le compte débiteurs de la facture : un administrateur doit en désigner un autre dans Administration → Facturation.'
 				);
 			}
 			// Story 30-1b (P1 R6) — pour une facture fournisseur, la dette est au compte

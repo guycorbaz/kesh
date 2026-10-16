@@ -408,7 +408,7 @@
 				}
 				if (err.code === 'CONFIGURATION_REQUIRED') {
 					if (authState.currentUser?.role === 'Admin') {
-						validateError = `${err.message} — Configurez les comptes par défaut dans Paramètres > Facturation.`;
+						validateError = `${err.message} — Configurez les comptes par défaut dans Administration → Facturation.`;
 					} else {
 						validateError =
 							'Demandez à votre administrateur de configurer les comptes par défaut de facturation.';

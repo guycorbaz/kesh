@@ -29,11 +29,11 @@ error-credit-note-blocked-settled = Questa fattura presenta un pagamento, anche 
 error-settlement-counterparty-is-receivable = Il conto { $account } è il conto debitori di questa fattura: un pagamento deve trasferire il credito su un altro conto (banca, cassa, compensazione…).
 error-settlement-counterparty-is-payable = Il conto { $account } è il conto creditori di questa fattura: un pagamento deve estinguere il debito tramite un altro conto (banca, cassa, compensazione…).
 error-settlement-counterparty-is-payable-in-batch = Il conto bancario di questo lotto è collegato al conto { $account }, il conto creditori della fattura { $invoice }: il lotto non può essere confermato. Collegare il conto bancario al proprio conto di banca e confermare di nuovo, oppure annullare il lotto e pagare la fattura dalla sua scheda.
-error-settlement-rounding-account-is-receivable = Il conto { $account }, designato nelle impostazioni come conto delle differenze di arrotondamento, è il conto debitori di questa fattura: un amministratore deve designare un altro conto in Impostazioni → Fatturazione.
-error-settlement-write-off-account-is-receivable = Il conto { $account }, designato nelle impostazioni come conto di questa natura di saldo, è il conto debitori di questa fattura: un amministratore deve designare un altro conto in Impostazioni → Fatturazione.
-error-settlement-vat-payable-account-is-receivable = Il conto { $account }, designato nelle impostazioni come conto dell'IVA dovuta, è il conto debitori di questa fattura: un amministratore deve designare un altro conto in Impostazioni → Fatturazione.
-error-bank-account-ledger-is-receivable = Il conto { $account } è il conto debitori designato in Impostazioni → Fatturazione: un conto bancario deve essere collegato al proprio conto di banca.
-error-bank-account-ledger-is-payable = Il conto { $account } è il conto creditori designato in Impostazioni → Fatturazione: un conto bancario deve essere collegato al proprio conto di banca.
+error-settlement-rounding-account-is-receivable = Il conto { $account }, designato nelle impostazioni come conto delle differenze di arrotondamento, è il conto debitori di questa fattura: un amministratore deve designare un altro conto in Amministrazione → Fatturazione.
+error-settlement-write-off-account-is-receivable = Il conto { $account }, designato nelle impostazioni come conto di questa natura di saldo, è il conto debitori di questa fattura: un amministratore deve designare un altro conto in Amministrazione → Fatturazione.
+error-settlement-vat-payable-account-is-receivable = Il conto { $account }, designato nelle impostazioni come conto dell'IVA dovuta, è il conto debitori di questa fattura: un amministratore deve designare un altro conto in Amministrazione → Fatturazione.
+error-bank-account-ledger-is-receivable = Il conto { $account } è il conto debitori designato in Amministrazione → Fatturazione: un conto bancario deve essere collegato al proprio conto di banca.
+error-bank-account-ledger-is-payable = Il conto { $account } è il conto creditori designato in Amministrazione → Fatturazione: un conto bancario deve essere collegato al proprio conto di banca.
 error-claim-account-linked-to-bank-account-receivable = Il conto { $account } è collegato al conto bancario { $bank }: non può servire da conto debitori.
 error-claim-account-linked-to-bank-account-payable = Il conto { $account } è collegato al conto bancario { $bank }: non può servire da conto creditori.
 error-invoice-unvalidate-blocked-credited = Questa fattura è stornata da una nota di credito, che ne è già la correzione.
@@ -310,16 +310,16 @@ error-account-not-postable = { $count ->
    *[other] I conti { $numbers } non sono registrabili (conti di raggruppamento, di risultato o di chiusura): scegli conti registrabili.
 }
 error-designated-account-not-postable = { $count ->
-    [one] Il conto { $numbers }, designato in Impostazioni → Fatturazione, non è registrabile (conto di raggruppamento, di risultato o di chiusura): un amministratore deve designarvi al suo posto un conto registrabile.
-   *[other] I conti { $numbers }, designati in Impostazioni → Fatturazione, non sono registrabili (conti di raggruppamento, di risultato o di chiusura): un amministratore deve designarvi al loro posto conti registrabili.
+    [one] Il conto { $numbers }, designato in Amministrazione → Fatturazione, non è registrabile (conto di raggruppamento, di risultato o di chiusura): un amministratore deve designarvi al suo posto un conto registrabile.
+   *[other] I conti { $numbers }, designati in Amministrazione → Fatturazione, non sono registrabili (conti di raggruppamento, di risultato o di chiusura): un amministratore deve designarvi al loro posto conti registrabili.
 }
-error-rounding-account-not-configured = Questo pagamento salda la fattura al centesimo, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
-error-rounding-account-not-configured-issuance = Il totale di questo documento è arrotondato a 5 centesimi, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
-error-write-off-account-not-configured-discount = Nessun conto sconti utilizzabile è designato: sceglietene uno in Impostazioni → Fatturazione, sezione Saldo del residuo.
-error-write-off-account-not-configured-bank-fees = Nessun conto spese bancarie utilizzabile è designato: sceglietene uno in Impostazioni → Fatturazione, sezione Saldo del residuo.
-error-write-off-account-not-configured-bad-debt = Nessun conto perdite su crediti utilizzabile è designato: sceglietene uno in Impostazioni → Fatturazione, sezione Saldo del residuo.
-error-write-off-account-not-configured-rounding = Nessun conto differenze di arrotondamento utilizzabile è designato: sceglietene uno in Impostazioni → Fatturazione.
-error-invoice-below-minimum = Il totale di questa fattura, CHF { $total }, è inferiore all'importo minimo fissato in Impostazioni → Fatturazione, CHF { $minimum }.
+error-rounding-account-not-configured = Questo pagamento salda la fattura al centesimo, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Amministrazione → Fatturazione.
+error-rounding-account-not-configured-issuance = Il totale di questo documento è arrotondato a 5 centesimi, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Amministrazione → Fatturazione.
+error-write-off-account-not-configured-discount = Nessun conto sconti utilizzabile è designato: sceglietene uno in Amministrazione → Fatturazione, sezione Saldo del residuo.
+error-write-off-account-not-configured-bank-fees = Nessun conto spese bancarie utilizzabile è designato: sceglietene uno in Amministrazione → Fatturazione, sezione Saldo del residuo.
+error-write-off-account-not-configured-bad-debt = Nessun conto perdite su crediti utilizzabile è designato: sceglietene uno in Amministrazione → Fatturazione, sezione Saldo del residuo.
+error-write-off-account-not-configured-rounding = Nessun conto differenze di arrotondamento utilizzabile è designato: sceglietene uno in Amministrazione → Fatturazione.
+error-invoice-below-minimum = Il totale di questa fattura, CHF { $total }, è inferiore all'importo minimo fissato in Amministrazione → Fatturazione, CHF { $minimum }.
 
 # Conto di ricavo per riga di fattura (Story 16-1a, #152)
 invoice-line-account-subject-line = Riga { $line }
@@ -339,7 +339,7 @@ journal-entry-open = Apri la scheda
 
 # Assistente IVA acquisto (Story 18-1c)
 vat-purchase-title = Assistente IVA acquisto
-vat-purchase-config-required = Configurare il conto dell'imposta precedente in Impostazioni → Fatturazione per usare l'assistente.
+vat-purchase-config-required = Configurare il conto dell'imposta precedente in Amministrazione → Fatturazione per usare l'assistente.
 vat-purchase-no-rates = Nessuna aliquota IVA configurata — vedere Impostazioni → Aliquote IVA.
 vat-purchase-charge-account = Conto di costo
 vat-purchase-ht = Importo IVA esclusa
@@ -788,8 +788,8 @@ invoices-write-off-error-date-before-invoice = La data del saldo non può essere
 invoices-write-off-error-date-required = Data del saldo obbligatoria
 invoices-write-off-help-no-vat = Senza correzione IVA.
 invoices-write-off-help-vat = L'IVA dovuta è corretta in proporzione alle aliquote della fattura.
-invoices-write-off-missing-nature-account = Nessun conto è designato per questa natura: chiedete a un amministratore di sceglierlo in Impostazioni → Fatturazione.
-invoices-write-off-missing-rounding-account = Questo residuo contiene una frazione di centesimo, che va al conto differenze di arrotondamento — nessuno è designato: chiedete a un amministratore di sceglierlo in Impostazioni → Fatturazione.
+invoices-write-off-missing-nature-account = Nessun conto è designato per questa natura: chiedete a un amministratore di sceglierlo in Amministrazione → Fatturazione.
+invoices-write-off-missing-rounding-account = Questo residuo contiene una frazione di centesimo, che va al conto differenze di arrotondamento — nessuno è designato: chiedete a un amministratore di sceglierlo in Amministrazione → Fatturazione.
 invoices-write-off-nature-bad-debt = Perdita su debitore
 invoices-write-off-nature-bank-fees = Spese bancarie
 invoices-write-off-nature-discount = Sconto concesso
@@ -880,7 +880,7 @@ invoice-pdf-error-empty = Il PDF ricevuto è vuoto.
 # Story 2.6 — Onboarding: Invoice Settings Pre-fill
 config-incomplete-title = Configurazione incompleta
 config-incomplete-link = Configurare i conti di fatturazione
-invoice-settings-required = Configurare innanzitutto i conti di fatturazione nelle impostazioni
+invoice-settings-required = Configurare innanzitutto i conti di fatturazione in Amministrazione → Fatturazione
 
 # === Story 3.7 — Gestione esercizi contabili (IT-CH) ===
 
@@ -981,7 +981,7 @@ error-fiscal-year-name-too-long = Il nome dell’esercizio è troppo lungo (mass
 error-fiscal-year-dates-invalid = Date non valide — la data di fine deve essere strettamente successiva alla data di inizio.
 error-fiscal-year-already-closed = Questo esercizio è già chiuso.
 error-fiscal-year-conflict = Conflitto sull’esercizio (nome o data di inizio già utilizzati).
-error-fiscal-year-missing = Crea prima un esercizio contabile in Impostazioni → Esercizi.
+error-fiscal-year-missing = Crea prima un esercizio contabile in Impostazioni → Esercizi contabili.
 error-fiscal-year-closed-for-date = L’esercizio che copre questa data è chiuso. Verifica la data inserita o consulta i tuoi esercizi.
 go-to-settings = Apri impostazioni
 settings-fiscal-years-link = Crea, rinomina o chiudi gli esercizi contabili della tua azienda.
@@ -1001,7 +1001,7 @@ opening-balances-generate = Genera la registrazione di apertura
 opening-balances-generating = Generazione…
 opening-balances-success = Registrazione di apertura generata.
 opening-balances-entry-description = Bilancio di apertura — saldi iniziali
-opening-balances-locked-no-fiscal-year = Nessun esercizio contabile: crea prima un esercizio (Impostazioni → Esercizi) per inserire i saldi iniziali.
+opening-balances-locked-no-fiscal-year = Nessun esercizio contabile: crea prima un esercizio (Impostazioni → Esercizi contabili) per inserire i saldi iniziali.
 opening-balances-locked-first-year-closed = Il primo esercizio « { $name } » è chiuso: prima dell’inserimento dei saldi iniziali, un amministratore deve riaprire gli esercizi chiusi fino a questo esercizio, cominciando dal più recente.
 opening-balances-locked-already-has-entries = L’azienda contiene già delle registrazioni: il bilancio di apertura è stato generato e non si rigenera più. Un conto di bilancio dimenticato si completa qui sotto; un importo errato su un conto già inserito si corregge nel giornale, modificando la registrazione di apertura finché l’esercizio è aperto (dopo averla disabbinata se una delle sue righe è abbinata), oppure con uno storno o una registrazione di rettifica.
 opening-balances-goto-journal = Apri il giornale
@@ -1251,7 +1251,7 @@ reconciliation-failed-currency-mismatch = Solo le transazioni in CHF possono ess
 reconciliation-failed-overpayment = L'importo della transazione supera il saldo dovuto della fattura.
 reconciliation-failed-counterparty-is-claim-account = Il conto bancario è collegato al conto debitori della fattura: collegarlo al proprio conto di banca.
 reconciliation-failed-counterparty-is-payable-account = Il conto bancario è collegato al conto creditori della fattura: collegarlo al proprio conto di banca.
-reconciliation-failed-rounding-account-is-claim-account = Il conto delle differenze di arrotondamento designato è il conto debitori della fattura: un amministratore deve designarne un altro in Impostazioni → Fatturazione.
+reconciliation-failed-rounding-account-is-claim-account = Il conto delle differenze di arrotondamento designato è il conto debitori della fattura: un amministratore deve designarne un altro in Amministrazione → Fatturazione.
 reconciliation-failed-payment-before-invoice = Il pagamento è anteriore di più di un giorno alla data della fattura: non può saldarla.
 reconciliation-failed-payment-before-invoice-days = Il pagamento è anteriore di più di { $days } giorni alla data della fattura: non può saldarla.
 reconciliation-failed-rule-mismatch = Il conto di contropartita della regola è cambiato: ricaricare la pagina.
@@ -1967,7 +1967,7 @@ invoice-project-current = Progetto attuale
 invoice-project-none = — Nessuno
 invoice-line-revenue-account-default = { $account } (predefinito della società)
 invoice-lines-revenue-account-invalid = Conto di ricavo non valido nelle righe seguenti: { $lines }
-invoice-default-revenue-account-unusable = Il conto di ricavo predefinito della società non è più utilizzabile (archiviato, non imputabile o di tipo inatteso). Le righe che lo seguono non potranno essere validate — correggilo in Impostazioni → Fatturazione oppure scegli un conto per ogni riga.
+invoice-default-revenue-account-unusable = Il conto di ricavo predefinito della società non è più utilizzabile (archiviato, non imputabile o di tipo inatteso). Le righe che lo seguono non potranno essere validate — correggilo in Amministrazione → Fatturazione oppure scegli un conto per ogni riga.
 common-account-default-suffix = (predefinito)
 invoice-line-aria-line = riga { $n }
 
@@ -2006,7 +2006,7 @@ error-invoice-pdf-header-overflow = L'intestazione del documento non entra nella
 error-configuration-required = Configurazione incompleta: configura le impostazioni di fatturazione prima di convalidare.
 error-fiscal-year-invalid = Nessun esercizio aperto copre questa data.
 invoice-error-already-validated = Questa fattura è già convalidata.
-invoice-error-configuration-required = Configura i conti predefiniti in Impostazioni > Fatturazione prima di convalidare una fattura.
+invoice-error-configuration-required = Configura i conti predefiniti in Amministrazione → Fatturazione prima di convalidare una fattura.
 invoice-error-configuration-required-non-admin = Chiedi al tuo amministratore di configurare i conti predefiniti di fatturazione.
 invoice-error-fiscal-year-invalid = Nessun esercizio aperto copre la data della fattura.
 invoice-journal-entry-description = Fattura { $invoiceNumber } - { $contactName }
