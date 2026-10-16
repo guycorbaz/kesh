@@ -13,7 +13,8 @@
 //! mais inexploitable — code d'origine en `qrError` : `INVALID_SPC_PAYLOAD`,
 //! `INVALID_IBAN`, `PDF_RENDER_ERROR`, `FIELD_TOO_LONG`,
 //! `QR_AMOUNT_OUT_OF_RANGE`). Un document `none` ou `unreadable` entre sans
-//! aucune donnée QR (la facture complétée naît sans IBAN ni référence).
+//! aucune donnée QR (l'IBAN et la référence de la facture se saisissent à la
+//! main à sa création, Story 30-2b).
 //! Restent des échecs `failed[]` : type
 //! hors liste blanche ou octets incohérents, image non décodable, taille, lien
 //! symbolique, doublon, erreur de lecture.

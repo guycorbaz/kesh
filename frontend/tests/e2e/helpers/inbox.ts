@@ -163,3 +163,76 @@ export async function inboxHandshake(page: Page): Promise<void> {
 	}
 	await discardViaApi(page, entry.importedSupplierInvoiceId);
 }
+
+/**
+ * Story 30-2b — crée un fournisseur par l'API et rend son id. Partagé par
+ * `inbox-import.spec.ts` et `supplier-documents.spec.ts` (DRY).
+ */
+export async function createSupplierViaApi(page: Page, name: string): Promise<number> {
+	const ctx = await authedApiContext(page);
+	try {
+		const res = await ctx.post('/api/v1/contacts', {
+			data: {
+				contactType: 'Entreprise',
+				name,
+				isClient: false,
+				isSupplier: true,
+				address: 'Rue 2\n1000 Lausanne',
+				defaultPaymentTerms: '30 jours net',
+			},
+		});
+		expect(res.ok(), `createSupplier failed: ${res.status()}`).toBeTruthy();
+		return (await res.json()).id as number;
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+/**
+ * Désigne le compte créanciers (2000) s'il manque et rend un compte de charge — sans quoi
+ * aucune facture fournisseur ne se crée. Le seed `with-company` ne le désigne pas (Story
+ * 15-5d, AC6 — contournement gardé ; il ne dépend pas de #521). Déplacé ici depuis
+ * `inbox-import.spec.ts` par la Story 30-2b (DRY).
+ */
+export async function ensurePayableAndExpense(page: Page): Promise<number> {
+	const ctx = await authedApiContext(page);
+	try {
+		const accounts = (await (await ctx.get('/api/v1/accounts')).json()) as Array<{
+			id: number;
+			number: string;
+			accountType: string;
+			active: boolean;
+			postable: boolean;
+		}>;
+		const payable = accounts.find((a) => a.number === '2000');
+		const expense = accounts.find((a) => a.accountType === 'Expense' && a.active && a.postable);
+		expect(payable, 'compte 2000 attendu').toBeTruthy();
+		expect(expense, 'un compte de charge attendu').toBeTruthy();
+		const s = await (await ctx.get('/api/v1/company/invoice-settings')).json();
+		if (s.defaultPayableAccountId == null) {
+			const putRes = await ctx.put('/api/v1/company/invoice-settings', {
+				data: { ...s, defaultPayableAccountId: payable!.id },
+			});
+			expect(putRes.ok(), `set payable failed: ${putRes.status()}`).toBeTruthy();
+		}
+		return expense!.id;
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+/**
+ * Story 30-2b — remplit la première ligne du formulaire de facture fournisseur
+ * (`SupplierInvoiceForm`) : description, prix unitaire, compte de charge (quantité 1, TVA 0).
+ */
+export async function fillFirstInvoiceLine(
+	page: Page,
+	description: string,
+	unitPrice: string,
+	expenseAccountId: number,
+): Promise<void> {
+	const line = page.getByTestId('supplier-invoice-line').first();
+	await line.getByTestId('supplier-invoice-line-desc').fill(description);
+	await line.getByTestId('supplier-invoice-line-unit-price').fill(unitPrice);
+	await line.getByTestId('supplier-invoice-line-account').selectOption(String(expenseAccountId));
+}

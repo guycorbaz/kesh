@@ -185,7 +185,17 @@ describe('Documents à traiter', () => {
 		expect(lines[0].textContent).toMatch(/sans\.png.*sans QR-code/s);
 		expect(lines[1].textContent).toMatch(/abime\.png.*QR illisible/s);
 		expect(lines[1].textContent).toMatch(/Montant du QR hors des limites admises/);
-		expect(lines[1].textContent).toMatch(/la facture créée sera sans IBAN ni référence/);
+		// Story 30-2b : la saisie de l'IBAN et de la référence existe désormais.
+		expect(lines[1].textContent).toMatch(/saisissez l’IBAN et la référence à la main/);
+	});
+
+	it('« Créer une facture » mène à la page de création à côté du document (Story 30-2b, AC10)', async () => {
+		listImportedMock.mockResolvedValue([SANS_QR]);
+		const { findByTestId, queryByTestId } = render(Page);
+		const link = await findByTestId('imported-create-invoice');
+		expect(link.getAttribute('href')).toBe('/supplier-invoices/new?document=8');
+		expect(link.textContent).toContain('Créer une facture');
+		expect(queryByTestId('imported-complete-form')).toBeNull();
 	});
 
 	it('« Retirer de la liste » demande confirmation, puis retire la ligne', async () => {

@@ -1,15 +1,13 @@
 import { expect, test } from '@playwright/test';
 import { promises as fs } from 'node:fs';
-import {
-	seedTestState,
-	clearAuthStorage,
-	authedApiContext,
-	disposeContextSafe,
-} from './helpers/test-state';
+import { seedTestState, clearAuthStorage } from './helpers/test-state';
 import {
 	INBOX_DIR,
 	assertInboxDirsUsable,
+	createSupplierViaApi,
 	deposit,
+	ensurePayableAndExpense,
+	fillFirstInvoiceLine,
 	inboxHandshake,
 	readFixture,
 	token,
@@ -23,7 +21,8 @@ import {
  * Flux UI consommant les endpoints livrés par 12-5c. Le pipeline d'import lui-même
  * (décodage QR, sécurité, documents sans QR) est couvert par les tests d'intégration
  * backend `inbox_import_e2e.rs` — ici on valide l'écran, le rapport, la liste, la
- * complétion, le retrait et le téléchargement.
+ * création de la facture (Story 30-2b : sur la page `/supplier-invoices/new?document=`), le
+ * retrait et le téléchargement.
  *
  * **Seed du round-trip (DC-d4)** : le test dépose une copie de la fixture QR PNG
  * pré-commitée (`fixtures/spc_e2e_invoice.png`, image → rxing, pas de pdfium) dans le
@@ -56,58 +55,6 @@ function uniq(prefix: string): string {
 	return `${prefix} ${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 }
 
-/** Crée un fournisseur (is_supplier) via API et retourne son id. */
-async function createSupplier(page: import('@playwright/test').Page): Promise<number> {
-	const ctx = await authedApiContext(page);
-	try {
-		const res = await ctx.post('/api/v1/contacts', {
-			data: {
-				contactType: 'Entreprise',
-				name: uniq('Fournisseur E2E'),
-				isClient: false,
-				isSupplier: true,
-				address: 'Rue 2\n1000 Lausanne',
-				defaultPaymentTerms: '30 jours net',
-			},
-		});
-		expect(res.ok(), `createSupplier failed: ${res.status()}`).toBeTruthy();
-		return (await res.json()).id as number;
-	} finally {
-		await disposeContextSafe(ctx);
-	}
-}
-
-/** Configure default_payable (2000) si absent + retourne un compte de charge. */
-async function ensureConfigAndExpense(page: import('@playwright/test').Page): Promise<number> {
-	const ctx = await authedApiContext(page);
-	try {
-		const accounts = (await (await ctx.get('/api/v1/accounts')).json()) as Array<{
-			id: number;
-			number: string;
-			accountType: string;
-			active: boolean;
-			postable: boolean;
-		}>;
-		const payable = accounts.find((a) => a.number === '2000');
-		const expense = accounts.find((a) => a.accountType === 'Expense' && a.active && a.postable);
-		expect(payable, 'compte 2000 attendu').toBeTruthy();
-		expect(expense, 'un compte de charge attendu').toBeTruthy();
-		// Le seed `with-company` (`seed_accounting_company`) ne désigne pas le compte
-		// créanciers : on le pose ici quand il manque (Story 15-5d, AC6 — contournement
-		// gardé ; il ne dépend pas de #521).
-		const s = await (await ctx.get('/api/v1/company/invoice-settings')).json();
-		if (s.defaultPayableAccountId == null) {
-			const putRes = await ctx.put('/api/v1/company/invoice-settings', {
-				data: { ...s, defaultPayableAccountId: payable!.id },
-			});
-			expect(putRes.ok(), `set payable failed: ${putRes.status()}`).toBeTruthy();
-		}
-		return expense!.id;
-	} finally {
-		await disposeContextSafe(ctx);
-	}
-}
-
 test.describe('Documents à traiter — import du dossier', () => {
 	test('écran accessible, import sur dossier vide → rapport sans erreur', async ({ page }) => {
 		await login(page);
@@ -123,11 +70,11 @@ test.describe('Documents à traiter — import du dossier', () => {
 		await expect(page.getByTestId('imported-empty')).toBeVisible();
 	});
 
-	test('round-trip : import fixture → liste → download → complétion', async ({ page }) => {
+	test('round-trip : import fixture → liste → download → création de la facture', async ({ page }) => {
 		await login(page);
 		await inboxHandshake(page);
-		const expenseAccountId = await ensureConfigAndExpense(page);
-		const supplierId = await createSupplier(page);
+		const expenseAccountId = await ensurePayableAndExpense(page);
+		const supplierId = await createSupplierViaApi(page, uniq('Fournisseur E2E'));
 
 		// Déposer une copie unique de la fixture QR PNG dans le dossier du serveur de test.
 		const name = `e2e-${token()}.png`;
@@ -147,20 +94,19 @@ test.describe('Documents à traiter — import du dossier', () => {
 		await row.getByTestId('imported-download').click();
 		await downloadPromise;
 
-		// Compléter : fournisseur + 1 ligne au montant cible (100.00, TVA 0).
-		await row.getByTestId('imported-complete-open').click();
-		// Validation client (M2) : sans fournisseur, le bouton Valider est désactivé.
-		await expect(row.getByTestId('imported-complete-submit')).toBeDisabled();
-		await row.getByTestId('imported-supplier-select').selectOption(String(supplierId));
-		const lineInputs = row.locator('input[inputmode="decimal"]');
-		await lineInputs.nth(0).fill('1'); // quantité
-		await lineInputs.nth(1).fill('100.00'); // PU HT
-		await row.locator('input[placeholder="Description"]').first().fill('Prestation E2E');
-		await row.locator('select').nth(2).selectOption(String(expenseAccountId)); // compte de charge
-		await row.getByTestId('imported-complete-submit').click();
+		// Story 30-2b : « Créer une facture » mène à la page de création, à côté du document.
+		await row.getByTestId('imported-create-invoice').click();
+		await expect(page).toHaveURL(/\/supplier-invoices\/new\?document=\d+$/);
+		// Sans fournisseur, l'enregistrement est refusé à l'écran, saisie intacte.
+		await fillFirstInvoiceLine(page, 'Prestation E2E', '100.00', expenseAccountId);
+		await page.getByTestId('supplier-invoice-submit').click();
+		await expect(page.getByTestId('supplier-invoice-form-error')).toBeVisible();
+		await page.getByTestId('supplier-invoice-supplier').selectOption(String(supplierId));
+		await page.getByTestId('supplier-invoice-submit').click();
 
-		// Le document quitte la liste (complété), on reste sur l'écran.
-		await expect(page).toHaveURL(/\/supplier-invoices\/import$/);
+		// L'écran va à la fiche de la facture créée ; le document a quitté la liste.
+		await expect(page).toHaveURL(/\/supplier-invoices\/\d+$/);
+		await page.goto('/supplier-invoices/import');
 		await expect(page.getByTestId('imported-row').filter({ hasText: name })).toHaveCount(0);
 	});
 

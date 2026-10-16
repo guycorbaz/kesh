@@ -187,7 +187,9 @@ function cheminRelatif(fichier: string): string {
 
 /**
  * La table fermée — quatorze entrées, mesurées sur l'arbre de la 28-1 et
- * examinées une à une contre la fiche (Dev Notes § Inventaire, classes B à E).
+ * examinées une à une contre la fiche (Dev Notes § Inventaire, classes B à E) ;
+ * **treize** depuis la Story 30-2b, qui réunit les deux ✕ de retrait de ligne des
+ * formulaires de facture fournisseur en un seul composant.
  */
 const ATTENDU: Record<string, { jetons: string[]; motif: string }> = {
 	// Classe B — <Button> rouge par `class` : déjà visible, rouge de palette au
@@ -242,11 +244,9 @@ const ATTENDU: Record<string, { jetons: string[]; motif: string }> = {
 	},
 	// Classe E — icônes ✕ de retrait d'une ligne de saisie non enregistrée :
 	// réversible, contrôle iconique.
-	'routes/(app)/supplier-invoices/+page.svelte@button:1': {
-		jetons: ['text-destructive'],
-		motif: 'E — ✕ de retrait d\'une ligne de saisie',
-	},
-	'routes/(app)/supplier-invoices/import/+page.svelte@button:1': {
+	// Story 30-2b (#685) : les deux formulaires en ligne (liste et page d'import) n'en font
+	// plus qu'un, `SupplierInvoiceForm` — deux entrées deviennent une (14 → 13).
+	'lib/features/supplier-invoices/SupplierInvoiceForm.svelte@button:1': {
 		jetons: ['text-destructive'],
 		motif: 'E — ✕ de retrait d\'une ligne de saisie',
 	},
@@ -319,8 +319,8 @@ describe('AC6 — inventaire clos des boutons rouges posés à la main', () => {
 		expect(releve).toEqual(attendu);
 	});
 
-	it('la table compte quatorze entrées, chacune avec son motif', () => {
-		expect(Object.keys(ATTENDU)).toHaveLength(14);
+	it('la table compte treize entrées, chacune avec son motif', () => {
+		expect(Object.keys(ATTENDU)).toHaveLength(13);
 		for (const [cle, { motif }] of Object.entries(ATTENDU)) {
 			expect(motif.trim().length, cle).toBeGreaterThan(0);
 		}

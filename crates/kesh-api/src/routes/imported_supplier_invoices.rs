@@ -4,6 +4,8 @@
 //! - `GET  /api/v1/imported-supplier-invoices?status=`          liste filtrée par statut (Comptable+)
 //! - `POST /api/v1/imported-supplier-invoices/{id}/complete`    complétion atomique DC6 (Comptable+)
 //! - `POST /api/v1/imported-supplier-invoices/{id}/discard`     écarte une importée (Comptable+)
+//! - `GET  /api/v1/imported-supplier-invoices/{id}/supplier-candidates`  fournisseurs
+//!   proposés par l'IBAN du document (Comptable+, Story 30-2b)
 //! - `GET  /api/v1/imported-supplier-invoices/{id}/source-document`  justificatif avant complétion
 //! - `GET  /api/v1/supplier-invoices/{id}/source-document`      justificatif après complétion
 //!
@@ -16,16 +18,14 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use chrono::NaiveDate;
 use rust_decimal::Decimal;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use kesh_core::accounting::vat::line_vat_amount;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::imported_supplier_invoice::ImportedSupplierInvoice;
-use kesh_db::entities::{NewSupplierInvoice, NewSupplierInvoiceLine};
 use kesh_db::errors::map_db_error;
-use kesh_db::repositories::{audit_log, imported_supplier_invoices, supplier_invoices};
+use kesh_db::repositories::{audit_log, contacts, imported_supplier_invoices, supplier_invoices};
 
 use crate::AppState;
 use crate::audit::AuditActor;
@@ -34,7 +34,11 @@ use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::inbox_import;
 use crate::middleware::auth::CurrentUser;
-use crate::routes::supplier_invoices::SupplierInvoiceResponse;
+use crate::routes::contacts::ContactResponse;
+use crate::routes::supplier_invoices::{
+    CreateSupplierInvoiceRequest, PaymentDetails, PaymentSource, SupplierInvoiceResponse,
+    normalize_payment_field,
+};
 
 /// Domaine valide du query param `status` (AC9 / dette D1).
 const VALID_STATUSES: [&str; 3] = ["to_complete", "completed", "discarded"];
@@ -96,30 +100,21 @@ pub async fn list_imported(
 // POST /api/v1/imported-supplier-invoices/{id}/complete
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CompleteImportLineRequest {
-    pub description: String,
-    pub quantity: Decimal,
-    pub unit_price: Decimal,
-    pub vat_rate: Decimal,
-    pub expense_account_id: i64,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CompleteImportRequest {
-    pub contact_id: i64,
-    pub invoice_date: NaiveDate,
-    pub supplier_invoice_number: Option<String>,
-    pub due_date: Option<NaiveDate>,
-    pub lines: Vec<CompleteImportLineRequest>,
-}
-
 /// Complétion atomique d'une facture importée (DC6, Comptable+). Toute la
 /// séquence (verrou staging → validations métier → `create_in_tx` → `UPDATE
 /// completed`) vit dans **une transaction** ; sur échec, rollback total (pas
 /// d'écriture comptable partielle, staging reste `to_complete`).
+///
+/// Story 30-2b (AC13, C-30-2-10) : le corps est **celui de** `POST
+/// /supplier-invoices` ([`CreateSupplierInvoiceRequest`]) — projet compris ; un
+/// client qui n'envoie pas les champs ajoutés reste accepté (tous facultatifs).
+/// La réponse est relue, une fois la transaction validée, par la fonction du GET
+/// ([`SupplierInvoiceResponse::load_with_settlement_cancellation`]).
+///
+/// ⚠️ Angle mort écrit (revue P1 de la 30-2b, C-30-2-42) : une erreur de base
+/// **entre** le `COMMIT` et cette relecture rend une erreur alors que la facture
+/// est créée et le document `completed` ; un nouvel essai rend `409
+/// IMPORT_NOT_PENDING_COMPLETION`. Rien n'est perdu ni faussé — patron de `pay`.
 ///
 /// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `AppError`
 /// [`crate::retry::retry_app_on_deadlock`] : la transaction vit dans
@@ -128,7 +123,7 @@ pub async fn complete_import(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
-    Json(req): Json<CompleteImportRequest>,
+    Json(req): Json<CreateSupplierInvoiceRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
     let created =
@@ -136,10 +131,14 @@ pub async fn complete_import(
             complete_import_once(&state.pool, &current_user, company.id, id, &req)
         })
         .await?;
-    Ok(Json(SupplierInvoiceResponse::from_parts(
-        created.invoice,
-        created.lines,
-    )))
+    Ok(Json(
+        SupplierInvoiceResponse::load_with_settlement_cancellation(
+            &state.pool,
+            company.id,
+            created.invoice.id,
+        )
+        .await?,
+    ))
 }
 
 /// Une tentative de la complétion d'une facture importée : ouvre la
@@ -156,7 +155,7 @@ async fn complete_import_once(
     current_user: &CurrentUser,
     company_id: i64,
     id: i64,
-    req: &CompleteImportRequest,
+    req: &CreateSupplierInvoiceRequest,
 ) -> Result<supplier_invoices::SupplierInvoiceWithLines, AppError> {
     let user_id = current_user.user_id;
 
@@ -195,14 +194,19 @@ async fn complete_import_once(
             });
         }
 
-        // (4) Routage IBAN (F9) + cohérence QRR ↔ QR-IBAN (SIX SPC 2.2).
-        //     Story 30-2a (AC7) : un document sans QR n'a ni IBAN ni référence —
-        //     aucun routage, la facture naît sans coordonnées de paiement.
-        let (creditor_iban, creditor_qr_iban) = match staging.creditor_iban.clone() {
-            None => (None, None),
+        // (4) Source des coordonnées de paiement (Story 30-2b, AC11/AC12).
+        //     - Document AVEC QR : routage IBAN (F9) + cohérence QRR ↔ QR-IBAN
+        //       (SIX SPC 2.2), valeurs lues sur la ligne VERROUILLÉE ; le corps
+        //       ne doit en porter aucune (`QR_FIELDS_FROM_DOCUMENT`, refusé par
+        //       la conversion commune).
+        //     - Document SANS QR : elles viennent du corps, validées par la
+        //       conversion commune comme pour `POST /supplier-invoices`
+        //       (AC12-bis, `INVALID_PAYMENT_DETAILS`).
+        let source = match staging.creditor_iban.clone() {
+            None => PaymentSource::Body,
             Some(iban) => {
                 let reference_is_qrr = staging.reference_type.as_deref() == Some("QRR");
-                if staging.is_qr_iban == Some(true) {
+                let (creditor_iban, creditor_qr_iban) = if staging.is_qr_iban == Some(true) {
                     if !reference_is_qrr {
                         return Err(iban_reference_mismatch(
                             "Un QR-IBAN exige une référence QRR.",
@@ -216,29 +220,27 @@ async fn complete_import_once(
                         ));
                     }
                     (Some(iban), None)
+                };
+                // (5) Mapping payment_reference (C5-1) : QRR/SCOR → valeur,
+                //     sinon None.
+                let payment_reference = match staging.reference_type.as_deref() {
+                    Some("QRR" | "SCOR") => staging.reference_value.clone(),
+                    _ => None,
+                };
+                PaymentSource::Document {
+                    payment: PaymentDetails {
+                        creditor_iban,
+                        creditor_qr_iban,
+                        payment_reference,
+                    },
+                    expected_payment_amount: staging.amount,
                 }
             }
         };
 
-        // (5) Mapping payment_reference (C5-1) : QRR/SCOR → valeur, sinon None
-        //     (dont un document sans QR : `reference_type` absent).
-        let payment_reference = match staging.reference_type.as_deref() {
-            Some("QRR" | "SCOR") => staging.reference_value.clone(),
-            _ => None,
-        };
-
-        // Construction des lignes de la facture réelle.
-        let lines: Vec<NewSupplierInvoiceLine> = req
-            .lines
-            .iter()
-            .map(|l| NewSupplierInvoiceLine {
-                description: l.description.clone(),
-                quantity: l.quantity,
-                unit_price: l.unit_price,
-                vat_rate: l.vat_rate,
-                expense_account_id: l.expense_account_id,
-            })
-            .collect();
+        // Conversion COMMUNE aux deux routes (AC13) : projet compris (fin de
+        // l'« extension future » de la 12-5c), validation de l'AC12-bis.
+        let new = req.to_new_supplier_invoice(company_id, source)?;
 
         // (6) Réconciliation montant (F2) : si le QR porte un montant (jamais un
         //     document sans QR, dont `amount` est `None` — Story 30-2a), exiger
@@ -249,7 +251,7 @@ async fn complete_import_once(
         if let Some(qr_amount) = staging.amount {
             let mut sum_ht = Decimal::ZERO;
             let mut sum_vat = Decimal::ZERO;
-            for l in &lines {
+            for l in &new.lines {
                 let line_total = l.quantity * l.unit_price;
                 sum_ht += line_total;
                 sum_vat += line_vat_amount(line_total, l.vat_rate);
@@ -270,20 +272,6 @@ async fn complete_import_once(
         }
 
         // (7) Création de la facture réelle dans la MÊME transaction (DC6).
-        let new = NewSupplierInvoice {
-            company_id,
-            contact_id: req.contact_id,
-            supplier_invoice_number: req.supplier_invoice_number.clone(),
-            invoice_date: req.invoice_date,
-            due_date: req.due_date,
-            creditor_iban,
-            creditor_qr_iban,
-            payment_reference,
-            expected_payment_amount: staging.amount,
-            // Tag projet à la complétion d'un import = extension future → None ici.
-            project_id: None,
-            lines,
-        };
         let created = supplier_invoices::create_in_tx(&mut tx, new, user_id).await?;
 
         // Lien staging → facture réelle + passage `completed`.
@@ -330,6 +318,58 @@ async fn complete_import_once(
             Err(e)
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/imported-supplier-invoices/{id}/supplier-candidates
+// ---------------------------------------------------------------------------
+
+/// Nombre maximal de fournisseurs proposés (AC14, C-30-2-7) — le serveur n'en
+/// rend jamais plus que l'écran n'en affiche.
+const SUPPLIER_CANDIDATES_LIMIT: i64 = 3;
+
+/// Réponse de `supplier-candidates` : des contacts, **jamais** l'IBAN.
+#[derive(Serialize)]
+pub struct SupplierCandidatesResponse {
+    pub candidates: Vec<ContactResponse>,
+}
+
+/// Story 30-2b (AC14) — les fournisseurs qui ont déjà une facture portant
+/// l'IBAN (ou le QR-IBAN) du créancier de ce document (Comptable+).
+///
+/// L'IBAN est lu **sur le document**, borné à la société, jamais passé dans
+/// l'URL ; il ne sort ni dans la réponse ni dans les journaux. Un document sans
+/// QR rend une liste vide ; un document inconnu ou d'une autre société, `404
+/// IMPORTED_INVOICE_NOT_FOUND` (patron de la complétion). C'est la première des
+/// deux sources de proposition — la seconde, par nom, est calculée à l'écran.
+///
+/// ⚠️ **Proposer, jamais créer ni présélectionner** (`CLAUDE.md`, « un
+/// appariement automatique propose ») : l'écran affiche ces contacts avec un
+/// bouton « Retenir », rien de plus.
+pub async fn get_supplier_candidates(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<Json<SupplierCandidatesResponse>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    let staging = imported_supplier_invoices::find_by_id_scoped(&state.pool, company.id, id)
+        .await?
+        .ok_or(AppError::ImportedInvoiceNotFound)?;
+    let candidates = match staging.creditor_iban.as_deref() {
+        None => Vec::new(),
+        Some(iban) => {
+            contacts::find_suppliers_by_invoice_iban(
+                &state.pool,
+                company.id,
+                &normalize_payment_field(iban).to_uppercase(),
+                SUPPLIER_CANDIDATES_LIMIT,
+            )
+            .await?
+        }
+    };
+    Ok(Json(SupplierCandidatesResponse {
+        candidates: candidates.into_iter().map(ContactResponse::from).collect(),
+    }))
 }
 
 /// Helper : rejet `IBAN_REFERENCE_MISMATCH` (HTTP 400) avec message contextuel.

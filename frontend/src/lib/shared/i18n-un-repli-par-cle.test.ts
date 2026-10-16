@@ -152,8 +152,19 @@ const PREFIXES = [
  * (`DocumentPreview.svelte`). `-doc-gone`, déjà relevée, gagne un second site au même repli ;
  * `-error-qr-amount-out-of-range` passe par la carte `IMPORT_ERROR_LABELS`, non par un
  * littéral, et n'entre pas.
+ *
+ * ⚠️ **302 → 328, +50 −24** (Story 30-2b, #685) — la facture se crée à côté du document
+ * (`SupplierInvoiceForm`, `SupplierCreatePanel`, `supplier-invoice-form.ts`, page `new`) :
+ * **50** clés `supplier-invoices-*` neuves et demandées (titre et états de la page, champs
+ * verrouillés du QR, propositions, panneau « Nouveau fournisseur », refus et sept motifs de
+ * `INVALID_PAYMENT_DETAILS`) ; **24** retirées du catalogue avec le formulaire de complétion
+ * en ligne de la page d'import et celui de la liste — les 23 `imported-supplier-invoices-*`
+ * (`-add-line`, `-complete`, `-completed-hint`, `-err-amount`, `-err-currency`,
+ * `-err-fiscal-year`, `-err-form`, `-err-generic`, `-err-iban-ref`, `-err-not-pending`, quatre
+ * `-field-*`, quatre `-line-*`, `-lines`, `-mismatch`, `-subcentime`, `-sum-ttc`, `-target`) et
+ * `supplier-invoices-form-close`. Recompté : `git diff` du FTL fr-CH, préfixes du domaine.
  */
-const CLES_RELEVEES = 302;
+const CLES_RELEVEES = 328;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

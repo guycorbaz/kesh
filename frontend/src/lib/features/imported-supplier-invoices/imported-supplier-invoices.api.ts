@@ -1,7 +1,8 @@
 /**
  * Client API typé pour l'import de factures fournisseurs depuis un dossier — Story 12.5d (#194).
  *
- * Consomme les 6 endpoints livrés par 12-5c (aucune logique transactionnelle ici).
+ * Consomme les 6 endpoints livrés par 12-5c, plus `supplier-candidates` (Story 30-2b)
+ * — aucune logique transactionnelle ici.
  * Les downloads utilisent le **Pattern A** (`apiClient.getBlob` → blob → ancre
  * éphémère) qui gère le 401-refresh (cookie httpOnly), contrairement à une ancre
  * `<a download>` directe.
@@ -9,8 +10,9 @@
 
 import { apiClient } from '$lib/shared/utils/api-client';
 import { parseContentDispositionFilename } from '$lib/features/export/exports.api';
+import type { ContactResponse } from '$lib/features/contacts/contacts.types';
+import type { CreateSupplierInvoiceRequest } from '$lib/features/supplier-invoices/supplier-invoices.types';
 import type {
-	CompleteImportRequest,
 	CompleteImportResponse,
 	ImportedStatus,
 	ImportedSupplierInvoice,
@@ -27,12 +29,24 @@ export async function listImported(status: ImportedStatus): Promise<ImportedSupp
 	return apiClient.get(`/api/v1/imported-supplier-invoices?status=${encodeURIComponent(status)}`);
 }
 
-/** Complète une facture importée (crée la facture fournisseur réelle, atomique DC6). */
+/**
+ * Crée la facture d'un document à traiter (atomique DC6). Story 30-2b (AC13) : le corps
+ * est celui de `POST /supplier-invoices` ; avec QR, sans coordonnées de paiement.
+ */
 export async function completeImport(
 	id: number,
-	req: CompleteImportRequest,
+	req: CreateSupplierInvoiceRequest,
 ): Promise<CompleteImportResponse> {
 	return apiClient.post(`/api/v1/imported-supplier-invoices/${id}/complete`, req);
+}
+
+/**
+ * Fournisseurs proposés par l'IBAN du document (Story 30-2b, AC14) : ceux dont une
+ * facture passée porte cet IBAN, trois au plus. Liste vide pour un document sans QR.
+ * L'IBAN est lu par le serveur sur le document — il ne passe pas dans l'URL.
+ */
+export async function getSupplierCandidates(id: number): Promise<{ candidates: ContactResponse[] }> {
+	return apiClient.get(`/api/v1/imported-supplier-invoices/${id}/supplier-candidates`);
 }
 
 /** Écarte une facture importée (to_complete → discarded). 204 No Content. */

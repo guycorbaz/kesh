@@ -936,8 +936,9 @@ async fn list_returns_nulls_for_document_without_qr(pool: MySqlPool) {
 }
 
 /// Story 30-2a (AC7) — un document sans QR se complète : ni contrôle de devise
-/// (tue M-a7), ni routage IBAN, ni contrôle de montant ; facture sans IBAN, ni
-/// référence, ni montant attendu.
+/// (tue M-a7), ni routage IBAN, ni contrôle de montant ; sans coordonnées dans
+/// le corps, facture sans IBAN, ni référence, ni montant attendu (la 30-2b les
+/// prend dans le corps : `complete_without_qr_takes_payment_details_and_project_from_body`).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn complete_document_without_qr(pool: MySqlPool) {
     let ctx = setup(&pool).await;
@@ -1832,4 +1833,616 @@ async fn complete_refuses_a_designated_payable_made_non_postable(pool: MySqlPool
         supplier_invoice_count(&pool, ctx.seeded.company_id).await,
         0
     );
+}
+
+// ============================================================
+// C. Story 30-2b (#685) — un seul corps, coordonnées de paiement validées,
+//    fournisseurs proposés par IBAN
+// ============================================================
+
+/// IBAN suisse ordinaire, synthétique et valide (MOD-97).
+const IBAN_CH: &str = "CH9300762011623852957";
+/// QR-IBAN synthétique valide (QR-IID 31999).
+const QR_IBAN_CH: &str = "CH4431999123000889012";
+/// IBAN allemand valide : un IBAN étranger d'un pays de la table reste accepté.
+const IBAN_DE: &str = "DE89370400440532013000";
+/// QRR valide (somme de contrôle modulo 10 récursive).
+const QRR_OK: &str = "210000000003139471430009017";
+
+/// Corps de `POST /supplier-invoices` (ou de la complétion) : `complete_body`
+/// complété des champs de paiement donnés.
+fn body_with(ctx: &Ctx, extra: Value) -> Value {
+    let mut body = complete_body(
+        ctx.supplier_id,
+        ctx.seeded.accounts["4000"],
+        dec!(1),
+        dec!(100.00),
+        dec!(0),
+    );
+    for (k, v) in extra.as_object().unwrap() {
+        body[k] = v.clone();
+    }
+    body
+}
+
+async fn post_supplier_invoice(app: &TestApp, jwt: &str, body: &Value) -> (u16, Value) {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/supplier-invoices"))
+        .bearer_auth(jwt)
+        .json(body)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap())
+}
+
+async fn post_complete(app: &TestApp, jwt: &str, id: i64, body: &Value) -> (u16, Value) {
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/imported-supplier-invoices/{id}/complete")))
+        .bearer_auth(jwt)
+        .json(body)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap())
+}
+
+/// AC12-bis — un cas par motif de refus, sur `POST /supplier-invoices` ; aucun
+/// ne crée de facture. Tue M-b10 (validation retirée de la conversion commune).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn create_refuses_each_invalid_payment_detail(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let ref_65 = "R".repeat(65);
+    let cases: Vec<(Value, &str, &str)> = vec![
+        (
+            json!({ "creditorIban": "CH9300762011623852958" }),
+            "creditorIban",
+            "INVALID_IBAN",
+        ),
+        (
+            json!({ "creditorIban": QR_IBAN_CH }),
+            "creditorIban",
+            "QR_IBAN_IN_IBAN_FIELD",
+        ),
+        (
+            json!({ "creditorQrIban": IBAN_CH, "paymentReference": QRR_OK }),
+            "creditorQrIban",
+            "NOT_A_QR_IBAN",
+        ),
+        (
+            json!({ "creditorQrIban": "CH00 PAS UN IBAN", "paymentReference": QRR_OK }),
+            "creditorQrIban",
+            "INVALID_IBAN",
+        ),
+        (
+            json!({ "creditorIban": IBAN_CH, "creditorQrIban": QR_IBAN_CH, "paymentReference": QRR_OK }),
+            "creditorIban",
+            "BOTH_IBANS",
+        ),
+        (
+            json!({ "creditorQrIban": QR_IBAN_CH }),
+            "paymentReference",
+            "QRR_REQUIRED",
+        ),
+        // Revue P1, E3 : une référence BLANCHE avec un QR-IBAN vaut absente — et non
+        // une QRR invalide (tue M-b23 : `reference` lu brut, sans `present()`).
+        (
+            json!({ "creditorQrIban": QR_IBAN_CH, "paymentReference": " \u{00A0}\u{200B}" }),
+            "paymentReference",
+            "QRR_REQUIRED",
+        ),
+        (
+            json!({ "creditorQrIban": QR_IBAN_CH, "paymentReference": "210000000003139471430009018" }),
+            "paymentReference",
+            "INVALID_QRR",
+        ),
+        (
+            json!({ "creditorIban": IBAN_CH, "paymentReference": ref_65 }),
+            "paymentReference",
+            "REFERENCE_TOO_LONG",
+        ),
+        // Revue P1, E2 : la limite se compte en CARACTÈRES — 65 « é » (130 octets).
+        (
+            json!({ "creditorIban": IBAN_CH, "paymentReference": "é".repeat(65) }),
+            "paymentReference",
+            "REFERENCE_TOO_LONG",
+        ),
+    ];
+    for (extra, field, reason) in cases {
+        let (status, body) =
+            post_supplier_invoice(&app, &ctx.jwt, &body_with(&ctx, extra.clone())).await;
+        assert_eq!(status, 400, "{extra} → {body}");
+        assert_eq!(
+            body["error"]["code"], "INVALID_PAYMENT_DETAILS",
+            "{extra} → {body}"
+        );
+        assert_eq!(body["error"]["details"]["field"], field, "{extra} → {body}");
+        assert_eq!(
+            body["error"]["details"]["reason"], reason,
+            "{extra} → {body}"
+        );
+    }
+    assert_eq!(
+        supplier_invoice_count(&pool, ctx.seeded.company_id).await,
+        0,
+        "aucun refus ne crée de facture"
+    );
+}
+
+/// AC12-bis — ce qui reste accepté, et la forme enregistrée : IBAN étranger,
+/// blancs Unicode retirés (la même liste qu'au Vitest de `iban.ts`), référence
+/// libre et ancienne référence de 27 chiffres avec un IBAN ordinaire, QRR en
+/// groupes de cinq avec un QR-IBAN, chaîne vide = absente.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn create_accepts_and_normalizes_payment_details(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+
+    // IBAN allemand, saisi en groupes de quatre.
+    let (s, b) = post_supplier_invoice(
+        &app,
+        &ctx.jwt,
+        &body_with(
+            &ctx,
+            json!({ "creditorIban": "DE89 3704 0044 0532 0130 00" }),
+        ),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    assert_eq!(b["creditorIban"], IBAN_DE);
+
+    // IBAN suisse truffé des sept blancs de l'ensemble écrit (AC12-bis) :
+    // U+0020, U+0009, U+00A0, U+202F, U+0085, U+200B, U+FEFF.
+    let blanc = "CH93\u{0020}0076\u{0009}2011\u{00A0}6238\u{202F}5295\u{0085}7\u{200B}\u{FEFF}";
+    let (s, b) = post_supplier_invoice(
+        &app,
+        &ctx.jwt,
+        &body_with(
+            &ctx,
+            json!({ "creditorIban": blanc, "paymentReference": "Facture E2E" }),
+        ),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    assert_eq!(b["creditorIban"], IBAN_CH, "blancs retirés");
+    assert_eq!(
+        b["paymentReference"], "Facture E2E",
+        "référence libre gardée"
+    );
+
+    // Ancienne référence BVR/ESR (27 chiffres) avec un IBAN ordinaire : acceptée.
+    let (s, b) = post_supplier_invoice(
+        &app,
+        &ctx.jwt,
+        &body_with(
+            &ctx,
+            json!({ "creditorIban": IBAN_CH, "paymentReference": QRR_OK }),
+        ),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    assert_eq!(b["paymentReference"], QRR_OK);
+    assert!(b["creditorQrIban"].is_null());
+
+    // Référence libre rognée, 64 caractères tout juste.
+    let ref_64 = "R".repeat(64);
+    let (s, b) = post_supplier_invoice(
+        &app,
+        &ctx.jwt,
+        &body_with(
+            &ctx,
+            json!({ "creditorIban": IBAN_CH, "paymentReference": format!("  {ref_64}  ") }),
+        ),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    assert_eq!(b["paymentReference"], ref_64);
+
+    // Revue P1, E2 : 64 caractères non ASCII (128 octets) sont acceptés — la limite
+    // se compte en caractères, comme la colonne `VARCHAR(64)` (tue M-b21 : `.len()`).
+    let ref_64_e = "é".repeat(64);
+    let (s, b) = post_supplier_invoice(
+        &app,
+        &ctx.jwt,
+        &body_with(
+            &ctx,
+            json!({ "creditorIban": IBAN_CH, "paymentReference": ref_64_e }),
+        ),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    assert_eq!(b["paymentReference"], ref_64_e);
+
+    // Revue P1, B3 : 64 caractères visibles suivis d'un U+200B et précédés d'un
+    // U+FEFF (copier-coller d'un PDF) — rognés comme les autres blancs, ni stockés
+    // ni comptés (tue M-b22 : rognage `trim()` seul).
+    let (s, b) = post_supplier_invoice(
+        &app,
+        &ctx.jwt,
+        &body_with(
+            &ctx,
+            json!({ "creditorIban": IBAN_CH, "paymentReference": format!("\u{FEFF}{ref_64}\u{200B}") }),
+        ),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    assert_eq!(b["paymentReference"], ref_64);
+
+    // QR-IBAN + QRR en groupes de cinq : stockée sans blancs.
+    let (s, b) = post_supplier_invoice(
+        &app,
+        &ctx.jwt,
+        &body_with(
+            &ctx,
+            json!({ "creditorQrIban": "CH44 3199 9123 0008 8901 2", "paymentReference": "21 00000 00003 13947 14300 09017" }),
+        ),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    assert_eq!(b["creditorQrIban"], QR_IBAN_CH);
+    assert!(b["creditorIban"].is_null());
+    assert_eq!(b["paymentReference"], QRR_OK);
+
+    // Chaînes vides ou blanches = absentes.
+    let (s, b) = post_supplier_invoice(
+        &app,
+        &ctx.jwt,
+        &body_with(
+            &ctx,
+            json!({ "creditorIban": "", "creditorQrIban": " \u{00A0}", "paymentReference": "" }),
+        ),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    assert!(b["creditorIban"].is_null(), "{b}");
+    assert!(b["creditorQrIban"].is_null(), "{b}");
+    assert!(b["paymentReference"].is_null(), "{b}");
+}
+
+/// AC12, AC13 — la complétion d'un document sans QR prend IBAN, référence,
+/// montant attendu et projet dans le corps, validés et normalisés par la
+/// conversion commune ; la réponse est relue par la fonction du GET (ses champs
+/// calculés ne sont pas `null`). Tue M-b3 (projet ignoré).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn complete_without_qr_takes_payment_details_and_project_from_body(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let project_id: i64 = sqlx::query(
+        "INSERT INTO projects (company_id, parent_id, code, name, archived) VALUES (?, NULL, 'P302B', 'Projet 30-2b', FALSE)",
+    )
+    .bind(ctx.seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    std::fs::write(app.inbox.join("sansqr.png"), blank_png()).unwrap();
+    let report = run_import(&app, &ctx.jwt).await;
+    let id = accepted_entry(&report, "sansqr.png")["importedSupplierInvoiceId"]
+        .as_i64()
+        .unwrap();
+
+    // Un IBAN faux est refusé, et le document reste à traiter.
+    let (s, b) = post_complete(
+        &app,
+        &ctx.jwt,
+        id,
+        &body_with(&ctx, json!({ "creditorIban": "CH9300762011623852958" })),
+    )
+    .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(b["error"]["code"], "INVALID_PAYMENT_DETAILS");
+    assert_eq!(b["error"]["details"]["reason"], "INVALID_IBAN");
+    assert_eq!(staging_status(&pool, id).await, "to_complete");
+
+    let (s, b) = post_complete(
+        &app,
+        &ctx.jwt,
+        id,
+        &body_with(
+            &ctx,
+            json!({
+                "creditorIban": "CH93 0076 2011 6238 5295 7",
+                "paymentReference": " Facture 4711 ",
+                "expectedPaymentAmount": "100.00",
+                "projectId": project_id,
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["creditorIban"], IBAN_CH);
+    assert_eq!(b["paymentReference"], "Facture 4711");
+    assert_eq!(b["expectedPaymentAmount"], "100.0000");
+    assert_eq!(b["projectId"], project_id, "projet honoré à la complétion");
+    assert_eq!(
+        b["cancellable"], true,
+        "réponse relue par la fonction du GET : {b}"
+    );
+    assert_eq!(staging_status(&pool, id).await, "completed");
+}
+
+/// AC11 — avec QR, le corps ne porte aucune coordonnée de paiement : `400
+/// QR_FIELDS_FROM_DOCUMENT` pour chacun des quatre champs, le document reste à
+/// traiter ; une chaîne vide vaut absente, et un client actuel (sans ces
+/// champs) reste accepté, les valeurs venant du document. Tue M-b1.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn complete_with_qr_refuses_payment_fields_in_body(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let staging_id = seed_staging(
+        &pool,
+        ctx.seeded.company_id,
+        "CHF",
+        false,
+        "NON",
+        None,
+        Some(dec!(100.00)),
+        "Robert SA",
+        "x.png",
+    )
+    .await;
+    for extra in [
+        json!({ "creditorIban": IBAN_DE }),
+        json!({ "creditorQrIban": QR_IBAN_CH }),
+        json!({ "paymentReference": "Autre" }),
+        json!({ "expectedPaymentAmount": "100.00" }),
+    ] {
+        let (s, b) =
+            post_complete(&app, &ctx.jwt, staging_id, &body_with(&ctx, extra.clone())).await;
+        assert_eq!(s, 400, "{extra} → {b}");
+        assert_eq!(
+            b["error"]["code"], "QR_FIELDS_FROM_DOCUMENT",
+            "{extra} → {b}"
+        );
+        assert_eq!(staging_status(&pool, staging_id).await, "to_complete");
+    }
+
+    let (s, b) = post_complete(
+        &app,
+        &ctx.jwt,
+        staging_id,
+        &body_with(&ctx, json!({ "creditorIban": "", "paymentReference": " " })),
+    )
+    .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["creditorIban"], IBAN_CH, "l'IBAN vient du document");
+    assert_eq!(b["expectedPaymentAmount"], "100.0000");
+}
+
+// --- AC14 : fournisseurs proposés par IBAN ---
+
+async fn make_contact(pool: &MySqlPool, ctx: &Ctx, name: &str) -> i64 {
+    contacts::create(
+        pool,
+        ctx.seeded.admin_user_id,
+        NewContact {
+            company_id: ctx.seeded.company_id,
+            contact_type: ContactType::Entreprise,
+            name: name.into(),
+            first_name: None,
+            last_name: None,
+            is_client: false,
+            is_supplier: true,
+            address: None,
+            address_street: None,
+            address_building: None,
+            address_postal_code: None,
+            address_city: None,
+            address_country: None,
+            email: None,
+            phone: None,
+            ide_number: None,
+            client_number: None,
+            default_payment_terms: None,
+            default_payment_terms_days: None,
+            language: None,
+            salutation: kesh_db::entities::contact::Salutation::Neutre,
+        },
+    )
+    .await
+    .expect("create contact")
+    .id
+}
+
+/// Une facture fournisseur du contact, à la date donnée, portant `IBAN_CH`
+/// (forme normalisée : la validation l'exige), réécrite ensuite en SQL brut si
+/// `stored` est donné (une facture antérieure à la validation peut porter des
+/// espaces).
+async fn invoice_with_iban(
+    app: &TestApp,
+    pool: &MySqlPool,
+    ctx: &Ctx,
+    contact_id: i64,
+    date: &str,
+    stored: Option<(&str, &str)>,
+) -> i64 {
+    let mut body = body_with(ctx, json!({ "creditorIban": IBAN_CH, "invoiceDate": date }));
+    body["contactId"] = json!(contact_id);
+    let (s, b) = post_supplier_invoice(app, &ctx.jwt, &body).await;
+    assert_eq!(s, 201, "{b}");
+    let id = b["id"].as_i64().unwrap();
+    if let Some((column, value)) = stored {
+        sqlx::query(&format!(
+            "UPDATE supplier_invoices SET creditor_iban = NULL, {column} = ? WHERE id = ?"
+        ))
+        .bind(value)
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+    id
+}
+
+async fn get_candidates(app: &TestApp, jwt: &str, id: i64) -> (u16, Value) {
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/imported-supplier-invoices/{id}/supplier-candidates"
+        )))
+        .bearer_auth(jwt)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap())
+}
+
+/// AC14 — `supplier-candidates` : IBAN lu sur le document, comparé normalisé
+/// (espaces et insécables en base retrouvés), dans `creditor_iban` comme dans
+/// `creditor_qr_iban` ; factures annulées, contacts archivés ou non
+/// fournisseurs, autre société exclus ; ordre `MAX(invoice_date) DESC` puis
+/// `contacts.id` ; trois au plus ; vide sans QR ; 404 inconnu ou autre société ;
+/// l'IBAN ne sort pas dans la réponse. Tue M-b13 côté serveur.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn supplier_candidates_by_iban(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    // Document avec QR (IBAN_CH, cf. `seed_staging`).
+    let doc = seed_staging(
+        &pool,
+        ctx.seeded.company_id,
+        "CHF",
+        false,
+        "NON",
+        None,
+        Some(dec!(100.00)),
+        "Robert SA",
+        "x.png",
+    )
+    .await;
+
+    let a = make_contact(&pool, &ctx, "Alpha espaces").await;
+    let g = make_contact(&pool, &ctx, "Gamma récent").await;
+    let b = make_contact(&pool, &ctx, "Beta QR").await;
+    let h = make_contact(&pool, &ctx, "Hors plafond").await;
+    let annulee = make_contact(&pool, &ctx, "Annulée").await;
+    let archive = make_contact(&pool, &ctx, "Archivé").await;
+    let client = make_contact(&pool, &ctx, "Plus fournisseur").await;
+    let ailleurs = make_contact(&pool, &ctx, "Facture ailleurs").await;
+    let sans = make_contact(&pool, &ctx, "Autre IBAN").await;
+
+    invoice_with_iban(
+        &app,
+        &pool,
+        &ctx,
+        a,
+        "2026-05-01",
+        Some(("creditor_iban", "ch93 0076\u{00A0}2011\u{202F}6238 5295 7")),
+    )
+    .await;
+    invoice_with_iban(&app, &pool, &ctx, g, "2026-05-01", None).await;
+    invoice_with_iban(
+        &app,
+        &pool,
+        &ctx,
+        b,
+        "2026-04-01",
+        Some(("creditor_qr_iban", IBAN_CH)),
+    )
+    .await;
+    invoice_with_iban(&app, &pool, &ctx, h, "2026-02-01", None).await;
+    let inv_annulee = invoice_with_iban(&app, &pool, &ctx, annulee, "2026-06-01", None).await;
+    sqlx::query("UPDATE supplier_invoices SET status = 'cancelled' WHERE id = ?")
+        .bind(inv_annulee)
+        .execute(&pool)
+        .await
+        .unwrap();
+    invoice_with_iban(&app, &pool, &ctx, archive, "2026-06-01", None).await;
+    sqlx::query("UPDATE contacts SET active = FALSE WHERE id = ?")
+        .bind(archive)
+        .execute(&pool)
+        .await
+        .unwrap();
+    invoice_with_iban(&app, &pool, &ctx, client, "2026-06-01", None).await;
+    sqlx::query("UPDATE contacts SET is_supplier = FALSE, is_client = TRUE WHERE id = ?")
+        .bind(client)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let inv_ailleurs = invoice_with_iban(&app, &pool, &ctx, ailleurs, "2026-06-01", None).await;
+    let other_company = companies::create(
+        &pool,
+        NewCompany {
+            name: "Ailleurs SA".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
+            ide_number: None,
+            org_type: OrgType::Independant,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    sqlx::query("UPDATE supplier_invoices SET company_id = ? WHERE id = ?")
+        .bind(other_company)
+        .bind(inv_ailleurs)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Revue P1, E4 — la portée société côté CONTACT : une facture de la société
+    // courante, la plus récente de toutes et au bon IBAN, mais dont le contact
+    // appartient à une autre société (état incohérent posé en SQL). Il ne sort pas
+    // (tue M-b24 : `contacts.company_id = ?` retiré).
+    let contact_ailleurs = make_contact(&pool, &ctx, "Contact ailleurs").await;
+    invoice_with_iban(&app, &pool, &ctx, contact_ailleurs, "2026-07-01", None).await;
+    sqlx::query("UPDATE contacts SET company_id = ? WHERE id = ?")
+        .bind(other_company)
+        .bind(contact_ailleurs)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut autre = body_with(
+        &ctx,
+        json!({ "creditorIban": IBAN_DE, "invoiceDate": "2026-06-01" }),
+    );
+    autre["contactId"] = json!(sans);
+    assert_eq!(post_supplier_invoice(&app, &ctx.jwt, &autre).await.0, 201);
+
+    let (s, body) = get_candidates(&app, &ctx.jwt, doc).await;
+    assert_eq!(s, 200, "{body}");
+    let ids: Vec<i64> = body["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_i64().unwrap())
+        .collect();
+    assert_eq!(ids, vec![a, g, b], "ordre, filtres et plafond : {body}");
+    assert!(
+        !body.to_string().contains("CH93") && !body.to_string().contains("ch93"),
+        "l'IBAN ne sort pas dans la réponse : {body}"
+    );
+
+    // Document sans QR : liste vide.
+    std::fs::write(app.inbox.join("sansqr.png"), blank_png()).unwrap();
+    let report = run_import(&app, &ctx.jwt).await;
+    let sans_qr = accepted_entry(&report, "sansqr.png")["importedSupplierInvoiceId"]
+        .as_i64()
+        .unwrap();
+    let (s, body) = get_candidates(&app, &ctx.jwt, sans_qr).await;
+    assert_eq!(s, 200, "{body}");
+    assert_eq!(body["candidates"], json!([]));
+
+    // Inconnu, puis autre société : le même 404.
+    let (s, body) = get_candidates(&app, &ctx.jwt, doc + 1000).await;
+    assert_eq!(s, 404, "{body}");
+    assert_eq!(body["error"]["code"], "IMPORTED_INVOICE_NOT_FOUND");
+    let other_jwt = other_company_jwt(&pool).await;
+    let (s, body) = get_candidates(&app, &other_jwt, doc).await;
+    assert_eq!(s, 404, "{body}");
+    assert_eq!(body["error"]["code"], "IMPORTED_INVOICE_NOT_FOUND");
 }

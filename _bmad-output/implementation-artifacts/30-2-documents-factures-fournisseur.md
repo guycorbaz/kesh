@@ -4,7 +4,9 @@
 
 **30-2a : review** (développée le 2026-10-15 ; reportée sur `fecc8566`, merge de la 30-1a — T-a0 fait ; revue de
 code P1 faite — B 0/0/0/5, E 0/0/2/5, A 0/0/0/8 — et remédiée le 2026-10-15 ; **passe ciblée P2** à lancer,
-`30-2a-review-prompt-p2-ciblee.md`, Haiku). **30-2b, 30-2c : ready-for-dev.**
+`30-2a-review-prompt-p2-ciblee.md`, Haiku). *(Annotation du 2026-10-15 : la 30-2a est `done`, revue terminée, et mergée
+— `f1508653`.)* **30-2b : review** (développée le 2026-10-15 sur `f1508653`, reportée sur `fc3a4f7d` — merge de la
+30-1b ; revue de code P1 à lancer, `30-2b-review-prompt-p1.md`, Sonnet, lentilles B, E, A). **30-2c : ready-for-dev.**
 
 *Historique de la validation (paragraphe écrit avant le développement ; la passe ciblée P5 qu'il annonce « à lancer » a
 été faite le 2026-10-15 — 0/0/0/5, validation terminée, cf. Change Log) :* **ready-for-dev** (trois clés) — fiche créée le 2026-10-15 en autonomie (`bmad-create-story`, Opus 5.5), sur
@@ -692,20 +694,20 @@ chaîne brute ; `paidAt` absent : la phrase sans date. Mutation **M-c12** (`paid
 
 ### 30-2b
 
-- [ ] **T-b1** Tests rouges : complétion avec corps de création (projet, IBAN sans QR), `QR_FIELDS_FROM_DOCUMENT`,
+- [x] **T-b1** Tests rouges : complétion avec corps de création (projet, IBAN sans QR), `QR_FIELDS_FROM_DOCUMENT`,
   client sans les nouveaux champs, `INVALID_PAYMENT_DETAILS` sur les deux routes (IBAN invalide, QR-IBAN en
   `creditorIban`, IBAN en `creditorQrIban`, les deux ensemble, QR-IBAN sans QRR, QRR invalide, référence de 65
   caractères — les sept motifs d'AC12-bis), référence de 27 chiffres avec un IBAN ordinaire **acceptée**, IBAN à
   espaces insécables accepté, IBAN allemand accepté, valeur enregistrée normalisée, réponse de `complete` qui porte `sourceDocument` (en 30-2c).
-- [ ] **T-b2** `CreateSupplierInvoiceRequest` partagé, conversion commune et validation par `kesh_core::types::{Iban, QrIban}` et `validate_qrr` (AC12, AC12-bis, AC13) ; IBAN et références factices des tests et du seed remplacés par des valeurs synthétiques valides ; route `GET /imported-supplier-invoices/{id}/supplier-candidates` et son test Rust (AC14), registre des routes.
-- [ ] **T-b3** `SupplierInvoiceForm.svelte` extrait ; Vitest du composant (champs verrouillés avec QR, total, erreurs).
-- [ ] **T-b4** Page `/supplier-invoices/new` (AC10 ; Vitest des états « document inconnu, d'une autre société ou plus à
+- [x] **T-b2** `CreateSupplierInvoiceRequest` partagé, conversion commune et validation par `kesh_core::types::{Iban, QrIban}` et `validate_qrr` (AC12, AC12-bis, AC13) ; IBAN et références factices des tests et du seed remplacés par des valeurs synthétiques valides ; route `GET /imported-supplier-invoices/{id}/supplier-candidates` et son test Rust (AC14), registre des routes.
+- [x] **T-b3** `SupplierInvoiceForm.svelte` extrait ; Vitest du composant (champs verrouillés avec QR, total, erreurs).
+- [x] **T-b4** Page `/supplier-invoices/new` (AC10 ; Vitest des états « document inconnu, d'une autre société ou plus à
   traiter », « chargement », « erreur de lecture ») ; liste et page d'import reliées ; formulaires en ligne retirés et
   leurs clés i18n orphelines retirées (AC8) ; `supplier-invoice-scan.spec.ts`, `supplier-invoices.spec.ts`,
   `inbox-import.spec.ts` (complétion en ligne) et `boutons-rouges-inventory.test.ts` adaptés (§ *Gardes existantes*).
-- [ ] **T-b5** `supplierNameKey`, `searchTermsFor` et `proposeSuppliers` (pures, Vitest des cas d'AC14), extraction de `qrIbanHasValidQrIid` dans `lib/shared/utils/iban.ts` (avec CH/LI, Vitest) employée par `bank-accounts` et le formulaire, panneau de création (AC12, AC14, AC15).
-- [ ] **T-b6** i18n, manuel, PDF, `api-external.md`, CHANGELOG (AC17).
-- [ ] **T-b7** E2E E1, E2, E4 ; captures clair et sombre de la page côte à côte et du panneau fournisseur ; mutations M-b1 à M-b13 (M-b2 déclarée équivalente) ; gates.
+- [x] **T-b5** `supplierNameKey`, `searchTermsFor` et `proposeSuppliers` (pures, Vitest des cas d'AC14), extraction de `qrIbanHasValidQrIid` dans `lib/shared/utils/iban.ts` (avec CH/LI, Vitest) employée par `bank-accounts` et le formulaire, panneau de création (AC12, AC14, AC15).
+- [x] **T-b6** i18n, manuel, PDF, `api-external.md`, CHANGELOG (AC17).
+- [x] **T-b7** E2E E1, E2, E4 ; captures clair et sombre de la page côte à côte et du panneau fournisseur ; mutations M-b1 à M-b13 (M-b2 déclarée équivalente) ; gates.
 
 ### 30-2c
 
@@ -901,6 +903,19 @@ mutée s'y enregistrerait (P8). Les tests de comportement montent le squash sur 
   refusée en `UNSUPPORTED_FILE_TYPE` même si un navigateur l'afficherait — JPEG CMJN ou à codage arithmétique, image
   de plus de `MAX_IMAGE_DIMENSION` (10 000) pixels de côté ; le manuel le dit (§ *Ce qui reste refusé*) et C-30-2-4
   est annoté.
+- *(Ajouté le 2026-10-16, revue de code P1 de la 30-2b, B2 = A9 ; C-30-2-42.)* Une erreur de base **entre** le `COMMIT`
+  de la complétion et la relecture de la réponse rend une erreur sur une facture créée ; un nouvel essai rend
+  `409 IMPORT_NOT_PENDING_COMPLETION` (patron de `pay`). Écrit au doc-comment de `complete_import`.
+- *(Ajouté le 2026-10-16, revue de code P1 de la 30-2b, B4 ; C-30-2-43.)* La page `/supplier-invoices/new` lit
+  `?document=` une fois : un passage direct d'un document à l'autre sans quitter la page la laisserait sur le premier
+  (aucun lien de l'application ne le fait). Si la navigation vers la fiche rejette après une création réussie, le
+  formulaire se réactive et un second clic peut créer un doublon (sans document ; avec document, `409`).
+- *(Ajouté le 2026-10-16, revue de code P1 de la 30-2b, E5.)* Plus de 200 fournisseurs : la liste déroulante n'en
+  charge que 200 (limite héritée des deux anciens écrans) ; un fournisseur au-delà n'est atteignable que s'il est
+  proposé puis retenu.
+- *(Ajouté le 2026-10-16, revue de code P1 de la 30-2b, E6.)* La clé de nom des propositions ne replie ni les ligatures
+  (« œ », « æ ») ni « ø », « ł », coupe à l'apostrophe, et retire les formes juridiques et mots de liaison où qu'ils
+  soient : un nom réduit à « Ab » ou « Co » n'est jamais proposé. Rappel perdu, jamais de fausse proposition.
 
 ### Pièges connus du dépôt, applicables ici
 
@@ -1181,6 +1196,209 @@ complet, port 3052 : **297 passés, 8 échoués, 17 ignorés** — les sept KF-0
 **Tests neufs de la remédiation** (de `75020c01` à `75f3bdcd`, `grep -cE "^\s*it\("`) : `DocumentPreview.test.ts`
 8 → 10, `import-page.test.ts` 5 → 6 (**+3 Vitest**) ; aucun test Rust.
 
+#### 30-2b — développement (2026-10-15, Opus 5.5, autonomie)
+
+Worktree `/home/gcorbaz/devel/kesh-30-2`, branche `story/30-2b`, partie de `f1508653` (30-1a et 30-2a mergées) ; bases
+`kesh_302b` et `kesh_e2e_302b` (script `kesh-gate-logs/302b-reset-db.sh`), port 3052, dossiers E2E
+`/tmp/kesh-e2e-302b/{inbox,documents,backup}` passés au backend **et** au runner, `CARGO_TARGET_DIR` du worktree.
+Développement interrompu une fois par une erreur 429 (limite de dépense) au lancement de la campagne de mutations, repris
+au même point. **Reportée** ensuite sur `fc3a4f7d` (merge de la 30-1b, PR #690) par `git rebase origin/main` :
+hashes d'avant le report `5266fb3b` (code) → **`1ff20e04`**, `ee08f448` (documentation) → `401e7949`.
+
+**Commits** : `1ff20e04` feat(30-2b) — code, tests, i18n, E2E (**dernier commit de code**) ; `401e7949` docs(30-2b) —
+manuels, `api-external.md`, CHANGELOG, README, registre ; `26851b6d` docs(30-2b) — PDF régénérés après le report ; puis
+le commit de cette fiche, de `sprint-status.yaml` et du prompt de revue.
+
+**Tests rouges d'abord** (`kesh-gate-logs/302b-rouges.log`), sur `f1508653` + les tests seuls : **5 Rust rouges sur 5**
+(`create_refuses_each_invalid_payment_detail` : `left: 201, right: 400` ; `create_accepts_and_normalizes_payment_details` :
+`left: "DE89 3704 0044 0532 0130 00", right: "DE89370400440532013000"` ; `complete_with_qr_refuses_payment_fields_in_body` :
+`left: 200, right: 400` ; `complete_without_qr_takes_payment_details_and_project_from_body` : `left: 200, right: 400` ;
+`supplier_candidates_by_iban` : corps vide, route absente). Le test d'intégration de la recherche
+(`contacts::tests::search_terms_for_mueller_find_the_three_spellings`) était **vert d'emblée** : il fige le comportement
+existant de la recherche (un « OU » de mots en collation qui confond `ü` et `u`), il ne demandait pas de code — déclaré.
+Collation relevée : `contacts.name` en **`utf8mb4_unicode_ci`** sur `kesh_302b` (base créée par le script en
+`utf8mb4_unicode_ci`) ; serveur MariaDB 10.11.16, `collation_server` = `utf8mb4_general_ci` ; les deux confondent `ü` et `u`.
+Vitest : `supplier-proposals.test.ts` rouge (module absent, « Failed to resolve import »), constaté. ⚠️ **Écart** :
+`iban.test.ts`, `SupplierInvoiceForm.test.ts`, `new-page.test.ts` et `supplier-invoice-form.ts` ont été écrits **avec**
+leur code (extraction de code existant), non constatés rouges avant lui ; la campagne de mutations tient lieu de preuve
+qu'ils mordent.
+
+**Inventaire des IBAN et références des tests (AC12-bis)** — `grep -rn "creditorIban\|creditorQrIban\|paymentReference\|creditor_iban\|payment_reference" crates/*/tests frontend/tests crates/kesh-seed` : seuls les corps HTTP
+comptent (la validation est dans la route) ; un seul en pose, `frontend/tests/e2e/payment-batches.spec.ts:107-108`
+(`CH5604835012345678009`, MOD-97 vérifié = 1, et « Facture E2E ») : valide, il reste accepté — aucun test ni seed à
+corriger. `kesh-seed` n'en pose aucun.
+
+**Choix ajoutés au registre** : **C-30-2-30 à C-30-2-40** (conversion commune et `PaymentSource` ; ordre et champ des
+motifs ; lecture `supplier-candidates` dans le dépôt des contacts ; réponse de la complétion relue dès la 30-2b ;
+propositions calculées par la page, affichées par le formulaire, panneau dans le formulaire ; clés au préfixe
+`supplier-invoices-` et 24 retirées ; création réservée à l'écran aussi ; paramètre illisible ; `normalizeIban` en
+majuscules et total comparé au seul montant du QR ; captures dans les E2E ; ligne du README).
+
+**i18n** (recompté par `git diff` du FTL fr-CH) : **+52 clés** ×4 (50 `supplier-invoices-*`, `error-invalid-payment-details`,
+`error-qr-fields-from-document`) et **−24** (23 `imported-supplier-invoices-*` : `-add-line`, `-complete`, `-completed-hint`,
+`-err-amount`, `-err-currency`, `-err-fiscal-year`, `-err-form`, `-err-generic`, `-err-iban-ref`, `-err-not-pending`,
+`-field-date`, `-field-due`, `-field-number`, `-field-supplier`, `-line-account`, `-line-desc`, `-line-qty`, `-line-ht`,
+`-lines`, `-mismatch`, `-subcentime`, `-sum-ttc`, `-target` ; et `supplier-invoices-form-close`) ; une valeur changée
+×4 (`imported-supplier-invoices-qr-unreadable-hint` : « en créant la facture, saisissez l'IBAN et la référence à la
+main »). Parité : 2455 clés dans chacune des quatre locales avant le report. `sitesTotal` 2205 → 2237 (+32 : +86 dans
+les fichiers neufs, −54 dans les deux formulaires retirés), réuni au report avec les +14 de la 30-1b : **2251** ;
+`CLES_RELEVEES` 302 → **328** ; `boutons-rouges-inventory` 14 → **13** (les deux ✕ de retrait de ligne deviennent un).
+
+**Valeur grepée** (« sans IBAN ni référence » et ses quatre traductions, `imported-complete-*`,
+`imported-supplier-select`, `CompleteImportRequest`) sur le worktree hors `_bmad-output` : ne reste qu'une assertion
+**négative** (`import-page.test.ts`, le formulaire en ligne absent). Réécrits : `-qr-unreadable-hint` ×4 et son repli
+Svelte, doc-comments de `inbox_import.rs` et de l'entité, commentaire du test `complete_document_without_qr`, manuel
+utilisateur (§ *Documents à traiter*, note CHF, K5), manuel d'administration (§ `sec:inbox-import`), CHANGELOG (entrée
+*Ajouté* de la 30-2a, K5), `api-external.md` (paragraphe de la complétion remplacé).
+
+**Mutations** — campagne sous le verrou de gate, `kesh-gate-logs/302b-mutations.log` (motifs littéraux vérifiés uniques
+par `302b-muter.pl`, définitions sous `kesh-gate-logs/302b-mut/<id>/`, journaux `302b-mut-<id>.log`), sur `5266fb3b`
+(avant le report ; code identique à `1ff20e04` hors réunion de `sitesTotal`), restauration `git checkout -- f && touch f`,
+arbre propre constaté en fin de campagne ; aucune erreur de compilation :
+
+| Mutation | Motif | Verdict | Tuée par |
+|---|---|---|---|
+| M-b1 | garde `carries_payment_fields` neutralisée | tuée | `complete_with_qr_refuses_payment_fields_in_body` |
+| M-b2 | le corps l'emporte sur le QR | **non jouée — équivalente isolément, déclarée** (fiche) | — |
+| M-b3 | `project_id: None` dans la conversion | tuée | `complete_without_qr_takes_…` (`projectId` `Null`) |
+| M-b4 | première proposition présélectionnée | tuée | Vitest du formulaire (`selectedIndex`) |
+| M-b5 | recherche sans `isSupplier` | tuée | Vitest de la page `new` |
+| M-b6 | lignes vidées à la création du fournisseur | tuée | Vitest du panneau (AC15) |
+| M-b7 | `AMOUNT_MISMATCH` retiré | tuée | `complete_amount_mismatch_and_sub_centime_blocked` (existant) |
+| M-b8 | scan proposé avec un document | tuée | Vitest du formulaire (M-b8) |
+| M-b9 | `qrIbanHasValidQrIid` toujours fausse | tuée | `iban.test.ts` et Vitest du formulaire |
+| M-b10 | validation retirée de la conversion | tuée | `create_refuses_each_invalid_payment_detail` (201 au lieu de 400) |
+| M-b11 | éligibilité retirée | tuée | `supplier-proposals.test.ts` (« Zurcher » / « Nicolet ») |
+| M-b12 | sans `ü`→`ue` | tuée | `supplier-proposals.test.ts` |
+| M-b13 | propositions par IBAN ignorées (écran) | tuée | `supplier-proposals.test.ts` |
+| M-b13s | `supplier-candidates` toujours vide (serveur) | tuée | `supplier_candidates_by_iban` |
+| M-b14 *(ajoutée)* | factures annulées non exclues | tuée | `supplier_candidates_by_iban` (`[6, 2, 3]`) |
+| M-b15 *(ajoutée)* | IBAN en base non normalisé (`REPLACE` retirés) | tuée | `supplier_candidates_by_iban` |
+| M-b16 *(ajoutée)* | QR-IBAN admis dans `creditorIban` | tuée | `create_refuses_each_invalid_payment_detail` |
+| M-b17 *(ajoutée)* | seul l'espace ASCII retiré | tuée | `create_accepts_and_normalizes_payment_details` |
+| M-b18 *(ajoutée)* | QR-IBAN routé aussi vers `creditorIban` (écran) | tuée | Vitest du formulaire |
+| M-b19 *(ajoutée)* | coordonnées envoyées malgré le QR (écran) | tuée | Vitest du formulaire |
+
+Bilan : **19 jouées, 19 tuées** ; M-b2 déclarée équivalente, non jouée.
+
+**Gates** — premier gate complet sur `5266fb3b` (`302b-gate1-*.log`) : `scripts/test-fast.sh` **3786 passés,
+6 ignorés** ; `npm run check` 0 erreur, 29 avertissements (aucun dans un fichier de la story) ; `lint-i18n-ownership`
+PASS ; Vitest **1761 passés, 155 fichiers** ; build vert. **Gate final au dernier commit de code `1ff20e04`**, après le
+report, base `kesh_302b` remise à zéro (`302b-gate2-*.log`) : `scripts/test-fast.sh` (fmt, clippy `-D warnings`,
+nextest) **3830 passés, 6 ignorés** ; `npm run check` 0 erreur (29 avertissements) ; `lint-i18n-ownership` PASS ; Vitest
+**1791 passés, 155 fichiers** ; `npm run build` vert. **E2E complet** au même code (`302b-e2e-final.log`, recette de
+`docs/testing.md`, port 3052, base `kesh_e2e_302b` remise à zéro, `/health` en 0.14.0) : **304 passés, 7 échoués,
+17 ignorés** — les sept KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* (`mode-expert.spec.ts:26`, `:41`,
+`onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; aucune régression. E1, E2, E4,
+le round-trip d'`inbox-import.spec.ts` et `supplier-invoice-scan.spec.ts` verts. Captures clair et sombre de la page
+côte à côte et du panneau : `kesh-gate-logs/302b-captures/302b-{cote-a-cote,panneau-fournisseur}-{clair,sombre}.png`
+(fixtures synthétiques ; ⚠️ Kesh n'a pas de thème sombre, C-28-1-7 — seule la préférence du navigateur change).
+**PDF** : `make fr` sous le verrou après le report (`302b-make.log`), deux PDF régénérés ; phrases relues au PDF
+aplati (« Créer le fournisseur », « Les coordonnées de paiement sont contrôlées », « Une proposition n'est qu'une
+proposition » au manuel utilisateur ; `INVALID_PAYMENT_DETAILS`, `QR_FIELDS_FROM_DOCUMENT`, « saisissent alors à la
+main » au manuel d'administration) ; « ni IBAN ni référence » : 0.
+
+**Tests neufs** — recomptés aux deux bornes `f1508653` → `1ff20e04` : `inbox_import_e2e.rs` 29 → 34 (**+5**),
+`contacts.rs` (mod tests) **+1** — **+6 Rust** ; Vitest : `iban.test.ts` 0 → 6, `supplier-proposals.test.ts` 0 → 12,
+`SupplierInvoiceForm.test.ts` 0 → 12, `new-page.test.ts` 0 → 8 (sept `it` et un `it.each` à deux cas),
+`import-page.test.ts` 6 → 7 — **+39 Vitest** (1722 → 1761 avant le report ; 1791 après, avec la 30-1b) ; E2E :
+`supplier-documents.spec.ts` 3 → 6 (E1, E2, E4), `inbox-import.spec.ts` 3 → 3 (round-trip réécrit).
+
+**Écarts à la fiche** :
+
+- Un fichier source (`imported-supplier-invoices.types.ts`, retrait des types de complétion) a été édité **une fois par
+  un script `python3`** au lieu de l'outil d'édition — contraire aux consignes communes (§ 7 de
+  `docs/agents-orchestration.md`). Résultat vérifié (`npm run check` 0 erreur, diff relu) ; toutes les autres éditions
+  de code sont passées par l'outil d'édition.
+- Les quatre tests Vitest et le module d'extraction ci-dessus non constatés rouges avant leur code (déclaré plus haut).
+- Mutations ajoutées M-b13s et M-b14 à M-b19 (au-delà de la liste de la fiche) ; M-b2 non jouée.
+- `qrIbanHasValidQrIid` gagne la condition CH/LI **aussi** pour la page des comptes bancaires : un QR-IBAN d'un autre
+  pays y est désormais refusé à l'écran (le serveur le refusait déjà, `QrIban::new`).
+- La liste ne propose plus « Enregistrer une facture » à un rôle Consultation (C-30-2-36) — la fiche disait « patron
+  existant de la liste », qui n'existait pas.
+- La fiche de la facture n'affiche que `creditorIban` (`[id]/+page.svelte`), jamais `creditorQrIban` : une facture à
+  QR-IBAN ne montre pas son QR-IBAN. Préexistant, hors périmètre, **à ouvrir en issue** (proposé dans le rapport).
+- Le champ IBAN verrouillé est étroit sur la page côte à côte (capture) : l'IBAN y est tronqué à l'œil, la valeur est
+  entière. Cosmétique, laissé.
+
+**Conflits du report sur `fc3a4f7d`** (30-1b) : `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal` : 2219 de
+la 30-1b + 32 = 2251, commentaires réunis) et `CHANGELOG.md` (bandeau *Intégrations* : phrase de la 30-1b sur
+`RECONCILIATION_RULE_MASKED` gardée, phrases de la 30-2b ajoutées ; *Modifié* : entrées des deux stories gardées) —
+résolus par union. Sans conflit : `errors.rs`, `lib.rs`, les FTL, `api-external.md`, les manuels (PDF régénérés après
+le report), `CLES_RELEVEES` (la 30-1b n'ajoute aucune clé du domaine : 328 vérifié par le gate). Pour la 30-2c :
+`SupplierInvoiceResponse` gagnera `sourceDocument` dans `load_with_settlement_cancellation`, déjà employée par la
+complétion (C-30-2-33).
+
+#### 30-2b — remédiation de la revue de code P1 (2026-10-16, Opus 5.5, autonomie)
+
+Rapports `kesh-gate-logs/302b-review-p1-{B,E,A}.md` (Sonnet) : **B 0/0/1/3, E 0/0/1/6, A 0/0/1/8**. Commits :
+**`f428279f`** fix(30-2b) — code et tests (**dernier commit de code**) ; `eed3564f` docs(30-2b) — manuels, PDF,
+`api-external.md` ; puis le commit de cette fiche, du registre, de `sprint-status.yaml` et du prompt P2.
+
+- **B1 = E1 = A1 (MEDIUM)** — Entrée dans un champ du panneau « Nouveau fournisseur » soumettait la facture.
+  Corrigé : `onPanelKeydown` sur le conteneur du panneau (C-30-2-41). Tests : trois Vitest neufs
+  (`SupplierInvoiceForm.test.ts` 12 → 15 `it`) — Entrée dans chacun des 6 champs (Entreprise) puis des 7 (Personne),
+  fournisseur sélectionné et lignes valides ; Entrée dans le nom crée et sélectionne ; **témoin** : Entrée dans un champ
+  de la facture la soumet bien (le modèle de soumission implicite n'est pas muet). E2E E2 : `press('Enter')` dans le
+  nom au lieu du clic. ⚠️ Pas de test rouge constaté avant le code : la mutation M-b20 (gestionnaire retiré) en tient
+  lieu, et rend les deux tests rouges.
+- **B3** — référence libre rognée de l'ensemble de blancs de `present()` (`is_payment_blank`, seule définition serveur),
+  longueur comptée après (C-30-2-44). **E2, E3, E4** — cas ajoutés aux tests existants de `inbox_import_e2e.rs` (64/65
+  « é », U+FEFF + 64 + U+200B, référence blanche avec QR-IBAN → `QRR_REQUIRED`, contact d'une autre société écarté de
+  `supplier-candidates`) : aucun test neuf, le nombre de tests Rust ne bouge pas.
+- **A6 = E7** — plus aucun caractère invisible littéral dans `iban.ts` ni `iban.test.ts` (points de code explicites,
+  `grep -cP` = 0 dans les deux). ⚠️ L'outil d'édition convertit en caractère brut une séquence `\u200B` écrite dans un
+  littéral : d'où `String.fromCodePoint` ; `iban.test.ts` réécrit en entier par l'outil d'écriture.
+- **A8** — `svelte-ignore state_referenced_locally` retiré devant `contactType` ; `npm run check` : 29 avertissements,
+  comme avant, aucun dans un fichier de la story. Un `svelte-ignore a11y_no_noninteractive_element_interactions`
+  justifié est posé devant le panneau (sans lui, avertissement neuf).
+- **A2** — angle mort `expectedPaymentAmount` écrit au doc-comment de `validate_payment_details`, au manuel utilisateur
+  (note des coordonnées de paiement) et à `api-external.md`. **A7** — « la saisie (ou la complétion) » remplacé aux
+  trois sites (`user-manual.tex:406`, `admin-manual.tex:2669`, `:2671`) ; « (ou la complétion) » : 0 dans les deux PDF.
+- **B2 = A9, B4** — angles morts écrits (C-30-2-42, C-30-2-43 ; § *Angles morts assumés* ; doc-comment de
+  `complete_import`), non corrigés. **E5, E6** — laissés, écrits au même §.
+- **A3** *(annotation du Record du développement)* : l'AC16 « un refus simulé laisse champs et lignes intacts » n'est
+  testé qu'au niveau du composant (`SupplierInvoiceForm.test.ts`, deux tests), pas dans `new-page.test.ts` ;
+  `supplier-invoice-scan.spec.ts` et `supplier-invoices.spec.ts` ne sont pas au diff (T-b4 les disait « adaptés ») :
+  ils passent tels quels, leurs `data-testid` étant conservés ; l'E2E E1 n'établit que par l'API que la fiche porte
+  le document — écarts non déclarés à leur date, déclarés ici.
+- **A4** *(annotation)* : « `new-page.test.ts` 0 → 8 (sept `it` et un `it.each` à deux cas) » se lit **six** `it` et un
+  `it.each` à deux cas (total 8 juste). Le second point d'A4 (« +86 dans les six fichiers neufs ») est **réfuté** : le
+  commentaire de `i18n-keys.test.ts` nomme six fichiers neufs, dont deux sans appel — recompté :
+  18 + 42 + 16 + 10 + 0 + 0 = 86.
+- **A5** *(annotation)* : le « gate final au dernier commit de code `1ff20e04` » a tourné au HEAD `401e7949`
+  (`302b-gate2-head.txt`, `302b-e2e-final-head.txt`), dont le code est identique à `1ff20e04`
+  (`git diff --stat 1ff20e04 401e7949` : documentation et registre seuls).
+
+**Mutations** (`kesh-gate-logs/302b-mutations-p1.log`, définitions `302b-mut-p1/<id>/`, sous le verrou, HEAD
+`f428279f`, restauration `git checkout -- f && touch f`, arbre propre en fin) — un premier lancement a rendu quatre
+« MOTIF-INVALIDE » (motifs écrits avec une fin de ligne que le muteur, en lecture d'un bloc, ne retire pas), aucune
+écriture ; relancé, toutes jouées :
+
+| Mutation | Motif | Verdict | Tuée par |
+|---|---|---|---|
+| M-b20 | `onkeydown={onPanelKeydown}` retiré | tuée | les deux tests Entrée du panneau |
+| M-b20b | `e.preventDefault()` retiré (création **et** soumission) | tuée | les mêmes |
+| M-b21 | `.chars().count()` → `.len()` | tuée | `create_accepts_and_normalizes_payment_details` (64 « é » : 400 au lieu de 201) |
+| M-b22 | `trim_matches(is_payment_blank)` → `trim()` | tuée | même test (U+FEFF + 64 + U+200B : 400 au lieu de 201) |
+| M-b23 | `present(payment_reference)` → brut | tuée | `create_refuses_each_invalid_payment_detail` (`INVALID_QRR` au lieu de `QRR_REQUIRED`) |
+| M-b24 | `contacts.company_id = ?` neutralisé (`OR TRUE`) | tuée | `supplier_candidates_by_iban` (`[11, 2, 3]` au lieu de `[2, 3, 4]`) |
+| M-b25 | U+200B retiré de `IBAN_BLANKS` | tuée | `iban.test.ts` (deux tests) |
+
+Bilan : **7 jouées, 7 tuées**.
+
+**Gates** au HEAD `eed3564f` (code identique à `f428279f`), base `kesh_302b` remise à zéro (`302b-gate3-*.log`) :
+`scripts/test-fast.sh` (fmt, clippy `-D warnings`, nextest) **3830 passés, 6 ignorés** ; `npm run check` 0 erreur,
+29 avertissements ; `lint-i18n-ownership` PASS ; Vitest **1794 passés, 155 fichiers** (1791 + 3) ; `npm run build`
+vert. **E2E complet** au même HEAD (`302b-e2e-p1.log`, recette de `docs/testing.md`, port 3052, base
+`kesh_e2e_302b` remise à zéro, `/health` en 0.14.0) : **304 passés, 7 échoués, 17 ignorés** — les sept KF-029 (#97)
+(`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ;
+E2 (Entrée dans le panneau) vert. **PDF** : `make fr` sous le verrou (`302b-make-p1.log`), deux PDF régénérés, phrases
+neuves retrouvées au texte aplati.
+
+**Choix ajoutés** : C-30-2-41 à C-30-2-44. **Écart** : `iban.test.ts` réécrit en entier par l'outil d'écriture (non
+par substitution de motifs) — l'outil d'édition ne pouvait ni lire ni écrire les caractères invisibles en jeu.
+
 ### File List
 
 30-2a, `git diff --name-status 5b566378 af0d2eb4` (58 fichiers ; A = ajouté) :
@@ -1207,6 +1425,23 @@ complet, port 3052 : **297 passés, 8 échoués, 17 ignorés** — les sept KF-0
   `README.md`, `.env.example`.
 - BMAD : `_bmad-output/implementation-artifacts/epic-30-choix-autonomes-302.md`, cette fiche,
   `sprint-status.yaml`, `30-2a-review-prompt-p1.md` (A).
+
+30-2b, `git diff --name-status fc3a4f7d HEAD` (34 fichiers de code à `1ff20e04`, 7 de documentation ensuite ; A = ajouté) :
+
+- Backend : `crates/kesh-api/src/{errors.rs, inbox_import.rs (doc-comment), lib.rs, routes/imported_supplier_invoices.rs, routes/supplier_invoices.rs}`,
+  `crates/kesh-db/src/entities/imported_supplier_invoice.rs` (doc-comment), `crates/kesh-db/src/repositories/contacts.rs`.
+- Tests Rust : `crates/kesh-api/tests/inbox_import_e2e.rs` (et `contacts.rs`, mod tests).
+- i18n : `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`.
+- Frontend : `frontend/src/lib/features/supplier-invoices/{SupplierInvoiceForm.svelte (A), SupplierCreatePanel.svelte (A), supplier-invoice-form.ts (A), supplier-proposals.ts (A), SupplierInvoiceForm.test.ts (A), supplier-proposals.test.ts (A)}`,
+  `frontend/src/lib/shared/utils/{iban.ts (A), iban.test.ts (A)}`,
+  `frontend/src/lib/features/imported-supplier-invoices/{imported-supplier-invoices.api.ts, imported-supplier-invoices.types.ts}`,
+  `frontend/src/routes/(app)/supplier-invoices/{+page.svelte, new/+page.svelte (A), new/new-page.test.ts (A), import/+page.svelte, import/import-page.test.ts}`,
+  `frontend/src/routes/(app)/bank-accounts/+page.svelte`,
+  `frontend/src/lib/shared/{i18n-keys.test.ts, i18n-un-repli-par-cle.test.ts}`,
+  `frontend/src/lib/components/ui/button/boutons-rouges-inventory.test.ts`.
+- E2E : `frontend/tests/e2e/{helpers/inbox.ts, inbox-import.spec.ts, supplier-documents.spec.ts}`.
+- Documentation : `docs/manual/fr/{user-manual,admin-manual}.{tex,pdf}`, `docs/api-external.md`, `CHANGELOG.md`, `README.md`.
+- BMAD : `epic-30-choix-autonomes-302.md`, cette fiche, `sprint-status.yaml`, `30-2b-review-prompt-p1.md` (A).
 
 ## Change Log
 
@@ -1476,4 +1711,48 @@ remédiés ; **passe ciblée P2** à lancer (`30-2a-review-prompt-p2-ciblee.md`,
   P1 ci-dessus (l. 901, 1159, 1169) se lisent avec cette correction. T2 et T3 (LOW) laissés.
 - Le correctif ne touche aucun comportement : un commentaire Rust et des textes. **La revue de la 30-2a est terminée**
   (P1 Sonnet B 0/0/0/5, E 0/0/2/5, A 0/0/0/8 → P2 ciblée Haiku 0/0/1/2, T1 corrigé).
+
+
+### 2026-10-15 — Développement de la 30-2b (Opus 5.5, autonomie)
+
+`bmad-dev-story` sur la **30-2b seulement**, partie de `f1508653`, reportée sur `fc3a4f7d` (merge de la 30-1b). Commits
+`1ff20e04` (code, dernier commit de code), `401e7949` (documentation), `26851b6d` (PDF). Tests rouges d'abord (5 Rust
+sur 5 ; `supplier-proposals.test.ts` rouge), conversion commune et validation des coordonnées de paiement (sept
+motifs), `QR_FIELDS_FROM_DOCUMENT`, route `supplier-candidates`, formulaire extrait, page `/supplier-invoices/new` seule
+ou à côté du document, propositions jamais présélectionnées, panneau « Nouveau fournisseur ». Campagne M-b1 à M-b19 :
+19 jouées, 19 tuées (M-b2 équivalente déclarée, non jouée). Gate final au dernier commit de code : nextest 3830/3830
+(6 ignorés), Vitest 1791/1791 (155 fichiers), check, lint et build verts ; E2E 304 passés + les 7 KF-029 (17 ignorés).
+Choix C-30-2-30 à 40. Écart déclaré : une édition de fichier source par script. Le détail est au Dev Agent Record.
+Statut de la clé `30-2b-creation-cote-a-cote` : `review` ; revue de code P1 à lancer (`30-2b-review-prompt-p1.md`,
+Sonnet, lentilles B, E, A).
+
+### 2026-10-16 — Revue de code P1 de la 30-2b (Sonnet, lentilles B, E, A) et remédiation (Opus 5.5)
+
+Rapports : `/home/gcorbaz/devel/kesh-gate-logs/302b-review-p1-{B,E,A}.md` — **B 0/0/1/3, E 0/0/1/6, A 0/0/1/8**
+(CRITICAL/HIGH/MEDIUM/LOW) ; un MEDIUM convergent, aucun finding réfuté hors le second point d'A4.
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| B1 = E1 = A1 | MEDIUM | Entrée dans le panneau crée le fournisseur, jamais la facture (C-30-2-41) ; 3 Vitest, pas E2E ; M-b20, M-b20b tuées |
+| B3 | LOW | même ensemble de blancs pour le rognage, longueur après (C-30-2-44) ; M-b22 tuée |
+| E2, E3, E4 | LOW | cas de test ajoutés ; M-b21, M-b23, M-b24 tuées |
+| A6 = E7 | LOW | points de code explicites dans `iban.ts` et son test ; M-b25 tuée |
+| A2, A7 | LOW | manuels (PDF régénérés), `api-external.md`, doc-comment |
+| A8 | LOW | `svelte-ignore` superflu retiré |
+| A3, A4, A5 | LOW | Dev Agent Record annoté (A4, second point, réfuté) |
+| B2 = A9, B4 | LOW | angles morts écrits (C-30-2-42, C-30-2-43) |
+| E5, E6 | LOW | laissés, écrits aux angles morts |
+
+Gate complet au dernier commit de code (`f428279f`, exécuté au HEAD `eed3564f`, code identique) : nextest 3830/3830
+(6 ignorés), Vitest 1794/1794 (155 fichiers), check, lint et build verts ; E2E 304 passés + les 7 KF-029, 17 ignorés.
+Trend : P1 = 1 MEDIUM → remédié ; la remédiation touche du code de production (panneau, validation de la référence,
+`iban.ts`) : **passe ciblée P2** à lancer (`30-2b-review-prompt-p2-ciblee.md`, **Haiku**, une lentille T, diff
+`5da6428d..HEAD`, rapport `302b-review-p2-T.md`).
+
+### Revue de code P2 ciblée de la 30-2b — 2026-10-16 — revue terminée
+
+- Passe ciblée P2 (Haiku, lentille T, `5da6428d..4fd03a41`) : **0/0/0/3**. T1 (garde IME sur Safari, hypothèse),
+  T2 (portée du doc-comment « seule définition »), T3 (première campagne de mutations aux motifs invalides, non
+  annoncée) laissés. **La revue de la 30-2b est terminée** : P1 Sonnet B 0/0/1/3, E 0/0/1/6, A 0/0/1/8 (MEDIUM
+  convergent : Entrée dans le panneau « Nouveau fournisseur ») → remédiée (`f428279f`) → P2 ciblée Haiku 0/0/0/3.
 

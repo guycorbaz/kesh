@@ -423,3 +423,189 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   `NO_QR_CODE_FOUND`) ; les deux points s'ajouteront avec leur code. Écart à la fiche déclaré au Dev Agent Record.
 - **Écartées** : annoncer au manuel un comportement absent du code (le manuel dirait faux jusqu'au merge de la 30-2b).
 - **Réversible** : oui.
+- *(Suite donnée le 2026-10-15 par la 30-2b : `INVALID_PAYMENT_DETAILS` et `QR_FIELDS_FROM_DOCUMENT` sont écrits au
+  *Passer à la 0.14.0*, au bandeau du CHANGELOG et à `api-external.md` ; la lecture par les clés `read` reste à la 30-2c.)*
+
+---
+
+*Choix de la 30-2b — développement du 2026-10-15 (Opus 5.5, autonomie), sur `f1508653` (30-1a et 30-2a mergées).*
+
+### C-30-2-30 — La conversion commune vit sur `CreateSupplierInvoiceRequest`, la source des coordonnées est un type
+
+- **Contexte** : AC12-bis et AC13 veulent une seule conversion vers `NewSupplierInvoice`, portant la validation des
+  coordonnées, pour `POST /supplier-invoices` et la complétion ; avec QR, les coordonnées viennent de la ligne verrouillée
+  et le corps ne doit pas en porter (AC11).
+- **Retenu** : `CreateSupplierInvoiceRequest::to_new_supplier_invoice(company_id, PaymentSource)` dans
+  `routes/supplier_invoices.rs`, avec `PaymentSource::{Body, Document { payment, expected_payment_amount }}` ; `Body`
+  passe par `validate_payment_details` (seule définition serveur), `Document` refuse `QR_FIELDS_FROM_DOCUMENT` si le corps
+  porte l'une des quatre coordonnées (une chaîne blanche vaut absente). La complétion construit la source après le
+  verrou et le routage IBAN existant. `normalize_payment_field` est `pub(crate)` (aussi employée par `supplier-candidates`).
+  Deux variantes neuves d'`AppError` : `InvalidPaymentDetails { field, reason }` et `QrFieldsFromDocument`, messages par
+  les clés `error-invalid-payment-details` et `error-qr-fields-from-document` (quatre locales).
+- **Écartées** : la validation dans `kesh-core` (le type `Iban` y est déjà ; c'est la politique de la route — quel champ,
+  quel motif — qui est neuve) ; réutiliser `ImportCompletionRejected` pour `QR_FIELDS_FROM_DOCUMENT` (message en dur, non
+  traduit, et le refus vaut au-delà de la complétion).
+- **Réversible** : oui.
+
+### C-30-2-31 — Ordre et champ des motifs de refus
+
+- **Contexte** : AC12-bis nomme sept motifs et trois champs, sans ordre ni champ pour `BOTH_IBANS`.
+- **Retenu** : `BOTH_IBANS` d'abord, sur `creditorIban` ; puis l'IBAN (`INVALID_IBAN`, `QR_IBAN_IN_IBAN_FIELD`), puis le
+  QR-IBAN (`INVALID_IBAN` si `CoreError::InvalidIban`, `NOT_A_QR_IBAN` sinon), puis la référence. Avec un QR-IBAN, la
+  référence est normalisée comme un IBAN (blancs de l'ensemble écrit) avant `validate_qrr` ; sans QR-IBAN, elle est
+  rognée (`trim`) et comptée en caractères (64 au plus).
+- **Écartées** : signaler `BOTH_IBANS` sur `creditorQrIban` (l'écran n'a qu'un champ IBAN : le choix est sans effet
+  visible).
+- **Réversible** : oui.
+
+### C-30-2-32 — La lecture `supplier-candidates` vit dans le dépôt des contacts
+
+- **Contexte** : AC14 demande les fournisseurs dont une facture passée porte l'IBAN ; la 30-1b, développée en parallèle,
+  modifie `repositories/supplier_invoices.rs`.
+- **Retenu** : `contacts::find_suppliers_by_invoice_iban` (`kesh-db/src/repositories/contacts.rs`) — elle rend des
+  contacts, réutilise `COLUMNS`, et n'entre pas en conflit avec la 30-1b. Sous-requête `GROUP BY contact_id` avec
+  `MAX(invoice_date)`, `status <> 'cancelled'`, `REPLACE` de l'espace, U+00A0, U+202F sur `UPPER(…)` des deux colonnes,
+  `LIMIT` en SQL ; l'IBAN du document est normalisé côté route (`normalize_payment_field` puis majuscules).
+- **Écartées** : le dépôt des factures fournisseur (conflit certain avec la 30-1b) ; un dépôt neuf (un module pour une
+  fonction).
+- **Réversible** : oui.
+
+### C-30-2-33 — La réponse de la complétion est relue par la fonction du GET dès la 30-2b
+
+- **Contexte** : AC13 (30-2b) dit « la réponse de la complétion est relue par la même fonction que le GET (AC18) une fois
+  la transaction validée » ; AC18 (`sourceDocument`) est en 30-2c.
+- **Retenu** : `complete_import` répond par `SupplierInvoiceResponse::load_with_settlement_cancellation` après le
+  `COMMIT` (patron de `pay`) ; la 30-2c n'aura qu'à y ajouter `sourceDocument`. Test : `cancellable` vaut `true` dans la
+  réponse (il vaut `null` par `from_parts`).
+- **Écartées** : attendre la 30-2c (AC13 est en 30-2b).
+- **Réversible** : oui.
+
+### C-30-2-34 — Le formulaire porte les propositions et le panneau ; la page les calcule
+
+- **Contexte** : AC14 (propositions), AC15 (panneau « Nouveau fournisseur ») et M-b5 (« Vitest de la page qui observe
+  `listContacts` »).
+- **Retenu** : la page `new` appelle `getSupplierCandidates` et `listContacts({ search: searchTermsFor(nom), isSupplier:
+  true, limit: 20 })`, compose par `proposeSuppliers` et passe la liste au formulaire, qui l'affiche (« Proposé : … »,
+  motif, *Retenir*). Le panneau `SupplierCreatePanel` vit dans le formulaire (un `<div role="group">`, jamais un `<form>`
+  imbriqué) ; il crée par `createContact`, le formulaire ajoute le contact à sa liste (`bind:suppliers`) et le
+  sélectionne. *Retenir* ajoute aussi le contact à la liste s'il n'y est pas (la liste déroulante est bornée à 200).
+  La sonde « contacts proches » du panneau suit le patron de la page des contacts (`probeTerm`, `rank`,
+  `describeProches`, cinq au plus), avec un délai de 300 ms.
+- **Écartées** : le panneau dans la page (il devrait alors piloter l'état du formulaire de l'extérieur) ; un modal
+  (C-30-2-8).
+- **Réversible** : oui.
+
+### C-30-2-35 — Les clés du formulaire passent au préfixe `supplier-invoices-` ; 24 clés retirées
+
+- **Contexte** : `lint-i18n-ownership` n'admet, dans `lib/features/supplier-invoices/`, que des clés
+  `supplier-invoices-*` ; le formulaire de complétion de la page d'import employait des clés
+  `imported-supplier-invoices-*`.
+- **Retenu** : les libellés repris (total TTC, écart, sous-centimes, refus de la complétion) renaissent sous le préfixe
+  du composant ; les 23 clés `imported-supplier-invoices-*` devenues orphelines et `supplier-invoices-form-close` sont
+  retirées des quatre locales (recherche de chaque clé dans `frontend/src` et `crates`). `imported-supplier-invoices-completed`
+  (« Facture créée. ») est **gardée** et sert la notification de la page `new` : le glossaire i18n l'a pour référence du
+  verbe *créer*. Les clés d'erreur d'import (`-error-*`) restent : la carte `IMPORT_ERROR_LABELS` les lit par préfixe.
+- **Écartées** : ajouter les clés à la liste des violations connues du lint (dette #30, à ne pas grossir).
+- **Réversible** : oui.
+
+### C-30-2-36 — La création est réservée aux rôles qui écrivent, à l'écran aussi
+
+- **Contexte** : AC16 — « pour un autre rôle, le bouton « Enregistrer une facture » et la page ne proposent rien
+  (patron existant de la liste) » ; or la liste montrait le bouton à tout rôle.
+- **Retenu** : le patron `canWrite` (Admin ou Comptable) de la fiche de la facture : le bouton de la liste est masqué, la
+  page `new` affiche « Votre rôle ne permet pas de saisir une facture fournisseur. » sans rien charger.
+- **Écartées** : garder le bouton et laisser le serveur refuser (403 après saisie).
+- **Réversible** : oui.
+
+### C-30-2-37 — Un paramètre `document` illisible vaut « plus à traiter »
+
+- **Contexte** : AC10 : inconnu, autre société, plus `to_complete` → même message.
+- **Retenu** : `?document=abc` (non entier) est traité comme un document inconnu — même message, même lien, aucun
+  formulaire. Le document se cherche dans `GET /imported-supplier-invoices?status=to_complete`.
+- **Écartées** : ignorer le paramètre et ouvrir la saisie sans document (on croirait avoir lié la pièce).
+- **Réversible** : oui.
+
+### C-30-2-38 — `normalizeIban` passe aussi en majuscules ; le total ne se compare qu'au montant du QR
+
+- **Contexte** : AC12-bis prescrit l'ensemble de blancs de `normalizeIban` ; AC11 compare le total au montant du QR.
+- **Retenu** : `normalizeIban` retire les blancs **et** passe en majuscules (comme `Iban::new` côté serveur) — sans effet
+  sur la validation, utile à la classification (`ch44…` reconnu QR-IBAN). Le total vivant n'est comparé qu'au montant
+  du QR (document avec QR) ; le montant attendu saisi à la main n'est pas une cible (angle mort écrit de la fiche :
+  `expectedPaymentAmount` n'est validé ni contre le total).
+- **Écartées** : comparer aussi au montant attendu saisi (un indicateur rouge sans refus serveur derrière tromperait).
+- **Réversible** : oui.
+
+### C-30-2-39 — Les captures clair et sombre se prennent dans les E2E E1 et E2
+
+- **Contexte** : T-b7 demande des captures de la page côte à côte et du panneau, clair et sombre.
+- **Retenu** : `supplier-documents.spec.ts` (E1, E2) capture la page en clair puis en sombre (`page.emulateMedia`) dans
+  `KESH_E2E_CAPTURES_DIR` s'il est posé (hors dépôt), sinon dans la sortie du test — patron de
+  `reconciliation-reject-unmatched.spec.ts`. ⚠️ Kesh n'a pas de thème sombre (C-28-1-7) : seule la préférence du
+  navigateur change.
+- **Écartées** : un script à part (non rejoué par la suite).
+- **Réversible** : oui.
+
+### C-30-2-40 — Le README marque l'ensemble « Documents à traiter » comme à paraître
+
+- **Contexte** : `README.md:44` cochait ✓ les documents sans QR et l'aperçu (30-2a), non publiés ; la 30-2b y ajoute la
+  création côte à côte.
+- **Retenu** : la ligne décrit la création côte à côte et le fournisseur proposé, et porte *(documents sans QR-code,
+  aperçu et création côte à côte à paraître en v0.14.0)*, sur le patron de la ligne des transitoires ; « import lancé
+  depuis l'écran » (garde G5) est conservé mot pour mot.
+- **Écartées** : n'annoncer que la 30-2b (la ligne mentirait par omission sur la 30-2a).
+- **Réversible** : oui.
+
+### C-30-2-41 — Entrée dans le panneau « Nouveau fournisseur » crée le fournisseur, jamais la facture (revue P1, B1 = E1 = A1)
+
+- **Contexte** : le panneau (C-30-2-34) vit dans le `<form>` de la facture ; Entrée dans l'un de ses `<input>`
+  déclenchait la soumission implicite de ce formulaire — avec un fournisseur déjà sélectionné et des lignes valides, la
+  facture s'enregistrait sur ce fournisseur-là pendant que l'on en tapait un autre : faux rattachement muet.
+- **Retenu** : un `onkeydown` sur le conteneur du panneau (`onPanelKeydown`) : Entrée dont la cible est un `<input>`
+  (hors composition IME) → `preventDefault()` — ce qui annule la soumission implicite — puis `create()` si aucune
+  création n'est en cours. Entrée sur un bouton garde son clic ; un `<select>` ne soumet pas. Tests : Vitest qui modèle
+  la soumission implicite (keydown annulable, puis `requestSubmit()` s'il n'a pas été annulé — jsdom ne l'implémente
+  pas), sur chacun des champs en mode Entreprise (6) et Personne (7), plus un **témoin** qui montre que le modèle soumet
+  bien depuis un champ de la facture ; E2E E2 : Entrée dans le nom au lieu du clic. Mutation M-b20.
+- **Écartées** : sortir le panneau du `<form>` (il faut alors le replacer par CSS à côté du sélecteur, ou un portail :
+  plus de code pour le même effet) ; un `<form>` distinct relié par l'attribut `form` (chaque champ du panneau devrait
+  le porter, et un oubli rouvrirait le défaut en silence) ; Entrée qui ne fait rien (moins attendu qu'une création).
+- **Réversible** : oui.
+
+### C-30-2-42 — Relecture après COMMIT de la complétion : l'échec reste une erreur, écrit en angle mort (revue P1, B2 = A9)
+
+- **Contexte** : `complete_import` relit la facture après le `COMMIT` (C-30-2-33) ; une erreur de base entre le
+  `COMMIT` et la relecture rend une erreur sur une facture bel et bien créée, et un nouvel essai donne
+  `409 IMPORT_NOT_PENDING_COMPLETION`.
+- **Retenu** : **angle mort écrit** (fiche, doc-comment de `complete_import`), non corrigé. Le même patron vit dans
+  `pay`, `cancel` et l'annulation du règlement ; la fenêtre est un incident de pool entre deux requêtes ; aucune
+  donnée n'est perdue ni faussée, et le 409 dit « déjà traité » — l'écran l'affiche en tête du formulaire, et la
+  facture créée est dans la liste des factures fournisseurs.
+- **Écartées** : repli sur `from_parts` avec `tracing::warn!` — une branche qu'aucun test n'exerce sans injection de
+  panne, propre à une seule des quatre routes du patron ; à traiter, si on le traite, pour les quatre ensemble.
+- **Réversible** : oui.
+
+### C-30-2-43 — Page `/supplier-invoices/new` : `document` lu une fois, `goto` rejeté — angles morts écrits (revue P1, B4)
+
+- **Contexte** : `documentId` est lu à l'initialisation de la page ; un passage `?document=5` → `?document=6` sans
+  quitter la page la laisserait sur le 5. Si `goto` rejette après la création, le formulaire se réactive et un second
+  clic peut créer un doublon (sans document ; avec document, `409`).
+- **Retenu** : **angles morts écrits** à la fiche, non corrigés : aucun lien de l'application ne fait passer d'un
+  document à l'autre sans quitter la page (liste → page → retour détruit le composant), et un `goto` qui rejette après
+  une création réussie suppose une navigation annulée entre-temps.
+- **Écartées** : `$derived` sur `page.url` avec `{#key}` (rechargement complet des données à justifier par un parcours
+  qui n'existe pas) ; `try/catch` autour de `goto` (ne ferme pas la fenêtre du doublon : le bouton se réactive quand
+  même).
+- **Réversible** : oui.
+
+### C-30-2-44 — Un seul ensemble de blancs côté serveur, et des points de code explicites côté écran (revue P1, B3, A6 = E7)
+
+- **Contexte** : la référence libre était rognée par `trim()` (White_Space seul) alors que `present()` ignore aussi
+  U+200B et U+FEFF : un U+200B final collé depuis un PDF était stocké et compté. `iban.ts` et `iban.test.ts` portaient
+  des caractères invisibles littéraux.
+- **Retenu** : `is_payment_blank` est la seule définition de l'ensemble côté serveur, partagée par
+  `normalize_payment_field` et par le rognage de la référence libre (`trim_matches`), la longueur comptée après ce
+  rognage, en caractères. Côté écran, l'expression régulière se construit par `String.fromCodePoint(0x85, 0x200b)` et
+  le test liste ses sept blancs par points de code : la source ne porte plus aucun caractère invisible (l'outil
+  d'édition convertit en caractère brut une séquence `​` écrite dans un littéral).
+- **Écartées** : garder `trim()` et écrire l'angle mort (un caractère invisible stocké fait manquer un rapprochement).
+- **Réversible** : oui.
