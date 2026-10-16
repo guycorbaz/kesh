@@ -107,7 +107,7 @@ export function notifyMissingFiscalYearOrFallback(err: ApiError): boolean {
 			)
 		: i18nMsg(
 				'error-fiscal-year-missing',
-				"Créez d'abord un exercice comptable dans Paramètres → Exercices"
+				"Créez d'abord un exercice comptable dans Paramètres → Exercices comptables"
 			);
 
 	toast.error(message, {

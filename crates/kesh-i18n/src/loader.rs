@@ -1074,6 +1074,80 @@ mod tests {
         assert!(!entete.contains("dans les réglages"), "{entete}");
     }
 
+    /// **G3-bis** (Story 30-3, #585) — tout chemin « Paramètres → X » ou « Administration → X »
+    /// écrit dans un catalogue désigne un lieu **réel**, dans chaque locale.
+    ///
+    /// - « Administration → X » : `X` commence par le libellé d'une entrée du groupe
+    ///   *Administration* de la barre latérale (`nav-*` de `+layout.svelte`).
+    /// - « Paramètres → X » : `X` commence par le titre d'une section de la page
+    ///   `/settings` (`settings/+page.svelte`). « Facturation » n'y figure pas — il n'a pas de
+    ///   carte sur cette page : c'était le défaut de #585.
+    ///
+    /// ⚠️ Les deux listes sont en dur : elles recopient la barre latérale et la page, que ce test ne
+    /// lit pas (c'est du Svelte). Une entrée ajoutée à la barre sans être ajoutée ici ne rougit
+    /// que si un message la cite — angle mort assumé, la vérification croisée complète demanderait
+    /// d'analyser le Svelte.
+    #[test]
+    fn les_chemins_cites_aux_catalogues_existent() {
+        const ENTREES_ADMINISTRATION: [&str; 14] = [
+            "nav-accounts",
+            "nav-fiscal-years",
+            "nav-bank-accounts",
+            "nav-bank-profiles",
+            "nav-reconciliation-rules",
+            "nav-projects",
+            "nav-export-global",
+            "nav-opening-balances",
+            "nav-audit-log",
+            "nav-users",
+            "nav-invoicing",
+            "nav-email-templates",
+            "nav-admin-backup",
+            "nav-admin-restore",
+        ];
+        const SECTIONS_PARAMETRES: [&str; 10] = [
+            "settings-org-title",
+            "settings-accounting-title",
+            "settings-bank-title",
+            "settings-users-title",
+            "settings-books-lock-title",
+            "settings-api-keys-title",
+            "fiscal-year-title",
+            "vat-rates-title",
+            "email-templates-title",
+            "dunning-title",
+        ];
+        let mut vus = 0usize;
+        for locale in LOCALES {
+            let v = valeurs_brutes(locale);
+            let libelle = |cle: &str| -> String {
+                v.get(cle)
+                    .unwrap_or_else(|| panic!("{locale} : {cle} absent"))
+                    .clone()
+            };
+            for (racine, cles) in [
+                ("nav-administration", &ENTREES_ADMINISTRATION[..]),
+                ("nav-settings", &SECTIONS_PARAMETRES[..]),
+            ] {
+                let tete = format!("{} → ", libelle(racine));
+                let permis: Vec<String> = cles.iter().map(|c| libelle(c)).collect();
+                for (cle, texte) in &v {
+                    for (pos, _) in texte.match_indices(&tete) {
+                        let suite = &texte[pos + tete.len()..];
+                        vus += 1;
+                        assert!(
+                            permis.iter().any(|p| suite.starts_with(p.as_str())),
+                            "{locale} : `{cle}` cite « {tete}{} … » — pas un lieu réel \
+                             (permis : {permis:?})",
+                            suite.chars().take(30).collect::<String>()
+                        );
+                    }
+                }
+            }
+        }
+        assert!(vus > 60, "garde muette : {vus} chemins vus seulement");
+    }
+
     /// **G8** (Story 15-14a, #569, C-15-14-14) — toute clé qui **prescrit** une
     /// réouverture d'exercice dit l'ordre (« en commençant par le plus récent »),
     /// dans les quatre locales.
