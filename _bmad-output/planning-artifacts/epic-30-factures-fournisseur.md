@@ -93,6 +93,11 @@ documents sans QR, prévisualisation, suppression → **30-2b** la création cô
 ligne → **30-2c** document joint après coup et consultable depuis l'écriture. La sauvegarde doit emporter les pièces
 ([#503]) : la fiche vérifie ce qu'il en est et le dit. Manuel utilisateur (PDF), i18n quatre locales, E2E de parcours.
 
+### 30-3 — Le chemin de la facturation ([#585], bug P4)
+
+Petite story de texte : le manuel et les messages écrivent « Paramètres → Facturation » ; le vrai chemin est
+« Administration → Facturation ». Aucun changement de navigation. Fiche : `30-3-chemin-facturation.md`.
+
 ## Hors périmètre
 
 Plusieurs pages séparées pour une même facture (fusionner les PDF avant dépôt) ; dépôt par le navigateur ; tickets de
@@ -102,6 +107,7 @@ caisse ([#254]) ; import automatique du dossier ([#459]) ; factures client (pas 
 [#686]: https://github.com/guycorbaz/kesh/issues/686
 [#685]: https://github.com/guycorbaz/kesh/issues/685
 [#671]: https://github.com/guycorbaz/kesh/issues/671
+[#585]: https://github.com/guycorbaz/kesh/issues/585
 [#503]: https://github.com/guycorbaz/kesh/issues/503
 [#254]: https://github.com/guycorbaz/kesh/issues/254
 [#459]: https://github.com/guycorbaz/kesh/issues/459
