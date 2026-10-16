@@ -765,7 +765,7 @@
 			<p class="mb-2 text-sm text-destructive" role="alert" data-testid="invoice-default-account-warning">
 				{i18nMsg(
 					'invoice-default-revenue-account-unusable',
-					"Le compte de produit par défaut de la société n'est plus utilisable (archivé, non imputable ou de type inattendu). Les lignes qui le suivent ne pourront pas être validées — corrigez-le dans Paramètres → Facturation, ou choisissez un compte sur chaque ligne."
+					"Le compte de produit par défaut de la société n'est plus utilisable (archivé, non imputable ou de type inattendu). Les lignes qui le suivent ne pourront pas être validées — corrigez-le dans Administration → Facturation, ou choisissez un compte sur chaque ligne."
 				)}
 			</p>
 		{/if}
@@ -885,7 +885,7 @@
 		<Button data-testid="create-invoice-button"
 			type="submit"
 			disabled={submitting || conflictOpen || loadingSettings || (invoiceSettings && !invoiceSettings.defaultReceivableAccountId) || (invoiceSettings && !invoiceSettings.defaultRevenueAccountId) || invalidRevenueAccountLines.length > 0}
-			title={loadingSettings ? i18nMsg('common-loading', 'Chargement...') : (invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? i18nMsg('invoice-settings-required', "Configurez d'abord les comptes de facturation dans les paramètres") : (invalidRevenueAccountLines.length > 0 ? invalidLinesMessage : undefined))}
+			title={loadingSettings ? i18nMsg('common-loading', 'Chargement...') : (invoiceSettings && (!invoiceSettings.defaultReceivableAccountId || !invoiceSettings.defaultRevenueAccountId) ? i18nMsg('invoice-settings-required', "Configurez d'abord les comptes de facturation dans Administration → Facturation") : (invalidRevenueAccountLines.length > 0 ? invalidLinesMessage : undefined))}
 		>
 			{invoice ? 'Enregistrer' : 'Créer la facture'}
 		</Button>

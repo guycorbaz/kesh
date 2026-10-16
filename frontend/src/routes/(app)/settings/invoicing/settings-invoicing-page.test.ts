@@ -1,4 +1,4 @@
-// Story 25-4-c3-a1 (#476) — tests Vitest de la page Paramètres → Facturation :
+// Story 25-4-c3-a1 (#476) — tests Vitest de la page Administration → Facturation :
 // le sélecteur du compte de différences d'arrondi.
 //
 // - ne propose que les comptes actifs, imputables, de charge ou de produit ;
@@ -118,7 +118,7 @@ afterEach(async () => {
 	vi.clearAllMocks();
 });
 
-describe('Paramètres → Facturation — compte de différences d’arrondi', () => {
+describe('Administration → Facturation — compte de différences d’arrondi', () => {
 	it('ne propose que les charges et produits actifs et imputables', async () => {
 		getInvoiceSettingsMock.mockResolvedValue(settings());
 		const { findByTestId } = render(Page);
@@ -184,7 +184,7 @@ describe('Paramètres → Facturation — compte de différences d’arrondi', (
 });
 
 // Story 25-4-d1 (#384) — les comptes des natures d'écart soldé.
-describe('Paramètres → Facturation — solde du reste', () => {
+describe('Administration → Facturation — solde du reste', () => {
 	const FIELDS = [
 		{ testid: 'settings-discount-account', key: 'defaultDiscountAccountId' },
 		{ testid: 'settings-bank-fees-account', key: 'defaultBankFeesAccountId' },
@@ -244,7 +244,7 @@ describe('Paramètres → Facturation — solde du reste', () => {
 // CHEMIN DE CORRECTION que désigne le refus « compte désigné non imputable » :
 // sans ce champ, la saisie de toute facture fournisseur bloquée sur des
 // créanciers devenus non imputables n'avait aucun recours à l'écran.
-describe('Paramètres → Facturation — compte créanciers', () => {
+describe('Administration → Facturation — compte créanciers', () => {
 	// Le compte créanciers en place, DEVENU non imputable (sous-comptes créés) :
 	// avec un compte imputable, l'affichage marcherait sans `withCurrentAccount`.
 	const NON_POSTABLE_PAYABLE = account(7, '2000', 'Liability', { postable: false });
@@ -300,7 +300,7 @@ describe('Paramètres → Facturation — compte créanciers', () => {
 	});
 });
 
-describe('Paramètres → Facturation — comptes liés à un compte bancaire (Story 15-6c, AC8)', () => {
+describe('Administration → Facturation — comptes liés à un compte bancaire (Story 15-6c, AC8)', () => {
 	// 1020 (id 1) et 2100 sont liés chacun à un compte bancaire ; 1100 (débiteurs
 	// en place) aussi — donnée antérieure, qui doit rester affichée.
 	const LINKED_ASSET = account(10, '1100', 'Asset');

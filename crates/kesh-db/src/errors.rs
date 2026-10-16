@@ -715,7 +715,7 @@ pub enum DbError {
     /// Jumelle de [`DbError::AccountsNotPostable`] : **même code**
     /// (`ACCOUNT_NOT_POSTABLE`), **même détail** ([`NonPostableAccounts::details`]),
     /// un seul contrat pour l'intégrateur. Elle n'en diffère que par le
-    /// **message**, qui dit où agir — *Paramètres → Facturation* — et qui peut le
+    /// **message**, qui dit où agir — *Administration → Facturation* — et qui peut le
     /// faire (un administrateur, choix C36) : le compte n'a pas été choisi dans
     /// la requête, il vient des réglages.
     ///
@@ -736,7 +736,7 @@ pub enum DbError {
     ///
     /// ⛔ **Variante dédiée, et non `ConfigurationRequired`** : le mapping de
     /// celle-ci jette le champ et rend un code générique, alors que le refus doit
-    /// dire QUOI configurer — *Paramètres → Facturation*.
+    /// dire QUOI configurer — *Administration → Facturation*.
     ///
     /// Story 25-4-c4-a (#494) : le **contexte** dit qui a besoin du compte — un
     /// paiement qui solde au centime, ou une pièce émise arrondie à 5 centimes —,

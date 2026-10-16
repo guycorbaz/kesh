@@ -450,7 +450,7 @@ async fn null_clears_and_value_replaces_payable_account(pool: MySqlPool) {
 
 /// La validation d'une facture dont la **créance désignée** est devenue non
 /// imputable : 400 `ACCOUNT_NOT_POSTABLE`, `details.rejected`, un message qui
-/// renvoie à *Paramètres → Facturation*, nomme le numéro et dit qu'un
+/// renvoie à *Administration → Facturation*, nomme le numéro et dit qu'un
 /// administrateur doit agir — servi à un **Comptable**, qui n'a pas accès à la
 /// page des réglages (choix C36). La facture reste brouillon.
 ///
@@ -571,7 +571,7 @@ async fn validation_refuses_a_designated_receivable_made_non_postable(pool: MySq
         "{body}"
     );
     let message = body["error"]["message"].as_str().unwrap();
-    for attendu in ["Paramètres → Facturation", "1100", "administrateur"] {
+    for attendu in ["Administration → Facturation", "1100", "administrateur"] {
         assert!(
             message.contains(attendu),
             "« {attendu} » absent : {message}"

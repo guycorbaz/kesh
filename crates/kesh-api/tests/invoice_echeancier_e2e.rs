@@ -1290,7 +1290,7 @@ async fn a_rounding_gap_without_a_usable_account_is_a_dedicated_400(pool: MySqlP
         v["error"]["message"]
             .as_str()
             .unwrap()
-            .contains("Paramètres"),
+            .contains("Administration → Facturation"),
         "le message dit où agir, got {v:?}"
     );
     assert!(settlements_with_lines(&pool, id).await.is_empty());
@@ -1891,7 +1891,7 @@ async fn settle_on_the_receivable_account_is_a_400_with_details(pool: MySqlPool)
 
 /// Story 15-6b, test 16 bis — `POST …/write-off` dont le compte de la nature
 /// `discount` est la créance retypée : **400**, `details.role =
-/// "write_off_nature"`, message qui renvoie à Paramètres → Facturation — et non
+/// "write_off_nature"`, message qui renvoie à Administration → Facturation — et non
 /// à « banque, caisse » (clé plate `error-settlement-write-off-account-is-receivable`).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn write_off_on_a_nature_account_that_is_the_receivable_is_a_400(pool: MySqlPool) {
@@ -1942,7 +1942,7 @@ async fn write_off_on_a_nature_account_that_is_the_receivable_is_a_400(pool: MyS
     assert_eq!(body["error"]["details"]["claim"], "receivable");
     let msg = body["error"]["message"].as_str().unwrap();
     assert!(
-        msg.contains("nature de solde") && msg.contains("Paramètres → Facturation"),
+        msg.contains("nature de solde") && msg.contains("Administration → Facturation"),
         "{msg}"
     );
     assert!(!msg.contains("banque, caisse"), "{msg}");

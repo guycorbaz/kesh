@@ -185,7 +185,7 @@
 			>
 				{i18nMsg(
 					'invoices-write-off-missing-nature-account',
-					"Aucun compte n'est désigné pour cette nature : demandez à un administrateur de le choisir dans Paramètres → Facturation.",
+					"Aucun compte n'est désigné pour cette nature : demandez à un administrateur de le choisir dans Administration → Facturation.",
 				)}
 			</div>
 		{:else if missing === 'rounding'}
@@ -195,7 +195,7 @@
 			>
 				{i18nMsg(
 					'invoices-write-off-missing-rounding-account',
-					"Ce reste porte une fraction de centime, qui va au compte de différences d'arrondi — aucun n'est désigné : demandez à un administrateur de le choisir dans Paramètres → Facturation.",
+					"Ce reste porte une fraction de centime, qui va au compte de différences d'arrondi — aucun n'est désigné : demandez à un administrateur de le choisir dans Administration → Facturation.",
 				)}
 			</div>
 		{/if}

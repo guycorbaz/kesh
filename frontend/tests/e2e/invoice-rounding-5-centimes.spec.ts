@@ -1,7 +1,7 @@
 /**
  * Story 25-4-c4-b (#494) — l'arrondi à 5 centimes, réglable et visible.
  *
- * Désactiver puis réactiver la case de Paramètres → Facturation, puis valider une
+ * Désactiver puis réactiver la case de Administration → Facturation, puis valider une
  * facture au TTC de 123.44 (114.19 HT à 8.1 %) : sa fiche porte la ligne
  * « Arrondi » (+0.01) et un total de 123.45.
  *

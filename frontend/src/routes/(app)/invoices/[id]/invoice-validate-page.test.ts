@@ -84,7 +84,7 @@ import Page from "./+page.svelte";
 import { notifyError } from "$lib/shared/utils/notify";
 
 const MESSAGE =
-  "Le compte 1100, désigné dans Paramètres → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à sa place un compte imputable.";
+  "Le compte 1100, désigné dans Administration → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à sa place un compte imputable.";
 
 function brouillon(): InvoiceResponse {
   return {
