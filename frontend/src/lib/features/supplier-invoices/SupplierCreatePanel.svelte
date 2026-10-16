@@ -9,7 +9,9 @@
   proches).
 
   ⚠️ Ce n'est pas un `<form>` : il vit à l'intérieur du formulaire de la facture, et un
-  formulaire imbriqué est invalide en HTML. Ses boutons sont `type="button"`.
+  formulaire imbriqué est invalide en HTML. Ses boutons sont `type="button"`, et la
+  touche Entrée dans un de ses champs crée le fournisseur au lieu de soumettre la
+  facture (`onPanelKeydown`, C-30-2-41).
 
   *Créer* appelle `createContact` ; le parent ajoute le contact à sa liste et le
   SÉLECTIONNE — c'est le geste humain qui le désigne. Une erreur (IDE en double,
@@ -42,7 +44,6 @@
 
 	// Valeurs de départ lues une fois à l'ouverture : le panneau est recréé à chaque
 	// ouverture, et une saisie en cours ne doit pas être écrasée par le parent.
-	// svelte-ignore state_referenced_locally
 	let contactType = $state<ContactType>('Entreprise');
 	// svelte-ignore state_referenced_locally
 	let name = $state(initialName);
@@ -97,6 +98,25 @@
 			: !name.trim();
 	}
 
+	/**
+	 * Entrée dans un champ du panneau crée le FOURNISSEUR, jamais la facture
+	 * (revue P1 de la 30-2b, B1 = E1 = A1 ; C-30-2-41).
+	 *
+	 * Le panneau vit dans le `<form>` de la facture : sans ce garde, Entrée dans un
+	 * `<input>` déclenche la soumission implicite de ce formulaire — la facture
+	 * s'enregistrait sur le fournisseur déjà sélectionné pendant que l'on en tapait un
+	 * autre, faux rattachement muet. `preventDefault()` sur le `keydown` annule cette
+	 * soumission implicite ; seules les cibles `<input>` sont visées (Entrée sur un
+	 * bouton garde son clic, un `<select>` ne soumet pas), et une composition IME en
+	 * cours n'est pas une validation.
+	 */
+	function onPanelKeydown(e: KeyboardEvent) {
+		if (e.key !== 'Enter' || e.isComposing) return;
+		if (!(e.target instanceof HTMLInputElement)) return;
+		e.preventDefault();
+		if (!saving) void create();
+	}
+
 	async function create() {
 		error = '';
 		if (nameMissing()) {
@@ -125,11 +145,15 @@
 	}
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions — le `keydown` n'ajoute
+     aucune interaction au groupe : il intercepte la touche Entrée remontée de ses champs
+     (`onPanelKeydown`), qui restent les seuls éléments interactifs. -->
 <div
 	class="space-y-3 rounded border border-primary/40 bg-muted/30 p-4"
 	data-testid="supplier-new-panel"
 	role="group"
 	aria-label={i18nMsg('supplier-invoices-new-supplier', 'Nouveau fournisseur')}
+	onkeydown={onPanelKeydown}
 >
 	<div class="text-sm font-medium">{i18nMsg('supplier-invoices-new-supplier', 'Nouveau fournisseur')}</div>
 	<div class="grid grid-cols-2 gap-3">

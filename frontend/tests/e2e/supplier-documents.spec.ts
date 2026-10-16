@@ -250,8 +250,14 @@ test.describe('Créer la facture à côté du document (Story 30-2b)', () => {
 		await expect(preview).toBeVisible();
 		await page.getByTestId('supplier-new-name').fill(supplierName);
 		await captureBothSchemes(page, testInfo, '302b-panneau-fournisseur');
-		await page.getByTestId('supplier-new-create').click();
+		// Entrée dans le nom crée le FOURNISSEUR, jamais la facture : le panneau vit dans
+		// le formulaire de la facture, dont la soumission implicite est interceptée
+		// (revue P1, B1 = E1 = A1 ; C-30-2-41). Le clic sur « Créer le fournisseur » est
+		// couvert par Vitest.
+		await page.getByTestId('supplier-new-name').press('Enter');
 		await expect(page.getByTestId('supplier-new-panel')).toHaveCount(0);
+		await expect(page).toHaveURL(/\/supplier-invoices\/new\?document=\d+$/);
+		await expect(page.getByTestId('supplier-invoice-form-error')).toHaveCount(0);
 		await expect(page.getByTestId('supplier-invoice-supplier').locator('option:checked')).toHaveText(
 			supplierName,
 		);

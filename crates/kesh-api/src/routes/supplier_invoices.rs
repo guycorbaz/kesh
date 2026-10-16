@@ -269,9 +269,15 @@ const PAYMENT_REFERENCE_MAX_CHARS: usize = 64;
 /// tout non-ASCII : sans cette normalisation, un IBAN collé depuis un PDF (avec
 /// des insécables) serait refusé.
 pub(crate) fn normalize_payment_field(raw: &str) -> String {
-    raw.chars()
-        .filter(|c| !(c.is_whitespace() || *c == '\u{200B}' || *c == '\u{FEFF}'))
-        .collect()
+    raw.chars().filter(|c| !is_payment_blank(*c)).collect()
+}
+
+/// Un caractère de l'ensemble de blancs de l'AC12-bis — **seule** définition côté
+/// serveur, partagée par [`normalize_payment_field`] (qui les retire tous) et par le
+/// rognage de la référence libre (qui ne les retire qu'aux extrémités : revue P1 de
+/// la 30-2b, B3 — un U+200B final collé depuis un PDF n'est plus stocké ni compté).
+fn is_payment_blank(c: char) -> bool {
+    c.is_whitespace() || c == '\u{200B}' || c == '\u{FEFF}'
 }
 
 /// Une coordonnée de paiement **présente** : sa forme normalisée n'est pas vide.
@@ -307,6 +313,11 @@ fn invalid(field: &'static str, reason: &'static str) -> AppError {
 ///   jamais de refus « forme QRR ».
 ///
 /// Valeurs rendues normalisées (`Iban::as_str`, QRR sans blancs, texte rogné).
+///
+/// ⚠️ Angle mort écrit : le **montant attendu** (`expectedPaymentAmount`) n'est
+/// pas validé ici — ni en signe, ni en échelle, ni contre le total des lignes
+/// (comportement antérieur à la 30-2b, gardé ; écrit au manuel et à
+/// `docs/api-external.md`).
 pub(crate) fn validate_payment_details(
     creditor_iban: Option<&str>,
     creditor_qr_iban: Option<&str>,
@@ -356,7 +367,9 @@ pub(crate) fn validate_payment_details(
         match reference {
             None => None,
             Some(r) => {
-                let trimmed = r.trim();
+                // Rognée du même ensemble de blancs que `present()`, longueur comptée
+                // APRÈS ce rognage et en caractères (la colonne est `VARCHAR(64)`).
+                let trimmed = r.trim_matches(is_payment_blank);
                 if trimmed.chars().count() > PAYMENT_REFERENCE_MAX_CHARS {
                     return Err(invalid("paymentReference", "REFERENCE_TOO_LONG"));
                 }

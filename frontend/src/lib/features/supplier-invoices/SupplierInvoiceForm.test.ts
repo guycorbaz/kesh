@@ -5,6 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 import type { ImportedSupplierInvoice } from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.types';
 import type { CreateSupplierInvoiceRequest } from './supplier-invoices.types';
@@ -356,5 +357,76 @@ describe('SupplierInvoiceForm — nouveau fournisseur (AC15)', () => {
 		await fireEvent.click(getByTestId('supplier-new-cancel'));
 		expect(queryByTestId('supplier-new-panel')).toBeNull();
 		expect(createContactMock).not.toHaveBeenCalled();
+	});
+});
+
+/**
+ * Appuie sur Entrée dans `el` comme le ferait un navigateur : `keydown` annulable, puis,
+ * s'il n'a pas été annulé, la soumission implicite du formulaire qui contient le champ.
+ * jsdom n'implémente pas cette soumission implicite : sans ce modèle, aucun test ne
+ * verrait la facture partir.
+ */
+async function pressEnter(el: HTMLInputElement) {
+	const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+	el.dispatchEvent(ev);
+	if (!ev.defaultPrevented) el.form?.requestSubmit();
+	await tick();
+}
+
+describe('SupplierInvoiceForm — Entrée dans le panneau « Nouveau fournisseur » (revue P1, B1 = E1 = A1)', () => {
+	it('Entrée dans CHAQUE champ du panneau crée le fournisseur et ne soumet jamais la facture (M-b20)', async () => {
+		// Le pire cas : un fournisseur est déjà sélectionné et les lignes sont valides —
+		// une soumission partirait sur ce fournisseur-là.
+		createContactMock.mockRejectedValue({ code: 'VALIDATION_ERROR', status: 400, message: 'refus' });
+		const { container, getByTestId, onSubmit } = renderForm({ document: qrDoc() });
+		await fillLine(container, '100.00');
+		await selectSupplier(container, '1');
+		await fireEvent.click(getByTestId('supplier-new-open'));
+		const panel = getByTestId('supplier-new-panel');
+		const visit = async () => {
+			const inputs = Array.from(panel.querySelectorAll('input'));
+			expect(inputs.length).toBeGreaterThan(0);
+			for (const input of inputs) {
+				createContactMock.mockClear();
+				await pressEnter(input);
+				await waitFor(() => expect(createContactMock).toHaveBeenCalledTimes(1));
+				expect(onSubmit).not.toHaveBeenCalled();
+			}
+			return inputs.length;
+		};
+		// Entreprise : nom, rue, N°, NPA, localité, pays.
+		expect(await visit()).toBe(6);
+		// Personne : prénom et nom de famille en plus de l'adresse.
+		const type = getByTestId('supplier-new-type') as HTMLSelectElement;
+		type.value = 'Personne';
+		await fireEvent.change(type);
+		const firstLast = Array.from(panel.querySelectorAll('input')).slice(0, 2);
+		await fireEvent.input(firstLast[0], { target: { value: 'Jean' } });
+		await fireEvent.input(firstLast[1], { target: { value: 'Dupont' } });
+		expect(await visit()).toBe(7);
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('Entrée dans le nom crée et sélectionne le fournisseur, sans enregistrer la facture', async () => {
+		createContactMock.mockResolvedValue(contact(9, 'Dubarde SA'));
+		const { container, getByTestId, queryByTestId, onSubmit } = renderForm({ document: qrDoc() });
+		await fillLine(container, '100.00');
+		await selectSupplier(container, '1');
+		await fireEvent.click(getByTestId('supplier-new-open'));
+		await pressEnter(getByTestId('supplier-new-name') as HTMLInputElement);
+		await waitFor(() => expect(queryByTestId('supplier-new-panel')).toBeNull());
+		expect(createContactMock).toHaveBeenCalledTimes(1);
+		expect(onSubmit).not.toHaveBeenCalled();
+		expect((getByTestId('supplier-invoice-supplier') as HTMLSelectElement).value).toBe('9');
+	});
+
+	it('témoin du modèle : Entrée dans un champ de la facture la soumet bien', async () => {
+		// Sans ce témoin, `pressEnter` pourrait ne rien soumettre du tout et les deux
+		// tests ci-dessus passeraient à vide.
+		const { container, getByTestId, onSubmit } = renderForm({ document: qrDoc() });
+		await fillLine(container, '100.00');
+		await selectSupplier(container, '1');
+		await pressEnter(getByTestId('supplier-invoice-number') as HTMLInputElement);
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
 	});
 });

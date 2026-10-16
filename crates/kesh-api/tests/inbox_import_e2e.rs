@@ -1929,6 +1929,13 @@ async fn create_refuses_each_invalid_payment_detail(pool: MySqlPool) {
             "paymentReference",
             "QRR_REQUIRED",
         ),
+        // Revue P1, E3 : une référence BLANCHE avec un QR-IBAN vaut absente — et non
+        // une QRR invalide (tue M-b23 : `reference` lu brut, sans `present()`).
+        (
+            json!({ "creditorQrIban": QR_IBAN_CH, "paymentReference": " \u{00A0}\u{200B}" }),
+            "paymentReference",
+            "QRR_REQUIRED",
+        ),
         (
             json!({ "creditorQrIban": QR_IBAN_CH, "paymentReference": "210000000003139471430009018" }),
             "paymentReference",
@@ -1936,6 +1943,12 @@ async fn create_refuses_each_invalid_payment_detail(pool: MySqlPool) {
         ),
         (
             json!({ "creditorIban": IBAN_CH, "paymentReference": ref_65 }),
+            "paymentReference",
+            "REFERENCE_TOO_LONG",
+        ),
+        // Revue P1, E2 : la limite se compte en CARACTÈRES — 65 « é » (130 octets).
+        (
+            json!({ "creditorIban": IBAN_CH, "paymentReference": "é".repeat(65) }),
             "paymentReference",
             "REFERENCE_TOO_LONG",
         ),
@@ -2024,6 +2037,36 @@ async fn create_accepts_and_normalizes_payment_details(pool: MySqlPool) {
         &body_with(
             &ctx,
             json!({ "creditorIban": IBAN_CH, "paymentReference": format!("  {ref_64}  ") }),
+        ),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    assert_eq!(b["paymentReference"], ref_64);
+
+    // Revue P1, E2 : 64 caractères non ASCII (128 octets) sont acceptés — la limite
+    // se compte en caractères, comme la colonne `VARCHAR(64)` (tue M-b21 : `.len()`).
+    let ref_64_e = "é".repeat(64);
+    let (s, b) = post_supplier_invoice(
+        &app,
+        &ctx.jwt,
+        &body_with(
+            &ctx,
+            json!({ "creditorIban": IBAN_CH, "paymentReference": ref_64_e }),
+        ),
+    )
+    .await;
+    assert_eq!(s, 201, "{b}");
+    assert_eq!(b["paymentReference"], ref_64_e);
+
+    // Revue P1, B3 : 64 caractères visibles suivis d'un U+200B et précédés d'un
+    // U+FEFF (copier-coller d'un PDF) — rognés comme les autres blancs, ni stockés
+    // ni comptés (tue M-b22 : rognage `trim()` seul).
+    let (s, b) = post_supplier_invoice(
+        &app,
+        &ctx.jwt,
+        &body_with(
+            &ctx,
+            json!({ "creditorIban": IBAN_CH, "paymentReference": format!("\u{FEFF}{ref_64}\u{200B}") }),
         ),
     )
     .await;
@@ -2348,6 +2391,18 @@ async fn supplier_candidates_by_iban(pool: MySqlPool) {
     sqlx::query("UPDATE supplier_invoices SET company_id = ? WHERE id = ?")
         .bind(other_company)
         .bind(inv_ailleurs)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Revue P1, E4 — la portée société côté CONTACT : une facture de la société
+    // courante, la plus récente de toutes et au bon IBAN, mais dont le contact
+    // appartient à une autre société (état incohérent posé en SQL). Il ne sort pas
+    // (tue M-b24 : `contacts.company_id = ?` retiré).
+    let contact_ailleurs = make_contact(&pool, &ctx, "Contact ailleurs").await;
+    invoice_with_iban(&app, &pool, &ctx, contact_ailleurs, "2026-07-01", None).await;
+    sqlx::query("UPDATE contacts SET company_id = ? WHERE id = ?")
+        .bind(other_company)
+        .bind(contact_ailleurs)
         .execute(&pool)
         .await
         .unwrap();

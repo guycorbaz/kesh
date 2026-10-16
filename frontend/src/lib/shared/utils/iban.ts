@@ -22,7 +22,9 @@
  * deux. D'où cette liste explicite, et un test de chaque côté qui porte les mêmes
  * sept caractères.
  */
-const IBAN_BLANKS = /[\s\u0085​]/g;
+// Points de code explicites : un caractère invisible littéral ne se relit pas et un
+// formateur peut le retirer (revue P1 de la 30-2b, A6 = E7). U+0085, puis U+200B.
+const IBAN_BLANKS = new RegExp('[\\s' + String.fromCodePoint(0x85, 0x200b) + ']', 'g');
 
 /** Retire les blancs de l'ensemble écrit et passe en majuscules (`''` si rien ne reste). */
 export function normalizeIban(raw: string): string {

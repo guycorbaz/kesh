@@ -111,6 +111,11 @@ pub async fn list_imported(
 /// La réponse est relue, une fois la transaction validée, par la fonction du GET
 /// ([`SupplierInvoiceResponse::load_with_settlement_cancellation`]).
 ///
+/// ⚠️ Angle mort écrit (revue P1 de la 30-2b, C-30-2-42) : une erreur de base
+/// **entre** le `COMMIT` et cette relecture rend une erreur alors que la facture
+/// est créée et le document `completed` ; un nouvel essai rend `409
+/// IMPORT_NOT_PENDING_COMPLETION`. Rien n'est perdu ni faussé — patron de `pay`.
+///
 /// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `AppError`
 /// [`crate::retry::retry_app_on_deadlock`] : la transaction vit dans
 /// [`complete_import_once`], une tentative.
