@@ -9,9 +9,12 @@ Fiche : `30-3-chemin-facturation.md`. Issue [#585]. Choix tranchés au développ
 ### C-30-3-1 — Corriger le texte, ne pas ajouter de lien
 
 - **Contexte** : l'issue offre deux remèdes — écrire le vrai chemin, ou ajouter sur `/settings` un lien vers la facturation.
-- **Retenu** : écrire le vrai chemin (« Administration → Facturation »). Le lien aurait changé la navigation d'un seul
-  écran parmi plusieurs entrées sœurs (Exercices, Taux de TVA, Utilisateurs…) qui ont le même défaut.
-- **Écartées** : le lien sur `/settings` (périmètre de navigation, à décider pour l'ensemble des entrées).
+- **Retenu** : écrire le vrai chemin (« Administration → Facturation »). Le lien est un changement de navigation, hors
+  d'une correction de texte.
+- **Écartées** : le lien sur `/settings` (à décider à part, avec le titre d'écran de C-30-3-2).
+- *Annotation du 2026-10-16 (revue P1, F4)* : la rédaction d'origine ajoutait que les entrées Exercices, Taux de TVA,
+  Utilisateurs… « ont le même défaut ». C'était faux : `/settings` porte une section pour chacune ; seule
+  « Facturation » n'en a pas. Retiré.
 - **Réversible** : oui.
 
 ### C-30-3-2 — Le titre de l'écran reste « Paramètres — Facturation »
