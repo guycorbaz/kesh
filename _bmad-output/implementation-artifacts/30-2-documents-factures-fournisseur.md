@@ -1748,3 +1748,11 @@ Gate complet au dernier commit de code (`f428279f`, exécuté au HEAD `eed3564f`
 Trend : P1 = 1 MEDIUM → remédié ; la remédiation touche du code de production (panneau, validation de la référence,
 `iban.ts`) : **passe ciblée P2** à lancer (`30-2b-review-prompt-p2-ciblee.md`, **Haiku**, une lentille T, diff
 `5da6428d..HEAD`, rapport `302b-review-p2-T.md`).
+
+### Revue de code P2 ciblée de la 30-2b — 2026-10-16 — revue terminée
+
+- Passe ciblée P2 (Haiku, lentille T, `5da6428d..4fd03a41`) : **0/0/0/3**. T1 (garde IME sur Safari, hypothèse),
+  T2 (portée du doc-comment « seule définition »), T3 (première campagne de mutations aux motifs invalides, non
+  annoncée) laissés. **La revue de la 30-2b est terminée** : P1 Sonnet B 0/0/1/3, E 0/0/1/6, A 0/0/1/8 (MEDIUM
+  convergent : Entrée dans le panneau « Nouveau fournisseur ») → remédiée (`f428279f`) → P2 ciblée Haiku 0/0/0/3.
+
