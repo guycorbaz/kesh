@@ -554,3 +554,58 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   depuis l'écran » (garde G5) est conservé mot pour mot.
 - **Écartées** : n'annoncer que la 30-2b (la ligne mentirait par omission sur la 30-2a).
 - **Réversible** : oui.
+
+### C-30-2-41 — Entrée dans le panneau « Nouveau fournisseur » crée le fournisseur, jamais la facture (revue P1, B1 = E1 = A1)
+
+- **Contexte** : le panneau (C-30-2-34) vit dans le `<form>` de la facture ; Entrée dans l'un de ses `<input>`
+  déclenchait la soumission implicite de ce formulaire — avec un fournisseur déjà sélectionné et des lignes valides, la
+  facture s'enregistrait sur ce fournisseur-là pendant que l'on en tapait un autre : faux rattachement muet.
+- **Retenu** : un `onkeydown` sur le conteneur du panneau (`onPanelKeydown`) : Entrée dont la cible est un `<input>`
+  (hors composition IME) → `preventDefault()` — ce qui annule la soumission implicite — puis `create()` si aucune
+  création n'est en cours. Entrée sur un bouton garde son clic ; un `<select>` ne soumet pas. Tests : Vitest qui modèle
+  la soumission implicite (keydown annulable, puis `requestSubmit()` s'il n'a pas été annulé — jsdom ne l'implémente
+  pas), sur chacun des champs en mode Entreprise (6) et Personne (7), plus un **témoin** qui montre que le modèle soumet
+  bien depuis un champ de la facture ; E2E E2 : Entrée dans le nom au lieu du clic. Mutation M-b20.
+- **Écartées** : sortir le panneau du `<form>` (il faut alors le replacer par CSS à côté du sélecteur, ou un portail :
+  plus de code pour le même effet) ; un `<form>` distinct relié par l'attribut `form` (chaque champ du panneau devrait
+  le porter, et un oubli rouvrirait le défaut en silence) ; Entrée qui ne fait rien (moins attendu qu'une création).
+- **Réversible** : oui.
+
+### C-30-2-42 — Relecture après COMMIT de la complétion : l'échec reste une erreur, écrit en angle mort (revue P1, B2 = A9)
+
+- **Contexte** : `complete_import` relit la facture après le `COMMIT` (C-30-2-33) ; une erreur de base entre le
+  `COMMIT` et la relecture rend une erreur sur une facture bel et bien créée, et un nouvel essai donne
+  `409 IMPORT_NOT_PENDING_COMPLETION`.
+- **Retenu** : **angle mort écrit** (fiche, doc-comment de `complete_import`), non corrigé. Le même patron vit dans
+  `pay`, `cancel` et l'annulation du règlement ; la fenêtre est un incident de pool entre deux requêtes ; aucune
+  donnée n'est perdue ni faussée, et le 409 dit « déjà traité » — l'écran l'affiche en tête du formulaire, et la
+  facture créée est dans la liste des factures fournisseurs.
+- **Écartées** : repli sur `from_parts` avec `tracing::warn!` — une branche qu'aucun test n'exerce sans injection de
+  panne, propre à une seule des quatre routes du patron ; à traiter, si on le traite, pour les quatre ensemble.
+- **Réversible** : oui.
+
+### C-30-2-43 — Page `/supplier-invoices/new` : `document` lu une fois, `goto` rejeté — angles morts écrits (revue P1, B4)
+
+- **Contexte** : `documentId` est lu à l'initialisation de la page ; un passage `?document=5` → `?document=6` sans
+  quitter la page la laisserait sur le 5. Si `goto` rejette après la création, le formulaire se réactive et un second
+  clic peut créer un doublon (sans document ; avec document, `409`).
+- **Retenu** : **angles morts écrits** à la fiche, non corrigés : aucun lien de l'application ne fait passer d'un
+  document à l'autre sans quitter la page (liste → page → retour détruit le composant), et un `goto` qui rejette après
+  une création réussie suppose une navigation annulée entre-temps.
+- **Écartées** : `$derived` sur `page.url` avec `{#key}` (rechargement complet des données à justifier par un parcours
+  qui n'existe pas) ; `try/catch` autour de `goto` (ne ferme pas la fenêtre du doublon : le bouton se réactive quand
+  même).
+- **Réversible** : oui.
+
+### C-30-2-44 — Un seul ensemble de blancs côté serveur, et des points de code explicites côté écran (revue P1, B3, A6 = E7)
+
+- **Contexte** : la référence libre était rognée par `trim()` (White_Space seul) alors que `present()` ignore aussi
+  U+200B et U+FEFF : un U+200B final collé depuis un PDF était stocké et compté. `iban.ts` et `iban.test.ts` portaient
+  des caractères invisibles littéraux.
+- **Retenu** : `is_payment_blank` est la seule définition de l'ensemble côté serveur, partagée par
+  `normalize_payment_field` et par le rognage de la référence libre (`trim_matches`), la longueur comptée après ce
+  rognage, en caractères. Côté écran, l'expression régulière se construit par `String.fromCodePoint(0x85, 0x200b)` et
+  le test liste ses sept blancs par points de code : la source ne porte plus aucun caractère invisible (l'outil
+  d'édition convertit en caractère brut une séquence `​` écrite dans un littéral).
+- **Écartées** : garder `trim()` et écrire l'angle mort (un caractère invisible stocké fait manquer un rapprochement).
+- **Réversible** : oui.
