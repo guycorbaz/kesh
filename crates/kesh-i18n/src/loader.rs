@@ -1131,7 +1131,15 @@ mod tests {
             ] {
                 let tete = format!("{} → ", libelle(racine));
                 let permis: Vec<String> = cles.iter().map(|c| libelle(c)).collect();
+                // La graphie « X > Y » était l'une de celles de #585 : une seule graphie de
+                // chemin (« → ») est admise, afin que la vérification ci-dessous ne soit pas
+                // contournée par le séparateur.
+                let tete_chevron = format!("{} > ", libelle(racine));
                 for (cle, texte) in &v {
+                    assert!(
+                        !texte.contains(&tete_chevron),
+                        "{locale} : `{cle}` écrit « {tete_chevron} » — graphie « → » attendue"
+                    );
                     for (pos, _) in texte.match_indices(&tete) {
                         let suite = &texte[pos + tete.len()..];
                         vus += 1;

@@ -41,10 +41,26 @@ Manuels DE/EN/IT (`docs/manual/{de,en,it}/`) : un `README.md` seul, aucun chemin
 
 ## Hors de cette story (signalé, non traité)
 
-La même confusion existe pour d'autres entrées du groupe *Administration* (« Paramètres → Exercices », « → Taux de
-TVA », « → Utilisateurs », « → Modèles d'e-mail », « → Clés API », « → Rappels débiteurs ») : une vingtaine de sites
-au manuel et dans l'application. Chacun demande de vérifier la barre latérale avant correction ; issue à ouvrir par
-l'orchestrateur.
+Rien. *Annotation du 2026-10-16 (revue P1, F4)* : la version de cette section écrite au premier développement
+affirmait que « Paramètres → Exercices / Taux de TVA / Utilisateurs / Modèles d'e-mail / Clés API / Rappels débiteurs »
+avaient le même défaut et demandait une issue. C'était faux, établi ensuite au code : `/settings` porte une section
+pour chacun (`settings/+page.svelte` : utilisateurs `:507`, exercices `:585`, taux de TVA `:598`, modèles d'e-mail
+`:611`, clés API `:489`, rappels débiteurs `:624`). Ces chemins sont vrais ; **aucune issue à ouvrir**. Seule
+« Facturation » n'a pas de carte sur `/settings`.
+
+La passe d'extension a seulement écrit en entier « Exercices » → « Exercices comptables » (fr, it) pour tenir le titre
+de la section : `error-fiscal-year-missing` et `opening-balances-locked-no-fiscal-year` (fr, it), `notify.ts`,
+`settings/opening-balances/+page.svelte`, `admin-manual.tex:1418`. La garde `les_chemins_cites_aux_catalogues_existent`
+(G3-bis) vérifie mécaniquement, dans les 4 catalogues, que tout « Administration → X » ou « Paramètres → X » désigne un
+lieu réel ; son angle mort (listes en dur, catalogues seuls, graphie « > » désormais refusée) est écrit dans sa
+doc-comment.
+
+Forme sans flèche (revue P1, F1) : `user-manual.tex:292-294` disait « Les Paramètres regroupent … la facturation ».
+Corrigé le 2026-10-16 : la phrase renvoie à *Administration → Facturation*. Recherche des formes sans flèche
+(`paramètres|réglages|Einstellungen|Impostazioni|Settings` à moins de 60 caractères de `facturation|Fakturierung|
+Fatturazione|Invoicing`, et l'inverse « facturation … dans les paramètres ») sur les `.tex` FR, les 4 catalogues, les
+replis, `api-external.md`, README et `website/` : le reste ne désigne pas un lieu (libellés d'audit « Réglages de
+facturation », « les paramètres de facturation » comme objet).
 
 ## Choix (registre `epic-30-choix-autonomes-303.md`)
 
@@ -53,19 +69,36 @@ reste ; C-30-3-3 la garde G3 de `loader.rs` calcule le chemin depuis `nav-admini
 
 ## Gates
 
-- `cargo fmt --all -- --check` : vert (après `cargo fmt --all`, qui a recoupé une assertion de `errors.rs`).
-- `cargo clippy --workspace --all-targets -- -D warnings` : vert.
-- `cargo nextest run` ciblé, `kesh-i18n` (tout) + `kesh-api` (`textes_coherents`, `company_invoice_settings_postable_e2e`,
-  `invoice_echeancier_e2e`, tests de la lib) : **565 exécutés, 565 passés, 1 ignoré**. Premier essai : 1 échec
-  (`a_rounding_gap_without_a_usable_account_is_a_dedicated_400`, assertion `contains("Paramètres")`, graphie que le
-  premier grep n'avait pas), corrigé.
-- Front : `npm run check` 0 erreur (29 avertissements préexistants) ; `npm run lint-i18n-ownership` PASS ;
-  `npm run test:unit` **1752 tests, 151 fichiers, tous passés**. `npm run build` et l'E2E complet **non exécutés** :
-  aucun comportement ne change, seuls des libellés et des commentaires d'E2E.
-- `make fr` (sous verrou) : trois PDF régénérés ; contrôle aplati (`pdftotext … | tr`) : 18 occurrences
-  « Administration → Facturation » au manuel utilisateur, 3 à l'administrateur, **0** « Paramètres → Facturation ».
-  Le PDF de la brochure, inchangé en contenu, n'est pas versionné dans cette story.
-- Gate Rust complet (`scripts/test-fast.sh`) et E2E complet : non exécutés (aucune logique touchée) ; la PR passe la CI.
+**Décomptes recomptés le 2026-10-16** depuis `git diff -U0 fc3a4f7d..fb2bee28` (lignes ajoutées), périmètre : les trois
+commits de développement, avant la remédiation de revue. Catalogues : fr 23, de 21, it 23, en 21 = **88** (84 de la
+passe 1 + 4 « Exercices comptables » fr/it de fb2bee28) ; `admin-manual.tex` **4** lignes (3 facturation + `:1418`) ;
+`user-manual.tex` **17** lignes ; Svelte/TS hors tests **10** lignes dans 7 fichiers (`InvoiceForm.svelte`,
+`WriteOffDialog.svelte`, `VatPurchaseAssistant.svelte`, `failed-proposal-label.ts`, `invoices/[id]/+page.svelte`,
+`notify.ts`, `opening-balances/+page.svelte`) ; 30 fichiers versionnés hors planning et PDF. *(Les chiffres « 84 »,
+« (3) » et « 8 » écrits au premier développement valaient à la date de a4db4a08 ; ils ne tenaient pas compte de
+fb2bee28.)*
+
+**Gate des commits 6a6482cd et a4db4a08 (périmètre : avant fb2bee28)** : `cargo fmt`, `cargo clippy --workspace`
+verts ; nextest ciblé `kesh-i18n` + `kesh-api` (`textes_coherents`, `company_invoice_settings_postable_e2e`,
+`invoice_echeancier_e2e`, lib) 565 passés, 1 ignoré (1 échec au premier essai, assertion `contains("Paramètres")`,
+corrigé) ; `npm run check`, `lint-i18n-ownership`, `test:unit` 1752 tests / 151 fichiers verts.
+
+**Gate COMPLET au dernier commit de code, fb2bee28** (base `kesh_303` remise à zéro) :
+- `scripts/test-fast.sh` : 3825 exécutés, 3825 passés, 6 ignorés (G3-bis comprise).
+- `npm run check` 0 erreur (29 avertissements préexistants) ; `lint-i18n-ownership` PASS ; `test:unit` **1752 tests,
+  151 fichiers** ; `npm run build` OK.
+- `make fr` sous verrou ; PDF aplatis : 0 « Paramètres → Facturation », « Administration → Facturation » 3 fois à
+  l'administrateur et 18 à l'utilisateur.
+- E2E complet (port 3053, base `kesh_e2e_303`, sous verrou) : **301 passés, 7 échoués, 17 ignorés**, 11,9 min ; les 7
+  échecs sont exactement ceux de la KF-029 (#97) de `docs/testing.md` (`mode-expert:26`, `:41`,
+  `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`).
+
+**Remédiation de revue P1 (commit suivant)** : touche `loader.rs` (graphie « > » refusée par G3-bis), un `.tex` et
+son PDF, des `.md`. Gate ciblé : `cargo fmt --check` vert, `cargo clippy --workspace --all-targets -D warnings` vert,
+nextest `kesh-i18n` + `textes_coherents` **56 exécutés, 56 passés**. Vitest non rejoué : aucun fichier front n'est
+touché par la remédiation. PDF utilisateur régénéré sous verrou et contrôlé aplati (19 « Administration →
+Facturation », phrase de `:292` corrigée, 0 « Paramètres → Facturation »). Le gate complet de fb2bee28 vaut pour tout
+le code de production et de test de la story ; la remédiation n'ajoute que l'assertion « > » de G3-bis.
 
 ## Change Log
 
