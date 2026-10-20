@@ -70,6 +70,23 @@ export interface SupplierInvoiceResponse {
 	cancelBlockedBy: SupplierInvoiceCancelCode | null;
 	/** Le numéro du compte archivé, quand c'est le motif. */
 	cancelBlockedLabel: string | null;
+	/**
+	 * Story 30-2c (AC18) — le document de la facture, à **trois états** :
+	 * - champ **absent** (`undefined`) : non calculé (réponse de la création) ;
+	 * - `null` : la facture n'a pas de document ;
+	 * - l'objet : son nom, son type et sa taille.
+	 *
+	 * ⚠️ `undefined` ne veut jamais dire « sans document » : la fiche ne propose
+	 * « Joindre un document » que sur `null`.
+	 */
+	sourceDocument?: SupplierInvoiceSourceDocument | null;
+}
+
+/** Le document d'une facture fournisseur (Story 30-2c, AC18). */
+export interface SupplierInvoiceSourceDocument {
+	originalFilename: string;
+	mimeType: string;
+	byteSize: number;
 }
 
 export interface CancelSupplierSettlementResponse {

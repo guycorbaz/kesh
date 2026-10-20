@@ -126,10 +126,16 @@ async fn spawn_app(pool: MySqlPool, max_file_bytes: u64) -> TestApp {
 }
 
 fn forge_jwt(user_id: i64, company_id: i64) -> String {
+    forge_jwt_role(user_id, company_id, "Comptable")
+}
+
+/// JWT d'un rôle donné — Story 30-2c (AC22 : le rôle Consultation lit le
+/// document d'une facture).
+fn forge_jwt_role(user_id: i64, company_id: i64, role: &str) -> String {
     let now = Utc::now().timestamp();
     let claims = Claims {
         sub: user_id.to_string(),
-        role: "Comptable".to_string(),
+        role: role.to_string(),
         company_id,
         iat: now,
         exp: now + 3600,
@@ -1434,6 +1440,15 @@ async fn complete_currency_eur_rejected(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "CURRENCY_NOT_SUPPORTED");
+    // Story 30-2c (AC23) : le message dit l'autre issue — la facture sans
+    // document, puis le document joint.
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("créez la facture sans document puis joignez-le"),
+        "{body}"
+    );
     assert_eq!(staging_status(&pool, staging_id).await, "to_complete");
 }
 
@@ -2445,4 +2460,367 @@ async fn supplier_candidates_by_iban(pool: MySqlPool) {
     let (s, body) = get_candidates(&app, &other_jwt, doc).await;
     assert_eq!(s, 404, "{body}");
     assert_eq!(body["error"]["code"], "IMPORTED_INVOICE_NOT_FOUND");
+}
+
+// ============================================================
+// Story 30-2c (#685) — joindre un document après coup, le détacher,
+// le consulter depuis la facture et l'écriture
+// ============================================================
+
+/// `POST /supplier-invoices/{id}/source-document` (AC19).
+async fn post_attach(app: &TestApp, jwt: &str, invoice: i64, doc: i64) -> (u16, Value) {
+    let resp = app
+        .client
+        .post(app.url(&format!(
+            "/api/v1/supplier-invoices/{invoice}/source-document"
+        )))
+        .bearer_auth(jwt)
+        .json(&json!({ "importedSupplierInvoiceId": doc }))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap_or(Value::Null))
+}
+
+/// `DELETE /supplier-invoices/{id}/source-document` (AC24).
+async fn delete_attach(app: &TestApp, jwt: &str, invoice: i64) -> (u16, Value) {
+    let resp = app
+        .client
+        .delete(app.url(&format!(
+            "/api/v1/supplier-invoices/{invoice}/source-document"
+        )))
+        .bearer_auth(jwt)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap_or(Value::Null))
+}
+
+async fn get_json(app: &TestApp, jwt: &str, path: &str) -> (u16, Value) {
+    let resp = app
+        .client
+        .get(app.url(path))
+        .bearer_auth(jwt)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap_or(Value::Null))
+}
+
+/// Statut HTTP de la lecture du document d'une facture (AC22).
+async fn invoice_document_status(app: &TestApp, jwt: &str, invoice: i64) -> u16 {
+    app.client
+        .get(app.url(&format!(
+            "/api/v1/supplier-invoices/{invoice}/source-document"
+        )))
+        .bearer_auth(jwt)
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .as_u16()
+}
+
+/// Un document à traiter dont le fichier existe sous `KESH_DOCUMENTS_DIR`.
+async fn staged_document(app: &TestApp, pool: &MySqlPool, ctx: &Ctx, file: &str) -> i64 {
+    std::fs::write(app.documents.join(file), blank_png()).unwrap();
+    seed_staging(
+        pool,
+        ctx.seeded.company_id,
+        "CHF",
+        false,
+        "NON",
+        None,
+        Some(dec!(100.00)),
+        "Joint SA",
+        file,
+    )
+    .await
+}
+
+/// Une facture fournisseur ouverte, créée par l'API (sans document).
+async fn invoice_without_document(app: &TestApp, ctx: &Ctx) -> Value {
+    let (s, b) = post_supplier_invoice(app, &ctx.jwt, &body_with(ctx, json!({}))).await;
+    assert_eq!(s, 201, "{b}");
+    b
+}
+
+/// L'objet `sourceDocument` attendu d'un document semé par `staged_document`.
+fn expected_source_document() -> Value {
+    json!({ "originalFilename": "facture.png", "mimeType": "image/png", "byteSize": 1234 })
+}
+
+/// AC18 — `sourceDocument` à trois états : **absent** de la réponse de `POST
+/// /supplier-invoices` (non calculé), `null` au GET d'une facture sans document,
+/// l'objet dans la réponse de la complétion et au GET d'une facture qui en a un.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn source_document_has_three_states(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+
+    let created = invoice_without_document(&app, &ctx).await;
+    assert!(
+        created.get("sourceDocument").is_none(),
+        "création : champ absent (non calculé) : {created}"
+    );
+    let id = created["id"].as_i64().unwrap();
+    let (s, got) = get_json(&app, &ctx.jwt, &format!("/api/v1/supplier-invoices/{id}")).await;
+    assert_eq!(s, 200);
+    assert_eq!(got["sourceDocument"], Value::Null, "{got}");
+    assert!(
+        got.get("sourceDocument").is_some(),
+        "GET : champ présent, null"
+    );
+
+    let doc = staged_document(&app, &pool, &ctx, "complete-302c.png").await;
+    let (s, done) = post_complete(&app, &ctx.jwt, doc, &body_with(&ctx, json!({}))).await;
+    assert_eq!(s, 200, "{done}");
+    assert_eq!(done["sourceDocument"], expected_source_document(), "{done}");
+    let completed = done["id"].as_i64().unwrap();
+    let (_, got) = get_json(
+        &app,
+        &ctx.jwt,
+        &format!("/api/v1/supplier-invoices/{completed}"),
+    )
+    .await;
+    assert_eq!(got["sourceDocument"], expected_source_document());
+}
+
+/// AC19 — joindre après coup : `200` et la facture relue (`sourceDocument`
+/// calculé), audit `imported_supplier_invoice.attached` ; les refus `404` ×2,
+/// `409 IMPORT_NOT_PENDING_COMPLETION`, `409 SOURCE_DOCUMENT_ALREADY_ATTACHED`,
+/// autre société des deux côtés. Tue M-c1 (traduction de l'unicité retirée :
+/// 500 au lieu de 409).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn attach_route_refuses_then_attaches(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let inv = invoice_without_document(&app, &ctx).await["id"]
+        .as_i64()
+        .unwrap();
+    let doc = staged_document(&app, &pool, &ctx, "attach-302c.png").await;
+
+    let (s, b) = post_attach(&app, &ctx.jwt, inv, 999_999).await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (404, Some("IMPORTED_INVOICE_NOT_FOUND"))
+    );
+    let (s, b) = post_attach(&app, &ctx.jwt, 999_999, doc).await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (404, Some("NOT_FOUND")),
+        "{b}"
+    );
+    // Autre société : ni notre document, ni notre facture.
+    let other_jwt = other_company_jwt(&pool).await;
+    let (s, b) = post_attach(&app, &other_jwt, inv, doc).await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (404, Some("IMPORTED_INVOICE_NOT_FOUND"))
+    );
+    assert_eq!(staging_status(&pool, doc).await, "to_complete");
+
+    let (s, b) = post_attach(&app, &ctx.jwt, inv, doc).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["id"], json!(inv));
+    assert_eq!(b["sourceDocument"], expected_source_document(), "{b}");
+    assert_eq!(b["status"], "open", "la facture ne change pas");
+    assert_eq!(staging_status(&pool, doc).await, "completed");
+    let details = audit_details(&pool, doc, "imported_supplier_invoice.attached").await;
+    assert_eq!(details["supplier_invoice_id"], json!(inv));
+    assert_eq!(details["original_filename"], "facture.png");
+    assert_eq!(invoice_document_status(&app, &ctx.jwt, inv).await, 200);
+
+    // Le même document une seconde fois : il n'est plus à traiter.
+    let inv2 = invoice_without_document(&app, &ctx).await["id"]
+        .as_i64()
+        .unwrap();
+    let (s, b) = post_attach(&app, &ctx.jwt, inv2, doc).await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (409, Some("IMPORT_NOT_PENDING_COMPLETION"))
+    );
+    // Un autre document vers la facture qui en a déjà un.
+    let doc2 = staged_document(&app, &pool, &ctx, "attach-302c-2.png").await;
+    let (s, b) = post_attach(&app, &ctx.jwt, inv, doc2).await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (409, Some("SOURCE_DOCUMENT_ALREADY_ATTACHED")),
+        "{b}"
+    );
+    assert_eq!(staging_status(&pool, doc2).await, "to_complete");
+}
+
+/// AC24 — détacher : `200`, `sourceDocument: null`, le document revient « à
+/// traiter », la lecture du document de la facture rend `404`, audit
+/// `imported_supplier_invoice.detached` ; un second détachement et une autre
+/// société : `404 SOURCE_DOCUMENT_NOT_FOUND` ; puis un autre document se joint.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn detach_route_restores_the_document(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let inv = invoice_without_document(&app, &ctx).await["id"]
+        .as_i64()
+        .unwrap();
+    let doc = staged_document(&app, &pool, &ctx, "detach-302c.png").await;
+    let (s, _) = post_attach(&app, &ctx.jwt, inv, doc).await;
+    assert_eq!(s, 200);
+
+    let other_jwt = other_company_jwt(&pool).await;
+    let (s, b) = delete_attach(&app, &other_jwt, inv).await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (404, Some("SOURCE_DOCUMENT_NOT_FOUND"))
+    );
+
+    let (s, b) = delete_attach(&app, &ctx.jwt, inv).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["sourceDocument"], Value::Null, "{b}");
+    assert_eq!(b["status"], "open");
+    assert_eq!(staging_status(&pool, doc).await, "to_complete");
+    let details = audit_details(&pool, doc, "imported_supplier_invoice.detached").await;
+    assert_eq!(details["supplier_invoice_id"], json!(inv));
+    assert_eq!(details["original_filename"], "facture.png");
+    assert_eq!(invoice_document_status(&app, &ctx.jwt, inv).await, 404);
+    let (s, list) = get_json(
+        &app,
+        &ctx.jwt,
+        "/api/v1/imported-supplier-invoices?status=to_complete",
+    )
+    .await;
+    assert_eq!(s, 200);
+    assert!(
+        list.as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == json!(doc)),
+        "le document revient dans la liste : {list}"
+    );
+
+    let (s, b) = delete_attach(&app, &ctx.jwt, inv).await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str()),
+        (404, Some("SOURCE_DOCUMENT_NOT_FOUND"))
+    );
+
+    let doc2 = staged_document(&app, &pool, &ctx, "detach-302c-2.png").await;
+    let (s, b) = post_attach(&app, &ctx.jwt, inv, doc2).await;
+    assert_eq!(
+        s, 200,
+        "après détachement, un autre document se joint : {b}"
+    );
+}
+
+/// AC22 — la lecture du document d'une **facture** est ouverte à tout rôle
+/// authentifié (Consultation compris) ; celle d'un document **à traiter**, le
+/// rattachement et le détachement restent Comptable+ ; une autre société
+/// reçoit `404`. Tue M-c6 (lecture restée Comptable+).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn source_document_read_is_open_to_every_role(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let inv = invoice_without_document(&app, &ctx).await["id"]
+        .as_i64()
+        .unwrap();
+    let doc = staged_document(&app, &pool, &ctx, "role-302c.png").await;
+    let (s, _) = post_attach(&app, &ctx.jwt, inv, doc).await;
+    assert_eq!(s, 200);
+    let pending = staged_document(&app, &pool, &ctx, "role-302c-2.png").await;
+
+    let lecteur = forge_jwt_role(
+        ctx.seeded.admin_user_id,
+        ctx.seeded.company_id,
+        "Consultation",
+    );
+    assert_eq!(invoice_document_status(&app, &lecteur, inv).await, 200);
+    let (s, _) = get_json(
+        &app,
+        &lecteur,
+        &format!("/api/v1/imported-supplier-invoices/{pending}/source-document"),
+    )
+    .await;
+    assert_eq!(s, 403, "un document à traiter reste Comptable+");
+    let (s, _) = post_attach(&app, &lecteur, inv, pending).await;
+    assert_eq!(s, 403);
+    let (s, _) = delete_attach(&app, &lecteur, inv).await;
+    assert_eq!(s, 403);
+
+    let other_jwt = other_company_jwt(&pool).await;
+    assert_eq!(
+        invoice_document_status(&app, &other_jwt, inv).await,
+        404,
+        "IDOR"
+    );
+}
+
+/// AC21 — le détail d'une écriture d'**achat** et de **règlement** d'une facture
+/// à document porte `sourceDocument` ; `null` pour une écriture d'une facture
+/// sans document, et après détachement. Tue M-c5 (achat seul).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn journal_entry_detail_shows_the_document(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let created = invoice_without_document(&app, &ctx).await;
+    let inv = created["id"].as_i64().unwrap();
+    let purchase = created["purchaseJournalEntryId"].as_i64().unwrap();
+    let doc = staged_document(&app, &pool, &ctx, "entry-302c.png").await;
+    let (s, _) = post_attach(&app, &ctx.jwt, inv, doc).await;
+    assert_eq!(s, 200);
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/supplier-invoices/{inv}/pay")))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "settlementType": "internal_account",
+            "accountId": ctx.seeded.accounts["1000"],
+            "paymentDate": "2026-06-20",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let paid: Value = resp.json().await.unwrap();
+    let settlement = paid["settlementJournalEntryId"].as_i64().unwrap();
+    assert_eq!(
+        paid["sourceDocument"],
+        expected_source_document(),
+        "pay relit la facture"
+    );
+
+    let attendu = json!({
+        "supplierInvoiceId": inv,
+        "supplierInvoiceNumber": "FF-2026-100",
+        "originalFilename": "facture.png",
+    });
+    for entry in [purchase, settlement] {
+        let (s, b) = get_json(&app, &ctx.jwt, &format!("/api/v1/journal-entries/{entry}")).await;
+        assert_eq!(s, 200, "{b}");
+        assert_eq!(b["sourceDocument"], attendu, "écriture {entry} : {b}");
+    }
+    let other = invoice_without_document(&app, &ctx).await;
+    let other_entry = other["purchaseJournalEntryId"].as_i64().unwrap();
+    let (_, b) = get_json(
+        &app,
+        &ctx.jwt,
+        &format!("/api/v1/journal-entries/{other_entry}"),
+    )
+    .await;
+    assert_eq!(b["sourceDocument"], Value::Null);
+    assert!(
+        b.get("sourceDocument").is_some(),
+        "champ présent, null : {b}"
+    );
+
+    let (s, _) = delete_attach(&app, &ctx.jwt, inv).await;
+    assert_eq!(s, 200);
+    let (_, b) = get_json(
+        &app,
+        &ctx.jwt,
+        &format!("/api/v1/journal-entries/{purchase}"),
+    )
+    .await;
+    assert_eq!(b["sourceDocument"], Value::Null, "après détachement : {b}");
 }

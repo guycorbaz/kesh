@@ -163,8 +163,15 @@ const PREFIXES = [
  * `-err-fiscal-year`, `-err-form`, `-err-generic`, `-err-iban-ref`, `-err-not-pending`, quatre
  * `-field-*`, quatre `-line-*`, `-lines`, `-mismatch`, `-subcentime`, `-sum-ttc`, `-target`) et
  * `supplier-invoices-form-close`. Recompté : `git diff` du FTL fr-CH, préfixes du domaine.
+ *
+ * ⚠️ **328 → 341, +13 nommées** (Story 30-2c, #685) — le document joint et consulté :
+ * `supplier-invoices-paid-info-on`, `-doc-label`, `-doc-attach`, `-doc-attached`, `-doc-detach`,
+ * `-doc-detach-confirm`, `-doc-detached` (fiche de la facture) et
+ * `imported-supplier-invoices-attach-title`, `-attach-empty`, `-attach-qr-amount`,
+ * `-attach-invoice-total`, `-attach-submit`, `-attach-confirm` (`AttachDocumentPicker.svelte`).
+ * Les clés `journal-entries-*` neuves de la fiche d'écriture sont d'un autre domaine.
  */
-const CLES_RELEVEES = 328;
+const CLES_RELEVEES = 341;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

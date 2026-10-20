@@ -66,6 +66,14 @@ vi.mock(
   "$lib/features/imported-supplier-invoices/imported-supplier-invoices.api",
   () => ({
     downloadSupplierInvoiceSourceDocument: vi.fn(),
+    // Story 30-2c — la fiche joint, détache et prévisualise le document ; ces
+    // tests-ci ne touchent pas au document (`sourceDocument` absent : rien
+    // n'est rendu, rien n'est appelé).
+    fetchSupplierInvoiceSourceDocument: vi.fn(),
+    attachSourceDocument: vi.fn(),
+    detachSourceDocument: vi.fn(),
+    listImported: vi.fn(async () => []),
+    fetchImportedSourceDocument: vi.fn(),
   }),
 );
 

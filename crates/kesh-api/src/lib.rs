@@ -513,9 +513,14 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/imported-supplier-invoices/{id}/supplier-candidates",
             get(routes::imported_supplier_invoices::get_supplier_candidates),
         )
+        // Story 30-2c (AC19, AC24) : joindre un document à traiter à une facture
+        // existante, le détacher — Comptable+, clés `read-write` comme la
+        // complétion. La LECTURE du document d'une facture est montée parmi les
+        // lectures (AC22, C-30-2-14).
         .route(
             "/api/v1/supplier-invoices/{id}/source-document",
-            get(routes::imported_supplier_invoices::get_supplier_invoice_source_document),
+            post(routes::imported_supplier_invoices::attach_source_document)
+                .delete(routes::imported_supplier_invoices::detach_source_document),
         )
         // Story 12.3 : lots de paiement pain.001 — mutations (Comptable+)
         .route(
@@ -879,6 +884,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/supplier-invoices/{id}",
             get(routes::supplier_invoices::get_supplier_invoice),
+        )
+        // Story 30-2c (AC22, C-30-2-14) : le document d'une facture se lit par
+        // tout rôle authentifié, comme la fiche qu'il illustre ; celui d'un
+        // document à traiter reste Comptable+ (bloc des mutations ci-dessus).
+        .route(
+            "/api/v1/supplier-invoices/{id}/source-document",
+            get(routes::imported_supplier_invoices::get_supplier_invoice_source_document),
         )
         // Story 12.3 : lectures lots de paiement + download pain.001 (tout rôle authentifié)
         .route(

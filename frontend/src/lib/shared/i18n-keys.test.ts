@@ -689,7 +689,14 @@ const ATTENDU = {
 	// formulaires en ligne retirés de la liste et de la page d'import). Que des littéraux : les
 	// autres compteurs inchangés. Réunion au report de la 30-2b sur la 30-1b (2026-10-15) :
 	// 2219 + 32 = **2251**, mesuré par la collecte de ce test.
-	sitesTotal: 2251,
+	// Story 30-2c (#685, document joint et consulté) : **2251 → 2279** (+28), mesuré par la
+	// collecte de ce test et recompté par `perl -0ne '…/i18nMsg\s*\(/g'` aux deux bornes
+	// (`1aca02d2` → HEAD de `story/30-2c`) : `routes/(app)/supplier-invoices/[id]/+page.svelte`
+	// 40 → 50 (date de règlement, document, joindre, détacher), `routes/(app)/journal-entries/
+	// [id]/+page.svelte` 27 → 30 (lien vers la facture, aperçu), `AttachDocumentPicker.svelte`
+	// 0 → 15 (fichier neuf) ; `supplier-invoices/import/+page.svelte` 34 → 34 (la date d'import
+	// passe à `importDateOf`, sans site i18n). Que des littéraux : les autres compteurs inchangés.
+	sitesTotal: 2279,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

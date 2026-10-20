@@ -27,12 +27,12 @@
 	} from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.api';
 	import {
 		hasQr,
+		importDateOf,
 		type ImportedSupplierInvoice,
 		type InboxImportReport,
 	} from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.types';
 	import { importErrorLabel } from '$lib/features/imported-supplier-invoices/error-label';
 	import DocumentPreview from '$lib/features/imported-supplier-invoices/DocumentPreview.svelte';
-	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 
 	let toComplete = $state<ImportedSupplierInvoice[]>([]);
@@ -57,11 +57,6 @@
 	}
 	function togglePreview(id: number) {
 		previewId = previewId === id ? null : id;
-	}
-
-	/** Date d'import (`createdAt`, horodatage naïf) au format suisse. */
-	function importDate(row: ImportedSupplierInvoice): string {
-		return formatSwissDate(row.createdAt.slice(0, 10));
 	}
 
 	async function reloadList() {
@@ -292,7 +287,7 @@
 						<div class="font-medium" data-testid="imported-file-name">{row.originalFilename}</div>
 						<div class="text-text-muted">
 							{i18nMsg('imported-supplier-invoices-imported-on', 'Importé le {$date}', {
-								date: importDate(row),
+								date: importDateOf(row),
 							})}
 						</div>
 						{#if hasQr(row)}

@@ -31,7 +31,15 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { notifyInfo, notifyWarning, notifyError, notifySuccess } from '$lib/shared/utils/notify';
-	import { downloadSupplierInvoiceSourceDocument } from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.api';
+	import {
+		attachSourceDocument,
+		detachSourceDocument,
+		downloadSupplierInvoiceSourceDocument,
+		fetchSupplierInvoiceSourceDocument,
+	} from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.api';
+	import DocumentPreview from '$lib/features/imported-supplier-invoices/DocumentPreview.svelte';
+	import AttachDocumentPicker from '$lib/features/imported-supplier-invoices/AttachDocumentPicker.svelte';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 
 	const id = Number(page.params.id);
 
@@ -75,6 +83,28 @@
 	// refus s'affiche localement, jamais dans `errorMsg`.
 	let cancelling = $state(false);
 	let cancelError = $state('');
+
+	// Story 30-2c (AC18, AC20, AC24) — le document de la facture : aperçu, sélecteur
+	// pour en joindre un, détachement. ⛔ Le refus du détachement s'affiche ici,
+	// jamais dans `errorMsg`.
+	let showPreview = $state(false);
+	let showPicker = $state(false);
+	let detaching = $state(false);
+	let detachError = $state('');
+	/** Lecture STABLE du document pour l'aperçu (une closure par rendu relirait). */
+	const loadSourceDocument = () => fetchSupplierInvoiceSourceDocument(id);
+
+	/**
+	 * Story 30-2c (AC25) — `paidAt` est un horodatage naïf (« 2026-06-20T00:00:00 ») :
+	 * la fiche n'en montre que la date, au format suisse. Sans date, la phrase sans date
+	 * (deux clés : une seule à variable rendrait « Facture réglée le . »).
+	 */
+	function paidInfo(paidAt: string | null): string {
+		if (!paidAt) return i18nMsg('supplier-invoices-paid-info', 'Facture réglée.');
+		return i18nMsg('supplier-invoices-paid-info-on', 'Facture réglée le { $date }.', {
+			date: formatSwissDate(paidAt.slice(0, 10)),
+		});
+	}
 
 	async function load() {
 		invoice = await getSupplierInvoice(id);
@@ -217,9 +247,53 @@
 	}
 
 	/**
-	 * Télécharge le justificatif d'origine (Story 12.5d, DC-d1). Le lien est
-	 * toujours rendu ; une facture créée directement (sans import) n'a pas de
-	 * justificatif → 404 géré gracieusement (notifyInfo), jamais bloquant.
+	 * Joint un document à traiter (Story 30-2c, AC19-AC20) ; la réponse est la
+	 * facture relue, `sourceDocument` calculé. Une erreur remonte au sélecteur, qui
+	 * l'affiche sans se fermer.
+	 */
+	async function attach(importedSupplierInvoiceId: number) {
+		invoice = await attachSourceDocument(id, importedSupplierInvoiceId);
+		showPicker = false;
+		showPreview = false;
+		notifySuccess(i18nMsg('supplier-invoices-doc-attached', 'Document joint à la facture.'));
+	}
+
+	/**
+	 * Détache le document (Story 30-2c, AC24) : il revient dans « Documents à
+	 * traiter » ; la facture et ses écritures ne changent pas.
+	 */
+	async function detach() {
+		detachError = '';
+		if (
+			!confirm(
+				i18nMsg(
+					'supplier-invoices-doc-detach-confirm',
+					'Détacher ce document ? Il reviendra dans les documents à traiter ; la facture et son écriture ne changent pas.',
+				),
+			)
+		)
+			return;
+		detaching = true;
+		try {
+			invoice = await detachSourceDocument(id);
+			showPreview = false;
+			notifySuccess(
+				i18nMsg(
+					'supplier-invoices-doc-detached',
+					'Document détaché : il est de nouveau dans les documents à traiter.',
+				),
+			);
+		} catch (err) {
+			detachError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
+		} finally {
+			detaching = false;
+		}
+	}
+
+	/**
+	 * Télécharge le document de la facture (Story 12.5d, DC-d1). Depuis la Story
+	 * 30-2c, le bouton n'est rendu que si la facture a un document ; un 404 reste
+	 * possible (document détaché entre-temps, ailleurs) et se dit sans bloquer.
 	 */
 	async function viewSourceDocument() {
 		try {
@@ -276,19 +350,87 @@
 			<dt class="text-text-muted">IBAN</dt>
 			<dd class="font-mono">{invoice.creditorIban}</dd>
 		{/if}
+		<!-- Story 30-2c (ajout de l'orchestrateur, C-30-2-47) : le QR-IBAN d'une facture
+		     à QR-IBAN s'affiche aussi — la fiche ne montrait que `creditorIban`. -->
+		{#if invoice.creditorQrIban}
+			<dt class="text-text-muted">QR-IBAN</dt>
+			<dd class="font-mono" data-testid="supplier-invoice-qr-iban">{invoice.creditorQrIban}</dd>
+		{/if}
 		{#if invoice.paymentReference}
 			<dt class="text-text-muted">{i18nMsg('supplier-invoices-detail-reference', 'Référence')}</dt>
 			<dd class="font-mono">{invoice.paymentReference}</dd>
 		{/if}
 	</dl>
 
-	<button
-		class="mb-6 inline-block rounded border px-4 py-2 text-sm text-primary"
-		data-testid="supplier-invoice-source-document"
-		onclick={viewSourceDocument}
-	>
-		{i18nMsg('imported-supplier-invoices-view-source', 'Voir le document')}
-	</button>
+	<!-- Story 30-2c (AC18) : « Voir le document » SEULEMENT s'il existe (plus de bouton
+	     qui rend 404) ; sans document (`null`), « Joindre un document » pour un rôle
+	     qui écrit. `undefined` (non calculé) n'affiche rien : ce n'est pas « sans ». -->
+	{#if invoice.sourceDocument}
+		<div class="mb-6 space-y-2" data-testid="supplier-invoice-document">
+			<p class="text-sm">
+				<span class="text-text-muted">{i18nMsg('supplier-invoices-doc-label', 'Document')} :</span>
+				<span data-testid="supplier-invoice-document-name">{invoice.sourceDocument.originalFilename}</span>
+			</p>
+			<div class="flex flex-wrap gap-2">
+				<button
+					class="rounded border px-4 py-2 text-sm text-primary"
+					data-testid="supplier-invoice-source-document"
+					aria-expanded={showPreview}
+					onclick={() => (showPreview = !showPreview)}
+				>
+					{showPreview
+						? i18nMsg('imported-supplier-invoices-preview-close', 'Fermer l’aperçu')
+						: i18nMsg('imported-supplier-invoices-view-source', 'Voir le document')}
+				</button>
+				<button
+					class="rounded border px-4 py-2 text-sm text-primary"
+					data-testid="supplier-invoice-source-download"
+					onclick={viewSourceDocument}
+				>
+					{i18nMsg('imported-supplier-invoices-view-doc', 'Télécharger')}
+				</button>
+				{#if canManage}
+					<button
+						class="rounded border px-4 py-2 text-sm text-destructive disabled:opacity-60"
+						data-testid="supplier-invoice-detach"
+						disabled={detaching}
+						onclick={detach}
+					>
+						{i18nMsg('supplier-invoices-doc-detach', 'Détacher le document')}
+					</button>
+				{/if}
+			</div>
+			{#if detachError}
+				<p class="text-sm text-destructive" role="alert" data-testid="supplier-invoice-detach-error">
+					{detachError}
+				</p>
+			{/if}
+			{#if showPreview}
+				<div data-testid="supplier-invoice-preview-panel">
+					<DocumentPreview
+						load={loadSourceDocument}
+						fileName={invoice.sourceDocument.originalFilename}
+					/>
+				</div>
+			{/if}
+		</div>
+	{:else if invoice.sourceDocument === null && canManage}
+		{#if showPicker}
+			<AttachDocumentPicker
+				invoiceTotal={invoice.totalAmount}
+				onAttach={attach}
+				onClose={() => (showPicker = false)}
+			/>
+		{:else}
+			<button
+				class="mb-6 inline-block rounded border px-4 py-2 text-sm text-primary"
+				data-testid="supplier-invoice-attach"
+				onclick={() => (showPicker = true)}
+			>
+				{i18nMsg('supplier-invoices-doc-attach', 'Joindre un document')}
+			</button>
+		{/if}
+	{/if}
 
 	<table class="mb-6 w-full border-collapse text-sm">
 		<thead>
@@ -389,8 +531,7 @@
 	{:else if invoice.status === 'paid'}
 		<div class="mb-6 space-y-2" data-testid="supplier-invoice-settlement">
 			<p class="text-sm text-text-muted" data-testid="supplier-invoice-paid-info">
-				{i18nMsg('supplier-invoices-paid-info', 'Facture réglée.')}
-				{invoice.paidAt ?? ''}
+				{paidInfo(invoice.paidAt)}
 			</p>
 			{#if invoice.settlementJournalEntryId}
 				<a

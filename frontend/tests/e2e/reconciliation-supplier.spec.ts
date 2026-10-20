@@ -257,7 +257,11 @@ test('avec QR — un débit propose la facture fournisseur, Accepter la règle, 
 		// 3. La fiche : payée, à la date du paiement ; le lien vers l'écriture de règlement.
 		await page.goto(`/supplier-invoices/${d.supplierInvoiceId}`);
 		await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Payée');
-		await expect(page.getByTestId('supplier-invoice-paid-info')).toContainText(PAYMENT_DATE);
+		// Story 30-2c (AC25) : la fiche affiche la DATE au format suisse, jamais `paidAt` brut.
+		await expect(page.getByTestId('supplier-invoice-paid-info')).toContainText(
+			PAYMENT_DATE.split('-').reverse().join('.'),
+		);
+		await expect(page.getByTestId('supplier-invoice-paid-info')).not.toContainText('T00:00:00');
 		const paid = await factureFournisseur(page, d.supplierInvoiceId);
 		expect(paid.status).toBe('paid');
 		expect(paid.paidAt).toMatch(new RegExp(`^${PAYMENT_DATE}T00:00:00`));

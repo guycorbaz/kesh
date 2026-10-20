@@ -2,7 +2,8 @@
  * Client API typé pour l'import de factures fournisseurs depuis un dossier — Story 12.5d (#194).
  *
  * Consomme les 6 endpoints livrés par 12-5c, plus `supplier-candidates` (Story 30-2b)
- * — aucune logique transactionnelle ici.
+ * et le rattachement / détachement d'un document (Story 30-2c) — aucune logique
+ * transactionnelle ici.
  * Les downloads utilisent le **Pattern A** (`apiClient.getBlob` → blob → ancre
  * éphémère) qui gère le 401-refresh (cookie httpOnly), contrairement à une ancre
  * `<a download>` directe.
@@ -11,7 +12,10 @@
 import { apiClient } from '$lib/shared/utils/api-client';
 import { parseContentDispositionFilename } from '$lib/features/export/exports.api';
 import type { ContactResponse } from '$lib/features/contacts/contacts.types';
-import type { CreateSupplierInvoiceRequest } from '$lib/features/supplier-invoices/supplier-invoices.types';
+import type {
+	CreateSupplierInvoiceRequest,
+	SupplierInvoiceResponse,
+} from '$lib/features/supplier-invoices/supplier-invoices.types';
 import type {
 	CompleteImportResponse,
 	ImportedStatus,
@@ -75,10 +79,45 @@ export async function downloadImportedSourceDocument(id: number): Promise<void> 
 	await saveBlobResponse(response, `justificatif-import-${id}`);
 }
 
-/** Télécharge le justificatif d'une facture fournisseur complétée (après complétion). */
+/** Télécharge le document d'une facture fournisseur. */
 export async function downloadSupplierInvoiceSourceDocument(id: number): Promise<void> {
 	const response = await apiClient.getBlob(`/api/v1/supplier-invoices/${id}/source-document`);
 	await saveBlobResponse(response, `justificatif-${id}`);
+}
+
+/**
+ * Lit le document d'une facture fournisseur en `Blob`, pour l'aperçu de la fiche et
+ * du détail de l'écriture (Story 30-2c, AC18, AC21). Lecture ouverte à tout rôle
+ * authentifié (AC22).
+ */
+export async function fetchSupplierInvoiceSourceDocument(id: number): Promise<Blob> {
+	const response = await apiClient.getBlob(`/api/v1/supplier-invoices/${id}/source-document`);
+	return response.blob();
+}
+
+/**
+ * Joint le document à traiter `importedSupplierInvoiceId` à la facture `invoiceId`
+ * (Story 30-2c, AC19, Comptable+). Rend la facture relue, `sourceDocument` calculé.
+ * Refus : `404 IMPORTED_INVOICE_NOT_FOUND`, `404 NOT_FOUND`,
+ * `409 IMPORT_NOT_PENDING_COMPLETION`, `409 SOURCE_DOCUMENT_ALREADY_ATTACHED`.
+ */
+export async function attachSourceDocument(
+	invoiceId: number,
+	importedSupplierInvoiceId: number,
+): Promise<SupplierInvoiceResponse> {
+	return apiClient.post(`/api/v1/supplier-invoices/${invoiceId}/source-document`, {
+		importedSupplierInvoiceId,
+	});
+}
+
+/**
+ * Détache le document de la facture (Story 30-2c, AC24, Comptable+) : il revient dans
+ * « Documents à traiter ». Rend la facture relue, `sourceDocument: null`.
+ */
+export async function detachSourceDocument(invoiceId: number): Promise<SupplierInvoiceResponse> {
+	return apiClient.delete<SupplierInvoiceResponse>(
+		`/api/v1/supplier-invoices/${invoiceId}/source-document`,
+	);
 }
 
 /** Lit le blob + filename du header `Content-Disposition` et déclenche le download. */

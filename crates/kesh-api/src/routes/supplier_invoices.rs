@@ -111,6 +111,39 @@ pub struct SupplierInvoiceResponse {
     pub cancel_blocked_by: Option<&'static str>,
     /// Le numéro du compte archivé, quand c'est le motif.
     pub cancel_blocked_label: Option<String>,
+    /// Story 30-2c (AC18) — le document de la facture, à **trois états** :
+    /// - champ **absent** (`None`) : non calculé ici — réponses de
+    ///   [`Self::from_parts`], dont `POST /supplier-invoices` ;
+    /// - `null` (`Some(None)`) : la facture n'a pas de document ;
+    /// - l'objet (`Some(Some(_))`) : son nom, son type et sa taille.
+    ///
+    /// Même discipline que `settlement_cancellable` (« non calculé n'est jamais
+    /// non »), à ceci près qu'ici l'absence se distingue de `null`. Calculé par
+    /// [`Self::load_with_settlement_cancellation`], dans l'instantané du GET.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_document: Option<Option<SourceDocumentInfo>>,
+}
+
+/// Ce que la fiche d'une facture fournisseur dit de son document (Story 30-2c,
+/// AC18) — jamais son chemin de stockage ni son empreinte.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceDocumentInfo {
+    pub original_filename: String,
+    pub mime_type: String,
+    pub byte_size: i64,
+}
+
+impl From<kesh_db::entities::imported_supplier_invoice::ImportedSupplierInvoice>
+    for SourceDocumentInfo
+{
+    fn from(d: kesh_db::entities::imported_supplier_invoice::ImportedSupplierInvoice) -> Self {
+        Self {
+            original_filename: d.original_filename,
+            mime_type: d.mime_type,
+            byte_size: d.byte_size,
+        }
+    }
 }
 
 /// Le lot confirmé le plus récent qui contient une facture (Story 25-3-a-2).
@@ -155,15 +188,18 @@ impl SupplierInvoiceResponse {
             cancellable: None,
             cancel_blocked_by: None,
             cancel_blocked_label: None,
+            source_document: None,
         }
     }
 
     /// Story 25-3-a-2 (#414) — la réponse complète, champs d'annulation du
     /// règlement et dernier lot confirmé compris, **depuis un seul instantané**
     /// ([`supplier_invoices::get_settlement_view`]). ⚠️ Servie par le GET, `pay`
-    /// (dont la réponse remplace l'état de l'écran) et l'annulation du
-    /// règlement ; ailleurs, les champs restent `None` — « non calculé », jamais
-    /// une valeur qui mentirait. Après une écriture, la facture est **relue** :
+    /// (dont la réponse remplace l'état de l'écran), l'annulation de la facture
+    /// et celle du règlement, la complétion d'un document (Story 30-2b) et, depuis
+    /// la Story 30-2c, le rattachement et le détachement d'un document — le
+    /// document lui-même (`source_document`) compris ; ailleurs, les champs
+    /// restent `None` — « non calculé », jamais une valeur qui mentirait. Après une écriture, la facture est **relue** :
     /// la réponse décrit l'état courant, cohérent avec ses propres champs.
     pub async fn load_with_settlement_cancellation(
         pool: &sqlx::MySqlPool,
@@ -185,6 +221,7 @@ impl SupplierInvoiceResponse {
         resp.last_confirmed_batch = view
             .last_confirmed_batch
             .map(|(id, confirmed_at)| LastConfirmedBatchResponse { id, confirmed_at });
+        resp.source_document = Some(view.source_document.map(SourceDocumentInfo::from));
         Ok(resp)
     }
 }

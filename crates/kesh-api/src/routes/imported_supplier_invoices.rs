@@ -7,7 +7,12 @@
 //! - `GET  /api/v1/imported-supplier-invoices/{id}/supplier-candidates`  fournisseurs
 //!   proposés par l'IBAN du document (Comptable+, Story 30-2b)
 //! - `GET  /api/v1/imported-supplier-invoices/{id}/source-document`  justificatif avant complétion
-//! - `GET  /api/v1/supplier-invoices/{id}/source-document`      justificatif après complétion
+//! - `GET  /api/v1/supplier-invoices/{id}/source-document`      document d'une facture
+//!   (tout rôle authentifié depuis la Story 30-2c)
+//! - `POST   /api/v1/supplier-invoices/{id}/source-document`    joindre un document à
+//!   traiter à une facture existante (Comptable+, Story 30-2c)
+//! - `DELETE /api/v1/supplier-invoices/{id}/source-document`    détacher le document
+//!   (Comptable+, Story 30-2c)
 //!
 //! La complétion (`/complete`) **siège la transaction DC6** : `SELECT … FOR UPDATE`
 //! du staging + `create_in_tx` (facture réelle 12-2) + `UPDATE status='completed'`
@@ -188,7 +193,7 @@ async fn complete_import_once(
             return Err(AppError::ImportCompletionRejected {
                 error_code: "CURRENCY_NOT_SUPPORTED",
                 message: format!(
-                    "Devise non supportée (CHF uniquement) : '{currency}'. Retirez le document de la liste."
+                    "Devise non supportée (CHF uniquement) : '{currency}'. Retirez le document de la liste, ou créez la facture sans document puis joignez-le."
                 ),
                 details: Some(serde_json::json!({ "currency": currency })),
             });
@@ -473,9 +478,14 @@ pub async fn get_imported_source_document(
     serve_document(&state, &row)
 }
 
-/// `GET /supplier-invoices/{id}/source-document` — justificatif **après**
-/// complétion (résout l'`imported_supplier_invoices` lié, scopé company). Une
-/// facture créée directement 12-2 (sans import) → 404 (L5).
+/// `GET /supplier-invoices/{id}/source-document` — le document d'une facture
+/// fournisseur (résout l'`imported_supplier_invoices` lié et `completed`, scopé
+/// company). Une facture sans document → `404 SOURCE_DOCUMENT_NOT_FOUND`.
+///
+/// Story 30-2c (AC22, C-30-2-14) : **ouverte à tout rôle authentifié** — elle est
+/// montée parmi les lectures, comme la fiche de la facture qu'elle illustre ; la
+/// lecture d'un document **à traiter** (route ci-dessus) reste Comptable+.
+/// L'isolation par société est celle de la lecture partagée.
 pub async fn get_supplier_invoice_source_document(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -490,6 +500,204 @@ pub async fn get_supplier_invoice_source_document(
     .await?
     .ok_or(AppError::SourceDocumentNotFound)?;
     serve_document(&state, &row)
+}
+
+// ---------------------------------------------------------------------------
+// Story 30-2c (#685) — joindre un document après coup, le détacher
+// ---------------------------------------------------------------------------
+
+/// Corps de `POST /supplier-invoices/{id}/source-document`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachSourceDocumentRequest {
+    pub imported_supplier_invoice_id: i64,
+}
+
+/// `POST /api/v1/supplier-invoices/{id}/source-document` — joint un document à
+/// traiter à une facture fournisseur existante (Comptable+, Story 30-2c, AC19).
+///
+/// Tout statut de facture est accepté ; aucun champ de la facture n'est modifié
+/// (C-30-2-12). Refus : `404 IMPORTED_INVOICE_NOT_FOUND` (document inconnu ou
+/// d'une autre société), `404 NOT_FOUND` (facture), `409
+/// IMPORT_NOT_PENDING_COMPLETION` (document déjà traité ou retiré), `409
+/// SOURCE_DOCUMENT_ALREADY_ATTACHED` (la facture a déjà un document). Réponse :
+/// la facture relue une fois la transaction validée, `sourceDocument` calculé.
+///
+/// ⚠️ **Rejouée sur interblocage** ([`crate::retry::retry_app_on_deadlock`]) :
+/// la transaction vit dans [`attach_source_document_once`]. Cycle connu, rare :
+/// avec l'acceptation d'un lot de rapprochement (C-30-2-46).
+pub async fn attach_source_document(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(supplier_invoice_id): Path<i64>,
+    Json(req): Json<AttachSourceDocumentRequest>,
+) -> Result<Json<SupplierInvoiceResponse>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    crate::retry::retry_app_on_deadlock("imported_supplier_invoices::attach", || {
+        attach_source_document_once(
+            &state.pool,
+            &current_user,
+            company.id,
+            supplier_invoice_id,
+            req.imported_supplier_invoice_id,
+        )
+    })
+    .await?;
+    Ok(Json(
+        SupplierInvoiceResponse::load_with_settlement_cancellation(
+            &state.pool,
+            company.id,
+            supplier_invoice_id,
+        )
+        .await?,
+    ))
+}
+
+/// Une tentative du rattachement : [`imported_supplier_invoices::attach_in_tx`]
+/// (document, facture, sentinelle de la société, lien), puis l'audit
+/// `imported_supplier_invoice.attached`, dans la même transaction.
+async fn attach_source_document_once(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    company_id: i64,
+    supplier_invoice_id: i64,
+    imported_id: i64,
+) -> Result<(), AppError> {
+    use kesh_db::repositories::imported_supplier_invoices::AttachRefusal;
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    let result = async {
+        let staging = match imported_supplier_invoices::attach_in_tx(
+            &mut tx,
+            company_id,
+            imported_id,
+            supplier_invoice_id,
+        )
+        .await?
+        {
+            Ok(staging) => staging,
+            Err(AttachRefusal::DocumentNotFound) => return Err(AppError::ImportedInvoiceNotFound),
+            Err(AttachRefusal::DocumentNotPending { current_status }) => {
+                return Err(AppError::ImportNotPendingCompletion { current_status });
+            }
+            Err(AttachRefusal::InvoiceNotFound) => {
+                return Err(AppError::Database(kesh_db::errors::DbError::NotFound));
+            }
+            Err(AttachRefusal::AlreadyAttached) => {
+                return Err(AppError::SourceDocumentAlreadyAttached);
+            }
+        };
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::from_current_user(
+                current_user,
+                "imported_supplier_invoice.attached",
+                "imported_supplier_invoice",
+                imported_id,
+                Some(serde_json::json!({
+                    "supplier_invoice_id": supplier_invoice_id,
+                    "original_filename": staging.original_filename,
+                })),
+            ),
+        )
+        .await?;
+        Ok(())
+    }
+    .await;
+    match result {
+        Ok(()) => tx
+            .commit()
+            .await
+            .map_err(|e| AppError::Database(map_db_error(e))),
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
+/// `DELETE /api/v1/supplier-invoices/{id}/source-document` — détache le document
+/// d'une facture fournisseur (Comptable+, Story 30-2c, AC24, C-30-2-13).
+///
+/// Le document repasse « à traiter » avec ses données QR ; la facture, ses
+/// lignes et ses écritures ne sont pas touchées ; aucun fichier n'est supprimé.
+/// Tout statut de facture est accepté. Facture inconnue, d'une autre société ou
+/// sans document → `404 SOURCE_DOCUMENT_NOT_FOUND`. Réponse : la facture relue,
+/// `sourceDocument: null`.
+///
+/// ⚠️ Angle mort assumé : un document **avec QR** détaché peut servir à créer
+/// une seconde facture (geste humain explicite ; le manuel dit d'annuler la
+/// facture fausse d'abord).
+///
+/// ⚠️ **Rejouée sur interblocage**, comme le rattachement.
+pub async fn detach_source_document(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(supplier_invoice_id): Path<i64>,
+) -> Result<Json<SupplierInvoiceResponse>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    crate::retry::retry_app_on_deadlock("imported_supplier_invoices::detach", || {
+        detach_source_document_once(&state.pool, &current_user, company.id, supplier_invoice_id)
+    })
+    .await?;
+    Ok(Json(
+        SupplierInvoiceResponse::load_with_settlement_cancellation(
+            &state.pool,
+            company.id,
+            supplier_invoice_id,
+        )
+        .await?,
+    ))
+}
+
+/// Une tentative du détachement : [`imported_supplier_invoices::detach_in_tx`]
+/// (la ligne du document seule), puis l'audit
+/// `imported_supplier_invoice.detached`, dans la même transaction.
+async fn detach_source_document_once(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    company_id: i64,
+    supplier_invoice_id: i64,
+) -> Result<(), AppError> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    let result = async {
+        let staging =
+            imported_supplier_invoices::detach_in_tx(&mut tx, company_id, supplier_invoice_id)
+                .await?
+                .ok_or(AppError::SourceDocumentNotFound)?;
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::from_current_user(
+                current_user,
+                "imported_supplier_invoice.detached",
+                "imported_supplier_invoice",
+                staging.id,
+                Some(serde_json::json!({
+                    "supplier_invoice_id": supplier_invoice_id,
+                    "original_filename": staging.original_filename,
+                })),
+            ),
+        )
+        .await?;
+        Ok(())
+    }
+    .await;
+    match result {
+        Ok(()) => tx
+            .commit()
+            .await
+            .map_err(|e| AppError::Database(map_db_error(e))),
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
 }
 
 /// Lit le justificatif archivé et construit la réponse de téléchargement.
