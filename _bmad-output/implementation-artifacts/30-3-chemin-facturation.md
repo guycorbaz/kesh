@@ -104,3 +104,10 @@ le code de production et de test de la story ; la remédiation n'ajoute que l'as
 
 - 2026-10-16 — développement : sites ci-dessus, garde G3 réécrite, fiche, registre, CHANGELOG `[0.14.0]` § Corrigé,
   ligne d'epic. Commits `refs #585`.
+- 2026-10-20 — report de la branche sur `main` (1aca02d2, merge de la 30-2b) : les cinq commits de la 30-3 rejoués sans
+  perte (CHANGELOG, sprint-status, registres, catalogues i18n, manuels `.tex` réunis des deux côtés ; PDF des manuels
+  régénérés, commit `8408f590`). Aucun site de la 30-2b ne porte « Paramètres → Facturation » (grep de la valeur sur le
+  worktree, hors entrées historiques du CHANGELOG). Gates au dernier commit de code, sous verrou : `scripts/test-fast.sh`
+  3831 exécutés, 3831 passés, 6 ignorés ; `npm run check` 0 erreur (29 avertissements) ; `lint-i18n-ownership` vert ;
+  `npm run test:unit` 1794 passés (155 fichiers) ; `npm run build` vert ; E2E complet 304 passés, 17 ignorés, 7 échecs, les
+  sept de la KF-029 (#97) de `docs/testing.md` (mode-expert 26 et 41, onboarding-path-b 65 et 92, onboarding 57, 77, 150).
