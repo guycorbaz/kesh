@@ -1543,6 +1543,28 @@ historique ; « treize entrées » → 0 ; les « 2251 », « 328 », « 120 »,
 **À porter à l'orchestrateur** : #503 (la sauvegarde n'emporte pas les documents) reste le préalable à la mise en
 production signalé par C-30-2-16.
 
+**Annotations de la revue de code P1 (2026-10-20)** — le relevé ci-dessus est daté du développement et n'est pas
+réécrit ; ce qui y était faux ou incomplet à sa date est corrigé ici.
+
+- **« Arbre propre en fin » (campagne de mutations) était faux à la lettre** (A3) : la dernière ligne de
+  `302c-mutations.log` porte « git status : 6 fichier(s) modifié(s) ». Ces six fichiers ne sont plus identifiables
+  depuis le journal ; la revue A a contrôlé que le code livré ne porte aucun des treize motifs mutés (`grep -nF` :
+  zéro résidu) et que `git diff HEAD` était vide. Il fallait écrire : « `git status` : 6 fichiers modifiés en fin
+  de campagne (non identifiés au journal) ; code livré contrôlé exempt de motif muté ».
+- **Tableau des chemins (AC19)** — **ligne manquante** (B3 = E2) : `payment_batches::confirm_batch` (lot de
+  plusieurs articles) : … `companies` S (écriture du 1er article) → facture X (`pay_in_tx` du suivant) — **oui,
+  cycle**, même forme que l'acceptation de la 30-1b ; rejouée (`retry_on_deadlock("payment_batches::confirm")`).
+  La suppression d'un import (`bank_imports::delete`), citée par B, n'en est pas : ni facture ni écriture
+  (C-30-2-46, annotation).
+- **M-c11** (A1, E4) : tuée par la sonde qui exige que l'attente soit dans l'`UPDATE`, non par un comportement faux ;
+  preuve redéfinie sur l'ordre des événements, écrite au doc-comment du test et à C-30-2-46.
+- **M-c8** (E4) : tuée par un **plantage** (`TypeError` sur `null.originalFilename`, 11 tests sur 14 rouges), non
+  par l'assertion « bouton rendu à tort ». Verdict « tuée » maintenu ; une variante qui garde le bloc sur `null`
+  sans lire le nom n'est pas couverte par cette seule mutation.
+- **E2E E5 à E7** : déjà déclarés « non constatés rouges » aux écarts ; la clé de sprint disait « rouges
+  constatés » sans distinguer (A5) — corrigée.
+- **Écart non déclaré** (A4) : l'aperçu du sélecteur s'ouvre au bouton, non au survol (C-30-2-54).
+
 ### File List
 
 30-2a, `git diff --name-status 5b566378 af0d2eb4` (58 fichiers ; A = ajouté) :
@@ -1604,6 +1626,15 @@ production signalé par C-30-2-16.
 - E2E : `frontend/tests/e2e/{supplier-documents.spec.ts, reconciliation-supplier.spec.ts}`.
 - Documentation : `docs/manual/fr/{user-manual,admin-manual}.{tex,pdf}`, `docs/api-external.md`, `CHANGELOG.md`, `README.md`.
 - BMAD : `epic-30-choix-autonomes-302.md`, cette fiche, `sprint-status.yaml`, `30-2c-review-prompt-p1.md` (A).
+
+30-2c, remédiation de la revue P1, `git diff --name-status a4bffcac 9ad839ce` (10 fichiers ; A = ajouté), puis PDF :
+
+- Backend : `crates/kesh-api/src/routes/imported_supplier_invoices.rs`, `crates/kesh-db/src/repositories/imported_supplier_invoices.rs` (doc-comments).
+- Tests Rust : `crates/kesh-db/tests/supplier_document_attachment.rs`, `crates/kesh-api/tests/audit_route_registry.rs` (module-doc).
+- Frontend : `frontend/src/lib/features/imported-supplier-invoices/{AttachDocumentPicker.svelte, stale-refusal.ts (A)}`,
+  `frontend/src/routes/(app)/supplier-invoices/[id]/{+page.svelte, supplier-document-page.test.ts}`.
+- Documentation : `docs/api-external.md`, `docs/manual/fr/user-manual.{tex,pdf}` (`make fr` ne change que ce PDF).
+- BMAD : `epic-30-choix-autonomes-302.md`, cette fiche, `sprint-status.yaml`, `30-2c-review-prompt-p2-ciblee.md` (A).
 
 ## Change Log
 
@@ -1928,3 +1959,41 @@ de l'AC19 prise** (sentinelle de la société, C-30-2-46) sur un test rouge au c
 15/15 tuées (M-c7 équivalente) ; gate 3845/3845 (6 ignorés), Vitest 1812/1812, E2E 307 + 7 KF-029. Choix C-30-2-45 à
 51. Revue de code P1 à lancer : `30-2c-review-prompt-p1.md` (Sonnet, B, E, A). Détail au Dev Agent Record.
 
+
+### 2026-10-20 — Pass 1 review : revue de code P1 de la 30-2c (Sonnet, lentilles B, E, A) et remédiation (Opus 5.5)
+
+Rapports : `/home/gcorbaz/devel/kesh-gate-logs/302c-review-p1-{B,E,A}.md` — **B 0/0/1/3, E 0/0/1/6, A 0/0/0/8**
+(CRITICAL/HIGH/MEDIUM/LOW) ; un MEDIUM convergent (B1 = E1 = A2), soit **1 MEDIUM et 14 LOW distincts** après
+fusion des doublons (B2 = E5, B3 = E2). Réfuté : la partie de B3 qui cite `bank_imports::delete` comme partenaire du
+cycle (la suppression d'un import ne verrouille aucune facture et n'écrit aucune écriture).
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| B1 = E1 = A2 | MEDIUM | refus du détachement et double clic testés (Vitest) ; garde explicite du double clic (rouge constaté sous jsdom malgré `disabled`) ; message rendu hors du bloc du document (C-30-2-53) ; M-c22 à M-c25 tuées |
+| B2 = E5 | LOW | relecture de la liste et de la facture après un refus `404`/`409` (`stale-refusal.ts`, C-30-2-53) ; M-c19, M-c20, M-c21 tuées |
+| E3 | LOW | lien sur un document non `completed`, document d'une autre société : `entry_lookup_covers_purchase_and_settlement` étendu ; M-c17, M-c18 tuées |
+| E6, A7 | LOW | test `cancelled_invoices_take_a_document_and_the_detached_settlement_loses_it` ; manuel (PDF régénéré), `api-external.md`, doc-comment ; M-c26 tuée |
+| B3 = E2, E7, A6 | LOW | confirmation d'un lot de paiement nommée partout ; mesuré / raisonné ; attente sous sentinelle (C-30-2-46, annotation) |
+| A1, E4 | LOW | preuve de M-c11 redéfinie (doc-comment du test, C-30-2-46) ; M-c8 annotée au Dev Agent Record |
+| A8, B4 | LOW | angles morts écrits, pas d'idempotence (C-30-2-52) |
+| A3, A5 | LOW | Dev Agent Record annoté ; clé de sprint corrigée |
+| A4 | LOW | écart déclaré, non comblé (C-30-2-54) |
+
+Commit de remédiation de code : `9ad839ce` (dix fichiers). **Mutations** M-c17 à M-c26 : **10 jouées, 10 tuées**, sous
+le verrou (`302c-mutations-p1.log` au HEAD `1c1b76e8` ; quatre motifs d'abord refusés par le muteur — saut de ligne
+final conservé dans le motif — rejoués dans `302c-mutations-p1-bis1.log` ; M-c19 à M-c25 rejouées après la remise à
+zéro des mocks, `302c-mutations-p1-bis.log`, chacune tuée par le test qui la nomme). `1c1b76e8` ne diffère de
+`9ad839ce` que par cette remise à zéro (commit amendé, local). **Tests** (bornes `a4bffcac` → `9ad839ce`) : Vitest
+`supplier-document-page.test.ts` 14 → 21 (**+7**) ; Rust `supplier_document_attachment.rs` 9 → 10 (**+1**, un étendu).
+**Gate complet** au dernier commit de code `9ad839ce`, base `kesh_302c` remise à zéro (`302c-gate3-*.log`) :
+nextest **3846 passés, 6 ignorés** ; `npm run check` 0 erreur, 29 avertissements ; `lint-i18n-ownership` PASS ;
+Vitest **1819 passés, 156 fichiers** ; build vert. **E2E complet** au même HEAD (`302c-e2e-p1.log`, port 3052, base
+`kesh_e2e_302c` remise à zéro, `/health` 0.14.0) : **307 passés, 7 échoués, 17 ignorés** — les sept KF-029
+(`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`).
+PDF : `make fr` sous le verrou, seul `user-manual.pdf` change ; contrôlé aplati (« pas plus que celui d’une facture
+payée puis annulée », « L’écriture d’achat d’une facture annulée, elle, le montre toujours »).
+
+Trend : P1 = 1 MEDIUM (convergent) + 14 LOW → tout remédié (A4 par un écart déclaré). Modèles : **Sonnet** pour la revue, **Opus 5.5** pour la
+remédiation. La remédiation touche du code de production (fiche, sélecteur) : **passe ciblée P2** à lancer —
+`30-2c-review-prompt-p2-ciblee.md` (**Haiku**, une lentille T, diff `a4bffcac..9ad839ce`, rapport
+`302c-review-p2-T.md`). Choix C-30-2-52 à 54 ; annotations datées de C-30-2-46 et C-30-2-51.
