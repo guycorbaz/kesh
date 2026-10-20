@@ -609,3 +609,104 @@ Fiche : `30-2-documents-factures-fournisseur.md`. Issue [#685]. Choix tranchés 
   d'édition convertit en caractère brut une séquence `​` écrite dans un littéral).
 - **Écartées** : garder `trim()` et écrire l'angle mort (un caractère invisible stocké fait manquer un rapprochement).
 - **Réversible** : oui.
+
+---
+
+*Choix du développement de la 30-2c (2026-10-16, puis reprise du 2026-10-20, Opus 5.5, autonomie), sur `1aca02d2`,
+branche `story/30-2c`. C-30-2-45 et C-30-2-46 sont cités par le code écrit le 2026-10-16 par l'agent interrompu ; leur
+entrée est écrite par la reprise.*
+
+### C-30-2-45 — Les tests de concurrence appellent `attach_in_tx` / `detach_in_tx`, non les fonctions `_once` de la route
+
+- **Contexte** : AC19 et AC24 demandent des tests « en appelant les fonctions `_once` sans rejeu ». Les `_once` vivent
+  dans `kesh-api` (elles ajoutent l'audit à la transaction du dépôt) ; les tests qui doivent **tenir** une transaction
+  ouverte pendant qu'une autre attend (sondes `attendre_une_requete_en_cours`, `sonde_verrou_nowait`) vivent dans
+  `kesh-db`, qui ne voit pas `kesh-api`.
+- **Retenu** : les tests de concurrence (`crates/kesh-db/tests/supplier_document_attachment.rs`) ouvrent et valident
+  eux-mêmes leurs transactions autour de `attach_in_tx` / `detach_in_tx`, **sans rejeu**. La `_once` de la route n'y
+  ajoute qu'un `INSERT` dans `audit_log`, qui ne touche aucune des lignes en jeu ; les routes sont exercées à part, par
+  les tests HTTP de `inbox_import_e2e.rs` (succès, refus, RBAC, audit).
+- **Écartées** : exposer les `_once` de `kesh-api` aux tests de `kesh-db` (dépendance inverse) ; écrire les tests de
+  concurrence dans `kesh-api` (les sondes et le décor `fournisseur_rapproche` sont dans `kesh-db`).
+- **Réversible** : oui.
+
+### C-30-2-46 — Bascule écrite de l'AC19 : le rattachement prend la sentinelle de la société après le document et la facture
+
+- **Contexte** : le test déterministe de l'AC19 (A rattache D1 → I1 sans valider ; B rattache D2 → I2 doit aboutir sous
+  5 s) **a rougi sur le code non muté**, sur le vrai schéma (2026-10-16, `kesh-gate-logs/302c-db-1.log` :
+  `B (D2 → I2) doit aboutir pendant que A tient D1 → I1 : Err(Elapsed(()))`) — contrairement au banc de la fiche (tables
+  jetables, où B aboutissait). **Mesuré** : B attend dans son `UPDATE` tant que A n'a pas validé. **Raisonné, non
+  mesuré** : le contrôle de doublon de l'index d'unicité poserait un verrou partagé sur l'intervalle jusqu'au supremum
+  quand aucune clé n'existe au-delà, et l'insertion de l'autre rattachement y attendrait ; deux contrôles accordés
+  avant les deux insertions s'interbloqueraient (aucun test ne force cet interblocage).
+- **Retenu** : la **bascule écrite par la fiche** (AC19, P4) — `bank_accounts::acquire_company_sentinel_lock` prise
+  **après** le staging et la facture, **avant** l'`UPDATE` : ordre staging → facture → `companies` → entrée d'unicité.
+  Le test devient « B attend la sentinelle (vu dans `PROCESSLIST`), puis aboutit après le `COMMIT` de A, sans
+  interblocage ni refus » (`two_attachments_to_two_invoices_are_serialized_by_company`) ; mutation ajoutée **M-c13**
+  (sentinelle retirée). **Cycle relevé avec l'acceptation de la 30-1b** (ligne « à établir » du tableau de l'AC19) : un
+  lot de plusieurs propositions tient `companies` en partagé dès l'insertion de la première écriture, puis verrouille
+  la facture fournisseur d'une proposition suivante (`pay_in_tx_as`, `FOR UPDATE` de la facture) ; un rattachement
+  qui tient cette facture et demande `companies` en exclusif ferme le cycle. Rare (même facture, au même instant) ; les
+  deux routes sont rejouées sur interblocage (`retry_app_on_deadlock` pour le rattachement, l'acceptation est
+  `Rejouee`) ; écrit au point (vi) de `audit_route_registry.rs` et à `api-external.md`.
+- **Écartées** : garder le code sans sentinelle (le test rouge dit que deux rattachements simultanés vers deux
+  factures s'attendent et peuvent s'interbloquer — rejoués, mais l'AC19 promettait qu'ils ne s'attendent pas) ;
+  sentinelle en tête (deux cycles, P4 de la validation).
+- **Réversible** : oui.
+
+### C-30-2-47 — La fiche montre le QR-IBAN (ajout de l'orchestrateur à la 30-2c)
+
+- **Contexte** : écart relevé par la 30-2b (« la fiche n'affiche que `creditorIban` ») ; l'orchestrateur l'a versé dans
+  la 30-2c, avec AC25 (déjà à la fiche, C-30-2-23).
+- **Retenu** : une ligne « QR-IBAN » sous l'IBAN, quand `creditorQrIban` existe (libellé littéral, comme « IBAN ») ;
+  Vitest. AC25 : deux clés (`-paid-info`, `-paid-info-on`), `formatSwissDate` sur les dix premiers caractères.
+- **Écartées** : une clé i18n pour « QR-IBAN » (terme identique dans les quatre langues, comme « IBAN » à côté).
+- **Réversible** : oui.
+
+### C-30-2-48 — Le sélecteur « Joindre un document » vit dans `imported-supplier-invoices/`, la date d'import est partagée
+
+- **Contexte** : le sélecteur (AC20) affiche ce qu'affiche la liste « Documents à traiter » (badge, date, aperçu) ; la
+  garde `lint-i18n-ownership` interdit à un composant de `supplier-invoices/` d'employer les clés
+  `imported-supplier-invoices-*`.
+- **Retenu** : `AttachDocumentPicker.svelte` dans `lib/features/imported-supplier-invoices/`, qui réemploie les clés
+  du badge et de l'aperçu ; six clés neuves `imported-supplier-invoices-attach-*`. La date d'import passe dans
+  `importDateOf` (`imported-supplier-invoices.types.ts`), employée par la liste et le sélecteur (DRY). Le montant du QR
+  et le total de la facture se formatent par `formatSupplierInvoiceTotal`, le même formateur des deux côtés.
+- **Écartées** : le composant dans `supplier-invoices/` avec des clés dupliquées (badge et aperçu deux fois) ; une
+  exemption au linter.
+- **Réversible** : oui.
+
+### C-30-2-49 — « Voir le document » ouvre l'aperçu sous la fiche ; « Télécharger » reste ; `undefined` n'affiche rien
+
+- **Contexte** : AC18 — l'aperçu dans un panneau, et plus de bouton qui rend 404.
+- **Retenu** : sur une facture **avec** document : son nom, *Voir le document* (aperçu `DocumentPreview` sous les
+  boutons, qui dit lui-même 410 et erreur), *Télécharger* (patron de C-30-2-24 : une image ne s'enregistre pas depuis
+  l'aperçu), *Détacher le document* (Comptable+). **Sans** document (`null`) : *Joindre un document* (Comptable+). Champ
+  **absent** (`undefined`, non calculé) : rien — non calculé n'est pas « sans ». Le téléchargement garde son traitement
+  du 404 (document détaché ailleurs entre-temps). Sur la fiche d'une écriture, *Voir le document* ouvre le même aperçu,
+  refermé quand on passe à une autre écriture.
+- **Écartées** : un panneau modal (masque la fiche) ; retirer *Télécharger*.
+- **Réversible** : oui.
+
+### C-30-2-50 — Le dépôt rend un refus métier (`AttachRefusal`), la route le traduit ; une facture inconnue rend `404 NOT_FOUND`
+
+- **Contexte** : AC19 nomme les refus `404` (document, facture), `409 IMPORT_NOT_PENDING_COMPLETION`,
+  `409 SOURCE_DOCUMENT_ALREADY_ATTACHED`, sans code pour la facture.
+- **Retenu** : `attach_in_tx` rend `Result<Result<ImportedSupplierInvoice, AttachRefusal>, DbError>` — refus métier
+  distinct d'une erreur de base, testé au dépôt sans HTTP. Facture inconnue ou d'une autre société :
+  `404 NOT_FOUND` (code des autres routes de la facture). La violation d'unicité n'est traduite que si son message
+  nomme `uq_imported_supplier_invoice` ; toute autre erreur de base reste une erreur (mutation M-c1).
+- **Écartées** : `DbError` pour tout (le refus métier se confondrait avec une panne) ; `404 SUPPLIER_INVOICE_NOT_FOUND`,
+  code neuf sans précédent.
+- **Réversible** : oui.
+
+### C-30-2-51 — Le document d'une écriture se lit par une jointure ; un règlement annulé ne le montre plus
+
+- **Contexte** : AC21 — achat **ou** règlement (C-30-2-15).
+- **Retenu** : `find_source_document_of_entry`, une seule requête (`supplier_invoices` joint au document `completed`
+  de la même société, `purchase_journal_entry_id = ? OR settlement_journal_entry_id = ?`), exécuteur générique, lue
+  dans la transaction de lecture de `get_journal_entry` et inscrite à sa garde lexicale, paramétrée par couples
+  `(module, lecteur)`. Un règlement annulé vide `settlement_journal_entry_id` : son écriture ne montre plus le
+  document (écrit au manuel et à `api-external.md`).
+- **Écartées** : deux lectures (facture, puis document) — deux appels à inscrire à la garde pour le même fait.
+- **Réversible** : oui.

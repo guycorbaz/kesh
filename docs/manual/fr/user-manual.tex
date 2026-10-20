@@ -1809,8 +1809,8 @@ Quatre gestes par document~:
           Kesh demande confirmation~; le fichier reste conservé, et le déposer de nouveau
           le fait revenir dans la liste.
 \end{description}
-Le document d'une facture créée reste consultable depuis la fiche de la facture
-(« Voir le document »).
+Le document d'une facture créée reste consultable depuis la fiche de la facture et depuis
+ses écritures (voir \emph{Le document d'une facture}, plus bas).
 
 \paragraph{Créer la facture d'un document.} Le formulaire est celui de la saisie
 (\S\ref{sec:saisie-facture-fournisseur}), à deux différences près~:
@@ -1857,9 +1857,49 @@ même si votre navigateur l'affiche~: c'est le cas d'une image de plus de 10\,00
 de côté, et de certaines variantes peu courantes du format JPEG. Convertissez-la (PNG,
 ou JPEG ordinaire), ou déposez-la en PDF.
 
+\paragraph{Le document d'une facture.} La fiche d'une facture fournisseur dit si elle a un
+document~:
+\begin{itemize}
+    \item \textbf{avec un document}, elle porte son nom et trois boutons~: \emph{Voir le
+          document} (l'aperçu, sous les boutons), \emph{Télécharger}, et \emph{Détacher le
+          document}~;
+    \item \textbf{sans document} --- une facture saisie sans pièce, ou dont la pièce est
+          arrivée plus tard ---, elle propose \emph{Joindre un document}.
+\end{itemize}
+Le document se lit par \textbf{tout utilisateur}, le rôle \emph{Consultation} compris~:
+celui qui lit les livres voit la pièce. Joindre et détacher sont réservés aux rôles qui
+écrivent.
+
+\emph{Joindre un document} ouvre la liste des documents à traiter~: nom, date d'import,
+badge, et, pour un document avec QR, le \textbf{montant du QR à côté du total de la
+facture}. \emph{Aperçu} affiche le document choisi~; \emph{Joindre} demande confirmation,
+puis le document quitte la liste et la fiche le montre. Kesh \textbf{ne compare pas} les
+montants et ne modifie rien de la facture~: c'est à vous de voir que la pièce est la
+bonne. Tout statut de facture est accepté --- ouverte, payée ou annulée. Une facture n'a
+qu'un document~; si la liste est vide, déposez la pièce dans le dossier d'import puis
+importez-la.
+
+\emph{Détacher le document} (après confirmation) le remet dans « Documents à traiter »,
+avec les données de son QR~; la facture, ses lignes et ses écritures ne changent pas, et
+aucun fichier n'est supprimé. C'est le geste qui corrige une pièce jointe par erreur~:
+détachez-la, puis joignez la bonne.
+
+\begin{keshwarning}
+\textbf{Un document détaché redevient un document à traiter, avec QR compris}~: rien
+n'empêche d'en \emph{créer une facture} une seconde fois, et la première facture n'est ni
+annulée ni signalée. Si c'est la facture elle-même qui est fausse, annulez-la d'abord,
+puis traitez le document.
+\end{keshwarning}
+
+Le détail d'une \textbf{écriture} d'achat ou de règlement d'une facture fournisseur qui a un
+document montre « Facture fournisseur \emph{numéro} », lien vers la fiche, et \emph{Voir le
+document}. Un règlement annulé n'est plus rattaché à la facture~: son écriture ne montre
+plus le document.
+
 \begin{keshnote}
 Seules les factures en \textbf{CHF} sont acceptées à la création de la facture d'un
-document avec QR dans cette version~: un QR en euros se retire de la liste. Tout document
+document avec QR dans cette version~: un QR en euros se retire de la liste, ou bien vous
+créez la facture sans document (en CHF) puis vous lui joignez le document. Tout document
 déposé est conservé et compte dans la préparation de clôture (\S\ref{sec:preparer-cloture})
 tant qu'aucune facture n'en est créée et qu'il n'est pas retiré de la liste.
 \end{keshnote}

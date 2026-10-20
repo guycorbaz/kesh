@@ -303,9 +303,11 @@ async fn attach_refusals_then_success_on_a_paid_invoice(pool: MySqlPool) {
 /// l'index, et aboutit après le `COMMIT` de A — sans interblocage ni refus.
 ///
 /// Tue M-c13 (sentinelle retirée : B attend dans l'`UPDATE`, jamais sur
-/// `companies`) et M-c11 (lecture verrouillante du lien réintroduite entre la
-/// facture et la sentinelle : les deux verrous d'intervalle, compatibles entre
-/// eux, bloquent chacun l'insertion de l'autre — interblocage).
+/// `companies`). ⚠️ **Ne tue pas M-c11** (lecture verrouillante du lien
+/// réintroduite avant la sentinelle) : sous la sentinelle, B attend de toute
+/// façon, et la mutation ne change pas ce que ce test observe — constaté à la
+/// campagne de mutations (2026-10-20). M-c11 est tuée par
+/// `attach_waits_for_an_uncommitted_detach_then_succeeds`.
 #[sqlx::test(migrations = "./test-schema")]
 async fn two_attachments_to_two_invoices_are_serialized_by_company(pool: MySqlPool) {
     let (seeded, f) = decor(&pool).await;
