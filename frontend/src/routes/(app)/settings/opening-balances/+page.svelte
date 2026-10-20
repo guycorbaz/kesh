@@ -374,7 +374,7 @@
 				{#if status.reason === 'NO_FISCAL_YEAR'}
 					{i18nMsg(
 						'opening-balances-locked-no-fiscal-year',
-						'Aucun exercice comptable : créez d’abord un exercice (Paramètres → Exercices) pour saisir vos soldes de départ.'
+						'Aucun exercice comptable : créez d’abord un exercice (Paramètres → Exercices comptables) pour saisir vos soldes de départ.'
 					)}
 				{:else if status.reason === 'FIRST_YEAR_CLOSED'}
 					{i18nMsg(

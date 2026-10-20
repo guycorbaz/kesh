@@ -251,7 +251,7 @@ describe('failedProposalLabel', () => {
 			role: 'rounding',
 		});
 		expect(calls).toEqual(['reconciliation-failed-rounding-account-is-claim-account']);
-		expect(label).toContain('Paramètres → Facturation');
+		expect(label).toContain('Administration → Facturation');
 	});
 
 	it.each([

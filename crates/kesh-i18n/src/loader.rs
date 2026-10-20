@@ -922,12 +922,14 @@ mod tests {
                 pluriel.replace("1100, 2000", "1100"),
                 "{locale:?} : le singulier doit différer du pluriel — sélecteur inopérant"
             );
-            // Où agir : le menu tel que la locale l'affiche.
+            // Où agir : le chemin de la barre latérale tel que la locale l'affiche —
+            // le groupe *Administration*, puis l'entrée *Facturation* (Story 30-3,
+            // #585 : « Paramètres » est une entrée sœur, non le parent).
             let menu = match locale {
-                Locale::FrCh => "Paramètres → Facturation",
-                Locale::DeCh => "Einstellungen → Fakturierung",
-                Locale::ItCh => "Impostazioni → Fatturazione",
-                Locale::EnCh => "Settings → Invoicing",
+                Locale::FrCh => "Administration → Facturation",
+                Locale::DeCh => "Administration → Fakturierung",
+                Locale::ItCh => "Amministrazione → Fatturazione",
+                Locale::EnCh => "Administration → Invoicing",
             };
             for texte in [&singulier, &pluriel] {
                 assert!(
@@ -958,7 +960,7 @@ mod tests {
             bundle
                 .format(&Locale::FrCh, KEY, Some(&one))
                 .replace(['\u{2068}', '\u{2069}'], ""),
-            "Le compte 1100, désigné dans Paramètres → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à sa place un compte imputable."
+            "Le compte 1100, désigné dans Administration → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à sa place un compte imputable."
         );
         let mut many = FluentArgs::new();
         many.set("numbers", "1100, 2000");
@@ -967,7 +969,7 @@ mod tests {
             bundle
                 .format(&Locale::FrCh, KEY, Some(&many))
                 .replace(['\u{2068}', '\u{2069}'], ""),
-            "Les comptes 1100, 2000, désignés dans Paramètres → Facturation, ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à leur place des comptes imputables."
+            "Les comptes 1100, 2000, désignés dans Administration → Facturation, ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à leur place des comptes imputables."
         );
     }
 
@@ -1041,19 +1043,23 @@ mod tests {
     const LOCALES: [&str; 4] = ["fr-CH", "de-CH", "it-CH", "en-CH"];
 
     /// **G3** (Story 15-14a, #547) — le message du compte de produit inutilisable
-    /// nomme l'écran réel, dans chaque locale : son titre (`settings-invoicing-title`,
-    /// « Paramètres — Facturation ») écrit comme un chemin (` — ` → ` → `). Et le
-    /// message d'en-tête de PDF trop haut renvoie aux « Paramètres », non aux
-    /// « réglages » (nom commun) en fr-CH.
+    /// nomme l'écran réel, dans chaque locale, par son **chemin dans la barre latérale**
+    /// (Story 30-3, #585) : le groupe `nav-administration`, puis l'entrée `nav-invoicing`
+    /// — « Facturation » est une entrée sœur de « Paramètres », non son enfant, et le
+    /// titre de l'écran (`settings-invoicing-title`, « Paramètres — Facturation ») n'est
+    /// pas un chemin. Et le message d'en-tête de PDF trop haut renvoie aux
+    /// « Paramètres », non aux « réglages » (nom commun) en fr-CH.
     #[test]
     fn le_message_du_compte_de_produit_renvoie_a_l_ecran_reel() {
         for locale in LOCALES {
             let v = valeurs_brutes(locale);
-            let titre = v
-                .get("settings-invoicing-title")
-                .unwrap_or_else(|| panic!("{locale} : settings-invoicing-title absent"));
-            let chemin = titre.replace(" — ", " → ");
-            assert_ne!(&chemin, titre, "{locale} : titre sans « — » : {titre}");
+            let groupe = v
+                .get("nav-administration")
+                .unwrap_or_else(|| panic!("{locale} : nav-administration absent"));
+            let entree = v
+                .get("nav-invoicing")
+                .unwrap_or_else(|| panic!("{locale} : nav-invoicing absent"));
+            let chemin = format!("{groupe} → {entree}");
             let message = v
                 .get("invoice-default-revenue-account-unusable")
                 .unwrap_or_else(|| panic!("{locale} : clé absente"));
@@ -1066,6 +1072,88 @@ mod tests {
         let entete = &fr["error-invoice-pdf-header-overflow"];
         assert!(entete.contains("dans les Paramètres"), "{entete}");
         assert!(!entete.contains("dans les réglages"), "{entete}");
+    }
+
+    /// **G3-bis** (Story 30-3, #585) — tout chemin « Paramètres → X » ou « Administration → X »
+    /// écrit dans un catalogue désigne un lieu **réel**, dans chaque locale.
+    ///
+    /// - « Administration → X » : `X` commence par le libellé d'une entrée du groupe
+    ///   *Administration* de la barre latérale (`nav-*` de `+layout.svelte`).
+    /// - « Paramètres → X » : `X` commence par le titre d'une section de la page
+    ///   `/settings` (`settings/+page.svelte`). « Facturation » n'y figure pas — il n'a pas de
+    ///   carte sur cette page : c'était le défaut de #585.
+    ///
+    /// ⚠️ Les deux listes sont en dur : elles recopient la barre latérale et la page, que ce test ne
+    /// lit pas (c'est du Svelte). Une entrée ajoutée à la barre sans être ajoutée ici ne rougit
+    /// que si un message la cite — angle mort assumé, la vérification croisée complète demanderait
+    /// d'analyser le Svelte.
+    #[test]
+    fn les_chemins_cites_aux_catalogues_existent() {
+        const ENTREES_ADMINISTRATION: [&str; 14] = [
+            "nav-accounts",
+            "nav-fiscal-years",
+            "nav-bank-accounts",
+            "nav-bank-profiles",
+            "nav-reconciliation-rules",
+            "nav-projects",
+            "nav-export-global",
+            "nav-opening-balances",
+            "nav-audit-log",
+            "nav-users",
+            "nav-invoicing",
+            "nav-email-templates",
+            "nav-admin-backup",
+            "nav-admin-restore",
+        ];
+        const SECTIONS_PARAMETRES: [&str; 10] = [
+            "settings-org-title",
+            "settings-accounting-title",
+            "settings-bank-title",
+            "settings-users-title",
+            "settings-books-lock-title",
+            "settings-api-keys-title",
+            "fiscal-year-title",
+            "vat-rates-title",
+            "email-templates-title",
+            "dunning-title",
+        ];
+        let mut vus = 0usize;
+        for locale in LOCALES {
+            let v = valeurs_brutes(locale);
+            let libelle = |cle: &str| -> String {
+                v.get(cle)
+                    .unwrap_or_else(|| panic!("{locale} : {cle} absent"))
+                    .clone()
+            };
+            for (racine, cles) in [
+                ("nav-administration", &ENTREES_ADMINISTRATION[..]),
+                ("nav-settings", &SECTIONS_PARAMETRES[..]),
+            ] {
+                let tete = format!("{} → ", libelle(racine));
+                let permis: Vec<String> = cles.iter().map(|c| libelle(c)).collect();
+                // La graphie « X > Y » était l'une de celles de #585 : une seule graphie de
+                // chemin (« → ») est admise, afin que la vérification ci-dessous ne soit pas
+                // contournée par le séparateur.
+                let tete_chevron = format!("{} > ", libelle(racine));
+                for (cle, texte) in &v {
+                    assert!(
+                        !texte.contains(&tete_chevron),
+                        "{locale} : `{cle}` écrit « {tete_chevron} » — graphie « → » attendue"
+                    );
+                    for (pos, _) in texte.match_indices(&tete) {
+                        let suite = &texte[pos + tete.len()..];
+                        vus += 1;
+                        assert!(
+                            permis.iter().any(|p| suite.starts_with(p.as_str())),
+                            "{locale} : `{cle}` cite « {tete}{} … » — pas un lieu réel \
+                             (permis : {permis:?})",
+                            suite.chars().take(30).collect::<String>()
+                        );
+                    }
+                }
+            }
+        }
+        assert!(vus > 60, "garde muette : {vus} chemins vus seulement");
     }
 
     /// **G8** (Story 15-14a, #569, C-15-14-14) — toute clé qui **prescrit** une

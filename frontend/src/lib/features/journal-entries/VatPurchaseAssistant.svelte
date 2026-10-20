@@ -139,7 +139,7 @@
 				<p class="text-sm text-destructive">
 					{i18nMsg(
 						'vat-purchase-config-required',
-						'Configurez le compte d’impôt préalable dans Paramètres → Facturation pour utiliser l’assistant.'
+						'Configurez le compte d’impôt préalable dans Administration → Facturation pour utiliser l’assistant.'
 					)}
 				</p>
 			{:else if noRates}

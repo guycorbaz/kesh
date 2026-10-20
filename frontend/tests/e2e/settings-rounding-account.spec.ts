@@ -1,6 +1,6 @@
 /**
  * Story 25-4-c3-a1 (#476) — désigner le compte de différences d'arrondi dans
- * Paramètres → Facturation, l'enregistrer, et le retrouver après rechargement.
+ * Administration → Facturation, l'enregistrer, et le retrouver après rechargement.
  *
  * Le compte choisi est la charge imputable du jeu `with-company` (4000). Le test remet
  * le réglage à vide à la fin : la base est partagée entre specs.

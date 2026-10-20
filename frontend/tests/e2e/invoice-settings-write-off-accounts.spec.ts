@@ -1,6 +1,6 @@
 /**
  * Story 25-4-d1 (#384) — les comptes des natures d'écart soldé, désignés dans
- * Paramètres → Facturation, section « Solde du reste ».
+ * Administration → Facturation, section « Solde du reste ».
  *
  * Choisir un compte pour chacune des trois natures, enregistrer, recharger la
  * page : les trois valeurs reviennent du serveur. C'est le seul test qui voit
