@@ -2024,3 +2024,17 @@ Trend : P1 = 1 MEDIUM + 14 LOW → P2 = 1 MEDIUM + 1 LOW (le MEDIUM naît du dé
 Modèles : **Haiku** pour la revue, **Sonnet 5.5** pour la remédiation. Le correctif touche du code de production
 (une ligne) : **passe ciblée P3** à lancer — `30-2c-review-prompt-p3-ciblee.md` (**Opus**, lentille T, `git show d799b5f9`,
 rapport `302c-review-p3-T.md`).
+
+### 2026-10-20 — Pass 3 review (ciblée) : passe P3 de la 30-2c (Opus, lentille T) — revue terminée
+
+Prompt `30-2c-review-prompt-p3-ciblee.md`, braqué sur `d799b5f9` ; rapport
+`kesh-gate-logs/302c-review-p3-T.md`. **0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW** ; six axes exercés, trois en partie
+(aucun test rejoué, gate rattaché à `d799b5f9` par l'horodatage, diff de M-c27 absent de son journal). T1 (chemin
+jumeau dans `detach()`, course très courte, antérieur à la P1) : écart assumé ; T2 (motif d'exclusion trop large
+dans l'annotation P2 de C-30-2-53, modèle de la revue P2 mal lisible) : annotation datée au registre. Remédiation
+**sans aucune ligne de code** : la boucle se clôt (CLAUDE.md § *La passe ciblée*).
+
+Trend de la revue de code de la 30-2c : P1 (Sonnet, B/E/A) = 1 MEDIUM convergent + 14 LOW distincts → P2 ciblée
+(Haiku) = 1 MEDIUM (né de la remédiation P1) + 1 LOW → P3 ciblée (Opus) = 0 MEDIUM + 2 LOW. Modèles de remédiation :
+Opus 5.5 (P1), Sonnet 5.5 (P2), orchestrateur (P3, comptes rendus seulement). Dernier commit de code : `d799b5f9`,
+gate complet (nextest 3846) et E2E complet (307 + 7 KF-029) à ce commit.

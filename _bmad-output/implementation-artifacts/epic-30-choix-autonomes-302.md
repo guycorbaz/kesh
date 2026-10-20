@@ -795,3 +795,13 @@ entrée est écrite par la reprise.*
 > P1, la relecture échouée signifie que le réseau ou le serveur est en défaut, et le message reste lisible et vrai
 > de l'instant du refus. Corriger obligerait à inventer un état « facture périmée » à l'écran pour un cas sans effet
 > sur les comptes : non fait.
+>
+> **Annotation du 2026-10-20 (revue P3 ciblée, Opus, lentille T — orchestrateur)** — C-30-2-53 est complété, non
+> réécrit. (1) L'en-tête de l'annotation précédente nomme **Sonnet 5.5 pour la remédiation** ; la revue P2 elle-même
+> a été conduite par **Haiku**. (2) L'argument qui y écarte la remise à zéro dans `reloadAfterRefusal` ne vaut que
+> pour une remise à zéro **sans condition** ; une variante conditionnée à la présence d'un document dans la facture
+> relue n'aurait pas eu ce défaut — le correctif retenu (dans la branche de `attach`) reste juste, mais le motif
+> d'exclusion était trop large. (3) **Écart assumé (P3, T1)** : le chemin jumeau existe dans `detach()` — un
+> détachement refusé en `404`, puis un autre onglet qui joint un document juste avant la relecture, laisse « Cette
+> facture n'a pas de document. » sous ce document. Fenêtre de course très courte, comportement antérieur à la P1,
+> sans effet sur les comptes, disparu au rechargement : non corrigé.
