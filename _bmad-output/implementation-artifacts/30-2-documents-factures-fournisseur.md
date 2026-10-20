@@ -1997,3 +1997,30 @@ Trend : P1 = 1 MEDIUM (convergent) + 14 LOW → tout remédié (A4 par un écart
 remédiation. La remédiation touche du code de production (fiche, sélecteur) : **passe ciblée P2** à lancer —
 `30-2c-review-prompt-p2-ciblee.md` (**Haiku**, une lentille T, diff `a4bffcac..9ad839ce`, rapport
 `302c-review-p2-T.md`). Choix C-30-2-52 à 54 ; annotations datées de C-30-2-46 et C-30-2-51.
+
+### 2026-10-20 — Pass 2 review (ciblée) : passe P2 de la 30-2c (Haiku, lentille T) et remédiation (Sonnet 5.5)
+
+Rapport : `/home/gcorbaz/devel/kesh-gate-logs/302c-review-p2-T.md` — **0/0/1/1** (CRITICAL/HIGH/MEDIUM/LOW), sur le
+seul commit `9ad839ce`. Les autres axes (relecture après refus, gardes du double clic, tests Vitest et Rust neufs,
+doc-comments, cycle d'interblocage, manuel et PDF, décomptes, mots-clés de fermeture) ont tenu au code.
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| T1 | MEDIUM | confirmé au code par l'orchestrateur : `attach` sort par `return` (refus périmé, facture relue avec document) avant `detachError = ''` ; `detachError = ''` ajouté dans cette branche ; test Vitest rouge constaté d'abord (« expected <p> to be null », `302c-red-p2.log`), vert ensuite ; M-c27 tuée |
+| T2 | LOW | relecture en échec après un détachement `404` : écart assumé, annotation datée de C-30-2-53 (comportement inchangé depuis avant la P1) |
+
+Commit de remédiation de code : `d799b5f9` (deux fichiers : `+page.svelte`, `supplier-document-page.test.ts`). Grep du
+symptôme : `detachError` n'a que ces sites (`let`, `attach` succès et refus périmé, `detach` entrée et échec, bloc
+d'affichage) ; `attachError` vit dans le sélecteur, démonté avec lui. **Mutation** M-c27 (retrait de la ligne) : jouée
+sous le verrou, **tuée** par le test neuf (`302c-mutP2-M-c27.log`, 1 échoué / 21 passés) ; fichier restauré par
+`git checkout` puis `touch`. **Tests** (bornes `9ad839ce` → `d799b5f9`) : Vitest `supplier-document-page.test.ts`
+21 → 22 (**+1**). **Gate complet** au dernier commit de code `d799b5f9`, base `kesh_302c` : nextest **3846 passés,
+6 ignorés** (`302c-gate4-test-fast.log`) ; `npm run check` et `lint-i18n-ownership` verts ; Vitest **1820 passés,
+156 fichiers** ; build vert. **E2E complet** au même HEAD (`302c-p2.log`, port 3052, base `kesh_e2e_302c` remise à
+zéro) : **307 passés, 7 échoués, 17 ignorés** — les sept KF-029 (`mode-expert.spec.ts:26`, `:41`,
+`onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`).
+
+Trend : P1 = 1 MEDIUM + 14 LOW → P2 = 1 MEDIUM + 1 LOW (le MEDIUM naît du déplacement de bloc de la remédiation P1).
+Modèles : **Haiku** pour la revue, **Sonnet 5.5** pour la remédiation. Le correctif touche du code de production
+(une ligne) : **passe ciblée P3** à lancer — `30-2c-review-prompt-p3-ciblee.md` (**Opus**, lentille T, `git show d799b5f9`,
+rapport `302c-review-p3-T.md`).

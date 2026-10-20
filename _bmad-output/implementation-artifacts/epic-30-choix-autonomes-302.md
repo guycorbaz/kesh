@@ -781,3 +781,17 @@ entrée est écrite par la reprise.*
 - **Écartées** : `onmouseenter` ouvrant le panneau (coût et instabilité ci-dessus) ; une vignette au survol — un
   composant de plus, hors du « si trivial » de la décision de l'orchestrateur.
 - **Réversible** : oui (un gestionnaire de survol sur la ligne).
+
+> **Annotation du 2026-10-20 (revue P2 ciblée, T1 et T2 — Sonnet 5.5)** — C-30-2-53 est complété, non réécrit.
+> **T1 (MEDIUM, corrigé)** : le message de détachement ayant été sorti du bloc du document, le chemin « refus
+> `404`/`409` du rattachement, facture relue avec un document » (qui sort par `return` avant la remise à zéro du
+> chemin de succès) laissait un message périmé (« Cette facture n'a pas de document. ») sous le document joint
+> ailleurs. Retenu : `detachError = ''` dans cette branche (`+page.svelte`, `attach`), au plus près du `return` ;
+> l'autre variable d'erreur soumise à la relecture, `attachError`, vit dans le sélecteur, démonté avec lui, et
+> `detach()` remet `detachError` à vide en entrée. Écartée : la remise à zéro dans `reloadAfterRefusal` — elle
+> effacerait le message du `404` du détachement qu'on veut précisément garder. Test Vitest rouge constaté d'abord ;
+> mutation M-c27 (retrait de la ligne) tuée. **T2 (LOW, écart assumé)** : une relecture en échec après un
+> détachement `404` laisse l'ancienne facture et son message sous le document ; le comportement est celui d'avant la
+> P1, la relecture échouée signifie que le réseau ou le serveur est en défaut, et le message reste lisible et vrai
+> de l'instant du refus. Corriger obligerait à inventer un état « facture périmée » à l'écran pour un cas sans effet
+> sur les comptes : non fait.
