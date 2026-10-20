@@ -222,7 +222,7 @@ cd /opt/kesh
 Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.4/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.14.0/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -233,7 +233,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.4/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.14.0/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -548,7 +548,7 @@ Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh,
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.4
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.14.0
 curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
 curl -fsSL "$DEPOT/.env.example" -o .env
 
@@ -1671,13 +1671,13 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.4
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.14.0
 curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
 curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
 \end{lstlisting}
 
-L'URL désigne l'étiquette d'une version publiée (\keshpath{v0.13.4} ici) : prenez celle de la version que vous installez, la même que l'image de votre compose --- les scripts d'une autre version peuvent attendre d'autres réglages. Ne prenez pas \keshpath{main}, qui peut être en avance sur l'image publiée.
+L'URL désigne l'étiquette d'une version publiée (\keshpath{v0.14.0} ici) : prenez celle de la version que vous installez, la même que l'image de votre compose --- les scripts d'une autre version peuvent attendre d'autres réglages. Ne prenez pas \keshpath{main}, qui peut être en avance sur l'image publiée.
 
 \keshpath{kesh-dump.sh} écrit dans \keshpath{dump/} (forcé en 700) le dump et son empreinte (\keshpath{.sha256}), lisibles de root seul. Il s'arrête à la première erreur ; le dump s'écrit d'abord dans un fichier \keshpath{.tmp}, vérifié (archive intègre, au moins une table, dump complet), puis renommé : un dump raté ou vide ne remplace pas celui de la veille et ne laisse aucun fichier. Un verrou (\keshpath{dump/.verrou}) empêche deux dumps simultanés ; laissé par un arrêt brutal, il se supprime à la main (\keshcommand{rmdir}). Ses réglages, par variables d'environnement, ont pour défauts ceux de ce manuel : \texttt{SAUVEGARDE\_DOSSIER} (\keshpath{/volume1/docker/kesh}), \texttt{SAUVEGARDE\_BASE} (\texttt{kesh}, la base de \texttt{DATABASE\_URL}), \texttt{SAUVEGARDE\_RESEAU} (\keshcommand{frontend}), \texttt{SAUVEGARDE\_IMAGE} (\keshcommand{mariadb:10.11}) ; si votre base porte un autre nom, la commande de la tâche devient :
 
@@ -2039,6 +2039,9 @@ Les champs du QR de \texttt{GET /api/v1/imported-supplier-invoices} --- \texttt{
 \begin{sloppypar}
 \texttt{POST /api/v1/supplier-invoices} \textbf{valide désormais les coordonnées de paiement} et refuse en \texttt{400 INVALID\_PAYMENT\_DETAILS} (\texttt{details.field}, \texttt{details.reason}) : un IBAN dont le format, le code pays (absent de la table intégrée de Kesh), la longueur pour son pays ou la somme de contrôle est invalide ; un QR-IBAN dans \texttt{creditorIban} ; un IBAN ordinaire dans \texttt{creditorQrIban} ; les deux ensemble ; un QR-IBAN sans référence QRR valide ; une référence de plus de 64 caractères. Il \textbf{accepte toujours} un IBAN étranger valide d'un pays de la table, et toute référence libre de 64 caractères au plus, 27 chiffres compris ; les blancs (insécables compris) sont retirés des IBAN, un champ vide vaut absent. Les factures existantes ne changent pas. La complétion d'un document, \texttt{POST /api/v1/imported-supplier-invoices/\{id\}/complete}, reçoit désormais \textbf{le corps de} \texttt{POST /api/v1/supplier-invoices} (projet compris ; un client qui n'envoie pas les champs ajoutés reste accepté) : sans QR, elle applique la même validation ; avec QR, elle refuse en \texttt{400 QR\_FIELDS\_FROM\_DOCUMENT} un corps qui porte IBAN, QR-IBAN, référence ou montant attendu. \texttt{GET /api/v1/imported-supplier-invoices/\{id\}/supplier-candidates} est \textbf{nouveau}. Sont aussi \textbf{nouveaux} \texttt{POST} et \texttt{DELETE /api/v1/supplier-invoices/\{id\}/source-document}, qui joignent un document à traiter à une facture existante et l'en détachent (clés \texttt{read-write}), avec le refus \texttt{409 SOURCE\_DOCUMENT\_ALREADY\_ATTACHED} ; la réponse d'une facture fournisseur lue (\texttt{GET}, règlement, annulations, complétion) et le détail d'une écriture portent un champ \texttt{sourceDocument}. \textbf{La lecture du document d'une facture}, \texttt{GET /api/v1/supplier-invoices/\{id\}/source-document}, \textbf{s'ouvre à tout rôle authentifié et aux clés} \texttt{read} ; celle d'un document à traiter reste réservée aux rôles qui écrivent. Le détail est dans \texttt{docs/api-external.md}.
 \end{sloppypar}
+
+\paragraph{Sur Synology : les scripts de sauvegarde.}\mbox{}\\
+\keshpath{kesh-dump.sh} et \keshpath{kesh-restore.sh} sont inchangés depuis la 0.13.1 : rien à re-télécharger si vous avez ceux d'une 0.13.1 ou d'une version suivante. Pour les re-télécharger, prenez-les \textbf{au tag \keshpath{v0.14.0}} (\S\ref{sec:backup-dsm}), la même version que l'image de votre compose. Ils ne sauvegardent que la base : le dossier des documents se copie à part (issue \#503).
 
 \subsubsection{Passer à la 0.13.4}\label{sec:maj-0-13-4}
 

@@ -8,7 +8,9 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.14.0] — Non publié
+## [0.14.0] — 2026-10-20
+
+⚠️ **Cette version n'est toujours pas destinée à tenir une comptabilité réelle.** Epic 29, seconde partie : les **transitoires de fin d'exercice se contre-passent** au premier jour de l'exercice suivant, depuis la fiche de l'écriture. Epic 30, **les factures fournisseur de la pièce au règlement** : tout document fournisseur — avec ou sans QR-code — entre dans la liste « Documents à traiter », d'où la facture se crée à côté de son document, le fournisseur proposé ou créé sans quitter la saisie ; un document se joint à une facture après coup et se voit depuis l'écriture ; la réconciliation propose la facture fournisseur ouverte pour un débit et la règle. S'y ajoutent deux correctifs — une même facture fournisseur pouvait entrer dans deux lots de paiement en cours, et une facture payée affichait le moment de l'enregistrement au lieu de la date du paiement — et le vrai chemin de la facturation, « Administration → Facturation », dans le manuel et les messages.
 
 ⚠️ **À faire en passant à la 0.14.0** — le détail est au manuel d'administration, *Passer à la 0.14.0* :
 
