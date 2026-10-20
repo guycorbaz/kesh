@@ -15,6 +15,7 @@ import {
 	deposit,
 	ensurePayableAndExpense,
 	fillFirstInvoiceLine,
+	importViaApi,
 	inboxHandshake,
 	readFixture,
 	stillInInbox,
@@ -25,7 +26,9 @@ import {
 /**
  * Parcours « Documents à traiter » — Story 30-2a (#685), parcours E1-a, E2-a et E3 de la
  * fiche ; Story 30-2b, parcours E1, E2 et E4 (la facture se crée à côté du document, ou
- * sans document). Guy ne testera qu'en fin d'epic : ces specs portent la recette.
+ * sans document) ; Story 30-2c, parcours E5, E6 et E7 (joindre un document après coup, le
+ * voir depuis l'écriture, le détacher). Guy ne testera qu'en fin d'epic : ces specs portent
+ * la recette.
  *
  * ⚠️ **Aucun `test.skip`.** Les répertoires se lisent dans `helpers/inbox.ts` (défauts de la
  * recette documentée) ; un répertoire absent fait échouer le `beforeAll`, un backend qui lit
@@ -214,6 +217,8 @@ test.describe('Créer la facture à côté du document (Story 30-2b)', () => {
 
 		await page.getByTestId('supplier-invoice-submit').click();
 		await expect(page).toHaveURL(/\/supplier-invoices\/\d+$/);
+		// Story 30-2c (AC18) : la fiche MONTRE le document, et plus seulement l'API.
+		await expect(page.getByTestId('supplier-invoice-document-name')).toHaveText(name);
 		const { inv, docStatus } = await invoiceAndDocumentStatus(page, invoiceIdFromUrl(page));
 		expect(inv.contactId).toBe(supplierId);
 		expect(inv.creditorIban).toBe('CH9300762011623852957');
@@ -271,11 +276,27 @@ test.describe('Créer la facture à côté du document (Story 30-2b)', () => {
 		await expect(page).toHaveURL(/\/supplier-invoices\/\d+$/);
 		// La fiche montre l'IBAN saisi, normalisé par le serveur.
 		await expect(page.getByText('CH5604835012345678009')).toBeVisible();
+		await expect(page.getByTestId('supplier-invoice-document-name')).toHaveText(name);
 		const { inv, docStatus } = await invoiceAndDocumentStatus(page, invoiceIdFromUrl(page));
 		expect(inv.creditorIban).toBe('CH5604835012345678009');
 		expect(inv.paymentReference).toBe('Facture E2-302b');
 		expect(docStatus, 'la facture créée porte le document').toBe(200);
 	});
+
+});
+
+/**
+ * Story 30-2c — joindre un document après coup, le détacher (parcours E4 → E5 → E7).
+ *
+ * ⚠️ **`describe.serial`, avec son motif** (patron `open-items.spec.ts`) : les trois
+ * parcours portent sur UNE même facture — E4 la crée sans document (préparation, rejouée
+ * ici), E5 y joint un document, E7 le détache puis en joint un autre. Chacun dépose sa
+ * propre copie de fixture.
+ */
+test.describe.serial('Joindre puis détacher un document (Story 30-2c)', () => {
+	let invoiceId = 0;
+	let purchaseEntryId = 0;
+	let attachedName = '';
 
 	test('E4 — sans document : « Enregistrer une facture » mène à la page, la facture se crée sans pièce', async ({
 		page,
@@ -294,8 +315,165 @@ test.describe('Créer la facture à côté du document (Story 30-2b)', () => {
 		await fillFirstInvoiceLine(page, 'Prestation E4', '30.00', expenseAccountId);
 		await page.getByTestId('supplier-invoice-submit').click();
 		await expect(page).toHaveURL(/\/supplier-invoices\/\d+$/);
-		const { inv, docStatus } = await invoiceAndDocumentStatus(page, invoiceIdFromUrl(page));
+		invoiceId = invoiceIdFromUrl(page);
+		const { inv, docStatus } = await invoiceAndDocumentStatus(page, invoiceId);
 		expect(inv.contactId).toBe(supplierId);
 		expect(docStatus, 'une facture sans document n’en a pas').toBe(404);
+		purchaseEntryId = inv.purchaseJournalEntryId;
+		// Story 30-2c (AC18) : la fiche propose de joindre, et ne propose rien d'autre.
+		await expect(page.getByTestId('supplier-invoice-attach')).toBeVisible();
+		await expect(page.getByTestId('supplier-invoice-source-document')).toHaveCount(0);
+	});
+
+	test('E5 — joindre un document à traiter : la fiche le montre, la liste ne l’a plus', async ({
+		page,
+	}, testInfo) => {
+		expect(invoiceId, 'E4 a créé la facture').toBeGreaterThan(0);
+		await login(page);
+		attachedName = `e2e-e5-${token()}.png`;
+		await deposit(attachedName, uniqueCopy(PNG_SANS_QR, 'png'));
+		const report = await importViaApi(page);
+		expect(report.accepted.map((a) => a.fileName)).toContain(attachedName);
+
+		await page.goto(`/supplier-invoices/${invoiceId}`);
+		await page.getByTestId('supplier-invoice-attach').click();
+		const row = page.getByTestId('attach-document-row').filter({ hasText: attachedName });
+		await expect(row).toHaveCount(1);
+		await expect(row.getByTestId('attach-document-invoice-total')).toContainText('30.00');
+		await row.getByTestId('attach-document-preview').click();
+		await expect(row.getByTestId('document-preview-image')).toHaveAttribute('src', /^blob:/);
+		await captureBothSchemes(page, testInfo, '302c-selecteur');
+
+		page.once('dialog', (d) => void d.accept());
+		await row.getByTestId('attach-document-submit').click();
+		await expect(page.getByTestId('supplier-invoice-document-name')).toHaveText(attachedName);
+		await expect(page.getByTestId('supplier-invoice-attach')).toHaveCount(0);
+		await page.getByTestId('supplier-invoice-source-document').click();
+		await expect(
+			page.getByTestId('supplier-invoice-preview-panel').getByTestId('document-preview-image'),
+		).toHaveAttribute('src', /^blob:/);
+		await captureBothSchemes(page, testInfo, '302c-fiche-document');
+		const { docStatus } = await invoiceAndDocumentStatus(page, invoiceId);
+		expect(docStatus, 'le document se lit depuis la facture').toBe(200);
+
+		await page.goto('/supplier-invoices/import');
+		await expect(page.getByTestId('imported-row').filter({ hasText: attachedName })).toHaveCount(0);
+	});
+
+	test('E7 — détacher : retour dans « Documents à traiter », l’écriture ne le montre plus ; un autre document se joint', async ({
+		page,
+	}) => {
+		expect(attachedName, 'E5 a joint un document').not.toBe('');
+		await login(page);
+		await page.goto(`/journal-entries/${purchaseEntryId}`);
+		await expect(page.getByTestId('entry-source-document')).toBeVisible();
+
+		await page.goto(`/supplier-invoices/${invoiceId}`);
+		let message = '';
+		page.once('dialog', (d) => {
+			message = d.message();
+			void d.accept();
+		});
+		await page.getByTestId('supplier-invoice-detach').click();
+		await expect(page.getByTestId('supplier-invoice-attach')).toBeVisible();
+		expect(message).toContain('Il reviendra dans les documents à traiter');
+		const { docStatus } = await invoiceAndDocumentStatus(page, invoiceId);
+		expect(docStatus).toBe(404);
+
+		await page.goto('/supplier-invoices/import');
+		await expect(page.getByTestId('imported-row').filter({ hasText: attachedName })).toHaveCount(1);
+		await page.goto(`/journal-entries/${purchaseEntryId}`);
+		await expect(page.getByText(/Écriture n°/)).toBeVisible();
+		await expect(page.getByTestId('entry-source-document')).toHaveCount(0);
+
+		// Un AUTRE document se joint à la même facture (M-c9 : l'unicité ne tient plus
+		// l'ancien lien).
+		const other = `e2e-e7-${token()}.png`;
+		await deposit(other, uniqueCopy(PNG_SANS_QR, 'png'));
+		await importViaApi(page);
+		await page.goto(`/supplier-invoices/${invoiceId}`);
+		await page.getByTestId('supplier-invoice-attach').click();
+		const row = page.getByTestId('attach-document-row').filter({ hasText: other });
+		page.once('dialog', (d) => void d.accept());
+		await row.getByTestId('attach-document-submit').click();
+		await expect(page.getByTestId('supplier-invoice-document-name')).toHaveText(other);
 	});
 });
+
+test.describe('Le document depuis l’écriture (Story 30-2c)', () => {
+	test('E6 — depuis l’écriture d’achat d’une facture à document : lien vers la facture et « Voir le document »', async ({
+		page,
+	}, testInfo) => {
+		await login(page);
+		const expenseAccountId = await ensurePayableAndExpense(page);
+		const supplierId = await createSupplierViaApi(page, `Fournisseur E6 ${token()}`);
+		// Préparé par l'API, copie propre de la fixture à QR distincte de celle d'E1.
+		const name = `e2e-e6-${token()}.png`;
+		await deposit(name, uniqueCopy(await readFixture('spc_e2e_discard.png'), 'png'));
+		const report = await importViaApi(page);
+		const entry = report.accepted.find((a) => a.fileName === name);
+		expect(entry, `${name} importé`).toBeTruthy();
+		const number = `FF-E6-${token()}`;
+		const inv = await createInvoiceAndAttachViaApi(
+			page,
+			supplierId,
+			number,
+			expenseAccountId,
+			entry!.importedSupplierInvoiceId,
+		);
+
+		await page.goto(`/journal-entries/${inv.purchaseJournalEntryId}`);
+		const link = page.getByTestId('entry-supplier-invoice-link');
+		await expect(link).toHaveText(`Facture fournisseur ${number}`);
+		await expect(link).toHaveAttribute('href', `/supplier-invoices/${inv.id}`);
+		await page.getByTestId('entry-source-document-view').click();
+		await expect(
+			page.getByTestId('entry-source-document').getByTestId('document-preview-image'),
+		).toHaveAttribute('src', /^blob:/);
+		await captureBothSchemes(page, testInfo, '302c-ecriture-document');
+		await link.click();
+		await expect(page).toHaveURL(new RegExp(`/supplier-invoices/${inv.id}$`));
+		await expect(page.getByTestId('supplier-invoice-document-name')).toHaveText(name);
+	});
+});
+
+/**
+ * Crée une facture fournisseur sans document par l'API, puis y joint le document à traiter
+ * `importedId` (Story 30-2c, `POST /supplier-invoices/{id}/source-document`).
+ */
+async function createInvoiceAndAttachViaApi(
+	page: Page,
+	contactId: number,
+	number: string,
+	expenseAccountId: number,
+	importedId: number,
+): Promise<{ id: number; purchaseJournalEntryId: number }> {
+	const ctx = await authedApiContext(page);
+	try {
+		const created = await ctx.post('/api/v1/supplier-invoices', {
+			data: {
+				contactId,
+				supplierInvoiceNumber: number,
+				invoiceDate: new Date().toISOString().slice(0, 10),
+				lines: [
+					{
+						description: 'Prestation E6',
+						quantity: '1',
+						unitPrice: '25.00',
+						vatRate: '0',
+						expenseAccountId,
+					},
+				],
+			},
+		});
+		expect(created.status(), `création : ${await created.text()}`).toBe(201);
+		const inv = await created.json();
+		const attached = await ctx.post(`/api/v1/supplier-invoices/${inv.id}/source-document`, {
+			data: { importedSupplierInvoiceId: importedId },
+		});
+		expect(attached.status(), `rattachement : ${await attached.text()}`).toBe(200);
+		return { id: inv.id, purchaseJournalEntryId: inv.purchaseJournalEntryId };
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}

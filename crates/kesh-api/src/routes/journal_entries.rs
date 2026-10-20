@@ -29,7 +29,7 @@ use kesh_db::entities::{
 };
 use kesh_db::errors::map_db_error;
 use kesh_db::repositories::journal_entries::{JournalEntryListQuery, JournalEntryListResult};
-use kesh_db::repositories::{fiscal_years, journal_entries};
+use kesh_db::repositories::{fiscal_years, imported_supplier_invoices, journal_entries};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -177,6 +177,33 @@ pub struct JournalEntryDetailResponse {
     /// Numéro de pièce, nom de l'exercice postérieur clos, borne du verrou
     /// (`AAAA-MM-JJ`), ou code de lettrage ; `null` sinon.
     pub modification_blocked_label: Option<String>,
+    /// Story 30-2c (AC21, C-30-2-15) — le document de la facture fournisseur
+    /// dont cette écriture est l'**achat** ou le **règlement**, `null` sinon
+    /// (écriture d'une autre origine, facture sans document). Le détail est le
+    /// seul constructeur de cette réponse : `null` veut dire « aucun document »,
+    /// jamais « non calculé ».
+    pub source_document: Option<EntrySourceDocumentResponse>,
+}
+
+/// Le document d'une écriture d'achat ou de règlement (Story 30-2c, AC21) :
+/// de quoi afficher le lien vers la facture et ouvrir l'aperçu par
+/// `GET /supplier-invoices/{supplierInvoiceId}/source-document`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntrySourceDocumentResponse {
+    pub supplier_invoice_id: i64,
+    pub supplier_invoice_number: Option<String>,
+    pub original_filename: String,
+}
+
+impl From<imported_supplier_invoices::EntrySourceDocument> for EntrySourceDocumentResponse {
+    fn from(d: imported_supplier_invoices::EntrySourceDocument) -> Self {
+        Self {
+            supplier_invoice_id: d.supplier_invoice_id,
+            supplier_invoice_number: d.supplier_invoice_number,
+            original_filename: d.original_filename,
+        }
+    }
 }
 
 impl From<JournalEntryLine> for JournalEntryLineResponse {
@@ -480,6 +507,10 @@ pub async fn get_journal_entry(
     let blocker = journal_entries::reversal_blocker(&mut tx, company.id, id).await?;
     let reversed_by_entry_id = journal_entries::reversed_by(&mut *tx, company.id, id).await?;
     let modification = journal_entries::modification_blocker(&mut tx, company.id, id).await?;
+    // Story 30-2c (AC21) — le document de la facture fournisseur, dans le même
+    // instantané (lecture ordinaire).
+    let source_document =
+        imported_supplier_invoices::find_source_document_of_entry(&mut *tx, company.id, id).await?;
     tx.rollback().await.map_err(map_db_error)?;
 
     Ok(Json(JournalEntryDetailResponse {
@@ -491,6 +522,7 @@ pub async fn get_journal_entry(
         modifiable: modification.is_none(),
         modification_blocked_by: modification.as_ref().map(|m| m.code().to_string()),
         modification_blocked_label: modification.and_then(|m| m.label()),
+        source_document: source_document.map(EntrySourceDocumentResponse::from),
     }))
 }
 
@@ -1004,8 +1036,19 @@ mod tests {
             0,
             "aucune connexion acquise à côté de la transaction : {corps}"
         );
-        for lecteur in ["reversal_blocker", "reversed_by", "modification_blocker"] {
-            let motif = format!("journal_entries::{lecteur}(");
+        // Couples (module, lecteur) : le motif est paramétré par module (Story
+        // 30-2c, AC21 — un lecteur d'un autre module ne s'inscrit pas en
+        // ajoutant un nom à une liste qui chercherait `journal_entries::`).
+        for (module, lecteur) in [
+            ("journal_entries", "reversal_blocker"),
+            ("journal_entries", "reversed_by"),
+            ("journal_entries", "modification_blocker"),
+            (
+                "imported_supplier_invoices",
+                "find_source_document_of_entry",
+            ),
+        ] {
+            let motif = format!("{module}::{lecteur}(");
             let appels: Vec<&str> = corps
                 .match_indices(&motif)
                 .map(|(pos, _)| {

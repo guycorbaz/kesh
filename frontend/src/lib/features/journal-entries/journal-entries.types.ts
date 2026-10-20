@@ -87,6 +87,19 @@ export interface JournalEntryDetailResponse extends JournalEntryResponse {
 	 * (`AAAA-MM-JJ`), ou code de lettrage ; `null` sinon.
 	 */
 	modificationBlockedLabel: string | null;
+	/**
+	 * Story 30-2c (AC21) — le document de la facture fournisseur dont l'écriture est
+	 * l'achat ou le règlement ; `null` = aucun document (le détail est le seul
+	 * constructeur : jamais « non calculé »).
+	 */
+	sourceDocument: JournalEntrySourceDocument | null;
+}
+
+/** Le document d'une écriture d'achat ou de règlement fournisseur (Story 30-2c). */
+export interface JournalEntrySourceDocument {
+	supplierInvoiceId: number;
+	supplierInvoiceNumber: string | null;
+	originalFilename: string;
 }
 
 /**

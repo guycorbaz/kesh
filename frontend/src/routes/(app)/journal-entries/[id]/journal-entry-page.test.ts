@@ -9,7 +9,7 @@
 // ⚠️ `i18nMsg` rend le repli : les assertions portent sur le texte français.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
 import { authState } from '$lib/app/stores/auth.svelte';
 import type { JournalEntryDetailResponse } from '$lib/features/journal-entries/journal-entries.types';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
@@ -70,6 +70,11 @@ vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({
 }));
 vi.mock('$lib/features/settings/settings.api', () => ({ fetchCompanyCurrent: vi.fn() }));
 vi.mock('$lib/features/invoices/invoices.api', () => ({ getInvoiceSettings: vi.fn() }));
+// Story 30-2c (AC21) — l'aperçu du document de la facture fournisseur.
+const fetchSupplierDocMock = vi.fn<(id: number) => Promise<Blob>>();
+vi.mock('$lib/features/imported-supplier-invoices/imported-supplier-invoices.api', () => ({
+	fetchSupplierInvoiceSourceDocument: (id: number) => fetchSupplierDocMock(id)
+}));
 
 import Page from './+page.svelte';
 
@@ -114,6 +119,7 @@ function entry(over: Partial<JournalEntryDetailResponse> = {}): JournalEntryDeta
 		modifiable: true,
 		modificationBlockedBy: null,
 		modificationBlockedLabel: null,
+		sourceDocument: null,
 		...over
 	};
 }
@@ -579,5 +585,57 @@ describe('fiche d’écriture — revue de code P1 de la 29-1b', () => {
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		expect(screen.getByTestId(BUTTON)).toBeTruthy();
 		expect(screen.queryByTestId(REASON)).toBeNull();
+	});
+});
+
+describe('fiche d’écriture — le document de la facture fournisseur (30-2c, AC21)', () => {
+	const DOC = {
+		supplierInvoiceId: 44,
+		supplierInvoiceNumber: 'FF-44',
+		originalFilename: 'facture-44.png'
+	};
+
+	it('achat ou règlement d’une facture à document : le lien vers la facture et « Voir le document », qui lit le document de CETTE facture', async () => {
+		vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:doc');
+		vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+		fetchSupplierDocMock.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
+		await renderEntry(entry({ sourceDocument: DOC }));
+		const link = screen.getByTestId('entry-supplier-invoice-link');
+		expect(link.textContent?.trim()).toBe('Facture fournisseur FF-44');
+		expect(link.getAttribute('href')).toBe('/supplier-invoices/44');
+		await fireEvent.click(screen.getByTestId('entry-source-document-view'));
+		expect(await screen.findByTestId('document-preview-image')).toBeTruthy();
+		expect(fetchSupplierDocMock).toHaveBeenCalledWith(44);
+		expect(keysAsked.has('journal-entries-supplier-invoice-link')).toBe(true);
+		vi.restoreAllMocks();
+	});
+
+	it('facture sans numéro : le lien dit son identifiant', async () => {
+		await renderEntry(entry({ sourceDocument: { ...DOC, supplierInvoiceNumber: null } }));
+		expect(screen.getByTestId('entry-supplier-invoice-link').textContent?.trim()).toBe(
+			'Facture fournisseur #44'
+		);
+	});
+
+	it('`sourceDocument: null` : ni lien ni bouton', async () => {
+		await renderEntry(entry());
+		expect(screen.queryByTestId('entry-source-document')).toBeNull();
+		expect(fetchSupplierDocMock).not.toHaveBeenCalled();
+	});
+
+	it('naviguer vers une autre écriture referme l’aperçu', async () => {
+		vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:doc');
+		vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+		fetchSupplierDocMock.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
+		await renderEntry(entry({ sourceDocument: DOC }));
+		await fireEvent.click(screen.getByTestId('entry-source-document-view'));
+		expect(await screen.findByTestId('document-preview')).toBeTruthy();
+		getJournalEntryMock.mockResolvedValue(
+			entry({ id: 5, entryNumber: 10, sourceDocument: { ...DOC, supplierInvoiceId: 45 } })
+		);
+		pageState.params.id = '5';
+		await waitFor(() => expect(screen.getByText('Écriture n°10')).toBeTruthy());
+		expect(screen.queryByTestId('document-preview')).toBeNull();
+		vi.restoreAllMocks();
 	});
 });

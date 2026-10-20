@@ -36,8 +36,21 @@
 	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import LetteringCodeLink from '$lib/features/open-items/LetteringCodeLink.svelte';
+	import DocumentPreview from '$lib/features/imported-supplier-invoices/DocumentPreview.svelte';
+	import { fetchSupplierInvoiceSourceDocument } from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.api';
 
 	let entry = $state<JournalEntryDetailResponse | null>(null);
+	/**
+	 * Story 30-2c (AC21) — aperçu du document de la facture fournisseur. La lecture
+	 * suit la facture (une écriture en remplace une autre sans démonter la page) ;
+	 * `loadEntry` referme l'aperçu, et `{#key}` recrée le bloc, au changement d'écriture.
+	 */
+	let showDocumentPreview = $state(false);
+	let sourceInvoiceId = $derived(entry?.sourceDocument?.supplierInvoiceId ?? null);
+	let loadEntryDocument = $derived.by(() => {
+		const invoiceId = sourceInvoiceId;
+		return invoiceId === null ? null : () => fetchSupplierInvoiceSourceDocument(invoiceId);
+	});
 	/**
 	 * Story 24-4a (#380) — contre-passation ; Story 29-1b (#232) — au début de
 	 * l'exercice suivant. Le dialogue de confirmation est UN, son geste dit
@@ -134,6 +147,8 @@
 		// sur CELLE-LÀ dès sa lecture, et « Confirmer » la contre-passerait.
 		reverseConfirm = null;
 		showDeleteConfirm = false;
+		// Story 30-2c — l'aperçu du document ne survit pas non plus au changement.
+		showDocumentPreview = false;
 		loadFiscalYears();
 		if (!Number.isFinite(id) || id <= 0) {
 			errorMsg = "Identifiant d'écriture invalide";
@@ -529,6 +544,44 @@
 				)}
 			</a>
 		</p>
+	{/if}
+
+	<!-- Story 30-2c (AC21, C-30-2-15) : l'achat ou le règlement d'une facture
+	     fournisseur qui a un document — lien vers la facture et aperçu. -->
+	{#if entry.sourceDocument && loadEntryDocument}
+		{#key entry.id}
+			<div class="mb-4 space-y-2 text-sm" data-testid="entry-source-document">
+				<p class="flex flex-wrap items-center gap-3">
+					<a
+						class="underline"
+						href="/supplier-invoices/{entry.sourceDocument.supplierInvoiceId}"
+						data-testid="entry-supplier-invoice-link"
+					>
+						{i18nMsg('journal-entries-supplier-invoice-link', 'Facture fournisseur { $number }', {
+							number:
+								entry.sourceDocument.supplierInvoiceNumber ??
+								`#${entry.sourceDocument.supplierInvoiceId}`
+						})}
+					</a>
+					<button
+						class="rounded border px-3 py-1 text-primary"
+						data-testid="entry-source-document-view"
+						aria-expanded={showDocumentPreview}
+						onclick={() => (showDocumentPreview = !showDocumentPreview)}
+					>
+						{showDocumentPreview
+							? i18nMsg('journal-entries-document-preview-close', 'Fermer l’aperçu')
+							: i18nMsg('journal-entries-document-view', 'Voir le document')}
+					</button>
+				</p>
+				{#if showDocumentPreview}
+					<DocumentPreview
+						load={loadEntryDocument}
+						fileName={entry.sourceDocument.originalFilename}
+					/>
+				{/if}
+			</div>
+		{/key}
 	{/if}
 
 	<dl class="mb-6 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">

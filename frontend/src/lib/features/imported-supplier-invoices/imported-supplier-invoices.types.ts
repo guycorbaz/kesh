@@ -5,6 +5,7 @@
  */
 
 import type { SupplierInvoiceResponse } from '$lib/features/supplier-invoices/supplier-invoices.types';
+import { formatSwissDate } from '$lib/features/reports/reports.api';
 
 export type ImportedStatus = 'to_complete' | 'completed' | 'discarded';
 
@@ -53,6 +54,15 @@ export interface ImportedSupplierInvoice {
 /** Le document porte-t-il des données QR ? (Story 30-2a.) */
 export function hasQr(row: ImportedSupplierInvoice): boolean {
 	return row.creditorIban !== null;
+}
+
+/**
+ * Date d'import (`createdAt`, horodatage naïf UTC) au format suisse — partagée par la
+ * liste « Documents à traiter » et le sélecteur de la fiche (Story 30-2c, AC20).
+ * ⚠️ Angle mort assumé (revue P1 de la 30-2a) : la date est celle d'UTC.
+ */
+export function importDateOf(row: ImportedSupplierInvoice): string {
+	return formatSwissDate(row.createdAt.slice(0, 10));
 }
 
 /**

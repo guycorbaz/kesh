@@ -199,7 +199,7 @@ export function describeSubmitError(err: unknown): SubmitError {
 				field: null,
 				message: i18nMsg(
 					'supplier-invoices-err-currency',
-					'Devise non supportée (CHF uniquement). Retirez le document de la liste.',
+					'Devise non supportée (CHF uniquement). Retirez le document de la liste, ou créez la facture sans document puis joignez-le.',
 				),
 			};
 		case 'IBAN_REFERENCE_MISMATCH':

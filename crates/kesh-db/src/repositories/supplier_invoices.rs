@@ -1749,6 +1749,10 @@ pub struct SupplierInvoiceSettlementView {
     pub invoice_cancel_blocker: Option<super::settlement_cancellation::SettlementCancelHit>,
     /// Cf. [`super::payment_batches::last_confirmed_batch_for_invoice`].
     pub last_confirmed_batch: Option<(i64, Option<chrono::NaiveDateTime>)>,
+    /// Le document de la facture (Story 30-2c, AC18), `None` sans document —
+    /// cf. [`super::imported_supplier_invoices::find_by_supplier_invoice_id_scoped`].
+    pub source_document:
+        Option<crate::entities::imported_supplier_invoice::ImportedSupplierInvoice>,
 }
 
 /// Lit une facture fournisseur **et** ses champs d'annulation dans une même
@@ -1785,6 +1789,12 @@ pub async fn get_settlement_view(
     let invoice_cancel_blocker = supplier_invoice_cancel_blocker(&mut tx, company_id, id).await?;
     let last_confirmed_batch =
         super::payment_batches::last_confirmed_batch_for_invoice(&mut *tx, company_id, id).await?;
+    // Story 30-2c (AC18) — le document, lu dans le même instantané (lecture
+    // ordinaire : la seule lecture du staging de ce fichier, jamais verrouillante).
+    let source_document = super::imported_supplier_invoices::find_by_supplier_invoice_id_scoped(
+        &mut *tx, company_id, id,
+    )
+    .await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(Some(SupplierInvoiceSettlementView {
         invoice,
@@ -1792,6 +1802,7 @@ pub async fn get_settlement_view(
         settlement_cancel_blocker,
         invoice_cancel_blocker,
         last_confirmed_batch,
+        source_document,
     }))
 }
 

@@ -1150,6 +1150,12 @@ pub enum AppError {
     #[error("Justificatif non restauré")]
     SourceDocumentGone,
 
+    /// Story 30-2c (AC19) — `POST /supplier-invoices/{id}/source-document` vers
+    /// une facture qui a **déjà** un document (violation de l'unicité de
+    /// `supplier_invoice_id`) → `409 SOURCE_DOCUMENT_ALREADY_ATTACHED`.
+    #[error("La facture a déjà un document")]
+    SourceDocumentAlreadyAttached,
+
     // --- Story 20-1 — socle templates d'e-mail (#224) ---
     /// `PUT /admin/email-templates/{type}/{language}` : `subject`/`body`
     /// référencent un ou plusieurs tokens `{var}` hors de
@@ -3112,6 +3118,15 @@ impl IntoResponse for AppError {
                 &t(
                     "error-source-document-gone",
                     "Le justificatif n'a pas été restauré (métadonnées seules).",
+                ),
+            ),
+
+            AppError::SourceDocumentAlreadyAttached => build_response(
+                StatusCode::CONFLICT,
+                "SOURCE_DOCUMENT_ALREADY_ATTACHED",
+                &t(
+                    "error-source-document-already-attached",
+                    "Cette facture a déjà un document. Détachez-le d'abord pour en joindre un autre.",
                 ),
             ),
 

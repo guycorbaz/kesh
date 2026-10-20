@@ -24,12 +24,12 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 120 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 122 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (120 routes) ; celui du
-//! REGISTRE est plus large (123), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (122 routes) ; celui du
+//! REGISTRE est plus large (125), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -153,7 +153,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **quinze routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **dix-sept routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2 — la
 //!   seule des neuf routes d'étape à l'être, cf. (iv)),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
@@ -235,7 +235,19 @@
 //!   comme la confirmation) : la création d'un lot n'écrit rien au journal,
 //!   mais la Story 30-1b ouvre un cycle entre elle et l'acceptation de
 //!   plusieurs propositions (verrous facture → compte → articles) ; tenue par
-//!   T-a14 (`rejeu_interblocage_e2e.rs`). Quinze avec elle.
+//!   T-a14 (`rejeu_interblocage_e2e.rs`). Quinze avec elle. Et — Story 30-2c,
+//!   #685, AC19 et AC24 — `imported_supplier_invoices::attach_source_document`
+//!   et `detach_source_document` (enveloppe `AppError`
+//!   `crate::retry::retry_app_on_deadlock`, opérations
+//!   `imported_supplier_invoices::attach` et `::detach`) : joindre et détacher
+//!   un document n'écrivent rien au journal ; le rattachement verrouille le
+//!   document, la facture puis la sentinelle `companies` (C-30-2-46), et forme
+//!   un cycle nommé avec l'acceptation d'un lot de rapprochement et la
+//!   confirmation d'un lot de paiement (qui tiennent `companies` en partagé
+//!   puis verrouillent une facture) ; le détachement ne
+//!   verrouille que la ligne du document. Tenues par les tests sans rejeu de
+//!   `crates/kesh-db/tests/supplier_document_attachment.rs`, **aucune preuve
+//!   dynamique du rejeu** (C-30-2-45). Dix-sept avec elles.
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit
@@ -367,6 +379,11 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "imported_supplier_invoices::post_inbox_import", Traced, SansEcritureAuJournal),
     ("post", "imported_supplier_invoices::complete_import", Traced, Rejouee),
     ("post", "imported_supplier_invoices::discard_import", Traced, SansEcritureAuJournal),
+    // Story 30-2c (#685, AC19, AC24) — joindre un document à une facture,
+    // le détacher (audits `imported_supplier_invoice.attached` / `.detached`,
+    // dans la transaction ; rejouées, sans écriture au journal — point (vi)).
+    ("post", "imported_supplier_invoices::attach_source_document", Traced, SansEcritureAuJournal),
+    ("delete", "imported_supplier_invoices::detach_source_document", Traced, SansEcritureAuJournal),
     ("post", "payment_batches::create_payment_batch", Traced, SansEcritureAuJournal),
     ("post", "payment_batches::confirm_payment_batch", Traced, Rejouee),
     ("post", "payment_batches::cancel_payment_batch", Traced, SansEcritureAuJournal),
@@ -743,10 +760,10 @@ fn the_registry_partition_is_what_the_story_declares() {
         .filter(|(_, _, s, _)| matches!(s, NoMatter(_)))
         .count();
 
-    assert_eq!(LIB_ROUTES.len(), 120, "l'inventaire porte sur 120 routes");
+    assert_eq!(LIB_ROUTES.len(), 122, "l'inventaire porte sur 122 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 114,
+        traced, 116,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -759,7 +776,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          import non rapproché (27-1, #632), plus l'annulation d'un rejet (28-5a, #526), \
          plus la clôture et la réouverture d'un compte bancaire (28-4a, #642), plus le \
          rattachement d'une transaction à un règlement (29-8, #670), plus la \
-         contre-passation au début de l'exercice suivant (29-1b, #232)"
+         contre-passation au début de l'exercice suivant (29-1b, #232), plus le \
+         rattachement et le détachement d'un document fournisseur (30-2c, #685)"
     );
     assert_eq!(exempt, 4, "4 routes d'auth (#435)");
     assert_eq!(
@@ -768,7 +786,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        123,
+        125,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1093,14 +1111,15 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 95,
-        "94 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
+        sans_ecriture, 97,
+        "96 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
          import, 27-1 ; l'annulation d'un rejet, 28-5a ; la clôture et la réouverture d'un \
-         compte bancaire, 28-4a ; le rattachement d'une transaction à un règlement, 29-8), \
+         compte bancaire, 28-4a ; le rattachement d'une transaction à un règlement, 29-8 ; \
+         le rattachement et le détachement d'un document fournisseur, 30-2c), \
          plus /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
-    assert_eq!(tout.len(), 123);
+    assert_eq!(tout.len(), 125);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

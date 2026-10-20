@@ -228,6 +228,13 @@ const ATTENDU: Record<string, { jetons: string[]; motif: string }> = {
 		jetons: ['text-destructive'],
 		motif: 'C — action de page bordée ; rouge par le jeton défini (AC4)',
 	},
+	// Story 30-2c (#685, AC24) — détacher le document d'une facture : réversible (le
+	// document revient dans la liste), mais confirmé ; même forme que les deux ci-dessus
+	// (13 → 14).
+	'routes/(app)/supplier-invoices/[id]/+page.svelte#supplier-invoice-detach': {
+		jetons: ['text-destructive'],
+		motif: 'C — action de page bordée, confirm() natif ; rouge par le jeton défini (AC4)',
+	},
 	// Classe D — <button> brut sans bordure, texte rouge : se lit comme du texte
 	// ou un lien (angle mort 11, #648).
 	'lib/features/contacts/ContactPersonsManager.svelte#{`contact-person-delete-${p.id}`}': {
@@ -319,8 +326,8 @@ describe('AC6 — inventaire clos des boutons rouges posés à la main', () => {
 		expect(releve).toEqual(attendu);
 	});
 
-	it('la table compte treize entrées, chacune avec son motif', () => {
-		expect(Object.keys(ATTENDU)).toHaveLength(13);
+	it('la table compte quatorze entrées, chacune avec son motif', () => {
+		expect(Object.keys(ATTENDU)).toHaveLength(14);
 		for (const [cle, { motif }] of Object.entries(ATTENDU)) {
 			expect(motif.trim().length, cle).toBeGreaterThan(0);
 		}

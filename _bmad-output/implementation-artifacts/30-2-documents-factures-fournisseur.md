@@ -6,7 +6,10 @@
 code P1 faite — B 0/0/0/5, E 0/0/2/5, A 0/0/0/8 — et remédiée le 2026-10-15 ; **passe ciblée P2** à lancer,
 `30-2a-review-prompt-p2-ciblee.md`, Haiku). *(Annotation du 2026-10-15 : la 30-2a est `done`, revue terminée, et mergée
 — `f1508653`.)* **30-2b : review** (développée le 2026-10-15 sur `f1508653`, reportée sur `fc3a4f7d` — merge de la
-30-1b ; revue de code P1 à lancer, `30-2b-review-prompt-p1.md`, Sonnet, lentilles B, E, A). **30-2c : ready-for-dev.**
+30-1b ; revue de code P1 à lancer, `30-2b-review-prompt-p1.md`, Sonnet, lentilles B, E, A). *(Annotation du 2026-10-20 :
+la 30-2b est `done` et mergée — `1aca02d2`.)* **30-2c : review** (développée du 2026-10-16 au 2026-10-20 — reprise d'un
+développement interrompu —, sur `1aca02d2`, reportée sur `4663f60b`, merge de la 30-3 ; revue de code P1 à lancer,
+`30-2c-review-prompt-p1.md`, Sonnet, lentilles B, E, A).
 
 *Historique de la validation (paragraphe écrit avant le développement ; la passe ciblée P5 qu'il annonce « à lancer » a
 été faite le 2026-10-15 — 0/0/0/5, validation terminée, cf. Change Log) :* **ready-for-dev** (trois clés) — fiche créée le 2026-10-15 en autonomie (`bmad-create-story`, Opus 5.5), sur
@@ -711,7 +714,7 @@ chaîne brute ; `paidAt` absent : la phrase sans date. Mutation **M-c12** (`paid
 
 ### 30-2c
 
-- [ ] **T-c1** Tests rouges : rattachement (succès, 404 ×2, `409 IMPORT_NOT_PENDING_COMPLETION`,
+- [x] **T-c1** Tests rouges : rattachement (succès, 404 ×2, `409 IMPORT_NOT_PENDING_COMPLETION`,
   `409 SOURCE_DOCUMENT_ALREADY_ATTACHED`, autre société des deux côtés, facture payée) ; concurrence, en appelant les
   fonctions `_once` **sans rejeu** (AC19) : deux rattachements vers **deux factures différentes** (deux succès, aucun
   interblocage), deux vers la même facture (un succès, un `409`), rattachement contre complétion du même document (un
@@ -721,15 +724,15 @@ chaîne brute ; `paidAt` absent : la phrase sans date. Mutation **M-c12** (`paid
   après détachement, joindre un autre document à la même facture (M-c9) ; rattachement pendant un détachement non
   validé (AC24, il attend puis aboutit) ; rattachement déterministe sous verrou tenu (AC19, M-c11) ; détail de
   l'écriture de **règlement** d'une facture à document (M-c5) ; réponses `200` des deux routes avec `sourceDocument`.
-- [ ] **T-c2** Dépôt `kesh-db` : `attach_in_tx` et `detach_in_tx` (exposés sans `COMMIT`), lecture du document d'une facture et d'une écriture ; `find_by_supplier_invoice_id_scoped` passe d'un `&MySqlPool` (l. 158) à un exécuteur générique, pour lire dans l'instantané de `get_settlement_view` (AC18), et gagne `AND status = 'completed'`.
-- [ ] **T-c3** Routes (rattacher, détacher), réponses, déplacement de la lecture (AC18, AC19, AC21, AC22, AC24) ; registre des routes mutantes
+- [x] **T-c2** Dépôt `kesh-db` : `attach_in_tx` et `detach_in_tx` (exposés sans `COMMIT`), lecture du document d'une facture et d'une écriture ; `find_by_supplier_invoice_id_scoped` passe d'un `&MySqlPool` (l. 158) à un exécuteur générique, pour lire dans l'instantané de `get_settlement_view` (AC18), et gagne `AND status = 'completed'`.
+- [x] **T-c3** Routes (rattacher, détacher), réponses, déplacement de la lecture (AC18, AC19, AC21, AC22, AC24) ; registre des routes mutantes
   (`audit_route_registry.rs`, compteurs recomptés), registre des libellés d'audit (`crates/kesh-api/tests/audit_label_registry.rs`) pour
   les actions neuves `imported_supplier_invoice.attached` et `.detached`.
-- [ ] **T-c4** Fiche de la facture (dont « Détacher le document » et sa confirmation), sélecteur (Vitest : montant QR à
+- [x] **T-c4** Fiche de la facture (dont « Détacher le document » et sa confirmation), sélecteur (Vitest : montant QR à
   côté du total, liste vide), page de l'écriture
   (AC18, AC20, AC21, AC24, AC25) ; `supplier-settlement-page.test.ts:66` (mock du module `imported-supplier-invoices.api`) adapté.
-- [ ] **T-c5** i18n, manuel, PDF, `api-external.md`, CHANGELOG, README (AC23).
-- [ ] **T-c6** E2E de parcours complets (E1 à E7) ; captures ; mutations M-c1 à M-c12 (M-c7 déclarée équivalente ; M-c2 portée sur migration et squash) ; gate complet et E2E complet au dernier commit de code.
+- [x] **T-c5** i18n, manuel, PDF, `api-external.md`, CHANGELOG, README (AC23).
+- [x] **T-c6** E2E de parcours complets (E1 à E7) ; captures ; mutations M-c1 à M-c12 (M-c7 déclarée équivalente ; M-c2 portée sur migration et squash) ; gate complet et E2E complet au dernier commit de code.
 
 ## Dev Notes
 
@@ -958,6 +961,8 @@ Docs : `docs/manual/fr/user-manual.tex` (+ PDF), `docs/api-external.md`, `docs/m
 ### Agent Model Used
 
 Opus 5.5 (Claude Code), autonomie, 2026-10-15 — **30-2a seulement** (la 30-2b et la 30-2c ne sont pas commencées).
+*(Annotation du 2026-10-20 : la 30-2b et la 30-2c ont été développées par Opus 5.5 aussi, la 30-2c en deux temps —
+un agent interrompu le 2026-10-16, puis une reprise le 2026-10-20 ; voir leurs sections.)*
 Worktree `/home/gcorbaz/devel/kesh-30-2`, branche `story/30-2`, partie de `5b566378` ; bases `kesh_302a` et
 `kesh_e2e_302a`, port 3052, `CARGO_TARGET_DIR` du worktree, dossiers E2E `/tmp/kesh-e2e-302a/`.
 
@@ -1399,6 +1404,167 @@ neuves retrouvées au texte aplati.
 **Choix ajoutés** : C-30-2-41 à C-30-2-44. **Écart** : `iban.test.ts` réécrit en entier par l'outil d'écriture (non
 par substitution de motifs) — l'outil d'édition ne pouvait ni lire ni écrire les caractères invisibles en jeu.
 
+#### 30-2c — développement (2026-10-16 puis reprise du 2026-10-20, Opus 5.5, autonomie)
+
+Worktree `/home/gcorbaz/devel/kesh-30-2`, branche `story/30-2c`, partie de `1aca02d2` (30-2b mergée) ; bases
+`kesh_302c` et `kesh_e2e_302c` (`kesh-gate-logs/302c-reset-db.sh`), port 3052, dossiers E2E
+`/tmp/kesh-e2e-302c/{inbox,documents,backup}` passés au backend et au runner, `CARGO_TARGET_DIR` du worktree.
+**Reportée** sur `4663f60b` (merge de la 30-3, PR #692) à la demande de l'orchestrateur, avant le gate final : hashes
+d'avant le report `0d18652d` (code) → **`f8f81f6d`**, `c9e6fea6` (documentation, doc-comment de test) → **`67ac15e0`**
+(**dernier commit de code**) ; `ea986af6` : PDF régénérés après le report ; puis le commit de cette fiche, de
+`sprint-status.yaml` et du prompt de revue. Conflits du report : les **deux PDF** seuls (binaires) — résolus en
+**régénérant** les PDF depuis les `.tex` fusionnés sans conflit (`make fr`, `302c-make2.log`), et contrôlés aplatis :
+« Administration → Facturation » (30-3) et « Détacher le document » (30-2c) présents dans les deux. Le CHANGELOG, les
+FTL et les `.tex` ont fusionné sans conflit.
+
+**Reprise d'un travail interrompu.** Un premier agent a été interrompu le 2026-10-16 vers 11:36, au milieu du dev :
+~840 lignes non commitées, rien de gaté, frontend non touché. Relu contre la fiche et **conservé** : le dépôt
+(`attach_in_tx`, `detach_in_tx`, `AttachRefusal`, `find_source_document_of_entry`, `find_by_supplier_invoice_id_scoped`
+à exécuteur générique et filtre `completed`, `source_document` de la vue d'instantané), les routes `_once` et leur
+rejeu, `AppError::SourceDocumentAlreadyAttached` et sa clé ×4, `SupplierInvoiceResponse::source_document` à trois
+états, les neuf tests de `crates/kesh-db/tests/supplier_document_attachment.rs` et les cinq tests HTTP de
+`inbox_import_e2e.rs`. **La bascule de l'AC19** (sentinelle de la société, C-30-2-46) avait été prise par cet agent sur
+un test rouge constaté (`302c-db-1.log`) : conservée, et son entrée de registre écrite par la reprise (C-30-2-45 et 46
+n'étaient cités que par le code). **Ajouté par la reprise** : le montage des routes (`lib.rs` — `POST`/`DELETE` au bloc
+Comptable+, `GET` déplacé aux lectures), le détail d'écriture (AC21) et sa garde lexicale paramétrée par module, le
+message de `CURRENCY_NOT_SUPPORTED` (serveur, clé ×4, repli), les registres d'audit (routes et libellés), tout le
+frontend, les E2E, la documentation, la campagne de mutations et les gates. **Corrigé** : le doc-comment du test
+`two_attachments_to_two_invoices_are_serialized_by_company` affirmait qu'il tuait M-c11 — faux, constaté à la campagne
+(ci-dessous).
+
+**Tests rouges d'abord.** Constatés par l'agent interrompu, avant l'implémentation (le dépôt en `todo!()`, les routes
+non montées) : `kesh-gate-logs/302c-rouges-db.log` — **8 rouges sur 8 exécutés** (9 tests, nextest arrêté au premier
+échec : « not yet implemented: 30-2c : attach_in_tx ») ; `302c-rouges-api.log` — **6 rouges sur 6** :
+`attach_route_refuses_then_attaches` (`left: (405, None)`), `detach_route_restores_the_document` (`405`),
+`journal_entry_detail_shows_the_document` (`405`), `source_document_read_is_open_to_every_role` (`405`),
+`source_document_has_three_states`, `complete_currency_eur_rejected` (message sans « joignez-le »). Puis, sur le code du
+dépôt sans le filtre `completed`, `shared_lookup_only_sees_completed_documents` rouge (`302c-db-1.log`, `302c-db-2.log`) ;
+et le test déterministe de l'AC19 rouge **sur le code non muté** (`Err(Elapsed(()))`, `302c-db-1.log`) → bascule.
+Vitest (reprise) : écrits avec le code, puis constatés rouges **en remettant temporairement les deux pages d'origine**
+(`git show 1aca02d2:…` sur `supplier-invoices/[id]/+page.svelte` et `journal-entries/[id]/+page.svelte`, restaurées
+ensuite et `touch`) : `kesh-gate-logs/302c-rouges-vitest.log` — **15 rouges, 28 verts** (les verts : tests existants et
+cas qui attendent l'absence d'un élément, comme `null` ou le rôle Consultation). Les E2E E5, E6, E7 ont été écrits avec
+le code, non constatés rouges.
+
+**Tableau des chemins (AC19, sous la bascule)** — relevé au code :
+
+| Chemin | Ordre des verrous | Cycle avec le rattachement ? |
+|---|---|---|
+| rattachement | document X → facture X → `companies` X → entrée d'unicité | — |
+| `complete_import_once` | document X → `companies` X si projet → `companies` S (écriture) | non : même document → sérialisés sur le document |
+| `discard_import`, réactivation | document X | non : même document → sérialisés sur le document |
+| `pay_in_tx`, `cancel_in_tx`, `cancel_settlement_in_tx` | facture X → (compte bancaire X) → `companies` S | non : même facture → sérialisés sur la facture, avant `companies` |
+| détachement | document X (par l'index d'unicité, puis la clé primaire) | non : ne demande ni facture ni `companies` |
+| **acceptation de la 30-1b** (lot de plusieurs propositions) | … `companies` S (écriture de la 1re proposition) → facture X (`pay_in_tx_as` d'une suivante) | **oui** : le rattachement tient la facture et demande `companies` X. Rare ; les deux sont rejoués (C-30-2-46) |
+
+Contrôle demandé par l'AC19 : `grep -n "FOR UPDATE" crates/kesh-db/src/repositories/supplier_invoices.rs | grep -i
+imported` → **0** ; `supplier_invoices.rs` lit le staging par une lecture **ordinaire** (`get_settlement_view`), de même
+le détail d'écriture. `JournalEntryDetailResponse {` : **un seul** constructeur (`get_journal_entry`). ⚠️ Le Dev Agent
+Record ne recopie pas « aucun verrou d'intervalle » comme une garantie : la bascule montre précisément qu'un
+rattachement en attend un autre.
+
+**Mutations** — `kesh-gate-logs/302c-mutations.sh`, sous le verrou, HEAD `0d18652d` (avant le report, code identique hors
+30-3), motifs littéraux vérifiés uniques (`302c-muter.pl`, définitions `302c-mut/<id>/`), journaux `302c-mut-<id>.log`,
+restauration `git checkout -- f && touch f`, arbre propre en fin. ⚠️ Le journal porte « ERREUR-COMPILATION » pour les
+mutations Rust : **faux libellé** du détecteur (motif `^error:` qui attrape « error: test run failed » de nextest) ;
+requalifié par `grep "error\[E\|could not compile"` = 0 sur chaque journal, annoté en fin de `302c-mutations.log`.
+
+| Mutation | Motif | Verdict | Tuée par |
+|---|---|---|---|
+| M-c1 | traduction de l'unicité neutralisée | tuée | `attach_refusals_then_success_on_a_paid_invoice`, `two_attachments_to_the_same_invoice_one_wins`, `attach_route_refuses_then_attaches` |
+| M-c2 | unicité retirée (squash **et** migration) | tuée | les mêmes trois |
+| M-c3 | document `discarded` accepté | tuée | `attach_refusals_then_success_on_a_paid_invoice` |
+| M-c4 | facture d'une autre société acceptée | tuée | idem |
+| M-c5 | écriture de règlement ignorée | tuée | `entry_lookup_covers_purchase_and_settlement`, `journal_entry_detail_shows_the_document` |
+| M-c6 | lecture du document remise au bloc Comptable+ | tuée | `source_document_read_is_open_to_every_role` |
+| M-c7 | ordre des verrous inversé | **non jouée — équivalente, déclarée** (fiche) | — |
+| M-c8 | bloc document rendu sur `null` | tuée | Vitest de la fiche (11 rouges) |
+| M-c9 | détachement qui laisse le lien | tuée | `detach_restores_the_document_and_frees_the_invoice`, `attach_waits_for_an_uncommitted_detach_then_succeeds`, `detach_route_restores_the_document` |
+| M-c10 | détachement qui verrouille la facture | tuée | `detach_does_not_wait_for_the_invoice` (et `attach_waits_…`) |
+| M-c11 | lecture verrouillante du lien réintroduite | tuée | **seulement** `attach_waits_for_an_uncommitted_detach_then_succeeds` — le test déterministe de l'AC19, sous la bascule, ne la voit pas (écart à la fiche, déclaré) |
+| M-c12 | `paidAt` affiché brut | tuée | Vitest AC25 |
+| M-c13 *(ajoutée)* | sentinelle retirée | tuée | `two_attachments_to_two_invoices_are_serialized_by_company` |
+| M-c14 *(ajoutée)* | document de l'écriture lu au pool | tuée | `get_journal_entry_reads_in_one_transaction` |
+| M-c15 *(ajoutée)* | filtre `status = 'completed'` retiré | tuée | `shared_lookup_only_sees_completed_documents` |
+| M-c16 *(ajoutée)* | montant du QR jamais affiché au sélecteur | tuée | Vitest AC20 |
+
+Bilan : **15 jouées, 15 tuées** ; M-c7 déclarée équivalente, non jouée.
+
+**Gates.** Gate ciblé en cours de dev (`binary(supplier_document_attachment) | binary(inbox_import_e2e) |
+binary(audit_*)` + garde lexicale : 71/71). Un premier gate complet a tourné sur `c9e6fea6`, avant le report
+(`302c-gate1-*.log` : nextest 3844/3844, 6 ignorés ; Vitest 1812/1812) ; son E2E a été **interrompu** par l'arrivée de
+la consigne de report — il ne compte pas. **Gate final** au HEAD `ea986af6` (code identique au dernier commit de code
+`67ac15e0`), base `kesh_302c` remise à zéro (`302c-gate2-*.log`) : `scripts/test-fast.sh` (fmt, clippy `-D warnings`,
+nextest) **3845 passés, 6 ignorés** ; `npm run check` 0 erreur, 29 avertissements (aucun dans un fichier de la story) ;
+`lint-i18n-ownership` PASS ; Vitest **1812 passés, 156 fichiers** ; `npm run build` vert. **E2E complet** au même HEAD
+(`302c-e2e-final2.log`, recette de `docs/testing.md`, port 3052, base `kesh_e2e_302c` remise à zéro, `/health` en
+0.14.0) : **307 passés, 7 échoués, 17 ignorés** — les sept KF-029 (#97) de `docs/testing.md` § *Les échecs attendus*
+(`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ;
+aucune régression ; E4, E5, E6, E7 verts, et `reconciliation-supplier.spec.ts` (date au format suisse). E2E ciblé
+préalable (`302c-e2e-cible1.log`) : 15/15 sur `supplier-documents`, `reconciliation-supplier`, `inbox-import`.
+Captures clair et sombre : `kesh-gate-logs/302c-captures/302c-{selecteur,fiche-document,ecriture-document}-{clair,sombre}.png`
+(fixtures synthétiques ; Kesh n'a pas de thème sombre, C-28-1-7 — seule la préférence du navigateur change).
+**PDF** : `make fr` sous le verrou, contrôlés aplatis (« Détacher le document », « Un document détaché redevient »,
+« montant du QR à côté du total », « créez la facture sans document (en CHF) puis vous lui joignez » au manuel
+utilisateur ; `SOURCE_DOCUMENT_ALREADY_ATTACHED` et « s’ouvre à tout rôle authenti- fié » au manuel d'administration).
+
+**Tests neufs** — recomptés aux deux bornes `1aca02d2` → HEAD : `inbox_import_e2e.rs` 34 → 39 (**+5**),
+`supplier_document_attachment.rs` 0 → 9 (**+9**) — **+14 Rust** ; Vitest : `supplier-document-page.test.ts` 0 → 14,
+`journal-entry-page.test.ts` 24 → 28 — **+18 Vitest** (1794 de la 30-2b → 1812) ; E2E : `supplier-documents.spec.ts`
+6 → 9 (E5, E6, E7 ; E4 déplacé dans le bloc sériel). Adaptés : `supplier-settlement-page.test.ts` (mock),
+`reconciliation-supplier.spec.ts` (date), E1 et E2 (la fiche montre le document).
+
+**i18n** (recompté par `git diff 1aca02d2 HEAD` des FTL) : **+19 clés ×4** (sept `supplier-invoices-*`, six
+`imported-supplier-invoices-attach-*`, trois `journal-entries-*`, `error-source-document-already-attached`,
+`audit-log-action-imported-supplier-invoice-attached` et `-detached`) et **une valeur changée ×4**
+(`supplier-invoices-err-currency`). `sitesTotal` 2251 → **2279** (+28 : fiche 40 → 50, écriture 27 → 30,
+`AttachDocumentPicker.svelte` 0 → 15), `CLES_RELEVEES` 328 → **341**, `boutons-rouges-inventory` 13 → **14**,
+`audit_route_registry.rs` : 120 → 122 routes, 114 → 116 tracées, 95 → 97 sans écriture au journal, 123 → 125 au
+registre, point (vi) quinze → dix-sept.
+
+**Valeur grepée** : « Retirez le document de la liste. » et ses trois traductions (avec le point final) → 0 hors
+historique ; « treize entrées » → 0 ; les « 2251 », « 328 », « 120 », « 123 » restants sont des généalogies datées.
+
+**Choix ajoutés au registre** : **C-30-2-45 à C-30-2-51**.
+
+**Écarts à la fiche** :
+
+- Tests de concurrence sur `attach_in_tx` / `detach_in_tx`, non sur les `_once` de la route (C-30-2-45).
+- **Bascule de l'AC19 prise** (C-30-2-46) : deux rattachements vers deux factures différentes **s'attendent** ; le
+  cycle avec l'acceptation de la 30-1b est nommé. M-c11 n'est plus tuée par le test déterministe de l'AC19, mais par
+  celui de l'AC24.
+- Mutations ajoutées M-c13 à M-c16 ; M-c8 tuée par le rendu d'un bloc sur `null` (l'ancienne forme « bouton toujours
+  rendu » n'existe plus dans le gabarit).
+- La fiche garde *Télécharger* à côté de *Voir le document* (C-30-2-49).
+- Les E2E E5 à E7 n'ont pas été constatés rouges avant le code.
+- `two_attachments_to_two_invoices_are_serialized_by_company` : doc-comment corrigé dans le commit de documentation
+  (`67ac15e0`, un fichier de test) — c'est ce qui fait de ce commit le dernier commit de code.
+
+**À porter à l'orchestrateur** : #503 (la sauvegarde n'emporte pas les documents) reste le préalable à la mise en
+production signalé par C-30-2-16.
+
+**Annotations de la revue de code P1 (2026-10-20)** — le relevé ci-dessus est daté du développement et n'est pas
+réécrit ; ce qui y était faux ou incomplet à sa date est corrigé ici.
+
+- **« Arbre propre en fin » (campagne de mutations) était faux à la lettre** (A3) : la dernière ligne de
+  `302c-mutations.log` porte « git status : 6 fichier(s) modifié(s) ». Ces six fichiers ne sont plus identifiables
+  depuis le journal ; la revue A a contrôlé que le code livré ne porte aucun des treize motifs mutés (`grep -nF` :
+  zéro résidu) et que `git diff HEAD` était vide. Il fallait écrire : « `git status` : 6 fichiers modifiés en fin
+  de campagne (non identifiés au journal) ; code livré contrôlé exempt de motif muté ».
+- **Tableau des chemins (AC19)** — **ligne manquante** (B3 = E2) : `payment_batches::confirm_batch` (lot de
+  plusieurs articles) : … `companies` S (écriture du 1er article) → facture X (`pay_in_tx` du suivant) — **oui,
+  cycle**, même forme que l'acceptation de la 30-1b ; rejouée (`retry_on_deadlock("payment_batches::confirm")`).
+  La suppression d'un import (`bank_imports::delete`), citée par B, n'en est pas : ni facture ni écriture
+  (C-30-2-46, annotation).
+- **M-c11** (A1, E4) : tuée par la sonde qui exige que l'attente soit dans l'`UPDATE`, non par un comportement faux ;
+  preuve redéfinie sur l'ordre des événements, écrite au doc-comment du test et à C-30-2-46.
+- **M-c8** (E4) : tuée par un **plantage** (`TypeError` sur `null.originalFilename`, 11 tests sur 14 rouges), non
+  par l'assertion « bouton rendu à tort ». Verdict « tuée » maintenu ; une variante qui garde le bloc sur `null`
+  sans lire le nom n'est pas couverte par cette seule mutation.
+- **E2E E5 à E7** : déjà déclarés « non constatés rouges » aux écarts ; la clé de sprint disait « rouges
+  constatés » sans distinguer (A5) — corrigée.
+- **Écart non déclaré** (A4) : l'aperçu du sélecteur s'ouvre au bouton, non au survol (C-30-2-54).
+
 ### File List
 
 30-2a, `git diff --name-status 5b566378 af0d2eb4` (58 fichiers ; A = ajouté) :
@@ -1442,6 +1608,33 @@ par substitution de motifs) — l'outil d'édition ne pouvait ni lire ni écrire
 - E2E : `frontend/tests/e2e/{helpers/inbox.ts, inbox-import.spec.ts, supplier-documents.spec.ts}`.
 - Documentation : `docs/manual/fr/{user-manual,admin-manual}.{tex,pdf}`, `docs/api-external.md`, `CHANGELOG.md`, `README.md`.
 - BMAD : `epic-30-choix-autonomes-302.md`, cette fiche, `sprint-status.yaml`, `30-2b-review-prompt-p1.md` (A).
+
+30-2c, `git diff --name-status 4663f60b HEAD` (39 fichiers hors `_bmad-output` ; A = ajouté) :
+
+- Backend : `crates/kesh-api/src/{audit_labels.rs, errors.rs, lib.rs, routes/imported_supplier_invoices.rs, routes/journal_entries.rs, routes/supplier_invoices.rs}`,
+  `crates/kesh-db/src/repositories/{imported_supplier_invoices.rs, supplier_invoices.rs}`.
+- Tests Rust : `crates/kesh-db/tests/supplier_document_attachment.rs` (A), `crates/kesh-api/tests/{inbox_import_e2e.rs, audit_route_registry.rs}`.
+- i18n : `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`.
+- Frontend : `frontend/src/lib/features/imported-supplier-invoices/{AttachDocumentPicker.svelte (A), imported-supplier-invoices.api.ts, imported-supplier-invoices.types.ts}`,
+  `frontend/src/lib/features/supplier-invoices/{supplier-invoices.types.ts, supplier-invoice-form.ts}`,
+  `frontend/src/lib/features/journal-entries/journal-entries.types.ts`,
+  `frontend/src/routes/(app)/supplier-invoices/[id]/{+page.svelte, supplier-document-page.test.ts (A), supplier-settlement-page.test.ts}`,
+  `frontend/src/routes/(app)/supplier-invoices/import/+page.svelte`,
+  `frontend/src/routes/(app)/journal-entries/[id]/{+page.svelte, journal-entry-page.test.ts}`,
+  `frontend/src/lib/shared/{i18n-keys.test.ts, i18n-un-repli-par-cle.test.ts}`,
+  `frontend/src/lib/components/ui/button/boutons-rouges-inventory.test.ts`.
+- E2E : `frontend/tests/e2e/{supplier-documents.spec.ts, reconciliation-supplier.spec.ts}`.
+- Documentation : `docs/manual/fr/{user-manual,admin-manual}.{tex,pdf}`, `docs/api-external.md`, `CHANGELOG.md`, `README.md`.
+- BMAD : `epic-30-choix-autonomes-302.md`, cette fiche, `sprint-status.yaml`, `30-2c-review-prompt-p1.md` (A).
+
+30-2c, remédiation de la revue P1, `git diff --name-status a4bffcac 9ad839ce` (10 fichiers ; A = ajouté), puis PDF :
+
+- Backend : `crates/kesh-api/src/routes/imported_supplier_invoices.rs`, `crates/kesh-db/src/repositories/imported_supplier_invoices.rs` (doc-comments).
+- Tests Rust : `crates/kesh-db/tests/supplier_document_attachment.rs`, `crates/kesh-api/tests/audit_route_registry.rs` (module-doc).
+- Frontend : `frontend/src/lib/features/imported-supplier-invoices/{AttachDocumentPicker.svelte, stale-refusal.ts (A)}`,
+  `frontend/src/routes/(app)/supplier-invoices/[id]/{+page.svelte, supplier-document-page.test.ts}`.
+- Documentation : `docs/api-external.md`, `docs/manual/fr/user-manual.{tex,pdf}` (`make fr` ne change que ce PDF).
+- BMAD : `epic-30-choix-autonomes-302.md`, cette fiche, `sprint-status.yaml`, `30-2c-review-prompt-p2-ciblee.md` (A).
 
 ## Change Log
 
@@ -1756,3 +1949,92 @@ Trend : P1 = 1 MEDIUM → remédié ; la remédiation touche du code de producti
   annoncée) laissés. **La revue de la 30-2b est terminée** : P1 Sonnet B 0/0/1/3, E 0/0/1/6, A 0/0/1/8 (MEDIUM
   convergent : Entrée dans le panneau « Nouveau fournisseur ») → remédiée (`f428279f`) → P2 ciblée Haiku 0/0/0/3.
 
+### 2026-10-16 / 2026-10-20 — Développement de la 30-2c (Opus 5.5, autonomie ; reprise d'un agent interrompu)
+
+AC18 à AC25 et deux ajouts de l'orchestrateur (QR-IBAN sur la fiche ; `paidAt` formaté, déjà AC25). Joindre et
+détacher un document (`POST`/`DELETE /supplier-invoices/{id}/source-document`), `sourceDocument` à trois états sur la
+facture et sur le détail d'une écriture, lecture du document ouverte à tout rôle, sélecteur, E2E E4 à E7. **Bascule
+de l'AC19 prise** (sentinelle de la société, C-30-2-46) sur un test rouge au code non muté. Reportée sur `4663f60b`
+(30-3). Commits `f8f81f6d` (code), `67ac15e0` (documentation, **dernier commit de code**), `ea986af6` (PDF). Mutations
+15/15 tuées (M-c7 équivalente) ; gate 3845/3845 (6 ignorés), Vitest 1812/1812, E2E 307 + 7 KF-029. Choix C-30-2-45 à
+51. Revue de code P1 à lancer : `30-2c-review-prompt-p1.md` (Sonnet, B, E, A). Détail au Dev Agent Record.
+
+
+### 2026-10-20 — Pass 1 review : revue de code P1 de la 30-2c (Sonnet, lentilles B, E, A) et remédiation (Opus 5.5)
+
+Rapports : `/home/gcorbaz/devel/kesh-gate-logs/302c-review-p1-{B,E,A}.md` — **B 0/0/1/3, E 0/0/1/6, A 0/0/0/8**
+(CRITICAL/HIGH/MEDIUM/LOW) ; un MEDIUM convergent (B1 = E1 = A2), soit **1 MEDIUM et 14 LOW distincts** après
+fusion des doublons (B2 = E5, B3 = E2). Réfuté : la partie de B3 qui cite `bank_imports::delete` comme partenaire du
+cycle (la suppression d'un import ne verrouille aucune facture et n'écrit aucune écriture).
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| B1 = E1 = A2 | MEDIUM | refus du détachement et double clic testés (Vitest) ; garde explicite du double clic (rouge constaté sous jsdom malgré `disabled`) ; message rendu hors du bloc du document (C-30-2-53) ; M-c22 à M-c25 tuées |
+| B2 = E5 | LOW | relecture de la liste et de la facture après un refus `404`/`409` (`stale-refusal.ts`, C-30-2-53) ; M-c19, M-c20, M-c21 tuées |
+| E3 | LOW | lien sur un document non `completed`, document d'une autre société : `entry_lookup_covers_purchase_and_settlement` étendu ; M-c17, M-c18 tuées |
+| E6, A7 | LOW | test `cancelled_invoices_take_a_document_and_the_detached_settlement_loses_it` ; manuel (PDF régénéré), `api-external.md`, doc-comment ; M-c26 tuée |
+| B3 = E2, E7, A6 | LOW | confirmation d'un lot de paiement nommée partout ; mesuré / raisonné ; attente sous sentinelle (C-30-2-46, annotation) |
+| A1, E4 | LOW | preuve de M-c11 redéfinie (doc-comment du test, C-30-2-46) ; M-c8 annotée au Dev Agent Record |
+| A8, B4 | LOW | angles morts écrits, pas d'idempotence (C-30-2-52) |
+| A3, A5 | LOW | Dev Agent Record annoté ; clé de sprint corrigée |
+| A4 | LOW | écart déclaré, non comblé (C-30-2-54) |
+
+Commit de remédiation de code : `9ad839ce` (dix fichiers). **Mutations** M-c17 à M-c26 : **10 jouées, 10 tuées**, sous
+le verrou (`302c-mutations-p1.log` au HEAD `1c1b76e8` ; quatre motifs d'abord refusés par le muteur — saut de ligne
+final conservé dans le motif — rejoués dans `302c-mutations-p1-bis1.log` ; M-c19 à M-c25 rejouées après la remise à
+zéro des mocks, `302c-mutations-p1-bis.log`, chacune tuée par le test qui la nomme). `1c1b76e8` ne diffère de
+`9ad839ce` que par cette remise à zéro (commit amendé, local). **Tests** (bornes `a4bffcac` → `9ad839ce`) : Vitest
+`supplier-document-page.test.ts` 14 → 21 (**+7**) ; Rust `supplier_document_attachment.rs` 9 → 10 (**+1**, un étendu).
+**Gate complet** au dernier commit de code `9ad839ce`, base `kesh_302c` remise à zéro (`302c-gate3-*.log`) :
+nextest **3846 passés, 6 ignorés** ; `npm run check` 0 erreur, 29 avertissements ; `lint-i18n-ownership` PASS ;
+Vitest **1819 passés, 156 fichiers** ; build vert. **E2E complet** au même HEAD (`302c-e2e-p1.log`, port 3052, base
+`kesh_e2e_302c` remise à zéro, `/health` 0.14.0) : **307 passés, 7 échoués, 17 ignorés** — les sept KF-029
+(`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`).
+PDF : `make fr` sous le verrou, seul `user-manual.pdf` change ; contrôlé aplati (« pas plus que celui d’une facture
+payée puis annulée », « L’écriture d’achat d’une facture annulée, elle, le montre toujours »).
+
+Trend : P1 = 1 MEDIUM (convergent) + 14 LOW → tout remédié (A4 par un écart déclaré). Modèles : **Sonnet** pour la revue, **Opus 5.5** pour la
+remédiation. La remédiation touche du code de production (fiche, sélecteur) : **passe ciblée P2** à lancer —
+`30-2c-review-prompt-p2-ciblee.md` (**Haiku**, une lentille T, diff `a4bffcac..9ad839ce`, rapport
+`302c-review-p2-T.md`). Choix C-30-2-52 à 54 ; annotations datées de C-30-2-46 et C-30-2-51.
+
+### 2026-10-20 — Pass 2 review (ciblée) : passe P2 de la 30-2c (Haiku, lentille T) et remédiation (Sonnet 5.5)
+
+Rapport : `/home/gcorbaz/devel/kesh-gate-logs/302c-review-p2-T.md` — **0/0/1/1** (CRITICAL/HIGH/MEDIUM/LOW), sur le
+seul commit `9ad839ce`. Les autres axes (relecture après refus, gardes du double clic, tests Vitest et Rust neufs,
+doc-comments, cycle d'interblocage, manuel et PDF, décomptes, mots-clés de fermeture) ont tenu au code.
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| T1 | MEDIUM | confirmé au code par l'orchestrateur : `attach` sort par `return` (refus périmé, facture relue avec document) avant `detachError = ''` ; `detachError = ''` ajouté dans cette branche ; test Vitest rouge constaté d'abord (« expected <p> to be null », `302c-red-p2.log`), vert ensuite ; M-c27 tuée |
+| T2 | LOW | relecture en échec après un détachement `404` : écart assumé, annotation datée de C-30-2-53 (comportement inchangé depuis avant la P1) |
+
+Commit de remédiation de code : `d799b5f9` (deux fichiers : `+page.svelte`, `supplier-document-page.test.ts`). Grep du
+symptôme : `detachError` n'a que ces sites (`let`, `attach` succès et refus périmé, `detach` entrée et échec, bloc
+d'affichage) ; `attachError` vit dans le sélecteur, démonté avec lui. **Mutation** M-c27 (retrait de la ligne) : jouée
+sous le verrou, **tuée** par le test neuf (`302c-mutP2-M-c27.log`, 1 échoué / 21 passés) ; fichier restauré par
+`git checkout` puis `touch`. **Tests** (bornes `9ad839ce` → `d799b5f9`) : Vitest `supplier-document-page.test.ts`
+21 → 22 (**+1**). **Gate complet** au dernier commit de code `d799b5f9`, base `kesh_302c` : nextest **3846 passés,
+6 ignorés** (`302c-gate4-test-fast.log`) ; `npm run check` et `lint-i18n-ownership` verts ; Vitest **1820 passés,
+156 fichiers** ; build vert. **E2E complet** au même HEAD (`302c-p2.log`, port 3052, base `kesh_e2e_302c` remise à
+zéro) : **307 passés, 7 échoués, 17 ignorés** — les sept KF-029 (`mode-expert.spec.ts:26`, `:41`,
+`onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`).
+
+Trend : P1 = 1 MEDIUM + 14 LOW → P2 = 1 MEDIUM + 1 LOW (le MEDIUM naît du déplacement de bloc de la remédiation P1).
+Modèles : **Haiku** pour la revue, **Sonnet 5.5** pour la remédiation. Le correctif touche du code de production
+(une ligne) : **passe ciblée P3** à lancer — `30-2c-review-prompt-p3-ciblee.md` (**Opus**, lentille T, `git show d799b5f9`,
+rapport `302c-review-p3-T.md`).
+
+### 2026-10-20 — Pass 3 review (ciblée) : passe P3 de la 30-2c (Opus, lentille T) — revue terminée
+
+Prompt `30-2c-review-prompt-p3-ciblee.md`, braqué sur `d799b5f9` ; rapport
+`kesh-gate-logs/302c-review-p3-T.md`. **0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW** ; six axes exercés, trois en partie
+(aucun test rejoué, gate rattaché à `d799b5f9` par l'horodatage, diff de M-c27 absent de son journal). T1 (chemin
+jumeau dans `detach()`, course très courte, antérieur à la P1) : écart assumé ; T2 (motif d'exclusion trop large
+dans l'annotation P2 de C-30-2-53, modèle de la revue P2 mal lisible) : annotation datée au registre. Remédiation
+**sans aucune ligne de code** : la boucle se clôt (CLAUDE.md § *La passe ciblée*).
+
+Trend de la revue de code de la 30-2c : P1 (Sonnet, B/E/A) = 1 MEDIUM convergent + 14 LOW distincts → P2 ciblée
+(Haiku) = 1 MEDIUM (né de la remédiation P1) + 1 LOW → P3 ciblée (Opus) = 0 MEDIUM + 2 LOW. Modèles de remédiation :
+Opus 5.5 (P1), Sonnet 5.5 (P2), orchestrateur (P3, comptes rendus seulement). Dernier commit de code : `d799b5f9`,
+gate complet (nextest 3846) et E2E complet (307 + 7 KF-029) à ce commit.
