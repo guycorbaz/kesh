@@ -275,6 +275,9 @@
 				await reloadAfterRefusal();
 				if (invoice?.sourceDocument) {
 					showPicker = false;
+					// La facture relue montre un document : un message de
+					// détachement antérieur serait faux sous lui (revue P2, T1).
+					detachError = '';
 					notifyWarning(err.message);
 					return;
 				}

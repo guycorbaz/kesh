@@ -373,6 +373,37 @@ describe("fiche facture fournisseur — joindre (AC20)", () => {
     );
   });
 
+  it("revue P2 (T1) : un message de détachement périmé ne reste pas sous un document joint ailleurs (mutation M-c27)", async () => {
+    getMock
+      .mockResolvedValueOnce(inv({ sourceDocument: DOC }))
+      .mockResolvedValueOnce(inv({ sourceDocument: null }))
+      .mockResolvedValueOnce(inv({ sourceDocument: DOC }));
+    detachMock.mockRejectedValue(
+      apiError(
+        "SOURCE_DOCUMENT_NOT_FOUND",
+        404,
+        "Cette facture n'a pas de document.",
+      ),
+    );
+    listImportedMock.mockResolvedValue([staged()]);
+    attachMock.mockRejectedValue(
+      apiError(
+        "SOURCE_DOCUMENT_ALREADY_ATTACHED",
+        409,
+        "Cette facture a déjà un document.",
+      ),
+    );
+    const { findByTestId, queryByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-detach"));
+    expect(await findByTestId("supplier-invoice-detach-error")).toBeTruthy();
+    await fireEvent.click(await findByTestId("supplier-invoice-attach"));
+    await fireEvent.click(await findByTestId("attach-document-submit"));
+    expect(
+      (await findByTestId("supplier-invoice-document-name")).textContent,
+    ).toBe("facture-orage.png");
+    expect(queryByTestId("supplier-invoice-detach-error")).toBeNull();
+  });
+
   it("revue P1 : un refus qui ne dit rien des données (500) ne relit rien", async () => {
     getMock.mockResolvedValue(inv({ sourceDocument: null }));
     listImportedMock.mockResolvedValue([staged()]);
