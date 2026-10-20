@@ -604,6 +604,20 @@ async fn detach_does_not_wait_for_the_invoice(pool: MySqlPool) {
 /// validé** de X : son `UPDATE` attend l'entrée d'unicité que tient le
 /// détachement, puis, celui-ci validé, aboutit — en succès, sans interblocage
 /// ni refus.
+///
+/// ⚠️ **Ce que ce test prouve de M-c11, et ce qu'il ne prouve pas** (revue P1,
+/// A1 = E4). Sous la bascule de l'AC19 (C-30-2-46), la preuve de M-c11 est
+/// **redéfinie sur l'ordre des événements** : l'attente du rattachement doit
+/// se faire **dans son `UPDATE`**, après la sentinelle — la sonde de
+/// `PROCESSLIST` exige les deux motifs `UPDATE imported_supplier_invoices` et
+/// `supplier_invoice_id`. M-c11 (lecture verrouillante du lien réintroduite
+/// avant la sentinelle) déplace l'attente dans ce `SELECT … FOR UPDATE` : la
+/// sonde ne voit jamais l'`UPDATE`, et c'est **cela** qui la tue — non un
+/// comportement faux, le rattachement muté aboutirait de même. La propriété
+/// d'origine, « aucun verrou d'intervalle de notre fait », n'a pas de preuve
+/// déterministe sous la sentinelle ; une lecture **non** verrouillante du lien
+/// (inoffensive) ne serait pas vue. La preuve dépend du texte de la requête
+/// tel que `PROCESSLIST` le montre.
 #[sqlx::test(migrations = "./test-schema")]
 async fn attach_waits_for_an_uncommitted_detach_then_succeeds(pool: MySqlPool) {
     let (seeded, f) = decor(&pool).await;
@@ -694,7 +708,11 @@ async fn shared_lookup_only_sees_completed_documents(pool: MySqlPool) {
 
 /// AC21 — le document d'une écriture d'**achat** et de **règlement** (M-c5) ;
 /// rien pour une écriture d'une facture sans document, ni d'une autre société,
-/// ni après détachement.
+/// ni après détachement. Revue P1 (E3) : rien non plus pour un lien resté sur
+/// un document repassé « à traiter » (tue M-c17, `AND isi.status = 'completed'`
+/// retiré de la jointure), ni pour un document d'une **autre société** lié à
+/// la facture (tue M-c18, `AND isi.company_id = si.company_id` retiré) — deux
+/// états qu'aucun chemin n'écrit, posés ici par SQL.
 #[sqlx::test(migrations = "./test-schema")]
 async fn entry_lookup_covers_purchase_and_settlement(pool: MySqlPool) {
     let (seeded, f) = decor(&pool).await;
@@ -740,11 +758,118 @@ async fn entry_lookup_covers_purchase_and_settlement(pool: MySqlPool) {
             .is_none(),
         "IDOR"
     );
+
+    // Lien laissé sur un document repassé « à traiter » : l'écriture ne le
+    // montre pas (M-c17). Puis le statut revient, et le document avec lui.
+    let poser_statut = |statut: &'static str| {
+        sqlx::query("UPDATE imported_supplier_invoices SET status = ? WHERE id = ?")
+            .bind(statut)
+            .bind(doc.id)
+    };
+    poser_statut("to_complete").execute(&pool).await.unwrap();
+    assert!(
+        repo::find_source_document_of_entry(&pool, c, achat)
+            .await
+            .unwrap()
+            .is_none(),
+        "M-c17 : un document qui n'est pas `completed` ne se montre pas"
+    );
+    poser_statut("completed").execute(&pool).await.unwrap();
+    assert_eq!(
+        repo::find_source_document_of_entry(&pool, c, achat)
+            .await
+            .unwrap(),
+        Some(attendu.clone())
+    );
+
     detacher(&pool, c, inv).await.expect("détaché");
     assert!(
         repo::find_source_document_of_entry(&pool, c, reglement)
             .await
             .unwrap()
             .is_none()
+    );
+
+    // Un document d'une autre société lié à NOTRE facture : l'écriture ne le
+    // montre pas (M-c18).
+    let doc_autre = document(&pool, autre, "e-autre").await;
+    sqlx::query(
+        "UPDATE imported_supplier_invoices SET status = 'completed', supplier_invoice_id = ? \
+         WHERE id = ?",
+    )
+    .bind(inv)
+    .bind(doc_autre.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(
+        repo::find_source_document_of_entry(&pool, c, achat)
+            .await
+            .unwrap()
+            .is_none(),
+        "M-c18 : le document d'une autre société ne se montre pas"
+    );
+}
+
+/// AC19, AC21, revue P1 (E6, A7) — « tout statut de facture » jusqu'à
+/// l'annulée : une facture **annulée** reçoit un document puis le rend, sans
+/// que rien d'elle ne change ; une facture **payée puis annulée** garde son
+/// document sur l'écriture d'achat, mais son écriture de règlement ne le
+/// montre plus (l'annulation détache le règlement, colonnes à `NULL`).
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_invoices_take_a_document_and_the_detached_settlement_loses_it(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let c = seeded.company_id;
+
+    // Ouverte puis annulée : rattacher, puis détacher.
+    let (annulee, _) = facture_ouverte(&pool, &seeded, f, "FF-A", dec!(20)).await;
+    supplier_invoices::cancel(&pool, c, annulee, seeded.admin_user_id)
+        .await
+        .expect("annulée");
+    let avant = etat_facture(&pool, annulee).await;
+    assert_eq!(avant.0, "cancelled");
+    let doc = document(&pool, c, "a1").await;
+    rattacher(&pool, c, doc.id, annulee)
+        .await
+        .expect("une facture annulée reçoit un document");
+    assert_eq!(
+        statut_et_lien(&pool, doc.id).await,
+        ("completed".into(), Some(annulee))
+    );
+    assert_eq!(etat_facture(&pool, annulee).await, avant, "rien ne change");
+    assert_eq!(
+        detacher(&pool, c, annulee).await.map(|d| d.id),
+        Some(doc.id),
+        "et le rend"
+    );
+    assert_eq!(
+        statut_et_lien(&pool, doc.id).await,
+        ("to_complete".into(), None)
+    );
+
+    // Payée, document joint, puis annulée.
+    let (payee, achat, reglement) =
+        fournisseur_rapproche::facture_payee(&pool, &seeded, f, "FF-PA", jour(), dec!(40)).await;
+    let doc_p = document(&pool, c, "a2").await;
+    rattacher(&pool, c, doc_p.id, payee)
+        .await
+        .expect("rattaché");
+    supplier_invoices::cancel(&pool, c, payee, seeded.admin_user_id)
+        .await
+        .expect("payée puis annulée");
+    assert_eq!(
+        repo::find_source_document_of_entry(&pool, c, achat)
+            .await
+            .unwrap()
+            .map(|d| d.supplier_invoice_id),
+        Some(payee),
+        "l'écriture d'achat montre encore le document"
+    );
+    assert!(
+        repo::find_source_document_of_entry(&pool, c, reglement)
+            .await
+            .unwrap()
+            .is_none(),
+        "le règlement détaché par l'annulation ne le montre plus"
     );
 }

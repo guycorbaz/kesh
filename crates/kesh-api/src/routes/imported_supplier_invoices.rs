@@ -525,7 +525,15 @@ pub struct AttachSourceDocumentRequest {
 ///
 /// ⚠️ **Rejouée sur interblocage** ([`crate::retry::retry_app_on_deadlock`]) :
 /// la transaction vit dans [`attach_source_document_once`]. Cycle connu, rare :
-/// avec l'acceptation d'un lot de rapprochement (C-30-2-46).
+/// avec l'acceptation d'un lot de rapprochement et la confirmation d'un lot de
+/// paiement (C-30-2-46).
+///
+/// ⚠️ Angles morts écrits (revue P1 de la 30-2c, C-30-2-52) : une erreur de
+/// base **entre** le `COMMIT` et la relecture rend une erreur alors que le
+/// document est joint (patron de `pay` et de `complete_import`, C-30-2-42) ; et
+/// la demande n'est pas idempotente — renvoyée après un succès, elle rend `409
+/// IMPORT_NOT_PENDING_COMPLETION` (C-30-2-21 : aucune lecture préalable du
+/// lien). Rien n'est perdu ni faussé ; `api-external.md` dit de relire la facture.
 pub async fn attach_source_document(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -631,6 +639,11 @@ async fn attach_source_document_once(
 /// ⚠️ Angle mort assumé : un document **avec QR** détaché peut servir à créer
 /// une seconde facture (geste humain explicite ; le manuel dit d'annuler la
 /// facture fausse d'abord).
+///
+/// ⚠️ Angle mort écrit (revue P1 de la 30-2c, C-30-2-52) : une erreur de base
+/// **entre** le `COMMIT` et la relecture rend une erreur alors que le document
+/// est détaché ; un nouvel essai rend `404 SOURCE_DOCUMENT_NOT_FOUND`. Rien
+/// n'est perdu ni faussé.
 ///
 /// ⚠️ **Rejouée sur interblocage**, comme le rattachement.
 pub async fn detach_source_document(

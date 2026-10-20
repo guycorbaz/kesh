@@ -39,6 +39,7 @@
 	} from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.api';
 	import DocumentPreview from '$lib/features/imported-supplier-invoices/DocumentPreview.svelte';
 	import AttachDocumentPicker from '$lib/features/imported-supplier-invoices/AttachDocumentPicker.svelte';
+	import { isStaleDocumentRefusal } from '$lib/features/imported-supplier-invoices/stale-refusal';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 
 	const id = Number(page.params.id);
@@ -247,22 +248,56 @@
 	}
 
 	/**
+	 * Relit la facture après un refus qui dit l'écran périmé (revue P1, B2 = E5) ;
+	 * un échec de cette relecture laisse l'écran tel quel — le refus, lui, est
+	 * affiché.
+	 */
+	async function reloadAfterRefusal() {
+		try {
+			await load();
+		} catch {
+			// L'écran reste celui d'avant ; le message du refus suffit.
+		}
+	}
+
+	/**
 	 * Joint un document à traiter (Story 30-2c, AC19-AC20) ; la réponse est la
 	 * facture relue, `sourceDocument` calculé. Une erreur remonte au sélecteur, qui
-	 * l'affiche sans se fermer.
+	 * l'affiche sans se fermer. Sur un refus `404`/`409`, la facture est relue
+	 * d'abord : si elle a désormais un document (joint ailleurs), le sélecteur se
+	 * ferme sur elle et le refus se dit par une notification.
 	 */
 	async function attach(importedSupplierInvoiceId: number) {
-		invoice = await attachSourceDocument(id, importedSupplierInvoiceId);
+		try {
+			invoice = await attachSourceDocument(id, importedSupplierInvoiceId);
+		} catch (err) {
+			if (isStaleDocumentRefusal(err)) {
+				await reloadAfterRefusal();
+				if (invoice?.sourceDocument) {
+					showPicker = false;
+					notifyWarning(err.message);
+					return;
+				}
+			}
+			throw err;
+		}
 		showPicker = false;
 		showPreview = false;
+		detachError = '';
 		notifySuccess(i18nMsg('supplier-invoices-doc-attached', 'Document joint à la facture.'));
 	}
 
 	/**
 	 * Détache le document (Story 30-2c, AC24) : il revient dans « Documents à
-	 * traiter » ; la facture et ses écritures ne changent pas.
+	 * traiter » ; la facture et ses écritures ne changent pas. Un refus s'affiche
+	 * sous la fiche (`detachError`), jamais dans `errorMsg` ; un refus `404`/`409`
+	 * (document déjà détaché ailleurs) fait relire la facture, qui propose alors
+	 * « Joindre un document » (revue P1, B2 = E5).
 	 */
 	async function detach() {
+		// Garde du double clic : sous jsdom, un second clic est parti malgré
+		// `disabled={detaching}` (revue P1) ; la garde ne dépend pas du rendu.
+		if (detaching) return;
 		detachError = '';
 		if (
 			!confirm(
@@ -285,6 +320,10 @@
 			);
 		} catch (err) {
 			detachError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
+			if (isStaleDocumentRefusal(err)) {
+				showPreview = false;
+				await reloadAfterRefusal();
+			}
 		} finally {
 			detaching = false;
 		}
@@ -400,11 +439,6 @@
 					</button>
 				{/if}
 			</div>
-			{#if detachError}
-				<p class="text-sm text-destructive" role="alert" data-testid="supplier-invoice-detach-error">
-					{detachError}
-				</p>
-			{/if}
 			{#if showPreview}
 				<div data-testid="supplier-invoice-preview-panel">
 					<DocumentPreview
@@ -430,6 +464,13 @@
 				{i18nMsg('supplier-invoices-doc-attach', 'Joindre un document')}
 			</button>
 		{/if}
+	{/if}
+	<!-- Hors du bloc du document : après un refus `404` (document détaché ailleurs), la
+	     facture relue n'a plus de document, et le message doit rester lisible. -->
+	{#if detachError}
+		<p class="mb-6 text-sm text-destructive" role="alert" data-testid="supplier-invoice-detach-error">
+			{detachError}
+		</p>
 	{/if}
 
 	<table class="mb-6 w-full border-collapse text-sm">

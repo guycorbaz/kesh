@@ -233,19 +233,24 @@ const UNIQUE_SUPPLIER_INVOICE_KEY: &str = "uq_imported_supplier_invoice";
 /// jetables) concluait que deux rattachements vers deux factures différentes ne
 /// s'attendent pas. Sur le **vrai schéma**, le test
 /// `two_attachments_to_two_invoices_are_serialized_by_company` a montré le
-/// contraire quand l'index d'unicité ne porte encore aucune clé au-delà : le
-/// contrôle de doublon de la première insertion pose un verrou partagé sur
-/// l'intervalle qui court jusqu'au supremum, et l'insertion de la seconde y
-/// attend le `COMMIT` de la première. Deux contrôles de doublon accordés
-/// avant les deux insertions s'attendraient l'un l'autre : interblocage. La
-/// sentinelle, prise **après** le document et la facture et **avant**
+/// contraire quand l'index d'unicité ne porte encore aucune clé au-delà.
+/// **Mesuré** : sans sentinelle, la seconde attend dans son `UPDATE` le
+/// `COMMIT` de la première. **Explication retenue, raisonnée et non mesurée**
+/// (aucun test ne force l'interblocage) : le contrôle de doublon de la
+/// première insertion poserait un verrou partagé sur l'intervalle qui court
+/// jusqu'au supremum, où l'insertion de la seconde attendrait ; deux contrôles
+/// de doublon accordés avant les deux insertions s'attendraient l'un l'autre.
+/// La sentinelle, prise **après** le document et la facture et **avant**
 /// l'`UPDATE`, sérialise les rattachements d'une société avant leur
-/// insertion dans l'index : l'attente reste, l'interblocage entre deux
-/// rattachements disparaît. Prise en tête, elle formait deux cycles (P4 de la
-/// validation). Elle forme un cycle **connu** avec l'acceptation d'un lot de
-/// rapprochement (Story 30-1b), qui tient `companies` en partagé après sa
-/// première écriture puis verrouille la facture d'une proposition suivante :
-/// rare, les deux routes sont rejouées sur interblocage (Dev Agent Record).
+/// insertion dans l'index : l'attente reste, et deux rattachements ne peuvent
+/// plus s'interbloquer entre eux. Prise en tête, elle formait deux cycles (P4
+/// de la validation). Elle forme un cycle **connu** avec toute transaction
+/// qui règle plusieurs factures fournisseur — l'acceptation d'un lot de
+/// rapprochement (Story 30-1b) et la confirmation d'un lot de paiement
+/// (`payment_batches::confirm_batch`) : l'une et l'autre tiennent `companies`
+/// en partagé après leur première écriture, puis verrouillent la facture
+/// suivante (`pay_in_tx_as`). Rare ; les trois routes sont rejouées sur
+/// interblocage (C-30-2-46, revue P1 de la 30-2c).
 ///
 /// Deux rattachements vers la même facture se sérialisent sur l'étape 2 ; le
 /// second est refusé à l'étape 4.
@@ -366,9 +371,11 @@ pub struct EntrySourceDocument {
 /// (`completed`, comme [`find_by_supplier_invoice_id_scoped`]).
 ///
 /// Lecture **ordinaire**, faite par le détail d'une écriture dans sa transaction
-/// de lecture (exécuteur générique : `&mut *tx`). Un règlement annulé n'est plus
-/// rattaché à sa facture (colonnes de règlement vidées) : son écriture ne montre
-/// plus le document.
+/// de lecture (exécuteur générique : `&mut *tx`). Un règlement annulé, comme le
+/// règlement d'une facture payée puis annulée, n'est plus rattaché à sa facture
+/// (colonnes de règlement vidées) : son écriture ne montre plus le document ;
+/// l'écriture d'achat d'une facture annulée le montre toujours (test
+/// `cancelled_invoices_take_a_document_and_the_detached_settlement_loses_it`).
 pub async fn find_source_document_of_entry<'e, E>(
     executor: E,
     company_id: i64,

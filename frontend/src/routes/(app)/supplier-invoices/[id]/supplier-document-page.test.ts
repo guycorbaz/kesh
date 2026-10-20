@@ -27,10 +27,11 @@ vi.mock("$lib/shared/utils/i18n.svelte", () => ({
       ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, n) => String(args[n] ?? ""))
       : fallback,
 }));
+const notifyWarningMock = vi.fn();
 vi.mock("$lib/shared/utils/notify", () => ({
   notifyError: vi.fn(),
   notifySuccess: vi.fn(),
-  notifyWarning: vi.fn(),
+  notifyWarning: (m: string) => notifyWarningMock(m),
   notifyInfo: vi.fn(),
 }));
 const role = { value: "Comptable" };
@@ -156,8 +157,25 @@ function staged(
   };
 }
 
+/** Un refus du serveur, tel que le lève le client (`{ code, status, message }`). */
+function apiError(code: string, status: number, message: string): Error {
+  return Object.assign(new Error(message), { name: "ApiError", code, status });
+}
+
 let confirmSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
+  // Les files `mockResolvedValueOnce` qu'un test rouge n'a pas consommées ne
+  // doivent pas se reporter sur le suivant (`clearAllMocks` ne les vide pas) :
+  // un test qui échoue ferait alors échouer les autres, en cascade.
+  for (const m of [
+    getMock,
+    fetchDocMock,
+    attachMock,
+    detachMock,
+    listImportedMock,
+    notifyWarningMock,
+  ])
+    m.mockReset();
   role.value = "Comptable";
   confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:doc");
@@ -302,6 +320,84 @@ describe("fiche facture fournisseur — joindre (AC20)", () => {
     expect(await findByTestId("attach-document-error")).toBeTruthy();
     expect(getByTestId("attach-document-picker")).toBeTruthy();
   });
+
+  it("revue P1 (B2 = E5) : un refus 409 fait relire la liste du sélecteur et la facture — la ligne refusée disparaît (mutation M-c19)", async () => {
+    getMock.mockResolvedValue(inv({ sourceDocument: null }));
+    listImportedMock
+      .mockResolvedValueOnce([staged()])
+      .mockResolvedValueOnce([staged({ id: 32, originalFilename: "autre.png" })]);
+    attachMock.mockRejectedValue(
+      apiError(
+        "IMPORT_NOT_PENDING_COMPLETION",
+        409,
+        "Cette facture importée n'est plus en attente de complétion.",
+      ),
+    );
+    const { findByTestId, getAllByTestId, getByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-attach"));
+    await fireEvent.click(await findByTestId("attach-document-submit"));
+    expect((await findByTestId("attach-document-error")).textContent).toContain(
+      "n'est plus en attente",
+    );
+    await waitFor(() => expect(listImportedMock).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        getAllByTestId("attach-document-name").map((n) => n.textContent?.trim()),
+      ).toEqual(["autre.png"]),
+    );
+    expect(getMock).toHaveBeenCalledTimes(2);
+    expect(getByTestId("attach-document-picker")).toBeTruthy();
+  });
+
+  it("revue P1 (B2 = E5) : refus « déjà un document » et facture relue AVEC document ⇒ le sélecteur se ferme sur le document, le refus est notifié (mutation M-c20)", async () => {
+    getMock
+      .mockResolvedValueOnce(inv({ sourceDocument: null }))
+      .mockResolvedValueOnce(inv({ sourceDocument: DOC }));
+    listImportedMock.mockResolvedValue([staged()]);
+    attachMock.mockRejectedValue(
+      apiError(
+        "SOURCE_DOCUMENT_ALREADY_ATTACHED",
+        409,
+        "Cette facture a déjà un document.",
+      ),
+    );
+    const { findByTestId, queryByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-attach"));
+    await fireEvent.click(await findByTestId("attach-document-submit"));
+    expect(
+      (await findByTestId("supplier-invoice-document-name")).textContent,
+    ).toBe("facture-orage.png");
+    expect(queryByTestId("attach-document-picker")).toBeNull();
+    expect(notifyWarningMock).toHaveBeenCalledWith(
+      "Cette facture a déjà un document.",
+    );
+  });
+
+  it("revue P1 : un refus qui ne dit rien des données (500) ne relit rien", async () => {
+    getMock.mockResolvedValue(inv({ sourceDocument: null }));
+    listImportedMock.mockResolvedValue([staged()]);
+    attachMock.mockRejectedValue(apiError("INTERNAL_ERROR", 500, "Panne."));
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-attach"));
+    await fireEvent.click(await findByTestId("attach-document-submit"));
+    expect((await findByTestId("attach-document-error")).textContent).toContain(
+      "Panne.",
+    );
+    expect(listImportedMock).toHaveBeenCalledTimes(1);
+    expect(getMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("revue P1 : un double clic sur « Joindre » n'envoie qu'une demande (mutation M-c21)", async () => {
+    getMock.mockResolvedValue(inv({ sourceDocument: null }));
+    listImportedMock.mockResolvedValue([staged()]);
+    attachMock.mockReturnValue(new Promise(() => {}));
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-attach"));
+    const submit = await findByTestId("attach-document-submit");
+    await fireEvent.click(submit);
+    await fireEvent.click(submit);
+    expect(attachMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("fiche facture fournisseur — détacher (AC24)", () => {
@@ -323,6 +419,63 @@ describe("fiche facture fournisseur — détacher (AC24)", () => {
     const { findByTestId } = render(Page);
     await fireEvent.click(await findByTestId("supplier-invoice-detach"));
     expect(detachMock).not.toHaveBeenCalled();
+  });
+
+  it("revue P1 (B1 = E1 = A2) : refus 404 ⇒ message sous la fiche, jamais à la place de la fiche ; la facture relue propose « Joindre » (mutations M-c22, M-c23)", async () => {
+    getMock
+      .mockResolvedValueOnce(inv({ sourceDocument: DOC }))
+      .mockResolvedValueOnce(inv({ sourceDocument: null }));
+    detachMock.mockRejectedValue(
+      apiError(
+        "SOURCE_DOCUMENT_NOT_FOUND",
+        404,
+        "Cette facture n'a pas de document.",
+      ),
+    );
+    const { findByTestId, getByTestId, queryByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-detach"));
+    expect(
+      (await findByTestId("supplier-invoice-detach-error")).textContent?.trim(),
+    ).toBe("Cette facture n'a pas de document.");
+    // La fiche est toujours là : le refus n'est pas passé dans `errorMsg`.
+    expect(getByTestId("supplier-invoice-status")).toBeTruthy();
+    // Relue, la facture n'a plus de document : « Joindre » est proposé, le
+    // message reste lisible.
+    expect(await findByTestId("supplier-invoice-attach")).toBeTruthy();
+    expect(queryByTestId("supplier-invoice-detach")).toBeNull();
+    expect(getByTestId("supplier-invoice-detach-error")).toBeTruthy();
+    expect(getMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("revue P1 (B1 = E1 = A2) : refus non lié aux données ⇒ message, le document reste, le bouton redevient actif et un second essai part (mutation M-c24)", async () => {
+    getMock.mockResolvedValue(inv({ sourceDocument: DOC }));
+    detachMock
+      .mockRejectedValueOnce(apiError("INTERNAL_ERROR", 500, "Panne."))
+      .mockResolvedValueOnce(inv({ sourceDocument: null }));
+    const { findByTestId, getByTestId } = render(Page);
+    const button = await findByTestId("supplier-invoice-detach");
+    await fireEvent.click(button);
+    expect(
+      (await findByTestId("supplier-invoice-detach-error")).textContent?.trim(),
+    ).toBe("Panne.");
+    expect(getByTestId("supplier-invoice-document")).toBeTruthy();
+    expect(getMock).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect((button as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(button);
+    await waitFor(() => expect(detachMock).toHaveBeenCalledTimes(2));
+    expect(await findByTestId("supplier-invoice-attach")).toBeTruthy();
+  });
+
+  it("revue P1 : un double clic sur « Détacher » n'envoie qu'une demande (mutation M-c25)", async () => {
+    getMock.mockResolvedValue(inv({ sourceDocument: DOC }));
+    detachMock.mockReturnValue(new Promise(() => {}));
+    const { findByTestId } = render(Page);
+    const button = await findByTestId("supplier-invoice-detach");
+    await fireEvent.click(button);
+    await fireEvent.click(button);
+    expect(detachMock).toHaveBeenCalledTimes(1);
   });
 });
 

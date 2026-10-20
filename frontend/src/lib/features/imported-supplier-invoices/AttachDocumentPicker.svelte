@@ -8,7 +8,9 @@
 	 * sur un écart : l'humain voit les deux et décide (C-30-2-12). « Aperçu » ouvre le
 	 * document sous sa ligne (`DocumentPreview`, AC6) ; « Joindre » demande confirmation
 	 * puis appelle `onAttach`. Un refus du serveur s'affiche dans le panneau, sans le
-	 * fermer.
+	 * fermer ; un refus `404`/`409` (document traité, retiré ou joint ailleurs entre-temps)
+	 * fait **relire la liste**, pour ne plus proposer ce qui vient d'échouer (revue P1,
+	 * B2 = E5).
 	 *
 	 * Vit dans `imported-supplier-invoices/` pour partager les libellés de la liste
 	 * « Documents à traiter » (badge, aperçu) avec elle.
@@ -20,6 +22,7 @@
 	import DocumentPreview from './DocumentPreview.svelte';
 	import { fetchImportedSourceDocument, listImported } from './imported-supplier-invoices.api';
 	import { hasQr, importDateOf, type ImportedSupplierInvoice } from './imported-supplier-invoices.types';
+	import { isStaleDocumentRefusal } from './stale-refusal';
 
 	interface Props {
 		/** Total TTC de la facture (décimal sérialisé), affiché à côté du montant du QR. */
@@ -51,17 +54,24 @@
 		return loader;
 	}
 
-	onMount(async () => {
+	/** Lit (ou relit) les documents à traiter. */
+	async function loadRows() {
 		try {
 			rows = await listImported('to_complete');
+			loadError = '';
 		} catch (err) {
 			loadError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
 		} finally {
 			loading = false;
 		}
-	});
+	}
+
+	onMount(loadRows);
 
 	async function attach(row: ImportedSupplierInvoice) {
+		// Garde du double clic : sous jsdom, un second clic est parti malgré
+		// `disabled={attaching}` (revue P1) ; la garde ne dépend pas du rendu.
+		if (attaching) return;
 		attachError = '';
 		const ok = confirm(
 			i18nMsg(
@@ -76,6 +86,7 @@
 			await onAttach(row.id);
 		} catch (err) {
 			attachError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
+			if (isStaleDocumentRefusal(err)) await loadRows();
 		} finally {
 			attaching = false;
 		}

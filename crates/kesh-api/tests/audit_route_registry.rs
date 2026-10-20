@@ -242,8 +242,9 @@
 //!   `imported_supplier_invoices::attach` et `::detach`) : joindre et détacher
 //!   un document n'écrivent rien au journal ; le rattachement verrouille le
 //!   document, la facture puis la sentinelle `companies` (C-30-2-46), et forme
-//!   un cycle nommé avec l'acceptation d'un lot de rapprochement (qui tient
-//!   `companies` en partagé puis verrouille une facture) ; le détachement ne
+//!   un cycle nommé avec l'acceptation d'un lot de rapprochement et la
+//!   confirmation d'un lot de paiement (qui tiennent `companies` en partagé
+//!   puis verrouillent une facture) ; le détachement ne
 //!   verrouille que la ligne du document. Tenues par les tests sans rejeu de
 //!   `crates/kesh-db/tests/supplier_document_attachment.rs`, **aucune preuve
 //!   dynamique du rejeu** (C-30-2-45). Dix-sept avec elles.
