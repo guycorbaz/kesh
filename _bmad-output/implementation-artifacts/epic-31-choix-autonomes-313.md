@@ -68,6 +68,16 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   petite et isolée (un test pur plus la lecture de deux fichiers, aucun code de production), et la 31-3 touche justement
   ces deux fichiers. Le corps de #697 disait « non mécanique » : c'est la fiche qui fait foi ; l'orchestrateur lèvera le
   « hors périmètre » de l'issue par un commentaire.
+- **Annotation du 2026-10-23 (validation P3, R5)** : l'attribution ci-dessus est inexacte — `docs/agents-orchestration.md`
+  § 3 ne pose que la règle du mécanique ; le budget d'issues comme motif **accepté** d'intégrer un défaut voisin est écrit
+  au `CLAUDE.md` § *Priorités des défauts* (« ⛔ On trace toujours »), qui fait foi. La garde n'étant pas strictement
+  mécanique, c'est ce second texte, et non le § 3, qui fonde l'intégration.
+
+### C-31-3-7 — numéro non attribué
+
+- Aucun choix ne porte ce numéro (trou de numérotation né des remédiations de la validation ; relevé par la validation P3,
+  R4/F3). Il n'est **pas** réattribué et les suivants ne sont pas renumérotés : C-31-3-8 et C-31-3-9 sont cités par la
+  fiche et par les rapports de passe.
 
 ### C-31-3-8 — G21 vit dans `textes_coherents.rs`, pas dans `configuration_transmise.rs`
 
