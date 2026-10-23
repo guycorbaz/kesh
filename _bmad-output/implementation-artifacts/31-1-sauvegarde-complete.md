@@ -1863,3 +1863,18 @@ d'import 2048 ; manuels FR et PDF, `api-external`, CHANGELOG, `.env.example`, co
 E2E 307 passés / 7 échecs (les sept KF-029) / 17 ignorés. Mutations : 21 tuées, M-a6 équivalente (C-31-1-63), variante
 M-a6b tuée. Choix C-31-1-60 à 68. Écarts déclarés (une édition par `cat >>`, rouges constatés après coup pour `kesh-db`
 et l'intégration). Revue de code P1 à lancer : `311a-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
+
+### Revue de code P1 de la 31-1a (2026-10-24) — Sonnet, lentilles B, E, A : 0 MEDIUM+ après reclassement — revue terminée
+
+B 0/0/1/5, E 0/0/0/7, A 0/0/0/5 (`kesh-gate-logs/311a-review-p1-{B,E,A}.md`). **B-M1 reclassé LOW par l'orchestrateur, sur
+preuve** : « `abort_file` ne tronque pas, l'archive serait illisible par les outils qui cherchent le pied dans les
+derniers 64 Kio » — `zip-2.4.2/src/write.rs` `finalize` (≈ l. 1501-1524) invalide l'ancien pied et **réécrit** le
+répertoire central et le pied à la fin réelle du fichier quand des octets abandonnés le dépassent ; la lentille E l'a
+établi aussi. Restent deux effets mineurs, consignés : `byte_size` compte les octets morts d'une entrée abandonnée, et le
+contenu d'une pièce écartée subsiste dans l'archive. LOW consignés pour la 31-1b ou la release (aucun ne touche la
+production) : A-L1 (commentaire `kesh-db/src/backup.rs:642` périmé — premier commit de code de la 31-1b), A-L2/L3/L5 et
+B-L1/B-L3 (le manuel et `api-external.md` à compléter : refus propres au format 2, bornes de lecture, 410 d'une pièce non
+emportée, en-tête `X-Kesh-Backup-Exceeds-Import-Limit` sans écran avant la 31-1b), A-L4 (`formatVersion: 0`, comportement
+inchangé), B-L2, B-L4, B-L5, E-2 à E-7 (dont E-3 — pièces écrites avant un refus tardif, non nettoyées — et E-4 — verrou
+de `_kesh_version` tenu pendant la sauvegarde pré-import —, angles morts à porter au manuel par la 31-1b). Statut de la
+31-1a : `done`.

@@ -29,17 +29,22 @@ Seuls les tests qui exercent le chemin des migrations lui-même gardent
 
 ### Prérequis
 
-1. MariaDB en cours d'exécution :
+1. MariaDB en cours d'exécution, **conteneur créé depuis le dépôt principal**
+   (jamais un worktree : le montage des droits est relatif au répertoire de
+   lancement) :
    ```bash
    docker compose -f docker-compose.dev.yml up -d mariadb
    ```
 
-2. Les droits `CREATE DATABASE` / `DROP DATABASE` de l'utilisateur de
-   `DATABASE_URL` (nécessaires à `#[sqlx::test]`) — **rien à faire à la main** :
-   `scripts/mariadb-init/01-dev-grants.sql` les pose à chaque démarrage du
-   conteneur. Ce n'est pas une commodité mais une nécessité : depuis la Story
-   22-5, le datadir de dev est en tmpfs, donc les tables système — et tout droit
-   accordé une fois — disparaissent à chaque redémarrage.
+2. Les droits de l'utilisateur `kesh` — `ALL` sur `\_sqlx\_test%`.* (les bases
+   éphémères de `#[sqlx::test]`) et sur `kesh%`.*, **aucun droit global** —
+   **sans rien faire à la main** : `scripts/mariadb-init/01-dev-grants.sql` les
+   pose à chaque démarrage du conteneur (depuis la Story 22-5, le datadir de dev
+   est en tmpfs : tout droit accordé une fois disparaît au redémarrage). Aucun
+   `GRANT` à la main : `scripts/check-dev-grants.sh` (lancé par
+   `scripts/test-fast.sh`) vérifie que les droits réels sont ceux du fichier.
+   Détail, angles morts du garde et remise en état : `docs/testing.md`
+   § « Base de dev jetable ».
 
 3. `DATABASE_URL` configurée :
    ```bash

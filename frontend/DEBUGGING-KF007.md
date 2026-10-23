@@ -13,7 +13,7 @@
 # Terminal 1: Backend
 export KESH_TEST_MODE=true
 export KESH_HOST=127.0.0.1
-export DATABASE_URL=mysql://root:kesh_root@127.0.0.1:3306/kesh
+export DATABASE_URL=mysql://kesh:kesh_dev@127.0.0.1:3306/kesh   # kesh, pas root (Story 31-2)
 cargo run -p kesh-api
 
 # Terminal 2: E2E Tests

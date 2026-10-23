@@ -104,9 +104,14 @@ services:
     tmpfs:
       - /var/lib/mysql:size=8g
     # Corollaire du tmpfs : les tables système repartent vierges à chaque
-    # démarrage, donc les droits globaux dont `#[sqlx::test]` a besoin pour
-    # créer ses bases éphémères disparaissent avec elles. L'entrypoint MariaDB
-    # rejoue ce répertoire dès que le datadir est vide — ici, à tous les coups.
+    # démarrage, donc les droits de `kesh` sur `\_sqlx\_test%`.* et `kesh%`.*
+    # (aucun droit global), dont `#[sqlx::test]` a besoin pour créer ses bases
+    # éphémères, disparaissent avec elles. L'entrypoint MariaDB rejoue ce
+    # répertoire dès que le datadir est vide — ici, à tous les coups.
+    # ⚠️ `./scripts/mariadb-init` est relatif au répertoire de lancement :
+    # créer ce conteneur DEPUIS LE DÉPÔT PRINCIPAL, jamais depuis un worktree
+    # (un worktree supprimé laisse un montage vide). `scripts/check-dev-grants.sh`
+    # signale l'écart ; cf. docs/testing.md § « Base de dev jetable », #699.
     volumes:
       - ./scripts/mariadb-init:/docker-entrypoint-initdb.d:ro
     # Durabilité relâchée : la donnée ne survit pas au restart de toute façon,
