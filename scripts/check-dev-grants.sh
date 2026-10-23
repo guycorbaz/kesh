@@ -52,10 +52,23 @@
 #         est rompue (typiquement après suppression du worktree et redémarrage),
 #         non au moment de la violation. Prévention : issue #699.
 #
+# Limites de l'extraction (revue de code P1, écrites plutôt que traitées) : le
+# fichier de droits doit être écrit à la FORME CANONIQUE que rend le serveur
+# (`GRANT ALL PRIVILEGES ON \`base\`.* TO 'user'@'%'`, mot-clé et privilèges en
+# majuscules) — `grant all on …` y donnerait un faux rouge, bruyant ; un `--`,
+# `#` ou `/*` À L'INTÉRIEUR d'une chaîne n'est pas distingué d'un commentaire ;
+# les commentaires exécutables `/*! … */` sont ignorés comme des commentaires.
+#
+# Affichage : toute ligne affichée — droit relevé, attendu, instruction refusée
+# — passe par `masquer`, qui retire le condensé et masque toute autre forme de
+# secret (`IDENTIFIED BY '…'`, `USING '…'`). `set +x` en tête : un `bash -x` ou
+# un `SHELLOPTS=xtrace` hérité ne trace pas l'export du mot de passe.
+#
 # Remise en état (affichée, jamais exécutée — cf. docs/testing.md § « Base de
 # dev jetable » et docs/agents-orchestration.md § 2) : attendre `healthy` si le
 # conteneur vient de démarrer ; sinon recréation DEPUIS LE DÉPÔT PRINCIPAL, qui
 # efface les bases de tous les agents — à demander à l'orchestrateur.
+set +x
 set -euo pipefail
 export LC_ALL=C
 
@@ -132,18 +145,25 @@ if [ ! -f "$FICHIER_DROITS" ]; then
     exit 1
 fi
 
-# Extraction des GRANT du fichier : commentaires retirés (`-- …` jusqu'en fin de
-# ligne, `# …` en début de ligne, `/* … */` y compris sur plusieurs lignes),
-# découpage en instructions par `;`, blancs ramenés à une espace. Une instruction
-# qui contient GRANT sans commencer par lui est REFUSÉE (code 3) : l'extraction
-# ne comprend pas le fichier, elle ne l'ignore pas en silence. awk POSIX
-# (la CI a mawk, le poste gawk).
+# (c) — retrait de la clause du condensé sur toute ligne de niveau global
+# (comparaison). `masquer` (affichage) l'étend à toute ligne et à toute autre
+# forme de secret : rien n'est affiché sans y être passé.
+sans_condense() { sed -E "/ ON \\*\\.\\* TO /s/ IDENTIFIED BY PASSWORD '[^']*'//"; }
+masquer() {
+    sed -E "s/ IDENTIFIED BY PASSWORD '[^']*'//g; s/ IDENTIFIED BY '[^']*'/ IDENTIFIED BY <masqué>/g; s/ USING (PASSWORD\\()?'[^']*'\\)?/ USING <masqué>/g"
+}
+
+# Extraction des GRANT du fichier : commentaires retirés (`-- …` et `# …`
+# jusqu'en fin de ligne, `/* … */` y compris sur plusieurs lignes), découpage en
+# instructions par `;`, blancs ramenés à une espace. Une instruction qui contient
+# GRANT sans commencer par lui est REFUSÉE (code 3, ligne `REFUS<tab><instr>`) :
+# l'extraction ne comprend pas le fichier, elle ne l'ignore pas en silence. awk
+# POSIX (la CI a mawk, le poste gawk).
 rc=0
 grants_fichier=$(awk '
     BEGIN { dans_bloc = 0; tampon = "" }
     {
         ligne = $0; sortie = ""
-        if (!dans_bloc && ligne ~ /^[ \t]*#/) { tampon = tampon " "; next }
         while (length(ligne) > 0) {
             if (dans_bloc) {
                 i = index(ligne, "*/")
@@ -152,11 +172,15 @@ grants_fichier=$(awk '
             }
             b = index(ligne, "/*")
             d = match(ligne, /--([ \t]|$)/)
-            if (b > 0 && (d == 0 || b < d)) {
+            h = index(ligne, "#")
+            # Fin de ligne commentée : le plus tôt de `--` et `#`.
+            f = d
+            if (h > 0 && (f == 0 || h < f)) f = h
+            if (b > 0 && (f == 0 || b < f)) {
                 sortie = sortie substr(ligne, 1, b - 1) " "
                 ligne = substr(ligne, b + 2); dans_bloc = 1; continue
             }
-            if (d > 0) { sortie = sortie substr(ligne, 1, d - 1); ligne = ""; break }
+            if (f > 0) { sortie = sortie substr(ligne, 1, f - 1); ligne = ""; break }
             sortie = sortie ligne; ligne = ""
         }
         tampon = tampon " " sortie
@@ -168,13 +192,15 @@ grants_fichier=$(awk '
             gsub(/[ \t\r]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s)
             if (s == "") continue
             if (toupper(substr(s, 1, 6)) == "GRANT ") { print s; continue }
-            if (index(toupper(s), "GRANT") > 0) {
-                print "⛔ garde des droits : instruction de 01-dev-grants.sql non comprise (contient GRANT sans commencer par lui) : " s > "/dev/stderr"
-                exit 3
-            }
+            if (index(toupper(s), "GRANT") > 0) { print "REFUS\t" s; exit 3 }
         }
     }
 ' "$FICHIER_DROITS") || rc=$?
+if [ "$rc" -eq 3 ]; then
+    refusee=$(printf '%s\n' "$grants_fichier" | sed -n 's/^REFUS\t//p' | masquer)
+    echec "instruction de 01-dev-grants.sql non comprise (contient GRANT sans commencer par lui) : $refusee"
+    exit 1
+fi
 if [ "$rc" -ne 0 ]; then
     echec "extraction des GRANT de 01-dev-grants.sql impossible (code $rc)"
     exit 1
@@ -183,9 +209,6 @@ if [ -z "$grants_fichier" ]; then
     echec "01-dev-grants.sql ne porte aucune instruction GRANT : attendu refusé (un fichier vide ou tout commenté décrirait l'état défaillant)"
     exit 1
 fi
-
-# (c) — retrait de la clause du condensé sur toute ligne de niveau global.
-sans_condense() { sed -E "/ ON \\*\\.\\* TO /s/ IDENTIFIED BY PASSWORD '[^']*'//"; }
 
 # (a) — compte du fichier à la forme du serveur.
 attendu=$(printf '%s\n' "$grants_fichier" \
@@ -209,7 +232,8 @@ if [ "$rc" -ne 0 ]; then
     remise_en_etat
     exit 1
 fi
-releve=$(printf '%s\n' "$releve" | sans_condense | grep -v '^[[:space:]]*$' | sort -u || true)
+# `\r` et lignes vides retirés : ils feraient diverger les ensembles à tort.
+releve=$(printf '%s\n' "$releve" | tr -d '\r' | sans_condense | grep -v '^[[:space:]]*$' | sort -u || true)
 
 # --- (5) comparaison d'ensembles ---------------------------------------------
 if [ "$attendu" = "$releve" ]; then
@@ -221,11 +245,11 @@ global_attendu=$(grep -F ' ON *.* TO ' <<<"$attendu" || true)
 global_releve=$(grep -F ' ON *.* TO ' <<<"$releve" || true)
 echec "les droits de $UTILISATEUR sur $CONTENEUR ne sont pas ceux de scripts/mariadb-init/01-dev-grants.sql"
 if [ "$global_attendu" != "$global_releve" ]; then
-    echo "   droits globaux : attendu ${global_attendu:-<aucun>}, relevé ${global_releve:-<aucun>}" >&2
+    echo "   droits globaux : attendu ${global_attendu:-<aucun>}, relevé ${global_releve:-<aucun>}" | masquer >&2
 fi
 comm -23 <(grep -vF ' ON *.* TO ' <<<"$attendu" || true) <(grep -vF ' ON *.* TO ' <<<"$releve" || true) \
-    | sed 's/^/   droit manquant : /' >&2
+    | masquer | sed 's/^/   droit manquant : /' >&2
 comm -13 <(grep -vF ' ON *.* TO ' <<<"$attendu" || true) <(grep -vF ' ON *.* TO ' <<<"$releve" || true) \
-    | sed 's/^/   droit en plus : /' >&2
+    | masquer | sed 's/^/   droit en plus : /' >&2
 remise_en_etat
 exit 1

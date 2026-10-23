@@ -191,12 +191,20 @@ nouveau_cas "droits égaux, ordre différent → 0 (comparaison d'ensembles)"
 droits "$L_KESHP" "$L_SQLX" "$L_USAGE" "$L_KESH"
 lancer
 expect_rc 0
+acquisition_conforme
 
-nouveau_cas "droit en moins (\`kesh\`.* seul) → non nul"
+nouveau_cas "relevé avec lignes vides et fins de ligne \\r → 0"
+printf '%s\r\n\n%s\r\n   \n%s\r\n%s\r\n\n' "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP" > "$GRANTS"
+lancer
+expect_rc 0
+acquisition_conforme
+
+nouveau_cas "droit en moins (\`kesh\`.* seul) → non nul, étiqueté « droit manquant »"
 droits "$L_USAGE" "$L_KESH"
 lancer
 expect_rc nonnul
-expect_out 'kesh%'
+expect_out 'droit manquant : GRANT ALL PRIVILEGES ON `kesh%`.* TO `kesh`@`%`'
+expect_no_out 'droit en plus :'
 acquisition_conforme
 sans_fuite
 
@@ -213,13 +221,16 @@ droits "GRANT PROCESS ON *.* TO \`kesh\`@\`%\` IDENTIFIED BY PASSWORD '$FAUX'" "
 lancer
 expect_rc nonnul
 expect_out 'GRANT PROCESS ON *.* TO `kesh`@`%`'
+acquisition_conforme
 sans_fuite
 
-nouveau_cas "droit superflu hors niveau global (ALL ON autre.*, USAGE intact) → non nul"
+nouveau_cas "droit superflu hors niveau global (ALL ON autre.*, USAGE intact) → non nul, étiqueté « droit en plus »"
 droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP" 'GRANT ALL PRIVILEGES ON `autre`.* TO `kesh`@`%`'
 lancer
 expect_rc nonnul
-expect_out '`autre`'
+expect_out 'droit en plus : GRANT ALL PRIVILEGES ON `autre`.* TO `kesh`@`%`'
+expect_no_out 'droit manquant :'
+acquisition_conforme
 sans_fuite
 
 nouveau_cas "\`_sqlx_test%\` non échappé → non nul"
@@ -227,6 +238,7 @@ droits "$L_USAGE" "$L_KESH" 'GRANT ALL PRIVILEGES ON `_sqlx_test%`.* TO `kesh`@`
 lancer
 expect_rc nonnul
 expect_out '`_sqlx_test%`'
+acquisition_conforme
 sans_fuite
 
 nouveau_cas "compte kesh@localhost (ligne remplaçante) → non nul"
@@ -234,6 +246,7 @@ droits "GRANT USAGE ON *.* TO \`kesh\`@\`localhost\` IDENTIFIED BY PASSWORD '$FA
 lancer
 expect_rc nonnul
 expect_out '`kesh`@`localhost`'
+acquisition_conforme
 sans_fuite
 
 nouveau_cas "USAGE … WITH GRANT OPTION → non nul"
@@ -241,6 +254,69 @@ droits "$L_USAGE WITH GRANT OPTION" "$L_KESH" "$L_SQLX" "$L_KESHP"
 lancer
 expect_rc nonnul
 expect_out 'WITH GRANT OPTION'
+acquisition_conforme
+sans_fuite
+
+# C-31-2-16 : un droit `ON *.*` dans le FICHIER remplace la ligne `USAGE` attendue.
+nouveau_cas "fichier portant un droit ON *.* (C-31-2-16), relevé conforme → 0"
+printf -- "GRANT SELECT ON *.* TO 'kesh'@'%%';\n" >> "$R/scripts/mariadb-init/01-dev-grants.sql"
+droits "GRANT SELECT ON *.* TO \`kesh\`@\`%\` IDENTIFIED BY PASSWORD '$FAUX'" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc 0
+acquisition_conforme
+
+nouveau_cas "fichier portant un droit ON *.* (C-31-2-16), relevé avec une ligne USAGE en trop → non nul"
+printf -- "GRANT SELECT ON *.* TO 'kesh'@'%%';\n" >> "$R/scripts/mariadb-init/01-dev-grants.sql"
+droits "GRANT SELECT ON *.* TO \`kesh\`@\`%\` IDENTIFIED BY PASSWORD '$FAUX'" "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc nonnul
+expect_out 'droits globaux : attendu GRANT SELECT ON *.* TO `kesh`@`%`'
+acquisition_conforme
+sans_fuite
+
+nouveau_cas "commentaire # en milieu de ligne dans le fichier de droits → reconnu, 0"
+printf -- "FLUSH PRIVILEGES; # GRANT ALL ON *.* TO 'kesh'@'%%' (commentaire de fin de ligne)\n" >> "$R/scripts/mariadb-init/01-dev-grants.sql"
+droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc 0
+acquisition_conforme
+
+nouveau_cas "GRANT en minuscules dans le fichier → non nul (forme canonique exigée, faux rouge assumé)"
+printf -- "grant all privileges on \`autre\`.* to 'kesh'@'%%';\n" >> "$R/scripts/mariadb-init/01-dev-grants.sql"
+droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP" 'GRANT ALL PRIVILEGES ON `autre`.* TO `kesh`@`%`'
+lancer
+expect_rc nonnul
+expect_out 'droit manquant : grant all privileges on `autre`.*'
+acquisition_conforme
+sans_fuite
+
+nouveau_cas "secret en clair dans le fichier de droits → jamais affiché"
+printf -- "GRANT SELECT ON \`autre\`.* TO 'kesh'@'%%' IDENTIFIED BY 'secret-clair-31-2';\n" >> "$R/scripts/mariadb-init/01-dev-grants.sql"
+droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc nonnul
+expect_out 'droit manquant : GRANT SELECT ON `autre`.*'
+expect_no_out 'secret-clair-31-2'
+sans_fuite
+
+nouveau_cas "instruction refusée portant un secret → refusée, secret masqué"
+printf -- "ALTER USER 'kesh'@'%%' IDENTIFIED BY 'secret-clair-31-2' WITH GRANT OPTION;\n" >> "$R/scripts/mariadb-init/01-dev-grants.sql"
+droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc nonnul
+expect_out "non comprise"
+expect_no_out 'secret-clair-31-2'
+sans_fuite
+
+nouveau_cas "lancé sous bash -x : ni le mot de passe ni le condensé dans la trace"
+droits "$L_USAGE" "$L_KESH"
+set +e
+OUT=$(env -u MYSQL_PWD KESH_DOCKER="$DOCKER_CMD" STUB_LOG="$LOG" STUB_GRANTS="$GRANTS" \
+        STUB_PS="$STUB_PS" STUB_EXEC="$STUB_EXEC" STUB_CONTENEUR_ID="$CONTENEUR_ID" \
+        bash -x "$R/scripts/check-dev-grants.sh" 2>&1)
+RC=$?
+set -e
+expect_rc nonnul
 sans_fuite
 
 nouveau_cas "docker introuvable (KESH_DOCKER vers un chemin inexistant) → garde sauté, 0"
@@ -265,6 +341,7 @@ lancer
 expect_rc nonnul
 expect_out "docker ps a échoué"
 expect_no_out "garde des droits sauté"
+sans_fuite
 
 nouveau_cas "docker exec en échec → non nul, cause nommée"
 STUB_EXEC=echec
@@ -289,7 +366,8 @@ rm "$R/scripts/mariadb-init/01-dev-grants.sql"
 droits "$L_USAGE" "$L_KESH"
 lancer
 expect_rc nonnul
-expect_out "01-dev-grants.sql"
+expect_out "fichier de droits introuvable"
+sans_fuite
 
 nouveau_cas "instruction qui contient GRANT sans commencer par lui → non nul"
 printf -- "REVOKE GRANT OPTION ON *.* FROM 'kesh'@'%%';\n" >> "$R/scripts/mariadb-init/01-dev-grants.sql"
@@ -307,18 +385,53 @@ lancer
 expect_rc nonnul
 expect_out "MARIADB_USER"
 if grep -q '^ARGV exec' "$LOG"; then fail "exec appelé avec un compte interpolé"; else ok "aucun exec"; fi
+sans_fuite
 
 nouveau_cas "MARIADB_USER absent → non nul, clé nommée"
 sed -i '/^      MARIADB_USER:/d' "$R/docker-compose.dev.yml"
 droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
 lancer
 expect_rc nonnul
-expect_out "MARIADB_USER"
+expect_out "clé MARIADB_USER : 0 occurrence"
+sans_fuite
+
+nouveau_cas "MARIADB_USER en double → non nul, occurrences comptées"
+printf '      MARIADB_USER: autre\n' >> "$R/docker-compose.dev.yml"
+droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc nonnul
+expect_out "clé MARIADB_USER : 2 occurrence"
+sans_fuite
+
+nouveau_cas "MARIADB_DATABASE vide → non nul, clé nommée"
+sed -i 's/^      MARIADB_DATABASE: kesh$/      MARIADB_DATABASE:/' "$R/docker-compose.dev.yml"
+droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc nonnul
+expect_out "clé MARIADB_DATABASE vide"
+sans_fuite
+
+nouveau_cas "compose de dev absent → non nul, fichier nommé"
+rm "$R/docker-compose.dev.yml"
+droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc nonnul
+expect_out "compose de dev introuvable"
+
+nouveau_cas "mot de passe entre guillemets suivi d'un commentaire → valeur nue transmise, 0"
+sed -i "s/^      MARIADB_PASSWORD: .*/      MARIADB_PASSWORD: \"$MDP\"   # mot de passe de dev/" "$R/docker-compose.dev.yml"
+grep -qF "MARIADB_PASSWORD: \"$MDP\"   #" "$R/docker-compose.dev.yml" || fail "montage du cas : substitution non faite"
+droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc 0
+acquisition_conforme
 
 nouveau_cas "message d'échec : remise en état en texte arrêté, jamais exécutée"
 droits "$L_USAGE" "$L_KESH"
 lancer
 expect_rc nonnul
+acquisition_conforme
+sans_fuite
 expect_out "attendre l'état healthy"
 expect_out "depuis le dépôt principal"
 expect_out "docker compose -f docker-compose.dev.yml up -d --force-recreate mariadb"
@@ -327,20 +440,28 @@ if grep -qE '^ARGV (compose|restart|stop|start|rm)' "$LOG"; then fail "le garde 
 
 # --- Câblage dans test-fast.sh (lit le VRAI fichier) -------------------------
 CAS=$((CAS + 1))
-echo "• cas $CAS — câblage : une seule invocation non commentée, nue, entre cargo-nextest et le bloc lint"
+echo "• cas $CAS — câblage : une seule invocation non commentée, nue, au premier niveau, entre cargo-nextest et le bloc lint"
 INVOC=$(grep -nE '^[[:space:]]*[^#[:space:]].*check-dev-grants\.sh' "$TEST_FAST" || true)
 N_INVOC=$(printf '%s' "$INVOC" | grep -c . || true)
-L_NEXTEST=$(grep -nF 'command -v cargo-nextest' "$TEST_FAST" | head -1 | cut -d: -f1)
-L_LINT=$(grep -nF 'if [ "$RUN_LINT" = 1 ]' "$TEST_FAST" | head -1 | cut -d: -f1)
+# Bornes : sur leurs seules lignes de CODE (non commentées) ; une borne disparue
+# se dit, au lieu d'arrêter le test sans diagnostic (`set -e`).
+L_NEXTEST=$(grep -nE '^[^#]*command -v cargo-nextest' "$TEST_FAST" | head -1 | cut -d: -f1 || true)
+L_LINT=$(grep -nE '^[^#]*if \[ "\$RUN_LINT" = 1 \]' "$TEST_FAST" | head -1 | cut -d: -f1 || true)
+[ -n "$L_NEXTEST" ] || fail "borne introuvable dans test-fast.sh : « command -v cargo-nextest »"
+[ -n "$L_LINT" ] || fail "borne introuvable dans test-fast.sh : « if [ \"\$RUN_LINT\" = 1 ] »"
 if [ "$N_INVOC" = 1 ]; then ok "une seule ligne d'invocation"; else fail "$N_INVOC ligne(s) d'invocation non commentée(s) : $INVOC"; fi
 if [ "$N_INVOC" = 1 ] && [ -n "$L_NEXTEST" ] && [ -n "$L_LINT" ]; then
     L_INVOC=${INVOC%%:*}
     if [ "$L_INVOC" -gt "$L_NEXTEST" ] && [ "$L_INVOC" -lt "$L_LINT" ]; then
         ok "ligne $L_INVOC entre cargo-nextest ($L_NEXTEST) et le bloc lint ($L_LINT)"
     else fail "ligne $L_INVOC hors de ]$L_NEXTEST ; $L_LINT["; fi
-    if grep -qE '^[[:space:]]*(bash )?(\./)?scripts/check-dev-grants\.sh[[:space:]]*$' <<<"${INVOC#*:}"; then
-        ok "invocation nue"
-    else fail "invocation non nue : ${INVOC#*:}"; fi
+    # Nue ET au premier niveau (colonne 0) : dans `test-fast.sh`, tout code
+    # conditionnel est indenté. Angle mort assumé : un `if false; then` lui-même
+    # non indenté juste au-dessus passerait — le `set -e` du script et la revue
+    # restent le filet.
+    if grep -qE '^(bash )?(\./)?scripts/check-dev-grants\.sh[[:space:]]*$' <<<"${INVOC#*:}"; then
+        ok "invocation nue, au premier niveau"
+    else fail "invocation non nue ou indentée : ${INVOC#*:}"; fi
 fi
 if grep -qE 'echo.*check-dev-grants' "$TEST_FAST"; then fail "un echo de test-fast.sh nomme le fichier du garde"; else ok "aucun echo ne nomme le fichier"; fi
 
