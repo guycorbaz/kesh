@@ -48,6 +48,13 @@ jobs:
         # Story 10-1 D3 : pin 10.11 = parité prod NAS Synology Package Center DSM.
         # Compat MariaDB ≥ 10.6 (cf. migration reconciliation_rules.sql VIRTUAL+UNIQUE).
         image: mariadb:10.11
+        # Story 31-2 (A2) — tirage AUTHENTIFIÉ : anonyme, il tombait sous la
+        # limite de Docker Hub (429) et faisait rougir le job sans rapport avec
+        # le diff. Les PR de forks n'ont pas ces secrets et échouent ici,
+        # bruyamment (C-31-2-3, docs/ci.md).
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
         env:
           MARIADB_ROOT_PASSWORD: kesh_root
           MARIADB_DATABASE: kesh
@@ -61,7 +68,12 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     env:
-      DATABASE_URL: mysql://root:kesh_root@127.0.0.1:3306/kesh
+      # Story 31-2 (C-31-2-4) — l'utilisateur `kesh`, plus `root` : une CI en
+      # `root` ne peut rien dire d'un privilège que la production n'a pas
+      # (Stories 29-4, 29-8). Ses droits sont ceux du fichier de dev, appliqué
+      # par l'étape « Apply dev grants » ; migrations et seed restent en `root`
+      # (outillage, pas le chemin de l'application).
+      DATABASE_URL: mysql://kesh:kesh_dev@127.0.0.1:3306/kesh
       # Story 9-1 (Pass 2 ECH2-07) avait ajouté `SQLX_MAX_CONNECTIONS: "4"` ici, mais
       # code-review Pass 1 Sonnet a établi que la var n'est lue NULLE PART (main.rs:43
       # hardcode `max_connections(5)`, sqlx::test utilise sa propre config). Retirée :
@@ -155,6 +167,13 @@ jobs:
       # (graphie du squash depuis kesh-db — cf. Story 22-5 / issue #251).
       - name: Install mariadb-client
         run: sudo apt-get install -y mariadb-client
+
+      # Story 31-2 (C-31-2-4) — `kesh` reçoit exactement les droits du conteneur
+      # de dev : `\_sqlx\_test%`.* et `kesh%`.*, aucun droit global. `-h` est
+      # indispensable : sans lui, le client prendrait le socket Unix local, alors
+      # que MariaDB est un service conteneurisé.
+      - name: Apply dev grants (kesh, same file as the dev container)
+        run: mariadb -h 127.0.0.1 -P 3306 -uroot -pkesh_root < scripts/mariadb-init/01-dev-grants.sql
 
       - name: Apply migrations to kesh DB
         run: |
@@ -273,6 +292,14 @@ jobs:
             grep -q "required variable $absente is missing" "$refus"
           done
           docker compose -f docker-compose.prod.yml config -q
+      # Story 31-2 (C-31-2-11) — le Dockerfile tire `rust`, `node` et `debian`
+      # depuis Docker Hub, et le builder `docker-container` y tire
+      # `moby/buildkit` : la connexion précède donc `setup-buildx-action`.
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: docker/setup-buildx-action@v3
       - name: Build image (no push)
         uses: docker/build-push-action@v6
@@ -283,6 +310,137 @@ jobs:
           tags: kesh:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "### Job \`${{ github.job }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Started: $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+  # Story 31-2 (#577, C-31-2-2) — SMOKE E2E : le harnais Playwright est-il
+  # vivant ? Une spec, un navigateur : connexion par l'interface, un appel API
+  # authentifié par `authedApiContext`, et la sonde négative sans cookie. Il ne
+  # teste AUCUNE fonctionnalité, et c'est délibéré : il détecte le mode d'échec
+  # de l'issue #285 (un contexte API sans cookie rendait 401 partout, et rien ne
+  # signalait une suite qui cessait de tourner). La suite complète reste locale,
+  # avant tout push (CLAUDE.md § E2E).
+  #
+  # Montage : l'IMAGE DOCKER de la PR — ce qu'on publie (binaire de production,
+  # frontend buildé tel que servi), sans second `cargo build`. Les couches sont
+  # dans le cache `gha` du job `docker-build`, d'où `needs:`. Les migrations
+  # s'appliquent au démarrage du backend, comme en production ; le seed est
+  # celui du backend (`POST /api/v1/_test/seed`, par `seedTestState`).
+  e2e-smoke:
+    name: E2E smoke (Playwright)
+    runs-on: ubuntu-latest
+    needs: docker-build
+    timeout-minutes: 25
+    services:
+      mariadb:
+        image: mariadb:10.11
+        # Tirage authentifié (Story 31-2, A2) : cf. le job `backend`.
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        # `MARIADB_USER` crée `kesh` avec `ALL` sur `kesh`.* — les droits de la
+        # production, rien de plus : l'application ne reçoit pas davantage.
+        env:
+          MARIADB_ROOT_PASSWORD: kesh_root
+          MARIADB_DATABASE: kesh
+          MARIADB_USER: kesh
+          MARIADB_PASSWORD: kesh_dev
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Connexion AVANT le builder : il tire `moby/buildkit` depuis Docker Hub.
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image (cache gha, load)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: kesh:smoke
+          cache-from: type=gha
+
+      # `KESH_HOST=127.0.0.1` : le mode test refuse un bind non-loopback
+      # (`ConfigError::TestModeWithPublicBind`). `KESH_COOKIE_SECURE=false` : HTTP
+      # local, sans quoi Playwright ne joint pas les cookies (CLAUDE.md § E2E).
+      - name: Start backend from the image
+        run: |
+          set -euo pipefail
+          docker run -d --name kesh-smoke --network=host \
+            -e KESH_TEST_MODE=true \
+            -e KESH_HOST=127.0.0.1 \
+            -e KESH_PORT=3000 \
+            -e KESH_COOKIE_SECURE=false \
+            -e DATABASE_URL="mysql://kesh:kesh_dev@127.0.0.1:3306/kesh" \
+            -e KESH_JWT_SECRET="$(openssl rand -hex 32)" \
+            -e KESH_ADMIN_USERNAME=admin \
+            -e KESH_ADMIN_PASSWORD="e2e-admin-password-12chars" \
+            -e RUST_LOG=info \
+            kesh:smoke
+          for i in {1..45}; do
+            if curl -fsS http://127.0.0.1:3000/health; then
+              echo; echo "→ /health OK (essai $i)"; exit 0
+            fi
+            sleep 2
+          done
+          echo "✗ /health n'a jamais répondu"
+          docker logs kesh-smoke || true
+          exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright (chromium)
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright smoke
+        working-directory: frontend
+        env:
+          KESH_TEST_MODE: 'true'
+          KESH_BACKEND_URL: http://127.0.0.1:3000
+        run: npx playwright test tests/e2e/smoke.spec.ts
+
+      - name: Backend logs (on failure)
+        if: failure()
+        run: docker logs kesh-smoke || true
+
+      - name: Upload Playwright traces (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-smoke-traces
+          path: frontend/test-results
+          retention-days: 3
+
+      - name: Cleanup smoke container
+        if: always()
+        run: docker rm -f kesh-smoke 2>/dev/null || true
 
       - name: Job summary
         if: always()

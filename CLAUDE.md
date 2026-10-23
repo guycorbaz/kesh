@@ -219,9 +219,9 @@ function isLocalHostname(hostname) {
 2. **Ne JAMAIS déclarer une hypothèse « écartée » sans l'avoir exécutée.** L'hypothèse « cookie `Secure` sur du HTTP » a été notée écartée alors que la suite n'avait **jamais** été relancée avec `KESH_COOKIE_SECURE=false` — seule la forme de l'en-tête avait été vérifiée au `curl`. Une issue, une story et un amendement de ce fichier ont été construits sur cette conclusion fausse ; c'est une revue adversariale, lisant le code source de Playwright, qui l'a réfutée.
 3. C'est la même faute que « ne déclarer que ce qui a tourné », appliquée au **diagnostic** au lieu du gate : *une hypothèse éliminée par raisonnement n'est pas une hypothèse testée.*
 
-**La CI n'exécute PAS la suite complète** (coût récurrent : MariaDB, seed, navigateurs, durée) — **mais elle exécute un SMOKE** : une seule spec, login puis un appel API authentifié, 2-3 minutes.
+**La CI n'exécute PAS la suite complète** (coût récurrent : MariaDB, seed, navigateurs, durée) — **mais elle exécute un SMOKE** : le job **`e2e-smoke`** de `.github/workflows/ci.yml` (Story 31-2) lance une seule spec, **`frontend/tests/e2e/smoke.spec.ts`** — connexion par l'interface, `GET /api/v1/auth/me` par `authedApiContext` (200), et la même route **sans** cookie (401 : la sonde négative, sans laquelle le 200 pourrait venir d'une route ouverte). Il tourne contre l'**image Docker de la PR** (binaire de production, frontend tel que servi, migrations au démarrage), base en utilisateur `kesh`, après le job `docker-build`. **La durée du job n'est relevée qu'au premier run de CI** — à reporter ici. Il est **facultatif pour la fusion** tant qu'il n'a pas fait ses preuves (décision de Guy à prendre). Détail : `docs/ci.md`.
 
-⛔ **Constat du 2026-10-10 : ce smoke N'EXISTE PAS dans la CI actuelle.** `.github/workflows/ci.yml` n'a aucun job Playwright (seul `release.yml` lance un smoke, de l'image Docker : `/health`, pas de navigateur). Le paragraphe ci-dessus décrit une intention, pas le dépôt — issue #577 : recréer le smoke ou réécrire ce texte. D'ici là, **le gate E2E local avant push est le seul filet**.
+*(Historique : du 2026-10-10 à la Story 31-2, ce paragraphe décrivait un smoke qui n'existait pas — `ci.yml` n'avait aucun job Playwright, issue #577. Le gate E2E local avant push était alors le seul filet ; il reste la seule couverture des fonctionnalités.)*
 
 ⚠️ **Le smoke ne teste aucune fonctionnalité, et c'est délibéré : il vérifie que le HARNAIS EST VIVANT.** Les fonctionnalités restent couvertes par le gate local avant push.
 
@@ -264,15 +264,13 @@ Le gate **complet** reste obligatoire : avant tout `git push`, avant de déclare
 
 Cette règle ne s'applique pas aux **commits doc-only** (markdown, yaml de planning, README, CLAUDE.md lui-même) qui ne touchent pas de code exécutable : il n'y a rien à y casser localement.
 
-⚠️ **En revanche, la CI n'est PAS no-op sur un commit doc-only, et cette phrase disait le contraire.** `.github/workflows/ci.yml` n'a **aucun filtre `paths:`** — vérifié : ses déclencheurs sont `push: branches: [main]` et `pull_request: branches: [main]`, sans restriction de chemin. Les **trois** jobs s'exécutent donc à chaque push, quel que soit le fichier touché, et `Backend (Rust)` y enchaîne `cargo fmt`, `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets`, `cargo publish --dry-run -p kesh-import` puis la suite complète en `-j1 --test-threads=1`.
+⚠️ **En revanche, la CI n'est PAS no-op sur un commit doc-only, et cette phrase disait le contraire.** `.github/workflows/ci.yml` n'a **aucun filtre `paths:`** — vérifié : ses déclencheurs sont `push: branches: [main]` et `pull_request: branches: [main]`, sans restriction de chemin. Les **quatre** jobs (`backend`, `frontend`, `docker-build`, `e2e-smoke` — trois jusqu'à la Story 31-2) s'exécutent donc à chaque push, quel que soit le fichier touché, et `Backend (Rust)` y enchaîne `cargo fmt`, `cargo build --workspace --all-targets`, `cargo clippy --workspace --all-targets`, `cargo publish --dry-run -p kesh-import` puis la suite complète en `-j1 --test-threads=1`.
 
-⛔ **Le cache `Swatinem/rust-cache` réduit la compilation, il ne supprime rien** — et il rate dès que `main` a bougé. Mesuré le 2026-08-30 sur la PR #423, dont le diff ne portait que deux fichiers Markdown et un YAML de planning : `Backend (Rust)` a dépassé **dix minutes**, les deux autres jobs étant verts en quelques-unes.
+⛔ **Le cache `Swatinem/rust-cache` réduit la compilation, il ne supprime rien** — et il rate dès que `main` a bougé. Mesuré le 2026-08-30 sur la PR #423, dont le diff ne portait que deux fichiers Markdown et un YAML de planning : `Backend (Rust)` a dépassé **dix minutes**, les deux autres jobs étant verts en quelques-unes. *(Relevé du 2026-08-30, laissé tel quel ; depuis la Story 31-2 un quatrième job, `e2e-smoke`, s'y ajoute — annotation du 2026-10-23.)*
 
 **Ce que cela change en pratique** : un commit doc-only reste **gratuit en gate local** — c'est le sens de cette section, et il ne bouge pas — mais il **coûte un cycle de CI complet**. En conséquence, éviter d'en multiplier sur une même branche : les regrouper, ou les faire voyager avec la PR qui les motive.
 
 *(Corrigé le 2026-08-30, sur remarque de Guy. La formulation d'origine — « généralement no-op, cache hit instantané » — laissait croire qu'un commit de documentation ne déclenchait rien ; il déclenche tout.)*
-
-⚠️ **La CI dépend de Docker Hub.** Le job `Backend (Rust)` tire `mariadb:10.11` **anonymement** (aucun `credentials` sous `services:` dans `ci.yml` ni `release.yml`) : un `429` de Docker Hub le fait échouer sans rapport avec le diff — relancer, ne pas diagnostiquer. *(A-C9 de la rétrospective de l'Epic 15, versé le 2026-10-13 ; à retirer si les téléchargements sont authentifiés — A2 de la même rétrospective.)*
 
 ## Plafonds mémoire — pourquoi une session de travail meurt en plein gate
 
@@ -524,10 +522,12 @@ Le mode d'échec : un test qui modifie l'état partagé confie sa restauration �
 **Le geste, et pourquoi il est devenu bon marché** :
 
 ```sh
-docker compose -f docker-compose.dev.yml restart mariadb   # tmpfs : efface tout
+docker compose -f docker-compose.dev.yml restart mariadb   # depuis le dépôt principal ; tmpfs : efface tout
 sqlx migrate run --source crates/kesh-db/migrations
 docker exec -i kesh-mariadb-dev mariadb -uroot -pkesh_dev_root kesh < scripts/seed-dev-db.sql
 ```
+
+⚠️ **Toute commande `docker compose` sur ce conteneur se lance depuis le dépôt principal, jamais depuis un worktree** : son montage des droits (`./scripts/mariadb-init`) est relatif au répertoire de lancement, et un worktree supprimé laisse un montage vide — `kesh` perd alors les droits dont `#[sqlx::test]` a besoin (du 2026-10-11 au 2026-10-23, masqué par des `GRANT` posés à la main). En travail parallèle, **ni redémarrage ni recréation par un agent** (`docs/agents-orchestration.md` § 2) : chacun travaille sur ses bases `kesh_<clé>`. Le garde `scripts/check-dev-grants.sh`, lancé par `test-fast.sh`, signale un conteneur dont les droits ne sont plus ceux du fichier ; ses angles morts sont dans `docs/testing.md` § « Base de dev jetable ».
 
 Depuis que le datadir de dev est en tmpfs (Story 22-5, #251), ce cycle coûte **une quinzaine de secondes** — contre un vidage de tables à la main auparavant. C'est ce qui rend praticable une règle inconditionnelle là où l'ancienne devait se contenter d'un déclencheur. Détail et modes d'échec : `docs/testing.md` § « Base de dev jetable ».
 

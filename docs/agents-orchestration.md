@@ -46,6 +46,17 @@ Sauf autorisation écrite dans le prompt de l'agent :
 - `docker restart`, `stop` ou `compose down` du MariaDB de dev partagé : son datadir est en tmpfs
   (cf. `docs/testing.md` § *Base de dev jetable*), l'arrêter **efface les bases de tous les
   agents** ;
+- créer le conteneur de dev ailleurs que **depuis le dépôt principal** (l'orchestrateur seul le
+  recrée, ci-dessous) : son montage `./scripts/mariadb-init` est relatif au répertoire de
+  lancement, et un worktree supprimé laisse un montage vide (cf. `docs/testing.md` § *Base de dev
+  jetable*, point 1 ; prévention : #699) ;
+- **toute recréation du conteneur par un agent** — `docker compose … up -d --force-recreate
+  mariadb` compris, même depuis le dépôt principal : elle efface les bases de tous les agents ;
+  seul l'orchestrateur la fait, hors gate ;
+- tout **`GRANT` ou `REVOKE` manuel** sur le MariaDB de dev partagé : un droit manquant se signale
+  à l'orchestrateur. C'est ce geste, répété sans trace, qui a masqué douze jours un montage vide
+  (2026-10-11 → 2026-10-23) et rendu vertes des sondes qui exigeaient un privilège absent de la
+  production (§ 6.1) ;
 - `pkill` ou `killall` à motif large — cf. § 4.
 
 Le push, les PR, les merges et les issues reviennent à l'orchestrateur ; l'agent les **demande**.
@@ -95,7 +106,10 @@ messages `refs #N`.
    migrées depuis **les migrations du worktree** (`sqlx migrate run --source
    crates/kesh-db/migrations`), seedées par `scripts/seed-dev-db.sql` ; port `KESH_PORT` attribué
    par l'orchestrateur. `DATABASE_URL` en variable d'environnement, **jamais** dans un `.env`
-   commité.
+   commité. Le conteneur MariaDB, lui, est **partagé** : un agent ne le crée, ne le recrée ni ne
+   le redémarre, et n'y pose aucun `GRANT`/`REVOKE` (§ 2) ; si le garde des droits
+   (`scripts/check-dev-grants.sh`, lancé par `test-fast.sh`) rougit, l'agent le **signale** à
+   l'orchestrateur au lieu de contourner.
 2. **Recette E2E** : celle de `docs/testing.md` § *Prérequis Playwright local*, **à la lettre** —
    `KESH_COOKIE_SECURE=false`, `KESH_HOST=127.0.0.1`, `KESH_TEST_MODE=true` des deux côtés,
    `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`, `KESH_BACKEND_URL` sur le port attribué,
@@ -162,8 +176,14 @@ privilège `PROCESS`, que l'utilisateur `kesh` du fichier versionné
 sondes existantes : `sonde_verrou_nowait` (`crates/kesh-db/src/test_fixtures.rs`) ou
 `attendre_une_requete_en_cours` (requête en cours dans `PROCESSLIST`, visible sans privilège pour
 ses propres connexions). *(Rencontré deux fois, Stories 29-4 et 29-8 : ces sondes passaient en local
-parce que le conteneur de dev accordait plus de droits que le fichier versionné — écart corrigé par
-l'Epic 31, action C3 de la rétrospective de l'Epic 29.)* Plus généralement, un réglage ou un droit
+parce que des `GRANT` posés à la main donnaient au conteneur de dev plus de droits que le fichier
+versionné.)* Depuis la Story 31-2 (action C3 de la rétrospective de l'Epic 29), l'écart est
+**signalé** : `scripts/check-dev-grants.sh`, lancé par `test-fast.sh`, compare les droits réels de
+`kesh` à ceux du fichier et s'arrête sur tout droit en plus ou en moins ; la CI emploie elle aussi
+`kesh` avec ce même fichier. Ce garde a **trois angles morts**, écrits dans son en-tête et dans
+`docs/testing.md` § *Base de dev jetable* : les droits du rôle `PUBLIC`, un compte posé pour un autre
+hôte que `%` (il lit par le socket, le gate se connecte en TCP), et la règle « conteneur créé depuis le
+dépôt principal », qu'il ne vérifie pas. Plus généralement, un réglage ou un droit
 posé ailleurs que dans le chemin réel de la production ne prouve rien : la 29-4 voulait épingler un
 réglage de session dans `create_pool`, que la production n'appelle jamais (#669).
 
