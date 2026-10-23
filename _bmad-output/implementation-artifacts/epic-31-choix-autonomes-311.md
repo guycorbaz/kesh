@@ -199,3 +199,129 @@ Registre propre à la story 31-1 (#503), versé par union dans `epic-31-choix-au
   pas de migration ; le format 2 rend une sauvegarde 0.15.0 inimportable dans une 0.14.x (`formatVersion`), ce que dit
   le manuel.
 - **Réversible** : —
+
+---
+
+*Choix C-31-1-25 à C-31-1-36 : remédiation de la validation P1 (Sonnet, lentilles R et F), 2026-10-23. C-31-1-19
+est amendé par C-31-1-32 (le trait `FreeSpace` devient `BackupEnv`) ; son entrée d'origine n'est pas réécrite.*
+
+### C-31-1-25 — Les appels longs échappent au délai de 30 s du client, sans rejeu
+
+- **Contexte** : `api-client.ts` abandonne à 30 s tout appel dont les en-têtes ne sont pas arrivés, et rejoue un `GET`
+  jusqu'à quatre fois ; l'export n'envoie ses en-têtes qu'après avoir assemblé l'archive, l'import ne répond qu'après la
+  restauration. Avec les pièces, ces durées se comptent en minutes (F1, HIGH).
+- **Retenu** : options `{ timeoutMs, retry }` sur `getBlob` et `postFormData` ; `LONG_OPERATION_TIMEOUT_MS` = une heure
+  pour l'export, l'import et « Sauvegarder maintenant », sans rejeu ; message d'issue inconnue sur `TIMEOUT` de l'import ;
+  tests Vitest à horloge simulée qui figent les valeurs. Le correctif va dans la 31-1b (frontend déjà dans son périmètre ;
+  aucune release entre la 31-1a et la 31-1b, C-31-0-1). Exemples de proxy inverse du manuel mis à jour (taille, durée).
+- **Écartées** : téléchargement direct par lien (`<a href>`) — perd la lecture des en-têtes de l'AC18 et le message
+  d'erreur, et ne règle pas l'import ; réponse asynchrone (202 + sondage d'un état) — une machine à états et une route de
+  plus pour un geste rare, fait par un administrateur qui attend devant l'écran ; aucun délai — un serveur figé
+  laisserait le bouton désactivé sans fin.
+- **Réversible** : oui.
+
+### C-31-1-26 — L'import et « Sauvegarder maintenant » détachés de la connexion
+
+- **Contexte** : à l'abandon du client, hyper abandonne le futur du handler ; l'import pouvait s'arrêter au milieu de la
+  restauration (F1, volet serveur).
+- **Retenu** : après la réception, le travail s'exécute dans un `tokio::spawn` attendu par le handler ; la tâche va au
+  bout. Garde lexicale (le test d'une déconnexion réelle demanderait un banc de connexion, hors de proportion).
+- **Écartée** : laisser l'annulation au rollback de la transaction (vrai pour la base, mais l'audit et le journal se
+  perdent, et le client reçoit une erreur pour une opération dont il ignore l'issue).
+- **Réversible** : oui.
+
+### C-31-1-27 — Une sauvegarde incomplète n'est pas un succès ; la dernière complète ne se supprime pas
+
+- **Contexte** : un dossier des documents démonté rend chaque sauvegarde « réussie » sans aucune pièce ; la rétention
+  aurait supprimé, en `retention_count` jours, toutes les sauvegardes qui les portaient (F2, HIGH).
+- **Retenu** : statut `partial` (`filesNotIncluded` non vide), visible au panneau et au bandeau ; colonne
+  `last_complete_file`, que la rétention ne supprime jamais ; la rétention tourne après `ok` et `partial`.
+- **Écartées** : ne pas lancer la rétention après un `partial` — sur une installation dont des pièces manquent
+  durablement (C-31-1-4), plus rien ne serait jamais supprimé et le disque se remplirait ; relire le manifeste de chaque
+  archive pour trouver la plus complète — coûteux et inutile, l'état est déjà en base.
+- **Réversible** : par migration (avant toute application persistante : librement, P8).
+
+### C-31-1-28 — L'anomalie se juge par ligne, la clé est le chemin
+
+- **Contexte** : la règle « même empreinte sous deux chemins = anomalie » écartait deux fichiers intacts (même contenu
+  importé en `.jpg` et `.jpeg`, ou par deux sociétés) (F3, R15).
+- **Retenu** : anomalie = préfixe ≠ empreinte de la même ligne, ou même chemin sous deux empreintes, ou chemin hors
+  forme ; deux chemins de même empreinte sont deux fichiers.
+- **Écartée** : dédoublonner par empreinte (un des deux chemins resterait sans fichier à la restauration).
+- **Réversible** : oui.
+
+### C-31-1-29 — Lectures bornées à l'import : 64 Mio pour le manifeste, 1 Gio par table, 1 000 000 d'entrées
+
+- **Contexte** : `parse_and_verify` lit `manifest.json` et chaque table sans borne ; une entrée compressée de 1 Mio peut
+  se décompresser en dizaines de Gio (F9).
+- **Retenu** : constantes nommées, indépendantes des tailles déclarées par l'archive ; ensemble d'entrées attendu en
+  format 2 ; noms en double refusés.
+- **Écartées** : se fier à `entry.size()` (déclaratif) ; une borne totale proportionnelle au plafond d'import (la base
+  d'une installation dépasse rarement la centaine de Mio : une borne fixe par table est plus lisible).
+- **Réversible** : oui (constantes).
+
+### C-31-1-30 — Fenêtre de détention des verrous
+
+- **Contexte** : un verrou pris avant la réception d'un envoi de 2 Gio, ou gardé pendant la diffusion d'un export, rend
+  toutes les sauvegardes automatiques dépendantes d'un client lent (F8).
+- **Retenu** : import : `_kesh_version FOR UPDATE` et `backup_lock` pris après la réception et `parse_and_verify` ; export
+  manuel : `backup_lock` pour l'assemblage seulement, rendu avant la diffusion ; chaque tour sauté journalisé en `info!`.
+- **Réversible** : oui.
+
+### C-31-1-31 — La compatibilité du format 1 se prouve sur un fichier produit par la 0.14.0
+
+- **Contexte** : une fixture construite par le constructeur de test que la story modifie ne révèle pas un écart avec
+  ce que le vrai exporteur 0.14.0 a émis (R7).
+- **Retenu** : fixture produite par le vrai exporteur au commit `44ef2079`, avant tout changement de code, versionnée,
+  jamais régénérée ; générateur `#[ignore]` ; données synthétiques.
+- **Écartées** : une sauvegarde réelle de Guy (données réelles, interdites) ; un fichier produit à partir du tag
+  `v0.14.0` dans un worktree séparé (même code que `44ef2079` pour l'export, plus lourd).
+- **Réversible** : —
+
+### C-31-1-32 — `disk_full` se décide sur l'erreur d'OS, jamais sur un texte
+
+- **Contexte** : `write_backup_file` aplatissait toute erreur en chaîne dans `AdminPreImportBackupFailed` (F6, R6).
+- **Retenu** : erreur typée qui garde l'`io::Error` ; `classify_write_error` pure (`StorageFull`, `QuotaExceeded`, codes
+  28 et 122 → `disk_full`) ; trait `BackupEnv` (espace libre + écrivain injectable) qui remplace `FreeSpace` (C-31-1-19)
+  pour simuler un disque saturé pendant l'écriture.
+- **Écartées** : analyser le message ; une limite `RLIMIT_FSIZE` ou un tmpfs minuscule dans le test (dépend de
+  l'environnement de gate, et `RLIMIT_FSIZE` rend `EFBIG`, pas `ENOSPC`).
+- **Réversible** : oui.
+
+### C-31-1-33 — L'envoi reçu dans un temporaire anonyme
+
+- **Contexte** : `NamedTempFile` laisse un fichier de plusieurs Gio après un `kill -9` ou un OOM (F18).
+- **Retenu** : `tempfile::tempfile_in(KESH_ADMIN_BACKUP_DIR)` : sans nom, il disparaît avec le processus.
+- **Écartée** : nettoyer au démarrage (un motif de nom à maintenir, et un fichier qui survit jusqu'au redémarrage).
+- **Réversible** : oui.
+
+### C-31-1-34 — Le bandeau « aucune réussite » ne s'allume qu'après une première réussite
+
+- **Contexte** : « `last_success_at` nul » allumait le bandeau à chaque installation et pendant les cinq minutes qui
+  suivent chaque mise à jour (F17).
+- **Retenu** : le second cas de l'AC31 exige un `last_success_at` non nul ; une sauvegarde jamais tentée se lit au
+  panneau ; une tentée et échouée relève du premier cas. Angle mort écrit : une tâche morte dès le démarrage.
+- **Écartées** : délai de grâce depuis une date d'installation (colonne ou horloge de la base, fuseau de session) ;
+  heure de démarrage du processus dans `AppState` (un redémarrage effacerait le signal).
+- **Réversible** : oui.
+
+### C-31-1-35 — Seules les sauvegardes de Kesh se listent et se téléchargent
+
+- **Contexte** : `kind = other` n'avait pas d'expression et aurait servi n'importe quel fichier du dossier, y compris un
+  lien symbolique (F15).
+- **Retenu** : deux sortes, `auto` et `pre-import`, chacune par son expression ; fichiers réguliers seulement
+  (`symlink_metadata`).
+- **Écartée** : lister les autres sans téléchargement (de l'information sans geste, et un nom de fichier arbitraire à
+  afficher).
+- **Réversible** : oui.
+
+### C-31-1-36 — `scripts/regen-test-schema.sh` compté avec `kesh-db`
+
+- **Contexte** : la réinjection de la ligne singleton dans le squash (F7, R1) touche un script ; la 31-1c compte déjà
+  cinq modules.
+- **Retenu** : le script produit `crates/kesh-db/test-schema/` et sa garde vit dans `crates/kesh-db/tests/` : il fait
+  partie du module `kesh-db` au sens de la règle de découpage (« crates Rust, packages npm, ou modules métier de premier
+  niveau »). La 31-1c reste à cinq ; pas de redécoupage. Signalé au rapport pour arbitrage de l'orchestrateur.
+- **Écartées** : monter tous les tests de la 31-1c sur le vrai `MIGRATOR` (le squash garderait une table vide, piège pour
+  tout test futur) ; sortir la migration dans une 31-1d (elle n'est pas testable seule sans le dépôt et la tâche).
+- **Réversible** : oui, avant le développement.
