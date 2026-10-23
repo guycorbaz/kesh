@@ -76,7 +76,8 @@ git clone https://github.com/guycorbaz/kesh.git
 cd kesh
 
 # 2. Démarrer MariaDB + backend (mode dev complet) — sans .env : au premier
-#    accès, l'écran /setup crée l'administrateur
+#    accès, l'écran /setup crée l'administrateur. Depuis le clone principal,
+#    jamais un worktree (cf. docs/testing.md § « Base de dev jetable »).
 docker compose -f docker-compose.dev.yml up -d
 
 # 3. (Facultatif) Fixer vos propres valeurs
@@ -180,7 +181,7 @@ npm run build          # build production
 
 ```bash
 # Tests unitaires + intégration backend
-DATABASE_URL='mysql://root:...@127.0.0.1:3306/kesh' \
+DATABASE_URL='mysql://kesh:kesh_dev@127.0.0.1:3306/kesh' \
   cargo test --workspace -- --test-threads=1
 
 # Tests unitaires frontend
@@ -190,7 +191,7 @@ cd frontend && npm run test:unit
 cd frontend && npm run test:e2e
 ```
 
-> **Note** : les tests d'intégration SQLx créent des bases éphémères `_sqlx_test_*`. L'utilisateur DB doit avoir les droits `CREATE/DROP` sur `*.*` (en local, utiliser `root`).
+> **Note** : les tests d'intégration SQLx créent des bases éphémères `_sqlx_test_*`. L'utilisateur `kesh` du conteneur de dev en a les droits — sur `\_sqlx\_test%`.* et `kesh%`.*, **aucun droit global**, comme la production qui n'a que `kesh`.* —, posés par `scripts/mariadb-init/01-dev-grants.sql` ; ne pas employer `root`, qui laisserait passer un test dépendant d'un droit que la production n'a pas. `scripts/test-fast.sh` vérifie ces droits avant de compiler.
 
 ## Feuille de route
 

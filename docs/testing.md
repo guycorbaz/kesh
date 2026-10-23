@@ -19,7 +19,28 @@ Depuis la Story 22-5 (issue #251), `docker-compose.dev.yml` monte `/var/lib/mysq
 
 ⚠️ **Rien ne survit au redémarrage du conteneur** — ni la base `kesh`, ni `kesh_e2e`, ni les tables système. C'est délibéré, et cela a trois conséquences qu'il vaut mieux connaître avant de les découvrir :
 
-**1. Les droits et `kesh_e2e` se rejouent tout seuls.** `scripts/mariadb-init/01-dev-grants.sql` est monté dans `/docker-entrypoint-initdb.d/`, que l'entrypoint MariaDB exécute dès que le datadir est vide — donc à chaque démarrage ici. Il rend à l'utilisateur `kesh` les droits globaux dont `#[sqlx::test]` a besoin pour créer ses bases éphémères, et recrée `kesh_e2e`. Sans ce fichier, **toute** la suite d'intégration échouerait au premier `CREATE DATABASE`.
+**1. Les droits et `kesh_e2e` se rejouent tout seuls — si le montage est le bon.** `scripts/mariadb-init/01-dev-grants.sql` est monté dans `/docker-entrypoint-initdb.d/`, que l'entrypoint MariaDB exécute dès que le datadir est vide — donc à chaque démarrage ici. Il donne à l'utilisateur `kesh` `ALL` sur deux espaces de noms, `\_sqlx\_test%`.* (les bases éphémères de `#[sqlx::test]`) et `kesh%`.* (`kesh`, `kesh_e2e`, les bases de gate) — **aucun droit global** —, et recrée `kesh_e2e`. Sans ce fichier, **toute** la suite d'intégration échouerait au premier `CREATE DATABASE`.
+
+⚠️ **Le montage est relatif au répertoire d'où l'on lance `docker compose`** (`./scripts/mariadb-init`). Créé depuis un worktree, le conteneur garde le chemin de ce worktree ; une fois le worktree supprimé, Docker monte à la place un répertoire **vide**, et au démarrage suivant `kesh` n'a plus que `kesh`.*. C'est arrivé : du 2026-10-11 au 2026-10-23, le conteneur montait `kesh-chore-tmpfs/scripts/mariadb-init`, disparu — et des `GRANT` posés à la main ont masqué la panne. D'où la règle : **le conteneur de dev se crée DEPUIS LE DÉPÔT PRINCIPAL, jamais depuis un worktree** (prévention outillée : issue [#699](https://github.com/guycorbaz/kesh/issues/699), ouverte). Aucun `GRANT`/`REVOKE` à la main sur ce conteneur : un droit manquant se signale (cf. `docs/agents-orchestration.md` § 2).
+
+**Le garde des droits — `scripts/check-dev-grants.sh`.** `scripts/test-fast.sh` le lance avant toute compilation, sous `--no-lint` comme sans ; il est utilisable seul. Il compare l'**ensemble** des droits réels de `kesh` sur `kesh-mariadb-dev` (`SHOW GRANTS`, par `docker exec`) à celui que décrit le fichier versionné (ses `GRANT`, plus `ALL` sur `kesh`.* et la ligne `USAGE` que crée l'entrypoint), et s'arrête sur tout droit en moins **ou en plus** — un droit global posé à la main, un `_` non échappé, un autre compte, un `WITH GRANT OPTION`. Il est **sauté, en le disant**, sans `docker` ou si le conteneur n'est pas en marche ; tout autre échec (démon arrêté, authentification refusée) est non nul. Il n'affiche jamais le mot de passe ni le condensé. En cas d'écart, il affiche la remise en état — **sans jamais l'exécuter** :
+
+> Si le conteneur vient de démarrer, attendre l'état `healthy` (`docker ps`) et relancer. Sinon, **depuis le dépôt principal** (jamais un worktree) : `docker compose -f docker-compose.dev.yml up -d --force-recreate mariadb`, puis `sqlx migrate run --source crates/kesh-db/migrations` et `scripts/seed-dev-db.sql`. ⚠️ Cela **efface les bases de tous les agents** (tmpfs) : à demander à l'orchestrateur, jamais d'initiative ; un simple `restart` ne répare pas un montage périmé.
+
+Juste après un `restart`, le conteneur est « en marche » alors que `/docker-entrypoint-initdb.d` s'exécute encore : des droits partiels y sont un état transitoire, d'où le « attendre `healthy` ».
+
+⚠️ **Ses trois angles morts** — le garde est plus faible qu'« écart corrigé » ne le laisse entendre : (i) les droits du rôle `PUBLIC` n'apparaissent pas dans `SHOW GRANTS` d'un utilisateur ; (ii) il lit les droits par le socket du conteneur, le gate se connecte en TCP (`kesh@%`) : un compte `'kesh'@'172.%'` posé à la main lui resterait invisible ; (iii) **il ne vérifie pas la règle « depuis le dépôt principal »** : un conteneur monté depuis un worktree encore présent, au fichier identique, passe — il rougit quand l'égalité des droits est rompue (typiquement après suppression du worktree et redémarrage), non au moment de la violation.
+
+**Quand le garde rougit parce que la branche modifie `01-dev-grants.sql`** : c'est attendu (les droits du conteneur sont ceux du fichier de `main`) et rare. Ne pas contourner — aucune variable d'esquive n'existe, et ce serait un silence — : le signaler à l'orchestrateur, seul à recréer le conteneur. Le test du garde (`scripts/tests/check-dev-grants.test.sh`, lancé par `crates/kesh-db/tests/check_dev_grants_script.rs`) est hermétique : il ne lit pas le vrai fichier de droits et ne rougit pas, en local comme en CI.
+
+**Les droits de `kesh` selon l'environnement** — un test ne doit dépendre d'aucun droit que la production n'a pas (`docs/agents-orchestration.md` § 6.1) :
+
+| | Droits de `kesh` |
+|---|---|
+| Production (`docker-compose.yml` ; le manuel d'administration écrit `GRANT ALL PRIVILEGES ON kesh.*`) | `ALL` sur `kesh`.* (celui de `MARIADB_DATABASE`) |
+| Dev (`01-dev-grants.sql`) | idem **+** `ALL` sur `\_sqlx\_test%`.* et `kesh%`.* — nécessaires à `#[sqlx::test]` et à `kesh_e2e` ; **aucun droit global** |
+| CI, job `backend` | le **même fichier** appliqué en `root` au démarrage du job, puis `kesh` (Story 31-2 ; `root` auparavant, plus large que la production) |
+| CI, job `e2e-smoke` et smoke de `release.yml` | `kesh` créé par le service MariaDB : `ALL` sur `kesh`.*, les droits de la production |
 
 **2. Le seed de la base partagée, lui, se rejoue à la main.** Les 154 tests `kesh-db::repositories::*` travaillent sur la base `kesh` et attendent 1 société, 1 admin, 1 exercice ouvert et ≥ 2 comptes. Après un redémarrage :
 
@@ -35,10 +56,10 @@ Passer par `sqlx migrate run` et non par une boucle de `mariadb <` sur les fichi
 
 ⚠️ **La base partagée doit être remise à zéro avant CHAQUE gate complet, pas seulement après un gate interrompu** — c'est la **KF-039 ([#310](https://github.com/guycorbaz/kesh/issues/310))**, et le `CLAUDE.md` § *« Un gate laisse la base piégée »* en porte la règle. Le cas du run tué en vol y était déjà décrit ; il en existe un second, plus discret : **un run qui se termine normalement laisse lui aussi la base inutilisable pour le suivant.** Les tests de dépôt y créent des factures liées à des écritures comptables, et le `delete_all_by_company` du montage de `journal_entries::tests` échoue alors sur `fk_invoices_journal_entry` — **34 tests tombent d'un coup**, en 7 ms chacun, sur un module que la branche en cours ne touche pas.
 
-Le geste, avant tout gate complet :
+Le geste, avant tout gate complet — **depuis le dépôt principal**, comme toute commande `docker compose` sur ce conteneur (point 1), et **jamais par un agent** quand plusieurs travaillent en parallèle : le redémarrage efface les bases de tous (`docs/agents-orchestration.md` § 2) ; un agent emploie ses propres bases `kesh_<clé>` :
 
 ```sh
-docker compose -f docker-compose.dev.yml restart mariadb   # le tmpfs efface tout
+docker compose -f docker-compose.dev.yml restart mariadb   # depuis le dépôt principal ; le tmpfs efface tout
 sqlx migrate run --source crates/kesh-db/migrations
 docker exec -i kesh-mariadb-dev mariadb -uroot -pkesh_dev_root kesh < scripts/seed-dev-db.sql
 ```
@@ -49,7 +70,7 @@ Depuis le passage en tmpfs, ce cycle coûte une quinzaine de secondes — c'est 
 
 Le seed est **idempotent** et se rejoue sans dommage. Il suppose en revanche qu'il possède la base : il cible sa propre société (« CI Seed Company ») par son nom, et **saute la création de l'`admin` si un utilisateur de ce nom existe déjà** ailleurs — `username` porte une contrainte d'unicité globale. Sur une base où vous avez saisi vos propres données, relisez `scripts/seed-dev-db.sql` avant de le lancer.
 
-**3. Les bases éphémères orphelines s'effacent au redémarrage.** Un run interrompu (Ctrl-C, OOM, timeout) laisse derrière lui des `_sqlx_test_database_*` que sqlx n'a pas nettoyées — **et un test ROUGE aussi** : sqlx ne détruit la base que d'un test vert. Sur disque elles s'accumulaient ; en tmpfs, un `docker compose -f docker-compose.dev.yml restart mariadb` les balaie toutes. Pour les compter sans redémarrer :
+**3. Les bases éphémères orphelines s'effacent au redémarrage.** Un run interrompu (Ctrl-C, OOM, timeout) laisse derrière lui des `_sqlx_test_database_*` que sqlx n'a pas nettoyées — **et un test ROUGE aussi** : sqlx ne détruit la base que d'un test vert. Sur disque elles s'accumulaient ; en tmpfs, un `docker compose -f docker-compose.dev.yml restart mariadb` (depuis le dépôt principal, mêmes réserves qu'au point 2) les balaie toutes. Pour les compter sans redémarrer :
 
 ```sh
 docker exec kesh-mariadb-dev mariadb -uroot -pkesh_dev_root \
@@ -60,7 +81,7 @@ C'est aussi le geste qui répond à la § *« Un gate laisse la base piégée �
 
 **4. Un run massivement rouge peut SATURER le tmpfs.** À ~17 Mo la base éphémère et ~3,3 Go libres, il en tient environ **190**. Un squash cassé fait échouer les 1102 tests basculés d'un coup : passé la 190ᵉ base non détruite, MariaDB rend `table is full` sur toutes les suivantes. **Les premiers échecs portent la cause réelle, ceux d'après ne portent que la saturation** — c'est le début du rapport qu'il faut lire, pas la fin. La reprise est un `restart` du conteneur, puis la procédure du point 2.
 
-**5. Le conteneur `kesh` ne survit pas utilement à un redémarrage de MariaDB.** `depends_on` ne gouverne que le démarrage : après un `restart` de `mariadb`, le service `kesh` — toujours vivant sous `restart: unless-stopped` — pointe sur une base repartie **vide**, et il n'applique ses migrations qu'au boot. Chaque requête échoue, et rien ne le rattrape. Redémarrez-le explicitement (`docker compose -f docker-compose.dev.yml restart kesh`) après avoir rejoué migrations et seed. *(En développement quotidien la question ne se pose pas : le backend tourne en `cargo run`, pas dans ce conteneur.)*
+**5. Le conteneur `kesh` ne survit pas utilement à un redémarrage de MariaDB.** `depends_on` ne gouverne que le démarrage : après un `restart` de `mariadb`, le service `kesh` — toujours vivant sous `restart: unless-stopped` — pointe sur une base repartie **vide**, et il n'applique ses migrations qu'au boot. Chaque requête échoue, et rien ne le rattrape. Redémarrez-le explicitement (`docker compose -f docker-compose.dev.yml restart kesh`, depuis le dépôt principal) après avoir rejoué migrations et seed. *(En développement quotidien la question ne se pose pas : le backend tourne en `cargo run`, pas dans ce conteneur.)*
 
 **La production n'est pas concernée** : `docker-compose.yml` garde son volume persistant, sa durabilité par défaut, et ne monte pas `scripts/mariadb-init/`. *(`docker-compose.prod.yml`, lui, ne déclare aucun service MariaDB — il pointe une base externe.)*
 
@@ -98,8 +119,9 @@ Les helpers associés (`truncate_all`, `seed_changeme_user_only`, `mark_onboardi
 Lancer la suite :
 
 ```bash
-# DB MariaDB de dev démarrée (docker compose -f docker-compose.dev.yml up -d mariadb)
-DATABASE_URL="mysql://root:kesh_dev_root@127.0.0.1:3306/kesh" cargo test -p kesh-api --tests
+# DB MariaDB de dev démarrée (docker compose -f docker-compose.dev.yml up -d mariadb, depuis le dépôt principal)
+# Utilisateur `kesh`, pas `root` : le test ne doit pas pouvoir dépendre d'un droit que la production n'a pas.
+DATABASE_URL="mysql://kesh:kesh_dev@127.0.0.1:3306/kesh" cargo test -p kesh-api --tests
 ```
 
 ## Pattern Playwright : `seedTestState` via endpoint gated
@@ -160,7 +182,7 @@ Le défaut applicatif de `KESH_HOST` est passé de `0.0.0.0` à `127.0.0.1` (Sto
 
 ```bash
 # Terminal 1 : DB + frontend buildé + backend qui sert les deux
-docker compose -f docker-compose.dev.yml up -d mariadb
+docker compose -f docker-compose.dev.yml up -d mariadb   # depuis le dépôt principal, jamais un worktree
 cd /path/to/kesh
 (cd frontend && npm run build)          # KESH_STATIC_DIR pointe sur le résultat
 mkdir -p /tmp/kesh-e2e/inbox /tmp/kesh-e2e/documents /tmp/kesh-e2e/backup
@@ -305,7 +327,7 @@ KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_PORT=8181 \
   KESH_ADMIN_BACKUP_DIR=/tmp/kesh-e2e/backup \
   KESH_SMTP_HOST=127.0.0.1 KESH_SMTP_PORT=2525 KESH_SMTP_USER=e2e \
   KESH_SMTP_PASSWORD=e2e KESH_SMTP_FROM=kesh@example.invalid \
-  DATABASE_URL="mysql://root:kesh_dev_root@127.0.0.1:3306/kesh" \
+  DATABASE_URL="mysql://kesh:kesh_dev@127.0.0.1:3306/kesh" \
   KESH_JWT_SECRET="dev-secret-at-least-32-bytes-long-for-testing" \
   cargo run -p kesh-api
 # puis : KESH_BACKEND_URL=http://127.0.0.1:8181 npm run test:e2e -- password-recovery

@@ -93,11 +93,15 @@ jobs:
           JWT_SECRET="$(openssl rand -hex 32)"
           ADMIN_PASSWORD="$(openssl rand -base64 18)"
 
+          # Story 31-2 (#698) — l'image démarre avec l'utilisateur `kesh` que crée
+          # le service (`MARIADB_USER`) : `ALL` sur `kesh`.*, les droits de la
+          # production. En `root`, le smoke ne pouvait rien dire d'une migration
+          # qui exigerait un droit que la production n'a pas.
           echo "→ Starting container from $IMAGE"
           docker run -d \
             --name kesh-smoke \
             --network=host \
-            -e DATABASE_URL="mysql://root:kesh_root@127.0.0.1:3306/kesh" \
+            -e DATABASE_URL="mysql://kesh:kesh_dev@127.0.0.1:3306/kesh" \
             -e KESH_HOST="0.0.0.0" \
             -e KESH_PORT="80" \
             -e KESH_JWT_SECRET="$JWT_SECRET" \

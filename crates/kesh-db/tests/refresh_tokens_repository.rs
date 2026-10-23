@@ -1,8 +1,9 @@
 //! Tests d'intégration du repository `refresh_tokens`.
 //!
 //! Chaque test utilise `#[sqlx::test(migrations = "./test-schema")]`
-//! qui crée/détruit une DB temporaire par test — nécessite
-//! `GRANT ALL PRIVILEGES ON *.*` pour l'utilisateur DB (voir README).
+//! qui crée/détruit une DB temporaire par test — nécessite les droits sur
+//! `\_sqlx\_test%`.* que pose `scripts/mariadb-init/01-dev-grants.sql`, aucun
+//! droit global (voir le README du crate, § Prérequis).
 
 use chrono::{Duration as ChronoDuration, Utc};
 use kesh_db::entities::{NewRefreshToken, NewUser, Role};

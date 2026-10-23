@@ -68,7 +68,12 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     env:
-      DATABASE_URL: mysql://root:kesh_root@127.0.0.1:3306/kesh
+      # Story 31-2 (C-31-2-4) — l'utilisateur `kesh`, plus `root` : une CI en
+      # `root` ne peut rien dire d'un privilège que la production n'a pas
+      # (Stories 29-4, 29-8). Ses droits sont ceux du fichier de dev, appliqué
+      # par l'étape « Apply dev grants » ; migrations et seed restent en `root`
+      # (outillage, pas le chemin de l'application).
+      DATABASE_URL: mysql://kesh:kesh_dev@127.0.0.1:3306/kesh
       # Story 9-1 (Pass 2 ECH2-07) avait ajouté `SQLX_MAX_CONNECTIONS: "4"` ici, mais
       # code-review Pass 1 Sonnet a établi que la var n'est lue NULLE PART (main.rs:43
       # hardcode `max_connections(5)`, sqlx::test utilise sa propre config). Retirée :
@@ -162,6 +167,13 @@ jobs:
       # (graphie du squash depuis kesh-db — cf. Story 22-5 / issue #251).
       - name: Install mariadb-client
         run: sudo apt-get install -y mariadb-client
+
+      # Story 31-2 (C-31-2-4) — `kesh` reçoit exactement les droits du conteneur
+      # de dev : `\_sqlx\_test%`.* et `kesh%`.*, aucun droit global. `-h` est
+      # indispensable : sans lui, le client prendrait le socket Unix local, alors
+      # que MariaDB est un service conteneurisé.
+      - name: Apply dev grants (kesh, same file as the dev container)
+        run: mariadb -h 127.0.0.1 -P 3306 -uroot -pkesh_root < scripts/mariadb-init/01-dev-grants.sql
 
       - name: Apply migrations to kesh DB
         run: |

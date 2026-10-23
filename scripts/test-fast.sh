@@ -14,6 +14,8 @@
 #
 # Pré-requis : MariaDB dev démarré + `cargo install cargo-nextest` (ou binaire
 # prébuilt https://get.nexte.st). DATABASE_URL par défaut = conteneur dev local.
+# Le garde des droits de dev passe en premier (cf. docs/testing.md § « Base de
+# dev jetable ») : il est sauté, en le disant, sans docker ou sans conteneur.
 #
 # MÉMOIRE : le gate se relance automatiquement dans un cgroup à mémoire bornée
 # (`scripts/mem-guard.sh`), pour qu'un pic tue le gate et non le terminal — donc
@@ -49,6 +51,13 @@ if ! command -v cargo-nextest >/dev/null 2>&1; then
   echo "  (ou binaire prébuilt : curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C ~/.cargo/bin)" >&2
   exit 3
 fi
+
+# Garde des droits du MariaDB de dev (Story 31-2) : les droits réels de `kesh`
+# doivent être ceux du fichier versionné, sans quoi un test peut passer grâce à
+# un privilège que la production n'a pas. Avant toute compilation, sous
+# `--no-lint` comme sans ; s'il échoue, le gate s'arrête (`set -e`).
+echo "▶ garde des droits du MariaDB de dev"
+scripts/check-dev-grants.sh
 
 if [ "$RUN_LINT" = 1 ]; then
   echo "▶ cargo fmt --check"

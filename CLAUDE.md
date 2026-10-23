@@ -522,10 +522,12 @@ Le mode d'échec : un test qui modifie l'état partagé confie sa restauration �
 **Le geste, et pourquoi il est devenu bon marché** :
 
 ```sh
-docker compose -f docker-compose.dev.yml restart mariadb   # tmpfs : efface tout
+docker compose -f docker-compose.dev.yml restart mariadb   # depuis le dépôt principal ; tmpfs : efface tout
 sqlx migrate run --source crates/kesh-db/migrations
 docker exec -i kesh-mariadb-dev mariadb -uroot -pkesh_dev_root kesh < scripts/seed-dev-db.sql
 ```
+
+⚠️ **Toute commande `docker compose` sur ce conteneur se lance depuis le dépôt principal, jamais depuis un worktree** : son montage des droits (`./scripts/mariadb-init`) est relatif au répertoire de lancement, et un worktree supprimé laisse un montage vide — `kesh` perd alors les droits dont `#[sqlx::test]` a besoin (du 2026-10-11 au 2026-10-23, masqué par des `GRANT` posés à la main). En travail parallèle, **ni redémarrage ni recréation par un agent** (`docs/agents-orchestration.md` § 2) : chacun travaille sur ses bases `kesh_<clé>`. Le garde `scripts/check-dev-grants.sh`, lancé par `test-fast.sh`, signale un conteneur dont les droits ne sont plus ceux du fichier ; ses angles morts sont dans `docs/testing.md` § « Base de dev jetable ».
 
 Depuis que le datadir de dev est en tmpfs (Story 22-5, #251), ce cycle coûte **une quinzaine de secondes** — contre un vidage de tables à la main auparavant. C'est ce qui rend praticable une règle inconditionnelle là où l'ancienne devait se contenter d'un déclencheur. Détail et modes d'échec : `docs/testing.md` § « Base de dev jetable ».
 

@@ -14,6 +14,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 - **Les fichiers `.svelte-kit/` de la racine du dépôt sont retirés** (Story 31-2) : six résidus d'un `svelte-kit sync` lancé au mauvais endroit, que rien ne lisait ; `/.svelte-kit/` est désormais ignoré par git et par le contexte de build Docker.
 - **Les tirages depuis Docker Hub sont authentifiés en CI et à la publication** (Story 31-2) : le service MariaDB et les images de base ne sont plus tirés anonymement, ce qui faisait échouer un run sur la limite de Docker Hub sans rapport avec le changement. Une PR issue d'un fork, sans accès aux secrets, échoue désormais au démarrage (voir `docs/ci.md`).
+- **Les tests ne tournent plus avec plus de droits que la production** (Story 31-2, [#698](https://github.com/guycorbaz/kesh/issues/698)) : la CI et le contrôle de l'image avant publication se connectent à MariaDB avec l'utilisateur `kesh`, et non plus `root` ; en développement, un garde (`scripts/check-dev-grants.sh`, lancé avant chaque gate) vérifie que les droits réels du conteneur sont ceux du fichier versionné. Un test qui dépendrait d'un privilège absent de la production — c'était passé inaperçu deux fois — échoue désormais avant la publication.
 
 ## [0.14.0] — 2026-10-20
 

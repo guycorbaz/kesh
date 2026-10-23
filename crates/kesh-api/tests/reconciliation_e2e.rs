@@ -8246,8 +8246,8 @@ async fn post_reject_failed_merges_preflight_and_locked_refusals_by_id(pool: MyS
 /// requête **en attente de verrou** — le seul trait propre à l'attente
 /// (`information_schema.INNODB_TRX`, `trx_state = 'LOCK WAIT'`) exige le
 /// privilège `PROCESS`, que l'utilisateur de dev (`kesh`, droits par base,
-/// `scripts/mariadb-init/01-dev-grants.sql`) n'a pas ; la CI tourne en
-/// `root`, mais le test doit passer sur le poste de dev. Sous M11, la mutation
+/// `scripts/mariadb-init/01-dev-grants.sql`) n'a pas — ni en dev, ni en CI,
+/// qui emploie `kesh` avec ce même fichier depuis la Story 31-2. Sous M11, la mutation
 /// ne survit que si l'`UPDATE` de `tB`, par clé primaire, dure plus de 500 ms.
 /// Le code juste ne peut rendre aucun faux rouge : quel que soit l'`UPDATE`
 /// observé, la suppression est validée avant ou pendant le blocage de `tA`, et
