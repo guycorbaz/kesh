@@ -23,6 +23,7 @@
 //! | G18-bis | #127 | le manuel utilisateur dit comment on entre : compte créé par l'administrateur, connexion par identifiant |
 //! | G19 | release 0.13.0 | toute URL `raw.githubusercontent.com` du dépôt (manuels, README, site) pointe sur le tag `v<\keshVersion>`, jamais sur `main` |
 //! | G20 | #616, #617, #619 | ni case « Compte de banque » au plan comptable, ni CAMT.053 présenté comme universel ; l'écran d'import dit « CAMT.053 ou CSV » dans les quatre langues |
+//! | G21 | #697 | le `FROM rust:` du `Dockerfile` et le `channel` de `rust-toolchain.toml` désignent la même chaîne (même mineure, même patch si les deux en portent un) |
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -1323,4 +1324,251 @@ fn le_manuel_et_l_ecran_d_import_disent_vrai() {
         erreurs.len(),
         erreurs.join("\n  - ")
     );
+}
+
+/// Version de Rust lue dans un texte de configuration : la mineure `X.Y` et, s'il est
+/// écrit, le patch `Z`.
+#[derive(Debug, PartialEq, Eq)]
+struct VersionRust {
+    mineure: String,
+    patch: Option<String>,
+}
+
+/// Découpe `X.Y` ou `X.Y.Z` — rien d'autre — en [`VersionRust`].
+fn version_rust(texte: &str) -> Option<VersionRust> {
+    static FORME: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^(\d+\.\d+)(?:\.(\d+))?$").unwrap());
+    FORME.captures(texte).map(|c| VersionRust {
+        mineure: c[1].to_string(),
+        patch: c.get(2).map(|p| p.as_str().to_string()),
+    })
+}
+
+/// Retient l'unique ligne de `texte` que reconnaît `motif` ; zéro ou plusieurs lignes
+/// rendent un refus explicite, nommé par `quoi` et `fichier`.
+fn ligne_unique<'a>(
+    texte: &'a str,
+    motif: &Regex,
+    fichier: &str,
+    quoi: &str,
+    absent: &str,
+) -> Result<&'a str, String> {
+    let lignes: Vec<&str> = texte.lines().filter(|l| motif.is_match(l)).collect();
+    match lignes.as_slice() {
+        [une] => Ok(une),
+        [] => Err(format!("{fichier} : {absent}")),
+        plusieurs => Err(format!(
+            "{fichier} : {} lignes {quoi}, une seule attendue",
+            plusieurs.len()
+        )),
+    }
+}
+
+/// **Fonction pure de G21** (#697, Story 31-3) — extrait la version de Rust de l'étape
+/// `FROM rust:` du `Dockerfile` et le `channel` de `rust-toolchain.toml`, et dit s'ils
+/// s'accordent. Rend les deux versions lues (`Dockerfile`, puis toolchain) ou un message
+/// qui nomme l'écart.
+///
+/// Règle (AC7) :
+/// - **Dockerfile** : lignes `FROM rust:` non commentées, `FROM` sans égard à la casse
+///   (une instruction Dockerfile l'est) ; exactement une. Le tag est `X.Y[.Z]`, suivi ou
+///   non de `-<suffixe>` (`1.97-bookworm`, `1.97.1-bookworm`, `1.97`), puis éventuellement
+///   de `AS <nom>`. Un tag sans mineure (`1-bookworm`, `bookworm`, `latest`) est refusé.
+/// - **`rust-toolchain.toml`** : lignes `channel = …` non commentées ; exactement une ; la
+///   valeur, entre guillemets doubles ou simples, est `X.Y` ou `X.Y.Z` (`stable`,
+///   `nightly`, `beta` sont refusés).
+/// - **Comparaison** : mineures égales ; patchs égaux si les deux en portent un — sinon le
+///   patch n'est pas comparé, le `Dockerfile` suivant la convention du tag mineur
+///   (C-31-3-2).
+///
+/// **Angles morts écrits** : une image tirée par `FROM --platform=… rust:…`, par une
+/// variable (`FROM ${IMAGE}`) ou par un digest (`rust:1.97@sha256:…`) n'est pas
+/// reconnue — la première et la deuxième rendent « aucune ligne », la troisième « sans
+/// mineure » : un refus explicite, jamais un vert muet. Une table `[toolchain]` écrite en
+/// ligne (`toolchain = { channel = … }`) rend « absent ».
+fn rust_versions_accordees(
+    dockerfile: &str,
+    toolchain: &str,
+) -> Result<(VersionRust, VersionRust), String> {
+    static FROM_RUST: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)^\s*FROM\s+rust:").unwrap());
+    static TAG: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)^\s*FROM\s+rust:(\S+)(?:\s+AS\s+\S+)?\s*$").unwrap());
+    static VERSION_DU_TAG: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^(\d+\.\d+(?:\.\d+)?)(?:-[A-Za-z0-9._-]+)?$").unwrap());
+    static CHANNEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*channel\s*=").unwrap());
+    static VALEUR_DU_CHANNEL: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"^\s*channel\s*=\s*(?:"([^"]*)"|'([^']*)')\s*(?:#.*)?$"#).unwrap()
+    });
+
+    // Dockerfile : une seule étape `FROM rust:`, d'un tag X.Y[.Z][-suffixe].
+    let ligne = ligne_unique(
+        dockerfile,
+        &FROM_RUST,
+        "Dockerfile",
+        "`FROM rust:`",
+        "aucune ligne `FROM rust:` non commentée",
+    )?;
+    let tag = TAG
+        .captures(ligne)
+        .map(|c| c[1].to_string())
+        .ok_or_else(|| format!("Dockerfile : ligne `FROM rust:` illisible : « {ligne} »"))?;
+    let docker = VERSION_DU_TAG
+        .captures(&tag)
+        .and_then(|c| version_rust(&c[1]))
+        .ok_or_else(|| {
+            format!("Dockerfile : tag `rust:{tag}` sans mineure X.Y (attendu `X.Y[.Z][-suffixe]`)")
+        })?;
+
+    // rust-toolchain.toml : un seul `channel`, numérique.
+    let ligne = ligne_unique(
+        toolchain,
+        &CHANNEL,
+        "rust-toolchain.toml",
+        "`channel`",
+        "`channel` absent",
+    )?;
+    let valeur = VALEUR_DU_CHANNEL
+        .captures(ligne)
+        .and_then(|c| c.get(1).or_else(|| c.get(2)))
+        .map(|v| v.as_str().to_string())
+        .ok_or_else(|| format!("rust-toolchain.toml : ligne `channel` illisible : « {ligne} »"))?;
+    let chaine = version_rust(&valeur).ok_or_else(|| {
+        format!(
+            "rust-toolchain.toml : `channel = \"{valeur}\"` non numérique (attendu X.Y ou X.Y.Z)"
+        )
+    })?;
+
+    if docker.mineure != chaine.mineure {
+        return Err(format!(
+            "désaccord de mineure : Dockerfile `rust:{tag}` contre rust-toolchain.toml `{valeur}`"
+        ));
+    }
+    if let (Some(a), Some(b)) = (&docker.patch, &chaine.patch)
+        && a != b
+    {
+        return Err(format!(
+            "désaccord de patch : Dockerfile `rust:{tag}` contre rust-toolchain.toml `{valeur}`"
+        ));
+    }
+    Ok((docker, chaine))
+}
+
+/// G21 — cas de la fonction pure (AC7) : accords et chaque branche de refus, chacune
+/// reconnue à un fragment de son message (un refus pour une autre raison ne compte pas).
+#[test]
+fn g21_la_regle_d_accord_dockerfile_toolchain() {
+    const TC_1971: &str = "[toolchain]\nchannel = \"1.97.1\"\n";
+    // (Dockerfile, rust-toolchain.toml, Ok(()) ou fragment attendu du message d'erreur)
+    let cas: [(&str, &str, Result<(), &str>); 16] = [
+        ("FROM rust:1.97-bookworm\n", TC_1971, Ok(())),
+        (
+            "FROM rust:1.97.1-bookworm AS rust-builder\n",
+            TC_1971,
+            Ok(()),
+        ),
+        ("FROM rust:1.97-bookworm\n", "channel = \"1.97\"\n", Ok(())),
+        ("FROM rust:1.97\n", TC_1971, Ok(())),
+        ("from rust:1.97-bookworm as rust-builder\n", TC_1971, Ok(())),
+        ("FROM rust:1.97-bookworm\n", "channel = '1.97.1'\n", Ok(())),
+        (
+            "FROM rust:1.96-bookworm AS rust-builder\n",
+            TC_1971,
+            Err("mineure"),
+        ),
+        ("FROM rust:1.97.0-bookworm\n", TC_1971, Err("patch")),
+        ("FROM node:22-bookworm-slim\n", TC_1971, Err("aucune ligne")),
+        (
+            "# FROM rust:1.97-bookworm\nFROM debian:bookworm-slim\n",
+            TC_1971,
+            Err("aucune ligne"),
+        ),
+        (
+            "FROM rust:1.97-bookworm AS a\nFROM rust:1.97-bookworm AS b\n",
+            TC_1971,
+            Err("2 lignes `FROM rust:`"),
+        ),
+        ("FROM rust:1-bookworm\n", TC_1971, Err("sans mineure")),
+        ("FROM rust:latest\n", TC_1971, Err("sans mineure")),
+        (
+            "FROM rust:1.97-bookworm\n",
+            "channel = \"stable\"\n",
+            Err("non numérique"),
+        ),
+        (
+            "FROM rust:1.97-bookworm\n",
+            "[toolchain]\n# channel = \"1.97.1\"\n",
+            Err("absent"),
+        ),
+        (
+            "FROM rust:1.97-bookworm\n",
+            "channel = \"1.97.1\"\nchannel = \"1.97.1\"\n",
+            Err("2 lignes `channel`"),
+        ),
+    ];
+    let mut erreurs = Vec::new();
+    for (i, (dockerfile, toolchain, attendu)) in cas.iter().enumerate() {
+        let rendu = rust_versions_accordees(dockerfile, toolchain);
+        let juste = match (attendu, &rendu) {
+            (Ok(()), Ok(_)) => true,
+            (Err(fragment), Err(message)) => message.contains(fragment),
+            _ => false,
+        };
+        if !juste {
+            erreurs.push(format!(
+                "cas {i} ({dockerfile:?} / {toolchain:?}) : attendu {attendu:?}, rendu {rendu:?}"
+            ));
+        }
+    }
+    assert!(
+        erreurs.is_empty(),
+        "G21 — {} cas faux :\n  - {}",
+        erreurs.len(),
+        erreurs.join("\n  - ")
+    );
+    // Positif : les versions rendues sont celles écrites, mineure et patch séparés.
+    assert_eq!(
+        rust_versions_accordees("FROM rust:1.97-bookworm\n", TC_1971),
+        Ok((
+            VersionRust {
+                mineure: "1.97".into(),
+                patch: None
+            },
+            VersionRust {
+                mineure: "1.97".into(),
+                patch: Some("1".into())
+            },
+        ))
+    );
+}
+
+/// **G21** (#697, Story 31-3) — le `FROM rust:` du `Dockerfile` et le `channel` de
+/// `rust-toolchain.toml` désignent la même chaîne d'outils.
+///
+/// Pourquoi : ce sont deux sources de vérité indépendantes. `rustup` lit
+/// `rust-toolchain.toml` (CI, station) ; l'image part du `Dockerfile`. Un bump de l'un sans
+/// l'autre ne fait rien rougir — l'image se bâtit sur une autre chaîne que la CI, ou
+/// télécharge la bonne à chaque build. La règle est celle de [`rust_versions_accordees`].
+///
+/// **Positives adossées** : les deux fichiers sont lus et reconnus (`rust-builder`,
+/// `[toolchain]`), et la fonction rend `Ok` avec une mineure extraite de chacun — un motif
+/// qui ne trouverait rien rend un refus explicite, jamais un vert muet.
+#[test]
+fn le_dockerfile_et_rust_toolchain_designent_la_meme_chaine() {
+    let dockerfile = lire("Dockerfile");
+    let toolchain = lire("rust-toolchain.toml");
+    assert!(dockerfile.contains("rust-builder"), "Dockerfile lu à vide");
+    assert!(
+        toolchain.contains("[toolchain]"),
+        "rust-toolchain.toml lu à vide"
+    );
+    match rust_versions_accordees(&dockerfile, &toolchain) {
+        Ok((docker, chaine)) => {
+            assert!(
+                !docker.mineure.is_empty() && docker.mineure == chaine.mineure,
+                "G21 — versions extraites incohérentes : {docker:?} / {chaine:?}"
+            );
+        }
+        Err(e) => panic!("G21 — Dockerfile et rust-toolchain.toml en désaccord : {e}"),
+    }
 }
