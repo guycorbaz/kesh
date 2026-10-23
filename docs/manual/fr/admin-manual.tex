@@ -1067,6 +1067,8 @@ Le \emph{bootstrap} crée seulement une \textbf{company provisoire} (placeholder
     \item Le wizard d'onboarding démarre automatiquement (langue, mode, coordonnées de la société, banque).
 \end{enumerate}
 
+\textbf{Vous remettez debout une installation existante} (panne, changement de serveur) ? Ne configurez rien : dès le premier écran de l'assistant, le lien \textbf{« Restaurer une sauvegarde »} importe votre dernier \keshcommand{.keshbackup} --- procédure complète en \S\ref{sec:restauration-machine-neuve}.
+
 \begin{keshwarning}
 \textbf{Sécurité — bloquer l'accès réseau public avant le 1\textsuperscript{er} démarrage.} La personne qui touche \keshpath{/api/v1/setup/admin} en premier devient administrateur. Recommandé : binder loopback \keshcommand{127.0.0.1} (mapping Docker par défaut en prod) ou LAN privé via reverse proxy en attendant la création du compte. Le rate-limit IP (5 tentatives/15~min) limite le brute-force du formulaire.
 \end{keshwarning}
@@ -1599,7 +1601,7 @@ L'article 10 al. 1 OLICo exige que « l'intégrité et la lisibilité des suppor
 
 \begin{enumerate}
     \item Provisionner une instance Kesh de test (machine virtuelle ou container isolé).
-    \item Restaurer la sauvegarde la plus récente.
+    \item Restaurer la sauvegarde la plus récente --- un \keshcommand{.keshbackup} se restaure sur l'instance neuve par la procédure \emph{Restaurer sur une nouvelle machine} (\S\ref{sec:restauration-machine-neuve}), qui vérifie aussi les pièces.
     \item Vérifier que l'application démarre, que les écritures sont accessibles, qu'un export ZIP de souveraineté peut être généré et que son SHA-256 est identique à celui généré sur l'instance de production avant la sauvegarde.
     \item Documenter le test dans un procès-verbal écrit (date, opérateur, résultat, anomalies éventuelles). Conservation 10 ans avec les sauvegardes.
 \end{enumerate}
@@ -1922,7 +1924,7 @@ Menu \textbf{Administration → Restaurer / Importer} (\keshpath{/admin/restore}
 \textbf{Cette fonction sert à restaurer \emph{votre} installation} --- la remettre dans un état antérieur, ou la déplacer telle quelle vers un autre serveur. Ce n'est \textbf{pas} un outil pour verser les données d'une \emph{autre} installation dans la vôtre~: c'est techniquement possible, et les conséquences sur le journal d'audit sont décrites plus bas (section \emph{Conformité OLICo}).
 
 \begin{keshwarning}
-\textbf{Opération destructrice et irréversible.} L'import \textbf{remplace l'intégralité des données} de l'installation actuelle par celles du fichier. À la fin, vous êtes \textbf{déconnecté} et devez vous reconnecter avec les \textbf{identifiants tels qu'ils étaient au moment de la sauvegarde} --- tout compte créé, renommé ou dont le mot de passe a changé \emph{depuis} cette sauvegarde revient à son état d'alors, et les comptes créés depuis n'existent plus. Avant toute suppression, Kesh crée \textbf{automatiquement une sauvegarde de l'état courant} côté serveur, en filet de sécurité --- dans le dossier de sauvegarde \keshcommand{KESH\_ADMIN\_BACKUP\_DIR}, défaut \keshpath{/data/backup}, monté sur \keshpath{./backup} par les compose fournis (voir \emph{La sauvegarde de sécurité pré-import} ci-dessous).
+\textbf{Opération destructrice et irréversible.} L'import \textbf{remplace l'intégralité des données} de l'installation actuelle par celles du fichier. À la fin, votre session est \textbf{invalidée} : après avoir lu le bilan de l'import, cliquez « Se reconnecter » et reconnectez-vous avec les \textbf{identifiants tels qu'ils étaient au moment de la sauvegarde} --- tout compte créé, renommé ou dont le mot de passe a changé \emph{depuis} cette sauvegarde revient à son état d'alors, et les comptes créés depuis n'existent plus. Avant toute suppression, Kesh crée \textbf{automatiquement une sauvegarde de l'état courant} côté serveur, en filet de sécurité --- dans le dossier de sauvegarde \keshcommand{KESH\_ADMIN\_BACKUP\_DIR}, défaut \keshpath{/data/backup}, monté sur \keshpath{./backup} par les compose fournis (voir \emph{La sauvegarde de sécurité pré-import} ci-dessous).
 \end{keshwarning}
 
 L'import \textbf{refuse} le fichier et préserve l'installation si :
@@ -1949,6 +1951,12 @@ Les refus de \textbf{structure} et de \textbf{taille} arrivent avant toute écri
 Avant de remplacer les données, l'import écrit chaque pièce du fichier dans le dossier des documents (\keshcommand{KESH\_DOCUMENTS\_DIR}) ; une pièce déjà présente et intacte est laissée, une pièce présente mais altérée est remplacée. L'import ne supprime \textbf{jamais} un fichier du dossier des documents. Il compte ensuite, dans la base restaurée, les pièces \textbf{restaurées} et les pièces \textbf{manquantes} --- référencées, mais absentes ou altérées dans le dossier des documents : l'entrée d'audit \keshcommand{admin.full\_import} les porte (\keshcommand{files\_restored}, \keshcommand{files\_missing}, avec \keshcommand{source\_format\_version}), et le journal du serveur nomme chaque pièce manquante. Une sauvegarde de \textbf{format 1} (0.14.x et avant) n'emporte aucune pièce : restaurée sur la même installation, elle retrouve les pièces restées dans le dossier des documents (aucune ne manque) ; restaurée sur une autre machine, ses pièces manquent et chacune répond « document indisponible » (\texttt{410}) jusqu'à ce que le dossier des documents d'origine soit recopié (\S\ref{sec:pdf-factures-sauvegarde}).
 
 L'import va au bout même si le navigateur, ou le proxy inverse, abandonne l'attente : la restauration n'est jamais interrompue au milieu. Le fichier envoyé est d'abord reçu dans un temporaire \textbf{anonyme} du dossier de sauvegarde, qui disparaît à la fin de l'import. \textbf{Espace disque} : aucun seuil n'est contrôlé avant l'import ; au plus fort, l'envoi reçu, la sauvegarde de sécurité (base \textbf{et} pièces de l'installation actuelle) et les pièces écrites coexistent --- \textbf{jusqu'à environ trois fois} la taille du fichier quand le dossier de sauvegarde et celui des documents partagent le volume (le cas des compose fournis), moins sur une machine neuve, dont la sauvegarde de sécurité ne porte aucune pièce.
+
+\paragraph{Ce que dit l'écran à la fin de l'import (depuis la 0.15.0)}
+
+Un import réussi n'est plus suivi d'une déconnexion immédiate : l'écran annonce « \emph{Import réussi : l'installation est celle de la sauvegarde} », le nombre de \textbf{pièces justificatives restaurées} et, s'il en manque, un avertissement « \emph{Pièces référencées introuvables après la restauration : N} » --- elles répondront « document indisponible » tant que le dossier des documents ne les porte pas. Prenez le temps de lire, puis cliquez \textbf{« Se reconnecter »} : la session est déjà invalidée, et l'écran de connexion attend les identifiants \textbf{de la sauvegarde}.
+
+L'écran attend la réponse jusqu'à \textbf{une heure} (l'export aussi : il ne reçoit le fichier qu'une fois l'archive assemblée), sans jamais renvoyer la demande. Si la réponse ne revient pas --- délai dépassé, connexion coupée, ou proxy inverse qui abandonne l'attente (\texttt{502}, \texttt{504}) ---, l'écran affiche « \emph{La réponse du serveur n'est pas arrivée : l'import a pu aboutir. Reconnectez-vous pour vérifier l'état de l'installation.} » et propose \textbf{« Se reconnecter »}. \textbf{Ne relancez pas l'import} avant d'avoir vérifié : le serveur va au bout de la restauration même quand l'écran a cessé d'attendre ; l'entrée \keshcommand{admin.full\_import} du journal d'audit et le journal du serveur disent s'il a abouti.
 
 \paragraph{La sauvegarde de sécurité pré-import}
 
@@ -2001,6 +2009,36 @@ Il n'existe pas de commande qui rejouerait les reprises \textbf{sans} restaurer 
     \item \keshcommand{KESH\_ADMIN\_EXPORT\_INMEM\_MB} — plafond en mémoire de l'export ; au-delà, l'archive déborde dans un fichier temporaire anonyme du dossier de sauvegarde, puis est téléchargée (défaut \textbf{50}, bornes [1, 2048]).
     \item \sloppy\keshcommand{KESH\_ADMIN\_BACKUP\_DIR} — dossier de la sauvegarde de sécurité pré-import et des temporaires de l'export et de l'import (défaut \keshpath{/data/backup}, y compris quand la variable est vide, monté sur \keshpath{./backup} par les compose fournis ; créé en \texttt{0700} s'il n'existe pas). Une autre valeur doit être un chemin \textbf{monté}, sans quoi la sauvegarde retourne dans le conteneur ; hors Docker, un dossier inscriptible.
 \end{itemize}
+
+\subsubsection{Restaurer sur une nouvelle machine}\label{sec:restauration-machine-neuve}
+
+Le cas de la panne, du disque perdu ou du changement de serveur : remettre l'installation debout, \textbf{comptabilité et pièces}, à partir du dernier \keshcommand{.keshbackup} --- sans SSH, sans configurer de société, sans charger la démonstration. Il faut deux choses : le fichier \keshcommand{.keshbackup}, et une \textbf{copie de l'ancien} \keshpath{.env}, que le fichier ne contient pas (l'écran de sauvegarde le rappelle par un avis permanent). La sauvegarde doit être de format 2 (0.15.0 ou plus récente) pour emporter les pièces ; une sauvegarde de format 1 restaure la comptabilité, et ses pièces manquent (\S\ref{sec:pdf-factures-sauvegarde}).
+
+\begin{enumerate}
+    \item \textbf{Installer Kesh} sur la nouvelle machine (sections \emph{Installation} et \emph{Configuration}, \S\ref{sec:configuration}), dans une version \textbf{égale ou plus récente} que celle qui a produit la sauvegarde --- l'import refuse une sauvegarde qui exige une version plus récente que celle installée. Recréer le \keshpath{.env} depuis \keshpath{.env.example} et la copie conservée de l'ancien :
+    \begin{itemize}
+        \item \keshcommand{KESH\_JWT\_SECRET} peut être \textbf{neuf} : seules les sessions de connexion en dépendent, et l'import les remplace de toute façon ;
+        \item les mots de passe de la base (\keshcommand{MARIADB\_PASSWORD}, \keshcommand{DATABASE\_URL}) sont ceux de la \textbf{nouvelle} base, vide : la sauvegarde ne contient pas la base elle-même, mais ses données ;
+        \item la messagerie (\keshcommand{KESH\_SMTP\_*}) et les dossiers (\keshcommand{KESH\_DOCUMENTS\_DIR}, \keshcommand{KESH\_INBOX\_DIR}, \keshcommand{KESH\_ADMIN\_BACKUP\_DIR}) se reprennent de l'ancien \keshpath{.env} ; le dossier des documents doit être \textbf{monté} et inscriptible ;
+        \item \keshcommand{KESH\_ADMIN\_IMPORT\_MAX\_MB} seulement si le fichier dépasse \textbf{2048~Mio} (l'écran d'export l'a signalé : « Ce fichier dépasse la taille d'import autorisée ») ;
+        \item ne \textbf{pas} renseigner \keshcommand{KESH\_ADMIN\_USERNAME} / \keshcommand{KESH\_ADMIN\_PASSWORD} : l'écran \keshpath{/setup} crée un administrateur provisoire, que l'import remplace. (S'ils sont renseignés, il n'y a pas de \keshpath{/setup} : connectez-vous avec eux, l'assistant s'ouvre de même.)
+    \end{itemize}
+    Si un \textbf{proxy inverse} précède Kesh, le régler pour la taille et la durée de l'envoi --- bloc \texttt{location /api/v1/admin/} de \S\ref{sec:reverse-proxy}, taille égale au plafond d'import, délai d'une heure. Prévoir sur le disque environ \textbf{deux fois} la taille du fichier (le fichier reçu, puis les pièces écrites).
+    \item \textbf{\keshpath{/setup}} : ouvrir Kesh dans le navigateur, créer le compte administrateur demandé (nom et mot de passe quelconques : ils ne survivront pas à l'import).
+    \item \textbf{Restaurer une sauvegarde depuis l'assistant} : sur le premier écran de l'assistant (choix de la langue) --- et jusqu'au choix entre démonstration et production ---, cliquer le lien \textbf{« Restaurer une sauvegarde »}. La page de restauration s'ouvre : choisir le fichier \keshcommand{.keshbackup}, cliquer « Importer et remplacer l'installation », confirmer. Le lien n'apparaît qu'à un administrateur, et disparaît dès que l'on a choisi la démonstration ou la production : ces choix créent des données que l'import remplacerait. L'import peut durer plusieurs minutes ; ne fermez pas l'onglet. (Sur une installation déjà configurée, la même page est \textbf{Administration → Restaurer / Importer}, \S\ref{sec:backup-ui-keshbackup}.)
+    \item \textbf{Se reconnecter} : lire le bilan affiché --- pièces justificatives restaurées, et l'éventuel avertissement des \textbf{pièces manquantes} ---, cliquer « Se reconnecter », puis se connecter avec les identifiants \textbf{de la sauvegarde} (ceux de l'ancienne installation), et non avec le compte créé à l'étape~2, qui n'existe plus. L'application s'ouvre directement, sans l'assistant.
+    \item \textbf{Vérifier} :
+    \begin{itemize}
+        \item une \textbf{écriture} récente au journal, et la liste des factures ;
+        \item un \textbf{document fournisseur} : \emph{Documents à traiter} ou la fiche d'une facture fournisseur, aperçu affiché ;
+        \item le \textbf{PDF d'une facture} émise : il se télécharge, identique à l'original ;
+        \item si l'écran a annoncé des \textbf{pièces manquantes}, le journal du serveur (\keshcommand{docker compose logs kesh-api}) les nomme : chacune répond « document indisponible » tant que le fichier n'est pas recopié dans le dossier des documents depuis une autre sauvegarde (\S\ref{sec:pdf-factures-sauvegarde}).
+    \end{itemize}
+\end{enumerate}
+
+\begin{keshnote}
+L'import pris depuis l'assistant crée lui aussi sa \textbf{sauvegarde de sécurité} (\keshpath{kesh-pre-import-…}) de l'installation qu'il remplace --- ici presque vide : elle peut être supprimée une fois la restauration vérifiée. Si l'écran affiche « \emph{La réponse du serveur n'est pas arrivée : l'import a pu aboutir} », ne relancez pas l'import : reconnectez-vous d'abord avec les identifiants de la sauvegarde ; s'ils sont acceptés et que l'application s'ouvre, la restauration a abouti.
+\end{keshnote}
 
 \subsubsection{Quelle méthode de sauvegarde choisir ?}
 
