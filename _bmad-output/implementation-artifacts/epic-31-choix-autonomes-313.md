@@ -8,7 +8,8 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 
 - **Contexte** : le bump touche une ligne de configuration, un `FROM`, cinq lignes de documentation et d'éventuels
   correctifs clippy mécaniques ; pas de logique, pas de schéma.
-- **Retenu** : une seule passe P1 **ciblée**, une lentille F, Haiku, sur la fiche ; la revue de code se fera sur le diff
+- **Retenu** : une seule passe P1 **ciblée**, une lentille F, Haiku, sur la fiche (**révisé** : la fiche a changé de périmètre avec
+  C-31-3-6, une P2 **complète** Sonnet, lentilles R et F, la suit) ; la revue de code se fera sur le diff
   réel (surtout les correctifs de lints).
 - **Écartées** : deux lentilles Sonnet (R et F) comme pour une story fonctionnelle — coût sans objet ici.
 - **Réversible** : oui.
@@ -22,8 +23,9 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 
 ### C-31-3-3 — Les toolchains 1.96 restent installées sur la station
 
-- **Contexte** : des worktrees parallèles (31-1, 31-2) portent encore `channel = "1.96.1"` dans leur
-  `rust-toolchain.toml` tant qu'ils n'ont pas rebasé sur `main` après ce merge.
+- **Contexte** : les **15 worktrees** de la station (dépôt principal, Epics 15, 29, 30 et 31, releases 0.13.4 et 0.14.0)
+  portent tous `channel = "1.96.1"` dans leur `rust-toolchain.toml` (relevé du 2026-10-23, validation P1 F2), tant qu'ils
+  n'ont pas rebasé sur `main` après ce merge.
 - **Retenu** : le nettoyage (AC6) porte sur les **cibles cargo** de worktrees terminés, pas sur les toolchains.
 - **Écartée** : `rustup toolchain uninstall 1.96.1` — casserait les branches qui n'ont pas rebasé.
 - **Réversible** : oui (réinstallation).
@@ -33,7 +35,8 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Contexte** : la règle de l'action A10 (« gate vert avec le nouveau clippy ») ne dit pas quoi faire d'un lint qui
   demanderait un changement de comportement.
 - **Retenu** : correction mécanique par défaut ; sinon `#[allow]` local justifié et inscrit ici et au Dev Agent
-  Record ; correction non mécanique = issue demandée à l'orchestrateur.
+  Record ; un lint non mécanique reçoit **les deux** : l'`allow` au site et une issue de suivi de son correctif, demandée à
+  l'orchestrateur (une seule conduite, validation P1 F5).
 - **Écartée** : `-A clippy::x` en CI ou `#![allow]` de crate — éteint le lint pour tout le code futur.
 - **Réversible** : oui.
 
