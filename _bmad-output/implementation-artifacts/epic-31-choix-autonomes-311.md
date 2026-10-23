@@ -429,3 +429,98 @@ C-31-1-11 (C-31-1-39), C-31-1-20 et C-31-1-27 (C-31-1-40), C-31-1-29 (C-31-1-38)
 - **Écartée** : pid et compteur comme la sauvegarde pré-import (un motif plus long, à faire tenir dans l'expression de
   rétention, pour un cas que le verrou rend déjà presque impossible).
 - **Réversible** : oui, avant la première sauvegarde automatique écrite (le motif de rétention en dépend).
+
+### C-31-1-45 — `run_once` prend lui-même le verrou ; `POST …/run` traduit `Skipped` en 409 (amende C-31-1-41)
+
+- **Contexte** : validation P3 (R1 = F1, nés de la remédiation P2) — l'AC35 faisait prendre `backup_lock` par `run_once`,
+  l'AC27 et l'AC32 par le handler de `POST …/run`, qui déplaçait ensuite le garde dans la tâche appelant `run_once` ;
+  `tokio::sync::Mutex` n'est pas réentrant : l'appel manuel se serait toujours trouvé « en cours » (ou bloqué).
+- **Retenu** : une seule règle par acquéreur. `run_once` prend le verrou en `try_lock_owned` quel que soit le
+  déclencheur et rend `RunOutcome::Skipped` s'il est pris (ou si la réservation en base est perdue) ; la boucle de fond
+  ignore `Skipped` ; le handler de `POST …/run` n'acquiert rien, lance `run_once` dans un `tokio::spawn` attendu et
+  traduit `Skipped` en 409 `BACKUP_IN_PROGRESS`. L'import et l'export manuel gardent `lock_owned().await` (import dans
+  la fermeture de son `spawn`). M-c6 et M-c17 reformulées ; garde lexicale : `try_lock_owned` dans `auto_backup.rs`
+  seulement.
+- **Écartées** : passer le garde en paramètre de `run_once` (une seconde signature de fait, et la boucle comme le
+  handler devraient le prendre) ; garder le verrou au handler (la contradiction elle-même). Le motif qui avait écarté
+  cette option en P2 (C-31-1-41 : « lancer la tâche pour apprendre qu'elle ne peut pas tourner ») est un coût
+  négligeable — un `spawn` qui rend aussitôt.
+- **Réversible** : oui.
+
+### C-31-1-46 — L'assemblage d'une archive tient dans un seul `spawn_blocking` synchrone
+
+- **Contexte** : validation P3 (R5 = F2, nés de la remédiation P2) — `wrap_writer<'a>(&'a mut File)` ne pouvait entrer
+  dans un `spawn_blocking` (fermeture `'static`), `write_backup_file` était `async` sur `tokio::fs` alors que le
+  `ZipWriter` est synchrone, et les copies de fichiers « en `spawn_blocking` » ne pouvaient pas écrire dans l'entrée.
+- **Retenu** : lecture de la base en asynchrone (`export_installation`), puis tout le reste — tables, fichiers en deux
+  passes, `finish` — dans une fonction synchrone `write_keshbackup<W: Write + Seek>` appelée dans **un seul**
+  `spawn_blocking` qui possède l'export, les chemins, l'écrivain et, à la 31-1c, un `Arc<dyn BackupEnv>` ;
+  `write_backup_file` devient synchrone, à fermeture de remplissage, et remplit un clone (`try_clone`) du `.partial`
+  dont l'original reçoit `sync_all` ; `wrap_writer(File) -> Box<dyn Write + Seek + Send>` prend ce clone par valeur ;
+  aucun `tokio::fs` mêlé au `ZipWriter`, aucun `block_in_place`.
+- **Écartées** : `block_in_place` (panique sous le runtime mono-fil des tests) ; un pont `SyncIoBridge` (un `Write`
+  synchrone sur un `AsyncWrite`, qui bloque quand même un fil) ; un `spawn_blocking` par fichier (l'écrivain ZIP ne peut
+  pas y entrer).
+- **Réversible** : oui, avant le développement.
+
+### C-31-1-47 — Fichier illisible : listé `unreadable` ; divergence à la copie : la sauvegarde est abandonnée
+
+- **Contexte** : validation P3 (F3, d'origine) — `open_document` rend `Io(…)` pour un fichier présent mais illisible
+  (droits restaurés par DSM, `EIO`) ; la fiche ne disait pas si toute la sauvegarde échouait, et ne disait pas que la
+  copie, faite après le hachage, pouvait diverger et produire une archive que l'import refuse.
+- **Retenu** : toute erreur d'I/O autre que `NotFound` à la passe de hachage → raison `unreadable` dans
+  `filesNotIncluded`, la sauvegarde continue (cohérent avec C-31-1-4) ; la passe de copie re-hache, et toute divergence
+  (empreinte, taille, I/O) **abandonne la sauvegarde entière** — jamais d'archive partielle ni d'entrée fausse. Test du
+  fichier illisible (`chmod 000`, garde bruyante en `root`) et M-a20 ; le re-hachage est déclaré non testable (mutation
+  équivalente au niveau des tests).
+- **Écartées** : une seule passe (copie et hachage ensemble — un fichier altéré, déjà écrit, ne pourrait plus être
+  exclu : `zip` ne retire pas une entrée) ; lister le fichier divergent au lieu d'abandonner (l'entrée est déjà
+  commencée dans l'archive).
+- **Réversible** : oui.
+
+### C-31-1-48 — L'inventaire des sujets de l'AC14 est l'ensemble des lignes d'une commande
+
+- **Contexte** : validation P3 (F4, résidu de la P2) — l'extension de l'inventaire par sujets avait été rejouée sur
+  les `.tex` et `config.rs`, pas sur `.env.example`, `README.md` ni les doc-comments : huit sites manquaient, dans une
+  liste qui se disait close.
+- **Retenu** : la commande `grep` écrite à l'AC14 (motif tolérant `\_` du LaTeX, commentaires seulement dans `crates/`)
+  définit l'inventaire : 94 lignes à `c7639e80`, chacune au tableau ou triée « intacte » au Dev Agent Record ; rejouée
+  au dev sur le code modifié. Les huit sites de F4 et ceux de R11 (`admin-manual.tex:1721`, `:1739`, `:1887`, `:1958`,
+  `:2194`, `:2199`) sont au tableau.
+- **Écartées** : compléter la liste à la main (le défaut même) ; un test automatique (des phrases, non du code).
+- **Réversible** : oui.
+
+### C-31-1-49 — Bornes de l'import : cumulées pour les tables, paramétrables pour les tests
+
+- **Contexte** : validation P3 (F5, F6) — une borne de 1 Gio par table laissait 39 Gio en mémoire ; un test « table
+  trop grande » aurait exigé une entrée de plus de 1 Gio ; `byteSize + 1` paniquait sur `u64::MAX` en débogage.
+- **Retenu** : `TABLES_MAX_BYTES` (1 Gio) cumulé sur toutes les `data/*.ndjson` ; `MANIFEST_MAX_BYTES` inchangé ; les
+  deux passés à `parse_and_verify` par `ReadLimits` (constantes en production, réduites en test) ; `byteSize` supérieur
+  au plafond d'import refusé en 400 à la lecture du manifeste, `take(byteSize.saturating_add(1))` partout.
+- **Écartées** : abaisser la borne par table (39 × une borne plus petite reste un produit) ; borner par la taille
+  déclarée de l'en-tête ZIP (déclarative).
+- **Réversible** : oui.
+
+### C-31-1-50 — `ensure_not_pat` sur le seul téléchargement d'une sauvegarde du serveur
+
+- **Contexte** : validation P3 (R12) — la P2 mettait `ensure_not_pat` dans chacun des cinq handlers neufs, alors que la
+  couche anti-clé d'`admin_routes` les refuse déjà (les `users` et `email-templates` s'en passent) ; les trois `GET`
+  sortaient alors de la preuve de `head_couples_are_denied_too`.
+- **Retenu** : la couche suffit pour quatre routes ; seul `GET backups/{kind}/{name}`, qui livre une archive pleine de
+  secrets comme `full-export`, porte en plus `ensure_not_pat` (comme `full_export` et `full_import`) et entre dans
+  `GUARDED_BY_HANDLER` ; chemins discriminants 4 → 6.
+- **Écartées** : la garde partout (la preuve s'appauvrit sans gain) ; nulle part (le précédent de `full_export`
+  pour une route qui livre une archive).
+- **Réversible** : oui.
+
+### C-31-1-51 — Sauvegardes du serveur : pas d'indicateur de taille d'import, pas de suppression depuis l'écran
+
+- **Contexte** : validation P3 (F12, F13) — une sauvegarde du serveur peut dépasser le plafond d'import sans que la liste
+  le dise ; après `insufficient_space`, baisser le nombre conservé ne libère rien tant qu'aucune sauvegarde ne réussit.
+- **Retenu** : F12 en angle mort écrit (fiche et manuel : relever le plafond quand le dossier des documents grossit) ;
+  F13 par le texte — le message du statut `insufficient_space` au panneau et le manuel donnent la marche à suivre
+  (supprimer d'anciennes sauvegardes de `./backup/auto`) ; « un échec ne supprime rien » est conservé.
+- **Écartées** : un booléen « dépasse la taille d'import » dans `GET backups` (fonctionnalité neuve, à demander en
+  issue si l'usage le réclame) ; une rétention appliquée avant l'écriture (elle contredit M-c4 et M-c14 et supprime sur
+  un échec) ; un bouton « Supprimer » dans la liste (destructif, hors périmètre de #503).
+- **Réversible** : oui.
