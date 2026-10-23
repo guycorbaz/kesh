@@ -668,3 +668,92 @@ route `POST …/full-import` (`admin_backup` reste `pub(crate)`).
 - **Écartée** : produire la fixture sur la branche avant tout changement (chaîne 1.97.1 et `textes_coherents.rs` de la
   31-3 : le code de l'exporteur est identique, mais la fixture ne sortirait plus d'une version publiée).
 - **Réversible** : oui (la fixture se régénère au tag par le même générateur).
+
+### C-31-1-60 — Type d'erreur de `build_keshbackup` : `BackupError { Db, Write, Task }` (R4 = F3 de la P5)
+
+- **Contexte** : `build_keshbackup` lit la base (`DbError`), rend l'erreur de `remplir` (`BackupWriteError`, dont la 31-1c
+  classera l'`io::Error`) et peut perdre sa tâche (`JoinError`) ; l'import doit tout convertir par `avant_sauvegarde`.
+- **Retenu** : `pub enum BackupError { Db(DbError), Write(BackupWriteError), Task(String) }`, `impl From<BackupError> for
+  AppError` (→ `AdminFullExportFailed`, détail au journal) ; `avant_sauvegarde` devient `fn(impl Into<AppError>)`, si bien
+  que l'appel de la sauvegarde pré-import garde la forme `….await.map_err(avant_sauvegarde)?` que les gardes lexicales
+  exigent ; l'export écrit `.map_err(AppError::from)`.
+- **Écartées** : rendre `AppError` depuis `build_keshbackup` (perdrait l'`io::Error` dont la 31-1c a besoin) ; un
+  `Box<dyn Error>` (le `kind()` se perdrait derrière un `downcast`).
+- **Réversible** : oui.
+
+### C-31-1-61 — L'échec d'écriture des pièces réutilise `AdminFullImportFailed` et son message
+
+- **Contexte** : l'AC8 demande un refus 500 « aucune donnée n'a été remplacée » quand les pièces ne s'écrivent pas.
+- **Retenu** : `AppError::AdminFullImportFailed` (code `ADMIN_FULL_IMPORT_FAILED`), dont le message existant dit déjà
+  « L'état précédent a été préservé ; une sauvegarde de sécurité a été écrite avant l'opération » — exact ici : la
+  sauvegarde de sécurité est écrite, la base n'est pas touchée. Aucune clé i18n neuve (la 31-1a n'a pas d'i18n).
+- **Écartée** : une variante neuve (code et quatre locales pour un message équivalent).
+- **Réversible** : oui (la 31-1b peut distinguer le cas à l'écran si elle le juge utile).
+
+### C-31-1-62 — Classement des pièces en Rust, côté `kesh-api` ; `kesh-db` rend les couples bruts
+
+- **Contexte** : l'AC1 dédoublonne par chemin et classe trois anomalies, dont la forme `^[0-9a-f]{64}\.[a-z0-9]{1,8}$`
+  et `is_safe_storage_path`, qui vivent dans `kesh-api` (`document_storage`).
+- **Retenu** : `kesh_db::backup::read_referenced_files` rend les couples (chemin, empreinte) **distincts** (égalité
+  d'octets, `BTreeSet`), triés, lus dans l'instantané ; `export::classer_les_pieces` (fonction pure, testée seule) les
+  partage en « à lire » et « incohérents ». Un même chemin sous deux empreintes apparaît donc deux fois dans
+  `referenced_files`, et une seule fois, en `mismatch`, au manifeste.
+- **Écartée** : classer dans `kesh-db` (dépendance aux règles de nommage de `kesh-api`, ou duplication de l'expression).
+- **Réversible** : oui.
+
+### C-31-1-63 — Taille d'une pièce contrôlée deux fois à l'import ; M-a6 (borne seule) déclarée équivalente
+
+- **Contexte** : M-a6 retire la borne `take(byteSize + 1)`. L'import compare **aussi** le nombre d'octets lus à
+  `byteSize` (plus long → « trop grande », plus court → « taille différente ») : sans la borne, l'entrée est lue en
+  entier, puis refusée par la comparaison, avec le même message.
+- **Retenu** : garder les deux. La borne protège la mémoire et le temps (une entrée qui déclare 10 octets et en porte
+  plusieurs Gio n'est lue qu'au-delà de 11 octets) ; la comparaison refuse une entrée plus courte. M-a6 (borne seule)
+  est **équivalente** au niveau de l'observable (aucun test ne mesure la quantité lue) ; la variante M-a6b (borne **et**
+  comparaison retirées) est tuée par le test « entrée plus grande que déclarée, empreinte du contenu entier ».
+- **Écartée** : retirer la comparaison pour que la seule borne refuse (une entrée plus courte que déclarée passerait).
+- **Réversible** : oui.
+
+### C-31-1-64 — Un manifeste de format 1 qui déclare des pièces est refusé
+
+- **Contexte** : `files` et `filesNotIncluded` sont `#[serde(default)]` ; un manifeste `formatVersion: 1` peut
+  techniquement les porter.
+- **Retenu** : 400 « un manifeste de format 1 ne déclare aucune pièce » — la 0.14.0 n'en écrivait pas, et l'import
+  n'irait pas les lire (format 1 : `files/` doit être vide).
+- **Écartée** : les ignorer (une archive incohérente s'importerait sans le dire).
+- **Réversible** : oui.
+
+### C-31-1-65 — `restore_document` distingue « écrite » et « remplacée »
+
+- **Contexte** : l'AC8 journalise en `warn!` une pièce présente mais altérée, remplacée par celle de la sauvegarde.
+- **Retenu** : `RestoreOutcome::{Written, Replaced, AlreadyIntact}` ; `Replaced` dès qu'un fichier de ce nom existait et
+  n'avait pas l'empreinte attendue (ou n'était pas lisible) ; `ecrire_les_pieces` journalise `Replaced` en `warn!`.
+- **Réversible** : oui.
+
+### C-31-1-66 — `write_pre_import_backup` porte l'appel de `build_keshbackup` ; les deux gardes s'étendent
+
+- **Contexte** : la sauvegarde pré-import crée le dossier, nomme le fichier et appelle `build_keshbackup` avec une
+  fermeture `remplir` qui passe par `write_backup_file`. Laissé dans `run_backup_and_restore`, le `?` de la fermeture et
+  sa conversion rompaient le décompte de la garde `echecs_avant_sauvegarde_tous_convertis`.
+- **Retenu** : `write_pre_import_backup(state)` porte tout (dossier, nom, `remplir` nommée avant l'appel,
+  `build_keshbackup(…).await.map_err(avant_sauvegarde)?`) ; la garde 20 compte `write_pre_import_backup` parmi les
+  fonctions de l'import ; la garde des conversions porte désormais **deux** segments (début de
+  `run_backup_and_restore` → appel de `write_pre_import_backup` : (3, 0) ; corps de `write_pre_import_backup` → fin de
+  l'instruction `build_keshbackup` : (1, 1)), l'invariant « tout `?` d'avant la sauvegarde est converti » intact.
+- **Écartée** : baisser un compte sans étendre le segment (la garde ne verrait plus la sauvegarde elle-même).
+- **Réversible** : oui.
+
+### C-31-1-67 — `TMPDIR` n'est plus lu : l'entrée du registre des lectures est retirée
+
+- **Contexte** : `configuration_transmise.rs` (L) inventoriait `std::env::temp_dir()` de `stream_via_tempfile`, retiré
+  par l'AC4 (débordement dans `KESH_ADMIN_BACKUP_DIR`) ; l'entrée périmée rougissait.
+- **Retenu** : l'entrée et la constante `ADMIN` retirées, l'en-tête du test dit qu'un retour de `TMPDIR` rougirait.
+- **Réversible** : oui.
+
+### C-31-1-68 — Montage commun des tests de pièces dans `tests/support/pieces.rs`
+
+- **Contexte** : les tests d'export et d'import (deux binaires) seedent tous deux une facture figée par la route réelle
+  et un document écrit par `store_document`.
+- **Retenu** : un module `tests/support/pieces.rs` inclus par `#[path]` dans les deux binaires (patron de
+  `kesh-db/tests/support/`), aucun binaire de test neuf ; le générateur de la fixture garde son montage en ligne, tel
+  qu'il a tourné au tag `v0.14.0`.
+- **Réversible** : oui.

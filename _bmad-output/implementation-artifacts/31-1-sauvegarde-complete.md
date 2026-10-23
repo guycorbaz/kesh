@@ -7,8 +7,8 @@
 faite (Sonnet, R 0/0/10/8, F 0/2/9/8) et remédiée le 2026-10-23 ; validation P2 faite (Opus, R 0/0/8/8, F 0/1/7/9)
 et remédiée le 2026-10-23 ; validation P3 faite (Sonnet, R 0/0/5/7, F 0/0/4/11) et remédiée le 2026-10-23 ;
 validation P4 faite (Opus, R 0/0/3/11, F 0/0/4/7) et remédiée le 2026-10-24 ; validations P5 à P8 faites,
-**terminée au plafond de huit passes** (Change Log). **31-1a : in-progress** (développement, 2026-10-24) ; 31-1b et
-31-1c : ready-for-dev.
+**terminée au plafond de huit passes** (Change Log). **31-1a : review** (développement terminé le 2026-10-24 ; revue de
+code P1 à lancer, `311a-review-prompt-p1.md`, **Sonnet**, lentilles B, E, A) ; 31-1b et 31-1c : ready-for-dev.
 
 ⛔ **Trois stories, une fiche, trois PR successives** (C-31-1-1) :
 
@@ -957,28 +957,28 @@ sauvegarde E2E pèse quelques Kio, et `importMaxMib` ne descend pas sous 1).
 
 ### 31-1a
 
-- [ ] T-a0 **Avant tout changement de code**, sur `44ef2079` : générateur `#[ignore]` et fixture
+- [x] T-a0 **Avant tout changement de code**, sur `44ef2079` : générateur `#[ignore]` et fixture
   `tests/fixtures/keshbackup-0.14.0-format1.keshbackup` (AC10), commit dédié, empreinte au Dev Agent Record.
-- [ ] T-a1 Tests rouges : AC2 (deux gardes), AC6/AC7 (unitaires de `parse_and_verify` : format 2 valide, ligne du
+- [x] T-a1 Tests rouges : AC2 (deux gardes), AC6/AC7 (unitaires de `parse_and_verify` : format 2 valide, ligne du
   manifeste sans entrée, nom invalide, préfixe ≠ sha, taille dépassée, sous-dossier, format 3 refusé, chemin dans les
   deux listes, chemin de `filesNotIncluded` hors forme **accepté**), AC6b (manifeste trop grand, tables trop grandes **en
   cumul** — deux tables chacune sous la borne, leur somme au-dessus —, `byteSize` supérieur au plafond d'import → 400
   sans panique, entrée inattendue — dont une entrée `files/*` sans ligne — refusée en format 2 avant la lecture de
   toute table ; bornes réduites par `ReadLimits` ; « nom en double » retiré en P2, C-31-1-38), AC10 (fixture réelle),
   AC13 (intégration).
-- [ ] T-a2 `kesh-db` : `ReferencedFile`, lecture dans `export_installation_in` (AC1) ; tests de l'instantané étendus
+- [x] T-a2 `kesh-db` : `ReferencedFile`, lecture dans `export_installation_in` (AC1) ; tests de l'instantané étendus
   (une facture figée **après** l'ouverture de l'instantané n'apparaît pas dans `referenced_files` — observateur) ;
   les deux lectures sans `UNION` ni `DISTINCT` SQL, dédoublonnage en Rust par égalité d'octets ; test : `X….pdf` et
   `x….pdf` de même empreinte déclarée (deux sociétés) → deux chemins, `x….pdf` inclus et `X….pdf` en `mismatch`
   (préfixe hors `[0-9a-f]`), aller-retour **200** (F6, P4 ; tue M-a22 : sous un `UNION` SQL, une ligne disparaît et
   l'import refuse en 400).
-- [ ] T-a3 `manifest.rs` : version 2, `files`, `filesNotIncluded` (`serde(default)`).
-- [ ] T-a4 `export.rs` : `build_keshbackup(pool, documents_dir, remplir)` générique, seul appelant
+- [x] T-a3 `manifest.rs` : version 2, `files`, `filesNotIncluded` (`serde(default)`).
+- [x] T-a4 `export.rs` : `build_keshbackup(pool, documents_dir, remplir)` générique, seul appelant
   d'`export_installation(` (AC4, C-31-1-56) ; `write_keshbackup<W: Write + Seek>` synchrone, appelée par chaque
   `remplir` ; lecture des fichiers en **une passe**, boucle de copie à la main, `abort_file` sur `altered` et
   `unreadable` (AC3, C-31-1-53) ; `regex` aux `[dependencies]` (AC6) ; méta étendue
   (AC5) ; `routes/admin.rs` : `SpooledTempFile` (AC4), en-têtes (AC5, AC12), audit.
-- [ ] T-a4b Tests de l'export (≥ 11, rouges d'abord) : fichier `missing`, `altered`, `mismatch` (préfixe ≠ empreinte de la
+- [x] T-a4b Tests de l'export (≥ 11, rouges d'abord) : fichier `missing`, `altered`, `mismatch` (préfixe ≠ empreinte de la
   ligne ; même chemin, deux empreintes) → listé dans `filesNotIncluded`, absent de l'archive (c'est le test qui tue M-a2) ;
   fichier **illisible** (`chmod 000` dans le dossier des documents du test ; le test vérifie d'abord qu'il ne peut pas le
   lire et **échoue bruyamment** s'il le peut — gate en `root` —) → `unreadable`, l'export rend **200** et les autres
@@ -1000,16 +1000,16 @@ sauvegarde E2E pèse quelques Kio, et `importMaxMib` ne descend pas sous 1).
   dans `/tmp`), le premier cas rend 200 et rougit. Le test commence par vérifier qu'il ne peut pas créer de fichier dans
   ce dossier, et **échoue bruyamment** s'il le peut (gate lancé en `root`) au lieu de passer à vide ; dossier de
   sauvegarde absent → créé (AC4).
-- [ ] T-a5 `document_storage.rs` : cœur d'écriture atomique factorisé ; `restore_document(dir, storage_path, source:
+- [x] T-a5 `document_storage.rs` : cœur d'écriture atomique factorisé ; `restore_document(dir, storage_path, source:
   impl Read, byte_size, expected_sha)` — copie en flux à travers `take(byte_size.saturating_add(1))` et `Sha256` (AC8 ; la signature
   à `bytes` de la création lisait le fichier entier en mémoire, F4, P2), puis `sync_all` du dossier (AC8) ;
   `open_document` et son test unitaire direct (AC3 ; tue M-a12) ; `write_backup_file` **synchrone**, à fermeture de
   remplissage sur un clone du `File` (AC4) — ses tests (`routes/admin.rs:804`, `:830`) réécrits en synchrone.
-- [ ] T-a6 `import.rs` : `parse_and_verify<R: Read + Seek>`, `ReadLimits`, `ParsedBackup` portant la `ZipArchive<R>`,
+- [x] T-a6 `import.rs` : `parse_and_verify<R: Read + Seek>`, `ReadLimits`, `ParsedBackup` portant la `ZipArchive<R>`,
   format 2 (AC6, AC6b, AC7, AC8) ; `routes/admin.rs` : `read_upload` sur disque
   (AC11), écriture des fichiers avant le `DELETE` (AC8), import dans une tâche `spawn` attendue (AC8b), comptes et
   audit (AC9).
-- [ ] T-a6b Tests de l'import (≥ 9, rouges d'abord) : cohérence AC7 en format 2 (fichier de `manifest.files` non
+- [x] T-a6b Tests de l'import (≥ 9, rouges d'abord) : cohérence AC7 en format 2 (fichier de `manifest.files` non
   référencé ; empreinte ≠ `file_hash`/`pdf_sha256` ; fichier référencé ni dans `files` ni dans `filesNotIncluded` →
   400) ; la même absence en format 1 → **200** (fixture réelle) ; table `invoices` sans colonne `pdf_storage_path` →
   ni `panic` ni 400, `filesMissing` calculé sans elle ; refus d'écriture (dossier des documents non inscriptible) →
@@ -1022,15 +1022,15 @@ sauvegarde E2E pèse quelques Kio, et `importMaxMib` ne descend pas sous 1).
   P4). (L'échec du `sync_all` du dossier des documents, AC8, n'est pas testé : aucun système de fichiers du poste ne le
   refuse ; branche relue en revue, angle mort écrit — F7, P4.)
   (« Aucun temporaire laissé » retiré en P2 : vrai par construction, aucun test ne pouvait rougir — AC11.)
-- [ ] T-a7 `config.rs` : défaut 2048 (AC12) et son test ; `.env.example`.
-- [ ] T-a8 Manuels, `docs/api-external.md`, proxy inverse, CHANGELOG (AC14) ; grep des valeurs (`503`, `512`,
+- [x] T-a7 `config.rs` : défaut 2048 (AC12) et son test ; `.env.example`.
+- [x] T-a8 Manuels, `docs/api-external.md`, proxy inverse, CHANGELOG (AC14) ; grep des valeurs (`503`, `512`,
   `files/`, `n'emporte`, `sans les fichiers`, `aucun binaire`, `formatVersion`, `50M`, `300s`) sur tout le dépôt — code,
   doc-comments, i18n, manuels (`.tex` **et** PDF aplati), `docs/`, `website/` — confronté à l'inventaire clos de l'AC14 :
   chaque site de l'inventaire traité, chaque site **neuf** ajouté au tableau du Dev Agent Record avec son traitement
   (les phrases de `website/roadmap.html` et de la brochure sont laissées à la release, à noter au Dev Agent Record) ;
   **et** la commande des sujets de l'AC14 rejouée (`-i`, compose compris), chacune de ses lignes triée (103 à
   `6f0828cf` ; 94 à `c7639e80` par la commande de la P3).
-- [ ] T-a9 Mutations (§ Mutations), gate complet (`kesh-db` touché), E2E complet au dernier commit de code.
+- [x] T-a9 Mutations (§ Mutations), gate complet (`kesh-db` touché), E2E complet au dernier commit de code.
 
 ### 31-1b
 
@@ -1308,6 +1308,12 @@ seconde passe (C-31-1-53) ; le contrôle d'empreinte de la passe unique est tué
 ### Debug Log References
 
 - `/home/gcorbaz/devel/kesh-gate-logs/311a-fixture.log` — production de la fixture 0.14.0.
+- `311a-red-kesh-db.log`, `311a-red-integration.log` — tests rouges constatés.
+- `311a-cible-1.log` — premier gate ciblé `kesh-api` (lib + deux binaires d'intégration).
+- `311a-gate-1.log` (rouge, `configuration_transmise`), `311a-gate-2.log`, `311a-gate-3.log` — gates complets.
+- `311a-mut-M-a*.log` — campagne de mutations (diff de la mutation en tête de chaque journal).
+- `311a-make.log` — PDF des manuels.
+- `311a-e2e-run.log`, `311a-fe-*.log`, `311a-e2e.log`, `311a-e2e-backend.log` — gate frontend et E2E complet.
 
 ### Completion Notes List
 
@@ -1320,7 +1326,173 @@ seconde passe (C-31-1-53) ; le contrôle d'empreinte de la passe unique est tué
 (`pdf_storage_path` `6a818379….pdf`) — deux pièces référencées, aucune emportée. Données synthétiques (société de
 `seed_accounting_company`, « Client Fictif », IBAN d'exemple de la documentation SIX déjà employé par les tests).
 
+**31-1a — ce qui est livré** (commits `33684111` fixture, `844d522e` code, `3586d3c5` documentation) :
+
+- **kesh-db** (AC1) : `ReferencedFile`, `InstallationExport.referenced_files`, `read_referenced_files` — deux requêtes
+  dans l'instantané, après les tables, dédoublonnage par égalité de chaînes (`BTreeSet`), aucun `UNION` (C-31-1-62).
+- **document_storage** : `write_atomically` (cœur commun à `store_document`, comportement inchangé),
+  `open_document` (seul point de jointure d'un chemin), `sha256_of`, `document_is_intact`, `restore_document` en flux
+  (`Written` / `Replaced` / `AlreadyIntact`, C-31-1-65), `is_safe_storage_path` en `pub(crate)`.
+- **manifest** : `BACKUP_FORMAT_VERSION = 2`, `files`, `filesNotIncluded` (`serde(default)`), `NotIncludedReason`.
+- **export** : `build_keshbackup<T, F>(pool, documents_dir, remplir)` — unique lecteur de la base, un seul
+  `spawn_blocking` ; `write_keshbackup<W: Write + Seek>` ; `copier_piece` en une passe avec `abort_file` ;
+  `classer_les_pieces` ; `BackupWriteError` (l'`io::Error` conservée) et `BackupError` (C-31-1-60).
+- **import** : `parse_and_verify<R: Read + Seek>(reader, &ReadLimits)` — manifeste borné, inventaire des noms avant toute
+  lecture, borne cumulée des tables, pièces bornées et hachées, cohérence pièces ↔ base (format 2 seul), refus d'un
+  format 1 qui déclarerait des pièces (C-31-1-64) ; `ParsedBackup<R>` porte l'archive ; `ecrire_les_pieces` (dossier
+  synchronisé, échec journalisé sans refus) ; `compter_les_pieces_manquantes`.
+- **routes/admin** : export dans un `SpooledTempFile` débordant dans `KESH_ADMIN_BACKUP_DIR` (créé au besoin), en-têtes
+  `X-Kesh-Backup-Files`, `-Files-Not-Included`, `-Exceeds-Import-Limit`, audit `file_count` / `files_bytes` /
+  `files_not_included` ; import reçu par morceaux dans un temporaire anonyme, vérification en `spawn_blocking`, tout le
+  reste dans un `tokio::spawn` attendu, pièces écrites **avant** `restore_tables_in_tx`, `filesRestored` /
+  `filesMissing` en réponse et à l'audit (avec `source_format_version`) ; `write_backup_file` synchrone à fermeture de
+  remplissage ; `write_pre_import_backup(state)` porte la sauvegarde pré-import (C-31-1-66) ; `avant_sauvegarde`
+  générique.
+- **config** : `DEFAULT_ADMIN_IMPORT_MAX_MIB = 2048` (constante unique ; littéraux de test et messages la reprennent).
+- **Dépendances** : `regex` et `tempfile` passés aux `[dependencies]` de `kesh-api` ; `Cargo.lock` inchangé.
+
+**Tests rouges constatés avant le code** :
+
+- `kesh-db` (`311a-red-kesh-db.log`) — lecture remplacée par `Vec::new()` le temps du constat :
+  `referenced_files_lit_documents_et_pdf_figes` **FAIL** (`left: []`, `right: [ReferencedFile { … AAAA….pdf … }, …]`) ;
+  `colonnes_storage_path_inventaire_clos` passe (garde de l'état présent, verte par nature).
+- Intégration (`311a-red-integration.log`), sur le code d'avant (`manifest.rs` mis de côté par `git stash` le temps du
+  run) : **73 tests, 50 passés, 23 échoués** — les 12 tests neufs d'export, l'assertion `formatVersion == 2` du test de
+  structure, et 10 tests neufs d'import (`ac10…`, `ac13…` ×2, `format_1_restauree_sur_la_meme_installation`, les trois
+  refus de cohérence, `piece_presente_alteree_remplacee`, `table_invoices_sans_colonne_de_pdf`,
+  `refus_d_ecriture_des_pieces_laisse_la_base_intacte`). Verts dès l'origine, et c'est attendu : `import_cree_le_dossier…`
+  et `import_dossier_de_sauvegarde_non_inscriptible` (l'ancien code créait déjà le dossier et refusait un dossier non
+  inscriptible : ils gardent M-a17 et l'AC11), `full_import_refuses_unknown_format_400` porté à 3.
+- Les tests unitaires de `parse_and_verify`, `document_storage`, `export` et `routes/admin` ont été écrits **avec** les
+  nouvelles signatures (rouges de compilation, non consignés comme rouges de comportement) ; leur pouvoir de détection
+  est établi par la campagne de mutations ci-dessous. ⚠️ Écart de méthode déclaré : pour `kesh-db` et `manifest.rs`, le
+  code de production a été écrit avant les tests, le rouge a été constaté ensuite en défaisant le code le temps du run.
+
+**Gates réellement exécutés** (périmètre : branche `story/31-1`, base `b5fd9fb1`) :
+
+- Gate complet backend (`scripts/test-fast.sh --ci`, fmt + clippy `-D warnings` + nextest, base `kesh_311a` remise à
+  zéro avant chaque run) : `311a-gate-1.log` **rouge** (1 échec : `configuration_transmise lectures`, entrée `TMPDIR`
+  périmée — C-31-1-67) ; `311a-gate-2.log` **3907 passés, 7 ignorés** (au commit `844d522e`) ; `311a-gate-3.log`
+  **3907 passés, 7 ignorés** (au commit `3586d3c5`, dernier commit de code : doc-comments d'`errors.rs` et
+  `admin_backup/mod.rs`). Les 7 ignorés : les 6 de `main` et le générateur `generate_fixture_0_14_0`.
+- Frontend au commit `3586d3c5` (le frontend n'est pas touché) : `npm run check` **0 erreur, 29 avertissements** (5081
+  fichiers) ; `lint-i18n-ownership` **PASS** ; `npm run test:unit` **1820 tests, 156 fichiers, tous passés** ;
+  `npm run build` **vert**.
+- **E2E complet** au commit `3586d3c5` (recette de `docs/testing.md` à la lettre, port 3311, base `kesh_e2e_311a`
+  remise à zéro, dossiers `/tmp/kesh-e2e-311a/*` passés au backend **et** au runner, `/health` :
+  `smtpConfigured: true`) : **307 passés, 7 échoués, 17 ignorés** (12,5 min, `311a-e2e.log`). Les 7 échecs, jugés
+  fichier par fichier contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — **les sept KF-029 (#97)** ; ni KF-052
+  ni pollution sur ce run. Aucun échec hors liste.
+
+**Décompte des tests** (recompté aux deux bornes, `#[test]` / `#[tokio::test]` / `#[sqlx::test]`, de `b5fd9fb1` à
+`HEAD`) : `kesh-db/src/backup.rs` 25 → 28 ; `admin_backup/export.rs` 1 → 5 ; `admin_backup/import.rs` 6 → 23 ;
+`admin_backup/manifest.rs` 1 → 3 ; `document_storage.rs` 7 → 14 ; `routes/admin.rs` 8 → 10 (deux tests renommés et
+réécrits en synchrone : `write_backup_file_en_0600`, `ensure_backup_dir_dossiers_crees_et_existants`) ;
+`tests/admin_full_export_e2e.rs` 7 → 20 (dont le générateur `#[ignore]`) ; `tests/admin_full_import_e2e.rs` 43 → 55 ;
+soit **60** fonctions de test neuves. `config.rs` et `configuration_transmise.rs` : nombre inchangé, assertions mises à
+jour.
+
+**Mutations** (campagne sous le verrou de gate, journaux `311a-mut-<M>.log` ; chaque mutation appliquée par l'outil
+d'édition sur un motif unique, restaurée par `git checkout -- <f>` puis `touch <f>`, arbre propre vérifié après chacune) :
+
+| # | Mutation appliquée | Test(s) rejoué(s) | Résultat |
+|---|---|---|---|
+| M-a1 | boucle des PDF figés de `read_referenced_files` → `.take(0)` | `referenced_files_lit…`, `ac13_format_2…` | **tuée** (2/2 rouges) |
+| M-a2 | `copier_piece` sans le contrôle d'empreinte | `export_piece_alteree…` | **tuée** |
+| M-a3 | import sans « préfixe = empreinte » | `format_2_prefixe_different…` | **tuée** — par le message : l'archive est refusée plus loin (cohérence), le test exige le refus de nom |
+| M-a4 | import sans le contrôle « ligne du manifeste sans entrée » | `format_2_ligne_du_manifeste_sans_entree` | **tuée** — par le message : la lecture de la pièce échoue ensuite (défense en profondeur) |
+| M-a5 | import sans la comparaison d'empreinte d'une pièce | `format_2_empreinte_fausse` | **tuée** |
+| M-a6 | borne `take(byteSize + 1)` → `take(u64::MAX)` | `format_2_entree_plus_grande…` | **équivalente** (C-31-1-63) : la comparaison des tailles refuse avec le même message ; seule la quantité lue change, que rien n'observe |
+| M-a6b | borne **et** comparaisons de taille retirées | `format_2_entree_plus_grande…` | **tuée** (l'archive est acceptée) |
+| M-a7 | pièces écrites **après le `COMMIT`** | `refus_d_ecriture_des_pieces…` | **tuée** — sur l'assertion « la base n'a pas été remplacée » |
+| M-a8 | erreur d'écriture des pièces ignorée | `refus_d_ecriture_des_pieces…` | **tuée** |
+| M-a9 | `filesMissing` calculé sur le backup | `format_1_restauree_sur_la_meme_installation`, `ac13_format_1…` | **tuée** par le premier ; le second reste vert (même nombre, comme la fiche l'annonçait) |
+| M-a10 | `formatVersion` 3 accepté | `parse_rejects_future_format_version`, `full_import_refuses_unknown_format_400` | **tuée** (2/2) |
+| M-a11 | fichiers référencés lus dans un second instantané, sur le pool | `referenced_files_lus_dans_l_instantane`, `export_installation_n_ouvre_qu_un_instantane` | **tuée** (2/3 rouges ; `referenced_files_lit…` reste vert) |
+| M-a12 | `open_document` sans `is_safe_storage_path` | `open_document_refuse_les_chemins_hors_forme` | **tuée** |
+| M-a13 | deux chemins de même empreinte classés `mismatch` | `classer_les_pieces_garde_deux…`, `export_deux_chemins…` | **tuée** (2/2) |
+| M-a14 | borne des tables par table au lieu du cumul | `tables_trop_grandes_en_cumul` | **tuée** |
+| M-a15 | cohérence appliquée au format 1 | `coherence_appliquee_au_seul_format_2`, `ac10_la_sauvegarde_de_la_0_14_0…` | **tuée** (2/2) |
+| M-a16 | import exécuté sans `tokio::spawn` (même comportement) | `import_dans_une_tache_detachee`, `ac13_format_2…` | **tuée** par la garde lexicale (le test de comportement reste vert, attendu) |
+| M-a17 | `full_import` ne crée plus le dossier de sauvegarde | `import_cree_le_dossier…` | **tuée** |
+| M-a18 | expression des noms réappliquée à `filesNotIncluded` | `format_2_non_inclus_hors_forme_accepte`, `export_chemins_hors_forme…` | **tuée** (2/2) |
+| M-a19 | `spooled_tempfile` sans `_in` | `export_deborde_dans_le_dossier_de_sauvegarde` | **tuée** |
+| M-a20 | erreur d'ouverture propagée (sauvegarde abandonnée) | `export_piece_illisible…` | **tuée** |
+| M-a21 | erreur de lecture pendant la copie traitée en erreur d'écriture | `export_dossier_a_la_place_de_la_piece` | **tuée** |
+| M-a22 | `UNION` SQL au lieu de deux lectures | `referenced_files_lit…`, `export_chemins_de_casse…` | **tuée** (2/2) |
+
+Bilan : 22 mutations de la fiche exercées (+ la variante M-a6b) ; **21 tuées, 1 déclarée équivalente** (M-a6, avec la
+variante qui en tue l'intention).
+
+**Choix ajoutés au registre** : C-31-1-59 (fixture au tag), C-31-1-60 à C-31-1-68.
+
+**Inventaire de l'AC14** — la commande des sujets de la fiche (`-i`, compose compris) rejouée sur `HEAD` rend **123
+lignes** (103 à `6f0828cf` ; l'écart vient des doc-comments neufs de la 31-1a qui nomment ces sujets) :
+35 du manuel d'administration, 8 de `.env.example`, 2 du `README.md`, 4 de chaque compose, 70 de commentaires dans
+`crates/`. Tri, ligne par ligne, regroupé par traitement :
+
+| Lignes | Traitement |
+|---|---|
+| `admin-manual.tex:196` | « tout import et tout export » (jumeau de `.env.example:88`, `README.md:93`, tous trois traités) |
+| `admin-manual.tex:345`, `:367`, `:395`, `:531`, `:659` | **neuves** : bloc Nginx `location /api/v1/admin/`, paragraphe du proxy, Caddy, Traefik, Portail DSM |
+| `admin-manual.tex:805-807` (tableau), `:1991-1993` (§ *Variables*) | 2048, débordement dans le dossier de sauvegarde, temporaires |
+| `admin-manual.tex:1489`, `:1851`, `:1861`, `:1914`, `:1933`, `:1935`, `:1942`, `:1946` | corrigées ou **neuves** (stratégie, introduction, instantané et pièces, *Ce que la sauvegarde emporte*, refus de l'import, *Les pièces à l'import*, volume de la sauvegarde pré-import) |
+| `admin-manual.tex:866` (note des montages), `:1631` (Hyper Backup), `:1925` (import destructeur), `:1944` (titre), `:1950-1951` (copie SSH) | **intactes** : vraies après la 31-1a (le téléchargement par l'écran est la 31-1c, AC34) |
+| `admin-manual.tex:2240`, `:2245` (compose 0.13.0), `:2314` (montage `./backup`) | **intactes** : vraies à leur date / pour leur objet |
+| `admin-manual.tex:2283-2285`, `:2299-2301`, `docker-compose*.yml:131-133` / `:153-155` | **intactes** : transmission des variables (`${…:-}`) |
+| `.env.example:88`, `:183`, `:185`, `:189`, `:190`, `:197` | traitées (export aussi ; débordement ; 2048 ; dossier des temporaires) |
+| `.env.example:226`, `:261` (`./backup`, sauvegarde pré-import) | **intactes** : complétées à la 31-1c (`auto/`) |
+| `docker-compose.yml:154`, `docker-compose.prod.yml:172` | traitées (une sauvegarde par import pèse la base **plus** les pièces ; temporaires) |
+| `README.md:93` | traitée ; `README.md:225` (ligne de la v0.13.0 de la feuille de route) **intacte** : historique |
+| `crates/` — doc-comments et commentaires écrits ou réécrits par la 31-1a (`admin_backup/{mod,export,import}.rs`, `routes/admin.rs`, `config.rs:243-266`, `:901-903`, `:934-935`, `:961-963`, `:1279`, `:1285-1286`, `errors.rs:481-504`) | **traités** |
+| `config.rs:968`, `:1094`, `:1783`, `:1829` ; `errors.rs:2110` ; `lib.rs:253` ; `routes/admin.rs:825` ; `exports/global.rs:604` et `routes/reconciliation.rs:963` (« in-memory » sans rapport) | **intactes** : exactes ou sans objet |
+| `kesh-db/src/backup.rs:642` (« compter les tables du manifeste (`build_keshbackup`) ») | **intacte, mais devenue inexacte** : c'est désormais `write_keshbackup` qui compte, et le renvoi `import.rs:129` est périmé. Commentaire d'un test de `kesh-db`, relevé après le dernier gate : laissé pour ne pas rouvrir le gate et l'E2E sur une ligne de commentaire ; **LOW à corriger au prochain commit de code** (revue P1) |
+
+Grep des **valeurs** (`503`, `512`, `n'emporte`, `sans les fichiers`, `aucun binaire`, `formatVersion`, `50M`, `300s`)
+sur `crates/`, `docs/`, `website/`, `frontend/src/`, `README.md`, `.env.example`, les compose et `CLAUDE.md` : plus
+aucun « n'emporte pas » vivant ; restent, légitimes, les mentions historiques (« 512 avant », « défaut 512 jusqu'à la
+0.14.x »), `VARCHAR(512)` d'une migration, la taille d'une image de test (`inbox_import_e2e.rs:269`), le `50M` / `300s`
+du bloc Nginx général (voulus, le bloc d'administration les relève), `admin-manual.tex:2072` (passer à la 0.14.0, vrai
+à sa date), `website/roadmap.html:368` (déjà au futur), et le paragraphe *Current release* du `CLAUDE.md` (« le
+`.keshbackup` n'emporte pas … #503, ouverte ») — vrai pour la v0.14.0 publiée, à réécrire à la release 0.15.0. PDF
+contrôlés aplatis (`pdftotext … | tr '\n' ' '`) : « Ce que la sauvegarde emporte », le bloc `location /api/v1/admin/`,
+« défaut 2048 depuis la 0.15.0 » présents ; aucune référence non résolue (`??`) ; zéro « n'emporte pas » / « sans les
+fichiers » dans `admin-manual.pdf`. `website/roadmap.html`, brochure : laissés à la release.
+
+**Écarts à la fiche et aux consignes** :
+
+- **Édition hors de l'outil Edit, une fois** : le premier lot de tests d'export a été ajouté à
+  `tests/admin_full_export_e2e.rs` par `cat >> … <<'EOF'` (bloc reproduit ensuite et corrigé à l'outil Edit, dont une
+  assertion mal formée que ce bloc portait). Tout le reste du code a été édité par Edit / Write ; `cargo fmt` a reformaté.
+- AC8 : le message de refus d'écriture des pièces est celui d'`AdminFullImportFailed` (C-31-1-61), non un texte neuf.
+- M-a6 déclarée équivalente (C-31-1-63) ; M-a3 et M-a4 tuées par le message, l'archive étant refusée plus loin.
+- Rouges : constatés après coup, en défaisant le code, pour `kesh-db` et l'intégration ; les unitaires ont été écrits
+  avec les signatures (cf. ci-dessus).
+- La garde `echecs_avant_sauvegarde_tous_convertis` et le test 20 sont **étendus** à `write_pre_import_backup`
+  (C-31-1-66), sans baisse de compte.
+- `configuration_transmise.rs` : entrée `TMPDIR` retirée (C-31-1-67) — garde que la fiche ne listait pas.
+- `full_import_refuses_when_backup_cannot_be_written` exporte par une seconde instance au dossier utilisable (l'export
+  exige désormais lui aussi un dossier de sauvegarde inscriptible).
+
 ### File List
+
+31-1a (de `b5fd9fb1` à `HEAD`) :
+
+- `crates/kesh-db/src/backup.rs`
+- `crates/kesh-api/Cargo.toml`
+- `crates/kesh-api/src/admin_backup/mod.rs`, `export.rs`, `import.rs`, `manifest.rs`
+- `crates/kesh-api/src/document_storage.rs`
+- `crates/kesh-api/src/routes/admin.rs`
+- `crates/kesh-api/src/config.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/tests/admin_full_export_e2e.rs`, `admin_full_import_e2e.rs`, `configuration_transmise.rs`
+- `crates/kesh-api/tests/support/pieces.rs` (neuf)
+- `crates/kesh-api/tests/fixtures/keshbackup-0.14.0-format1.keshbackup` (neuf)
+- `docs/manual/fr/admin-manual.tex`, `admin-manual.pdf`, `user-manual.tex`, `user-manual.pdf`
+- `docs/api-external.md`, `CHANGELOG.md`, `README.md`, `.env.example`, `docker-compose.yml`, `docker-compose.prod.yml`
+- `_bmad-output/implementation-artifacts/31-1-sauvegarde-complete.md`, `epic-31-choix-autonomes-311.md`,
+  `sprint-status.yaml`, `311a-review-prompt-p1.md` (neuf)
 
 ## Change Log
 
@@ -1681,3 +1853,13 @@ gardé à l'AC14 comme relevé daté ; les « ≥ 4 » du tableau des tests, qui
 - **LOW consignés pour la 31-1c** (non touchés ici) : R5, R6, R8, R9 (P5) ; F2, F4 (P5) ; L1 à L4 (P8 — phrase de l'AC30
   disloquée, motif de `spawn`, `classify_write_error` testée en `mod tests`, visibilité de `backup_lock`). L5 (P8, dates)
   laissé.
+
+### 2026-10-24 — Développement de la 31-1a (Opus 5.5) → review
+
+T-a0 à T-a9 faits (détail au Dev Agent Record) : fixture 0.14.0 réelle produite au tag `v0.14.0` (C-31-1-59) ;
+format `.keshbackup` 2, export hors mémoire, import reçu sur disque et détaché, pièces écrites avant la base, plafond
+d'import 2048 ; manuels FR et PDF, `api-external`, CHANGELOG, `.env.example`, compose, README. Gate complet backend
+3907 passés / 7 ignorés au dernier commit de code (`3586d3c5`) ; frontend : check 0 erreur, Vitest 1820, build vert ;
+E2E 307 passés / 7 échecs (les sept KF-029) / 17 ignorés. Mutations : 21 tuées, M-a6 équivalente (C-31-1-63), variante
+M-a6b tuée. Choix C-31-1-60 à 68. Écarts déclarés (une édition par `cat >>`, rouges constatés après coup pour `kesh-db`
+et l'intégration). Revue de code P1 à lancer : `311a-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
