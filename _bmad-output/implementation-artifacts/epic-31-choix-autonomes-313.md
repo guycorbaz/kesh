@@ -42,3 +42,14 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Contexte** : `CHANGELOG.md` (v0.4.0) et le tableau de versions du README disent « Rust 1.96 » pour la v0.4.0.
 - **Retenu** : laissées telles quelles — relevés datés (`CLAUDE.md` : un compte rendu daté ne se « met pas à jour »).
 - **Réversible** : oui.
+
+### C-31-3-6 — #697 intégrée à la 31-3 (choix de l'orchestrateur)
+
+- **Contexte** : la fiche demandait d'ouvrir une issue pour l'absence de garde entre le `FROM` du `Dockerfile` et
+  `rust-toolchain.toml` ; ouverte (#697). La règle de release fixe le plafond au tag v0.15.0 à moins de 136 issues
+  ouvertes, et le compte est à 138 après trois issues de traçage nées des fiches.
+- **Retenu** : intégrer #697 à la 31-3 — une garde dans `crates/kesh-api/tests/textes_coherents.rs` qui lit les deux
+  valeurs et rougit si la version mineure diffère ; la PR de la 31-3 porte `closes #697`. C'est le site naturel : la 31-3
+  bumpe justement les deux.
+- **Écartée** : laisser #697 ouverte — la garde est petite et la 31-3 en est l'occasion.
+- **Réversible** : oui.
