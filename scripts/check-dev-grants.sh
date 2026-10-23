@@ -56,13 +56,17 @@
 # fichier de droits doit être écrit à la FORME CANONIQUE que rend le serveur
 # (`GRANT ALL PRIVILEGES ON \`base\`.* TO 'user'@'%'`, mot-clé et privilèges en
 # majuscules) — `grant all on …` y donnerait un faux rouge, bruyant ; un `--`,
-# `#` ou `/*` À L'INTÉRIEUR d'une chaîne n'est pas distingué d'un commentaire ;
-# les commentaires exécutables `/*! … */` sont ignorés comme des commentaires.
+# `#` ou `/*` À L'INTÉRIEUR d'une chaîne ou d'un identifiant fait REFUSER le
+# fichier (bruyant) s'il est détecté sur sa ligne — une chaîne ouverte sur une
+# ligne précédente échappe à ce contrôle ; les commentaires exécutables
+# `/*! … */` sont ignorés comme des commentaires.
 #
 # Affichage : toute ligne affichée — droit relevé, attendu, instruction refusée
-# — passe par `masquer`, qui retire le condensé et masque toute autre forme de
-# secret (`IDENTIFIED BY '…'`, `USING '…'`). `set +x` en tête : un `bash -x` ou
-# un `SHELLOPTS=xtrace` hérité ne trace pas l'export du mot de passe.
+# — passe par `masquer`, FAIL-CLOSED : à partir du premier `identified` ou
+# `using`, quelle qu'en soit la casse, rien n'est affiché (`<masqué>`), quels que
+# soient les guillemets. Le condensé de la ligne globale en est retiré avant.
+# `set +x` en tête : un `bash -x` ou un `SHELLOPTS=xtrace` hérité ne trace pas
+# l'export du mot de passe.
 #
 # Remise en état (affichée, jamais exécutée — cf. docs/testing.md § « Base de
 # dev jetable » et docs/agents-orchestration.md § 2) : attendre `healthy` si le
@@ -146,22 +150,38 @@ if [ ! -f "$FICHIER_DROITS" ]; then
 fi
 
 # (c) — retrait de la clause du condensé sur toute ligne de niveau global
-# (comparaison). `masquer` (affichage) l'étend à toute ligne et à toute autre
-# forme de secret : rien n'est affiché sans y être passé.
+# (comparaison seulement).
 sans_condense() { sed -E "/ ON \\*\\.\\* TO /s/ IDENTIFIED BY PASSWORD '[^']*'//"; }
+# `masquer` (affichage) — FAIL-CLOSED (revue de code P2) : toute ligne qui
+# contient `identified` ou `using`, quelle qu'en soit la casse, est tronquée à ce
+# mot-clé et suivie de `<masqué>` ; rien de ce qui suit n'est affiché, quels que
+# soient les guillemets. Rien n'est affiché sans passer par ici. Effet assumé :
+# une base dont le nom contiendrait l'un de ces mots serait tronquée elle aussi.
 masquer() {
-    sed -E "s/ IDENTIFIED BY PASSWORD '[^']*'//g; s/ IDENTIFIED BY '[^']*'/ IDENTIFIED BY <masqué>/g; s/ USING (PASSWORD\\()?'[^']*'\\)?/ USING <masqué>/g"
+    awk '{
+        l = tolower($0); i = index(l, "identified"); u = index(l, "using")
+        if (u > 0 && (i == 0 || u < i)) i = u
+        if (i > 0) print substr($0, 1, i - 1) "<masqué>"; else print
+    }'
 }
 
 # Extraction des GRANT du fichier : commentaires retirés (`-- …` et `# …`
 # jusqu'en fin de ligne, `/* … */` y compris sur plusieurs lignes), découpage en
-# instructions par `;`, blancs ramenés à une espace. Une instruction qui contient
-# GRANT sans commencer par lui est REFUSÉE (code 3, ligne `REFUS<tab><instr>`) :
-# l'extraction ne comprend pas le fichier, elle ne l'ignore pas en silence. awk
-# POSIX (la CI a mawk, le poste gawk).
+# instructions par `;`, blancs ramenés à une espace. L'extraction ne comprend
+# pas tout le SQL ; ce qu'elle ne comprend pas, elle le REFUSE, bruyamment,
+# au lieu de l'ignorer :
+#   - code 3 (`REFUS<tab><instr>`) : une instruction contient GRANT sans
+#     commencer par lui ;
+#   - code 4 (`CHAINE<tab><ligne>`) : un marqueur de commentaire (`#`, `--`,
+#     `/*`) suit, sur sa ligne, un nombre IMPAIR d'apostrophes ou de backticks —
+#     il est donc dans une chaîne ou un identifiant, et le prendre pour un
+#     commentaire tronquerait l'instruction (revue de code P2). Ce contrôle ne
+#     voit qu'une ligne : une chaîne ouverte sur une ligne précédente lui échappe.
+# awk POSIX (la CI a mawk, le poste gawk).
 rc=0
 grants_fichier=$(awk '
-    BEGIN { dans_bloc = 0; tampon = "" }
+    function impair(t, c,   n) { n = gsub(c, "", t); return n % 2 }
+    BEGIN { dans_bloc = 0; tampon = ""; chaine = "" }
     {
         ligne = $0; sortie = ""
         while (length(ligne) > 0) {
@@ -176,6 +196,13 @@ grants_fichier=$(awk '
             # Fin de ligne commentée : le plus tôt de `--` et `#`.
             f = d
             if (h > 0 && (f == 0 || h < f)) f = h
+            # Le marqueur retenu (bloc ou fin de ligne) est-il dans une chaîne ?
+            m = f
+            if (b > 0 && (m == 0 || b < m)) m = b
+            if (m > 0) {
+                avant = sortie substr(ligne, 1, m - 1)
+                if (impair(avant, "\047") || impair(avant, "`")) { chaine = $0; exit 4 }
+            }
             if (b > 0 && (f == 0 || b < f)) {
                 sortie = sortie substr(ligne, 1, b - 1) " "
                 ligne = substr(ligne, b + 2); dans_bloc = 1; continue
@@ -186,6 +213,7 @@ grants_fichier=$(awk '
         tampon = tampon " " sortie
     }
     END {
+        if (chaine != "") { print "CHAINE\t" chaine; exit 4 }
         n = split(tampon, instr, ";")
         for (k = 1; k <= n; k++) {
             s = instr[k]
@@ -199,6 +227,11 @@ grants_fichier=$(awk '
 if [ "$rc" -eq 3 ]; then
     refusee=$(printf '%s\n' "$grants_fichier" | sed -n 's/^REFUS\t//p' | masquer)
     echec "instruction de 01-dev-grants.sql non comprise (contient GRANT sans commencer par lui) : $refusee"
+    exit 1
+fi
+if [ "$rc" -eq 4 ]; then
+    refusee=$(printf '%s\n' "$grants_fichier" | sed -n 's/^CHAINE\t//p' | masquer)
+    echec "ligne de 01-dev-grants.sql non comprise (marqueur de commentaire dans une chaîne ou un identifiant) : $refusee"
     exit 1
 fi
 if [ "$rc" -ne 0 ]; then

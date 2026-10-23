@@ -308,6 +308,62 @@ expect_out "non comprise"
 expect_no_out 'secret-clair-31-2'
 sans_fuite
 
+# Revue de code P2 (T1) : le masquage est insensible à la casse et aux guillemets.
+nouveau_cas "secret en minuscules (identified by '…') dans le fichier → tronqué, jamais affiché"
+printf -- "GRANT SELECT ON \`autre\`.* TO 'kesh'@'%%' identified by 'secret-clair-31-2';\n" >> "$R/scripts/mariadb-init/01-dev-grants.sql"
+droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc nonnul
+expect_out 'droit manquant : GRANT SELECT ON `autre`.* TO `kesh`@`%` <masqué>'
+expect_no_out 'secret-clair-31-2'
+sans_fuite
+
+nouveau_cas "secret entre guillemets doubles (IDENTIFIED BY \"…\") dans le fichier → tronqué, jamais affiché"
+printf -- "GRANT SELECT ON \`autre\`.* TO 'kesh'@'%%' IDENTIFIED BY \"secret-clair-31-2\";\n" >> "$R/scripts/mariadb-init/01-dev-grants.sql"
+droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc nonnul
+expect_out 'droit manquant : GRANT SELECT ON `autre`.* TO `kesh`@`%` <masqué>'
+expect_no_out 'secret-clair-31-2'
+sans_fuite
+
+nouveau_cas "relevé portant « identified via … using '…' » en minuscules → tronqué, jamais affiché"
+droits "GRANT USAGE ON *.* TO \`kesh\`@\`%\` identified via ed25519 using 'secret-clair-31-2'" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc nonnul
+expect_out 'relevé GRANT USAGE ON *.* TO `kesh`@`%` <masqué>'
+expect_no_out 'secret-clair-31-2'
+acquisition_conforme
+sans_fuite
+
+nouveau_cas "instruction refusée, secret en minuscules et guillemets doubles → masqué"
+printf -- "alter user 'kesh'@'%%' identified by \"secret-clair-31-2\" with grant option;\n" >> "$R/scripts/mariadb-init/01-dev-grants.sql"
+droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc nonnul
+expect_out "non comprise"
+expect_no_out 'secret-clair-31-2'
+sans_fuite
+
+# Revue de code P2 (T2, T3) : un marqueur de commentaire dans une chaîne ou un
+# identifiant fait refuser le fichier, au lieu de tronquer l'extraction en silence.
+nouveau_cas "# dans une chaîne, suivi d'une autre instruction sur la ligne → refusé, non nul"
+printf -- "GRANT SELECT ON \`x\`.* TO 'kesh'@'%%' IDENTIFIED BY 'a#b'; GRANT ALL PRIVILEGES ON \`autre\`.* TO 'kesh'@'%%';\n" >> "$R/scripts/mariadb-init/01-dev-grants.sql"
+droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc nonnul
+expect_out "marqueur de commentaire dans une chaîne ou un identifiant"
+expect_no_out "a#b"
+sans_fuite
+
+nouveau_cas "# dans un identifiant entre backticks → refusé, non nul"
+printf -- "GRANT SELECT ON \`a#b\`.* TO 'kesh'@'%%';\n" >> "$R/scripts/mariadb-init/01-dev-grants.sql"
+droits "$L_USAGE" "$L_KESH" "$L_SQLX" "$L_KESHP"
+lancer
+expect_rc nonnul
+expect_out "marqueur de commentaire dans une chaîne ou un identifiant"
+sans_fuite
+
 nouveau_cas "lancé sous bash -x : ni le mot de passe ni le condensé dans la trace"
 droits "$L_USAGE" "$L_KESH"
 set +e
