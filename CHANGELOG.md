@@ -10,6 +10,12 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.15.0] — Non publié
 
+### Modifié
+
+- **Chaîne d'outils portée à Rust 1.97.1**, sans effet fonctionnel : `rust-toolchain.toml` et l'image Docker de
+  construction (`rust:1.97-bookworm`) suivent la même version, et un test du dépôt rougit désormais si l'une bouge sans
+  l'autre ([#697](https://github.com/guycorbaz/kesh/issues/697)).
+
 ### Interne, invisible de l'utilisateur
 
 - **Les fichiers `.svelte-kit/` de la racine du dépôt sont retirés** (Story 31-2) : six résidus d'un `svelte-kit sync` lancé au mauvais endroit, que rien ne lisait ; `/.svelte-kit/` est désormais ignoré par git et par le contexte de build Docker.

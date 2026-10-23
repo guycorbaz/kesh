@@ -862,7 +862,7 @@ mod tests {
         assert!(
             s.contains("\r\n"),
             "CSV must use CRLF terminator (RFC 4180), got first 50 bytes: {:?}",
-            &s.chars().take(50).collect::<String>()
+            s.chars().take(50).collect::<String>()
         );
     }
 

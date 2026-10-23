@@ -383,7 +383,7 @@ fn assert_pdf_response(content_type: &str, body: &[u8]) {
     assert!(
         body.starts_with(b"%PDF-1."),
         "PDF body must start with %PDF-1. signature, got: {:?}",
-        &body.get(..16).unwrap_or(&body[..body.len().min(16)])
+        body.get(..16).unwrap_or(&body[..body.len().min(16)])
     );
 }
 

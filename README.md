@@ -6,7 +6,7 @@
 [![Docker Image Version](https://img.shields.io/docker/v/gcorbaz/kesh?sort=semver&label=docker)](https://hub.docker.com/r/gcorbaz/kesh/tags)
 [![Docker Image Size](https://img.shields.io/docker/image-size/gcorbaz/kesh?sort=semver)](https://hub.docker.com/r/gcorbaz/kesh/tags)
 [![License: EUPL 1.2](https://img.shields.io/badge/license-EUPL--1.2-blue.svg)](https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12)
-[![Rust](https://img.shields.io/badge/rust-1.96-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.97-orange.svg)](https://www.rust-lang.org/)
 [![SvelteKit](https://img.shields.io/badge/svelte-5-ff3e00.svg)](https://svelte.dev/)
 
 **Kesh** est un logiciel de comptabilité et de gestion pour indépendants, TPE et associations en Suisse. Gratuit, open source, auto-hébergé.
@@ -54,7 +54,7 @@
 
 ## Pile technique
 
-- **Backend** : Rust 1.96 (édition 2024), Axum, SQLx
+- **Backend** : Rust 1.97 (édition 2024), Axum, SQLx
 - **Frontend** : SvelteKit 2 + Svelte 5, TypeScript, Tailwind CSS 4
 - **Base de données** : MariaDB 10.11+ (parité prod NAS Synology Package Center DSM, compat ≥ 10.6 — cf. Story 10-1 D3)
 - **Déploiement** : Docker Compose (web app uniquement)
@@ -64,7 +64,7 @@
 
 ### Prérequis
 
-- Rust ≥ 1.96 (installé automatiquement via `rust-toolchain.toml`)
+- Rust ≥ 1.97 (installé automatiquement via `rust-toolchain.toml`)
 - Node.js ≥ 20
 - Docker + Docker Compose
 
