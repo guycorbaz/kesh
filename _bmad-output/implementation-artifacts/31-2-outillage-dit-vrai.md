@@ -591,6 +591,20 @@ Passe suivante : ciblée P6 (Sonnet) sur le commit de cette remédiation.
   après rejeu isolé de deux échecs de montage. AC6, AC10, AC13 et AC18 ne se constatent qu'en CI. Fixture capturée :
   la forme `IDENTIFIED BY PASSWORD '*…'` est confirmée. Choix C-31-2-16 à C-31-2-22. Revue de code P1 à lancer
   (`312-review-prompt-p1.md`, Sonnet, lentilles B, E, A). Statut `review`.
+- 2026-10-23 — **Revue de code P1** (Sonnet, trois lentilles ; B : 0 CRITICAL / 0 HIGH / 0 MEDIUM / 5 LOW ; E : 0 / 0 / 1 / 7 ;
+  A : 0 / 0 / 0 / 4). Rapports `312-review-p1-{B,E,A}.md`. Vérifiés au `grep -nF`/`sed -n` ; **réfuté : aucun**. Remédiation
+  `365940a9` (code : `scripts/` seulement) et commit de textes. *Corrigés* : **E1** (MEDIUM — la branche C-31-2-16 n'était
+  exercée par aucun cas : deux cas, conforme et `USAGE` en trop, mutation **M21** tuée) ; B2 (toute ligne affichée passe par
+  `masquer`, instruction refusée comprise ; `set +x` en tête, cas `bash -x`) ; B1/E3 (`#` reconnu en milieu de ligne ; forme
+  canonique du fichier écrite comme limite, `grant` minuscule joué en faux rouge assumé) ; B3/E4 (`\r` et lignes vides du
+  relevé retirés et joués ; étiquettes « droit manquant » / « droit en plus » assertées) ; E2 (compose absent, clé en double,
+  vide, valeur entre guillemets et commentaire) ; E6 (« fichier de droits introuvable » asserté) ; E7 (borne de `test-fast.sh`
+  introuvable dite) ; B4 (invocation exigée au premier niveau ; un `if false; then` non indenté reste un angle mort écrit) ;
+  A2 (`sans_fuite` et `acquisition_conforme` sur tous les cas annoncés) ; A1 (« ~3 s » retiré de `CLAUDE.md`, non journalisé) ;
+  A3 et A4 (recomptes et journaux versés, ci-dessous). *Non repris* : E5 (démarrage à froid, extension écartée par la fiche),
+  E8 (métacaractères du nom de compte, `KESH_DOCKER` avec arguments), B5 (timeout d'`e2e-smoke` sur cache vide : CI seulement,
+  déjà écrit dans `docs/ci.md`). Test du garde : 32 cas, 242 assertions ; **30 mutations sur 30 tuées** (M1–M3, M6–M31).
+  Gate complet vert à `365940a9`. Passe ciblée P2 à lancer (`312-review-prompt-p2-ciblee.md`, Haiku, une lentille).
 
 ## Dev Agent Record
 
@@ -725,6 +739,42 @@ v0.15.0. Si la CI rougit faute d'un droit que la production n'a pas, chaque test
 attendue conditionnelle, clé de compose en double refusée, awk POSIX, message de réussite du garde, sonde négative par
 la fixture `request`, `website/index.html` assumé, CHANGELOG sous « Interne ».
 
+### Après la revue de code P1 (2026-10-23) — les relevés ci-dessus ne sont pas réécrits
+
+Journaux versés dans `/home/gcorbaz/devel/kesh-gate-logs/` (A3, A4) : `312-r1-test-garde-gawk.log`,
+`312-r1-test-garde-mawk.log`, `312-r1-mutations.log`, `312-r1-gate-complet.log`, `312-r1-inventaire-ac5.log`,
+`312-r1-e2e-rejeu.log`.
+
+- **Dernier commit de code : `365940a9`** (remédiation, `scripts/` seulement : le garde et son test). Les textes suivants
+  (`CLAUDE.md`, `docs/testing.md`) sont de la documentation : l'E2E complet du `7495144d` reste celui de la story.
+- **Test du garde** : sortie réelle, gawk et mawk 1.3.4 — `✅ 32 cas, aucune assertion en échec.`, **242** lignes `✓`,
+  0 `✗` (les 32 cas comptent celui du câblage).
+- **Mutations, sous verrou** (`312-r1-mutations.log`) : **30 sur 30 tuées**, M1–M3 et M6–M20 rejouées sur le code remédié
+  (M11 réécrite : le relevé brut contourne `masquer`), plus les nouvelles :
+
+| # | Mutation | Première assertion qui rougit |
+|---|---|---|
+| M21 | ligne `USAGE` toujours ajoutée (C-31-2-16) | cas « fichier portant un droit ON *.* » conforme : code 1, attendu 0 |
+| M22 | `tr -d '\r'` retiré | cas « lignes vides et \r » : code 1 |
+| M23 | filtre des lignes vides du relevé retiré | même cas : code 1 |
+| M24 | étiquette « droit manquant » remplacée par « droit en plus » | « droit en moins » : étiquette absente |
+| M25 | contrôle `-f` du fichier de droits retiré | « fichier de droits introuvable » absent |
+| M26 | `masquer` retiré de l'affichage des droits manquants | « secret en clair » affiché |
+| M27 | `#` reconnu seulement en colonne 1 | cas `#` en milieu de ligne : code 1 |
+| M28 | `set +x` retiré | cas `bash -x` : fuite dans la trace |
+| M29 | guillemets du compose non retirés | `MYSQL_PWD` transmis entre guillemets |
+| M30 | instruction refusée affichée sans `masquer` | secret affiché |
+| M31 | invocation enveloppée dans `if true; then … fi` | invocation indentée |
+
+  ⚠️ M20 a de nouveau atteint le vrai `docker`, en lecture (par construction de la mutation).
+- **Gate complet** à `365940a9`, base `kesh_312` remise à zéro : garde vert, fmt, clippy, nextest **3847/3847, 6 ignorés**.
+- **Inventaire AC5** (A3) : la commande rend aujourd'hui **7 lignes, toutes dans le garde et son test** (fixtures et
+  messages), assumées. *Annotation : le « vide » écrit plus haut était vrai à sa date pour les fichiers suivis — `git grep`
+  ne lit pas un fichier non encore ajouté, et le garde ne l'était pas.*
+- **Rejeu journalisé** (A4) des deux specs du montage et du smoke, à `365940a9`, `KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR`
+  passés au runner : **14 passed** (`312-r1-e2e-rejeu.log`).
+- **AC15** : aucun YAML touché par la remédiation.
+
 ### File List
 
 Développement (`git diff --name-status b34314ae 7495144d`, hors `_bmad-output/`) — **26 fichiers** : 4 ajoutés,
@@ -737,4 +787,7 @@ Développement (`git diff --name-status b34314ae 7495144d`, hors `_bmad-output/`
   `crates/kesh-db/tests/refresh_tokens_repository.rs`, `docker-compose.dev.yml`, `docs/agents-orchestration.md`,
   `docs/ci.md`, `docs/testing.md`, `frontend/DEBUGGING-KF007.md`, `scripts/test-fast.sh`.
 - Supprimés : les six `.svelte-kit/…` de la racine.
-- Artefacts : cette fiche, `epic-31-choix-autonomes-312.md`, `sprint-status.yaml`, `312-review-prompt-p1.md`.
+- Artefacts : cette fiche, `epic-31-choix-autonomes-312.md`, `sprint-status.yaml`, `312-review-prompt-p1.md`,
+  `312-review-prompt-p2-ciblee.md`.
+- Revue de code P1 (`365940a9` et le commit de textes qui suit) : `scripts/check-dev-grants.sh`,
+  `scripts/tests/check-dev-grants.test.sh`, `CLAUDE.md`, `docs/testing.md`.
