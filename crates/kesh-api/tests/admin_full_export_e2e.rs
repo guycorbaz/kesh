@@ -496,3 +496,175 @@ async fn full_export_streaming_path_delivers_valid_zip(pool: MySqlPool) {
     let archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     assert!(archive.len() >= 23, "23 data + files/ + manifest");
 }
+
+// ============================================================
+// Story 31-1a, AC10 — générateur de la fixture `.keshbackup` de la 0.14.0
+// ============================================================
+
+/// Chemin de la fixture de format 1 produite par le **vrai** exporteur de la
+/// 0.14.0 (Story 31-1a, AC10, T-a0).
+const FIXTURE_0_14_0: &str = "tests/fixtures/keshbackup-0.14.0-format1.keshbackup";
+
+/// Génère `tests/fixtures/keshbackup-0.14.0-format1.keshbackup` — **une seule
+/// fois, avec le code de la v0.14.0**, jamais ensuite.
+///
+/// ⚠️ **Pourquoi ce test est `#[ignore]` et doit le rester.** La fixture sert
+/// à prouver qu'une sauvegarde produite par une installation 0.14.0 réelle
+/// (format 1, `files/` vide) s'importe dans les versions suivantes (AC10).
+/// Elle n'a de valeur que si elle sort du code de la 0.14.0 : régénérée par
+/// une version ultérieure, elle deviendrait une sauvegarde de format 2 et le
+/// test d'import ne prouverait plus rien de l'ancien format. Elle a été
+/// produite le 2026-10-24 dans un worktree temporaire au tag `v0.14.0`
+/// (`5a128aec`, chaîne Rust 1.96.1), par ce même test, puis versionnée telle
+/// quelle ; son empreinte SHA-256 est au Dev Agent Record de la fiche 31-1.
+///
+/// Contenu, **entièrement synthétique** : la société de
+/// `seed_accounting_company`, un client fictif, une facture validée dont le
+/// PDF est **figé** par le premier téléchargement (`invoices.pdf_storage_path`,
+/// `pdf_sha256`), et un document fournisseur sans QR écrit par
+/// `store_document` (`imported_supplier_invoices.storage_path`, `file_hash`).
+/// Les deux pièces restent dans le dossier des documents du générateur : la
+/// sauvegarde de la 0.14.0 ne les emporte pas — c'est précisément ce que la
+/// fixture doit montrer (deux pièces référencées, `files/` vide).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+#[ignore = "générateur de fixture : à n'exécuter qu'au tag v0.14.0 (Story 31-1a, AC10)"]
+async fn generate_fixture_0_14_0(pool: MySqlPool) {
+    use kesh_db::entities::bank_account::NewBankAccount;
+    use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
+    use kesh_db::entities::imported_supplier_invoice::NewImportedSupplierInvoice;
+    use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
+    use kesh_db::repositories::{bank_accounts, contacts, imported_supplier_invoices, invoices};
+    use rust_decimal_macros::dec;
+
+    let documents =
+        std::env::temp_dir().join(format!("kesh-fixture-0-14-0-docs-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&documents).unwrap();
+    let mut config = test_config();
+    config.documents_dir = documents.to_string_lossy().to_string();
+
+    let seeded = kesh_db::test_fixtures::seed_accounting_company(&pool)
+        .await
+        .expect("seed");
+    bank_accounts::upsert_primary(
+        &pool,
+        NewBankAccount {
+            company_id: seeded.company_id,
+            bank_name: "Banque fictive".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: Some("CH4431999123000889012".into()),
+            is_primary: true,
+        },
+    )
+    .await
+    .unwrap();
+    let contact = contacts::create(
+        &pool,
+        seeded.admin_user_id,
+        NewContact {
+            company_id: seeded.company_id,
+            contact_type: ContactType::Personne,
+            name: "Client Fictif".into(),
+            first_name: Some("Client".into()),
+            last_name: Some("Fictif".into()),
+            is_client: true,
+            is_supplier: false,
+            address: None,
+            address_street: Some("Rue de l'Exemple".into()),
+            address_building: Some("1".into()),
+            address_postal_code: Some("1000".into()),
+            address_city: Some("Lausanne".into()),
+            address_country: Some("CH".into()),
+            email: None,
+            phone: None,
+            ide_number: None,
+            client_number: None,
+            default_payment_terms: None,
+            default_payment_terms_days: None,
+            language: None,
+            salutation: Salutation::Neutre,
+        },
+    )
+    .await
+    .unwrap();
+    let (invoice, _) = invoices::create(
+        &pool,
+        seeded.admin_user_id,
+        NewInvoice {
+            company_id: seeded.company_id,
+            contact_id: contact.id,
+            date: chrono::NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
+            due_date: Some(chrono::NaiveDate::from_ymd_opt(2026, 5, 14).unwrap()),
+            payment_terms: Some("30 jours net".into()),
+            lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
+                description: "Prestation fictive".into(),
+                quantity: dec!(1),
+                unit_price: dec!(100.00),
+                vat_rate: dec!(8.10),
+            }],
+            project_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    invoices::validate_invoice(&pool, seeded.company_id, invoice.id, seeded.admin_user_id)
+        .await
+        .expect("validation");
+
+    // Document fournisseur synthétique, écrit par la primitive de production.
+    let doc = kesh_api::document_storage::store_document(
+        &documents,
+        b"%PDF-1.4\n% Document fournisseur fictif - fixture Kesh 0.14.0\n%%EOF\n",
+        "pdf",
+        "facture-fournisseur-fictive.pdf",
+        "application/pdf",
+    )
+    .unwrap();
+    imported_supplier_invoices::create(
+        &pool,
+        &NewImportedSupplierInvoice::without_qr(seeded.company_id, doc),
+    )
+    .await
+    .unwrap();
+
+    let app = spawn_app_with(pool.clone(), config).await;
+    let jwt = forge_jwt(seeded.admin_user_id, "Admin", seeded.company_id);
+
+    // Premier téléchargement : fige le PDF de la facture.
+    let resp = app
+        .client
+        .get(app.url(&format!("/api/v1/invoices/{}/pdf", invoice.id)))
+        .header("Authorization", format!("Bearer {jwt}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "PDF figé");
+    let (frozen,): (Option<String>,) =
+        sqlx::query_as("SELECT pdf_storage_path FROM invoices WHERE id = ?")
+            .bind(invoice.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(frozen.is_some(), "la facture doit être figée");
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/admin/full-export"))
+        .header("Authorization", format!("Bearer {jwt}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let bytes = resp.bytes().await.unwrap().to_vec();
+
+    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join(FIXTURE_0_14_0);
+    std::fs::create_dir_all(out.parent().unwrap()).unwrap();
+    std::fs::write(&out, &bytes).unwrap();
+    std::fs::remove_dir_all(&documents).unwrap();
+    eprintln!(
+        "fixture écrite : {} ({} octets, sha256 {})",
+        out.display(),
+        bytes.len(),
+        sha256_hex(&bytes)
+    );
+}

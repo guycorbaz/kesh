@@ -651,3 +651,20 @@ crate externe ; le module `auto_backup` expose en `pub` `BackupEnv`, `RealBackup
 aussi `FailureStatus`, le statut de succès et le type d'erreur de `run_once` ; l'importabilité de l'AC36 se prouve par la
 route `POST …/full-import` (`admin_backup` reste `pub(crate)`).
 
+
+---
+
+## Développement de la 31-1a (2026-10-24, Opus 5.5)
+
+### C-31-1-59 — La fixture 0.14.0 est produite au tag `v0.14.0`, non à `44ef2079`
+
+- **Contexte** : l'AC10 et T-a0 nomment `44ef2079` (base de la branche à la création de la fiche) ; l'orchestrateur
+  prescrit le tag `v0.14.0` (`5a128aec`), dans un worktree temporaire, sous la chaîne que porte ce tag. La branche a
+  depuis été reportée sur `b5fd9fb1` (Rust 1.97.1, Story 31-3).
+- **Retenu** : worktree temporaire `git worktree add … v0.14.0`, générateur `generate_fixture_0_14_0` (`#[ignore]`)
+  copié dans ce worktree, exécuté sous Rust 1.96.1 (`rust-toolchain.toml` du tag) avec la cible cargo du worktree de la
+  story, puis worktree retiré. `git diff --stat 5a128aec 44ef2079 -- crates Cargo.toml Cargo.lock rust-toolchain.toml`
+  est **vide** : le code est le même aux deux commits ; le tag est la référence publiée, donc la plus forte.
+- **Écartée** : produire la fixture sur la branche avant tout changement (chaîne 1.97.1 et `textes_coherents.rs` de la
+  31-3 : le code de l'exporteur est identique, mais la fixture ne sortirait plus d'une version publiée).
+- **Réversible** : oui (la fixture se régénère au tag par le même générateur).

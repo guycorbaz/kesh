@@ -1303,9 +1303,22 @@ seconde passe (C-31-1-53) ; le contrôle d'empreinte de la passe unique est tué
 
 ### Agent Model Used
 
+31-1a : Opus 5.5 (Claude Code), 2026-10-24, en autonomie.
+
 ### Debug Log References
 
+- `/home/gcorbaz/devel/kesh-gate-logs/311a-fixture.log` — production de la fixture 0.14.0.
+
 ### Completion Notes List
+
+**31-1a — T-a0, fixture 0.14.0 (C-31-1-59).** Produite par `generate_fixture_0_14_0` (`#[ignore]`,
+`admin_full_export_e2e.rs`) dans un worktree temporaire au tag `v0.14.0` (`5a128aec`, Rust 1.96.1), avec
+`CARGO_TARGET_DIR` du worktree de la story ; le worktree temporaire est retiré aussitôt. Résultat :
+`crates/kesh-api/tests/fixtures/keshbackup-0.14.0-format1.keshbackup`, **12 490 octets**, SHA-256
+**`68516ceb92183353166788242c471314ccf0e0de2a7eaa36dc9906b38aa7e006`**. Contrôlée par `unzip` : `formatVersion: 1`,
+`keshVersion: 0.14.0`, `files/` vide, une ligne `imported_supplier_invoices` (`a6e62407….pdf`) et une facture figée
+(`pdf_storage_path` `6a818379….pdf`) — deux pièces référencées, aucune emportée. Données synthétiques (société de
+`seed_accounting_company`, « Client Fictif », IBAN d'exemple de la documentation SIX déjà employé par les tests).
 
 ### File List
 
