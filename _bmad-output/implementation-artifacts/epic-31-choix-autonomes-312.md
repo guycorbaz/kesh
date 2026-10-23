@@ -61,3 +61,15 @@
 
 - **Contexte** : la rétrospective 29 § 4.2 et l'epic le disaient plus doté (`GRANT ALL *.*`). Constat 2026-10-23 :
   `kesh`.* seul, montage vide. **Retenu** : la fiche corrige ; à noter à la rétrospective 31, aucune issue ne rouvre C3.
+
+### C-31-2-10 — #698 intégrée à la 31-2 (choix de l'orchestrateur)
+
+- **Contexte** : la fiche demandait d'ouvrir en P3 le fait que le smoke de `release.yml` interroge l'image publiée avec
+  l'utilisateur `root` ; ouverte (#698). La règle de release fixe le plafond au tag v0.15.0 à moins de 136 issues
+  ouvertes ; le compte est à 138.
+- **Retenu** : intégrer #698 au volet 1 de la 31-2 — le smoke de release applique `scripts/mariadb-init/01-dev-grants.sql`
+  (ou un `GRANT` aux droits de la production) puis démarre l'image avec l'utilisateur `kesh`, comme le job `backend` de
+  `ci.yml` dans la même story. La PR porte `closes #698`. Ne se vérifie qu'en CI de release : le dire.
+- **Écartée** : laisser #698 ouverte — même mécanisme que le volet 1, même correction.
+- **Réversible** : oui.
+- **Rappel** : #699 (montage relatif) reste ouverte ; le garde du volet 1 la signale sans la prévenir.
