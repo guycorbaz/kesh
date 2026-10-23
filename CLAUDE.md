@@ -272,8 +272,6 @@ Cette règle ne s'applique pas aux **commits doc-only** (markdown, yaml de plann
 
 *(Corrigé le 2026-08-30, sur remarque de Guy. La formulation d'origine — « généralement no-op, cache hit instantané » — laissait croire qu'un commit de documentation ne déclenchait rien ; il déclenche tout.)*
 
-⚠️ **La CI dépend de Docker Hub.** Le job `Backend (Rust)` tire `mariadb:10.11` **anonymement** (aucun `credentials` sous `services:` dans `ci.yml` ni `release.yml`) : un `429` de Docker Hub le fait échouer sans rapport avec le diff — relancer, ne pas diagnostiquer. *(A-C9 de la rétrospective de l'Epic 15, versé le 2026-10-13 ; à retirer si les téléchargements sont authentifiés — A2 de la même rétrospective.)*
-
 ## Plafonds mémoire — pourquoi une session de travail meurt en plein gate
 
 **Règle** : sur la station de dev, lancer tout travail lourd (gate backend, build workspace, suite vitest, E2E) via `scripts/mem-guard.sh`, qui l'exécute dans un cgroup à mémoire bornée. `scripts/test-fast.sh` le fait déjà tout seul.

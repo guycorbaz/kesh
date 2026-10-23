@@ -48,6 +48,13 @@ jobs:
         # Story 10-1 D3 : pin 10.11 = parité prod NAS Synology Package Center DSM.
         # Compat MariaDB ≥ 10.6 (cf. migration reconciliation_rules.sql VIRTUAL+UNIQUE).
         image: mariadb:10.11
+        # Story 31-2 (A2) — tirage AUTHENTIFIÉ : anonyme, il tombait sous la
+        # limite de Docker Hub (429) et faisait rougir le job sans rapport avec
+        # le diff. Les PR de forks n'ont pas ces secrets et échouent ici,
+        # bruyamment (C-31-2-3, docs/ci.md).
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
         env:
           MARIADB_ROOT_PASSWORD: kesh_root
           MARIADB_DATABASE: kesh
@@ -273,6 +280,14 @@ jobs:
             grep -q "required variable $absente is missing" "$refus"
           done
           docker compose -f docker-compose.prod.yml config -q
+      # Story 31-2 (C-31-2-11) — le Dockerfile tire `rust`, `node` et `debian`
+      # depuis Docker Hub, et le builder `docker-container` y tire
+      # `moby/buildkit` : la connexion précède donc `setup-buildx-action`.
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: docker/setup-buildx-action@v3
       - name: Build image (no push)
         uses: docker/build-push-action@v6

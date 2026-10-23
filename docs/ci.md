@@ -118,9 +118,33 @@ La publication d'images Docker se fait **uniquement** sur push de tag SemVer `v*
 
 Le job `docker-build` du `ci.yml` valide d'abord les deux compose distribués (`docker compose config -q` ; pour `docker-compose.yml`, avec des mots de passe MariaDB factices, puis l'échec **exigé** sans eux), puis build l'image en mode sanity (sans push) sur chaque PR/push afin de détecter au plus tôt toute régression du `Dockerfile`. L'image est jetée à la fin du runner. La **liste** des variables transmises par les compose est gardée par le test Rust `configuration_transmise` (job `backend`, Story 15-11a).
 
-### Rotation des secrets Docker Hub
+### Docker Hub : tirages authentifiés, secrets requis
 
-Les secrets `DOCKERHUB_USERNAME` et `DOCKERHUB_TOKEN` sont configurés au niveau du repo GitHub. À rotater annuellement ou en cas d'exposition. Vérification : Settings → Secrets and variables → Actions.
+Depuis la Story 31-2 (action A2 de la rétrospective de l'Epic 15), **tout tirage depuis Docker Hub est authentifié** par
+les secrets `DOCKERHUB_USERNAME` et `DOCKERHUB_TOKEN`, configurés au niveau du dépôt GitHub (Settings → Secrets and
+variables → Actions ; à renouveler chaque année ou en cas d'exposition). Auparavant, le service `mariadb:10.11` était
+tiré **anonymement**, et un `429` de Docker Hub faisait échouer le job `backend` sans rapport avec le diff.
+
+| Où | Ce qui est tiré | Comment c'est authentifié |
+|---|---|---|
+| `ci.yml`, job `backend` | service `mariadb:10.11` | `services.mariadb.credentials` |
+| `ci.yml`, job `e2e-smoke` | service `mariadb:10.11` ; images de base du `Dockerfile` ; `moby/buildkit` | `credentials` + `docker/login-action` |
+| `ci.yml`, job `docker-build` | images de base du `Dockerfile` (`rust`, `node`, `debian`) ; `moby/buildkit` | `docker/login-action` |
+| `release.yml`, job `docker` | service `mariadb:10.11` ; images de base ; `moby/buildkit` ; puis le push | `credentials` + `docker/login-action` |
+
+- **La connexion précède `docker/setup-buildx-action`** dans les trois jobs qui construisent : le builder
+  `docker-container` tire `moby/buildkit` depuis Docker Hub à cette étape. ⚠️ Que ce tirage profite de la connexion est
+  une **hypothèse** sur le comportement de l'action, à constater au journal du premier run (tirage authentifié ou non) —
+  non vérifiée localement.
+- **Les PR issues de forks et de Dependabot n'ont pas accès aux secrets** : elles échouent au démarrage du service ou à
+  l'étape de connexion — échec **bruyant**, jamais un faux vert. Aucun contournement conditionnel n'est écrit (C-31-2-3 :
+  dépôt tenu par un seul développeur, sans fork actif ni `dependabot.yml`). Si le dépôt accepte un jour des PR externes,
+  le repli noté est `image: mirror.gcr.io/library/mariadb:10.11`, sans secret — non adopté, la provenance de l'image n'étant
+  plus celle du Docker Hub officiel.
+- **Un jeton invalide bloque les fusions.** La branche protégée `main` exige **trois** vérifications
+  (`gh api repos/guycorbaz/kesh/branches/main/protection/required_status_checks` : `Backend (Rust)`, `Docker build
+  (sanity)`, `Frontend (Svelte)`) ; les deux premières dépendent du jeton (service `credentials`, connexion). Un jeton
+  expiré se voit donc à la première PR qui suit, par un rouge de démarrage — renouveler le secret, ne pas relancer.
 
 ## Timeouts et concurrency
 
