@@ -325,3 +325,107 @@ est amendé par C-31-1-32 (le trait `FreeSpace` devient `BackupEnv`) ; son entr�
 - **Écartées** : monter tous les tests de la 31-1c sur le vrai `MIGRATOR` (le squash garderait une table vide, piège pour
   tout test futur) ; sortir la migration dans une 31-1d (elle n'est pas testable seule sans le dépôt et la tâche).
 - **Réversible** : oui, avant le développement.
+
+---
+
+*Choix C-31-1-37 à C-31-1-44 : remédiation de la validation P2 (Opus, lentilles R et F), 2026-10-23. Ils amendent
+C-31-1-11 (C-31-1-39), C-31-1-20 et C-31-1-27 (C-31-1-40), C-31-1-29 (C-31-1-38), C-31-1-23 et C-31-1-30
+(C-31-1-41), C-31-1-19 (C-31-1-42), C-31-1-5 (C-31-1-43) ; les entrées d'origine ne sont pas réécrites.*
+
+### C-31-1-37 — Les chemins de `filesNotIncluded` ne sont soumis à aucune expression
+
+- **Contexte** : la P1 avait exigé que les chemins de `filesNotIncluded` satisfassent l'expression des noms, alors que
+  l'export y écrit le `storage_path` hors forme d'une ligne en anomalie : une sauvegarde authentique devenait
+  inimportable par la même version (F1 HIGH, R2).
+- **Retenu** : retrait de la règle ; ces chemins ne servent jamais de chemin, l'import les compare en chaînes (complétude
+  de l'AC7) et les compte dans `filesMissing` ; journalisés en `Debug` seulement ; doublons entre listes toujours
+  refusés. Test d'aller-retour (ligne `"../x.pdf"` → export → import 200).
+- **Écartées** : omettre ces chemins du manifeste et ne compter comme « référencé » qu'un chemin de forme valide (deux
+  règles au lieu d'une, et un compte du manifeste qui diverge de l'en-tête) ; neutraliser le chemin à l'export (une
+  transformation à documenter et à inverser).
+- **Réversible** : oui.
+
+### C-31-1-38 — Les bornes de l'AC6b se réduisent à ce que `zip` 2.4.2 laisse contrôler
+
+- **Contexte** : `zip` 2.4.2 fusionne les noms en double à l'ouverture (`read.rs:72-75`) et décode tout le répertoire
+  central dans `ZipArchive::new` (`read.rs:706-710`) ; « nom en double → 400 » était inobservable et intestable,
+  `MAX_ENTRIES` arrivait après le coût qu'il devait prévenir (R1, F4).
+- **Retenu** : manifeste lu d'abord (`by_name`, borné), puis contrôle de l'ensemble des noms attendus pour le format 2
+  avant toute autre lecture ; tables bornées ; fichiers bornés par `byteSize + 1` et restaurés **en flux** (la
+  signature `restore_document(…, bytes, …)` lisait le fichier entier en mémoire). Retirés : refus des doublons
+  (inoffensifs : seule l'entrée retenue est lue, et vérifiée par son empreinte) et `MAX_ENTRIES` ; le coût de
+  l'ouverture, borné par la taille reçue, est écrit en angle mort.
+- **Écartées** : lire l'EOCD et l'EOCD64 soi-même pour compter les entrées avant l'ouverture (un analyseur ZIP partiel à
+  maintenir, pour un import réservé à l'Administrateur) ; forger des octets bruts pour tester un doublon que le crate
+  rend invisible.
+- **Réversible** : oui.
+
+### C-31-1-39 — « Se reconnecter » après tout import réussi
+
+- **Contexte** : C-31-1-11 n'attendait le clic que si des pièces manquaient ; sinon la redirection est immédiate
+  (`AdminRestorePanel.svelte:119-128`), et l'avis « N pièces restaurées » de l'AC19 n'était ni lisible ni observable
+  par l'E2E (R7).
+- **Retenu** : le panneau attend toujours le clic *Se reconnecter* après un succès ; l'avis se lit, l'E2E l'observe
+  avant de cliquer.
+- **Écartée** : un délai fixe avant redirection (une valeur à régler, une course dans l'E2E).
+- **Réversible** : oui.
+
+### C-31-1-40 — `partial` reste au panneau ; le bandeau de l'application ne s'allume que si la sauvegarde est activée
+
+- **Contexte** : un `partial` durable (C-31-1-4, le cas même de #503) allumait le bandeau à vie, sans geste pour
+  l'éteindre, et noyait le signal d'échec ; un échec resté en base après désactivation l'allumait aussi à vie ; le
+  rôle ARIA de `partial` était double (F7, R8, F15) ; un `role="alert"` au layout ferait rougir
+  `reports.spec.ts:242` (L5).
+- **Retenu** : bandeau de l'application pour les échecs et pour « aucune réussite depuis deux intervalles » seulement,
+  et seulement si la sauvegarde est activée, en `role="status"` ; `partial` en avertissement (`role="status"`) au
+  panneau. Le dossier des documents démonté se voit déjà partout (« document indisponible »), et la rétention garde la
+  dernière complète (C-31-1-27).
+- **Écartées** : allumer le bandeau quand le nombre de pièces non incluses augmente (une colonne de plus, et un signal
+  qui s'éteint au tour suivant alors que le dossier reste démonté) ; un compte « reconnu » réglable au panneau (une
+  colonne, un champ de route et un geste de plus pour un cas que l'application montre déjà).
+- **Réversible** : oui.
+
+### C-31-1-41 — Le garde de `backup_lock` est possédé et vit dans la tâche ; `backup_lock` avant `FOR UPDATE`
+
+- **Contexte** : l'AC27 disait `lock().await` pour « Sauvegarder maintenant », que quatre autres AC veulent en 409
+  (F2, R4) ; et un garde emprunté pris dans le handler est relâché à l'abandon du client alors que la tâche détachée
+  continue (F3).
+- **Retenu** : sauvegarde automatique et « Sauvegarder maintenant » en `try_lock` (tour sauté / 409) ; export manuel et
+  import en attente ; gardes **possédés** (`lock_owned`, `try_lock_owned`) ; l'import prend le sien dans la fermeture du
+  `spawn`, `POST …/run` prend le sien dans le handler et le déplace dans la tâche ; garde lexicale qui interdit les
+  formes empruntées ; ordre écrit : `backup_lock` puis `_kesh_version FOR UPDATE`.
+- **Écartée** : prendre tout verrou dans la tâche, y compris pour `POST …/run` (le 409 demanderait de lancer la tâche
+  pour apprendre qu'elle ne peut pas tourner).
+- **Réversible** : oui.
+
+### C-31-1-42 — Le seuil d'espace s'estime aussi depuis le dossier des documents
+
+- **Contexte** : le seuil `last_success_bytes × 1,2 + 256 Mio` ne savait rien de la première sauvegarde (activée par
+  défaut, sans historique) ni du remontage d'un dossier des documents après une suite de `partial` (F6).
+- **Retenu** : `max(last_success_bytes, documents_bytes) × 1,2 + 256 Mio`, où `documents_bytes` est la somme des tailles
+  des fichiers réguliers du premier niveau de `KESH_DOCUMENTS_DIR` — un majorant connu sans lire la base.
+- **Écartées** : estimer depuis l'instantané (la base serait lue deux fois, ou l'instantané ouvert avant de savoir s'il
+  y a la place) ; les colonnes de taille (elles n'existent pas pour toutes les pièces).
+- **Réversible** : oui.
+
+### C-31-1-43 — Le débordement dans le dossier de sauvegarde se prouve par son effet
+
+- **Contexte** : les temporaires de `tempfile` sont anonymes (`O_TMPFILE` ou créé-puis-délié) ; aucun `read_dir` ne les
+  voit, si bien que « observer le dossier » ou « vérifier `/tmp` » passait sous la mutation ; et la `Config` de test met
+  `admin_backup_dir` à `/tmp`, le même dossier que `temp_dir()` (R3, F5).
+- **Retenu** : dossier de sauvegarde de test distinct, rendu non inscriptible ; seuil 0 → l'export échoue, seuil élevé →
+  200 ; le test échoue bruyamment s'il peut écrire dans le dossier (gate en `root`). « Aucun temporaire laissé » est
+  déclaré vrai par construction, pas compté comme test.
+- **Écartées** : lire `/proc/self/fd` pendant l'assemblage (un observateur à synchroniser avec l'écriture) ; injecter le
+  constructeur du temporaire (une abstraction pour un test).
+- **Réversible** : oui.
+
+### C-31-1-44 — Noms des sauvegardes automatiques à la milliseconde
+
+- **Contexte** : à la seconde, deux sauvegardes rapprochées se heurtaient au refus d'écraser de `write_backup_file`
+  (L3, F9).
+- **Retenu** : `kesh-auto-<AAAAMMJJ>T<HHMMSSmmm>Z.keshbackup`, dérivé du `now` passé à `run_once` ; sous `backup_lock`,
+  les sauvegardes sont successives et durent chacune plus d'une milliseconde ; une collision résiduelle vaut `failed`.
+- **Écartée** : pid et compteur comme la sauvegarde pré-import (un motif plus long, à faire tenir dans l'expression de
+  rétention, pour un cas que le verrou rend déjà presque impossible).
+- **Réversible** : oui, avant la première sauvegarde automatique écrite (le motif de rétention en dépend).
