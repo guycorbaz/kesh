@@ -4,7 +4,7 @@
 
 **ready-for-dev** (trois clés) — fiche créée le 2026-10-23 en autonomie (`bmad-create-story`, Opus 5.5), sur
 `1848012d` (kickoff de l'Epic 31), worktree `/home/gcorbaz/devel/kesh-31-1`, branche `story/31-1`. Validation P1 à
-lancer (`31-1-validate-prompt-p1.md`, **Sonnet**, lentilles R et F).
+lancer (`311-validate-prompt-p1.md`, **Sonnet**, lentilles R et F).
 
 ⛔ **Trois stories, une fiche, trois PR successives** (C-31-1-1) :
 
