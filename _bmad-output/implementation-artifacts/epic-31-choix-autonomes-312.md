@@ -188,3 +188,14 @@
 - **Amende C-31-0-3** (F-L7) : « petits, indépendants » et « pour du YAML et un fichier SQL » ne décrivent plus la 31-2 : un
   couplage (le job `e2e-smoke` n'existe qu'au volet 2) et `kesh-db` touché pour l'enveloppe du test du garde (C-31-2-13).
   Le registre commun n'est pas réécrit ici.
+
+### Amendements du 2026-10-24 (validation P4 ; ne réétendent pas C-31-2-15)
+
+- **Précise C-31-2-15** (R4-1, F4-1, F4-2) : le condensé de `SHOW GRANTS` figure sur l'unique ligne `ON *.*`, que tout droit
+  global posé à la main remplace. Le masquage vaut donc pour toute ligne `ON *.*` (jeton fixe), l'affichage d'un écart n'emploie
+  jamais les mots `IDENTIFIED BY PASSWORD`. Ce n'est pas un contrôle de plus : c'est la comparaison existante, correctement définie.
+- **Précise C-31-2-13** (R4-3, F4-7) : le test du garde est hermétique (mini-dépôt, `01-dev-grants.sql` de référence écrit par le
+  test) ; seule l'assertion de câblage lit le vrai `test-fast.sh`. Une branche qui modifie le vrai fichier de droits ne fait donc
+  rougir que le garde local, jamais la CI.
+- **Écart à l'epic** (R4-9) : « rend le montage fiable » devient « le signale » (C-31-2-1, C-31-2-15) ; à porter à la rétrospective 31.
+
