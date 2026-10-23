@@ -524,3 +524,16 @@ C-31-1-11 (C-31-1-39), C-31-1-20 et C-31-1-27 (C-31-1-40), C-31-1-29 (C-31-1-38)
   issue si l'usage le réclame) ; une rétention appliquée avant l'écriture (elle contredit M-c4 et M-c14 et supprime sur
   un échec) ; un bouton « Supprimer » dans la liste (destructif, hors périmètre de #503).
 - **Réversible** : oui.
+
+### C-31-1-52 — F12 intégré, pas d'issue (choix de l'orchestrateur, 2026-10-24 ; amende C-31-1-51)
+
+- **Contexte** : la remédiation P3 laissait en angle mort (C-31-1-51) qu'aucun signal ne prévienne qu'une sauvegarde du
+  serveur dépasse la taille d'import (`KESH_ADMIN_IMPORT_MAX_MB`), et proposait une issue. Le compte d'issues ouvertes est
+  à 139 ; le plafond au tag v0.15.0 est « moins de 136 », que les quatre fermetures prévues (#503, #577, #697, #698)
+  atteignent tout juste (135).
+- **Retenu** : intégrer à la 31-1c — dans la liste des sauvegardes du serveur, une sauvegarde dont la taille dépasse la
+  taille d'import porte une mention « trop grande pour être restaurée par l'écran (limite N Mio) » ; un test Vitest et une
+  mutation ; le manuel le dit. Budget d'issues comme motif d'intégration, accepté par Guy le 2026-10-23 (`CLAUDE.md`
+  § *Priorités des défauts*).
+- **Écartée** : ouvrir une issue `enhancement` — le point est mécanique et tient dans l'écran que la 31-1c construit.
+- **Réversible** : oui.
