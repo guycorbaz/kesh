@@ -167,3 +167,24 @@
 - **Écartées** : redécouper la 31-2 (le recyclage est confiné au garde, les trois autres volets ont convergé) ;
   poursuivre l'extension (chaque passe en a trouvé le défaut suivant).
 - **Réversible** : oui — une vérification retirée pourra revenir avec sa propre story si un incident la motive.
+
+### Amendements du 2026-10-24 (validation P3 ; les entrées ci-dessus ne sont pas réécrites)
+
+- **Amende C-31-2-1** (R3-5) : « un garde la rend visible » est inexact. Le garde ne signale que la **conséquence** (des
+  droits qui ne sont plus ceux du fichier) ; un conteneur monté depuis un worktree encore présent, au fichier identique, passe.
+  La fiche l'écrit comme angle mort (1b) et renvoie la prévention à #699.
+- **Remplace C-31-2-12** (C-31-2-15, R3-2, R3-3) : les options `--grants-from-stdin` et `--mount-source`, la comparaison de la
+  source du montage et celle du port ne sont plus dans la fiche. La seule injection est `KESH_DOCKER` ; tous les cas de test
+  sont de bout en bout avec un `docker` factice qui consigne son argv. Ce qui reste de C-31-2-12 : `-N -B -r`, la
+  normalisation minimale qui garde les antislashs, la fixture capturée, `MYSQL_PWD` sans valeur dans l'argv.
+- **Amende C-31-2-12 / C-31-2-15** (F-L4, R3-L7, F-3) : le mot de passe vient de la clé `MARIADB_PASSWORD` du compose
+  (`docker-compose.dev.yml:65`, avec `MARIADB_USER` et `MARIADB_DATABASE`), non de `DATABASE_URL` que le garde ne lit plus ;
+  le garde lit ses fichiers relativement à son emplacement, ce qui permet au test de bâtir un mini-dépôt (`mktemp -d`) pour
+  changer l'attendu (R3-L6). Aucun cas ne dépend d'une variable d'environnement héritée.
+- **Amende C-31-2-14** (F-6) : l'inventaire d'AC5 gagne `README.md:193` et le doc-comment de
+  `crates/kesh-api/tests/reconciliation_e2e.rs:8249-8250` (ajusté en T4) ; le décompte des modules passe à trois
+  (`kesh-db`, `kesh-api`, `frontend`) — la règle de splitting ne joue toujours pas. La règle « depuis le dépôt principal »
+  est portée aussi par les recettes `up`/`restart` (R3-L9).
+- **Amende C-31-0-3** (F-L7) : « petits, indépendants » et « pour du YAML et un fichier SQL » ne décrivent plus la 31-2 : un
+  couplage (le job `e2e-smoke` n'existe qu'au volet 2) et `kesh-db` touché pour l'enveloppe du test du garde (C-31-2-13).
+  Le registre commun n'est pas réécrit ici.
