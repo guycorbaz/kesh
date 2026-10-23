@@ -216,7 +216,7 @@
 		<div
 			id="admin-restore-error"
 			role="alert"
-			class="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
+			class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
 			data-testid="admin-restore-error"
 		>
 			{errorMsg}
@@ -247,7 +247,7 @@
 		{#if imported.filesMissing}
 			<div
 				role="status"
-				class="rounded-md border border-warning bg-warning-soft px-3 py-2 text-sm text-text"
+				class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm text-text"
 				data-testid="admin-restore-files-missing"
 			>
 				{i18nMsg(

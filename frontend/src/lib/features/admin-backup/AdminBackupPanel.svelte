@@ -75,7 +75,7 @@
 		<!-- Story 31-1b (AC18) : pièces référencées que l'export n'a pas pu emporter. -->
 		<div
 			role="status"
-			class="rounded-md border border-warning bg-warning-soft px-3 py-2 text-sm text-text"
+			class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm text-text"
 			data-testid="admin-backup-files-not-included"
 		>
 			{i18nMsg(
@@ -90,7 +90,7 @@
 		<!-- Story 31-1b (AC18) : archive plus grosse que KESH_ADMIN_IMPORT_MAX_MB. -->
 		<div
 			role="status"
-			class="rounded-md border border-warning bg-warning-soft px-3 py-2 text-sm text-text"
+			class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm text-text"
 			data-testid="admin-backup-exceeds-import-limit"
 		>
 			{i18nMsg(
@@ -104,7 +104,7 @@
 	{#if errorMsg}
 		<div
 			role="alert"
-			class="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
+			class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
 			data-testid="admin-backup-error"
 		>
 			{errorMsg}
