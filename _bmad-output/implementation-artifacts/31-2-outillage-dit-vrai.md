@@ -618,6 +618,15 @@ Passe suivante : ciblée P6 (Sonnet) sur le commit de cette remédiation.
   mawk. **36 mutations exécutées, 36 tuées** (M1–M3, M6–M36 ; M32 = retour à l'ancien `sed`). Gate complet vert à
   `28db7768`. E2E non rejoué : `scripts/` seulement. Passe ciblée P3 à lancer (`312-review-prompt-p3-ciblee.md`, Sonnet).
 
+- 2026-10-24 — **Revue de code P3 ciblée (Sonnet, lentille T sur `931df37a..28db7768`) : 0 MEDIUM+ — revue terminée.**
+  0/0/0/4 (`kesh-gate-logs/312-review-p3-T.md`). Trend de la revue : P1 Sonnet B 0/0/0/5, E 0/0/1/7, A 0/0/0/4 → P2 ciblée
+  Haiku 0/0/1/2 → P3 ciblée Sonnet 0/0/0/4. LOW : T4 — `docs/testing.md` promettait « toute forme de secret » masquée ;
+  **corrigé par l'orchestrateur** (texte seul) : un secret introduit par `identified`/`using` est masqué, l'angle mort
+  `SET PASSWORD … PASSWORD('…')` et le `#` entre guillemets doubles sont écrits. Laissés, consignés : T1 (`#` dans une
+  chaîne entre guillemets doubles non compté dans la parité — correctif d'une ligne, `impair(avant, "\"")`, non appliqué
+  pour ne pas rouvrir la boucle sur du code), T2 (faux refus bruyants `\'`), T3 (branche `using` de `masquer` sans test).
+  Statut : `done`.
+
 ## Dev Agent Record
 
 ### Agent Model Used
