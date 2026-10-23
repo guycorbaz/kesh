@@ -103,3 +103,15 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Écartée** : corriger sous `+1.97.1` en laissant 1.96.1 dans le fichier, en exigeant que chaque correctif compile aussi
   sous 1.96.1 — contrainte inutile et invérifiable commit par commit.
 - **Réversible** : oui.
+
+### C-31-3-10 — Sous-section `### Modifié`, et non `### Changed`, au CHANGELOG
+
+- **Contexte** : T8 prescrit d'ajouter la ligne de la chaîne « sous `### Changed` ». Le `CHANGELOG.md` nomme ses
+  sous-sections en français depuis la v0.4.0 (`### Ajouté`, `### Modifié`, `### Corrigé` : douze `### Modifié`) ; les trois
+  `### Changed` restants appartiennent à des versions antérieures (l. 852, 870, 901). `scripts/prepare-release.sh` ne lit
+  aucune sous-section (`grep` : aucune occurrence de `Changed` ni de `Modifié`).
+- **Retenu** : `### Modifié`, convention vivante du fichier ; c'est l'intention de la fiche (la section des changements),
+  écrite dans la langue du fichier.
+- **Écartée** : `### Changed` à la lettre — une section 0.15.0 seule à mélanger les deux langues ; une autre story qui
+  ajouterait `### Modifié` à la même section créerait deux sous-sections homologues au rebase.
+- **Réversible** : oui.
