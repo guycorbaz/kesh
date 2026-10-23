@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 Issue : [#577](https://github.com/guycorbaz/kesh/issues/577) (bug, P3, documentation) ; actions C3 (rétrospective 29),
 A2, A3 (rétrospective 15), A-C7 et A-C9 (rétrospective 15). Branche `story/31-2`. Choix : `epic-31-choix-autonomes.md`
-(C-31-0-2, C-31-0-3) et `epic-31-choix-autonomes-312.md` (C-31-2-1 à C-31-2-11). Issues liées : #698 (smoke de release
+(C-31-0-2, C-31-0-3) et `epic-31-choix-autonomes-312.md` (C-31-2-1 à C-31-2-12). Issues liées : #698 (smoke de release
 en `root`, **intégrée**, fermée par la PR) et #699 (montage relatif, **reste ouverte**). Aucune migration, aucun code de
 production, aucun texte visible de l'application : ni i18n, ni manuel, ni capture.
 
@@ -347,7 +347,7 @@ sur N+2 tests, à recompter), contrôle `scripts/tests/check-dev-grants.test.sh`
   `:131`, `:165`, `docs/testing.md:590`, clos par la forme), R-8 (`refresh_tokens_repository.rs:5`, `testing.md:22`/`:102`/`:308`,
   DEBUGGING-KF007, règle au § 2 et § 4 portée par AC5), F2 (provenance du `GRANT ALL *.*`, interdit de `GRANT` manuel au
   § 2), F3 (`-N -B -r`, normalisation minimale qui garde les antislashs, cas `_` non échappé, fixture capturée, M6),
-  F7 (`docker/login-action` sur `docker-build` et `e2e-smoke`, C-31-2-11), LOW : R-L1, R-L2/L3, R-L3/L2, R-L4/L4 (compte
+  F7 (`docker/login-action` sur `docker-build` et `e2e-smoke`, C-31-2-11 ; sources injectables du garde, C-31-2-12), LOW : R-L1, R-L2/L3, R-L3/L2, R-L4/L4 (compte
   `kesh@%`, `MYSQL_PWD`, ligne `USAGE`, rôle `PUBLIC`), R-L5 (tests de scripts non automatisés, dit), R-L6 (commentaire
   #698 demandé), R-L7 (actionlint absent), R-L8 (artefact, service), F-L5 (`cmp` du fichier du montage), F-L6, F-L8, F-L7
   (hypothèse signalée, non exécutée). **Réfuté : aucun** (les 33 constats se retrouvent au dépôt). Recomptes : **18 AC**
