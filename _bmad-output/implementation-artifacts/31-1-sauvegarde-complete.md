@@ -2033,3 +2033,60 @@ rejeu, et issue inconnue d'un import (`TIMEOUT`, `NETWORK_ERROR`, 502, 504) ; i1
 parcours d'états ; manuel *Restaurer sur une nouvelle machine* et PDF ; CHANGELOG, README. Défaut voisin intégré : jetons
 de couleur inexistants des encarts. Vitest 1820 → 1859 ; mutations 10 tuées sur 10 (dont 3 hors fiche). Choix
 C-31-1-69 à 77. Revue de code P1 à lancer : `311b-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
+
+### Revue de code P1 de la 31-1b (2026-10-24) — Sonnet, lentilles B, E, A : B 0/0/1/5, E 0/0/0/6, A 0/0/0/6 — remédiée (Opus 5.5)
+
+Rapports : `kesh-gate-logs/311b-review-p1-{B,E,A}.md`.
+
+*Annotation datée (2026-10-24), relevés ci-dessus non réécrits* : la branche a été **reportée sur `origin/main`** par
+l'orchestrateur (`rebase --onto`, arbre inchangé) ; les hashes cités au Dev Agent Record de la 31-1b et à l'entrée
+« Développement de la 31-1b » sont ceux d'avant le report. Correspondance : `dbf6206d` → `d3a6b64b`, `a4012e69` →
+`850503e5`, `0bd5c55b` → `98a32c15`, `e060e4c4` → `2a14ebb4`, `0bb317c6` → `f3719339`, `7f977a04` → `67ddcfc7`,
+`7cc8a3e4` → `c0aed5f7`, `17c7a8d6` → `44d30f57`, `08ef4bdd` → `3e3377da`, `e7189cf6` → `1fcb7732` ; base `1ee0583e`
+→ `a3e4bd62` (merge-base avec `origin/main`). *Seconde annotation (A-L1)* : « 12 clés neuves ×4 locales, une modifiée »
+du Dev Agent Record est faux à sa date : **11 neuves**, une modifiée (`admin-backup-page-description`), une retirée —
+recompté par `git diff origin/main...HEAD -- crates/kesh-i18n/locales/fr-CH/messages.ftl | grep -E '^[+-][a-z]'` (le
+compte « 12 » incluait la ligne modifiée).
+
+**Remédié (commit `9d6f3184`)** :
+
+- **B-1 (MEDIUM)** — le manuel citait « N pièces référencées n'ont pas pu être incluses », texte de la fiche que l'écran
+  n'affiche pas. **Toutes** les citations d'écran ajoutées au manuel par les 31-1a et 31-1b ont été relevées (`git diff
+  origin/main...HEAD -- docs/manual/fr/admin-manual.tex | grep -oE '« [^»]+ »'`, 13 citations) et confrontées au
+  catalogue fr-CH : onze exactes ; deux fausses. La citation de B-1, alignée (« Pièces référencées que le fichier n'a pas
+  pu inclure : N ») ; et **« document indisponible »**, cité à cinq endroits du manuel **et dans deux de mes propres avis
+  d'écran** (`admin-backup-files-not-included`, `admin-restore-files-missing`, quatre locales et replis), alors qu'aucun
+  écran ne le dit : un document fournisseur absent affiche « Le document n'a pas été restauré. », un PDF figé absent « Le
+  PDF émis de cette facture est introuvable… ». Les avis disent désormais « elles seront introuvables » / « Restaurez le
+  dossier des documents… », le manuel cite les deux vrais messages. Grep de la valeur sur `docs`, `crates`,
+  `frontend/src`, `frontend/tests`, CHANGELOG, README : zéro reste (« Dokument nicht verfügbar », « documento non
+  disponibile », « document unavailable » compris). PDF régénéré (`311b-make-2.log`), contrôlé aplati.
+- **A-L3** — `admin-restore-confirm-body` (quatre locales et repli) ne promet plus « Vous serez déconnecté » : « À la
+  fin, votre session sera fermée : vous vous reconnecterez… ». Test Vitest neuf.
+- **B-2** — le manuel conditionne « l'application s'ouvre sans l'assistant » (société configurée et administrateur dans
+  la sauvegarde, `force_onboarding_done_if_eligible`).
+- **B-3** — le commentaire du 503 d'`issueInconnue` nomme l'angle mort (coupure de la base au `COMMIT`, rendue en 503).
+- **E-LOW-3 / A-L5** — après une issue inconnue, le choix du fichier et « Importer » sont désactivés (recharger la page
+  rouvre l'import) ; le manuel le dit, et dit que le message apparaît aussi quand rien n'est parti (E-LOW-4, B-6) ; le
+  critère « identifiants acceptés » de la note est remplacé par la vérification des données ou de l'audit (A-L5). Deux
+  tests Vitest neufs (issue inconnue → import bloqué ; 409 → import proposé), une assertion E2E (bouton désactivé après le
+  504).
+- **E-LOW-2** — `/onboarding/restore` suit la borne du lien : un Administrateur au-delà de l'étape 2 est renvoyé à
+  `/onboarding` (`+page.ts`, `await parent()` puis `onboardingState`) ; test de garde réécrit (7 cas).
+- **E-LOW-5 / A-L4** — assertions E2E exactes : « Pièces justificatives restaurées : 2. » (`toHaveText`), « … : 0. » et
+  « … introuvables après la restauration : 1. » au second parcours, « … n'a pas pu inclure : 1 ( » à l'export.
+
+**Consignés, non traités** (LOW, sans effet comptable) : B-4 (`timeoutMs` ≤ 0 abandonne aussitôt — aucun appelant ne le
+passe), B-5 et E-LOW-6 (`headerCount` : valeur hors forme ou en-tête dupliqué par un proxy → aucun avis), E-LOW-1
+(`authState.logout()` sans délai : un serveur muet fige « Se reconnecter »), A-L6 (`frontend/src/.svelte-kit/` non
+couvert par le `.gitignore` — à décider par l'orchestrateur).
+
+**Mutations de la remédiation** (sous le verrou, `311b-mut-M-b1{1,2,3}.log`) : M-b11 (« Importer » sans
+`unknownOutcome`) **tuée** ; M-b12 (borne d'étape de la garde retirée) **tuée** (2) ; M-b13 (sélecteur de fichier sans
+`unknownOutcome`) **tuée**.
+
+**Gates après la remédiation** (au commit `9d6f3184`, bases remises à zéro, un seul passage sous le verrou) :
+[RUN-P1]
+
+Passe suivante : **P2 ciblée** (Haiku, une lentille T sur le seul diff `1fcb7732..9d6f3184`),
+`311b-review-prompt-p2-ciblee.md`.

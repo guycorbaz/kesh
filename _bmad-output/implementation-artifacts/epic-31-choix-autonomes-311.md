@@ -840,3 +840,25 @@ route `POST …/full-import` (`admin_backup` reste `pub(crate)`).
   rétabli) et M-b10 (condition d'étape du lien retirée), parce que la fiche ne garde ni la garde de rôle, ni la valeur du
   délai long, ni la borne d'étape par une mutation.
 - **Réversible** : oui.
+
+### C-31-1-78 — Revue P1 : aucun avis ne cite un message qu'aucun écran n'affiche
+
+- **Contexte** : B-1 ; « document indisponible » figurait dans deux avis et dans le manuel, sans être le texte d'aucun
+  écran (« Le document n'a pas été restauré. », « Le PDF émis de cette facture est introuvable… »).
+- **Retenu** : les avis disent « introuvables » sans guillemets ; le manuel cite les deux messages réels.
+- **Réversible** : oui.
+
+### C-31-1-79 — Revue P1 : après une issue inconnue, l'import est bloqué jusqu'au rechargement
+
+- **Contexte** : E-LOW-3 / A-L5 ; C-31-1-71 ne figeait le formulaire qu'après un succès.
+- **Retenu** : `unknownOutcome` désactive le fichier et « Importer » ; recharger la page les rouvre (choix délibéré, après
+  vérification). Le message reste prudent quand rien n'est parti (E-LOW-4, B-6 : consignés).
+- **Écartée** : un bouton « Réessayer quand même » (un geste destructeur de plus à l'écran).
+- **Réversible** : oui.
+
+### C-31-1-80 — Revue P1 : `/onboarding/restore` bornée aux étapes 0 à 2
+
+- **Contexte** : E-LOW-2 ; le lien était borné, la page non.
+- **Retenu** : la garde attend le layout (`await parent()`) puis renvoie à `/onboarding` au-delà de l'étape 2, comme un
+  non-Admin.
+- **Réversible** : oui.
