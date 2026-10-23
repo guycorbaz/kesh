@@ -605,6 +605,18 @@ Passe suivante : ciblée P6 (Sonnet) sur le commit de cette remédiation.
   E8 (métacaractères du nom de compte, `KESH_DOCKER` avec arguments), B5 (timeout d'`e2e-smoke` sur cache vide : CI seulement,
   déjà écrit dans `docs/ci.md`). Test du garde : 32 cas, 242 assertions ; **30 mutations sur 30 tuées** (M1–M3, M6–M31).
   Gate complet vert à `365940a9`. Passe ciblée P2 à lancer (`312-review-prompt-p2-ciblee.md`, Haiku, une lentille).
+- 2026-10-23 — **Revue de code P2 ciblée** (Haiku, lentille T sur `453a5d8c..365940a9 -- scripts/` ; 0 CRITICAL / 0 HIGH /
+  1 MEDIUM / 2 LOW). Rapport `312-review-p2-T.md`. **T1 (MEDIUM), vérifié par l'orchestrateur** : `masquer` était sensible à
+  la casse et ne connaissait que les apostrophes — `identified by 'x'` ou `IDENTIFIED BY "x"` ressortaient en clair, alors
+  que l'en-tête et `docs/testing.md` promettaient « toute autre forme de secret ». *Corrigé* (`28db7768`) en **fail-closed** :
+  `masquer` devient un awk POSIX qui tronque toute ligne affichée au premier `identified` ou `using` (après `tolower`) et la
+  suit de `<masqué>` ; `sans_condense` (comparaison) inchangé. T2/T3 (LOW) : un `#`, `--` ou `/*` précédé sur sa ligne d'un
+  nombre impair d'apostrophes ou de backticks fait **refuser** le fichier (code 4, ligne masquée) au lieu de tronquer
+  l'extraction en silence ; une chaîne ouverte sur une ligne précédente reste un angle mort, écrit. En-tête du garde et
+  `docs/testing.md` alignés. Six cas neufs (minuscules, guillemets doubles, `identified via … using` dans le relevé,
+  instruction refusée en minuscules, `#` dans une chaîne, `#` dans un identifiant) : **38 cas, 283 assertions**, gawk et
+  mawk. **36 mutations exécutées, 36 tuées** (M1–M3, M6–M36 ; M32 = retour à l'ancien `sed`). Gate complet vert à
+  `28db7768`. E2E non rejoué : `scripts/` seulement. Passe ciblée P3 à lancer (`312-review-prompt-p3-ciblee.md`, Sonnet).
 
 ## Dev Agent Record
 
@@ -775,6 +787,28 @@ Journaux versés dans `/home/gcorbaz/devel/kesh-gate-logs/` (A3, A4) : `312-r1-t
   passés au runner : **14 passed** (`312-r1-e2e-rejeu.log`).
 - **AC15** : aucun YAML touché par la remédiation.
 
+### Après la passe ciblée P2 (2026-10-23) — les relevés ci-dessus ne sont pas réécrits
+
+Journaux : `312-r2-test-garde-gawk.log`, `312-r2-test-garde-mawk.log`, `312-r2-mutations.log`, `312-r2-gate-complet.log`.
+
+- **Dernier commit de code : `28db7768`** (`scripts/` seulement). L'E2E complet n'est pas rejoué (consigne de l'orchestrateur :
+  ni le frontend ni le backend ne bougent).
+- **Test du garde**, gawk et mawk 1.3.4 : `✅ 38 cas, aucune assertion en échec.`, **283** lignes `✓`, 0 `✗`.
+- **Garde contre le conteneur réel** : `garde des droits : droits de kesh conformes à 01-dev-grants.sql`, code 0 — le fichier
+  réel n'est pas refusé par le contrôle de parité.
+- **Mutations, sous verrou** : 36 exécutées, **36 tuées** — M1–M3, M6–M31 rejouées, et :
+
+| # | Mutation | Première assertion qui rougit |
+|---|---|---|
+| M32 | `masquer` ramené à l'ancien `sed` | « secret en minuscules » : `<masqué>` absent (7 assertions) |
+| M33 | `tolower` retiré (`l = $0`) | secret affiché (5 assertions) |
+| M34 | contrôle de parité retiré | « marqueur de commentaire dans une chaîne » absent |
+| M35 | parité des backticks seule retirée | cas `#` dans un identifiant |
+| M36 | ligne `CHAINE` affichée sans `masquer` | `a#b` affiché |
+
+  ⚠️ M20 a de nouveau atteint le vrai `docker`, en lecture, par construction.
+- **Gate complet** à `28db7768`, base `kesh_312` remise à zéro : garde vert, fmt, clippy, nextest **3847/3847, 6 ignorés**.
+
 ### File List
 
 Développement (`git diff --name-status b34314ae 7495144d`, hors `_bmad-output/`) — **26 fichiers** : 4 ajoutés,
@@ -788,6 +822,8 @@ Développement (`git diff --name-status b34314ae 7495144d`, hors `_bmad-output/`
   `docs/ci.md`, `docs/testing.md`, `frontend/DEBUGGING-KF007.md`, `scripts/test-fast.sh`.
 - Supprimés : les six `.svelte-kit/…` de la racine.
 - Artefacts : cette fiche, `epic-31-choix-autonomes-312.md`, `sprint-status.yaml`, `312-review-prompt-p1.md`,
-  `312-review-prompt-p2-ciblee.md`.
+  `312-review-prompt-p2-ciblee.md`, `312-review-prompt-p3-ciblee.md`.
 - Revue de code P1 (`365940a9` et le commit de textes qui suit) : `scripts/check-dev-grants.sh`,
   `scripts/tests/check-dev-grants.test.sh`, `CLAUDE.md`, `docs/testing.md`.
+- Revue de code P2 ciblée (`28db7768` et le commit de textes qui suit) : `scripts/check-dev-grants.sh`,
+  `scripts/tests/check-dev-grants.test.sh`, `docs/testing.md`.
