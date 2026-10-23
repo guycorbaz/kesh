@@ -609,4 +609,4 @@ exige Docker et des conteneurs, et elle ne dépend que de ces fichiers.
 - Endpoint runtime : `crates/kesh-api/src/routes/test_endpoints.rs`
 - Helper Playwright : `frontend/tests/e2e/helpers/test-state.ts`
 - Tests d'intégration de l'endpoint : `crates/kesh-api/tests/test_endpoints_e2e.rs`
-- CI : `.github/workflows/ci.yml` (job `e2e`, step `Smoke test /api/v1/_test/seed`)
+- CI : `.github/workflows/ci.yml`, job `e2e-smoke` (Story 31-2) — une seule spec, `frontend/tests/e2e/smoke.spec.ts`, contre l'image Docker de la PR ; la suite complète ne tourne qu'en local (cf. `docs/ci.md`)
