@@ -141,7 +141,7 @@ neuf fait rougir l'un des deux, message qui nomme l'AC1 à mettre à jour.
 
 **AC3 — Format 2 : les fichiers dans `files/`.** `BACKUP_FORMAT_VERSION` passe à **2**. L'export écrit, pour chaque
 fichier référencé **présent et intact** (empreinte du contenu lu = `sha256` déclaré = préfixe du nom), une entrée
-`files/<storage_path>` en méthode **Stored** (PDF et images sont déjà compressés), mode `0644` ; **aucune entrée de répertoire `files/`** n'est écrite en format 2 (l'`add_directory("files/", …)` d'aujourd'hui, `export.rs:95`, disparaît du format 2 : sans elle, `ZipWriter::abort_file` peut toujours rembobiner une entrée abandonnée — validation P5, R2). Le manifeste gagne :
+`files/<storage_path>` en méthode **Stored** (PDF et images sont déjà compressés), mode `0644`. Le manifeste gagne :
 
 ```json
 "files": [ { "path": "<sha>.<ext>", "sha256": "<sha>", "byteSize": 12345 } ],
@@ -742,7 +742,7 @@ Synology ; stables sur la chaîne 1.96.1 du dépôt) — **`kind()` d'abord** : 
 `raw_os_error()` 28 ou 122 ne vaut que pour une erreur née hors du crate ; `'failed'` sinon (C-31-1-32). **La
 rétention ne tourne pas**, les sauvegardes existantes restent. Le trait d'injection de l'AC36 (`BackupEnv: Send +
 Sync`, qui remplace `FreeSpace`, passé en `Arc<dyn BackupEnv>`) porte deux méthodes : `free_bytes(dir)` et
-`wrap_writer(file: File) -> Box<dyn WriteSeek>`, où `WriteSeek` est un trait du module, `trait WriteSeek: Write + Seek + Send {}` avec une implémentation générale `impl<T: Write + Seek + Send> WriteSeek for T {}` — un objet-trait n'admet qu'**un** trait non automatique (E0225), d'où ce trait d'union (validation P5, R1) ; l'écrivain de test implémente `Write + Seek` — l'écrivain **possède** un **clone** du fichier
+`wrap_writer(file: File) -> Box<dyn WriteSeek>`, où `WriteSeek` est un trait du module, `pub(crate) trait WriteSeek: Write + Seek + Send {}` (visibilité égale à celle de `BackupEnv`, sans quoi le lint `private_interfaces` rougit sous `-D warnings`) avec une implémentation générale `impl<T: Write + Seek + Send> WriteSeek for T {}` — un objet-trait n'admet qu'**un** trait non automatique (E0225), d'où ce trait d'union (validation P5, R1) ; l'écrivain de test implémente `Write + Seek` — l'écrivain **possède** un **clone** du fichier
 (`try_clone`, même descripteur, AC4), si bien qu'il entre dans le `spawn_blocking` ; l'original reste à
 `write_backup_file`, qui appelle `sync_all()` dessus une fois l'archive finie (F10 de la P2 : sur btrfs et sur un
 partage réseau, `ENOSPC`/`EDQUOT` surgissent souvent au `fsync` ; C-31-1-46, P3 : l'emprunt `&'a mut File` de la P2
@@ -1593,3 +1593,16 @@ gardé à l'AC14 comme relevé daté ; les « ≥ 4 » du tableau des tests, qui
   signature de `build_keshbackup`), R4/F3 (type d'erreur), R5, R6, R7, R8 (lecture ZIP dans Playwright), R9, R10 (marquer
   les entrées amendées), F2 (`KESH_DOCUMENTS_DIR` absent ⇒ 0), F4, F5 (M-a20 muette sous root), F6 (dossier d'entrée).
 - Passe suivante : ciblée P6 (Haiku) sur le commit de cette remédiation.
+
+### Validation P6 ciblée (2026-10-24) — Haiku, lentille T sur `c9c36ae8` : 0/1/1/3 ; remédiée par l'orchestrateur
+
+- **T2 (MEDIUM), vérifié aux sources** : la prémisse de R2 (P5) était **fausse** — `add_directory` appelle `start_entry`
+  (`zip-2.4.2/src/write.rs:1422`), qui pose `data_start` (`:1040-1042`) ; l'entrée de répertoire `files/` ne bloque donc pas
+  le rembobinage d'`abort_file` (`:1146-1153`). **T1 (HIGH)**, conséquence directe : retirer l'entrée `files/` en format 2
+  contredisait l'AC3, l'AC6 et T-a4b, et l'import actuel (`has_files_dir`) aurait refusé une sauvegarde sans pièce.
+  **Défait** : la phrase ajoutée à l'AC3 en `c9c36ae8` est retirée ; l'entrée `files/` reste écrite, en format 1 comme en 2.
+  *Une remédiation a produit le défaut suivant : c'est l'orchestrateur qui l'a écrite, sans relire la source qu'il
+  croyait connue.*
+- **T5 (LOW)** : `pub(crate) trait WriteSeek` (lint `private_interfaces`).
+- T3, T4 (LOW) : laissés au développement (T4 : une archive de format 2 portant l'entrée `files/` est la forme normale).
+- Passe suivante : ciblée P7 (Sonnet) sur ce commit.

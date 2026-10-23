@@ -627,3 +627,7 @@ C-31-1-11 (C-31-1-39), C-31-1-20 et C-31-1-27 (C-31-1-40), C-31-1-29 (C-31-1-38)
 générale. **Et (R2)** : en format 2, aucune entrée de répertoire `files/` n'est écrite, pour que `abort_file` puisse toujours
 rembobiner.
 
+**Amendement (2026-10-24, validation P6)** : la seconde moitié de l'amendement précédent (« aucune entrée de répertoire
+`files/` en format 2 ») est **retirée** — sa prémisse était fausse (`add_directory` pose `data_start`, `zip-2.4.2`
+`write.rs:1040-1042`, `:1422`). L'entrée `files/` reste écrite. `WriteSeek` est `pub(crate)`.
+
