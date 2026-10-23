@@ -478,9 +478,11 @@ pub enum AppError {
     AdminFullExportFailed(String),
 
     /// Story 17-3c — échec de l'**import** complet d'installation **après**
-    /// l'écriture réussie de la sauvegarde pré-import (panne DB pendant le
-    /// restore transactionnel, rejeu des backfills, dataset source sans aucun
-    /// compte Admin, commit). HTTP 500 ; la destination reste intacte
+    /// l'écriture réussie de la sauvegarde pré-import (écriture des pièces
+    /// dans le dossier des documents — Story 31-1a, avant tout remplacement
+    /// des tables —, panne DB pendant le restore transactionnel, rejeu des
+    /// backfills, dataset source sans aucun compte Admin, commit). HTTP 500 ;
+    /// la destination reste intacte
     /// (rollback) et la sauvegarde pré-import existe. Story 15-13b (#576) : un
     /// échec **antérieur** à la sauvegarde rend `AdminPreImportBackupFailed`.
     /// ⚠️ Cette variante est encore **construite** avant la sauvegarde par
@@ -494,7 +496,8 @@ pub enum AppError {
 
     /// Story 15-13b (#576) — échec de l'import d'installation **avant** que la
     /// sauvegarde de sécurité soit sur disque : transaction, verrou, lecture du
-    /// schéma ou des données, création du dossier, écriture du fichier. Rien
+    /// schéma ou des données, création du dossier, écriture du fichier — et,
+    /// depuis la Story 31-1a, réception de l'envoi dans le dossier. Rien
     /// n'a été supprimé et **aucune sauvegarde n'existe** : le message ne la
     /// promet pas, et nomme les deux pistes (dossier de sauvegarde, base de
     /// données). HTTP 500, code `ADMIN_PRE_IMPORT_BACKUP_FAILED`, clé
@@ -610,10 +613,14 @@ pub enum AppError {
     InvalidOrExpiredToken,
 
     /// Story 17-3c — `.keshbackup` structurellement invalide ou corrompu :
-    /// ZIP malformé, `manifest.json` absent/illisible, `files/` non-vide,
-    /// `formatVersion > 1`, NDJSON d'une table absent, ou SHA-256 d'une table
-    /// ne correspondant pas au manifeste (tamper). HTTP 400 — refusé **avant
-    /// tout DELETE** (la DB n'est jamais mutée).
+    /// ZIP malformé, `manifest.json` absent/illisible, `formatVersion > 2`,
+    /// NDJSON d'une table absent, ou SHA-256 d'une table ne correspondant pas
+    /// au manifeste (tamper). Story 31-1a (#503) : `files/` non vide dans un
+    /// format 1 ; dans un format 2, pièce au nom invalide, entrée inattendue,
+    /// pièce plus grande que sa taille déclarée ou d'une autre empreinte, pièce
+    /// sans ligne de la base ou référencée sans être déclarée ; entrée au-delà
+    /// des bornes de lecture. HTTP 400 — refusé **avant tout DELETE** (la DB
+    /// n'est jamais mutée).
     #[error("Backup invalide : {0}")]
     InvalidBackupStructure(String),
 

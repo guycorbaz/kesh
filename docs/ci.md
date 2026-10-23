@@ -53,9 +53,9 @@ si elle échoue), puis `npm ci`, `npx playwright install --with-deps chromium` e
 (traces) téléversé, rétention 3 jours.
 
 Il exerce aussi, **sur chaque PR**, le chemin « image + utilisateur `kesh` + migrations au démarrage » que reprend le
-smoke `/health` de `release.yml`. ⚠️ **Sa durée n'a pas encore été mesurée** (non exécutable hors d'un runner) : à
-relever au premier run et à reporter ici et dans le `CLAUDE.md` ; au-delà de 10 min, envisager le cache des
-navigateurs (D-6-1-A).
+smoke `/health` de `release.yml`. **Durée mesurée au premier run** (PR #702, 2026-10-23) : **16 min 29 s** — ≈ 10 min pour
+`npx playwright install --with-deps chromium`, ≈ 5 min de construction de l'image depuis le cache `gha`, ≈ 4 s pour la
+spec. Au-delà des 10 min visées : le cache des navigateurs (D-6-1-A) est le levier, à mettre en place.
 
 **Repli** si le cache `gha` ne tient pas (reconstruction complète de l'image à chaque run) : un job qui compile
 `kesh-api` et télécharge l'artefact `frontend-build` — écarté d'abord (C-31-2-2) parce qu'il ajoute un second
@@ -202,7 +202,7 @@ tiré **anonymement**, et un `429` de Docker Hub faisait échouer le job `backen
 | `backend` | 120 min | Compilation + `cargo test -j1 --test-threads=1` ; 19 min 14 s mesurées sur runner le 2026-08-16 (PR #311). La marge est délibérée : un timeout se dimensionne sur le pire cas (cf. commentaire de `ci.yml`) |
 | `frontend` | 20 min | Build Vite + Vitest + svelte-check ≈ 5 min |
 | `docker-build` | 20 min | Build multi-stage ≈ 8 min |
-| `e2e-smoke` | 25 min | Image depuis le cache `gha` + installation de chromium + une spec ; durée réelle à relever au premier run |
+| `e2e-smoke` | 25 min | Image depuis le cache `gha` + installation de chromium + une spec ; 16 min 29 s au premier run (PR #702) |
 
 Les timeouts évitent qu'un test gelé (typiquement `PoolTimedOut` SQLx cross-binary) mobilise un runner pendant 6 h (défaut GitHub Actions).
 

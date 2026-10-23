@@ -173,7 +173,9 @@ services:
       # défaut du code /data/backup, monté ici sur ./backup (montage fixe, sans
       # variable d'hôte). SECRET (condensés des mots de passe, jetons de session) :
       # fichiers en 0600. Dans le périmètre de sauvegarde du dossier du compose
-      # (Hyper Backup) ; à purger par l'exploitant (une sauvegarde par import).
+      # (Hyper Backup) ; à purger par l'exploitant (une sauvegarde par import,
+      # qui pèse la base PLUS les pièces du dossier des documents). Reçoit aussi
+      # les temporaires de l'export et de l'import d'installation.
       - ./backup:/data/backup
     networks:
       - frontend

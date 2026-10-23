@@ -60,8 +60,9 @@
 //! par `main` après la connexion à la base), le défaut appliqué à une valeur
 //! vide n'a pas de test de comportement ; celui de `RUST_LOG` en a un
 //! (`rust_log_vide_vaut_info`).
-//! `TMPDIR` (`std::env::temp_dir()`) est inventorié mais non compté dans
-//! l'ensemble lu. `docker-compose.dev.yml` (pile de développement, non
+//! `TMPDIR` (`std::env::temp_dir()`) n'est plus lu par la production depuis la
+//! Story 31-1a (les temporaires vont dans `KESH_ADMIN_BACKUP_DIR`) ; un retour
+//! rougirait ici. `docker-compose.dev.yml` (pile de développement, non
 //! distribuée) n'est contraint ni par (T) ni par (M) : ses mots de passe de
 //! développement et son port en loopback y restent. Depuis la 15-14b, G17 y
 //! contrôle une seule chose — que les défauts de `KESH_ADMIN_PASSWORD` et de
@@ -1177,7 +1178,6 @@ const CONFIG: &str = "kesh-api/src/config.rs";
 const MAIN: &str = "kesh-api/src/main.rs";
 const LOGGING: &str = "kesh-api/src/logging.rs";
 const ONBOARDING: &str = "kesh-api/src/routes/onboarding.rs";
-const ADMIN: &str = "kesh-api/src/routes/admin.rs";
 
 /// **Liste fermée** des occurrences de jetons surveillés dans le code de
 /// production (AC3 de la 15-11b). Toute occurrence non couverte rougit ;
@@ -1327,14 +1327,8 @@ const EMPLACEMENTS_AUTORISES: &[Autorisation] = &[
         Forme::Exacte("EnvFilter :: new ( raw )"),
         1,
     ),
-    // `TMPDIR` : inventorié, nom non compté dans l'ensemble lu (angle mort).
-    autorise(
-        ADMIN,
-        "stream_via_tempfile",
-        "env",
-        Forme::Exacte("env :: temp_dir ( )"),
-        1,
-    ),
+    // `TMPDIR` (`std::env::temp_dir()`) : plus lu depuis la Story 31-1a — les
+    // temporaires de l'export et de l'import vont dans `KESH_ADMIN_BACKUP_DIR`.
 ];
 
 /// Position (ligne 1-based, colonne 0-based), comparable.

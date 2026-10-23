@@ -348,6 +348,71 @@ pub struct InstallationExport {
     pub instance_id: i64,
     /// Une entrée par table de [`TABLES_TO_TRUNCATE`], dans son ordre.
     pub tables: Vec<(&'static str, TableExport)>,
+    /// Story 31-1a (#503, AC1) — les fichiers du dossier des documents que la
+    /// base désigne, lus **dans le même instantané** que les tables, après
+    /// elles ([`read_referenced_files`]).
+    pub referenced_files: Vec<ReferencedFile>,
+}
+
+/// Story 31-1a (#503, AC1) — un fichier du dossier des documents désigné par
+/// une ligne de la base : un document fournisseur
+/// (`imported_supplier_invoices.storage_path` / `file_hash`) ou le PDF figé
+/// d'une facture (`invoices.pdf_storage_path` / `pdf_sha256`).
+///
+/// L'inventaire de ces colonnes est **clos** : le test
+/// `tests::colonnes_storage_path_inventaire_clos` rougit si une colonne
+/// `*storage_path*` apparaît ailleurs.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ReferencedFile {
+    /// Nom relatif au dossier des documents, **tel que la base le porte** —
+    /// éventuellement hors forme : c'est l'exporteur qui le contrôle.
+    pub storage_path: String,
+    /// Empreinte SHA-256 déclarée par la ligne (hex), chaîne vide si la ligne
+    /// n'en porte pas.
+    pub sha256: String,
+}
+
+/// Story 31-1a (#503, AC1) — lit les couples (chemin, empreinte) que la base
+/// référence, dans l'instantané `snap`.
+///
+/// **Deux requêtes, jamais un `UNION` ni un `DISTINCT` SQL** : les colonnes
+/// sont en `utf8mb4_unicode_ci`, insensible à la casse et aux espaces finaux,
+/// qui fusionnerait `x.pdf` et `X.PDF` de deux lignes alors que l'import
+/// compare les chemins octet à octet — la ligne fusionnée ne serait alors ni
+/// sauvegardée ni déclarée manquante, et la sauvegarde authentique refusée.
+/// Le dédoublonnage se fait ici, en Rust, sur l'égalité exacte des chaînes ;
+/// le classement des anomalies (même chemin sous deux empreintes, préfixe qui
+/// n'est pas l'empreinte, chemin hors forme) revient à l'exporteur.
+///
+/// Toutes les lignes de `imported_supplier_invoices` comptent, quel que soit
+/// leur statut (`discarded` compris : la ligne reste restaurée et son document
+/// téléchargeable). Rend la liste triée.
+async fn read_referenced_files(snap: &mut ReadSnapshot) -> Result<Vec<ReferencedFile>, DbError> {
+    let mut couples = std::collections::BTreeSet::new();
+    let documents: Vec<(String, String)> =
+        sqlx::query_as("SELECT storage_path, file_hash FROM imported_supplier_invoices")
+            .fetch_all(snap.conn())
+            .await
+            .map_err(map_db_error)?;
+    let pdf_figes: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT pdf_storage_path, pdf_sha256 FROM invoices WHERE pdf_storage_path IS NOT NULL",
+    )
+    .fetch_all(snap.conn())
+    .await
+    .map_err(map_db_error)?;
+    for (storage_path, sha256) in documents {
+        couples.insert(ReferencedFile {
+            storage_path,
+            sha256,
+        });
+    }
+    for (storage_path, sha256) in pdf_figes {
+        couples.insert(ReferencedFile {
+            storage_path,
+            sha256: sha256.unwrap_or_default(),
+        });
+    }
+    Ok(couples.into_iter().collect())
 }
 
 /// Futur boxé `Send`, alias local (std seule : `kesh-db` ne dépend pas du crate
@@ -403,10 +468,13 @@ async fn export_installation_in(
         tables.push((table, export));
         obs(Etape::ApresTable(table)).await;
     }
+    // Story 31-1a (AC1) : dans le même instantané, après les tables.
+    let referenced_files = read_referenced_files(snap).await?;
     Ok(InstallationExport {
         min_required,
         instance_id,
         tables,
+        referenced_files,
     })
 }
 
@@ -1958,5 +2026,264 @@ mod tests {
         );
         drop(conn);
         p1.close().await;
+    }
+
+    // =======================================================================
+    // Story 31-1a (#503) — fichiers référencés par la base (AC1, AC2)
+    // =======================================================================
+
+    /// Empreinte fictive de 64 caractères hexadécimaux, répétée de `c`.
+    fn empreinte(c: char) -> String {
+        std::iter::repeat_n(c, 64).collect()
+    }
+
+    /// Insère un document fournisseur sans QR (seules les colonnes du fichier).
+    async fn inserer_document(pool: &MySqlPool, company_id: i64, chemin: &str, sha: &str) {
+        sqlx::query(
+            "INSERT INTO imported_supplier_invoices \
+             (company_id, file_hash, storage_path, original_filename, mime_type, byte_size) \
+             VALUES (?, ?, ?, 'doc.pdf', 'application/pdf', 10)",
+        )
+        .bind(company_id)
+        .bind(sha)
+        .bind(chemin)
+        .execute(pool)
+        .await
+        .expect("document fournisseur");
+    }
+
+    /// Fige le PDF d'une facture : les quatre colonnes de la migration
+    /// `20261003000001` (contrainte « tout ou rien »).
+    async fn figer(pool: &MySqlPool, invoice_id: i64, chemin: &str, sha: &str) {
+        sqlx::query(
+            "UPDATE invoices SET pdf_storage_path = ?, pdf_sha256 = ?, \
+             pdf_frozen_at = NOW(3), pdf_language = 'FR' WHERE id = ?",
+        )
+        .bind(chemin)
+        .bind(sha)
+        .bind(invoice_id)
+        .execute(pool)
+        .await
+        .expect("facture figée");
+    }
+
+    /// Société comptable + un client + deux factures en brouillon (non figées) ;
+    /// rend `(company_id, [facture_1, facture_2])`.
+    async fn monter_factures(pool: &MySqlPool) -> (i64, [i64; 2]) {
+        use crate::entities::contact::{ContactType, NewContact, Salutation};
+        use crate::entities::invoice::{NewInvoice, NewInvoiceLine};
+        use crate::repositories::{contacts, invoices};
+
+        let seeded = crate::test_fixtures::seed_accounting_company(pool)
+            .await
+            .expect("seed société");
+        let contact = contacts::create(
+            pool,
+            seeded.admin_user_id,
+            NewContact {
+                company_id: seeded.company_id,
+                contact_type: ContactType::Personne,
+                name: "Client Fictif".into(),
+                first_name: Some("Client".into()),
+                last_name: Some("Fictif".into()),
+                is_client: true,
+                is_supplier: false,
+                address: None,
+                address_street: None,
+                address_building: None,
+                address_postal_code: None,
+                address_city: None,
+                address_country: None,
+                email: None,
+                phone: None,
+                ide_number: None,
+                client_number: None,
+                default_payment_terms: None,
+                default_payment_terms_days: None,
+                language: None,
+                salutation: Salutation::Neutre,
+            },
+        )
+        .await
+        .expect("client");
+        let mut ids = [0i64; 2];
+        for id in &mut ids {
+            let (invoice, _) = invoices::create(
+                pool,
+                seeded.admin_user_id,
+                NewInvoice {
+                    company_id: seeded.company_id,
+                    contact_id: contact.id,
+                    date: chrono::NaiveDate::from_ymd_opt(2026, 4, 14).expect("date"),
+                    due_date: None,
+                    payment_terms: None,
+                    lines: vec![NewInvoiceLine {
+                        revenue_account_id: None,
+                        description: "Prestation".into(),
+                        quantity: rust_decimal::Decimal::ONE,
+                        unit_price: rust_decimal::Decimal::new(100, 0),
+                        vat_rate: rust_decimal::Decimal::ZERO,
+                    }],
+                    project_id: None,
+                },
+            )
+            .await
+            .expect("facture");
+            *id = invoice.id;
+        }
+        (seeded.company_id, ids)
+    }
+
+    /// Une seconde société (deux documents de même empreinte ne peuvent
+    /// coexister que dans deux sociétés : `UNIQUE (company_id, file_hash)`).
+    async fn seconde_societe(pool: &MySqlPool) -> i64 {
+        use crate::entities::address::StructuredAddress;
+        use crate::entities::{Language, NewCompany, OrgType};
+        crate::repositories::companies::create(
+            pool,
+            NewCompany {
+                name: "Seconde société".into(),
+                first_name: None,
+                last_name: None,
+                address_structured: StructuredAddress {
+                    street: "Rue Test".into(),
+                    building: "2".into(),
+                    postal_code: "1000".into(),
+                    city: "Lausanne".into(),
+                    country: "CH".into(),
+                },
+                ide_number: None,
+                org_type: OrgType::Independant,
+                accounting_language: Language::Fr,
+                instance_language: Language::Fr,
+            },
+        )
+        .await
+        .expect("seconde société")
+        .id
+    }
+
+    /// AC1 (T-a2) — les deux familles de pièces sont lues ; une facture non
+    /// figée n'apparaît pas ; deux chemins qui ne diffèrent que par la casse
+    /// (même empreinte, deux sociétés) restent **deux** fichiers — un `UNION`
+    /// SQL, sous la collation `utf8mb4_unicode_ci`, les fusionnerait (M-a22) ;
+    /// le résultat est trié.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn referenced_files_lit_documents_et_pdf_figes(pool: MySqlPool) {
+        let (company_id, [figee, brouillon]) = monter_factures(&pool).await;
+        let autre = seconde_societe(&pool).await;
+        let h = empreinte('a');
+        let minuscule = format!("{h}.pdf");
+        let majuscule = format!("{}.pdf", h.to_uppercase());
+        inserer_document(&pool, company_id, &minuscule, &h).await;
+        inserer_document(&pool, autre, &majuscule, &h).await;
+        let p = empreinte('b');
+        figer(&pool, figee, &format!("{p}.pdf"), &p).await;
+        let _ = brouillon;
+
+        let export = export_installation(&pool).await.expect("export");
+        let attendu = vec![
+            ReferencedFile {
+                storage_path: majuscule.clone(),
+                sha256: h.clone(),
+            },
+            ReferencedFile {
+                storage_path: minuscule.clone(),
+                sha256: h.clone(),
+            },
+            ReferencedFile {
+                storage_path: format!("{p}.pdf"),
+                sha256: p.clone(),
+            },
+        ];
+        assert_eq!(export.referenced_files, attendu);
+    }
+
+    /// AC1 (T-a2, M-a11) — les fichiers référencés se lisent dans l'instantané :
+    /// une facture figée **après** l'ouverture (écriture committée sur une autre
+    /// connexion, par l'observateur) n'apparaît pas ; un document inséré avant,
+    /// si.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn referenced_files_lus_dans_l_instantane(pool: MySqlPool) {
+        let (company_id, [figee, _]) = monter_factures(&pool).await;
+        let h = empreinte('c');
+        inserer_document(&pool, company_id, &format!("{h}.png"), &h).await;
+        let p = empreinte('d');
+
+        let compteur = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut obs = {
+            let pool = pool.clone();
+            let compteur = std::sync::Arc::clone(&compteur);
+            let p = p.clone();
+            move |etape: Etape| -> BoxFuture<'static, ()> {
+                if etape != Etape::Ouvert {
+                    return Box::pin(async {});
+                }
+                let pool = pool.clone();
+                let compteur = std::sync::Arc::clone(&compteur);
+                let p = p.clone();
+                Box::pin(async move {
+                    figer(&pool, figee, &format!("{p}.pdf"), &p).await;
+                    compteur.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                })
+            }
+        };
+        let mut snap = ReadSnapshot::begin(&pool).await.expect("instantané");
+        let export = export_installation_in(&mut snap, &mut obs)
+            .await
+            .expect("sauvegarde");
+        snap.finish().await.expect("clôture");
+
+        assert_eq!(
+            compteur.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "assertion de montage : la facture n'a pas été figée pendant la sauvegarde"
+        );
+        let figees: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM invoices WHERE pdf_storage_path IS NOT NULL")
+                .fetch_one(&pool)
+                .await
+                .expect("comptage");
+        assert_eq!(
+            figees, 1,
+            "assertion de montage : la base porte la facture figée"
+        );
+        assert_eq!(
+            export.referenced_files,
+            vec![ReferencedFile {
+                storage_path: format!("{h}.png"),
+                sha256: h,
+            }],
+            "seul le document antérieur à l'instantané est référencé"
+        );
+    }
+
+    /// AC2 — inventaire clos des colonnes qui désignent un fichier : toute
+    /// colonne dont le nom contient `storage_path` est l'une des deux que lit
+    /// [`read_referenced_files`]. Une colonne neuve fait rougir ce test :
+    /// mettre à jour l'AC1 de la Story 31-1 (la lecture des fichiers
+    /// référencés), puis cette liste.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn colonnes_storage_path_inventaire_clos(pool: MySqlPool) {
+        let colonnes: Vec<(String, String)> = sqlx::query_as(
+            "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS \
+             WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME LIKE '%storage_path%' \
+             ORDER BY TABLE_NAME, COLUMN_NAME",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("information_schema");
+        assert_eq!(
+            colonnes,
+            vec![
+                (
+                    "imported_supplier_invoices".to_string(),
+                    "storage_path".to_string()
+                ),
+                ("invoices".to_string(), "pdf_storage_path".to_string()),
+            ],
+            "colonne de fichier neuve : mettre à jour la lecture des fichiers référencés \
+             (Story 31-1a, AC1 — read_referenced_files) puis cette liste"
+        );
     }
 }
