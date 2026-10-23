@@ -351,7 +351,7 @@
 						<h3 class="font-semibold">E29 — Preparing the first year-end closing, part two <span class="text-slate-500 font-mono text-xs">v0.14.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
-					<p class="text-sm text-slate-400"><strong class="text-slate-200">Accruals and deferrals reversed on the first day of the next fiscal year</strong>, from the entry itself (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/232">#232</a>): a prepaid expense, accrued income or an invoice still to receive is booked on the last day of the year, and its reversal is dated the first day of the next one, in that year. A dry run of a closing in the administration manual is still to be written.</p>
+					<p class="text-sm text-slate-400"><strong class="text-slate-200">Accruals and deferrals reversed on the first day of the next fiscal year</strong>, from the entry itself (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/232">#232</a>): a prepaid expense, accrued income or an invoice still to receive is booked on the last day of the year, and its reversal is dated the first day of the next one, in that year. A dry run of a closing in the administration manual is moved to E31, after the complete backup.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
@@ -359,6 +359,13 @@
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
 					<p class="text-sm text-slate-400">Every supplier document, <strong class="text-slate-200">with or without a QR code</strong>, enters a &ldquo;Documents to process&rdquo; list with a preview; the bill is <strong class="text-slate-200">created next to its document</strong>, the supplier proposed — never chosen automatically — or created without leaving the form (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/685">#685</a>). A document can be attached to a bill afterwards, detached, and viewed from the journal entry. Reconciliation <strong class="text-slate-200">proposes the open supplier bill for a debit</strong> and settles it; cancelling the match undoes the payment (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/686">#686</a>). The same bill can no longer enter two pending payment batches. One <strong class="text-slate-200">breaking</strong> database migration: going back to v0.13.4 requires restoring the backup taken before the upgrade.</p>
+				</div>
+				<div class="p-5 rounded-xl bg-slate-900 border border-amber-500/30 sm:col-span-2">
+					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+						<h3 class="font-semibold">E31 — Keeping the books <span class="text-slate-500 font-mono text-xs">v0.15.0</span></h3>
+						<span class="text-xs font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">In progress</span>
+					</div>
+					<p class="text-sm text-slate-400">A <strong class="text-slate-200">backup that restores everything</strong>: the <code>.keshbackup</code> file carries the supporting documents and frozen invoice PDFs, and Kesh writes a complete backup on its own, at a regular interval set in the interface (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/503">#503</a>). Then a dry run of a year-end closing in the administration manual, carried out on a copy. Also: an E2E smoke test in CI (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/577">#577</a>) and Rust 1.97.1.</p>
 				</div>
 			</div>
 		</div>

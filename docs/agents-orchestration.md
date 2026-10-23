@@ -11,7 +11,10 @@ Elles **complètent** le `CLAUDE.md`, qui fait foi : en cas d'écart, c'est lui 
 se corrige ici.
 
 *(Versé au dépôt le 2026-10-13, Story 28-0 — action A8 de la rétrospective de l'Epic 15, B6 de celle
-de l'Epic 26, Q5 de celle de l'Epic 27.)*
+de l'Epic 26, Q5 de celle de l'Epic 27. Complété le 2026-10-23, Story 31-0 — action C2 de la
+rétrospective de l'Epic 29 : les consignes que les prompts communs des Epics 29 et 30 portaient
+hors du dépôt — défaut voisin, mots-clés de fermeture, recette visuelle, symétrique client,
+privilèges de la base, lentilles sans fichier.)*
 
 **Conventions de ce document.** `<clé>` désigne la clé courte de la story (`281` pour la 28-1) ;
 `<worktree>` le répertoire du worktree assigné ; `$GATE_LOGS` le répertoire **commun** des journaux
@@ -68,6 +71,23 @@ messages `refs #N`.
   mettre à jour.)*
 - **Une passe dont le résultat n'est pas écrit dans la fiche n'a pas eu lieu**, même si son prompt
   est versionné : elle ne compte pas dans la boucle.
+- **Une boucle ne se clôt que sur une passe à 0 MEDIUM+**, même remédié hors production
+  (`CLAUDE.md` § *La passe ciblée*, décision du 2026-10-23).
+- **Périmètre minimal dès la fiche — le défaut voisin.** Un défaut découvert en écrivant une fiche
+  ou en développant, hors de la story, **ne s'intègre que si sa correction est mécanique** ; sinon
+  l'agent **demande l'issue** dans son rapport, et l'orchestrateur l'ouvre — même si elle fait
+  remonter le compte (`CLAUDE.md` § *Priorités des défauts*, « on trace toujours »). *(Rétrospective
+  de l'Epic 28, action B3 : deux élargissements révisés le jour même.)*
+- **Messages de commit** : `refs #N` seulement ; ni `closes`, ni `fixes`, ni `resolves`, même en
+  prose ou au futur, ni « validation close » — écrire « validation terminée » (`CLAUDE.md` § *Commits
+  qui adressent une issue*).
+- **Recette visuelle** : captures d'écran, thème clair seulement, de tout contrôle visible touché
+  (`CLAUDE.md` § *Recette visuelle*).
+- **Le symétrique existe peut-être déjà.** Avant d'écrire une fonction côté fournisseur, chercher
+  son symétrique côté client (`grep -rn` sur le nom client), et inversement ; le réutiliser ou le
+  généraliser (règle DRY). *(Epic 30.)*
+- **Une règle qui écarte une candidate se relit sur ce qui prend sa place** — une autre facture,
+  une règle d'affectation : sinon on fabrique un faux rattachement muet. *(Story 29-6.)*
 
 ## 4. Travail parallèle : base, port, cible, processus
 
@@ -129,6 +149,23 @@ attend. C'est le prix, et il est bas devant une session perdue.
   sont présumés **erreur de catégorie** — le livrable n'est pas encore écrit, ce n'est pas un défaut
   — et se vérifient au `grep -nF` avant tout patch. Quatre occurrences sur les Epics 15 et 27, toutes
   fausses. Vérifier un finding Haiku, c'est vérifier aussi **son remède**.
+- **Aucun fichier hors du rapport.** Une lentille ne crée aucun fichier temporaire : elle compare
+  par une commande enchaînée (pipe) et lit les PDF vers la sortie standard seulement —
+  `pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`. *(Epic 29 : des lentilles ont écrit des fichiers
+  `pdftotext` et retouché leur rapport par `sed`.)*
+
+### 6.1 Un test ne dépend d'aucun privilège que la production n'a pas
+
+Un test ne lit **jamais** `information_schema.INNODB_TRX` ni `INNODB_LOCKS` : ces tables exigent le
+privilège `PROCESS`, que l'utilisateur `kesh` du fichier versionné
+`scripts/mariadb-init/01-dev-grants.sql` n'a pas. Pour observer une attente de verrou, employer les
+sondes existantes : `sonde_verrou_nowait` (`crates/kesh-db/src/test_fixtures.rs`) ou
+`attendre_une_requete_en_cours` (requête en cours dans `PROCESSLIST`, visible sans privilège pour
+ses propres connexions). *(Rencontré deux fois, Stories 29-4 et 29-8 : ces sondes passaient en local
+parce que le conteneur de dev accordait plus de droits que le fichier versionné — écart corrigé par
+l'Epic 31, action C3 de la rétrospective de l'Epic 29.)* Plus généralement, un réglage ou un droit
+posé ailleurs que dans le chemin réel de la production ne prouve rien : la 29-4 voulait épingler un
+réglage de session dans `create_pool`, que la production n'appelle jamais (#669).
 
 ## 7. Édition du code et mutations
 
