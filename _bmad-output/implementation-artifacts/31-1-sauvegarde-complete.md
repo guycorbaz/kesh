@@ -2100,3 +2100,20 @@ ignorés**. Ni Vitest ni l'E2E ne lisent ce texte allemand : ils n'ont pas été
 
 Passe suivante : **P2 ciblée** (Haiku, une lentille T sur le seul diff `1fcb7732..ea51180b`),
 `311b-review-prompt-p2-ciblee.md`.
+
+### Revue de code P2 ciblée de la 31-1b (2026-10-24) — Haiku, lentille T sur `1fcb7732..ea51180b` : 0/0/2/5 ; remédiée par l'orchestrateur
+
+Les deux MEDIUM, vérifiés au code par l'orchestrateur (règle des MEDIUM de Haiku), sont **réels** :
+- **M-1** — le commentaire « angle mort » de `AdminRestorePanel.svelte` (B-3 de la P1) disait qu'un échec au `COMMIT`
+  rend un 503 ; `routes/admin.rs:603-605` le convertit en `AdminFullImportFailed` (500). Commentaire réécrit : ce que
+  l'écran montre réellement, le cas ordinaire (`COMMIT` échoué annulé, état préservé) et le cas rare (coupure après
+  validation, issue inconnue présentée comme un échec ordinaire). *Aucun code de production changé.*
+- **M-2** — le manuel disait qu'une sauvegarde « prise avant la fin de l'assistant » le rouvre ; c'est la société
+  **provisoire** qui décide (`force_onboarding_done_if_eligible`, `kesh-db/src/backup.rs` : société non provisoire et
+  administrateur) — une sauvegarde prise après la saisie des coordonnées, ou de démonstration, s'ouvre directement.
+  Manuel corrigé, PDF régénéré (`make admin`), contrôlé aplati.
+- LOW : L-1 corrigé (commentaire de `admin-restore.api.ts` : les deux messages réels du 410) ; L-2 à L-5 consignés
+  (L-2 : deux clés modifiées et non une ; L-4 : la garde d'étape en démonstration n'est pas testée ; L-5 : garde inopérante
+  si l'état d'assistant ne se charge pas — l'autorité reste le RBAC du serveur).
+- Gates : la remédiation ne change que deux commentaires et le manuel ; l'E2E complet est rejoué au dernier commit de code
+  de la story (règle D7). Passe suivante : ciblée P3 (Sonnet) sur ce commit.

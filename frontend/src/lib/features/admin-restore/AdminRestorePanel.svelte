@@ -45,10 +45,15 @@
 	 * l'autre). Le serveur, lui, va au bout de l'import (AC8b) : l'installation est
 	 * peut-être déjà remplacée, et « réessayez » inviterait à la remplacer encore.
 	 * Le 503 n'en est pas : Kesh l'émet quand la base est injoignable, presque
-	 * toujours avant tout import. ⚠️ Angle mort assumé (revue P1, B-3) : une coupure
-	 * de la base au `COMMIT` de la restauration rend aussi un 503 (`map_db_error`,
-	 * `ConnectionUnavailable`) alors que l'issue est inconnue ; cas rare, et un nouvel
-	 * import rejouerait les mêmes données.
+	 * toujours avant tout import. ⚠️ Angle mort assumé (revue P1, B-3 ; corrigé en
+	 * revue P2, M-1) : un échec au `COMMIT` de la restauration ne rend PAS un 503 —
+	 * `routes/admin.rs` le convertit en `AdminFullImportFailed` (500,
+	 * `ADMIN_FULL_IMPORT_FAILED`), dont le message dit l'état préservé et invite à
+	 * réessayer. C'est vrai pour la base dans le cas ordinaire (le `COMMIT` échoué
+	 * est annulé), mais si la coupure a eu lieu après que le serveur a validé, l'issue
+	 * réelle est inconnue et l'écran le présente comme un échec ordinaire ; cas rare,
+	 * et un nouvel import rejouerait les mêmes données. Les pièces déjà écrites
+	 * restent dans le dossier des documents (angle mort E-3 de la 31-1a, au manuel).
 	 *
 	 * Après une issue inconnue, l'import n'est plus proposé (revue P1, E-LOW-3) : on
 	 * vérifie d'abord en se reconnectant ; recharger la page le rouvre.
