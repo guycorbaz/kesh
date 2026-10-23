@@ -537,3 +537,87 @@ C-31-1-11 (C-31-1-39), C-31-1-20 et C-31-1-27 (C-31-1-40), C-31-1-29 (C-31-1-38)
   § *Priorités des défauts*).
 - **Écartée** : ouvrir une issue `enhancement` — le point est mécanique et tient dans l'écran que la 31-1c construit.
 - **Réversible** : oui.
+
+### C-31-1-53 — Une seule passe par fichier, `abort_file` (amende C-31-1-47)
+
+- **Contexte** : validation P4 (F2, né de la remédiation P3) — C-31-1-47 écartait la passe unique au motif que « `zip`
+  ne retire pas une entrée » ; `zip` 2.4.2 expose `ZipWriter::abort_file` (`write.rs:1134`), s'en sert lui-même
+  (`ok_or_abort_file`, `:889`) et réécrit le pied à la finalisation si des octets abandonnés le dépassent
+  (`:1501-1524`). La prémisse fausse coûtait une double lecture de chaque pièce, un abandon de toute la sauvegarde sur
+  une erreur de lecture survenue en seconde passe, et une mutation déclarée équivalente.
+- **Retenu** : une passe — ouverture (`missing` / `unreadable` sans entrée commencée), `start_file`, boucle de copie
+  écrite à la main (lecture à travers `take(byteSize + 1)`, `Sha256`, écriture), puis empreinte ou taille différente →
+  `abort_file` et `altered`, erreur de lecture → `abort_file` et `unreadable` ; seule une erreur d'écriture de l'archive
+  abandonne la sauvegarde. Tests : dossier à la place du fichier suivi d'un sain (M-a21), altéré suivi d'un sain avec
+  aller-retour (établit au dev la relecture d'une archive à entrée abandonnée). Aucune mutation équivalente.
+- **Écartées** : garder deux passes « par choix » (le coût de lecture et les deux traitements d'une même cause
+  restaient) ; `io::copy` (confond l'erreur de lecture et l'erreur d'écriture).
+- **Réversible** : oui, avant le développement — si le test d'aller-retour montrait qu'une archive à entrée abandonnée
+  ne se relit pas, revenir à C-31-1-47.
+
+### C-31-1-54 — Pas de réservation en base ; une instance par base (amende C-31-1-23 et C-31-1-45)
+
+- **Contexte** : validation P4 (F5, d'origine) — la réservation `WHERE last_attempt_at <=> ?` portait sur la valeur
+  lue par `run_once` lui-même après son verrou, sans réévaluer `is_due` : un second processus lisant après la
+  réservation du premier réussissait la sienne. Elle ne fermait que quelques millisecondes, ne protégeait pas
+  `Trigger::Manual`, et le nettoyage des `.partial` restait capable de supprimer celui de l'autre processus ; dans un
+  seul processus, le verrou suffit.
+- **Retenu** : retirer la réservation (AC27), `Skipped` sur réservation perdue, le test « réservation perdue » et M-c7 ;
+  `record_attempt` enregistre la tentative sans condition ; l'angle mort dit qu'aucune protection n'existe entre
+  processus, et le manuel qu'il faut une instance par base.
+- **Écartées** : faire réévaluer `is_due` à `run_once` sur la valeur réservée (protège la seule boucle planifiée, pas
+  `Manual` ni les `.partial`, pour un déploiement que Kesh ne prévoit pas) ; un verrou consultatif MariaDB
+  (`GET_LOCK`) — une connexion tenue pendant toute la sauvegarde, pour le même déploiement non prévu.
+- **Réversible** : oui.
+
+### C-31-1-55 — Le garde de l'export manuel vit dans le `spawn_blocking` d'assemblage
+
+- **Contexte** : validation P4 (F1) — la P3 laissait le garde au handler de `full_export` : un client parti (proxy au
+  délai plus court) relâchait le verrou pendant que l'assemblage continuait, et chaque nouvel essai en lançait un autre,
+  N assemblages débordant ensemble dans `KESH_ADMIN_BACKUP_DIR`, le volume de `auto/` et souvent de la base.
+- **Retenu** : `lock_owned().await` dans le handler, garde déplacé dans la fermeture `remplir` passée à
+  `build_keshbackup` ; rendu à la fin de l'assemblage, avant la diffusion. Garde lexicale (le nom du garde dans la
+  fermeture de `full_export`) ; M-c24. L'angle mort *(P3)* disparaît.
+- **Écartées** : détacher l'export dans un `tokio::spawn` comme l'import (même effet, une tâche de plus) ; garder
+  l'angle mort.
+- **Réversible** : oui.
+
+### C-31-1-56 — `build_keshbackup` reste l'unique lecteur de la base, générique sur le remplissage
+
+- **Contexte** : validation P4 (R7) — l'AC4 de la P3 avait trois appelants au contenu de `spawn_blocking` différent
+  et disait seulement « corps renommé » : la garde `build_keshbackup_ne_lit_la_base_qu_une_fois` pouvait rougir sur son
+  montage ou veiller sur un `build_keshbackup` devenu code mort.
+- **Retenu** : `build_keshbackup(pool, documents_dir, remplir)` asynchrone appelle `export_installation(pool)` puis
+  `spawn_blocking(move || remplir(export, documents_dir))` ; chaque appelant passe sa fermeture (qui appelle
+  `write_keshbackup` sur son écrivain). La garde reste exacte sur son corps et gagne « `export_installation(` une seule
+  fois dans la production de `kesh-api` ». La garde `avant_sauvegarde_branchee_aux_appels_de_l_import` garde ses motifs
+  et son compte ; la fermeture se nomme avant l'appel pour ne pas couper l'instruction au premier `;`.
+- **Écartées** : remplacer la garde par la seule signature de `write_keshbackup` (laisse chaque appelant libre de lire
+  la base autrement) ; une garde lexicale « `export_installation(` une fois par appelant » (trois sites à tenir au lieu
+  d'un).
+- **Réversible** : oui.
+
+### C-31-1-57 — Horloge revenue en arrière : `last_*` futur vaut nul ; le retard se calcule au serveur
+
+- **Contexte** : validation P4 (F4, d'origine) — un `last_success_at` ou `last_attempt_at` postérieur à `now` rendait
+  `is_due` faux et le bandeau éteint jusqu'à ce que l'horloge rattrape la valeur : la sauvegarde s'arrêtait en silence,
+  la panne même que #503 veut rendre visible. Calculé dans le navigateur, le second cas du bandeau comparerait en outre
+  la date du serveur à l'horloge du navigateur.
+- **Retenu** : `is_due` tient une valeur future pour nulle (`warn!`) ; fonction pure `is_overdue` (activée, réussite
+  non nulle, plus vieille que deux intervalles **ou** future), exposée par `GET backup-schedule` (`overdue`) et lue
+  telle quelle par le bandeau ; `nextDueAt` vaut `now` si une valeur est future. Tests aux bornes, M-c22 ; M-c9 reciblée
+  sur `is_overdue`.
+- **Écartées** : une tolérance dans le navigateur (un seuil arbitraire, et l'horloge du navigateur reste la référence) ;
+  ignorer le cas (panne silencieuse).
+- **Réversible** : oui.
+
+### C-31-1-58 — `importMaxMib` une fois par réponse de `GET backups`
+
+- **Contexte** : validation P4 (R1) — C-31-1-52 retient une mention « trop grande pour être restaurée par l'écran
+  (limite N Mio) » dans la liste, mais aucune route ne transmet le plafond d'import au frontend.
+- **Retenu** : `GET backups` rend `{ importMaxMib, items }` ; le panneau compare chaque taille à `importMaxMib ×
+  1 048 576` (strictement supérieure → mention). Test Rust (valeur égale à la `Config`), Vitest (au-dessus, égal,
+  au-dessous), M-c23, capture (r), clé `admin-backup-server-too-large` ×4, phrase du manuel.
+- **Écartées** : un booléen par ligne (la même information répétée, et la limite N ne s'afficherait pas) ; une route
+  de configuration générale (hors périmètre).
+- **Réversible** : oui.

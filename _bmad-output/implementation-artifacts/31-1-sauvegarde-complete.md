@@ -6,7 +6,8 @@
 `1848012d` (kickoff de l'Epic 31), worktree `/home/gcorbaz/devel/kesh-31-1`, branche `story/31-1`. Validation P1
 faite (Sonnet, R 0/0/10/8, F 0/2/9/8) et remédiée le 2026-10-23 ; validation P2 faite (Opus, R 0/0/8/8, F 0/1/7/9)
 et remédiée le 2026-10-23 ; validation P3 faite (Sonnet, R 0/0/5/7, F 0/0/4/11) et remédiée le 2026-10-23 ;
-validation **P4** à lancer (`311-validate-prompt-p4.md`, **Opus**, lentilles R et F).
+validation P4 faite (Opus, R 0/0/3/11, F 0/0/4/7) et remédiée le 2026-10-24 ; validation **P5** à lancer
+(`311-validate-prompt-p5.md`, **Sonnet**, lentilles R et F).
 
 ⛔ **Trois stories, une fiche, trois PR successives** (C-31-1-1) :
 
@@ -33,7 +34,7 @@ justificative, sans dépendre d'une procédure SSH ni de ma mémoire.
 Issue : [#503](https://github.com/guycorbaz/kesh/issues/503) (`enhancement`, **P1**) et ses deux commentaires de Guy
 (2026-10-10 : restauration sur un système neuf, `.env`, volume ; 2026-10-23 : sauvegarde locale automatique et complète
 faite par Kesh, `.env` hors sauvegarde pour l'instant). Epic : `_bmad-output/planning-artifacts/epic-31-tenir-les-livres.md`
-§ 31-1. Cible : **v0.15.0**. Choix : `epic-31-choix-autonomes-311.md` (C-31-1-1 à C-31-1-51). Réglages nouveaux dans
+§ 31-1. Cible : **v0.15.0**. Choix : `epic-31-choix-autonomes-311.md` (C-31-1-1 à C-31-1-58). Réglages nouveaux dans
 l'interface, pas en variable d'environnement (C-31-0-4).
 
 ## Prémisses de #503, établies au code (`1848012d`)
@@ -81,7 +82,7 @@ l'interface, pas en variable d'environnement (C-31-0-4).
 | Copie hors site (cloud, NAS distant) | « sauvegarde locale » ; Hyper Backup copie déjà `./backup` | — |
 | Chiffrement du `.keshbackup` | inchangé : un secret, à chiffrer pour le transit (manuel) | — |
 | Fichiers non référencés du dossier des documents (rendus orphelins) | « tous les fichiers référencés par la base » | écrit au manuel |
-| Plusieurs processus Kesh sur une même base | une instance par base (déploiement documenté) | la réservation conditionnelle (AC27) protège tout de même la sauvegarde automatique ; écrit en angle mort |
+| Plusieurs processus Kesh sur une même base | une instance par base (déploiement documenté) | **aucune** protection entre processus (le verrou est en mémoire ; la réservation en base de la P2, qui ne protégeait rien, est retirée en P4, C-31-1-54) ; écrit en angle mort et au manuel |
 | Archives de plus de 4 Gio | non mesuré | angle mort écrit (C-31-1-9) |
 
 ### Décompte des modules (règle de découpage)
@@ -101,6 +102,11 @@ milliseconde et le seuil `documents_bytes` restent dans `kesh-api` (31-1c) ; rec
 non plus : l'assemblage en un seul `spawn_blocking`, la raison `unreadable` et l'inventaire étendu (`.env.example`,
 `README.md`, doc-comments) restent dans `kesh-api` et docs (31-1a) ; le verrou pris par `run_once`, la garde du
 lancement par `main.rs` et la variante `BackupInProgress` d'`errors.rs` dans `kesh-api` (31-1c) ; recompté : 3, 4, 5.
+La remédiation P4 non plus : la passe unique et `abort_file`, la promotion de `regex` et l'union faite en Rust restent
+dans `kesh-db` et `kesh-api` (31-1a) ; les commentaires des deux `docker-compose*.yml` (31-1a, 31-1c) sont de la
+documentation d'exploitation, comptés avec docs comme `.env.example` ; `importMaxMib`, `is_overdue` et le garde de
+l'export dans le `spawn_blocking` restent dans `kesh-api`, le frontend, `kesh-i18n` et docs (31-1c) ; la réservation
+retirée enlève du code sans module ; recompté : 3, 4, 5.
 
 ## Critères d'acceptation
 
@@ -110,8 +116,12 @@ lancement par `main.rs` et la variante `BackupInProgress` d'`errors.rs` dans `ke
 `ReferencedFile { storage_path: String, sha256: String }` et l'`InstallationExport` porte `referenced_files:
 Vec<ReferencedFile>` (dédoublonnés par `storage_path`, triés), lus par `export_installation_in` **dans le même
 `ReadSnapshot`** que les tables, après elles :
-`SELECT storage_path, file_hash FROM imported_supplier_invoices` ∪ `SELECT pdf_storage_path, pdf_sha256 FROM invoices
-WHERE pdf_storage_path IS NOT NULL`. Toutes les lignes de `imported_supplier_invoices` comptent, quel que soit leur
+`SELECT storage_path, file_hash FROM imported_supplier_invoices` et `SELECT pdf_storage_path, pdf_sha256 FROM invoices
+WHERE pdf_storage_path IS NOT NULL`, **deux requêtes** (ou `UNION ALL`), jamais un `UNION` ni un `DISTINCT` SQL : les
+colonnes sont en `utf8mb4_unicode_ci`, insensible à la casse et aux espaces finaux, qui fusionnerait `x.pdf` et `X.PDF`
+de deux lignes alors que l'import compare les chemins par égalité de chaînes (AC7) — la ligne fusionnée ne serait ni
+dans `files` ni dans `filesNotIncluded`, et la sauvegarde authentique refusée en 400 (F6, P4). Le dédoublonnage et la
+détection des anomalies (ii) se font **en Rust, par égalité d'octets**. Toutes les lignes de `imported_supplier_invoices` comptent, quel que soit leur
 statut (`discarded` compris : la ligne reste restaurée et son document téléchargeable). La clé est le
 `storage_path` : **deux chemins de même empreinte sont deux fichiers** (même contenu importé par deux sociétés sous
 deux extensions, `x.jpg` et `x.jpeg` — dans une même société, `UNIQUE (company_id, file_hash)` l'interdit, si bien que
@@ -140,16 +150,23 @@ fichier référencé **présent et intact** (empreinte du contenu lu = `sha256` 
 
 (champs `#[serde(default)]` : un manifeste 1 se relit avec deux listes vides). Un fichier **absent** du dossier des
 documents (`NotFound`), **altéré** (empreinte différente), **illisible** (`unreadable` : toute autre erreur d'I/O à
-l'ouverture ou pendant la passe de hachage — droits, `EIO`, dossier à la place du fichier ; journalisée `warn!` avec
+l'ouverture ou pendant la lecture — droits, `EIO`, dossier à la place du fichier ; journalisée `warn!` avec
 `?kind`) ou en **anomalie** (AC1) n'empêche pas la sauvegarde : il est listé dans `filesNotIncluded` et **n'est pas**
 écrit dans l'archive (C-31-1-4, C-31-1-47 — un seul fichier illisible ne doit pas faire échouer chaque sauvegarde).
-**Deux passes par fichier** : le crate `zip` ne sait pas retirer une entrée commencée, donc l'empreinte se calcule
-**avant** d'ouvrir l'entrée (passe 1 : classement) ; la copie dans l'entrée (passe 2) **re-hache** ce qu'elle copie, à
-travers `take(byteSize + 1)`. Une divergence de la passe 2 (empreinte, taille, ou erreur d'I/O) **abandonne toute la
-sauvegarde** (`BackupWriteError`, aucune archive rendue ni renommée : export 500, sauvegarde pré-import en échec donc
-import refusé, sauvegarde automatique `failed`) — une archive que l'import refuserait (AC7) ne sort jamais. La fenêtre
-est celle d'une lecture sur un fichier nommé par son contenu et jamais réécrit (P-3) : l'abandon est le cas d'école, pas
-l'usage (C-31-1-47). Les fichiers du dossier que la base ne référence pas
+**Une seule passe par fichier** (C-31-1-53, P4 : la P3 en prescrivait deux sur la prémisse fausse que le crate `zip`
+ne sait pas retirer une entrée commencée — `ZipWriter::abort_file`, `zip-2.4.2/src/write.rs:1134`, la retire, et
+`finalize`, `:1501-1524`, réécrit le pied si des octets abandonnés le dépassent) : ouverture par `open_document`
+(`NotFound` → `missing`, autre erreur → `unreadable`, aucune entrée commencée), `byteSize` lu par `metadata()` du
+descripteur ouvert, `start_file("files/<path>")`, puis une **boucle de copie écrite à la main** (lecture d'un tampon
+dans le fichier à travers `take(byteSize + 1)`, mise à jour d'un `Sha256`, écriture dans l'entrée) — pas `io::copy`,
+qui confondrait l'erreur de lecture du fichier et l'erreur d'écriture de l'archive. À la fin : empreinte différente du
+`sha256` déclaré, ou nombre d'octets différent de `byteSize` → `abort_file()` et raison `altered` ; **erreur de
+lecture** du fichier en cours de copie → `abort_file()` et raison `unreadable` ; seule une **erreur d'écriture** de
+l'archive (ou une erreur d'`abort_file` lui-même) abandonne la sauvegarde (`BackupWriteError` : export 500, sauvegarde
+pré-import en échec donc import refusé, sauvegarde automatique `failed` ou `disk_full`). Chaque pièce est donc lue
+**une fois** ; aucune entrée fausse n'entre dans l'archive, si bien qu'une archive que l'import refuserait (AC7) ne
+sort jamais. ⚠️ À établir au dev par un test (T-a4b) : une archive dont une entrée a été abandonnée **au milieu**,
+suivie d'une entrée saine, se relit par `ZipArchive::new` et s'importe. Les fichiers du dossier que la base ne référence pas
 ne sont pas emportés. **Aucun chemin n'est joint au dossier des documents avant validation** : la lecture passe par une
 fonction de `document_storage` (`open_document(dir, storage_path) -> Result<File, ReadDocumentError>`, qui applique
 `is_safe_storage_path`, rendue `pub(crate)`, comme `read_document` le fait déjà) — jamais `documents_dir.join(…)` dans
@@ -166,10 +183,19 @@ ne compilait pas ou copiait des Gio sur un fil de l'exécuteur) :
    mémoire, comme aujourd'hui — quelques dizaines de Mio) ;
 2. **tout le reste dans un seul `tokio::task::spawn_blocking`**, par une fonction **synchrone**
    `write_keshbackup<W: Write + Seek>(export: &InstallationExport, documents_dir: &Path, w: W) -> Result<(W,
-   KeshBackupMeta), BackupWriteError>` : écriture des tables, lecture des fichiers **un par un** (`std::fs`, deux passes,
+   KeshBackupMeta), BackupWriteError>` : écriture des tables, lecture des fichiers **un par un** (`std::fs`, une passe,
    AC3 ; jamais tous en mémoire), `finish`. La fermeture **possède** tout ce qu'elle touche (l'`InstallationExport`, les
-   chemins, l'écrivain ; à la 31-1c un `Arc<dyn BackupEnv>`) : aucun emprunt, aucun `tokio::fs` mêlé au `ZipWriter`
-   synchrone, **aucun `block_in_place`** (il panique sous le runtime mono-fil des `#[tokio::test]`).
+   chemins, l'écrivain ; à la 31-1c un `Arc<dyn BackupEnv>` ; pour l'export manuel, le garde de `backup_lock`, AC27) :
+   aucun emprunt, aucun `tokio::fs` mêlé au `ZipWriter` synchrone, **aucun `block_in_place`** (il panique sous le
+   runtime mono-fil des `#[tokio::test]`).
+
+**Un seul point d'entrée** (C-31-1-56, R7, P4) : les deux temps sont tenus par **une** fonction asynchrone,
+`build_keshbackup(pool, documents_dir, remplir)`, qui appelle `export_installation(pool)` puis
+`spawn_blocking(move || remplir(export, documents_dir))` et rend ce que rend `remplir` ; `remplir` est une fermeture
+`FnOnce(InstallationExport, PathBuf) -> Result<T, BackupWriteError> + Send + 'static`, propre à chaque appelant, qui
+appelle `write_keshbackup` sur son écrivain (export : le `SpooledTempFile` ; pré-import : `write_backup_file` ; 31-1c :
+`write_backup_file` et `wrap_writer`). `build_keshbackup` reste **le seul appelant d'`export_installation(` dans le
+code de production de `kesh-api`** ; aucun appelant ne le contourne.
 
 `GET /admin/full-export` passe à `write_keshbackup` un `tempfile::SpooledTempFile` de seuil
 `KESH_ADMIN_EXPORT_INMEM_MB` (sémantique de la variable inchangée : en mémoire jusqu'au seuil, sur disque au-delà),
@@ -185,13 +211,19 @@ appelle `sync_all()` sur l'original, refuse d'écraser et renomme. `tempfile` pa
 l'`io::Error` d'origine (`BackupWriteError { stage, source: io::Error }` ; une `ZipError` y entre par
 `io::Error::from(ZipError)`, jamais par `format!`, F10) ; l'adaptation vers `AppError::AdminPreImportBackupFailed` se
 fait chez l'appelant pré-import, pas dans la primitive (la 31-1c en a besoin pour distinguer `disk_full`, AC30). La
-garde lexicale `build_keshbackup_ne_lit_la_base_qu_une_fois` s'adapte au nouveau corps et reste exacte (le pool n'est
-lu que par `export_installation(pool)` ; `write_keshbackup` ne reçoit aucun pool).
+garde lexicale `build_keshbackup_ne_lit_la_base_qu_une_fois` reste sur le corps de `build_keshbackup` et reste exacte
+(`pool` y apparaît deux fois : paramètre et `export_installation(pool)`) ; elle gagne une seconde assertion : dans le
+code de production de `crates/kesh-api/src` (lignes `//` écartées, `mod tests` exclus), `export_installation(`
+apparaît **exactement une fois**, dans `build_keshbackup` — un appelant qui lirait la base lui-même la fait rougir.
+`write_keshbackup` ne reçoit aucun pool : l'invariant « une seule lecture » est tenu par le type dans le
+`spawn_blocking`, et par la garde au-dehors.
 
 **AC5 — Ce que l'export rend, et ce qu'il dit.** La réponse de `GET /admin/full-export` porte deux en-têtes,
 `X-Kesh-Backup-Files: <n inclus>` et `X-Kesh-Backup-Files-Not-Included: <n>` (exposés à l'écran par la 31-1b). L'audit
 `admin.full_export` ajoute `file_count`, `files_bytes`, `files_not_included` au détail. Un fichier absent ou altéré est
-journalisé (`warn!`, chemin et raison, jamais le contenu) ; un fichier `unreadable` aussi, avec `?kind`.
+journalisé (`warn!`, chemin et raison, jamais le contenu) ; un fichier `unreadable` aussi, avec `?kind`. Le chemin,
+venu de la base et possiblement hors forme (AC1 (iii) : `../x`, retour à la ligne), se journalise **en `Debug`**
+(`?path`), jamais `%path` ni interpolé dans le message (F8, P4 ; même règle qu'à l'AC6).
 
 **AC6 — Import : formats acceptés.** `parse_and_verify` accepte `formatVersion` 1 **et** 2, refuse au-delà
 (`InvalidBackupStructure`, message « formatVersion N non supporté (maximum 2) »). Format 1 : règle actuelle inchangée
@@ -200,7 +232,9 @@ journalisé (`warn!`, chemin et raison, jamais le contenu) ; un fichier `unreada
 déjà refusée par le contrôle d'ensemble de l'AC6b (2), qui seul la porte (R2, P3 : la porter deux fois rendait M-a4
 équivalente) ; chaque nom satisfait
 `^[0-9a-f]{64}\.[a-z0-9]{1,8}$` **et** `is_safe_storage_path`, et son préfixe égale le `sha256` déclaré ; aucun
-sous-dossier sous `files/`. Les chemins de `filesNotIncluded` ne sont soumis à **aucune** expression : ils ne servent
+sous-dossier sous `files/`. Cette expression (et celles des noms de sauvegardes, AC29, AC32) est du code de
+production : `regex` passe des `[dev-dependencies]` aux `[dependencies]` de `kesh-api` (`Cargo.toml:83`, déjà au
+`Cargo.lock` ; R10, F11, P4), comme `tempfile` (AC4). Les chemins de `filesNotIncluded` ne sont soumis à **aucune** expression : ils ne servent
 jamais de chemin (ni lecture, ni écriture, ni jointure au dossier des documents), et l'export y écrit tel quel le
 `storage_path` hors forme d'une ligne en anomalie (AC1 (iii)) — les y refuser rendrait inimportable, par la même
 version, une sauvegarde authentique (C-31-1-37, retrait de la règle posée en P1). Ils ne sont journalisés qu'en
@@ -250,15 +284,21 @@ l'entrée ZIP est copiée dans le temporaire à travers `take(byteSize.saturatin
 le `rename` — jamais le fichier entier en mémoire (une entrée qui déclare plusieurs Gio ne fait donc pas tomber le
 processus ; elle remplit au pire le disque, ce qui est un refus d'écriture ci-dessous). Un fichier de
 même nom déjà présent **et intact** est laissé (compté restauré) ; présent mais **altéré**, il est remplacé
-atomiquement (journalisé `warn!`). Un échec d'écriture (dossier non inscriptible, disque plein) → la restauration est
+atomiquement (journalisé `warn!`, chemin en `?path`). Un échec d'écriture (dossier non inscriptible, disque plein) → la restauration est
 **refusée**, la base n'est pas touchée (`AdminFullImportFailed`, 500, message « aucune donnée n'a été remplacée ») ;
 les fichiers déjà écrits restent (ils sont nommés par leur contenu : inoffensifs, C-31-1-6). Aucun fichier du dossier
 des documents n'est jamais supprimé par l'import. L'écriture des fichiers (`std::fs`, `fsync`) s'exécute en
 `spawn_blocking` ; à la fin de la boucle, le dossier des documents lui-même est synchronisé
-(`File::open(documents_dir)?.sync_all()`, une ligne ; F15, P3) pour que les entrées de dossier, et non seulement les
-contenus, soient sur disque avant le `COMMIT` — non testable (durabilité après coupure), dit au doc-comment. L'archive
+(`File::open(documents_dir).and_then(|d| d.sync_all())` ; F15, P3) pour que les entrées de dossier, et non seulement
+les contenus, soient sur disque avant le `COMMIT` — non testable (durabilité après coupure), dit au doc-comment. Un
+échec de **cette** synchronisation (certains montages réseau ou FUSE refusent `fsync` sur un dossier, `EINVAL`) est
+journalisé `warn!` et **ne refuse pas** l'import : les contenus sont déjà synchronisés un à un, et en faire une cause
+de refus permanent rendrait la restauration impossible sur ces montages (F7, P4). L'archive
 parvient à cette écriture par `ParsedBackup`, qui **porte** la `ZipArchive<R>` ouverte par `parse_and_verify` (le
-temporaire d'import est anonyme et ne se rouvre pas par chemin, AC11 ; F9, P3). Ce que l'ordre « fichiers avant la base » achète se teste par sa négation : écrire les fichiers
+temporaire d'import est anonyme et ne se rouvre pas par chemin, AC11 ; F9, P3). Le `spawn_blocking` est `'static` et
+`ZipArchive::by_name` exige `&mut self` : `run_backup_and_restore` reçoit donc `ParsedBackup` **par valeur** (il en
+déplace l'archive dans la fermeture, `Option::take` si le reste de `ParsedBackup` sert encore après, et la fermeture la
+rend avec son résultat) — jamais `&parsed` (R13, P4). Ce que l'ordre « fichiers avant la base » achète se teste par sa négation : écrire les fichiers
 **après le `COMMIT`** laisserait, sur un refus d'écriture, une base déjà remplacée (M-a7).
 
 **AC8b — L'import ne dépend pas de la connexion du client.** Une fois l'envoi reçu sur disque (AC11), le reste de
@@ -277,7 +317,10 @@ pas dans le handler.
 intacts dans `KESH_DOCUMENTS_DIR` (calculé après l'écriture, pour les deux formats : une sauvegarde 1 restaurée sur la
 même installation rend 0, sur une machine neuve rend le nombre de pièces perdues). L'audit `admin.full_import` porte
 `files_restored`, `files_missing`, `source_format_version`. La réponse ne nomme aucun fichier (le journal du serveur,
-si : `warn!` par fichier manquant).
+si : `warn!` par fichier manquant, chemin en `?path`, F8, P4). Le calcul hache chaque fichier référencé présent (des Gio
+sur la même installation) : il s'exécute en `spawn_blocking`, comme l'écriture (F10, R13, P4). Le cas « même
+installation → 0 » est **testé** (T-a6b, R2, P4) : c'est le seul qui distingue un calcul sur la destination d'un calcul
+sur le backup (M-a9), et c'est le cas réel d'une restauration sur le NAS d'origine.
 
 **AC10 — Ancien format accepté, et c'est testé sur un fichier réel.** Un `.keshbackup` de format 1 produit par le
 **vrai** exporteur de la 0.14.0 s'importe : `200`, `filesRestored = 0`, `filesMissing` égal au nombre de pièces que
@@ -296,7 +339,9 @@ deviennent des tests du format 2 **sans fichier** (bijection vide, valide) ; et 
 fixture réelle, par les tests qui forcent `Some(1)` et par AC13 (sauvegarde format 1) — c'est voulu, et dit ici.
 
 **AC11 — Import reçu sur disque.** `read_upload` crée au besoin `KESH_ADMIN_BACKUP_DIR` (`ensure_backup_dir`, AC4),
-puis copie le champ `file` **par morceaux** (`field.chunk()`) dans un fichier temporaire **anonyme** de ce dossier
+puis copie le champ `file` **par morceaux** (`field.chunk()`) dans un fichier temporaire **anonyme** de ce dossier,
+écrit par `tokio::fs::File::from_std` (jamais un `std::fs::File` sur un fil de l'exécuteur ; F10, P4) puis rendu en
+`std::fs::File` (`into_std`) pour `parse_and_verify`, qui tourne en `spawn_blocking` (AC7)
 (`tempfile::tempfile_in` : sans nom dans le dossier, il disparaît avec le descripteur, même après un `kill -9` ou un
 OOM — aucun résidu de plusieurs Gio ; C-31-1-33 ; vrai **par construction** et non testé : un temporaire anonyme
 n'apparaît dans aucun `read_dir`, si bien qu'un test « aucun temporaire laissé » passerait sous toute mutation — retiré
@@ -317,14 +362,20 @@ par `store_document` dans le dossier A) et une facture figée (fichier + quatre 
 créé ; import ; assertions : `200`, `filesRestored = 2`, `filesMissing = 0` ; les deux fichiers existent dans B avec
 leur contenu ; `GET` du document fournisseur et du PDF figé rendent `200` et les octets d'origine (plus de 410). Et la
 même chose avec une sauvegarde **format 1** : `filesMissing = 2`, les deux `GET` rendent 410 (le comportement que
-#503 décrit, désormais annoncé).
+#503 décrit, désormais annoncé). Et la sauvegarde **format 1 restaurée sur la même installation** (dossier des
+documents A, qui porte encore les deux fichiers) : `filesRestored = 0`, **`filesMissing = 0`**, les deux `GET` rendent
+`200` — sous M-a9 (calcul sur le backup), 2 (R2, P4).
 
 **AC14 — Manuel d'administration et CHANGELOG.** `docs/manual/fr/admin-manual.tex` : le format 2 et ce qu'il emporte
 (§ *Export/import d'installation*, l. 1826) ; les phrases « ni dans le `.keshbackup` » / « sans les fichiers » / note
 de bas de page #503 (l. ~1465, 1474, 1828, tableau l. ~1950-1963) **corrigées** ; ce qui n'est pas emporté (fichiers non
 référencés, `filesNotIncluded`, `.env`, réglage de la sauvegarde automatique — ce dernier écrit par la 31-1c) ; le
 volume, le débordement dans `KESH_ADMIN_BACKUP_DIR`, le nouveau défaut de `KESH_ADMIN_IMPORT_MAX_MB` (tableau l. ~783 et
-§ *Variables d'environnement*) ; une sauvegarde de la 0.15.0 ne s'importe pas dans une 0.14.x (`formatVersion`).
+§ *Variables d'environnement*) ; une sauvegarde de la 0.15.0 ne s'importe pas dans une 0.14.x, et le manuel nomme le
+message que l'administrateur verra : une sauvegarde portant au moins une pièce est refusée par la 0.14.0 **avant** la
+lecture de `formatVersion` (`import.rs:91-96` : « le dossier files/ doit être vide »), d'où à l'écran « Fichier de
+sauvegarde invalide ou corrompu » (`INVALID_BACKUP_STRUCTURE`) devant une sauvegarde saine ; une sauvegarde sans
+aucune pièce est refusée par `formatVersion` (`:111-116`) (R11, P4).
 `.env.example` : commentaire du plafond à 2048. PDF régénéré. CHANGELOG : section **`## [0.15.0] — Non publié`**,
 l'en-tête exact qu'exige `scripts/prepare-release.sh` (l. 248 ; il refuse toute autre forme et plus d'une section) —
 **créée** par la première des stories de l'epic à merger (31-1a, 31-2 ou 31-3, qui la créent chacune sur leur
@@ -342,7 +393,10 @@ n'hérite pas des directives `proxy_*` d'un autre : le bloc neuf **répète** le
 (l. ~360) et Traefik (l. ~377, délais de lecture des points d'entrée) : une phrase chacun sur les limites de taille et
 de durée à vérifier pour la version utilisée ; Portail DSM (l. ~618) : idem, sans inventer de chemin d'écran non vérifié.
 Volume : la sauvegarde pré-import contient désormais toutes les pièces, une copie à chaque import, jamais purgée ;
-le dire, avec l'ordre de grandeur « taille du dossier des documents + base ».
+le dire, avec l'ordre de grandeur « taille du dossier des documents + base ». Et le **pic** d'un import, sans seuil
+d'espace préalable (seule l'automatique en a un, AC30) : l'envoi reçu (AC11), la sauvegarde pré-import et les pièces
+écrites (AC8) coexistent, soit environ **trois fois** la taille de l'archive sur le volume du dossier de sauvegarde,
+souvent celui de la base (F9, P4).
 
 **Inventaire clos des phrases à traiter** (grep des valeurs `503`, `512`, `n'emporte`, `sans les fichiers`, `aucun
 binaire`, `files/`, `formatVersion`, relevé en P1 ; **étendu en P2** aux sujets que le code de la 31-1a ou de la 31-1c
@@ -355,16 +409,21 @@ rend faux — `KESH_ADMIN_BACKUP_DIR`, `INMEM`, `temporaire`, `./backup`, `keshb
 
 ```sh
 P='KESH\\?_ADMIN\\?_(BACKUP\\?_DIR|EXPORT\\?_INMEM\\?_MB|IMPORT\\?_MAX\\?_MB)|admin_backup_dir|admin_export_inmem_mib|admin_import_max_mib|build_keshbackup|pré-import|pre-import|sauvegarde de sécurité|in-memory|spill'
-{ grep -rnE "$P" docs/manual/fr/*.tex docs/api-external.md README.md .env.example website
-  grep -rnE "^\s*//.*($P)" crates/kesh-api/src crates/kesh-db/src; }
+{ grep -rniE "$P" docs/manual/fr/*.tex docs/api-external.md README.md .env.example website docker-compose*.yml
+  grep -rniE "^\s*//.*($P)" crates/kesh-api/src crates/kesh-db/src; }
 ```
 
 (`\\?_` : le LaTeX écrit `KESH\_ADMIN\_…`, qu'un motif sans échappement manque — c'est ainsi que `admin-manual.tex:196`
-échappait au grep des noms.) À `c7639e80`, elle rend **94 lignes** (27 du manuel d'administration, 9 de
-`.env.example`, 2 du `README.md`, 56 de commentaires dans `crates/`). **Chaque ligne** est soit au tableau ci-dessous,
-soit triée « intacte » au Dev Agent Record avec sa raison (code d'exemple de compose, historique, sans objet) ; au dev,
-la commande est rejouée sur le code modifié et toute ligne neuve est triée de même. Le grep des **valeurs** (P1) reste
-à rejouer à côté (T-a8).
+échappait au grep des noms. `-i` et `docker-compose*.yml` depuis la P4 (F3) : les deux compose que l'exploitant copie
+portaient « **S**auvegarde de sécurité … », que la commande de la P3 manquait deux fois — fichiers hors liste, motif
+sensible à la casse.) À `6f0828cf`, elle rend **103 lignes** (27 du manuel d'administration, 9 de `.env.example`, 2 du
+`README.md`, 4 de `docker-compose.yml`, 4 de `docker-compose.prod.yml`, 57 de commentaires dans `crates/` — la 57ᵉ,
+`config.rs:255`, n'apparaît qu'en `-i` ; 94 à `c7639e80` sans `-i` ni compose). **Chaque ligne** est soit au tableau
+ci-dessous, soit **ajoutée au tableau du Dev Agent Record avec son traitement**, soit triée « intacte » au Dev Agent
+Record avec sa raison (code d'exemple de compose, historique, sans objet) — une ligne que la 31-1 rend fausse ou
+incomplète n'est jamais triée intacte (R9, P4) ; au dev, la commande est rejouée sur le code modifié et toute ligne
+neuve est triée de même. Les six lignes `KESH_ADMIN_*: ${…}` des deux compose (transmission des variables) sont
+intactes. Le grep des **valeurs** (P1) reste à rejouer à côté (T-a8).
 
 | Site | Traitement |
 |---|---|
@@ -394,6 +453,14 @@ la commande est rejouée sur le code modifié et toute ligne neuve est triée de
 | `crates/kesh-api/src/config.rs:240-243` (doc d'`admin_export_inmem_mib` : « spillée vers un fichier temporaire ») et `:252-261` (doc d'`admin_backup_dir` : « sauvegarde de sécurité pré-import », « l'import est refusé ») | réécrits (31-1a ; `auto/` ajouté à la 31-1c) |
 | `crates/kesh-api/src/admin_backup/export.rs:44-55` (doc de `build_keshbackup` : « DC8 : l'assemblage est in-memory ») | réécrit (31-1a, AC4 : lecture de la base, puis `write_keshbackup` en un `spawn_blocking`) |
 | `crates/kesh-api/src/routes/admin.rs:118-130` (doc de `full_import` : séquence en cinq temps, « cœur `build_keshbackup` ») | réécrit (31-1a : réception sur disque, tâche détachée, écriture des fichiers avant la base) |
+| `docker-compose.yml:154-158`, `docker-compose.prod.yml:172-176` (« Sauvegarde de sécurité prise avant chaque import … à purger par l'exploitant (une sauvegarde par import) ») | jumeaux de `.env.example:187-192` : le dossier porte aussi les temporaires de l'export et de l'import, et chaque sauvegarde pré-import pèse la base **plus** les pièces (31-1a) ; puis `auto/` et sa rétention (31-1c, AC39) (F3, P4) |
+| `docker-compose.prod.yml:165-168` (« bind mounts … que copie Hyper Backup (la base, elle, se sauvegarde par le dump du manuel) ») | hors de la commande (aucun sujet), relevé par F3 : complété à la 31-1c — Kesh sauvegarde aussi la base et les pièces dans `./backup/auto` |
+| `crates/kesh-api/src/config.rs:895-896` (« l'export `.keshbackup` spille sur fichier temporaire ») | jumeau de `:240-243` : emplacement du temporaire (31-1a) (R9, P4) |
+| `crates/kesh-api/src/config.rs:1268-1269` (doc de `DEFAULT_ADMIN_BACKUP_DIR` : « sauvegarde de sécurité prise avant chaque import ») | les temporaires (31-1a), puis `auto/` (31-1c) (R9, P4) |
+| `.env.example:220-223` et `:255-257` (« `./backup` (sauvegarde pré-import, sans variable d'hôte) ») | `./backup` porte aussi `auto/` : complétés à la 31-1c (R9, P4) |
+| `crates/kesh-api/src/routes/admin.rs:52` (« DC8 — in-memory sous plafond, au-delà spill fichier temporaire ») | réécrit avec l'AC4 (31-1a) (R9, P4) |
+| `crates/kesh-api/src/admin_backup/export.rs:1-12` (en-tête de module : « `build_keshbackup` assemble le conteneur ZIP », lecture par `export_installation`) | réécrit (31-1a, AC4 : `build_keshbackup` générique sur le remplissage, `write_keshbackup`) (R9, P4) |
+| `admin-manual.tex:1838` (« Kesh lit toutes les tables dans un seul instantané ») | complété (31-1a) : les pièces sont lues hors de l'instantané, mais nommées par leur contenu et jamais réécrites (P-3) (R9, P4) |
 | `website/roadmap.html`, brochure | laissés à la release, noté au Dev Agent Record |
 
 ### Partie b — `31-1b-restauration-installation-neuve`
@@ -417,7 +484,8 @@ dossiers…). Conservez-la à part : sur une nouvelle machine, recréez-la avant
 
 **AC18 — Ce que l'export a omis, dit après.** `downloadFullExport` lit les en-têtes de l'AC5 et de l'AC12 : si
 `X-Kesh-Backup-Files-Not-Included > 0`, avis d'avertissement « N pièces référencées n'ont pas pu être incluses (fichier
-absent, altéré ou illisible sur le serveur) — voir le journal du serveur » ; si `X-Kesh-Backup-Exceeds-Import-Limit` est posé,
+absent, altéré, illisible ou incohérent avec la base) — voir le journal du serveur » (la raison `mismatch` compte
+aussi, R12, P4) ; si `X-Kesh-Backup-Exceeds-Import-Limit` est posé,
 avis « Ce fichier dépasse la taille d'import autorisée (N Mio) : pour le restaurer, relevez `KESH_ADMIN_IMPORT_MAX_MB` ».
 En-têtes absents (serveur ancien) : aucun avis.
 
@@ -451,7 +519,9 @@ répondront « document indisponible » ; restaurez le dossier des documents dep
 import réussi, avec ou sans avertissement, le panneau attend un clic **« Se reconnecter »** avant la déconnexion et la
 redirection vers `/login` : l'avis se lit sans délai à régler, et l'E2E l'observe sans course contre une redirection
 (C-31-1-39, qui remplace la règle conditionnelle de C-31-1-11 ; constat R7 de la P2 : le panneau redirige aujourd'hui
-immédiatement, `AdminRestorePanel.svelte:119-128`).
+immédiatement, `AdminRestorePanel.svelte:119-128`). Le toast `admin-restore-toast-success` (« Import réussi — vous
+allez être déconnecté. », l. 120-122) est **retiré** : l'avis du panneau le remplace, et « vous allez être déconnecté »
+deviendrait faux tant que le clic n'a pas eu lieu (R14, P4) ; sa clé est supprimée des quatre locales.
 
 **AC20 — E2E de bout en bout (`frontend/tests/e2e/backup-restore-new-install.spec.ts`).** (1) `seedTestState('with-company')`,
 connexion ; un document fournisseur importé par l'inbox (fixture synthétique `spc_e2e_invoice.png` passée par
@@ -462,7 +532,9 @@ documents (`DOCUMENTS_DIR` de `helpers/inbox.ts` ; garde bruyante : chaque fichi
 ne plus exister après — sinon le spec échoue, il ne se tait pas) ; (4) `/setup` (nouvel admin), assistant, lien
 **« Restaurer une sauvegarde »**, import du fichier, confirmation ; (5) avis de l'AC19 avec « 2 pièces restaurées »,
 lu **avant** le clic *Se reconnecter* (qui seul déclenche la redirection, C-31-1-39), puis reconnexion avec les
-identifiants de la sauvegarde ; (6) l'application s'ouvre (pas l'assistant) ; le document
+identifiants de la sauvegarde ; (6) l'application s'ouvre (pas l'assistant) ; **la comptabilité est revenue** : la
+facture de l'étape (1) figure dans la liste des factures avec son numéro, et son écriture au journal (même montant)
+(R3, P4 : le commentaire de Guy du 2026-10-10 sur #503 nomme la comptabilité en premier) ; le document
 fournisseur s'affiche dans son aperçu et le PDF de la facture se télécharge (`200`, octets égaux à ceux d'avant) ; les
 deux fichiers existent de nouveau dans le dossier. Le spec remet l'état (`seedTestState`) en fin de test.
 
@@ -481,7 +553,8 @@ sauvegarde* ; (b) `/onboarding/restore` ; (c) avis permanent `.env` sur `AdminBa
 (g) fin d'import `filesMissing = 0` (avis des pièces restaurées et bouton *Se reconnecter*) ; (h) fin d'import
 `filesMissing > 0` (avertissement et bouton *Se reconnecter*) ; (i) message d'issue inconnue de l'import (AC18b).
 **Comment chaque état s'atteint** (R8, P3) : (e) en retirant un fichier du dossier des documents avant l'export ; (h)
-en en retirant un avant l'import ; (f) et (i) **par interception réseau** (`page.route` : en-tête
+en important l'archive de (e), le fichier **toujours absent** du dossier (corrigé en P4, R4 : un fichier retiré
+**après** l'export est réécrit par l'import depuis l'archive, et `filesMissing` vaut alors 0) ; (f) et (i) **par interception réseau** (`page.route` : en-tête
 `X-Kesh-Backup-Exceeds-Import-Limit` ajouté à la réponse de l'export ; réponse de l'import remplacée par un 504) — une
 archive de plus de 2048 Mio ou une coupure réelle ne se fabriquent pas en E2E. Le Dev Agent Record dit, pour chaque
 capture, par quelle voie elle a été obtenue.
@@ -529,15 +602,29 @@ un import **ne la modifie pas** (réglages et état de la destination conservés
 **AC25 — Le moment d'une sauvegarde (fonction pure).** `auto_backup::is_due(schedule, now) -> bool` : vrai si et
 seulement si `enabled` **et** (`last_success_at` nul ou `now - last_success_at ≥ interval`) **et** (`last_attempt_at`
 nul ou `now - last_attempt_at ≥ min(interval, 1 h)`) — un échec se retente au bout d'une heure, pas en boucle, pas un
-jour plus tard (C-31-1-17). Tests aux bornes (égalité, une milliseconde avant, désactivé, jamais tenté).
+jour plus tard (C-31-1-17). **Horloge revenue en arrière** (C-31-1-57, F4, P4) : un `last_success_at` ou un
+`last_attempt_at` **postérieur** à `now` (horloge partie dans le futur puis corrigée par NTP, NAS redémarré sur une
+horloge matérielle remise à zéro) vaut **nul** dans ces deux clauses — sans quoi la différence négative rendrait
+`is_due` faux, et la sauvegarde s'arrêterait sans échec ni bandeau jusqu'à ce que l'horloge rattrape la valeur
+enregistrée ; journal `warn!` « horloge en arrière ». Pas de boucle : le tour suivant enregistre `last_attempt_at =
+now`, qui n'est plus dans le futur. Tests aux bornes (égalité, une milliseconde avant, désactivé, jamais tenté,
+**dernière réussite dans le futur → dû**, **dernière tentative dans le futur → dû**).
+
+**`auto_backup::is_overdue(schedule, now) -> bool`** (même module, fonction pure ; C-31-1-57) : vrai si et seulement si
+`enabled` **et** `last_success_at` non nul **et** (`now - last_success_at ≥ 2 × interval` **ou** `last_success_at >
+now`). C'est le **second cas du bandeau** (AC31 (b)), calculé **par le serveur** et rendu par `GET backup-schedule`
+(`overdue`, AC32) : le navigateur ne compare aucune date à sa propre horloge, qui peut différer de celle du serveur
+de quelques secondes (une réussite « dans le futur » pour le navigateur allumerait le bandeau à tort) ou de plusieurs
+heures. Tests aux bornes (deux intervalles moins une milliseconde → faux ; égalité → vrai ; dans le futur → vrai ;
+`last_success_at` nul → faux ; désactivé → faux).
 
 **AC26 — La tâche de fond.** `main.rs` (et lui seul — ni `build_router`, ni les tests) lance une tâche
 `auto_backup::spawn(state.clone())` : premier contrôle **5 minutes** après le démarrage, puis toutes les **5 minutes**
 (`tokio::time::interval`, `MissedTickBehavior::Skip`) ; à chaque tour, lit le réglage, et si `is_due` appelle
 `run_once(&state, env.clone(), now, Trigger::Schedule)`. **Signature unique** (fixée en P2, F17 ; `env` possédé depuis
 la P3, pour entrer dans le `spawn_blocking` de l'AC4) : `run_once(state: &AppState, env: Arc<dyn BackupEnv>, now:
-NaiveDateTime, trigger: Trigger) -> Result<RunOutcome, …>`, où `RunOutcome` vaut `Skipped` (verrou pris ou réservation
-perdue, AC27 : rien d'écrit) ou `Done(statut)` ; en production, `env` est `Arc::new(RealBackupEnv)` (construit par
+NaiveDateTime, trigger: Trigger) -> Result<RunOutcome, …>`, où `RunOutcome` vaut `Skipped` (verrou pris, AC27 : rien
+d'écrit ; la « réservation perdue » de la P2 est retirée en P4, C-31-1-54) ou `Done(statut)` ; en production, `env` est `Arc::new(RealBackupEnv)` (construit par
 `spawn` et par la route `POST …/run`, pas porté par `AppState`) ; les tests passent leur `BackupEnv` et leur `now`.
 Toutes les mentions de `run_once` de cette fiche désignent cette signature. La boucle de fond ignore `Skipped` (journal
 `info!`). Une erreur de lecture est journalisée et le tour suivant réessaie ; une panique dans un tour n'arrête pas la
@@ -545,7 +632,9 @@ boucle (le tour s'exécute dans un `tokio::spawn` dont le `JoinError` est journa
 prouve** (R4, P3 : c'est la demande de #503, « faite par Kesh lui-même », et rien ne rougissait si `main.rs` oubliait
 l'appel) : garde lexicale dans `auto_backup.rs` (`mod tests`, sur `include_str!` de `main.rs` et `lib.rs`) —
 `auto_backup::spawn(` apparaît **exactement une fois** dans `main.rs` et **aucune** dans `lib.rs` (où elle se
-déclencherait dans chaque test monté par `build_router`) ; elle tue M-c21. La cadence (5 min, `Skip`) et l'isolation
+déclencherait dans chaque test monté par `build_router`), **lignes `//` écartées** (R8, P4 : un appel mis en
+commentaire, le geste de débogage typique, garderait sinon le compte à 1 ; `main.rs` l'écrira
+`kesh_api::auto_backup::spawn(`, que le motif trouve) ; elle tue M-c21. La cadence (5 min, `Skip`) et l'isolation
 d'une panique ne sont **pas** testées : quelques lignes relues en revue ; les tester demanderait d'extraire et
 d'horloger la boucle (angle mort écrit).
 
@@ -554,8 +643,9 @@ d'horloger la boucle (angle mort écrit).
 `middleware/auth.rs:267`, `tests/password_recovery_e2e.rs:127`, `tests/invoice_frozen_pdf_e2e.rs:102`,
 `tests/invoice_send_email_e2e.rs:103,1034,1147`, `tests/setup_admin_e2e.rs:81` — et le `Self { … }` de
 `AppState::new_for_tests`, `lib.rs:105` ; recompter au dev par `grep -rnE "AppState \{$" --include=*.rs crates | grep
--vE "struct |impl |fn "` — huit lignes, plus le `Self {` ; sans le filtre, la commande rend douze lignes : la
-définition, l'`impl`, une signature `fn test_state() -> AppState {` et un commentaire). **Une seule règle par
+-vE "struct |impl |fn "` — huit lignes, plus le `Self {` ; sans le filtre, la commande rend onze lignes : les huit,
+plus la définition `lib.rs:49`, l'`impl` `lib.rs:89` et la signature `fn test_state() -> AppState {`
+`middleware/auth.rs:240` — « douze … et un commentaire » corrigé en P4, R10). **Une seule règle par
 acquéreur** (C-31-1-45, P3 : la forme de la P2 faisait prendre le verrou à la fois par le handler de `POST …/run` et
 par `run_once`, ce qu'un mutex non réentrant ne permet pas) :
 
@@ -567,30 +657,38 @@ par `run_once`, ce qu'un mutex non réentrant ne permet pas) :
   Trigger::Manual)`, attend le `JoinHandle`, et traduit `Skipped` en **409 `BACKUP_IN_PROGRESS`** ; le garde vit dans la
   tâche **par construction** (un client parti n'interrompt ni l'écriture ni la détention) ;
 - l'**import** prend `lock_owned().await` dans la fermeture de son `spawn` (AC8b), après `parse_and_verify` ;
-- l'**export manuel** prend `lock_owned().await` pour l'assemblage.
+- l'**export manuel** prend `lock_owned().await` et **déplace le garde dans la fermeture `remplir`** qu'il passe à
+  `build_keshbackup` (AC4), donc dans le `spawn_blocking` d'assemblage : le garde est rendu à la fin de l'assemblage,
+  quel que soit le sort du client (C-31-1-55, F1, P4).
 
 Toujours un garde **possédé** (`lock_owned` / `try_lock_owned`), jamais un garde emprunté. Garde lexicale dans
 `routes/admin.rs` et `auto_backup.rs` (`mod tests`) — une garde contre l'inattention, pas contre une forme délibérée
 (une variable intermédiaire la contourne ; F11, P3) : aucune occurrence de `backup_lock.lock(` ni
 `backup_lock.try_lock(` (formes empruntées) ; `try_lock_owned` n'apparaît **que** dans `auto_backup.rs` (jamais dans
-`routes/admin.rs`) ; dans `full_import`, `lock_owned` se trouve dans la fermeture du `spawn`. **Ordre** : `backup_lock` est toujours pris **avant** `_kesh_version FOR UPDATE`
+`routes/admin.rs`) ; dans `full_import`, `lock_owned` se trouve dans la fermeture du `spawn` ; dans `full_export`, le
+nom du garde apparaît dans la fermeture passée à `build_keshbackup` (tue M-c24). **Ordre** : `backup_lock` est toujours pris **avant** `_kesh_version FOR UPDATE`
 (seul l'import prend les deux : `run_backup_and_restore` ouvre le `FOR UPDATE` après) — l'ordre inverse ferait tenir
 le verrou de ligne pendant l'attente d'un export de plusieurs minutes. **Fenêtre de détention** (C-31-1-30) : l'import le
 prend **après** la réception de l'envoi et `parse_and_verify` (un client lent ne bloque pas les sauvegardes pendant
 l'envoi) et le garde jusqu'à la fin de la restauration (sauvegarde de sécurité, écriture des fichiers, restauration) ;
 l'export manuel le prend pour l'**assemblage** de l'archive dans son temporaire et le **rend avant la diffusion** (un
-téléchargement lent ne bloque rien). L'export n'est pas détaché : un client parti pendant l'assemblage abandonne le
-futur du handler, donc **relâche le garde**, tandis que le `spawn_blocking` d'assemblage (AC4), que rien n'interrompt,
-va au bout dans son temporaire anonyme puis le perd ; une sauvegarde peut alors s'y superposer — sans effet sur les
-données (instantané, fichiers immuables), seulement sur le disque et le processeur (F11, P3 : la P2 disait « sans
-effet », ce qui était inexact). Puis `run_once` **réserve** son tour en base : `UPDATE _kesh_backup_schedule SET
-last_attempt_at = ? WHERE id = 1 AND last_attempt_at <=> ?` (valeur lue) ; `rows_affected = 0` → un autre processus l'a
-prise, `Skipped` (`debug!`). L'instantané de la base (Story 28-3) et l'immuabilité des fichiers nommés par
+téléchargement lent ne bloque rien). Le garde vivant dans le `spawn_blocking`, un client parti pendant l'assemblage
+(proxy au délai plus court, onglet fermé) abandonne le futur du handler **sans relâcher le verrou** : l'assemblage
+orphelin va au bout puis rend le garde, et l'essai suivant attend — jamais N assemblages simultanés débordant dans
+`KESH_ADMIN_BACKUP_DIR` (F1, P4 : la P3 laissait le garde au handler, et chaque nouvel essai prenait le verrou pendant
+que les assemblages abandonnés continuaient). Le temporaire de l'assemblage orphelin, anonyme, se perd ; un seul à la
+fois. Une fois le verrou pris, `run_once` enregistre sa tentative (`record_attempt` : `UPDATE … SET last_attempt_at =
+?`, sans condition) avant d'écrire. **Plus de réservation conditionnelle en base** (C-31-1-54, F5, P4) : la forme de la
+P2 (`WHERE last_attempt_at <=> ?` sur la valeur lue par `run_once` lui-même) ne fermait que les quelques millisecondes
+entre sa propre lecture et son `UPDATE`, ne protégeait pas `Trigger::Manual`, et laissait le nettoyage des `.partial`
+(AC28) supprimer celui d'un autre processus ; dans un seul processus, le verrou suffit. Kesh se déploie à **une
+instance par base**, et rien ne protège deux processus l'un de l'autre (angle mort écrit, manuel). L'instantané de la base (Story 28-3) et l'immuabilité des fichiers nommés par
 leur contenu (P-3) garantissent une archive cohérente même pendant une saisie.
 
 **AC28 — Écrire la sauvegarde.** `run_once` crée `KESH_ADMIN_BACKUP_DIR/auto/` (`0700`, `DirBuilder` récursif comme
 `write_pre_import_backup`), supprime d'abord les `kesh-auto-*.keshbackup.partial` qu'il y trouve (les siens, laissés par
-un arrêt brutal — le verrou garantit qu'aucun n'est en cours), puis écrit
+un arrêt brutal — le verrou garantit qu'aucun n'est en cours **dans ce processus**, et Kesh tourne à une instance par
+base, AC27), puis écrit
 `kesh-auto-<AAAAMMJJ>T<HHMMSSmmm>Z.keshbackup` (UTC, **millisecondes comprises**, dérivé du `now` passé à `run_once` —
 C-31-1-44, P2 : à la seconde, deux sauvegardes rapprochées, ou les appels successifs de l'AC36, se seraient heurtées au
 refus d'écraser de `write_backup_file` — `create_new`, `routes/admin.rs:591`, et contrôle du nom final, `:615-619`)
@@ -605,6 +703,11 @@ Succès : `last_success_at`, `last_success_file`, `last_success_bytes`, `last_fi
 `last_status = 'ok'` si `filesNotIncluded` est **vide** (alors `last_complete_file` = ce fichier), **`'partial'`** sinon
 — une sauvegarde à qui il manque des pièces n'est pas une sauvegarde complète pour le panneau (AC33) ni pour la
 rétention (AC29) (C-31-1-27) ; journal `info!` (`warn!` pour `partial`, avec le nombre de pièces).
+**Même nettoyage pour l'import** (F9, P4) : sous `backup_lock`, avant sa sauvegarde de sécurité, l'import supprime les
+fichiers réguliers `kesh-pre-import-*.keshbackup.partial` de `KESH_ADMIN_BACKUP_DIR` (laissés par un arrêt brutal pendant
+une sauvegarde pré-import, exclus de la liste de l'AC32 et sinon jamais supprimés — tolérable à quelques dizaines de
+Mio, plus à « base + toutes les pièces ») ; un échec de suppression est journalisé et ne refuse pas l'import. Test
+(AC36) : un `.partial` pré-import déposé disparaît après un import.
 
 **AC29 — Rétention.** Après un succès (`ok` ou `partial`) **seulement** : les fichiers **réguliers** de `auto/`
 (`symlink_metadata`, un lien n'est jamais suivi ni supprimé) dont le nom satisfait exactement
@@ -621,8 +724,8 @@ Un échec de sauvegarde (`failed`, `disk_full`, `insufficient_space`) ne supprim
 (`rustix::fs::statvfs`, `f_bavail × f_frsize` — l'espace accessible, non `f_bfree`, qui compterait la réserve de
 `root` ; dépendance directe ajoutée — `rustix` 1.1.4 est au `Cargo.lock` ; C-31-1-19) comparé au seuil
 `max(last_success_bytes, documents_bytes) × 1,2 + 256 Mio`, où `documents_bytes` est la somme des tailles des fichiers
-réguliers du premier niveau de `KESH_DOCUMENTS_DIR` (un `read_dir` et un `metadata()` par fichier ; `store_document`
-n'écrit qu'à ce niveau) — majorant des pièces que l'archive emportera, connu **avant** la première sauvegarde et
+réguliers du premier niveau de `KESH_DOCUMENTS_DIR` (un `read_dir` et un `metadata()` par fichier, **dans le
+`spawn_blocking`** de l'AC4, jamais sur un fil de l'exécuteur ; F10, P4 ; `store_document` n'écrit qu'à ce niveau) — majorant des pièces que l'archive emportera, connu **avant** la première sauvegarde et
 après un remontage du dossier des documents (C-31-1-42, P2 : sans lui, la première sauvegarde automatique, activée par
 défaut et sans historique, écrivait jusqu'à `ENOSPC` sur le volume de la base) ; `last_success_bytes` nul compte 0.
 Insuffisant → rien n'est écrit, `last_status = 'insufficient_space'`, `warn!` avec les deux nombres. Comme un échec
@@ -660,7 +763,9 @@ un bandeau discret sous l'en-tête (`routes/(app)/+layout.svelte`, **`role="stat
 intervalles ; L5, P2) : « La dernière sauvegarde automatique a échoué — Administration → Sauvegarde complète » quand
 `last_status` est un échec ; **ou** quand `last_success_at` est **non nul** et plus vieux que **deux** intervalles
 (« aucune sauvegarde automatique réussie depuis le … ») — une sauvegarde qui cesse de tourner sans échouer (tâche
-morte) se voit aussi (C-31-1-20). **`partial` n'allume pas le bandeau de l'application** (C-31-1-40, retrait de la P2) :
+morte) se voit aussi (C-31-1-20). Ce second cas est le champ `overdue` de `GET backup-schedule`, calculé par le serveur
+(`is_overdue`, AC25), qui le tient aussi pour vrai quand `last_success_at` est **postérieur** à l'heure du serveur
+(horloge revenue en arrière, C-31-1-57) ; le frontend ne compare aucune date à l'horloge du navigateur. **`partial` n'allume pas le bandeau de l'application** (C-31-1-40, retrait de la P2) :
 sur une installation dont des pièces manquent durablement (C-31-1-4 — le cas même de #503), il s'allumerait à vie sans
 geste pour l'éteindre et apprendrait à l'ignorer, y compris l'échec qui partage sa place ; le dossier des documents
 démonté, que la P1 voulait rendre visible, se voit déjà dans toute l'application (chaque pièce répond « document
@@ -678,21 +783,24 @@ couche anti-clé refuse déjà toute clé d'API, comme pour `users` et `email-te
 **seul le téléchargement** (`GET backups/{kind}/{name}`), qui livre une archive comme `full-export`, porte en plus
 `ensure_not_pat` dans son handler, à l'image de `full_export` et `full_import` (`routes/admin.rs:37, 143`) — défense en
 profondeur là où sort le secret, et non partout (C-31-1-50, R12, P3) :
-- `GET /api/v1/admin/backup-schedule` → réglage + état + `nextDueAt` (calculé par la même logique que `is_due`) +
-  `backupDir` **non exposé** (le chemin reste au journal, comme pour la sauvegarde pré-import) ;
+- `GET /api/v1/admin/backup-schedule` → réglage + état + `nextDueAt` (calculé par la même logique que `is_due` ;
+  `now` si une valeur est dans le futur) + `overdue` (`is_overdue`, AC25, AC31 ; C-31-1-57) + `backupDir` **non exposé** (le chemin reste au journal, comme pour la sauvegarde pré-import) ;
 - `PUT /api/v1/admin/backup-schedule` `{ enabled, intervalHours, retentionCount, version }` → 200 ; valeurs hors
   domaine → 400 `VALIDATION_ERROR` ; version périmée → 409 `OPTIMISTIC_LOCK_CONFLICT` (code existant) ; audit
   `admin.backup_schedule_updated` (`before`/`after`) dans la même transaction. **Seul `update_settings` incrémente
-  `version`** : `claim_attempt` et `record_*` ne la touchent pas (sinon une sauvegarde terminée entre le chargement du
+  `version`** : `record_attempt` et `record_*` ne la touchent pas (sinon une sauvegarde terminée entre le chargement du
   panneau et *Enregistrer* produirait un 409 sans cause visible) ; leurs horodatages sont liés **depuis l'application**
   (`Utc::now().naive_utc()`), jamais `NOW(3)` (le fuseau de session MariaDB fausserait `<=>` et `is_due`) ;
 - `POST /api/v1/admin/backup-schedule/run` → exécute `run_once(…, Trigger::Manual)` **sans** la condition `is_due`,
   dans une tâche `tokio::spawn` attendue (comme l'import, AC8b : un client parti n'interrompt pas l'écriture), attend la
-  fin, rend l'état ; `RunOutcome::Skipped` (verrou pris par une autre sauvegarde, que `run_once` a tenté lui-même, ou
-  réservation perdue, AC27) → 409 `BACKUP_IN_PROGRESS` (code neuf : variante `AppError::BackupInProgress` d'`errors.rs`,
+  fin, rend l'état ; `RunOutcome::Skipped` (verrou pris par une autre sauvegarde, que `run_once` a tenté lui-même,
+  AC27) → 409 `BACKUP_IN_PROGRESS` (code neuf : variante `AppError::BackupInProgress` d'`errors.rs`,
   clé `error-backup-in-progress` en quatre locales). Le handler ne touche pas `backup_lock`. Le frontend l'appelle
   avec `LONG_OPERATION_TIMEOUT_MS`, sans rejeu (AC18b) ;
-- `GET /api/v1/admin/backups` → liste des fichiers **réguliers** (`symlink_metadata` : un lien n'est jamais listé)
+- `GET /api/v1/admin/backups` → `{ "importMaxMib": N, "items": [ … ] }` : `importMaxMib` est la taille d'import de
+  l'installation (`config.admin_import_max_mib`, `KESH_ADMIN_IMPORT_MAX_MB`), **une fois** par réponse et non par
+  ligne — c'est une propriété de l'installation (C-31-1-52, C-31-1-58 ; R1, P4 : aucune route ne transmet aujourd'hui ce
+  plafond au frontend) ; `items` est la liste des fichiers **réguliers** (`symlink_metadata` : un lien n'est jamais listé)
   `kesh-auto-*.keshbackup` de `auto/` et `kesh-pre-import-*.keshbackup` de `KESH_ADMIN_BACKUP_DIR` dont le nom satisfait
   l'expression de son `kind` (`auto` : `^kesh-auto-[0-9]{8}T[0-9]{9}Z\.keshbackup$` ; `pre-import` :
   `^kesh-pre-import-[0-9]{8}T[0-9]{9}-[0-9]+-[0-9]+\.keshbackup$`, forme du nom écrit par `write_pre_import_backup`,
@@ -709,7 +817,9 @@ atteignent la couche, un `PUT` et un `POST` de plus sont arrêtés par le gate d
 l. 785, mis à jour) ; et **le seul `GET` neuf qui porte `ensure_not_pat`**, le téléchargement, entre dans
 `GUARDED_BY_HANDLER` de `head_couples_are_denied_too` (l. 846) — son `403` ne discrimine pas la couche ; les deux autres
 `GET` neufs (`backup-schedule`, `backups`) n'ont pas de garde propre et **prouvent** la couche : le compte des chemins
-discriminants passe de 4 à **6**, à écrire dans le commentaire du test (R5 de la P2, R12 de la P3 : la P2 faisait
+discriminants passe de 4 à **6**, et l'assertion `discriminating >= 4` (l. 861) devient
+**`assert_eq!(discriminating, 6)`** — un seuil, même relevé à 6, resterait vert si l'on oubliait le téléchargement dans
+`GUARDED_BY_HANDLER` (7 ≥ 6) ; l'égalité le voit (R14, P4) (R5 de la P2, R12 de la P3 : la P2 faisait
 porter `ensure_not_pat` aux trois et les sortait tous de la preuve). `docs/api-external.md` : rien à ajouter **pour ces routes**, qui relèvent de
 la fermeture générale des routes d'administration aux clés (§ 4) — vérifié, à écrire au Dev Agent Record (le fichier
 change par ailleurs à la 31-1a, AC14).
@@ -721,7 +831,11 @@ a — statut `partial` dit « incomplète », en avertissement, `role="status"`,
 elle diffère (marquée « introuvable sur le serveur » si `last_complete_file` n'est pas dans la liste des sauvegardes de
 l'AC32 — fichier supprimé ou déplacé à la main ; L6, P2), dernière
 tentative et son statut, prochaine prévue ; bouton **« Sauvegarder maintenant »** (désactivé pendant
-l'exécution) ; liste **« Sauvegardes sur le serveur »** (nom, type, taille, date, *Télécharger*). Rappel permanent : les
+l'exécution) ; liste **« Sauvegardes sur le serveur »** (nom, type, taille, date, *Télécharger*) ; toute ligne dont la
+taille dépasse `importMaxMib × 1 048 576` octets (AC32) porte la mention **« trop grande pour être restaurée par
+l'écran (limite N Mio) »** (clé `admin-backup-server-too-large`, quatre locales ; C-31-1-52) — comparaison stricte,
+l'enveloppe multipart de l'envoi ajoutant quelques centaines d'octets que l'écran ne compte pas (une archive à
+quelques octets du plafond peut être refusée sans mention : écrit au manuel). Rappel permanent : les
 sauvegardes du serveur sont dans le dossier de sauvegarde de l'installation (`./backup/auto` avec les compose fournis),
 sur le **même disque** que Kesh — à copier ailleurs (Hyper Backup) ; elles contiennent des secrets ; chacune pèse à peu
 près la base **plus** le dossier des documents (`retention_count + 1` copies dans `auto/`, plus une par import dans le
@@ -748,37 +862,46 @@ libération, `run_once` écrit.
 (fichier `0600`, dossier `0700`, archive importable : `parse_and_verify` vert, fichiers inclus) ; rétention (8
 sauvegardes déposées + une neuve, `retention_count = 3` → restent les 3 plus récentes, un `kesh-pre-import-x` et un
 `autre.keshbackup` intacts) ; espace insuffisant (seuil injecté par paramètre de test : la fonction de mesure est
-passée à `run_once` derrière le trait `BackupEnv`, AC30, C-31-1-19) → `insufficient_space`, aucun fichier ;
+passée à `run_once` derrière le trait `BackupEnv`, AC30, C-31-1-19) → `insufficient_space`, aucun fichier, **8
+sauvegardes déposées restent 8** (R5, P4 : un échec ne supprime rien) ;
 **première sauvegarde sans historique** (`last_success_bytes` nul, dossier des documents de test portant des fichiers
 dont la somme dépasse l'espace libre injecté) → `insufficient_space`, aucun fichier (C-31-1-42, tue M-c19) ; deux
 `run_once` successifs à des `now` distincts d'une milliseconde → deux fichiers, deux noms (C-31-1-44) ; écriture
-impossible (dossier `auto` remplacé par un fichier) → `failed`, aucune suppression ; **disque saturé pendant
-l'écriture** (écrivain de test `StorageFull` après N octets) → `disk_full`, `.partial` supprimé, aucune suppression de
-rétention (8 sauvegardes déposées restent 8) ; `classify_write_error` unitaire (`StorageFull`, `QuotaExceeded`, code
+impossible (dossier `auto` remplacé par un fichier) → `failed` (aucune sauvegarde n'y est déposable : ce test ne
+prouve pas « aucune suppression », les trois suivants si) ; **disque saturé pendant
+l'écriture** (écrivain de test `StorageFull` après N octets, `retention_count = 3`) → `disk_full`, `.partial` supprimé,
+aucune suppression de rétention (8 sauvegardes déposées restent 8 — sous `retention_count = 3`, la rétention en
+garderait 3 ; R5, P4) ; `classify_write_error` unitaire (`StorageFull`, `QuotaExceeded`, code
 brut 28, `PermissionDenied` → `failed`) ; **sauvegarde incomplète** (une pièce référencée retirée du dossier des
 documents) → `partial`, `last_complete_file` inchangé, et sur une suite de `retention_count + 2` sauvegardes `partial`
 la dernière complète **reste** ; une sauvegarde complète suivante la remplace dans `last_complete_file` et la rétention
-retrouve son compte ; archive relue (AC28) : un écrivain de test qui tronque l'archive → `failed`, fichier supprimé ;
-`version` inchangée par `claim_attempt`/`record_*` (un `PUT` avec la version lue avant le tour → 200) ; réservation perdue (une autre
-connexion avance `last_attempt_at` entre la lecture et l'`UPDATE` — observateur de test) → rien n'est écrit ;
-`.partial` résiduel supprimé ; garde lexicale du garde possédé (AC27 : aucune forme empruntée de `backup_lock`,
-`try_lock_owned` dans `auto_backup.rs` seulement, `lock_owned` dans la fermeture du `spawn` de `full_import` ; tue
-M-c18) ; garde lexicale du lancement (AC26 ; tue M-c21) ; liste et téléchargement : un lien symbolique
-`kesh-auto-…keshbackup` vers un autre fichier n'est ni listé ni servi ; routes : 403 non-admin, 403 clé d'API, 400
+retrouve son compte ; archive relue (AC28) : un écrivain de test qui tronque l'archive → `failed`, fichier supprimé,
+8 sauvegardes déposées restent 8 (`retention_count = 3` ; R5, P4) ;
+`version` inchangée par `record_attempt`/`record_*` (un `PUT` avec la version lue avant le tour → 200) ;
+`.partial` résiduel supprimé ; `.partial` pré-import résiduel supprimé par un import (AC28, F9, P4) ; garde lexicale du garde possédé (AC27 : aucune forme empruntée de `backup_lock`,
+`try_lock_owned` dans `auto_backup.rs` seulement, `lock_owned` dans la fermeture du `spawn` de `full_import`, garde de
+`full_export` nommé dans la fermeture passée à `build_keshbackup` ; tue M-c18 et M-c24) ; garde lexicale du lancement
+(AC26, lignes `//` écartées ; tue M-c21) ; liste et téléchargement : un lien symbolique
+`kesh-auto-…keshbackup` vers un autre fichier n'est ni listé ni servi (tue M-c8) ; `GET backups` rend `importMaxMib`
+égal à `admin_import_max_mib` de la `Config` de test (valeur non par défaut, par exemple 7) (C-31-1-52, R1, P4) ;
+`GET backup-schedule` rend `overdue` vrai pour une `last_success_at` dans le futur (C-31-1-57) ; routes : 403 non-admin, 403 clé d'API, 400
 domaine, 409 version, téléchargement 404 sur `../x`, sur un nom hors expression et sur un nom absent ; **audits et
 état** (R12, P3) : un `PUT` écrit `admin.backup_schedule_updated` avec `before` et `after` exacts, et un `PUT` refusé
 (400) n'en écrit aucun ; un téléchargement écrit `admin.backup_downloaded` (nom, taille) ; `nextDueAt` de
-`GET backup-schedule` égale `last_success_at + interval` après un succès, et l'heure de la tentative + 1 h après un
-échec (la logique d'`is_due`).
+`GET backup-schedule` égale `last_success_at + interval` après un succès, et l'heure de la tentative + 1 h après
+l'échec **d'un tour planifié** (qui ne part qu'une fois `last_success_at + interval` atteint) (la logique d'`is_due` : après l'échec
+d'un « Sauvegarder maintenant » peu après une réussite, c'est `last_success_at + interval` qui l'emporte ; R14, P4).
 
 **AC37 — Vitest.** Panneau : rendu de l'état (ok, `partial`, échec de chaque type, jamais tenté, désactivé),
 enregistrement (payload exact, conflit 409 → rechargement proposé), « Sauvegarder maintenant » (désactivé pendant, 409
 affiché, appel avec `LONG_OPERATION_TIMEOUT_MS` sans rejeu), liste et téléchargement, `partial` en avertissement
-(`role="status"`, aucun `role="alert"`), `last_complete_file` absent de la liste → « introuvable » ; bandeau du layout
-(`role="status"`) : affiché pour Admin seulement, dans les deux cas de l'AC31 (échec, aucune réussite depuis deux
-intervalles), **absent quand `partial`**, **absent quand la sauvegarde est désactivée** même si `last_status` est un
-échec (tue M-c20), absent quand `ok` et récent, absent quand `last_success_at` est nul et `last_status` nul, absent
-quand la lecture échoue.
+(`role="status"`, aucun `role="alert"`), `last_complete_file` absent de la liste → « introuvable » ; mention « trop
+grande pour être restaurée par l'écran (limite N Mio) » sur une ligne dont la taille dépasse `importMaxMib × 1 048 576`,
+absente sur une ligne égale à cette valeur et sur une ligne plus petite (C-31-1-52, R1, P4 ; tue M-c23) ; bandeau du
+layout (`role="status"`) : affiché pour Admin seulement, dans les deux cas de l'AC31 (échec ; `overdue` vrai rendu par
+le serveur, « aucune réussite depuis … »), absent quand `overdue` est faux et `last_status` vaut `ok` — le composant ne
+compare aucune date à l'horloge du navigateur (C-31-1-57), **absent quand `partial`**, **absent quand la sauvegarde est désactivée** même si `last_status` est un
+échec (tue M-c20), absent quand `last_success_at` est nul et `last_status` nul, absent quand la lecture échoue.
 
 **AC38 — E2E (`frontend/tests/e2e/backup-schedule.spec.ts`).** Admin : changer la fréquence et la rétention,
 enregistrer, recharger la page → valeurs gardées ; « Sauvegarder maintenant » → état « réussie » et une ligne `auto` dans
@@ -790,7 +913,12 @@ refus 403 de l'API est vérifié côté Rust (AC36).
 **AC39 — Manuel et CHANGELOG.** `admin-manual.tex` : sous-section **« La sauvegarde automatique »** (activée par défaut
 à la mise à jour, fréquence, rétention et protection de la dernière sauvegarde complète, statut « incomplète »,
 emplacement `./backup/auto`, espace requis et refus, volume (base + documents par copie), état et bandeau, *Sauvegarder
-maintenant*, téléchargement, horloge déréglée, ce que la relecture d'une archive garantit et ne garantit pas (AC28),
+maintenant*, téléchargement, la mention « trop grande pour être restaurée par l'écran » et ce qu'elle demande (relever
+`KESH_ADMIN_IMPORT_MAX_MB`, et le proxy inverse avec lui ; une archive à quelques octets du plafond peut être refusée
+sans mention) (C-31-1-52), horloge déréglée **dans les deux sens** (vers le futur : un nom daté du futur survit à la
+rétention ; en arrière : la sauvegarde repart aussitôt et le bandeau s'allume jusqu'à la réussite suivante,
+C-31-1-57), une seule instance de Kesh par base (rien ne protège deux processus l'un de l'autre, C-31-1-54), ce que la
+relecture d'une archive garantit et ne garantit pas (AC28),
 le statut « incomplète » visible au panneau et non au bandeau (C-31-1-40), ce qu'elle ne remplace pas : la copie hors
 du disque) ; tableau *Quelle méthode choisir ?*
 (l. ~1950-1963) mis à jour ; *Stratégie recommandée* (l. 1461) ; sauvegarde pré-import (téléchargement, AC34) ; mise à
@@ -804,11 +932,18 @@ citées au Dev Agent Record et au prompt de revue : section *Sauvegarde automati
 cours ; (i) 409 `BACKUP_IN_PROGRESS` affiché ; (j) conflit de version (rechargement proposé) ; (k) erreur de validation ;
 (l) liste des sauvegardes remplie ; (m) liste vide ; bandeau du layout (n) échec, (o) *retirée en P2* (`partial`
 n'allume plus le bandeau, C-31-1-40 ; lettre conservée pour ne pas décaler les suivantes), (p) « aucune
-sauvegarde réussie depuis … » ; (q) la section à largeur étroite (390 px). Les états qu'on ne peut atteindre par
+sauvegarde réussie depuis … » ; (q) la section à largeur étroite (390 px) ; (r) une ligne de la liste portant la
+mention « trop grande pour être restaurée par l'écran (limite N Mio) » (C-31-1-52, P4). Les états qu'on ne peut atteindre par
 l'écran se posent ainsi, ce que le Dev Agent Record dit capture par capture (R8, P3) : les **statuts** (d), (e), (f),
 (g), (n), (p) en base de test par `UPDATE` avant la capture ; (h) et (i), états d'un **verrou en mémoire** qu'aucun
 `UPDATE` ne pose et qu'une sauvegarde de quelques Kio ne tient pas assez longtemps, **par interception réseau**
-(`page.route` sur `POST …/run` : réponse retardée pour (h), réponse 409 `BACKUP_IN_PROGRESS` pour (i)).
+(`page.route` sur `POST …/run` : réponse retardée pour (h), réponse 409 `BACKUP_IN_PROGRESS` pour (i)). Depuis la P4
+(R4) : (a) « jamais tentée » par `UPDATE` remettant `last_attempt_at`, `last_success_at` et `last_status` à `NULL` (la
+tâche de fond écrit 5 minutes après le démarrage) ; (j) conflit de version et (k) erreur de validation par
+interception de `PUT backup-schedule` (réponses 409 `OPTIMISTIC_LOCK_CONFLICT` et 400 `VALIDATION_ERROR` : les champs
+de l'écran ne produisent pas de valeur hors domaine) ; (r) mention « trop grande pour être restaurée par l'écran »
+(C-31-1-52) par interception de `GET backups` (taille d'une ligne portée au-delà de `importMaxMib` × 1 Mio : une
+sauvegarde E2E pèse quelques Kio, et `importMaxMib` ne descend pas sous 1).
 
 ## Tasks / Subtasks
 
@@ -824,16 +959,26 @@ l'écran se posent ainsi, ce que le Dev Agent Record dit capture par capture (R8
   toute table ; bornes réduites par `ReadLimits` ; « nom en double » retiré en P2, C-31-1-38), AC10 (fixture réelle),
   AC13 (intégration).
 - [ ] T-a2 `kesh-db` : `ReferencedFile`, lecture dans `export_installation_in` (AC1) ; tests de l'instantané étendus
-  (une facture figée **après** l'ouverture de l'instantané n'apparaît pas dans `referenced_files` — observateur).
+  (une facture figée **après** l'ouverture de l'instantané n'apparaît pas dans `referenced_files` — observateur) ;
+  les deux lectures sans `UNION` ni `DISTINCT` SQL, dédoublonnage en Rust par égalité d'octets ; test : `X….pdf` et
+  `x….pdf` de même empreinte déclarée (deux sociétés) → deux chemins, `x….pdf` inclus et `X….pdf` en `mismatch`
+  (préfixe hors `[0-9a-f]`), aller-retour **200** (F6, P4 ; tue M-a22 : sous un `UNION` SQL, une ligne disparaît et
+  l'import refuse en 400).
 - [ ] T-a3 `manifest.rs` : version 2, `files`, `filesNotIncluded` (`serde(default)`).
-- [ ] T-a4 `export.rs` : `write_keshbackup<W: Write + Seek>` synchrone, appelée dans un seul `spawn_blocking` après
-  `export_installation` (AC4) ; lecture des fichiers en deux passes, raisons dont `unreadable` (AC3) ; méta étendue
+- [ ] T-a4 `export.rs` : `build_keshbackup(pool, documents_dir, remplir)` générique, seul appelant
+  d'`export_installation(` (AC4, C-31-1-56) ; `write_keshbackup<W: Write + Seek>` synchrone, appelée par chaque
+  `remplir` ; lecture des fichiers en **une passe**, boucle de copie à la main, `abort_file` sur `altered` et
+  `unreadable` (AC3, C-31-1-53) ; `regex` aux `[dependencies]` (AC6) ; méta étendue
   (AC5) ; `routes/admin.rs` : `SpooledTempFile` (AC4), en-têtes (AC5, AC12), audit.
-- [ ] T-a4b Tests de l'export (≥ 9, rouges d'abord) : fichier `missing`, `altered`, `mismatch` (préfixe ≠ empreinte de la
+- [ ] T-a4b Tests de l'export (≥ 11, rouges d'abord) : fichier `missing`, `altered`, `mismatch` (préfixe ≠ empreinte de la
   ligne ; même chemin, deux empreintes) → listé dans `filesNotIncluded`, absent de l'archive (c'est le test qui tue M-a2) ;
   fichier **illisible** (`chmod 000` dans le dossier des documents du test ; le test vérifie d'abord qu'il ne peut pas le
   lire et **échoue bruyamment** s'il le peut — gate en `root` —) → `unreadable`, l'export rend **200** et les autres
-  pièces sont incluses (tue M-a20) ;
+  pièces sont incluses (tue M-a20) ; **dossier à la place du fichier** (s'ouvre, échoue à la lecture, `EISDIR`, donc
+  **après** `start_file`) suivi d'un fichier sain → `unreadable`, export 200, l'archive se relit et le fichier sain y
+  est (tue M-a21) ; **fichier altéré suivi d'un fichier sain** (entrée abandonnée au milieu par `abort_file`) →
+  `altered`, l'entrée altérée absente, et l'archive **s'importe** (aller-retour 200, le fichier sain restauré : établit
+  au dev la prémisse de C-31-1-53, F2, P4) ;
   deux chemins de même empreinte (deux sociétés, AC1) → tous deux inclus ; `storage_path = "/etc/hostname"` et
   `"../x.pdf"` en base → `mismatch`, aucune lecture hors du dossier ; **aller-retour** : la même base → export →
   import sur une base vidée → **200**, `filesMissing` compte ces lignes (une sauvegarde authentique s'importe ; tue
@@ -856,7 +1001,7 @@ l'écran se posent ainsi, ce que le Dev Agent Record dit capture par capture (R8
   format 2 (AC6, AC6b, AC7, AC8) ; `routes/admin.rs` : `read_upload` sur disque
   (AC11), écriture des fichiers avant le `DELETE` (AC8), import dans une tâche `spawn` attendue (AC8b), comptes et
   audit (AC9).
-- [ ] T-a6b Tests de l'import (≥ 8, rouges d'abord) : cohérence AC7 en format 2 (fichier de `manifest.files` non
+- [ ] T-a6b Tests de l'import (≥ 9, rouges d'abord) : cohérence AC7 en format 2 (fichier de `manifest.files` non
   référencé ; empreinte ≠ `file_hash`/`pdf_sha256` ; fichier référencé ni dans `files` ni dans `filesNotIncluded` →
   400) ; la même absence en format 1 → **200** (fixture réelle) ; table `invoices` sans colonne `pdf_storage_path` →
   ni `panic` ni 400, `filesMissing` calculé sans elle ; refus d'écriture (dossier des documents non inscriptible) →
@@ -864,7 +1009,10 @@ l'écran se posent ainsi, ce que le Dev Agent Record dit capture par capture (R8
   `sha256` déclaré est celui du contenu entier** (seule la borne la refuse ; sans borne, l'empreinte concorderait :
   c'est ce qui tue M-a6 ; R12, P3) → 400 « trop grande » ; dossier de sauvegarde absent → créé, import 200 ; dossier de
   sauvegarde existant **non inscriptible** (`0500`, même garde « échoue bruyamment en `root` ») → 500
-  `AdminPreImportBackupFailed`, base intacte (R12, P3) ; garde lexicale de l'AC8b.
+  `AdminPreImportBackupFailed`, base intacte (R12, P3) ; garde lexicale de l'AC8b ; **format 1 restauré sur la même
+  installation** (dossier des documents portant encore les fichiers) → `filesMissing = 0` (AC9, AC13 ; tue M-a9 ; R2,
+  P4). (L'échec du `sync_all` du dossier des documents, AC8, n'est pas testé : aucun système de fichiers du poste ne le
+  refuse ; branche relue en revue, angle mort écrit — F7, P4.)
   (« Aucun temporaire laissé » retiré en P2 : vrai par construction, aucun test ne pouvait rougir — AC11.)
 - [ ] T-a7 `config.rs` : défaut 2048 (AC12) et son test ; `.env.example`.
 - [ ] T-a8 Manuels, `docs/api-external.md`, proxy inverse, CHANGELOG (AC14) ; grep des valeurs (`503`, `512`,
@@ -872,7 +1020,8 @@ l'écran se posent ainsi, ce que le Dev Agent Record dit capture par capture (R8
   doc-comments, i18n, manuels (`.tex` **et** PDF aplati), `docs/`, `website/` — confronté à l'inventaire clos de l'AC14 :
   chaque site de l'inventaire traité, chaque site **neuf** ajouté au tableau du Dev Agent Record avec son traitement
   (les phrases de `website/roadmap.html` et de la brochure sont laissées à la release, à noter au Dev Agent Record) ;
-  **et** la commande des sujets de l'AC14 rejouée, chacune de ses lignes triée (94 à `c7639e80`).
+  **et** la commande des sujets de l'AC14 rejouée (`-i`, compose compris), chacune de ses lignes triée (103 à
+  `6f0828cf` ; 94 à `c7639e80` par la commande de la P3).
 - [ ] T-a9 Mutations (§ Mutations), gate complet (`kesh-db` touché), E2E complet au dernier commit de code.
 
 ### 31-1b
@@ -881,7 +1030,8 @@ l'écran se posent ainsi, ce que le Dev Agent Record dit capture par capture (R8
   d'en-têtes), avis de fin d'import (`filesMissing` 0 / > 0 ; bouton *Se reconnecter* dans **les deux** cas, aucune
   redirection avant le clic), garde de rôle de `/onboarding/restore`.
 - [ ] T-b2 `routes/onboarding/restore/+page.svelte` et `+page.ts` (garde de rôle), lien sur `+page.svelte` (AC15).
-- [ ] T-b3 `admin-backup.api.ts` (en-têtes), `AdminBackupPanel`, `AdminRestorePanel` (AC17-AC19).
+- [ ] T-b3 `admin-backup.api.ts` (en-têtes), `AdminBackupPanel`, `AdminRestorePanel` (AC17-AC19 ; toast
+  `admin-restore-toast-success` retiré, clé supprimée des quatre locales).
 - [ ] T-b4 i18n ×4 (AC22).
 - [ ] T-b5 E2E AC20 ; captures (AC21).
 - [ ] T-b6 Manuel (AC21), PDF.
@@ -893,16 +1043,19 @@ l'écran se posent ainsi, ce que le Dev Agent Record dit capture par capture (R8
 
 - [ ] T-c1 Migration, réinjection de la ligne singleton par `scripts/regen-test-schema.sh` et garde
   `squash_seeds_the_backup_schedule_row`, squash régénéré, audit P5 (trois sites), P6, P7, inventaire (AC23, AC24).
-- [ ] T-c2 `kesh-db` : dépôt `backup_schedule` (`get`, `update_settings` avec version, `claim_attempt`, `record_*`).
-- [ ] T-c3 `kesh-api/src/auto_backup.rs` : `is_due`, `run_once` (relecture de l'archive, statut `partial`,
+- [ ] T-c2 `kesh-db` : dépôt `backup_schedule` (`get`, `update_settings` avec version, `record_attempt` sans condition,
+  `record_*`).
+- [ ] T-c3 `kesh-api/src/auto_backup.rs` : `is_due` (horloge en arrière), `is_overdue` (AC25, C-31-1-57), `run_once` (relecture de l'archive, statut `partial`,
   `last_complete_file`, noms à la milliseconde, seuil `documents_bytes`, verrou pris en `try_lock_owned` et
   `RunOutcome::Skipped`), `spawn`, `BackupEnv` (`Arc<dyn BackupEnv>`, `wrap_writer` qui prend un clone du `File` par
   valeur), `classify_write_error` (AC25-AC30) ; `AppState.backup_lock` aux neuf sites, gardes possédés et leur garde
   lexicale (AC27) ; branchement dans `main.rs` et sa garde lexicale (AC26).
 - [ ] T-c4 Routes et registres (AC32 : `audit_route_registry`, `audit_label_registry`, `admin_pat_denied_e2e`
-  — `ADMIN_COUPLES`, 33 constructeurs, `(8, 25)`, le seul `GET` de téléchargement dans `GUARDED_BY_HANDLER`, 6 chemins
-  discriminants) ; `AppError::BackupInProgress` ; libellés d'audit ×4.
-- [ ] T-c5 Frontend : panneau (AC33), bandeau (AC31), API ; Vitest (AC37) ; i18n ×4 de toutes les chaînes de la 31-1c
+  — `ADMIN_COUPLES`, 33 constructeurs, `(8, 25)`, le seul `GET` de téléchargement dans `GUARDED_BY_HANDLER`,
+  `assert_eq!(discriminating, 6)`) ; `importMaxMib` dans `GET backups`, `overdue` dans `GET backup-schedule` ;
+  `AppError::BackupInProgress` ; libellés d'audit ×4 ; nettoyage des `.partial` pré-import (AC28).
+- [ ] T-c5 Frontend : panneau (AC33, dont la mention « trop grande pour être restaurée par l'écran »), bandeau (AC31,
+  lu sur `overdue`), API ; Vitest (AC37) ; i18n ×4 de toutes les chaînes de la 31-1c
   (règle de l'AC22, AC33).
 - [ ] T-c6 Tests d'intégration (AC35, AC36), E2E (AC38), captures (AC40).
 - [ ] T-c7 Manuel, CHANGELOG, README (AC34, AC39).
@@ -913,9 +1066,9 @@ l'écran se posent ainsi, ce que le Dev Agent Record dit capture par capture (R8
 
 | Sous-story | Rust | Vitest | E2E |
 |---|---|---|---|
-| 31-1a | gardes AC2 (2), `parse_and_verify` format 2 et lectures bornées (≥ 12, T-a1), instantané (1), `open_document` direct (1), export (≥ 9, T-a4b), import et cohérence (≥ 8, T-a6b, dont la garde lexicale de l'AC8b), intégration AC13 (2), AC10 sur la fixture réelle (1) | — | aucune spec neuve (l'écran ne change pas) ; suite complète au dernier commit de code |
+| 31-1a | gardes AC2 (2), `parse_and_verify` format 2 et lectures bornées (≥ 12, T-a1), instantané et lectures de l'AC1 (2, T-a2), `open_document` direct (1), export (≥ 11, T-a4b), import et cohérence (≥ 9, T-a6b, dont la garde lexicale de l'AC8b), intégration AC13 (3), AC10 sur la fixture réelle (1) | — | aucune spec neuve (l'écran ne change pas) ; suite complète au dernier commit de code |
 | 31-1b | — | ≥ 16 (dont ≥ 5 pour `api-client` et ≥ 4 pour le message d'issue inconnue — `TIMEOUT`, `NETWORK_ERROR`, 502, 504 —, AC18b ; garde de rôle de `/onboarding/restore`) | `backup-restore-new-install.spec.ts` |
-| 31-1c | migration et squash (AC23, AC24), `is_due` (≥ 6), `classify_write_error` (≥ 4), garde lexicale des gardes possédés (AC27), garde lexicale du lancement par `main.rs` (AC26), intégration AC35/AC36 | ≥ 14 | `backup-schedule.spec.ts` |
+| 31-1c | migration et squash (AC23, AC24), `is_due` (≥ 8, dont deux d'horloge en arrière), `is_overdue` (≥ 5), `classify_write_error` (≥ 4), garde lexicale des gardes possédés (AC27), garde lexicale du lancement par `main.rs` (AC26), intégration AC35/AC36 | ≥ 14 | `backup-schedule.spec.ts` |
 
 Le délai du client (AC18b) n'est **pas** prouvé par un E2E : les fixtures E2E pèsent quelques Ko et s'exportent en
 moins d'une seconde, si bien qu'un E2E vert ne dirait rien du délai. Il l'est par les tests Vitest de `api-client` à
@@ -926,11 +1079,17 @@ horloge simulée, qui figent les valeurs (30 s par défaut, une heure pour les a
 - `import.rs` tests `parse_rejects_future_format_version` (forge `Some(2)` → désormais **valide** : passer à 3) et
   `parse_rejects_non_empty_files_dir` (vaut encore pour le format 1 : forcer `formatVersion: 1`).
 - `manifest.rs` `manifest_json_has_canonical_shape` (`formatVersion` 1 → 2, `files` présent).
-- `export.rs` `build_keshbackup_ne_lit_la_base_qu_une_fois` (corps renommé ; garder la garde exacte).
+- `export.rs` `build_keshbackup_ne_lit_la_base_qu_une_fois` : `build_keshbackup` garde son nom et reste l'unique
+  lecteur de la base (AC4, C-31-1-56) ; la garde reste exacte sur son corps et gagne l'assertion « `export_installation(`
+  une seule fois dans la production de `kesh-api` » (R7, P4 : la P3 disait « corps renommé » sans dire quelle fonction
+  restait l'unique point d'entrée, et la garde pouvait veiller sur du code mort).
 - `routes/admin.rs` garde `avant_sauvegarde_branchee_aux_appels_de_l_import` (l. 881 ; motifs `check_schema_compat(` et
-  `build_keshbackup(`, compte `(1, 2)`, l. 911-915) — **rougit** quand l'appel pré-import change de forme (lecture de la
-  base, puis `write_keshbackup` en `spawn_blocking`), puis **deviendrait muette** si l'on n'ajustait que le compte : sa
-  liste d'identifiants s'étend aux nouveaux appelants (R6, P3).
+  `build_keshbackup(`, compte `(1, 2)`, l. 911-915) — les deux appelants de `routes/admin.rs` appellent toujours
+  `build_keshbackup(` (AC4), le compte reste `(1, 2)` ; mais elle découpe une instruction jusqu'au `;` suivant, et la
+  fermeture `remplir` passée en argument en contient : écrite en ligne, elle couperait l'instruction **avant**
+  `.map_err(avant_sauvegarde)` et la garde **rougirait** à tort. La fermeture se nomme donc avant l'appel (`let remplir
+  = move |…| …;`), ou la garde se réécrit en gardant l'invariant (tout appel de l'import converti) ; jamais en baissant
+  le compte (R6, P3 ; R7, P4).
 - `routes/admin.rs` garde `echecs_avant_sauvegarde_tous_convertis` (l. 957 ; segment du début de
   `run_backup_and_restore` à `write_pre_import_backup(`, compte `(directes, par_avant_sauvegarde) == (3, 1)`, l. 975-984)
   — **rougit** si la conversion `.map_err(avant_sauvegarde)` quitte ce segment pour `write_pre_import_backup` ; le
@@ -954,8 +1113,15 @@ horloge simulée, qui figent les valeurs (30 s par défaut, une heure pour les a
   répartition `(5, 23)` → `(8, 25)` et commentaire « Les 5 `get` » (l. 785), qui **rougit** ; `GUARDED_BY_HANDLER`
   (l. 846) gagne le seul `GET` de téléchargement, qui porte `ensure_not_pat` — **silencieux** sinon : le seuil « ≥ 4
   discriminants » resterait vert avec une preuve gonflée d'un chemin ; les deux autres `GET` neufs comptent, eux, parmi
-  les discriminants (4 → 6 ; AC32, R5 de la P2, R12 de la P3).
+  les discriminants (4 → 6 ; AC32, R5 de la P2, R12 de la P3) ; le seuil `>= 4` (l. 861) devient
+  `assert_eq!(discriminating, 6)` (R14, P4).
 - `scripts/regen-test-schema.sh` et `tests/test_schema_guard.rs` (ligne singleton, 31-1c).
+- `crates/kesh-db/tests/migrations_upgrade_path.rs` `upgrade_path_preserves_data` (l. 120, `total, 82`) — 31-1c :
+  **rougit** (82 → 83) ; bumper `total` **et** `N` du même pas (48 → 49, frontière 34 inchangée) — ne bumper que `total`
+  rendrait le test **muet** (fenêtre plus étroite d'une migration, le fichier le dit l. 142-144) (R6, P4).
+- `crates/kesh-db/src/post_restore.rs` `EXEMPT_MIGRATIONS.len() == 19` (l. 1217-1218) — 31-1c : **rougit** à l'entrée
+  neuve (AC23) ; 19 → 20, l'entrée déclare son fondement **`Durable`** (patron de `_kesh_version`, commentaire « 18 → 19 »
+  l. 1214-1215) ; le compte « 8 exemptions Hors fenêtre » (l. 1122) reste 8 (R6, P4).
 - `backup.rs:1763` `tables_sauvegardees_innodb_et_toutes_exportees` : relu (itère sur les tables attendues, non
   affecté par `referenced_files` ; à étendre seulement si l'implémentation y ajoute la lecture).
 - Les **neuf** sites `AppState { … }` / `Self { … }` (AC27, 31-1c).
@@ -980,7 +1146,7 @@ horloge simulée, qui figent les valeurs (30 s par défaut, une heure pour les a
 | M-a6 | AC7 : supprimer la borne `byteSize + 1` | entrée plus grande que déclarée **dont le `sha256` déclaré est celui du contenu entier** (T-a6b) |
 | M-a7 | AC8 : écrire les fichiers **après le `COMMIT`** (reformulée en P1 : « après le `DELETE` » restait dans la transaction, donc annulée par l'échec — mutation équivalente) | refus d'écriture : la base doit rester intacte (sous la mutation, elle est déjà remplacée) |
 | M-a8 | AC8 : ignorer l'erreur d'écriture | idem (200 au lieu de 500) |
-| M-a9 | AC9 : `filesMissing` calculé sur le backup au lieu de la destination | AC13 format 1 (`filesMissing = 2`) |
+| M-a9 | AC9 : `filesMissing` calculé sur le backup au lieu de la destination | T-a6b / AC13 format 1 restauré **sur la même installation** (`filesMissing = 0` ; sous la mutation, 2) — reciblé en P4 (R2) : « AC13 format 1 (`filesMissing = 2`) » donnait le même nombre sous la mutation |
 | M-a10 | AC6 : accepter `formatVersion` 3 | format 3 refusé |
 | M-a11 | AC1 : lire les fichiers référencés **hors** instantané (sur le pool) | garde lexicale + test de l'observateur |
 | M-a12 | AC3 : `open_document` sans `is_safe_storage_path` (`documents_dir.join(storage_path)` direct) | test unitaire direct d'`open_document` (`"../x"`, `"/etc/hostname"`, `"a/b"`, `""` → `InvalidPath`) — reciblé en P3 : par l'export, l'AC1 classe `mismatch` avant tout appel, et T-a4b restait vert |
@@ -992,6 +1158,8 @@ horloge simulée, qui figent les valeurs (30 s par défaut, une heure pour les a
 | M-a18 | AC6 : réappliquer l'expression des noms aux chemins de `filesNotIncluded` | T-a4b aller-retour (ligne `"../x.pdf"` → export → import 200) |
 | M-a19 | AC4 : `spooled_tempfile` sans `_in` (débordement dans `/tmp`) | T-a4b dossier de sauvegarde non inscriptible, seuil 0 → 500 |
 | M-a20 | AC3 : erreur d'I/O autre que `NotFound` propagée par `?` (toute la sauvegarde échoue) au lieu de `unreadable` | T-a4b fichier illisible → 200, `unreadable` |
+| M-a21 | AC3 : erreur de **lecture** pendant la copie traitée comme une erreur d'écriture (sauvegarde abandonnée) au lieu d'`abort_file` + `unreadable` | T-a4b dossier à la place du fichier, suivi d'un fichier sain → 200, `unreadable` (P4, C-31-1-53) |
+| M-a22 | AC1 : `UNION` SQL au lieu de deux lectures dédoublonnées en Rust | T-a2 `X….pdf` / `x….pdf` → aller-retour 200 (P4, F6) |
 | M-b1 | AC15 : lien visible pour un non-Admin | Vitest du lien |
 | M-b2 | AC19 : déconnexion immédiate après un import réussi (reformulée en P2 : *Se reconnecter* vaut pour tout succès) | Vitest *Se reconnecter* (`filesMissing = 0` et `> 0`) |
 | M-b3 | AC18 : ignorer l'en-tête `Not-Included` | Vitest avis export |
@@ -1001,13 +1169,12 @@ horloge simulée, qui figent les valeurs (30 s par défaut, une heure pour les a
 | M-b7 | AC18b : 504 de l'import → message par défaut (« Erreur serveur (504) ») | Vitest du panneau, 504 |
 | M-c1 | AC25 : `≥` → `>` sur l'intervalle | `is_due` à l'égalité |
 | M-c2 | AC25 : retirer la clause `last_attempt_at` | `is_due` « échec il y a 10 min » |
-| M-c3 | AC29 : rétention sur `kesh-*` au lieu du motif exact | rétention : `kesh-pre-import-x` intact |
-| M-c4 | AC29 : rétention aussi après échec | écriture impossible → aucune suppression |
+| M-c3 | AC29 : rétention sur `kesh-*` au lieu du motif exact | rétention : « restent les 3 plus récentes » `auto` (sous la mutation, `kesh-pre-import-x`, trié le plus récent par nom — `kesh-p` > `kesh-a` —, prend une des trois places et survit ; reciblé en P4, R5) |
+| M-c4 | AC29 : rétention aussi après échec | AC36 `insufficient_space`, archive tronquée (`failed`) et `disk_full` : 8 sauvegardes déposées restent 8 sous `retention_count = 3` (reciblé en P4, R5 : dans le test « écriture impossible », aucune sauvegarde n'est déposable) |
 | M-c5 | AC30 : seuil d'espace ignoré | `insufficient_space` |
 | M-c6 | AC27 : `run_once` en `lock_owned().await` au lieu de `try_lock_owned` | AC35 (`run_once` sous `tokio::time::timeout` de 5 s : échoue au lieu de pendre) |
-| M-c7 | AC27 : réservation sans `<=> ?` | réservation perdue |
-| M-c8 | AC32 : téléchargement par concaténation du nom | `../x` → 404 |
-| M-c9 | AC31 : bandeau sans la condition « deux intervalles » | Vitest bandeau « aucune réussite depuis » |
+| M-c8 | AC32 : téléchargement par concaténation du nom | AC36 lien symbolique `kesh-auto-…keshbackup` → non servi (reciblé en P4, R5 : `../x` échoue à l'expression du `kind` avant toute concaténation) |
+| M-c9 | AC25/AC31 : `is_overdue` sans la condition « deux intervalles » (vrai dès un intervalle) | `is_overdue` aux bornes (deux intervalles moins une milliseconde → faux) — reciblé en P4 : le calcul est passé au serveur (C-31-1-57) |
 | M-c10 | AC23/AC24 : table ajoutée à `TABLES_TO_TRUNCATE` | AC24 (export ne contient pas la table ; un backup 0.14 s'importe) |
 | M-c11 | AC28 : `partial` enregistré comme `ok` | AC36 « sauvegarde incomplète → `partial` » ; Vitest du panneau `partial` (avertissement) |
 | M-c12 | AC29 : rétention qui ne protège pas `last_complete_file` | AC36 « suite de `partial` : la dernière complète reste » |
@@ -1019,13 +1186,17 @@ horloge simulée, qui figent les valeurs (30 s par défaut, une heure pour les a
 | M-c18 | AC27 : garde emprunté (`backup_lock.lock().await`) tenu par le handler de l'import, hors de la tâche | garde lexicale des gardes possédés (AC27, AC36) |
 | M-c19 | AC30 : seuil sans `documents_bytes` | AC36 « première sauvegarde sans historique → `insufficient_space` » |
 | M-c20 | AC31 : bandeau du layout sans la condition « activée » | Vitest « désactivée + échec → aucun bandeau » |
-| M-c21 | AC26 : retirer `auto_backup::spawn(state.clone())` de `main.rs` | garde lexicale du lancement (une occurrence dans `main.rs`, aucune dans `lib.rs`) |
+| M-c21 | AC26 : retirer `auto_backup::spawn(state.clone())` de `main.rs`, **ou le mettre en commentaire** | garde lexicale du lancement (une occurrence hors lignes `//` dans `main.rs`, aucune dans `lib.rs`) |
+| M-c22 | AC25 : retirer la clause « `last_*` postérieur à `now` vaut nul » d'`is_due`, ou « `last_success_at > now` » d'`is_overdue` | `is_due` « dernière réussite / tentative dans le futur → dû » ; `is_overdue` « dans le futur → vrai » (P4, F4) |
+| M-c23 | AC33 : mention « trop grande » sans la comparaison à `importMaxMib` (toujours, jamais, ou `≥` au lieu de `>`) | Vitest : ligne au-dessus → mention ; ligne égale et ligne au-dessous → aucune (P4, R1, C-31-1-52) |
+| M-c24 | AC27 : garde de l'export manuel tenu par le handler, hors de la fermeture passée à `build_keshbackup` | garde lexicale des gardes possédés (AC27, AC36) (P4, F1) |
 
-Une mutation équivalente se **déclare** (pourquoi aucun test ne peut la tuer), elle ne se tait pas. **Déclarée
-équivalente au niveau des tests** (P3) : retirer le re-hachage de la passe de copie (AC3) — la divergence entre les
-deux passes exige qu'un fichier nommé par son contenu change pendant une lecture ; la provoquer demanderait un
-observateur glissé entre les deux passes, pour un cas que l'immuabilité des fichiers rend théorique (C-31-1-47). Le
-contrôle reste exigé du code et relu en revue.
+**Retirée en P4** : M-c7 (« réservation sans `<=> ?` ») — la réservation conditionnelle elle-même est retirée
+(C-31-1-54) ; le numéro n'est pas réattribué.
+
+Une mutation équivalente se **déclare** (pourquoi aucun test ne peut la tuer), elle ne se tait pas. Aucune n'est
+déclarée équivalente depuis la P4 : le re-hachage de la seconde passe, déclaré équivalent en P3, a disparu avec la
+seconde passe (C-31-1-53) ; le contrôle d'empreinte de la passe unique est tué par T-a4b « altéré non inclus » (M-a2).
 
 ### Angles morts assumés (à écrire aux doc-comments et au manuel)
 
@@ -1035,13 +1206,16 @@ contrôle reste exigé du code et relu en revue.
   sont petites, le volume total ne l'est peut-être pas) — test non fait, écrit au manuel comme limite (C-31-1-9).
 - La sauvegarde automatique ne tourne que si Kesh tourne ; une tâche arrêtée sans échec se voit par le bandeau « aucune
   réussite depuis deux intervalles », pas autrement.
-- Deux processus sur une même base : la réservation conditionnelle évite deux sauvegardes automatiques simultanées ;
-  le verrou en mémoire ne protège pas un import d'un processus contre la sauvegarde de l'autre (l'instantané reste
-  cohérent).
+- Deux processus sur une même base : **rien** ne les protège l'un de l'autre (P4, C-31-1-54 : la réservation
+  conditionnelle de la P2, qui disait l'éviter, ne fermait qu'une fenêtre de quelques millisecondes et est retirée).
+  Deux sauvegardes automatiques peuvent alors s'écrire en même temps, le nettoyage des `.partial` de l'un peut supprimer
+  le `.partial` en cours de l'autre (sauvegarde `failed`), et le verrou en mémoire ne protège pas un import de l'un
+  contre la sauvegarde de l'autre (l'instantané reste cohérent). Kesh se déploie à une instance par base (manuel).
 - L'espace libre est mesuré **avant** ; un autre programme peut remplir le disque pendant l'écriture (cas `disk_full`).
 - Pas d'arrêt gracieux : un arrêt du conteneur pendant une sauvegarde laisse un `.partial`, nettoyé au tour suivant.
 - Horloge du serveur déréglée vers le futur : un nom `kesh-auto-…` daté du futur passe pour le plus récent et survit
-  aux suivants (la rétention trie par nom) ; inoffensif pour les données, coûteux en disque — écrit au manuel.
+  aux suivants (la rétention trie par nom) ; inoffensif pour les données, coûteux en disque — écrit au manuel. (Vers le
+  passé, l'horloge revenue en arrière n'est plus un angle mort : `is_due` et `is_overdue` la traitent, C-31-1-57.)
 - Le téléchargement de l'export par le navigateur reçoit l'archive entière dans un `Blob` (mémoire ou disque selon le
   navigateur) avant de l'enregistrer : pour plusieurs Gio, c'est la limite du navigateur, non mesurée. Le passage à un
   téléchargement direct (lien) perdrait la lecture des en-têtes de l'AC18 et le message d'erreur (C-31-1-25).
@@ -1065,13 +1239,17 @@ contrôle reste exigé du code et relu en revue.
 - *(P3)* La borne des tables est désormais **cumulée** (1 Gio pour toutes, AC6b) ; l'entrée qui la franchit est
   « trop grande » même si chaque table, seule, passerait. La mémoire de l'import reste « 1 Gio de NDJSON + leur
   conversion en valeurs » (un multiple, non mesuré), plus le répertoire central (ci-dessus).
-- *(P3)* Une sauvegarde **du serveur** (automatique ou pré-import) plus grosse que `KESH_ADMIN_IMPORT_MAX_MB` n'est pas
-  signalée dans la liste (AC33) : l'avertissement de l'AC12 ne protège que l'export manuel (F12, C-31-1-51). Le manuel
-  dit de relever le plafond quand le dossier des documents grossit.
+- *(P3, levé en P4)* Une sauvegarde du serveur plus grosse que `KESH_ADMIN_IMPORT_MAX_MB` **est** désormais signalée
+  dans la liste (AC32 `importMaxMib`, AC33 ; C-31-1-52, qui amende C-31-1-51). Reste : la comparaison ne compte pas
+  l'enveloppe multipart de l'envoi, si bien qu'une archive à quelques centaines d'octets sous le plafond peut être
+  refusée sans mention (écrit au manuel).
 - *(P3)* Le `JoinError` de la tâche d'import (AC8b), la cadence de la boucle de fond et l'isolation d'une panique dans
   un tour (AC26) ne sont pas testés.
-- *(P3)* Un client parti pendant l'assemblage d'un export manuel relâche le verrou, l'assemblage continue jusqu'au bout
-  et peut se superposer à une sauvegarde (AC27) — coût disque et processeur, pas de risque pour les données.
+- *(P4)* L'échec de la synchronisation du dossier des documents (AC8, montages qui refusent `fsync` sur un dossier)
+  n'est pas testé : journalisé, il ne refuse pas l'import.
+- *(P4)* Un client parti pendant l'assemblage d'un export manuel ne relâche plus le verrou (le garde vit dans le
+  `spawn_blocking`, C-31-1-55) ; l'archive de cet assemblage orphelin, dans un temporaire anonyme, se perd — une à la
+  fois. (L'angle mort *(P3)* « relâche le verrou » est levé.)
 
 ### Pièges connus du dépôt, applicables ici
 
@@ -1321,3 +1499,83 @@ choix** (`grep -c '^### C-31-1-'` ; +7 : C-31-1-45 à C-31-1-51). Valeurs corrig
 registre — C-31-1-23, C-31-1-41 —, que C-31-1-45 amende sans les réécrire ; la mention de l'emprunt de la P2 à l'AC30 ;
 `take(byteSize + 1)` de la passe de copie de l'export, AC3, où `byteSize` vient de la passe de hachage et non d'un
 manifeste).
+
+### 2026-10-24 — Validation P4 (Opus 5.5, lentilles R et F) et remédiation (Opus 5.5)
+
+Rapports : `kesh-gate-logs/311-validate-p4-R.md` (**0 CRITICAL / 0 HIGH / 3 MEDIUM / 11 LOW**) et
+`311-validate-p4-F.md` (**0 / 0 / 4 / 7**). Le prompt annonçait un erratum en fin du rapport F : il n'y en a pas
+(`grep -ni erratum` vide ; le rapport se termine sur « Axes exercés et non exercés »). Chaque finding vérifié avant
+correction, au dépôt (`grep -nF`, `sed -n`, `awk`) et dans les sources du registre cargo : `zip` 2.4.2
+(`write.rs:1134` `abort_file`, `:889` `ok_or_abort_file`, `:1501-1524` pied réécrit), `tokio` 1.52.3 (`lock_owned`,
+`OwnedMutexGuard` `Send + 'static`), `crates/kesh-api/Cargo.toml:79-83` (`regex` sous `[dev-dependencies]`),
+`import.rs:85-116` (refus de `files/` non vide avant `formatVersion`), `migrations_upgrade_path.rs:120, 142-144, 199`,
+`post_restore.rs:1122, 1214-1218`, `admin_pat_denied_e2e.rs:848-861` (`discriminating >= 4`),
+`AdminRestorePanel.svelte:120-122` et les quatre `.ftl` (`admin-restore-toast-success`), `docker-compose.yml:131-133,
+154-158`, `docker-compose.prod.yml:153-155, 165-176`, `config.rs:895-896, 1268-1269`, `.env.example:180-193, 220-223,
+255-257`, `routes/admin.rs:52, 875-930`, `export.rs:1-12`, `admin-manual.tex:1838`. La commande de l'AC14, rejouée en
+`-i` avec les compose, rend **103** lignes (94 + 8 des compose + `config.rs:255`).
+
+**Réfuté** : R10, premier point — les numéros de `.env.example` de l'AC14 et du § Gardes sont **justes** : `sed -n
+180,193p .env.example | cat -n` place le commentaire « défaut 512 » l. 185, la valeur l. 186 et le bloc « Dossier de
+sauvegarde de sécurité » l. 187-192 (le rapport les décalait d'une ligne). Les trois autres points de R10 sont exacts
+(onze lignes sans filtre ; `regex` dépendance de test ; liste des vérifiés).
+
+**Origine.** Nés de la remédiation P3 : F2 (deux passes sur une prémisse fausse), F3 (commande de l'AC14), F7
+(`sync_all` à `?`), R4 (voie de la capture (h)), R13 (archive empruntée par un `spawn_blocking`). Nés du choix C-31-1-52
+(postérieur à la P3) : R1. D'origine, non vus en P1 à P3 : R2, R3, R5 à R12, R14, F4, F5, F6, F8 à F11. F1 reprend un
+angle mort écrit en P3.
+
+**Simplifications** (une exigence retirée plutôt que compensée) :
+
+- **F2** — **une seule passe** par fichier : `abort_file` puis `altered` ou `unreadable` ; retirés la double lecture,
+  l'abandon de toute la sauvegarde sur une erreur de lecture en seconde passe, et la mutation déclarée équivalente du
+  re-hachage (AC3, AC4, T-a4, T-a4b ; M-a21 ; C-31-1-53, qui amende C-31-1-47). Établi au dev par un aller-retour
+  (entrée abandonnée au milieu suivie d'une saine).
+- **F5** — réservation conditionnelle en base retirée, avec `Skipped` sur réservation perdue, son test et **M-c7** ;
+  `claim_attempt` devient `record_attempt` sans condition ; angle mort et § Périmètre disent qu'aucune protection n'existe
+  entre processus (AC26, AC27, AC32, AC36, T-c2 ; C-31-1-54, qui amende C-31-1-23 et C-31-1-45).
+- **F1** — le garde de l'export manuel entre dans la fermeture `remplir`, donc dans le `spawn_blocking` ; l'angle mort
+  *(P3)* « relâche le verrou » disparaît (AC4, AC27, AC36 ; M-c24 ; C-31-1-55).
+- **R7** — `build_keshbackup(pool, documents_dir, remplir)` reste l'unique lecteur de la base ; la garde existante reste
+  exacte, et `avant_sauvegarde_branchee_aux_appels_de_l_import` garde ses motifs et son compte (AC4, § Gardes, T-a4 ;
+  C-31-1-56).
+
+**Corrections** :
+
+- **R1 (C-31-1-52 reporté)** — `importMaxMib` dans `GET backups` (`{ importMaxMib, items }`), mention « trop grande pour
+  être restaurée par l'écran (limite N Mio) » (AC32, AC33), test Rust (AC36), Vitest au-dessus / égal / au-dessous
+  (AC37), M-c23, capture (r) (AC40), clé `admin-backup-server-too-large` ×4, phrase du manuel (AC39) ; angle mort *(P3)*
+  réécrit « levé en P4 » ; en-tête « C-31-1-1 à C-31-1-58 » ; C-31-1-58.
+- **R2** — test « format 1 restauré sur la même installation → `filesMissing = 0` » (AC9, AC13, T-a6b) ; M-a9 reciblée.
+- **R3** — AC20 (6) : la facture et son écriture au journal reviennent.
+- **F3** — commande de l'AC14 en `-i`, compose inclus, 103 lignes ; sites des compose au tableau ; **R9** — règle
+  « au tableau, au tableau du Dev Agent Record, ou intacte avec raison » et sept sites ajoutés (`config.rs:895-896`,
+  `:1268-1269`, `.env.example:220-223`, `:255-257`, `routes/admin.rs:52`, `export.rs:1-12`, `admin-manual.tex:1838`).
+- **F4** — `is_due` : `last_*` futur vaut nul ; `is_overdue` au serveur, champ `overdue`, le bandeau ne lit plus
+  l'horloge du navigateur (AC25, AC31, AC32, AC36, AC37, AC39, T-c3 ; M-c22, M-c9 reciblée ; C-31-1-57).
+- LOW : R4 (AC21 (h) ; AC40 (a), (j), (k)) ; R5 (M-c3, M-c4, M-c8 reciblées ; 8 sauvegardes déposées dans les tests
+  `failed`, `insufficient_space`, `disk_full` sous `retention_count = 3`) ; R6 (§ Gardes : `upgrade_path_preserves_data`,
+  `EXEMPT_MIGRATIONS.len()`) ; R8 (AC26, M-c21 : lignes `//` écartées) ; R10 (AC27 : onze lignes ; `regex`) ; R11
+  (AC14 : message vu par une 0.14.0) ; R12 (AC18 : `mismatch`) ; R13 (AC8 : `ParsedBackup` par valeur ; AC9 en
+  `spawn_blocking`) ; R14 (`assert_eq!(discriminating, 6)` ; toast `admin-restore-toast-success` retiré, AC19, T-b3 ;
+  `nextDueAt` après l'échec d'un tour planifié) ; F6 (AC1 : deux requêtes, dédoublonnage en Rust ; T-a2 ; M-a22) ; F7
+  (AC8 : échec du `sync_all` du dossier journalisé, angle mort) ; F8 (AC5, AC8, AC9 : `?path`) ; F9 (AC14 : pic de
+  disque au manuel ; AC28 : nettoyage des `.partial` pré-import, test AC36) ; F10 (AC11 : `tokio::fs::File::from_std` ;
+  AC30 : `documents_bytes` dans le `spawn_blocking` ; AC9) ; F11 (= R10, `regex` aux `[dependencies]`, AC6, T-a4).
+
+**Annotation datée de l'entrée P3** (2026-10-24, sans la réécrire) : sa ligne « **À ouvrir en issue** … F12 … non
+traité ici (C-31-1-51) » est caduque — l'orchestrateur a écarté l'issue et intégré F12 à la 31-1c (C-31-1-52), dont
+la forme est fixée par C-31-1-58. Aucune issue n'est à ouvrir pour F12.
+
+Découpage : recompté, 31-1a : 3 modules (`kesh-db`, `kesh-api`, docs — les commentaires des compose comptés avec docs),
+31-1b : 4, 31-1c : 5 ; la remédiation n'en ajoute à aucune ; pas de redécoupage.
+
+Recomptes (depuis la fiche et le registre, après remédiation) : **43 AC** (`grep -cE '^\*\*AC[0-9]+b? '`, inchangé) ;
+**26 tâches** (`grep -cE '^- \[ \] T-'`, inchangé : le test de F6 est versé à T-a2) ; **52 mutations** (`grep -cE '^\|
+M-'` : 22 + 7 + 23 — M-a1 à M-a22, M-b1 à M-b7, M-c1 à M-c24 sans M-c7 ; +5 : M-a21, M-a22, M-c22, M-c23, M-c24 ; −1 :
+M-c7 ; reciblées : M-a9, M-c3, M-c4, M-c8, M-c9, M-c21) ; **58 choix** (`grep -c '^### C-31-1-'` ; 52 à `6f0828cf`, +6 :
+C-31-1-53 à C-31-1-58). Valeurs corrigées grepées sur la fiche et le registre (`réservation`, `claim_attempt`, `deux
+passes`, `passe 2`, `passe de hachage`, `re-hach`, `douze`, `M-c7`, `relâche le garde`, `≥ 4`, `C-31-1-51`, `94 lignes`,
+`en en retirant`) : aucun résidu hors des mentions historiques voulues (entrées passées du Change Log et du registre —
+C-31-1-23, C-31-1-45, C-31-1-47, C-31-1-51 —, que les choix neufs amendent sans les réécrire ; « 94 à `c7639e80` »
+gardé à l'AC14 comme relevé daté ; les « ≥ 4 » du tableau des tests, qui comptent des tests).
