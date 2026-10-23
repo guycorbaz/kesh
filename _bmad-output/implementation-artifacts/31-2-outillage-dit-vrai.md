@@ -92,16 +92,16 @@ distinction fine par le texte des erreurs de `docker`, options d'injection propr
   normalisation (a) et l'attendu en dérivent ; une clé absente, vide ou interpolée (`${…}`) est refusée (non nul, clé nommée).
   **Normalisation explicite et minimale** (et rien d'autre) : (a) le compte `'kesh'@'%'` du fichier est réécrit en
   `` `kesh`@`%` `` (forme du serveur) ; (b) le `;` final des instructions du fichier est retiré ; (c) **sur toute ligne
-  `ON *.*`** (critère : ` ON \*\.\* TO `), **réelle ou attendue**, la chaîne quotée du condensé qui suit `IDENTIFIED BY
-  PASSWORD` est remplacée par le jeton fixe `<condensé masqué>`, **espace précédente comprise** (aucune espace résiduelle :
-  l'égalité ne dépend d'aucun `trim`) ; privilèges, compte et `WITH GRANT OPTION` sont **conservés**. **Sur MariaDB le
+  `ON *.*`** (critère : ` ON \*\.\* TO `), **réelle ou attendue**, la clause entière ` IDENTIFIED BY PASSWORD '<condensé>'`
+  — espace qui la précède comprise — est **retirée** (aucun jeton de remplacement ; la ligne `USAGE` attendue, écrite par le
+  garde, s'écrit donc sans cette clause : `` GRANT USAGE ON *.* TO `kesh`@`%` ``) ; privilèges, compte et `WITH GRANT OPTION`
+  sont **conservés**. **Sur MariaDB le
   condensé figure sur l'unique ligne de niveau global, quelle que soit sa liste de privilèges** : un `GRANT PROCESS ON *.*`
   ou `GRANT ALL ON *.*` posé à la main **remplace** la ligne `USAGE` au lieu de s'y ajouter — c'est la forme réelle de
   l'incident, et celle des fixtures d'AC3. **Les antislashs sont conservés** — les retirer rendrait `_sqlx_test%` non échappé
   (le défaut que le fichier documente, lignes 33–39 : un `_` joker ouvre `Xsqlx_testZZZ`) indiscernable du bon droit (M6).
-  La comparaison porte sur les lignes **ainsi normalisées** (jeton compris) ; **l'affichage** d'un écart, lui, retire de la
-  ligne toute la clause ` IDENTIFIED BY PASSWORD <condensé masqué>` : la sortie du garde **ne contient jamais** les mots
-  `IDENTIFIED BY PASSWORD`, ni le condensé, ni le jeton. Tout droit **en moins** et tout droit **en plus** — au niveau global
+  La comparaison **et l'affichage** portent sur les **mêmes** lignes ainsi normalisées : la sortie du garde **ne contient
+  jamais** les mots `IDENTIFIED BY PASSWORD`, ni le condensé. Tout droit **en moins** et tout droit **en plus** — au niveau global
   (la ligne `*.*` diffère : « droits globaux : attendu <ligne>, relevé <ligne> », privilège en trop et compte fautif
   visibles) comme **hors niveau global** (`ALL ON autre.*`, `USAGE` intact : « droit en plus : <ligne> ») — échoue, de même
   qu'un compte autre que `kesh@%` ou un `WITH GRANT OPTION`.
@@ -163,7 +163,7 @@ non sur les commits).
 - **AC1** — `scripts/check-dev-grants.sh` existe, exécutable ; il compare l'**ensemble** des droits de `kesh` sur le conteneur
   (acquis en `-N -B -r`) à celui attendu — dérivé des lignes `^GRANT` du fichier décommenté + `MARIADB_USER`, avec la
   normalisation minimale de 1b —, rend 0 si les ensembles sont égaux, non nul sinon, en nommant chaque écart **par un libellé qui lui est propre** (privilège
-  et compte visibles) et qui ne contient jamais ni le condensé, ni le jeton `<condensé masqué>`, ni les mots `IDENTIFIED BY
+  et compte visibles) et qui ne contient jamais ni le condensé, ni les mots `IDENTIFIED BY
   PASSWORD`, ni le mot de passe (l'absence de fuite est **assertée**, AC3, M11, M13, M14) ; un attendu à zéro `GRANT` extrait
   est refusé, de même qu'une instruction qui contient `GRANT` sans commencer par lui. Sa seule injection est `KESH_DOCKER` (la
   commande `docker`) : aucune option propre au garde. Son en-tête de script dit ses **trois angles morts** (rôle `PUBLIC`, socket
@@ -196,7 +196,7 @@ non sur les commits).
   inexistant) → « garde sauté », 0 ; conteneur non en marche (`ps` vide) → « garde sauté », 0, message **distinct** du
   précédent ; `ps` en échec → non nul ; `exec` en échec → non nul ; attendu à zéro `GRANT` → non nul ; instruction contenant
   `GRANT` sans commencer par lui → non nul ; `MARIADB_USER` interpolé → non nul. **Assertions transversales** : sur chaque cas
-  d'échec, la sortie ne contient ni `IDENTIFIED BY PASSWORD`, ni le jeton `<condensé masqué>`, ni le **faux condensé de la
+  d'échec, la sortie ne contient ni `IDENTIFIED BY PASSWORD`, ni le **faux condensé de la
   fixture**, ni le mot de passe du compose ; sur tous les cas qui atteignent `exec`, l'argv consigné contient `-N -B -r`, le
   nom `kesh-mariadb-dev`, et `-e MYSQL_PWD` **suivi d'une espace ou de la fin de ligne** (regex `-e MYSQL_PWD( |$)`), ne
   contient pas le mot de passe, et la valeur consignée de `$MYSQL_PWD` **égale** celle du compose du mini-dépôt. **Éprouvé par
@@ -216,8 +216,10 @@ non sur les commits).
   la règle « depuis le dépôt principal » (écrite, **non vérifiée par le garde**) ; le garde, son message et la remise en état en texte arrêté (1b, avec « attendre `healthy` après un `restart` ») ; **les trois angles morts du garde** (rôle `PUBLIC`, socket contre TCP, règle non vérifiée) ; **la conduite quand le garde rougit parce que la
   branche modifie `01-dev-grants.sql`** (signaler à l'orchestrateur, ne pas contourner ; le test du garde, hermétique, ne rougit pas) ; la table de 1c ; les recettes en
   `root` (`:102`, `:308`) passent en `kesh` ou portent leur justification écrite. **`docs/agents-orchestration.md` § 2** (et la ligne de § 6.1, qui nomme les angles morts)
-  reçoit deux interdits — créer ou recréer le conteneur de dev ailleurs que depuis le dépôt principal, et tout
-  `GRANT`/`REVOKE` manuel sur le MariaDB de dev partagé — rappelés au § 4 ; § 6.1 renvoie au garde (« écart corrigé par
+  reçoit trois interdits — créer ou recréer le conteneur de dev ailleurs que depuis le dépôt principal ; **toute recréation
+  du conteneur par un agent** (`docker compose … up -d --force-recreate mariadb` compris, même depuis le dépôt principal :
+  elle efface les bases de tous les agents, seul l'orchestrateur la fait) ; et tout `GRANT`/`REVOKE` manuel sur le MariaDB
+  de dev partagé — rappelés au § 4 ; § 6.1 renvoie au garde (« écart corrigé par
   l'Epic 31 » devient vrai ou est ajusté). `crates/kesh-db/README.md` § Prérequis 2 renvoie au même endroit ;
   `crates/kesh-db/tests/refresh_tokens_repository.rs:5` (« nécessite `GRANT ALL PRIVILEGES ON *.*` ») est corrigé ;
   `frontend/DEBUGGING-KF007.md:16` (`root`) est corrigé ou assumé par écrit ; **`docker-compose.dev.yml:107-108`** (commentaire :
@@ -356,7 +358,7 @@ adopté (la provenance de l'image n'est plus celle du Docker Hub officiel).
   builder** (`moby/buildkit`) l'est si la connexion précède bien `setup-buildx`, ce qui est une hypothèse sur le
   comportement de l'action : elle se **constate au journal du premier run** (tirage authentifié ou non), et `docs/ci.md`
   l'écrit comme telle. `docs/ci.md` dit à la place de l'avertissement les secrets requis, le comportement des forks, et que
-  les vérifications requises de la branche protégée sont **trois** (`gh api repos/guycorbaz/kesh/branches/main/protection/required_status_checks` : `Backend (Rust)`, `Docker build (sanity)`, `Frontend (Svelte)`) ; `Backend (Rust)` (service `credentials`) et `Docker build (sanity)` (connexion) dépendent du jeton, dont l'invalidité bloquerait donc les fusions. Aucun autre site : `git grep -nI "429\|anonymement" -- '*.md' '*.yml'` (les `*.pdf` et `docs/kesh-specifications.txt`, où `429` désigne le code HTTP, sont exclus par construction) rend `CLAUDE.md:275` — inventaire recompté et traité.
+  les vérifications requises de la branche protégée sont **trois** (`gh api repos/guycorbaz/kesh/branches/main/protection/required_status_checks` : `Backend (Rust)`, `Docker build (sanity)`, `Frontend (Svelte)`) ; `Backend (Rust)` (service `credentials`) et `Docker build (sanity)` (connexion) dépendent du jeton, dont l'invalidité bloquerait donc les fusions. Aucun autre site : `git grep -nI "429\|anonymement" -- 'docs/*.md' CLAUDE.md README.md '.github/*.yml'` rend trois lignes — `CLAUDE.md:275` (le site à réécrire), `README.md:225` et `docs/testing.md:314` (sans rapport : contenu de version, piège SMTP) ; `_bmad-output/`, `_bmad/` et `.claude/` (artefacts et cadre, hors documentation du dépôt) sont exclus du périmètre — inventaire recompté et traité.
 - **AC15** — `actionlint` (**absent de la station** : `command -v actionlint` vide ; le repli est donc le chemin réel) ou, à
   défaut, `python3 -c "import yaml; yaml.safe_load(...)"` sur les deux fichiers, **refait au dernier commit qui touche du YAML** (T2, T4, T5) confirme que les workflows restent
   syntaxiquement valides **localement** — syntaxe YAML seulement, **non le schéma GitHub Actions**
@@ -390,7 +392,7 @@ adopté (la provenance de l'image n'est plus celle du Docker Hub officiel).
 | M11 | Message d'échec qui recopie la ligne `ON *.*` brute (avec son condensé) | AC3 : l'assertion de non-fuite rougit |
 | M12 | Garde qui accepte un fichier de droits sans aucun `GRANT` | AC3 : le cas « zéro `GRANT` » rougit |
 | M13 | Garde qui transmet le mot de passe **en valeur** dans l'argv (`-e MYSQL_PWD=<valeur>`) | AC3 : la seconde moitié de l'assertion (absence de la valeur) rougit |
-| M14 | Masquage du condensé limité à la ligne `USAGE` (les autres lignes `ON *.*` affichées telles quelles) | AC3 : les cas `*.*` et `PROCESS` (ligne remplaçante) rougissent sur l'assertion de non-fuite du faux condensé |
+| M14 | Retrait de la clause du condensé limité à la ligne `USAGE` (les autres lignes `ON *.*` gardent leur clause) | AC3 : les cas `*.*` et `PROCESS` (ligne remplaçante) rougissent sur l'assertion de non-fuite du faux condensé |
 | M15 | Appel du garde conservé dans `test-fast.sh` mais suffixé `|| true` | AC4 : l'assertion de ligne nue rougit |
 | M16 | Garde qui traite l'échec de `docker ps` comme « conteneur non en marche » (rend 0) | AC3 : le cas `ps` en échec rougit |
 | M17 | Garde qui émet le même message pour « docker introuvable » et « conteneur non en marche » | AC3 : l'assertion de messages distincts rougit |
@@ -574,3 +576,18 @@ devient 7 à 10 échecs attendus sur N+2 tests, à recompter). Les deux tests de
 ### File List
 
 *(à renseigner)*
+
+### Validation P5 ciblée (2026-10-24) — Haiku, lentille T sur `12a23dbf` : 0/0/3/2 ; remédiée par l'orchestrateur
+
+Les trois MEDIUM, vérifiés au `sed -n` par l'orchestrateur (règle des MEDIUM de Haiku), sont **réels** :
+- **M-1** — forme du jeton ambiguë (remplacement « espace comprise » contre affichage qui retire la clause « avec espace » ;
+  ligne `USAGE` attendue sans chaîne quotée). **Retrait** : plus de jeton ; la clause ` IDENTIFIED BY PASSWORD '…'` est
+  **retirée** des lignes `ON *.*`, comparaison et affichage portent sur les mêmes lignes normalisées ; la ligne `USAGE`
+  attendue s'écrit sans clause. AC1, AC3 et M14 alignés.
+- **M-2** — la remise en état prescrit `up -d --force-recreate`, qu'aucun interdit d'agent ne nommait : AC5 fait recevoir
+  à `docs/agents-orchestration.md` § 2 un **troisième** interdit, toute recréation du conteneur par un agent.
+- **M-3** — la commande d'inventaire de l'AC14 était trop large (346 lignes) : bornée à `docs/*.md`, `CLAUDE.md`,
+  `README.md`, `.github/*.yml`, sortie réelle reportée (trois lignes, une seule à traiter).
+LOW laissés : L-1 (sorties de l'inventaire du compose), L-2 (littéral `kesh` du fichier de droits — échec bruyant).
+**Écart de la lentille** : deux fichiers temporaires écrits dans `kesh-gate-logs/`, supprimés avant le rapport.
+Passe suivante : ciblée P6 (Sonnet) sur le commit de cette remédiation.
