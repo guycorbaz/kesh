@@ -1,6 +1,6 @@
 # Story 31-2 — L'outillage dit vrai : droits de dev, smoke E2E en CI, Docker authentifié, `.svelte-kit/`
 
-Status: ready-for-dev
+Status: in-progress
 
 Issue : [#577](https://github.com/guycorbaz/kesh/issues/577) (bug, P3, documentation) ; actions C3 (rétrospective 29),
 A2, A3 (rétrospective 15), A-C7 et A-C9 (rétrospective 15). Branche `story/31-2`. Choix : `epic-31-choix-autonomes.md`
@@ -59,7 +59,7 @@ hérite d'un chemin que la suppression du worktree vide. Ce n'est pas corrigeabl
 écrit en dur casserait les autres postes ; une variable de plus ajoute un réglage à oublier). **Retenu (C-31-2-1)** : la
 règle « le conteneur de dev se crée **depuis le dépôt principal** seulement » est écrite (`docs/testing.md` § *Base de
 dev jetable*, `docs/agents-orchestration.md` § 2 — interdits — et rappelée au § 4), **et** un garde en signale la **conséquence** (1b : des droits qui ne sont plus ceux du fichier) — non la règle elle-même, qu'un
-conteneur monté depuis un worktree encore présent satisfait (C-31-2-15) ; la prévention est #699. Le même § 2 reçoit l'interdit de **tout `GRANT`/`REVOKE` manuel sur le MariaDB de dev partagé** : un droit manquant se signale à l'orchestrateur (c'est ce geste, répété sans trace, qui a masqué la panne du montage douze jours). La règle est portée par un AC (AC5), non par la seule prose.
+conteneur monté depuis un worktree encore présent satisfait (C-31-2-15) ; la prévention est #699. Le même § 2 reçoit **trois interdits** (AC5) : créer le conteneur ailleurs que depuis le dépôt principal, toute recréation du conteneur par un agent, et **tout `GRANT`/`REVOKE` manuel sur le MariaDB de dev partagé** — un droit manquant se signale à l'orchestrateur (c'est ce geste, répété sans trace, qui a masqué la panne du montage douze jours). La règle est portée par un AC (AC5), non par la seule prose.
 
 **1b. Un garde qui lit les droits réels : `scripts/check-dev-grants.sh`.** Lancé par `scripts/test-fast.sh` **hors
 du bloc `if [ "$RUN_LINT" = 1 ]`**, donc avant toute compilation (`cargo fmt`, `cargo clippy`) et sous `--no-lint` comme sans,
@@ -216,7 +216,7 @@ non sur les commits).
   la règle « depuis le dépôt principal » (écrite, **non vérifiée par le garde**) ; le garde, son message et la remise en état en texte arrêté (1b, avec « attendre `healthy` après un `restart` ») ; **les trois angles morts du garde** (rôle `PUBLIC`, socket contre TCP, règle non vérifiée) ; **la conduite quand le garde rougit parce que la
   branche modifie `01-dev-grants.sql`** (signaler à l'orchestrateur, ne pas contourner ; le test du garde, hermétique, ne rougit pas) ; la table de 1c ; les recettes en
   `root` (`:102`, `:308`) passent en `kesh` ou portent leur justification écrite. **`docs/agents-orchestration.md` § 2** (et la ligne de § 6.1, qui nomme les angles morts)
-  reçoit trois interdits — créer ou recréer le conteneur de dev ailleurs que depuis le dépôt principal ; **toute recréation
+  reçoit trois interdits — créer le conteneur de dev ailleurs que depuis le dépôt principal (l'orchestrateur seul le recrée, ci-après) ; **toute recréation
   du conteneur par un agent** (`docker compose … up -d --force-recreate mariadb` compris, même depuis le dépôt principal :
   elle efface les bases de tous les agents, seul l'orchestrateur la fait) ; et tout `GRANT`/`REVOKE` manuel sur le MariaDB
   de dev partagé — rappelés au § 4 ; § 6.1 renvoie au garde (« écart corrigé par
@@ -358,7 +358,7 @@ adopté (la provenance de l'image n'est plus celle du Docker Hub officiel).
   builder** (`moby/buildkit`) l'est si la connexion précède bien `setup-buildx`, ce qui est une hypothèse sur le
   comportement de l'action : elle se **constate au journal du premier run** (tirage authentifié ou non), et `docs/ci.md`
   l'écrit comme telle. `docs/ci.md` dit à la place de l'avertissement les secrets requis, le comportement des forks, et que
-  les vérifications requises de la branche protégée sont **trois** (`gh api repos/guycorbaz/kesh/branches/main/protection/required_status_checks` : `Backend (Rust)`, `Docker build (sanity)`, `Frontend (Svelte)`) ; `Backend (Rust)` (service `credentials`) et `Docker build (sanity)` (connexion) dépendent du jeton, dont l'invalidité bloquerait donc les fusions. Aucun autre site : `git grep -nI "429\|anonymement" -- 'docs/*.md' CLAUDE.md README.md '.github/*.yml'` rend trois lignes — `CLAUDE.md:275` (le site à réécrire), `README.md:225` et `docs/testing.md:314` (sans rapport : contenu de version, piège SMTP) ; `_bmad-output/`, `_bmad/` et `.claude/` (artefacts et cadre, hors documentation du dépôt) sont exclus du périmètre — inventaire recompté et traité.
+  les vérifications requises de la branche protégée sont **trois** (`gh api repos/guycorbaz/kesh/branches/main/protection/required_status_checks` : `Backend (Rust)`, `Docker build (sanity)`, `Frontend (Svelte)`) ; `Backend (Rust)` (service `credentials`) et `Docker build (sanity)` (connexion) dépendent du jeton, dont l'invalidité bloquerait donc les fusions. Aucun autre site : `git grep -nI "429\|anonymement" -- 'docs/*.md' CLAUDE.md README.md '.github/*.yml'` rend trois lignes — `CLAUDE.md:275` (le site à réécrire), `README.md:225` et `docs/testing.md:314` (sans rapport : contenu de version, piège SMTP) ; `_bmad-output/`, `_bmad/` et `.claude/` (artefacts et cadre, hors documentation du dépôt) sont exclus du périmètre, ainsi que `CHANGELOG.md` (hors des quatre globs ; ses occurrences de « 429 » sont l'issue #429, sans rapport) — inventaire recompté et traité.
 - **AC15** — `actionlint` (**absent de la station** : `command -v actionlint` vide ; le repli est donc le chemin réel) ou, à
   défaut, `python3 -c "import yaml; yaml.safe_load(...)"` sur les deux fichiers, **refait au dernier commit qui touche du YAML** (T2, T4, T5) confirme que les workflows restent
   syntaxiquement valides **localement** — syntaxe YAML seulement, **non le schéma GitHub Actions**
@@ -559,6 +559,32 @@ devient 7 à 10 échecs attendus sur N+2 tests, à recompter). Les deux tests de
   fiche seule). Passe ciblée P5 à lancer (`312-validate-prompt-p5-ciblee.md`, Haiku, une lentille, `git diff HEAD~1..HEAD` du
   commit de remédiation).
 
+### Validation P5 ciblée (2026-10-24) — Haiku, lentille T sur `12a23dbf` : 0/0/3/2 ; remédiée par l'orchestrateur
+
+Les trois MEDIUM, vérifiés au `sed -n` par l'orchestrateur (règle des MEDIUM de Haiku), sont **réels** :
+- **M-1** — forme du jeton ambiguë (remplacement « espace comprise » contre affichage qui retire la clause « avec espace » ;
+  ligne `USAGE` attendue sans chaîne quotée). **Retrait** : plus de jeton ; la clause ` IDENTIFIED BY PASSWORD '…'` est
+  **retirée** des lignes `ON *.*`, comparaison et affichage portent sur les mêmes lignes normalisées ; la ligne `USAGE`
+  attendue s'écrit sans clause. AC1, AC3 et M14 alignés.
+- **M-2** — la remise en état prescrit `up -d --force-recreate`, qu'aucun interdit d'agent ne nommait : AC5 fait recevoir
+  à `docs/agents-orchestration.md` § 2 un **troisième** interdit, toute recréation du conteneur par un agent.
+- **M-3** — la commande d'inventaire de l'AC14 était trop large (346 lignes) : bornée à `docs/*.md`, `CLAUDE.md`,
+  `README.md`, `.github/*.yml`, sortie réelle reportée (trois lignes, une seule à traiter).
+LOW laissés : L-1 (sorties de l'inventaire du compose), L-2 (littéral `kesh` du fichier de droits — échec bruyant).
+**Écart de la lentille** : deux fichiers temporaires écrits dans `kesh-gate-logs/`, supprimés avant le rapport.
+Passe suivante : ciblée P6 (Sonnet) sur le commit de cette remédiation.
+
+- 2026-10-23 — **Validation P6 ciblée** (Sonnet, lentille T sur `b37ce17d`, rapport `312-validate-p6-T.md`) :
+  0 CRITICAL / 0 HIGH / 0 MEDIUM / 4 LOW. Appliqués par l'agent de développement : L-1 (conception 1a : les trois
+  interdits du § 2 nommés), L-2 (AC5 : premier interdit reformulé, « créer […] ailleurs que depuis le dépôt principal
+  (l'orchestrateur seul le recrée) »), L-3 (AC14 : `CHANGELOG.md` nommé dans l'exclusion), L-4 (l'entrée P5, placée après
+  la File List, déplacée sous `## Change Log` sans changement de texte).
+- 2026-10-23 — **Validation terminée** (0 MEDIUM+ à la P6). Trend : P1 Opus R 0/1/7/8, F 0/0/8/8 → P2 Sonnet R 0/0/3/8,
+  F 0/0/5/9 → P3 Opus R 0/0/5/10, F 0/0/6/7 (signal de recyclage, retrait C-31-2-15) → P4 Sonnet R 0/0/1/9, F 0/0/2/6 →
+  P5 ciblée Haiku 0/0/3/2 → P6 ciblée Sonnet 0/0/0/4. Fait constaté par l'orchestrateur le 2026-10-23 (recréation du
+  conteneur) : `SHOW GRANTS FOR 'kesh'@'%'` rend `` GRANT USAGE ON *.* TO `kesh`@`%` IDENTIFIED BY PASSWORD '*…' `` — la
+  capture réelle de la fixture du dév le confirmera. Statut `in-progress`.
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -576,18 +602,3 @@ devient 7 à 10 échecs attendus sur N+2 tests, à recompter). Les deux tests de
 ### File List
 
 *(à renseigner)*
-
-### Validation P5 ciblée (2026-10-24) — Haiku, lentille T sur `12a23dbf` : 0/0/3/2 ; remédiée par l'orchestrateur
-
-Les trois MEDIUM, vérifiés au `sed -n` par l'orchestrateur (règle des MEDIUM de Haiku), sont **réels** :
-- **M-1** — forme du jeton ambiguë (remplacement « espace comprise » contre affichage qui retire la clause « avec espace » ;
-  ligne `USAGE` attendue sans chaîne quotée). **Retrait** : plus de jeton ; la clause ` IDENTIFIED BY PASSWORD '…'` est
-  **retirée** des lignes `ON *.*`, comparaison et affichage portent sur les mêmes lignes normalisées ; la ligne `USAGE`
-  attendue s'écrit sans clause. AC1, AC3 et M14 alignés.
-- **M-2** — la remise en état prescrit `up -d --force-recreate`, qu'aucun interdit d'agent ne nommait : AC5 fait recevoir
-  à `docs/agents-orchestration.md` § 2 un **troisième** interdit, toute recréation du conteneur par un agent.
-- **M-3** — la commande d'inventaire de l'AC14 était trop large (346 lignes) : bornée à `docs/*.md`, `CLAUDE.md`,
-  `README.md`, `.github/*.yml`, sortie réelle reportée (trois lignes, une seule à traiter).
-LOW laissés : L-1 (sorties de l'inventaire du compose), L-2 (littéral `kesh` du fichier de droits — échec bruyant).
-**Écart de la lentille** : deux fichiers temporaires écrits dans `kesh-gate-logs/`, supprimés avant le rapport.
-Passe suivante : ciblée P6 (Sonnet) sur le commit de cette remédiation.
