@@ -189,7 +189,7 @@ docker compose up -d
 
 - Base de données: MariaDB 10.11 (parité prod NAS Synology, cf. Story 10-1 D3)
 - Runtime: Debian Bookworm Slim
-- Rust: 1.85 (build stage uniquement)
+- Rust: 1.97 (build stage uniquement)
 - Node.js: 22 (build stage uniquement)
 - Les données sont persistées dans le volume `kesh-mariadb-data` du compose,
   que `docker volume ls` affiche `<projet>_kesh-mariadb-data` (préfixe du
