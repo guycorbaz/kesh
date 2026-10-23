@@ -6,12 +6,16 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 
 ### C-31-3-1 — Une story courte, sans validation multi-passes
 
-- **Contexte** : le bump touche une ligne de configuration, un `FROM`, cinq lignes de documentation et d'éventuels
+- **Contexte** : le bump touche une ligne de configuration, un `FROM`, sept sites de documentation (six lignes de la validation P1 plus `DOCKER_START.md`, validation P2 R8/F1) et d'éventuels
   correctifs clippy mécaniques ; pas de logique, pas de schéma.
 - **Retenu** : une seule passe P1 **ciblée**, une lentille F, Haiku, sur la fiche (**révisé** : la fiche a changé de périmètre avec
   C-31-3-6, une P2 **complète** Sonnet, lentilles R et F, la suit) ; la revue de code se fera sur le diff
   réel (surtout les correctifs de lints).
 - **Écartées** : deux lentilles Sonnet (R et F) comme pour une story fonctionnelle — coût sans objet ici.
+- **Révisé le 2026-10-23 (validation P2, R5)** — titre et « Écartées » ci-dessus restent tels qu'à leur date ; ils ne
+  valent plus. La fiche ayant intégré la garde G21 (C-31-3-6), la validation suit la règle commune (`CLAUDE.md` § *Review
+  Iteration Rule*, `docs/agents-orchestration.md` § 3) : **passes complètes, Sonnet et Opus en alternance, lentilles R et F,
+  jusqu'à une passe à 0 MEDIUM+ ou 8 passes**. La P2 (Opus) a rendu 6 MEDIUM + 1 MEDIUM ; la P3 (Sonnet) suit.
 - **Réversible** : oui.
 
 ### C-31-3-2 — Tag Docker `rust:1.97-bookworm` (mineur), comme `1.96` aujourd'hui
@@ -44,6 +48,7 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 
 - **Contexte** : `CHANGELOG.md` (v0.4.0) et le tableau de versions du README disent « Rust 1.96 » pour la v0.4.0.
 - **Retenu** : laissées telles quelles — relevés datés (`CLAUDE.md` : un compte rendu daté ne se « met pas à jour »).
+- **Écartée** : réécrire ces mentions en 1.97 — cela ferait mentir la v0.4.0 sur la chaîne avec laquelle elle a été bâtie.
 - **Réversible** : oui.
 
 ### C-31-3-6 — #697 intégrée à la 31-3 (choix de l'orchestrateur)
@@ -55,4 +60,36 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   valeurs et rougit si la version mineure diffère ; la PR de la 31-3 porte `closes #697`. C'est le site naturel : la 31-3
   bumpe justement les deux.
 - **Écartée** : laisser #697 ouverte — la garde est petite et la 31-3 en est l'occasion.
+- **Réversible** : oui.
+- **Justification (validation P2, R6 — arbitrage de l'orchestrateur)** : la règle du périmètre minimal
+  (`docs/agents-orchestration.md` § 3 : un défaut voisin ne s'intègre que si sa correction est mécanique) **admet le budget
+  d'issues comme motif d'intégration** — décision de Guy du 2026-10-23, `CLAUDE.md` § *Priorités des défauts*, « on trace
+  toujours » : l'issue existe (#697), elle est tracée, et la fermer ici ramène le compte vers le plafond. La garde est
+  petite et isolée (un test pur plus la lecture de deux fichiers, aucun code de production), et la 31-3 touche justement
+  ces deux fichiers. Le corps de #697 disait « non mécanique » : c'est la fiche qui fait foi ; l'orchestrateur lèvera le
+  « hors périmètre » de l'issue par un commentaire.
+
+### C-31-3-8 — G21 vit dans `textes_coherents.rs`, pas dans `configuration_transmise.rs`
+
+- **Contexte** : `configuration_transmise.rs` lit déjà le `Dockerfile` (`lire("Dockerfile")` l. 1897, `dockerfile_fixe`
+  l. 468-480) ; `textes_coherents.rs` garde des textes, dispose de `racine()`/`lire()`, de `regex` et de G19 comme modèle
+  d'extraction adossée à une positive (validation P2, R14).
+- **Retenu** : `textes_coherents.rs` — c'est l'emplacement que nomme #697, la garde compare deux *textes* de
+  configuration, et la lecture qu'offre `configuration_transmise.rs` ne sert pas (`dockerfile_fixe` ne regarde que
+  l'étape finale, après le dernier `FROM`, alors que G21 cherche l'étape `rust:`) : rien à mutualiser, la règle DRY n'est
+  pas en jeu. G21 est libre (aucune occurrence dans les 15 arbres de travail).
+- **Écartée** : `configuration_transmise.rs` — ses gardes G14-G17 portent sur l'environnement transmis à l'image, pas sur
+  sa chaîne de build.
+- **Réversible** : oui.
+
+### C-31-3-9 — `rust-toolchain.toml` d'abord, puis les correctifs de lints
+
+- **Contexte** : la première rédaction relevait les lints sous `+1.97.1`, corrigeait, puis bumpait. Sous 1.96.1, le gate
+  ciblé ne voit pas les lints corrigés, et un correctif employant une API stabilisée en 1.97 (cas courant des lints
+  `manual_*`, aucun `rust-version`/`msrv` ne le bornant) ne compile pas (validation P2, R3).
+- **Retenu** : T2 bumpe `rust-toolchain.toml` seul, avant les correctifs ; chaque commit compile sous la chaîne qu'il porte ;
+  le gate ciblé de T3 tourne sous 1.97.1. Le désaccord transitoire avec le `Dockerfile` est sans conséquence (G21 arrive à
+  T4, et son test du dépôt est alors réellement rouge avant le bump du `Dockerfile`).
+- **Écartée** : corriger sous `+1.97.1` en laissant 1.96.1 dans le fichier, en exigeant que chaque correctif compile aussi
+  sous 1.96.1 — contrainte inutile et invérifiable commit par commit.
 - **Réversible** : oui.
