@@ -485,12 +485,14 @@ async fn full_import_refuses_unknown_format_400(pool: MySqlPool) {
     let admin = seed_admin(&pool, "Acme").await;
     let backup = export_backup(&app, &admin.jwt).await;
 
+    // Story 31-1a (#503) : le format 2 est désormais valide — le premier
+    // format inconnu est 3.
     let (mut manifest, data) = unzip(&backup);
-    manifest["formatVersion"] = Value::from(2);
+    manifest["formatVersion"] = Value::from(3);
     let forged = rezip(&manifest, &data);
 
     let resp = post_import(&app, &admin.jwt, forged).await;
-    assert_eq!(resp.status(), 400, "formatVersion 2 → 400");
+    assert_eq!(resp.status(), 400, "formatVersion 3 → 400");
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "INVALID_BACKUP_STRUCTURE");
 }
@@ -632,7 +634,10 @@ async fn full_import_refuses_when_backup_cannot_be_written(pool: MySqlPool) {
     config.admin_backup_dir = occupe.path().to_str().unwrap().to_string();
     let app = spawn_app_with(pool.clone(), config).await;
     let keep = seed_admin(&pool, "KeepMe").await;
-    let backup = export_backup(&app, &keep.jwt).await;
+    // Story 31-1a (AC4) : l'export déborde lui aussi dans le dossier de
+    // sauvegarde — il se fait donc par une instance au dossier utilisable.
+    let export_app = spawn_app(pool.clone()).await;
+    let backup = export_backup(&export_app, &keep.jwt).await;
 
     let resp = post_import(&app, &keep.jwt, backup).await;
     assert_eq!(resp.status(), 500, "sauvegarde impossible → 500");
@@ -3588,4 +3593,469 @@ async fn full_import_d_une_sauvegarde_sans_description(pool: MySqlPool) {
         bank_name_and_description(&pool, id).await,
         ("UBS".to_string(), None)
     );
+}
+
+// ============================================================
+// Story 31-1a (#503) — les pièces dans la sauvegarde (AC7 à AC13, T-a6b)
+// ============================================================
+
+#[path = "support/pieces.rs"]
+mod pieces;
+
+/// La fixture produite par l'exporteur **de la v0.14.0** (AC10, T-a0) : format
+/// 1, deux pièces référencées (un document fournisseur, un PDF figé), `files/`
+/// vide. Jamais régénérée — cf. `generate_fixture_0_14_0`.
+const FIXTURE_0_14_0: &[u8] = include_bytes!("fixtures/keshbackup-0.14.0-format1.keshbackup");
+
+fn config_docs(documents: &Path, backup: &Path) -> Config {
+    let mut config = test_config();
+    config.documents_dir = documents.to_string_lossy().to_string();
+    config.admin_backup_dir = backup.to_string_lossy().to_string();
+    config
+}
+
+/// Contenus d'une archive, par nom (table ou pièce).
+type Contenus = BTreeMap<String, Vec<u8>>;
+
+/// Décompose une archive : manifeste, NDJSON par table, pièces de `files/`.
+fn ouvrir_tout(bytes: &[u8]) -> (Value, Contenus, Contenus) {
+    let (manifest, data) = unzip(bytes);
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).unwrap();
+    let mut fichiers = BTreeMap::new();
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).unwrap();
+        if let Some(nom) = entry
+            .name()
+            .strip_prefix("files/")
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+        {
+            let mut buf = Vec::new();
+            entry.read_to_end(&mut buf).unwrap();
+            fichiers.insert(nom, buf);
+        }
+    }
+    (manifest, data, fichiers)
+}
+
+/// [`rezip`] qui garde aussi les pièces (`files/<nom>`, sans compression).
+fn rezip_tout(
+    manifest: &Value,
+    data: &BTreeMap<String, Vec<u8>>,
+    fichiers: &BTreeMap<String, Vec<u8>>,
+) -> Vec<u8> {
+    let mut cursor = std::io::Cursor::new(Vec::<u8>::new());
+    {
+        let mut zip = ZipWriter::new(&mut cursor);
+        let opts: SimpleFileOptions =
+            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        for (table, ndjson) in data {
+            zip.start_file(format!("data/{table}.ndjson"), opts)
+                .unwrap();
+            zip.write_all(ndjson).unwrap();
+        }
+        zip.add_directory("files/", opts).unwrap();
+        let stored = opts.compression_method(CompressionMethod::Stored);
+        for (nom, contenu) in fichiers {
+            zip.start_file(format!("files/{nom}"), stored).unwrap();
+            zip.write_all(contenu).unwrap();
+        }
+        zip.start_file("manifest.json", opts).unwrap();
+        zip.write_all(&serde_json::to_vec_pretty(manifest).unwrap())
+            .unwrap();
+        zip.finish().unwrap();
+    }
+    cursor.into_inner()
+}
+
+/// Récrit les lignes d'une table du backup par `f`, NDJSON et empreinte du
+/// manifeste compris.
+fn recrire_table(
+    manifest: &mut Value,
+    data: &mut BTreeMap<String, Vec<u8>>,
+    table: &str,
+    mut f: impl FnMut(&mut serde_json::Map<String, Value>),
+) {
+    let mut ndjson = Vec::new();
+    for ligne in std::str::from_utf8(&data[table]).unwrap().lines() {
+        let mut obj: serde_json::Map<String, Value> = serde_json::from_str(ligne).unwrap();
+        f(&mut obj);
+        ndjson.extend_from_slice(serde_json::to_string(&obj).unwrap().as_bytes());
+        ndjson.push(b'\n');
+    }
+    manifest["tables"][table]["sha256"] = Value::from(sha256_hex(&ndjson));
+    data.insert(table.to_string(), ndjson);
+}
+
+/// Rend une sauvegarde de format 1 à partir d'un export de format 2 : version
+/// 1, sans les deux listes, `files/` vide — la forme qu'écrivait la 0.14.0.
+fn en_format_1(bytes: &[u8]) -> Vec<u8> {
+    let (mut manifest, data) = unzip(bytes);
+    manifest["formatVersion"] = Value::from(1);
+    let obj = manifest.as_object_mut().unwrap();
+    obj.remove("files");
+    obj.remove("filesNotIncluded");
+    rezip(&manifest, &data)
+}
+
+/// Une installation qui porte deux pièces : un document fournisseur et le PDF
+/// figé d'une facture validée.
+struct DeuxPieces {
+    app: TestApp,
+    jwt: String,
+    company_id: i64,
+    document_id: i64,
+    invoice_id: i64,
+    doc_path: String,
+    doc: Vec<u8>,
+    pdf_path: String,
+    pdf: Vec<u8>,
+}
+
+async fn deux_pieces(pool: &MySqlPool, docs: &Path, backup: &Path) -> DeuxPieces {
+    let (seeded, invoice_id) = pieces::seed_company_with_invoice(pool).await;
+    let doc = b"%PDF-1.4\n% document fournisseur fictif 31-1a\n%%EOF\n".to_vec();
+    let (document_id, doc_path) =
+        pieces::seed_document(pool, seeded.company_id, docs, &doc, "pdf").await;
+    let app = spawn_app_with(pool.clone(), config_docs(docs, backup)).await;
+    let jwt = forge_jwt(seeded.admin_user_id, "Admin", seeded.company_id);
+    let (pdf_path, pdf) =
+        pieces::freeze_pdf(pool, &app.client, &app.base_url, &jwt, invoice_id).await;
+    DeuxPieces {
+        app,
+        jwt,
+        company_id: seeded.company_id,
+        document_id,
+        invoice_id,
+        doc_path,
+        doc,
+        pdf_path,
+        pdf,
+    }
+}
+
+/// `GET` authentifié : statut et octets.
+async fn telecharger(app: &TestApp, jwt: &str, chemin: &str) -> (u16, Vec<u8>) {
+    let resp = app
+        .client
+        .get(app.url(chemin))
+        .header("Authorization", format!("Bearer {jwt}"))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.bytes().await.unwrap().to_vec())
+}
+
+/// Vide la base comme une installation passée par `/setup` (société
+/// provisoire), puis crée un administrateur : rend son JWT.
+async fn installation_vierge(pool: &MySqlPool) -> String {
+    kesh_db::test_fixtures::truncate_all(pool).await.unwrap();
+    kesh_db::test_fixtures::seed_stub_company_only(pool)
+        .await
+        .unwrap();
+    seed_admin(pool, "Neuf").await.jwt
+}
+
+async fn ghost(pool: &MySqlPool) {
+    seed_role(pool, "Ghost", Role::Comptable).await;
+}
+
+async fn ghost_present(pool: &MySqlPool) -> bool {
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies WHERE name = 'CI Ghost'")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    n == 1
+}
+
+/// AC13 — restauration d'une sauvegarde de format 2 sur une installation
+/// vierge dont le dossier des documents est vide : les deux pièces sont
+/// écrites, les deux `GET` rendent les octets d'origine, et l'audit porte les
+/// comptes.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac13_format_2_sur_installation_vierge(pool: MySqlPool) {
+    let docs_a = pieces::dossier();
+    let backup = pieces::dossier();
+    let a = deux_pieces(&pool, docs_a.path(), backup.path()).await;
+    let sauvegarde = export_backup(&a.app, &a.jwt).await;
+
+    let jwt_neuf = installation_vierge(&pool).await;
+    let docs_b = pieces::dossier();
+    let app_b = spawn_app_with(pool.clone(), config_docs(docs_b.path(), backup.path())).await;
+    let resp = post_import(&app_b, &jwt_neuf, sauvegarde).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["filesRestored"], 2);
+    assert_eq!(body["filesMissing"], 0);
+    assert_eq!(
+        std::fs::read(docs_b.path().join(&a.doc_path)).unwrap(),
+        a.doc
+    );
+    assert_eq!(
+        std::fs::read(docs_b.path().join(&a.pdf_path)).unwrap(),
+        a.pdf
+    );
+
+    let doc = format!(
+        "/api/v1/imported-supplier-invoices/{}/source-document",
+        a.document_id
+    );
+    assert_eq!(
+        telecharger(&app_b, &a.jwt, &doc).await,
+        (200, a.doc.clone())
+    );
+    let pdf = format!("/api/v1/invoices/{}/pdf", a.invoice_id);
+    assert_eq!(
+        telecharger(&app_b, &a.jwt, &pdf).await,
+        (200, a.pdf.clone())
+    );
+
+    let details: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'admin.full_import' \
+         ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(details["files_restored"], 2);
+    assert_eq!(details["files_missing"], 0);
+    assert_eq!(details["source_format_version"], 2);
+    let _ = a.company_id;
+}
+
+/// AC13 — la même chose avec une sauvegarde de **format 1** : la base est
+/// restaurée, les deux pièces manquent et le disent (`filesMissing = 2`), les
+/// deux `GET` rendent 410 — le comportement que #503 décrit, annoncé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac13_format_1_sur_installation_vierge(pool: MySqlPool) {
+    let docs_a = pieces::dossier();
+    let backup = pieces::dossier();
+    let a = deux_pieces(&pool, docs_a.path(), backup.path()).await;
+    let sauvegarde = en_format_1(&export_backup(&a.app, &a.jwt).await);
+
+    let jwt_neuf = installation_vierge(&pool).await;
+    let docs_b = pieces::dossier();
+    let app_b = spawn_app_with(pool.clone(), config_docs(docs_b.path(), backup.path())).await;
+    let resp = post_import(&app_b, &jwt_neuf, sauvegarde).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["filesRestored"], 0);
+    assert_eq!(body["filesMissing"], 2);
+    let doc = format!(
+        "/api/v1/imported-supplier-invoices/{}/source-document",
+        a.document_id
+    );
+    assert_eq!(telecharger(&app_b, &a.jwt, &doc).await.0, 410);
+    let pdf = format!("/api/v1/invoices/{}/pdf", a.invoice_id);
+    assert_eq!(telecharger(&app_b, &a.jwt, &pdf).await.0, 410);
+}
+
+/// AC9, AC13 (M-a9) — une sauvegarde de format 1 restaurée sur **la même**
+/// installation, dont le dossier des documents porte encore les deux pièces :
+/// `filesMissing = 0` (le compte se fait sur la destination, pas sur le
+/// backup), et les deux `GET` rendent 200.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn format_1_restauree_sur_la_meme_installation(pool: MySqlPool) {
+    let docs = pieces::dossier();
+    let backup = pieces::dossier();
+    let a = deux_pieces(&pool, docs.path(), backup.path()).await;
+    let sauvegarde = en_format_1(&export_backup(&a.app, &a.jwt).await);
+
+    let resp = post_import(&a.app, &a.jwt, sauvegarde).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["filesRestored"], 0);
+    assert_eq!(body["filesMissing"], 0);
+    let pdf = format!("/api/v1/invoices/{}/pdf", a.invoice_id);
+    assert_eq!(
+        telecharger(&a.app, &a.jwt, &pdf).await,
+        (200, a.pdf.clone())
+    );
+}
+
+/// AC10 — la sauvegarde produite par la **vraie** 0.14.0 s'importe : 200,
+/// aucune pièce restaurée, les deux pièces qu'elle référence comptées
+/// manquantes (le dossier des documents du test est vide).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac10_la_sauvegarde_de_la_0_14_0_s_importe(pool: MySqlPool) {
+    let docs = pieces::dossier();
+    let backup = pieces::dossier();
+    let admin = seed_admin(&pool, "Acme").await;
+    let app = spawn_app_with(pool.clone(), config_docs(docs.path(), backup.path())).await;
+    let resp = post_import(&app, &admin.jwt, FIXTURE_0_14_0.to_vec()).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["sourceVersion"], "0.14.0");
+    assert_eq!(body["filesRestored"], 0);
+    assert_eq!(body["filesMissing"], 2);
+    let details: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'admin.full_import' \
+         ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(details["source_format_version"], 1);
+}
+
+/// AC7 (format 2) — une pièce de `files` qu'aucune ligne restaurée ne
+/// référence → 400.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn format_2_piece_sans_ligne_refusee(pool: MySqlPool) {
+    let docs = pieces::dossier();
+    let backup = pieces::dossier();
+    let a = deux_pieces(&pool, docs.path(), backup.path()).await;
+    let (mut manifest, data, mut fichiers) = ouvrir_tout(&export_backup(&a.app, &a.jwt).await);
+    let intrus = b"piece sans ligne".to_vec();
+    let nom = format!("{}.pdf", sha256_hex(&intrus));
+    manifest["files"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "path": nom, "sha256": sha256_hex(&intrus), "byteSize": intrus.len(),
+        }));
+    fichiers.insert(nom, intrus);
+    let resp = post_import(&a.app, &a.jwt, rezip_tout(&manifest, &data, &fichiers)).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "INVALID_BACKUP_STRUCTURE");
+}
+
+/// AC7 (format 2) — l'empreinte de la pièce n'est pas celle que déclare sa
+/// ligne (`file_hash` récrit dans le NDJSON) → 400.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn format_2_empreinte_differente_de_la_ligne_refusee(pool: MySqlPool) {
+    let docs = pieces::dossier();
+    let backup = pieces::dossier();
+    let a = deux_pieces(&pool, docs.path(), backup.path()).await;
+    let (mut manifest, mut data, fichiers) = ouvrir_tout(&export_backup(&a.app, &a.jwt).await);
+    recrire_table(
+        &mut manifest,
+        &mut data,
+        "imported_supplier_invoices",
+        |l| {
+            l.insert("file_hash".into(), Value::from(sha256_hex(b"autre")));
+        },
+    );
+    let resp = post_import(&a.app, &a.jwt, rezip_tout(&manifest, &data, &fichiers)).await;
+    assert_eq!(resp.status(), 400);
+}
+
+/// AC7 (format 2) — une pièce référencée par le backup qui n'est ni dans
+/// `files` ni dans `filesNotIncluded` → 400 (sauvegarde incomplète).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn format_2_piece_referencee_non_declaree_refusee(pool: MySqlPool) {
+    let docs = pieces::dossier();
+    let backup = pieces::dossier();
+    let a = deux_pieces(&pool, docs.path(), backup.path()).await;
+    let (mut manifest, data, mut fichiers) = ouvrir_tout(&export_backup(&a.app, &a.jwt).await);
+    manifest["files"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|f| f["path"] != a.doc_path.as_str());
+    fichiers.remove(&a.doc_path);
+    let resp = post_import(&a.app, &a.jwt, rezip_tout(&manifest, &data, &fichiers)).await;
+    assert_eq!(resp.status(), 400);
+}
+
+/// AC7, AC9 — une table `invoices` sans la colonne `pdf_storage_path` (backup
+/// antérieur à la migration `20261003000001`) vaut « aucune référence » pour
+/// cette table : ni panique ni 400, et `filesMissing` se calcule sans elle.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn table_invoices_sans_colonne_de_pdf(pool: MySqlPool) {
+    let docs = pieces::dossier();
+    let backup = pieces::dossier();
+    let (seeded, _) = pieces::seed_company_with_invoice(&pool).await;
+    pieces::seed_document(&pool, seeded.company_id, docs.path(), b"seule piece", "pdf").await;
+    let app = spawn_app_with(pool.clone(), config_docs(docs.path(), backup.path())).await;
+    let jwt = forge_jwt(seeded.admin_user_id, "Admin", seeded.company_id);
+    let (mut manifest, data, fichiers) = ouvrir_tout(&export_backup(&app, &jwt).await);
+    strip_column(&mut manifest, "invoices", "pdf_storage_path");
+    let resp = post_import(&app, &jwt, rezip_tout(&manifest, &data, &fichiers)).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["filesRestored"], 1);
+    assert_eq!(body["filesMissing"], 0);
+}
+
+/// AC8 (M-a7, M-a8) — le dossier des documents refuse l'écriture (c'est un
+/// fichier) : l'import est refusé en 500 et **la base n'est pas touchée** — les
+/// pièces s'écrivent avant le remplacement des tables.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_d_ecriture_des_pieces_laisse_la_base_intacte(pool: MySqlPool) {
+    let docs = pieces::dossier();
+    let backup = pieces::dossier();
+    let a = deux_pieces(&pool, docs.path(), backup.path()).await;
+    let sauvegarde = export_backup(&a.app, &a.jwt).await;
+    ghost(&pool).await;
+
+    let fichier = tempfile::NamedTempFile::new().unwrap();
+    let app = spawn_app_with(pool.clone(), config_docs(fichier.path(), backup.path())).await;
+    let resp = post_import(&app, &a.jwt, sauvegarde).await;
+    assert_eq!(resp.status(), 500);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ADMIN_FULL_IMPORT_FAILED");
+    assert!(ghost_present(&pool).await, "la base n'a pas été remplacée");
+}
+
+/// AC8 — une pièce présente mais **altérée** dans le dossier des documents est
+/// remplacée atomiquement par celle de l'archive.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn piece_presente_alteree_remplacee(pool: MySqlPool) {
+    let docs = pieces::dossier();
+    let backup = pieces::dossier();
+    let a = deux_pieces(&pool, docs.path(), backup.path()).await;
+    let sauvegarde = export_backup(&a.app, &a.jwt).await;
+    std::fs::write(docs.path().join(&a.doc_path), b"altere apres la sauvegarde").unwrap();
+
+    let resp = post_import(&a.app, &a.jwt, sauvegarde).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["filesRestored"], 2);
+    assert_eq!(body["filesMissing"], 0);
+    assert_eq!(std::fs::read(docs.path().join(&a.doc_path)).unwrap(), a.doc);
+}
+
+/// AC11 (M-a17) — un dossier de sauvegarde absent est créé par l'import.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_cree_le_dossier_de_sauvegarde_absent(pool: MySqlPool) {
+    let admin = seed_admin(&pool, "Acme").await;
+    let sauvegarde = export_backup(&spawn_app(pool.clone()).await, &admin.jwt).await;
+    let docs = pieces::dossier();
+    let racine = pieces::dossier();
+    let absent = racine.path().join("absent").join("sous-dossier");
+    let app = spawn_app_with(pool.clone(), config_docs(docs.path(), &absent)).await;
+    let resp = post_import(&app, &admin.jwt, sauvegarde).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert!(absent.is_dir(), "dossier de sauvegarde créé");
+}
+
+/// AC11 — un dossier de sauvegarde existant mais **non inscriptible** (`0500`)
+/// refuse l'import en `ADMIN_PRE_IMPORT_BACKUP_FAILED`, base intacte. Sous
+/// `root`, le test échoue bruyamment au lieu de passer à vide.
+#[cfg(unix)]
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_dossier_de_sauvegarde_non_inscriptible(pool: MySqlPool) {
+    use std::os::unix::fs::PermissionsExt;
+    let admin = seed_admin(&pool, "Acme").await;
+    let sauvegarde = export_backup(&spawn_app(pool.clone()).await, &admin.jwt).await;
+    ghost(&pool).await;
+    let docs = pieces::dossier();
+    let racine = pieces::dossier();
+    let backup = racine.path().join("sauvegardes");
+    std::fs::create_dir(&backup).unwrap();
+    std::fs::set_permissions(&backup, std::fs::Permissions::from_mode(0o500)).unwrap();
+    assert!(
+        std::fs::File::create(backup.join("sonde")).is_err(),
+        "le test s'exécute avec des droits qui ignorent les permissions (root ?) : \
+         il ne prouverait rien — relancer sous un utilisateur ordinaire"
+    );
+    let app = spawn_app_with(pool.clone(), config_docs(docs.path(), &backup)).await;
+    let resp = post_import(&app, &admin.jwt, sauvegarde).await;
+    std::fs::set_permissions(&backup, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(resp.status(), 500);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ADMIN_PRE_IMPORT_BACKUP_FAILED");
+    assert!(ghost_present(&pool).await, "base intacte");
 }

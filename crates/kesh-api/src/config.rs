@@ -237,28 +237,34 @@ pub struct Config {
     /// (O4 validate Pass 3 — borne haute évite OOM côté `axum::body::Bytes`).
     pub bank_import_max_mib: u32,
 
-    /// Story 17-3a (DC8) — plafond d'assemblage **in-memory** du `.keshbackup`
-    /// (export complet d'installation). Au-delà, la réponse est spillée vers un
-    /// fichier temporaire et streamée. Lu depuis `KESH_ADMIN_EXPORT_INMEM_MB` ;
-    /// défaut 50, borne [1, 2048] (borne haute évite l'OOM sur grosses installs).
+    /// Story 17-3a (DC8) — plafond **en mémoire** du `.keshbackup` (export
+    /// complet d'installation). Story 31-1a : l'archive s'écrit dans un
+    /// temporaire qui reste en mémoire jusqu'à ce seuil et déborde au-delà
+    /// dans un fichier anonyme de `KESH_ADMIN_BACKUP_DIR`, puis est diffusée.
+    /// Lu depuis `KESH_ADMIN_EXPORT_INMEM_MB` ; défaut 50, borne [1, 2048]
+    /// (borne haute évite l'OOM sur grosses installs).
     pub admin_export_inmem_mib: u32,
 
     /// Story 17-3c (DC5) — taille max d'un upload `.keshbackup` à l'**import**,
     /// en MiB binaires. Appliqué via `axum::extract::DefaultBodyLimit::max` sur
     /// la route `POST /api/v1/admin/full-import`. Lu depuis
-    /// `KESH_ADMIN_IMPORT_MAX_MB` ; défaut 512, borne [1, 10240].
+    /// `KESH_ADMIN_IMPORT_MAX_MB` ; défaut [`DEFAULT_ADMIN_IMPORT_MAX_MIB`]
+    /// (2048 depuis la Story 31-1a : la sauvegarde emporte les pièces), borne
+    /// [1, 10240]. L'export prévient quand son archive le dépasse.
     pub admin_import_max_mib: u32,
 
-    /// Story 17-3c (DC5) — dossier où écrire la **sauvegarde de sécurité
-    /// pré-import** (`.keshbackup` de l'état courant, filet avant le restore
-    /// destructeur). Lu depuis `KESH_ADMIN_BACKUP_DIR` ; défaut
-    /// [`DEFAULT_ADMIN_BACKUP_DIR`] (`/data/backup`), que les compose distribués
-    /// montent sur `./backup` (Story 15-13b, #552 — l'ancien défaut `/tmp`
-    /// mourait avec le conteneur). **Hors Docker**, poser la variable sur un
-    /// dossier inscriptible : sinon la création du dossier échoue et l'import
-    /// est refusé avant toute suppression (`AdminPreImportBackupFailed`).
-    /// Créé (en `0700`) s'il n'existe pas ; fichiers en `0600`. La purge est à
-    /// la charge de l'exploitant.
+    /// Story 17-3c (DC5) — dossier de la **sauvegarde de sécurité pré-import**
+    /// (`.keshbackup` de l'état courant, pièces comprises, filet avant le
+    /// restore destructeur) et, depuis la Story 31-1a, des **temporaires** de
+    /// l'export (débordement) et de l'import (envoi reçu). Lu depuis
+    /// `KESH_ADMIN_BACKUP_DIR` ; défaut [`DEFAULT_ADMIN_BACKUP_DIR`]
+    /// (`/data/backup`), que les compose distribués montent sur `./backup`
+    /// (Story 15-13b, #552 — l'ancien défaut `/tmp` mourait avec le
+    /// conteneur). **Hors Docker**, poser la variable sur un dossier
+    /// inscriptible : sinon la création du dossier échoue, et tout import et
+    /// tout export sont refusés. Créé (en `0700`) s'il n'existe pas ; fichiers
+    /// en `0600`. La purge des sauvegardes pré-import est à la charge de
+    /// l'exploitant.
     pub admin_backup_dir: String,
 
     /// Story 12-5b (#194) — répertoire de stockage des **justificatifs**
@@ -510,7 +516,7 @@ impl Config {
             test_mode: false,
             bank_import_max_mib: 10,
             admin_export_inmem_mib: 50,
-            admin_import_max_mib: 512,
+            admin_import_max_mib: DEFAULT_ADMIN_IMPORT_MAX_MIB,
             admin_backup_dir: "/tmp".to_string(),
             documents_dir: "/tmp/kesh-documents-test".to_string(),
             inbox_dir: "/tmp/kesh-inbox-test".to_string(),
@@ -893,8 +899,9 @@ impl Config {
         };
 
         // Story 17-3a (DC8) — KESH_ADMIN_EXPORT_INMEM_MB : optionnel, défaut 50,
-        // borne [1, 2048]. Au-delà du plafond, l'export `.keshbackup` spille sur
-        // fichier temporaire + streaming. Log WARN si > 500 (RAM à surveiller).
+        // borne [1, 2048]. Au-delà du plafond, l'export `.keshbackup` déborde
+        // dans un fichier anonyme de KESH_ADMIN_BACKUP_DIR (Story 31-1a), puis
+        // est diffusé. Log WARN si > 500 (RAM à surveiller).
         let admin_export_inmem_mib = match env_nonempty("KESH_ADMIN_EXPORT_INMEM_MB") {
             Some(val) => match val.parse::<u32>() {
                 Ok(m) if (1..=2048).contains(&m) => {
@@ -924,32 +931,36 @@ impl Config {
             None => 50,
         };
 
-        // Story 17-3c (DC5) — KESH_ADMIN_IMPORT_MAX_MB : optionnel, défaut 512,
-        // borne [1, 10240]. Plafond de l'upload `.keshbackup` à l'import
+        // Story 17-3c (DC5) — KESH_ADMIN_IMPORT_MAX_MB : optionnel, défaut
+        // DEFAULT_ADMIN_IMPORT_MAX_MIB (2048 depuis la Story 31-1a), borne
+        // [1, 10240]. Plafond de l'upload `.keshbackup` à l'import
         // (DefaultBodyLimit). Pattern parse+borne+warn identique à bank-import.
         let admin_import_max_mib = match env_nonempty("KESH_ADMIN_IMPORT_MAX_MB") {
             Some(val) => match val.parse::<u32>() {
                 Ok(m) if (1..=10240).contains(&m) => m,
                 Ok(m) => {
                     tracing::warn!(
-                        "KESH_ADMIN_IMPORT_MAX_MB={} hors borne [1, 10240], utilisation du défaut 512",
-                        m
+                        "KESH_ADMIN_IMPORT_MAX_MB={} hors borne [1, 10240], utilisation du défaut {}",
+                        m,
+                        DEFAULT_ADMIN_IMPORT_MAX_MIB
                     );
-                    512
+                    DEFAULT_ADMIN_IMPORT_MAX_MIB
                 }
                 Err(_) => {
                     tracing::warn!(
-                        "KESH_ADMIN_IMPORT_MAX_MB='{}' invalide, utilisation du défaut 512",
-                        val
+                        "KESH_ADMIN_IMPORT_MAX_MB='{}' invalide, utilisation du défaut {}",
+                        val,
+                        DEFAULT_ADMIN_IMPORT_MAX_MIB
                     );
-                    512
+                    DEFAULT_ADMIN_IMPORT_MAX_MIB
                 }
             },
-            None => 512,
+            None => DEFAULT_ADMIN_IMPORT_MAX_MIB,
         };
 
         // Story 17-3c (DC5) — KESH_ADMIN_BACKUP_DIR : dossier de la sauvegarde
-        // de sécurité pré-import. Défaut `DEFAULT_ADMIN_BACKUP_DIR`
+        // de sécurité pré-import et, depuis la Story 31-1a, des temporaires de
+        // l'export et de l'import. Défaut `DEFAULT_ADMIN_BACKUP_DIR`
         // (`/data/backup`, monté sur `./backup` par les compose distribués —
         // Story 15-13b, #552 ; hors Docker, poser la variable). Créé si absent
         // (au moment de l'import, pas au boot). Pas de borne (chemin arbitraire
@@ -1265,8 +1276,15 @@ impl LogFormat {
 /// Nombre de fichiers de log conservés par défaut (rotation).
 const DEFAULT_LOG_MAX_FILES: usize = 7;
 
+/// Story 31-1a (#503, AC12) — défaut de `KESH_ADMIN_IMPORT_MAX_MB`, en Mio :
+/// 2048 (512 jusqu'à la 0.14.x) — une sauvegarde emporte désormais les pièces
+/// du dossier des documents. Le relever exige de relever aussi la taille
+/// admise par le proxy inverse (manuel d'administration).
+pub const DEFAULT_ADMIN_IMPORT_MAX_MIB: u32 = 2048;
+
 /// Story 15-13b (#552) — défaut de `KESH_ADMIN_BACKUP_DIR` : dossier de la
-/// sauvegarde de sécurité prise avant chaque import d'installation. Les deux
+/// sauvegarde de sécurité prise avant chaque import d'installation, et depuis
+/// la Story 31-1a des temporaires de l'export et de l'import. Les deux
 /// compose distribués le montent sur `./backup` (le test `transmission` de
 /// `configuration_transmise.rs` exige qu'une entrée de `MONTAGES` ait cette
 /// cible) ; sa valeur est fixée par le test
@@ -1623,7 +1641,7 @@ pub(crate) mod test_helpers {
             test_mode: false,
             bank_import_max_mib: 10,
             admin_export_inmem_mib: 50,
-            admin_import_max_mib: 512,
+            admin_import_max_mib: DEFAULT_ADMIN_IMPORT_MAX_MIB,
             admin_backup_dir: "/tmp".to_string(),
             documents_dir: "/tmp/kesh-documents-test".to_string(),
             inbox_dir: "/tmp/kesh-inbox-test".to_string(),
@@ -1763,7 +1781,7 @@ mod tests {
     /// par les compose (`${NOM:-}`) prend le défaut du code, **sans**
     /// avertissement : `/data/backup` (et non un chemin vide, qui ferait écrire
     /// la sauvegarde pré-import dans le répertoire courant), `fr`, 12, 10, 50,
-    /// 512, 587.
+    /// 2048 (512 jusqu'à la Story 31-1a), 587.
     #[test]
     fn from_env_empty_or_blank_vars_take_code_default_silently() {
         for raw in ["", "   "] {
@@ -1786,7 +1804,7 @@ mod tests {
             assert_eq!(config.password_min_length, 12, "raw={raw:?}");
             assert_eq!(config.bank_import_max_mib, 10, "raw={raw:?}");
             assert_eq!(config.admin_export_inmem_mib, 50, "raw={raw:?}");
-            assert_eq!(config.admin_import_max_mib, 512, "raw={raw:?}");
+            assert_eq!(config.admin_import_max_mib, 2048, "raw={raw:?}");
             assert_eq!(config.smtp_port, 587, "raw={raw:?}");
             // Assertion de montage : la capture n'est pas muette (la ligne
             // « Locale instance » est toujours émise par `from_env`).

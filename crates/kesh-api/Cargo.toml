@@ -76,16 +76,19 @@ lettre = { version = "0.11", default-features = false, features = [
 url = "2"
 percent-encoding = "2"
 
+# Story 31-1a (#503) — `regex` : forme des noms de pièces du `.keshbackup`
+# (AC1, AC6), promue des dev-dependencies (Story 15-14a) ; `tempfile` :
+# débordement de l'export dans `KESH_ADMIN_BACKUP_DIR` (`SpooledTempFile`) et
+# réception de l'import dans un temporaire anonyme (AC4, AC11), promue elle
+# aussi (Story v011-1). Toutes deux déjà au Cargo.lock : aucun paquet neuf.
+regex = "1.10"
+tempfile = "3"
+
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
-# Story 15-14a (C-15-14-27) — gardes de texte de `tests/textes_coherents.rs`.
-# Déjà au Cargo.lock (version de kesh-db et kesh-import) : aucun paquet neuf.
-regex = "1.10"
 http-body-util = "0.1"
 reqwest = { version = "0.12", features = ["json", "multipart", "cookies"] }
 rust_decimal_macros = "1.40"
-# Story v011-1 — répertoire temporaire pour le test d'intégration logs fichier.
-tempfile = "3"
 # Story 15-5e1 (choix C70) — le volet (c) du registre des routes analyse le
 # corps des handlers avec l'analyseur de Rust (déjà au Cargo.lock, 2.0.118).
 syn = { version = "2", features = ["full", "visit"] }
