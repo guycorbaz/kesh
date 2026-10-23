@@ -80,7 +80,7 @@
 		>
 			{i18nMsg(
 				'admin-backup-files-not-included',
-				"Pièces référencées que le fichier n'a pas pu inclure : { $count } (fichier absent, altéré, illisible ou incohérent avec la base) — voir le journal du serveur. Après une restauration, elles répondront « document indisponible ».",
+				"Pièces référencées que le fichier n'a pas pu inclure : { $count } (fichier absent, altéré, illisible ou incohérent avec la base) — voir le journal du serveur. Après une restauration, elles seront introuvables.",
 				{ count: outcome.filesNotIncluded },
 			)}
 		</div>

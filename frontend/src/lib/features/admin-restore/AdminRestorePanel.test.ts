@@ -193,7 +193,7 @@ describe('AdminRestorePanel — Story 31-1b', () => {
 
 		const avertissement = await findByTestId('admin-restore-files-missing');
 		expect(avertissement.textContent).toContain('3');
-		expect(avertissement.textContent).toContain('document indisponible');
+		expect(avertissement.textContent).toContain('depuis une autre sauvegarde');
 		expect(getByTestId('admin-restore-relogin')).toBeTruthy();
 		expect(mockAuth.logout).not.toHaveBeenCalled();
 		expect(replaceMock).not.toHaveBeenCalled();
@@ -221,6 +221,37 @@ describe('AdminRestorePanel — Story 31-1b', () => {
 		await findByTestId('admin-restore-relogin');
 		expect((getByTestId('admin-restore-import-button') as HTMLButtonElement).disabled).toBe(true);
 		expect((getByTestId('admin-restore-file-input') as HTMLInputElement).disabled).toBe(true);
+	});
+
+	it('AC18b (revue P1, E-LOW-3) : après une issue inconnue, l’import n’est plus proposé', async () => {
+		mockApi.uploadFullImport.mockRejectedValue({ code: 'TIMEOUT', message: 'x', status: 0 });
+		const { getByTestId, findByTestId } = render(AdminRestorePanel);
+		await importer(getByTestId, findByTestId);
+		await findByTestId('admin-restore-relogin');
+		expect((getByTestId('admin-restore-import-button') as HTMLButtonElement).disabled).toBe(true);
+		expect((getByTestId('admin-restore-file-input') as HTMLInputElement).disabled).toBe(true);
+	});
+
+	it('AC18b : après une erreur ordinaire (409), l’import reste proposé', async () => {
+		mockApi.uploadFullImport.mockRejectedValue({
+			code: 'IMPORT_VERSION_INCOMPATIBLE',
+			message: 'x',
+			status: 409,
+		});
+		const { getByTestId, findByTestId, queryByTestId } = render(AdminRestorePanel);
+		await importer(getByTestId, findByTestId);
+		await findByTestId('admin-restore-error');
+		expect(queryByTestId('admin-restore-relogin')).toBeNull();
+		expect((getByTestId('admin-restore-import-button') as HTMLButtonElement).disabled).toBe(false);
+	});
+
+	it('A-L3 : la confirmation ne promet plus une déconnexion immédiate', async () => {
+		const { getByTestId, findByTestId } = render(AdminRestorePanel);
+		await selectFile(getByTestId('admin-restore-file-input') as HTMLInputElement);
+		await fireEvent.click(getByTestId('admin-restore-import-button'));
+		const dialog = await findByTestId('admin-restore-confirm-dialog');
+		expect(dialog.textContent).not.toContain('Vous serez déconnecté');
+		expect(dialog.textContent).toContain('votre session sera fermée');
 	});
 
 	const INCONNUE = "La réponse du serveur n'est pas arrivée : l'import a pu aboutir.";

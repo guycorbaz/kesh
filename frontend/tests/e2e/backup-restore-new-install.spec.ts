@@ -208,9 +208,11 @@ test.describe('Restaurer une installation neuve depuis l’assistant (Story 31-1
 
 		// (5) Ce que la restauration a rendu, lu AVANT « Se reconnecter » (aucune redirection
 		// avant le clic, C-31-1-39).
-		await expect(page.getByTestId('admin-restore-files-restored')).toContainText('2', {
-			timeout: 60_000,
-		});
+		// Nombre exact (revue P1, E-LOW-5) : « 12 » ou « 20 » ne passent pas.
+		await expect(page.getByTestId('admin-restore-files-restored')).toHaveText(
+			'Pièces justificatives restaurées : 2.',
+			{ timeout: 60_000 },
+		);
 		await expect(page.getByTestId('admin-restore-files-missing')).toHaveCount(0);
 		await expect(page).toHaveURL(/\/onboarding\/restore$/);
 		await capture(page, 'g-fin-import-sans-piece-manquante');
@@ -271,7 +273,9 @@ test.describe('Restaurer une installation neuve depuis l’assistant (Story 31-1
 		await removePiece(pdfFile);
 
 		const backup = await exportByScreen(page, testInfo);
-		await expect(page.getByTestId('admin-backup-files-not-included')).toContainText('1');
+		await expect(page.getByTestId('admin-backup-files-not-included')).toContainText(
+			"Pièces référencées que le fichier n'a pas pu inclure : 1 (",
+		);
 		await capture(page, 'e-export-pieces-non-incluses');
 
 		// Import de cette archive sur la même installation, la pièce toujours absente.
@@ -279,9 +283,13 @@ test.describe('Restaurer une installation neuve depuis l’assistant (Story 31-1
 		await expect(page.getByTestId('backup-env-notice')).toBeVisible();
 		await capture(page, 'd-restore-panneau-avis-env');
 		await importByScreen(page, backup);
-		await expect(page.getByTestId('admin-restore-files-missing')).toContainText('1', {
-			timeout: 60_000,
-		});
+		await expect(page.getByTestId('admin-restore-files-missing')).toContainText(
+			'Pièces référencées introuvables après la restauration : 1.',
+			{ timeout: 60_000 },
+		);
+		await expect(page.getByTestId('admin-restore-files-restored')).toHaveText(
+			'Pièces justificatives restaurées : 0.',
+		);
 		await expect(page.getByTestId('admin-restore-relogin')).toBeVisible();
 		await expect(page).toHaveURL(/\/admin\/restore$/);
 		await capture(page, 'h-fin-import-pieces-manquantes');
@@ -329,6 +337,8 @@ test.describe('Restaurer une installation neuve depuis l’assistant (Story 31-1
 		await expect(error).toContainText("La réponse du serveur n'est pas arrivée");
 		await expect(error).not.toContainText('Erreur serveur');
 		await expect(page.getByTestId('admin-restore-relogin')).toBeVisible();
+		// Revue P1 (E-LOW-3) : pas de nouvel import avant vérification.
+		await expect(page.getByTestId('admin-restore-import-button')).toBeDisabled();
 		expect(reached).toBe(true);
 		await capture(page, 'i-import-issue-inconnue');
 	});

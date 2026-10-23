@@ -1628,7 +1628,7 @@ admin-backup-error-generic = Installation export failed. Please try again shortl
 admin-backup-page-hint-secret = The .keshbackup file contains sensitive data (credentials, tokens). Keep it in a safe place.
 # Story 31-1b (#503) — what the file does not contain, what the export left out
 admin-backup-not-included-env = The file does not contain the server configuration (.env file: email, session secret, directories…). Keep it separately: on a new machine, recreate it before importing.
-admin-backup-files-not-included = Referenced documents the file could not include: { $count } (file missing, altered, unreadable or inconsistent with the database) — see the server log. After a restore, they will answer "document unavailable".
+admin-backup-files-not-included = Referenced documents the file could not include: { $count } (file missing, altered, unreadable or inconsistent with the database) — see the server log. After a restore, they will not be found.
 admin-backup-exceeds-import-limit = This file exceeds the allowed import size ({ $mib } MiB): to restore it, raise KESH_ADMIN_IMPORT_MAX_MB.
 # Story 17-3d — full installation import / restore (.keshbackup, Admin)
 nav-admin-restore = Restore / Import
@@ -1638,7 +1638,7 @@ admin-restore-file-label = .keshbackup file to import
 admin-restore-action-import = Import and replace the installation
 admin-restore-action-importing = Importing…
 admin-restore-confirm-title = Replace the entire installation?
-admin-restore-confirm-body = This action will replace ALL data of the current installation. A backup of the current state will be created server-side before the import. You will be logged out and must log back in with the credentials of the imported instance.
+admin-restore-confirm-body = This action will replace ALL data of the current installation. A backup of the current state will be created server-side before the import. At the end, your session will be closed: you will log back in with the credentials of the imported instance.
 admin-restore-confirm-cancel = Cancel
 admin-restore-confirm-ok = Confirm replacement
 admin-restore-error-version = This backup requires a newer version of Kesh ({ $src }) than the one installed ({ $bin }). Update Kesh before importing again.
@@ -1648,7 +1648,7 @@ admin-restore-error-generic = Import failed. The previous state of the installat
 # Story 31-1b (#503) — what the restore gave back; unknown outcome of a long import
 admin-restore-success = Import successful: the installation is now the one from the backup. Log back in with the backup's credentials.
 admin-restore-files-restored = Supporting documents restored: { $count }.
-admin-restore-files-missing = Referenced documents not found after the restore: { $count }. They will answer "document unavailable"; restore the documents directory from another backup.
+admin-restore-files-missing = Referenced documents not found after the restore: { $count }. Restore the documents directory from another backup.
 admin-restore-action-relogin = Log back in
 admin-restore-error-unknown-outcome = The server's response did not arrive: the import may have completed. Log back in to check the state of the installation.
 export-global-title = Global export of your data

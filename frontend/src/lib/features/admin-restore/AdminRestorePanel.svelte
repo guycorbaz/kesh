@@ -44,7 +44,14 @@
 	 * proxy inverse a abandonné l'attente (502, 504 — Kesh n'émet ni l'un ni
 	 * l'autre). Le serveur, lui, va au bout de l'import (AC8b) : l'installation est
 	 * peut-être déjà remplacée, et « réessayez » inviterait à la remplacer encore.
-	 * Le 503 n'en est pas : Kesh l'émet, avant tout import.
+	 * Le 503 n'en est pas : Kesh l'émet quand la base est injoignable, presque
+	 * toujours avant tout import. ⚠️ Angle mort assumé (revue P1, B-3) : une coupure
+	 * de la base au `COMMIT` de la restauration rend aussi un 503 (`map_db_error`,
+	 * `ConnectionUnavailable`) alors que l'issue est inconnue ; cas rare, et un nouvel
+	 * import rejouerait les mêmes données.
+	 *
+	 * Après une issue inconnue, l'import n'est plus proposé (revue P1, E-LOW-3) : on
+	 * vérifie d'abord en se reconnectant ; recharger la page le rouvre.
 	 */
 	function issueInconnue(err: unknown): boolean {
 		if (!isApiError(err)) return false;
@@ -79,7 +86,7 @@
 
 	/** Ouvre le modal de confirmation (n'envoie RIEN — DC-D3). */
 	function requestImport() {
-		if (!selectedFile || importing || imported) return;
+		if (!selectedFile || importing || imported || unknownOutcome) return;
 		errorMsg = null;
 		confirmOpen = true;
 	}
@@ -205,7 +212,7 @@
 			type="file"
 			accept=".keshbackup"
 			onchange={onFileChange}
-			disabled={importing || imported !== null}
+			disabled={importing || imported !== null || unknownOutcome}
 			aria-describedby={errorMsg ? 'admin-restore-error' : undefined}
 			data-testid="admin-restore-file-input"
 			class="text-sm"
@@ -252,7 +259,7 @@
 			>
 				{i18nMsg(
 					'admin-restore-files-missing',
-					"Pièces référencées introuvables après la restauration : { $count }. Elles répondront « document indisponible » ; restaurez le dossier des documents depuis une autre sauvegarde.",
+					"Pièces référencées introuvables après la restauration : { $count }. Restaurez le dossier des documents depuis une autre sauvegarde.",
 					{ count: imported.filesMissing },
 				)}
 			</div>
@@ -276,7 +283,7 @@
 		<Button
 			variant="destructive"
 			onclick={requestImport}
-			disabled={!selectedFile || importing || imported !== null}
+			disabled={!selectedFile || importing || imported !== null || unknownOutcome}
 			aria-busy={importing}
 			data-testid="admin-restore-import-button"
 		>
@@ -297,7 +304,7 @@
 			<Dialog.Description>
 				{i18nMsg(
 					'admin-restore-confirm-body',
-					"Cette action va remplacer TOUTES les données de l'installation actuelle. Une sauvegarde de l'état actuel sera créée côté serveur avant l'import. Vous serez déconnecté et devrez vous reconnecter avec les identifiants de l'instance importée.",
+					"Cette action va remplacer TOUTES les données de l'installation actuelle. Une sauvegarde de l'état actuel sera créée côté serveur avant l'import. À la fin, votre session sera fermée : vous vous reconnecterez avec les identifiants de l'instance importée.",
 				)}
 			</Dialog.Description>
 		</Dialog.Header>

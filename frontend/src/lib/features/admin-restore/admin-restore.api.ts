@@ -21,8 +21,9 @@ export interface FullImportResponse {
 	filesRestored?: number;
 	/**
 	 * Story 31-1a (AC9) — pièces que la base restaurée référence mais que le
-	 * dossier des documents ne porte pas (ou altérées) : elles répondront « document
-	 * indisponible ». Optionnel, comme `filesRestored`.
+	 * dossier des documents ne porte pas (ou altérées) : elles seront introuvables
+	 * (« Le document n'a pas été restauré. », refus 410 du PDF figé). Optionnel, comme
+	 * `filesRestored`.
 	 */
 	filesMissing?: number;
 }

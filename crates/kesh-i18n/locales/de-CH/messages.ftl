@@ -1628,7 +1628,7 @@ admin-backup-error-generic = Export der Installation fehlgeschlagen. Versuchen S
 admin-backup-page-hint-secret = Die .keshbackup-Datei enthält sensible Daten (Anmeldedaten, Tokens). Bewahren Sie sie sicher auf.
 # Story 31-1b (#503) — was die Datei nicht enthält, was der Export ausgelassen hat
 admin-backup-not-included-env = Die Datei enthält die Serverkonfiguration nicht (Datei .env: E-Mail-Versand, Sitzungsgeheimnis, Verzeichnisse…). Bewahren Sie sie separat auf: Erstellen Sie sie auf einem neuen Rechner vor dem Import neu.
-admin-backup-files-not-included = Referenzierte Belege, die die Datei nicht aufnehmen konnte: { $count } (Datei fehlt, verändert, unlesbar oder mit der Datenbank unvereinbar) — siehe Serverprotokoll. Nach einer Wiederherstellung antworten sie mit «Dokument nicht verfügbar».
+admin-backup-files-not-included = Referenzierte Belege, die die Datei nicht aufnehmen konnte: { $count } (Datei fehlt, verändert, unlesbar oder mit der Datenbank unvereinbar) — siehe Serverprotokoll. Nach einer Wiederherstellung sind sie nicht auffindbar.
 admin-backup-exceeds-import-limit = Diese Datei überschreitet die zulässige Importgrösse ({ $mib } MiB): Um sie wiederherzustellen, erhöhen Sie KESH_ADMIN_IMPORT_MAX_MB.
 # Story 17-3d — vollständiger Installationsimport / -wiederherstellung (.keshbackup, Admin)
 nav-admin-restore = Wiederherstellen / Importieren
@@ -1638,7 +1638,7 @@ admin-restore-file-label = Zu importierende .keshbackup-Datei
 admin-restore-action-import = Importieren und Installation ersetzen
 admin-restore-action-importing = Import läuft…
 admin-restore-confirm-title = Gesamte Installation ersetzen?
-admin-restore-confirm-body = Dieser Vorgang ersetzt ALLE Daten der aktuellen Installation. Vor dem Import wird serverseitig eine Sicherung des aktuellen Zustands erstellt. Sie werden abgemeldet und müssen sich mit den Anmeldedaten der importierten Instanz erneut anmelden.
+admin-restore-confirm-body = Dieser Vorgang ersetzt ALLE Daten der aktuellen Installation. Vor dem Import wird serverseitig eine Sicherung des aktuellen Zustands erstellt. Am Ende wird Ihre Sitzung geschlossen: Sie melden sich mit den Anmeldedaten der importierten Instanz erneut an.
 admin-restore-confirm-cancel = Abbrechen
 admin-restore-confirm-ok = Ersetzen bestätigen
 admin-restore-error-version = Dieses Backup erfordert eine neuere Kesh-Version ({ $src }) als die installierte ({ $bin }). Aktualisieren Sie Kesh vor dem erneuten Import.
@@ -1648,7 +1648,7 @@ admin-restore-error-generic = Import fehlgeschlagen. Der vorherige Zustand der I
 # Story 31-1b (#503) — was die Wiederherstellung zurückgegeben hat; ungewisser Ausgang eines langen Imports
 admin-restore-success = Import erfolgreich: Die Installation entspricht der Sicherung. Melden Sie sich mit den Anmeldedaten der Sicherung erneut an.
 admin-restore-files-restored = Wiederhergestellte Belege: { $count }.
-admin-restore-files-missing = Nach der Wiederherstellung nicht auffindbare referenzierte Belege: { $count }. Sie antworten mit «Dokument nicht verfügbar»; stellen Sie das Dokumentenverzeichnis aus einer anderen Sicherung wieder her.
+admin-restore-files-missing = Nach der Wiederherstellung nicht auffindbare referenzierte Belege: { $count }. Stellen Sie das Dokumentenverzeichnis aus einer anderen Sicherung wieder her.
 admin-restore-action-relogin = Erneut anmelden
 admin-restore-error-unknown-outcome = Die Antwort des Servers ist nicht eingetroffen: Der Import könnte abgeschlossen sein. Melden Sie sich erneut an, um den Zustand der Installation zu prüfen.
 export-global-title = Globaler Export Ihrer Daten

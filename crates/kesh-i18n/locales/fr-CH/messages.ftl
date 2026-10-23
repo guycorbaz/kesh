@@ -1699,7 +1699,7 @@ admin-backup-error-generic = Échec de l'export de l'installation. Réessayez da
 admin-backup-page-hint-secret = Le fichier .keshbackup contient des données sensibles (identifiants, jetons). Conservez-le en lieu sûr.
 # Story 31-1b (#503) — ce que le fichier ne contient pas, ce que l'export a omis
 admin-backup-not-included-env = Le fichier ne contient pas la configuration du serveur (fichier .env : messagerie, secret de session, dossiers…). Conservez-la à part : sur une nouvelle machine, recréez-la avant d'importer.
-admin-backup-files-not-included = Pièces référencées que le fichier n'a pas pu inclure : { $count } (fichier absent, altéré, illisible ou incohérent avec la base) — voir le journal du serveur. Après une restauration, elles répondront « document indisponible ».
+admin-backup-files-not-included = Pièces référencées que le fichier n'a pas pu inclure : { $count } (fichier absent, altéré, illisible ou incohérent avec la base) — voir le journal du serveur. Après une restauration, elles seront introuvables.
 admin-backup-exceeds-import-limit = Ce fichier dépasse la taille d'import autorisée ({ $mib } Mio) : pour le restaurer, relevez KESH_ADMIN_IMPORT_MAX_MB.
 # Story 17-3d — import/restauration complète d'installation (.keshbackup, Admin)
 nav-admin-restore = Restaurer / Importer
@@ -1709,7 +1709,7 @@ admin-restore-file-label = Fichier .keshbackup à importer
 admin-restore-action-import = Importer et remplacer l'installation
 admin-restore-action-importing = Import en cours…
 admin-restore-confirm-title = Remplacer toute l'installation ?
-admin-restore-confirm-body = Cette action va remplacer TOUTES les données de l'installation actuelle. Une sauvegarde de l'état actuel sera créée côté serveur avant l'import. Vous serez déconnecté et devrez vous reconnecter avec les identifiants de l'instance importée.
+admin-restore-confirm-body = Cette action va remplacer TOUTES les données de l'installation actuelle. Une sauvegarde de l'état actuel sera créée côté serveur avant l'import. À la fin, votre session sera fermée : vous vous reconnecterez avec les identifiants de l'instance importée.
 admin-restore-confirm-cancel = Annuler
 admin-restore-confirm-ok = Confirmer le remplacement
 admin-restore-error-version = Ce backup requiert une version de Kesh plus récente ({ $src }) que celle installée ({ $bin }). Mettez à jour Kesh avant de réimporter.
@@ -1719,7 +1719,7 @@ admin-restore-error-generic = Échec de l'import. L'état précédent de l'insta
 # Story 31-1b (#503) — ce que la restauration a rendu ; issue inconnue d'un import long
 admin-restore-success = Import réussi : l'installation est celle de la sauvegarde. Reconnectez-vous avec les identifiants de la sauvegarde.
 admin-restore-files-restored = Pièces justificatives restaurées : { $count }.
-admin-restore-files-missing = Pièces référencées introuvables après la restauration : { $count }. Elles répondront « document indisponible » ; restaurez le dossier des documents depuis une autre sauvegarde.
+admin-restore-files-missing = Pièces référencées introuvables après la restauration : { $count }. Restaurez le dossier des documents depuis une autre sauvegarde.
 admin-restore-action-relogin = Se reconnecter
 admin-restore-error-unknown-outcome = La réponse du serveur n'est pas arrivée : l'import a pu aboutir. Reconnectez-vous pour vérifier l'état de l'installation.
 export-global-title = Export global de vos données
