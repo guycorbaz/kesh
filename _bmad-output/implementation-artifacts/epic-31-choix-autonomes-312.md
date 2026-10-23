@@ -109,3 +109,34 @@
   `cmp` avec le fichier du worktree) ; `PATH` sans `docker` testé. Mot de passe par `MYSQL_PWD`.
 - **Écartée** : normaliser en retirant les antislashs (rend `_sqlx_test%` non échappé indiscernable du bon droit).
   **Réversible** : oui.
+
+### Amendements du 2026-10-23 (validation P2 ; les entrées ci-dessus ne sont pas réécrites)
+
+- **Amende C-31-2-4** (R2-8) : le « Retenu » dit « après l'attente de MariaDB » ; l'étape de droits emploie le client
+  `mariadb`, installé par « Install mariadb-client » (`ci.yml:156-157`), **après** « Wait for MariaDB ». Elle se place donc
+  après « Install mariadb-client » et avant « Apply migrations » (déjà dans la fiche, 1c).
+- **Amende C-31-2-11** (F2-4, R2-5, F2-11) : la connexion `docker/login-action` précède `docker/setup-buildx-action` dans
+  les trois jobs qui construisent (`docker-build`, `e2e-smoke`, `release.yml` — remontée de `:44` avant `:41`), le builder
+  tirant `moby/buildkit` depuis Docker Hub ; `e2e-smoke` porte lui-même `setup-buildx` (cache `gha`). Que l'image du
+  builder soit authentifiée est une hypothèse sur le comportement de l'action, constatée au journal du premier run.
+- **Amende C-31-2-12** (F2-5, F2-6, F2-7) : le mot de passe est exporté puis transmis sans valeur (`docker exec -e
+  MYSQL_PWD`) ; seule la chaîne du condensé est retirée de la ligne `USAGE` ; un attendu à zéro `GRANT` est refusé ; le
+  garde distingue « absent » (trois cas, rend 0 en le disant) de « en erreur » (non nul, cause nommée).
+
+### C-31-2-13 — Le test du garde est lancé par une enveloppe Rust dans `kesh-db` (R2-1, F2-1)
+
+- **Contexte** : la fiche affirmait qu'aucun test automatique ne lance `scripts/tests/*.test.sh` ; faux, car
+  `crates/kesh-db/tests/prepare_release_script.rs` lance `prepare-release.test.sh` (nextest, CI) et refuse un test muet.
+- **Retenu** : `crates/kesh-db/tests/check_dev_grants_script.rs`, calquée sur ce précédent, lance
+  `check-dev-grants.test.sh` ; toutes ses acquisitions sont injectées (jamais le conteneur réel). Conséquence assumée :
+  `kesh-db` est touché, donc gate complet même en cours de boucle (`CLAUDE.md`).
+- **Écartée** : un test local jamais lancé (test muet : M3 ne rougirait jamais en CI) ; une étape YAML d'une ligne dans
+  `ci.yml` (ne tourne pas au gate local).
+- **Réversible** : oui.
+
+### C-31-2-14 — `docker-compose.dev.yml:107-108` et `README.md:183` rejoignent la story (R2-2, F2-3)
+
+- **Contexte** : l'inventaire d'AC5, enfin exécutable, rend deux sites que la fiche ne nommait pas : un commentaire du
+  compose de dev (« les droits globaux dont `#[sqlx::test]` a besoin », faux) et un `mysql://root:…` de `README.md`.
+- **Retenu** : les deux sont réécrits (mécanique, même symptôme) ; le commentaire n'exige aucune recréation du conteneur.
+- **Réversible** : oui.
