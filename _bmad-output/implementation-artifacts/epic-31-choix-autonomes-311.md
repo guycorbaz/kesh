@@ -631,3 +631,7 @@ rembobiner.
 `files/` en format 2 ») est **retirée** — sa prémisse était fausse (`add_directory` pose `data_start`, `zip-2.4.2`
 `write.rs:1040-1042`, `:1422`). L'entrée `files/` reste écrite. `WriteSeek` est `pub(crate)`.
 
+**Amendement (2026-10-24, validation P7)** : `WriteSeek` est **`pub`**, non `pub(crate)` — les tests de l'AC36 sont dans un
+crate externe ; le module `auto_backup` expose en `pub` `BackupEnv`, `RealBackupEnv`, `WriteSeek`, `run_once`, `RunOutcome`,
+`RunTrigger`, `spawn`. **État final de C-31-1-46** : `Box<dyn WriteSeek>` ; l'entrée `files/` reste écrite.
+

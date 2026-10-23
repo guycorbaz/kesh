@@ -742,7 +742,7 @@ Synology ; stables sur la chaîne 1.96.1 du dépôt) — **`kind()` d'abord** : 
 `raw_os_error()` 28 ou 122 ne vaut que pour une erreur née hors du crate ; `'failed'` sinon (C-31-1-32). **La
 rétention ne tourne pas**, les sauvegardes existantes restent. Le trait d'injection de l'AC36 (`BackupEnv: Send +
 Sync`, qui remplace `FreeSpace`, passé en `Arc<dyn BackupEnv>`) porte deux méthodes : `free_bytes(dir)` et
-`wrap_writer(file: File) -> Box<dyn WriteSeek>`, où `WriteSeek` est un trait du module, `pub(crate) trait WriteSeek: Write + Seek + Send {}` (visibilité égale à celle de `BackupEnv`, sans quoi le lint `private_interfaces` rougit sous `-D warnings`) avec une implémentation générale `impl<T: Write + Seek + Send> WriteSeek for T {}` — un objet-trait n'admet qu'**un** trait non automatique (E0225), d'où ce trait d'union (validation P5, R1) ; l'écrivain de test implémente `Write + Seek` — l'écrivain **possède** un **clone** du fichier
+`wrap_writer(file: File) -> Box<dyn WriteSeek>`, où `WriteSeek` est un trait du module, `pub trait WriteSeek: Write + Seek + Send {}` — **visibilité** : les tests de l'AC36 vivent dans un crate externe (`crates/kesh-api/tests/admin_auto_backup_e2e.rs`), donc le module `kesh_api::auto_backup` et ce qu'ils emploient sont **`pub`** : `BackupEnv`, `RealBackupEnv`, `WriteSeek`, `run_once`, `RunOutcome`, `RunTrigger` et `spawn` (sinon E0603, ou `private_interfaces` sous `-D warnings`) avec une implémentation générale `impl<T: Write + Seek + Send> WriteSeek for T {}` — un objet-trait n'admet qu'**un** trait non automatique (E0225), d'où ce trait d'union (validation P5, R1) ; l'écrivain de test implémente `Write + Seek` — l'écrivain **possède** un **clone** du fichier
 (`try_clone`, même descripteur, AC4), si bien qu'il entre dans le `spawn_blocking` ; l'original reste à
 `write_backup_file`, qui appelle `sync_all()` dessus une fois l'archive finie (F10 de la P2 : sur btrfs et sur un
 partage réseau, `ENOSPC`/`EDQUOT` surgissent souvent au `fsync` ; C-31-1-46, P3 : l'emprunt `&'a mut File` de la P2
@@ -1606,3 +1606,15 @@ gardé à l'AC14 comme relevé daté ; les « ≥ 4 » du tableau des tests, qui
 - **T5 (LOW)** : `pub(crate) trait WriteSeek` (lint `private_interfaces`).
 - T3, T4 (LOW) : laissés au développement (T4 : une archive de format 2 portant l'entrée `files/` est la forme normale).
 - Passe suivante : ciblée P7 (Sonnet) sur ce commit.
+
+### Validation P7 ciblée (2026-10-24) — Sonnet, lentille T sur `HEAD~2..HEAD` : 0/1/0/3 ; remédiée par l'orchestrateur
+
+- **H1 (HIGH)**, né de la remédiation P6 (T5) : `pub(crate) trait WriteSeek` aurait été invisible des tests d'intégration
+  de l'AC36, qui vivent dans un crate externe, et la fiche ne déclarait nulle part la visibilité de `BackupEnv`. Corrigé à
+  l'AC30 : `pub trait WriteSeek`, et la liste des éléments **`pub`** du module `auto_backup` écrite.
+- Axe 1 confirmé : l'état final de l'entrée `files/` est cohérent (AC3, AC6, AC6b, T-a4b) ; le Change Log ne reçoit que
+  des ajouts. LOW laissés au développement (L1 : les deux amendements de C-31-1-46 se lisent ensemble ; entrée d'origine
+  non marquée).
+- *Deuxième remédiation de l'orchestrateur, deuxième défaut introduit* (P5 → T1, P6 → H1) : la règle « la sévérité se
+  déplace vers ce qu'on vient d'écrire » vaut pour l'orchestrateur comme pour les agents.
+- Passe suivante : ciblée P8 (Opus) sur ce seul commit — **dernière passe permise** par le plafond de huit.
