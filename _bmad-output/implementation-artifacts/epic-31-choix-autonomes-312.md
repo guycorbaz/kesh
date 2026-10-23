@@ -73,3 +73,39 @@
 - **Écartée** : laisser #698 ouverte — même mécanisme que le volet 1, même correction.
 - **Réversible** : oui.
 - **Rappel** : #699 (montage relatif) reste ouverte ; le garde du volet 1 la signale sans la prévenir.
+
+### Amendements du 2026-10-23 (validation P1 ; les entrées ci-dessus ne sont pas réécrites)
+
+- **Amende C-31-2-10** (R-2, F6) : la prescription « applique `01-dev-grants.sql` (ou un `GRANT`…) » est **retirée**. Le
+  service de `release.yml` crée déjà `kesh` (`MARIADB_USER: kesh`, `release.yml:22-26`) avec `ALL` sur `kesh`.*, soit les
+  droits de la production ; la seule modification est `DATABASE_URL` (`release.yml:94`) → `mysql://kesh:kesh_dev@
+  127.0.0.1:3306/kesh`, sans fichier de droits ni `GRANT` (le fichier de dev ajouterait `\_sqlx\_test%`.* et `kesh%`.*,
+  que la production n'a pas). Porté par l'AC18 et la tâche T4 de la fiche. Ne se vérifie qu'au tag v0.15.0.
+- **Amende C-31-2-4** (R-1) : l'« écartée » « modifier `release.yml` » vaut pour `credentials` et le reste de la
+  publication, **non** pour le `DATABASE_URL` du smoke, repris par C-31-2-10.
+- **Amende C-31-2-9** (F2) : provenance du `GRANT ALL *.*` de la rétrospective 29 — le fichier versionné de `main` n'a
+  jamais porté de droit global (seulement deux commits intermédiaires de la 22-5, corrigés en passe 1) ; le montage est
+  vide depuis le 2026-10-11 ; le `*.*` a été **posé à la main par un agent** (journal de l'Epic 15, 2026-10-10). D'où
+  l'interdit de tout `GRANT`/`REVOKE` manuel sur le MariaDB de dev partagé, ajouté à `docs/agents-orchestration.md` § 2 par la
+  fiche (AC5). Le conteneur a été recréé par l'orchestrateur le 2026-10-23 vers 18:13Z depuis le dépôt principal : plus de
+  recréation à demander (AC7, T7).
+
+### C-31-2-11 — Docker Hub authentifié aussi pour le build des images (F7)
+
+- **Contexte** : `credentials` ne couvre que les services MariaDB ; les jobs `docker-build` et `e2e-smoke` tirent `rust`,
+  `node` et `debian` (Dockerfile) anonymement. Retirer l'avertissement A-C9 aurait laissé un texte qui dit moins que le
+  dépôt.
+- **Retenu** : `docker/login-action@v3` (mêmes secrets) avant le build de ces deux jobs (`release.yml` le fait déjà) ;
+  AC13 compte les étapes de connexion en plus des `credentials`. Les forks échouent bruyamment, comme pour C-31-2-3.
+- **Écartée** : réécrire l'avertissement au lieu de le retirer (garde la dépendance anonyme, pour un coût de deux étapes
+  YAML). **Réversible** : oui.
+
+### C-31-2-12 — Le garde a des sources injectables (R-5, F1, F3)
+
+- **Contexte** : depuis la recréation du conteneur, aucun état défaillant réel n'existe pour éprouver le garde ; AC3 ne
+  portait que sur des `SHOW GRANTS`.
+- **Retenu** : acquisition et comparaison séparées pour les droits (`--grants-from-stdin`, lu en `-N -B -r`,
+  normalisation minimale qui garde les antislashs, fixture capturée) et pour le montage (`--mount-source <répertoire>`,
+  `cmp` avec le fichier du worktree) ; `PATH` sans `docker` testé. Mot de passe par `MYSQL_PWD`.
+- **Écartée** : normaliser en retirant les antislashs (rend `_sqlx_test%` non échappé indiscernable du bon droit).
+  **Réversible** : oui.

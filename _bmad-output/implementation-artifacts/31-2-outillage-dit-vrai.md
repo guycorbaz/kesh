@@ -4,34 +4,35 @@ Status: ready-for-dev
 
 Issue : [#577](https://github.com/guycorbaz/kesh/issues/577) (bug, P3, documentation) ; actions C3 (rétrospective 29),
 A2, A3 (rétrospective 15), A-C7 et A-C9 (rétrospective 15). Branche `story/31-2`. Choix : `epic-31-choix-autonomes.md`
-(C-31-0-2, C-31-0-3) et `epic-31-choix-autonomes-312.md` (C-31-2-1 à C-31-2-9). Aucune migration, aucun code de
+(C-31-0-2, C-31-0-3) et `epic-31-choix-autonomes-312.md` (C-31-2-1 à C-31-2-11). Issues liées : #698 (smoke de release
+en `root`, **intégrée**, fermée par la PR) et #699 (montage relatif, **reste ouverte**). Aucune migration, aucun code de
 production, aucun texte visible de l'application : ni i18n, ni manuel, ni capture.
 
 Quatre volets indépendants (C-31-0-3), revus en une boucle. Le dév les livre **dans cet ordre** : 4, 3, 1, 2 — du plus
 mécanique au plus coûteux en gate. Un commit par volet.
 
-## Ce que cette story établit d'abord (prémisses vérifiées le 2026-10-23, lecture seule)
+## Ce que cette story établit d'abord (prémisses vérifiées le 2026-10-23 **au matin**, lecture seule — état du conteneur AVANT sa recréation de 18:13Z, voir la dernière ligne)
 
 | Prémisse | Constat | Verdict |
 |---|---|---|
-| « Le conteneur de dev a les droits du fichier versionné » (C3, rétro 29 § 4.2 : il aurait `GRANT ALL *.*`) | `SHOW GRANTS FOR 'kesh'@'%'` rend `GRANT USAGE ON *.*` et `GRANT ALL PRIVILEGES ON \`kesh\`.*` — **moins** que le fichier, pas plus | **Fausse dans les deux sens.** |
+| « Le conteneur de dev a les droits du fichier versionné » (C3, rétro 29 § 4.2 : il aurait `GRANT ALL *.*`) | `SHOW GRANTS FOR 'kesh'@'%'` rend `GRANT USAGE ON *.*` et `GRANT ALL PRIVILEGES ON \`kesh\`.*` — **moins** que le fichier, pas plus | **Fausse dans les deux sens.** Provenance du `GRANT ALL *.*` que décrivait la rétrospective 29 : le fichier versionné ne l'a porté que dans un commit intermédiaire de la 22-5, jamais sur `main` (`git log --all -S'ON *.*' -- scripts/mariadb-init/01-dev-grants.sql` : `94b5643e`, `31aaa20a`, corrigés en passe 1) ; le montage est vide depuis le 2026-10-11, donc `kesh` n'avait que `kesh`.* dès ce démarrage ; le `*.*` observé le 2026-10-14 (29-4) est un **`GRANT` posé à la main par un agent** (journal de l'Epic 15, 2026-10-10 : « L'agent a fait GRANT ALL ON *.* TO kesh sur le dev ») — pratique qui a masqué la panne du montage et rendu vertes les sondes `INNODB_TRX` des 29-4 et 29-8. |
 | « Le fichier `scripts/mariadb-init/01-dev-grants.sql` est monté dans le conteneur » (`docs/testing.md` § *Base de dev jetable*, point 1) | `docker inspect kesh-mariadb-dev` : le montage a pour source `/home/gcorbaz/devel/kesh-chore-tmpfs/scripts/mariadb-init`, un répertoire **vide** (créé par Docker, propriétaire `root`, 2026-10-11) : le worktree `kesh-chore-tmpfs` n'existe plus, ce n'est même plus un dépôt git | **Cause établie.** |
 | « Le conteneur est celui du compose de dev du dépôt principal » | `com.docker.compose.project.working_dir` = `/home/gcorbaz/devel/kesh-chore-tmpfs` ; démarré le 2026-10-23 07:55 | Le conteneur a été (re)créé depuis un worktree, par `docker compose -f docker-compose.dev.yml up` lancé *dans* ce worktree. |
 | « Les suites emploient l'utilisateur `kesh` » | `scripts/test-fast.sh:33` : `DATABASE_URL=mysql://kesh:kesh_dev@…/kesh` par défaut ; `docs/testing.md` § Prérequis idem ; l'environnement de la session porte la même valeur | Vrai pour le dev. **La CI emploie `root`** (`ci.yml:64`, `root:kesh_root`) ; `docs/testing.md:102` et `:308` aussi, pour deux recettes ponctuelles. |
 | « La CI a les droits de la production » | La CI est `root` sur son service MariaDB ; la production a `kesh`.* seulement (`MARIADB_USER`, `docker-compose.yml:14`) | **Fausse : la CI a bien plus que la production.** Un test qui exige un privilège passe en CI *et* en dev si le conteneur est trop large — c'est le mécanisme des Stories 29-4 et 29-8, côté CI. |
-| « L'écart est corrigé quand le conteneur est conforme au fichier » | Le conteneur actuel, tel quel, **ne peut plus créer une base éphémère** (`CREATE DATABASE` hors `kesh`.* refusé) : tout `#[sqlx::test]` rougit d'emblée. Non exécuté ici (écriture) ; déduit des droits relevés | À confirmer par le dév au premier gate — **signalé à l'orchestrateur : tout gate lancé maintenant sur la station échoue pour cette raison, et non pour la branche.** |
+| « L'écart est corrigé quand le conteneur est conforme au fichier » | Le conteneur actuel, tel quel, **ne peut plus créer une base éphémère** (`CREATE DATABASE` hors `kesh`.* refusé) : tout `#[sqlx::test]` rougit d'emblée. Non exécuté ici (écriture) ; déduit des droits relevés | Relevé du matin ; **sans objet depuis 18:13Z** (ligne suivante). |
+| « Le conteneur a été remis en état » | **Recréé par l'orchestrateur le 2026-10-23 vers 18:13Z** depuis `/home/gcorbaz/devel/kesh` : `docker inspect` rend le montage `/home/gcorbaz/devel/kesh/scripts/mariadb-init`, `StartedAt` 2026-10-23T18:13:03Z ; `SHOW GRANTS` (lu en `-N -B -r`) : `USAGE` sur `*.*`, `ALL` sur `kesh`.*, `\_sqlx\_test%`.*, `kesh%`.* — exactement le fichier plus `MARIADB_USER`. | **Conforme.** La remise en état est faite ; le dév n'en demande aucune et ne dispose plus d'un conteneur défaillant pour éprouver le garde (d'où la source injectable, 1b). |
 
 **Prémisse de l'issue #577 vérifiée** : `ci.yml` n'a que trois jobs (`backend`, `frontend`, `docker-build`), aucun ne lance
 Playwright ; `CLAUDE.md` (§ *E2E*, lignes ~220–226) et `docs/ci.md` (lignes 12, 23–32, 133, 166, 188–192, 212–216)
-décrivent un job `e2e` qui n'existe pas. L'issue reste vraie telle qu'écrite.
+décrivent un job `e2e` qui n'existe pas. L'issue reste vraie telle qu'écrite. Le même symptôme est écrit ailleurs : `docs/ci.md:9-10` (« 3 jobs »), `CLAUDE.md:267` et `:269` (« les **trois** jobs », « les deux autres jobs »), `docs/testing.md:590` (« job `e2e`, step `Smoke test /api/v1/_test/seed` »).
 
 **Prémisse de l'epic : « les six fichiers `.svelte-kit/` versionnés à la racine »** — vérifiée : `git ls-files | grep
 svelte-kit` en rend six (`.svelte-kit/ambient.d.ts`, `generated/client/{app,matchers,nodes/0,nodes/1}.js`,
-`tsconfig.json`), tous ajoutés par les commits `046efa51` (23-3) et `08e20353` (24-4b) ; `.gitignore:8` n'ignore que
+`tsconfig.json`), tous ajoutés par le commit `046efa51` (23-3) — `08e20353` (24-4b) n'a fait que retoucher `ambient.d.ts` ; `.gitignore:8` n'ignore que
 `frontend/.svelte-kit/`. Aucun outil ne les lit : `grep -rn svelte-kit` (hors `node_modules`, `target`, documents de
 planning) ne rend que `frontend/package.json` (`svelte-kit sync`, qui écrit dans `frontend/.svelte-kit/`),
-`frontend/tsconfig.json` (`extends ./.svelte-kit/tsconfig.json`, **relatif à `frontend/`**), `.gitignore` et
-`.dockerignore`. Les fichiers de la racine sont des résidus d'un `svelte-kit sync` lancé depuis la racine.
+`frontend/tsconfig.json` (`extends ./.svelte-kit/tsconfig.json`, **relatif à `frontend/`**), `.gitignore`, `frontend/.gitignore:8` (`/.svelte-kit`), `.dockerignore`, et `crates/kesh-db/tests/test_schema_guard.rs:847` (`SKIPPED_DIRS`, un lecteur qui *saute* le répertoire). Les fichiers de la racine sont des résidus d'un `svelte-kit sync` lancé depuis la racine.
 
 ## Volet 1 — Les droits du conteneur de dev (C3)
 
@@ -42,40 +43,49 @@ planning) ne rend que `frontend/package.json` (`svelte-kit sync`, qui écrit dan
 hérite d'un chemin que la suppression du worktree vide. Ce n'est pas corrigeable dans le compose (un chemin absolu
 écrit en dur casserait les autres postes ; une variable de plus ajoute un réglage à oublier). **Retenu (C-31-2-1)** : la
 règle « le conteneur de dev se crée **depuis le dépôt principal** seulement » est écrite (`docs/testing.md` § *Base de
-dev jetable*, `docs/agents-orchestration.md` § 4), **et** un garde la rend visible (1b) — parce que, comme tout ce dépôt
-le montre, une règle sans garde est une règle contournée.
+dev jetable*, `docs/agents-orchestration.md` § 2 — interdits — et rappelée au § 4), **et** un garde la rend visible (1b) — parce que, comme tout ce dépôt
+le montre, une règle sans garde est une règle contournée. Le même § 2 reçoit l'interdit de **tout `GRANT`/`REVOKE` manuel sur le MariaDB de dev partagé** : un droit manquant se signale à l'orchestrateur (c'est ce geste, répété sans trace, qui a masqué la panne du montage douze jours). La règle est portée par un AC (AC5), non par la seule prose.
 
-**1b. Un garde qui lit les droits réels : `scripts/check-dev-grants.sh`.** Lancé par `scripts/test-fast.sh` avant
-`nextest` (et utilisable seul). Il sépare deux gestes :
+**1b. Un garde qui lit les droits réels : `scripts/check-dev-grants.sh`.** Lancé par `scripts/test-fast.sh` **avant
+`cargo clippy`** — donc avant toute compilation, y compris sous `--no-lint` (le garde tourne dans les deux cas), juste après
+le contrôle de `cargo-nextest` (et utilisable seul). Il sépare **deux acquisitions et deux comparaisons pures**, chacune
+injectable pour être testée sans conteneur :
 
-- l'**acquisition** : `SHOW GRANTS FOR CURRENT_USER` de l'utilisateur de `DATABASE_URL`, par `docker exec
-  kesh-mariadb-dev mariadb …` (aucun client MariaDB requis sur l'hôte) ; et, du même conteneur, la **source du montage**
-  `/docker-entrypoint-initdb.d` par `docker inspect` — répertoire absent, vide, ou sans `01-dev-grants.sql` ;
-- la **comparaison** (fonction pure, lisible sur l'entrée standard avec `--from-stdin`, pour être testée sans
-  conteneur) : l'ensemble attendu est **dérivé du fichier versionné** (ses lignes `GRANT … TO 'kesh'@'%'`) **plus** le
-  droit de `MARIADB_USER`, `GRANT ALL PRIVILEGES ON \`kesh\`.*`, plus `USAGE` ; tout droit **en moins** (ce que montre
-  le conteneur d'aujourd'hui) **et tout droit en plus** (un `*.*` ou `PROCESS` posé à la main, ce que la rétrospective 29
-  décrivait) échoue. L'égalité d'ensembles est le critère : c'est ce qui fait que « retirer les droits que la
-  production n'a pas » (décision de Guy, 2026-10-23) est contrôlé, non constaté une fois.
-- sortie en cas d'échec : le droit manquant ou superflu nommé, la cause probable (montage vide : chemin lu et
-  répertoire), et **la remise en état** — recréer le conteneur depuis le dépôt principal. Cette remise en état efface
-  les bases de **tous** les agents (tmpfs) : le script **n'y procède jamais**, il la nomme (`docs/agents-orchestration.md`
-  § 2).
-- hors conteneur de dev (`docker` ou le conteneur absent, `DATABASE_URL` vers un autre hôte) : le garde **dit** qu'il ne
-  contrôle rien et rend 0 — un MariaDB non conteneurisé reste possible, mais le silence est exclu (« un détecteur qui se
-  tait »).
+- **Droits.** Acquisition : `docker exec -e MYSQL_PWD=… kesh-mariadb-dev mariadb -N -B -r -u kesh -e 'SHOW GRANTS FOR
+  CURRENT_USER'` (le mot de passe passe par l'environnement, non par `-p` visible dans `ps` ; aucun client MariaDB requis
+  sur l'hôte). **`-N -B -r` est imposé** : sans `-r`, le client double les antislashs (`\\_sqlx\\_test%`) ; avec, il rend
+  `\_sqlx\_test%`, forme du fichier. Comparaison (`--grants-from-stdin`) : l'attendu est **dérivé des seules lignes
+  `^GRANT` du SQL décommenté** de `01-dev-grants.sql`, **plus** `GRANT ALL PRIVILEGES ON \`kesh\`.*` (`MARIADB_USER`, lu
+  dans `docker-compose.dev.yml`) et `USAGE`. **Normalisation explicite et minimale** (et rien d'autre) : le compte
+  `'kesh'@'%'` du fichier est réécrit en `` `kesh`@`%` `` (forme du serveur) ; la clause `IDENTIFIED BY PASSWORD '…'` est
+  **supprimée** et la ligne `USAGE` n'est jamais recopiée dans un message (elle porte le condensé du mot de passe) ; **les
+  antislashs sont conservés** — les retirer rendrait `_sqlx_test%` non échappé (le défaut que le fichier documente,
+  lignes 33–39 : un `_` joker ouvre `Xsqlx_testZZZ`) indiscernable du bon droit. Égalité d'**ensembles** : tout droit
+  **en moins** et tout droit **en plus** (un `*.*` ou `PROCESS` posé à la main) échoue, de même qu'un compte autre que
+  `kesh@%`. Angle mort écrit : les droits du rôle `PUBLIC` n'apparaissent pas dans `SHOW GRANTS` d'un utilisateur.
+- **Montage.** Acquisition : `docker inspect kesh-mariadb-dev` donne la source de `/docker-entrypoint-initdb.d` ; elle peut
+  être **remplacée** par `--mount-source <répertoire>` (injectable, pour les tests). Comparaison : le répertoire existe,
+  n'est pas vide, contient `01-dev-grants.sql`, et ce fichier est **identique** (`cmp`) à celui du worktree où le garde
+  tourne — sinon le message nomme la cause (« le conteneur lit le dépôt `X`, sur la branche duquel le fichier diffère »,
+  un montage qui suit une autre branche que le worktree courant).
+- **Sortie en cas d'échec** : le droit manquant ou superflu nommé, la cause probable (montage vide : chemin lu), et **la
+  remise en état** — recréer le conteneur depuis le dépôt principal. Cette remise en état efface les bases de **tous**
+  les agents (tmpfs) : le script **n'y procède jamais**, il la nomme (`docs/agents-orchestration.md` § 2).
+- **Hors conteneur de dev** (`docker` ou le conteneur absent, `DATABASE_URL` vers un autre hôte) : le garde **dit** qu'il
+  ne contrôle rien et rend 0 — un MariaDB non conteneurisé reste possible, mais le silence est exclu (« un détecteur qui
+  se tait »). Ce cas se teste (`PATH` sans `docker`).
 
 **1c. Aligné sur la production — et sur la CI.** Table à écrire dans `docs/testing.md` :
 
 | | Droits de `kesh` |
 |---|---|
-| Production (`docker-compose.yml`) | `ALL` sur `kesh`.* (celui de `MARIADB_DATABASE`) |
+| Production (`docker-compose.yml` ; `docker-compose.prod.yml` et `admin-manual.tex:995`, `GRANT ALL PRIVILEGES ON kesh.*`) | `ALL` sur `kesh`.* (celui de `MARIADB_DATABASE`) |
 | Dev (`01-dev-grants.sql`) | idem **+** `ALL` sur `\_sqlx\_test%`.* et `kesh%`.* — nécessaires à `#[sqlx::test]` et à `kesh_e2e` ; **aucun droit global** |
 | CI, aujourd'hui | `root` — **plus large que la production** |
 | CI, après la story | `kesh` avec le **même fichier** appliqué en `root` au démarrage du job |
 
-Dans `ci.yml`, job `backend` : une étape après « Wait for MariaDB » exécute `mariadb -uroot -pkesh_root <
-scripts/mariadb-init/01-dev-grants.sql`, et `DATABASE_URL` devient `mysql://kesh:kesh_dev@127.0.0.1:3306/kesh`.
+Dans `ci.yml`, job `backend` : une étape placée **après « Install mariadb-client »** (le client `mariadb` n'est installé qu'à cet endroit ; « Wait for MariaDB » n'emploie que `mysqladmin`) et avant « Apply migrations » exécute `mariadb -h 127.0.0.1 -P 3306 -uroot -pkesh_root <
+scripts/mariadb-init/01-dev-grants.sql` (**sans `-h`, le client prendrait le socket Unix local, alors que MariaDB est un service conteneurisé**), et `DATABASE_URL` — défini au niveau `env:` du **job**, donc aussi vu par `cargo build` et `clippy` — devient `mysql://kesh:kesh_dev@127.0.0.1:3306/kesh`.
 Les étapes « Apply migrations » et « Seed » (qui emploient `root` sur le client `mariadb`) restent en `root` : c'est
 de l'outillage, pas le chemin de l'application. **Retenu (C-31-2-4)** parce qu'une CI en `root` fait exactement ce que
 fait un conteneur de dev trop large : elle ne peut rien dire d'un privilège que la production n'a pas. ⚠️ **Ne se
@@ -83,43 +93,62 @@ vérifie qu'en CI** : un test qui dépendrait de `root` n'a jamais pu rougir en 
 rougit pour cette raison, le dév **n'annule pas silencieusement** : chaque test concerné est nommé dans la fiche et
 une issue est demandée (« on trace toujours »).
 
-**1d. Pas de CI : `release.yml`.** Son smoke Docker emploie `root` (`DATABASE_URL=mysql://root:kesh_root@…`) pour lancer
-l'image publiée : le backend crée ses tables avec `root`, ce que la production ne fait pas (`kesh`). Le passer en
-`kesh` serait cohérent mais touche le workflow de **publication** : **hors périmètre, demandé en issue** (voir
-« Issues à ouvrir »), pas modifié ici.
+**1d. Le smoke de `release.yml` (#698, intégrée — C-31-2-10).** Son étape de smoke Docker emploie `root`
+(`DATABASE_URL=mysql://root:kesh_root@…`, `release.yml:94`) pour lancer l'image publiée : le backend crée ses tables avec
+`root`, ce que la production ne fait pas. Le service MariaDB du job crée **déjà** `kesh` (`MARIADB_USER: kesh`,
+`MARIADB_PASSWORD: kesh_dev`, `MARIADB_DATABASE: kesh`, `release.yml:22-26`) : cet utilisateur a exactement `ALL` sur
+`kesh`.*, c'est-à-dire **les droits de la production**. **Retenu : la seule modification est `DATABASE_URL` →
+`mysql://kesh:kesh_dev@127.0.0.1:3306/kesh`** ; aucun fichier de droits, aucun `GRANT` (appliquer `01-dev-grants.sql`
+ajouterait `\_sqlx\_test%`.* et `kesh%`.*, que la production n'a pas — l'inverse du but). ⚠️ **Ne se vérifie qu'à la
+publication** (tag v0.15.0) : un échec y bloque la release ; la procédure de release le dit (`docs/ci.md`), faute de
+second filet. La PR porte `closes #698` (sur la PR, non sur les commits).
 
 ### Critères d'acceptation
 
-- **AC1** — `scripts/check-dev-grants.sh` existe, exécutable ; `--from-stdin` lit un `SHOW GRANTS` et rend 0 si
-  l'ensemble égale celui attendu (dérivé du fichier + `MARIADB_USER`), non nul sinon, en nommant chaque écart.
-- **AC2** — Le garde échoue, message à l'appui, dans chacun des cas : droit manquant (`kesh`.* seul — l'état du
-  2026-10-23), droit global en trop (`ALL … ON *.*`, `PROCESS`), montage vide ou absent, `01-dev-grants.sql` introuvable
-  dans la source du montage. Il rend 0 et le dit quand il ne peut rien contrôler.
-- **AC3** — `scripts/tests/check-dev-grants.test.sh` (même forme que `scripts/tests/prepare-release.test.sh`) exerce
-  la comparaison sur cinq entrées figées : conforme, `kesh`.* seul, `*.*` en trop, `PROCESS` en trop, un droit du
-  fichier retiré. **Éprouvé par mutation** : une comparaison qui ne vérifie que « les attendus sont présents » (et non
-  l'égalité) fait rougir le cas « en trop ».
-- **AC4** — `scripts/test-fast.sh` appelle le garde avant `nextest`, et s'arrête (code non nul) s'il échoue, **avant**
-  de compiler quoi que ce soit de lourd.
+- **AC1** — `scripts/check-dev-grants.sh` existe, exécutable ; `--grants-from-stdin` lit un `SHOW GRANTS` (acquis en `-N
+  -B -r`) et rend 0 si l'ensemble égale celui attendu (dérivé des lignes `^GRANT` du fichier décommenté + `MARIADB_USER`,
+  avec la normalisation minimale de 1b), non nul sinon, en nommant chaque écart sans jamais recopier la ligne `USAGE`.
+- **AC2** — Le garde échoue, message à l'appui, dans chacun des cas : droit manquant (`kesh`.* seul), droit global en trop
+  (`ALL … ON *.*`, `PROCESS`), `_` non échappé, compte autre que `kesh@%`, montage vide, absent ou sans
+  `01-dev-grants.sql`, fichier du montage différent de celui du worktree. Il rend 0 **et le dit** quand `docker` ou le
+  conteneur sont absents.
+- **AC3** — `scripts/tests/check-dev-grants.test.sh` (même forme que `scripts/tests/prepare-release.test.sh`) exerce les
+  deux comparaisons. Droits (`--grants-from-stdin`) : conforme — fixture **capturée sur le serveur réel** (sortie `-N -B
+  -r`, condensé du mot de passe remplacé), `kesh`.* seul, `*.*` en trop, `PROCESS` en trop, un droit du fichier retiré,
+  `` `_sqlx_test%` `` non échappé, compte `kesh@localhost`. Montage (`--mount-source`) : répertoire vide, répertoire sans
+  `01-dev-grants.sql`, fichier différent, conforme ; et `PATH` sans `docker` → 0 avec message. **Éprouvé par mutation** :
+  M1 (égalité réduite à l'inclusion), M2 (montage non lu), M3 (câblage).
+- **AC4** — `scripts/test-fast.sh` appelle le garde **avant la première commande `cargo` de compilation (`cargo
+  clippy`)**, après le contrôle `cargo-nextest`, sous `--no-lint` comme sans, et s'arrête (code non nul) s'il échoue.
 - **AC5** — `docs/testing.md` § *Base de dev jetable* (point 1) dit la vérité : le montage dépend du répertoire d'où
-  le compose est lancé ; la règle « depuis le dépôt principal » ; le garde et son message ; la table de 1c.
-  `docs/agents-orchestration.md` § 6.1 renvoie au garde (la phrase « écart corrigé par l'Epic 31 » devient vraie
-  ou est ajustée à l'état réel). `crates/kesh-db/README.md` § Prérequis 2 renvoie au même endroit.
-- **AC6 (CI uniquement)** — Le job `backend` applique `01-dev-grants.sql` en `root` puis emploie `kesh` ; il passe vert
-  sur la PR.
-- **AC7 (local)** — Après remise en état du conteneur **par l'orchestrateur** (voir ci-dessous), `SHOW GRANTS` est
-  conforme, `scripts/check-dev-grants.sh` rend 0, et **un gate complet** (`scripts/test-fast.sh`) est lancé : tout rouge
-  est trié (cause : privilège que la production n'a pas, ou autre) et consigné ; un test qui exigeait un privilège
-  absent de la production est **corrigé** s'il emploie `INNODB_TRX`/`INNODB_LOCKS` (sondes de § 6.1), sinon
-  une issue est demandée.
+  le compose est lancé ; la phrase « il rend à `kesh` les droits globaux » (`:22`) est **réécrite** (aucun droit global) ;
+  la règle « depuis le dépôt principal » ; le garde et son message ; la table de 1c ; les recettes en `root` (`:102`,
+  `:308`) passent en `kesh` ou portent leur justification écrite. **`docs/agents-orchestration.md` § 2** reçoit deux
+  interdits — créer ou recréer le conteneur de dev ailleurs que depuis le dépôt principal, et tout `GRANT`/`REVOKE`
+  manuel sur le MariaDB de dev partagé — rappelés au § 4 ; § 6.1 renvoie au garde (« écart corrigé par l'Epic 31 »
+  devient vrai ou est ajusté). `crates/kesh-db/README.md` § Prérequis 2 renvoie au même endroit ;
+  `crates/kesh-db/tests/refresh_tokens_repository.rs:5` (« nécessite `GRANT ALL PRIVILEGES ON *.*` ») est corrigé ;
+  `frontend/DEBUGGING-KF007.md:16` (`root`) est corrigé ou assumé par écrit. **Inventaire clos par la forme** :
+  `git grep -nE "GRANT ALL.*\*\.\*|droits globaux|mysql://root" -- . ':!_bmad-output' ':!docs/known-failures.md'`,
+  chaque occurrence réécrite ou assumée par écrit.
+- **AC6 (CI uniquement)** — Le job `backend` applique `01-dev-grants.sql` en `root` (étape après « Install
+  mariadb-client », `-h 127.0.0.1`) puis emploie `kesh` ; il passe vert sur la PR.
+- **AC7 (local)** — Le conteneur a été **recréé conforme par l'orchestrateur le 2026-10-23 vers 18:13Z** : le dév ne
+  demande aucune recréation. Il vérifie `SHOW GRANTS`, `scripts/check-dev-grants.sh` rend 0 contre le conteneur actuel, et
+  **un gate complet** (`scripts/test-fast.sh`) est lancé : tout rouge est trié (cause : privilège que la production n'a
+  pas, ou autre) et consigné ; un test qui exigeait un privilège absent de la production est **corrigé** s'il emploie
+  `INNODB_TRX`/`INNODB_LOCKS` (sondes de § 6.1), sinon une issue est demandée. L'état défaillant ne s'éprouve que par
+  `--grants-from-stdin` et `--mount-source` (AC3).
+- **AC18 (release uniquement, #698)** — `release.yml` démarre l'image du smoke avec `DATABASE_URL=mysql://kesh:kesh_dev@
+  127.0.0.1:3306/kesh` : `grep -nF 'mysql://root' .github/workflows/release.yml` rend vide (local) ; la réussite du smoke
+  ne se voit qu'au tag v0.15.0 (**non vérifié localement**, dit au Dev Agent Record et à `docs/ci.md`).
 
 ### Ce que le dév ne fait pas
 
-Aucun `docker restart|stop|compose down|up --force-recreate` : la remise en état du conteneur **efface la base de
-tous les agents**. Le dév la **demande** à l'orchestrateur, qui choisit un moment sans gate en cours : depuis
-`/home/gcorbaz/devel/kesh` (dépôt principal), `docker compose -f docker-compose.dev.yml up -d --force-recreate mariadb`,
-puis migrations et seed (`docs/testing.md`), puis `scripts/check-dev-grants.sh`. Le garde et ses tests se développent
-et s'éprouvent sans conteneur modifié (`--from-stdin` et l'état actuel du conteneur, qui est justement l'état défaillant).
+Aucun `docker restart|stop|compose down|up --force-recreate`, aucun `GRANT`/`REVOKE` à la main. Le conteneur a déjà été
+remis en état (2026-10-23 vers 18:13Z, depuis le dépôt principal) : le dév n'en demande **pas** de nouvelle — elle
+effacerait les bases de tous les agents. Le garde et ses tests s'éprouvent sans toucher au conteneur
+(`--grants-from-stdin`, `--mount-source`, `PATH` sans `docker`).
 
 ## Volet 2 — Le smoke E2E en CI (#577, C-31-0-2)
 
@@ -150,9 +179,9 @@ backend** (`POST /api/v1/_test/seed`, par `seedTestState`), pas un SQL : aucune 
 Ni `KESH_INBOX_DIR`, `KESH_DOCUMENTS_DIR` ni `KESH_SMTP_*` : ils ne servent qu'à des specs que le smoke ne lance pas.
 Puis `actions/setup-node@v4` (Node 22, cache npm), `npm ci`, `npx playwright install --with-deps chromium`, et
 `KESH_TEST_MODE=true KESH_BACKEND_URL=http://127.0.0.1:3000 npx playwright test tests/e2e/smoke.spec.ts`.
-Attente du backend par `/health` en boucle avec délai (consigne § 4.4), avec le journal du conteneur affiché si elle
-échoue. `timeout-minutes: 25`. Le rapport/trace Playwright est téléversé **en cas d'échec** (`actions/upload-artifact`,
-rétention 3 jours).
+Attente du backend par `/health` en boucle avec délai (consigne § 4, point 4), avec le journal du conteneur affiché si elle
+échoue. `timeout-minutes: 25`. Le rapport/trace Playwright (`frontend/test-results/`, `trace: 'retain-on-failure'`) est téléversé **en cas d'échec** (`actions/upload-artifact`,
+rétention 3 jours). Le service MariaDB du job porte `MARIADB_USER: kesh`, `MARIADB_PASSWORD: kesh_dev`, `MARIADB_DATABASE: kesh` (c'est ce qui crée `kesh`) et `credentials`.
 
 **Écartée** : un job qui compile `kesh-api` (`cargo build`) + télécharge l'artefact `frontend-build` — un second
 `cargo build` complet (plus de dix minutes à froid), pour tester un binaire de débogage et un dossier de build qui ne
@@ -168,7 +197,7 @@ cette story — décision de Guy à demander à l'orchestrateur (voir « Issues 
   `kesh_e2e_312`, port attribué) : `2 passed`.
 - **AC9 (mutation locale, exigée)** — Backend lancé **sans** `KESH_COOKIE_SECURE=false` : la spec rougit en `401` sur
   l'appel authentifié (c'est l'échec #285/`docs/testing.md`) — preuve que le smoke détecte un harnais mort. Backend
-  sans `KESH_TEST_MODE` : rouge dès le `beforeAll`. Les deux mutations sont décrites au Dev Agent Record **avec leur
+  sans `KESH_TEST_MODE` : rouge dès le `globalSetup` (`global-setup.ts` appelle `seedTestState('with-company')`). Les deux mutations sont décrites au Dev Agent Record **avec leur
   sortie**.
 - **AC10 (CI uniquement)** — Le job `e2e-smoke` figure dans `ci.yml`, passe vert sur la PR, et sa durée est relevée
   (objectif : quelques minutes ; si > 10 min, le noter et envisager le cache des navigateurs, `docs/ci.md` D-6-1-A).
@@ -177,11 +206,15 @@ cette story — décision de Guy à demander à l'orchestrateur (voir « Issues 
 - **AC12 (texte)** — `CLAUDE.md` § *E2E* : le paragraphe « ⛔ Constat du 2026-10-10 : ce smoke N'EXISTE PAS » est
   **remplacé** par une description de ce que fait le job (nom, spec, durée mesurée), et les phrases qui supposent le
   smoke (« **La CI n'exécute PAS la suite complète — mais elle exécute un SMOKE** ») restent exactes ; la mention
-  « issue #577 » devient l'historique. `docs/ci.md` est **réécrit pour dire le dépôt** : quatre jobs
-  (`backend`, `frontend`, `docker-build`, `e2e-smoke`) — schéma d'exécution, tableau des jobs, timeouts, sections
-  « migrations » et « mode test » (lignes 12, 23–32, 133, 166, 188–192), le bandeau ⚠️ de la ligne 12 retiré, les lignes
-  D-6-1-* qui décrivent un job complet (212–216) annotées « non retenu ». Inventaire clos, recompté par
-  `grep -nE "\be2e\b|4 jobs|trois|quatre" docs/ci.md` : chaque occurrence soit réécrite, soit assumée par écrit.
+  « issue #577 » devient l'historique ; `CLAUDE.md:267` et `:269` (« les **trois** jobs », « les deux autres jobs »)
+  sont corrigés. `docs/ci.md` est **réécrit pour dire le dépôt** : quatre jobs (`backend`, `frontend`, `docker-build`,
+  `e2e-smoke`) — lignes 9-10 (« 3 jobs »), schéma d'exécution, tableau des jobs et **timeouts** (dont `backend` : « 30 min »
+  contre `timeout-minutes: 120` de `ci.yml`), section « migrations » (`:165` décrit `cargo sqlx migrate run`, alors que
+  `ci.yml` boucle `mariadb <`) et « mode test », le bandeau ⚠️ de la ligne 12 retiré, les lignes D-6-1-* qui décrivent un
+  job complet annotées « non retenu ». `docs/testing.md:590` (« job `e2e`, step `Smoke test /api/v1/_test/seed` ») est
+  réécrit. **Inventaire clos par la forme, non par la valeur** : relecture ligne à ligne de `docs/ci.md` contre `ci.yml`
+  (tableaux « jobs » et « timeouts » compris), complétée par `git grep -nE "job .?e2e|Smoke test /api|\b(3|4|trois|quatre)\b.*jobs?|jobs?\b.*\b(trois|quatre|3|4)\b|\be2e\b" -- docs CLAUDE.md README.md website`
+  (`docs/known-failures.md` archivé, laissé) : chaque occurrence soit réécrite, soit assumée par écrit.
 
 ## Volet 3 — Docker Hub authentifié (A2)
 
@@ -189,28 +222,31 @@ cette story — décision de Guy à demander à l'orchestrateur (voir « Issues 
 
 `services.mariadb.credentials` (`username: ${{ secrets.DOCKERHUB_USERNAME }}`, `password: ${{ secrets.DOCKERHUB_TOKEN }}`)
 dans les **trois** services MariaDB : `ci.yml` job `backend`, `ci.yml` job `e2e-smoke` (nouveau), `release.yml` job
-`docker`. Les secrets existent déjà pour `release.yml` (étape `docker/login-action`) ; elles n'y couvraient pas le
+`docker` — **et** `docker/login-action@v3` (mêmes secrets) avant le build des jobs `docker-build` et `e2e-smoke` : leur `Dockerfile` tire `rust`, `node` et `debian` depuis Docker Hub, anonymement sinon (C-31-2-11). `release.yml` se connecte déjà avant de construire. Les secrets existent déjà pour `release.yml` (étape `docker/login-action`) ; elles n'y couvraient pas le
 service, tiré **avant** toute étape.
 
 **Les PR issues de forks et de Dependabot n'ont pas accès aux secrets.** Tranché (C-31-2-3) : **pas de contournement
 conditionnel.** Le dépôt est tenu par un seul développeur, sans fork actif et sans `dependabot.yml`
 (`ls .github` : aucun) ; une expression conditionnelle sur `credentials` (un objet nul ou `fromJSON(format(…))`) est
 invérifiable hors d'un runner et ajoute une fragilité pour un cas qui n'existe pas. Conséquence **assumée et écrite**
-dans `docs/ci.md` : une PR de fork échouera au démarrage du service (échec bruyant, jamais un faux vert). Si le dépôt
+dans `docs/ci.md` : une PR de fork échouera au démarrage du service **ou à l'étape de connexion** (échec bruyant, jamais un faux vert). Si le dépôt
 accepte un jour des PR externes, le repli est `image: mirror.gcr.io/library/mariadb:10.11` (sans secret) — noté, non
 adopté (la provenance de l'image n'est plus celle du Docker Hub officiel).
 
 ### Critères d'acceptation
 
-- **AC13 (CI uniquement)** — Les trois services portent `credentials` ; `grep -c 'credentials:' .github/workflows/ci.yml`
-  rend 2 et `release.yml` 1 ; les runs de la PR passent (le tirage est authentifié : l'en-tête du service dans le journal
-  du job le montre).
+- **AC13 (CI uniquement)** — Les trois services portent `credentials` (`grep -c 'credentials:' .github/workflows/ci.yml`
+  rend 2, `release.yml` 1) et les jobs `docker-build` et `e2e-smoke` portent une étape `docker/login-action`
+  (`grep -c 'docker/login-action' .github/workflows/ci.yml` rend 2) ; les runs de la PR passent (le tirage est
+  authentifié : l'en-tête du service dans le journal du job le montre).
 - **AC14** — Le paragraphe « ⚠️ **La CI dépend de Docker Hub.** » (`CLAUDE.md`, § Test Locally First, fin) est
-  retiré, avec la mention A-C9 ; `docs/ci.md` dit à sa place les secrets requis et le comportement des forks. Aucun
-  autre site : `grep -rn "429\|anonymement" CLAUDE.md docs .github` — inventaire recompté et traité.
-- **AC15** — `actionlint` (ou à défaut `python -c "import yaml; yaml.safe_load(...)"` sur les deux fichiers)
-  confirme que les workflows restent syntaxiquement valides **localement** ; la validité d'exécution ne se voit qu'en
-  CI (AC13).
+  retiré, avec la mention A-C9, **parce que les images de service et de base sont toutes authentifiées** (AC13) ;
+  `docs/ci.md` dit à sa place les secrets requis et le comportement des forks. Aucun autre site : `grep -rn
+  "429\|anonymement" CLAUDE.md docs .github` — inventaire recompté et traité.
+- **AC15** — `actionlint` (**absent de la station** : `command -v actionlint` vide ; le repli est donc le chemin réel) ou, à
+  défaut, `python -c "import yaml; yaml.safe_load(...)"` sur les deux fichiers confirme que les workflows restent
+  syntaxiquement valides **localement** — syntaxe YAML seulement, **non le schéma GitHub Actions**
+  (`services.<id>.credentials`) ; la validité d'exécution ne se voit qu'en CI (AC13).
 
 ## Volet 4 — `.svelte-kit/` à la racine (A3)
 
@@ -228,10 +264,11 @@ adopté (la provenance de l'image n'est plus celle du Docker Hub officiel).
 | # | Mutation | Attendu |
 |---|---|---|
 | M1 | Comparaison du garde réduite à « attendus ⊆ réels » | AC3 : le cas `*.*` en trop rougit |
-| M2 | Garde sans lecture de la source du montage | AC2/AC3 : le cas « montage vide » rougit |
-| M3 | Appel du garde retiré de `test-fast.sh` | AC4 : `scripts/tests/check-dev-grants.test.sh` porte une assertion de câblage (`grep -nF 'check-dev-grants.sh' scripts/test-fast.sh` non vide, et placée avant la ligne `cargo nextest run`) ; elle rougit |
+| M2 | Garde sans lecture de la source du montage (`--mount-source` ignoré) | AC3 : les cas « répertoire vide » et « sans `01-dev-grants.sql` » rougissent |
+| M3 | Appel du garde retiré de `test-fast.sh` | AC4 : `scripts/tests/check-dev-grants.test.sh` porte une assertion de câblage (`grep -nF 'check-dev-grants.sh' scripts/test-fast.sh` non vide, et placée **avant la ligne `cargo clippy`**) ; elle rougit |
 | M4 | Backend du smoke sans `KESH_COOKIE_SECURE=false` | AC9 : 401 |
 | M5 | `smoke.spec.ts` : le test « sans cookie » attend 200 | Rouge — prouve que la sonde négative sonde |
+| M6 | Comparaison du garde qui retire les antislashs des deux côtés | AC3 : le cas `_` non échappé rougit |
 
 Restauration de chaque mutation : `git checkout -- <fichier>` **puis** `touch <fichier>` (`docs/agents-orchestration.md`
 § 7).
@@ -240,8 +277,8 @@ Restauration de chaque mutation : `git checkout -- <fichier>` **puis** `touch <f
 
 | Local | CI seulement |
 |---|---|
-| Garde et son test (AC1–AC4), mutations M1–M3 | AC6 (job `backend` en `kesh`), AC10 (job `e2e-smoke`), AC13 (tirage authentifié) |
-| `smoke.spec.ts` contre la recette locale (AC8, AC9, AC11) | La durée réelle du smoke ; le cache `gha` du `docker-build` ; la validité des secrets |
+| Garde et son test (AC1–AC4), mutations M1–M3, M6 | AC6 (job `backend` en `kesh`), AC10 (job `e2e-smoke`), AC13 (tirage authentifié) |
+| `smoke.spec.ts` contre la recette locale (AC8, AC9, AC11) | La durée réelle du smoke ; le cache `gha` du `docker-build` ; la validité des secrets ; **AC18 : le smoke de `release.yml` en `kesh`, effectif au seul tag v0.15.0** (échec = release bloquée) |
 | `.svelte-kit` (AC16, AC17), YAML syntaxique (AC15), textes (AC5, AC12, AC14) | Tout test qui dépendrait encore de `root` en CI |
 
 Gate : `scripts/test-fast.sh` complet (kesh-db non touché, mais le volet 1 change le chemin d'exécution du gate ;
@@ -249,47 +286,69 @@ sous le verrou commun), `cd frontend && npm run check && npm run lint-i18n-owner
 build`, **E2E complet au dernier commit de code** (le smoke y est ajouté : la baseline devient 7 à 10 échecs attendus
 sur N+2 tests, à recompter), contrôle `scripts/tests/check-dev-grants.test.sh` et `scripts/tests/prepare-release.test.sh`.
 
-## Issues à ouvrir ou à commenter (demandées à l'orchestrateur)
+## Issues liées, à commenter ou à décider (demandées à l'orchestrateur)
 
-1. **Commenter #577** : prémisse confirmée, plus `docs/ci.md` entièrement concerné (cinq sites), pas seulement le
-   `CLAUDE.md` ; la 31-2 la ferme (**mot-clé de fermeture sur la PR seulement**).
-2. **Ouvrir (P3, `bug`)** — `release.yml` : le smoke de l'image publiée emploie `root` pour `DATABASE_URL` ; la
-   production emploie `kesh` (même défaut de classe que le volet 1c, côté publication). Hors périmètre ici.
-3. **Ouvrir (P3)** — le conteneur de dev peut être créé depuis un worktree : `docker-compose.dev.yml` monte un chemin
-   relatif. Le garde le *signale*, il ne l'*empêche* pas ; une vraie prévention (script `scripts/dev-db.sh` qui refuse de
-   démarrer hors du dépôt principal, ou montage par un volume nommé alimenté une fois) est une story, pas un correctif.
+1. **Commenter #577** : prémisse confirmée, plus `docs/ci.md` entièrement concerné, `CLAUDE.md:267-269` et
+   `docs/testing.md:590` ; la 31-2 la ferme (**mot-clé de fermeture sur la PR seulement**).
+2. **#698 (ouverte, intégrée — C-31-2-10)** : fermée par la PR (`closes #698` sur la PR). Son corps dit encore « Hors
+   périmètre de la 31-2 » : l'orchestrateur y ajoute un commentaire renvoyant à C-31-2-10.
+3. **#699 (ouverte, reste ouverte)** — le conteneur de dev peut être créé depuis un worktree : `docker-compose.dev.yml`
+   monte un chemin relatif. Le garde le *signale*, il ne l'*empêche* pas ; une vraie prévention (script
+   `scripts/dev-db.sh`, volume nommé alimenté une fois) est une story, pas un correctif.
 4. **Décision de Guy à demander** — le job `e2e-smoke` doit-il être une **vérification obligatoire** de la branche
    protégée ? Cette story ne modifie aucun réglage de dépôt.
-5. **Rien à ouvrir** pour C3 : le constat (conteneur *moins* doté que le fichier) et la cause (montage vide) sont dans
-   cette fiche ; la rétrospective 29 § 4.2 décrivait un état ancien du conteneur (`GRANT ALL *.*` d'avant la recréation) —
-   à noter à la rétrospective, non à rouvrir.
+5. **Rien à ouvrir** pour C3 : le constat (conteneur *moins* doté que le fichier), la cause (montage vide depuis le
+   2026-10-11) et la provenance du `GRANT ALL *.*` de la rétrospective 29 (posé à la main par un agent, jamais dans le
+   fichier versionné de `main`) sont dans cette fiche ; à noter à la rétrospective 31, non à rouvrir. À vérifier par
+   l'orchestrateur : si `docker compose … restart` lancé depuis un worktree cible bien le conteneur (projet
+   `kesh`) — hypothèse non exécutée ici — avant de borner la règle « depuis le dépôt principal » à `up`.
 
 ## Tâches
 
 - [ ] **T1 (volet 4)** `.svelte-kit/` retiré, `/.svelte-kit/` aux deux ignore ; AC16, AC17.
-- [ ] **T2 (volet 3)** `credentials` sur les trois services ; note A-C9 retirée ; AC13–AC15.
-- [ ] **T3 (volet 1)** `scripts/check-dev-grants.sh` + `scripts/tests/check-dev-grants.test.sh` (rouge d'abord :
-  M1–M3) ; câblage dans `test-fast.sh` ; textes `docs/testing.md`, `docs/agents-orchestration.md`, `crates/kesh-db/README.md` ;
-  AC1–AC5.
-- [ ] **T4 (volet 1c)** `ci.yml` job `backend` : droits appliqués en `root`, `DATABASE_URL` en `kesh` ; AC6.
+- [ ] **T2 (volet 3)** `credentials` sur les trois services, `docker/login-action` sur `docker-build` et `e2e-smoke` ; note
+  A-C9 retirée ; AC13–AC15.
+- [ ] **T3 (volet 1)** `scripts/check-dev-grants.sh` (droits et montage, sources injectables) +
+  `scripts/tests/check-dev-grants.test.sh` (rouge d'abord : M1–M3, M6) ; câblage dans `test-fast.sh` avant `cargo clippy` ;
+  textes `docs/testing.md`, `docs/agents-orchestration.md`, `crates/kesh-db/README.md`,
+  `refresh_tokens_repository.rs:5`, `DEBUGGING-KF007.md` ; AC1–AC5.
+- [ ] **T4 (volet 1c et 1d)** `ci.yml` job `backend` : droits appliqués en `root` après « Install mariadb-client »,
+  `DATABASE_URL` en `kesh` ; `release.yml` : `DATABASE_URL` du smoke en `kesh` (#698) ; AC6, AC18.
 - [ ] **T5 (volet 2)** `smoke.spec.ts` (rouge d'abord : M5), job `e2e-smoke`, mutations M4 ; AC8–AC11.
-- [ ] **T6 (volet 2, textes)** `CLAUDE.md` § E2E et `docs/ci.md` réécrits ; AC12.
-- [ ] **T7** Demander à l'orchestrateur la remise en état du conteneur ; gate complet ; trier les rouges (AC7).
+- [ ] **T6 (volet 2, textes)** `CLAUDE.md` § E2E et `docs/ci.md`, `docs/testing.md:590` réécrits ; AC12.
+- [ ] **T7** Vérifier le conteneur (déjà conforme, aucune recréation à demander) ; gate complet ; trier les rouges (AC7).
 - [ ] **T8** E2E complet au dernier commit de code ; Dev Agent Record **sans affirmer ce qui n'a pas tourné** (les
-  AC « CI uniquement » y figurent comme *non vérifiés localement*).
+  AC « CI uniquement » et AC18 y figurent comme *non vérifiés localement*).
 
 ## Dev Notes
 
-- **Périmètre minimal.** Aucun code de production ; `release.yml` n'est modifié que pour `credentials` (pas pour `root`).
+- **Périmètre minimal.** Aucun code de production ; `release.yml` est modifié pour `credentials` et pour le `DATABASE_URL` du smoke (#698, C-31-2-10) — rien d'autre.
 - **Le symétrique existe peut-être déjà** (`docs/agents-orchestration.md` § 3) : `scripts/tests/prepare-release.test.sh`
   est le modèle de forme des tests de scripts ; `seedTestState`/`authedApiContext` sont réutilisés, non réécrits ;
   la fonction qui lit `KESH_BACKEND_URL` est `resolveBackendUrl` (`test-state.ts`).
 - **Un test ne dépend d'aucun privilège que la production n'a pas** (§ 6.1) : c'est le critère que le volet 1 rend
   contrôlé.
 - **Données réelles** : aucune ; mots de passe de dev/CI factices déjà versionnés (`kesh_dev`, `kesh_root`).
-- **Le garde lit un mot de passe de dev** (`DATABASE_URL`) : ne l'affiche jamais dans ses messages.
+- **Le garde lit un mot de passe de dev** (`DATABASE_URL`) : ne l'affiche jamais dans ses messages, ni la ligne `USAGE` (condensé). Il le passe par `MYSQL_PWD`, non par `-p`.
+- **Aucun test automatique ne lance `scripts/tests/*.test.sh`** (`prepare-release.test.sh` non plus) : le dév ajoute, s'il le juge peu coûteux, une étape d'une ligne au job `frontend` ou `backend` ; sinon le test reste un contrôle du gate local, dit tel au Dev Agent Record.
 
 ## Change Log
 
 - 2026-10-23 — Fiche écrite (agent de fiche 31-2, Sonnet 5.5). Prémisses C3 et #577 établies au code et à la lecture
   du conteneur (lecture seule). Validation P1 à lancer (`312-validate-prompt-p1.md`, Opus, lentilles R et F).
+- 2026-10-23 — **Validation P1** (Opus, deux lentilles ; R : 0 CRITICAL / 1 HIGH / 7 MEDIUM / 8 LOW ; F : 0 / 0 / 8 / 8).
+  Rapports `312-validate-p1-{R,F}.md`. Vérifiés au `grep -nF`/`sed -n`/`docker inspect` (lecture seule) puis corrigés : R-1/F5
+  (#698 non reportée dans la fiche : AC18, 1d, T4, tableaux, issues), R-2/F6 (la prescription « fichier de droits ou
+  `GRANT` » donnait plus que la production : `release.yml` crée déjà `kesh`, seul `DATABASE_URL` change), R-3/F4 (étape CI
+  après « Install mariadb-client », `-h 127.0.0.1` ; `DATABASE_URL` au niveau du job), R-4/F1 (conteneur déjà recréé à
+  18:13Z : prémisse datée, AC7/T7/« Ce que le dév ne fait pas » réécrits), R-5/F1 (montage et droits à sources
+  injectables `--mount-source`/`--grants-from-stdin`, cas supplémentaires d'AC3, M2 recâblée), R-6/L1 (garde avant
+  `cargo clippy`, `--no-lint` compris ; M3), R-7/F8 (inventaire de textes : `CLAUDE.md:267-269`, `docs/ci.md:9-10`, `:30`,
+  `:131`, `:165`, `docs/testing.md:590`, clos par la forme), R-8 (`refresh_tokens_repository.rs:5`, `testing.md:22`/`:102`/`:308`,
+  DEBUGGING-KF007, règle au § 2 et § 4 portée par AC5), F2 (provenance du `GRANT ALL *.*`, interdit de `GRANT` manuel au
+  § 2), F3 (`-N -B -r`, normalisation minimale qui garde les antislashs, cas `_` non échappé, fixture capturée, M6),
+  F7 (`docker/login-action` sur `docker-build` et `e2e-smoke`, C-31-2-11), LOW : R-L1, R-L2/L3, R-L3/L2, R-L4/L4 (compte
+  `kesh@%`, `MYSQL_PWD`, ligne `USAGE`, rôle `PUBLIC`), R-L5 (tests de scripts non automatisés, dit), R-L6 (commentaire
+  #698 demandé), R-L7 (actionlint absent), R-L8 (artefact, service), F-L5 (`cmp` du fichier du montage), F-L6, F-L8, F-L7
+  (hypothèse signalée, non exécutée). **Réfuté : aucun** (les 33 constats se retrouvent au dépôt). Recomptes : **18 AC**
+  (AC1 à AC18, +AC18), **8 tâches**. Validation P2 à lancer (`312-validate-prompt-p2.md`, Sonnet, lentilles R et F).
