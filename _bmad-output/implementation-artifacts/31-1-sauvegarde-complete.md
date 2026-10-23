@@ -6,8 +6,9 @@
 `1848012d` (kickoff de l'Epic 31), worktree `/home/gcorbaz/devel/kesh-31-1`, branche `story/31-1`. Validation P1
 faite (Sonnet, R 0/0/10/8, F 0/2/9/8) et remédiée le 2026-10-23 ; validation P2 faite (Opus, R 0/0/8/8, F 0/1/7/9)
 et remédiée le 2026-10-23 ; validation P3 faite (Sonnet, R 0/0/5/7, F 0/0/4/11) et remédiée le 2026-10-23 ;
-validation P4 faite (Opus, R 0/0/3/11, F 0/0/4/7) et remédiée le 2026-10-24 ; validation **P5** à lancer
-(`311-validate-prompt-p5.md`, **Sonnet**, lentilles R et F).
+validation P4 faite (Opus, R 0/0/3/11, F 0/0/4/7) et remédiée le 2026-10-24 ; validations P5 à P8 faites,
+**terminée au plafond de huit passes** (Change Log). **31-1a : in-progress** (développement, 2026-10-24) ; 31-1b et
+31-1c : ready-for-dev.
 
 ⛔ **Trois stories, une fiche, trois PR successives** (C-31-1-1) :
 
@@ -173,7 +174,10 @@ fonction de `document_storage` (`open_document(dir, storage_path) -> Result<File
 `export.rs`. Comme l'AC1 classe déjà `mismatch` tout chemin hors forme, aucun test d'export n'atteint ce contrôle : il
 se prouve par un test **unitaire direct** d'`open_document` (`"../x"`, `"/etc/hostname"`, `"a/b"`, `""` →
 `InvalidPath`, sans toucher au disque), qui tue M-a12 (R3, P3). L'entrée dossier `files/` est écrite **même sans aucun fichier** (le contrôle de présence de l'import,
-`import.rs:98-102`, l'exige pour le format 1 et le 2).
+`import.rs:98-102`, l'exige pour le format 1 et le 2), et **avant** les entrées `files/<nom>` : c'est l'ordre que le
+test « altéré suivi d'un sain » de T-a4b exerce avec `abort_file` (L3 de la P7). Une archive de format 2 portant cette
+entrée est la forme normale ; l'entrée `files/` appartient à l'ensemble attendu de l'AC6b (2) et n'est pas une
+« entrée `files/*` sans ligne » (T4 de la P6).
 
 **AC4 — L'export n'assemble plus l'archive en mémoire.** Deux temps, et deux seulement (C-31-1-46, P3 : la forme de la
 P2 — un écrivain empruntant le `File`, des copies en `spawn_blocking` séparés, un `write_backup_file` sur `tokio::fs` —
@@ -396,7 +400,11 @@ Volume : la sauvegarde pré-import contient désormais toutes les pièces, une c
 le dire, avec l'ordre de grandeur « taille du dossier des documents + base ». Et le **pic** d'un import, sans seuil
 d'espace préalable (seule l'automatique en a un, AC30) : l'envoi reçu (AC11), la sauvegarde pré-import et les pièces
 écrites (AC8) coexistent, soit environ **trois fois** la taille de l'archive sur le volume du dossier de sauvegarde,
-souvent celui de la base (F9, P4).
+souvent celui de la base (F9, P4) — *jusqu'à* environ trois fois, selon que le dossier de sauvegarde et le dossier des
+documents partagent ou non le volume (le cas des compose fournis), et moins sur une machine neuve dont la sauvegarde
+pré-import ne porte aucune pièce (R7 de la P5, appliqué à l'étape 0 du développement). Les documents **en attente** dans
+`KESH_INBOX_DIR` (pas encore importés, ou déplacés en `failed/`) ne sont référencés par aucune ligne et ne sont pas
+emportés : le manuel le dit avec les fichiers non référencés (F6 de la P5).
 
 **Inventaire clos des phrases à traiter** (grep des valeurs `503`, `512`, `n'emporte`, `sans les fichiers`, `aucun
 binaire`, `files/`, `formatVersion`, relevé en P1 ; **étendu en P2** aux sujets que le code de la 31-1a ou de la 31-1c
@@ -1082,7 +1090,10 @@ horloge simulée, qui figent les valeurs (30 s par défaut, une heure pour les a
 - `export.rs` `build_keshbackup_ne_lit_la_base_qu_une_fois` : `build_keshbackup` garde son nom et reste l'unique
   lecteur de la base (AC4, C-31-1-56) ; la garde reste exacte sur son corps et gagne l'assertion « `export_installation(`
   une seule fois dans la production de `kesh-api` » (R7, P4 : la P3 disait « corps renommé » sans dire quelle fonction
-  restait l'unique point d'entrée, et la garde pouvait veiller sur du code mort).
+  restait l'unique point d'entrée, et la garde pouvait veiller sur du code mort). Son motif d'ouverture
+  (`starts_with("pub async fn build_keshbackup(")`) ne reconnaît pas une signature générique (`build_keshbackup<T, F>(`) :
+  il passe à `pub async fn build_keshbackup` sans parenthèse, et le compte de `pool` se recompte sur la signature réelle
+  (R3 de la P5, appliqué au développement).
 - `routes/admin.rs` garde `avant_sauvegarde_branchee_aux_appels_de_l_import` (l. 881 ; motifs `check_schema_compat(` et
   `build_keshbackup(`, compte `(1, 2)`, l. 911-915) — les deux appelants de `routes/admin.rs` appellent toujours
   `build_keshbackup(` (AC4), le compte reste `(1, 2)` ; mais elle découpe une instruction jusqu'au `;` suivant, et la
@@ -1637,3 +1648,23 @@ gardé à l'AC14 comme relevé daté ; les « ≥ 4 » du tableau des tests, qui
   à son étape 0, et la revue de code P1 les couvre. *Les P6 à P8 n'ont trouvé que des défauts introduits par les
   remédiations de l'orchestrateur lui-même* (P5 → T1, P6 → H1, P7 → M1) : la règle de la passe ciblée s'est vérifiée sur
   celui qui l'applique.
+
+### 2026-10-24 — Développement de la 31-1a, étape 0 : recontrôle de la P8 et LOW des P5 à P8 (Opus 5.5)
+
+- **M1 (P8) recontrôlé** : `grep -rn RunTrigger _bmad-output docs crates` ne rend que l'entrée de ce Change Log qui
+  rapporte la P8 et l'amendement P7 du registre, suivi de l'amendement P8 qui le corrige — relevés datés, laissés. La
+  fiche dit `Trigger` partout (AC26, AC27, AC30, AC32, AC35). Conforme.
+- **M2 (P8) recontrôlé** : la liste `pub` de l'AC30 nomme `FailureStatus`, le statut de succès et le type d'erreur de
+  `run_once`, `spawn` motivé par `main.rs`, `classify_write_error` privée. Conforme (31-1c).
+- **M3 (P8) recontrôlé** : l'AC36 prouve l'importabilité par la route `POST /api/v1/admin/full-import` et laisse
+  `admin_backup` en `pub(crate)`. Conforme (31-1c).
+- **LOW appliqués (mécaniques, 31-1a)** : R3 (P5, motif d'ouverture de la garde `build_keshbackup_ne_lit_la_base_qu_une_fois`,
+  § Gardes) ; R7 (P5, « jusqu'à environ trois fois », AC14) ; F6 (P5, documents en attente de l'inbox non emportés,
+  AC14) ; T4 (P6) et L3 (P7) (entrée `files/` de format 2 : forme normale, écrite avant les pièces, AC3) ; R10 (P5),
+  T3 (P6), L1 (P7) : marques datées sur les entrées amendées C-31-1-23, 45, 46 et 47 du registre, sans les réécrire.
+- **LOW consignés, tranchés au développement de la 31-1a** : R4 (P5) = F3 (P5), type d'erreur de `build_keshbackup`
+  (choix au registre) ; F5 (P5), M-a20 sous `root` : le test échoue bruyamment s'il peut lire le fichier, comme T-a4b le
+  prescrit.
+- **LOW consignés pour la 31-1c** (non touchés ici) : R5, R6, R8, R9 (P5) ; F2, F4 (P5) ; L1 à L4 (P8 — phrase de l'AC30
+  disloquée, motif de `spawn`, `classify_write_error` testée en `mod tests`, visibilité de `backup_lock`). L5 (P8, dates)
+  laissé.

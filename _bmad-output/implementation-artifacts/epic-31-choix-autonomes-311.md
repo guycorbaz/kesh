@@ -185,6 +185,9 @@ Registre propre à la story 31-1 (#503), versé par union dans `epic-31-choix-au
 
 ### C-31-1-23 — Une sauvegarde à la fois : verrou en mémoire puis réservation en base
 
+*(Marque ajoutée le 2026-10-24 au développement de la 31-1a, LOW R10 de la validation P5 : la réservation en base est
+retirée par C-31-1-54 ; l'entrée n'est pas réécrite.)*
+
 - **Retenu** : `AppState.backup_lock` (tâche automatique en `try_lock`, export, « maintenant » et import en attente) ;
   réservation conditionnelle `last_attempt_at <=> ?` pour un second processus éventuel.
 - **Écartées** : `GET_LOCK` MariaDB (fuite sur panique, connexion dédiée — écarté en 17-3c pour la même raison) ;
@@ -432,6 +435,8 @@ C-31-1-11 (C-31-1-39), C-31-1-20 et C-31-1-27 (C-31-1-40), C-31-1-29 (C-31-1-38)
 
 ### C-31-1-45 — `run_once` prend lui-même le verrou ; `POST …/run` traduit `Skipped` en 409 (amende C-31-1-41)
 
+*(Marque ajoutée le 2026-10-24, LOW R10 de la P5 : la « réservation perdue » est retirée par C-31-1-54.)*
+
 - **Contexte** : validation P3 (R1 = F1, nés de la remédiation P2) — l'AC35 faisait prendre `backup_lock` par `run_once`,
   l'AC27 et l'AC32 par le handler de `POST …/run`, qui déplaçait ensuite le garde dans la tâche appelant `run_once` ;
   `tokio::sync::Mutex` n'est pas réentrant : l'appel manuel se serait toujours trouvé « en cours » (ou bloqué).
@@ -449,6 +454,10 @@ C-31-1-11 (C-31-1-39), C-31-1-20 et C-31-1-27 (C-31-1-40), C-31-1-29 (C-31-1-38)
 
 ### C-31-1-46 — L'assemblage d'une archive tient dans un seul `spawn_blocking` synchrone
 
+*(Marque ajoutée le 2026-10-24, LOW R10 de la P5, T3 de la P6, L1 de la P7 : « deux passes » est amendé par C-31-1-53
+— une seule passe — et la signature `Box<dyn Write + Seek + Send>` par les amendements datés P5 à P8 en fin de
+registre — `Box<dyn WriteSeek>`, entrée `files/` toujours écrite.)*
+
 - **Contexte** : validation P3 (R5 = F2, nés de la remédiation P2) — `wrap_writer<'a>(&'a mut File)` ne pouvait entrer
   dans un `spawn_blocking` (fermeture `'static`), `write_backup_file` était `async` sur `tokio::fs` alors que le
   `ZipWriter` est synchrone, et les copies de fichiers « en `spawn_blocking` » ne pouvaient pas écrire dans l'entrée.
@@ -464,6 +473,9 @@ C-31-1-11 (C-31-1-39), C-31-1-20 et C-31-1-27 (C-31-1-40), C-31-1-29 (C-31-1-38)
 - **Réversible** : oui, avant le développement.
 
 ### C-31-1-47 — Fichier illisible : listé `unreadable` ; divergence à la copie : la sauvegarde est abandonnée
+
+*(Marque ajoutée le 2026-10-24, LOW R10 de la P5 : la seconde passe et l'abandon sur divergence sont amendés par
+C-31-1-53 — une passe, `abort_file`, raison `altered` ou `unreadable`.)*
 
 - **Contexte** : validation P3 (F3, d'origine) — `open_document` rend `Io(…)` pour un fichier présent mais illisible
   (droits restaurés par DSM, `EIO`) ; la fiche ne disait pas si toute la sauvegarde échouait, et ne disait pas que la
