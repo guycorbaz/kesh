@@ -141,7 +141,7 @@ neuf fait rougir l'un des deux, message qui nomme l'AC1 à mettre à jour.
 
 **AC3 — Format 2 : les fichiers dans `files/`.** `BACKUP_FORMAT_VERSION` passe à **2**. L'export écrit, pour chaque
 fichier référencé **présent et intact** (empreinte du contenu lu = `sha256` déclaré = préfixe du nom), une entrée
-`files/<storage_path>` en méthode **Stored** (PDF et images sont déjà compressés), mode `0644`. Le manifeste gagne :
+`files/<storage_path>` en méthode **Stored** (PDF et images sont déjà compressés), mode `0644` ; **aucune entrée de répertoire `files/`** n'est écrite en format 2 (l'`add_directory("files/", …)` d'aujourd'hui, `export.rs:95`, disparaît du format 2 : sans elle, `ZipWriter::abort_file` peut toujours rembobiner une entrée abandonnée — validation P5, R2). Le manifeste gagne :
 
 ```json
 "files": [ { "path": "<sha>.<ext>", "sha256": "<sha>", "byteSize": 12345 } ],
@@ -742,7 +742,7 @@ Synology ; stables sur la chaîne 1.96.1 du dépôt) — **`kind()` d'abord** : 
 `raw_os_error()` 28 ou 122 ne vaut que pour une erreur née hors du crate ; `'failed'` sinon (C-31-1-32). **La
 rétention ne tourne pas**, les sauvegardes existantes restent. Le trait d'injection de l'AC36 (`BackupEnv: Send +
 Sync`, qui remplace `FreeSpace`, passé en `Arc<dyn BackupEnv>`) porte deux méthodes : `free_bytes(dir)` et
-`wrap_writer(file: File) -> Box<dyn Write + Seek + Send>` — l'écrivain **possède** un **clone** du fichier
+`wrap_writer(file: File) -> Box<dyn WriteSeek>`, où `WriteSeek` est un trait du module, `trait WriteSeek: Write + Seek + Send {}` avec une implémentation générale `impl<T: Write + Seek + Send> WriteSeek for T {}` — un objet-trait n'admet qu'**un** trait non automatique (E0225), d'où ce trait d'union (validation P5, R1) ; l'écrivain de test implémente `Write + Seek` — l'écrivain **possède** un **clone** du fichier
 (`try_clone`, même descripteur, AC4), si bien qu'il entre dans le `spawn_blocking` ; l'original reste à
 `write_backup_file`, qui appelle `sync_all()` dessus une fois l'archive finie (F10 de la P2 : sur btrfs et sur un
 partage réseau, `ENOSPC`/`EDQUOT` surgissent souvent au `fsync` ; C-31-1-46, P3 : l'emprunt `&'a mut File` de la P2
@@ -1579,3 +1579,17 @@ passes`, `passe 2`, `passe de hachage`, `re-hach`, `douze`, `M-c7`, `relâche le
 `en en retirant`) : aucun résidu hors des mentions historiques voulues (entrées passées du Change Log et du registre —
 C-31-1-23, C-31-1-45, C-31-1-47, C-31-1-51 —, que les choix neufs amendent sans les réécrire ; « 94 à `c7639e80` »
 gardé à l'AC14 comme relevé daté ; les « ≥ 4 » du tableau des tests, qui comptent des tests).
+
+### Validation P5 (2026-10-24) — Sonnet, R 0/0/1/9, F 0/0/0/6 ; MEDIUM remédié par l'orchestrateur
+
+- **R1 (MEDIUM ; F1 de la lentille F, coté LOW)** — `Box<dyn Write + Seek + Send>` n'est pas un type valide (E0225 : un
+  seul trait non automatique par objet-trait). Corrigé à l'AC30 : trait d'union `WriteSeek: Write + Seek + Send` et son
+  implémentation générale ; `Box<dyn WriteSeek>`. Registre : amendement daté de C-31-1-46 (sans réécrire l'entrée).
+- **R2 (LOW, retenu parce qu'il touche la taille déclarée)** — `abort_file` ne rembobine que si les entrées suivantes ont un
+  `data_start` connu ; l'entrée de répertoire `files/` écrite par `add_directory` n'en a pas. Règle fixée à l'AC3 : **aucune
+  entrée de répertoire `files/`** n'est écrite en format 2 (les entrées `files/<nom>` suffisent, et le format 1 garde la
+  sienne) ; l'archive ne porte donc pas d'octets morts après un abandon.
+- Autres LOW (R3 à R10, F2 à F6) laissés au développement, qui les applique à l'étape 0 ou les consigne : R3 (garde de
+  signature de `build_keshbackup`), R4/F3 (type d'erreur), R5, R6, R7, R8 (lecture ZIP dans Playwright), R9, R10 (marquer
+  les entrées amendées), F2 (`KESH_DOCUMENTS_DIR` absent ⇒ 0), F4, F5 (M-a20 muette sous root), F6 (dossier d'entrée).
+- Passe suivante : ciblée P6 (Haiku) sur le commit de cette remédiation.

@@ -621,3 +621,9 @@ C-31-1-11 (C-31-1-39), C-31-1-20 et C-31-1-27 (C-31-1-40), C-31-1-29 (C-31-1-38)
 - **Écartées** : un booléen par ligne (la même information répétée, et la limite N ne s'afficherait pas) ; une route
   de configuration générale (hors périmètre).
 - **Réversible** : oui.
+
+**Amendement de C-31-1-46 (2026-10-24, validation P5, R1)** : `Box<dyn Write + Seek + Send>` n'est pas un type valide
+(E0225) ; l'écrivain s'écrit `Box<dyn WriteSeek>`, avec `trait WriteSeek: Write + Seek + Send {}` et son implémentation
+générale. **Et (R2)** : en format 2, aucune entrée de répertoire `files/` n'est écrite, pour que `abort_file` puisse toujours
+rembobiner.
+
