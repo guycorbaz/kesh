@@ -2086,7 +2086,17 @@ couvert par le `.gitignore` — à décider par l'orchestrateur).
 `unknownOutcome`) **tuée**.
 
 **Gates après la remédiation** (au commit `9d6f3184`, bases remises à zéro, un seul passage sous le verrou) :
-[RUN-P1]
+backend `311b-gate-5.log` **rouge** — 3907 passés, 1 échoué, 7 ignorés :
+`kesh-i18n loader::tests::la_cloture_d_exercice_ne_parle_pas_comme_un_panneau`, le de-CH neuf
+d'`admin-restore-confirm-body` employait « geschlossen », réservé aux panneaux ; `check` **0 erreur, 29 avertissements**
+(5091 fichiers) ; `lint-i18n-ownership` **PASS** ; Vitest **1866 tests, 159 fichiers** (+7 : trois
+d'`AdminRestorePanel`, quatre de la garde de `/onboarding/restore`) ; `build` **vert** ; **E2E complet**
+(`311b-e2e-5.log`) **311 passés, 8 échoués, 17 ignorés** — les sept KF-029 (`mode-expert:26`, `:41`,
+`onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et `sidebar-navigation.spec.ts:75` (KF-052 #424 ou
+pollution, non rejoué isolément), 8 dans la fourchette 7 à 10 de `docs/testing.md` ; les trois parcours de
+`backup-restore-new-install.spec.ts` passent. Correctif `ea51180b` (« beendet », un texte allemand, ni code ni test) :
+gate ciblé `kesh-i18n` 41/41, puis **gate backend complet** `311b-gate-6.log` au commit `ea51180b` : **3908 passés, 7
+ignorés**. Ni Vitest ni l'E2E ne lisent ce texte allemand : ils n'ont pas été rejoués après `ea51180b`.
 
-Passe suivante : **P2 ciblée** (Haiku, une lentille T sur le seul diff `1fcb7732..9d6f3184`),
+Passe suivante : **P2 ciblée** (Haiku, une lentille T sur le seul diff `1fcb7732..ea51180b`),
 `311b-review-prompt-p2-ciblee.md`.
