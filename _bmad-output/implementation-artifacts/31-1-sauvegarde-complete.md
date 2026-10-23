@@ -7,8 +7,9 @@
 faite (Sonnet, R 0/0/10/8, F 0/2/9/8) et remédiée le 2026-10-23 ; validation P2 faite (Opus, R 0/0/8/8, F 0/1/7/9)
 et remédiée le 2026-10-23 ; validation P3 faite (Sonnet, R 0/0/5/7, F 0/0/4/11) et remédiée le 2026-10-23 ;
 validation P4 faite (Opus, R 0/0/3/11, F 0/0/4/7) et remédiée le 2026-10-24 ; validations P5 à P8 faites,
-**terminée au plafond de huit passes** (Change Log). **31-1a : review** (développement terminé le 2026-10-24 ; revue de
-code P1 à lancer, `311a-review-prompt-p1.md`, **Sonnet**, lentilles B, E, A) ; 31-1b et 31-1c : ready-for-dev.
+**terminée au plafond de huit passes** (Change Log). **31-1a : done** (revue de code P1 terminée le 2026-10-24) ;
+**31-1b : review** (développement terminé le 2026-10-24 ; revue de code P1 à lancer, `311b-review-prompt-p1.md`,
+**Sonnet**, lentilles B, E, A) ; 31-1c : ready-for-dev.
 
 ⛔ **Trois stories, une fiche, trois PR successives** (C-31-1-1) :
 
@@ -1034,16 +1035,16 @@ sauvegarde E2E pèse quelques Kio, et `importMaxMib` ne descend pas sous 1).
 
 ### 31-1b
 
-- [ ] T-b1 Vitest rouges : lien de l'assistant (Admin seulement, étapes 0–2), avis `.env`, avis de l'export (trois cas
+- [x] T-b1 Vitest rouges : lien de l'assistant (Admin seulement, étapes 0–2), avis `.env`, avis de l'export (trois cas
   d'en-têtes), avis de fin d'import (`filesMissing` 0 / > 0 ; bouton *Se reconnecter* dans **les deux** cas, aucune
   redirection avant le clic), garde de rôle de `/onboarding/restore`.
-- [ ] T-b2 `routes/onboarding/restore/+page.svelte` et `+page.ts` (garde de rôle), lien sur `+page.svelte` (AC15).
-- [ ] T-b3 `admin-backup.api.ts` (en-têtes), `AdminBackupPanel`, `AdminRestorePanel` (AC17-AC19 ; toast
+- [x] T-b2 `routes/onboarding/restore/+page.svelte` et `+page.ts` (garde de rôle), lien sur `+page.svelte` (AC15).
+- [x] T-b3 `admin-backup.api.ts` (en-têtes), `AdminBackupPanel`, `AdminRestorePanel` (AC17-AC19 ; toast
   `admin-restore-toast-success` retiré, clé supprimée des quatre locales).
-- [ ] T-b4 i18n ×4 (AC22).
-- [ ] T-b5 E2E AC20 ; captures (AC21).
-- [ ] T-b6 Manuel (AC21), PDF.
-- [ ] T-b7 `api-client.ts` : options `{ timeoutMs, retry }` de `getBlob` et `postFormData`,
+- [x] T-b4 i18n ×4 (AC22).
+- [x] T-b5 E2E AC20 ; captures (AC21).
+- [x] T-b6 Manuel (AC21), PDF.
+- [x] T-b7 `api-client.ts` : options `{ timeoutMs, retry }` de `getBlob` et `postFormData`,
   `LONG_OPERATION_TIMEOUT_MS` ; `downloadFullExport`, `uploadFullImport` ; message d'issue inconnue de l'import pour
   `TIMEOUT`, `NETWORK_ERROR`, 502, 504 (i18n ×4) ; tests Vitest rouges d'abord (AC18b).
 
@@ -1304,6 +1305,7 @@ seconde passe (C-31-1-53) ; le contrôle d'empreinte de la passe unique est tué
 ### Agent Model Used
 
 31-1a : Opus 5.5 (Claude Code), 2026-10-24, en autonomie.
+31-1b : Opus 5.5 (Claude Code), 2026-10-24, en autonomie (worktree `kesh-31-1b`, branche `story/31-1b` sur `1ee0583e`).
 
 ### Debug Log References
 
@@ -1475,6 +1477,130 @@ fichiers » dans `admin-manual.pdf`. `website/roadmap.html`, brochure : laissés
 - `full_import_refuses_when_backup_cannot_be_written` exporte par une seconde instance au dossier utilisable (l'export
   exige désormais lui aussi un dossier de sauvegarde inscriptible).
 
+---
+
+**31-1b — premiers commits : LOW confiés par la revue P1 de la 31-1a** (`dbf6206d`) : commentaire
+`kesh-db/src/backup.rs:642` (A-L1) réécrit sans numéro de ligne ; manuel d'administration — refus propres au format 2
+(entrée inattendue, `byteSize` au-delà du plafond, pièce plus grande que déclarée, nom hors forme, manifeste de format 1
+qui déclare des pièces), bornes de lecture (64 Mio, 1 Gio cumulé), deux limites assumées (E-3 pièces écrites avant un
+refus tardif ; E-4 verrou de `_kesh_version` tenu pendant la sauvegarde pré-import, second import en échec au-delà de
+`innodb_lock_wait_timeout`), 410 d'une pièce non emportée (§ PDF figés) ; `docs/api-external.md` : le 410 des deux
+lectures de document (B-L3). Les refus de l'import ne vont **pas** à `api-external.md`, qui ne documente pas les routes
+d'administration, refusées aux clés d'API (C-31-1-74). L'avertissement de l'en-tête d'excès (A-L2) est désormais vrai à
+l'écran, et le manuel le dit.
+
+**31-1b — ce qui est livré** (commits `a4012e69` code, `e060e4c4` E2E, `0bb317c6` manuel, `7f977a04` et `7cc8a3e4`
+gardes, `17c7a8d6` jetons de couleur, `08ef4bdd` garde des jetons) :
+
+- **AC15** : lien « Restaurer une sauvegarde » sur `routes/onboarding/+page.svelte` (étapes ≤ 2, `Admin`, état chargé) ;
+  page `routes/onboarding/restore/+page.svelte` (rend `AdminRestorePanel`, charge les messages, lien de retour) et sa
+  garde de rôle `+page.ts` (non-Admin → `/onboarding`, C-31-1-72).
+- **AC17** : `features/admin-backup/BackupEnvNotice.svelte`, rendu par les deux panneaux (C-31-1-69).
+- **AC18** : `downloadFullExport` rend `{ filesNotIncluded, exceedsImportLimitMib }` lus strictement (C-31-1-73) ;
+  `AdminBackupPanel` affiche les deux avis, effacés à chaque export.
+- **AC18b** : `api-client.ts` — `CallOptions { timeoutMs, retry }`, `LONG_OPERATION_TIMEOUT_MS` (une heure), options
+  conservées au rejeu après refresh ; `getBlob` / `postFormData` à défauts inchangés ; export et import en
+  `{ timeoutMs: LONG_OPERATION_TIMEOUT_MS, retry: false }` ; `AdminRestorePanel` : `issueInconnue` (`TIMEOUT`,
+  `NETWORK_ERROR`, 502, 504) → `admin-restore-error-unknown-outcome`, « Se reconnecter » proposé (C-31-1-71) ; 503 au
+  défaut.
+- **AC19** : succès → avis « Import réussi », pièces restaurées, avertissement des pièces manquantes ; aucune redirection
+  avant « Se reconnecter » (logout best-effort, redirection garantie) ; formulaire figé ; toast
+  `admin-restore-toast-success` retiré du code et des quatre catalogues.
+- **AC20** : `frontend/tests/e2e/backup-restore-new-install.spec.ts`, trois parcours (C-31-1-75).
+- **AC21** : manuel — § *Restaurer sur une nouvelle machine* (`sec:restauration-machine-neuve`, étapes 1 à 5), § *Ce que
+  dit l'écran à la fin de l'import*, renvoi depuis *Test de restauration périodique* et depuis *Premier démarrage* ; PDF
+  régénéré (`make fr` sous verrou, `311b-make.log` ; PDF des deux autres manuels, seulement redatés, non commités).
+- **AC22** : 12 clés neuves ×4 locales, une modifiée (`admin-backup-page-description`), une retirée ; replis identiques
+  au fr-CH (vérifiés clé par clé par `grep -F` de la valeur fr-CH dans les sources Svelte) ; CHANGELOG `[0.15.0]` et
+  README.
+
+**Tests rouges constatés avant le code** (`311b-red-vitest.log`) : 27 tests en échec et un fichier non chargé
+(`onboarding-restore-page.test.ts`, `./+page` absent) — les quatre de `api-client-long-operation` sur la constante, le
+délai long et `retry: false` (le « 30 s par défaut » et le témoin à cinq `fetch` passaient : comportement d'avant),
+trois du lien de l'assistant, quatre d'`admin-backup.api`, un d'`admin-restore.api`, cinq d'`AdminBackupPanel`, dix
+d'`AdminRestorePanel` (dont le test historique du succès, réécrit pour « Se reconnecter »). Verts après le code
+(`311b-green-vitest.log` : 9 fichiers, 97 tests).
+
+**Décompte des tests** (de `1ee0583e` à `HEAD`, tests **exécutés**, boucles comprises) : Vitest **+39** —
+`api-client-long-operation.test.ts` 0 → 6, `admin-backup.api.test.ts` 9 → 13, `AdminBackupPanel.test.ts` 4 → 10,
+`admin-restore.api.test.ts` 2 → 3, `AdminRestorePanel.test.ts` 5 → 15, `onboarding-restore-link.test.ts` 0 → 9,
+`onboarding-restore-page.test.ts` 0 → 3 ; la suite passe de 1820 à 1859, cohérent. E2E **+3**. Rust : aucun test
+neuf ; deux bornes de garde mises à jour (`i18n-keys.test.ts` `sitesTotal` 2279 → 2289, ventilé au fichier ;
+`i18n-un-repli-par-cle.test.ts` 341 → 344) et deux fragments de G18-ter (`textes_coherents.rs`).
+
+**Mutations** (sous le verrou, script `perl` à motif unique vérifié, restauration `git checkout -- f && touch f`, arbre
+propre vérifié ; journaux `311b-mut-M-b*.log`, diff en tête) :
+
+| # | Mutation appliquée | Test(s) rejoué(s) | Résultat |
+|---|---|---|---|
+| M-b1 | lien : `role === 'Admin'` → `currentUser !== undefined` | `onboarding-restore-link.test.ts` | **tuée** (3 rouges : Comptable, Consultation, sans utilisateur) |
+| M-b2 | `await relogin()` aussitôt après un import réussi | `AdminRestorePanel.test.ts` | **tuée** (3 rouges) |
+| M-b3 | `filesNotIncluded: null` (en-tête ignoré) | `admin-backup.api.test.ts` | **tuée** (2) |
+| M-b4 | `getBlob(FULL_EXPORT_URL)` sans l'option longue | `admin-backup.api.test.ts` | **tuée** (l'espion) |
+| M-b5 | `retry !== false` retiré de `fetchWithRetry` | `api-client-long-operation.test.ts` | **tuée** (2) |
+| M-b6 | `TIMEOUT` retiré d'`issueInconnue` | `AdminRestorePanel.test.ts` | **tuée** |
+| M-b7 | `504` retiré d'`issueInconnue` | `AdminRestorePanel.test.ts` | **tuée** |
+| M-b8 *(hors fiche)* | garde de `/onboarding/restore` neutralisée | `onboarding-restore-page.test.ts` | **tuée** (2) |
+| M-b9 *(hors fiche)* | `timeoutMs` ignoré (30 s rétablis) | `api-client-long-operation.test.ts` | **tuée** (2) |
+| M-b10 *(hors fiche)* | condition d'étape du lien retirée | `onboarding-restore-link.test.ts` | **tuée** (3) |
+
+Bilan : 7 mutations de la fiche, 7 tuées ; 3 complémentaires (C-31-1-77), 3 tuées ; aucune équivalente. Les mutations
+ont tourné au commit `0bb317c6` ; le code muté n'a pas changé ensuite, hors les classes de couleur de `17c7a8d6`.
+
+**Captures (AC21, thème clair)** — `kesh-gate-logs/311b-captures/`, prises par la spec E2E quand
+`KESH_E2E_CAPTURES_DIR` est posé, réécrites par le run final : (a) `a-assistant-etape-0-lien-restaurer.png`, (b)
+`b-onboarding-restore.png`, (g) `g-fin-import-sans-piece-manquante.png` et (c) `c-backup-panneau-avis-env.png` — parcours
+réel de l'AC20 ; (d) `d-restore-panneau-avis-env.png`, (e) `e-export-pieces-non-incluses.png` (pièce retirée du dossier
+**avant** l'export) et (h) `h-fin-import-pieces-manquantes.png` (cette archive importée, la pièce toujours absente) —
+parcours réel ; (f) `f-export-depasse-taille-import.png` (en-tête ajouté à la réponse réelle par `page.route`) et (i)
+`i-import-issue-inconnue.png` (import remplacé par un 504, `page.route`) — interception réseau. Non copiées au dépôt :
+le manuel d'administration n'emploie aucune capture (C-31-1-76). La capture (i) a révélé que l'encart d'erreur des deux
+panneaux était **sans couleur** (jetons `danger` inexistants), et l'avertissement de fond sans teinte (`bg-warning-soft`
+inexistant) : corrigés en `17c7a8d6` (défaut voisin à correction mécanique).
+
+**Gates réellement exécutés** (périmètre : branche `story/31-1b`, base `1ee0583e`) :
+
+- Au commit `7cc8a3e4` : gate backend `311b-gate-1.log` **rouge** (1 échec, `textes_coherents
+  les_ecrans_multi_societe_sont_assumes` — G18-ter, fragment de la description changé par l'AC22 ; corrigé en
+  `7f977a04`), puis `311b-gate-2.log` **3908 passés, 7 ignorés** (au commit `7f977a04`) ; frontend `311b-fe-unit.log`
+  **rouge** (1 : `i18n-un-repli-par-cle` 344 ≠ 341, corrigé en `7cc8a3e4`), puis au commit `7cc8a3e4` : `check` 0 erreur,
+  29 avertissements ; `lint-i18n-ownership` PASS ; Vitest **1859 tests, 159 fichiers** ; `build` vert ; **E2E complet**
+  (`311b-e2e.log`) **311 passés, 8 échoués, 17 ignorés** (12,6 min) : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — les sept KF-029 (#97) — et
+  `sidebar-navigation.spec.ts:75` (KF-052 #424 ou pollution, `docs/testing.md` § *Les échecs attendus* ; non rejoué
+  isolément) : 8, dans la fourchette 7 à 10, aucun hors liste.
+- Au commit `17c7a8d6` (bases remises à zéro) : backend `311b-gate-3.log` **3908 passés, 7 ignorés** ; `check` 0
+  erreur, 29 avertissements ; `lint-i18n-ownership` PASS ; Vitest `311b-fe-unit-3.log` **rouge** (1 :
+  `jetons-non-definis.test.ts`, `danger` sans emploi — corrigé en `08ef4bdd`) ; `build` vert ; E2E `311b-e2e-3.log`
+  **312 passés, 7 échoués, 17 ignorés** (12,7 min) — les sept KF-029, rien d'autre.
+- **Au dernier commit de code `08ef4bdd`** (bases `kesh_311b` et `kesh_e2e_311b` remises à zéro, un seul passage sous
+  le verrou) : gate backend `311b-gate-4.log` (`scripts/test-fast.sh --ci` : fmt, clippy `-D warnings`, nextest)
+  **3908 passés, 7 ignorés** ; `check` **0 erreur, 29 avertissements** (5090 fichiers) ; `lint-i18n-ownership`
+  **PASS** ; Vitest `311b-fe-unit-4.log` **1859 tests, 159 fichiers, tous passés** ; `build` **vert** ; **E2E complet**
+  (`311b-e2e-4.log`, port 3312, `kesh_e2e_311b`, dossiers `/tmp/kesh-e2e-311b/*` passés au backend **et** au runner,
+  `/health` : `smtpConfigured: true`) **312 passés, 7 échoués, 17 ignorés** (12,7 min). Les 7 échecs, jugés fichier par
+  fichier contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — **les sept KF-029 (#97)** ; ni KF-052
+  ni pollution ; aucun échec hors liste. Les trois parcours de `backup-restore-new-install.spec.ts` passent, et les
+  captures de l'AC21 sont celles de ce run.
+
+**Écarts à la fiche et aux consignes** :
+
+- Textes des avis neutres au nombre (C-31-1-70) : « Pièces justificatives restaurées : 2. » au lieu de « 2 pièces
+  restaurées » (AC20), et formulations voisines pour les AC18 et AC19.
+- La spec E2E ne fait pas de poignée de main de l'inbox (C-31-1-75) ; elle porte deux parcours de plus que l'AC20.
+- Défaut voisin intégré (correction mécanique) : jetons de couleur des encarts (`17c7a8d6`) ; la garde
+  `jetons-non-definis.test.ts` l'a relevé — son nom `danger` n'a plus d'emploi — et sa table fermée perd cette entrée
+  (`08ef4bdd`, `refs #645`). Les **autres** emplois de jetons non définis (`bg-warning-soft` ×8 hors story,
+  `bg-error-soft` ×3…) restent à #645, déjà ouverte : aucune issue neuve.
+- Un dossier généré `frontend/src/.svelte-kit/` a été commité par erreur dans `a4012e69` et retiré par `0bd5c55b`
+  (l'amendement du commit a été refusé par le système de droits) ; il ne s'est pas reformé ensuite, sa cause n'est pas
+  établie — il n'est couvert que par `/.svelte-kit/` à la racine et `frontend/.svelte-kit/` du `.gitignore`.
+- Mutations appliquées par un script `perl` (permis pour les mutations), le code lui-même édité à l'outil Edit.
+- `/tmp/kesh-e2e-311b/` n'a pas pu être vidé ni supprimé (suppression récursive refusée par le système de droits) :
+  à retirer par l'orchestrateur.
+- `website/roadmap.html` et la brochure : laissés à la release, comme pour la 31-1a.
+
 ### File List
 
 31-1a (de `b5fd9fb1` à `HEAD`) :
@@ -1493,6 +1619,24 @@ fichiers » dans `admin-manual.pdf`. `website/roadmap.html`, brochure : laissés
 - `docs/api-external.md`, `CHANGELOG.md`, `README.md`, `.env.example`, `docker-compose.yml`, `docker-compose.prod.yml`
 - `_bmad-output/implementation-artifacts/31-1-sauvegarde-complete.md`, `epic-31-choix-autonomes-311.md`,
   `sprint-status.yaml`, `311a-review-prompt-p1.md` (neuf)
+
+31-1b (de `1ee0583e` à `HEAD`) :
+
+- `frontend/src/lib/shared/utils/api-client.ts`, `api-client-long-operation.test.ts` (neuf)
+- `frontend/src/lib/features/admin-backup/admin-backup.api.ts`, `admin-backup.api.test.ts`, `AdminBackupPanel.svelte`,
+  `AdminBackupPanel.test.ts`, `BackupEnvNotice.svelte` (neuf)
+- `frontend/src/lib/features/admin-restore/admin-restore.api.ts`, `admin-restore.api.test.ts`,
+  `AdminRestorePanel.svelte`, `AdminRestorePanel.test.ts`
+- `frontend/src/routes/onboarding/+page.svelte`, `onboarding-restore-link.test.ts` (neuf),
+  `restore/+page.svelte`, `restore/+page.ts`, `restore/onboarding-restore-page.test.ts` (neufs)
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `i18n-un-repli-par-cle.test.ts`,
+  `frontend/src/lib/components/ui/jetons-non-definis.test.ts`
+- `frontend/tests/e2e/backup-restore-new-install.spec.ts` (neuf)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `crates/kesh-api/tests/textes_coherents.rs`, `crates/kesh-db/src/backup.rs` (commentaire)
+- `docs/manual/fr/admin-manual.tex`, `admin-manual.pdf`, `docs/api-external.md`, `CHANGELOG.md`, `README.md`
+- `_bmad-output/implementation-artifacts/31-1-sauvegarde-complete.md`, `epic-31-choix-autonomes-311.md`,
+  `sprint-status.yaml`, `311b-review-prompt-p1.md` (neuf)
 
 ## Change Log
 
@@ -1878,3 +2022,14 @@ emportée, en-tête `X-Kesh-Backup-Exceeds-Import-Limit` sans écran avant la 31
 inchangé), B-L2, B-L4, B-L5, E-2 à E-7 (dont E-3 — pièces écrites avant un refus tardif, non nettoyées — et E-4 — verrou
 de `_kesh_version` tenu pendant la sauvegarde pré-import —, angles morts à porter au manuel par la 31-1b). Statut de la
 31-1a : `done`.
+
+### 2026-10-24 — Développement de la 31-1b (Opus 5.5) → review
+
+LOW de la revue P1 de la 31-1a traités en premier commit (commentaire de `backup.rs`, refus du format 2, bornes, 410
+d'une pièce non emportée, angles morts E-3 et E-4 ; C-31-1-74). T-b1 à T-b7 faits (détail au Dev Agent Record) : lien
+« Restaurer une sauvegarde » de l'assistant et page `/onboarding/restore` gardée ; avis `.env` partagé ; avis d'export
+(pièces non incluses, plafond dépassé) ; bilan de l'import et « Se reconnecter » ; appels longs hors délai de 30 s, sans
+rejeu, et issue inconnue d'un import (`TIMEOUT`, `NETWORK_ERROR`, 502, 504) ; i18n ×4 ; E2E de bout en bout et deux
+parcours d'états ; manuel *Restaurer sur une nouvelle machine* et PDF ; CHANGELOG, README. Défaut voisin intégré : jetons
+de couleur inexistants des encarts. Vitest 1820 → 1859 ; mutations 10 tuées sur 10 (dont 3 hors fiche). Choix
+C-31-1-69 à 77. Revue de code P1 à lancer : `311b-review-prompt-p1.md` (Sonnet, lentilles B, E, A).

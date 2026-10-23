@@ -757,3 +757,86 @@ route `POST …/full-import` (`admin_backup` reste `pub(crate)`).
   `kesh-db/tests/support/`), aucun binaire de test neuf ; le générateur de la fixture garde son montage en ligne, tel
   qu'il a tourné au tag `v0.14.0`.
 - **Réversible** : oui.
+
+## Développement de la 31-1b (2026-10-24, Opus 5.5)
+
+### C-31-1-69 — L'avis `.env` est un composant partagé, possédé par `admin-backup`
+
+- **Contexte** : l'AC17 nomme **une** clé (`admin-backup-not-included-env`) pour deux panneaux de deux dossiers ; la
+  règle `lint-i18n-ownership` refuse qu'un fichier de `features/admin-restore/` appelle une clé `admin-backup-*`.
+- **Retenu** : `features/admin-backup/BackupEnvNotice.svelte` porte la clé et le texte ; `AdminRestorePanel` importe le
+  composant (`data-testid="backup-env-notice"` sur les deux écrans). Une clé, un repli, un texte.
+- **Écartées** : une seconde clé `admin-restore-*` au même texte (deux replis à tenir égaux) ; une entrée
+  `KNOWN_VIOLATIONS` (dette #30 étendue pour rien).
+- **Réversible** : oui.
+
+### C-31-1-70 — Les avis chiffrés sont écrits neutres au nombre
+
+- **Contexte** : `i18nMsg` ne fait qu'une substitution de `{ $var }` (aucun sélecteur Fluent côté client) ; les textes
+  de la fiche (« N pièces référencées n'ont pas pu être incluses », « N pièces référencées sont introuvables… »,
+  « 2 pièces restaurées ») donneraient « 1 pièces ».
+- **Retenu** : le nombre après deux-points — « Pièces référencées que le fichier n'a pas pu inclure : N (…) — voir le
+  journal du serveur. Après une restauration, elles répondront « document indisponible ». », « Pièces justificatives
+  restaurées : N. », « Pièces référencées introuvables après la restauration : N. … ». Le sens et les éléments de la
+  fiche sont gardés ; l'E2E lit le nombre dans l'élément dédié (`admin-restore-files-restored`).
+- **Écartées** : « pièce(s) » (accords impossibles du verbe) ; deux clés singulier / pluriel (logique de choix dans
+  chaque écran).
+- **Réversible** : oui.
+
+### C-31-1-71 — « Se reconnecter » aussi après une issue inconnue ; formulaire figé après un succès
+
+- **Contexte** : après une réponse d'import perdue (AC18b), le message dit « Reconnectez-vous pour vérifier » ; après un
+  import réussi, la session est invalidée et l'installation remplacée.
+- **Retenu** : le bouton « Se reconnecter » est proposé dans les deux cas ; après un succès, le choix du fichier et
+  « Importer » sont désactivés (un second import ne se lance pas d'un écran dont la session est morte).
+- **Écartée** : laisser l'utilisateur chercher seul la reconnexion (le menu utilisateur est absent de l'assistant).
+- **Réversible** : oui.
+
+### C-31-1-72 — Lien de l'assistant et page `/onboarding/restore`
+
+- **Retenu** : le lien est placé sous le contenu de l'étape, avec une invite (« Vous avez une sauvegarde de Kesh
+  (.keshbackup) ? ») ; il exige un état d'onboarding chargé (`onboardingState.loaded`), une étape ≤ 2 et le rôle
+  `Admin`. La page `/onboarding/restore` charge les messages i18n au montage (elle peut s'ouvrir avant le choix de la
+  langue) et porte un lien « ← Retour à l'assistant ». Sa garde de rôle renvoie un non-Admin vers **`/onboarding`**, et
+  non vers `/` comme `(app)/admin/restore/+page.ts` : `/` le renverrait de toute façon à l'assistant, en deux sauts.
+- **Réversible** : oui.
+
+### C-31-1-73 — En-têtes de l'export lus strictement
+
+- **Retenu** : `headerCount` n'accepte qu'un entier décimal non signé (`^\d+$`, après `trim`) et sûr ; toute autre
+  valeur (absente, vide, `abc`, `1e3`, `-1`, trop grande) vaut `null`, jamais `NaN`. Un avis ne s'affiche que pour une
+  valeur > 0.
+- **Réversible** : oui.
+
+### C-31-1-74 — Les refus de l'import vont au manuel, pas à `docs/api-external.md`
+
+- **Contexte** : la revue P1 de la 31-1a confie à la 31-1b les refus propres au format 2, les bornes de lecture, le 410
+  d'une pièce non emportée et les angles morts E-3 / E-4 « au manuel et à `docs/api-external.md` ».
+- **Retenu** : `docs/api-external.md` ne documente pas `full-export` / `full-import`, refusés aux clés d'API (route
+  d'administration, `ensure_not_pat`) : seul le 410 des deux lectures de document y est corrigé (B-L3). Refus, bornes,
+  E-3 et E-4 vont au manuel d'administration (liste des refus et deux limites).
+- **Réversible** : oui.
+
+### C-31-1-75 — E2E : pas de poignée de main de l'inbox ; trois parcours
+
+- **Contexte** : `inboxHandshake` dépose une sonde puis l'**écarte** ; un document écarté reste une ligne référencée,
+  que la sauvegarde emporte — le compte « 2 pièces restaurées » de l'AC20 deviendrait 3.
+- **Retenu** : la spec ne fait pas de poignée de main ; la garde bruyante de suppression des pièces (chaque fichier
+  existe avant, n'existe plus après) détecte le même défaut de montage. Deux parcours s'ajoutent à celui de l'AC20 :
+  pièce absente avant l'export → avis d'export, puis avis de pièces manquantes à l'import (captures e, h) ; plafond
+  d'import dépassé et import en 504 par interception réseau (captures f, i).
+- **Réversible** : oui.
+
+### C-31-1-76 — Les captures restent hors dépôt
+
+- **Retenu** : `docs/manual/fr/admin-manual.tex` n'emploie aucune capture d'écran (`grep -c includegraphics` : 0) ;
+  les neuf captures (a) à (i) restent dans `kesh-gate-logs/311b-captures/`, prises par l'E2E quand
+  `KESH_E2E_CAPTURES_DIR` est posé.
+- **Réversible** : oui.
+
+### C-31-1-77 — Trois mutations hors fiche
+
+- **Retenu** : M-b8 (garde de rôle de `/onboarding/restore` neutralisée), M-b9 (`timeoutMs` ignoré, délai de 30 s
+  rétabli) et M-b10 (condition d'étape du lien retirée), parce que la fiche ne garde ni la garde de rôle, ni la valeur du
+  délai long, ni la borne d'étape par une mutation.
+- **Réversible** : oui.
