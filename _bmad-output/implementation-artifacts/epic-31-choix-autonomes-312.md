@@ -199,3 +199,55 @@
   rougir que le garde local, jamais la CI.
 - **Écart à l'epic** (R4-9) : « rend le montage fiable » devient « le signale » (C-31-2-1, C-31-2-15) ; à porter à la rétrospective 31.
 
+
+### Choix du développement (2026-10-23 ; agent de développement, ne réécrivent aucune entrée ci-dessus)
+
+### C-31-2-16 — La ligne `USAGE` attendue n'est ajoutée que si le fichier ne porte aucun droit `ON *.*`
+
+- **Contexte** : sur MariaDB, un droit global *remplace* la ligne `USAGE ON *.*` au lieu de s'y ajouter (fait établi en
+  validation P4). Un fichier de droits qui accorderait un jour un droit global ferait attendre deux lignes `*.*` là où le
+  serveur n'en rend qu'une : le garde rougirait pour toujours, même sur un conteneur conforme.
+- **Retenu** : l'attendu reçoit `GRANT USAGE ON *.* TO \`<user>\`@\`%\`` seulement si aucune de ses lignes ne porte
+  ` ON *.* TO `. C'est la définition correcte de l'attendu, non un contrôle de plus (C-31-2-15 tient).
+- **Écartée** : ajouter `USAGE` inconditionnellement (faux rouge permanent dans un cas que le fichier interdit
+  aujourd'hui, mais qu'il n'empêche pas). **Réversible** : oui.
+
+### C-31-2-17 — Une clé `MARIADB_*` présente plusieurs fois dans le compose de dev est refusée
+
+- **Contexte** : le garde lit `MARIADB_USER`, `MARIADB_PASSWORD` et `MARIADB_DATABASE` par `grep` ; un second service qui
+  porterait la même clé rendrait la lecture ambiguë.
+- **Retenu** : une seule occurrence admise, sinon non nul, clé et nombre d'occurrences nommés — même famille que « clé
+  absente, vide ou interpolée » (fiche 1b). **Écartée** : lire le seul bloc `mariadb:` (analyse YAML en shell, fragile).
+  **Réversible** : oui.
+
+### C-31-2-18 — L'extraction des `GRANT` est en awk POSIX, éprouvée sous gawk et mawk
+
+- **Contexte** : le poste a gawk, `ubuntu-latest` a mawk par défaut ; le test du garde tourne en CI par son enveloppe.
+- **Retenu** : aucune extension gawk ; le test a été rejoué avec `awk` → `mawk 1.3.4` (105 assertions vertes).
+  **Réversible** : oui.
+
+### C-31-2-19 — Le garde dit aussi sa réussite
+
+- **Retenu** : « garde des droits : droits de kesh conformes à 01-dev-grants.sql » (code 0) ; sans lui, `test-fast.sh`
+  n'affichait rien entre l'en-tête de l'étape et la suivante, et l'AC7 ne se constatait qu'au code de retour.
+  **Réversible** : oui.
+
+### C-31-2-20 — Smoke : sonde négative par la fixture `request`, nettoyage dans le premier test
+
+- **Contexte** : `resolveBackendUrl` n'est pas exporté ; un `afterEach({ page })` ouvre une page vide pour la sonde
+  négative, et `clearAuthStorage` y journalise un `SecurityError` sur `localStorage`.
+- **Retenu** : la sonde négative emploie la fixture `request` de Playwright (contexte neuf, sans cookie, sur le `baseURL`
+  de la configuration, qui lit le même `KESH_BACKEND_URL`) ; `clearAuthStorage` est appelé dans le `finally` du premier
+  test. Aucun helper réécrit ni exporté. **Réversible** : oui.
+
+### C-31-2-21 — `website/index.html:189` n'est pas modifié (assumé par écrit, AC5)
+
+- **Retenu** : la commande `docker compose -f docker-compose.dev.yml up -d` du guide public suit un `git clone` dans la
+  même recette : elle se lance, par construction, depuis le dépôt principal. La page est en anglais et publique ; y
+  ajouter la règle des worktrees parlerait à un lecteur qui n'en a pas. **Réversible** : oui.
+
+### C-31-2-22 — Le CHANGELOG range la 31-2 sous « Interne, invisible de l'utilisateur »
+
+- **Retenu** : sous-section déjà employée par le CHANGELOG ; aucune des quatre entrées ne change ce que voit
+  l'utilisateur de Kesh. Section `## [0.15.0] — Non publié` créée par la 31-2 (la 31-3 l'écrit aussi : union au rebase).
+  **Réversible** : oui.

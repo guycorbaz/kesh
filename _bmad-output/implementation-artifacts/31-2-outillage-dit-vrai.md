@@ -1,6 +1,6 @@
 # Story 31-2 — L'outillage dit vrai : droits de dev, smoke E2E en CI, Docker authentifié, `.svelte-kit/`
 
-Status: in-progress
+Status: review
 
 Issue : [#577](https://github.com/guycorbaz/kesh/issues/577) (bug, P3, documentation) ; actions C3 (rétrospective 29),
 A2, A3 (rétrospective 15), A-C7 et A-C9 (rétrospective 15). Branche `story/31-2`. Choix : `epic-31-choix-autonomes.md`
@@ -441,23 +441,23 @@ devient 7 à 10 échecs attendus sur N+2 tests, à recompter). Les deux tests de
 
 ## Tâches
 
-- [ ] **T1 (volet 4)** `.svelte-kit/` retiré, `/.svelte-kit/` aux deux ignore ; AC16, AC17.
-- [ ] **T2 (volet 3)** `credentials` sur les services de `ci.yml` (`backend`) et de `release.yml`, `docker/login-action`
+- [x] **T1 (volet 4)** `.svelte-kit/` retiré, `/.svelte-kit/` aux deux ignore ; AC16, AC17.
+- [x] **T2 (volet 3)** `credentials` sur les services de `ci.yml` (`backend`) et de `release.yml`, `docker/login-action`
   sur `docker-build` et dans `release.yml`, **placés avant `setup-buildx-action`** (celui de `release.yml` est remonté) ;
   note A-C9 retirée ; AC13 (premier temps), AC14, AC15 (refait à T4 et T5). Le service et la connexion d'`e2e-smoke` sont écrits en T5.
-- [ ] **T3 (volet 1)** `scripts/check-dev-grants.sh` (égalité d'ensembles de droits, `docker` injectable par `KESH_DOCKER`,
+- [x] **T3 (volet 1)** `scripts/check-dev-grants.sh` (égalité d'ensembles de droits, `docker` injectable par `KESH_DOCKER`,
   deux « garde sauté », tout autre échec non nul) + `scripts/tests/check-dev-grants.test.sh` + son enveloppe
   `crates/kesh-db/tests/check_dev_grants_script.rs` (rouge d'abord : M1–M3, M6–M20) ; câblage dans `test-fast.sh` hors du bloc
   lint ; textes `docs/testing.md` (dont la règle aux recettes `up`/`restart`), `docs/agents-orchestration.md`, `CLAUDE.md:527`,
   `crates/kesh-db/README.md`, `refresh_tokens_repository.rs:5`, `DEBUGGING-KF007.md`, `docker-compose.dev.yml:107-108`,
   `README.md:183` et `:193` ; AC1–AC5.
-- [ ] **T4 (volet 1c et 1d)** `ci.yml` job `backend` : droits appliqués en `root` après « Install mariadb-client »,
+- [x] **T4 (volet 1c et 1d)** `ci.yml` job `backend` : droits appliqués en `root` après « Install mariadb-client »,
   `DATABASE_URL` en `kesh` ; `release.yml` : `DATABASE_URL` du smoke en `kesh` (#698) ; doc-comment de `reconciliation_e2e.rs:8249-8250` ajusté ; AC6, AC18.
-- [ ] **T5 (volet 2)** `smoke.spec.ts` (rouge d'abord : M5), job `e2e-smoke` **avec son service `credentials`, sa
+- [x] **T5 (volet 2)** `smoke.spec.ts` (rouge d'abord : M5), job `e2e-smoke` **avec son service `credentials`, sa
   connexion Docker Hub puis `setup-buildx-action`**, mutations M4 ; AC8–AC11 ; AC13 (second temps).
-- [ ] **T6 (volet 2, textes)** `CLAUDE.md` § E2E et `docs/ci.md`, `docs/testing.md:590` réécrits ; AC12.
-- [ ] **T7** Vérifier le conteneur (déjà conforme, aucune recréation à demander) ; gate complet ; trier les rouges (AC7).
-- [ ] **T8** E2E complet au dernier commit de code ; Dev Agent Record **sans affirmer ce qui n'a pas tourné** (les
+- [x] **T6 (volet 2, textes)** `CLAUDE.md` § E2E et `docs/ci.md`, `docs/testing.md:590` réécrits ; AC12.
+- [x] **T7** Vérifier le conteneur (déjà conforme, aucune recréation à demander) ; gate complet ; trier les rouges (AC7).
+- [x] **T8** E2E complet au dernier commit de code ; Dev Agent Record **sans affirmer ce qui n'a pas tourné** (les
   AC « CI uniquement » et AC18 y figurent comme *non vérifiés localement*).
 
 ## Dev Notes
@@ -584,21 +584,157 @@ Passe suivante : ciblée P6 (Sonnet) sur le commit de cette remédiation.
   P5 ciblée Haiku 0/0/3/2 → P6 ciblée Sonnet 0/0/0/4. Fait constaté par l'orchestrateur le 2026-10-23 (recréation du
   conteneur) : `SHOW GRANTS FOR 'kesh'@'%'` rend `` GRANT USAGE ON *.* TO `kesh`@`%` IDENTIFIED BY PASSWORD '*…' `` — la
   capture réelle de la fixture du dév le confirmera. Statut `in-progress`.
+- 2026-10-23 — **Développement** (Claude Opus 5.5). Volets livrés dans l'ordre 4, 3, 1, 2 (`a5233131`, `7ceee92e`,
+  `883293b3`, `7495144d`). Garde des droits et son test hermétique (20 cas, 105 assertions, gawk et mawk), enveloppe
+  Rust ; 18 mutations du garde sur 18 tuées ; smoke 2 passed, M4, M5 et la variante sans `KESH_TEST_MODE` rouges.
+  Gate complet vert (nextest 3847/3847, 6 ignorés ; Vitest 1820 ; check, i18n, build) ; E2E complet : 7 échecs KF-029
+  après rejeu isolé de deux échecs de montage. AC6, AC10, AC13 et AC18 ne se constatent qu'en CI. Fixture capturée :
+  la forme `IDENTIFIED BY PASSWORD '*…'` est confirmée. Choix C-31-2-16 à C-31-2-22. Revue de code P1 à lancer
+  (`312-review-prompt-p1.md`, Sonnet, lentilles B, E, A). Statut `review`.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
-*(à renseigner par le dév)*
+Claude Opus 5.5 (agent de développement de l'Epic 31), le 2026-10-23.
 
 ### Debug Log References
 
-*(à renseigner)*
+Journaux hors dépôt (`/home/gcorbaz/devel/kesh-gate-logs/`) : `312-gate-complet.log` (gate backend),
+`312-gate-frontend.log`, `312-e2e-complet.log`.
+
+**Tests rouges d'abord (sortie copiée).** Le test shell seul, avant l'écriture du garde :
+
+```
+⛔ garde introuvable : /home/gcorbaz/devel/kesh-31-2/scripts/check-dev-grants.sh
+⛔ 1 assertion(s) en échec sur 0 cas.
+rc=1
+```
+
+L'enveloppe Rust par nextest (`-E 'binary(check_dev_grants_script)'`) :
+
+```
+thread 'check_dev_grants_script_compares_real_grants_to_versioned_file' panicked at crates/kesh-db/tests/check_dev_grants_script.rs:43:5:
+le test de check-dev-grants.sh a échoué (exit status: 1):
+⛔ garde introuvable : /home/gcorbaz/devel/kesh-31-2/scripts/check-dev-grants.sh
+Summary [   0.066s] 1 test run: 0 passed, 1 failed, 0 skipped
+```
+
+Puis, garde écrit et avant son câblage dans `test-fast.sh` : 19 cas verts, le cas 20 (câblage) rouge —
+`✗ 0 ligne(s) d'invocation non commentée(s)` — ; vert après câblage.
+
+**Fixture capturée** (AC3 ; confirme le fait relevé par l'orchestrateur) : `docker exec -e MYSQL_PWD kesh-mariadb-dev
+mariadb -N -B -r -u kesh -e 'SHOW GRANTS FOR CURRENT_USER'`, mot de passe exporté et absent de l'argv, condensé masqué à
+l'affichage :
+
+```
+GRANT USAGE ON *.* TO `kesh`@`%` IDENTIFIED BY PASSWORD '<condensé>'
+GRANT ALL PRIVILEGES ON `kesh`.* TO `kesh`@`%`
+GRANT ALL PRIVILEGES ON `\_sqlx\_test%`.* TO `kesh`@`%`
+GRANT ALL PRIVILEGES ON `kesh%`.* TO `kesh`@`%`
+```
+
+Sans `-r`, la troisième ligne sort en `` `\\_sqlx\\_test%` `` (vérifié). `SELECT CURRENT_USER()` par le socket rend
+`kesh@%`.
 
 ### Completion Notes List
 
-*(à renseigner — **sans affirmer ce qui n'a pas tourné** : AC6, AC10, AC13 et AC18 y figurent comme non vérifiés localement.)*
+**Ordre de livraison** 4, 3, 1, 2 (C-31-2-6), un commit par volet : `a5233131` (volet 4), `7ceee92e` (volet 3),
+`883293b3` (volet 1 : T3 et T4), `7495144d` (volet 2 : T5 et T6). **Dernier commit de code : `7495144d`.**
+
+**Garde et test (AC1–AC4).** Test hermétique `scripts/tests/check-dev-grants.test.sh` : **20 cas, 105 assertions**
+(`grep -c '^    ✓'` sur sa sortie), vert sous gawk **et** sous `mawk 1.3.4` (`awk` → `mawk` en tête du `PATH`) —
+`ubuntu-latest` a mawk. Contre le conteneur réel (AC7) : `garde des droits : droits de kesh conformes à
+01-dev-grants.sql`, code 0 ; il passe en tête du gate (`312-gate-complet.log`, ligne 3).
+
+**Mutations du garde (M1–M3, M6–M20), sous verrou**, chacune par motif vérifié unique, test shell rejoué, restauration
+par `git checkout -- <fichier>` puis `touch` (`git status` propre à l'issue) — **18 sur 18 tuées** :
+
+| # | Résultat | Première assertion qui rougit |
+|---|---|---|
+| M1 | tuée | « droit superflu hors niveau global » : code 0, sortie sans `` `autre` `` |
+| M2 | tuée | 19 assertions, dont « droit en moins » (code 0) |
+| M3 | tuée | câblage : 0 ligne d'invocation non commentée |
+| M6 | tuée | `_` non échappé : code 0 |
+| M7 | tuée | câblage : ligne 64 hors de ]49 ; 61[ |
+| M8 | tuée | « conteneur non en marche » : code 1, attendu 0 |
+| M9 | tuée | « docker introuvable » : code 1, attendu 0 |
+| M10 | tuée | « exec en échec » : code 0, sortie sans « docker exec a échoué » |
+| M11 | tuée | non-fuite : la sortie contient `IDENTIFIED BY PASSWORD` et le faux condensé |
+| M12 | tuée | « zéro GRANT » : sortie sans « aucune instruction GRANT » |
+| M13 | tuée | argv d'exec sans `-e MYSQL_PWD` nu ; mot de passe dans un argv |
+| M14 | tuée | non-fuite sur les cas `ALL PRIVILEGES ON *.*` et `PROCESS` |
+| M15 | tuée | invocation non nue (`… \|\| true`) |
+| M16 | tuée | « ps en échec » : code 0 |
+| M17 | tuée | message « docker introuvable » absent ; messages identiques |
+| M18 | tuée | argv d'exec sans `-N -B -r` |
+| M19 | tuée | `MYSQL_PWD` vu par exec : `<absente>` |
+| M20 | tuée | « docker introuvable » : code 1 ; aucun `exec` consigné |
+
+⚠️ **M20 a atteint le vrai `docker`** — c'est l'objet de la mutation : un `docker ps` et un `docker exec … SHOW GRANTS`
+en lecture, avec le mot de passe factice du mini-dépôt (authentification refusée). Aucune écriture.
+
+**Smoke (AC8, AC9, AC11), contre le backend du worktree** (port 3312, base `kesh_e2e_312`, recette de
+`docs/testing.md`) : `npx playwright test --list tests/e2e/smoke.spec.ts` → `Total: 2 tests in 1 file` ; nominal →
+**`2 passed`** ; **M4** (backend sans `KESH_COOKIE_SECURE=false`) → `Expected: 200 / Received: 401` à
+`smoke.spec.ts:42`, 1 failed, 1 passed (la sonde négative) ; **sans `KESH_TEST_MODE`** → rouge au `globalSetup` :
+`seedTestState(with-company) failed: 405 Method Not Allowed — … KESH_TEST_MODE may not be enabled` ; **M5** (sonde
+négative attendant 200) → rouge à `smoke.spec.ts:58`, 1 failed, 1 passed. ⚠️ La spec n'étant pas encore suivie par git,
+la restauration de M5 par `git checkout` n'a rien restauré : remise à `toBe(401)` par l'outil d'édition, vérifiée au
+`grep -n "toBe("`.
+
+**Gates réellement exécutés, au dernier commit de code `7495144d`** :
+
+- `scripts/test-fast.sh` complet sous verrou, base `kesh_312` remise à zéro (supprimée, recréée, migrée, seedée — sans
+  toucher au conteneur) : garde vert, fmt, clippy `-D warnings`, nextest **3847 exécutés, 3847 passés, 6 ignorés**
+  (162 s ; 3846 à la v0.14.0 + l'enveloppe neuve). **Aucun rouge** : aucun test ne dépend localement d'un droit absent
+  du fichier (AC7).
+- Frontend sous verrou : `npm run check` **0 erreur** (29 avertissements préexistants), `lint-i18n-ownership` PASS,
+  Vitest **156 fichiers, 1820 tests** verts, `npm run build` vert.
+- **E2E complet** (base `kesh_e2e_312` neuve, **333 tests dans 80 fichiers**, `--list`) : **297 passed, 9 failed,
+  17 skipped, 10 did not run** (12,0 min). Jugés fichier par fichier contre `docs/testing.md` § *Les échecs attendus* :
+  sept **KF-029 (#97)** — `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` — ; deux échecs **de mon montage** — `inbox-import.spec.ts:59` et
+  `supplier-documents.spec.ts:78`, dans `assertInboxDirsUsable` : mes dossiers étaient `/tmp/kesh-e2e-312/…`, non passés
+  au runner ; les 10 « did not run » sont les tests suivants de ces deux specs. **Rejouées seules** avec `KESH_INBOX_DIR`
+  et `KESH_DOCUMENTS_DIR` passés au runner : **12 passed**. Compte effectif : **7 échecs, la borne basse de la
+  baseline** ; ni KF-052 ni pollution sur ce run.
+- AC15 : `yaml.safe_load` sur `ci.yml` et `release.yml` après T2, T4 et T5 (« yaml ok » ; quatre jobs lus) — syntaxe YAML
+  seulement, non le schéma GitHub Actions (`actionlint` absent de la station).
+- AC16/AC17 : `git ls-files | grep -c svelte-kit` → 0 ; `npm run check` (0 erreur) et `npm run build` verts après le
+  retrait ; `git check-ignore -v .svelte-kit/tsconfig.json` → `.gitignore:11:/.svelte-kit/`.
+
+**Inventaires clos ré-exécutés.** AC5 (`git grep -nE "GRANT ALL.*\*\.\*|droits globaux|mysql://root" …`) : **vide**
+après T4. Recettes `compose -f docker-compose.dev.yml` : toutes portent la règle ou y renvoient, sauf
+`website/index.html:189`, assumé (C-31-2-21). AC12 : ne restent que des occurrences justes (quatre jobs), des
+annotations historiques et les faux positifs `jobs` de cargo (`CLAUDE.md:298`, `:318`, `:324`, `:344`). AC13 : `ci.yml`
+2 et 2, `release.yml` 1 et 1 ; la connexion précède `setup-buildx` dans `docker-build`, `e2e-smoke` et `release.yml`.
+AC14 : l'avertissement A-C9 est retiré ; restent `README.md:226` et `docs/testing.md:336` (sans rapport ; `:225` et
+`:314` avant les ajouts de la story), et deux lignes neuves qui racontent l'historique (`ci.yml:52`, `docs/ci.md:173`). AC18 : `grep -nF 'mysql://root'
+.github/workflows/release.yml` → vide. **Manuel** : `grep` sur `docs/manual/fr/*.tex` ne rend que des droits de
+production (`GRANT ALL PRIVILEGES ON kesh.*`, `GRANT SELECT … kesh_backup`), conformes à la table de `docs/testing.md` ;
+aucun PDF à régénérer (la fiche n'en prescrit pas).
+
+**Non vérifié localement — ne se constate qu'en CI** : AC6 (le job `backend` en `kesh` après « Apply dev grants ») ;
+AC10 (le job `e2e-smoke` vert, et **sa durée**, que `CLAUDE.md` et `docs/ci.md` annoncent « à relever au premier run ») ;
+AC13 (tirages authentifiés, dont `moby/buildkit` — hypothèse sur l'action) ; la validité des secrets ; le cache `gha`
+partagé entre `docker-build` et `e2e-smoke`. **AC18** : le smoke de `release.yml` en `kesh` ne se voit qu'au tag
+v0.15.0. Si la CI rougit faute d'un droit que la production n'a pas, chaque test se nomme ici et une issue se demande.
+
+**Écarts à la fiche** : aucun sur le périmètre. Ajouts consignés au registre (C-31-2-16 à C-31-2-22) : ligne `USAGE`
+attendue conditionnelle, clé de compose en double refusée, awk POSIX, message de réussite du garde, sonde négative par
+la fixture `request`, `website/index.html` assumé, CHANGELOG sous « Interne ».
 
 ### File List
 
-*(à renseigner)*
+Développement (`git diff --name-status b34314ae 7495144d`, hors `_bmad-output/`) — **26 fichiers** : 4 ajoutés,
+16 modifiés, 6 supprimés.
+
+- Ajoutés : `scripts/check-dev-grants.sh`, `scripts/tests/check-dev-grants.test.sh`,
+  `crates/kesh-db/tests/check_dev_grants_script.rs`, `frontend/tests/e2e/smoke.spec.ts`.
+- Modifiés : `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.gitignore`, `.dockerignore`,
+  `CHANGELOG.md`, `CLAUDE.md`, `README.md`, `crates/kesh-api/tests/reconciliation_e2e.rs`, `crates/kesh-db/README.md`,
+  `crates/kesh-db/tests/refresh_tokens_repository.rs`, `docker-compose.dev.yml`, `docs/agents-orchestration.md`,
+  `docs/ci.md`, `docs/testing.md`, `frontend/DEBUGGING-KF007.md`, `scripts/test-fast.sh`.
+- Supprimés : les six `.svelte-kit/…` de la racine.
+- Artefacts : cette fiche, `epic-31-choix-autonomes-312.md`, `sprint-status.yaml`, `312-review-prompt-p1.md`.
