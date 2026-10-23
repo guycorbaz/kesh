@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { authState } from '$lib/app/stores/auth.svelte';
+import { apiClient, LONG_OPERATION_TIMEOUT_MS } from '$lib/shared/utils/api-client';
 import { downloadFullExport, parseContentDispositionFilename } from './admin-backup.api';
 
 describe('admin-backup.api — Story 17-3b', () => {
@@ -122,6 +123,73 @@ describe('admin-backup.api — Story 17-3b', () => {
 
 			await expect(downloadFullExport()).rejects.toThrow();
 			expect(createObjectURLSpy).not.toHaveBeenCalled();
+		});
+
+		// Story 31-1b (AC18) — ce que l'export a omis, lu dans les en-têtes de la 31-1a.
+		function reponseAvecEnTetes(entetes: Record<string, string>) {
+			return vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				blob: () => Promise.resolve(new Blob([new Uint8Array([0x50, 0x4b])])),
+				headers: new Headers({
+					'content-type': 'application/octet-stream',
+					'content-disposition': 'attachment; filename="kesh-installation.keshbackup"',
+					...entetes,
+				}),
+			} as unknown as Response);
+		}
+
+		it('AC18 : rend le nombre de pièces non incluses et le plafond d’import dépassé', async () => {
+			vi.stubGlobal(
+				'fetch',
+				reponseAvecEnTetes({
+					'x-kesh-backup-files': '5',
+					'x-kesh-backup-files-not-included': '3',
+					'x-kesh-backup-exceeds-import-limit': '2048',
+				}),
+			);
+			await expect(downloadFullExport()).resolves.toEqual({
+				filesNotIncluded: 3,
+				exceedsImportLimitMib: 2048,
+			});
+		});
+
+		it('AC18 : en-têtes à zéro / absents (serveur ancien) → rien à signaler', async () => {
+			vi.stubGlobal('fetch', reponseAvecEnTetes({ 'x-kesh-backup-files-not-included': '0' }));
+			await expect(downloadFullExport()).resolves.toEqual({
+				filesNotIncluded: 0,
+				exceedsImportLimitMib: null,
+			});
+			vi.stubGlobal('fetch', reponseAvecEnTetes({}));
+			await expect(downloadFullExport()).resolves.toEqual({
+				filesNotIncluded: null,
+				exceedsImportLimitMib: null,
+			});
+		});
+
+		it('AC18 : en-tête illisible → ignoré (null), jamais NaN', async () => {
+			vi.stubGlobal(
+				'fetch',
+				reponseAvecEnTetes({
+					'x-kesh-backup-files-not-included': 'abc',
+					'x-kesh-backup-exceeds-import-limit': '',
+				}),
+			);
+			await expect(downloadFullExport()).resolves.toEqual({
+				filesNotIncluded: null,
+				exceedsImportLimitMib: null,
+			});
+		});
+
+		it('AC18b : l’export passe l’option longue, sans rejeu', async () => {
+			const espion = vi.spyOn(apiClient, 'getBlob');
+			vi.stubGlobal('fetch', reponseAvecEnTetes({}));
+			await downloadFullExport();
+			expect(espion).toHaveBeenCalledWith('/api/v1/admin/full-export', {
+				timeoutMs: LONG_OPERATION_TIMEOUT_MS,
+				retry: false,
+			});
+			espion.mockRestore();
 		});
 	});
 });

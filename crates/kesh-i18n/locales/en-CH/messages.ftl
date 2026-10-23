@@ -88,6 +88,10 @@ onboarding-path-demo = Explore with demo data
 onboarding-path-demo-desc = Discover Kesh with realistic sample data
 onboarding-path-production = Set up for production
 onboarding-path-production-desc = Configure your organisation to start working
+# Story 31-1b (#503) — restore a backup from the setup assistant
+onboarding-restore-hint = Do you have a Kesh backup (.keshbackup)?
+onboarding-restore-link = Restore a backup
+onboarding-restore-back = ← Back to the assistant
 
 # Demo banner
 demo-banner-text = Demo instance — fictitious data
@@ -1616,12 +1620,16 @@ nav-export-global = Global export
 # Story 17-3b — full installation backup (.keshbackup, Admin)
 nav-admin-backup = Full backup
 admin-backup-page-title = Full installation backup
-admin-backup-page-description = Downloads the entire installation (all companies, users and system data) into a single .keshbackup file, for migration or backup. Distinct from a single company's global export.
+admin-backup-page-description = Downloads the entire installation (all companies, users, system data and supporting documents: supplier documents, PDFs of issued invoices) into a single .keshbackup file, for migration or backup. Distinct from a single company's global export.
 admin-backup-action-export = Export the entire installation
 admin-backup-action-exporting = Exporting…
 admin-backup-toast-success = Installation backup downloaded.
 admin-backup-error-generic = Installation export failed. Please try again shortly.
 admin-backup-page-hint-secret = The .keshbackup file contains sensitive data (credentials, tokens). Keep it in a safe place.
+# Story 31-1b (#503) — what the file does not contain, what the export left out
+admin-backup-not-included-env = The file does not contain the server configuration (.env file: email, session secret, directories…). Keep it separately: on a new machine, recreate it before importing.
+admin-backup-files-not-included = Referenced documents the file could not include: { $count } (file missing, altered, unreadable or inconsistent with the database) — see the server log. After a restore, they will answer "document unavailable".
+admin-backup-exceeds-import-limit = This file exceeds the allowed import size ({ $mib } MiB): to restore it, raise KESH_ADMIN_IMPORT_MAX_MB.
 # Story 17-3d — full installation import / restore (.keshbackup, Admin)
 nav-admin-restore = Restore / Import
 admin-restore-page-title = Installation restore / import
@@ -1633,11 +1641,16 @@ admin-restore-confirm-title = Replace the entire installation?
 admin-restore-confirm-body = This action will replace ALL data of the current installation. A backup of the current state will be created server-side before the import. You will be logged out and must log back in with the credentials of the imported instance.
 admin-restore-confirm-cancel = Cancel
 admin-restore-confirm-ok = Confirm replacement
-admin-restore-toast-success = Import successful — you will be logged out.
 admin-restore-error-version = This backup requires a newer version of Kesh ({ $src }) than the one installed ({ $bin }). Update Kesh before importing again.
 admin-restore-error-schema = Backup schema incompatible with this version of Kesh (table { $table }).
 admin-restore-error-invalid = Backup file invalid or corrupted. Make sure it is a .keshbackup file produced by Kesh.
 admin-restore-error-generic = Import failed. The previous state of the installation was preserved.
+# Story 31-1b (#503) — what the restore gave back; unknown outcome of a long import
+admin-restore-success = Import successful: the installation is now the one from the backup. Log back in with the backup's credentials.
+admin-restore-files-restored = Supporting documents restored: { $count }.
+admin-restore-files-missing = Referenced documents not found after the restore: { $count }. They will answer "document unavailable"; restore the documents directory from another backup.
+admin-restore-action-relogin = Log back in
+admin-restore-error-unknown-outcome = The server's response did not arrive: the import may have completed. Log back in to check the state of the installation.
 export-global-title = Global export of your data
 export-global-description = Export your entire accounting as CSV in a ZIP file: chart of accounts, journal entries, sales and supplier invoices, credit notes, settlements, projects, contacts, banking data and audit log. Use this export to archive your data for 10 years (Swiss CO art. 958f) or to migrate to another application.
 export-global-button = Start export

@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { authState } from '$lib/app/stores/auth.svelte';
+import { apiClient, LONG_OPERATION_TIMEOUT_MS } from '$lib/shared/utils/api-client';
 import { uploadFullImport } from './admin-restore.api';
 
 describe('admin-restore.api — Story 17-3d', () => {
@@ -67,5 +68,24 @@ describe('admin-restore.api — Story 17-3d', () => {
 
 		const file = new File([new Uint8Array([0x50, 0x4b])], 'inst.keshbackup');
 		await expect(uploadFullImport(file)).rejects.toThrow();
+	});
+
+	it('Story 31-1b (AC18b) : l’import passe l’option longue, sans rejeu', async () => {
+		const espion = vi.spyOn(apiClient, 'postFormData').mockResolvedValue({
+			backupCreated: false,
+			tablesRestored: 1,
+			rowsRestored: 1,
+			sourceVersion: '0.15.0',
+			sessionInvalidated: true,
+			filesRestored: 0,
+			filesMissing: 0,
+		});
+		const file = new File([new Uint8Array([0x50, 0x4b])], 'inst.keshbackup');
+		await uploadFullImport(file);
+		expect(espion).toHaveBeenCalledWith('/api/v1/admin/full-import', expect.any(FormData), {
+			timeoutMs: LONG_OPERATION_TIMEOUT_MS,
+			retry: false,
+		});
+		espion.mockRestore();
 	});
 });

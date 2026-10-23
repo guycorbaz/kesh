@@ -88,6 +88,10 @@ onboarding-path-demo = Esplora con dati dimostrativi
 onboarding-path-demo-desc = Scopri Kesh con dati fittizi realistici
 onboarding-path-production = Configura per la produzione
 onboarding-path-production-desc = Configura la tua organizzazione per iniziare a lavorare
+# Story 31-1b (#503) — ripristinare un backup dall'assistente
+onboarding-restore-hint = Avete un backup di Kesh (.keshbackup)?
+onboarding-restore-link = Ripristina un backup
+onboarding-restore-back = ← Torna all'assistente
 
 # Banner demo
 demo-banner-text = Istanza dimostrativa — dati fittizi
@@ -1616,12 +1620,16 @@ nav-export-global = Esportazione globale
 # Story 17-3b — backup completo dell'installazione (.keshbackup, Admin)
 nav-admin-backup = Backup completo
 admin-backup-page-title = Backup completo dell'installazione
-admin-backup-page-description = Scarica l'intera installazione (tutte le società, gli utenti e i dati di sistema) in un unico file .keshbackup, per migrare o salvare. Da distinguere dall'esportazione globale di una singola società.
+admin-backup-page-description = Scarica l'intera installazione (tutte le società, gli utenti, i dati di sistema e i giustificativi: documenti dei fornitori, PDF delle fatture emesse) in un unico file .keshbackup, per migrare o salvare. Da distinguere dall'esportazione globale di una singola società.
 admin-backup-action-export = Esporta l'intera installazione
 admin-backup-action-exporting = Esportazione in corso…
 admin-backup-toast-success = Backup dell'installazione scaricato.
 admin-backup-error-generic = Esportazione dell'installazione non riuscita. Riprovate tra poco.
 admin-backup-page-hint-secret = Il file .keshbackup contiene dati sensibili (credenziali, token). Conservatelo in un luogo sicuro.
+# Story 31-1b (#503) — ciò che il file non contiene, ciò che l'esportazione ha omesso
+admin-backup-not-included-env = Il file non contiene la configurazione del server (file .env: posta elettronica, segreto di sessione, cartelle…). Conservatela a parte: su una nuova macchina, ricreatela prima di importare.
+admin-backup-files-not-included = Giustificativi referenziati che il file non ha potuto includere: { $count } (file assente, alterato, illeggibile o incoerente con la base dati) — vedere il registro del server. Dopo un ripristino, risponderanno «documento non disponibile».
+admin-backup-exceeds-import-limit = Questo file supera la dimensione di import consentita ({ $mib } MiB): per ripristinarlo, aumentate KESH_ADMIN_IMPORT_MAX_MB.
 # Story 17-3d — import / ripristino completo dell'installazione (.keshbackup, Admin)
 nav-admin-restore = Ripristina / Importa
 admin-restore-page-title = Ripristino / import dell'installazione
@@ -1633,11 +1641,16 @@ admin-restore-confirm-title = Sostituire l'intera installazione?
 admin-restore-confirm-body = Questa azione sostituirà TUTTI i dati dell'installazione attuale. Prima dell'import verrà creato un backup dello stato attuale lato server. Sarete disconnessi e dovrete riconnettervi con le credenziali dell'istanza importata.
 admin-restore-confirm-cancel = Annulla
 admin-restore-confirm-ok = Conferma la sostituzione
-admin-restore-toast-success = Import riuscito — verrete disconnessi.
 admin-restore-error-version = Questo backup richiede una versione di Kesh più recente ({ $src }) di quella installata ({ $bin }). Aggiornate Kesh prima di reimportare.
 admin-restore-error-schema = Schema del backup non compatibile con questa versione di Kesh (tabella { $table }).
 admin-restore-error-invalid = File di backup non valido o danneggiato. Assicuratevi che sia un file .keshbackup prodotto da Kesh.
 admin-restore-error-generic = Import non riuscito. Lo stato precedente dell'installazione è stato preservato.
+# Story 31-1b (#503) — ciò che il ripristino ha restituito; esito incerto di un import lungo
+admin-restore-success = Import riuscito: l'installazione è quella del backup. Riconnettetevi con le credenziali del backup.
+admin-restore-files-restored = Giustificativi ripristinati: { $count }.
+admin-restore-files-missing = Giustificativi referenziati introvabili dopo il ripristino: { $count }. Risponderanno «documento non disponibile»; ripristinate la cartella dei documenti da un altro backup.
+admin-restore-action-relogin = Riconnettersi
+admin-restore-error-unknown-outcome = La risposta del server non è arrivata: l'import potrebbe essere andato a buon fine. Riconnettetevi per verificare lo stato dell'installazione.
 export-global-title = Esportazione globale dei vostri dati
 export-global-description = Esportate tutta la vostra contabilità in formato CSV in un file ZIP: piano dei conti, scritture, fatture di vendita e di acquisto, note di credito, pagamenti, progetti, contatti, dati bancari e registro di audit. Utilizzate questa esportazione per archiviare i dati per 10 anni (CO svizzero art. 958f) o per migrare verso un altro software.
 export-global-button = Avvia esportazione

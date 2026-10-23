@@ -88,6 +88,10 @@ onboarding-path-demo = Mit Demodaten erkunden
 onboarding-path-demo-desc = Entdecken Sie Kesh mit realistischen Beispieldaten
 onboarding-path-production = Für die Produktion konfigurieren
 onboarding-path-production-desc = Konfigurieren Sie Ihre Organisation, um loszulegen
+# Story 31-1b (#503) — eine Sicherung aus dem Assistenten wiederherstellen
+onboarding-restore-hint = Sie haben eine Kesh-Sicherung (.keshbackup)?
+onboarding-restore-link = Eine Sicherung wiederherstellen
+onboarding-restore-back = ← Zurück zum Assistenten
 
 # Demo-Banner
 demo-banner-text = Demonstrationsinstanz — fiktive Daten
@@ -1616,12 +1620,16 @@ nav-export-global = Globaler Export
 # Story 17-3b — vollständige Installationssicherung (.keshbackup, Admin)
 nav-admin-backup = Vollständige Sicherung
 admin-backup-page-title = Vollständige Sicherung der Installation
-admin-backup-page-description = Lädt die gesamte Installation (alle Firmen, Benutzer und Systemdaten) in eine einzige .keshbackup-Datei zur Migration oder Sicherung herunter. Zu unterscheiden vom globalen Export einer einzelnen Firma.
+admin-backup-page-description = Lädt die gesamte Installation (alle Firmen, Benutzer, Systemdaten und Belege: Lieferantendokumente, PDF der ausgestellten Rechnungen) in eine einzige .keshbackup-Datei zur Migration oder Sicherung herunter. Zu unterscheiden vom globalen Export einer einzelnen Firma.
 admin-backup-action-export = Gesamte Installation exportieren
 admin-backup-action-exporting = Export läuft…
 admin-backup-toast-success = Installationssicherung heruntergeladen.
 admin-backup-error-generic = Export der Installation fehlgeschlagen. Versuchen Sie es in Kürze erneut.
 admin-backup-page-hint-secret = Die .keshbackup-Datei enthält sensible Daten (Anmeldedaten, Tokens). Bewahren Sie sie sicher auf.
+# Story 31-1b (#503) — was die Datei nicht enthält, was der Export ausgelassen hat
+admin-backup-not-included-env = Die Datei enthält die Serverkonfiguration nicht (Datei .env: E-Mail-Versand, Sitzungsgeheimnis, Verzeichnisse…). Bewahren Sie sie separat auf: Erstellen Sie sie auf einem neuen Rechner vor dem Import neu.
+admin-backup-files-not-included = Referenzierte Belege, die die Datei nicht aufnehmen konnte: { $count } (Datei fehlt, verändert, unlesbar oder mit der Datenbank unvereinbar) — siehe Serverprotokoll. Nach einer Wiederherstellung antworten sie mit «Dokument nicht verfügbar».
+admin-backup-exceeds-import-limit = Diese Datei überschreitet die zulässige Importgrösse ({ $mib } MiB): Um sie wiederherzustellen, erhöhen Sie KESH_ADMIN_IMPORT_MAX_MB.
 # Story 17-3d — vollständiger Installationsimport / -wiederherstellung (.keshbackup, Admin)
 nav-admin-restore = Wiederherstellen / Importieren
 admin-restore-page-title = Wiederherstellung / Import der Installation
@@ -1633,11 +1641,16 @@ admin-restore-confirm-title = Gesamte Installation ersetzen?
 admin-restore-confirm-body = Dieser Vorgang ersetzt ALLE Daten der aktuellen Installation. Vor dem Import wird serverseitig eine Sicherung des aktuellen Zustands erstellt. Sie werden abgemeldet und müssen sich mit den Anmeldedaten der importierten Instanz erneut anmelden.
 admin-restore-confirm-cancel = Abbrechen
 admin-restore-confirm-ok = Ersetzen bestätigen
-admin-restore-toast-success = Import erfolgreich — Sie werden abgemeldet.
 admin-restore-error-version = Dieses Backup erfordert eine neuere Kesh-Version ({ $src }) als die installierte ({ $bin }). Aktualisieren Sie Kesh vor dem erneuten Import.
 admin-restore-error-schema = Backup-Schema ist mit dieser Kesh-Version nicht kompatibel (Tabelle { $table }).
 admin-restore-error-invalid = Sicherungsdatei ungültig oder beschädigt. Stellen Sie sicher, dass es sich um eine von Kesh erzeugte .keshbackup-Datei handelt.
 admin-restore-error-generic = Import fehlgeschlagen. Der vorherige Zustand der Installation wurde beibehalten.
+# Story 31-1b (#503) — was die Wiederherstellung zurückgegeben hat; ungewisser Ausgang eines langen Imports
+admin-restore-success = Import erfolgreich: Die Installation entspricht der Sicherung. Melden Sie sich mit den Anmeldedaten der Sicherung erneut an.
+admin-restore-files-restored = Wiederhergestellte Belege: { $count }.
+admin-restore-files-missing = Nach der Wiederherstellung nicht auffindbare referenzierte Belege: { $count }. Sie antworten mit «Dokument nicht verfügbar»; stellen Sie das Dokumentenverzeichnis aus einer anderen Sicherung wieder her.
+admin-restore-action-relogin = Erneut anmelden
+admin-restore-error-unknown-outcome = Die Antwort des Servers ist nicht eingetroffen: Der Import könnte abgeschlossen sein. Melden Sie sich erneut an, um den Zustand der Installation zu prüfen.
 export-global-title = Globaler Export Ihrer Daten
 export-global-description = Exportieren Sie Ihre gesamte Buchhaltung als CSV in einer ZIP-Datei: Kontenplan, Buchungen, Ausgangs- und Eingangsrechnungen, Gutschriften, Zahlungen, Projekte, Kontakte, Bankdaten und Audit-Protokoll. Nutzen Sie diesen Export zur Archivierung über 10 Jahre (OR Art. 958f) oder für den Wechsel zu einer anderen Software.
 export-global-button = Export starten
