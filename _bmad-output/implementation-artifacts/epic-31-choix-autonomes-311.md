@@ -635,3 +635,7 @@ rembobiner.
 crate externe ; le module `auto_backup` expose en `pub` `BackupEnv`, `RealBackupEnv`, `WriteSeek`, `run_once`, `RunOutcome`,
 `RunTrigger`, `spawn`. **État final de C-31-1-46** : `Box<dyn WriteSeek>` ; l'entrée `files/` reste écrite.
 
+**Amendement (2026-10-24, validation P8)** : `RunTrigger` se lit `Trigger` ; la liste `pub` du module `auto_backup` comprend
+aussi `FailureStatus`, le statut de succès et le type d'erreur de `run_once` ; l'importabilité de l'AC36 se prouve par la
+route `POST …/full-import` (`admin_backup` reste `pub(crate)`).
+

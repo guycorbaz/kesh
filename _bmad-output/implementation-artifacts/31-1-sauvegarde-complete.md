@@ -742,7 +742,7 @@ Synology ; stables sur la chaîne 1.96.1 du dépôt) — **`kind()` d'abord** : 
 `raw_os_error()` 28 ou 122 ne vaut que pour une erreur née hors du crate ; `'failed'` sinon (C-31-1-32). **La
 rétention ne tourne pas**, les sauvegardes existantes restent. Le trait d'injection de l'AC36 (`BackupEnv: Send +
 Sync`, qui remplace `FreeSpace`, passé en `Arc<dyn BackupEnv>`) porte deux méthodes : `free_bytes(dir)` et
-`wrap_writer(file: File) -> Box<dyn WriteSeek>`, où `WriteSeek` est un trait du module, `pub trait WriteSeek: Write + Seek + Send {}` — **visibilité** : les tests de l'AC36 vivent dans un crate externe (`crates/kesh-api/tests/admin_auto_backup_e2e.rs`), donc le module `kesh_api::auto_backup` et ce qu'ils emploient sont **`pub`** : `BackupEnv`, `RealBackupEnv`, `WriteSeek`, `run_once`, `RunOutcome`, `RunTrigger` et `spawn` (sinon E0603, ou `private_interfaces` sous `-D warnings`) avec une implémentation générale `impl<T: Write + Seek + Send> WriteSeek for T {}` — un objet-trait n'admet qu'**un** trait non automatique (E0225), d'où ce trait d'union (validation P5, R1) ; l'écrivain de test implémente `Write + Seek` — l'écrivain **possède** un **clone** du fichier
+`wrap_writer(file: File) -> Box<dyn WriteSeek>`, où `WriteSeek` est un trait du module, `pub trait WriteSeek: Write + Seek + Send {}` — **visibilité** : les tests de l'AC36 vivent dans un crate externe (`crates/kesh-api/tests/admin_auto_backup_e2e.rs`), donc le module `kesh_api::auto_backup` et ce qu'ils emploient sont **`pub`** : `BackupEnv`, `RealBackupEnv`, `WriteSeek`, `run_once`, `RunOutcome`, `Trigger`, le statut porté par `RunOutcome::Done` (`FailureStatus` et le type de statut de succès que l'AC28 nomme), le type d'erreur de `run_once`, et `spawn` — ce dernier parce que `main.rs` est un crate binaire distinct (sinon E0603, ou `private_interfaces` sous `-D warnings`) ; `classify_write_error` reste privée et se teste dans un `mod tests` du module avec une implémentation générale `impl<T: Write + Seek + Send> WriteSeek for T {}` — un objet-trait n'admet qu'**un** trait non automatique (E0225), d'où ce trait d'union (validation P5, R1) ; l'écrivain de test implémente `Write + Seek` — l'écrivain **possède** un **clone** du fichier
 (`try_clone`, même descripteur, AC4), si bien qu'il entre dans le `spawn_blocking` ; l'original reste à
 `write_backup_file`, qui appelle `sync_all()` dessus une fois l'archive finie (F10 de la P2 : sur btrfs et sur un
 partage réseau, `ENOSPC`/`EDQUOT` surgissent souvent au `fsync` ; C-31-1-46, P3 : l'emprunt `&'a mut File` de la P2
@@ -859,7 +859,7 @@ sous la mutation M-c6 (`run_once` en `lock_owned().await`) il **échoue** en 5 s
 libération, `run_once` écrit.
 
 **AC36 — Tests d'intégration de la sauvegarde automatique** (`crates/kesh-api/tests/admin_auto_backup_e2e.rs`) : succès
-(fichier `0600`, dossier `0700`, archive importable : `parse_and_verify` vert, fichiers inclus) ; rétention (8
+(fichier `0600`, dossier `0700`, archive importable — prouvée par la route `POST /api/v1/admin/full-import`, qui rend 200 et restaure les fichiers ; le module `admin_backup` reste `pub(crate)`, décision de la Story 17-3a : il manipule des secrets) ; rétention (8
 sauvegardes déposées + une neuve, `retention_count = 3` → restent les 3 plus récentes, un `kesh-pre-import-x` et un
 `autre.keshbackup` intacts) ; espace insuffisant (seuil injecté par paramètre de test : la fonction de mesure est
 passée à `run_once` derrière le trait `BackupEnv`, AC30, C-31-1-19) → `insufficient_space`, aucun fichier, **8
@@ -1618,3 +1618,22 @@ gardé à l'AC14 comme relevé daté ; les « ≥ 4 » du tableau des tests, qui
 - *Deuxième remédiation de l'orchestrateur, deuxième défaut introduit* (P5 → T1, P6 → H1) : la règle « la sévérité se
   déplace vers ce qu'on vient d'écrire » vaut pour l'orchestrateur comme pour les agents.
 - Passe suivante : ciblée P8 (Opus) sur ce seul commit — **dernière passe permise** par le plafond de huit.
+
+### Validation P8 ciblée (2026-10-24) — Opus, lentille T sur `6e1db7f7` : 0/0/3/5 — **plafond de huit passes atteint**
+
+- **M1** (né de la remédiation P7, de l'orchestrateur) : `RunTrigger` n'existe pas, le type s'appelle `Trigger` partout ;
+  corrigé dans la liste `pub` de l'AC30 et au registre.
+- **M2** : la liste `pub` omettait le statut de `RunOutcome::Done` et l'erreur de `run_once` ; complétée (`FailureStatus`,
+  statut de succès, type d'erreur) ; `spawn` est `pub` à cause de `main.rs` (crate binaire), `classify_write_error` reste
+  privée, testée en `mod tests`.
+- **M3** : l'AC36 prouvait l'importabilité par `parse_and_verify`, inaccessible d'un crate externe (`admin_backup` est
+  `pub(crate)`, Story 17-3a) ; la preuve passe par la route `POST …/full-import`.
+- LOW L1 à L5 laissés au développement (L5 : les entrées P5 à P7 portent la date du 2026-10-24, leurs commits celle du
+  2026-10-23 au fuseau UTC — jour de travail continu, non corrigé).
+- **Fin de la validation au plafond** (`CLAUDE.md` § *Review Iteration Rule* : huit passes au plus). Trend : P1 Sonnet R
+  0/0/10/8 F 0/2/9/8 → P2 Opus R 0/0/8/8 F 0/1/7/9 → P3 Sonnet R 0/0/5/7 F 0/0/4/11 → P4 Opus R 0/0/3/11 F 0/0/4/7 → P5
+  Sonnet R 0/0/1/9 F 0/0/0/6 → P6 ciblée Haiku 0/1/1/3 → P7 ciblée Sonnet 0/1/0/3 → P8 ciblée Opus 0/0/3/5. **Les trois
+  MEDIUM de la P8 sont corrigés par l'orchestrateur sans passe de vérification** — l'agent de développement les recontrôle
+  à son étape 0, et la revue de code P1 les couvre. *Les P6 à P8 n'ont trouvé que des défauts introduits par les
+  remédiations de l'orchestrateur lui-même* (P5 → T1, P6 → H1, P7 → M1) : la règle de la passe ciblée s'est vérifiée sur
+  celui qui l'applique.
