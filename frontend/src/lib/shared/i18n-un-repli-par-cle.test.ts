@@ -170,8 +170,14 @@ const PREFIXES = [
  * `imported-supplier-invoices-attach-title`, `-attach-empty`, `-attach-qr-amount`,
  * `-attach-invoice-total`, `-attach-submit`, `-attach-confirm` (`AttachDocumentPicker.svelte`).
  * Les clés `journal-entries-*` neuves de la fiche d'écriture sont d'un autre domaine.
+ *
+ * ⚠️ **341 → 344, +3 nommées** (Story 31-1b, #503) — restaurer une sauvegarde depuis
+ * l'assistant, toutes au préfixe `onboarding-` : `onboarding-restore-hint` et
+ * `onboarding-restore-link` (relais `msg` de `routes/onboarding/+page.svelte`),
+ * `onboarding-restore-back` (`routes/onboarding/restore/+page.svelte`). Recompté : `git diff`
+ * du FTL fr-CH, préfixes du domaine.
  */
-const CLES_RELEVEES = 341;
+const CLES_RELEVEES = 344;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */
