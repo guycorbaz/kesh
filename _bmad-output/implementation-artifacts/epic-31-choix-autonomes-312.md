@@ -140,3 +140,30 @@
   compose de dev (« les droits globaux dont `#[sqlx::test]` a besoin », faux) et un `mysql://root:…` de `README.md`.
 - **Retenu** : les deux sont réécrits (mécanique, même symptôme) ; le commentaire n'exige aucune recréation du conteneur.
 - **Réversible** : oui.
+
+### C-31-2-15 — Signal de recyclage en validation P3 : le garde des droits se réduit à ce qu'il doit voir (choix de l'orchestrateur, 2026-10-24)
+
+- **Contexte** : la validation P3 (Opus) rend 5 MEDIUM (R) et 6 MEDIUM (F), après 3 et 5 en P2 — sévérité égale, et
+  **tous** portent sur le garde `check-dev-grants.sh` tel que les remédiations P1 et P2 l'ont étendu (source du montage
+  comparée par `cmp`, port de `DATABASE_URL`, distinction fine « absent / en erreur » par le texte des messages de
+  `docker`, options `--grants-from-stdin` et `--mount-source`). C'est le **recyclage** du `CLAUDE.md` (§ *Règle de
+  splitting préventif*, amendement D5) : chaque correction ajoutait une surface que la passe suivante trouvait fautive.
+  La sortie que le `CLAUDE.md` désigne comme la meilleure est un **retrait**.
+- **Retenu** : le garde ne fait plus que ce qui aurait détecté l'incident du 2026-10-23 — **comparer l'ensemble des
+  droits de `kesh` sur le conteneur à celui du fichier versionné**. Conception :
+  1. `docker` s'injecte par la variable `KESH_DOCKER` (défaut `docker`) : les tests passent un `docker` factice qui
+     **consigne son argv**, et tous les cas sont de bout en bout, sans option d'injection propre au garde.
+  2. Si `docker` est introuvable, ou si le conteneur n'est pas **en marche** (`docker ps --filter name=^<nom>$ --filter
+     status=running -q` vide) : message « garde sauté : … » et code 0. Aucune lecture de message d'erreur de `docker`.
+  3. Sinon : `SHOW GRANTS` par `docker exec`, le mot de passe transmis **par le nom** de la variable
+     (`-e MYSQL_PWD`, valeur héritée de l'environnement), jamais par sa valeur dans l'argv ; échec d'`exec` → code non
+     nul avec la cause ; ensembles différents → code non nul, différence affichée et commande de remise en état
+     **nommée** (jamais exécutée).
+  4. **Retirés** : la comparaison du port de `DATABASE_URL`, la comparaison de la source du montage, les options
+     `--grants-from-stdin` et `--mount-source`. La règle « conteneur créé depuis le dépôt principal » reste une règle
+     **écrite** (`docs/testing.md`, `docs/agents-orchestration.md`) ; le garde ne prétend pas la vérifier, et #699
+     reste ouverte pour une prévention.
+  5. Le câblage s'asserte sur **l'unique** ligne d'invocation **non commentée** de `test-fast.sh`.
+- **Écartées** : redécouper la 31-2 (le recyclage est confiné au garde, les trois autres volets ont convergé) ;
+  poursuivre l'extension (chaque passe en a trouvé le défaut suivant).
+- **Réversible** : oui — une vérification retirée pourra revenir avec sa propre story si un incident la motive.
