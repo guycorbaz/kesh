@@ -10,7 +10,33 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.15.0] — Non publié
 
+### Ajouté
+
+- **La sauvegarde d'installation emporte les pièces** ([#503](https://github.com/guycorbaz/kesh/issues/503)). Le fichier
+  `.keshbackup` passe au **format 2** : à côté des données, il porte les documents fournisseur importés et les PDF figés
+  des factures émises que la base référence, chacun avec son empreinte SHA-256 au manifeste. Une pièce absente, altérée
+  ou illisible n'empêche pas la sauvegarde : elle est listée au manifeste avec sa raison, et le journal du serveur la
+  nomme. L'import vérifie chaque pièce (taille, empreinte, cohérence avec la base sauvegardée) avant tout effet, **écrit
+  les pièces dans le dossier des documents avant de remplacer la base** — un refus d'écriture laisse la base intacte —,
+  puis compte les pièces restaurées et manquantes (audit `admin.full_import`). Une sauvegarde de la 0.14.x (format 1)
+  s'importe toujours ; ses pièces, qu'elle n'emporte pas, sont comptées manquantes sur une autre machine. Restent hors du
+  fichier : la configuration `.env`, les fichiers du dossier des documents que la base ne référence pas, et les documents
+  en attente dans le dossier de dépôt.
+- **L'export ne s'assemble plus en mémoire, et l'import se reçoit sur disque** : au-delà de `KESH_ADMIN_EXPORT_INMEM_MB`,
+  l'archive déborde dans un fichier temporaire anonyme de `KESH_ADMIN_BACKUP_DIR` (créé s'il manque), et l'envoi d'un
+  import y est reçu de même ; l'import va au bout même si le navigateur ou le proxy abandonne l'attente. L'export porte
+  les en-têtes `X-Kesh-Backup-Files` et `X-Kesh-Backup-Files-Not-Included`, et `X-Kesh-Backup-Exceeds-Import-Limit`
+  quand l'archive dépasse le plafond d'import.
+
 ### Modifié
+
+- **`KESH_ADMIN_IMPORT_MAX_MB` vaut 2048 par défaut** (512 auparavant), une sauvegarde emportant désormais les pièces.
+  Derrière un proxy inverse, relever avec lui la taille de requête et les délais admis pour `/api/v1/admin/` : le manuel
+  d'administration donne le bloc Nginx (`client_max_body_size 2048M`, délais d'une heure). `KESH_ADMIN_BACKUP_DIR` doit
+  désormais être inscriptible pour l'**export** aussi (temporaire de débordement), et plus seulement pour l'import.
+- ⚠️ **Une sauvegarde de la 0.15.0 ne s'importe pas dans une 0.14.x** : celle-ci la refuse avec « Fichier de sauvegarde
+  invalide ou corrompu » (`INVALID_BACKUP_STRUCTURE`), devant une sauvegarde pourtant saine. La sauvegarde de sécurité
+  prise avant chaque import emporte elle aussi les pièces : elle pèse la base **plus** le dossier des documents.
 
 - **Chaîne d'outils portée à Rust 1.97.1**, sans effet fonctionnel : `rust-toolchain.toml` et l'image Docker de
   construction (`rust:1.97-bookworm`) suivent la même version, et un test du dépôt rougit désormais si l'une bouge sans

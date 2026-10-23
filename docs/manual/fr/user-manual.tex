@@ -1158,7 +1158,7 @@ Le PDF d'une facture est produit \textbf{une seule fois} : au premier téléchar
 \end{itemize}
 
 \begin{keshwarning}
-\textbf{Si le fichier figé a disparu} --- typiquement après une restauration qui n'a pas repris le répertoire des documents ---, le téléchargement est \textbf{refusé} avec un message qui nomme le fichier manquant (\texttt{<empreinte>.pdf}). Kesh ne le régénère jamais de lui-même : ce serait fabriquer une pièce qui n'a pas été émise. Le remède est de \textbf{restaurer ce fichier} depuis la sauvegarde du répertoire des documents --- c'est le seul moyen de retrouver l'original. À défaut, un \textbf{administrateur} voit apparaître sur la fiche, après ce refus, le bouton \emph{Refiger le document} : il produit un \textbf{nouveau} document avec les données et la langue du client d'aujourd'hui, \textbf{qui n'est pas l'original}, et le journal d'audit garde l'empreinte de l'ancien et du nouveau. Une facture annulée ne peut pas être refigée : seule la restauration du fichier la répare.
+\textbf{Si le fichier figé a disparu} --- typiquement après une restauration qui n'a pas repris le répertoire des documents : une sauvegarde d'avant la version 0.15.0, ou un dump de la base (depuis la 0.15.0, la sauvegarde \texttt{.keshbackup} emporte le fichier figé) ---, le téléchargement est \textbf{refusé} avec un message qui nomme le fichier manquant (\texttt{<empreinte>.pdf}). Kesh ne le régénère jamais de lui-même : ce serait fabriquer une pièce qui n'a pas été émise. Le remède est de \textbf{restaurer ce fichier} depuis la sauvegarde du répertoire des documents --- c'est le seul moyen de retrouver l'original. À défaut, un \textbf{administrateur} voit apparaître sur la fiche, après ce refus, le bouton \emph{Refiger le document} : il produit un \textbf{nouveau} document avec les données et la langue du client d'aujourd'hui, \textbf{qui n'est pas l'original}, et le journal d'audit garde l'empreinte de l'ancien et du nouveau. Une facture annulée ne peut pas être refigée : seule la restauration du fichier la répare.
 \end{keshwarning}
 
 \subsection{Envoyer une facture par e-mail}\label{sec:envoi-email}
@@ -1906,11 +1906,14 @@ tant qu'aucune facture n'en est créée et qu'il n'est pas retiré de la liste.
 \end{keshnote}
 
 \begin{keshwarning}
-\textbf{La sauvegarde \texttt{.keshbackup} n'emporte pas les documents}~: elle ne contient
-que leur trace, pas le fichier (\href{https://github.com/guycorbaz/kesh/issues/503}{\#503}).
-Après une restauration, un document dont le fichier manque répond « Le document n'a pas été
-restauré ». Sauvegardez aussi le dossier des documents (\texttt{KESH\_DOCUMENTS\_DIR}), comme
-le décrit le manuel administrateur.
+\textbf{Depuis la version 0.15.0, la sauvegarde \texttt{.keshbackup} emporte les
+documents}~: leur fichier voyage avec la sauvegarde et revient à la restauration
+(\href{https://github.com/guycorbaz/kesh/issues/503}{\#503}). Une sauvegarde faite
+\textbf{avant} la 0.15.0 n'en contient que la trace, pas le fichier : restaurée sur une
+autre machine, un document dont le fichier manque répond « Le document n'a pas été
+restauré ». Avec une telle sauvegarde, ou une sauvegarde de la base par un dump, le
+dossier des documents (\texttt{KESH\_DOCUMENTS\_DIR}) se sauvegarde à part, comme le décrit
+le manuel administrateur.
 \end{keshwarning}
 
 %%─────────────────────────────────────────────────────────────────────────────
