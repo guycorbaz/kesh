@@ -306,8 +306,9 @@ reconnexion avec **les identifiants de la production**. **Critère de réussite,
 que l'export de la production en a annoncé** (l'en-tête `X-Kesh-Backup-Files` ou le message de l'écran d'export,
 relevé à l'étape 0) ; et la lecture de l'étape 5 de *Restaurer sur une nouvelle machine* est faite telle quelle :
 **une écriture récente au journal, et la liste des factures** que la source portait y figurent. Ce critère vaut pour
-toute installation, y compris une production sans aucune pièce (format 1, ou aucun document importé) : le manuel ne
-présume rien de *N*. **Ce que le développement exige en plus, et que le manuel ne dit pas** : la sauvegarde
+toute installation, y compris une production sans aucune pièce (aucun document importé) : le manuel ne présume rien
+de *N*. **Si l'export n'annonce aucun compte de pièces** (production antérieure à la 0.15.0, sauvegarde de format 1),
+le critère se réduit à **0 pièce manquante** et à la lecture de l'étape 5 ; le manuel le dit *(P6, T2-bis)*. **Ce que le développement exige en plus, et que le manuel ne dit pas** : la sauvegarde
 synthétique de la T1 porte *N* ≥ 1 (au moins une pièce y est entrée par l'écran) ; *N* = 0 y serait un **échec de la
 préparation de la source** — « 0 manquante » serait alors vrai quelle que soit la qualité de la restauration des
 pièces —, et la copie contient en outre l'exercice suivant et l'écriture de régularisation de la T1. **Étapes 2 à 5
@@ -876,3 +877,12 @@ une garde de hiérarchie des chemins de menu ; **tout outillage de fixture et to
 
 *(à remplir au développement : gates réellement exécutés avec leurs chiffres, journal de répétition, constats de T3,
 captures, mutations tuées, écarts à la fiche.)*
+
+### Validation P6 ciblée (2026-10-24) — Haiku, lentille T sur `2d3394aa` : 0/0/1/3 ; MEDIUM remédié par l'orchestrateur
+
+- **T2-bis (MEDIUM)**, vérifié à la lecture par l'orchestrateur : le critère « autant de pièces restaurées que l'export en
+  a annoncé » était déclaré valable pour le format 1, qui n'annonce aucun compte. Corrigé à l'AC4 : sans compte annoncé
+  (production antérieure à la 0.15.0), le critère se réduit à 0 pièce manquante et à la lecture de l'étape 5.
+- LOW L1 à L3 laissés au développement (L1 : réserve « si le navigateur le permet » à propager aux l. 226, 231, 348 ; L2 :
+  la regex de G14 ne lit qu'une liste fermée de verbes ; L3 : « l'original » de l'étape 0 à définir).
+- Passe suivante : ciblée P7 (Sonnet) sur ce commit.
