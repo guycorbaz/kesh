@@ -4,6 +4,10 @@
 //! bibliothèque (`lib.rs`) pour permettre aux tests d'intégration
 //! d'importer `build_router` et les helpers de configuration.
 
+// Story 32-3 (essai T1, C-32-3-33) — aucun `unsafe` dans le code de la lib hors
+// tests ; `services/mod.rs` porte le même attribut, qu'un rollout ne déplace pas.
+#![cfg_attr(not(test), forbid(unsafe_code))]
+
 // `pub(crate)` : module manipulant des secrets (dump complet incl. hash de mots
 // de passe), pas d'API publique nécessaire hors crate (review 17-3a Pass 1).
 pub mod address_input;
@@ -24,6 +28,7 @@ pub mod middleware;
 pub mod qr_decode;
 pub mod retry;
 pub mod routes;
+pub mod services;
 pub(crate) mod util;
 
 use std::sync::Arc;
@@ -134,6 +139,27 @@ impl AppState {
             // Story 31-1c — verrou des sauvegardes, libre.
             backup_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
+    }
+
+    /// Story 32-3 — la poignée de **lecture** des livres que reçoivent les
+    /// services (`crate::services`).
+    ///
+    /// La fabrication d'une `Lecture` en lecture seule (mode de session,
+    /// utilisateur `SELECT`, ou les deux, et son lieu) est décidée par Guy (Q11)
+    /// et réalisée par la 32-6 ; en 32-3, les deux poignées enveloppent `pool`.
+    /// Méthode, et non champ : `AppState` se construit aussi par littéral dans
+    /// des tests.
+    pub fn lecture(&self) -> services::poignees::Lecture {
+        services::poignees::Lecture::new(self.pool.clone())
+    }
+
+    /// Story 32-3 — la poignée d'écriture de la **trace** d'audit des lectures.
+    ///
+    /// La fabrication d'une `Lecture` en lecture seule (mode de session,
+    /// utilisateur `SELECT`, ou les deux, et son lieu) est décidée par Guy (Q11)
+    /// et réalisée par la 32-6 ; en 32-3, les deux poignées enveloppent `pool`.
+    pub fn trace(&self) -> services::poignees::Trace {
+        services::poignees::Trace::new(self.pool.clone())
     }
 }
 

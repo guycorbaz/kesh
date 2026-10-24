@@ -1,6 +1,6 @@
 # Story 32.3 : la couche de services — le motif, sur deux modules pilotes (rapports, plan comptable)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-32-3`, branche `story/32-3` partie de la spike
 `275e9b97`. Registre : `epic-32-choix-autonomes-323.md` (C-32-3-1 à C-32-3-33). Clé courte : `323`. Issue de l'epic :
