@@ -435,3 +435,38 @@ de l'orchestrateur.*
   vraisemblablement : un changement de tout le crate, hors du motif, que cette fiche ne peut vérifier sans compiler ;
   la 32-6 ou une story dédiée peut le reprendre. Pour la même raison, un service n'emploie pas `tokio::join!`.
 - **Réversible** : oui.
+- *Annoté le 2026-10-24 (validation P5, P5-1) : la prémisse des *Écartées* n'était pas établie — le lint
+  `unsafe_code` ne se déclenche pas dans l'expansion d'une macro d'une autre crate (précédent `testcontainers-0.26.3`,
+  `#![forbid(unsafe_code)]` et `tokio::select!` en code non-test). Le `forbid` reste **posé au module `services/`** ;
+  son extension au crate n'est pas écartée pour cette raison, elle est **à essayer au développement** (T1) ; la
+  contrainte « un service n'emploie pas `tokio::join!` » est retirée. P5-3 : les `unsafe` de `config.rs` sont aussi
+  dans `smtp_config_tests` (l. 3293-3596), tous sous `#[cfg(test)]`. Cf. C-32-3-33.*
+
+*Choix C-32-3-33 : remédiation de la validation P5 (2026-10-24, agent de remédiation, Opus 5.5) ; retrait prescrit par
+P5-1.*
+
+### C-32-3-33 — retrait de la prémisse `tokio::join!` ; `forbid(unsafe_code)` sur le crate à essayer au développement
+
+- **Contexte** : P5 (passe ciblée, Sonnet), **0/0/1/2**, tous nés de la remédiation P4. P5-1 (MEDIUM) : la prémisse
+  « l'expansion de `tokio::join!` porte un `unsafe` que `forbid(unsafe_code)` refuserait » n'est pas établie ; le lint
+  ne se déclenche pas dans l'expansion d'une macro externe, et la crate publiée `testcontainers-0.26.3` porte
+  `#![forbid(unsafe_code)]` et emploie `tokio::select!` (même forme `Pin::new_unchecked`) en code non-test (relevé par
+  lecture du registre cargo local par la passe P5, non compilé). La fiche en tirait une contrainte gratuite sur les
+  services — qui serait tombée sur la 32-4b (`routes/invoices.rs:1156`) — et un rejet du crate entier sans fondement.
+- **Retenu** :
+  - **Retrait** de la contrainte « un service n'emploie pas `tokio::join!` » (AC1, seul site vivant). La fiche
+    n'affirme rien de ce que le lint fait d'une macro externe.
+  - L'attribut reste **posé au module `services/`** (`#![cfg_attr(not(test), forbid(unsafe_code))]` en tête de
+    `services/mod.rs`, C-32-3-32, inchangé ; M14 inchangée).
+  - Son extension au crate est **à essayer au développement** — tâche T1 : poser `#![cfg_attr(not(test),
+    forbid(unsafe_code))]` dans `lib.rs`, compiler ; s'il passe, le garder ; sinon le retirer et consigner au Dev Agent
+    Record la cause réelle constatée (fichier, ligne, message du compilateur).
+  - Ton : rien n'est affirmé comme établi qui n'ait été compilé ou lu — l'effet de l'attribut est dit raisonné, établi
+    par M14 au développement (AC1, AC3, *Le motif*) ; le relevé de `config.rs` est dit « par lecture, non compilé ».
+  - LOW : P5-2 — (v-1) : l'identifiant brut `r#pool` et la coupure entre `pool` et `(` rejoignent *Ce que les gardes
+    ne voient pas* ; faux rouges futurs (un `AppState::pool()`, toute méthode `.pool(` d'un autre type) cités, avec la
+    conduite : élargir la liste d'exceptions écrite de la garde (vide en 32-3), jamais affaiblir le motif. P5-3 —
+    `config.rs` : `tests` et `smtp_config_tests`, tous deux sous `#[cfg(test)]`.
+- **Écartées** : garder la contrainte « par prudence » — elle bride le rollout sans motif établi ; trancher sans
+  compiler que le crate entier prend l'attribut — l'agent de fiche ne compile pas, l'essai revient au développement.
+- **Réversible** : oui.
