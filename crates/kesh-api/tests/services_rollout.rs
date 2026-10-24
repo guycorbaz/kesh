@@ -816,9 +816,13 @@ async fn ac10_a_les_neuf_refus_de_la_liste_des_ecritures(pool: MySqlPool) {
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
 }
 
+/// Une ligne de la table des bornes : (limit, offset) demandés, (limit, offset)
+/// rendus.
+type LigneDeBornes = ((Option<i64>, Option<i64>), (i64, i64));
+
 /// Les trois couples (limit, offset) demandés de l'AC10 (b), et leur rendu
 /// attendu en fonction du défaut et du plafond.
-fn table_des_bornes(defaut: i64, plafond: i64) -> [((Option<i64>, Option<i64>), (i64, i64)); 3] {
+fn table_des_bornes(defaut: i64, plafond: i64) -> [LigneDeBornes; 3] {
     [
         ((None, None), (defaut, 0)),
         ((Some(0), Some(-3)), (1, 0)),

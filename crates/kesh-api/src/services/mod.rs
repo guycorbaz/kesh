@@ -100,6 +100,9 @@
 #![cfg_attr(not(test), forbid(unsafe_code))]
 
 pub mod acces;
+pub mod carnet;
+pub mod ecritures;
 pub mod plan_comptable;
 pub mod poignees;
+pub mod postes_ouverts;
 pub mod rapports;

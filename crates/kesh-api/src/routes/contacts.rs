@@ -4,6 +4,9 @@
 //! The company_id in JWT can become stale if a user is reassigned to a different company
 //! during an active session. See `middleware/auth.rs` for staleness window (proportional to
 //! `KESH_JWT_EXPIRY_MINUTES`, default 15 min).
+//!
+//! Les deux lectures (liste et fiche) passent par `services::carnet`
+//! (Story 32-4a) ; les mutations restent ici (C-32-0-4).
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -17,13 +20,15 @@ use kesh_core::types::CheNumber;
 use kesh_db::entities::Language;
 use kesh_db::entities::contact::{Contact, ContactType, ContactUpdate, NewContact, Salutation};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::contacts::{self, ContactListQuery, ContactSortBy};
+use kesh_db::repositories::contacts::{self, ContactSortBy};
 
 use crate::AppState;
 use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
+use crate::services::acces::ContexteAcces;
+use crate::services::carnet;
 
 // ---------------------------------------------------------------------------
 // Limites
@@ -39,8 +44,7 @@ const MAX_CLIENT_NUMBER_LEN: usize = kesh_core::text::CLIENT_NUMBER_MAX_CHARS;
 /// Borne haute du délai de paiement en jours (#245) — miroir du CHECK SQL
 /// `chk_contacts_payment_terms_days` (le CHECK n'est que le filet).
 const MAX_PAYMENT_TERMS_DAYS: i32 = 365;
-const MAX_LIST_LIMIT: i64 = 100;
-const DEFAULT_LIST_LIMIT: i64 = 20;
+// Les bornes de la liste vivent dans `services::carnet` (Story 32-4a).
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -565,30 +569,28 @@ pub async fn list_contacts(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListContactsQuery>,
 ) -> Result<Json<ListResponse<ContactResponse>>, AppError> {
-    // Company : contrôle défensif (staleness window) ET langue d'instance
-    // pour le libellé des conditions de paiement (#245).
-    let company = get_company_for(&current_user, &state.pool).await?;
-
-    let limit = params
-        .limit
-        .unwrap_or(DEFAULT_LIST_LIMIT)
-        .clamp(1, MAX_LIST_LIMIT);
-    let offset = params.offset.unwrap_or(0).max(0);
-
-    let query = ContactListQuery {
+    // Story 32-4a — société d'abord, bornes, défauts du tri et lecture :
+    // `services::carnet::lister`. Le libellé reste ici (présentation).
+    let demande = carnet::DemandeListeContacts {
         search: params.search,
         contact_type: params.contact_type,
         is_client: params.is_client,
         is_supplier: params.is_supplier,
         include_archived: params.include_archived,
-        sort_by: params.sort_by.unwrap_or_default(),
-        sort_direction: params.sort_direction.unwrap_or(SortDirection::Asc),
-        limit,
-        offset,
+        sort_by: params.sort_by,
+        sort_direction: params.sort_direction,
+        limit: params.limit,
+        offset: params.offset,
     };
-
-    let result =
-        contacts::list_by_company_paginated(&state.pool, current_user.company_id, query).await?;
+    let carnet::PageContacts {
+        page: result,
+        societe: company,
+    } = carnet::lister(
+        &ContexteAcces::depuis_api(&current_user),
+        &state.lecture(),
+        demande,
+    )
+    .await?;
 
     Ok(Json(ListResponse {
         items: result
@@ -609,13 +611,17 @@ pub async fn get_contact(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<ContactResponse>, AppError> {
-    // Story 6.2: Multi-tenant scoping via find_by_id_in_company
-    let contact = contacts::find_by_id_in_company(&state.pool, id, current_user.company_id)
-        .await?
-        .ok_or(AppError::Database(DbError::NotFound))?;
-
-    // #245 : Company requise pour la langue d'instance (fallback du libellé).
-    let company = get_company_for(&current_user, &state.pool).await?;
+    // Story 32-4a — le contact (scopé à la société, 404 sinon), puis la société
+    // pour la langue d'instance (#245) : `services::carnet::detail`.
+    let carnet::FicheContact {
+        contact,
+        societe: company,
+    } = carnet::detail(
+        &ContexteAcces::depuis_api(&current_user),
+        &state.lecture(),
+        id,
+    )
+    .await?;
     Ok(Json(contact_response_with_label(
         contact,
         &company,
