@@ -21,9 +21,10 @@
 //! `Decimal` → string, `NaiveDateTime` → ISO 8601 `YYYY-MM-DDTHH:MM:SS[.mmm]`
 //! (précision sub-seconde préservée — colonnes `DATETIME(3)`), entiers → nombre JSON.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::OnceLock;
 
 use serde_json::Value;
 use sqlx::{MySql, MySqlPool, Row, Transaction};
@@ -34,8 +35,17 @@ use crate::snapshot::ReadSnapshot;
 /// Liste canonique des tables applicatives Kesh, ordonnée **enfants → parents**
 /// (ordre de suppression FK-safe). Exclut les tables système `_sqlx_migrations`,
 /// `_kesh_version` et, depuis la Story 31-1c, `_kesh_backup_schedule` (réglage
-/// et état de la sauvegarde automatique) — jamais exportées ni vidées : y
-/// ajouter une table rendrait non importable toute sauvegarde antérieure.
+/// et état de la sauvegarde automatique) — jamais exportées ni vidées : elles
+/// appartiennent à l'installation, non aux livres.
+///
+/// **Y ajouter une table** (Story 32-12a, #722) : une sauvegarde antérieure, qui
+/// ne la porte pas, reste importable — la table, créée après le plancher
+/// [`IMPORT_FLOOR_MIGRATION`], est tolérée absente par
+/// [`check_backup_inventory`] et restaurée **vide**. La story qui l'ajoute
+/// l'inscrit à la liste écrite du test `tolerated_tables_are_written_down` et
+/// respecte le contrat du doc-comment d'[`IMPORT_FLOOR_MIGRATION`]. **En
+/// retirer une** rendrait en revanche non importable toute sauvegarde qui la
+/// porte (table hors inventaire, [`InventoryError::Inconnue`]).
 ///
 /// Source de vérité unique : `test_fixtures::truncate_all` (vidage de test) et
 /// l'export d'installation 17-3a la réutilisent. Le test
@@ -132,6 +142,228 @@ pub fn reset_cleared_tables() -> Vec<&'static str> {
         .copied()
         .filter(|t| !RESET_PRESERVED_TABLES.contains(t))
         .collect()
+}
+
+// ===========================================================================
+// Story 32-12a (#722) — la règle d'inventaire d'une sauvegarde importée.
+// ===========================================================================
+
+/// **Plancher d'import** : la fenêtre d'importabilité des `.keshbackup`, gelée
+/// à la v0.15.0 — Story 32-12a (#722), AC2.
+///
+/// C'est la migration qui crée `journal_entry_number_sequences`, la plus
+/// récente des créatrices de table applicative à la v0.15.0. Une sauvegarde
+/// doit porter **toutes** les tables de [`TABLES_TO_TRUNCATE`] créées au plus
+/// tard par elle ; une table créée **après** peut manquer, pourvu qu'elle soit
+/// postérieure à toutes celles que le fichier porte ([`check_backup_inventory`]).
+/// Avant la 32-12a, l'inventaire d'une sauvegarde devait être celui du binaire,
+/// à la table près, si bien que chaque table neuve rendait non importables
+/// toutes les sauvegardes antérieures ; le plancher gèle la fenêtre à sa
+/// position de la v0.15.0 au lieu de la laisser avancer à chaque table.
+///
+/// ⛔ **Le relever referme la fenêtre** : toute sauvegarde antérieure au nouveau
+/// plancher devient non importable — et les exemptions « Hors fenêtre » de
+/// `post_restore::EXEMPT_MIGRATIONS` se relisent contre lui. C'est une
+/// **décision du Project Lead**, annoncée au CHANGELOG, jamais un geste de
+/// maintenance.
+///
+/// # Contrat d'une table créée après le plancher
+///
+/// Une sauvegarde qui la précède arrive sans elle, et l'import la **vide**
+/// (`restore_body`) : ni les lignes de l'installation remplacée, ni celles que
+/// sa migration avait posées. La table doit donc être **valide vide** — le code
+/// lit l'absence de ligne comme l'état par défaut —, ou ses lignes d'amorçage
+/// doivent être rejouées par le registre `post_restore::POST_RESTORE_BACKFILLS`
+/// (classe A gardée, extrait des seuls statements d'écriture), ce que tient le
+/// test `post_floor_table_seeds_are_replayed`. La story qui ajoute la table
+/// (32-5, 32-6, 32-10a…) :
+///
+/// 1. l'inscrit à `TOLEREES_ECRITES` (test `tolerated_tables_are_written_down`) ;
+/// 2. la rend valide vide, ou inscrit son amorçage au registre ;
+/// 3. récrit la justification de l'exemption `20260917000001`
+///    (`post_restore.rs`), dont la phrase sur la « fenêtre elle-même » cesse
+///    d'être vraie avec la première table postérieure — elle devient « EST le
+///    plancher d'import » ;
+/// 4. constate `registry_entries_are_within_import_window` **vert** sur l'entrée
+///    `20261010000001` — c'est la preuve que la fenêtre des tests est bien le
+///    plancher ;
+/// 5. reprend le test d'import de la fixture 0.15.0 avec `tablesAbsent ==
+///    [<sa table>]` et la table vide après l'import, et prend les captures de
+///    l'état « tables absentes » (fiche 32-12, AC8, AC10, AC14).
+///
+/// # Ce que disent encore quatre migrations publiées
+///
+/// Les commentaires de quatre migrations publiées, antérieures à la 32-12a,
+/// décrivent l'ancienne règle d'égalité des inventaires (« une table neuve
+/// rendrait les sauvegardes antérieures inimportables ») :
+/// `20261001000004_invoice_settlements_write_off.sql`,
+/// `20261003000001_invoices_frozen_pdf.sql`,
+/// `20261009000001_journal_entry_lines_lettering.sql` et
+/// `20261024000001_backup_schedule.sql`. Ils sont **faux depuis la 32-12a** et
+/// restent tels quels : une migration appliquée ne se modifie plus, pas même un
+/// commentaire (`CLAUDE.md`, P8). La rectification est ici.
+pub const IMPORT_FLOOR_MIGRATION: i64 = 20260917000001;
+
+/// Pour chaque table de [`TABLES_TO_TRUNCATE`], **toutes** les migrations qui
+/// la créent (`CREATE TABLE`), par version croissante — liste vide pour une
+/// table sans créatrice reconnue. Calculée une fois depuis [`crate::MIGRATOR`]
+/// (Story 32-12a, #722, AC1), par `post_restore::created_application_table`.
+///
+/// Aujourd'hui chaque table a exactement une créatrice, ce que tient le test
+/// `every_inventory_table_has_exactly_one_creating_migration` : zéro (graphie
+/// ratée) ou deux (table recréée) le font échouer en nommant la table — un cas
+/// que la règle ne sait pas dater, et qui doit se voir.
+pub fn table_creators() -> &'static BTreeMap<&'static str, Vec<i64>> {
+    static CARTE: OnceLock<BTreeMap<&'static str, Vec<i64>>> = OnceLock::new();
+    CARTE.get_or_init(|| {
+        let mut carte: BTreeMap<&'static str, Vec<i64>> = TABLES_TO_TRUNCATE
+            .iter()
+            .map(|&t| (t, Vec::new()))
+            .collect();
+        for m in crate::MIGRATOR.migrations.iter() {
+            for statement in crate::post_restore::split_statements(&m.sql) {
+                if let Some(table) = crate::post_restore::created_application_table(&statement) {
+                    let versions = carte.entry(table).or_default();
+                    if !versions.contains(&m.version) {
+                        versions.push(m.version);
+                    }
+                }
+            }
+        }
+        for versions in carte.values_mut() {
+            versions.sort_unstable();
+        }
+        carte
+    })
+}
+
+/// Table → version de la migration qui la crée, pour chaque table de
+/// [`TABLES_TO_TRUNCATE`] dont une créatrice est connue ([`table_creators`]).
+///
+/// Pour une table à **deux** créatrices (inatteignable aujourd'hui), la **plus
+/// ancienne** : la table paraît vieille, donc exigée — refus plutôt que
+/// tolérance à tort. Une table **sans** créatrice connue est absente de la
+/// carte, et [`InventoryRules::production`] la tient alors pour exigée.
+pub fn table_creating_migrations() -> &'static BTreeMap<&'static str, i64> {
+    static CARTE: OnceLock<BTreeMap<&'static str, i64>> = OnceLock::new();
+    CARTE.get_or_init(|| {
+        table_creators()
+            .iter()
+            .filter_map(|(&t, versions)| versions.iter().min().map(|&v| (t, v)))
+            .collect()
+    })
+}
+
+/// Les règles d'inventaire qu'applique [`check_backup_inventory`] — injectables
+/// pour les tests, [`InventoryRules::production`] sinon.
+#[derive(Debug, Clone, Copy)]
+pub struct InventoryRules {
+    /// L'inventaire applicatif, dans son ordre canonique ([`TABLES_TO_TRUNCATE`]
+    /// en production) : il départage deux tables nées dans la même migration.
+    pub inventaire: &'static [&'static str],
+    /// Version de la migration créatrice d'une table de l'inventaire, `None` si
+    /// elle est inconnue (la table est alors exigée).
+    pub creation: fn(&str) -> Option<i64>,
+    /// Le plancher d'import ([`IMPORT_FLOOR_MIGRATION`] en production).
+    pub plancher: i64,
+}
+
+impl InventoryRules {
+    /// [`TABLES_TO_TRUNCATE`], [`table_creating_migrations`] et
+    /// [`IMPORT_FLOOR_MIGRATION`].
+    pub fn production() -> Self {
+        Self {
+            inventaire: TABLES_TO_TRUNCATE,
+            creation: |t| table_creating_migrations().get(t).copied(),
+            plancher: IMPORT_FLOOR_MIGRATION,
+        }
+    }
+}
+
+/// Refus de [`check_backup_inventory`], chacun nommant la table en cause.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InventoryError {
+    /// Table présente au manifeste mais hors inventaire applicatif — typiquement
+    /// une sauvegarde d'une version plus récente. Le nom vient du fichier.
+    Inconnue(String),
+    /// Table absente du manifeste, et créée au plus tard par le plancher (ou sans
+    /// migration connue) : la sauvegarde est tronquée, ou antérieure au plancher.
+    Exigee(&'static str),
+    /// `absente` est postérieure au plancher, mais antérieure — ou née dans la
+    /// même migration — à `presente`, que le fichier porte : aucun binaire n'a pu
+    /// produire ce fichier.
+    HorsOrdre {
+        absente: &'static str,
+        presente: &'static str,
+    },
+}
+
+/// Vérifie l'inventaire des tables d'une sauvegarde — Story 32-12a (#722), AC3.
+///
+/// `present` : les tables que déclare le manifeste. Rend les tables absentes
+/// **tolérées** — créées après le plancher, et après la création de chaque
+/// table présente : l'ensemble des absentes est un *suffixe* de l'ordre de
+/// création —, triées par version de leur migration créatrice puis par rang
+/// dans l'inventaire ; ou la première violation, dans cet ordre de contrôle :
+///
+/// 1. [`InventoryError::Inconnue`] — d'abord, si bien que toute table présente
+///    qui passe appartient à l'inventaire ;
+/// 2. [`InventoryError::Exigee`] — dans l'ordre de l'inventaire ;
+/// 3. [`InventoryError::HorsOrdre`] — la plus ancienne des absentes, contre la
+///    plus récente des présentes.
+///
+/// Une table **présente** sans migration connue ne contraint pas le suffixe :
+/// elle compte comme créée au plus tard par le plancher, comme elle serait
+/// exigée si elle manquait — aucune absente tolérée ne peut lui être antérieure.
+///
+/// La preuve vient du schéma que le fichier porte, non de la version qu'il
+/// déclare (`keshVersion`, texte libre non signé, qui ne bouge pas avec une
+/// migration non breaking). Elle protège d'une sauvegarde tronquée par accident
+/// ou d'un ordre impossible, non d'un manifeste forgé.
+pub fn check_backup_inventory(
+    present: &BTreeSet<&str>,
+    regles: &InventoryRules,
+) -> Result<Vec<&'static str>, InventoryError> {
+    // (1) Aucune table hors inventaire.
+    if let Some(inconnue) = present.iter().find(|t| !regles.inventaire.contains(t)) {
+        return Err(InventoryError::Inconnue((*inconnue).to_string()));
+    }
+
+    // Une table est « postérieure » si elle est créée après le plancher ; une
+    // table sans migration connue ne l'est jamais.
+    let posterieure = |t: &str| (regles.creation)(t).filter(|&v| v > regles.plancher);
+
+    // (2) Toute absente est postérieure au plancher.
+    let mut absentes: Vec<(i64, usize, &'static str)> = Vec::new();
+    for (rang, &t) in regles.inventaire.iter().enumerate() {
+        if present.contains(t) {
+            continue;
+        }
+        match posterieure(t) {
+            Some(v) => absentes.push((v, rang, t)),
+            None => return Err(InventoryError::Exigee(t)),
+        }
+    }
+    absentes.sort_unstable();
+
+    // (3) Les absentes forment un suffixe de l'ordre de création : la plus
+    // ancienne est strictement postérieure à la plus récente des présentes
+    // (à version égale, la présente de plus petit rang est retenue).
+    let plus_recente_presente = regles
+        .inventaire
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| present.contains(*t))
+        .filter_map(|(rang, &t)| posterieure(t).map(|v| (v, std::cmp::Reverse(rang), t)))
+        .max();
+    if let (Some(&(v_absente, _, absente)), Some((v_presente, _, presente))) =
+        (absentes.first(), plus_recente_presente)
+        && v_absente <= v_presente
+    {
+        return Err(InventoryError::HorsOrdre { absente, presente });
+    }
+
+    Ok(absentes.into_iter().map(|(_, _, t)| t).collect())
 }
 
 /// Résultat de la sérialisation NDJSON d'une table.
@@ -644,7 +876,9 @@ async fn restore_body(
     // (`write_keshbackup`, `kesh-api/src/admin_backup/export.rs`) et à REJETER
     // un manifeste portant une table hors inventaire (`parse_and_verify`,
     // `kesh-api/src/admin_backup/import.rs`, contrôle « hors inventaire
-    // applicatif »). L'en sortir rendrait **tout backup existant inimportable**.
+    // applicatif »). L'en sortir rendrait **inimportable tout backup qui la
+    // porte** — tous ceux qui existent : une table retirée de l'inventaire est
+    // une table inconnue (`InventoryError::Inconnue`).
     for &table in TABLES_TO_TRUNCATE {
         if table == "onboarding_state" || table == "audit_log" {
             continue;
@@ -664,12 +898,14 @@ async fn restore_body(
             continue;
         }
         let Some(data) = tables.get(table) else {
-            // Dans le flux réel, `parse_and_verify` garantit la couverture (toute
-            // table de TABLES_TO_TRUNCATE figure au manifeste). En usage isolé
-            // (tests bas-niveau avec map partielle), une table absente est
-            // simplement vidée (le DELETE a déjà eu lieu) — **non comptée** comme
-            // restaurée (review Pass 3 : évite le sur-comptage de tables_restored
-            // sans imposer la couverture complète à cette fonction).
+            // Une table absente de la carte est **vidée** (le DELETE a déjà eu
+            // lieu) et **non comptée** comme restaurée (review Pass 3 : évite le
+            // sur-comptage de tables_restored). Depuis la Story 32-12a (#722),
+            // c'est aussi le flux réel, et À DESSEIN : `parse_and_verify` tolère
+            // qu'une table créée après le plancher `IMPORT_FLOOR_MIGRATION`
+            // manque à une sauvegarde qui la précède, et la table finit vide —
+            // garder les lignes de l'installation remplacée mêlerait deux
+            // installations. Fixé par `restore_empties_a_table_absent_from_the_backup`.
             continue;
         };
         tables_restored += 1;
@@ -2289,5 +2525,376 @@ mod tests {
             "colonne de fichier neuve : mettre à jour la lecture des fichiers référencés \
              (Story 31-1a, AC1 — read_referenced_files) puis cette liste"
         );
+    }
+
+    // =======================================================================
+    // Story 32-12a (#722) — la règle d'inventaire.
+    // =======================================================================
+
+    /// AC1 (i) — **chaque** table de l'inventaire a exactement **une** migration
+    /// créatrice. Zéro (graphie de `CREATE TABLE` que la reconnaissance rate) ou
+    /// deux (table recréée par une seconde migration) : la règle ne saurait pas
+    /// dater la table, et le cas doit se voir au lieu d'être deviné.
+    #[test]
+    fn every_inventory_table_has_exactly_one_creating_migration() {
+        let carte = table_creators();
+        let fautives: Vec<String> = TABLES_TO_TRUNCATE
+            .iter()
+            .filter_map(|t| match carte.get(t).map(Vec::as_slice) {
+                Some([_]) => None,
+                autre => Some(format!("{t} → {autre:?}")),
+            })
+            .collect();
+        assert!(
+            fautives.is_empty(),
+            "table(s) de l'inventaire sans exactement UNE migration créatrice : {fautives:?}\n\
+             Zéro : la reconnaissance de `CREATE TABLE` (post_restore::created_application_table) \
+             rate sa graphie — l'étendre. Deux : la table est recréée ; la règle d'import la date \
+             par la plus ancienne (exigée), à revoir avant de fusionner."
+        );
+    }
+
+    /// AC1 (ii) — la carte date correctement trois tables connues.
+    #[test]
+    fn table_creating_migrations_dates_known_tables() {
+        let carte = table_creating_migrations();
+        assert_eq!(
+            carte.get("journal_entry_number_sequences"),
+            Some(&20260917000001)
+        );
+        assert_eq!(carte.get("invoice_settlements"), Some(&20260827000001));
+        assert_eq!(carte.get("vat_rates"), Some(&20260428000001));
+        assert_eq!(carte.len(), TABLES_TO_TRUNCATE.len());
+    }
+
+    /// AC1 — la reconnaissance de `CREATE TABLE`, graphie par graphie.
+    #[test]
+    fn created_application_table_reads_the_header_only() {
+        use crate::post_restore::created_application_table as cree;
+        assert_eq!(cree("CREATE TABLE products (id BIGINT)"), Some("products"));
+        assert_eq!(
+            cree("create  table\n  IF NOT EXISTS `vat_rates`(id BIGINT)"),
+            Some("vat_rates"),
+            "blancs, casse, IF NOT EXISTS, accents graves et parenthèse collée"
+        );
+        assert_eq!(
+            cree("CREATE TABLE supplier_invoice_lines (id BIGINT)"),
+            Some("supplier_invoice_lines"),
+            "le nom est isolé : pas `supplier_invoices`"
+        );
+        assert_eq!(
+            cree("CREATE TABLE _kesh_version (id INT)"),
+            None,
+            "table système"
+        );
+        assert_eq!(cree("INSERT INTO products (id) VALUES (1)"), None);
+        assert_eq!(cree("ALTER TABLE products ADD COLUMN x INT"), None);
+    }
+
+    /// AC2 (i) — le plancher est une migration réelle du `MIGRATOR`, qui crée une
+    /// table de l'inventaire.
+    #[test]
+    fn import_floor_is_a_real_table_creating_migration() {
+        assert!(
+            crate::MIGRATOR
+                .migrations
+                .iter()
+                .any(|m| m.version == IMPORT_FLOOR_MIGRATION),
+            "IMPORT_FLOOR_MIGRATION ({IMPORT_FLOOR_MIGRATION}) n'est pas une migration du MIGRATOR"
+        );
+        assert!(
+            table_creators()
+                .values()
+                .any(|v| v.contains(&IMPORT_FLOOR_MIGRATION)),
+            "IMPORT_FLOOR_MIGRATION ({IMPORT_FLOOR_MIGRATION}) ne crée aucune table de l'inventaire"
+        );
+    }
+
+    /// AC2 (ii) — le plancher ne dépasse pas la plus récente des créatrices.
+    #[test]
+    fn import_floor_is_not_beyond_the_latest_creation() {
+        let plus_recente = table_creating_migrations()
+            .values()
+            .copied()
+            .max()
+            .expect("carte non vide");
+        assert!(IMPORT_FLOOR_MIGRATION <= plus_recente);
+    }
+
+    /// Tables créées **après** le plancher, écrites à la main (AC2) : chaque
+    /// story qui ajoute une table l'inscrit ici, et ce geste force à relire le
+    /// contrat du doc-comment d'[`IMPORT_FLOOR_MIGRATION`] (valide vide, ou
+    /// amorcée par le registre de rejeu). **Vide** à la Story 32-12a.
+    const TOLEREES_ECRITES: &[&str] = &[];
+
+    /// `(exigees, tolerees_calculees)` : les tables de l'inventaire créées au plus
+    /// tard par le plancher **ou sans migration connue**, et celles créées après.
+    fn exigees_et_tolerees_calculees() -> (BTreeSet<&'static str>, BTreeSet<&'static str>) {
+        let carte = table_creating_migrations();
+        TABLES_TO_TRUNCATE
+            .iter()
+            .copied()
+            .partition(|t| carte.get(t).is_none_or(|&v| v <= IMPORT_FLOOR_MIGRATION))
+    }
+
+    /// AC2 (iii) — `exigees ∪ TOLEREES_ECRITES == TABLES_TO_TRUNCATE` et
+    /// `exigees ∩ TOLEREES_ECRITES == ∅`. Impliquée par (iv) (les deux ensembles
+    /// calculés partitionnent l'inventaire) : elle reste pour son message, qui
+    /// nomme la table qui n'est dans aucun des deux.
+    #[test]
+    fn required_and_written_tolerated_partition_the_inventory() {
+        let (exigees, _) = exigees_et_tolerees_calculees();
+        let ecrites: BTreeSet<&str> = TOLEREES_ECRITES.iter().copied().collect();
+        let inventaire: BTreeSet<&str> = TABLES_TO_TRUNCATE.iter().copied().collect();
+        let union: BTreeSet<&str> = exigees.union(&ecrites).copied().collect();
+        let nulle_part: Vec<&&str> = inventaire.difference(&union).collect();
+        assert!(
+            nulle_part.is_empty(),
+            "table(s) créée(s) après le plancher d'import et absente(s) de TOLEREES_ECRITES : \
+             {nulle_part:?} — l'inscrire, après avoir relu le contrat d'IMPORT_FLOOR_MIGRATION"
+        );
+        assert_eq!(union, inventaire);
+        let les_deux: Vec<&&str> = exigees.intersection(&ecrites).collect();
+        assert!(
+            les_deux.is_empty(),
+            "table(s) inscrite(s) à TOLEREES_ECRITES mais créée(s) au plus tard par le \
+             plancher : {les_deux:?}"
+        );
+    }
+
+    /// AC2 (iv) — la liste écrite est exactement la liste calculée.
+    #[test]
+    fn tolerated_tables_are_written_down() {
+        let (_, tolerees_calculees) = exigees_et_tolerees_calculees();
+        let ecrites: BTreeSet<&str> = TOLEREES_ECRITES.iter().copied().collect();
+        assert_eq!(
+            tolerees_calculees, ecrites,
+            "tables créées après le plancher d'import ≠ TOLEREES_ECRITES : une table neuve doit y \
+             être inscrite (contrat d'IMPORT_FLOOR_MIGRATION) ; une table qui en sort signale un \
+             plancher déplacé"
+        );
+    }
+
+    // --- AC3 : `check_backup_inventory`, inventaire et carte injectés. ---
+
+    /// Plancher des règles injectées.
+    const P: i64 = 200;
+
+    /// Inventaire 1 — l'ordre de l'inventaire n'est PAS l'ordre de création
+    /// (`d` avant `c`), pour que le tri par version se voie.
+    static INV1: &[&str] = &["d", "a", "c", "b", "g"];
+    fn creation1(t: &str) -> Option<i64> {
+        match t {
+            "a" => Some(100),
+            "b" => Some(P),
+            "c" => Some(300),
+            "d" => Some(400),
+            _ => None, // `g` : sans migration connue
+        }
+    }
+    fn regles1() -> InventoryRules {
+        InventoryRules {
+            inventaire: INV1,
+            creation: creation1,
+            plancher: P,
+        }
+    }
+
+    /// Inventaire 2 — `z` et `y` naissent dans la même migration, `z` avant `y`
+    /// dans l'inventaire (l'inverse de l'ordre alphabétique).
+    static INV2: &[&str] = &["x", "z", "y"];
+    fn creation2(t: &str) -> Option<i64> {
+        match t {
+            "x" => Some(100),
+            "y" | "z" => Some(300),
+            _ => None,
+        }
+    }
+    fn regles2() -> InventoryRules {
+        InventoryRules {
+            inventaire: INV2,
+            creation: creation2,
+            plancher: P,
+        }
+    }
+
+    /// L'inventaire `inv` privé de `absentes`, plus `en_plus`.
+    fn manifeste<'a>(inv: &[&'a str], absentes: &[&str], en_plus: &[&'a str]) -> BTreeSet<&'a str> {
+        inv.iter()
+            .copied()
+            .filter(|t| !absentes.contains(t))
+            .chain(en_plus.iter().copied())
+            .collect()
+    }
+
+    #[test]
+    fn inventory_complete_is_ok() {
+        assert_eq!(
+            check_backup_inventory(&manifeste(INV1, &[], &[]), &regles1()),
+            Ok(vec![])
+        );
+    }
+
+    #[test]
+    fn inventory_one_post_floor_table_absent_is_tolerated() {
+        assert_eq!(
+            check_backup_inventory(&manifeste(INV1, &["d"], &[]), &regles1()),
+            Ok(vec!["d"])
+        );
+    }
+
+    #[test]
+    fn inventory_two_post_floor_tables_absent_in_creation_order() {
+        assert_eq!(
+            check_backup_inventory(&manifeste(INV1, &["d", "c"], &[]), &regles1()),
+            Ok(vec!["c", "d"]),
+            "ordre de création (300 puis 400), non ordre de l'inventaire (d avant c)"
+        );
+    }
+
+    #[test]
+    fn inventory_same_migration_absent_in_inventory_order() {
+        assert_eq!(
+            check_backup_inventory(&manifeste(INV2, &["y", "z"], &[]), &regles2()),
+            Ok(vec!["z", "y"]),
+            "même migration : rang dans l'inventaire (z avant y), non ordre alphabétique"
+        );
+    }
+
+    #[test]
+    fn inventory_present_table_without_known_migration_does_not_constrain() {
+        let present = manifeste(INV1, &["d"], &[]);
+        assert!(
+            present.contains("g"),
+            "g (sans migration connue) est présente"
+        );
+        assert_eq!(check_backup_inventory(&present, &regles1()), Ok(vec!["d"]));
+    }
+
+    #[test]
+    fn inventory_older_absent_newer_present_is_out_of_order() {
+        assert_eq!(
+            check_backup_inventory(&manifeste(INV1, &["c"], &[]), &regles1()),
+            Err(InventoryError::HorsOrdre {
+                absente: "c",
+                presente: "d"
+            })
+        );
+    }
+
+    #[test]
+    fn inventory_same_migration_one_absent_is_out_of_order() {
+        assert_eq!(
+            check_backup_inventory(&manifeste(INV2, &["y"], &[]), &regles2()),
+            Err(InventoryError::HorsOrdre {
+                absente: "y",
+                presente: "z"
+            }),
+            "le fichier ne peut pas porter l'une sans l'autre"
+        );
+    }
+
+    #[test]
+    fn inventory_floor_table_absent_is_required() {
+        // Seule absente, aucune présente postérieure : c'est le cas de
+        // `journal_entry_number_sequences` manquant seule à une sauvegarde.
+        assert_eq!(
+            check_backup_inventory(&manifeste(INV1, &["b", "c", "d"], &[]), &regles1()),
+            Err(InventoryError::Exigee("b"))
+        );
+        assert_eq!(
+            check_backup_inventory(&manifeste(INV1, &["b"], &[]), &regles1()),
+            Err(InventoryError::Exigee("b"))
+        );
+        assert_eq!(
+            check_backup_inventory(&manifeste(INV1, &["a"], &[]), &regles1()),
+            Err(InventoryError::Exigee("a"))
+        );
+    }
+
+    #[test]
+    fn inventory_table_without_known_migration_absent_is_required() {
+        assert_eq!(
+            check_backup_inventory(&manifeste(INV1, &["g"], &[]), &regles1()),
+            Err(InventoryError::Exigee("g")),
+            "repli sûr : une table qu'on ne sait pas dater est exigée"
+        );
+    }
+
+    #[test]
+    fn inventory_unknown_table_is_refused_first() {
+        assert_eq!(
+            check_backup_inventory(&manifeste(INV1, &[], &["zz"]), &regles1()),
+            Err(InventoryError::Inconnue("zz".into()))
+        );
+        assert_eq!(
+            check_backup_inventory(&manifeste(INV1, &["b"], &["zz"]), &regles1()),
+            Err(InventoryError::Inconnue("zz".into())),
+            "Inconnue est vérifiée avant Exigee"
+        );
+    }
+
+    #[test]
+    fn inventory_production_rules_complete_manifest_is_ok() {
+        let present: BTreeSet<&str> = TABLES_TO_TRUNCATE.iter().copied().collect();
+        assert_eq!(
+            check_backup_inventory(&present, &InventoryRules::production()),
+            Ok(vec![])
+        );
+    }
+
+    /// AC4 — une table absente de la carte est **vidée**, même si la
+    /// destination avait des lignes, et n'est pas comptée comme restaurée. Le
+    /// comportement est celui de `restore_body` depuis la Story 17-3c ; ce test
+    /// le **fixe**, parce que l'import tolère désormais une table postérieure au
+    /// plancher absente du fichier (Story 32-12a) et compte sur ce vidage.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn restore_empties_a_table_absent_from_the_backup(pool: MySqlPool) {
+        let seeded = crate::test_fixtures::seed_accounting_company(&pool)
+            .await
+            .expect("seed");
+        sqlx::query(
+            "INSERT INTO products (company_id, name, unit_price, vat_rate) \
+             VALUES (?, 'Produit de la destination', '10.00', '8.10')",
+        )
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .expect("insert product");
+
+        let mut snap = ReadSnapshot::begin(&pool).await.expect("snapshot");
+        let export = export_table(&mut snap, "companies").await.expect("export");
+        snap.finish().await.expect("finish");
+        let rows = parse_ndjson_rows(&export.ndjson, &export.column_names).expect("parse");
+        let mut tables = BTreeMap::new();
+        tables.insert(
+            "companies".to_string(),
+            TableRestore {
+                column_names: export.column_names.clone(),
+                rows,
+            },
+        );
+        assert!(!tables.contains_key("products"));
+
+        let mut tx = pool.begin().await.expect("begin");
+        let (n_tables, _) = restore_tables_in_tx(&mut tx, &tables)
+            .await
+            .expect("restore");
+        tx.commit().await.expect("commit");
+
+        let produits: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM products")
+            .fetch_one(&pool)
+            .await
+            .expect("count");
+        assert_eq!(
+            produits, 0,
+            "products, absente de la sauvegarde, doit finir vide"
+        );
+        assert_eq!(n_tables, 1, "seule companies est comptée restaurée");
+        let societes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies")
+            .fetch_one(&pool)
+            .await
+            .expect("count");
+        assert_eq!(societes, 1);
     }
 }
