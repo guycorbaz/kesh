@@ -27,7 +27,7 @@ les issues ouvertes, à la date de la mesure, non au tag.
 | Étape | Compte |
 |---|---|
 | ouvertes au 2026-10-24 (validation P3), #711 et #712 comprises | 143 |
-| − #503 (fermée par la 31-1c) | 142 |
+| − #503 (ouverte à la mesure ; attendue fermée par la PR de la 31-1c, avant le tag) | 142 |
 | − les quatre défauts de cette story (#707, #589, #504, #469) | **138** — attendu au tag si rien d'autre ne s'ouvre ni ne se ferme |
 
 **Plafond : moins de 136.** Au tag, le compte attendu est **138** : il manque **trois** retraits. Cette story, à elle
@@ -394,11 +394,13 @@ code commun), si bien qu'une passe de revue peut les lire un par un (C-31-5-1). 
   UPDATE`, prescrit à la validation P1, **ne donnait pas** l'ordre des identifiants : InnoDB verrouille au fil de l'index
   parcouru, le tri vient après (le dépôt connaît ce piège : `FORCE INDEX (PRIMARY)` de `company_invoice_settings.rs:897-905`,
   inapplicable ici faute de liste d'`id`). Le seul autre site qui verrouille ces comptes dans un ordre fixe est le
-  verrou partagé par identifiant croissant de `lock_designated_accounts_in_tx` (validation d'une facture,
-  `company_invoice_settings.rs:865-916`, 1171 → 2200 au plan standard) : l'ordre retenu le **suit** au plan standard,
-  ce qui retire l'unique ordre opposé que la validation P2 avait identifié (C-31-5-21) ; hors du plan standard (rôle
-  réattribué), l'opposition redevient possible, improbable pendant l'étape 2 et rejouée par `is_seed_retryable` si elle
-  survenait. L'ordre **entre tables** est ce que tient le Pattern 5, l'ordre **entre comptes** n'est que celui du code,
+  verrou partagé par identifiant croissant de `lock_designated_accounts_in_tx` (`company_invoice_settings.rs:865-916`) ;
+  mais ses appelants ne verrouillent jamais 1171 et 2200 **ensemble** — la validation d'une facture prend `SALE`
+  (créance, `VatPayable`), la saisie fournisseur `PURCHASE` (dette, `VatRecoverable`), `company_invoice_settings.rs:696-700`
+  —, si bien qu'aucun ordre opposé n'existe entre deux comptes de TVA. La permutation de la validation P3 (C-31-5-21)
+  est donc **sans effet sur les interblocages** : elle aligne seulement l'ordre de lecture sur celui des identifiants au
+  plan standard, par lisibilité ; une opposition imprévue serait de toute façon rejouée par `is_seed_retryable`
+  *(rectifié à la validation P4, P4-1 : la P3 invoquait à tort un « unique ordre opposé » 1171 → 2200)*. L'ordre **entre tables** est ce que tient le Pattern 5, l'ordre **entre comptes** n'est que celui du code,
   écrit tel. `insert_with_defaults_in_tx` verrouille ensuite ses comptes de rôle de la même
   façon (`company_invoice_settings.rs:1076-1105`) puis
   insère la ligne de réglages (`INSERT IGNORE`, l. 1123) ; `designate_vat_accounts_in_tx` ne fait qu'un `UPDATE` de
@@ -607,3 +609,17 @@ de l'utilisateur` (l. 13, 40, 60) ; une section **`### Corrigé`** (intitulé de
     P1 7 MEDIUM distincts → P2 3 → P3 2. Une passe P4 **ciblée** suit (Haiku, une lentille *regression hunter* sur le
     seul diff de cette remédiation, `315-validate-prompt-p4.md`) : la boucle ne se clôt que sur une passe sans finding
     au-dessus de LOW.
+- 2026-10-24 — **Validation P4** (Haiku, passe ciblée, une lentille *regression hunter* sur `ee140ef5..eec02e1f` ;
+  rapport hors dépôt `315-validate-p4.md`) : 0/0/2/1. Remédiation par l'orchestrateur, fiche et registre seulement :
+  - P4-1 (MEDIUM), **vérifié au code** par l'orchestrateur (`company_invoice_settings.rs:696-700` : `SALE` =
+    créance + `VatPayable`, `PURCHASE` = dette + `VatRecoverable`) : aucun appelant de `lock_designated_accounts_in_tx`
+    ne verrouille 1171 et 2200 ensemble ; la justification « unique ordre opposé » de C-31-5-21 et des Dev Notes était
+    fausse. Réécrite : la permutation est gardée pour la lisibilité, sans effet sur les interblocages (C-31-5-21
+    annoté, Dev Notes, l'« Écartée » de C-31-5-21).
+  - P4-2 (MEDIUM) : l'*Origine* disait #503 « fermée par la 31-1c » ; elle est ouverte à la mesure, attendue fermée par
+    la PR de la 31-1c avant le tag. Libellé corrigé.
+  - P4-3 (LOW) : le *Contexte* de C-31-5-16 daté (relevé de la P1) et renvoyé au recompte vivant.
+  - Propagation : `oppos` grepé dans la fiche et le registre ; restent l'entrée datée du *Contexte* de C-31-5-21 (suivie
+    de sa rectification) et les entrées datées du Change Log. Tendance : P1 7 → P2 3 → P3 2 → P4 2 MEDIUM, ces deux
+    derniers nés de la remédiation précédente. Une passe P5 **ciblée** (Sonnet) suit, sur le seul diff de cette
+    remédiation.

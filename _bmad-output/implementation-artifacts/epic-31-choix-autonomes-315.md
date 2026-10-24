@@ -164,7 +164,8 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 
 ### C-31-5-16 — Le budget d'issues n'est pas tenu par cette story : déficit déclaré, arbitrage au Project Lead (validation P1, R3/F1 ; rendu inconditionnel à la validation P2, F2 ; recompté à la validation P3, F4 = R8)
 
-- **Contexte** : recompte du 2026-10-24 : 141 ouvertes (#708, #709, #710 ouvertes ce jour) ; − #503 − 4 = 136, pas sous
+- **Contexte** : *(relevé de la validation P1, daté ; recompte vivant à l'Origine de la fiche : 143 ouvertes à la
+  validation P3, #711 et #712 ouvertes, 138 attendues au tag)* recompte du 2026-10-24 (validation P1) : 141 ouvertes (#708, #709, #710 ouvertes ce jour) ; − #503 − 4 = 136, pas sous
   le plafond « moins de 136 » ; + l'issue annoncée des LOW résiduels de la 31-1c = 137 ; + l'issue des libellés
   d'écriture (C-31-5-17), non ouverte, si elle s'ouvre = 138.
 - **Retenu** : écrire les deux comptes dans l'*Origine* — **137** attendues au tag si rien d'autre ne s'ouvre (deux
@@ -263,10 +264,14 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   PME) est l'inverse, pour ses deux premiers comptes, du verrou partagé par identifiant croissant de
   `lock_designated_accounts_in_tx` (`company_invoice_settings.rs:865-916`, 1171 puis 2200), seul ordre opposé identifié ;
   `bulk_create_from_chart_in_tx` crée les comptes par longueur puis numéro, d'où 1171 < 2200 < 2206 en identifiants.
+- **Rectifié (validation P4, P4-1)** : l'« opposition » invoquée n'existe pas — les appelants de
+  `lock_designated_accounts_in_tx` prennent `SALE` (créance, `VatPayable`) ou `PURCHASE` (dette, `VatRecoverable`),
+  jamais 1171 et 2200 ensemble (`company_invoice_settings.rs:696-700`, vérifié par l'orchestrateur). La permutation est
+  gardée pour la seule lisibilité (ordre des identifiants au plan standard), sans effet sur les interblocages.
 - **Retenu** : `VatRecoverable`, `VatPayable`, `VatSettlement` — sans coût, il suit au plan standard l'ordre des
-  identifiants et retire cette opposition ; le doc-comment dit qu'il coïncide avec l'ordre des identifiants au plan
+  identifiants ; le doc-comment dit qu'il coïncide avec l'ordre des identifiants au plan
   standard sans le garantir (un rôle réattribué peut le défaire), et le rejeu `is_seed_retryable` reste le filet.
-- **Écartée** : garder l'ordre de la P2 (défendable, mais une opposition nommée qu'une permutation gratuite supprime).
+- **Écartée** : garder l'ordre de la P2 (aussi sûr, l'opposition invoquée n'existant pas — P4-1 ; écartée pour la seule lisibilité).
 - **Réversible** : oui.
 
 ### C-31-5-22 — #707 : définitions de `VatRoleAccounts` et de la constante des types (validation P3, F6)
