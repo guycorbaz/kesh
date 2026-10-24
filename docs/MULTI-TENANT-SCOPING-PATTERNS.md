@@ -273,7 +273,12 @@ pub async fn list_invoices(
 - **Every handler validates company exists** — Catches edge cases. *(Story 32-3 : for the reads migrated to the
   service layer — `GET /api/v1/accounts` first — the check runs in the service, through
   `helpers::company_for_ids`, to which `get_company_for` delegates; see the module doc-comment of
-  `crates/kesh-api/src/services/mod.rs`.)*
+  `crates/kesh-api/src/services/mod.rs`. Story 32-4a adds five reads: `GET /api/v1/journal-entries`,
+  `GET /api/v1/journal-entries/{id}`, `GET /api/v1/accounts/{id}/open-items`, `GET /api/v1/contacts` and
+  `GET /api/v1/contacts/{id}`. ⚠️ **Exception, unchanged by the move:** the journal-entry list
+  (`services::ecritures::lister`) does **not** read the company — it passes the context's `company_id` to the
+  repository, which filters by it, so an orphaned token yields an empty page rather than an error.
+  `GET /api/v1/contacts/{id}` reads the contact first (404 if absent or foreign), then the company.)*
 - **Fast failure:** If company missing, error returned immediately
 - **Clear error:** `Forbidden` indicates permission issue, not data absence
 

@@ -16,14 +16,18 @@ use crate::middleware::auth::CurrentUser;
 
 /// Portée d'une clé MCP — ce qu'elle a le droit de lire.
 ///
-/// La 32-3 ne pose que les deux portées dont ses pilotes ont besoin ; la 32-5
-/// ajoute les autres et leur persistance.
+/// La 32-3 a posé les deux portées dont ses pilotes ont besoin, la 32-4a celle
+/// du carnet d'adresses ; la 32-5 ajoute les autres, leurs chaînes et leur
+/// persistance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Portee {
     /// Lecture des livres : plan comptable, écritures, rapports comptables.
     BooksRead,
     /// Lecture des factures, dont la balance âgée des débiteurs.
     InvoicesRead,
+    /// Lecture du carnet d'adresses : contacts, données personnelles (Story
+    /// 32-4a, C-32-4a-4).
+    ContactsRead,
 }
 
 /// Canal par lequel arrive une lecture.

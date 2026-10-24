@@ -7,6 +7,9 @@
 //! - `PUT /api/v1/journal-entries/{id}` — modification avec verrou optimiste
 //!   (story 3.3 ; gelée par la 24-4b, rouverte par la Story 15-8a, #532).
 //! - `DELETE /api/v1/journal-entries/{id}` — suppression avec audit (story 3.3).
+//!
+//! Les deux lectures (liste et détail) passent par `services::ecritures`
+//! (Story 32-4a) ; les mutations restent ici (C-32-0-4).
 
 use std::str::FromStr;
 
@@ -27,8 +30,6 @@ use kesh_db::entities::{
     Journal as DbJournal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,
 };
-use kesh_db::errors::map_db_error;
-use kesh_db::repositories::journal_entries::{JournalEntryListQuery, JournalEntryListResult};
 use kesh_db::repositories::{fiscal_years, imported_supplier_invoices, journal_entries};
 
 use crate::AppState;
@@ -36,13 +37,13 @@ use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
+use crate::services::acces::ContexteAcces;
+use crate::services::ecritures;
 
-/// Défaut et plafond pour la pagination de la liste des écritures.
-const DEFAULT_LIMIT: i64 = 50;
-const MAX_LIMIT: i64 = 500;
-
+/// Défaut de la pagination de la liste des écritures : celui du service
+/// (Story 32-4a, C-32-4a-5), qui écrête aussi.
 fn default_limit() -> i64 {
-    DEFAULT_LIMIT
+    ecritures::LIMITE_DEFAUT
 }
 
 fn default_offset() -> i64 {
@@ -347,114 +348,27 @@ pub async fn list_journal_entries(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListJournalEntriesQuery>,
 ) -> Result<Json<ListResponse<JournalEntryResponse>>, AppError> {
-    // Clamp canonique — source de vérité (le repository a un garde-fou
-    // défensif mais ne remonte pas d'erreur).
-    let clamped_limit = params.limit.clamp(1, MAX_LIMIT);
-    let clamped_offset = params.offset.max(0);
-
-    // Parse des dates optionnelles.
-    let date_from = match params.date_from.as_deref() {
-        Some(s) if !s.is_empty() => Some(
-            NaiveDate::from_str(s)
-                .map_err(|e| AppError::Validation(format!("dateFrom invalide ({e})")))?,
-        ),
-        _ => None,
-    };
-    let date_to = match params.date_to.as_deref() {
-        Some(s) if !s.is_empty() => Some(
-            NaiveDate::from_str(s)
-                .map_err(|e| AppError::Validation(format!("dateTo invalide ({e})")))?,
-        ),
-        _ => None,
-    };
-
-    // Parse des montants optionnels.
-    let amount_min = match params.amount_min.as_deref() {
-        Some(s) if !s.is_empty() => Some(
-            Decimal::from_str(s)
-                .map_err(|e| AppError::Validation(format!("amountMin invalide ({e})")))?,
-        ),
-        _ => None,
-    };
-    let amount_max = match params.amount_max.as_deref() {
-        Some(s) if !s.is_empty() => Some(
-            Decimal::from_str(s)
-                .map_err(|e| AppError::Validation(format!("amountMax invalide ({e})")))?,
-        ),
-        _ => None,
-    };
-
-    // P6 : rejeter les montants négatifs (évite BETWEEN -100 AND max
-    // qui ne filtre rien, ou BETWEEN 0 AND -100 qui renvoie toujours vide).
-    if let Some(min) = amount_min
-        && min < Decimal::ZERO
-    {
-        return Err(AppError::Validation(
-            "amountMin ne peut pas être négatif".into(),
-        ));
-    }
-    if let Some(max) = amount_max
-        && max < Decimal::ZERO
-    {
-        return Err(AppError::Validation(
-            "amountMax ne peut pas être négatif".into(),
-        ));
-    }
-
-    // P2 : cross-validation des bornes. Un filtre min > max retournerait
-    // 0 résultats silencieusement — l'utilisateur croirait à une absence
-    // de données au lieu d'un filtre incohérent. Mieux vaut rejeter.
-    if let (Some(min), Some(max)) = (amount_min, amount_max)
-        && min > max
-    {
-        return Err(AppError::Validation(
-            "amountMin doit être inférieur ou égal à amountMax".into(),
-        ));
-    }
-    if let (Some(from), Some(to)) = (date_from, date_to)
-        && from > to
-    {
-        return Err(AppError::Validation(
-            "dateFrom doit être inférieur ou égal à dateTo".into(),
-        ));
-    }
-
-    // `accountId <= 0` est un 400 plutôt qu'un filtre qui ne rendrait rien :
-    // un filtre silencieusement vide se lit comme « pas d'écritures », ce qui
-    // est le pire des deux messages.
-    if let Some(id) = params.account_id
-        && id <= 0
-    {
-        return Err(AppError::Validation(
-            "accountId doit être un identifiant positif".into(),
-        ));
-    }
-    let account_id = params.account_id;
-
-    // Trim description (garde-fou cohérent avec create/update).
-    let description = params
-        .description
-        .as_ref()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-
-    let query = JournalEntryListQuery {
-        description,
-        account_id,
-        amount_min,
-        amount_max,
-        date_from,
-        date_to,
-        journal: params.journal.map(DbJournal::from),
+    // Story 32-4a — bornes, validation (neuf refus, même ordre, mêmes
+    // messages) et lecture : `services::ecritures::lister`.
+    let demande = ecritures::DemandeListeEcritures {
+        description: params.description,
+        account_id: params.account_id,
+        amount_min: params.amount_min,
+        amount_max: params.amount_max,
+        date_from: params.date_from,
+        date_to: params.date_to,
+        journal: params.journal,
         sort_by: params.sort_by,
         sort_dir: params.sort_dir,
-        limit: clamped_limit,
-        offset: clamped_offset,
+        limit: Some(params.limit),
+        offset: Some(params.offset),
     };
-
-    let result: JournalEntryListResult =
-        journal_entries::list_by_company_paginated(&state.pool, current_user.company_id, query)
-            .await?;
+    let result = ecritures::lister(
+        &ContexteAcces::depuis_api(&current_user),
+        &state.lecture(),
+        demande,
+    )
+    .await?;
 
     Ok(Json(ListResponse {
         items: result
@@ -491,38 +405,28 @@ pub async fn get_journal_entry(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<JournalEntryDetailResponse>, AppError> {
-    let company = get_company_for(&current_user, &state.pool).await?;
-
-    let entry = journal_entries::find_by_id(&state.pool, company.id, id)
-        .await?
-        .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
-
-    // Story 15-1b-0 (D2, C-15-1b-0-1) — ce que l'écran peut faire se lit dans
-    // UNE transaction de lecture : un instantané (`REPEATABLE READ`, défaut
-    // d'InnoDB), sans quoi un motif pourrait s'afficher contre un état
-    // qu'aucun instant n'a connu. ⚠️ `find_by_id` reste hors de cette
-    // transaction — écart assumé : l'en-tête n'est pas un motif. Garde :
-    // `get_journal_entry_reads_in_one_transaction`.
-    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
-    let blocker = journal_entries::reversal_blocker(&mut tx, company.id, id).await?;
-    let reversed_by_entry_id = journal_entries::reversed_by(&mut *tx, company.id, id).await?;
-    let modification = journal_entries::modification_blocker(&mut tx, company.id, id).await?;
-    // Story 30-2c (AC21) — le document de la facture fournisseur, dans le même
-    // instantané (lecture ordinaire).
-    let source_document =
-        imported_supplier_invoices::find_source_document_of_entry(&mut *tx, company.id, id).await?;
-    tx.rollback().await.map_err(map_db_error)?;
+    // Story 32-4a — société, écriture, puis les quatre motifs dans UNE
+    // transaction de lecture (Story 15-1b-0, D2) : `services::ecritures::detail`,
+    // où vit la garde `get_journal_entry_reads_in_one_transaction`.
+    let detail = ecritures::detail(
+        &ContexteAcces::depuis_api(&current_user),
+        &state.lecture(),
+        id,
+    )
+    .await?;
+    let blocker = detail.blocage_contre_passation;
+    let modification = detail.blocage_modification;
 
     Ok(Json(JournalEntryDetailResponse {
-        entry: JournalEntryResponse::from(entry),
-        reversed_by_entry_id,
+        entry: JournalEntryResponse::from(detail.ecriture),
+        reversed_by_entry_id: detail.contre_passee_par,
         reversable: blocker.is_none(),
         reversal_blocked_by: blocker.as_ref().map(|(b, _, _)| b.code().to_string()),
         reversal_blocked_label: blocker.and_then(|(_, _, label)| label),
         modifiable: modification.is_none(),
         modification_blocked_by: modification.as_ref().map(|m| m.code().to_string()),
         modification_blocked_label: modification.and_then(|m| m.label()),
-        source_document: source_document.map(EntrySourceDocumentResponse::from),
+        source_document: detail.piece_source.map(EntrySourceDocumentResponse::from),
     }))
 }
 
@@ -1000,82 +904,5 @@ mod tests {
         let (status, body) = body_json(resp).await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION");
-    }
-
-    /// Story 15-1b-0 (AC4, D2 ; C-15-1b-0-4) — garde LEXICALE de la
-    /// transaction de lecture de `get_journal_entry`. Le compilateur garde
-    /// `modification_blocker` (il exige une `Transaction`) mais ne voit pas une
-    /// connexion acquise à côté : `reversal_blocker` et `reversed_by` prennent
-    /// une connexion, que `state.pool.acquire()` fournirait aussi. Lit ce
-    /// fichier, tronqué à la première ligne `#[cfg(test)]`, commentaires `//`
-    /// écartés (patron `admin.rs`, test 20) ; le corps va de la signature à la
-    /// fonction suivante ; une instruction court jusqu'au `;` (rustfmt peut la
-    /// couper). Écart assumé : `find_by_id` reste sur `&state.pool`.
-    #[test]
-    fn get_journal_entry_reads_in_one_transaction() {
-        let code: String = include_str!("journal_entries.rs")
-            .lines()
-            .take_while(|l| l.trim() != "#[cfg(test)]")
-            .filter(|l| !l.trim_start().starts_with("//"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let debut = code
-            .find("pub async fn get_journal_entry(")
-            .expect("get_journal_entry introuvable");
-        let fin = code[debut + 1..]
-            .find("\npub async fn ")
-            .map_or(code.len(), |i| debut + 1 + i);
-        let corps = &code[debut..fin];
-        assert_eq!(
-            corps.matches("pool.begin()").count(),
-            1,
-            "une transaction de lecture, ouverte une fois : {corps}"
-        );
-        assert_eq!(
-            corps.matches("acquire()").count(),
-            0,
-            "aucune connexion acquise à côté de la transaction : {corps}"
-        );
-        // Couples (module, lecteur) : le motif est paramétré par module (Story
-        // 30-2c, AC21 — un lecteur d'un autre module ne s'inscrit pas en
-        // ajoutant un nom à une liste qui chercherait `journal_entries::`).
-        for (module, lecteur) in [
-            ("journal_entries", "reversal_blocker"),
-            ("journal_entries", "reversed_by"),
-            ("journal_entries", "modification_blocker"),
-            (
-                "imported_supplier_invoices",
-                "find_source_document_of_entry",
-            ),
-        ] {
-            let motif = format!("{module}::{lecteur}(");
-            let appels: Vec<&str> = corps
-                .match_indices(&motif)
-                .map(|(pos, _)| {
-                    let fin = corps[pos..].find(';').map_or(corps.len(), |i| pos + i);
-                    &corps[pos..fin]
-                })
-                .collect();
-            assert_eq!(
-                appels.len(),
-                1,
-                "assertion de montage : un appel de {lecteur}"
-            );
-            assert!(
-                !appels[0].contains("state.pool")
-                    && [
-                        format!("{lecteur}(&mut tx,"),
-                        format!("{lecteur}(&mut *tx,")
-                    ]
-                    .iter()
-                    .any(|forme| appels[0].contains(forme.as_str())),
-                "{lecteur} doit lire dans la transaction, non sur le pool : {}",
-                appels[0]
-            );
-        }
-        assert!(
-            corps.contains("journal_entries::find_by_id(&state.pool"),
-            "écart assumé (D2) : find_by_id hors transaction — s'il change, relire la garde"
-        );
     }
 }
