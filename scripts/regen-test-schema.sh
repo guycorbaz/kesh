@@ -302,6 +302,26 @@ if [[ ! "$KV_ID" =~ ^[0-9]+$ ]] || [[ ! "$KV_MIN" =~ ^[0-9A-Za-z.+-]+$ ]] \
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# 7-bis. Réinjection de la ligne `_kesh_backup_schedule` — Story 31-1c (#503)
+#
+# Le dump est `--no-data` : sans cette ligne, le squash porterait la table du
+# réglage de la sauvegarde automatique VIDE, et tout test monté sur le squash
+# lirait un singleton absent. Mêmes règles que `_kesh_version` : les valeurs
+# se LISENT dans la base migrée (les défauts posés par la migration), jamais ne
+# se codent en dur, et se contrôlent par expression avant la réinjection. Les
+# colonnes d'état (`last_*`) sont nulles après migration et ne sont pas
+# réinjectées ; `updated_at` prend son défaut serveur. La garde
+# `squash_seeds_the_backup_schedule_row` de `test_schema_guard.rs` la tient.
+# ---------------------------------------------------------------------------
+BS_ROW=$(cli "$SQUASH_DB" -e "SELECT CONCAT_WS(',', id, enabled, interval_hours, \
+    retention_count, version) FROM _kesh_backup_schedule WHERE id = 1;")
+if [[ ! "$BS_ROW" =~ ^[0-9]+,[0-9]+,[0-9]+,[0-9]+,[0-9]+$ ]]; then
+    echo "✗ _kesh_backup_schedule ne porte aucune ligne id=1 exploitable après" >&2
+    echo "  migration (relevé : '$BS_ROW'). Le squash la réinjecte dans un INSERT." >&2
+    exit 1
+fi
+
 # ⚠️ On écrit dans un TEMPORAIRE, et `$OUT` n'est remplacé qu'au `mv` final.
 # Une redirection directe tronquait l'artefact VERSIONNÉ dès l'ouverture du
 # bloc : un échec en cours laissait un squash coupé là où le run précédent était
@@ -323,6 +343,11 @@ TMP_OUT=$(mktemp)
     echo "-- chaque bump P2 de kesh_version_min_required la déplace)."
     echo "INSERT INTO \`_kesh_version\` (\`id\`, \`kesh_version_min_required\`, \`kesh_version_last_applied\`)"
     echo "VALUES ($KV_ID, '$KV_MIN', '$KV_LAST');"
+    echo ""
+    echo "-- Réglage de la sauvegarde automatique, RELEVÉ dans la base migrée"
+    echo "-- (Story 31-1c : défauts posés par la migration ; dump --no-data)."
+    echo "INSERT INTO \`_kesh_backup_schedule\` (\`id\`, \`enabled\`, \`interval_hours\`, \`retention_count\`, \`version\`)"
+    echo "VALUES ($BS_ROW);"
 } > "$TMP_OUT"
 
 # ---------------------------------------------------------------------------
@@ -358,4 +383,4 @@ fi
 mv "$TMP_OUT" "$OUT"
 TMP_OUT=""
 
-echo "✓ $OUT — $GOT_TABLES tables (rejeu vérifié), _kesh_version = ($KV_ID, '$KV_MIN', '$KV_LAST'), $(wc -c < "$OUT") octets"
+echo "✓ $OUT — $GOT_TABLES tables (rejeu vérifié), _kesh_version = ($KV_ID, '$KV_MIN', '$KV_LAST'), _kesh_backup_schedule = ($BS_ROW), $(wc -c < "$OUT") octets"

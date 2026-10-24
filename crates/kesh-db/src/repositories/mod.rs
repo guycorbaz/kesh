@@ -7,6 +7,7 @@
 pub mod accounts;
 pub mod api_keys;
 pub mod audit_log;
+pub mod backup_schedule;
 pub mod bank_accounts;
 pub mod bank_imports;
 pub mod bank_profiles;
