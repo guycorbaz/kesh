@@ -49,7 +49,7 @@ pub(crate) fn t(key: &str, default: &str) -> String {
 /// (Story 25-6-b) nomme le fichier `{empreinte}.pdf` à chercher dans une
 /// sauvegarde — copié avec ses marques, il ne trouverait rien. Elles sont donc
 /// retirées (précédent : `routes/contacts.rs`, libellé des conditions).
-fn t_args(key: &str, default: &str, args: &FluentArgs<'_>) -> String {
+pub(crate) fn t_args(key: &str, default: &str, args: &FluentArgs<'_>) -> String {
     let guard = I18N.read().expect("I18N read lock");
     match guard.as_ref() {
         Some((bundle, locale)) => bundle

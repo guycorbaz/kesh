@@ -365,8 +365,15 @@ async fn final_attempt(pool: &MySqlPool, facts: &DemoFacts) -> Result<(), SeedAt
 ///
 /// Séquence de verrous, telle qu'écrite à la ligne `seed_demo` du Pattern 5
 /// (`docs/MULTI-TENANT-SCOPING-PATTERNS.md`) : `onboarding_state → companies →
-/// accounts → company_invoice_settings → vat_rates → audit_log` — l'ordre de
-/// `finalize` (réglages puis taux). Ne commite jamais.
+/// accounts (TVA, puis rôles de insert_with_defaults_in_tx) →
+/// company_invoice_settings → vat_rates → audit_log` — l'ordre de `finalize`
+/// (réglages puis taux), précédé des trois comptes de TVA (Story 31-5, #707).
+/// Ne commite jamais.
+///
+/// Story 31-5 (#707, C-31-5-3) — la démonstration, **seule**, désigne les trois
+/// comptes de TVA du plan, pour qu'une facture avec TVA s'y valide sans réglage
+/// préalable. Le chemin production (`finalize`) ne les désigne pas : un assujetti
+/// le fait dans *Administration → Facturation*.
 async fn final_body(
     tx: &mut Transaction<'_, MySql>,
     facts: &DemoFacts,
@@ -386,10 +393,21 @@ async fn final_body(
     //    handler n'était borné à aucune société, F-3 de la P3 de la 15-7a1).
     companies::clear_stub_in_tx(tx, facts.company_id).await?;
 
-    // 3. Réglages de facturation (lectures verrouillantes des comptes de rôle),
-    //    puis les quatre taux de TVA — l'ordre de `finalize`.
+    // 3. Les trois comptes de TVA verrouillés AVANT la ligne de réglages (ordre
+    //    `accounts → company_invoice_settings`, Story 31-5, #707), puis les
+    //    réglages de facturation (lectures verrouillantes des comptes de rôle),
+    //    la désignation de la TVA sur la ligne NEUVE seulement, et les quatre
+    //    taux de TVA — l'ordre de `finalize`.
+    let vat_accounts =
+        company_invoice_settings::lock_vat_role_accounts_in_tx(tx, facts.company_id).await?;
     let (_settings, invoice_settings_created) =
         company_invoice_settings::insert_with_defaults_in_tx(tx, facts.company_id).await?;
+    if invoice_settings_created {
+        // Ligne créée par cette transaction : personne ne l'a lue, aucun
+        // `version` à bumper (C-31-5-4).
+        company_invoice_settings::designate_vat_accounts_in_tx(tx, facts.company_id, &vat_accounts)
+            .await?;
+    }
     let rates = vat_rates::seed_default_swiss_rates_in_tx(tx, facts.company_id).await?;
 
     // 4. L'étape, sur la version et le mode relus sous verrou.

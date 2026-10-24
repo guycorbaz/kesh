@@ -28,11 +28,11 @@ use std::str::FromStr;
 
 use kesh_db::entities::audit_log::AuditLogEntry;
 use kesh_db::repositories::audit_log::{self as audit_log_repo, AuditLogListQuery, MAX_LIMIT};
-use kesh_i18n::{I18nBundle, Locale};
+use kesh_i18n::{FluentArgs, I18nBundle, Locale};
 
 use crate::AppState;
 use crate::audit_labels::{self, ACTIONS, ENTITY_TYPES};
-use crate::errors::AppError;
+use crate::errors::{AppError, t, t_args};
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 use crate::routes::api_keys::ensure_not_pat;
@@ -176,9 +176,10 @@ pub(crate) fn construire_requete(
     if let (Some(depuis), Some(jusqu)) = (date_from, date_to)
         && depuis > jusqu
     {
-        return Err(AppError::Validation(
-            "dateFrom doit être inférieur ou égal à dateTo".into(),
-        ));
+        return Err(AppError::Validation(t(
+            "audit-log-query-error-date-range-inverted",
+            "dateFrom doit être inférieur ou égal à dateTo",
+        )));
     }
 
     let entity_type = parse_code(
@@ -191,16 +192,18 @@ pub(crate) fn construire_requete(
     if let Some(id) = params.entity_id
         && id <= 0
     {
-        return Err(AppError::Validation(
-            "entityId doit être un identifiant positif".into(),
-        ));
+        return Err(AppError::Validation(t(
+            "audit-log-query-error-entity-id-not-positive",
+            "entityId doit être un identifiant positif",
+        )));
     }
     // Un identifiant n'a de sens que rapporté à son type : les `entity_id` se
     // répètent d'une table à l'autre.
     if params.entity_id.is_some() && entity_type.is_none() {
-        return Err(AppError::Validation(
-            "entityId exige entityType — un identifiant seul ne désigne rien".into(),
-        ));
+        return Err(AppError::Validation(t(
+            "audit-log-query-error-entity-id-without-type",
+            "entityId exige entityType — un identifiant seul ne désigne rien",
+        )));
     }
 
     Ok(AuditLogListQuery {
@@ -218,11 +221,22 @@ fn parse_date(valeur: Option<&str>, nom: &str) -> Result<Option<NaiveDate>, AppE
     let Some(texte) = valeur.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(None);
     };
-    let date = NaiveDate::from_str(texte)
-        .map_err(|e| AppError::Validation(format!("{nom} invalide ({e})")))?;
+    // Story 31-5 (#469) — refus traduits dans la langue de l'installation ; le
+    // détail `chrono` (anglais) n'est plus montré. Repli = valeur fr-CH (G9).
+    let mut args = FluentArgs::new();
+    args.set("field", nom.to_string());
+    let date = NaiveDate::from_str(texte).map_err(|_| {
+        AppError::Validation(t_args(
+            "audit-log-query-error-date-invalid",
+            &format!("{nom} invalide : date attendue au format AAAA-MM-JJ"),
+            &args,
+        ))
+    })?;
     if date < borne_basse() || date > borne_haute() {
-        return Err(AppError::Validation(format!(
-            "{nom} doit être compris entre 1000-01-01 et 9999-12-31"
+        return Err(AppError::Validation(t_args(
+            "audit-log-query-error-date-out-of-range",
+            &format!("{nom} doit être compris entre 1000-01-01 et 9999-12-31"),
+            &args,
         )));
     }
     Ok(Some(date))
@@ -236,8 +250,13 @@ fn parse_code(valeur: Option<&str>, nom: &str, maximum: usize) -> Result<Option<
         return Ok(None);
     };
     if texte.chars().count() > maximum {
-        return Err(AppError::Validation(format!(
-            "{nom} dépasse {maximum} caractères"
+        let mut args = FluentArgs::new();
+        args.set("field", nom.to_string());
+        args.set("max", maximum.to_string());
+        return Err(AppError::Validation(t_args(
+            "audit-log-query-error-code-too-long",
+            &format!("{nom} dépasse {maximum} caractères"),
+            &args,
         )));
     }
     Ok(Some(texte.to_string()))

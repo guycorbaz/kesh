@@ -1624,3 +1624,147 @@ async fn settings_update_waits_at_before_for_a_bank_gesture_holding_the_settings
     let result = tache.await.expect("tâche de la désignation");
     assert_linked_refusal(&result, x, bank_account_id);
 }
+
+// ===========================================================================
+// Story 31-5 (#707, AC1) — `lock_vat_role_accounts_in_tx` : la lecture des
+// comptes de TVA de la démonstration. Les états (ii) à (iv) se posent par
+// `UPDATE` direct : le test éprouve la LECTURE, non les routes qui y mènent.
+// ===========================================================================
+
+/// Une société au plan PME chargé ; rend son id.
+async fn pme_company_with_chart(pool: &MySqlPool) -> i64 {
+    let company = companies::create(
+        pool,
+        NewCompany {
+            name: "TVA Démo Synthétique SA".to_string(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
+            ide_number: None,
+            org_type: OrgType::Pme,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .expect("société");
+    let chart = kesh_core::chart_of_accounts::load_chart("Pme").expect("plan PME");
+    accounts::bulk_create_from_chart(pool, company.id, &chart, "fr")
+        .await
+        .expect("comptes du plan");
+    company.id
+}
+
+/// Le compte qui porte `role` (colonne brute `role`, relue en base).
+async fn account_with_role(pool: &MySqlPool, company_id: i64, role: &str) -> i64 {
+    sqlx::query_scalar::<_, i64>("SELECT id FROM accounts WHERE company_id = ? AND role = ?")
+        .bind(company_id)
+        .bind(role)
+        .fetch_one(pool)
+        .await
+        .unwrap_or_else(|e| panic!("compte du rôle {role} : {e}"))
+}
+
+async fn read_vat_role_accounts(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> company_invoice_settings::VatRoleAccounts {
+    let mut tx = pool.begin().await.unwrap();
+    let found = company_invoice_settings::lock_vat_role_accounts_in_tx(&mut tx, company_id)
+        .await
+        .expect("lecture des comptes de TVA");
+    tx.rollback().await.unwrap();
+    found
+}
+
+/// (i) Chemin heureux : les trois rôles retenus, chacun égal au compte qui le porte.
+#[sqlx::test(migrations = "./test-schema")]
+async fn vat_role_accounts_happy_path(pool: MySqlPool) {
+    let company_id = pme_company_with_chart(&pool).await;
+    let found = read_vat_role_accounts(&pool, company_id).await;
+    assert_eq!(
+        found,
+        company_invoice_settings::VatRoleAccounts {
+            payable: Some(account_with_role(&pool, company_id, "VatPayable").await),
+            recoverable: Some(account_with_role(&pool, company_id, "VatRecoverable").await),
+            settlement: Some(account_with_role(&pool, company_id, "VatSettlement").await),
+        }
+    );
+}
+
+/// (ii) Le compte `VatPayable` retypé en `Asset` (la règle du RÔLE le permet) :
+/// la règle du RÉGLAGE l'écarte — `payable == None`, les deux autres retenus.
+#[sqlx::test(migrations = "./test-schema")]
+async fn vat_role_accounts_reject_payable_of_wrong_type(pool: MySqlPool) {
+    let company_id = pme_company_with_chart(&pool).await;
+    let payable = account_with_role(&pool, company_id, "VatPayable").await;
+    sqlx::query("UPDATE accounts SET account_type = 'Asset' WHERE id = ?")
+        .bind(payable)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let found = read_vat_role_accounts(&pool, company_id).await;
+    assert_eq!(found.payable, None, "TVA due portée par un actif : écartée");
+    assert_eq!(
+        found.recoverable,
+        Some(account_with_role(&pool, company_id, "VatRecoverable").await)
+    );
+    assert_eq!(
+        found.settlement,
+        Some(account_with_role(&pool, company_id, "VatSettlement").await)
+    );
+}
+
+/// (iii) Le compte `VatRecoverable` rendu non imputable : `recoverable == None`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn vat_role_accounts_reject_non_postable_recoverable(pool: MySqlPool) {
+    let company_id = pme_company_with_chart(&pool).await;
+    let recoverable = account_with_role(&pool, company_id, "VatRecoverable").await;
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(recoverable)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let found = read_vat_role_accounts(&pool, company_id).await;
+    assert_eq!(
+        found.recoverable, None,
+        "impôt préalable non imputable : écarté"
+    );
+    assert_eq!(
+        found.payable,
+        Some(account_with_role(&pool, company_id, "VatPayable").await)
+    );
+    assert_eq!(
+        found.settlement,
+        Some(account_with_role(&pool, company_id, "VatSettlement").await)
+    );
+}
+
+/// (iv) Le compte `VatSettlement` archivé (sa colonne `singleton_role` devient
+/// `NULL`) : `settlement == None`, sans erreur.
+#[sqlx::test(migrations = "./test-schema")]
+async fn vat_role_accounts_skip_archived_settlement(pool: MySqlPool) {
+    let company_id = pme_company_with_chart(&pool).await;
+    let settlement = account_with_role(&pool, company_id, "VatSettlement").await;
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(settlement)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let found = read_vat_role_accounts(&pool, company_id).await;
+    assert_eq!(found.settlement, None, "décompte archivé : non lu");
+    assert_eq!(
+        found.payable,
+        Some(account_with_role(&pool, company_id, "VatPayable").await)
+    );
+    assert_eq!(
+        found.recoverable,
+        Some(account_with_role(&pool, company_id, "VatRecoverable").await)
+    );
+}

@@ -335,12 +335,15 @@ pub async fn update_invoice_settings(
     )
     .await?;
     // Comptes TVA (Story 18-1a) : TVA due + décompte = Liability, récupérable = Asset.
+    // Story 31-5 (C-31-5-19) : la règle est écrite UNE fois, en `kesh-db`
+    // (`VAT_SETTING_ACCOUNT_TYPES`), que lit aussi la démonstration.
+    let vat_types = company_invoice_settings::VAT_SETTING_ACCOUNT_TYPES;
     validate_account(
         &state,
         company.id,
         req.default_vat_payable_account_id,
         current.default_vat_payable_account_id,
-        AccountType::Liability,
+        vat_types.payable,
         "Compte TVA due",
     )
     .await?;
@@ -349,7 +352,7 @@ pub async fn update_invoice_settings(
         company.id,
         req.default_vat_recoverable_account_id,
         current.default_vat_recoverable_account_id,
-        AccountType::Asset,
+        vat_types.recoverable,
         "Compte TVA récupérable",
     )
     .await?;
@@ -358,7 +361,7 @@ pub async fn update_invoice_settings(
         company.id,
         req.default_vat_decompte_account_id,
         current.default_vat_decompte_account_id,
-        AccountType::Liability,
+        vat_types.settlement,
         "Compte décompte TVA",
     )
     .await?;

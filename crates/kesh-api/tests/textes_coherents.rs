@@ -274,6 +274,8 @@ fn premiers_mots(noms: &HashMap<String, Vec<String>>) -> std::collections::HashS
 /// `{` et `}` ne bornent plus rien (revue de code P2, B2-2) : `\textbf{3600}` est lu.
 fn nombres_isoles(ligne: &str) -> Vec<(String, String, usize, usize)> {
     static NOMBRE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"([1-9]\d{3})(\.\d+)?").unwrap());
+    static DATE_ISO: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^-\d{2}-\d{2}(\D|$)").unwrap());
     let mut out = Vec::new();
     for c in NOMBRE.captures_iter(ligne) {
         let m = c.get(0).unwrap();
@@ -288,7 +290,11 @@ fn nombres_isoles(ligne: &str) -> Vec<(String, String, usize, usize)> {
             .chars()
             .next()
             .is_some_and(|s| s.is_ascii_digit() || s.is_ascii_alphabetic() || "'’%_".contains(s));
-        if !exclu_avant && !exclu_apres {
+        // Story 31-5 (#469, C-31-5-23) — une date ISO `NNNN-MM-JJ` (« entre
+        // 1000-01-01 et 9999-12-31 ») n'est pas un compte : l'année est suivie
+        // de `-MM-JJ` exactement.
+        let date_iso = c.get(2).is_none() && DATE_ISO.is_match(&ligne[m.end()..]);
+        if !exclu_avant && !exclu_apres && !date_iso {
             out.push((
                 c[1].to_string(),
                 c.get(2).map_or("", |d| d.as_str()).to_string(),
@@ -344,6 +350,7 @@ fn montant_ou_npa(
 ///
 /// - les années 2001 à 2099 (aucun plan livré n'y a de compte, ce que la garde
 ///   vérifie) ;
+/// - l'année d'une date ISO `NNNN-MM-JJ` (`9999-12-31`, Story 31-5) ;
 /// - un montant : une devise (`CHF`, `Fr.`, `EUR`, `francs`) le précède ou le suit ;
 /// - un NPA : nombre sans décimales suivi d'un mot à majuscule qui n'ouvre aucun nom de
 ///   compte et qui clôt le segment (`1003 Lausanne,` ; [`montant_ou_npa`]).
@@ -681,8 +688,22 @@ fn references_d_issues_du_readme_sont_des_liens() {
 fn les_replis_rust_suivent_le_catalogue() {
     const NOM: &[(&str, &str)] = &[("{ $name }", "{fiscal_year_name}")];
     const DEVISES: &[(&str, &str)] = &[("{ $currencies }", "{currencies}")];
+    const CHAMP: &[(&str, &str)] = &[("{ $field }", "{nom}")];
+    const CHAMP_MAX: &[(&str, &str)] = &[("{ $field }", "{nom}"), ("{ $max }", "{maximum}")];
     type Cles = &'static [(&'static str, usize, &'static [(&'static str, &'static str)])];
-    const TABLE: [(&str, Cles); 3] = [
+    const TABLE: [(&str, Cles); 4] = [
+        // Story 31-5 (#469, C-31-5-15) — les six refus du journal d'audit.
+        (
+            "crates/kesh-api/src/routes/audit_log.rs",
+            &[
+                ("audit-log-query-error-date-range-inverted", 1, &[]),
+                ("audit-log-query-error-date-invalid", 1, CHAMP),
+                ("audit-log-query-error-date-out-of-range", 1, CHAMP),
+                ("audit-log-query-error-entity-id-not-positive", 1, &[]),
+                ("audit-log-query-error-entity-id-without-type", 1, &[]),
+                ("audit-log-query-error-code-too-long", 1, CHAMP_MAX),
+            ],
+        ),
         (
             "crates/kesh-api/src/errors.rs",
             &[

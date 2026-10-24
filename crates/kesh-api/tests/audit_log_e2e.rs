@@ -351,30 +351,93 @@ async fn les_parametres_invalides_sont_refuses_en_400(pool: MySqlPool) {
     // ⛔ Le `+` est écrit `%2B`. Écrit en clair, `form_urlencoded` le décode en
     // ESPACE : la valeur échoue alors au FORMAT, et le test ne sonde plus la
     // PLAGE — il passerait au vert sans rien prouver de la borne.
-    let cas: [&str; 10] = [
-        "?dateFrom=pas-une-date",
-        "?dateFrom=2026-02-01&dateTo=2026-01-01",
-        "?entityId=42",
-        "?entityType=contact&entityId=0",
-        "?action=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "?dateTo=%2B262142-12-31",
-        "?dateFrom=%2B262142-12-31",
-        "?dateFrom=-0001-01-01",
-        "?dateFrom=0999-12-31",
-        "?dateTo=0999-12-31",
+    //
+    // Story 31-5 (#469, AC12) — chaque cas porte la clé du refus attendu et ses
+    // variables : le message rendu doit ÉGALER le rendu `de-CH` de la clé (langue
+    // de l'installation) et DIFFÉRER du rendu `fr-CH` (une valeur allemande restée
+    // copie du français serait attrapée). Valeurs calculées depuis le catalogue
+    // chargé, marques d'isolation retirées — aucun texte allemand codé en dur.
+    type Cas = (
+        &'static str,
+        &'static str,
+        &'static [(&'static str, &'static str)],
+    );
+    const FORMAT: &str = "audit-log-query-error-date-invalid";
+    const PLAGE: &str = "audit-log-query-error-date-out-of-range";
+    let cas: [Cas; 10] = [
+        ("?dateFrom=pas-une-date", FORMAT, &[("field", "dateFrom")]),
+        (
+            "?dateFrom=2026-02-01&dateTo=2026-01-01",
+            "audit-log-query-error-date-range-inverted",
+            &[],
+        ),
+        (
+            "?entityId=42",
+            "audit-log-query-error-entity-id-without-type",
+            &[],
+        ),
+        (
+            "?entityType=contact&entityId=0",
+            "audit-log-query-error-entity-id-not-positive",
+            &[],
+        ),
+        (
+            "?action=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "audit-log-query-error-code-too-long",
+            &[("field", "action"), ("max", "64")],
+        ),
+        ("?dateTo=%2B262142-12-31", PLAGE, &[("field", "dateTo")]),
+        ("?dateFrom=%2B262142-12-31", PLAGE, &[("field", "dateFrom")]),
+        ("?dateFrom=-0001-01-01", PLAGE, &[("field", "dateFrom")]),
+        ("?dateFrom=0999-12-31", PLAGE, &[("field", "dateFrom")]),
+        ("?dateTo=0999-12-31", PLAGE, &[("field", "dateTo")]),
     ];
+    let catalogues = catalogues_charges();
+    let rendu = |locale: kesh_i18n::Locale, cle: &str, vars: &[(&str, &str)]| {
+        let mut args = kesh_i18n::FluentArgs::new();
+        for (nom, valeur) in vars {
+            args.set(*nom, valeur.to_string());
+        }
+        let args = (!vars.is_empty()).then_some(&args);
+        catalogues
+            .format(&locale, cle, args)
+            .replace(['\u{2068}', '\u{2069}'], "")
+    };
 
-    for suffixe in cas {
+    for (suffixe, cle, vars) in cas {
         let resp = app
             .get(&format!("/api/v1/audit-log{suffixe}"), &ctx.jeton)
             .await;
         assert_eq!(resp.status(), 400, "attendu 400 pour {suffixe}");
+        let corps: Value = resp.json().await.unwrap();
         assert_eq!(
-            code_erreur(resp).await,
-            "VALIDATION_ERROR",
+            corps["error"]["code"], "VALIDATION_ERROR",
             "code du refus pour {suffixe}"
         );
+        let message = corps["error"]["message"].as_str().unwrap_or_default();
+        let attendu_de = rendu(kesh_i18n::Locale::DeCh, cle, vars);
+        let rendu_fr = rendu(kesh_i18n::Locale::FrCh, cle, vars);
+        assert_eq!(
+            message, attendu_de,
+            "message de {suffixe} : clé {cle} en de-CH"
+        );
+        assert_ne!(
+            message, rendu_fr,
+            "message de {suffixe} : la valeur de-CH de {cle} n'est pas le français"
+        );
     }
+}
+
+/// Les catalogues de l'application, chargés comme par `spawn_app_de`.
+fn catalogues_charges() -> kesh_i18n::I18nBundle {
+    kesh_i18n::I18nBundle::load(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("kesh-i18n/locales")
+            .as_path(),
+    )
+    .expect("charger les catalogues")
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

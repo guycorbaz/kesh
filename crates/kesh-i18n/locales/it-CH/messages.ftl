@@ -873,6 +873,9 @@ echeancier-csv-header-amount-due = Saldo dovuto
 echeancier-csv-header-payment-status = Stato pagamento
 echeancier-csv-header-paid-at = Data pagamento
 echeancier-export-error-too-large = Troppi risultati (> { $limit }). Affinare i filtri (intervallo date o stato di pagamento) prima di esportare.
+# Story 31-5 (#504) — préfixe de la communication de la QR-facture (« <préfixe> <numéro> »),
+# dans la langue du document. Sans variable : aucune marque d'isolation Fluent n'entre dans la QR.
+invoice-qr-message-prefix = Fattura
 invoice-pdf-error-contact-missing = Il contatto collegato alla fattura non è stato trovato.
 invoice-pdf-error-no-primary-bank = Nessun conto bancario principale configurato per questa azienda.
 invoice-pdf-error-company-address-empty = L'indirizzo dell'azienda è vuoto — compilarlo prima di generare un PDF.
@@ -2698,6 +2701,14 @@ audit-log-csv-header-entity-id = ID entità
 audit-log-csv-header-api-key-id = Chiave API
 audit-log-csv-header-details = Dettagli
 audit-log-export-error-too-large = Troppi risultati (> { $limit }). Affinare i filtri (intervallo date, azione o tipo di entità) prima di esportare.
+# Story 31-5 (#469) — refus des paramètres de consultation du journal d'audit (serveur).
+# Les noms de paramètre (dateFrom, entityType…) sont des noms d'API : ils ne se traduisent pas.
+audit-log-query-error-date-range-inverted = dateFrom deve essere inferiore o uguale a dateTo
+audit-log-query-error-date-invalid = { $field } non valido: data attesa nel formato AAAA-MM-GG
+audit-log-query-error-date-out-of-range = { $field } deve essere compreso tra 1000-01-01 e 9999-12-31
+audit-log-query-error-entity-id-not-positive = entityId deve essere un identificativo positivo
+audit-log-query-error-entity-id-without-type = entityId richiede entityType — un identificativo da solo non designa nulla
+audit-log-query-error-code-too-long = { $field } supera { $max } caratteri
 
 # --- Journal d'audit — écran (Story 25-1c-b1) ---
 nav-audit-log = Registro di audit

@@ -81,7 +81,7 @@ export interface OutOfOrderState {
  * C'est lui que l'on clôture d'abord : la clôture le refuse tant qu'un antérieur est ouvert.
  *
  * Comparaison des dates par chaîne `YYYY-MM-DD` (ordre lexicographique = chronologique),
- * comme `nearestLaterClosed` de la page.
+ * comme `latestLaterClosed` de la page.
  */
 export function outOfOrderState(fiscalYears: FiscalYearResponse[]): OutOfOrderState | null {
 	let open: FiscalYearResponse | null = null;

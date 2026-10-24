@@ -1189,6 +1189,150 @@ pub async fn insert_with_defaults_in_tx(
     Ok((settings, inserted))
 }
 
+/// Les comptes retenus pour les trois réglages de TVA (Story 31-5, #707), dans
+/// l'ordre des colonnes `default_vat_payable_account_id`,
+/// `default_vat_recoverable_account_id`, `default_vat_decompte_account_id`.
+/// `None` = aucun compte utilisable pour ce réglage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct VatRoleAccounts {
+    /// TVA due (réglage `default_vat_payable_account_id`).
+    pub payable: Option<i64>,
+    /// Impôt préalable (réglage `default_vat_recoverable_account_id`).
+    pub recoverable: Option<i64>,
+    /// Décompte TVA (réglage `default_vat_decompte_account_id`).
+    pub settlement: Option<i64>,
+}
+
+/// Le type de compte qu'exige chacun des trois réglages de TVA.
+#[derive(Debug, Clone, Copy)]
+pub struct VatSettingAccountTypes {
+    /// TVA due.
+    pub payable: AccountType,
+    /// Impôt préalable.
+    pub recoverable: AccountType,
+    /// Décompte TVA.
+    pub settlement: AccountType,
+}
+
+/// Règle du **réglage** (non du rôle, cf. `accepts_account_type` de
+/// `kesh_core::chart_of_accounts`, qui admet `Asset` ou `Liability` pour les trois
+/// rôles de TVA), lue par [`lock_vat_role_accounts_in_tx`] et par la route
+/// `PUT /api/v1/company/invoice-settings` (`update_invoice_settings`). Écrite une
+/// seule fois (Story 31-5, C-31-5-19) : la route et la démonstration ne peuvent
+/// plus diverger.
+pub const VAT_SETTING_ACCOUNT_TYPES: VatSettingAccountTypes = VatSettingAccountTypes {
+    payable: AccountType::Liability,
+    recoverable: AccountType::Asset,
+    settlement: AccountType::Liability,
+};
+
+/// Lit et **verrouille** (`FOR UPDATE`) les comptes qui portent les trois rôles
+/// de TVA de la société, et rend ceux qui sont utilisables pour les réglages de
+/// TVA — Story 31-5 (#707, C-31-5-13, C-31-5-18, C-31-5-21, C-31-5-22).
+///
+/// **Pourquoi la démonstration seulement** (C-31-5-3) : seul `seed_demo` l'appelle.
+/// Le chemin production (`finalize`) laisse les trois réglages à `NULL` — un
+/// assujetti les désigne dans *Administration → Facturation*, et un non-assujetti
+/// qui saisirait un taux par erreur voit la validation refusée
+/// (`CONFIGURATION_REQUIRED`) au lieu d'écrire de la TVA due.
+///
+/// Un rôle n'est retenu que si son compte est **imputable** (`postable`) et du
+/// type que [`VAT_SETTING_ACCOUNT_TYPES`] fixe pour le réglage — les exigences de
+/// la route de désignation et de `check_written` à la validation. Un compte
+/// archivé n'est pas lu (la colonne générée `singleton_role` est `active`-aware).
+/// Un rôle sans compte utilisable donne `None`, **sans erreur** : la
+/// démonstration se charge quand même.
+///
+/// **Ordre réel des verrous** : trois lectures ponctuelles
+/// `singleton_role = ? FOR UPDATE` sur l'index unique
+/// `uq_accounts_company_singleton_role`, dans l'ordre du code — `VatRecoverable`,
+/// `VatPayable`, `VatSettlement`. Chacune verrouille l'entrée de l'index puis
+/// l'enregistrement du compte ; pour un rôle absent, l'intervalle de l'index où
+/// il serait. Au plan standard, cet ordre **coïncide** avec l'ordre croissant des
+/// identifiants (1171, 2200, 2206) sans le **garantir** : un rôle réattribué à un
+/// autre compte peut le défaire. Le rejeu de `seed_demo` sur interblocage
+/// (`is_seed_retryable`) reste le filet.
+///
+/// À appeler **avant** la création de la ligne de réglages : l'ordre documenté
+/// `accounts → company_invoice_settings` (Pattern 5) est ainsi tenu. Ne lit ni
+/// n'écrit `company_invoice_settings`. Ne commite ni n'annule.
+pub async fn lock_vat_role_accounts_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+) -> Result<VatRoleAccounts, DbError> {
+    let types = VAT_SETTING_ACCOUNT_TYPES;
+    let recoverable = lock_usable_role_account(
+        tx,
+        company_id,
+        AccountRole::VatRecoverable,
+        types.recoverable,
+    )
+    .await?;
+    let payable =
+        lock_usable_role_account(tx, company_id, AccountRole::VatPayable, types.payable).await?;
+    let settlement =
+        lock_usable_role_account(tx, company_id, AccountRole::VatSettlement, types.settlement)
+            .await?;
+    Ok(VatRoleAccounts {
+        payable,
+        recoverable,
+        settlement,
+    })
+}
+
+/// Une lecture ponctuelle verrouillante du compte qui porte `role`, retenu s'il
+/// est imputable et du type `expected` (cf. [`lock_vat_role_accounts_in_tx`]).
+async fn lock_usable_role_account(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    role: AccountRole,
+    expected: AccountType,
+) -> Result<Option<i64>, DbError> {
+    let row = sqlx::query_as::<_, (i64, AccountType, bool)>(
+        "SELECT id, account_type, postable FROM accounts \
+         WHERE company_id = ? AND singleton_role = ? FOR UPDATE",
+    )
+    .bind(company_id)
+    .bind(role)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    Ok(row
+        .filter(|(_, account_type, postable)| *postable && *account_type == expected)
+        .map(|(id, _, _)| id))
+}
+
+/// Désigne les comptes de TVA de `accounts` dans la ligne de réglages de la
+/// société — Story 31-5 (#707). Un seul `UPDATE`, `COALESCE` par colonne : une
+/// valeur déjà posée n'est **jamais** écrasée, et la fonction est idempotente
+/// (rejeu de `seed_demo`). Ne lit **aucun** compte : aucun verrou de compte n'est
+/// pris après la ligne de réglages (ordre `accounts → company_invoice_settings`).
+///
+/// N'incrémente pas `version` : l'appelant (`seed_demo`) ne l'emploie que sur une
+/// ligne que la même transaction vient de créer, que personne n'a donc pu lire.
+/// Ne commite ni n'annule.
+pub async fn designate_vat_accounts_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    accounts: &VatRoleAccounts,
+) -> Result<(), DbError> {
+    sqlx::query(
+        "UPDATE company_invoice_settings SET \
+         default_vat_payable_account_id = COALESCE(default_vat_payable_account_id, ?), \
+         default_vat_recoverable_account_id = COALESCE(default_vat_recoverable_account_id, ?), \
+         default_vat_decompte_account_id = COALESCE(default_vat_decompte_account_id, ?) \
+         WHERE company_id = ?",
+    )
+    .bind(accounts.payable)
+    .bind(accounts.recoverable)
+    .bind(accounts.settlement)
+    .bind(company_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    Ok(())
+}
+
 // Reference to avoid unused import warning if Journal is not referenced
 // elsewhere in this file (needed for the SQL bind).
 #[allow(dead_code)]

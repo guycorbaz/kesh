@@ -310,6 +310,27 @@ async fn full_path_b_flow(pool: MySqlPool) {
             .await
             .unwrap();
     assert_eq!(settings_rows, 1, "une ligne de réglages de facturation");
+    // Story 31-5 (#707, AC2, C-31-5-3) — le chemin production ne désigne AUCUN
+    // compte de TVA : un assujetti les désigne dans Administration → Facturation,
+    // et un non-assujetti qui saisirait un taux par erreur voit la validation
+    // refusée au lieu d'écrire de la TVA due. Seule la démonstration les désigne.
+    // Garde éprouvée par la mutation M8 (appel de la désignation dans `finalize`).
+    let (vat_payable, vat_recoverable, vat_decompte): (Option<i64>, Option<i64>, Option<i64>) =
+        sqlx::query_as(
+            "SELECT default_vat_payable_account_id, default_vat_recoverable_account_id, \
+                    default_vat_decompte_account_id \
+             FROM company_invoice_settings WHERE company_id = ?",
+        )
+        .bind(company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(vat_payable, None, "TVA due non désignée en production");
+    assert_eq!(
+        vat_recoverable, None,
+        "impôt préalable non désigné en production"
+    );
+    assert_eq!(vat_decompte, None, "décompte TVA non désigné en production");
     // `user.created` : bootstrap (`ensure_admin_user`), avant toute route ; puis
     // la séquence de l'onboarding (Story 15-7a2, AC 2). Société de
     // `create_test_company` (non provisoire, `Independant`, FR/FR) : la langue

@@ -355,8 +355,12 @@ async fn le_pdf_est_dans_la_langue_du_client(pool: MySqlPool) {
         "section de paiement en allemand"
     );
     assert!(pdf_contains(&pdf, "Rechnung"), "titre en allemand");
-    // ⚠️ Pas « Facture » : la communication de la QR (« Facture {numéro} »)
-    // est écrite en français quelle que soit la langue — défaut antérieur.
+    // Story 31-5 (#504) — la communication de la QR (« <préfixe> {numéro} »),
+    // imprimée dans les informations supplémentaires, suit la langue du document.
+    assert!(
+        !pdf_contains(&pdf, "Facture"),
+        "pas de « Facture » français dans le PDF allemand (communication de la QR)"
+    );
     assert!(
         !pdf_contains(&pdf, "Section paiement"),
         "pas de libellé français de la section de paiement"

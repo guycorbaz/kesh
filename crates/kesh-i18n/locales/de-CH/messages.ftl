@@ -873,6 +873,9 @@ echeancier-csv-header-amount-due = Offener Betrag
 echeancier-csv-header-payment-status = Zahlungsstatus
 echeancier-csv-header-paid-at = Zahlungsdatum
 echeancier-export-error-too-large = Zu viele Ergebnisse (> { $limit }). Bitte die Filter verfeinern (z. B. Datumsbereich oder Zahlungsstatus), bevor der Export erneut gestartet wird.
+# Story 31-5 (#504) — préfixe de la communication de la QR-facture (« <préfixe> <numéro> »),
+# dans la langue du document. Sans variable : aucune marque d'isolation Fluent n'entre dans la QR.
+invoice-qr-message-prefix = Rechnung
 invoice-pdf-error-contact-missing = Der mit der Rechnung verknüpfte Kontakt wurde nicht gefunden.
 invoice-pdf-error-no-primary-bank = Für dieses Unternehmen ist kein Hauptbankkonto konfiguriert.
 invoice-pdf-error-company-address-empty = Die Unternehmensadresse ist leer — bitte vor der PDF-Erstellung ausfüllen.
@@ -2697,6 +2700,14 @@ audit-log-csv-header-entity-id = Entitäts-ID
 audit-log-csv-header-api-key-id = API-Schlüssel
 audit-log-csv-header-details = Details
 audit-log-export-error-too-large = Zu viele Ergebnisse (> { $limit }). Bitte die Filter verfeinern (z. B. Datumsbereich, Aktion oder Entitätstyp), bevor der Export erneut gestartet wird.
+# Story 31-5 (#469) — refus des paramètres de consultation du journal d'audit (serveur).
+# Les noms de paramètre (dateFrom, entityType…) sont des noms d'API : ils ne se traduisent pas.
+audit-log-query-error-date-range-inverted = dateFrom muss kleiner oder gleich dateTo sein
+audit-log-query-error-date-invalid = { $field } ist ungültig: Datum im Format JJJJ-MM-TT erwartet
+audit-log-query-error-date-out-of-range = { $field } muss zwischen 1000-01-01 und 9999-12-31 liegen
+audit-log-query-error-entity-id-not-positive = entityId muss eine positive Kennung sein
+audit-log-query-error-entity-id-without-type = entityId erfordert entityType — eine Kennung allein bezeichnet nichts
+audit-log-query-error-code-too-long = { $field } überschreitet { $max } Zeichen
 
 # --- Journal d'audit — écran (Story 25-1c-b1) ---
 nav-audit-log = Audit-Protokoll

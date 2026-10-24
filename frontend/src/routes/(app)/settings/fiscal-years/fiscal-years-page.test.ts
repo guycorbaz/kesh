@@ -110,7 +110,7 @@ describe('bouton Réouvrir — visibilité RBAC', () => {
 });
 
 describe('garde LIFO client', () => {
-	it('désactive le bouton + tooltip nommant le plus proche postérieur clos', async () => {
+	it('désactive le bouton + tooltip nommant le postérieur clos (un seul postérieur)', async () => {
 		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
 		listFiscalYearsMock.mockResolvedValue([
 			fy({ id: 1, name: 'Exercice 2025', startDate: '2025-01-01', endDate: '2025-12-31', status: 'Closed' }),
@@ -125,6 +125,40 @@ describe('garde LIFO client', () => {
 		// Un bouton désactivé ne reçoit pas le survol (`pointer-events: none`) :
 		// l'infobulle doit aussi être portée par son enveloppe (revue P1 15-12a, B-3).
 		expect(btn.parentElement?.getAttribute('title') ?? '').toContain('Exercice 2026');
+	});
+
+	// Story 31-5 (#589, AC5) — trois exercices clos 2024 < 2025 < 2026 : la garde LIFO
+	// du serveur (`reopen`) refuse tout exercice suivi d'un clos, si bien que seul le
+	// PLUS RÉCENT est rouvrable. L'infobulle doit le nommer, et non le plus proche
+	// (2025), que le serveur refuserait à son tour.
+	it('trois clos : l’infobulle nomme le plus récent clos, pas le plus proche', async () => {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([
+			fy({ id: 1, name: 'Exercice 2024', startDate: '2024-01-01', endDate: '2024-12-31', status: 'Closed' }),
+			fy({ id: 2, name: 'Exercice 2025', startDate: '2025-01-01', endDate: '2025-12-31', status: 'Closed' }),
+			fy({ id: 3, name: 'Exercice 2026', startDate: '2026-01-01', endDate: '2026-12-31', status: 'Closed' }),
+		]);
+
+		render(Page);
+
+		const btn2024 = (await screen.findByTestId('fiscal-year-reopen-1')) as HTMLButtonElement;
+		expect(btn2024.disabled).toBe(true);
+		const title2024 = btn2024.getAttribute('title') ?? '';
+		const wrap2024 = btn2024.parentElement?.getAttribute('title') ?? '';
+		expect(title2024).toContain('Exercice 2026');
+		expect(title2024).not.toContain('Exercice 2025');
+		expect(wrap2024).toContain('Exercice 2026');
+		expect(wrap2024).not.toContain('Exercice 2025');
+
+		const btn2025 = screen.getByTestId('fiscal-year-reopen-2') as HTMLButtonElement;
+		expect(btn2025.disabled).toBe(true);
+		expect(btn2025.getAttribute('title') ?? '').toContain('Exercice 2026');
+		expect(btn2025.parentElement?.getAttribute('title') ?? '').toContain('Exercice 2026');
+
+		const btn2026 = screen.getByTestId('fiscal-year-reopen-3') as HTMLButtonElement;
+		expect(btn2026.disabled).toBe(false);
+		expect(btn2026.getAttribute('title')).toBeNull();
+		expect(btn2026.parentElement?.getAttribute('title')).toBeNull();
 	});
 });
 
