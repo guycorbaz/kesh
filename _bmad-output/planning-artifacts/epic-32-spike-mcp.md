@@ -6,10 +6,10 @@ MariaDB **10.11.19** (`10.11.19-MariaDB-ubu2204`), utilisateur `kesh` du fichier
 (`scripts/mariadb-init/01-dev-grants.sql` — `ALL` sur `kesh%`.* et `\_sqlx\_test%`.*, **aucun droit global**, aucun
 `GRANT` posé). **Aucune donnée réelle**, `~/kesh-test/` jamais ouvert.
 
-Choix au registre `implementation-artifacts/epic-32-choix-autonomes-322.md` (C-32-2-1 à 18). Journaux bruts des essais,
+Choix au registre `implementation-artifacts/epic-32-choix-autonomes-322.md` (C-32-2-1 à 23). Journaux bruts des essais,
 hors dépôt : `/home/gcorbaz/devel/kesh-gate-logs/322-spike/` — `ro-essai.sql` → `ro-essai.out` ; `ro-pool-main.rs` et
-`ro-pool-Cargo.toml` → `ro-pool.out` ; `proto-main.rs` → `proto-curl.out` (et `proto-server.log`) ; ils suffisent à
-rejouer chaque essai.
+`ro-pool-Cargo.toml` → `ro-pool.out` ; `proto-main.rs` → `proto-curl.out` ; ils suffisent à rejouer chaque essai.
+*(Relecture P2, L-9 : `proto-server.log`, cité jusqu'ici, est vide — 0 octet — et n'est plus compté parmi les journaux.)*
 
 ⚠️ **Relecture P1 (2026-10-24, `kesh-gate-logs/322-review-p1.md`, 0 CRITICAL / 0 HIGH / 7 MEDIUM / 7 LOW).** Deux faits
 de la première rédaction étaient faux (YOLO de Hermes, protocole de Hermes), un était cité sans en tirer la conséquence
@@ -18,14 +18,23 @@ de la première rédaction étaient faux (YOLO de Hermes, protocole de Hermes), 
 par la spike : elles sont recommandées et remises à Guy** (Q10 à Q12, § 7) — la forme de la validation, la forme de la
 lecture seule, et la portée de la validation. Registre : C-32-2-10 à 18.
 
+⚠️ **Relecture P2 (2026-10-24, `kesh-gate-logs/322-review-p2.md`, 0 / 0 / 4 MEDIUM / 11 LOW).** La justification de
+`2025-11-25` disait plus que les documentations des clients (§ 1.3, rendue à ce qui est établi) ; une phrase sur les
+délais oubliait que l'élicitation tient l'appel ouvert (§ 2.3) ; la garantie « par construction » de la validation ne
+couvrait que `tools/call` (§ 5.3, étendue à toute méthode servie, ressources non servies en 0.16.0) ; le bloc du § 4.2
+portait des identifiants de connexion absents du journal (recopié depuis `ro-pool.out`). Registre : C-32-2-19 à 23.
+
 ---
 
 ## Les cinq décisions, en une ligne chacune
 
 1. **Révision figée : `2025-11-25`** (revision *Final*), servie **sans session**, réponses JSON — `2025-06-18` acceptée à
    la négociation ; la révision *Current* `2026-07-28` (sans `initialize`) n'est **pas** servie en 0.16.0 : les deux
-   clients savent la parler, mais un serveur `2025-11-25` est **le seul qui fonctionne dans tous leurs réglages
-   documentés**, y compris ceux qui forcent l'ancienne poignée de main (§ 1.3).
+   clients savent la parler, mais certains de leurs réglages documentés n'ont **que** la poignée de main `initialize`
+   (Hermes `legacy`, Claude Code v1 et `legacy`), les autres la tentent ou — Claude Code v2, d'après la matrice de la
+   spécification, à éprouver — s'y replient (§ 1.3). Ce qui n'est **pas** établi : quelle
+   `protocolVersion` chaque client demande, et s'il accepte `2025-11-25` en réponse — observation (h) du § 2.4, à faire
+   avant la 32-6.
 2. **Clients** : Claude Code (2.1.310 installé) et Hermes Agent se branchent tous deux, d'après leur documentation, en
    Streamable HTTP avec un en-tête `Authorization` fixe ; **rien n'a été essayé avec un client réel** (consigne) — les
    gestes pour l'éprouver sont au § 2.4.
@@ -41,8 +50,8 @@ lecture seule, et la portée de la validation. Registre : C-32-2-10 à 18.
    trancher par Guy (Q11)** ; *recommandation* : l'utilisateur `SELECT`, contrôlé au démarrage, plus le mode de session
    en complément (§ 4.3).
 5. **SDK : écrit à la main, derrière des traits à types propres à Kesh** (décision de Guy maintenue) — `rmcp` 3.7.0
-   (2026-10-22) est officiel, *Tier 1*, double ère et intégrable à Axum, mais a connu **trois versions majeures en huit
-   mois** ; il redevient candidat si Kesh doit servir `2026-07-28` (§ 5.2, Q8).
+   (2026-10-22) est officiel, *Tier 1*, double ère et intégrable à Axum, mais a connu **trois versions majeures en moins
+   de cinq mois** (2026-03-03 → 2026-07-28) ; il redevient candidat si Kesh doit servir `2026-07-28` (§ 5.2, Q8).
 
 ---
 
@@ -81,7 +90,11 @@ lecture seule, et la portée de la validation. Registre : C-32-2-10 à 18.
 
 Prototype jetable (≈ 150 lignes, Axum 0.8.9 et sqlx 0.8.6 du `Cargo.lock` du dépôt, `--offline`), hors du dépôt, sur
 `127.0.0.1:3322`, contre `kesh_322` par un pool en lecture seule ; source gardée :
-`kesh-gate-logs/322-spike/proto-main.rs`. Sortie complète : `proto-curl.out`. Extraits (en-tête `Date` retiré) :
+`kesh-gate-logs/322-spike/proto-main.rs`. Sortie complète : `proto-curl.out`. Extraits **remis en forme**, non
+recopiés octet pour octet *(précisé en relecture P2 — la mention « en-tête `Date` retiré » était fausse : le journal n'en
+porte aucun)* : en-têtes et corps rapprochés sur une ligne, `content-length` omis, champs longs abrégés par `…`, les
+mentions entre parenthèses sont des commentaires ; codes, statuts et identifiants JSON-RPC sont ceux du journal ; les essais 3
+(`tools/list`, l. 13-18) et 7 (`prompts/get`, l. 41-46) ne sont pas repris :
 
 ```
 ### 1 initialize (2025-11-25)
@@ -118,17 +131,36 @@ replie, et qu'une réponse SSE à progression se produit avec `axum::response::s
 - **Révision de référence : `2025-11-25`**, texte cité ci-dessus, liens versionnés par la date de révision dans l'URL. À
   `initialize`, Kesh répond la version demandée si c'est `2025-11-25` ou `2025-06-18` (mêmes méthodes pour ce que Kesh
   sert), `2025-11-25` sinon.
-- **Pourquoi pas `2026-07-28`** — *raisonnement refait en relecture P1 (C-32-2-11)* : **les deux clients savent parler
-  les deux ères**. Hermes a un réglage `protocol` dont le défaut est `auto` — « legacy `initialize` handshake first,
-  falling back to the 2026-07-28 `server/discover` » —, avec `stateless` (sonde moderne d'abord) et `legacy` (poignée de
-  main seule) (`…/docs/reference/mcp-config-reference`) ; Claude Code a deux runtimes, le v2 (par défaut depuis
-  2.1.232 ou 2.1.274 selon la session) sonde la `2026-07-28` puis se replie, le v1 et `MCP_PROTOCOL_NEGOTIATION=legacy`
-  ne parlent que l'ancienne (§ 2.1). Ce qui tranche n'est donc pas « ce que les clients parlent », mais **ce qui marche
-  dans tous leurs réglages** : un serveur `2025-11-25` est servi par les **deux** clients dans **chacun** de leurs
-  réglages documentés ; un serveur moderne seul échoue dès qu'un réglage force l'ancienne poignée de main (Hermes
-  `protocol: legacy`, Claude Code v1 ou `legacy` — pour le v1, la documentation ne dit pas ce qu'il fait d'un serveur
-  moderne seul : non établi) ; un serveur double ère marche partout, mais double le protocole écrit à la main. Le
-  premier `initialize` de Hermes en `auto` et le repli de Claude Code v2 sont tous deux **à éprouver** (§ 2.4 e, h).
+- **Pourquoi pas `2026-07-28`** — *raisonnement refait en relecture P1 (C-32-2-11), ramené en relecture P2 à ce que
+  disent les sources (C-32-2-19)* : **les deux clients savent parler les deux ères**. Hermes a un réglage `protocol` dont
+  le défaut est `auto` — « legacy `initialize` handshake first, falling back to the 2026-07-28 `server/discover`
+  stateless probe when the server rejects the handshake as modern-only » —, avec `stateless` (« probe
+  `server/discover` first; one legacy retry ») et `legacy` (« handshake only, no fallback »)
+  (`…/docs/reference/mcp-config-reference`) ; Claude Code a deux runtimes : le v2 « adds MCP protocol revision
+  2026-07-28 », « Asks HTTP, stdio, and claude.ai connector servers whether they support the newer revision and uses it
+  with those that do », puis « […] connects to every other server as v1 does » (la page ne dit pas si « every other
+  server » désigne les serveurs qui ont décliné ou les autres transports) ;
+  `MCP_PROTOCOL_NEGOTIATION=legacy` « keeps every server on » la poignée de main antérieure (§ 2.1).
+  - **Établi par les documentations** : Hermes **tente ou retente** la poignée de main `initialize` dans ses trois
+    réglages (`auto` d'abord, `stateless` une fois, `legacy` seulement) ; Claude Code la garde en `legacy` et en v1. Pour
+    le v2 face à un serveur de l'ère `initialize`, le repli n'est pas écrit en toutes lettres : c'est ce que la matrice de
+    compatibilité attend d'un client double ère (« Dual-era | Legacy | Works »), **à éprouver** (§ 2.4 e). Trois réglages
+    **n'ont qu'elle** (Hermes `legacy`, Claude Code v1 — *déduit* de ce que le v2 « ajoute » la `2026-07-28` —, Claude
+    Code `legacy`). Un serveur moderne seul est donc exclu de ces réglages ; un serveur de l'ère `initialize` ne l'est
+    d'aucun réglage documenté, **au niveau de l'ère**, sous la réserve du repli du v2.
+  - **Non établi** : quelle `protocolVersion` chaque client demande à `initialize` — aucune des deux pages ne le dit — ni
+    s'il accepte `2025-11-25` en réponse. Or la spécification veut que le serveur réponde une autre version qu'il sert si
+    la demandée n'en est pas une, et que le client « SHOULD disconnect » s'il ne la connaît pas
+    (`…/2025-11-25/basic/lifecycle`, *Version Negotiation*). Un client qui demanderait `2025-03-26` recevrait
+    `2025-11-25` et **pourrait se déconnecter**. L'affirmation « servi par les deux clients dans chacun de leurs
+    réglages » de la relecture P1 allait donc au-delà des sources : elle vaut pour l'ère, **non pour la révision**.
+  - **Pourquoi `2025-11-25` reste le choix, et à quelle condition** : c'est la révision *Final* la plus récente de l'ère
+    `initialize`, la seule ère que tous les réglages décrits atteignent ; Kesh accepte aussi `2025-06-18`, la
+    précédente, qui couvre un client resté sur l'avant-dernière révision. Le choix tient **sous réserve de l'observation (h) du § 2.4**,
+    à faire avant la 32-6 : si un client demande une révision plus ancienne, l'ajouter à la liste acceptée est
+    réversible et local, **à condition** que les méthodes servies par Kesh y aient la même forme (non vérifié pour
+    `2025-03-26`). Un serveur double ère marcherait partout, mais double le protocole écrit à la main. Le premier
+    `initialize` de Hermes en `auto` et le repli de Claude Code v2 restent **à éprouver** (§ 2.4 e, h).
 - **Sans état** : aucun `Mcp-Session-Id` émis, ni lu ; `GET` et `DELETE` → **405** ; `notifications/*` → **202** ;
   `ping` → `{}` ; lot → **400** ; corps borné (1 Mio proposé). *Éprouvés par le prototype* (`proto-curl.out`) : sans
   session, `GET` 405, notification 202, lot 400. **Décidés mais non éprouvés** : `DELETE` 405 (le prototype ne monte que
@@ -153,7 +185,7 @@ replie, et qu'une réponse SSE à progression se produit avec `axum::response::s
   (32-5/32-6). La spécification n'impose rien pour un `Origin` absent : « absent admis » est conforme.
 - **Outil inconnu ou hors portée** : erreur JSON-RPC **`-32602`**, même message — conforme à l'exemple « Unknown tool »
   de la spécification et à l'AC « aucun oracle » de la 32-6. Une erreur **d'exécution** d'un outil reste un résultat
-  `isError: true`.
+  `isError: true`, à texte fixe (§ 5.3). Méthode non servie (dont `resources/*`) → **`-32601`**.
 - **Tous les outils annotés `readOnlyHint: true`** (Hermes s'en sert pour dispenser d'approbation, § 2.2).
 
 ---
@@ -171,10 +203,14 @@ officielle, consultée le 2026-10-24, et est **non éprouvé** tant que Guy ou l
 - **Révision** : deux runtimes. « The v2 runtime is the same code on MCP TypeScript SDK 2.0, which adds MCP protocol
   revision 2026-07-28 » ; il « Asks HTTP, stdio, and claude.ai connector servers whether they support the newer revision
   and uses it with those that do. […] Claude Code connects to every other server as v1 does. » Réglages :
-  `MCP_SDK_GENERATION=v1|v2`, `MCP_PROTOCOL_NEGOTIATION=auto|legacy`. Le v2 est le runtime par défaut « on Claude
-  Code v2.1.232 or later » quand la session lit les *feature flags*, « v2.1.274 or later » sinon. → un serveur
-  `2025-11-25` est servi « as v1 does » ; la version exacte que le runtime v1 demande à `initialize` n'est pas écrite
-  dans la page, ni ce que fait le v1 d'un serveur moderne seul (observation (h) du § 2.4).
+  `MCP_SDK_GENERATION=v1|v2`, `MCP_PROTOCOL_NEGOTIATION=auto|legacy`. Le v2 est le runtime « on Claude Code v2.1.232 or
+  later » dans les sessions qui lisent les *feature flags* ; dans celles qui ne les lisent pas, « by default on Claude
+  Code v2.1.274 or later », la page citant pour exemples les sessions sur Amazon Bedrock, Claude Platform on AWS,
+  Google Cloud's Agent Platform ou Microsoft Foundry (« unless a host platform that embeds Claude Code sets
+  `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` »), celles ouvertes par une passerelle Claude apps et celles où la télémétrie
+  ou la lecture des *flags* est coupée ; elle ne dit pas quel runtime vaut en deçà de ces versions *(précisé en
+  relecture P2, L-3)*. → la version exacte qu'un runtime demande à `initialize` n'est pas écrite dans la page, ni ce
+  que fait le v1 d'un serveur moderne seul (observation (h) du § 2.4).
 - **Élicitation** : supportée, formulaire et URL (« Claude Code displays an interactive dialog ») ; mais : « To
   auto-respond to elicitation requests without showing a dialog, use the `Elicitation` hook » (le *hook* rend
   `accept`/`decline`/`cancel` avec un `content`, `https://code.claude.com/docs/en/hooks`) ; pour les tâches MCP, « In a
@@ -184,7 +220,9 @@ officielle, consultée le 2026-10-24, et est **non éprouvé** tant que Guy ou l
 - **Délais d'un `tools/call`** — *relus en relecture P1 (C-32-2-12)* :
   - « The per-server `timeout` is a hard wall-clock limit per tool call, and progress notifications from the server
     don't extend it » ; sans `timeout` par serveur ni `MCP_TOOL_TIMEOUT`, le défaut est « about 28 hours ».
-  - Minuteur par requête jusqu'au **premier octet** de la réponse : « Claude Code sets that timer to the greatest of
+  - Minuteur par requête jusqu'au **premier octet** de la réponse, pour « an HTTP, SSE, or claude.ai connector
+    server » seulement (« Stdio and WebSocket servers have no per-request timer » — *portée ajoutée en relecture P2,
+    L-2* ; Kesh est servi en HTTP) : « Claude Code sets that timer to the greatest of
     three values: 60 seconds, the tool timeout that applies to the server, and `MCP_TIMEOUT`. The 28-hour default of an
     unset `MCP_TOOL_TIMEOUT` doesn't enter that comparison ». **Avec les réglages par défaut, il vaut donc 60 s** (il ne
     s'allonge que si l'utilisateur fixe un délai d'outil ou `MCP_TIMEOUT` plus long) ; il porte sur le **premier octet**,
@@ -209,11 +247,15 @@ officielle, consultée le 2026-10-24, et est **non éprouvé** tant que Guy ou l
 confirmer par Guy** (C-32-2-9). Rien n'est installé sur la station (`which hermes` vide, pas de `~/.hermes`).
 
 - Configuration `~/.hermes/config.yaml`, clé `mcp_servers.<nom>` : `url`, `headers` (`Authorization: "Bearer ***"`),
-  `transport: sse` seulement pour l'ancien transport ; Streamable HTTP par défaut.
+  `transport` : « Set to `sse` to use the SSE transport instead of Streamable HTTP ». La référence **ne nomme pas** de
+  transport par défaut ; « Streamable HTTP faute de `transport: sse` » est une lecture de cette phrase, **non sourcée**
+  en toutes lettres *(relecture P2, L-4)* — à éprouver (§ 2.4 a).
 - **Délais** : « `timeout` — Tool call timeout in seconds (default: `300`) », `connect_timeout` 60 s (« Initial
-  connection timeout »).
+  connection timeout »). La page ne dit pas si ce délai est une coupure dure ou s'il est réarmé par une progression
+  (**non sourcé**, *relecture P2, L-4*) ; le document le traite comme une coupure dure, l'hypothèse prudente.
 - **Protocole** — *rectifié en relecture P1 (C-32-2-11)* : réglage `protocol`, défaut **`auto`** (« legacy `initialize`
-  handshake first, falling back to the 2026-07-28 `server/discover` »), `stateless` (« probe `server/discover` first; one
+  handshake first, falling back to the 2026-07-28 `server/discover` stateless probe when the server rejects the
+  handshake as modern-only » — *citation complétée en relecture P2, L-5*), `stateless` (« probe `server/discover` first; one
   legacy retry »), `legacy` (« handshake only, no fallback »). **Hermes parle donc les deux ères** ; la première
   rédaction l'avait déduit *legacy* seul de la mention du SDK Python 1.x, à tort.
 - **SDK** : « mcp Python SDK ≥ 1.11.0 » (pour l'élicitation).
@@ -231,14 +273,21 @@ confirmer par Guy** (C-32-2-9). Rien n'est installé sur la station (`which herm
 
 ### 2.3 Ce que ces deux documentations tranchent déjà
 
-- Les deux parlent `2025-11-25` dans tous leurs réglages documentés (Hermes `auto` la tente d'abord, `legacy` ne parle
-  qu'elle ; Claude Code v1 ne parle qu'elle, v2 s'y replie) ; les deux savent aussi parler `2026-07-28` → C-32-2-1,
-  justification refaite par C-32-2-11.
-- **Délais, pour un appel qui reste ouvert** (ce qui ne concerne que la forme (b) du § 3) : Hermes coupe à **300 s**,
-  dur ; Claude Code n'impose que le premier octet sous 60 s par défaut (satisfait par une réponse qui commence aussitôt)
-  et une activité toutes les 5 min, **mais fait passer l'appel en tâche de fond à 2 min** en session interactive — l'agent
-  continue alors sans le résultat (§ 2.1). Pour une réponse immédiate (formes (a) et (c) du § 3), aucun de ces délais
-  ne joue.
+- **Révision** *(rectifié en relecture P2, C-32-2-19)* : l'ère `initialize` est atteinte par chacun des réglages
+  documentés (Hermes `auto` la tente d'abord, `stateless` la retente, `legacy` n'a qu'elle ; Claude Code v1 et `legacy`
+  n'ont qu'elle, le v2 est censé s'y replier — à éprouver) ; les deux savent aussi parler `2026-07-28`. Quelle
+  **révision** de cette ère chacun demande, et s'il accepte `2025-11-25`, **n'est pas écrit** : observation (h) du § 2.4
+  → C-32-2-1, justification refaite par C-32-2-11 puis C-32-2-19.
+- **Délais, pour un appel qui reste ouvert** — les formes **(a)** (l'élicitation attend la réponse de l'utilisateur) et
+  **(b)** du § 3 ; *rectifié en relecture P2 (C-32-2-20)*, la phrase précédente ne nommait que (b) :
+  - *Hermes* : `timeout` d'un appel d'outil 300 s par défaut (nature de la coupure non écrite, § 2.2) ; pour (a),
+    `elicitation.timeout` 300 s en plus — la page ne dit pas lequel l'emporte quand les deux courent.
+  - *Claude Code* : premier octet sous 60 s par défaut (satisfait par une réponse qui commence aussitôt — pour (a), le
+    flux SSE qui porte `elicitation/create`) et une activité toutes les 5 min ; **passage en tâche de fond à 2 min** en
+    session interactive pour (b) — l'agent continue alors sans le résultat (§ 2.1) —, **pas** pour (a) tant que le
+    dialogue est ouvert (« isn't backgrounded while the dialog is open »). Qu'un dialogue ouvert compte comme activité
+    au regard des 5 min n'est pas écrit (**non établi**).
+  - Seule la forme **(c)** répond aussitôt : aucun de ces délais ne la concerne.
 - La clé en clair dans `~/.claude.json` (portée `local`) ou, pire, dans un `.mcp.json` **versionné** (portée `project`)
   : le manuel (32-7, 32-11) doit dire **portée `local` ou `user`**, jamais `project` sauf par expansion de variable
   (`${KESH_MCP_KEY}`).
@@ -274,8 +323,11 @@ mcp_servers:
 
 À observer, et à consigner avec la version du client : (a) `initialize` puis `tools/list` sans session ; (b) le
 client envoie-t-il un `Origin` ? (c) un `progressToken` dans le `_meta` de `tools/call` ? (d) **selon la forme retenue
-(Q10)** — *forme (b), appel tenu ouvert* : `attendre_validation` à **90 s** (vérifie que le premier évènement SSE
-immédiat satisfait le minuteur de premier octet de 60 s), à **150 s** (Claude Code le passe-t-il en tâche de fond, et
+(Q10)** — *forme (b), appel tenu ouvert* : le minuteur de premier octet se juge **au premier octet**, non à la durée
+totale *(rectifié en relecture P2, L-1)* — d'où un couple d'essais : `attendre_validation` à **90 s** avec premier
+évènement SSE **immédiat** (l'appel ne doit pas être coupé à 60 s : c'est ce qui distingue un minuteur de premier octet
+d'un minuteur de réponse complète), et un contrôle négatif, premier évènement **retardé à 70 s** (l'appel doit être
+coupé vers 60 s ; le prototype devra recevoir ce retard en argument, il ne l'a pas) ; puis à **150 s** (Claude Code le passe-t-il en tâche de fond, et
 l'agent reçoit-il le résultat ensuite ?), puis à **280 s** (sous les 300 s de Hermes) ; les commentaires SSE
 `: attente` comptent-ils comme activité pour Claude Code (sa doc ne nomme que la réponse et `notifications/progress`) ?
 *Forme (c), poignée* : l'agent, sur la seule description de l'outil, rappelle-t-il l'outil de lecture du résultat, et
@@ -296,7 +348,8 @@ l'élicitation sur trois motifs dont un et demi était faux ; elle reléguait la
 ### 3.1 Les trois formes
 
 - **(a) Élicitation MCP** — pendant le `tools/call`, Kesh demande au client `elicitation/create` (en `2025-11-25` : sur le
-  flux SSE de la réponse, « The server MAY send JSON-RPC requests and notifications before the JSON-RPC response » ; en
+  flux SSE de la réponse, « The server **MAY** send JSON-RPC *requests* and *notifications* before sending the JSON-RPC
+  *response* » (*citation rétablie en relecture P2, L-5*) ; en
   `2026-07-28` : `InputRequiredResult`, le client rejoue sa requête avec `inputResponses`, motif MRTR, sans état). Le
   client montre un formulaire ; la réponse revient ; Kesh rend le contenu accepté.
 - **(b) Appel tenu ouvert au plus N s** — Kesh garde la proposition en mémoire, l'utilisateur la valide (telle quelle,
@@ -351,7 +404,7 @@ validation de Kesh — Claude Code seulement, Hermes refuse le mode URL).
 
 | Critère | (a) Élicitation | (b) Appel tenu ouvert ≤ N s | (c) Poignée |
 |---|---|---|---|
-| **Délais des clients** | Hermes : 300 s pour répondre ; Claude Code : pas de tâche de fond tant que le dialogue est ouvert | Hermes coupe à 300 s, dur → N ≤ 240 s ; Claude Code : premier octet sous 60 s (satisfait par un évènement immédiat), activité toutes les 5 min, **tâche de fond à 2 min** (l'agent continue sans le résultat, le reçoit ensuite si la session vit) | **aucun** : chaque appel répond aussitôt |
+| **Délais des clients** | l'appel reste ouvert pendant que l'utilisateur répond : Hermes, 300 s pour répondre (`elicitation.timeout`, et `timeout` d'outil 300 s) ; Claude Code : premier octet satisfait par le flux SSE ouvert aussitôt, pas de tâche de fond tant que le dialogue est ouvert, inactivité de 5 min pendant le dialogue **non établie** | Hermes : 300 s (coupure supposée dure, non écrite) → N ≤ 240 s ; Claude Code : premier octet sous 60 s (satisfait par un évènement immédiat), activité toutes les 5 min, **tâche de fond à 2 min** (l'agent continue sans le résultat, le reçoit ensuite si la session vit) | **aucun** : chaque appel répond aussitôt |
 | **Mandataires** (Traefik devant une partie des conteneurs) | flux SSE tenu ouvert : tampon et délais d'inactivité du mandataire à régler | idem, pendant N s ; `X-Accel-Buffering: no` ne vaut que pour nginx ; Traefik **non vérifié** | **aucun** : requêtes courtes ordinaires |
 | **Expérience utilisateur** | dialogue dans le client, champs plats ; modifier un tableau = un champ texte | passer dans Kesh et valider **dans les N s**, sinon tout est perdu ; l'agent bloqué (Hermes) ou poursuivant sans le résultat (Claude Code) | valider dans Kesh **à son rythme** ; puis l'agent relit (seul, ou quand on le lui dit) — **un tour d'agent de plus** |
 | **Simplicité côté Kesh** | SSE, corrélation d'un `POST` à un appel en attente, état en mémoire ; pas d'écran ; à réécrire pour la `2026-07-28` | SSE, progression, minuteur, état en mémoire, écran qui doit apprendre en direct qu'une proposition attend | JSON seul ; **une table** (proposition, état, contenu approuvé, échéance), un outil de plus, une purge à l'échéance ; un écran ; **migration** (🗄️) |
@@ -359,7 +412,7 @@ validation de Kesh — Claude Code seulement, Hermes refuse le mode URL).
 | **Ce que l'agent doit savoir faire** | rien | rien chez Hermes ; chez Claude Code, la notification de tâche (automatique) | **rappeler l'outil de lecture** après validation — consigne dans la description de l'outil et dans les `instructions` d'`initialize` ; risque : interrogations répétées (jetons) ou oubli |
 | **Hors session interactive** | annulée (Claude Code, tâches) ; non documenté (Hermes) | Claude Code `-p` attend sans tâche de fond ; possible si quelqu'un valide dans les N s | fonctionne ; une exécution unique qui se termine ne lit simplement jamais le résultat — rien ne part |
 | **Redémarrage de Kesh** | attente perdue, rien ne part | attente perdue, rien ne part | **survit** (en base) |
-| **Révision `2026-07-28`** | à réécrire (MRTR) | inchangée | **native** (poignée explicite) |
+| **Révision `2026-07-28`** | à réécrire (MRTR) | **non établi** : la révision supprime la reprise SSE et le `GET` ; qu'une réponse SSE à un `POST` y reste admise n'a pas été vérifié (*relecture P2, L-11*) | **native** (poignée explicite) |
 | **Qui garantit que l'utilisateur a vu** | le client et sa configuration | Kesh | Kesh |
 | **Réemploi pour les propositions (0.17.0)** | non | l'écran | **l'écran et la table** |
 
@@ -415,23 +468,37 @@ Contrôle après l'essai : `SELECT COUNT(*) FROM audit_log WHERE action='spike'`
 
 ### 4.2 Par un pool sqlx 0.8.6 (`after_connect`) — `ro-pool-main.rs` → `ro-pool.out`
 
+*Recopié en relecture P2 (C-32-2-22)* : la version précédente de ce bloc portait des identifiants de connexion
+(`313122`, `313126`…`313130`) **absents du journal**, et abrégeait les lignes. Ci-dessous, les lignes citées sont
+celles de `ro-pool.out`, octet pour octet, avec leur numéro de ligne en tête de chaque morceau ; les seules lignes
+ajoutées sont les marques `[…]` entre crochets, qui disent ce qui est omis.
+
 ```
+[l. 1-10]
 == A. pool lecture seule, 3 connexions physiques simultanées
-conn 0 id=313122 tx_read_only=1
+conn 0 id=313133 tx_read_only=1
   autocommit INSERT : ERREUR Some(1792) Cannot execute statement in a READ ONLY transaction
-  autocommit UPDATE : ERREUR Some(1792) …     autocommit DELETE : ERREUR Some(1792) …
-  tx INSERT : ERREUR Some(1792) …   tx UPDATE : ERREUR Some(1792) …   tx DELETE : ERREUR Some(1792) …
+  autocommit UPDATE : ERREUR Some(1792) Cannot execute statement in a READ ONLY transaction
+  autocommit DELETE : ERREUR Some(1792) Cannot execute statement in a READ ONLY transaction
+  tx INSERT : ERREUR Some(1792) Cannot execute statement in a READ ONLY transaction
+  tx UPDATE : ERREUR Some(1792) Cannot execute statement in a READ ONLY transaction
+  tx DELETE : ERREUR Some(1792) Cannot execute statement in a READ ONLY transaction
   SELECT : OK (1 société)
-conn 1 id=313123 tx_read_only=1   (idem)      conn 2 id=313124 tx_read_only=1   (idem)
+conn 1 id=313134 tx_read_only=1
+[… l. 11-17 : les six mêmes refus 1792 et SELECT OK, pour conn 1 …]
+[l. 18]
+conn 2 id=313135 tx_read_only=1
+[… l. 19-25 : idem pour conn 2 …]
+[l. 26-37]
   pool.begin() + UPDATE : ERREUR Some(1792) Cannot execute statement in a READ ONLY transaction
 == B. une connexion rendue au pool garde son état de session (max 1)
   SET SESSION TRANSACTION READ WRITE : OK (0 lignes)
   après réacquisition, tx UPDATE : OK (1 lignes)
 == C. idem avec before_acquire qui vérifie @@tx_read_only (max 1)
-  conn avant=313126 après=313127 ; tx UPDATE : ERREUR Some(1792) …
+  conn avant=313137 après=313138 ; tx UPDATE : ERREUR Some(1792) Cannot execute statement in a READ ONLY transaction
 == D. connexion perdue (KILL) : la neuve repasse after_connect
-  KILL 313128 : OK (0 lignes)
-  nouvelle conn id=313130 tx_read_only=1
+  KILL 313139 : OK (0 lignes)
+  nouvelle conn id=313141 tx_read_only=1
 == E. pool ordinaire (sans after_connect) : écrit
   tx UPDATE : OK (1 lignes)
 == lignes 'spike' au journal d'audit : 0
@@ -474,7 +541,11 @@ le mauvais pool, une instruction fautive), non une attaque de l'agent.
   `scripts/mariadb-init` par `docker-compose.dev.yml:116`) **ne s'exécutent qu'à la création du répertoire de données** :
   sur la base existante du NAS, l'utilisateur se crée **à la main**, avec un compte MariaDB qui a le droit de créer des
   utilisateurs (root) ; `docker-compose.prod.yml` n'a pas de service MariaDB (base fournie par l'exploitant) : à la
-  main aussi ; et les `MARIADB_*` de `docker-compose.yml` ne sont lues qu'à la création (`.env.example`). **Kesh ne
+  main aussi ; et les `MARIADB_*` de `docker-compose.yml` (l. 12-15) ne servent qu'à la création — la documentation de l'image
+  officielle (`https://hub.docker.com/_/mariadb`, consultée le 2026-10-24) : elles « will have no effect if you start
+  the container with a data directory that already contains a database », et l'initialisation a lieu « When a container
+  is started for the first time » *(source rectifiée en relecture P2, L-10 : `.env.example`, cité jusqu'ici, ne le dit
+  pas)*. **Kesh ne
   peut pas le créer lui-même** : `CREATE USER` est un droit global et l'utilisateur `kesh` n'en a aucun (déduit du
   fichier de droits et du `1227` sur `SET GLOBAL`, § 4.1 ; `CREATE USER` non essayé).
 - *Une variable de plus dans le `.env`* (nom à fixer, p. ex. `KESH_MCP_DATABASE_URL`), avec un second mot de passe.
@@ -557,7 +628,10 @@ encore.)*
 
 Règle : **aucun type de `rmcp` ni de JSON-RPC ne traverse les traits** ; le registre parle des types de Kesh, et
 l'adaptateur (le nôtre aujourd'hui, un `impl rmcp::ServerHandler` demain : `list_tools`, `call_tool`, `list_prompts`,
-`get_prompt`) traduit.
+`get_prompt`) traduit. **Aucune ressource MCP n'est servie en 0.16.0** (C-32-2-21) : ni capacité `resources` à
+`initialize`, ni `resources/list`, `resources/read`, `resources/templates/list`, `resources/subscribe` — ces méthodes
+rendent `-32601` (*Method not found*), comme `completion/complete`, `logging/setLevel` et `tasks/*`, que Kesh ne sert
+pas non plus.
 
 ```rust
 /// Portée d'une clé MCP (C-32-0-7). Aucune portée d'administration ni d'écriture des livres.
@@ -572,7 +646,7 @@ pub struct ContexteMcp<'a> {
 }
 
 /// Ce que reçoit l'outil qui PROPOSE un prompt (portée PromptsWrite) — et lui seul : aucune `Lecture`,
-/// donc aucune donnée des livres ; `EcriturePrompts` n'écrit qu'une version d'origine `agent`, « à valider » (32-10).
+/// donc aucune lecture des livres ; `EcriturePrompts` n'écrit qu'une version d'origine `agent`, « à valider » (32-10).
 pub struct ContextePrompts<'a> {
     pub acces: &'a ContexteAcces,
     pub prompts: &'a EcriturePrompts,
@@ -587,10 +661,23 @@ pub struct Donnees {
     pub structure: Option<serde_json::Value>, // structuredContent, si l'outil en déclare un
 }
 
-/// Ce que rend l'outil qui propose un prompt : un accusé fermé, qui ne peut porter aucune donnée des livres.
+/// Nom d'un prompt : `[a-z0-9_-]{1,64}`, validé à la construction (Claude Code l'affiche `/serveur:nom`).
+pub struct NomPrompt(String);
+
+/// Ce que rend l'outil qui propose un prompt : un accusé fermé. Il ne porte que le nom que l'AGENT a lui-même fourni et
+/// un numéro de version : rien qui vienne des livres.
 pub enum Accuse { PromptPropose { nom: NomPrompt, version: u32 } } // état toujours « à valider »
 
-pub enum ErreurOutil { ArgumentsInvalides(String), Introuvable, Interne }
+/// Erreur d'un outil ou d'un prompt — SANS texte libre (relecture P2, C-32-2-21) : un message d'erreur est un chemin
+/// vers le client, et un `String` pourrait y porter une valeur lue (le prototype renvoyait le message brut de MariaDB,
+/// `proto-curl.out` l. 32). Le répartiteur traduit chaque variante en un texte FIXE ; le détail d'`Interne` est
+/// journalisé côté Kesh, jamais envoyé.
+pub enum ErreurOutil {
+    ArgumentsInvalides { argument: &'static str, motif: MotifArgument }, // nom tiré du schéma, motif énuméré
+    Introuvable,                         // texte fixe : ne distingue pas « n'existe pas » de « autre société »
+    Interne,
+}
+pub enum MotifArgument { Absent, MauvaisType, HorsBornes, Inconnu }
 
 pub trait McpTool: Send + Sync + 'static {
     fn nom(&self) -> &'static str;
@@ -621,10 +708,16 @@ pub trait McpToolPrompts: Send + Sync + 'static {
 pub struct ArgumentPrompt { pub nom: &'static str, pub description: &'static str, pub requis: bool }
 pub struct MessagePrompt { pub role: Role, pub texte: String }
 
-/// Un prompt instruit, il ne lit pas : `rendre` ne reçoit aucune `Lecture`. Son texte vient de Kesh (standard ou
-/// administrateur, ou agent approuvé) et ne porte aucune donnée des livres — d'où son absence de validation.
-/// Servi seulement à l'état `approuvé` ; un prompt `agent` porte sa marque dans le texte servi (32-10).
-pub trait McpPrompt: Send + Sync {
+/// Un prompt instruit, il ne lit pas : `rendre` ne reçoit aucune `Lecture`. Son texte vient de la table des prompts
+/// (standard, administrateur, ou agent approuvé) et des arguments que le CLIENT envoie ; `MessagePrompt` n'a qu'un
+/// texte — aucun contenu `resource` embarqué. Servi seulement à l'état `approuvé` ; un prompt `agent` porte sa marque
+/// dans le texte servi (32-10).
+/// L'absence de `Lecture` ne tient que par la signature : une implémentation pourrait capturer un pool à sa
+/// construction (relecture P2, L-8). D'où un trait SCELLÉ (`mod scelle { pub trait Scelle {} }`), une seule
+/// implémentation, `PromptEnBase` (champs : nom, description, arguments, portée, texte — aucun pool), construite par le
+/// catalogue. Même règle pour les outils : structures construites par `Registre::standard()` sans pool (le contexte
+/// arrive par `executer`), ce que la revue de chaque outil vérifie.
+pub trait McpPrompt: Send + Sync + scelle::Scelle {
     fn nom(&self) -> &str;              // les prompts viennent de la base (32-10a) : pas de &'static
     fn description(&self) -> &str;
     fn arguments(&self) -> &[ArgumentPrompt];
@@ -639,6 +732,22 @@ pub enum Validation { Requise, Dispensee /* posée par l'administrateur seul ; c
 pub struct Registre {
     outils: Vec<Box<dyn McpTool>>,          // ordre stable
     prompts_ecriture: Vec<Box<dyn McpToolPrompts>>,
+    prompts: CataloguePrompts,              // lit la table des prompts (état `approuvé` seul) sur le pool ordinaire,
+                                            // rend des `PromptEnBase` ; ajouté en relecture P2 (L-8)
+}
+
+/// Données des livres APRÈS la politique de la clé : seul `repartiteur` la construit (constructeur privé au module).
+/// Le transport ne sait sérialiser qu'une `Reponse` — aucun chemin ne mène d'une `Donnees` au client sans elle.
+pub struct DonneesValidees { donnees: Donnees /* champ privé */ }
+
+/// Tout ce que le transport peut envoyer en `result` (C-32-2-21).
+pub enum Reponse {
+    Statique(ReponseStatique),        // initialize, tools/list, prompts/list (noms et descriptions), ping
+    Outil(DonneesValidees),           // tools/call d'un McpTool
+    EnAttente(Poignee),               // forme (c) : « envoi n° X en attente », sans donnée
+    Accuse(Accuse),                   // tools/call de proposer_prompt
+    Prompt(Vec<MessagePrompt>),       // prompts/get
+    Echec(ErreurOutil),               // isError: true, texte fixe par variante
 }
 impl Registre {
     pub fn lister(&self, portees: &HashSet<Portee>) -> Vec<DescripteurOutil> { /* … */ }
@@ -646,13 +755,43 @@ impl Registre {
 }
 ```
 
-**Où se tient « par construction » pour la validation** (C-32-2-17) : non plus dans le type de retour de l'outil —
-la première rédaction faisait rendre une `PropositionEnvoi` à **tout** outil, y compris `proposer_prompt`, qui n'envoie
-rien, et ne laissait aucune place à une clé dispensée —, mais dans le **répartiteur** : un outil de lecture ne produit
-que des `Donnees`, il n'a aucun moyen de fabriquer une réponse du transport, et le seul chemin des `Donnees` vers le
-client passe par `Validation` de la clé. Une clé `Requise` ne peut pas être contournée par un outil ; une clé
-`Dispensee` ne l'est que par l'administrateur, et chaque envoi est journalisé sur `Trace`. Si Guy retient « toujours »
-(Q12), `Validation` disparaît et le répartiteur valide tout.
+**Où se tient « par construction » pour la validation** (C-32-2-17, étendu en relecture P2 par C-32-2-21) : non plus
+dans le type de retour de l'outil — la première rédaction faisait rendre une `PropositionEnvoi` à **tout** outil, y
+compris `proposer_prompt`, qui n'envoie rien, et ne laissait aucune place à une clé dispensée —, mais dans le
+**répartiteur** et dans le type `Reponse` du transport. La relecture P2 a relevé que la formule précédente (« le seul
+chemin des `Donnees` vers le client passe par `Validation` ») ne couvrait que `tools/call` : la garantie doit porter sur
+**chaque méthode JSON-RPC servie et chaque message d'erreur**. Inventaire clos, en `2025-11-25` :
+
+| Méthode servie | Ce qui part vers le client | Peut-il porter des données des livres ? |
+|---|---|---|
+| `initialize`, `ping`, `notifications/*` (202) | capacités, `instructions`, version — textes de Kesh | non : `ReponseStatique`, constantes du binaire |
+| `tools/list` | noms, descriptions, schémas des outils | non : `&'static str` des outils |
+| `tools/call` d'un `McpTool` | `Donnees` | **oui** → seulement en `DonneesValidees`, construite par le répartiteur après la politique de la clé (Q12) ; en forme (c), `EnAttente` sans donnée ; en forme (a), la requête `elicitation/create` est elle-même construite par le répartiteur depuis les `Donnees` — c'est l'étape de validation, et elle envoie les données **au client** avant l'accord (§ 3.2, motif 1) |
+| `tools/call` de `proposer_prompt` | `Accuse` | non : nom fourni par l'agent, numéro de version |
+| `prompts/list`, `prompts/get` | noms, descriptions, texte des prompts approuvés, arguments du client | **pas par Kesh** : aucune `Lecture` (trait scellé, `PromptEnBase` sans pool). Reste un cas assumé : un texte de prompt dans lequel un humain a **recopié** des valeurs des livres, ou qu'un agent a proposé avec elles et que l'administrateur a approuvé — l'approbation du texte en tient lieu de validation, ce que le manuel dira (32-10) |
+| `notifications/progress` (forme (b)) | `message` de progression | non : texte fixe (« en attente de validation dans Kesh », `proto-curl.out` l. 87) |
+| toute erreur JSON-RPC ou `isError: true` | texte d'erreur | non : `ErreurOutil` sans texte libre, traduit en textes fixes ; erreurs du transport (`-32600`, `-32601`, `-32602`) en constantes |
+| `resources/*`, `completion/complete`, `logging/setLevel`, `tasks/*`, toute autre | `-32601` | non servies en 0.16.0 |
+
+**Tests de la 32-6 qui tiennent cet inventaire** (AC ajoutés) :
+- *inventaire des méthodes* : le répartiteur JSON-RPC associe chaque nom de méthode à une variante d'une énumération
+  `MethodeServie` ; un test compare l'ensemble des méthodes acceptées à la liste close ci-dessus et **rougit** si une
+  méthode est ajoutée sans y être inscrite ; un second envoie chaque méthode du schéma `2025-11-25` non servie
+  (`resources/list`, `resources/read`, `resources/templates/list`, `resources/subscribe`, `completion/complete`,
+  `logging/setLevel`, `tasks/get`, `tasks/list`…) et exige `-32601` ;
+- *par le type* : `DonneesValidees` n'a pas de constructeur public hors du module `repartiteur`, et le transport ne
+  sérialise qu'une `Reponse` — un futur gestionnaire `resources/read` qui voudrait rendre des `Donnees` sans passer par le
+  répartiteur **ne compile pas** ; mutation à tuer : rendre le constructeur public (un test de compilation négatif,
+  `trybuild`, ou à défaut une garde lexicale sur `DonneesValidees {` hors du module) ;
+- *erreurs* : un outil de démonstration dont l'exécution échoue sur une valeur piégée de la fixture (32-9) ne fait
+  apparaître cette valeur ni dans `isError`, ni dans une erreur JSON-RPC.
+
+Une clé `Requise` ne peut donc pas être contournée par un outil ; une clé `Dispensee` ne l'est que par
+l'administrateur, et chaque envoi est journalisé sur `Trace`. Si Guy retient « toujours » (Q12), `Validation` disparaît
+et le répartiteur valide tout. **Le jour où Kesh sert des ressources** (contenu d'une pièce, 0.17.0 au plus tôt), elles
+passent par un trait `McpRessource` qui produit des `Donnees` et par le même répartiteur, jamais par un gestionnaire à
+part — ou bien le contenu d'une pièce se rend par un **outil** (`McpTool`, bloc de contenu image ou ressource embarquée
+dans le résultat), ce qui le place d'office sous la validation.
 
 Le futur boxé (plutôt que `async fn` dans le trait) rend le trait **compatible `dyn`**, ce qu'exige un registre
 hétérogène ; `async-trait` n'est pas dans le dépôt et n'est pas nécessaire.
@@ -682,7 +821,8 @@ approbation (32-10). Trois AC ci-dessous dépendent des réponses de Guy à Q10,
   `GET`/`DELETE` 405, notification 202, lot 400, `ping` ; `MCP-Protocol-Version` non servi → **400 texte** (jamais
   `-32022`), absent admis ; `Origin` présent et étranger → 403, absent admis, origines du réseau local en liste réglable
   et jamais déduites de `Host` (§ 1.3) ; outil inconnu ou hors portée → `-32602` identique ; `readOnlyHint: true` sur
-  tout outil ; corps borné. **Ce que le prototype n'a pas éprouvé** (`DELETE`, `ping`, borne du corps, version absente)
+  tout outil ; corps borné ; **inventaire clos des méthodes servies** et `DonneesValidees` à constructeur privé, avec
+  leurs tests (§ 5.3) ; `ErreurOutil` sans texte libre. **Ce que le prototype n'a pas éprouvé** (`DELETE`, `ping`, borne du corps, version absente)
   entre au test de contrat. Pool de lecture : **fonction unique** des options (cf. [#669]) ; **selon Q11** : (a)
   `after_connect` + `before_acquire` + garde lexicale, ou (b)/(c) utilisateur `SELECT` + contrôle de ses droits au
   démarrage (+ `after_connect` en (c)) ; tests et mutations du § 4.3. Le module JSON-RPC n'expose aux outils que les
@@ -700,11 +840,13 @@ approbation (32-10). Trois AC ci-dessous dépendent des réponses de Guy à Q10,
   `isError: true`, rien ne part ; ce que reçoit le client est exactement ce qui a été validé ; le répartiteur applique la
   politique de la clé (Q12). **Avant la 32-8, Guy ou la 32-8 elle-même rejoue § 2.4 (d)** pour la forme retenue.
 - **32-9a / 32-9b** — bornes de pagination choisies pour rester **sous 10 000 jetons** par réponse (avertissement de
-  Claude Code) ; ressources MCP (`resources/read`) disponibles en `2025-11-25` pour le contenu d'une pièce
-  (C-32-0-10) — capacité `resources` déclarée seulement si elle est servie.
+  Claude Code) ; **aucune ressource MCP en 0.16.0** (C-32-2-21) : la spike n'a pas éprouvé de forme pour le
+  contenu d'une pièce, si bien que la 32-9b livre les **métadonnées** seulement, comme C-32-0-10 le prévoit à défaut ;
+  le contenu glisse en 0.17.0, par un outil ou par un trait de ressource soumis au répartiteur (§ 5.3) — capacité
+  `resources` non déclarée.
 - **32-10a** — `prompts/list`/`prompts/get` selon `2025-11-25` ; Claude Code les montre en commandes
   `/serveur:prompt (MCP)`, Hermes par `get_prompt` : le nom d'un prompt doit être court et sans espace ; `rendre` sans
-  `Lecture` (§ 5.3) ; `proposer_prompt` est un `McpToolPrompts` : contexte sans `Lecture`, retour `Accuse`, hors validation
+  `Lecture`, trait scellé, seule implémentation `PromptEnBase` sans pool (§ 5.3) ; `proposer_prompt` est un `McpToolPrompts` : contexte sans `Lecture`, retour `Accuse`, hors validation
   avant envoi (il n'envoie rien des livres) ; la version créée est d'origine `agent`, « à valider ».
 - **32-11** — test de contrat sur la séquence du § 1.2 (initialize, initialized, tools/list, tools/call, outil inconnu,
   Origin, sans clé, sonde `2026-07-28`, lot, `GET`, `DELETE`, `ping`, version absente) ; parcours joué avec **les deux**
@@ -737,7 +879,9 @@ approbation (32-10). Trois AC ci-dessous dépendent des réponses de Guy à Q10,
   (toute clé, tout outil de lecture) ; **par clé, réglable** par l'administrateur (`requise` par défaut, `dispensée`
   pour une clé qu'il désigne, chaque envoi restant journalisé) ; **seuil** (validation au-delà de N lignes, ou seulement
   pour les champs nominatifs — difficile à définir sans trou). Hors question dans tous les cas : un prompt servi et
-  l'accusé de `proposer_prompt` ne portent aucune donnée des livres et ne passent pas par la validation (§ 5.3).
+  l'accusé de `proposer_prompt` ne portent aucune donnée **lue par Kesh** et ne passent pas par la validation (§ 5.3 ;
+  *précisé en relecture P2* : un texte de prompt où un humain a recopié des valeurs reste un cas assumé, couvert par
+  l'approbation du texte).
   *Recommandation* : **par clé, `requise` par défaut**, dès la 0.16.0 — elle coûte un réglage au répartiteur, et l'usage
   de l'agent de développement est un objectif de la 0.16.0. *(Elle s'écarte de la recommandation de la Q2 du kickoff —
   « obligatoire en 0.16.0, option après la recette » — parce que la poignée rend chaque validation plus coûteuse ; la Q2

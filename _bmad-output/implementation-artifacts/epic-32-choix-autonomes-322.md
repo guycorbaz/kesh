@@ -39,6 +39,8 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
 
 ### C-32-2-4 — Validation avant envoi : l'écran de Kesh, attente bornée à 240 s en SSE
 
+*⚠️ Remplacé en relecture P1 par C-32-2-14 et C-32-2-15 — annotation de la relecture P2 (L-7).*
+
 - **Contexte** : l'élicitation est garantie par le client — qui reçoit les données — et contournable par lui (*hook*
   `Elicitation` de Claude Code, YOLO de Hermes), limitée à des formulaires plats, refusée hors session interactive ;
   Hermes coupe un `tools/call` à 300 s, Claude Code exige un premier octet sous 60 s et une activité toutes les 5 min.
@@ -51,6 +53,8 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
 
 
 ### C-32-2-5 — Lecture seule : second pool `READ ONLY` + `before_acquire` + garde lexicale
+
+*⚠️ Remplacé en relecture P1 par C-32-2-16 — annotation de la relecture P2 (L-7).*
 
 - **Contexte** : essai réel sur `kesh_322`, utilisateur `kesh` : `INSERT`/`UPDATE`/`DELETE`, `FOR UPDATE`, DDL et table
   temporaire refusés en 1792, autocommit comme transaction ; mais `START TRANSACTION READ WRITE`, `SET TRANSACTION READ
@@ -75,6 +79,7 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
   revient).
 - **Réversible** : oui, c'est l'objet des traits.
 - **Relecture P1** : critère de réexamen reformulé par **C-32-2-11** (« quand Kesh doit servir `2026-07-28` », les deux clients la parlant déjà) ; traits revus par **C-32-2-17**.
+- **Relecture P2 (L-6)** : « en huit mois » ne se rapporte à aucune fenêtre définie — les trois majeures tiennent en moins de cinq mois (2026-03-03 → 2026-07-28) ; document corrigé, entrée laissée telle quelle.
 
 
 ### C-32-2-7 — Prototype hors du dépôt plutôt que sur une branche `spike/32-2-proto`
@@ -126,6 +131,7 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
   qu'un serveur moderne seul ne garantit pas. Critère de réexamen du SDK : « quand Kesh doit servir `2026-07-28` », et
   non « quand un client l'exige ». Document §§ 1.3, 2.2, 5.2, Q8.
 - **Réversible** : oui (C-32-2-1).
+- **Relecture P2 (M-1, L-5)** : le motif « fonctionne dans **tous** les réglages documentés » dit plus que les sources — elles établissent l'**ère** `initialize`, non la révision que chaque client demande ni qu'il accepte `2025-11-25` ; justification refaite par **C-32-2-19**. La citation de Hermes ci-dessus est tronquée sans marque (« … `server/discover` stateless probe when the server rejects the handshake as modern-only ») ; le document la cite entière.
 
 ### C-32-2-12 — M3 : minuteur de premier octet de Claude Code — finding **partiellement réfuté**
 
@@ -137,6 +143,7 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
   compté) ; une réponse qui commence aussitôt n'y est jamais soumise ; l'essai § 2.4 (d) à 90 s garde son objet (le
   premier évènement SSE suffit-il ?). Document §§ 2.1, 2.3, 2.4.
 - **Réversible** : sans objet.
+- **Relecture P2 (L-1, L-2)** : l'essai à 90 s seul ne juge pas le premier octet — un contrôle négatif (premier évènement retardé à 70 s) lui est adjoint au § 2.4 (d) ; la portée du minuteur (HTTP, SSE, connecteur claude.ai ; ni stdio ni WebSocket) est ajoutée au § 2.1.
 
 ### C-32-2-13 — M4 : Claude Code passe en tâche de fond un appel de plus de 2 min — conséquence tirée
 
@@ -199,6 +206,7 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
   sans état.
 - **L2** : liste des journaux du § en-tête — `ro-pool-main.rs` et `ro-pool-Cargo.toml` → `ro-pool.out` ; `proto-server.log`
   ajouté.
+  *(Relecture P2, L-9 : ce journal est vide, 0 octet ; retiré de la liste du document.)*
 - **L3** : `grep -rniE "read write|tx_read_only|transaction_read" crates` ne rend **aucune ligne** (revérifié).
 - **L4** : `DELETE` 405, `ping`, borne de 1 Mio, `MCP-Protocol-Version` absent — écrits « décidés, non éprouvés par le
   prototype » (§ 1.3) et ajoutés au test de contrat (32-6, 32-11).
@@ -208,3 +216,82 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
   écrit sa dernière utilisation (§ 4.4).
 - **L7** : filtre d'adresse, activation par l'administrateur, prompts « à valider » — rappelés en tête du § 6 et
   renvoyés aux stories du kickoff (32-5, 32-6, 32-7, 32-10).
+
+---
+
+*Rectifications de la relecture P2 (rapport hors dépôt `/home/gcorbaz/devel/kesh-gate-logs/322-review-p2.md`,
+0 CRITICAL / 0 HIGH / 4 MEDIUM / 11 LOW, Haiku 5.5, passe ciblée), 2026-10-24. Sources revérifiées en ligne le même
+jour : `code.claude.com/docs/en/mcp`, `…/2025-11-25/basic/transports`, `…/2025-11-25/basic/lifecycle`, la référence de
+configuration de Hermes, `hub.docker.com/_/mariadb`.*
+
+### C-32-2-19 — M-1 : `2025-11-25` justifiée par l'ère `initialize`, la révision demandée restant à observer
+
+- **Contexte** : le § 1.3, le § 2.3 et C-32-2-11 disaient qu'un serveur `2025-11-25` « est servi par les deux clients dans
+  chacun de leurs réglages documentés » et que « Claude Code v1 ne parle qu'elle ». Les sources disent : Hermes tente ou
+  retente `initialize` dans ses trois réglages ; Claude Code v1 et `legacy` gardent la poignée de main antérieure, le v2
+  « adds » la `2026-07-28` ; aucune ne dit quelle `protocolVersion` est demandée, et le repli du v2 sur un serveur de
+  l'ère `initialize` n'y est pas écrit en toutes lettres. La spécification (`lifecycle`) veut que le client « SHOULD
+  disconnect » s'il ne connaît pas la version répondue.
+- **Retenu** : `2025-11-25` maintenue — révision *Final* la plus récente de la seule ère que tous les réglages décrits
+  atteignent, `2025-06-18` acceptée — **sous réserve de l'observation (h) du § 2.4, à faire avant la 32-6** ; si un client
+  demande une révision plus ancienne, l'accepter est réversible et local, à condition que les méthodes servies y aient
+  la même forme (non vérifié pour `2025-03-26`). Document : décision 1, §§ 1.3, 2.3.
+- **Écartée** : servir double ère dès la 0.16.0 pour lever l'incertitude (double le protocole écrit à la main, pour un
+  risque qu'une observation tranche).
+- **Réversible** : oui.
+
+### C-32-2-20 — M-2 : l'élicitation tient l'appel ouvert ; délais du § 2.3 réécrits par forme
+
+- **Contexte** : « pour une réponse immédiate (formes (a) et (c)) aucun de ces délais ne joue » était faux pour (a) :
+  l'élicitation attend l'utilisateur (Hermes : `elicitation.timeout` 300 s, et `timeout` d'outil 300 s).
+- **Retenu** : § 2.3 par forme — (a) et (b) tiennent l'appel ouvert, (c) seule répond aussitôt ; pour (a), premier octet
+  satisfait par le flux SSE, pas de tâche de fond chez Claude Code tant que le dialogue est ouvert, inactivité de 5 min
+  pendant le dialogue **non établie**, préséance des deux délais de Hermes non écrite. Cellule (a) du tableau du § 3.3
+  alignée.
+- **Réversible** : sans objet (rectification).
+
+### C-32-2-21 — M-3 : la garantie de validation porte sur toute méthode servie ; pas de ressources en 0.16.0
+
+- **Contexte** : « le seul chemin des `Donnees` vers le client passe par `Validation` » ne couvrait que `tools/call` ;
+  le § 6 annonçait `resources/read` pour le contenu d'une pièce, sans trait ni passage par le répartiteur ; les messages
+  d'erreur (`ErreurOutil::ArgumentsInvalides(String)`) et `prompts/get` n'étaient pas examinés.
+- **Retenu** : **aucune ressource MCP servie en 0.16.0** (méthodes `resources/*` → `-32601`, capacité non déclarée) ; la
+  32-9b livre les métadonnées des pièces, comme C-32-0-10 le prévoit à défaut d'une forme éprouvée par la spike ; le
+  contenu, en 0.17.0, passera par un outil ou par un trait `McpRessource` soumis au même répartiteur. Au § 5.3 :
+  inventaire clos des méthodes servies et de ce que chacune envoie ; `DonneesValidees` à constructeur privé au
+  répartiteur et type `Reponse` seul sérialisable ; `ErreurOutil` sans texte libre ; `McpPrompt` scellé, seule
+  implémentation sans pool ; prompts au `Registre`. Tests de la 32-6 : inventaire des méthodes (rougit sur une méthode
+  non inscrite), `-32601` sur chaque méthode non servie du schéma, constructeur privé (mutation à tuer), valeur piégée
+  absente des erreurs. Cas assumé, écrit : un texte de prompt où un humain a recopié des valeurs (couvert par
+  l'approbation du texte) ; en forme (a), l'élicitation envoie les données au client avant l'accord.
+- **Écartée** : ajouter dès maintenant un trait de ressources (rien à servir en 0.16.0, et une forme non éprouvée).
+- **Réversible** : oui (C-32-0-10 laisse glisser le contenu des pièces sans toucher le reste).
+
+### C-32-2-22 — M-4 : bloc du § 4.2 recopié depuis `ro-pool.out`
+
+- **Contexte** : le bloc citait `313122`, `313126`/`313127`, `313128`, `313130`, absents du journal (qui porte `313133`…
+  `313141`) ; préexistant à la relecture P1.
+- **Retenu** : lignes 1-10, 18 et 26-37 de `ro-pool.out` recopiées octet pour octet (contrôle : chaque ligne du bloc,
+  hors marques `[…]`, se trouve telle quelle dans le journal) ; les omissions sont marquées entre crochets. Le bloc du
+  § 1.2 (`proto-curl.out`) est dit **remis en forme** — sa mention « en-tête `Date` retiré » était fausse (le journal
+  n'en porte aucun).
+- **Réversible** : sans objet.
+
+### C-32-2-23 — LOW L-1 à L-11 de la relecture P2
+
+- **L-1** : § 2.4 (d) — essai à 90 s avec premier évènement immédiat, plus un contrôle négatif à premier évènement
+  retardé à 70 s (le prototype devra recevoir ce retard).
+- **L-2** : § 2.1 — portée du minuteur de premier octet (HTTP, SSE, connecteur claude.ai), citée.
+- **L-3** : § 2.1 — conditions du runtime v2 par défaut recopiées de la page (sessions qui lisent ou non les *feature
+  flags*, exemples, réserve `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`, silence sur les versions antérieures).
+- **L-4** : § 2.2 — « Streamable HTTP par défaut » et « coupe à 300 s, dur » marqués **non sourcés** ; la coupure dure est
+  gardée comme hypothèse prudente (tableau du § 3.3 : « supposée dure, non écrite »).
+- **L-5** : citations rétablies — spécification « before sending the JSON-RPC *response* » (§ 3.1) ; Hermes, phrase
+  entière (§§ 1.3, 2.2) ; C-32-2-11 annoté.
+- **L-6** : « trois majeures en moins de cinq mois » (décision 5) ; C-32-2-6 annoté.
+- **L-7** : sous les titres de C-32-2-4 et C-32-2-5, une ligne « remplacé » ajoutée (titres laissés intacts, registre tenu par union).
+- **L-8** : § 5.3 — `CataloguePrompts` au `Registre`, `NomPrompt` défini, `McpPrompt` scellé (l'absence de `Lecture` ne
+  tenait que par la signature) ; même règle pour les outils, vérifiée en revue.
+- **L-9** : `proto-server.log` (vide) retiré de la liste des journaux ; C-32-2-18 annoté.
+- **L-10** : § 4.3 — les `MARIADB_*` sourcés par la documentation de l'image officielle, non plus par `.env.example`.
+- **L-11** : § 3.3 — « (b) inchangée en `2026-07-28` » remplacé par **non établi**.
