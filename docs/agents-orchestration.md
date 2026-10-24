@@ -115,7 +115,12 @@ messages `refs #N`.
    `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`, `KESH_BACKEND_URL` sur le port attribué,
    `KESH_INBOX_DIR`, `KESH_DOCUMENTS_DIR`, les quatre `KESH_SMTP_*`, et `KESH_ADMIN_BACKUP_DIR` vers
    un répertoire inscriptible (son défaut `/data/backup` ne l'est pas hors Docker). Un montage
-   reconstitué de tête rend 18 échecs au lieu de la baseline.
+   reconstitué de tête rend 18 échecs au lieu de la baseline. ⚠️ **Des dossiers propres au worktree
+   (`/tmp/kesh-e2e-<clé>/…`) se passent au backend ET au runner** : le runner lit `KESH_INBOX_DIR`
+   et `KESH_DOCUMENTS_DIR` (`frontend/tests/e2e/helpers/inbox.ts`), avec pour défaut
+   `/tmp/kesh-e2e/{inbox,documents}` — ceux de la recette ; s'il ne les reçoit pas, les specs qui
+   déposent ou lisent un fichier visent un autre dossier que le backend et rougissent hors baseline
+   (constaté à la Story 31-5 : quatre échecs).
 3. **Une cible cargo par worktree** : `CARGO_TARGET_DIR=<worktree>/target`. Une cible partagée mêle
    les binaires de plusieurs branches (incident C82, Epic 15).
 4. **Attendre le backend** en interrogeant `http://127.0.0.1:<port>/health` en boucle, avec délai ;
