@@ -70,10 +70,6 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   comptables », tantôt « Administration → Exercices comptables ». L'entrée du menu est dans le groupe *Administration*
   de la barre latérale ; les manuels d'administration et utilisateur (PDF compris) l'écrivent désormais partout ainsi.
   Aucun écran ne change.
-- **Le test de restauration périodique ne demande plus l'impossible** : son étape 3 exigeait que l'export de
-  souveraineté de l'instance de test ait la même empreinte SHA-256 que celui de la production, ce qui ne se peut pas (la
-  date de l'export et le journal d'audit diffèrent toujours). Le manuel d'administration compare désormais l'empreinte
-  de chaque table, `audit_log.csv` seule pouvant différer.
 
 ### Interne, invisible de l'utilisateur
 
