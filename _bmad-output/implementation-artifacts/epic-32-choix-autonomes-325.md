@@ -35,7 +35,7 @@ de ligne cités sont ceux de `e59d63e8`.
   (`bootstrap.rs`), `kesh-api/routes` (`onboarding.rs`, `admin.rs`), docs : 5). Total recompté : douze modules ; ordre
   a → b, puis c et d dans l'un ou l'autre ordre. *(Annoté en validation P2, F8, R10 = F9 : « douze » ne se recompte
   pas — **dix modules distincts, dix-sept en somme** (5 + 3 + 4 + 5, la 32-5a gagnant `onboarding_audit_e2e.rs`, F3) ;
-  et l'ordre est désormais **imposé**, a → b → d → c, C-32-5-27.)* Jusqu'à d, la remise à zéro vide `mcp_keys` et l'authentification joint
+  et l'ordre est désormais **imposé**, a → b → d → c, C-32-5-27.)* *(Annoté en validation P3, F9 : la 32-5b compte aussi `middleware`, qu'éprouve `cles_mcp_e2e.rs` — **onze distincts, dix-huit en somme**, 5 + 4 + 4 + 5 ; F7 : ses comptes s'écrivent relativement à `main` au départ de la 32-5b, la 32-4 pouvant la précéder.)* Jusqu'à d, la remise à zéro vide `mcp_keys` et l'authentification joint
   `companies` : aucun état intermédiaire n'ouvre d'accès ni ne fait mentir le manuel.
 
 ### C-32-5-2 — Deux tables neuves dans une seule migration
@@ -97,17 +97,23 @@ de ligne cités sont ceux de `e59d63e8`.
 - **Écartée** : une route `PATCH` des portées (élargirait en silence les droits d'un secret déjà distribué).
 - **Réversible** : oui (une route s'ajoute).
 
-### C-32-5-7 — Une clé MCP exige un créateur actif et toujours Administrateur (hypothèse Q3)
+### C-32-5-7 — Création réservée à l'Administrateur, et une clé MCP qui exige un créateur actif et toujours Administrateur (hypothèse Q3)
 
 - **Contexte** : Q3 sans réponse ; recommandation du kickoff (C-32-0-9) : création réservée à l'Administrateur. Un PAT
   relit le rôle et l'état **courants** de son créateur (`api_keys.rs:123-141`, `auth/api_key.rs:163-167`).
-- **Retenu** : une constante `ROLE_CLE_MCP = Role::Admin`, seule source de deux règles : la création (route sous
-  `admin_routes`) et l'authentification (créateur `active` **et** `role >= ROLE_CLE_MCP`, relus à chaque requête). Un
-  administrateur rétrogradé ou désactivé coupe ses clés MCP sur-le-champ. **Hypothèse de travail**, écrite comme telle
-  à la fiche ; si Guy ouvre la création au Comptable, la constante change et les deux règles suivent.
+- **Retenu** (*réécrit en validation P3, F1*) : deux règles, **deux sources**. (1) La **création** est réservée à
+  l'Administrateur par la couche d'`admin_routes` : `require_admin_role` code `Role::Admin` **en dur**
+  (`middleware/rbac.rs:31-33`), avant tout handler. (2) L'**authentification** exige un créateur `active` **et**
+  `role >= ROLE_CLE_MCP` (constante `Role::Admin` de `services::cles_mcp`), relus à chaque requête : un administrateur
+  rétrogradé ou désactivé coupe ses clés MCP sur-le-champ. La constante ne pilote **pas** la création, et la fiche ne
+  l'y branche pas (du code pour une hypothèse que Guy n'a pas tranchée). **Hypothèse de travail**, écrite comme telle.
 - **Écartées** : le rôle relu seulement à la création (une clé survivrait à la rétrogradation de son créateur) ; aucune
-  règle de rôle à l'authentification (incohérent avec une création réservée).
-- **Réversible** : oui (une constante).
+  règle de rôle à l'authentification (incohérent avec une création réservée) ; brancher la constante sur le handler de
+  création, hors du bloc (revient sur C-32-5-17, sans décision de Guy).
+- **Réversible** : la règle d'authentification, oui (une constante) ; la règle de création, **par une modification de
+  routage** : sortir les six routes d'`admin_routes`, les remonter sous `require_comptable_role` avec `ensure_not_pat`
+  (`routes/api_keys.rs:95-100`), changer la constante, refaire AC-c2 et les compteurs d'`admin_pat_denied_e2e`
+  (39 → 33, et la répartition `(10, 29)`).
 
 ### C-32-5-8 — Réglages absents = défauts ; aucune ligne écrite ni par la migration ni à la lecture
 

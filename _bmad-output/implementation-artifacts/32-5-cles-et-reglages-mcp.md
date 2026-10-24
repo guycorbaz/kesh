@@ -71,7 +71,7 @@ Chaque fait a été lu ; la commande ou la ligne est citée.
    (`:185-187`).
 2. **Le middleware de l'API** ne connaît que deux formes de jeton : préfixe `kesh_pat_` exact → `validate_pat`
    (`middleware/auth.rs:134`) ; tout le reste → `jwt::decode` (`:146`), qui échoue en 401 (`jwt.rs:96`). Le jeton lu au
-   cookie `kesh_access_token` suit le même chemin (`auth.rs:77-79`, puis `:134`). **Un jeton `kesh_mcp_…` y échoue donc
+   cookie `kesh_access_token` suit le même chemin (`auth.rs:83`, puis `:134`). **Un jeton `kesh_mcp_…` y échoue donc
    déjà en 401** — aucun test ne le fige (`grep -rln "kesh_mcp_" crates frontend/src docs` → rien).
 3. **La table `api_keys`** (`migrations/20260605000001_api_keys.sql:18-38`) : `key_hash CHAR(64)` unique, `scope`
    contrôlé par `CHECK`, `expires_at`/`last_used_at`/`revoked_at`, `version` (verrou optimiste de la révocation), FK
@@ -141,10 +141,11 @@ Chaque fait a été lu ; la commande ou la ligne est citée.
     `20261010000002` (`:559-568` : « une sauvegarde d'avant la 15-1a2-ii importée laisse ces paires ouvertes » ; « portées
     par 20261010000001, au registre »), de `20261009000001` (`:575`), `20261011000001` (`:582`) et `20261015000001`
     (`:591`), qui raisonnent sur l'import d'une « sauvegarde antérieure » désormais refusée, et de `20260917000001`
-    (`:436-445`, « la dernière créatrice de table applicative ») ; les commentaires `post_restore.rs:211-216` et
+    (`:436-445`, « la dernière créatrice de table applicative ») ; les commentaires `post_restore.rs:211-224` et
     `:250-251`, `repositories/letterings.rs:22-25` et `tests/post_restore_class_a.rs:43-46` (« entrée de classe A de
-    `POST_RESTORE_BACKFILLS` »), `admin_full_import_e2e.rs:950-956` (« Le registre de production, lui, n'est PAS
-    vide ») et `:1614` (« Version de M1, au registre (classe A) »), `tests/lettering_documents_backfill.rs:2` et `:46`
+    `POST_RESTORE_BACKFILLS` »), `admin_full_import_e2e.rs` — **sept** occurrences de « n'est PAS vide » : le
+    doc-comment de `replay_retired` (`:953`) et six commentaires de corps (`:1093`, `:1176`, `:1223`, `:1316`, `:1388`,
+    `:1502`) et `:1614` (« Version de M1, au registre (classe A) »), `tests/lettering_documents_backfill.rs:2` et `:46`
     (« registre de rejeu »), `tests/letterings_lexical.rs:19` (« rejouée à l'import »). L'en-tête de la migration
     `20261010000002_lettering_reversal_pairs_backfill.sql:3` (« 20261010000001, au registre de rejeu ») devient faux
     aussi, mais **ne se corrige pas** (P8, migration publiée) : la rectification va dans sa justification d'exemption.
@@ -173,7 +174,7 @@ Chaque fait a été lu ; la commande ou la ligne est citée.
     JSON (rapporté `longtext`) en chaîne (`backup.rs:307-316`), rebindée telle quelle à l'import. Aucun `CHECK` du dépôt
     n'emploie `JSON_TYPE` ni `JSON_LENGTH` (`grep -rln "JSON_TYPE\|JSON_LENGTH" crates/kesh-db/migrations` → rien).
 15. **Le chemin positionnel des migrations (P6)** : `migrations_upgrade_path.rs:119-123` (`assert_eq!(total, 83)`) et
-    `:209` (`total - 49`, frontière 34) ; les autres sites (`grep -rn "migrations.len()\|apply_migrations_up_to"
+    `:208` (`total - 49`, frontière 34) ; les autres sites (`grep -rn "migrations.len()\|apply_migrations_up_to"
     crates/`) résolvent par version (`common::migrations_before`).
 16. **Le squash et le registre des checksums.** Le squash (`crates/kesh-db/test-schema/0001_schema_squash.sql`) se
     **régénère** par `scripts/regen-test-schema.sh` (MariaDB démarré) ; `test_schema_guard.rs` rougit s'il dérive.
@@ -208,8 +209,8 @@ Chaque fait a été lu ; la commande ou la ligne est citée.
     porte l'inventaire de la 0.14.0 ; `ac10_la_sauvegarde_de_la_0_14_0_s_importe` (`:3878-3900`, AC10 de la 31-1a)
     attend **200** — après la 32-5a, `parse_and_verify` la refuse. C'est le seul test qui éprouvera la limite de Q4
     contre une sauvegarde réellement produite par une version antérieure. (b) `EMPTY_BEFORE_RESET`
-    (`onboarding_audit_e2e.rs:1965-1983`, comparée à `:2012-2019`) est la liste **fermée** des tables vides avant une
-    remise à zéro ; les tables conservées se comparent par instantané (`:2023-2028`, `:2079-2084` : `users`,
+    (`onboarding_audit_e2e.rs:1965-1983`, comparée à `:2013-2019`) est la liste **fermée** des tables vides avant une
+    remise à zéro ; les tables conservées se comparent par instantané (`:2024-2028`, `:2079-2084` : `users`,
     `api_keys`, `refresh_tokens`, `password_reset_tokens`).
 
 ## Le découpage (C-32-5-1, recompté en validation P1)
@@ -222,7 +223,7 @@ module dont il sert les tests.
 | Partie | Objet | Modules | 🗄️ |
 |---|---|---|---|
 | **32-5a** | les deux tables, leurs entités et dépôts, l'inventaire de la sauvegarde, la fenêtre de P7, l'export global, la limite de Q4 au manuel et au CHANGELOG, le refus de la sauvegarde 0.14.0 | `kesh-db` ; `kesh-api/exports` ; `kesh-api/admin_backup` (ses tests) ; `kesh-api/routes` (`tests/onboarding_audit_e2e.rs`, liste `EMPTY_BEFORE_RESET`) ; docs (audit d'idempotence, manuels, CHANGELOG) — **5** | oui |
-| **32-5b** | l'authentification par clé MCP : génération DRY, `Portee` unique, `services::cles_mcp::authentifier`, refus croisés, clé restaurée qui authentifie | `kesh-api/auth` (`api_key.rs`) ; `kesh-api/services` (et `tests/services_motif.rs`, `tests/common/`) ; `kesh-api/admin_backup` (le test de restauration) — **3** | non (aucun fichier de `kesh-db`) |
+| **32-5b** | l'authentification par clé MCP : génération DRY, `Portee` unique, `services::cles_mcp::authentifier`, refus croisés, clé restaurée qui authentifie | `kesh-api/auth` (`api_key.rs`) ; `kesh-api/services` (et `tests/services_motif.rs`, `tests/common/`) ; `kesh-api/admin_backup` (le test de restauration) ; `kesh-api/middleware` (par `cles_mcp_e2e.rs`, qui éprouve `require_auth`, F9) — **4** | non (aucun fichier de `kesh-db`) |
 | **32-5c** | les routes de gestion (clés, réglages) et leurs gardes, le journal d'audit, les messages traduits | `kesh-api/routes` (+ `lib.rs`, `Cargo.toml`) ; `kesh-api/audit_labels` ; `kesh-i18n` ; docs (`api-external.md`, manuel `:2929`) — **4** | non |
 | **32-5d** | la clé MCP à la remise à zéro (conservée) et à la réparation (règle des principaux orphelins), et les textes qui le disent | `kesh-db` (`backup.rs`, `companies.rs`, leurs tests) ; `kesh-seed` ; `kesh-api/auth` (`bootstrap.rs`) ; `kesh-api/routes` (`onboarding.rs`, commentaire d'`admin.rs`, `tests/onboarding_audit_e2e.rs`) ; docs (manuel d'administration `:1414`, `:1416`, `:2461`, manuel utilisateur `:190`, `:3202`, `:3209-3212`, `MULTI-TENANT-SCOPING-PATTERNS.md`) — **5** | oui |
 
@@ -230,7 +231,8 @@ La première rédaction comptait trois parties (4 / 5 / 4) ; la validation P1 a 
 quatrième consommateur, un fichier de tests et deux passages du manuel (F3, F4, R4, R10), ce qui la portait à **six**
 modules : elle se scinde en **b** (authentification) et **d** (remise à zéro et réparation), chacune sous le plafond.
 La validation P2 (F3) ajoute à la 32-5a `onboarding_audit_e2e.rs` (module `routes`) : **5**. Recompte (P2, F8) :
-**17 modules en somme** des quatre parties (5 + 3 + 4 + 5), **10 distincts** (`kesh-db`, `kesh-seed`, `kesh-i18n`,
+**17 modules en somme** des quatre parties (5 + 3 + 4 + 5), **10 distincts** — *recompté en P3 (F9) : la 32-5b
+compte aussi `middleware` par ses tests, d'où **18 en somme** (5 + 4 + 4 + 5), **11 distincts*** (`kesh-db`, `kesh-seed`, `kesh-i18n`,
 docs, `kesh-api/auth`, `services`, `routes`, `exports`, `audit_labels`, `admin_backup`).
 
 **Aucun état intermédiaire n'ouvre d'accès ni ne fait mentir un texte** : après 32-5a, les tables existent et sont
@@ -300,7 +302,8 @@ passages du manuel qui les décrivent (C-32-5-22).
    `exports_global_e2e.rs` vert. Le manuel utilisateur (`user-manual.tex:3027`) nomme aussi, parmi ce que l'export ne
    contient pas, les clés et les réglages du serveur MCP.
 9. **AC-a9 — la fenêtre de P7 (C-32-5-13).** `20261010000001` passe de `POST_RESTORE_BACKFILLS` à `RETIRED_BACKFILLS`
-   (même contenu) ; son exemption entre à `EXEMPT_MIGRATIONS`, justification **commençant par** « Hors fenêtre depuis
+   (même contenu) ; son exemption entre à `EXEMPT_MIGRATIONS`, fondement **`ExemptionBasis::Durable`** (comme les huit autres « Hors
+   fenêtre » ; `PerishableSince` est exclusif du marqueur), justification **commençant par** « Hors fenêtre depuis
    20261025000001 (mcp_keys, Story 32-5) : » ; compteurs 8 → **9** et 20 → **21**, chacun avec sa ligne de
    commentaire (motif `:1106-1124`, `:1205-1226`). **Textes réécrits** (fait 10), sans changer leur fondement
    `Durable` et **sans la chaîne « aucune version publiée »**, qu'une exemption `Durable` ne peut porter (garde
@@ -313,7 +316,7 @@ passages du manuel qui les décrivent (C-32-5-22).
      objet depuis 20261025000001 : une sauvegarde antérieure à cette migration ne porte pas `mcp_keys` et est refusée
      au contrôle de couverture » (P2, F11 : borner à « 0.16.0 et suivantes » ne désignerait rien) ;
    - `20260917000001` : elle n'est plus la dernière créatrice de table ; son fondement reste la **couverture** ;
-   - commentaires : `post_restore.rs:211-216` et `:250-251`, `letterings.rs:22-25`, `post_restore_class_a.rs:43-46`,
+   - commentaires : `post_restore.rs:211-224` (« M1 ci-dessous », « TROIS reprennent matière ») et `:250-251`, `letterings.rs:22-25`, `post_restore_class_a.rs:43-46`,
      `lettering_documents_backfill.rs:2` et `:46`, `letterings_lexical.rs:19`.
    Les deux justifications qui se disent « dans la fenêtre » alors qu'elles en sont sorties depuis la 25-2-c
    (`20260909000001`, `20260915000001`) sont **hors périmètre**, signalées au Change Log.
@@ -328,18 +331,25 @@ passages du manuel qui les décrivent (C-32-5-22).
     registre vide, avec un commentaire qui le dit (et sans l'assertion de montage de `:1586`) ;
     `full_import_replays_backfills_in_increasing_version_order` (`:1450`) attend **cinq** entrées, `LETTERING_BACKFILL`
     en dernier, et son commentaire `:1522-1527` passe de quatre à cinq ; `LETTERING_BACKFILL` (son commentaire `:1614`)
-    et `lettering_entry` sont réécrits ou retirés ; le doc-comment de `replay_retired` (`:950-956`) dit le nouvel état.
+    et `lettering_entry` sont réécrits ou retirés ; le doc-comment de `replay_retired` (`:953`) et les six commentaires de corps qui répètent « n'est PAS vide »
+    (fait 10) disent le nouvel état.
     Les neuf autres appelants de `replay_retired` (fait 10) rejouent désormais `20261010000001` : le gate le constate,
     le Change Log le dit. Aucun des tests convertis ne passe à vide : chacun garde au moins une assertion sur une
     marque posée par le rejeu.
 11. **AC-a11 — P5 et P6.** Une ligne au tableau de `docs/migrations-idempotence-audit.md` (verdict `tracked-by-sqlx` :
     `CREATE TABLE` sans `IF NOT EXISTS` ; non breaking ; aucune donnée écrite → ni registre ni exemption ; les deux
-    tables entrent à l'inventaire et referment la fenêtre) ; en-tête `## Table d'audit (84 migrations)`, `Total` 84
+    tables entrent à l'inventaire et referment la fenêtre ; **`20261010000001` passe au registre retiré et à
+    `EXEMPT_MIGRATIONS`**, ce que la ligne dit — patron de la ligne de la 25-2-c, `:91`) ; la ligne de `20261010000001`
+    (`:99`, « inscrite au registre … en CLASSE A …, rejouée à chaque import ») gagne la mention « retirée du registre
+    par la 32-5, exemptée Hors fenêtre depuis 20261025000001 », et celle de `20261010000002` (`:100`) la même pour son
+    coût assumé ; la ligne `:89` (`20260910000001`), restée au présent depuis la 25-2-c, est signalée au Change Log ; en-tête `## Table d'audit (84 migrations)`, `Total` 84
     (« + 1 Story 32-5 »), `tracked-by-sqlx` 74, `yes` 10, `no` 0 — **recomptés** :
     `ls crates/kesh-db/migrations/*.sql | wc -l` et `grep -c '^| \`20' docs/migrations-idempotence-audit.md` → 84 et
     84, et somme des trois partitions = 84. P6 : `migrations_upgrade_path.rs` passe à `total == 84` et `total - 50`
-    (frontière **34** inchangée), avec la ligne « Story 32-5 : 49 → 50, frontière inchangée (84 - 50 = 34) », et les messages et commentaires qui
-    citent `total - 49` ou `83` (`:44`, `:46`, `:63`, `:134`, `:211`) suivent ; les autres sites du `grep` de P6 sont
+    (frontière **34** inchangée), avec la ligne « Story 32-5 : 49 → 50, frontière inchangée (84 - 50 = 34) » et la ligne
+    « = 84 » au cumul (`:118`) ; **chaque occurrence** de `\b49\b` et de `\b83\b` du fichier
+    (`grep -nE "\b(83|49)\b" crates/kesh-db/tests/migrations_upgrade_path.rs`, quinze lignes au départ), triée à la
+    main, suit — on grepe la valeur, non une liste de lignes ; les autres sites du `grep` de P6 sont
     relus et résolvent par version.
 12. **AC-a12 — le squash et le registre des checksums.** Le squash est régénéré (`scripts/regen-test-schema.sh`) ; la
     ligne `20261025000001 <sha384 du fichier final>` est **ajoutée** à `crates/kesh-db/migrations.sha384` dans la même
@@ -354,7 +364,9 @@ passages du manuel qui les décrivent (C-32-5-22).
     sauvegardes de la 0.15.0 et d'avant (message *« Fichier de sauvegarde invalide ou corrompu »*, motif au journal
     du serveur « table … absente du manifeste ») ; la phrase « La 0.15.0 importe les sauvegardes des deux formats »
     se borne à la 0.15.0 ; pour restaurer une sauvegarde plus ancienne (R2) : **sur une base vide** — installation
-    neuve, puis restauration depuis l'assistant (§ *Restaurer sur une nouvelle machine*) —, avec **l'image de la
+    neuve, puis restauration depuis l'assistant (0.15.0 et suivantes, § *Restaurer sur une nouvelle machine*), ou par
+    *Administration → Restaurer / Importer* après connexion à l'administrateur d'amorçage pour une version qui n'a pas
+    l'assistant —, avec **l'image de la
     version qui a produit la sauvegarde** et le dossier des documents, importer, **puis** mettre à jour ; l'image d'une
     version antérieure **ne démarre pas** sur une base qu'une version plus récente a migrée (P1), la base en place
     reste donc intouchée (ou se sauvegarde d'abord) ; prendre une sauvegarde complète **juste après** chaque mise à
@@ -401,7 +413,7 @@ passages du manuel qui les décrivent (C-32-5-22).
     rend **400** `INVALID_BACKUP_STRUCTURE`, **aucune** entrée `admin.full_import`, et aucune table changée (compte par
     table avant et après) ; son doc-comment dit que l'AC10 de la 31-1a est dépassé par Q4 et pourquoi. C'est le seul
     test de la limite de Q4 contre une sauvegarde réellement produite par une version antérieure ; le format 1
-    reste éprouvé par le test `en_format_1` (`:3842-3874`, qui part d'un export courant). La fixture et son générateur
+    reste éprouvé par `format_1_restauree_sur_la_meme_installation` (`:3859`, par le helper `en_format_1`, `:3692`, qui part d'un export courant). La fixture et son générateur
     (`admin_full_export_e2e.rs:509-534`, `#[ignore]`) ne changent pas.
 
 ### Partie B — 32-5b : l'authentification par clé MCP
@@ -418,8 +430,12 @@ passages du manuel qui les décrivent (C-32-5-22).
     `TOUTES` devient `McpScope::ALL` (cinq) ; `autre_portee` ne se limite plus à l'autre des deux pilotes — chaque test
     de refus de portée (R7 de la 32-3) éprouve la clé qui porte **les quatre autres portées** (`ALL` privé de la portée
     exigée) et attend le refus — dont `:1201` (`autre_portee`) et le second refus de `plan_comptable::lister`, portée en dur
-    (`:1220`, `for portees in [vec![], vec![Portee::InvoicesRead]]`) ; le positif reste la portée exigée seule. `ac10_vi` passe de **cinq à six** fichiers
-    (`services/cles_mcp.rs`), `RESIDUS_VI` inchangé.
+    (`:1220`, `for portees in [vec![], vec![Portee::InvoicesRead]]`) ; le positif reste la portée exigée seule. `ac10_vi` compte **un fichier de plus**
+    que sur `main` au départ de la 32-5b (`services/cles_mcp.rs` ; cinq à six au relevé de `e59d63e8`, à recompter à
+    T-b0 : la 32-4 ajoute des services), `RESIDUS_VI` inchangé. Les comptes de ce paragraphe (trois occurrences de
+    `src/`, onze de `services_motif.rs`, `:1201`, `:1220`) sont ceux de `e59d63e8` : recomptés à T-b0. `services_motif.rs`
+    gagne `mod common;` pour appeler `pool_lecture_seule` (il n'en a pas aujourd'hui ; les sous-modules de `common/` y
+    compilent alors, sans effet — F9).
 18. **AC-b3 — l'authentification (C-32-5-14).** `services::cles_mcp::authentifier(&Lecture, &Trace, jeton)` rend
     `CleMcpAuthentifiee { cle_id, acces: ContexteAcces /* canal Mcp, portées de la clé */, validation: SendValidation }`
     ou `AppError::Unauthenticated` (401) — **même** erreur, au texte près côté client, pour : préfixe absent ou autre
@@ -433,8 +449,11 @@ passages du manuel qui les décrivent (C-32-5-22).
     uniformiserait tout refus en 401 laisserait passer Mb6 ; recherche sur la **`Lecture`** ; dernière utilisation *best-effort* sur la **`Trace`**
     (un échec est journalisé, n'échoue pas). Le module ne nomme ni `axum`, ni `AppState`, ni `CurrentUser` dans ses
     lignes de code (garde (vi), `RESIDUS_VI` inchangé) ; `poignees.rs:45-48` et `services/mod.rs:80-83` disent le
-    nouvel usage de la `Trace`, et `poignees.rs:9-12`, antérieur à Q11 (« utilisateur MariaDB limité au `SELECT`, ou les
-    deux »), dit la décision : lecture seule applicative, mode de session `READ ONLY`, à la 32-6 (F13).
+    nouvel usage de la `Trace`, et les sites antérieurs à Q11 (« utilisateur MariaDB limité au `SELECT`, ou les
+    deux ») disent la décision — lecture seule applicative, mode de session `READ ONLY`, à la 32-6 : `poignees.rs:9-12`
+    et `services/mod.rs:93-95` (F13, F2 = R5 ; les deux sites de `lib.rs:147-148` et `:158-159` vont à la 32-5c, qui
+    touche `lib.rs`) ; le doc-comment de `ContexteAcces` (`acces.rs:~72`, « les tests et la 32-6 ») nomme aussi
+    `cles_mcp::authentifier`, son constructeur de production (R6).
 19. **AC-b4 — refus croisés.** (a) Une clé MCP **active**, portée `books:read`, présentée à `GET /api/v1/accounts` en
     `Authorization: Bearer` **et** en cookie `kesh_access_token` — **deux requêtes distinctes**, le cookie primant sur
     l'en-tête (`middleware/auth.rs:83-87`) — → **401** les deux fois, et sa `last_used_at` reste
@@ -466,7 +485,11 @@ passages du manuel qui les décrivent (C-32-5-22).
     `GET /api/v1/admin/mcp/settings` (défauts et `version: 0` sans ligne) ; `PUT /api/v1/admin/mcp/settings` (tous les
     champs, `version`) → 200.
 23. **AC-c2 — gardes.** Pour **chaque** route : Comptable → 403 `FORBIDDEN` ; PAT, même créé par un Administrateur →
-    403 `API_KEY_ADMIN_FORBIDDEN` ; clé MCP → 401 ; sans authentification → 401. Les six couples entrent à
+    403 `API_KEY_ADMIN_FORBIDDEN` (jambe `read-write`, `admin_pat_denied_e2e.rs:769`) et, pour un PAT `read` sur une
+    méthode mutante, `API_KEY_READ_ONLY` (jambe `read-only`, `:792-815`) ; clé MCP → 401 ; sans authentification → 401.
+    Les deux handlers `GET` **ne portent pas** `ensure_not_pat` (la couche suffit) ; la répartition `(8, 25)` → **`(10, 29)`**
+    (`:830-836`) et `discriminating` 6 → **8** (`:881-888`) suivent. Les deux commentaires antérieurs à Q11 de
+    `lib.rs:147-148` et `:158-159` (F2 = R5) se corrigent ici. Les six couples entrent à
     `admin_pat_denied_e2e` (33 → **39**, à chaque site du nombre : `lib.rs:224`, `admin_pat_denied_e2e.rs:46`, `:323`,
     `:382`, `:409`, `:769`) ; les quatre routes mutantes à `audit_route_registry.rs` (`Traced`, et la classe de rejeu
     que l'inventaire établit), inventaires 124 → **128** et 127 → **131** (`:768`, `:795`, doc `:27-32`), `traced` 118 → **122** (`:770-771`, avec
@@ -505,7 +528,7 @@ passages du manuel qui les décrivent (C-32-5-22).
     `kesh-api/tests/onboarding_audit_e2e.rs`** (C-32-5-23 ; `kesh-seed` n'a ni test de base ni accès à
     `authentifier`, fait 8) : après `reset_demo`, une clé MCP active créée avant **authentifie encore**, et
     `mcp_server_settings` est **vide** (serveur désactivé). Dans le test de la remise à zéro (fait 19 (b)), `mcp_keys`
-    rejoint les deux listes d'instantanés des tables conservées (`onboarding_audit_e2e.rs:2023-2028`, `:2079-2084`) —
+    rejoint les deux listes d'instantanés des tables conservées (`onboarding_audit_e2e.rs:2024-2028`, `:2079-2084`) —
     la ligne que `populate` y a posée en 32-5a survit, identique.
 30. **AC-d2 — principaux orphelins (C-32-5-12, révisé).** `reattach_orphan_principals_in_tx` verrouille les clés MCP
     **après** les clés d'API, révoque les actives orphelines **quelle que soit la cible**, puis, avec une cible, les
@@ -535,9 +558,9 @@ passages du manuel qui les décrivent (C-32-5-22).
 ### 32-5a
 - [ ] **T-a0** — recontrôle au code des faits 7, 10, 11, 14, 15, 16, 17 (ligne lue citée au Change Log) ; `git log -1`
   = partie de `main` à jour ; version de migration libre.
-- [ ] **T-a1** — migration (AC-a1), `CHECK` éprouvés sur `kesh_325` ; squash régénéré ; ligne de `migrations.sha384`
-  **en dernier** (AC-a12).
-- [ ] **T-a2** — entités et dépôts, leurs tests (AC-a2 à AC-a5).
+- [ ] **T-a1** — migration (AC-a1), `CHECK` éprouvés **à la main** sur `kesh_325` (le fichier peut encore changer).
+- [ ] **T-a2** — entités et dépôts, leurs tests (AC-a2 à AC-a5) ; **puis**, les `CHECK` éprouvés par les tests
+  d'AC-a2, squash régénéré et ligne de `migrations.sha384` **en dernier** (AC-a12) — à partir de là, P8.
 - [ ] **T-a3** — inventaire, export global, aller-retour (AC-a6 à AC-a8).
 - [ ] **T-a4** — fenêtre de P7, justifications, tests d'import du lettrage, refus de la 0.14.0 (AC-a9, AC-a10,
   AC-a15).
@@ -546,7 +569,9 @@ passages du manuel qui les décrivent (C-32-5-22).
 - [ ] **T-a7** — mutations Ma1 à Ma7, gates (§ *Gates*).
 
 ### 32-5b
-- [ ] **T-b0** — recontrôle des faits 1, 2, 6 ; 32-5a fusionnée.
+- [ ] **T-b0** — recontrôle des faits 1, 2, 6 ; 32-5a fusionnée ; **recompte**, sur `main` au départ de la 32-5b, des
+  fichiers de `services/`, des emplois de `Portee::` et des refus de portée de `services_motif.rs` (la 32-4a, PR #745,
+  et sans doute la 32-4b, seront fusionnées avant : leurs comptes changent) — écrits au Dev Agent Record.
 - [ ] **T-b1** — génération DRY, `Portee`, `services_motif.rs` (AC-b1, AC-b2).
 - [ ] **T-b2** — `services::cles_mcp::authentifier` et ses tests (AC-b3, AC-b5).
 - [ ] **T-b3** — refus croisés et clé restaurée (AC-b4, AC-b6).
@@ -702,7 +727,8 @@ pub struct McpScopes(BTreeSet<McpScope>);            // non vide ; encode/décod
 pub enum SendValidation { Required, Exempt }          // "required" | "exempt"
 
 // kesh-api/src/services/cles_mcp.rs
-pub const ROLE_CLE_MCP: Role = Role::Admin;           // hypothèse Q3 — création ET authentification
+pub const ROLE_CLE_MCP: Role = Role::Admin;           // hypothèse Q3 — AUTHENTIFICATION seulement ; la création
+                                                      // est gardée par require_admin_role (rbac.rs:31-33, en dur)
 pub struct CleMcpAuthentifiee { pub cle_id: i64, pub acces: ContexteAcces, pub validation: SendValidation }
 pub async fn authentifier(lecture: &Lecture, trace: &Trace, jeton: &str) -> Result<CleMcpAuthentifiee, AppError>;
 ```
@@ -777,14 +803,18 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
 ## Points à soumettre à Guy
 
 1. **Q3 — qui crée une clé MCP ?** Hypothèse de travail : l'Administrateur seul, et une clé cesse d'authentifier dès
-   que son créateur n'est plus Administrateur ou n'est plus actif (C-32-5-7). Si tu ouvres la création au Comptable,
-   une constante change et les deux règles suivent.
+   que son créateur n'est plus Administrateur ou n'est plus actif (C-32-5-7). **Le vrai coût d'une ouverture au
+   Comptable** : la constante `ROLE_CLE_MCP` ne règle que l'authentification ; la création est gardée par la couche
+   d'`admin_routes` (`require_admin_role`, `Role::Admin` en dur, `rbac.rs:31-33`). Il faudrait donc sortir les six
+   routes du bloc, les remonter sous `require_comptable_role` avec `ensure_not_pat` (motif des clés d'API), changer la
+   constante, et refaire les gardes et leurs compteurs (`admin_pat_denied_e2e`, 39 → 33) — une modification de routage,
+   non d'une ligne. Rien n'est branché d'avance tant que tu n'as pas tranché.
 2. **Q7 — les réglages restaurés tels quels ?** Hypothèse : oui, un serveur activé dans la sauvegarde l'est après
    l'import (C-32-5-11). L'autre voie : désactivé à toute restauration, réactivé à la main.
 3. **Q5 — les cinq portées** `books:read`, `invoices:read`, `contacts:read`, `documents:read`, `prompts:write` : toujours
    l'hypothèse du kickoff.
 4. **Le découpage en quatre parties** (32-5a à 32-5d), une fiche et quatre revues, dans l'ordre a → b → d → c : le
-   relevé au code et les deux validations ont trouvé **dix modules distincts** (dix-sept en somme des quatre parties)
+   relevé au code et les validations ont trouvé **onze modules distincts** (dix-huit en somme des quatre parties)
    là où le kickoff en comptait trois (C-32-5-1).
 5. **La remise à zéro de démonstration** conserve les clés MCP (comme les clés d'API) et remet le serveur à
    « désactivé » (C-32-5-11). Te convient-il ?
@@ -902,3 +932,31 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
     fait 17, ou déclaré exempté (en-tête P8).
   - Nouveaux totaux : **31 AC** (A 15, B 6, C 7, D 3), **23 tâches**, **23 mutations** (Ma 7, Mb 6, Mc 6, Md 4) ;
     registre C-32-5-1 à C-32-5-27. Prochaine passe : P3 complète, Sonnet, R et F (`325-validate-prompt-p3.md`).
+- **2026-10-25 — Validation P3** (passe complète, deux lentilles en contexte frais, **Sonnet** ×2 ; rapports
+  `kesh-gate-logs/325-validate-p3-R.md` et `325-validate-p3-F.md`). **Trend : P1 2 HIGH / 8 MEDIUM → P2 1 / 7 → P3
+  R 0/0/0/7, F 0/0/1/9 (0 HIGH, 1 MEDIUM).** Convergents : F2 = R5, F5 = R2, F8 = R4, F9 (i) = R7. Prémisse de F1
+  revérifiée par l'orchestrateur. Remédiation (Opus 5.5), **sur la fiche seule** (aucun code) :
+  - **F1 (MEDIUM)** — `ROLE_CLE_MCP` ne pilote que l'authentification ; la création est gardée par `require_admin_role`
+    (`rbac.rs:31-33`, `Role::Admin` en dur). C-32-5-7, l'esquisse des Dev Notes et le point 1 à Guy disent le vrai coût
+    d'une ouverture au Comptable (une modification de routage) ; la constante n'est **pas** branchée sur le handler.
+  - **LOW** : R1 (jambes `read-write`/`read-only`, `(8, 25)` → `(10, 29)`, `discriminating` 6 → 8, les `GET` sans
+    `ensure_not_pat`) ; R2 = F5 (P6 : chaque occurrence de `\b49\b`/`\b83\b`, `:208`) ; R3 (sept « n'est PAS vide ») ;
+    R4 = F8 (lignes `:99`/`:100` de l'audit d'idempotence, ligne neuve qui dit le déplacement, `:89` signalée) ; F2 = R5
+    (quatre sites antérieurs à Q11 : `poignees.rs`, `services/mod.rs` en 32-5b, `lib.rs` ×2 en 32-5c) ; R6
+    (`ContexteAcces`) ; R7 = F9 (i) (citations `:83`, `:208`, `format_1_restauree_sur_la_meme_installation`, `:2013`,
+    `:2024`) ; F3 (squash et `migrations.sha384` en fin de T-a2, après les tests des `CHECK`) ; F4 (`:211-224`,
+    `ExemptionBasis::Durable`) ; F6 (versions sans l'assistant) ; F7 (comptes de la 32-5b relatifs à `main` au départ,
+    recomptés à T-b0 — la 32-4a, PR #745, la précédera) ; F9 (ii) (`mod common;` à `services_motif.rs`), (iii)
+    (`middleware` compté : 32-5b à **4** modules, **11 distincts, 18 en somme**) ; F10 (annotations du registre de
+    sprint rafraîchies).
+  - **Recyclage** : F2 et F5 sont des propagations incomplètes de correctifs P2 (F13 et R8 de la P2) ; F1 est un défaut
+    **d'origine** (C-32-5-7, première rédaction). Sévérité en baisse continue.
+  - **Symptômes grepés par la valeur** sur la fiche, le registre, le fichier d'epic et le registre de sprint :
+    `création ET`, `une constante change`, `seule source de deux`, `auth.rs:77-79`, `:209`, `en_format_1`, `:2012`,
+    `:2023`, `:211-216`, `:950-956`, `dix modules distincts`/`dix-sept` — restent seulement les mentions datées des
+    entrées P1 et P2 de ce Change Log. Au dépôt : `utilisateur .?SELECT` (quatre sites, tous nommés), `n'est PAS vide`
+    (sept, nommés), `\b(83|49)\b` dans `migrations_upgrade_path.rs` (règle de la valeur).
+  - Totaux inchangés : 31 AC, 23 tâches, 23 mutations ; registre C-32-5-1 à 27. La remédiation ne touchant aucune ligne
+    de code, la passe suivante est **ciblée** (P4, une lentille regression hunter, Opus, sur le seul commit de cette
+    remédiation, `325-validate-prompt-p4.md`).
+
