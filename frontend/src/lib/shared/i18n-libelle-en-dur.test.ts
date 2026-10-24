@@ -229,8 +229,16 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * (clés `fiscal-years-checks-*`) : aucun littéral, donc `conforme` **49 → 54** ; `ecartee` ne
  * bouge pas. *Identifiées en cherchant les suffixes `Label`, `Text`, `Display` dans les
  * fichiers de la story ; `checkTitle` et `checkHelp` n'en portent pas.*
+ *
+ * ⚠️ **68 → 70, et les deux déclarations sont NOMMÉES** (Story 31-1c, #503 — la sauvegarde
+ * automatique) : `errorText` et `frequencyLabel` (`lib/features/admin-backup/
+ * AutoBackupSection.svelte`). `frequencyLabel` délègue chaque branche à `i18nMsg` (clés
+ * `admin-backup-auto-frequency-*`) ; `errorText` rend le message de l'`ApiError` ou le repli
+ * reçu en paramètre, lui-même traduit à l'appel : aucun littéral, donc `conforme` **54 → 56** ;
+ * `ecartee` ne bouge pas. *Identifiées en cherchant les suffixes `Label`, `Text`, `Display`
+ * dans les fichiers de la story ; `failureMessage` n'en porte pas.*
  */
-const CANDIDATES_ATTENDUES = 68;
+const CANDIDATES_ATTENDUES = 70;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -747,7 +755,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 54 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 56 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);
