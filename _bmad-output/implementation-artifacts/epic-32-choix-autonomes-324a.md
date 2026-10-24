@@ -20,7 +20,10 @@ autonomie. Relevé au code de `89d68704` (32-3 fusionnée).
   deux services sans consommateur, contraire à C-32-0-4 et sans gain pour la 0.16.0 ; ne rien figer pour les deux
   restants — une liste qu'on a pensé à traiter, non un inventaire clos (`CLAUDE.md`, *Inventorier les sites NON
   RÉSOLUS*).
-- **Réversible** : oui ; la 0.17.0 (propositions) migrera les propositions de lettrage si un outil les sert.
+- **Réversible** : oui ; la story qui ajoutera un outil servant ces lectures les migrera — **aucune échéance planifiée**
+  (ni la 32-9a, ni la 32-9b, ni la 0.17.0, dont les « propositions » sont celles de l'agent, `epic-32-serveur-mcp.md:69`,
+  non les paires de lettrage ; validation P1, F6). *(Écart à la lettre de l'AC de l'epic tranché ici seul : soumis à
+  Guy, fiche § *Points à soumettre à Guy*, Q1 ; l'epic est annoté — validation P1, R7, 2026-10-24.)*
 
 ### C-32-4a-2 — `contact_persons::list_persons` hors périmètre
 
@@ -87,8 +90,10 @@ autonomie. Relevé au code de `89d68704` (32-3 fusionnée).
   `find_by_id(&state.pool` hors transaction. Le corps quitte le handler : la garde rougirait (« get_journal_entry
   introuvable » ne tombe pas — le handler reste —, mais `pool.begin()` y compterait 0).
 - **Retenu** : la garde **se déplace** au `#[cfg(test)] mod tests` de `services/ecritures.rs`, même nom, mêmes
-  assertions, sur le corps de `pub async fn detail(` ; deux jetons changent, `state.pool` → `lecture.pool()` dans
-  l'écart assumé (`find_by_id(lecture.pool()`) et dans le refus d'un lecteur sur le pool. Elle disparaît de
+  assertions, sur le corps de `pub async fn detail(` ; **trois** jetons changent (validation P1, R3 = F3 — « deux » à
+  la rédaction) : le compte de la transaction, `pool.begin()` → `pool().begin()` (la première ne figure pas dans
+  `lecture.pool().begin()` et compterait zéro), compté sur le corps sans blancs ; `state.pool` → `lecture.pool()` dans
+  l'écart assumé (`find_by_id(lecture.pool()`) ; `state.pool` → `.pool()` dans le refus d'un lecteur sur le pool. Elle disparaît de
   `routes/journal_entries.rs` ; le diff des deux versions se recopie au Dev Agent Record. Mutation M13.
 - **Écartées** : la laisser dans `journal_entries.rs`, pointée sur `../services/ecritures.rs` (une garde loin de ce
   qu'elle garde) ; la supprimer (le compilateur ne voit pas une connexion acquise à côté de la transaction, motif
@@ -109,24 +114,38 @@ autonomie. Relevé au code de `89d68704` (32-3 fusionnée).
 ### C-32-4a-9 — Un fichier de tests neuf pour le rollout ; la `Lecture` en lecture seule partagée
 
 - **Contexte** : `tests/services_motif.rs` (2177 lignes) porte le motif et sa garde ; les tests de refus et de lecture
-  seule des cinq services sont neufs. `pool_lecture_seule` (`services_motif.rs:835-851`) serait recopiée (DRY).
-- **Retenu** : `tests/services_rollout.rs` neuf (la 32-4b y ajoutera les siens) ; `pool_lecture_seule` déplacée dans
-  `tests/common/lecture_seule.rs` (`pub mod lecture_seule;` de `tests/common/mod.rs`, sous son `#![allow(dead_code)]`),
-  employée par les deux fichiers ; la **garde lexicale** reste dans `services_motif.rs` et s'y étend (R8).
+  seule des cinq services sont neufs. `pool_lecture_seule` et `lecture_seule` (`services_motif.rs:833-855`) seraient
+  recopiées (DRY).
+- **Retenu** : `tests/services_rollout.rs` neuf (la 32-4b y ajoutera les siens) ; `pool_lecture_seule` et
+  `lecture_seule` déplacées dans `tests/common/lecture_seule.rs` (`pub mod lecture_seule;` de `tests/common/mod.rs`,
+  sous son `#![allow(dead_code)]`), employées par les deux fichiers — `services_motif.rs` gagnant `mod common;`, qu'il
+  ne déclare pas aujourd'hui (validation P1, R5 = F4) ; la **garde lexicale** reste dans `services_motif.rs` et s'y
+  étend (R8). Le montage HTTP (`spawn_app`, `forge_jwt`) et les constructeurs de contexte se **recopient** dans
+  `services_rollout.rs` : convention du dépôt (`spawn_app` dans 68 binaires de test, `forge_jwt` dans 29), et la 32-4b
+  ajoute au même fichier, sans troisième copie (validation P1, F4). **Ordre avec la 32-4b** (validation P1, F8) : elle
+  part de `main` après la fusion de la 32-4a ; à défaut, celle qui fusionne en second rebase, ajoute à
+  `services_rollout.rs` sans le recréer et porte le compte des fichiers de `services/` à la somme.
 - **Écartées** : tout dans `services_motif.rs` (fichier déjà long, et un binaire qui mêle motif et rollout) ; recopier
   l'aide.
 - **Réversible** : oui.
 
-### C-32-4a-10 — Points de #738 repris : A5 et P2-2 ; les autres y restent
+### C-32-4a-10 — Points de #738 repris : A5, P2-2, et B4 pour sa forme coupée ; les autres y restent
 
 - **Contexte** : #738 trace onze LOW de la revue de la 32-3 et deux de sa P2. La 32-4a étend la garde (ii) et touche
   `services_motif.rs`.
 - **Retenu** : **A5** (garde (i)/(ii) sans témoin positif, (ii) jamais rougie par une mutation) — la garde étendue gagne
   son témoin et ses mutations (M15) ; **P2-2** (aucune ligne de `TABLE_DES_TRACES` ne trace les journaux **sans**
-  filtre) — la ligne 7 repasse à `journal: None` (une ligne de test ; mutation M17). Restent sur #738, avec la raison
-  au *Hors périmètre* : B1, B2, B3 (conception du `Rapport`, que la 32-4a ne produit pas), B4 (aucun faux vert
-  aujourd'hui), E3, E4 (rapports), B5 (doc-comment de `routes/reports.rs`, un module de plus), A3, A4, P2-1 (texte de
-  la fiche 32-3, historique), A6 (non vérifiable).
+  filtre) — **une dix-neuvième ligne** `journaux_affichage_sans_filtre` (mutation M17), la ligne 7 **restant filtrée**
+  (mutation M17′). *(Révisé à la validation P1, R1 : la rédaction passait la ligne 7 à `journal: None` ; or elle est
+  la seule qui exerce « affichage avec filtre » — le bras d'affichage de `tracer` (`rapports.rs:378-390`) appelle
+  `emit_report_audit`, la ligne 8 passant par `emit_report_export_audit` — et la mutation « l'affichage trace `None` »
+  aurait survécu. Écartée aussi : garder dix-huit lignes et déclarer la perte.)* **B4**, repris pour sa seule forme
+  « `.pool` coupé sur deux lignes », sur les gardes (ii) et (iii) que la story écrit (validation P1, R2 = F2 : la forme
+  est dans `letterings.rs:243-244`, `:544-545`, `:566-567`) — détecteur sur le corps aplati, témoin coupé, M16 ; ses
+  autres formes et la garde (i) restent. Restent sur #738, avec la raison au *Hors périmètre* : B1, B2, B3 (conception
+  du `Rapport`, que la 32-4a ne produit pas), B4 hors la forme coupée (aucun faux vert aujourd'hui), E3, E4 (rapports),
+  B5 (doc-comment de `routes/reports.rs`, un module de plus), A3, A4, P2-1 (texte de la fiche 32-3, historique), A6
+  (non vérifiable).
 - **Réversible** : oui.
 
 ### C-32-4a-11 — Les bornes du service des écritures : mutations équivalentes, déclarées

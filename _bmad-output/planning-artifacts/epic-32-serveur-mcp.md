@@ -315,6 +315,11 @@ restent dans les handlers jusqu'à la 0.17.0 (propositions). Revue fichier par f
 modules visés n'appelle plus un dépôt directement (inventaire clos, garde lexicale si elle est simple). **Risque** :
 faible à moyen ; une liste paginée dont les bornes (`clamp(1, 200)`) se perdent dans le déplacement.
 
+*(Annoté le 2026-10-24, validation P1 de la 32-4a : la 32-4a migre cinq des sept lectures de ses fichiers et laisse
+`get_lettering` et `get_lettering_proposals` sur `state.pool`, inventoriés et figés par la garde, faute d'outil qui
+les serve — C-32-4a-1, `implementation-artifacts/epic-32-choix-autonomes-324a.md` ; écart à la lettre de cet AC soumis
+à Guy, fiche 32-4a, Q1. Les plafonds réels sont 500, 500 et 100, non `clamp(1, 200)` : fiche 32-4a, fait 3.)*
+
 ### 32-12 — Une sauvegarde antérieure reste importable 🗄️ *(ajoutée par l'orchestrateur le 2026-10-24, sous réserve de Guy — Q4)*
 
 **Objet** : que les sauvegardes prises en 0.15.0 — automatiques comprises, celles des livres réels de Guy — restent

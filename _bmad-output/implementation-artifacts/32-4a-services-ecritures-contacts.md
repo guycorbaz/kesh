@@ -69,14 +69,33 @@ la 32-9a et de la 32-9b ne puisse ni contourner une règle écrite dans un handl
    l. 1016, `find("pub async fn get_journal_entry(")` l. 1023, `corps.contains("journal_entries::find_by_id(&state.pool")`
    l. 1077). Déplacer le corps la ferait rougir (C-32-4a-7).
 6. **Aucune des cinq lectures n'écrit** : aucun `audit`, `insert_in_tx` ni `get_or_create` dans leurs corps (`grep -n
-   'get_or_create\|audit' routes/{contacts,letterings,journal_entries}.rs` → commentaires seuls) ; les dépôts appelés —
-   `journal_entries::{list_by_company_paginated, find_by_id, reversal_blocker, reversal_blockers, reversed_by,
-   modification_blocker}`, `imported_supplier_invoices::find_source_document_of_entry` (« lecture **ordinaire** (jamais
-   `FOR UPDATE`) », `imported_supplier_invoices.rs:171`), `letterings::open_items` (sa transaction, `conn.begin()` l. 354, refermée par
-   `rollback` l. 405 de `open_items.rs`), `contacts::{list_by_company_paginated, find_by_id_in_company}`,
-   `helpers::company_for_ids` → `companies::find_by_id` — ne portent, sur ces chemins, ni écriture ni `FOR UPDATE`
-   (`modification_blocker`, « Lecture **sans verrou** », `journal_entries.rs:1205`) : **établi par lecture statique**,
-   à confirmer à l'exécution par l'AC11.
+   'get_or_create\|audit' routes/{contacts,letterings,journal_entries}.rs` → commentaires seuls). **Fermeture des appels**
+   (relevée le 2026-10-24 en suivant chaque appel jusqu'à la requête, validation P1, F1 ; chemins `kesh-db/src/repositories/`) :
+   - **appels directs** des handlers : `journal_entries::{list_by_company_paginated, find_by_id, reversal_blocker,
+     reversed_by, modification_blocker}`, `imported_supplier_invoices::find_source_document_of_entry` (« lecture
+     **ordinaire** (jamais `FOR UPDATE`) », `imported_supplier_invoices.rs:171`), `letterings::open_items`,
+     `contacts::{list_by_company_paginated, find_by_id_in_company}`, `helpers::company_for_ids` → `companies::find_by_id`
+     (`FIND_BY_ID_SQL`, `companies.rs:24-27`) ;
+   - **appels transitifs** : `reversal_blocker` → `reversal_blockers` (l. 2368) → `document_owners` (l. 2212) ;
+     `modification_blocker` (l. 1215) → `fiscal_years::find_later_closed` (`FIND_LATER_CLOSED_SQL`, sans verrou ; la
+     variante verrouillante est `find_later_closed_in_tx`, l. 870, hors chemin), `modification_guard` (l. 1066 →
+     `reversal_blockers`, puis un `SELECT` sur `supplier_invoices`/`audit_log`), un `SELECT books_locked_through`, et
+     `lettering_guard(…, Lecture::Conseil)` (l. 1261) ; `open_items` (`open_items.rs:346`, sa transaction `conn.begin()`
+     l. 354, refermée par `rollback` l. 405) → `require_viewable_account` → `letterings::letterable_account`
+     (`letterings.rs:376`), les trois `const` `OPEN_ITEMS_*_SQL`, `lines_documents_and_periods` (`letterings.rs:945` →
+     `document_owners`, `open_period_rule` → `find_later_closed` et `books_locked_through`), `invoice_states`
+     (`open_items.rs:476`).
+   Sur cette fermeture, **aucune** écriture ni `get_or_create` ; **un seul** `FOR UPDATE` : la branche
+   `Lecture::Verrouillante` de `lettering_guard` (`journal_entries.rs:1182`), **non prise** — `modification_blocker`
+   passe `Lecture::Conseil` (l. 1261 ; « Lecture **sans verrou** », l. 1205). Les autres `FOR UPDATE` de ces fichiers
+   sont dans des fonctions hors de la fermeture (`create_in_tx_inner`, `update_in_tx`, `delete_in_tx`,
+   `reverse_in_tx_inner`, `find_later_closed_in_tx`, `lock_fiscal_years_of_group`…). **Établi par lecture statique.**
+   L'exécution (AC11) le confirme **pour les écritures** sur les branches que les fixtures exercent ; **pour les
+   verrous**, elle ne le confirme que si une session `SET SESSION TRANSACTION READ ONLY` refuse aussi un `SELECT … FOR
+   UPDATE` — ce que le dépôt a **mesuré** pour une transaction ouverte par `START TRANSACTION … READ ONLY` (MariaDB
+   10.11.16, erreur 1792, SQLSTATE `25006` : test `t0_un_verrou_dans_l_instantane_est_refuse_par_le_serveur`,
+   `kesh-db/tests/closing_checks.rs:253-274`, Story 29-1), **non** pour la forme de session qu'emploie l'aide
+   `lecture_seule` : **non établi**, mesuré par l'AC11 (c).
 7. **Ordres de lecture** : `get_contact` lit le contact (`find_by_id_in_company`, l. 613-615) **avant** la société
    (l. 618) ; `list_contacts` lit la société d'abord (l. 570) ; `get_open_items` analyse `asOf` (l. 540, `parse_as_of`
    l. 512-527, `Utc::now()` si absent) **avant** de lire la société (l. 543). La société des contacts ne sert qu'à la
@@ -139,19 +158,27 @@ la 32-9a et de la 32-9b ne puisse ni contourner une règle écrite dans un handl
    au handler (au développement, à écrire au Dev Agent Record) sans changer l'ordre des erreurs : une valeur de
    `journal` invalide reste un refus de l'extracteur `Query` d'Axum, avant le service.
 4. **AC4 — `ecritures::detail`.** Reçoit `(&ContexteAcces, &Lecture, id)`. Après `exiger` : `company_for_ids`
-   (`Internal` si la société manque), `find_by_id(lecture.pool(), company.id, id)` (`NotFound` → 404), puis **une**
+   (`Internal` si la société manque), `find_by_id(lecture.pool(), company.id, id)`
+   (`AppError::Database(DbError::NotFound)` → 404, la forme d'aujourd'hui, `journal_entries.rs:498`), puis **une**
    transaction `lecture.pool().begin()` portant les quatre lecteurs du fait 5, et `rollback`. Rend
    `DetailEcriture` (champs `pub` : l'écriture et ses lignes, l'écriture qui la contre-passe, le motif de blocage de la
    contre-passation, le motif de blocage de la modification, la pièce source — noms au développement). La garde du fait 5
    **se déplace** au `#[cfg(test)] mod tests` de `services/ecritures.rs` (C-32-4a-7) : même nom
    (`get_journal_entry_reads_in_one_transaction`, ou `detail_lit_dans_une_transaction` avec renvoi à la 15-1b-0 au
    doc-comment — au choix, écrit au Dev Agent Record), mêmes assertions sur le corps de `pub async fn detail(` lu par
-   `include_str!("ecritures.rs")` tronqué à `#[cfg(test)]` : `pool.begin()` une fois, `acquire()` zéro fois, chacun des
-   quatre lecteurs appelé une fois sur `&mut tx` ou `&mut *tx` et non sur le pool, et l'écart assumé
-   `journal_entries::find_by_id(lecture.pool()` ; le refus d'un lecteur sur le pool cherche `.pool()` au lieu de
-   `state.pool`. Le diff entre l'ancienne et la nouvelle garde est recopié au Dev Agent Record.
+   `include_str!("ecritures.rs")` tronqué à `#[cfg(test)]` : une transaction ouverte une fois, `acquire()` zéro fois,
+   chacun des quatre lecteurs appelé une fois sur `&mut tx` ou `&mut *tx` et non sur le pool, et l'écart assumé.
+   **Trois jetons changent** (validation P1, R3 = F3), et chacun s'écrit tel quel : (1) le compte de la transaction —
+   `pool.begin()` (`journal_entries.rs:1030`), que `lecture.pool().begin()` ne contient pas (`pool().begin()`) et qui y
+   compterait **zéro** — devient `pool().begin()`, compté sur le corps **débarrassé de ses blancs** (`chars().filter(|c|
+   !c.is_whitespace())`), insensible à une coupure de rustfmt (`lecture\n.pool()\n.begin()`) ; (2) l'écart assumé
+   `journal_entries::find_by_id(&state.pool` (l. 1077) devient `journal_entries::find_by_id(lecture.pool()` ; (3) le refus
+   d'un lecteur sur le pool (`!appels[0].contains("state.pool")`, l. 1065) cherche `.pool()`. S'y ajoutent les deux
+   ancres (`include_str!("ecritures.rs")`, `find("pub async fn detail(")`). Corriger un rouge de cette garde en
+   **relâchant** un motif est interdit : le diff entre l'ancienne et la nouvelle garde est recopié au Dev Agent Record,
+   jeton par jeton.
 5. **AC5 — `postes_ouverts::lister`.** Reçoit `(&ContexteAcces, &Lecture, DemandePostesOuverts)`. Après `exiger` :
-   `parse_as_of` (déplacée telle quelle de `letterings.rs:503-527`, doc-comment compris, `Utc::now().naive_utc().date()`
+   `parse_as_of` (déplacée telle quelle de `letterings.rs:504-527`, doc-comment compris, `Utc::now().naive_utc().date()`
    si absente ou vide), puis défaut (`LIMITE_DEFAUT` 50) et `clamp(1, LIMITE_MAX)`, `offset` défaut 0 puis `max(0)`,
    puis `company_for_ids`, puis une connexion acquise de la `Lecture` et `letterings::open_items(&mut conn, company.id,
    account_id, as_of, limit, offset)`. **Ordre des refus inchangé** (AC7 de la 15-1b, doc-comment l. 530-533) : `asOf`
@@ -162,7 +189,8 @@ la 32-9a et de la 32-9b ne puisse ni contourner une règle écrite dans un handl
    `exiger`, `company_for_ids` **d'abord** (fait 7), puis défaut (`LIMITE_DEFAUT` 20) et `clamp(1, LIMITE_MAX)` (100),
    `offset` défaut 0 puis `max(0)`, puis `contacts::list_by_company_paginated(lecture.pool(), acces.company_id(),
    query)` ; rend `PageContacts { page, societe }`. `detail(&ContexteAcces, &Lecture, id)` : après `exiger`,
-   `find_by_id_in_company(lecture.pool(), id, acces.company_id())` → `NotFound` **avant** `company_for_ids` (fait 7) ;
+   `find_by_id_in_company(lecture.pool(), id, acces.company_id())` → `AppError::Database(DbError::NotFound)`
+   (`contacts.rs:615`) **avant** `company_for_ids` (fait 7) ;
    rend `FicheContact { contact, societe }`. Le libellé des conditions de paiement reste au handler
    (`contact_response_with_label`, C-32-4a-8).
 7. **AC7 — handlers minces, comportement inchangé.** Chacun des cinq handlers ne fait plus que : extraire la requête,
@@ -175,17 +203,28 @@ la 32-9a et de la 32-9b ne puisse ni contourner une règle écrite dans un handl
    `OPEN_ITEMS_DEFAULT_LIMIT`/`MAX_LIMIT` de `letterings.rs:288, 292`, `MAX_LIST_LIMIT`/`DEFAULT_LIST_LIMIT` de
    `contacts.rs:42-43`) — `grep -nE "\b(MAX_LIMIT|DEFAULT_LIMIT|MAX_LIST_LIMIT|DEFAULT_LIST_LIMIT|OPEN_ITEMS_DEFAULT_LIMIT)\b"
    crates/kesh-api/src/routes/{journal_entries,letterings,contacts}.rs` ne rend plus que leurs **usages** par chemin
-   du service (ou rien), recopié au Dev Agent Record. Les mutants, `get_lettering` et `get_lettering_proposals` ne
-   changent pas, hors l'import du plafond commun (AC5).
+   du service (ou rien), recopié au Dev Agent Record. Ce contrôle ne voit que la disparition des **noms** — une borne
+   recopiée sous un autre nom (`const PAGE_MAX: i64 = 500` au handler) lui échappe (validation P1, F7) ; d'où le second,
+   sur les **écrêtages** : `grep -nE 'clamp\(|\.max\(0\)' crates/kesh-api/src/routes/{journal_entries,letterings,contacts}.rs`
+   rend aujourd'hui huit lignes (`contacts.rs:575-576`, `letterings.rs:541-542`, `:563-564`, `journal_entries.rs:352-353`)
+   et ne doit plus rendre que les **deux** de `get_lettering_proposals` (`letterings.rs:563`, commentaire, et `:564`,
+   l'écrêtage par le plafond importé du service), sortie recopiée au Dev Agent Record. Les mutants, `get_lettering` et
+   `get_lettering_proposals` ne changent pas, hors l'import du plafond commun (AC5).
 
 ### C — Les tests
 
 8. **AC8 — les tests existants restent verts ; les seules modifications sont celles-ci.** (1) `tests/services_motif.rs` :
    `TOUTES` à trois portées (l. 869) et un bras `ContactsRead` à `autre_portee` (l. 894-899) (C-32-4a-4) ; le compte de
-   `services/` à **huit** fichiers (l. 2137-2142) ; la garde étendue de l'AC12 ; `pool_lecture_seule` remplacée par
-   l'aide commune ; la ligne 7 de `TABLE_DES_TRACES` (l. 432-442) à `journal: None`, `nom` et `details` en conséquence
-   (`"journal_filter": null`) (AC17). (2) `tests/common/mod.rs` : `pub mod lecture_seule;` ; `tests/common/lecture_seule.rs`
-   neuf (C-32-4a-9). (3) `routes/journal_entries.rs` : le `mod tests` perd la seule garde du fait 5 (l. 1005-1080),
+   `services/` à **huit** fichiers (l. 2137-2142) ; la garde étendue de l'AC12 ; `mod common;` ajouté en tête (le
+   fichier ne le déclare pas aujourd'hui — `grep -n '^mod common' tests/services_motif.rs` ne rend rien ; validation P1,
+   R5 = F4 —, et `common/mod.rs`, monté par 23 binaires, se compile sous son `#![allow(dead_code)]`) ;
+   `pool_lecture_seule` et `lecture_seule` (l. 833-855) remplacées par l'aide commune ; **une dix-neuvième ligne** à
+   `TABLE_DES_TRACES`, `journaux_affichage_sans_filtre` (`num: 19`, `Svc::Journaux`, `Usg::Affichage`, `dem: BORNES`,
+   `"journal_filter": null`), la **ligne 7 restant filtrée** (`Some("Achats")`), et les sites qui comptent la table en
+   conséquence — l'assertion `TABLE_DES_TRACES.len()` (l. 773-777 : « dix-neuf lignes pour dix-huit couples (service,
+   usage) ») et le doc-comment de `table_des_traces_par_la_route` (l. 765) ; celui du module (l. 4, « chacun des
+   dix-huit handlers ») reste vrai (AC17, C-32-4a-10). (2) `tests/common/mod.rs` : `pub mod lecture_seule;` ;
+   `tests/common/lecture_seule.rs` neuf (C-32-4a-9). (3) `routes/journal_entries.rs` : le `mod tests` perd la seule garde du fait 5 (l. 1005-1080),
    déplacée (AC4) ; ses autres tests sont identiques. Contrôles au dernier commit :
    `git diff --diff-filter=MDR --name-only $(git merge-base HEAD origin/main) HEAD -- crates/kesh-api/tests` → **exactement**
    `crates/kesh-api/tests/common/mod.rs` et `crates/kesh-api/tests/services_motif.rs` ;
@@ -206,8 +245,16 @@ la 32-9a et de la 32-9b ne puisse ni contourner une règle écrite dans un handl
    `kesh-db/tests/letterings_lexical.rs`), relancées par le gate ciblé.
 9. **AC9 — un test de refus par service, et son contrôle positif.** Fichier neuf `crates/kesh-api/tests/services_rollout.rs`
    (`#[sqlx::test(migrations = "../kesh-db/test-schema")]`, fixtures **synthétiques** : `seed_accounting_company`, une
-   écriture sur un compte lettrable — établi au code des fixtures, sinon posé en SQL —, un contact). Une assertion nommée
-   par cas (C-32-3-38), pour **chacun des cinq services** :
+   écriture sur un compte lettrable — 1000 et 2000 le sont, aucun compte bancaire n'y étant lié dans le seed —, un
+   contact). Ces fixtures s'écrivent dans `services_rollout.rs` : `poser_livres` est privée à `services_motif.rs`. Le
+   montage HTTP (`spawn_app`, `forge_jwt`) et les constructeurs de contexte (`mcp_societe`, `api_societe`, `INEXISTANT`)
+   s'y **recopient** de `services_motif.rs:85-141` et `:830-883` — recopie assumée, convention du dépôt (`spawn_app` est
+   recopiée dans 68 binaires de test, `forge_jwt` dans 29 ; validation P1, F4) ; la 32-4b ajoutera ses tests à ce même
+   fichier, sans troisième copie. **Erreurs attendues, à la lettre** (validation P1, R4 = F5) : « `NotFound` » s'écrit
+   `AppError::Database(DbError::NotFound)` (la variante `AppError::NotFound` n'existe pas, `errors.rs:138-170`) ; le
+   compte non lettrable, `AppError::Database(DbError::LetteringAccountNotLetterable)` ; `AppError` n'étant pas
+   `PartialEq` (`#[derive(Debug, Error)]`), les assertions s'écrivent en `matches!`. Une assertion nommée par cas
+   (C-32-3-38), pour **chacun des cinq services** :
    - (a) canal **MCP sans la portée** (portées vides ; puis les **deux autres** portées seules) → `Err(AppError::Forbidden)` ;
    - (b) contrôle positif : MCP **avec** la portée exigée → `Ok` ;
    - (c) **le refus précède la validation et la lecture** — MCP sans portée, demande qui échouerait sans contrôle →
@@ -241,24 +288,49 @@ la 32-9a et de la 32-9b ne puisse ni contourner une règle écrite dans un handl
     passe `SET SESSION TRANSACTION READ ONLY`, C-32-4a-9) :
     - (a) les **cinq** services **réussissent** sur cette `Lecture` (le détail d'écriture compris : `BEGIN`, quatre
       lectures, `ROLLBACK` ; les postes ouverts : leur transaction propre) — confirmation, **sur les branches que les
-      fixtures exercent**, de l'inventaire de l'AC13 ; les branches non atteintes (pièce source présente, motifs de
-      blocage présents…) sont **nommées** au Dev Agent Record, non revendiquées ;
-    - (b) **filtre de société** : une seconde société (fixture synthétique) ; un contexte MCP de cette société, toutes
-      portées, demande le détail de l'écriture et du contact de la première → `NotFound` ; les postes ouverts du compte
-      de la première → `NotFound` ; `ecritures::lister` et `carnet::lister` → aucune ligne de la première.
+      fixtures exercent**, de l'inventaire de l'AC13 — **pour les écritures** ; pour les verrous, seulement si l'AC11 (c)
+      établit le refus ; les branches non atteintes (pièce source présente, motifs de blocage présents…) sont
+      **nommées** au Dev Agent Record, non revendiquées ;
+    - (b) **filtre de société** : une seconde société, posée par `kesh_db::repositories::companies::create` (comme
+      `common::create_test_company`) — **non** par un second `seed_accounting_company`, qui échouerait sur l'unicité de
+      `users.username` (il insère `admin` et `changeme`, `kesh-db/src/test_fixtures.rs:96-114` ; `uq_users_username`,
+      `test-schema/0001_schema_squash.sql:1143` ; validation P1, R6) ; un contexte MCP de cette société, toutes portées,
+      demande le détail de l'écriture et du contact de la première → `AppError::Database(DbError::NotFound)` ; les postes
+      ouverts du compte de la première → idem ; `ecritures::lister` et `carnet::lister` → aucune ligne de la première ;
+    - (c) **mesure, puis témoin : un verrou sur la `Lecture` de test** (validation P1, F1) — au patron de la T0 de la
+      29-1 (`kesh-db/tests/closing_checks.rs:253-274`) : le développement **mesure** d'abord ce que MariaDB fait de
+      `SELECT 1 FROM fiscal_years LIMIT 1 FOR UPDATE` sur `pool_lecture_seule` (session `SET SESSION TRANSACTION READ
+      ONLY`), **en autocommit puis dans `begin()`**, et recopie l'issue au Dev Agent Record ; puis il la **fige** par un
+      test qui l'asserte (erreur 1792 attendue d'après la 29-1, non établie pour la forme de session). Si les deux sont
+      refusés, l'AC11 (a) confirme aussi l'absence de verrou sur les branches exercées, et le doc-comment de
+      `services/mod.rs` peut le dire ; si l'un est accepté, l'absence de `FOR UPDATE` reste établie **par la seule
+      lecture statique** (fait 6, AC13), et le doc-comment comme le Dev Agent Record l'écrivent ainsi.
 12. **AC12 — la garde lexicale, étendue (R8), dans `services_motif.rs`.** Mêmes définitions que l'AC10 de la 32-3
-    (lignes de code, corps de handler de sa ligne d'ouverture au `pub async fn` suivant ou au `#[cfg(test)]`) :
+    (lignes de code, corps de handler de sa ligne d'ouverture au `pub async fn` suivant ou au `#[cfg(test)]`) ;
+    **détecteur commun à (ii) et (iii)** (validation P1, R2 = F2) : non plus `contains("state.pool")` ligne à ligne (le
+    patron de `ac10_i_ii_handlers_sans_le_pool`, `services_motif.rs:2073-2100`), mais le motif `\bstate\s*\.\s*pool\b`
+    sur le corps **aplati** — `sans_commentaires` (l. 1998) appliquée au corps joint par `\n`, `\s` traversant les fins
+    de ligne. Raison : rustfmt coupe `state.pool.acquire()…` en `state` / `.pool` sur deux lignes, forme présente dans
+    les fichiers mêmes que la garde lit (`letterings.rs:243-244`, `:544-545`, `:566-567` ; `grep -nE '^\s*\.pool\b'`),
+    et qu'un détecteur ligne à ligne ne voit pas (#738 B4). Aucun faux vert aujourd'hui — chacun des douze handlers
+    attendus porte aussi une occurrence non coupée —, mais un handler neuf écrit comme ses voisins y échapperait ;
     - (ii) étendue : les corps des **six** handlers `accounts::list_accounts`, `journal_entries::{list_journal_entries,
       get_journal_entry}`, `letterings::get_open_items`, `contacts::{list_contacts, get_contact}` ne contiennent pas
-      `state.pool` ; chaque corps est non vide (plancher de lignes) ; **témoin positif** (#738 A5) : le même détecteur,
-      appliqué à un texte témoin **et** au corps réel de `letterings::get_lettering`, y trouve `state.pool` ;
+      `state.pool` ; chaque corps est non vide (plancher de lignes) ; **témoins positifs** (#738 A5) : le même détecteur
+      trouve `state.pool` dans un texte témoin **en une ligne**, dans un texte témoin **coupé**
+      (`"let mut conn = state\n        .pool\n        .acquire()"`), et dans le corps réel de `letterings::get_lettering` ;
+      il ne le trouve pas dans `// state.pool` ni dans `lecture.pool()` ;
     - (iii) **inventaire des sites non résolus** : dans les trois fichiers visés, l'ensemble des couples (fichier,
       handler) dont le corps contient `state.pool` est **exactement** les douze attendus — les dix mutants
       (`journal_entries::{reverse_journal_entry, reverse_journal_entry_at_next_fiscal_year_start, create_journal_entry,
       update_journal_entry, delete_journal_entry}`, `letterings::{create_lettering, delete_lettering}`,
       `contacts::{create_contact, update_contact, archive_contact}`) et `letterings::{get_lettering,
-      get_lettering_proposals}` (C-32-4a-1) — et le nombre de `pub async fn` par fichier vaut 7 / 5 / 5 ; un handler
-      neuf sur `state.pool` y rougit par son nom ;
+      get_lettering_proposals}` (C-32-4a-1) — et le nombre de `pub async fn` par fichier vaut 7 / 5 / 5 ; **et** le
+      nombre de fonctions asynchrones de premier niveau, toutes visibilités (`^(pub(\([^)]*\))? )?async fn`, avant le
+      `#[cfg(test)]`), égale celui des `pub async fn` — aujourd'hui 7 / 5 / 5 des deux côtés : un `pub(crate) async fn`
+      ou un `async fn` neuf, que `corps_des_handlers` (qui n'ouvre que sur `pub async fn`, l. 2011-2033) ne lirait pas,
+      fait rougir ce compte. Un handler neuf sur `state.pool`, en une ligne ou coupé, y rougit par son nom ; la limite
+      qui reste (#738 B4, hors périmètre) : une déstructuration `State(AppState { pool, .. })`, que le motif ne voit pas ;
     - (vi) inchangée (`RESIDUS_VI`), le compte de `services/` passant à **huit** fichiers exactement ;
     - (viii) **neuve** : les lignes de code de `services/{ecritures,postes_ouverts,carnet}.rs` ne contiennent ni
       `\bTrace\b` ni `\btrace\b` (témoin positif : le motif trouve `trace: &Trace` dans un texte témoin, et ne trouve pas
@@ -271,13 +343,22 @@ la 32-9a et de la 32-9b ne puisse ni contourner une règle écrite dans un handl
 ### D — Inventaire, mutations, gates, documentation
 
 13. **AC13 — inventaire clos des écritures sur les cinq chemins.** Écrit au doc-comment de `services/mod.rs` (point 3
-    étendu) et au Dev Agent Record : (1) **aucune** écriture des services : les lecteurs du fait 6 ne font que lire —
-    établi par lecture statique (le développement relance `grep -nE "INSERT|UPDATE |DELETE|FOR UPDATE|get_or_create"`
-    sur le corps de chacun, sortie recopiée) et confirmé par l'AC11 (a) ; (2) `api_keys::touch_last_used`, écrite par
-    le **middleware** pour une requête par clé d'API — hors service, inchangée (point 2 de l'inventaire de la 32-3).
+    étendu) et au Dev Agent Record : (1) **aucune** écriture des services, **sur la fermeture des appels** du fait 6
+    (appels directs **et** transitifs, `const` SQL comprises — non sur le seul corps des fonctions nommées : `reversal_blocker`
+    n'est qu'un `reversal_blockers(…).next()`, et les requêtes vivent souvent dans des `const` hors du corps, validation
+    P1, F1) — établi par lecture statique : le développement relance, sur le **code** (commentaires écartés, même
+    définition qu'à l'AC12 ; validation P1, R9), `grep -nE "INSERT|UPDATE |DELETE|FOR UPDATE|get_or_create"` sur les
+    **fichiers** des dépôts de la fermeture (`journal_entries.rs`, `fiscal_years.rs`, `imported_supplier_invoices.rs`,
+    `letterings.rs`, `letterings/open_items.rs`, `contacts.rs`, `companies.rs`), range chaque occurrence sous sa
+    fonction ou sa `const`, et recopie le tri : **dans** la fermeture, la seule occurrence attendue est le `FOR UPDATE`
+    de la branche `Lecture::Verrouillante` de `lettering_guard` (`journal_entries.rs:1182`), non prise (`Lecture::Conseil`,
+    l. 1261) ; toute autre occurrence dans la fermeture est un défaut à porter au Project Lead. L'exécution le confirme
+    pour les écritures (AC11 (a)), et pour les verrous selon la mesure de l'AC11 (c) ; (2) `api_keys::touch_last_used`,
+    écrite par le **middleware** pour une requête par clé d'API — hors service, inchangée (point 2 de l'inventaire de la
+    32-3).
 14. **AC14 — mutations qui doivent rougir** (une à la fois, restauration `git checkout -- <f> && touch <f>`, diff
     résiduel nul ; gate ciblé de l'AC15 ; chacune rougit **au moins une assertion nommée**, recopiée au Dev Agent
-    Record avec son diff) — **33** :
+    Record avec son diff) — **35** (33 à la fiche, plus M16′ et M17′ à la validation P1) :
     - **M1a-e** — `acces.exiger(…)?` retiré de `ecritures::lister`, `ecritures::detail`, `postes_ouverts::lister`,
       `carnet::lister`, `carnet::detail` → AC9 (a) du service ;
     - **M2a** — `exiger` déplacé **après** les contrôles dans `ecritures::lister` ; **M2b** — après `parse_as_of` dans
@@ -303,10 +384,19 @@ la 32-9a et de la 32-9b ne puisse ni contourner une règle écrite dans un handl
       AC11 (a) (1792) ;
     - **M15** — `get_contact` relit le contact par `state.pool` → AC12 (ii) et (iii) (#738 A5 : la garde (ii) rougit
       enfin sous une mutation) ;
-    - **M16** — un handler de lecture neuf sur `state.pool` dans `letterings.rs` → AC12 (iii) ;
-    - **M17** — le service `rapports::journaux` trace un filtre **absent** comme un filtre présent (le premier journal) →
-      ligne 7 de `TABLE_DES_TRACES` (AC17 ; aucune ligne ne le voyait avant) ;
-    - **M18** — un paramètre `trace: &Trace` ajouté à un service du rollout → AC12 (viii).
+    - **M16** — un handler de lecture neuf sur `state.pool` dans `letterings.rs`, écrit **sous la forme coupée** que
+      rustfmt donne aux voisins (`let mut conn = state\n        .pool\n        .acquire()…`, seule occurrence du corps) →
+      AC12 (iii) ; **M16′** — le même handler déclaré `pub(crate) async fn` → AC12 (iii), compte des fonctions
+      asynchrones toutes visibilités ;
+    - **M17** — le service `rapports::journaux` trace un filtre **absent** comme un filtre présent (le premier journal ;
+      `journal_filter`, `rapports.rs:602`) → ligne 19 de `TABLE_DES_TRACES`, `journaux_affichage_sans_filtre` (AC17 ;
+      aucune ligne ne le voyait avant) ; **M17′** — le bras **affichage** de `tracer` passe `None` à
+      `emit_report_audit` au lieu de `journal_filter.as_deref()` (`rapports.rs:388`) → ligne 7, restée filtrée — la
+      seule qui exerce « affichage avec filtre », la ligne 8 passant par `emit_report_export_audit` (validation P1, R1) ;
+    - **M18** — une mention de `Trace` dans le code d'un service du rollout, **sans toucher sa signature** :
+      `let _t: Option<&crate::services::poignees::Trace> = None;` dans le corps de `carnet::detail` → AC12 (viii).
+      (Un paramètre `trace: &Trace` ajouté casserait la compilation des appelants, E0061 : la mutation ne s'exécuterait
+      pas, aucune assertion nommée ne rougirait ; validation P1, R8.)
 15. **AC15 — gates.** `kesh-db` n'est **pas** touché (aucun dépôt, aucune migration, ni `post_restore.rs`). En boucle de
     revue, **gate ciblé** : `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, puis
     `cargo nextest run -E 'package(kesh-api) & kind(lib)'` et les binaires `services_rollout`, `services_motif`, les
@@ -324,8 +414,12 @@ la 32-9a et de la 32-9b ne puisse ni contourner une règle écrite dans un handl
     et dit que la liste des écritures ne lit pas la société (C-32-4a-6) ; le doc-comment de `services/mod.rs` (AC1,
     AC13). Aucun écran ne change : recette visuelle sans objet. Les doc-comments de module de
     `routes/{journal_entries,letterings,contacts}.rs` renvoient en une ligne aux services pour les lectures migrées.
-17. **AC17 — deux points de #738 repris** (C-32-4a-10) : **A5** (AC12 (ii), témoin et M15) ; **P2-2** (ligne 7 de
-    `TABLE_DES_TRACES` sans filtre, M17). Le corps de la PR les nomme ; #738 reste ouverte (`refs`) pour les autres.
+17. **AC17 — deux points de #738 repris, un troisième en partie** (C-32-4a-10) : **A5** (AC12 (ii), témoins et M15) ;
+    **P2-2** (une ligne de `TABLE_DES_TRACES` qui trace les journaux **sans** filtre : la dix-neuvième,
+    `journaux_affichage_sans_filtre`, M17 — la ligne 7 restant filtrée, M17′) ; **B4**, pour sa seule forme « `.pool`
+    coupé sur deux lignes », sur les gardes (ii) et (iii) (détecteur aplati de l'AC12, M16) — ses autres formes
+    (alias de `Lecture::new`, `<Lecture>::new(`, déstructuration `AppState { pool, .. }`, `ContexteAcces::mcp(` hors
+    tests) et la garde (i) restent. Le corps de la PR les nomme ; #738 reste ouverte (`refs`) pour les autres.
 
 ## Tâches
 
@@ -334,9 +428,9 @@ la 32-9a et de la 32-9b ne puisse ni contourner une règle écrite dans un handl
   `node_modules` par `cp -al` (`docs/agents-orchestration.md` § 4). Étape 0 : recontrôler au code les lignes citées des
   faits 1 à 9 (une ligne lue citée par fait au Dev Agent Record).
 - [ ] **T1 (AC9-AC11 — rouge d'abord)** — `tests/common/lecture_seule.rs`, `tests/services_rollout.rs` : en **deux
-  commits** — (i) AC10 (c) **seul** (par la route, sans référence aux services neufs), **joué vert sur le code d'avant
-  T2** : c'est le relevé qui établit que la table des bornes et des refus décrit le code d'aujourd'hui ; (ii) le reste,
-  dont on constate qu'il ne compile pas avant T2.
+  commits** — (i) AC10 (c) **et** la mesure de l'AC11 (c) (ni l'un ni l'autre ne réfère aux services neufs), **joués
+  sur le code d'avant T2** : c'est le relevé qui établit que la table des bornes et des refus décrit le code
+  d'aujourd'hui, et ce que la `Lecture` de test refuse ; (ii) le reste, dont on constate qu'il ne compile pas avant T2.
 - [ ] **T2 (AC1-AC4, AC7)** — `Portee::ContactsRead` ; `services/ecritures.rs` (`lister`, `detail`, la garde déplacée) ;
   handlers minces ; gate ciblé.
 - [ ] **T3 (AC5, AC7)** — `services/postes_ouverts.rs` ; `get_open_items` mince ; plafond commun importé par
@@ -355,12 +449,13 @@ la 32-9a et de la 32-9b ne puisse ni contourner une règle écrite dans un handl
 - `crates/kesh-api/src/routes/journal_entries.rs` — constantes l. 41-50 ; DTO l. 291-330 ; `list_journal_entries`
   l. 345-487 ; `get_journal_entry` l. 489-532 ; `mod tests` l. 855, garde l. 1005-1080.
 - `crates/kesh-api/src/routes/letterings.rs` — constantes l. 286-300 ; `OpenItemsQuery` l. 302-312 ; `parse_as_of`
-  l. 503-527 ; `get_open_items` l. 530-551 ; `get_lettering` (l. 236) et `get_lettering_proposals` (l. 557), qui
+  l. 504-527 ; `get_open_items` l. 530-551 ; `get_lettering` (l. 236) et `get_lettering_proposals` (l. 557), qui
   restent. Aucun `#[cfg(test)]`.
 - `crates/kesh-api/src/routes/contacts.rs` — constantes l. 42-43 ; `ListContactsQuery` l. 48-70 ;
   `contact_response_with_label` l. 510-522 ; `list_contacts` l. 563-602 ; `get_contact` l. 607-622 ; `mod tests` l. 784.
 - `crates/kesh-api/src/services/{mod,acces}.rs` — liste des modules (l. 102-105), inventaire (l. 76-89) ; `Portee`.
-- `crates/kesh-api/tests/services_motif.rs` — l. 869, 894-899, 835-853, 2073-2100, 2131-2151, 432-442.
+- `crates/kesh-api/tests/services_motif.rs` — l. 869, 894-899, 833-855, 2073-2100, 2131-2151, 432-457 (lignes 7 et 8
+  de la table), 765-777 (son compte), 1998-2033 (`sans_commentaires`, `corps_des_handlers`).
 - `crates/kesh-api/src/helpers.rs:76` — `company_for_ids`, réemployée telle quelle.
 - `docs/MULTI-TENANT-SCOPING-PATTERNS.md:273-276`.
 
@@ -400,12 +495,23 @@ pub async fn detail(a: &ContexteAcces, l: &Lecture, id: i64) -> Result<FicheCont
 - **#738, points non repris** (C-32-4a-10) : **B1** (`#[must_use]` sur `Rapport`), **B2** (la fermeture `rendre` reçoit
   `&T`), **B3** (accesseurs en `Option`) — conception du `Rapport`, que cette story ne produit ni ne consomme ; la 32-4b
   n'en produit pas davantage (« balance âgée : appel seulement ») : à reprendre quand un outil MCP consommera un
-  `Rapport` (32-9a) ; **B4** (gardes non étanches) — aucun faux vert aujourd'hui, et la limite est écrite à la garde ;
+  `Rapport` (32-9a) ; **B4** (gardes non étanches) — repris pour la seule forme coupée, sur (ii) et (iii) (AC12,
+  AC17) ; ses autres formes et la garde (i) restent : aucun faux vert aujourd'hui, et la limite est écrite à l'AC12 ;
   **E3**, **E4** (ordre des rapports de projet, trace en échec) — tests des rapports, hors des modules visés ; **B5**
   (doc-comment déplacé dans `routes/reports.rs`) — un sixième fichier de production pour une ligne de commentaire ;
   **A3**, **A4**, **P2-1** (textes de la fiche 32-3) — une fiche close est un relevé daté, non une page à tenir ; **A6**
   — non vérifiable. #738 reste ouverte pour eux.
 - **La lecture seule de production** (Q11) — 32-6, comme pour la 32-3.
+- **La plage des dates `dateFrom` / `dateTo` de la liste des écritures** (validation P1, R10) — l'analyse
+  (`journal_entries.rs:355-369`, `NaiveDate::from_str` seul) n'exige pas la plage 1000-9999 que `parse_as_of` exige
+  pour `asOf` (`letterings.rs:504-527`, « revue P1, B-1 = E-1 » de la 15-1b : chrono lit `+10000-01-01` ou une année
+  négative, que sqlx refuse d'encoder ou que MariaDB lirait comme une date invalide). La conséquence — un 500 ou un
+  résultat faux plutôt qu'un 400 — **n'est pas établie à l'exécution**. Hors périmètre, **motivé** : la story déplace la
+  validation **sans la changer** (« messages identiques au caractère près », AC3 ; C-32-4a-5), et l'AC10 (a) fige les
+  neuf refus d'aujourd'hui ; ajouter la plage serait un dixième refus, donc un changement de comportement de l'API,
+  à décider et à tester pour lui-même. Le service en devient l'unique porte pour le MCP (C-32-4a-5) : la correction,
+  quand elle viendra, se fera **une fois**, au service. **Issue à ouvrir** par l'orchestrateur (« on trace toujours ») ;
+  texte au Change Log, validation P1.
 
 ### Fichiers touchés (prévus)
 
@@ -428,6 +534,12 @@ plus. Sous le seuil de 5 : **non découpée**.
 - **Faible — la garde de transaction déplacée** perd sa force si ses assertions s'affaiblissent au déplacement : diff
   recopié (AC4), M13.
 - **Faible — ordre des lectures** (contact avant société ; `asOf` avant la société) : AC9, M12, M2b.
+- **Faible — conflit avec la 32-4b** (validation P1, F8) : le graphe de l'epic met 32-4a et 32-4b côte à côte
+  (`epic-32-serveur-mcp.md:213`) ; les deux touchent `tests/services_rollout.rs` (créé ici) et le compte **absolu** des
+  fichiers de `services/` (`services_motif.rs:2137-2142`, huit ici). **Ordre voulu** : la 32-4b part de `main` **après**
+  la fusion de la 32-4a (C-32-4a-9). À défaut — si l'orchestrateur les mène en parallèle —, celle qui fusionne **en
+  second** rebase sur l'autre, ajoute ses tests à `services_rollout.rs` sans le recréer et porte le compte de
+  `services/` à la somme.
 
 ### Références
 
@@ -436,6 +548,19 @@ les sites NON RÉSOLUS*, § *Recompter ses propres comptes rendus* ; `docs/agent
 `planning-artifacts/epic-32-serveur-mcp.md` § *32-4*, § *32-9* ; fiche `32-3-services-motif.md` (§ *Le motif*, AC7,
 AC8, AC10, R1-R8) ; registres `epic-32-choix-autonomes.md` (C-32-0-4, C-32-0-7) et `-323.md` (C-32-3-4, C-32-3-36 à
 41) ; #738.
+
+## Points à soumettre à Guy
+
+- **Q1 — l'écart de C-32-4a-1 à la lettre de l'AC de l'epic** (validation P1, R7). L'AC de la 32-4 écrit « aucun
+  handler de lecture des modules visés n'appelle plus un dépôt directement » (`epic-32-serveur-mcp.md:315-316`) ; la
+  story en migre **cinq** sur **sept** et laisse `get_lettering` (`GET /letterings/{key}`) et `get_lettering_proposals`
+  (`GET /accounts/{id}/lettering-proposals`) sur `state.pool`, parce qu'aucun outil prévu de la 0.16.0 ne les sert
+  (C-32-0-4) — nommés à l'inventaire des non résolus et figés par la garde (AC12 (iii)). Le registre l'a tranché seul ;
+  l'epic est annoté d'une ligne datée qui renvoie au registre. **La question** : acceptez-vous que l'AC de l'epic se lise
+  « aucun handler de lecture **servi par un outil** », les deux autres restant inventoriés — ou faut-il migrer les sept
+  (deux services sans consommateur, une story un peu plus large, toujours sous le seuil de découpage) ? Le
+  développement peut partir sur la première lecture ; la seconde se rattrape sans défaire le travail (deux services de
+  plus, l'inventaire de l'AC12 (iii) passant de douze à dix).
 
 ## Dev Agent Record
 
@@ -451,3 +576,55 @@ AC8, AC10, R1-R8) ; registres `epic-32-choix-autonomes.md` (C-32-0-4, C-32-0-7) 
   mutations nommées (M8 déclarée équivalente d'avance), 4 modules (non découpée) ; registre
   `epic-32-choix-autonomes-324a.md`, C-32-4a-1 à 12 ; deux points de #738 repris (A5, P2-2). Validation P1 à lancer
   (`324a-validate-prompt-p1.md`, Sonnet, lentilles R et F).
+- **2026-10-24 — validation P1** (Sonnet ×2, contexte frais, lecture seule ; rapports hors dépôt
+  `kesh-gate-logs/324a-validate-p1-{R,F}.md`) : **R 0/0/2/8, F 0/0/1/7**, soit 18 findings, **14 distincts** après
+  recoupement (R2 = F2, R3 = F3, R4 = F5, R5 = F4) — **3 MEDIUM** (R1, R2 = F2, F1), **11 LOW** ; 0 au-dessus de
+  MEDIUM. Remédiation par l'orchestrateur de la fiche (Opus 5.5), **chaque prémisse relue au code** avant application,
+  ligne citée :
+  - **R1 (MEDIUM)** — appliqué, en ajoutant plutôt qu'en déplaçant : la ligne 7 de `TABLE_DES_TRACES`
+    (`services_motif.rs:432-442`) est **la seule** qui exerce « affichage avec filtre » (le bras `tracer` d'affichage,
+    `rapports.rs:378-390`, appelle `emit_report_audit` ; la ligne 8 passe par `emit_report_export_audit`, l. 397-409) ;
+    la passer à `None` aurait rendu M17′ survivante. Retenu : **une dix-neuvième ligne** sans filtre, la 7 restant
+    filtrée ; M17′ ajoutée ; compte de la table à 19 (AC8 (1), AC14, AC17, C-32-4a-10).
+  - **R2 = F2 (MEDIUM / LOW)** — appliqué : `letterings.rs:243-244`, `:544-545`, `:566-567` portent bien `state` / `.pool`
+    sur deux lignes ; détecteur de (ii)/(iii) sur le corps aplati (`\bstate\s*\.\s*pool\b` après `sans_commentaires`),
+    témoin coupé, M16 en forme coupée ; et la remarque de R2 sur les visibilités (`corps_des_handlers` n'ouvre que sur
+    `pub async fn`) : compte des `async fn` toutes visibilités (7 / 5 / 5 aujourd'hui, vérifié) et M16′. #738 B4 repris
+    pour cette seule forme (AC12, AC17, *Hors périmètre*).
+  - **F1 (MEDIUM)** — appliqué : fermeture des appels suivie jusqu'aux requêtes (fait 6, appels directs et transitifs,
+    `const` SQL) ; un seul `FOR UPDATE` dans la fermeture, branche non prise (`journal_entries.rs:1182`, `Lecture::Conseil`
+    l. 1261) ; AC13 sur les fichiers, commentaires écartés. Sur le `FOR UPDATE` en lecture seule : le dépôt l'a
+    **mesuré** refusé (1792) pour `START TRANSACTION … READ ONLY` (`kesh-db/tests/closing_checks.rs:253-274`, 29-1),
+    **non** pour `SET SESSION TRANSACTION READ ONLY` — « à confirmer à l'exécution par l'AC11 » était trop fort ; écrit
+    « non établi », et mesuré par une AC11 (c) neuve, au patron de la T0 de la 29-1.
+  - **R3 = F3** — appliqué : trois jetons, non deux (`pool.begin()`, l. 1030, compterait zéro sur `lecture.pool().begin()`) ;
+    compte sur le corps sans blancs (AC4, C-32-4a-7). **R4 = F5** — appliqué : `AppError::Database(DbError::NotFound)`,
+    `matches!` (`errors.rs:138-170`) (AC4, AC6, AC9, AC11). **R5 = F4** — appliqué : `mod common;` à l'AC8 (1) ; et, de F4,
+    la recopie du montage HTTP et des constructeurs de contexte **assumée** (convention : `spawn_app` dans 68 binaires,
+    `forge_jwt` dans 29). **R6** — appliqué : seconde société par `companies::create` (`uq_users_username`). **R8** —
+    appliqué : M18 sans toucher la signature. **R9** — appliqué avec F1. **F6** — appliqué : réversibilité de C-32-4a-1
+    sans échéance (les « propositions » de la 0.17.0 sont celles de l'agent, `epic-32-serveur-mcp.md:69`). **F7** —
+    appliqué : second contrôle sur les écrêtages (`grep -nE 'clamp\(|\.max\(0\)'`, huit lignes aujourd'hui, deux
+    attendues). **F8** — appliqué : ordre avec la 32-4b (*Risques*, C-32-4a-9).
+  - **R7** — annoté, non tranché : ligne datée à l'AC de la 32-4 dans `epic-32-serveur-mcp.md`, question **Q1** posée
+    (*Points à soumettre à Guy*).
+  - **R10** — laissé **hors périmètre**, motivé (comportement inchangé ; un dixième refus se décide pour lui-même) ;
+    **issue à ouvrir** par l'orchestrateur. Texte prêt : titre « `GET /journal-entries` : `dateFrom` / `dateTo` hors de
+    la plage 1000-9999 ne sont pas refusés en 400 » ; labels `bug`, `triage`, `P2` (à confirmer : P2 si l'exécution
+    rend un 500) ; corps — « `list_journal_entries` (`crates/kesh-api/src/routes/journal_entries.rs:355-369`) analyse
+    `dateFrom` et `dateTo` par `NaiveDate::from_str` seul. `parse_as_of` (`routes/letterings.rs:504-527`) ajoute la
+    plage 1000-9999 pour `asOf`, parce que chrono lit `+10000-01-01` ou une année négative que sqlx refuse d'encoder ou
+    que MariaDB lirait comme une date invalide (revue P1, B-1 = E-1, Story 15-1b). La liste des écritures n'a pas cette
+    garde : `GET /api/v1/journal-entries?dateFrom=+10000-01-01` rend vraisemblablement un 500, ou un filtre faux, au lieu
+    d'un 400 `VALIDATION_ERROR` — non vérifié à l'exécution. Avec la Story 32-4a, l'analyse passe au service
+    `ecritures::lister`, que l'outil MCP de la 32-9a appellera : la correction se fera au service, une fois. Hors du
+    périmètre de la 32-4a, qui déplace la validation sans la changer. À reproduire, puis : refus 400 aux messages
+    `dateFrom invalide (année hors de 1000 à 9999)` / `dateTo …`, au patron de `asOf`, test au service et par la route. »
+  - **Propagation** (grep des valeurs sur la fiche, le registre et `sprint-status.yaml`) : `33` → `35` dans les entrées
+    **vivantes** (AC14, ligne de `sprint-status.yaml` par annotation datée), non dans l'entrée « fiche rédigée »
+    ci-dessus, relevé daté ; `deux jetons`, `journal: None`, `835-851` / `835-853` (→ `833-855`), `503-527` (→ `504-527`),
+    `` `NotFound` `` nu, `0.17.0 (propositions)` traités au registre et à la fiche ; `dix-huit` : seul le compte de la
+    table change, le doc-comment du module (« dix-huit handlers ») reste vrai.
+  - **Trend** : P1 = 3 MEDIUM (+ 11 LOW). Les trois MEDIUM touchent des **règles de garde** (table des traces, garde
+    lexicale, inventaire des écritures) : la P2 est une passe **complète**, **Opus**, lentilles R et F sur la fiche
+    entière (`324a-validate-prompt-p2.md`).
