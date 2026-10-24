@@ -96,6 +96,8 @@
 - **Écartées** : worktree au tag `v0.15.0` (20 à 50 Go de cible pour un résultat identique) ; fixture fabriquée à la
   main (`Fabrique` des tests unitaires : ne prouve rien du vrai exporteur).
 - **Réversible** : oui.
+- **Révisé à la validation P1 (2026-10-24, annoté à la P2)** : le worktree au tag n'est plus écarté sans condition — il
+  est le **repli** si `git diff --stat v0.15.0 HEAD -- crates/` n'est plus vide au développement (C-32-12-21).
 
 ### C-32-12-11 — La capture de l'état « tables absentes » est transférée à la 32-5
 
@@ -168,6 +170,9 @@
   d'idempotence de `20261024000001` reste vraie et n'est pas touchée.
 - **Écartée** : corriger le commentaire des migrations (le binaire refuserait de démarrer sur toute base qui les porte).
 - **Réversible** : oui.
+- **Révisé à la validation P2 (2026-10-24)** : les migrations publiées concernées sont **quatre**, non trois —
+  `20261003000001_invoices_frozen_pdf.sql:9-11` manquait (R1 = F1) ; le motif unique est remplacé par cinq familles de
+  `grep` (C-32-12-22).
 
 ### C-32-12-18 — Deux migrations créatrices d'une même table : la plus ancienne, en production
 
@@ -195,4 +200,83 @@
 - **Contexte** : R7 — C-32-12-10 suppose `git diff --stat v0.15.0 HEAD -- crates/` vide au développement.
 - **Retenu** : sinon, worktree temporaire au tag `v0.15.0` (patron de la fixture 0.14.0), disque vérifié, retiré aussitôt ;
   jamais de génération avec un diff non vide.
+- **Réversible** : oui.
+
+---
+
+*Choix 22 à 29 : remédiation de la validation P2 (2026-10-24, rapports `3212-validate-p2-{R,F}.md`).*
+
+### C-32-12-22 — La classe des textes devenus faux s'inventorie par son symptôme, non site par site
+
+- **Contexte** : R1 = F1 et R2 = F3 — deux validations de suite ont trouvé des phrases devenues fausses que le motif
+  unique de l'AC17 ne rendait pas (une quatrième migration ; « recalculée depuis le `MIGRATOR` », « dernière
+  créatrice »), parce qu'elles ne portaient aucun de ses mots.
+- **Retenu** : cinq familles de `grep` (importabilité, égalité, fenêtre calculée, dernière créatrice, couverture) et la
+  valeur `20260917000001`, sur code, tests, migrations, `CLAUDE.md`, `docs/`, README, `website/` ; tableau
+  *Inventaire de la classe* aux Dev Notes, où chaque site a un sort (récrit, intouchable P8 et rectifié ailleurs, repris
+  par la 32-5, ou reste vrai avec la raison) ; une ligne absente du tableau est un site neuf à classer. La rectification
+  des quatre migrations P8 les nomme une à une, sans les compter.
+- **Écartée** : allonger encore le motif unique (même mode d'échec : une énumération de formes est ouverte).
+- **Réversible** : oui.
+
+### C-32-12-23 — Reconnaissance `CREATE TABLE` dans `post_restore.rs` ; `last_table_creating_migration` retirée
+
+- **Contexte** : F6 — l'AC2 (ii) appelait une fonction privée d'un autre `mod tests` ; `split_statements` est privée.
+- **Retenu** : `creates_application_table`, `normalize` et `split_statements` en `pub(crate)` dans `post_restore.rs` ;
+  `backup::table_creating_migrations` les appelle ; l'AC2 (ii) compare au maximum de la carte ;
+  `last_table_creating_migration` retirée (sans appelant après l'AC9 ; `clippy -D warnings`).
+- **Écartées** : la reconnaissance dans `backup.rs` (deux modules s'appelleraient l'un l'autre pour un même analyseur) ;
+  garder `last_table_creating_migration` en enveloppe du maximum (code de test sans appelant).
+- **Réversible** : oui.
+
+### C-32-12-24 — Le message du refus se prouve hors HTTP, à l'égalité exacte
+
+- **Contexte** : F5 = R4 — sous M1, l'AC6 (i) restait vert ; et, relevé de la remédiation, la réponse HTTP d'un
+  `InvalidBackupStructure` ne porte **pas** le motif (`errors.rs:2171-2180`), si bien que l'AC6 (i) assertait un texte
+  absent de la réponse. Le message `HorsOrdre` disait « créée après elle », faux pour deux tables d'une même migration.
+- **Retenu** : AC6 au code `INVALID_BACKUP_STRUCTURE` seul ; AC7 (b), `#[test]` sans base, message d'`Exigee` à
+  l'égalité exacte sur la fixture privée de `products` avec les règles de production ; `HorsOrdre` : « créée par la même
+  migration qu'elle ou après ».
+- **Écartée** : exposer le motif dans la réponse HTTP (change le contrat d'erreur pour un test).
+- **Réversible** : oui.
+
+### C-32-12-25 — Les six tests lexicaux qui lisent `routes/admin.rs` sont nommés
+
+- **Contexte** : F7 — « les deux » de la remédiation P1 en omettait quatre, dont `echecs_avant_sauvegarde_tous_convertis`,
+  qu'un `?` ajouté par l'AC12 ferait rougir.
+- **Retenu** : les six nommés à T4 et au tableau des sites ; l'AC12 interdit tout `?` neuf avant `write_pre_import_backup(`.
+- **Réversible** : oui.
+
+### C-32-12-26 — `version.rs:272-275` récrit au même commit
+
+- **Contexte** : R5 — « une source d'une version mineure plus récente mais non-breaking reste importable » est faux
+  avant comme après la story (table inconnue → `Inconnue`).
+- **Retenu** : récrit (« ce contrôle-ci ne refuse pas pour cette seule raison ; l'inventaire et les colonnes peuvent
+  refuser ailleurs ») ; `version.rs` ajouté aux fichiers touchés.
+- **Écartée** : le justifier comme « vrai du seul contrôle de version » sans le récrire (le texte resterait trompeur).
+- **Réversible** : oui.
+
+### C-32-12-27 — `post_restore.rs:441` confié à la 32-5
+
+- **Contexte** : F3 (b) — la justification de l'exemption `20260917000001` dit « EST la dernière créatrice de table
+  applicative » : vrai aujourd'hui, faux dès la table de la 32-5.
+- **Retenu** : laissée telle ; *Contrat* point 5 et AC10 demandent à la 32-5 d'écrire « EST le plancher d'import ».
+- **Écartée** : la récrire dès maintenant (exacte aujourd'hui sous l'une et l'autre forme ; c'est la table de la 32-5
+  qui la rend fausse, et son gate la relira par G4).
+- **Réversible** : oui.
+
+### C-32-12-28 — `TOLEREES_ECRITES` et `tolerees_calculees`, deux objets nommés
+
+- **Contexte** : F4 = R6 — « tolérées » désignait la liste écrite et l'ensemble calculé ; sous la seconde lecture,
+  l'AC2 (iii) était une tautologie.
+- **Retenu** : deux noms dans le code et la fiche ; (iii) sur la liste écrite ; « tolérées » seul réservé à l'AC3.
+- **Réversible** : oui.
+
+### C-32-12-29 — Dérogation au découpage préventif (huit modules)
+
+- **Contexte** : F9 — compté au grain de la règle, la story touche huit modules (sept au relevé de F, plus `version.rs`
+  par C-32-12-26).
+- **Retenu** : story gardée unique, section *Dérogation règle de splitting* écrite (deux sites lourds, six mécaniques ;
+  pas de recyclage de défauts entre P1 et P2) ; à confirmer par Guy avec Q4.
+- **Écartée** : story-zéro `kesh-db` + rollout (livrerait une règle sans appelant ; la fixture traverse les deux).
 - **Réversible** : oui.
