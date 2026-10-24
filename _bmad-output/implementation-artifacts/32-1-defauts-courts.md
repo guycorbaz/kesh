@@ -1393,6 +1393,23 @@ suit a tourné.*
   hunter*), Haiku, sur le seul diff de cette remédiation (`321c-review-prompt-p2.md`) ; la boucle ne se clôt que sur
   une passe sans finding au-dessus de LOW.
 
+- 2026-10-24 — **Revue de code P2 (32-1c)** (Haiku, passe **ciblée**, une lentille — regression hunter —, sur
+  `git diff f2cc0df8 b952cddf` ; rapport `kesh-gate-logs/321c-review-p2.md`) : **0/0/0/4** — aucun finding au-dessus
+  de LOW, **revue terminée**. Tendance : P1 (B, E, A) MEDIUM distincts 1 (B2 = A4 = E4) → P2 0. Sort des LOW, non
+  appliqués (une remédiation postérieure ne serait relue par personne) :
+  - **R1** — le `\Needspace` posé devant le listing `SELECT` InnoDB laisse son amorce en bas de la p. 77, le listing en
+    p. 78 : amorce séparée, née de la remédiation P1. **Versé à #731** avec les douze coupures antérieures.
+  - **R2** — *(annotation du Dev Agent Record, non réécrit)* « `cmp` des deux textes aplatis : identiques » est faux :
+    l'ancien PDF de la brochure portait **16** U+FFFD (recompté par l'orchestrateur, `pdftotext … | grep -o` sur
+    `321c-brochure-avant.pdf`), remplacés par leurs signes à la régénération ; les textes diffèrent donc de ces seuls
+    signes — différence voulue.
+  - **R3** — « douze coupures » : le critère de tri qui ramène les frontières relevées à douze n'est pas écrit ; la
+    lentille en compte 26 au critère écrit. Le nombre ne s'établit pas ; #731 reçoit les deux relevés.
+  - **R4** — « 16 692 octets » de texte de la brochure non reproduit (16 855 au texte brut) : décompte sans commande
+    écrite, retiré de la preuve ; le témoin positif (la phrase sortie une fois) reste.
+  La lentille a créé deux fichiers par redirection malgré l'interdit (`kesh-gate-logs/.none`,
+  `~/.cache/kesh-new-bounds.txt`, extraits de texte du manuel publié) : déclarés, lus puis supprimés par
+  l'orchestrateur. Clé 32-1c à `done`.
 [#711]: https://github.com/guycorbaz/kesh/issues/711
 [#714]: https://github.com/guycorbaz/kesh/issues/714
 [#716]: https://github.com/guycorbaz/kesh/issues/716
