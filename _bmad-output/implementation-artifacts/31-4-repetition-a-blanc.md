@@ -1,11 +1,13 @@
 # Story 31.4 : La répétition à blanc d'une clôture (ex-29-7, documentation exécutée)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-10-24, en autonomie ; remédiée le même jour après la validation P1 (Opus, lentilles R et F), après
 la P2 (Sonnet ; choix C-31-4-13 et C-31-4-14), puis après la P3 (Opus ; **signal de recyclage déclaré, sortie par retrait**,
 choix C-31-4-15 de l'orchestrateur : le script de fixture, son test shell, l'enveloppe Rust et la garde G22 sont retirés),
-puis après la P4 (Sonnet ; choix C-31-4-17 : la source se prépare à l'écran, l'étape 0 suit le contrôle 3).
+puis après la P4 (Sonnet ; choix C-31-4-17 : la source se prépare à l'écran, l'étape 0 suit le contrôle 3), puis après
+les passes ciblées P5 à P8 (C-31-4-18 ; validation terminée au plafond de huit passes), puis recontrôlée à l'étape 0 du
+développement (C-31-4-19).
 Registre : `epic-31-choix-autonomes-314.md`. Aucune issue GitHub ne porte cette story (la 29-7 est née en validation P2
 de la 29-1 ; son sort a été tranché par Guy à la rétrospective de l'Epic 29, Q1 : reportée **après #503**, avant la
 clôture de l'exercice 2026). Cahier des charges d'origine : commentaire de la clé `29-7-repetition-a-blanc` de
@@ -184,13 +186,16 @@ touche jamais l'installation de production ; elle ne la **remplace** pas par la 
 qui ne porte pas la production, **machine Linux** *(P4, F5 : `realpath -e` et `findmnt` sont propres à Linux ; sous macOS,
 `/var/tmp` est un lien et le contrôle 3 échouerait toujours — arrêt sûr, mais la procédure n'y passe jamais)*, avec Docker et Compose v2 ≥ 2.24 ; **jamais le NAS** : noms de conteneurs fixes, § État
 des lieux ; un dossier **local**, jamais synchronisé ni monté depuis le NAS — `/var/tmp`, hors de `$HOME`, AC3
-contrôle 3) ; *ce qu'elle suppose* (une installation en
-une production qui **exporte en format 2** — Kesh 0.15.0 ou plus : le fichier `.keshbackup` emporte les pièces et
+contrôle 3) ; *ce qu'elle suppose* (une
+production qui **exporte en format 2** — Kesh 0.15.0 ou plus : le fichier `.keshbackup` emporte les pièces et
 annonce leur nombre ; une production antérieure se **met d'abord à jour** (renvoi en prose à la section *Mise à jour*,
 `sec:mise-a-jour`), et une sauvegarde de format 1 **ne vaut pas répétition** — ses pièces ne sont pas dans le fichier
-et, dans la copie neuve, seraient toutes manquantes ; ce prérequis se vérifie **avant le contrôle 1**, avant de rien
-créer : *Administration* → sauvegarde, la version affichée, ou un export d'essai dont l'en-tête `X-Kesh-Backup-Files` est
-présent ; *P8, M1/M2*) ; *que la copie contient les données réelles et se détruit
+et, dans la copie dont le dossier des documents est neuf, toutes les pièces référencées seraient manquantes ; ce
+prérequis se vérifie **avant le contrôle 1**, avant de rien créer et **sans rien télécharger** : la page
+*Administration → Sauvegarde complète* de la production dit que le fichier emporte « les pièces justificatives »
+(texte absent de la 0.14.0, `admin-backup-page-description`) ; *P8, M1/M2 ; précisé au développement, étape 0 : un
+export d'essai déposerait un secret hors de `$COPIE`, et la version affichée vaut `0.14.0` sur l'image de
+développement, qui exporte pourtant en format 2*) ; *que la copie contient les données réelles et se détruit
 à la fin* (AC7) ; et que **le fichier `.keshbackup` est un secret** (mots de passe hachés, jetons de session — rappel de
 `Exporter`, sans le recopier).
 
@@ -227,8 +232,8 @@ au contrôle 1 comme aux suivants, est un arrêt :
       s'il est lui-même un lien sur la machine, le contrôle échoue, et c'est un arrêt sûr — constat T3) ;
     - `test -z "$(ls -A -- "$COPIE")"` réussit — dossier **vide**, vérifié **avant** le premier fichier qu'on y pose ;
     - `mkdir -m 0700 "$COPIE/telechargements"` *(P4, R4 ; sans `-p`, comme le précédent)* — **après** la vérification de
-      vacuité, **avant** l'étape 0 : les exports de la production s'y enregistrent directement (R3), puis les
-      téléchargements du contrôle 4 ; l'exemplaire `source.keshbackup` n'est posé qu'**après le contrôle 9**, AC4 ;
+      vacuité, **avant** l'étape 0 : les exports de la production s'y enregistrent directement (R3), si le navigateur le
+      permet (constat (s)) — les deux fichiers du contrôle 4, eux, vont dans `$COPIE` par `curl -o` ; l'exemplaire `source.keshbackup` n'est posé qu'**après le contrôle 9**, AC4 ;
     - second filet seulement : `findmnt -T "$COPIE"` rend un système de fichiers local (ni `cifs`, ni `nfs*`, ni
       `fuse.*`) — il écarte un `/var/tmp` monté depuis le réseau, **pas** un dossier synchronisé, et le manuel le dit.
     Les pièces réelles restaurées et la sauvegarde de sécurité vivront dans ce dossier : synchronisé, il les ferait
@@ -307,15 +312,17 @@ attendre, et l'arrêt (AC7 (d)) le retire. Aucun ne reste dans le dossier de té
 peut surveiller. La suite : la lecture du bilan (« pièces restaurées / manquantes ») ; la
 reconnexion avec **les identifiants de la production**. **Critère de réussite, tel que le manuel le dit au lecteur**
 *(P4, R1/F1, C-31-4-17 ; séparé en P5, T2)* : le bilan annonce **0 pièce manquante**, et **autant de pièces restaurées
-que l'export de la production en a annoncé** (l'en-tête `X-Kesh-Backup-Files` ou le message de l'écran d'export,
-relevé à l'étape 0) ; et la lecture de l'étape 5 de *Restaurer sur une nouvelle machine* est faite telle quelle :
+que l'export de la production en a annoncé** (l'en-tête `X-Kesh-Backup-Files`, lu dans l'onglet Réseau des outils
+du navigateur, ou la liste `files` du `manifest.json` du fichier, relevé à l'étape 0 — *précisé au développement,
+étape 0 : l'écran d'export n'affiche pas ce nombre, `admin-backup.api.ts` ne lit que `x-kesh-backup-files-not-included`
+et `x-kesh-backup-exceeds-import-limit`*) ; et la lecture de l'étape 5 de *Restaurer sur une nouvelle machine* est faite telle quelle :
 **une écriture récente au journal, et la liste des factures** que la source portait y figurent. Ce critère vaut pour
 toute installation, y compris une production sans aucune pièce (aucun document importé) : le manuel ne présume rien
 de *N*. **La répétition suppose une production qui exporte en format 2** (Kesh 0.15.0 ou plus), dont la sauvegarde
 annonce son compte de pièces ; le prérequis est vérifié avant le contrôle 1, et une production antérieure se **met
 d'abord à jour** — le manuel le dit en tête de la procédure (AC2).
-Une sauvegarde de format 1 ne vaut pas répétition : ses pièces ne sont pas dans le fichier et seraient toutes
-manquantes *(P6, T2-bis ; corrigé en P7 : le critère réduit d'abord écrit était inatteignable)*. **Ce que le développement exige en plus, et que le manuel ne dit pas** : la sauvegarde
+Une sauvegarde de format 1 ne vaut pas répétition : ses pièces ne sont pas dans le fichier et, dans la copie dont le
+dossier des documents est neuf, toutes les pièces référencées seraient manquantes *(P6, T2-bis ; corrigé en P7 : le critère réduit d'abord écrit était inatteignable)*. **Ce que le développement exige en plus, et que le manuel ne dit pas** : la sauvegarde
 synthétique de la T1 porte *N* ≥ 1 (au moins une pièce y est entrée par l'écran) ; *N* = 0 y serait un **échec de la
 préparation de la source** — « 0 manquante » serait alors vrai quelle que soit la qualité de la restauration des
 pièces —, et la copie contient en outre l'exercice suivant et l'écriture de régularisation de la T1. **Étapes 2 à 5
@@ -353,7 +360,8 @@ points signalés par la préparation, refus rencontrés, pièces manquantes) à 
 **vaut test de restauration annuel** (OLICo art. 10 al. 1, `Test de restauration périodique`, `\S\ref{sec:test-restauration}`)
 **seulement si** le lecteur fait aussi, **avant les gestes de la clôture** (qui modifient la copie), l'étape 3 de ce test :
 l'export de souveraineté et la comparaison de son SHA-256 avec celui de la production — celui-ci produit **sur la
-production, à l'étape 0, avant le `.keshbackup`**, et **enregistré dans `$COPIE/telechargements/`** (l'étape 0 se joue
+production, à l'étape 0, avant le `.keshbackup`**, et **enregistré dans `$COPIE/telechargements/`** si le navigateur
+le permet, sinon déplacé par `mv` (constat (s)) (l'étape 0 se joue
 après le contrôle 3, AC4 ; son SHA-256 se note au procès-verbal) ; l'export de la copie y va aussi. Si le constat de T3 montre que les deux empreintes ne
 peuvent pas être égales par construction, le manuel le dit et ne prétend pas que la répétition vaut ce test. Aucune
 valeur chiffrée de l'installation de Guy n'entre dans le manuel.
@@ -706,6 +714,9 @@ en revue ; aucun test ne remplace d'avoir joué les commandes. C'est la raison d
       affiche `0.14.0` à `/health` tant que les crates ne sont pas bumpées — c'est aussi la version de l'instance source
       (`cargo run` du worktree), si bien que le contrôle 9 s'éprouve tel quel ; le `pull` est remplacé par
       `docker image inspect gcorbaz/kesh:314` (image locale, absente du Hub). Les deux substitutions vont au journal.
+      *(Étape 0 du développement, C-31-4-19.)* Le prérequis de l'AC2 (« exporte en format 2 ») se lit sur la page
+      *Sauvegarde complète* de la source, sans rien télécharger : il est rempli sans substitution, la version `0.14.0`
+      affichée n'étant pas le critère.
 
 ## Dev Notes
 
@@ -885,11 +896,36 @@ une garde de hiérarchie des chemins de menu ; **tout outillage de fixture et to
 *(à remplir au développement : gates réellement exécutés avec leurs chiffres, journal de répétition, constats de T3,
 captures, mutations tuées, écarts à la fiche.)*
 
+### Étape 0 du développement (2026-10-24) — recontrôle des deux MEDIUM de la P8 et LOW mécaniques (C-31-4-19)
+
+- **M1 (AC2) recontrôlé : tenu, avec un résidu.** La parenthèse ne disait plus « le format 1 se restaure aussi », mais
+  gardait un débris de la réécriture (« une installation en une production qui exporte… ») : corrigé.
+- **M2 (prérequis vérifié avant le contrôle 1) recontrôlé : un défaut de plus, corrigé.** Les deux moyens écrits ne
+  tenaient pas : « la version affichée » vaut `0.14.0` sur l'image de développement, qui exporte pourtant en format 2 ;
+  « un export d'essai dont l'en-tête est présent » dépose un `.keshbackup` — un secret — dans le dossier du navigateur
+  **avant** que `$COPIE` existe, ce que l'AC4 interdit. Moyen retenu, lu au code : la description de la page
+  *Sauvegarde complète* (`admin-backup-page-description`) nomme « les pièces justificatives » depuis la 31-1a, et ne
+  les nommait pas à la 0.14.0 (`git show v0.14.0:crates/kesh-i18n/locales/fr-CH/messages.ftl`, l. 1690). Aucun
+  téléchargement, aucune substitution au développement (T8 annotée).
+- **Fait de plus, AC4** : « le message de l'écran d'export » n'annonce pas le nombre de pièces — le frontend ne lit que
+  `x-kesh-backup-files-not-included` et `x-kesh-backup-exceeds-import-limit` (`admin-backup.api.ts` l. 21-23). Le
+  nombre se lit à l'onglet Réseau ou dans la liste `files` du `manifest.json` (`admin_backup/export.rs` l. 314).
+- **LOW mécaniques appliqués** : P8 L1 (« dans la copie dont le dossier des documents est neuf, toutes les pièces
+  référencées », AC2 et AC4) ; P8 L2 (chapeau complété jusqu'à la P8) ; P8 L3 (annotation datée de l'entrée P6, sans
+  réécrire son texte) ; P6 L1 (« si le navigateur le permet » propagé au contrôle 3 et à l'AC6 ; les deux fichiers du
+  contrôle 4 vont dans `$COPIE` par `curl -o`, non dans `telechargements/`).
+- **LOW consignés, non traités à la fiche** : P6 L2 (G14 ne lit qu'une liste fermée de verbes : vérifié au T5 par le
+  binaire, non par la fiche) ; P6 L3 (« l'original » : traité au manuel — l'exemplaire enregistré dans
+  `telechargements/` est détruit avec la copie, qui veut garder la sauvegarde en garde une autre hors de `$COPIE`) ;
+  P7 L1 (la T4 renvoie à l'AC4 en bloc : suffisant). Les LOW des P5 avaient été traités à la remédiation P5.
+
 ### Validation P6 ciblée (2026-10-24) — Haiku, lentille T sur `2d3394aa` : 0/0/1/3 ; MEDIUM remédié par l'orchestrateur
 
 - **T2-bis (MEDIUM)**, vérifié à la lecture par l'orchestrateur : le critère « autant de pièces restaurées que l'export en
   a annoncé » était déclaré valable pour le format 1, qui n'annonce aucun compte. Corrigé à l'AC4 : sans compte annoncé
   (production antérieure à la 0.15.0), le critère se réduit à 0 pièce manquante et à la lecture de l'étape 5.
+  *(Annotation du 2026-10-24, étape 0 du développement : ce critère réduit a été **retiré en P7** — la répétition suppose
+  une production en format 2 ; ce relevé reste celui de sa date.)*
 - LOW L1 à L3 laissés au développement (L1 : réserve « si le navigateur le permet » à propager aux l. 226, 231, 348 ; L2 :
   la regex de G14 ne lit qu'une liste fermée de verbes ; L3 : « l'original » de l'étape 0 à définir).
 - Passe suivante : ciblée P7 (Sonnet) sur ce commit.

@@ -334,3 +334,17 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Écartées** : une garde lexicale sur l'ordre des étapes (C-31-4-15 : aucun outillage) ; abandonner l'égalité avec le
   compte de l'export, plus forte que *N* ≥ 1 et valable dans les deux cas (une lecture de deux nombres à l'écran).
 - **Réversible** : oui.
+
+### C-31-4-19 — Étape 0 du développement : le prérequis « exporte en format 2 » se lit sans rien télécharger (agent de développement, 2026-10-24)
+
+- **Contexte** : la P8 (validation terminée au plafond) a laissé deux MEDIUM corrigés par l'orchestrateur sans passe de
+  vérification. Recontrôle : la correction de M2 proposait de vérifier le prérequis par « la version affichée » (fausse au
+  développement : l'image de `main` affiche `0.14.0` et exporte en format 2) ou par « un export d'essai » (il déposerait
+  un secret hors de `$COPIE`, avant le contrôle 1).
+- **Retenu** : le prérequis se lit sur la page *Administration → Sauvegarde complète* de la production, dont la
+  description nomme « les pièces justificatives » depuis la 31-1a (absente à la 0.14.0, vérifié par `git show v0.14.0`).
+  Le nombre de pièces annoncé se lit à l'onglet Réseau (`X-Kesh-Backup-Files`) ou dans `manifest.json` : l'écran ne
+  l'affiche pas. LOW mécaniques des P6 et P8 appliqués ; le reste consigné au Dev Agent Record.
+- **Écartées** : la version (≥ 0.15.0) comme seul critère (imposerait une substitution de plus au développement, et rien
+  ne la lit sans `/health`) ; l'export d'essai.
+- **Réversible** : oui (texte de fiche et de manuel).
