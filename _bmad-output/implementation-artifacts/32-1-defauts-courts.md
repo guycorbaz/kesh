@@ -1315,6 +1315,14 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/
   de l'AC-a7 constaté avant le correctif ; huit mutations tuées ; gate complet 3975/3975 (7 ignorés), Vitest 1911/1911,
   E2E 315 passés / 7 échoués (les sept KF-029) / 17 ignorés. Registre C-32-1-39. Clé à `review` ; revue de code P1
   (Sonnet, lentilles B, E, A) : `321a-review-prompt-p1.md`.
+- 2026-10-24 — **32-1a, revue de code P1** (Sonnet, trois lentilles, contexte frais ; rapports
+  `kesh-gate-logs/321a-review-p1-{B,E,A}.md`) : **B 0/0/0/2, E 0/0/0/3, A 0/0/0/0** — aucun finding au-dessus de LOW,
+  **revue terminée en une passe**. La lentille A recoupe les treize AC, les huit mutations et les gates contre les
+  journaux. LOW distincts : quatre (B1 = E1, couverture de `DATE_ISO` ; B2, séquence des verrous non tenue par un test ;
+  E2, `designate_vat_*` sur une seule société ; E3, cas « clos, ouvert, clos »), **non appliqués** — la boucle se clôt
+  sur cette passe, une remédiation postérieure ne serait relue par personne — et **tracés sur [#732]**. Note A : le
+  Dev Agent Record dit « aucun écart aux AC » et déclare l'écart de nommage de T-a0 (bases `kesh_321a`) : écart de
+  tâche, non d'AC, cosmétique. Clé à `done`.
 
 [#711]: https://github.com/guycorbaz/kesh/issues/711
 [#714]: https://github.com/guycorbaz/kesh/issues/714
@@ -1323,3 +1331,4 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/
 [#725]: https://github.com/guycorbaz/kesh/issues/725
 [#726]: https://github.com/guycorbaz/kesh/issues/726
 [#727]: https://github.com/guycorbaz/kesh/issues/727
+[#732]: https://github.com/guycorbaz/kesh/issues/732
