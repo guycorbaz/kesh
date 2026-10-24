@@ -272,10 +272,14 @@ fn premiers_mots(noms: &HashMap<String, Vec<String>>) -> std::collections::HashS
 /// apostrophe (séparateur de milliers), un `%` ; précédé de `.`, `,`, `:`, `#` ; ou d'un
 /// `-` lui-même collé à un caractère alphanumérique (`ISO-8859`, `F-2026-0042`).
 /// `{` et `}` ne bornent plus rien (revue de code P2, B2-2) : `\textbf{3600}` est lu.
+/// Une date ISO `NNNN-MM-JJ` n'est pas un compte, à condition que le mois soit
+/// `01`-`12` et le jour `01`-`31` (Story 32-1a, #716, E6) : `1171-99-99` est lu.
+/// Limite assumée : `2026-02-30` reste une date — la regex ne connaît pas la
+/// longueur des mois.
 fn nombres_isoles(ligne: &str) -> Vec<(String, String, usize, usize)> {
     static NOMBRE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"([1-9]\d{3})(\.\d+)?").unwrap());
     static DATE_ISO: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"^-\d{2}-\d{2}(\D|$)").unwrap());
+        LazyLock::new(|| Regex::new(r"^-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])(\D|$)").unwrap());
     let mut out = Vec::new();
     for c in NOMBRE.captures_iter(ligne) {
         let m = c.get(0).unwrap();
@@ -304,6 +308,35 @@ fn nombres_isoles(ligne: &str) -> Vec<(String, String, usize, usize)> {
         }
     }
     out
+}
+
+/// Story 32-1a (#716, E6) — la reconnaissance d'une date ISO, fixée par des cas.
+///
+/// Négatifs : une date au mois `01`-`12` et au jour `01`-`31` n'est pas un compte
+/// (aucun nombre rendu). Positifs : un mois ou un jour hors de ces bornes ne fait pas
+/// d'une suite `NNNN-MM-JJ` une date, et le nombre est rendu comme compte possible.
+/// Limite assumée : `2026-02-30` reste une date (la regex ne connaît pas la longueur
+/// des mois).
+#[test]
+fn nombres_isoles_ne_prend_pour_date_que_des_mois_et_jours_bornes() {
+    for date in ["entre 1000-01-01 et 9999-12-31", "au 2026-02-28."] {
+        assert!(
+            nombres_isoles(date).is_empty(),
+            "« {date} » : une date ISO n'est pas un compte, rendu {:?}",
+            nombres_isoles(date)
+        );
+    }
+    for pas_une_date in ["1171-99-99", "1171-13-01", "1171-00-10", "1171-12-32"] {
+        let rendus: Vec<String> = nombres_isoles(pas_une_date)
+            .into_iter()
+            .map(|(n, ..)| n)
+            .collect();
+        assert_eq!(
+            rendus,
+            vec!["1171".to_string()],
+            "« {pas_une_date} » n'est pas une date : le nombre doit être rendu"
+        );
+    }
 }
 
 /// Vrai si le nombre `[debut, fin)` de `ligne` est un **montant** (une devise le
@@ -691,7 +724,7 @@ fn les_replis_rust_suivent_le_catalogue() {
     const CHAMP: &[(&str, &str)] = &[("{ $field }", "{nom}")];
     const CHAMP_MAX: &[(&str, &str)] = &[("{ $field }", "{nom}"), ("{ $max }", "{maximum}")];
     type Cles = &'static [(&'static str, usize, &'static [(&'static str, &'static str)])];
-    const TABLE: [(&str, Cles); 4] = [
+    const TABLE: [(&str, Cles); 5] = [
         // Story 31-5 (#469, C-31-5-15) — les six refus du journal d'audit.
         (
             "crates/kesh-api/src/routes/audit_log.rs",
@@ -782,6 +815,12 @@ fn les_replis_rust_suivent_le_catalogue() {
         (
             "crates/kesh-api/src/routes/opening_balances.rs",
             &[("error-opening-balances-first-year-closed", 2, &[])],
+        ),
+        // Story 32-1d (#711, L-B7) — le refus du réglage de sauvegarde hors
+        // domaine.
+        (
+            "crates/kesh-api/src/routes/backup_schedule.rs",
+            &[("admin-backup-schedule-error-out-of-domain", 1, &[])],
         ),
     ];
     let continuation = Regex::new(r"\\\n\s*").unwrap();

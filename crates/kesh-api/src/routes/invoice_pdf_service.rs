@@ -359,6 +359,12 @@ fn build_qrbill_inputs(
     // #504) : `qr_message_prefix` est résolu dans la langue du document, si bien
     // qu'une facture et son rappel rendus dans la même langue portent le même
     // message ; le rapprochement lit la contenance du numéro, non le préfixe.
+    // Story 32-1a (#716, B1) — « rendus dans la même langue » n'est pas toujours
+    // le cas : une facture dont le PDF a été FIGÉ (avant la 0.15.0, ou dans une
+    // langue que le contact a quittée depuis) garde le préfixe de ce PDF, tandis
+    // que son rappel, produit à chaque envoi, porte celui de la langue courante
+    // du client. Les deux QR diffèrent alors par le préfixe ; le rapprochement
+    // n'en est pas touché, puisqu'il lit la contenance du numéro.
     let (qr_amount, reminder) = match document {
         PdfDocument::Invoice => (total_ttc, None),
         PdfDocument::Reminder(a) => {
@@ -1026,6 +1032,32 @@ mod tests {
                     label.chars().count() <= kesh_qrbill::REMINDER_LABEL_MAX_CHARS,
                     "{locale:?} : « {label} » dépasse {} caractères",
                     kesh_qrbill::REMINDER_LABEL_MAX_CHARS
+                );
+            }
+        }
+    }
+
+    /// Story 32-1a (#716, B3 = E3) — la clé du préfixe de la communication de la
+    /// QR est exigée des quatre catalogues réels. Le chargeur rend la clé brute si
+    /// elle manque partout, et se replie sur le français si elle manque à une seule
+    /// langue : les deux cas laisseraient une QR lisible mais fausse. Aucun repli
+    /// Rust n'existe (C-32-1-3) : c'est ce test qui tient la clé.
+    #[test]
+    fn qr_message_prefix_is_translated_in_all_four_locales() {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../kesh-i18n/locales");
+        let bundle = kesh_i18n::I18nBundle::load(&dir).unwrap();
+        let cle = "invoice-qr-message-prefix";
+        let fr = bundle.format(&Locale::FrCh, cle, None);
+        for locale in [Locale::FrCh, Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+            let prefixe = bundle.format(&locale, cle, None);
+            assert!(
+                !prefixe.trim().is_empty() && prefixe != cle,
+                "{locale:?} : le préfixe de la QR est absent du catalogue (rendu « {prefixe} »)"
+            );
+            if locale != Locale::FrCh {
+                assert_ne!(
+                    prefixe, fr,
+                    "{locale:?} : le préfixe de la QR retombe sur le français (« {fr} »)"
                 );
             }
         }

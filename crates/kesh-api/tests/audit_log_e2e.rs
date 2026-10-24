@@ -96,16 +96,7 @@ fn config_de_test() -> Config {
 async fn spawn_app_de(pool: MySqlPool) -> TestApp {
     let config = config_de_test().with_locale(kesh_i18n::Locale::DeCh);
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
-    let i18n = Arc::new(
-        kesh_i18n::I18nBundle::load(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .unwrap()
-                .join("kesh-i18n/locales")
-                .as_path(),
-        )
-        .expect("charger les catalogues"),
-    );
+    let i18n = Arc::new(catalogues_charges());
     kesh_api::errors::init_error_i18n(i18n.clone(), config.locale);
 
     let state = AppState::new_for_tests(pool, Arc::new(config), Arc::new(rate_limiter), i18n);
@@ -364,8 +355,22 @@ async fn les_parametres_invalides_sont_refuses_en_400(pool: MySqlPool) {
     );
     const FORMAT: &str = "audit-log-query-error-date-invalid";
     const PLAGE: &str = "audit-log-query-error-date-out-of-range";
-    let cas: [Cas; 10] = [
+    let cas: [Cas; 12] = [
         ("?dateFrom=pas-une-date", FORMAT, &[("field", "dateFrom")]),
+        // Story 32-1a (#716, E5) — deux dates invalides : l'ordre d'évaluation
+        // est figé, `dateFrom` d'abord.
+        (
+            "?dateFrom=pas-une-date&dateTo=pas-une-date",
+            FORMAT,
+            &[("field", "dateFrom")],
+        ),
+        // Story 32-1a (#716, E5) — la borne d'`entityType` (32), distincte de
+        // celle d'`action` (64) : 33 caractères sont refusés.
+        (
+            "?entityType=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "audit-log-query-error-code-too-long",
+            &[("field", "entityType"), ("max", "32")],
+        ),
         (
             "?dateFrom=2026-02-01&dateTo=2026-01-01",
             "audit-log-query-error-date-range-inverted",
@@ -428,7 +433,8 @@ async fn les_parametres_invalides_sont_refuses_en_400(pool: MySqlPool) {
     }
 }
 
-/// Les catalogues de l'application, chargés comme par `spawn_app_de`.
+/// Les catalogues de l'application — le seul chargement du fichier : `spawn_app_de`
+/// et les tests qui calculent un rendu attendu passent par lui (Story 32-1a, #716, B2).
 fn catalogues_charges() -> kesh_i18n::I18nBundle {
     kesh_i18n::I18nBundle::load(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

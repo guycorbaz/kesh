@@ -502,6 +502,9 @@ essais volontaires du refus**, aucun ne lançant de `up` :
       `rmdir` de chaque dossier créé pour l'essai, dossier courant compris). *(P4, F2, R6.)* **`COPIE` est rétablie après
       chaque cas** et sa valeur **relue au journal** avant le cas suivant et avant le contrôle final de l'AC7 (c) : une
       `COPIE` laissée sur le « nom faux » ferait passer `test ! -e "$COPIE"` à tort alors que la vraie copie subsiste.
+      *(Annotation du 2026-10-24, Story 32-1c, #714 (P4 LOW-4) : le `test ! -e "$COPIE"` décrit ici au présent n'est
+      plus le contrôle final — le manuel écrit depuis la revue de code P3 un test à quatre issues, dont une seule de
+      succès ; voir l'annotation de l'AC7 (c), plus haut. Le texte d'origine reste.)*
       Les quatre cas sont le minimum ; **deux refus de plus se constatent dans le même passage** : une **barre finale**
       (`COPIE=<dossier de l'essai>/`, sur un dossier de l'essai existant) et **`/var/tmp` lui-même** ; le suffixe vide
       (`/var/tmp/kesh-repetition-`) passe le `case`, puis la garde le **refuse** au `-d` tant que ce dossier de ce nom exact
@@ -542,6 +545,11 @@ par une garde lexicale. **Restent** les gardes existantes qui relisent la sous-s
 (services nommés ; la forme `-p` n'est pas lue, angle mort écrit), **G15** (volumes, préfixe `kesh-repetition_` accepté) et
 **G16** (liste fermée des « Hyper Backup » hors sections Synology) — le binaire `configuration_transmise` et la garde G19
 de `textes_coherents.rs` se relancent au gate ciblé (T5).
+*(Annotation du 2026-10-24, Story 32-1c, #714 (fiche P2 A-LOW-4) : G15 ne lit **rien** de la sous-section. Elle relève
+les volumes écrits `/var/lib/docker/volumes/<x>` et « volume `\texttt{<x>}` » (`configuration_transmise.rs`,
+`les_volumes_cites_existent`) ; la sous-section écrit le sien en `\keshpath{kesh-repetition\_kesh-mariadb-data}`, forme
+que G15 ne lit pas. La ranger parmi « les gardes existantes qui relisent la sous-section » était faux à sa date ; le
+texte d'origine reste.)*
 
 **AC12 — CHANGELOG.** Entrée `Ajouté` dans la section `[0.15.0] — Non publié` : la répétition de clôture sur une copie,
 au manuel d'administration, jouée sur une sauvegarde complète. Et une entrée dans une rubrique `### Corrigé` à créer dans
