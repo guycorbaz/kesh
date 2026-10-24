@@ -34,6 +34,7 @@ use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine, Role};
 use kesh_db::repositories::journal_entries;
 use kesh_db::test_fixtures::{SeededCompany, seed_accounting_company};
+use kesh_report::{GeneralLedger, MAX_LEDGER_LIMIT};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
@@ -441,12 +442,18 @@ const TABLE_DES_TRACES: &[Ligne] = &[
     },
     Ligne {
         num: 8,
-        nom: "journaux_export_csv",
+        // Filtrée (revue de code P1, E2) : seule ligne qui voie le filtre de
+        // journal d'un **export** tracé ; les exports 2, 4, 6 et 10 tiennent
+        // le `null`.
+        nom: "journaux_export_csv_filtre_achats",
         svc: Svc::Journaux,
         usage: Usg::Csv,
-        dem: BORNES,
+        dem: Dem::Periode {
+            bornes: true,
+            journal: Some("Achats"),
+        },
         action: "report.exported",
-        details: r#"{"report_type": "journals", "format": "csv", "fiscal_year_id": "$fy", "period_start": "$debut", "period_end": "$fin", "journal_filter": null}"#,
+        details: r#"{"report_type": "journals", "format": "csv", "fiscal_year_id": "$fy", "period_start": "$debut", "period_end": "$fin", "journal_filter": "Achats"}"#,
     },
     Ligne {
         num: 9,
@@ -1709,6 +1716,160 @@ async fn ac9_d_service_en_echec_aucune_trace(pool: MySqlPool) {
     );
     let traces = traces_depuis(&pool, livres.user_id(), repere).await;
     assert!(traces.is_empty(), "aucune trace attendue : {traces:?}");
+}
+
+// ============================================================
+// Les deux régimes du grand livre (revue de code P1, E1)
+// ============================================================
+
+/// Les identifiants des lignes de la section du compte `compte`, et son
+/// `line_count` (avant pagination).
+fn lignes_du_compte(gl: &GeneralLedger, compte: i64) -> (Vec<i64>, i64) {
+    let section = gl
+        .sections
+        .iter()
+        .find(|s| s.account_id == compte)
+        .expect("la section du compte demandé");
+    (
+        section.lines.iter().map(|l| l.line_id).collect(),
+        section.line_count,
+    )
+}
+
+/// Les deux régimes de `rapports::grand_livre` : l'affichage lit `offset` et
+/// borne `limit` (défaut et plafond `MAX_LEDGER_LIMIT`) ; l'export rend le livre
+/// **entier**, quels que soient `offset` et `limit`.
+///
+/// ⚠️ Le générateur borne **par compte** (`fetch_lines` : `LIMIT ? OFFSET ?`
+/// sur les lignes d'un seul compte, `limit` écrêté à `[1, MAX_LEDGER_LIMIT]`) :
+/// la fixture pose donc `MAX_LEDGER_LIMIT + 1` lignes sur **un** compte — une
+/// écriture synthétique de `MAX_LEDGER_LIMIT + 2` lignes. C'est le seul moyen de
+/// distinguer « aucune borne » du plafond.
+///
+/// Mutations que ce test tue (jouées à la remédiation de la P1) : l'export
+/// tronqué à `MAX_LEDGER_LIMIT` ; l'export qui lit `offset` ; l'affichage sans
+/// plafond par défaut ; l'affichage qui ne lit pas `offset`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn grand_livre_les_deux_regimes(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let compte = seeded.accounts["1100"];
+    let plafond = usize::try_from(MAX_LEDGER_LIMIT).unwrap();
+    let total = plafond + 1;
+    let attendu = i64::try_from(total).unwrap();
+
+    let mut lines: Vec<NewJournalEntryLine> = (0..total)
+        .map(|_| NewJournalEntryLine {
+            account_id: compte,
+            debit: dec!(1),
+            credit: Decimal::ZERO,
+            project_id: None,
+        })
+        .collect();
+    lines.push(NewJournalEntryLine {
+        account_id: seeded.accounts["2000"],
+        debit: Decimal::ZERO,
+        credit: Decimal::from(attendu),
+        project_id: None,
+    });
+    journal_entries::create(
+        &pool,
+        seeded.fiscal_year_id,
+        seeded.admin_user_id,
+        NewJournalEntry {
+            company_id: seeded.company_id,
+            entry_date: date("2026-06-01"),
+            journal: Journal::Achats,
+            description: "Écriture synthétique à nombreuses lignes".into(),
+            project_id: None,
+            lines,
+        },
+    )
+    .await
+    .unwrap();
+
+    let lecture = lecture_seule(&pool).await;
+    let trace = Trace::new(pool.clone());
+    let admin = api_societe(seeded.company_id, seeded.admin_user_id, Role::Admin);
+    let demande = |offset: Option<i64>, limit: Option<i64>| DemandeGrandLivre {
+        from: date(BORNE_DEBUT),
+        to: date(BORNE_FIN),
+        account_ids: Some(compte.to_string()),
+        include_zero: false,
+        offset,
+        limit,
+    };
+
+    // Export sans paramètre : le livre entier, au-delà du plafond d'écran.
+    let mut vu = None;
+    rapports::grand_livre(
+        &admin,
+        &lecture,
+        demande(None, None),
+        Export(FormatExport::Pdf),
+    )
+    .await
+    .unwrap()
+    .exporter(&trace, |gl| {
+        vu = Some(lignes_du_compte(gl, compte));
+        Ok(Vec::new())
+    })
+    .await
+    .unwrap();
+    let (entier, n) = vu.take().unwrap();
+    assert_eq!(n, attendu, "line_count de la fixture");
+    assert_eq!(
+        entier.len(),
+        total,
+        "export : le livre entier ({total} lignes), jamais tronqué au plafond {plafond}"
+    );
+
+    // Export avec `offset` et `limit` : ignorés, le même livre entier.
+    rapports::grand_livre(
+        &admin,
+        &lecture,
+        demande(Some(1), Some(1)),
+        Export(FormatExport::Csv),
+    )
+    .await
+    .unwrap()
+    .exporter(&trace, |gl| {
+        vu = Some(lignes_du_compte(gl, compte));
+        Ok(Vec::new())
+    })
+    .await
+    .unwrap();
+    let (export_pagine, _) = vu.take().unwrap();
+    assert_eq!(
+        export_pagine, entier,
+        "export : `offset` et `limit` sont ignorés — le livre entier, depuis la première ligne"
+    );
+
+    // Affichage sans paramètre : le plafond par défaut, depuis la première ligne.
+    let gl = rapports::grand_livre(&admin, &lecture, demande(None, None), Affichage)
+        .await
+        .unwrap()
+        .afficher(&trace)
+        .await;
+    let (ecran, n) = lignes_du_compte(&gl, compte);
+    assert_eq!(n, attendu, "line_count avant pagination");
+    assert_eq!(
+        ecran,
+        entier[..plafond],
+        "affichage : le défaut est le plafond ({plafond} lignes), depuis la première"
+    );
+
+    // Affichage paginé : `offset` et `limit` lus.
+    let gl = rapports::grand_livre(&admin, &lecture, demande(Some(1), Some(1)), Affichage)
+        .await
+        .unwrap()
+        .afficher(&trace)
+        .await;
+    let (page, _) = lignes_du_compte(&gl, compte);
+    assert_eq!(
+        page,
+        entier[1..2],
+        "affichage : `offset=1&limit=1` rend la deuxième ligne seule"
+    );
 }
 
 // ============================================================
