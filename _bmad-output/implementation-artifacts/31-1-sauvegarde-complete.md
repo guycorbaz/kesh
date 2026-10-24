@@ -8,8 +8,8 @@ faite (Sonnet, R 0/0/10/8, F 0/2/9/8) et remédiée le 2026-10-23 ; validation P
 et remédiée le 2026-10-23 ; validation P3 faite (Sonnet, R 0/0/5/7, F 0/0/4/11) et remédiée le 2026-10-23 ;
 validation P4 faite (Opus, R 0/0/3/11, F 0/0/4/7) et remédiée le 2026-10-24 ; validations P5 à P8 faites,
 **terminée au plafond de huit passes** (Change Log). **31-1a : done** (revue de code P1 terminée le 2026-10-24) ;
-**31-1b : review** (développement terminé le 2026-10-24 ; revue de code P1 à lancer, `311b-review-prompt-p1.md`,
-**Sonnet**, lentilles B, E, A) ; 31-1c : ready-for-dev.
+**31-1b : done** (revue de code terminée le 2026-10-24) ; **31-1c : review** (développement terminé le 2026-10-24 ;
+revue de code P1 à lancer, `311c-review-prompt-p1.md`, **Sonnet**, lentilles B, E, A).
 
 ⛔ **Trois stories, une fiche, trois PR successives** (C-31-1-1) :
 
@@ -1050,24 +1050,24 @@ sauvegarde E2E pèse quelques Kio, et `importMaxMib` ne descend pas sous 1).
 
 ### 31-1c
 
-- [ ] T-c1 Migration, réinjection de la ligne singleton par `scripts/regen-test-schema.sh` et garde
+- [x] T-c1 Migration, réinjection de la ligne singleton par `scripts/regen-test-schema.sh` et garde
   `squash_seeds_the_backup_schedule_row`, squash régénéré, audit P5 (trois sites), P6, P7, inventaire (AC23, AC24).
-- [ ] T-c2 `kesh-db` : dépôt `backup_schedule` (`get`, `update_settings` avec version, `record_attempt` sans condition,
+- [x] T-c2 `kesh-db` : dépôt `backup_schedule` (`get`, `update_settings` avec version, `record_attempt` sans condition,
   `record_*`).
-- [ ] T-c3 `kesh-api/src/auto_backup.rs` : `is_due` (horloge en arrière), `is_overdue` (AC25, C-31-1-57), `run_once` (relecture de l'archive, statut `partial`,
+- [x] T-c3 `kesh-api/src/auto_backup.rs` : `is_due` (horloge en arrière), `is_overdue` (AC25, C-31-1-57), `run_once` (relecture de l'archive, statut `partial`,
   `last_complete_file`, noms à la milliseconde, seuil `documents_bytes`, verrou pris en `try_lock_owned` et
   `RunOutcome::Skipped`), `spawn`, `BackupEnv` (`Arc<dyn BackupEnv>`, `wrap_writer` qui prend un clone du `File` par
   valeur), `classify_write_error` (AC25-AC30) ; `AppState.backup_lock` aux neuf sites, gardes possédés et leur garde
   lexicale (AC27) ; branchement dans `main.rs` et sa garde lexicale (AC26).
-- [ ] T-c4 Routes et registres (AC32 : `audit_route_registry`, `audit_label_registry`, `admin_pat_denied_e2e`
+- [x] T-c4 Routes et registres (AC32 : `audit_route_registry`, `audit_label_registry`, `admin_pat_denied_e2e`
   — `ADMIN_COUPLES`, 33 constructeurs, `(8, 25)`, le seul `GET` de téléchargement dans `GUARDED_BY_HANDLER`,
   `assert_eq!(discriminating, 6)`) ; `importMaxMib` dans `GET backups`, `overdue` dans `GET backup-schedule` ;
   `AppError::BackupInProgress` ; libellés d'audit ×4 ; nettoyage des `.partial` pré-import (AC28).
-- [ ] T-c5 Frontend : panneau (AC33, dont la mention « trop grande pour être restaurée par l'écran »), bandeau (AC31,
+- [x] T-c5 Frontend : panneau (AC33, dont la mention « trop grande pour être restaurée par l'écran »), bandeau (AC31,
   lu sur `overdue`), API ; Vitest (AC37) ; i18n ×4 de toutes les chaînes de la 31-1c
   (règle de l'AC22, AC33).
-- [ ] T-c6 Tests d'intégration (AC35, AC36), E2E (AC38), captures (AC40).
-- [ ] T-c7 Manuel, CHANGELOG, README (AC34, AC39).
+- [x] T-c6 Tests d'intégration (AC35, AC36), E2E (AC38), captures (AC40).
+- [x] T-c7 Manuel, CHANGELOG, README (AC34, AC39).
 
 ## Dev Notes
 
@@ -1306,6 +1306,7 @@ seconde passe (C-31-1-53) ; le contrôle d'empreinte de la passe unique est tué
 
 31-1a : Opus 5.5 (Claude Code), 2026-10-24, en autonomie.
 31-1b : Opus 5.5 (Claude Code), 2026-10-24, en autonomie (worktree `kesh-31-1b`, branche `story/31-1b` sur `1ee0583e`).
+31-1c : Opus 5.5 (Claude Code), 2026-10-24, en autonomie (worktree `kesh-31-1c`, branche `story/31-1c` sur `e71cd351`).
 
 ### Debug Log References
 
@@ -1601,6 +1602,167 @@ inexistant) : corrigés en `17c7a8d6` (défaut voisin à correction mécanique).
   à retirer par l'orchestrateur.
 - `website/roadmap.html` et la brochure : laissés à la release, comme pour la 31-1a.
 
+---
+
+**31-1c — ce qui est livré** (commits `ea2f8269` kesh-db, `e7e575ad` backend, `4577f9f0` frontend, `971983a9`
+documentation, `8300bf20` correction des deux gardes de `configuration_transmise` — dernier commit de code) :
+
+- **Migration** `20261024000001_backup_schedule.sql` (AC23), non breaking : `_kesh_backup_schedule`, singleton, quatre
+  contraintes `CHECK`, `INSERT` de la ligne. **P5** : ligne d'audit `tracked-by-sqlx`, total 83 aux deux sites (en-tête
+  et `Total`, ventilation `+ 1 Story 31-1c`, somme recalculée 83), `tracked-by-sqlx` 72 → 73, `yes` 10 ; recompte :
+  `ls crates/kesh-db/migrations/*.sql | wc -l` = 83, `grep -c '^| \`20'` = 83. **P6** : `grep -rn
+  "migrations.len()\|apply_migrations_up_to" crates/` — tous les sites de backfill résolvent par version
+  (`common::migrations_before`) ; seul `migrations_upgrade_path.rs` est positionnel, garde-fou `assert_eq!(total, …)` :
+  82/48 → **83/49**, frontière 34 inchangée, commentaires et messages suivis (les deux sites `migrations_before(…)` du
+  même fichier résolvent par version). **P7** : `EXEMPT_MIGRATIONS` gagne l'entrée `Durable` (patron de
+  `20260522000001`), compte 19 → 20. **P8** : empreinte SHA-384 inscrite à `crates/kesh-db/migrations.sha384` une fois
+  le contenu figé, avant toute base persistante. **Squash** : `scripts/regen-test-schema.sh` § 7-bis relève la ligne
+  dans la base migrée (`CONCAT_WS` contrôlé par `^[0-9]+,…$`) et la réinjecte ; squash régénéré (41 tables, rejeu
+  vérifié) ; garde `squash_seeds_the_backup_schedule_row` ; `backup_inventory_matches_schema` exclut la table.
+- **kesh-db** (AC24, AC32) : `repositories/backup_schedule.rs` — `get`, `update_settings` (version, no-op, audit
+  `admin.backup_schedule_updated` dans la transaction), `record_attempt`, `record_success` (`ok` → dernière complète,
+  `partial` la garde), `record_failure` ; jamais `version` hors du réglage ; horodatages liés par l'application.
+- **kesh-api** : `auto_backup.rs` (`is_due`, `next_due_at`, `is_overdue`, `classify_write_error`, `run_once`, `spawn`,
+  `BackupEnv` / `RealBackupEnv` / `WriteSeek`, rétention, liste, nettoyage des `.partial` abandonnés, relecture) ;
+  `AppState.backup_lock` aux neuf sites ; gardes possédés dans `full_export` (déplacé dans `remplir`) et `full_import`
+  (dans la tâche, après la vérification) ; `main.rs` lance `spawn` ; `routes/backup_schedule.rs` (cinq handlers) ;
+  `AppError::BackupInProgress` (409) ; registres d'audit ; `admin_pat_denied_e2e` (33 couples, `(8, 25)`,
+  `GUARDED_BY_HANDLER` élargi au téléchargement, `assert_eq!(discriminating, 6)`) ; dépendance `rustix` (fs).
+- **Frontend** : `backup-schedule.api.ts`, `backup-schedule.svelte.ts` (état partagé), `backup-format.ts`,
+  `AutoBackupSection.svelte` (rendu par `AdminBackupPanel`), `BackupScheduleBanner.svelte` (rendu par le layout) ;
+  `apiClient.post` gagne l'option `call` (délai long, sans rejeu).
+- **i18n** : 43 clés d'écran, `error-backup-in-progress`, trois libellés d'audit, ×4 locales (relevés des replis par
+  `scripts/harvest-i18n-fallbacks.mjs admin-backup-` : 43 clés, 0 conflit) ; `i18n-keys.test.ts` 2289 → 2332,
+  `i18n-libelle-en-dur.test.ts` 68 → 70 (`errorText`, `frequencyLabel`), conformes 54 → 56.
+- **Docs** : manuel d'administration (sous-section *La sauvegarde automatique* `sec:sauvegarde-automatique`,
+  sauvegarde pré-import par l'écran — SSH en secours —, stratégie, tableau des méthodes, *Passer à la 0.15.0*, entrée
+  `KESH_ADMIN_BACKUP_DIR` du tableau des variables), PDF régénéré ; CHANGELOG `[0.15.0]` (deux entrées *Ajouté*, deux
+  *Modifié* dont la migration et le retour à la 0.14.0 par la sauvegarde d'avant) ; README ; `.env.example` ; deux
+  compose. **`docs/api-external.md` : rien à ajouter** — vérifié : § 4 ferme toute route réservée à l'Administrateur aux
+  clés (`403 API_KEY_ADMIN_FORBIDDEN`), et la liste du § 6 renvoie à cette fermeture ; les cinq routes neuves en
+  relèvent (AC32).
+
+**Tests rouges constatés** : la garde du squash (`311c-red-squash.log`) — avant régénération, `test_schema_guard`
+rend 3 échecs : `squash_matches_real_schema_structure` (table absente du squash), `squash_seeds_the_backup_schedule_row`
+(ligne absente) et `published_migrations_keep_their_checksums` (migration non inscrite). ⚠️ **Écart de méthode
+déclaré** : les autres tests (unitaires, intégration, Vitest, E2E) ont été écrits **avec** le code, et non rouges
+d'abord ; leur pouvoir de détection est établi par la campagne de mutations ci-dessous (26 mutations, 26 tuées).
+
+**Décompte des tests** (de `e71cd351` à `HEAD`, recompté `grep -cE '#\[(test|tokio::test|sqlx::test)'` aux deux
+bornes) : Rust **+52** — `auto_backup.rs` 0 → 24, `tests/admin_auto_backup_e2e.rs` 0 → 19,
+`repositories/backup_schedule.rs` 0 → 7, `tests/test_schema_guard.rs` 21 → 22, `tests/onboarding_audit_e2e.rs` 46 → 47
+(AC24, `reset_demo`) ; cohérent avec le gate (3908 → 3960). Vitest **+43 exécutés** (`backup-schedule.api.test.ts` 17,
+`AutoBackupSection.test.ts` 17, `BackupScheduleBanner.test.ts` 9, boucles comprises) ; cohérent avec la suite
+(1866 → 1909). E2E **+3** (`backup-schedule.spec.ts`).
+
+**Mutations** (sous le verrou ; script `311c-mutations.py` hors dépôt, motif unique vérifié, restauration
+`git checkout -- f && touch f`, arbre propre vérifié après chacune ; journaux `kesh-gate-logs/311c-mut-<M>.log`, diff en
+tête ; bilan `311c-mutations.log`) :
+
+| # | Mutation appliquée | Test(s) qui la tuent | Résultat |
+|---|---|---|---|
+| M-c1 | `t <= now` → `t < now` dans `is_due` | `is_due_a_l_egalite` | **tuée** |
+| M-c2 | clause de la dernière tentative retirée de `next_due_at` | `is_due_echec_il_y_a_dix_minutes` | **tuée** |
+| M-c3 | rétention sur `kesh-*` | `retention_garde_les_plus_recentes` | **tuée** |
+| M-c4 | rétention après tout échec | `espace_insuffisant`, `disque_sature…`, `archive_illisible_supprimee` | **tuée** (3/3) |
+| M-c5 | seuil d'espace ignoré | `espace_insuffisant` | **tuée** |
+| M-c6 | `run_once` en `lock_owned().await` | `verrou_tenu_la_sauvegarde_saute` (délai de 5 s) | **tuée** |
+| M-c8 | téléchargement par concaténation du chemin | `telechargement` (lien symbolique servi) | **tuée** |
+| M-c9 | `is_overdue` dès un intervalle | `is_overdue_un_intervalle`, `…_moins_une_milliseconde` | **tuée** (2) |
+| M-c10 | table ajoutée à `TABLES_TO_TRUNCATE` | `backup_inventory_matches_schema`, `export_sans_la_table`, `table_systeme_hors_inventaire`, `import_conserve_le_reglage_de_la_destination` | **tuée** (4/4) |
+| M-c11 | `partial` enregistré comme `ok` | `partial_garde_la_derniere_complete` (db), `partial_protege_la_derniere_complete` (api) | **tuée** (2/2) |
+| M-c12 | rétention sans protection de la dernière complète | `partial_protege_la_derniere_complete` | **tuée** |
+| M-c13 | `StorageFull` classé `failed` | `classify_storage_full`, `disque_sature…` | **tuée** (2/2) |
+| M-c14 | rétention après `disk_full` | `disque_sature_pendant_l_ecriture` | **tuée** |
+| M-c15 | `record_attempt` incrémente `version` | `version_inchangee_par_un_tour`, `seul_le_reglage_fait_avancer_la_version` | **tuée** (2/2) |
+| M-c16 | réinjection retirée du script, squash régénéré (test recompilé par `touch`) | `squash_seeds_the_backup_schedule_row` | **tuée** ; témoin vert après restauration |
+| M-c17 | `Skipped` rendu en 200 | `verrou_tenu_la_sauvegarde_saute` | **tuée** |
+| M-c18 | garde emprunté `backup_lock.lock()` dans l'import | `gardes_possedes` | **tuée** (le comportement reste vert, attendu) |
+| M-c19 | seuil sans `documents_bytes` | `premiere_sauvegarde_compte_les_documents` | **tuée** |
+| M-c20 | bandeau sans la condition « activée » | Vitest `bannerKind` et bandeau « désactivée » | **tuée** (2) |
+| M-c21 | `spawn` mis en commentaire dans `main.rs` | `lancement_par_main_seulement` | **tuée** |
+| M-c22a | valeurs futures non tenues pour nulles (`is_due`) | trois `is_due` / `next_due_at` | **tuée** (3) |
+| M-c22b | `is_overdue` sans `reussite > now` | `is_overdue_dans_le_futur` | **tuée** |
+| M-c23a | `>` → `>=` (mention « trop grande ») | Vitest égal au plafond | **tuée** (2) |
+| M-c23b | mention toujours affichée | Vitest au-dessous et égal | **tuée** (3) |
+| M-c24 | garde de l'export laissé au handler | `gardes_possedes` | **tuée** |
+| M-c25 *(hors fiche)* | `.partial` supprimés quel que soit leur âge | `partiels_residuels_supprimes` | **tuée** |
+
+Bilan : 23 mutations de la fiche (M-c1 à M-c24, M-c7 retirée en P4), deux variantes (M-c22b, M-c23b) et une hors fiche
+(C-31-1-82) : **26 appliquées, 26 tuées**, aucune équivalente, aucune compilation en échec.
+
+**Captures (AC40, thème clair)** — `kesh-gate-logs/311c-captures/`, prises par la spec E2E quand
+`KESH_E2E_CAPTURES_DIR` est posé, réécrites par le run final (05:21) : (c) `c-reussie.png` et (l) `l-liste-remplie.png`
+— parcours réel (« Sauvegarder maintenant » sur le vrai serveur) ; (a) `a-jamais-tentee`, (b) `b-desactivee`, (d)
+`d-partial`, (e) `e-failed`, (f) `f-insufficient-space`, (g) `g-disk-full`, (n) `n-bandeau-echec`, (p)
+`p-bandeau-aucune-reussite` — état posé par **interception de `GET backup-schedule`** (C-31-1-83 : la spec n'a pas
+d'accès à la base, l'`UPDATE` prescrit n'est pas praticable) ; (h) `h-en-cours` et (i) `i-409-en-cours` — interception
+de `POST …/run` (réponse retenue, puis 409) ; (j) `j-conflit-de-version` et (k) `k-erreur-de-validation` — interception
+de `PUT` (409, 400) ; (m) `m-liste-vide` et (r) `r-trop-grande` — interception de `GET backups` ; (q)
+`q-largeur-etroite` — fenêtre de 390 px. ⚠️ **(q) ne montre pas une section étroite** : à 390 px, la barre latérale
+fixe du layout (antérieure à la story) fait déborder la page et la colonne de contenu garde sa largeur ; la section
+elle-même passe ses champs à la ligne (`flex-wrap`), ce que la fenêtre ne permet pas de voir — écart déclaré, issue
+demandée. Le dossier contient aussi des captures **d'autres specs** (29-1a, 29-1b, 29-6, 29-8, 30-1b, 30-2b, 30-2c,
+31-1b…), écrites parce que la variable était posée pour toute la suite : elles ne sont pas de la 31-1c. Les captures ont
+été relues à l'œil (f, p, r, q).
+
+**Inventaire de l'AC14 rejoué (T-c7)** — la commande close de l'AC14 rend **127 lignes** à `e71cd351` et **139** à
+`HEAD` (tri `LC_ALL=C`, numéros de ligne retirés) : 17 lignes neuves ou réécrites, 5 disparues (leurs versions
+d'avant). Les 17 sont écrites par la 31-1c (doc-comments d'`auto_backup.rs`, `routes/admin.rs`,
+`routes/backup_schedule.rs` ; manuel ; `.env.example`) et justes. Lignes **inchangées rendues incomplètes** par la
+31-1c, traitées en `8300bf20` : l'entrée `KESH_ADMIN_BACKUP_DIR` du tableau des variables du manuel (sous-dossier
+`auto/`) et `.env.example:88` (la sauvegarde automatique échoue aussi hors Docker sans dossier inscriptible). Le reste
+est intact : vrai après la 31-1c.
+
+**LOW confiés à la 31-1c** (Change Log, étape 0 de la 31-1a) : **R5** (P5) — la garde de M-c24 délimite la fermeture
+nommée : garde, puis `let remplir =`, puis `build_keshbackup(` dans l'ordre, et le nom du garde entre les deux
+(`auto_backup::tests::gardes_possedes`) ; **R6** — `next_due_at` suit `is_due` (C-31-1-85) ; **R8** — manifeste lu par
+un analyseur ZIP minimal en Node (C-31-1-83) ; **R9** — état partagé du bandeau (C-31-1-84) ; **F2** — dossier des
+documents absent = 0 (C-31-1-86) ; **F4** — relecture dans le `spawn_blocking` (C-31-1-86) ; **L1 à L4** (P8) —
+rédaction de la fiche (phrase de l'AC30, motif de `spawn`, `classify_write_error` en `mod tests`, visibilité de
+`backup_lock`) : le code les tient (`spawn` est `pub` pour `main.rs`, `classify_write_error` privée et testée dans le
+module, `backup_lock` est `pub`, doc-comment de `AppState`) ; la fiche n'est pas réécrite.
+
+**Gates réellement exécutés** (périmètre : branche `story/31-1c`, base `e71cd351`) :
+
+- Gates ciblés pendant le développement : `311c-cible-1.log` à `-4.log` (rouges puis verts, cf. C-31-1-82 et les
+  registres d'audit), `binary(test_schema_guard)` et consorts.
+- Au commit `971983a9` (bases remises à zéro) : backend `311c-final-backend.log` **rouge** — 3958 passés, 2 échoués
+  (`configuration_transmise` : `lectures`, le paramètre `env` ; `synology_sauvegarde_la_base_par_le_dump`, G16 (e),
+  deux mentions « Hyper Backup » hors des sections Synology), 7 ignorés ; `check` 0 erreur ; `lint-i18n-ownership`
+  PASS ; Vitest 1909 ; `build` vert ; E2E `311c-final-e2e.log` **314 passés, 8 échoués, 17 ignorés** — les sept
+  KF-029 et `bank-accounts-crud.spec.ts:262` (en `page.fill('#username')`). Corrigés en `8300bf20`.
+- **Au dernier commit de code `8300bf20`** (bases `kesh_311c` et `kesh_e2e_311c` remises à zéro, dossiers
+  `/tmp/kesh-e2e-311c/*` vidés, un seul passage sous le verrou, `311c-final2.log`) : backend `311c-final2-backend.log`
+  (`scripts/test-fast.sh --ci` : fmt, clippy `-D warnings`, garde des droits, nextest) **3960 passés, 7 ignorés** ;
+  `npm run check` **0 erreur, 29 avertissements** (5100 fichiers) ; `lint-i18n-ownership` **PASS** ; Vitest
+  `311c-final2-unit.log` **1909 tests, 162 fichiers, tous passés** ; `build` **vert** ; **E2E complet**
+  (`311c-final2-e2e.log`, port 3313, `kesh_e2e_311c`, `KESH_INBOX_DIR`, `KESH_DOCUMENTS_DIR` et
+  `KESH_ADMIN_BACKUP_DIR` passés au backend **et** au runner, `/health` : `smtpConfigured: true`) **315 passés, 7
+  échoués, 17 ignorés** (13,0 min). Les 7 échecs, jugés fichier par fichier contre `docs/testing.md` § *Les échecs
+  attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`,
+  `:150` — **les sept KF-029 (#97)** ; aucun échec hors liste. Les trois parcours de `backup-schedule.spec.ts` passent.
+  `bank-accounts-crud.spec.ts:262`, rouge au passage précédent, passe ici, et **rejoué isolément** sur un backend neuf
+  (`311c-final2-e2e-isole.log`) : **1 passé** — le « huitième variable » de `docs/testing.md` (pollution ou KF-053,
+  page `/login` non rendue), non une régression.
+- PDF : `make fr` sous le verrou (`311c-make.log`, `311c-make-2.log`) ; `admin-manual.pdf` contrôlé aplati
+  (sous-section, « trop grande … (limite N Mio) », *Passer à la 0.15.0*, tableau, aucune référence `??`) ; les PDF du
+  manuel utilisateur et de la brochure, seulement redatés, ne sont pas commités.
+
+**Écarts à la fiche et aux consignes** :
+
+- **Rouges d'abord** : constatés pour la garde du squash seulement ; le reste a été écrit avec le code (cf. ci-dessus).
+- **Édition hors de l'outil Edit, une fois** : la ligne `pub mod backup_schedule;` de `kesh-db/src/repositories/mod.rs`
+  a été insérée par un script `python3` (substitution d'une ligne unique, vérifiée) ; tout le reste du code par Edit /
+  Write ; les mutations par script (permis).
+- **AC28** : seuls les `.partial` non modifiés depuis dix minutes sont supprimés (C-31-1-82), au lieu de tous.
+- **AC40** : états posés par interception réseau et non par `UPDATE` (C-31-1-83) ; (q) non démontrable (layout).
+- **AC38** : le manifeste est lu par un analyseur maison (C-31-1-83), aucune dépendance ajoutée.
+- **AC31** : le texte du bandeau `overdue` garde la date de la dernière réussite même datée du futur (C-31-1-85).
+- **Audit** : `admin.backup_run` ajouté (C-31-1-81) — la fiche ne nommait que deux actions.
+- `configuration_transmise` (deux gardes que la fiche ne listait pas) : paramètre renommé, manuel reformulé.
+- Gate rouge au commit `971983a9`, vert au dernier commit de code ; l'E2E a donc tourné deux fois.
+
 ### File List
 
 31-1a (de `b5fd9fb1` à `HEAD`) :
@@ -1637,6 +1799,31 @@ inexistant) : corrigés en `17c7a8d6` (défaut voisin à correction mécanique).
 - `docs/manual/fr/admin-manual.tex`, `admin-manual.pdf`, `docs/api-external.md`, `CHANGELOG.md`, `README.md`
 - `_bmad-output/implementation-artifacts/31-1-sauvegarde-complete.md`, `epic-31-choix-autonomes-311.md`,
   `sprint-status.yaml`, `311b-review-prompt-p1.md` (neuf)
+
+31-1c (de `e71cd351` à `HEAD`) :
+
+- `crates/kesh-db/migrations/20261024000001_backup_schedule.sql` (neuf), `crates/kesh-db/migrations.sha384`,
+  `crates/kesh-db/test-schema/0001_schema_squash.sql`, `scripts/regen-test-schema.sh`
+- `crates/kesh-db/src/repositories/backup_schedule.rs` (neuf), `repositories/mod.rs`, `backup.rs`, `post_restore.rs`,
+  `test_fixtures.rs`
+- `crates/kesh-db/tests/test_schema_guard.rs`, `migrations_upgrade_path.rs`
+- `crates/kesh-api/src/auto_backup.rs` (neuf), `routes/backup_schedule.rs` (neuf), `routes/mod.rs`, `routes/admin.rs`,
+  `lib.rs`, `main.rs`, `errors.rs`, `audit_labels.rs`, `middleware/auth.rs`, `crates/kesh-api/Cargo.toml`, `Cargo.lock`
+- `crates/kesh-api/tests/admin_auto_backup_e2e.rs` (neuf), `admin_pat_denied_e2e.rs`, `audit_route_registry.rs`,
+  `onboarding_audit_e2e.rs`, `invoice_frozen_pdf_e2e.rs`, `invoice_send_email_e2e.rs`, `password_recovery_e2e.rs`,
+  `setup_admin_e2e.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/lib/features/admin-backup/backup-schedule.api.ts`, `backup-schedule.api.test.ts`,
+  `backup-schedule.svelte.ts`, `backup-format.ts`, `AutoBackupSection.svelte`, `AutoBackupSection.test.ts`,
+  `BackupScheduleBanner.svelte`, `BackupScheduleBanner.test.ts` (neufs), `AdminBackupPanel.svelte`,
+  `AdminBackupPanel.test.ts`
+- `frontend/src/lib/shared/utils/api-client.ts`, `frontend/src/lib/shared/i18n-keys.test.ts`,
+  `i18n-libelle-en-dur.test.ts`, `frontend/src/routes/(app)/+layout.svelte`
+- `frontend/tests/e2e/backup-schedule.spec.ts` (neuf)
+- `docs/manual/fr/admin-manual.tex`, `admin-manual.pdf`, `docs/migrations-idempotence-audit.md`, `CHANGELOG.md`,
+  `README.md`, `.env.example`, `docker-compose.yml`, `docker-compose.prod.yml`
+- `_bmad-output/implementation-artifacts/31-1-sauvegarde-complete.md`, `epic-31-choix-autonomes-311.md`,
+  `sprint-status.yaml`, `311c-review-prompt-p1.md` (neuf)
 
 ## Change Log
 
@@ -2143,3 +2330,16 @@ condition d'ouverture de l'assistant au manuel sont vrais contre le code ; LOW c
 commentaire de `admin-restore.api.ts`). Trend de la revue : P1 Sonnet B 0/0/1/5, E 0/0/0/6, A 0/0/0/6 → P2 ciblée Haiku
 0/0/2/5 → P3 ciblée Sonnet 0/0/0/1. Gates complets au dernier commit de code `06cc4ad4` : vert (entrée ci-dessus).
 Statut de la 31-1b : `done`.
+
+### 2026-10-24 — Développement de la 31-1c (Opus 5.5) → review
+
+T-c1 à T-c7 faits (détail au Dev Agent Record) : migration non breaking `20261024000001_backup_schedule` (P5 à P8,
+squash réinjecté et gardé) ; dépôt `backup_schedule` ; `auto_backup` (moment, verrou, écriture, relecture, statuts,
+rétention protégeant la dernière complète, seuil d'espace, `disk_full`), lancée par `main.rs` seul ; gardes possédés
+dans l'export et l'import ; cinq routes, `BACKUP_IN_PROGRESS`, audits ; section de l'écran, bandeau, i18n ×4 ; tests
+d'intégration, Vitest, E2E et captures ; manuel, PDF, CHANGELOG, README. Gate complet au dernier commit de code
+`8300bf20` : 3960 passés / 7 ignorés ; Vitest 1909 ; E2E 315 passés / 7 échecs (les sept KF-029) / 17 ignorés.
+Mutations 26 tuées sur 26. Choix C-31-1-81 à 87. Écarts déclarés (rouges d'abord pour la seule garde du squash, une
+ligne insérée par script, `.partial` abandonnés seuls, états E2E par interception, capture (q)). Revue de code P1 à
+lancer : `311c-review-prompt-p1.md` (**Sonnet**, lentilles B, E, A).
+
