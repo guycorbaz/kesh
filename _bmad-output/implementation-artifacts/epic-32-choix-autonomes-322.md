@@ -15,6 +15,8 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
 - **Écartées** : `2026-07-28` seule (Hermes exclu) ; double ère écrite à la main (deux protocoles à tenir pour un
   besoin minuscule).
 - **Réversible** : oui — ajouter `2026-07-28` est un adaptateur de transport de plus derrière le registre (§ 5.3).
+- **Relecture P1** : prémisse « Hermes repose sur la poignée de main » fausse — justification refaite par **C-32-2-11** ; le choix tient.
+
 
 ### C-32-2-2 — Sans état : aucun `Mcp-Session-Id`, `GET`/`DELETE` 405, pas de lot, JSON par défaut
 
@@ -45,6 +47,8 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
   expiration → `isError: true`, rien ne part. Repli si l'essai client échoue : poignée explicite rappelée par l'agent.
 - **Écartée** : élicitation en 0.16.0 (complément possible plus tard, en mode URL vers la page d'approbation).
 - **Réversible** : oui ; **reste à éprouver** avec les deux clients (§ 2.4 d du document).
+- **Relecture P1** : prémisses fausses ou incomplètes (YOLO, minuteur, tâche de fond) ; **le choix n'est plus pris par la spike** — remplacé par **C-32-2-14** (ce qui reste du rejet de l'élicitation) et **C-32-2-15** (trois formes, recommandation, Q10 à Guy).
+
 
 ### C-32-2-5 — Lecture seule : second pool `READ ONLY` + `before_acquire` + garde lexicale
 
@@ -58,6 +62,8 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
 - **Écartée** : second utilisateur MariaDB `SELECT` seul (repli ; une variable `.env` et un script d'init de plus sur
   le NAS) ; `after_connect` seul (séquence B).
 - **Réversible** : oui.
+- **Relecture P1** : « par construction » ne vaut pas pour ce verrou ; **le choix n'est plus pris par la spike** — remplacé par **C-32-2-16** (trois formes, recommandation, Q11 à Guy).
+
 
 ### C-32-2-6 — SDK : écrit à la main en 0.16.0, traits à types propres à Kesh
 
@@ -68,6 +74,8 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
 - **Écartée** : adopter `rmcp` dès la 32-6 (contredit une décision du Project Lead ; le critère de maturité lui
   revient).
 - **Réversible** : oui, c'est l'objet des traits.
+- **Relecture P1** : critère de réexamen reformulé par **C-32-2-11** (« quand Kesh doit servir `2026-07-28` », les deux clients la parlant déjà) ; traits revus par **C-32-2-17**.
+
 
 ### C-32-2-7 — Prototype hors du dépôt plutôt que sur une branche `spike/32-2-proto`
 
@@ -93,3 +101,110 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
 - **Retenu** : Hermes Agent (`hermes-agent.nousresearch.com`), seul client MCP de ce nom trouvé — **à confirmer par
   Guy** (Q9).
 - **Réversible** : oui ; si c'est un autre client, C-32-2-1 et C-32-2-4 sont à revoir.
+
+---
+
+*Rectifications de la relecture P1 (rapport hors dépôt `/home/gcorbaz/devel/kesh-gate-logs/322-review-p1.md`,
+0 CRITICAL / 0 HIGH / 7 MEDIUM / 7 LOW), 2026-10-24. Sources revérifiées en ligne le même jour.*
+
+### C-32-2-10 — M1 : le mode YOLO de Hermes ne répond pas à l'élicitation
+
+- **Contexte** : C-32-2-4 donnait « Hermes par YOLO » comme contournement de l'élicitation. La documentation de Hermes
+  (`…/docs/user-guide/features/mcp`) dit : « YOLO and `approvals.mode: off` do not answer these for you: the server is
+  asking you a question, not asking permission ».
+- **Retenu** : seul le *hook* `Elicitation` de Claude Code répond sans dialogue — posé par l'utilisateur dans sa propre
+  configuration. Document §§ 2.2, 3.2.
+- **Réversible** : sans objet (rectification de fait).
+
+### C-32-2-11 — M2 : Hermes parle les deux ères (`protocol: auto`) ; justification de `2025-11-25` refaite
+
+- **Contexte** : le document disait Hermes *legacy* seul. `…/docs/reference/mcp-config-reference` : `protocol` par
+  défaut `auto` (« legacy `initialize` handshake first, falling back to the 2026-07-28 `server/discover` »), `stateless`,
+  `legacy`.
+- **Retenu** : `2025-11-25` maintenue, au motif qu'un serveur `2025-11-25` fonctionne dans **tous** les réglages
+  documentés des deux clients (y compris Hermes `legacy`, Claude Code v1 ou `MCP_PROTOCOL_NEGOTIATION=legacy`), ce
+  qu'un serveur moderne seul ne garantit pas. Critère de réexamen du SDK : « quand Kesh doit servir `2026-07-28` », et
+  non « quand un client l'exige ». Document §§ 1.3, 2.2, 5.2, Q8.
+- **Réversible** : oui (C-32-2-1).
+
+### C-32-2-12 — M3 : minuteur de premier octet de Claude Code — finding **partiellement réfuté**
+
+- **Contexte** : le rapport lisait « avec la configuration par défaut, ce minuteur vaut des heures ». La documentation
+  (`https://code.claude.com/docs/en/mcp`) poursuit : « The 28-hour default of an unset `MCP_TOOL_TIMEOUT` doesn't enter
+  that comparison » — **par défaut, il vaut 60 s**, comme la première rédaction l'écrivait. Ce qui était faux : « la doc
+  ne dit pas » si le premier évènement le satisfait — elle le dit (« through to the server's first response byte »).
+- **Retenu** : formule complète citée (max de 60 s, du délai d'outil du serveur et de `MCP_TIMEOUT`, défaut non
+  compté) ; une réponse qui commence aussitôt n'y est jamais soumise ; l'essai § 2.4 (d) à 90 s garde son objet (le
+  premier évènement SSE suffit-il ?). Document §§ 2.1, 2.3, 2.4.
+- **Réversible** : sans objet.
+
+### C-32-2-13 — M4 : Claude Code passe en tâche de fond un appel de plus de 2 min — conséquence tirée
+
+- **Contexte** : « Claude receives the task ID immediately and keeps working, and the result arrives as a task
+  notification when the call settles » ; la tâche « doesn't survive exiting the session » ; pas de tâche de fond en
+  session non interactive (sauf `CLAUDE_AUTO_BACKGROUND_TASKS=1`) ; aucune tant qu'un dialogue d'élicitation est ouvert.
+- **Retenu** : un appel tenu ouvert 240 s devient, chez Claude Code, une poignée de fait à 120 s — l'agent poursuit sans
+  le résultat. Critère inscrit au tableau du § 3.3 ; observation (d) du § 2.4 à 150 s.
+- **Réversible** : sans objet.
+
+### C-32-2-14 — Ce qui reste du rejet de l'élicitation
+
+- **Contexte** : C-32-2-4 reposait sur trois motifs : contournable (à moitié faux, C-32-2-10), formulaires plats (tient),
+  flux serveur → client absent de la révision sans état (faux, L1 : la requête part sur le flux SSE du `tools/call`, et
+  MRTR est sans état).
+- **Retenu** : l'élicitation n'est pas recommandée pour l'ergonomie de la modification (champs plats), le fonctionnement
+  sans session interactive, et le réemploi de l'écran pour les propositions de la 0.17.0 — **préférence raisonnée, non
+  impossibilité** ; l'argument « le client garantit » demeure comme principe, de faible poids pour un seul utilisateur.
+  Ce qui plaide pour elle est écrit (pas d'écran à construire, pas de sortie de la fenêtre du client). Document § 3.2.
+- **Réversible** : oui.
+
+### C-32-2-15 — M5 : trois formes de la validation pesées ; recommandation la poignée ; **décision à Guy (Q10)**
+
+- **Contexte** : la poignée était reléguée en repli sans être pesée contre les risques d'un appel bloquant 240 s (deux
+  délais clients, tâche de fond, mandataire, état en mémoire).
+- **Retenu** : tableau à onze critères (§ 3.3) — (a) élicitation, (b) appel tenu ouvert ≤ N s, (c) poignée.
+  *Recommandation* : (c), soumise à Guy (Q10) ; la spike ne tranche pas. Conséquences sur la 32-8 écrites pour chaque
+  forme (§ 6) — en (c), la 32-8 devient 🗄️ (table des envois en attente).
+- **Écartée** : trancher dans la spike (c'est une décision d'ergonomie et de modèle de données, elle revient à Guy).
+- **Réversible** : oui jusqu'à la 32-8.
+
+### C-32-2-16 — M6 : trois formes de la lecture seule ; « par construction » retiré là où il ne vaut pas ; **décision à Guy (Q11)**
+
+- **Contexte** : le mode de session `READ ONLY` est défait par quatre instructions sans privilège ; `before_acquire` ne
+  contrôle qu'à l'emprunt ; la garde lexicale ne voit que le texte du dépôt. Le second utilisateur `SELECT` avait été
+  écarté pour « une variable `.env` et un script d'init de plus », sans dire la vraie contrainte.
+- **Retenu** : (a) mode de session + `before_acquire` + garde lexicale — garantie « tant que le code de Kesh n'émet pas
+  ces instructions » ; (b) utilisateur `SELECT` — par construction, mais créé **à la main** sur le NAS (les scripts
+  d'init ne rejouent pas sur une base existante ; `docker-compose.prod.yml` sans MariaDB ; Kesh sans droit global pour le
+  créer) et une variable d'accès à la base de plus dans le `.env` ; (c) les deux. *Recommandation* : (c), avec contrôle
+  des droits au démarrage et MCP non activable sans la variable — soumise à Guy (Q11). Document §§ 4.3, 6.
+- **Écartée** : garder « par construction » pour (a).
+- **Réversible** : oui jusqu'à la 32-6.
+
+### C-32-2-17 — M7 : la politique de validation sort du trait ; `PromptsWrite` a son propre trait ; **portée à Guy (Q12)**
+
+- **Contexte** : le trait faisait rendre une `PropositionEnvoi` à tout outil, y compris celui qui écrit un prompt (une
+  écriture, non un envoi), et ne laissait aucune place à une clé dispensée ; la règle de Guy (« montrer les données qui
+  vont être envoyées ») pèse lourd sur l'agent de développement.
+- **Retenu** : `McpTool` rend des `Donnees` ; seul le répartiteur fabrique la réponse et applique `Validation` de la clé
+  (`Requise` / `Dispensee`, posée par l'administrateur, envois journalisés) ; `McpToolPrompts` (contexte sans
+  `Lecture`, retour `Accuse` fermé) pour `proposer_prompt` ; `McpPrompt::rendre` sans `Lecture`. Question Q12 (toujours ;
+  par clé ; seuil), *recommandation* : par clé, `requise` par défaut — elle s'écarte de la Q2 du kickoff, même question.
+  Document §§ 5.3, 6, 7.
+- **Réversible** : oui (traits indicatifs).
+
+### C-32-2-18 — LOW L1 à L7 : rectifications mécaniques
+
+- **L1** : décision 3 et § 3.2 — le flux serveur → client existe en `2025-11-25` sur le SSE du `tools/call`, MRTR est
+  sans état.
+- **L2** : liste des journaux du § en-tête — `ro-pool-main.rs` et `ro-pool-Cargo.toml` → `ro-pool.out` ; `proto-server.log`
+  ajouté.
+- **L3** : `grep -rniE "read write|tx_read_only|transaction_read" crates` ne rend **aucune ligne** (revérifié).
+- **L4** : `DELETE` 405, `ping`, borne de 1 Mio, `MCP-Protocol-Version` absent — écrits « décidés, non éprouvés par le
+  prototype » (§ 1.3) et ajoutés au test de contrat (32-6, 32-11).
+- **L5** : `Origin` d'un navigateur sur l'adresse du réseau local refusé si l'URL publique est vide ; liste réglable,
+  jamais déduite de `Host` (*DNS rebinding*) (§ 1.3).
+- **L6** : `touch_last_used` ne concerne le MCP que si la clé MCP réutilise `validate_pat` ; la 32-5 dit où la clé MCP
+  écrit sa dernière utilisation (§ 4.4).
+- **L7** : filtre d'adresse, activation par l'administrateur, prompts « à valider » — rappelés en tête du § 6 et
+  renvoyés aux stories du kickoff (32-5, 32-6, 32-7, 32-10).
