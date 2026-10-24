@@ -1182,5 +1182,14 @@ réserve de Q4**.
   premier commit (`642c88f9`), règle d'inventaire, plancher, import, fenêtre P7, AC11 et textes (`c70b80e6`) ; gate complet
   3996/3996, E2E 315 / 7 (KF-029) / 17, mutations M1-M4, M7, M8 tuées et M6 équivalente ; détail au Dev Agent Record
   § 32-12a ; clé à `review`. Passe suivante : revue de code P1, Sonnet, lentilles B, E, A (`3212a-review-prompt-p1.md`).
+- 2026-10-24 — **32-12a, revue de code P1** (Sonnet, trois lentilles, contexte frais ; rapports
+  `kesh-gate-logs/3212a-review-p1-{B,E,A}.md`) : **B 0/0/0/3, E 0/0/0/2, A 0/0/0/1** — aucun finding au-dessus de LOW,
+  **revue terminée en une passe**. La lentille A confirme le bloc de `post_restore.rs` réécrit par script (C-32-12-42) :
+  ni perte ni altération hors de la fiche ; AC17 recompté (G1 58, G2 5, G3 27, G4 5, G5 14, valeur 7). Cinq LOW
+  distincts (B1 = E1 détecteur d'écritures post-plancher, B2 test vacant, B3, E2 format 1, A1 cosmétique), non
+  appliqués, **tracés sur [#735]**. Contrôle de fuite de l'orchestrateur avant push : aucun des motifs d'IBAN des
+  relevés réels dans la fixture ni dans le diff (comptes seulement, aucune valeur écrite). Clé laissée à `review` :
+  **fusion en attente de Q4**.
 
 [#722]: https://github.com/guycorbaz/kesh/issues/722
+[#735]: https://github.com/guycorbaz/kesh/issues/735
