@@ -988,9 +988,11 @@ async fn liste_des_sauvegardes(pool: MySqlPool) {
 /// Revue de code P1, L-B2 / E-4 (C-31-1-88) — un dossier `auto` inutilisable
 /// n'emporte pas la liste : les sauvegardes pré-import restent servies (et
 /// téléchargeables), le problème se lit à l'état de la sauvegarde automatique
-/// (`failed` au tour suivant) et au journal. Deux formes : `auto` remplacé par
-/// un fichier (`read_dir` en échec), puis `auto` lisible mais non traversable
-/// (`0o600` : chaque entrée en échec de métadonnées).
+/// (`failed` au tour suivant) et au journal. Trois formes : `auto` remplacé par
+/// un fichier (`read_dir` en échec), `auto` lisible mais non traversable
+/// (`0o600` : chaque entrée en échec de métadonnées, écriture refusée), et
+/// `auto` inscriptible mais illisible (`0o300` : `read_dir` en échec,
+/// l'écriture passerait — revue de code P2, M1).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn liste_servie_malgre_un_dossier_auto_inutilisable(pool: MySqlPool) {
     use std::os::unix::fs::PermissionsExt;
@@ -1037,9 +1039,43 @@ async fn liste_servie_malgre_un_dossier_auto_inutilisable(pool: MySqlPool) {
     let r = i.get("/api/v1/admin/backups").await;
     let statut = r.status();
     let corps: Value = r.json().await.unwrap_or(Value::Null);
+    let issue = run_once(&i.state, TestEnv::large(), instant(1), Trigger::Schedule).await;
     std::fs::set_permissions(i.auto(), std::fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(statut, 200, "auto non traversable");
     assert_eq!(noms(corps), attendu);
+    assert_eq!(
+        issue.unwrap(),
+        RunOutcome::Done(RunStatus::Failure(FailureStatus::Failed)),
+        "auto non traversable"
+    );
+    assert_eq!(i.schedule().await["lastStatus"], "failed");
+
+    // (3) `auto` traversable et inscriptible mais **illisible** (`0o300`) :
+    // l'écriture y réussirait, la rétention n'y lirait rien — le disque se
+    // remplirait en silence. Le tour échoue avant d'écrire, et le dit
+    // (`failed`, que le panneau et le bandeau affichent) — revue de code P2,
+    // M1, C-31-1-93.
+    std::fs::remove_dir_all(i.auto()).unwrap();
+    let deposees = i.deposer(1);
+    std::fs::set_permissions(i.auto(), std::fs::Permissions::from_mode(0o300)).unwrap();
+    let r = i.get("/api/v1/admin/backups").await;
+    let statut = r.status();
+    let corps: Value = r.json().await.unwrap_or(Value::Null);
+    let issue = run_once(&i.state, TestEnv::large(), instant(2), Trigger::Schedule).await;
+    std::fs::set_permissions(i.auto(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(statut, 200, "auto illisible");
+    assert_eq!(noms(corps), attendu);
+    assert_eq!(
+        issue.unwrap(),
+        RunOutcome::Done(RunStatus::Failure(FailureStatus::Failed)),
+        "auto illisible"
+    );
+    assert_eq!(
+        i.noms_auto(),
+        deposees,
+        "rien d'écrit dans un auto illisible"
+    );
+    assert_eq!(i.schedule().await["lastStatus"], "failed");
 }
 
 /// Téléchargement : le fichier servi est celui du disque, audit

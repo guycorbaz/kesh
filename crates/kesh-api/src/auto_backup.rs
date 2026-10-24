@@ -348,7 +348,8 @@ fn fichiers_reguliers(
 /// les sauvegardes pré-import restent servies — c'est la voie normale pour en
 /// récupérer une (manuel). Le problème se lit à l'état de la sauvegarde
 /// automatique, que le tour suivant met en échec (`failed`) faute de pouvoir
-/// y écrire (revue de code P1, L-B2 / E-4, C-31-1-88). Seul un dossier de
+/// le lister ou y écrire (revue de code P1, L-B2 / E-4, C-31-1-88 ; P2, M1,
+/// C-31-1-93). Seul un dossier de
 /// sauvegarde lui-même illisible rend `Err` (rien ne peut alors être listé).
 pub(crate) fn lister_les_sauvegardes(backup_dir: &Path) -> io::Result<Vec<ServerBackup>> {
     let mut liste = Vec::new();
@@ -383,12 +384,14 @@ pub(crate) fn lister_les_sauvegardes(backup_dir: &Path) -> io::Result<Vec<Server
 }
 
 /// Ouvre en lecture une sauvegarde trouvée par [`lister_les_sauvegardes`],
-/// **sans suivre** un lien symbolique (`O_NOFOLLOW`, comme la liste qui les
-/// écarte par `symlink_metadata`). `Ok(None)` — le téléchargement rend alors
-/// 404, comme pour un nom absent — si le fichier a disparu depuis la liste
-/// (rétention, suppression à la main), s'il est devenu un lien, ou s'il n'est
-/// plus un fichier régulier ; `Err` pour toute autre erreur (revue de code P1,
-/// L-B1 / E-5, C-31-1-89).
+/// **sans suivre** un lien symbolique au **dernier composant** (`O_NOFOLLOW`,
+/// comme la liste qui les écarte par `symlink_metadata` ; un dossier `auto/`
+/// lui-même lien est suivi, par la liste comme ici). `Ok(None)` — le
+/// téléchargement rend alors 404, comme pour un nom absent — si le fichier a
+/// disparu depuis la liste (rétention, suppression à la main, `auto/`
+/// remplacé par un fichier : `ENOTDIR`), s'il est devenu un lien, ou s'il
+/// n'est plus un fichier régulier ; `Err` pour toute autre erreur (revue de
+/// code P1, L-B1 / E-5, C-31-1-89 ; P2, L2 et L6).
 pub(crate) fn ouvrir_la_sauvegarde(path: &Path) -> io::Result<Option<File>> {
     use rustix::fs::{Mode, OFlags};
     use rustix::io::Errno;
@@ -398,7 +401,7 @@ pub(crate) fn ouvrir_la_sauvegarde(path: &Path) -> io::Result<Option<File>> {
         Mode::empty(),
     ) {
         Ok(fd) => fd,
-        Err(Errno::NOENT | Errno::LOOP) => return Ok(None),
+        Err(Errno::NOENT | Errno::LOOP | Errno::NOTDIR) => return Ok(None),
         Err(e) => return Err(e.into()),
     };
     let fichier = File::from(fd);
@@ -423,7 +426,11 @@ pub(crate) const PARTIEL_ABANDONNE_APRES: std::time::Duration =
 /// d'au moins ce délai (horloge revenue en arrière depuis l'arrêt brutal)
 /// vaut abandon ; à moins de ce délai dans le futur (horloge d'un partage
 /// réseau légèrement en avance), le fichier reste (revue de code P1, E-3,
-/// C-31-1-90). Date de modification illisible : le fichier reste. Un échec
+/// C-31-1-90). Supprimer un `.partial` daté d'au moins ce délai dans le futur
+/// est voulu : ce nettoyage ne tourne qu'au début d'un tour, sous
+/// `backup_lock`, et une seule instance de Kesh sert une base, si bien
+/// qu'un tel fichier vient d'un tour interrompu avant un recul d'horloge, non
+/// d'une écriture en cours (revue de code P2, M2). Date de modification illisible : le fichier reste. Un échec
 /// est journalisé ; rend le nombre de fichiers supprimés.
 pub(crate) fn supprimer_les_partiels(dir: &Path, prefixe: &str) -> usize {
     let partiels = match fichiers_reguliers(dir, |n| {
@@ -498,7 +505,10 @@ fn seuil_d_espace(derniere: u64, documents: u64) -> u64 {
 /// qui vient d'être écrite, la dernière sauvegarde complète). Rend le nombre
 /// de fichiers supprimés ; un échec est journalisé. Un fichier dont les
 /// métadonnées sont illisibles n'est ni compté ni supprimé : la rétention en
-/// garde alors plus, jamais moins (C-31-1-88).
+/// garde alors plus, jamais moins (C-31-1-88). Un dossier illisible rend 0,
+/// journalisé : [`ecrire`] a refusé d'écrire dans un `auto/` qui ne se liste
+/// pas, si bien que ce cas ne survient que si le dossier a changé entre-temps
+/// (C-31-1-93).
 fn appliquer_la_retention(auto_dir: &Path, garder: usize, proteges: &[&str]) -> usize {
     let mut noms: Vec<(String, PathBuf)> =
         match fichiers_reguliers(auto_dir, |n| NOM_AUTO.is_match(n)) {
@@ -560,7 +570,8 @@ pub fn nom_de_sauvegarde(now: NaiveDateTime) -> String {
 }
 
 /// Écrit la sauvegarde dans `auto/` — tout ce qui touche le disque, dans le
-/// seul `spawn_blocking` de `build_keshbackup` : dossier `0700`, `.partial`
+/// seul `spawn_blocking` de `build_keshbackup` : dossier `0700` (qui doit se
+/// lister, sans quoi la rétention n'y tournerait pas), `.partial`
 /// résiduels, seuil d'espace, écriture par `write_backup_file` (`0600`,
 /// renommage, jamais d'écrasement), relecture.
 fn ecrire(
@@ -577,6 +588,14 @@ fn ecrire(
     std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
     if let Err(e) = builder.create(&auto_dir) {
         tracing::error!(dir = %auto_dir.display(), "sauvegarde automatique : dossier : {e}");
+        return Ecriture::Refusee(FailureStatus::Failed);
+    }
+    // Un `auto/` inscriptible mais illisible (`0o300`) accepterait l'écriture
+    // sans que la rétention puisse jamais le lister : le disque se remplirait
+    // en silence. Le tour échoue donc **avant** d'écrire, en `failed` — que
+    // le panneau et le bandeau affichent (revue de code P2, M1, C-31-1-93).
+    if let Err(e) = std::fs::read_dir(&auto_dir) {
+        tracing::error!(dir = %auto_dir.display(), "sauvegarde automatique : dossier illisible : {e}");
         return Ecriture::Refusee(FailureStatus::Failed);
     }
     supprimer_les_partiels(&auto_dir, "kesh-auto-");
@@ -1084,6 +1103,14 @@ mod tests {
         assert!(
             ouvrir_la_sauvegarde(&sous_dossier).unwrap().is_none(),
             "dossier ouvert"
+        );
+        // `auto/` remplacé par un fichier depuis la liste : `ENOTDIR`, 404
+        // comme un fichier disparu (revue de code P2, L2).
+        assert!(
+            ouvrir_la_sauvegarde(&regulier.join("d.keshbackup"))
+                .unwrap()
+                .is_none(),
+            "dossier devenu fichier"
         );
     }
 
