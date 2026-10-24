@@ -305,6 +305,48 @@ describe('AutoBackupSection — saisie et « Sauvegarder maintenant » (Story 32
 		});
 		expect(await screen.findByTestId('auto-backup-conflict')).toBeTruthy();
 	});
+
+	// Revue de code P1 (E1) : `formUnchanged` compare aussi la case « Activée » —
+	// seule modifiée, elle doit suffire à garder la saisie (mutation M-b12).
+	it('(iv) la case « Activée » seule décochée sans enregistrer survit au run ; « Enregistrer » envoie enabled: false', async () => {
+		await monter(schedule());
+		await fireEvent.click(screen.getByTestId('auto-backup-enabled'));
+		mock.runBackupNow.mockResolvedValue(schedule({ version: 4, retentionCount: 9 }));
+		await lancer();
+		expect((screen.getByTestId('auto-backup-enabled') as HTMLInputElement).checked).toBe(false);
+		expect(conserve().value).toBe('7');
+		mock.saveBackupSchedule.mockResolvedValue(schedule({ version: 5, enabled: false }));
+		await fireEvent.click(screen.getByTestId('auto-backup-save'));
+		expect(mock.saveBackupSchedule).toHaveBeenCalledWith({
+			enabled: false,
+			intervalHours: 24,
+			retentionCount: 7,
+			version: 3,
+		});
+	});
+
+	// Revue de code P1 (E1) : une saisie modifiée puis remise à sa base n'est plus
+	// une saisie en cours — le formulaire et sa version suivent le run.
+	it('(v) modifiée puis remise à l’origine : le formulaire suit le réglage rendu, et sa version', async () => {
+		await monter(schedule());
+		const caseActivee = screen.getByTestId('auto-backup-enabled') as HTMLInputElement;
+		await fireEvent.click(caseActivee);
+		await fireEvent.click(caseActivee);
+		await fireEvent.change(selecteur(), { target: { value: '12' } });
+		await fireEvent.change(selecteur(), { target: { value: '24' } });
+		mock.runBackupNow.mockResolvedValue(schedule({ version: 4, retentionCount: 9 }));
+		await lancer();
+		expect(caseActivee.checked).toBe(true);
+		expect(conserve().value).toBe('9');
+		mock.saveBackupSchedule.mockResolvedValue(schedule({ version: 5, retentionCount: 9 }));
+		await fireEvent.click(screen.getByTestId('auto-backup-save'));
+		expect(mock.saveBackupSchedule).toHaveBeenCalledWith({
+			enabled: true,
+			intervalHours: 24,
+			retentionCount: 9,
+			version: 4,
+		});
+	});
 });
 
 describe('AutoBackupSection — réponse manquante ou en erreur (Story 32-1b, #711 E-7)', () => {
