@@ -3,9 +3,10 @@
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-32-3`, branche `story/32-3` partie de la spike
-`275e9b97`. Registre : `epic-32-choix-autonomes-323.md` (C-32-3-1 à C-32-3-23). Clé courte : `323`. Issue de l'epic :
+`275e9b97`. Registre : `epic-32-choix-autonomes-323.md` (C-32-3-1 à C-32-3-30). Clé courte : `323`. Issue de l'epic :
 #723 (CR « Serveur MCP intégré à Kesh ») ; issue du défaut conservé : #729 (export du grand livre tracé en consultation) ;
-toutes deux en `refs` seulement. Les numéros de ligne cités sont ceux de `275e9b97`.*
+issue de l'écart antérieur du manuel : #730 (rôle Consultation et clés « sans écriture ») ; toutes trois en `refs`
+seulement. Les numéros de ligne cités sont ceux de `275e9b97`.*
 
 ## Story
 
@@ -76,8 +77,9 @@ perdre en silence la ligne d'audit d'un rapport lorsque le MCP lira par une conn
    `audit_log_scoped_to_company_via_user_join` (l. 1060). Aucun test ne lit la trace d'un export, du grand livre, de la
    balance âgée, d'un rapport de projet, ni des quatre autres rapports à période en consultation (`grep -n "audit_log"
    crates/kesh-api/tests/{reports_export_e2e,vat_report_e2e,project_reports_e2e}.rs` → rien). Une trace perdue serait
-   donc **muette** aujourd'hui sur **dix-sept des dix-huit handlers** — sur **sept des huit chemins de trace** (AC9 (b)),
-   le seul couvert étant « période × affichage », et pour le seul bilan.
+   donc **muette** aujourd'hui sur **dix-sept des dix-huit handlers** — sur **sept des huit chemins de trace** (forme ×
+   usage : période, grand livre, balance âgée, projet), le seul couvert étant « période × affichage », et pour le seul
+   bilan. L'AC9 (b) et (b′) les figent sur les dix-huit couples.
 10. **`AppState` se construit aussi par littéral dans des tests** (commentaire de `new_for_tests`, `lib.rs:98-130` :
     « les tests d'envoi construisent AppState littéral ») : ajouter un **champ** à `AppState` modifierait des tests
     existants. Les poignées se fabriquent donc par **méthodes** sur `AppState`, sans champ neuf (C-32-3-6).
@@ -94,20 +96,22 @@ handler (routes/…)            service (services/…)                        po
   mettre en forme la réponse HTTP
 ```
 
-- **`ContexteAcces`** : société, utilisateur, **canal** (`Api { role }` ou `Mcp { portees }`). Construit par
-  `ContexteAcces::depuis_api(&CurrentUser)` pour l'API ; `ContexteAcces::mcp(company_id, user_id, portees)` existe pour
-  les tests et la 32-6.
+- **`ContexteAcces`** : société, utilisateur, **canal** (`Api { role }` ou `Mcp { portees }`), en champs **privés**
+  lus par accesseurs (C-32-3-29). Construit par `ContexteAcces::depuis_api(&CurrentUser)` pour l'API ;
+  `ContexteAcces::mcp(company_id, user_id, portees)` existe pour les tests et la 32-6 ; aucun autre constructeur.
 - **`Exigence`** : `{ role_api: Role, portee_mcp: Option<Portee> }` — `None` : jamais servi au MCP. `acces.exiger(e)`
   rend `Err(AppError::Forbidden)` si `Api { role }` et `role < e.role_api`, ou si `Mcp { portees }` et que
   `e.portee_mcp` est `None` ou absente de `portees`.
 - **`Portee`** : `BooksRead`, `InvoicesRead` en 32-3 (les deux dont les pilotes ont besoin, C-32-0-7) ; la 32-5 ajoute
   les autres et leur persistance (C-32-3-4).
-- **`Lecture`** et **`Trace`** : deux types distincts, sans conversion de l'un à l'autre. `Lecture` expose son pool
-  **à la seule couche de services** (`pub(in crate::services) fn pool(&self) -> &MySqlPool`), qui le passe aux dépôts,
-  aux générateurs et à `helpers::company_for_ids` ; **aucun handler ne peut l'atteindre** — le compilateur le refuse
-  (C-32-3-17). `Trace` **n'expose aucun pool hors de `services`** : l'écriture de la trace (les sept fonctions d'audit)
-  vit dans `services/rapports.rs`, et c'est là seulement que le pool de la `Trace` est lu. En production, fabriqués
-  **uniquement** par `AppState::lecture()` et `AppState::trace()` ; en 32-3, tous deux sur `state.pool`.
+- **`Lecture`** et **`Trace`** : deux types distincts, sans conversion de l'un à l'autre, chacun un tuple à champ
+  **privé** (`pub struct Lecture(MySqlPool);`), donc constructible par `new` seulement. Chacun expose son pool **à la
+  seule couche de services** (`pub(in crate::services) fn pool(&self) -> &MySqlPool`) : celui de la `Lecture` passe aux
+  dépôts, aux générateurs et à `helpers::company_for_ids`, celui de la `Trace` aux seules fonctions d'audit de
+  `services/rapports.rs`. Hors de `services`, le compilateur refuse `lecture.pool()` (C-32-3-17) ; **dans** `services`,
+  ce qui ouvrirait un autre chemin vers le pool — un accesseur d'un autre nom, un `impl Deref`/`AsRef`/`From`, une
+  conversion — est attrapé par l'**inventaire clos** de l'AC10 (v), non par le compilateur (C-32-3-24). En production,
+  fabriqués **uniquement** par `AppState::lecture()` et `AppState::trace()` ; en 32-3, tous deux sur `state.pool`.
 - **`Rapport<T, U>`** : ce que rend un service de rapport. Le contenu `T` **ne s'obtient que** par
   `Rapport<T, Affichage>::afficher(self, &Trace) -> T` (trace de consultation) ou
   `Rapport<T, Export>::exporter(self, &Trace, rendre) -> Result<Vec<u8>, AppError>` (rendu, **puis** trace d'export).
@@ -135,21 +139,25 @@ handler (routes/…)            service (services/…)                        po
    deux dans `acces.rs` : l'import `use crate::middleware::auth::CurrentUser;` et la signature de
    `ContexteAcces::depuis_api(u: &CurrentUser)`. Commande de contrôle : `grep -rnE "axum|AppState|CurrentUser"
    crates/kesh-api/src/services | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//'` → ces deux lignes ; la même règle est
-   **exécutée** par le test de l'AC10 (vi) (C-32-3-20). Aucun commentaire de bloc `/* … */` dans `services/` (la
-   commande ne les voit pas). Chaque élément public porte son doc-comment.
+   **exécutée** par le test de l'AC10 (vi) (C-32-3-20). Une ligne de code qui porte un commentaire **de fin de ligne**
+   reste une ligne de code et compte (le jeton y est écrit en code ou à côté du code : rouge voulu, à ne pas « corriger »
+   dans la garde). Un commentaire de bloc `/* … */` n'est **pas** retiré par la règle : il est lu comme du code et ne
+   peut donc produire qu'un **faux rouge**, jamais masquer une ligne — d'où l'absence d'interdiction (C-32-3-30). Chaque
+   élément public porte son doc-comment.
 2. **AC2 — contrôle d'accès dans le service, en tête.** Chaque fonction de service publique commence par
    `acces.exiger(…)?` **avant toute lecture** — y compris avant la validation de la demande. Les exigences sont
    celles du tableau de l'AC6 ; pour le canal API, elles **répliquent** le RBAC actuel des routes (fait 8) : le
    comportement HTTP ne change pas, le middleware refusant toujours le premier.
 3. **AC3 — poignées typées, fabriquées en un lieu.** `Lecture::new(pool)` et `Trace::new(pool)` publics (la 32-6 et les
-   tests en ont besoin) ; `#[derive(Clone)]` sur les deux (un clone de pool, sans coût) ; `Lecture::pool()` en
-   `pub(in crate::services)`, seul accesseur de pool des deux types, celui de `Trace` étant un champ lu par les
-   fonctions d'audit de `services/rapports.rs` (`pub(in crate::services)` lui aussi, ou un accesseur de même
-   visibilité) ; `AppState::lecture()` et `AppState::trace()` dans `lib.rs` (méthodes, **aucun champ ajouté** à
+   tests en ont besoin) ; `#[derive(Clone)]` sur les deux (un clone de pool, sans coût) ; champ de tuple **privé** sur
+   les deux ; `Lecture::pool()` et `Trace::pool()` en `pub(in crate::services)`, seuls accesseurs de pool, seules
+   méthodes avec `new` (l'inventaire de l'AC10 (v) les liste) — `Trace::pool()` n'étant appelé que par les fonctions
+   d'audit de `services/rapports.rs` ; `AppState::lecture()` et `AppState::trace()` dans `lib.rs` (méthodes, **aucun champ ajouté** à
    `AppState`, fait 10), doc-comment **sans promesse sur Q11** : « la fabrication d'une `Lecture` en lecture seule
    (mode de session, utilisateur `SELECT`, ou les deux, et son lieu) est décidée par Guy (Q11) et réalisée par la
    32-6 ; en 32-3, les deux poignées enveloppent `pool` » (C-32-3-22). Aucune conversion `Lecture → Trace` ni
-   `Trace → Lecture`.
+   `Trace → Lecture`, **où que ce soit** dans `src/`, `services/` compris : l'inventaire clos de l'AC10 (v) ne laisse
+   `Lecture::new(`/`Trace::new(` qu'au câblage de `lib.rs` et aucun `impl` de trait sur les poignées (C-32-3-24).
 
 ### B — Les pilotes
 
@@ -165,12 +173,16 @@ handler (routes/…)            service (services/…)                        po
    usage)`, privé) qui appelle, selon (forme, usage), l'une des sept fonctions d'audit — c'est le point unique où la
    mutation M1 se pose (C-32-3-18). **Une aide de lecture en plus** : `rapports::identite_societe(&ContexteAcces,
    &Lecture) -> Result<(String, String), AppError>` (nom et `accounting_language` de la société du contexte, le `SELECT`
-   de `load_pdf_context` l. 1229-1234 recopié avec son `map_db_error`), exigence `{ Consultation, None }` (le contexte
-   PDF ne sert qu'aux exports, jamais au MCP) ; la mise en forme (`PdfContext`, `map_language_to_bcp47`) reste au
-   handler (C-32-3-17). Le grand livre garde ses deux régimes : affichage `offset` lu et `limit` à
+   de `load_pdf_context` l. 1229-1234 recopié avec son `map_db_error`), exigence `{ Consultation, None }` — `None` : le
+   contexte PDF ne sert qu'aux exports, jamais au MCP ; `Consultation` : l'aide sert les **neuf** routes d'export, dont
+   huit en Consultation et une en Comptable, et une aide partagée porte **le plus bas** des rôles de ses routes (règle
+   R3), chaque route gardant le sien par son service et son middleware (C-32-3-27) ; la mise en forme (`PdfContext`,
+   `map_language_to_bcp47`) reste au handler (C-32-3-17). Le grand livre garde ses deux régimes : affichage `offset` lu et `limit` à
    `Some(limit.unwrap_or(MAX_LEDGER_LIMIT))`, export `offset 0` et `limit None` (l. 295-301, 342-348). La validation
    du **format** d'export (`validate_format`, `validate_aged_export_format`) reste au handler, **en premier**, comme
-   aujourd'hui. `ExportFormat` passe dans `services::rapports` sous le nom `FormatExport` avec ses trois méthodes, et
+   aujourd'hui. `ExportFormat` passe dans `services::rapports` sous le nom `FormatExport`, type **`pub`** (il paraît
+   dans `Export(pub FormatExport)`), avec ses dérives d'aujourd'hui (`Debug, Clone, Copy, PartialEq, Eq` — `Debug` et
+   `PartialEq` sont exigés par les `assert_eq!` du `mod tests`) et ses trois méthodes rendues **`pub`** (C-32-3-30), et
    `routes/reports.rs` l'importe sous son nom actuel (`use crate::services::rapports::FormatExport as ExportFormat;`),
    de sorte que le `mod tests` de `reports.rs` (l. 1587-1648) compile **sans modification** (C-32-3-11) ; ses deux
    méthodes de présentation (`content_type`, `extension`) le suivent, assumé (C-32-3-21). En export, `balance_agee`
@@ -188,8 +200,14 @@ handler (routes/…)            service (services/…)                        po
    (`load_pdf_context(&ContexteAcces, &Lecture)`, privée au handler, qui lit par `rapports::identite_societe` puis met
    en forme — **au même rang qu'aujourd'hui**, après la génération : un échec n'y laisse aucune trace, le `Rapport`
    étant abandonné sans `exporter`), rendre, construire la réponse. Statuts, corps, en-têtes,
-   ordre des erreurs, **action et `details_json` de chaque trace** : identiques. Tableau des 18 + 1 chemins (ensemble
-   clos, fait 1 et fait 7) :
+   ordre des erreurs, **action et `details_json` de chaque trace** : identiques. **Mesures du `span` d'export**
+   (C-32-3-28) : `start` est pris à l'ouverture du `span`, comme aujourd'hui, et `byte_size` et `duration_ms`
+   s'enregistrent **dans** la fermeture `rendre`, après le rendu — donc avant la trace, comme aujourd'hui
+   (`reports.rs:487-493`) : `duration_ms` ne compte pas l'`INSERT` d'audit. Seul changement, assumé et sans effet sur
+   l'API : la validation de la demande (`validate_fiscal_year_id`, aujourd'hui **avant** l'ouverture du `span`,
+   l. 462, 1034) passe dans le service, appelé sous le `span` ; une erreur de validation naît donc dans le `span`, sans
+   qu'aucun champ n'y soit enregistré (comme toute erreur postérieure aujourd'hui). Tableau des 18 + 1 chemins
+   (ensemble clos, fait 1 et fait 7) :
 
    | Handler (l.) | Route | Service | Usage | Exigence API / MCP | Trace (fonction d'aujourd'hui, site) |
    |---|---|---|---|---|---|
@@ -213,9 +231,11 @@ handler (routes/…)            service (services/…)                        po
    | `export_project_return` (922) | `…/project-return/export` | `rendement_projet` | Export | Consultation / jamais | `emit_project_report_export_audit` (940) |
    | `list_accounts` (`accounts.rs:188`) | `GET /accounts` | `plan_comptable::lister` | — | Consultation / BooksRead | aucune |
 
-   Les sept fonctions d'audit **quittent** `routes/reports.rs` pour `services/rapports.rs`, en méthodes de `Trace`
-   (ou fonctions recevant `&Trace`) ; leurs corps — action, `entity_type`, `AUDIT_ENTITY_ID_NONE`, clés et valeurs du
-   JSON, message et champs du `warn!` — sont **recopiés à l'identique** ; seule la source du pool change. ⚠️ **L'action
+   Les sept fonctions d'audit **quittent** `routes/reports.rs` pour `services/rapports.rs`, en **fonctions libres
+   recevant `&Trace`** — et non en méthodes : un `impl Trace` hors de `poignees.rs` sortirait de l'inventaire clos de
+   l'AC10 (v) (C-32-3-24) ; leurs corps — action, `entity_type`, `AUDIT_ENTITY_ID_NONE`, clés et valeurs du
+   JSON, message et champs du `warn!` — sont **recopiés à l'identique** ; seule la source du pool change
+   (`trace.pool().begin()` au lieu de `pool.begin()`, aucun type `sqlx` nommé). ⚠️ **L'action
    et le type d'entité restent des littéraux à chacun des sept sites `NewAuditLogEntry::user(`** : l'aiguillage
    `tracer` choisit **quelle fonction** appeler, jamais **quelle action** écrire. Une factorisation qui passerait
    l'action en variable ferait de `services/rapports.rs` un « site non résolu » pour
@@ -242,28 +262,49 @@ handler (routes/…)            service (services/…)                        po
    "sqlx::test"`) : `reports_e2e` 39, `opening_balances_e2e` 31, `reports_export_e2e` 21, `accounts_e2e` 19,
    `idor_multi_tenant_e2e` 14, `vat_report_e2e` 11, `letterings_e2e` 11, `project_reports_e2e` 8, `open_items_e2e` 7.
    Le développement relance ce `grep` au dernier commit et recopie la liste et les comptes **réellement exécutés** au
-   Dev Agent Record. S'y ajoutent les **gardes de sources** qui balaient `crates/*/src` et verront `services/` :
-   `audit_label_registry.rs` (actions littérales, AC6), `textes_coherents.rs` (G4-ter), `admin_pat_denied_e2e.rs`
-   (`the_admin_guards_have_no_alias_and_no_second_consumer_crate_wide`, l. 439, qui compte
-   `require_admin_role`/`require_not_pat` dans tout `src/`), `audit_route_registry.rs` (lit `lib.rs`,
-   que la story touche).
+   Dev Agent Record. S'y ajoutent les **gardes de sources** qui balaient `crates/*/src` (ou `lib.rs`) et verront
+   `services/` ou le test neuf — **huit**, relevé du 2026-10-24 par `grep -rlnE "include_str!|read_to_string|read_dir"
+   crates/*/tests` (17 fichiers) puis lecture de chaque balayage, neuf écartés parce qu'ils lisent des fichiers de
+   données ou un fichier nommé hors du périmètre (`admin_auto_backup_e2e`, `admin_full_export_e2e`,
+   `admin_full_import_e2e`, `inbox_import_e2e`, `invoice_echeancier_e2e`, `onboarding_audit_e2e`,
+   `reconciliation_e2e`, `supplier_settlement_cancel_e2e`, et `kesh-db/tests/lexique/mod.rs`, module de
+   `letterings_lexical`) ; liste que le développement relance au dernier commit. Cinq que la story peut atteindre —
+   `audit_label_registry.rs` (actions littérales, AC6), `textes_coherents.rs` (G4-ter),
+   `admin_pat_denied_e2e.rs` (`the_admin_guards_have_no_alias_and_no_second_consumer_crate_wide`, l. 439, qui compte
+   `require_admin_role`/`require_not_pat` dans tout `src/`), `audit_route_registry.rs` (lit `lib.rs`, que la story
+   touche), `crates/kesh-db/tests/test_schema_guard.rs` (`every_sqlx_test_attribute_is_accounted_for`, balaie tout le
+   workspace : chaque `#[sqlx::test(` de `services_motif.rs` tient **sur une ligne** et nomme
+   `../kesh-db/test-schema`) — et trois hors d'atteinte du code prévu, lancées quand même : `configuration_transmise.rs` (lectures
+   d'environnement, analyse `syn` de tout `crates/*/src` — un fichier de `services/` qui ne se parse pas y rougirait),
+   `bank_account_closed_inventory.rs` (écritures SQL littérales sur sept tables bancaires) et
+   `crates/kesh-db/tests/letterings_lexical.rs` (écritures littérales des marques de lettrage) : `services/` ne lit
+   aucune variable d'environnement et n'écrit aucun SQL littéral hors `audit_log`.
 8. **AC8 — un test de refus par service, et son contrôle positif.** Fichier neuf `crates/kesh-api/tests/services_motif.rs`
    (`#[sqlx::test(migrations = "../kesh-db/test-schema")]`, fixtures **synthétiques** :
    `kesh_db::test_fixtures::seed_accounting_company`, plus une facture ouverte et un projet posés en SQL pour la balance
    âgée et les rapports de projet). Pour **chacun des dix services** (neuf rapports, `lister`), une assertion nommée
-   par cas — et pour l'aide `identite_societe` (AC4) : MCP avec toutes les portées → `Forbidden`, API `Consultation`
-   → `Ok` :
+   par cas — et pour l'aide `identite_societe` (AC4) : MCP avec toutes les portées → `Forbidden`, MCP avec toutes les
+   portées sur une **société inexistante** → `Forbidden` (et non l'erreur de `fetch_one` : le refus précède la
+   lecture), API `Consultation` → `Ok` (C-32-3-27) :
    - (a) canal **MCP sans la portée** exigée (portées vides, et — pour `balance_agee` — `{BooksRead}` seule ; pour les
      neuf autres — `{InvoicesRead}` seule) → `Err(AppError::Forbidden)` ;
    - (b) **contrôle positif** : canal MCP **avec** la portée exigée → `Ok` (sans quoi (a) pourrait rougir pour une autre
      raison) ;
-   - (c) **le refus précède la lecture et la validation** : canal MCP sans portée, demande qui échouerait sans le
-     contrôle — `fiscalYearId` **inexistant** pour les cinq rapports à période (échec à la lecture de
-     `ReportPeriod::resolve`), période inversée (`from > to`) pour le grand livre (échec à `LedgerPeriod::new`),
-     `projectId` inexistant pour les deux rapports de projet (échec à `resolve_scope`), société inexistante pour
-     `lister` (échec `Internal`) → `Forbidden`, et non l'erreur attendue sans contrôle. **Sans objet pour
-     `balance_agee`**, dont la demande ne porte rien qui puisse échouer : le contrôle y reste couvert par (a) et (b),
-     et le Dev Agent Record le dit ;
+   - (c) **le refus précède la validation et la lecture** : canal MCP sans portée, demande qui échouerait sans le
+     contrôle → `Forbidden`, et non l'erreur attendue sans contrôle ; **deux cas par service** là où la demande porte
+     les deux, une assertion nommée chacun (C-32-3-26) :
+     - **(c-val), échec à la validation** — `fiscalYearId = 0` pour les cinq rapports à période (échec à
+       `validate_fiscal_year_id`, `reports.rs:1334-1341`) ; période inversée (`from > to`) pour le grand livre (échec à
+       `LedgerPeriod::new`) ; `projectId = 0` pour les deux rapports de projet (échec au contrôle `project_id <= 0`
+       de `resolve_project_report`, l. 750-754) ;
+     - **(c-lec), échec à la lecture** — `fiscalYearId` positif **inexistant** pour les cinq rapports à période
+       (échec à `ReportPeriod::resolve`) ; `projectId` positif inexistant pour les deux rapports de projet (échec à
+       `resolve_scope`) ; société inexistante pour `lister` (échec `Internal`) et pour `identite_societe` (échec de
+       `fetch_one`) ; le grand livre ne lit, avant sa génération, aucune entité que nomme la demande : pas de cas
+       (c-lec) pour lui, ce que le Dev Agent Record dit.
+     Un `exiger` placé entre la validation et la lecture laisse (c-lec) vert et rougit (c-val) : c'est ce que tue
+     M3′. **Sans objet pour `balance_agee`**, dont la demande ne porte rien qui puisse échouer : le contrôle y reste
+     couvert par (a) et (b), et le Dev Agent Record le dit ;
    - (d) **exports jamais servis au MCP** : `Export` sur canal MCP **avec toutes les portées** → `Forbidden`, pour les
      neuf rapports ;
    - (e) **canal API** : `Export` de `balance_agee` avec le rôle `Consultation` → `Forbidden`, avec `Comptable` →
@@ -274,50 +315,133 @@ handler (routes/…)            service (services/…)                        po
    du test :
    - (a) les **neuf** services de rapport, `lister` et `identite_societe` **réussissent** sur cette `Lecture` (en
      affichage et, pour les rapports, en export) — confirmation exécutée, **sur les branches que les fixtures
-     exercent**, que leur chemin de lecture n'écrit rien (AC11). Les fixtures portent au moins une facture ouverte
-     (balance âgée non vide) et une écriture sur un compte de TVA si `seed_accounting_company` le permet ; une branche
-     de générateur que les fixtures n'atteignent pas est **nommée** au Dev Agent Record, non revendiquée ;
-   - (b) pour **chacun des huit chemins de trace** (période, grand livre, balance âgée, projet) × (affichage, export),
-     après `afficher`/`exporter`, **exactement une** ligne neuve dans `audit_log` pour l'utilisateur, avec l'`action`,
-     l'`entity_type` `"report"`, l'`entity_id` `0` et un `details_json` **égal, objet entier**, à celui qu'écrit le code
-     d'aujourd'hui (`routes/reports.rs:599-615, 626-645, 1372-1400, 1407-1435, 1463-1495, 1514-1538, 1548-1573`) — une
-     assertion nommée par chemin. Les huit attendus, en littéral (dates `"AAAA-MM-JJ"`, valeurs de la demande du test) :
+     exercent**, que leur chemin de lecture n'écrit rien (AC11). Fixtures : `seed_accounting_company` **retenu** — il
+     pose déjà `company_invoice_settings` (TVA due sur le compte `2000`, impôt préalable sur le compte `1000`) et les
+     taux de TVA (`8.10` compris) ; s'y ajoutent, en SQL ou par les dépôts, une facture **validée** et non réglée
+     portant au moins une ligne au taux `8.10` (le rapport de TVA lit les `invoice_lines` des factures validées, taux
+     par ligne ; la même facture rend la balance âgée non vide), une écriture débitant le compte d'impôt préalable
+     `1000` (branche récupérable du rapport de TVA), et un projet portant une écriture imputée. S'inspirer de
+     `seed_open_invoice_for` (`reports_e2e.rs:1562`) **sans** son `INSERT INTO company_invoice_settings` : la ligne
+     existe déjà (clé `company_id`), le recopier heurterait la clé (C-32-3-30). Une branche de générateur que les
+     fixtures n'atteignent pas est **nommée** au Dev Agent Record, non revendiquée ;
+   - (b) **test tabulaire sur les dix-huit couples** (service, usage) — un par handler de l'AC6 —, une ligne de table
+     par couple et une assertion nommée par ligne (le nom porte le service et l'usage) : après `afficher`/`exporter`,
+     **exactement une** ligne neuve dans `audit_log` pour l'utilisateur, avec l'`action`, l'`entity_type` `"report"`,
+     l'`entity_id` `0` et un `details_json` **égal, objet entier**, au littéral de la table — celui qu'écrit le code
+     d'aujourd'hui (`routes/reports.rs:599-615, 626-645, 1372-1400, 1407-1435, 1463-1495, 1514-1538, 1548-1573`, et
+     les valeurs passées aux 18 sites d'appel du tableau de l'AC6) (C-32-3-25). La table **est** la liste ci-dessous ;
+     elle exerce un filtre de journal **non nul** (`journaux` en affichage), un filtre de comptes non nul (grand livre en
+     affichage), le mode `cumulative` (rendement de projet, deux usages) et les deux formats. Notations : `fy` l'exercice
+     de la demande ; `debut`/`fin` les bornes de la `ReportPeriod` **résolue** que le `Rapport` expose ; `du`/`au` les
+     bornes de la demande du grand livre ; `compte` l'identifiant d'un compte seedé ; `pid` le projet ; `asof` la date
+     qu'expose le `Rapport` ; dates en `"AAAA-MM-JJ"`.
 
-     | Chemin | `action` | `details_json` |
-     |---|---|---|
-     | période × affichage | `report.generated` | `{"report_type": <"balance-sheet"…"vat">, "fiscal_year_id": n, "period_start": d, "period_end": d, "journal_filter": null}` (`journal_filter` : le code du journal pour `journals` filtré, `null` sinon — **clé toujours présente**) |
-     | période × export | `report.exported` | `{"report_type": …, "format": "pdf"\|"csv", "fiscal_year_id": n, "period_start": d, "period_end": d, "journal_filter": …}` |
-     | grand livre × affichage | `report.generated` | `{"report_type": "general-ledger", "period_start": d, "period_end": d, "account_ids": [..]\|null}` (`null` sans filtre — **clé toujours présente**) |
-     | grand livre × export | **`report.generated`** | **le même objet, sans `format`** — comportement conservé (#729) : l'assertion se nomme `…_export_grand_livre_trace_en_consultation_729` et son commentaire renvoie à #729, que son correctif modifiera en connaissance de cause |
-     | balance âgée × affichage | `report.generated` | `{"report_type": "aged-receivables", "as_of": d}` |
-     | balance âgée × export | `report.exported` | `{"report_type": "aged-receivables", "format": "csv", "as_of": d}` |
-     | projet × affichage | `report.generated` | `{"report_type": "project-expenses"\|"project-return", "project_id": n, "mode": "fiscal_year"\|"cumulative"}` |
-     | projet × export | `report.exported` | `{"report_type": …, "format": "pdf"\|"csv", "project_id": n, "mode": …}` |
+     | # | Service × usage | `action` | `details_json` attendu |
+     |---|---|---|---|
+     | 1 | `bilan` × Affichage | `report.generated` | `{"report_type": "balance-sheet", "fiscal_year_id": fy, "period_start": debut, "period_end": fin, "journal_filter": null}` |
+     | 2 | `bilan` × Export(Pdf) | `report.exported` | `{"report_type": "balance-sheet", "format": "pdf", "fiscal_year_id": fy, "period_start": debut, "period_end": fin, "journal_filter": null}` |
+     | 3 | `compte_de_resultat` × Affichage | `report.generated` | `{"report_type": "income-statement", "fiscal_year_id": fy, "period_start": debut, "period_end": fin, "journal_filter": null}` |
+     | 4 | `compte_de_resultat` × Export(Csv) | `report.exported` | `{"report_type": "income-statement", "format": "csv", "fiscal_year_id": fy, "period_start": debut, "period_end": fin, "journal_filter": null}` |
+     | 5 | `balance` × Affichage | `report.generated` | `{"report_type": "trial-balance", "fiscal_year_id": fy, "period_start": debut, "period_end": fin, "journal_filter": null}` |
+     | 6 | `balance` × Export(Pdf) | `report.exported` | `{"report_type": "trial-balance", "format": "pdf", "fiscal_year_id": fy, "period_start": debut, "period_end": fin, "journal_filter": null}` |
+     | 7 | `journaux` × Affichage, filtre `Achats` | `report.generated` | `{"report_type": "journals", "fiscal_year_id": fy, "period_start": debut, "period_end": fin, "journal_filter": "Achats"}` |
+     | 8 | `journaux` × Export(Csv), sans filtre | `report.exported` | `{"report_type": "journals", "format": "csv", "fiscal_year_id": fy, "period_start": debut, "period_end": fin, "journal_filter": null}` |
+     | 9 | `tva` × Affichage | `report.generated` | `{"report_type": "vat", "fiscal_year_id": fy, "period_start": debut, "period_end": fin, "journal_filter": null}` |
+     | 10 | `tva` × Export(Pdf) | `report.exported` | `{"report_type": "vat", "format": "pdf", "fiscal_year_id": fy, "period_start": debut, "period_end": fin, "journal_filter": null}` |
+     | 11 | `grand_livre` × Affichage, filtre `[compte]` | `report.generated` | `{"report_type": "general-ledger", "period_start": du, "period_end": au, "account_ids": [compte]}` |
+     | 12 | `grand_livre` × Export(Pdf), sans filtre | **`report.generated`** | `{"report_type": "general-ledger", "period_start": du, "period_end": au, "account_ids": null}` — **sans `format`**, comportement conservé (#729) : l'assertion se nomme `…_export_grand_livre_trace_en_consultation_729` et son commentaire renvoie à #729, que son correctif modifiera en connaissance de cause |
+     | 13 | `balance_agee` × Affichage | `report.generated` | `{"report_type": "aged-receivables", "as_of": asof}` |
+     | 14 | `balance_agee` × Export(Csv) | `report.exported` | `{"report_type": "aged-receivables", "format": "csv", "as_of": asof}` |
+     | 15 | `depenses_projet` × Affichage, `fiscal_year` | `report.generated` | `{"report_type": "project-expenses", "project_id": pid, "mode": "fiscal_year"}` |
+     | 16 | `depenses_projet` × Export(Pdf), `fiscal_year` | `report.exported` | `{"report_type": "project-expenses", "format": "pdf", "project_id": pid, "mode": "fiscal_year"}` |
+     | 17 | `rendement_projet` × Affichage, `cumulative` | `report.generated` | `{"report_type": "project-return", "project_id": pid, "mode": "cumulative"}` |
+     | 18 | `rendement_projet` × Export(Csv), `cumulative` | `report.exported` | `{"report_type": "project-return", "format": "csv", "project_id": pid, "mode": "cumulative"}` |
 
-     `period_start`/`period_end` d'un rapport à période sont ceux de la `ReportPeriod` **résolue**, `fiscal_year_id`
-     celui de la demande. Pour la balance âgée, l'`as_of` attendu est **celui qu'expose le `Rapport`**, lu avant
-     `afficher`/`exporter` — le test ne recalcule pas la date, et ne peut donc pas franchir minuit UTC entre l'attendu
-     et l'écrit ; une assertion de plus vérifie que cette date est celle du contenu (`AgedReceivables.as_of`)
-     (C-32-3-23) ;
+     Les clés `journal_filter` et `account_ids` sont **toujours présentes**, `null` sans filtre. Pour la balance âgée,
+     `asof` est **celui qu'expose le `Rapport`**, lu avant `afficher`/`exporter` — le test ne recalcule pas la date, et
+     ne peut donc pas franchir minuit UTC entre l'attendu et l'écrit ; une assertion de plus vérifie que cette date est
+     celle du contenu (`AgedReceivables.as_of`) (C-32-3-23). La table est une **constante unique** du fichier de test,
+     que (b′) relit ;
+   - (b′) **la même table, par la route** : pour chacune des dix-huit lignes, la requête HTTP de la route du tableau de
+     l'AC6 (routeur `kesh_api::build_router` sur `AppState::new_for_tests`, jeton JWT d'un utilisateur seedé, comme
+     `reports_e2e.rs:54-80`, montage recopié dans `services_motif.rs`), puis **exactement une** ligne neuve dans
+     `audit_log`, d'`action` et de `details_json` égaux à la ligne de la table — les demandes portent des bornes
+     **explicites** dans l'exercice seedé, de sorte que `debut`/`fin` égalent la demande ; `asof` est accepté s'il égale
+     la date UTC du jour lue **avant ou après** la requête (seul point où le test ne lit pas le `Rapport`). C'est le seul volet qui voie un **handler** passer par le mauvais usage (un export
+     tracé `report.generated`, la forme de #729) ou le mauvais service (un `report_type` faux) (C-32-3-25) ;
    - (c) `exporter` avec un rendu qui échoue → `Err`, et **aucune** ligne d'audit (ordre du fait 4) ;
    - (d) un service qui échoue (période hors exercice) → aucune ligne (pendant de `reports_e2e.rs:1027`, ici au niveau
      du service).
+   En (b), les bornes `debut`/`fin` sont lues sur le `Rapport` ; une demande sans bornes (résolues à celles de
+   l'exercice) est employée pour au moins une ligne, afin que la résolution soit exercée.
 10. **AC10 — garde lexicale de la frontière.** Dans `services_motif.rs`, un test qui lit les sources (comme
-    `textes_coherents.rs` ou `audit_route_registry.rs`) et exige : (i) `crates/kesh-api/src/routes/reports.rs` ne
-    contient plus ni `state.pool` ni `MySqlPool` ; (ii) le corps de `list_accounts` (de `pub async fn list_accounts` au
-    `pub async fn` suivant) ne contient pas `state.pool` ; (iii) **aucun fichier de `crates/kesh-api/src/`, hors
-    `services/` et `lib.rs`**, ne contient `Lecture::new(` ni `Trace::new(` (balayage récursif, `main.rs`, `exports/`,
-    `mail/`, `middleware/`, `auth/` compris) ; (iv) en 32-3, `crates/kesh-api/src/lib.rs` en contient **exactement un**
-    de chaque (dans `lecture()` et `trace()`) — ce volet décrit l'état de la 32-3, non un lieu imposé à la 32-6, qui
-    l'amende avec (iii) en connaissance de cause si Q11 fait fabriquer la `Lecture` du MCP ailleurs (C-32-3-22) ;
-    (v) dans `services/poignees.rs`, hors commentaires, aucune ligne ne contient `pub(crate)`, ni `pub fn pool`, ni
-    `pub MySqlPool` : l'accès au pool d'une poignée reste borné à `pub(in crate::services)` — le compilateur interdit
-    alors `lecture.pool()` dans un handler, et ce volet interdit d'élargir la visibilité sans rougir (C-32-3-17) ;
-    (vi) la règle de l'AC1 (lignes de code de `services/` portant `axum`, `AppState` ou `CurrentUser` : exactement
-    les deux lignes attendues d'`acces.rs`). Chaque volet rend le fichier et la ligne fautifs. Contrôle positif écrit
-    dans le test : chaque motif cherché est d'abord trouvé dans un texte témoin, pour qu'une faute de frappe dans le
-    motif ne rende pas la garde vide ; le balayage de (iii) affirme un nombre plancher de fichiers lus (comme
-    `admin_pat_denied_e2e.rs`, l. 480-485), pour qu'un chemin faux ne la rende pas vide.
+    `textes_coherents.rs` ou `audit_route_registry.rs`) et exige ce qui suit. **Tous les volets portent sur les lignes
+    de code**, selon la définition de l'AC1 (est commentaire une ligne dont le premier caractère non blanc ouvre `//`,
+    `///` et `//!` compris ; une ligne de code à commentaire de fin de ligne compte ; un `/* … */` est lu comme du code
+    et ne peut produire qu'un faux rouge) :
+    - (i) `crates/kesh-api/src/routes/reports.rs` ne contient plus ni `state.pool` ni `MySqlPool` ;
+    - (ii) le corps de `list_accounts` (de `pub async fn list_accounts` au `pub async fn` suivant) ne contient pas
+      `state.pool` ;
+    - (iii)-(iv) *(remplacés en P2 par l'inventaire (v-d) ci-dessous, qui couvre aussi `services/`, C-32-3-24)* ;
+    - (v) **inventaire clos des accès aux poignées** (C-32-3-24) — chacun de ces relevés est **égal**, comme ensemble de
+      couples (fichier, ligne réduite de ses blancs de tête et de fin), à la liste écrite **ici** et recopiée en
+      constante dans le test ; **toute ligne en plus rougit**, en nommant le fichier et la ligne ; la mise en forme
+      exacte que rustfmt donne aux lignes listées est fixée au développement et recopiée au Dev Agent Record, sans
+      qu'une ligne s'ajoute ni ne se retire :
+      - **(v-a)** lignes de `crates/kesh-api/src/services/` (récursif) qui contiennent `MySql`, `Pool` ou `sqlx` (sous-
+        chaînes, casse respectée : `MySqlPool`, `MySqlConnection`, `Pool<`, `PoolConnection`, `sqlx::` sont tous vus ;
+        `lecture.pool()` ne l'est pas) — **huit** :
+        1. `poignees.rs` : `use sqlx::MySqlPool;`
+        2. `poignees.rs` : `pub struct Lecture(MySqlPool);`
+        3. `poignees.rs` : `pub struct Trace(MySqlPool);`
+        4. `poignees.rs` : `pub fn new(p: MySqlPool) -> Self {` (celui de `Lecture`)
+        5. `poignees.rs` : `pub fn new(p: MySqlPool) -> Self {` (celui de `Trace`)
+        6. `poignees.rs` : `pub(in crate::services) fn pool(&self) -> &MySqlPool {` (celui de `Lecture`)
+        7. `poignees.rs` : `pub(in crate::services) fn pool(&self) -> &MySqlPool {` (celui de `Trace`)
+        8. `rapports.rs` : `sqlx::query_as("SELECT name, accounting_language FROM companies WHERE id = ?")` (dans
+           `identite_societe`, recopié de `load_pdf_context`, l. 1228)
+
+        Les lignes 4-5 et 6-7 sont deux occurrences de la même chaîne : le relevé compare des **multiensembles**.
+        Rougissent : `pub(crate)`, `pub(in crate)` ou `pub` sur `fn pool` (la ligne change) ; un accesseur d'un autre
+        nom, où que ce soit dans `services/` (`pub fn brut(l: &Lecture) -> &MySqlPool`) ; un `type Target = MySqlPool;`
+        ; une fonction d'audit qui garderait `pool: &MySqlPool` ;
+      - **(v-b)** en-têtes de bloc `impl` de **tout** `crates/kesh-api/src/` (récursif) qui nomment `Lecture` ou
+        `Trace` en mot entier — l'en-tête court du mot `impl` au premier `{`, **lignes jointes** (un `impl Deref\n for
+        Lecture` replié par rustfmt est vu) — **deux** : `poignees.rs` : `impl Lecture {` et `impl Trace {`.
+        Rougissent : `impl Deref for Lecture`, `impl AsRef<MySqlPool> for Trace`, `impl From<Lecture> for MySqlPool`,
+        `impl Borrow…`, et un `impl Lecture` ou `impl Trace` inhérent posé dans un autre fichier (un `impl` inhérent
+        peut vivre dans tout module du crate) ;
+      - **(v-c)** lignes de `services/poignees.rs` qui contiennent `fn ` — **quatre** : les deux `new` et les deux
+        `pool` de (v-a). Rougit : toute méthode ou fonction de plus dans `poignees.rs`, dont une conversion
+        (`fn en_trace(&self) -> Trace`), qui seule pourrait y lire le champ privé ;
+      - **(v-d)** lignes de **tout** `crates/kesh-api/src/` qui contiennent `Lecture::new(` ou `Trace::new(` —
+        **deux**, au câblage de `lib.rs` : le corps de `AppState::lecture()` (`Lecture::new(self.pool.clone())`, chemin
+        éventuel compris) et celui de `AppState::trace()` (`Trace::new(self.pool.clone())`). Remplace les anciens (iii)
+        et (iv) et **couvre `services/`** : la conversion `Trace::new(lecture.pool().clone())`, que l'AC3 interdit et
+        que M1 simule, y rougit. Ce volet décrit l'état de la 32-3, non un lieu imposé à la 32-6, qui l'amende en
+        connaissance de cause si Q11 fait fabriquer la `Lecture` du MCP ailleurs (C-32-3-22) ;
+      - **(v-e)** lignes de tout `crates/kesh-api/src/` qui contiennent `Lecture(` ou `Trace(` précédés d'une frontière
+        de mot (`\b(Lecture|Trace)\(`) — **deux** : les définitions de (v-a) 2 et 3. Avec le champ privé, le
+        compilateur refuse déjà ce constructeur hors de `poignees.rs`, que (v-c) ferme ; ce volet en fait un rouge
+        nommé.
+
+      **Ce que (v) ne voit pas, et qui reste à la revue** : une forme **non lexicale** — un alias de type défini hors
+      de `services/` (`type P = sqlx::MySqlPool;` dans `helpers.rs`, puis `-> &crate::helpers::P` dans un service),
+      ou du code engendré par une macro dont le texte ne nomme ni les poignées ni un type `sqlx`. La revue de code de
+      la 32-3 et de chaque rollout lit donc les signatures publiques de `services/` ;
+    - (vi) la règle de l'AC1 (lignes de code de `services/` portant `axum`, `AppState` ou `CurrentUser` : exactement
+      les deux lignes attendues d'`acces.rs`) ;
+    - (vii) **le bon usage à chaque handler** (C-32-3-25) : dans `routes/reports.rs`, le corps de chaque
+      `pub async fn export_…` (de sa ligne d'ouverture à la première ligne égale à `}`, colonne 0) contient
+      `.exporter(` et ne contient pas `.afficher(` ; celui de chaque `pub async fn get_…` contient `.afficher(` et ne
+      contient pas `.exporter(` ; le test affirme **neuf** corps de chaque sorte (un chemin faux ou un renommage ne
+      rend pas le volet vide).
+
+    Chaque volet rend le fichier et la ligne fautifs. Contrôle positif écrit dans le test : chaque motif cherché est
+    d'abord trouvé dans un texte témoin (dont, pour (v-b), un en-tête replié sur deux lignes), pour qu'une faute de
+    frappe dans le motif ne rende pas la garde vide ; les balayages récursifs de `src/` affirment un nombre plancher
+    de fichiers lus (comme `admin_pat_denied_e2e.rs`, l. 480-485), et celui de `services/` le nombre exact de ses
+    cinq fichiers, pour qu'un chemin faux ne les rende pas vides.
 
 ### D — Inventaire, mutations, gates
 
@@ -329,7 +453,9 @@ handler (routes/…)            service (services/…)                        po
     autre : générateurs de `kesh-report`, `ReportPeriod::resolve`, `resolve_scope`, `identite_societe` (le `SELECT` de
     l'ancien `load_pdf_context`), `get_company_for`/`company_for_ids`, `list_by_company`, `letterable_account_ids` ne
     font que lire — **établi par la lecture statique** (fait 3 ; les dépôts appelés relus : `fiscal_years`, `projects`,
-    `accounts`, `letterings`, `companies`, sans écriture ni verrou) **et confirmé, sur les branches que les fixtures
+    `accounts`, `letterings`, `companies`, sans écriture ni verrou, et `invoice_settlements`, dont `kesh-report` ne prend
+    que des fragments SQL et une analyse pure — `INVOICE_AMOUNT_DUE_DERIVED_SQL`, `amount_due_derived_joins`
+    (`aged_receivables.rs:31`), `parse_write_off_vat` (`vat_report.rs:305`) —, aucun accès à la base) **et confirmé, sur les branches que les fixtures
     exercent, par l'AC9 (a)**, qui les exécute sur une connexion en lecture seule. La mise en forme du contexte PDF
     (`load_pdf_context` au handler) ne lit plus rien elle-même. Les `get_or_create_default` du § 4.4 de la spike ne
     sont sur aucun chemin de ces pilotes : `grep -rn "get_or_create" crates/kesh-api/src/routes/reports.rs
@@ -343,21 +469,33 @@ handler (routes/…)            service (services/…)                        po
       un champ `lecture_m1: Lecture` ajouté à `Rapport`, rempli par le constructeur commun `Rapport::nouveau` à partir
       de la `Lecture` que reçoit le service (un paramètre de plus au constructeur, `lecture.clone()` aux neuf appels).
       **Mutation** : aux deux appels de l'aiguillage commun `tracer` (dans `afficher` et dans `exporter`), passer
-      `&Trace::new(self.lecture_m1.pool().clone())` au lieu de la `Trace` reçue → **les huit assertions de l'AC9 (b)
-      rougissent** (l'`INSERT` échoue en 1792 sur la `Lecture` de test, avalé par le `warn!` : la ligne manque).
+      `&Trace::new(self.lecture_m1.pool().clone())` au lieu de la `Trace` reçue → **les dix-huit lignes de l'AC9 (b)
+      rougissent** (l'`INSERT` échoue en 1792 sur la `Lecture` de test, avalé par le `warn!` : la ligne manque). L'AC10
+      (v-d) rougit aussi (un `Trace::new(` hors du câblage) : attendu, c'est la conversion que l'AC3 interdit ; le Dev
+      Agent Record consigne **les deux** rouges, celui de l'AC9 (b) étant la preuve à l'exécution. L'AC9 (b′) reste
+      **vert** sous M1 — par la route, la `Lecture` est le pool ordinaire et l'`INSERT` réussit —, ce qui est consigné.
       **M1′** : même échafaudage, substitution au seul appel de `exporter`, gardée par
-      `matches!(details, DetailsTrace::GrandLivre { .. })` → sa seule assertion (`…_729`) rougit. Le diff de l'échafaudage et de la mutation est recopié au Dev Agent Record.
-      ⚠️ **Ce que M1 ne couvre pas, et pourquoi** : en 32-3, `AppState::lecture()` et `AppState::trace()` enveloppent
-      le même pool ; muter `trace()` pour qu'il enveloppe la `Lecture` n'a **aucun effet observable** (même pool, au
-      niveau HTTP comme au niveau du service) — c'est une mutation **équivalente**, déclarée comme telle ; le lieu de
-      fabrication est tenu par l'AC10 (iii)-(iv), et la preuve de production revient à la 32-6. **M1-témoin** (contrôle
-      du test, non une mutation de production) : bâtir dans le test la `Trace` sur le pool en lecture seule → les huit
-      assertions rougissent ; consigné pour montrer que l'AC9 (b) voit une trace perdue.
+      `matches!(details, DetailsTrace::GrandLivre { .. })` → la seule ligne 12 de l'AC9 (b) (`…_729`) rougit, les
+      dix-sept autres restant vertes. Le diff de l'échafaudage et de la mutation est recopié au Dev Agent Record.
+      ⚠️ **Ce que M1 ne couvre pas, et pourquoi** : la mutation « `AppState::trace()` enveloppe la `Lecture` » n'est
+      **pas exprimable** en 32-3 — `lib.rs` est hors de `crate::services` et ne peut pas lire `lecture.pool()`, si bien
+      que la seule écriture possible de `trace()` est `Trace::new(self.pool.clone())`, c'est-à-dire le code lui-même.
+      Elle le deviendra quand la 32-6 donnera à la `Lecture` un pool distinct ; la 32-6 la pose alors (C-32-3-30). Le
+      lieu de fabrication est tenu par l'AC10 (v-d). **M1-témoin** (contrôle du test, non une mutation de production) :
+      bâtir dans le test la `Trace` sur le pool en lecture seule → les dix-huit lignes de l'AC9 (b) rougissent ;
+      consigné pour montrer que l'AC9 (b) voit une trace perdue.
     - **M2 — contrôle d'accès retiré du service** : supprimer l'`acces.exiger(…)?` de `rapports::bilan` → AC8 (a), (c),
-      (d) de `bilan` rougissent ; **M2′** : le même retrait dans `plan_comptable::lister` → AC8 (a), (c) de `lister`.
-    - **M3 — contrôle d'accès déplacé après la lecture** (dans `rapports::journaux`) → AC8 (c) de `journaux` rougit,
-      (a) restant vert : c'est ce qui prouve que (c) mesure l'ordre.
-    - **M4 — trace supprimée** : retirer l'`insert_in_tx` du chemin « balance âgée, export » → son assertion AC9 (b).
+      (d) de `bilan` rougissent ; **M2′** : le même retrait dans `plan_comptable::lister` → AC8 (a), (c-lec) de `lister` ;
+      **M2″** : le même retrait dans `rapports::identite_societe` → ses deux assertions MCP de l'AC8 rougissent
+      (C-32-3-27).
+    - **M3 — contrôle d'accès déplacé après la lecture** (dans `rapports::journaux`) → AC8 (c-val) et (c-lec) de
+      `journaux` rougissent, (a) restant vert : c'est ce qui prouve que (c) mesure l'ordre.
+    - **M3′ — contrôle d'accès placé après la validation** (C-32-3-26) : dans `rapports::bilan`, `exiger` déplacé
+      entre `validate_fiscal_year_id` et `ReportPeriod::resolve` → AC8 (c-val) de `bilan` rougit (`Validation` au lieu
+      de `Forbidden`), (c-lec) de `bilan` restant vert : c'est ce qui prouve que (c-val) mesure le refus **avant la
+      validation**, et non seulement avant la lecture.
+    - **M4 — trace supprimée** : retirer l'`insert_in_tx` du chemin « balance âgée, export » → la ligne 14 de l'AC9 (b)
+      et de l'AC9 (b′).
     - **M5 — mauvaise portée** : `balance_agee` exige `BooksRead` → AC8 (a) avec `{BooksRead}` seule rougit.
     - **M6 — export servi au MCP** : l'exigence d'export porte `Some(BooksRead)` → AC8 (d).
     - **M7 — rôle API perdu** : l'export de `balance_agee` exige `Consultation` → AC8 (e) rougit, alors que
@@ -367,28 +505,43 @@ handler (routes/…)            service (services/…)                        po
       AC10 (i).
     - **M9 — trace avant rendu** : dans `exporter`, tracer avant `rendre` → AC9 (c).
     - **M10 — clé de détail changée** : renommer `fiscal_year_id` en `fiscalYearId` dans la trace de période →
-      `report_generated_audit_emitted_on_success` (`reports_e2e.rs:955`) **et** AC9 (b) rougissent.
-    - **M11 — pool rendu atteignable des handlers** : `Lecture::pool()` en `pub(crate)` → AC10 (v) rougit (le
-      compilateur, lui, ne dit rien : l'élargissement compile).
-    - **M12 — `as_of` recalculé** : dans `balance_agee`, la trace reçoit `Utc::now()…` relu au moment de tracer au lieu
-      de la date du contenu → mutation **équivalente hors minuit**, déclarée ; l'AC9 (b) la verrait seulement au
-      passage de minuit UTC. Elle est consignée pour dire que la règle « calculée une fois » (C-32-3-23) tient par la
-      structure (un seul champ `as_of`), non par le test.
+      `report_generated_audit_emitted_on_success` (`reports_e2e.rs:955`) **et** les lignes 1 à 10 de l'AC9 (b) et (b′)
+      rougissent.
+    - **M11 — pool rendu atteignable des handlers** : `Lecture::pool()` en `pub(crate)` → AC10 (v-a) rougit (ligne 6
+      changée ; le compilateur, lui, ne dit rien : l'élargissement compile).
+    - **M11′ — `impl Deref for Lecture`** (`type Target = MySqlPool;`, posé dans `poignees.rs`) → AC10 (v-b) rougit (un
+      en-tête d'`impl` de plus) et (v-a) aussi (la ligne `type Target`) (C-32-3-24).
+    - **M11″ — accesseur d'un autre nom dans un autre fichier** : dans `services/plan_comptable.rs`,
+      `pub fn brut(l: &Lecture) -> &MySqlPool { l.pool() }` → AC10 (v-a) rougit (une ligne de `plan_comptable.rs` en
+      plus), alors que le compilateur l'accepte et que l'ancienne garde, limitée à `poignees.rs` et à trois chaînes, ne
+      la voyait pas.
+    - **M12 — `as_of` recalculé** : dans la **branche balance âgée de l'aiguillage `tracer`**, `Utc::now().naive_utc()
+      .date()` passé à la fonction d'audit au lieu du `as_of` du `DetailsTrace` → mutation **équivalente hors minuit**,
+      déclarée ; l'AC9 (b) la verrait seulement au passage de minuit UTC. Elle est consignée pour dire que la règle
+      « calculée une fois » (C-32-3-23) tient par la **structure** — une seule variable `as_of`, calculée une fois dans
+      le service, dont le contenu et le `DetailsTrace` reçoivent la valeur —, non par le test.
+    - **M13 — export passé par `Affichage`** (C-32-3-25) : dans `export_trial_balance`, appeler `rapports::balance`
+      avec `Affichage`, obtenir le contenu par `afficher(&trace)` et le rendre au handler → AC10 (vii) rougit (corps
+      d'`export_` sans `.exporter(`) **et** la ligne 6 de l'AC9 (b′) rougit (`report.generated` au lieu de
+      `report.exported`, sans `format`) ; l'AC9 (b), qui choisit l'usage lui-même, reste vert — consigné : c'est
+      pourquoi (b′) existe.
     Une mutation qui ne rougit rien est **déclarée** au Dev Agent Record avec la raison (équivalente, ou test manquant
     ajouté puis mutation rejouée).
 13. **AC13 — gates au dernier commit de code.** `kesh-db` n'est **pas** touché (aucun dépôt, aucune migration,
     `post_restore.rs` non plus) : en boucle de revue, gate ciblé (`fmt` et `clippy` sur le workspace, `nextest` sur
     `services_motif`, les neuf binaires de l'AC7 — `reports_e2e`, `reports_export_e2e`, `vat_report_e2e`,
     `project_reports_e2e`, `accounts_e2e`, `opening_balances_e2e`, `open_items_e2e`, `idor_multi_tenant_e2e`,
-    `letterings_e2e` —, les quatre gardes de sources — `audit_label_registry`, `textes_coherents`,
-    `admin_pat_denied_e2e`, `audit_route_registry` —, et la lib de `kesh-api`) ; au **dernier commit de code** : **gate complet** (`scripts/test-fast.sh` sous verrou, base
+    `letterings_e2e` —, les huit gardes de sources de l'AC7 — `audit_label_registry`, `textes_coherents`,
+    `admin_pat_denied_e2e`, `audit_route_registry`, `test_schema_guard`, `configuration_transmise`,
+    `bank_account_closed_inventory`, `letterings_lexical` —, et la lib de `kesh-api`) ; au **dernier commit de code** : **gate complet** (`scripts/test-fast.sh` sous verrou, base
     remise à zéro d'abord) **et E2E Playwright complet** (recette de `docs/testing.md`, jugé fichier par fichier contre
     § *Les échecs attendus*), les quatre gates frontend inclus (aucun fichier frontend ne change, mais l'E2E les exige
     par la règle du dernier commit). Ne déclarer que ce qui a tourné, avec les chiffres.
 14. **AC14 — documentation.** Aucun changement visible : ni manuel, ni `docs/api-external.md`, ni CHANGELOG, ni
     README (C-32-3-13) — le contrôle se fait quand même (une passe vérifie qu'aucun texte ne décrit ce qui bouge).
     Aucun écran ne change : la recette visuelle est sans objet. L'écart antérieur du manuel sur le rôle Consultation
-    (« aucune mutation ») n'est pas corrigé ici (*Hors périmètre*). Les
+    et les clés en lecture seule (« aucune mutation », « une lecture n'écrit rien ») n'est pas corrigé ici : **#730**
+    (*Hors périmètre*). Les
     doc-comments de module de `routes/reports.rs` (l. 1-17 : « Pattern audit best-effort ») et de `routes/accounts.rs`
     renvoient à `services`. Le motif est écrit **une fois**, au doc-comment de `services/mod.rs`.
 15. **AC15 — indépendance de Q11, écrite.** Le doc-comment de `poignees.rs` dit, en une phrase, que la fabrication
@@ -413,7 +566,8 @@ handler (routes/…)            service (services/…)                        po
   seule), import `FormatExport as ExportFormat` ; gate ciblé.
 - [ ] **T4 (AC5)** — `helpers.rs::company_for_ids` (et délégation de `get_company_for`) ; `services/plan_comptable.rs` ;
   `list_accounts` mince ; gate ciblé.
-- [ ] **T5 (AC12)** — mutations M1 à M10 (M1′, M2′), chacune tuée ou déclarée.
+- [ ] **T5 (AC12)** — mutations M1 à M13 (M1′, M2′, M2″, M3′, M11′, M11″) et M1-témoin, chacune tuée ou déclarée
+  (M1 en échafaudage, M12 équivalente hors minuit).
 - [ ] **T6 (AC7, AC13, AC14)** — contrôles de l'AC7, gate complet et E2E complet au dernier commit de code ; Dev Agent
   Record : chiffres réellement exécutés, liste exacte des fichiers de l'AC7, inventaire de l'AC11.
 
@@ -425,19 +579,24 @@ handler (routes/…)            service (services/…)                        po
   `&Trace` là où il trace. Le MCP l'appellera tel quel.
 - **R2** — Première instruction : `acces.exiger(EXIGENCE)?` — avant la validation, avant toute lecture.
 - **R3** — Une `Exigence` par opération, constante nommée à côté du service ; pour l'API, le rôle **égal** au RBAC de la
-  route (le middleware reste ; le service ne l'assouplit jamais) ; pour le MCP, une portée, ou `None`.
+  route (le middleware reste ; le service ne l'assouplit jamais) — et, pour une aide servie par **plusieurs** routes de
+  RBAC différents, **le plus bas** de leurs rôles, chaque route gardant le sien par son propre service et son
+  middleware (`identite_societe`, C-32-3-27) ; pour le MCP, une portée, ou `None`.
 - **R4** — Toute lecture passe par la `Lecture` ; **aucune écriture** sur un chemin de lecture : ce qui doit écrire
   (trace, dernière utilisation) passe par la `Trace`. Le pool d'une poignée ne sort pas de `services`
-  (`pub(in crate::services)`) ; ce qu'un handler doit lire pour sa présentation (le contexte PDF) passe par une
+  (`pub(in crate::services)`, champ privé) ; aucun autre chemin vers lui n'est ouvert — l'inventaire clos de
+  l'AC10 (v) le contrôle (C-32-3-24) ; ce qu'un handler doit lire pour sa présentation (le contexte PDF) passe par une
   fonction de service. L'action d'audit reste un **littéral** à chaque `NewAuditLogEntry::user(` (garde
   `audit_label_registry`).
 - **R5** — Une trace qu'un handler pourrait oublier est une trace muette : le contenu ne se rend qu'à travers la méthode
   qui trace (`Rapport::afficher`/`exporter`). Une lecture sans trace (le plan comptable) rend directement.
 - **R6** — La validation de la demande vit dans le service, **dans l'ordre d'aujourd'hui** ; la présentation (format
   d'export, rendu, en-têtes, nom de fichier) reste au handler.
-- **R7** — Chaque service a son test de refus (portée absente, canal refusé, refus avant lecture) **et** son contrôle
-  positif ; et un test qui l'exécute sur une `Lecture` en lecture seule.
-- **R8** — La garde lexicale (AC10) s'étend aux handlers migrés.
+- **R7** — Chaque service a son test de refus (portée absente, canal refusé, refus avant la validation **et** avant la
+  lecture) **et** son contrôle positif ; un test qui l'exécute sur une `Lecture` en lecture seule ; et, s'il trace, sa
+  ligne dans la table des traces, au service et par la route.
+- **R8** — La garde lexicale (AC10) s'étend aux handlers migrés ; ses inventaires clos (v) s'amendent en connaissance
+  de cause, ligne par ligne, jamais par un motif élargi.
 
 ### Sites
 
@@ -465,19 +624,22 @@ handler (routes/…)            service (services/…)                        po
 // services/acces.rs
 pub enum Portee { BooksRead, InvoicesRead }
 pub enum Canal { Api { role: Role }, Mcp { portees: BTreeSet<Portee> } }
-pub struct ContexteAcces { pub company_id: i64, pub user_id: i64, pub canal: Canal }
+pub struct ContexteAcces { company_id: i64, user_id: i64, canal: Canal }   // champs privés (C-32-3-29)
 pub struct Exigence { pub role_api: Role, pub portee_mcp: Option<Portee> }
 impl ContexteAcces {
     pub fn depuis_api(u: &CurrentUser) -> Self;
     pub fn mcp(company_id: i64, user_id: i64, portees: BTreeSet<Portee>) -> Self;
+    pub fn company_id(&self) -> i64;  pub fn user_id(&self) -> i64;  pub fn canal(&self) -> &Canal;
     pub fn exiger(&self, e: Exigence) -> Result<(), AppError>; // Err(AppError::Forbidden)
 }
-// services/poignees.rs
-#[derive(Clone)] pub struct Lecture(MySqlPool);
+// services/poignees.rs — les huit lignes de l'AC10 (v-a) 1-7 et les quatre `fn` de (v-c), rien d'autre
+#[derive(Clone)] pub struct Lecture(MySqlPool);                      // champ privé
 impl Lecture { pub fn new(p: MySqlPool) -> Self; pub(in crate::services) fn pool(&self) -> &MySqlPool; }
-#[derive(Clone)] pub struct Trace(pub(in crate::services) MySqlPool);   // lu par les fonctions d'audit seules
-impl Trace   { pub fn new(p: MySqlPool) -> Self; }
+#[derive(Clone)] pub struct Trace(MySqlPool);                        // champ privé
+impl Trace   { pub fn new(p: MySqlPool) -> Self; pub(in crate::services) fn pool(&self) -> &MySqlPool; }
+// (pool() de Trace : appelé par les seules fonctions d'audit, libres, de services/rapports.rs)
 // services/rapports.rs
+#[derive(Debug, Clone, Copy, PartialEq, Eq)] pub enum FormatExport { Pdf, Csv }  // as_str, content_type, extension : pub
 pub struct Affichage;  pub struct Export(pub FormatExport);
 pub struct Rapport<T, U> { contenu: T, details: DetailsTrace, user_id: i64, usage: U }  // champs privés, aucune Lecture
 impl<T, U> Rapport<T, U> { fn nouveau(contenu: T, details: DetailsTrace, user_id: i64, usage: U) -> Self; }
@@ -500,18 +662,27 @@ d'aujourd'hui selon (forme, usage) — huit chemins, l'export du grand livre gar
 
 ### Hors périmètre, et ce qui reste non résolu (inventaire)
 
-- **La fabrication d'une `Lecture` en lecture seule** — décidée par Guy (Q11), réalisée par la 32-6. En 32-3, un
-  handler ne **peut pas** écrire sur le pool d'une `Lecture` : `Lecture::pool()` est `pub(in crate::services)`, et le
-  compilateur refuse `lecture.pool()` hors de la couche ; l'AC10 (v) interdit d'élargir cette visibilité, l'AC10 (iii)
-  de fabriquer une poignée hors de `services/` et `lib.rs`. Ce qui reste **non observable** en 32-3 : un handler qui
-  écrirait par un autre pool (`state.pool`) — fermé dans `routes/reports.rs` et `list_accounts` par l'AC10 (i)-(ii),
-  **pas** dans les modules que la 32-4 n'a pas encore migrés ; et une `AppState::trace()` qui envelopperait le pool de
-  la `Lecture` — équivalente tant que les deux partagent `state.pool` (M1, AC12). Au niveau du service, l'AC9.
+- **La fabrication d'une `Lecture` en lecture seule** — décidée par Guy (Q11), réalisée par la 32-6. En 32-3, le
+  compilateur refuse `lecture.pool()` hors de `services` (`pub(in crate::services)`, champ privé). L'AC10 (v)
+  **attrape** — par inventaire clos des lignes, non par énumération de formes — tout chemin **lexical** de plus vers
+  le pool d'une poignée : une ligne de `services/` qui nomme un type `sqlx` hors des huit attendues (accesseur d'un
+  autre nom, visibilité élargie), un `impl` sur une poignée hors des deux attendus (`Deref`, `AsRef`, `From`, `impl`
+  inhérent ailleurs), une fonction de plus dans `poignees.rs`, un `Lecture::new(`/`Trace::new(` hors du câblage de
+  `lib.rs`. **Reste à la revue** : une forme non lexicale — alias de type défini hors de `services/`, code engendré par
+  macro (AC10, *Ce que (v) ne voit pas*). Reste **non observable** en 32-3 : un handler qui écrirait par un autre pool
+  (`state.pool`) — fermé dans `routes/reports.rs` et `list_accounts` par l'AC10 (i)-(ii), **pas** dans les modules que
+  la 32-4 n'a pas encore migrés ; et une `AppState::trace()` qui envelopperait le pool de la `Lecture` — **non
+  exprimable** en 32-3 (`lib.rs` ne lit pas `lecture.pool()`), à poser par la 32-6 (AC12, M1). Au niveau du service,
+  l'AC9.
 - **L'export du grand livre tracé en consultation** (fait 5) — conservé ; **#729** (C-32-3-8).
-- **Le manuel d'administration** (`admin-manual.tex:1464`) dit du rôle Consultation « aucune mutation, à une exception
-  près » (le premier téléchargement du PDF d'une facture, qui « l'inscrit au journal d'audit »), alors que chaque
-  consultation de rapport inscrit une ligne `report.generated` (fait 1). Écart **antérieur** à la story, qu'elle ne
-  déplace pas (AC14) : issue P3 demandée à l'orchestrateur.
+- **Le manuel d'administration dit « sans écriture » ce qui écrit** — **#730** (`bug`, `documentation`, P3, ouverte par
+  l'orchestrateur et complétée en P2). Deux sites : `admin-manual.tex:1464` (rôle Consultation : « aucune mutation, à
+  une exception près », le premier téléchargement du PDF d'une facture) et `admin-manual.tex:2897` (clés d'API en
+  lecture seule : « une lecture n'écrit rien, à une exception près »), le PDF disant la même chose. Écritures que ces
+  phrases omettent : chaque consultation ou export de rapport (`report.generated`/`report.exported`, fait 1), l'export
+  global (`exports.global`, `routes/exports.rs:131`, route tous rôles `lib.rs:1134`), et, pour une requête par clé,
+  `api_keys::touch_last_used` (`auth/api_key.rs:185`, AC11 (2)). Écart **antérieur** à la story, qu'elle ne déplace
+  pas (AC14) ; le manuel MCP de la 32-7 (clés en lecture seule) devra en tenir compte.
 - **L2** (`actor_type='user'` via PAT, fait 6) — conservé ; l'acteur d'une clé MCP est à la 32-5/32-6.
 - **Les autres modules de lecture** (écritures, postes ouverts, contacts, factures) — 32-4a/32-4b.
 - **`touch_last_used`** — middleware, hors service (AC11 (2)).
@@ -533,7 +704,8 @@ migration.
 ### Risques
 
 - **Moyen — une trace perdue est muette.** Dix-sept des dix-huit handlers n'ont aujourd'hui aucun test qui lise leur
-  trace (fait 9) : l'AC9 (b) les fige avant le déplacement des sept fonctions. Écrire les tests (T2) **avant** de déplacer
+  trace (fait 9) : l'AC9 (b) fige les **dix-huit** couples (service, usage) au niveau du service, et l'AC9 (b′) les
+  mêmes dix-huit par la route, avant le déplacement des sept fonctions. Écrire les tests (T2) **avant** de déplacer
   (T3).
 - **Ordre des erreurs** : passer la validation dans le service ne doit pas changer quelle erreur sort quand plusieurs
   s'appliqueraient (format invalide **et** exercice nul : 400 sur le format d'abord, comme aujourd'hui). Les tests
@@ -597,8 +769,48 @@ d'attention* ; `planning-artifacts/epic-32-spike-mcp.md` § 4.3, § 4.4, § 5.3.
     `get_or_create` étendue à `services/` et `helpers.rs` ; **R13/F6** « une relation d'ordre, deux sites » ; **F12**
     manuel vérifié — `admin-manual.tex:1464` dit du rôle Consultation « aucune mutation, à une exception près » alors
     que chaque consultation de rapport écrit au journal d'audit : écart réel, antérieur, **issue P3 demandée à
-    l'orchestrateur**, inscrit au *Hors périmètre* ; **F13** `content_type`/`extension` suivent `FormatExport`, assumé
+    l'orchestrateur**, inscrit au *Hors périmètre* *(annoté en P2 : ouverte, **#730**, et complétée — constat incomplet,
+    cf. Validation P2, R2)* ; **F13** `content_type`/`extension` suivent `FormatExport`, assumé
     (C-32-3-21) ; recette visuelle sans objet (AC14). Ajout de la remédiation : M12 (équivalente, déclarée).
   - Propagation grepée sur la fiche, le registre et la clé : `seize`, `issue demandée`, `pool de lecture`,
     `pub(crate) fn pool`, `une seule règle`, `deviendra`, `load_pdf_context(&Lecture`. Prompt de la passe P2 :
     `323-validate-prompt-p2.md` (complète, Opus, R et F).
+- **2026-10-24 — Validation P2** (Opus, deux lentilles en contexte frais ; rapports `kesh-gate-logs/323-validate-p2-R.md`
+  et `-F.md`) : **R 0/0/3/8, F 0/0/3/9** (CRITICAL/HIGH/MEDIUM/LOW). Recoupements : R1 = F1 (MEDIUM), R4 = F4, R5 = F5,
+  R7 = F10, R8 = F7, R9 = F9, R10 = F6 ; propres à R : R2, R3 (MEDIUM), R6, R11 ; propres à F : F2, F3 (MEDIUM), F8,
+  F11, F12 — soit **cinq défauts MEDIUM distincts** (inventaire des poignées, manuel, refus avant validation, traces
+  des dix-huit couples, usage du handler) et onze LOW distincts. ⚠️ **Signal de recyclage déclaré au Project Lead** :
+  R1 = F1 est une **forme recyclée** du MEDIUM F2 de la P1 (le pool d'une poignée atteignable hors de la couche) — un
+  défaut revenu sous une autre forme après son correctif, que la P1 avait traité par une énumération de formes.
+  Remède par **inventaire clos**, non par une énumération plus longue. Le périmètre reste à quatre modules (F, axe 2) :
+  pas de découpage proposé ; l'arbitrage reste au Project Lead. Sort de chacun (registre C-32-3-24 à C-32-3-30) :
+  - **R1/F1** — AC10 (v) refondu en cinq inventaires clos, listes écrites (v-a huit lignes, v-b deux en-têtes d'`impl`,
+    v-c quatre `fn`, v-d deux `::new(` au câblage de `lib.rs`, v-e deux définitions), sur `services/` ou tout `src/` ;
+    champs des poignées privés, fonctions d'audit libres ; anciens (iii)-(iv) absorbés par (v-d), qui couvre
+    `services/` ; M11 gardée, M11′ et M11″ ajoutées ; les phrases « interdit d'élargir sans rougir » (AC10, *Hors
+    périmètre*) réécrites en « attrape » et « reste à la revue » (formes non lexicales) ; *Le motif*, AC3, R4, R8,
+    esquisse alignés (C-32-3-24).
+  - **R2** — *Hors périmètre* et AC14 : **#730** citée, deux sites du manuel (`admin-manual.tex:1464`, `:2897`), trois
+    écritures omises (rapports, `exports.global`, `touch_last_used`) ; #730 complétée par l'orchestrateur ; en-tête de
+    la fiche ; entrée P1 annotée (non réécrite).
+  - **R3** — AC8 (c) scindé en (c-val) et (c-lec), une assertion chacun par service ; M3′ ; R7 des règles (C-32-3-26).
+  - **F2** — AC9 (b) tabulaire sur les dix-huit couples, `details_json` en littéral par ligne, filtre de journal non
+    nul, filtre de comptes, `cumulative`, deux formats ; M1, M1′, M4, M10 ajustés ; fait 9 et Risques (C-32-3-25).
+  - **F3** — AC10 (vii) (`.exporter(`/`.afficher(` par corps de handler, neuf de chaque) et AC9 (b′) (la même table
+    par la route) ; M13 (C-32-3-25).
+  - LOW : **R4/F4** T5 (M1 à M13, primes, M1-témoin) ; **R5/F5** R3 complétée (aide partagée : le plus bas des rôles),
+    cas « société inexistante » et M2″ (C-32-3-27) ; **R6** mutation de `AppState::trace()` dite non exprimable,
+    à la 32-6 ; **R7/F10** mesures du `span` dans `rendre`, validation sous le `span` assumée (C-32-3-28) ; **R8/F7**
+    définition des commentaires pour tous les volets, commentaire de fin de ligne, interdiction des `/* */` retirée
+    (C-32-3-30) ; **R9/F9** fixture de TVA : facture validée à ligne taxée, écriture sur `1000`,
+    `seed_accounting_company` retenu, sans recopier l'`INSERT` de réglages (F9 se trompait sur le compte d'impôt
+    préalable, configuré à `1000`) ; **R10/F6** M12 située dans `tracer`, « une seule variable `as_of` » ; **R11**
+    `invoice_settlements` à l'AC11 (3) ; **F8** huit gardes de sources nommées (dont `test_schema_guard`, que la P2
+    n'avait pas relevée, atteignable par le fichier de test neuf), motifs d'exclusion des neuf autres lecteurs de
+    fichiers ; **F11** `ContexteAcces` à champs privés, résidu `CurrentUser` écrit (C-32-3-29) ; **F12** dérives et
+    visibilité de `FormatExport`.
+  - Propagation grepée sur la fiche, le registre et la clé, par valeur : `P3 demandée`, `issue demandée`, `élargir`,
+    `M1 à M1`, `huit assertions`, `huit chemins`, `quatre gardes`, `AppState::trace()`, `/* `, `Trace::new(`,
+    `Lecture::new(`, `le permet`, `pub(in crate::services) MySqlPool`, `méthodes de .Trace.`, `pub company_id` ;
+    survivances laissées : relevés datés (Change Log P1, registre C-32-3-17/18/19/20 annotés). Prompt de la passe P3 :
+    `323-validate-prompt-p3.md` (complète, Sonnet, R et F).

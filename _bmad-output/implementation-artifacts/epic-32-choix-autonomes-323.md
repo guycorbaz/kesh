@@ -173,6 +173,10 @@
   `load_pdf_context` l'aurait contournée) ; inscrire `load_pdf_context` « hors preuve » (une lecture statique là où une
   exécution est à portée).
 - **Réversible** : oui.
+- *Amendé le 2026-10-24 (validation P2) : le champ de la `Trace` devient **privé**, lu par un accesseur
+  `pub(in crate::services) fn pool()` ; l'AC10 (iii)-(iv) et l'ancien (v) sont remplacés par l'inventaire clos de
+  l'AC10 (v) (C-32-3-24) — l'ancien (v), liste de trois formes dans un seul fichier, ne fermait pas ce qu'il disait
+  fermer.*
 
 ### C-32-3-18 — M1 par échafaudage nommé, sur un aiguillage commun
 
@@ -186,6 +190,9 @@
   une mutation dans les sept fonctions à la fois (sept éditions, et la tentation d'un écrivain à action variable,
   C-32-3-19).
 - **Réversible** : oui.
+- *Amendé le 2026-10-24 (validation P2, R6) : la mutation de `AppState::trace()` n'est pas « équivalente », elle est
+  **non exprimable** en 32-3 (`lib.rs` ne lit pas `lecture.pool()`) ; la 32-6 la pose quand la `Lecture` aura un pool
+  distinct (C-32-3-30). M1 tue désormais les dix-huit lignes de l'AC9 (b) (C-32-3-25).*
 
 ### C-32-3-19 — Les actions d'audit restent des littéraux ; les gardes de sources sont au gate ciblé
 
@@ -198,6 +205,9 @@
   gate ciblé.
 - **Écartée** : un écrivain unique à action variable (moins de code, mais rouge sans remède admissible).
 - **Réversible** : oui.
+- *Amendé le 2026-10-24 (validation P2, F8) : les gardes de sources sont **huit**, non quatre — s'y ajoutent
+  `test_schema_guard` (atteignable par le test neuf), `configuration_transmise`, `bank_account_closed_inventory`,
+  `letterings_lexical` (hors d'atteinte du code prévu, lancées quand même) ; relevé et motifs d'exclusion à l'AC7.*
 
 ### C-32-3-20 — La frontière d'Axum se garde sur les lignes de code, et par un test
 
@@ -208,6 +218,8 @@
   `services/`.
 - **Écartée** : édulcorer les doc-comments pour « passer » la commande.
 - **Réversible** : oui.
+- *Amendé le 2026-10-24 (validation P2, R8 = F7) : l'interdiction des `/* … */` est **retirée** (C-32-3-30) ; la
+  définition des commentaires vaut pour tous les volets de l'AC10.*
 
 ### C-32-3-21 — `FormatExport` garde ses trois méthodes
 
@@ -227,6 +239,8 @@
   et réalisée par la 32-6 ; la 32-3 ne suppose qu'une poignée distincte ; l'AC10 (iv) décrit l'état de la 32-3, que la
   32-6 amende en connaissance de cause.
 - **Réversible** : oui.
+- *Amendé le 2026-10-24 (validation P2) : l'AC10 (iv) est absorbé par l'inventaire (v-d) (C-32-3-24), qui porte la
+  même réserve.*
 
 ### C-32-3-23 — `as_of` calculé une fois, et ce que le `Rapport` expose
 
@@ -235,4 +249,96 @@
 - **Retenu** : le `Rapport` porte `user_id` et expose en lecture seule la période résolue, les bornes du grand livre,
   `as_of`, le mode et les bornes d'un projet ; `as_of` est calculé une fois dans le service ; l'AC9 (b) lit l'attendu
   sur le `Rapport` ; la balance âgée n'est exportée qu'en CSV, trace `"format": "csv"` littérale.
+- **Réversible** : oui.
+
+---
+
+*Choix C-32-3-24 à C-32-3-30 : remédiation de la validation P2 (2026-10-24, agent de remédiation, Opus 5.5).*
+
+### C-32-3-24 — La frontière des poignées se garde par inventaire clos, non par formes interdites
+
+- **Contexte** : P2 (R1 = F1 MEDIUM, **forme recyclée** du MEDIUM F2 de la P1 — signal de recyclage déclaré) :
+  l'ancien AC10 (v) n'interdisait que `pub(crate)`, `pub fn pool` et `pub MySqlPool`, dans le seul `poignees.rs` ;
+  `impl Deref for Lecture`, `pub(in crate)`, un accesseur d'un autre nom dans un autre fichier de `services/`,
+  `Trace::new(lecture.pool().clone())` dans un service passaient tous, compilés et verts. C'est le mode d'échec que
+  `CLAUDE.md` § *Inventorier les sites NON RÉSOLUS* décrit : une énumération de formes est ouverte.
+- **Retenu** : champs de tuple **privés** sur les deux poignées, accesseur `pub(in crate::services) fn pool()` sur
+  chacune ; fonctions d'audit **libres** recevant `&Trace` (aucun `impl Trace` hors de `poignees.rs`) ; l'AC10 (v)
+  devient cinq **inventaires clos**, chacun égal à une liste écrite dans la fiche, toute ligne en plus rougissant :
+  (v-a) lignes de `services/` nommant `MySql`, `Pool` ou `sqlx` — huit, sept dans `poignees.rs` et le `query_as` de
+  `identite_societe` ; (v-b) en-têtes d'`impl` de tout `src/` nommant une poignée, lignes jointes — deux ; (v-c)
+  lignes `fn ` de `poignees.rs` — quatre ; (v-d) `Lecture::new(`/`Trace::new(` dans tout `src/` — deux, au câblage de
+  `lib.rs` (remplace les anciens (iii)-(iv), `services/` compris) ; (v-e) `Lecture(`/`Trace(` dans tout `src/` —
+  deux, les définitions. Mutations M11 (gardée), M11′ (`impl Deref`), M11″ (accesseur ailleurs). Ce qui reste à la
+  revue est écrit : formes non lexicales (alias de type hors de `services/`, macro).
+- **Écartées** : allonger la liste des formes interdites (`Deref`, `AsRef`, `pub(in crate)`…), même faiblesse ; un
+  inventaire des lignes nommant `MySqlPool` sur **tout** `src/` (108 lignes dans 24 fichiers au 2026-10-24, dont les
+  modules non migrés : ingérable et sans rapport avec les poignées) ; une garde par `syn` (plus juste, mais un outil
+  neuf pour une story de motif — la 32-4 peut y venir).
+- **Réversible** : oui.
+
+### C-32-3-25 — Les traces se figent sur les dix-huit couples, au service et par la route
+
+- **Contexte** : P2 (F2 MEDIUM) : huit assertions pour huit formes laissaient dix couples (service, usage), le filtre
+  de journal non nul et le mode `cumulative` sans lecture de trace ; (F3 MEDIUM) rien ne voyait un **handler**
+  d'export passer par `Affichage` — la forme de #729 — ni appeler le mauvais service.
+- **Retenu** : l'AC9 (b) devient une **table** de dix-huit lignes (service, usage, action, `details_json` en littéral),
+  exerçant un filtre de journal, un filtre de comptes, `cumulative` et les deux formats, une assertion nommée par
+  ligne ; l'AC9 (b′) rejoue la même table **par la route** ; l'AC10 (vii) exige `.exporter(` dans chaque `export_`,
+  `.afficher(` dans chaque `get_`. M13 (export de la balance par `Affichage`) rougit (vii) et (b′).
+- **Écartée** : (vii) seul (lexical, il ne voit pas le mauvais service) ; (b′) seul (il ne dit pas lequel des deux
+  usages manque quand une trace est fausse).
+- **Réversible** : oui.
+
+### C-32-3-26 — Le refus précède la validation : un cas par service qui échoue à la validation
+
+- **Contexte** : P2 (R3 MEDIUM, rédaction d'origine) : les cas de l'AC8 (c) (exercice ou projet **inexistants**)
+  passent la validation et ne prouvent que « avant la lecture » ; un `exiger` posé entre validation et lecture
+  rendrait `Validation` au MCP — un oracle que C-32-3-5 exclut.
+- **Retenu** : (c-val) — `fiscalYearId = 0`, `from > to`, `projectId = 0` — et (c-lec) distincts, une assertion
+  chacun ; M3′ (`exiger` après `validate_fiscal_year_id` dans `bilan`) rougit (c-val) et laisse (c-lec) vert.
+- **Réversible** : oui.
+
+### C-32-3-27 — L'exigence d'une aide partagée : le plus bas des rôles de ses routes
+
+- **Contexte** : P2 (R5 = F5 LOW) : `identite_societe` sert neuf routes d'export (huit Consultation, une Comptable) ;
+  la règle R3 (« égal au RBAC de la route ») ne pouvait pas s'y appliquer, et l'aide n'avait ni cas (c) ni mutation.
+- **Retenu** : R3 complétée — une aide partagée porte le plus bas des rôles de ses routes, chaque route gardant le
+  sien par son service et son middleware ; `identite_societe` reste `{ Consultation, None }` ; un cas « société
+  inexistante » au MCP (`Forbidden`) et la mutation M2″.
+- **Écartée** : une exigence par route appelante (une aide de présentation n'a pas à connaître ses appelants).
+- **Réversible** : oui.
+
+### C-32-3-28 — Les mesures du `span` d'export restent où elles sont
+
+- **Contexte** : P2 (R7 = F10 LOW) : avec `exporter` (rendu puis trace), un `span.record` placé après `exporter`
+  compterait l'`INSERT` d'audit dans `duration_ms` ; et la validation passée dans le service naît sous le `span`.
+- **Retenu** : `byte_size` et `duration_ms` s'enregistrent dans la fermeture `rendre`, après le rendu, comme
+  aujourd'hui ; la validation sous le `span` est un changement **assumé**, sans effet sur l'API (aucun champ
+  enregistré sur une erreur, comme aujourd'hui pour toute erreur postérieure à l'ouverture).
+- **Réversible** : oui.
+
+### C-32-3-29 — `ContexteAcces` à champs privés
+
+- **Contexte** : P2 (F11 LOW) : des champs publics laissaient le futur code MCP du même crate forger
+  `ContexteAcces { canal: Canal::Api { role: Admin }, … }` et passer toute exigence sans portée.
+- **Retenu** : champs privés, accesseurs en lecture, construction par `depuis_api` et `mcp` seuls. Résidu écrit :
+  `CurrentUser` a ses champs publics (les tests en ont besoin) et reste forgeable dans le crate ; le doc-comment le
+  dit à la 32-6, dont la validation de clé est le seul constructeur légitime d'un canal MCP.
+- **Réversible** : oui.
+
+### C-32-3-30 — Arrêts mineurs de la P2
+
+- **Commentaires de bloc** (R8 = F7) : l'interdiction des `/* … */` dans `services/` est **retirée** — la définition
+  des commentaires (premier caractère non blanc `//`) lit un `/* */` comme du code, qui ne peut produire qu'un faux
+  rouge, jamais masquer une ligne ; un commentaire de fin de ligne laisse la ligne compter ; la définition vaut pour
+  tous les volets de l'AC10.
+- **Fixtures de TVA** (R9 = F9) : `seed_accounting_company` retenu (il pose réglages, comptes de TVA due `2000` et
+  d'impôt préalable `1000`, taux) ; une facture **validée** à ligne taxée `8.10`, une écriture sur `1000` ; ne pas
+  recopier l'`INSERT` de réglages de `seed_open_invoice_for` (clé `company_id` déjà posée). *(F9 disait le compte
+  d'impôt préalable non configuré : `test_fixtures.rs` le lie au compte `1000` — R9 avait raison.)*
+- **`FormatExport`** (F12) : type `pub`, dérives `Debug, Clone, Copy, PartialEq, Eq`, trois méthodes `pub`.
+- **`AppState::trace()`** (R6) : sa mutation est non exprimable en 32-3 ; à poser par la 32-6.
+- **M12** (R10 = F6) : située dans la branche balance âgée de `tracer` ; « une seule variable `as_of` ».
+- **`invoice_settlements`** (R11) : nommé à l'AC11 (3), fragments SQL et analyse pure.
 - **Réversible** : oui.
