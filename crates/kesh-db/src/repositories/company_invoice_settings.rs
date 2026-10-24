@@ -1253,6 +1253,18 @@ pub const VAT_SETTING_ACCOUNT_TYPES: VatSettingAccountTypes = VatSettingAccountT
 /// autre compte peut le défaire. Le rejeu de `seed_demo` sur interblocage
 /// (`is_seed_retryable`) reste le filet.
 ///
+/// **La transaction complète, elle, n'est pas croissante** (Story 32-1a, #716,
+/// E7). Dans `final_body`, ces trois verrous **précèdent** les lectures
+/// verrouillantes de [`insert_with_defaults_in_tx`] : ses trois rôles
+/// (`Receivable`, `DefaultRevenue`, `Payable`), puis les comptes que le plan
+/// désigne (`chart_designated_accounts` : l'arrondi, puis les natures d'écart
+/// soldé dans l'ordre de `WriteOffNature::ALL`, chacun seulement si le plan le
+/// désigne). Ce sont ces deux fonctions qui portent la liste ; elle n'est pas
+/// recopiée ici comme exhaustive. Au plan PME, la séquence par numéro est 1171,
+/// 2200, 2206, 1100, 3000, 2000, 6940, 3800, 6900, 3805 : un interblocage avec
+/// une transaction qui verrouillerait ces comptes dans l'ordre croissant reste
+/// possible, et le rejeu de `seed_demo` (`is_seed_retryable`) est le filet.
+///
 /// À appeler **avant** la création de la ligne de réglages : l'ordre documenté
 /// `accounts → company_invoice_settings` (Pattern 5) est ainsi tenu. Ne lit ni
 /// n'écrit `company_invoice_settings`. Ne commite ni n'annule.
