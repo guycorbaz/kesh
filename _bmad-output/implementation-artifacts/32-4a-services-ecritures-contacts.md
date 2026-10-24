@@ -1,6 +1,6 @@
 # Story 32.4a : la couche de services — rollout des lectures : écritures comptables, postes ouverts, contacts
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-32-4a`, branche `story/32-4a` partie de `main`
 `89d68704` (la 32-3 fusionnée). Registre : `epic-32-choix-autonomes-324a.md` (C-32-4a-1 à C-32-4a-12). Clé courte :
@@ -461,23 +461,23 @@ la 32-9a et de la 32-9b ne puisse ni contourner une règle écrite dans un handl
 
 ## Tâches
 
-- [ ] **T0** — Worktree et branche (posés) ; bases `kesh_324a`, `kesh_e2e_324a` créées, migrées depuis les migrations
+- [x] **T0** — Worktree et branche (posés) ; bases `kesh_324a`, `kesh_e2e_324a` créées, migrées depuis les migrations
   du worktree, seedées ; port attribué par l'orchestrateur ; `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-32-4a/target` ;
   `node_modules` par `cp -al` (`docs/agents-orchestration.md` § 4). Étape 0 : recontrôler au code les lignes citées des
   faits 1 à 9 (une ligne lue citée par fait au Dev Agent Record).
-- [ ] **T1 (AC9-AC11 — rouge d'abord)** — `tests/common/lecture_seule.rs`, `tests/services_rollout.rs` : en **deux
+- [x] **T1 (AC9-AC11 — rouge d'abord)** — `tests/common/lecture_seule.rs`, `tests/services_rollout.rs` : en **deux
   commits** — (i) AC10 (c) **et** la mesure de l'AC11 (c) (ni l'un ni l'autre ne réfère aux services neufs), **joués
   sur le code d'avant T2** : c'est le relevé qui établit que la table des bornes et des refus décrit le code
   d'aujourd'hui, et ce que la `Lecture` de test refuse ; (ii) le reste, dont on constate qu'il ne compile pas avant T2.
-- [ ] **T2 (AC1-AC4, AC7)** — `Portee::ContactsRead` ; `services/ecritures.rs` (`lister`, `detail`, la garde déplacée) ;
+- [x] **T2 (AC1-AC4, AC7)** — `Portee::ContactsRead` ; `services/ecritures.rs` (`lister`, `detail`, la garde déplacée) ;
   handlers minces ; gate ciblé.
-- [ ] **T3 (AC5, AC7)** — `services/postes_ouverts.rs` ; `get_open_items` mince ; plafond commun importé par
+- [x] **T3 (AC5, AC7)** — `services/postes_ouverts.rs` ; `get_open_items` mince ; plafond commun importé par
   `get_lettering_proposals` ; gate ciblé.
-- [ ] **T4 (AC6, AC7)** — `services/carnet.rs` ; `list_contacts`, `get_contact` minces ; gate ciblé.
-- [ ] **T5 (AC8, AC12, AC17)** — amendements de `services_motif.rs` (liste fermée de l'AC8 (1)) ; doc-comment de
+- [x] **T4 (AC6, AC7)** — `services/carnet.rs` ; `list_contacts`, `get_contact` minces ; gate ciblé.
+- [x] **T5 (AC8, AC12, AC17)** — amendements de `services_motif.rs` (liste fermée de l'AC8 (1)) ; doc-comment de
   `services/mod.rs` (AC1, AC13) ; textes de l'AC16.
-- [ ] **T6 (AC14)** — mutations M1a à M18, chacune tuée ou déclarée (M8 équivalente).
-- [ ] **T7 (AC8, AC13, AC15, AC16)** — contrôles de l'AC8, gate complet et E2E complet au dernier commit de code ; Dev
+- [x] **T6 (AC14)** — mutations M1a à M18, chacune tuée ou déclarée (M8 équivalente).
+- [x] **T7 (AC8, AC13, AC15, AC16)** — contrôles de l'AC8, gate complet et E2E complet au dernier commit de code ; Dev
   Agent Record : chiffres réellement exécutés, listes exactes, inventaire.
 
 ## Dev Notes
@@ -609,9 +609,197 @@ AC8, AC10, R1-R8) ; registres `epic-32-choix-autonomes.md` (C-32-0-4, C-32-0-7) 
 
 ### Agent Model Used
 
+Opus 5.5 (claude-opus-5-5), en autonomie, worktree `kesh-32-4a`, base de développement `39939799` (fiche validée).
+Port 3326, bases `kesh_324a` (gate) et `kesh_e2e_324a`, cible `kesh-32-4a/target`. **Q1** non tranchée : développé sur
+la première lecture (cinq lectures migrées, les deux de lettrage inventoriées et figées).
+
 ### Completion Notes List
 
+#### Étape 0 — prémisses recontrôlées au code (ligne lue citée)
+
+- **P3-1** — confirmé : la requête de `find_source_document_of_entry` est aux l. **387-396** de
+  `kesh-db/src/repositories/imported_supplier_invoices.rs` (l. 387 `sqlx::query_as::<_, EntrySourceDocument>(`,
+  l. 396 `ORDER BY si.id LIMIT 1",`).
+- **P3-2** — confirmé : `services_motif.rs:2091` — `.find(|&j| lignes[j].contains("pub async fn"))`.
+- **P3-3** — confirmé, et appliqué en **rétablissant** le compte des `async fn` toutes visibilités à côté du compte au
+  niveau du fichier (C-32-4a-13) ; relevé `awk … | grep -cE '^\s*(pub(\([^)]*\))?\s+)?async fn'` → 7 / 5 / 5.
+- **P3-4** — appliqué : les limites de la garde (doc-comment de `ac12_iii_inventaire_des_sites_non_resolus`) nomment
+  `self.pool` (`impl AppState`), `(&state).pool`, `state.clone().pool`, une macro à paramètre ident, la
+  déstructuration et la liaison renommée.
+- **P3-5** — appliqué par le code : les autres formes de #738 B4 sont écrites aux limites, dans la garde ; la fiche
+  n'est pas réécrite (relevé daté).
+- **P3-6** — appliqué : M14 joue `INSERT INTO audit_log (user_id, action, entity_type, entity_id) VALUES (1,
+  'contact.read', 'contact', 0)`, instruction complète (patron du témoin `ac9_temoin_la_lecture_de_test_refuse_l_ecriture`).
+- **P3-7** — appliqué : `BORNE_*` et `EXERCICE_*` non recopiées dans `services_rollout.rs` (clippy `-D warnings` vert).
+- **P3-8** — appliqué : C-32-4a-14 au registre ; le commentaire de #738 sur `journal_entries.rs:775-776` et `:934` de
+  `kesh-db` vérifié (`gh issue view 738 --json comments` : deuxième commentaire, « relevé par la validation P2 de la
+  fiche de la Story 32-4a »).
+
+Faits 1 à 9 (une ligne lue par fait, au code de `39939799`) : (1) `grep -n '^pub async fn'` → 7 / 5 / 5, dont
+`letterings.rs:534:pub async fn get_open_items(` ; (2) `lib.rs` : `.route("/api/v1/contacts", get(routes::contacts::list_contacts))`
+dans `authenticated_routes` ; (3) `kesh-db/src/repositories/journal_entries.rs:935` `let clamped_limit =
+query.limit.clamp(1, MAX_LIMIT);`, `contacts.rs:472` `items_qb.push_bind(query.limit);` ; (4)
+`routes/journal_entries.rs:359` `.map_err(|e| AppError::Validation(format!("dateFrom invalide ({e})")))?,` ; (5)
+`:506` `let mut tx = state.pool.begin().await.map_err(map_db_error)?;` ; (6) `kesh-db/…/journal_entries.rs:1182`
+`Lecture::Verrouillante => format!("{LETTERING_GUARD_SQL} FOR UPDATE"),`, `:1261` `lettering_guard(&mut *conn, id,
+Lecture::Conseil)` ; (7) `routes/contacts.rs:613` `find_by_id_in_company(&state.pool, …)` avant `:618`
+`get_company_for` ; (8) `services/mod.rs:100` `#![cfg_attr(not(test), forbid(unsafe_code))]` ; (9)
+`docs/MULTI-TENANT-SCOPING-PATTERNS.md:273` `- **Every handler validates company exists**`.
+
+#### T1 — rouge d'abord
+
+- **T1 (i)** (`c550ea8c`), joué **sur le code d'avant T2** : AC10 (c) par la route (contacts `limit=1000&offset=-3` →
+  100 / 0, défaut 20 ; écritures `limit=0` → 1, défaut 50 ; `dateFrom=x` → 400 `VALIDATION_ERROR`, message
+  `dateFrom invalide (…`) et la **mesure de l'AC11 (c)** : `SELECT 1 FROM fiscal_years LIMIT 1 FOR UPDATE` sur
+  `pool_lecture_seule` (session `SET SESSION TRANSACTION READ ONLY`) → **refusé, erreur 1792, en autocommit ET dans
+  `begin()`** (MariaDB 10.11.19 du conteneur de dev, `SELECT VERSION()`) ; figé par `ac11_c_un_verrou_est_refuse_sur_la_lecture_de_test`. Les
+  deux tests verts sur le code d'avant : ils décrivent le code d'aujourd'hui. Conséquence (AC11 (c)) : l'AC11 (a)
+  confirme aussi l'absence de verrou sur les branches exercées ; le doc-comment de `services/mod.rs` le dit.
+- **T1 (ii)** (`7abc9073`) : constaté **ne compile pas** avant T2, sources neuves mises de côté (`git stash -u` des
+  seules sources de `src/`) — E0432 sur `services::{ecritures, postes_ouverts, carnet}`, E0599 ×3 sur
+  `Portee::ContactsRead` (journal `324a-t1ii-avant-t2.log`).
+
+#### T2 à T5 — le code (`90dbcf5b`, puis `345bcc7f` pour les doc-comments)
+
+- **Un commit pour T2 à T4** (C-32-4a-17) : les tests de T1 (ii) importent les trois services.
+- **Conversion `CoreJournal → DbJournal` au service** (C-32-4a-15). Les DTO gardent leur forme et leurs défauts serde,
+  qui rendent les constantes du service ; les handlers passent `Some(params.limit)` (C-32-4a-16).
+- **Garde déplacée** (AC4, C-32-4a-7), nom conservé : `services::ecritures::tests::get_journal_entry_reads_in_one_transaction`.
+  Diff jeton par jeton contre l'ancienne (`routes/journal_entries.rs:1005-1080` à `39939799`), aucun motif relâché :
+  - `include_str!("journal_entries.rs")` → `include_str!("ecritures.rs")` ;
+    `find("pub async fn get_journal_entry(")` / `"get_journal_entry introuvable"` → `find("pub async fn detail(")` /
+    `"detail introuvable"` ;
+  - `corps.matches("pool.begin()").count()` → `sans_blancs.matches("pool().begin()").count()`, `sans_blancs` = le corps
+    débarrassé de ses blancs (`corps.chars().filter(|c| !c.is_whitespace())`) ;
+  - `!appels[0].contains("state.pool")` → `!appels[0].contains(".pool()")` ;
+  - `corps.contains("journal_entries::find_by_id(&state.pool")` → `corps.contains("journal_entries::find_by_id(lecture.pool()")` ;
+  - inchangés : `take_while(… != "#[cfg(test)]")`, filtre `//`, fin au `\npub async fn ` suivant, `acquire()` compté
+    zéro, les quatre couples (module, lecteur), « un appel » et les formes `(&mut tx,` / `(&mut *tx,`.
+- **AC7, contrôles au code** :
+  `grep -nE "\b(MAX_LIMIT|DEFAULT_LIMIT|MAX_LIST_LIMIT|DEFAULT_LIST_LIMIT|OPEN_ITEMS_DEFAULT_LIMIT)\b" crates/kesh-api/src/routes/{journal_entries,letterings,contacts}.rs`
+  → **rien** ; `grep -nE 'clamp\(|\.max\(0\)' …` → **deux** lignes, dans `get_lettering_proposals` :
+  `letterings.rs:544:    // \`clamp(1, 500)\` : la valeur est positive, la conversion ne perd rien.` et
+  `letterings.rs:545:    let limit = params.limit.clamp(1, postes_ouverts::LIMITE_MAX) as usize;`.
+- **AC8** : `git diff --diff-filter=MDR --name-only $(git merge-base HEAD origin/main) HEAD -- crates/kesh-api/tests`
+  → `crates/kesh-api/tests/common/mod.rs`, `crates/kesh-api/tests/services_motif.rs` ; `diff` du `mod tests` de
+  `contacts.rs` → vide ; celui de `journal_entries.rs` → la seule suppression `150,226d149` (le bloc de la garde,
+  aucune ligne ajoutée). Modifications de `services_motif.rs`, liste fermée : `mod common;` + import de l'aide
+  commune, aides `pool_lecture_seule`/`lecture_seule` retirées, `TOUTES` à trois portées, bras `ContactsRead` à
+  `autre_portee` (`panic!`, C-32-4a-18), ligne 19 `journaux_affichage_sans_filtre` et le compte (« dix-neuf lignes pour
+  dix-huit couples ») avec le doc-comment de `table_des_traces_par_la_route`, `services/` à huit fichiers, la garde de
+  l'AC12 ((ii) réécrite, (iii) et (viii) neuves, témoins).
+- **AC9, cas sans objet** (dits aussi au doc-comment de `ac9_c_le_refus_precede_validation_et_lecture`) : (c-lec)
+  pour `ecritures::lister` ; (c-val) pour `ecritures::detail`, `carnet::lister`, `carnet::detail`.
+- **AC11 (a), branches non atteintes** par les fixtures (non revendiquées) : pièce source présente, motifs de blocage
+  de la contre-passation et de la modification présents, compte non lettrable, contact avec conditions de paiement.
+- **AC12 (iii)**, relevé à `345bcc7f` : douze couples (fichier, handler) sur `state.pool`, 7 / 5 / 5 `pub async fn`
+  et `async fn`, compte du fichier égal à la somme des corps (test vert).
+- **AC13 — tri des écritures sur la fermeture** (`324a-ac13-tri.txt`) : `grep -nE "INSERT|UPDATE |DELETE|FOR
+  UPDATE|get_or_create"` sur le code (lignes de commentaire écartées) des huit fichiers, chacun tronqué à son
+  `#[cfg(test)]` (`journal_entries.rs:3111`, `fiscal_years.rs:1394`, `letterings.rs:2215`, `open_items.rs:618`,
+  `contacts.rs:738`, `search.rs:158` ; aucun dans `imported_supplier_invoices.rs` ni `companies.rs`) → **77**
+  occurrences : `journal_entries.rs` 20, `fiscal_years.rs` 15, `imported_supplier_invoices.rs` 8, `letterings.rs` 10,
+  `open_items.rs` 0, `contacts.rs` 5, `companies.rs` 19, `search.rs` 0, rangées sous 49 fonctions ou `const`. **Dans la
+  fermeture, une seule** : `journal_entries.rs:1182`, `fn lettering_guard`, branche `Lecture::Verrouillante`, non
+  prise. Toutes les autres sont dans des fonctions ou `const` hors fermeture (`create_in_tx_inner`, `update_in_tx`,
+  `delete_in_tx`, `reverse_in_tx_inner`, `create_opening_entry`, `delete_all_by_company`, `find_later_closed_in_tx`,
+  `find_open_covering_date`, `find_overlapping`, `find_by_name`, `LOCK_*_SQL`, `SYNC_*_SQL`, `create`/`update`/`archive`
+  des contacts, mutations de `companies`…). Aucun défaut à porter au Project Lead. Point (2) : `api_keys::touch_last_used`,
+  middleware, inchangé.
+- **AC16** : `api-external.md` l. 213, 216-218 (routes), 405 (`limit` défaut 50, 1-500 ; `offset` défaut 0, ramené à 0),
+  426-433 (refus dans l'ordre `asOf` 400 → 404 → 409) et 441 (propositions défaut 100, plafond 500) relues contre le
+  code déplacé : conformes, aucune modification. `grep -nE "contacts|journal-entries|open-items" docs/manual/fr/*.tex`
+  → mentions générales (admin l. 1041, 1414, 1464, 2195, 2220, 2328, 2471, 2902 ; user l. 913, 933), aucune borne ;
+  PDF aplatis (`admin-manual`, `user-manual`, `marketing-brochure`) : `grep -oiE ".{60}(par page|pagination|100
+  contacts|500 écritures).{60}"` → rien. Textes modifiés : la note de `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, le
+  doc-comment de `services/mod.rs`, les doc-comments de module des trois fichiers de routes.
+
+#### T6 — mutations (AC14), pilote `kesh-gate-logs/324a-mutations-pilote.py`, journal `324a-mutations-campagne.log`
+
+Une à la fois, sous verrou, motif vérifié unique, restauration `git checkout -- <f> && touch <f>`, diff résiduel nul
+après chacune ; journal et diff par mutation : `324a-mut-<id>.{log,diff}` (`′` écrit `p`). **34 tuées, M8 survivante
+(équivalente déclarée)** :
+
+| Mutation | Assertion(s) nommée(s) qui rougissent |
+|---|---|
+| M1a-e (`exiger` retiré, cinq services) | `ac9_a_b_e_refus_et_controle_positif`, `ac9_c_le_refus_precede_validation_et_lecture` |
+| M2a, M2b (`exiger` après la validation) | `ac9_c_…` |
+| M3a-d (`exiger` après la première lecture) | `ac9_c_…` |
+| M4a (carnet `BooksRead`) | `ac9_a_b_e_…`, `ac9_c_…`, `ac9_carnet_detail_lit_le_contact_avant_la_societe` |
+| M4b (écritures `ContactsRead`) | `ac9_a_b_e_…`, `ac9_c_…` |
+| M5 (`carnet::detail` `Comptable`) | `ac9_a_b_e_…`, `ac11_a_les_cinq_services_lisent_en_lecture_seule` |
+| M6a, M6c, M6d (carnet : plafond, `offset`, défaut) | `ac10_b_les_bornes_des_trois_listes`, `ac10_c_bornes_et_refus_par_la_route` |
+| M6b (carnet : plancher) | `ac10_b_…` |
+| M7a-c (postes ouverts) | `ac10_b_…`, `open_items_e2e::inputs_defaults_bounds_and_refusal_order` |
+| **M8** (écrêtage des écritures retiré) | **survit — équivalente** : le dépôt écrête (`kesh-db/src/repositories/journal_entries.rs:935-936`, C-32-4a-11) |
+| M8′ (défaut des écritures au plafond) | `ac10_b_…` |
+| M9 (`accountId` avant les dates) | `ac10_a_les_neuf_refus_de_la_liste_des_ecritures` |
+| M10 (`amountMin` négatif retiré) | `ac10_a_…` |
+| M11 (`contacts::find_by_id`, sans société) | `ac11_b_aucune_lecture_d_une_autre_societe` |
+| M12 (société avant le contact) | `ac9_carnet_detail_lit_le_contact_avant_la_societe` |
+| M13 (lecteur sur une connexion acquise) | `services::ecritures::tests::get_journal_entry_reads_in_one_transaction` |
+| M14 (`INSERT` propagé dans `carnet::detail`) | `ac11_a_…` — erreur rendue : `AC11 (a) carnet::detail : Err(Database(Sqlx(Database(MySqlDatabaseError { code: Some("25006"), number: 1792, message: "Cannot execute statement in a READ ONLY transaction" }))))` |
+| M15 (`get_contact` relit par `state.pool`) | `ac10_i_ii_handlers_sans_le_pool`, `ac12_iii_inventaire_des_sites_non_resolus` |
+| M16, M16′ (handler neuf, forme coupée ; `pub(crate)`) | `ac12_iii_…` |
+| M17, M17′ (journaux : filtre absent tracé présent ; affichage à `None`) | `ac9_b_table_des_traces_au_service`, `table_des_traces_par_la_route` |
+| M18 (`Trace` nommée dans `carnet::detail`) | `ac12_viii_les_services_du_rollout_ne_tracent_pas` |
+
+Incident de pilote, sans effet : le premier passage s'est arrêté à M15 sur un motif **non unique** (trois sites dans
+`routes/contacts.rs`), **avant** toute écriture ; motif resserré au corps de `get_contact`, M15 à M18 rejouées en
+second passage (même journal).
+
+#### T7 — gates (au dernier commit de code, `345bcc7f`)
+
+- **Gate ciblé de l'AC15** (`324a-cible-ac15.log`, filtre `324a-filtre-cible.txt`) : **984 tests, 984 passés, 1
+  ignoré**, 27 binaires — `kesh-api` lib 529, `services_rollout` 9, `services_motif` 23 ; les seize de l'AC8 :
+  `admin_full_import_e2e` 54, `contact_client_number_e2e` 8, `contact_payment_terms_e2e` 9, `contact_persons_e2e` 4,
+  `filet_bilan_clos_e2e` 2, `idor_multi_tenant_e2e` 14, `inbox_import_e2e` 39, `invoice_ttc_e2e` 3,
+  `journal_entry_reversal_e2e` 55, `kf004_no_op_e2e` 6, `letterings_e2e` 11, `onboarding_e2e` 16,
+  `opening_balances_e2e` 31, `open_items_e2e` 7, `period_lock_e2e` 16, `reports_e2e` 38 ; les huit gardes :
+  `audit_label_registry` 11, `textes_coherents` 19, `admin_pat_denied_e2e` 16, `audit_route_registry` 11,
+  `test_schema_guard` 7, `configuration_transmise` 30, `bank_account_closed_inventory` 9, `letterings_lexical` 7.
+  (Les comptes `grep -c 'sqlx::test'` de la fiche — 56, 40, 56, 39 — comptent aussi des mentions hors attribut ; les
+  nombres ci-dessus sont ceux **exécutés**.) Frappent l'une des cinq routes en `GET` (relevé au site) :
+  `contact_client_number_e2e`, `contact_payment_terms_e2e`, `idor_multi_tenant_e2e`, `inbox_import_e2e`
+  (`GET /journal-entries/{id}`), `journal_entry_reversal_e2e`, `letterings_e2e`, `open_items_e2e`.
+- **Gate complet** (`324a-gate-complet.log`, rév. `345bcc7f`, bases `kesh_324a` et `kesh_e2e_324a` remises à zéro
+  avant, conteneur non touché) : `scripts/test-fast.sh --ci` sous verrou — fmt, clippy `-D warnings`, garde des droits
+  conforme, **nextest 4013 exécutés, 4013 passés, 7 ignorés**.
+- **Frontend** (`324a-frontend.log`, rév. `345bcc7f`) : `npm run check` 0 erreur (29 avertissements ; la story ne touche aucun fichier de `frontend/` — `git diff 39939799...HEAD --stat -- frontend` vide) ;
+  `lint-i18n-ownership` PASS ; `test:unit` **162 fichiers, 1911 tests** passés ; `build` vert.
+- **E2E complet** (`324a-e2e.log`, rév. `345bcc7f`, script `324a-e2e.sh` — recette de `docs/testing.md`, port 3326,
+  base `kesh_e2e_324a`, dossiers `/tmp/kesh-e2e-324a/` passés au backend et au runner ; backend arrêté par PID, port
+  libre ensuite) : **315 passés, 7 échecs, 17 ignorés** (12,9 min). Jugés fichier par fichier contre `docs/testing.md`
+  § *Les échecs attendus* : les sept sont les sept lignes KF-029 (#97) du tableau — `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; ni KF-052, ni pollution. Compte 7,
+  borne basse de la baseline (7 à 10). Aucune régression.
+
+#### Écarts
+
+- **Édition hors de l'outil Edit** (consigne 14) : la seconde moitié des tests de `services_rollout.rs` (fichier neuf
+  de la story, avant son premier commit de T1 (ii)) a été **ajoutée par `cat >> … <<'EOF'`** — un ajout, non une
+  substitution, mais pas par l'outil Edit. Aucune autre écriture de code hors Edit/Write ; `cargo fmt` a reformaté.
+- T2 à T4 en un commit (C-32-4a-17).
+
 ### File List
+
+- `crates/kesh-api/src/services/ecritures.rs` (neuf)
+- `crates/kesh-api/src/services/postes_ouverts.rs` (neuf)
+- `crates/kesh-api/src/services/carnet.rs` (neuf)
+- `crates/kesh-api/src/services/mod.rs`
+- `crates/kesh-api/src/services/acces.rs`
+- `crates/kesh-api/src/routes/journal_entries.rs`
+- `crates/kesh-api/src/routes/letterings.rs`
+- `crates/kesh-api/src/routes/contacts.rs`
+- `crates/kesh-api/tests/services_rollout.rs` (neuf)
+- `crates/kesh-api/tests/common/lecture_seule.rs` (neuf)
+- `crates/kesh-api/tests/common/mod.rs`
+- `crates/kesh-api/tests/services_motif.rs`
+- `docs/MULTI-TENANT-SCOPING-PATTERNS.md`
+- `_bmad-output/implementation-artifacts/324a-review-prompt-p1.md` (neuf)
+- `_bmad-output/implementation-artifacts/epic-32-choix-autonomes-324a.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/32-4a-services-ecritures-contacts.md`
 
 ## Change Log
 
@@ -741,3 +929,15 @@ AC8, AC10, R1-R8) ; registres `epic-32-choix-autonomes.md` (C-32-0-4, C-32-0-7) 
   P1) → P3 ciblée (Sonnet) 0/0/0/8. Pas de découpage : la sévérité décroît, et le MEDIUM de P2 venait du patch précédent
   (amendement D5). **Q1** reste posée à Guy (§ *Points à soumettre à Guy*) ; le développement part sur la première
   lecture. Statut : `ready-for-dev`.
+- **2026-10-24 — développement** (Opus 5.5, en autonomie, `bmad-dev-story`) : commits `c550ea8c` (T1 (i), joué sur
+  le code d'avant), `7abc9073` (T1 (ii), constaté non compilable avant T2), `90dbcf5b` (T2 à T5, code), `345bcc7f`
+  (T5, doc-comments et document des motifs — **dernier commit de code**), puis ce compte rendu. Trois services neufs,
+  cinq handlers minces, `Portee::ContactsRead`, garde de transaction déplacée, garde lexicale étendue ((ii), (iii),
+  (viii)), dix-neuvième ligne de la table des traces. Étape 0 : P3-1 à P3-8 recontrôlés et appliqués (P3-3 par le
+  compte des `async fn` rétabli, C-32-4a-13). Tests : **+12** de `39939799` à `HEAD` (`services_rollout.rs` 0 → 9,
+  `services_motif.rs` 20 → 23), **1 déplacé** (`routes/journal_entries.rs` 8 → 7, `services/ecritures.rs` 0 → 1 ;
+  `grep -cE '#\[(sqlx::|tokio::)?test'` aux deux bornes). Mutations : **34 tuées sur 35, M8 équivalente**. Gates à
+  `345bcc7f` : ciblé 984/984 (1 ignoré) ; complet 4013/4013 (7 ignorés) ; frontend 1911 tests ; E2E 315 passés, 7
+  échecs = les sept KF-029. Choix C-32-4a-13 à 18 au registre. Écart : un ajout de tests par `cat >>` (consigne 14),
+  déclaré. **Q1** reste à Guy. Statut : `review` ; revue de code P1 à lancer (`324a-review-prompt-p1.md`, Sonnet,
+  lentilles B, E, A).

@@ -165,3 +165,69 @@ autonomie. Relevé au code de `89d68704` (32-3 fusionnée).
   des postes ouverts ; validation P2, R6), les manuels et leurs PDF —,
   aucune modification ; une phrase au document des motifs (C-32-4a-6) et le doc-comment de `services/mod.rs`.
 - **Réversible** : oui.
+
+---
+
+## Choix du développement (2026-10-24, Opus 5.5, en autonomie)
+
+### C-32-4a-13 — Le compte des `async fn` toutes visibilités rétabli, à côté du compte au niveau du fichier (P3-3)
+
+- **Contexte** : la validation P3 (P3-3) relève que le compte au niveau du fichier de l'AC12 (iii), qui a remplacé en P2
+  le compte des `async fn` toutes visibilités, ne le couvre pas : une `async fn` non `pub` qui lirait le pool sous un
+  autre nom que `state` (`s.pool`) n'ouvre aucun corps et échappe au détecteur ; le compte des `async fn` la voyait.
+- **Retenu** : les deux comptes, dans `ac12_iii_inventaire_des_sites_non_resolus` : `pub async fn` (7 / 5 / 5, par
+  `corps_des_handlers`), `async fn` toutes visibilités (7 / 5 / 5, motif `^\s*(pub(\([^)]*\))?\s+)?async\s+fn\b` sur les
+  lignes de code), et l'égalité « occurrences du fichier = somme des corps ». M16′ rougit par les deux derniers.
+- **Écartée** : écrire la limite seulement (aux limites de l'AC12) — un compte d'une ligne la ferme pour un coût nul.
+- **Réversible** : oui.
+
+### C-32-4a-14 — La définition du corps d'un handler : celle de `corps_des_handlers` (P3-8)
+
+- **Contexte** : la validation P2 (R3) a retenu, pour (ii) et (iii), une seule définition du corps — celle de
+  `corps_des_handlers` (de la ligne `pub async fn <nom>` à la première ligne égale à `}`) — contre la définition
+  inverse que R3 préférait (« jusqu'au `pub async fn` suivant »). Le registre ne portait pas ce choix.
+- **Retenu** : la définition de `corps_des_handlers`, choisie par **nom exact** (`corps_du_handler`) ; la (ii) de
+  `list_accounts` s'y ramène (entre deux handlers, `accounts.rs` ne porte que des doc-comments). Ce qu'elle ne voit pas
+  — une aide hors de tout corps — est vu par le compte au niveau du fichier (C-32-4a-13). La garde de transaction
+  déplacée (AC4) garde, elle, sa propre délimitation, déplacée telle quelle.
+- **Écartée** : « jusqu'au `pub async fn` suivant » — englobe les aides posées entre deux handlers dans le corps du
+  premier, et attribue leur `state.pool` au mauvais handler.
+- **Réversible** : oui.
+
+### C-32-4a-15 — La conversion `CoreJournal → DbJournal` se fait au service
+
+- **Contexte** : AC3 laisse le choix (service ou handler).
+- **Retenu** : `DemandeListeEcritures.journal` porte le type de `kesh-core` (`kesh_core::accounting::Journal`), celui du
+  DTO ; `ecritures::lister` le convertit (`DbJournal::from`), comme le faisait le handler. Une valeur invalide reste un
+  refus de l'extracteur `Query`, avant le service ; l'outil MCP de la 32-9a analysera vers le même type.
+- **Écartée** : la demande en `kesh_db::entities::Journal` — le vocabulaire de l'API n'est pas celui du dépôt.
+- **Réversible** : oui.
+
+### C-32-4a-16 — Les DTO gardent leurs défauts serde ; le handler passe `Some(limit)`
+
+- **Contexte** : `ListJournalEntriesQuery` et `OpenItemsQuery` portent `limit`/`offset` en `i64` avec défauts serde ;
+  `ListContactsQuery` en `Option<i64>` sans défaut.
+- **Retenu** : les DTO ne changent pas de forme ; `default_limit` et `default_open_items_limit` rendent
+  `ecritures::LIMITE_DEFAUT` et `postes_ouverts::LIMITE_DEFAUT` ; le handler passe `Some(params.limit)` /
+  `Some(params.offset)` (contacts : l'`Option` telle quelle). Le défaut du service sert au MCP (`None`) ; celui du DTO,
+  qui est la même constante, sert à la route. Une seule valeur, deux chemins.
+- **Écartée** : passer les DTO en `Option<i64>` (forme de désérialisation changée — `limit=` vide, par exemple — hors
+  d'un rollout mécanique).
+- **Réversible** : oui.
+
+### C-32-4a-17 — La garde déplacée garde son nom ; T2 à T4 en un commit
+
+- **Contexte** : AC4 laisse le nom au choix ; T2, T3, T4 sont trois tâches.
+- **Retenu** : `get_journal_entry_reads_in_one_transaction`, dans `services/ecritures.rs` (un `grep` du nom retrouve la
+  garde citée par la 15-1b-0 et les commentaires du handler). T2 à T4 en **un** commit : les tests de T1 (ii) importent
+  les trois services, et un commit par tâche aurait laissé deux commits où `cargo clippy --all-targets` ne compile pas.
+- **Réversible** : oui.
+
+### C-32-4a-18 — Le bras `ContactsRead` d'`autre_portee` (`services_motif.rs`) est un `panic!`
+
+- **Contexte** : `autre_portee` (`match` exhaustif sur `portee_exigee(svc)`) gagne un bras (AC8 (1)) ; aucun service
+  de rapport n'exige `ContactsRead`.
+- **Retenu** : `Portee::ContactsRead => panic!("aucun service de rapport n'exige ContactsRead")` — inatteignable par
+  `portee_exigee`, et bruyant si un rapport l'exigeait un jour.
+- **Écartée** : rendre une portée arbitraire (le test mentirait sur « l'autre portée »).
+- **Réversible** : oui.
