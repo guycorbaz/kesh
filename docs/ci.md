@@ -73,9 +73,9 @@ Pourquoi : une CI en `root` fait ce que faisait un conteneur de dev trop large �
 d'un privilège que la production n'a pas (Stories 29-4 et 29-8, `INNODB_TRX`). Table des droits par environnement :
 `docs/testing.md` § « Base de dev jetable ».
 
-⚠️ **Le smoke de `release.yml` ne se vérifie qu'à la publication** (tag `v0.15.0` pour le premier en `kesh`, #698) : un
-échec y bloque la release avant le push de l'image. Le risque est borné par `e2e-smoke`, qui exerce sur chaque PR la
-même image avec le même utilisateur.
+⚠️ **Le smoke de `release.yml` ne se vérifie qu'à la publication** : un échec y bloque la release avant le push de
+l'image. Le risque est borné par `e2e-smoke`, qui exerce sur chaque PR la même image avec le même utilisateur. Premier
+smoke de publication en utilisateur `kesh` (#698) : tag `v0.15.0`, 2026-10-24, **vert** (run 40080415340).
 
 ## Reproduction locale
 
