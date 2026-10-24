@@ -158,3 +158,16 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Écartées** : (a) garder l'argument — faux ; (b) n'exiger qu'une version « supérieure ou égale » — la répétition
   montrerait d'autres gestes que ceux de la production, sans le signaler.
 - **Réversible** : oui.
+
+### C-31-4-13 — Le chemin « Paramètres → Exercices comptables » du manuel utilisateur, corrigé par la 31-4 (choix de l'orchestrateur, 2026-10-24)
+
+- **Contexte** : la remédiation P1 demandait une issue (P3, `bug`) : `docs/manual/fr/user-manual.tex` l. 794 et 845 écrit
+  « \emph{Paramètres} → \emph{Exercices comptables} », alors que le menu range l'écran dans le groupe **Administration**
+  (`frontend/src/routes/(app)/+layout.svelte`, groupe `nav-administration`, item `nav-fiscal-years`). Vérifié par
+  l'orchestrateur. C'est la famille de #585 (Story 30-3), que la garde `les_chemins_cites_aux_catalogues_existent` ne voit
+  pas : elle contrôle que chaque libellé existe, non qu'il appartienne au groupe cité.
+- **Retenu** : la 31-4, qui renvoie justement à ces pages du manuel utilisateur, corrige les deux occurrences (et toute
+  autre « Paramètres → <item du groupe Administration> » que le grep par la forme rendrait), PDF régénéré. Correction
+  mécanique (budget d'issues, `CLAUDE.md` § *Priorités des défauts*). Une garde de hiérarchie n'est **pas** ajoutée ici.
+- **Écartée** : ouvrir une issue — le compte est à 137 pour un plafond de « moins de 136 » au tag.
+- **Réversible** : oui.
