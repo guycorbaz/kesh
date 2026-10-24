@@ -13,8 +13,11 @@
 //! Tous montés dans `authenticated_routes` (Admin + Comptable + Consultation —
 //! lecture seule). Multi-tenant strict via `current_user.company_id`.
 //!
-//! Pattern audit best-effort (Pass 1 ECH-15) : INSERT audit après SELECT métier
-//! réussi, dans une transaction dédiée, échec → `warn!` + retour 200.
+//! Story 32-3 — handlers minces : la génération, le contrôle d'accès, la
+//! validation de la demande et la trace d'audit (best-effort, écrite après le
+//! SELECT métier réussi, échec → `warn!` + retour 200) vivent dans la couche de
+//! services (`crate::services::rapports`). Le handler valide le format
+//! d'export, charge le contexte PDF, rend, et construit la réponse.
 
 use axum::{
     Extension, Json,
@@ -23,31 +26,32 @@ use axum::{
     http::{StatusCode, header},
     response::Response,
 };
-use chrono::{NaiveDate, Utc};
-use kesh_db::entities::AUDIT_ENTITY_ID_NONE;
-use kesh_db::entities::audit_log::NewAuditLogEntry;
+use chrono::NaiveDate;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_report::pdf::{ProjectExpensesPdfLabels, ProjectReturnPdfLabels, VatPdfLabels};
-use kesh_report::project_report::{ProjectPeriodMode, resolve_scope};
+use kesh_report::project_report::ProjectPeriodMode;
 use kesh_report::{
-    AgedReceivables, BalanceSheet, GeneralLedger, IncomeStatement, JournalReport, LedgerOptions,
-    LedgerPeriod, MAX_LEDGER_LIMIT, PdfContext, ProjectExpensesReport, ProjectReturnReport,
-    ReportPeriod, TrialBalance, VatReport, generate_aged_receivables, generate_balance_sheet,
-    generate_general_ledger, generate_income_statement, generate_journal_report,
-    generate_project_expenses, generate_project_return, generate_trial_balance,
-    generate_vat_report, render_aged_receivables_csv, render_balance_sheet_csv,
-    render_balance_sheet_pdf, render_general_ledger_csv, render_general_ledger_pdf,
-    render_income_statement_csv, render_income_statement_pdf, render_journal_report_csv,
-    render_journal_report_pdf, render_project_expenses_csv, render_project_expenses_pdf,
-    render_project_return_csv, render_project_return_pdf, render_trial_balance_csv,
-    render_trial_balance_pdf, render_vat_report_csv, render_vat_report_pdf,
+    AgedReceivables, BalanceSheet, GeneralLedger, IncomeStatement, JournalReport, PdfContext,
+    ProjectExpensesReport, ProjectReturnReport, ReportPeriod, TrialBalance, VatReport,
+    render_aged_receivables_csv, render_balance_sheet_csv, render_balance_sheet_pdf,
+    render_general_ledger_csv, render_general_ledger_pdf, render_income_statement_csv,
+    render_income_statement_pdf, render_journal_report_csv, render_journal_report_pdf,
+    render_project_expenses_csv, render_project_expenses_pdf, render_project_return_csv,
+    render_project_return_pdf, render_trial_balance_csv, render_trial_balance_pdf,
+    render_vat_report_csv, render_vat_report_pdf,
 };
 use serde::Deserialize;
-use sqlx::MySqlPool;
 
 use crate::AppState;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
+use crate::services::acces::ContexteAcces;
+use crate::services::poignees::Lecture;
+use crate::services::rapports::FormatExport as ExportFormat;
+use crate::services::rapports::{
+    self, Affichage, DemandeGrandLivre, DemandeJournaux, DemandePeriode, DemandeProjet, Export,
+    ModeProjet,
+};
 
 /// Query params communs aux 3 premiers rapports (balance-sheet, income-statement,
 /// trial-balance).
@@ -60,6 +64,16 @@ pub struct ReportQuery {
     pub fiscal_year_id: i64,
     pub period_start: Option<NaiveDate>,
     pub period_end: Option<NaiveDate>,
+}
+
+impl ReportQuery {
+    fn demande(&self) -> DemandePeriode {
+        DemandePeriode {
+            fiscal_year_id: self.fiscal_year_id,
+            period_start: self.period_start,
+            period_end: self.period_end,
+        }
+    }
 }
 
 /// Query params du grand livre.
@@ -96,44 +110,30 @@ pub struct GeneralLedgerExportQuery {
 }
 
 impl GeneralLedgerQuery {
-    fn parse_account_ids(&self) -> Result<Option<Vec<i64>>, AppError> {
-        parse_ledger_account_ids(self.account_ids.as_deref())
+    fn demande(&self) -> DemandeGrandLivre {
+        DemandeGrandLivre {
+            from: self.from,
+            to: self.to,
+            account_ids: self.account_ids.clone(),
+            include_zero: self.include_zero.unwrap_or(false),
+            offset: self.offset,
+            limit: self.limit,
+        }
     }
 }
 
 impl GeneralLedgerExportQuery {
-    fn parse_account_ids(&self) -> Result<Option<Vec<i64>>, AppError> {
-        parse_ledger_account_ids(self.account_ids.as_deref())
-    }
-}
-
-/// Découpe `accountIds`. Une entrée non numérique est un 400 : mieux vaut
-/// refuser que rendre silencieusement le grand livre d'un autre périmètre.
-fn parse_ledger_account_ids(raw: Option<&str>) -> Result<Option<Vec<i64>>, AppError> {
-    let Some(raw) = raw else {
-        return Ok(None);
-    };
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Ok(None);
-    }
-    let mut ids = Vec::new();
-    for part in trimmed.split(',') {
-        let p = part.trim();
-        if p.is_empty() {
-            continue;
+    fn demande(&self) -> DemandeGrandLivre {
+        DemandeGrandLivre {
+            from: self.from,
+            to: self.to,
+            account_ids: self.account_ids.clone(),
+            include_zero: self.include_zero.unwrap_or(false),
+            // Sans effet : l'export n'a jamais de pagination (service).
+            offset: None,
+            limit: None,
         }
-        let id: i64 = p.parse().map_err(|_| {
-            AppError::Validation(format!("accountIds : « {p} » n'est pas un identifiant"))
-        })?;
-        if id <= 0 {
-            return Err(AppError::Validation(format!(
-                "accountIds : « {p} » n'est pas un identifiant"
-            )));
-        }
-        ids.push(id);
     }
-    Ok(if ids.is_empty() { None } else { Some(ids) })
 }
 
 /// Query params spécifiques au rapport journaux (avec `journal` optionnel).
@@ -147,6 +147,19 @@ pub struct JournalReportQuery {
     pub period_start: Option<NaiveDate>,
     pub period_end: Option<NaiveDate>,
     pub journal: Option<Journal>,
+}
+
+impl JournalReportQuery {
+    fn demande(&self) -> DemandeJournaux {
+        DemandeJournaux {
+            periode: DemandePeriode {
+                fiscal_year_id: self.fiscal_year_id,
+                period_start: self.period_start,
+                period_end: self.period_end,
+            },
+            journal: self.journal,
+        }
+    }
 }
 
 /// Query params pour les 4 endpoints d'export (Story 9-2a).
@@ -165,30 +178,21 @@ pub struct ExportQuery {
     pub format: Option<String>,
 }
 
-/// Discriminant interne PDF/CSV après validation handler-side.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ExportFormat {
-    Pdf,
-    Csv,
-}
+impl ExportQuery {
+    /// La demande d'un rapport à période — `journal` ignoré.
+    fn demande(&self) -> DemandePeriode {
+        DemandePeriode {
+            fiscal_year_id: self.fiscal_year_id,
+            period_start: self.period_start,
+            period_end: self.period_end,
+        }
+    }
 
-impl ExportFormat {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::Pdf => "pdf",
-            Self::Csv => "csv",
-        }
-    }
-    fn content_type(&self) -> &'static str {
-        match self {
-            Self::Pdf => "application/pdf",
-            Self::Csv => "text/csv; charset=utf-8",
-        }
-    }
-    fn extension(&self) -> &'static str {
-        match self {
-            Self::Pdf => "pdf",
-            Self::Csv => "csv",
+    /// La demande du rapport des journaux.
+    fn demande_journaux(&self) -> DemandeJournaux {
+        DemandeJournaux {
+            periode: self.demande(),
+            journal: self.journal,
         }
     }
 }
@@ -207,6 +211,21 @@ fn validate_format(format: &Option<String>) -> Result<ExportFormat, AppError> {
     }
 }
 
+/// Une valeur qu'un `Rapport` expose toujours pour son service — son absence
+/// serait un défaut de code, non une erreur de la demande.
+fn attendu<V>(valeur: Option<V>) -> Result<V, AppError> {
+    valeur.ok_or_else(|| {
+        AppError::Internal("rapport sans les bornes de son nom de fichier".to_string())
+    })
+}
+
+/// Enregistre au `span` d'export la taille du corps et la durée depuis `start` —
+/// après le rendu, avant la trace (Story 32-3, C-32-3-28).
+fn mesurer(span: &tracing::Span, start: std::time::Instant, body: &[u8]) {
+    span.record("byte_size", body.len());
+    span.record("duration_ms", start.elapsed().as_millis() as u64);
+}
+
 // ===========================================================================
 // Story 9-1 — Endpoints JSON
 // ===========================================================================
@@ -217,31 +236,9 @@ pub async fn get_balance_sheet(
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<ReportQuery>,
 ) -> Result<Json<BalanceSheet>, AppError> {
-    validate_fiscal_year_id(query.fiscal_year_id)?;
-
-    let period = ReportPeriod::resolve(
-        &state.pool,
-        current_user.company_id,
-        query.fiscal_year_id,
-        query.period_start,
-        query.period_end,
-    )
-    .await?;
-
-    let report = generate_balance_sheet(&state.pool, current_user.company_id, &period).await?;
-
-    emit_report_audit(
-        &state.pool,
-        current_user.user_id,
-        "balance-sheet",
-        query.fiscal_year_id,
-        period.start_date,
-        period.end_date,
-        None,
-    )
-    .await;
-
-    Ok(Json(report))
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let rapport = rapports::bilan(&acces, &state.lecture(), query.demande(), Affichage).await?;
+    Ok(Json(rapport.afficher(&state.trace()).await))
 }
 
 /// GET /api/v1/reports/income-statement
@@ -250,31 +247,10 @@ pub async fn get_income_statement(
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<ReportQuery>,
 ) -> Result<Json<IncomeStatement>, AppError> {
-    validate_fiscal_year_id(query.fiscal_year_id)?;
-
-    let period = ReportPeriod::resolve(
-        &state.pool,
-        current_user.company_id,
-        query.fiscal_year_id,
-        query.period_start,
-        query.period_end,
-    )
-    .await?;
-
-    let report = generate_income_statement(&state.pool, current_user.company_id, &period).await?;
-
-    emit_report_audit(
-        &state.pool,
-        current_user.user_id,
-        "income-statement",
-        query.fiscal_year_id,
-        period.start_date,
-        period.end_date,
-        None,
-    )
-    .await;
-
-    Ok(Json(report))
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let rapport =
+        rapports::compte_de_resultat(&acces, &state.lecture(), query.demande(), Affichage).await?;
+    Ok(Json(rapport.afficher(&state.trace()).await))
 }
 
 /// GET /api/v1/reports/trial-balance
@@ -291,35 +267,17 @@ pub async fn get_general_ledger(
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<GeneralLedgerQuery>,
 ) -> Result<Json<GeneralLedger>, AppError> {
-    let period = LedgerPeriod::new(query.from, query.to)?;
-    let options = LedgerOptions {
-        account_ids: query.parse_account_ids()?,
-        include_zero: query.include_zero.unwrap_or(false),
-        offset: query.offset.unwrap_or(0),
-        // Écran : le défaut est le plafond. `None` (export) ne passe pas par ici.
-        limit: Some(query.limit.unwrap_or(MAX_LEDGER_LIMIT)),
-    };
-
-    let report =
-        generate_general_ledger(&state.pool, current_user.company_id, &period, &options).await?;
-
-    emit_ledger_audit(
-        &state.pool,
-        current_user.user_id,
-        period.from,
-        period.to,
-        options.account_ids.as_deref(),
-    )
-    .await;
-
-    Ok(Json(report))
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let rapport =
+        rapports::grand_livre(&acces, &state.lecture(), query.demande(), Affichage).await?;
+    Ok(Json(rapport.afficher(&state.trace()).await))
 }
 
 /// `GET /api/v1/reports/general-ledger/export?format=pdf|csv`
 ///
 /// ⚠️ **Sans pagination, et c'est le point.** L'écran s'arrête à
-/// [`MAX_LEDGER_LIMIT`] lignes par compte ; l'export, jamais — c'est lui qui
-/// porte l'obligation de produire le livre en entier (Olico art. 3), et le
+/// [`kesh_report::MAX_LEDGER_LIMIT`] lignes par compte ; l'export, jamais — c'est
+/// lui qui porte l'obligation de produire le livre en entier (Olico art. 3), et le
 /// bandeau « seules N lignes sont affichées » de l'écran renvoie à lui.
 pub async fn export_general_ledger(
     State(state): State<AppState>,
@@ -327,7 +285,6 @@ pub async fn export_general_ledger(
     Query(query): Query<GeneralLedgerExportQuery>,
 ) -> Result<Response, AppError> {
     let format = validate_format(&query.format)?;
-    let period = LedgerPeriod::new(query.from, query.to)?;
 
     let span = tracing::info_span!(
         "report_export",
@@ -339,34 +296,22 @@ pub async fn export_general_ledger(
     let _enter = span.enter();
     let start = std::time::Instant::now();
 
-    let options = LedgerOptions {
-        account_ids: query.parse_account_ids()?,
-        include_zero: query.include_zero.unwrap_or(false),
-        offset: 0,
-        // `None` = aucune borne. Voir la note de doc ci-dessus.
-        limit: None,
-    };
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let lecture = state.lecture();
+    let rapport = rapports::grand_livre(&acces, &lecture, query.demande(), Export(format)).await?;
+    let (ctx, company_name) = load_pdf_context(&acces, &lecture).await?;
+    let period = *attendu(rapport.bornes_grand_livre())?;
 
-    let report =
-        generate_general_ledger(&state.pool, current_user.company_id, &period, &options).await?;
-    let (ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
-
-    let body: Vec<u8> = match format {
-        ExportFormat::Pdf => render_general_ledger_pdf(&report, &ctx)?,
-        ExportFormat::Csv => render_csv_to_vec(|w| render_general_ledger_csv(&report, w))?,
-    };
-
-    span.record("byte_size", body.len());
-    span.record("duration_ms", start.elapsed().as_millis() as u64);
-
-    emit_ledger_audit(
-        &state.pool,
-        current_user.user_id,
-        period.from,
-        period.to,
-        options.account_ids.as_deref(),
-    )
-    .await;
+    let body = rapport
+        .exporter(&state.trace(), |report| {
+            let body: Vec<u8> = match format {
+                ExportFormat::Pdf => render_general_ledger_pdf(report, &ctx)?,
+                ExportFormat::Csv => render_csv_to_vec(|w| render_general_ledger_csv(report, w))?,
+            };
+            mesurer(&span, start, &body);
+            Ok(body)
+        })
+        .await?;
 
     let type_slug = resolve_type_slug(&state, &ctx.locale, "general-ledger");
     build_project_export_response(
@@ -385,31 +330,9 @@ pub async fn get_trial_balance(
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<ReportQuery>,
 ) -> Result<Json<TrialBalance>, AppError> {
-    validate_fiscal_year_id(query.fiscal_year_id)?;
-
-    let period = ReportPeriod::resolve(
-        &state.pool,
-        current_user.company_id,
-        query.fiscal_year_id,
-        query.period_start,
-        query.period_end,
-    )
-    .await?;
-
-    let report = generate_trial_balance(&state.pool, current_user.company_id, &period).await?;
-
-    emit_report_audit(
-        &state.pool,
-        current_user.user_id,
-        "trial-balance",
-        query.fiscal_year_id,
-        period.start_date,
-        period.end_date,
-        None,
-    )
-    .await;
-
-    Ok(Json(report))
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let rapport = rapports::balance(&acces, &state.lecture(), query.demande(), Affichage).await?;
+    Ok(Json(rapport.afficher(&state.trace()).await))
 }
 
 /// GET /api/v1/reports/journals?journal=Achats
@@ -418,34 +341,9 @@ pub async fn get_journal_report(
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<JournalReportQuery>,
 ) -> Result<Json<JournalReport>, AppError> {
-    validate_fiscal_year_id(query.fiscal_year_id)?;
-
-    let period = ReportPeriod::resolve(
-        &state.pool,
-        current_user.company_id,
-        query.fiscal_year_id,
-        query.period_start,
-        query.period_end,
-    )
-    .await?;
-
-    let report =
-        generate_journal_report(&state.pool, current_user.company_id, &period, query.journal)
-            .await?;
-
-    let journal_filter_str = query.journal.map(|j| j.as_str().to_string());
-    emit_report_audit(
-        &state.pool,
-        current_user.user_id,
-        "journals",
-        query.fiscal_year_id,
-        period.start_date,
-        period.end_date,
-        journal_filter_str.as_deref(),
-    )
-    .await;
-
-    Ok(Json(report))
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let rapport = rapports::journaux(&acces, &state.lecture(), query.demande(), Affichage).await?;
+    Ok(Json(rapport.afficher(&state.trace()).await))
 }
 
 // ===========================================================================
@@ -459,7 +357,6 @@ pub async fn export_balance_sheet(
     Query(query): Query<ExportQuery>,
 ) -> Result<Response, AppError> {
     let format = validate_format(&query.format)?;
-    validate_fiscal_year_id(query.fiscal_year_id)?;
 
     let span = tracing::info_span!(
         "report_export",
@@ -471,38 +368,23 @@ pub async fn export_balance_sheet(
     let _enter = span.enter();
     let start = std::time::Instant::now();
 
-    let period = ReportPeriod::resolve(
-        &state.pool,
-        current_user.company_id,
-        query.fiscal_year_id,
-        query.period_start,
-        query.period_end,
-    )
-    .await?;
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let lecture = state.lecture();
+    let rapport = rapports::bilan(&acces, &lecture, query.demande(), Export(format)).await?;
 
-    let report = generate_balance_sheet(&state.pool, current_user.company_id, &period).await?;
+    let (ctx, company_name) = load_pdf_context(&acces, &lecture).await?;
+    let period = attendu(rapport.periode())?.clone();
 
-    let (ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
-
-    let body: Vec<u8> = match format {
-        ExportFormat::Pdf => render_balance_sheet_pdf(&report, &ctx)?,
-        ExportFormat::Csv => render_csv_to_vec(|w| render_balance_sheet_csv(&report, w))?,
-    };
-
-    span.record("byte_size", body.len());
-    span.record("duration_ms", start.elapsed().as_millis() as u64);
-
-    emit_report_export_audit(
-        &state.pool,
-        current_user.user_id,
-        "balance-sheet",
-        format.as_str(),
-        query.fiscal_year_id,
-        period.start_date,
-        period.end_date,
-        None,
-    )
-    .await;
+    let body = rapport
+        .exporter(&state.trace(), |report| {
+            let body: Vec<u8> = match format {
+                ExportFormat::Pdf => render_balance_sheet_pdf(report, &ctx)?,
+                ExportFormat::Csv => render_csv_to_vec(|w| render_balance_sheet_csv(report, w))?,
+            };
+            mesurer(&span, start, &body);
+            Ok(body)
+        })
+        .await?;
 
     // Pass 1 code-review H10 : type_slug localisé via i18n (fr-CH → `bilan`).
     let type_slug = resolve_type_slug(&state, &ctx.locale, "balance-sheet");
@@ -523,9 +405,9 @@ pub async fn export_balance_sheet(
 //
 // Divergences délibérées vs les rapports comptables ci-dessus :
 // - **Pas de `ReportPeriod`/`fiscalYearId`** : un rapport « as-of » à date unique
-//   (aujourd'hui, v1). D'où les helpers `emit_aged_receivables_*_audit` /
-//   filename bespoke (les helpers période `emit_report_*`/`build_filename`
-//   exigent un `&ReportPeriod`, cf. validate 21-7 H1).
+//   (aujourd'hui, v1). D'où ses fonctions d'audit propres (services::rapports) et
+//   un filename bespoke (`build_filename` exige un `&ReportPeriod`, cf. validate
+//   21-7 H1).
 // - **RBAC divergent (D24)** : la vue JSON est tous-rôles (`authenticated_routes`),
 //   l'export CSV est Comptable+ (`comptable_routes`, cf. lib.rs).
 
@@ -554,10 +436,9 @@ pub async fn get_aged_receivables(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<AgedReceivables>, AppError> {
-    let as_of = Utc::now().naive_utc().date();
-    let report = generate_aged_receivables(&state.pool, current_user.company_id, as_of).await?;
-    emit_aged_receivables_audit(&state.pool, current_user.user_id, as_of).await;
-    Ok(Json(report))
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let rapport = rapports::balance_agee(&acces, &state.lecture(), Affichage).await?;
+    Ok(Json(rapport.afficher(&state.trace()).await))
 }
 
 /// GET /api/v1/reports/aged-receivables/export?format=csv — export CSV.
@@ -569,12 +450,17 @@ pub async fn export_aged_receivables(
 ) -> Result<Response, AppError> {
     validate_aged_export_format(&query.format)?;
 
-    let as_of = Utc::now().naive_utc().date();
-    let report = generate_aged_receivables(&state.pool, current_user.company_id, as_of).await?;
-    let (ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
-    let body: Vec<u8> = render_csv_to_vec(|w| render_aged_receivables_csv(&report, w))?;
-
-    emit_aged_receivables_export_audit(&state.pool, current_user.user_id, as_of).await;
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let lecture = state.lecture();
+    let rapport = rapports::balance_agee(&acces, &lecture, Export(ExportFormat::Csv)).await?;
+    let (ctx, company_name) = load_pdf_context(&acces, &lecture).await?;
+    // La date du contenu et de la trace, calculée une fois par le service.
+    let as_of = attendu(rapport.as_of())?;
+    let body: Vec<u8> = rapport
+        .exporter(&state.trace(), |report| {
+            render_csv_to_vec(|w| render_aged_receivables_csv(report, w))
+        })
+        .await?;
 
     // Filename « date unique » (patron `exports.rs::build_global_filename`, PAS
     // `build_filename` qui exige un `&ReportPeriod` — validate 21-7 H1).
@@ -594,62 +480,6 @@ pub async fn export_aged_receivables(
         .map_err(|e| AppError::Internal(format!("response build: {e}")))
 }
 
-/// Story 21-7 — audit best-effort génération balance âgée (as_of, pas de période).
-/// Bespoke (ne réutilise pas `emit_report_audit`, signature période).
-async fn emit_aged_receivables_audit(pool: &MySqlPool, user_id: i64, as_of: NaiveDate) {
-    let result = async {
-        let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
-        kesh_db::repositories::audit_log::insert_in_tx(
-            &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
-                "report.generated",
-                "report",
-                AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
-                    "report_type": "aged-receivables",
-                    "as_of": as_of.format("%Y-%m-%d").to_string(),
-                })),
-            ),
-        )
-        .await?;
-        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
-        Ok::<(), kesh_db::errors::DbError>(())
-    }
-    .await;
-    if let Err(e) = result {
-        tracing::warn!(error = ?e, user_id, "audit insert failed (report.generated aged) — non-blocking");
-    }
-}
-
-/// Story 21-7 — audit best-effort export balance âgée (CSV).
-async fn emit_aged_receivables_export_audit(pool: &MySqlPool, user_id: i64, as_of: NaiveDate) {
-    let result = async {
-        let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
-        kesh_db::repositories::audit_log::insert_in_tx(
-            &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
-                "report.exported",
-                "report",
-                AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
-                    "report_type": "aged-receivables",
-                    "format": "csv",
-                    "as_of": as_of.format("%Y-%m-%d").to_string(),
-                })),
-            ),
-        )
-        .await?;
-        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
-        Ok::<(), kesh_db::errors::DbError>(())
-    }
-    .await;
-    if let Err(e) = result {
-        tracing::warn!(error = ?e, user_id, "audit insert failed (report.exported aged) — non-blocking");
-    }
-}
-
 /// GET /api/v1/reports/income-statement/export?format=pdf|csv
 pub async fn export_income_statement(
     State(state): State<AppState>,
@@ -657,7 +487,6 @@ pub async fn export_income_statement(
     Query(query): Query<ExportQuery>,
 ) -> Result<Response, AppError> {
     let format = validate_format(&query.format)?;
-    validate_fiscal_year_id(query.fiscal_year_id)?;
 
     let span = tracing::info_span!(
         "report_export",
@@ -669,37 +498,23 @@ pub async fn export_income_statement(
     let _enter = span.enter();
     let start = std::time::Instant::now();
 
-    let period = ReportPeriod::resolve(
-        &state.pool,
-        current_user.company_id,
-        query.fiscal_year_id,
-        query.period_start,
-        query.period_end,
-    )
-    .await?;
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let lecture = state.lecture();
+    let rapport =
+        rapports::compte_de_resultat(&acces, &lecture, query.demande(), Export(format)).await?;
+    let (ctx, company_name) = load_pdf_context(&acces, &lecture).await?;
+    let period = attendu(rapport.periode())?.clone();
 
-    let report = generate_income_statement(&state.pool, current_user.company_id, &period).await?;
-    let (ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
-
-    let body: Vec<u8> = match format {
-        ExportFormat::Pdf => render_income_statement_pdf(&report, &ctx)?,
-        ExportFormat::Csv => render_csv_to_vec(|w| render_income_statement_csv(&report, w))?,
-    };
-
-    span.record("byte_size", body.len());
-    span.record("duration_ms", start.elapsed().as_millis() as u64);
-
-    emit_report_export_audit(
-        &state.pool,
-        current_user.user_id,
-        "income-statement",
-        format.as_str(),
-        query.fiscal_year_id,
-        period.start_date,
-        period.end_date,
-        None,
-    )
-    .await;
+    let body = rapport
+        .exporter(&state.trace(), |report| {
+            let body: Vec<u8> = match format {
+                ExportFormat::Pdf => render_income_statement_pdf(report, &ctx)?,
+                ExportFormat::Csv => render_csv_to_vec(|w| render_income_statement_csv(report, w))?,
+            };
+            mesurer(&span, start, &body);
+            Ok(body)
+        })
+        .await?;
 
     // Pass 1 code-review H10 : type_slug localisé via i18n.
     let type_slug = resolve_type_slug(&state, &ctx.locale, "income-statement");
@@ -733,6 +548,21 @@ pub struct ProjectReportQuery {
     pub format: Option<String>,
 }
 
+impl ProjectReportQuery {
+    fn demande(&self) -> DemandeProjet {
+        DemandeProjet {
+            project_id: self.project_id,
+            mode: match self.mode {
+                ProjectModeParam::FiscalYear => ModeProjet::Exercice,
+                ProjectModeParam::Cumulative => ModeProjet::Cumule,
+            },
+            fiscal_year_id: self.fiscal_year_id,
+            period_start: self.period_start,
+            period_end: self.period_end,
+        }
+    }
+}
+
 /// Mode de période (paramètre URL).
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -741,75 +571,16 @@ pub enum ProjectModeParam {
     Cumulative,
 }
 
-/// Résout `(scope, ProjectPeriodMode)` depuis la query. Valide `project_id > 0`
-/// et, en mode exercice, la présence de `fiscalYearId`.
-async fn resolve_project_report(
-    state: &AppState,
-    company_id: i64,
-    query: &ProjectReportQuery,
-) -> Result<(kesh_report::ProjectReportScope, ProjectPeriodMode), AppError> {
-    if query.project_id <= 0 {
-        return Err(AppError::Validation(
-            "projectId doit être strictement positif".into(),
-        ));
-    }
-    let scope = resolve_scope(&state.pool, company_id, query.project_id).await?;
-
-    let mode = match query.mode {
-        ProjectModeParam::FiscalYear => {
-            let fy_id = query.fiscal_year_id.ok_or_else(|| {
-                AppError::Validation("fiscalYearId requis en mode fiscal_year".into())
-            })?;
-            validate_fiscal_year_id(fy_id)?;
-            let period = ReportPeriod::resolve(
-                &state.pool,
-                company_id,
-                fy_id,
-                query.period_start,
-                query.period_end,
-            )
-            .await?;
-            ProjectPeriodMode::FiscalYear { period }
-        }
-        ProjectModeParam::Cumulative => {
-            // Borne haute = date de fin du projet si définie, sinon aujourd'hui
-            // (résolu handler-side — pas de Date::now() en lib).
-            //
-            // Note (Pass 3 Opus, DC4) : les bornes proviennent du projet **ciblé**
-            // (racine du scope). Pour un rapport racine agrégeant des sous-projets,
-            // les écritures d'un sous-projet hors de la fenêtre de dates de la racine
-            // sont donc exclues — comportement voulu (« borné par les dates du
-            // projet »). Une racine sans start_date (cas courant) ⇒ pas de borne
-            // basse (`entry_date <= end`), donc tous les enfants sont inclus.
-            let today = chrono::Utc::now().date_naive();
-            let end = scope.root.end_date.unwrap_or(today);
-            ProjectPeriodMode::Cumulative {
-                start: scope.root.start_date,
-                end,
-            }
-        }
-    };
-    Ok((scope, mode))
-}
-
 /// GET /api/v1/reports/project-expenses
 pub async fn get_project_expenses(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<ProjectReportQuery>,
 ) -> Result<Json<ProjectExpensesReport>, AppError> {
-    let (scope, mode) = resolve_project_report(&state, current_user.company_id, &query).await?;
-    let report =
-        generate_project_expenses(&state.pool, current_user.company_id, &scope, &mode).await?;
-    emit_project_report_audit(
-        &state.pool,
-        current_user.user_id,
-        "project-expenses",
-        query.project_id,
-        mode.as_str(),
-    )
-    .await;
-    Ok(Json(report))
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let rapport =
+        rapports::depenses_projet(&acces, &state.lecture(), query.demande(), Affichage).await?;
+    Ok(Json(rapport.afficher(&state.trace()).await))
 }
 
 /// GET /api/v1/reports/project-expenses/export?format=pdf|csv
@@ -819,30 +590,27 @@ pub async fn export_project_expenses(
     Query(query): Query<ProjectReportQuery>,
 ) -> Result<Response, AppError> {
     let format = validate_format(&query.format)?;
-    let (scope, mode) = resolve_project_report(&state, current_user.company_id, &query).await?;
-    let report =
-        generate_project_expenses(&state.pool, current_user.company_id, &scope, &mode).await?;
-    let (ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let lecture = state.lecture();
+    let rapport =
+        rapports::depenses_projet(&acces, &lecture, query.demande(), Export(format)).await?;
+    let (ctx, company_name) = load_pdf_context(&acces, &lecture).await?;
+    let (start, end) = project_mode_dates(attendu(rapport.mode_projet())?);
 
-    let body: Vec<u8> = match format {
-        ExportFormat::Pdf => {
-            render_project_expenses_pdf(&report, &ctx, &ProjectExpensesPdfLabels::fr_ch_defaults())?
-        }
-        ExportFormat::Csv => render_csv_to_vec(|w| render_project_expenses_csv(&report, w))?,
-    };
-
-    emit_project_report_export_audit(
-        &state.pool,
-        current_user.user_id,
-        "project-expenses",
-        format.as_str(),
-        query.project_id,
-        mode.as_str(),
-    )
-    .await;
+    let body = rapport
+        .exporter(&state.trace(), |report| {
+            Ok(match format {
+                ExportFormat::Pdf => render_project_expenses_pdf(
+                    report,
+                    &ctx,
+                    &ProjectExpensesPdfLabels::fr_ch_defaults(),
+                )?,
+                ExportFormat::Csv => render_csv_to_vec(|w| render_project_expenses_csv(report, w))?,
+            })
+        })
+        .await?;
 
     let type_slug = resolve_type_slug(&state, &ctx.locale, "project-expenses");
-    let (start, end) = project_mode_dates(&mode);
     build_project_export_response(
         format,
         body,
@@ -904,18 +672,10 @@ pub async fn get_project_return(
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<ProjectReportQuery>,
 ) -> Result<Json<ProjectReturnReport>, AppError> {
-    let (scope, mode) = resolve_project_report(&state, current_user.company_id, &query).await?;
-    let report =
-        generate_project_return(&state.pool, current_user.company_id, &scope, &mode).await?;
-    emit_project_report_audit(
-        &state.pool,
-        current_user.user_id,
-        "project-return",
-        query.project_id,
-        mode.as_str(),
-    )
-    .await;
-    Ok(Json(report))
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let rapport =
+        rapports::rendement_projet(&acces, &state.lecture(), query.demande(), Affichage).await?;
+    Ok(Json(rapport.afficher(&state.trace()).await))
 }
 
 /// GET /api/v1/reports/project-return/export?format=pdf|csv
@@ -925,30 +685,27 @@ pub async fn export_project_return(
     Query(query): Query<ProjectReportQuery>,
 ) -> Result<Response, AppError> {
     let format = validate_format(&query.format)?;
-    let (scope, mode) = resolve_project_report(&state, current_user.company_id, &query).await?;
-    let report =
-        generate_project_return(&state.pool, current_user.company_id, &scope, &mode).await?;
-    let (ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let lecture = state.lecture();
+    let rapport =
+        rapports::rendement_projet(&acces, &lecture, query.demande(), Export(format)).await?;
+    let (ctx, company_name) = load_pdf_context(&acces, &lecture).await?;
+    let (start, end) = project_mode_dates(attendu(rapport.mode_projet())?);
 
-    let body: Vec<u8> = match format {
-        ExportFormat::Pdf => {
-            render_project_return_pdf(&report, &ctx, &ProjectReturnPdfLabels::fr_ch_defaults())?
-        }
-        ExportFormat::Csv => render_csv_to_vec(|w| render_project_return_csv(&report, w))?,
-    };
-
-    emit_project_report_export_audit(
-        &state.pool,
-        current_user.user_id,
-        "project-return",
-        format.as_str(),
-        query.project_id,
-        mode.as_str(),
-    )
-    .await;
+    let body = rapport
+        .exporter(&state.trace(), |report| {
+            Ok(match format {
+                ExportFormat::Pdf => render_project_return_pdf(
+                    report,
+                    &ctx,
+                    &ProjectReturnPdfLabels::fr_ch_defaults(),
+                )?,
+                ExportFormat::Csv => render_csv_to_vec(|w| render_project_return_csv(report, w))?,
+            })
+        })
+        .await?;
 
     let type_slug = resolve_type_slug(&state, &ctx.locale, "project-return");
-    let (start, end) = project_mode_dates(&mode);
     build_project_export_response(
         format,
         body,
@@ -967,7 +724,6 @@ pub async fn export_trial_balance(
     Query(query): Query<ExportQuery>,
 ) -> Result<Response, AppError> {
     let format = validate_format(&query.format)?;
-    validate_fiscal_year_id(query.fiscal_year_id)?;
 
     let span = tracing::info_span!(
         "report_export",
@@ -979,37 +735,22 @@ pub async fn export_trial_balance(
     let _enter = span.enter();
     let start = std::time::Instant::now();
 
-    let period = ReportPeriod::resolve(
-        &state.pool,
-        current_user.company_id,
-        query.fiscal_year_id,
-        query.period_start,
-        query.period_end,
-    )
-    .await?;
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let lecture = state.lecture();
+    let rapport = rapports::balance(&acces, &lecture, query.demande(), Export(format)).await?;
+    let (ctx, company_name) = load_pdf_context(&acces, &lecture).await?;
+    let period = attendu(rapport.periode())?.clone();
 
-    let report = generate_trial_balance(&state.pool, current_user.company_id, &period).await?;
-    let (ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
-
-    let body: Vec<u8> = match format {
-        ExportFormat::Pdf => render_trial_balance_pdf(&report, &ctx)?,
-        ExportFormat::Csv => render_csv_to_vec(|w| render_trial_balance_csv(&report, w))?,
-    };
-
-    span.record("byte_size", body.len());
-    span.record("duration_ms", start.elapsed().as_millis() as u64);
-
-    emit_report_export_audit(
-        &state.pool,
-        current_user.user_id,
-        "trial-balance",
-        format.as_str(),
-        query.fiscal_year_id,
-        period.start_date,
-        period.end_date,
-        None,
-    )
-    .await;
+    let body = rapport
+        .exporter(&state.trace(), |report| {
+            let body: Vec<u8> = match format {
+                ExportFormat::Pdf => render_trial_balance_pdf(report, &ctx)?,
+                ExportFormat::Csv => render_csv_to_vec(|w| render_trial_balance_csv(report, w))?,
+            };
+            mesurer(&span, start, &body);
+            Ok(body)
+        })
+        .await?;
 
     // Pass 1 code-review H10 : type_slug localisé via i18n.
     let type_slug = resolve_type_slug(&state, &ctx.locale, "trial-balance");
@@ -1031,7 +772,6 @@ pub async fn export_journal_report(
     Query(query): Query<ExportQuery>,
 ) -> Result<Response, AppError> {
     let format = validate_format(&query.format)?;
-    validate_fiscal_year_id(query.fiscal_year_id)?;
 
     let span = tracing::info_span!(
         "report_export",
@@ -1043,43 +783,26 @@ pub async fn export_journal_report(
     let _enter = span.enter();
     let start = std::time::Instant::now();
 
-    let period = ReportPeriod::resolve(
-        &state.pool,
-        current_user.company_id,
-        query.fiscal_year_id,
-        query.period_start,
-        query.period_end,
-    )
-    .await?;
-
-    let report =
-        generate_journal_report(&state.pool, current_user.company_id, &period, query.journal)
-            .await?;
-    let (mut ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let lecture = state.lecture();
+    let rapport =
+        rapports::journaux(&acces, &lecture, query.demande_journaux(), Export(format)).await?;
+    let (mut ctx, company_name) = load_pdf_context(&acces, &lecture).await?;
     if let Some(j) = query.journal {
         ctx.journal_filter_label = Some(j.as_str().to_string());
     }
+    let period = attendu(rapport.periode())?.clone();
 
-    let body: Vec<u8> = match format {
-        ExportFormat::Pdf => render_journal_report_pdf(&report, &ctx)?,
-        ExportFormat::Csv => render_csv_to_vec(|w| render_journal_report_csv(&report, w))?,
-    };
-
-    span.record("byte_size", body.len());
-    span.record("duration_ms", start.elapsed().as_millis() as u64);
-
-    let journal_filter_str = query.journal.map(|j| j.as_str().to_string());
-    emit_report_export_audit(
-        &state.pool,
-        current_user.user_id,
-        "journals",
-        format.as_str(),
-        query.fiscal_year_id,
-        period.start_date,
-        period.end_date,
-        journal_filter_str.as_deref(),
-    )
-    .await;
+    let body = rapport
+        .exporter(&state.trace(), |report| {
+            let body: Vec<u8> = match format {
+                ExportFormat::Pdf => render_journal_report_pdf(report, &ctx)?,
+                ExportFormat::Csv => render_csv_to_vec(|w| render_journal_report_csv(report, w))?,
+            };
+            mesurer(&span, start, &body);
+            Ok(body)
+        })
+        .await?;
 
     // Pass 1 code-review H10 : type_slug localisé via i18n.
     let type_slug = resolve_type_slug(&state, &ctx.locale, "journals");
@@ -1107,31 +830,9 @@ pub async fn get_vat_report(
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<ReportQuery>,
 ) -> Result<Json<VatReport>, AppError> {
-    validate_fiscal_year_id(query.fiscal_year_id)?;
-
-    let period = ReportPeriod::resolve(
-        &state.pool,
-        current_user.company_id,
-        query.fiscal_year_id,
-        query.period_start,
-        query.period_end,
-    )
-    .await?;
-
-    let report = generate_vat_report(&state.pool, current_user.company_id, &period).await?;
-
-    emit_report_audit(
-        &state.pool,
-        current_user.user_id,
-        "vat",
-        query.fiscal_year_id,
-        period.start_date,
-        period.end_date,
-        None,
-    )
-    .await;
-
-    Ok(Json(report))
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let rapport = rapports::tva(&acces, &state.lecture(), query.demande(), Affichage).await?;
+    Ok(Json(rapport.afficher(&state.trace()).await))
 }
 
 /// GET /api/v1/reports/vat/export?format=pdf|csv
@@ -1141,7 +842,6 @@ pub async fn export_vat_report(
     Query(query): Query<ExportQuery>,
 ) -> Result<Response, AppError> {
     let format = validate_format(&query.format)?;
-    validate_fiscal_year_id(query.fiscal_year_id)?;
 
     let span = tracing::info_span!(
         "report_export",
@@ -1153,40 +853,27 @@ pub async fn export_vat_report(
     let _enter = span.enter();
     let start = std::time::Instant::now();
 
-    let period = ReportPeriod::resolve(
-        &state.pool,
-        current_user.company_id,
-        query.fiscal_year_id,
-        query.period_start,
-        query.period_end,
-    )
-    .await?;
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let lecture = state.lecture();
+    let rapport = rapports::tva(&acces, &lecture, query.demande(), Export(format)).await?;
 
-    let report = generate_vat_report(&state.pool, current_user.company_id, &period).await?;
+    let (ctx, company_name) = load_pdf_context(&acces, &lecture).await?;
+    let period = attendu(rapport.periode())?.clone();
 
-    let (ctx, company_name) = load_pdf_context(&state.pool, current_user.company_id).await?;
-
-    let body: Vec<u8> = match format {
-        // Libellés PDF = defaults FR-CH v0.1 (cohérent `load_pdf_context` /
-        // `PdfContext::fr_ch_default` ; i18n PDF complète déférée v0.2+).
-        ExportFormat::Pdf => render_vat_report_pdf(&report, &ctx, &VatPdfLabels::fr_ch_defaults())?,
-        ExportFormat::Csv => render_csv_to_vec(|w| render_vat_report_csv(&report, w))?,
-    };
-
-    span.record("byte_size", body.len());
-    span.record("duration_ms", start.elapsed().as_millis() as u64);
-
-    emit_report_export_audit(
-        &state.pool,
-        current_user.user_id,
-        "vat",
-        format.as_str(),
-        query.fiscal_year_id,
-        period.start_date,
-        period.end_date,
-        None,
-    )
-    .await;
+    let body = rapport
+        .exporter(&state.trace(), |report| {
+            let body: Vec<u8> = match format {
+                // Libellés PDF = defaults FR-CH v0.1 (cohérent `load_pdf_context` /
+                // `PdfContext::fr_ch_default` ; i18n PDF complète déférée v0.2+).
+                ExportFormat::Pdf => {
+                    render_vat_report_pdf(report, &ctx, &VatPdfLabels::fr_ch_defaults())?
+                }
+                ExportFormat::Csv => render_csv_to_vec(|w| render_vat_report_csv(report, w))?,
+            };
+            mesurer(&span, start, &body);
+            Ok(body)
+        })
+        .await?;
 
     let type_slug = resolve_type_slug(&state, &ctx.locale, "vat");
     build_export_response_with_locale(
@@ -1203,34 +890,22 @@ pub async fn export_vat_report(
 // Helpers privés Story 9-2a
 // ===========================================================================
 
-/// Charge le `PdfContext` côté handler (1 query DB `SELECT name, accounting_language
-/// FROM companies WHERE id = ?`). Libellés résolus avec les defaults FR-CH v0.1
+/// Met en forme le `PdfContext` d'un export à partir de l'identité de la société,
+/// lue par le service `rapports::identite_societe` (Story 32-3 : le handler ne
+/// lit plus rien lui-même). Libellés résolus avec les defaults FR-CH v0.1
 /// (Pass 3 ECH3-C1 — accept lib `kesh-i18n` non utilisée pour les sérialiseurs
 /// PDF/CSV, DD-14 pattern).
 ///
 /// Retourne `(ctx, company_name)` — `company_name` est aussi utilisé séparément
 /// pour construire le filename.
 ///
-/// **Pass 1 code-review H5 (BH2-H1) — scoping multi-tenant** : `company_id`
-/// provient de `Extension<CurrentUser>` injecté par `middleware/auth.rs` à
-/// partir du claim JWT signé HS256 (cf. `middleware/auth.rs:96`). Le claim
-/// `company_id` est garanti = la company dont l'utilisateur est membre, le JWT
-/// étant signé côté serveur lors du login. Il n'y a donc pas d'IDOR ici tant
-/// que le JWT guard est sain (éprouvé Story 1-5/1-6 + 7-1). Ajouter
-/// `AND company_id = ?` ne fournirait aucune protection supplémentaire car la
-/// valeur testée serait identique à la PK. Documenté comme dette de défense
-/// en profondeur — voir Limitations L13.
+/// Appelée **après** la génération, comme avant la 32-3 : un échec ici laisse le
+/// `Rapport` abandonné sans `exporter`, donc sans trace.
 async fn load_pdf_context(
-    pool: &MySqlPool,
-    company_id: i64,
+    acces: &ContexteAcces,
+    lecture: &Lecture,
 ) -> Result<(PdfContext, String), AppError> {
-    let row: (String, String) =
-        sqlx::query_as("SELECT name, accounting_language FROM companies WHERE id = ?")
-            .bind(company_id)
-            .fetch_one(pool)
-            .await
-            .map_err(kesh_db::errors::map_db_error)?;
-    let (company_name, locale_code) = row;
+    let (company_name, locale_code) = rapports::identite_societe(acces, lecture).await?;
 
     // v0.1 : tous libellés FR-CH par défaut. L'extension i18n complète des
     // libellés PDF est reportée à v0.2 (L4 + L11). Le code locale est exposé
@@ -1321,263 +996,6 @@ fn build_filename(type_slug: &str, company_name: &str, period: &ReportPeriod, ex
     let period_start = period.start_date.format("%Y-%m-%d").to_string();
     let period_end = period.end_date.format("%Y-%m-%d").to_string();
     format!("kesh-{slug_type}-{slug_company}-{period_start}_{period_end}.{ext}")
-}
-
-// ===========================================================================
-// Helpers communs (audit, validation)
-// ===========================================================================
-
-/// Validation `fiscalYearId > 0` handler-side (Pass 1 ECH-06 + Pass 3 BH3-01).
-///
-/// Le parsing serde i64 accepte 0 et négatifs sans erreur. Ce check explicite
-/// retourne 400 `VALIDATION_ERROR` en JSON (via `build_response` standard).
-fn validate_fiscal_year_id(fiscal_year_id: i64) -> Result<(), AppError> {
-    if fiscal_year_id <= 0 {
-        return Err(AppError::Validation(format!(
-            "fiscalYearId must be > 0 (got {fiscal_year_id})"
-        )));
-    }
-    Ok(())
-}
-
-/// Audit log `report.generated` — best-effort (Pass 1 ECH-15).
-///
-/// Pattern strict : log `warn!` sur erreur, ne JAMAIS faire échouer la réponse rapport.
-///
-/// ## Convention projet — `audit_log.details_json` JSON keys
-///
-/// **Snake_case obligatoire** pour les clés JSON de `details_json` (cohérent SQL
-/// JSON path `details_json->>'$.field_name'` future-proof, AC #23 Story 9-2b
-/// explicite). Les autres surfaces API restent **camelCase** par convention
-/// REST/JS :
-///
-/// | Surface | Convention | Exemple |
-/// |---|---|---|
-/// | Query params HTTP URL | camelCase | `?fiscalYearId=...&periodStart=...` |
-/// | Request/Response body HTTP | camelCase (via `#[serde(rename_all = "camelCase")]`) | `{"reportType": "..."}` |
-/// | `AppError.details` HTTP error body | camelCase | `{"details": {"fiscalYearId": ...}}` (cf. `errors.rs`) |
-/// | Frontend `metadata.json` | camelCase | `{"keshVersion", "exportDate"}` |
-/// | **`audit_log.details_json` (serveur)** | **snake_case** | `{"report_type", "fiscal_year_id"}` |
-///
-/// **Référence canonique** : `emit_global_export_audit` (Story 9-2b
-/// `crates/kesh-api/src/routes/exports.rs`) — premier `emit_*_audit` snake_case.
-/// Migration camelCase → snake_case appliquée 2026-05-18 Story 9-5-2 pour
-/// `emit_report_audit` (Story 9-1) + `emit_report_export_audit` (Story 9-2a).
-/// Référence pour futures fonctions audit Epic 10+ (`vat.calculated`,
-/// `payment.created`, etc.).
-/// Trace la consultation du grand livre.
-///
-/// Audit distinct de [`emit_report_audit`] : celui-ci exige un `fiscal_year_id`,
-/// que le grand livre n'a pas — il franchit les exercices.
-async fn emit_ledger_audit(
-    pool: &MySqlPool,
-    user_id: i64,
-    from: NaiveDate,
-    to: NaiveDate,
-    account_ids: Option<&[i64]>,
-) {
-    let result = async {
-        let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
-        kesh_db::repositories::audit_log::insert_in_tx(
-            &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
-                "report.generated",
-                "report",
-                AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
-                    "report_type": "general-ledger",
-                    "period_start": from.format("%Y-%m-%d").to_string(),
-                    "period_end": to.format("%Y-%m-%d").to_string(),
-                    "account_ids": account_ids,
-                })),
-            ),
-        )
-        .await?;
-        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
-        Ok::<(), kesh_db::errors::DbError>(())
-    }
-    .await;
-
-    if let Err(e) = result {
-        tracing::warn!(error = %e, "audit report.generated (general-ledger) non enregistré");
-    }
-}
-
-async fn emit_report_audit(
-    pool: &MySqlPool,
-    user_id: i64,
-    report_type: &str,
-    fiscal_year_id: i64,
-    period_start: NaiveDate,
-    period_end: NaiveDate,
-    journal_filter: Option<&str>,
-) {
-    let result = async {
-        let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
-        kesh_db::repositories::audit_log::insert_in_tx(
-            &mut tx,
-            // Story 9-5-2 (Epic 9.5) — clés snake_case pour cohérence SQL JSON
-            // path `details_json->>'$.field_name'` future-proof.
-            // Story 17-2a (DC5) — `::user` : audit READ-path (report.generated).
-            // Limitation L2 documentée : non threadé actor_api_key_id (4 callers,
-            // chemin lecture non-mutation hors scope strict AC8(b)) → `actor_type='user'`
-            // même via PAT. Couverture exhaustive = v0.3.
-            NewAuditLogEntry::user(
-                user_id,
-                "report.generated",
-                "report",
-                AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
-                    "report_type": report_type,
-                    "fiscal_year_id": fiscal_year_id,
-                    "period_start": period_start.format("%Y-%m-%d").to_string(),
-                    "period_end": period_end.format("%Y-%m-%d").to_string(),
-                    "journal_filter": journal_filter,
-                })),
-            ),
-        )
-        .await?;
-        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
-        Ok::<(), kesh_db::errors::DbError>(())
-    }
-    .await;
-
-    if let Err(e) = result {
-        tracing::warn!(
-            error = ?e,
-            user_id,
-            report_type,
-            fiscal_year_id,
-            "audit insert failed (report.generated) — non-blocking"
-        );
-    }
-}
-
-/// Story 9-2a — audit log `report.exported` (best-effort, distinct de
-/// `report.generated` pour faciliter les requêtes audit — Pass 1 BH-M2).
-///
-/// Fonction **séparée** de `emit_report_audit` — la modifier briserait les
-/// 4 callers Story 9-1.
-#[allow(clippy::too_many_arguments)]
-async fn emit_report_export_audit(
-    pool: &MySqlPool,
-    user_id: i64,
-    report_type: &str,
-    format: &str,
-    fiscal_year_id: i64,
-    period_start: NaiveDate,
-    period_end: NaiveDate,
-    journal_filter: Option<&str>,
-) {
-    let result = async {
-        let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
-        kesh_db::repositories::audit_log::insert_in_tx(
-            &mut tx,
-            // Story 9-5-2 (Epic 9.5) — clés snake_case.
-            // Story 17-2a (DC5) — `::user` : audit READ-path (report.exported),
-            // limitation L2 (cf. emit_report_audit) → `actor_type='user'` même via PAT.
-            NewAuditLogEntry::user(
-                user_id,
-                "report.exported",
-                "report",
-                AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
-                    "report_type": report_type,
-                    "format": format,
-                    "fiscal_year_id": fiscal_year_id,
-                    "period_start": period_start.format("%Y-%m-%d").to_string(),
-                    "period_end": period_end.format("%Y-%m-%d").to_string(),
-                    "journal_filter": journal_filter,
-                })),
-            ),
-        )
-        .await?;
-        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
-        Ok::<(), kesh_db::errors::DbError>(())
-    }
-    .await;
-
-    if let Err(e) = result {
-        tracing::warn!(
-            error = ?e,
-            user_id,
-            report_type,
-            format,
-            fiscal_year_id,
-            "audit insert failed (report.exported) — non-blocking"
-        );
-    }
-}
-
-/// Story 19-6a — audit best-effort génération d'un rapport projet.
-async fn emit_project_report_audit(
-    pool: &MySqlPool,
-    user_id: i64,
-    report_type: &str,
-    project_id: i64,
-    mode: &str,
-) {
-    let result = async {
-        let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
-        kesh_db::repositories::audit_log::insert_in_tx(
-            &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
-                "report.generated",
-                "report",
-                AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
-                    "report_type": report_type,
-                    "project_id": project_id,
-                    "mode": mode,
-                })),
-            ),
-        )
-        .await?;
-        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
-        Ok::<(), kesh_db::errors::DbError>(())
-    }
-    .await;
-    if let Err(e) = result {
-        tracing::warn!(error = ?e, user_id, report_type, project_id, "audit insert failed (report.generated project) — non-blocking");
-    }
-}
-
-/// Story 19-6a — audit best-effort export d'un rapport projet.
-async fn emit_project_report_export_audit(
-    pool: &MySqlPool,
-    user_id: i64,
-    report_type: &str,
-    format: &str,
-    project_id: i64,
-    mode: &str,
-) {
-    let result = async {
-        let mut tx = pool.begin().await.map_err(kesh_db::errors::map_db_error)?;
-        kesh_db::repositories::audit_log::insert_in_tx(
-            &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
-                "report.exported",
-                "report",
-                AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
-                    "report_type": report_type,
-                    "format": format,
-                    "project_id": project_id,
-                    "mode": mode,
-                })),
-            ),
-        )
-        .await?;
-        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
-        Ok::<(), kesh_db::errors::DbError>(())
-    }
-    .await;
-    if let Err(e) = result {
-        tracing::warn!(error = ?e, user_id, report_type, format, project_id, "audit insert failed (report.exported project) — non-blocking");
-    }
 }
 
 // ===========================================================================

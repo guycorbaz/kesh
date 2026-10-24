@@ -62,19 +62,23 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
     spawn_app_with_locale(pool, kesh_i18n::Locale::FrCh).await
 }
 
+/// Les quatre catalogues réels (`crates/kesh-i18n/locales`), tels que l'application
+/// de test les charge — et tels que les tests les relisent pour calculer l'attendu.
+fn catalogues() -> kesh_i18n::I18nBundle {
+    kesh_i18n::I18nBundle::load(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("kesh-i18n/locales")
+            .as_path(),
+    )
+    .expect("load test i18n")
+}
+
 async fn spawn_app_with_locale(pool: MySqlPool, locale: kesh_i18n::Locale) -> TestApp {
     let config = test_config().with_locale(locale);
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
-    let i18n = Arc::new(
-        kesh_i18n::I18nBundle::load(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .unwrap()
-                .join("kesh-i18n/locales")
-                .as_path(),
-        )
-        .expect("load test i18n"),
-    );
+    let i18n = Arc::new(catalogues());
 
     // Init global i18n pour les messages d'erreur
     // Note: must be called within a get_i18n_lock guard from the test
@@ -199,4 +203,58 @@ async fn error_messages_in_german_when_locale_de(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "INVALID_CREDENTIALS");
     let message = body["error"]["message"].as_str().unwrap();
     assert_eq!(message, "Ungültige Anmeldedaten");
+}
+
+/// Story 32-1d (#711, L-B7) — le refus d'un réglage de sauvegarde hors domaine
+/// (`PUT /api/v1/admin/backup-schedule`, fréquence 7 h) parle la langue de
+/// l'instance : le message égale le rendu `de-CH` de
+/// `admin-backup-schedule-error-out-of-domain`, et diffère du rendu `fr-CH` —
+/// sans quoi un repli français resté dans la route passerait pour juste.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn backup_schedule_out_of_domain_refusal_in_german(pool: MySqlPool) {
+    const CLE: &str = "admin-backup-schedule-error-out-of-domain";
+    let _guard = get_i18n_lock().await;
+    let app = spawn_app_with_locale(pool.clone(), kesh_i18n::Locale::DeCh).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let reglage: serde_json::Value = app
+        .client
+        .get(app.url("/api/v1/admin/backup-schedule"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .expect("get backup-schedule")
+        .json()
+        .await
+        .expect("json");
+    let version = reglage["version"].clone();
+    assert!(version.is_i64(), "version absente : {reglage}");
+
+    let resp = app
+        .client
+        .put(app.url("/api/v1/admin/backup-schedule"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "enabled": true, "intervalHours": 7, "retentionCount": 5, "version": version
+        }))
+        .send()
+        .await
+        .expect("put backup-schedule");
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.expect("json");
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    let message = body["error"]["message"].as_str().unwrap();
+
+    let cat = catalogues();
+    let rendu = |locale: kesh_i18n::Locale| {
+        cat.format(&locale, CLE, None)
+            .replace(['\u{2068}', '\u{2069}'], "")
+    };
+    let de = rendu(kesh_i18n::Locale::DeCh);
+    let fr = rendu(kesh_i18n::Locale::FrCh);
+    assert_ne!(de, CLE, "de-CH : {CLE} absente du catalogue");
+    assert_ne!(de, fr, "de-CH : {CLE} retombe sur le français");
+    assert_eq!(message, de);
 }

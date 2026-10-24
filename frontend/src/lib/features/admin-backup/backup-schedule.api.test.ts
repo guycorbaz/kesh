@@ -42,6 +42,7 @@ function schedule(over: Partial<BackupSchedule> = {}): BackupSchedule {
 		lastCompleteFile: 'kesh-auto-20261024T010000000Z.keshbackup',
 		nextDueAt: '2026-10-25T01:00:00.000Z',
 		overdue: false,
+		lastSuccessInFuture: false,
 		...over,
 	};
 }

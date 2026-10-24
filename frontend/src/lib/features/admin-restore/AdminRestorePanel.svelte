@@ -18,6 +18,7 @@
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { isUnknownOutcome } from '$lib/shared/utils/unknown-outcome';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -57,16 +58,13 @@
 	 *
 	 * Après une issue inconnue, l'import n'est plus proposé (revue P1, E-LOW-3) : on
 	 * vérifie d'abord en se reconnectant ; recharger la page le rouvre.
+	 *
+	 * Story 32-1b (#711 E-7) : le prédicat est extrait dans
+	 * `$lib/shared/utils/unknown-outcome` et partagé avec « Sauvegarder maintenant » ;
+	 * ce qui précède reste propre à l'import. Faux pour une erreur qui n'est pas une
+	 * `ApiError`, comme avant l'extraction.
 	 */
-	function issueInconnue(err: unknown): boolean {
-		if (!isApiError(err)) return false;
-		return (
-			err.code === 'TIMEOUT' ||
-			err.code === 'NETWORK_ERROR' ||
-			err.status === 502 ||
-			err.status === 504
-		);
-	}
+	const issueInconnue = isUnknownOutcome;
 
 	function onFileChange(event: Event) {
 		const input = event.target as HTMLInputElement;

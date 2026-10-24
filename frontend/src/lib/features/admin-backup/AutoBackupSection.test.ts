@@ -1,7 +1,10 @@
 // Story 31-1c (#503, AC33, AC37) — la section « Sauvegarde automatique » et la
 // liste des sauvegardes du serveur : états, enregistrement, conflit,
 // « Sauvegarder maintenant », liste, téléchargement, mention « trop grande ».
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+// Story 32-1b (#711 E-6, E-7, L-B6) : la saisie non enregistrée survit à
+// « Sauvegarder maintenant » sans défaire le verrou optimiste ; une réponse qui
+// manque (ou un 5xx) relit l'état et la liste ; la limite dite en deux unités.
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
 
 vi.mock('./backup-schedule.api', async (importOriginal) => {
@@ -25,8 +28,13 @@ vi.mock('svelte-sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } })
 import * as api from './backup-schedule.api';
 import type { BackupSchedule, ServerBackups } from './backup-schedule.api';
 import AutoBackupSection from './AutoBackupSection.svelte';
+import { formatBackupDate } from './backup-format';
 
 const mock = vi.mocked(api);
+
+// Story 32-1b : les réponses `…Once` non consommées d'un test ne doivent pas
+// fuir dans le suivant (`clearAllMocks` garde les implémentations en file).
+afterEach(() => vi.resetAllMocks());
 
 function schedule(over: Partial<BackupSchedule> = {}): BackupSchedule {
 	return {
@@ -43,6 +51,7 @@ function schedule(over: Partial<BackupSchedule> = {}): BackupSchedule {
 		lastCompleteFile: 'kesh-auto-20261024T010000000Z.keshbackup',
 		nextDueAt: '2026-10-25T01:00:00.000Z',
 		overdue: false,
+		lastSuccessInFuture: false,
 		...over,
 	};
 }
@@ -218,6 +227,216 @@ describe('AutoBackupSection — « Sauvegarder maintenant » (AC33)', () => {
 		expect((await screen.findByTestId('auto-backup-run-error')).textContent).toContain(
 			'déjà en cours',
 		);
+		// 4xx : le serveur a refusé, rien n'a été écrit — aucune relecture (AC-b2).
+		expect(mock.fetchBackupSchedule).toHaveBeenCalledTimes(1);
+		expect(mock.fetchServerBackups).toHaveBeenCalledTimes(1);
+	});
+});
+
+/** La tentative en cours vue par une relecture : date neuve, statut de la précédente. */
+const NOUVELLE_TENTATIVE = '2026-10-26T03:00:00.000Z';
+/** Sa date telle que l'écran l'affiche (comparer « 26 » seul passerait sur « 2026 »). */
+const NOUVELLE_TENTATIVE_AFFICHEE = formatBackupDate(NOUVELLE_TENTATIVE, 'fr-CH');
+
+function selecteur(): HTMLSelectElement {
+	return screen.getByTestId('auto-backup-frequency') as HTMLSelectElement;
+}
+
+function conserve(): HTMLInputElement {
+	return screen.getByTestId('auto-backup-retention') as HTMLInputElement;
+}
+
+async function lancer(): Promise<void> {
+	await fireEvent.click(screen.getByTestId('auto-backup-run'));
+	await waitFor(() =>
+		expect((screen.getByTestId('auto-backup-run') as HTMLButtonElement).disabled).toBe(false),
+	);
+}
+
+describe('AutoBackupSection — saisie et « Sauvegarder maintenant » (Story 32-1b, #711 E-6)', () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	it('(i) la fréquence modifiée sans enregistrer survit au run ; « Enregistrer » envoie la version lue', async () => {
+		await monter(schedule());
+		await fireEvent.change(selecteur(), { target: { value: '12' } });
+		mock.runBackupNow.mockResolvedValue(
+			schedule({ lastAttemptAt: NOUVELLE_TENTATIVE, lastSuccessAt: NOUVELLE_TENTATIVE }),
+		);
+		await lancer();
+		expect(selecteur().value).toBe('12');
+		expect(screen.getByTestId('auto-backup-last-attempt').textContent).toContain(
+			NOUVELLE_TENTATIVE_AFFICHEE,
+		);
+		expect(screen.getByTestId('auto-backup-last-attempt').textContent).toContain('réussie');
+		mock.saveBackupSchedule.mockResolvedValue(schedule({ version: 4, intervalHours: 12 }));
+		await fireEvent.click(screen.getByTestId('auto-backup-save'));
+		expect(mock.saveBackupSchedule).toHaveBeenCalledWith({
+			enabled: true,
+			intervalHours: 12,
+			retentionCount: 7,
+			version: 3,
+		});
+	});
+
+	it('(ii) sans saisie, le formulaire suit le réglage rendu par le run', async () => {
+		await monter(schedule());
+		mock.runBackupNow.mockResolvedValue(schedule({ retentionCount: 9 }));
+		await lancer();
+		expect(conserve().value).toBe('9');
+	});
+
+	it('(iii) concurrence : la saisie est gardée et s’enregistre contre la version lue → 409', async () => {
+		await monter(schedule());
+		await fireEvent.input(conserve(), { target: { value: '12' } });
+		mock.runBackupNow.mockResolvedValue(schedule({ version: 4, retentionCount: 10 }));
+		await lancer();
+		expect(conserve().value).toBe('12');
+		mock.saveBackupSchedule.mockRejectedValue({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			status: 409,
+			message: 'conflit',
+		});
+		await fireEvent.click(screen.getByTestId('auto-backup-save'));
+		expect(mock.saveBackupSchedule).toHaveBeenCalledWith({
+			enabled: true,
+			intervalHours: 24,
+			retentionCount: 12,
+			version: 3,
+		});
+		expect(await screen.findByTestId('auto-backup-conflict')).toBeTruthy();
+	});
+
+	// Revue de code P1 (E1) : `formUnchanged` compare aussi la case « Activée » —
+	// seule modifiée, elle doit suffire à garder la saisie (mutation M-b12).
+	it('(iv) la case « Activée » seule décochée sans enregistrer survit au run ; « Enregistrer » envoie enabled: false', async () => {
+		await monter(schedule());
+		await fireEvent.click(screen.getByTestId('auto-backup-enabled'));
+		mock.runBackupNow.mockResolvedValue(schedule({ version: 4, retentionCount: 9 }));
+		await lancer();
+		expect((screen.getByTestId('auto-backup-enabled') as HTMLInputElement).checked).toBe(false);
+		expect(conserve().value).toBe('7');
+		mock.saveBackupSchedule.mockResolvedValue(schedule({ version: 5, enabled: false }));
+		await fireEvent.click(screen.getByTestId('auto-backup-save'));
+		expect(mock.saveBackupSchedule).toHaveBeenCalledWith({
+			enabled: false,
+			intervalHours: 24,
+			retentionCount: 7,
+			version: 3,
+		});
+	});
+
+	// Revue de code P1 (E1) : une saisie modifiée puis remise à sa base n'est plus
+	// une saisie en cours — le formulaire et sa version suivent le run.
+	it('(v) modifiée puis remise à l’origine : le formulaire suit le réglage rendu, et sa version', async () => {
+		await monter(schedule());
+		const caseActivee = screen.getByTestId('auto-backup-enabled') as HTMLInputElement;
+		await fireEvent.click(caseActivee);
+		await fireEvent.click(caseActivee);
+		await fireEvent.change(selecteur(), { target: { value: '12' } });
+		await fireEvent.change(selecteur(), { target: { value: '24' } });
+		mock.runBackupNow.mockResolvedValue(schedule({ version: 4, retentionCount: 9 }));
+		await lancer();
+		expect(caseActivee.checked).toBe(true);
+		expect(conserve().value).toBe('9');
+		mock.saveBackupSchedule.mockResolvedValue(schedule({ version: 5, retentionCount: 9 }));
+		await fireEvent.click(screen.getByTestId('auto-backup-save'));
+		expect(mock.saveBackupSchedule).toHaveBeenCalledWith({
+			enabled: true,
+			intervalHours: 24,
+			retentionCount: 9,
+			version: 4,
+		});
+	});
+});
+
+describe('AutoBackupSection — réponse manquante ou en erreur (Story 32-1b, #711 E-7)', () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	const PAS_PARVENUE = "La réponse du serveur n'est pas parvenue";
+
+	for (const [nom, rejet] of [
+		['TIMEOUT', { code: 'TIMEOUT', status: 0, message: 'Le serveur ne répond pas.' }],
+		['NETWORK_ERROR', { code: 'NETWORK_ERROR', status: 0, message: 'Coupé.' }],
+		['502', { code: 'UNKNOWN_ERROR', status: 502, message: 'Bad Gateway' }],
+		['504', { code: 'UNKNOWN_ERROR', status: 504, message: 'Gateway Timeout' }],
+		['rejet hors ApiError', new TypeError('x')],
+	] as const) {
+		it(`${nom} : message « pas parvenue », état et liste relus`, async () => {
+			await monter(schedule());
+			mock.runBackupNow.mockRejectedValue(rejet);
+			await lancer();
+			expect(screen.getByTestId('auto-backup-run-error').textContent).toContain(PAS_PARVENUE);
+			expect(mock.fetchBackupSchedule).toHaveBeenCalledTimes(2);
+			expect(mock.fetchServerBackups).toHaveBeenCalledTimes(2);
+		});
+	}
+
+	it('200 au corps illisible (`undefined`) : message « pas parvenue », relecture faite', async () => {
+		await monter(schedule());
+		mock.runBackupNow.mockResolvedValue(undefined as unknown as BackupSchedule);
+		await lancer();
+		expect(screen.getByTestId('auto-backup-run-error').textContent).toContain(PAS_PARVENUE);
+		expect(mock.fetchBackupSchedule).toHaveBeenCalledTimes(2);
+		expect(mock.fetchServerBackups).toHaveBeenCalledTimes(2);
+		// Le panneau reste affiché (le réglage relu, non un état vide).
+		expect(screen.getByTestId('auto-backup-state')).toBeTruthy();
+	});
+
+	it('TIMEOUT pendant l’écriture : la relecture montre la tentative en cours, le message dit « s’écrit encore »', async () => {
+		await monter(schedule());
+		mock.runBackupNow.mockRejectedValue({ code: 'TIMEOUT', status: 0, message: 'délai' });
+		mock.fetchBackupSchedule.mockResolvedValue(schedule({ lastAttemptAt: NOUVELLE_TENTATIVE }));
+		await lancer();
+		expect(screen.getByTestId('auto-backup-run-error').textContent).toContain("ou s'écrit encore");
+		const tentative = screen.getByTestId('auto-backup-last-attempt').textContent ?? '';
+		expect(tentative).toContain(NOUVELLE_TENTATIVE_AFFICHEE);
+		// La tentative en cours avec le statut de la précédente (C-32-1-30, #725).
+		expect(tentative).toContain('réussie');
+	});
+
+	it('500 : le message du serveur, état et liste relus', async () => {
+		await monter(schedule());
+		mock.runBackupNow.mockRejectedValue({
+			code: 'INTERNAL_ERROR',
+			status: 500,
+			message: 'Erreur interne',
+		});
+		await lancer();
+		const texte = screen.getByTestId('auto-backup-run-error').textContent ?? '';
+		expect(texte).toContain('Erreur interne');
+		expect(texte).not.toContain(PAS_PARVENUE);
+		expect(mock.fetchBackupSchedule).toHaveBeenCalledTimes(2);
+		expect(mock.fetchServerBackups).toHaveBeenCalledTimes(2);
+	});
+
+	it('403 : le message du serveur, aucune relecture', async () => {
+		await monter(schedule());
+		mock.runBackupNow.mockRejectedValue({ code: 'FORBIDDEN', status: 403, message: 'Accès refusé' });
+		await lancer();
+		const texte = screen.getByTestId('auto-backup-run-error').textContent ?? '';
+		expect(texte).toContain('Accès refusé');
+		expect(texte).not.toContain(PAS_PARVENUE);
+		expect(mock.fetchBackupSchedule).toHaveBeenCalledTimes(1);
+		expect(mock.fetchServerBackups).toHaveBeenCalledTimes(1);
+	});
+
+	it('relecture en échec : alerte de lecture ; un run suivant réussi l’efface', async () => {
+		await monter(schedule());
+		mock.runBackupNow.mockRejectedValueOnce({ code: 'TIMEOUT', status: 0, message: 'délai' });
+		mock.fetchBackupSchedule.mockRejectedValueOnce({
+			code: 'NETWORK_ERROR',
+			status: 0,
+			message: 'Impossible de contacter le serveur.',
+		});
+		await lancer();
+		expect(screen.getByTestId('auto-backup-run-error').textContent).toContain(PAS_PARVENUE);
+		expect(screen.getByTestId('auto-backup-load-error')).toBeTruthy();
+		// Le réglage affiché reste le précédent.
+		expect(screen.getByTestId('auto-backup-state')).toBeTruthy();
+		mock.runBackupNow.mockResolvedValueOnce(schedule());
+		await lancer();
+		expect(screen.queryByTestId('auto-backup-load-error')).toBeNull();
+		expect(screen.queryByTestId('auto-backup-run-error')).toBeNull();
 	});
 });
 
@@ -250,6 +469,10 @@ describe('AutoBackupSection — sauvegardes du serveur (AC33, AC34)', () => {
 		expect(lignes).toHaveLength(3);
 		const mentions = lignes.map((l) => l.querySelector('[data-testid="server-backup-too-large"]'));
 		expect(mentions[0]?.textContent).toContain('limite 7 Mio');
+		// Story 32-1b (#711 L-B6) : l'équivalent décimal, dans l'unité des tailles listées —
+		// écrit tel qu'observé au run : `Intl` sépare le nombre de l'unité par une espace
+		// fine insécable (U+202F) en fr-CH.
+		expect(mentions[0]?.textContent).toContain('limite 7 Mio, soit 7,3 Mo');
 		expect(mentions[1]).toBeNull();
 		expect(mentions[2]).toBeNull();
 	});

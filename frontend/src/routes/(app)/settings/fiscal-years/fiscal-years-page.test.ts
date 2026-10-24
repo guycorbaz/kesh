@@ -160,6 +160,24 @@ describe('garde LIFO client', () => {
 		expect(btn2026.getAttribute('title')).toBeNull();
 		expect(btn2026.parentElement?.getAttribute('title')).toBeNull();
 	});
+
+	// Story 32-1a (#716, E2) — seul un postérieur CLOS bloque la réouverture : un
+	// postérieur ouvert n'est pas une garde. Sans ce cas, retirer le filtre sur le
+	// statut de `latestLaterClosed` ne rougissait aucun test (tous n'avaient que des clos).
+	it('un clos suivi d’un ouvert reste rouvrable, sans infobulle', async () => {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([
+			fy({ id: 1, name: 'Exercice 2025', startDate: '2025-01-01', endDate: '2025-12-31', status: 'Closed' }),
+			fy({ id: 2, name: 'Exercice 2026', startDate: '2026-01-01', endDate: '2026-12-31', status: 'Open' }),
+		]);
+
+		render(Page);
+
+		const btn = (await screen.findByTestId('fiscal-year-reopen-1')) as HTMLButtonElement;
+		expect(btn.disabled).toBe(false);
+		expect(btn.getAttribute('title')).toBeNull();
+		expect(btn.parentElement?.getAttribute('title')).toBeNull();
+	});
 });
 
 describe('modal de réouverture — motif obligatoire + submit', () => {

@@ -12,6 +12,7 @@ use std::io::{self, Seek, SeekFrom, Write};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use chrono::{NaiveDateTime, TimeDelta, Utc};
@@ -55,17 +56,31 @@ enum Ecrivain {
 struct TestEnv {
     libre: u64,
     ecrivain: Ecrivain,
+    /// Nombre d'appels à `free_bytes` — la mesure d'espace du tour (Story
+    /// 32-1a, #711 E-9 (1)). Lu par le test que rend [`TestEnv::sonde`].
+    mesures: Arc<AtomicUsize>,
 }
 
 impl TestEnv {
     fn large() -> Arc<dyn BackupEnv> {
-        Arc::new(Self {
-            libre: u64::MAX,
-            ecrivain: Ecrivain::Normal,
-        })
+        Self::sonde().0
     }
     fn avec(libre: u64, ecrivain: Ecrivain) -> Arc<dyn BackupEnv> {
-        Arc::new(Self { libre, ecrivain })
+        Arc::new(Self {
+            libre,
+            ecrivain,
+            mesures: Arc::default(),
+        })
+    }
+    /// Comme [`TestEnv::large`], avec le compteur des mesures d'espace.
+    fn sonde() -> (Arc<dyn BackupEnv>, Arc<AtomicUsize>) {
+        let mesures = Arc::new(AtomicUsize::new(0));
+        let env = Arc::new(Self {
+            libre: u64::MAX,
+            ecrivain: Ecrivain::Normal,
+            mesures: mesures.clone(),
+        });
+        (env, mesures)
     }
 }
 
@@ -117,6 +132,7 @@ impl Seek for EcrivainDeTest {
 
 impl BackupEnv for TestEnv {
     fn free_bytes(&self, _dir: &Path) -> io::Result<u64> {
+        self.mesures.fetch_add(1, Ordering::SeqCst);
         Ok(self.libre)
     }
     fn wrap_writer(&self, file: File) -> Box<dyn WriteSeek> {
@@ -679,12 +695,24 @@ async fn archive_illisible_supprimee(pool: MySqlPool) {
     assert_eq!(reglage(&pool).await.last_status.as_deref(), Some("failed"));
 }
 
-/// Écriture impossible (`auto` remplacé par un fichier) → `failed`.
+/// Écriture impossible (`auto` remplacé par un fichier) → `failed`, et le tour
+/// s'arrête à la **garde du dossier** : aucune mesure d'espace.
+///
+/// Les deux gardes du dossier (création, puis lecture par `read_dir`) rendent le
+/// même statut, et toute création en échec fait aussi échouer la lecture : leur
+/// ordre est équivalent quant au statut (C-32-1-4). Ce qui distingue un tour
+/// arrêté à la garde d'un tour qui la passerait, c'est qu'il ne mesure pas
+/// l'espace (`free_bytes`, compté par [`TestEnv::sonde`]). `wrap_writer` n'est
+/// pas compté (C-32-1-25) : sur ce montage, même gardes neutralisées,
+/// `write_backup_file` échoue à créer `auto/<nom>.partial` sous un fichier
+/// (`ENOTDIR`) avant d'appeler l'écrivain — un compteur de `wrap_writer` serait
+/// à zéro avec ou sans le défaut.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn dossier_auto_inutilisable(pool: MySqlPool) {
     let i = monter(pool.clone()).await;
     std::fs::write(i.auto(), b"un fichier, pas un dossier").unwrap();
-    let issue = run_once(&i.state, TestEnv::large(), instant(0), Trigger::Schedule)
+    let (env, mesures) = TestEnv::sonde();
+    let issue = run_once(&i.state, env, instant(0), Trigger::Schedule)
         .await
         .unwrap();
     assert_eq!(
@@ -692,6 +720,11 @@ async fn dossier_auto_inutilisable(pool: MySqlPool) {
         RunOutcome::Done(RunStatus::Failure(FailureStatus::Failed))
     );
     assert_eq!(reglage(&pool).await.last_status.as_deref(), Some("failed"));
+    assert_eq!(
+        mesures.load(Ordering::SeqCst),
+        0,
+        "le tour doit s'arrêter à la garde du dossier, avant la mesure d'espace"
+    );
 }
 
 /// Recule la date de modification d'un fichier d'une heure : un `.partial`
@@ -1116,7 +1149,9 @@ async fn telechargement(pool: MySqlPool) {
 
 /// `nextDueAt` = dernière réussite + intervalle après un succès ; = tentative
 /// + 1 h après l'échec d'un tour planifié (parti une fois l'intervalle
-/// atteint) ; `overdue` vrai pour une réussite datée du futur.
+/// atteint) ; `overdue` vrai pour une réussite datée du futur, et
+/// `lastSuccessInFuture` (Story 32-1d, L-B5) vrai dans ce seul cas — faux pour
+/// une réussite passée.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn prochaine_et_retard(pool: MySqlPool) {
     let i = monter(pool.clone()).await;
@@ -1127,6 +1162,7 @@ async fn prochaine_et_retard(pool: MySqlPool) {
     let s = i.schedule().await;
     assert_eq!(date(&s["nextDueAt"]), t0 + TimeDelta::hours(24));
     assert_eq!(s["overdue"], false);
+    assert_eq!(s["lastSuccessInFuture"], false);
 
     // Un tour planifié qui échoue, la dernière réussite datant d'un jour.
     sqlx::query("UPDATE _kesh_backup_schedule SET last_success_at = ? WHERE id = 1")
@@ -1150,11 +1186,14 @@ async fn prochaine_et_retard(pool: MySqlPool) {
     let s = i.schedule().await;
     assert_eq!(date(&s["nextDueAt"]), t1 + TimeDelta::hours(1));
     assert_eq!(s["lastStatus"], "insufficient_space");
+    assert_eq!(s["lastSuccessInFuture"], false);
 
     sqlx::query("UPDATE _kesh_backup_schedule SET last_success_at = ? WHERE id = 1")
         .bind(Utc::now().naive_utc() + TimeDelta::days(3))
         .execute(&pool)
         .await
         .unwrap();
-    assert_eq!(i.schedule().await["overdue"], true);
+    let s = i.schedule().await;
+    assert_eq!(s["overdue"], true);
+    assert_eq!(s["lastSuccessInFuture"], true);
 }
