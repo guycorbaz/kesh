@@ -6,7 +6,7 @@ de ligne cités sont ceux de `e59d63e8`.
 
 ---
 
-### C-32-5-1 — Une fiche, trois parties (a, b, c), trois revues — découpage proposé
+### C-32-5-1 — Une fiche, quatre parties (a, b, c, d), quatre revues — découpage proposé
 
 - **Contexte** : le kickoff comptait **3** modules (`kesh-db`, `kesh-api` auth et routes, docs). Le relevé au code en
   trouve davantage : la règle des principaux orphelins (`companies.rs:308`) et ses trois consommateurs
@@ -28,6 +28,13 @@ de ligne cités sont ceux de `e59d63e8`.
   moitié « clé et routes » ferait six modules) ; déplacer les routes à la 32-7 (le kickoff les met ici, et leurs gardes
   — Administrateur seul, fermées aux clés — sont de la sécurité, non de l'écran).
 - **Réversible** : oui — les parties se fusionnent sans rien réécrire.
+- ⚠️ **Révisé en validation P1** (F3, F4, R4, R10) : l'ancienne partie b gagnait un quatrième consommateur
+  d'`OrphanPrincipals`, `tests/onboarding_audit_e2e.rs`, `MULTI-TENANT-SCOPING-PATTERNS.md` et deux passages du manuel —
+  **six** modules. Elle se scinde : **b** — l'authentification (`kesh-api/auth`, `kesh-api/services`, le test de
+  restauration : 3) ; **d** — la remise à zéro et la réparation (`kesh-db`, `kesh-seed`, `kesh-api/auth`
+  (`bootstrap.rs`), `kesh-api/routes` (`onboarding.rs`, `admin.rs`), docs : 5). Total recompté : douze modules ; ordre
+  a → b, puis c et d dans l'un ou l'autre ordre. Jusqu'à d, la remise à zéro vide `mcp_keys` et l'authentification joint
+  `companies` : aucun état intermédiaire n'ouvre d'accès ni ne fait mentir le manuel.
 
 ### C-32-5-2 — Deux tables neuves dans une seule migration
 
@@ -59,7 +66,7 @@ de ligne cités sont ceux de `e59d63e8`.
   la colonne exige l'énumération côté `kesh-db` (motif `ApiKeyScope`, `entities/api_key.rs:22-71`).
 - **Retenu** : l'énumération vit dans `kesh-db` (`McpScope`, cinq variantes aux **mêmes noms** que `Portee`, `as_str`,
   `FromStr`, dérivations `Ord` et `Hash` comprises) ; `services::acces` la réexporte (`pub use … McpScope as Portee`).
-  Les quatorze emplois de `Portee::` de la 32-3 compilent inchangés.
+  Les emplois de `Portee::` hors de `tests/services_motif.rs` (quatorze occurrences sur onze lignes en tout) compilent inchangés ; *révisé en validation P1 (R2 = F1, F7)* : `services_motif.rs` énumère les deux variantes (`TOUTES: [Portee; 2]`, l. 869 ; `match` exhaustif d'`autre_portee`, l. 894-898) et se réécrit (AC-b2).
 - **Écartées** : deux énumérations et une conversion (deux listes à tenir égales — DRY) ; l'énumération dans
   `kesh-api` et des chaînes en `kesh-db` (le décodage strict quitterait le dépôt).
 - **Réversible** : oui.
@@ -155,7 +162,7 @@ de ligne cités sont ceux de `e59d63e8`.
   (`companies.rs:278-311`) : aucune clé orpheline ne redevient active par aucun chemin.
 - **Retenu** : `reattach_orphan_principals_in_tx` verrouille, révoque puis repointe aussi les clés MCP orphelines,
   après `api_keys` (ordre des verrous `users` → `api_keys` → `mcp_keys`) ; `OrphanPrincipals` gagne
-  `mcp_keys_revoked` et `mcp_keys_repointed`, que ses trois consommateurs écrivent au détail de leur entrée d'audit ;
+  `mcp_keys_revoked` et `mcp_keys_repointed`, que ses **quatre** consommateurs (*révisé en validation P1, R4 = F3* : `repair_installation_in_tx` lui-même, `companies.rs:680-683`, s'ajoute aux trois premiers) écrivent **toujours** au détail de leur entrée d'audit (`[]` et `0` quand il n'y a rien : forme stable, tests à égalité JSON complétés) ;
   la règle 4 attend `{api_keys, mcp_keys, users}`. Défense de plus, sans coût : l'authentification d'une clé MCP joint
   `companies` — une clé orpheline n'authentifie jamais, même avant la réparation.
 - **Écartées** : mêler les clés MCP aux `api_keys_revoked` (une seule liste, deux natures de secret, et un JSON d'audit
@@ -243,7 +250,7 @@ de ligne cités sont ceux de `e59d63e8`.
 - **Contexte** : aucune dépendance directe de Kesh ne lit une notation CIDR ; `ipnet 2.12.0` est déjà dans `Cargo.lock`
   (l. 1872-1873), par dépendance transitive.
 - **Retenu** : `ipnet` en dépendance directe de `kesh-api` (même version, aucun téléchargement), pour valider et
-  **canoniser** chaque entrée à l'écriture (`IpNet`, une adresse seule devenant `/32` ou `/128`) ; la 32-6 s'en sert
+  **canoniser** chaque entrée à l'écriture (*révisé en validation P1, R7* : lue d'abord comme `IpAddr`, stockée `/32` ou `/128` ; sinon comme `IpNet`, dont `from_str` exige le préfixe ; un réseau à bits d'hôte, `10.1.2.3/8`, est **refusé** plutôt que tronqué en silence — l'administrateur voit la forme attendue) ; la 32-6 s'en sert
   pour l'appartenance. Origines : `scheme://hôte[:port]`, `http` ou `https`, sans chemin, comparées en minuscules.
 - **Écartée** : un analyseur maison (une seconde implémentation d'une notation normée).
 - **Réversible** : oui.
@@ -270,4 +277,50 @@ de ligne cités sont ceux de `e59d63e8`.
   l'avertissement « secret » : les condensés des clés MCP ; CHANGELOG `[0.16.0]`, un ⚠️ en tête de *Modifié*. PDF
   régénéré.
 - **Écartée** : une note au CHANGELOG seul (le manuel est ce qu'on lit le jour de la panne).
+- **Réversible** : oui.
+
+### C-32-5-22 — La partie qui change le comportement corrige le manuel (F4)
+
+- **Contexte** : la 32-5d fait conserver les clés MCP par la remise à zéro et révoquer les clés MCP orphelines par la
+  réparation ; le manuel dit aujourd'hui que la remise à zéro « conserve les utilisateurs et les clés d'API »
+  (`admin-manual.tex:1414`) et que la réparation révoque « les clés d'API » (`:1416`, `:2461`). Entre la 32-5d et la
+  32-7, il mentirait par omission — sur un point de sécurité (une clé de démonstration qui garde l'accès aux livres de
+  production).
+- **Retenu** : la 32-5d corrige les trois passages et régénère le PDF dans sa PR (*Règle d'inclusion* de `CLAUDE.md`) ;
+  la 32-7, qui écrit la section *Le serveur MCP*, y renvoie (point de suite inscrit à la fiche, pour la section 32-7 du
+  fichier d'epic).
+- **Écartée** : laisser la 32-7 reprendre les deux passages, la 32-5d le disant — moins de modules, mais un manuel faux
+  sur `main` pendant plusieurs stories, et une règle d'inclusion contournée.
+- **Réversible** : oui.
+
+### C-32-5-23 — Où vivent les tests : là où le montage existe
+
+- **Contexte** : `kesh-seed` n'a aucun test de base et ne dépend pas de `kesh-api` (R3) ; les helpers d'export et
+  d'import sont privés à `admin_full_import_e2e.rs` (R8 = F8).
+- **Retenu** : le test de la remise à zéro dans `kesh-api/tests/onboarding_audit_e2e.rs` (où vivent ceux de
+  `reset_demo`) ; le test de la clé restaurée dans `admin_full_import_e2e.rs` (montage réutilisé, `DELETE FROM mcp_keys`
+  direct) ; les refus croisés dans un `cles_mcp_e2e.rs` neuf (montage de `tests/common/`).
+- **Écartée** : extraire les helpers d'import vers `tests/common/` (un déplacement de 800 lignes hors du sujet).
+- **Réversible** : oui.
+
+### C-32-5-24 — La ligne de `migrations.sha384` dans la même PR, en dernier (R1)
+
+- **Contexte** : `published_migrations_keep_their_checksums` (`test_schema_guard.rs:602`) exige une ligne par migration ;
+  l'en-tête du registre dit qu'elle s'ajoute à la création ; la 31-1c l'a fait dans sa PR. La première rédaction
+  affirmait le contraire.
+- **Retenu** : la 32-5a inscrit `20261025000001 <sha384>` une fois les `CHECK` éprouvés ; dès lors le fichier de
+  migration ne se modifie plus (P8).
+- **Écartée** : attendre la release (gate rouge).
+- **Réversible** : non (c'est l'objet même du registre).
+
+### C-32-5-25 — Cohérence avec #722 : la 32-5 n'ajoute rien hors sauvegarde
+
+- **Contexte** : #722 demande l'inventaire clos de ce qui vit hors du `.keshbackup`, réglages de l'Epic 32 compris
+  (prompts, activation du serveur, clés MCP), et, pour chacun, de l'emporter ou de dire pourquoi, au manuel
+  § restauration.
+- **Retenu** : les clés MCP et les réglages du serveur — activation comprise — **entrent** au `.keshbackup` (C-32-0-8,
+  C-32-5-2) ; le manuel le dit à *Ce que la sauvegarde emporte* (AC-a13 (4)) ; la liste de ce qui reste hors du fichier
+  ne change pas. La 32-5 ne ferme pas #722 (`_kesh_backup_schedule` reste à part ; les prompts sont la 32-10a) et le
+  dit en `refs`.
+- **Écartée** : traiter ici l'inventaire entier de #722 (hors périmètre de la story).
 - **Réversible** : oui.
