@@ -28,6 +28,7 @@ vi.mock('svelte-sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } })
 import * as api from './backup-schedule.api';
 import type { BackupSchedule, ServerBackups } from './backup-schedule.api';
 import AutoBackupSection from './AutoBackupSection.svelte';
+import { formatBackupDate } from './backup-format';
 
 const mock = vi.mocked(api);
 
@@ -234,6 +235,8 @@ describe('AutoBackupSection — « Sauvegarder maintenant » (AC33)', () => {
 
 /** La tentative en cours vue par une relecture : date neuve, statut de la précédente. */
 const NOUVELLE_TENTATIVE = '2026-10-26T03:00:00.000Z';
+/** Sa date telle que l'écran l'affiche (comparer « 26 » seul passerait sur « 2026 »). */
+const NOUVELLE_TENTATIVE_AFFICHEE = formatBackupDate(NOUVELLE_TENTATIVE, 'fr-CH');
 
 function selecteur(): HTMLSelectElement {
 	return screen.getByTestId('auto-backup-frequency') as HTMLSelectElement;
@@ -261,7 +264,9 @@ describe('AutoBackupSection — saisie et « Sauvegarder maintenant » (Story 32
 		);
 		await lancer();
 		expect(selecteur().value).toBe('12');
-		expect(screen.getByTestId('auto-backup-last-attempt').textContent).toContain('26');
+		expect(screen.getByTestId('auto-backup-last-attempt').textContent).toContain(
+			NOUVELLE_TENTATIVE_AFFICHEE,
+		);
 		expect(screen.getByTestId('auto-backup-last-attempt').textContent).toContain('réussie');
 		mock.saveBackupSchedule.mockResolvedValue(schedule({ version: 4, intervalHours: 12 }));
 		await fireEvent.click(screen.getByTestId('auto-backup-save'));
@@ -341,7 +346,10 @@ describe('AutoBackupSection — réponse manquante ou en erreur (Story 32-1b, #7
 		mock.fetchBackupSchedule.mockResolvedValue(schedule({ lastAttemptAt: NOUVELLE_TENTATIVE }));
 		await lancer();
 		expect(screen.getByTestId('auto-backup-run-error').textContent).toContain("ou s'écrit encore");
-		expect(screen.getByTestId('auto-backup-last-attempt').textContent).toContain('26');
+		const tentative = screen.getByTestId('auto-backup-last-attempt').textContent ?? '';
+		expect(tentative).toContain(NOUVELLE_TENTATIVE_AFFICHEE);
+		// La tentative en cours avec le statut de la précédente (C-32-1-30, #725).
+		expect(tentative).toContain('réussie');
 	});
 
 	it('500 : le message du serveur, état et liste relus', async () => {
