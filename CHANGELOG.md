@@ -8,6 +8,21 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.16.0] — Non publié
+
+### Corrigé
+
+- **Manuels et brochure : la répétition d'une clôture dit vrai, et les signes s'impriment**
+  ([#714](https://github.com/guycorbaz/kesh/issues/714)). Dans le manuel d'administration, § *Répéter une clôture sur
+  une copie*, sans qu'aucune commande change : ce que les deux exports écrivent sur la production (journal d'audit,
+  sessions, réglages par défaut — les trois niveaux de relance que pose la page, et non l'export) ; la barre finale de
+  `COPIE`, première cause d'un `realpath -e` en échec ; un message de `curl` ou de `grep` à l'inventaire du contrôle 4
+  est un arrêt ; une intégration qui écrit par clé d'API entre les deux exports ; la limite du contrôle final, qui ne
+  voit pas le dossier d'une autre répétition ; aucun listing coupé par une page. Le signe ⚠️ des deux manuels, qui ne
+  s'imprimait pas, sort désormais en **!** ; les coches et la flèche de la brochure et les signes des deux scripts
+  d'exemple du manuel d'administration s'impriment (`+`, `→`, `x`, `=`) — aucun PDF ne porte plus de caractère sans
+  glyphe.
+
 ## [0.15.0] — 2026-10-24
 
 Epic 31, **une sauvegarde qui restaure tout** ([#503](https://github.com/guycorbaz/kesh/issues/503)) : le fichier `.keshbackup` emporte désormais les pièces — documents fournisseur importés et PDF figés des factures émises —, Kesh fait lui-même sa sauvegarde complète à intervalle régulier, réglée dans *Administration → Sauvegarde complète*, les sauvegardes du serveur se listent et se téléchargent depuis l'écran, et une installation neuve se restaure depuis l'assistant. Le manuel d'administration décrit la **répétition d'une clôture sur une copie** isolée, avant de clore pour de bon. S'y ajoutent quatre correctifs courts — la démonstration valide une facture avec TVA, l'infobulle de *Réouvrir*, la communication du QR-code dans la langue de la facture, les refus du journal d'audit traduits — et, en interne, un smoke E2E sur chaque PR et Rust 1.97.1.

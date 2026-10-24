@@ -643,3 +643,33 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   gardes de test que #727 corrige entier ; découper la 32-1a au motif de ses six modules — ses AC sont indépendants ;
   une variante de message pour le 200 illisible (F10) — une clé de plus pour un cas rare.
 - **Réversible** : oui — l'AC-a11 peut revenir tant que la 32-1a n'est pas développée, et #727 le porte d'ici là.
+
+### C-32-1-39 — 32-1c : le `literate` des listings ne prend pas, repli ASCII dans les deux scripts d'exemple
+
+- **Contexte** (développement de la 32-1c, 2026-10-24) : l'AC-c7 prescrivait `literate={✓}{{+}}1 {✗}{{x}}1 {═}{{=}}1`
+  au style `kesh`, avec un repli écrit si le compte de U+FFFD le démentait. Après `make fr`, le manuel d'administration
+  rendait encore **9** U+FFFD — exactement les neuf signes des deux scripts d'exemple ; les replis d'icônes et la macro
+  `\keshAttention` avaient porté les deux autres PDF à 0. Sous XeLaTeX, `listings` ne traite pas les caractères au-delà
+  de U+00FF : le `literate` sur eux ne remplace rien.
+- **Retenu** : le repli que la fiche prescrit — les neuf signes écrits en ASCII dans les deux scripts (`+`, `x`, `=`),
+  hors `sec:repetition-cloture` ; le `literate`, inopérant, est **retiré** du `.sty` et remplacé par un commentaire qui
+  dit pourquoi (un réglage qui ne fait rien et paraît fonctionner est le pire des deux). Après reconstruction :
+  administration **0** U+FFFD.
+- **Écartées** : garder le `literate` « pour le jour où » (code mort qui paraît actif) ; `extendedchars`/`inputencoding`
+  (sans effet sur des caractères hors de l'octet sous XeTeX) ; changer la police des listings (hors périmètre, effet sur
+  tous les listings).
+- **Réversible** : oui — trois lignes de `.tex` et un commentaire du `.sty`.
+
+### C-32-1-40 — 32-1c : trois `\needspace` de plus, pour qu'aucun listing de la sous-section ne soit coupé
+
+- **Contexte** : l'AC-c6 exige, au contrôle du PDF, qu'« aucun listing de la sous-section » ne soit coupé. Le PDF de la
+  base de la branche (`c03d3a5f`) en coupait **déjà deux** (contrôle 1, p. 54→55 ; contrôle 7, p. 57→58), sans lien
+  avec la 32-1c ; l'en-tête de la sous-section dit aussi que le PDF ne doit pas couper ses listings.
+- **Retenu** : `\needspace{12\baselineskip}` avant les listings des contrôles 1 et 7 ; le décalage coupant alors celui
+  du contrôle 4, `\needspace{9\baselineskip}` avant lui. Aucune ligne d'aucun listing ne change (`git diff` des
+  `lstlisting` de la sous-section vide, AC-c9) ; contrôle page par page au `pdftotext -layout` (haut et bas de chaque
+  page de 53 à 67) : aucune coupure.
+- **Écartées** : laisser les deux coupures préexistantes (l'AC ne serait pas tenue) ; un `\needspace` devant chacun des
+  vingt-deux listings (bruit, et une page presque vide à chaque fois).
+- **Réversible** : oui — trois lignes. *Limite* : un `\needspace` tient la mise en page **d'aujourd'hui** ; une
+  phrase ajoutée plus haut peut déplacer une coupure — le contrôle se refait à chaque régénération.
