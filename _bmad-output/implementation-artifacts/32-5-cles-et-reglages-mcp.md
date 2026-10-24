@@ -580,7 +580,7 @@ passages du manuel qui les décrivent (C-32-5-22).
 - [ ] **T-a4** — fenêtre de P7, justifications, tests d'import du lettrage, refus de la 0.14.0 (AC-a9, AC-a10,
   AC-a15).
 - [ ] **T-a5** — audit d'idempotence, P6 (AC-a11).
-- [ ] **T-a6** — manuels, PDF, CHANGELOG, propagation (AC-a13, AC-a14).
+- [ ] **T-a6** — manuels, PDF, CHANGELOG, propagation (AC-a13, AC-a14) — et § *À recontrôler à l'étape 0 du développement* (P8-1 à P8-4, `user-manual.tex:1914`).
 - [ ] **T-a7** — mutations Ma1 à Ma7, gates (§ *Gates*).
 
 ### 32-5b
@@ -857,6 +857,29 @@ Constats de la validation P7 laissés sans remédiation, parce qu'ils demandaien
   au manuel une phrase sans redite (p. ex. « après la mise à jour vers la 0.16.0, prendre sans attendre une sauvegarde
   complète »), et ajuster en conséquence le motif du contrôle aplati (« juste après la mise à jour »).
 
+Constats de la validation P8 (dernière passe permise), **non remédiés à la fiche** — rien n'y serait relu. L'agent de
+développement fait chaque correction **à l'étape 0**, et la déclare au Change Log, **ligne lue citée** :
+
+- **P8-1 (MEDIUM)** — le grep de classe d'AC-a13 (5) : sa moitié **PDF** n'est pas restreinte aux deux § (185
+  occurrences aujourd'hui), et le motif `égale` capte « légale », « légalement », « légales », « également ». Correction
+  attendue : **retirer la moitié PDF** du grep de classe (le PDF reste contrôlé par la liste d'absence de l'AC-a13 :
+  « égale ou plus récente », « 0.15.0 ou plus récente », « appliquera cette fois ») et écrire **`égale ou`** au lieu
+  de `égale` aux trois sites du motif (AC-a13 (5) deux fois, AC-a14). Le grep ne porte alors que sur le `.tex`
+  restreint aux deux §. *(L'AC-a13 (5) n'est pas modifié à la fiche : c'est ce point qui fait foi au développement.)*
+- **P8-2 (LOW)** — « texte d'origine au commit `481116dd` » est faux : le texte d'origine de la précision P4 se lit à
+  **`00475d19`**. Correction : remplacer `481116dd` par `00475d19` dans l'annotation P7 du fichier d'epic (puce Q4) ;
+  dans l'entrée *Validation P7* de ce Change Log, une annotation datée, sans réécriture.
+- **P8-3 (LOW)** — cette section n'était nommée par aucune tâche : renvoi ajouté à T-a6 (la seule écriture faite à la
+  fiche après la P8, d'une ligne). À l'étape 0, constater que le renvoi suffit.
+- **P8-4 (LOW)** — « cette marche est remplacée » (C-32-5-21) et « aucune marche de restauration » (point 7) décrivent
+  plus absente qu'elle ne l'est la suite gardée par l'AC-a13 (1). Correction : au registre, « cette marche est
+  **réduite** par C-32-5-28 à la phrase de l'AC-a13 (1) » ; au point 7, « il ne décrit aucune procédure détaillée de
+  restauration ». Peut aussi rester tel quel (constat sans effet sur le code).
+- **Hors périmètre, signalé par la P8** — `docs/manual/fr/user-manual.tex:1914` (« Une sauvegarde faite **avant** la
+  0.15.0 n'en contient que la trace […] : restaurée sur une autre machine… ») : même famille que la classe d'AC-a13 (5),
+  hors des deux § que vise le grep. À relire à l'étape 0 : la phrase doit rester vraie après la 32-5a (une version qui
+  importe encore cette sauvegarde) ; sinon, la borner comme les mentions du format 1 du manuel d'administration.
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -1081,4 +1104,23 @@ Constats de la validation P7 laissés sans remédiation, parce qu'ils demandaien
     procédure` (point 7) → plus aucune occurrence vivante.
   - Totaux inchangés : 31 AC, 23 tâches, 23 mutations ; registre C-32-5-1 à C-32-5-28. Suivante : **P8, dernière passe
     permise**, ciblée, Opus (`325-validate-prompt-p8.md`).
+- **2026-10-25 — Validation P8 — VALIDATION TERMINÉE AU PLAFOND** (passe **ciblée**, regression hunter, contexte frais,
+  **Opus**, sur `3a57bbce` ; rapport `kesh-gate-logs/325-validate-p8.md` : **0 / 0 / 1 MEDIUM / 3 LOW**).
+  - **Trend complet** : P1 complète (Sonnet ×2) R 0/2/3/7, F 0/0/5/4 → P2 complète (Opus ×2) R 0/0/3/7, F 0/1/4/10 → P3
+    complète (Sonnet ×2) R 0/0/0/7, F 0/0/1/9 → P4 ciblée (Opus) 0/0/1/6 → P5 ciblée (Sonnet) 0/0/1/4 → P6 ciblée
+    (Opus) 0/0/2/1 → P7 ciblée (Sonnet) 0/0/1/5 → P8 ciblée (Opus) 0/0/1/3. Soit 2 HIGH / 8 MEDIUM en P1, plus aucun
+    HIGH depuis la P3.
+  - ⚠️ **Recyclage déclaré** : la phrase sur la restauration d'une sauvegarde ancienne a pris **six formes** (R2 en P2,
+    F6 en P3, H1 en P4, P5-1 en P5, P6-1 en P6, P7-1 en P7), chacune née du correctif précédent ; elle a été traitée par
+    **retraits** successifs (C-32-5-28 : plus de chemin pour une version sans assistant, plus de fichier de release, plus
+    de version nommée à l'étape 1, puis traitement par classe) ; le MEDIUM de la P8 (P8-1) porte sur le contrôle de cette
+    même classe.
+  - **Clôture au plafond**, selon la règle de Guy du 2026-10-24 (`CLAUDE.md`, *Review Iteration Rule*) : la P8 est la
+    huitième et dernière passe permise ; **aucune remédiation de fond** n'est écrite après elle — la seule écriture à la
+    fiche est le renvoi d'une ligne de T-a6 (P8-3) ; P8-1 à P8-4 et `user-manual.tex:1914` sont **renvoyés à l'étape 0
+    du développement** (§ *À recontrôler à l'étape 0 du développement*), où l'agent les corrige et les déclare au
+    Change Log, ligne lue citée. Depuis la sixième passe, les remédiations ont été des retraits ou des réductions
+    décidés par l'orchestrateur.
+  - Totaux : 31 AC, 23 tâches, 23 mutations ; registre C-32-5-1 à C-32-5-28. La fiche est prête pour le développement
+    des quatre parties, dans l'ordre a → b → d → c.
 
