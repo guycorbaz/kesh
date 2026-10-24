@@ -1069,3 +1069,9 @@ par copie et non par `git checkout` (fichier non commité).
 fiche, P3 ; (2) **le test de restauration périodique exige un SHA-256 identique, inatteignable** (date du manifeste,
 journal d'audit), P3 manuel ; (3) **la démonstration ne valide pas une facture avec TVA** (`CONFIGURATION_REQUIRED`,
 compte de TVA due non réglé par `seed_demo`), P3 ou P4.
+
+**Gate complet au dernier commit de contenu (`d3562c7d`)** : `scripts/test-fast.sh` (fmt, clippy, garde des droits,
+nextest) sous verrou, base `kesh_314` recréée, migrée et seedée avant le gate → **3908 exécutés, 3908 réussis, 7
+ignorés**, « Gate backend rapide vert » (`/home/gcorbaz/devel/kesh-gate-logs/314-test-fast.log`). E2E complet : **non
+exécuté**, non requis (aucun écran ni code produit modifié). Instance source arrêtée par PID ; base `kesh_314` laissée
+en état de gate. Revue de code P1 à lancer : `314-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
