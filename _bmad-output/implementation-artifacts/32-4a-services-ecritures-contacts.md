@@ -843,6 +843,11 @@ C-32-4a-20) — **19 tuées sur 19, aucune survivante** :
 Chaque rouge a été relu à son message (`grep` des lignes d'échec de `324a-p1r-mut-<id>.log`) : aucun ne vient d'une
 compilation ni d'un montage. Non jouées (C-32-4a-20) : trois recopies du handler des contacts (`contact_type`,
 `is_client`, `sort_by`) et dix du handler des écritures — chacune a sa ligne dans la table, **non revendiquée**.
+*(Annoté le 2026-10-25, revue de code P2, P2-1 : **faux à cette date** pour trois des dix recopies du handler des
+écritures — `sort_by`, `sort_dir` et `offset` n'avaient de ligne dans aucune table (les écritures étaient comparées en
+ensemble, `ac10_c` n'attendait que `offset 0`) —, et pour l'`offset` du handler des contacts, hors des sept recopies
+comptées. Les sept autres recopies non jouées des écritures avaient bien leur ligne (`limit` dans `ac10_c`). Fermé par
+la remédiation de la P2 : table ordonnée et `offset` positif, M38 à M43 ; § *Revue de code P2 — remédiation*.)*
 
 **Gates** (révision `fa80ab4a`, dernier commit de code) :
 
@@ -864,6 +869,63 @@ compilation ni d'un montage. Non jouées (C-32-4a-20) : trois recopies du handle
 `services_rollout.rs` 9 → 12 (+3), `services_motif.rs` 23 → 23 ; table de `ac10_a` : dix lignes → douze. Mutations de
 la story : 35 (T6) + 19 = **54**, dont 53 tuées et M8 équivalente.
 
+#### Revue de code P2 — remédiation (2026-10-25, Opus 5.5, en autonomie)
+
+Commit `439cb5ec` (tests et doc-comments de tests — **dernier commit de code** ; aucune ligne de `crates/*/src`,
+`git diff 2e46e0d2..HEAD --stat` : `services_rollout.rs`, `services_motif.rs`). Choix C-32-4a-24 et annotation datée
+de C-32-4a-20 au registre.
+
+- **P2-1 (MEDIUM)** — traité. `filtres_des_ecritures_par_la_route` gagne une **seconde table, en ordre rendu** (quatre
+  lignes, total 3 attendu sur chacune) : sans paramètre → `[Frais, Vente, Loyer]` (`EntryDate`, `Desc`) ;
+  `sortDir=Asc` → `[Loyer, Vente, Frais]` ; `sortBy=Description&sortDir=Asc` → `[Frais, Loyer, Vente]` (distinct des
+  deux autres) ; `limit=1&offset=1` → `[Vente]` ; puis le tri par défaut **au service**, `DemandeListeEcritures::default()`,
+  contexte MCP `BooksRead` → `[Frais, Vente, Loyer]`. `tri_par_defaut_et_filtres_du_carnet` gagne
+  `limit=1&offset=1` → `[Mu Personne]`, total 3, `offset` 1. La phrase fausse du tableau M19-M37 et celle de
+  C-32-4a-20 sont **annotées** (datées du 2026-10-25), non réécrites.
+- **P2-2 (LOW)** — traité : le doc-comment d'`ac11_b_la_liste_des_ecritures_ne_lit_pas_la_societe` dit `Internal` pour
+  `ecritures::detail`, `postes_ouverts::lister`, `carnet::lister` (`ac9_c`), et `NotFound` pour `carnet::detail`
+  (`ac9_carnet_detail_lit_le_contact_avant_la_societe`).
+- **P2-3 (LOW)** — traité : la doc de `sans_commentaires` borne le `/*` « jusqu'au `*/` suivant, sur plusieurs lignes » et
+  nomme les quatre fichiers relevés (relevé refait ici : `sed -n '1,/^#\[cfg(test)\]/p' routes/<f>.rs | grep -nE
+  '"[^"]*(//|/\*)'`, hors lignes de commentaire, vide pour `accounts`, `journal_entries`, `letterings`, `contacts`) ;
+  celle d'`ac12_iii` distingue les deux portées et écrit « revue de code P1 de la 32-4a, B4 ».
+
+**Mutations M38 à M43** (pilote `kesh-gate-logs/324a-p2r-mutations-pilote.py`, journal
+`324a-p2r-mutations-campagne.log`, `324a-p2r-mut-<id>.{log,diff}` ; même protocole, sous verrou, binaire
+`services_rollout` seul, résidu nul après chacune) — **6 tuées sur 6** :
+
+| Mutation | Remplacement | Ce qui rougit (ligne) |
+|---|---|---|
+| M38 | `sort_dir: demande.sort_dir` → `SortDirection::Asc` (service) | `filtres_des_ecritures_par_la_route` : défaut ordonné, et service demande vide |
+| M39 | `sort_dir: params.sort_dir` → `Default::default()` (handler) | idem : `sortDir=Asc`, `sortBy=Description&sortDir=Asc` |
+| M40 | `sort_by: demande.sort_by` → `SortBy::default()` (service) | idem : `sortBy=Description&sortDir=Asc` |
+| M41 | `sort_by: params.sort_by` → `Default::default()` (handler) | idem : `sortBy=Description&sortDir=Asc` |
+| M42 | `offset: Some(params.offset)` → `None` (handler des écritures) | idem : `limit=1&offset=1` (rendu `[Frais]`) |
+| M43 | `offset: params.offset` → `None` (handler des contacts) | `tri_par_defaut_et_filtres_du_carnet` : `limit=1&offset=1` (rendu `[Alpha]`, `offset` 0) |
+
+Chaque rouge relu à son message : aucun ne vient d'une compilation ni d'un montage. Restent non jouées (C-32-4a-20) :
+`contact_type`, `is_client`, `sort_by`, `limit` du handler des contacts et `description`, `account_id`,
+`amount_min`, `amount_max`, `date_from`, `date_to`, `limit` du handler des écritures — chacune a une ligne qui la
+distingue (`contactType=Personne`, `isClient=…`, `sortBy=CreatedAt|UpdatedAt`, `limit=1000` de `ac10_c` ; les sept
+lignes de filtre et `limit=0` de `ac10_c`), **non revendiquée** comme tuée.
+
+**Gates** (révision `439cb5ec`) :
+
+- **ciblé** (`324a-p2r-cible-1.log`, arbre de travail commité tel quel en `439cb5ec`) : clippy `-D warnings` vert,
+  `services_rollout` + `services_motif` **35 exécutés, 35 passés** ;
+- **complet** (`324a-p2r-gate-complet.log`, `rev 439cb5ec`, bases `kesh_324a` et `kesh_e2e_324a` remises à zéro avant,
+  migrées et seedées) : `scripts/test-fast.sh --ci` sous verrou — **4016 exécutés, 4016 passés, 7 ignorés** ;
+- **frontend** : non relancé (`frontend/` non touché depuis `345bcc7f`) ;
+- **E2E complet** (`324a-p2r-e2e.log`, `rev 439cb5ec`, script `324a-p2r-e2e.sh`, port 3326, base `kesh_e2e_324a`) :
+  **315 passés, 7 échecs, 17 ignorés** (12,8 min) — les sept KF-029 de `docs/testing.md` l. 394-400
+  (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ;
+  backend arrêté par PID, port libre.
+
+**Décomptes** (périmètre `2e46e0d2` → `HEAD`) : aucun test ajouté (`services_rollout.rs` 12 → 12, `services_motif.rs`
+23 → 23) ; `filtres_des_ecritures_par_la_route` 12 lignes en ensemble + 4 ordonnées + 1 contrôle au service ;
+`tri_par_defaut_et_filtres_du_carnet` 11 lignes + 1 (`offset`). Mutations de la story : 54 + 6 = **60**, dont 59
+tuées et M8 équivalente.
+
 ### File List
 
 - `crates/kesh-api/src/services/ecritures.rs` (neuf)
@@ -881,6 +943,7 @@ la story : 35 (T6) + 19 = **54**, dont 53 tuées et M8 équivalente.
 - `docs/MULTI-TENANT-SCOPING-PATTERNS.md`
 - `_bmad-output/implementation-artifacts/324a-review-prompt-p1.md` (neuf)
 - `_bmad-output/implementation-artifacts/324a-review-prompt-p2.md` (neuf, remédiation de la revue de code P1)
+- `_bmad-output/implementation-artifacts/324a-review-prompt-p3.md` (neuf, remédiation de la revue de code P2)
 - `_bmad-output/implementation-artifacts/epic-32-choix-autonomes-324a.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 - `_bmad-output/implementation-artifacts/32-4a-services-ecritures-contacts.md`
@@ -1053,3 +1116,31 @@ la story : 35 (T6) + 19 = **54**, dont 53 tuées et M8 équivalente.
     production exécutable** (`git diff 8f3b4ffe..HEAD -- crates/*/src` : doc-comments seuls). La boucle ne se clôt que
     sur une passe à 0 MEDIUM : **P2 ciblée**, une lentille (regression hunter), **Opus**, sur `8f3b4ffe..HEAD`
     (`324a-review-prompt-p2.md`, rapport `kesh-gate-logs/324a-review-p2.md`).
+- **2026-10-25 — Revue de code P2, passe ciblée** (Opus, une lentille — regression hunter —, contexte frais, lecture
+  seule, sur `8f3b4ffe..HEAD` ; prompt `324a-review-prompt-p2.md`, rapport hors dépôt `kesh-gate-logs/324a-review-p2.md`)
+  : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW**. Les sept axes déclarés exercés ; les tests neufs de la P1 jugés justes et non
+  vides sur ce qu'ils couvrent, les 19 mutations tuées par l'assertion nommée.
+  - **P2-1 (MEDIUM)** — un **résidu de B1** : le tri (`sortBy`, `sortDir`) et le décalage de la liste des écritures, et
+    le décalage du carnet, restaient sans témoin (écritures comparées en ensemble, aucun `offset` positif) ; la phrase
+    « chacune a sa ligne dans la table » du Record et de C-32-4a-20 était fausse pour ces recopies, et l'entrée « Revue
+    de code P1 » ci-dessus déclare B1 « traité » alors qu'une partie nommée restait ouverte — **cette entrée n'est pas
+    réécrite** (relevé daté). Traité : table ordonnée de quatre lignes et tri par défaut au service (écritures),
+    `limit=1&offset=1` (carnet) ; annotations datées au Record et au registre ; C-32-4a-24.
+  - **P2-2, P2-3 (LOW)** — traités : doc-comments d'`ac11_b_la_liste_des_ecritures_ne_lit_pas_la_societe`, de
+    `sans_commentaires` et d'`ac12_iii_inventaire_des_sites_non_resolus`.
+  - Remédiation par l'orchestrateur de la story (Opus 5.5), prémisses relues au code (`SortDirection::default` →
+    `Desc`, `SortBy::default` → `EntryDate`, `kesh-core/src/listing/mod.rs` ; `default_sort_by`/`default_sort_dir` du
+    DTO) ; commit `439cb5ec` (**dernier commit de code**, tests seuls), puis ce compte rendu.
+  - **Mutations** : M38 à M43, **6 tuées sur 6** (tri au service et au handler, défaut de `sort_by` au service et au
+    handler, `offset` aux deux handlers) ; total de la story **60**, 59 tuées, M8 équivalente.
+  - **Tests** (périmètre `2e46e0d2` → `HEAD`) : aucun test neuf ; quatre lignes ordonnées et un contrôle au service
+    (écritures), une ligne (carnet).
+  - **Gates à `439cb5ec`** : ciblé 35/35 (clippy vert) ; complet `test-fast.sh --ci` **4016/4016** (7 ignorés), bases
+    remises à zéro avant ; frontend non relancé (non touché) ; E2E complet **315 passés, 7 échecs = les sept KF-029**,
+    17 ignorés.
+  - **Propagation** : `grep` de « chacune a sa ligne » et « ont chacune leur ligne » → les deux sites annotés ; relevé
+    des chaînes `//` et `/*` refait sur les quatre fichiers de routes lus par les gardes (vide).
+  - **Trend** : P1 1 MEDIUM → P2 1 MEDIUM, et ce MEDIUM est un **résidu** du MEDIUM de la P1 (B1 traité en partie), non
+    un défaut neuf ; la remédiation ne touche **aucune ligne de production** (`crates/*/src` absent du diff). La boucle
+    ne se clôt que sur une passe à 0 MEDIUM : **P3 ciblée**, une lentille (regression hunter), **Sonnet**, sur
+    `2e46e0d2..HEAD` (`324a-review-prompt-p3.md`, rapport `kesh-gate-logs/324a-review-p3.md`).

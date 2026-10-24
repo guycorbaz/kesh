@@ -263,6 +263,25 @@ autonomie. Relevé au code de `89d68704` (32-3 fusionnée).
 - **Écartée** : jouer les dix-huit recopies du handler (treize compilations de plus pour des lignes que la table
   désigne déjà une à une).
 - **Réversible** : oui (le pilote se relance avec d'autres identifiants).
+- *(Annoté le 2026-10-25, revue de code P2, P2-1 : « les autres ont chacune leur ligne » était **faux** pour `sort_by`,
+  `sort_dir` et `offset` du handler des écritures, et pour `offset` du handler des contacts — aucune ligne ne les
+  exerçait. Lignes ajoutées et mutations M38 à M43 jouées par la remédiation de la P2 (C-32-4a-24). Le choix
+  d'échantillonner reste ; ce qui se corrige, c'est l'affirmation qu'il reposait sur une table complète.)*
+
+### C-32-4a-24 — Le tri des écritures se vérifie en ordre rendu, par une seconde table
+
+*(Revue de code P2, P2-1.)*
+
+- **Contexte** : C-32-4a-19 compare les écritures en ensemble ; le tri (`sortBy`, `sortDir`) et le décalage n'avaient
+  donc aucun témoin, au handler comme au service.
+- **Retenu** : dans `filtres_des_ecritures_par_la_route`, une **seconde** table, en ordre rendu — défaut (`[F, V, L]`,
+  `EntryDate` `Desc`), `sortDir=Asc`, `sortBy=Description&sortDir=Asc` (un ordre distinct des deux autres),
+  `limit=1&offset=1` —, et le tri par défaut **au service**, demande vide, sous un contexte MCP `BooksRead` (le chemin de
+  la 32-9a) ; au carnet, `limit=1&offset=1` (`[Mu]`, `offset 1`). La première table reste en ensemble : ses lignes
+  portent sur les filtres, non sur l'ordre. Mutations M38 à M43 (pilote `324a-p2r-mutations-pilote.py`).
+- **Écartée** : passer la première table en ordre rendu — chaque ligne de filtre dépendrait alors aussi du tri, et une
+  mutation de tri rougirait douze lignes au lieu de la seule qui la vise.
+- **Réversible** : oui.
 
 ### C-32-4a-21 — AC14 : les diffs restent aux journaux, une ligne par mutation au Dev Agent Record
 
