@@ -1,6 +1,6 @@
 # Epic 32 — registre des choix autonomes de la Story 32-1 (défauts courts, clés 32-1a, 32-1b, 32-1c)
 
-Registre propre à la story (C-32-1-1 à C-32-1-28 ; C-32-1-20 à 28 de la validation P1), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
+Registre propre à la story (C-32-1-1 à C-32-1-36 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
 (`docs/agents-orchestration.md` § 1). Fiche : `32-1-defauts-courts.md`. Clé courte : `321`.
 Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` sur `chore/kickoff-epic-32` (`6f0cee00`).
 
@@ -119,6 +119,8 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   complet, voulu).
 - **Écartées** : un avertissement avant « Sauvegarder maintenant » (un dialogue de plus pour un geste fréquent) ;
   enregistrer d'office la saisie avant le run (une écriture que l'utilisateur n'a pas demandée).
+- **Amendé (validation P2, 2026-10-24)** : la saisie gardée l'est **avec la version sur laquelle elle a été faite**
+  (`formBase`, C-32-1-29) ; « Recharger » remplace la saisie aussi dans le cas concurrent, par le 409 qui joue désormais.
 - **Réversible** : oui.
 
 ### C-32-1-9 — E-7 : tout échec de « Sauvegarder maintenant » autre qu'un 409 `BACKUP_IN_PROGRESS` relit l'état
@@ -240,6 +242,9 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Écartées** : une police de repli à emoji (`fontspec` + police couleur : dépendance de la chaîne TeX du poste et de la
   CI) ; le seul manuel d'administration (le même défaut resterait, mécanique, dans l'autre).
 - **Amendé (validation P1, 2026-10-24)** : « 16 + 9 occurrences » étaient des **lignes** : 17 + 9 = **26** occurrences (la l. 2923 d'`admin-manual.tex` en porte deux), toutes suivies du sélecteur U+FE0F, remplacé avec elles ; emploi `\keshAttention\ ` ; la brochure se régénère aussi — C-32-1-26.
+- **Amendé (validation P2, 2026-10-24)** : le contrôle `pdftotext … | grep -c "⚠"` rend 0 avant comme après — il ne
+  prouve rien ; et « la brochure : 0 » est vrai de `⚠`, faux de la classe. La classe se recense par son **symptôme**
+  (U+FFFD de `pdftotext`) : 26 / 9 / 16 ; elle est traitée entière par la 32-1c (C-32-1-31).
 - **Réversible** : oui.
 
 ### C-32-1-17 — Ordre de fusion : 32-1c, puis 32-1b ; le second régénère le PDF
@@ -298,6 +303,8 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   `code(include_str!("lib.rs"))` contient `.with_state(state)`, une durée de vie) ; mutation M-a7 (retrait naïf) tuée.
 - **Écartées** : retirer les blocs ligne à ligne avant ou après le filtre `//` (les deux ordres aveuglent `lib.rs`,
   l. 1179, 1186, 1196) ; `syn` (C-32-1-6).
+- **Amendé (validation P2, 2026-10-24)** : le balayeur n'est pas à écrire, il **existe** (`kesh-db/tests/lexique/mod.rs`,
+  `decouper`) et se réemploie, étendu aux blocs imbriqués ; M-a7 en deux formes et assertion (3') — C-32-1-32.
 - **Réversible** : oui.
 
 ### C-32-1-21 — E1 : les trois colonnes posées, trois mutations, `UPDATE` après le `commit` (R3 = F2)
@@ -370,6 +377,9 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   `### Corrigé`.
 - **Écartées** : restaurer la brochure par `git checkout` (le `make` suivant la reconstruirait) ; une section
   `[Unreleased]` en anglais (contraire au fichier).
+- **Amendé (validation P2, 2026-10-24)** : le texte de la brochure change en ses 16 signes sans glyphe (C-32-1-31) ;
+  le contrôle compare au PDF de la **base de la branche** (`git merge-base origin/main HEAD`), jamais à `HEAD:` (F7) ;
+  le bloc du CHANGELOG est créé par la première **des 32-1b et 32-1c** qui fusionne (F6).
 - **Réversible** : oui.
 
 ### C-32-1-27 — Fichiers communs A/B, ordre de fusion, `closes #711` sur la dernière (R10 = F7)
@@ -388,4 +398,125 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Retenu** : champ **requis** (le serveur le sert toujours) ; fixtures complétées : `backup-schedule.api.test.ts:44`,
   `AutoBackupSection.test.ts:45`, `BackupScheduleBanner.test.ts:43`, et `etat()` de `backup-schedule.spec.ts:111-125`.
 - **Écartée** : champ optionnel (le type dirait moins que le contrat servi).
+- **Réversible** : oui.
+
+---
+
+*C-32-1-29 à C-32-1-36 : remédiation de la validation P2 (Opus 5.5, 2026-10-24 ; rapports
+`kesh-gate-logs/321-validate-p2-R.md`, `321-validate-p2-F.md`).*
+
+### C-32-1-29 — E-6 : la saisie gardée garde sa version ; le 409 joue (F1)
+
+- **Contexte** : `save` envoie `schedule.version` (`AutoBackupSection.svelte:103-118`). L'AC-b1 de la P1 faisait poser
+  `schedule` par `applyState` sous une saisie gardée : si un autre administrateur avait enregistré entre la lecture et le
+  run (version *n* + 1 dans la réponse), l'enregistrement suivant partait contre *n* + 1 et passait — son réglage
+  écrasé sans 409, la rétention suivante appliquée au nombre de la saisie. La Dev Note disait l'inverse.
+- **Retenu** : un état `formBase` (le réglage sur lequel la saisie a été faite), posé par `apply`, et par `applyState`
+  seulement quand il réécrit le formulaire ; `save` envoie `formBase.version`. Le cas normal ne change pas (`record_*`
+  ne touche pas `version`) ; le cas concurrent rend 409 et ouvre « Recharger », comportement existant. Vitest (iii),
+  mutation M-b9.
+- **Écartées** : `applyState` qui ne garde la saisie que si la version n'a pas bougé (la saisie perdue en silence dans
+  le cas concurrent, ce que l'E-6 voulait éviter) ; un avertissement de conflit propre au run (un état d'écran de plus,
+  quand le 409 existant dit déjà la chose).
+- **Réversible** : oui.
+
+### C-32-1-30 — E-7 : la relecture ne dit pas le résultat d'une sauvegarde en cours ; l'écran le dit (F2)
+
+- **Contexte** : le cas d'E-7 est un proxy qui coupe avant la fin ; la tâche `tokio::spawn`
+  (`routes/backup_schedule.rs:152`) continue, et la relecture tombe entre `record_attempt` (qui ne pose que
+  `last_attempt_at`) et `record_success`/`record_failure` (qui ne pose aucune date). Le panneau montre alors la date de
+  la tentative en cours avec le statut de la précédente (`AutoBackupSection.svelte:339-343`). Rien dans l'état servi ne
+  distingue « en cours » de « terminée en échec » : le dire à l'écran demande un champ neuf.
+- **Retenu** : formulation honnête — le message neuf dit « peut-être écrite, ou s'écrit encore » et invite à recharger
+  la page dans quelques minutes ; la phrase du manuel ne dit plus « où se lit le résultat » et décrit ce que montre une
+  tentative en cours. L'affichage, défaut préexistant, va en **commentaire de #725**, dont la partie 1 prévoit déjà un
+  signal « tentative en cours » (aucune issue neuve).
+- **Écartées** : un champ `running` servi (tiré de l'état de `backup_lock`, que l'export et l'import prennent aussi :
+  une conception, celle de #725) ; une relecture différée ou répétée côté client (un minuteur dont la durée ne se
+  justifie pas, pour une écriture de durée inconnue).
+- **Réversible** : oui.
+
+### C-32-1-31 — Les signes sans glyphe : la classe entière, par son symptôme, dans les trois PDF (F3 = R2)
+
+- **Contexte** : `pdftotext` rend U+FFFD pour chaque caractère sans glyphe : 26 (administration), 9 (utilisateur), 16
+  (brochure). Au-delà des 26 `⚠️` : 9 signes de deux scripts d'exemple du manuel d'administration (`✓`, `✗`, `═`,
+  l. 1547, 3313, 3318, 3320 ; TeX Gyre Cursor), 15 `\faCheckCircle` (`\textbf{✓}`, `kesh-style.sty:39`) et 1
+  `\faExchangeAlt` (`\textbf{⇄}`, l. 42) dans la brochure. Lu dans la table `cmap` des `.otf` de TeX Live : ni Heros ni
+  Cursor n'ont U+2713, U+2717, U+21C4, U+2550, U+26A0 ; tous deux ont `+`, `x`, `=`, `→`.
+- **Retenu** : même cause, même fichier, geste mécanique : `\faCheckCircle` → `\textbf{+}`, `\faExchangeAlt` →
+  `\textbf{→}` (le repli de `\faRocket`), `literate={✓}{{+}}1 {✗}{{x}}1 {═}{{=}}1` au style `kesh` des listings ; aucun
+  `.tex` touché pour ces 25 sites. Contrôle décidable : U+FFFD → 0 dans les trois PDF, aux deux bornes. Repli écrit si
+  `literate` ne prend pas un caractère multioctet : les 9 signes en ASCII dans les deux scripts (hors
+  `sec:repetition-cloture`).
+- **Écartées** : une police de repli (DejaVu, présente sur la station mais **hors** de TeX Live : une dépendance neuve
+  de la chaîne) ; une issue (le geste est d'une ligne par signe, dans le fichier que la 32-1c touche déjà) ; `amssymb`
+  pour `\checkmark` (un paquet de plus pour un signe).
+- **Réversible** : oui (une ligne du `.sty` par signe ; le choix du signe de repli est de présentation).
+
+### C-32-1-32 — Le balayeur lexical se réemploie : `lexique::decouper`, étendu aux blocs imbriqués ; M-a7 en deux formes (R1, F9)
+
+- **Contexte** : (R1) M-a7, « un `code()` qui retire `/*…*/` sans connaître les chaînes », était indécidable : sous sa
+  forme non gourmande, ni le texte de (3) ni `lib.rs` n'ont de `*/`, rien n'est retiré, (3) et (4) restent vertes, et
+  la mutation survit. (Remédiation) En complétant l'inventaire de R4 : `crates/kesh-db/tests/lexique/mod.rs` porte déjà
+  un analyseur juste (`decouper` : chaînes ordinaires et brutes, `//`, `/* */` non imbriqués, caractères distingués des
+  durées de vie, copie masquée de même longueur, fins de ligne gardées), inclus par `#[path]` dans
+  `kesh-api/tests/bank_account_closed_inventory.rs:61`. L'AC-a11 prescrivait un second balayeur : contraire à la règle
+  DRY, dans la story même qui inventorie les copies.
+- **Retenu** : `#[cfg(test)] #[path = "../../kesh-db/tests/lexique/mod.rs"] mod lexique;` en tête d'`auto_backup.rs`
+  (hors du `mod tests` en ligne, dont le chemin se résoudrait sous `src/auto_backup/tests/`) ; `decouper` étendu aux
+  blocs imbriqués (assertion (2)) ; `code()` rend la copie masquée tronquée au premier `#[cfg(test)]` du masque ;
+  `argument_de` apparie sur le masque et rend la tranche de la source ; assertion (6) des fins de ligne (F9 (a)) ;
+  **M-a7a** (le bras `"` retiré de `decouper`) et **M-a7b** (retrait non gourmand dans `code()`), tuées par (3') — la même
+  chaîne, fermée par `/* c */` après l'appel — et, pour M-a7a, par (3) et (4).
+- **Écartées** : écrire le balayeur dans `mod tests` (copie de plus) ; ne garder qu'une forme de M-a7 ; extraire
+  `lexique` dans un crate de test commun (le périmètre de #727).
+- **Réversible** : oui.
+
+### C-32-1-33 — L-B3 : la base, à la première sauvegarde, couverte par la marge seule (R3)
+
+- **Contexte** : `seuil_d_espace` (`auto_backup.rs:496-500`) vaut `max(dernière, documents) × 1,2 + 256 Mio` ; sans
+  réussite, `dernière = 0` (`:680-683`). L'archive contient base et documents : la base n'est couverte que par
+  0,2 × documents + 256 Mio, quelle que soit sa taille. La phrase prescrite en P1 (« une base plus grosse que le dossier
+  des documents n'est couverte que par la marge de 256 Mio ») était fausse dans les deux sens.
+- **Retenu** : « tant qu'aucune sauvegarde n'a réussi, la base n'y est couverte que par la marge — un cinquième de la
+  taille des documents, plus 256 Mio » ; contrôle aplati sur « un cinquième de la taille des documents ».
+- **Écartée** : changer le seuil (une conception, hors des LOW mécaniques).
+- **Réversible** : oui.
+
+### C-32-1-34 — E-7 : un rejet qui n'est pas une `ApiError` est une issue inconnue ; `loadError` remis à `null` (R5 = F10, R6)
+
+- **Contexte** : `request()` rend `undefined` sur un 200 au corps illisible (`api-client.ts:480-484`), et
+  `applyState(undefined)` lève : le prédicat d'`issueInconnue` (faux hors `ApiError`) ne le classait nulle part, alors
+  que la sauvegarde est écrite. Et `loadError`, posé par une relecture en échec, n'était effacé que par `loadSchedule`.
+- **Retenu** : `!isApiError(err) || <prédicat>(err)` → issue inconnue (message neuf, relecture : un `GET`, sans
+  risque) ; le prédicat partagé reste inchangé pour l'import. `runNow` remet `loadError` à `null` au départ ; Vitest,
+  mutation M-b10.
+- **Écartée** : traiter le rejet hors `ApiError` comme un 4xx (sans relecture) : il naît surtout d'un 200, dont l'archive
+  est écrite.
+- **Réversible** : oui.
+
+### C-32-1-35 — Bilan d'issues : #727 comptée ; son inventaire complété en commentaire (F4, R4)
+
+- **Contexte** : #727 (`technical-debt`, `P3`) a été ouverte par l'orchestrateur une minute après la remédiation P1, sur
+  sa demande ; la fiche gardait « −3 + 2 ». Son texte ne couvre que `kesh-api` : quatre sites de `kesh-db` manquent
+  (`src/backup.rs:1950-1951`, `src/repositories/closing_checks.rs:922`, `:928`, `tests/test_schema_guard.rs:818-827`),
+  et elle ne nomme pas `lexique`, qui existe.
+- **Retenu** : bilan **−3 + 3 = 0** issue, **−1** bug ; inventaire complété dans la fiche ; texte d'un commentaire à
+  verser sur #727 par l'orchestrateur (fiche, *Commentaires à verser*). L'entrée « Validation P1 » du Change Log, juste à
+  sa date, n'est pas réécrite.
+- **Écartée** : une issue neuve pour les sites de `kesh-db` (même classe, même remède : #727 la porte).
+- **Réversible** : oui.
+
+### C-32-1-36 — La 32-1b au-delà de cinq modules au grain métier : déclaré, non découpé (F5)
+
+- **Contexte** : au grain des crates et paquets, la 32-1b touche 4 modules ; au grain des modules métier de premier
+  niveau que cite `CLAUDE.md`, 7 (`features/admin-backup`, `features/admin-restore`, `shared/utils`,
+  `kesh-api/routes/backup_schedule`, `kesh-api/auto_backup`, `kesh-i18n`, le manuel). La règle de splitting préventif vise
+  une story avant sa validation ; la tendance P1 → P2 (4 → 6 MEDIUM, dont un recyclage sur l'AC-a11 de la 32-1a) lève
+  aussi le signal de sévérité.
+- **Retenu** : le compte écrit avec son grain ; le signal déclaré au Project Lead (Change Log) ; aucun découpage par la
+  remédiation. Coupe proposée si elle est décidée : un écran (E-6, E-7, E-8, L-B6) et un serveur (L-B5, L-B7), chacun à
+  cinq modules, au prix d'un ordre de fusion de plus sur le PDF et les catalogues.
+- **Écartée** : découper d'office (la décision appartient au Project Lead ; les trois MEDIUM de la P2 qui portent sur
+  la 32-1b — F1, F2, R3 — sont des défauts de la rédaction d'origine, non un recyclage).
 - **Réversible** : oui.

@@ -5,7 +5,8 @@ Status: ready-for-dev
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` sur
 `chore/kickoff-epic-32` (`6f0cee00`). Une fiche, trois clés (C-32-0-3, C-32-1-1) : `32-1a-defauts-tests-commentaires`,
 `32-1b-defauts-sauvegarde-automatique`, `32-1c-defauts-procedure-repetition`. Registre :
-`epic-32-choix-autonomes-321.md` (C-32-1-1 à C-32-1-28 ; C-32-1-20 à 28 de la validation P1). Clé courte : `321`. Action A8 de la rétrospective de l'Epic 31.*
+`epic-32-choix-autonomes-321.md` (C-32-1-1 à C-32-1-36 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la
+validation P2). Clé courte : `321`. Action A8 de la rétrospective de l'Epic 31.*
 
 ## Story
 
@@ -25,10 +26,13 @@ plus étroite, nommée dans le rapport.
 rendait **142**, dont 51 bugs — chiffres du fichier d'epic, non recomptés par cette fiche). Effet attendu de la story,
 si tout se passe comme écrit : **#716** fermée par la 32-1a ; **#711** fermée par la dernière fusionnée de la 32-1a et
 de la 32-1b (C-32-1-27), E-1 et E-2 sortis dans **[#725]** (ouverte le 2026-10-24) ; **#714** fermée par la 32-1c, les
-gestes à trancher sortis dans **[#726]** (ouverte le 2026-10-24). Bilan : **−3 + 2 = −1** issue ; les bugs : #711 et
-#714 portent `bug`, #716 non ; #725 porte `bug` (`bug`, `P3`), #726 non (`documentation`, `P3`) — **−2 + 1 = −1** bug
-(étiquettes lues par l'orchestrateur à l'ouverture, recoupées par la validation P1). Ce n'est pas un motif pour taire un
-constat (*On trace toujours*, `CLAUDE.md` § *Priorités des défauts*).
+gestes à trancher sortis dans **[#726]** (ouverte le 2026-10-24) ; les copies de l'assistant lexical que la 32-1a ne
+corrige pas sorties dans **[#727]** (ouverte le 2026-10-24 sur la demande de la remédiation P1, *Inventaire*). Bilan :
+**−3 + 3 = 0** issue ; les bugs : #711 et #714 portent `bug`, #716 non ; #725 porte `bug` (`bug`, `P3`), #726 non
+(`documentation`, `P3`), #727 non (`technical-debt`, `P3`) — **−2 + 1 = −1** bug (étiquettes lues par l'orchestrateur à
+l'ouverture, recoupées par les validations P1 et P2). Ce n'est pas un motif pour taire un constat (*On trace toujours*,
+`CLAUDE.md` § *Priorités des défauts*) : la remédiation P2 n'ouvre aucune issue neuve — ce qu'elle sort va en
+commentaire de [#725] et de [#727] (C-32-1-30, C-32-1-35).
 
 ## Constats établis au code (2026-10-24, sur `6f0cee00`)
 
@@ -76,7 +80,7 @@ sortie attendue, une source d'écriture, une limite —, **sans** ajouter, retir
 | Id (#714) | Établi au code | Clé |
 |---|---|---|
 | P3 E L-3 — `realpath -e` en échec | **En partie vrai.** « En cas d'arrêt », puce *Au contrôle~3* (`:1905`) : « laissez le dossier vide, et traitez la cause (un `/var/tmp` qui serait un lien) ». La cause la plus probable est une **barre finale** dans `COPIE` (`realpath` la retire, la comparaison échoue), que la puce ne nomme pas ; *Conventions* (`:1635`) dit `COPIE` « toujours écrit sans barre finale ». « Un reste qui **bloque** une reprise le même jour » est **faux** : la reprise se fait dans un nouveau dossier, suffixé (`:1635`) ; le reste est un dossier vide. | cause : 32-1c ; geste (retirer la barre et supprimer par la garde) : **hors** — [#726] |
-| P2 B2-L4 = E-LOW-2 — inventaire du contrôle 4 muet | **Vrai.** Si un `curl -fsSL … -o` échoue (`:1704-1705`), le `grep` lit un fichier absent et la boucle n'affiche rien : « Attendu : rien » est satisfait à tort ; le contrôle 7 rattrape. | 32-1c (sortie attendue) |
+| P2 B2-L4 = E-LOW-2 — inventaire du contrôle 4 muet | **Vrai en partie.** Si un `curl -fsSL … -o` échoue (`:1704-1705`), le `grep` lit un fichier absent et la boucle n'affiche **rien sur la sortie standard** ; `curl` (`-S`) et `grep` écrivent pourtant leur erreur sur la sortie d'erreur — le terminal n'est donc pas muet, mais l'attendu (« rien ») ne dit pas que ce message compte comme écart, et une lecture qui ne regarde que la liste attendue le laisse passer ; le contrôle 7 rattrape. (« Muet » nuancé à la validation P2, F12.) | 32-1c (sortie attendue) |
 | P2 E-LOW-7 — clients par clé d'API | **Vrai.** Étape 0 (`:1686`) : « ni saisie, ni import, ni autre utilisateur au travail » — une intégration par clé d'API qui écrit n'est pas nommée. « Refaire les exports en cas de doute » est une consigne neuve. | nommer : 32-1c ; refaire : **hors** — [#726] |
 | P1 B-10 — gestionnaire de mots de passe, historique | **Vrai.** Rien n'avertit que le navigateur propose d'enregistrer, pour `127.0.0.1:18314`, les identifiants de la production saisis à la reconnexion (`:1788`), ni que l'historique des téléchargements garde les noms de fichiers. | **hors** — [#726] (consignes neuves) |
 | P1 E LOW-2 — port pris entre le contrôle 8 et `up -d` | **Vrai.** Aucune branche ne dit ce que fait un `up -d` qui échoue (contrôle 9, `:1772`). | **hors** — [#726] (choix de branche) |
@@ -86,7 +90,7 @@ sortie attendue, une source d'écriture, une limite —, **sans** ajouter, retir
 | P4 LOW-2 — branche « date inconnue » ; dossier sous un autre nom | **En partie vrai.** La branche « date inconnue » (`:1914`) est dans la même puce que le `ls -d` qu'elle suppose (premier geste de la puce *Reste d'une répétition antérieure*, `:1907`) : tenue. Le contrôle final (`:1880-1900`) ne regarde que `$COPIE` : un dossier d'une **autre** répétition, sans objet Docker, lui échappe — limite non écrite. | limite : 32-1c |
 | P4 LOW-1, LOW-3 — « elle ne fait que lire la version » | **Vrai.** `:1625` : « elle ne fait que lire la version et télécharger deux exports » contredit la suite de la phrase, qui dit les écritures. Et « comme le fait la première ouverture de leur page » est inexact pour les **relances** : l'export appelle `company_dunning_settings::get_or_create_default` (`crates/kesh-api/src/exports/global.rs:313`, un `INSERT IGNORE` de la seule ligne), la page des relances appelle `ensure_seeded_in_tx` (`routes/company_dunning_settings.rs:56`), qui pose **en plus** les trois niveaux par défaut (`crates/kesh-db/src/repositories/company_dunning_settings.rs:168-200`). | 32-1c |
 | P3 B3-2 — « Ou, avec sudo : » détaché | **Vrai.** `:1851-1852` : l'amorce précède le `\needspace{10\baselineskip}`, qui ne la retient donc pas avec son listing. | 32-1c |
-| P2 B2-L5 — ⚠️ non imprimé | **Vrai, et plus large.** `grep -c "⚠"` (des **lignes**) : **16** dans `admin-manual.tex`, **9** dans `user-manual.tex`, 0 dans la brochure ; en **occurrences** (`grep -o "⚠" … \| wc -l`) : **17** et **9**, soit **26** (la l. 2923 d'`admin-manual.tex` en porte deux), toutes écrites `⚠️` (U+26A0 suivi du sélecteur U+FE0F : `grep -o $'\xe2\x9a\xa0\xef\xb8\x8f' docs/manual/fr/*.tex \| wc -l` rend 26), aucune dans un `lstlisting` ; `pdftotext … \| grep -c "⚠"` rend **0** pour les deux PDF (police TeX Gyre Heros, `kesh-style.sty:95`). | 32-1c, les deux manuels (C-32-1-16) |
+| P2 B2-L5 — ⚠️ non imprimé | **Vrai, et plus large.** `grep -c "⚠"` (des **lignes**) : **16** dans `admin-manual.tex`, **9** dans `user-manual.tex`, 0 dans la brochure ; en **occurrences** (`grep -o "⚠" … \| wc -l`) : **17** et **9**, soit **26** (la l. 2923 d'`admin-manual.tex` en porte deux), toutes écrites `⚠️` (U+26A0 suivi du sélecteur U+FE0F : `grep -o $'\xe2\x9a\xa0\xef\xb8\x8f' docs/manual/fr/*.tex \| wc -l` rend 26), aucune dans un `lstlisting` ; `pdftotext … \| grep -c "⚠"` rend **0** pour les deux PDF (police TeX Gyre Heros, `kesh-style.sty:95`) — **avant comme après** tout correctif : ce contrôle ne prouve rien. **Recensé par le symptôme** (validation P2, F3 = R2) : un caractère sans glyphe dans la police sort de `pdftotext` en **U+FFFD** — `pdftotext docs/manual/fr/<pdf> - \| grep -o $'\xef\xbf\xbd' \| wc -l` rend **26** (manuel d'administration), **9** (manuel utilisateur), **16** (brochure). Ventilation, au `.tex` : administration = 17 `⚠️` + **9 signes de listings** dans TeX Gyre Cursor (`✓` l. 1547 ; `═══ … ═══` l. 3313, six ; `✓` l. 3318 ; `✗` l. 3320 — `grep -n '[✓✗═⇄]'`) ; utilisateur = ses 9 `⚠️` ; brochure = **15** `\faCheckCircle` (`\providecommand{\faCheckCircle}{\textbf{✓}}`, `kesh-style.sty:39`) + **1** `\faExchangeAlt` (`\textbf{⇄}`, l. 42 ; « Import bancaire automatisé »). Ni TeX Gyre Heros ni TeX Gyre Cursor n'ont U+2713, U+2717, U+21C4, U+2550, U+26A0 (table `cmap` des fichiers `.otf` de TeX Live, lue à la validation P2) ; tous deux ont `+`, `x`, `=`, `→` (U+2192, déjà employé par `\faRocket`). Même cause, même fichier (`kesh-style.sty`). | 32-1c, les **trois** PDF (C-32-1-16, C-32-1-31) |
 | Fiche P2 A-LOW-4 — G15 et l'AC11 | **Vrai.** L'AC11 de la 31-4 (`31-4-repetition-a-blanc.md:537-543`) range G15 parmi « les gardes existantes qui relisent la sous-section » ; G15 (`configuration_transmise.rs:2732-2745`) lit `/var/lib/docker/volumes/<x>` et « volume `\texttt{<x>}` » — la sous-section écrit ses volumes en `\keshpath{…}` : G15 n'y lit rien. | 32-1c (annotation datée) |
 | Fiche P4 LOW-4 — `test ! -e` au présent | **Vrai.** `31-4-repetition-a-blanc.md:504` (puce *nom faux*, AC7 (d)) décrit au présent un test que le manuel n'écrit plus ; la l. 433 est annotée (l. 435), la l. 504 non. | 32-1c (annotation datée) |
 
@@ -100,9 +104,11 @@ mutation du `COALESCE` qui se tue (C-32-1-2).
 ## A — 32-1a : tests et commentaires (#716 entier ; E-9 de #711)
 
 **Modules** : `kesh-api` (tests : `audit_log_e2e.rs`, `textes_coherents.rs`, `admin_auto_backup_e2e.rs` ; `src` : un
-commentaire de `routes/invoice_pdf_service.rs` et son `mod tests`, le `mod tests` de `auto_backup.rs`), `kesh-db`
-(doc-comment de `repositories/company_invoice_settings.rs`, `tests/company_invoice_settings_repository.rs`), frontend
-(`settings/fiscal-years/fiscal-years-page.test.ts`) — **3**. 🗄️ (un test de dépôt `kesh-db`) : **gate complet même en
+commentaire de `routes/invoice_pdf_service.rs` et son `mod tests`, le `mod tests` de `auto_backup.rs` et la déclaration
+`#[cfg(test)]` du module `lexique` qui le précède), `kesh-db` (doc-comment de `repositories/company_invoice_settings.rs`,
+`tests/company_invoice_settings_repository.rs`, `tests/lexique/mod.rs` — l'analyseur lexical partagé, étendu aux
+commentaires imbriqués, C-32-1-32), frontend (`settings/fiscal-years/fiscal-years-page.test.ts`) — **3** (grain : crate
+ou paquet). 🗄️ (un test de dépôt `kesh-db`) : **gate complet même en
 boucle de revue**. Aucune ligne servie ne change ; `kesh-i18n` et `kesh-seed` ne sont pas touchés (C-32-1-3, C-32-1-7).
 
 ### Critères d'acceptation
@@ -133,7 +139,9 @@ boucle de revue**. Aucune ligne servie ne change ; `kesh-i18n` et `kesh-seed` ne
      Assertion de montage : les trois comptes sont `postable`, du bon type, et différents de ceux que rend
      `lock_vat_role_accounts_in_tx` (sans quoi l'égalité finale ne prouve rien). Après (t2) : les trois colonnes
      **restent** les valeurs posées.
-   - **`designate_vat_fills_nulls_and_is_idempotent`** — sans (u) : après (t2), les trois colonnes égalent les comptes
+   - **`designate_vat_fills_nulls_and_is_idempotent`** — sans (u) : assertion de montage **après (t1)** — les trois
+     colonnes sont `NULL` (sans quoi « remplit les `NULL` » passerait à vide si `insert_with_defaults_in_tx` venait à les
+     poser) ; après (t2), les trois colonnes égalent les comptes
      des rôles ; après (t3), les trois colonnes **et** `version` sont inchangées (la fonction ne touche pas `version`,
      doc-comment l. 1311-1312).
    **Mutations M-a1a, M-a1b, M-a1c** : `COALESCE(<colonne>, ?)` → `?` pour `default_vat_payable_account_id`,
@@ -184,33 +192,55 @@ boucle de revue**. Aucune ligne servie ne change ; `kesh-i18n` et `kesh-seed` ne
     verrou vit jusqu'à la fin de l'assemblage même si le client part) ne s'observe qu'au départ du client pendant
     l'assemblage ; aucun test comportemental ne la tient (il faudrait un crochet de synchronisation dans
     `build_keshbackup`) — angle mort assumé, la garde lexicale (M-c24) est le seul filet (C-32-1-5). Commentaire seul.
-11. **AC-a11 — E-9 (3) : les helpers lexicaux lisent ce qu'ils disent** (C-32-1-20).
-    - **Un seul balayeur**, dans `mod tests`, partagé par `code()` et `argument_de` : il parcourt le texte caractère par
-      caractère et distingue cinq états — code, commentaire `//` (jusqu'à la fin de ligne), commentaire `/* … */`
-      (imbriqué, avec profondeur), chaîne `"…"` (échappements `\"` et `\\`), chaîne brute `r"…"` / `r#"…"#` (sans
-      échappement, fermée par `"` suivi d'autant de `#`) — et les littéraux de caractère **seulement** sous les formes
-      `'x'` et `'\x'` (apostrophe, un caractère ou un échappement, apostrophe) : une apostrophe qui n'ouvre pas l'une
-      de ces formes est une **durée de vie** (`&'static str`, présent dans `auto_backup.rs:258` et
-      `routes/backup_schedule.rs:194`, lus par `gardes_possedes`) et reste du code. Un `/*` ou un `//` **dans une
-      chaîne** n'ouvre aucun commentaire.
-    - `code()` rend le code de production, commentaires (`//` et `/* … */`) **retirés par le balayeur**, et garde sa
-      troncature au premier `#[cfg(test)]`. Assertions de montage, toutes **rouges avant** sauf mention :
+11. **AC-a11 — E-9 (3) : les helpers lexicaux lisent ce qu'ils disent** (C-32-1-20, **amendé par C-32-1-32** : le
+    balayeur existe déjà, il se réemploie).
+    - **Le balayeur est celui du dépôt** : `decouper` de `crates/kesh-db/tests/lexique/mod.rs` (Story 28-4a, #642), déjà
+      inclus par `#[path]` dans `crates/kesh-api/tests/bank_account_closed_inventory.rs:61`. Il rend une copie
+      **masquée** de la source, de même longueur en octets, où le contenu des chaînes (ordinaires et brutes) et des
+      commentaires (`//`, `/* … */`) est remplacé par des espaces, **fins de ligne gardées** (`effacer` saute `\n`), et
+      distingue les littéraux de caractère `'x'`, `'\x'` des durées de vie (`&'static str`, présent dans
+      `auto_backup.rs:258` et `routes/backup_schedule.rs:194`, lus par `gardes_possedes`). Un `/*` ou un `//` **dans une
+      chaîne** n'ouvre aucun commentaire (la chaîne est reconnue d'abord). Inclusion : en tête d'`auto_backup.rs`,
+      `#[cfg(test)] #[path = "../../kesh-db/tests/lexique/mod.rs"] mod lexique;` — déclaration hors de tout module en
+      ligne, donc chemin relatif à `crates/kesh-api/src/` ; **pas** dans le `mod tests` en ligne, où le chemin se
+      résoudrait sous `src/auto_backup/tests/`, qui n'existe pas. **Seule extension** : le bras `/*` de `decouper` suit la
+      **profondeur** (Rust imbrique les commentaires de bloc ; aujourd'hui il s'arrête au premier `*/`) ; un `/*` jamais
+      fermé masque jusqu'à la fin, comme aujourd'hui. Les deux utilisateurs actuels (`kesh-db/tests/letterings_lexical.rs`,
+      `kesh-api/tests/bank_account_closed_inventory.rs`) restent verts. Aucun second balayeur n'est écrit (règle DRY).
+    - `code()` rend la copie **masquée** du code de production — commentaires et contenu des chaînes effacés, fins de
+      ligne gardées —, tronquée au premier `#[cfg(test)]` **de la copie masquée** (un `"#[cfg(test)]"` écrit dans une
+      chaîne ne tronque plus). Les jetons que cherchent `lancement_par_main_seulement` et `gardes_possedes` sont tous du
+      code (à vérifier au développement : si une assertion cherchait un jeton dans une chaîne, elle le lirait dans la
+      source à la même position, les deux textes ayant mêmes positions). Assertions de montage, toutes **rouges avant**
+      (le `code()` actuel, ligne à ligne) sauf mention :
       (1) `code("/* auto_backup::spawn(x) */ fn f() {}")` ne contient pas `auto_backup::spawn(` ;
-      (2) `code("/* a /* b */ auto_backup::spawn(x) */ fn f() {}")` non plus ;
+      (2) `code("/* a /* b */ auto_backup::spawn(x) */ fn f() {}")` non plus — rouge aussi sous `decouper` **non
+      étendu** (masque arrêté au premier `*/`) : c'est elle qui tient l'extension ;
       (3) **tirée du réel** — `lib.rs:1186` porte `/*` **dans une chaîne** (`"KESH_TEST_MODE=true — /api/v1/_test/*
       exposé …"`), sans `*/` dans tout le fichier et sans `#[cfg(test)]` qui borne la lecture : un retrait de blocs qui
       ignore les chaînes ouvrirait là un commentaire jamais fermé et ferait disparaître la fin de `build_router` de la
       garde « zéro lancement dans `lib.rs` », **en vert**. Assertion : `code("let s = \"a /* b\"; auto_backup::spawn(x);
-      fn g() {}")` contient `auto_backup::spawn(` (verte avant, **rouge sous un retrait naïf** — c'est la mutation
-      **M-a7** : un `code()` qui retire `/*…*/` sans connaître les chaînes) ;
+      fn g() {}")` contient `auto_backup::spawn(` (verte avant ; rouge sous **M-a7a**) ;
+      (3') la même, **fermée après l'appel** : `code("let s = \"a /* b\"; auto_backup::spawn(x); /* c */ fn g() {}")`
+      contient `auto_backup::spawn(` (verte avant ; rouge sous **M-a7a** et sous **M-a7b** : le `*/` de `/* c */` ferme
+      le faux commentaire ouvert dans la chaîne, qui avale l'appel) ;
       (4) **sur le vrai fichier** — `code(include_str!("lib.rs"))` contient `.with_state(state)` (`lib.rs:1200`, dernière
-      instruction de `build_router`, **après** la l. 1186) : verte avant, rouge sous M-a7 ;
+      instruction de `build_router`, **après** la l. 1186) : verte avant, rouge sous M-a7a ;
       (5) une durée de vie n'ouvre rien : `code("fn f() -> &'static str { \"x\" } auto_backup::spawn(y)")` contient
       `auto_backup::spawn(` (verte avant ; elle tient le balayeur contre un `'` pris pour un littéral ouvrant) ;
-    - `argument_de` apparie les parenthèses **dans l'état « code » du balayeur seulement** ; assertion de montage : sur le
-      texte `f("(", x) y` (littéral Rust `"f(\"(\", x) y"`), `argument_de(texte, "f(")` rend `("(", x)` — **rouge avant**
-      (aujourd'hui : panique, la parenthèse de la chaîne laissant la profondeur à 1 au bout du texte) ; et sur `f('(', x)`,
-      il rend `('(', x)` ;
+      (6) les fins de ligne gardées : `code("fn f() {} // x\n}\nfn g() {}")` contient `"\n}"` (verte avant ; elle tient
+      `corps()`, qui coupe au premier `"\n}"` du texte rendu par `code()`, contre un masquage qui mangerait le `\n` d'un
+      `//`).
+      **M-a7** (deux formes, un journal chacune, comme M-b7) : **M-a7a** — le bras `b'"'` de `decouper` retiré (le
+      balayeur privé de l'état chaîne : un `"` reste du code) → (3), (3') et (4) rouges ; **M-a7b** — `code()` qui
+      retire les paires `/\*.*?\*/` (non gourmand) sans connaître les chaînes, à la place de `decouper` → (3') rouge
+      ((3) et (4) restent vertes sous cette forme : ni le texte de (3) ni `lib.rs` n'ont de `*/` — c'est pourquoi (3')
+      existe).
+    - `argument_de(texte, appel)` appelle `decouper(texte)`, cherche `appel` et apparie les parenthèses **sur la copie
+      masquée**, et rend la tranche **de `texte`** aux mêmes positions ; assertion de montage : sur le texte `f("(", x) y`
+      (littéral Rust `"f(\"(\", x) y"`), `argument_de(texte, "f(")` rend `("(", x)` — **rouge avant** (aujourd'hui :
+      panique, la parenthèse de la chaîne laissant la profondeur à 1 au bout du texte) ; et sur `f('(', x)`, il rend
+      `('(', x)`.
     - `corps()` garde sa règle ; son doc-comment dit qu'elle repose sur rustfmt (un item de tête se ferme par `}` en
       colonne 0) ; assertion de montage : `corps(&admin, "pub async fn full_import(")` ne contient pas `"\npub "`.
     `lancement_par_main_seulement` et `gardes_possedes` restent verts.
@@ -218,8 +248,10 @@ boucle de revue**. Aucune ligne servie ne change ; `kesh-i18n` et `kesh-seed` ne
     gates frontend ; **E2E complet au dernier commit de code** (C-32-1-18), jugé fichier par fichier contre
     `docs/testing.md` § *Les échecs attendus*. Ne déclarer que ce qui a tourné.
 13. **AC-a13 — mutations** (sous verrou, appliquées par Edit, restaurées par `git checkout -- f && touch f`, diff
-    résiduel 0, un journal `321-mut-<id>.log` chacune dans `kesh-gate-logs/`) : M-a1a, M-a1b, M-a1c, M-a2 à M-a7 (neuf), chacune tuée par un test
-    **nommé**. Une mutation qui survit est un défaut du test, non un constat à reporter.
+    résiduel 0, un journal `321-mut-<id>.log` chacune dans `kesh-gate-logs/`) : M-a1a, M-a1b, M-a1c, M-a2 à M-a7 (neuf ;
+    M-a7 en deux formes, M-a7a et M-a7b, un journal chacune), chacune tuée par un test **nommé**. M-a7a touche
+    `crates/kesh-db/tests/lexique/mod.rs` : restauration par `git checkout -- crates/kesh-db/tests/lexique/mod.rs && touch`
+    du même fichier. Une mutation qui survit est un défaut du test, non un constat à reporter.
 
 ### Tâches
 
@@ -230,7 +262,10 @@ boucle de revue**. Aucune ligne servie ne change ; `kesh-i18n` et `kesh-seed` ne
 - [ ] **T-a3 (AC-a4)** — deux tests de dépôt ; M-a1a, M-a1b, M-a1c ; gate complet (kesh-db).
 - [ ] **T-a4 (AC-a5)** — cas Vitest ; M-a2.
 - [ ] **T-a5 (AC-a2, AC-a6)** — `audit_log_e2e.rs` ; M-a5, M-a6.
-- [ ] **T-a6 (AC-a9, AC-a11)** — sonde, balayeur et helpers lexicaux ; assertions de montage (1), (2) et `argument_de` **rouges avant**, (3) à (5) vertes avant et (3), (4) **rouges sous M-a7** ; M-a3, M-a7.
+- [ ] **T-a6 (AC-a9, AC-a11)** — sonde ; `lexique` inclus, `decouper` étendu aux blocs imbriqués, helpers lexicaux sur
+  la copie masquée ; assertions de montage (1), (2) et `argument_de` **rouges avant**, (3) à (6) vertes avant, (3), (3'),
+  (4) **rouges sous M-a7a**, (3') **rouge sous M-a7b** ; `letterings_lexical` et `bank_account_closed_inventory` verts ;
+  M-a3, M-a7a, M-a7b.
 - [ ] **T-a7 (AC-a1, AC-a8, AC-a10)** — trois commentaires.
 - [ ] **T-a8 (AC-a12, AC-a13)** — gates complets, E2E complet ; Dev Agent Record chiffré.
 
@@ -238,31 +273,60 @@ boucle de revue**. Aucune ligne servie ne change ; `kesh-i18n` et `kesh-seed` ne
 
 ## B — 32-1b : l'écran de la sauvegarde automatique (#711 : E-6, E-7, E-8, L-B3, L-B5, L-B6, L-B7)
 
-**Modules** : frontend (`lib/features/admin-backup/`), `kesh-api` (`routes/backup_schedule.rs`, `auto_backup.rs` pour
-L-B5 ; tests `i18n_e2e.rs`, `admin_auto_backup_e2e.rs`, `textes_coherents.rs`), `kesh-i18n` (catalogues, quatre locales),
-manuel d'administration FR (`.tex` et PDF) — **4**. Pas de migration, pas de `kesh-db`.
+**Modules** : frontend (trois dossiers de `src/lib/` — `features/admin-backup/` ; `features/admin-restore/`, pour le seul
+prédicat extrait (AC-b2) ; `shared/utils/`, un module neuf et son test — et `tests/e2e/backup-schedule.spec.ts`),
+`kesh-api` (`routes/backup_schedule.rs`, `auto_backup.rs` pour L-B5 ; tests `i18n_e2e.rs`, `admin_auto_backup_e2e.rs`,
+`textes_coherents.rs`), `kesh-i18n` (catalogues, quatre locales), manuel d'administration FR (`.tex` et PDF) — **4** au
+grain des crates et paquets ; **7** au grain des modules métier de premier niveau que cite `CLAUDE.md`
+(`features/admin-backup`, `features/admin-restore`, `shared/utils`, `kesh-api/routes/backup_schedule`,
+`kesh-api/auto_backup`, `kesh-i18n`, le manuel). Le second dépasse cinq : la règle de splitting préventif vise une story
+avant sa validation, et le dépassement est **déclaré au Project Lead** (Change Log, validation P2), sans découpage par
+la remédiation (C-32-1-36). Pas de migration, pas de `kesh-db`.
 
 ### Critères d'acceptation
 
-1. **AC-b1 — E-6 : une saisie non enregistrée survit à « Sauvegarder maintenant ».** `AutoBackupSection.svelte` :
-   `applyState(value)` pose `schedule` et l'état partagé, et ne remet les trois champs du formulaire à `value` **que
-   s'ils égalent encore le réglage lu** (`schedule` d'avant) ; `runNow` l'emploie ; `loadSchedule` et `save` gardent
-   `apply` (C-32-1-8). Vitest neuf (bloc « Sauvegarder maintenant ») : la fréquence passée de 24 à 12 **sans
-   enregistrer**, puis run réussi (`runBackupNow` rend `lastStatus: 'ok'`, `intervalHours: 24`) → le sélecteur montre
-   **12**, l'état affiché est celui de la réponse (dernière tentative réussie), et « Enregistrer » envoie
-   `intervalHours: 12` avec la `version` de la réponse. Et le cas non modifié : sans saisie, après un run dont la réponse
-   porte `retentionCount: 9`, le champ montre 9. **Rouge constaté avant le correctif** (le premier cas montre 24).
-   **Mutation M-b1** : `applyState` qui réécrit toujours le formulaire → rouge.
-2. **AC-b2 — E-7 : une réponse qui manque relit l'état** (C-32-1-9, amendé par C-32-1-22). Dans `runNow`, l'échec se
-   classe en trois cas, et le message « pas parvenue » est **réservé** à celui où le serveur n'a pas répondu :
-   - **issue inconnue** — `isApiError(err)` et `code === 'TIMEOUT'`, `code === 'NETWORK_ERROR'` (tous deux `status: 0`,
-     `api-client.ts:312-321`), `status === 502` ou `status === 504` : le prédicat **même** d'`issueInconnue`
+1. **AC-b1 — E-6 : une saisie non enregistrée survit à « Sauvegarder maintenant », sans défaire le verrou
+   optimiste** (C-32-1-8, amendé par C-32-1-29). `AutoBackupSection.svelte` : un état neuf **`formBase`** — le réglage
+   (`BackupSchedule`) sur lequel la saisie a été faite. `apply(value)` (gardé par `loadSchedule` et `save`) pose
+   `schedule`, l'état partagé, les trois champs **et** `formBase = value`. `applyState(value)` (employé par `runNow` et par
+   la relecture de l'AC-b2) pose `schedule` et l'état partagé ; si les trois champs **égalent** encore ceux de
+   `formBase` (saisie non modifiée), il les remet à `value` et pose `formBase = value` ; sinon il ne touche **ni** les
+   champs **ni** `formBase`. `save` envoie **`formBase.version`** (non plus `schedule.version`) : une saisie faite sur
+   la version *n* s'enregistre contre *n*. Dans le cas normal la réponse d'un run porte la même `version` (`record_*` ne
+   la touche jamais), et rien ne change ; si un autre administrateur a enregistré entre-temps (*n* + 1), l'enregistrement
+   rend **409** et l'écran ouvre « Recharger » (comportement existant, `auto-backup-conflict`) au lieu d'écraser son
+   réglage en silence. Vitest neufs (bloc « Sauvegarder maintenant ») : (i) la fréquence passée de 24 à 12 **sans
+   enregistrer**, puis run réussi (`runBackupNow` rend `lastStatus: 'ok'`, `intervalHours: 24`, même `version`) → le
+   sélecteur montre **12**, l'état affiché est celui de la réponse (dernière tentative réussie), et « Enregistrer »
+   envoie `intervalHours: 12` avec la `version` lue au montage ; (ii) sans saisie, après un run dont la réponse porte
+   `retentionCount: 9`, le champ montre 9 ; (iii) **concurrence** — saisie modifiée, puis run dont la réponse porte
+   `version + 1` et `retentionCount: 10` → le formulaire garde la saisie, « Enregistrer » envoie la `version` **lue au
+   montage**, et `saveBackupSchedule` rejeté en 409 `OPTIMISTIC_LOCK_CONFLICT` → `auto-backup-conflict` présent.
+   **Rouge constaté avant le correctif** (le cas (i) montre 24). **Mutations** : **M-b1** — `applyState` qui réécrit
+   toujours le formulaire → (i) rouge ; **M-b9** — `save` qui envoie `schedule.version` → (iii) rouge (la version
+   envoyée est *n* + 1).
+2. **AC-b2 — E-7 : une réponse qui manque relit l'état** (C-32-1-9, amendé par C-32-1-22, C-32-1-30 et C-32-1-34).
+   Dans `runNow`, l'échec se classe en trois cas, et le message « pas parvenue » est **réservé** au premier :
+   - **issue inconnue** — (a) `isApiError(err)` et `code === 'TIMEOUT'`, `code === 'NETWORK_ERROR'` (tous deux
+     `status: 0`, `api-client.ts:312-321`), `status === 502` ou `status === 504` : le prédicat **même** d'`issueInconnue`
      (`features/admin-restore/AdminRestorePanel.svelte:61-68`), à **extraire** dans un module partagé
      (`frontend/src/lib/shared/utils/`, nom au développement) et employé par les deux écrans (règle DRY ; aucun
-     comportement de l'import ne change) → `runError` = `admin-backup-auto-run-unknown` (« La réponse du serveur n'est
-     pas parvenue : la sauvegarde a peut-être été écrite. L'écran relit l'état et la liste ci-dessous : vérifiez-les. »,
-     valeur fr-CH à reprendre telle quelle ou à affiner, quatre locales — elle ne dit **pas** que la relecture a réussi),
-     puis relecture de l'état et de la liste ;
+     comportement de l'import ne change, le prédicat extrait restant faux pour une erreur qui n'est pas une
+     `ApiError`) ; **ou** (b) un rejet qui **n'est pas** une `ApiError` — le cas réel : un 200 dont le corps ne se lit pas,
+     que `request()` rend `undefined` (`api-client.ts:480-484`, `catch { return undefined as T; }`), si bien qu'`applyState(undefined)` lève ; la sauvegarde,
+     elle, est écrite. `runNow` teste donc `!isApiError(err) || <prédicat>(err)` → `runError` =
+     `admin-backup-auto-run-unknown` (« La réponse du serveur n'est pas parvenue : la sauvegarde a peut-être été écrite,
+     ou s'écrit encore. L'écran relit l'état et la liste ci-dessous ; une sauvegarde encore en cours n'y paraît pas
+     terminée : rechargez la page dans quelques minutes. », valeur fr-CH à reprendre telle quelle ou à affiner, quatre
+     locales — elle ne dit **pas** que la relecture a réussi, ni que l'état relu est le résultat), puis relecture de
+     l'état et de la liste. **Pourquoi « s'écrit encore »** (C-32-1-30) : un proxy coupe avant la fin (502/504) pendant
+     que la tâche `tokio::spawn` continue (`routes/backup_schedule.rs:152`) ; la relecture tombe alors entre
+     `record_attempt` (qui ne pose que `last_attempt_at`, `repositories/backup_schedule.rs:250-258`) et
+     `record_success`/`record_failure` : le panneau montre la date de la tentative en cours avec le statut de la
+     **précédente** (« réussie » si elle l'était, `AutoBackupSection.svelte:339-343`), et la liste n'a pas encore le
+     fichier. Rien dans l'état servi ne distingue « en cours » de « terminée en échec » (`record_failure` ne pose aucune
+     date) : l'écran ne peut pas le dire sans un champ neuf — hors périmètre, versé en commentaire de [#725], dont la
+     partie 1 prévoit déjà un signal « tentative en cours » ;
    - **autre réponse 5xx** (500 d'E-2 compris, 503) : le serveur a répondu, et l'archive a pu être écrite (E-2) →
      `runError` = le message du serveur (`errorText`, repli `admin-backup-auto-run-error` actuel), **et** relecture de
      l'état et de la liste ;
@@ -272,19 +336,29 @@ manuel d'administration FR (`.tex` et PDF) — **4**. Pas de migration, pas de `
    `saveError` et réécrit le formulaire) ; la liste par `loadBackups`. Un échec de la relecture de l'état pose
    `loadError` (même texte que `loadSchedule`, `AutoBackupSection.svelte:78-84` : alerte `auto-backup-load-error`
    au-dessus du panneau, le réglage affiché restant le précédent) ; un échec de la liste pose `listError` (déjà fait par
-   `loadBackups`). Vitest neufs : `{ code: 'TIMEOUT', status: 0 }` → message neuf, `fetchBackupSchedule` appelé une fois
-   de plus qu'au montage, `fetchServerBackups` aussi ; idem `{ status: 504 }` ; `{ status: 500, message: 'Erreur
-   interne' }` → « Erreur interne », relecture faite ; `{ status: 403, message: 'Accès refusé' }` → « Accès refusé »,
-   **aucune** relecture ; `TIMEOUT` puis `fetchBackupSchedule` rejeté → message neuf **et** `auto-backup-load-error`
-   présent ; le test 409 existant (`AutoBackupSection.test.ts:210`) reste vert **et** assert qu'aucune relecture d'état
-   n'a lieu ; les tests d'`AdminRestorePanel` restent verts (prédicat extrait). **Rouges constatés avant le correctif**
-   (TIMEOUT, 504, 500). **Mutations** : **M-b2** — retirer la relecture → rouge ; **M-b8** — étendre le message neuf aux
-   4xx (prédicat `status !== 409`) → le cas 403 rouge.
+   `loadBackups`). **`loadError` remis à `null`** au départ de `runNow`, comme `runError` (l. 142) : sans quoi une alerte
+   posée par une relecture en échec resterait au-dessus d'un état relu ensuite avec succès — seul `loadSchedule` l'efface
+   aujourd'hui (l. 72) ; l'alerte d'un premier chargement en échec n'est pas concernée (`schedule` nul, le panneau et son
+   bouton ne s'affichent pas). Vitest neufs : `{ code: 'TIMEOUT', status: 0 }` → message neuf, `fetchBackupSchedule`
+   appelé une fois de plus qu'au montage, `fetchServerBackups` aussi ; idem `{ status: 504 }` ; `runBackupNow` résolu en
+   `undefined`, et `mockRejectedValue(new TypeError('x'))` → message neuf, relecture faite ; `TIMEOUT` puis une relecture
+   qui rend `lastAttemptAt` neuf et `lastStatus: 'ok'` ancien (la tentative en cours) → message neuf affiché, qui dit
+   « s'écrit encore » ;
+   `{ status: 500, message: 'Erreur interne' }` → « Erreur interne », relecture faite ; `{ status: 403, message: 'Accès
+   refusé' }` → « Accès refusé », **aucune** relecture ; `TIMEOUT` puis `fetchBackupSchedule` rejeté → message neuf
+   **et** `auto-backup-load-error` présent, puis un second « Sauvegarder maintenant » réussi → `auto-backup-load-error`
+   **absent** ; le test 409 existant (`AutoBackupSection.test.ts:210`) reste vert **et** assert qu'aucune relecture
+   d'état n'a lieu ; les tests d'`AdminRestorePanel` restent verts (prédicat extrait). **Rouges constatés avant le
+   correctif** (TIMEOUT, 504, 500, `undefined`). **Mutations** : **M-b2** — retirer la relecture → rouge ; **M-b8** —
+   étendre le message neuf aux 4xx (prédicat `status !== 409`) → le cas 403 rouge ; **M-b10** — retirer
+   `loadError = null` du départ de `runNow` → le cas « second run réussi » rouge.
 3. **AC-b3 — E-8 : un échec de sondage n'éteint plus le bandeau ; une réponse tardive est ignorée.**
    `backup-schedule.svelte.ts` : un échec de lecture **laisse** `_value` ; un compteur de séquence, incrémenté par
    `setBackupScheduleState` et au départ de chaque `refreshBackupScheduleState`, fait ignorer toute réponse dont la
-   séquence n'est plus la dernière (C-32-1-10). Doc-comments du module et de `BackupScheduleBanner.svelte` (l. 10-12)
-   mis d'accord. Vitest neufs (`BackupScheduleBanner.test.ts`) : (i) état `failed` affiché, sondage suivant en échec →
+   séquence n'est plus la dernière (C-32-1-10). Commentaires mis d'accord, **quatre** sites : le doc-comment du module
+   `backup-schedule.svelte.ts`, celui du getter (l. 14 : « `null` tant qu'il n'est pas lu, ou si la lecture a échoué »
+   — la seconde moitié devient fausse), l'en-tête de `BackupScheduleBanner.svelte` (l. 10-12) et celui de
+   `BackupScheduleBanner.test.ts` (l. 1-3 : « jamais si la lecture échoue » — vrai seulement d'une première lecture). Vitest neufs (`BackupScheduleBanner.test.ts`) : (i) état `failed` affiché, sondage suivant en échec →
    bandeau **toujours** `failed` ; (ii) une lecture lancée, puis `setBackupScheduleState(ok)`, puis la lecture rend
    `failed` → **aucun** bandeau ; (iii) le test existant « lecture en échec : absent, sans erreur » (l. 106) reste vert.
    **Rouges constatés avant le correctif.** **Mutations** : **M-b3** — rétablir `_value = null` dans le `catch` →
@@ -329,21 +403,32 @@ manuel d'administration FR (`.tex` et PDF) — **4**. Pas de migration, pas de `
    **Mutation M-b6** : rétablir la chaîne française → rouge.
 7. **AC-b7 — L-B3 et les autres phrases du manuel.** `docs/manual/fr/admin-manual.tex`, § *Sauvegarde automatique* :
    - *Espace disque requis* (l. 2349) : le seuil **ne mesure pas la base** ; il la compte à travers la dernière
-     sauvegarde réussie ; à la **première**, une base plus grosse que le dossier des documents n'est couverte que par la
-     marge de 256 Mio ; si l'espace manque alors, l'écriture échoue en « disque plein », le fichier partiel est supprimé,
-     rien d'autre n'est touché. La **dernière phrase** du paragraphe (« Sur un NAS, la base partage souvent le volume du
-     dossier de sauvegarde : ce seuil protège aussi la base. ») est réécrite pour ne plus contredire la précédente : le
-     seuil ne mesure pas la base, mais en refusant d'écrire il évite de remplir le volume qu'elle partage ;
+     sauvegarde réussie, qui la contient. **Tant qu'aucune sauvegarde n'a réussi** (`last_success_bytes` absent, compté
+     0 : `auto_backup.rs:680-683` ; `seuil_d_espace`, l. 496-500), le seuil vaut 1,2 fois le total des documents plus
+     256 Mio : l'archive contenant la base **et** les documents, la base n'y est couverte que par la marge — un
+     cinquième de la taille des documents, plus 256 Mio —, **quelle que soit** sa taille rapportée aux documents (C-32-1-33 ;
+     la phrase « une base plus grosse que le dossier des documents n'est couverte que par 256 Mio », prescrite en P1,
+     était fausse dans les deux sens). Phrase à écrire, dans ce sens : « Le seuil ne mesure pas la base : il la compte à
+     travers la dernière sauvegarde réussie, qui la contient. Tant qu'aucune sauvegarde n'a réussi, la base n'y est
+     couverte que par la marge — un cinquième de la taille des documents, plus 256 Mio — : si la base dépasse cette marge,
+     le disque peut se remplir pendant l'écriture (le cas que le paragraphe décrit ensuite : fichier partiel supprimé,
+     sauvegardes existantes gardées). » (Placement et liaison avec la phrase du disque rempli au développement ; le
+     contrôle aplati porte sur « un cinquième de la taille des documents ».) La **dernière phrase** du paragraphe (« Sur un NAS, la base partage souvent le volume du dossier de
+     sauvegarde : ce seuil protège aussi la base. ») est réécrite pour ne plus contredire la précédente : le seuil ne
+     mesure pas la base, mais en refusant d'écrire il évite de remplir le volume qu'elle partage ;
    - *Ce que l'écran montre* (l. 2345) : une modification du réglage non enregistrée est **conservée** par « Sauvegarder
-     maintenant » ; si la réponse ne parvient pas (délai, coupure, 502, 504) ou si le serveur rend une erreur interne,
-     l'écran relit l'état et la liste, où se lit le résultat (AC-b2) ;
+     maintenant » (et si un autre administrateur a enregistré entre-temps, « Enregistrer » le signale et propose
+     « Recharger », AC-b1) ; si la réponse ne parvient pas (délai, coupure, 502, 504) ou si le serveur rend une erreur
+     (5xx, 503 compris), l'écran relit l'état et la liste — **sans** écrire « où se lit le résultat » (C-32-1-30) : une
+     sauvegarde encore en cours y montre la date de la tentative avec le statut de la **précédente**, et le fichier n'est
+     pas encore dans la liste ; l'issue se lit en rechargeant la page une fois l'écriture finie (AC-b2) ;
    - *Le bandeau de l'application* (l. 2347) : un échec de lecture **garde** le dernier état lu ; et la phrase « « Aucune
      sauvegarde automatique réussie depuis le … » quand la dernière réussite date d'au moins deux intervalles » reçoit
      son cas futur (renvoi à *Horloge du serveur déréglée* et au texte de l'AC-b4) ;
    - *Horloge du serveur déréglée* (l. 2357) : le bandeau dit que la dernière réussite est datée **après** l'heure du
      serveur (texte de l'AC-b4), au lieu de « aucune sauvegarde réussie depuis le … » ;
    - *Les sauvegardes du serveur* (l. 2355) : la mention citée dans sa forme neuve (AC-b5).
-   `make fr` sous verrou ; **contrôle aplati** du PDF (Dev Notes, § *Contrôle aplati d'un PDF* : apostrophe
+   `make admin` sous verrou (T-b6) ; **contrôle aplati** du PDF (Dev Notes, § *Contrôle aplati d'un PDF* : apostrophe
    typographique normalisée, témoin positif d'abord) pour chaque phrase neuve, et `grep -c '??'` sur le texte aplati : 0.
    Les gardes qui lisent le manuel restent vertes (`binary(textes_coherents)`, `binary(configuration_transmise)`).
 8. **AC-b8 — i18n.** Trois clés neuves (`admin-backup-auto-run-unknown`, `admin-backup-banner-future`,
@@ -362,7 +447,8 @@ manuel d'administration FR (`.tex` et PDF) — **4**. Pas de migration, pas de `
     avant « Sauvegarder maintenant », modifier le nombre conservé **sans enregistrer** ; après le 200, le champ garde la
     valeur saisie (AC-b1 à travers la frontière HTTP). Gate **complet**, les quatre gates frontend, **E2E complet au
     dernier commit de code**, jugé fichier par fichier contre `docs/testing.md` § *Les échecs attendus*.
-11. **AC-b11 — mutations** M-b1 à M-b8 (huit ; M-b7 en deux formes ; même protocole que l'AC-a13).
+11. **AC-b11 — mutations** M-b1 à M-b10 (dix ; M-b7 en deux formes ; M-b9 et M-b10 de la validation P2 ; même
+    protocole que l'AC-a13).
 
 ### Tâches
 
@@ -370,10 +456,13 @@ manuel d'administration FR (`.tex` et PDF) — **4**. Pas de migration, pas de `
 - [ ] **T-b1 (AC-b6, AC-b8)** — clé × 4, test `i18n_e2e.rs` **rouge**, `t(…)`, G9.
 - [ ] **T-b2 (AC-b4)** — tests rouges (unitaires, e2e), fonction, champ, bandeau, clé × 4.
 - [ ] **T-b3 (AC-b1, AC-b2)** — Vitest rouges, `applyState`, prédicat d'issue inconnue extrait (AdminRestorePanel inchangé en
-  comportement), `runNow` en trois cas, clé × 4 ; M-b1, M-b2, M-b8.
+  comportement), `formBase`, `runNow` en trois cas (non-`ApiError` comprise), `loadError` remis à `null`, clé × 4 ;
+  M-b1, M-b2, M-b8, M-b9, M-b10.
 - [ ] **T-b4 (AC-b3)** — Vitest rouges, séquence, doc-comments.
 - [ ] **T-b5 (AC-b5)** — clé modifiée × 4, repli Svelte, test ; M-b7 (deux formes).
-- [ ] **T-b6 (AC-b7)** — manuel, `make fr` sous verrou, contrôle aplati ; après fusion de la 32-1c, mise à jour sur
+- [ ] **T-b6 (AC-b7)** — manuel, **`make admin`** sous verrou (non `make fr` : après le rebase sur la 32-1c, les dates
+  posées par le checkout peuvent faire reconstruire le manuel utilisateur et la brochure, des diffs binaires que la 32-1b
+  ne porte pas ; seul `admin-manual.pdf` est commité), contrôle aplati ; après fusion de la 32-1c, mise à jour sur
   `main` et **régénération** du PDF (C-32-1-17).
 - [ ] **T-b7 (AC-b9, AC-b10, AC-b11)** — E2E, captures, mutations, gates ; Dev Agent Record chiffré.
 
@@ -382,8 +471,9 @@ manuel d'administration FR (`.tex` et PDF) — **4**. Pas de migration, pas de `
 ## C — 32-1c : la procédure de répétition (#714, hors ses deux choix tranchés)
 
 **Modules** : manuels FR (`docs/manual/fr/admin-manual.tex`, `docs/manual/fr/user-manual.tex` pour ⚠️ seulement,
-`docs/manual/shared/kesh-style.sty` pour la macro, et les **trois** PDF — la brochure se régénère aussi, sa règle du
-`Makefile` dépendant du `.sty`, C-32-1-26) ; fiche `31-4-repetition-a-blanc.md` (annotations
+`docs/manual/shared/kesh-style.sty` pour la macro, les deux replis d'icônes et le `literate` des listings (C-32-1-31), et
+les **trois** PDF — la brochure se régénère aussi, sa règle du `Makefile` dépendant du `.sty`, C-32-1-26 ; son `.tex`
+ne change pas) ; fiche `31-4-repetition-a-blanc.md` (annotations
 datées) — **1** module (documentation). Aucun code. **La procédure ne se rejoue pas** : la 32-1c corrige ce que la
 procédure dit, sans changer aucune commande ni ajouter aucune consigne d'agir (C-32-1-15).
 
@@ -411,7 +501,7 @@ procédure dit, sans changer aucune commande ni ajouter aucune consigne d'agir (
    passe **avant** l'amorce. Contrôle au PDF (`pdftotext -layout`) : l'amorce et la première ligne de son listing sur la
    même page ; aucun listing de la sous-section coupé. Capture de la page (rendu de la page du PDF en image,
    `kesh-gate-logs/321-captures/`), jointe au Dev Agent Record (recette visuelle : un contrôle visible).
-7. **AC-c7 — ⚠️ imprimé** (P2 B2-L5, C-32-1-16). Macro `\keshAttention` dans `docs/manual/shared/kesh-style.sty`,
+7. **AC-c7 — ⚠️ imprimé, et aucun autre signe sans glyphe** (P2 B2-L5, C-32-1-16, C-32-1-31). Macro `\keshAttention` dans `docs/manual/shared/kesh-style.sty`,
    définie sur `\faExclamationTriangle` (l. 37 — un `\providecommand` dont le rendu est un **« ! » gras**, fontawesome
    n'étant pas chargé) ; une macro sans argument avale l'espace qui la suit : chaque emploi s'écrit `\keshAttention\ `
    suivi du texte (comme le titre de `keshwarning`, `\faExclamationTriangle\ Attention`, l. 299), ou `\keshAttention{}`.
@@ -423,15 +513,36 @@ procédure dit, sans changer aucune commande ni ajouter aucune consigne d'agir (
    « ! Un dossier = une instance », `admin-manual.tex:99`), nommées au Dev Agent Record, la phrase sans le signe ne
    distinguant rien — ; `grep -c '??'` sur les textes aplatis : 0. Capture d'une page portant le signe, jointe au Dev
    Agent Record.
+   **La classe entière, par son symptôme** (C-32-1-31, validation P2 F3 = R2) — les 25 autres caractères sans glyphe des
+   trois PDF, même cause et même fichier (`kesh-style.sty`), traités par le même geste, sans toucher aucun `.tex` :
+   - **replis d'icônes** : `\providecommand{\faCheckCircle}{\textbf{+}}` (l. 39, au lieu de `✓`) et
+     `\providecommand{\faExchangeAlt}{\textbf{→}}` (l. 42, au lieu de `⇄` ; `→` est déjà le repli de `\faRocket` et
+     s'imprime) — signes que TeX Gyre Heros possède ; les 16 sites de la brochure ;
+   - **listings** : au style `kesh` (`\lstdefinestyle{kesh}`, l. 221-242), `literate={✓}{{+}}1 {✗}{{x}}1 {═}{{=}}1`
+     — signes que TeX Gyre Cursor possède ; les 9 sites des deux scripts d'exemple du manuel d'administration (l. 1547,
+     3313, 3318, 3320), hors `sec:repetition-cloture` (aucun de ses listings ne porte ces caractères : son rendu ne
+     change pas, et son `git diff` reste vide, AC-c9). La source des listings garde ses caractères ; le PDF montre le
+     repli.
+   Le choix des signes de repli est de présentation et **réversible** (une ligne du `.sty` chacun). **Contrôle
+   décidable, aux deux bornes** : `pdftotext docs/manual/fr/<pdf> - | grep -o $'\xef\xbf\xbd' | wc -l` rend
+   **26 → 0** (administration), **9 → 0** (utilisateur), **16 → 0** (brochure), écrits au Dev Agent Record ; témoins
+   aplatis : « + Conforme au Code des obligations suisse » (brochure), « echo "+ Sauvegarde terminee » (administration,
+   listing ; aplati sans `tr -s` si l'espacement du listing le demande). Le `grep -c "⚠"` sur un PDF, qui rend 0 avant
+   comme après, **n'est pas** un contrôle et n'est pas écrit comme tel. Si `literate` ne prend pas un caractère multioctet
+   sous XeLaTeX (le compte de U+FFFD le dit), le repli est d'écrire ces 9 signes en ASCII dans les deux scripts
+   d'exemple (déjà sans accents : « terminee », « integrite »), et de le dire au Dev Agent Record.
 8. **AC-c8 — la fiche de la 31-4 annotée, non réécrite** (P2 A-LOW-4, P4 LOW-4). Deux annotations datées
    (« *Annotation du 2026-10-2x, Story 32-1c* ») : à l'AC11 (`31-4-repetition-a-blanc.md:537-543`), G15 ne lit rien de la
    sous-section (elle écrit ses volumes en `\keshpath{…}`, G15 lit `\texttt{…}` et `/var/lib/docker/volumes/`) ; à la
    l. 504, le `test ! -e "$COPIE"` décrit n'est plus le contrôle final (renvoi à l'annotation de la l. 435). Le texte
    d'origine reste.
 9. **AC-c9 — le manuel et ses gardes.** `make fr` sous verrou ; chaque phrase neuve des AC-c1 à AC-c5 contrôlée au PDF
-   aplati (Dev Notes, § *Contrôle aplati d'un PDF*) ; la brochure régénérée garde son texte (`pdftotext` de
-   `marketing-brochure.pdf` identique à celui de la version d'avant, extraite dans `kesh-gate-logs/` par
-   `git show HEAD:docs/manual/fr/marketing-brochure.pdf` puis passée à `pdftotext` — C-32-1-26) ; gate ciblé `binary(textes_coherents)` et
+   aplati (Dev Notes, § *Contrôle aplati d'un PDF*) ; la brochure régénérée garde son texte **hors ses 16 signes**
+   (C-32-1-26, amendé par C-32-1-31) : la version d'avant est extraite dans `kesh-gate-logs/` depuis **la base de la
+   branche**, `git show "$(git merge-base origin/main HEAD)":docs/manual/fr/marketing-brochure.pdf` — **jamais**
+   `HEAD:`, qui, après le commit du PDF régénéré, désigne la version d'après et rendrait le contrôle vert par
+   construction —, puis les deux `pdftotext` sont aplatis (`tr '\n' ' '`), privés de U+FFFD, de `+` et de `→`, et
+   comprimés (`tr -s ' '`) : textes **identiques** ; référence employée écrite au Dev Agent Record ; gate ciblé `binary(textes_coherents)` et
    `binary(configuration_transmise)` (gardes G14 à G16, G19, qui lisent la sous-section) — C-32-1-18. Aucune commande de
    la sous-section ne change : `git diff` des `lstlisting` de `sec:repetition-cloture` **vide** (contrôle écrit au Dev
    Agent Record).
@@ -441,7 +552,8 @@ procédure dit, sans changer aucune commande ni ajouter aucune consigne d'agir (
 ### Tâches
 
 - [ ] **T-c1 (AC-c1 à AC-c5)** — phrases ; **aucune** commande touchée.
-- [ ] **T-c2 (AC-c6, AC-c7)** — `\needspace`, macro, 26 remplacements (`⚠️` entier), captures.
+- [ ] **T-c2 (AC-c6, AC-c7)** — `\needspace`, macro, 26 remplacements (`⚠️` entier), deux replis d'icônes, `literate`
+  des listings ; U+FFFD compté aux deux bornes dans les trois PDF (26, 9, 16 → 0) ; captures.
 - [ ] **T-c3 (AC-c8)** — deux annotations datées.
 - [ ] **T-c4 (AC-c9)** — `make fr`, contrôles aplatis, gate ciblé ; Dev Agent Record.
 
@@ -462,6 +574,10 @@ Les trois parties se développent **séparément**, mais elles ne sont pas sans 
 - **32-1b et 32-1c** partagent `admin-manual.tex` (sections distinctes) et son PDF (binaire : conflit à toute fusion
   parallèle) : **32-1c avant 32-1b**, la 32-1b régénérant le PDF sur le `.tex` fusionné (C-32-1-17).
 - Ordre : 32-1a quand elle est prête ; 32-1c avant 32-1b.
+- **Les trois** écrivent dans cette fiche, `sprint-status.yaml` et le registre (F11 de la validation P2) : chacune
+  n'écrit que **sa** sous-section du Dev Agent Record (*32-1a*, *32-1b*, *32-1c*, ci-dessous) et **sa** clé du
+  `sprint-status.yaml` ; le Change Log reçoit une entrée par clé, ajoutée en fin ; la seconde à fusionner résout par
+  union. Le registre ne reçoit que des entrées neuves, numérotées à la suite au moment de l'écriture.
 
 Mots-clés de PR (à poser par l'orchestrateur, **jamais dans un commit**) : 32-1a `closes #716` ; **`closes #711` porté
 par celle des 32-1a et 32-1b qui fusionne EN DERNIER** (E-9 est dans la 32-1a, le reste dans la 32-1b ; E-1 et E-2 sont
@@ -496,22 +612,31 @@ une, l'ajouter au `sed`.
   de (t1) : faits sur le pool pendant (t1), ils attendraient le verrou de la ligne de réglages tenu par la transaction.
 - **AC-a9** : la sonde ne change pas `BackupEnv` (trait de production) ; elle vit dans le fichier de test.
 - **AC-a11** : les helpers sont dans `mod tests` d'un fichier de production : leur modification ne change aucune ligne
-  servie, mais le fichier est relu en revue comme du code. Le balayeur ne vise pas tout Rust (pas de `syn`,
-  C-32-1-6) : il couvre les formes présentes dans les cinq fichiers lus (`main.rs`, `lib.rs`, `routes/admin.rs`,
-  `routes/backup_schedule.rs`, `auto_backup.rs` — relevé à la validation P1 : chaînes brutes `r"…"` aux
-  `auto_backup.rs:66`, `:72`, durées de vie `&'static` aux `auto_backup.rs:258` et `routes/backup_schedule.rs:194`,
-  aucun littéral de caractère hors `mod tests`) ; son doc-comment le dit.
+  servie, mais le fichier est relu en revue comme du code. Le balayeur est `lexique::decouper` (C-32-1-32), qui ne vise
+  pas tout Rust (pas de `syn`, C-32-1-6) : il couvre les formes présentes dans les cinq fichiers lus (`main.rs`,
+  `lib.rs`, `routes/admin.rs`, `routes/backup_schedule.rs`, `auto_backup.rs` — relevé aux validations P1 et P2 : chaînes
+  brutes `r"…"` aux `auto_backup.rs:66`, `:72`, durées de vie `&'static` aux `auto_backup.rs:258` et
+  `routes/backup_schedule.rs:194`, aucun littéral de caractère, aucune chaîne d'octets ni label hors `mod tests` ;
+  `lib.rs:1179` et `:1196` portent `/*` **dans des `//`**, que le bras `//` de `decouper` traite d'abord) ; ses limites
+  connues (un `'\''` mal lu) sont hors de ces fichiers. L'extension aux blocs imbriqués change `decouper` pour ses deux
+  utilisateurs actuels dans le sens juste (aucun `/*` imbriqué dans les sources qu'ils lisent : à vérifier par
+  `binary(letterings_lexical)` et `binary(bank_account_closed_inventory)` verts) ; le fichier `lexique/mod.rs` étant
+  sous `kesh-db/tests/`, le gate complet de la 32-1a le couvre déjà (🗄️).
 
 ### 32-1b — remarques de conception
 
-- **AC-b1** : « égalent le réglage lu » se compare sur les trois champs, `Number(intervalHours)` et
-  `Number(retentionCount)` (les champs liés aux `<select>`/`<input>` sont des chaînes en Svelte). Un réglage modifié
-  ailleurs (autre administrateur) pendant la saisie n'est pas un cas de l'AC : la `version` change, l'enregistrement rend
-  409, et « Recharger » remplace la saisie — comportement existant, inchangé.
-- **AC-b2** : trois cas (C-32-1-22) — issue inconnue (prédicat d'`issueInconnue`, extrait et partagé), autre 5xx,
-  4xx (409 `BACKUP_IN_PROGRESS` compris) ; seuls les deux premiers relisent. La relecture n'appelle pas `loadSchedule`
-  (qui remet `conflict`/`saveError` et réécrit le formulaire) mais `fetchBackupSchedule` + `applyState`, et pose
-  `loadError` si elle échoue.
+- **AC-b1** : « égalent ceux de `formBase` » se compare sur les trois champs, `Number(intervalHours)` et
+  `Number(retentionCount)` (les champs liés aux `<select>`/`<input>` sont des chaînes en Svelte). **Un réglage modifié
+  ailleurs** (autre administrateur) pendant la saisie **est** un cas de l'AC (C-32-1-29 ; la note de la validation P1, qui
+  le disait hors de l'AC et tenu par le 409, était fausse : `applyState` posait `schedule` — donc sa `version` — sous une
+  saisie gardée, et l'enregistrement suivant passait sans 409, écrasant le réglage de l'autre en silence). C'est
+  `formBase.version`, non `schedule.version`, qui part avec l'enregistrement : la saisie s'enregistre contre la version
+  sur laquelle elle a été faite, et le 409 existant joue.
+- **AC-b2** : trois cas (C-32-1-22, C-32-1-34) — issue inconnue (prédicat d'`issueInconnue`, extrait et partagé, **ou**
+  rejet qui n'est pas une `ApiError`), autre 5xx, 4xx (409 `BACKUP_IN_PROGRESS` compris) ; seuls les deux premiers
+  relisent. La relecture n'appelle pas `loadSchedule` (qui remet `conflict`/`saveError` et réécrit le formulaire) mais
+  `fetchBackupSchedule` + `applyState`, et pose `loadError` si elle échoue ; `runNow` le remet à `null` au départ. La
+  relecture **ne dit pas le résultat** d'une sauvegarde encore en cours (C-32-1-30) : le message et le manuel le disent.
 - **AC-b3** : le motif de séquence est celui de `fiscal-years` (C-29-1-37) ; la séquence est **module-level**, comme
   `_value`.
 - **AC-b4** : `passe()` est privée ; `is_success_in_future` vit dans le même module et la réemploie (une seule règle de
@@ -601,26 +726,68 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
 - **Mention de taille en Mio ailleurs** : `admin-backup-exceeds-import-limit` (`AdminBackupPanel.svelte:96-99`) dit
   « (N Mio) » sans afficher la taille du fichier à côté : pas de juxtaposition d'unités, hors classe de L-B6.
 - **Date ISO** : `2026-02-30` reste une date pour `nombres_isoles` (AC-a7, limite écrite).
-- **Gardes lexicales** : `corps()` reste coupée par un `\n}` dans une chaîne brute (AC-a11, écrit) ; aucune n'existe dans
-  les fichiers lus (`routes/admin.rs`, `routes/backup_schedule.rs`, `auto_backup.rs`, `main.rs`, `lib.rs`) — à
-  recontrôler au développement par `grep -n '^}' ` dans des chaînes, déclaré.
+- **Gardes lexicales** : `corps()` lit la copie masquée (AC-a11, C-32-1-32) : un `\n}` **dans une chaîne** n'y coupe
+  plus (le `}` y est effacé, la fin de ligne gardée) ; la limite qui reste est la règle rustfmt (un item de tête se
+  ferme par `}` en colonne 0), écrite à son doc-comment.
+- **Signes sans glyphe dans les PDF** (classe recensée par son symptôme, U+FFFD) : après la 32-1c, **0** dans les trois
+  PDF FR (AC-c7) ; aucun autre PDF de manuel n'est versionné (`ls docs/manual/*/*.pdf` : les trois FR seulement).
 - **⚠️ hors des manuels FR** : `crates/kesh-report/src/pdf.rs:1532` écrit `⚠` dans un titre de PDF de rapport ; police et
   rendu non vérifiés ici — **hors** (code, autre police) ; à signaler à l'orchestrateur, issue si le glyphe manque au
   rendu.
+- **État « tentative en cours » du panneau** (C-32-1-30) : pendant une sauvegarde, le panneau accole à la date de la
+  tentative en cours le statut de la **précédente** (`AutoBackupSection.svelte:339-343` ; `record_attempt` ne pose que
+  `last_attempt_at`, `record_failure` ne pose aucune date : l'état servi ne distingue pas « en cours » de « terminée en
+  échec »). Défaut préexistant, que la relecture de l'AC-b2 rend plus visible ; **hors** — commentaire à verser sur
+  [#725], dont la partie 1 prévoit un signal « tentative en cours » (texte ci-dessous, *Commentaires à verser*).
 - **E-9 (2)** : angle mort assumé (AC-a10).
 - **Copies de l'assistant lexical `code()`** (même `take_while(… != "#[cfg(test)]")` ligne à ligne, sans connaissance
   des blocs `/* … */` ni des chaînes) : `crates/kesh-api/src/admin_backup/export.rs:442` et `:508`,
   `crates/kesh-api/src/routes/admin.rs:1097` (`code_de_production`), `crates/kesh-api/src/document_storage.rs:608`,
   `crates/kesh-api/src/routes/journal_entries.rs:1018` ; `crates/kesh-api/tests/audit_label_registry.rs` a sa propre lecture
-  (`strip_line_comments`, l. 179 ; `source_assainie`, l. 231 ; `accolades_hors_chaines`, l. 291).
-  L'AC-a11 ne corrige que celle d'`auto_backup.rs` (constat E-9 (3)) ; les cinq autres
-  gardent la limite — **hors périmètre, non corrigées ici**, à tracer : issue demandée à l'orchestrateur (rapport de
-  la remédiation P1), qui décidera aussi de l'extraction d'un balayeur commun (règle DRY).
+  (`strip_line_comments`, l. 179 ; `source_assainie`, l. 231 ; `accolades_hors_chaines`, l. 291). **Complété à la
+  validation P2** (R4), par `grep -rn '"#\[cfg(test)\]"\|split("#\[cfg(test)\]")' crates --include=*.rs` et
+  `grep -rn 'starts_with("//")' crates --include=*.rs` sur **tout** `crates/` : `crates/kesh-db/src/backup.rs:1950-1951`
+  (`corps_de_production`, même forme) ; `crates/kesh-db/src/repositories/closing_checks.rs:922` (`hors_tests`, un
+  `split("#[cfg(test)]")` sur la source brute — tronqué aussi par un `"#[cfg(test)]"` écrit dans une chaîne) et `:928`
+  (`decommente`, filtre `//` ligne à ligne) ; `crates/kesh-db/tests/test_schema_guard.rs:818-827` (profondeur de bloc
+  comptée par `matches("/*")` et `matches("*/")` ligne à ligne, filtre `//` à la l. 825 — sans connaissance des
+  chaînes). **Un analyseur juste existe déjà** : `crates/kesh-db/tests/lexique/mod.rs` (`decouper`, `blocs_de_test`,
+  Story 28-4a, #642), employé par `letterings_lexical.rs` et `bank_account_closed_inventory.rs` — c'est lui que l'AC-a11
+  réemploie (C-32-1-32), et c'est la cible naturelle de l'extraction.
+  L'AC-a11 ne corrige que celle d'`auto_backup.rs` (constat E-9 (3)) ; les autres gardent la limite — **hors périmètre,
+  non corrigées ici**, suivies par **[#727]** (ouverte le 2026-10-24 par l'orchestrateur, `technical-debt`, `P3`, sur la
+  demande de la remédiation P1), dont le texte ne nomme ni les quatre sites de `kesh-db` ni `lexique` : commentaire à
+  verser (*Commentaires à verser*, ci-dessous).
+
+### Commentaires à verser (par l'orchestrateur ; la remédiation P2 n'ouvre aucune issue)
+
+**Sur [#725]** (C-32-1-30) :
+
+> Complément (Story 32-1, validation P2) : pendant une tentative, le panneau *Sauvegarde automatique* accole à la date de
+> la tentative **en cours** le statut de la **précédente** — `record_attempt` ne pose que `last_attempt_at`
+> (`crates/kesh-db/src/repositories/backup_schedule.rs:250-258`), `last_status` reste celui d'avant, et
+> `AutoBackupSection.svelte:339-343` affiche « Dernière tentative : <maintenant> — réussie ». `record_failure` ne pose
+> aucune date : l'état servi ne distingue pas « en cours » de « terminée en échec ». La Story 32-1b relit l'état après une
+> réponse manquante (proxy 502/504 pendant l'écriture) et le dit au message (« la sauvegarde … s'écrit encore ») sans
+> pouvoir le montrer ; le signal « tentative en cours » de la partie 1 le fermerait (par exemple un champ servi tiré de
+> l'état du verrou, ou une date de fin de tentative).
+
+**Sur [#727]** (C-32-1-35) :
+
+> Complément (Story 32-1, validation P2) : l'inventaire de cette issue ne couvrait que `kesh-api`. Sur tout `crates/` :
+> `crates/kesh-db/src/backup.rs:1950-1951` (`corps_de_production`, même forme) ; `crates/kesh-db/src/repositories/closing_checks.rs:922`
+> (`hors_tests`, `split("#[cfg(test)]")` sur la source brute) et `:928` (`decommente`) ;
+> `crates/kesh-db/tests/test_schema_guard.rs:818-827` (blocs comptés ligne à ligne, sans les chaînes). Et **un analyseur
+> lexical juste existe déjà** : `crates/kesh-db/tests/lexique/mod.rs` (`decouper` : chaînes ordinaires et brutes,
+> commentaires, caractères distingués des durées de vie, copie masquée de même longueur), inclus par `#[path]` dans
+> `crates/kesh-api/tests/bank_account_closed_inventory.rs`. La Story 32-1a le réemploie pour `auto_backup.rs` (et
+> l'étend aux commentaires de bloc imbriqués) : l'extraction demandée ici est donc un réemploi, non un balayeur neuf.
 
 ### Fichiers touchés (prévus)
 
 - **32-1a** : `crates/kesh-api/src/routes/invoice_pdf_service.rs` (commentaire, `mod tests`) ;
-  `crates/kesh-api/src/auto_backup.rs` (`mod tests` seul) ; `crates/kesh-api/tests/audit_log_e2e.rs` ;
+  `crates/kesh-api/src/auto_backup.rs` (`mod tests`, et la déclaration `#[cfg(test)]` de `mod lexique`) ;
+  `crates/kesh-db/tests/lexique/mod.rs` (blocs imbriqués) ; `crates/kesh-api/tests/audit_log_e2e.rs` ;
   `crates/kesh-api/tests/textes_coherents.rs` ; `crates/kesh-api/tests/admin_auto_backup_e2e.rs` ;
   `crates/kesh-db/src/repositories/company_invoice_settings.rs` (doc-comment) ;
   `crates/kesh-db/tests/company_invoice_settings_repository.rs` ;
@@ -634,16 +801,18 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
   textes_coherents.rs}` ; `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ;
   `docs/manual/fr/admin-manual.{tex,pdf}`.
 - **32-1c** : `docs/manual/fr/admin-manual.{tex,pdf}` ; `docs/manual/fr/user-manual.{tex,pdf}` ;
-  `docs/manual/fr/marketing-brochure.pdf` (régénéré par la dépendance au `.sty`, texte inchangé, C-32-1-26) ;
+  `docs/manual/fr/marketing-brochure.pdf` (régénéré par la dépendance au `.sty`, texte inchangé hors ses 16 signes,
+  C-32-1-26, C-32-1-31) ;
   `docs/manual/shared/kesh-style.sty` ; `_bmad-output/implementation-artifacts/31-4-repetition-a-blanc.md`.
 - **Toutes** : cette fiche, `sprint-status.yaml`, le registre `-321`.
 - **CHANGELOG** (C-32-1-26) : la 0.15.0 est publiée (`## [0.15.0] — 2026-10-24`, `CHANGELOG.md:11`) et aucun bloc non
   publié n'existe au 2026-10-24. Convention du dépôt (celle que `scripts/prepare-release.sh` date, l. 237-255) : un
-  bloc `## [0.16.0] — Non publié` en tête, sous la ligne `---`. La clé qui fusionne la première le **crée** s'il n'existe
-  pas encore sur `main` (une autre story de l'Epic 32 a pu le faire), les suivantes y ajoutent ; rubrique **`### Corrigé`**
-  (le CHANGELOG est en français : `Ajouté`, `Modifié`, `Corrigé`, `Interne, invisible de l'utilisateur`). Une ligne pour
-  la 32-1b (écran de la sauvegarde automatique) et une pour la 32-1c (manuels : procédure de répétition, signe
-  d'attention imprimé) ; la 32-1a n'a aucun effet visible — pas d'entrée.
+  bloc `## [0.16.0] — Non publié` en tête, sous la ligne `---`. La **première des 32-1b et 32-1c** qui fusionne le
+  **crée** s'il n'existe pas encore sur `main` (une autre story de l'Epic 32 a pu le faire), la seconde y ajoute ;
+  rubrique **`### Corrigé`** (le CHANGELOG est en français : `Ajouté`, `Modifié`, `Corrigé`, `Interne, invisible de
+  l'utilisateur`). Une ligne pour la 32-1b (écran de la sauvegarde automatique) et une pour la 32-1c (manuels et
+  brochure : procédure de répétition, signes imprimés) ; la 32-1a n'a aucun effet visible — pas d'entrée, et elle ne
+  crée pas le bloc.
 
 ### Risques
 
@@ -665,11 +834,31 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
 
 ## Dev Agent Record
 
-### Agent Model Used
+*Une sous-section par clé, chacune écrite par sa seule branche (Dev Notes, § *Pourquoi trois clés*).*
 
-### Completion Notes List
+### 32-1a
 
-### File List
+#### Agent Model Used
+
+#### Completion Notes List
+
+#### File List
+
+### 32-1b
+
+#### Agent Model Used
+
+#### Completion Notes List
+
+#### File List
+
+### 32-1c
+
+#### Agent Model Used
+
+#### Completion Notes List
+
+#### File List
 
 ## Change Log
 
@@ -715,6 +904,66 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
     C-32-1-2, 4, 6, 7, 9, 11, 14, 15, 16, 17. Propagation grepée dans la fiche et le registre (`issue pour Guy`,
     `à ouvrir`, `\b25\b`, `trois lectures`, `M-a1\b`, `M-b6`). **Quatre MEDIUM remédiés : une passe P2 complète est
     due** (`321-validate-prompt-p2.md`, Opus).
+- 2026-10-24 — **Validation P2** (Opus 5.5, deux lentilles en contexte frais, lecture seule ; prompt
+  `321-validate-prompt-p2.md` ; rapports `kesh-gate-logs/321-validate-p2-R.md` et `321-validate-p2-F.md`). Lentille R :
+  **0 CRITICAL, 0 HIGH, 3 MEDIUM, 5 LOW** (R1 à R8) ; lentille F : **0 CRITICAL, 0 HIGH, 4 MEDIUM, 8 LOW** (F1 à F12).
+  Recoupements : F3 = R2 ; F10 = R5 (a) + R6 (b) ; F9 (b) = R1 — soit **6 MEDIUM distincts** (R1, R2 = F3, R3, F1, F2,
+  F4) et **12 LOW distincts** (R4, R5, R6, R7, R8, F5, F6, F7, F8, F9 (a), F11, F12). Remédiation (Opus 5.5), chaque
+  affirmation relue au code :
+  - **F1** (MEDIUM ; origine : rédaction d'origine, C-32-1-8, étendue par la remédiation P1 à la relecture de l'AC-b2) —
+    `applyState` posait `schedule` sous une saisie gardée, et « Enregistrer » partait avec la `version` de la réponse :
+    le réglage d'un autre administrateur écrasé sans 409, la Dev Note disant l'inverse. AC-b1 : `formBase`, `save` envoie
+    `formBase.version`, le 409 existant joue ; Vitest (iii) « concurrence », **M-b9** ; Dev Note corrigée. C-32-1-29.
+  - **F2** (MEDIUM ; origine : rédaction d'origine, C-32-1-9, formulée par la remédiation P1) — la relecture tombe pendant
+    l'écriture (proxy 502/504, tâche `tokio::spawn` qui continue) et montre la date de la tentative en cours avec le
+    statut de la précédente ; rien dans l'état servi ne distingue « en cours » (`record_failure` ne pose aucune date).
+    Formulation honnête : message neuf (« … ou s'écrit encore … rechargez la page dans quelques minutes ») et phrase du
+    manuel sans « où se lit le résultat » ; l'affichage, défaut préexistant, en commentaire de **#725** (sa partie 1
+    prévoit le signal). C-32-1-30.
+  - **F3 = R2** (MEDIUM ; origine : rédaction d'origine, constat élargi en P1 sans aller jusqu'au symptôme) — classe
+    recensée par **U+FFFD** : 26 / 9 / 16 dans les trois PDF ; 17 `⚠️` + 9 signes de listings (`✓`, `✗`, `═`, l. 1547,
+    3313, 3318, 3320) ; 15 `\faCheckCircle` + 1 `\faExchangeAlt` (brochure). Mécanique, même fichier : intégrée à la
+    32-1c (deux replis d'icônes, `literate` du style `kesh`) ; AC-c7 contrôle **U+FFFD → 0** dans les trois PDF ;
+    AC-c9 : brochure identique hors ses 16 signes. Aucune issue. C-32-1-31.
+  - **F4** (MEDIUM ; origine : remédiation P1) — #727 ouverte depuis : bilan **−3 + 3 = 0** issue, **−1** bug (#727
+    `technical-debt`, sans `bug`) ; *Origine* et *Inventaire* corrigés, lien `[#727]`. L'entrée « Validation P1 »
+    ci-dessus (« −3 + 2 ») était juste à sa date — #727 a été ouverte après son commit — et n'est pas réécrite. C-32-1-35.
+  - **R1** (MEDIUM ; origine : remédiation P1 — **recyclage** sur l'AC-a11) — M-a7 indécidable (un retrait non gourmand ne
+    trouve aucun `*/` dans (3) ni dans `lib.rs`). M-a7 en deux formes : **M-a7a** (le balayeur privé de l'état chaîne),
+    **M-a7b** (retrait non gourmand) ; assertion **(3')**, fermée par `/* c */` après l'appel, qui tue les deux.
+    C-32-1-32.
+  - **R3** (MEDIUM ; origine : rédaction d'origine) — à la première sauvegarde, `derniere = 0` : le seuil vaut 1,2 ×
+    documents + 256 Mio, la base n'est couverte que par 0,2 × documents + 256 Mio, quelle que soit sa taille. Phrase
+    juste prescrite (AC-b7). C-32-1-33.
+  - **Constat neuf de la remédiation** (en complétant R4) : un analyseur lexical juste **existe déjà**
+    (`crates/kesh-db/tests/lexique/mod.rs`, `decouper`, Story 28-4a) ; l'AC-a11 en prescrivait un second. AC-a11
+    réécrite : `decouper` réemployé par `#[path]`, étendu aux blocs imbriqués, helpers sur la copie masquée (fins de ligne
+    gardées — ce qui règle F9 (a) — ; la limite « `\n}` dans une chaîne » de `corps()` disparaît), assertion (6) ;
+    modules de la 32-1a inchangés en nombre (kesh-db y était). C-32-1-32.
+  - LOW : **R4** — inventaire complété sur tout `crates/` (`kesh-db/src/backup.rs:1950-1951`, `closing_checks.rs:922`,
+    `:928`, `tests/test_schema_guard.rs:818-827`) et `lexique` nommé ; commentaire à verser sur **#727**. **R5 = F10 (a)**
+    — un rejet qui n'est pas une `ApiError` (200 au corps illisible : `request()` rend `undefined`) → issue inconnue,
+    Vitest. **R6 = F10 (b)** — `loadError` remis à `null` au départ de `runNow`, Vitest, **M-b10**. C-32-1-34. **R7** — la
+    phrase du manuel dit « 5xx, 503 compris ». **R8** — quatre commentaires nommés (getter l. 14, en-tête du test).
+    **F5** — modules de la 32-1b : 4 au grain des crates et paquets, **7** au grain des modules métier ; signal déclaré
+    ci-dessous, sans découpage. C-32-1-36. **F6** — CHANGELOG : « la première des 32-1b et 32-1c ». **F7** — brochure
+    d'avant tirée de `git merge-base origin/main HEAD`, jamais de `HEAD:`. **F8** — assertion de montage « trois `NULL`
+    après (t1) ». **F9 (a)** — fins de ligne : réglé par `decouper` et l'assertion (6) ; **(b)** = R1. **F11** — Dev Agent
+    Record en trois sous-sections ; 32-1b : `make admin`, seul `admin-manual.pdf` commité. **F12** — constat P2 B2-L4
+    nuancé (« muet » sur la sortie standard seulement).
+  - **Tendance** : P1 **4 MEDIUM** distincts → P2 **6 MEDIUM** distincts. ⚠️ **Signal de la règle de splitting
+    (sévérité égale, MEDIUM → MEDIUM), déclaré au Project Lead** : quatre des six sont des défauts **d'origine** non vus
+    en P1 (F1, F2, F3 = R2, R3) — la revue trouve, elle ne tourne pas en rond (amendement D5) ; deux viennent de la
+    remédiation P1 (F4, comptable ; R1, **recyclage** de l'AC-a11, qui reçoit en P2 sa deuxième réécriture) ; et la
+    32-1b dépasse cinq modules au grain métier (F5). Le découpage n'est pas fait par la remédiation ; s'il est décidé,
+    la coupe la moins coûteuse sépare la 32-1b en un écran (E-6, E-7, E-8, L-B6 : `admin-backup`, `admin-restore`,
+    `shared/utils`, i18n, manuel) et un serveur (L-B5, L-B7 : `auto_backup`, `routes/backup_schedule`, bandeau, i18n,
+    manuel), au prix d'un ordre de plus sur le PDF et les catalogues.
+  - Registre : **C-32-1-29 à C-32-1-36** ; amendements datés de C-32-1-8, 16, 20, 26. Propagation grepée dans la fiche,
+    le registre et le prompt P3 (`−3 + 2`, `applyState`, `schedule.version`, `où se lit le résultat`, `M-a7`, `M-b8`,
+    `huit`, `grep -c "⚠"`, `texte inchangé`, `git show HEAD:`, `la clé qui fusionne la première`, `256 Mio`, `Un seul
+    balayeur`). Aucune issue neuve ; deux commentaires à verser par l'orchestrateur (#725, #727, *Commentaires à
+    verser*). **Six MEDIUM remédiés : une passe P3 complète est due** (`321-validate-prompt-p3.md`, Sonnet).
 
 [#711]: https://github.com/guycorbaz/kesh/issues/711
 [#714]: https://github.com/guycorbaz/kesh/issues/714
@@ -722,3 +971,4 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
 [#710]: https://github.com/guycorbaz/kesh/issues/710
 [#725]: https://github.com/guycorbaz/kesh/issues/725
 [#726]: https://github.com/guycorbaz/kesh/issues/726
+[#727]: https://github.com/guycorbaz/kesh/issues/727
