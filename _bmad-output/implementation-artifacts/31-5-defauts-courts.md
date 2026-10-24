@@ -3,7 +3,7 @@
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-31-5`, branche `story/31-5` sur `origin/main`
-`e71cd351`. Registre : `epic-31-choix-autonomes-315.md` (C-31-5-0 à C-31-5-20 ; 13 à 17 à la validation P1, 18 à 20 à la validation P2).
+`e71cd351`. Registre : `epic-31-choix-autonomes-315.md` (C-31-5-0 à C-31-5-22 ; 13 à 17 à la validation P1, 18 à 20 à la validation P2, 21 et 22 à la validation P3).
 Clé courte : `315`.*
 
 ## Story
@@ -18,23 +18,23 @@ QR-facture suive la langue du document, et que les refus du journal d'audit parl
 La règle de release de Guy (`CLAUDE.md` § *Priorités des défauts*) exige **moins de 136 issues ouvertes au tag
 v0.15.0** (plafond écrit au fichier d'epic, `epic-31-tenir-les-livres.md` : 136 au tag v0.14.0).
 
-**Recompte vivant** (validation P1, 2026-10-24, après l'ouverture de #708, #709 et #710 le même jour) :
-`gh issue list --state open --limit 500 --json number --jq length` rend **141** (la fiche disait 140 à sa rédaction,
-avant #710). Périmètre : toutes les issues ouvertes, à la date de la mesure, non au tag.
+**Recompte vivant** (validation P3, 2026-10-24, après l'ouverture de #711 — LOW résiduels de la 31-1c — et de #712 —
+libellés des écritures générées écrits en dur en français, C-31-5-17 — le même jour) :
+`gh issue list --state open --limit 500 --json number --jq length` rend **143**. Relevés datés antérieurs, laissés
+tels : 140 à la rédaction, 141 à la validation P1 (après #710), 142 à la validation P2 (après #711). Périmètre : toutes
+les issues ouvertes, à la date de la mesure, non au tag.
 
 | Étape | Compte |
 |---|---|
-| ouvertes au 2026-10-24 | 141 |
-| − #503 (fermée par la 31-1c) | 140 |
-| − les quatre défauts de cette story (#707, #589, #504, #469) | 136 |
-| + l'issue des LOW résiduels de la 31-1c, annoncée par l'orchestrateur | **137** — attendu au tag si rien d'autre ne s'ouvre |
-| + l'issue des libellés d'écriture en français (C-31-5-17), **non ouverte à ce jour**, soumise au Project Lead par l'orchestrateur | **138** si elle s'ouvre |
+| ouvertes au 2026-10-24 (validation P3), #711 et #712 comprises | 143 |
+| − #503 (fermée par la 31-1c) | 142 |
+| − les quatre défauts de cette story (#707, #589, #504, #469) | **138** — attendu au tag si rien d'autre ne s'ouvre ni ne se ferme |
 
-**Plafond : moins de 136.** Au tag, le compte attendu est **137** si rien d'autre ne s'ouvre — il manque **deux**
-retraits —, et **138** si l'issue des libellés s'ouvre — il en manque **trois**. Cette story, à elle seule, ne tient
-donc pas la règle de release, dans aucun des deux cas. L'arbitrage — corriger d'autres défauts (dans cette story ou une
-autre de l'epic), ou publier au-dessus du plafond — **revient au Project Lead** et lui est soumis par l'orchestrateur
-(C-31-5-16). ⛔ **Jamais fermer un défaut réel pour tenir le chiffre**, et tout point non traité s'ouvre en issue même
+**Plafond : moins de 136.** Au tag, le compte attendu est **138** : il manque **trois** retraits. Cette story, à elle
+seule, ne tient pas la règle de release. L'arbitrage — corriger d'autres défauts (dans cette story ou une autre de
+l'epic), ou publier au-dessus du plafond — **revient au Project Lead** et lui est soumis par l'orchestrateur
+(C-31-5-16). La règle de type des comptes de TVA n'ajoute pas d'issue : elle est tenue en une seule copie par cette
+story (AC1, C-31-5-19). ⛔ **Jamais fermer un défaut réel pour tenir le chiffre**, et tout point non traité s'ouvre en issue même
 s'il fait remonter le compte. Six candidates ont été proposées par l'orchestrateur ; chacune a été établie au code
 (§ *Sélection*), quatre sont retenues.
 
@@ -53,9 +53,12 @@ s'il fait remonter le compte. Six candidates ont été proposées par l'orchestr
 
 - **#707** — « démonstration seulement » est vrai du **symptôme**, pas de la cause : le chemin **production**
   (`routes/onboarding.rs:830`, finalisation) appelle la même `insert_with_defaults_in_tx` et laisse lui aussi les
-  trois comptes de TVA à `NULL`. C'est **voulu** depuis la Story 18-1a (colonnes nullables, désignation par
-  l'administrateur dans *Administration → Facturation*) et c'est un garde-fou pour un non-assujetti — Guy l'est : une
-  facture saisie par erreur avec un taux est refusée au lieu d'écrire de la TVA due. Seule la démonstration, dont
+  trois comptes de TVA à `NULL`. Les colonnes sont nullables depuis la Story 18-1a (`18-1a-comptes-tva.md:109-110`,
+  qui renvoie à la 18-1b la question du blocage), et la 18-1b a décidé que la validation d'une facture avec TVA est
+  refusée en `CONFIGURATION_REQUIRED` tant que la TVA due n'est pas désignée (`18-1b-comptabilisation-ventes.md:122-125`,
+  AC5 ; la décision aux l. 123-124). La désignation par l'administrateur dans *Administration → Facturation*, et le
+  garde-fou qui en résulte pour un non-assujetti — Guy l'est : une facture saisie par erreur avec un taux est refusée
+  au lieu d'écrire de la TVA due —, en sont la **conséquence**, lecture de cette fiche, non le texte des deux fiches. Seule la démonstration, dont
   l'issue attend un essai « sans réglage préalable » (formule de l'issue, que le produit ne porte nulle part), est
   corrigée (C-31-5-3) ; le chemin production reçoit une phrase au
   manuel (AC3).
@@ -65,11 +68,15 @@ s'il fait remonter le compte. Six candidates ont été proposées par l'orchestr
   l'infobulle de A nomme B, que le serveur refusera à son tour.
 - **#504** — l'avertissement de l'issue (« vérifier qu'aucun rapprochement ne s'appuie sur le texte « Facture » ») est
   levé : le score de référence (`crates/kesh-reconciliation/src/matching.rs:231-256`) teste la **contenance** du numéro
-  de facture normalisé dans la référence de la transaction ; le préfixe, quel qu'il soit, n'y entre pas
-  (C-31-5-7).
+  de facture normalisé dans la référence de la transaction : la contenance du numéro décide (score 1.0), et le
+  préfixe n'y entre pas **tant que le numéro est contenu** — le cas de toute communication `<préfixe> <numéro>`. La
+  branche suivante (préfixe commun d'au moins quatre caractères, score 0.5, `matching.rs:247-254`, après la contenance de la l. 242) n'est évaluée que
+  si la contenance échoue ; un format de numéro personnalisé commençant par `Facture`/`Rechnung` pourrait y entrer,
+  sans changer la conclusion pratique : aucun test de rapprochement à ajouter (C-31-5-7).
 
-**Découpage préventif** : cinq modules de premier niveau — `kesh-db` (deux fonctions, C-31-5-13), `kesh-seed`, `kesh-api` (deux
-fichiers de route et `errors.rs`), `kesh-i18n` (catalogues), `frontend` (une page) — plus le manuel utilisateur FR.
+**Découpage préventif** : cinq modules de premier niveau — `kesh-db` (deux fonctions, deux types et une constante,
+C-31-5-13, C-31-5-22), `kesh-seed`, `kesh-api` (trois fichiers de route — dont `company_invoice_settings.rs`, trois
+arguments, validation P3 — et `errors.rs`), `kesh-i18n` (catalogues), `frontend` (une page) — plus le manuel utilisateur FR.
 Le critère « plus de cinq modules » n'est pas franchi ; les quatre correctifs sont **indépendants** (aucun fichier de
 code commun), si bien qu'une passe de revue peut les lire un par un (C-31-5-1). Aucune migration.
 
@@ -84,23 +91,47 @@ code commun), si bien qu'une passe de revue peut les lire un par un (C-31-5-1). 
    - `lock_vat_role_accounts_in_tx(tx, company_id) -> Result<VatRoleAccounts, DbError>` : **trois lectures
      ponctuelles** verrouillantes, sur le patron des trois lectures d'`insert_with_defaults_in_tx`
      (`company_invoice_settings.rs:1076-1105`) — `SELECT id, account_type, postable FROM accounts WHERE company_id = ?
-     AND singleton_role = ? FOR UPDATE`, une par rôle, **dans l'ordre écrit dans le code** : `VatPayable`, puis
-     `VatRecoverable`, puis `VatSettlement`. Chaque lecture est un accès `const` à l'index unique
+     AND singleton_role = ? FOR UPDATE`, une par rôle, **dans l'ordre écrit dans le code** : `VatRecoverable`, puis
+     `VatPayable`, puis `VatSettlement` (ordre permuté à la validation P3, C-31-5-21 : il suit, au plan standard,
+     l'ordre croissant des identifiants, celui du verrou partagé de `lock_designated_accounts_in_tx`). Chaque lecture est
+     un accès `const` à l'index unique
      `uq_accounts_company_singleton_role (company_id, singleton_role)` ; elle verrouille l'entrée de cet index puis
      l'enregistrement du compte (clé primaire), et, pour un rôle absent, l'intervalle de l'index où il serait — le même
-     verrou que les lectures existantes. L'**ordre réel des verrous** est donc celui du code (2200, 1171, 2206 dans le
-     plan PME), **non** celui des identifiants : c'est ce que dit le doc-comment, sans rien promettre de plus. La colonne
+     verrou que les lectures existantes. L'**ordre réel des verrous** est donc celui du code (1171, 2200, 2206 dans le
+     plan PME) ; il **coïncide** avec l'ordre des identifiants au plan standard sans le **garantir** (un rôle réattribué
+     à un autre compte peut le défaire) : c'est ce que dit le doc-comment, sans rien promettre de plus. Lecture typée
+     `sqlx::query_as::<_, (i64, AccountType, bool)>` — `AccountType` implémente `Type`/`Decode` pour MySQL
+     (`crates/kesh-db/src/entities/account.rs:43-66`), `postable` (`tinyint(1)`) se décode en `bool`. La colonne
      générée `singleton_role` est déjà `active`-aware (`company_invoice_settings.rs:1019-1027`) : un compte archivé n'est
      pas lu. La fonction retient le compte de chaque rôle **à la condition** qu'il soit imputable (`postable`) et du type
-     que la route exige **au même réglage** (`crates/kesh-api/src/routes/company_invoice_settings.rs:337-364` :
-     `Liability`, `Asset`, `Liability`) ; un rôle sans compte utilisable donne `None`, sans erreur (la démonstration se
+     que `VAT_SETTING_ACCOUNT_TYPES` fixe **pour ce réglage** — `Liability`, `Asset`, `Liability`, les types qu'exige
+     aujourd'hui la route (`crates/kesh-api/src/routes/company_invoice_settings.rs:337-364`) ; un rôle sans compte utilisable donne `None`, sans erreur (la démonstration se
      charge quand même). Ce type n'est **pas** `accepts_account_type` (`crates/kesh-core/src/chart_of_accounts/mod.rs:161`,
      appliquée à l'écriture du compte par `crates/kesh-db/src/repositories/accounts.rs:89`) : cette règle est celle du
      **rôle**, qui admet `Asset` **ou** `Liability` pour les trois rôles de TVA et que tout compte portant un rôle
      satisfait déjà — l'y réappliquer serait une tautologie et laisserait passer un `VatPayable` porté par un actif. La
-     règle requise est celle du **réglage**, dont la seule copie est la route, dans `kesh-api`, que `kesh-db` ne peut pas
-     importer : les trois types s'écrivent **une fois**, en une constante nommée de `kesh-db`, dont le doc-comment désigne
-     la route comme sa jumelle (C-31-5-19). Elle **ne lit ni n'écrit** `company_invoice_settings`.
+     règle requise est celle du **réglage**, aujourd'hui écrite à la seule route. Elle s'écrit **une fois**, en `kesh-db`,
+     et **la route l'emploie** (C-31-5-19) : `kesh-api` dépend de `kesh-db` et la route importe déjà
+     `kesh_db::entities::account::AccountType` (`crates/kesh-api/src/routes/company_invoice_settings.rs:25-26`) et le
+     module `kesh_db::repositories::company_invoice_settings` (l. 28) ; ses trois appels de `validate_account` (l. 337-364)
+     passent `expected: AccountType` par valeur (signature l. 152-158 ; `AccountType` est `Copy`), si bien que les trois
+     arguments `AccountType::Liability`, `AccountType::Asset`, `AccountType::Liability` deviennent
+     `company_invoice_settings::VAT_SETTING_ACCOUNT_TYPES.payable`, `.recoverable`, `.settlement` — aucune autre ligne de
+     la route ne change, son comportement non plus. Il n'y a donc **pas de jumelle** à tenir d'accord. Précédent du même
+     fichier, qui garde, lui, deux copies : `designated_account_id` (`company_invoice_settings.rs:495-520`, « Mêmes
+     exigences que sa validation (`validate_account_of`, `kesh-api`) », `account_type IN (?, ?)` lié à `Expense`,
+     `Revenue`), sans garde qui les tienne d'accord — la forme à ne pas reproduire ici (C-31-5-19).
+     **Définitions** (C-31-5-22), les deux types et la constante `pub` dans `company_invoice_settings.rs`, atteignables par
+     `kesh_db::repositories::company_invoice_settings::…` (`kesh-seed` et la route en sont les consommateurs) :
+     `#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)] pub struct VatRoleAccounts { pub payable: Option<i64>, pub
+     recoverable: Option<i64>, pub settlement: Option<i64> }` (le compte retenu pour chacun des trois réglages, dans
+     l'ordre des colonnes `default_vat_payable_account_id`, `default_vat_recoverable_account_id`,
+     `default_vat_decompte_account_id`) ; `#[derive(Debug, Clone, Copy)] pub struct VatSettingAccountTypes { pub payable:
+     AccountType, pub recoverable: AccountType, pub settlement: AccountType }` et `pub const VAT_SETTING_ACCOUNT_TYPES:
+     VatSettingAccountTypes = VatSettingAccountTypes { payable: AccountType::Liability, recoverable: AccountType::Asset,
+     settlement: AccountType::Liability }`, doc-comment : « règle du **réglage** (non du rôle, cf.
+     `accepts_account_type`), lue par `lock_vat_role_accounts_in_tx` et par la route `PUT /api/v1/company/invoice-settings` (`update_invoice_settings`) ».
+     `lock_vat_role_accounts_in_tx` **ne lit ni n'écrit** `company_invoice_settings`.
    - `designate_vat_accounts_in_tx(tx, company_id, &VatRoleAccounts) -> Result<(), DbError>` : un seul `UPDATE company_invoice_settings SET
      default_vat_payable_account_id = COALESCE(default_vat_payable_account_id, ?), … WHERE company_id = ?` ; elle **ne
      lit aucun compte** (aucun verrou de compte pris après la ligne de réglages) et n'écrase **jamais** une valeur posée.
@@ -110,8 +141,10 @@ code commun), si bien qu'une passe de revue peut les lire un par un (C-31-5-1). 
      companies → accounts (TVA, puis rôles de insert_with_defaults_in_tx) → company_invoice_settings → vat_rates →
      audit_log` : la ligne `seed_demo` du Pattern 5 et le doc-comment de `final_body` le disent (même PR). Le chemin
      production (`crates/kesh-api/src/routes/onboarding.rs`) **n'appelle ni l'une ni l'autre**.
-   - **Test `kesh-db` de la lecture** (C-31-5-19), `#[sqlx::test]` sur le squash, dans le `mod tests` de
-     `company_invoice_settings.rs` : une société au plan PME chargé ; (i) chemin heureux — les trois rôles retenus, chacun
+   - **Test `kesh-db` de la lecture** (C-31-5-19), `#[sqlx::test(migrations = "./test-schema")]` sur le squash, dans
+     `crates/kesh-db/tests/company_invoice_settings_repository.rs` (le fichier de tests de ce dépôt ; il monte déjà un
+     plan PME par `kesh_core::chart_of_accounts::load_chart("Pme")` et `accounts::bulk_create_from_chart`, l. 34-35 —
+     `company_invoice_settings.rs` n'a pas de `mod tests`) : une société au plan PME chargé ; (i) chemin heureux — les trois rôles retenus, chacun
      égal au compte qui porte le rôle (relu en base) ; (ii) le compte `VatPayable` retypé en `Asset` (permis par la règle
      du rôle) → `payable == None`, `recoverable` et `settlement` retenus ; (iii) le compte `VatRecoverable` rendu non
      imputable (`postable = FALSE`) → `recoverable == None`, les deux autres retenus ; (iv) le compte `VatSettlement`
@@ -126,7 +159,11 @@ code commun), si bien qu'une passe de revue peut les lire un par un (C-31-5-1). 
    rôles relus en base, pas numéros codés en dur). Un test du chemin **production**, dans
    `crates/kesh-api/tests/onboarding_path_b_e2e.rs` (qui monte déjà la finalisation : `full_path_b_flow`, l. 216 —
    `onboarding_e2e.rs` ne porte que le chemin démonstration), vérifie que les trois réglages restent `NULL` après la
-   finalisation (garde de C-31-5-3 ; vert avant comme après).
+   finalisation (garde de C-31-5-3 ; vert avant comme après). C'est une **assertion à écrire** : `full_path_b_flow`
+   n'interroge aujourd'hui que le **nombre** de lignes de réglages (`settings_rows == 1`, l. 306-312) ; le test lit les
+   trois colonnes `default_vat_payable_account_id`, `default_vat_recoverable_account_id` et
+   `default_vat_decompte_account_id` de la ligne de la société et exige `None` pour **chacune** (une assertion nommée par
+   colonne). Vert dès son écriture, il ne prouve qu'il sait rougir que par la mutation M8 (AC15).
 3. **AC3 — manuel utilisateur FR.** `docs/manual/fr/user-manual.tex` l. 185 : « Les quatre taux de TVA suisses et les
    réglages de facturation par défaut, **dont les comptes de TVA** (TVA due, impôt préalable, décompte) ». Au chemin B
    (production, après le paragraphe de la l. 205, « Dès que vous avez choisi la langue comptable… ») : une phrase — *les comptes de TVA ne sont pas désignés d'office ; un assujetti les désigne
@@ -222,7 +259,11 @@ code commun), si bien qu'une passe de revue peut les lire un par un (C-31-5-1). 
     `{ $max }`). Les noms de paramètre (`dateFrom`, `entityType`…) restent tels quels : ce sont des noms d'API. Le code
     reste `VALIDATION_ERROR` (aucun changement d'API). Chaque repli Rust (`default` de `t`/`t_args`) égale la valeur
     `fr-CH` de sa clé, variables réécrites (`{ $field }` → `{nom}`, `{ $max }` → `{maximum}`, les noms des paramètres
-    actuels de `parse_date`/`parse_code`) : les six clés entrent à la garde **G9**
+    actuels de `parse_date`/`parse_code`). Pour une clé **à variable**, le repli s'écrit `&format!("…{nom}…")` — un
+    littéral égal au catalogue réécrit, passé à `format!` avec les variables `nom`/`maximum` en portée —, **jamais** le
+    littéral nu `"…{nom}…"` : celui-ci passerait G9 (qui ne compare que le littéral, `textes_coherents.rs:774-805`) mais
+    afficherait des accolades brutes sans bundle (`t_args` rend alors `default.to_string()`, `errors.rs:52-59`) ;
+    précédent : le repli `format!` de `error-later-fiscal-year-closed` (`errors.rs:3565-3567`). Les six clés entrent à la garde **G9**
     (`crates/kesh-api/tests/textes_coherents.rs`, `les_replis_rust_suivent_le_catalogue`, l. 680 — une quatrième
     entrée `crates/kesh-api/src/routes/audit_log.rs` dans `TABLE`, dont le type passe de `[…; 3]` à `[…; 4]`), C-31-5-15.
     Le **contrôle de fin** est celui de l'AC16 (multi-ligne) ; le **garde** est le test de l'AC12, seul à prouver
@@ -231,7 +272,9 @@ code commun), si bien qu'une passe de revue peut les lire un par un (C-31-5-1). 
     français, `verrou_i18n()` pris) : pour **chacun** des dix cas de `les_parametres_invalides_sont_refuses_en_400`
     (l. 346), le message est **égal** au rendu `de-CH` de la clé attendue (calculé depuis le catalogue chargé, marques
     d'isolation retirées — pas un texte allemand codé en dur) **et différent** du rendu `fr-CH` de la même clé (attrape
-    une valeur allemande restée une copie du français). Constaté rouge avant le correctif. Le test existant
+    une valeur allemande restée une copie du français). Constaté rouge avant le correctif — **après** l'ajout des six
+    clés aux quatre catalogues (ordre de T4) : sans elles, le calcul de la valeur attendue échouerait sur une clé absente
+    et le rouge ne démontrerait pas que le message rendu est français. Le test existant
     `une_date_hors_plage_…` (l. 381, exige `1000-01-01` et `9999-12-31` dans le message) reste vert.
 
 ### E — transverses
@@ -296,17 +339,22 @@ code commun), si bien qu'une passe de revue peut les lire un par un (C-31-5-1). 
 - [ ] **T1 (#589, AC4-AC7)** — test rouge (AC5) ; `latestLaterClosed` ; commentaire du helper ; Vitest ciblé.
 - [ ] **T2 (#707, AC1-AC2)** — tests rouges (AC2, dont le test production dans `onboarding_path_b_e2e.rs`) ;
   `lock_vat_role_accounts_in_tx` et `designate_vat_accounts_in_tx` (doc-comment : pourquoi la démonstration seulement,
-  C-31-5-3 ; l'ordre **réel** des verrous — trois lectures ponctuelles dans l'ordre du code, `VatPayable`,
-  `VatRecoverable`, `VatSettlement`, sur l'index `uq_accounts_company_singleton_role`, non l'ordre des identifiants —,
-  C-31-5-13 et C-31-5-18 ; la constante des types du réglage et sa jumelle de la route, C-31-5-19) ; test `kesh-db` de
-  la lecture (AC1, cas i-iv) ; appels dans `final_body` (la lecture avant
+  C-31-5-3 ; l'ordre **réel** des verrous — trois lectures ponctuelles dans l'ordre du code, `VatRecoverable`,
+  `VatPayable`, `VatSettlement`, sur l'index `uq_accounts_company_singleton_role`, qui coïncide au plan standard avec
+  l'ordre des identifiants sans le garantir —, C-31-5-13, C-31-5-18 et C-31-5-21) ; `VatRoleAccounts`,
+  `VatSettingAccountTypes` et `VAT_SETTING_ACCOUNT_TYPES` (C-31-5-22) ; la route
+  `crates/kesh-api/src/routes/company_invoice_settings.rs` emploie la constante (trois arguments, l. 337-364,
+  C-31-5-19) ; test `kesh-db` de la lecture dans `crates/kesh-db/tests/company_invoice_settings_repository.rs` (AC1,
+  cas i-iv) ; appels dans `final_body` (la lecture avant
   `insert_with_defaults_in_tx`, l'application après) ; doc-comment de `final_body` et ligne `seed_demo` de
   `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (l. 326) mis à jour ; gate **complet** (kesh-db).
 - [ ] **T3 (#504, AC8-AC10)** — tests rouges (AC9) ; clé `invoice-qr-message-prefix` × 4 ; résolution dans
   `render_document`, paramètre de `build_qrbill_inputs` — ajouté d'abord, ignoré, pour constater (a) rouge (AC9) — (ses sept appels de test, l. 705-943, reçoivent le préfixe
   `"Facture"`) ; commentaire de l. 345-348 (« ne dépendent PAS du document ») complété : *ils dépendent de la langue*.
-- [ ] **T4 (#469, AC11-AC12)** — test rouge (AC12) ; `t_args` en `pub(crate)` ; six clés `audit-log-query-error-*` × 4 ; six sites ; les six
-  clés à la garde G9 (`textes_coherents.rs`, C-31-5-15).
+- [ ] **T4 (#469, AC11-AC12)** — dans cet ordre : six clés `audit-log-query-error-*` × 4 d'abord ; puis le test de
+  l'AC12, écrit et **constaté rouge** sur le seul message français rendu ; puis `t_args` en `pub(crate)` et les six
+  sites (replis `&format!(…)` pour les clés à variable, AC11) ; enfin les six clés à la garde G9 (`textes_coherents.rs`,
+  C-31-5-15).
 - [ ] **T5 (AC3, AC7, AC10)** — manuel FR (trois retouches), `make fr` sous verrou, contrôle aplati :
   `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oF "dont les comptes de TVA"` (et
   les deux autres phrases) ; captures (AC3 : *Administration → Facturation* de la démonstration ; AC7).
@@ -320,8 +368,10 @@ code commun), si bien qu'une passe de revue peut les lire un par un (C-31-5-1). 
 - La ligne `company_invoice_settings` de la démonstration est créée par `insert_with_defaults_in_tx`
   (`company_invoice_settings.rs:1069-1192`) : rôles `Receivable`, `DefaultRevenue`, `Payable` lus `FOR UPDATE`, puis
   `chart_designated_accounts` (arrondi, escompte, frais, perte). **Aucun** des trois comptes de TVA. Les colonnes
-  viennent de `20260614000001_vat_accounts_config.sql`, nullables, et la Story 18-1a a laissé leur désignation à
-  l'administrateur (`18-1a-comptes-tva.md:109-110`).
+  viennent de `20260614000001_vat_accounts_config.sql`, nullables (`18-1a-comptes-tva.md:109-110`, qui renvoie la
+  question du blocage à la 18-1b) ; la 18-1b a décidé le refus `CONFIGURATION_REQUIRED` d'une facture avec TVA sans
+  compte de TVA due (`18-1b-comptabilisation-ventes.md:122-125`, AC5). La désignation par l'administrateur en est la
+  conséquence.
 - Les rôles existent dans les trois plans livrés (`crates/kesh-core/assets/charts/{pme,independant,association}.json` :
   1171 `VatRecoverable` Asset, 2200 `VatPayable` Liability, 2206 `VatSettlement` Liability) ; la démonstration charge
   le plan PME (`user-manual.tex:183`).
@@ -338,17 +388,20 @@ code commun), si bien qu'une passe de revue peut les lire un par un (C-31-5-1). 
   ni que `check_written` refuserait.
 - **Ordre des verrous** (C-31-5-13) : `final_body` tient l'état d'onboarding (`lock_state_in_tx`), puis la société
   (`clear_stub_in_tx`) ; `lock_vat_role_accounts_in_tx` verrouille les trois comptes de TVA par **trois lectures ponctuelles**
-  `singleton_role = ? FOR UPDATE`, dans l'ordre du code — `VatPayable`, `VatRecoverable`, `VatSettlement` (2200, 1171,
-  2206 au plan PME) —, chacune sur l'index unique `uq_accounts_company_singleton_role` puis sur l'enregistrement du
+  `singleton_role = ? FOR UPDATE`, dans l'ordre du code — `VatRecoverable`, `VatPayable`, `VatSettlement` (1171, 2200,
+  2206 au plan PME ; ordre permuté à la validation P3, C-31-5-21) —, chacune sur l'index unique `uq_accounts_company_singleton_role` puis sur l'enregistrement du
   compte, un rôle absent ne laissant qu'un verrou d'intervalle sur cet index (C-31-5-18). ⚠️ Un `IN (…) ORDER BY id FOR
   UPDATE`, prescrit à la validation P1, **ne donnait pas** l'ordre des identifiants : InnoDB verrouille au fil de l'index
   parcouru, le tri vient après (le dépôt connaît ce piège : `FORCE INDEX (PRIMARY)` de `company_invoice_settings.rs:897-905`,
-  inapplicable ici faute de liste d'`id`). Le seul ordre opposé plausible est un verrou partagé par identifiant croissant
-  (`lock_designated_accounts_in_tx`, validation d'une facture, 1171 → 2200), improbable pendant l'étape 2 et rejoué par
-  `is_seed_retryable` s'il survenait : l'ordre **entre tables** est ce que tient le Pattern 5, l'ordre **entre comptes**
-  n'est que celui du code, écrit tel. `insert_with_defaults_in_tx` verrouille ensuite ses comptes de rôle de la même
+  inapplicable ici faute de liste d'`id`). Le seul autre site qui verrouille ces comptes dans un ordre fixe est le
+  verrou partagé par identifiant croissant de `lock_designated_accounts_in_tx` (validation d'une facture,
+  `company_invoice_settings.rs:865-916`, 1171 → 2200 au plan standard) : l'ordre retenu le **suit** au plan standard,
+  ce qui retire l'unique ordre opposé que la validation P2 avait identifié (C-31-5-21) ; hors du plan standard (rôle
+  réattribué), l'opposition redevient possible, improbable pendant l'étape 2 et rejouée par `is_seed_retryable` si elle
+  survenait. L'ordre **entre tables** est ce que tient le Pattern 5, l'ordre **entre comptes** n'est que celui du code,
+  écrit tel. `insert_with_defaults_in_tx` verrouille ensuite ses comptes de rôle de la même
   façon (`company_invoice_settings.rs:1076-1105`) puis
-  insère la ligne de réglages (`INSERT IGNORE`, l. 1126) ; `designate_vat_accounts_in_tx` ne fait qu'un `UPDATE` de
+  insère la ligne de réglages (`INSERT IGNORE`, l. 1123) ; `designate_vat_accounts_in_tx` ne fait qu'un `UPDATE` de
   cette ligne, **sans** lire de compte. Aucun verrou de compte n'est donc pris après la ligne de réglages : l'ordre
   documenté `accounts → company_invoice_settings` est tenu, sans exception à justifier. La forme écartée (verrouiller
   les comptes de TVA après l'`INSERT`) donnait `accounts → settings → accounts`, contraire au Pattern 5, et ne se
@@ -395,26 +448,29 @@ code commun), si bien qu'une passe de revue peut les lire un par un (C-31-5-1). 
 
 ### Hors périmètre, et ce qui reste non résolu (inventaire)
 
-- **Chemin production, comptes de TVA `NULL`** : voulu (C-31-5-3), documenté par l'AC3.
+- **Chemin production, comptes de TVA `NULL`** : conséquence des Stories 18-1a et 18-1b, gardée (C-31-5-3), documentée
+  par l'AC3.
 - **Autres `AppError::Validation` en français hors du journal d'audit** (`routes/projects.rs:107`, `:115`,
   `payment_batches.rs:176`, `contacts.rs:453`, `address_input.rs:62`, et d'autres — un `grep` grossier,
   `grep -rn "AppError::Validation(" crates | grep -v "t(" | grep -v audit_log.rs | wc -l`, en compte **283** hors du
   journal d'audit — 289 sans le dernier filtre, dont les six d'`audit_log.rs` —, relevé du 2026-10-24, qui surcompte les
   messages déjà traduits sur plusieurs lignes) : même classe de défaut, **non** couverte par #469 qui est bornée au journal d'audit :
-  tracée par **#710**, ouverte le 2026-10-24 (comprise dans le recompte de 141 de l'*Origine*), C-31-5-12.
+  tracée par **#710**, ouverte le 2026-10-24 (comprise dans les recomptes de l'*Origine* depuis la validation P1 — 141, puis 143 à la validation P3), C-31-5-12.
 - **Libellés d'écriture comptable en français en dur** — `crates/kesh-db/src/repositories/supplier_invoices.rs:512`
   (« Facture fournisseur … », seule exception du contrôle #504 de l'AC16), `:941` (« Règlement fournisseur … »),
   `invoice_settlements_write.rs:277` (« Règlement facture … »), `credit_notes.rs:590` (« Avoir … (annule …) ») : ce
   sont des descriptions d'écritures du journal, non des textes adressés au débiteur ; hors classe de #504 et hors
-  périmètre. Aucune issue ouverte ne les couvre (`gh issue list` du 2026-10-24) ; la question de savoir s'ils doivent
-  suivre la langue comptable de la société est soumise au **Project Lead** par l'orchestrateur ; l'issue **n'est pas
-  ouverte** à ce jour, et le budget de l'*Origine* la compte dans les deux cas (137 sans elle, 138 avec) — C-31-5-17.
+  périmètre. Tracés par **#712** (« Les libellés des écritures générées (facture fournisseur, règlement, avoir) sont
+  écrits en dur en français »), ouverte le 2026-10-24 par l'orchestrateur et comprise dans le recompte de 143 de
+  l'*Origine* — C-31-5-17.
 - **PDF déjà figés** en français : conservés (AC10).
 - #687 et #645 : écartées (§ *Sélection*).
 
 ### Fichiers touchés (prévus)
 
-`crates/kesh-db/src/repositories/company_invoice_settings.rs` ; `crates/kesh-seed/src/lib.rs` ;
+`crates/kesh-db/src/repositories/company_invoice_settings.rs` ; `crates/kesh-db/tests/company_invoice_settings_repository.rs`
+(test de la lecture, AC1) ; `crates/kesh-api/src/routes/company_invoice_settings.rs` (les trois arguments de type
+remplacés par la constante, AC1, C-31-5-19) ; `crates/kesh-seed/src/lib.rs` ;
 `crates/kesh-api/src/routes/invoice_pdf_service.rs` ; `crates/kesh-api/src/routes/audit_log.rs` ;
 `crates/kesh-api/src/errors.rs` (visibilité de `t_args`) ; `crates/kesh-api/tests/{onboarding_e2e,
 onboarding_path_b_e2e,invoice_frozen_pdf_e2e,audit_log_e2e,textes_coherents}.rs` ;
@@ -431,6 +487,11 @@ de l'utilisateur` (l. 13, 40, 60) ; une section **`### Corrigé`** (intitulé de
 
 - **#707 touche `kesh-db` et la transaction de la démonstration** : gate complet obligatoire ; la relecture porte sur
   les verrous et la naissance de la ligne (leçon des Epics 29-30).
+- **La route `PUT /api/v1/company/invoice-settings` lit ses trois types de TVA dans la constante de `kesh-db`** : mêmes
+  valeurs, comportement inchangé ; `crates/kesh-api/tests/company_invoice_settings_postable_e2e.rs` (table des champs,
+  « Compte TVA due » `Liability`, « Compte TVA récupérable » `Asset`, « Compte décompte TVA » `Liability`, l. 150-170)
+  crée des comptes du type exigé et reste vert. Une mutation de la constante change désormais la route **et** la
+  lecture ensemble : le cas (ii) du test `kesh-db` (AC1) la voit.
 - **#504 change le contenu d'un PDF émis désormais** (pas des PDF déjà figés) : la QR reste valide (même longueur
   bornée, ASCII).
 - **#469** : un message attendu par un client de l'API change de texte, pas de code — aucun test frontend ne lit ces
@@ -512,3 +573,37 @@ de l'utilisateur` (l. 13, 40, 60) ; une section **`### Corrigé`** (intitulé de
     `promet`, `M1-M6`, « qui ouvre l'issue ») ; occurrences restantes légitimes (entrées datées P1, mentions de la forme
     écartée). Tendance : P1 7 MEDIUM distincts → P2 3. Une passe P3 **complète** suit (Sonnet, lentilles R et F,
     `315-validate-prompt-p3.md`) : la boucle ne se clôt que sur une passe sans finding au-dessus de LOW.
+- 2026-10-24 — **Validation P3** (Sonnet, passe complète, deux lentilles en contexte frais ; rapports hors dépôt
+  `kesh-gate-logs/315-validate-p3-{R,F}.md`). Lentille R : 0 CRITICAL / 0 HIGH / 0 MEDIUM / 8 LOW (R1-R8). Lentille F :
+  0 / 0 / 2 MEDIUM (F1, F2) / 4 LOW (F3-F6). Recoupements : F1 = R4 (traité au plus haut, MEDIUM), F3 = R1, F4 = R8.
+  Deux MEDIUM distincts, contre trois en P2 : F1 né de la remédiation P2 (C-31-5-19), F2 hérité de la P1 — aucun
+  recyclage. Sort, chaque affirmation revérifiée au code avant écriture :
+  - **F1 = R4** (MEDIUM, règle de type du réglage en deux copies sans garde) — corrigé : la constante
+    `VAT_SETTING_ACCOUNT_TYPES` de `kesh-db` est **employée par la route** (`routes/company_invoice_settings.rs`, qui
+    importe déjà `AccountType` l. 25-26 et le module l. 28 ; trois arguments de `validate_account`, l. 337-364, passés
+    par valeur, `AccountType` `Copy`) : une seule copie, plus de jumelle ; précédent `designated_account_id`
+    (`company_invoice_settings.rs:495-520`) cité comme la forme à ne pas reproduire ; fichier ajouté aux *Fichiers
+    touchés* et aux *Risques* (C-31-5-19 annoté).
+  - **F2** (MEDIUM, issue des libellés non ouverte) — corrigé : **#712** ouverte par l'orchestrateur, citée au
+    *Hors périmètre*, à l'*Origine* et à C-31-5-17.
+  - **F4 = R8** (LOW, recompte périmé) — corrigé : **143** ouvertes (#711 et #712 comprises), 143 − #503 − 4 = **138**
+    attendues au tag, trois retraits manquants sous le plafond < 136, arbitrage au Project Lead, écrit sans conditionnel
+    (C-31-5-16 annoté) ; les relevés antérieurs (140, 141, 142) restent datés.
+  - **LOW** — F3 = R1 (test `kesh-db` situé dans `crates/kesh-db/tests/company_invoice_settings_repository.rs`, ajouté
+    aux fichiers touchés) ; F5 (prémisse « voulu depuis la 18-1a » : colonnes nullables à la 18-1a,
+    `18-1a-comptes-tva.md:109-110`, refus décidé par la 18-1b, `18-1b-comptabilisation-ventes.md:122-125`, AC5 — la
+    décision aux l. 123-124 ; garde-fou du non-assujetti donné comme conséquence ; fiche, Dev Notes, *Hors périmètre*,
+    C-31-5-3) ; F6 (`VatRoleAccounts`, `VatSettingAccountTypes`, `VAT_SETTING_ACCOUNT_TYPES` définis : noms, champs,
+    `pub`, chemin ; décodage `(i64, AccountType, bool)`, C-31-5-22) ; R2 (`INSERT IGNORE` l. 1123) ; R3 (ordre
+    **permuté** : `VatRecoverable`, `VatPayable`, `VatSettlement`, qui suit au plan standard l'ordre croissant des
+    identifiants et celui de `lock_designated_accounts_in_tx`, sans le garantir hors plan standard, C-31-5-21) ; R5
+    (contenance du numéro, branche du préfixe commun `matching.rs:247-254` nommée) ; R6 (replis `&format!(…)` des clés
+    à variable, précédent `errors.rs:3565-3567`) ; R7 (T4 ordonnée : clés, test constaté rouge, sites, G9 ; AC12) ;
+    assertion « trois réglages `NULL` » de l'AC2 écrite comme **nouvelle** (`full_path_b_flow` ne compte aujourd'hui
+    que les lignes, l. 306-312), prouvée par M8 : tous corrigés.
+  - Propagation : symptômes grepés dans la fiche et le registre (`137`, `141`, `142`, `non ouverte`, `soumise au`,
+    `jumelle`, `mod tests`, `VatPayable`, puis, `2200, 1171`, `1126`, `voulu`, `deux fichiers de route`) ; occurrences
+    restantes légitimes (entrées datées P1/P2 du Change Log et du registre, mentions de la forme écartée). Tendance :
+    P1 7 MEDIUM distincts → P2 3 → P3 2. Une passe P4 **ciblée** suit (Haiku, une lentille *regression hunter* sur le
+    seul diff de cette remédiation, `315-validate-prompt-p4.md`) : la boucle ne se clôt que sur une passe sans finding
+    au-dessus de LOW.
