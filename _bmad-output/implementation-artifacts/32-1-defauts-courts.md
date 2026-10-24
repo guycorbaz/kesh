@@ -1765,6 +1765,18 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/
     Rust, inchangé depuis). Clé reste `review` ; passe P2 ciblée (Opus, regression hunter, diff `dae40211...HEAD`) :
     `321b-review-prompt-p2.md`.
 
+- 2026-10-24 — **32-1b, revue de code P2, passe ciblée** (Opus, une lentille — regression hunter —, contexte frais,
+  sur le seul diff `dae40211...HEAD` ; prompt `321b-review-prompt-p2.md`, rapport `kesh-gate-logs/321b-review-p2.md`) :
+  **0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW** — **revue terminée** (aucun finding au-dessus de LOW ; la remédiation relue
+  ne touche aucune ligne de production : blob de `AutoBackupSection.svelte` identique, `77ad37f3`, aux deux bornes).
+  Elle confirme les tests (iv) et (v), M-b12 tuée par (iv) seul, l'annotation A1 (onze journaux), l'E2E à
+  `9997f877`. LOW **non appliqués** — une remédiation postérieure ne serait relue par personne — et **tracés sur
+  [#740]** avec les huit LOW de la P1 : **R1**, le 32/32 du fichier de test attribué à `321b-p1rem-cible.log`, qui ne
+  le contient pas (le chiffre reste vrai par le Vitest complet 1939/1939) ; **R2**, M-b12 jouée sur le test avant son
+  commit, sans empreinte au journal. **Synthèse de la boucle** : P1 (Sonnet ×3) B 0/0/0/3, E 0/0/1/4, A 0/0/0/2 → E1
+  corrigé par un test → P2 ciblée (Opus) 0/0/0/2. Commentaires de la fiche déjà versés sur [#725] et [#727]. Clé à
+  `done`.
+
 [#711]: https://github.com/guycorbaz/kesh/issues/711
 [#714]: https://github.com/guycorbaz/kesh/issues/714
 [#716]: https://github.com/guycorbaz/kesh/issues/716
@@ -1774,3 +1786,4 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/
 [#727]: https://github.com/guycorbaz/kesh/issues/727
 [#732]: https://github.com/guycorbaz/kesh/issues/732
 [#736]: https://github.com/guycorbaz/kesh/issues/736
+[#740]: https://github.com/guycorbaz/kesh/issues/740
