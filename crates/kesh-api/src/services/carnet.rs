@@ -84,7 +84,9 @@ pub struct FicheContact {
 /// La page de contacts de la société du contexte.
 ///
 /// La société est lue **d'abord** (`Internal` si elle manque), puis les bornes
-/// et les défauts du tri sont posés, puis la page est lue.
+/// et les défauts du tri sont posés, puis la page est lue. Garde des défauts
+/// du tri et de la recopie des filtres : `tri_par_defaut_et_filtres_du_carnet`
+/// (`tests/services_rollout.rs`).
 pub async fn lister(
     acces: &ContexteAcces,
     lecture: &Lecture,

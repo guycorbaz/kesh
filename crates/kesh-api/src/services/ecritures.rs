@@ -109,7 +109,10 @@ fn analyser_montant(valeur: Option<&str>, nom: &str) -> Result<Option<Decimal>, 
 ///
 /// ⚠️ **Aucune lecture de société** (C-32-4a-6) : la liste passe la société du
 /// contexte au dépôt, qui filtre ; un jeton orphelin rend une page vide, non
-/// une erreur — comportement d'avant la 32-4a, conservé.
+/// une erreur — comportement d'avant la 32-4a, conservé. Gardes :
+/// `ac11_b_la_liste_des_ecritures_ne_lit_pas_la_societe`, et, pour la recopie
+/// de chaque filtre vers le dépôt, `filtres_des_ecritures_par_la_route`
+/// (`tests/services_rollout.rs`).
 pub async fn lister(
     acces: &ContexteAcces,
     lecture: &Lecture,
