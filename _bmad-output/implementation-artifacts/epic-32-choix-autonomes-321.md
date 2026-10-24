@@ -1,6 +1,6 @@
 # Epic 32 — registre des choix autonomes de la Story 32-1 (défauts courts, clés 32-1a, 32-1b, 32-1c, 32-1d)
 
-Registre propre à la story (C-32-1-1 à C-32-1-38 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage de la 32-1b, C-32-1-38 de la validation P3), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
+Registre propre à la story (C-32-1-1 à C-32-1-42 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage de la 32-1b, C-32-1-38 de la validation P3, C-32-1-39 et 40 du développement de la 32-1c, C-32-1-41 et 42 de sa revue de code P1), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
 (`docs/agents-orchestration.md` § 1). Fiche : `32-1-defauts-courts.md`. Clé courte : `321`.
 Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` sur `chore/kickoff-epic-32` (`6f0cee00`).
 
@@ -673,3 +673,38 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   vingt-deux listings (bruit, et une page presque vide à chaque fois).
 - **Réversible** : oui — trois lignes. *Limite* : un `\needspace` tient la mise en page **d'aujourd'hui** ; une
   phrase ajoutée plus haut peut déplacer une coupure — le contrôle se refait à chaque régénération.
+
+### C-32-1-41 — 32-1c, revue de code P1 : B1 réfuté à la lettre, le renvoi précisé plutôt que retourné
+
+- **Contexte** (remédiation P1, 2026-10-24) : B1 (LOW) lisait « le `ls -d /var/tmp/kesh-repetition-*` écrit plus
+  haut » comme un renvoi faux, le seul `ls -d` étant selon lui au cas *Reste d'une répétition antérieure*, plus bas.
+  Faux à la lettre : la commande est écrite **plus haut**, en tête du contrôle final (`admin-manual.tex`, paragraphe
+  *Le contrôle final* : « `ls -d /var/tmp/kesh-repetition-*` montre les dossiers qui restent ») — la lentille A l'avait
+  relevé (« Le `ls -d` est bien écrit plus haut »).
+- **Retenu** : garder « plus haut », et lever l'ambiguïté qui a égaré B1 : « écrit plus haut, en tête de ce
+  contrôle ». Aucune commande ne change.
+- **Écartées** : « plus bas » (prescrit par la consigne de remédiation, sur la foi de B1) — il aurait rendu le renvoi
+  faux ; supprimer le renvoi (il dit où regarder).
+- **Réversible** : oui — quatre mots.
+
+### C-32-1-42 — 32-1c, revue de code P1 : `\Needspace` (exact) avant l'item, à la place du `\needspace` (approché) avant le listing
+
+- **Contexte** : A3 = E2 demandaient l'amorce et le listing des contrôles 1, 4 et 8 sur une même page, B5 un garde
+  placé avant l'amorce, E1 la commande Synology (étape 6) d'un seul tenant. Premier essai : `\needspace{…}` avant
+  l'item, en gardant les `\needspace` posés devant les listings (C-32-1-40). Résultat au `pdftotext -layout` : la page
+  qui commence par l'item 1 s'arrête après son texte, le listing partant seul à la page suivante. Cause, lue dans
+  `needspace.sty` (v1.3e) : `\needspace` n'est qu'**approché** — de la colle et un `\penalty -100` qui offrent un point
+  de coupure avantageux, choisi même quand la place suffit ; `\Needspace` compare `\pagegoal` à `\pagetotal` et ne coupe
+  que si la place manque.
+- **Retenu** : `\Needspace` avant les items 1 (23 lignes), 4 (15) et 8 (24), les trois `\needspace` intérieurs retirés
+  (contrôles 1 et 4, posés par la 32-1c ; contrôle 8, `\needspace{19}` antérieur) ; `\Needspace` avant le paragraphe qui
+  porte l'amorce « Sans sudo : » (18) et celui du troisième listing (13), à la place des deux `\needspace` posés entre
+  l'amorce et le listing ; `\Needspace{6}` avant l'étape 6 de la restauration Synology. La régénération déplaçait une
+  coupure de la p. 76→77 (le listing `SELECT … information_schema.TABLES`, qui succédait à celle du listing
+  `ALTER TABLE contact_persons`, déjà coupé au PDF de la base) : `\Needspace{6}` et `{4}` devant ces deux listings.
+  Les `\needspace` de « Ou, avec sudo : » (AC-c6), du contrôle 7 et du *Contrôle final* restent : ils tiennent.
+- **Écartées** : garder les deux formes empilées (c'est elles qui ont coupé la page) ; agrandir les `\needspace`
+  intérieurs (même défaut, plus grand) ; corriger les douze coupures antérieures hors sous-section (p. 12, 14 à 17, 21,
+  36, 44, 50, 104, 125, 126 — présentes au PDF de la base, hors du périmètre de la 32-1c, relevées pour #731).
+- **Réversible** : oui — huit gardes. *Limite* : celle de C-32-1-40, inchangée — la garde tient la mise en page du jour ;
+  #731 porte le contrôle outillé qui manque.

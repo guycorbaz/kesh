@@ -1122,7 +1122,53 @@ Claude Opus 5.5 (`claude-opus-5-5`), worktree `kesh-32-1c`, branche `story/32-1c
   une ligne pour la 32-1c ; la 32-1d ou la 32-1b qui fusionne après résout le conflit en y ajoutant sa ligne.
 - **Défaut voisin** (à signaler, non traité) : la limite de C-32-1-40 — un `\needspace` tient la mise en page du jour ;
   aucun contrôle outillé ne détecte un listing coupé par une page. Pas d'issue demandée (le contrôle est manuel et écrit
-  ici ; à l'orchestrateur de juger).
+  ici ; à l'orchestrateur de juger). *(Annotation du 2026-10-24, revue de code P1 : ouverte depuis par l'orchestrateur,
+  #731.)*
+- *(Annotation du 2026-10-24, revue de code P1 — A1 = E5.)* Le journal `321c-make-fr.log` cité à l'AC-c9 est celui du
+  **dernier `make admin`** (14:03), qui a écrasé celui du `make fr` précédent : « trois PDF stables » ne s'y lisait pas.
+  Le journal de la remédiation, `321c-make-fr-p1.log`, est celui d'un `make -B fr` complet et montre les trois PDF.
+
+**Remédiation de la revue de code P1** (Opus 5.5, 2026-10-24 ; rapports `321c-review-p1-{B,E,A}.md`). *Tout ce qui
+suit a tourné.*
+
+- **B2 = A4 = E4** (puce *Au contrôle~3*) : la puce nomme le contrôle qui refuse — **la comparaison** du chemin que rend
+  `realpath -e` à `COPIE` (« `chemin réel` ne s'affiche pas ») —, dit que la garde, qui fait la même comparaison,
+  refuse aussi, et donne ses deux causes : la barre finale (`realpath -e` **réussit**, mais rend le chemin sans elle),
+  puis un `/var/tmp` lien (il rend le chemin de la cible). Geste inchangé. CHANGELOG : « première cause d'un refus de
+  la comparaison au chemin que rend `realpath -e` ».
+- **B3 = E3** (l. 1625) : les sessions sont rendues aux connexions — « deux lignes au journal d'audit, une par export
+  --- vos connexions, elles, y laissent leurs sessions --- ».
+- **B4** (contrôle 4) : « La dernière commande relève, dans le compose téléchargé… ».
+- **B1** (contrôle final) : **réfuté à la lettre** — le `ls -d /var/tmp/kesh-repetition-*` est écrit plus haut, en tête
+  du contrôle final (A l'avait relevé) ; le renvoi est précisé, non retourné : « écrit plus haut, en tête de ce
+  contrôle » (C-32-1-41).
+- **B5, A3 = E2, E1** : `\Needspace` (exact) avant les items 1, 4 et 8 et avant les paragraphes qui portent les amorces
+  « Sans sudo : » et du troisième listing, les `\needspace` (approchés) d'entre amorce et listing retirés ;
+  `\Needspace{6}` avant l'étape 6 Synology. Le premier essai, `\needspace` empilés, coupait la page après le texte de
+  l'item 1 : C-32-1-42. La régénération avait déplacé une coupure p. 76→77 (listing `SELECT … information_schema`) :
+  `\Needspace` devant ce listing et le suivant.
+- **A5** (CHANGELOG) : « aucun listing de cette sous-section n'est coupé par une page dans le PDF de cette version
+  (aucun contrôle outillé ne le garde encore : #731) » ; « `pdftotext` ne relève plus aucun caractère de remplacement
+  (U+FFFD) dans les trois PDF ».
+- **A2** : en-tête du registre « C-32-1-1 à C-32-1-42 ».
+- **Contrôles** (après le dernier `make -B fr`, journal `321c-make-fr-p1.log`, trois PDF « stables, 2 passes ») :
+  U+FFFD **0/0/0** ; `Missing character` aux trois `.log` : 0 ; brochure — témoin positif d'abord (« Conforme au Code des
+  obligations suisse » → 1, 16 692 octets ; le PDF d'avant identique à `c03d3a5f` par `cmp`), puis `cmp` des deux textes
+  aplatis : **identiques** ; phrases neuves au PDF aplati, témoin « trop grande pour être restaurée par l'écran » → 1
+  d'abord, puis chacune → 1 (« vos connexions, elles, y laissent leurs sessions », « La dernière commande relève, dans
+  le compose », « écrit plus haut, en tête de ce contrôle, qui le montre », « qui fait la même comparaison, refuse
+  aussi », « mais rend le chemin sans elle », « il rend alors le chemin de la cible ») ; 22 listings de
+  `sec:repetition-cloture` : `diff` contre `story/32-1` et contre `HEAD` **vides**.
+  **Coupures, sur tout le manuel d'administration** (129 pages) : à chaque frontière de page, dernière ligne et première
+  ligne indentées de 3 espaces ou plus (un listing l'est toujours), sur le PDF neuf et sur celui de la base
+  (`321c-admin-avant.pdf`) ; chaque frontière relevée relue. Corrigées : p. 54→55 et 57→58 (C-32-1-40), 58→59 (amorce
+  de l'item 8), 73→74 (E1), 76→77 (déplacée par la régénération). Restent **douze** coupures, toutes **présentes au PDF de
+  la base**, hors sous-section (p. 12, 14, 15, 16, 17, 21, 36, 44, 50, 104 — amorce séparée —, 125, 126) : relevées
+  pour #731, non traitées. Sous-section relue haut et bas de chaque page de 53 à 68 : items 1, 4, 8 en tête de page avec
+  leur listing ; « Sans sudo : » et « Ou, avec sudo : » avec le leur ; aucun listing coupé. **Manuel utilisateur**
+  (113 pages, `.tex` non touché par la remédiation, texte `-layout` identique à celui de `HEAD`) : quatorze frontières
+  relevées, toutes de la prose ou un encadré, aucun listing coupé.
+  **Gate ciblé** sous le verrou, base `kesh_321c` : voir *Change Log*, « Revue de code P1 (32-1c) ».
 
 #### File List
 
@@ -1136,6 +1182,8 @@ Claude Opus 5.5 (`claude-opus-5-5`), worktree `kesh-32-1c`, branche `story/32-1c
 - `CHANGELOG.md` — bloc `[0.16.0] — Non publié`, `### Corrigé`.
 - `_bmad-output/implementation-artifacts/{32-1-defauts-courts.md, sprint-status.yaml, epic-32-choix-autonomes-321.md}`.
 - `_bmad-output/implementation-artifacts/321c-review-prompt-p1.md` — prompt de la revue de code P1.
+- `_bmad-output/implementation-artifacts/321c-review-prompt-p2.md` — prompt de la revue de code P2 (ciblée), écrit à la
+  remédiation P1.
 
 ### 32-1d
 
@@ -1330,6 +1378,20 @@ Claude Opus 5.5 (`claude-opus-5-5`), worktree `kesh-32-1c`, branche `story/32-1c
   `\needspace` pour qu'aucun listing de la sous-section ne soit coupé, dont deux coupures préexistantes (C-32-1-40).
   U+FFFD 26/9/16 → 0/0/0 ; brochure identique hors ses signes ; gate ciblé 48/48. Détail : Dev Agent Record, *32-1c*.
   Revue de code P1 à lancer (`321c-review-prompt-p1.md`, Sonnet, lentilles B, E, A).
+- 2026-10-24 — **Revue de code P1 (32-1c)** (Sonnet, trois lentilles ; rapports hors dépôt `321c-review-p1-{B,E,A}.md`) :
+  B **0/0/1/4**, E **0/0/0/5**, A **0/0/0/5**. Un seul MEDIUM, convergent : **B2 = A4 = E4** (la barre finale ne fait
+  pas échouer `realpath -e`, elle fait échouer la comparaison) — corrigé au manuel et au CHANGELOG. Convergences LOW :
+  B3 = E3, A3 = E2, A1 = E5. Sort de chacun : B2 corrigé ; B1 **réfuté à la lettre**, renvoi précisé (C-32-1-41) ; B3,
+  B4 corrigés ; B5, A3, E1 corrigés par `\Needspace` avant l'item ou l'amorce (C-32-1-42, avec une coupure p. 76→77 née
+  de la régénération, corrigée) ; A5 corrigé ; A2 corrigé ; A1 rejoué (`make -B fr`, `321c-make-fr-p1.log`). Aucune
+  commande ne change, aucune consigne d'agir ne s'ajoute : rien n'est renvoyé à #726. Détail et contrôles : Dev Agent
+  Record, *32-1c*, *Remédiation de la revue de code P1*. Gate ciblé, sous le verrou, base `kesh_321c`, après le dernier `make -B fr` (journal `321c-gate-cible-p1.log`) :
+  `cargo nextest run -p kesh-api -E 'binary(textes_coherents) | binary(configuration_transmise)'` → **48 passed**
+  (18 + 30), puis `cargo nextest run -p kesh-db -E 'test(le_manuel_cite_les_taux_poses_par_kesh)'` → **1 passed**.
+  Pas de gate complet (aucun code).
+  La remédiation touche le manuel (texte publié) : **une passe P2 est due** — ciblée, une lentille (*regression
+  hunter*), Haiku, sur le seul diff de cette remédiation (`321c-review-prompt-p2.md`) ; la boucle ne se clôt que sur
+  une passe sans finding au-dessus de LOW.
 
 [#711]: https://github.com/guycorbaz/kesh/issues/711
 [#714]: https://github.com/guycorbaz/kesh/issues/714

@@ -16,12 +16,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   ([#714](https://github.com/guycorbaz/kesh/issues/714)). Dans le manuel d'administration, § *Répéter une clôture sur
   une copie*, sans qu'aucune commande change : ce que les deux exports écrivent sur la production (journal d'audit,
   sessions, réglages par défaut — les trois niveaux de relance que pose la page, et non l'export) ; la barre finale de
-  `COPIE`, première cause d'un `realpath -e` en échec ; un message de `curl` ou de `grep` à l'inventaire du contrôle 4
-  est un arrêt ; une intégration qui écrit par clé d'API entre les deux exports ; la limite du contrôle final, qui ne
-  voit pas le dossier d'une autre répétition ; aucun listing coupé par une page. Le signe ⚠️ des deux manuels, qui ne
-  s'imprimait pas, sort désormais en **!** ; les coches et la flèche de la brochure et les signes des deux scripts
-  d'exemple du manuel d'administration s'impriment (`+`, `→`, `x`, `=`) — aucun PDF ne porte plus de caractère sans
-  glyphe.
+  `COPIE`, première cause d'un refus de la comparaison au chemin que rend `realpath -e` ; un message de `curl` ou de
+  `grep` à l'inventaire du contrôle 4 est un arrêt ; une intégration qui écrit par clé d'API entre les deux exports ; la
+  limite du contrôle final, qui ne voit pas le dossier d'une autre répétition ; aucun listing de cette sous-section
+  n'est coupé par une page dans le PDF de cette version (aucun contrôle outillé ne le garde encore :
+  [#731](https://github.com/guycorbaz/kesh/issues/731)). Le signe ⚠️ des deux manuels, qui ne s'imprimait pas, sort
+  désormais en **!** ; les coches et la flèche de la brochure et les signes des deux scripts d'exemple du manuel
+  d'administration s'impriment (`+`, `→`, `x`, `=`) — `pdftotext` ne relève plus aucun caractère de remplacement
+  (U+FFFD) dans les trois PDF.
 
 ## [0.15.0] — 2026-10-24
 
