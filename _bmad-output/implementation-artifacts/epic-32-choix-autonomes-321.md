@@ -1,6 +1,6 @@
 # Epic 32 — registre des choix autonomes de la Story 32-1 (défauts courts, clés 32-1a, 32-1b, 32-1c, 32-1d)
 
-Registre propre à la story (C-32-1-1 à C-32-1-37 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage de la 32-1b), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
+Registre propre à la story (C-32-1-1 à C-32-1-38 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage de la 32-1b, C-32-1-38 de la validation P3), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
 (`docs/agents-orchestration.md` § 1). Fiche : `32-1-defauts-courts.md`. Clé courte : `321`.
 Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` sur `chore/kickoff-epic-32` (`6f0cee00`).
 
@@ -88,6 +88,8 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Écartées** : un analyseur Rust (`syn`) pour trois gardes lexicales (une dépendance pour des tests) ; laisser les
   helpers tels quels (le constat est réel : un `/* auto_backup::spawn(x) */` dans `main.rs` compterait).
 - **Amendé (validation P1, 2026-10-24)** : le retrait des `/* … */` passe par un **balayeur** qui connaît les chaînes (brutes comprises), les `//` et les littéraux de caractère sans les confondre avec les durées de vie ; assertions de montage tirées de `lib.rs:1186` — C-32-1-20.
+- *Annotation de la validation P3 (2026-10-24)* : ce choix ne s'applique plus — E-9 (3) est **sorti de la story** et
+  renvoyé à #727 ; la 32-1a n'écrit que la limite des helpers à leurs doc-comments (C-32-1-38).
 - **Réversible** : oui.
 
 ### C-32-1-7 — E7 : le doc-comment de `kesh-db` seul ; `kesh-seed` n'est pas touché
@@ -310,6 +312,8 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   l. 1179, 1186, 1196) ; `syn` (C-32-1-6).
 - **Amendé (validation P2, 2026-10-24)** : le balayeur n'est pas à écrire, il **existe** (`kesh-db/tests/lexique/mod.rs`,
   `decouper`) et se réemploie, étendu aux blocs imbriqués ; M-a7 en deux formes et assertion (3') — C-32-1-32.
+- *Annotation de la validation P3 (2026-10-24)* : sans objet — l'AC-a11 est retiré, aucun balayeur n'est écrit ni
+  réemployé par la story ; E-9 (3) va à #727 (C-32-1-38).
 - **Réversible** : oui.
 
 ### C-32-1-21 — E1 : les trois colonnes posées, trois mutations, `UPDATE` après le `commit` (R3 = F2)
@@ -385,6 +389,10 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Amendé (validation P2, 2026-10-24)** : le texte de la brochure change en ses 16 signes sans glyphe (C-32-1-31) ;
   le contrôle compare au PDF de la **base de la branche** (`git merge-base origin/main HEAD`), jamais à `HEAD:` (F7) ;
   le bloc du CHANGELOG est créé par la première **des 32-1b et 32-1c** qui fusionne (F6).
+- **Amendé (validation P3, 2026-10-24, F3)** : depuis le découpage (C-32-1-37), le bloc est créé par la première **des
+  32-1c et 32-1d** qui fusionne — la 32-1b fusionne après les deux et n'est jamais la première ; un seul bloc, le
+  conflit textuel au rebase de la seconde étant prévu et résolu par union (fiche, *Pourquoi quatre clés*). Le
+  découpage aurait dû porter cet amendement ; il ne l'a pas fait.
 - **Réversible** : oui.
 
 ### C-32-1-27 — Fichiers communs A/B, ordre de fusion, `closes #711` sur la dernière (R10 = F7)
@@ -480,6 +488,10 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   chaîne, fermée par `/* c */` après l'appel — et, pour M-a7a, par (3) et (4).
 - **Écartées** : écrire le balayeur dans `mod tests` (copie de plus) ; ne garder qu'une forme de M-a7 ; extraire
   `lexique` dans un crate de test commun (le périmètre de #727).
+- *Annotation de la validation P3 (2026-10-24)* : ce choix est **retiré**. La déclaration « en tête d'`auto_backup.rs` »
+  tronquait `code()` avant tout le code de production (R1 = F1 de la P3) — troisième défaut de l'AC-a11, chacun né de
+  la remédiation précédente. Rien de ce qui est retenu ci-dessus n'est fait par la story : ni inclusion, ni extension
+  de `decouper`, ni M-a7a/M-a7b. E-9 (3) est renvoyé à #727, où le piège est consigné (C-32-1-38).
 - **Réversible** : oui.
 
 ### C-32-1-33 — L-B3 : la base, à la première sauvegarde, couverte par la marge seule (R3)
@@ -515,6 +527,9 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   verser sur #727 par l'orchestrateur (fiche, *Commentaires à verser*). L'entrée « Validation P1 » du Change Log, juste à
   sa date, n'est pas réécrite.
 - **Écartée** : une issue neuve pour les sites de `kesh-db` (même classe, même remède : #727 la porte).
+- *Annotation de la validation P3 (2026-10-24)* : le texte du commentaire sur #727 est **remplacé** par celui de la P3
+  (sa dernière phrase annonçait le réemploi de `lexique` par la 32-1a, retiré) ; le bilan d'issues ne change pas
+  (C-32-1-38).
 - **Réversible** : oui.
 
 ### C-32-1-36 — La 32-1b au-delà de cinq modules au grain métier : déclaré, non découpé (F5)
@@ -578,4 +593,53 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Écartées** : la coupe à deux manuels (bandeau et phrases du serveur au manuel de la 32-1d) — un PDF binaire de plus à
   ordonner, pour aucun gain ; numéroter à neuf la 32-1b (AC-b1 à b9) — casserait les renvois du registre et des rapports ;
   ne pas découper (C-32-1-36) — les deux motifs de l'amendement D5 sont réunis.
+- **Amendé (validation P3, 2026-10-24, F2 = R4)** : le motif écrit au *Contexte* et aux *Écartées* (« les deux motifs
+  sont réunis ») est **faux** pour la 32-1b. Le recyclage (R1 de la P2, M-a7 indécidable) porte sur l'AC-a11, qui est à
+  la **32-1a** ; les trois MEDIUM de la P2 sur la 32-1b (F1, F2, R3) étaient des défauts d'origine (C-32-1-36). **Seule
+  la dispersion — 7 modules au grain métier, au-delà des cinq de la règle — justifie le découpage de la 32-1b**, et elle
+  y suffit : la coupe ne change pas. Le recyclage, lui, n'était pas traité par cette coupe ; il l'est par le retrait de
+  l'AC-a11 (C-32-1-38).
 - **Réversible** : oui (refondre les parties B et D), tant qu'aucune des deux n'est développée.
+
+---
+
+*C-32-1-38 : remédiation de la validation P3 (Opus 5.5, 2026-10-24, retrait décidé par l'orchestrateur).*
+
+### C-32-1-38 — L'AC-a11 retiré de la 32-1a, E-9 (3) renvoyé à #727 ; grain métier de la 32-1a déclaré ; LOW de la P3
+
+- **Contexte** : la validation P3 (Sonnet, R 0/0/1/4, F 0/0/2/8 ; R1 = F1, F2 = R4) relève un troisième défaut sur
+  l'AC-a11 : la déclaration `#[cfg(test)] #[path …] mod lexique;` « en tête » d'`auto_backup.rs` (C-32-1-32) précède
+  tout le code de production, si bien que `code()`, tronqué au premier `#[cfg(test)]`, ne rend plus que la tête du
+  fichier — `gardes_possedes` rougit sur `try_lock_owned()` et sa boucle des jetons interdits passe à vide sur ce
+  fichier. Trois rédactions de l'AC (C-32-1-6, C-32-1-20, C-32-1-32), trois défauts (P1 R1, P2 R1, P3 R1), chaque
+  remédiation introduisant le suivant : le **recyclage** que l'amendement D5 de la règle de splitting désigne. Le
+  constat E-9 (3) est LOW, sur des gardes de test ; #727 (ouverte, `technical-debt`, P3) demande déjà l'extraction
+  d'un balayeur commun qui corrigera toutes les copies d'un coup.
+- **Retenu** (décision de l'orchestrateur ; mise en forme par la remédiation) :
+  - **Retrait** : l'AC-a11, ses mutations M-a7a/M-a7b et le réemploi de `lexique` sortent de la 32-1a ; le numéro
+    AC-a11 garde une ligne de renvoi, M-a7 n'est pas réemployé ; la 32-1a ne touche ni
+    `crates/kesh-db/tests/lexique/mod.rs` ni le code des helpers. Mutations de la 32-1a : huit (M-a1a à M-a6).
+  - **Angle mort écrit** (choix de la remédiation, contestable) : l'AC-a10 s'élargit aux doc-comments de `code()`,
+    `argument_de`, `corps()` — leur limite telle que E-9 (3) l'établit, la conséquence muette, le renvoi à #727 —,
+    commentaires seuls, sans test ni mutation ; la fiche le dit aussi (*Inventaire*).
+  - **#711** : se ferme toujours par la dernière fusionnée des 32-1a et 32-1b ; chaque constat a un sort écrit — E-1,
+    E-2 suivis par #725, E-9 (3) par #727 —, que le corps de la PR écrit en toutes lettres, le commentaire sur #727
+    versé avant la fusion ; à défaut, `refs #711`. Bilan inchangé : **0** issue, **−1** bug.
+  - **Commentaire sur #727** : un texte P3 qui remplace celui de la P2 (dont la dernière phrase annonçait le réemploi)
+    — E-9 (3), le piège de la déclaration en tête, l'inventaire sur tout `crates/` (avec `admin_pat_denied_e2e.rs:124`,
+    R3), `lexique` comme cible.
+  - **Grain métier de la 32-1a, après retrait** (F2) : **6** (`routes/invoice_pdf_service`, `routes/audit_log`, la
+    garde des textes, `auto_backup`, `repositories/company_invoice_settings`, `settings/fiscal-years`), 3 au grain des
+    crates. Au-delà de cinq : **signal déclaré au Project Lead**, sans découpage — chaque AC touche un module et
+    aucun ne lit le résultat d'un autre, et le seul recyclage en est sorti.
+  - **LOW** : R2 (`i18n-keys.test.ts`, `sitesTotal` +2 par la 32-1b), R3 (inventaire), R5 (espace disque : la base
+    comptée à travers la dernière sauvegarde seulement si celle-ci dépasse les documents), F3 (C-32-1-26 amendé), F4
+    (`CHANGELOG.md` commun aux B, C, D, un seul bloc, conflit prévu), F5 (commande exacte de l'AC-c9), F6
+    (`sprint-status.yaml`), F7 (`-p kesh-i18n` au gate ciblé de l'AC-d5), F8 (`./api-error`), F9 (G22 nommée), F10
+    (200 illisible : tentative terminée, limite du message unique écrite).
+- **Écartées** : une quatrième rédaction de l'AC-a11, placée avant `mod tests` comme le proposaient R1 et F1 — elle
+  aurait été juste à la lecture, mais rien n'assurait qu'elle ne porte pas le défaut suivant, et elle reste
+  l'extraction de #727 en miniature ; une clé propre 32-1e pour les helpers (F2) — une clé de plus pour un LOW de
+  gardes de test que #727 corrige entier ; découper la 32-1a au motif de ses six modules — ses AC sont indépendants ;
+  une variante de message pour le 200 illisible (F10) — une clé de plus pour un cas rare.
+- **Réversible** : oui — l'AC-a11 peut revenir tant que la 32-1a n'est pas développée, et #727 le porte d'ici là.

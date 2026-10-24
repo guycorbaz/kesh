@@ -6,8 +6,9 @@ Status: ready-for-dev
 `chore/kickoff-epic-32` (`6f0cee00`). Une fiche, **quatre** clés (C-32-0-3, C-32-1-1 ; la quatrième, 32-1d, née du
 découpage de la 32-1b avant la validation P3, C-32-1-37) : `32-1a-defauts-tests-commentaires`,
 `32-1b-defauts-sauvegarde-automatique` (l'écran), `32-1c-defauts-procedure-repetition`,
-`32-1d-defauts-sauvegarde-serveur` (le serveur). Registre : `epic-32-choix-autonomes-321.md` (C-32-1-1 à C-32-1-37 ;
-C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage). Clé courte : `321`.
+`32-1d-defauts-sauvegarde-serveur` (le serveur). Registre : `epic-32-choix-autonomes-321.md` (C-32-1-1 à C-32-1-38 ;
+C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage, C-32-1-38 de la
+validation P3). Clé courte : `321`.
 Action A8 de la rétrospective de l'Epic 31.*
 
 ## Story
@@ -28,14 +29,16 @@ plus étroite, nommée dans le rapport.
 rendait **142**, dont 51 bugs — chiffres du fichier d'epic, non recomptés par cette fiche). Effet attendu de la story,
 si tout se passe comme écrit : **#716** fermée par la 32-1a ; **#711** fermée par la dernière fusionnée des 32-1a, 32-1b
 et 32-1d — en pratique la dernière des 32-1a et 32-1b, la 32-1d fusionnant avant la 32-1b (C-32-1-27, C-32-1-37) —, E-1 et
-E-2 sortis dans **[#725]** (ouverte le 2026-10-24) ; **#714** fermée par la 32-1c, les
+E-2 sortis dans **[#725]** (ouverte le 2026-10-24), **E-9 (3)** renvoyé à **[#727]** (validation P3, C-32-1-38 : la
+PR qui ferme #711 l'écrit) ; **#714** fermée par la 32-1c, les
 gestes à trancher sortis dans **[#726]** (ouverte le 2026-10-24) ; les copies de l'assistant lexical que la 32-1a ne
 corrige pas sorties dans **[#727]** (ouverte le 2026-10-24 sur la demande de la remédiation P1, *Inventaire*). Bilan :
 **−3 + 3 = 0** issue ; les bugs : #711 et #714 portent `bug`, #716 non ; #725 porte `bug` (`bug`, `P3`), #726 non
 (`documentation`, `P3`), #727 non (`technical-debt`, `P3`) — **−2 + 1 = −1** bug (étiquettes lues par l'orchestrateur à
 l'ouverture, recoupées par les validations P1 et P2). Ce n'est pas un motif pour taire un constat (*On trace toujours*,
 `CLAUDE.md` § *Priorités des défauts*) : la remédiation P2 n'ouvre aucune issue neuve — ce qu'elle sort va en
-commentaire de [#725] et de [#727] (C-32-1-30, C-32-1-35).
+commentaire de [#725] et de [#727] (C-32-1-30, C-32-1-35) ; la remédiation P3 non plus — E-9 (3) va en commentaire de
+[#727], qui porte déjà la classe (C-32-1-38). Le bilan ne change pas.
 
 ## Constats établis au code (2026-10-24, sur `6f0cee00`)
 
@@ -66,7 +69,7 @@ Chaque constat a été relu **au site**, même LOW (`docs/agents-orchestration.m
 | E-8 | **Vrai.** `refreshBackupScheduleState` (`backup-schedule.svelte.ts:30-36`) pose `null` sur tout échec ; aucune séquence ne protège `setBackupScheduleState` (l. 21-23) d'une réponse tardive. | 32-1b |
 | E-9 (1) | **Vrai, et précisé.** `dossier_auto_inutilisable` (`admin_auto_backup_e2e.rs:684-695`) n'assert que `failed`. Les deux gardes du dossier (`auto_backup.rs:589`, création ; `:597`, `read_dir`) rendent `failed` ; toute création en échec fait aussi échouer `read_dir` : leur ordre est **équivalent** quant au statut (C-32-1-4). Ce qui est observable : le tour s'arrête **avant** la mesure d'espace (`free_bytes`) et avant toute écriture (`wrap_writer`). | 32-1a |
 | E-9 (2) | **Vrai, non mécanique en test.** La propriété du garde de `full_export` (`routes/admin.rs:72-80`, garde déplacé dans `remplir`) ne s'observe qu'au départ du client pendant l'assemblage (C-32-1-5). | 32-1a (commentaire) |
-| E-9 (3) | **Vrai.** `code()` (`auto_backup.rs:1121-1128`) n'écarte que les lignes `//` ; `argument_de` (`:1159-1179`) ne voit pas les chaînes ; `corps()` (`:1182-1188`) coupe au premier `\n}`. | 32-1a |
+| E-9 (3) | **Vrai.** `code()` (`auto_backup.rs:1121-1128`) n'écarte que les lignes `//` ; `argument_de` (`:1159-1179`) ne voit pas les chaînes ; `corps()` (`:1182-1188`) coupe au premier `\n}`. | **hors** — [#727] (retiré de la 32-1a à la validation P3, C-32-1-38 ; angle mort écrit, AC-a10) |
 | L-B3 | **Vrai ; site corrigé.** `seuil_d_espace` (`auto_backup.rs:496-500` — non les l. 490-491 citées, qui sont la fin de `taille_des_documents`) : `max(dernière, documents) × 1,2 + 256 Mio` ; la base n'est mesurée qu'à travers la dernière sauvegarde. Le manuel (`admin-manual.tex:2349`, § *Espace disque requis*) ne le dit pas. | 32-1b |
 | L-B5 | **Vrai.** `is_overdue` vrai pour une réussite future (`auto_backup.rs:221-226`, voulu) ; `since` (`BackupScheduleBanner.svelte:33`) affiche la date future. | 32-1d (le drapeau servi) ; 32-1b (le bandeau qui le lit) — C-32-1-37 |
 | L-B6 | **Vrai.** `formatBackupSize` en unités décimales (`backup-format.ts:14-28`) ; `exceedsImportLimit` en Mio (`backup-schedule.api.ts:129-131`) ; mention `AutoBackupSection.svelte:450-458`. | 32-1b |
@@ -104,14 +107,23 @@ mutation du `COALESCE` qui se tue (C-32-1-2).
 
 ---
 
-## A — 32-1a : tests et commentaires (#716 entier ; E-9 de #711)
+## A — 32-1a : tests et commentaires (#716 entier ; E-9 (1) et (2) de #711, l'angle mort de E-9 (3) écrit)
+
+*E-9 (3) — réécrire les helpers lexicaux d'`auto_backup.rs` — est **sorti de la 32-1a** à la validation P3 et renvoyé à
+[#727] (C-32-1-38) : trois rédactions de l'AC-a11, trois défauts, chaque remédiation introduisant le suivant. Le numéro
+AC-a11 est gardé avec une ligne de renvoi ; M-a7 n'est pas réemployé.*
 
 **Modules** : `kesh-api` (tests : `audit_log_e2e.rs`, `textes_coherents.rs`, `admin_auto_backup_e2e.rs` ; `src` : un
-commentaire de `routes/invoice_pdf_service.rs` et son `mod tests`, le `mod tests` de `auto_backup.rs` et la déclaration
-`#[cfg(test)]` du module `lexique` qui le précède), `kesh-db` (doc-comment de `repositories/company_invoice_settings.rs`,
-`tests/company_invoice_settings_repository.rs`, `tests/lexique/mod.rs` — l'analyseur lexical partagé, étendu aux
-commentaires imbriqués, C-32-1-32), frontend (`settings/fiscal-years/fiscal-years-page.test.ts`) — **3** (grain : crate
-ou paquet). 🗄️ (un test de dépôt `kesh-db`) : **gate complet même en
+commentaire de `routes/invoice_pdf_service.rs` et son `mod tests`, des doc-comments du `mod tests` d'`auto_backup.rs`),
+`kesh-db` (doc-comment de `repositories/company_invoice_settings.rs`, `tests/company_invoice_settings_repository.rs`),
+frontend (`settings/fiscal-years/fiscal-years-page.test.ts`) — **3** au grain des crates et paquets ; **6** au grain des
+modules métier de premier niveau, compté comme pour la 32-1b (un fichier de test compte au module qu'il exerce) :
+`kesh-api/routes/invoice_pdf_service`, `kesh-api/routes/audit_log` (par `audit_log_e2e.rs`), la garde des textes
+(`textes_coherents.rs`), `kesh-api/auto_backup` (par `admin_auto_backup_e2e.rs` et les doc-comments de son `mod tests`),
+`kesh-db/repositories/company_invoice_settings`, `frontend/settings/fiscal-years`. ⚠️ **Au-delà des cinq de la règle de
+splitting préventif : signal déclaré au Project Lead** (C-32-1-38), sans découpage par la remédiation — les AC de la
+32-1a sont indépendants deux à deux (chacun touche un module, aucun ne lit le résultat d'un autre), et le seul
+recyclage de la story, l'AC-a11, en est sorti. 🗄️ (un test de dépôt `kesh-db`) : **gate complet même en
 boucle de revue**. Aucune ligne servie ne change ; `kesh-i18n` et `kesh-seed` ne sont pas touchés (C-32-1-3, C-32-1-7).
 
 ### Critères d'acceptation
@@ -190,71 +202,41 @@ boucle de revue**. Aucune ligne servie ne change ; `kesh-i18n` et `kesh-seed` ne
    des gardes du dossier (`auto_backup.rs:591`, `:599`) → le tour passe `supprimer_les_partiels` et
    `taille_des_documents`, **mesure l'espace** (compteur à 1 : rouge), puis échoue à l'ouverture du `.partial` — le statut
    reste `failed`.
-10. **AC-a10 — E-9 (2) : la garde lexicale de l'export, assumée.** Doc-comment de `gardes_possedes`
-    (`auto_backup.rs:1190-1201`) : la propriété tenue par le déplacement du garde de `full_export` dans `remplir` (le
-    verrou vit jusqu'à la fin de l'assemblage même si le client part) ne s'observe qu'au départ du client pendant
-    l'assemblage ; aucun test comportemental ne la tient (il faudrait un crochet de synchronisation dans
-    `build_keshbackup`) — angle mort assumé, la garde lexicale (M-c24) est le seul filet (C-32-1-5). Commentaire seul.
-11. **AC-a11 — E-9 (3) : les helpers lexicaux lisent ce qu'ils disent** (C-32-1-20, **amendé par C-32-1-32** : le
-    balayeur existe déjà, il se réemploie).
-    - **Le balayeur est celui du dépôt** : `decouper` de `crates/kesh-db/tests/lexique/mod.rs` (Story 28-4a, #642), déjà
-      inclus par `#[path]` dans `crates/kesh-api/tests/bank_account_closed_inventory.rs:61`. Il rend une copie
-      **masquée** de la source, de même longueur en octets, où le contenu des chaînes (ordinaires et brutes) et des
-      commentaires (`//`, `/* … */`) est remplacé par des espaces, **fins de ligne gardées** (`effacer` saute `\n`), et
-      distingue les littéraux de caractère `'x'`, `'\x'` des durées de vie (`&'static str`, présent dans
-      `auto_backup.rs:258` et `routes/backup_schedule.rs:194`, lus par `gardes_possedes`). Un `/*` ou un `//` **dans une
-      chaîne** n'ouvre aucun commentaire (la chaîne est reconnue d'abord). Inclusion : en tête d'`auto_backup.rs`,
-      `#[cfg(test)] #[path = "../../kesh-db/tests/lexique/mod.rs"] mod lexique;` — déclaration hors de tout module en
-      ligne, donc chemin relatif à `crates/kesh-api/src/` ; **pas** dans le `mod tests` en ligne, où le chemin se
-      résoudrait sous `src/auto_backup/tests/`, qui n'existe pas. **Seule extension** : le bras `/*` de `decouper` suit la
-      **profondeur** (Rust imbrique les commentaires de bloc ; aujourd'hui il s'arrête au premier `*/`) ; un `/*` jamais
-      fermé masque jusqu'à la fin, comme aujourd'hui. Les deux utilisateurs actuels (`kesh-db/tests/letterings_lexical.rs`,
-      `kesh-api/tests/bank_account_closed_inventory.rs`) restent verts. Aucun second balayeur n'est écrit (règle DRY).
-    - `code()` rend la copie **masquée** du code de production — commentaires et contenu des chaînes effacés, fins de
-      ligne gardées —, tronquée au premier `#[cfg(test)]` **de la copie masquée** (un `"#[cfg(test)]"` écrit dans une
-      chaîne ne tronque plus). Les jetons que cherchent `lancement_par_main_seulement` et `gardes_possedes` sont tous du
-      code (à vérifier au développement : si une assertion cherchait un jeton dans une chaîne, elle le lirait dans la
-      source à la même position, les deux textes ayant mêmes positions). Assertions de montage, toutes **rouges avant**
-      (le `code()` actuel, ligne à ligne) sauf mention :
-      (1) `code("/* auto_backup::spawn(x) */ fn f() {}")` ne contient pas `auto_backup::spawn(` ;
-      (2) `code("/* a /* b */ auto_backup::spawn(x) */ fn f() {}")` non plus — rouge aussi sous `decouper` **non
-      étendu** (masque arrêté au premier `*/`) : c'est elle qui tient l'extension ;
-      (3) **tirée du réel** — `lib.rs:1186` porte `/*` **dans une chaîne** (`"KESH_TEST_MODE=true — /api/v1/_test/*
-      exposé …"`), sans `*/` dans tout le fichier et sans `#[cfg(test)]` qui borne la lecture : un retrait de blocs qui
-      ignore les chaînes ouvrirait là un commentaire jamais fermé et ferait disparaître la fin de `build_router` de la
-      garde « zéro lancement dans `lib.rs` », **en vert**. Assertion : `code("let s = \"a /* b\"; auto_backup::spawn(x);
-      fn g() {}")` contient `auto_backup::spawn(` (verte avant ; rouge sous **M-a7a**) ;
-      (3') la même, **fermée après l'appel** : `code("let s = \"a /* b\"; auto_backup::spawn(x); /* c */ fn g() {}")`
-      contient `auto_backup::spawn(` (verte avant ; rouge sous **M-a7a** et sous **M-a7b** : le `*/` de `/* c */` ferme
-      le faux commentaire ouvert dans la chaîne, qui avale l'appel) ;
-      (4) **sur le vrai fichier** — `code(include_str!("lib.rs"))` contient `.with_state(state)` (`lib.rs:1200`, dernière
-      instruction de `build_router`, **après** la l. 1186) : verte avant, rouge sous M-a7a ;
-      (5) une durée de vie n'ouvre rien : `code("fn f() -> &'static str { \"x\" } auto_backup::spawn(y)")` contient
-      `auto_backup::spawn(` (verte avant ; elle tient le balayeur contre un `'` pris pour un littéral ouvrant) ;
-      (6) les fins de ligne gardées : `code("fn f() {} // x\n}\nfn g() {}")` contient `"\n}"` (verte avant ; elle tient
-      `corps()`, qui coupe au premier `"\n}"` du texte rendu par `code()`, contre un masquage qui mangerait le `\n` d'un
-      `//`).
-      **M-a7** (deux formes, un journal chacune, comme M-b7) : **M-a7a** — le bras `b'"'` de `decouper` retiré (le
-      balayeur privé de l'état chaîne : un `"` reste du code) → (3), (3') et (4) rouges ; **M-a7b** — `code()` qui
-      retire les paires `/\*.*?\*/` (non gourmand) sans connaître les chaînes, à la place de `decouper` → (3') rouge
-      ((3) et (4) restent vertes sous cette forme : ni le texte de (3) ni `lib.rs` n'ont de `*/` — c'est pourquoi (3')
-      existe).
-    - `argument_de(texte, appel)` appelle `decouper(texte)`, cherche `appel` et apparie les parenthèses **sur la copie
-      masquée**, et rend la tranche **de `texte`** aux mêmes positions ; assertion de montage : sur le texte `f("(", x) y`
-      (littéral Rust `"f(\"(\", x) y"`), `argument_de(texte, "f(")` rend `("(", x)` — **rouge avant** (aujourd'hui :
-      panique, la parenthèse de la chaîne laissant la profondeur à 1 au bout du texte) ; et sur `f('(', x)`, il rend
-      `('(', x)`.
-    - `corps()` garde sa règle ; son doc-comment dit qu'elle repose sur rustfmt (un item de tête se ferme par `}` en
-      colonne 0) ; assertion de montage : `corps(&admin, "pub async fn full_import(")` ne contient pas `"\npub "`.
-    `lancement_par_main_seulement` et `gardes_possedes` restent verts.
+10. **AC-a10 — E-9 (2) et E-9 (3) : les angles morts des gardes lexicales, assumés et écrits.** Commentaires seuls,
+    dans le `mod tests` d'`auto_backup.rs`, sans toucher une ligne de code des helpers :
+    - doc-comment de `gardes_possedes` (`auto_backup.rs:1190-1201`) : la propriété tenue par le déplacement du garde de
+      `full_export` dans `remplir` (le verrou vit jusqu'à la fin de l'assemblage même si le client part) ne s'observe
+      qu'au départ du client pendant l'assemblage ; aucun test comportemental ne la tient (il faudrait un crochet de
+      synchronisation dans `build_keshbackup`) — angle mort assumé, la garde lexicale (M-c24) est le seul filet
+      (C-32-1-5) ;
+    - doc-comment de `code()` (`auto_backup.rs:1119-1120`), d'`argument_de` (`:1157-1158`) et de `corps()` (`:1181`)
+      (C-32-1-38) : chacun dit sa limite, telle que le constat E-9 (3) l'établit — `code()` n'écarte que les lignes
+      entières qui commencent par `//` et lit comme du code un commentaire de fin de ligne, un commentaire `/* … */` et
+      le contenu des chaînes ;
+      `argument_de` compte les parenthèses écrites dans une chaîne ou un littéral de caractère ; `corps()` coupe au
+      premier `\n}` du texte, chaîne comprise, et repose sur rustfmt (un item de tête se ferme par `}` en colonne 0) —,
+      la conséquence muette (un jeton **exigé** écrit seulement dans un commentaire de bloc ou une chaîne satisfait la
+      garde à tort ; un jeton interdit l'y fait rougir, ce qui est bruyant), et le renvoi à [#727] (extraction d'un
+      balayeur commun). Aucun test, aucune mutation : le texte des helpers et leurs assertions de montage existantes
+      ne changent pas, `lancement_par_main_seulement` et `gardes_possedes` restent verts sans y toucher.
+11. **AC-a11 — retiré à la validation P3** (C-32-1-38). E-9 (3) — faire lire aux helpers lexicaux d'`auto_backup.rs`
+    ce qu'ils disent — n'est plus corrigé par la 32-1a : il est **renvoyé à [#727]**, dont l'extraction d'un balayeur
+    commun corrigera toutes les copies d'un coup (texte du commentaire à verser : *Commentaires à verser*). Motif :
+    trois rédactions de cet AC — d'origine (retrait des `/* … */`, C-32-1-6), remédiation P1 (balayeur à états,
+    C-32-1-20), remédiation P2 (réemploi de `lexique`, inclus « en tête » d'`auto_backup.rs`, C-32-1-32) —, trois
+    défauts relevés aux validations P1 (un `/*` dans une chaîne de `lib.rs:1186`), P2 (M-a7 indécidable) et P3
+    (l'inclusion en tête tronquait `code()` avant tout le code de production), chaque remédiation introduisant le
+    suivant — le recyclage que la règle de splitting préventif désigne. Ni `crates/kesh-db/tests/lexique/mod.rs`
+    ni le code des helpers (`code()`, `argument_de`, `corps()`) ne sont touchés par la 32-1a ; leur limite est **écrite**
+    à leurs doc-comments (AC-a10), angle mort assumé d'ici l'extraction. Les mutations M-a7a et M-a7b sortent avec cet
+    AC ; leur numéro n'est pas réemployé.
 12. **AC-a12 — gates.** Gate **complet** (`scripts/test-fast.sh` sous verrou, base remise à zéro d'abord) ; les quatre
     gates frontend ; **E2E complet au dernier commit de code** (C-32-1-18), jugé fichier par fichier contre
     `docs/testing.md` § *Les échecs attendus*. Ne déclarer que ce qui a tourné.
 13. **AC-a13 — mutations** (sous verrou, appliquées par Edit, restaurées par `git checkout -- f && touch f`, diff
-    résiduel 0, un journal `321-mut-<id>.log` chacune dans `kesh-gate-logs/`) : M-a1a, M-a1b, M-a1c, M-a2 à M-a7 (neuf ;
-    M-a7 en deux formes, M-a7a et M-a7b, un journal chacune), chacune tuée par un test **nommé**. M-a7a touche
-    `crates/kesh-db/tests/lexique/mod.rs` : restauration par `git checkout -- crates/kesh-db/tests/lexique/mod.rs && touch`
-    du même fichier. Une mutation qui survit est un défaut du test, non un constat à reporter.
+    résiduel 0, un journal `321-mut-<id>.log` chacune dans `kesh-gate-logs/`) : M-a1a, M-a1b, M-a1c, M-a2 à M-a6
+    (**huit** ; M-a7 est sortie avec l'AC-a11, C-32-1-38), chacune tuée par un test **nommé**. Une mutation qui survit
+    est un défaut du test, non un constat à reporter.
 
 ### Tâches
 
@@ -265,11 +247,9 @@ boucle de revue**. Aucune ligne servie ne change ; `kesh-i18n` et `kesh-seed` ne
 - [ ] **T-a3 (AC-a4)** — deux tests de dépôt ; M-a1a, M-a1b, M-a1c ; gate complet (kesh-db).
 - [ ] **T-a4 (AC-a5)** — cas Vitest ; M-a2.
 - [ ] **T-a5 (AC-a2, AC-a6)** — `audit_log_e2e.rs` ; M-a5, M-a6.
-- [ ] **T-a6 (AC-a9, AC-a11)** — sonde ; `lexique` inclus, `decouper` étendu aux blocs imbriqués, helpers lexicaux sur
-  la copie masquée ; assertions de montage (1), (2) et `argument_de` **rouges avant**, (3) à (6) vertes avant, (3), (3'),
-  (4) **rouges sous M-a7a**, (3') **rouge sous M-a7b** ; `letterings_lexical` et `bank_account_closed_inventory` verts ;
-  M-a3, M-a7a, M-a7b.
-- [ ] **T-a7 (AC-a1, AC-a8, AC-a10)** — trois commentaires.
+- [ ] **T-a6 (AC-a9)** — sonde ; M-a3. *(L'AC-a11 est retiré, C-32-1-38.)*
+- [ ] **T-a7 (AC-a1, AC-a8, AC-a10)** — commentaires : B1, E7, `gardes_possedes`, et les limites de `code()`,
+  `argument_de`, `corps()` avec le renvoi à [#727] (aucune ligne de code des helpers).
 - [ ] **T-a8 (AC-a12, AC-a13)** — gates complets, E2E complet ; Dev Agent Record chiffré.
 
 ---
@@ -282,7 +262,8 @@ est parti laisse une ligne de renvoi (AC-b6 ; M-b5, M-b6), pour que les référe
 restent lisibles.*
 
 **Modules** : frontend (trois dossiers de `src/lib/` — `features/admin-backup/` ; `features/admin-restore/`, pour le seul
-prédicat extrait (AC-b2) ; `shared/utils/`, un module neuf et son test — et `tests/e2e/backup-schedule.spec.ts`),
+prédicat extrait (AC-b2) ; `shared/utils/`, un module neuf et son test — et `tests/e2e/backup-schedule.spec.ts` ; plus
+la constante de la garde de comptage `shared/i18n-keys.test.ts`, comptée avec l'i18n, AC-b8),
 `kesh-i18n` (catalogues, quatre locales : deux clés neuves, une modifiée), manuel d'administration FR (`.tex` et PDF) —
 **3** au grain des crates et paquets ; **5** au grain des modules métier de premier niveau que cite `CLAUDE.md`
 (`features/admin-backup`, `features/admin-restore`, `shared/utils`, `kesh-i18n`, le manuel). **Aucun fichier Rust** n'est
@@ -320,14 +301,24 @@ après les deux (Dev Notes, § *Pourquoi quatre clés*).
      (`features/admin-restore/AdminRestorePanel.svelte:61-68`), à **extraire** dans un module partagé
      (`frontend/src/lib/shared/utils/`, nom au développement) et employé par les deux écrans (règle DRY ; aucun
      comportement de l'import ne change, le prédicat extrait restant faux pour une erreur qui n'est pas une
-     `ApiError`) ; **ou** (b) un rejet qui **n'est pas** une `ApiError` — le cas réel : un 200 dont le corps ne se lit pas,
-     que `request()` rend `undefined` (`api-client.ts:480-484`, `catch { return undefined as T; }`), si bien qu'`applyState(undefined)` lève ; la sauvegarde,
-     elle, est écrite. `runNow` teste donc `!isApiError(err) || <prédicat>(err)` → `runError` =
+     `ApiError`). Le module neuf importe `isApiError` de **`./api-error`**, non de `./api-client` (comme le fait
+     aujourd'hui `AdminRestorePanel.svelte:20`) : l'en-tête d'`api-error.ts` (l. 5-9) dit que dix-huit fichiers de test
+     simulent `$lib/shared/utils/api-client` par une fabrique qui ne fournit presque jamais `isApiError`, si bien
+     qu'un écran qui emploierait le prédicat casserait sous ces tests ; **ou** (b) un rejet qui **n'est pas** une `ApiError` — le cas réel : un 200 dont le corps ne se lit pas,
+     que `request()` rend `undefined` (`api-client.ts:480-484`, `catch { return undefined as T; }`), si bien qu'`applyState(undefined)` lève ; la tentative,
+     elle, est terminée (l'archive écrite si elle a réussi ; voir la limite ci-dessous). `runNow` teste donc `!isApiError(err) || <prédicat>(err)` → `runError` =
      `admin-backup-auto-run-unknown` (« La réponse du serveur n'est pas parvenue : la sauvegarde a peut-être été écrite,
      ou s'écrit encore. L'écran relit l'état et la liste ci-dessous ; une sauvegarde encore en cours n'y paraît pas
      terminée : rechargez la page dans quelques minutes. », valeur fr-CH à reprendre telle quelle ou à affiner, quatre
      locales — elle ne dit **pas** que la relecture a réussi, ni que l'état relu est le résultat), puis relecture de
-     l'état et de la liste. **Pourquoi « s'écrit encore »** (C-32-1-30) : un proxy coupe avant la fin (502/504) pendant
+     l'état et de la liste. **Limite assumée, cas (b)** (validation P3, F10 ; C-32-1-38) : pour le 200 au corps
+     illisible, la réponse **est** parvenue et la sauvegarde est **terminée** — réussie ou en échec : le 200 rend
+     l'état *après* la tentative, quel que soit son statut (`routes/backup_schedule.rs:144-146`) — ; la relecture montre
+     alors son résultat, et la première moitié du message (« pas parvenue ») comme « ou s'écrit
+     encore » y sont inexactes ; le message ne reste vrai que par sa disjonction (« a peut-être été écrite »). C'est le
+     prix d'un message unique pour un cas rare (un corps de 200 abîmé en route) ; une variante propre (une clé de plus)
+     n'est pas prescrite. Le message n'est donc **pas** « vrai dans chaque cas » : il l'est pour TIMEOUT, NETWORK_ERROR,
+     502 et 504. **Pourquoi « s'écrit encore »** (C-32-1-30) : un proxy coupe avant la fin (502/504) pendant
      que la tâche `tokio::spawn` continue (`routes/backup_schedule.rs:152`) ; la relecture tombe alors entre
      `record_attempt` (qui ne pose que `last_attempt_at`, `repositories/backup_schedule.rs:250-258`) et
      `record_success`/`record_failure` : le panneau montre la date de la tentative en cours avec le statut de la
@@ -399,17 +390,20 @@ après les deux (Dev Notes, § *Pourquoi quatre clés*).
    seul `de-CH` → le maillon 2 rouge (journal de la seconde forme écrit aussi).
 6. **AC-b6 — déplacé** : L-B7 (le refus du réglage traduit) est l'**AC-d2** de la 32-1d (C-32-1-37).
 7. **AC-b7 — L-B3 et les autres phrases du manuel.** `docs/manual/fr/admin-manual.tex`, § *Sauvegarde automatique* :
-   - *Espace disque requis* (l. 2349) : le seuil **ne mesure pas la base** ; il la compte à travers la dernière
-     sauvegarde réussie, qui la contient. **Tant qu'aucune sauvegarde n'a réussi** (`last_success_bytes` absent, compté
-     0 : `auto_backup.rs:680-683` ; `seuil_d_espace`, l. 496-500), le seuil vaut 1,2 fois le total des documents plus
-     256 Mio : l'archive contenant la base **et** les documents, la base n'y est couverte que par la marge — un
+   - *Espace disque requis* (l. 2349) : le seuil **ne mesure pas la base** ; il ne la compte qu'à travers la dernière
+     sauvegarde réussie, qui la contient — et seulement quand celle-ci est **plus grande que les documents** :
+     `seuil_d_espace` (l. 496-500) part de `max(dernière, documents)` (validation P3, R5 ; C-32-1-38). **Quand la
+     dernière sauvegarde réussie n'est pas plus grande que les documents — en particulier avant la première**
+     (`last_success_bytes` absent, compté 0 : `auto_backup.rs:680-683`) —, le seuil vaut 1,2 fois le total des documents
+     plus 256 Mio : l'archive contenant la base **et** les documents, la base n'y est couverte que par la marge — un
      cinquième de la taille des documents, plus 256 Mio —, **quelle que soit** sa taille rapportée aux documents (C-32-1-33 ;
      la phrase « une base plus grosse que le dossier des documents n'est couverte que par 256 Mio », prescrite en P1,
-     était fausse dans les deux sens). Phrase à écrire, dans ce sens : « Le seuil ne mesure pas la base : il la compte à
-     travers la dernière sauvegarde réussie, qui la contient. Tant qu'aucune sauvegarde n'a réussi, la base n'y est
-     couverte que par la marge — un cinquième de la taille des documents, plus 256 Mio — : si la base dépasse cette marge,
-     le disque peut se remplir pendant l'écriture (le cas que le paragraphe décrit ensuite : fichier partiel supprimé,
-     sauvegardes existantes gardées). » (Placement et liaison avec la phrase du disque rempli au développement ; le
+     était fausse dans les deux sens). Phrase à écrire, dans ce sens : « Le seuil ne mesure pas la base : il ne la compte
+     qu'à travers la dernière sauvegarde réussie, qui la contient, quand celle-ci est plus grande que les documents.
+     Sinon — en particulier avant la première sauvegarde réussie —, la base n'y est couverte que par la marge — un
+     cinquième de la taille des documents, plus 256 Mio — : si la base dépasse cette marge, le disque peut se remplir
+     pendant l'écriture (le cas que le paragraphe décrit ensuite : fichier partiel supprimé, sauvegardes existantes
+     gardées). » (Placement et liaison avec la phrase du disque rempli au développement ; le
      contrôle aplati porte sur « un cinquième de la taille des documents ».) La **dernière phrase** du paragraphe (« Sur un NAS, la base partage souvent le volume du dossier de
      sauvegarde : ce seuil protège aussi la base. ») est réécrite pour ne plus contredire la précédente : le seuil ne
      mesure pas la base, mais en refusant d'écrire il évite de remplir le volume qu'elle partage ;
@@ -421,13 +415,18 @@ après les deux (Dev Notes, § *Pourquoi quatre clés*).
      pas encore dans la liste ; l'issue se lit en rechargeant la page une fois l'écriture finie (AC-b2) ;
    - *Le bandeau de l'application* (l. 2347) : un échec de lecture **garde** le dernier état lu ; et la phrase « « Aucune
      sauvegarde automatique réussie depuis le … » quand la dernière réussite date d'au moins deux intervalles » reçoit
-     son cas futur (renvoi à *Horloge du serveur déréglée* et au texte de l'AC-b4) ;
+     son cas futur (renvoi à *Horloge du serveur déréglée* et au texte de l'AC-b4). Cette phrase porte la locution que
+     la garde **G22** exige (`textes_coherents.rs`, `la_sauvegarde_automatique_dit_vrai`, l. 1599-1663 : sur tout
+     `admin-manual.tex` normalisé, elle exige « au moins deux intervalles » et « retentée au bout d'une heure. », et
+     refuse « plus de deux intervalles » et « retentée … plus court ») : la locution « au moins deux intervalles » reste, et
+     la phrase du cas futur n'emploie aucune tournure « plus de deux intervalles » (validation P3, F9) ;
    - *Horloge du serveur déréglée* (l. 2357) : le bandeau dit que la dernière réussite est datée **après** l'heure du
      serveur (texte de l'AC-b4), au lieu de « aucune sauvegarde réussie depuis le … » ;
    - *Les sauvegardes du serveur* (l. 2355) : la mention citée dans sa forme neuve (AC-b5).
    `make admin` sous verrou (T-b6) ; **contrôle aplati** du PDF (Dev Notes, § *Contrôle aplati d'un PDF* : apostrophe
    typographique normalisée, témoin positif d'abord) pour chaque phrase neuve, et `grep -c '??'` sur le texte aplati : 0.
-   Les gardes qui lisent le manuel restent vertes (`binary(textes_coherents)`, `binary(configuration_transmise)`).
+   Les gardes qui lisent le manuel restent vertes (`binary(textes_coherents)` — G22 nommément —,
+   `binary(configuration_transmise)`).
 8. **AC-b8 — i18n.** Deux clés neuves (`admin-backup-auto-run-unknown`, `admin-backup-banner-future`) et une modifiée
    (`admin-backup-server-too-large`, variable `$size`) dans les quatre catalogues — la troisième clé neuve d'origine,
    `admin-backup-schedule-error-out-of-domain`, est à la 32-1d (AC-d3) ; `parity_between_locales`
@@ -438,6 +437,14 @@ après les deux (Dev Notes, § *Pourquoi quatre clés*).
    `grep -c '^admin-backup-' crates/kesh-i18n/locales/*/messages.ftl` aux deux bornes — base de la 32-1b sur `main`
    **après** la fusion de la 32-1d, et sa tête —, **+2** par locale (la 32-1d en ajoute une, comptée à sa propre
    fusion).
+   **Garde de comptage des sites** (validation P3, R2) : `frontend/src/lib/shared/i18n-keys.test.ts` assert
+   `releve.sitesTotal` égal à `ATTENDU.sitesTotal` (l. 715 : **2332** au 2026-10-24, l. 1025) ; la 32-1b ajoute deux
+   sites `i18nMsg(` (`admin-backup-auto-run-unknown` dans `runNow`, `admin-backup-banner-future` dans
+   `BackupScheduleBanner.svelte`) : la constante est **relevée de 2** (2332 → 2334 attendu), avec le commentaire daté
+   qu'exige le fichier (story, valeurs aux deux bornes, commande `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('` recomptée par
+   fichier, périmètre déclaré, comme le paragraphe de la Story 31-1c au-dessus de la l. 715) ; un site de plus si la
+   relecture de l'AC-b2 réécrit le texte de `loadError` au lieu de le partager avec `loadSchedule` — le compte se lit à
+   la source, il ne se suppose pas. La 32-1d n'ajoute aucun site (clé servie par Rust seule).
 9. **AC-b9 — recette visuelle** (thème clair, base de démonstration, `kesh-gate-logs/321-captures/`) : (a) formulaire
    modifié conservé après « Sauvegarder maintenant » ; (b) message de réponse manquante (délai simulé par une route
    interceptée en E2E, ou Vitest à défaut — dire lequel) ; (c) bandeau « datée après l'heure du serveur » (prise après
@@ -548,7 +555,18 @@ procédure dit, sans changer aucune commande ni ajouter aucune consigne d'agir (
    branche**, `git show "$(git merge-base origin/main HEAD)":docs/manual/fr/marketing-brochure.pdf` — **jamais**
    `HEAD:`, qui, après le commit du PDF régénéré, désigne la version d'après et rendrait le contrôle vert par
    construction —, puis les deux `pdftotext` sont aplatis (`tr '\n' ' '`), privés de U+FFFD, de `+` et de `→`, et
-   comprimés (`tr -s ' '`) : textes **identiques** ; référence employée écrite au Dev Agent Record ; gate ciblé `binary(textes_coherents)` et
+   comprimés (`tr -s ' '`) : textes **identiques**. Commande exacte (validation P3, F5), lancée depuis la racine du
+   worktree — le retrait des caractères multioctets passe par `sed` avec les caractères **entiers**, écrits en
+   `$'…'` (un `tr -d '→'` agirait par octets et abîmerait d'autres caractères qui partagent l'octet E2, `’` compris) :
+   ```sh
+   git show "$(git merge-base origin/main HEAD)":docs/manual/fr/marketing-brochure.pdf \
+     > /home/gcorbaz/devel/kesh-gate-logs/321-brochure-avant.pdf
+   aplatir() { pdftotext "$1" - | tr '\n' ' ' | sed $'s/\xef\xbf\xbd//g; s/+//g; s/\xe2\x86\x92//g' | tr -s ' '; }
+   cmp <(aplatir /home/gcorbaz/devel/kesh-gate-logs/321-brochure-avant.pdf) \
+       <(aplatir docs/manual/fr/marketing-brochure.pdf) && echo identiques
+   ```
+   (témoin positif d'abord : `aplatir` sur le PDF d'avant rend un texte non vide qui contient « Conforme au Code des
+   obligations suisse ») ; référence employée et sortie de `cmp` écrites au Dev Agent Record ; gate ciblé `binary(textes_coherents)` et
    `binary(configuration_transmise)` (gardes G14 à G16, G19, qui lisent la sous-section) — C-32-1-18. Aucune commande de
    la sous-section ne change : `git diff` des `lstlisting` de `sec:repetition-cloture` **vide** (contrôle écrit au Dev
    Agent Record).
@@ -615,8 +633,10 @@ table : le `.keshbackup` ne change pas. **Fusionnée avant la 32-1b**, qui lit s
    pourquoi au Dev Agent Record. Le drapeau `lastSuccessInFuture` n'a aucun rendu dans la 32-1d (capture (c) de la
    32-1b).
 5. **AC-d5 — gates.** Gate backend **complet** (`scripts/test-fast.sh`, base remise à zéro) avant le push ; en boucle de
-   revue, gate ciblé `binary(admin_auto_backup_e2e)`, `binary(i18n_e2e)`, `binary(textes_coherents)` et les tests du
-   `mod tests` d'`auto_backup.rs` (pas de `kesh-db` : le ciblage est permis) ; les quatre gates frontend (les catalogues
+   revue, gate ciblé `binary(admin_auto_backup_e2e)`, `binary(i18n_e2e)`, `binary(textes_coherents)`, les tests du
+   `mod tests` d'`auto_backup.rs` et ceux de `kesh-i18n` (`cargo nextest run -p kesh-i18n` : la parité des catalogues,
+   `parity_between_locales`, qu'exige l'AC-d3 — sans eux, une clé oubliée dans une locale ne rougirait qu'au gate
+   complet ; validation P3, F7) (pas de `kesh-db` : le ciblage est permis) ; les quatre gates frontend (les catalogues
    changent) ; **E2E complet au dernier commit de code** — la réponse servie change, et `backup-schedule.spec.ts` tourne
    contre elle —, jugé fichier par fichier contre `docs/testing.md` § *Les échecs attendus*.
 6. **AC-d6 — mutations** M-d1 et M-d2 (deux ; même protocole que l'AC-a13).
@@ -638,8 +658,9 @@ table : le `.keshbackup` ne change pas. **Fusionnée avant la 32-1b**, qui lit s
 
 Les quatre parties se développent **séparément**, mais elles ne sont pas sans fichier commun (C-32-1-27, amendé par
 C-32-1-37) :
-- **32-1a et 32-1d** partagent trois fichiers de code, en hunks distincts : `crates/kesh-api/src/auto_backup.rs` (A : la
-  déclaration `#[cfg(test)]` de `mod lexique` en tête, et les helpers lexicaux du `mod tests`, l. 1117-1201 ; D :
+- **32-1a et 32-1d** partagent trois fichiers de code, en hunks distincts : `crates/kesh-api/src/auto_backup.rs` (A : les
+  doc-comments des helpers lexicaux et de `gardes_possedes` du `mod tests`, l. 1117-1201 — commentaires seuls depuis le
+  retrait de l'AC-a11, C-32-1-38 ; D :
   `is_success_in_future` près de `is_overdue`, l. 221, et ses tests près de `is_overdue_dans_le_futur`, l. 950, dans le
   même `mod tests`), `crates/kesh-api/tests/admin_auto_backup_e2e.rs` (A : `TestEnv` l. 55-129 et
   `dossier_auto_inutilisable` l. 684 ; D : `prochaine_et_retard` l. 1121) et `crates/kesh-api/tests/textes_coherents.rs`
@@ -657,6 +678,11 @@ C-32-1-37) :
   pas le manuel : aucun ordre de plus sur le PDF.
 - **32-1a et 32-1b** ne partagent plus aucun fichier (la 32-1a touche `fiscal-years-page.test.ts`, non
   `features/admin-backup/`).
+- **32-1b, 32-1c et 32-1d** partagent `CHANGELOG.md` (validation P3, F4) : **un seul** bloc `## [0.16.0] — Non publié`,
+  créé par la première des 32-1c et 32-1d qui fusionne (*Fichiers touchés*, CHANGELOG). Les deux étant fusionnables
+  dans l'ordre qu'on veut et développées en parallèle, chacune écrit le bloc sur sa branche : **le conflit textuel est
+  prévu** au rebase de la seconde, qui le résout en gardant le bloc de `main` et en y ajoutant sa seule ligne sous
+  `### Corrigé` (jamais un second bloc) ; la 32-1b, fusionnée en dernier, fait de même. La 32-1a n'y écrit rien.
 - **Ordre de fusion** : 32-1a quand elle est prête ; **32-1c** et **32-1d** dans l'ordre où elles sont prêtes ; **32-1b
   en dernier des trois clés B, C, D**. Contraintes, et seulement elles : 32-1c → 32-1b ; 32-1d → 32-1b ; la seconde des
   32-1a et 32-1d à fusionner se rebase et repasse son gate complet (fichiers communs).
@@ -666,11 +692,16 @@ C-32-1-37) :
   union. Le registre ne reçoit que des entrées neuves, numérotées à la suite au moment de l'écriture.
 
 Mots-clés de PR (à poser par l'orchestrateur, **jamais dans un commit**) : 32-1a `closes #716` ; **`closes #711` porté
-par celle des clés qui touchent #711 — 32-1a, 32-1b, 32-1d — qui fusionne EN DERNIER** (E-9 est dans la 32-1a, L-B5 et
+par celle des clés qui touchent #711 — 32-1a, 32-1b, 32-1d — qui fusionne EN DERNIER** (E-9 (1) et (2) — et l'angle mort écrit de E-9 (3) — dans la 32-1a, L-B5 et
 L-B7 dans la 32-1d, le reste dans la 32-1b ; E-1 et E-2 sont dans [#725], déjà ouverte), les autres portant
 `refs #711`. La 32-1d fusionnant toujours avant la 32-1b, elle porte **toujours** `refs #711` ; `closes #711` va donc à
 la dernière des 32-1a et 32-1b — à décider au moment d'ouvrir la seconde de ces deux PR, et à vérifier après fusion
-(`gh issue view 711 --json state`) ; 32-1c `closes #714` ([#726] étant ouverte).
+(`gh issue view 711 --json state`) ; 32-1c `closes #714` ([#726] étant ouverte). **Depuis la validation P3**
+(C-32-1-38), E-9 (3) n'est plus traité par la story : #711 se ferme quand même, chacun de ses constats ayant alors un
+sort écrit — corrigé (32-1a, 32-1b, 32-1d), ou suivi ailleurs : E-1 et E-2 par [#725], **E-9 (3) par [#727]**. Le corps
+de la PR qui porte `closes #711` le dit en toutes lettres (« E-1 et E-2 suivis par #725 ; E-9 (3) suivi par #727, où
+le commentaire de la Story 32-1 le verse »), et le commentaire sur #727 est versé **avant** cette fusion ; sinon, la
+PR porte `refs #711` et #711 reste ouverte.
 
 ### Contrôle aplati d'un PDF (AC-b7, AC-c7, AC-c9)
 
@@ -699,17 +730,13 @@ une, l'ajouter au `sed`.
   l'assertion de montage relit en base plutôt que de le supposer. Les `UPDATE` directs se font **après** le `commit`
   de (t1) : faits sur le pool pendant (t1), ils attendraient le verrou de la ligne de réglages tenu par la transaction.
 - **AC-a9** : la sonde ne change pas `BackupEnv` (trait de production) ; elle vit dans le fichier de test.
-- **AC-a11** : les helpers sont dans `mod tests` d'un fichier de production : leur modification ne change aucune ligne
-  servie, mais le fichier est relu en revue comme du code. Le balayeur est `lexique::decouper` (C-32-1-32), qui ne vise
-  pas tout Rust (pas de `syn`, C-32-1-6) : il couvre les formes présentes dans les cinq fichiers lus (`main.rs`,
-  `lib.rs`, `routes/admin.rs`, `routes/backup_schedule.rs`, `auto_backup.rs` — relevé aux validations P1 et P2 : chaînes
-  brutes `r"…"` aux `auto_backup.rs:66`, `:72`, durées de vie `&'static` aux `auto_backup.rs:258` et
-  `routes/backup_schedule.rs:194`, aucun littéral de caractère, aucune chaîne d'octets ni label hors `mod tests` ;
-  `lib.rs:1179` et `:1196` portent `/*` **dans des `//`**, que le bras `//` de `decouper` traite d'abord) ; ses limites
-  connues (un `'\''` mal lu) sont hors de ces fichiers. L'extension aux blocs imbriqués change `decouper` pour ses deux
-  utilisateurs actuels dans le sens juste (aucun `/*` imbriqué dans les sources qu'ils lisent : à vérifier par
-  `binary(letterings_lexical)` et `binary(bank_account_closed_inventory)` verts) ; le fichier `lexique/mod.rs` étant
-  sous `kesh-db/tests/`, le gate complet de la 32-1a le couvre déjà (🗄️).
+- **AC-a10, AC-a11** : l'AC-a11 est retiré (C-32-1-38). Les doc-comments que l'AC-a10 ajoute aux helpers lexicaux
+  décrivent leur comportement **actuel**, sans le changer : la 32-1a ne touche ni `crates/kesh-db/tests/lexique/mod.rs`
+  ni une ligne de code des helpers, et ne déclare aucun module `lexique` dans `auto_backup.rs`. Le piège qu'avait la
+  troisième rédaction (une déclaration `#[cfg(test)]` placée avant le code de production tronquait `code()`, qui
+  s'arrête au premier `#[cfg(test)]` : l'assertion `try_lock_owned()` de `gardes_possedes` rougissait, et sa boucle
+  des jetons interdits passait à vide sur `auto_backup.rs` — validation P3, R1 = F1) est versé
+  au commentaire de [#727], pour que l'extraction ne le rejoue pas.
 
 ### 32-1b — remarques de conception
 
@@ -818,9 +845,14 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
 - **Mention de taille en Mio ailleurs** : `admin-backup-exceeds-import-limit` (`AdminBackupPanel.svelte:96-99`) dit
   « (N Mio) » sans afficher la taille du fichier à côté : pas de juxtaposition d'unités, hors classe de L-B6.
 - **Date ISO** : `2026-02-30` reste une date pour `nombres_isoles` (AC-a7, limite écrite).
-- **Gardes lexicales** : `corps()` lit la copie masquée (AC-a11, C-32-1-32) : un `\n}` **dans une chaîne** n'y coupe
-  plus (le `}` y est effacé, la fin de ligne gardée) ; la limite qui reste est la règle rustfmt (un item de tête se
-  ferme par `}` en colonne 0), écrite à son doc-comment.
+- **Gardes lexicales d'`auto_backup.rs`** (E-9 (3), C-32-1-38) : **non corrigées** par la story. `code()` lit comme
+  du code les commentaires de fin de ligne, les blocs `/* … */` et le contenu des chaînes ; `argument_de` compte les
+  parenthèses des chaînes et des littéraux de caractère ; `corps()` coupe au premier `\n}`, chaîne comprise, et repose
+  sur rustfmt. Angle mort assumé, écrit à leurs doc-comments (AC-a10), suivi par [#727]. Constaté le 2026-10-24
+  (remédiation P3, `grep`) : les deux jetons exigés par `code()` seul sont du code (`main.rs:383`
+  `auto_backup::spawn(` ; `auto_backup.rs:669` `try_lock_owned()`), et les cinq fichiers lus n'ont aucun `/*` hors
+  des trois de `lib.rs` (l. 1179 et 1196 dans des `//`, l. 1186 dans une chaîne), que `code()` n'interprète pas ; les
+  jetons que `gardes_possedes` cherche par `corps()` et `argument_de` n'ont **pas** été relus ici.
 - **Signes sans glyphe dans les PDF** (classe recensée par son symptôme, U+FFFD) : après la 32-1c, **0** dans les trois
   PDF FR (AC-c7) ; aucun autre PDF de manuel n'est versionné (`ls docs/manual/*/*.pdf` : les trois FR seulement).
 - **⚠️ hors des manuels FR** : `crates/kesh-report/src/pdf.rs:1532` écrit `⚠` dans un titre de PDF de rapport ; police et
@@ -843,13 +875,17 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
   `split("#[cfg(test)]")` sur la source brute — tronqué aussi par un `"#[cfg(test)]"` écrit dans une chaîne) et `:928`
   (`decommente`, filtre `//` ligne à ligne) ; `crates/kesh-db/tests/test_schema_guard.rs:818-827` (profondeur de bloc
   comptée par `matches("/*")` et `matches("*/")` ligne à ligne, filtre `//` à la l. 825 — sans connaissance des
-  chaînes). **Un analyseur juste existe déjà** : `crates/kesh-db/tests/lexique/mod.rs` (`decouper`, `blocs_de_test`,
-  Story 28-4a, #642), employé par `letterings_lexical.rs` et `bank_account_closed_inventory.rs` — c'est lui que l'AC-a11
-  réemploie (C-32-1-32), et c'est la cible naturelle de l'extraction.
-  L'AC-a11 ne corrige que celle d'`auto_backup.rs` (constat E-9 (3)) ; les autres gardent la limite — **hors périmètre,
-  non corrigées ici**, suivies par **[#727]** (ouverte le 2026-10-24 par l'orchestrateur, `technical-debt`, `P3`, sur la
-  demande de la remédiation P1), dont le texte ne nomme ni les quatre sites de `kesh-db` ni `lexique` : commentaire à
-  verser (*Commentaires à verser*, ci-dessous).
+  chaînes). **Complété à la validation P3** (R3) : `crates/kesh-api/tests/admin_pat_denied_e2e.rs:124`
+  (`strip_line_comments`, `l.split("//").next()` sur la source de `lib.rs` — coupe aussi un `//` écrit dans une chaîne,
+  limite que son doc-comment, l. 115-123, assume en s'appuyant sur le test compagnon
+  `lib_rs_has_no_double_slash_inside_literals`). **Un analyseur juste existe déjà** : `crates/kesh-db/tests/lexique/mod.rs`
+  (`decouper`, `blocs_de_test`, Story 28-4a, #642), employé par `letterings_lexical.rs` et
+  `bank_account_closed_inventory.rs` — c'est la cible naturelle de l'extraction.
+  **Depuis la validation P3** (C-32-1-38), la story n'en corrige **aucune** : celle d'`auto_backup.rs` (constat E-9 (3))
+  rejoint les autres — **hors périmètre, non corrigées ici**, suivies par **[#727]** (ouverte le 2026-10-24 par
+  l'orchestrateur, `technical-debt`, `P3`, sur la demande de la remédiation P1), dont le texte ne nomme ni les sites de
+  `kesh-db`, ni celui d'`admin_pat_denied_e2e.rs`, ni `lexique`, ni le renvoi de E-9 (3) : commentaire à verser
+  (*Commentaires à verser*, ci-dessous).
 
 ### Commentaires à verser (par l'orchestrateur ; la remédiation P2 n'ouvre aucune issue)
 
@@ -864,7 +900,48 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
 > pouvoir le montrer ; le signal « tentative en cours » de la partie 1 le fermerait (par exemple un champ servi tiré de
 > l'état du verrou, ou une date de fin de tentative).
 
-**Sur [#727]** (C-32-1-35) :
+**Sur [#727]** (C-32-1-35, **remplacé par C-32-1-38** : le texte à verser est celui de la validation P3, ci-dessous ;
+celui de la validation P2 est gardé pour la trace — sa dernière phrase est fausse depuis le retrait de l'AC-a11 —, et
+n'est **pas** à verser s'il ne l'a pas déjà été ; s'il l'a été, le texte P3 le corrige) :
+
+> **Texte à verser (validation P3, 2026-10-24) :**
+>
+> Complément (Story 32-1, validations P2 et P3) — il remplace et corrige tout complément antérieur de la Story 32-1.
+>
+> **1. Le constat E-9 (3) de #711 rejoint cette issue.** Les trois helpers des gardes lexicales du `mod tests` de
+> `crates/kesh-api/src/auto_backup.rs` lisent la source ligne à ligne : `code()` (l. 1121) n'écarte que les lignes
+> entières qui commencent par `//` et tronque à la première ligne `#[cfg(test)]` — un commentaire de fin de ligne, un
+> bloc `/* … */` et le contenu des chaînes y restent du code ; `argument_de` (l. 1159) compte les parenthèses écrites
+> dans une chaîne ou un littéral de caractère ; `corps()` (l. 1182) coupe au premier `\n}`, chaîne comprise. Le sens
+> dangereux est muet : un jeton **exigé** par une garde, écrit seulement dans un commentaire de bloc ou une chaîne, la
+> satisferait. La Story 32-1a devait les corriger ; elle ne le fait plus — trois rédactions successives de la
+> correction, trois défauts, chacun né du correctif précédent — et écrit seulement leur limite à leurs doc-comments, avec
+> un renvoi ici. #711 se ferme en renvoyant E-9 (3) à cette issue, comme E-1 et E-2 à #725.
+>
+> **2. Un piège pour l'extraction, rencontré par la dernière rédaction.** Déclarer le module partagé par
+> `#[cfg(test)] #[path = "../../kesh-db/tests/lexique/mod.rs"] mod lexique;` **en tête** d'un fichier de production
+> dont une garde relit la source par `include_str!` et la tronque « au premier `#[cfg(test)]` » coupe tout le code de
+> production : dans `auto_backup.rs`, l'assertion `try_lock_owned()` de `gardes_possedes` rougissait, et sa boucle des
+> jetons interdits passait à vide sur ce fichier. La déclaration doit suivre le dernier item de production (juste avant
+> `#[cfg(test)] mod tests`), ou la troncature se faire au `#[cfg(test)]` de `mod tests` (`blocs_de_test` de `lexique`),
+> avec une assertion de montage sur un jeton de production connu. Le chemin `#[path]` se résout depuis `src/` hors
+> module en ligne ; dans le `mod tests` en ligne, il se résoudrait sous `src/auto_backup/tests/`.
+>
+> **3. L'inventaire, sur tout `crates/`** (celui de l'issue ne couvrait que `kesh-api`) :
+> `crates/kesh-db/src/backup.rs:1950-1951` (`corps_de_production`, même forme) ;
+> `crates/kesh-db/src/repositories/closing_checks.rs:922` (`hors_tests`, `split("#[cfg(test)]")` sur la source brute)
+> et `:928` (`decommente`) ; `crates/kesh-db/tests/test_schema_guard.rs:818-827` (blocs comptés ligne à ligne, sans
+> les chaînes) ; `crates/kesh-api/tests/admin_pat_denied_e2e.rs:124` (`strip_line_comments`, `split("//")` sur la
+> source de `lib.rs` : limite assumée par son doc-comment et par le test `lib_rs_has_no_double_slash_inside_literals`) ;
+> et `auto_backup.rs` (point 1).
+>
+> **4. Un analyseur lexical juste existe déjà** : `crates/kesh-db/tests/lexique/mod.rs` (`decouper` : chaînes
+> ordinaires et brutes, commentaires, caractères distingués des durées de vie, copie masquée de même longueur, fins de
+> ligne gardées ; ses blocs `/* … */` ne s'imbriquent pas, alors que Rust les imbrique), inclus par `#[path]` dans
+> `crates/kesh-api/tests/bank_account_closed_inventory.rs:61` et employé par `crates/kesh-db/tests/letterings_lexical.rs`.
+> L'extraction demandée ici est donc un réemploi, non un balayeur neuf.
+
+*Texte de la validation P2 (trace, à ne pas verser) :*
 
 > Complément (Story 32-1, validation P2) : l'inventaire de cette issue ne couvrait que `kesh-api`. Sur tout `crates/` :
 > `crates/kesh-db/src/backup.rs:1950-1951` (`corps_de_production`, même forme) ; `crates/kesh-db/src/repositories/closing_checks.rs:922`
@@ -878,8 +955,8 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
 ### Fichiers touchés (prévus)
 
 - **32-1a** : `crates/kesh-api/src/routes/invoice_pdf_service.rs` (commentaire, `mod tests`) ;
-  `crates/kesh-api/src/auto_backup.rs` (`mod tests`, et la déclaration `#[cfg(test)]` de `mod lexique`) ;
-  `crates/kesh-db/tests/lexique/mod.rs` (blocs imbriqués) ; `crates/kesh-api/tests/audit_log_e2e.rs` ;
+  `crates/kesh-api/src/auto_backup.rs` (doc-comments du `mod tests` seulement, AC-a10 ; ni module `lexique`, ni code des
+  helpers — C-32-1-38) ; `crates/kesh-api/tests/audit_log_e2e.rs` ;
   `crates/kesh-api/tests/textes_coherents.rs` ; `crates/kesh-api/tests/admin_auto_backup_e2e.rs` ;
   `crates/kesh-db/src/repositories/company_invoice_settings.rs` (doc-comment) ;
   `crates/kesh-db/tests/company_invoice_settings_repository.rs` ;
@@ -888,6 +965,7 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
   BackupScheduleBanner.svelte, BackupScheduleBanner.test.ts, backup-schedule.svelte.ts, backup-schedule.api.ts,
   backup-schedule.api.test.ts}` ; `frontend/src/lib/features/admin-restore/AdminRestorePanel.svelte` et un module
   partagé neuf sous `frontend/src/lib/shared/utils/` avec son test (prédicat d'issue inconnue extrait, AC-b2) ;
+  `frontend/src/lib/shared/i18n-keys.test.ts` (`ATTENDU.sitesTotal`, AC-b8) ;
   `frontend/tests/e2e/backup-schedule.spec.ts` ; `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ;
   `docs/manual/fr/admin-manual.{tex,pdf}`. Aucun fichier Rust (C-32-1-37).
 - **32-1d** : `crates/kesh-api/src/auto_backup.rs` ; `crates/kesh-api/src/routes/backup_schedule.rs` ;
@@ -1097,6 +1175,49 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
     vérifié, partie D lue). Registre : C-32-1-37 ; amendements datés de C-32-1-17, 18, 27, 28, 36. Propagation grepée
     dans la fiche (`trois clés`, `M-b5`, `M-b6`, `AC-b6`, `T-b1`, `is_success_in_future`, `i18n_e2e`, `+3`,
     `32-1b et 32-1c`, `32-1a et 32-1b`).
+  - *Annotation de la validation P3 (2026-10-24, F2 = R4, F3) : le motif écrit ci-dessus était faux à sa date sur un
+    point — le recyclage (R1 de la P2) porte sur l'AC-a11, à la **32-1a**, que ce découpage ne touche pas ; seule la
+    dispersion (7 modules au grain métier) justifiait de découper la 32-1b, et elle suffit. Et l'amendement de C-32-1-26
+    (« première des 32-1b et 32-1c ») n'avait pas été propagé : il l'est par la P3. Voir C-32-1-37 (amendé) et
+    C-32-1-38.*
+- 2026-10-24 — **Validation P3** (Sonnet 5.5, deux lentilles en contexte frais, lecture seule ; prompt
+  `321-validate-prompt-p3.md` ; rapports `kesh-gate-logs/321-validate-p3-R.md` et `321-validate-p3-F.md`). Lentille R :
+  **0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW** (R1 à R5) ; lentille F : **0 CRITICAL, 0 HIGH, 2 MEDIUM, 8 LOW** (F1 à F10).
+  Recoupements : **F1 = R1** ; **F2 = R4** (F2 classé MEDIUM, R4 LOW : retenu à la plus haute) — soit **2 MEDIUM
+  distincts** (R1 = F1, F2 = R4) et **11 LOW distincts** (R2, R3, R5, F3 à F10). La lentille F déclare une entorse (une
+  redirection vers `/tmp/claude-1000/`, fichier non relu, hors dépôt). Remédiation (Opus 5.5) :
+  - **R1 = F1** (MEDIUM ; origine : remédiation P2, troisième rédaction de l'AC-a11) — l'inclusion de `lexique` « en
+    tête » d'`auto_backup.rs` tronquait `code()` avant tout le code de production (`gardes_possedes` rouge sur
+    `try_lock_owned()`, muette sur ses jetons interdits). **Décision de l'orchestrateur : retrait**, sur le signal de
+    recyclage (trois rédactions, trois défauts, chaque remédiation introduisant le suivant). L'AC-a11, M-a7a, M-a7b et
+    le réemploi de `lexique` sortent de la 32-1a ; E-9 (3) est renvoyé à **[#727]** (commentaire P3 à verser, qui
+    remplace celui de la P2 et consigne le piège) ; l'angle mort est écrit aux doc-comments des helpers (AC-a10 élargi,
+    commentaires seuls). #711 se ferme toujours par la dernière des 32-1a et 32-1b, son corps de PR écrivant « E-9 (3)
+    suivi par #727 » ; bilan d'issues inchangé (**0** issue, **−1** bug). Mutations de la 32-1a : **huit** (M-a1a à
+    M-a6). C-32-1-38 ; annotations datées de C-32-1-6, 20, 32.
+  - **F2 = R4** (MEDIUM ; origine : découpage) — motif du découpage corrigé (dispersion seule pour la 32-1b ; le
+    recyclage était sur la 32-1a) : amendement daté de C-32-1-37, annotation de l'entrée « Découpage » ci-dessus. Grain
+    métier de la 32-1a écrit après le retrait : **6** (3 au grain des crates) — au-delà de cinq, **signal déclaré au
+    Project Lead**, sans découpage (AC indépendants, recyclage sorti). C-32-1-38.
+  - LOW : **R2** — `i18n-keys.test.ts` (`ATTENDU.sitesTotal` 2332, l. 715) nommé à l'AC-b8 et aux *Fichiers touchés*
+    de la 32-1b, relevé de 2 avec commentaire daté. **R3** — `admin_pat_denied_e2e.rs:124` ajouté à l'*Inventaire* et au
+    commentaire de #727. **R5** — phrase de l'espace disque : la base n'est comptée à travers la dernière sauvegarde que
+    si celle-ci dépasse les documents (`seuil_d_espace` prend le `max`) ; « tant que la dernière sauvegarde réussie n'est
+    pas plus grande que les documents, en particulier avant la première ». **F3** — amendement daté de C-32-1-26
+    (« première des 32-1c et 32-1d »). **F4** — `CHANGELOG.md` nommé parmi les fichiers communs des 32-1b, 32-1c,
+    32-1d (un seul bloc, conflit prévu au rebase de la seconde). **F5** — AC-c9 : commande exacte, `sed $'…'` sur les
+    caractères entiers, `cmp` sur deux substitutions de processus. **F6** — en-tête de la clé 32-1b de
+    `sprint-status.yaml` annoté (L-B7 à la 32-1d). **F7** — AC-d5 : `cargo nextest run -p kesh-i18n` au gate ciblé.
+    **F8** — AC-b2 : le module du prédicat importe `isApiError` de `./api-error`. **F9** — AC-b7 : G22 nommée, aucune
+    tournure « plus de deux intervalles ». **F10** — AC-b2 : pour le 200 au corps illisible, la tentative est terminée
+    (réussie ou en échec) ; la limite du message unique est écrite (vrai pour TIMEOUT, NETWORK_ERROR, 502, 504).
+  - **Tendance** : P1 4 MEDIUM → P2 6 → P3 **2** distincts, dont un recyclage (R1, retiré) et un motif de compte rendu
+    (F2). La remédiation P3 touche une AC de code (l'AC-a11 retirée, l'AC-a10 élargie à des commentaires) : **une passe
+    P4 est due** — ciblée, une lentille (regression hunter sur la spec), Haiku, sur le seul diff de cette remédiation
+    (`321-validate-prompt-p4.md`) ; la boucle ne se clôt que sur une passe sans finding au-dessus de LOW.
+  - Propagation grepée dans la fiche, le registre et `sprint-status.yaml` (`AC-a11`, `lexique`, `M-a7`, `en tête`,
+    `decouper`, `E-9 de #711`, `neuf ;`, `est écrite`, `Tant qu'aucune sauvegarde`, `32-1b et 32-1c`, `2332`). Les
+    entrées passées du Change Log (P1, P2) ne sont pas réécrites.
 
 [#711]: https://github.com/guycorbaz/kesh/issues/711
 [#714]: https://github.com/guycorbaz/kesh/issues/714
