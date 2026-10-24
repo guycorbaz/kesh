@@ -3,8 +3,8 @@
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-5`, branche `story/32-5` partie de `main`
-`e59d63e8` ; remédiée après les validations P1 et P2 le même jour. Registre : `epic-32-choix-autonomes-325.md` (C-32-5-1 à
-C-32-5-27). Clé courte : `325`. Issue de l'epic : #723 (CR « Serveur MCP intégré à Kesh ») ; issue voisine : #722
+`e59d63e8` ; remédiée après les validations P1 à P4 le même jour. Registre : `epic-32-choix-autonomes-325.md` (C-32-5-1 à
+C-32-5-28). Clé courte : `325`. Issue de l'epic : #723 (CR « Serveur MCP intégré à Kesh ») ; issue voisine : #722
 (« la sauvegarde emporte tout ce qu'il faut pour redémarrer, hors `.env` ») — toutes deux en `refs` seulement. Les
 numéros de ligne cités sont ceux de `e59d63e8`.*
 
@@ -232,8 +232,9 @@ quatrième consommateur, un fichier de tests et deux passages du manuel (F3, F4,
 modules : elle se scinde en **b** (authentification) et **d** (remise à zéro et réparation), chacune sous le plafond.
 La validation P2 (F3) ajoute à la 32-5a `onboarding_audit_e2e.rs` (module `routes`) : **5**. Recompte (P2, F8) :
 **17 modules en somme** des quatre parties (5 + 3 + 4 + 5), **10 distincts** — *recompté en P3 (F9) : la 32-5b
-compte aussi `middleware` par ses tests, d'où **18 en somme** (5 + 4 + 4 + 5), **11 distincts*** (`kesh-db`, `kesh-seed`, `kesh-i18n`,
-docs, `kesh-api/auth`, `services`, `routes`, `exports`, `audit_labels`, `admin_backup`).
+compte aussi `middleware` par ses tests, d'où* **18 en somme** (5 + 4 + 4 + 5), **11 distincts** (`kesh-db`,
+`kesh-seed`, `kesh-i18n`, docs, `kesh-api/auth`, `services`, `routes`, `exports`, `audit_labels`, `admin_backup`,
+`middleware`).
 
 **Aucun état intermédiaire n'ouvre d'accès ni ne fait mentir un texte** : après 32-5a, les tables existent et sont
 sauvegardées, mais aucune clé ne se crée ni ne s'authentifie ; après 32-5b, une clé s'authentifie au service, mais
@@ -341,8 +342,9 @@ passages du manuel qui les décrivent (C-32-5-22).
     tables entrent à l'inventaire et referment la fenêtre ; **`20261010000001` passe au registre retiré et à
     `EXEMPT_MIGRATIONS`**, ce que la ligne dit — patron de la ligne de la 25-2-c, `:91`) ; la ligne de `20261010000001`
     (`:99`, « inscrite au registre … en CLASSE A …, rejouée à chaque import ») gagne la mention « retirée du registre
-    par la 32-5, exemptée Hors fenêtre depuis 20261025000001 », et celle de `20261010000002` (`:100`) la même pour son
-    coût assumé ; la ligne `:89` (`20260910000001`), restée au présent depuis la 25-2-c, est signalée au Change Log ; en-tête `## Table d'audit (84 migrations)`, `Total` 84
+    par la 32-5a, exemptée Hors fenêtre depuis 20261025000001 », et celle de `20261010000002` (`:100`), qui n'a jamais
+    été au registre, dit seulement que son coût assumé ne se présente plus : une sauvegarde d'avant la 15-1a2-ii est
+    refusée au contrôle de couverture depuis 20261025000001 ; la ligne `:89` (`20260910000001`), restée au présent depuis la 25-2-c, est signalée au Change Log ; en-tête `## Table d'audit (84 migrations)`, `Total` 84
     (« + 1 Story 32-5 »), `tracked-by-sqlx` 74, `yes` 10, `no` 0 — **recomptés** :
     `ls crates/kesh-db/migrations/*.sql | wc -l` et `grep -c '^| \`20' docs/migrations-idempotence-audit.md` → 84 et
     84, et somme des trois partitions = 84. P6 : `migrations_upgrade_path.rs` passe à `total == 84` et `total - 50`
@@ -363,14 +365,15 @@ passages du manuel qui les décrivent (C-32-5-22).
     version de Kesh **qui porte les mêmes tables** ; la 0.16.0 en ajoute deux, si bien qu'elle **refuse** les
     sauvegardes de la 0.15.0 et d'avant (message *« Fichier de sauvegarde invalide ou corrompu »*, motif au journal
     du serveur « table … absente du manifeste ») ; la phrase « La 0.15.0 importe les sauvegardes des deux formats »
-    se borne à la 0.15.0 ; pour restaurer une sauvegarde plus ancienne (R2) : **sur une base vide** — installation
-    neuve, puis restauration depuis l'assistant (0.15.0 et suivantes, § *Restaurer sur une nouvelle machine*), ou par
-    *Administration → Restaurer / Importer* après connexion à l'administrateur d'amorçage pour une version qui n'a pas
-    l'assistant —, avec **l'image de la
-    version qui a produit la sauvegarde** et le dossier des documents, importer, **puis** mettre à jour ; l'image d'une
-    version antérieure **ne démarre pas** sur une base qu'une version plus récente a migrée (P1), la base en place
-    reste donc intouchée (ou se sauvegarde d'abord) ; prendre une sauvegarde complète **juste après** chaque mise à
-    jour ;
+    se borne à la 0.15.0. Puis **trois choses, et rien de plus** (C-32-5-28, retrait de la validation P4) :
+    (i) une sauvegarde ne se réimporte que dans une version qui porte les mêmes tables ; (ii) pour restaurer une
+    sauvegarde plus ancienne, on installe **l'image de la version qui l'a produite, sur une base vide**, et l'on suit
+    **la procédure du manuel de cette version**, publié à son tag — le PDF joint à la release GitHub de cette version, ou
+    le manuel du dépôt au tag `v<version>` ; (iii) ensuite, on met à jour. ⚠️ Le manuel **ne prescrit aucun chemin**
+    pour une version sans l'assistant, et **n'écrit pas** l'adresse sous la forme `raw.githubusercontent.com/…/<réf>/` :
+    la garde G19 (`textes_coherents.rs:1250-1285`) exige que toute URL de cette forme pointe sur le tag de la version
+    publiée, si bien qu'un gabarit `v<version>` la ferait rougir — le lieu se dit en mots. Il rappelle enfin de prendre
+    une sauvegarde complète **juste après** chaque mise à jour ;
     (2) § *Reprises de données rejouées à l'import* (F4 = R4) : **aucune reprise du registre** n'est plus rejouée depuis
     la 0.16.0 — une sauvegarde assez ancienne pour en avoir besoin n'est plus importable ; la phrase de tête (`:2317`)
     et l'alinéa du lettrage (`:2321`) le disent ; la puce #528 **reste** (la réparation tourne à chaque import, sans
@@ -396,7 +399,7 @@ passages du manuel qui les décrivent (C-32-5-22).
     `CHANGELOG.md`, section `[0.16.0]` : **créer** `### Modifié`, une entrée ⚠️ de même substance, procédure de la base
     vide comprise. PDF régénéré (`make fr` dans `docs/manual/`) et **contrôlé aplati**, apostrophes typographiques
     comprises (`pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oiE ".{60}mêmes
-    tables.{80}"` rend la phrase ; idem « base vide », « serveur MCP », « sauvegarde automatique » dans la liste, et
+    tables.{80}"` rend la phrase ; idem « base vide », « manuel de cette version », « serveur MCP », « sauvegarde automatique » dans la liste, et
     plus aucune occurrence de « égale ou plus récente » ni de « appliquera cette fois »).
 14. **AC-a14 — propagation.** Rendent zéro site périmé (les mentions historiques datées restent, marquées comme
     telles) : `grep -rnE "\b39\b" crates docs --include=*.rs --include=*.tex --include=*.md | grep -i table` ;
@@ -452,7 +455,7 @@ passages du manuel qui les décrivent (C-32-5-22).
     nouvel usage de la `Trace`, et les sites antérieurs à Q11 (« utilisateur MariaDB limité au `SELECT`, ou les
     deux ») disent la décision — lecture seule applicative, mode de session `READ ONLY`, à la 32-6 : `poignees.rs:9-12`
     et `services/mod.rs:93-95` (F13, F2 = R5 ; les deux sites de `lib.rs:147-148` et `:158-159` vont à la 32-5c, qui
-    touche `lib.rs`) ; le doc-comment de `ContexteAcces` (`acces.rs:~72`, « les tests et la 32-6 ») nomme aussi
+    touche `lib.rs`) ; le doc-comment de `ContexteAcces` (`acces.rs:57-58`, « les tests et la 32-6 ») nomme aussi
     `cles_mcp::authentifier`, son constructeur de production (R6).
 19. **AC-b4 — refus croisés.** (a) Une clé MCP **active**, portée `books:read`, présentée à `GET /api/v1/accounts` en
     `Authorization: Bearer` **et** en cookie `kesh_access_token` — **deux requêtes distinctes**, le cookie primant sur
@@ -488,7 +491,9 @@ passages du manuel qui les décrivent (C-32-5-22).
     403 `API_KEY_ADMIN_FORBIDDEN` (jambe `read-write`, `admin_pat_denied_e2e.rs:769`) et, pour un PAT `read` sur une
     méthode mutante, `API_KEY_READ_ONLY` (jambe `read-only`, `:792-815`) ; clé MCP → 401 ; sans authentification → 401.
     Les deux handlers `GET` **ne portent pas** `ensure_not_pat` (la couche suffit) ; la répartition `(8, 25)` → **`(10, 29)`**
-    (`:830-836`) et `discriminating` 6 → **8** (`:881-888`) suivent. Les deux commentaires antérieurs à Q11 de
+    (`:830-836`) et `discriminating` 6 → **8** (`:881-888`) suivent — à **chaque** site de ces valeurs : le doc-comment
+    `:795-797` (« Les 8 `get` … les 25 méthodes mutantes … ces vingt-cinq-là ») et la généalogie `:831-833`, qui gagne
+    la ligne « (8, 25) → (10, 29) : Story 32-5c ». Les deux commentaires antérieurs à Q11 de
     `lib.rs:147-148` et `:158-159` (F2 = R5) se corrigent ici. Les six couples entrent à
     `admin_pat_denied_e2e` (33 → **39**, à chaque site du nombre : `lib.rs:224`, `admin_pat_denied_e2e.rs:46`, `:323`,
     `:382`, `:409`, `:769`) ; les quatre routes mutantes à `audit_route_registry.rs` (`Traced`, et la classe de rejeu
@@ -805,9 +810,10 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
 1. **Q3 — qui crée une clé MCP ?** Hypothèse de travail : l'Administrateur seul, et une clé cesse d'authentifier dès
    que son créateur n'est plus Administrateur ou n'est plus actif (C-32-5-7). **Le vrai coût d'une ouverture au
    Comptable** : la constante `ROLE_CLE_MCP` ne règle que l'authentification ; la création est gardée par la couche
-   d'`admin_routes` (`require_admin_role`, `Role::Admin` en dur, `rbac.rs:31-33`). Il faudrait donc sortir les six
-   routes du bloc, les remonter sous `require_comptable_role` avec `ensure_not_pat` (motif des clés d'API), changer la
-   constante, et refaire les gardes et leurs compteurs (`admin_pat_denied_e2e`, 39 → 33) — une modification de routage,
+   d'`admin_routes` (`require_admin_role`, `Role::Admin` en dur, `rbac.rs:31-33`). Il faudrait donc sortir les **quatre
+   routes des clés** du bloc (les deux routes des réglages restent à l'Administrateur), les remonter sous
+   `require_comptable_role` avec `ensure_not_pat` (motif des clés d'API), changer la constante, et refaire les gardes et
+   leurs compteurs (`admin_pat_denied_e2e` : 39 → 35, `(10, 29)` → `(9, 26)`, `discriminating` 8 → 7) — une modification de routage,
    non d'une ligne. Rien n'est branché d'avance tant que tu n'as pas tranché.
 2. **Q7 — les réglages restaurés tels quels ?** Hypothèse : oui, un serveur activé dans la sauvegarde l'est après
    l'import (C-32-5-11). L'autre voie : désactivé à toute restauration, réactivé à la main.
@@ -823,8 +829,8 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
    l'ajouter à l'écran (C-32-5-10).
 7. **Pour information — une conséquence de Q4** : la 0.16.0 refuse les sauvegardes de la 0.15.0, et, du même coup, le
    rattrapage du lettrage rejoué à l'import (0.13.0) n'a plus d'objet et se retire (C-32-5-13). Rien n'est perdu pour
-   une installation neuve ; le manuel l'écrit, avec la marche à suivre (partir d'une base vide, image de la version qui
-   a produit la sauvegarde, importer, puis mettre à jour). ⚠️ Si une installation existante (celle du NAS) était
+   une installation neuve ; le manuel l'écrit : l'image de la version qui a produit la sauvegarde, sur une base vide, la
+   procédure du manuel de cette version, puis la mise à jour (C-32-5-28). ⚠️ Si une installation existante (celle du NAS) était
    mise à jour en 0.16.0 au lieu d'une installation neuve, **toutes** ses sauvegardes antérieures, automatiques
    comprises, cesseraient de se restaurer sur la 0.16.0 : d'où la sauvegarde complète juste après la mise à jour.
    *(La prémisse « Kesh n'est pas en service » est la tienne ; son écart avec `CLAUDE.md`, qui dit les livres réels
@@ -959,4 +965,29 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
   - Totaux inchangés : 31 AC, 23 tâches, 23 mutations ; registre C-32-5-1 à 27. La remédiation ne touchant aucune ligne
     de code, la passe suivante est **ciblée** (P4, une lentille regression hunter, Opus, sur le seul commit de cette
     remédiation, `325-validate-prompt-p4.md`).
+- **2026-10-25 — Validation P4** (passe **ciblée**, une lentille regression hunter, contexte frais, **Opus**, sur le
+  seul commit `bafe2c9b` ; rapport `kesh-gate-logs/325-validate-p4.md`). **Trend : P1 2 HIGH / 8 MEDIUM → P2 1 / 7 →
+  P3 0 / 1 → P4 0 / 0 / 1 MEDIUM / 6 LOW.** Remédiation (Opus 5.5), **sur la fiche, le registre et le fichier d'epic
+  seuls** :
+  - **H1 (MEDIUM) — retrait** (décision de l'orchestrateur, C-32-5-28). ⚠️ **Recyclage déclaré** : c'est la
+    **troisième** forme du même défaut, chacune née du correctif précédent — R2 en P2, F6 en P3, H1 en P4 — sur la
+    procédure de restauration d'une sauvegarde ancienne. AC-a13 (1) ne prescrit plus de chemin pour une version sans
+    l'assistant ; le manuel dit trois choses : mêmes tables ; l'image de la version qui a produit la sauvegarde, sur une
+    base vide, et la procédure du **manuel de cette version** publié à son tag ; puis la mise à jour. Le lieu se dit en
+    mots : un gabarit `raw.githubusercontent.com/guycorbaz/kesh/v<version>/…` ferait rougir G19
+    (`textes_coherents.rs:1250-1285`). Point 7 à Guy et annotation du fichier d'epic (puce Q4, précision datée)
+    alignés.
+  - **LOW** : H2 (onze modules distincts, `middleware` dans la liste, italique refermée) ; H3 (annotation de
+    `32-5b` au registre de sprint : 4 modules) ; H4 (doc-comment `:795-797` et généalogie `:831-833`
+    d'`admin_pat_denied_e2e.rs`) ; H5 (`acces.rs:57-58`) ; H6 (la ligne `:100` de l'audit d'idempotence ne dit pas
+    « retirée du registre » d'une migration qui n'y fut jamais ; « 32-5a ») ; H7 (quatre routes des clés, les
+    réglages restant à l'Administrateur : 39 → 35, `(10, 29)` → `(9, 26)`, `discriminating` 8 → 7 — point 1 à Guy et
+    C-32-5-7).
+  - **Valeurs grepées** sur la fiche, le registre, le fichier d'epic et le registre de sprint :
+    `administrateur d'amorçage`, `n'a pas l'assistant`, `sortir les six`, `39 → 33`, `acces.rs:~72`, `la même pour
+    son`, `3 modules, sans`, `11 distincts***` → plus aucune occurrence hors des entrées datées du Change Log ;
+    `raw.githubusercontent.com/guycorbaz/kesh/v<` → une seule, au registre (C-32-5-28, l'exemple écarté ; hors des
+    fichiers que G19 lit).
+  - Totaux inchangés : 31 AC, 23 tâches, 23 mutations ; registre C-32-5-1 à C-32-5-28. Remédiation sans code :
+    passe suivante **ciblée** (P5, regression hunter, Sonnet, `325-validate-prompt-p5.md`).
 

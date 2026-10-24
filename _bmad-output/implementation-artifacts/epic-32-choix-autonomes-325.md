@@ -111,9 +111,10 @@ de ligne cités sont ceux de `e59d63e8`.
   règle de rôle à l'authentification (incohérent avec une création réservée) ; brancher la constante sur le handler de
   création, hors du bloc (revient sur C-32-5-17, sans décision de Guy).
 - **Réversible** : la règle d'authentification, oui (une constante) ; la règle de création, **par une modification de
-  routage** : sortir les six routes d'`admin_routes`, les remonter sous `require_comptable_role` avec `ensure_not_pat`
-  (`routes/api_keys.rs:95-100`), changer la constante, refaire AC-c2 et les compteurs d'`admin_pat_denied_e2e`
-  (39 → 33, et la répartition `(10, 29)`).
+  routage** : sortir les **quatre routes des clés** d'`admin_routes` (les deux routes des réglages restent à
+  l'Administrateur), les remonter sous `require_comptable_role` avec `ensure_not_pat` (`routes/api_keys.rs:95-100`),
+  changer la constante, refaire AC-c2 et les compteurs d'`admin_pat_denied_e2e` (39 → 35, `(10, 29)` → `(9, 26)`,
+  `discriminating` 8 → 7). *(Chiffres corrigés en validation P4, H7.)*
 
 ### C-32-5-8 — Réglages absents = défauts ; aucune ligne écrite ni par la migration ni à la lecture
 
@@ -363,3 +364,21 @@ de ligne cités sont ceux de `e59d63e8`.
 - **Écartée** : laisser l'ordre libre en décrivant l'effet de c avant d (un état de `main` où une clé disparaît à la
   remise à zéro, sans texte qui le dise).
 - **Réversible** : oui.
+
+### C-32-5-28 — Retrait : le manuel ne prescrit plus de chemin pour restaurer une sauvegarde ancienne (orchestrateur)
+
+- **Contexte** : la procédure de restauration d'une sauvegarde plus ancienne a recyclé **trois fois** : R2 en P2
+  (l'image ancienne ne démarre pas sur une base migrée → « base vide »), F6 en P3 (l'assistant n'existe qu'à partir
+  de la 0.15.0 → un second chemin pour les versions sans assistant), H1 en P4 (ce second chemin ne s'atteint ni « après
+  connexion » ni sur une base vide : l'assistant d'une 0.14.x l'impose d'abord). Chaque correction écrivait le chemin
+  d'une version que Kesh ne maintient plus, et le défaut suivant naissait du correctif précédent.
+- **Retenu** (décision de l'orchestrateur) : **retrait**. L'AC-a13 (1) et le manuel disent trois choses : une sauvegarde
+  ne se réimporte que dans une version qui porte les mêmes tables ; pour en restaurer une plus ancienne, on installe
+  l'image de la version qui l'a produite, sur une base vide, et l'on suit la procédure du **manuel de cette version**,
+  publié à son tag (PDF de la release, ou manuel du dépôt au tag) ; ensuite, on met à jour. Le lieu se dit **en mots** :
+  une URL `raw.githubusercontent.com/guycorbaz/kesh/v<version>/…` ferait rougir la garde G19, qui exige le tag publié.
+- **Écartées** : prescrire le chemin de la 0.14.x par l'assistant et la démonstration (H1, première correction
+  proposée — une quatrième forme du même texte) ; passer par l'image 0.15.0, qui importe les deux formats (vrai, mais
+  une règle de plus à tenir pour une version ancienne).
+- **Réversible** : oui.
+
