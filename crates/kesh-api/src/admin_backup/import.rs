@@ -11,8 +11,11 @@
 //!    `manifest.json`, `data/…`, `files/` présent et **vide** ; format 2,
 //!    exactement l'ensemble attendu (`manifest.json`, les `data/<table>.ndjson`
 //!    du manifeste, `files/`, les `files/<nom>` de `manifest.files`) ;
-//! 3. couverture des tables, puis NDJSON à travers une borne **cumulée** pour
-//!    l'ensemble des tables, intégrité SHA-256 par table ;
+//! 3. inventaire des tables ([`kesh_db::backup::check_backup_inventory`],
+//!    Story 32-12a, #722 : aucune table inconnue, toute table créée au plus tard
+//!    par le plancher d'import présente, les absentes postérieures à toutes les
+//!    présentes), puis NDJSON à travers une borne **cumulée** pour l'ensemble
+//!    des tables, intégrité SHA-256 par table ;
 //! 4. format 2 : chaque pièce lue en flux à travers `take(byteSize + 1)` et un
 //!    `Sha256` (taille et empreinte), puis **cohérence avec la base
 //!    restaurée** : toute pièce emportée est référencée par une ligne de même
@@ -41,7 +44,8 @@ use zip::ZipArchive;
 use zip::result::ZipError;
 
 use kesh_db::backup::{
-    ReferencedFile, TABLES_TO_TRUNCATE, TableRestore, column_constraints, parse_ndjson_rows,
+    InventoryError, InventoryRules, ReferencedFile, TableRestore, check_backup_inventory,
+    column_constraints, parse_ndjson_rows,
 };
 
 use crate::admin_backup::export::nom_de_piece_valide;
@@ -90,6 +94,13 @@ pub struct ParsedBackup<R> {
     /// Données par table, dans l'ordre des `column_names` du manifeste.
     pub tables: BTreeMap<String, TableRestore>,
     pub total_rows: usize,
+    /// Story 32-12a (#722) — les tables de l'inventaire **absentes** du fichier
+    /// et tolérées ([`kesh_db::backup::check_backup_inventory`]) : créées après
+    /// le plancher d'import, elles sont restaurées vides. Ordre de création ;
+    /// vide quand rien ne manque. Son lecteur de production, le bilan de
+    /// l'import (réponse et audit), vient avec la Story 32-12b ; d'ici là, le
+    /// `Debug` ci-dessous le lit.
+    pub tables_absent: Vec<String>,
     /// L'archive, `None` une fois prise par l'écriture des pièces.
     pub archive: Option<ZipArchive<R>>,
 }
@@ -100,6 +111,7 @@ impl<R> std::fmt::Debug for ParsedBackup<R> {
             .field("manifest", &self.manifest)
             .field("tables", &self.tables.keys().collect::<Vec<_>>())
             .field("total_rows", &self.total_rows)
+            .field("tables_absent", &self.tables_absent)
             .field("archive", &self.archive.is_some())
             .finish()
     }
@@ -173,6 +185,19 @@ pub fn parse_and_verify<R: Read + Seek>(
     reader: R,
     limits: &ReadLimits,
 ) -> Result<ParsedBackup<R>, AppError> {
+    parse_and_verify_with(reader, limits, &InventoryRules::production())
+}
+
+/// [`parse_and_verify`] sous des règles d'inventaire données — Story 32-12a
+/// (#722), AC5. La production passe [`InventoryRules::production`] ; les tests
+/// de la crate injectent les leurs pour simuler une table créée après le
+/// plancher d'import, faute d'en avoir une avant la Story 32-5. `pub(crate)`
+/// comme tout le module (`lib.rs`, revue 17-3a) : aucune ré-exportation.
+pub(crate) fn parse_and_verify_with<R: Read + Seek>(
+    reader: R,
+    limits: &ReadLimits,
+    regles: &InventoryRules,
+) -> Result<ParsedBackup<R>, AppError> {
     let mut zip =
         ZipArchive::new(reader).map_err(|e| invalide(format!("conteneur ZIP illisible : {e}")))?;
 
@@ -229,25 +254,29 @@ pub fn parse_and_verify<R: Read + Seek>(
         verifier_format_1(&manifest, &noms)?;
     }
 
-    // Couverture : chaque table applicative attendue doit figurer au manifeste
-    // (sinon on ne saurait pas la restaurer correctement).
-    for &t in TABLES_TO_TRUNCATE {
-        if !manifest.tables.contains_key(t) {
-            return Err(invalide(format!("table '{t}' absente du manifeste")));
-        }
-    }
-    // Réciproque (review Pass 1) : aucune table hors inventaire applicatif dans
-    // le manifeste — sinon ses lignes seraient comptées dans `total_rows` mais
-    // jamais restaurées (table absente de TABLES_TO_TRUNCATE) ⇒ la garde de
-    // cohérence du handler lèverait un faux `500` au lieu d'un `400` propre.
-    let known: HashSet<&str> = TABLES_TO_TRUNCATE.iter().copied().collect();
-    for table in manifest.tables.keys() {
-        if !known.contains(table.as_str()) {
-            return Err(invalide(format!(
-                "table '{table}' présente dans le manifeste mais hors inventaire applicatif"
-            )));
-        }
-    }
+    // Inventaire des tables (Story 32-12a, #722) : toute table créée au plus
+    // tard par le plancher d'import doit figurer au manifeste (sinon on ne
+    // saurait pas la restaurer) ; une table créée après peut manquer — elle
+    // sera restaurée vide — pourvu qu'elle soit postérieure à toutes celles que
+    // le fichier porte. Et aucune table hors inventaire applicatif (review
+    // Pass 1) : ses lignes seraient comptées dans `total_rows` mais jamais
+    // restaurées ⇒ la garde de cohérence du handler lèverait un faux `500` au
+    // lieu d'un `400` propre.
+    let presentes: BTreeSet<&str> = manifest.tables.keys().map(String::as_str).collect();
+    let tables_absent: Vec<String> = check_backup_inventory(&presentes, regles)
+        .map_err(|e| match e {
+            InventoryError::Exigee(t) => invalide(format!("table '{t}' absente du manifeste")),
+            InventoryError::Inconnue(t) => invalide(format!(
+                "table '{t}' présente dans le manifeste mais hors inventaire applicatif"
+            )),
+            InventoryError::HorsOrdre { absente, presente } => invalide(format!(
+                "table '{absente}' absente du manifeste alors que '{presente}', créée par la même \
+                 migration qu'elle ou après, y figure"
+            )),
+        })?
+        .into_iter()
+        .map(str::to_string)
+        .collect();
 
     // (3) Intégrité SHA-256 + parsing NDJSON par table (avant tout DELETE),
     // sous une borne cumulée.
@@ -306,6 +335,7 @@ pub fn parse_and_verify<R: Read + Seek>(
         manifest,
         tables,
         total_rows,
+        tables_absent,
         archive: None,
     };
     if format_2 {
@@ -625,6 +655,7 @@ pub async fn check_schema_compat<R>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kesh_db::backup::TABLES_TO_TRUNCATE;
     use std::io::{Cursor, Write};
     use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
@@ -1230,5 +1261,151 @@ mod tests {
             compter_les_pieces_manquantes(&parsed.referenced_files(), vide.path()),
             1
         );
+    }
+
+    // =======================================================================
+    // Story 32-12a (#722), AC7 — la chaîne d'import tolère une table
+    // postérieure au plancher, bout à bout hors HTTP.
+    // =======================================================================
+
+    /// La sauvegarde produite par le vrai exporteur de la 0.15.0 (Story 32-12a,
+    /// AC15) — jamais régénérée.
+    const FIXTURE_0_15_0: &[u8] =
+        include_bytes!("../../tests/fixtures/keshbackup-0.15.0-format2.keshbackup");
+
+    /// La fixture 0.15.0 privée d'une table : son entrée `data/<table>.ndjson`
+    /// omise, sa ligne `tables.<table>` retirée du manifeste ; le reste recopié
+    /// tel quel (pièces sous `files/` comprises).
+    fn fixture_sans_table(table: &str) -> Vec<u8> {
+        let mut source = ZipArchive::new(Cursor::new(FIXTURE_0_15_0)).expect("fixture lisible");
+        let omise = format!("data/{table}.ndjson");
+        let mut cursor = Cursor::new(Vec::<u8>::new());
+        {
+            let mut zip = ZipWriter::new(&mut cursor);
+            let opts: SimpleFileOptions =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            for i in 0..source.len() {
+                let mut entree = source.by_index(i).expect("entrée");
+                let nom = entree.name().to_string();
+                if nom == omise {
+                    continue;
+                }
+                if entree.is_dir() {
+                    zip.add_directory(nom.trim_end_matches('/'), opts).unwrap();
+                    continue;
+                }
+                let mut octets = Vec::new();
+                entree.read_to_end(&mut octets).unwrap();
+                if nom == "manifest.json" {
+                    let mut manifeste: Value = serde_json::from_slice(&octets).unwrap();
+                    let retiree = manifeste["tables"]
+                        .as_object_mut()
+                        .expect("tables")
+                        .remove(table);
+                    assert!(retiree.is_some(), "la fixture porte la table {table}");
+                    octets = serde_json::to_vec(&manifeste).unwrap();
+                }
+                zip.start_file(nom, opts).unwrap();
+                zip.write_all(&octets).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+        cursor.into_inner()
+    }
+
+    /// Règles d'inventaire où `products` est créée **après le plancher et après
+    /// toute autre table** de l'inventaire — ce que sera une table de la 32-5 :
+    /// « après le plancher » seul ne suffirait pas, une table présente créée
+    /// après elle rendrait `HorsOrdre`.
+    fn creation_products_apres_tout(table: &str) -> Option<i64> {
+        if table == "products" {
+            Some(99_991_231_000_001)
+        } else {
+            kesh_db::backup::table_creating_migrations()
+                .get(table)
+                .copied()
+        }
+    }
+
+    fn regles_products_posterieure() -> InventoryRules {
+        InventoryRules {
+            creation: creation_products_apres_tout,
+            ..InventoryRules::production()
+        }
+    }
+
+    /// AC7 (a) — la fixture 0.15.0 privée de `products`, sous des règles où
+    /// `products` est postérieure au plancher : vérification, compatibilité de
+    /// schéma, restauration et rejeu passent ; `products` finit **vide** malgré
+    /// le produit de la destination, le reste est restauré.
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
+    async fn ac7_une_table_posterieure_absente_est_restauree_vide(pool: MySqlPool) {
+        let seeded = kesh_db::test_fixtures::seed_accounting_company(&pool)
+            .await
+            .expect("seed");
+        sqlx::query(
+            "INSERT INTO products (company_id, name, unit_price, vat_rate) \
+             VALUES (?, 'Produit de la destination', '10.00', '8.10')",
+        )
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .expect("produit de la destination");
+
+        let parsed = parse_and_verify_with(
+            Cursor::new(fixture_sans_table("products")),
+            &larges(),
+            &regles_products_posterieure(),
+        )
+        .expect("la fixture privée d'une table postérieure doit être acceptée");
+        assert_eq!(parsed.tables_absent, vec!["products".to_string()]);
+        assert!(!parsed.tables.contains_key("products"));
+
+        check_schema_compat(&pool, &parsed)
+            .await
+            .expect("schéma compatible");
+
+        let mut tx = pool.begin().await.expect("begin");
+        kesh_db::backup::restore_tables_in_tx(&mut tx, &parsed.tables)
+            .await
+            .expect("restauration");
+        kesh_db::post_restore::replay_post_restore_backfills(&mut tx, &parsed.tables)
+            .await
+            .expect("rejeu");
+        tx.commit().await.expect("commit");
+
+        let produits: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM products")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(produits, 0, "products, absente du fichier, finit vide");
+        let factures: Vec<String> = sqlx::query_scalar("SELECT invoice_number FROM invoices")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(factures.len(), 1, "la facture de la fixture est restaurée");
+        let attendu = parsed.tables["invoices"].rows[0][parsed.tables["invoices"]
+            .column_names
+            .iter()
+            .position(|c| c == "invoice_number")
+            .unwrap()]
+        .as_str()
+        .map(str::to_string);
+        assert_eq!(Some(factures[0].clone()), attendu);
+    }
+
+    /// AC7 (b) — sous les règles de production, `products` (créée par
+    /// `20260415000001`, au plus tard par le plancher) est **exigée** : le
+    /// message est exactement celui d'`Exigee`, et non celui de `HorsOrdre`,
+    /// qui commence par le même fragment.
+    #[test]
+    fn ac7_une_table_exigee_absente_est_refusee_par_son_message_exact() {
+        let err = parse_and_verify_with(
+            Cursor::new(fixture_sans_table("products")),
+            &larges(),
+            &InventoryRules::production(),
+        )
+        .expect_err("products est exigée");
+        assert_eq!(message(err), "table 'products' absente du manifeste");
     }
 }

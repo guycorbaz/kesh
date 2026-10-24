@@ -19,11 +19,13 @@
 //! # La fenêtre d'importabilité, qui borne tout ce module
 //!
 //! Une **quatrième** protection, elle, mord : `parse_and_verify` (côté
-//! `kesh-api`) exige l'égalité **exacte, dans les deux sens**, entre les tables
-//! du manifeste et [`crate::backup::TABLES_TO_TRUNCATE`]. Comme aucune migration
-//! du dépôt ne supprime de table, l'inventaire ne fait que croître : **un backup
-//! n'est importable que s'il provient d'un binaire postérieur ou égal à la
-//! dernière migration créatrice de table applicative.**
+//! `kesh-api`) applique [`crate::backup::check_backup_inventory`] — toute table
+//! du manifeste appartient à [`crate::backup::TABLES_TO_TRUNCATE`], et toute
+//! table créée au plus tard par le **plancher d'import**
+//! [`crate::backup::IMPORT_FLOOR_MIGRATION`] y figure ; une table créée après le
+//! plancher peut manquer, pourvu qu'elle soit postérieure à toutes celles que le
+//! fichier porte (Story 32-12a, #722). **Un backup n'est donc importable que
+//! s'il provient d'un binaire postérieur ou égal au plancher.**
 //!
 //! C'est cette fenêtre qui fixe le contenu du registre — et non le nombre de
 //! migrations portant un backfill. La plupart des migrations qui écrivent des
@@ -31,10 +33,18 @@
 //! (cf. [`EXEMPT_MIGRATIONS`], qui porte la liste et la justification de
 //! chacune — ⚠️ ne pas récrire ici un décompte, il se périmerait en silence à la
 //! prochaine migration ; la source se lit, elle ne se résume pas).
-//! Toute future migration créant une table
-//! applicative **referme la fenêtre** et périme les entrées antérieures : le
-//! test `registry_entries_are_within_import_window` le fait échouer bruyamment
-//! plutôt que de laisser du code mort qui *paraît* fonctionner.
+//! La fenêtre est le plancher, une constante écrite : une table neuve ne la
+//! déplace plus, et seul le **relèvement** du plancher — décision du Project
+//! Lead, jamais un geste de maintenance — périmerait les entrées antérieures.
+//! Le test `registry_entries_are_within_import_window` compare chaque entrée au
+//! plancher et échoue bruyamment plutôt que de laisser du code mort qui *paraît*
+//! fonctionner.
+//!
+//! ⚠️ **Une table créée après le plancher arrive VIDE d'une sauvegarde qui la
+//! précède** (`restore_body` vide toute table de l'inventaire, n'insère que
+//! celles que porte le fichier). Si sa migration — ou une migration ultérieure —
+//! y écrit des lignes, l'argument « couverture » d'une exemption est faux pour
+//! elle : la migration va au registre (test `post_floor_table_seeds_are_replayed`).
 //!
 //! # Deux classes d'entrées, et le déclencheur n'est pas le même
 //!
@@ -247,8 +257,10 @@ pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
         // ligne de pièce n'est jamais délettrable à la main) — ce n'est pas
         // écraser un choix. Le manuel d'administration le dit.
         //
-        // Hors fenêtre ? Non : aucune table applicative n'est créée depuis
-        // `20260917000001` (`registry_entries_are_within_import_window`).
+        // Hors fenêtre ? Non : elle est POSTÉRIEURE au plancher d'import
+        // `IMPORT_FLOOR_MIGRATION` (`registry_entries_are_within_import_window`),
+        // si bien qu'une sauvegarde qui la précède reste importable — et a besoin
+        // de ce rejeu. Une table créée après le plancher ne change rien à cela.
         trigger: BackfillTrigger::Unconditional,
         sql: include_str!("../migrations/20261010000001_lettering_documents_backfill.sql"),
     },
@@ -266,12 +278,15 @@ pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
 // chaque import.
 //
 // Les deux sont passées en [`EXEMPT_MIGRATIONS`] avec le marqueur `Hors fenêtre`,
-// que `exemptions_claiming_out_of_window_really_are_out_of_window` recalcule
-// depuis le `MIGRATOR` — l'affirmation est donc vérifiée, pas crue sur parole.
+// que `exemptions_claiming_out_of_window_really_are_out_of_window` compare au
+// plancher d'import `IMPORT_FLOOR_MIGRATION` — l'affirmation est donc vérifiée,
+// pas crue sur parole.
 //
-// ⚠️ **Toute nouvelle table applicative aura le même effet** sur les entrées
-// futures. Ce n'est pas une raison de renoncer au mécanisme : il reste la seule
-// réponse au cas « le backup est dans la fenêtre et précède un backfill ».
+// ⚠️ **Depuis la Story 32-12a (#722), une nouvelle table applicative n'a plus
+// cet effet** : la fenêtre est le plancher, gelé à la v0.15.0, et seul son
+// relèvement — décision du Project Lead — périmerait des entrées. Le mécanisme
+// reste la seule réponse au cas « le backup est dans la fenêtre et précède un
+// backfill ».
 //
 // ⛔ **Et ce cas s'est représenté à la story SUIVANTE** : `20260828000001`
 // (Story 24-3) est postérieure à la table qui avait refermé la fenêtre, donc un
@@ -376,7 +391,8 @@ pub const RETIRED_BACKFILLS: &[PostRestoreBackfill] = &[
 /// ⚠️ **Une justification qui invoque la fenêtre d'importabilité DOIT commencer
 /// par la chaîne `Hors fenêtre`.** Ce n'est pas une convention de style : c'est
 /// le marqueur sur lequel `exemptions_claiming_out_of_window_really_are_out_of_window`
-/// recalcule la fenêtre depuis le `MIGRATOR` et vérifie l'affirmation. Une
+/// compare la version au plancher d'import `IMPORT_FLOOR_MIGRATION` et vérifie
+/// l'affirmation. Une
 /// justification « hors fenêtre » rédigée autrement échappe au contrôle et
 /// redevient une affirmation crue sur parole — laquelle, si elle est fausse,
 /// désactive **définitivement et en silence** le rejeu du backfill concerné.
@@ -715,9 +731,11 @@ pub async fn replay_with_registry(
 
 /// Sentinelles absentes du manifeste, au format `"table.colonne"`.
 ///
-/// Une table entièrement absente compte comme sentinelle absente. C'est
-/// **défensif seulement** : `parse_and_verify` refuse en amont tout manifeste
-/// incomplet en tables, donc l'état est inatteignable par le flux réel.
+/// Une table entièrement absente compte comme sentinelle absente. L'état est
+/// **atteignable** depuis la Story 32-12a (#722) : `parse_and_verify` tolère
+/// qu'une table créée après le plancher d'import `IMPORT_FLOOR_MIGRATION`
+/// manque à une sauvegarde qui la précède — la sauvegarde précède alors aussi
+/// toute colonne de cette table, et le rejeu conditionné doit avoir lieu.
 fn missing_sentinels(
     tables: &BTreeMap<String, TableRestore>,
     sentinels: &[(&'static str, &'static str)],
@@ -769,7 +787,10 @@ fn missing_sentinels(
 ///    `IN (',', ';', '\t')`), inoffensif parce que ce fichier n'est pas rejoué —
 ///    ce qui montre que le risque n'est pas théorique. Tenu, **sur le SQL
 ///    réellement exécuté** et lui seul, par `registry_sql_has_no_literal_hazard`.
-fn split_statements(sql: &str) -> Vec<String> {
+///
+/// `pub(crate)` depuis la Story 32-12a (#722) : [`crate::backup`] l'emploie pour
+/// dater les tables de l'inventaire ([`created_application_table`]).
+pub(crate) fn split_statements(sql: &str) -> Vec<String> {
     let stripped: String = sql
         .lines()
         .map(|line| match line.find("--") {
@@ -784,6 +805,63 @@ fn split_statements(sql: &str) -> Vec<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect()
+}
+
+/// Normalise les blancs (toute suite de blancs, sauts de ligne compris, devient
+/// une espace) — pour comparer un statement à son fichier source sans dépendre
+/// de l'indentation résiduelle du découpage, et pour lire l'en-tête d'un
+/// statement dont le nom est rejeté à la ligne suivante.
+pub(crate) fn normalize(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// L'entrée de [`crate::backup::TABLES_TO_TRUNCATE`] que crée ce statement, ou
+/// `None` s'il n'en crée aucune — Story 32-12a (#722), AC1.
+///
+/// C'est la brique de la carte **table → migration créatrice**
+/// ([`crate::backup::table_creators`]), qui date chaque table de l'inventaire
+/// depuis le `MIGRATOR` au lieu d'une liste écrite à la main. Jusqu'à la 32-12a,
+/// cette reconnaissance vivait dans les tests (elle y calculait une fenêtre
+/// d'importabilité qui est désormais le plancher écrit
+/// [`crate::backup::IMPORT_FLOOR_MIGRATION`]) ; elle passe en production, en un
+/// seul exemplaire.
+///
+/// **Pourquoi [`split_statements`] suffit ici**, malgré les dangers d'un
+/// analyseur naïf que liste son doc-comment (`/* */`, `--` ou `;` dans un
+/// littéral) : seul l'**en-tête** du statement est lu (`CREATE TABLE <nom>`).
+/// Les blocs `/* */` sont tenus absents de **toutes** les migrations par
+/// `migrations_contain_no_block_comment` ; un `;` dans un littéral découpe un
+/// statement en fragments dont aucun ne commence par `CREATE TABLE` sans en
+/// être le vrai en-tête. Une graphie ratée rend **zéro** migration créatrice
+/// pour une table : le test `every_inventory_table_has_exactly_one_creating_migration`
+/// (`backup.rs`) échoue alors en la nommant, et la production, faute de date,
+/// tient la table pour **exigée** — refus plutôt que tolérance à tort.
+///
+/// - **Filtre sur l'inventaire applicatif** : une table **système**
+///   (`_kesh_version`, `_kesh_backup_schedule`) n'est pas dans l'inventaire et
+///   n'a donc pas de migration créatrice dans la carte. Le SQL est décommenté
+///   avant analyse ([`split_statements`]) — plusieurs migrations portent
+///   `CREATE TABLE` en prose.
+/// - **Reconnaissance large** : blancs normalisés (`CREATE  TABLE`, nom rejeté à
+///   la ligne suivante), accents graves retirés (`` CREATE TABLE `x` ``, graphie
+///   absente du dépôt aujourd'hui mais que rien n'interdit), `IF NOT EXISTS`
+///   admis, nom comparé sans casse et **isolé** — un `CREATE TABLE
+///   supplier_invoice_lines` ne crée pas `supplier_invoices` —, la parenthèse
+///   ouvrante pouvant être collée au nom (`CREATE TABLE accounts(`).
+pub(crate) fn created_application_table(statement: &str) -> Option<&'static str> {
+    let up = normalize(statement).to_ascii_uppercase().replace('`', "");
+    let rest = up.strip_prefix("CREATE TABLE ")?;
+    let rest = rest.strip_prefix("IF NOT EXISTS ").unwrap_or(rest);
+    // Le nom s'arrête au premier blanc ou à la parenthèse ouvrante.
+    let name = rest
+        .split([' ', '('])
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(';');
+    crate::backup::TABLES_TO_TRUNCATE
+        .iter()
+        .copied()
+        .find(|t| t.eq_ignore_ascii_case(name))
 }
 
 /// Abrège un statement pour un message d'erreur : blancs normalisés, tronqué à
@@ -915,82 +993,30 @@ mod tests {
 
     /// **Garde-fou de la fenêtre d'importabilité.**
     ///
-    /// Un backup n'est importable que si son inventaire de tables est identique
-    /// au nôtre ; les tables ne faisant que s'ajouter, cela borne les backups
-    /// acceptés aux binaires postérieurs à la dernière migration créatrice de
-    /// table **applicative**. Une entrée de registre antérieure à cette borne est
-    /// du **code mort qui paraît fonctionner** : son cas de déclenchement est
-    /// refusé en 400 bien avant le rejeu.
+    /// Un backup n'est importable que s'il porte toutes les tables créées au plus
+    /// tard par le plancher d'import [`crate::backup::IMPORT_FLOOR_MIGRATION`]
+    /// (Story 32-12a, #722 — `check_backup_inventory`). Une entrée de registre
+    /// antérieure ou égale au plancher est du **code mort qui paraît
+    /// fonctionner** : un backup assez ancien pour la déclencher est dépourvu
+    /// d'une table exigée, donc refusé en 400 bien avant le rejeu.
     ///
-    /// La fenêtre est **recalculée depuis le `MIGRATOR`**, jamais codée en dur :
-    /// toute future migration créant une table applicative la referme et fait
-    /// échouer ce test, forçant le triage.
+    /// La fenêtre est le **plancher**, constante écrite et non plus calculée :
+    /// une table neuve ne la déplace plus. Le plancher lui-même est tenu pour une
+    /// migration créatrice réelle du `MIGRATOR` par
+    /// `import_floor_is_a_real_table_creating_migration` (`backup.rs`).
     #[test]
     fn registry_entries_are_within_import_window() {
-        let window = last_table_creating_migration();
+        let window = crate::backup::IMPORT_FLOOR_MIGRATION;
         for entry in POST_RESTORE_BACKFILLS {
             assert!(
                 entry.version > window,
-                "l'entrée {} est ANTÉRIEURE à la dernière migration créatrice de table applicative \
-                 ({window}) : un backup assez ancien pour la déclencher est refusé au contrôle de \
-                 couverture de `parse_and_verify`. Elle doit passer en exemption.",
+                "l'entrée {} est ANTÉRIEURE ou égale au plancher d'import \
+                 IMPORT_FLOOR_MIGRATION ({window}) : un backup assez ancien pour la déclencher est \
+                 dépourvu d'une table exigée, donc refusé par `parse_and_verify`. Elle doit passer \
+                 en exemption.",
                 entry.version
             );
         }
-    }
-
-    /// Version de la dernière migration créant une table **applicative**,
-    /// c'est-à-dire figurant dans [`crate::backup::TABLES_TO_TRUNCATE`].
-    ///
-    /// Le filtre sur l'inventaire applicatif est indispensable : `parse_and_verify`
-    /// ne compare que ces tables, donc une migration créant une table **système**
-    /// (comme `_kesh_version`) ne déplace pas la fenêtre. Le SQL est décommenté
-    /// avant analyse — plusieurs migrations contiennent `CREATE TABLE` en prose.
-    ///
-    /// ⚠️ **La reconnaissance doit être LARGE, pour la raison inverse de
-    /// [`writes_data`].** Ici, une graphie ratée ne produit pas un faux positif
-    /// mais une fenêtre qui **recule** : `registry_entries_are_within_import_window`
-    /// resterait vert sur des entrées devenues injoignables, c'est-à-dire du code
-    /// mort qui *paraît* fonctionner — le mode d'échec que l'AC-C6.6 existe pour
-    /// interdire. D'où la normalisation des blancs (`CREATE  TABLE`, nom rejeté à
-    /// la ligne suivante) et le retrait des accents graves (`` CREATE TABLE `x` ``,
-    /// graphie absente du dépôt aujourd'hui mais que rien n'interdit).
-    fn last_table_creating_migration() -> i64 {
-        crate::MIGRATOR
-            .migrations
-            .iter()
-            .filter(|m| {
-                split_statements(&m.sql)
-                    .iter()
-                    .any(|st| creates_application_table(st))
-            })
-            .map(|m| m.version)
-            .max()
-            .expect("aucune migration créatrice de table applicative — schéma vide ?")
-    }
-
-    /// Vrai si le statement crée une table figurant dans
-    /// [`crate::backup::TABLES_TO_TRUNCATE`].
-    ///
-    /// La comparaison porte sur le nom **isolé** (et non sur un `contains`) : un
-    /// `CREATE TABLE supplier_invoice_lines` ne doit pas être compté comme créant
-    /// `supplier_invoices`, ni l'inverse.
-    fn creates_application_table(statement: &str) -> bool {
-        let up = normalize(statement).to_ascii_uppercase().replace('`', "");
-        let Some(rest) = up.strip_prefix("CREATE TABLE ") else {
-            return false;
-        };
-        let rest = rest.strip_prefix("IF NOT EXISTS ").unwrap_or(rest);
-        // Le nom s'arrête au premier blanc ou à la parenthèse ouvrante, qui peut
-        // être collée au nom (`CREATE TABLE accounts(`).
-        let name = rest
-            .split([' ', '('])
-            .next()
-            .unwrap_or_default()
-            .trim_end_matches(';');
-        crate::backup::TABLES_TO_TRUNCATE
-            .iter()
-            .any(|t| t.to_ascii_uppercase() == name)
     }
 
     /// **Garde-fou fail-loud du triage.**
@@ -1079,9 +1105,14 @@ mod tests {
     /// raisonnements que la version seule ne décide pas. Le marqueur est la
     /// chaîne `Hors fenêtre` en tête de justification — d'où l'exigence, dans le
     /// message d'échec, de l'écrire ainsi.
+    ///
+    /// La fenêtre est le plancher d'import [`crate::backup::IMPORT_FLOOR_MIGRATION`]
+    /// (Story 32-12a, #722) : une migration située entre le plancher et une table
+    /// créée après lui est déclenchable par une sauvegarde importable, et ne peut
+    /// donc pas se dire « Hors fenêtre ».
     #[test]
     fn exemptions_claiming_out_of_window_really_are_out_of_window() {
-        let window = last_table_creating_migration();
+        let window = crate::backup::IMPORT_FLOOR_MIGRATION;
         let mut checked = 0usize;
 
         for (version, _, justification) in EXEMPT_MIGRATIONS {
@@ -1092,9 +1123,9 @@ mod tests {
             assert!(
                 *version < window,
                 "exemption {version} : la justification invoque « Hors fenêtre », mais la version \
-                 est POSTÉRIEURE à la dernière migration créatrice de table applicative \
-                 ({window}). Un backup assez ancien pour la déclencher est donc IMPORTABLE, et son \
-                 backfill ne sera jamais rejoué. → l'inscrire à POST_RESTORE_BACKFILLS, ou motiver \
+                 est POSTÉRIEURE ou égale au plancher d'import IMPORT_FLOOR_MIGRATION ({window}). \
+                 Un backup assez ancien pour la déclencher est donc IMPORTABLE, et son backfill ne \
+                 sera jamais rejoué. → l'inscrire à POST_RESTORE_BACKFILLS, ou motiver \
                  l'exemption autrement."
             );
         }
@@ -1479,12 +1510,6 @@ mod tests {
         );
     }
 
-    /// Normalise les blancs pour comparer un statement à son fichier source sans
-    /// dépendre de l'indentation résiduelle du découpage.
-    fn normalize(s: &str) -> String {
-        s.split_whitespace().collect::<Vec<_>>().join(" ")
-    }
-
     /// **Condition de validité de la classe B** : la colonne sentinelle doit être
     /// créée par la migration elle-même, sans quoi « colonne présente » n'implique
     /// pas « backfill appliqué » et la sentinelle ment.
@@ -1667,8 +1692,178 @@ UPDATE accounts SET role = 'X' WHERE number = '1'; -- commentaire de fin de lign
             "une seule sentinelle manquante doit suffire à déclencher (OU, pas ET)"
         );
 
-        // Table entièrement absente : défensif, compte comme sentinelle absente.
+        // Table entièrement absente — atteignable depuis la Story 32-12a (table
+        // créée après le plancher, absente d'une sauvegarde qui la précède) :
+        // compte comme sentinelle absente.
         let empty = BTreeMap::new();
         assert_eq!(missing_sentinels(&empty, sentinels).len(), 2);
+    }
+
+    // =======================================================================
+    // Story 32-12a (#722), AC11 — une table postérieure au plancher, amorcée
+    // ou corrigée par une migration, va au registre.
+    // =======================================================================
+
+    /// Les tables de `inventaire` créées **après** `plancher` (selon `creation`)
+    /// dans lesquelles `sql` écrit — premier mot-clé `INSERT`/`REPLACE`/
+    /// `UPDATE`/`DELETE` ([`writes_data`]), cible lue après `INTO`, `UPDATE` ou
+    /// `FROM`.
+    ///
+    /// La date de la cible vient de `creation`, non de la migration examinée :
+    /// une migration qui écrit dans une table créée par une migration
+    /// **antérieure** (la 32-6 amorçant une table de la 32-5) est visée au même
+    /// titre que celle qui crée sa table et l'amorce.
+    fn post_floor_write_targets(
+        sql: &str,
+        inventaire: &[&'static str],
+        creation: &dyn Fn(&str) -> Option<i64>,
+        plancher: i64,
+    ) -> Vec<&'static str> {
+        let mut cibles = Vec::new();
+        for statement in split_statements(sql) {
+            if !writes_data(&statement) {
+                continue;
+            }
+            let up = normalize(&statement).to_ascii_uppercase().replace('`', "");
+            let mots: Vec<&str> = up.split([' ', '(']).filter(|m| !m.is_empty()).collect();
+            let apres = |cle: &str| -> Option<&str> {
+                let i = mots.iter().position(|m| *m == cle)?;
+                mots.get(i + 1).copied()
+            };
+            let cible = match mots.first().copied() {
+                Some("INSERT") | Some("REPLACE") => apres("INTO"),
+                Some("DELETE") => apres("FROM"),
+                // `UPDATE [LOW_PRIORITY] [IGNORE] <table>` : le premier mot qui
+                // n'est pas un modificateur.
+                Some("UPDATE") => mots
+                    .iter()
+                    .skip(1)
+                    .copied()
+                    .find(|m| *m != "LOW_PRIORITY" && *m != "IGNORE"),
+                _ => None,
+            };
+            let Some(cible) = cible else { continue };
+            let Some(table) = inventaire
+                .iter()
+                .copied()
+                .find(|t| t.eq_ignore_ascii_case(cible))
+            else {
+                // Table système (`_kesh_version`…) ou hors inventaire : non visée.
+                continue;
+            };
+            if creation(table).is_some_and(|v| v > plancher) && !cibles.contains(&table) {
+                cibles.push(table);
+            }
+        }
+        cibles
+    }
+
+    /// La détection de l'AC11 nourrie de migrations **fictives** (mutation M7 de
+    /// la fiche 32-12) — sans quoi le test réel, vacant tant qu'aucune table
+    /// n'est postérieure au plancher, ne prouverait rien.
+    #[test]
+    fn post_floor_write_targets_on_fictitious_migrations() {
+        const PLANCHER: i64 = crate::backup::IMPORT_FLOOR_MIGRATION;
+        // Une migration fictive, postérieure au plancher.
+        const T_CREEE: i64 = 99_991_231_000_001;
+        static INVENTAIRE: &[&str] = &["t", "ancienne"];
+        let creation = |t: &str| match t {
+            "t" => Some(T_CREEE),
+            "ancienne" => Some(20260415000001),
+            _ => None,
+        };
+
+        // (1) La migration crée sa table et l'amorce.
+        let cree_et_amorce = "-- Amorçage par société.\n\
+            CREATE TABLE t (id BIGINT PRIMARY KEY, company_id BIGINT NOT NULL);\n\
+            INSERT INTO t (company_id)\n  SELECT id FROM companies\n  WHERE NOT EXISTS (SELECT 1 FROM t);\n";
+        assert_eq!(
+            post_floor_write_targets(cree_et_amorce, INVENTAIRE, &creation, PLANCHER),
+            vec!["t"],
+            "une migration qui crée une table postérieure au plancher et l'amorce est à inscrire"
+        );
+
+        // (2) Une migration ULTÉRIEURE écrit dans la table créée avant elle.
+        let ecrit_plus_tard = "UPDATE `t` SET company_id = company_id WHERE id = 1;\n\
+            INSERT IGNORE INTO t (company_id) VALUES (1);";
+        assert_eq!(
+            post_floor_write_targets(ecrit_plus_tard, INVENTAIRE, &creation, PLANCHER),
+            vec!["t"],
+            "une migration qui écrit dans une table postérieure créée par une migration \
+             antérieure est à inscrire"
+        );
+        assert_eq!(
+            post_floor_write_targets(
+                "DELETE FROM t WHERE id = 0;",
+                INVENTAIRE,
+                &creation,
+                PLANCHER
+            ),
+            vec!["t"]
+        );
+
+        // (3) Ne déclenchent rien : la table système, une table au plus tard au
+        // plancher (exigée, donc présente dans toute sauvegarde importable), le
+        // DDL `ON UPDATE CURRENT_TIMESTAMP`.
+        let rien = "UPDATE _kesh_version SET kesh_version_min_required = '0.16.0' WHERE id = 1;\n\
+            UPDATE ancienne SET a = 1;\n\
+            ALTER TABLE t ADD COLUMN u DATETIME ON UPDATE CURRENT_TIMESTAMP;";
+        assert!(
+            post_floor_write_targets(rien, INVENTAIRE, &creation, PLANCHER).is_empty(),
+            "ni une table système, ni une table exigée, ni du DDL ne sont visés"
+        );
+    }
+
+    /// **AC11 — une table postérieure au plancher amorcée va au registre.**
+    ///
+    /// Une table créée après [`crate::backup::IMPORT_FLOOR_MIGRATION`] arrive
+    /// **vide** d'une sauvegarde qui la précède (`restore_body` la vide, et le
+    /// fichier ne la porte pas). Si une migration y écrit des lignes — en la
+    /// créant, ou plus tard —, ces lignes manqueraient après l'import : l'argument
+    /// « couverture » d'une exemption serait faux, et
+    /// `every_data_backfill_migration_is_triaged`, qui accepte toute
+    /// justification écrite, ne le verrait pas. La migration doit donc figurer à
+    /// [`POST_RESTORE_BACKFILLS`] — par un **extrait** de ses seuls statements
+    /// d'écriture si elle crée aussi la table (`registry_sql_contains_no_ddl`).
+    ///
+    /// Vacant à la Story 32-12a : aucune table de l'inventaire n'est postérieure
+    /// au plancher. Sa matière vient de
+    /// `post_floor_write_targets_on_fictitious_migrations`, puis, à la 32-5, du
+    /// réel.
+    #[test]
+    fn post_floor_table_seeds_are_replayed() {
+        let floor = crate::backup::IMPORT_FLOOR_MIGRATION;
+        let creation = |t: &str| crate::backup::table_creating_migrations().get(t).copied();
+        let mut fautives = Vec::new();
+        for m in crate::MIGRATOR.migrations.iter() {
+            if m.version <= floor {
+                continue;
+            }
+            let cibles = post_floor_write_targets(
+                &m.sql,
+                crate::backup::TABLES_TO_TRUNCATE,
+                &creation,
+                floor,
+            );
+            if cibles.is_empty() {
+                continue;
+            }
+            let au_registre = POST_RESTORE_BACKFILLS
+                .iter()
+                .any(|e| e.version == m.version);
+            let exemptee = EXEMPT_MIGRATIONS.iter().any(|(v, _, _)| *v == m.version);
+            if !au_registre || exemptee {
+                fautives.push(format!("{} → {cibles:?}", migration_file_name(m)));
+            }
+        }
+        assert!(
+            fautives.is_empty(),
+            "migration(s) écrivant dans une table créée APRÈS le plancher d'import ({floor}) sans \
+             figurer à POST_RESTORE_BACKFILLS (ou exemptée) : {fautives:?}\n\
+             Une sauvegarde antérieure à la table arrive sans elle ; la table est vidée à \
+             l'import, et ces lignes manqueraient. → l'inscrire au registre, en classe A gardée, \
+             par un EXTRAIT de ses seuls statements d'écriture si elle crée aussi la table \
+             (`registry_sql_contains_no_ddl`). Cf. fiche 32-12, *Contrat*, point 2."
+        );
     }
 }

@@ -498,8 +498,9 @@ mod tests {
     fn table_systeme_hors_inventaire() {
         assert!(
             !crate::backup::TABLES_TO_TRUNCATE.contains(&"_kesh_backup_schedule"),
-            "_kesh_backup_schedule est une table système : l'ajouter à l'inventaire \
-             rendrait toute sauvegarde antérieure non importable"
+            "_kesh_backup_schedule est une table système : elle appartient à l'installation, \
+             non aux livres — dans l'inventaire, elle serait exportée, et vidée à l'import de \
+             toute sauvegarde qui ne la porte pas, réglage de la sauvegarde automatique compris"
         );
     }
 

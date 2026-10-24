@@ -3899,6 +3899,73 @@ async fn ac10_la_sauvegarde_de_la_0_14_0_s_importe(pool: MySqlPool) {
     assert_eq!(details["source_format_version"], 1);
 }
 
+// ============================================================
+// Story 32-12a (#722), AC6 — la règle d'inventaire : les refus restent des
+// refus, avant tout effet.
+// ============================================================
+
+/// La sauvegarde produite par l'exporteur **de la v0.15.0** (Story 32-12a,
+/// AC15) : format 2, 39 tables, deux pièces. Jamais régénérée — cf.
+/// `generate_fixture_0_15_0`.
+const FIXTURE_0_15_0: &[u8] = include_bytes!("fixtures/keshbackup-0.15.0-format2.keshbackup");
+
+/// Importe `bytes` sur une installation qui porte la société « CI Témoin »,
+/// exige le refus `400 INVALID_BACKUP_STRUCTURE`, puis que la base soit
+/// intacte (la société témoin relue) et qu'aucune sauvegarde pré-import n'ait
+/// été écrite. Le **motif** du refus ne traverse pas la réponse HTTP (il est
+/// journalisé) : il se prouve hors HTTP, `admin_backup::import::tests`.
+async fn exiger_refus_d_inventaire_sans_effet(pool: &MySqlPool, bytes: Vec<u8>) {
+    let docs = pieces::dossier();
+    let backup = pieces::dossier();
+    let admin = seed_admin(pool, "Témoin").await;
+    let app = spawn_app_with(pool.clone(), config_docs(docs.path(), backup.path())).await;
+    let resp = post_import(&app, &admin.jwt, bytes).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "INVALID_BACKUP_STRUCTURE");
+    let societes: Vec<String> = sqlx::query_scalar("SELECT name FROM companies")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+    assert_eq!(societes, vec!["CI Témoin".to_string()], "base intacte");
+    assert_eq!(
+        std::fs::read_dir(backup.path()).unwrap().count(),
+        0,
+        "aucune sauvegarde pré-import ne doit avoir été écrite"
+    );
+}
+
+/// AC6 (i) — la fixture 0.15.0 privée de `products` (créée au plus tard par le
+/// plancher d'import, donc exigée) → 400, sans effet.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac6_une_table_exigee_absente_est_refusee_sans_effet(pool: MySqlPool) {
+    let (mut manifest, mut data, fichiers) = ouvrir_tout(FIXTURE_0_15_0);
+    assert!(data.remove("products").is_some());
+    assert!(
+        manifest["tables"]
+            .as_object_mut()
+            .unwrap()
+            .remove("products")
+            .is_some()
+    );
+    exiger_refus_d_inventaire_sans_effet(&pool, rezip_tout(&manifest, &data, &fichiers)).await;
+}
+
+/// AC6 (ii) — la fixture 0.15.0 augmentée d'une table que ce binaire ne
+/// connaît pas (sauvegarde d'une version plus récente) → 400, sans effet.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac6_une_table_inconnue_est_refusee_sans_effet(pool: MySqlPool) {
+    let (mut manifest, mut data, fichiers) = ouvrir_tout(FIXTURE_0_15_0);
+    let ndjson = Vec::new();
+    manifest["tables"]["table_du_futur"] = serde_json::json!({
+        "rowCount": 0,
+        "sha256": sha256_hex(&ndjson),
+        "columnNames": ["id"],
+    });
+    data.insert("table_du_futur".to_string(), ndjson);
+    exiger_refus_d_inventaire_sans_effet(&pool, rezip_tout(&manifest, &data, &fichiers)).await;
+}
+
 /// AC7 (format 2) — une pièce de `files` qu'aucune ligne restaurée ne
 /// référence → 400.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

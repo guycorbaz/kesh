@@ -270,9 +270,11 @@ pub async fn check_downgrade_protection(
 /// Sémantique (DC4) : refus **ssi `manifest_min_required > binary`** — le
 /// binaire destination ne sait pas lire un schéma exigeant une version plus
 /// récente que lui (downgrade-protection, identique à 10-2). On **NE refuse
-/// PAS** sur `kesh_version > binary` seul (sur-restrictif : une source d'une
-/// version mineure plus récente mais non-breaking reste importable ; la compat
-/// schéma est vérifiée par ailleurs via le check colonnes bidirectionnel).
+/// PAS** sur `kesh_version > binary` seul (sur-restrictif) : ce contrôle-ci ne
+/// refuse pas une source d'une version plus récente pour cette seule raison ;
+/// l'inventaire des tables (`kesh_db::backup::check_backup_inventory`, qui
+/// refuse une table que ce binaire ne connaît pas) et la compatibilité des
+/// colonnes (check bidirectionnel) peuvent refuser ailleurs.
 ///
 /// En cas de refus, retourne [`VersionError::DowngradeRefused`] (le caller
 /// 17-3c le mappe en `409`). Les strings non-SemVer retournent
