@@ -1,6 +1,8 @@
 // Story 31-1c (#503, AC31 (b), AC37) — le bandeau de l'application :
 // Administrateur seulement, sauvegarde activée, échec ou retard dit par le
-// serveur ; jamais pour `partial`, jamais si la lecture échoue.
+// serveur ; jamais pour `partial` ; jamais si la PREMIÈRE lecture échoue — un
+// échec de lecture ultérieur garde le dernier état lu (Story 32-1b, #711 E-8).
+// Story 32-1b (#711 L-B5) : une réussite datée du futur se dit telle.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 
@@ -21,7 +23,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 
 import * as api from './backup-schedule.api';
 import type { BackupSchedule } from './backup-schedule.api';
-import { setBackupScheduleState } from './backup-schedule.svelte';
+import { refreshBackupScheduleState, setBackupScheduleState } from './backup-schedule.svelte';
 import BackupScheduleBanner from './BackupScheduleBanner.svelte';
 
 const fetchMock = vi.mocked(api.fetchBackupSchedule);
@@ -41,6 +43,7 @@ function schedule(over: Partial<BackupSchedule> = {}): BackupSchedule {
 		lastCompleteFile: 'kesh-auto-20261020T010000000Z.keshbackup',
 		nextDueAt: '2026-10-21T01:00:00.000Z',
 		overdue: false,
+		lastSuccessInFuture: false,
 		...over,
 	};
 }
@@ -120,5 +123,58 @@ describe('BackupScheduleBanner — Story 31-1c', () => {
 		expect(screen.queryByTestId('backup-schedule-banner')).toBeNull();
 		setBackupScheduleState(schedule({ lastStatus: 'failed' }));
 		expect(await screen.findByTestId('backup-schedule-banner')).toBeTruthy();
+	});
+});
+
+describe('BackupScheduleBanner — Story 32-1b (#711 E-8, L-B5)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		auth.currentUser = { role: 'Admin' };
+		setBackupScheduleState(null);
+	});
+
+	it('E-8 (i) : un sondage en échec garde le dernier état lu', async () => {
+		await afficher(schedule({ lastStatus: 'failed' }));
+		expect((await screen.findByTestId('backup-schedule-banner')).getAttribute('data-kind')).toBe(
+			'failed',
+		);
+		fetchMock.mockRejectedValue(new Error('réseau'));
+		await refreshBackupScheduleState();
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		await Promise.resolve();
+		expect(screen.getByTestId('backup-schedule-banner').getAttribute('data-kind')).toBe('failed');
+	});
+
+	it('E-8 (ii) : une réponse tardive ne remplace pas l’état posé par le panneau', async () => {
+		let rendre!: (s: BackupSchedule) => void;
+		fetchMock.mockImplementation(() => new Promise((r) => (rendre = r)));
+		render(BackupScheduleBanner);
+		await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+		setBackupScheduleState(schedule());
+		rendre(schedule({ lastStatus: 'failed' }));
+		await new Promise((r) => setTimeout(r, 0));
+		expect(screen.queryByTestId('backup-schedule-banner')).toBeNull();
+	});
+
+	it('L-B5 : réussite datée après l’heure du serveur → le bandeau le dit, avec la date', async () => {
+		await afficher(
+			schedule({
+				overdue: true,
+				lastSuccessInFuture: true,
+				lastSuccessAt: '2027-03-01T08:00:00.000Z',
+			}),
+		);
+		const bandeau = await screen.findByTestId('backup-schedule-banner');
+		expect(bandeau.getAttribute('data-kind')).toBe('overdue');
+		expect(bandeau.textContent).toContain("après l'heure du serveur : son horloge a reculé");
+		expect(bandeau.textContent).toContain('2027');
+		expect(bandeau.textContent).not.toContain('Aucune sauvegarde automatique réussie depuis le');
+	});
+
+	it('L-B5 : en retard sans réussite future → le texte du retard', async () => {
+		await afficher(schedule({ overdue: true, lastSuccessInFuture: false }));
+		const bandeau = await screen.findByTestId('backup-schedule-banner');
+		expect(bandeau.textContent).toContain('Aucune sauvegarde automatique réussie depuis le');
+		expect(bandeau.textContent).not.toContain('horloge');
 	});
 });
