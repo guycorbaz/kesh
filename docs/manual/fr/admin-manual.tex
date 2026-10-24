@@ -223,7 +223,7 @@ cd /opt/kesh
 Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.14.0/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.15.0/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -234,7 +234,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.14.0/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.15.0/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -570,7 +570,7 @@ Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh,
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.14.0
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.15.0
 curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
 curl -fsSL "$DEPOT/.env.example" -o .env
 
@@ -1637,7 +1637,7 @@ Le fichier \keshcommand{.keshbackup} est un \textbf{secret} (mots de passe hach�
 \paragraph{Les contrôles de la copie.} Les huit premiers précèdent tout démarrage ; chacun écrit ce qu'on doit voir, et tout écart est un arrêt --- sauf une variable du terminal, aux contrôles 1 et~4 : elle se retire et le contrôle se refait, rien n'ayant encore été lu par Compose.
 
 \begin{enumerate}
-    \item \textbf{Environnement neutre, démon local, Compose 2.24 ou plus.} Les variables du terminal l'emportent sur le \keshpath{.env} : la première commande ne doit \textbf{rien} afficher ; sinon, retirez chaque variable listée (\keshcommand{unset}) et refaites-la. Elle affiche chaque variable \textbf{avec sa valeur}, mots de passe compris : ne recopiez pas sa sortie --- au procès-verbal, notez seulement les noms retirés --- ; il en va de même au contrôle final. \keshcommand{DATABASE\_URL} y figure : sur une machine de développement, elle est souvent exportée par le profil du terminal, et le compose du Synology la lirait. \keshcommand{RUST\_LOG} aussi : le compose la lit, et un niveau \texttt{debug} hérité du terminal ferait écrire des données métier en clair dans le journal de la copie. Ce filtre couvre les variables que lit le compose du tag 0.14.0 ; celles du compose de \textbf{votre} version se contrôlent au contrôle~4, sur le fichier lui-même.
+    \item \textbf{Environnement neutre, démon local, Compose 2.24 ou plus.} Les variables du terminal l'emportent sur le \keshpath{.env} : la première commande ne doit \textbf{rien} afficher ; sinon, retirez chaque variable listée (\keshcommand{unset}) et refaites-la. Elle affiche chaque variable \textbf{avec sa valeur}, mots de passe compris : ne recopiez pas sa sortie --- au procès-verbal, notez seulement les noms retirés --- ; il en va de même au contrôle final. \keshcommand{DATABASE\_URL} y figure : sur une machine de développement, elle est souvent exportée par le profil du terminal, et le compose du Synology la lirait. \keshcommand{RUST\_LOG} aussi : le compose la lit, et un niveau \texttt{debug} hérité du terminal ferait écrire des données métier en clair dans le journal de la copie. Ce filtre couvre les variables que lit le compose du tag 0.15.0 ; celles du compose de \textbf{votre} version se contrôlent au contrôle~4, sur le fichier lui-même.
 \begin{lstlisting}[language=bash]
 env | grep -E '^(COMPOSE_|KESH_|MARIADB_|RUST_LOG=|DATABASE_URL=)'
 env | grep -E '^DOCKER_(HOST|CONTEXT|CONFIG|TLS_VERIFY|CERT_PATH)='
@@ -1698,9 +1698,9 @@ Les exports ne doivent pas rester dans le dossier de téléchargements : Synolog
 
 \begin{enumerate}
     \setcounter{enumi}{3}
-    \item \textbf{Compose et \keshpath{.env.example} au tag de la version relevée, et variables qu'il lit.} Remplacez \texttt{0.14.0} par la version relevée. Les exemples de cette sous-section portent \texttt{0.14.0}, la version de ce manuel ; une production qui satisfait le prérequis porte \textbf{0.15.0 ou plus} : recopié tel quel, l'exemple donnerait une copie qui n'est pas celle de la production. Le contrôle~9 arrête une \textbf{image} d'une autre version ; le tag de \keshcommand{DEPOT}, lui, n'est contrôlé par rien : remplacez les deux.
+    \item \textbf{Compose et \keshpath{.env.example} au tag de la version relevée, et variables qu'il lit.} Remplacez \texttt{0.15.0} par la version relevée. Les exemples de cette sous-section portent \texttt{0.15.0}, la version de ce manuel ; une production qui satisfait le prérequis porte \textbf{0.15.0 ou plus} : à une version suivante, l'exemple recopié tel quel donnerait une copie qui n'est pas celle de la production. Le contrôle~9 arrête une \textbf{image} d'une autre version ; le tag de \keshcommand{DEPOT}, lui, n'est contrôlé par rien : remplacez les deux.
 \begin{lstlisting}[language=bash]
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.14.0
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.15.0
 curl -fsSL "$DEPOT/docker-compose.yml" -o "$COPIE/docker-compose.yml"
 curl -fsSL "$DEPOT/.env.example" -o "$COPIE/.env"
 grep -oE '\$\{?[A-Za-z_][A-Za-z0-9_]*' "$COPIE/docker-compose.yml" \
@@ -1743,7 +1743,7 @@ docker compose -p kesh-repetition --project-directory "$COPIE" \
 \needspace{19\baselineskip}
 \begin{lstlisting}[language=bash]
 cat > "$COPIE/docker-compose.override.yml" <<'FIN'
-{"services": {"kesh-api": {"image": "gcorbaz/kesh:0.14.0",
+{"services": {"kesh-api": {"image": "gcorbaz/kesh:0.15.0",
   "ports": !override ["127.0.0.1:18314:80"], "restart": "no"},
   "mariadb": {"restart": "no"}}}
 FIN
@@ -2018,13 +2018,13 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.14.0
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.15.0
 curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
 curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
 \end{lstlisting}
 
-L'URL désigne l'étiquette d'une version publiée (\keshpath{v0.14.0} ici) : prenez celle de la version que vous installez, la même que l'image de votre compose --- les scripts d'une autre version peuvent attendre d'autres réglages. Ne prenez pas \keshpath{main}, qui peut être en avance sur l'image publiée.
+L'URL désigne l'étiquette d'une version publiée (\keshpath{v0.15.0} ici) : prenez celle de la version que vous installez, la même que l'image de votre compose --- les scripts d'une autre version peuvent attendre d'autres réglages. Ne prenez pas \keshpath{main}, qui peut être en avance sur l'image publiée.
 
 \keshpath{kesh-dump.sh} écrit dans \keshpath{dump/} (forcé en 700) le dump et son empreinte (\keshpath{.sha256}), lisibles de root seul. Il s'arrête à la première erreur ; le dump s'écrit d'abord dans un fichier \keshpath{.tmp}, vérifié (archive intègre, au moins une table, dump complet), puis renommé : un dump raté ou vide ne remplace pas celui de la veille et ne laisse aucun fichier. Un verrou (\keshpath{dump/.verrou}) empêche deux dumps simultanés ; laissé par un arrêt brutal, il se supprime à la main (\keshcommand{rmdir}). Ses réglages, par variables d'environnement, ont pour défauts ceux de ce manuel : \texttt{SAUVEGARDE\_DOSSIER} (\keshpath{/volume1/docker/kesh}), \texttt{SAUVEGARDE\_BASE} (\texttt{kesh}, la base de \texttt{DATABASE\_URL}), \texttt{SAUVEGARDE\_RESEAU} (\keshcommand{frontend}), \texttt{SAUVEGARDE\_IMAGE} (\keshcommand{mariadb:10.11}) ; si votre base porte un autre nom, la commande de la tâche devient :
 

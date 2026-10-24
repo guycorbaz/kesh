@@ -395,7 +395,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
     \item Paiements sortants : fichier ISO 20022 \texttt{pain.001.001.09} (Swiss Payment Standards / SIX). \emph{(v0.3.x)}
     \item Import de factures fournisseurs déposées dans un dossier, avec décodage du QR-facture côté serveur. \emph{(v0.3.x)} Depuis la v0.14.0, tout document y entre, avec ou sans QR-code.
     \item Exports PDF et CSV par rapport + ZIP global de souveraineté avec SHA-256.
-    \item Export / import complet d'installation (\texttt{.keshbackup}) pour migration ou restauration sans accès SSH.
+    \item Export / import complet d'installation (\texttt{.keshbackup}) pour migration ou restauration sans accès SSH. Depuis la v0.15.0, il emporte les pièces justificatives.
     \item API externe à clés d'accès personnelles (PAT) pour intégrations IA et logiciels tiers.
     \item Déploiement \& Opérations : CI/CD release automatisée, images Docker officielles, migrations automatiques, résilience frontend, manuels PDF.
 \end{itemize}
@@ -430,7 +430,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 
 \vspace{0.4cm}
 
-\textbf{\color{keshWarning}\faClock\ Préparer la première clôture (Epic 29, en cours)}
+\textbf{\color{keshSuccess}\faCheckCircle\ Préparer la première clôture (Epic 29, v0.13.4 et v0.14)}
 
 \begin{itemize}
     \item Sept contrôles préalables à la clôture, en lecture seule (rapprochement bancaire, relevé de fin d'exercice, brouillons, écritures incohérentes\ldots). \emph{(livré en v0.13.4)}
@@ -445,6 +445,17 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
     \item « Documents à traiter » : tout document fournisseur, avec ou sans QR-code, avec un aperçu ; la facture se crée à côté de son document, le fournisseur proposé --- jamais choisi d'office --- ou créé sans quitter la saisie.
     \item Un document se joint à une facture après coup, s'en détache, et se voit depuis l'écriture.
     \item La réconciliation propose la facture fournisseur ouverte pour un débit du relevé, et la règle.
+\end{itemize}
+
+\vspace{0.4cm}
+
+\textbf{\color{keshSuccess}\faCheckCircle\ Tenir les livres : une sauvegarde qui restaure tout (Epic 31, v0.15)}
+
+\begin{itemize}
+    \item La sauvegarde \texttt{.keshbackup} emporte les pièces justificatives : documents fournisseur importés et PDF figés des factures émises, chacun vérifié par son empreinte à la restauration.
+    \item Kesh fait lui-même sa sauvegarde complète, à intervalle régulier, réglée dans l'interface ; les sauvegardes du serveur se listent et se téléchargent depuis l'écran.
+    \item Une installation neuve se restaure depuis l'assistant, sans SSH ni société à configurer.
+    \item Le manuel d'administration décrit la répétition d'une clôture sur une copie isolée, avant de clore pour de bon.
 \end{itemize}
 
 \vspace{0.4cm}
