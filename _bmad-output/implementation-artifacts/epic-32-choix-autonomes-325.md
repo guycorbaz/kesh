@@ -282,7 +282,8 @@ de ligne cités sont ceux de `e59d63e8`.
   lettrage » (`admin-manual.tex:2321`) et que le `.keshbackup` porte « les condensés des clés API (PAT) »
   (`:2230`).
 - **Retenu** : (1) § *Ce que la sauvegarde emporte*, paragraphe **Compatibilité** : la règle, la marche à suivre
-  *(annoté en P6 : marche remplacée par C-32-5-28, la phrase vit à l'AC-a13 (1) seule)* (installer l'image de la version qui a produit la sauvegarde, importer, puis mettre à jour), le message de refus ; (2)
+  (installer l'image de la version qui a produit la sauvegarde, importer, puis mettre à jour) *(annoté en P6, déplacé en
+  P7 : cette marche est remplacée par C-32-5-28 ; la phrase vit à l'AC-a13 (1) seule)*, le message de refus ; (2)
   § *Reprises de données rejouées à l'import* : plus aucune reprise rejouée depuis la 0.16.0, et pourquoi ; (3)
   l'avertissement « secret » : les condensés des clés MCP ; CHANGELOG `[0.16.0]`, un ⚠️ en tête de *Modifié*. PDF
   régénéré.

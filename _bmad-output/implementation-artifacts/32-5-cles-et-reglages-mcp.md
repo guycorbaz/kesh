@@ -3,7 +3,7 @@
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-5`, branche `story/32-5` partie de `main`
-`e59d63e8` ; remédiée après les validations P1 à P4 le même jour. Registre : `epic-32-choix-autonomes-325.md` (C-32-5-1 à
+`e59d63e8` ; remédiée après les validations P1 à P7 le même jour. Registre : `epic-32-choix-autonomes-325.md` (C-32-5-1 à
 C-32-5-28). Clé courte : `325`. Issue de l'epic : #723 (CR « Serveur MCP intégré à Kesh ») ; issue voisine : #722
 (« la sauvegarde emporte tout ce qu'il faut pour redémarrer, hors `.env` ») — toutes deux en `refs` seulement. Les
 numéros de ligne cités sont ceux de `e59d63e8`.*
@@ -386,7 +386,16 @@ passages du manuel qui les décrivent (C-32-5-22).
     réglages du serveur MCP — **activation comprise** — **sont dans** le fichier ; la liste de ce qui reste hors du
     fichier gagne **le réglage et l'état de la sauvegarde automatique**, propres à l'installation (R9 ; défaut
     antérieur, suivi par #722) ;
-    (5) § *Restaurer sur une nouvelle machine* (F1) : `:2373` (« une sauvegarde de format 1 restaure la
+    (5) **La classe, non la ligne** (P7-1) : le développement relit **en entier** le § *Restaurer sur une nouvelle
+    machine* (`:2371-…`) et le paragraphe *Compatibilité* (`:2246`) ; **toute** mention de format (« format 1 »,
+    « format 2 ») ou de version (« 0.15.0 », « ou plus récente », « égale ») y est réécrite pour rester vraie après la
+    32-5a. Premier site connu, **sans que la liste soit close** : `:2373`, « La sauvegarde doit être de format 2 (0.15.0
+    ou plus récente) pour emporter les pièces » — la 0.16.0 refuse une sauvegarde de la 0.15.0, la clause se réduit au
+    fait que le format 2 emporte les pièces, la version renvoyant à *Compatibilité*. **C'est le grep qui ferme la
+    liste** : `grep -nE "format [12]|0\.15\.0|ou plus récente|égale" docs/manual/fr/admin-manual.tex` restreint aux
+    lignes de ces deux §, et le même motif sur le PDF aplati (`pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' '
+    | tr -s ' ' | grep -oiE ".{60}(format [12]|0\.15\.0|ou plus récente|égale).{80}"`), **sorties citées au Dev Agent
+    Record**, chaque occurrence restante justifiée. En particulier, `:2373` (« une sauvegarde de format 1 restaure la
     comptabilité ») et `:2376` (« dans une version **égale ou plus récente** ») deviennent : l'étape 1 **ne nomme plus aucune
     version à installer** ; elle se réduit à la règle — la version installée doit porter les mêmes tables que la
     sauvegarde — et renvoie au paragraphe *Compatibilité* que prescrit (1), seul lieu de la phrase sur une sauvegarde
@@ -400,13 +409,14 @@ passages du manuel qui les décrivent (C-32-5-22).
     rappel de prendre une sauvegarde complète juste après la mise à jour. PDF régénéré (`make fr` dans `docs/manual/`) et **contrôlé aplati**, apostrophes typographiques
     comprises (`pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oiE ".{60}mêmes
     tables.{80}"` rend la phrase ; idem « au tag de cette version », « juste après la mise à jour », « serveur MCP », « sauvegarde automatique » dans la liste, et
-    plus aucune occurrence de « égale ou plus récente » ni de « appliquera cette fois »).
+    plus aucune occurrence de « égale ou plus récente », « 0.15.0 ou plus récente » ni de « appliquera cette fois »).
 14. **AC-a14 — propagation.** Rendent zéro site périmé (les mentions historiques datées restent, marquées comme
     telles) : `grep -rnE "\b39\b" crates docs --include=*.rs --include=*.tex --include=*.md | grep -i table` ;
     `grep -rn "dix ci-dessous" crates` ; `grep -rn "aucune table applicative n'est créée depuis" crates` ;
     `grep -rn "classe A de \`POST_RESTORE_BACKFILLS\`\|au registre (Story 15-1a2-ii\|registre de rejeu\|au registre (classe A)\|rejouée à l'import" crates --include=*.rs` ;
     `grep -rn "n'est PAS vide" crates/kesh-api/tests/admin_full_import_e2e.rs` ;
-    `grep -rnE "égale ou plus récente|format 1 restaure|appliquera cette fois|rejoue donc ces reprises" docs/manual`.
+    `grep -rnE "égale ou plus récente|0\.15\.0 ou plus récente|format 1 restaure|appliquera cette fois|rejoue donc ces reprises" docs/manual` ;
+    et le grep de classe d'AC-a13 (5) (`format [12]|0\.15\.0|ou plus récente|égale`) sur les deux § qu'il vise.
     ⚠️ Lignes attendues, exemptées : l'en-tête de `20261010000002_lettering_reversal_pairs_backfill.sql:3` et celui de
     `20260909000001_closing_accounts_not_postable.sql:52` (migrations, P8), les historiques datés de
     `post_restore.rs:421` et `:497` (« Figurait au registre de rejeu jusque-là ») ; chaque occurrence de « format 1 »
@@ -829,13 +839,23 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
    l'ajouter à l'écran (C-32-5-10).
 7. **Pour information — une conséquence de Q4** : la 0.16.0 refuse les sauvegardes de la 0.15.0, et, du même coup, le
    rattrapage du lettrage rejoué à l'import (0.13.0) n'a plus d'objet et se retire (C-32-5-13). Rien n'est perdu pour
-   une installation neuve ; le manuel en dit la règle en une seule phrase (AC-a13 (1), C-32-5-28) et ne prescrit aucune
-   procédure : la 0.14.0 n'a pas de restauration sur machine neuve, et la 32-5 ne la pallie pas,
+   une installation neuve ; le manuel dit la règle, la phrase sur une sauvegarde plus ancienne et le rappel de la sauvegarde
+   complète (AC-a13 (1), C-32-5-28) ; il ne décrit aucune marche de restauration : la 0.14.0 n'a pas de restauration sur machine neuve, et la 32-5 ne la pallie pas,
    puisque tu installeras à neuf. ⚠️ Si une installation existante (celle du NAS) était
    mise à jour en 0.16.0 au lieu d'une installation neuve, **toutes** ses sauvegardes antérieures, automatiques
    comprises, cesseraient de se restaurer sur la 0.16.0 : d'où la sauvegarde complète juste après la mise à jour, que le manuel et le CHANGELOG prescrivent (AC-a13 (1)).
    *(La prémisse « Kesh n'est pas en service » est la tienne ; son écart avec `CLAUDE.md`, qui dit les livres réels
    tenus sur le NAS, t'est déjà posé par l'orchestrateur — la fiche ne le tranche pas, F14.)*
+
+## À recontrôler à l'étape 0 du développement
+
+Constats de la validation P7 laissés sans remédiation, parce qu'ils demandaient plus qu'une annotation ou un mot :
+
+- **P7-6 (LOW)** — dans la phrase prescrite de l'AC-a13 (1), « après la mise à jour vers la 0.16.0, prendre une
+  sauvegarde complète juste après la mise à jour » répète « la mise à jour », et le « seulement » de la phrase sur une
+  sauvegarde plus ancienne précède une liste que suit, dix lignes plus bas, un énoncé de plus. Au développement : écrire
+  au manuel une phrase sans redite (p. ex. « après la mise à jour vers la 0.16.0, prendre sans attendre une sauvegarde
+  complète »), et ajuster en conséquence le motif du contrôle aplati (« juste après la mise à jour »).
 
 ## Dev Agent Record
 
@@ -1027,7 +1047,9 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
   - **P6-1 (MEDIUM), par retrait** : l'étape 1 (`admin-manual.tex:2376`) ne nomme plus aucune version ; elle se réduit
     à la règle des mêmes tables et renvoie à *Compatibilité*. **Seule l'AC-a13 (1) porte désormais la phrase** sur une
     sauvegarde plus ancienne : le point 7, C-32-5-28, C-32-5-21 et la précision du fichier d'epic y renvoient au lieu de
-    la répéter.
+    la répéter. *(Annoté en P7, P7-3 : inexact pour C-32-5-21, **annoté** et non réduit — son ancienne marche reste en
+    clair, sous l'annotation déplacée après elle ; et la précision du fichier d'epic a été réécrite au lieu d'être
+    annotée, P7-4.)*
   - **P6-2 (MEDIUM), par rétablissement** : « prendre une sauvegarde complète juste après la mise à jour » redevient une
     phrase distincte de *Compatibilité* et du CHANGELOG, contrôlée au PDF aplati ; le point 7 y renvoie ; l'entrée P5 qui
     le disait « plus prescrit à cet endroit » est annotée.
@@ -1039,4 +1061,24 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
     (puce Q4, suivie de ses précisions datées).
   - Totaux inchangés : 31 AC, 23 tâches, 23 mutations ; registre C-32-5-1 à C-32-5-28. Suivante : P7 ciblée, Sonnet
     (`325-validate-prompt-p7.md`), qui relit aussi **toute la fiche** à la recherche d'une prescription restante.
+- **2026-10-25 — Validation P7** (passe **ciblée**, regression hunter, contexte frais, **Sonnet**, sur `2e0ea04c`, avec un
+  axe sur toute la fiche ; rapport `kesh-gate-logs/325-validate-p7.md`). **Trend : P1 2 HIGH / 8 MEDIUM → P2 1 / 7 →
+  P3 0 / 1 → P4 0 / 1 → P5 0 / 1 → P6 0 / 2 → P7 0 / 0 / 1 MEDIUM / 5 LOW.** Passes : **7 sur 8** ; la P8 est la
+  dernière permise. Remédiation (Opus 5.5), sur la fiche, le registre, le fichier d'epic et le registre de sprint seuls :
+  - **P7-1 (MEDIUM), traité par classe** : la sixième forme du même défaut (« format 2 (0.15.0 ou plus récente) », à
+    `admin-manual.tex:2373`, que la 0.16.0 rend faux) n'est pas corrigée ligne à ligne. L'AC-a13 (5) prescrit de relire
+    en entier *Restaurer sur une nouvelle machine* et *Compatibilité*, d'y réécrire toute mention de format ou de
+    version pour qu'elle reste vraie après la 32-5a, et de fermer la liste **par un grep** (`format [12]|0\.15\.0|ou plus
+    récente|égale`, sur le `.tex` et sur le PDF aplati, sorties citées au Dev Agent Record). `:2373` est nommée comme
+    premier site connu, sans prétendre la liste close. L'AC-a14 et le contrôle du PDF reçoivent ces motifs.
+  - **LOW traités par un mot ou une annotation** : P7-2 (point 7 à Guy : la règle, la phrase et le rappel ; aucune marche
+    de restauration) ; P7-3 (annotation de C-32-5-21 déplacée après la parenthèse qu'elle annote ; l'entrée P6 annotée :
+    C-32-5-21 est annoté, non réduit) ; P7-4 (la précision datée P4 du fichier d'epic, réécrite en P5 et P6, **annotée**
+    sans être réécrite de nouveau ; texte d'origine au commit `481116dd`) ; P7-5 (en-tête : « P1 à P7 »).
+  - **Reporté** : P7-6 (redite dans la phrase prescrite) → section *À recontrôler à l'étape 0 du développement*.
+  - **Valeurs grepées** sur la fiche, le registre, le fichier d'epic et le registre de sprint : `0.15.0 ou plus récente`
+    (désormais au seul titre de motif à greper : AC-a13 (5), contrôle du PDF de l'AC-a13, AC-a14), `en une seule phrase`, `P1 à P4`, `ne prescrit aucune
+    procédure` (point 7) → plus aucune occurrence vivante.
+  - Totaux inchangés : 31 AC, 23 tâches, 23 mutations ; registre C-32-5-1 à C-32-5-28. Suivante : **P8, dernière passe
+    permise**, ciblée, Opus (`325-validate-prompt-p8.md`).
 
