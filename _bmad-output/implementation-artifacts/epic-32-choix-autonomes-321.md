@@ -1,6 +1,6 @@
 # Epic 32 — registre des choix autonomes de la Story 32-1 (défauts courts, clés 32-1a, 32-1b, 32-1c)
 
-Registre propre à la story, à verser **par union** dans `epic-32-choix-autonomes.md` au merge
+Registre propre à la story (C-32-1-1 à C-32-1-28 ; C-32-1-20 à 28 de la validation P1), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
 (`docs/agents-orchestration.md` § 1). Fiche : `32-1-defauts-courts.md`. Clé courte : `321`.
 Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` sur `chore/kickoff-epic-32` (`6f0cee00`).
 
@@ -31,6 +31,7 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   fiche le dit. Prémisse du fichier d'epic corrigée (à signaler à l'orchestrateur).
 - **Écartées** : chercher un test qui « tue » la M4 de la 31-5 (il faudrait une ligne de réglages préexistante dans
   `seed_demo`, ce que la démonstration ne produit pas : un tel test prouverait un cas qui n'existe pas).
+- **Amendé (validation P1, 2026-10-24)** : « M-a1 » devient **trois** mutations, une par colonne (M-a1a, M-a1b, M-a1c), et le test pose les trois colonnes — C-32-1-21.
 - **Réversible** : oui.
 
 ### C-32-1-3 — B3 : un test d'existence, pas de repli Rust, pour `invoice-qr-message-prefix`
@@ -60,6 +61,7 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Écartées** : capturer le journal (`tracing`) pour lire le message de la garde (aucune capture n'existe dans les tests
   de `kesh-api`, et ce serait la seule) ; réécrire `ecrire` pour rendre l'étape qui échoue (une modification de
   production pour un test).
+- **Amendé (validation P1, 2026-10-24)** : `wrap_writer` n'est plus compté : sur ce montage, `write_backup_file` échoue avant `remplir`, le compteur serait à zéro avec ou sans le défaut ; M-a3 est tuée par `free_bytes` seul — C-32-1-25.
 - **Réversible** : oui.
 
 ### C-32-1-5 — E-9 (2) : la garde lexicale de l'export reste la seule, et le dit
@@ -85,6 +87,7 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   helper reçoit son assertion de montage (cas qui rougit avant le correctif).
 - **Écartées** : un analyseur Rust (`syn`) pour trois gardes lexicales (une dépendance pour des tests) ; laisser les
   helpers tels quels (le constat est réel : un `/* auto_backup::spawn(x) */` dans `main.rs` compterait).
+- **Amendé (validation P1, 2026-10-24)** : le retrait des `/* … */` passe par un **balayeur** qui connaît les chaînes (brutes comprises), les `//` et les littéraux de caractère sans les confondre avec les durées de vie ; assertions de montage tirées de `lib.rs:1186` — C-32-1-20.
 - **Réversible** : oui.
 
 ### C-32-1-7 — E7 : le doc-comment de `kesh-db` seul ; `kesh-seed` n'est pas touché
@@ -102,6 +105,7 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   bas au plan standard), et le rejeu de `seed_demo` sur interblocage (`is_seed_retryable`) en est le filet. La 32-1a reste
   à trois modules.
 - **Écartée** : retoucher aussi `final_body` (un cinquième site pour une phrase déjà juste).
+- **Amendé (validation P1, 2026-10-24)** : la séquence n'est pas « les trois rôles » : `insert_with_defaults_in_tx` verrouille aussi, par `chart_designated_accounts`, jusqu'à quatre comptes désignés par le plan — C-32-1-23.
 - **Réversible** : oui.
 
 ### C-32-1-8 — E-6 : une saisie non enregistrée survit à « Sauvegarder maintenant » ; « Recharger » la remplace
@@ -128,6 +132,7 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   ont été relus — et relit l'état (`applyState`, C-32-1-8) et la liste. Clé neuve `admin-backup-auto-run-unknown`.
 - **Écartées** : distinguer `TIMEOUT` / `NETWORK_ERROR` des 5xx (le résultat est inconnu dans les deux cas) ; sonder
   l'état jusqu'à voir changer `lastAttemptAt` (une boucle pour un cas rare).
+- **Amendé (validation P1, 2026-10-24)** : « tout échec autre que 409 » est **remplacé** : le message « pas parvenue » est réservé à l'issue inconnue (prédicat d'`issueInconnue` de l'import, extrait) ; les autres 5xx gardent le message du serveur et relisent ; les 4xx gardent le message du serveur sans relire — C-32-1-22. L'écartée « distinguer `TIMEOUT` / `NETWORK_ERROR` des 5xx » est reprise en partie.
 - **Réversible** : oui.
 
 ### C-32-1-10 — E-8 : un échec de sondage garde l'état connu ; une réponse tardive est ignorée
@@ -158,6 +163,7 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Écartées** : masquer la date (le libellé « depuis le » sans date est absurde aussi) ; ne pas allumer le bandeau (le
   manuel, § *Horloge du serveur déréglée*, dit qu'il s'allume, et c'est utile : l'horloge est fausse) ; comparer dans le
   navigateur (contraire à la doctrine du module).
+- **Amendé (validation P1, 2026-10-24)** : `is_success_in_future` exige aussi `enabled`, comme `is_overdue` — C-32-1-24.
 - **Réversible** : oui (un champ additionnel de réponse).
 
 ### C-32-1-12 — L-B6 : la mention garde les Mio de la variable et ajoute l'équivalent décimal
@@ -198,9 +204,10 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   `last_success_at` (`auto_backup.rs:221-226`) ; `record_success` (`:713`) en `Err` remonte par `?` (aucune rétention,
   500 au `POST …/run`, `last_attempt_at` déjà posé : reprise dans une heure, seconde archive).
 - **Retenu** : une issue « robustesse du tour de sauvegarde automatique », deux parties, texte prêt dans la fiche
-  (*Issue à ouvrir*) ; l'orchestrateur peut la scinder.
+  (*Issue à ouvrir*, devenue *Issues ouvertes*) ; l'orchestrateur peut la scinder.
 - **Écartées** : les intégrer à la 32-1b (conception d'un délai et d'un chemin d'erreur, non mécanique — C-32-0-3) ; deux
   issues (même module, même verrou, même revue probable).
+- **Amendé (validation P1, 2026-10-24)** : l'issue est ouverte : **#725** (`bug`, `P3`), en une seule issue à deux parties.
 - **Réversible** : oui.
 
 ### C-32-1-15 — 32-1c : une phrase se corrige ici ; un geste se renvoie à Guy
@@ -217,6 +224,7 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Écartées** : tout corriger dans la 32-1c (la procédure n'a été jouée qu'une fois, dans une rédaction antérieure :
   une commande changée sans rejeu est une procédure non éprouvée de plus) ; tout renvoyer à Guy (des phrases fausses
   resteraient au manuel tant qu'il n'a pas tranché).
+- **Amendé (validation P1, 2026-10-24)** : l'issue des gestes est ouverte : **#726** (`documentation`, `P3`, sans `bug`).
 - **Réversible** : oui.
 
 ### C-32-1-16 — Le glyphe ⚠️ remplacé par une macro, dans les deux manuels FR (défaut voisin mécanique)
@@ -231,6 +239,7 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   les deux `.tex` rend 0.
 - **Écartées** : une police de repli à emoji (`fontspec` + police couleur : dépendance de la chaîne TeX du poste et de la
   CI) ; le seul manuel d'administration (le même défaut resterait, mécanique, dans l'autre).
+- **Amendé (validation P1, 2026-10-24)** : « 16 + 9 occurrences » étaient des **lignes** : 17 + 9 = **26** occurrences (la l. 2923 d'`admin-manual.tex` en porte deux), toutes suivies du sélecteur U+FE0F, remplacé avec elles ; emploi `\keshAttention\ ` ; la brochure se régénère aussi — C-32-1-26.
 - **Réversible** : oui.
 
 ### C-32-1-17 — Ordre de fusion : 32-1c, puis 32-1b ; le second régénère le PDF
@@ -240,6 +249,7 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Retenu** : la 32-1c (doc seule, plus courte) se fusionne d'abord ; la 32-1b se met à jour sur `main` avant sa revue
   finale et **régénère** le PDF (`make fr`) sur le `.tex` fusionné. La 32-1a ne touche pas le manuel.
 - **Écartée** : une PR unique pour les trois clés (trois revues dans une PR, contraire à C-32-0-3).
+- **Amendé (validation P1, 2026-10-24)** : la 32-1a et la 32-1b partagent aussi trois fichiers de code (hunks distincts) ; la clé fusionnée en second se rebase et repasse son gate complet ; `closes #711` porté par celle des deux qui fusionne en dernier — C-32-1-27.
 - **Réversible** : oui (l'ordre inverse marche, en inversant la régénération).
 
 ### C-32-1-18 — Gates : complet pour 32-1a et 32-1b, E2E complet au dernier commit de code de chacune ; 32-1c ciblé
@@ -269,3 +279,113 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   `/var/tmp` garde trente jours ; #716 E6 cite `textes_coherents.rs:276,295` — la regex est l. 277-278, son emploi
   l. 296 ; le fichier d'epic, pour la 32-1a, « M4 de la 31-5 tuée » (C-32-1-2).
 - **Réversible** : sans objet (relevé).
+
+---
+
+*Choix C-32-1-20 à C-32-1-28 : remédiation de la validation P1 (2026-10-24, Opus 5.5), sur les rapports
+`kesh-gate-logs/321-validate-p1-R.md` et `321-validate-p1-F.md`.*
+
+### C-32-1-20 — Un balayeur lexical partagé, qui connaît les chaînes avant les commentaires (R1 = F1)
+
+- **Contexte** : `lib.rs:1186` porte `/*` **dans une chaîne** (`"KESH_TEST_MODE=true — /api/v1/_test/* exposé …"`) ;
+  le fichier n'a aucun `*/` ni `#[cfg(test)]`. Un retrait de `/* … */` qui ignore les chaînes y ouvre un commentaire
+  jamais fermé : la fin de `build_router` (dont `.with_state(state)`, l. 1200) sort de la garde « zéro lancement dans
+  `lib.rs` », qui reste **verte**. Les deux assertions d'école de la fiche passaient avec ce défaut. Les fichiers lus
+  portent aussi des chaînes brutes (`auto_backup.rs:66`, `:72`) et des durées de vie `&'static` (`auto_backup.rs:258`,
+  `routes/backup_schedule.rs:194`), qu'un balayeur naïf prendrait pour des littéraux de caractère.
+- **Retenu** : un seul balayeur à états (code, `//`, `/* */` imbriqués, `"…"`, `r#"…"#`, littéraux `'x'` / `'\x'`
+  seulement), partagé par `code()` et `argument_de` ; assertions de montage tirées du réel (une chaîne contenant `/*`,
+  `code(include_str!("lib.rs"))` contient `.with_state(state)`, une durée de vie) ; mutation M-a7 (retrait naïf) tuée.
+- **Écartées** : retirer les blocs ligne à ligne avant ou après le filtre `//` (les deux ordres aveuglent `lib.rs`,
+  l. 1179, 1186, 1196) ; `syn` (C-32-1-6).
+- **Réversible** : oui.
+
+### C-32-1-21 — E1 : les trois colonnes posées, trois mutations, `UPDATE` après le `commit` (R3 = F2)
+
+- **Contexte** : seule `default_vat_payable_account_id` était posée avant l'appel ; sur `NULL`, `COALESCE(col, ?)` et
+  `?` écrivent la même chose : les mutations des deux autres colonnes survivaient.
+- **Retenu** : deux tests — les trois colonnes posées à des valeurs légitimes et distinctes des rôles (2000, 1170, 2201
+  au plan PME, relues en base), puis le remplissage et l'idempotence ; M-a1a, M-a1b, M-a1c, une par colonne. Montage :
+  création de la ligne dans une transaction **commitée**, `UPDATE` directs sur le pool **après** ce `commit` (sinon ils
+  attendraient le verrou de la ligne), puis appels dans des transactions commitées.
+- **Écartées** : un seul test à trois colonnes posées et un second appel (l'idempotence sur `NULL` d'origine ne serait
+  plus exercée) ; l'`UPDATE` dans la même transaction (possible, mais un test qui mêle le montage et l'objet se relit
+  moins bien).
+- **Réversible** : oui.
+
+### C-32-1-22 — E-7 : « la réponse n'est pas parvenue » réservé à l'issue inconnue (F3 = R6)
+
+- **Contexte** : C-32-1-9 mettait le message neuf sur tout échec autre que 409 : un 401, 403, 423 ou 429 — le serveur a
+  répondu, rien n'a été écrit — aurait dit « la sauvegarde a peut-être été écrite ». Le dépôt a un précédent :
+  `issueInconnue` de l'import (`AdminRestorePanel.svelte:61-68` : `TIMEOUT`, `NETWORK_ERROR`, 502, 504). Le texte
+  promettait aussi « ont été relus » alors que la relecture peut échouer, et l'échec de la relecture de l'état n'avait
+  pas de message nommé.
+- **Retenu** : trois cas. Issue inconnue (le prédicat d'`issueInconnue`, **extrait** dans `lib/shared/utils/` et
+  employé par les deux écrans) → message neuf, qui dit « l'écran relit … : vérifiez-les », et relecture. Autre 5xx
+  (500 d'E-2, 503) → message du serveur et relecture (l'archive a pu être écrite). 4xx → message du serveur, sans
+  relecture. Un échec de la relecture de l'état pose `loadError` (texte de `loadSchedule`), la liste `listError`.
+  Mutation M-b8 (message neuf étendu aux 4xx) tuée par le cas 403.
+- **Écartées** : recopier le prédicat dans `AutoBackupSection` (règle DRY) ; le message neuf pour le 500 (le serveur a
+  répondu : « pas parvenue » serait faux) ; aucune relecture pour le 500 (c'est le cas où l'archive est écrite, E-2).
+- **Réversible** : oui.
+
+### C-32-1-23 — E7 : la séquence des verrous établie au code, non énumérée comme exhaustive (R2)
+
+- **Contexte** : la fiche écrivait « les trois lectures `FOR UPDATE` d'`insert_with_defaults_in_tx` » ; la fonction
+  appelle aussi `chart_designated_accounts` (`company_invoice_settings.rs:1118`), qui verrouille par
+  `designated_account_id` (`FOR UPDATE`, l. 512) jusqu'à quatre comptes désignés par le plan — arrondi, puis rabais,
+  frais bancaires, pertes sur créances (`WriteOffNature::ALL`). Au plan PME : 1171, 2200, 2206, 1100, 3000, 2000, 6940,
+  3800, 6900, 3805.
+- **Retenu** : le doc-comment dit les deux familles de lectures d'`insert_with_defaults_in_tx`, la séquence au plan PME
+  à titre d'exemple, et renvoie aux deux fonctions qui la portent plutôt que d'affirmer une liste close.
+- **Écartée** : écrire la liste de dix comme exhaustive (elle dépend du plan, et changera avec lui).
+- **Réversible** : oui.
+
+### C-32-1-24 — L-B5 : `is_success_in_future` exige `enabled`, comme `is_overdue` (R5)
+
+- **Contexte** : `is_overdue` (`auto_backup.rs:221-226`) est faux si la sauvegarde est désactivée ; la fonction
+  prescrite ne regardait pas `enabled` : désactivée et datée du futur, l'API aurait servi `lastSuccessInFuture: true`
+  et `overdue: false`.
+- **Retenu** : `enabled &&` ; `lastSuccessInFuture` implique `overdue` ; cas de test « futur et désactivée → faux ».
+- **Écartée** : la sémantique sans `enabled` (vraie d'un horodatage, mais deux drapeaux contradictoires à l'API pour
+  un bandeau qui ne lit le second que sous le premier).
+- **Réversible** : oui.
+
+### C-32-1-25 — E-9 (1) : la sonde compte `free_bytes` seul (R4)
+
+- **Contexte** : sur le montage de `dossier_auto_inutilisable` (`auto` est un fichier), même les deux gardes
+  neutralisées, `write_backup_file` échoue à créer `auto/<nom>.partial` (`ENOTDIR`, `routes/admin.rs:747`) avant
+  d'appeler `remplir`, donc `wrap_writer` : un compteur de `wrap_writer` vaut zéro avec ou sans le défaut.
+- **Retenu** : compter `free_bytes` seul, et dire au doc-comment pourquoi `wrap_writer` ne l'est pas.
+- **Écartée** : garder l'assertion inerte (un test qui prouve moins qu'il n'annonce).
+- **Réversible** : oui.
+
+### C-32-1-26 — Brochure régénérée et commitée ; CHANGELOG `## [0.16.0] — Non publié`, rubrique `Corrigé` (R11 = F8 = F10)
+
+- **Contexte** : `docs/manual/Makefile` (l. 79, `%.pdf: %.tex shared/kesh-style.sty …`) reconstruit les trois PDF dès
+  que le `.sty` change ; la fiche n'en nommait que deux. Le CHANGELOG n'a plus de bloc non publié depuis la 0.15.0.
+- **Retenu** : `marketing-brochure.pdf` régénéré **et commité** (un PDF plus ancien que son `.sty` est périmé au sens du
+  `Makefile`), avec contrôle que son texte ne change pas ; CHANGELOG : bloc `## [0.16.0] — Non publié` (la forme que
+  `scripts/prepare-release.sh` date), créé par la première clé qui fusionne s'il n'existe pas sur `main`, entrées sous
+  `### Corrigé`.
+- **Écartées** : restaurer la brochure par `git checkout` (le `make` suivant la reconstruirait) ; une section
+  `[Unreleased]` en anglais (contraire au fichier).
+- **Réversible** : oui.
+
+### C-32-1-27 — Fichiers communs A/B, ordre de fusion, `closes #711` sur la dernière (R10 = F7)
+
+- **Contexte** : la fiche disait les trois clés « sans fichier de code commun » ; la 32-1a et la 32-1b partagent
+  `auto_backup.rs`, `admin_auto_backup_e2e.rs` et `textes_coherents.rs` (hunks distincts). Et `closes #711` n'était
+  prévu que sur la 32-1b : fusionnée la première, #711 restait ouverte, E-9 attendant la 32-1a.
+- **Retenu** : la seconde des deux à fusionner se rebase sur `main` et repasse son gate complet ; `closes #711` est
+  porté par celle qui fusionne **en dernier**, l'autre `refs #711`, vérification après fusion.
+- **Écartée** : imposer l'ordre 32-1a puis 32-1b (sans raison technique : les hunks ne se recouvrent pas).
+- **Réversible** : oui.
+
+### C-32-1-28 — `lastSuccessInFuture` requis côté client, fixtures nommées (R7 = F9)
+
+- **Contexte** : un champ requis fait rougir `npm run check` sur les fixtures typées `BackupSchedule`.
+- **Retenu** : champ **requis** (le serveur le sert toujours) ; fixtures complétées : `backup-schedule.api.test.ts:44`,
+  `AutoBackupSection.test.ts:45`, `BackupScheduleBanner.test.ts:43`, et `etat()` de `backup-schedule.spec.ts:111-125`.
+- **Écartée** : champ optionnel (le type dirait moins que le contrat servi).
+- **Réversible** : oui.

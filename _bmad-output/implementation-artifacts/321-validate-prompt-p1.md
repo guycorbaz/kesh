@@ -53,7 +53,11 @@ ton rapport. Un LOW se vérifie comme un HIGH : un site a pu bouger. Axes, tous 
    la fiche prétend ? Contrôle le **PDF aplati** :
    `pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oF "ne fait que lire la version"`, idem
    « ne mesure », « Aucune sauvegarde automatique réussie depuis le », « trop grande pour être restaurée par l'écran »,
-   et `pdftotext docs/manual/fr/admin-manual.pdf - | grep -c "⚠"` (attendu 0). Les retouches prescrites (AC-b7, AC-c1 à
+   et `pdftotext docs/manual/fr/admin-manual.pdf - | grep -c "⚠"` (attendu 0).
+   *Annotation du 2026-10-24 (remédiation de la P1, R8 = F6) : cette commande ne retrouve pas une phrase à apostrophe,
+   le PDF portant `’` (U+2019) ; la forme corrigée (`… | sed "s/’/'/g" | …`) est dans la fiche (Dev Notes, § Contrôle
+   aplati d'un PDF) et dans `321-validate-prompt-p2.md`. Le texte ci-dessus reste, relevé de la passe telle qu'elle a
+   été jouée.* Les retouches prescrites (AC-b7, AC-c1 à
    AC-c5) seront-elles **vraies après** le correctif ? Le manuel utilisateur ou le CHANGELOG disent-ils quelque chose de
    contraire (bandeau, sauvegarde automatique, communication de la QR) ?
 6. **i18n.** Les clés neuves et la clé modifiée de l'AC-b8 entrent-elles en conflit avec une garde (parité des locales,
