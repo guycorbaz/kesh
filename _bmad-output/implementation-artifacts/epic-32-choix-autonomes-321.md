@@ -643,3 +643,20 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   gardes de test que #727 corrige entier ; découper la 32-1a au motif de ses six modules — ses AC sont indépendants ;
   une variante de message pour le 200 illisible (F10) — une clé de plus pour un cas rare.
 - **Réversible** : oui — l'AC-a11 peut revenir tant que la 32-1a n'est pas développée, et #727 le porte d'ici là.
+
+*C-32-1-39 : développement de la 32-1a (Opus 5.5, 2026-10-24).*
+
+### C-32-1-39 — 32-1a : forme de la sonde de `TestEnv`, variante de M-a4, journal des mutations
+
+- **Contexte** : l'AC-a9 laisse le choix entre un compteur lisible et une variante `TestEnv::sonde()` ; l'AC-a3 décrit
+  deux rouges (quatre catalogues, `de-CH` seul) sous le seul identifiant M-a4 ; l'AC-a13 nomme les journaux
+  `321-mut-<id>.log`, le prompt de l'agent `321a-mutations.log`.
+- **Retenu** : un champ `mesures: Arc<AtomicUsize>` dans `TestEnv`, incrémenté par `free_bytes` ; `sonde()` rend
+  `(env, compteur)` ; `large()` délègue à `sonde()` et jette le compteur, `avec()` pose un compteur neuf — leur effet
+  sur les tests existants est inchangé, un compteur par tour (aucun partage entre tests). M-a4 jouée sous ses deux
+  formes, journalisées `321-mut-M-a4.log` (quatre catalogues) et `321-mut-M-a4-de.log` (`de-CH` seul). Les deux
+  noms de journaux tenus : un `321-mut-<id>.log` par mutation, et le résumé `321a-mutations.log`. Deux runs ratés par
+  l'outillage (Edit refusé, Vitest lancé hors de `frontend/`) gardés et annotés au résumé, non effacés.
+- **Écartées** : changer la signature de `large()` (tous les appels à toucher) ; un compteur global `static` (partagé
+  entre les tests parallèles de nextest dans un même binaire).
+- **Réversible** : oui.

@@ -1022,9 +1022,89 @@ n'est **pas** à verser s'il ne l'a pas déjà été ; s'il l'a été, le texte 
 
 #### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/devel/kesh-32-1a`, branche
+`story/32-1a` partie de `01b9a58b` (= `story/32-1`) ; bases `kesh_321a` (gate) et `kesh_e2e_321a`, port 3317,
+`CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-32-1a/target`, dossiers E2E `/tmp/kesh-e2e-321a/{inbox,documents,backup}`.
+
 #### Completion Notes List
 
+*Ne sont déclarés que les runs réellement exécutés ; journaux dans `kesh-gate-logs/` (hors dépôt).*
+
+- **AC-a1** (B1) : commentaire `invoice_pdf_service.rs` complété (PDF figé avant la 0.15.0 ou dans une langue quittée :
+  ancien préfixe ; rappel régénéré : préfixe de la langue courante ; rapprochement non touché). Commentaire seul.
+- **AC-a2** (B2) : `spawn_app_de` emploie `catalogues_charges()` ; `grep -c 'I18nBundle::load'
+  crates/kesh-api/tests/audit_log_e2e.rs` rend **1**.
+- **AC-a3** (B3 = E3) : test `routes::invoice_pdf_service::tests::qr_message_prefix_is_translated_in_all_four_locales`.
+  **M-a4** (clé retirée des quatre `.ftl`) : rouge « FrCh : le préfixe de la QR est absent du catalogue (rendu
+  « invoice-qr-message-prefix ») » ; variante `de-CH` seul : rouge « DeCh : le préfixe de la QR retombe sur le français
+  (« Facture ») ». Restaurées (`git checkout` + `touch` des quatre fichiers). Aucun repli Rust.
+- **AC-a4** (E1) : `designate_vat_never_overwrites_a_set_value` et `designate_vat_fills_nulls_and_is_idempotent`
+  (`crates/kesh-db/tests/company_invoice_settings_repository.rs`), montage (t1)/(u)/(t2)/(t3) de la fiche ; comptes 2000,
+  1170, 2201 relus en base (imputables, du bon type), différents des rôles ; colonnes `NULL` après (t1) ; colonnes et
+  `version` inchangées après (t3). **M-a1a**, **M-a1b**, **M-a1c** tuées chacune par
+  `designate_vat_never_overwrites_a_set_value`, sur l'assertion de sa colonne.
+- **AC-a5** (E2) : cas « un clos suivi d'un ouvert reste rouvrable, sans infobulle » ; **M-a2** : ce seul cas rouge
+  (1 échoué / 29 passés).
+- **AC-a6** (E5) : `[Cas; 10]` → `[Cas; 12]` ; **M-a5** (permutation des `parse_date`) : rouge sur le cas des deux
+  dates (`dateTo` rendu au lieu de `dateFrom`) ; **M-a6** (`ACTION_MAX_LEN` pour `entityType`) : rouge `200` au lieu
+  de `400`.
+- **AC-a7** (E6) : test `nombres_isoles_ne_prend_pour_date_que_des_mois_et_jours_bornes` **constaté rouge avant le
+  correctif** (`321a-rouge-AC-a7.log` : « 1171-99-99 … left: [] right: ["1171"] »), puis regex bornée, vert
+  (`321a-vert-AC-a7.log`, `binary(textes_coherents)` 19/19, dont les deux gardes nommées). Limite `2026-02-30` écrite au
+  doc-comment de `nombres_isoles` et du test.
+- **AC-a8** (E7) : doc-comment de `lock_vat_role_accounts_in_tx` complété (séquence non croissante, renvoi à
+  `insert_with_defaults_in_tx` et `chart_designated_accounts`, séquence PME par numéro, filet `is_seed_retryable`).
+  Commentaire seul ; `kesh-seed` non touché.
+- **AC-a9** (E-9 (1)) : `TestEnv` porte un compteur des appels à `free_bytes` (`sonde()`, C-32-1-39) ;
+  `dossier_auto_inutilisable` exige **0** mesure, doc-comment de l'équivalence des gardes et du non-comptage de
+  `wrap_writer`. **M-a3** (les deux `return` des gardes neutralisés) : rouge « left: 1, right: 0 », le statut restant
+  `failed` (les assertions précédentes passent).
+- **AC-a10** (E-9 (2), E-9 (3)) : doc-comments de `code()`, `argument_de`, `corps()` (limite, conséquence muette ou
+  bruyante, renvoi à #727) et de `gardes_possedes` (angle mort du départ du client) ; aucune ligne de code des helpers
+  ni de `crates/kesh-db/tests/lexique/mod.rs` touchée, aucun module `lexique` déclaré ; `gardes_possedes` et
+  `lancement_par_main_seulement` verts (`321a-cible-1.log`, gate complet).
+- **AC-a11** : retiré (C-32-1-38) — rien fait.
+- **AC-a12 — gates, au dernier commit de code `79a42008`** (base `kesh_321a` remise à zéro avant : `DROP`/`CREATE`,
+  migrations du worktree, seed) :
+  - `scripts/test-fast.sh --ci` sous verrou (`321a-gate-complet.log`) : garde des droits, fmt, clippy `-D warnings`,
+    nextest **3975 exécutés, 3975 passés, 7 ignorés**, exit 0.
+  - Frontend sous verrou : `npm run check` 0 erreur, 29 avertissements (préexistants), exit 0 ; `lint-i18n-ownership`
+    PASS ; `test:unit` **162 fichiers, 1911 tests passés** ; `build` vert (`321a-frontend-{check,lint,unit,build}.log`).
+  - **E2E complet** (`321a-e2e.log`, montage de `docs/testing.md`, port 3317, dossiers `/tmp/kesh-e2e-321a/…` passés au
+    backend **et** au runner, base `kesh_e2e_321a` reconstruite, backend arrêté par son PID) : **315 passés, 7 échoués,
+    17 ignorés** (12,9 min). Les sept échecs, jugés fichier par fichier, sont les sept KF-029 (#97) du tableau de
+    `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`,
+    `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`. Ni KF-052 ni pollution ; la branche ne touche aucun de ces
+    fichiers (`git log story/32-1..HEAD -- <fichiers>` : 0 commit).
+  - Les commits postérieurs à `79a42008` ne touchent que de la documentation (cette fiche, le registre,
+    `sprint-status.yaml`, le prompt de revue).
+- **AC-a13 — mutations** (sous verrou, une à la fois, appliquées par Edit, restaurées par `git checkout -- f && touch f`,
+  diff résiduel 0 après chacune ; `321a-mutations.log` et un `321-mut-<id>.log` chacune) : **huit tuées** — M-a1a,
+  M-a1b, M-a1c, M-a2, M-a3, M-a4 (et sa variante `de-CH`), M-a5, M-a6 —, chacune par le test nommé ci-dessus. Deux runs
+  ratés par l'outillage, gardés et annotés : `321-mut-M-a1b-temoin-sans-mutation.log` (Edit refusé : run sans
+  mutation, vert — témoin) et `321-mut-M-a2-run-invalide.log` (Vitest lancé hors de `frontend/`, « no tests ») ; les
+  deux mutations ont été rejouées et tuées ensuite.
+- **Tests ajoutés**, recomptés aux deux bornes `01b9a58b` → `79a42008` (`grep -cE '#\[(sqlx::|tokio::)?test'`, et
+  `grep -cE '^\s*it\('` pour le Vitest) : `textes_coherents.rs` 18 → 19, `invoice_pdf_service.rs` 10 → 11,
+  `company_invoice_settings_repository.rs` 29 → 31, `fiscal-years-page.test.ts` 27 → 28 ; `audit_log_e2e.rs` 15 → 15
+  (deux **cas** de plus au tableau), `admin_auto_backup_e2e.rs` 20 → 20 (une **assertion** de plus),
+  `auto_backup.rs` 26 → 26. Soit **5 tests neufs** (4 Rust, 1 Vitest).
+- **Écarts** : aucun écart aux AC. Le `T-a0` de la fiche nommait `kesh_321`/`kesh-32-1` : le prompt de l'agent attribue
+  `kesh_321a`/`kesh-32-1a`, employés. Aucune entrée CHANGELOG (pas d'effet visible, conforme à la fiche). Aucune issue
+  demandée.
+
 #### File List
+
+- `crates/kesh-api/src/routes/invoice_pdf_service.rs` (commentaire, test)
+- `crates/kesh-api/src/auto_backup.rs` (doc-comments du `mod tests` seulement)
+- `crates/kesh-api/tests/audit_log_e2e.rs`
+- `crates/kesh-api/tests/textes_coherents.rs`
+- `crates/kesh-api/tests/admin_auto_backup_e2e.rs`
+- `crates/kesh-db/src/repositories/company_invoice_settings.rs` (doc-comment)
+- `crates/kesh-db/tests/company_invoice_settings_repository.rs`
+- `frontend/src/routes/(app)/settings/fiscal-years/fiscal-years-page.test.ts`
+- `_bmad-output/implementation-artifacts/32-1-defauts-courts.md`, `epic-32-choix-autonomes-321.md` (C-32-1-39),
+  `sprint-status.yaml`, `321a-review-prompt-p1.md`
 
 ### 32-1b
 
@@ -1230,6 +1310,11 @@ n'est **pas** à verser s'il ne l'a pas déjà été ; s'il l'a été, le texte 
   P4-2 (l'import d'`AdminRestorePanel.svelte:20` n'est pas le modèle) ; P4-3 (l'attribut `#[cfg(test)]` seul sur sa
   ligne — précisé au commentaire de #727) ; P4-4 (annotation P3 de la clé 32-1b déplacée en fin de ligne, datée).
   Signal déclaré au Project Lead, sans découpage : la 32-1a touche six modules au grain métier (C-32-1-38).
+- 2026-10-24 — **32-1a développée** (Opus 5.5, branche `story/32-1a`, dernier commit de code `79a42008`) : AC-a1 à
+  AC-a10, AC-a12, AC-a13 tenus (AC-a11 retiré) ; 5 tests neufs (4 Rust, 1 Vitest), 2 cas de tableau, 1 assertion ; rouge
+  de l'AC-a7 constaté avant le correctif ; huit mutations tuées ; gate complet 3975/3975 (7 ignorés), Vitest 1911/1911,
+  E2E 315 passés / 7 échoués (les sept KF-029) / 17 ignorés. Registre C-32-1-39. Clé à `review` ; revue de code P1
+  (Sonnet, lentilles B, E, A) : `321a-review-prompt-p1.md`.
 
 [#711]: https://github.com/guycorbaz/kesh/issues/711
 [#714]: https://github.com/guycorbaz/kesh/issues/714
