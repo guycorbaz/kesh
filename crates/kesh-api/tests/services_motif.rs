@@ -328,11 +328,15 @@ enum Dem {
         journal: Option<&'static str>,
     },
     /// Grand livre sur `BORNE_*`, filtré sur `$compte` ou non.
-    GrandLivre { filtre: bool },
+    GrandLivre {
+        filtre: bool,
+    },
     BalanceAgee,
     /// Rapport de projet, en mode `fiscal_year` (exercice, sans bornes) ou
     /// `cumulative`.
-    Projet { cumule: bool },
+    Projet {
+        cumule: bool,
+    },
 }
 
 /// Une ligne de la table des traces.
@@ -749,7 +753,11 @@ async fn table_des_traces_par_la_route(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
     let app = spawn_app(pool.clone()).await;
     let jwt = forge_jwt(livres.user_id(), "Admin", livres.company_id());
-    assert_eq!(TABLE_DES_TRACES.len(), 18, "dix-huit couples (service, usage)");
+    assert_eq!(
+        TABLE_DES_TRACES.len(),
+        18,
+        "dix-huit couples (service, usage)"
+    );
 
     let mut echecs = Vec::new();
     for ligne in TABLE_DES_TRACES {
