@@ -26,6 +26,8 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
   pour l'appel en attente de validation.
 - **Écartée** : sessions en mémoire (état perdu au redémarrage, rien à y mettre, et supprimées par la révision suivante).
 - **Réversible** : oui.
+- **Relecture P3 (L-1)** : la forme « élicitation » répond aussi en SSE (la requête `elicitation/create` part sur le flux
+  du `tools/call`) ; § 1.3 rectifié, cf. **C-32-2-26**.
 
 ### C-32-2-3 — `MCP-Protocol-Version` non servi → 400 à corps texte ; `Origin` absent admis, étranger → 403
 
@@ -199,6 +201,8 @@ décision : `planning-artifacts/epic-32-spike-mcp.md` ; journaux des essais hors
   par clé ; seuil), *recommandation* : par clé, `requise` par défaut — elle s'écarte de la Q2 du kickoff, même question.
   Document §§ 5.3, 6, 7.
 - **Réversible** : oui (traits indicatifs).
+- **Relecture P3** : la direction (politique de la clé appliquée par le répartiteur, non par l'outil) est gardée comme
+  exigence E1 ; les types qui la portaient deviennent une esquisse non contraignante — **C-32-2-24**.
 
 ### C-32-2-18 — LOW L1 à L7 : rectifications mécaniques
 
@@ -266,6 +270,9 @@ configuration de Hermes, `hub.docker.com/_/mariadb`.*
   l'approbation du texte) ; en forme (a), l'élicitation envoie les données au client avant l'accord.
 - **Écartée** : ajouter dès maintenant un trait de ressources (rien à servir en 0.16.0, et une forme non éprouvée).
 - **Réversible** : oui (C-32-0-10 laisse glisser le contenu des pièces sans toucher le reste).
+- **Relecture P3** : « aucune ressource en 0.16.0 » et l'inventaire des méthodes sont gardés (exigences E2, E3) ; la
+  garantie « par construction » par `DonneesValidees` et `Reponse` est **retirée** (non prouvée, et `Reponse` ouverte) —
+  **C-32-2-24**.
 
 ### C-32-2-22 — M-4 : bloc du § 4.2 recopié depuis `ro-pool.out`
 
@@ -295,3 +302,57 @@ configuration de Hermes, `hub.docker.com/_/mariadb`.*
 - **L-9** : `proto-server.log` (vide) retiré de la liste des journaux ; C-32-2-18 annoté.
 - **L-10** : § 4.3 — les `MARIADB_*` sourcés par la documentation de l'image officielle, non plus par `.env.example`.
 - **L-11** : § 3.3 — « (b) inchangée en `2026-07-28` » remplacé par **non établi**.
+
+### C-32-2-24 — Relecture P3 : retrait — le § 5.3 garde les exigences, la conception des types passe aux fiches 32-6 et 32-8
+
+- **Contexte** : relecture P3 (`kesh-gate-logs/322-review-p3.md`, 0 / 0 / 3 MEDIUM / 11 LOW). Les trois MEDIUM portent
+  tous sur la conception des types du § 5.3 écrite par la remédiation P2 : M-1 (la forme (c) n'a pas de chemin pour le
+  contenu approuvé relu), M-2 (`Donnees` porte deux représentations, la modification n'en vise qu'une), M-3 (« par
+  construction » non tenu : `Reponse` ouverte, mutation `pub(crate)` invisible à `trybuild`, garantie qui change avec
+  `rmcp`). **Signal de recyclage**, déclaré par l'orchestrateur : P1 7 MEDIUM → P2 4, dont 3 nés de la remédiation P1 →
+  P3 3, tous nés de la remédiation P2 et sur le même objet. Chaque passe corrige la conception de la précédente et en
+  ouvre une autre : la boucle ne converge pas sur cet objet, parce qu'il n'est pas de la spike.
+- **Retenu** : remédiation **par retrait**. Une spike décide ; elle ne conçoit pas les types d'une story.
+  - § 5.3.1 : **exigences E1 à E6**, écrites comme AC à porter par les fiches — E1 toute donnée des livres vers le client
+    (réponse d'outil, `structuredContent` **et** bloc texte, erreur, progression, élicitation, prompt, contenu relu par
+    la poignée) passe par la validation et la donnée envoyée est exactement celle validée, une seule représentation
+    source, l'autre dérivée après validation (M-2) ; E2 liste close des méthodes servies avec ce que chacune envoie, test
+    d'inventaire, non servies tirées du schéma ; E3 aucune ressource MCP en 0.16.0 ; E4 forme (c) : table des envois en
+    attente, outil de relecture, « même clé, même société » (M-1) ; E5 erreurs sans texte libre issu de la base ; E6
+    les six mutations qui doivent rougir (M-3).
+  - § 5.3.2 : les types (`Donnees`, `DonneesValidees`, `Reponse`, `MessagePrompt`, traits scellés, `trybuild`) deviennent
+    une **esquisse indicative, non contraignante** ; les commentaires qui affirmaient une garantie sont rectifiés.
+  - § 5.3.3 : les trous relevés (M-1, M-2, M-3, L-4 à L-7) deviennent des **points à porter** par les fiches 32-6 et 32-8.
+  - « Par construction » retiré partout où la propriété n'est pas prouvée, avec ce qui la prouverait : pour la
+    validation, la compilation du code des 32-6/32-8 et les mutations d'E6 ; pour la lecture seule (b)/(c), le test de
+    la 32-6 sur le chemin de production (le refus `1142` n'a pas été essayé). § 6 (32-6, 32-8, 32-10a) réécrit pour
+    renvoyer aux exigences et non plus aux types.
+- **Écartées** : (i) une quatrième conception des types qui fermerait M-1 à M-3 — elle aurait recyclé une fois de plus,
+  sans compilateur pour la juger ; (ii) découper la spike — l'objet en trop n'est pas une seconde décision, c'est du
+  travail de story.
+- **Réversible** : oui — les fiches 32-6 et 32-8 peuvent reprendre l'esquisse telle quelle si leur conception la
+  retrouve, à condition de tenir E1 à E6.
+
+### C-32-2-25 — Relecture P3, L-8 et L-9 : conséquences sur le kickoff, écrites au § 6.1, à reprendre par l'orchestrateur
+
+- **Contexte** : la forme (c) fait de la 32-8 une story 🗄️, ce que le kickoff ne prévoit pas ; une restauration
+  « serveur MCP activé » sans l'utilisateur `SELECT` ni sa variable n'a pas de comportement écrit.
+- **Retenu** : § 6.1 — si (c) : ordre des migrations (la 32-8 s'insère dans la suite 32-5 → 32-6 → 32-10a, plus de
+  parallèle avec une autre 🗄️), plafond de migrations de la release (une de plus), sauvegarde (table portée par la 32-8
+  elle-même — « avec la 32-12 », écrit jusqu'ici, était faux), nombre de modules (au-delà de 5 : découpage préventif,
+  p. ex. 32-8a / 32-8b), texte périmé de la fiche 32-8 du kickoff. Restauration sans le second utilisateur :
+  comportement vraisemblable écrit (le serveur ne s'active pas, l'écran le dit), AC à attribuer (32-5, 32-6, 32-7), lié
+  à #722. La spike ne modifie pas le fichier d'epic.
+- **Réversible** : sans objet (relevé pour l'orchestrateur).
+
+### C-32-2-26 — LOW mécaniques de la relecture P3 : L-1, L-2, L-3, L-10, L-11
+
+- **L-1** : § 1.3 « Réponses » — la forme (a) répond aussi en SSE ; C-32-2-2 annoté.
+- **L-2** : § 3.3, ligne `2026-07-28`, cellule (b) — « non établi » remplacé par le fait établi (la réponse SSE à un
+  `POST` reste admise, reprise et `GET` supprimés, un flux rompu perd la requête), citations du changelog **telles que
+  rapportées par la relecture P3** (non refetchées par la remédiation).
+- **L-3** : § 5.3.2 — `async-trait` n'est pas une dépendance directe, mais figure au `Cargo.lock` en transitif (0.1.89,
+  vérifié) ; la conclusion (inutile) tient.
+- **L-10** : § 5.2 — « sept méthodes » → six requêtes et les notifications du client (E2).
+- **L-11** : § 4.1 — parenthèse « MySQL l'admet », non sourcée, retirée.
+- **L-4 à L-7** : non corrigés dans la spike — points à porter par les fiches (§ 5.3.3) ; L-8 et L-9 : C-32-2-25.

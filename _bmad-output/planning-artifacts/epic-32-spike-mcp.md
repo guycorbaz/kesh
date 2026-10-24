@@ -6,7 +6,7 @@ MariaDB **10.11.19** (`10.11.19-MariaDB-ubu2204`), utilisateur `kesh` du fichier
 (`scripts/mariadb-init/01-dev-grants.sql` — `ALL` sur `kesh%`.* et `\_sqlx\_test%`.*, **aucun droit global**, aucun
 `GRANT` posé). **Aucune donnée réelle**, `~/kesh-test/` jamais ouvert.
 
-Choix au registre `implementation-artifacts/epic-32-choix-autonomes-322.md` (C-32-2-1 à 23). Journaux bruts des essais,
+Choix au registre `implementation-artifacts/epic-32-choix-autonomes-322.md` (C-32-2-1 à 26). Journaux bruts des essais,
 hors dépôt : `/home/gcorbaz/devel/kesh-gate-logs/322-spike/` — `ro-essai.sql` → `ro-essai.out` ; `ro-pool-main.rs` et
 `ro-pool-Cargo.toml` → `ro-pool.out` ; `proto-main.rs` → `proto-curl.out` ; ils suffisent à rejouer chaque essai.
 *(Relecture P2, L-9 : `proto-server.log`, cité jusqu'ici, est vide — 0 octet — et n'est plus compté parmi les journaux.)*
@@ -23,6 +23,14 @@ lecture seule, et la portée de la validation. Registre : C-32-2-10 à 18.
 délais oubliait que l'élicitation tient l'appel ouvert (§ 2.3) ; la garantie « par construction » de la validation ne
 couvrait que `tools/call` (§ 5.3, étendue à toute méthode servie, ressources non servies en 0.16.0) ; le bloc du § 4.2
 portait des identifiants de connexion absents du journal (recopié depuis `ro-pool.out`). Registre : C-32-2-19 à 23.
+
+⚠️ **Relecture P3 (2026-10-24, `kesh-gate-logs/322-review-p3.md`, 0 / 0 / 3 MEDIUM / 11 LOW) — remédiée par retrait.**
+Les trois MEDIUM portaient tous sur la conception des types du § 5.3, écrite par la remédiation P2 : la boucle recyclait
+(P1 7 MEDIUM → P2 4, dont 3 nés de la remédiation → P3 3, nés de la remédiation P2). Une spike décide ; elle ne conçoit
+pas les types d'une story. Le § 5.3 garde donc les **exigences** (E1 à E6, AC à porter par les fiches) et ramène les
+types à une **esquisse indicative**, renvoyée aux fiches 32-6 et 32-8 ; la garantie « par construction » de la
+validation, annoncée par la relecture P2 ci-dessus, est **retirée** : rien ne la prouve avant la compilation et les
+mutations de ces stories. Registre : C-32-2-24 à 26.
 
 ---
 
@@ -46,7 +54,8 @@ portait des identifiants de connexion absents du journal (recopié depuis `ro-po
 4. **Lecture seule** : essai réel — une session `SET SESSION TRANSACTION READ ONLY` refuse `INSERT`, `UPDATE`, `DELETE`,
    `SELECT … FOR UPDATE`, DDL et table temporaire en **1792 (25006)** ; **mais une instruction sans privilège la défait**
    (quatre formes) et sqlx **ne remet pas** l'état de session à zéro entre deux emprunts. Ce verrou n'est donc pas une
-   garantie **par construction** ; seul un **utilisateur MariaDB limité au `SELECT`** en est une. **La forme reste à
+   garantie **par construction** ; seul un **utilisateur MariaDB limité au `SELECT`** en serait une — refus attendu,
+   non essayé dans la spike, à prouver par le test de la 32-6 sur le chemin de production (§ 4.3). **La forme reste à
    trancher par Guy (Q11)** ; *recommandation* : l'utilisateur `SELECT`, contrôlé au démarrage, plus le mode de session
    en complément (§ 4.3).
 5. **SDK : écrit à la main, derrière des traits à types propres à Kesh** (décision de Guy maintenue) — `rmcp` 3.7.0
@@ -172,8 +181,10 @@ replie, et qu'une réponse SSE à progression se produit avec `axum::response::s
   méthodes), journalisé — **décidé, non essayé** (le prototype le laisse passer sans qu'aucun `curl` l'omette
   délibérément).
 - **Réponses** : `application/json` partout — **et partout sans exception si Guy retient la poignée** (Q10) ; dans la
-  forme « appel tenu ouvert » seulement, l'appel en attente de validation (32-8) répond en `text/event-stream`, un
-  premier évènement immédiat, `X-Accel-Buffering: no`, une progression périodique.
+  forme « appel tenu ouvert », l'appel en attente de validation (32-8) répond en `text/event-stream`, un premier
+  évènement immédiat, `X-Accel-Buffering: no`, une progression périodique ; dans la forme « élicitation », le
+  `tools/call` répond aussi en `text/event-stream`, la requête `elicitation/create` partant sur ce flux (§ 3.1).
+  *(Relecture P3, L-1 : « dans la forme “appel tenu ouvert” seulement » oubliait l'élicitation.)*
 - **`Origin`** : **absent → admis** (un client en ligne de commande n'en envoie pas — à éprouver, § 2.4) ; **présent et
   différent des origines de Kesh lui-même** (l'URL publique configurée, et `http://127.0.0.1:<port>` /
   `http://localhost:<port>`) → **403**, corps JSON-RPC sans `id`. La clé `Authorization` reste la vraie barrière : une
@@ -185,7 +196,7 @@ replie, et qu'une réponse SSE à progression se produit avec `axum::response::s
   (32-5/32-6). La spécification n'impose rien pour un `Origin` absent : « absent admis » est conforme.
 - **Outil inconnu ou hors portée** : erreur JSON-RPC **`-32602`**, même message — conforme à l'exemple « Unknown tool »
   de la spécification et à l'AC « aucun oracle » de la 32-6. Une erreur **d'exécution** d'un outil reste un résultat
-  `isError: true`, à texte fixe (§ 5.3). Méthode non servie (dont `resources/*`) → **`-32601`**.
+  `isError: true`, à texte fixe (§ 5.3.1, E5). Méthode non servie (dont `resources/*`) → **`-32601`**.
 - **Tous les outils annotés `readOnlyHint: true`** (Hermes s'en sert pour dispenser d'approbation, § 2.2).
 
 ---
@@ -412,7 +423,7 @@ validation de Kesh — Claude Code seulement, Hermes refuse le mode URL).
 | **Ce que l'agent doit savoir faire** | rien | rien chez Hermes ; chez Claude Code, la notification de tâche (automatique) | **rappeler l'outil de lecture** après validation — consigne dans la description de l'outil et dans les `instructions` d'`initialize` ; risque : interrogations répétées (jetons) ou oubli |
 | **Hors session interactive** | annulée (Claude Code, tâches) ; non documenté (Hermes) | Claude Code `-p` attend sans tâche de fond ; possible si quelqu'un valide dans les N s | fonctionne ; une exécution unique qui se termine ne lit simplement jamais le résultat — rien ne part |
 | **Redémarrage de Kesh** | attente perdue, rien ne part | attente perdue, rien ne part | **survit** (en base) |
-| **Révision `2026-07-28`** | à réécrire (MRTR) | **non établi** : la révision supprime la reprise SSE et le `GET` ; qu'une réponse SSE à un `POST` y reste admise n'a pas été vérifié (*relecture P2, L-11*) | **native** (poignée explicite) |
+| **Révision `2026-07-28`** | à réécrire (MRTR) | la réponse SSE à un `POST` **reste admise** : « Request-scoped notifications such as `notifications/progress` and `notifications/message` continue to flow on the response stream of the request they relate to » ; la reprise SSE et le `GET` sont supprimés — « A broken response stream loses the in-flight request » (`…/2026-07-28/changelog`, changements 4 et 9, cités par la relecture P3) ; une coupure du mandataire ou du client perd donc l'attente (*relecture P3, L-2 : « non établi », écrit en P2, sous-déclarait un fait établi*) | **native** (poignée explicite) |
 | **Qui garantit que l'utilisateur a vu** | le client et sa configuration | Kesh | Kesh |
 | **Réemploi pour les propositions (0.17.0)** | non | l'écran | **l'écran et la table** |
 
@@ -434,7 +445,7 @@ progression toutes les 15 s (`notifications/progress` si `progressToken`, commen
 **(a)** : les motifs 2 et 4 du § 3.2 sont à écrire comme limites acceptées.
 
 Dans les trois cas : refus et échéance → résultat `isError: true`, **rien ne part** ; le contenu reçu par le client est
-exactement celui validé (AC de la 32-8).
+exactement celui validé (exigence E1 du § 5.3.1, AC de la 32-8).
 
 ---
 
@@ -452,7 +463,7 @@ Après `SET SESSION TRANSACTION READ ONLY` (`@@session.tx_read_only = 1`, `@@aut
 | `START TRANSACTION; INSERT; UPDATE; DELETE; ROLLBACK` | trois fois `ERROR 1792 (25006)` |
 | `SELECT … FOR UPDATE` | `ERROR 1792 (25006)` |
 | `CREATE TABLE spike_ddl` | `ERROR 1792 (25006)` |
-| `CREATE TEMPORARY TABLE` puis `INSERT` | `ERROR 1792 (25006)` deux fois — **MariaDB refuse aussi la table temporaire** (MySQL l'admet) |
+| `CREATE TEMPORARY TABLE` puis `INSERT` | `ERROR 1792 (25006)` deux fois — **MariaDB refuse aussi la table temporaire** (*relecture P3, L-11 : une comparaison avec MySQL, non sourcée, retirée*) |
 | `SET GLOBAL read_only=1` | `ERROR 1227 (42000) … READ_ONLY ADMIN privilege` (l'utilisateur `kesh` n'a aucun droit global) |
 
 **Ce qui la défait** — quatre formes, toutes admises sans privilège :
@@ -536,7 +547,9 @@ le mauvais pool, une instruction fautive), non une attaque de l'agent.
 
 **(b) Un second utilisateur MariaDB limité au `SELECT`** (`GRANT SELECT ON <base>.*`).
 - *Garantit* : le **serveur** refuse toute écriture, quel que soit le SQL que Kesh émet — c'est la seule forme **par
-  construction**. Refus attendu en `1142` ; **non essayé dans la spike** (aucun utilisateur créé, consigne).
+  construction** du côté du serveur. Refus attendu en `1142` ; **non essayé dans la spike** (aucun utilisateur créé,
+  consigne) : ce qui le prouvera est le test de la 32-6 sur le pool de production (« Tests sur le chemin de
+  production », ci-dessous) — jusque-là, c'est une propriété attendue des droits de MariaDB, non une propriété établie.
 - *La vraie contrainte* : les scripts d'initialisation (`/docker-entrypoint-initdb.d`, monté depuis
   `scripts/mariadb-init` par `docker-compose.dev.yml:116`) **ne s'exécutent qu'à la création du répertoire de données** :
   sur la base existante du NAS, l'utilisateur se crée **à la main**, avec un compte MariaDB qui a le droit de créer des
@@ -615,7 +628,8 @@ fait de « un rapport n'écrit plus sa ligne d'audit » une mutation à tuer —
 
 ### 5.2 Décision (C-32-2-6)
 
-**Écrit à la main en 0.16.0** — la décision de Guy tient : le besoin est minuscule (sept méthodes, sans état, JSON ;
+**Écrit à la main en 0.16.0** — la décision de Guy tient : le besoin est minuscule (six requêtes et les notifications du client, § 5.3 E2 — *« sept méthodes » rectifié en
+relecture P3, L-10* —, sans état, JSON ;
 le prototype tient en ≈ 150 lignes), et une API qui change de majeure tous les deux à trois mois imposerait des
 migrations sans rapport avec Kesh. **Mais le critère « quand il sera mûr » est en partie rempli** (officiel, Tier 1,
 double ère, garde `Origin`/`Host` intégrée) : je propose de le réexaminer **dès que Kesh doit servir `2026-07-28`** —
@@ -624,14 +638,111 @@ que Guy voudrait les poignées natives ou MRTR de cette révision — question p
 reformulé en relecture P1, C-32-2-11 : « dès qu'un client exige `2026-07-28` » supposait, à tort, qu'aucun ne la parlait
 encore.)*
 
-### 5.3 Les traits — indicatifs, pour que le passage au SDK ne change que le transport
+### 5.3 Ce que le transport doit tenir — exigences ; les types, esquisse indicative
 
-Règle : **aucun type de `rmcp` ni de JSON-RPC ne traverse les traits** ; le registre parle des types de Kesh, et
-l'adaptateur (le nôtre aujourd'hui, un `impl rmcp::ServerHandler` demain : `list_tools`, `call_tool`, `list_prompts`,
-`get_prompt`) traduit. **Aucune ressource MCP n'est servie en 0.16.0** (C-32-2-21) : ni capacité `resources` à
-`initialize`, ni `resources/list`, `resources/read`, `resources/templates/list`, `resources/subscribe` — ces méthodes
-rendent `-32601` (*Method not found*), comme `completion/complete`, `logging/setLevel` et `tasks/*`, que Kesh ne sert
-pas non plus.
+*Refait en relecture P3, par retrait (C-32-2-24). Les relectures P1 et P2 avaient conçu ici les types censés tenir la
+validation « par construction » ; la relecture P3 y a trouvé trois MEDIUM, tous dans cette conception, dont deux nés de
+la remédiation P2. Une spike décide ; elle ne conçoit pas les types d'une story. Cette section garde les **exigences**
+(§ 5.3.1), écrites comme des AC que les fiches porteront, et ramène les types à une **esquisse indicative** (§ 5.3.2),
+que les fiches 32-6 et 32-8 concevront au code. **Aucune propriété de cette section n'est prouvée** : elle le sera par la
+compilation du code de ces stories et par les tests et mutations d'E1 à E6 — et par rien d'autre.*
+
+Orientation d'architecture, non éprouvée : **aucun type de `rmcp` ni de JSON-RPC ne traverse l'interface des outils** ;
+l'adaptateur traduit (le nôtre aujourd'hui, un `impl rmcp::ServerHandler` demain : `list_tools`, `call_tool`,
+`list_prompts`, `get_prompt`). ⚠️ Un passage à `rmcp` (Q8) remplace le répartiteur et les types du transport : les
+exigences valent alors pour le nouvel adaptateur et leurs tests se rejouent contre lui — **la garantie ne se transporte
+pas avec les traits** (relecture P3, M-3 point 4).
+
+#### 5.3.1 Les exigences — AC à porter par les fiches
+
+**E1 — Toute donnée issue des livres qui part vers le client passe par la validation, et la donnée envoyée est
+exactement celle qui a été validée** (32-6 : le répartiteur applique la politique de la clé, Q12 ; 32-8 : la validation
+et son écran).
+- *Chemins visés, sans exception* : la réponse d'un outil — `structuredContent` **et** bloc texte —, toute erreur
+  (JSON-RPC ou `isError: true`, E5), la progression, la requête d'élicitation (forme (a)), le rendu d'un prompt, le
+  contenu relu par la poignée (forme (c), E4).
+- *Modification par l'utilisateur* : une **seule représentation source** est montrée, modifiée et validée ; la seconde
+  — le bloc texte qui sérialise le `structuredContent`, que la spécification recommande (« a tool that returns structured
+  content SHOULD also return the serialized JSON in a TextContent block », `…/2025-11-25/server/tools`, cité par la
+  relecture P3), ou l'inverse — est **dérivée après validation** depuis la représentation validée, jamais conservée
+  telle que l'outil l'a produite (relecture P3, M-2). Le choix de la représentation source revient à la 32-8.
+- *Clé dispensée* (si Q12 retient « par clé ») : les données partent sans validation, par décision de l'administrateur,
+  et chaque envoi est journalisé sur `Trace` — seule voie hors validation.
+- *Cas assumés, à écrire au manuel* : en forme (a), l'élicitation envoie les données **au client avant l'accord** —
+  c'est l'étape de validation elle-même (§ 3.2, motif 1) ; un texte de prompt où un humain a recopié des valeurs des
+  livres, ou qu'un agent a proposé avec elles et que l'administrateur a approuvé — l'approbation du texte en tient lieu
+  (32-10). Le rendu d'un prompt ne lit pas les livres.
+- *Tests* : un outil de démonstration rend une valeur piégée ; sous une clé `requise`, elle n'apparaît dans **aucune**
+  réponse d'**aucune** méthode servie avant validation (32-6) ; une valeur modifiée ou retirée à l'écran est absente du
+  `content` **et** du `structuredContent` reçus (32-8).
+
+**E2 — La liste close des méthodes JSON-RPC servies, avec ce que chacune peut envoyer, et un test d'inventaire**
+(32-6). En `2025-11-25`, six requêtes servies (`initialize`, `ping`, `tools/list`, `tools/call`, `prompts/list`,
+`prompts/get`), les notifications du client, et deux messages du serveur selon la forme de validation :
+
+| Méthode | Ce qui part vers le client | Données des livres ? |
+|---|---|---|
+| `initialize` | capacités, `instructions`, version | non : textes du binaire |
+| `ping` | `{}` | non |
+| `notifications/*` du client | `202`, sans corps | non |
+| `tools/list` | noms, descriptions, schémas des outils | non : textes et schémas du binaire |
+| `tools/call` d'un outil de lecture | les données de l'outil | **oui** → E1 ; en forme (c), un accusé « envoi n° X en attente », sans donnée |
+| `tools/call` de l'outil de relecture (forme (c)) | le contenu approuvé, lu dans la table des envois | **oui, déjà validé** → E1, E4 |
+| `tools/call` de `proposer_prompt` | accusé : nom fourni par l'agent, numéro de version | non |
+| `prompts/list`, `prompts/get` | noms, descriptions, texte des prompts approuvés, arguments du client | pas lues par Kesh ; cas assumé d'E1 |
+| `notifications/progress` (serveur → client, forme (b)) | message de progression | non : texte fixe (`proto-curl.out` l. 87) |
+| `elicitation/create` (serveur → client, forme (a)) | les données à valider | **oui** : c'est l'étape de validation (cas assumé d'E1) |
+| toute erreur | texte d'erreur | non → E5 |
+
+- *Test d'inventaire* : le répartiteur associe chaque méthode acceptée à une entrée de la liste ; un test compare
+  l'ensemble des méthodes acceptées à la liste **écrite en dur dans le test** et **rougit** si une méthode est servie sans
+  y figurer. Il prouve l'appartenance, non le contenu : ce que chaque méthode envoie est tenu par le test d'E1.
+- *Méthodes non servies* : `-32601` ; leur liste est **tirée du schéma** `2025-11-25` — dont `resources/unsubscribe`,
+  `tasks/result` et `tasks/cancel`, que l'énumération de la relecture P2 omettait (relecture P3, L-4) —, non recopiée de
+  mémoire.
+
+**E3 — Aucune ressource MCP en 0.16.0** (32-6, 32-9b ; C-32-2-21) : capacité `resources` non déclarée à `initialize`,
+`resources/*` → `-32601`, comme `completion/complete`, `logging/setLevel` et `tasks/*`. Le jour où Kesh sert des
+ressources (0.17.0 au plus tôt), elles passent par le même répartiteur et sous E1 — ou le contenu d'une pièce se rend par
+un **outil** (bloc image ou ressource embarquée dans le résultat), ce qui le place d'office sous la validation.
+
+**E4 — Forme (c) « poignée », si Guy la retient (Q10)** (32-8, qui devient alors 🗄️ — conséquences au § 6) :
+- une **table des envois en attente** (clé, société, proposition, état, contenu approuvé, échéance) et sa purge à
+  l'échéance ; son accès en écriture est distinct de `Lecture` et de `Trace` (§ 4.4), sur le pool ordinaire ;
+- un **outil de relecture du contenu approuvé** (`kesh_lire_envoi(X)`, nom indicatif), qui rend « en attente », le
+  contenu approuvé, « refusé » ou « expiré » ; il rend le contenu **tel que validé** — sans le soumettre à une nouvelle
+  validation (ce serait une boucle), sans le recomposer depuis les livres ;
+- la règle **« même clé, même société »** : un envoi d'une autre clé ou d'une autre société se lit comme un envoi
+  inconnu, réponse indiscernable (AC « aucun oracle » de la 32-6) ;
+- *tests* : le contenu relu est octet pour octet celui validé ; autre clé, autre société et inconnu rendent la même
+  réponse ; refusé et expiré → `isError: true`, rien ne part.
+
+**E5 — Les erreurs ne portent aucun texte libre issu de la base** (32-6) : chaque erreur rendue au client — JSON-RPC ou
+`isError: true` — est un texte fixe par cas ; le détail est journalisé côté Kesh (le prototype renvoyait le message brut
+de MariaDB, `proto-curl.out` l. 32). *Test* : sur une **fixture propre à la 32-6** — celle de la 32-9a vient après
+(relecture P3, L-6) —, l'outil de démonstration échoue sur une valeur piégée, qui n'apparaît dans aucune erreur.
+
+**E6 — Les mutations qui doivent rougir** (32-6, 32-8) — tuées, ce sont elles qui établiront E1 à E5 :
+1. *contournement de la validation* : un gestionnaire sérialise les données d'un outil dans une réponse hors
+   validation (une autre forme de réponse, un message de prompt, une réponse statique) → le test d'E1 rougit ;
+2. *restriction de construction affaiblie* : si la conception retenue porte les données validées dans un type à
+   construction restreinte, le rendre constructible hors du répartiteur — y compris par un `pub(crate)`, qu'un test de
+   compilation négatif lancé hors du crate (`trybuild`) ne voit pas → une garde lexicale ou le test d'E1 rougit
+   (relecture P3, M-3) ;
+3. *méthode ajoutée hors inventaire* → le test d'inventaire d'E2 rougit ;
+4. *modification ignorée* : la représentation dérivée n'est pas recalculée après la modification → le test d'E1
+   (32-8) rougit ;
+5. *erreur à texte libre* : une erreur composée depuis la base, **émise par l'outil de démonstration** (sans quoi le test
+   passerait à vide) → le test d'E5 rougit ;
+6. *forme (c)* : le contrôle « même clé, même société » levé → le test d'E4 rougit.
+
+#### 5.3.2 Esquisse des types — indicative, non contraignante
+
+*L'esquisse des relectures P1 et P2, gardée pour la direction qu'elle montre : le répartiteur, non l'outil, applique la
+politique de la clé ; l'outil de prompt n'a pas accès aux livres ; les erreurs sont énumérées. Elle **ne contraint
+pas** les fiches 32-6 et 32-8 et **ne prouve rien** : les propriétés qu'on lui prêtait (« ne compile pas », « aucun
+chemin ») ne s'établiraient qu'à la compilation de ce code et par les mutations d'E6. Ses trous connus sont au
+§ 5.3.3.*
 
 ```rust
 /// Portée d'une clé MCP (C-32-0-7). Aucune portée d'administration ni d'écriture des livres.
@@ -736,11 +847,12 @@ pub struct Registre {
                                             // rend des `PromptEnBase` ; ajouté en relecture P2 (L-8)
 }
 
-/// Données des livres APRÈS la politique de la clé : seul `repartiteur` la construit (constructeur privé au module).
-/// Le transport ne sait sérialiser qu'une `Reponse` — aucun chemin ne mène d'une `Donnees` au client sans elle.
+/// Données des livres APRÈS la politique de la clé. Intention : seul `repartiteur` la construit (champ privé au
+/// module). Insuffisant à lui seul — `Reponse` ci-dessous reste ouverte (§ 5.3.3, relecture P3 M-3).
 pub struct DonneesValidees { donnees: Donnees /* champ privé */ }
 
-/// Tout ce que le transport peut envoyer en `result` (C-32-2-21).
+/// Intention : ce que le transport envoie en `result`. Telle qu'écrite, énumération publique à variantes publiques,
+/// donc ouverte : elle ne ferme aucun chemin (§ 5.3.3).
 pub enum Reponse {
     Statique(ReponseStatique),        // initialize, tools/list, prompts/list (noms et descriptions), ping
     Outil(DonneesValidees),           // tools/call d'un McpTool
@@ -755,46 +867,46 @@ impl Registre {
 }
 ```
 
-**Où se tient « par construction » pour la validation** (C-32-2-17, étendu en relecture P2 par C-32-2-21) : non plus
-dans le type de retour de l'outil — la première rédaction faisait rendre une `PropositionEnvoi` à **tout** outil, y
-compris `proposer_prompt`, qui n'envoie rien, et ne laissait aucune place à une clé dispensée —, mais dans le
-**répartiteur** et dans le type `Reponse` du transport. La relecture P2 a relevé que la formule précédente (« le seul
-chemin des `Donnees` vers le client passe par `Validation` ») ne couvrait que `tools/call` : la garantie doit porter sur
-**chaque méthode JSON-RPC servie et chaque message d'erreur**. Inventaire clos, en `2025-11-25` :
+*Note sur l'esquisse.* Le futur boxé (plutôt que `async fn` dans le trait) rend un trait **compatible `dyn`**, ce
+qu'exige un registre hétérogène ; `async-trait` n'est pas une dépendance directe de Kesh — il figure au `Cargo.lock` en
+transitif, `0.1.89` (*relecture P3, L-3 : « pas dans le dépôt » était inexact*) — et n'est pas nécessaire.
 
-| Méthode servie | Ce qui part vers le client | Peut-il porter des données des livres ? |
-|---|---|---|
-| `initialize`, `ping`, `notifications/*` (202) | capacités, `instructions`, version — textes de Kesh | non : `ReponseStatique`, constantes du binaire |
-| `tools/list` | noms, descriptions, schémas des outils | non : `&'static str` des outils |
-| `tools/call` d'un `McpTool` | `Donnees` | **oui** → seulement en `DonneesValidees`, construite par le répartiteur après la politique de la clé (Q12) ; en forme (c), `EnAttente` sans donnée ; en forme (a), la requête `elicitation/create` est elle-même construite par le répartiteur depuis les `Donnees` — c'est l'étape de validation, et elle envoie les données **au client** avant l'accord (§ 3.2, motif 1) |
-| `tools/call` de `proposer_prompt` | `Accuse` | non : nom fourni par l'agent, numéro de version |
-| `prompts/list`, `prompts/get` | noms, descriptions, texte des prompts approuvés, arguments du client | **pas par Kesh** : aucune `Lecture` (trait scellé, `PromptEnBase` sans pool). Reste un cas assumé : un texte de prompt dans lequel un humain a **recopié** des valeurs des livres, ou qu'un agent a proposé avec elles et que l'administrateur a approuvé — l'approbation du texte en tient lieu de validation, ce que le manuel dira (32-10) |
-| `notifications/progress` (forme (b)) | `message` de progression | non : texte fixe (« en attente de validation dans Kesh », `proto-curl.out` l. 87) |
-| toute erreur JSON-RPC ou `isError: true` | texte d'erreur | non : `ErreurOutil` sans texte libre, traduit en textes fixes ; erreurs du transport (`-32600`, `-32601`, `-32602`) en constantes |
-| `resources/*`, `completion/complete`, `logging/setLevel`, `tasks/*`, toute autre | `-32601` | non servies en 0.16.0 |
+#### 5.3.3 Points remis aux fiches 32-6 et 32-8
 
-**Tests de la 32-6 qui tiennent cet inventaire** (AC ajoutés) :
-- *inventaire des méthodes* : le répartiteur JSON-RPC associe chaque nom de méthode à une variante d'une énumération
-  `MethodeServie` ; un test compare l'ensemble des méthodes acceptées à la liste close ci-dessus et **rougit** si une
-  méthode est ajoutée sans y être inscrite ; un second envoie chaque méthode du schéma `2025-11-25` non servie
-  (`resources/list`, `resources/read`, `resources/templates/list`, `resources/subscribe`, `completion/complete`,
-  `logging/setLevel`, `tasks/get`, `tasks/list`…) et exige `-32601` ;
-- *par le type* : `DonneesValidees` n'a pas de constructeur public hors du module `repartiteur`, et le transport ne
-  sérialise qu'une `Reponse` — un futur gestionnaire `resources/read` qui voudrait rendre des `Donnees` sans passer par le
-  répartiteur **ne compile pas** ; mutation à tuer : rendre le constructeur public (un test de compilation négatif,
-  `trybuild`, ou à défaut une garde lexicale sur `DonneesValidees {` hors du module) ;
-- *erreurs* : un outil de démonstration dont l'exécution échoue sur une valeur piégée de la fixture (32-9) ne fait
-  apparaître cette valeur ni dans `isError`, ni dans une erreur JSON-RPC.
+La relecture P3 a relevé dans l'esquisse des trous que la conception au code devra fermer — ou dire pourquoi un test
+d'E6 en tient lieu. Ce sont des points de fiche, non des décisions de la spike.
 
-Une clé `Requise` ne peut donc pas être contournée par un outil ; une clé `Dispensee` ne l'est que par
-l'administrateur, et chaque envoi est journalisé sur `Trace`. Si Guy retient « toujours » (Q12), `Validation` disparaît
-et le répartiteur valide tout. **Le jour où Kesh sert des ressources** (contenu d'une pièce, 0.17.0 au plus tôt), elles
-passent par un trait `McpRessource` qui produit des `Donnees` et par le même répartiteur, jamais par un gestionnaire à
-part — ou bien le contenu d'une pièce se rend par un **outil** (`McpTool`, bloc de contenu image ou ressource embarquée
-dans le résultat), ce qui le place d'office sous la validation.
-
-Le futur boxé (plutôt que `async fn` dans le trait) rend le trait **compatible `dyn`**, ce qu'exige un registre
-hétérogène ; `async-trait` n'est pas dans le dépôt et n'est pas nécessaire.
+- **32-6 — l'énumération de réponse est ouverte** (M-3 points 1 à 3). `Reponse` publique à variantes publiques :
+  `Reponse::Prompt(vec![MessagePrompt { role, texte: serde_json::to_string(&donnees)? }])` compilerait et contournerait
+  la validation ; de même `ReponseStatique` (non défini) s'il accepte une chaîne ou un `Value`. La conception soit
+  restreint la construction des variantes qui portent du texte (constantes, `PromptEnBase`), soit s'en remet à la
+  mutation 1 d'E6 — et le dit. Le test d'inventaire d'E2 prouve l'appartenance d'une méthode, pas ce qu'elle envoie.
+- **32-8 — aucune place pour le contenu approuvé relu** (M-1). L'esquisse n'a ni variante de réponse pour le contenu
+  relu par la poignée (`EnAttente` est sans donnée), ni accès en écriture à la table des envois, ni la règle « même clé,
+  même société ». Les deux lectures naïves échouent : un outil de relecture soumis à la politique de la clé se
+  remettrait lui-même en validation (boucle) ; un outil exempté obligerait à construire des données validées hors du
+  répartiteur. À concevoir pour tenir E4 sans l'un ni l'autre.
+- **32-8 — deux représentations dans `Donnees`** (M-2) : `contenu` et `structure` ; la conception tient E1 — une
+  source, l'autre dérivée après validation.
+- **32-6 — liste des méthodes non servies et message de type réponse** (L-4) : la liste se tire du schéma `2025-11-25`
+  (E2) ; un message JSON-RPC de **type réponse** posté par le client hors attente — le prototype le traitait en requête
+  et rendait `-32601` en `200` (`proto-main.rs` l. 49-62) — appelle selon la spécification un `202` s'il est accepté ou
+  une erreur HTTP : comportement à fixer au test de contrat (32-6, rejoué en 32-11).
+- **32-6 — portée réelle d'un trait scellé et canal de `schema_entree()`** (L-5). Un sceau `mod scelle { pub trait
+  Scelle {} }` n'exclut que les autres crates si `scelle` est privé à son module parent ; tout descendant de ce parent —
+  un futur module d'outils de `kesh-api` compris — peut encore l'implémenter : dire où vit le module, et quel test tient
+  la règle. `schema_entree()` rend un `serde_json::Value` non `'static`, seul canal par lequel un outil qui capturerait
+  un pool logerait une donnée dans `tools/list` : le rendre `'static` ou le contrôler.
+- **32-6 — fixture et test des erreurs** (L-6) : fixture propre à la 32-6 (E5) ; sans texte libre dans les erreurs, le
+  test passe tant que le type ne change pas — sa valeur est de rougir sur la mutation 5 d'E6, à condition que l'outil de
+  démonstration emprunte ce chemin.
+- **32-6 — mutation de la lecture seule « donner `INSERT` à l'utilisateur »** (L-7, § 4.3) : non jouable avec
+  l'utilisateur `kesh` du développement (`GRANT ALL … ON kesh%.*` sans `GRANT OPTION`, aucun droit global,
+  `01-dev-grants.sql`) ; en test, elle porte sur l'**analyseur** de `SHOW GRANTS`, nourri de sorties fixes ; en CI, une
+  ligne ajoutée au fichier de droits, appliqué en root (`ci.yml` l. 175-176), donne un
+  utilisateur `SELECT` réel.
+- **32-6 — l'outil de démonstration**, avec sa valeur piégée, son chemin d'erreur et sa sortie structurée, est un
+  livrable de la story : E1, E5 et E6 en dépendent.
 
 ---
 
@@ -821,20 +933,27 @@ approbation (32-10). Trois AC ci-dessous dépendent des réponses de Guy à Q10,
   `GET`/`DELETE` 405, notification 202, lot 400, `ping` ; `MCP-Protocol-Version` non servi → **400 texte** (jamais
   `-32022`), absent admis ; `Origin` présent et étranger → 403, absent admis, origines du réseau local en liste réglable
   et jamais déduites de `Host` (§ 1.3) ; outil inconnu ou hors portée → `-32602` identique ; `readOnlyHint: true` sur
-  tout outil ; corps borné ; **inventaire clos des méthodes servies** et `DonneesValidees` à constructeur privé, avec
-  leurs tests (§ 5.3) ; `ErreurOutil` sans texte libre. **Ce que le prototype n'a pas éprouvé** (`DELETE`, `ping`, borne du corps, version absente)
-  entre au test de contrat. Pool de lecture : **fonction unique** des options (cf. [#669]) ; **selon Q11** : (a)
-  `after_connect` + `before_acquire` + garde lexicale, ou (b)/(c) utilisateur `SELECT` + contrôle de ses droits au
-  démarrage (+ `after_connect` en (c)) ; tests et mutations du § 4.3. Le module JSON-RPC n'expose aux outils que les
-  types du § 5.3.
+  tout outil ; corps borné ; **exigences E1 (côté répartiteur), E2, E3, E5 et les mutations 1, 2, 3 et 5 d'E6** du
+  § 5.3.1, avec leurs tests ; la **conception des types** (l'esquisse du § 5.3.2 n'est qu'indicative) et les points du
+  § 5.3.3 qui lui reviennent ; l'outil de démonstration et sa fixture propre. **Ce que le prototype n'a pas éprouvé**
+  (`DELETE`, `ping`, borne du corps, version absente, message de type réponse) entre au test de contrat. Pool de
+  lecture : **fonction unique** des options (cf. [#669]) ; **selon Q11** : (a) `after_connect` + `before_acquire` +
+  garde lexicale, ou (b)/(c) utilisateur `SELECT` + contrôle de ses droits au démarrage (+ `after_connect` en (c)) ;
+  tests et mutations du § 4.3, la mutation « donner `INSERT` » portée sur l'analyseur de `SHOW GRANTS` (§ 5.3.3, L-7).
+  *(Relecture P3 : « `DonneesValidees` à constructeur privé » et « le module n'expose que les types du § 5.3 »
+  imposaient l'esquisse ; retirés, C-32-2-24.)*
 - **32-7** — le manuel dit la configuration des deux clients (§ 2.4), la limite de 25 000 jetons de Claude Code, que
   le filtre `Origin` ne protège que d'un navigateur ; **selon Q11 (b)/(c)**, la création à la main de l'utilisateur
   `SELECT` sur le NAS (commande, compte qui la passe, variable du `.env`) ; **selon Q10 (b)**, qu'au-delà de 2 min Claude
   Code poursuit sans le résultat.
-- **32-8** — **selon Q10**. *(c) poignée* (recommandée) : une table des envois en attente (🗄️ : migration, audit
-  d'idempotence, triage P7, place dans la sauvegarde avec la 32-12), un outil de lecture du résultat sous la même clé
-  et la même société, une échéance et une purge, l'écran de validation ; l'« état en mémoire » de la fiche du kickoff ne
-  vaut plus. *(b) appel tenu ouvert* : attente **240 s** (constante nommée, sous les 300 s de Hermes), réponse SSE,
+- **32-8** — **selon Q10**. *(c) poignée* (recommandée) : **exigence E4** du § 5.3.1 — table des envois en attente
+  (🗄️ : migration, audit d'idempotence, triage P7, entrée dans l'inventaire de la sauvegarde **par la 32-8 elle-même**,
+  cf. ci-dessous), outil de relecture du contenu approuvé, règle « même clé, même société », échéance et purge —, et
+  l'écran de validation ; l'« état en mémoire » de la fiche du kickoff ne vaut plus. *(« place dans la sauvegarde avec
+  la 32-12 », écrit jusqu'à la relecture P3, était faux : la 32-12 traite l'import des sauvegardes antérieures, non une
+  table née en 32-8 — L-8.)* Dans toutes les formes : **E1** côté validation (une représentation source, l'autre
+  dérivée après validation ; test de la valeur modifiée absente du `content` et du `structuredContent`) et les
+  mutations 4 et 6 d'E6 ; la conception des types qui lui revient (§ 5.3.3 : contenu relu, deux représentations). *(b) appel tenu ouvert* : attente **240 s** (constante nommée, sous les 300 s de Hermes), réponse SSE,
   premier évènement immédiat, progression toutes les 15 s (`notifications/progress` si `progressToken`, commentaire SSE
   sinon), connexion de lecture **rendue avant l'attente**, état en mémoire. Dans tous les cas : expiration et refus →
   `isError: true`, rien ne part ; ce que reçoit le client est exactement ce qui a été validé ; le répartiteur applique la
@@ -842,15 +961,44 @@ approbation (32-10). Trois AC ci-dessous dépendent des réponses de Guy à Q10,
 - **32-9a / 32-9b** — bornes de pagination choisies pour rester **sous 10 000 jetons** par réponse (avertissement de
   Claude Code) ; **aucune ressource MCP en 0.16.0** (C-32-2-21) : la spike n'a pas éprouvé de forme pour le
   contenu d'une pièce, si bien que la 32-9b livre les **métadonnées** seulement, comme C-32-0-10 le prévoit à défaut ;
-  le contenu glisse en 0.17.0, par un outil ou par un trait de ressource soumis au répartiteur (§ 5.3) — capacité
+  le contenu glisse en 0.17.0, par un outil ou par une ressource soumise au répartiteur (§ 5.3, E3) — capacité
   `resources` non déclarée.
 - **32-10a** — `prompts/list`/`prompts/get` selon `2025-11-25` ; Claude Code les montre en commandes
-  `/serveur:prompt (MCP)`, Hermes par `get_prompt` : le nom d'un prompt doit être court et sans espace ; `rendre` sans
-  `Lecture`, trait scellé, seule implémentation `PromptEnBase` sans pool (§ 5.3) ; `proposer_prompt` est un `McpToolPrompts` : contexte sans `Lecture`, retour `Accuse`, hors validation
-  avant envoi (il n'envoie rien des livres) ; la version créée est d'origine `agent`, « à valider ».
+  `/serveur:prompt (MCP)`, Hermes par `get_prompt` : le nom d'un prompt doit être court et sans espace ; le rendu d'un
+  prompt **ne lit pas les livres** et l'outil `proposer_prompt` n'y a pas accès (E1, cas assumé du texte recopié, écrit
+  au manuel) ; il rend un accusé (nom fourni par l'agent, numéro de version), hors validation avant envoi (il n'envoie
+  rien des livres) ; la version créée est d'origine `agent`, « à valider ». La forme qui le tient (trait scellé, seule
+  implémentation sans pool, ou autre) est à concevoir, en tenant le point L-5 du § 5.3.3 ; l'esquisse du § 5.3.2 n'est
+  qu'indicative.
 - **32-11** — test de contrat sur la séquence du § 1.2 (initialize, initialized, tools/list, tools/call, outil inconnu,
   Origin, sans clé, sonde `2026-07-28`, lot, `GET`, `DELETE`, `ping`, version absente) ; parcours joué avec **les deux**
   clients et leurs versions ; les observations (a) à (h) du § 2.4 consignées.
+
+### 6.1 Conséquences sur le kickoff — à reprendre par l'orchestrateur dans `epic-32-serveur-mcp.md`
+
+*Relevées en relecture P3 (L-8, L-9). La spike ne modifie pas le fichier d'epic ; elle écrit ici ce qui y deviendrait
+faux, pour que l'orchestrateur le reprenne une fois Q10 à Q12 tranchées.*
+
+- **Si Guy retient la poignée (Q10 (c)), la 32-8 devient 🗄️** (E4), ce qui touche quatre endroits du kickoff :
+  - *l'ordre des migrations* — « une seule migration à la fois », les stories 🗄️ se suivant 32-5 → 32-6 → 32-10a : la
+    32-8 s'y insère, et ne peut plus courir en parallèle d'une autre story 🗄️ (32-10a) ;
+  - *le plafond de la release* — « trois migrations non breaking au plus (32-5, 32-6 si elle en porte une, 32-10a) » : la
+    32-8 en ajoute une, à compter ;
+  - *la sauvegarde* — la table des envois entre dans l'inventaire de la sauvegarde (export et import), **portée par la
+    32-8** ; et, comme toute table neuve, elle relève de la prémisse 4 du kickoff (sauvegardes antérieures non
+    importables), que traite la 32-12 ;
+  - *le nombre de modules de la 32-8* — le kickoff en compte 4 (`kesh-api/mcp`, frontend, `kesh-i18n`, manuel) ;
+    s'y ajoutent la migration, le dépôt de `kesh-db` et la sauvegarde : au-delà de 5, la règle de découpage préventif
+    s'applique (p. ex. 32-8a table, dépôt et outil de relecture ; 32-8b écran de validation).
+  - Et le texte de la fiche 32-8 du kickoff — « **Par construction** […] le trait ne rend pas une réponse, il rend une
+    proposition d'envoi », « état en mémoire » — est périmé par C-32-2-17 et C-32-2-24 : la propriété y devient
+    l'exigence E1, à prouver par les tests et mutations de la 32-8.
+- **Restauration d'une sauvegarde « serveur MCP activé » sans l'utilisateur `SELECT` ni sa variable** (Q11 (b)/(c),
+  avec la Q7 du kickoff : réglages restaurés tels quels). Le second utilisateur se crée à la main et sa variable vit
+  dans le `.env`, que la sauvegarde exclut : sur une installation neuve, le réglage dirait « activé » sans que le
+  serveur puisse l'être. Comportement **non écrit** — vraisemblablement le même qu'au démarrage (le serveur MCP ne
+  s'active pas, l'écran d'administration dit pourquoi). Aucune story ne porte cet AC : à attribuer (32-5 pour le réglage,
+  32-6 pour le contrôle, 32-7 pour l'écran et le manuel) ; lié à [#722].
 
 ## 7. Questions pour Guy
 
@@ -871,7 +1019,8 @@ approbation (32-10). Trois AC ci-dessous dépendent des réponses de Guy à Q10,
   limité au `SELECT`** (garantie tenue par le serveur, mais créé **à la main** sur le NAS — les scripts d'init ne
   rejouent pas sur une base existante — et une variable d'accès à la base de plus dans le `.env`), ou (c) les deux ?
   *Recommandation* : **(c)** — l'utilisateur `SELECT`, ses droits contrôlés au démarrage, le mode de session en
-  complément, le MCP non activable sans lui ; c'est la seule forme qui tienne « prouvée par construction ». Si tu
+  complément, le MCP non activable sans lui ; c'est la seule forme qui puisse tenir « prouvée par construction » —
+  la preuve étant le test de la 32-6 sur le chemin de production, le refus n'ayant pas été essayé dans la spike. Si tu
   refuses l'étape manuelle, (a), et les mots « par construction » disparaissent.
 - **Q12 — La validation s'applique-t-elle à chaque appel ?** Ta règle : « montrer les données qui vont être envoyées et
   demander la permission de les envoyer telles quelles ou de les modifier ». Pour l'agent de développement, qui lit
@@ -888,3 +1037,4 @@ approbation (32-10). Trois AC ci-dessous dépendent des réponses de Guy à Q10,
   et la Q12 sont la même question, à trancher une fois.)*
 
 [#669]: https://github.com/guycorbaz/kesh/issues/669
+[#722]: https://github.com/guycorbaz/kesh/issues/722
