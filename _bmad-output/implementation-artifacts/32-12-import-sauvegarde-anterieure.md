@@ -1048,5 +1048,12 @@ AC10, `31-1-sauvegarde-complete.md:335-345, 1325-1335`).
   périmètre*, Dev Agent Record par clé. `sprint-status.yaml` : `32-12-import-sauvegarde-anterieure` à `split`, deux
   clés neuves à `ready-for-dev` sous réserve de Q4. Décision **soumise à Guy avec Q4**. Passe suivante : **P5 ciblée,
   Sonnet**, une lentille sur le seul diff du découpage (`3212-validate-prompt-p5.md`).
+- 2026-10-24 — **Validation P5** (Sonnet, passe ciblée sur le découpage `b427a0a8` ; rapport hors dépôt
+  `3212-validate-p5.md`) : **0/0/0/7** — **validation terminée**. Tendance des MEDIUM distincts : P1 3 → P2 3 → P3 2 →
+  P4 2 → P5 0. LOW consignés, **à appliquer au développement** (orchestrateur) : P5-1 (l'AC17 est aussi relancé par la
+  32-12b) ; P5-2 (AC12 et AC14 s'appuient sur `tables_absent` (AC5) et la fixture (AC15) de la 32-12a) ; P5-3 (« AC16-AC17
+  (F) ») ; P5-4 (T4b) ; **P5-5 : la 32-12a consigne au Dev Agent Record les nombres que rendent les commandes de l'AC17 et
+  le tableau des sites après ses réécritures — la 32-12b s'y mesure, non aux nombres d'avant** ; P5-6 (axes de l'entrée
+  P4) ; P5-7 (le fichier d'epic, l. 214 et 318, et C-32-0-13 disent encore une story unique : actualisés à la fusion).
 
 [#722]: https://github.com/guycorbaz/kesh/issues/722
