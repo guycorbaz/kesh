@@ -41,8 +41,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   isolée restaurée depuis une sauvegarde complète, y jouer la préparation de la clôture, la contre-passation des
   transitoires, la clôture et la réouverture, puis la détruire sans rien laisser. Huit contrôles précèdent le premier
   démarrage, dont celui qui écarte le compose du Synology, qui viserait la base de la production ; la copie n'écoute que
-  sur la machine elle-même et n'envoie aucun courriel. La procédure a été jouée de bout en bout sur une sauvegarde de
-  démonstration, et ce qu'elle n'a pas pu éprouver est écrit comme tel.
+  sur la machine elle-même et n'envoie aucun courriel. La procédure a été jouée sur une sauvegarde de démonstration,
+  dans une rédaction antérieure ; ce qui n'a pas été éprouvé — dont les commandes ajoutées depuis, jamais jouées dans
+  une répétition réelle — est écrit comme tel. Elle ne remplace pas le test de restauration périodique tant que son
+  critère n'est pas tranché ([#709](https://github.com/guycorbaz/kesh/issues/709)).
 
 ### Modifié
 

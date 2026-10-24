@@ -381,6 +381,9 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   revient à la rédaction de C-31-4-20 : la répétition ne prétend pas remplir l'étape 3 à la lettre.
 - **Écartées** : garder le commit et amender fiche, AC et registre (l'arbitrage du critère revient à Guy, non à une passe).
 - **Réversible** : oui (texte du manuel ; #709 tranche).
+- *Annotation datée (revue de code P2, 2026-10-24, A-M3)* : « sans objet » était faux pour la dernière puce d'A-1 — les
+  phrases « elle peut tenir lieu de ce test » (`sec:test-restauration`) et « La répétition tient lieu du test … seulement
+  si » (procès-verbal) ne venaient pas de `9c59dec4` et sont restées après le retrait. Corrigé par C-31-4-25.
 
 ### C-31-4-22 — Revue de code P1 remédiée : les variables lues dans le fichier, les comparaisons qui ne se taisent plus, les cibles nommées (agent de remédiation, 2026-10-24)
 
@@ -412,3 +415,70 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
      « ne modifie aucune donnée » au lieu de « ne touche jamais » (B-6).
 - **Écartées** : les LOW consignés au Change Log (B-7, B-10, E LOW-2 à LOW-5, A L2, L6).
 - **Réversible** : oui (texte du manuel).
+
+### C-31-4-23 — Revue de code P2 : l'encadré dit ce que la répétition réelle n'a pas joué (agent de remédiation, 2026-10-24)
+
+- **Contexte** : B2-M1 = A-M1 (même défaut) — l'encadré « jouée en entier », « vus refuser », et le CHANGELOG « de bout en
+  bout », alors que les commandes de `6186edfc` ne figurent dans aucun des trois journaux de la répétition.
+- **Retenu** : retirer la promesse, ne pas rejouer (consigne de l'orchestrateur : aucune répétition Docker). L'encadré
+  dit « jouée, dans une rédaction antérieure à celle-ci », et une puce nouvelle, en tête, nomme ce qui n'a jamais été joué
+  dans une répétition réelle : l'inventaire du contrôle 4 et la boucle de comparaison (essayés sur fichiers synthétiques
+  seulement, C-31-4-22) ; `RUST_LOG=`, les `mv` à cible nommée, `production.keshbackup`, et les ajouts de cette passe
+  (export de la copie avant l'étape 5, `[ -n "$COPIE" ]` du contrôle final, la marche *À la destruction ou au contrôle
+  final*) — sans « essayé », faute d'essai attesté. « vus refuser » est borné à « lors de cette exécution », l'inventaire
+  du contrôle 4 dit non éprouvé. CHANGELOG nuancé dans le même sens.
+- **Écartées** : rejouer les commandes en lecture seule sur la station (interdit par la consigne de la passe).
+- **Réversible** : oui.
+
+### C-31-4-24 — Revue de code P2 : la variable du terminal au contrôle 4 se rattache à l'exception du contrôle 1 (agent de remédiation, 2026-10-24)
+
+- **Contexte** : A-M2 (= B2-L1) — l'introduction des contrôles et l'AC3 réservent l'issue corrective au contrôle 1 ; le
+  contrôle 4 (`6186edfc`) en porte une seconde (`unset` et refaire).
+- **Retenu** : rattacher le contrôle 4 à l'exception, en amendant l'AC3 (annotation datée) et l'introduction du manuel :
+  « sauf une variable du terminal, aux contrôles 1 et 4 ». Justification : l'écart est **de même nature** que celui du
+  contrôle 1 (une variable exportée), et Compose n'a encore rien lu — `unset` ne laisse aucune trace. En faire un arrêt
+  détruirait `$COPIE` et ferait refaire les **deux exports de la production**, c'est-à-dire de nouvelles écritures au
+  journal d'audit de la production, sans aucun gain de sûreté sur la copie. Le contrôle 4 dit aussi que c'est sa seule
+  issue corrective : tout autre écart y reste un arrêt.
+- **Écartée** : l'arrêt (plus coûteux, plus d'interactions avec la production, même résultat).
+- **Réversible** : oui.
+
+### C-31-4-25 — Revue de code P2 : la répétition ne remplace pas le test de restauration périodique (agent de remédiation, 2026-10-24)
+
+- **Contexte** : A-M3 — l'AC6 interdit de prétendre que la répétition vaut ce test quand les empreintes ne peuvent pas
+  être égales (constat (h)) ; le manuel disait « elle peut tenir lieu de ce test » et « tient lieu … seulement si ».
+  C-31-4-21 l'avait classé sans objet à tort (annotation datée sous C-31-4-21).
+- **Retenu** : les deux affirmations retirées ; le manuel écrit, à `sec:test-restauration`, à la comparaison et au
+  procès-verbal, que la répétition **ne remplace pas** le test tant que son critère n'est pas tranché, avec renvoi en clair
+  à l'issue #709 (sans mot-clé de fermeture). L'export de souveraineté de la production n'est plus conditionné à « tenir
+  lieu du test » mais à la comparaison table par table, qui reste ce que la répétition établit. Le CHANGELOG le dit.
+- **Écartée** : amender l'AC6 pour laisser « au lecteur de décider » (l'arbitrage du critère revient à Guy, #709).
+- **Réversible** : oui (#709 tranche).
+
+### C-31-4-26 — Revue de code P2 : l'export de la copie avant l'étape 5 de la restauration (agent de remédiation, 2026-10-24)
+
+- **Contexte** : E-M1 — l'étape 5 de *Restaurer sur une nouvelle machine* fait télécharger le PDF d'une facture ; le
+  premier téléchargement d'une facture validée non figée la fige. Vérifié au code : `invoice_pdf.rs` l. 9-12 (« le
+  premier téléchargement écrit donc (fichier, colonnes, audit `invoice.pdf_frozen`) »), `invoices::freeze_pdf`
+  (`crates/kesh-db/src/repositories/invoices.rs` l. 2737-2755 : `UPDATE invoices SET pdf_storage_path, pdf_sha256,
+  pdf_frozen_at = NOW(3), pdf_language`), colonnes `pdf_sha256`, `pdf_frozen_at`, `pdf_language` d'`invoices.csv`
+  (`csv_tables.rs` l. 539-541, 570-572). Fait avant l'export de la copie, ce téléchargement fait différer `invoices.csv`.
+- **Retenu** : réordonner **et** nommer la cause. La restauration renvoie aux étapes 2 à 4 ; l'export de souveraineté de
+  la copie se fait « aussitôt reconnecté », avant l'étape 5 et les gestes ; la comparaison se clôt par « Puis faites
+  l'étape 5 ». La liste des causes d'écart nomme « une écriture dans la copie avant son export (un PDF de facture
+  téléchargé avant lui : `invoices.csv` diffère) ». Côté production, l'étape 0 nomme le téléchargement d'un PDF jamais
+  téléchargé parmi les écritures à éviter entre les deux exports (même mécanisme). AC4 et AC6 annotées.
+- **Réversible** : oui.
+
+### C-31-4-27 — Revue de code P2 : une destruction qui échoue a sa marche (agent de remédiation, 2026-10-24)
+
+- **Contexte** : E-M2 — rien n'était prévu si `down -v` ou le `docker run` échoue, ni si le contrôle final ne rend pas
+  « rien » ; le volume restant porte la comptabilité restaurée.
+- **Retenu** : une entrée *À la destruction ou au contrôle final* dans *En cas d'arrêt* : ne pas s'arrêter là ; lever la
+  cause visible ; lister par les trois filtres d'étiquette du contrôle 2 ; retirer par la boucle du cas *Reste*
+  (identifiants rendus par les filtres, jamais un nom écrit à la main, jamais `prune`) ; le dossier par la garde (premier
+  ou deuxième listing) ; rejouer le contrôle final. S'il rend encore des lignes : la copie n'est pas détruite, le noter au
+  procès-verbal, aucune autre répétition sur la machine, reprendre dès la cause levée. Le cas *Reste* (ii) nomme le
+  listing (premier ou deuxième, l'ancienne copie ayant pu démarrer) et finit par le contrôle final (E LOW-5, traité en
+  passant).
+- **Réversible** : oui.

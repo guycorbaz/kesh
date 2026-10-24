@@ -203,7 +203,9 @@ développement, qui exporte pourtant en format 2*) ; *que la copie contient les 
 suivent le *principe directeur*. Dans l'ordre, chacun avec sa **sortie attendue** écrite, et **arrêt** sinon (« arrêt » est
 défini une fois pour toutes à l'AC7 (d) : destruction, puis reprise au contrôle 1). **Seule exception, le contrôle 1 pour
 les variables d'environnement** *(P4, R5)* : son issue est **corrective** (`unset`, contrôle refait) ; tout autre écart,
-au contrôle 1 comme aux suivants, est un arrêt :
+au contrôle 1 comme aux suivants, est un arrêt *(amendé en revue de code P2, 2026-10-24, A-M2, C-31-4-24 : l'exception
+s'étend à l'inventaire des variables du contrôle 4, de même nature — une variable du terminal, avant toute lecture par
+Compose ; tout autre écart au contrôle 4 reste un arrêt)* :
  1. **Environnement neutre, démon local.** `env | grep -E '^(COMPOSE_|KESH_|MARIADB_|DOCKER_HOST=|DOCKER_CONTEXT=|DOCKER_CONFIG=|DOCKER_TLS_VERIFY=|DOCKER_CERT_PATH=)'` ne
     rend rien *(P4, R8 : trois variables de Docker ajoutées — elles changent le contexte courant et le chiffrement du
     démon)* ; sinon `unset` de chaque variable listée, et contrôle refait (issue corrective, voir plus haut). `docker context show` est lu et
@@ -288,7 +290,8 @@ au contrôle 1 comme aux suivants, est un arrêt :
     qu'un filtre mal écrit rendrait aussi.
  Le manuel écrit ces neuf contrôles comme une **liste numérotée**, dans cet ordre.
 
-**AC4 — la restauration, par renvoi et non par recopie.** Après le contrôle 9, le manuel **renvoie aux étapes 2 à 5** de
+**AC4 — la restauration, par renvoi et non par recopie.** *(Revue de code P2, E-M1 : les étapes 2 à 4, puis l'export de
+souveraineté de la copie, puis l'étape 5.)* Après le contrôle 9, le manuel **renvoie aux étapes 2 à 5** de
 `Restaurer sur une nouvelle machine` (§ `sec:restauration-machine-neuve`) pour `/setup`, le lien « Restaurer une
 sauvegarde », l'import et la reconnexion, et écrit : « **l'étape 1 (le `.env`) ne vaut pas ici** : le `.env` de la copie
 est celui des contrôles 4 à 6, rien n'est repris de l'ancien ». Il ne redit que ce qui est **propre à la copie** :
@@ -364,7 +367,10 @@ production, à l'étape 0, avant le `.keshbackup`**, et **enregistré dans `$COP
 le permet, sinon déplacé par `mv` (constat (s)) (l'étape 0 se joue
 après le contrôle 3, AC4 ; son SHA-256 se note au procès-verbal) ; l'export de la copie y va aussi. Si le constat de T3 montre que les deux empreintes ne
 peuvent pas être égales par construction, le manuel le dit et ne prétend pas que la répétition vaut ce test. Aucune
-valeur chiffrée de l'installation de Guy n'entre dans le manuel.
+valeur chiffrée de l'installation de Guy n'entre dans le manuel. *(Revue de code P2, 2026-10-24 : la clause précédente
+est celle qui s'applique — le constat (h) établit l'inégalité ; le manuel écrit que la répétition **ne remplace pas** le
+test tant que #709 n'est pas tranchée (A-M3, C-31-4-25). L'export de la copie se fait aussi **avant l'étape 5** de la
+restauration, dont le téléchargement d'un PDF de facture écrit dans `invoices` (E-M1, C-31-4-26).)*
 
 **AC7 — la copie ne laisse rien derrière elle.** (a) **Ce qui est détruit**, nommé : les conteneurs, le volume
 `kesh-repetition_kesh-mariadb-data`, le réseau, et **le dossier `$COPIE` entier** — qui contient l'exemplaire
@@ -912,6 +918,28 @@ une garde de hiérarchie des chemins de menu ; **tout outillage de fixture et to
   rattrape) ; A-L2 (contrôle final plus court que l'AC7 (c) : écart déclaré, non corrigé) ; A-L6 (renvoi ci-dessus) ;
   A-L8 (issues désormais ouvertes : #705, #707, #709). **Gate** : ciblé seulement (Dev Agent Record, *Revue de code P1*).
   Revue de code P2 à lancer : `314-review-prompt-p2.md` (Opus, passe complète, lentilles B, E, A).
+- 2026-10-24 — **Revue de code P2** (Opus, trois lentilles B, E, A, contexte frais, lecture seule, sur
+  `origin/main...f384681f`, attention à `6186edfc`). Bruts (CRITICAL/HIGH/MEDIUM/LOW) : **B 0/0/1/6**, **E 0/0/2/7**,
+  **A 0/0/3/4** — six MEDIUM bruts, **cinq distincts** (B2-M1 et A-M1 sont le même défaut). **Aucun finding réfuté** ;
+  E-M1 et A-LOW-1 vérifiés au code (registre). **MEDIUM remédiés**, avec leur origine :
+  B2-M1/A-M1 (remédiation P1) → encadré et CHANGELOG ne disent plus « jouée en entier » / « de bout en bout » ; les
+  commandes jamais jouées dans une répétition réelle sont nommées (C-31-4-23) ; A-M2 (remédiation P1) → le contrôle 4 se
+  rattache à l'exception du contrôle 1, AC3 amendée (C-31-4-24) ; A-M3 (texte d'origine, classé sans objet à tort par
+  C-31-4-21) → la répétition **ne remplace pas** le test de restauration périodique tant que #709 n'est pas tranchée
+  (C-31-4-25) ; E-M1 (texte d'origine, aggravé par la remédiation P1) → export de souveraineté de la copie avant l'étape 5,
+  cause nommée (C-31-4-26) ; E-M2 (texte d'origine) → marche *À la destruction ou au contrôle final* (C-31-4-27).
+  **LOW traités** : B2-L1 (avec A-M2) ; B2-L2 (« des trois listings ») ; B2-L3 et E-LOW-3 (`unzip -l` après le `mv`,
+  « avant la restauration, qui le renomme `source.keshbackup` ») ; B2-L6 et E-LOW-1 (`\needspace` devant les trois
+  listings de destruction et celui du contrôle 8, paquet `needspace` chargé par le seul `admin-manual.tex`) ; E-LOW-4
+  (`$COPIE` « vide ou ne portant que `telechargements/` ») ; E-LOW-5 (listing nommé au cas *Reste*, avec E-M2) ;
+  E-LOW-6 (`[ -n "$COPIE" ] && test ! -e …`) ; A-LOW-1 (aucune connexion n'entre au journal d'audit — `audit_labels.rs` n'a
+  aucune action de connexion ; les deux sites corrigés) ; A-LOW-2 (le contrôle 9 arrête l'image, non le tag de `DEPOT`) ;
+  A-LOW-3 (`sprint-status.yaml`). **LOW consignés, non traités** : B2-L4 = E-LOW-2 (inventaire muet si le compose n'a
+  pas été téléchargé : rattrapé au contrôle 7, et une commande de plus serait une commande de plus non jouée) ; B2-L5
+  (glyphe ⚠️ non rendu : défaut transversal du manuel, 16 lignes du `.tex` le portent (`grep -c '⚠'`), hors de la story) ; E-LOW-7 (clients par clé
+  d'API, refaire les exports en cas de doute : non mécanique) ; A-LOW-4 (G15 ne lit rien de la sous-section : écart de la
+  fiche, non du manuel ; à trancher en passe suivante). **Gate** : ciblé (Dev Agent Record, *Revue de code P2 remédiée*).
+  Revue de code P3 à lancer : `314-review-prompt-p3.md` (Sonnet, passe complète, lentilles B, E, A).
 
 ## Dev Agent Record
 
@@ -1126,3 +1154,29 @@ tiennent sur leur ligne ; la seule ligne de plus de 105 colonnes du PDF est hors
 `cargo nextest run -E 'binary(configuration_transmise) | binary(textes_coherents)'` → **47 exécutés, 47 réussis, 0
 ignoré** (30 + 17, recomptés dans `/home/gcorbaz/devel/kesh-gate-logs/314-gate-cible-p1.log`). **Gate complet non
 rejoué** à ce commit : aucun code ni test ne change, et les deux seuls binaires qui lisent `admin-manual.tex` ont tourné.
+
+### Revue de code P2 remédiée (2026-10-24) — agent de remédiation (C-31-4-23 à C-31-4-27)
+
+**Remédiation** : `admin-manual.tex` (et son PDF), `CHANGELOG.md`, fiche (annotations datées à l'AC3, l'AC4 et l'AC6 ;
+Change Log), registre (C-31-4-23 à 27, annotation datée sous C-31-4-21), `sprint-status.yaml`. Édition par l'outil Edit
+seulement. **Aucune exécution** des commandes du manuel, ni répétition Docker, ni fichier synthétique : les ajouts de
+cette passe sont déclarés non joués dans l'encadré. Faits vérifiés au code : gel du PDF au premier téléchargement
+(`invoice_pdf.rs` l. 9-12, `invoices::freeze_pdf`, `csv_tables.rs` l. 539-541) ; aucune action de connexion au journal
+d'audit (`grep -rnE '"auth\.[a-z_]+"' crates/kesh-api/src` → les seules `auth.password_reset_*`).
+
+**PDF** : `make fr` sous verrou et `mem-guard`, deux fois (la première laissait la boucle de comparaison coupée entre
+deux pages ; `\needspace` ajouté devant elle). `admin-manual.pdf` seul régénéré ; brochure et manuel utilisateur
+inchangés (`git status`). Contrôle du PDF aplati : `??` → 0 ; présentes : « ne remplace pas » (×5), « #709 » (×3),
+« étapes 2 à 4 », « avant l'étape 5 » (×3), « des trois listings qui suivent », « aux contrôles 1 et 4 », « À la
+destruction ou au contrôle final » (×2), « jamais joués dans une répétition réelle », « dans une rédaction antérieure »,
+« qui le renomme source.keshbackup », « invoices.csv diffère », « n'est contrôlé par rien », « à commencer par
+l'import », « ne portant que telechargements/ », `[ -n "$COPIE" ] && test ! -e`, « fige ce PDF » ; absentes :
+« tient lieu », « tenir lieu », « jouée en entier », « deux listings ». `pdftotext -layout` sur la sous-section : chaque
+saut de page tombe hors d'un listing (les listings du contrôle 5, du contrôle 8, de la comparaison et de la troisième
+garde commencent en haut de page).
+
+**Gate ciblé** (sous verrou, `mem-guard`, `CARGO_TARGET_DIR` du worktree, `DATABASE_URL` sur `kesh_314`) :
+`cargo fmt --all -- --check` vert ; `cargo clippy --workspace --all-targets -- -D warnings` vert ;
+`cargo nextest run -E 'binary(configuration_transmise) | binary(textes_coherents)'` → **47 exécutés, 47 réussis, 0
+ignoré** (30 + 17, recomptés dans `/home/gcorbaz/devel/kesh-gate-logs/314-gate-cible-p2.log`). Gate complet non rejoué :
+aucun code ni test ne change.
