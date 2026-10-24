@@ -791,7 +791,7 @@ Un exercice \textbf{ne se crée pas avant un exercice clôturé} (depuis la v0.1
 
 \subsection{Préparer la clôture}\label{sec:preparer-cloture}
 
-Avant de clôturer --- et à tout moment de l'année ---, le bouton \emph{Préparer la clôture} d'un exercice ouvert (\emph{Paramètres} → \emph{Exercices comptables}, colonne \emph{Actions}) ouvre un panneau qui passe l'exercice en revue~: sept \textbf{contrôles préalables}, chacun avec son état --- \emph{Rien à signaler}, ou ce qui reste à faire --- et un lien vers l'écran où l'on agit. Le panneau est offert à \textbf{tous les rôles}, Consultation comprise~: il ne fait que lire.
+Avant de clôturer --- et à tout moment de l'année ---, le bouton \emph{Préparer la clôture} d'un exercice ouvert (\emph{Administration} → \emph{Exercices comptables}, colonne \emph{Actions}) ouvre un panneau qui passe l'exercice en revue~: sept \textbf{contrôles préalables}, chacun avec son état --- \emph{Rien à signaler}, ou ce qui reste à faire --- et un lien vers l'écran où l'on agit. Le panneau est offert à \textbf{tous les rôles}, Consultation comprise~: il ne fait que lire.
 
 Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercice antérieur encore ouvert. Le dialogue de clôture en rappelle le résultat au-dessus de sa confirmation (« Aucun point à vérifier », ou la liste des points), sans empêcher de clôturer --- une clôture se défait d'ailleurs par une réouverture motivée (\S\ref{sec:reouverture-exercice}).
 
@@ -842,7 +842,7 @@ La clôture d'un exercice est une opération critique. Effectuez d'abord une sau
 
 \subsection{Réouverture d'un exercice clôturé}\label{sec:reouverture-exercice}
 
-En cas d'erreur découverte après clôture, un \textbf{administrateur} peut rouvrir l'exercice directement depuis l'interface : \emph{Paramètres} → \emph{Exercices comptables} → bouton \emph{Réouvrir} (visible uniquement pour les administrateurs sur un exercice clôturé). Un \textbf{motif est obligatoire} ; il est conservé, avec l'auteur et l'horodatage, dans le journal d'audit (\texttt{audit\_log}, conservation 10 ans). L'exercice rouvert redevient modifiable --- ses écritures saisies à la main se modifient de nouveau, si aucun exercice postérieur n'est clôturé et après délettrage pour celles dont une ligne est lettrée ---, puis pourra être re-clôturé.
+En cas d'erreur découverte après clôture, un \textbf{administrateur} peut rouvrir l'exercice directement depuis l'interface : \emph{Administration} → \emph{Exercices comptables} → bouton \emph{Réouvrir} (visible uniquement pour les administrateurs sur un exercice clôturé). Un \textbf{motif est obligatoire} ; il est conservé, avec l'auteur et l'horodatage, dans le journal d'audit (\texttt{audit\_log}, conservation 10 ans). L'exercice rouvert redevient modifiable --- ses écritures saisies à la main se modifient de nouveau, si aucun exercice postérieur n'est clôturé et après délettrage pour celles dont une ligne est lettrée ---, puis pourra être re-clôturé.
 
 \begin{keshtip}
 On rouvre les exercices \textbf{du plus récent vers l'ancien} : si un exercice postérieur est encore clôturé, Kesh refuse la réouverture et indique lequel rouvrir d'abord. C'est l'ordre inverse de la clôture, qui va du plus ancien vers le plus récent~: ensemble, ils garantissent qu'aucun exercice ouvert ne précède un exercice clôturé. Effectuer cette opération avec parcimonie pour préserver l'intégrité légale.

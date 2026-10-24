@@ -52,6 +52,15 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   récupérer une sauvegarde pré-import. Une sauvegarde plus grosse que la taille d'import autorisée porte la mention
   « trop grande pour être restaurée par l'écran ». Chaque téléchargement est inscrit au journal d'audit
   (`admin.backup_downloaded`).
+- **Répéter une clôture sur une copie, avant de clore pour de bon** : le manuel d'administration (*Répéter une clôture
+  sur une copie*) donne la procédure pour monter, sur une autre machine que la production — jamais le NAS —, une copie
+  isolée restaurée depuis une sauvegarde complète, y jouer la préparation de la clôture, la contre-passation des
+  transitoires, la clôture et la réouverture, puis la détruire sans rien laisser. Huit contrôles précèdent le premier
+  démarrage, dont celui qui écarte le compose du Synology, qui viserait la base de la production ; la copie n'écoute que
+  sur la machine elle-même et n'envoie aucun courriel. La procédure a été jouée sur une sauvegarde de démonstration,
+  dans une rédaction antérieure ; ce qui n'a pas été éprouvé — dont les commandes ajoutées depuis, jamais jouées dans
+  une répétition réelle — est écrit comme tel. Elle ne remplace pas le test de restauration périodique tant que son
+  critère n'est pas tranché ([#709](https://github.com/guycorbaz/kesh/issues/709)).
 
 ### Modifié
 
@@ -80,6 +89,13 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 - **Chaîne d'outils portée à Rust 1.97.1**, sans effet fonctionnel : `rust-toolchain.toml` et l'image Docker de
   construction (`rust:1.97-bookworm`) suivent la même version, et un test du dépôt rougit désormais si l'une bouge sans
   l'autre ([#697](https://github.com/guycorbaz/kesh/issues/697)).
+
+### Corrigé
+
+- **Les manuels disent le vrai chemin des exercices comptables** : ils écrivaient tantôt « Paramètres → Exercices
+  comptables », tantôt « Administration → Exercices comptables ». L'entrée du menu est dans le groupe *Administration*
+  de la barre latérale ; les manuels d'administration et utilisateur (PDF compris) l'écrivent désormais partout ainsi.
+  Aucun écran ne change.
 
 ### Interne, invisible de l'utilisateur
 
