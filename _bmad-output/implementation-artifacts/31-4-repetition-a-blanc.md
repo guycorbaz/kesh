@@ -985,6 +985,18 @@ une garde de hiérarchie des chemins de menu ; **tout outillage de fixture et to
   **Gate** : ciblé (Dev Agent Record, *Revue de code P3 remédiée*). La boucle ne se clôt pas sur cette passe (elle rend
   un MEDIUM) : revue de code P4 à lancer, **passe ciblée** (Haiku, une lentille, regression hunter, sur
   `b9c02b8d..HEAD` aplati), `314-review-prompt-p4.md`.
+- 2026-10-24 — **Revue de code P4** (Haiku, passe ciblée, une lentille *regression hunter* sur `b9c02b8d..a296e757`
+  aplati ; rapport hors dépôt `/home/gcorbaz/devel/kesh-gate-logs/314-review-p4.md`) : **0/0/0/4**. Aucune forme du
+  contrôle final ne rend `copie détruite` sur un dossier existant ; listing identique `.tex`/PDF, aucun listing coupé,
+  0 `??`. LOW consignés, non traités : LOW-1 et LOW-3 (l. 1624, ce que l'export de souveraineté écrit, dit trop court
+  puis trop large), LOW-2 (branche « date inconnue » du contrôle final), LOW-4 (fiche, « `test ! -e` » au présent).
+  **La revue de code est terminée** : la passe rend 0 finding au-dessus de LOW, et la remédiation qu'elle relisait ne
+  touchait aucun code de production. **Trend** (findings bruts, CRITICAL/HIGH/MEDIUM/LOW) : P1 Sonnet B 0/0/1/9, E
+  0/0/4/5, A 0/0/3/8 → P2 Opus B 0/0/1/6, E 0/0/2/7, A 0/0/3/4 → P3 Sonnet B 0/0/0/5, E 0/0/1/7, A 0/0/0/4 → P4 Haiku
+  ciblée 0/0/0/4 ; MEDIUM distincts 8 → 5 → 1 → 0. Un commit de l'orchestrateur (`9c59dec4`, étape 3 du test
+  périodique) a été **retiré** en P1 (`728012ba`, C-31-4-21) et renvoyé à l'issue #709. Les LOW laissés non corrigés
+  sur l'ensemble des passes, dont deux choix de procédure à trancher par le Project Lead (P1 B-7 = P3 E L-7, P3 E L-2),
+  sont tracés par l'issue **#714**.
 
 ## Dev Agent Record
 
