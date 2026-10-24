@@ -282,7 +282,7 @@ de ligne cités sont ceux de `e59d63e8`.
   lettrage » (`admin-manual.tex:2321`) et que le `.keshbackup` porte « les condensés des clés API (PAT) »
   (`:2230`).
 - **Retenu** : (1) § *Ce que la sauvegarde emporte*, paragraphe **Compatibilité** : la règle, la marche à suivre
-  (installer l'image de la version qui a produit la sauvegarde, importer, puis mettre à jour), le message de refus ; (2)
+  *(annoté en P6 : marche remplacée par C-32-5-28, la phrase vit à l'AC-a13 (1) seule)* (installer l'image de la version qui a produit la sauvegarde, importer, puis mettre à jour), le message de refus ; (2)
   § *Reprises de données rejouées à l'import* : plus aucune reprise rejouée depuis la 0.16.0, et pourquoi ; (3)
   l'avertissement « secret » : les condensés des clés MCP ; CHANGELOG `[0.16.0]`, un ⚠️ en tête de *Modifié*. PDF
   régénéré.
@@ -372,10 +372,9 @@ de ligne cités sont ceux de `e59d63e8`.
   de la 0.15.0 → un second chemin pour les versions sans assistant), H1 en P4 (ce second chemin ne s'atteint ni « après
   connexion » ni sur une base vide : l'assistant d'une 0.14.x l'impose d'abord). Chaque correction écrivait le chemin
   d'une version que Kesh ne maintient plus, et le défaut suivant naissait du correctif précédent.
-- **Retenu** (décision de l'orchestrateur ; *réduit en validation P5, P5-1 et P5-2*) : **retrait**. L'AC-a13 (1) et
-  le manuel disent seulement : une sauvegarde ne se réimporte que dans une version qui porte les mêmes tables ; une
-  sauvegarde plus ancienne se restaure avec **la version qui l'a produite**, dont le manuel se trouve **dans le dépôt,
-  au tag de cette version** ; ensuite, on met à jour. Rien d'autre : ni « base vide », ni procédure, ni section d'un
+- **Retenu** (décision de l'orchestrateur ; *réduit en validation P5, P5-1 et P5-2*) : **retrait**. Sur une sauvegarde plus
+  ancienne, la seule phrase prescrite est celle de **l'AC-a13 (1)** de la fiche (*P6 : elle n'est plus recopiée ici*),
+  et l'étape 1 de *Restaurer sur une nouvelle machine* ne nomme plus aucune version (AC-a13 (5)). Rien d'autre : ni « base vide », ni procédure, ni section d'un
   manuel ancien (la 0.14.0 n'a pas de restauration sur machine neuve, `git show v0.14.0:docs/manual/fr/admin-manual.tex`
   ne la décrit pas ; ce n'est pas à la 32-5 de le pallier — Kesh n'est pas en service, Guy installera à neuf), ni PDF
   joint à une release (`.github/workflows/release.yml:161-165` n'attache aucun fichier ; la phrase contraire du manuel,

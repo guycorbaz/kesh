@@ -370,7 +370,9 @@ passages du manuel qui les décrivent (C-32-5-22).
     qui l'a produite**, dont le manuel se trouve **dans le dépôt, au tag de cette version** ; **ensuite, on met à
     jour**. Aucune procédure n'est prescrite, aucune section d'un manuel ancien n'est citée, aucun fichier joint à une
     release n'est promis (`release.yml:161-165` n'en attache aucun). Le lieu se dit **en mots** : un gabarit
-    `raw.githubusercontent.com/…/v<version>/` ferait rougir la garde G19 (`textes_coherents.rs:1250-1285`) ;
+    `raw.githubusercontent.com/…/v<version>/` ferait rougir la garde G19 (`textes_coherents.rs:1250-1285`).
+    **Phrase distincte**, hors de ce qui précède (P6-2) : après la mise à jour vers la 0.16.0, **prendre une sauvegarde
+    complète juste après la mise à jour** — les sauvegardes précédentes, automatiques comprises, ne s'y importent plus ;
     (2) § *Reprises de données rejouées à l'import* (F4 = R4) : **aucune reprise du registre** n'est plus rejouée depuis
     la 0.16.0 — une sauvegarde assez ancienne pour en avoir besoin n'est plus importable ; la phrase de tête (`:2317`)
     et l'alinéa du lettrage (`:2321`) le disent ; la puce #528 **reste** (la réparation tourne à chaque import, sans
@@ -385,17 +387,19 @@ passages du manuel qui les décrivent (C-32-5-22).
     fichier gagne **le réglage et l'état de la sauvegarde automatique**, propres à l'installation (R9 ; défaut
     antérieur, suivi par #722) ;
     (5) § *Restaurer sur une nouvelle machine* (F1) : `:2373` (« une sauvegarde de format 1 restaure la
-    comptabilité ») et `:2376` (« dans une version **égale ou plus récente** ») deviennent : la version installée doit
-    **porter les mêmes tables** que la sauvegarde — en pratique la version qui l'a produite, puis la mise à jour —, et
-    une sauvegarde de format 1 (0.14.x et avant) ne s'importe plus dans la 0.16.0 ; `:1505` dit de même du
+    comptabilité ») et `:2376` (« dans une version **égale ou plus récente** ») deviennent : l'étape 1 **ne nomme plus aucune
+    version à installer** ; elle se réduit à la règle — la version installée doit porter les mêmes tables que la
+    sauvegarde — et renvoie au paragraphe *Compatibilité* que prescrit (1), seul lieu de la phrase sur une sauvegarde
+    plus ancienne (P6-1) ; une sauvegarde de format 1 (0.14.x et avant) ne s'importe plus dans la 0.16.0 ; `:1505` dit de même du
     `.keshbackup` de format 1, et *Les pièces à l'import* (`:2279`, « Une sauvegarde de format 1 … restaurée sur la
     même installation, elle retrouve les pièces ») se borne aux versions qui l'importent encore (0.15.x). Les autres
     occurrences de « format 1 » restent vraies et ne changent pas : `:1501` (le format 1 n'emporte pas le PDF), `:2266`
     (refus d'un manifeste de format 1 qui déclare des pièces), `:1629` (la répétition de clôture exporte et réimporte
     dans une même version).
-    `CHANGELOG.md`, section `[0.16.0]` : **créer** `### Modifié`, une entrée ⚠️ de même substance, sur les mêmes trois énoncés (règle, version qui l'a produite et son manuel au tag, mise à jour). PDF régénéré (`make fr` dans `docs/manual/`) et **contrôlé aplati**, apostrophes typographiques
+    `CHANGELOG.md`, section `[0.16.0]` : **créer** `### Modifié`, une entrée ⚠️ de même substance : la règle des mêmes tables, la phrase de (1) sur une sauvegarde plus ancienne, et le
+    rappel de prendre une sauvegarde complète juste après la mise à jour. PDF régénéré (`make fr` dans `docs/manual/`) et **contrôlé aplati**, apostrophes typographiques
     comprises (`pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oiE ".{60}mêmes
-    tables.{80}"` rend la phrase ; idem « au tag de cette version », « serveur MCP », « sauvegarde automatique » dans la liste, et
+    tables.{80}"` rend la phrase ; idem « au tag de cette version », « juste après la mise à jour », « serveur MCP », « sauvegarde automatique » dans la liste, et
     plus aucune occurrence de « égale ou plus récente » ni de « appliquera cette fois »).
 14. **AC-a14 — propagation.** Rendent zéro site périmé (les mentions historiques datées restent, marquées comme
     telles) : `grep -rnE "\b39\b" crates docs --include=*.rs --include=*.tex --include=*.md | grep -i table` ;
@@ -825,12 +829,11 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
    l'ajouter à l'écran (C-32-5-10).
 7. **Pour information — une conséquence de Q4** : la 0.16.0 refuse les sauvegardes de la 0.15.0, et, du même coup, le
    rattrapage du lettrage rejoué à l'import (0.13.0) n'a plus d'objet et se retire (C-32-5-13). Rien n'est perdu pour
-   une installation neuve ; le manuel dit seulement qu'une sauvegarde plus ancienne se restaure avec la version qui l'a
-   produite, dont le manuel est dans le dépôt au tag de cette version, puis qu'on met à jour (C-32-5-28). Il ne
-   prescrit aucune procédure : la 0.14.0 n'a pas de restauration sur machine neuve, et la 32-5 ne la pallie pas,
+   une installation neuve ; le manuel en dit la règle en une seule phrase (AC-a13 (1), C-32-5-28) et ne prescrit aucune
+   procédure : la 0.14.0 n'a pas de restauration sur machine neuve, et la 32-5 ne la pallie pas,
    puisque tu installeras à neuf. ⚠️ Si une installation existante (celle du NAS) était
    mise à jour en 0.16.0 au lieu d'une installation neuve, **toutes** ses sauvegardes antérieures, automatiques
-   comprises, cesseraient de se restaurer sur la 0.16.0 : d'où la sauvegarde complète juste après la mise à jour.
+   comprises, cesseraient de se restaurer sur la 0.16.0 : d'où la sauvegarde complète juste après la mise à jour, que le manuel et le CHANGELOG prescrivent (AC-a13 (1)).
    *(La prémisse « Kesh n'est pas en service » est la tienne ; son écart avec `CLAUDE.md`, qui dit les livres réels
    tenus sur le NAS, t'est déjà posé par l'orchestrateur — la fiche ne le tranche pas, F14.)*
 
@@ -907,7 +910,7 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
   - **R1** — sixième test (`full_import_replays_backfills_in_increasing_version_order`), neuf appelants de
     `replay_retired`, quatre commentaires de plus ; l'en-tête de `20261010000002` laissé intact (P8), dit dans sa
     justification (fait 10, AC-a9, AC-a10, AC-a14).
-  - **R2** — la marche à suivre part d'une base vide (AC-a13 (1), CHANGELOG) ; la même phrase du fichier d'epic (§
+  - **R2** — *(annoté en P6 : forme remplacée par C-32-5-28)* la marche à suivre part d'une base vide (AC-a13 (1), CHANGELOG) ; la même phrase du fichier d'epic (§
     *Réponses de Guy*, Q4) **annotée** au 2026-10-25, la décision inchangée.
   - **R3** — manuel utilisateur `:190`, `:3202`, `:3209-3212` en 32-5d (AC-d3).
   - **LOW** : R5 = F10 (compteurs `:770-771`, `:1096-1129`), R6 (garde `:1178`, formulation proposée), R7 = F7 (trois
@@ -967,7 +970,7 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
   seul commit `bafe2c9b` ; rapport `kesh-gate-logs/325-validate-p4.md`). **Trend : P1 2 HIGH / 8 MEDIUM → P2 1 / 7 →
   P3 0 / 1 → P4 0 / 0 / 1 MEDIUM / 6 LOW.** Remédiation (Opus 5.5), **sur la fiche, le registre et le fichier d'epic
   seuls** :
-  - **H1 (MEDIUM) — retrait** (décision de l'orchestrateur, C-32-5-28). ⚠️ **Recyclage déclaré** : c'est la
+  - **H1 (MEDIUM) — retrait** (décision de l'orchestrateur, C-32-5-28 ; *annoté en P6 : la forme décrite ici a été réduite en P5 puis en P6*). ⚠️ **Recyclage déclaré** : c'est la
     **troisième** forme du même défaut, chacune née du correctif précédent — R2 en P2, F6 en P3, H1 en P4 — sur la
     procédure de restauration d'une sauvegarde ancienne. AC-a13 (1) ne prescrit plus de chemin pour une version sans
     l'assistant ; le manuel dit trois choses : mêmes tables ; l'image de la version qui a produit la sauvegarde, sur une
@@ -994,7 +997,7 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
   rapport `kesh-gate-logs/325-validate-p5.md`). **Trend : P1 2 HIGH / 8 MEDIUM → P2 1 / 7 → P3 0 / 1 → P4 0 / 1 → P5
   0 / 0 / 1 MEDIUM / 4 LOW.** Remédiation (Opus 5.5), sur la fiche, le registre, le fichier d'epic et le registre de
   sprint seuls :
-  - **P5-1 (MEDIUM)** et **P5-2** — la phrase promettait « le PDF joint à la release GitHub » : `release.yml:161-165`
+  - **P5-1 (MEDIUM)** et **P5-2** — *(annoté en P6 : la phrase décrite ici ne vit plus qu'à l'AC-a13 (1))* la phrase promettait « le PDF joint à la release GitHub » : `release.yml:161-165`
     n'attache aucun fichier (l'erreur venait de la consigne de la P4, vérifié par l'orchestrateur). Réduction à ce qui
     est vérifiable, sans procédure : mêmes tables ; une sauvegarde plus ancienne se restaure avec la version qui l'a
     produite, dont le manuel est dans le dépôt au tag de cette version ; ensuite, on met à jour. Plus de « base vide »
@@ -1004,7 +1007,8 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
     suite sur la même phrase (R2, F6, H1, P5-1) ; le retrait la réduit désormais à trois énoncés vérifiables.
   - **LOW** : P5-3 (le décompte du grep déclaré à l'entrée P4 était faux : annoté à sa place, daté) ; P5-4 (ligne de la
     clé `32-5` du registre de sprint : état après P5) ; P5-5 (« trois choses, et rien de plus » comptait une redite et un
-    quatrième énoncé : la règle n'est plus répétée, le rappel de sauvegarde n'est plus prescrit à cet endroit).
+    quatrième énoncé : la règle n'est plus répétée, le rappel de sauvegarde n'est plus prescrit à cet endroit). *(Annoté en P6, P6-2 :
+    faux — le rappel n'était prescrit nulle part ailleurs ; il est rétabli en P6 comme phrase distincte.)*
   - ⚠️ **Le prompt de la P5 désignait le commit par `git log --grep "validation P4"`** : sur une branche qui contient
     l'historique de `main`, ce motif peut retrouver un commit de `main` plutôt que celui de la remédiation. Le prompt de
     la P6 désigne le commit **par son SHA**, en dur.
@@ -1014,4 +1018,25 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
     contexte de C-32-5-28.
   - Totaux inchangés : 31 AC, 23 tâches, 23 mutations ; registre C-32-5-1 à C-32-5-28. Passes : **5 sur 8**. Suivante :
     P6 ciblée, regression hunter, Opus (`325-validate-prompt-p6.md`).
+- **2026-10-25 — Validation P6** (passe **ciblée**, regression hunter, contexte frais, **Opus**, sur `b7505390` ; rapport
+  `kesh-gate-logs/325-validate-p6.md`). **Trend : … → P4 0 / 1 → P5 0 / 1 → P6 0 / 0 / 2 MEDIUM / 1 LOW.** Passes :
+  **6 sur 8**. Remédiation (Opus 5.5), sur la fiche, le registre, le fichier d'epic et le registre de sprint seuls :
+  - ⚠️ **Recyclage déclaré — cinquième forme** du défaut de la restauration d'une sauvegarde ancienne (R2, F6, H1, P5-1,
+    P6-1) : l'AC-a13 (5) prescrivait encore, dans la procédure de l'assistant, « en pratique la version qui l'a
+    produite, puis la mise à jour ».
+  - **P6-1 (MEDIUM), par retrait** : l'étape 1 (`admin-manual.tex:2376`) ne nomme plus aucune version ; elle se réduit
+    à la règle des mêmes tables et renvoie à *Compatibilité*. **Seule l'AC-a13 (1) porte désormais la phrase** sur une
+    sauvegarde plus ancienne : le point 7, C-32-5-28, C-32-5-21 et la précision du fichier d'epic y renvoient au lieu de
+    la répéter.
+  - **P6-2 (MEDIUM), par rétablissement** : « prendre une sauvegarde complète juste après la mise à jour » redevient une
+    phrase distincte de *Compatibilité* et du CHANGELOG, contrôlée au PDF aplati ; le point 7 y renvoie ; l'entrée P5 qui
+    le disait « plus prescrit à cet endroit » est annotée.
+  - **P6-3 (LOW)** : les deux occurrences datées de « base vide » hors de la fiche (puce Q4 du fichier d'epic,
+    annotation P2 ; annotation P2 de `32-5a` au registre de sprint) sont annotées « forme remplacée par C-32-5-28 ».
+  - **Valeurs grepées** sur la fiche, le registre, le fichier d'epic et le registre de sprint : `version qui l'a
+    produite`, `puis la mise à jour`, `installer l'image`, `en pratique la version`, `base vide` — la seule prescription
+    vivante est l'AC-a13 (1) ; les autres occurrences sont des entrées datées, annotées, ou la décision d'origine de Guy
+    (puce Q4, suivie de ses précisions datées).
+  - Totaux inchangés : 31 AC, 23 tâches, 23 mutations ; registre C-32-5-1 à C-32-5-28. Suivante : P7 ciblée, Sonnet
+    (`325-validate-prompt-p7.md`), qui relit aussi **toute la fiche** à la recherche d'une prescription restante.
 

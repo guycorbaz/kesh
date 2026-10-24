@@ -550,12 +550,11 @@ nombre de tables du NAS) : à Guy avant la release.
   recopiée ici par l'orchestrateur était incomplète : l'image de la version qui a produit la sauvegarde **ne démarre pas**
   sur une base qu'une version plus récente a migrée — `sqlx` y trouve une migration qu'il ne connaît pas, `CLAUDE.md`
   § P1. La procédure part donc d'une **base vide** — installation neuve, restauration depuis l'assistant (31-1b) —,
-  importe, puis met à jour ; la base en place n'est pas touchée. C'est la forme que la fiche 32-5 écrit au manuel.)*
+  importe, puis met à jour ; la base en place n'est pas touchée. C'est la forme que la fiche 32-5 écrit au manuel.)* *(Forme remplacée par C-32-5-28.)*
   *(Précisé le 2026-10-25, validation P4 de la 32-5, C-32-5-28 : le manuel ne prescrit plus le chemin propre à une
-  version ancienne — « restauration depuis l'assistant » n'existe qu'à partir de la 0.15.0. Il dit seulement : une
-  sauvegarde ne se réimporte que dans une version qui porte les mêmes tables ; une sauvegarde plus ancienne se
-  restaure avec la version qui l'a produite, dont le manuel se trouve dans le dépôt, au tag de cette version ; ensuite,
-  on met à jour — réduit à la validation P5 : aucune procédure, aucun fichier de release, cf. #746.)*
+  version ancienne — « restauration depuis l'assistant » n'existe qu'à partir de la 0.15.0. Réduit aux
+  validations P5 et P6 : la seule phrase prescrite au manuel est celle de l'AC-a13 (1) de la fiche 32-5 ; aucune
+  procédure, aucun fichier de release, cf. #746.)*
 - **Q6** : fait — CR #723.
 - **Q3, Q5, Q7** : pas encore de réponse ; les recommandations restent l'hypothèse de travail des fiches 32-5 et 32-6.
 
