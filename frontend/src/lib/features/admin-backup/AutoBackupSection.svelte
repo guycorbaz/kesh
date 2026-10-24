@@ -405,7 +405,7 @@
 	<p class="text-xs text-text-muted" data-testid="auto-backup-reminder">
 		{i18nMsg(
 			'admin-backup-auto-reminder',
-			"Ces sauvegardes sont écrites dans le dossier de sauvegarde de l'installation (./backup/auto avec les fichiers docker-compose fournis), sur le même disque que Kesh : copiez-les ailleurs, par exemple avec Hyper Backup. Elles contiennent des données sensibles. Chacune pèse à peu près la base plus le dossier des documents. Le réglage de la sauvegarde automatique ne voyage pas dans le fichier .keshbackup : il appartient à l'installation, comme le fichier .env.",
+			"Ces sauvegardes sont écrites dans le dossier de sauvegarde de l'installation (./backup/auto avec les fichiers docker-compose fournis), sur le même disque que Kesh : copiez-les ailleurs, par exemple avec Hyper Backup. Elles contiennent des données sensibles. Chacune pèse à peu près la base plus le dossier des documents : le dossier auto en garde le nombre conservé plus une, et le dossier de sauvegarde y ajoute une sauvegarde par import, jamais purgée. Le réglage de la sauvegarde automatique ne voyage pas dans le fichier .keshbackup : il appartient à l'installation, comme le fichier .env.",
 		)}
 	</p>
 </section>

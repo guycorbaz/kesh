@@ -43,8 +43,8 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   jamais supprimée, même après une suite de sauvegardes incomplètes (pièces absentes du dossier des documents). Avant
   d'écrire, Kesh vérifie la place sur le disque et refuse plutôt que de le remplir ; un disque plein pendant l'écriture
   ne laisse aucun fichier partiel et ne supprime rien. Le réglage et l'état se trouvent dans **Administration →
-  Sauvegarde complète**, avec **« Sauvegarder maintenant »** ; un échec, ou l'absence de sauvegarde réussie depuis deux
-  intervalles, s'affiche aussi en bandeau dans toute l'application pour l'administrateur. Une seule sauvegarde, export
+  Sauvegarde complète**, avec **« Sauvegarder maintenant »** ; un échec, ou l'absence de sauvegarde réussie depuis au moins
+  deux intervalles, s'affiche aussi en bandeau dans toute l'application pour l'administrateur. Une seule sauvegarde, export
   ou import à la fois. Le réglage appartient à l'installation : il ne voyage pas dans le `.keshbackup`. Audit
   `admin.backup_schedule_updated`, `admin.backup_run`.
 - **Les sauvegardes du serveur se listent et se téléchargent depuis l'écran** : sauvegardes automatiques et sauvegardes

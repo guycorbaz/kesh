@@ -985,6 +985,63 @@ async fn liste_des_sauvegardes(pool: MySqlPool) {
     );
 }
 
+/// Revue de code P1, L-B2 / E-4 (C-31-1-88) — un dossier `auto` inutilisable
+/// n'emporte pas la liste : les sauvegardes pré-import restent servies (et
+/// téléchargeables), le problème se lit à l'état de la sauvegarde automatique
+/// (`failed` au tour suivant) et au journal. Deux formes : `auto` remplacé par
+/// un fichier (`read_dir` en échec), puis `auto` lisible mais non traversable
+/// (`0o600` : chaque entrée en échec de métadonnées).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn liste_servie_malgre_un_dossier_auto_inutilisable(pool: MySqlPool) {
+    use std::os::unix::fs::PermissionsExt;
+    let i = monter(pool.clone()).await;
+    let pre = "kesh-pre-import-20260101T000000000-1-0.keshbackup";
+    std::fs::write(i.backup.path().join(pre), b"pre").unwrap();
+    let noms = |corps: Value| -> Vec<(String, String)> {
+        corps["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| {
+                (
+                    x["kind"].as_str().unwrap().into(),
+                    x["name"].as_str().unwrap().into(),
+                )
+            })
+            .collect()
+    };
+    let attendu = vec![("pre-import".to_string(), pre.to_string())];
+
+    // (1) `auto` est un fichier.
+    std::fs::write(i.auto(), b"un fichier, pas un dossier").unwrap();
+    let r = i.get("/api/v1/admin/backups").await;
+    assert_eq!(r.status(), 200, "auto = fichier");
+    assert_eq!(noms(r.json().await.unwrap()), attendu);
+    let r = i
+        .get(&format!("/api/v1/admin/backups/pre-import/{pre}"))
+        .await;
+    assert_eq!(r.status(), 200, "téléchargement pré-import, auto = fichier");
+    let issue = run_once(&i.state, TestEnv::large(), instant(0), Trigger::Schedule)
+        .await
+        .unwrap();
+    assert_eq!(
+        issue,
+        RunOutcome::Done(RunStatus::Failure(FailureStatus::Failed))
+    );
+    assert_eq!(i.schedule().await["lastStatus"], "failed");
+
+    // (2) `auto` lisible mais non traversable : ses entrées ne se lisent pas.
+    std::fs::remove_file(i.auto()).unwrap();
+    i.deposer(1);
+    std::fs::set_permissions(i.auto(), std::fs::Permissions::from_mode(0o600)).unwrap();
+    let r = i.get("/api/v1/admin/backups").await;
+    let statut = r.status();
+    let corps: Value = r.json().await.unwrap_or(Value::Null);
+    std::fs::set_permissions(i.auto(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(statut, 200, "auto non traversable");
+    assert_eq!(noms(corps), attendu);
+}
+
 /// Téléchargement : le fichier servi est celui du disque, audit
 /// `admin.backup_downloaded` ; 404 sur `../x`, un nom hors expression, un nom
 /// absent, un type inconnu, et un lien symbolique au nom conforme.

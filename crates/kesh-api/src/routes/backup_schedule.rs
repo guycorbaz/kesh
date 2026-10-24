@@ -68,7 +68,8 @@ pub struct BackupScheduleResponse {
     /// Prochaine sauvegarde prévue (même règle qu'`is_due`) ; `null` si
     /// désactivée.
     pub next_due_at: Option<chrono::DateTime<Utc>>,
-    /// Aucune réussite depuis deux intervalles (ou réussite datée du futur).
+    /// Dernière réussite datant d'au moins deux intervalles (ou datée du
+    /// futur).
     pub overdue: bool,
 }
 
@@ -254,9 +255,15 @@ pub async fn download_backup(
         .into_iter()
         .find(|b| b.kind == kind && b.name == name)
         .ok_or_else(introuvable)?;
-    let fichier = tokio::fs::File::open(&sauvegarde.path)
+    // Disparu, devenu un lien ou plus un fichier régulier depuis la liste :
+    // 404, comme un nom absent (C-31-1-89).
+    let chemin = sauvegarde.path.clone();
+    let fichier = tokio::task::spawn_blocking(move || auto_backup::ouvrir_la_sauvegarde(&chemin))
         .await
-        .map_err(|e| AppError::Internal(format!("ouverture de la sauvegarde : {e}")))?;
+        .map_err(|e| AppError::Internal(format!("ouverture de la sauvegarde : {e}")))?
+        .map_err(|e| AppError::Internal(format!("ouverture de la sauvegarde : {e}")))?
+        .map(tokio::fs::File::from_std)
+        .ok_or_else(introuvable)?;
     emit_audit(
         &state,
         NewAuditLogEntry::from_current_user(

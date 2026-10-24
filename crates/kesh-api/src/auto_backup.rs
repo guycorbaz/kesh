@@ -184,17 +184,18 @@ fn passe(valeur: Option<NaiveDateTime>, now: NaiveDateTime) -> Option<NaiveDateT
     valeur.filter(|v| *v <= now)
 }
 
-/// Délai avant de retenter après une tentative : une heure, ou l'intervalle
-/// s'il est plus court.
-fn delai_de_reprise(schedule: &BackupSchedule) -> TimeDelta {
-    intervalle(schedule).min(TimeDelta::hours(1))
-}
+/// Délai avant de retenter après une tentative : une heure. La fiche écrit
+/// `min(intervalle, 1 h)` ; aucune fréquence admise
+/// (`ALLOWED_INTERVAL_HOURS`, 6 h au moins, gardée par la `CHECK` de la
+/// table) n'étant inférieure à une heure, le `min` était mort et le manuel
+/// promettait un cas inatteignable (revue de code P1, L-B4, C-31-1-91).
+const DELAI_DE_REPRISE: TimeDelta = TimeDelta::hours(1);
 
 /// AC25 — vrai si et seulement si la sauvegarde est activée, que la dernière
 /// réussite est nulle ou date d'au moins un intervalle, et que la dernière
-/// tentative est nulle ou date d'au moins `min(intervalle, 1 h)` (un échec se
-/// retente au bout d'une heure, pas en boucle). Une valeur postérieure à `now`
-/// vaut nulle (horloge revenue en arrière).
+/// tentative est nulle ou date d'au moins une heure ([`DELAI_DE_REPRISE`] :
+/// un échec se retente au bout d'une heure, pas en boucle). Une valeur
+/// postérieure à `now` vaut nulle (horloge revenue en arrière).
 pub fn is_due(schedule: &BackupSchedule, now: NaiveDateTime) -> bool {
     schedule.enabled && next_due_at(schedule, now).is_some_and(|t| t <= now)
 }
@@ -209,7 +210,7 @@ pub fn next_due_at(schedule: &BackupSchedule, now: NaiveDateTime) -> Option<Naiv
     let apres_reussite =
         passe(schedule.last_success_at, now).map_or(now, |t| t + intervalle(schedule));
     let apres_tentative =
-        passe(schedule.last_attempt_at, now).map_or(now, |t| t + delai_de_reprise(schedule));
+        passe(schedule.last_attempt_at, now).map_or(now, |t| t + DELAI_DE_REPRISE);
     Some(apres_reussite.max(apres_tentative).max(now))
 }
 
@@ -289,7 +290,11 @@ pub(crate) struct ServerBackup {
 
 /// Fichiers **réguliers** de `dir` (`symlink_metadata` : un lien n'est
 /// jamais suivi) dont le nom satisfait `garder`. Un dossier absent rend une
-/// liste vide.
+/// liste vide ; un dossier illisible (`read_dir` en échec : droits, `dir`
+/// qui n'est pas un dossier) rend `Err`. Une **entrée** illisible (entrée du
+/// dossier ou métadonnées en échec) est sautée, journalisée si elle ne s'est
+/// pas simplement évanouie : elle ne fait pas échouer les autres (revue de
+/// code P1, E-4, C-31-1-88).
 fn fichiers_reguliers(
     dir: &Path,
     garder: impl Fn(&str) -> bool,
@@ -301,7 +306,13 @@ fn fichiers_reguliers(
     };
     let mut fichiers = Vec::new();
     for entree in entrees {
-        let entree = entree?;
+        let entree = match entree {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!(dir = %dir.display(), "entrée du dossier de sauvegarde illisible : {e}");
+                continue;
+            }
+        };
         let Some(nom) = entree.file_name().to_str().map(str::to_owned) else {
             continue;
         };
@@ -310,11 +321,15 @@ fn fichiers_reguliers(
         }
         let chemin = entree.path();
         // Un fichier disparu entre la lecture du dossier et celle de ses
-        // métadonnées (renommé, supprimé) n'est plus là : il est sauté.
+        // métadonnées (renommé, supprimé) n'est plus là : il est sauté ; des
+        // métadonnées illisibles (droits) aussi, journalisées.
         let meta = match std::fs::symlink_metadata(&chemin) {
             Ok(m) => m,
             Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(e),
+            Err(e) => {
+                tracing::warn!(path = %chemin.display(), "fichier de sauvegarde illisible : {e}");
+                continue;
+            }
         };
         if meta.file_type().is_file() {
             fichiers.push((nom, meta, chemin));
@@ -327,13 +342,29 @@ fn fichiers_reguliers(
 /// `kesh-pre-import-*.keshbackup` du dossier de sauvegarde, fichiers réguliers
 /// dont le nom satisfait l'expression de leur type (aucun `.partial`, aucun
 /// autre fichier), les plus récentes en tête.
+///
+/// Un dossier `auto` **illisible** (remplacé par un fichier, droits cassés)
+/// n'emporte pas la liste : ses lignes manquent, l'erreur est journalisée, et
+/// les sauvegardes pré-import restent servies — c'est la voie normale pour en
+/// récupérer une (manuel). Le problème se lit à l'état de la sauvegarde
+/// automatique, que le tour suivant met en échec (`failed`) faute de pouvoir
+/// y écrire (revue de code P1, L-B2 / E-4, C-31-1-88). Seul un dossier de
+/// sauvegarde lui-même illisible rend `Err` (rien ne peut alors être listé).
 pub(crate) fn lister_les_sauvegardes(backup_dir: &Path) -> io::Result<Vec<ServerBackup>> {
     let mut liste = Vec::new();
     for (kind, dir) in [
         (BackupKind::Auto, backup_dir.join(AUTO_SUBDIR)),
         (BackupKind::PreImport, backup_dir.to_path_buf()),
     ] {
-        for (name, meta, path) in fichiers_reguliers(&dir, |n| kind.nom_valide(n))? {
+        let fichiers = match fichiers_reguliers(&dir, |n| kind.nom_valide(n)) {
+            Ok(f) => f,
+            Err(e) if kind == BackupKind::Auto => {
+                tracing::warn!(dir = %dir.display(), "dossier des sauvegardes automatiques illisible : {e}");
+                Vec::new()
+            }
+            Err(e) => return Err(e),
+        };
+        for (name, meta, path) in fichiers {
             liste.push(ServerBackup {
                 kind,
                 name,
@@ -351,6 +382,32 @@ pub(crate) fn lister_les_sauvegardes(backup_dir: &Path) -> io::Result<Vec<Server
     Ok(liste)
 }
 
+/// Ouvre en lecture une sauvegarde trouvée par [`lister_les_sauvegardes`],
+/// **sans suivre** un lien symbolique (`O_NOFOLLOW`, comme la liste qui les
+/// écarte par `symlink_metadata`). `Ok(None)` — le téléchargement rend alors
+/// 404, comme pour un nom absent — si le fichier a disparu depuis la liste
+/// (rétention, suppression à la main), s'il est devenu un lien, ou s'il n'est
+/// plus un fichier régulier ; `Err` pour toute autre erreur (revue de code P1,
+/// L-B1 / E-5, C-31-1-89).
+pub(crate) fn ouvrir_la_sauvegarde(path: &Path) -> io::Result<Option<File>> {
+    use rustix::fs::{Mode, OFlags};
+    use rustix::io::Errno;
+    let fd = match rustix::fs::open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(fd) => fd,
+        Err(Errno::NOENT | Errno::LOOP) => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
+    let fichier = File::from(fd);
+    if !fichier.metadata()?.file_type().is_file() {
+        return Ok(None);
+    }
+    Ok(Some(fichier))
+}
+
 /// Un `.partial` que personne n'a modifié depuis ce délai est abandonné.
 pub(crate) const PARTIEL_ABANDONNE_APRES: std::time::Duration =
     std::time::Duration::from_secs(10 * 60);
@@ -361,9 +418,13 @@ pub(crate) const PARTIEL_ABANDONNE_APRES: std::time::Duration =
 /// d'écriture (chaque écriture avance sa date de modification) et reste. Le
 /// verrou `backup_lock` garantit qu'aucune écriture **de ce processus** n'est
 /// en cours ; le délai protège celle d'un autre (deux processus sur un même
-/// dossier, ou des tests parallèles qui le partagent — C-31-1-82). Date de
-/// modification illisible : le fichier reste. Un échec est journalisé ; rend
-/// le nombre de fichiers supprimés.
+/// dossier, ou des tests parallèles qui le partagent — C-31-1-82). L'écart
+/// se mesure **dans les deux sens** : une date postérieure à `maintenant`
+/// d'au moins ce délai (horloge revenue en arrière depuis l'arrêt brutal)
+/// vaut abandon ; à moins de ce délai dans le futur (horloge d'un partage
+/// réseau légèrement en avance), le fichier reste (revue de code P1, E-3,
+/// C-31-1-90). Date de modification illisible : le fichier reste. Un échec
+/// est journalisé ; rend le nombre de fichiers supprimés.
 pub(crate) fn supprimer_les_partiels(dir: &Path, prefixe: &str) -> usize {
     let partiels = match fichiers_reguliers(dir, |n| {
         n.starts_with(prefixe) && n.ends_with(".keshbackup.partial")
@@ -378,8 +439,11 @@ pub(crate) fn supprimer_les_partiels(dir: &Path, prefixe: &str) -> usize {
     let abandonne = |meta: &std::fs::Metadata| {
         meta.modified()
             .ok()
-            .and_then(|m| maintenant.duration_since(m).ok())
-            .is_some_and(|age| age >= PARTIEL_ABANDONNE_APRES)
+            .map(|m| match maintenant.duration_since(m) {
+                Ok(age) => age,
+                Err(futur) => futur.duration(),
+            })
+            .is_some_and(|ecart| ecart >= PARTIEL_ABANDONNE_APRES)
     };
     let mut supprimes = 0;
     for (_, meta, chemin) in partiels {
@@ -407,7 +471,8 @@ pub(crate) fn supprimer_les_partiels(dir: &Path, prefixe: &str) -> usize {
 /// AC30 — somme des tailles des fichiers réguliers du premier niveau du
 /// dossier des documents (`store_document` n'écrit qu'à ce niveau) : majorant
 /// des pièces que l'archive emportera. Dossier absent : 0 (aucune pièce
-/// encore) ; autre erreur de lecture : 0, journalisée.
+/// encore) ; dossier illisible : 0, journalisé ; une entrée illisible est
+/// sautée, journalisée, et la somme ne la compte pas (C-31-1-88).
 fn taille_des_documents(documents_dir: &Path) -> u64 {
     match fichiers_reguliers(documents_dir, |_| true) {
         Ok(fichiers) => fichiers.iter().map(|(_, m, _)| m.len()).sum(),
@@ -431,7 +496,9 @@ fn seuil_d_espace(derniere: u64, documents: u64) -> u64 {
 /// d'une sauvegarde automatique, triés par nom (= par date), supprime les plus
 /// anciens au-delà de `garder`, **jamais** un nom de `proteges` (la sauvegarde
 /// qui vient d'être écrite, la dernière sauvegarde complète). Rend le nombre
-/// de fichiers supprimés ; un échec est journalisé.
+/// de fichiers supprimés ; un échec est journalisé. Un fichier dont les
+/// métadonnées sont illisibles n'est ni compté ni supprimé : la rétention en
+/// garde alors plus, jamais moins (C-31-1-88).
 fn appliquer_la_retention(auto_dir: &Path, garder: usize, proteges: &[&str]) -> usize {
     let mut noms: Vec<(String, PathBuf)> =
         match fichiers_reguliers(auto_dir, |n| NOM_AUTO.is_match(n)) {
@@ -932,6 +999,92 @@ mod tests {
         assert!(!NOM_AUTO.is_match("kesh-auto-20261024T010203045Z.keshbackup.partial"));
         assert!(!NOM_AUTO.is_match("kesh-auto-２０261024T010203045Z.keshbackup"));
         assert!(NOM_PRE_IMPORT.is_match("kesh-pre-import-20261024T010203045-42-0.keshbackup"));
+    }
+
+    // --- fichiers (revue de code P1) -----------------------------------------
+
+    /// Date la modification de `chemin` à `maintenant ± secondes`.
+    fn dater(chemin: &Path, futur: bool, secondes: u64) {
+        let ecart = std::time::Duration::from_secs(secondes);
+        let maintenant = std::time::SystemTime::now();
+        File::options()
+            .write(true)
+            .open(chemin)
+            .unwrap()
+            .set_modified(if futur {
+                maintenant + ecart
+            } else {
+                maintenant - ecart
+            })
+            .unwrap();
+    }
+
+    /// E-3 (C-31-1-90) — un `.partial` dont la date de modification s'écarte
+    /// de `maintenant` d'au moins dix minutes, **dans un sens ou dans l'autre**,
+    /// est abandonné : une heure dans le futur (horloge revenue en arrière)
+    /// est supprimé ; une minute dans le futur ou dans le passé reste.
+    #[test]
+    fn partiel_date_du_futur() {
+        let dir = tempfile::tempdir().unwrap();
+        let noms = [
+            (
+                "kesh-auto-20260101T000000000Z.keshbackup.partial",
+                true,
+                3600,
+            ),
+            ("kesh-auto-20260102T000000000Z.keshbackup.partial", true, 60),
+            (
+                "kesh-auto-20260103T000000000Z.keshbackup.partial",
+                false,
+                60,
+            ),
+        ];
+        for (nom, futur, secondes) in noms {
+            let chemin = dir.path().join(nom);
+            std::fs::write(&chemin, b"x").unwrap();
+            dater(&chemin, futur, secondes);
+        }
+        assert_eq!(supprimer_les_partiels(dir.path(), "kesh-auto-"), 1);
+        let mut restants: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        restants.sort();
+        assert_eq!(restants, vec![noms[1].0.to_string(), noms[2].0.to_string()]);
+    }
+
+    /// L-B1 / E-5 (C-31-1-89) — l'ouverture d'une sauvegarde listée ne suit
+    /// pas un lien symbolique et tient pour absent un fichier disparu ou qui
+    /// n'est plus un fichier régulier (`Ok(None)` → 404) ; un fichier régulier
+    /// s'ouvre et se lit.
+    #[test]
+    fn ouverture_sans_suivre_les_liens() {
+        let dir = tempfile::tempdir().unwrap();
+        let regulier = dir.path().join("a.keshbackup");
+        std::fs::write(&regulier, b"archive").unwrap();
+        let lien = dir.path().join("b.keshbackup");
+        std::os::unix::fs::symlink(&regulier, &lien).unwrap();
+        let sous_dossier = dir.path().join("c.keshbackup");
+        std::fs::create_dir(&sous_dossier).unwrap();
+
+        let mut lu = String::new();
+        ouvrir_la_sauvegarde(&regulier)
+            .unwrap()
+            .expect("fichier régulier ouvert")
+            .read_to_string(&mut lu)
+            .unwrap();
+        assert_eq!(lu, "archive");
+        assert!(ouvrir_la_sauvegarde(&lien).unwrap().is_none(), "lien suivi");
+        assert!(
+            ouvrir_la_sauvegarde(&dir.path().join("absent.keshbackup"))
+                .unwrap()
+                .is_none(),
+            "fichier disparu"
+        );
+        assert!(
+            ouvrir_la_sauvegarde(&sous_dossier).unwrap().is_none(),
+            "dossier ouvert"
+        );
     }
 
     // --- gardes lexicales ----------------------------------------------------

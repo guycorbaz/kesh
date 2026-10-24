@@ -45,7 +45,7 @@ export interface BackupSchedule {
 	lastCompleteFile: string | null;
 	/** Prochaine sauvegarde prévue, calculée par le serveur ; `null` si désactivée. */
 	nextDueAt: string | null;
-	/** Aucune réussite depuis deux intervalles — calculé par le serveur. */
+	/** Dernière réussite datant d'au moins deux intervalles — calculé par le serveur. */
 	overdue: boolean;
 }
 
