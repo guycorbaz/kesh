@@ -14,7 +14,9 @@ se corrige ici.
 de l'Epic 26, Q5 de celle de l'Epic 27. Complété le 2026-10-23, Story 31-0 — action C2 de la
 rétrospective de l'Epic 29 : les consignes que les prompts communs des Epics 29 et 30 portaient
 hors du dépôt — défaut voisin, mots-clés de fermeture, recette visuelle, symétrique client,
-privilèges de la base, lentilles sans fichier.)*
+privilèges de la base, lentilles sans fichier. Complété le 2026-10-24, rétrospective de l'Epic 31 :
+écritures dans le worktree seulement (§ 2.1), prémisse vérifiée au code et remédiations de
+l'orchestrateur (§ 3), lentilles sans redirection (§ 6), contrôle de fuite avant le push (§ 8).)*
 
 **Conventions de ce document.** `<clé>` désigne la clé courte de la story (`281` pour la 28-1) ;
 `<worktree>` le répertoire du worktree assigné ; `$GATE_LOGS` le répertoire **commun** des journaux
@@ -61,6 +63,26 @@ Sauf autorisation écrite dans le prompt de l'agent :
 
 Le push, les PR, les merges et les issues reviennent à l'orchestrateur ; l'agent les **demande**.
 
+### 2.1 Écrire dans son worktree, et nulle part ailleurs
+
+Sans exception, pour tout agent :
+
+- **Toute destination d'écriture est un chemin absolu** sous le worktree assigné ou sous `$GATE_LOGS`
+  — `-o`, `>`, `cp`, `mv`, `tee` compris. Jamais de chemin relatif pour une écriture.
+- **Chaîner par `&&`, jamais par `;`**, après un `cd` ou un `mkdir` : `cd X && commande`.
+- **Une commande préalable refusée** (par les permissions ou en échec) **arrête l'agent** : il ne
+  poursuit pas « ailleurs », il le signale dans son rapport.
+- **Le dépôt principal est en lecture seule** pour tout agent ; ses fichiers non versionnés (`.env`,
+  `target/`…) n'ont pas de copie.
+- **Un agent de fiche n'exécute ni `docker`, ni `docker compose`, ni `curl`** : il établit au code et
+  à la lecture ; ce qui doit être essayé se prescrit au développement.
+
+*(Incident du 2026-10-24, Story 31-4 : l'agent de fiche a voulu essayer `docker compose config` dans
+un dossier jeté ; son `mkdir` a été refusé, son `cd` a échoué, et ses `curl -o` ont écrit dans le
+dépôt principal — `docker-compose.yml` écrasé, restauré par git, et `.env`, non versionné, **perdu**.
+Ces règles vivaient depuis dans les prompts communs, hors dépôt ; versées à la rétrospective de
+l'Epic 31.)*
+
 ⛔ **Interdire l'écriture ne suffit pas : il faut nommer les commandes qui écrivent.** Une lentille à
 qui l'on avait dit « n'écris aucun fichier » a lancé `scripts/prepare-release.sh`, qui a bumpé les
 dix crates (cf. `CLAUDE.md` § *Une passe qui ne déclare pas ses axes exercés…*). Une autre a
@@ -99,6 +121,12 @@ messages `refs #N`.
   généraliser (règle DRY). *(Epic 30.)*
 - **Une règle qui écarte une candidate se relit sur ce qui prend sa place** — une autre facture,
   une règle d'affectation : sinon on fabrique un faux rattachement muet. *(Story 29-6.)*
+- **La prémisse d'un finding, d'un arbitrage ou d'un signalement se vérifie au code avant d'être
+  appliquée** — même pour un LOW, même quand c'est l'orchestrateur qui remédie, et dans la source
+  d'une dépendance s'il le faut ; l'arbitrage cite la ligne lue. **La remédiation de l'orchestrateur
+  passe ensuite sous une passe ciblée, comme une autre.** *(Rétrospectives des Epics 30, action A3,
+  et 31, § 4.1 : une entrée `files/` retirée sur la foi d'un LOW sans lire `zip-2.4.2` a produit un
+  HIGH ; trois autres remédiations de l'orchestrateur ont produit le défaut suivant.)*
 
 ## 4. Travail parallèle : base, port, cible, processus
 
@@ -170,8 +198,11 @@ attend. C'est le prix, et il est bas devant une session perdue.
   fausses. Vérifier un finding Haiku, c'est vérifier aussi **son remède**.
 - **Aucun fichier hors du rapport.** Une lentille ne crée aucun fichier temporaire : elle compare
   par une commande enchaînée (pipe) et lit les PDF vers la sortie standard seulement —
-  `pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`. *(Epic 29 : des lentilles ont écrit des fichiers
-  `pdftotext` et retouché leur rapport par `sed`.)*
+  `pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`. **Aucune redirection** (`>`, `>>`, `tee`), pas même
+  vers un fichier « jetable », et aucun fichier dans le scratchpad : un fichier créé par erreur se
+  déclare au rapport, il ne se supprime pas (supprimer, c'est écrire). *(Epic 29 : des lentilles ont
+  écrit des fichiers `pdftotext` et retouché leur rapport par `sed`. Epic 31 : un `.noop` de 270 Ko
+  créé par redirection dans `$GATE_LOGS`, un `sub.txt` dans le scratchpad.)*
 
 ### 6.1 Un test ne dépend d'aucun privilège que la production n'a pas
 
@@ -215,3 +246,8 @@ dans le dépôt, un commit, une issue, une fiche, un registre ou un prompt versi
 sont **synthétiques**, posées **avant** le premier diagnostic sur un fichier réel ; un contrôle sur
 le fichier réel se fait en local et se rapporte en « conforme » ou « non conforme », sans chiffre.
 Les journaux de `$GATE_LOGS` peuvent contenir de tels agrégats : ils ne se versent jamais au dépôt.
+
+**Le contrôle de fuite précède tout push** : l'orchestrateur cherche dans le diff de la branche les
+valeurs réelles qu'il connaît (IBAN, numéros de compte) **avant** `git push`, non après l'ouverture de
+la PR. *(Epic 31 : la PR #703 a été poussée avant le contrôle ; les IBAN du diff étaient des exemples
+SIX, déjà présents sur `main` — aucune fuite, mais l'ordre était le mauvais.)*
