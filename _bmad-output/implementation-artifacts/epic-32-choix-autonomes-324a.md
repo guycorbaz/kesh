@@ -1,0 +1,147 @@
+# Epic 32 — registre des choix autonomes de la story 32-4a (couche de services : écritures, postes ouverts, contacts)
+
+À verser par **union** dans `epic-32-choix-autonomes.md` au merge (`docs/agents-orchestration.md` § 1). Fiche :
+`implementation-artifacts/32-4a-services-ecritures-contacts.md`. Date : 2026-10-24. Agent de fiche : Opus 5.5, en
+autonomie. Relevé au code de `89d68704` (32-3 fusionnée).
+
+---
+
+### C-32-4a-1 — Cinq lectures migrées : celles que serviront les outils de la 32-9a et de la 32-9b
+
+- **Contexte** : l'epic (§ 32-4) nomme `routes/journal_entries` (liste, détail), les postes ouverts et
+  `routes/contacts` (liste, détail) ; C-32-0-4 borne la couche de services aux **lectures que serviront les outils**.
+  Les trois fichiers portent **sept** handlers de lecture (relevé de la fiche, fait 1) : les cinq nommés, plus
+  `get_lettering` (`GET /letterings/{key}`) et `get_lettering_proposals` (`GET /accounts/{id}/lettering-proposals`),
+  qu'aucun outil prévu ne sert (32-9a : « postes ouverts » ; 32-9b : « contacts (liste, détail) »).
+- **Retenu** : migrer les **cinq** ; laisser `get_lettering` et `get_lettering_proposals` dans leurs handlers, **nommés**
+  à l'inventaire des sites non résolus et figés par la garde (AC12 (iii)) — un handler de lecture ajouté plus tard sur
+  `state.pool` dans ces fichiers rougit, et se trie.
+- **Écartées** : migrer les sept (« aucun handler de lecture des modules visés », lecture littérale de l'AC de l'epic) —
+  deux services sans consommateur, contraire à C-32-0-4 et sans gain pour la 0.16.0 ; ne rien figer pour les deux
+  restants — une liste qu'on a pensé à traiter, non un inventaire clos (`CLAUDE.md`, *Inventorier les sites NON
+  RÉSOLUS*).
+- **Réversible** : oui ; la 0.17.0 (propositions) migrera les propositions de lettrage si un outil les sert.
+
+### C-32-4a-2 — `contact_persons::list_persons` hors périmètre
+
+- **Contexte** : `GET /contacts/{id}/persons` (`lib.rs:877-880`) lit les personnes d'un contact, dans un **autre**
+  module (`routes/contact_persons.rs`) ; la 32-9b ne nomme que « contacts (liste, détail) ».
+- **Retenu** : hors périmètre, nommé au *Hors périmètre* ; si la 32-9b sert les personnes, elle migrera cette lecture.
+- **Écartée** : l'ajouter (un cinquième module, à la limite du découpage préventif, sans consommateur décidé).
+- **Réversible** : oui.
+
+### C-32-4a-3 — Noms des modules de services : `ecritures`, `postes_ouverts`, `carnet`
+
+- **Contexte** : la 32-3 nomme en français (`rapports`, `plan_comptable`). Un module `services::contacts` heurterait, dans
+  `routes/contacts.rs`, l'import `kesh_db::repositories::contacts` que les handlers mutants gardent.
+- **Retenu** : `services/ecritures.rs`, `services/postes_ouverts.rs`, `services/carnet.rs` (le « carnet d'adresses » du
+  manuel utilisateur).
+- **Écartée** : `services/contacts.rs` avec un alias à l'import — un nom qui se lit deux fois pour deux choses.
+- **Réversible** : oui (renommage interne).
+
+### C-32-4a-4 — `Portee::ContactsRead` ajoutée maintenant, sans persistance
+
+- **Contexte** : le service des contacts exige la portée `contacts:read` (C-32-0-7) ; la 32-3 n'a posé que `BooksRead`
+  et `InvoicesRead` (C-32-3-4 : « la 32-5 ajoute les autres et leur persistance »). Sans la variante, l'exigence MCP du
+  carnet ne s'écrit pas — ou s'écrirait `None` (jamais servi), ce qui mentirait sur la 32-9b.
+- **Retenu** : la variante `ContactsRead` seule, dans `services/acces.rs`, doc-comment compris ; ni chaîne `contacts:read`,
+  ni persistance, ni analyse — c'est la 32-5. Conséquences sur `tests/services_motif.rs`, écrites à l'AC8 : le `match`
+  exhaustif d'`autre_portee` (l. 894-899) gagne un bras, et `TOUTES` (l. 869) passe à trois portées pour rester vrai.
+- **Écartées** : `portee_mcp: None` pour le carnet (faux) ; `BooksRead` pour le carnet (les contacts sont des données
+  personnelles : portée propre, décision de l'epic).
+- **Réversible** : oui.
+
+### C-32-4a-5 — Défauts, bornes et validation de la demande dans le service ; une constante, écrite une fois
+
+- **Contexte** : le risque nommé par l'epic est la borne de pagination perdue au déplacement. Le MCP appellera le
+  service sans passer par le DTO d'Axum : une borne laissée au handler ne le protégerait pas. Deux des trois dépôts
+  n'écrêtent rien (`contacts::list_by_company_paginated`, `letterings::open_items`) : la borne du handler est
+  aujourd'hui la **seule**.
+- **Retenu** : chaque demande porte `limit: Option<i64>` et `offset: Option<i64>` ; le service applique le défaut, puis
+  `clamp(1, MAX)` et `max(0)`, avec les valeurs d'aujourd'hui (écritures 50 / 500 ; postes ouverts 50 / 500 ; contacts
+  20 / 100). Les constantes passent au service (`pub`), et les fonctions `default_*` des DTO serde s'y réfèrent ; le
+  plafond commun des propositions de lettrage (`MAX_LIMIT`, `letterings.rs:292`, partagé aujourd'hui avec les postes
+  ouverts) se lit du service. Les analyses et contrôles de la demande (dates, montants, `accountId`, `asOf`) passent au
+  service dans l'ordre d'aujourd'hui, messages identiques — **y compris leurs noms de paramètres en camelCase**
+  (`dateFrom invalide (…)`) : le vocabulaire de l'API, que l'outil MCP de la 32-9a reprendra ou traduira.
+- **Écartées** : bornes au handler (le MCP les contournerait) ; messages reformulés (changement visible de l'API).
+- **Réversible** : oui.
+
+### C-32-4a-6 — L'ordre des lectures d'aujourd'hui est conservé, l'écart de la liste des écritures compris
+
+- **Contexte** : `get_contact` lit le contact **avant** la société (`contacts.rs:613`, puis `:618`) ; `list_contacts` lit
+  la société d'abord (`:570`) ; `list_journal_entries` ne lit **aucune** société (`journal_entries.rs:456`, sur
+  `current_user.company_id`) — alors que `docs/MULTI-TENANT-SCOPING-PATTERNS.md` écrit « Every handler validates company
+  exists ».
+- **Retenu** : ordres conservés tels quels (comportement inchangé : un jeton orphelin rend aujourd'hui une liste
+  d'écritures vide, non un 500) ; la note de la 32-3 au document des motifs (l. 273-276) nomme les cinq lectures et dit
+  l'exception de la liste des écritures, telle qu'elle est.
+- **Écartées** : ajouter le contrôle de société à la liste (changement de comportement, hors d'un rollout mécanique) ;
+  le taire (le document dirait faux sur un site que la story touche).
+- **Réversible** : oui ; si l'on veut le contrôle, une issue le demandera.
+
+### C-32-4a-7 — La garde de transaction de `get_journal_entry` suit le code dans le service
+
+- **Contexte** : `get_journal_entry_reads_in_one_transaction` (`journal_entries.rs:1005-1080`, Story 15-1b-0) lit le
+  **corps du handler** et exige `pool.begin()` une fois, aucun `acquire()`, les quatre lecteurs sur `tx`, et
+  `find_by_id(&state.pool` hors transaction. Le corps quitte le handler : la garde rougirait (« get_journal_entry
+  introuvable » ne tombe pas — le handler reste —, mais `pool.begin()` y compterait 0).
+- **Retenu** : la garde **se déplace** au `#[cfg(test)] mod tests` de `services/ecritures.rs`, même nom, mêmes
+  assertions, sur le corps de `pub async fn detail(` ; deux jetons changent, `state.pool` → `lecture.pool()` dans
+  l'écart assumé (`find_by_id(lecture.pool()`) et dans le refus d'un lecteur sur le pool. Elle disparaît de
+  `routes/journal_entries.rs` ; le diff des deux versions se recopie au Dev Agent Record. Mutation M13.
+- **Écartées** : la laisser dans `journal_entries.rs`, pointée sur `../services/ecritures.rs` (une garde loin de ce
+  qu'elle garde) ; la supprimer (le compilateur ne voit pas une connexion acquise à côté de la transaction, motif
+  d'origine de la garde).
+- **Réversible** : oui.
+
+### C-32-4a-8 — La présentation des contacts reste au handler ; le service rend la société
+
+- **Contexte** : `contact_response_with_label` (`contacts.rs:510-522`) calcule le libellé des conditions de paiement
+  avec `state.i18n` et la langue tirée du contact et de la société. `I18nBundle` vit dans `AppState` (R1 l'interdit au
+  service).
+- **Retenu** : `carnet::lister` rend `PageContacts { page, societe }`, `carnet::detail` rend `FicheContact { contact,
+  societe }` ; le libellé reste au handler (présentation, R6).
+- **Écartée** : passer `&I18nBundle` au service (le libellé n'est pas une lecture des livres ; le MCP aura sa propre
+  mise en forme).
+- **Réversible** : oui.
+
+### C-32-4a-9 — Un fichier de tests neuf pour le rollout ; la `Lecture` en lecture seule partagée
+
+- **Contexte** : `tests/services_motif.rs` (2177 lignes) porte le motif et sa garde ; les tests de refus et de lecture
+  seule des cinq services sont neufs. `pool_lecture_seule` (`services_motif.rs:835-851`) serait recopiée (DRY).
+- **Retenu** : `tests/services_rollout.rs` neuf (la 32-4b y ajoutera les siens) ; `pool_lecture_seule` déplacée dans
+  `tests/common/lecture_seule.rs` (`pub mod lecture_seule;` de `tests/common/mod.rs`, sous son `#![allow(dead_code)]`),
+  employée par les deux fichiers ; la **garde lexicale** reste dans `services_motif.rs` et s'y étend (R8).
+- **Écartées** : tout dans `services_motif.rs` (fichier déjà long, et un binaire qui mêle motif et rollout) ; recopier
+  l'aide.
+- **Réversible** : oui.
+
+### C-32-4a-10 — Points de #738 repris : A5 et P2-2 ; les autres y restent
+
+- **Contexte** : #738 trace onze LOW de la revue de la 32-3 et deux de sa P2. La 32-4a étend la garde (ii) et touche
+  `services_motif.rs`.
+- **Retenu** : **A5** (garde (i)/(ii) sans témoin positif, (ii) jamais rougie par une mutation) — la garde étendue gagne
+  son témoin et ses mutations (M15) ; **P2-2** (aucune ligne de `TABLE_DES_TRACES` ne trace les journaux **sans**
+  filtre) — la ligne 7 repasse à `journal: None` (une ligne de test ; mutation M17). Restent sur #738, avec la raison
+  au *Hors périmètre* : B1, B2, B3 (conception du `Rapport`, que la 32-4a ne produit pas), B4 (aucun faux vert
+  aujourd'hui), E3, E4 (rapports), B5 (doc-comment de `routes/reports.rs`, un module de plus), A3, A4, P2-1 (texte de
+  la fiche 32-3, historique), A6 (non vérifiable).
+- **Réversible** : oui.
+
+### C-32-4a-11 — Les bornes du service des écritures : mutations équivalentes, déclarées
+
+- **Contexte** : `journal_entries::list_by_company_paginated` écrête **aussi** (`kesh-db/src/repositories/journal_entries.rs:935-936`,
+  `MAX_LIMIT` = 500 l. 777) et rend les valeurs écrêtées : retirer l'écrêtage du service ne change rien d'observable.
+- **Retenu** : M8 déclarée **équivalente**, la ligne du dépôt citée au Dev Agent Record ; le test de bornes des écritures
+  reste (il tient le contrat que le MCP recevra, et rougirait si le dépôt perdait le sien) ; le défaut (`None` → 50),
+  que le dépôt ne connaît pas, est tenu par le test et tué par M8′.
+- **Écartée** : modifier le dépôt pour rendre la mutation tuable (hors périmètre, `kesh-db`).
+- **Réversible** : oui.
+
+### C-32-4a-12 — Ni CHANGELOG, ni manuel, ni `docs/api-external.md` : rien de visible ne change
+
+- **Contexte** : comme la 32-3 (C-32-3-41), aucun statut, corps ni borne ne change.
+- **Retenu** : contrôle exigé (AC16) — `docs/api-external.md` l. 213, 216-218, 405, 441, les manuels et leurs PDF —,
+  aucune modification ; une phrase au document des motifs (C-32-4a-6) et le doc-comment de `services/mod.rs`.
+- **Réversible** : oui.
