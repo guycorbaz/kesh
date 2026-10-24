@@ -2,6 +2,8 @@
 
 À verser par **union** dans `epic-32-choix-autonomes.md` au merge (`docs/agents-orchestration.md` § 1). Fiche :
 `32-12-import-sauvegarde-anterieure.md`. Date : 2026-10-24. Toute la story est **sous réserve de Q4** (C-32-0-13).
+Découpée le 2026-10-24 en 32-12a et 32-12b (C-32-12-37) : les choix 1 à 36 valent pour les deux clés, chacune pour les
+AC qu'elle porte.
 
 ---
 
@@ -360,3 +362,30 @@
   manuel, CHANGELOG). Décision soumise à Guy avec Q4.
 - **Écartée** : découper d'office (décision du Project Lead, D5 : le signal se déclare, il ne découpe pas seul).
 - **Réversible** : oui.
+- *Annotation du 2026-10-24 (validation P4, P4-1 et P4-2)* : le motif d'écart cite D5 sans sa condition — « Ce qui
+  découpe, c'est le recyclage … et la dispersion dans plus de cinq modules », toutes deux constatées ici ; et
+  l'argument « aucune passe n'a trouvé deux fois un défaut de la règle, de la carte… » est contredit par les rapports
+  (AC2 (iii) en P1, P2, P3 ; carte de l'AC1 en P1, P3). Choix **remplacé** par C-32-12-37 (découpage) ; texte
+  ci-dessus laissé tel qu'écrit à sa date.
+
+### C-32-12-37 — La dérogation est retirée : découpage en 32-12a et 32-12b
+
+- **Contexte** : validation P4 (Haiku, ciblée, 0/0/2/1) — P4-1 : C-32-12-36 invoquait D5 à contresens ; P4-2 :
+  l'argument (a) de la dérogation est contredit par les rapports P1-P3. Les deux conditions de D5 sont constatées :
+  recyclage partiel de la classe « textes devenus faux » et dispersion sur huit modules.
+- **Retenu** (décision de l'orchestrateur, **soumise à Guy avec Q4**) : la coupe de repli de la fiche. **32-12a**
+  (`32-12a-regle-inventaire-et-textes`) = AC1-AC7, AC9-AC11, AC15-AC17, AC18a, AC19a (M1-M4, M6-M8) — fixture, règle,
+  import qui l'applique, fenêtre des tests P7, et tous les textes qu'elles rendent faux ; cinq modules (`kesh-db/backup`,
+  `kesh-db/post_restore`, `kesh-db/repositories`, `kesh-db/version`, `kesh-api/admin_backup`), 🗄️. **32-12b**
+  (`32-12b-bilan-ecran-manuel`) = AC8, AC12-AC14, AC20-AC21, AC18b, AC19b (M5, M9) ; trois modules
+  (`kesh-api/routes/admin`, `kesh-i18n`, `frontend/admin-restore`). Ordre : 32-12a, puis 32-12b, les deux avant la
+  32-5. Une seule fiche, deux clés ; numérotation des AC et des mutations conservée. `ParsedBackup::tables_absent` lu
+  par le `Debug` manuel à la 32-12a (aucun lecteur de production avant l'AC12). CHANGELOG : une entrée, à la 32-12b.
+- **Écartées** : garder la dérogation en la récrivant comme dérogation explicite à D5 (correction proposée par P4-1 —
+  mais sans l'argument (a), réfuté par P4-2, il ne reste rien pour la motiver) ; une autre coupe — story-zéro
+  `kesh-db` seule, puis rollout (sépare la règle de son appelant et des textes qu'elle rend faux, ce que la coupe
+  retenue évite) ; deux fiches distinctes (les AC se citent d'une clé à l'autre, la traçabilité des validations P1-P4
+  se perdrait).
+- **Réserve** : la 32-12a est **au seuil** (cinq modules) au grain qui a donné huit pour la story entière ; compter
+  `kesh-api/tests` comme module en donnerait six. Signalé à Guy.
+- **Réversible** : oui — les deux clés se recousent sans perte si Guy en décide ainsi.

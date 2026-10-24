@@ -1,21 +1,31 @@
-# Story 32.12 : une sauvegarde antérieure reste importable (refs #722)
+# Stories 32.12a et 32.12b : une sauvegarde antérieure reste importable (refs #722)
 
-Status: ready-for-dev
+Status: 32-12a ready-for-dev ; 32-12b ready-for-dev — toutes deux **sous réserve de Q4** (et de la décision de
+découpage, § *Découpage*)
 
-> ⚠️ **Story ajoutée par l'orchestrateur sous réserve du Project Lead** — question **Q4** du fichier d'epic
+| Clé | Contenu | AC | Ordre |
+|---|---|---|---|
+| `32-12a-regle-inventaire-et-textes` | fixture 0.15.0, règle d'inventaire, import qui l'applique, fenêtre des tests P7, et **tous** les textes qu'elles rendent faux | AC1-AC7, AC9-AC11, AC15-AC17, AC18a, AC19a | **la première** |
+| `32-12b-bilan-ecran-manuel` | réponse et audit de l'import, écran, captures, manuel, CHANGELOG | AC8, AC12-AC14, AC20, AC21, AC18b, AC19b | après la **fusion** de la 32-12a |
+
+**Ordre** : 32-12a, puis 32-12b ; **les deux avant la 32-5** (C-32-0-12, C-32-0-13, C-32-12-37).
+
+> ⚠️ **Stories ajoutées par l'orchestrateur sous réserve du Project Lead** — question **Q4** du fichier d'epic
 > (`planning-artifacts/epic-32-serveur-mcp.md` § *Questions pour Guy*), choix **C-32-0-13**. La fiche est écrite
-> complète. **Si Guy préfère accepter la limite**, la story se réduit à **l'écrire** : une entrée du CHANGELOG
+> complète. **Si Guy préfère accepter la limite**, le travail se réduit à **l'écrire** : une entrée du CHANGELOG
 > (`## [0.16.0] — Non publié`, *Modifié*) et un paragraphe du manuel d'administration (§ *Importer*, liste des refus),
 > qui disent qu'après la mise à jour vers la 0.16.0 une sauvegarde prise en 0.15.0 ou avant — automatiques comprises —
 > ne se restaure plus que par une image 0.15.0, et qu'il faut prendre une sauvegarde complète **juste après** la mise à
-> jour ; seuls les AC20 (manuel) et AC21 (CHANGELOG) subsistent alors, récrits dans ce sens, et le reste de la fiche
-> tombe (registre : C-32-12-1).
+> jour ; la **32-12a tombe entière**, et la **32-12b** se réduit à ses AC20 (manuel) et AC21 (CHANGELOG), récrits dans
+> ce sens (registre : C-32-12-1, C-32-12-37).
 
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-32-12`, branche `story/32-12` partie de
-`275e9b97`. Registre : `epic-32-choix-autonomes-3212.md` (C-32-12-1 à C-32-12-36 ; 15 à 21 à la validation P1, 22 à 29
-à la validation P2, 30 à 36 à la validation P3). Clé courte : `3212`. 🗄️ touche
-`kesh-db` (`backup.rs`, `post_restore.rs`) : **gate complet même en cours de boucle** (`CLAUDE.md` § *Exception
-kesh-db*). Aucune migration.*
+`275e9b97` ; **découpée** le 2026-10-24 après la validation P4 (§ *Découpage*). Registre :
+`epic-32-choix-autonomes-3212.md` (C-32-12-1 à C-32-12-37 ; 15 à 21 à la validation P1, 22 à 29 à la validation P2, 30 à
+36 à la validation P3, 37 au découpage). Clé courte : `3212`. 🗄️ La **32-12a** touche `kesh-db` (`backup.rs`,
+`post_restore.rs`, `repositories/backup_schedule.rs`, `version.rs`) : **gate complet même en cours de boucle**
+(`CLAUDE.md` § *Exception kesh-db*). La **32-12b** ne touche pas `kesh-db` : gate ciblé entre les passes, gate complet
+au dernier commit de code. Aucune migration dans l'une ni l'autre.*
 
 ## Story
 
@@ -104,7 +114,7 @@ l'inventaire. **Aucune exemption ne devient fausse.**
      32-5 passerait, alors qu'une sauvegarde 0.15.0 la déclencherait.
 - **Donc** : la fenêtre des deux tests devient `IMPORT_FLOOR_MIGRATION` (AC9). Aujourd'hui les deux valeurs sont égales
   et la substitution est **équivalente** — elle ne devient observable qu'à la 32-5 (AC10, mutation M6 déclarée
-  équivalente, AC19).
+  équivalente, AC19a).
 - **Le registre** : M1 reste dedans ; aucune entrée n'entre ni ne sort. Mais une table neuve postérieure au plancher
   dont la migration **écrit des lignes** (amorçage par société, comme `20260917000001` pour les compteurs) ne peut plus
   invoquer l'argument de couverture : une sauvegarde 0.15.0 arrive sans la table, la table est vidée (point 3), et ses
@@ -163,9 +173,14 @@ l'inventaire. **Aucune exemption ne devient fausse.**
 
 ## Critères d'acceptation
 
-### A — La règle d'inventaire (`kesh-db`)
+**Répartition** (C-32-12-37) : **32-12a** — groupes A, C, E, et AC5-AC7 (B), AC15-AC17 (F), AC18a, AC19a ;
+**32-12b** — groupe D, et AC8 (B), AC20-AC21 (F), AC18b, AC19b. Chaque AC porte sa clé en tête. Un AC d'une clé qui en
+cite un de l'autre le dit (« AC8, 32-12b ») : la citation désigne un critère tenu par l'autre story, non une tâche de
+celle-ci.
 
-1. **AC1 — table → migration créatrice, dérivée du `MIGRATOR`.** `kesh_db::backup::table_creating_migrations()` rend,
+### A — La règle d'inventaire (`kesh-db`) — 32-12a
+
+1. **AC1 [32-12a] — table → migration créatrice, dérivée du `MIGRATOR`.** `kesh_db::backup::table_creating_migrations()` rend,
    pour chaque table de `TABLES_TO_TRUNCATE`, la version de la migration qui la crée — calculée une fois
    (`std::sync::OnceLock`) depuis `crate::MIGRATOR`, par la reconnaissance de `CREATE TABLE` aujourd'hui confinée aux
    tests (`creates_application_table`, `normalize`), **déplacée en production** dans `post_restore.rs`, à côté de
@@ -197,7 +212,7 @@ l'inventaire. **Aucune exemption ne devient fausse.**
    (une table **système** n'a pas de migration créatrice dans la carte) et la reconnaissance **large** (blancs normalisés,
    accents graves retirés) — mais non plus « une graphie ratée produit une fenêtre qui **recule** » : depuis l'AC9 la
    fenêtre est le plancher, et une graphie ratée rend zéro créatrice, ce qui fait rougir (i).
-2. **AC2 — le plancher.** `pub const IMPORT_FLOOR_MIGRATION: i64 = 20260917000001;` dans `backup.rs`, avec un
+2. **AC2 [32-12a] — le plancher.** `pub const IMPORT_FLOOR_MIGRATION: i64 = 20260917000001;` dans `backup.rs`, avec un
    doc-comment qui dit : ce qu'il est (la fenêtre d'importabilité, gelée à la v0.15.0) ; que le **relever** referme la
    fenêtre et rend non importables les sauvegardes antérieures — décision du Project Lead, CHANGELOG à l'appui, jamais
    un geste de maintenance ; et le **contrat** des tables postérieures (valides vides, ou amorcées par le registre —
@@ -220,9 +235,9 @@ l'inventaire. **Aucune exemption ne devient fausse.**
    par (iv)** : `exigees` et `tolerees_calculees` partitionnent l'inventaire par construction, si bien que (iv) vraie
    entraîne (iii) vraie — (iii) ne rougit jamais **seule**. Elle reste pour son message (elle nomme la table qui
    n'est dans aucun des deux ensembles), non comme un second garde : une mutation qu'elle tue, (iv) la tue aussi, et
-   l'AC19 ne les compte pas comme deux tueurs (C-32-12-33). Le mot « tolérées » sans
+   l'AC19a ne les compte pas comme deux tueurs (C-32-12-33). Le mot « tolérées » sans
    qualificatif est réservé, dans cette fiche, aux tables **absentes du fichier** que l'AC3 laisse passer à l'exécution.
-3. **AC3 — la vérification pure.** `kesh_db::backup::check_backup_inventory(present: &BTreeSet<&str>, regles:
+3. **AC3 [32-12a] — la vérification pure.** `kesh_db::backup::check_backup_inventory(present: &BTreeSet<&str>, regles:
    &InventoryRules) -> Result<Vec<&'static str>, InventoryError>` — les tables absentes tolérées, dans l'ordre de
    création, ou l'erreur. **Ordre défini** : par version de la migration créatrice, puis, pour deux tables nées dans la
    même migration, par leur rang dans l'inventaire (`TABLES_TO_TRUNCATE` en production) — `tablesAbsent` à l'écran et à
@@ -248,7 +263,7 @@ l'inventaire. **Aucune exemption ne devient fausse.**
    `Inconnue` ; deux tables nées dans **la même** migration, une seule absente → `HorsOrdre` (même version : le
    fichier ne peut pas porter l'une sans l'autre) ; inventaire de production (`InventoryRules::production()`) et
    manifeste complet → `Ok(vec![])`.
-4. **AC4 — une table absente est vidée, même si la destination avait des lignes.** Test `kesh-db`
+4. **AC4 [32-12a] — une table absente est vidée, même si la destination avait des lignes.** Test `kesh-db`
    (`#[sqlx::test(migrations = "./test-schema")]` — **cette graphie exactement**, celle des 837 attributs de `kesh-db`
    et de `backup.rs:1150` : la garde `crates/kesh-db/tests/test_schema_guard.rs::every_sqlx_test_attribute_is_accounted_for`
    (l. 921) n'accepte que les deux graphies de `SQUASH_SPELLINGS` (l. 64, `"./test-schema"` et
@@ -259,9 +274,9 @@ l'inventaire. **Aucune exemption ne devient fausse.**
    **fixe**, et le commentaire « Dans le flux réel, `parse_and_verify` garantit la couverture » est récrit (la
    couverture n'est plus complète : une table postérieure au plancher peut manquer, et elle est vidée **à dessein**).
 
-### B — L'import (`kesh-api`)
+### B — L'import (`kesh-api`) — AC5-AC7 32-12a, AC8 32-12b
 
-5. **AC5 — `parse_and_verify` applique la règle.** Les deux boucles de `import.rs:232-250` sont remplacées par un appel
+5. **AC5 [32-12a] — `parse_and_verify` applique la règle.** Les deux boucles de `import.rs:232-250` sont remplacées par un appel
    à `check_backup_inventory` avec `InventoryRules::production()`, par une porte `pub(crate) fn
    parse_and_verify_with(reader, limits, regles)` que `parse_and_verify` enveloppe. Le module `admin_backup` est
    `pub(crate)` (`crates/kesh-api/src/lib.rs:10`, commentaire de sécurité de la revue 17-3a, l. 7-8 : **ne pas le
@@ -275,8 +290,14 @@ l'inventaire. **Aucune exemption ne devient fausse.**
    deux tables nées dans la même migration (C-32-12-24). Les deux messages commencent par le même fragment `table '…'
    absente du manifeste` : un test qui ne cherche que ce fragment (`parse_rejects_missing_table_coverage`,
    `m.contains(…)`) ne les distingue pas, d'où l'égalité **exacte** exigée à l'AC7 (b).
-   `ParsedBackup` porte `tables_absent: Vec<String>`.
-6. **AC6 — les refus restent des refus, avant tout effet.** Tests HTTP (`admin_full_import_e2e.rs`) sur la fixture
+   `ParsedBackup` porte `tables_absent: Vec<String>`. ⚠️ **Découpage** : à la 32-12a, aucun code de production ne lit
+   encore ce champ (son lecteur, `run_backup_and_restore`, est l'AC12, 32-12b) — `clippy -D warnings` signalerait un
+   champ jamais lu, l'AC7 ne le lisant qu'en `cfg(test)`. Il est lu par l'implémentation **manuelle** de `Debug` de
+   `ParsedBackup` (`import.rs:97-106`), qui gagne `.field("tables_absent", &self.tables_absent)` — une lecture réelle,
+   qu'un `Debug` dérivé ne serait pas (`dead_code` ignore les implémentations dérivées, non les manuelles) ; à constater
+   au premier `clippy`. Si le lint parlait malgré tout, repli sur le précédent de `backup.rs:434`
+   (`#[cfg_attr(not(test), allow(dead_code))]`), commentaire nommant la 32-12b, qui le retire.
+6. **AC6 [32-12a] — les refus restent des refus, avant tout effet.** Tests HTTP (`admin_full_import_e2e.rs`) sur la fixture
    0.15.0 récrite par `ouvrir_tout`/`rezip_tout` (`admin_full_import_e2e.rs:3620` et suivantes) : (i) `products` retirée
    du manifeste et de l'archive → `400`, `error.code == "INVALID_BACKUP_STRUCTURE"` ; (ii) une table inconnue ajoutée →
    même refus. Le **motif** du refus ne traverse pas la réponse HTTP : `errors.rs:2171-2180` le journalise
@@ -284,7 +305,7 @@ l'inventaire. **Aucune exemption ne devient fausse.**
    invalide ou corrompu. ») — un test HTTP ne peut donc pas asserter `absente du manifeste` ; le message exact se prouve
    hors HTTP, à l'AC7 (b) (C-32-12-24). Dans les deux cas, la base de destination est **intacte** (une ligne témoin relue) et
    **aucune** sauvegarde pré-import n'a été écrite (`KESH_ADMIN_BACKUP_DIR` vide).
-7. **AC7 — la chaîne d'import tolère une table postérieure, bout à bout hors HTTP.** Test **dans la crate** —
+7. **AC7 [32-12a] — la chaîne d'import tolère une table postérieure, bout à bout hors HTTP.** Test **dans la crate** —
    `crates/kesh-api/src/admin_backup/import.rs`, `mod tests`, `#[sqlx::test(migrations = "../kesh-db/test-schema")]`
    (précédents en `src/` : `auth/bootstrap.rs:482` et suivants) —, parce que `admin_backup` est `pub(crate)` et qu'un
    test de `tests/` (crate externe) ne voit ni `parse_and_verify_with`, ni `check_schema_compat`, ni `ParsedBackup` ;
@@ -300,25 +321,26 @@ l'inventaire. **Aucune exemption ne devient fausse.**
    produit. `parse_and_verify_with` → `Ok`,
    `tables_absent == ["products"]` ; `check_schema_compat` → `Ok` ; `restore_tables_in_tx` → `products` **vide**, les
    autres tables restaurées (une facture de la fixture relue) ; `replay_post_restore_backfills` → `Ok`. Ce test
-   n'emprunte pas le handler : la recopie de `tables_absent` dans la réponse et l'audit est prouvée par l'AC8 (liste
-   vide) et, avec une liste non vide, à la 32-5 (AC10) — d'ici là, une valeur codée en dur à `[]` survit (mutation M9,
-   AC19, report assumé).
+   n'emprunte pas le handler : la recopie de `tables_absent` dans la réponse et l'audit est l'affaire de la **32-12b**,
+   prouvée par son AC8 (liste vide) et, avec une liste non vide, à la 32-5 (AC10) — d'ici là, une valeur codée en dur à
+   `[]` survit (mutation M9, AC19b, report assumé).
    **(b) Le message exact du refus**, même `mod tests`, simple `#[test]` (sans base) : la même fixture privée de
    `products`, passée à `parse_and_verify_with` avec `InventoryRules::production()` (où `products`, créée par
    `20260415000001`, est exigée) → `Err(AppError::InvalidBackupStructure(m))` avec **`m == "table 'products' absente du
    manifeste"`** (égalité, non `contains`). C'est ce qui rend le message de `Exigee` observable — l'AC6 ne le peut pas —
    et ce qui distingue `Exigee` de `HorsOrdre` : sous M1, `products` tombe en `HorsOrdre` (des tables créées après elle
-   sont présentes), dont le message commence par le même fragment et finit par `… y figure` (AC5, AC19).
-8. **AC8 — la fixture 0.15.0 s'importe, et le bilan le dit.** `ac_la_sauvegarde_de_la_0_15_0_s_importe` (patron de
+   sont présentes), dont le message commence par le même fragment et finit par `… y figure` (AC5, AC19a).
+8. **AC8 [32-12b] — la fixture 0.15.0 s'importe, et le bilan le dit.** Emploie la fixture produite par la 32-12a
+   (AC15) et le champ `ParsedBackup::tables_absent` qu'elle pose (AC5). `ac_la_sauvegarde_de_la_0_15_0_s_importe` (patron de
    `ac10_la_sauvegarde_de_la_0_14_0_s_importe`, `admin_full_import_e2e.rs:3881`) : `200`, `sourceVersion` `"0.15.0"`,
    `tablesAbsent` **présent et vide** (`[]`, non absent), `filesRestored` `2`, `filesMissing` `0` ; détail d'audit
    `tables_absent: []`, `source_format_version: 2`. Le test de la 0.14.0 gagne l'assertion `tablesAbsent == []`
    (même inventaire). Une fixture générée par un binaire ultérieur, qui porterait des tables que celui-ci n'a pas,
    tombe sous `Inconnue` : c'est le symétrique, inchangé.
 
-### C — Le rejeu des backfills (`post_restore.rs`)
+### C — Le rejeu des backfills (`post_restore.rs`) — 32-12a
 
-9. **AC9 — la fenêtre des tests est le plancher.** `registry_entries_are_within_import_window` et
+9. **AC9 [32-12a] — la fenêtre des tests est le plancher.** `registry_entries_are_within_import_window` et
    `exemptions_claiming_out_of_window_really_are_out_of_window` comparent à `crate::backup::IMPORT_FLOOR_MIGRATION`, et
    non plus à `last_table_creating_migration()` (retirée, AC1). Sont récrits, au même commit — *la fenêtre est le
    plancher, constante écrite et non plus calculée ; une table neuve ne la referme plus* :
@@ -342,12 +364,13 @@ l'inventaire. **Aucune exemption ne devient fausse.**
    Le compteur `checked` reste à **8**. Le commentaire du compteur (l. 1105-1121, relevés datés 24-2 et 25-2-c, dont la
    citation « *toute nouvelle table applicative aura le même effet* » rapportée **comme ce que le module annonçait**)
    reste : il dit vrai à sa date.
-10. **AC10 — contrat écrit pour la 32-5.** Le doc-comment d'`IMPORT_FLOOR_MIGRATION` et le Dev Notes de cette fiche
+10. **AC10 [32-12a] — contrat écrit pour la 32-5.** (Les AC8 et AC14 qu'il cite sont tenus par la 32-12b ; la 32-5
+    ne part qu'une fois **les deux** fusionnées.) Le doc-comment d'`IMPORT_FLOOR_MIGRATION` et le Dev Notes de cette fiche
     nomment ce que la 32-5 (et toute story qui ajoute une table) doit faire : inscrire la table à `TOLEREES_ECRITES`
     (AC2) ; récrire la justification de l'exemption `20260917000001` (`post_restore.rs:441`, *Contrat* point 5) ; constater que `registry_entries_are_within_import_window` reste **vert** sur M1 (c'est la preuve que l'AC9
     tient) ; reprendre l'AC8 pour la fixture 0.15.0 avec `tablesAbsent == [<sa table>]` et la table vide après
     l'import ; prendre les captures de l'état « tables absentes » (AC14).
-11. **AC11 — une table postérieure amorcée va au registre.** Test `post_restore.rs` :
+11. **AC11 [32-12a] — une table postérieure amorcée va au registre.** Test `post_restore.rs` :
     `post_floor_table_seeds_are_replayed` — pour toute migration de version `> IMPORT_FLOOR_MIGRATION` qui porte un
     statement d'écriture (premier mot-clé `INSERT`/`REPLACE`/`UPDATE`/`DELETE` et nom de table qui suit
     `INTO`/`UPDATE`/`FROM`) dont la cible est une table de l'inventaire **créée après le plancher** — par cette migration
@@ -356,7 +379,7 @@ l'inventaire. **Aucune exemption ne devient fausse.**
     des lignes d'une table créée par une story précédente (la 32-6 écrivant dans une table de la 32-5) : une
     sauvegarde 0.15.0 arrive sans la table, la table est vidée (point 3), et l'argument « couverture » d'une exemption
     serait **faux** — que `every_data_backfill_migration_is_triaged`, qui accepte toute justification écrite, ne verrait
-    pas (C-32-12-32). Vacant aujourd'hui (aucune table postérieure au plancher) : sa matière vient de l'AC19 (M7) et, à
+    pas (C-32-12-32). Vacant aujourd'hui (aucune table postérieure au plancher) : sa matière vient de l'AC19a (M7) et, à
     la 32-5, du réel. Un `UPDATE _kesh_version` dans la même migration n'est pas une écriture dans une table de
     l'inventaire et ne déclenche rien.
     ⚠️ **Une migration qui crée sa table et l'amorce ne s'inscrit pas au registre par un `include_str!` du fichier
@@ -366,9 +389,9 @@ l'inventaire. **Aucune exemption ne devient fausse.**
     `extract_carries_every_write_statement_of_its_source_migration` (l. 1307) en contrôle la cardinalité. Le *Contrat*,
     point 2, le reprend.
 
-### D — Le bilan
+### D — Le bilan — 32-12b
 
-12. **AC12 — réponse et audit, chacun dans sa fonction.** `parsed` est déplacé dans `run_backup_and_restore`
+12. **AC12 [32-12b] — réponse et audit, chacun dans sa fonction.** `parsed` est déplacé dans `run_backup_and_restore`
     (`admin.rs:260`), qui le reçoit **par valeur** (l. 343-346) et l'a encore en main quand il construit le détail
     d'audit (l. 581) : c'est **là** que s'ajoute `"tables_absent": parsed.tables_absent` (`run_backup_and_restore`). La
     **réponse**, elle, est construite dans `full_import` (l. 262-270) **après** le déplacement, depuis l'`ImportOutcome`
@@ -379,7 +402,7 @@ l'inventaire. **Aucune exemption ne devient fausse.**
     relevé de `tables_absent` n'en demande pas). `FullImportResponse`
     (`frontend/src/lib/features/admin-restore/admin-restore.api.ts:11`) gagne `tablesAbsent?: string[]`, optionnel
     (absent d'un serveur 0.15.0), doc-comment à la manière de `filesMissing`.
-13. **AC13 — l'écran.** `AdminRestorePanel.svelte`, sous le bloc des pièces manquantes : quand `tablesAbsent` est non
+13. **AC13 [32-12b] — l'écran.** `AdminRestorePanel.svelte`, sous le bloc des pièces manquantes : quand `tablesAbsent` est non
     vide, un encart `role="status"` d'avertissement (mêmes classes que `admin-restore-files-missing`),
     `data-testid="admin-restore-tables-absent"`, clé `admin-restore-tables-absent` :
     « Données nées après la version de la sauvegarde, laissées vides : { $tables }. Ressaisissez-les depuis
@@ -389,7 +412,7 @@ l'inventaire. **Aucune exemption ne devient fausse.**
     **quatre** catalogues (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`, à côté de
     `admin-restore-files-missing`, l. 1769 / 1698). Vitest (`AdminRestorePanel.test.ts`) : réponse simulée avec
     `tablesAbsent: ['mcp_keys']` → l'encart et le nom ; `[]` → pas d'encart ; champ absent → pas d'encart.
-14. **AC14 — recette visuelle.** Captures, thème clair, de `/admin/restore` après l'import de la fixture 0.15.0 :
+14. **AC14 [32-12b] — recette visuelle.** Captures, thème clair, de `/admin/restore` après l'import de la fixture 0.15.0 :
     l'état nominal (pas d'encart). L'état « tables absentes » ne peut pas être produit **pour de vrai** avant qu'une
     table postérieure existe : sa capture est **transférée à la 32-5** (AC10), et la fiche le dit au Dev Agent Record —
     ne pas la fabriquer en simulant une réponse dans le navigateur (C-32-12-11). C'est une **dérogation déclarée** à
@@ -398,11 +421,11 @@ l'inventaire. **Aucune exemption ne devient fausse.**
     l'identité des classes avec `admin-restore-files-missing` (`border-warning bg-warning/10`, dont la visibilité est
     établie) et levé par la capture de la 32-5.
 
-### E — La fixture
+### E — La fixture — 32-12a
 
-15. **AC15 — produite par le vrai exporteur de la 0.15.0, avant tout changement de code.** Premier commit de
+15. **AC15 [32-12a] — produite par le vrai exporteur de la 0.15.0, avant tout changement de code.** Premier commit de
     développement : `generate_fixture_0_15_0` (`#[ignore = "générateur de fixture : à n'exécuter qu'avec le code de la
-    v0.15.0 (Story 32-12, AC15)"]`, `admin_full_export_e2e.rs`), dont le seed est **partagé** avec
+    v0.15.0 (Story 32-12a, AC15)"]`, `admin_full_export_e2e.rs`), dont le seed est **partagé** avec
     `generate_fixture_0_14_0` (fonction extraite, DRY ; le générateur 0.14.0 garde son doc-comment et son `#[ignore]`) ;
     exécuté une fois, **après** avoir constaté `git diff --stat v0.15.0 HEAD -- crates/` vide (sinon : repli du
     point 5, worktree temporaire au tag, C-32-12-21) ; sortie
@@ -411,9 +434,9 @@ l'inventaire. **Aucune exemption ne devient fausse.**
     Agent Record ; le doc-comment du générateur dit pourquoi il est `#[ignore]` et ne doit jamais être relancé avec un
     code ultérieur (il produirait une sauvegarde qui n'est plus celle de la 0.15.0).
 
-### F — Documentation et gates
+### F — Documentation et gates — AC16-AC17 32-12a, AC20-AC21 32-12b, AC18-AC19 dans chacune
 
-16. **AC16 — les textes qui disent « identique ».** Récrits au même commit : doc-comment de `TABLES_TO_TRUNCATE`
+16. **AC16 [32-12a] — les textes qui disent « identique ».** Récrits au même commit : doc-comment de `TABLES_TO_TRUNCATE`
     (`backup.rs:34-38`, « y ajouter une table rendrait non importable toute sauvegarde antérieure ») ; commentaire de
     `restore_body` (`backup.rs:647`, « L'en sortir rendrait tout backup existant inimportable » — vrai pour un
     **retrait**, à préciser) ; commentaire de `restore_body` l. 667-668 (« Dans le flux réel, `parse_and_verify`
@@ -457,7 +480,7 @@ l'inventaire. **Aucune exemption ne devient fausse.**
     n'est pas touchée ; les lignes 85, 91 et 98 du même fichier sont des relevés datés (« sa création de table
     REFERME la fenêtre », « pour que les sauvegardes antérieures restent importables ») qui disent vrai à leur date
     (C-32-12-17, C-32-12-22).
-17. **AC17 — la classe inventoriée par son symptôme, valeur comprise.** La classe : *toute phrase du dépôt qui affirme
+17. **AC17 [32-12a ; relancé par la 32-12b] — la classe inventoriée par son symptôme, valeur comprise.** La classe : *toute phrase du dépôt qui affirme
     l'égalité des inventaires, la non-importabilité d'une sauvegarde antérieure, une fenêtre « recalculée depuis le
     `MIGRATOR` » / « jamais codée en dur » / qui « se referme » à chaque table, ou que `20260917000001` est « la dernière
     créatrice »*. Un seul motif s'est montré deux fois insuffisant (validations P1 et P2 : il manquait des phrases qui ne
@@ -482,14 +505,31 @@ l'inventaire. **Aucune exemption ne devient fausse.**
     Record** : l'inventaire attendu est le tableau *Inventaire de la classe* des Dev Notes, et les homonymes exclus y
     sont **nommés un à un** ; une ligne qui ne figure ni au tableau ni parmi les homonymes nommés est un site neuf, à
     classer avant de clore le patch.
-18. **AC18 — gates au dernier commit de code.** `kesh-db` touché : **gate complet même en boucle** — `scripts/test-fast.sh`
-    sous verrou (`docs/agents-orchestration.md` § 5), base `kesh_3212` remise à zéro d'abord ; `cargo publish --dry-run
-    -p kesh-import` n'est pas concerné ; les quatre gates frontend (`npm run check`, `lint-i18n-ownership`,
-    `test:unit`, `build`) ; **E2E complet** (frontend et backend changent), jugé fichier par fichier contre
-    `docs/testing.md` § *Les échecs attendus*. Garde de parité i18n (`parity_between_locales`) verte. Ne déclarer que ce
-    qui a tourné.
+    **Découpage** : la 32-12a récrit les sites du sort *Récrit par la 32-12a* ; les trois sites du manuel
+    (`admin-manual.tex:2252-2263`, `:2273`, `:2370`) ont le sort *Récrit par la 32-12b* (AC20). La 32-12a ne les rend
+    **pas** faux : aucune table postérieure au plancher n'existe avant la 32-5, si bien que la réponse et le manuel
+    décrivent encore exactement ce que fait l'import ; la liste des refus (l. 2253-2263) ne nomme aucun refus d'inventaire
+    de tables aujourd'hui — son item générique « le **schéma** de la sauvegarde est incompatible » (l. 2255) reste vrai
+    sous la règle neuve, et l'item des tables est **ajouté** —, `tables\_absent` (l. 2273) n'existe à l'audit qu'avec l'AC12, et la
+    l. 2370 est fausse avant comme après (AC20 (vi)). La **32-12b relance** les cinq greps et la valeur, telles
+    qu'écrits, après son patch du manuel, et confronte chaque ligne au tableau.
+18. **AC18 — gates au dernier commit de code, une forme par clé.**
+    - **AC18a [32-12a]** — `kesh-db` touché : **gate complet même en boucle** — `scripts/test-fast.sh` sous verrou
+      (`docs/agents-orchestration.md` § 5), base `kesh_3212` remise à zéro d'abord ; `cargo publish --dry-run -p
+      kesh-import` n'est pas concerné ; gates frontend **sans objet** (aucun fichier de `frontend/` ni de
+      `crates/kesh-i18n/` touché — à constater par `git diff --name-only main...HEAD`) ; **E2E complet** au dernier commit
+      de code (le chemin d'import change côté serveur, et `frontend/tests/e2e/backup-restore-new-install.spec.ts`
+      l'emprunte), jugé fichier par fichier contre `docs/testing.md` § *Les échecs attendus*. Ne déclarer que ce qui a
+      tourné.
+    - **AC18b [32-12b]** — `kesh-db` non touché : gate **ciblé** entre les passes (`fmt` et `clippy` sur le workspace,
+      `cargo nextest run -E 'binary(admin_full_import_e2e)'` et les binaires des six tests lexicaux de T4b) ; gate
+      **complet** (`scripts/test-fast.sh` sous verrou, base remise à zéro) au dernier commit de code ; les quatre gates
+      frontend (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) ; garde de parité i18n
+      (`parity_between_locales`) verte ; **E2E complet** (frontend et backend changent), jugé fichier par fichier ;
+      `make fr` sous verrou et PDF aplati (AC20) ; les greps de l'AC17 relancés. Ne déclarer que ce qui a tourné.
 19. **AC19 — mutations** (sous verrou ; restauration `git checkout -- f && touch f`) : chacune doit faire rougir au
-    moins un test **nommé** au Dev Agent Record.
+    moins un test **nommé** au Dev Agent Record. Numérotation conservée d'une clé à l'autre (traçabilité des
+    validations) : **AC19a [32-12a]** = M1, M2, M3, M4, M6, M7, M8 ; **AC19b [32-12b]** = M5, M9.
     - M1 : `check_backup_inventory` tolère toute table absente (condition « postérieure au plancher » retirée) → AC3
       (`Exigee` : `journal_entry_number_sequences` absente seule, aucune présente postérieure, serait tolérée) et AC7
       (b) rouges (`products` tombe en `HorsOrdre`, message différent). **Ni l'AC6 (i)** (le motif ne traverse pas la
@@ -521,7 +561,7 @@ l'inventaire. **Aucune exemption ne devient fausse.**
       (C-32-12-20), à déclarer au Dev Agent Record ; le test qui la tuera est la reprise de l'AC8 par la 32-5
       (`ac_la_sauvegarde_de_la_0_15_0_s_importe` avec `tablesAbsent == [<sa table>]` et `tables_absent` à l'audit,
       AC10).
-20. **AC20 — manuel d'administration, et son PDF.** `docs/manual/fr/admin-manual.tex`, § *Importer (restaurer la même
+20. **AC20 [32-12b] — manuel d'administration, et son PDF.** `docs/manual/fr/admin-manual.tex`, § *Importer (restaurer la même
     installation)* (l. 2242 et suivantes) : (i) à la liste des refus (phrase d'annonce l. 2252, `itemize` l. 2253-2263),
     l'item « une **table** que la
     version installée exige manque à la sauvegarde, ou la sauvegarde porte une table que la version installée ne
@@ -545,45 +585,60 @@ l'inventaire. **Aucune exemption ne devient fausse.**
     `pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oF "restaurées vides"` (et la phrase
     de l'encart). Manuels DE/IT/EN : sans objet (non traduits) ; manuel utilisateur : rien (l'import est réservé à
     l'Administrateur — à vérifier par `grep -n "keshbackup" docs/manual/fr/user-manual.tex`).
-21. **AC21 — CHANGELOG.** `## [0.16.0] — Non publié` (créé s'il n'existe pas encore — union avec les autres stories de
-    l'epic), *Modifié* : « Une sauvegarde complète qui s'importait avant une mise à jour reste importable après une
-    mise à jour qui ajoute des tables : ces tables sont restaurées vides, et le bilan de l'import les nomme
-    (Story 32-12, refs #722). » Le CHANGELOG ne promet rien de la 32-5.
+21. **AC21 [32-12b] — CHANGELOG.** `## [0.16.0] — Non publié` (créé s'il n'existe pas encore — union avec les autres
+    stories de l'epic), *Modifié* : « Une sauvegarde complète qui s'importait avant une mise à jour reste importable
+    après une mise à jour qui ajoute des tables : ces tables sont restaurées vides, et le bilan de l'import les nomme
+    (Stories 32-12a et 32-12b, refs #722). » Le CHANGELOG ne promet rien de la 32-5. **Une seule entrée, écrite par
+    la 32-12b** : la 32-12a seule n'a aucun effet visible tant qu'aucune table postérieure au plancher n'existe (le
+    bilan n'est pas encore câblé), et son entrée annoncerait un bilan qu'elle ne livre pas.
 
 ## Tâches
 
-- [ ] **T0** — Worktree `kesh-32-12`, branche `story/32-12` (déjà branchée) ; base `kesh_3212`, `kesh_e2e_3212`, port
-  attribué par l'orchestrateur, `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-32-12/target` (`docs/agents-orchestration.md`
-  § 4). Disque : vérifier la place libre avant le premier build (`memory` *Disque et worktrees*).
-- [ ] **T1 (AC15)** — **avant tout code** : `git diff --stat v0.15.0 HEAD -- crates/` vide constaté (sinon : worktree
+Préfixe de clé : **a** = 32-12a, **b** = 32-12b. Les tâches de la 32-12b ne commencent qu'une fois la 32-12a
+**fusionnée** dans `main` (elle lit `ParsedBackup::tables_absent` et la fixture 0.15.0 que la 32-12a pose).
+
+- [ ] **T0 (a, b)** — 32-12a : worktree `kesh-32-12`, branche `story/32-12` (déjà branchée, porte la fiche) ; 32-12b :
+  worktree et branche attribués par l'orchestrateur, partis de `main` **après** la fusion de la 32-12a. Pour chacune :
+  base `kesh_3212`, `kesh_e2e_3212` (ou celles que l'orchestrateur attribue), port attribué,
+  `CARGO_TARGET_DIR=<worktree>/target` (`docs/agents-orchestration.md` § 4). Disque : vérifier la place libre avant le
+  premier build (`memory` *Disque et worktrees*).
+- [ ] **T1 (a ; AC15)** — **avant tout code** : `git diff --stat v0.15.0 HEAD -- crates/` vide constaté (sinon : worktree
   temporaire au tag `v0.15.0`, point 5, C-32-12-21) ; extraction du
   seed partagé, `generate_fixture_0_15_0`, exécution unique (`cargo nextest run --run-ignored only -E
   'test(generate_fixture_0_15_0)'` ou équivalent), contrôle `unzip`, commit dédié de la fixture et du générateur.
-- [ ] **T2 (AC1-AC4, AC10)** — `kesh-db` : reconnaissance `CREATE TABLE` déplacée en production (`post_restore.rs`,
+- [ ] **T2 (a ; AC1-AC4, AC10)** — `kesh-db` : reconnaissance `CREATE TABLE` déplacée en production (`post_restore.rs`,
   `created_application_table`, `split_statements` en `pub(crate)`), `table_creators` et `table_creating_migrations`,
   `IMPORT_FLOOR_MIGRATION` et son doc-comment (quatre migrations nommées, contrat de l'AC10), `InventoryRules`, `check_backup_inventory`, tests unitaires (`TOLEREES_ECRITES`,
   `tolerees_calculees`) ; test de l'AC4 ; commentaires de `TABLES_TO_TRUNCATE` et `restore_body`, message de
   `backup_schedule.rs:502`, doc-comment de `version.rs:272-275` (AC16).
-- [ ] **T3 (AC9, AC11)** — `post_restore.rs` : fenêtre = plancher dans les deux tests, `last_table_creating_migration`
+- [ ] **T3 (a ; AC9, AC11)** — `post_restore.rs` : fenêtre = plancher dans les deux tests, `last_table_creating_migration`
   retirée, sites de l'AC9 récrits un à un (doc-module, l. 250-251, 269-274, 375-381, 916-934, 1084, 1095-1096),
   `post_floor_table_seeds_are_replayed`.
-- [ ] **T4 (AC5-AC8, AC12)** — `kesh-api` : `parse_and_verify_with` (`pub(crate)`), messages, `tables_absent` ;
-  réponse et audit ; tests AC6 et AC8 (`tests/admin_full_import_e2e.rs`, et assertion ajoutée au test 0.14.0), AC7
-  (a) et (b) (`src/admin_backup/import.rs`, `mod tests`). Les **six** tests lexicaux qui lisent `routes/admin.rs` sont
+- [ ] **T4a (a ; AC5-AC7)** — `kesh-api/admin_backup` : `parse_and_verify_with` (`pub(crate)`), messages,
+  `ParsedBackup::tables_absent` lu par le `Debug` manuel (AC5) ; tests AC6 (`tests/admin_full_import_e2e.rs`), AC7 (a)
+  et (b) (`src/admin_backup/import.rs`, `mod tests`). `routes/admin.rs` **non touché**. Gate **complet** (kesh-db
+  touché par T2-T3).
+- [ ] **T4b (b ; AC8, AC12)** — `kesh-api/routes/admin` : réponse et audit ; test AC8 (`tests/admin_full_import_e2e.rs`,
+  et assertion ajoutée au test 0.14.0) ; si le repli `cfg_attr(…allow(dead_code))` de l'AC5 a été pris par la 32-12a,
+  le retirer. Les **six** tests lexicaux qui lisent `routes/admin.rs` sont
   relancés au gate ciblé (C-32-12-25) — les quatre de son propre `mod tests` (`include_str!("admin.rs")`, l. 1095) :
   `avant_sauvegarde_branchee_aux_appels_de_l_import` (l. 1037, compte un appel de `check_schema_compat`),
   `echecs_avant_sauvegarde_tous_convertis` (l. 1131, compte les `?` de `run_backup_and_restore` jusqu'à
   `write_pre_import_backup(` : AC12, n'en ajouter aucun), `import_dans_une_tache_detachee` (l. 1176),
   `aucun_blanc_parasite_dans_le_code` (l. 1221) ; et `auto_backup.rs::tests::gardes_possedes` (l. 1202, compte
   `lock_owned` dans `full_import`), `tests/admin_pat_denied_e2e.rs::the_three_intrinsic_guards_are_still_wired`
-  (l. 563, compte `ensure_not_pat(&current_user)?`). Gate **complet** (kesh-db touché).
-- [ ] **T5 (AC12-AC14)** — frontend : type, encart, clé × 4, Vitest ; captures de l'état nominal.
-- [ ] **T6 (AC16, AC17, AC20, AC21)** — `CLAUDE.md` P7 (l. 827 **et** 829), manuel FR (AC20 (i) à (vi)), `make fr`,
-  PDF aplati ; CHANGELOG ; les cinq greps et la valeur de l'AC17, chaque ligne confrontée à l'*Inventaire de la
-  classe*.
-- [ ] **T7 (AC18, AC19)** — mutations M1-M9 ; gate complet, frontend, E2E complet au dernier commit de code ; Dev Agent
-  Record : chiffres réellement exécutés, M6 (et M8 le cas échéant) déclarées équivalentes avec la raison, M9 déclarée
-  non tuée et reportée à la 32-5 ; risque résiduel de la capture non prise (AC14).
+  (l. 563, compte `ensure_not_pat(&current_user)?`). Gate ciblé entre les passes, complet au dernier commit de code
+  (AC18b).
+- [ ] **T5 (b ; AC12-AC14)** — frontend : type, encart, clé × 4, Vitest ; captures de l'état nominal.
+- [ ] **T6a (a ; AC16, AC17)** — textes du code et `CLAUDE.md` P7 (l. 827 **et** 829) ; les cinq greps et la valeur de
+  l'AC17, chaque ligne confrontée à l'*Inventaire de la classe* (sites du manuel : sort *Récrit par la 32-12b*).
+- [ ] **T6b (b ; AC20, AC21, AC17)** — manuel FR (AC20 (i) à (vi)), `make fr`, PDF aplati ; CHANGELOG ; les cinq greps
+  et la valeur de l'AC17 relancés après le patch du manuel.
+- [ ] **T7a (a ; AC18a, AC19a)** — mutations M1-M4, M6-M8 ; gate complet et E2E complet au dernier commit de code ;
+  Dev Agent Record : chiffres réellement exécutés, M6 (et M8 le cas échéant) déclarées équivalentes avec la raison.
+- [ ] **T7b (b ; AC18b, AC19b)** — mutations M5, M9 ; gate complet, frontend, E2E complet au dernier commit de code ;
+  Dev Agent Record : chiffres réellement exécutés, M9 déclarée non tuée et reportée à la 32-5 ; risque résiduel de la
+  capture non prise (AC14).
 
 ## Dev Notes
 
@@ -640,7 +695,8 @@ rendue par G1, G3 (« REFERME la fenêtre », d'où le `-i`) et G5.
 
 | Sort | Sites |
 |---|---|
-| **Récrit par la story** | `backup.rs:34-38`, `:643-647`, `:667-668` ; `repositories/backup_schedule.rs:502` ; `version.rs:272-275` ; `post_restore.rs:19-37` (l. 22, 25-26, 35), `:250-251`, `:269-270`, `:272-274`, `:375-381` (l. 379), `:718-720`, `:916-927` (l. 918, 920, 925-927), `:930` et `:1084` (appels remplacés par le plancher), `:934`, `:942-958` (avec la fonction), `:1095-1096` ; `admin_backup/import.rs:14`, `:232-233` ; `CLAUDE.md:827`, `:829` ; `admin-manual.tex:2252-2263` (item ajouté), `:2273`, `:2370` |
+| **Récrit par la 32-12a** | `backup.rs:34-38`, `:643-647`, `:667-668` ; `repositories/backup_schedule.rs:502` ; `version.rs:272-275` ; `post_restore.rs:19-37` (l. 22, 25-26, 35), `:250-251`, `:269-270`, `:272-274`, `:375-381` (l. 379), `:718-720`, `:916-927` (l. 918, 920, 925-927), `:930` et `:1084` (appels remplacés par le plancher), `:934`, `:942-958` (avec la fonction), `:1095-1096` ; `admin_backup/import.rs:14`, `:232-233` ; `CLAUDE.md:827`, `:829` |
+| **Récrit par la 32-12b** (que la 32-12a ne rend pas faux, AC17) | `admin-manual.tex:2252-2263` (item ajouté), `:2273`, `:2370` |
 | **Intouchable (P8), rectifié ailleurs** | `20261001000004_invoice_settlements_write_off.sql:14-15`, `20261003000001_invoices_frozen_pdf.sql:9-11`, `20261009000001_journal_entry_lines_lettering.sql:10-12`, `20261024000001_backup_schedule.sql:5-7` — rectification : doc-comment d'`IMPORT_FLOOR_MIGRATION`, qui les nomme (AC2), et cette fiche |
 | **Repris par la 32-5** (*Contrat* point 5) | `post_restore.rs:441` (« cette migration EST la dernière créatrice de table applicative — donc la fenêtre elle-même ») : vrai jusqu'à la 32-5, faux dès sa table ; l'entrée commence à `:433` (valeur), et son « refusé au contrôle de couverture » (l. 436-437, coupé sur deux lignes, que G5 ne rend pas) reste vrai : la table est le plancher, exigée |
 | **Reste vrai : relevé daté** | `post_restore.rs:212-215`, `:257-266`, `:276-279`, `:338-340`, `:1105-1121` ; `admin_full_import_e2e.rs:747`, `:947`, `:955`, `:1091`, `:1174`, `:1221`, `:1314`, `:1386`, `:1500` (« fenêtre refermée » : entrées de la Story 24-2 retirées du registre, rejeu déclenché explicitement), `:1523-1524`, `:1544`, `:2324-2325`, `:2383`, `:2505`, `:2577` ; `post_restore_class_a.rs:78` ; `docs/migrations-idempotence-audit.md:85`, `:91`, `:98` — chacun dit ce qui était vrai à sa story |
@@ -705,56 +761,85 @@ comportement actuel de `restore_body` : la story le fixe par un test (AC4) au li
   façon, est importé par un Administrateur et remplace toute l'installation.
 - **#722** reste ouverte : la story n'en traite que l'import d'une sauvegarde antérieure.
 
-### Fichiers touchés (prévus)
+### Fichiers touchés (prévus), par clé
 
-`crates/kesh-db/src/backup.rs`, `crates/kesh-db/src/post_restore.rs`,
-`crates/kesh-db/src/repositories/backup_schedule.rs` (message d'assertion), `crates/kesh-db/src/version.rs`
-(doc-comment), `crates/kesh-api/src/admin_backup/import.rs`,
-`crates/kesh-api/src/routes/admin.rs`, `crates/kesh-api/tests/admin_full_export_e2e.rs`,
-`crates/kesh-api/tests/admin_full_import_e2e.rs`, `crates/kesh-api/tests/fixtures/keshbackup-0.15.0-format2.keshbackup`
-(neuf), `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`,
-`frontend/src/lib/features/admin-restore/{admin-restore.api.ts,AdminRestorePanel.svelte,AdminRestorePanel.test.ts}`,
-`docs/manual/fr/admin-manual.tex` et `.pdf`, `CHANGELOG.md`, `CLAUDE.md`.
+- **32-12a** : `crates/kesh-db/src/backup.rs`, `crates/kesh-db/src/post_restore.rs`,
+  `crates/kesh-db/src/repositories/backup_schedule.rs` (message d'assertion), `crates/kesh-db/src/version.rs`
+  (doc-comment), `crates/kesh-api/src/admin_backup/import.rs`, `crates/kesh-api/tests/admin_full_export_e2e.rs`
+  (générateur), `crates/kesh-api/tests/admin_full_import_e2e.rs` (AC6),
+  `crates/kesh-api/tests/fixtures/keshbackup-0.15.0-format2.keshbackup` (neuf), `CLAUDE.md` (P7).
+- **32-12b** : `crates/kesh-api/src/routes/admin.rs`, `crates/kesh-api/tests/admin_full_import_e2e.rs` (AC8),
+  `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`,
+  `frontend/src/lib/features/admin-restore/{admin-restore.api.ts,AdminRestorePanel.svelte,AdminRestorePanel.test.ts}`,
+  `docs/manual/fr/admin-manual.tex` et `.pdf`, `CHANGELOG.md` ; et `crates/kesh-api/src/admin_backup/import.rs`
+  **seulement** si la 32-12a a pris le repli `cfg_attr(…allow(dead_code))` de l'AC5, à retirer.
 
-**Modules** (règle de découpage préventif, ≤ 5) : compté au grain de l'exemple de la règle
-(`kesh-api/routes/invoices`), la story touche **huit** modules — `kesh-db/backup`, `kesh-db/post_restore`,
-`kesh-db/repositories` (un message d'assertion), `kesh-db/version` (un doc-comment, ajouté à la validation P2),
-`kesh-api/admin_backup`, `kesh-api/routes/admin`, `kesh-i18n`, `frontend/admin-restore` (les docs à part ; sept avant
-l'ajout de `version.rs`, relevé de la lentille F de la P2). Le seuil est franchi ; la story n'est
-pas découpée — cf. *Dérogation règle de splitting* ci-dessous. Aucune migration, donc ni P2/P3 (pas de bump), ni P5 (pas de ligne d'audit d'idempotence), ni P6
-(aucun `.sql` neuf ; les deux tests positionnels ne sont pas touchés) ; **P7** est l'objet même de l'AC9 et de l'AC11.
+Seul fichier commun aux deux : `crates/kesh-api/tests/admin_full_import_e2e.rs` — des tests distincts (AC6 dans la
+32-12a, AC8 et l'assertion ajoutée au test 0.14.0 dans la 32-12b) ; la 32-12b part de `main` après la fusion de la
+32-12a, aucun conflit à fusionner.
 
-### Dérogation règle de splitting
+**Modules** (règle de découpage préventif, ≤ 5), comptés au grain de l'exemple de la règle (`kesh-api/routes/invoices`)
+et comme l'était le total de **huit** de la story entière — les fichiers sous `tests/` d'une crate et les docs à part :
 
-- **Critère franchi** : huit modules au grain de la règle (ci-dessus), pour un seuil de cinq.
-- **Second critère : le signal est levé, et il y a recyclage partiel.** Sévérités (CRITICAL/HIGH/MEDIUM/LOW), lentille R
-  puis F : P1 0/0/2/6 et 0/1/2/5 → P2 0/0/2/6 et 0/0/3/6 → P3 0/0/2/7 et 0/0/0/9. La sévérité maximale de la lentille
-  R est **égale** d'une passe à l'autre (MEDIUM → MEDIUM → MEDIUM). Et au sens de l'amendement D5 (`CLAUDE.md`, « un
-  défaut qui revient sous une autre forme, ou qui naît du correctif précédent »), il y a recyclage : R1 = F1 de la P2
-  (quatre migrations publiées, la fiche en nommait trois) **est né de la remédiation P1** (les rapports P2 le datent de
-  `544c2821`) ; R1 de la P3 (les greps de l'AC17 sans `-i`) **est né de la remédiation P2** ; et la classe « textes
-  devenus faux sans être nommés » est revenue à chaque passe (F3 = R2 en P1, R2 = F3 en P2, R1 = F1 et F9 en P3). Le
-  texte de la P2 disait le contraire (« distincts … non des défauts qu'elle aurait créés ») : c'était faux, rectifié ici
-  sur les rapports P3 (C-32-12-36).
-- **Pourquoi ne pas découper malgré tout** — la proposition soumise à Guy : (a) le recyclage est **circonscrit** à
-  une seule classe — l'inventaire des textes que la règle rend faux et la commande qui l'établit —, non à la logique :
-  aucune passe n'a trouvé deux fois un défaut de la règle, de la carte, de l'import ou du bilan ; (b) un découpage
-  sépare précisément ce qui recycle de ce qui le motive : les textes devenus faux le deviennent **par** la règle
-  (`kesh-db`), et les récrire dans une autre story laisserait la première fusionner avec des commentaires, un
-  `CLAUDE.md` et un manuel qui mentent — ce que le gate ne voit pas ; (c) les huit modules sont liés par **une seule
-  règle**, deux sites la portent (`kesh-db/backup` : règle et carte ; `kesh-db/post_restore` : fenêtre des tests), les
-  six autres sont mécaniques (un champ de réponse et d'audit, un message, un doc-comment, une clé i18n × 4, un
-  encart) ; (d) une story-zéro (`kesh-db`) + rollout (`kesh-api`, frontend) livrerait d'abord une règle que rien
-  n'emploie, et le contrat de la fixture (T1 avant tout code) traverserait les deux. **Si Guy juge que le recyclage
-  appelle le découpage**, la coupe la moins mauvaise garde la règle avec son appelant et ses textes : 32-12a = AC1-AC7,
-  AC9-AC11, AC15-AC17 (fixture, règle, import qui l'applique, fenêtre des tests, et **tous** les textes qu'elles
-  rendent faux) ; 32-12b = AC8, AC12-AC14, AC20-AC21 (bilan, écran, manuel, CHANGELOG) ; AC18-AC19 dans chacune ; les
-  deux avant la 32-5.
-- **Risque accepté** : un défaut d'interaction entre la règle et le bilan visible ; atténué par l'AC7 (chaîne bout à
-  bout hors HTTP) et l'AC8 (HTTP), et par le gate complet à chaque passe (`kesh-db`) ; et un nouveau texte devenu faux
-  qu'aucune famille de l'AC17 ne rend, atténué par la règle « une ligne absente du tableau est un site neuf » et par la
-  recherche par le sens de chaque passe. Signal déclaré, décision de l'orchestrateur **soumise au Project Lead avec la
-  question Q4** (C-32-12-29, C-32-12-36).
+- **32-12a — cinq** : `kesh-db/backup`, `kesh-db/post_restore`, `kesh-db/repositories` (un message d'assertion),
+  `kesh-db/version` (un doc-comment), `kesh-api/admin_backup`. **Au seuil, non au-delà.** ⚠️ Compter
+  `kesh-api/tests` comme un module en donnerait **six** : ce grain n'a pas servi au total de huit, et il n'est pas
+  retenu ici ; le Project Lead peut en juger autrement (Q4).
+- **32-12b — trois** : `kesh-api/routes/admin`, `kesh-i18n`, `frontend/admin-restore` (quatre avec
+  `kesh-api/admin_backup` si le repli de l'AC5 est à retirer).
+
+Huit modules distincts au total (5 + 3, sans recoupement). Aucune migration dans l'une ni l'autre, donc ni P2/P3 (pas
+de bump), ni P5 (pas de ligne d'audit d'idempotence), ni P6 (aucun `.sql` neuf ; les deux tests positionnels ne sont
+pas touchés) ; **P7** est l'objet même de l'AC9 et de l'AC11, tous deux à la 32-12a.
+
+### Découpage
+
+*(Remplace la section « Dérogation règle de splitting », écrite à la validation P2 et récrite à la P3 ; son texte se
+relit au commit `7d7ade33`. Choix C-32-12-37.)*
+
+- **Motif — les deux conditions de l'amendement D5, toutes deux constatées.** `CLAUDE.md` § *Règle de splitting
+  préventif*, amendement D5, cité tel qu'il est écrit : « Ce qui découpe, c'est le **recyclage** — un défaut qui revient
+  sous une autre forme, ou qui naît du correctif précédent — et la dispersion dans plus de cinq modules. »
+  - **Recyclage partiel de la classe « textes devenus faux sans être nommés »** : R1 = F1 de la P2 (quatre migrations
+    publiées, la fiche en nommait trois) est né de la remédiation P1 (`544c2821`) ; R1 de la P3 (les greps de l'AC17
+    sans `-i`) est né de la remédiation P2 ; la classe est revenue à chaque passe (F3 = R2 en P1, R2 = F3 en P2, R1 = F1
+    et F9 en P3). Sévérités, lentille R puis F : P1 0/0/2/6 et 0/1/2/5 → P2 0/0/2/6 et 0/0/3/6 → P3 0/0/2/7 et 0/0/0/9
+    → P4 (Haiku, ciblée) 0/0/2/1.
+  - **Dispersion sur huit modules** (§ *Fichiers touchés*), pour un seuil de cinq.
+- **Pourquoi la dérogation est retirée — P4-1 et P4-2** (`kesh-gate-logs/3212-validate-p4.md`) :
+  - **P4-1 (MEDIUM)** : C-32-12-36 (« Écartée : découper d'office (décision du Project Lead, D5 : le signal se déclare,
+    il ne découpe pas seul) ») invoquait D5 pour ne **pas** découper, en omettant la phrase qui fait du recyclage et de
+    la dispersion ce qui découpe — alors que la dérogation constatait elle-même ces deux conditions. Ce n'était pas une
+    application de D5, c'était une dérogation à D5 présentée comme son application.
+  - **P4-2 (MEDIUM)** : son argument (a) — « aucune passe n'a trouvé deux fois un défaut de la règle, de la carte, de
+    l'import ou du bilan » — est contredit par les rapports qu'elle citait : l'AC2 (iii) revient en P1 (F2, R3), P2 (F4,
+    R6) et P3 (R6 = F7) ; la carte de l'AC1 en P1 (F5) et P3 (R4 = F3). Le recyclage n'était donc pas circonscrit aux
+    textes.
+  Sans l'argument (a), et D5 relu tel qu'écrit, rien ne fonde plus la dérogation.
+- **Décision de l'orchestrateur** (2026-10-24) : la fiche est découpée selon la coupe de repli qu'elle proposait.
+  **Soumise à Guy avec Q4** : s'il juge que la story devait rester une, les deux clés se recousent sans perte (même
+  fiche, mêmes AC, numérotation conservée).
+- **La coupe** — la règle reste avec son appelant et avec **tous** les textes qu'elle rend faux :
+  - **32-12a** (`32-12a-regle-inventaire-et-textes`) : AC1-AC7, AC9-AC11, AC15-AC17 — fixture, règle, carte, plancher,
+    import qui applique la règle, fenêtre des tests P7, registre des tables amorcées, textes du code et de `CLAUDE.md` ;
+    AC18a, AC19a (M1-M4, M6-M8). Cinq modules. 🗄️ `kesh-db`.
+  - **32-12b** (`32-12b-bilan-ecran-manuel`) : AC8, AC12-AC14, AC20-AC21 — réponse et audit, écran, captures, manuel,
+    CHANGELOG ; AC18b, AC19b (M5, M9). Trois modules. Sans `kesh-db`.
+  - Aucun AC ne tombe entre les deux : union = AC1-AC21 ; seuls AC18 et AC19 sont portés par les deux, chacun dans une
+    forme propre à sa clé.
+- **Ce que la coupe répond aux arguments de l'ancienne dérogation** : (b) aucun texte rendu faux par la règle ne
+  part dans la 32-12b — les trois sites du manuel qu'elle récrit ne sont pas rendus faux par la 32-12a (AC17) ; (d) la
+  32-12a ne livre pas une règle que rien n'emploie : l'import l'applique en production (AC5), et le contrat de la
+  fixture (T1 avant tout code) reste entier dans la 32-12a.
+- **Ordre** : 32-12a, puis 32-12b (qui lit `ParsedBackup::tables_absent` et la fixture 0.15.0), **les deux avant la
+  32-5**. Entre les deux fusions, `main` porte une règle qui tolère des tables postérieures absentes sans le dire au
+  bilan : sans effet, aucune table postérieure au plancher n'existant avant la 32-5 — d'où l'interdit de faire partir la
+  32-5 avant la fusion de la 32-12b.
+- **Risque accepté** : un défaut d'interaction entre la règle (32-12a) et le bilan (32-12b), qu'aucune des deux
+  boucles de revue ne voit en entier ; atténué par l'AC7 (chaîne bout à bout hors HTTP, 32-12a), par l'AC8 (HTTP,
+  32-12b, sur le code fusionné de la 32-12a) et par la reprise de l'AC8 à la 32-5 ; et un texte devenu faux qu'aucune
+  famille de l'AC17 ne rend, atténué par la règle « une ligne absente du tableau est un site neuf » et par la relance
+  des greps à la 32-12b.
 
 ### Risques
 
@@ -762,7 +847,7 @@ pas découpée — cf. *Dérogation règle de splitting* ci-dessous. Aucune migr
 - **Le message d'un test qui ment** : le risque principal de l'epic n'est pas dans cette story mais dans la 32-5, si
   l'AC9 n'est pas fait — `registry_entries_are_within_import_window` y prescrirait de retirer M1 du registre. D'où
   l'AC10 et la demande à l'orchestrateur (*Hors périmètre*).
-- **Ordre d'épique** : à développer **avant** la 32-5 (C-32-0-12, C-32-0-13) ; si la 32-5 part d'une `main` sans cette
+- **Ordre d'épique** : 32-12a, puis 32-12b, toutes deux **avant** la 32-5 (C-32-0-12, C-32-0-13, C-32-12-37) ; si la 32-5 part d'une `main` sans cette
   story, sa table rend la fixture 0.15.0 non importable et son gate le dit (AC8 rouge) — signal voulu.
 - **Fixture** : la générer après un changement de code produirait une sauvegarde qui n'est plus celle de la 0.15.0, et
   le test ne prouverait plus rien. T1 est le premier geste, en commit dédié ; si la branche ne porte plus le code de la
@@ -775,8 +860,12 @@ pas découpée — cf. *Dérogation règle de splitting* ci-dessous. Aucune migr
 - Mettre à jour, après merge, la prémisse 4, le texte de la 32-5 (« Risque … sauvegardes 0.15.0 non importables ») et le
   paragraphe *Release v0.16.0* du fichier d'epic, ainsi que le commentaire de `32-5-cles-et-reglages-mcp` dans
   `sprint-status.yaml` : la limite disparaît, le contrat de la § *Contrat* ci-dessus s'y ajoute.
-- Faire développer la 32-12 **avant** que du code d'une autre story de l'epic n'atteigne la branche (sinon la fixture
+- Faire développer la 32-12a **avant** que du code d'une autre story de l'epic n'atteigne la branche (sinon la fixture
   passe par le repli du point 5, plus coûteux en disque).
+- Après la fusion de la 32-12a : ouvrir le worktree et la branche de la 32-12b depuis `main` ; ne faire partir la 32-5
+  qu'après la fusion de la 32-12b (§ *Découpage*, *Ordre*).
+- Soumettre à Guy, avec Q4, la décision de découpage (C-32-12-37) et le décompte de modules de la 32-12a (cinq, au
+  seuil ; six si l'on compte `kesh-api/tests`).
 
 ### Références
 
@@ -787,11 +876,23 @@ AC10, `31-1-sauvegarde-complete.md:335-345, 1325-1335`).
 
 ## Dev Agent Record
 
-### Agent Model Used
+*Un enregistrement par clé : chacune déclare ses seuls gates, mutations et fichiers.*
 
-### Completion Notes List
+### 32-12a
 
-### File List
+#### Agent Model Used
+
+#### Completion Notes List
+
+#### File List
+
+### 32-12b
+
+#### Agent Model Used
+
+#### Completion Notes List
+
+#### File List
 
 ## Change Log
 
@@ -912,5 +1013,40 @@ AC10, `31-1-sauvegarde-complete.md:335-345, 1325-1335`).
   commandes de l'AC17 telles qu'écrites (`3212-validate-prompt-p4.md`) — la P3 a rendu deux MEDIUM, la boucle ne se
   clôt pas (`CLAUDE.md`, décision Q3 (c)). Fiche toujours `ready-for-dev` **sous réserve de Q4** (et de la décision de
   découpage, *Dérogation*).
+- 2026-10-24 — **Validation P4** (Haiku 5.5, passe **ciblée**, une lentille — regression hunter — en contexte frais, sur
+  le seul diff `git diff 8a5a720a 7d7ade33` ; prompt `3212-validate-prompt-p4.md` ; rapport
+  `kesh-gate-logs/3212-validate-p4.md`) : **0/0/2/1** (CRITICAL/HIGH/MEDIUM/LOW). Axe 1 : les six commandes de l'AC17
+  exécutées telles qu'écrites rendent **51 / 7 / 36 / 10 / 18 / 5**, égaux aux nombres de l'AC17 ; 14 homonymes
+  recomptés ; aucune ligne hors du tableau. Axes 2 à 4 sans écart. Non exercés, déclarés par la lentille : rapports P1
+  et P2 lus par leurs seuls bilans, mutations non rejouées. Sort :
+  - **P4-1 (MEDIUM)** — C-32-12-36 invoquait D5 pour ne pas découper en en omettant la condition qui découpe ; prémisse
+    vérifiée (`CLAUDE.md` § *Règle de splitting préventif*, amendement D5 : « Ce qui découpe, c'est le recyclage … et
+    la dispersion dans plus de cinq modules »). Résolu par le **découpage** (entrée suivante) : la dérogation est
+    retirée.
+  - **P4-2 (MEDIUM)** — l'argument (a) de la dérogation (« aucune passe n'a trouvé deux fois un défaut de la règle, de
+    la carte… ») est contredit par les rapports ; prémisse vérifiée sur les titres des rapports P1 à P3 (AC2 (iii) :
+    P1 F2 et R3, P2 F4 et R6, P3 R6 et F7 ; carte de l'AC1 : P1 F5, P3 R4 et F3). Résolu par le découpage.
+  - **P4-3 (LOW)** — **écarts de protocole des deux lentilles de la P3**, déclarés par leurs rapports et absents de
+    l'entrée « Validation P3 » : la lentille R a écrit `/tmp/x` par une redirection (`3212-validate-p3-R.md` l. 7-8),
+    la lentille F a redirigé une sortie vers `…/scratchpad/ct.txt` (`3212-validate-p3-F.md` l. 9-13) — contre
+    l'interdit des redirections d'écriture (`docs/agents-orchestration.md` § 2.1). Fichiers hors dépôt, **déjà
+    supprimés par l'orchestrateur** ; consigné ici, l'entrée P3 n'est pas réécrite. Le prompt P4 nommait déjà
+    l'interdit ; la P4 n'a rien écrit hors de son rapport.
+  La P4 rend deux MEDIUM : la boucle ne se clôt pas.
+- 2026-10-24 — **Découpage** (orchestrateur ; agent de fiche Opus 5.5 ; choix **C-32-12-37**, C-32-12-36 annoté) : la
+  dérogation est retirée et la fiche découpée selon sa coupe de repli — **32-12a** (`32-12a-regle-inventaire-et-textes` :
+  AC1-AC7, AC9-AC11, AC15-AC17, AC18a, AC19a = M1-M4, M6-M8 ; cinq modules ; 🗄️ `kesh-db`) et **32-12b**
+  (`32-12b-bilan-ecran-manuel` : AC8, AC12-AC14, AC20, AC21, AC18b, AC19b = M5, M9 ; trois modules). Motif : recyclage
+  partiel de la classe « textes devenus faux » et dispersion sur huit modules, les deux conditions de D5 (P4-1, P4-2).
+  Ordre : 32-12a, puis 32-12b, les deux avant la 32-5. Remaniés : en-tête (deux clés, tableau, encadré Q4 : la 32-12a
+  tombe entière si Guy accepte la limite), clé portée par chaque AC, AC5 (`tables_absent` lu par le `Debug` manuel en
+  attendant l'AC12 — sans quoi `clippy -D warnings` refuserait un champ jamais lu ; constaté au code :
+  `import.rs:97-106`, `Debug` écrit à la main), AC7, AC8, AC10, AC17 (sites du manuel : sort *Récrit par la 32-12b*,
+  non rendus faux par la 32-12a ; greps relancés par la 32-12b), AC18 en AC18a/AC18b (E2E complet dans les deux :
+  `backup-restore-new-install.spec.ts` emprunte l'import), AC19 réparti, AC21 (une seule entrée, à la 32-12b), tâches
+  (T4, T6, T7 scindées), fichiers touchés et modules par clé, *Découpage* à la place de *Dérogation*, *Risques*, *Hors
+  périmètre*, Dev Agent Record par clé. `sprint-status.yaml` : `32-12-import-sauvegarde-anterieure` à `split`, deux
+  clés neuves à `ready-for-dev` sous réserve de Q4. Décision **soumise à Guy avec Q4**. Passe suivante : **P5 ciblée,
+  Sonnet**, une lentille sur le seul diff du découpage (`3212-validate-prompt-p5.md`).
 
 [#722]: https://github.com/guycorbaz/kesh/issues/722
