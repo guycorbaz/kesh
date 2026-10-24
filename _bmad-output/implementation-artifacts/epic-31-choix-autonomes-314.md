@@ -171,3 +171,25 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   mécanique (budget d'issues, `CLAUDE.md` § *Priorités des défauts*). Une garde de hiérarchie n'est **pas** ajoutée ici.
 - **Écartée** : ouvrir une issue — le compte est à 137 pour un plafond de « moins de 136 » au tag.
 - **Réversible** : oui.
+
+### C-31-4-14 — Validation P2 : la garde G22 réduite, le dossier de la copie fixé hors de `$HOME` (choix de l'orchestrateur, 2026-10-24)
+
+- **Contexte** : la validation P2 (Sonnet) rend 5 MEDIUM (R) et 6 MEDIUM (F) ; les deux lentilles convergent sur la garde
+  G22 telle que la remédiation P1 l'a étendue (lecture « par position », seuil de 60 lignes et 8 commandes, critère (e)
+  « chaque `docker compose` porte `-p` et `--project-directory` ») : `manuel::normaliser` aplatit les lignes, (c)/(d)/(e)
+  deviennent indécidables, (e) rougirait sur `docker compose ls`/`version`. C'est le même motif que le garde de la 31-2
+  (C-31-2-15) : une garde lexicale qu'on étend pour qu'elle « prouve » la procédure finit par ne rien prouver.
+  Et le contrôle 3 (`findmnt`) ne peut pas reconnaître un dossier synchronisé par Synology Drive Client (dossier local).
+- **Retenu** :
+  1. **G22 se réduit à des présences**, lues dans le source brut de la sous-section (`manuel::section`, avant
+     normalisation) : les jetons `-p kesh-repetition`, `docker compose config`, `--services`, `/health`, la garde du
+     `rm -rf`, et l'**absence** de toute ligne active qui assigne une variable `KESH_*_HOST_DIR`. Plus d'ordre par position,
+     plus de seuils, plus de critère (e). Ce que G22 ne prouve pas — l'ordre et la justesse des gestes — est porté par le
+     **journal d'exécution réelle** (T3, T8), et la fiche le dit.
+  2. **Le dossier de la copie vit sous `/var/tmp/kesh-repetition-<date>`**, créé par `mkdir` **sans** `-p` (échec s'il
+     existe), hors de `$HOME` — donc hors de tout dossier que Synology Drive Client synchronise ; le contrôle 3 vérifie
+     ce préfixe et l'absence de lien symbolique (`test ! -L`), et la garde du `rm -rf` compare le `realpath` à ce préfixe.
+     Les téléchargements du navigateur y sont déplacés avant usage.
+- **Écartées** : poursuivre l'extension de G22 (chaque passe en trouve le défaut suivant) ; détecter la synchronisation
+  (aucun moyen fiable).
+- **Réversible** : oui.
