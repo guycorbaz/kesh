@@ -643,10 +643,10 @@ table : le `.keshbackup` ne change pas. **Fusionnée avant la 32-1b**, qui lit s
 
 ### Tâches
 
-- [ ] **T-d0** — Base et port propres (comme T-a0) ; dossiers E2E `/tmp/kesh-e2e-321/…` passés au backend **et** au runner.
-- [ ] **T-d1 (AC-d2, AC-d3)** — clé × 4, test `i18n_e2e.rs` **rouge**, `t(…)`, G9 (ex-T-b1).
-- [ ] **T-d2 (AC-d1)** — tests rouges (unitaires, e2e), fonction, champ (ex-T-b2, moitié serveur).
-- [ ] **T-d3 (AC-d4, AC-d5, AC-d6)** — capture, mutations, gates, E2E ; Dev Agent Record chiffré.
+- [x] **T-d0** — Base et port propres (comme T-a0) ; dossiers E2E `/tmp/kesh-e2e-321/…` passés au backend **et** au runner.
+- [x] **T-d1 (AC-d2, AC-d3)** — clé × 4, test `i18n_e2e.rs` **rouge**, `t(…)`, G9 (ex-T-b1).
+- [x] **T-d2 (AC-d1)** — tests rouges (unitaires, e2e), fonction, champ (ex-T-b2, moitié serveur).
+- [x] **T-d3 (AC-d4, AC-d5, AC-d6)** — capture, mutations, gates, E2E ; Dev Agent Record chiffré.
 
 ---
 
@@ -1126,9 +1126,87 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/
 
 #### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/devel/kesh-32-1d`, branche
+`story/32-1d` partie de `5ea108ae` (`main`, la 32-1a fusionnée) ; bases `kesh_321d` (gate) et `kesh_e2e_321d`, port
+3324, `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-32-1d/target`, dossiers E2E `/tmp/kesh-e2e-321d/{inbox,documents,backup}`.
+
 #### Completion Notes List
 
+*Ne sont déclarés que les runs réellement exécutés ; journaux dans `kesh-gate-logs/` (hors dépôt), préfixe `321d-`.*
+
+- **T-d0** : bases `kesh_321d` et `kesh_e2e_321d` créées (`DROP`/`CREATE`, migrations du worktree, seed
+  `scripts/seed-dev-db.sql`), `node_modules` par `cp -al` ; `kesh_321d` remise à zéro avant le gate complet,
+  `kesh_e2e_321d` et `/tmp/kesh-e2e-321d/` avant l'E2E et avant la capture (`321d-e2e.sh`).
+- **AC-d2** (L-B7) : `update_backup_schedule` rend `AppError::Validation(t("admin-backup-schedule-error-out-of-domain",
+  <repli fr-CH exact>))`. Test `i18n_e2e.rs::backup_schedule_out_of_domain_refusal_in_german` (verrou `get_i18n_lock`,
+  `DeCh`, société et administrateur, `GET` de la version, `PUT` à 7 h → 400 `VALIDATION_ERROR`, message égal au rendu
+  `de-CH`, différent du `fr-CH`, rendu `de-CH` différent de la clé brute). **Rouge constaté avant le correctif**
+  (`321d-rouge-AC-d2.log` : message français contre allemand), vert ensuite. G9 : `TABLE` à **5**, entrée
+  `backup_schedule.rs`, un site, sans paramètre ; `les_replis_rust_suivent_le_catalogue` vert. Aide `catalogues()`
+  extraite dans `i18n_e2e.rs` (C-32-1-44).
+- **AC-d3** : clé dans les quatre catalogues (textes : C-32-1-45). `grep -c '^admin-backup-'` : **53 → 54** dans chacune
+  des quatre locales (`5ea108ae` → tête). `cargo nextest run -p kesh-i18n` **41/41**, `parity_between_locales` compris
+  (`321d-cible-i18n.log`). Gardes frontend : `lint-i18n-ownership` PASS ; Vitest complet vert (dont
+  `i18n-entrees-a-variables.test.ts`, `i18n-repli-divergent-actif.test.ts`).
+- **AC-d1** (L-B5, moitié serveur) : `auto_backup::is_success_in_future` (C-32-1-46), cinq tests unitaires (futur,
+  passé, absent, égal, désactivée ; « futur » et « désactivée » assertent aussi `is_overdue`) ; champ
+  `last_success_in_future` (`lastSuccessInFuture`) servi par `BackupScheduleResponse::new`, donc par `GET`, `PUT` et
+  `POST …/run`. `prochaine_et_retard` : faux après le succès passé et après l'échec, vrai (avec `overdue`) pour la
+  réussite datée du futur — **rouge constaté avant** (`321d-rouge-AC-d1-vert-AC-d2.log` : `left: Null, right: false`).
+- **AC-d4** (capture) : `kesh-gate-logs/321-captures/321d-refus-reglage-de-CH.png` (section) et
+  `321d-refus-reglage-de-CH-page.png` (page), thème clair, instance en `de` (`KESH_LANG=de`), preset `with-company`.
+  L'écran borne la saisie : le script `kesh-gate-logs/321d-capture.mjs` **réécrit** le corps du `PUT` envoyé par
+  « Speichern » (`intervalHours: 7`) et le **transmet au vrai backend** (`route.fetch`), si bien que le message affiché
+  est celui du serveur (`321d-capture.log` : réponse 400, message allemand, texte affiché identique) — C-32-1-48.
+- **AC-d6 — mutations** (sous verrou, appliquées par Edit, motif unique vérifié, restaurées par `git checkout -- f &&
+  touch f`, diff résiduel **0** après chacune) : **M-d1** (`&& false` ajouté à `is_success_in_future`) tuée par
+  `prochaine_et_retard` (`left: false, right: true`) et par `is_success_in_future_dans_le_futur`
+  (`321d-mut-M-d1.log`) ; **M-d2** (la chaîne française rétablie en `.into()`) tuée par
+  `backup_schedule_out_of_domain_refusal_in_german` (message français), G9 restant vert comme attendu — le repli est
+  présent dans les deux formes (`321d-mut-M-d2.log`).
+- **AC-d5 — gates, au dernier commit de code `2deedf42`** :
+  - en itération : `binary(i18n_e2e) | binary(textes_coherents) | binary(admin_auto_backup_e2e) | auto_backup::` du
+    `mod tests` — **75/75** (`321d-cible-1.log`) ; `-p kesh-i18n` 41/41 ; clippy workspace `-D warnings` vert
+    (`321d-clippy.log`) ; `cargo fmt --check` vert ;
+  - `scripts/test-fast.sh --ci` sous verrou, base remise à zéro (`321d-gate-complet.log`) : garde des droits conforme,
+    fmt, clippy, nextest **3981 exécutés, 3981 passés, 7 ignorés**, exit 0 ;
+  - frontend sous verrou : `npm run check` 0 erreur, 29 avertissements (préexistants), exit 0 ; `lint-i18n-ownership`
+    PASS ; `test:unit` **162 fichiers, 1911 tests passés** ; `build` vert (`321d-frontend-{check,lint,unit,build}.log`) ;
+  - **E2E complet** (`321d-e2e.log`, montage de `docs/testing.md`, port 3324, dossiers passés au backend **et** au
+    runner, backend arrêté par le PID qui écoute sur 3324) : **315 passés, 7 échoués, 17 ignorés** (12,9 min). Les sept
+    échecs, jugés fichier par fichier, sont les sept KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* :
+    `mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`.
+    `backup-schedule.spec.ts` (trois tests, qui lisent la réponse servie) vert. La branche ne touche aucun fichier du
+    frontend.
+  - Les commits postérieurs à `2deedf42` ne touchent que de la documentation (cette fiche, le registre,
+    `sprint-status.yaml`, le prompt de revue).
+- **Tests ajoutés**, recomptés aux deux bornes `5ea108ae` → `2deedf42` (`grep -cE '#\[(sqlx::|tokio::)?test'`) :
+  `auto_backup.rs` 26 → 31, `i18n_e2e.rs` 4 → 5 ; `admin_auto_backup_e2e.rs` 20 → 20 (trois **assertions** de plus),
+  `textes_coherents.rs` 19 → 19 (une **entrée** de table de plus). Soit **6 tests neufs** (6 Rust) ; nextest 3975 (gate de
+  la 32-1a) → 3981.
+- **Inventaire « refus en français seul »** (*Inventaire des sites non résolus*), commandes de la fiche : chaîne
+  littérale **145 → 144**, chaîne formatée **101 → 101** (`5ea108ae` → tête). Le décompte est à verser en commentaire
+  sur #710 (action demandée à l'orchestrateur).
+- **CHANGELOG** : bloc `## [0.16.0] — Non publié` créé, `### Corrigé`, une ligne (C-32-1-47) — conflit textuel prévu
+  avec la 32-1c au rebase de la seconde.
+- **Limite connue, préexistante** : les tests de `i18n_e2e.rs` qui montent l'application sans prendre `get_i18n_lock`
+  (`i18n_messages_*`) réinitialisent le bundle global en `FrCh` ; sous nextest (un processus par test) c'est sans effet,
+  sous `cargo test` parallèle dans un même processus le test neuf pourrait lire du français — même exposition que
+  `error_messages_in_german_when_locale_de`, existant ; la CI lance `--test-threads=1`. Non corrigé (hors périmètre).
+- **Écarts** : aucun écart aux AC. T-d0 nomme `/tmp/kesh-e2e-321/…` : le prompt de l'agent attribue
+  `/tmp/kesh-e2e-321d/…`, `kesh_321d`, port 3324, employés. Aucune issue demandée.
+
 #### File List
+
+- `crates/kesh-api/src/auto_backup.rs` (`is_success_in_future`, cinq tests)
+- `crates/kesh-api/src/routes/backup_schedule.rs` (champ servi, refus par `t()`)
+- `crates/kesh-api/tests/i18n_e2e.rs` (aide `catalogues()`, test neuf)
+- `crates/kesh-api/tests/admin_auto_backup_e2e.rs` (`prochaine_et_retard`)
+- `crates/kesh-api/tests/textes_coherents.rs` (G9 à 5)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/32-1-defauts-courts.md`, `epic-32-choix-autonomes-321.md` (C-32-1-44 à 48),
+  `sprint-status.yaml`, `321d-review-prompt-p1.md`
 
 ## Change Log
 
@@ -1323,6 +1401,12 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/
   sur cette passe, une remédiation postérieure ne serait relue par personne — et **tracés sur [#732]**. Note A : le
   Dev Agent Record dit « aucun écart aux AC » et déclare l'écart de nommage de T-a0 (bases `kesh_321a`) : écart de
   tâche, non d'AC, cosmétique. Clé à `done`.
+- 2026-10-24 — **32-1d développée** (Opus 5.5, branche `story/32-1d` partie de `5ea108ae`, dernier commit de code
+  `2deedf42`) : AC-d1 à AC-d6 tenus ; 6 tests neufs (5 unitaires, 1 `i18n_e2e`), 3 assertions e2e, une entrée de G9 ;
+  rouges de l'AC-d1 et de l'AC-d2 constatés avant les correctifs ; M-d1 et M-d2 tuées ; gate complet 3981/3981
+  (7 ignorés), Vitest 1911, E2E 315 / 7 KF-029 / 17 ignorés ; capture du refus en allemand, message du serveur ;
+  CHANGELOG `[0.16.0] — Non publié` créé. Registre C-32-1-44 à C-32-1-48. Clé à `review` ; revue de code P1 (Sonnet,
+  lentilles B, E, A) : `321d-review-prompt-p1.md`.
 
 [#711]: https://github.com/guycorbaz/kesh/issues/711
 [#714]: https://github.com/guycorbaz/kesh/issues/714

@@ -660,3 +660,67 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Écartées** : changer la signature de `large()` (tous les appels à toucher) ; un compteur global `static` (partagé
   entre les tests parallèles de nextest dans un même binaire).
 - **Réversible** : oui.
+
+*C-32-1-44 à C-32-1-48 : développement de la 32-1d (Opus 5.5, 2026-10-24). Numérotés à partir de 44 : la branche
+non fusionnée de la 32-1c prend C-32-1-40 à 43 ; union à la fusion.*
+
+### C-32-1-44 — 32-1d : le test du refus traduit lit les catalogues par l'aide de l'application
+
+- **Contexte** : l'AC-d2 veut un message **égal** au rendu `de-CH` et **différent** du rendu `fr-CH`. Le test doit
+  donc charger les catalogues réels pour calculer l'attendu ; `spawn_app_with_locale` (`i18n_e2e.rs`) les chargeait
+  en ligne.
+- **Retenu** : une aide `catalogues()` dans `i18n_e2e.rs`, employée par `spawn_app_with_locale` **et** par le test neuf
+  `backup_schedule_out_of_domain_refusal_in_german` (DRY) ; le test exige en plus que le rendu `de-CH` ne soit pas la clé
+  brute (clé absente) ; `create_test_company` avant la connexion, comme `i18n_messages_endpoint_returns_locale_and_messages`.
+  Le rendu retire les marques d'isolation, comme `audit_log_e2e.rs` — sans effet ici (clé sans variable), gardé pour
+  qu'une variable ajoutée plus tard ne fasse pas rougir à tort.
+- **Écartées** : une chaîne allemande codée en dur dans le test (elle dériverait du catalogue en silence) ; réemployer
+  `catalogues_charges()` d'`audit_log_e2e.rs` (autre binaire de test, pas de module commun qui le porte).
+- **Réversible** : oui.
+
+### C-32-1-45 — 32-1d : textes de la clé `admin-backup-schedule-error-out-of-domain`
+
+- **Contexte** : la fiche fixe la valeur `fr-CH` (le repli actuel, à l'octet) ; les trois autres sont à écrire.
+- **Retenu** : `de-CH` « Sicherungseinstellung ausserhalb des zulässigen Bereichs: Häufigkeit 6, 12, 24 oder 168
+  Stunden, 1 bis 60 aufbewahrte Sicherungen. » (graphie suisse `ss`, « aufbewahrt » comme
+  `admin-backup-auto-retention`) ; `it-CH` « Impostazione del backup fuori dai valori ammessi: frequenza 6, 12, 24 o 168
+  ore, da 1 a 60 backup conservati. » ; `en-CH` « Backup setting out of range: frequency 6, 12, 24 or 168 hours, 1 to
+  60 backups kept. » Clé rangée après `admin-backup-banner-overdue`, dans l'ordre alphabétique du bloc.
+- **Écartées** : paramétrer les bornes (`{ $intervals }`, `{ $max }`) depuis `ALLOWED_INTERVAL_HOURS` et
+  `RETENTION_MAX` — plus juste à long terme, mais une conception de plus pour un LOW, et le repli `format!` changerait
+  la forme que G9 compare ; la fiche ne le demande pas.
+- **Réversible** : oui (textes seuls).
+
+### C-32-1-46 — 32-1d : forme d'`is_success_in_future`
+
+- **Contexte** : AC-d1 — vrai si activée, réussite présente, et `passe()` l'écarte.
+- **Retenu** : `enabled && last_success_at.is_some() && passe(last_success_at, now).is_none()` — `passe()` réemployée
+  telle quelle (une seule règle du « futur », Dev Notes) ; les tests « futur » et « désactivée » assertent aussi
+  `is_overdue`, pour tenir l'implication `lastSuccessInFuture ⇒ overdue` (C-32-1-24) là où elle se lit. Le champ servi
+  porte un doc-comment qui la dit ; le doc-comment de module de `routes/backup_schedule.rs` nomme le drapeau.
+- **Écartées** : `matches!(last_success_at, Some(v) if v > now)` — même valeur, mais une seconde écriture de la règle.
+- **Réversible** : oui.
+
+### C-32-1-47 — 32-1d : le bloc `## [0.16.0] — Non publié` du CHANGELOG
+
+- **Contexte** : `main` (`5ea108ae`) n'a aucun bloc non publié ; la 32-1c, développée en parallèle, en crée un aussi
+  (*Fichiers touchés*, CHANGELOG ; conflit prévu au rebase de la seconde).
+- **Retenu** : le bloc créé sous la ligne `---`, avec la seule rubrique `### Corrigé` et une ligne pour le refus traduit,
+  lien vers #711 ; aucune ligne pour `lastSuccessInFuture` (sans lecteur jusqu'à la 32-1b, qui le dit). Celle des
+  32-1c et 32-1d qui se rebase en second garde le bloc de `main` et y ajoute sa ligne.
+- **Écartées** : ne rien écrire et laisser la 32-1c créer le bloc — l'ordre de fusion n'est pas fixé entre elles.
+- **Réversible** : oui.
+
+### C-32-1-48 — 32-1d : provoquer le refus pour la capture (AC-d4)
+
+- **Contexte** : l'écran borne la saisie (sélecteur de fréquence, champ du nombre conservé) ; l'AC-d4 admet une requête
+  forgée ou une route interceptée. Une réponse **simulée** (comme les captures (j) et (k) de `backup-schedule.spec.ts`)
+  montrerait le texte de la spec, non celui du serveur.
+- **Retenu** : un script Playwright hors dépôt (`kesh-gate-logs/321d-capture.mjs`), backend du worktree lancé en
+  `KESH_LANG=de` sur la base E2E remise à zéro (preset `with-company`) ; l'interception réécrit le corps du `PUT`
+  (`intervalHours: 7`) et le **transmet** au backend (`route.fetch`), puis rend sa réponse telle quelle — le message
+  affiché est celui que le serveur rend, journalisé à côté (`321d-capture.log`).
+- **Écartées** : une spec versionnée de plus (le refus traduit est prouvé par `i18n_e2e.rs` ; la capture est une
+  recette visuelle, non un test) ; modifier le DOM pour lever les bornes de saisie (montrerait un état que l'écran
+  n'atteint pas).
+- **Réversible** : oui (rien de versionné).
