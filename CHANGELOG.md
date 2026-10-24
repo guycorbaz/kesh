@@ -8,6 +8,12 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.16.0] — Non publié
+
+### Corrigé
+
+- **Sauvegarde automatique — le refus d'un réglage hors domaine parle la langue de l'instance** : un réglage refusé par le serveur (fréquence autre que 6, 12, 24 ou 168 heures, ou nombre de sauvegardes conservées hors de 1 à 60) était annoncé en français quelle que soit la langue de l'installation ; il l'est désormais en français, en allemand, en italien ou en anglais ([#711](https://github.com/guycorbaz/kesh/issues/711)).
+
 ## [0.15.0] — 2026-10-24
 
 Epic 31, **une sauvegarde qui restaure tout** ([#503](https://github.com/guycorbaz/kesh/issues/503)) : le fichier `.keshbackup` emporte désormais les pièces — documents fournisseur importés et PDF figés des factures émises —, Kesh fait lui-même sa sauvegarde complète à intervalle régulier, réglée dans *Administration → Sauvegarde complète*, les sauvegardes du serveur se listent et se téléchargent depuis l'écran, et une installation neuve se restaure depuis l'assistant. Le manuel d'administration décrit la **répétition d'une clôture sur une copie** isolée, avant de clore pour de bon. S'y ajoutent quatre correctifs courts — la démonstration valide une facture avec TVA, l'infobulle de *Réouvrir*, la communication du QR-code dans la langue de la facture, les refus du journal d'audit traduits — et, en interne, un smoke E2E sur chaque PR et Rust 1.97.1.

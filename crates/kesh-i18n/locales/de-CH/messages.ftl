@@ -1665,6 +1665,7 @@ admin-backup-auto-title = Automatische Sicherung
 admin-backup-banner-failed = Die letzte automatische Sicherung ist fehlgeschlagen.
 admin-backup-banner-link = Administration → Vollständige Sicherung
 admin-backup-banner-overdue = Seit dem { $date } keine erfolgreiche automatische Sicherung.
+admin-backup-schedule-error-out-of-domain = Sicherungseinstellung ausserhalb des zulässigen Bereichs: Häufigkeit 6, 12, 24 oder 168 Stunden, 1 bis 60 aufbewahrte Sicherungen.
 admin-backup-server-download = Herunterladen
 admin-backup-server-download-error = Das Herunterladen ist fehlgeschlagen.
 admin-backup-server-empty = Keine Sicherung auf dem Server.

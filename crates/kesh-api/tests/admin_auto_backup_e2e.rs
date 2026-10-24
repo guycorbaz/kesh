@@ -1149,7 +1149,9 @@ async fn telechargement(pool: MySqlPool) {
 
 /// `nextDueAt` = dernière réussite + intervalle après un succès ; = tentative
 /// + 1 h après l'échec d'un tour planifié (parti une fois l'intervalle
-/// atteint) ; `overdue` vrai pour une réussite datée du futur.
+/// atteint) ; `overdue` vrai pour une réussite datée du futur, et
+/// `lastSuccessInFuture` (Story 32-1d, L-B5) vrai dans ce seul cas — faux pour
+/// une réussite passée.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn prochaine_et_retard(pool: MySqlPool) {
     let i = monter(pool.clone()).await;
@@ -1160,6 +1162,7 @@ async fn prochaine_et_retard(pool: MySqlPool) {
     let s = i.schedule().await;
     assert_eq!(date(&s["nextDueAt"]), t0 + TimeDelta::hours(24));
     assert_eq!(s["overdue"], false);
+    assert_eq!(s["lastSuccessInFuture"], false);
 
     // Un tour planifié qui échoue, la dernière réussite datant d'un jour.
     sqlx::query("UPDATE _kesh_backup_schedule SET last_success_at = ? WHERE id = 1")
@@ -1183,11 +1186,14 @@ async fn prochaine_et_retard(pool: MySqlPool) {
     let s = i.schedule().await;
     assert_eq!(date(&s["nextDueAt"]), t1 + TimeDelta::hours(1));
     assert_eq!(s["lastStatus"], "insufficient_space");
+    assert_eq!(s["lastSuccessInFuture"], false);
 
     sqlx::query("UPDATE _kesh_backup_schedule SET last_success_at = ? WHERE id = 1")
         .bind(Utc::now().naive_utc() + TimeDelta::days(3))
         .execute(&pool)
         .await
         .unwrap();
-    assert_eq!(i.schedule().await["overdue"], true);
+    let s = i.schedule().await;
+    assert_eq!(s["overdue"], true);
+    assert_eq!(s["lastSuccessInFuture"], true);
 }

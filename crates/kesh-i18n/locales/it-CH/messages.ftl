@@ -1665,6 +1665,7 @@ admin-backup-auto-title = Backup automatico
 admin-backup-banner-failed = L'ultimo backup automatico non è riuscito.
 admin-backup-banner-link = Amministrazione → Backup completo
 admin-backup-banner-overdue = Nessun backup automatico riuscito dal { $date }.
+admin-backup-schedule-error-out-of-domain = Impostazione del backup fuori dai valori ammessi: frequenza 6, 12, 24 o 168 ore, da 1 a 60 backup conservati.
 admin-backup-server-download = Scarica
 admin-backup-server-download-error = Il download non è riuscito.
 admin-backup-server-empty = Nessun backup sul server.
