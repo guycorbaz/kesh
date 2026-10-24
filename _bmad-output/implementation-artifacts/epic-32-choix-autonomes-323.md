@@ -470,3 +470,82 @@ P5-1.*
 - **Écartées** : garder la contrainte « par prudence » — elle bride le rollout sans motif établi ; trancher sans
   compiler que le crate entier prend l'attribut — l'agent de fiche ne compile pas, l'essai revient au développement.
 - **Réversible** : oui.
+
+*Choix C-32-3-34 à C-32-3-41 : développement (2026-10-24, agent de développement, Opus 5.5).*
+
+### C-32-3-34 — accesseurs du `Rapport` en `Option`, `attendu(…)` au handler
+
+- **Contexte** : le `Rapport<T, U>` doit exposer, sans le contenu, ce qui nomme le fichier d'un export (période
+  résolue, bornes du grand livre, `as_of`, mode de projet) ; la fiche fixe `Rapport<T, U>` à deux paramètres.
+- **Retenu** : quatre accesseurs `periode()`, `bornes_grand_livre()`, `as_of()`, `mode_projet()` qui rendent `Option`
+  selon la forme de `DetailsTrace` ; le handler les lit par `attendu(…)`, qui rend `AppError::Internal` sur `None` —
+  défaut de code, inatteignable pour le service appelé (chaque service pose toujours sa forme).
+- **Écartées** : un troisième paramètre de type (métadonnées typées) — alourdit les neuf signatures et le test ; des
+  `impl` par type de contenu — l'aiguillage sur `DetailsTrace` y reste, avec un bras inatteignable.
+- **Réversible** : oui (API interne au crate et aux tests).
+
+### C-32-3-35 — usage scellé `Usage::format_export()` ; exigences par service sur deux constantes de base
+
+- **Contexte** : chaque service est générique sur l'usage et doit choisir son exigence (affichage ou export).
+- **Retenu** : trait `Usage` scellé (`Affichage`, `Export` seuls), une méthode `format_export() -> Option<FormatExport>`,
+  qui sert aussi à l'aiguillage `tracer` et au régime du grand livre ; une constante `EXIGENCES_<SERVICE>:
+  ExigencesRapport { affichage, export }` par service (R3), huit d'entre elles égales à `LIVRES`, bâtie sur
+  `AFFICHAGE_LIVRES` et `EXPORT_SANS_MCP` ; `EXIGENCES_BALANCE_AGEE` écrite à part. Conséquence assumée : M6, posée sur
+  `EXPORT_SANS_MCP`, rougit l'AC8 (d) des **huit** services qui la partagent.
+- **Écartées** : une exigence passée en argument par le handler (le contrôle quitterait le service) ; un type privé
+  d'usage dans une méthode de trait public (E0446).
+- **Réversible** : oui.
+
+### C-32-3-36 — `forbid(unsafe_code)` sur la lib entière : essai T1 concluant, gardé
+
+- **Contexte** : C-32-3-33 renvoyait l'extension au crate à un essai de T1.
+- **Retenu** : `#![cfg_attr(not(test), forbid(unsafe_code))]` en tête de `lib.rs` **et** de `services/mod.rs`. La lib
+  compile (`cargo build -p kesh-api --all-targets`, `323-t1-build.log`) malgré `tokio::join!` dans
+  `routes/invoices.rs` : le lint ne se déclenche pas dans l'expansion de cette macro externe — **établi par
+  compilation**. M14 (`transmute` dans `poignees.rs`) : la note du compilateur désigne `services/mod.rs:100`
+  (l'attribut le plus proche) ; M14-bis (un `unsafe` dans `helpers.rs`, hors de `services/`) désigne `lib.rs:9`. Le
+  binaire `main.rs` est une autre racine de crate, non couverte.
+- **Réversible** : oui (retirer la ligne de `lib.rs`).
+
+### C-32-3-37 — demandes de service ; validations déplacées ; résolution de période en auxiliaire
+
+- **Retenu** : `DemandePeriode`, `DemandeJournaux`, `DemandeGrandLivre`, `ModeProjet`, `DemandeProjet` dans
+  `services::rapports` ; les `Query` du handler les construisent (`demande()`) ; `ProjectModeParam` (serde) reste au
+  handler, converti en `ModeProjet`. `validate_fiscal_year_id` et `parse_ledger_account_ids` passent au service
+  (privées) ; le corps de `resolve_project_report` devient `resoudre_projet`. La résolution `ReportPeriod::resolve`
+  des cinq rapports à période passe par un auxiliaire `resoudre_periode`, mais `exiger` et `validate_fiscal_year_id`
+  restent **deux lignes distinctes dans chaque service** : M3 et M3′ se posent dans le service nommé et ne rougissent
+  que lui (constaté).
+- **Réversible** : oui.
+
+### C-32-3-38 — « assertion nommée » : un message nommé par cas, cas rassemblés par volet
+
+- **Retenu** : chaque volet de l'AC8, de l'AC9 et de l'AC10 est **une** fonction de test qui parcourt ses cas
+  (services, lignes de table), rassemble les échecs dans une liste dont chaque entrée porte le volet, le service, l'usage
+  ou le numéro et le nom de ligne (`service#12 grand_livre_export_pdf_export_grand_livre_trace_en_consultation_729`),
+  et échoue une fois en les listant tous. Un rouge nomme donc chaque cas fautif, et une mutation qui n'en touche qu'un
+  (M1′, M4) le montre seul.
+- **Écartées** : une fonction `#[sqlx::test]` par cas (dix-huit × deux bases éphémères et fixtures de plus pour la
+  seule table).
+- **Réversible** : oui.
+
+### C-32-3-39 — garde (v-1) et (v-2) : « ligne réduite de ses blancs » = blancs de tête et de fin
+
+- **Retenu** : les couples comparés sont (chemin relatif à `src/`, ligne `trim()`ée). Liste d'exceptions de (v-1)
+  nommée `EXCEPTIONS_V1`, vide (P6-3) ; fabriques de (v-2) `FABRIQUES_V2` ; résidus de (vi) `RESIDUS_VI`. Plancher de
+  fichiers lus : 80 (85 au relevé du 2026-10-24) ; `services/` : cinq exactement.
+- **Réversible** : oui.
+
+### C-32-3-40 — `mesurer(span, start, body)` au handler
+
+- **Retenu** : les deux `span.record` des six exports à `span` passent par une fonction privée de `routes/reports.rs`,
+  appelée dans la fermeture `rendre` (C-32-3-28) — DRY ; aucun changement d'ordre.
+- **Réversible** : oui.
+
+### C-32-3-41 — documentation : une ligne de renvoi dans deux textes
+
+- **Retenu** (AC14) : `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (« Every handler validates company exists ») gagne une
+  phrase de renvoi au service et à `helpers::company_for_ids` ; l'arbre de `kesh-api/src` de
+  `planning-artifacts/architecture.md` gagne la ligne `services/`. Aucun manuel, ni `docs/api-external.md`, ni
+  CHANGELOG, ni README : rien de visible ne change.
+- **Réversible** : oui.

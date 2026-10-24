@@ -1,6 +1,6 @@
 # Story 32.3 : la couche de services — le motif, sur deux modules pilotes (rapports, plan comptable)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-32-3`, branche `story/32-3` partie de la spike
 `275e9b97`. Registre : `epic-32-choix-autonomes-323.md` (C-32-3-1 à C-32-3-33). Clé courte : `323`. Issue de l'epic :
@@ -627,28 +627,28 @@ handler (routes/…)            service (services/…)                        po
 
 ## Tâches
 
-- [ ] **T0** — Worktree `kesh-32-3`, branche `story/32-3` (déjà posés) ; bases `kesh_323`, `kesh_e2e_323` créées,
+- [x] **T0** — Worktree `kesh-32-3`, branche `story/32-3` (déjà posés) ; bases `kesh_323`, `kesh_e2e_323` créées,
   migrées depuis les migrations du worktree et seedées ; port attribué par l'orchestrateur ;
   `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-32-3/target` (`docs/agents-orchestration.md` § 4).
-- [ ] **T1 (AC1-AC3, AC15)** — `services/{mod,acces,poignees}.rs` ; `pub mod services;` ; `AppState::lecture()` et
+- [x] **T1 (AC1-AC3, AC15)** — `services/{mod,acces,poignees}.rs` ; `pub mod services;` ; `AppState::lecture()` et
   `trace()` ; doc-comments. **Essai du crate entier** (C-32-3-33) : poser `#![cfg_attr(not(test), forbid(unsafe_code))]`
   dans `lib.rs`, compiler (`cargo build -p kesh-api --all-targets`) ; s'il passe, le garder (l'attribut de
   `services/mod.rs` reste, M14 inchangée) ; sinon le retirer et consigner au Dev Agent Record la **cause réelle
   constatée** (fichier, ligne, message du compilateur).
-- [ ] **T2 (AC8, AC9, AC10 — rouge d'abord)** — `tests/services_motif.rs`, en **deux commits** : (i) le montage HTTP,
+- [x] **T2 (AC8, AC9, AC10 — rouge d'abord)** — `tests/services_motif.rs`, en **deux commits** : (i) le montage HTTP,
   la table et l'AC9 (b′) **seuls**, sans aucune référence à `kesh_api::services` — joués **verts sur le code d'avant
   T3** (c'est le relevé qui établit que la table est ce que le code fait aujourd'hui), résultat consigné au Dev Agent
   Record ; (ii) le reste — fixtures synthétiques, `Lecture` de test en lecture seule, AC8, AC9 (a)-(d), AC10,
   assertions nommées —, dont on constate qu'il ne compile pas ou rougit avant T3-T4.
-- [ ] **T3 (AC4, AC6, AC11)** — `services/rapports.rs` : `FormatExport`, `Affichage`, `Export`, `Rapport<T, U>`, les
+- [x] **T3 (AC4, AC6, AC11)** — `services/rapports.rs` : `FormatExport`, `Affichage`, `Export`, `Rapport<T, U>`, les
   neuf services, `identite_societe`, `Rapport::nouveau`, l'aiguillage `tracer`, la trace (les sept corps recopiés, actions
   littérales ; le doc-comment de conventions rattaché à `emit_report_audit`, AC6) ; `routes/reports.rs` : handlers minces, `load_pdf_context(&ContexteAcces, &Lecture)` (mise en forme
   seule), import `FormatExport as ExportFormat` ; gate ciblé.
-- [ ] **T4 (AC5)** — `helpers.rs::company_for_ids` (et délégation de `get_company_for`) ; `services/plan_comptable.rs` ;
+- [x] **T4 (AC5)** — `helpers.rs::company_for_ids` (et délégation de `get_company_for`) ; `services/plan_comptable.rs` ;
   `list_accounts` mince ; gate ciblé.
-- [ ] **T5 (AC12)** — mutations M1 à M14 (M1′, M2′, M2″, M3′, M11-bis) et M1-témoin, chacune tuée ou déclarée
+- [x] **T5 (AC12)** — mutations M1 à M14 (M1′, M2′, M2″, M3′, M11-bis) et M1-témoin, chacune tuée ou déclarée
   (M1 en échafaudage, M12 équivalente hors minuit).
-- [ ] **T6 (AC7, AC13, AC14)** — contrôles de l'AC7, gate complet et E2E complet au dernier commit de code ; Dev Agent
+- [x] **T6 (AC7, AC13, AC14)** — contrôles de l'AC7, gate complet et E2E complet au dernier commit de code ; Dev Agent
   Record : chiffres réellement exécutés, liste exacte des fichiers de l'AC7, inventaire de l'AC11.
 
 ## Dev Notes
@@ -821,9 +821,147 @@ d'attention* ; `planning-artifacts/epic-32-spike-mcp.md` § 4.3, § 4.4, § 5.3.
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, en autonomie, worktree `kesh-32-3`), 2026-10-24. Choix consignés : C-32-3-34 à
+C-32-3-41 (registre `epic-32-choix-autonomes-323.md`).
+
+### Étape 0 — recontrôle des points renvoyés par les validations P6 et P7 (ligne lue citée)
+
+- **P6-2 / P7-3** — `config.rs` : `#[cfg(test)]` l. 1665 (`mod tests` l. 1666), l. 3134 (`mod cookie_secure_tests`
+  l. 3135), l. 3292 (`mod smtp_config_tests` l. 3293), l. 3600 (`mod mot_de_passe_base_tests` l. 3601) ; le premier
+  `unsafe` du fichier est l. 1691 (`grep -n "unsafe" config.rs`), donc **tous** dans des modules de test, dont
+  `cookie_secure_tests`. L'énumération de l'AC1 est à compléter de ce module. **Confirmé par compilation** : la lib hors
+  tests compile avec `forbid(unsafe_code)` (`323-t1-build.log`).
+- **P6-3 / P7-4** — la liste d'exceptions de (v-1) est la constante `EXCEPTIONS_V1` de `tests/services_motif.rs`, vide.
+- **P6-4 / P7-4** — l'essai T1 garde les deux attributs (`lib.rs:9`, `services/mod.rs:100`). M14 (`poignees.rs`) : la
+  note du compilateur désigne `crates/kesh-api/src/services/mod.rs:100:31` ; M14-bis (un `unsafe` dans `helpers.rs`,
+  hors de `services/`) désigne `crates/kesh-api/src/lib.rs:9:31` (`323-mut-M14.log`, `323-mut-M14bis.log`).
+- **P7-1** — l'entrée « Validation P6 » attribue l'atténuation à l'AC1 et à *Le motif* ; le diff `26731b29` l'a portée
+  sur deux annotations du Change Log. Relevé daté, laissé tel quel (annotation P7 déjà écrite).
+- **P7-2** — « un précédent publié le contredit » (AC1) est lu comme « suggère » ; **tranché par compilation** à T1 : la
+  lib, qui contient `tokio::join!` (`routes/invoices.rs:1156`), compile sous `forbid(unsafe_code)` — le lint ne se
+  déclenche pas dans l'expansion de cette macro externe (C-32-3-36).
+
 ### Completion Notes List
 
+- **T0** — bases `kesh_323` et `kesh_e2e_323` créées, migrées (migrations du worktree) et seedées, remises à zéro avant
+  le gate complet ; `CARGO_TARGET_DIR` du worktree ; `node_modules` par `cp -al` ; port 3323.
+- **T1** — `services/{mod,acces,poignees}.rs`, `pub mod services;`, `AppState::lecture()`/`trace()` (méthodes, aucun
+  champ). **Essai du crate entier concluant** : `#![cfg_attr(not(test), forbid(unsafe_code))]` gardé en tête de
+  `lib.rs` (C-32-3-36) ; `cargo build -p kesh-api --all-targets` vert (`323-t1-build.log`).
+- **T2 (i)** — `tests/services_motif.rs` : montage HTTP, fixtures synthétiques, `TABLE_DES_TRACES` (constante unique,
+  symboles `$fy`…`$asof`), AC9 (b′). **Joué vert sur le code d'avant T3** (commit `d720bb7e`) :
+  `table_des_traces_par_la_route` 1 passed (`323-t2i-route.log`) — la table est ce que le code faisait.
+- **T2 (ii)** — AC8, AC9 (a)-(d), AC10 : commit `2850a9e9`, **ne compilait pas** avant T3-T4 (`E0432` sur
+  `services::rapports` et `services::plan_comptable`, constaté par `cargo check`).
+- **T3-T4** — `services/rapports.rs`, `services/plan_comptable.rs`, `helpers::company_for_ids`, handlers minces
+  (`be6043e6`). Forme retenue : `exiger` et la validation restent deux lignes distinctes dans chaque service, la
+  résolution de période passe par l'auxiliaire `resoudre_periode` (C-32-3-37) — M3 et M3′ ne rougissent que le service
+  nommé. Accesseurs du `Rapport` en `Option`, lus par `attendu(…)` (C-32-3-34). Le `mod tests` de `reports.rs` est
+  identique octet pour octet (commande de l'AC7 → vide).
+- **AC8, cas sans objet** : pas de (c-val) ni de (c-lec) pour `balance_agee` (sa demande ne porte rien) ; pas de
+  (c-lec) pour le grand livre (aucune entité nommée par la demande n'est lue avant la génération). Chaque cas (c) porte
+  aussi un **contrôle** : avec la portée, la même demande échoue bien (erreur non `Forbidden`).
+- **AC9 (a), branches** : les fixtures atteignent une ligne de TVA au taux `8.10` (assertion « rows non vide ») et une
+  ligne de balance âgée ; un témoin établit que la `Lecture` de test refuse l'écriture (`INSERT` → 1792,
+  `ac9_temoin_la_lecture_de_test_refuse_l_ecriture`). **Non atteintes, non revendiquées** : les diminutions de
+  contre-prestation du rapport de TVA (aucun solde d'escompte ni de perte), les sous-projets (`resolve_scope` d'une
+  racine sans enfant), un projet borné (`start_date`/`end_date`), le grand livre avec `include_zero` et pagination
+  au-delà du plafond, la balance âgée avec règlement partiel.
+- **AC10, mise en forme rustfmt des deux lignes de (v-2)** : `services::poignees::Lecture::new(self.pool.clone())` et
+  `services::poignees::Trace::new(self.pool.clone())` (`lib.rs:153`, `:162`). Plancher du balayage de `src/` : 80 (85
+  fichiers lus) ; `services/` : 5 exactement. « Ligne réduite » = `trim()` (C-32-3-39).
+- **AC11 — inventaire clos** (écrit aussi au doc-comment de `services/mod.rs`) : (1) les sept fonctions d'audit, dix-huit
+  sites d'appel (un par handler, par l'aiguillage `tracer`), toutes sur `Trace` ; (2) `api_keys::touch_last_used`
+  (middleware, hors service, inchangée) ; (3) aucune autre — générateurs de `kesh-report`, `ReportPeriod::resolve`,
+  `resolve_scope`, `identite_societe`, `company_for_ids`/`get_company_for`, `list_by_company`,
+  `letterable_account_ids` ne font que lire ; confirmé sur les branches exercées par l'AC9 (a).
+  `grep -rn "get_or_create" crates/kesh-api/src/routes/reports.rs crates/kesh-api/src/routes/accounts.rs
+  crates/kesh-api/src/services crates/kesh-api/src/helpers.rs` → rien (au dernier commit de code).
+- **AC15** : `grep -rniE "transaction read only|tx_read_only" crates/kesh-api/src` → vide.
+- **AC1** : `grep -rnE "axum|AppState|CurrentUser" crates/kesh-api/src/services | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//'`
+  → `acces.rs:15` (`use crate::middleware::auth::CurrentUser;`) et `acces.rs:69` (`pub fn depuis_api(u: &CurrentUser)
+  -> Self {`), seules.
+- **AC14** : aucun manuel, `docs/api-external.md`, CHANGELOG ni README touché (rien de visible ne change) ; une phrase
+  de renvoi dans `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (« Every handler validates company exists ») et la ligne
+  `services/` dans l'arbre de `planning-artifacts/architecture.md` (C-32-3-41) ; doc-comments de module de
+  `routes/reports.rs` et `routes/accounts.rs` renvoient à `services`.
+
+#### Mutations (T5, AC12) — une à la fois, restauration `git checkout -- <f> && touch <f>`, diff résiduel nul
+
+Campagne `323-campagne.log` (diffs `323-mut-<nom>.diff`, journaux `323-mut-<nom>.log`), gate `binary(services_motif)`
+plus le binaire nommé :
+
+| Mutation | Rouge constaté |
+|---|---|
+| M1 (échafaudage `lecture_m1` + `Trace::new(self.lecture_m1.pool().clone())` aux deux `tracer`) | AC9 (b) : les **18** lignes (« 0 trace neuve ») ; AC10 (v-2) ; AC9 (b′) **vert**, comme prévu |
+| M1′ (même échafaudage, `exporter` seul, garde `GrandLivre`) | AC9 (b) : la seule ligne 12 (`…_729`) ; AC10 (v-2) (attendu) |
+| M1-témoin (`Trace` du test sur le pool en lecture seule) | AC9 (b) : les 18 lignes |
+| M2 (`exiger` retiré de `bilan`) | AC8 (a) ×2, (c-val), (c-lec), (d) de `Bilan` |
+| M2′ (`exiger` retiré de `lister`) | AC8 (a) ×2, (c-lec) de `lister` |
+| M2″ (`exiger` retiré d'`identite_societe`) | ses deux assertions MCP |
+| M3 (`exiger` après la génération, `journaux`) | AC8 (c-val) et (c-lec) de `Journaux` ; (a) vert |
+| M3′ (`exiger` entre validation et résolution, `bilan`) | AC8 (c-val) de `Bilan` seul ; (c-lec) vert |
+| M4 (`insert_in_tx` retiré, balance âgée × export) | ligne 14 de l'AC9 (b) et de l'AC9 (b′) |
+| M5 (`balance_agee` exige `BooksRead`) | AC8 (a) `{BooksRead}` ; et AC8 (b) |
+| M6 (`EXPORT_SANS_MCP` porte `Some(BooksRead)`) | AC8 (d) des **huit** services qui la partagent (C-32-3-35) |
+| M7 (export de la balance âgée à `Consultation`) | AC8 (e) ; `aged_receivables_export_forbidden_for_consultation` **vert** (le middleware refuse d'abord) |
+| M8 (`generate_balance_sheet(&state.pool, …)` dans `get_balance_sheet`) | AC10 (i) |
+| M9 (tracer avant `rendre`) | AC9 (c), neuf services |
+| M10 (`fiscalYearId` dans les deux fonctions de période) | lignes 1 à 10 de l'AC9 (b) et (b′), et `report_generated_audit_emitted_on_success` |
+| M11 (`Lecture::pool()` en `pub(crate)` + `state.lecture().pool()` dans `get_balance_sheet`) | AC10 (v-1) |
+| M11, élargissement seul | **aucun rouge** — forme que les gardes ne voient pas, déclarée (AC10) |
+| M11-bis (élargissement + `Lecture::pool(&state.lecture())`) | AC10 (v-1) |
+| M12 (`as_of` recalculé dans les deux branches balance âgée de `tracer`) | **aucun rouge — équivalente hors minuit**, déclarée ; la règle tient par la structure (une seule variable `as_of`) |
+| M13 (`export_trial_balance` par `Affichage` + `afficher`) | AC10 (vii) et ligne 6 de l'AC9 (b′) (`action` `report.generated`) ; AC9 (b) vert |
+| M14 (`transmute::<Lecture, Trace>` dans `poignees.rs`) | **rouge de compilation** : `error: usage of an unsafe block`, `note: the lint level is defined here --> crates/kesh-api/src/services/mod.rs:100:31` |
+| M14-bis (`unsafe` dans `helpers.rs`, contrôle de l'attribut de la lib) | rouge de compilation, niveau défini à `crates/kesh-api/src/lib.rs:9:31` |
+
+#### Gates réellement exécutés
+
+- **Gate ciblé** (au commit `be6043e6`, avant la campagne) : `fmt` et `clippy -D warnings` sur le workspace verts ;
+  `nextest` sur `services_motif`, les neuf binaires de l'AC7, les huit gardes de sources et la lib de `kesh-api` :
+  **808 passés, 0 échec** (`323-t3-cible.log`). Tests exécutés par binaire : `services_motif` 19, `reports_e2e` 38,
+  `opening_balances_e2e` 31, `reports_export_e2e` 20, `accounts_e2e` 19, `idor_multi_tenant_e2e` 14,
+  `letterings_e2e` 11, `vat_report_e2e` 10, `project_reports_e2e` 7, `open_items_e2e` 7 ; gardes :
+  `configuration_transmise` 30, `textes_coherents` 18, `admin_pat_denied_e2e` 16, `audit_label_registry` 11,
+  `audit_route_registry` 11, `bank_account_closed_inventory` 9, `test_schema_guard` 7, `letterings_lexical` 7 ;
+  lib `kesh-api` 523. ⚠️ Les comptes de la fiche (`grep -c "sqlx::test"`) dépassent d'une unité les tests exécutés
+  pour `reports_e2e` (39), `reports_export_e2e` (21), `vat_report_e2e` (11), `project_reports_e2e` (8) : la mention
+  `sqlx::test` de leur commentaire d'en-tête est comptée ; `grep -c '^#\[sqlx::test'` rend 38, 20, 10, 7.
+- **AC7, relancé au dernier commit de code** : `git diff --diff-filter=MDR --name-only $(git merge-base HEAD
+  origin/main) HEAD -- crates/kesh-api/tests` → vide ; `grep -rlE "/api/v1/reports|/api/v1/accounts"
+  crates/kesh-api/tests` → les neuf fichiers de la fiche, plus `services_motif.rs` ; `grep -rlnE
+  "include_str!|read_to_string|read_dir" crates/*/tests` → les dix-sept de la fiche, plus `services_motif.rs`.
+- **Gate complet** au dernier commit de code `be6043e6`, bases remises à zéro d'abord : `scripts/test-fast.sh --ci`
+  (garde des droits conforme, `fmt`, `clippy`, `nextest`) → **3990 passés, 7 ignorés, 0 échec**
+  (`323-gate-complet.log`) — 3971 + 19 neufs.
+- **Frontend** (même révision) : `npm run check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` PASS,
+  `test:unit` **1910 passés**, `build` vert (`323-frontend-*.log`).
+- **E2E Playwright complet** (même révision, recette de `docs/testing.md`, port 3323, base `kesh_e2e_323`, dossiers
+  `/tmp/kesh-e2e-323`) : **315 passés, 7 échecs, 17 ignorés** (`323-e2e.log`). Les sept échecs, jugés fichier par
+  fichier contre § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` — les sept de la **KF-029 (#97)** ; aucun autre.
+- Tests ajoutés (de `08a6f1af` à `be6043e6`) : **19**, tous dans `tests/services_motif.rs` (13 `#[sqlx::test]`,
+  6 `#[test]`) ; aucun fichier de test existant modifié.
+
 ### File List
+
+- `crates/kesh-api/src/services/mod.rs` (neuf)
+- `crates/kesh-api/src/services/acces.rs` (neuf)
+- `crates/kesh-api/src/services/poignees.rs` (neuf)
+- `crates/kesh-api/src/services/rapports.rs` (neuf)
+- `crates/kesh-api/src/services/plan_comptable.rs` (neuf)
+- `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/src/routes/reports.rs`
+- `crates/kesh-api/src/routes/accounts.rs`
+- `crates/kesh-api/src/helpers.rs`
+- `crates/kesh-api/tests/services_motif.rs` (neuf)
+- `docs/MULTI-TENANT-SCOPING-PATTERNS.md`
+- `_bmad-output/planning-artifacts/architecture.md`
+- `_bmad-output/implementation-artifacts/32-3-services-motif.md`
+- `_bmad-output/implementation-artifacts/epic-32-choix-autonomes-323.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/323-review-prompt-p1.md` (neuf)
 
 ## Change Log
 
@@ -1037,3 +1175,14 @@ d'attention* ; `planning-artifacts/epic-32-spike-mcp.md` § 4.3, § 4.4, § 5.3.
     des modules de test (relu par la lentille) : l'énumération de l'AC1 est à compléter de lui à T1.
   - **P7-4** — P6-3 (nommer la constante d'exceptions de la garde (v-1)) et P6-4 (M14 sur les deux attributs si
     l'essai T1 les garde) font partie des tâches T1 et M14, bien qu'écrits seulement ici.
+
+### Développement (2026-10-24, Opus 5.5, agent de développement, en autonomie)
+
+- T0 à T6 faits ; commits `7a2ac2f0` (T1), `d720bb7e` (T2 (i), vert avant T3), `64d957a5` (rustfmt), `2850a9e9`
+  (T2 (ii), rouge de compilation), `be6043e6` (T3-T4, dernier commit de code), puis le commit de documentation de fin.
+- Gates au dernier commit de code : complet **3990/3990** (7 ignorés), frontend 1910 Vitest, E2E **315 passés, 7
+  échecs** (les sept de KF-029), détail au Dev Agent Record. Vingt-deux mutations jouées, toutes tuées sauf deux
+  déclarées (M11 élargissement seul, M12 équivalente).
+- Choix C-32-3-34 à C-32-3-41 ; essai T1 concluant (`forbid(unsafe_code)` sur la lib). Écart à la fiche : aucun sur le
+  comportement ; les quatre comptes `sqlx::test` de l'AC7 comptaient une mention de commentaire (Dev Agent Record).
+- Prompt de la revue de code P1 : `323-review-prompt-p1.md` (complète, **Sonnet**, lentilles B, E, A).
