@@ -48,9 +48,9 @@ Pour **chaque fait** du tableau « État des lieux », de « Prémisses… » et
 `git show` et **copie la sortie**. Axes, tous à exercer :
 
 1. **Compose** : `docker-compose.yml` et `docker-compose.prod.yml` — `DATABASE_URL`, `container_name`, ports, volumes, réseaux,
-   lignes citées (l. 76-78 pour les montages). `git diff v0.14.0 HEAD -- docker-compose.yml docker-compose.prod.yml .env.example Dockerfile` :
+   lignes citées (l. 140, 152-153 pour les montages). `git diff v0.14.0 HEAD -- docker-compose.yml docker-compose.prod.yml .env.example Dockerfile` :
    « quatre lignes de commentaires » est-il exact ? Les deux fichiers sont-ils bien nommés comme la fiche le dit au manuel
-   Synology (`admin-manual.tex` autour de la l. 574) ?
+   Synology (`admin-manual.tex` autour de la l. 573) ?
 2. **`.env.example`** : `DATABASE_URL=<EDIT…>`, `KESH_JWT_SECRET=<GENERATE_ME…>`, `MARIADB_*` commentées, `KESH_COOKIE_SECURE=true` ;
    le refus des placeholders au démarrage (`crates/kesh-api/src/config.rs`, `is_template_placeholder`).
 3. **Manuel** : sections et lignes citées (`Test de restauration périodique` l. 1598, `Restaurer sur une nouvelle machine`
