@@ -2117,3 +2117,21 @@ Les deux MEDIUM, vérifiés au code par l'orchestrateur (règle des MEDIUM de Ha
   si l'état d'assistant ne se charge pas — l'autorité reste le RBAC du serveur).
 - Gates : la remédiation ne change que deux commentaires et le manuel ; l'E2E complet est rejoué au dernier commit de code
   de la story (règle D7). Passe suivante : ciblée P3 (Sonnet) sur ce commit.
+
+### Gates au dernier commit de code `06cc4ad4` de la 31-1b (2026-10-24)
+
+Bases `kesh_311b` et `kesh_e2e_311b` remises à zéro (DROP/CREATE, `sqlx migrate run`, `seed-dev-db.sql`) avant les
+gates ; aucun code modifié. Journaux : `kesh-gate-logs/311b-final-{backend,frontend,e2e,e2e-backend}.log`.
+
+| Gate | Résultat |
+|---|---|
+| `scripts/test-fast.sh` (fmt, clippy, nextest) | vert — **3908 tests exécutés, 3908 passés, 7 ignorés** (161 s) |
+| `npm run check` | rc 0 (avertissements `state_referenced_locally` préexistants) |
+| `npm run lint-i18n-ownership` | rc 0 |
+| `npm run test:unit` | **1866 tests passés, 159 fichiers** |
+| `npm run build` | rc 0 |
+| E2E Playwright complet (port 3312, `KESH_INBOX_DIR`, `KESH_DOCUMENTS_DIR`, `KESH_ADMIN_BACKUP_DIR` au backend et au runner) | **312 passés, 7 échoués, 17 ignorés** (12,6 min) |
+
+Les 7 échecs E2E sont exactement les sept de la KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* :
+`mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
+Aucun échec hors liste ; KF-052 (`sidebar-navigation:75`) n'a pas déclenché.
