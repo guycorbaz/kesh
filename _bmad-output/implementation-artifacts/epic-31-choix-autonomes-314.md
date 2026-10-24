@@ -313,3 +313,24 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   down -v` sans `-f` (le geste que le principe directeur s'interdit ; à constater peut-être en T3, non autorisé ici) ;
   `prune`.
 - **Réversible** : oui.
+
+### C-31-4-18 — Validation P5 remédiée : R3 propagé jusqu'au bout, et le critère du manuel n'est pas celui du développement (agent de remédiation, 2026-10-24)
+
+- **Contexte** : P5 (Opus, passe ciblée sur le seul commit de la remédiation P4), T 0/0/2/5, aucun finding réfuté. (1) R3
+  (étape 0 après le contrôle 3, enregistrement direct dans `$COPIE/telechargements/`) laissait trois énoncés à l'ancien
+  état : la parenthèse « aucun secret réel dans `/var/tmp` » (fausse depuis R3), l'exemplaire « créé hors de `$COPIE` »,
+  le « déplacé » du contrôle 3. (2) C-31-4-17 avait écrit à l'AC4, qui décrit **le manuel**, un critère (*N* ≥ 1, échec de
+  préparation, renvois à la pièce et au PDF de la T1) qui ne vaut que pour la sauvegarde synthétique : une production sans
+  pièce y aurait constaté un « échec », et la vérification des écritures et des factures de l'étape 5 avait disparu.
+- **Retenu** :
+  1. Le secret réel est dans `/var/tmp` dès l'étape 0 ; la garantie est la **destruction de `$COPIE` à tout arrêt**
+     (AC7 (d)). `source.keshbackup` se pose par `mv` depuis `$COPIE/telechargements/` après le contrôle 9, puis `chmod
+     0600`. Le « hors de `$COPIE` » ne reste que pour le repli du constat (s).
+  2. **Deux critères séparés** : au manuel, 0 pièce manquante et autant de pièces restaurées que l'export en a annoncé,
+     plus les vérifications de l'étape 5 (écriture récente, liste des factures) ; au développement (T1, Dev Notes), *N*
+     ≥ 1. Cela **précise** le point 1 de C-31-4-17 (l'entrée reste écrite, non réécrite).
+  3. LOW T3 à T7, mécaniques (voir le Change Log) ; le repli (i) → (ii) est écrit et (i) rangé parmi les « non
+     éprouvés » de l'AC10.
+- **Écartées** : une garde lexicale sur l'ordre des étapes (C-31-4-15 : aucun outillage) ; abandonner l'égalité avec le
+  compte de l'export, plus forte que *N* ≥ 1 et valable dans les deux cas (une lecture de deux nombres à l'écran).
+- **Réversible** : oui.
