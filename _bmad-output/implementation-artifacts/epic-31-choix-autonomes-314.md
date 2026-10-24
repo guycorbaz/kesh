@@ -278,3 +278,38 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Écartées** : conserver M12/M13 réécrites en « toutes les occurrences » (elles protégeaient une garde retirée) ;
   rattacher une issue P4 aux dix sites (le compte des issues ne baisse pas).
 - **Réversible** : oui.
+
+### C-31-4-17 — Validation P4 remédiée : la source de la sauvegarde se prépare à l'écran, et rien de sensible ne précède `$COPIE` (agent de remédiation, 2026-10-24)
+
+- **Contexte** : P4 (Sonnet), R 0/0/3/5 et F 0/0/1/6, aucun finding réfuté. Trois constats de fond, tous nés de C-31-4-15/16
+  ou de leur lecture. (1) `kesh_seed::seed_demo` (`crates/kesh-seed/src/lib.rs` l. 139-143, 272-296) ne pose que la société,
+  le plan PME, **un exercice**, les réglages de facturation et les taux de TVA : ni écriture, ni exercice suivant, ni pièce ;
+  C-31-4-16 point 1 (« 0 pièce manquante », *N* possiblement nul) rendait le critère de l'AC4 **vrai par construction** et
+  la source inapte au geste 2 de l'AC5. (2) L'« arrêt » sur le reste d'une répétition antérieure visait un `$COPIE` qui
+  n'existe pas encore. (3) L'étape 0 déposait le `.keshbackup` de la production et l'export de souveraineté dans le
+  dossier de téléchargements **avant** tout contrôle.
+- **Retenu** :
+  1. **T1 prescrit des gestes à l'écran, journalisés**, sur l'instance de démonstration avant l'export : exercice suivant ;
+     écriture 1300/2300 du dernier jour de l'exercice courant ; au moins une pièce (fixture synthétique du dépôt
+     `spc_e2e_invoice.png`, déposée dans le dossier d'import de l'instance source puis *Documents à traiter → Importer le
+     dossier*) ; PDF figé d'une facture **si l'écran le permet**, sinon « non éprouvé ». **Critère de l'AC4 : *N* ≥ 1 et 0
+     manquante** ; *N* = 0 est un échec de préparation de la source. Le renvoi aux étapes 2 à 5 de *Restaurer sur une
+     nouvelle machine* dit lesquelles de leurs vérifications s'appliquent. Cela **remplace le point 1 de C-31-4-16**
+     (l'entrée reste écrite, non réécrite).
+  2. **L'étape 0 se joue après les contrôles 1 à 3** et enregistre ses fichiers directement dans
+     `$COPIE/telechargements/` (créé par `mkdir -m 0700`, sans `-p`, après la vérification de vacuité). Un arrêt aux
+     contrôles 1 ou 2 n'a donc rien à nettoyer ; après l'étape 0, l'arrêt retire à la main un exemplaire atterri dans le
+     dossier du navigateur (repli du constat (s)).
+  3. **L'arrêt sur reste d'une répétition antérieure** a un chemin écrit : dossier existant → `COPIE` y est affectée et
+     (b) s'applique avec sa garde ; dossier disparu → `docker rm -f` / `volume rm` / `network rm` appliqués aux seuls
+     identifiants rendus par les filtres d'étiquette, éprouvé **à blanc** (constat (u)), exécution réelle « non éprouvée »
+     (AC10).
+  4. LOW : R4 (`mkdir` de `telechargements`), R5 (contrôle 1 seule issue corrective), R6 (un seul `if` pour les deux
+     gestes sans `sudo` ; deux refus de plus constatés à l'essai (iii)), R7 (annotation datée au Change Log), R8 (trois
+     variables `DOCKER_*` de plus), F2 (`COPIE` rétablie après chaque cas), F3 (port ≠ 80, > 1023), F4 (ôter le `#`
+     des deux `MARIADB_*`), F5 (machine Linux), F6 (en-tête lu à l'onglet Réseau, à constater), F7 (commandes en
+     listing).
+- **Écartées** : un script de remise à zéro des restes (C-31-4-15 : aucun outillage) ; un `docker compose -p kesh-repetition
+  down -v` sans `-f` (le geste que le principe directeur s'interdit ; à constater peut-être en T3, non autorisé ici) ;
+  `prune`.
+- **Réversible** : oui.
