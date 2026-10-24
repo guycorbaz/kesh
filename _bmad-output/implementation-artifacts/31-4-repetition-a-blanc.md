@@ -2,8 +2,9 @@
 
 Status: ready-for-dev
 
-*Fiche rédigée le 2026-10-24, en autonomie ; remédiée le même jour après la validation P1 (Opus, lentilles R et F),
-puis après la validation P2 (Sonnet, lentilles R et F ; choix C-31-4-13 et C-31-4-14 de l'orchestrateur).
+*Fiche rédigée le 2026-10-24, en autonomie ; remédiée le même jour après la validation P1 (Opus, lentilles R et F), après
+la P2 (Sonnet ; choix C-31-4-13 et C-31-4-14), puis après la P3 (Opus ; **signal de recyclage déclaré, sortie par retrait**,
+choix C-31-4-15 de l'orchestrateur : le script de fixture, son test shell, l'enveloppe Rust et la garde G22 sont retirés).
 Registre : `epic-31-choix-autonomes-314.md`. Aucune issue GitHub ne porte cette story (la 29-7 est née en validation P2
 de la 29-1 ; son sort a été tranché par Guy à la rétrospective de l'Epic 29, Q1 : reportée **après #503**, avant la
 clôture de l'exercice 2026). Cahier des charges d'origine : commentaire de la clé `29-7-repetition-a-blanc` de
@@ -49,16 +50,14 @@ contre-passation des transitoires, la clôture, la réouverture.
 | Manuel : existant | `admin-manual.tex` § *Sauvegarde et restauration* : `Test de restauration périodique` (l. 1598, **sans `\label`** ; OLICo art. 10 al. 1 ; son étape 3 exige aussi un export de souveraineté dont le SHA-256 égale celui de la production) ; `Export/import d'installation via l'interface Kesh` (l. 1851) ; `Restaurer sur une nouvelle machine` (l. 2013, `sec:restauration-machine-neuve`, livrée par la 31-1b). **Son étape 1 recrée le `.env` depuis l'ancien et reprend `KESH_SMTP_*` et les dossiers** (l. 2018-2022) : l'inverse de la copie — **le renvoi ne vaut que pour ses étapes 2 à 5** (validation P1, R4/F6). **Renvoi relatif** (validation P2, F4) : l'encadré de fin de `Backup natif sur Synology DSM` (`sec:backup-dsm`, l. 1613) écrit « \textbf{Test de restauration annuel obligatoire} (cf. sous-section précédente OLICo Art. 10 al. 1) » (l. 1847, seule occurrence de « sous-section précédente/suivante ») : il désigne aujourd'hui `Test de restauration périodique` ; une sous-section insérée entre les deux le rendrait faux. Le « (cf. section précédente) » de l. 2085 vise la *section* qui précède *Mise à jour* : l'insertion d'une sous-section ne le déplace pas |
 | Manuel : gestes de clôture | `user-manual.tex` : `Préparer la clôture` (`sec:preparer-cloture`, l. 792), `Les transitoires de fin d'exercice` (`sec:transitoires`, l. 685 ; bouton « Contre-passer au début de l'exercice suivant », l. 699), `Clôture d'un exercice` (l. **823**, sans label), `Réouverture d'un exercice clôturé` (`sec:reouverture-exercice`, l. 843). **Deux documents compilés séparément, aucun paquet `xr`** : un `\ref` du manuel d'administration vers ces labels rendrait « ?? » ; la convention est le renvoi **en prose** (« manuel utilisateur, \emph{…} », `admin-manual.tex` l. 886, 2149, 2213). Défaut préexistant : le chemin du menu s'écrit « Paramètres → Exercices comptables » (l. 794, 845) et « Administration → Exercices comptables » (l. 827) ; le menu le range sous *Administration* (`routes/(app)/+layout.svelte` l. 118-124) — ~~signalé, non traité ici~~ **corrigé par la story (C-31-4-13, AC13)**. *(Annoté en remédiation P2, 2026-10-24 — R6 : le même chemin s'écrit aussi dans le manuel d'administration, `admin-manual.tex` l. 1445 et 1451 ; `grep -nE 'Paramètres[^.]{0,60}Exercices' docs/manual/fr/*.tex` rend ces quatre lignes et elles seules. **Précision de fait** : l'ancien chemin n'est pas une impasse — la page *Paramètres* (`/settings`, elle-même rangée sous *Administration*, `+layout.svelte` l. 130) porte une carte *Exercices comptables* et son bouton *Gérer* (`routes/(app)/settings/+page.svelte` l. 582-590, Story 3.7) ; le défaut est que les manuels écrivent deux chemins pour un même écran, et que celui des l. 794, 845, 1445, 1451 n'est pas l'entrée du menu.)* |
 | Macros du manuel | `\keshscreenshot` n'est définie que dans le préambule du manuel utilisateur (`user-manual.tex` l. 15) : ni `kesh-style.sty`, ni `admin-manual.tex` ne l'ont |
-| Gardes qui lisent déjà le manuel d'administration | `crates/kesh-api/tests/configuration_transmise.rs` : **G14** (services nommés par `docker compose <verbe> <service>` ; la forme `docker compose -p <projet> …` **n'est pas lue**, angle mort écrit l. 2660-2662), **G15** (volumes cités ; le préfixe `kesh-repetition_` est accepté, l. 2757-2759), **G16 (e)** (liste **fermée** des « Hyper Backup » hors des sections Synology, l. 2779-2793 : nommer Hyper Backup dans la sous-section la ferait rougir) |
-| Parcours déjà automatisé | `frontend/tests/e2e/fiscal-year-closing-journey.spec.ts` (29-1b) joue : exercices 2025 et 2026, comptes `1300`/`1020`, compte bancaire lié, relevé CAMT `camt053_v04_year_end.xml`, préparation (K2 et K3 en attention), rapprochement manuel, régularisation de 250.00 au 31.12.2025, contre-passation, clôture, réouverture. **La répétition en est la version « copie du NAS »**, pas un nouveau test fonctionnel. `backup-restore-new-install.spec.ts` exporte **par l'écran** (l. 103-105, `exportByScreen`), non par l'API ; la facture du helper `createAndValidateInvoiceViaApi` est **datée du jour** (`helpers/api-fixtures.ts` l. 105-106) ; le dépôt dans la boîte d'import écrit dans `KESH_INBOX_DIR`, par défaut `/tmp/kesh-e2e/inbox` (`helpers/inbox.ts` l. 27, 100), avec une poignée de main (l. 153-160) |
-| Hors mode test | les routes `/api/v1/_test` ne sont montées qu'en `test_mode` (`lib.rs` l. 1153-1157) ; hors de ce mode, la requête tombe sur le repli `ServeDir` (l. 175-176, 1167), et `test_endpoints_e2e.rs` l. 97-104 admet **404 ou 405** : le refus de la fixture ne peut pas reposer sur un « 404 » |
-| Authentification de l'API (validation P2, R4/F7) | `_test/seed` est monté hors du routeur protégé (`lib.rs` l. 1153-1157 : `main_router.nest("/api/v1/_test", …)` après `merge(protected)`) : **sans jeton**. Les autres routes de la fixture en exigent un : `inbox-import` Comptable+, `full-export` Admin et refusé aux jetons d'accès personnels (`lib.rs` l. 249-251). Le preset `with-company-no-fy` crée deux administrateurs, `admin`/`admin123` et `changeme`/`changeme` (`kesh-db/src/test_fixtures.rs`, doc de `seed_accounting_company_no_fy`). `POST /api/v1/auth/login` (`lib.rs` l. 1118) prend `{"username","password"}` (`routes/auth.rs` l. 107-110) et rend un corps **camelCase** dont `accessToken` (`LoginResponse`, `rename_all = "camelCase"`, l. 133-142 — et non `access_token`), utilisable en `Authorization: Bearer` (`middleware/auth.rs`) ; un jeton de session n'est pas un jeton d'accès personnel |
-| Gel du PDF d'une facture (validation P2, F3) | `routes/issued_invoice_pdf.rs` l. 1-14 : le PDF émis est **figé au premier rendu après validation** ; la validation seule ne fige rien. Les déclencheurs : `GET /api/v1/invoices/{id}/pdf` (`lib.rs` l. 863) et l'envoi par courriel. Le rendu exige une facture `validated`, son **contact**, et un **compte bancaire principal** de la société (`routes/invoice_pdf_service.rs`, `find_primary`) — `fiscal-year-closing-journey.spec.ts` l. 181 crée le compte avec `isPrimary: true`, `helpers/api-fixtures.ts` l. 39 crée le contact par `POST /api/v1/contacts`. Sans ce `GET`, la sauvegarde de la fixture ne porterait qu'**une** pièce |
+| Gardes qui lisent déjà le manuel d'administration | `crates/kesh-api/tests/configuration_transmise.rs` : **G14** (services nommés par `docker compose <verbe> <service>` ; la forme `docker compose -p <projet> …` **n'est pas lue**, angle mort écrit l. 2660-2662), **G15** (volumes cités ; le préfixe `kesh-repetition_` est accepté, l. 2762), **G16 (e)** (liste **fermée** des « Hyper Backup » hors des sections Synology, constante `HYPER_BACKUP_HORS_SYNOLOGY`, l. 2785 et suivantes : nommer Hyper Backup dans la sous-section la ferait rougir) |
+| Parcours déjà automatisé | `frontend/tests/e2e/fiscal-year-closing-journey.spec.ts` (29-1b) joue : exercices 2025 et 2026, comptes `1300`/`1020`, compte bancaire lié, relevé CAMT `camt053_v04_year_end.xml`, préparation (K2 et K3 en attention), rapprochement manuel, régularisation de 250.00 au 31.12.2025, contre-passation, clôture, réouverture. **La répétition en est la version « copie du NAS »**, pas un nouveau test fonctionnel. `backup-restore-new-install.spec.ts` exporte **par l'écran** (l. 103-105, `exportByScreen`) |
+| Instance de démonstration (P3, C-31-4-15) | l'assistant d'installation propose la **démonstration** (`POST /api/v1/onboarding/seed-demo`, `routes/onboarding.rs` l. 204-229, `kesh_seed::seed_demo` ; manuel d'administration l. 1409-1413) : c'est la source de la sauvegarde synthétique, exportée **par l'écran** (*Administration → Sauvegarde complète*) au format 2. **Non établi à la fiche** : ce que la démonstration porte exactement (exercices, écriture de régularisation 1300/2300, factures, pièces) — le développeur le **relève au journal** (T1) et, s'il manque une écriture de régularisation, la **saisit à l'écran** dans l'instance de démonstration avant l'export (donnée synthétique). Aucune exigence de PDF figé ni de nombre de pièces |
 | Garde G19 | `crates/kesh-api/tests/textes_coherents.rs` l. 1188 : toute URL `raw.githubusercontent.com/guycorbaz/kesh/<réf>/…` des `.tex`, du README et de `website/` doit porter `v<\keshVersion>` (au 2026-10-24 : **`v0.14.0`**, `kesh-style.sty` l. 64). Au bump de release (0.15.0), elle rougit tant que les URL n'ont pas suivi — **ce qui est voulu** et suffit à tenir l'URL de la répétition |
 | Droits de la station | `sudo -n true` → *interactive authentication is required* : **un agent n'a pas `sudo`**. Les dossiers `log/`, `inbox/`, `documents/`, `backup/` d'une copie sont créés **par Docker, en root** (le conteneur tourne en root) : leur suppression est le point où la procédure doit offrir un chemin **sans `sudo`** (C-31-4-5) |
 | Station, images | `gcorbaz/kesh:0.13.2`, `0.13.3` et d'autres anciennes présentes ; **aucune image portant le format 2** (la 0.15.0 n'est pas publiée). `docker build` possible depuis `main` (`Dockerfile`, Rust 1.97). Les crates sont en `0.14.0` : l'image construite depuis `main` affiche **`0.14.0` à `/health`** tout en portant le format 2, que la `gcorbaz/kesh:0.14.0` publiée **refuse** (`admin_backup/manifest.rs` l. 25) |
 | Santé de la version | `GET /health` → `{"status":"ok","db":true,"version":"…"}` (`crates/kesh-api/src/routes/health.rs` l. 38-41) : c'est **là** que « la version relevée » se lit |
-| Précédent de destruction gardée | `scripts/synology/recette.sh` : conteneurs et réseau de test à nom propre, `trap 'rm -rf "$W"' EXIT` (l. 43) — modèle pour la fixture et la garde du `rm -rf` |
+| Précédent de destruction gardée | `scripts/synology/recette.sh` : conteneurs et réseau de test à nom propre, `trap 'rm -rf "$W"' EXIT` (l. 43) — modèle pour l'écriture de la garde du `rm -rf` |
 
 ## Prémisses de l'issue / du cahier des charges : établies, corrigées, ajoutées
 
@@ -135,34 +134,32 @@ Le manuel peut écrire les commandes sur deux lignes (`\`), jamais les raccourci
 session où la fonction manque retomberait sur les défauts implicites (C-31-4-10 (c)). Ces comportements de Compose viennent
 de sa documentation : **ils sont des constats à faire en T3, avant d'écrire le manuel** (voir T3).
 
-*(Amendé en remédiation P2, 2026-10-24 — R2/F2.)* Le principe vaut pour les commandes **qui désignent un projet** :
-`config`, `pull`, `up`, `ps`, `logs`, `exec`, `down`. `docker compose ls -a` (contrôle 2, qui doit voir **tous** les
-projets) et `docker compose version` (contrôle 1) n'en désignent aucun et ne portent **ni** `-p` **ni**
-`--project-directory`. La contradiction relevée par R2/F2 visait G22 (e), qui exigeait ces drapeaux de *chaque*
-`docker compose` : **(e) est retirée** (C-31-4-14), le point est sans objet pour la garde ; il reste dit ici pour le
-lecteur. Plus aucune garde ne lit chaque commande : leur forme est tenue par le journal d'exécution et la T8 (AC11).
+*(Amendé en remédiation P2, puis P3.)* Le principe vaut pour les commandes **qui désignent un projet** : `config`, `pull`,
+`up`, `ps`, `logs`, `exec`, `down`. `docker compose ls -a` (contrôle 2, qui doit voir **tous** les projets) et
+`docker compose version` (contrôle 1) n'en désignent aucun et ne portent **ni** `-p` **ni** `--project-directory`. Aucune
+garde automatique ne lit la forme des commandes (la garde G22 est retirée, C-31-4-15) : elle est tenue par le **journal
+d'exécution** et le rejeu depuis le PDF (T8).
 
 ## Périmètre
 
 **Dedans** : une sous-section du manuel d'administration (`.tex` **et** PDF), et un `\label` posé sur la sous-section
-voisine `Test de restauration périodique` (mécanique, pour le renvoi) ; un script de **fixture synthétique** versionné
-(`scripts/repetition-fixture.sh`) qui fabrique la sauvegarde servant à écrire et à rejouer la procédure, avec son test
-(`scripts/tests/repetition-fixture.test.sh`) rattaché au gate par une enveloppe Rust ; une **garde** de texte (G22) qui
-épingle les contrôles de la copie ; l'entrée `CHANGELOG`. **La procédure est jouée réellement au développement**, journal
-à l'appui.
+voisine `Test de restauration périodique` (mécanique, pour le renvoi) ; l'entrée `CHANGELOG`. **La procédure est jouée
+réellement au développement** sur une sauvegarde synthétique exportée par l'écran depuis une instance de démonstration,
+journal à l'appui. Aucun script, aucun test shell, aucune garde de texte nouvelle : la justesse de la procédure est portée
+par son exécution journalisée et par la relecture du manuel (`.tex` et PDF) en revue (C-31-4-15).
 
-*(Ajouté en remédiation P2, 2026-10-24 — C-31-4-13 élargi par R6, et F4.)* **Dedans aussi** : le chemin des exercices
-comptables écrit tel que le menu le range, dans les **deux** manuels (`user-manual.tex` l. 794, 845 ; `admin-manual.tex`
-l. 1445, 1451 ; AC13), avec la régénération de `user-manual.pdf` ; et le renvoi relatif « cf. sous-section précédente »
-de `admin-manual.tex` l. 1847, remplacé par `\S\ref{sec:test-restauration}` (AC1). Corrections mécaniques : deux `.tex`
-et deux PDF, sous le seuil de la règle de splitting.
+**Dedans aussi** *(C-31-4-13)* : le chemin des exercices comptables écrit tel que le menu le range, dans les **deux**
+manuels (`user-manual.tex` l. 794, 845 ; `admin-manual.tex` l. 1445, 1451 ; AC13), avec la régénération de
+`user-manual.pdf` ; et le renvoi relatif « cf. sous-section précédente » de `admin-manual.tex` l. 1847, remplacé par
+`\S\ref{sec:test-restauration}` (AC1). Corrections mécaniques : deux `.tex` et deux PDF, sous le seuil de la règle de
+splitting.
 
 **Dehors** (voir *Hors périmètre*) : toute modification du code du produit, des compose ou de `.env.example` (les noms
 fixes sont **signalés**, non corrigés, n° 1) ; la répétition **sur le NAS** (impossible, ci-dessous) ; le manuel
-utilisateur **hors du chemin des exercices** (AC13) *(amendé en remédiation P2 : la fiche écrivait « le manuel
-utilisateur (le défaut de chemin de menu est signalé, n° 2) »)* ; une garde de hiérarchie des chemins de menu (C-31-4-13) ;
-les trois autres langues (le manuel d'administration n'existe qu'en français, `docs/manual/{de,en,it}/` ne porte que des
-`README.md`) ; la sauvegarde automatique (31-1c).
+utilisateur **hors du chemin des exercices** (AC13) ; **l'application** : les messages et replis qui écrivent « Paramètres
+→ Exercices comptables » (AC13) ; une garde de hiérarchie des chemins de menu ; les trois autres langues (le manuel
+d'administration n'existe qu'en français, `docs/manual/{de,en,it}/` ne porte que des `README.md`) ; la sauvegarde
+automatique (31-1c) ; tout outillage de fixture (retiré en P3, une story ultérieure pourra le proposer).
 
 ## Critères d'acceptation
 
@@ -192,7 +189,8 @@ restaure aussi, ses pièces manquent, ce que la copie montrera) ; *que la copie 
 `Exporter`, sans le recopier).
 
 **AC3 — les contrôles de la copie : les huit premiers AVANT le premier `up` (R1, R2, F5).** Toutes les commandes Compose
-suivent le *principe directeur*. Dans l'ordre, chacun avec sa **sortie attendue** écrite, et **arrêt** sinon :
+suivent le *principe directeur*. Dans l'ordre, chacun avec sa **sortie attendue** écrite, et **arrêt** sinon (« arrêt » est
+défini une fois pour toutes à l'AC7 (d) : destruction, puis reprise au contrôle 1) :
  1. **Environnement neutre, démon local.** `env | grep -E '^(COMPOSE_|KESH_|MARIADB_|DOCKER_HOST=|DOCKER_CONTEXT=)'` ne
     rend rien ; sinon `unset` de chaque variable listée, et contrôle refait. `docker context show` est lu et
     `docker context inspect --format '{{.Endpoints.docker.Host}}'` rend une adresse `unix://` (démon de la machine),
@@ -219,7 +217,8 @@ suivent le *principe directeur*. Dans l'ordre, chacun avec sa **sortie attendue*
     - `[ "$(realpath -e -- "$COPIE")" = "$COPIE" ]` réussit (aucun lien ni `..` dans le chemin, `/var/tmp` compris :
       s'il est lui-même un lien sur la machine, le contrôle échoue, et c'est un arrêt sûr — constat T3) ;
     - `test -z "$(ls -A -- "$COPIE")"` réussit — dossier **vide**, vérifié **avant** le premier fichier qu'on y pose
-      (l'exemplaire `source.keshbackup` de *La marche*, étape 1, puis les téléchargements du contrôle 4 — F11) ;
+      (les fichiers sensibles de l'étape 0 déplacés après ce contrôle, puis les téléchargements du contrôle 4 ; l'exemplaire
+      `source.keshbackup` n'est posé qu'**après le contrôle 9**, AC4) ;
     - second filet seulement : `findmnt -T "$COPIE"` rend un système de fichiers local (ni `cifs`, ni `nfs*`, ni
       `fuse.*`) — il écarte un `/var/tmp` monté depuis le réseau, **pas** un dossier synchronisé, et le manuel le dit.
     Les pièces réelles restaurées et la sauvegarde de sécurité vivront dans ce dossier : synchronisé, il les ferait
@@ -244,8 +243,8 @@ suivent le *principe directeur*. Dans l'ordre, chacun avec sa **sortie attendue*
     les rendrait et apprendrait au lecteur à passer outre un contrôle — validation P1, F2).
  7. **Première lecture de la configuration** (le `.env` est posé : les `:?` sont satisfaits). Avec le seul premier `-f` :
     `config --services` rend **exactement** `mariadb` et `kesh-api`, en **ensemble** (l'ordre de sortie n'est pas établi —
-    R10 (n)) — **c'est le contrôle décisif** : le compose Synology
-    n'a qu'un service ; `config` rend en première ligne `name: kesh-repetition` ; sa `DATABASE_URL` contient
+    validation P2, R10) — **c'est le contrôle décisif** : le compose Synology
+    n'a qu'un service ; *(P3, R-L4)* la sortie porte `KESH_SMTP_HOST` **vide** (la copie n'envoie aucun courriel) ; `config` rend en première ligne `name: kesh-repetition` ; sa `DATABASE_URL` contient
     `@mariadb:3306` (**second filet seulement** : le manuel prescrit cette forme au Synology aussi, l. 269) ; tous ses
     `source:` sont sous `$COPIE`, hormis le volume nommé `kesh-mariadb-data`.
  8. **Override, puis configuration relue.** `$COPIE/docker-compose.override.yml` : `image: gcorbaz/kesh:<version relevée>`
@@ -254,8 +253,11 @@ suivent le *principe directeur*. Dans l'ordre, chacun avec sa **sortie attendue*
     données réelles au prochain démarrage de Docker ; prise en compte à constater en T3)*. Les commandes portent
     désormais les **deux** `-f`. Le contrôle 7 est **refait sur la sortie finale**, et en plus : l'`image:` est celle
     épinglée ; *(précisé en remédiation P2, R1/F8)* le service `kesh-api` porte **une seule** publication de port, avec
-    `host_ip: 127.0.0.1` et `published: "<port choisi>"` ; la sortie ne contient **aucun** `published: "80"`, **aucun**
-    `0.0.0.0`, et le service `mariadb` **aucune** publication. Deux publications, ou une sans `host_ip`, signifient que
+    `host_ip: 127.0.0.1` et `published: "<port choisi>"` ; **dans le bloc `ports:` de `kesh-api`** *(P3, R1)*, aucun
+    `published: "80"` et aucun `host_ip: 0.0.0.0` ; le service `mariadb` **aucune** publication. ⚠️ Le `0.0.0.0` de
+    `KESH_HOST: 0.0.0.0` (défaut du compose, adresse d'écoute **dans** le conteneur) **n'est pas une publication** et se
+    trouve dans toute sortie correcte : le contrôle ne cherche **pas** `0.0.0.0` dans la sortie entière, et le manuel dit
+    de **ne pas** poser `KESH_HOST` au `.env` (constat T3 (p)). Deux publications, ou une sans `host_ip`, signifient que
     l'override n'a pas écrasé la liste : arrêt.
  9. **Seulement alors : l'image, le démarrage, la version.** `pull kesh-api` (une version mal écrite échoue ici, au lieu
     d'une construction tentée dans `$COPIE`, `build: context: .`) ; `up -d` ; `curl -fsS http://127.0.0.1:<port>/health` :
@@ -271,18 +273,22 @@ suivent le *principe directeur*. Dans l'ordre, chacun avec sa **sortie attendue*
 sauvegarde », l'import et la reconnexion, et écrit : « **l'étape 1 (le `.env`) ne vaut pas ici** : le `.env` de la copie
 est celui des contrôles 4 à 6, rien n'est repris de l'ancien ». Il ne redit que ce qui est **propre à la copie** :
 l'adresse (`http://127.0.0.1:<port>`) ; le fichier à importer — le `.keshbackup` pris sur la production par
-**Administration → Sauvegarde complète** —, dont la répétition travaille sur **un exemplaire placé dans
-`$COPIE/source.keshbackup`** (mode 0600) : l'original, où qu'il soit conservé, n'est ni déplacé ni supprimé par la
-procédure, et un exemplaire **créé pour l'occasion** hors de `$COPIE` (un téléchargement du navigateur) y est
-**déplacé** — *(ajouté en remédiation P2, F14 LOW)* le manuel dit en toutes lettres que cet exemplaire **n'est pas
-une sauvegarde à conserver** et sera détruit avec la copie : qui veut le garder en fait d'abord une copie ailleurs ;
-tout fichier téléchargé depuis la copie (un PDF de facture) va dans `$COPIE/telechargements/` ; la lecture
-du bilan (« pièces restaurées / manquantes ») ; la reconnexion avec **les identifiants de la production**. **Critère de
-réussite** nommé : le bilan annonce *N* pièces restaurées et **0 manquante** pour une sauvegarde de format 2 ; la facture
-la plus récente de la production est dans la liste ; son PDF se télécharge ; un document fournisseur s'affiche.
-*(Ajouté en remédiation P2, F10 LOW.)* Les commandes que ces étapes 2 à 5 écrivent pour l'installation ordinaire
-(`docker compose logs kesh-api`, étape 5) se jouent, dans la copie, **selon le *principe directeur*** : la sous-section
-les redonne sous cette forme plutôt que de laisser le lecteur recopier la forme courte contre le dossier courant.
+**Administration → Sauvegarde complète** —, dont la répétition travaille sur **un exemplaire** `$COPIE/source.keshbackup`
+(mode 0600) **posé seulement après le contrôle 9**, juste avant l'import *(P3, R5 : un arrêt aux contrôles 4 à 9 ne laisse
+ainsi aucun secret réel dans `/var/tmp`)* : l'original, où qu'il soit conservé, n'est ni déplacé ni supprimé par la
+procédure, et un exemplaire **créé pour l'occasion** hors de `$COPIE` (un téléchargement du navigateur) y est **déplacé**
+(`mv`, et non copié) ; le manuel dit en toutes lettres que cet exemplaire **n'est pas une sauvegarde à conserver** et sera
+détruit avec la copie : qui veut le garder en fait d'abord une copie ailleurs. **Tout fichier sensible** — l'exemplaire,
+les **exports de souveraineté** de la production et de la copie, tout fichier téléchargé depuis la copie (un PDF de
+facture) — **se déplace dans `$COPIE/telechargements/`** dès qu'il existe (l'export de la production, produit avant la
+copie, y est déplacé après le contrôle 3) ; aucun ne reste dans le dossier de téléchargements du navigateur, que
+Synology Drive Client peut surveiller. La suite : la lecture du bilan (« pièces restaurées / manquantes ») ; la
+reconnexion avec **les identifiants de la production**. **Critère de réussite** nommé : le bilan annonce *N* pièces
+restaurées et **0 manquante** pour une sauvegarde de format 2 (*N* peut valoir 0 si la source n'en porte aucune : le
+journal dit ce que la source portait) ; les écritures et les factures que la source portait sont dans la copie.
+Les commandes que ces étapes 2 à 5 écrivent pour l'installation ordinaire (`docker compose logs kesh-api`, étape 5) se
+jouent, dans la copie, **selon le *principe directeur*** : la sous-section les redonne sous cette forme plutôt que de
+laisser le lecteur recopier la forme courte contre le dossier courant.
 
 **AC5 — la répétition des gestes de la clôture, avec pour chacun ce qu'on doit voir.** Quatre étapes, chacune renvoyant
 au manuel utilisateur **en prose, par le titre de sa section** (« manuel utilisateur, \emph{Préparer la clôture} », comme
@@ -307,122 +313,100 @@ points signalés par la préparation, refus rencontrés, pièces manquantes) à 
 **vaut test de restauration annuel** (OLICo art. 10 al. 1, `Test de restauration périodique`, `\S\ref{sec:test-restauration}`)
 **seulement si** le lecteur fait aussi, **avant les gestes de la clôture** (qui modifient la copie), l'étape 3 de ce test :
 l'export de souveraineté et la comparaison de son SHA-256 avec celui de la production — celui-ci produit **sur la
-production, à l'étape 0, avant le `.keshbackup`** (*La marche* ; ajouté en remédiation P2, F13 LOW : sans lui, l'empreinte
-de la copie n'a rien à quoi se comparer). Si le constat de T3 montre que les
-deux empreintes ne peuvent pas être égales par construction, le manuel le dit et ne prétend pas que la répétition vaut ce
-test. Aucune valeur chiffrée de l'installation de Guy n'entre dans le manuel.
+production, à l'étape 0, avant le `.keshbackup`**, et **déplacé dans `$COPIE/telechargements/`** après le contrôle 3 (son
+SHA-256 se note au procès-verbal) ; l'export de la copie y va aussi. Si le constat de T3 montre que les deux empreintes ne
+peuvent pas être égales par construction, le manuel le dit et ne prétend pas que la répétition vaut ce test. Aucune
+valeur chiffrée de l'installation de Guy n'entre dans le manuel.
 
-**AC7 — la copie ne laisse rien derrière elle.** (a) **Ce qui est détruit** : les conteneurs, le volume
+**AC7 — la copie ne laisse rien derrière elle.** (a) **Ce qui est détruit**, nommé : les conteneurs, le volume
 `kesh-repetition_kesh-mariadb-data`, le réseau, et **le dossier `$COPIE` entier** — qui contient l'exemplaire
-`source.keshbackup`, le `.env`, **toute sauvegarde produite par la copie** (`backup/kesh-pre-import-*` et toute autre) et
-les téléchargements de `$COPIE/telechargements/`. L'original de la sauvegarde n'est jamais touché. (b) **La
-destruction** : `down -v` selon le *principe directeur* (`-p kesh-repetition`, `--project-directory`, les deux `-f`), puis
-la suppression de `$COPIE` — dossiers `log/`, `inbox/`, `documents/`, `backup/` **créés par Docker, en root** : deux
-chemins écrits et éprouvés, **`sudo rm -rf "$COPIE"`** et, **sans `sudo`**, `docker run --rm -v "$COPIE":/copie
---entrypoint sh <image mariadb déjà tirée> -c 'rm -rf /copie/log /copie/inbox /copie/documents /copie/backup'` puis
-`rm -rf "$COPIE"`. Chaque `rm -rf` et le `docker run -v` sont précédés de la **garde**, *(réécrite en remédiation P2 —
-C-31-4-14, R8, F5)* **dans le même listing** que le geste qu'elle protège :
-- `$COPIE` est non vide ;
-- `[ "$(dirname -- "$COPIE")" = /var/tmp ]` — directement sous `/var/tmp` (donc **absolu** : un chemin relatif passé à
-  `-v` crée un volume nommé, et le `rm` tourne à vide — validation P1, R L2) ;
-- `case "$(basename -- "$COPIE")" in kesh-repetition-*) … ;; esac` — dernier élément nommé ;
-- `test -d "$COPIE"` et `test ! -L "$COPIE"` — un dossier existant, **pas un lien** (le `-v "$COPIE":/copie` suivrait le
-  lien, et le `rm -rf` du conteneur détruirait les homonymes du dossier visé) ;
-- `[ "$(realpath -e -- "$COPIE")" = "$COPIE" ]` — le chemin résolu **est** le chemin écrit. Les tests de texte
-  (`dirname`, `basename`) ne lisent que la chaîne : ils acceptent un `/var/tmp` qui serait lui-même un lien vers un autre
-  disque, et ne voient pas un remplacement du dossier par un lien entre deux commandes. Une barre finale
-  (`…/kesh-repetition-x/`) fait aussi échouer la comparaison : refus sûr, le manuel dit d'écrire `COPIE` sans elle.
-La garde s'écrit en un seul bloc `if … then <geste> else echo "refus : …" fi`, **sans `exit` ni `return`** (le premier
-fermerait le terminal du lecteur, le second n'a de sens que dans une fonction, que le *principe directeur* écarte).
-Consigne : un `rm -rf "$VAR"` non gardé est la faute dangereuse type ; le dev l'éprouve avec une variable vide, un chemin
-relatif **inexistant** et un lien symbolique (AC9 (iii)), et lit que la garde arrête. G22 exige la présence des jetons
-`realpath -e` et `test ! -L` (AC11) ; l'exactitude de la garde est portée par l'essai (iii) et la T8. (c) **Contrôle final** écrit : le contrôle 2 refait (ni `kesh-api` ni
-`kesh-mariadb` parmi les noms ; conteneurs, volumes et réseaux filtrés par l'étiquette `kesh-repetition` : rien — ces
-mêmes filtres ayant rendu des lignes au contrôle 9) ;
-`test ! -e "$COPIE"` ; et aucun exemplaire de la répétition (`.keshbackup`, PDF) ne subsiste dans le dossier de
-téléchargements du navigateur.
+`source.keshbackup`, le `.env`, **toute sauvegarde produite par la copie** (`backup/kesh-pre-import-*` et toute autre), les
+**exports de souveraineté** (production et copie) et les téléchargements de `$COPIE/telechargements/`. L'original de la
+sauvegarde n'est jamais touché. (b) **La destruction**, dans cet ordre : le **contrôle 1 refait** *(P3, R-L1 : le contexte
+Docker a pu changer depuis le `up` ; sur un hôte distant, `docker run -v` créerait le dossier sur le NAS)* ; `down -v`
+selon le *principe directeur* (`-p kesh-repetition`, `--project-directory`, les deux `-f`) ; puis la suppression de
+`$COPIE` — dossiers `log/`, `inbox/`, `documents/`, `backup/` **créés par Docker, en root** : deux chemins écrits et
+éprouvés, **`sudo rm -rf "$COPIE"`** et, **sans `sudo`**, `docker run --rm -v "$COPIE":/copie --entrypoint sh <image
+mariadb déjà tirée> -c 'rm -rf /copie/log /copie/inbox /copie/documents /copie/backup'` puis `rm -rf "$COPIE"`. Chaque
+`rm -rf` et le `docker run -v` sont précédés de la **garde**, écrite **exactement** ainsi et **dans le même listing** que
+le geste qu'elle protège :
 
-**AC8 — la fixture synthétique : `scripts/repetition-fixture.sh`.** Un script `bash` (+ `curl`, `jq`, déjà présents sur
-la station) qui, **contre une instance source en `KESH_TEST_MODE`** (base `kesh_314`, port attribué, loopback), fabrique
-une comptabilité **synthétique** et en tire un `.keshbackup` de format 2.
-- **Arguments, trois, sans défaut ni héritage de l'environnement** : `repetition-fixture.sh <url> <dossier de sortie>
-  <boîte de dépôt>`. Le script ne lit pas `KESH_INBOX_DIR`. La boîte est **propre à l'instance source** : le dev lance
-  `cargo run` avec `KESH_INBOX_DIR`, `KESH_DOCUMENTS_DIR` et `KESH_ADMIN_BACKUP_DIR` sous
-  `/home/gcorbaz/devel/kesh-gate-logs/314-source/` (jamais `/tmp/kesh-e2e/`, partagé entre worktrees). Le script
-  n'écrit **que** dans le dossier de sortie et dans la boîte.
-- **Refus, tous avant le premier appel qui écrit** : argument manquant ; URL hors boucle locale (`http://127.0.0.1:` ou
-  `http://localhost:` seulement) ; dossier de sortie non vide ; boîte non vide ; instance injoignable ; et
-  `POST /api/v1/_test/seed` qui ne rend pas un **2xx** — **tout autre code refuse**, 404 et 405 compris (hors mode test,
-  le repli `ServeDir` peut rendre l'un ou l'autre, § État des lieux). Ce dernier refus est le seul qui empêche le
-  `TRUNCATE` de `_test/seed` sur une instance qui n'est pas en mode test.
-- **Authentification** *(ajoutée en remédiation P2 — R4/F7)* : après `_test/seed` (seul appel sans jeton, et celui qui
-  crée les utilisateurs), `POST /api/v1/auth/login` avec `{"username":"admin","password":"admin123"}` — les identifiants
-  du preset `with-company-no-fy`, **constantes du script**, écrites en tête avec leur source (`test_fixtures.rs`) : ce ne
-  sont pas des secrets (preset de test, instance en `KESH_TEST_MODE` sur la boucle locale) et elles ne s'héritent pas de
-  l'environnement, ce que les trois arguments interdisent. Le script lit `accessToken` du corps (camelCase) et le passe
-  en `Authorization: Bearer <jeton>` à **chaque** appel suivant, export compris (jeton de session, non jeton d'accès
-  personnel). Un login qui ne rend pas un 2xx, ou un corps sans `accessToken` non vide → refus, **sans appel suivant**.
-  Ces identifiants sont aussi ceux de la reconnexion de la répétition jouée sur la fixture (AC4).
-- **Contenu** : `POST /api/v1/_test/seed {"preset": "with-company-no-fy"}` ; exercices **2025 et 2026** ; comptes
-  `1300 Actifs transitoires`, `1020 Banque` ; compte bancaire lié (IBAN **de test** de `fiscal-year-closing-journey.spec.ts`,
-  `CH4431999123000889012`), créé **principal** (`isPrimary: true`, l. 181 de la spécification : le rendu du PDF l'exige)
-  et relevé CAMT `camt053_v04_year_end.xml` (fixture existante, **non rapprochée** : la
-  préparation doit la signaler) ; la **régularisation** de 250.00 au 31.12.2025 (débit 1300) ; **un contact client**
-  (`POST /api/v1/contacts`, repris de `helpers/api-fixtures.ts` l. 39) ; **une facture client à ce contact, validée**,
-  datée d'une **date fixe de 2026** (`2026-06-15`), non du jour comme le helper `createAndValidateInvoiceViaApi`, **puis
-  figée** *(ajouté en remédiation P2 — F3 : la validation ne fige rien)* par `GET /api/v1/invoices/<id>/pdf`, qui doit
-  rendre 200 et un corps commençant par `%PDF` — sinon refus ; c'est ce PDF figé qui est la seconde pièce du format 2 ;
-  **un document fournisseur** — la fixture versionnée `frontend/tests/e2e/fixtures/spc_e2e_invoice.png`, **copiée** par
-  le script dans la boîte (il ne fabrique aucune image ; R13 LOW) — importé (`POST /api/v1/inbox-import`), qui doit
-  revenir dans `accepted[]` — sinon refus : c'est la poignée de main de `helpers/inbox.ts` l. 153-160, sans sonde
-  distincte ; puis `GET /api/v1/admin/full-export` (`lib.rs` l. 251) vers `<dossier de sortie>/fixture.keshbackup`, dont
-  l'en-tête `X-Kesh-Backup-Files` (nombre de pièces emportées, `routes/admin.rs` l. 39-40, 97) doit valoir **2** et
-`X-Kesh-Backup-Files-Not-Included` **0** (sinon refus : une pièce n'a pas été emportée). Les routes et les corps sont **repris** de `fiscal-year-closing-journey.spec.ts`
-  et de `backup-restore-new-install.spec.ts` ; l'appel d'export est **écrit sur la route** (les deux spécifications
-  exportent par l'écran). Rien ne dépend du jour d'exécution. **Aucune donnée réelle**, aucun relevé du dossier
-  `~/kesh-test/` (jamais ouvert).
-- **Test** : `scripts/tests/repetition-fixture.test.sh`, sur le modèle de `scripts/tests/prepare-release.test.sh` (un
-  `curl` **factice** en tête du `PATH`, qui trace ses appels, l. 6-13 du modèle) : argument manquant, URL non locale,
-  sortie non vide, boîte non vide, instance injoignable (code de `curl` 7) ; `_test/seed` en **404** puis en **405** →
-  refus **et aucun appel suivant** dans la trace ; en **200** → le script passe à l'appel suivant (la trace en porte un
-  second) ; *(ajouté en remédiation P2, R4)* `_test/seed` en 200 puis **login en 401** → refus, et la trace s'arrête au
-  login. Le test est lancé au gate par une enveloppe `crates/kesh-api/tests/repetition_fixture_script.rs`, calquée sur
-  `crates/kesh-db/tests/prepare_release_script.rs` (un test shell que rien ne lance serait un test muet), **garde contre
-  le test muet comprise** — l'enveloppe exige le résumé final du test shell (le modèle exige « aucune assertion en échec »)
-  — ; un `jq` absent fait **rougir** le test, il ne le saute pas (R11 LOW). Le chemin nominal est exercé **au
-  développement**, sur l'instance source réelle.
+```sh
+if [ -n "$COPIE" ] \
+   && [ "$(dirname -- "$COPIE")" = /var/tmp ] \
+   && case "$(basename -- "$COPIE")" in kesh-repetition-*) true ;; *) false ;; esac \
+   && [ -d "$COPIE" ] && [ ! -L "$COPIE" ] \
+   && [ "$(realpath -e -- "$COPIE")" = "$COPIE" ]; then
+  <geste>
+else
+  echo "refus : COPIE n'est pas le dossier de la copie"
+fi
+```
+
+- **La branche `*) false`** du `case` est indispensable *(P3, R2/F2)* : un `case` sans motif correspondant rend le code
+  **0**, donc « vrai » ; écrit avec la seule branche `kesh-repetition-*)`, il laisserait passer tout dossier enfant de
+  `/var/tmp` (le `docker run -v` y tourne en root). Le manuel le dit.
+- `[ -n "$COPIE" ]` — non vide ; `dirname` égal à `/var/tmp` — directement sous `/var/tmp` (donc **absolu** : un chemin
+  relatif passé à `-v` crée un volume nommé, et le `rm` tourne à vide) ; `-d` et `! -L` — un dossier existant, **pas un
+  lien** (le `-v "$COPIE":/copie` suivrait le lien) ; `realpath -e` égal au chemin écrit — les tests de texte ne lisent que
+  la chaîne, ils acceptent un `/var/tmp` qui serait lui-même un lien. Une barre finale fait échouer la comparaison : refus
+  sûr, le manuel dit d'écrire `COPIE` sans elle.
+- **Ni `exit` ni `return`** (le premier fermerait le terminal du lecteur, le second n'a de sens que dans une fonction) ;
+  `fi` sur sa propre ligne (pas de `else echo … fi` en ligne, P3, F8).
+- Un `rm -rf "$VAR"` non gardé est la faute dangereuse type ; le dev éprouve la garde par **quatre cas** (AC9 (iii)) :
+  variable vide, chemin relatif inexistant, lien symbolique, **nom faux**.
+
+(c) **Contrôle final** écrit : le contrôle 1 est vrai ; le contrôle 2 refait (ni `kesh-api` ni `kesh-mariadb` parmi les
+noms ; conteneurs, volumes et réseaux filtrés par l'étiquette `kesh-repetition` : rien — ces mêmes filtres ayant rendu des
+lignes au contrôle 9) ; `test ! -e "$COPIE"` ; et **aucun exemplaire de la répétition** (`.keshbackup`, **ZIP de
+souveraineté**, PDF) ne subsiste dans le dossier de téléchargements du navigateur. (d) **Arrêt** *(P3, R5)* : « arrêt »,
+dans tout le manuel, veut dire : détruire (b) puis, si l'on veut reprendre, **repartir du contrôle 1** avec une
+nouvelle date — jamais un `mkdir -p`, jamais un `rm` improvisé. Une copie oubliée **reste** : `/var/tmp` survit au
+redémarrage (nettoyage à 30 jours sur la station) et le volume de la base n'est jamais nettoyé ; le manuel le dit.
+
+**AC8 — *retiré en P3 (C-31-4-15)*.** Le script de fixture, son test shell et son enveloppe Rust sont retirés (le HIGH de
+la P3 — la fixture ne pouvait pas figer un PDF sur le preset de test — et la majorité des MEDIUM de P2 et P3 portaient sur
+cet échafaudage). **À sa place** : la sauvegarde synthétique est **exportée par l'écran** (*Administration → Sauvegarde
+complète*, format 2) depuis une instance de démonstration (État des lieux, ligne « Instance de démonstration »), jouée en
+T1. Aucune donnée réelle, aucun relevé de `~/kesh-test/`.
 
 **AC9 — le journal d'exécution, hors dépôt.** `/home/gcorbaz/devel/kesh-gate-logs/314-repetition-<AAAAMMJJ>.log` :
 chaque commande du manuel **et sa sortie**, dans l'ordre, horodatée, avec le résultat des contrôles de l'AC3, les
-constats de T3, et **trois essais volontaires du refus**, aucun ne lançant de `up` :
+constats de T3, **ce que la sauvegarde source portait** (relevé de T1, nombre de pièces du bilan de l'import) et **trois
+essais volontaires du refus**, aucun ne lançant de `up` :
  (i) **le compose Synology** : `docker-compose.prod.yml` du tag, enregistré sous le nom `docker-compose.yml` dans un
      second dossier `/var/tmp/kesh-repetition-essai-<AAAAMMJJ>` (créé par le contrôle 3, comme la copie), avec un `.env`
      **synthétique** dont la `DATABASE_URL` vaut `mysql://kesh:essai@mariadb:3306/kesh` — ce compose n'a aucun `:?`
      (`grep -c ':?' docker-compose.prod.yml` → 0), la `DATABASE_URL` suffit à ce que `config` aboutisse et que seul le
-     nombre de services décide (F15 LOW) — attendu : contrôle 7, `--services` rend `kesh-api` seul → **arrêt** ; le
-     `grep` de `@mariadb:3306` **passe** (preuve qu'il ne suffit pas) ; les `source:` relatifs **passent** ; le dossier de
-     l'essai est ensuite **détruit** par la garde de l'AC7 (R12, F15) ;
+     nombre de services décide — attendu : contrôle 7, `--services` rend `kesh-api` seul → **arrêt** ; le `grep` de
+     `@mariadb:3306` **passe** (preuve qu'il ne suffit pas) ; les `source:` relatifs **passent** ; le dossier de l'essai est
+     ensuite **détruit** par la garde de l'AC7 **appliquée à ce dossier** (le journal dit la variable employée : `COPIE`
+     réaffectée au dossier de l'essai, puis **rétablie**) ;
  (ii) **un nom de projet hérité** : `export COMPOSE_PROJECT_NAME=kesh-essai-314` (jamais `kesh`, ni le nom d'une pile
       existante) — attendu : contrôle 1 le liste → arrêt ; puis, la variable posée, `config` avec `-p kesh-repetition`
       rend `name: kesh-repetition` (constat de préséance) ; puis `unset`. Ce `config` se joue sur `$COPIE` **après le
-      contrôle 5**, dont le `.env` satisfait les `:?` — sans quoi il échouerait pour une raison étrangère au constat (R12) ;
- (iii) **la garde du `rm -rf`** avec `COPIE` vide, puis relatif **et inexistant** (`kesh-repetition-absent-314`), puis
-      un **lien symbolique** `/var/tmp/kesh-repetition-lien-<AAAAMMJJ>` vers un dossier vide créé pour l'essai — chaque
-      fois depuis un dossier courant **vide** créé pour l'essai sous `/var/tmp`, jamais le worktree ni le dépôt, et le geste
-      d'abord sous la forme `echo rm -rf …` — attendu : la garde arrête, rien n'est supprimé ; le lien et son dossier
-      sont ensuite retirés (`rm` du lien, `rmdir` du dossier) (R12, F12 LOW).
+      contrôle 5**, dont le `.env` satisfait les `:?` ;
+ (iii) **la garde du `rm -rf`, quatre cas** : `COPIE` vide ; relatif **et inexistant** (`kesh-repetition-absent-314`) ; un
+      **lien symbolique** `/var/tmp/kesh-repetition-lien-<AAAAMMJJ>` vers un dossier vide créé pour l'essai ; et un
+      **nom faux** *(P3, R2/F2)* : un dossier **vide existant** `/var/tmp/essai-sans-prefixe-<AAAAMMJJ>`, créé pour
+      l'essai, que la garde doit **refuser** — chaque fois depuis un dossier courant **vide** créé pour l'essai sous
+      `/var/tmp`, jamais le worktree ni le dépôt, et le geste d'abord sous la forme `echo rm -rf …` — attendu : la garde
+      arrête, rien n'est supprimé ; les restes de l'essai sont ensuite retirés (`rm -- "$LIEN"` sans barre finale, puis
+      `rmdir` de chaque dossier créé pour l'essai, dossier courant compris).
 Le journal **ne se verse pas au dépôt** (il peut contenir des chemins et des empreintes). Les **captures** (thème clair
 seulement) de l'écran de restauration réussie, du panneau *Préparer la clôture* et de la confirmation de
 contre-passation sont prises à l'exécution et **restent hors dépôt**, avec le journal : le manuel d'administration n'a pas
 de macro de capture (`\keshscreenshot` est propre au manuel utilisateur) ; s'il en montre une, c'est par
 `\includegraphics` dans une `figure`, la capture allant dans `docs/manual/fr/screenshots/`. Les données des captures sont
-celles de la fixture synthétique.
+celles de l'instance de démonstration.
 
 **AC10 — ce qui ne s'éprouve pas sur la station, écrit comme tel.** Le manuel contient un court encadré
 (`keshnote`) *Ce que cette procédure n'a pas éprouvé* : **le Synology** (DSM, Container Manager, les ACL des dossiers
 partagés, le compose `prod` à réseau externe, la copie du `.keshbackup` depuis le NAS vers la station — gestes décrits
 par `Restaurer depuis elle`, dont la procédure est celle de la 31-1b), la **taille réelle** de l'installation (les temps
-et l'espace disque de la fixture ne valent pas ceux de l'installation de Guy ; le manuel renvoie aux ordres de grandeur
+et l'espace disque de la démonstration ne valent pas ceux de l'installation de Guy ; *(P3, R-L3)* le **moteur Docker**
+éprouvé, nommé au journal, Docker Engine en root — sous Docker Desktop, rootless ou snap, le partage de `/var/tmp` avec le
+démon n'est pas établi ; le manuel renvoie aux ordres de grandeur
 déjà écrits : « jusqu'à environ trois fois la taille du fichier »), et **l'image publiée** si la procédure a été jouée
 sur une image construite depuis `main` (C-31-4-4 : au développement, `gcorbaz/kesh:314` affiche `0.14.0` à `/health`
 tant que les crates ne sont pas bumpées, et le `pull` est remplacé par `docker image inspect`). **Comment la procédure
@@ -431,42 +415,21 @@ du fichier, déjà documentée ; (ii) les contrôles de l'AC3 sont **indépendan
 le démon et la sortie de `docker compose config`) ; (iii) le **rejeu sur l'image publiée** est demandé à la release (voir
 *Actions demandées*, n° 3). L'encadré **ne nomme pas Hyper Backup** (G16 (e), liste fermée).
 
-**AC11 — la garde G22 : des présences, rien de plus.** *(Réécrit en remédiation P2 — C-31-4-14 ; la version de la P1,
-par position, à seuils et à critère (e), est retirée : `manuel::normaliser` aplatit les sauts de ligne, si bien que ses
-critères (c), (d) et (e) étaient indécidables ou passaient à vide — R3/F1 —, et (e) rougissait sur `docker compose ls`
-— R2/F2.)* `crates/kesh-api/tests/textes_coherents.rs` gagne un test **G22** (ligne du tableau d'en-tête, issue : aucune
-→ « Story 31-4 ») qui lit `admin-manual.tex`, en retire les commentaires LaTeX (`manuel::sans_commentaires`, l. 145 :
-un jeton qui ne vivrait qu'en commentaire est absent du PDF — F1), borne la sous-section par
-`manuel::section(&source, "sec:repetition-cloture")` (l. 84) **sur ce source brut, sans `manuel::normaliser`**, et en
-extrait les listings par `manuel::listings` (l. 125), lignes conservées. Elle exige :
-(a) **la sous-section existe** : `manuel::section` la trouve (il panique sinon : rouge, jamais « vert à vide ») ;
-(b) **les présences**, chacune au moins une fois dans les listings : `-p kesh-repetition` ; `config --services` ;
-    `/health` ; et la garde du `rm -rf` : `realpath -e`, `test ! -L` et `/var/tmp` ;
-(c) **une absence** : aucune ligne de listing qui, hors commentaire shell (ligne dont le premier caractère non blanc est
-    `#`), assigne une variable `KESH_*_HOST_DIR` — motif `(?m)^[^#\n]*\bKESH_[A-Z_]*HOST_DIR\s*=`, non ancré sur
-    `KESH_` en tête de ligne, pour que `export KESH_LOG_HOST_DIR=…` ou `env KESH_X_HOST_DIR=…` soient vus (R3) ; nommer
-    la variable en prose, pour dire de ne pas la poser, reste permis.
-Les jetons de (b) vivent dans **une seule** constante (`JETONS_G22`), lue par une fonction pure
-`manques_g22(&str) -> Vec<&'static str>` ; un test unitaire **retire en mémoire chaque jeton** de la sous-section réelle
-et vérifie que `manques_g22` le rapporte (R11 : aucun jeton exigé sans sa mutation, sans éditer le `.tex` jeton par
-jeton) ; un second test vérifie qu'une ligne `# KESH_LOG_HOST_DIR=…` ne déclenche pas (c), et qu'une ligne
-`export KESH_LOG_HOST_DIR=…` la déclenche.
-Le jeton littéral `docker compose config` de C-31-4-14 **n'est pas** exigé tel quel : le *principe directeur* place
-`-p` et `--project-directory` entre `compose` et `config`, si bien qu'il n'apparaîtrait jamais dans un manuel juste ;
-`config --services` en tient lieu *(précision de remédiation P2, versée au registre)*.
-**Ce que G22 ne prouve pas, dit ici** : l'**ordre** des contrôles, la **forme** de chaque commande (drapeaux présents
-partout), la **justesse** des gestes. Ces trois-là sont portés par le **journal d'exécution réelle** (AC9, T3) et par le
-rejeu depuis le PDF (T8) — non par une garde lexicale, qu'on ne réétend pas (C-31-4-14). G19 (URL au tag) couvre déjà
-l'URL de la sous-section, sans test de plus. **G14** ne lit pas les commandes de la sous-section (forme `-p`, angle mort
-écrit de G14), et **plus aucune garde ne les lit une à une** : angle mort assumé, couvert par la T8. **G15** et **G16**
-relisent la sous-section : lancer le binaire `configuration_transmise` au gate ciblé (T5).
+**AC11 — *retiré en P3 (C-31-4-15)*.** La garde G22 (présences de jetons dans la sous-section, absence de
+`KESH_*_HOST_DIR=`, constante `JETONS_G22`, test de retrait en mémoire) est retirée avec ses lettres (a) à (e) et ses
+mutations. Ce qu'elle devait tenir — l'ordre des contrôles, la forme des commandes, la justesse des gestes — est porté par
+le **journal d'exécution réelle** (AC9, T3), le **rejeu depuis le PDF** (T8) et la **relecture du manuel en revue**, non
+par une garde lexicale. **Restent** les gardes existantes qui relisent la sous-section : **G19** (URL au tag), **G14**
+(services nommés ; la forme `-p` n'est pas lue, angle mort écrit), **G15** (volumes, préfixe `kesh-repetition_` accepté) et
+**G16** (liste fermée des « Hyper Backup » hors sections Synology) — le binaire `configuration_transmise` et la garde G19
+de `textes_coherents.rs` se relancent au gate ciblé (T5).
 
 **AC12 — CHANGELOG.** Entrée `Ajouté` dans la section `[0.15.0] — Non publié` : la répétition de clôture sur une copie,
-au manuel d'administration, jouée sur une sauvegarde complète. ~~Aucune autre entrée.~~ *(Amendé en remédiation P2,
-R6 item 6.)* Et une entrée dans une rubrique `### Corrigé` à créer dans cette section (elle n'en a pas encore,
-`CHANGELOG.md` l. 13, 40, 60) : les manuels nomment **Administration → Exercices comptables** (AC13), sur le modèle de
-l'entrée de #585 en 0.14.0 (`CHANGELOG.md` l. 106) — sans lien d'issue, aucune n'étant ouverte (C-31-4-13). Aucune
-autre entrée.
+au manuel d'administration, jouée sur une sauvegarde complète. Et une entrée dans une rubrique `### Corrigé` à créer dans
+cette section, **entre `Modifié` et `Interne`** *(P3, F12)* (elle n'en a pas encore ; `CHANGELOG.md` l. 13, 40, 60) : **les
+manuels** nomment **Administration → Exercices comptables** (AC13), sur le modèle de l'entrée de #585 en 0.14.0
+(`CHANGELOG.md` l. 106) — le libellé dit « les manuels », **non** « et les messages » (AC13), sans lien d'issue, aucune
+n'étant ouverte (C-31-4-13). Aucune autre entrée.
 
 **AC13 — le chemin des exercices comptables, écrit tel que le menu le range** *(ajouté en remédiation P2 — C-31-4-13,
 élargi par R6).* Les quatre occurrences « \emph{Paramètres} → \emph{Exercices comptables} » — `user-manual.tex` l. 794
@@ -477,61 +440,54 @@ sur les **deux** PDF régénérés (`user-manual.pdf`, `admin-manual.pdf`), `pdf
 grep -c 'Paramètres → Exercices comptables'` rend `0` pour chacun (T4). La phrase de conventions de `user-manual.tex`
 l. 59 (« \emph{Paramètres} → \emph{Utilisateurs} » donné en exemple) et les chemins internes à la page *Paramètres*
 (`Paramètres → Modèles d'e-mail`, `Paramètres → Clés API`, … : des cartes de cette page) ne sont **pas** touchés : ils
-désignent bien la page *Paramètres*. Aucune garde de hiérarchie n'est ajoutée (C-31-4-13).
+désignent bien la page *Paramètres*. Aucune garde de hiérarchie n'est ajoutée (C-31-4-13). **Résidu nommé, hors périmètre**
+*(P3, R7/F4, C-31-4-15)* : les **dix sites de l'application** qui écrivent le même chemin — `messages.ftl` des quatre
+locales (`error-fiscal-year-missing` et `opening-balances-locked-no-fiscal-year`, ×4 = 8 lignes), `notify.ts` l. 110 et
+`settings/opening-balances/+page.svelte` l. 377 — **restent** : la page *Paramètres* porte une carte *Exercices comptables*,
+le chemin est un détour valide, et corriger les messages relève du code du produit. Le contrôle de l'AC13 est donc borné
+aux **manuels** (`docs/manual/fr/*.tex`), non au dépôt entier.
 
 ## La marche prescrite (squelette ; le texte exact est écrit en exécutant)
 
-Le manuel écrit, dans cet ordre, et **ne change rien à cet ordre sans l'avoir rejoué** :
-
 0. Relever sur la production : la version (`GET /health`, champ `version`) ; si la répétition doit valoir test de
-   restauration (AC6), l'export de souveraineté **et son SHA-256** *(ajouté en remédiation P2, F13)* ; **puis** produire
-   le `.keshbackup` (*Administration → Sauvegarde complète*).
-1. Contrôles 1 à 3 (version de Compose et environnement, hôte, dossier neuf sous `/var/tmp`, vide) ; **ensuite**
-   seulement, placer l'exemplaire `$COPIE/source.keshbackup` (0600) (AC4).
+   restauration (AC6), l'export de souveraineté **et son SHA-256** ; **puis** produire le `.keshbackup`
+   (*Administration → Sauvegarde complète*). Ces fichiers sont dans le dossier de téléchargements du navigateur : ils
+   sont **déplacés dans `$COPIE/telechargements/`** dès que le contrôle 3 a créé `$COPIE` (AC4).
+1. Contrôles 1 à 3 (version de Compose et environnement, hôte, dossier neuf sous `/var/tmp`, vide) ; puis les fichiers
+   sensibles de l'étape 0 sont déplacés dans `$COPIE/telechargements/`. **L'exemplaire `$COPIE/source.keshbackup` n'est
+   pas encore posé** (AC4).
 2. Contrôles 4 à 8 : téléchargements au tag → `.env` rempli → lignes `HOST_DIR` → première lecture de `config` →
    override et relecture.
-3. Contrôle 9 : `pull`, `up -d`, version à `/health` ; ouvrir `http://127.0.0.1:<port>/setup` ; **renvoi aux étapes 2 à 5**
-   de *Restaurer sur une nouvelle machine* (AC4).
-4. Le cas échéant, l'export de souveraineté et son SHA-256 (AC6) ; puis les quatre gestes (AC5) et le constat de chacun.
+3. Contrôle 9 : `pull`, `up -d`, version à `/health` ; **seulement alors**, poser l'exemplaire `$COPIE/source.keshbackup`
+   (0600) ; ouvrir `http://127.0.0.1:<port>/setup` ; **renvoi aux étapes 2 à 5** de *Restaurer sur une nouvelle machine*
+   (AC4).
+4. Le cas échéant, l'export de souveraineté de la copie et son SHA-256 (AC6) ; puis les quatre gestes (AC5) et le constat
+   de chacun.
 5. Le procès-verbal (AC6).
-6. Destruction (AC7) et contrôle final.
+6. Destruction (AC7 (b)) et contrôle final (AC7 (c)). **Arrêt** à toute étape : AC7 (d).
 
 ## Mutations à prévoir
 
-Sous verrou, mutation → test rouge → restauration (`git checkout -- <fichier>` **puis `touch`**, § 7 de
-`docs/agents-orchestration.md`) :
+*(Table réécrite en remédiation P3 — C-31-4-15 : toutes les mutations qui visaient G22, la fixture, son test shell ou son
+enveloppe sont **retirées**, leurs numéros gardés pour les renvois datés ; **une seule reste active**, M5.)*
 
 | # | Mutation | Attendu |
 |---|---|---|
-*(Table amendée en remédiation P2 — C-31-4-14 : les mutations qui visaient l'ordre (M2), le critère (e) (M8) et un
-jeton retiré de G22 (M9) sont **retirées**, leurs numéros gardés pour les renvois ; les lettres de G22 suivent l'AC11
-réécrit.)*
+| M1 | *retirée P3 (G22 retirée ; ex-« retirer `config --services` »)* | — |
+| M2 | *retirée (P2, C-31-4-14)* | — |
+| M3 | *retirée P3 (G22 (c) retirée)* | — |
+| M4 | *retirée P3 (G22 (a) retirée)* | — |
+| M5 | écrire dans la sous-section une URL `raw.githubusercontent.com/…/main/…` | G19 rouge (garde existante, `textes_coherents.rs`) |
+| M6 à M7 | *retirées P3 (fixture)* | — |
+| M8, M9 | *retirées (P2)* | — |
+| M10 à M11 | *retirées P3 (fixture)* | — |
+| M12 à M13 | *retirées P3 (jetons de garde de G22 ; leur survie au contrôle 3 était le MEDIUM R3/F3 de la P3)* | — |
+| M14 | *retirée P3 (G22 (c))* | — |
+| M15 à M16 | *retirées P3 (fixture, garde contre le test muet)* | — |
 
-| # | Mutation | Attendu |
-|---|---|---|
-| M1 | retirer du `.tex` **toutes** les occurrences de `config --services` dans la sous-section | G22 (b) rouge |
-| M2 | *retirée (C-31-4-14 : G22 ne lit plus l'ordre)* | — |
-| M3 | ajouter `KESH_DOCUMENTS_HOST_DIR=/volume1/kesh/documents` dans un `lstlisting` de la sous-section | G22 (c) rouge |
-| M4 | renommer le label `sec:repetition-cloture` | G22 (a) rouge (sous-section introuvable, pas « vert à vide ») |
-| M5 | écrire dans la sous-section une URL `raw.githubusercontent.com/…/main/…` | G19 rouge |
-| M6 | réduire le refus de `_test/seed` à « 404 seulement » | `repetition-fixture.test.sh` rouge (cas 405), donc l'enveloppe Rust rouge |
-| M7 | retirer du script le refus « dossier de sortie non vide » | idem |
-| M8 | *retirée (C-31-4-14 : critère (e) retiré)* | — |
-| M9 | *retirée (C-31-4-14 : « étapes 2 à 5 » n'est plus un jeton de G22 ; le renvoi se contrôle au PDF, T4)* | — |
-| M10 | retirer du script le refus « boîte de dépôt non vide » | `repetition-fixture.test.sh` rouge |
-| M11 | retirer du script le refus « URL hors boucle locale » | idem |
-| M12 | retirer du `.tex` le `realpath -e` de la garde du `rm -rf` (F5) | G22 (b) rouge |
-| M13 | retirer du `.tex` le `test ! -L` de la garde | G22 (b) rouge |
-| M14 | ajouter `export KESH_LOG_HOST_DIR=/volume1/kesh/log` dans un `lstlisting` de la sous-section | G22 (c) rouge (motif non ancré, R3) |
-| M15 | retirer du script le refus sur un login non 2xx | `repetition-fixture.test.sh` rouge (cas login 401), donc l'enveloppe Rust rouge |
-| M16 | faire sortir le test shell en 0 avant son résumé final | l'enveloppe Rust rouge (garde contre le test muet, R11) |
-
-Les autres jetons de G22 (b) — `-p kesh-repetition`, `/health`, `/var/tmp` — sont tués par le test unitaire de retrait en
-mémoire (AC11), qui couvre **tous** les jetons de `JETONS_G22`, M1, M12 et M13 compris : les trois mutations de fichier
-restent comme preuve de bout en bout sur le vrai `.tex`.
-
-**Non mutable, dit ici** : l'exactitude de la procédure elle-même. Elle n'est portée que par le **journal d'exécution**
-(AC9) ; aucun test ne remplace d'avoir joué les commandes. C'est la raison d'être de la story.
+**Non mutable, dit ici** : l'exactitude de la procédure elle-même, **garde du `rm -rf` comprise**. Elle n'est portée que par
+le **journal d'exécution** (AC9, dont l'essai (iii) à quatre cas), le rejeu depuis le PDF (T8) et la relecture du manuel
+en revue ; aucun test ne remplace d'avoir joué les commandes. C'est la raison d'être de la story.
 
 ## Ce qui se vérifie à la station et ce qui ne se vérifie nulle part ici
 
@@ -563,42 +519,43 @@ restent comme preuve de bout en bout sur le vrai `.tex`.
    `29-7-repetition-a-blanc` reste `superseded` (déjà).
 3. **À la release v0.15.0, après la publication de l'image** : rejouer la procédure du manuel **avec l'image publiée**
    (pas l'image de `main`) et verser le journal à côté du premier (`314-repetition-<date>.log`). C'est ce rejeu qui lève la
-   réserve de l'AC10 (« image publiée »). Le script de fixture le rend peu coûteux (quelques minutes, hors verrou de gate
-   hormis le `docker pull`). **Cette action n'est pas un critère du développeur** : elle appartient à la release.
+   réserve de l'AC10 (« image publiée »). Le rejeu est peu coûteux (quelques minutes, hors verrou de gate hormis le
+   `docker pull`) : le manuel est la procédure, le journal de la première exécution en est le témoin. **Cette action n'est pas un critère du développeur** : elle appartient à la release.
 
 ## Tâches
 
 - [ ] **T0 — état des lieux rejoué** : `git log -1 origin/main` ; `docker ps -a` (aucune pile `kesh-api` /
       `kesh-mariadb`) ; port libre ; `sudo -n true` (confirmer l'absence de `sudo`) ; base `kesh_314` créée et migrée
       depuis les migrations **du worktree**, port d'instance source attribué par l'orchestrateur ; dossiers de l'instance
-      source sous `/home/gcorbaz/devel/kesh-gate-logs/314-source/` (AC8).
-- [ ] **T1 — la fixture** (AC8) : écrire `scripts/repetition-fixture.sh`, **son test au `curl` factice** et l'enveloppe
-      `crates/kesh-api/tests/repetition_fixture_script.rs` (rouge d'abord, M6, M7, M10, M11, M15, M16) ; la jouer contre
-      l'instance source (`cargo run`, `KESH_TEST_MODE=true`, recette de `docs/testing.md`, avec la boîte propre) ; vérifier
-      que le `.keshbackup` produit est de **format 2** et porte **deux pièces** — le document fournisseur et le PDF figé
-      de la facture : en-tête `X-Kesh-Backup-Files: 2`, et deux entrées dans la liste des pièces du manifeste (lu, sans
-      l'ouvrir ailleurs que dans le dossier temporaire de la story).
+      source sous `/home/gcorbaz/devel/kesh-gate-logs/314-source/` ; **moteur Docker** relevé au journal (Docker Engine
+      en root, ou Docker Desktop / rootless / snap : le partage de `/var/tmp` avec le démon en dépend — constat (r)).
+- [ ] **T1 — la sauvegarde synthétique** (C-31-4-15) : lancer une instance source **ordinaire** (`cargo run`, recette de
+      `docs/testing.md` **sans** `KESH_TEST_MODE`, `KESH_COOKIE_SECURE=false`, `KESH_HOST=127.0.0.1`, base `kesh_314`,
+      dossiers sous `314-source/`) ; dans l'assistant, choisir la **démonstration** ; **relever au journal ce qu'elle porte**
+      (exercices, écriture de régularisation 1300/2300, factures, pièces) et, s'il manque une régularisation, la saisir à
+      l'écran ; exporter par **Administration → Sauvegarde complète** ; vérifier que le fichier est de **format 2** (en-tête
+      `X-Kesh-Backup-Files` lu au navigateur ou au manifeste, sans l'ouvrir ailleurs que dans le dossier de la story) et
+      noter le nombre de pièces. Aucune donnée réelle, `~/kesh-test/` jamais ouvert.
 - [ ] **T2 — l'image** : construire l'image depuis `main` du worktree (`docker build -t gcorbaz/kesh:314 .`, sous verrou
       et `mem-guard.sh` ; elle n'écrase pas `latest`). Noter l'empreinte au journal.
 - [ ] **T3 — jouer la procédure** (AC3 à AC7), **avant** d'écrire le manuel, dans un `$COPIE` neuf hors dépôt ; journal
-      AC9 ; les captures utiles ; **les trois essais du refus** (AC9) ; la destruction avec `sudo` si disponible, sans
-      `sudo` (conteneur jetable) sinon. **Constats à faire et à verser au journal avant d'écrire le manuel** (tirés de la
-      documentation de Compose, non exécutés à la validation) :
+      AC9 ; les captures utiles ; **les trois essais du refus** (AC9, dont l'essai (iii) à quatre cas) ; la destruction
+      avec `sudo` si disponible, sans `sudo` (conteneur jetable) sinon. **Constats à faire et à verser au journal avant
+      d'écrire le manuel** (tirés de la documentation de Compose, non exécutés à la validation) :
       (a) `-p kesh-repetition` l'emporte sur un `COMPOSE_PROJECT_NAME` exporté (`config` → `name:`) ;
       (b) avec un `-f` explicite, `docker-compose.override.yml` **n'est pas** lu tant qu'il n'est pas nommé, et l'est
       quand il l'est ;
       (c) `--project-directory "$COPIE"` lit le `.env` de `$COPIE` quand la commande est lancée depuis un autre dossier
       (son dossier parent, jamais le dépôt) ;
       (d) sans `.env`, `config` échoue sur les `:?` (preuve que l'ordre des contrôles 5 et 7 importe) ;
-      (e) le code que rend `POST /api/v1/_test/seed` sur une instance **sans** `KESH_TEST_MODE` (404 ou 405), pour le
-      journal — le script refuse l'un et l'autre ;
+      (e) *retiré P3 (fixture)* ;
       (f) la sortie de `findmnt -T "$COPIE"` et de `docker context inspect` sur la station ;
       (g) où le navigateur dépose un téléchargement, et le réglage qui le fait demander l'emplacement ;
       (h) les SHA-256 de l'export de souveraineté, source et copie : égaux ou non (AC6) ;
       (i) `docker compose ls -a` disponible dans la version installée, **sans** `-p` ;
-      *(constats ajoutés en remédiation P2 — R1, R7, R9, R10, F8, C-31-4-14)*
-      (j) `docker compose version --short` sur la station ; le comportement de `ports: !override` sous une Compose
-      < 2.24 **si** une telle version est disponible sans installation (sinon : « non éprouvé », au manuel, AC10) ;
+      (j) `docker compose version --short` sur la station (avec ou sans `v` ; comparaison « 2.24.0 ou plus » par
+      `sort -V`, à écrire au contrôle 1) ; le comportement de `ports: !override` sous une Compose < 2.24 **si** une telle
+      version est disponible sans installation (sinon : « non éprouvé », au manuel, AC10) ;
       (k) une clé dupliquée dans le `.env` : laquelle l'emporte (pour le dire au lecteur, contrôle 5) ;
       (l) le code de retour de `docker ps -a` quand le démon est injoignable (`DOCKER_HOST=unix:///nonexistent docker ps
       -a`, inoffensif) — l'attendu « réussit (code 0) » du contrôle 2 en dépend ;
@@ -607,26 +564,36 @@ restent comme preuve de bout en bout sur le vrai `.tex`.
       (n) la sortie de `config` avec l'override : **une seule** publication de `kesh-api`, `host_ip: 127.0.0.1`, aucune sur
       `mariadb` (contrôle 8), et `restart: "no"` pris en compte ;
       (o) `/var/tmp` sur la station : système de fichiers local, pas un lien (`realpath -e /var/tmp` → `/var/tmp`), et
-      `mkdir -m 0700` sans `-p` qui échoue sur un dossier existant (contrôle 3).
+      `mkdir -m 0700` sans `-p` qui échoue sur un dossier existant (contrôle 3) ;
+      *(constats ajoutés en remédiation P3)*
+      (p) la sortie de `config` porte `KESH_HOST: 0.0.0.0` (défaut du compose) — **attendu, et sans rapport avec la
+      publication** ; le manuel dit de ne **pas** y toucher (R1) ;
+      (q) le code de sortie d'un `case` sans motif correspondant (0) et celui de la forme `*) false` (non nul), dans le
+      `if` de la garde (R2/F2) ;
+      (r) le moteur : `/var/tmp` visible du démon (Docker Engine en root : oui ; Docker Desktop, rootless, snap : à
+      constater), pour l'encadré AC10 (R-L3) ;
+      (s) que le navigateur réellement employé (Firefox en snap sur la station) peut **envoyer** un fichier de `$COPIE`
+      et **enregistrer** dans `$COPIE/telechargements/` ; à défaut, le manuel dit de déplacer par `mv` (R-L2) ;
+      (t) la sortie de `config` pour la messagerie : `KESH_SMTP_HOST` vide (contrôle 7, R-L4).
       Un constat contraire à la fiche **change la procédure** avant d'écrire le manuel, et se dit au Dev Agent Record.
 - [ ] **T4 — écrire la sous-section** à partir du journal, pas de la mémoire ; renvois **en prose** au manuel
       utilisateur, `\ref` seulement vers des labels du manuel d'administration (`sec:restauration-machine-neuve`,
-      `sec:test-restauration`, posé ici) ; encadré AC10 ; *(ajouté en remédiation P2)* le renvoi de l. 1847 réécrit
-      (AC1, F4) et les quatre chemins des exercices corrigés (AC13) ; `make fr` sous verrou — il régénère
-      **`admin-manual.pdf` et `user-manual.pdf`**, tous deux commités ; contrôler le PDF **aplati**
-      (`pdftotext … - | tr '\n' ' ' | tr -s ' '`) : la sous-section, les neuf contrôles, l'URL au tag, la phrase « ne se
-      joue jamais sur le NAS », « étapes 2 à 5 », **aucun `??`** dans la sous-section ni dans l'encadré de
-      `sec:backup-dsm` (renvoi de l. 1847) ; et, sur **chacun des deux PDF**, `grep -c 'Paramètres → Exercices comptables'`
-      sur la sortie aplatie → `0`, avec `grep -nE 'Paramètres[^.]{0,60}Exercices comptables' docs/manual/fr/*.tex` → aucun
-      résultat (AC13).
-- [ ] **T5 — G22** (AC11), tests rouges d'abord (M1, M3, M4, M5, M12, M13, M14 ; le test de retrait en mémoire de
-      chaque jeton), puis verts ; G19 relancée ; binaire `configuration_transmise` (G14, G15, G16) relancé.
-      *(Liste amendée en remédiation P2 : elle portait « M1 à M5, M8, M9 », dont M2, M8 et M9 sont retirées.)*
+      `sec:test-restauration`, posé ici) ; encadré AC10 ; le renvoi de l. 1847 réécrit (AC1) et les quatre chemins des
+      exercices corrigés (AC13) ; `make fr` sous verrou — il construit **trois** PDF (`docs/manual/Makefile` l. 35 :
+      `admin-manual`, `user-manual`, `marketing-brochure`) : `admin-manual.pdf` et `user-manual.pdf` sont commités ;
+      `marketing-brochure.pdf` est **restauré** (`git checkout -- <pdf>` puis `touch`) s'il n'a changé que par ses
+      métadonnées. Contrôler le PDF **aplati** (`pdftotext … - | tr '\n' ' ' | tr -s ' '`) : la sous-section, les neuf
+      contrôles, l'URL au tag, la phrase « ne se joue jamais sur le NAS », « étapes 2 à 5 », **aucun `??`** dans la
+      sous-section ni dans l'encadré de `sec:backup-dsm` (renvoi de l. 1847) ; et, sur **chacun des deux PDF**,
+      `grep -c 'Paramètres → Exercices comptables'` sur la sortie aplatie → `0`, avec `grep -nE 'Paramètres[^.]{0,60}Exercices
+      comptables' docs/manual/fr/*.tex` → aucun résultat (AC13). **Relecture en revue** : la garde du `rm -rf` du `.tex`
+      est comparée mot à mot à la forme de l'AC7 (branche `*) false` comprise).
+- [ ] **T5 — gardes existantes** : lancer, au gate ciblé, le binaire `configuration_transmise` (G14, G15, G16) et la garde
+      G19 de `textes_coherents.rs` ; M5 (URL `main` → G19 rouge, puis restauration).
 - [ ] **T6 — CHANGELOG** (AC12) ; `sprint-status.yaml` ; registre.
-- [ ] **T7 — gate** : `scripts/test-fast.sh` complet sous verrou au dernier commit de code, base remise à zéro d'abord ;
-      `cargo fmt`, `clippy` ; l'enveloppe `repetition_fixture_script` y passe (le test shell exige `jq` : présent sur
-      la station et sur `ubuntu-latest`) ; **E2E complet non requis** (aucun écran, aucun code produit ne change) — **à
-      dire dans le Dev Agent Record, sans l'afficher comme exécuté**.
+- [ ] **T7 — gate** : `fmt`/`clippy` si du code a changé (aucun n'est attendu) ; le gate complet n'est exigé que si un
+      fichier de code ou de test change ; **E2E complet non requis** (aucun écran, aucun code produit ne change) — **à dire
+      dans le Dev Agent Record, sans l'afficher comme exécuté**.
 - [ ] **T8 — rejouer** la procédure **à partir du manuel PDF** (et non du journal) : un second passage, en suivant le
       texte tel que livré, pour attraper l'écart entre ce qu'on a fait et ce qu'on a écrit ; corriger le manuel de ce
       que ce passage révèle. **L'image** : `gcorbaz/kesh:314`, substituée à `gcorbaz/kesh:<version relevée>` ; elle
@@ -642,26 +609,30 @@ restent comme preuve de bout en bout sur le vrai `.tex`.
   story n'a pas créé. `kesh-mariadb-dev` n'est **jamais** touché (interdit, `docs/agents-orchestration.md` § 2) — c'est
   aussi pourquoi aucun essai ne pose un nom de projet `kesh`.
 - **Pas de lecteur de la base de dev partagée** : la copie a sa propre MariaDB dans son volume ; seule l'instance
-  **source** de la fixture emploie `kesh_314` du conteneur de dev.
-- **Aucune donnée réelle** : la fixture est synthétique de bout en bout ; `~/kesh-test/` n'est pas ouvert ; le journal
-  de gate-logs ne se verse pas ; les captures ne montrent que la fixture.
+  **source** (démonstration) emploie `kesh_314` du conteneur de dev.
+- **Aucune donnée réelle** : la source est une démonstration ; `~/kesh-test/` n'est pas ouvert ; le journal de gate-logs
+  ne se verse pas ; les captures ne montrent que la démonstration.
 - **Le texte d'un manuel se vérifie contre lui-même** : T8 est le geste qui manque aux fiches qui « documentent » sans
   rejouer (les six tours de l'Epic 24, § *Le prompt d'une passe doit NOMMER le manuel*).
 - **Conventions du manuel** : `\keshcommand{}`, `\keshpath{}`, `keshwarning`/`keshnote`/`keshtip`, `lstlisting[language=bash]`.
   Éviter l'emoji ; les exemples de commandes sont ceux du journal, avec les chemins de la copie en `<…>` ou `$COPIE`.
 - **Version dans le manuel** : tant que `\keshVersion` vaut `0.14.0`, l'URL est au tag `v0.14.0` (G19). La phrase « format
   2, depuis la 0.15.0 » est déjà celle du manuel (31-1a/31-1b) ; au bump de release, G19 force la mise à jour de l'URL.
-- **Précédent de destruction gardée** : `scripts/synology/recette.sh` (noms propres, `trap … EXIT`), à imiter pour la
-  fixture (dossiers temporaires du test) et pour l'écriture de la garde.
+- **Précédent de destruction gardée** : `scripts/synology/recette.sh` (noms propres, `trap … EXIT`), à imiter pour
+  l'écriture de la garde.
+- **Contrôle 8 — `KESH_HOST`** : la sortie de `config` porte `KESH_HOST: 0.0.0.0` (défaut du compose) ; c'est l'adresse
+  d'écoute **dans** le conteneur, non une publication. Le manuel dit de ne pas y toucher.
 
 ## Hors périmètre
 
 La sauvegarde automatique (31-1c) ; la correction des noms et du port en dur du compose (issue n° 1) ; une répétition
 **sur le NAS** ; un E2E de la procédure (elle est une procédure d'exploitation sur Docker, hors du périmètre de
 Playwright) ; la traduction (le manuel d'administration n'existe qu'en français) ; le manuel utilisateur **hors du
-chemin des exercices** (AC13) ; une garde de hiérarchie des chemins de menu ; toute extension de G22 au-delà des
-présences (C-31-4-14) ; #404 et #235 (P1, nommés à la rétrospective de l'Epic 31) ; #671. *(Amendé en remédiation P2 :
-« le chemin de menu du manuel utilisateur (issue n° 2) » et « le manuel utilisateur » en sortent, C-31-4-13.)*
+chemin des exercices** (AC13) ; **les messages de l'application** qui écrivent « Paramètres → Exercices comptables »
+(catalogues `messages.ftl` des quatre locales, `notify.ts`, `settings/opening-balances/+page.svelte`) : ils restent
+**valides** par la carte *Exercices comptables* de la page *Paramètres* et relèvent du code du produit (C-31-4-13, AC13) ;
+une garde de hiérarchie des chemins de menu ; **tout outillage de fixture et toute garde de texte nouvelle** (C-31-4-15) ;
+#404 et #235 (P1, nommés à la rétrospective de l'Epic 31) ; #671.
 
 ## Change Log
 
@@ -738,6 +709,31 @@ présences (C-31-4-14) ; #404 et #235 (P1, nommés à la rétrospective de l'Epi
   16 numéros M1 à M16, dont 13 actives et 3 retirées (M2, M8, M9) (étaient 11) ; constats de la T3 : (a) à (o), 15
   (étaient 9) ; choix C-31-4-1 à 14 (étaient 12) ; issues à demander : 1 (étaient 2). Validation P3 à lancer (Opus,
   R et F ; `314-validate-prompt-p3.md`).
+- 2026-10-24 — **Validation P3** (Opus, deux lentilles, contexte frais, lecture seule). Bruts : **R 0/0/7/8**
+  (CRITICAL/HIGH/MEDIUM/LOW), **F 0/1/3/9**. **Signal de recyclage déclaré au Project Lead** (`CLAUDE.md` § *Règle de
+  splitting préventif*, amendement D5) : P1 Opus 0/1/19 → P2 Sonnet 0/0/11 → P3 Opus 0/1/10 ; les défauts naissent de ce
+  que les remédiations ajoutent **autour** de la procédure (script de fixture, test shell, enveloppe Rust, garde G22 et
+  leurs mutations ; le HIGH F1 : l'adresse de la société du preset est vide et l'IBAN de test est un QR-IBAN, le PDF ne peut
+  pas se figer). **Sortie par retrait (C-31-4-15)** : fixture, test shell, enveloppe Rust, G22 et leurs mutations, tâches,
+  AC et constats sont retirés, leurs numéros gardés (AC8, AC11, M1 à M16 sauf M5, constat (e)) ; la sauvegarde synthétique
+  s'exporte par l'écran depuis une instance de démonstration ; la justesse est portée par l'exécution journalisée, le rejeu
+  depuis le PDF (T8) et la relecture du manuel en revue. **Sans objet du fait du retrait** : F1 (HIGH) ; R3/F3 (M12/M13 ne
+  tuent rien) ; R6 (cas de refus du test shell) ; F5 (casse des en-têtes de l'export) ; F6, F7 (motif et jetons de G22) ;
+  F10 (en-tête de table des mutations, la table est réécrite) ; F11 est au contraire corrigé (ligne 53 : constante en l. 2785, volumes préfixés en l. 2762)  ;
+  R-L6, R-L8 ; les lignes d'État des
+  lieux sur `_test/seed`, l'authentification et le gel du PDF, supprimées. **Corrigés** : R1 (contrôle 8 borné au bloc
+  `ports:` de `kesh-api` ; `KESH_HOST: 0.0.0.0` attendu, constat (p)) ; R2/F2 (garde du `rm -rf` écrite **exactement**
+  avec `*) false`, essai (iii) à **quatre cas** dont le nom faux ; constat (q)) ; R4 (exports de souveraineté déplacés dans
+  `$COPIE/telechargements/`, nommés à la destruction et au contrôle final) ; R5 (exemplaire réel posé **après le
+  contrôle 9** ; « arrêt » défini à l'AC7 (d)) ; R7/F4 (dix sites de l'application nommés, **hors périmètre**, entrée
+  `Corrigé` bornée aux manuels, contrôle de l'AC13 borné aux `.tex`) ; F8 (`fi` sur sa ligne) ; F9 (renvoi « validation P2,
+  R10 ») ; F12 (`Corrigé` entre `Modifié` et `Interne`) ; F13 → constats (j), (r) ; R-L1 (contrôle 1 refait à la
+  destruction) ; R-L2 → constat (s) ; R-L3 (copie oubliée qui reste ; moteur Docker nommé à l'AC10, constat (r)) ; R-L4 →
+  constat (t) et `KESH_SMTP_HOST` vide au contrôle 7 ; R-L5 (`make fr` : trois PDF, la brochure restaurée) ; R-L7 (restes
+  des essais retirés, variable de l'essai (i) dite). **Recomptes** (fiche après remédiation, commandes à l'appui) : AC1
+  à AC13 : 13 numéros, dont 2 retirés (AC8, AC11) ; T0 à T8 : 9 (T1 et T5 réécrites) ; contrôles de l'AC3 : 9 ;
+  mutations M1 à M16 : 16 numéros, 1 active (M5), 15 retirées ; constats de la T3 (a) à (t) : 20 lettres, 1 retirée
+  ((e)) ; choix C-31-4-1 à 16 ; issues à demander : 1. Validation P4 à lancer (Sonnet, R et F ; `314-validate-prompt-p4.md`).
 
 ## Dev Agent Record
 

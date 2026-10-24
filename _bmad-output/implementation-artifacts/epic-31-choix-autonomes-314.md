@@ -261,3 +261,20 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Écartées** : redécouper la 31-4 (le recyclage est confiné à l'échafaudage) ; poursuivre (chaque passe trouvait le
   défaut suivant de ce qu'on venait d'ajouter).
 - **Réversible** : oui — une fixture scriptée pourra revenir avec sa propre story.
+
+### C-31-4-16 — Validation P3 remédiée : ce que le retrait de C-31-4-15 emporte, et ce qui reste (agent de remédiation, 2026-10-24)
+
+- **Contexte** : C-31-4-15 retire l'échafaudage. Il en découle que C-31-4-2 (script de fixture), C-31-4-7 (G22), C-31-4-11
+  (arguments et refus de la fixture) et le point 1 de C-31-4-14 (G22 réduite) sont **sans objet** ; ils restent écrits
+  ci-dessus comme relevés datés, non réécrits.
+- **Retenu** :
+  1. **Source de la sauvegarde** : une instance de démonstration ordinaire (assistant, étape *démonstration*), exportée par
+     l'écran. Ce que la démonstration porte n'est pas établi à la fiche : le développeur le relève au journal (T1) et saisit
+     à l'écran une régularisation 1300/2300 si elle manque. Aucune exigence de PDF ni de nombre de pièces ; le critère de
+     l'import devient « 0 pièce manquante ».
+  2. **Les gardes qui restent** relisent la sous-section sans qu'on les étende : G19 (M5), G14, G15, G16 (T5).
+  3. **Aucune dette nouvelle** : les dix sites de l'application (C-31-4-15, point 4) sont déjà nommés ; aucune issue
+     n'est demandée (budget d'issues, C-31-4-13), le résidu est écrit en *Hors périmètre* et à l'AC13.
+- **Écartées** : conserver M12/M13 réécrites en « toutes les occurrences » (elles protégeaient une garde retirée) ;
+  rattacher une issue P4 aux dix sites (le compte des issues ne baisse pas).
+- **Réversible** : oui.
