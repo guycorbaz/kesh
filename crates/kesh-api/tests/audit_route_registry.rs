@@ -24,12 +24,12 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 122 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 124 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (122 routes) ; celui du
-//! REGISTRE est plus large (125), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (124 routes) ; celui du
+//! REGISTRE est plus large (127), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -320,6 +320,11 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("delete", "invoices::delete_invoice", Traced, SansEcritureAuJournal),
     ("post", "dunning_reminders::cancel_reminder", Traced, SansEcritureAuJournal),
     ("post", "admin::full_import", Traced, Exemptee("restauration d'instance : geste d'administration exclusif des autres imports seulement (pas des écrivains : angle mort assumé de la restauration en vol, Story 15-12b), hors exploitation — un 1213 annule sa transaction unique et la relance manuelle est sûre")),
+    // Story 31-1c (#503) — sauvegarde automatique : le réglage
+    // (`admin.backup_schedule_updated`, dans la transaction du dépôt) et
+    // « Sauvegarder maintenant » (`admin.backup_run`, best-effort).
+    ("put", "backup_schedule::update_backup_schedule", Traced, SansEcritureAuJournal),
+    ("post", "backup_schedule::run_backup_now", Traced, SansEcritureAuJournal),
     ("put", "email_templates::update_email_template", Traced, SansEcritureAuJournal),
     ("delete", "email_templates::restore_email_template_default", Traced, SansEcritureAuJournal),
     ("put", "companies::update_company_email", Traced, SansEcritureAuJournal),
@@ -760,10 +765,10 @@ fn the_registry_partition_is_what_the_story_declares() {
         .filter(|(_, _, s, _)| matches!(s, NoMatter(_)))
         .count();
 
-    assert_eq!(LIB_ROUTES.len(), 122, "l'inventaire porte sur 122 routes");
+    assert_eq!(LIB_ROUTES.len(), 124, "l'inventaire porte sur 124 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 116,
+        traced, 118,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -777,7 +782,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          plus la clôture et la réouverture d'un compte bancaire (28-4a, #642), plus le \
          rattachement d'une transaction à un règlement (29-8, #670), plus la \
          contre-passation au début de l'exercice suivant (29-1b, #232), plus le \
-         rattachement et le détachement d'un document fournisseur (30-2c, #685)"
+         rattachement et le détachement d'un document fournisseur (30-2c, #685), plus le \
+         réglage et « Sauvegarder maintenant » de la sauvegarde automatique (31-1c, #503)"
     );
     assert_eq!(exempt, 4, "4 routes d'auth (#435)");
     assert_eq!(
@@ -786,7 +792,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        125,
+        127,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1111,15 +1117,16 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 97,
-        "96 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
+        sans_ecriture, 99,
+        "98 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
          import, 27-1 ; l'annulation d'un rejet, 28-5a ; la clôture et la réouverture d'un \
          compte bancaire, 28-4a ; le rattachement d'une transaction à un règlement, 29-8 ; \
-         le rattachement et le détachement d'un document fournisseur, 30-2c), \
+         le rattachement et le détachement d'un document fournisseur, 30-2c ; le réglage et \
+         « Sauvegarder maintenant » de la sauvegarde automatique, 31-1c), \
          plus /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
-    assert_eq!(tout.len(), 125);
+    assert_eq!(tout.len(), 127);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

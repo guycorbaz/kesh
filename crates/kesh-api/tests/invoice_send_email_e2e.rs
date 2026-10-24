@@ -115,6 +115,7 @@ async fn spawn_app(
         mailer: Arc::new(mailer),
         smtp_ready,
         test_mock_mailer: None,
+        backup_lock: Arc::new(tokio::sync::Mutex::new(())),
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());
@@ -1042,6 +1043,7 @@ async fn test_sent_emails_endpoint_captures_and_guards(pool: MySqlPool) {
         mailer: Arc::new(mock.clone()),
         smtp_ready: true,
         test_mock_mailer: Some(mock.clone()),
+        backup_lock: Arc::new(tokio::sync::Mutex::new(())),
     };
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1155,6 +1157,7 @@ async fn test_sent_emails_endpoint_400_without_capture(pool: MySqlPool) {
         mailer: Arc::new(kesh_api::mail::NoopMailer),
         smtp_ready: false,
         test_mock_mailer: None,
+        backup_lock: Arc::new(tokio::sync::Mutex::new(())),
     };
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

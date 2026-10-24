@@ -584,11 +584,20 @@ export const apiClient = {
 		return requestRaw(url, { method: 'GET' }, false, call);
 	},
 
-	post<T>(url: string, body?: unknown): Promise<T> {
-		return request<T>(url, {
-			method: 'POST',
-			body: body !== undefined ? JSON.stringify(body) : undefined,
-		});
+	/**
+	 * POST JSON. `call` (Story 31-1c, AC32) : délai et rejeu — `{ timeoutMs:
+	 * LONG_OPERATION_TIMEOUT_MS, retry: false }` pour « Sauvegarder maintenant ».
+	 */
+	post<T>(url: string, body?: unknown, call?: CallOptions): Promise<T> {
+		return request<T>(
+			url,
+			{
+				method: 'POST',
+				body: body !== undefined ? JSON.stringify(body) : undefined,
+			},
+			false,
+			call,
+		);
 	},
 
 	/**

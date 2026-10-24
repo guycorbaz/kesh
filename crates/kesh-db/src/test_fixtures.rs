@@ -367,6 +367,8 @@ pub async fn seed_accounting_company_no_fy(pool: &MySqlPool) -> Result<(), Fixtu
 ///   initiale `('0.1.0', '0.1.0')`). Truncer effacerait la row, ce qui
 ///   ferait warn `rows_affected != 1` sur le premier `record_boot_version`
 ///   suivant sans casser le boot. Cohérent traitement `_sqlx_migrations`.
+/// - `_kesh_backup_schedule` : Story 31-1c — singleton du réglage et de l'état
+///   de la sauvegarde automatique (table système, comme `_kesh_version`).
 // Story 17-3a — la liste canonique des tables a été promue vers
 // `crate::backup::TABLES_TO_TRUNCATE` (source de vérité unique, réutilisée par
 // l'export d'installation). On la ré-exporte ici pour `truncate_all`.

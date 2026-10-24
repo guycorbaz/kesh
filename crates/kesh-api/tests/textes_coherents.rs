@@ -24,6 +24,7 @@
 //! | G19 | release 0.13.0 | toute URL `raw.githubusercontent.com` du dépôt (manuels, README, site) pointe sur le tag `v<\keshVersion>`, jamais sur `main` |
 //! | G20 | #616, #617, #619 | ni case « Compte de banque » au plan comptable, ni CAMT.053 présenté comme universel ; l'écran d'import dit « CAMT.053 ou CSV » dans les quatre langues |
 //! | G21 | #697 | le `FROM rust:` du `Dockerfile` et le `channel` de `rust-toolchain.toml` désignent la même chaîne (même mineure, même patch si les deux en portent un) |
+//! | G22 | #503 | la sauvegarde automatique : le manuel dit la reprise au bout d'une heure et le bandeau à partir d'au moins deux intervalles ; le rappel de l'écran dit le volume (nombre conservé plus une, une par import jamais purgée) dans les quatre langues |
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -1572,4 +1573,70 @@ fn le_dockerfile_et_rust_toolchain_designent_la_meme_chaine() {
         }
         Err(e) => panic!("G21 — Dockerfile et rust-toolchain.toml en désaccord : {e}"),
     }
+}
+
+/// **G22** (#503, revue de code P1 de la Story 31-1c, L-B4 et F-A2) — la sauvegarde
+/// automatique dit vrai :
+///
+/// - le manuel d'administration dit qu'un échec est retenté **au bout d'une heure**,
+///   sans la parenthèse « ou de l'intervalle, s'il est plus court » (aucune fréquence
+///   admise n'est inférieure à une heure, C-31-1-91) ;
+/// - il dit que le bandeau s'allume quand la dernière réussite date d'**au moins** deux
+///   intervalles (`is_overdue` compare par `>=`), non de « plus de » deux ;
+/// - le rappel permanent de l'écran (`admin-backup-auto-reminder`) dit le volume de
+///   l'AC33 — le nombre conservé plus une dans `auto/`, plus une sauvegarde par import,
+///   jamais purgée — dans les quatre langues (un marqueur par locale).
+///
+/// **Positives adossées** : la phrase de reprise et celle du bandeau sont trouvées ; la
+/// clé existe dans chaque catalogue. **Angle mort écrit** : les marqueurs de/en/it
+/// prouvent que la phrase du volume y est, pas la qualité de sa traduction ; le repli
+/// Svelte est tenu égal au fr-CH par le Vitest `i18n-un-repli-par-cle`.
+#[test]
+fn la_sauvegarde_automatique_dit_vrai() {
+    let manuel = normaliser(&lire("docs/manual/fr/admin-manual.tex"));
+    let mut erreurs = Vec::new();
+    let negatives: [(&str, &str); 2] = [
+        (
+            r"retentée[^.]*plus court",
+            "reprise « ou de l'intervalle, s'il est plus court » : cas inatteignable",
+        ),
+        (
+            r"plus de deux intervalles",
+            "« plus de deux intervalles » alors que le bandeau s'allume à l'égalité",
+        ),
+    ];
+    for (re, quoi) in negatives {
+        for m in Regex::new(re).unwrap().find_iter(&manuel) {
+            erreurs.push(format!("admin-manual.tex — {quoi} : « {} »", m.as_str()));
+        }
+    }
+    let positives = [
+        r"retentée au bout d'une heure\.",
+        r"au moins deux intervalles",
+    ];
+    for re in positives {
+        if !Regex::new(re).unwrap().is_match(&manuel) {
+            erreurs.push(format!("admin-manual.tex : « {re} » absent"));
+        }
+    }
+    let marqueurs = [
+        ("fr-CH", "jamais purgée"),
+        ("de-CH", "nie gelöscht"),
+        ("en-CH", "never purged"),
+        ("it-CH", "mai eliminat"),
+    ];
+    for (locale, marqueur) in marqueurs {
+        match catalogue(locale).get("admin-backup-auto-reminder") {
+            Some(v) if v.contains(marqueur) => {}
+            autre => erreurs.push(format!(
+                "{locale} : admin-backup-auto-reminder ne dit pas « {marqueur} » ({autre:?})"
+            )),
+        }
+    }
+    assert!(
+        erreurs.is_empty(),
+        "G22 — {} écart(s) :\n  - {}",
+        erreurs.len(),
+        erreurs.join("\n  - ")
+    );
 }
