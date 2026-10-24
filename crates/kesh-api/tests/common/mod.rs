@@ -164,3 +164,6 @@ pub async fn create_key_via_http(
 
 /// Témoin du rejeu sur interblocage (Story 15-5e1, choix C74).
 pub mod capture_rejeu;
+
+/// La `Lecture` de test en lecture seule (Story 32-4a, C-32-4a-9).
+pub mod lecture_seule;
