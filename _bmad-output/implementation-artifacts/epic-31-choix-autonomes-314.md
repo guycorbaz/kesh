@@ -482,3 +482,41 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   listing (premier ou deuxième, l'ancienne copie ayant pu démarrer) et finit par le contrôle final (E LOW-5, traité en
   passant).
 - **Réversible** : oui.
+- *(Annotation du 2026-10-24, revue de code P3, E M-1 = B3-1 : le critère « s'il rend encore des lignes » était faux
+  pour le cas où seul le dossier survit — aucune ligne ne s'affichait. Remplacé par C-31-4-28.)*
+
+### C-31-4-28 — Revue de code P3 : un contrôle final décidable (agent de remédiation, 2026-10-24)
+
+- **Contexte** : E M-1 = B3-1 (origine : remédiation P2, `[ -n "$COPIE" ] && test ! -e …`). Un `COPIE` vide ou non
+  posée (terminal neuf), ou un dossier qui survit, ne rendaient **aucune** ligne, comme un succès ; l'« Attendu : rien,
+  sauf `copie détruite` » et le critère « s'il rend encore des lignes » de la marche *À la destruction ou au contrôle
+  final* concluaient alors à tort à la destruction.
+- **Retenu** : la dernière commande du contrôle final devient un `if … elif … else … fi` à quatre issues, dont une seule
+  de succès : `échec : COPIE n'est pas posée` (`-z`) ; `échec : COPIE n'est pas le chemin de la copie` (même `dirname`
+  et même `case … *) false ;; esac` que la garde du `rm -rf`, nié par `!`) ; `échec : … existe encore` (`-e` **ou**
+  `-L`, un lien pendant compte comme un reste) ; `copie détruite`. L'« Attendu » dit que cette ligne est **requise** et
+  que son absence, comme une ligne `échec :`, est un échec ; la marche *À la destruction…* dit « une ligne des filtres,
+  une ligne `échec :`, ou rien du tout », puis « tant qu'il ne rend pas la seule ligne `copie détruite` ». E L-1 traité
+  avec : un terminal neuf repose `COPIE` (nom daté, `ls -d /var/tmp/kesh-repetition-*`) et refait le contrôle 1 avant
+  tout `docker run` ; le cas *Reste* dit quel chemin poser quand le dossier a disparu. Essayé sur onze formes de `COPIE`
+  sous un dossier synthétique (`/home/gcorbaz/devel/kesh-gate-logs/314-p3-essais/`, `/var/tmp` remplacé par lui, détruit
+  ensuite) : vide, non posée, dossier présent, avec barre finale, lien, lien pendant, autre nom, relatif, le dossier
+  synthétique lui-même, dossier absent, et dossier détruit → seules les deux formes absentes rendent `copie détruite` ;
+  `bash -n` et `dash` acceptent `! case … esac`. Jamais joué dans une répétition réelle : l'encadré le dit.
+- **Écartée** : garder `test ! -e` et n'écrire que la phrase « l'absence de la ligne est un échec » (B3-1, remède d'une
+  phrase) — la sortie vide resterait la même pour trois situations distinctes, et le lecteur devrait se souvenir de la
+  phrase pour la juger.
+- **Réversible** : oui.
+
+### C-31-4-29 — Revue de code P3 : ce que les exports écrivent dans la production (agent de remédiation, 2026-10-24)
+
+- **Contexte** : E L-5 — « la production n'en garde que la trace … au journal d'audit » est inexact à la lettre.
+  Vérifié au code : `crates/kesh-api/src/exports/global.rs` l. 304 et 313 appellent
+  `company_invoice_settings::get_or_create_default` et `company_dunning_settings::get_or_create_default`, dont
+  l'`INSERT IGNORE` (`company_invoice_settings.rs` l. 75, `company_dunning_settings.rs` l. 52) crée la ligne de réglages
+  si elle manque ; les pages de ces réglages font de même à leur première ouverture (`get_or_create_default` dans
+  `routes/company_invoice_settings.rs`, `ensure_seeded_in_tx` dans `routes/company_dunning_settings.rs`).
+- **Retenu** : *Ce qu'elle ne fait pas* dit « aucune donnée **comptable** », et nomme ce cas : si ces réglages n'ont jamais
+  été enregistrés, l'export de souveraineté en crée les lignes, aux valeurs par défaut, comme la première ouverture de
+  leur page. Sans effet sur la comparaison (ligne créée avant le `.keshbackup`, ordre de l'étape 0).
+- **Réversible** : oui.

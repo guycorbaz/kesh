@@ -174,7 +174,11 @@ voisine reçoit un `\label{sec:test-restauration}` pour le renvoi retour ; `Quel
 pas touché. **Le renvoi relatif de l. 1847** (« cf. sous-section précédente OLICo Art. 10 al. 1 », encadré de
 `sec:backup-dsm`), que l'insertion rendrait faux, devient « cf. \S\ref{sec:test-restauration}, OLICo Art. 10 al. 1 » ;
 la sous-section reste à sa place, qu'elle complète *(tranché en remédiation P2, F4 : le placer ailleurs, après
-`sec:backup-dsm`, l'éloignerait du test qu'elle peut remplacer ; la référence explicite ne dépend plus de l'ordre)*. Le
+`sec:backup-dsm`, l'éloignerait du test qu'elle peut remplacer ; la référence explicite ne dépend plus de l'ordre)*
+*(Revue de code P3, 2026-10-24, A LOW-1, C-31-4-28 : « peut servir de test de restauration » et « le test qu'elle peut
+remplacer » sont dépassés — la condition de l'AC6 n'est pas remplie (constat (h)) ; le manuel écrit que la répétition
+**ne remplace pas** ce test tant que #709 n'est pas tranchée (C-31-4-25). Le renvoi entre les deux sous-sections, lui,
+demeure.)* Le
 fragment est dans une section Synology : G16 relue au binaire `configuration_transmise` (T5). Le PDF est **régénéré** (`make fr`, sous verrou, § 5 de `docs/agents-orchestration.md`) et commité. **Chaque
 commande du manuel a été exécutée** sur la station, dans l'ordre où le manuel l'écrit, et le journal de cette exécution
 est versé hors dépôt (AC9). Un pas qui n'a pas pu être exécuté **ne figure pas au manuel comme acquis** : il porte la
@@ -205,7 +209,12 @@ défini une fois pour toutes à l'AC7 (d) : destruction, puis reprise au contrô
 les variables d'environnement** *(P4, R5)* : son issue est **corrective** (`unset`, contrôle refait) ; tout autre écart,
 au contrôle 1 comme aux suivants, est un arrêt *(amendé en revue de code P2, 2026-10-24, A-M2, C-31-4-24 : l'exception
 s'étend à l'inventaire des variables du contrôle 4, de même nature — une variable du terminal, avant toute lecture par
-Compose ; tout autre écart au contrôle 4 reste un arrêt)* :
+Compose ; tout autre écart au contrôle 4 reste un arrêt)* *(Revue de code P3, 2026-10-24, A LOW-2, C-31-4-28 : le
+filtre du contrôle 1 ci-dessous n'est plus celui du manuel. Depuis la revue de code P1 (C-31-4-22), le manuel en écrit
+deux : `env | grep -E '^(COMPOSE_|KESH_|MARIADB_|RUST_LOG=|DATABASE_URL=)'` et `env | grep -E
+'^DOCKER_(HOST|CONTEXT|CONFIG|TLS_VERIFY|CERT_PATH)='` ; le contrôle 4 y ajoute l'inventaire des variables que le
+compose téléchargé interpole (`grep -oE` sur le fichier, puis `printenv` de chaque nom). Depuis la P3, le manuel avertit
+que ces filtres affichent les valeurs, à ne pas recopier (B3-5))* :
  1. **Environnement neutre, démon local.** `env | grep -E '^(COMPOSE_|KESH_|MARIADB_|DOCKER_HOST=|DOCKER_CONTEXT=|DOCKER_CONFIG=|DOCKER_TLS_VERIFY=|DOCKER_CERT_PATH=)'` ne
     rend rien *(P4, R8 : trois variables de Docker ajoutées — elles changent le contexte courant et le chiffrement du
     démon)* ; sinon `unset` de chaque variable listée, et contrôle refait (issue corrective, voir plus haut). `docker context show` est lu et
@@ -419,14 +428,22 @@ par `&&`, non par une ligne seule : si le `docker run` échoue, le `rm -rf "$COP
 (c) **Contrôle final** écrit : le contrôle 1 est vrai ; le contrôle 2 refait (ni `kesh-api` ni `kesh-mariadb` parmi les
 noms ; conteneurs, volumes et réseaux filtrés par l'étiquette `kesh-repetition` : rien — ces mêmes filtres ayant rendu des
 lignes au contrôle 9) ; `test ! -e "$COPIE"` ; et **aucun exemplaire de la répétition** (`.keshbackup`, **ZIP de
-souveraineté**, PDF) ne subsiste dans le dossier de téléchargements du navigateur. (d) **Arrêt** *(P3, R5 ; précisé en P4,
+souveraineté**, PDF) ne subsiste dans le dossier de téléchargements du navigateur. *(Revue de code P3, 2026-10-24,
+E M-1 = B3-1, C-31-4-28 : `test ! -e "$COPIE"` seul ne décide rien — un `COPIE` vide ou non posée, ou un dossier qui
+survit, rendaient une sortie vide, lisible comme un succès. Le manuel écrit un test à quatre issues, dont une seule de
+succès : `échec : COPIE n'est pas posée`, `échec : COPIE n'est pas le chemin de la copie` (même `dirname` et même
+`case` que la garde), `échec : … existe encore` (`-e` ou `-L`), et `copie détruite`, ligne **requise** — son absence est
+un échec, dit en toutes lettres. Un terminal neuf repose `COPIE` (`ls -d /var/tmp/kesh-repetition-*`, nom daté) et
+refait le contrôle 1.)* (d) **Arrêt** *(P3, R5 ; précisé en P4,
 R2/R3)* : « arrêt », dans tout le manuel, veut dire : détruire (b) puis, si l'on veut reprendre, **repartir du contrôle 1**
 avec une nouvelle date — jamais un `mkdir -p`, jamais un `rm` improvisé. Quatre précisions *(P5, T4 : les « trois
 précisions » de P4 ne couvraient ni l'arrêt au contrôle 3, ni un dossier resté sans objet Docker)* :
  - **Arrêt avant que `$COPIE` existe** (contrôles 1 et 2, les plus probables) : il n'y a **rien à détruire** — l'étape 0
    n'a pas eu lieu (elle suit le contrôle 3), aucun fichier sensible n'existe encore. On corrige la cause (hôte, contexte)
    ou on abandonne.
- - **Arrêt au contrôle 3** (le `mkdir` a réussi, l'étape 0 n'a pas eu lieu) : `$COPIE` existe et est **vide** ; on le
+ - **Arrêt au contrôle 3** (le `mkdir` a réussi, l'étape 0 n'a pas eu lieu) : `$COPIE` existe et est **vide** *(revue
+   de code P3, 2026-10-24, A LOW-2 : le manuel écrit « vide ou ne portant que `telechargements/`, vide lui aussi » depuis
+   la P2, E-LOW-4)* ; on le
    supprime par (b) sous garde, sans `down -v`. Si c'est le `realpath -e` qui a échoué, la garde **refuse** aussi (elle comprend le même
    `realpath -e`) : le dossier vide est alors laissé tel quel, **le refus est consigné au journal**, et c'est la
    cause (un `/var/tmp` qui serait un lien) qu'on traite, non le dossier.
@@ -508,7 +525,11 @@ l'ancienne copie n'a plus que des `-f` partiels *(P5, T4)*. **Comment la procéd
 les couvre** : (i) elle ne s'exécute **jamais sur le NAS** ; le seul geste Synology qu'elle contient est la récupération
 du fichier, déjà documentée ; (ii) les contrôles de l'AC3 sont **indépendants de l'hôte** (ils lisent l'environnement,
 le démon et la sortie de `docker compose config`) ; (iii) le **rejeu sur l'image publiée** est demandé à la release (voir
-*Actions demandées*, n° 3). L'encadré **ne nomme pas Hyper Backup** (G16 (e), liste fermée).
+*Actions demandées*, n° 3). L'encadré **ne nomme pas Hyper Backup** (G16 (e), liste fermée). *(Revue de code P2 et P3,
+2026-10-24, A LOW-2, C-31-4-23 et C-31-4-28 : l'encadré dit que la procédure a été jouée « dans une rédaction
+antérieure à celle-ci », et sa puce de tête nomme les commandes et gestes ajoutés depuis, « jamais joués dans une
+répétition réelle » — depuis la P3, le troisième listing de destruction et le dernier test du contrôle final, ce
+dernier essayé sur des dossiers synthétiques.)*
 
 **AC11 — *retiré en P3 (C-31-4-15)*.** La garde G22 (présences de jetons dans la sous-section, absence de
 `KESH_*_HOST_DIR=`, constante `JETONS_G22`, test de retrait en mémoire) est retirée avec ses lettres (a) à (e) et ses
@@ -940,6 +961,30 @@ une garde de hiérarchie des chemins de menu ; **tout outillage de fixture et to
   d'API, refaire les exports en cas de doute : non mécanique) ; A-LOW-4 (G15 ne lit rien de la sous-section : écart de la
   fiche, non du manuel ; à trancher en passe suivante). **Gate** : ciblé (Dev Agent Record, *Revue de code P2 remédiée*).
   Revue de code P3 à lancer : `314-review-prompt-p3.md` (Sonnet, passe complète, lentilles B, E, A).
+- 2026-10-24 — **Revue de code P3** (Sonnet, trois lentilles B, E, A, contexte frais, lecture seule, sur
+  `origin/main...b9c02b8d`, attention à `34ccce7e`). Bruts (CRITICAL/HIGH/MEDIUM/LOW) : **B 0/0/0/5**, **E 0/0/1/7**,
+  **A 0/0/0/4** — un MEDIUM, **E M-1 = B3-1** (B le classait LOW ; même défaut). **Aucun finding réfuté** ; E L-5 vérifié
+  au code (C-31-4-29). **MEDIUM remédié** : E M-1 (origine : remédiation P2) → la dernière commande du contrôle final
+  est un test à quatre issues dont une seule de succès, `copie détruite` **requise**, son absence dite échec ; la marche
+  *À la destruction ou au contrôle final* juge sur « la seule ligne `copie détruite` », non plus sur « des lignes »
+  (C-31-4-28). **LOW traités** : E L-1 (terminal neuf : reposer `COPIE` par le nom daté et `ls -d`, refaire le contrôle 1
+  avant tout `docker run` ; cas *Reste*, dossier disparu : quel chemin poser) ; B3-3 = E L-4 (« si vous le produisez »
+  retiré) ; B3-4 (le troisième listing de destruction et le dernier test du contrôle final nommés dans l'encadré parmi
+  ce qui n'a jamais été joué) ; B3-5 (le contrôle 1 avertit que les filtres affichent les valeurs, secrets compris, à ne
+  pas recopier ; noter seulement les noms) ; E L-5 (*Ce qu'elle ne fait pas* : « aucune donnée comptable », et la
+  création des lignes de réglages par l'export nommée, C-31-4-29) ; A LOW-1 (AC1 annotée) ; A LOW-2 (AC3, AC7 (c), AC7 (d)
+  et AC10 annotées) ; A LOW-3 et la seconde moitié d'A LOW-4 (annotation datée au Dev Agent Record P2 : périmètre des
+  décomptes, deuxième et non troisième listing en haut de page). **LOW consignés, non traités** : B3-2 = E L-6 = première
+  moitié d'A LOW-4 (« Ou, avec sudo : » détaché de son listing par le saut de page : cosmétique, aucun listing coupé ;
+  déplacer le `\needspace` avant la phrase d'amorce est le remède, laissé à une passe qui touchera la pagination) ;
+  E L-2 (`docker run` impossible faute d'image et sans `sudo` : un geste de plus, non mécanique et jamais joué ; à
+  trancher par Guy) ; E L-3 (`realpath -e` en échec : la cause probable est une barre finale, que la convention interdit
+  déjà ; réécrire le cas est un changement de marche, non mécanique) ; E L-7 (écart au critère de réussite de la
+  restauration sans geste nommé : même choix de procédure que B-7 de la P1, à trancher par Guy). **Tendance des MEDIUM
+  distincts** : P1 8 → P2 5 → P3 1 ; le MEDIUM de la P3 vient de la remédiation P2, aucun de la conception d'origine.
+  **Gate** : ciblé (Dev Agent Record, *Revue de code P3 remédiée*). La boucle ne se clôt pas sur cette passe (elle rend
+  un MEDIUM) : revue de code P4 à lancer, **passe ciblée** (Haiku, une lentille, regression hunter, sur
+  `b9c02b8d..HEAD` aplati), `314-review-prompt-p4.md`.
 
 ## Dev Agent Record
 
@@ -1175,8 +1220,49 @@ l'import », « ne portant que telechargements/ », `[ -n "$COPIE" ] && test ! -
 saut de page tombe hors d'un listing (les listings du contrôle 5, du contrôle 8, de la comparaison et de la troisième
 garde commencent en haut de page).
 
+*(Annotation du 2026-10-24, revue de code P3, A LOW-3 et A LOW-4 : les décomptes ci-dessus sont des relevés bruts du
+**PDF entier**, non de la sous-section — « ne remplace pas » (×5) en compte deux hors sujet (script de sauvegarde),
+« avant l'étape 5 » (×3) un (script de restauration) ; sur `sec:test-restauration` et `sec:repetition-cloture`, ils
+valent 3 et 2. Et c'est le **deuxième** listing de destruction (avec `sudo`) qui commence en haut de page, non le
+troisième. L'affirmation centrale — aucun saut de page dans un listing — reste vraie.)*
+
 **Gate ciblé** (sous verrou, `mem-guard`, `CARGO_TARGET_DIR` du worktree, `DATABASE_URL` sur `kesh_314`) :
 `cargo fmt --all -- --check` vert ; `cargo clippy --workspace --all-targets -- -D warnings` vert ;
 `cargo nextest run -E 'binary(configuration_transmise) | binary(textes_coherents)'` → **47 exécutés, 47 réussis, 0
 ignoré** (30 + 17, recomptés dans `/home/gcorbaz/devel/kesh-gate-logs/314-gate-cible-p2.log`). Gate complet non rejoué :
+aucun code ni test ne change.
+
+### Revue de code P3 remédiée (2026-10-24) — agent de remédiation (C-31-4-28, C-31-4-29)
+
+**Remédiation** : `admin-manual.tex` (et son PDF), fiche (annotations datées à l'AC1, l'AC3, l'AC7 (c) et (d), l'AC10,
+au Dev Agent Record P2 ; Change Log), registre (C-31-4-28, C-31-4-29, annotation datée sous C-31-4-27),
+`sprint-status.yaml`, prompt `314-review-prompt-p4.md`. CHANGELOG inchangé : son entrée *Ajouté* ne décrit ni le
+contrôle final ni les phrases corrigées (`grep -nF` de « copie détruite », « si vous le produisez », « n'en garde que » :
+aucune ligne). Édition par l'outil Edit, sauf deux écarts : un `sed -i` d'un mot dans le registre (« dix » → « onze ») et
+l'annotation de `sprint-status.yaml` par un court script Python (relu ensuite par `yaml.safe_load`).
+
+**Essai du contrôle final** (seule commande nouvelle exécutée) : dans `/home/gcorbaz/devel/kesh-gate-logs/314-p3-essais/`
+(détruit ensuite, `ls -d` → absent), `/var/tmp` remplacé par ce dossier, onze formes de `COPIE` — vide, non posée,
+dossier présent, avec barre finale, lien vers le dossier, lien pendant, autre nom, chemin relatif, le dossier d'essai
+lui-même, nom absent, dossier détruit par `rm -rf` : seules les deux dernières rendent `copie détruite` ; les neuf autres
+rendent une ligne `échec :`. `bash -n` accepte le listing ; `dash` accepte `! case … esac` (aussi coupé sur deux lignes,
+forme finale du listing). Ni Docker ni `kesh-mariadb-dev`.
+
+**PDF** : `make fr` sous verrou et `mem-guard`, deux fois (la première laissait l'amorce du contrôle final seule en bas
+de page et la ligne du `case` repliée dans le listing : `\needspace` placé avant le paragraphe, `case` coupé après `in`).
+`admin-manual.pdf` seul régénéré ; brochure et manuel utilisateur inchangés (`git status`). PDF aplati : `??` → 0 ;
+présentes (périmètre : le PDF entier) : « copie détruite, qui est requise » (1), « une sortie entièrement vide n'est pas
+un succès » (1), « échec : COPIE n'est pas » (3 : les deux lignes du listing et l'exemple du cas *Reste*), « existe
+encore » (1), « la seule ligne copie détruite » (2), « ou rien du tout » (1), « Si COPIE n'est plus posée » (1),
+« celle du procès-verbal » (1), « si cette date est inconnue » (1), « avec sa valeur » (1), « aucune donnée comptable »
+(2, dont une de § *Exporter*, antérieure), « en crée les lignes » (1), « le troisième listing de destruction » (1),
+« essayé seulement sur des dossiers synthétiques » (1) ; absentes : « si vous le produisez », « S'il rend encore des
+lignes », `test ! -e "$COPIE" && echo`. `pdftotext -layout` : l'amorce et le listing du contrôle final sont sur la même
+page (63 du PDF), le listing entier ; les autres sauts de page de la sous-section sont inchangés (« table (outil jq) : »
+et « Ou, avec sudo : » restent en bas de page, B3-2 consigné), aucun listing coupé.
+
+**Gate ciblé** (sous verrou, `mem-guard`, `CARGO_TARGET_DIR` du worktree, `DATABASE_URL` sur `kesh_314`) :
+`cargo fmt --all -- --check` vert ; `cargo clippy --workspace --all-targets -- -D warnings` vert ;
+`cargo nextest run -E 'binary(configuration_transmise) | binary(textes_coherents)'` → **47 exécutés, 47 réussis, 0
+ignoré** (30 + 17, recomptés dans `/home/gcorbaz/devel/kesh-gate-logs/314-gate-cible-p3.log`). Gate complet non rejoué :
 aucun code ni test ne change.
