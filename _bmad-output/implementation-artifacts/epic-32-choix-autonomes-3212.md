@@ -114,6 +114,9 @@
   restauration et rejeu.
 - **Écartée** : injection des règles dans `AppState` (surface de production pour un test).
 - **Réversible** : oui.
+- **Révisé à la validation P1 (2026-10-24)** : le placement du test et la visibilité de la porte sont fixés par
+  C-32-12-15 — le « patron de `replay_with_registry` » ne transposait pas (module `pub` en `kesh-db`, quand
+  `admin_backup` est `pub(crate)`).
 
 ### C-32-12-13 — Messages de refus existants gardés mot pour mot
 
@@ -126,4 +129,70 @@
 - **Contexte** : P7 dit « un backup n'est importable que si son inventaire de tables est identique au nôtre » ; faux
   après la story.
 - **Retenu** : la PR récrit le paragraphe ; Guy l'accepte ou non au merge.
+- **Réversible** : oui.
+
+---
+
+*Choix 15 à 21 : remédiation de la validation P1 (2026-10-24, rapports `3212-validate-p1-{R,F}.md`).*
+
+### C-32-12-15 — Le test de l'AC7 vit dans la crate ; `admin_backup` reste `pub(crate)`
+
+- **Contexte** : F1 (HIGH) = R1 — `crates/kesh-api/src/lib.rs:10` déclare `pub(crate) mod admin_backup;`, avec un
+  commentaire de sécurité de la revue 17-3a (module qui manipule le dump complet, hash de mots de passe compris) ; un
+  test de `tests/` ne voit ni `parse_and_verify_with`, ni `check_schema_compat`, ni `ParsedBackup`.
+- **Retenu** : AC7 dans `crates/kesh-api/src/admin_backup/import.rs`, `mod tests`,
+  `#[sqlx::test(migrations = "../kesh-db/test-schema")]` (précédent `auth/bootstrap.rs:482`), fixture par
+  `include_bytes!`, retrait de `products` par une fonction locale ; porte `pub(crate)`, sans `#[doc(hidden)]` (sans objet
+  dans un module `pub(crate)`).
+- **Écartées** : ré-exporter `admin_backup` ou ses fonctions (surface publique d'un module à secrets, pour un test) ;
+  passer l'AC7 par le handler HTTP (exigerait d'injecter les règles dans `AppState`, déjà écarté par C-32-12-12).
+- **Réversible** : oui.
+
+### C-32-12-16 — L'AC2 (iii) s'écrit en union et disjonction
+
+- **Contexte** : F2 = R3 — « exigées == `TABLES_TO_TRUNCATE` » rougirait à la 32-5 sans que le contrat dise quoi en faire.
+- **Retenu** : `exigées ∪ tolérées == TABLES_TO_TRUNCATE` et `exigées ∩ tolérées == ∅`, tolérées = la liste écrite de
+  (iv) ; vrai aujourd'hui, vrai à la 32-5 une fois sa table inscrite ; M3 reste tuée.
+- **Écartée** : garder l'égalité et ajouter au contrat « réécrire (iii) » (un test que chaque story récrit n'est plus
+  un garde).
+- **Réversible** : oui.
+
+### C-32-12-17 — Grep de l'AC17 ciblé ; commentaires des migrations publiées laissés faux, rectifiés ailleurs
+
+- **Contexte** : F3 = R2 — la commande rendait 103 lignes et manquait la famille « importable » et le doc-comment de
+  `missing_sentinels` ; trois migrations publiées (`20261024000001:5-7`, `20261001000004:15`, `20261009000001:11`)
+  décrivent l'ancienne règle d'égalité.
+- **Retenu** : motif ciblé (28 lignes au relevé de `6d24f6d1`) ; AC16 étendu à `backup_schedule.rs:502`,
+  `post_restore.rs:718-720`, `import.rs:14` et `:232-233`, `backup.rs:667-668` ; les migrations **ne se touchent pas**
+  (P8) — rectification par une phrase du doc-comment d'`IMPORT_FLOOR_MIGRATION` et par les Dev Notes ; la ligne d'audit
+  d'idempotence de `20261024000001` reste vraie et n'est pas touchée.
+- **Écartée** : corriger le commentaire des migrations (le binaire refuserait de démarrer sur toute base qui les porte).
+- **Réversible** : oui.
+
+### C-32-12-18 — Deux migrations créatrices d'une même table : la plus ancienne, en production
+
+- **Contexte** : F5 — la carte table → une version ne disait pas laquelle retenir ; inatteignable aujourd'hui.
+- **Retenu** : la plus ancienne (table exigée : refus bruyant) ; le test AC1 (i) reste le garde qui le signale.
+- **Écartée** : la plus récente (pourrait tolérer à tort une table ancienne).
+- **Réversible** : oui.
+
+### C-32-12-19 — Texte de l'encart : « Ressaisissez-les depuis l'application si nécessaire »
+
+- **Contexte** : F6 — « Elles se recréent depuis l'application » promettait plus que le contrat (valide vide, ou amorcée).
+- **Retenu** : formule qui n'affirme pas de recréation automatique.
+- **Réversible** : oui.
+
+### C-32-12-20 — Mutation M9 (`tablesAbsent` codé à `[]`) : report assumé à la 32-5
+
+- **Contexte** : R4 — aucun test ne voit une liste non vide traverser le handler avant qu'une table postérieure existe.
+- **Retenu** : M9 déclarée non tuée ; tuée par la reprise de l'AC8 par la 32-5 (`tablesAbsent == [<sa table>]`).
+- **Écartée** : extraire le JSON du bilan en fonction pure testée avec une liste non vide (site de plus, pour une preuve
+  que la 32-5 apporte de toute façon sur le vrai chemin).
+- **Réversible** : oui.
+
+### C-32-12-21 — Repli de la fixture si la branche ne porte plus le code de la v0.15.0
+
+- **Contexte** : R7 — C-32-12-10 suppose `git diff --stat v0.15.0 HEAD -- crates/` vide au développement.
+- **Retenu** : sinon, worktree temporaire au tag `v0.15.0` (patron de la fixture 0.14.0), disque vérifié, retiré aussitôt ;
+  jamais de génération avec un diff non vide.
 - **Réversible** : oui.
