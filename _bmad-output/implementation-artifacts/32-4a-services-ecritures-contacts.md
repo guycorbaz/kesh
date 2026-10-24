@@ -713,3 +713,31 @@ AC8, AC10, R1-R8) ; registres `epic-32-choix-autonomes.md` (C-32-0-4, C-32-0-7) 
     correction de la P1 est l'annotation datée de F3) ; `sprint-status.yaml` : annotation datée ajoutée à la ligne de la story.
   - **Suite** : la boucle ne se clôt que sur une passe à 0 MEDIUM. P3 **ciblée**, une lentille (regression hunter),
     **Sonnet**, sur le diff de cette remédiation et l'AC12 entier (`324a-validate-prompt-p3.md`).
+- 2026-10-24 — **Validation P3, passe ciblée** (Sonnet, une lentille — regression hunter —, contexte frais, sur
+  `git show cbcd3237` et l'AC12 entier ; prompt `324a-validate-prompt-p3.md`, rapport
+  `kesh-gate-logs/324a-validate-p3.md`) : **0 CRITICAL, 0 HIGH, 0 MEDIUM, 8 LOW** — **validation terminée**. Elle
+  confirme 15 / 10 / 12 occurrences de `state.pool` (fichier = somme des corps), la (ii) de `list_accounts` ramenée à
+  la définition unique, le choix des corps par nom exact, M16′ tuée, 35 = 34 + M8, M14 compilable, un seul
+  `FOR UPDATE` dans la fermeture (`journal_entries.rs:1182`, branche non prise). **Les huit LOW ne sont pas appliqués**
+  — une remédiation écrite après la passe de clôture ne serait relue par personne — et **se recontrôlent à l'étape 0
+  du développement**, ligne lue citée au Dev Agent Record :
+  - **P3-1** : la requête de `find_source_document_of_entry` est aux l. 387-396 (non 386-395).
+  - **P3-2** : la clause `contains("pub async fn")` de `services_motif.rs` est à la l. 2091 (non 2088-2090).
+  - **P3-3** : le compte au niveau du fichier ne couvre **pas** le compte des `async fn` retiré en P2 — une `async fn`
+    non `pub` qui lit le pool sous un autre nom rougissait en P1 et ne rougit plus ; à écrire aux limites de l'AC12 (ou
+    à rétablir le compte, au choix du développement, au registre).
+  - **P3-4** : la liste des limites de l'AC12 omet `self.pool` (un `impl AppState`), `(&state).pool`,
+    `state.clone().pool` et une macro à paramètre ident.
+  - **P3-5** : le *Hors périmètre* de B4 dit « la limite est écrite à l'AC12 » ; les autres formes de B4 ne sont qu'à
+    l'AC17.
+  - **P3-6** : M14 écrit `INSERT INTO audit_log …`, qui n'est pas du SQL : recopié tel quel, il rendrait 1064
+    (syntaxe) et non 1792 — écrire une instruction complète et valide.
+  - **P3-7** : la plage `services_motif.rs:43-141` emporte `BORNE_*` et `EXERCICE_*` (l. 46-52), inutiles au montage —
+    `dead_code` sous `clippy -D warnings` si recopiées en bloc.
+  - **P3-8** : le registre ne porte pas le choix de R3 (définition du corps retenue, contre la définition inverse que
+    R3 préférait) — à ajouter au registre ; les deux doc-comments de `kesh-db` (`journal_entries.rs:775-776`, `:934`)
+    sont tracés sur **#738** (commentaire du 2026-10-24).
+  **Synthèse de la boucle** : P1 (Sonnet ×2, R/F) 0/0/3/15 → P2 (Opus ×2, R/F) 0/0/1/14 (le MEDIUM né de la remédiation
+  P1) → P3 ciblée (Sonnet) 0/0/0/8. Pas de découpage : la sévérité décroît, et le MEDIUM de P2 venait du patch précédent
+  (amendement D5). **Q1** reste posée à Guy (§ *Points à soumettre à Guy*) ; le développement part sur la première
+  lecture. Statut : `ready-for-dev`.
