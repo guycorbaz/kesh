@@ -463,20 +463,20 @@ après les deux (Dev Notes, § *Pourquoi quatre clés*).
 
 ### Tâches
 
-- [ ] **T-b0** — Base et port propres (comme T-a0) ; dossiers E2E `/tmp/kesh-e2e-321/…` passés au backend **et** au runner.
+- [x] **T-b0** — Base et port propres (comme T-a0) ; dossiers E2E `/tmp/kesh-e2e-321/…` passés au backend **et** au runner.
 - [ ] **T-b1** — *déplacée* : le refus traduit est la T-d1 de la 32-1d.
-- [ ] **T-b2 (AC-b4)** — Vitest rouge du bandeau, type `BackupSchedule` et fixtures, bandeau, clé × 4 ; M-b11. Sur la
+- [x] **T-b2 (AC-b4)** — Vitest rouge du bandeau, type `BackupSchedule` et fixtures, bandeau, clé × 4 ; M-b11. Sur la
   branche mise à jour après la fusion de la 32-1d.
-- [ ] **T-b3 (AC-b1, AC-b2)** — Vitest rouges, `applyState`, prédicat d'issue inconnue extrait (AdminRestorePanel inchangé en
+- [x] **T-b3 (AC-b1, AC-b2)** — Vitest rouges, `applyState`, prédicat d'issue inconnue extrait (AdminRestorePanel inchangé en
   comportement), `formBase`, `runNow` en trois cas (non-`ApiError` comprise), `loadError` remis à `null`, clé × 4 ;
   M-b1, M-b2, M-b8, M-b9, M-b10.
-- [ ] **T-b4 (AC-b3)** — Vitest rouges, séquence, doc-comments.
-- [ ] **T-b5 (AC-b5)** — clé modifiée × 4, repli Svelte, test ; M-b7 (deux formes).
-- [ ] **T-b6 (AC-b7)** — manuel, **`make admin`** sous verrou (non `make fr` : après le rebase sur la 32-1c, les dates
+- [x] **T-b4 (AC-b3)** — Vitest rouges, séquence, doc-comments.
+- [x] **T-b5 (AC-b5)** — clé modifiée × 4, repli Svelte, test ; M-b7 (deux formes).
+- [x] **T-b6 (AC-b7)** — manuel, **`make admin`** sous verrou (non `make fr` : après le rebase sur la 32-1c, les dates
   posées par le checkout peuvent faire reconstruire le manuel utilisateur et la brochure, des diffs binaires que la 32-1b
   ne porte pas ; seul `admin-manual.pdf` est commité), contrôle aplati ; après fusion de la 32-1c, mise à jour sur
   `main` et **régénération** du PDF (C-32-1-17).
-- [ ] **T-b7 (AC-b9, AC-b10, AC-b11)** — après la fusion de la 32-1c **et** de la 32-1d : mise à jour sur `main`,
+- [x] **T-b7 (AC-b9, AC-b10, AC-b11)** — après la fusion de la 32-1c **et** de la 32-1d : mise à jour sur `main`,
   E2E, captures, mutations, gates ; Dev Agent Record chiffré.
 
 ---
@@ -1110,9 +1110,129 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/
 
 #### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/devel/kesh-32-1b`, branche
+`story/32-1b` partie de `b3f52733` (`main` : les 32-1a, 32-1c et 32-1d fusionnées — aucune mise à jour sur `main`
+nécessaire, l'E2E et la régénération du PDF portent déjà le `.tex` et le serveur fusionnés) ; bases `kesh_321b` (gate)
+et `kesh_e2e_321b`, port 3325, `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-32-1b/target`, dossiers E2E
+`/tmp/kesh-e2e-321b/{inbox,documents,backup}`.
+
 #### Completion Notes List
 
+*Ne sont déclarés que les runs réellement exécutés ; journaux dans `kesh-gate-logs/` (hors dépôt), préfixe `321b-`.*
+
+- **T-b0** : bases `kesh_321b` et `kesh_e2e_321b` créées (`DROP`/`CREATE`, migrations du worktree, seed
+  `scripts/seed-dev-db.sql`) ; `kesh_321b` remise à zéro avant le gate complet, `kesh_e2e_321b` et `/tmp/kesh-e2e-321b/`
+  avant l'E2E (`321b-e2e.sh`, repris de `321d-e2e.sh`).
+- **Rouge constaté avant tout correctif** (`321b-rouge-avant.log`, Vitest des deux fichiers, tests neufs écrits
+  d'abord) : **16 échecs** — AC-b1 (i) et (iii) ; AC-b2 TIMEOUT, NETWORK_ERROR, 502, 504, rejet hors `ApiError`,
+  `undefined`, « s'écrit encore », 500, relecture en échec ; AC-b3 (i) et (ii) ; AC-b4 (cas `true`) ; AC-b5 (« soit »
+  absent) ; plus « liste vide », sans rapport, rouge par fuite d'une file `mockRejectedValueOnce` non consommée — d'où
+  `afterEach(vi.resetAllMocks)` (C-32-1-54). Verts sans correctif, comme attendu : AC-b1 (ii), AC-b2 403, AC-b4 cas
+  `false`.
+- **AC-b1** (E-6) : `formBase`, `resetForm`, `formUnchanged` (comparaison en nombres), `apply`, `applyState` (garde sur
+  une réponse non objet **avant** toute écriture, C-32-1-49) ; `save` envoie `formBase.version`. Vitest (i), (ii), (iii).
+- **AC-b2** (E-7) : `runNow` en trois cas — `!isApiError(err) || isUnknownOutcome(err)` → `admin-backup-auto-run-unknown`
+  et relecture ; autre `ApiError` → `errorText` et relecture si `status >= 500` ; 4xx sans relecture. `reread` :
+  `fetchBackupSchedule` → `applyState`, échec → `loadError` (texte partagé par `loadErrorText`, C-32-1-51), puis
+  `loadBackups`. `loadError = null` au départ de `runNow`. Prédicat extrait : `shared/utils/unknown-outcome.ts`
+  (`isUnknownOutcome`, import de `./api-error`) et son test ; `AdminRestorePanel.svelte` l'emploie par un alias qui garde
+  son doc-comment propre à l'import (C-32-1-50) — `AdminRestorePanel.test.ts` vert. Le 409 existant assert désormais
+  qu'aucune relecture n'a lieu.
+- **AC-b3** (E-8) : `backup-schedule.svelte.ts` — échec de lecture qui garde `_value`, compteur `_sequence` incrémenté par
+  `setBackupScheduleState` et au départ de chaque lecture ; quatre commentaires mis d'accord (module, getter, en-tête du
+  bandeau, en-tête de son test). Vitest (i), (ii) ; (iii) existant vert.
+- **AC-b4** (L-B5) : `lastSuccessInFuture: boolean` requis au type ; fixtures complétées (`backup-schedule.api.test.ts`,
+  `AutoBackupSection.test.ts`, `BackupScheduleBanner.test.ts`, `etat()` de la spec E2E) ; branche
+  `admin-backup-banner-future` dans `kind === 'overdue'` ; deux Vitest (`true`, `false`).
+- **AC-b5** (L-B6) : `admin-backup-server-too-large` prend `{ $size }` = `formatBackupSize(importMaxMib × 1 048 576,
+  locale)` ; valeur **observée** en fr-CH pour 7 Mio : `7,3 Mo` avec une **espace fine insécable U+202F** — le test
+  l'écrit ainsi (C-32-1-56). *Limite observée à la capture (d)* : l'arrondi à une décimale peut afficher la même valeur
+  pour la ligne et la limite (2049 Mio et 2048 Mio : « 2,1 Go » l'une et l'autre) ; la mention reste juste (comparaison
+  en octets), seul l'affichage se confond — non corrigé, signalé à la revue.
+- **AC-b7** (manuel) : § *Sauvegarde automatique* — *Ce que l'écran montre* (saisie gardée, « Recharger », réponse
+  manquante et 5xx relus, ce que la relecture ne dit pas) ; *Le bandeau de l'application* (cas futur, lecture manquée) ;
+  *Espace disque requis* (le seuil ne mesure pas la base ; la marge « un cinquième de la taille des documents plus
+  256 Mio » ; dernière phrase réécrite — C-32-1-55) ; *Les sauvegardes du serveur* (mention neuve) ; *Horloge du serveur
+  déréglée* (texte du bandeau). `make admin` sous verrou (`321b-make-admin.log` : 3 passes, stable) ; seul
+  `admin-manual.pdf` touché. **Contrôle aplati** (`321b-pdf-aplati.log`) : témoin positif sur le PDF d'avant (« trop
+  grande pour être restaurée par l'écran » sort), puis seize phrases neuves ou gardées présentes dans le PDF neuf (dont
+  « un cinquième de la taille des documents », « au moins deux intervalles », « retentée au bout d'une heure. »), « ce
+  seuil protège aussi la base » absente, `??` **0**, U+FFFD **0**, U+00A0 **0**. `binary(textes_coherents) |
+  binary(configuration_transmise)` **49/49** (`321b-cible-textes.log`), G22 (`la_sauvegarde_automatique_dit_vrai`)
+  compris. Symptôme grepé : « limite N Mio) », « aucune sauvegarde réussie depuis » — aucun autre site (user-manual,
+  brochure, `website/`, README).
+- **AC-b8** (i18n) : `grep -c '^admin-backup-'` **54 → 56** dans chacune des quatre locales (`b3f52733` → tête) ;
+  `cargo nextest run -p kesh-i18n` **41/41**, `parity_between_locales` compris (`321b-cible-i18n.log`) ; textes :
+  C-32-1-52. `sitesTotal` **2332 → 2334**, recompté par fichier aux deux bornes (`AutoBackupSection.svelte` 40 → 41,
+  `BackupScheduleBanner.svelte` 3 → 4, `AdminRestorePanel.svelte` 20 → 20, `unknown-outcome.ts` 0 → 0), commentaire
+  daté. **Garde non prévue par la fiche** : `i18n-libelle-en-dur.test.ts` (déclarations à suffixe `Label`/`Text`/
+  `Display`) a rougi au Vitest complet — `loadErrorText` est une candidate neuve, conforme : **70 → 71**, `conforme`
+  **56 → 57**, déclaration nommée au commentaire daté (commit `68843cd8`).
+- **AC-b9** (captures, thème clair, base E2E `with-company`, prises par `backup-schedule.spec.ts` pendant l'E2E complet
+  avec `KESH_E2E_CAPTURES_DIR`, copiées — C-32-1-53) : `321-captures/321b-a-saisie-gardee.png` (réelle : après le 200
+  du vrai serveur, nombre conservé 9 saisi et gardé, fréquence 12) ; `321b-b-reponse-manquante-504.png` (`POST …/run`
+  **intercepté en 504**, relecture au vrai serveur) ; `321b-c-bandeau-horloge-reculee.png` (`GET` du réglage
+  **intercepté**, `lastSuccessInFuture: true` — la spec n'a pas accès à la base ; page entière) ;
+  `321b-d-trop-grande-deux-unites.png` (liste interceptée : « limite 2048 Mio, soit 2,1 Go »). Regardées.
+- **AC-b10** — **au dernier commit de code `68843cd8`** :
+  - E2E `backup-schedule.spec.ts` : saisie non enregistrée du nombre conservé gardée après le 200 (assertions
+    `toHaveValue('9')` et fréquence `'12'`) ; 504 intercepté → message et relecture (réponse `GET` 200 attendue) ;
+    bandeau de l'horloge reculée ; mention « soit 2,1 ».
+  - **E2E complet** (`321b-e2e.log`, montage de `docs/testing.md`, port 3325, dossiers passés au backend **et** au
+    runner, backend arrêté par le PID qui écoute sur 3325) : **315 passés, 7 échoués, 17 ignorés** (13,0 min). Les sept
+    échecs, jugés fichier par fichier, sont les sept KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* :
+    `mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`.
+    `backup-schedule.spec.ts` : trois tests verts.
+  - **Gate complet** `scripts/test-fast.sh --ci` sous verrou, `kesh_321b` remise à zéro juste avant
+    (`321b-gate-complet.log`, révision `68843cd8` écrite en tête) : garde des droits conforme, fmt, clippy, nextest
+    **3981 exécutés, 3981 passés, 7 ignorés**, exit 0 (aucun fichier Rust touché : même total qu'au gate de la 32-1d).
+  - **Frontend** sous verrou (`321b-frontend-{check,lint,unit,build}.log`) : `npm run check` 0 erreur, 29 avertissements
+    (préexistants) ; `lint-i18n-ownership` PASS ; `test:unit` **163 fichiers, 1937 tests passés** ; `build` vert. (Un
+    premier passage au commit `8cfe08c3` avait rendu 2 échecs, ceux de la garde des libellés, corrigés par `68843cd8`.)
+  - Les commits postérieurs à `68843cd8` ne touchent que de la documentation (cette fiche, le registre,
+    `sprint-status.yaml`, le prompt de revue).
+- **AC-b11 — mutations** (sous verrou, appliquées par Edit, motif unique, restaurées par `git checkout -- f && touch f`,
+  diff résiduel **0** après chacune ; script `kesh-gate-logs/321b-mut.sh`, journal `321b-mut-<id>.log`) : **M-b1**
+  (`applyState` réécrit toujours) tuée par (i) et (iii) ; **M-b2** (relecture retirée) tuée par huit tests ;
+  **M-b3** (`_value = null` dans le `catch`) tuée par E-8 (i) ; **M-b4** (séquence ignorée) tuée par E-8 (ii) ;
+  **M-b7** site (`size` retiré de l'appel) tuée par le maillon 3 (« chaque site fournit les arguments que son repli
+  réclame ») ; **M-b7** `de-CH` (`{ $size }` retiré) tuée par le maillon 2 (« les quatre locales déclarent le même jeu
+  de variables ») ; **M-b8** (message neuf étendu aux 4xx, `status !== 409`) tuée par le cas 403 (et 500) ; **M-b9**
+  (`schedule.version`) tuée par (iii) ; **M-b10** (`loadError = null` retiré) tuée par « relecture en échec … un run
+  suivant réussi l'efface » ; **M-b11** (`lastSuccessInFuture && false`) tuée par le cas `true` du bandeau. Neuf
+  mutations, dix exécutions. **Test faible trouvé par M-b2** : « TIMEOUT pendant l'écriture » était resté vert —
+  `toContain('26')` était satisfait par « 2026 » ; la date se compare désormais à sa forme affichée et le statut de la
+  précédente est asserté (commit `8cfe08c3`) ; M-b2 rejouée (`321b-mut-M-b2-test-renforce.log`) : **neuf** rouges.
+- **Tests ajoutés**, recomptés aux deux bornes `b3f52733` → `68843cd8` (lignes `it(`/`test(` ; boucles comptées à
+  l'exécution) : `AutoBackupSection.test.ts` 15 → 24 lignes (exécutés 17 → 30 : une boucle de cinq cas),
+  `BackupScheduleBanner.test.ts` 9 → 13, `unknown-outcome.test.ts` 0 → 3 lignes (9 exécutés), spec E2E 3 → 3
+  (assertions et captures ajoutées au test d'origine et au test des états). Soit **26 tests Vitest neufs** :
+  1911 (gate de la 32-1d) → **1937**.
+- **CHANGELOG** : une ligne sous `### Corrigé` du bloc `## [0.16.0] — Non publié` existant (32-1c, 32-1d).
+- **Écarts** : aucun écart aux AC. T-b0 nomme `/tmp/kesh-e2e-321/…` : le prompt de l'agent attribue `/tmp/kesh-e2e-321b/…`,
+  `kesh_321b`, port 3325, employés. T-b6 et T-b7 prévoyaient une mise à jour sur `main` après les fusions des 32-1c et
+  32-1d : la branche est partie **après** ces fusions (`b3f52733`), sans rebase. Garde `i18n-libelle-en-dur.test.ts`
+  touchée hors *Fichiers touchés* (C-32-1-51). Aucune issue demandée ; la limite d'affichage de L-B6 (même arrondi pour
+  la ligne et la limite) est laissée à l'appréciation de la revue.
+
 #### File List
+
+- `frontend/src/lib/features/admin-backup/AutoBackupSection.svelte` (`formBase`, `applyState`, `reread`, `runNow` en
+  trois cas, mention en deux unités)
+- `frontend/src/lib/features/admin-backup/AutoBackupSection.test.ts`
+- `frontend/src/lib/features/admin-backup/BackupScheduleBanner.svelte`, `BackupScheduleBanner.test.ts`
+- `frontend/src/lib/features/admin-backup/backup-schedule.svelte.ts` (séquence, échec qui garde l'état)
+- `frontend/src/lib/features/admin-backup/backup-schedule.api.ts`, `backup-schedule.api.test.ts`
+  (`lastSuccessInFuture`)
+- `frontend/src/lib/features/admin-restore/AdminRestorePanel.svelte` (prédicat extrait)
+- `frontend/src/lib/shared/utils/unknown-outcome.ts`, `unknown-outcome.test.ts` (neufs)
+- `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal` 2334), `i18n-libelle-en-dur.test.ts` (71, `conforme` 57)
+- `frontend/tests/e2e/backup-schedule.spec.ts`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/32-1-defauts-courts.md`, `epic-32-choix-autonomes-321.md` (C-32-1-49 à 56),
+  `sprint-status.yaml`, `321b-review-prompt-p1.md`
 
 ### 32-1c
 
@@ -1597,6 +1717,15 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/
   Décompte « refus en français seul » recompté par l'orchestrateur aux deux bornes, commandes de la fiche : **145 →
   144** (chaîne littérale), **101 → 101** (formatée) — le « 101 → 100 » de la lentille E venait d'une autre méthode.
   Note A : « exit 0 » des journaux frontend `check` et `build` se lit au contenu, sans ligne `exit`. Clé à `done`.
+- 2026-10-24 — **32-1b développée** (Opus 5.5, branche `story/32-1b` partie de `b3f52733`, dernier commit de code
+  `68843cd8`) : E-6 (`formBase`, `applyState`, la saisie s'enregistre contre sa version), E-7 (`runNow` en trois cas,
+  prédicat `isUnknownOutcome` extrait et partagé avec l'import, relecture), E-8 (séquence, l'état gardé sur un échec),
+  L-B5 (le bandeau lit `lastSuccessInFuture`), L-B6 (`$size`), manuel (L-B3 et les phrases de l'écran), PDF régénéré par
+  `make admin`, contrôle aplati. Deux clés neuves et une modifiée × 4 (54 → 56) ; `sitesTotal` 2332 → 2334 ; garde des
+  libellés en dur 70 → 71 (`loadErrorText`, non prévue par la fiche). 26 tests Vitest neufs (1911 → 1937), rouge
+  constaté avant (16 échecs) ; neuf mutations tuées (dix exécutions), un test faible trouvé par M-b2 et renforcé ; gate
+  complet 3981/3981 (7 ignorés) ; E2E 315 / 7 KF-029 / 17 ignorés ; quatre captures. CHANGELOG : une ligne. Registre
+  C-32-1-49 à C-32-1-56. Clé à `review` ; revue de code P1 (Sonnet, lentilles B, E, A) : `321b-review-prompt-p1.md`.
 
 [#711]: https://github.com/guycorbaz/kesh/issues/711
 [#714]: https://github.com/guycorbaz/kesh/issues/714
