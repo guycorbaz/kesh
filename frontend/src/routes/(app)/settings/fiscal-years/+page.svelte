@@ -116,15 +116,23 @@
 	// c'est une information sur l'état des comptes, pas un geste.
 	let outOfOrder = $derived(outOfOrderState(fiscalYears));
 
-	// Garde LIFO côté client : le plus proche exercice postérieur encore clos
-	// (min startDate parmi les postérieurs clos), aligné sur le serveur
-	// `find_later_closed_in_tx ORDER BY start_date ASC LIMIT 1`. Si non-null,
-	// la réouverture de `fy` est bloquée (le serveur reste le filet 409).
-	function nearestLaterClosed(fy: FiscalYearResponse): FiscalYearResponse | null {
+	/**
+	 * Garde LIFO côté client (Story 31-5, #589) — le **plus récent** exercice
+	 * postérieur à `fy` encore clos (max `startDate`), ou `null`. Si non-null, la
+	 * réouverture de `fy` est bloquée, et c'est cet exercice que l'infobulle nomme.
+	 *
+	 * Pourquoi le plus récent : la garde du serveur (`reopen` de `fiscal_years.rs`,
+	 * `kesh-db`) refuse de rouvrir tout exercice suivi d'un exercice clos — elle ne
+	 * tire de `find_later_closed_in_tx` qu'une **existence**. Parmi les postérieurs
+	 * clos, le seul rouvrable est donc celui qui n'en a aucun après lui : le max.
+	 * Nommer le plus proche enverrait l'utilisateur sur un exercice que la même garde
+	 * refuserait à son tour. Le serveur reste l'autorité (409).
+	 */
+	function latestLaterClosed(fy: FiscalYearResponse): FiscalYearResponse | null {
 		let best: FiscalYearResponse | null = null;
 		for (const other of fiscalYears) {
 			if (other.status === 'Closed' && other.startDate > fy.startDate) {
-				if (best === null || other.startDate < best.startDate) {
+				if (best === null || other.startDate > best.startDate) {
 					best = other;
 				}
 			}
@@ -134,7 +142,7 @@
 
 	/**
 	 * Story 15-12a (#543) — le **plus ancien** exercice antérieur encore ouvert,
-	 * ou `null`. Sœur de `nearestLaterClosed`, alignée sur la requête serveur de
+	 * ou `null`. Sœur de `latestLaterClosed`, alignée sur la requête serveur de
 	 * la clôture (`EARLIER_OPEN_SQL` de `fiscal_years.rs`, `ORDER BY start_date ASC
 	 * LIMIT 1` — le même texte que lit le contrôle K1 de « Préparer la clôture ») :
 	 * c'est lui qu'il faut clôturer d'abord — en nommer un plus proche enverrait
@@ -512,7 +520,7 @@
 									</span>
 								{/if}
 								{#if fy.status === 'Closed' && isAdmin}
-									{@const blocker = nearestLaterClosed(fy)}
+									{@const blocker = latestLaterClosed(fy)}
 									{@const reopenHint = blocker
 										? i18nMsg(
 												'fiscal-year-reopen-blocked-later-closed',
