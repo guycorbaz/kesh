@@ -1004,3 +1004,20 @@ route `POST …/full-import` (`admin_backup` reste `pub(crate)`).
   au fr-CH. Le pic pendant une écriture (une de plus, le `.partial`) reste au manuel seul (§ *Volume*), qui le dit
   déjà : l'écran garde une phrase courte.
 - **Réversible** : oui.
+
+### C-31-1-93 — Un dossier `auto/` qui ne se liste pas fait échouer le tour avant l'écriture
+
+- **Contexte** : revue de code P2, M1 — un `auto/` inscriptible et traversable mais illisible (`0o300`) acceptait
+  l'écriture ; `appliquer_la_retention`, sur l'échec de `read_dir`, journalisait et rendait 0. La sauvegarde était
+  annoncée réussie, la rétention ne tournait plus, et le disque se remplissait en silence — alors que le manuel (§ *Les
+  sauvegardes du serveur*) dit que « la sauvegarde automatique suivante échoue, et le panneau comme le bandeau le
+  disent ».
+- **Retenu** : `ecrire` vérifie, juste après la création du dossier, que `auto/` se liste (`std::fs::read_dir`) ; sinon
+  le tour s'arrête **avant toute écriture** en `failed`, journalisé. C'est le point le plus simple : un seul contrôle,
+  dans le `spawn_blocking` qui touche déjà le disque, au même endroit que l'échec de création du dossier, et qui ne
+  laisse aucune archive orpheline. Le manuel est vrai tel qu'il est écrit (rien à changer, PDF inchangé). La rétention
+  garde son repli journalisé, qui ne vaut plus que pour un dossier changé entre le contrôle et la fin du tour.
+- **Rejeté** : remonter l'échec de la rétention après l'écriture — une archive écrite et relue serait annoncée en
+  échec, alors que `last_success_*` est déjà enregistré ; et restreindre le manuel à « l'écriture est refusée » — il
+  décrirait le trou au lieu de le fermer.
+- **Réversible** : oui.

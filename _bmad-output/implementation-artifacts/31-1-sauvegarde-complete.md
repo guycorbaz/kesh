@@ -2402,3 +2402,40 @@ dans le futur » présents ; « s'il est plus court », « plus de deux interval
 Suite : passe P2 **ciblée**, une lentille (regression hunter), **Haiku**, sur le diff aplati `b4936ba2..HEAD` —
 `311c-review-prompt-p2.md`, rapport `kesh-gate-logs/311c-review-p2.md`.
 
+### Revue de code P2 (ciblée, Haiku) de la 31-1c (2026-10-24) — regression hunter sur `b4936ba2..9c20768a` : 0/0/2/6 — remédiée (Opus 5.5)
+
+Rapport `kesh-gate-logs/311c-review-p2.md`. Remédiation `6b85409a` (code et tests seuls ; manuel, PDF et i18n
+inchangés).
+
+| Finding | Sort |
+|---|---|
+| **M1** (MEDIUM) | **vérifié au code et corrigé** (C-31-1-93) : un `auto/` en `0o300` (inscriptible, illisible) acceptait l'écriture, la rétention rendait 0 en silence, aucun `failed`. `ecrire` vérifie maintenant que `auto/` se liste juste après sa création ; sinon le tour s'arrête **avant d'écrire** en `failed`, que le panneau et le bandeau affichent. Le manuel (§ *Les sauvegardes du serveur*) dit exactement ce comportement : non modifié, PDF non régénéré |
+| **M2** (MEDIUM) | **reclassé LOW par l'orchestrateur** : le nettoyage des `.partial` ne tourne qu'au début d'un tour, sous `backup_lock`, et une seule instance de Kesh sert une base ; aucune écriture ne peut être en cours, et un `.partial` daté d'au moins dix minutes dans le futur vient d'un tour interrompu avant un recul d'horloge — sa suppression est voulue (C-31-1-90). Code inchangé ; le doc-comment de `supprimer_les_partiels` dit désormais cette raison |
+| L2 | **corrigé** : `ENOTDIR` à l'ouverture (`auto/` remplacé par un fichier depuis la liste) → `Ok(None)` → 404 ; cas ajouté à `ouverture_sans_suivre_les_liens` |
+| L6 | **corrigé** : le doc-comment d'`ouvrir_la_sauvegarde` précise que seul le dernier composant n'est pas suivi (un `auto/` lien est suivi, par la liste comme par l'ouverture) ; les deux autres points de L6 jugés acceptables par la P2, laissés |
+| L1, L3, L4, L5 | **non corrigés**, consignés (`kesh-gate-logs/311c-low-residuels.md` § *P2*, P2-L1, P2-L3, P2-L4, P2-L5) pour l'issue #711 |
+
+**Rouge constaté avant le correctif** (`kesh-gate-logs/311c-p2r-rouge.log`) : `liste_servie_malgre_un_dossier_auto_inutilisable`
+étendu, 1 test, 1 échec à la branche (3) `0o300` — `assertion left == right failed: auto illisible`, `left:
+Done(Success(Ok))`, `right: Done(Failure(Failed))` ; la branche (2) `0o600`, à laquelle un `run_once` a été ajouté,
+passait déjà (écriture refusée).
+
+**Tests** (de `9c20768a` à `6b85409a`, recompté `grep -cE '#\[(test|tokio::test|sqlx::test)'` aux deux bornes) : **aucune
+fonction ajoutée** — `auto_backup.rs` 26 → 26, `tests/admin_auto_backup_e2e.rs` 20 → 20 ; deux tests étendus :
+`liste_servie_malgre_un_dossier_auto_inutilisable` (troisième forme `0o300` ; `run_once` et `lastStatus = failed`
+vérifiés aussi pour `0o600` ; rien d'écrit dans `auto/`), `ouverture_sans_suivre_les_liens` (`ENOTDIR`). Cohérent avec
+le gate : 3964 avant et après.
+
+**Gates** : entre les patchs, `311c-p2r-cible-1.log` (fmt, clippy workspace `-D warnings`, nextest
+`binary(admin_auto_backup_e2e) | binary(textes_coherents) | lib de kesh-api`) **560 passés, 1 ignoré**. **Au dernier
+commit de code `6b85409a`** (bases `kesh_311c` et `kesh_e2e_311c` remises à zéro sans GRANT, `/tmp/kesh-e2e-311c-p2r`
+recréé, un seul passage sous le verrou, `311c-p2r-final.log`) : `scripts/test-fast.sh --ci` **3964 passés, 7
+ignorés** ; `npm run check` **0 erreur, 29 avertissements** (5100 fichiers) ; `lint-i18n-ownership` **PASS** ; Vitest
+**1909 tests, 162 fichiers, tous passés** ; `build` **vert** ; **E2E complet** (port 3313, `/health` `status: ok`)
+**315 passés, 7 échoués, 17 ignorés** (12,9 min) — `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`,
+`:92`, `onboarding.spec.ts:57`, `:77`, `:150` : **les sept KF-029 (#97)** de `docs/testing.md` § *Les échecs
+attendus*, aucun hors liste. Backend E2E arrêté par son PID.
+
+Suite : passe P3 **ciblée**, une lentille (regression hunter), **Sonnet**, sur le diff aplati `9c20768a..HEAD` —
+`311c-review-prompt-p3.md`, rapport `kesh-gate-logs/311c-review-p3.md`.
+
