@@ -10,6 +10,22 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.15.0] — 2026-10-24
 
+Epic 31, **une sauvegarde qui restaure tout** ([#503](https://github.com/guycorbaz/kesh/issues/503)) : le fichier `.keshbackup` emporte désormais les pièces — documents fournisseur importés et PDF figés des factures émises —, Kesh fait lui-même sa sauvegarde complète à intervalle régulier, réglée dans *Administration → Sauvegarde complète*, les sauvegardes du serveur se listent et se téléchargent depuis l'écran, et une installation neuve se restaure depuis l'assistant. Le manuel d'administration décrit la **répétition d'une clôture sur une copie** isolée, avant de clore pour de bon. S'y ajoutent quatre correctifs courts — la démonstration valide une facture avec TVA, l'infobulle de *Réouvrir*, la communication du QR-code dans la langue de la facture, les refus du journal d'audit traduits — et, en interne, un smoke E2E sur chaque PR et Rust 1.97.1.
+
+⚠️ **Kesh tient désormais une comptabilité réelle, dans des limites qu'il faut connaître.** Depuis le 2026-10-23, la comptabilité de son auteur — une personne physique, non assujettie à la TVA — est tenue dans Kesh. Ce que cela n'établit pas :
+
+- **aucun exercice réel n'a encore été clôturé dans Kesh** : la répétition d'une clôture que décrit le manuel n'a été jouée que sur une sauvegarde de démonstration ;
+- **la TVA n'est pas opposable** : dix défauts critiques restent ouverts ([#390](https://github.com/guycorbaz/kesh/issues/390) à [#397](https://github.com/guycorbaz/kesh/issues/397), [#401](https://github.com/guycorbaz/kesh/issues/401), [#525](https://github.com/guycorbaz/kesh/issues/525), jalon « Vague 2 ») — **la comptabilité d'un assujetti ne se tient pas dans Kesh** ;
+- aucun rapport ne franchit la borne d'un exercice, si bien qu'aucune comparaison avec l'exercice précédent n'est possible ([#404](https://github.com/guycorbaz/kesh/issues/404)) ; et une écriture saisie à la main ne porte pas de pièce justificative — seules les factures en ont une, le document d'une facture fournisseur ou le PDF figé d'une facture émise ([#235](https://github.com/guycorbaz/kesh/issues/235)).
+
+⚠️ **À faire en passant à la 0.15.0** — le détail est au manuel d'administration, *Passer à la 0.15.0* :
+
+1. **Sauvegarder avant la mise à jour** : la base, une sauvegarde d'installation `.keshbackup` **et le dossier des documents** (`KESH_DOCUMENTS_DIR`), que le `.keshbackup` de la 0.14.0 n'emporte pas. La 0.15.0 ajoute une migration **non breaking**, `20261024000001_backup_schedule` (la table du réglage et de l'état de la sauvegarde automatique) : `kesh_version_min_required` ne change pas. Mais, comme toute migration, elle **empêche la 0.14.0 de démarrer** sur une base passée par la 0.15.0, et une sauvegarde d'installation prise sous la 0.15.0 ne s'importe pas dans une 0.14.x : **le retour à la 0.14.0 passe uniquement par la sauvegarde d'avant la mise à jour** — base, `.keshbackup` et dossier des documents —, et ce qui a été saisi depuis est perdu.
+2. **Prévoir la place des sauvegardes automatiques** : activées à la mise à jour (chaque jour, sept conservées), elles s'écrivent dans `./backup/auto`, chacune pesant la base **plus** le dossier des documents (voir *Modifié*).
+3. **Derrière un proxy inverse**, relever la taille de requête et les délais admis pour `/api/v1/admin/` : `KESH_ADMIN_IMPORT_MAX_MB` vaut désormais 2048 par défaut.
+
+Le compose ne change pas (seuls ses commentaires et ceux de `.env.example` suivent), et aucune variable de `.env` n'est ajoutée : la sauvegarde automatique se règle dans l'interface.
+
 ### Ajouté
 
 - **La sauvegarde d'installation emporte les pièces** ([#503](https://github.com/guycorbaz/kesh/issues/503)). Le fichier
@@ -71,10 +87,6 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 - ⚠️ **Une sauvegarde de la 0.15.0 ne s'importe pas dans une 0.14.x** : celle-ci la refuse avec « Fichier de sauvegarde
   invalide ou corrompu » (`INVALID_BACKUP_STRUCTURE`), devant une sauvegarde pourtant saine. La sauvegarde de sécurité
   prise avant chaque import emporte elle aussi les pièces : elle pèse la base **plus** le dossier des documents.
-- ⚠️ **Migration `20261024000001_backup_schedule` (non breaking)** : une table système porte le réglage et l'état de la
-  sauvegarde automatique ; `kesh_version_min_required` ne change pas. Mais, comme toute migration, elle **empêche la
-  0.14.0 de démarrer** sur une base migrée : le retour à la 0.14.0 ne passe que par **la sauvegarde d'avant la mise à
-  jour** — base, `.keshbackup` **et dossier des documents**, que le `.keshbackup` de la 0.14.0 n'emporte pas.
 - **La sauvegarde automatique est activée à la mise à jour** (chaque jour, 7 conservées) : environ cinq minutes après le
   démarrage, une première sauvegarde complète — la base plus le dossier des documents — s'écrit dans `./backup/auto`.
   Prévoir la place de plusieurs copies sur le disque du dossier de sauvegarde, et les copier hors du disque (Hyper
