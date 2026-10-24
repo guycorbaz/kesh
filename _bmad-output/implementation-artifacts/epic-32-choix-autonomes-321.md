@@ -1,6 +1,6 @@
-# Epic 32 — registre des choix autonomes de la Story 32-1 (défauts courts, clés 32-1a, 32-1b, 32-1c)
+# Epic 32 — registre des choix autonomes de la Story 32-1 (défauts courts, clés 32-1a, 32-1b, 32-1c, 32-1d)
 
-Registre propre à la story (C-32-1-1 à C-32-1-36 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
+Registre propre à la story (C-32-1-1 à C-32-1-37 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage de la 32-1b), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
 (`docs/agents-orchestration.md` § 1). Fiche : `32-1-defauts-courts.md`. Clé courte : `321`.
 Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` sur `chore/kickoff-epic-32` (`6f0cee00`).
 
@@ -255,6 +255,8 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   finale et **régénère** le PDF (`make fr`) sur le `.tex` fusionné. La 32-1a ne touche pas le manuel.
 - **Écartée** : une PR unique pour les trois clés (trois revues dans une PR, contraire à C-32-0-3).
 - **Amendé (validation P1, 2026-10-24)** : la 32-1a et la 32-1b partagent aussi trois fichiers de code (hunks distincts) ; la clé fusionnée en second se rebase et repasse son gate complet ; `closes #711` porté par celle des deux qui fusionne en dernier — C-32-1-27.
+- **Amendé (découpage, 2026-10-24)** : la 32-1d (serveur) ne touche pas le manuel ; l'ordre 32-1c → 32-1b reste, et
+  s'y ajoute 32-1d → 32-1b (le bandeau lit le drapeau servi) — C-32-1-37.
 - **Réversible** : oui (l'ordre inverse marche, en inversant la régénération).
 
 ### C-32-1-18 — Gates : complet pour 32-1a et 32-1b, E2E complet au dernier commit de code de chacune ; 32-1c ciblé
@@ -269,6 +271,9 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   code).
 - **Écartée** : pas d'E2E pour la 32-1a (défendable, mais une revue le contesterait ; le coût d'une contestation est
   supérieur au coût du run).
+- **Amendé (découpage, 2026-10-24)** : la 32-1d reçoit le même régime que la 32-1b — gate complet avant le push (ciblage
+  permis en boucle, pas de `kesh-db`), les quatre gates frontend (les catalogues changent), E2E complet au dernier commit
+  de code (la réponse servie change) ; l'E2E final de la 32-1b se joue après la fusion de la 32-1d — C-32-1-37.
 - **Réversible** : oui.
 
 ### C-32-1-19 — Prémisses des issues corrigées au code
@@ -390,6 +395,9 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Retenu** : la seconde des deux à fusionner se rebase sur `main` et repasse son gate complet ; `closes #711` est
   porté par celle qui fusionne **en dernier**, l'autre `refs #711`, vérification après fusion.
 - **Écartée** : imposer l'ordre 32-1a puis 32-1b (sans raison technique : les hunks ne se recouvrent pas).
+- **Amendé (découpage, 2026-10-24)** : les trois fichiers de code communs passent avec la partie serveur — ils sont
+  partagés par la 32-1a et la **32-1d** ; la 32-1b n'en touche plus aucun. `closes #711` va à la dernière fusionnée des
+  32-1a, 32-1b, 32-1d ; la 32-1d fusionnant avant la 32-1b, elle porte toujours `refs #711` — C-32-1-37.
 - **Réversible** : oui.
 
 ### C-32-1-28 — `lastSuccessInFuture` requis côté client, fixtures nommées (R7 = F9)
@@ -398,6 +406,8 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Retenu** : champ **requis** (le serveur le sert toujours) ; fixtures complétées : `backup-schedule.api.test.ts:44`,
   `AutoBackupSection.test.ts:45`, `BackupScheduleBanner.test.ts:43`, et `etat()` de `backup-schedule.spec.ts:111-125`.
 - **Écartée** : champ optionnel (le type dirait moins que le contrat servi).
+- **Amendé (découpage, 2026-10-24)** : le champ est servi par la 32-1d, déclaré requis par la 32-1b ; « requis » n'est
+  vrai qu'une fois la 32-1d fusionnée, d'où l'ordre 32-1d → 32-1b — C-32-1-37.
 - **Réversible** : oui.
 
 ---
@@ -519,4 +529,53 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   cinq modules, au prix d'un ordre de fusion de plus sur le PDF et les catalogues.
 - **Écartée** : découper d'office (la décision appartient au Project Lead ; les trois MEDIUM de la P2 qui portent sur
   la 32-1b — F1, F2, R3 — sont des défauts de la rédaction d'origine, non un recyclage).
+- **Amendé (découpage, 2026-10-24)** : la 32-1b est **découpée** par décision de l'orchestrateur, avant la P3 —
+  C-32-1-37. La coupe retenue diffère sur deux points de celle proposée ici : le bandeau (lecteur de
+  `lastSuccessInFuture`) et tout le manuel restent à l'écran, si bien que le serveur ne touche ni le frontend ni le PDF
+  (aucun ordre de plus sur le PDF) ; et les comptes sont 5 (écran) et 3 (serveur), non « cinq chacun ».
 - **Réversible** : oui.
+
+---
+
+*C-32-1-37 : découpage de la 32-1b avant la validation P3 (Opus 5.5, 2026-10-24, sur décision de l'orchestrateur).*
+
+### C-32-1-37 — La 32-1b découpée en écran (32-1b) et serveur (32-1d) : règle de splitting préventif
+
+- **Contexte** : la 32-1b touchait **7 modules** au grain métier (C-32-1-36), au-delà des cinq de la règle de splitting
+  préventif de `CLAUDE.md` ; et la validation P2 a levé le signal de sévérité **MEDIUM → MEDIUM** (4 → 6 MEDIUM
+  distincts) avec un **recyclage** — R1, la M-a7 indécidable, née de la remédiation P1 de l'AC-a11, qui reçoit sa
+  deuxième réécriture. L'amendement D5 exempte du découpage une sévérité égale faite de défauts **d'origine** distincts,
+  non un recyclage ni une dispersion au-delà de cinq modules : les deux motifs de découpage sont réunis. La story n'est
+  pas encore passée en P3 : la règle s'applique avant.
+- **Signal déclaré au Project Lead** : oui — au Change Log de la P2 (C-32-1-36), puis ici et à l'entrée « Découpage de
+  la 32-1b » du Change Log de la fiche. Décision prise par l'orchestrateur en autonomie (Guy absent), **à confirmer par
+  Guy** à son retour ; réversible tant que rien n'est développé.
+- **Retenu** — la coupe de la remédiation P2, vérifiée au code et ajustée :
+  - **32-1b « écran »** (`32-1b-defauts-sauvegarde-automatique`) : E-6 (AC-b1), E-7 (AC-b2), E-8 (AC-b3), L-B5 côté
+    bandeau (AC-b4 réduit : type `BackupSchedule`, fixtures, `BackupScheduleBanner.svelte`, clé
+    `admin-backup-banner-future`), L-B6 (AC-b5), le manuel entier (AC-b7, L-B3 compris : une phrase sur `seuil_d_espace`,
+    qui ne change pas), i18n (AC-b8, **+2**), captures (a)–(d), E2E, mutations M-b1–M-b4, M-b7–M-b10 et **M-b11** neuve
+    (le bandeau qui ignore le drapeau — sans elle, la moitié bandeau de L-B5 n'avait aucune mutation propre, la M-b5
+    d'origine tuant le seul serveur). Modules : `features/admin-backup`, `features/admin-restore`, `shared/utils`,
+    `kesh-i18n`, manuel — **5** ; aucun fichier Rust.
+  - **32-1d « serveur »** (`32-1d-defauts-sauvegarde-serveur`) : L-B5 drapeau servi (AC-d1 : `is_success_in_future`,
+    `lastSuccessInFuture`, `prochaine_et_retard`), L-B7 (AC-d2 : `t(…)`, G9 à 5, `i18n_e2e.rs`), i18n (AC-d3, **+1**),
+    capture du refus en allemand (AC-d4), gates et E2E (AC-d5), M-d1 = ex-M-b5, M-d2 = ex-M-b6 (AC-d6). Modules :
+    `kesh-api/auto_backup`, `kesh-api/routes/backup_schedule`, `kesh-i18n` — **3** ; aucun fichier du frontend ni du
+    manuel (un champ de plus dans la réponse est ignoré par le client actuel ; le refus n'a pas de phrase au manuel).
+  - **Aucune AC entre les deux** : chaque élément de l'AC-b4 d'origine est attribué ; L-B3 n'a pas de code ; AC-b9 (e)
+    est l'AC-d4.
+  - **Numérotation** : les numéros de la 32-1b sont gardés (renvois à AC-b6, T-b1, M-b5, M-b6), pour que le registre et
+    les rapports P1/P2, qui les citent, restent lisibles ; la 32-1d numérote en `AC-d*`, `M-d*`, `T-d*`.
+  - **Ordre de fusion** : 32-1d → 32-1b (la 32-1b déclare requis un champ que la 32-1d sert ; son E2E final, sa capture
+    (c), ses mutations et son gate complet se jouent sur `main` mis à jour) ; 32-1c → 32-1b (PDF, C-32-1-17) ; la 32-1a
+    libre, la seconde des 32-1a et 32-1d se rebasant (trois fichiers de code communs, C-32-1-27).
+  - **Mots-clés** : `closes #711` sur la dernière fusionnée des 32-1a, 32-1b, 32-1d — jamais la 32-1d, qui porte
+    `refs #711` ; 32-1a `closes #716`, 32-1c `closes #714` inchangés.
+  - **CHANGELOG** : bloc `## [0.16.0] — Non publié` créé par la première fusionnée des 32-1c et 32-1d ; une ligne
+    `Corrigé` pour la 32-1d (refus traduit).
+  - **Bilan d'issues** : inchangé (0 issue, −1 bug) ; aucune issue ouverte ni fermée par le découpage.
+- **Écartées** : la coupe à deux manuels (bandeau et phrases du serveur au manuel de la 32-1d) — un PDF binaire de plus à
+  ordonner, pour aucun gain ; numéroter à neuf la 32-1b (AC-b1 à b9) — casserait les renvois du registre et des rapports ;
+  ne pas découper (C-32-1-36) — les deux motifs de l'amendement D5 sont réunis.
+- **Réversible** : oui (refondre les parties B et D), tant qu'aucune des deux n'est développée.

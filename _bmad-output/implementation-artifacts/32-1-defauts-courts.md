@@ -1,12 +1,14 @@
-# Story 32.1 : défauts courts — tests et commentaires (32-1a), écran de la sauvegarde automatique (32-1b), procédure de répétition (32-1c) (#716, #711, #714)
+# Story 32.1 : défauts courts — tests et commentaires (32-1a), écran de la sauvegarde automatique (32-1b), procédure de répétition (32-1c), serveur de la sauvegarde automatique (32-1d) (#716, #711, #714)
 
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` sur
-`chore/kickoff-epic-32` (`6f0cee00`). Une fiche, trois clés (C-32-0-3, C-32-1-1) : `32-1a-defauts-tests-commentaires`,
-`32-1b-defauts-sauvegarde-automatique`, `32-1c-defauts-procedure-repetition`. Registre :
-`epic-32-choix-autonomes-321.md` (C-32-1-1 à C-32-1-36 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la
-validation P2). Clé courte : `321`. Action A8 de la rétrospective de l'Epic 31.*
+`chore/kickoff-epic-32` (`6f0cee00`). Une fiche, **quatre** clés (C-32-0-3, C-32-1-1 ; la quatrième, 32-1d, née du
+découpage de la 32-1b avant la validation P3, C-32-1-37) : `32-1a-defauts-tests-commentaires`,
+`32-1b-defauts-sauvegarde-automatique` (l'écran), `32-1c-defauts-procedure-repetition`,
+`32-1d-defauts-sauvegarde-serveur` (le serveur). Registre : `epic-32-choix-autonomes-321.md` (C-32-1-1 à C-32-1-37 ;
+C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage). Clé courte : `321`.
+Action A8 de la rétrospective de l'Epic 31.*
 
 ## Story
 
@@ -24,8 +26,9 @@ plus étroite, nommée dans le rapport.
 
 **Décompte** (lecture seule, 2026-10-24, au kickoff : `gh issue list --state open --limit 500 --json number --jq length`
 rendait **142**, dont 51 bugs — chiffres du fichier d'epic, non recomptés par cette fiche). Effet attendu de la story,
-si tout se passe comme écrit : **#716** fermée par la 32-1a ; **#711** fermée par la dernière fusionnée de la 32-1a et
-de la 32-1b (C-32-1-27), E-1 et E-2 sortis dans **[#725]** (ouverte le 2026-10-24) ; **#714** fermée par la 32-1c, les
+si tout se passe comme écrit : **#716** fermée par la 32-1a ; **#711** fermée par la dernière fusionnée des 32-1a, 32-1b
+et 32-1d — en pratique la dernière des 32-1a et 32-1b, la 32-1d fusionnant avant la 32-1b (C-32-1-27, C-32-1-37) —, E-1 et
+E-2 sortis dans **[#725]** (ouverte le 2026-10-24) ; **#714** fermée par la 32-1c, les
 gestes à trancher sortis dans **[#726]** (ouverte le 2026-10-24) ; les copies de l'assistant lexical que la 32-1a ne
 corrige pas sorties dans **[#727]** (ouverte le 2026-10-24 sur la demande de la remédiation P1, *Inventaire*). Bilan :
 **−3 + 3 = 0** issue ; les bugs : #711 et #714 portent `bug`, #716 non ; #725 porte `bug` (`bug`, `P3`), #726 non
@@ -65,9 +68,9 @@ Chaque constat a été relu **au site**, même LOW (`docs/agents-orchestration.m
 | E-9 (2) | **Vrai, non mécanique en test.** La propriété du garde de `full_export` (`routes/admin.rs:72-80`, garde déplacé dans `remplir`) ne s'observe qu'au départ du client pendant l'assemblage (C-32-1-5). | 32-1a (commentaire) |
 | E-9 (3) | **Vrai.** `code()` (`auto_backup.rs:1121-1128`) n'écarte que les lignes `//` ; `argument_de` (`:1159-1179`) ne voit pas les chaînes ; `corps()` (`:1182-1188`) coupe au premier `\n}`. | 32-1a |
 | L-B3 | **Vrai ; site corrigé.** `seuil_d_espace` (`auto_backup.rs:496-500` — non les l. 490-491 citées, qui sont la fin de `taille_des_documents`) : `max(dernière, documents) × 1,2 + 256 Mio` ; la base n'est mesurée qu'à travers la dernière sauvegarde. Le manuel (`admin-manual.tex:2349`, § *Espace disque requis*) ne le dit pas. | 32-1b |
-| L-B5 | **Vrai.** `is_overdue` vrai pour une réussite future (`auto_backup.rs:221-226`, voulu) ; `since` (`BackupScheduleBanner.svelte:33`) affiche la date future. | 32-1b |
+| L-B5 | **Vrai.** `is_overdue` vrai pour une réussite future (`auto_backup.rs:221-226`, voulu) ; `since` (`BackupScheduleBanner.svelte:33`) affiche la date future. | 32-1d (le drapeau servi) ; 32-1b (le bandeau qui le lit) — C-32-1-37 |
 | L-B6 | **Vrai.** `formatBackupSize` en unités décimales (`backup-format.ts:14-28`) ; `exceedsImportLimit` en Mio (`backup-schedule.api.ts:129-131`) ; mention `AutoBackupSection.svelte:450-458`. | 32-1b |
-| L-B7 | **Vrai.** `AppError::Validation("Réglage de sauvegarde hors domaine : …".into())` (`routes/backup_schedule.rs:133-137`). | 32-1b |
+| L-B7 | **Vrai.** `AppError::Validation("Réglage de sauvegarde hors domaine : …".into())` (`routes/backup_schedule.rs:133-137`). | 32-1d |
 
 ### #714 — constats de la revue de la 31-4 (manuel d'administration, `sec:repetition-cloture`, l. 1617-1933)
 
@@ -271,17 +274,22 @@ boucle de revue**. Aucune ligne servie ne change ; `kesh-i18n` et `kesh-seed` ne
 
 ---
 
-## B — 32-1b : l'écran de la sauvegarde automatique (#711 : E-6, E-7, E-8, L-B3, L-B5, L-B6, L-B7)
+## B — 32-1b : l'écran de la sauvegarde automatique (#711 : E-6, E-7, E-8, L-B3 (manuel), L-B5 (bandeau), L-B6)
+
+*Découpée avant la validation P3 (C-32-1-37) : le serveur — le drapeau `lastSuccessInFuture` de L-B5 et le refus traduit
+de L-B7 — est passé dans la **32-1d** (partie D). Les numéros des AC et des mutations de la 32-1b sont **gardés** ; ce qui
+est parti laisse une ligne de renvoi (AC-b6 ; M-b5, M-b6), pour que les références du registre et des rapports P1 et P2
+restent lisibles.*
 
 **Modules** : frontend (trois dossiers de `src/lib/` — `features/admin-backup/` ; `features/admin-restore/`, pour le seul
 prédicat extrait (AC-b2) ; `shared/utils/`, un module neuf et son test — et `tests/e2e/backup-schedule.spec.ts`),
-`kesh-api` (`routes/backup_schedule.rs`, `auto_backup.rs` pour L-B5 ; tests `i18n_e2e.rs`, `admin_auto_backup_e2e.rs`,
-`textes_coherents.rs`), `kesh-i18n` (catalogues, quatre locales), manuel d'administration FR (`.tex` et PDF) — **4** au
-grain des crates et paquets ; **7** au grain des modules métier de premier niveau que cite `CLAUDE.md`
-(`features/admin-backup`, `features/admin-restore`, `shared/utils`, `kesh-api/routes/backup_schedule`,
-`kesh-api/auto_backup`, `kesh-i18n`, le manuel). Le second dépasse cinq : la règle de splitting préventif vise une story
-avant sa validation, et le dépassement est **déclaré au Project Lead** (Change Log, validation P2), sans découpage par
-la remédiation (C-32-1-36). Pas de migration, pas de `kesh-db`.
+`kesh-i18n` (catalogues, quatre locales : deux clés neuves, une modifiée), manuel d'administration FR (`.tex` et PDF) —
+**3** au grain des crates et paquets ; **5** au grain des modules métier de premier niveau que cite `CLAUDE.md`
+(`features/admin-backup`, `features/admin-restore`, `shared/utils`, `kesh-i18n`, le manuel). **Aucun fichier Rust** n'est
+modifié (`kesh-api` ne l'est plus : `auto_backup.rs`, `routes/backup_schedule.rs`, `i18n_e2e.rs`,
+`admin_auto_backup_e2e.rs` et `textes_coherents.rs` sont à la 32-1d ou à la 32-1a). Pas de migration, pas de `kesh-db`.
+**Dépend de la 32-1d** (le bandeau lit `lastSuccessInFuture`, que la 32-1d sert) et de la **32-1c** (le PDF) : fusionnée
+après les deux (Dev Notes, § *Pourquoi quatre clés*).
 
 ### Critères d'acceptation
 
@@ -363,25 +371,22 @@ la remédiation (C-32-1-36). Pas de migration, pas de `kesh-db`.
    `failed` → **aucun** bandeau ; (iii) le test existant « lecture en échec : absent, sans erreur » (l. 106) reste vert.
    **Rouges constatés avant le correctif.** **Mutations** : **M-b3** — rétablir `_value = null` dans le `catch` →
    (i) rouge ; **M-b4** — ignorer la séquence → (ii) rouge.
-4. **AC-b4 — L-B5 : une réussite datée du futur se dit telle.**
-   - `auto_backup.rs` : `pub fn is_success_in_future(schedule: &BackupSchedule, now: NaiveDateTime) -> bool`, vrai si
-     la sauvegarde est **activée**, que `last_success_at` existe et que `passe()` l'écarte (l. 183) — la garde
-     `enabled` calquée sur `is_overdue` (l. 221-226), pour que `lastSuccessInFuture` vrai implique `overdue` vrai et que
-     l'API ne serve jamais deux drapeaux contradictoires (C-32-1-24) ; tests unitaires à côté de
-     `is_overdue_dans_le_futur` (l. 950) : futur → vrai, passé → faux, absent → faux, égal à `now` → faux, **futur et
-     désactivée → faux**.
-   - `BackupScheduleResponse` (`routes/backup_schedule.rs:55-74`, `new` l. 76-95) : champ `last_success_in_future: bool`
-     (`lastSuccessInFuture`), calculé par `new` ; `BackupSchedule` (frontend, `backup-schedule.api.ts:34-51`) le porte,
-     **requis** (le serveur le sert toujours ; C-32-1-28). Fixtures typées à compléter de `lastSuccessInFuture: false`,
-     sans quoi `npm run check` rougit : `backup-schedule.api.test.ts:44` (`schedule()`), `AutoBackupSection.test.ts:45`,
-     `BackupScheduleBanner.test.ts:43` ; et, non typée mais à tenir fidèle à la réponse servie, la fonction `etat()` de
-     `frontend/tests/e2e/backup-schedule.spec.ts:111-125`.
-   - `prochaine_et_retard` (`admin_auto_backup_e2e.rs:1121`) assert `lastSuccessInFuture` **faux** dans les cas passés et
-     **vrai** dans le cas futur (assertion `overdue` de la l. 1159) — **rouge avant** (`null`).
+4. **AC-b4 — L-B5, le bandeau : une réussite datée du futur se dit telle.** *Le drapeau servi
+   (`is_success_in_future`, champ `lastSuccessInFuture` de `BackupScheduleResponse`, test `prochaine_et_retard`) est
+   l'AC-d1 de la 32-1d, qui fusionne avant ; cet AC en est le lecteur (C-32-1-37).*
+   - `BackupSchedule` (frontend, `backup-schedule.api.ts:34-51`) porte `lastSuccessInFuture: boolean`, **requis** (le
+     serveur le sert toujours une fois la 32-1d fusionnée ; C-32-1-28). Fixtures typées à compléter de
+     `lastSuccessInFuture: false`, sans quoi `npm run check` rougit : `backup-schedule.api.test.ts:44` (`schedule()`),
+     `AutoBackupSection.test.ts:45`, `BackupScheduleBanner.test.ts:43` ; et, non typée mais à tenir fidèle à la réponse
+     servie, la fonction `etat()` de `frontend/tests/e2e/backup-schedule.spec.ts:111-125`.
    - `BackupScheduleBanner.svelte` : `kind === 'overdue'` **et** `lastSuccessInFuture` → clé neuve
      `admin-backup-banner-future` (« La dernière sauvegarde automatique réussie est datée du { $date }, après l'heure du
-     serveur : son horloge a reculé. », quatre locales) ; sinon le texte actuel. `bannerKind` inchangé. Vitest neuf.
-   **Mutation M-b5** : `is_success_in_future` qui rend toujours `false` → le test e2e rouge.
+     serveur : son horloge a reculé. », quatre locales) ; sinon le texte actuel. `bannerKind` inchangé. Vitest neuf
+     (`BackupScheduleBanner.test.ts`) : état `overdue` avec `lastSuccessInFuture: true` → le texte neuf, la date
+     formatée ; même état avec `false` → le texte actuel. **Rouge constaté avant le correctif.**
+   **Mutation M-b11** (ajoutée au découpage, C-32-1-37 : la M-b5 d'origine, côté serveur, est devenue la M-d1 de la
+   32-1d, et le bandeau n'avait aucune mutation propre) : le bandeau qui ignore `lastSuccessInFuture` → le Vitest neuf
+   rouge (cas `true`).
 5. **AC-b5 — L-B6 : la limite dite dans les deux unités.** `admin-backup-server-too-large` prend `{ $size }`
    (`formatBackupSize(importMaxMib × 1 048 576, locale)`) : « trop grande pour être restaurée par l'écran (limite
    { $mib } Mio, soit { $size }) » ; repli Svelte (`AutoBackupSection.svelte:454`) identique à la valeur fr-CH ;
@@ -392,15 +397,7 @@ la remédiation (C-32-1-36). Pas de migration, pas de `kesh-db`.
    (repli ↔ fr-CH), maillon 2 (« les quatre locales déclarent le même jeu de variables pour chaque clé ») — aucune garde
    neuve. **Mutation M-b7** : retirer `size` de l'appel `i18nMsg` du site → le maillon 3 rouge ; retirer `{ $size }` du
    seul `de-CH` → le maillon 2 rouge (journal de la seconde forme écrit aussi).
-6. **AC-b6 — L-B7 : le refus du réglage traduit.** `update_backup_schedule` : `AppError::Validation(t(
-   "admin-backup-schedule-error-out-of-domain", "<valeur fr-CH exacte>"))` ; clé dans les quatre catalogues ; entrée
-   ajoutée à la table de G9 (`textes_coherents.rs`, `les_replis_rust_suivent_le_catalogue`, `TABLE: [(&str, Cles); 4]` →
-   `5`, fichier `crates/kesh-api/src/routes/backup_schedule.rs`, un site, sans paramètre). Test neuf dans
-   `crates/kesh-api/tests/i18n_e2e.rs` (C-32-1-13) : application montée en `DeCh` (`spawn_app_with_locale`), connexion
-   administrateur, `GET` du réglage pour lire `version`, `PUT /api/v1/admin/backup-schedule` avec `intervalHours: 7`
-   → **400**, `VALIDATION_ERROR`, message **égal** au rendu `de-CH` de la clé et **différent** du rendu `fr-CH` (marques
-   d'isolation retirées, comme `audit_log_e2e.rs:396-405`). **Rouge constaté avant le correctif** (message français).
-   **Mutation M-b6** : rétablir la chaîne française → rouge.
+6. **AC-b6 — déplacé** : L-B7 (le refus du réglage traduit) est l'**AC-d2** de la 32-1d (C-32-1-37).
 7. **AC-b7 — L-B3 et les autres phrases du manuel.** `docs/manual/fr/admin-manual.tex`, § *Sauvegarde automatique* :
    - *Espace disque requis* (l. 2349) : le seuil **ne mesure pas la base** ; il la compte à travers la dernière
      sauvegarde réussie, qui la contient. **Tant qu'aucune sauvegarde n'a réussi** (`last_success_bytes` absent, compté
@@ -431,30 +428,38 @@ la remédiation (C-32-1-36). Pas de migration, pas de `kesh-db`.
    `make admin` sous verrou (T-b6) ; **contrôle aplati** du PDF (Dev Notes, § *Contrôle aplati d'un PDF* : apostrophe
    typographique normalisée, témoin positif d'abord) pour chaque phrase neuve, et `grep -c '??'` sur le texte aplati : 0.
    Les gardes qui lisent le manuel restent vertes (`binary(textes_coherents)`, `binary(configuration_transmise)`).
-8. **AC-b8 — i18n.** Trois clés neuves (`admin-backup-auto-run-unknown`, `admin-backup-banner-future`,
-   `admin-backup-schedule-error-out-of-domain`) et une modifiée (`admin-backup-server-too-large`, variable `$size`) dans
-   les quatre catalogues ; `parity_between_locales` (`kesh-i18n/src/loader.rs`) vert ; G9 vert ;
+8. **AC-b8 — i18n.** Deux clés neuves (`admin-backup-auto-run-unknown`, `admin-backup-banner-future`) et une modifiée
+   (`admin-backup-server-too-large`, variable `$size`) dans les quatre catalogues — la troisième clé neuve d'origine,
+   `admin-backup-schedule-error-out-of-domain`, est à la 32-1d (AC-d3) ; `parity_between_locales`
+   (`kesh-i18n/src/loader.rs`) vert ; G9 vert (inchangé par la 32-1b) ;
    `npm run lint-i18n-ownership` vert (préfixe `admin-backup-` dans `features/admin-backup/`) ; les gardes frontend
    `frontend/src/lib/shared/i18n-entrees-a-variables.test.ts` (variable `$size`, AC-b5) et
    `i18n-repli-divergent-actif.test.ts` (repli Svelte de la clé modifiée égal au fr-CH) vertes. Recompte :
-   `grep -c '^admin-backup-' crates/kesh-i18n/locales/*/messages.ftl` aux deux bornes, **+3** par locale.
+   `grep -c '^admin-backup-' crates/kesh-i18n/locales/*/messages.ftl` aux deux bornes — base de la 32-1b sur `main`
+   **après** la fusion de la 32-1d, et sa tête —, **+2** par locale (la 32-1d en ajoute une, comptée à sa propre
+   fusion).
 9. **AC-b9 — recette visuelle** (thème clair, base de démonstration, `kesh-gate-logs/321-captures/`) : (a) formulaire
    modifié conservé après « Sauvegarder maintenant » ; (b) message de réponse manquante (délai simulé par une route
-   interceptée en E2E, ou Vitest à défaut — dire lequel) ; (c) bandeau « datée après l'heure du serveur » ; (d) ligne
-   « trop grande … soit … » ; (e) refus du réglage en allemand, si l'écran permet de le provoquer (sinon dire pourquoi).
+   interceptée en E2E, ou Vitest à défaut — dire lequel) ; (c) bandeau « datée après l'heure du serveur » (prise après
+   la fusion de la 32-1d, sur un serveur qui sert le drapeau, ou par une route interceptée — dire lequel) ; (d) ligne
+   « trop grande … soit … ». La capture (e) d'origine, le refus du réglage en allemand, est l'AC-d4 de la 32-1d.
    Jointes au Dev Agent Record et au prompt de revue.
 10. **AC-b10 — E2E.** `frontend/tests/e2e/backup-schedule.spec.ts`, test « Administrateur : réglage gardé… » (l. 139) :
     avant « Sauvegarder maintenant », modifier le nombre conservé **sans enregistrer** ; après le 200, le champ garde la
     valeur saisie (AC-b1 à travers la frontière HTTP). Gate **complet**, les quatre gates frontend, **E2E complet au
-    dernier commit de code**, jugé fichier par fichier contre `docs/testing.md` § *Les échecs attendus*.
-11. **AC-b11 — mutations** M-b1 à M-b10 (dix ; M-b7 en deux formes ; M-b9 et M-b10 de la validation P2 ; même
-    protocole que l'AC-a13).
+    dernier commit de code**, jugé fichier par fichier contre `docs/testing.md` § *Les échecs attendus* — joué sur la
+    branche **mise à jour sur `main` après la fusion de la 32-1d et de la 32-1c** (le backend servi porte alors
+    `lastSuccessInFuture`) : un E2E joué avant cette mise à jour ne compte pas pour le dernier commit de code.
+11. **AC-b11 — mutations** M-b1 à M-b4 et M-b7 à M-b11 (neuf ; M-b7 en deux formes ; M-b9 et M-b10 de la validation
+    P2 ; M-b11 du découpage ; même protocole que l'AC-a13). **M-b5** et **M-b6** sont parties avec la 32-1d (**M-d1**,
+    **M-d2**) ; leurs numéros ne sont pas réemployés.
 
 ### Tâches
 
 - [ ] **T-b0** — Base et port propres (comme T-a0) ; dossiers E2E `/tmp/kesh-e2e-321/…` passés au backend **et** au runner.
-- [ ] **T-b1 (AC-b6, AC-b8)** — clé × 4, test `i18n_e2e.rs` **rouge**, `t(…)`, G9.
-- [ ] **T-b2 (AC-b4)** — tests rouges (unitaires, e2e), fonction, champ, bandeau, clé × 4.
+- [ ] **T-b1** — *déplacée* : le refus traduit est la T-d1 de la 32-1d.
+- [ ] **T-b2 (AC-b4)** — Vitest rouge du bandeau, type `BackupSchedule` et fixtures, bandeau, clé × 4 ; M-b11. Sur la
+  branche mise à jour après la fusion de la 32-1d.
 - [ ] **T-b3 (AC-b1, AC-b2)** — Vitest rouges, `applyState`, prédicat d'issue inconnue extrait (AdminRestorePanel inchangé en
   comportement), `formBase`, `runNow` en trois cas (non-`ApiError` comprise), `loadError` remis à `null`, clé × 4 ;
   M-b1, M-b2, M-b8, M-b9, M-b10.
@@ -464,7 +469,8 @@ la remédiation (C-32-1-36). Pas de migration, pas de `kesh-db`.
   posées par le checkout peuvent faire reconstruire le manuel utilisateur et la brochure, des diffs binaires que la 32-1b
   ne porte pas ; seul `admin-manual.pdf` est commité), contrôle aplati ; après fusion de la 32-1c, mise à jour sur
   `main` et **régénération** du PDF (C-32-1-17).
-- [ ] **T-b7 (AC-b9, AC-b10, AC-b11)** — E2E, captures, mutations, gates ; Dev Agent Record chiffré.
+- [ ] **T-b7 (AC-b9, AC-b10, AC-b11)** — après la fusion de la 32-1c **et** de la 32-1d : mise à jour sur `main`,
+  E2E, captures, mutations, gates ; Dev Agent Record chiffré.
 
 ---
 
@@ -559,30 +565,112 @@ procédure dit, sans changer aucune commande ni ajouter aucune consigne d'agir (
 
 ---
 
+## D — 32-1d : le serveur de la sauvegarde automatique (#711 : L-B5 (drapeau servi), L-B7)
+
+*Née du découpage de la 32-1b avant la validation P3 (C-32-1-37). Ses AC reprennent, sans en changer le fond, la moitié
+serveur de l'ancien AC-b4 (AC-d1) et l'ancien AC-b6 (AC-d2) ; ses mutations sont les anciennes M-b5 (M-d1) et M-b6
+(M-d2).*
+
+**Modules** : `kesh-api` (`auto_backup.rs` — `is_success_in_future` près d'`is_overdue` et ses tests dans le `mod tests` ;
+`routes/backup_schedule.rs` — le champ servi et le refus traduit ; tests `admin_auto_backup_e2e.rs`, `i18n_e2e.rs`,
+`textes_coherents.rs`), `kesh-i18n` (une clé neuve, quatre locales) — **2** au grain des crates ; **3** au grain des
+modules métier (`kesh-api/auto_backup`, `kesh-api/routes/backup_schedule`, `kesh-i18n`). **Aucun fichier du frontend ni du
+manuel** : un champ ajouté à la réponse est ignoré par le client actuel (le type `BackupSchedule` ne le déclare pas
+encore ; `npm run check` reste vert), et le refus, déjà affiché tel que le serveur le rend (`errorText`), n'a pas de
+phrase au manuel (`grep -n 'hors domaine' docs/manual/fr/*.tex` : rien). Pas de migration, pas de `kesh-db`, aucune
+table : le `.keshbackup` ne change pas. **Fusionnée avant la 32-1b**, qui lit son drapeau.
+
+### Critères d'acceptation
+
+1. **AC-d1 — L-B5, le drapeau servi : une réussite datée du futur se dit telle** (ex-AC-b4, moitié serveur).
+   - `auto_backup.rs` : `pub fn is_success_in_future(schedule: &BackupSchedule, now: NaiveDateTime) -> bool`, vrai si
+     la sauvegarde est **activée**, que `last_success_at` existe et que `passe()` l'écarte (l. 183) — la garde
+     `enabled` calquée sur `is_overdue` (l. 221-226), pour que `lastSuccessInFuture` vrai implique `overdue` vrai et que
+     l'API ne serve jamais deux drapeaux contradictoires (C-32-1-24) ; tests unitaires à côté de
+     `is_overdue_dans_le_futur` (l. 950) : futur → vrai, passé → faux, absent → faux, égal à `now` → faux, **futur et
+     désactivée → faux**.
+   - `BackupScheduleResponse` (`routes/backup_schedule.rs:55-74`, `new` l. 76-95) : champ `last_success_in_future: bool`
+     (`lastSuccessInFuture`), calculé par `new`, toujours servi.
+   - `prochaine_et_retard` (`admin_auto_backup_e2e.rs:1121`) assert `lastSuccessInFuture` **faux** dans les cas passés et
+     **vrai** dans le cas futur (assertion `overdue` de la l. 1159) — **rouge avant** (`null`).
+   **Mutation M-d1** (ex-M-b5) : `is_success_in_future` qui rend toujours `false` → le test e2e rouge.
+2. **AC-d2 — L-B7 : le refus du réglage traduit** (ex-AC-b6). `update_backup_schedule` : `AppError::Validation(t(
+   "admin-backup-schedule-error-out-of-domain", "<valeur fr-CH exacte>"))` ; clé dans les quatre catalogues ; entrée
+   ajoutée à la table de G9 (`textes_coherents.rs`, `les_replis_rust_suivent_le_catalogue`, `TABLE: [(&str, Cles); 4]` →
+   `5`, fichier `crates/kesh-api/src/routes/backup_schedule.rs`, un site, sans paramètre). Test neuf dans
+   `crates/kesh-api/tests/i18n_e2e.rs` (C-32-1-13) : application montée en `DeCh` (`spawn_app_with_locale`), connexion
+   administrateur, `GET` du réglage pour lire `version`, `PUT /api/v1/admin/backup-schedule` avec `intervalHours: 7`
+   → **400**, `VALIDATION_ERROR`, message **égal** au rendu `de-CH` de la clé et **différent** du rendu `fr-CH` (marques
+   d'isolation retirées, comme `audit_log_e2e.rs:396-405`). **Rouge constaté avant le correctif** (message français).
+   Le test existant du `PUT` hors domaine (`admin_auto_backup_e2e.rs:849`) n'assert que le statut : il reste vert.
+   **Mutation M-d2** (ex-M-b6) : rétablir la chaîne française → rouge.
+3. **AC-d3 — i18n.** Une clé neuve (`admin-backup-schedule-error-out-of-domain`) dans les quatre catalogues ;
+   `parity_between_locales` vert ; G9 vert (table à **5**) ; `npm run lint-i18n-ownership` et les gardes frontend
+   `i18n-entrees-a-variables.test.ts`, `i18n-repli-divergent-actif.test.ts` vertes (les catalogues changent, aucun site
+   Svelte). Recompte : `grep -c '^admin-backup-' crates/kesh-i18n/locales/*/messages.ftl` aux deux bornes (base de la
+   branche, tête), **+1** par locale.
+4. **AC-d4 — recette visuelle** (ex-AC-b9 (e) ; thème clair, base de démonstration, `kesh-gate-logs/321-captures/`) :
+   le refus du réglage en allemand, si l'écran permet de le provoquer — le sélecteur de fréquence et le champ du nombre
+   conservé bornent la saisie, si bien qu'il faut sans doute une requête forgée ou une route interceptée ; sinon dire
+   pourquoi au Dev Agent Record. Le drapeau `lastSuccessInFuture` n'a aucun rendu dans la 32-1d (capture (c) de la
+   32-1b).
+5. **AC-d5 — gates.** Gate backend **complet** (`scripts/test-fast.sh`, base remise à zéro) avant le push ; en boucle de
+   revue, gate ciblé `binary(admin_auto_backup_e2e)`, `binary(i18n_e2e)`, `binary(textes_coherents)` et les tests du
+   `mod tests` d'`auto_backup.rs` (pas de `kesh-db` : le ciblage est permis) ; les quatre gates frontend (les catalogues
+   changent) ; **E2E complet au dernier commit de code** — la réponse servie change, et `backup-schedule.spec.ts` tourne
+   contre elle —, jugé fichier par fichier contre `docs/testing.md` § *Les échecs attendus*.
+6. **AC-d6 — mutations** M-d1 et M-d2 (deux ; même protocole que l'AC-a13).
+
+### Tâches
+
+- [ ] **T-d0** — Base et port propres (comme T-a0) ; dossiers E2E `/tmp/kesh-e2e-321/…` passés au backend **et** au runner.
+- [ ] **T-d1 (AC-d2, AC-d3)** — clé × 4, test `i18n_e2e.rs` **rouge**, `t(…)`, G9 (ex-T-b1).
+- [ ] **T-d2 (AC-d1)** — tests rouges (unitaires, e2e), fonction, champ (ex-T-b2, moitié serveur).
+- [ ] **T-d3 (AC-d4, AC-d5, AC-d6)** — capture, mutations, gates, E2E ; Dev Agent Record chiffré.
+
+---
+
 ## Dev Notes
 
-### Pourquoi trois clés, et dans quel ordre
+### Pourquoi quatre clés, et dans quel ordre
 
-Les trois parties se développent **séparément**, mais elles ne sont pas sans fichier commun (C-32-1-27) :
-- **32-1a et 32-1b** partagent trois fichiers de code, en hunks distincts : `crates/kesh-api/src/auto_backup.rs` (A : les
-  helpers lexicaux du `mod tests`, l. 1117-1201 ; B : `is_success_in_future` près de `is_overdue`, l. 221, et ses tests
-  près de `is_overdue_dans_le_futur`, l. 950, dans le même `mod tests`), `crates/kesh-api/tests/admin_auto_backup_e2e.rs`
-  (A : `TestEnv` l. 55-129 et `dossier_auto_inutilisable` l. 684 ; B : `prochaine_et_retard` l. 1121) et
-  `crates/kesh-api/tests/textes_coherents.rs` (A : `DATE_ISO` l. 277 et un test neuf ; B : `TABLE` de G9, l. 694).
-  Fusion textuelle sans conflit attendue ; la clé fusionnée **en second** se met à jour sur `main` (rebase), vérifie
-  `git diff` des trois fichiers, et repasse son gate **complet** avant sa fusion.
+*Trois clés jusqu'au découpage de la 32-1b avant la validation P3 (C-32-1-37), qui en a sorti la 32-1d.*
+
+Les quatre parties se développent **séparément**, mais elles ne sont pas sans fichier commun (C-32-1-27, amendé par
+C-32-1-37) :
+- **32-1a et 32-1d** partagent trois fichiers de code, en hunks distincts : `crates/kesh-api/src/auto_backup.rs` (A : la
+  déclaration `#[cfg(test)]` de `mod lexique` en tête, et les helpers lexicaux du `mod tests`, l. 1117-1201 ; D :
+  `is_success_in_future` près de `is_overdue`, l. 221, et ses tests près de `is_overdue_dans_le_futur`, l. 950, dans le
+  même `mod tests`), `crates/kesh-api/tests/admin_auto_backup_e2e.rs` (A : `TestEnv` l. 55-129 et
+  `dossier_auto_inutilisable` l. 684 ; D : `prochaine_et_retard` l. 1121) et `crates/kesh-api/tests/textes_coherents.rs`
+  (A : `DATE_ISO` l. 277 et un test neuf ; D : `TABLE` de G9, l. 694). Fusion textuelle sans conflit attendue ; la clé
+  fusionnée **en second** se met à jour sur `main` (rebase), vérifie `git diff` des trois fichiers, et repasse son gate
+  **complet** avant sa fusion. *(Ces trois fichiers étaient partagés par la 32-1a et la 32-1b avant le découpage ; la
+  32-1b n'en touche plus aucun.)*
+- **32-1d et 32-1b** partagent les quatre `crates/kesh-i18n/locales/*/messages.ftl` (clés distinctes : une pour la D,
+  deux neuves et une modifiée pour la B) ; et la 32-1b **lit** ce que la 32-1d sert (`lastSuccessInFuture`, AC-b4 ←
+  AC-d1) : **32-1d avant 32-1b**. La 32-1b peut se développer en parallèle (ses Vitest simulent la réponse), mais elle
+  se met à jour sur `main` après la fusion de la 32-1d, et son E2E complet, sa capture (c), ses mutations et son gate
+  complet se jouent **après** cette mise à jour (AC-b10, T-b7).
 - **32-1b et 32-1c** partagent `admin-manual.tex` (sections distinctes) et son PDF (binaire : conflit à toute fusion
-  parallèle) : **32-1c avant 32-1b**, la 32-1b régénérant le PDF sur le `.tex` fusionné (C-32-1-17).
-- Ordre : 32-1a quand elle est prête ; 32-1c avant 32-1b.
-- **Les trois** écrivent dans cette fiche, `sprint-status.yaml` et le registre (F11 de la validation P2) : chacune
-  n'écrit que **sa** sous-section du Dev Agent Record (*32-1a*, *32-1b*, *32-1c*, ci-dessous) et **sa** clé du
-  `sprint-status.yaml` ; le Change Log reçoit une entrée par clé, ajoutée en fin ; la seconde à fusionner résout par
+  parallèle) : **32-1c avant 32-1b**, la 32-1b régénérant le PDF sur le `.tex` fusionné (C-32-1-17). La 32-1d ne touche
+  pas le manuel : aucun ordre de plus sur le PDF.
+- **32-1a et 32-1b** ne partagent plus aucun fichier (la 32-1a touche `fiscal-years-page.test.ts`, non
+  `features/admin-backup/`).
+- **Ordre de fusion** : 32-1a quand elle est prête ; **32-1c** et **32-1d** dans l'ordre où elles sont prêtes ; **32-1b
+  en dernier des trois clés B, C, D**. Contraintes, et seulement elles : 32-1c → 32-1b ; 32-1d → 32-1b ; la seconde des
+  32-1a et 32-1d à fusionner se rebase et repasse son gate complet (fichiers communs).
+- **Les quatre** écrivent dans cette fiche, `sprint-status.yaml` et le registre (F11 de la validation P2) : chacune
+  n'écrit que **sa** sous-section du Dev Agent Record (*32-1a*, *32-1b*, *32-1c*, *32-1d*, ci-dessous) et **sa** clé du
+  `sprint-status.yaml` ; le Change Log reçoit une entrée par clé, ajoutée en fin ; la suivante à fusionner résout par
   union. Le registre ne reçoit que des entrées neuves, numérotées à la suite au moment de l'écriture.
 
 Mots-clés de PR (à poser par l'orchestrateur, **jamais dans un commit**) : 32-1a `closes #716` ; **`closes #711` porté
-par celle des 32-1a et 32-1b qui fusionne EN DERNIER** (E-9 est dans la 32-1a, le reste dans la 32-1b ; E-1 et E-2 sont
-dans [#725], déjà ouverte), l'autre portant `refs #711` — à décider au moment d'ouvrir la seconde PR, et à vérifier
-après fusion (`gh issue view 711 --json state`) ; 32-1c `closes #714` ([#726] étant ouverte).
+par celle des clés qui touchent #711 — 32-1a, 32-1b, 32-1d — qui fusionne EN DERNIER** (E-9 est dans la 32-1a, L-B5 et
+L-B7 dans la 32-1d, le reste dans la 32-1b ; E-1 et E-2 sont dans [#725], déjà ouverte), les autres portant
+`refs #711`. La 32-1d fusionnant toujours avant la 32-1b, elle porte **toujours** `refs #711` ; `closes #711` va donc à
+la dernière des 32-1a et 32-1b — à décider au moment d'ouvrir la seconde de ces deux PR, et à vérifier après fusion
+(`gh issue view 711 --json state`) ; 32-1c `closes #714` ([#726] étant ouverte).
 
 ### Contrôle aplati d'un PDF (AC-b7, AC-c7, AC-c9)
 
@@ -639,11 +727,15 @@ une, l'ajouter au `sed`.
   relecture **ne dit pas le résultat** d'une sauvegarde encore en cours (C-32-1-30) : le message et le manuel le disent.
 - **AC-b3** : le motif de séquence est celui de `fiscal-years` (C-29-1-37) ; la séquence est **module-level**, comme
   `_value`.
-- **AC-b4** : `passe()` est privée ; `is_success_in_future` vit dans le même module et la réemploie (une seule règle de
-  « futur »). Le bandeau ne compare toujours aucune date (doctrine du module).
-- **AC-b6** : `i18n_e2e.rs` a son propre verrou (`get_i18n_lock`, l. 27) ; le test neuf le prend, comme ses voisins.
+- **AC-b4** : le bandeau ne compare toujours aucune date (doctrine du module) : il lit le drapeau que la 32-1d sert.
+
+### 32-1d — remarques de conception
+
+- **AC-d1** : `passe()` est privée ; `is_success_in_future` vit dans le même module et la réemploie (une seule règle de
+  « futur »).
+- **AC-d2** : `i18n_e2e.rs` a son propre verrou (`get_i18n_lock`, l. 27) ; le test neuf le prend, comme ses voisins.
   Les routes d'administration exigent un administrateur **non PAT** (`require_not_pat`) : la connexion par mot de passe
-  d'`ensure_admin_user` y suffit.
+  d'`ensure_admin_user` y suffit. `t()` (`crates/kesh-api/src/errors.rs:36`) rend la clé dans la langue de l'instance.
 
 ### 32-1c — remarques
 
@@ -712,7 +804,7 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
 ### Inventaire des sites non résolus
 
 - **Classe « refus de validation en français seul »** (`AppError::Validation("…".into())` dans `crates/kesh-api/src/routes/`) :
-  L-B7 n'en corrige **qu'un** (`backup_schedule.rs`) ; #711 note le « motif répandu dans `routes/` ». Les autres sites
+  L-B7 (32-1d depuis le découpage, C-32-1-37) n'en corrige **qu'un** (`backup_schedule.rs`) ; #711 note le « motif répandu dans `routes/` ». Les autres sites
   sont **hors périmètre** et **suivis par [#710]** (ouverte, P4 : « Les refus de validation du backend
   (AppError::Validation) sont écrits en français en dur dans les routes, hors journal d'audit » ; #469, fermée, ne
   couvrait que le journal d'audit). Le développement relève le compte aux deux bornes et l'écrit au Dev Agent Record,
@@ -721,7 +813,7 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
   `grep -rzoP 'AppError::Validation\(\s*"' crates/kesh-api/src/routes | tr '\0' '\n' | grep -c Validation` (chaîne
   littérale ; **145** au 2026-10-24, validation P1) et
   `grep -rzoP 'AppError::Validation\(\s*format!\(\s*"' crates/kesh-api/src/routes | tr '\0' '\n' | grep -c Validation`
-  (chaîne formatée ; **101**). Attendu après la 32-1b : le premier baisse de **1**, le second ne bouge pas ; le décompte
+  (chaîne formatée ; **101**). Attendu après la 32-1d : le premier baisse de **1**, le second ne bouge pas ; le décompte
   est versé en commentaire sur #710.
 - **Mention de taille en Mio ailleurs** : `admin-backup-exceeds-import-limit` (`AdminBackupPanel.svelte:96-99`) dit
   « (N Mio) » sans afficher la taille du fichier à côté : pas de juxtaposition d'unités, hors classe de L-B6.
@@ -796,10 +888,11 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
   BackupScheduleBanner.svelte, BackupScheduleBanner.test.ts, backup-schedule.svelte.ts, backup-schedule.api.ts,
   backup-schedule.api.test.ts}` ; `frontend/src/lib/features/admin-restore/AdminRestorePanel.svelte` et un module
   partagé neuf sous `frontend/src/lib/shared/utils/` avec son test (prédicat d'issue inconnue extrait, AC-b2) ;
-  `frontend/tests/e2e/backup-schedule.spec.ts` ; `crates/kesh-api/src/auto_backup.rs` ;
-  `crates/kesh-api/src/routes/backup_schedule.rs` ; `crates/kesh-api/tests/{i18n_e2e.rs, admin_auto_backup_e2e.rs,
-  textes_coherents.rs}` ; `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ;
-  `docs/manual/fr/admin-manual.{tex,pdf}`.
+  `frontend/tests/e2e/backup-schedule.spec.ts` ; `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ;
+  `docs/manual/fr/admin-manual.{tex,pdf}`. Aucun fichier Rust (C-32-1-37).
+- **32-1d** : `crates/kesh-api/src/auto_backup.rs` ; `crates/kesh-api/src/routes/backup_schedule.rs` ;
+  `crates/kesh-api/tests/{i18n_e2e.rs, admin_auto_backup_e2e.rs, textes_coherents.rs}` ;
+  `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`.
 - **32-1c** : `docs/manual/fr/admin-manual.{tex,pdf}` ; `docs/manual/fr/user-manual.{tex,pdf}` ;
   `docs/manual/fr/marketing-brochure.pdf` (régénéré par la dépendance au `.sty`, texte inchangé hors ses 16 signes,
   C-32-1-26, C-32-1-31) ;
@@ -807,11 +900,15 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
 - **Toutes** : cette fiche, `sprint-status.yaml`, le registre `-321`.
 - **CHANGELOG** (C-32-1-26) : la 0.15.0 est publiée (`## [0.15.0] — 2026-10-24`, `CHANGELOG.md:11`) et aucun bloc non
   publié n'existe au 2026-10-24. Convention du dépôt (celle que `scripts/prepare-release.sh` date, l. 237-255) : un
-  bloc `## [0.16.0] — Non publié` en tête, sous la ligne `---`. La **première des 32-1b et 32-1c** qui fusionne le
-  **crée** s'il n'existe pas encore sur `main` (une autre story de l'Epic 32 a pu le faire), la seconde y ajoute ;
+  bloc `## [0.16.0] — Non publié` en tête, sous la ligne `---`. La **première des clés à effet visible** qui fusionne —
+  en pratique la première des **32-1c et 32-1d**, la 32-1b fusionnant après les deux (C-32-1-37) — le **crée** s'il
+  n'existe pas encore sur `main` (une autre story de l'Epic 32 a pu le faire), les suivantes y ajoutent ;
   rubrique **`### Corrigé`** (le CHANGELOG est en français : `Ajouté`, `Modifié`, `Corrigé`, `Interne, invisible de
-  l'utilisateur`). Une ligne pour la 32-1b (écran de la sauvegarde automatique) et une pour la 32-1c (manuels et
-  brochure : procédure de répétition, signes imprimés) ; la 32-1a n'a aucun effet visible — pas d'entrée, et elle ne
+  l'utilisateur`). Une ligne pour la 32-1d (le refus d'un réglage de sauvegarde hors domaine dans la langue de
+  l'instance), une pour la 32-1b (écran de la sauvegarde automatique : saisie gardée, réponse manquante relue, bandeau
+  stable, horloge du serveur reculée dite telle, limite en deux unités) et une pour la 32-1c (manuels et brochure :
+  procédure de répétition, signes imprimés) ; le drapeau `lastSuccessInFuture` servi par la 32-1d sans lecteur jusqu'à
+  la 32-1b n'a pas de ligne propre (la 32-1b le dit) ; la 32-1a n'a aucun effet visible — pas d'entrée, et elle ne
   crée pas le bloc.
 
 ### Risques
@@ -819,7 +916,9 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
 - **32-1a** : faible ; le risque est le **test qui passe à vide** (`memory/tests-qui-prouvent-moins`) — d'où un rouge
   constaté avant chaque correctif et une mutation tuée par AC.
 - **32-1b** : moyen ; trois changements de comportement d'écran, dont un état partagé (bandeau) ; l'E2E et les captures
-  sont exigés.
+  sont exigés ; elle dépend de la 32-1d (drapeau servi) — un développement fini avant la fusion de la 32-1d se rejoue
+  après (AC-b10).
+- **32-1d** : faible ; un champ ajouté à une réponse et un message traduit, sans lecteur frontend jusqu'à la 32-1b.
 - **32-1c** : la documentation exécutée a coûté 8 + 4 passes à la 31-4 ; ici, **aucune commande ne change** (AC-c9, diff
   des listings vide), ce qui borne la revue à des phrases.
 
@@ -834,7 +933,7 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
 
 ## Dev Agent Record
 
-*Une sous-section par clé, chacune écrite par sa seule branche (Dev Notes, § *Pourquoi trois clés*).*
+*Une sous-section par clé, chacune écrite par sa seule branche (Dev Notes, § *Pourquoi quatre clés*).*
 
 ### 32-1a
 
@@ -853,6 +952,14 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
 #### File List
 
 ### 32-1c
+
+#### Agent Model Used
+
+#### Completion Notes List
+
+#### File List
+
+### 32-1d
 
 #### Agent Model Used
 
@@ -964,6 +1071,32 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
     `huit`, `grep -c "⚠"`, `texte inchangé`, `git show HEAD:`, `la clé qui fusionne la première`, `256 Mio`, `Un seul
     balayeur`). Aucune issue neuve ; deux commentaires à verser par l'orchestrateur (#725, #727, *Commentaires à
     verser*). **Six MEDIUM remédiés : une passe P3 complète est due** (`321-validate-prompt-p3.md`, Sonnet).
+- 2026-10-24 — **Découpage de la 32-1b** (Opus 5.5, avant la validation P3 ; décision de l'orchestrateur, règle de
+  splitting préventif de `CLAUDE.md`, amendement D5 ; C-32-1-37). Motifs : la 32-1b touchait **7 modules** au grain
+  métier (C-32-1-36), et la P2 a levé le signal de sévérité **MEDIUM → MEDIUM avec un recyclage** (R1, deuxième
+  réécriture de l'AC-a11) — ce que l'amendement D5 compte pour découper. Signal déclaré au Project Lead (registre,
+  C-32-1-37). Coupe, celle que proposait la remédiation P2, ajustée au code :
+  - **32-1b « écran »** (E-6, E-7, E-8, L-B6 ; L-B3 et L-B5 pour le manuel et le bandeau) : AC-b1, AC-b2, AC-b3, AC-b4
+    (réduit au bandeau, au type `BackupSchedule` et aux fixtures), AC-b5, AC-b7 (manuel entier, L-B3 compris : une phrase
+    sur un comportement existant, sans code), AC-b8 (deux clés neuves, une modifiée, **+2**), AC-b9 (a)–(d), AC-b10,
+    AC-b11 (neuf mutations : M-b1 à M-b4, M-b7 à M-b10, et **M-b11** neuve — le bandeau qui ignore le drapeau, la M-b5
+    d'origine étant côté serveur) ; **5 modules** au grain métier, 3 au grain des paquets ; **aucun fichier Rust**.
+  - **32-1d « serveur »** (L-B5 drapeau servi, L-B7) : AC-d1 (ex-AC-b4, moitié serveur), AC-d2 (ex-AC-b6), AC-d3 (une
+    clé, **+1**), AC-d4 (ex-AC-b9 (e)), AC-d5 (gates, E2E complet : la réponse servie change), AC-d6 (M-d1 = ex-M-b5,
+    M-d2 = ex-M-b6) ; **3 modules** au grain métier, 2 au grain des crates ; aucun fichier du frontend ni du manuel.
+  - Aucune AC ne tombe entre les deux : chaque ligne de l'AC-b4 d'origine est à l'une ou à l'autre ; L-B3 n'a pas de
+    code ; le manuel (AC-b7) ne décrit que l'écran et un seuil existant. Numéros de la 32-1b gardés, renvois laissés
+    (AC-b6, T-b1, M-b5, M-b6).
+  - **Ordre de fusion** : 32-1a quand elle est prête ; 32-1c et 32-1d dans l'ordre où elles sont prêtes ; **32-1b après
+    la 32-1c et la 32-1d**. La 32-1d hérite des trois fichiers de code partagés avec la 32-1a (rebase et gate complet de
+    la seconde) ; la 32-1b et la 32-1a ne partagent plus rien. Mots-clés : `closes #711` sur la dernière fusionnée des
+    32-1a, 32-1b, 32-1d — la 32-1d, toujours avant la 32-1b, porte `refs #711`. CHANGELOG : bloc créé par la première
+    fusionnée des 32-1c et 32-1d, une ligne pour la 32-1d. Bilan d'issues inchangé (**0** issue, **−1** bug) : le
+    découpage n'ouvre ni ne ferme rien.
+  - `sprint-status.yaml` : clé `32-1d-defauts-sauvegarde-serveur` (`ready-for-dev`) ; prompt P3 amendé (le découpage
+    vérifié, partie D lue). Registre : C-32-1-37 ; amendements datés de C-32-1-17, 18, 27, 28, 36. Propagation grepée
+    dans la fiche (`trois clés`, `M-b5`, `M-b6`, `AC-b6`, `T-b1`, `is_success_in_future`, `i18n_e2e`, `+3`,
+    `32-1b et 32-1c`, `32-1a et 32-1b`).
 
 [#711]: https://github.com/guycorbaz/kesh/issues/711
 [#714]: https://github.com/guycorbaz/kesh/issues/714

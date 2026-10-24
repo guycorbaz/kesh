@@ -1,11 +1,13 @@
-# Prompt — validation P3, Story 32-1 (défauts courts : 32-1a, 32-1b, 32-1c)
+# Prompt — validation P3, Story 32-1 (défauts courts : 32-1a, 32-1b, 32-1c, 32-1d)
 
 *Versionné le 2026-10-24. Passe **complète** (non ciblée), **deux lentilles, R et F**, chacune en contexte frais,
-**Sonnet**. Lecture seule stricte.*
+**Sonnet**. Lecture seule stricte. **Amendé le 2026-10-24**, après le découpage de la 32-1b en écran (32-1b) et
+serveur (32-1d), pour que la passe vérifie aussi ce découpage (§ *Attention — le découpage de la 32-1b*).*
 
 Dépôt `/home/gcorbaz/devel/kesh-32-1`, branche `story/32-1`. Fiche :
-`_bmad-output/implementation-artifacts/32-1-defauts-courts.md` (trois parties A, B, C, une par clé) ; registre :
-`_bmad-output/implementation-artifacts/epic-32-choix-autonomes-321.md` (C-32-1-1 à C-32-1-36). Cahier des charges :
+`_bmad-output/implementation-artifacts/32-1-defauts-courts.md` (quatre parties A, B, C, D, une par clé — la D, 32-1d,
+née du découpage de la 32-1b) ; registre :
+`_bmad-output/implementation-artifacts/epic-32-choix-autonomes-321.md` (C-32-1-1 à C-32-1-37). Cahier des charges :
 `_bmad-output/planning-artifacts/epic-32-serveur-mcp.md` § *32-1*. Règles : `CLAUDE.md` (§ *Review Iteration Rule*,
 *La passe ciblée* — une boucle ne se clôt que sur une passe qui ne rend **aucun** MEDIUM+ —, *Règle de splitting
 préventif*, *Exception kesh-db*, *Le prompt d'une passe doit NOMMER le manuel*, *Inventorier les sites NON RÉSOLUS*,
@@ -19,6 +21,39 @@ Rapports des passes précédentes, à lire **après** ta propre lecture de la fi
 
 **Ce que la fiche prescrit au développement n'existe pas encore : son absence dans le code n'est pas un défaut.** Ce qui
 se juge, c'est la vérité de ce que la fiche affirme du code **actuel**, et la faisabilité de ce qu'elle prescrit.
+
+## Attention — le découpage de la 32-1b
+
+Après la remédiation P2, l'orchestrateur a **découpé** la 32-1b (règle de splitting préventif, amendement D5 : 7 modules
+au grain métier, et MEDIUM → MEDIUM avec un recyclage en P2 ; C-32-1-37, Change Log « Découpage de la 32-1b ») :
+**32-1b « écran »** (partie B : E-6, E-7, E-8, L-B6, le bandeau de L-B5, le manuel entier, L-B3 compris) et **32-1d
+« serveur »** (partie D : L-B5 drapeau servi, L-B7). C'est une écriture **neuve** : la sévérité s'y déplace. Vérifie,
+dans les deux lentilles :
+
+- **Aucune AC entre les deux** : chaque élément de l'ancien AC-b4 (fonction, champ servi, test `prochaine_et_retard`,
+  type frontend, fixtures, bandeau, clé), de l'ancien AC-b6, de l'AC-b8 (clés réparties : deux neuves et une modifiée
+  pour la B, une pour la D), de l'AC-b9 (captures (a)–(d) à la B, (e) à la D, AC-d4) et des mutations (M-b5 → M-d1,
+  M-b6 → M-d2, M-b11 neuve) est-il attribué une fois et une seule ? Un renvoi (AC-b6, T-b1, M-b5, M-b6) pointe-t-il
+  juste ? Lis `git show e312b425:_bmad-output/implementation-artifacts/32-1-defauts-courts.md` (la fiche d'avant le
+  découpage) et compare.
+- **Au code** : la 32-1d est-elle réellement sans frontend — un champ de plus dans `BackupScheduleResponse` laisse-t-il
+  vert `npm run check` et chaque test frontend actuel (un test compare-t-il la réponse entière, par exemple par
+  `toEqual` sur un objet servi) ? Le refus traduit a-t-il une phrase au manuel ou un texte assert ailleurs
+  (`grep -rn 'hors domaine' docs frontend/src crates`) ? La 32-1b est-elle réellement sans fichier Rust ? La phrase
+  L-B3 de l'AC-b7 ne décrit-elle qu'un comportement existant (`seuil_d_espace`, `auto_backup.rs:496-500`) ?
+- **Comptes** : 5 modules (B) et 3 (D) au grain métier, 3 et 2 au grain des crates et paquets, contre *Fichiers touchés* ;
+  neuf mutations en B (M-b7 en deux formes), deux en D ; **+2** et **+1** clés `admin-backup-` par locale, et les bornes
+  de leur recompte.
+- **Ordre de fusion et mots-clés** (Dev Notes, § *Pourquoi quatre clés*) : 32-1c → 32-1b et 32-1d → 32-1b ; fichiers de
+  code communs 32-1a/32-1d (trois, hunks distincts) et catalogues communs 32-1b/32-1d ; 32-1a et 32-1b sans fichier
+  commun (vérifie). `closes #711` sur la dernière fusionnée des 32-1a, 32-1b, 32-1d — la 32-1d toujours `refs` : tient-il
+  dans **tous** les ordres permis ? Le CHANGELOG (bloc créé par la première des 32-1c et 32-1d ; une ligne pour la D) ;
+  le bilan d'issues inchangé. L'E2E final et la capture (c) de la 32-1b après la fusion de la 32-1d : exigés partout où
+  il le faut (AC-b9, AC-b10, T-b2, T-b7) ?
+- **Registre et `sprint-status.yaml`** : C-32-1-37 et les amendements datés de C-32-1-17, 18, 27, 28, 36 contredisent-ils
+  un passage de la fiche ? La clé `32-1d-defauts-sauvegarde-serveur` et les commentaires datés disent-ils la même chose
+  que la fiche ? Le motif du découpage (recyclage R1 de la P2, au sens de l'amendement D5) est-il juste au regard des
+  rapports P2 ?
 
 ## Attention — la remédiation de la P2
 
@@ -51,8 +86,9 @@ elle **réemploie** `decouper` de `crates/kesh-db/tests/lexique/mod.rs`, étendu
   signes de repli existent-ils dans TeX Gyre Heros et TeX Gyre Cursor ? Le `literate` touche-t-il un listing de
   `sec:repetition-cloture` ? La commande de comparaison de la brochure est-elle bien formée et discriminante ?
 - *Origine* (bilan **−3 + 3 = 0** issue, **−1** bug), *Inventaire* (copies de l'assistant lexical sur tout `crates/`,
-  `lexique` nommé, signes sans glyphe, « tentative en cours »), *Commentaires à verser* (#725, #727), *Pourquoi trois
-  clés* (sous-sections du Dev Agent Record), *Fichiers touchés* (CHANGELOG), ligne *Modules* de la 32-1b (4 / 7).
+  `lexique` nommé, signes sans glyphe, « tentative en cours »), *Commentaires à verser* (#725, #727), *Pourquoi quatre
+  clés* (sous-sections du Dev Agent Record, quatre depuis le découpage), *Fichiers touchés* (CHANGELOG), lignes *Modules*
+  de la 32-1b (3 / 5) et de la 32-1d (2 / 3) — voir aussi *Attention — le découpage de la 32-1b*.
 
 Pour chacun : est-il vrai au code, faisable, cohérent avec le reste de la fiche, et a-t-il laissé un résidu ailleurs
 (même symptôme écrit autrement — dans la fiche, le registre, les tâches, les Dev Notes) ?
@@ -63,7 +99,8 @@ Pour chaque affirmation de la fiche sur le code, ouvre le site cité (`sed -n`, 
 ton rapport. Un LOW se vérifie comme un HIGH : un site a pu bouger. Axes, tous à exercer :
 
 1. **Tableaux « Constats établis au code ».** Chaque ligne (8 de #716, 12 de #711, 14 de #714) : le site dit-il ce que
-   la fiche en dit ? Classement juste (32-1a / 32-1b / 32-1c / hors, avec #725, #726, #727) ? Prémisses corrigées
+   la fiche en dit ? Classement juste (32-1a / 32-1b / 32-1c / 32-1d / hors, avec #725, #726, #727 ; L-B5 partagé
+   entre 32-1d et 32-1b, L-B7 à la 32-1d) ? Prémisses corrigées
    (C-32-1-19) justes ? La ligne P2 B2-L5 réécrite (U+FFFD, ventilation, lignes 1547, 3313, 3318, 3320, `kesh-style.sty:39`
    et `:42`) et la ligne P2 B2-L4 nuancée sont-elles exactes ?
 2. **32-1a, tests.** Chaque test prescrit rougit-il **avant** le correctif pour la bonne raison, ou, quand la fiche dit
@@ -72,8 +109,13 @@ ton rapport. Un LOW se vérifie comme un HIGH : un site a pu bouger. Axes, tous 
    est-elle vraie au code (`insert_with_defaults_in_tx`) ? AC-a11 : voir *Attention*.
 3. **32-1b, comportement.** `formBase` contre `AutoBackupSection.svelte` entier (script et gabarit) ; le classement de
    l'AC-b2 contre `frontend/src/lib/shared/utils/api-client.ts` (formes réelles des erreurs, `request()` sur un corps
-   illisible, retries d'un `POST`) et `AdminRestorePanel.svelte` ; AC-b3 (quatre commentaires nommés, séquence) ; AC-b4 ;
-   AC-b5 et M-b7 ; AC-b6.
+   illisible, retries d'un `POST`) et `AdminRestorePanel.svelte` ; AC-b3 (quatre commentaires nommés, séquence) ; AC-b4
+   (bandeau, type, fixtures) et M-b11 ; AC-b5 et M-b7.
+3-bis. **32-1d, serveur.** AC-d1 contre `auto_backup.rs` (`passe()`, `is_overdue`, `mod tests`) et
+   `routes/backup_schedule.rs` (`BackupScheduleResponse`, `new`) ; `prochaine_et_retard` ; AC-d2 contre
+   `update_backup_schedule`, `errors.rs` (`t()`), la table de G9 et `i18n_e2e.rs` (`spawn_app_with_locale`,
+   `get_i18n_lock`) ; M-d1, M-d2 ; AC-d4 (la capture du refus est-elle provocable depuis l'écran ?) ; AC-d5 (régime de
+   gates justifié ?).
 4. **32-1c, phrases contre gestes.** Chaque AC-c1 à AC-c8 est-il **une phrase** (aucune commande changée, aucune
    consigne neuve d'agir — C-32-1-15) ? Le `literate` et les replis d'icônes changent-ils le **rendu** d'une commande de
    `sec:repetition-cloture` ? Le repli « 9 signes en ASCII dans les deux scripts » touche-t-il une commande d'une autre
@@ -87,7 +129,7 @@ ton rapport. Un LOW se vérifie comme un HIGH : un site a pu bouger. Axes, tous 
    retouches prescrites (AC-b7, AC-c1 à AC-c5, AC-c7) seront-elles **vraies après** le correctif, et aucune phrase voisine
    ne deviendra-t-elle fausse ? Le manuel utilisateur, la brochure, le README, `website/` ou le CHANGELOG disent-ils
    quelque chose de contraire ?
-6. **i18n.** Clés neuves et modifiée de l'AC-b8 contre les gardes (parité, G9, `lint-i18n-ownership`,
+6. **i18n.** Clés neuves et modifiée de l'AC-b8 et de l'AC-d3 contre les gardes (parité, G9, `lint-i18n-ownership`,
    `i18n-entrees-a-variables.test.ts`, `i18n-repli-divergent-actif.test.ts`) ; la valeur fr-CH neuve
    d'`admin-backup-auto-run-unknown` ; un test existant asserte-t-il un texte qui changera sans être nommé ?
 7. **Inventaire des sites non résolus.** Est-il clos ? Recompte les deux décomptes de #710 (145 et 101) ; les copies de
@@ -102,11 +144,13 @@ ton rapport. Un LOW se vérifie comme un HIGH : un site a pu bouger. Axes, tous 
    retenue comme mécanique cache-t-elle une conception — en particulier `formBase`, le classement « non-`ApiError` →
    issue inconnue », le réemploi de `lexique` (dépendance d'un fichier de `kesh-api/src` vers `kesh-db/tests`), les
    replis de glyphes (choix de présentation) ?
-2. **Découpage** : modules annoncés (A : 3 ; B : 4 au grain des crates, 7 au grain métier ; C : 1) contre *Fichiers
-   touchés* ; le signal de splitting déclaré (C-32-1-36) est-il juste et la coupe proposée tenable ? Ordre de fusion,
-   `closes #711` sur la dernière fusionnée (C-32-1-27), sous-sections du Dev Agent Record : tiennent-ils dans tous les
-   ordres ? Deux clés touchent-elles les mêmes lignes (la 32-1a touche maintenant `lexique/mod.rs` et la tête
-   d'`auto_backup.rs`) ?
+2. **Découpage** : modules annoncés (A : 3 ; B : 3 au grain des crates et paquets, 5 au grain métier ; C : 1 ; D : 2 et
+   3) contre *Fichiers touchés* ; le découpage (C-32-1-37, qui amende C-32-1-36) est-il juste, la coupe tenable, et
+   chaque clé développable et revue seule (voir *Attention — le découpage de la 32-1b*) ? Ordre de fusion (32-1c → 32-1b,
+   32-1d → 32-1b), `closes #711` sur la dernière fusionnée des 32-1a, 32-1b, 32-1d (C-32-1-27 amendé), sous-sections du
+   Dev Agent Record : tiennent-ils dans tous les ordres permis ? Deux clés touchent-elles les mêmes lignes (la 32-1a et
+   la 32-1d partagent `auto_backup.rs` — tête et `mod tests` pour l'une, près d'`is_overdue` et dans le même `mod tests`
+   pour l'autre —, `admin_auto_backup_e2e.rs`, `textes_coherents.rs` ; la 32-1b et la 32-1d les quatre catalogues) ?
 3. **Faisabilité** : l'inclusion `#[path]` en `src` sous `#[cfg(test)]` (compile-t-elle avec `clippy --all-targets -D
    warnings` : lints de `kesh-api` contre un module à `#![allow(dead_code)]`) ; l'extension de `decouper` sans casser ses
    deux utilisateurs ; les Vitest de l'AC-b1 (iii) et de l'AC-b2 (non-`ApiError`, `loadError`) avec les mocks existants
@@ -114,24 +158,26 @@ ton rapport. Un LOW se vérifie comme un HIGH : un site a pu bouger. Axes, tous 
    `make admin` (cible du `docs/manual/Makefile`) ; la commande de comparaison de la brochure.
 4. **Décomptes** : recompte chaque nombre à sa source — `[Cas; 10]` → 12 ; `TABLE: [(&str, Cles); 4]` → 5 ; 26 `⚠️`
    (17 + 9, 16 + 9 lignes) ; U+FFFD 26 / 9 / 16 et leur ventilation (17 + 9 ; 9 ; 15 + 1) ; 2 `I18nBundle::load` ; neuf
-   mutations en A (M-a7 en deux formes), dix en B (M-b1 à M-b10, M-b7 en deux formes) ; « −3 + 3 » issues, « −2 + 1 »
+   mutations en A (M-a7 en deux formes), neuf en B (M-b1 à M-b4, M-b7 à M-b11, M-b7 en deux formes), deux en D (M-d1,
+   M-d2) ; **+2** (B) et **+1** (D) clés `admin-backup-` par locale ; « −3 + 3 » issues, « −2 + 1 »
    bugs (étiquettes réelles de #711, #714, #716, #725, #726, #727) ; 6 MEDIUM et 12 LOW distincts au Change Log de la P2
    (recompte depuis les deux rapports P2) ; signale celui qui ne se retrouve pas.
-5. **Cohérence interne** : AC-a1 à AC-a13, AC-b1 à AC-b11, AC-c1 à AC-c10, tâches, registre (C-32-1-1 à 36 et
+5. **Cohérence interne** : AC-a1 à AC-a13, AC-b1 à AC-b11 (AC-b6 renvoyé), AC-c1 à AC-c10, AC-d1 à AC-d6, tâches,
+   `sprint-status.yaml` (quatre clés 32-1), registre (C-32-1-1 à 37 et
    amendements : une décision amendée contredit-elle encore un passage de la fiche ?), *Issues ouvertes*, *Commentaires à
    verser*, *Inventaire*, Change Log — contradiction, critère invérifiable, commande mal formée (essaie mentalement chaque
    `grep`, `sed`, `pdftotext`, `git show` contre le dépôt actuel) ? Aucune donnée réelle ?
 6. **Ce que la fiche omet** : un test existant qui rougira sans être nommé ; une conséquence pour la recette visuelle
-   (captures des AC-b9, AC-c6, AC-c7 — le cas concurrent de l'AC-b1 en mérite-t-il une ?) ; le `.keshbackup` (aucune
-   table ne change : vérifie) ; une phrase du manuel que les correctifs de la 32-1b ou de la 32-1c rendraient fausse
-   sans être nommée.
+   (captures des AC-b9, AC-c6, AC-c7, AC-d4 — le cas concurrent de l'AC-b1 en mérite-t-il une ?) ; le `.keshbackup`
+   (aucune table ne change : vérifie) ; une phrase du manuel que les correctifs de la 32-1b, de la 32-1c ou de la 32-1d
+   rendraient fausse sans être nommée.
 
 ## Ce que tu rends
 
-Findings `R1…` ou `F1…`, sévérité CRITICAL / HIGH / MEDIUM / LOW, partie de la fiche (A, B, C, Dev Notes, registre) et
+Findings `R1…` ou `F1…`, sévérité CRITICAL / HIGH / MEDIUM / LOW, partie de la fiche (A, B, C, D, Dev Notes, registre) et
 ligne, site du dépôt, preuve (commande et sortie copiée), correction proposée ; pour chacun, dis s'il vient de la
 **remédiation P2**, de la remédiation P1 ou de la rédaction d'origine. ⛔ **La liste des axes exercés ET non exercés**
-(R1 à R7, F1 à F6), avec pour chacun ce qui a été lu — sans elle, « 0 finding » ne compte pas.
+(R1 à R7 et R3-bis, F1 à F6, et chaque point d'*Attention — le découpage de la 32-1b*), avec pour chacun ce qui a été lu — sans elle, « 0 finding » ne compte pas.
 
 Rapport écrit **d'un seul jet**, un seul fichier par lentille, **par l'outil d'écriture de fichier** (jamais par une
 redirection du shell) : `/home/gcorbaz/devel/kesh-gate-logs/321-validate-p3-R.md` pour la lentille R,
