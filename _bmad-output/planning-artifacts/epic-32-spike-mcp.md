@@ -1000,6 +1000,24 @@ faux, pour que l'orchestrateur le reprenne une fois Q10 à Q12 tranchées.*
   s'active pas, l'écran d'administration dit pourquoi). Aucune story ne porte cet AC : à attribuer (32-5 pour le réglage,
   32-6 pour le contrôle, 32-7 pour l'écran et le manuel) ; lié à [#722].
 
+### 6.2 Relecture P4 — six LOW consignés pour les fiches *(orchestrateur, 2026-10-24)*
+
+La boucle de relecture s'est close sur la P4 (Sonnet, ciblée, 0/0/0/6 ; rapport hors dépôt `322-review-p4.md`). Ses six
+LOW ne sont pas corrigés ici ; ils sont **à porter par les fiches** :
+
+1. La citation `proto-main.rs` l. 49-62 est imprécise : le `-32601` en `200` est à la l. 108, la l. 50 est le `202`
+   (fiche 32-6, test de contrat).
+2. Un commentaire de l'esquisse du § 5.3.2 — « un outil sans portée ne compile pas » — affirme encore une garantie ;
+   l'esquisse est **non contraignante** : la fiche 32-6 décide si l'absence de portée est un refus de compilation ou un
+   test d'inventaire.
+3. L'option « toujours » de la Q12 implique que le répartiteur valide tout appel, sans dispense possible (fiche 32-8).
+4. E1 et E4 se lisent en tension : le contenu relu par la poignée a **déjà** été validé, et E4 le rend sans nouvelle
+   validation ; c'est le tableau d'E2 qui arbitre (fiche 32-8).
+5. La liste des stories 🗄️ reprise du kickoff omet la **32-12** (import d'une sauvegarde antérieure) : 32-12, 32-5,
+   32-6, 32-10a — et 32-8 si la forme (c) est retenue.
+6. Le test d'E1 attribué à la 32-6 suppose la validation de la 32-8 : la fiche 32-6 dit ce que fait le répartiteur
+   d'une clé « requise » tant que la 32-8 n'est pas livrée (refus, par défaut).
+
 ## 7. Questions pour Guy
 
 - **Q8 — Le SDK** : `rmcp` est officiel, Tier 1 et double ère ; on garde l'écriture à la main en 0.16.0 et on le
