@@ -365,15 +365,12 @@ passages du manuel qui les décrivent (C-32-5-22).
     version de Kesh **qui porte les mêmes tables** ; la 0.16.0 en ajoute deux, si bien qu'elle **refuse** les
     sauvegardes de la 0.15.0 et d'avant (message *« Fichier de sauvegarde invalide ou corrompu »*, motif au journal
     du serveur « table … absente du manifeste ») ; la phrase « La 0.15.0 importe les sauvegardes des deux formats »
-    se borne à la 0.15.0. Puis **trois choses, et rien de plus** (C-32-5-28, retrait de la validation P4) :
-    (i) une sauvegarde ne se réimporte que dans une version qui porte les mêmes tables ; (ii) pour restaurer une
-    sauvegarde plus ancienne, on installe **l'image de la version qui l'a produite, sur une base vide**, et l'on suit
-    **la procédure du manuel de cette version**, publié à son tag — le PDF joint à la release GitHub de cette version, ou
-    le manuel du dépôt au tag `v<version>` ; (iii) ensuite, on met à jour. ⚠️ Le manuel **ne prescrit aucun chemin**
-    pour une version sans l'assistant, et **n'écrit pas** l'adresse sous la forme `raw.githubusercontent.com/…/<réf>/` :
-    la garde G19 (`textes_coherents.rs:1250-1285`) exige que toute URL de cette forme pointe sur le tag de la version
-    publiée, si bien qu'un gabarit `v<version>` la ferait rougir — le lieu se dit en mots. Il rappelle enfin de prendre
-    une sauvegarde complète **juste après** chaque mise à jour ;
+    se borne à la 0.15.0. Sur la restauration d'une sauvegarde plus ancienne, le manuel dit **seulement**, outre la
+    règle ci-dessus (C-32-5-28, réduit en validation P5) : une sauvegarde plus ancienne se restaure **avec la version
+    qui l'a produite**, dont le manuel se trouve **dans le dépôt, au tag de cette version** ; **ensuite, on met à
+    jour**. Aucune procédure n'est prescrite, aucune section d'un manuel ancien n'est citée, aucun fichier joint à une
+    release n'est promis (`release.yml:161-165` n'en attache aucun). Le lieu se dit **en mots** : un gabarit
+    `raw.githubusercontent.com/…/v<version>/` ferait rougir la garde G19 (`textes_coherents.rs:1250-1285`) ;
     (2) § *Reprises de données rejouées à l'import* (F4 = R4) : **aucune reprise du registre** n'est plus rejouée depuis
     la 0.16.0 — une sauvegarde assez ancienne pour en avoir besoin n'est plus importable ; la phrase de tête (`:2317`)
     et l'alinéa du lettrage (`:2321`) le disent ; la puce #528 **reste** (la réparation tourne à chaque import, sans
@@ -396,10 +393,9 @@ passages du manuel qui les décrivent (C-32-5-22).
     occurrences de « format 1 » restent vraies et ne changent pas : `:1501` (le format 1 n'emporte pas le PDF), `:2266`
     (refus d'un manifeste de format 1 qui déclare des pièces), `:1629` (la répétition de clôture exporte et réimporte
     dans une même version).
-    `CHANGELOG.md`, section `[0.16.0]` : **créer** `### Modifié`, une entrée ⚠️ de même substance, procédure de la base
-    vide comprise. PDF régénéré (`make fr` dans `docs/manual/`) et **contrôlé aplati**, apostrophes typographiques
+    `CHANGELOG.md`, section `[0.16.0]` : **créer** `### Modifié`, une entrée ⚠️ de même substance, sur les mêmes trois énoncés (règle, version qui l'a produite et son manuel au tag, mise à jour). PDF régénéré (`make fr` dans `docs/manual/`) et **contrôlé aplati**, apostrophes typographiques
     comprises (`pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oiE ".{60}mêmes
-    tables.{80}"` rend la phrase ; idem « base vide », « manuel de cette version », « serveur MCP », « sauvegarde automatique » dans la liste, et
+    tables.{80}"` rend la phrase ; idem « au tag de cette version », « serveur MCP », « sauvegarde automatique » dans la liste, et
     plus aucune occurrence de « égale ou plus récente » ni de « appliquera cette fois »).
 14. **AC-a14 — propagation.** Rendent zéro site périmé (les mentions historiques datées restent, marquées comme
     telles) : `grep -rnE "\b39\b" crates docs --include=*.rs --include=*.tex --include=*.md | grep -i table` ;
@@ -829,8 +825,10 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
    l'ajouter à l'écran (C-32-5-10).
 7. **Pour information — une conséquence de Q4** : la 0.16.0 refuse les sauvegardes de la 0.15.0, et, du même coup, le
    rattrapage du lettrage rejoué à l'import (0.13.0) n'a plus d'objet et se retire (C-32-5-13). Rien n'est perdu pour
-   une installation neuve ; le manuel l'écrit : l'image de la version qui a produit la sauvegarde, sur une base vide, la
-   procédure du manuel de cette version, puis la mise à jour (C-32-5-28). ⚠️ Si une installation existante (celle du NAS) était
+   une installation neuve ; le manuel dit seulement qu'une sauvegarde plus ancienne se restaure avec la version qui l'a
+   produite, dont le manuel est dans le dépôt au tag de cette version, puis qu'on met à jour (C-32-5-28). Il ne
+   prescrit aucune procédure : la 0.14.0 n'a pas de restauration sur machine neuve, et la 32-5 ne la pallie pas,
+   puisque tu installeras à neuf. ⚠️ Si une installation existante (celle du NAS) était
    mise à jour en 0.16.0 au lieu d'une installation neuve, **toutes** ses sauvegardes antérieures, automatiques
    comprises, cesseraient de se restaurer sur la 0.16.0 : d'où la sauvegarde complète juste après la mise à jour.
    *(La prémisse « Kesh n'est pas en service » est la tienne ; son écart avec `CLAUDE.md`, qui dit les livres réels
@@ -988,6 +986,32 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
     son`, `3 modules, sans`, `11 distincts***` → plus aucune occurrence hors des entrées datées du Change Log ;
     `raw.githubusercontent.com/guycorbaz/kesh/v<` → une seule, au registre (C-32-5-28, l'exemple écarté ; hors des
     fichiers que G19 lit).
+    *(Annoté en validation P5, P5-3 : faux à sa date — trois occurrences, une au registre et deux dans ce Change Log,
+    l'exemple écarté et la liste du grep elle-même ; toutes hors des fichiers que G19 lit.)*
   - Totaux inchangés : 31 AC, 23 tâches, 23 mutations ; registre C-32-5-1 à C-32-5-28. Remédiation sans code :
     passe suivante **ciblée** (P5, regression hunter, Sonnet, `325-validate-prompt-p5.md`).
+- **2026-10-25 — Validation P5** (passe **ciblée**, regression hunter, contexte frais, **Sonnet**, sur `00475d19` ;
+  rapport `kesh-gate-logs/325-validate-p5.md`). **Trend : P1 2 HIGH / 8 MEDIUM → P2 1 / 7 → P3 0 / 1 → P4 0 / 1 → P5
+  0 / 0 / 1 MEDIUM / 4 LOW.** Remédiation (Opus 5.5), sur la fiche, le registre, le fichier d'epic et le registre de
+  sprint seuls :
+  - **P5-1 (MEDIUM)** et **P5-2** — la phrase promettait « le PDF joint à la release GitHub » : `release.yml:161-165`
+    n'attache aucun fichier (l'erreur venait de la consigne de la P4, vérifié par l'orchestrateur). Réduction à ce qui
+    est vérifiable, sans procédure : mêmes tables ; une sauvegarde plus ancienne se restaure avec la version qui l'a
+    produite, dont le manuel est dans le dépôt au tag de cette version ; ensuite, on met à jour. Plus de « base vide »
+    ni de section d'un manuel ancien (la 0.14.0 n'a pas de restauration sur machine neuve ; Kesh n'est pas en service,
+    Guy installera à neuf). AC-a13 (1), C-32-5-28, précision du fichier d'epic et point 7 à Guy alignés ; la phrase
+    fausse `admin-manual.tex:2430` est tracée en **#746**, non corrigée ici. ⚠️ **Recyclage** : quatrième passe de
+    suite sur la même phrase (R2, F6, H1, P5-1) ; le retrait la réduit désormais à trois énoncés vérifiables.
+  - **LOW** : P5-3 (le décompte du grep déclaré à l'entrée P4 était faux : annoté à sa place, daté) ; P5-4 (ligne de la
+    clé `32-5` du registre de sprint : état après P5) ; P5-5 (« trois choses, et rien de plus » comptait une redite et un
+    quatrième énoncé : la règle n'est plus répétée, le rappel de sauvegarde n'est plus prescrit à cet endroit).
+  - ⚠️ **Le prompt de la P5 désignait le commit par `git log --grep "validation P4"`** : sur une branche qui contient
+    l'historique de `main`, ce motif peut retrouver un commit de `main` plutôt que celui de la remédiation. Le prompt de
+    la P6 désigne le commit **par son SHA**, en dur.
+  - **Valeurs grepées** sur la fiche, le registre, le fichier d'epic et le registre de sprint : `joint à la release`,
+    `PDF de la release`, `base vide` (AC-a13 et point 7), `rien de plus`, `manuel de cette version` → plus aucune
+    prescription vivante ; restent les entrées datées du Change Log (P2 à P4) et l'historique du choix C-32-5-21 et du
+    contexte de C-32-5-28.
+  - Totaux inchangés : 31 AC, 23 tâches, 23 mutations ; registre C-32-5-1 à C-32-5-28. Passes : **5 sur 8**. Suivante :
+    P6 ciblée, regression hunter, Opus (`325-validate-prompt-p6.md`).
 

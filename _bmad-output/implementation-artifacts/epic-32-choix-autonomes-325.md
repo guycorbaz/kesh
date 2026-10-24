@@ -288,7 +288,7 @@ de ligne cités sont ceux de `e59d63e8`.
   régénéré.
 - **Écartée** : une note au CHANGELOG seul (le manuel est ce qu'on lit le jour de la panne).
 - ⚠️ **Révisé en validation P2** (F1, F4 = R4, F12, R2, R9) : la règle s'écrit **sans date** (elle vaut depuis la
-  v0.12.0 au moins) ; la marche à suivre part d'une **base vide** (l'image d'une version antérieure ne démarre pas sur
+  v0.12.0 au moins) ; la marche à suivre part d'une **base vide** *(remplacé par C-32-5-28 : plus de marche prescrite)* (l'image d'une version antérieure ne démarre pas sur
   une base migrée par une version plus récente) ; cinq endroits du manuel d'administration — *Compatibilité*,
   *Reprises* (« du registre », #528, numéros de client, `keshwarning`), l'avertissement « secret », *Ce qui reste hors
   du fichier* (avec la sauvegarde automatique), *Restaurer sur une nouvelle machine* et les mentions du format 1
@@ -372,11 +372,15 @@ de ligne cités sont ceux de `e59d63e8`.
   de la 0.15.0 → un second chemin pour les versions sans assistant), H1 en P4 (ce second chemin ne s'atteint ni « après
   connexion » ni sur une base vide : l'assistant d'une 0.14.x l'impose d'abord). Chaque correction écrivait le chemin
   d'une version que Kesh ne maintient plus, et le défaut suivant naissait du correctif précédent.
-- **Retenu** (décision de l'orchestrateur) : **retrait**. L'AC-a13 (1) et le manuel disent trois choses : une sauvegarde
-  ne se réimporte que dans une version qui porte les mêmes tables ; pour en restaurer une plus ancienne, on installe
-  l'image de la version qui l'a produite, sur une base vide, et l'on suit la procédure du **manuel de cette version**,
-  publié à son tag (PDF de la release, ou manuel du dépôt au tag) ; ensuite, on met à jour. Le lieu se dit **en mots** :
-  une URL `raw.githubusercontent.com/guycorbaz/kesh/v<version>/…` ferait rougir la garde G19, qui exige le tag publié.
+- **Retenu** (décision de l'orchestrateur ; *réduit en validation P5, P5-1 et P5-2*) : **retrait**. L'AC-a13 (1) et
+  le manuel disent seulement : une sauvegarde ne se réimporte que dans une version qui porte les mêmes tables ; une
+  sauvegarde plus ancienne se restaure avec **la version qui l'a produite**, dont le manuel se trouve **dans le dépôt,
+  au tag de cette version** ; ensuite, on met à jour. Rien d'autre : ni « base vide », ni procédure, ni section d'un
+  manuel ancien (la 0.14.0 n'a pas de restauration sur machine neuve, `git show v0.14.0:docs/manual/fr/admin-manual.tex`
+  ne la décrit pas ; ce n'est pas à la 32-5 de le pallier — Kesh n'est pas en service, Guy installera à neuf), ni PDF
+  joint à une release (`.github/workflows/release.yml:161-165` n'attache aucun fichier ; la phrase contraire du manuel,
+  `admin-manual.tex:2430`, est tracée en **#746** et n'est pas corrigée ici). Le lieu se dit **en mots** : une URL
+  `raw.githubusercontent.com/guycorbaz/kesh/v<version>/…` ferait rougir la garde G19, qui exige le tag publié.
 - **Écartées** : prescrire le chemin de la 0.14.x par l'assistant et la démonstration (H1, première correction
   proposée — une quatrième forme du même texte) ; passer par l'image 0.15.0, qui importe les deux formats (vrai, mais
   une règle de plus à tenir pour une version ancienne).
