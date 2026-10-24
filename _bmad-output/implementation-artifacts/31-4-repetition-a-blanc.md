@@ -890,6 +890,28 @@ une garde de hiérarchie des chemins de menu ; **tout outillage de fixture et to
   l'AC3 : 9 ; constats (a) à (u) : 21 lettres, 1 retirée ; mutations : 16 numéros, 1 active ; choix C-31-4-1 à 18
   (`grep -oE 'C-31-4-[0-9]+'` sur le registre). Validation P6 ciblée à lancer (Haiku, une lentille, sur le seul commit de
   cette remédiation ; `314-validate-prompt-p6-ciblee.md`).
+- 2026-10-24 — **Validations P6 à P8 et développement** : consignés au Dev Agent Record (sections du même nom), non
+  recopiés ici — ce renvoi tient lieu de l'entrée que relevait A-L6.
+- 2026-10-24 — **Revue de code P1** (Sonnet, trois lentilles B, E, A, contexte frais, lecture seule, sur
+  `origin/main...9c59dec4`). Bruts (CRITICAL/HIGH/MEDIUM/LOW) : **B 0/0/1/9** (B-1 à B-10 ; le verdict du rapport en
+  annonce 8), **E 0/0/4/5**, **A 0/0/3/8**. **Sans objet** après le retrait de `9c59dec4` par `728012ba` (C-31-4-21,
+  issue #709) : A-1, A-2, A-3, E-3 et la partie de B-9 qui visait ce commit ; le reste de B-9 tombe avec lui (la
+  « réserve écrite plus haut » du procès-verbal désigne de nouveau l'avertissement restauré). **MEDIUM remédiés**
+  (C-31-4-22) : E-1/B-3 (convergents) → `RUST_LOG=` au filtre des contrôles 1 et final, et, au contrôle 4, l'inventaire
+  des variables que le compose téléchargé interpole (45 noms au tag, `RUST_LOG` seule hors des préfixes), affichées si
+  le terminal les exporte ; E-2/B-2 → la boucle de comparaison écrit `N tables` par archive (`test -s`, `wc -l`),
+  l'absence d'une ligne est une comparaison non faite ; B-1 → toutes les cibles de `mv` nommées, `.keshbackup`
+  enregistré sous `production.keshbackup` ; E-4 → les deux exports de l'étape 0 enchaînés sans écriture, une écriture
+  intercalée dite reconnaissable. **LOW traités** : B-4, E LOW-1 (deux répétitions le même jour), B-5/L5 (trois listings
+  de destruction séparés), B-6, B-8, L1, L3, L4, L7. **LOW consignés, non traités** : B-7 (écart au critère de
+  restauration sans arrêt nommé : arrêt ou simple constat est un choix de procédure, à trancher en passe suivante ou par
+  Guy) ; B-10 (gestionnaire de mots de passe et historique du navigateur : hors du dossier de la copie, non mécanique) ;
+  E LOW-2 (port pris entre le contrôle 8 et `up -d` : l'arrêt générique s'applique) ; E LOW-3 (`mariadb:10.11` en dur
+  dans la destruction : juste au tag, le `&&` protège le dossier) ; E LOW-4 (secrets en arguments de `sed`, visibles de
+  `ps` un instant : copie jetable) ; E LOW-5 (`export KESH_…_HOST_DIR=` et comptes du contrôle 5 : le contrôle 7
+  rattrape) ; A-L2 (contrôle final plus court que l'AC7 (c) : écart déclaré, non corrigé) ; A-L6 (renvoi ci-dessus) ;
+  A-L8 (issues désormais ouvertes : #705, #707, #709). **Gate** : ciblé seulement (Dev Agent Record, *Revue de code P1*).
+  Revue de code P2 à lancer : `314-review-prompt-p2.md` (Opus, passe complète, lentilles B, E, A).
 
 ## Dev Agent Record
 
@@ -1075,3 +1097,32 @@ nextest) sous verrou, base `kesh_314` recréée, migrée et seedée avant le gat
 ignorés**, « Gate backend rapide vert » (`/home/gcorbaz/devel/kesh-gate-logs/314-test-fast.log`). E2E complet : **non
 exécuté**, non requis (aucun écran ni code produit modifié). Instance source arrêtée par PID ; base `kesh_314` laissée
 en état de gate. Revue de code P1 à lancer : `314-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
+
+### Revue de code P1 remédiée (2026-10-24) — agent de remédiation (C-31-4-21, C-31-4-22)
+
+**Retrait** : `9c59dec4` (étape 3 du test périodique) retiré par `728012ba` ; l'étape 3 relève de l'issue #709.
+L'énoncé « gate complet au dernier commit de contenu (`d3562c7d`) » ci-dessus redevient exact pour le contenu de
+`728012ba`, identique à celui de `92b5219c` côté manuel.
+
+**Issues ouvertes** (par l'orchestrateur) : **#705** (compose sans pile jumelle — noms et port en dur), **#707** (la
+démonstration ne valide pas une facture avec TVA), **#709** (étape 3 du test périodique, SHA-256 inatteignable). Le
+constat « l'exercice 2026, non échu, se clôture sans refus » n'a **pas** d'issue.
+
+**Remédiation** : `admin-manual.tex` seul (et son PDF), détail au registre C-31-4-22. Essais sur fichiers synthétiques
+seulement (`/home/gcorbaz/devel/kesh-gate-logs/314-p1-essais/`, détruit ensuite) : l'inventaire des variables sur une
+copie du compose du tag, la boucle de comparaison sur deux ZIP synthétiques, `mv -n` ; ni Docker, ni `kesh-mariadb-dev`.
+Écart : le registre a été complété par un ajout en fin de fichier (`cat >> … <<'FIN'`), non par l'outil Edit ;
+aucune ligne existante n'a été touchée.
+
+**PDF** : `make fr` sous verrou et `mem-guard` (deux fois : la première rendait une commande `mv` en ligne qui débordait
+la marge, passée en listing) — `admin-manual.pdf` seul régénéré, brochure et manuel utilisateur inchangés. Contrôle du
+PDF aplati : `??` → 0 ; chacune des phrases nouvelles présente (20 chaînes contrôlées, dont `RUST_LOG=|DATABASE_URL=`
+×2, `posée : $n`, `ce silence n'est pas un succès`, `test -s "$e"`, `un seul se tape`, `kesh-repetition_kesh-network`,
+`kesh-repetition_kesh-mariadb-data`, `sept formes`, `suivez chaque lien`). `pdftotext -layout` : les commandes modifiées
+tiennent sur leur ligne ; la seule ligne de plus de 105 colonnes du PDF est hors de la sous-section (`setcap`).
+
+**Gate ciblé** (sous verrou, `mem-guard`, `CARGO_TARGET_DIR` du worktree, `DATABASE_URL` sur `kesh_314`) :
+`cargo fmt --all -- --check` vert ; `cargo clippy --workspace --all-targets -- -D warnings` vert ;
+`cargo nextest run -E 'binary(configuration_transmise) | binary(textes_coherents)'` → **47 exécutés, 47 réussis, 0
+ignoré** (30 + 17, recomptés dans `/home/gcorbaz/devel/kesh-gate-logs/314-gate-cible-p1.log`). **Gate complet non
+rejoué** à ce commit : aucun code ni test ne change, et les deux seuls binaires qui lisent `admin-manual.tex` ont tourné.

@@ -368,3 +368,47 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Écartées** : ajouter une garde lexicale (C-31-4-15) ; corriger l'étape 3 du test périodique dans cette story (défaut
   voisin, non mécanique : issue demandée) ; régler le compte de TVA de la démonstration (code du produit : issue demandée).
 - **Réversible** : oui (texte du manuel).
+
+### C-31-4-21 — Revue de code P1 : le commit `9c59dec4` retiré, l'étape 3 du test périodique renvoyée à #709 (orchestrateur, 2026-10-24)
+
+- **Contexte** : `9c59dec4` réécrivait l'étape 3 de `sec:test-restauration` (comparaison table par table au lieu du
+  SHA-256 de l'archive) et ajoutait une seconde entrée « Corrigé » au CHANGELOG — exactement ce que C-31-4-20 écartait
+  (défaut voisin non mécanique). La lentille A (MEDIUM-1 à 3) l'a relevé : contradiction avec la fiche, l'AC6 et l'AC12,
+  gate complet antérieur au commit, critère d'un contrôle légal (OLICo art. 10 al. 1) relâché sur la foi d'une seule
+  exécution de démonstration.
+- **Retenu** : retrait par `728012ba` (revert) ; le point devient l'**issue #709** (étape 3, SHA-256 inatteignable).
+  Les findings A-1, A-2, A-3, E-3 (MEDIUM-3) et la partie de B-9 qui visaient ce commit sont **sans objet**. Le manuel
+  revient à la rédaction de C-31-4-20 : la répétition ne prétend pas remplir l'étape 3 à la lettre.
+- **Écartées** : garder le commit et amender fiche, AC et registre (l'arbitrage du critère revient à Guy, non à une passe).
+- **Réversible** : oui (texte du manuel ; #709 tranche).
+
+### C-31-4-22 — Revue de code P1 remédiée : les variables lues dans le fichier, les comparaisons qui ne se taisent plus, les cibles nommées (agent de remédiation, 2026-10-24)
+
+- **Contexte** : P1 (Sonnet, lentilles B, E, A), hors `9c59dec4` : quatre MEDIUM retenus (E-1/B-3, E-2/B-2, B-1, E-4).
+- **Retenu** :
+  1. **Variables interpolées : l'ensemble clos, lu dans le fichier.** Au tag `v0.14.0`, `git show v0.14.0:docker-compose.yml
+     | grep -oE '\$\{[A-Za-z_]+' | sort -u` rend 45 noms : 39 `KESH_*`, 4 `MARIADB_*`, `RUST_LOG`, et `NOM` (dans un
+     commentaire, l. 108) ; aucune variable sans accolades, aucune entrée `environment:` sans valeur (qui transmettrait la
+     valeur du terminal), pas d'`env_file`. Seule `RUST_LOG` échappait au filtre. Le filtre du contrôle 1 (et du contrôle
+     final) gagne `RUST_LOG=` ; surtout, le contrôle 4 relève, **dans le compose téléchargé**, chaque `${NOM` / `$NOM`
+     et affiche ceux que le terminal exporte (`printenv`) — attendu : rien. Ce n'est plus une énumération de préfixes,
+     c'est l'inventaire des sites du fichier même, valable pour le compose de la 0.15.0 et des suivantes. Essayé sur une
+     copie synthétique du compose du tag (`env -i … RUST_LOG=debug KESH_LANG=fr`) : `posée : KESH_LANG`, `posée : RUST_LOG`.
+  2. **Comparaison table par table** : la boucle écrit `production : N tables` / `copie : N tables` par `test -s` et
+     `wc -l` ; une ligne absente = fichier d'empreintes vide = comparaison **non faite** (le `diff` de deux fichiers vides
+     se tait) ; deux `N` différents = exports de tables différentes. Essayé sur deux ZIP synthétiques : cas normal (deux
+     lignes, une différence `audit_log.csv`) et archive de la copie absente (une seule ligne).
+  3. **Cibles nommées** : l'étape 0 nomme le `.keshbackup` `production.keshbackup` (commandes de comptage et de pose
+     reprises) ; les replis `mv` nomment leur cible (`souverainete-production.zip`, `production.keshbackup`,
+     `souverainete-copie.zip`) — le navigateur propose le même nom aux deux exports de souveraineté (journal T8). `mv -n`
+     écarté : sous coreutils 9.7, il ne déplace pas et rend 0 sans rien dire (essayé).
+  4. **Étape 0 ordonnée** : l'export de souveraineté puis, aussitôt, le `.keshbackup`, sans écriture entre eux ; une
+     écriture intercalée apparaît comme la différence d'une autre table qu'`audit_log.csv` (dit aux deux endroits).
+  5. LOW traités : « Arrêt » renvoie à *En cas d'arrêt*, reprise avec un nouveau dossier (date ou suffixe `-2`) (B-4,
+     E LOW-1) ; trois listings séparés pour la destruction — sans `sudo`, avec `sudo`, `rm -rf` gardé seul avant le premier
+     démarrage —, « un seul se tape » (B-5, L5) ; exemples `0.14.0` déclarés tels face au prérequis 0.15.0 — l'URL reste au
+     tag `v0.14.0`, G19 l'exige (B-8) ; volume et réseau nommés (L1) ; espace disque renvoyé à sa source, « jusqu'à
+     environ trois fois » dans `/var/tmp`, décompte corrigé (L3) ; « sept formes » (L4) ; « suivez chaque lien » (L7) ;
+     « ne modifie aucune donnée » au lieu de « ne touche jamais » (B-6).
+- **Écartées** : les LOW consignés au Change Log (B-7, B-10, E LOW-2 à LOW-5, A L2, L6).
+- **Réversible** : oui (texte du manuel).
