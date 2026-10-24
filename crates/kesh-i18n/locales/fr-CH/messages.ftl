@@ -923,6 +923,9 @@ echeancier-csv-header-amount-due = Reste dû
 echeancier-csv-header-payment-status = Statut paiement
 echeancier-csv-header-paid-at = Date paiement
 echeancier-export-error-too-large = Trop de résultats (> { $limit }). Veuillez affiner vos filtres (par ex. plage de dates ou statut de paiement) avant de relancer l'export.
+# Story 31-5 (#504) — préfixe de la communication de la QR-facture (« <préfixe> <numéro> »),
+# dans la langue du document. Sans variable : aucune marque d'isolation Fluent n'entre dans la QR.
+invoice-qr-message-prefix = Facture
 invoice-pdf-error-contact-missing = Le contact lié à la facture est introuvable.
 invoice-pdf-error-no-primary-bank = Aucun compte bancaire principal n'est configuré pour cette entreprise.
 invoice-pdf-error-company-address-empty = L'adresse de l'entreprise est vide — renseignez-la avant de générer un PDF.
@@ -2711,6 +2714,14 @@ audit-log-csv-header-entity-id = Identifiant d'entité
 audit-log-csv-header-api-key-id = Clé API
 audit-log-csv-header-details = Détails
 audit-log-export-error-too-large = Trop de résultats (> { $limit }). Veuillez affiner vos filtres (par ex. plage de dates, action ou type d'entité) avant de relancer l'export.
+# Story 31-5 (#469) — refus des paramètres de consultation du journal d'audit (serveur).
+# Les noms de paramètre (dateFrom, entityType…) sont des noms d'API : ils ne se traduisent pas.
+audit-log-query-error-date-range-inverted = dateFrom doit être inférieur ou égal à dateTo
+audit-log-query-error-date-invalid = { $field } invalide : date attendue au format AAAA-MM-JJ
+audit-log-query-error-date-out-of-range = { $field } doit être compris entre 1000-01-01 et 9999-12-31
+audit-log-query-error-entity-id-not-positive = entityId doit être un identifiant positif
+audit-log-query-error-entity-id-without-type = entityId exige entityType — un identifiant seul ne désigne rien
+audit-log-query-error-code-too-long = { $field } dépasse { $max } caractères
 
 # --- Journal d'audit — écran (Story 25-1c-b1) ---
 nav-audit-log = Journal d'audit

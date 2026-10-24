@@ -234,6 +234,10 @@ pub async fn render_document(
     let creditor_country = fetch_country(pool, "companies", company.id).await?;
     let debtor_country = fetch_country(pool, "contacts", contact.id).await?;
 
+    // Story 31-5 (#504) — le préfixe de la communication de la QR, dans la
+    // langue du document (`locale`, celle du reste du PDF). Clé sans variable :
+    // aucune marque d'isolation Fluent n'entre dans la QR.
+    let qr_message_prefix = i18n.format(&locale, "invoice-qr-message-prefix", None);
     let (qr_data, pdf_data) = build_qrbill_inputs(
         &invoice,
         &lines,
@@ -243,6 +247,7 @@ pub async fn render_document(
         &creditor_country,
         &debtor_country,
         document,
+        &qr_message_prefix,
     )?;
     let qr_i18n = build_i18n(i18n, locale);
 
@@ -260,6 +265,10 @@ pub async fn render_document(
 }
 
 /// Convertit les entités DB en `QrBillData` + `InvoicePdfData`.
+///
+/// `qr_message_prefix` : le préfixe de la communication de la QR
+/// (« `<préfixe> <numéro>` »), résolu par l'appelant dans la langue du document
+/// (clé `invoice-qr-message-prefix`, Story 31-5, #504).
 #[allow(clippy::too_many_arguments)]
 fn build_qrbill_inputs(
     invoice: &Invoice,
@@ -270,6 +279,7 @@ fn build_qrbill_inputs(
     creditor_country: &str,
     debtor_country: &str,
     document: PdfDocument,
+    qr_message_prefix: &str,
 ) -> Result<(QrBillData, InvoicePdfData), AppError> {
     // Adresse créancier — STRUCTURÉE type S (#213, conformité SIX 21.11.2025).
     let ca = company.structured_address();
@@ -345,7 +355,10 @@ fn build_qrbill_inputs(
     // Story 25-4-b2 (#416, AC 7) : la QR d'un rappel porte le RESTE DÛ — la même
     // valeur, déjà arrondie, que le texte et le bloc imprimé. ⛔ La référence et
     // le message ci-dessous ne dépendent PAS du document : c'est ce que lit le
-    // rapprochement.
+    // rapprochement. Le message dépend en revanche de la LANGUE (Story 31-5,
+    // #504) : `qr_message_prefix` est résolu dans la langue du document, si bien
+    // qu'une facture et son rappel rendus dans la même langue portent le même
+    // message ; le rapprochement lit la contenance du numéro, non le préfixe.
     let (qr_amount, reminder) = match document {
         PdfDocument::Invoice => (total_ttc, None),
         PdfDocument::Reminder(a) => {
@@ -370,7 +383,7 @@ fn build_qrbill_inputs(
         currency: Currency::Chf,
         reference,
         unstructured_message: invoice.invoice_number.as_ref().map(|n| {
-            let msg = format!("Facture {n}");
+            let msg = format!("{qr_message_prefix} {n}");
             // SIX 2.2: unstructured_message max 140 chars (USTRD_MAX).
             msg.chars().take(140).collect::<String>()
         }),
@@ -711,6 +724,7 @@ mod tests {
                 "CH",
                 "CH",
                 doc,
+                "Facture",
             )
             .expect("montage exploitable");
             assert_eq!(data.rounding, dec!(0.01));
@@ -729,6 +743,7 @@ mod tests {
             "CH",
             "CH",
             PdfDocument::Invoice,
+            "Facture",
         )
         .expect("le montage doit produire un PDF exploitable");
 
@@ -769,6 +784,7 @@ mod tests {
             "CH",
             "CH",
             PdfDocument::Invoice,
+            "Facture",
         )
         .expect("le montage doit produire un PDF exploitable");
 
@@ -797,6 +813,7 @@ mod tests {
             "CH",
             "CH",
             PdfDocument::Invoice,
+            "Facture",
         )
         .expect("le montage doit produire un PDF exploitable");
 
@@ -819,6 +836,7 @@ mod tests {
             "CH",
             "CH",
             PdfDocument::Invoice,
+            "Facture",
         )
         .expect("le montage doit produire un PDF exploitable");
 
@@ -863,8 +881,32 @@ mod tests {
             "CH",
             "CH",
             document,
+            "Facture",
         )
         .expect("montage exploitable")
+    }
+
+    /// Story 31-5 (#504, AC9 a) — la communication de la QR porte le préfixe
+    /// reçu, résolu par l'appelant dans la langue du document : `Rechnung` pour
+    /// un document allemand, jamais `Facture` écrit en dur.
+    #[test]
+    fn qr_message_uses_the_document_language_prefix() {
+        let (qr, _data) = build_qrbill_inputs(
+            &invoice(),
+            &lines_1081(),
+            &contact_with_structured_address(),
+            &company_with_contact_details(),
+            &primary_bank(),
+            "CH",
+            "CH",
+            PdfDocument::Invoice,
+            "Rechnung",
+        )
+        .expect("montage exploitable");
+        assert_eq!(
+            qr.unstructured_message.as_deref(),
+            Some("Rechnung F-2026-0001")
+        );
     }
 
     /// AC 7 — ⛔ la QR du rappel d'une facture réglée en partie porte le RESTE
@@ -949,6 +991,7 @@ mod tests {
                 "CH",
                 "CH",
                 PdfDocument::Reminder(nul),
+                "Facture",
             ),
             Err(AppError::ReminderNothingDue)
         ));
