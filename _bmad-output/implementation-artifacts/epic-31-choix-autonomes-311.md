@@ -943,3 +943,64 @@ route `POST …/full-import` (`admin_backup` reste `pub(crate)`).
   Mio » garde l'unité binaire de `KESH_ADMIN_IMPORT_MAX_MB`. La date d'une ligne de la liste est la date de
   modification du fichier.
 - **Réversible** : oui.
+
+### C-31-1-88 — Un dossier `auto` illisible n'emporte pas la liste des sauvegardes du serveur
+
+- **Contexte** : revue de code P1, L-B2 / E-4 — `fichiers_reguliers` propageait la première erreur (`read_dir` sur un
+  `auto` qui n'est pas un dossier, entrée ou métadonnées illisibles) : `GET /admin/backups` rendait 500, et la voie
+  normale du manuel pour récupérer une sauvegarde pré-import tombait avec elle.
+- **Retenu** (la forme la plus simple qui tient) : dans `lister_les_sauvegardes`, une erreur de lecture du dossier
+  `auto` est **journalisée** et ses lignes manquent ; les sauvegardes pré-import restent servies et téléchargeables.
+  Dans `fichiers_reguliers`, une **entrée** illisible (entrée du dossier, métadonnées) est sautée et journalisée au
+  lieu de faire échouer les autres — pour tous ses appelants : la rétention en garde alors plus, jamais moins ; la
+  taille des documents ne la compte pas (le seuil d'espace peut en être sous-estimé d'autant, le disque plein pendant
+  l'écriture restant attrapé par `disk_full`). Seul un dossier de sauvegarde **lui-même** illisible rend encore 500
+  (rien ne peut alors être listé). L'état dit le problème sans champ neuf : le tour suivant ne peut pas écrire dans
+  `auto` et enregistre `failed` (panneau et bandeau) — rien de plus n'est ajouté à l'API.
+- **Rejeté** : un indicateur `autoDirUnreadable` dans la réponse (API, écran, quatre locales pour un cas que l'état
+  dit déjà au tour suivant).
+- **Réversible** : oui.
+
+### C-31-1-89 — Le téléchargement ouvre sans suivre les liens ; disparu depuis la liste → 404
+
+- **Contexte** : revue de code P1, L-B1 / E-5 — `File::open` suivait un lien posé dans la fenêtre liste → ouverture,
+  et un fichier supprimé dans cette fenêtre (rétention) rendait 500.
+- **Retenu** : `auto_backup::ouvrir_la_sauvegarde` ouvre en `O_RDONLY | O_NOFOLLOW | O_CLOEXEC` (`rustix`, déjà
+  dépendance) puis vérifie par `fstat` un fichier régulier ; `ENOENT`, `ELOOP` ou non régulier → `Ok(None)` → 404,
+  comme un nom absent ; toute autre erreur → 500. L'ouverture passe par `spawn_blocking`. `Content-Length` reste la
+  taille lue à la liste (les archives sont immuables après leur renommage).
+- **Réversible** : oui.
+
+### C-31-1-90 — Un `.partial` daté du futur d'au moins dix minutes est abandonné
+
+- **Contexte** : revue de code P1, E-3 — `duration_since` en erreur (date future) rendait le fichier « récent » à
+  jamais : un `.partial` laissé avant un recul d'horloge n'était jamais supprimé.
+- **Retenu** : l'abandon se juge sur l'**écart absolu** entre la date de modification et `maintenant` : au moins dix
+  minutes, dans un sens ou dans l'autre. Une date légèrement future (moins de dix minutes : horloge d'un partage réseau
+  un peu en avance, écriture peut-être en cours ailleurs) protège encore le fichier. Écrit au manuel (§ *Horloge du
+  serveur déréglée*).
+- **Rejeté** : la règle « une date future protège toujours », écrite seulement — elle laisse le fichier pour toujours.
+- **Réversible** : oui.
+
+### C-31-1-91 — Le délai de reprise est une heure, sans `min` ; « au moins deux intervalles »
+
+- **Contexte** : revue de code P1, L-B4 — `delai_de_reprise = min(intervalle, 1 h)` avec des fréquences de 6, 12, 24 et
+  168 h (la `CHECK` de la table et `ALLOWED_INTERVAL_HOURS`) : le `min` était mort, et le manuel promettait « ou de
+  l'intervalle, s'il est plus court ». Le manuel disait aussi « plus de deux intervalles » pour un bandeau calculé par
+  `>=`.
+- **Retenu** : la constante `DELAI_DE_REPRISE = 1 h` remplace le `min` (code et texte disent la même chose) ; le
+  manuel dit « retentée au bout d'une heure » et « au moins deux intervalles », le CHANGELOG « depuis au moins deux
+  intervalles ». Garde G22 de `textes_coherents.rs`. Si une fréquence inférieure à une heure était un jour admise, le
+  délai de reprise serait à revoir avec elle (il dépasserait l'intervalle).
+- **Rejeté** : garder le `min` et corriger le seul texte — du code mort qui décrit une règle que rien n'exerce.
+- **Réversible** : oui.
+
+### C-31-1-92 — Le rappel de l'écran dit le volume de l'AC33, le manuel son pic
+
+- **Contexte** : revue de code P1, F-A2 — le rappel `admin-backup-auto-reminder` s'arrêtait à « Chacune pèse à peu
+  près la base plus le dossier des documents ».
+- **Retenu** : le rappel dit ce que l'AC33 exige — « le dossier auto en garde le nombre conservé plus une, et le
+  dossier de sauvegarde y ajoute une sauvegarde par import, jamais purgée » —, quatre locales, repli Svelte identique
+  au fr-CH. Le pic pendant une écriture (une de plus, le `.partial`) reste au manuel seul (§ *Volume*), qui le dit
+  déjà : l'écran garde une phrase courte.
+- **Réversible** : oui.

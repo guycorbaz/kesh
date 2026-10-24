@@ -1702,7 +1702,8 @@ de `PUT` (409, 400) ; (m) `m-liste-vide` et (r) `r-trop-grande` — interception
 `q-largeur-etroite` — fenêtre de 390 px. ⚠️ **(q) ne montre pas une section étroite** : à 390 px, la barre latérale
 fixe du layout (antérieure à la story) fait déborder la page et la colonne de contenu garde sa largeur ; la section
 elle-même passe ses champs à la ligne (`flex-wrap`), ce que la fenêtre ne permet pas de voir — écart déclaré, issue
-demandée. Le dossier contient aussi des captures **d'autres specs** (29-1a, 29-1b, 29-6, 29-8, 30-1b, 30-2b, 30-2c,
+demandée *(ouverte depuis : **#708**, « À 390 px, la barre latérale fixe fait déborder la page » — annotation du
+2026-10-24, revue de code P1, F-A3 ; le fichier `q-largeur-etroite.png` ne prouve donc **pas** l'état (q))*. Le dossier contient aussi des captures **d'autres specs** (29-1a, 29-1b, 29-6, 29-8, 30-1b, 30-2b, 30-2c,
 31-1b…), écrites parce que la variable était posée pour toute la suite : elles ne sont pas de la 31-1c. Les captures ont
 été relues à l'œil (f, p, r, q).
 
@@ -1756,9 +1757,23 @@ module, `backup_lock` est `pub`, doc-comment de `AppState`) ; la fiche n'est pas
   a été insérée par un script `python3` (substitution d'une ligne unique, vérifiée) ; tout le reste du code par Edit /
   Write ; les mutations par script (permis).
 - **AC28** : seuls les `.partial` non modifiés depuis dix minutes sont supprimés (C-31-1-82), au lieu de tous.
-- **AC40** : états posés par interception réseau et non par `UPDATE` (C-31-1-83) ; (q) non démontrable (layout).
+- **AC40** : états posés par interception réseau et non par `UPDATE` (C-31-1-83) ; (q) non démontrable (layout,
+  issue **#708**).
 - **AC38** : le manifeste est lu par un analyseur maison (C-31-1-83), aucune dépendance ajoutée.
 - **AC31** : le texte du bandeau `overdue` garde la date de la dernière réussite même datée du futur (C-31-1-85).
+- *Ajoutés le 2026-10-24 à la revue de code P1 (F-A4, F-A1) — écarts déjà au registre ou au code, absents de cette
+  liste :*
+  - **AC32** : `nextDueAt` ne rend pas « `now` si une valeur est future » mais
+    `max(réussite + intervalle, tentative + délai de reprise, now)`, chaque valeur future tenue pour nulle — la règle
+    d'`is_due`, une seule (C-31-1-85, correction de R6) ; le délai de reprise vaut une heure (C-31-1-91).
+  - **AC32** : `POST …/run` rend 200 et l'état **quel que soit le statut** de la tentative, l'échec se lisant dans
+    `lastStatus` ; seul `Skipped` est une erreur HTTP (409) (C-31-1-87).
+  - **AC25 / AC28** : `run_once` tronque `now` à la **milliseconde** (précision de `DATETIME(3)` et du nom du fichier) :
+    nom, `last_attempt_at` et `last_success_at` disent le même instant (C-31-1-85).
+  - **AC23** : `id` est déclaré `TINYINT UNSIGNED NOT NULL PRIMARY KEY DEFAULT 1` (squash : `tinyint(3) unsigned NOT
+    NULL DEFAULT 1`) au lieu de `TINYINT PRIMARY KEY`, avec la même `CHECK (id = 1)` : sans effet fonctionnel (la
+    `CHECK` interdit tout autre `id`), `DEFAULT 1` permet l'`INSERT … (id) VALUES (1)` comme un `INSERT` sans colonne.
+    La migration est appliquée et ne se modifie plus (P8) : l'écart reste, déclaré ici.
 - **Audit** : `admin.backup_run` ajouté (C-31-1-81) — la fiche ne nommait que deux actions.
 - `configuration_transmise` (deux gardes que la fiche ne listait pas) : paramètre renommé, manuel reformulé.
 - Gate rouge au commit `971983a9`, vert au dernier commit de code ; l'E2E a donc tourné deux fois.
@@ -2342,4 +2357,48 @@ d'intégration, Vitest, E2E et captures ; manuel, PDF, CHANGELOG, README. Gate c
 Mutations 26 tuées sur 26. Choix C-31-1-81 à 87. Écarts déclarés (rouges d'abord pour la seule garde du squash, une
 ligne insérée par script, `.partial` abandonnés seuls, états E2E par interception, capture (q)). Revue de code P1 à
 lancer : `311c-review-prompt-p1.md` (**Sonnet**, lentilles B, E, A).
+
+### Revue de code P1 de la 31-1c (2026-10-24) — Sonnet, lentilles B, E, A : B 0/0/0/7, E 0/0/0/9, A 0/0/0/4 — remédiée (Opus 5.5)
+
+Aucun finding au-dessus de LOW (rapports `kesh-gate-logs/311c-review-p1-{B,E,A}.md`). Dix LOW corrigés (`9e860b0d`),
+dix consignés pour une issue (`kesh-gate-logs/311c-low-residuels.md`). Sort de chaque LOW :
+
+| LOW | Sort |
+|---|---|
+| L-B2 / E-4 | **corrigé** (C-31-1-88) : un dossier `auto` illisible n'emporte plus `GET /admin/backups`, les sauvegardes pré-import restent servies et téléchargeables, l'état dit `failed` au tour suivant ; une entrée illisible est sautée et journalisée (rétention : en garde plus, jamais moins) ; manuel complété (§ *Les sauvegardes du serveur*) |
+| L-B1 / E-5 | **corrigé** (C-31-1-89) : `ouvrir_la_sauvegarde` en `O_NOFOLLOW` + `fstat` ; disparu, lien ou non régulier → 404 |
+| E-3 | **corrigé** (C-31-1-90) : un `.partial` daté d'au moins dix minutes dans le futur est abandonné ; manuel (§ *Horloge du serveur déréglée*) |
+| L-B4 | **corrigé** (C-31-1-91) : `min` mort retiré (`DELAI_DE_REPRISE` = 1 h) ; manuel « retentée au bout d'une heure » et « au moins deux intervalles » ; CHANGELOG et deux commentaires (Rust, TS) alignés |
+| F-A2 | **corrigé** (C-31-1-92) : le rappel `admin-backup-auto-reminder` dit le volume de l'AC33, quatre locales, repli Svelte identique au fr-CH |
+| F-A3 | **corrigé** : #708 cité à la capture (q), par annotation datée, et à la liste des écarts |
+| F-A4, F-A1 | **corrigés** : la liste « Écarts à la fiche » du Dev Agent Record gagne C-31-1-85 (`nextDueAt`), C-31-1-87 (200 quel que soit le statut), la troncature à la milliseconde et `TINYINT UNSIGNED` (migration non modifiée, P8) |
+| E-1, E-2, E-6, E-7, E-8, E-9, L-B3, L-B5, L-B6, L-B7 | **non corrigés**, consignés avec fichier et ligne (`311c-low-residuels.md`) : issue à ouvrir par l'orchestrateur |
+
+**Rouges constatés avant le correctif** (`kesh-gate-logs/311c-p1r-rouge.log`, `ouvrir_la_sauvegarde` d'abord écrite
+avec l'ancien comportement `File::open`) : 4 tests, 4 échecs — `ouverture_sans_suivre_les_liens` (« lien suivi »),
+`partiel_date_du_futur` (`left: 0, right: 1`), `liste_servie_malgre_un_dossier_auto_inutilisable` (`left: 500, right:
+200`), G22 `la_sauvegarde_automatique_dit_vrai` (8 écarts : deux négatives et deux positives au manuel, quatre locales).
+
+**Tests ajoutés** (de `b4936ba2` à `9e860b0d`, recompté `grep -cE '#\[(test|tokio::test|sqlx::test)'` aux deux
+bornes) : Rust **+4** — `auto_backup.rs` 24 → 26, `tests/admin_auto_backup_e2e.rs` 19 → 20,
+`tests/textes_coherents.rs` 17 → 18 ; cohérent avec le gate (3960 → 3964). Vitest : aucun ajouté (1909).
+
+**Gates** : entre les patchs, `311c-p1r-cible-1.log` (fmt, clippy workspace `-D warnings`, nextest ciblé
+`binary(textes_coherents) | binary(admin_auto_backup_e2e) | lib de kesh-api | kesh-i18n`) **601 passés, 1 ignoré**.
+**Au dernier commit de code `9e860b0d`** (bases `kesh_311c` et `kesh_e2e_311c` remises à zéro, `/tmp/kesh-e2e-311c`
+recréé, un seul passage sous le verrou, `311c-p1r-final.log`) : `scripts/test-fast.sh --ci` **3964 passés, 7
+ignorés** ; `npm run check` **0 erreur, 29 avertissements** (5100 fichiers) ; `lint-i18n-ownership` **PASS** ; Vitest
+**1909 tests, 162 fichiers, tous passés** ; `build` **vert** ; **E2E complet** (port 3313, `/health` :
+`smtpConfigured: true`) **315 passés, 7 échoués, 17 ignorés** (12,8 min) — `mode-expert.spec.ts:26`, `:41`,
+`onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` : **les sept KF-029 (#97)** de
+`docs/testing.md` § *Les échecs attendus*, aucun hors liste. PDF : `make fr` sous le verrou (`311c-p1r-make.log`),
+`admin-manual.pdf` seul modifié (brochure et manuel utilisateur inchangés), contrôlé aplati : « retentée au bout d'une
+heure. », « au moins deux intervalles », « la liste montre encore les sauvegardes pré-import », « dix minutes ou plus
+dans le futur » présents ; « s'il est plus court », « plus de deux intervalles » absents ; aucune référence `??`.
+
+**Écart de méthode** : un ajout à `textes_coherents.rs` a d'abord été fait par `cat >>` (heredoc), aussitôt annulé par
+`git checkout -- <fichier>` et refait par Edit ; aucune autre écriture hors de l'outil Edit dans le dépôt.
+
+Suite : passe P2 **ciblée**, une lentille (regression hunter), **Haiku**, sur le diff aplati `b4936ba2..HEAD` —
+`311c-review-prompt-p2.md`, rapport `kesh-gate-logs/311c-review-p2.md`.
 
