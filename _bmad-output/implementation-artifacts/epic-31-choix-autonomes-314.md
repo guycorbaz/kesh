@@ -233,3 +233,31 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   l'égalité du `realpath -e` au chemin écrit (F5, R8) ; la vacuité se vérifie au contrôle 3, avant le premier fichier
   posé (F11). (3) Mutations retirées : M2 (ordre), M8 (critère (e)), M9 (jeton « étapes 2 à 5 », non retenu par ce
   choix ; le renvoi se contrôle au PDF) ; ajoutées : M12 à M16.
+
+### C-31-4-15 — Signal de recyclage en validation P3 : retrait de l'échafaudage, la procédure seule (choix de l'orchestrateur, 2026-10-24)
+
+- **Contexte** : P1 Opus 0/1/19 MEDIUM → P2 Sonnet 0/0/11 → P3 Opus R 0/0/7, F 0/1/3 : la sévérité ne baisse plus, et la
+  grande majorité des findings de P2 et P3 portent sur ce que les remédiations ont **ajouté autour** de la procédure — le
+  script de fixture et son test shell, l'enveloppe Rust qui le lance, la garde G22, leurs mutations (le HIGH de P3 : la
+  fixture ne peut pas figer un PDF sur le preset de test). C'est le **recyclage** du `CLAUDE.md` (§ *Règle de splitting*,
+  amendement D5) ; le signal est **déclaré au Project Lead** dans le compte rendu de l'orchestrateur. La 31-4 est une story
+  de **documentation** : son livrable est une procédure **exécutée**, non un outillage.
+- **Retenu — retrait** :
+  1. **Plus de script de fixture, ni de test shell, ni d'enveloppe Rust, ni de garde G22** (G19, existante, suffit pour
+     les URL). La sauvegarde synthétique est **exportée par l'écran** (*Administration* → sauvegarde) depuis une instance
+     de **démonstration** de la station (« Charger la démo »), au format 2 ; le journal d'exécution dit combien de pièces
+     elle porte — aucune exigence de PDF figé.
+  2. **La justesse de la procédure est portée par son exécution réelle**, journalisée hors dépôt (T3, T8), et par la
+     relecture du manuel (`.tex` et PDF) en revue de code.
+  3. **Restent exigés**, parce qu'ils protègent la production : la garde du `rm -rf` écrite exactement (`case … in
+     kesh-repetition-*) ;; *) false ;; esac` dans le `if`, `test -d`, `test ! -L`, `realpath -e`, parent `/var/tmp`), essai
+     avec un **nom faux** ; le contrôle 8 borné au bloc `ports:` de `kesh-api` (le `0.0.0.0` de `KESH_HOST` n'est pas une
+     publication) ; tous les fichiers sensibles (exemplaire `.keshbackup`, exports de souveraineté de la production et de la
+     copie, téléchargements) **déplacés dans `$COPIE`** et nommés à la destruction ; l'**arrêt** défini (destruction de
+     l'AC7, puis reprise au contrôle 1) et l'exemplaire réel posé **après** le contrôle 9.
+  4. **C-31-4-13** : les chemins « Paramètres → Exercices comptables » de l'**application** (messages ×4, `notify.ts`,
+     `opening-balances`) restent valides — la page *Paramètres* porte une carte *Exercices comptables* — et sont écrits
+     **hors périmètre** ; seuls les manuels sont corrigés, et l'entrée `Corrigé` du CHANGELOG dit « les manuels ».
+- **Écartées** : redécouper la 31-4 (le recyclage est confiné à l'échafaudage) ; poursuivre (chaque passe trouvait le
+  défaut suivant de ce qu'on venait d'ajouter).
+- **Réversible** : oui — une fixture scriptée pourra revenir avec sa propre story.
