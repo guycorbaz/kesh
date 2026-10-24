@@ -1,6 +1,6 @@
 # Story 32.4a : la couche de services — rollout des lectures : écritures comptables, postes ouverts, contacts
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-32-4a`, branche `story/32-4a` partie de `main`
 `89d68704` (la 32-3 fusionnée). Registre : `epic-32-choix-autonomes-324a.md` (C-32-4a-1 à C-32-4a-12). Clé courte :
@@ -1144,3 +1144,13 @@ tuées et M8 équivalente.
     un défaut neuf ; la remédiation ne touche **aucune ligne de production** (`crates/*/src` absent du diff). La boucle
     ne se clôt que sur une passe à 0 MEDIUM : **P3 ciblée**, une lentille (regression hunter), **Sonnet**, sur
     `2e46e0d2..HEAD` (`324a-review-prompt-p3.md`, rapport `kesh-gate-logs/324a-review-p3.md`).
+- **2026-10-25 — Revue de code P3, passe ciblée — REVUE TERMINÉE** (Sonnet, une lentille — regression hunter —,
+  contexte frais, lecture seule, `2e46e0d2..HEAD`, prompt `324a-review-prompt-p3.md`, rapport
+  `kesh-gate-logs/324a-review-p3.md`) : **0/0/0/1**. Production non touchée par la remédiation P2 ; ordres attendus
+  recalculés depuis la fixture et l'`ORDER BY` du dépôt ; M38 à M43 relues à leur journal ; décomptes recomptés.
+  P3-1 (LOW, doc-comment d'`ac11_b_la_liste_des_ecritures_ne_lit_pas_la_societe` imprécis, l. 1044 > 100 colonnes)
+  **tracé sur #738**, non corrigé : une remédiation après la dernière passe ne serait relue par personne.
+  **Trend de la boucle** : P1 (Sonnet ×3) 0/0/3/10 → P2 ciblée (Opus) 0/0/1/2 → P3 ciblée (Sonnet) 0/0/0/1 ; aucun
+  reclassement. Gates au dernier commit de code `439cb5ec` : complet 4016/4016 (7 ignorés), E2E 315 passés et les
+  7 KF-029. Mutations de la story : 60, 59 tuées, M8 équivalente. Q1 confirmée par Guy le 2026-10-24 (les deux
+  lectures du lettrage restent hors services, figées par la garde). Statut `done`.
