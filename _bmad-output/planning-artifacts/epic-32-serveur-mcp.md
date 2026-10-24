@@ -211,7 +211,7 @@ chacune. 🗄️ = touche `kesh-db` (migration, dépôt ou `backup.rs`) : **gate
 ```
 32-0 ──┬── 32-1a, 32-1b, 32-1c (défauts, indépendants de tout le reste, en parallèle)
        └── 32-2 (spike) ──┬── 32-3 (services : motif) ── 32-4a, 32-4b (services : rollout)
-                          └── 32-5 🗄️ (clés et réglages) ── 32-6 🗄️ (endpoint /mcp)
+                          └── 32-12 🗄️ (import d'une sauvegarde antérieure) ── 32-5 🗄️ (clés et réglages) ── 32-6 🗄️ (endpoint /mcp)
 32-6 ── 32-7 (écran Serveur MCP)
 32-6 ── 32-8 (validation avant envoi) ── 32-9a, 32-9b (outils de lecture ; exigent aussi 32-4a, 32-4b)
 32-6 ── 32-10a 🗄️ (prompts en base) ── 32-10b (écran des prompts)
@@ -314,6 +314,25 @@ restent dans les handlers jusqu'à la 0.17.0 (propositions). Revue fichier par f
 **AC** : tests d'API inchangés et verts ; chaque service porte son contrôle d'accès ; aucun handler de lecture des
 modules visés n'appelle plus un dépôt directement (inventaire clos, garde lexicale si elle est simple). **Risque** :
 faible à moyen ; une liste paginée dont les bornes (`clamp(1, 200)`) se perdent dans le déplacement.
+
+### 32-12 — Une sauvegarde antérieure reste importable 🗄️ *(ajoutée par l'orchestrateur le 2026-10-24, sous réserve de Guy — Q4)*
+
+**Objet** : que les sauvegardes prises en 0.15.0 — automatiques comprises, celles des livres réels de Guy — restent
+importables par la 0.16.0, alors que l'epic ajoute des tables à l'inventaire du `.keshbackup`. Aujourd'hui,
+`parse_and_verify` exige un inventaire **identique dans les deux sens** (point 4 de *Ce que le code dit déjà*) : un
+fichier plus ancien, auquel manquent les tables nées depuis, est refusé en 400.
+
+**AC de haut niveau** : un `.keshbackup` dont l'inventaire est un **sous-ensemble** du nôtre, et dont les tables
+absentes sont toutes **postérieures** à sa version (vérifié par le registre des migrations, non par le seul nom), est
+importé — ces tables restent vides ou à leurs défauts, et le bilan d'import le dit ; une table **inconnue** du fichier,
+ou une table manquante qui n'est pas postérieure, reste un refus ; le rejeu des backfills (`POST_RESTORE_BACKFILLS`,
+P7) et sa fenêtre (`registry_entries_are_within_import_window`) sont revus, puisque la fenêtre d'import s'élargit ;
+fixture réelle d'un `.keshbackup` 0.15.0 synthétique ; manuel d'administration (restauration) et CHANGELOG.
+
+**Risques** : `kesh-db` et l'import (gate complet même en boucle) ; la fenêtre de rejeu P7, dont des exemptions
+« Hors fenêtre » reposent sur l'inventaire identique — à réexaminer une à une (`scripts/prepare-release.sh` les
+contrôle) ; à développer **avant** la 32-5, première story qui change l'inventaire. Si Guy préfère accepter et écrire
+la limite (Q4), la story se réduit à la note du CHANGELOG et du manuel.
 
 ### 32-5 — Les clés MCP et les réglages du serveur, en base 🗄️
 

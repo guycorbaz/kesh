@@ -145,3 +145,10 @@ Fichier d'epic : `planning-artifacts/epic-32-serveur-mcp.md`.
 - **Écartées** : une 0.15.1 avec la 32-1 seule (Guy n'a pas demandé de correctif ; à réévaluer s'il en veut un) ; trois
   stories de schéma en parallèle.
 - **Réversible** : oui.
+
+### C-32-0-13 — Une story 32-12 pour garder importables les sauvegardes 0.15.0 (orchestrateur, sous réserve de Guy)
+
+- **Contexte** : le kickoff a relevé au code (`parse_and_verify`) qu'une table ajoutée à l'inventaire du `.keshbackup` rend toute sauvegarde antérieure non importable ; la 32-5 en ajoute ; Guy tient des livres réels et sauvegarde automatiquement en 0.15.0.
+- **Retenu** : ajouter la story 32-12 (import d'un inventaire sous-ensemble dont les tables absentes sont postérieures à la version du fichier), à développer avant la 32-5 ; décision soumise à Guy (Q4) — s'il préfère accepter la limite, la story se réduit à l'écrire au CHANGELOG et au manuel.
+- **Écartée** : ne rien faire avant sa réponse (la 32-5 serait alors bloquée ou poserait la limite sans l'avoir décidée).
+- **Réversible** : oui.
