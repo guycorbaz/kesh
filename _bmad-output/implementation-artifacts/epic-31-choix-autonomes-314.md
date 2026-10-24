@@ -75,6 +75,10 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   (Compose ≥ 2.24 ; essai à blanc de `docker compose config` réussi en 2.40.3) ; le manuel nomme la version minimale.
   *(Précisé en validation P1, 2026-10-24 : l'override est **nommé** par un second `-f` — avec un `-f` explicite,
   Compose ne le charge plus d'office (constat T3 (b)).)*
+  *(Précisé en remédiation P2, 2026-10-24 — R1, F8 : la version ≥ 2.24 devient un contrôle (`docker compose version
+  --short`, contrôle 1) ; le contrôle 8 exige **une seule** publication de `kesh-api`, `host_ip: 127.0.0.1`, aucun
+  `published: "80"` ni `0.0.0.0` — sous une Compose qui fusionnerait les listes, `80:80` subsisterait et l'ancien
+  contrôle passait. R9 LOW : l'override pose aussi `restart: "no"`.)*
 - **Écartées** : changer `KESH_PORT` — ne change pas la publication ; éditer le compose téléchargé — le contrôle de
   l'AC3 porte alors sur un fichier modifié à la main et perd son sens.
 - **Réversible** : oui.
@@ -90,6 +94,8 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   listings, avec une relecture `config` exigée entre l'override et `up -d` ; positive chiffrée (60 lignes, 8 commandes) ;
   (e) nouvelle : chaque `docker compose` des listings porte `-p kesh-repetition` et `--project-directory`. G14 étant
   aveugle à la forme `-p` (angle mort écrit), c'est G22 (e) qui tient ces commandes.)*
+  *(Remplacé en validation P2, 2026-10-24, par C-31-4-14 : G22 se réduit à des présences dans le source brut ; ordre,
+  seuils et (e) sont retirés, et la forme de chaque commande n'est plus tenue que par le journal et la T8.)*
 - **Écartées** : aucune garde (voir C-31-4-1) ; une garde qui « exécute » les commandes du manuel — elle exigerait
   Docker en CI et un réseau.
 - **Réversible** : oui.
@@ -104,6 +110,11 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   étape 1 reprend `KESH_SMTP_*` et les dossiers de l'ancien `.env`, l'inverse de la copie, et le manuel le dit en toutes
   lettres. R L5 : la répétition ne vaut test OLICo que si l'export de souveraineté et son SHA-256 sont faits avant les
   gestes de clôture.)*
+  *(Précisé en remédiation P2, 2026-10-24 — F4 : la place « juste après » est **maintenue**, et le renvoi relatif
+  « cf. sous-section précédente » de l'encadré de `sec:backup-dsm` (`admin-manual.tex` l. 1847), qui désignerait la
+  nouvelle sous-section, devient `\S\ref{sec:test-restauration}`. Écartée : placer la sous-section après
+  `sec:backup-dsm` — elle s'éloignerait du test qu'elle peut remplacer, et un renvoi relatif resterait à la merci du
+  prochain déplacement.)*
 - **Écartées** : recopier la marche (deux textes à tenir d'accord — DRY) ; la placer en *Mise à jour* (elle n'est pas une
   mise à jour).
 - **Réversible** : oui.
@@ -143,6 +154,15 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   `accepted[]` ; facture au `2026-06-15` ; export écrit sur `GET /api/v1/admin/full-export` ; test au `curl` factice
   (404, 405, 200) lancé par `crates/kesh-api/tests/repetition_fixture_script.rs`, calqué sur
   `crates/kesh-db/tests/prepare_release_script.rs`.
+  *(Précisé en remédiation P2, 2026-10-24 — R4/F7 : la fixture s'authentifie par `POST /api/v1/auth/login` avec
+  `admin`/`admin123`, identifiants du preset écrits en **constantes** du script (preset de test, instance en mode test
+  sur la boucle locale : pas un secret), et passe `accessToken` (corps camelCase) en `Authorization: Bearer` ; un login
+  refusé arrête tout, cas ajouté au test (M15). Écartés : un quatrième argument ou une variable d'environnement — le
+  mot de passe d'un preset de test n'a rien à protéger, et l'environnement est ce que les trois arguments excluent.
+  F3 : la validation d'une facture ne fige pas son PDF ; la fixture crée un contact et un compte bancaire **principal**,
+  puis appelle `GET /api/v1/invoices/<id>/pdf` (200, `%PDF`) et exige `X-Kesh-Backup-Files: 2` à l'export. R13 :
+  le document fournisseur est `frontend/tests/e2e/fixtures/spc_e2e_invoice.png`, copié. R11 : l'enveloppe Rust reprend
+  la garde contre le test muet du modèle.)*
 - **Écartées** : (a) refuser sur « 404 » — un 405 passerait ; (b) un faux serveur HTTP — plus lourd que le `curl` factice
   du précédent `prepare-release.test.sh` ; (c) laisser le test hors gate, lancé à la main en T7 — test muet.
 - **Réversible** : oui.
@@ -171,6 +191,15 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   mécanique (budget d'issues, `CLAUDE.md` § *Priorités des défauts*). Une garde de hiérarchie n'est **pas** ajoutée ici.
 - **Écartée** : ouvrir une issue — le compte est à 137 pour un plafond de « moins de 136 » au tag.
 - **Réversible** : oui.
+- *(Élargi et précisé en remédiation P2, 2026-10-24 — R6.)* Le même chemin s'écrit dans le **manuel d'administration**,
+  `admin-manual.tex` l. 1445 et 1451 : la story le corrige aussi (AC13) ; `grep -nE 'Paramètres[^.]{0,60}Exercices'
+  docs/manual/fr/*.tex` rend ces quatre lignes et elles seules ; T4 régénère et contrôle `user-manual.pdf` et
+  `admin-manual.pdf` (grep à zéro résultat sur le PDF aplati). **Précision de fait, à porter à l'orchestrateur** :
+  l'ancien chemin n'est pas une impasse — la page *Paramètres* (`/settings`, rangée sous *Administration*) porte une carte
+  *Exercices comptables* et son bouton *Gérer* (`routes/(app)/settings/+page.svelte` l. 582-590, Story 3.7). Le défaut
+  est l'écart entre deux chemins pour un même écran, celui des quatre lignes n'étant pas l'entrée du menu ; la
+  correction reste juste. Les chemins `Paramètres → Modèles d'e-mail`, `→ Clés API`… désignent des cartes de cette page
+  et ne sont pas touchés. Entrée `Corrigé` au CHANGELOG (AC12).
 
 ### C-31-4-14 — Validation P2 : la garde G22 réduite, le dossier de la copie fixé hors de `$HOME` (choix de l'orchestrateur, 2026-10-24)
 
@@ -193,3 +222,14 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Écartées** : poursuivre l'extension de G22 (chaque passe en trouve le défaut suivant) ; détecter la synchronisation
   (aucun moyen fiable).
 - **Réversible** : oui.
+- *(Précisé au report dans la fiche, remédiation P2, 2026-10-24.)* (1) Le jeton littéral `docker compose config` ne
+  peut pas figurer dans un manuel conforme au *principe directeur* (`-p` et `--project-directory` s'intercalent entre
+  `compose` et `config`) : G22 exige `config --services` à sa place, avec `-p kesh-repetition`, `/health`, et pour la
+  garde du `rm -rf` les jetons `realpath -e`, `test ! -L` et `/var/tmp`. Les jetons tiennent dans une constante unique
+  et un test les retire un à un **en mémoire** (R11). Les commentaires LaTeX sont retirés avant la lecture
+  (`manuel::sans_commentaires`, F1). Le motif d'absence est non ancré (`export KESH_…_HOST_DIR=` vu, R3).
+  (2) Le dossier se crée par `mkdir -m 0700` : `/var/tmp` est partagé entre utilisateurs et la copie porte les données
+  réelles. La garde du `rm -rf` compare `dirname` à `/var/tmp`, le nom au préfixe, exige `test -d`, `test ! -L` et
+  l'égalité du `realpath -e` au chemin écrit (F5, R8) ; la vacuité se vérifie au contrôle 3, avant le premier fichier
+  posé (F11). (3) Mutations retirées : M2 (ordre), M8 (critère (e)), M9 (jeton « étapes 2 à 5 », non retenu par ce
+  choix ; le renvoi se contrôle au PDF) ; ajoutées : M12 à M16.
