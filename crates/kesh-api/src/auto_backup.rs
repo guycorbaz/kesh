@@ -1118,6 +1118,16 @@ mod tests {
 
     /// Lignes de code d'un fichier, commentaires `//` écartés, tronqué au
     /// premier `#[cfg(test)]`.
+    ///
+    /// ⚠️ **Limite assumée** (Story 32-1a, #711 E-9 (3), C-32-1-38) : la lecture
+    /// est ligne à ligne, sans analyse lexicale. Seules les lignes **entières**
+    /// qui commencent par `//` sont écartées ; un commentaire de fin de ligne, un
+    /// commentaire `/* … */` et le **contenu des chaînes** restent lus comme du
+    /// code. La troncature s'arrête à la première ligne dont le contenu est
+    /// exactement `#[cfg(test)]`. Conséquence : un jeton **exigé** par une garde,
+    /// écrit seulement dans un commentaire de bloc ou une chaîne, la satisferait à
+    /// tort — muet ; un jeton **interdit** écrit au même endroit la fait rougir —
+    /// bruyant. Correction suivie par #727 (extraction d'un balayeur commun).
     fn code(source: &str) -> String {
         source
             .lines()
@@ -1156,6 +1166,12 @@ mod tests {
 
     /// Extrait l'argument parenthésé qui suit la première occurrence de
     /// `appel` dans `texte` (parenthèses appariées).
+    ///
+    /// ⚠️ **Limite assumée** (Story 32-1a, #711 E-9 (3)) : les parenthèses sont
+    /// comptées sur le texte brut, y compris celles écrites dans une chaîne ou un
+    /// littéral de caractère (`')'`) — l'argument rendu peut alors être tronqué ou
+    /// déborder, et une garde qui y cherche un jeton exigé peut le trouver à tort
+    /// hors de l'argument réel. Correction suivie par #727.
     fn argument_de(texte: &str, appel: &str) -> String {
         let debut = texte
             .find(appel)
@@ -1179,6 +1195,14 @@ mod tests {
     }
 
     /// Corps de la fonction `signature` (jusqu'à la première ligne `}`).
+    ///
+    /// ⚠️ **Limite assumée** (Story 32-1a, #711 E-9 (3)) : la fin est le premier
+    /// `\n}` du texte après la signature, **chaîne comprise** — une chaîne
+    /// multiligne dont une ligne commence par `}` couperait le corps. La coupe
+    /// repose sur `rustfmt`, qui ferme un item de tête par `}` en colonne 0. Un
+    /// corps trop court fait manquer un jeton exigé (bruyant) ; un corps trop long
+    /// pourrait en trouver un hors de la fonction (muet). Correction suivie par
+    /// #727.
     fn corps(texte: &str, signature: &str) -> String {
         let debut = texte
             .find(signature)
@@ -1198,6 +1222,14 @@ mod tests {
     /// - dans `full_export`, le garde est pris avant la fermeture `remplir`,
     ///   nommée avant l'appel de `build_keshbackup`, et il est nommé **dans**
     ///   cette fermeture (il y est déplacé, donc vit dans le `spawn_blocking`).
+    ///
+    /// ⚠️ **Angle mort assumé** (Story 32-1a, #711 E-9 (2), C-32-1-5) : la
+    /// propriété que tient ce déplacement — le verrou vit jusqu'à la fin de
+    /// l'assemblage **même si le client part** — ne s'observe qu'au départ du
+    /// client pendant l'assemblage. Aucun test comportemental ne la tient : il
+    /// faudrait un crochet de synchronisation dans `build_keshbackup`. Cette garde
+    /// lexicale (M-c24) est le seul filet, avec les limites de `code()`,
+    /// `argument_de` et `corps()` écrites à leurs doc-comments.
     #[test]
     fn gardes_possedes() {
         let admin = code(include_str!("routes/admin.rs"));
