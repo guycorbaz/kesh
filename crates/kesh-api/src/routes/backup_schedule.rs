@@ -3,8 +3,8 @@
 //! `require_not_pat` du bloc `admin_routes`).
 //!
 //! - `GET  /api/v1/admin/backup-schedule` — réglage, état, `nextDueAt`,
-//!   `overdue` (calculés par le serveur : le navigateur ne compare aucune date
-//!   à sa propre horloge) ;
+//!   `overdue`, `lastSuccessInFuture` (calculés par le serveur : le navigateur
+//!   ne compare aucune date à sa propre horloge) ;
 //! - `PUT  /api/v1/admin/backup-schedule` — réglage (verrou optimiste, audit
 //!   `admin.backup_schedule_updated`) ;
 //! - `POST /api/v1/admin/backup-schedule/run` — « Sauvegarder maintenant » :
@@ -39,9 +39,10 @@ use kesh_db::repositories::backup_schedule::{self, BackupSchedule, BackupSchedul
 use crate::AppState;
 use crate::audit::AuditActor;
 use crate::auto_backup::{
-    self, BackupKind, RealBackupEnv, RunOutcome, RunStatus, Trigger, is_overdue, next_due_at,
+    self, BackupKind, RealBackupEnv, RunOutcome, RunStatus, Trigger, is_overdue,
+    is_success_in_future, next_due_at,
 };
-use crate::errors::AppError;
+use crate::errors::{AppError, t};
 use crate::middleware::auth::CurrentUser;
 use crate::routes::api_keys::ensure_not_pat;
 
@@ -71,6 +72,10 @@ pub struct BackupScheduleResponse {
     /// Dernière réussite datant d'au moins deux intervalles (ou datée du
     /// futur).
     pub overdue: bool,
+    /// Dernière réussite datée du futur (horloge du serveur revenue en
+    /// arrière ; Story 32-1d, L-B5) : vrai implique `overdue` vrai. Toujours
+    /// servi.
+    pub last_success_in_future: bool,
 }
 
 impl BackupScheduleResponse {
@@ -78,6 +83,7 @@ impl BackupScheduleResponse {
         Self {
             next_due_at: utc(next_due_at(&s, now)),
             overdue: is_overdue(&s, now),
+            last_success_in_future: is_success_in_future(&s, now),
             enabled: s.enabled,
             interval_hours: s.interval_hours,
             retention_count: s.retention_count,
@@ -116,8 +122,9 @@ pub struct UpdateBackupScheduleRequest {
 }
 
 /// `PUT /api/v1/admin/backup-schedule` — 400 `VALIDATION_ERROR` hors domaine
-/// (rien d'écrit, aucun audit) ; 409 `OPTIMISTIC_LOCK_CONFLICT` sur une version
-/// périmée.
+/// (rien d'écrit, aucun audit ; message dans la langue de l'instance, clé
+/// `admin-backup-schedule-error-out-of-domain`, Story 32-1d) ; 409
+/// `OPTIMISTIC_LOCK_CONFLICT` sur une version périmée.
 pub async fn update_backup_schedule(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -129,11 +136,12 @@ pub async fn update_backup_schedule(
         retention_count: req.retention_count,
     };
     if !settings.is_valid() {
-        return Err(AppError::Validation(
+        // Le repli égale la valeur fr-CH du catalogue (G9, `textes_coherents.rs`).
+        return Err(AppError::Validation(t(
+            "admin-backup-schedule-error-out-of-domain",
             "Réglage de sauvegarde hors domaine : fréquence 6, 12, 24 ou 168 heures, \
-             de 1 à 60 sauvegardes conservées."
-                .into(),
-        ));
+             de 1 à 60 sauvegardes conservées.",
+        )));
     }
     let s =
         backup_schedule::update_settings(&state.pool, req.version, current_user.user_id, settings)

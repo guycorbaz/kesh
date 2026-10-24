@@ -225,6 +225,19 @@ pub fn is_overdue(schedule: &BackupSchedule, now: NaiveDateTime) -> bool {
     }
 }
 
+/// Story 32-1d (#711, L-B5) — vrai si et seulement si la sauvegarde est
+/// activée et que la dernière réussite existe mais est **postérieure** à `now`
+/// (horloge du serveur revenue en arrière) : la règle de [`passe`], qui l'écarte.
+/// Servi à l'écran (`lastSuccessInFuture`) pour qu'il ne dise pas « aucune
+/// réussite depuis » une date à venir. La garde `enabled` est celle
+/// d'[`is_overdue`] : vrai ici implique `overdue` vrai, et l'API ne sert jamais
+/// deux drapeaux contradictoires (C-32-1-24).
+pub fn is_success_in_future(schedule: &BackupSchedule, now: NaiveDateTime) -> bool {
+    schedule.enabled
+        && schedule.last_success_at.is_some()
+        && passe(schedule.last_success_at, now).is_none()
+}
+
 // ---------------------------------------------------------------------------
 // Classement des erreurs d'écriture
 // ---------------------------------------------------------------------------
@@ -963,6 +976,43 @@ mod tests {
     #[test]
     fn is_overdue_desactive() {
         let s = reglage(false, 6, Some(t(0, 0, 0, 0) - TimeDelta::days(9)), None);
+        assert!(!is_overdue(&s, t(10, 0, 0, 0)));
+    }
+
+    // --- is_success_in_future (Story 32-1d, L-B5) ----------------------------
+
+    #[test]
+    fn is_success_in_future_dans_le_futur() {
+        let s = reglage(true, 24, Some(t(23, 0, 0, 0)), None);
+        assert!(is_success_in_future(&s, t(10, 0, 0, 0)));
+        // Vrai ici implique `overdue` vrai (C-32-1-24).
+        assert!(is_overdue(&s, t(10, 0, 0, 0)));
+    }
+
+    #[test]
+    fn is_success_in_future_dans_le_passe() {
+        let s = reglage(true, 24, Some(t(9, 0, 0, 0)), None);
+        assert!(!is_success_in_future(&s, t(10, 0, 0, 0)));
+    }
+
+    #[test]
+    fn is_success_in_future_sans_reussite() {
+        let s = reglage(true, 24, None, Some(t(23, 0, 0, 0)));
+        assert!(!is_success_in_future(&s, t(10, 0, 0, 0)));
+    }
+
+    /// L'égalité n'est pas le futur : `passe` garde `v <= now`.
+    #[test]
+    fn is_success_in_future_a_l_egalite() {
+        let s = reglage(true, 24, Some(t(10, 0, 0, 0)), None);
+        assert!(!is_success_in_future(&s, t(10, 0, 0, 0)));
+    }
+
+    /// Désactivée : faux, comme `overdue` — jamais deux drapeaux contradictoires.
+    #[test]
+    fn is_success_in_future_desactive() {
+        let s = reglage(false, 24, Some(t(23, 0, 0, 0)), None);
+        assert!(!is_success_in_future(&s, t(10, 0, 0, 0)));
         assert!(!is_overdue(&s, t(10, 0, 0, 0)));
     }
 

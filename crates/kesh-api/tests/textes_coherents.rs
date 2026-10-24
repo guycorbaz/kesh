@@ -724,7 +724,7 @@ fn les_replis_rust_suivent_le_catalogue() {
     const CHAMP: &[(&str, &str)] = &[("{ $field }", "{nom}")];
     const CHAMP_MAX: &[(&str, &str)] = &[("{ $field }", "{nom}"), ("{ $max }", "{maximum}")];
     type Cles = &'static [(&'static str, usize, &'static [(&'static str, &'static str)])];
-    const TABLE: [(&str, Cles); 4] = [
+    const TABLE: [(&str, Cles); 5] = [
         // Story 31-5 (#469, C-31-5-15) — les six refus du journal d'audit.
         (
             "crates/kesh-api/src/routes/audit_log.rs",
@@ -815,6 +815,12 @@ fn les_replis_rust_suivent_le_catalogue() {
         (
             "crates/kesh-api/src/routes/opening_balances.rs",
             &[("error-opening-balances-first-year-closed", 2, &[])],
+        ),
+        // Story 32-1d (#711, L-B7) — le refus du réglage de sauvegarde hors
+        // domaine.
+        (
+            "crates/kesh-api/src/routes/backup_schedule.rs",
+            &[("admin-backup-schedule-error-out-of-domain", 1, &[])],
         ),
     ];
     let continuation = Regex::new(r"\\\n\s*").unwrap();

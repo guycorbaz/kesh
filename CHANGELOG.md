@@ -24,6 +24,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   désormais en **!** ; les coches et la flèche de la brochure et les signes des deux scripts d'exemple du manuel
   d'administration s'impriment (`+`, `→`, `x`, `=`) — `pdftotext` ne relève plus aucun caractère de remplacement
   (U+FFFD) dans les trois PDF.
+- **Sauvegarde automatique — le refus d'un réglage hors domaine parle la langue de l'instance** : un réglage refusé par le serveur (fréquence autre que 6, 12, 24 ou 168 heures, ou nombre de sauvegardes conservées hors de 1 à 60) était annoncé en français quelle que soit la langue de l'installation ; il l'est désormais en français, en allemand, en italien ou en anglais ([#711](https://github.com/guycorbaz/kesh/issues/711)).
 
 ## [0.15.0] — 2026-10-24
 
