@@ -161,6 +161,7 @@ autonomie. Relevé au code de `89d68704` (32-3 fusionnée).
 ### C-32-4a-12 — Ni CHANGELOG, ni manuel, ni `docs/api-external.md` : rien de visible ne change
 
 - **Contexte** : comme la 32-3 (C-32-3-41), aucun statut, corps ni borne ne change.
-- **Retenu** : contrôle exigé (AC16) — `docs/api-external.md` l. 213, 216-218, 405, 441, les manuels et leurs PDF —,
+- **Retenu** : contrôle exigé (AC16) — `docs/api-external.md` l. 213, 216-218, 405, 441, et 426-433 (l'ordre des refus
+  des postes ouverts ; validation P2, R6), les manuels et leurs PDF —,
   aucune modification ; une phrase au document des motifs (C-32-4a-6) et le doc-comment de `services/mod.rs`.
 - **Réversible** : oui.
