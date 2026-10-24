@@ -8,6 +8,8 @@
 	import { onboardingState } from '$lib/features/onboarding/onboarding.svelte';
 	import DemoBanner from '$lib/shared/components/DemoBanner.svelte';
 	import IncompleteBanner from '$lib/shared/components/IncompleteBanner.svelte';
+	// Story 31-1c (#503, AC31) — échec ou retard de la sauvegarde automatique (Admin).
+	import BackupScheduleBanner from '$lib/features/admin-backup/BackupScheduleBanner.svelte';
 	import { Search, LogOut, User, Settings, ChevronDown } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
@@ -343,6 +345,8 @@
 	{:else if !onboardingState.isDemo && onboardingState.loaded && onboardingState.stepCompleted >= 6 && onboardingState.stepCompleted < 7}
 		<IncompleteBanner />
 	{/if}
+	<!-- Story 31-1c — indépendant des précédentes ; s'affiche seul pour un Admin. -->
+	<BackupScheduleBanner />
 
 	<!-- Corps : sidebar + contenu -->
 	<div class="flex flex-1">

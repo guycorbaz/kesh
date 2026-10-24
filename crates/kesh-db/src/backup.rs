@@ -32,8 +32,10 @@ use crate::errors::{DbError, map_db_error};
 use crate::snapshot::ReadSnapshot;
 
 /// Liste canonique des tables applicatives Kesh, ordonnée **enfants → parents**
-/// (ordre de suppression FK-safe). Exclut les tables système `_sqlx_migrations`
-/// et `_kesh_version` (jamais exportées ni vidées).
+/// (ordre de suppression FK-safe). Exclut les tables système `_sqlx_migrations`,
+/// `_kesh_version` et, depuis la Story 31-1c, `_kesh_backup_schedule` (réglage
+/// et état de la sauvegarde automatique) — jamais exportées ni vidées : y
+/// ajouter une table rendrait non importable toute sauvegarde antérieure.
 ///
 /// Source de vérité unique : `test_fixtures::truncate_all` (vidage de test) et
 /// l'export d'installation 17-3a la réutilisent. Le test
@@ -820,7 +822,8 @@ mod tests {
         let db_tables: Vec<String> = sqlx::query_scalar(
             "SELECT TABLE_NAME FROM information_schema.TABLES \
              WHERE TABLE_SCHEMA = DATABASE() \
-               AND TABLE_NAME NOT IN ('_sqlx_migrations', '_kesh_version') \
+               AND TABLE_NAME NOT IN ('_sqlx_migrations', '_kesh_version', \
+                                      '_kesh_backup_schedule') \
              ORDER BY TABLE_NAME",
         )
         .fetch_all(&pool)

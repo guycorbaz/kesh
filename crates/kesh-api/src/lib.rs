@@ -11,6 +11,7 @@ pub(crate) mod admin_backup;
 pub mod audit;
 pub mod audit_labels;
 pub mod auth;
+pub mod auto_backup;
 pub mod config;
 pub mod document_storage;
 pub mod errors;
@@ -84,6 +85,14 @@ pub struct AppState {
     /// (déviation documentée 20-4 : pas de variant dédié pour un endpoint
     /// de test, le message diagnostique explicite suffit).
     pub test_mock_mailer: Option<mail::MockMailer>,
+    /// Story 31-1c (#503, AC27) — une seule sauvegarde à la fois : la
+    /// sauvegarde automatique (`auto_backup::run_once`, en `try_lock_owned`),
+    /// l'export manuel et l'import (en `lock_owned().await`) le prennent,
+    /// toujours en garde **possédé**, et toujours **avant** le `FOR UPDATE` de
+    /// `_kesh_version`. Verrou en mémoire : il ne protège pas deux processus
+    /// Kesh l'un de l'autre (une instance par base). Champ `pub` : les tests
+    /// le tiennent à la main (AC35).
+    pub backup_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl AppState {
@@ -122,6 +131,8 @@ impl AppState {
             smtp_ready: false,
             // Story 20-4 — capture d'e-mails réservée au boot test-mode réel.
             test_mock_mailer: None,
+            // Story 31-1c — verrou des sauvegardes, libre.
+            backup_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 }
@@ -184,7 +195,7 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
     // KESH-ADMIN-ROUTES-BEGIN
     // ⚠️ Bloc borné — Story 22-4a (#167). Le test `admin_pat_denied_e2e` lit CE
     // fichier par `include_str!`, compte les constructeurs de méthode entre les
-    // deux marqueurs, et exige exactement 28. Toute route ajoutée ici sans son
+    // deux marqueurs, et exige exactement 33 (Story 31-1c). Toute route ajoutée ici sans son
     // couple dans la liste du test fait ROUGIR le test : c'est le rappel qui
     // manquait, et qui a laissé 16 routes sur 19 sans garde anti-PAT.
     // Ne pas déplacer ni reformuler les marqueurs sans ajuster le test.
@@ -258,6 +269,26 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
                 // (10240 MiB * 1024² > u32::MAX) — review Pass 3.
                 (state.config.admin_import_max_mib as usize).saturating_mul(1024 * 1024),
             )),
+        )
+        // Story 31-1c (#503) : la sauvegarde automatique — réglage et état,
+        // « Sauvegarder maintenant », liste et téléchargement des sauvegardes
+        // du serveur (Admin ; le téléchargement porte aussi `ensure_not_pat`).
+        .route(
+            "/api/v1/admin/backup-schedule",
+            get(routes::backup_schedule::get_backup_schedule)
+                .put(routes::backup_schedule::update_backup_schedule),
+        )
+        .route(
+            "/api/v1/admin/backup-schedule/run",
+            post(routes::backup_schedule::run_backup_now),
+        )
+        .route(
+            "/api/v1/admin/backups",
+            get(routes::backup_schedule::list_backups),
+        )
+        .route(
+            "/api/v1/admin/backups/{kind}/{name}",
+            get(routes::backup_schedule::download_backup),
         )
         // Story 20-1 : socle templates d'e-mail (Admin-only — pas de lecture
         // Comptable+ v1, seul consommateur = section Admin dédiée 20-2).

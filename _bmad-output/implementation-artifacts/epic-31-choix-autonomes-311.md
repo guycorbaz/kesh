@@ -862,3 +862,162 @@ route `POST …/full-import` (`admin_backup` reste `pub(crate)`).
 - **Retenu** : la garde attend le layout (`await parent()`) puis renvoie à `/onboarding` au-delà de l'étape 2, comme un
   non-Admin.
 - **Réversible** : oui.
+
+## Développement de la 31-1c (2026-10-24, Opus 5.5)
+
+### C-31-1-81 — « Sauvegarder maintenant » est audité ; les actions d'audit s'écrivent en littéral au site d'appel
+
+- **Contexte** : le registre des routes mutantes exige qu'une route soit `Traced` ou exemptée avec le numéro d'une issue
+  qui la suit ; `POST …/run` écrit une sauvegarde (un secret) sur le serveur, par le geste d'un administrateur. L'AC31
+  n'exclut de l'audit que la sauvegarde **automatique** réussie (bruit quotidien).
+- **Retenu** : `admin.backup_run` (statut, fichier), best-effort comme `admin.full_export` ; libellé ×4. Les deux audits
+  best-effort de `routes/backup_schedule.rs` construisent leur `NewAuditLogEntry` au site d'appel, l'action en toutes
+  lettres : l'aide `emit_audit` ne reçoit que l'entrée (la garde `audit_label_registry` ne voit pas un `&str` relayé, et
+  l'inscrire aux sites indirects aurait réécrit les trois mentions « huit » du fichier).
+- **Écartées** : exempter la route (aucune issue ne la suit) ; inscrire un neuvième site indirect.
+- **Réversible** : oui.
+
+### C-31-1-82 — Seuls les `.partial` abandonnés (non modifiés depuis 10 minutes) sont supprimés
+
+- **Contexte** : l'AC28 (et F9) prescrivent de supprimer les `.partial` résiduels avant d'écrire (auto) et avant la
+  sauvegarde de sécurité (import). Le premier gate ciblé a rougi au hasard sur deux tests d'import différents : les
+  tests d'intégration partagent `/tmp` comme dossier de sauvegarde (`Config::from_fields_for_test`), et le nettoyage
+  d'un import supprimait le `.partial` **en cours** d'un import parallèle (renommage en `ENOENT`, 500). C'est le mode
+  d'échec que la fiche écrit en angle mort pour deux processus sur une même base — ici rencontré.
+- **Retenu** : un `.partial` n'est supprimé que si sa date de modification date d'au moins `PARTIEL_ABANDONNE_APRES`
+  (10 minutes) : un écrivain actif avance cette date à chaque écriture. Date illisible : le fichier reste. Le verrou en
+  mémoire garde l'exclusion dans un processus ; le délai ferme le cas « deux processus » pour le nettoyage (pas pour
+  deux écritures simultanées, toujours un angle mort). Test : un `.partial` récent reste, un `.partial` vieilli d'une
+  heure disparaît (auto et pré-import). Mutation complémentaire M-c25. Manuel et `.env.example` le disent.
+- **Écartées** : donner aux tests un dossier propre (corrige les tests, pas le défaut) ; ne rien nettoyer.
+- **Réversible** : oui (la constante).
+
+### C-31-1-83 — E2E : états posés par interception réseau ; manifeste lu sans bibliothèque ZIP
+
+- **Contexte** : l'AC40 pose les statuts (d) à (g), (n), (p) « en base de test par `UPDATE` » ; Playwright n'a aucun
+  accès à la base (aucune spec n'en a, aucune dépendance MariaDB côté frontend). R8 (P5) : l'AC38 lit le manifeste
+  sans bibliothèque ZIP.
+- **Retenu** : tous les états non atteignables par l'écran sont posés par `page.route` sur `GET backup-schedule` (et
+  `PUT`, `POST …/run`, `GET backups` comme la fiche le prévoyait pour (h)–(k), (r)) — le rendu est le même, la source
+  de l'état est la réponse de l'API. Le parcours réel (réglage, « Sauvegarder maintenant », liste, téléchargement)
+  passe par le vrai serveur. Le manifeste est lu par un analyseur des en-têtes locaux de 20 lignes et `zlib`
+  (`inflateRawSync`) : `formatVersion === 2` est vérifié, comme l'AC38 le demande.
+- **Écartées** : une dépendance `mysql2` aux tests E2E ; ramener l'assertion à la signature `PK` (R8).
+- **Réversible** : oui.
+
+### C-31-1-84 — Découpage : `routes/backup_schedule.rs`, `backup-schedule.api.ts`, état partagé du bandeau
+
+- **Contexte** : `routes/admin.rs` dépasse 1200 lignes ; R9 (P5) : le rafraîchissement du bandeau « après chaque action
+  du panneau » n'avait pas de mécanisme.
+- **Retenu** : les cinq handlers dans un module neuf ; côté frontend, `backup-schedule.api.ts` (API, `bannerKind`,
+  `exceedsImportLimit`), `backup-schedule.svelte.ts` (état partagé : le panneau le pose après chaque action, le bandeau
+  le lit et le relit toutes les 30 minutes), `AutoBackupSection.svelte` et `BackupScheduleBanner.svelte`, tous sous
+  `features/admin-backup` (propriété des clés `admin-backup-*`). La garde lexicale des gardes possédés lit aussi
+  `routes/backup_schedule.rs`, qui ne doit pas nommer `backup_lock`.
+- **Réversible** : oui.
+
+### C-31-1-85 — `nextDueAt` suit la règle d'`is_due` ; `run_once` tronque `now` à la milliseconde
+
+- **Contexte** : R6 (P5) — « `now` si une valeur est future » contredisait `is_due` quand seule `last_success_at` est
+  future et qu'une tentative est récente. Les colonnes sont en `DATETIME(3)`, le nom du fichier à la milliseconde.
+- **Retenu** : `next_due_at = max(réussite + intervalle, tentative + min(intervalle, 1 h), now)`, chaque valeur future
+  tenue pour nulle ; `is_due` en est la comparaison à `now` (une seule règle). `run_once` tronque `now` à la
+  milliseconde : nom, `last_attempt_at` et `last_success_at` disent le même instant. Le texte du bandeau garde la date
+  de la dernière réussite, même datée du futur (second volet de R6 non appliqué : la date affichée est exacte).
+- **Réversible** : oui.
+
+### C-31-1-86 — Dossier des documents absent : 0 ; relecture dans le `spawn_blocking`
+
+- **Contexte** : F2 et F4 (P5).
+- **Retenu** : `taille_des_documents` rend 0 pour un dossier absent (aucune pièce encore) et pour toute autre erreur de
+  lecture, journalisée ; un fichier disparu entre la lecture du dossier et ses métadonnées est sauté. La relecture de
+  l'AC28 se fait dans la même fermeture que l'écriture, après le renommage. Un espace libre illisible vaut `failed`.
+- **Réversible** : oui.
+
+### C-31-1-87 — « Sauvegarder maintenant » rend 200 quel que soit le statut ; tailles en unités localisées
+
+- **Contexte** : l'AC32 dit « attend la fin, rend l'état » ; l'écran affiche des tailles lisibles.
+- **Retenu** : `POST …/run` rend 200 et l'état, l'échec se lisant dans `lastStatus` (seul `Skipped` est une erreur
+  HTTP, 409) ; une erreur de lecture ou d'écriture de l'état en base reste un 500. Les tailles s'affichent par
+  `Intl.NumberFormat` en unités décimales localisées (o, ko, Mo, Go) sans clé de catalogue ; la mention « limite N
+  Mio » garde l'unité binaire de `KESH_ADMIN_IMPORT_MAX_MB`. La date d'une ligne de la liste est la date de
+  modification du fichier.
+- **Réversible** : oui.
+
+### C-31-1-88 — Un dossier `auto` illisible n'emporte pas la liste des sauvegardes du serveur
+
+- **Contexte** : revue de code P1, L-B2 / E-4 — `fichiers_reguliers` propageait la première erreur (`read_dir` sur un
+  `auto` qui n'est pas un dossier, entrée ou métadonnées illisibles) : `GET /admin/backups` rendait 500, et la voie
+  normale du manuel pour récupérer une sauvegarde pré-import tombait avec elle.
+- **Retenu** (la forme la plus simple qui tient) : dans `lister_les_sauvegardes`, une erreur de lecture du dossier
+  `auto` est **journalisée** et ses lignes manquent ; les sauvegardes pré-import restent servies et téléchargeables.
+  Dans `fichiers_reguliers`, une **entrée** illisible (entrée du dossier, métadonnées) est sautée et journalisée au
+  lieu de faire échouer les autres — pour tous ses appelants : la rétention en garde alors plus, jamais moins ; la
+  taille des documents ne la compte pas (le seuil d'espace peut en être sous-estimé d'autant, le disque plein pendant
+  l'écriture restant attrapé par `disk_full`). Seul un dossier de sauvegarde **lui-même** illisible rend encore 500
+  (rien ne peut alors être listé). L'état dit le problème sans champ neuf : le tour suivant ne peut pas écrire dans
+  `auto` et enregistre `failed` (panneau et bandeau) — rien de plus n'est ajouté à l'API.
+- **Rejeté** : un indicateur `autoDirUnreadable` dans la réponse (API, écran, quatre locales pour un cas que l'état
+  dit déjà au tour suivant).
+- **Réversible** : oui.
+
+### C-31-1-89 — Le téléchargement ouvre sans suivre les liens ; disparu depuis la liste → 404
+
+- **Contexte** : revue de code P1, L-B1 / E-5 — `File::open` suivait un lien posé dans la fenêtre liste → ouverture,
+  et un fichier supprimé dans cette fenêtre (rétention) rendait 500.
+- **Retenu** : `auto_backup::ouvrir_la_sauvegarde` ouvre en `O_RDONLY | O_NOFOLLOW | O_CLOEXEC` (`rustix`, déjà
+  dépendance) puis vérifie par `fstat` un fichier régulier ; `ENOENT`, `ELOOP` ou non régulier → `Ok(None)` → 404,
+  comme un nom absent ; toute autre erreur → 500. L'ouverture passe par `spawn_blocking`. `Content-Length` reste la
+  taille lue à la liste (les archives sont immuables après leur renommage).
+- **Réversible** : oui.
+
+### C-31-1-90 — Un `.partial` daté du futur d'au moins dix minutes est abandonné
+
+- **Contexte** : revue de code P1, E-3 — `duration_since` en erreur (date future) rendait le fichier « récent » à
+  jamais : un `.partial` laissé avant un recul d'horloge n'était jamais supprimé.
+- **Retenu** : l'abandon se juge sur l'**écart absolu** entre la date de modification et `maintenant` : au moins dix
+  minutes, dans un sens ou dans l'autre. Une date légèrement future (moins de dix minutes : horloge d'un partage réseau
+  un peu en avance, écriture peut-être en cours ailleurs) protège encore le fichier. Écrit au manuel (§ *Horloge du
+  serveur déréglée*).
+- **Rejeté** : la règle « une date future protège toujours », écrite seulement — elle laisse le fichier pour toujours.
+- **Réversible** : oui.
+
+### C-31-1-91 — Le délai de reprise est une heure, sans `min` ; « au moins deux intervalles »
+
+- **Contexte** : revue de code P1, L-B4 — `delai_de_reprise = min(intervalle, 1 h)` avec des fréquences de 6, 12, 24 et
+  168 h (la `CHECK` de la table et `ALLOWED_INTERVAL_HOURS`) : le `min` était mort, et le manuel promettait « ou de
+  l'intervalle, s'il est plus court ». Le manuel disait aussi « plus de deux intervalles » pour un bandeau calculé par
+  `>=`.
+- **Retenu** : la constante `DELAI_DE_REPRISE = 1 h` remplace le `min` (code et texte disent la même chose) ; le
+  manuel dit « retentée au bout d'une heure » et « au moins deux intervalles », le CHANGELOG « depuis au moins deux
+  intervalles ». Garde G22 de `textes_coherents.rs`. Si une fréquence inférieure à une heure était un jour admise, le
+  délai de reprise serait à revoir avec elle (il dépasserait l'intervalle).
+- **Rejeté** : garder le `min` et corriger le seul texte — du code mort qui décrit une règle que rien n'exerce.
+- **Réversible** : oui.
+
+### C-31-1-92 — Le rappel de l'écran dit le volume de l'AC33, le manuel son pic
+
+- **Contexte** : revue de code P1, F-A2 — le rappel `admin-backup-auto-reminder` s'arrêtait à « Chacune pèse à peu
+  près la base plus le dossier des documents ».
+- **Retenu** : le rappel dit ce que l'AC33 exige — « le dossier auto en garde le nombre conservé plus une, et le
+  dossier de sauvegarde y ajoute une sauvegarde par import, jamais purgée » —, quatre locales, repli Svelte identique
+  au fr-CH. Le pic pendant une écriture (une de plus, le `.partial`) reste au manuel seul (§ *Volume*), qui le dit
+  déjà : l'écran garde une phrase courte.
+- **Réversible** : oui.
+
+### C-31-1-93 — Un dossier `auto/` qui ne se liste pas fait échouer le tour avant l'écriture
+
+- **Contexte** : revue de code P2, M1 — un `auto/` inscriptible et traversable mais illisible (`0o300`) acceptait
+  l'écriture ; `appliquer_la_retention`, sur l'échec de `read_dir`, journalisait et rendait 0. La sauvegarde était
+  annoncée réussie, la rétention ne tournait plus, et le disque se remplissait en silence — alors que le manuel (§ *Les
+  sauvegardes du serveur*) dit que « la sauvegarde automatique suivante échoue, et le panneau comme le bandeau le
+  disent ».
+- **Retenu** : `ecrire` vérifie, juste après la création du dossier, que `auto/` se liste (`std::fs::read_dir`) ; sinon
+  le tour s'arrête **avant toute écriture** en `failed`, journalisé. C'est le point le plus simple : un seul contrôle,
+  dans le `spawn_blocking` qui touche déjà le disque, au même endroit que l'échec de création du dossier, et qui ne
+  laisse aucune archive orpheline. Le manuel est vrai tel qu'il est écrit (rien à changer, PDF inchangé). La rétention
+  garde son repli journalisé, qui ne vaut plus que pour un dossier changé entre le contrôle et la fin du tour.
+- **Rejeté** : remonter l'échec de la rétention après l'écriture — une archive écrite et relue serait annoncée en
+  échec, alors que `last_success_*` est déjà enregistré ; et restreindre le manuel à « l'écriture est refusée » — il
+  décrirait le trou au lieu de le fermer.
+- **Réversible** : oui.

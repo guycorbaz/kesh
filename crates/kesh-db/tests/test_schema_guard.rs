@@ -443,6 +443,46 @@ async fn squash_seeds_the_kesh_version_row(pool: MySqlPool) {
     );
 }
 
+/// Story 31-1c (#503, AC23) — la ligne singleton de `_kesh_backup_schedule`
+/// (réglage de la sauvegarde automatique) existe au squash, avec les valeurs
+/// que pose le vrai chemin. Le dump du script est `--no-data` : sans la
+/// réinjection de l'étape 7-bis, la table y serait VIDE, et tout test monté
+/// sur le squash lirait un singleton absent — sans que `information_schema`
+/// ne voie rien. Assertion de montage : le vrai chemin pose bien la ligne.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn squash_seeds_the_backup_schedule_row(pool: MySqlPool) {
+    const COLONNES: &str = "SELECT CAST(id AS CHAR), CAST(enabled AS CHAR), \
+         CAST(interval_hours AS CHAR), CAST(retention_count AS CHAR), CAST(version AS CHAR), \
+         CAST(COALESCE(last_attempt_at, last_success_at, last_status) IS NULL AS CHAR) \
+         FROM _kesh_backup_schedule";
+    type Ligne = (String, String, String, String, String, String);
+    let mut real = pool.acquire().await.unwrap();
+    let expected: Vec<Ligne> = sqlx::query_as(COLONNES)
+        .fetch_all(&mut *real)
+        .await
+        .expect("le chemin réel doit poser _kesh_backup_schedule");
+    assert_eq!(
+        expected.len(),
+        1,
+        "assertion de montage : le vrai chemin pose exactement une ligne"
+    );
+
+    let (mut squash, squash_db) = mount_squash("backup_schedule").await;
+    let got: Vec<Ligne> = sqlx::query_as(COLONNES)
+        .fetch_all(&mut squash)
+        .await
+        .expect("lecture _kesh_backup_schedule côté squash");
+    squash.close().await.ok();
+    drop_db(&squash_db).await;
+
+    assert_eq!(
+        got, expected,
+        "la ligne singleton _kesh_backup_schedule diffère (ou manque) au squash — \
+         le dump est --no-data, seule la réinjection du script la pose. \
+         Régénérez : scripts/regen-test-schema.sh"
+    );
+}
+
 // ============================================================================
 // 3. Suivi — le mode d'échec MUET
 // ============================================================================

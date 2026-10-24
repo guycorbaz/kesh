@@ -16,6 +16,8 @@
 	import { toast } from 'svelte-sonner';
 	import { downloadFullExport, type FullExportOutcome } from './admin-backup.api';
 	import BackupEnvNotice from './BackupEnvNotice.svelte';
+	// Story 31-1c (#503, AC33) — la sauvegarde automatique et les sauvegardes du serveur.
+	import AutoBackupSection from './AutoBackupSection.svelte';
 
 	let exporting = $state(false);
 	let errorMsg = $state<string | null>(null);
@@ -130,4 +132,6 @@
 			'Le fichier .keshbackup contient des données sensibles (identifiants, jetons). Conservez-le en lieu sûr.',
 		)}
 	</p>
+
+	<AutoBackupSection />
 </section>

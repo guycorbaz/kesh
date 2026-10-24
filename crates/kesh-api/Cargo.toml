@@ -84,6 +84,12 @@ percent-encoding = "2"
 regex = "1.10"
 tempfile = "3"
 
+# Story 31-1c (#503, AC30, C-31-1-19) — `statvfs` : espace accessible
+# (`f_bavail × f_frsize`) du dossier des sauvegardes automatiques, mesuré avant
+# l'écriture. Déjà au Cargo.lock (1.1.4, dépendance transitive) : aucun paquet
+# neuf.
+rustix = { version = "1.1", features = ["fs"] }
+
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"

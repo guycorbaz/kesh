@@ -372,7 +372,15 @@ async fn main() {
         smtp_ready,
         // Story 20-4 — capture d'e-mails E2E (test-mode uniquement).
         test_mock_mailer,
+        // Story 31-1c — une seule sauvegarde à la fois (AC27).
+        backup_lock: Arc::new(tokio::sync::Mutex::new(())),
     };
+
+    // Story 31-1c (#503, AC26) — la sauvegarde automatique faite par Kesh :
+    // ici et ici seulement (ni `build_router`, ni les tests), premier contrôle
+    // 5 minutes après le démarrage. Garde lexicale :
+    // `auto_backup::tests::lancement_par_main_seulement`.
+    kesh_api::auto_backup::spawn(state.clone());
 
     let app = build_router(state, static_dir);
 
