@@ -11,17 +11,27 @@
 //! compte d'impôt préalable, et un projet portant une écriture imputée.
 #![allow(clippy::too_many_arguments)]
 
+use std::collections::BTreeSet;
 use std::net::SocketAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::{NaiveDate, TimeDelta, Utc};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use kesh_api::auth::jwt::Claims;
 use kesh_api::config::Config;
+use kesh_api::errors::AppError;
+use kesh_api::middleware::auth::CurrentUser;
+use kesh_api::services::acces::{ContexteAcces, Portee};
+use kesh_api::services::plan_comptable;
+use kesh_api::services::poignees::{Lecture, Trace};
+use kesh_api::services::rapports::{
+    self, Affichage, DemandeGrandLivre, DemandeJournaux, DemandePeriode, DemandeProjet, Export,
+    FormatExport, ModeProjet, Rapport,
+};
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::journal_entry::Journal;
-use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine};
+use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine, Role};
 use kesh_db::repositories::journal_entries;
 use kesh_db::test_fixtures::{SeededCompany, seed_accounting_company};
 use rust_decimal::Decimal;
@@ -791,4 +801,1184 @@ async fn table_des_traces_par_la_route(pool: MySqlPool) {
         }
     }
     assert!(echecs.is_empty(), "AC9 (b′) :\n{}", echecs.join("\n"));
+}
+
+// ============================================================
+// Au niveau du service : contextes, poignées, demandes
+// ============================================================
+
+/// Les neuf services de rapport.
+const SERVICES: [Svc; 9] = [
+    Svc::Bilan,
+    Svc::CompteDeResultat,
+    Svc::Balance,
+    Svc::Journaux,
+    Svc::Tva,
+    Svc::GrandLivre,
+    Svc::BalanceAgee,
+    Svc::DepensesProjet,
+    Svc::RendementProjet,
+];
+
+/// Un id positif qu'aucune fixture ne pose.
+const INEXISTANT: i64 = 999_999_999;
+
+/// Pool dont chaque connexion passe `SET SESSION TRANSACTION READ ONLY` — mêmes
+/// options de connexion que le pool du test, aucun privilège requis.
+async fn pool_lecture_seule(pool: &MySqlPool) -> MySqlPool {
+    let options = (*pool.connect_options()).clone();
+    sqlx::mysql::MySqlPoolOptions::new()
+        .max_connections(4)
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                sqlx::query("SET SESSION TRANSACTION READ ONLY")
+                    .execute(&mut *conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect_with(options)
+        .await
+        .expect("pool en lecture seule")
+}
+
+/// La `Lecture` du chapeau de l'AC9 : sur le pool en lecture seule.
+async fn lecture_seule(pool: &MySqlPool) -> Lecture {
+    Lecture::new(pool_lecture_seule(pool).await)
+}
+
+fn mcp(livres: &Livres, portees: &[Portee]) -> ContexteAcces {
+    ContexteAcces::mcp(
+        livres.company_id(),
+        livres.user_id(),
+        portees.iter().copied().collect::<BTreeSet<_>>(),
+    )
+}
+
+fn mcp_societe(company_id: i64, user_id: i64, portees: &[Portee]) -> ContexteAcces {
+    ContexteAcces::mcp(company_id, user_id, portees.iter().copied().collect())
+}
+
+const TOUTES: [Portee; 2] = [Portee::BooksRead, Portee::InvoicesRead];
+
+fn api(livres: &Livres, role: Role) -> ContexteAcces {
+    api_societe(livres.company_id(), livres.user_id(), role)
+}
+
+fn api_societe(company_id: i64, user_id: i64, role: Role) -> ContexteAcces {
+    ContexteAcces::depuis_api(&CurrentUser {
+        user_id,
+        role,
+        company_id,
+        exp: i64::MAX,
+        api_key_id: None,
+    })
+}
+
+/// Portée qu'exige l'affichage d'un service.
+fn portee_exigee(svc: Svc) -> Portee {
+    match svc {
+        Svc::BalanceAgee => Portee::InvoicesRead,
+        _ => Portee::BooksRead,
+    }
+}
+
+/// L'autre portée — insuffisante seule.
+fn autre_portee(svc: Svc) -> Portee {
+    match portee_exigee(svc) {
+        Portee::BooksRead => Portee::InvoicesRead,
+        Portee::InvoicesRead => Portee::BooksRead,
+    }
+}
+
+/// Demande par défaut d'un service.
+fn dem_defaut(svc: Svc) -> Dem {
+    match svc {
+        Svc::GrandLivre => Dem::GrandLivre { filtre: false },
+        Svc::BalanceAgee => Dem::BalanceAgee,
+        Svc::DepensesProjet | Svc::RendementProjet => Dem::Projet { cumule: false },
+        _ => BORNES,
+    }
+}
+
+/// Usage d'export d'un service (la balance âgée n'exporte qu'en CSV).
+fn usage_export(svc: Svc) -> Usg {
+    match svc {
+        Svc::BalanceAgee => Usg::Csv,
+        _ => Usg::Pdf,
+    }
+}
+
+/// Paramètres des demandes — modifiés par les cas (c) de l'AC8.
+#[derive(Debug, Clone, Copy)]
+struct Params {
+    fy: i64,
+    pid: i64,
+    compte: i64,
+    /// Grand livre : bornes inversées (`from > to`).
+    gl_inverse: bool,
+}
+
+impl Params {
+    fn de(livres: &Livres) -> Self {
+        Self {
+            fy: livres.fy(),
+            pid: livres.projet_id,
+            compte: livres.compte(),
+            gl_inverse: false,
+        }
+    }
+}
+
+fn date(s: &str) -> NaiveDate {
+    NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+}
+
+fn demande_periode(dem: Dem, p: &Params) -> DemandePeriode {
+    let bornes = matches!(dem, Dem::Periode { bornes: true, .. });
+    DemandePeriode {
+        fiscal_year_id: p.fy,
+        period_start: bornes.then(|| date(BORNE_DEBUT)),
+        period_end: bornes.then(|| date(BORNE_FIN)),
+    }
+}
+
+fn demande_journaux(dem: Dem, p: &Params) -> DemandeJournaux {
+    let journal = match dem {
+        Dem::Periode {
+            journal: Some("Achats"),
+            ..
+        } => Some(Journal::Achats),
+        Dem::Periode {
+            journal: Some(autre),
+            ..
+        } => panic!("journal non prévu par la table : {autre}"),
+        _ => None,
+    };
+    DemandeJournaux {
+        periode: demande_periode(dem, p),
+        journal,
+    }
+}
+
+fn demande_grand_livre(dem: Dem, p: &Params) -> DemandeGrandLivre {
+    let filtre = matches!(dem, Dem::GrandLivre { filtre: true });
+    let (from, to) = if p.gl_inverse {
+        (date(BORNE_FIN), date(BORNE_DEBUT))
+    } else {
+        (date(BORNE_DEBUT), date(BORNE_FIN))
+    };
+    DemandeGrandLivre {
+        from,
+        to,
+        account_ids: filtre.then(|| p.compte.to_string()),
+        include_zero: false,
+        offset: None,
+        limit: None,
+    }
+}
+
+fn demande_projet(dem: Dem, p: &Params) -> DemandeProjet {
+    let cumule = matches!(dem, Dem::Projet { cumule: true });
+    DemandeProjet {
+        project_id: p.pid,
+        mode: if cumule {
+            ModeProjet::Cumule
+        } else {
+            ModeProjet::Exercice
+        },
+        fiscal_year_id: (!cumule).then_some(p.fy),
+        period_start: None,
+        period_end: None,
+    }
+}
+
+/// Ce qu'expose un `Rapport` — relevé **avant** `afficher`/`exporter`.
+#[derive(Debug, Default)]
+struct Releve {
+    periode: Option<(NaiveDate, NaiveDate)>,
+    bornes_gl: Option<(NaiveDate, NaiveDate)>,
+    as_of: Option<NaiveDate>,
+    /// `AgedReceivables.as_of` du contenu (balance âgée seulement).
+    as_of_contenu: Option<NaiveDate>,
+}
+
+fn relever<T, U>(r: &Rapport<T, U>) -> Releve {
+    Releve {
+        periode: r.periode().map(|p| (p.start_date, p.end_date)),
+        bornes_gl: r.bornes_grand_livre().map(|p| (p.from, p.to)),
+        as_of: r.as_of(),
+        as_of_contenu: None,
+    }
+}
+
+/// Ce que fait le test du `Rapport` rendu par le service.
+#[derive(Clone, Copy)]
+enum Fin<'a> {
+    /// L'abandonner sans tracer.
+    Aucune,
+    /// `afficher`/`exporter` sur cette `Trace`, rendu réussi.
+    Tracer(&'a Trace),
+    /// `exporter` avec un rendu qui échoue (en affichage : comme `Tracer`).
+    RenduEnEchec(&'a Trace),
+}
+
+impl<'a> Fin<'a> {
+    fn trace(self) -> Option<&'a Trace> {
+        match self {
+            Fin::Aucune => None,
+            Fin::Tracer(t) | Fin::RenduEnEchec(t) => Some(t),
+        }
+    }
+}
+
+fn format_de(usage: Usg) -> FormatExport {
+    match usage {
+        Usg::Pdf => FormatExport::Pdf,
+        Usg::Csv => FormatExport::Csv,
+        Usg::Affichage => panic!("pas de format en affichage"),
+    }
+}
+
+fn rendu_en_echec() -> AppError {
+    AppError::Internal("rendu en échec (test)".into())
+}
+
+/// Appelle un service générique sur l'usage, puis applique la `Fin`.
+macro_rules! servir {
+    ($usage:expr, $fin:expr, |$u:ident| $appel:expr) => {{
+        match $usage {
+            Usg::Affichage => {
+                let $u = Affichage;
+                let r = $appel.await?;
+                let rel = relever(&r);
+                if let Some(t) = $fin.trace() {
+                    let _ = r.afficher(t).await;
+                }
+                rel
+            }
+            Usg::Pdf | Usg::Csv => {
+                let $u = Export(format_de($usage));
+                let r = $appel.await?;
+                let rel = relever(&r);
+                match $fin {
+                    Fin::Aucune => {}
+                    Fin::Tracer(t) => {
+                        r.exporter(t, |_| Ok(Vec::new())).await?;
+                    }
+                    Fin::RenduEnEchec(t) => {
+                        r.exporter(t, |_| Err(rendu_en_echec())).await?;
+                    }
+                }
+                rel
+            }
+        }
+    }};
+}
+
+/// Joue un service de rapport (service, usage, demande) dans un contexte et
+/// sur une `Lecture`, puis applique la `Fin`.
+async fn jouer(
+    svc: Svc,
+    usage: Usg,
+    dem: Dem,
+    p: &Params,
+    a: &ContexteAcces,
+    l: &Lecture,
+    fin: Fin<'_>,
+) -> Result<Releve, AppError> {
+    let rel = match svc {
+        Svc::Bilan => servir!(usage, fin, |u| rapports::bilan(
+            a,
+            l,
+            demande_periode(dem, p),
+            u
+        )),
+        Svc::CompteDeResultat => servir!(usage, fin, |u| rapports::compte_de_resultat(
+            a,
+            l,
+            demande_periode(dem, p),
+            u
+        )),
+        Svc::Balance => servir!(usage, fin, |u| rapports::balance(
+            a,
+            l,
+            demande_periode(dem, p),
+            u
+        )),
+        Svc::Journaux => servir!(usage, fin, |u| rapports::journaux(
+            a,
+            l,
+            demande_journaux(dem, p),
+            u
+        )),
+        Svc::Tva => servir!(usage, fin, |u| rapports::tva(
+            a,
+            l,
+            demande_periode(dem, p),
+            u
+        )),
+        Svc::GrandLivre => servir!(usage, fin, |u| rapports::grand_livre(
+            a,
+            l,
+            demande_grand_livre(dem, p),
+            u
+        )),
+        Svc::DepensesProjet => servir!(usage, fin, |u| rapports::depenses_projet(
+            a,
+            l,
+            demande_projet(dem, p),
+            u
+        )),
+        Svc::RendementProjet => servir!(usage, fin, |u| rapports::rendement_projet(
+            a,
+            l,
+            demande_projet(dem, p),
+            u
+        )),
+        Svc::BalanceAgee => match usage {
+            Usg::Affichage => {
+                let r = rapports::balance_agee(a, l, Affichage).await?;
+                let mut rel = relever(&r);
+                if let Some(t) = fin.trace() {
+                    rel.as_of_contenu = Some(r.afficher(t).await.as_of);
+                }
+                rel
+            }
+            Usg::Pdf | Usg::Csv => {
+                let r = rapports::balance_agee(a, l, Export(format_de(usage))).await?;
+                let mut rel = relever(&r);
+                let mut vu = None;
+                match fin {
+                    Fin::Aucune => {}
+                    Fin::Tracer(t) => {
+                        r.exporter(t, |c| {
+                            vu = Some(c.as_of);
+                            Ok(Vec::new())
+                        })
+                        .await?;
+                    }
+                    Fin::RenduEnEchec(t) => {
+                        r.exporter(t, |_| Err(rendu_en_echec())).await?;
+                    }
+                }
+                rel.as_of_contenu = vu;
+                rel
+            }
+        },
+    };
+    Ok(rel)
+}
+
+/// Résumé d'un résultat pour les messages d'échec.
+fn resume(r: &Result<Releve, AppError>) -> String {
+    match r {
+        Ok(_) => "Ok".into(),
+        Err(e) => format!("Err({e:?})"),
+    }
+}
+
+// ============================================================
+// AC8 — un test de refus par service, et son contrôle positif
+// ============================================================
+
+/// AC8 (a) — canal MCP sans la portée exigée (portées vides, puis l'autre
+/// portée seule) → `Forbidden`, pour les dix services.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac8_a_refus_mcp_sans_la_portee(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = Lecture::new(pool.clone());
+    let p = Params::de(&livres);
+    let mut echecs = Vec::new();
+    for svc in SERVICES {
+        for portees in [vec![], vec![autre_portee(svc)]] {
+            let r = jouer(
+                svc,
+                Usg::Affichage,
+                dem_defaut(svc),
+                &p,
+                &mcp(&livres, &portees),
+                &lecture,
+                Fin::Aucune,
+            )
+            .await;
+            if !matches!(r, Err(AppError::Forbidden)) {
+                echecs.push(format!(
+                    "AC8 (a) {svc:?} portées {portees:?} : {}",
+                    resume(&r)
+                ));
+            }
+        }
+    }
+    for portees in [vec![], vec![Portee::InvoicesRead]] {
+        let r = plan_comptable::lister(&mcp(&livres, &portees), &lecture, false).await;
+        if !matches!(r, Err(AppError::Forbidden)) {
+            echecs.push(format!("AC8 (a) lister portées {portees:?} : {:?}", r.err()));
+        }
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// AC8 (b) — contrôle positif : canal MCP avec la portée exigée → `Ok`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac8_b_controle_positif_mcp_avec_la_portee(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = Lecture::new(pool.clone());
+    let p = Params::de(&livres);
+    let mut echecs = Vec::new();
+    for svc in SERVICES {
+        let r = jouer(
+            svc,
+            Usg::Affichage,
+            dem_defaut(svc),
+            &p,
+            &mcp(&livres, &[portee_exigee(svc)]),
+            &lecture,
+            Fin::Aucune,
+        )
+        .await;
+        if r.is_err() {
+            echecs.push(format!("AC8 (b) {svc:?} : {}", resume(&r)));
+        }
+    }
+    let r = plan_comptable::lister(&mcp(&livres, &[Portee::BooksRead]), &lecture, false).await;
+    if let Err(e) = r {
+        echecs.push(format!("AC8 (b) lister : {e:?}"));
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// Un cas (c) : sans portée → `Forbidden` ; avec la portée (contrôle) → une
+/// erreur qui n'est pas `Forbidden` — la demande échoue bien sans le contrôle.
+async fn cas_c(
+    volet: &str,
+    svc: Svc,
+    p: &Params,
+    livres: &Livres,
+    lecture: &Lecture,
+    echecs: &mut Vec<String>,
+) {
+    let dem = dem_defaut(svc);
+    let refuse = jouer(
+        svc,
+        Usg::Affichage,
+        dem,
+        p,
+        &mcp(livres, &[]),
+        lecture,
+        Fin::Aucune,
+    )
+    .await;
+    if !matches!(refuse, Err(AppError::Forbidden)) {
+        echecs.push(format!("AC8 ({volet}) {svc:?} sans portée : {}", resume(&refuse)));
+    }
+    let controle = jouer(
+        svc,
+        Usg::Affichage,
+        dem,
+        p,
+        &mcp(livres, &[portee_exigee(svc)]),
+        lecture,
+        Fin::Aucune,
+    )
+    .await;
+    if !matches!(controle, Err(ref e) if !matches!(e, AppError::Forbidden)) {
+        echecs.push(format!(
+            "AC8 ({volet}) {svc:?} contrôle avec portée — la demande devait échouer : {}",
+            resume(&controle)
+        ));
+    }
+}
+
+/// AC8 (c-val) — le refus précède la **validation** : `fiscalYearId = 0`
+/// (rapports à période), période inversée (grand livre), `projectId = 0`
+/// (rapports de projet). Sans objet pour la balance âgée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac8_c_val_refus_avant_la_validation(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = Lecture::new(pool.clone());
+    let base = Params::de(&livres);
+    let mut echecs = Vec::new();
+    for svc in SERVICES {
+        let p = match svc {
+            Svc::BalanceAgee => continue,
+            Svc::GrandLivre => Params {
+                gl_inverse: true,
+                ..base
+            },
+            Svc::DepensesProjet | Svc::RendementProjet => Params { pid: 0, ..base },
+            _ => Params { fy: 0, ..base },
+        };
+        cas_c("c-val", svc, &p, &livres, &lecture, &mut echecs).await;
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// AC8 (c-lec) — le refus précède la **lecture** : exercice inexistant
+/// (rapports à période), projet inexistant (rapports de projet), société
+/// inexistante (`lister`). Le grand livre ne lit, avant sa génération, aucune
+/// entité que nomme la demande, et la demande de la balance âgée ne porte rien :
+/// pas de cas pour eux.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac8_c_lec_refus_avant_la_lecture(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = Lecture::new(pool.clone());
+    let base = Params::de(&livres);
+    let mut echecs = Vec::new();
+    for svc in SERVICES {
+        let p = match svc {
+            Svc::BalanceAgee | Svc::GrandLivre => continue,
+            Svc::DepensesProjet | Svc::RendementProjet => Params {
+                pid: INEXISTANT,
+                ..base
+            },
+            _ => Params {
+                fy: INEXISTANT,
+                ..base
+            },
+        };
+        cas_c("c-lec", svc, &p, &livres, &lecture, &mut echecs).await;
+    }
+    let refuse = plan_comptable::lister(
+        &mcp_societe(INEXISTANT, livres.user_id(), &[]),
+        &lecture,
+        false,
+    )
+    .await;
+    if !matches!(refuse, Err(AppError::Forbidden)) {
+        echecs.push(format!(
+            "AC8 (c-lec) lister sans portée : {:?}",
+            refuse.err()
+        ));
+    }
+    let controle = plan_comptable::lister(
+        &mcp_societe(INEXISTANT, livres.user_id(), &[Portee::BooksRead]),
+        &lecture,
+        false,
+    )
+    .await;
+    if !matches!(controle, Err(AppError::Internal(_))) {
+        echecs.push(format!(
+            "AC8 (c-lec) lister contrôle — Internal attendu : {:?}",
+            controle.err()
+        ));
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// AC8 (d) — les exports ne sont jamais servis au MCP, même avec toutes les
+/// portées.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac8_d_exports_jamais_servis_au_mcp(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = Lecture::new(pool.clone());
+    let p = Params::de(&livres);
+    let mut echecs = Vec::new();
+    for svc in SERVICES {
+        let r = jouer(
+            svc,
+            usage_export(svc),
+            dem_defaut(svc),
+            &p,
+            &mcp(&livres, &TOUTES),
+            &lecture,
+            Fin::Aucune,
+        )
+        .await;
+        if !matches!(r, Err(AppError::Forbidden)) {
+            echecs.push(format!("AC8 (d) {svc:?} export : {}", resume(&r)));
+        }
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// AC8 (e) — canal API : l'export de la balance âgée exige `Comptable` ;
+/// l'affichage de chaque rapport, les autres exports et `lister` sont servis à
+/// `Consultation`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac8_e_canal_api(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = Lecture::new(pool.clone());
+    let p = Params::de(&livres);
+    let mut echecs = Vec::new();
+
+    let agee = |role| {
+        let a = api(&livres, role);
+        let lecture = lecture.clone();
+        async move {
+            jouer(
+                Svc::BalanceAgee,
+                Usg::Csv,
+                Dem::BalanceAgee,
+                &p,
+                &a,
+                &lecture,
+                Fin::Aucune,
+            )
+            .await
+        }
+    };
+    let r = agee(Role::Consultation).await;
+    if !matches!(r, Err(AppError::Forbidden)) {
+        echecs.push(format!(
+            "AC8 (e) balance_agee export Consultation : {}",
+            resume(&r)
+        ));
+    }
+    let r = agee(Role::Comptable).await;
+    if r.is_err() {
+        echecs.push(format!(
+            "AC8 (e) balance_agee export Comptable : {}",
+            resume(&r)
+        ));
+    }
+
+    let consultation = api(&livres, Role::Consultation);
+    for svc in SERVICES {
+        let mut usages = vec![Usg::Affichage];
+        if svc != Svc::BalanceAgee {
+            usages.push(usage_export(svc));
+        }
+        for usage in usages {
+            let r = jouer(
+                svc,
+                usage,
+                dem_defaut(svc),
+                &p,
+                &consultation,
+                &lecture,
+                Fin::Aucune,
+            )
+            .await;
+            if r.is_err() {
+                echecs.push(format!(
+                    "AC8 (e) {svc:?} {usage:?} Consultation : {}",
+                    resume(&r)
+                ));
+            }
+        }
+    }
+    if let Err(e) = plan_comptable::lister(&consultation, &lecture, false).await {
+        echecs.push(format!("AC8 (e) lister Consultation : {e:?}"));
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// AC8 — l'aide `identite_societe` : jamais servie au MCP (le refus précède la
+/// lecture, même sur une société inexistante) ; servie à `Consultation`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac8_identite_societe(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = Lecture::new(pool.clone());
+    let mut echecs = Vec::new();
+
+    let r = rapports::identite_societe(&mcp(&livres, &TOUTES), &lecture).await;
+    if !matches!(r, Err(AppError::Forbidden)) {
+        echecs.push(format!(
+            "AC8 identite_societe MCP toutes portées : {:?}",
+            r.err()
+        ));
+    }
+    let r = rapports::identite_societe(
+        &mcp_societe(INEXISTANT, livres.user_id(), &TOUTES),
+        &lecture,
+    )
+    .await;
+    if !matches!(r, Err(AppError::Forbidden)) {
+        echecs.push(format!(
+            "AC8 identite_societe MCP société inexistante : {:?}",
+            r.err()
+        ));
+    }
+    match rapports::identite_societe(&api(&livres, Role::Consultation), &lecture).await {
+        Ok((nom, _)) if nom == "CI Test Company" => {}
+        autre => echecs.push(format!(
+            "AC8 identite_societe API Consultation : {autre:?}"
+        )),
+    }
+    // Contrôle : sans refus, la société inexistante échoue bien à la lecture.
+    let r = rapports::identite_societe(
+        &api_societe(INEXISTANT, livres.user_id(), Role::Consultation),
+        &lecture,
+    )
+    .await;
+    if !matches!(r, Err(ref e) if !matches!(e, AppError::Forbidden)) {
+        echecs.push(format!(
+            "AC8 identite_societe contrôle société inexistante : {r:?}"
+        ));
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+// ============================================================
+// AC9 — la trace s'écrit, et sur `Trace`
+// ============================================================
+
+/// Témoin du chapeau de l'AC9 : la `Lecture` de test refuse bien l'écriture
+/// (1792) — sans quoi M1 serait vert.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac9_temoin_la_lecture_de_test_refuse_l_ecriture(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let ro = pool_lecture_seule(&pool).await;
+    let e = sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id) \
+         VALUES (?, 'report.generated', 'report', 0)",
+    )
+    .bind(livres.user_id())
+    .execute(&ro)
+    .await
+    .expect_err("l'INSERT doit échouer sur la connexion en lecture seule");
+    let numero = e
+        .as_database_error()
+        .and_then(|d| d.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>())
+        .map(|m| m.number());
+    assert_eq!(numero, Some(1792), "erreur attendue 1792 : {e:?}");
+}
+
+/// AC9 (a) — les neuf services (affichage et export), `lister` et
+/// `identite_societe` réussissent sur une `Lecture` en lecture seule.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac9_a_les_services_lisent_sur_une_lecture_en_lecture_seule(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = lecture_seule(&pool).await;
+    let trace = Trace::new(pool.clone());
+    let admin = api(&livres, Role::Admin);
+    let p = Params::de(&livres);
+    let mut echecs = Vec::new();
+    for svc in SERVICES {
+        for usage in [Usg::Affichage, usage_export(svc)] {
+            let r = jouer(
+                svc,
+                usage,
+                dem_defaut(svc),
+                &p,
+                &admin,
+                &lecture,
+                Fin::Tracer(&trace),
+            )
+            .await;
+            if r.is_err() {
+                echecs.push(format!("AC9 (a) {svc:?} {usage:?} : {}", resume(&r)));
+            }
+        }
+    }
+    match plan_comptable::lister(&admin, &lecture, true).await {
+        Ok(comptes) if comptes.len() == 5 => {}
+        autre => echecs.push(format!(
+            "AC9 (a) lister : {:?}",
+            autre.map(|c| c.len())
+        )),
+    }
+    if let Err(e) = rapports::identite_societe(&admin, &lecture).await {
+        echecs.push(format!("AC9 (a) identite_societe : {e:?}"));
+    }
+    // Les fixtures atteignent bien les branches visées : une ligne de TVA, une
+    // ligne de balance âgée.
+    match rapports::tva(&admin, &lecture, demande_periode(BORNES, &p), Affichage).await {
+        Ok(r) if !r.afficher(&trace).await.rows.is_empty() => {}
+        Ok(_) => echecs.push("AC9 (a) tva : aucune ligne — fixture inopérante".into()),
+        Err(e) => echecs.push(format!("AC9 (a) tva : {e:?}")),
+    }
+    match rapports::balance_agee(&admin, &lecture, Affichage).await {
+        Ok(r) if !r.afficher(&trace).await.rows.is_empty() => {}
+        Ok(_) => echecs.push("AC9 (a) balance_agee : aucune ligne — fixture inopérante".into()),
+        Err(e) => echecs.push(format!("AC9 (a) balance_agee : {e:?}")),
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// AC9 (b) — la table des traces au niveau du service : chaque appel reçoit la
+/// `Lecture` **en lecture seule**, `afficher`/`exporter` la `Trace` du pool
+/// ordinaire ; exactement une trace neuve, égale à la ligne.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac9_b_table_des_traces_au_service(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = lecture_seule(&pool).await;
+    let trace = Trace::new(pool.clone());
+    let admin = api(&livres, Role::Admin);
+    let p = Params::de(&livres);
+    let mut echecs = Vec::new();
+    for ligne in TABLE_DES_TRACES {
+        let repere = repere_audit(&pool).await;
+        let rel = match jouer(
+            ligne.svc,
+            ligne.usage,
+            ligne.dem,
+            &p,
+            &admin,
+            &lecture,
+            Fin::Tracer(&trace),
+        )
+        .await
+        {
+            Ok(rel) => rel,
+            Err(e) => {
+                echecs.push(format!("service#{} {} : {e:?}", ligne.num, ligne.nom));
+                continue;
+            }
+        };
+        if ligne.svc == Svc::BalanceAgee && rel.as_of != rel.as_of_contenu {
+            echecs.push(format!(
+                "service#{} {} : as_of du rapport {:?} ≠ du contenu {:?}",
+                ligne.num, ligne.nom, rel.as_of, rel.as_of_contenu
+            ));
+        }
+        let jour = |d: Option<NaiveDate>| {
+            d.map(|d| d.format("%Y-%m-%d").to_string())
+                .unwrap_or_default()
+        };
+        let symboles = Symboles {
+            fy: p.fy,
+            debut: jour(rel.periode.map(|x| x.0)),
+            fin: jour(rel.periode.map(|x| x.1)),
+            du: jour(rel.bornes_gl.map(|x| x.0)),
+            au: jour(rel.bornes_gl.map(|x| x.1)),
+            compte: p.compte,
+            pid: p.pid,
+            asof: jour(rel.as_of),
+        };
+        let traces = traces_depuis(&pool, livres.user_id(), repere).await;
+        if let Err(e) = verifier_trace(
+            "service",
+            ligne,
+            &traces,
+            &[resoudre(ligne.details, &symboles)],
+        ) {
+            echecs.push(e);
+        }
+    }
+    assert!(echecs.is_empty(), "AC9 (b) :\n{}", echecs.join("\n"));
+}
+
+/// AC9 (c) — `exporter` avec un rendu qui échoue → `Err`, et **aucune** trace.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac9_c_rendu_en_echec_aucune_trace(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = lecture_seule(&pool).await;
+    let trace = Trace::new(pool.clone());
+    let admin = api(&livres, Role::Admin);
+    let p = Params::de(&livres);
+    let mut echecs = Vec::new();
+    for svc in SERVICES {
+        let repere = repere_audit(&pool).await;
+        let r = jouer(
+            svc,
+            usage_export(svc),
+            dem_defaut(svc),
+            &p,
+            &admin,
+            &lecture,
+            Fin::RenduEnEchec(&trace),
+        )
+        .await;
+        if !matches!(r, Err(AppError::Internal(_))) {
+            echecs.push(format!("AC9 (c) {svc:?} : {}", resume(&r)));
+        }
+        let traces = traces_depuis(&pool, livres.user_id(), repere).await;
+        if !traces.is_empty() {
+            echecs.push(format!("AC9 (c) {svc:?} : trace écrite {traces:?}"));
+        }
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// AC9 (d) — un service qui échoue (période hors exercice) n'écrit aucune
+/// trace.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac9_d_service_en_echec_aucune_trace(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = lecture_seule(&pool).await;
+    let admin = api(&livres, Role::Admin);
+    let repere = repere_audit(&pool).await;
+    let demande = DemandePeriode {
+        fiscal_year_id: livres.fy(),
+        period_start: Some(date("2019-01-01")),
+        period_end: None,
+    };
+    let r = rapports::bilan(&admin, &lecture, demande, Affichage).await;
+    assert!(r.is_err(), "période hors exercice : le service doit échouer");
+    let traces = traces_depuis(&pool, livres.user_id(), repere).await;
+    assert!(traces.is_empty(), "aucune trace attendue : {traces:?}");
+}
+
+// ============================================================
+// AC10 — garde lexicale de la frontière
+// ============================================================
+
+/// Exceptions écrites de la garde (v-1) : (fichier relatif à `src/`, ligne
+/// réduite de ses blancs de tête et de fin). **Vide en 32-3** ; un faux rouge
+/// s'y inscrit, jamais par un motif affaibli.
+const EXCEPTIONS_V1: &[(&str, &str)] = &[];
+
+/// Les deux fabriques de poignées, au câblage de `lib.rs` (v-2).
+const FABRIQUES_V2: &[(&str, &str)] = &[
+    ("lib.rs", "services::poignees::Lecture::new(self.pool.clone())"),
+    ("lib.rs", "services::poignees::Trace::new(self.pool.clone())"),
+];
+
+/// Les deux lignes de code de `services/` qui nomment `axum`, `AppState` ou
+/// `CurrentUser` (AC1, (vi)).
+const RESIDUS_VI: &[(&str, &str)] = &[
+    ("services/acces.rs", "use crate::middleware::auth::CurrentUser;"),
+    (
+        "services/acces.rs",
+        "pub fn depuis_api(u: &CurrentUser) -> Self {",
+    ),
+];
+
+const MOTIF_V1: &str = r"\.\s*pool\s*\(|::\s*pool\b";
+const MOTIF_V2: &str = r"\bLecture::new\(|\bTrace::new\(";
+const MOTIF_VI: &str = r"axum|AppState|CurrentUser";
+
+fn racine_src() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
+}
+
+/// Tous les `.rs` de `dir`, récursivement, triés.
+fn fichiers_rs(dir: &Path) -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    for e in std::fs::read_dir(dir).expect("répertoire lisible") {
+        let p = e.unwrap().path();
+        if p.is_dir() {
+            v.extend(fichiers_rs(&p));
+        } else if p.extension().is_some_and(|x| x == "rs") {
+            v.push(p);
+        }
+    }
+    v.sort();
+    v
+}
+
+/// Chemin relatif à `src/`, séparateur `/`.
+fn relatif(p: &Path) -> String {
+    p.strip_prefix(racine_src())
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+/// Ligne de commentaire au sens de l'AC1 : son premier caractère non blanc
+/// ouvre `//` (`///` et `//!` compris).
+fn est_commentaire(ligne: &str) -> bool {
+    ligne.trim_start().starts_with("//")
+}
+
+/// Les lignes de code d'un texte : (numéro 1-based, ligne).
+fn lignes_de_code(texte: &str) -> Vec<(usize, &str)> {
+    texte
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| !est_commentaire(l))
+        .map(|(i, l)| (i + 1, l))
+        .collect()
+}
+
+/// Les sources de `src/` : (chemin relatif, texte). Plancher de fichiers lus.
+fn sources() -> Vec<(String, String)> {
+    let v: Vec<(String, String)> = fichiers_rs(&racine_src())
+        .into_iter()
+        .map(|p| {
+            let t = std::fs::read_to_string(&p).unwrap();
+            (relatif(&p), t)
+        })
+        .collect();
+    assert!(
+        v.len() >= 80,
+        "balayage de src/ : {} fichiers lus, plancher 80 — chemin faux ?",
+        v.len()
+    );
+    v
+}
+
+/// Les couples (fichier, ligne réduite) des lignes de code qui satisfont `motif`.
+fn couples(sources: &[(String, String)], motif: &regex::Regex) -> Vec<(String, String)> {
+    let mut v = Vec::new();
+    for (f, t) in sources {
+        for (_, l) in lignes_de_code(t) {
+            if motif.is_match(l) {
+                v.push((f.clone(), l.trim().to_string()));
+            }
+        }
+    }
+    v.sort();
+    v
+}
+
+fn attendus(liste: &[(&str, &str)]) -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = liste
+        .iter()
+        .map(|(f, l)| (f.to_string(), l.to_string()))
+        .collect();
+    v.sort();
+    v
+}
+
+/// Ôte d'un corps ses commentaires : blocs `/* … */` (sur le corps entier,
+/// plusieurs lignes comprises), lignes de commentaire, fin de ligne après `//`.
+fn sans_commentaires(corps: &str) -> String {
+    let blocs = regex::Regex::new(r"(?s)/\*.*?\*/").unwrap();
+    let sans_blocs = blocs.replace_all(corps, " ");
+    sans_blocs
+        .lines()
+        .filter(|l| !est_commentaire(l))
+        .map(|l| l.split("//").next().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Les corps des `pub async fn <prefixe>…` d'un texte : de la ligne d'ouverture
+/// à la première ligne égale à `}`.
+fn corps_des_handlers<'a>(texte: &'a str, prefixe: &str) -> Vec<(String, Vec<&'a str>)> {
+    let lignes: Vec<&str> = texte.lines().collect();
+    let ouverture = format!("pub async fn {prefixe}");
+    let mut v = Vec::new();
+    let mut i = 0;
+    while i < lignes.len() {
+        if lignes[i].starts_with(&ouverture) {
+            let nom = lignes[i]
+                .trim_start_matches("pub async fn ")
+                .split('(')
+                .next()
+                .unwrap()
+                .to_string();
+            let fin = (i..lignes.len())
+                .find(|&j| lignes[j] == "}")
+                .expect("corps de handler fermé");
+            v.push((nom, lignes[i..=fin].to_vec()));
+            i = fin;
+        }
+        i += 1;
+    }
+    v
+}
+
+/// Témoins : chaque motif est d'abord trouvé dans un texte témoin — une faute de
+/// frappe ne rend pas la garde vide.
+#[test]
+fn ac10_temoins_des_motifs() {
+    let v1 = regex::Regex::new(MOTIF_V1).unwrap();
+    for forme in ["lecture.pool()", "Lecture::pool(&l)", ".map(Lecture::pool)"] {
+        assert!(v1.is_match(forme), "(v-1) doit voir {forme}");
+    }
+    assert!(!v1.is_match("state.pool"), "(v-1) ne doit pas voir le champ");
+    let v2 = regex::Regex::new(MOTIF_V2).unwrap();
+    assert!(v2.is_match("Lecture::new(p)") && v2.is_match("x::Trace::new(p)"));
+    assert!(!v2.is_match("DetailsTrace::new(p)"), "(v-2) : frontière de mot");
+    let vi = regex::Regex::new(MOTIF_VI).unwrap();
+    assert!(vi.is_match("use axum::Router;") && vi.is_match("&AppState") && vi.is_match("CurrentUser"));
+    assert!(est_commentaire("   /// doc") && est_commentaire("//! m") && !est_commentaire("x // y"));
+    let temoin = "pub async fn export_x() {\n    // rapport.exporter(&t)\n    /*\n    rapport.exporter(&t)\n    */\n    let a = 1; // r.exporter(\n}\n";
+    assert!(!sans_commentaires(temoin).contains(".exporter("), "(vii) : un commentaire ne compte pas");
+    assert!(sans_commentaires("    r.exporter(&t, f)").contains(".exporter("));
+    let corps = corps_des_handlers(temoin, "export_");
+    assert_eq!(corps.len(), 1);
+    assert_eq!(corps[0].0, "export_x");
+}
+
+/// AC10 (i) et (ii) — `routes/reports.rs` sans `state.pool` ni `MySqlPool` ;
+/// le corps de `list_accounts` sans `state.pool`.
+#[test]
+fn ac10_i_ii_handlers_sans_le_pool() {
+    let src = racine_src();
+    let reports = std::fs::read_to_string(src.join("routes/reports.rs")).unwrap();
+    let fautes: Vec<String> = lignes_de_code(&reports)
+        .into_iter()
+        .filter(|(_, l)| l.contains("state.pool") || l.contains("MySqlPool"))
+        .map(|(n, l)| format!("routes/reports.rs:{n}: {l}"))
+        .collect();
+    assert!(fautes.is_empty(), "AC10 (i) :\n{}", fautes.join("\n"));
+
+    let accounts = std::fs::read_to_string(src.join("routes/accounts.rs")).unwrap();
+    let lignes: Vec<&str> = accounts.lines().collect();
+    let debut = lignes
+        .iter()
+        .position(|l| l.starts_with("pub async fn list_accounts"))
+        .expect("list_accounts trouvé");
+    let fin = (debut + 1..lignes.len())
+        .find(|&j| lignes[j].contains("pub async fn"))
+        .unwrap_or(lignes.len());
+    assert!(fin > debut + 2, "corps de list_accounts non vide");
+    let fautes: Vec<String> = (debut..fin)
+        .filter(|&j| !est_commentaire(lignes[j]) && lignes[j].contains("state.pool"))
+        .map(|j| format!("routes/accounts.rs:{}: {}", j + 1, lignes[j]))
+        .collect();
+    assert!(fautes.is_empty(), "AC10 (ii) :\n{}", fautes.join("\n"));
+}
+
+/// AC10 (v-1) — aucun appel ni chemin de l'accesseur `pool` hors de `services/`.
+#[test]
+fn ac10_v1_aucun_acces_au_pool_hors_des_services() {
+    let motif = regex::Regex::new(MOTIF_V1).unwrap();
+    let hors: Vec<(String, String)> = sources()
+        .into_iter()
+        .filter(|(f, _)| !f.starts_with("services/"))
+        .collect();
+    let trouves = couples(&hors, &motif);
+    assert_eq!(
+        trouves,
+        attendus(EXCEPTIONS_V1),
+        "AC10 (v-1) : accès au pool d'une poignée hors de services/"
+    );
+}
+
+/// AC10 (v-2) — `Lecture::new(`/`Trace::new(` aux deux seules lignes du câblage
+/// de `lib.rs`.
+#[test]
+fn ac10_v2_les_poignees_ne_se_fabriquent_qu_au_cablage() {
+    let motif = regex::Regex::new(MOTIF_V2).unwrap();
+    assert_eq!(
+        couples(&sources(), &motif),
+        attendus(FABRIQUES_V2),
+        "AC10 (v-2) : fabrique de poignée hors du câblage de lib.rs"
+    );
+}
+
+/// AC10 (vi) — la règle de l'AC1 : dans `services/`, exactement deux lignes de
+/// code nomment `axum`, `AppState` ou `CurrentUser`.
+#[test]
+fn ac10_vi_services_sans_axum_ni_app_state() {
+    let motif = regex::Regex::new(MOTIF_VI).unwrap();
+    let services: Vec<(String, String)> = sources()
+        .into_iter()
+        .filter(|(f, _)| f.starts_with("services/"))
+        .collect();
+    assert_eq!(
+        services.len(),
+        5,
+        "services/ : cinq fichiers attendus, {:?}",
+        services.iter().map(|(f, _)| f).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        couples(&services, &motif),
+        attendus(RESIDUS_VI),
+        "AC10 (vi) : type d'Axum ou AppState dans le code de services/"
+    );
+}
+
+/// AC10 (vii) — le bon usage à chaque handler : neuf `export_…` qui appellent
+/// `.exporter(` et jamais `.afficher(`, neuf `get_…` l'inverse.
+#[test]
+fn ac10_vii_le_bon_usage_a_chaque_handler() {
+    let reports = std::fs::read_to_string(racine_src().join("routes/reports.rs")).unwrap();
+    let mut fautes = Vec::new();
+    for (prefixe, present, absent) in [
+        ("export_", ".exporter(", ".afficher("),
+        ("get_", ".afficher(", ".exporter("),
+    ] {
+        let corps = corps_des_handlers(&reports, prefixe);
+        assert_eq!(corps.len(), 9, "neuf handlers {prefixe}… attendus");
+        for (nom, lignes) in corps {
+            let texte = lignes.join("\n");
+            if !sans_commentaires(&texte).contains(present) {
+                fautes.push(format!("{nom} : n'appelle pas {present}"));
+            }
+            if lignes
+                .iter()
+                .any(|l| !est_commentaire(l) && l.contains(absent))
+            {
+                fautes.push(format!("{nom} : appelle {absent}"));
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "AC10 (vii) :\n{}", fautes.join("\n"));
 }
