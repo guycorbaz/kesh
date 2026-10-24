@@ -1,6 +1,6 @@
 # Story 32.3 : la couche de services — le motif, sur deux modules pilotes (rapports, plan comptable)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-32-3`, branche `story/32-3` partie de la spike
 `275e9b97`. Registre : `epic-32-choix-autonomes-323.md` (C-32-3-1 à C-32-3-33). Clé courte : `323`. Issue de l'epic :
@@ -1260,3 +1260,12 @@ plus le binaire nommé :
 - **Décompte** (de `210c5808` à `1d27f065`) : **un test ajouté**, `grand_livre_les_deux_regimes` ; `services_motif.rs`
   passe de 19 à **20** (`grep -c '#\[sqlx::test'` → 14, `grep -cE '^#\[test\]'` → 6) ; une ligne de la table modifiée.
 - Statut inchangé : `review`.
+- 2026-10-24 — **Revue de code P2, passe ciblée** (Opus, une lentille — regression hunter —, contexte frais, sur le
+  seul diff `210c5808..HEAD` ; prompt `323-review-prompt-p2.md`, rapport `kesh-gate-logs/323-review-p2.md`) :
+  **0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW** — **revue terminée** (la passe ne rend rien au-dessus de LOW, et la
+  remédiation qu'elle relit ne touche aucune ligne de production). Elle confirme `grand_livre_les_deux_regimes`
+  (borne par compte, fixture de 501 lignes, ordre déterministe, pas de passage à vide), les cinq mutations de la
+  remédiation et les annotations A1, A2. LOW **non appliqués** — une remédiation postérieure ne serait relue par
+  personne — et **tracés sur #738** avec les onze LOW de la P1 : **P2-1**, l'AC9 décrit encore la ligne 8 « sans
+  filtre » ; **P2-2**, plus aucune ligne de `TABLE_DES_TRACES` ne trace le rapport des journaux sans filtre.
+  **Synthèse de la boucle** : P1 (Sonnet ×3, B/E/A) 0/0/1/13 → P2 (Opus, ciblée) 0/0/0/2. Statut : `done`.
