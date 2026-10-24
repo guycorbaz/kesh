@@ -12,8 +12,8 @@ Status: ready-for-dev
 > tombe (registre : C-32-12-1).
 
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-32-12`, branche `story/32-12` partie de
-`275e9b97`. Registre : `epic-32-choix-autonomes-3212.md` (C-32-12-1 à C-32-12-29 ; 15 à 21 à la validation P1, 22 à 29
-à la validation P2). Clé courte : `3212`. 🗄️ touche
+`275e9b97`. Registre : `epic-32-choix-autonomes-3212.md` (C-32-12-1 à C-32-12-36 ; 15 à 21 à la validation P1, 22 à 29
+à la validation P2, 30 à 36 à la validation P3). Clé courte : `3212`. 🗄️ touche
 `kesh-db` (`backup.rs`, `post_restore.rs`) : **gate complet même en cours de boucle** (`CLAUDE.md` § *Exception
 kesh-db*). Aucune migration.*
 
@@ -169,13 +169,20 @@ l'inventaire. **Aucune exemption ne devient fausse.**
    pour chaque table de `TABLES_TO_TRUNCATE`, la version de la migration qui la crée — calculée une fois
    (`std::sync::OnceLock`) depuis `crate::MIGRATOR`, par la reconnaissance de `CREATE TABLE` aujourd'hui confinée aux
    tests (`creates_application_table`, `normalize`), **déplacée en production** dans `post_restore.rs`, à côté de
-   `split_statements` (un seul exemplaire, DRY) : `creates_application_table` et `normalize` y deviennent `pub(crate)`,
-   et `split_statements` (`post_restore.rs:772`, aujourd'hui privée) passe `pub(crate)` pour que
-   `backup::table_creating_migrations` l'appelle (C-32-12-23). La fonction de test `last_table_creating_migration`
+   `split_statements` (un seul exemplaire, DRY) : `creates_application_table(statement: &str) -> bool`
+   (`post_restore.rs:978`, qui calcule le nom puis le jette) y devient **`created_application_table(statement: &str) ->
+   Option<&'static str>`**, qui rend l'entrée de `TABLES_TO_TRUNCATE` créée par le statement (le nom en majuscules
+   comparé sans casse, l'entrée de l'inventaire rendue) ; `normalize` devient `pub(crate)`, et `split_statements`
+   (`post_restore.rs:772`, aujourd'hui privée) passe `pub(crate)` pour que `backup` l'appelle (C-32-12-23, C-32-12-31).
+   Deux accesseurs dans `backup.rs` : **`table_creators() -> &'static BTreeMap<&'static str, Vec<i64>>`**, **toutes**
+   les migrations créatrices de chaque table (liste vide pour une table sans créatrice connue), et
+   **`table_creating_migrations()`**, la carte d'une version par table, qui prend le **minimum** de chaque liste non
+   vide — sur cette seule carte, « deux créatrices » serait indiscernable de « une ». La fonction de test `last_table_creating_migration`
    (`post_restore.rs:958`) est **retirée** : après l'AC9 elle n'a plus d'appelant (l'AC2 (ii) lit le maximum de la carte),
-   et `clippy -D warnings` refuserait une fonction morte. Tests (`backup.rs`, `mod tests`) : (i) **chaque** table de l'inventaire a
-   exactement **une** migration créatrice — zéro ou deux font échouer le test en nommant la table (une table recréée
-   par une seconde migration est un cas que la règle ne sait pas traiter : il doit se voir) ; (ii) la carte rend
+   et `clippy -D warnings` refuserait une fonction morte. Tests (`backup.rs`, `mod tests`) : (i) **sur `table_creators()`**,
+   **chaque** table de l'inventaire a exactement **une** migration créatrice — zéro ou deux font échouer le test en
+   nommant la table (une table recréée par une seconde migration est un cas que la règle ne sait pas traiter : il doit
+   se voir) ; (ii) la carte rend
    `20260917000001` pour `journal_entry_number_sequences`, `20260827000001` pour `invoice_settlements`,
    `20260428000001` pour `vat_rates`. En production, une table sans migration connue est **exigée** (repli sûr : refus
    plutôt que tolérance) ; une table à **deux** migrations créatrices (inatteignable aujourd'hui : chacune des 39 n'a
@@ -209,19 +216,34 @@ l'inventaire. **Aucune exemption ne devient fausse.**
    (liste vide : `exigees` = les 39 tables, ce qui prouve que le plancher couvre tout l'inventaire de la 0.15.0) et qui
    reste vraie à la 32-5 sans réécriture, une fois sa table inscrite à `TOLEREES_ECRITES` (C-32-12-16) ; (iv)
    `assert_eq!(tolerees_calculees, TOLEREES_ECRITES)` — chaque story qui ajoute une table l'inscrit à la liste écrite,
-   et ce geste force à relire le contrat (patron du compteur `checked` de `post_restore.rs`). Le mot « tolérées » sans
+   et ce geste force à relire le contrat (patron du compteur `checked` de `post_restore.rs`). ⚠️ **(iii) est impliquée
+   par (iv)** : `exigees` et `tolerees_calculees` partitionnent l'inventaire par construction, si bien que (iv) vraie
+   entraîne (iii) vraie — (iii) ne rougit jamais **seule**. Elle reste pour son message (elle nomme la table qui
+   n'est dans aucun des deux ensembles), non comme un second garde : une mutation qu'elle tue, (iv) la tue aussi, et
+   l'AC19 ne les compte pas comme deux tueurs (C-32-12-33). Le mot « tolérées » sans
    qualificatif est réservé, dans cette fiche, aux tables **absentes du fichier** que l'AC3 laisse passer à l'exécution.
 3. **AC3 — la vérification pure.** `kesh_db::backup::check_backup_inventory(present: &BTreeSet<&str>, regles:
    &InventoryRules) -> Result<Vec<&'static str>, InventoryError>` — les tables absentes tolérées, dans l'ordre de
-   création, ou l'erreur. `InventoryRules { inventaire, creation: fn(&str) -> Option<i64>, plancher }` (ou équivalent),
+   création, ou l'erreur. **Ordre défini** : par version de la migration créatrice, puis, pour deux tables nées dans la
+   même migration, par leur rang dans l'inventaire (`TABLES_TO_TRUNCATE` en production) — `tablesAbsent` à l'écran et à
+   l'audit ne dépend donc pas d'un tri laissé au hasard (C-32-12-34). `InventoryRules { inventaire: &'static [&'static
+   str], creation: fn(&str) -> Option<i64>, plancher }` (ou équivalent),
    `InventoryRules::production()` construit depuis `TABLES_TO_TRUNCATE`, `table_creating_migrations()` et
    `IMPORT_FLOOR_MIGRATION` ; les tests injectent les leurs. Trois erreurs, chacune nommant la table :
-   - `Inconnue(t)` — `t` présente au manifeste, hors inventaire (règle actuelle) ;
-   - `Exigee(t)` — `t` absente et créée au plus tard par le plancher (ou sans migration connue) ;
-   - `HorsOrdre { absente, presente }` — `absente` postérieure au plancher mais antérieure (ou égale) à la création
-     d'une table `presente`.
+   - `Inconnue(String)` — table présente au manifeste, hors inventaire (règle actuelle ; le nom vient du fichier, d'où
+     un `String`) ;
+   - `Exigee(&'static str)` — table absente et créée au plus tard par le plancher (ou sans migration connue) ;
+   - `HorsOrdre { absente: &'static str, presente: &'static str }` — `absente` postérieure au plancher mais antérieure
+     (ou égale) à la création d'une table `presente`. `Inconnue` est vérifiée **d'abord** : toute table présente qui
+     passe appartient à l'inventaire, et `presente` est l'entrée de l'inventaire, d'où la durée de vie `'static`.
+   Une table **présente sans migration connue** (`creation` rend `None` : inatteignable en production par l'AC1 (i),
+   possible avec des règles injectées) ne contraint pas la règle du suffixe : elle compte comme créée au plus tard
+   par le plancher, comme le repli « exigée » de l'AC1 la traiterait absente — aucune absente tolérée (postérieure au
+   plancher) ne peut lui être antérieure.
    Tests unitaires (inventaire et carte injectés, sans base) : inventaire complet → `Ok(vec![])` ; une table postérieure
-   absente → `Ok([t])` ; deux postérieures absentes → `Ok([t1, t2])` dans l'ordre de création ; la plus ancienne des deux
+   absente → `Ok([t])` ; deux postérieures absentes → `Ok([t1, t2])` dans l'ordre de création ; deux postérieures nées
+   dans la **même** migration, toutes deux absentes → `Ok` dans l'ordre de l'inventaire ; une table présente sans
+   migration connue et une postérieure absente → `Ok([t])` ; la plus ancienne des deux
    absente, la plus récente présente → `HorsOrdre` ; une table du plancher absente → `Exigee` ; une table inconnue →
    `Inconnue` ; deux tables nées dans **la même** migration, une seule absente → `HorsOrdre` (même version : le
    fichier ne peut pas porter l'une sans l'autre) ; inventaire de production (`InventoryRules::production()`) et
@@ -271,7 +293,9 @@ l'inventaire. **Aucune exemption ne devient fausse.**
    fonction locale au `mod tests` (ouvrir le zip, omettre `data/products.ndjson`, retirer l'entrée `tables.products`
    du manifeste, rezipper) — les helpers `ouvrir_tout`/`rezip_tout` de `tests/admin_full_import_e2e.rs` ne sont pas
    accessibles depuis `src/`. Le test **simule** une table postérieure au plancher, faute d'en avoir une avant la
-   32-5 : règles injectées où `products` est créée après le plancher ; fixture 0.15.0 privée de `products` (vide dans
+   32-5 : règles injectées où `products` est créée après le plancher **et après toute autre table de l'inventaire**
+   (version supérieure à la plus récente des créatrices, au-delà de `20260917000001`) — « après le plancher » seul ne
+   suffit pas : si une table présente était créée après elle, la règle du suffixe rendrait `HorsOrdre` (AC3) ; fixture 0.15.0 privée de `products` (vide dans
    le seed, aucune ligne de facture ne la référence — à constater sur la fixture produite) ; destination qui porte un
    produit. `parse_and_verify_with` → `Ok`,
    `tables_absent == ["products"]` ; `check_schema_compat` → `Ok` ; `restore_tables_in_tx` → `products` **vide**, les
@@ -302,13 +326,16 @@ l'inventaire. **Aucune exemption ne devient fausse.**
      l. 22, « dernière migration créatrice » l. 25-26, « referme la fenêtre » l. 35) ;
    - le commentaire de l'entrée M1 (l. 250-251, « aucune table applicative n'est créée depuis `20260917000001` » —
      faux dès la 32-5 : M1 est **postérieure au plancher**, c'est ce qui la garde dans la fenêtre) ;
-   - le bloc l. 258-279, pour ses seules phrases au présent (l. 269-270 « recalcule depuis le `MIGRATOR` », l. 274-276
-     « Toute nouvelle table applicative aura le même effet ») — ses relevés datés des Stories 24-2/24-3 restent ;
+   - le bloc l. 257-279, pour ses seules phrases au présent (l. 269-270 « recalcule depuis le `MIGRATOR` », l. 272-274
+     « Toute nouvelle table applicative aura le même effet ») — ses relevés datés des Stories 24-2/24-3 (l. 257-266 et
+     276-279, « Et ce cas s'est représenté à la story SUIVANTE ») restent ;
    - le doc-comment d'`EXEMPT_MIGRATIONS` (l. 375-381, « recalcule la fenêtre depuis le `MIGRATOR` », l. 379) ;
    - le doc-comment de `registry_entries_are_within_import_window` (l. 916-927 : « inventaire de tables est
      identique » l. 918, « dernière migration créatrice » l. 920, « **recalculée depuis le `MIGRATOR`**, jamais codée en
      dur : toute future migration créant une table applicative la referme » l. 925-927) et son message (l. 934) ;
-   - le message de `exemptions_claiming_out_of_window_really_are_out_of_window` (l. 1095) ;
+   - les deux appels `let window = last_table_creating_migration();` (l. 930 et 1084), remplacés par le plancher ;
+   - le message de `exemptions_claiming_out_of_window_really_are_out_of_window` (l. 1095-1096, « POSTÉRIEURE à la
+     dernière migration créatrice … donc IMPORTABLE ») ;
    - le doc-comment de `last_table_creating_migration` (l. 942-957 : « ne déplace pas la fenêtre » l. 947, « une fenêtre
      qui **recule** » l. 952) part avec la fonction ; ce qui en reste vrai passe au doc-comment de la reconnaissance
      déplacée (AC1).
@@ -321,12 +348,23 @@ l'inventaire. **Aucune exemption ne devient fausse.**
     tient) ; reprendre l'AC8 pour la fixture 0.15.0 avec `tablesAbsent == [<sa table>]` et la table vide après
     l'import ; prendre les captures de l'état « tables absentes » (AC14).
 11. **AC11 — une table postérieure amorcée va au registre.** Test `post_restore.rs` :
-    `post_floor_table_seeds_are_replayed` — pour toute migration de version `> IMPORT_FLOOR_MIGRATION` qui **crée** une
-    table de l'inventaire **et** porte un statement d'écriture dont la cible est cette table (premier mot-clé
-    `INSERT`/`REPLACE`/`UPDATE`/`DELETE` et nom de table qui suit `INTO`/`UPDATE`/`FROM`), la migration figure à
-    `POST_RESTORE_BACKFILLS` — pas à `EXEMPT_MIGRATIONS`. Vacant aujourd'hui (aucune migration postérieure au plancher
-    ne crée de table) : sa matière vient de l'AC19 (M7) et, à la 32-5, du réel. Un `UPDATE _kesh_version` dans la même
-    migration n'est pas une écriture **dans** la table créée et ne déclenche rien.
+    `post_floor_table_seeds_are_replayed` — pour toute migration de version `> IMPORT_FLOOR_MIGRATION` qui porte un
+    statement d'écriture (premier mot-clé `INSERT`/`REPLACE`/`UPDATE`/`DELETE` et nom de table qui suit
+    `INTO`/`UPDATE`/`FROM`) dont la cible est une table de l'inventaire **créée après le plancher** — par cette migration
+    **ou par une migration antérieure** (`table_creating_migrations()` donne la date de la cible) —, la migration figure
+    à `POST_RESTORE_BACKFILLS`, pas à `EXEMPT_MIGRATIONS`. Le second cas est celui d'une story qui amorce ou corrige
+    des lignes d'une table créée par une story précédente (la 32-6 écrivant dans une table de la 32-5) : une
+    sauvegarde 0.15.0 arrive sans la table, la table est vidée (point 3), et l'argument « couverture » d'une exemption
+    serait **faux** — que `every_data_backfill_migration_is_triaged`, qui accepte toute justification écrite, ne verrait
+    pas (C-32-12-32). Vacant aujourd'hui (aucune table postérieure au plancher) : sa matière vient de l'AC19 (M7) et, à
+    la 32-5, du réel. Un `UPDATE _kesh_version` dans la même migration n'est pas une écriture dans une table de
+    l'inventaire et ne déclenche rien.
+    ⚠️ **Une migration qui crée sa table et l'amorce ne s'inscrit pas au registre par un `include_str!` du fichier
+    entier** : `registry_sql_contains_no_ddl` (`post_restore.rs:1355`) refuse tout `CREATE TABLE` dans le SQL rejoué
+    (« une migration mixte DDL + données exige un EXTRAIT de ses seuls statements de données »). L'entrée porte un
+    **extrait** de ses seuls statements d'écriture, sous `crates/kesh-db/src/post_restore/`, et
+    `extract_carries_every_write_statement_of_its_source_migration` (l. 1307) en contrôle la cardinalité. Le *Contrat*,
+    point 2, le reprend.
 
 ### D — Le bilan
 
@@ -423,22 +461,27 @@ l'inventaire. **Aucune exemption ne devient fausse.**
     l'égalité des inventaires, la non-importabilité d'une sauvegarde antérieure, une fenêtre « recalculée depuis le
     `MIGRATOR` » / « jamais codée en dur » / qui « se referme » à chaque table, ou que `20260917000001` est « la dernière
     créatrice »*. Un seul motif s'est montré deux fois insuffisant (validations P1 et P2 : il manquait des phrases qui ne
-    portaient aucun de ses mots) ; elle s'inventorie donc par **cinq familles**, chacune son `grep`, sur la portée
+    portaient aucun de ses mots) ; elle s'inventorie donc par **cinq familles**, chacune son `grep`, **toutes
+    insensibles à la casse (`-i`)** — une graphie capitalisée (« REFERME la fenêtre », `docs/migrations-idempotence-audit.md:91`,
+    membre de la classe) échappe sinon à la commande —, sur la portée
     `S="crates/kesh-db/src crates/kesh-db/migrations crates/kesh-db/tests crates/kesh-api/src crates/kesh-api/tests
-    CLAUDE.md docs README.md website frontend/src"` (`--exclude='*.pdf' --exclude='*.keshbackup'`), depuis la racine du
-    worktree, après chaque patch (C-32-12-22) :
-    - **G1 — importabilité** : `grep -rniE "importab" $S` (50 lignes au relevé de `ffd2d306`) ;
-    - **G2 — égalité** : `grep -rnE "inventaire[^.]{0,40}identique|\*\*identique\*\* au nôtre|doit être identique|égalité (\*\*exacte|des inventaires)|compare dans les deux sens|exacte, dans les deux sens" $S` (7) ;
-    - **G3 — fenêtre calculée** : `grep -rnE "recalcul[a-zé]* (la |cette )?fenêtre|recalculée depuis le|codée en dur|ne déplace pas la fenêtre|fenêtre qui \*\*recule|referm[a-z]* (\*\*)?(la|cette) fenêtre|refermé la fenêtre|last_table_creating_migration" $S` (29) ;
-    - **G4 — dernière créatrice** : `grep -rnE "dernière (migration )?créatrice|dernière création de table|EST la dernière" $S` (10) ;
-    - **G5 — couverture** : `grep -rnE "inatteignable par le flux|garantit la couverture|incomplet en tables|couverture des tables|Couverture :|contrôle de couverture" $S` (18) ;
-    - **valeur** : `grep -rn "20260917000001" crates/kesh-db/src crates/kesh-api/src` (5 : `post_restore.rs:212, 251, 418,
+    CLAUDE.md docs README.md website frontend/src scripts .config"` (`--exclude='*.pdf' --exclude='*.keshbackup'`),
+    depuis la racine du worktree, après chaque patch (C-32-12-22, C-32-12-30). `scripts/` et
+    `.config/` y sont parce que `scripts/prepare-release.sh:128` parle de la fenêtre d'importabilité. Chaque commande
+    se lance **telle qu'écrite**, suivie de `| wc -l` pour le nombre, sans fichier intermédiaire :
+    - **G1 — importabilité** : `grep -rniE "importab" --exclude='*.pdf' --exclude='*.keshbackup' $S` (**51** lignes) ;
+    - **G2 — égalité** : `grep -rniE "inventaire[^.]{0,40}identique|\*\*identique\*\* au nôtre|doit être identique|égalité (\*\*exacte|des inventaires)|compare dans les deux sens|exacte, dans les deux sens" --exclude='*.pdf' --exclude='*.keshbackup' $S` (**7**) ;
+    - **G3 — fenêtre calculée** : `grep -rniE "recalcul[a-zé]* (la |cette )?fenêtre|recalculée depuis le|codée en dur|ne déplace pas la fenêtre|fenêtre qui \*\*recule|referm[a-z]* (\*\*)?(la|cette) fenêtre|refermé la fenêtre|fenêtre refermée|last_table_creating_migration" --exclude='*.pdf' --exclude='*.keshbackup' $S` (**36**) ;
+    - **G4 — dernière créatrice** : `grep -rniE "dernière (migration )?créatrice|dernière création de table|EST la dernière" --exclude='*.pdf' --exclude='*.keshbackup' $S` (**10**) ;
+    - **G5 — couverture** : `grep -rniE "inatteignable par le flux|garantit la couverture|incomplet en tables|couverture des tables|Couverture :|contrôle de couverture" --exclude='*.pdf' --exclude='*.keshbackup' $S` (**18**) ;
+    - **valeur** : `grep -rn "20260917000001" crates/kesh-db/src crates/kesh-api/src` (**5** : `post_restore.rs:212, 251, 418,
       427, 433`) — chaque occurrence relue contre le sens neuf (plancher et non plus « dernière migration créatrice »).
-    Les familles se recoupent (une ligne peut sortir de deux greps) ; les nombres sont des relevés par famille, non un
-    total. **Chaque ligne rendue reçoit un sort, écrit au Dev Agent Record** : l'inventaire attendu au relevé de
-    `ffd2d306` est le tableau *Inventaire de la classe* des Dev Notes ; une ligne qui n'y figure pas et n'est pas un
-    homonyme (« recalcule la canonique », « payload identique », « dans les deux sens » d'un autre registre) est un
-    site neuf, à classer avant de clore le patch.
+    Nombres **rendus par ces commandes exécutées telles qu'écrites** le 2026-10-24 sur `8a5a720a` (code identique à
+    `ffd2d306` : la branche n'a changé que des fiches). Les familles se recoupent (une ligne peut sortir de deux greps) ;
+    les nombres sont des relevés par famille, non un total. **Chaque ligne rendue reçoit un sort, écrit au Dev Agent
+    Record** : l'inventaire attendu est le tableau *Inventaire de la classe* des Dev Notes, et les homonymes exclus y
+    sont **nommés un à un** ; une ligne qui ne figure ni au tableau ni parmi les homonymes nommés est un site neuf, à
+    classer avant de clore le patch.
 18. **AC18 — gates au dernier commit de code.** `kesh-db` touché : **gate complet même en boucle** — `scripts/test-fast.sh`
     sous verrou (`docs/agents-orchestration.md` § 5), base `kesh_3212` remise à zéro d'abord ; `cargo publish --dry-run
     -p kesh-import` n'est pas concerné ; les quatre gates frontend (`npm run check`, `lint-i18n-ownership`,
@@ -455,7 +498,8 @@ l'inventaire. **Aucune exemption ne devient fausse.**
     - M2 : règle du suffixe retirée → AC3 (`HorsOrdre`, et le cas « même migration ») rouge.
     - M3 : `IMPORT_FLOOR_MIGRATION = 20260827000001` (plancher abaissé d'un cran) → AC2 (iii) rouge (`exigees` = 38
       tables, `∪ TOLEREES_ECRITES` vide ≠ 39) et (iv) rouge (`tolerees_calculees` = [`journal_entry_number_sequences`]
-      ≠ `TOLEREES_ECRITES` vide) ; aussi `exemptions_claiming_out_of_window_really_are_out_of_window` (`20260828000001`
+      ≠ `TOLEREES_ECRITES` vide) — **une seule condition** : (iii) est impliquée par (iv) (AC2), le Dev Agent Record
+      nomme (iv) comme tueur et (iii) comme son écho ; aussi `exemptions_claiming_out_of_window_really_are_out_of_window` (`20260828000001`
       et `20260910000001` ne sont plus `<` plancher).
     - M4 : `restore_body` ne vide plus une table absente de la carte (`DELETE` conditionné à `tables.contains_key`) →
       AC4 et AC7 rouges.
@@ -465,9 +509,11 @@ l'inventaire. **Aucune exemption ne devient fausse.**
       `last_table_creating_migration`) → **équivalente aujourd'hui** (les deux valeurs sont `20260917000001`) : la
       déclarer telle, avec la raison, et la reporter à la 32-5 (AC10).
     - M7 : test de l'AC11 nourri d'une migration **fictive** (registre et `MIGRATOR` injectés par une porte de test, ou
-      fonction de détection testée sur un SQL littéral `CREATE TABLE t (...); INSERT INTO t ...` de version > plancher)
-      → la détection rend « à inscrire » ; sans la porte, déclarer l'AC11 vacant et le dire.
-    - M8 : `creates_application_table` ne retire plus les accents graves → AC1 (i) reste-t-il vert ? Si oui (aucune
+      fonction de détection testée sur un SQL littéral `CREATE TABLE t (...); INSERT INTO t ...` de version > plancher,
+      **et** sur une seconde migration fictive, postérieure, qui ne porte que `INSERT INTO t ...` — le cas de l'AC11
+      où la table vient d'une migration antérieure) → la détection rend « à inscrire » dans les deux cas ; sans la
+      porte, déclarer l'AC11 vacant et le dire.
+    - M8 : `created_application_table` ne retire plus les accents graves → AC1 (i) reste-t-il vert ? Si oui (aucune
       migration du dépôt n'écrit `` CREATE TABLE `x` ``), mutation équivalente sur le dépôt actuel, à déclarer.
     - M9 : `full_import` écrit `tablesAbsent` (réponse) et `run_backup_and_restore` `tables_absent` (audit) **codés en
       dur à `[]`** → **non
@@ -484,7 +530,9 @@ l'inventaire. **Aucune exemption ne devient fausse.**
     même quand la mise à jour a ajouté des tables (le manuel ne cite pas de version plancher : une colonne
     obligatoire ajoutée depuis à une table ancienne reste un refus de schéma, indépendant de cette story) ; ces tables
     sont restaurées **vides** — ce qu'elles contenaient sur l'installation est effacé, comme tout le reste — et le bilan
-    les nomme ; exemple : une sauvegarde 0.15.0 importée en 0.16.0 restaure un serveur MCP désactivé et sans clé ; (iii)
+    les nomme ; **aucun exemple tiré d'une story à venir** (le serveur MCP de la 32-5 n'est pas dans `main` quand la
+    32-12 y arrive, et l'AC21 interdit d'en rien promettre) : l'exemple concret est ajouté par la story qui crée la
+    première table postérieure (*Contrat* point 3, C-32-12-35) ; (iii)
     § *Ce que dit l'écran à la fin de l'import* (l. 2277) : l'encart de l'AC13 ; (iv) § *Reprises de données rejouées à
     l'import* (l. 2305) : rien à changer **sauf** si une phrase y lie l'importabilité à l'inventaire identique (à
     vérifier) ; (v) § *Les pièces à l'import*, l. 2273 : l'énumération des champs de l'entrée d'audit
@@ -511,13 +559,13 @@ l'inventaire. **Aucune exemption ne devient fausse.**
   temporaire au tag `v0.15.0`, point 5, C-32-12-21) ; extraction du
   seed partagé, `generate_fixture_0_15_0`, exécution unique (`cargo nextest run --run-ignored only -E
   'test(generate_fixture_0_15_0)'` ou équivalent), contrôle `unzip`, commit dédié de la fixture et du générateur.
-- [ ] **T2 (AC1-AC4)** — `kesh-db` : reconnaissance `CREATE TABLE` déplacée en production (`post_restore.rs`,
-  `split_statements` en `pub(crate)`), `table_creating_migrations`, `IMPORT_FLOOR_MIGRATION` et son doc-comment (quatre
-  migrations nommées), `InventoryRules`, `check_backup_inventory`, tests unitaires (`TOLEREES_ECRITES`,
+- [ ] **T2 (AC1-AC4, AC10)** — `kesh-db` : reconnaissance `CREATE TABLE` déplacée en production (`post_restore.rs`,
+  `created_application_table`, `split_statements` en `pub(crate)`), `table_creators` et `table_creating_migrations`,
+  `IMPORT_FLOOR_MIGRATION` et son doc-comment (quatre migrations nommées, contrat de l'AC10), `InventoryRules`, `check_backup_inventory`, tests unitaires (`TOLEREES_ECRITES`,
   `tolerees_calculees`) ; test de l'AC4 ; commentaires de `TABLES_TO_TRUNCATE` et `restore_body`, message de
   `backup_schedule.rs:502`, doc-comment de `version.rs:272-275` (AC16).
 - [ ] **T3 (AC9, AC11)** — `post_restore.rs` : fenêtre = plancher dans les deux tests, `last_table_creating_migration`
-  retirée, sites de l'AC9 récrits un à un (doc-module, l. 250-251, 269-276, 375-381, 916-934, 1095),
+  retirée, sites de l'AC9 récrits un à un (doc-module, l. 250-251, 269-274, 375-381, 916-934, 1084, 1095-1096),
   `post_floor_table_seeds_are_replayed`.
 - [ ] **T4 (AC5-AC8, AC12)** — `kesh-api` : `parse_and_verify_with` (`pub(crate)`), messages, `tables_absent` ;
   réponse et audit ; tests AC6 et AC8 (`tests/admin_full_import_e2e.rs`, et assertion ajoutée au test 0.14.0), AC7
@@ -554,13 +602,13 @@ l'inventaire. **Aucune exemption ne devient fausse.**
 | `crates/kesh-db/src/backup.rs:34-104` | `TABLES_TO_TRUNCATE` (39 tables) | doc-comment ; `IMPORT_FLOOR_MIGRATION`, carte, règle à côté |
 | `crates/kesh-db/src/backup.rs:627-720` | `restore_body` — vide tout, insère le présent | commentaires l. 647 et 667-668 seulement (comportement fixé par AC4) |
 | `crates/kesh-db/src/repositories/backup_schedule.rs:502` | message de `table_systeme_hors_inventaire` | récrit (AC16) |
-| `crates/kesh-db/src/post_restore.rs:19-37, 250-251, 258-279` | « toute table neuve referme la fenêtre », « aucune table n'est créée depuis `20260917000001` » | plancher (AC9) ; relevés datés du bloc 258-279 gardés |
+| `crates/kesh-db/src/post_restore.rs:19-37, 250-251, 257-279` | « toute table neuve referme la fenêtre », « aucune table n'est créée depuis `20260917000001` » | plancher (AC9) ; relevés datés du bloc 257-279 (l. 257-266, 276-279) gardés |
 | `crates/kesh-db/src/post_restore.rs:375-381` | doc d'`EXEMPT_MIGRATIONS`, « recalcule la fenêtre depuis le `MIGRATOR` » (l. 379) | récrit (AC9) |
 | `crates/kesh-db/src/post_restore.rs:441` | justification de `20260917000001`, « EST la dernière créatrice » | vraie jusqu'à la 32-5 ; récrite par elle (*Contrat* point 5, C-32-12-27) |
 | `crates/kesh-db/src/post_restore.rs:718-720` | doc de `missing_sentinels`, « inatteignable par le flux réel » | récrit : l'état devient atteignable (AC16) |
 | `crates/kesh-db/migrations/20261001000004_…:14-15`, `20261003000001_…:9-11`, `20261009000001_…:10-12`, `20261024000001_backup_schedule.sql:5-7` | commentaires « une table neuve rendrait les sauvegardes inimportables » | **intouchables (P8)** ; rectification au doc-comment d'`IMPORT_FLOOR_MIGRATION`, qui les nomme (AC2, AC16) |
 | `crates/kesh-db/src/post_restore.rs:772` | `split_statements`, privée | `pub(crate)` (AC1) |
-| `crates/kesh-db/src/post_restore.rs:916-934, 942-958, 978, 1084-1095, 1484` | fenêtre des tests et leurs doc-comments, `last_table_creating_migration`, reconnaissance `CREATE TABLE` | plancher ; doc-comments récrits ; fonction retirée ; reconnaissance en production (AC1, AC9) |
+| `crates/kesh-db/src/post_restore.rs:916-934, 942-958, 978, 1084-1096, 1484` | fenêtre des tests et leurs doc-comments, `last_table_creating_migration`, reconnaissance `CREATE TABLE` (`-> bool`) | plancher ; doc-comments récrits ; fonction retirée ; reconnaissance en production, `created_application_table -> Option<&'static str>` (AC1, AC9) |
 | `crates/kesh-db/src/version.rs:272-275` | doc de `check_import_version_compat`, « plus récente mais non-breaking reste importable » | récrit (AC16, C-32-12-26) |
 | `CLAUDE.md:827, 829` | P7, « identique au nôtre », « recalcule la fenêtre depuis le `MIGRATOR` » | récrits, soumis à Guy (AC16) |
 | `docs/manual/fr/admin-manual.tex:2252-2263, 2273, 2277, 2370` | refus, champs d'audit, écran, migration de machine | AC20 (i), (v), (iii), (vi) |
@@ -569,24 +617,36 @@ l'inventaire. **Aucune exemption ne devient fausse.**
 | `frontend/src/lib/features/admin-restore/` | type, panneau, test | `tablesAbsent`, encart |
 | `crates/kesh-i18n/locales/*/messages.ftl` | `admin-restore-files-missing` (fr l. 1769, autres l. 1698) | `admin-restore-tables-absent` |
 
-### Inventaire de la classe (relevé de `ffd2d306`, greps G1-G5 et valeur de l'AC17)
+### Inventaire de la classe (relevé du 2026-10-24 sur `8a5a720a`, greps G1-G5 et valeur de l'AC17 tels qu'écrits)
 
 Chaque site de la classe — phrase qui affirme l'égalité des inventaires, la non-importabilité d'une sauvegarde
 antérieure, une fenêtre calculée ou refermée par toute table neuve, ou que `20260917000001` est la dernière créatrice —
-reçoit **un** sort. Les lignes des greps qui n'appartiennent pas à la classe (homonymes : `backfill.rs:18` « recalcule
-la canonique », les « payload identique » des dépôts, les « dans les deux sens » de `bank_account_closed_inventory.rs`
-ou `audit_label_registry.rs`, `rejeu_interblocage_e2e.rs:184` et `onboarding_audit_e2e.rs:1294` « codée en dur »,
-`migrations_upgrade_path.rs:134`, les tests frontend) ne sont pas listées.
+reçoit **un** sort. Les lignes des greps qui n'appartiennent pas à la classe sont des **homonymes**, nommés ici un à
+un (relevé des commandes telles qu'écrites, 14 lignes) :
+
+- G2 : `crates/kesh-db/src/repositories/reconciliation.rs:802` (« égalité **exacte** en décimal ») ;
+- G3 : `crates/kesh-api/tests/rejeu_interblocage_e2e.rs:184`, `crates/kesh-api/tests/onboarding_audit_e2e.rs:1294`,
+  `crates/kesh-db/tests/migrations_upgrade_path.rs:134`, `scripts/regen-test-schema.sh:342` (« codée en dur » d'autres
+  valeurs) ; `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts:759` (« recalculée depuis les classes ») ;
+- G4 : `crates/kesh-db/tests/accounts_role_backfill.rs:29` (« la dernière du dépôt »),
+  `frontend/src/routes/(app)/journal-entries/[id]/journal-entry-page.test.ts:166` et `:173`,
+  `frontend/src/lib/features/reports/GeneralLedgerView.test.ts:178` (« la dernière colonne / de sa rangée ») ;
+- G5 : `crates/kesh-db/src/version.rs:331` (« Note couverture » de test), `crates/kesh-api/tests/bank_account_closed_inventory.rs:1606`
+  (contrôle de couverture d'un autre inventaire), `docs/kesh-specifications.txt:2530` (« Couverture : 89/89 FRs »),
+  `frontend/src/lib/shared/i18n-literal-reader.test.ts:4` (« pour la couverture »).
+
+G1 ne rend aucun homonyme : chacune de ses 51 lignes est au tableau. `docs/migrations-idempotence-audit.md:91` est
+rendue par G1, G3 (« REFERME la fenêtre », d'où le `-i`) et G5.
 
 | Sort | Sites |
 |---|---|
-| **Récrit par la story** | `backup.rs:34-38`, `:643-647`, `:667-668` ; `repositories/backup_schedule.rs:502` ; `version.rs:272-275` ; `post_restore.rs:19-37` (l. 22, 25-26, 35), `:250-251`, `:269-270`, `:274-276`, `:375-381` (l. 379), `:718-720`, `:916-927` (l. 918, 920, 925-927), `:934`, `:942-957` (avec la fonction), `:1095` ; `admin_backup/import.rs:14`, `:232-233` ; `CLAUDE.md:827`, `:829` ; `admin-manual.tex:2252-2263` (item ajouté), `:2273`, `:2370` |
+| **Récrit par la story** | `backup.rs:34-38`, `:643-647`, `:667-668` ; `repositories/backup_schedule.rs:502` ; `version.rs:272-275` ; `post_restore.rs:19-37` (l. 22, 25-26, 35), `:250-251`, `:269-270`, `:272-274`, `:375-381` (l. 379), `:718-720`, `:916-927` (l. 918, 920, 925-927), `:930` et `:1084` (appels remplacés par le plancher), `:934`, `:942-958` (avec la fonction), `:1095-1096` ; `admin_backup/import.rs:14`, `:232-233` ; `CLAUDE.md:827`, `:829` ; `admin-manual.tex:2252-2263` (item ajouté), `:2273`, `:2370` |
 | **Intouchable (P8), rectifié ailleurs** | `20261001000004_invoice_settlements_write_off.sql:14-15`, `20261003000001_invoices_frozen_pdf.sql:9-11`, `20261009000001_journal_entry_lines_lettering.sql:10-12`, `20261024000001_backup_schedule.sql:5-7` — rectification : doc-comment d'`IMPORT_FLOOR_MIGRATION`, qui les nomme (AC2), et cette fiche |
-| **Repris par la 32-5** (*Contrat* point 5) | `post_restore.rs:441` (« cette migration EST la dernière créatrice de table applicative — donc la fenêtre elle-même ») : vrai jusqu'à la 32-5, faux dès sa table |
-| **Reste vrai : relevé daté** | `post_restore.rs:212-215`, `:258-266`, `:277-279`, `:338-340`, `:1105-1121` ; `admin_full_import_e2e.rs:747`, `:947`, `:955`, `:1523-1524`, `:1544`, `:2324-2325`, `:2383`, `:2505`, `:2577` ; `post_restore_class_a.rs:78` ; `docs/migrations-idempotence-audit.md:85`, `:91`, `:98` — chacun dit ce qui était vrai à sa story |
-| **Reste vrai : table au plus tard au plancher, donc exigée** | les « refusé au contrôle de couverture » de `post_restore.rs:263`, `:421`, `:497`, `:518`, `:530`, `:536`, `admin_full_import_e2e.rs:2393`, `:2587`, `docs/migrations-idempotence-audit.md:91` ; les exemptions « Hors fenêtre » `post_restore.rs:418`, `:427` (et les six autres, point 2) ; `post_restore.rs:474` (argument de parc) ; `import.rs:900` (« couverture KO » : `Fabrique` incomplète en tables exigées) |
+| **Repris par la 32-5** (*Contrat* point 5) | `post_restore.rs:441` (« cette migration EST la dernière créatrice de table applicative — donc la fenêtre elle-même ») : vrai jusqu'à la 32-5, faux dès sa table ; l'entrée commence à `:433` (valeur), et son « refusé au contrôle de couverture » (l. 436-437, coupé sur deux lignes, que G5 ne rend pas) reste vrai : la table est le plancher, exigée |
+| **Reste vrai : relevé daté** | `post_restore.rs:212-215`, `:257-266`, `:276-279`, `:338-340`, `:1105-1121` ; `admin_full_import_e2e.rs:747`, `:947`, `:955`, `:1091`, `:1174`, `:1221`, `:1314`, `:1386`, `:1500` (« fenêtre refermée » : entrées de la Story 24-2 retirées du registre, rejeu déclenché explicitement), `:1523-1524`, `:1544`, `:2324-2325`, `:2383`, `:2505`, `:2577` ; `post_restore_class_a.rs:78` ; `docs/migrations-idempotence-audit.md:85`, `:91`, `:98` — chacun dit ce qui était vrai à sa story |
+| **Reste vrai : table au plus tard au plancher, donc exigée** | les « refusé au contrôle de couverture » de `post_restore.rs:263`, `:421`, `:497`, `:518`, `:530`, `:536`, `admin_full_import_e2e.rs:2393`, `:2587`, `docs/migrations-idempotence-audit.md:91` ; les exemptions « Hors fenêtre » `post_restore.rs:418`, `:427` (et les six autres, point 2) ; `post_restore.rs:473-474` (justification de `20260915000001` : « elle EST dans la fenêtre d'importabilité », argument de parc) ; `import.rs:900` (« couverture KO » : `Fabrique` incomplète en tables exigées) |
 | **Reste vrai : autre contrôle que l'inventaire** | `backup.rs:1148` et `admin_full_import_e2e.rs:2649`, `:2834`, `:3064` (importabilité par **colonne**) ; `admin_backup/manifest.rs:25` (par **format**) ; `20260915000001_audit_log_company_id.sql:23-24` (colonne `NOT NULL` sans défaut) ; `admin_auto_backup_e2e.rs:328`, `:335`, `admin_full_export_e2e.rs:858` (une archive fraîche s'importe) |
-| **Reste vrai : générique** | `post_restore.rs:81-84`, `:207`, `:281`, `:376`, `:402`, `:449`, `:1027`, `:1138` (la fenêtre existe toujours, elle est le plancher) ; `docs/migrations-idempotence-audit.md:105` (table système) |
+| **Reste vrai : générique** | `post_restore.rs:81-84`, `:207`, `:281`, `:376`, `:402`, `:449`, `:1027`, `:1138` (la fenêtre existe toujours, elle est le plancher) ; `scripts/prepare-release.sh:128` (des exemptions qui « ne s'appuient ni sur la fenêtre d'importabilité ni … » : vrai sous le plancher) ; `docs/migrations-idempotence-audit.md:105` (table système) |
 
 ### Pourquoi pas la version déclarée (C-32-12-3)
 
@@ -613,9 +673,13 @@ comportement actuel de `restore_body` : la story le fixe par un test (AC4) au li
    le test soit à assouplir.
 2. La table est **valide vide** : le code lit l'absence de ligne comme l'état par défaut. Sinon, sa migration amorce des
    lignes **et** va au registre (AC11), en classe A gardée (`INSERT … SELECT … WHERE NOT EXISTS`) — la classe B
-   exigerait une sentinelle reconnue par `adds_column`, qui ne lit que les `ALTER TABLE … ADD COLUMN`.
+   exigerait une sentinelle reconnue par `adds_column`, qui ne lit que les `ALTER TABLE … ADD COLUMN`. L'entrée porte un
+   **extrait** des seuls statements d'écriture, sous `crates/kesh-db/src/post_restore/` (`registry_sql_contains_no_ddl`
+   refuse le `CREATE TABLE` d'un `include_str!` du fichier entier, AC11). De même pour une migration **ultérieure** qui
+   écrit dans la table (AC11, second cas).
 3. Reprendre l'AC8 avec la fixture 0.15.0 : `tablesAbsent == [<table>]`, table vide après l'import ; captures de l'état
-   « tables absentes » (AC14).
+   « tables absentes » (AC14) ; ajouter au manuel (§ *Une sauvegarde d'une version antérieure*, AC20 (ii)) l'exemple
+   concret de sa table, que la 32-12 ne peut pas écrire avant qu'elle existe (C-32-12-35).
 4. Constater `registry_entries_are_within_import_window` vert sur M1 : c'est la preuve que l'AC9 tient (M6 cesse
    d'être équivalente).
 5. Récrire la justification de l'exemption `20260917000001` (`post_restore.rs:441`) : « cette migration EST la dernière
@@ -662,18 +726,35 @@ pas découpée — cf. *Dérogation règle de splitting* ci-dessous. Aucune migr
 
 ### Dérogation règle de splitting
 
-- **Critère franchi** : huit modules au grain de la règle (ci-dessus), pour un seuil de cinq. Le second critère
-  (non-convergence) n'est pas levé : P1 → P2 passe de 0/1/2/5 et 0/0/2/6 à 0/0/3/6 et 0/0/2/6, sans HIGH, et les
-  MEDIUM de la P2 sont **distincts** de ceux de la P1 (des sites que la remédiation P1 n'avait pas énumérés, non des
-  défauts qu'elle aurait créés : `CLAUDE.md` amendement D5).
-- **Pourquoi ne pas découper** : le motif de la règle — un mental-model trop large pour une revue adversariale — n'est
-  pas réalisé. Deux sites portent la logique (`kesh-db/backup` : règle et carte ; `kesh-db/post_restore` : fenêtre des
-  tests) ; les six autres sont mécaniques (un champ de réponse et d'audit, un message, un doc-comment, une clé i18n ×
-  4, un encart). Un découpage en story-zéro (`kesh-db`) + rollout (`kesh-api`, frontend) livrerait d'abord une règle
-  que rien n'emploie, et le contrat de la fixture (T1 avant tout code) traverserait les deux.
+- **Critère franchi** : huit modules au grain de la règle (ci-dessus), pour un seuil de cinq.
+- **Second critère : le signal est levé, et il y a recyclage partiel.** Sévérités (CRITICAL/HIGH/MEDIUM/LOW), lentille R
+  puis F : P1 0/0/2/6 et 0/1/2/5 → P2 0/0/2/6 et 0/0/3/6 → P3 0/0/2/7 et 0/0/0/9. La sévérité maximale de la lentille
+  R est **égale** d'une passe à l'autre (MEDIUM → MEDIUM → MEDIUM). Et au sens de l'amendement D5 (`CLAUDE.md`, « un
+  défaut qui revient sous une autre forme, ou qui naît du correctif précédent »), il y a recyclage : R1 = F1 de la P2
+  (quatre migrations publiées, la fiche en nommait trois) **est né de la remédiation P1** (les rapports P2 le datent de
+  `544c2821`) ; R1 de la P3 (les greps de l'AC17 sans `-i`) **est né de la remédiation P2** ; et la classe « textes
+  devenus faux sans être nommés » est revenue à chaque passe (F3 = R2 en P1, R2 = F3 en P2, R1 = F1 et F9 en P3). Le
+  texte de la P2 disait le contraire (« distincts … non des défauts qu'elle aurait créés ») : c'était faux, rectifié ici
+  sur les rapports P3 (C-32-12-36).
+- **Pourquoi ne pas découper malgré tout** — la proposition soumise à Guy : (a) le recyclage est **circonscrit** à
+  une seule classe — l'inventaire des textes que la règle rend faux et la commande qui l'établit —, non à la logique :
+  aucune passe n'a trouvé deux fois un défaut de la règle, de la carte, de l'import ou du bilan ; (b) un découpage
+  sépare précisément ce qui recycle de ce qui le motive : les textes devenus faux le deviennent **par** la règle
+  (`kesh-db`), et les récrire dans une autre story laisserait la première fusionner avec des commentaires, un
+  `CLAUDE.md` et un manuel qui mentent — ce que le gate ne voit pas ; (c) les huit modules sont liés par **une seule
+  règle**, deux sites la portent (`kesh-db/backup` : règle et carte ; `kesh-db/post_restore` : fenêtre des tests), les
+  six autres sont mécaniques (un champ de réponse et d'audit, un message, un doc-comment, une clé i18n × 4, un
+  encart) ; (d) une story-zéro (`kesh-db`) + rollout (`kesh-api`, frontend) livrerait d'abord une règle que rien
+  n'emploie, et le contrat de la fixture (T1 avant tout code) traverserait les deux. **Si Guy juge que le recyclage
+  appelle le découpage**, la coupe la moins mauvaise garde la règle avec son appelant et ses textes : 32-12a = AC1-AC7,
+  AC9-AC11, AC15-AC17 (fixture, règle, import qui l'applique, fenêtre des tests, et **tous** les textes qu'elles
+  rendent faux) ; 32-12b = AC8, AC12-AC14, AC20-AC21 (bilan, écran, manuel, CHANGELOG) ; AC18-AC19 dans chacune ; les
+  deux avant la 32-5.
 - **Risque accepté** : un défaut d'interaction entre la règle et le bilan visible ; atténué par l'AC7 (chaîne bout à
-  bout hors HTTP) et l'AC8 (HTTP), et par le gate complet à chaque passe (`kesh-db`). Décision de l'orchestrateur, à
-  confirmer par le Project Lead avec la question Q4 (C-32-12-29).
+  bout hors HTTP) et l'AC8 (HTTP), et par le gate complet à chaque passe (`kesh-db`) ; et un nouveau texte devenu faux
+  qu'aucune famille de l'AC17 ne rend, atténué par la règle « une ligne absente du tableau est un site neuf » et par la
+  recherche par le sens de chaque passe. Signal déclaré, décision de l'orchestrateur **soumise au Project Lead avec la
+  question Q4** (C-32-12-29, C-32-12-36).
 
 ### Risques
 
@@ -790,5 +871,46 @@ AC10, `31-1-sauvegarde-complete.md:335-345, 1325-1335`).
   Passe suivante : **P3 complète, Sonnet**, lentilles R et F (`3212-validate-prompt-p3.md`) — la P2 a rendu des MEDIUM,
   et la remédiation a touché des AC (AC2, AC6, AC7, AC9, AC12, AC16, AC17, AC20). Fiche toujours `ready-for-dev`
   **sous réserve de Q4**.
+- 2026-10-24 — **Validation P3** (Sonnet 5.5, deux lentilles en contexte frais ; prompt `3212-validate-prompt-p3.md` ;
+  rapports `kesh-gate-logs/3212-validate-p3-{R,F}.md`) : lentille R **0/0/2/7**, lentille F **0/0/0/9**
+  (CRITICAL/HIGH/MEDIUM/LOW). Convergences : **R1 = F1** (MEDIUM chez R, LOW chez F : retenu MEDIUM — la commande
+  manquait un membre de la classe), **R2 = F6** (idem, retenu MEDIUM), R3 = F2, R4 = F3, R6 = F7, R9 = F8 ; R7 et F4
+  portent sur l'AC11 sous deux angles, R8 est un cas de F9. Aucun finding réfuté ; chaque site revérifié au code par
+  l'agent de remédiation, et **les six commandes de l'AC17 exécutées telles qu'écrites** (lecture seule, sortie
+  standard) : G1 **51**, G2 **7**, G3 **36**, G4 **10**, G5 **18**, valeur **5** — nombres écrits à l'AC17. Sort (dix
+  entrées) :
+  - **R1 = F1 (MEDIUM)** — `-i` sur les cinq familles (G2 compris, par hygiène : 7 dans les deux formes) ; portée `S`
+    étendue à `scripts` et `.config` (F9 : `prepare-release.sh:128`) ; G3 gagne `fenêtre refermée` ; commandes écrites
+    avec leurs exclusions, telles qu'à exécuter ; `docs/migrations-idempotence-audit.md:91` désormais rendue par G3 ;
+    les **14** homonymes nommés un à un aux Dev Notes (C-32-12-30). Les « 29 / 10 / 18 » de la P2 étaient ceux d'une
+    commande avec `-i` que la fiche n'écrivait pas — relevé laissé tel quel dans l'entrée P2.
+  - **R2 = F6 (MEDIUM)** — *Dérogation règle de splitting* récrite : signal levé, **recyclage partiel** reconnu (R1 = F1
+    de la P2 né de la remédiation P1, R1 de la P3 né de la remédiation P2, la classe des textes devenus faux revenue à
+    chaque passe) ; non-découpage motivé autrement (recyclage circonscrit à une classe, découpage qui séparerait la
+    règle de ses textes, huit modules liés par une règle) et coupe de repli proposée ; décision soumise à Guy avec Q4
+    (C-32-12-36 ; C-32-12-29 annoté).
+  - **R3 = F2 (LOW)** — AC9, T3, tableau des sites et inventaire : l. 257-279, 272-274, relevés datés 257-266 et 276-279.
+  - **R4 = F3 (LOW)** — AC1 : `created_application_table -> Option<&'static str>`, `table_creators()` (toutes les
+    créatrices), `table_creating_migrations()` en prend le minimum ; le test (i) lit `table_creators()` ; M8 renommée
+    (C-32-12-31 ; C-32-12-23 annoté).
+  - **R5 (LOW)** — AC7 (a) : `products` injectée après **toute** autre table.
+  - **R6 = F7 (LOW)** — AC2 : (iii) dite impliquée par (iv) ; M3 une seule condition (C-32-12-33) ; AC10 porté par T2.
+  - **R7 + F4 (LOW)** — AC11 étendu aux migrations qui écrivent dans une table postérieure au plancher créée par une
+    migration antérieure ; extrait sous `post_restore/` exigé par `registry_sql_contains_no_ddl` (l. 1355),
+    cardinalité par `extract_carries_every_write_statement_of_its_source_migration` (l. 1307) ; *Contrat* point 2 et
+    M7 alignés (C-32-12-32).
+  - **R8 + F9 (LOW)** — triés à l'inventaire : `post_restore.rs:473-474` (générique de parc), `:1095-1096` (récrit),
+    `:930` et `:1084` (appels remplacés), `:433` (entrée confiée à la 32-5), `admin_full_import_e2e.rs:1091, 1174,
+    1221, 1314, 1386, 1500` (relevés datés), `scripts/prepare-release.sh:128` (générique).
+  - **R9 = F8 (LOW)** — AC3 : ordre défini (version, puis rang dans l'inventaire) et testé ; table présente sans
+    migration connue sans contrainte de suffixe, testée ; `Inconnue(String)`, `Exigee` et `HorsOrdre` en `&'static str`
+    (C-32-12-34).
+  - **F5 (LOW)** — AC20 (ii) sans exemple MCP ; l'exemple passe au *Contrat* point 3, pour la story qui crée la
+    première table (C-32-12-35).
+  **Tendance des MEDIUM distincts** : P1 **3** → P2 **3** → P3 **2**, aucun HIGH depuis la P1. Passe suivante :
+  **P4 ciblée, Haiku**, une lentille (regression hunter) sur le seul diff de cette remédiation, qui exécute les
+  commandes de l'AC17 telles qu'écrites (`3212-validate-prompt-p4.md`) — la P3 a rendu deux MEDIUM, la boucle ne se
+  clôt pas (`CLAUDE.md`, décision Q3 (c)). Fiche toujours `ready-for-dev` **sous réserve de Q4** (et de la décision de
+  découpage, *Dérogation*).
 
 [#722]: https://github.com/guycorbaz/kesh/issues/722

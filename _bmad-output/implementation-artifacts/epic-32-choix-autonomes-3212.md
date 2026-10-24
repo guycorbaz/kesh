@@ -228,6 +228,8 @@
 - **Écartées** : la reconnaissance dans `backup.rs` (deux modules s'appelleraient l'un l'autre pour un même analyseur) ;
   garder `last_table_creating_migration` en enveloppe du maximum (code de test sans appelant).
 - **Réversible** : oui.
+- *Annoté à la validation P3 (2026-10-24)* : `creates_application_table` ne passe pas telle quelle en production —
+  elle devient `created_application_table -> Option<&'static str>` (C-32-12-31).
 
 ### C-32-12-24 — Le message du refus se prouve hors HTTP, à l'égalité exacte
 
@@ -279,4 +281,82 @@
 - **Retenu** : story gardée unique, section *Dérogation règle de splitting* écrite (deux sites lourds, six mécaniques ;
   pas de recyclage de défauts entre P1 et P2) ; à confirmer par Guy avec Q4.
 - **Écartée** : story-zéro `kesh-db` + rollout (livrerait une règle sans appelant ; la fixture traverse les deux).
+- **Réversible** : oui.
+- *Annoté à la validation P3 (2026-10-24)* : « pas de recyclage de défauts entre P1 et P2 » était faux (R2 = F6 de la
+  P3) ; motivation récrite, recyclage partiel reconnu (C-32-12-36).
+
+---
+
+*Choix 30 à 36 : remédiation de la validation P3 (2026-10-24, rapports `3212-validate-p3-{R,F}.md`).*
+
+### C-32-12-30 — Les commandes de l'AC17 s'écrivent telles qu'exécutées, insensibles à la casse, portée élargie
+
+- **Contexte** : R1 = F1 — G3, G4, G5 écrits sans `-i` rendaient 28 / 6 / 16 au lieu des 29 / 10 / 18 déclarés, et G3
+  manquait `docs/migrations-idempotence-audit.md:91` (« REFERME la fenêtre »), membre de la classe ; F9 — la portée
+  laissait `scripts/prepare-release.sh:128` hors balayage, et six commentaires « fenêtre refermée » échappaient à G3.
+- **Retenu** : `-i` sur les cinq familles ; `scripts` et `.config` ajoutés à `S` ; `fenêtre refermée` ajouté à G3 ;
+  exclusions écrites dans chaque commande ; nombres **rendus par les commandes exécutées telles qu'écrites** (51 / 7 /
+  36 / 10 / 18 / 5) ; homonymes nommés un à un aux Dev Notes (14).
+- **Écartée** : corriger les nombres à 28 / 6 / 16 sans `-i` (la commande continuerait de manquer `audit:91` et toute
+  graphie capitalisée d'un site neuf).
+- **Réversible** : oui.
+
+### C-32-12-31 — `created_application_table` rend le nom ; `table_creators` garde toutes les créatrices
+
+- **Contexte** : R4 = F3 — `creates_application_table -> bool` ne dit pas quelle table ; et une carte d'une version par
+  table (la plus ancienne) rend « deux créatrices » indiscernable de « une » : le test AC1 (i) ne pouvait pas s'écrire.
+- **Retenu** : `created_application_table(&str) -> Option<&'static str>` (l'entrée de l'inventaire) ;
+  `table_creators() -> &'static BTreeMap<&'static str, Vec<i64>>` ; `table_creating_migrations()` en prend le minimum ;
+  le test (i) lit `table_creators()`.
+- **Écartée** : recalculer les créatrices dans le test seul (deux analyseurs du même SQL, l'un pouvant diverger de
+  l'autre).
+- **Réversible** : oui.
+
+### C-32-12-32 — L'AC11 couvre toute écriture dans une table postérieure au plancher, et l'extrait est exigé
+
+- **Contexte** : R7 — une migration ultérieure qui amorce ou corrige une table créée après le plancher par une story
+  précédente échappait à l'AC11 et pouvait être exemptée « par couverture », à tort ; F4 — une migration qui crée et
+  amorce ne s'inscrit pas au registre par un `include_str!` entier (`registry_sql_contains_no_ddl`).
+- **Retenu** : prédicat sur la **cible** (table de l'inventaire dont la créatrice est postérieure au plancher), quelle
+  que soit la migration qui l'a créée ; extrait sous `post_restore/` écrit à l'AC11 et au *Contrat* point 2 ; M7 nourrie
+  des deux cas.
+- **Écartée** : déclarer la sous-classe angle mort (vacante aujourd'hui, mais la 32-6 écrira peut-être dans une table
+  de la 32-5).
+- **Réversible** : oui.
+
+### C-32-12-33 — AC2 (iii) gardée pour son message, déclarée impliquée par (iv)
+
+- **Contexte** : R6 = F7 — `exigees` et `tolerees_calculees` partitionnent l'inventaire ; (iv) vraie entraîne (iii).
+- **Retenu** : (iii) reste (elle nomme la table orpheline) ; la fiche dit qu'elle ne rougit jamais seule ; M3 compte
+  une condition.
+- **Écartée** : supprimer (iii) (message moins parlant pour la 32-5).
+- **Réversible** : oui.
+
+### C-32-12-34 — Ordre de `tablesAbsent`, table présente sans créatrice, durées de vie des erreurs
+
+- **Contexte** : R9 = F8 — deux tables d'une même migration n'avaient pas d'ordre ; une table présente sans
+  migration connue n'avait pas de règle ; `presente` venait du manifeste.
+- **Retenu** : ordre par version puis rang dans l'inventaire ; une présente sans créatrice compte comme au plus tard au
+  plancher (aucune contrainte de suffixe) ; `Inconnue` vérifiée d'abord, `presente` résolue dans l'inventaire
+  (`&'static str`), `Inconnue(String)`. Cas testés à l'AC3.
+- **Écartée** : ordre alphabétique (sans lien avec l'inventaire que lit l'Administrateur ailleurs).
+- **Réversible** : oui.
+
+### C-32-12-35 — Le manuel ne donne pas d'exemple tiré de la 32-5
+
+- **Contexte** : F5 — l'AC20 (ii) citait « un serveur MCP désactivé et sans clé », alors que l'AC21 interdit de rien
+  promettre de la 32-5 et que le manuel versionné arriverait dans `main` avant elle.
+- **Retenu** : paragraphe sans exemple d'une story à venir ; l'exemple concret est ajouté par la story qui crée la
+  première table postérieure (*Contrat* point 3).
+- **Réversible** : oui.
+
+### C-32-12-36 — Dérogation au découpage : le recyclage est reconnu, le non-découpage motivé autrement
+
+- **Contexte** : R2 = F6 — la dérogation niait tout recyclage ; les rapports P2 datent R1 = F1 de la remédiation P1, R1
+  de la P3 vient de la remédiation P2, et la classe « textes devenus faux » est revenue à chaque passe.
+- **Retenu** : signal déclaré levé, recyclage partiel écrit ; non-découpage motivé par la circonscription du recyclage
+  à une classe, par le fait qu'un découpage séparerait la règle des textes qu'elle rend faux, et par l'unité de la
+  règle sur huit modules ; coupe de repli écrite (32-12a fixture, règle, import et textes ; 32-12b bilan, écran,
+  manuel, CHANGELOG). Décision soumise à Guy avec Q4.
+- **Écartée** : découper d'office (décision du Project Lead, D5 : le signal se déclare, il ne découpe pas seul).
 - **Réversible** : oui.
