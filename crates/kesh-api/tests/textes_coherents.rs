@@ -1091,10 +1091,11 @@ const ECRANS_ASSUMES: &[(&str, &str)] = &[
         "crates/kesh-i18n/locales/fr-CH/messages.ftl",
         "locale = companies.accounting_language",
     ),
-    // admin-backup-page-description : le contenu d'une sauvegarde d'installation.
+    // admin-backup-page-description : le contenu d'une sauvegarde d'installation
+    // (complétée des pièces justificatives par la Story 31-1b, AC22).
     (
         "crates/kesh-i18n/locales/fr-CH/messages.ftl",
-        "(toutes les sociétés, les utilisateurs et les données système)",
+        "(toutes les sociétés, les utilisateurs, les données système et les pièces justificatives :",
     ),
     // Commentaire de tête du composant : même contenu.
     (
@@ -1104,7 +1105,7 @@ const ECRANS_ASSUMES: &[(&str, &str)] = &[
     // Repli de admin-backup-page-description (égal à la valeur fr-CH).
     (
         "frontend/src/lib/features/admin-backup/AdminBackupPanel.svelte",
-        "(toutes les sociétés, les utilisateurs et les données système)",
+        "(toutes les sociétés, les utilisateurs, les données système et les pièces justificatives :",
     ),
 ];
 

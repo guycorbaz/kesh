@@ -41,6 +41,28 @@ export const DEGRADED_RETRY_DELAYS_MS = [300, 1000, 3000, 10000] as const;
 /** Timeout par défaut pour les requêtes fetch (30 secondes). */
 const REQUEST_TIMEOUT_MS = 30_000;
 
+/**
+ * Délai des opérations longues (Story 31-1b, AC18b, C-31-1-25) : une heure.
+ *
+ * Le délai du client court **jusqu'à l'arrivée des en-têtes**. Or l'export d'une
+ * sauvegarde complète n'envoie les siens qu'après avoir assemblé toute l'archive,
+ * et l'import ne répond qu'après la restauration : avec les pièces, des minutes.
+ * Les appels qui l'emploient passent aussi `retry: false` — rejouer un export de
+ * plusieurs Gio, ou un import destructeur, n'est jamais souhaitable.
+ */
+export const LONG_OPERATION_TIMEOUT_MS = 60 * 60_000;
+
+/**
+ * Options d'un appel (Story 31-1b, AC18b). Défauts inchangés : délai de 30 s,
+ * rejeu des seules méthodes idempotentes.
+ */
+export interface CallOptions {
+	/** Délai avant abandon, en millisecondes (défaut : 30 s). */
+	timeoutMs?: number;
+	/** `false` interdit tout rejeu, même d'un `GET` (défaut : rejeu des méthodes idempotentes). */
+	retry?: boolean;
+}
+
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Promise partagée pour le mutex de refresh. */
@@ -264,9 +286,13 @@ function isIdempotentMethod(method: string | undefined): boolean {
  * controller.signal])` (API stable Chrome 116+ / Safari 17.4+) plutôt que
  * d'écraser.
  */
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+async function fetchWithTimeout(
+	url: string,
+	init: RequestInit,
+	timeoutMs: number = REQUEST_TIMEOUT_MS,
+): Promise<Response> {
 	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 	try {
 		// Story 10-5 (T7.1) : `credentials: 'include'` pour permettre l'envoi
 		// automatique du cookie HttpOnly `kesh_access_token` par le browser.
@@ -325,15 +351,21 @@ function getRetryDelays(): readonly number[] {
  * - **Pilotage banner** : `apiHealth.setDegraded()` au 1er échec retry-eligible
  *   (même pour les non-retryables) ; `clearDegraded()` au 1er succès de fetch
  *   ne retournant pas 503 (réponse 200, 4xx, 5xx-non-503 → la DB répond).
+ * - **`call.retry === false`** (Story 31-1b, AC18b) : une seule tentative, quelle
+ *   que soit la méthode ; **`call.timeoutMs`** remplace le délai de 30 s.
  */
-async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+async function fetchWithRetry(
+	url: string,
+	init: RequestInit,
+	call: CallOptions = {},
+): Promise<Response> {
 	const idempotent = isIdempotentMethod(init.method);
 	const delays = getRetryDelays();
-	const maxAttempts = idempotent ? delays.length + 1 : 1;
+	const maxAttempts = idempotent && call.retry !== false ? delays.length + 1 : 1;
 
 	for (let attempt = 0; attempt < maxAttempts; attempt++) {
 		try {
-			const res = await fetchWithTimeout(url, init);
+			const res = await fetchWithTimeout(url, init, call.timeoutMs);
 			if (res.status === 503) {
 				apiHealth.setDegraded();
 				if (attempt < maxAttempts - 1) {
@@ -386,17 +418,23 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
  * @param url - URL relative (ex: `/api/v1/users`)
  * @param options - Options fetch (method, body, etc.)
  * @param isRetry - Guard anti-boucle 401-refresh : si `true`, ne pas retenter le refresh
+ * @param call - Délai et rejeu de l'appel (Story 31-1b, AC18b) ; conservés au rejeu après refresh
  * @returns La réponse parsée en JSON, typée `T`
  * @throws {ApiError} En cas d'erreur HTTP ou réseau
  */
-async function request<T>(url: string, options: RequestInit = {}, isRetry = false): Promise<T> {
+async function request<T>(
+	url: string,
+	options: RequestInit = {},
+	isRetry = false,
+	call: CallOptions = {},
+): Promise<T> {
 	const headers = buildHeaders(
 		url,
 		options.headers as Record<string, string> | undefined,
 		options.body ?? null,
 	);
 
-	const res = await fetchWithRetry(url, { ...options, headers });
+	const res = await fetchWithRetry(url, { ...options, headers }, call);
 
 	// Story v011-5 (AC #19) + CR Pass 1 ECH1-5 — interceptor 423 Locked partagé
 	// avec requestRaw via le helper. La table `users` est vide côté backend →
@@ -419,7 +457,7 @@ async function request<T>(url: string, options: RequestInit = {}, isRetry = fals
 		const refreshed = await refreshTokens();
 		if (refreshed) {
 			// Retry avec le nouveau token (isRetry = true pour le guard anti-boucle)
-			return request<T>(url, options, true);
+			return request<T>(url, options, true, call);
 		}
 		// refreshTokens() a déjà fait clearSession + redirect si échec
 		const error: ApiError = {
@@ -489,10 +527,11 @@ async function requestRaw(
 	url: string,
 	options: RequestInit = {},
 	isRetry = false,
+	call: CallOptions = {},
 ): Promise<Response> {
 	const headers = buildHeaders(url, options.headers as Record<string, string> | undefined);
 
-	const res = await fetchWithRetry(url, { ...options, headers });
+	const res = await fetchWithRetry(url, { ...options, headers }, call);
 
 	// CR Pass 1 ECH1-5 — interceptor 423 partagé via handle423Redirect : sans
 	// ce check, un export blob (PDF/CSV/ZIP) fait pendant la fenêtre théorique
@@ -514,7 +553,7 @@ async function requestRaw(
 	) {
 		const refreshed = await refreshTokens();
 		if (refreshed) {
-			return requestRaw(url, options, true);
+			return requestRaw(url, options, true, call);
 		}
 		const error: ApiError = {
 			code: 'UNAUTHENTICATED',
@@ -536,9 +575,13 @@ export const apiClient = {
 		return request<T>(url, { method: 'GET' });
 	},
 
-	/** Téléchargement binaire : retourne la `Response` brute (appelez `.blob()`). */
-	getBlob(url: string): Promise<Response> {
-		return requestRaw(url, { method: 'GET' });
+	/**
+	 * Téléchargement binaire : retourne la `Response` brute (appelez `.blob()`).
+	 * `call` (Story 31-1b, AC18b) : délai et rejeu — `{ timeoutMs:
+	 * LONG_OPERATION_TIMEOUT_MS, retry: false }` pour un export complet.
+	 */
+	getBlob(url: string, call?: CallOptions): Promise<Response> {
+		return requestRaw(url, { method: 'GET' }, false, call);
 	},
 
 	post<T>(url: string, body?: unknown): Promise<T> {
@@ -552,9 +595,11 @@ export const apiClient = {
 	 * POST avec body `FormData` (Story 8-1b §api-client) — le browser pose
 	 * automatiquement `Content-Type: multipart/form-data; boundary=...`.
 	 * Utilisé pour l'upload bank-import (XML CAMT.053).
+	 * `call` (Story 31-1b, AC18b) : délai et rejeu — `{ timeoutMs:
+	 * LONG_OPERATION_TIMEOUT_MS, retry: false }` pour un import complet.
 	 */
-	postFormData<T>(url: string, form: FormData): Promise<T> {
-		return request<T>(url, { method: 'POST', body: form });
+	postFormData<T>(url: string, form: FormData, call?: CallOptions): Promise<T> {
+		return request<T>(url, { method: 'POST', body: form }, false, call);
 	},
 
 	put<T>(url: string, body?: unknown): Promise<T> {

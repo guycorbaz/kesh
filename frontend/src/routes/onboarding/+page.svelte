@@ -5,12 +5,23 @@
 	import { Input } from '$lib/components/ui/input';
 	import { onboardingState, i18nMsg, loadI18nMessages } from '$lib/features/onboarding/onboarding.svelte';
 	import { modeState } from '$lib/app/stores/mode.svelte';
+	import { authState } from '$lib/app/stores/auth.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { toast } from 'svelte-sonner';
 
 	function msg(key: string, fallback: string): string {
 		return i18nMsg(key, fallback);
 	}
+
+	// Story 31-1b (AC15, #503) — restaurer une sauvegarde au lieu de configurer :
+	// aux étapes 0 à 2 seulement (avant le choix démo / production, qui crée des
+	// données), et pour l'Administrateur seulement (le compte créé par /setup
+	// l'est ; le serveur refuse de toute façon les autres rôles, 403).
+	const showRestoreLink = $derived(
+		onboardingState.loaded &&
+			onboardingState.stepCompleted <= 2 &&
+			authState.currentUser?.role === 'Admin'
+	);
 
 	// Charger les messages i18n au mount si reprise à étape 2+
 	onMount(async () => {
@@ -398,4 +409,18 @@
 			</Button>
 		</div>
 	</form>
+{/if}
+
+{#if showRestoreLink}
+	<!-- Story 31-1b (AC15) : lien secondaire, sous le choix de l'étape. -->
+	<div class="mt-8 border-t border-border pt-4 text-center text-sm text-text-muted">
+		<p>{msg('onboarding-restore-hint', 'Vous avez une sauvegarde de Kesh (.keshbackup) ?')}</p>
+		<a
+			href="/onboarding/restore"
+			class="font-medium text-primary underline hover:no-underline"
+			data-testid="onboarding-restore-link"
+		>
+			{msg('onboarding-restore-link', 'Restaurer une sauvegarde')}
+		</a>
+	</div>
 {/if}

@@ -6,8 +6,14 @@
   ⚠️ OPÉRATION DESTRUCTRICE : remplace TOUTES les données de l'installation.
   Confirmation forte via modal `Dialog` (DC-D3) — l'upload n'est déclenché QUE
   par « Confirmer » du modal, jamais par le bouton « Importer » directement.
-  Succès → déconnexion + redirection /login (DC-D4, sessionInvalidated). Gating
-  RBAC doublé : guard `+page.ts` (DC-D1) + `require_admin_role` backend.
+  Succès → avis de ce que la restauration a rendu, puis déconnexion + redirection
+  /login au clic « Se reconnecter » (DC-D4, sessionInvalidated ; Story 31-1b, AC19,
+  C-31-1-39). Gating RBAC doublé : guard `+page.ts` (DC-D1) + `require_admin_role`
+  backend.
+
+  Story 31-1b (#503) : rendu aussi par `/onboarding/restore` (restaurer une
+  installation neuve depuis l'assistant, AC15) ; avis permanent sur le `.env`
+  (AC17) ; issue inconnue d'un import long (AC18b).
 -->
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
@@ -16,12 +22,51 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
-	import { uploadFullImport } from './admin-restore.api';
+	import BackupEnvNotice from '$lib/features/admin-backup/BackupEnvNotice.svelte';
+	import { uploadFullImport, type FullImportResponse } from './admin-restore.api';
 
 	let selectedFile = $state<File | null>(null);
 	let confirmOpen = $state(false);
 	let importing = $state(false);
 	let errorMsg = $state<string | null>(null);
+	/**
+	 * Story 31-1b (AC19) — réponse d'un import réussi. Non nulle : l'installation est
+	 * remplacée, la session invalidée ; le panneau n'attend plus que « Se reconnecter ».
+	 */
+	let imported = $state<FullImportResponse | null>(null);
+	let reconnecting = $state(false);
+	/** Story 31-1b (AC18b) — le dernier import a fini sans réponse : « Se reconnecter » est proposé. */
+	let unknownOutcome = $state(false);
+
+	/**
+	 * Story 31-1b (AC18b) — échecs après lesquels l'issue de l'import est inconnue :
+	 * la réponse n'est pas arrivée (délai du client dépassé, connexion coupée) ou un
+	 * proxy inverse a abandonné l'attente (502, 504 — Kesh n'émet ni l'un ni
+	 * l'autre). Le serveur, lui, va au bout de l'import (AC8b) : l'installation est
+	 * peut-être déjà remplacée, et « réessayez » inviterait à la remplacer encore.
+	 * Le 503 n'en est pas : Kesh l'émet quand la base est injoignable, presque
+	 * toujours avant tout import. ⚠️ Angle mort assumé (revue P1, B-3 ; corrigé en
+	 * revue P2, M-1) : un échec au `COMMIT` de la restauration ne rend PAS un 503 —
+	 * `routes/admin.rs` le convertit en `AdminFullImportFailed` (500,
+	 * `ADMIN_FULL_IMPORT_FAILED`), dont le message dit l'état préservé et invite à
+	 * réessayer. C'est vrai pour la base dans le cas ordinaire (le `COMMIT` échoué
+	 * est annulé), mais si la coupure a eu lieu après que le serveur a validé, l'issue
+	 * réelle est inconnue et l'écran le présente comme un échec ordinaire ; cas rare,
+	 * et un nouvel import rejouerait les mêmes données. Les pièces déjà écrites
+	 * restent dans le dossier des documents (angle mort E-3 de la 31-1a, au manuel).
+	 *
+	 * Après une issue inconnue, l'import n'est plus proposé (revue P1, E-LOW-3) : on
+	 * vérifie d'abord en se reconnectant ; recharger la page le rouvre.
+	 */
+	function issueInconnue(err: unknown): boolean {
+		if (!isApiError(err)) return false;
+		return (
+			err.code === 'TIMEOUT' ||
+			err.code === 'NETWORK_ERROR' ||
+			err.status === 502 ||
+			err.status === 504
+		);
+	}
 
 	function onFileChange(event: Event) {
 		const input = event.target as HTMLInputElement;
@@ -46,13 +91,19 @@
 
 	/** Ouvre le modal de confirmation (n'envoie RIEN — DC-D3). */
 	function requestImport() {
-		if (!selectedFile || importing) return;
+		if (!selectedFile || importing || imported || unknownOutcome) return;
 		errorMsg = null;
 		confirmOpen = true;
 	}
 
 	/** Mappe une erreur d'import en message lisible (AC20). */
 	function importErrorMessage(err: unknown): string {
+		if (issueInconnue(err)) {
+			return i18nMsg(
+				'admin-restore-error-unknown-outcome',
+				"La réponse du serveur n'est pas arrivée : l'import a pu aboutir. Reconnectez-vous pour vérifier l'état de l'installation.",
+			);
+		}
 		if (isApiError(err)) {
 			switch (err.code) {
 				case 'IMPORT_VERSION_INCOMPATIBLE': {
@@ -95,39 +146,44 @@
 		// `importing = true` en TOUT PREMIER (avant de fermer le modal et avant
 		// tout `await`) — garde de ré-entrance définitive contre un double-clic
 		// « Confirmer » sur cette opération destructrice (review P1).
-		if (!selectedFile || importing) return;
+		if (!selectedFile || importing || imported) return;
 		importing = true;
 		confirmOpen = false;
 		errorMsg = null;
+		unknownOutcome = false;
 
-		let imported = false;
 		try {
-			await uploadFullImport(selectedFile);
-			imported = true;
+			// Story 31-1b (AC19, C-31-1-39) : au succès, AUCUNE redirection ici — le
+			// panneau dit ce que la restauration a rendu, et attend « Se reconnecter ».
+			imported = await uploadFullImport(selectedFile);
 		} catch (err) {
+			unknownOutcome = issueInconnue(err);
 			const msg = importErrorMessage(err);
 			errorMsg = msg;
 			toast.error(msg);
 		} finally {
 			importing = false;
 		}
+	}
 
-		// DC-D4 : au succès, la session est invalidée (refresh_tokens remplacés).
-		// logout best-effort PUIS redirection **garantie** vers /login — même si
-		// `logout()` jetait, on redirige quand même (review P1 : ne pas laisser
-		// une exception logout masquer la redirection après un import réussi, ce
-		// qui afficherait une fausse erreur sur une installation déjà remplacée).
-		if (imported) {
-			toast.success(
-				i18nMsg('admin-restore-toast-success', 'Import réussi — vous allez être déconnecté.'),
-			);
-			try {
-				await authState.logout();
-			} catch {
-				// best-effort — le cookie est déjà invalide côté serveur.
-			}
-			window.location.replace('/login');
+	/**
+	 * Story 31-1b (AC19) — clic « Se reconnecter », après tout import réussi.
+	 *
+	 * DC-D4 : la session est invalidée (refresh_tokens remplacés). logout
+	 * best-effort PUIS redirection **garantie** vers /login — même si `logout()`
+	 * jetait, on redirige quand même (review P1 : ne pas laisser une exception
+	 * logout masquer la redirection après un import réussi, ce qui afficherait
+	 * une fausse erreur sur une installation déjà remplacée).
+	 */
+	async function relogin() {
+		if (reconnecting) return;
+		reconnecting = true;
+		try {
+			await authState.logout();
+		} catch {
+			// best-effort — le cookie est déjà invalide côté serveur.
 		}
+		window.location.replace('/login');
 	}
 </script>
 
@@ -150,6 +206,8 @@
 		</p>
 	</header>
 
+	<BackupEnvNotice />
+
 	<div class="flex flex-col gap-2">
 		<label class="text-sm font-medium text-text" for="admin-restore-file">
 			{i18nMsg('admin-restore-file-label', 'Fichier .keshbackup à importer')}
@@ -159,7 +217,7 @@
 			type="file"
 			accept=".keshbackup"
 			onchange={onFileChange}
-			disabled={importing}
+			disabled={importing || imported !== null || unknownOutcome}
 			aria-describedby={errorMsg ? 'admin-restore-error' : undefined}
 			data-testid="admin-restore-file-input"
 			class="text-sm"
@@ -170,10 +228,59 @@
 		<div
 			id="admin-restore-error"
 			role="alert"
-			class="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
+			class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
 			data-testid="admin-restore-error"
 		>
 			{errorMsg}
+		</div>
+	{/if}
+
+	{#if imported}
+		<!-- Story 31-1b (AC19) : ce que la restauration a rendu, lu avant la reconnexion. -->
+		<div
+			role="status"
+			class="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-text"
+			data-testid="admin-restore-success"
+		>
+			<p>
+				{i18nMsg(
+					'admin-restore-success',
+					"Import réussi : l'installation est celle de la sauvegarde. Reconnectez-vous avec les identifiants de la sauvegarde.",
+				)}
+			</p>
+			{#if typeof imported.filesRestored === 'number'}
+				<p class="mt-1" data-testid="admin-restore-files-restored">
+					{i18nMsg('admin-restore-files-restored', 'Pièces justificatives restaurées : { $count }.', {
+						count: imported.filesRestored,
+					})}
+				</p>
+			{/if}
+		</div>
+		{#if imported.filesMissing}
+			<div
+				role="status"
+				class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm text-text"
+				data-testid="admin-restore-files-missing"
+			>
+				{i18nMsg(
+					'admin-restore-files-missing',
+					"Pièces référencées introuvables après la restauration : { $count }. Restaurez le dossier des documents depuis une autre sauvegarde.",
+					{ count: imported.filesMissing },
+				)}
+			</div>
+		{/if}
+	{/if}
+
+	{#if imported || unknownOutcome}
+		<div>
+			<Button
+				onclick={relogin}
+				disabled={reconnecting}
+				aria-busy={reconnecting}
+				data-testid="admin-restore-relogin"
+			>
+				{i18nMsg('admin-restore-action-relogin', 'Se reconnecter')}
+			</Button>
 		</div>
 	{/if}
 
@@ -181,7 +288,7 @@
 		<Button
 			variant="destructive"
 			onclick={requestImport}
-			disabled={!selectedFile || importing}
+			disabled={!selectedFile || importing || imported !== null || unknownOutcome}
 			aria-busy={importing}
 			data-testid="admin-restore-import-button"
 		>
@@ -202,7 +309,7 @@
 			<Dialog.Description>
 				{i18nMsg(
 					'admin-restore-confirm-body',
-					"Cette action va remplacer TOUTES les données de l'installation actuelle. Une sauvegarde de l'état actuel sera créée côté serveur avant l'import. Vous serez déconnecté et devrez vous reconnecter avec les identifiants de l'instance importée.",
+					"Cette action va remplacer TOUTES les données de l'installation actuelle. Une sauvegarde de l'état actuel sera créée côté serveur avant l'import. À la fin, votre session sera fermée : vous vous reconnecterez avec les identifiants de l'instance importée.",
 				)}
 			</Dialog.Description>
 		</Dialog.Header>

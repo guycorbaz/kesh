@@ -696,7 +696,16 @@ const ATTENDU = {
 	// [id]/+page.svelte` 27 → 30 (lien vers la facture, aperçu), `AttachDocumentPicker.svelte`
 	// 0 → 15 (fichier neuf) ; `supplier-invoices/import/+page.svelte` 34 → 34 (la date d'import
 	// passe à `importDateOf`, sans site i18n). Que des littéraux : les autres compteurs inchangés.
-	sitesTotal: 2279,
+	// Story 31-1b (#503, restaurer une installation neuve) : **2279 → 2289** (+10), mesuré par
+	// la collecte de ce test et recompté par `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('` aux deux
+	// bornes (`1ee0583e` → HEAD de `story/31-1b`) : `AdminBackupPanel.svelte` 8 → 10 (pièces non
+	// incluses, plafond d'import dépassé), `BackupEnvNotice.svelte` 0 → 1 (fichier neuf, avis
+	// `.env`), `AdminRestorePanel.svelte` 16 → 20 (+5 : succès, pièces restaurées, pièces
+	// manquantes, « Se reconnecter », issue inconnue ; −1 : le toast de succès retiré),
+	// `routes/onboarding/+page.svelte` 57 → 59 (relais `msg` : invite et lien),
+	// `routes/onboarding/restore/+page.svelte` 0 → 1 (fichier neuf, retour à l'assistant).
+	// Que des littéraux : les autres compteurs inchangés.
+	sitesTotal: 2289,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

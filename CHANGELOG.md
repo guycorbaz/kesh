@@ -27,6 +27,15 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   import y est reçu de même ; l'import va au bout même si le navigateur ou le proxy abandonne l'attente. L'export porte
   les en-têtes `X-Kesh-Backup-Files` et `X-Kesh-Backup-Files-Not-Included`, et `X-Kesh-Backup-Exceeds-Import-Limit`
   quand l'archive dépasse le plafond d'import.
+- **Restaurer une installation neuve depuis l'assistant** ([#503](https://github.com/guycorbaz/kesh/issues/503)).
+  Après `/setup`, le premier écran de l'assistant propose **« Restaurer une sauvegarde »** à l'administrateur, jusqu'au
+  choix entre démonstration et production : la restauration sur une machine neuve ne passe plus par une société
+  configurée ou une démonstration chargée pour rien. Le manuel d'administration en donne la procédure pas à pas
+  (*Restaurer sur une nouvelle machine*).
+- **Les écrans de sauvegarde disent ce que le fichier contient** : un avis permanent rappelle que la configuration du
+  serveur (`.env`) n'y est pas ; après un export, l'écran annonce les pièces qu'il n'a pas pu inclure et prévient si le
+  fichier dépasse la taille d'import autorisée ; après un import, il annonce les pièces restaurées et les pièces
+  manquantes.
 
 ### Modifié
 
@@ -37,6 +46,12 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 - ⚠️ **Une sauvegarde de la 0.15.0 ne s'importe pas dans une 0.14.x** : celle-ci la refuse avec « Fichier de sauvegarde
   invalide ou corrompu » (`INVALID_BACKUP_STRUCTURE`), devant une sauvegarde pourtant saine. La sauvegarde de sécurité
   prise avant chaque import emporte elle aussi les pièces : elle pèse la base **plus** le dossier des documents.
+- **Après un import réussi, l'écran attend « Se reconnecter »** au lieu de déconnecter aussitôt : le bilan de l'import
+  (pièces restaurées, pièces manquantes) se lit avant la reconnexion.
+- **L'export et l'import complets échappent au délai de 30 s de l'écran** : l'écran attend jusqu'à une heure, sans
+  jamais renvoyer la demande. Si la réponse d'un import ne revient pas (délai dépassé, connexion coupée, proxy qui
+  abandonne en 502 ou 504), l'écran le dit — « l'import a pu aboutir, reconnectez-vous pour vérifier » — au lieu
+  d'inviter à recommencer un remplacement peut-être déjà fait.
 
 - **Chaîne d'outils portée à Rust 1.97.1**, sans effet fonctionnel : `rust-toolchain.toml` et l'image Docker de
   construction (`rust:1.97-bookworm`) suivent la même version, et un test du dépôt rougit désormais si l'une bouge sans

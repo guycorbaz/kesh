@@ -639,9 +639,10 @@ async fn restore_body(
     // ⚠️ La table **reste dans `TABLES_TO_TRUNCATE`**, et il le faut : la
     // constante sert aussi à produire l'export (la boucle de
     // `export_installation`), à compter les tables du manifeste
-    // (`build_keshbackup`) et à REJETER un manifeste portant une table
-    // hors inventaire (`import.rs:129`). L'en sortir rendrait **tout backup
-    // existant inimportable**.
+    // (`write_keshbackup`, `kesh-api/src/admin_backup/export.rs`) et à REJETER
+    // un manifeste portant une table hors inventaire (`parse_and_verify`,
+    // `kesh-api/src/admin_backup/import.rs`, contrôle « hors inventaire
+    // applicatif »). L'en sortir rendrait **tout backup existant inimportable**.
     for &table in TABLES_TO_TRUNCATE {
         if table == "onboarding_state" || table == "audit_log" {
             continue;

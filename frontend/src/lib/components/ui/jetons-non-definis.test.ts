@@ -117,7 +117,8 @@ const NON_DEFINIS: Record<string, string> = {
 	card: '#645 — jeton shadcn, fond de carte',
 	'error-soft': '#645 — fond pâle des bandeaux de l\'import bancaire',
 	'warning-soft': '#645 — fond pâle des avertissements de l\'import',
-	danger: '#645 — cadres d\'erreur de la sauvegarde et de la restauration',
+	// `danger` retiré par la Story 31-1b (#503) : ses deux seuls emplois, les cadres d'erreur
+	// de la sauvegarde et de la restauration, passent au jeton défini `destructive`.
 	'surface-hover': '#645 — survol des lignes de trois listes',
 };
 
