@@ -394,3 +394,44 @@ l'orchestrateur.*
   (doc-comment de conventions rattaché à `emit_report_audit`) ; R2 au paragraphe *Ce que les gardes ne voient pas* ;
   R5 = F5 sans objet ((v-b) retiré).
 - **Réversible** : oui.
+- *Annoté le 2026-10-24 (validation P4) : trois points de ce choix étaient inexacts à leur date et sont rectifiés par
+  C-32-3-32 — (v-1) ne cherchait que `.pool()`, l'appel qualifié `Lecture::pool(&x)` lui échappait (P4-1) ;
+  « `forbid(unsafe_code)` sur le crate — impossible » ne suit pas du fait cité, les `unsafe` de `config.rs` étant tous
+  sous `#[cfg(test)]`, et le `forbid` de module « signalé à l'arbitrage, non retenu » est **retenu** (P4-2) ; « #431 ne
+  couvre que les dépôts » était trop étroit, et le traçage, déjà fait (P4-3). Le texte ci-dessus reste comme relevé
+  daté.*
+
+---
+
+*Choix C-32-3-32 : remédiation de la validation P4 (2026-10-24, agent de remédiation, Opus 5.5) ; P4-2 sur décision
+de l'orchestrateur.*
+
+### C-32-3-32 — (v-1) couvre toute forme d'appel de l'accesseur ; `forbid(unsafe_code)` sur `services/`
+
+- **Contexte** : P4 (passe ciblée, Haiku), **0/0/1/4**, tous nés de la remédiation P3. P4-1 (MEDIUM) : (v-1) ne
+  cherchait que `.pool()` ; une fois `pool()` élargi, `Lecture::pool(&x)` ou `.map(Lecture::pool)` dans un handler
+  compilaient et la laissaient verte, alors que la fiche disait qu'elle nommait ce rouge. P4-2 (LOW) : le rejet du
+  `forbid(unsafe_code)` sur le crate reposait sur une conclusion qui ne suivait pas du fait cité.
+- **Retenu** :
+  - (v-1) : motif `\.\s*pool\s*\(|::\s*pool\b`, lignes de code hors commentaires, tout `src/` hors `services/` ;
+    baseline vide revérifiée le 2026-10-24 ; `\bpool\b` écarté (il attraperait le champ `state.pool` et
+    `self.pool.clone()`) ; témoins positifs des trois formes, témoin négatif `state.pool` ; mutation **M11-bis**
+    (élargissement et `Lecture::pool(&state.lecture())` dans `get_balance_sheet` → (v-1) rouge). Restent hors
+    d'atteinte, écrits à *Ce que les gardes ne voient pas* : l'appel coupé entre deux lignes entre `.`/`::` et
+    `pool`, un commentaire de bloc glissé dans l'appel, un identifiant fabriqué par une macro.
+  - **Décision de l'orchestrateur** : `#![cfg_attr(not(test), forbid(unsafe_code))]` en tête de `services/mod.rs`
+    (AC1) ; mutation **M14** (`transmute::<Lecture, Trace>` dans `poignees.rs` → la lib ne compile pas). La forme
+    `cfg_attr(not(test), …)` est celle qu'arrête l'orchestrateur ; au niveau du module, un `#![forbid(unsafe_code)]`
+    nu serait aussi valide et couvrirait en plus les tests unitaires de `services/`, qui n'emploient pas `unsafe` —
+    écart sans effet sur la mutation, jouée sur la lib hors `cfg(test)`. `unsafe`/`transmute` quittent *Ce que les
+    gardes ne voient pas* pour `services/` et y restent **hors** de `services/`.
+  - LOW : P4-3 — L2 : #431 couvre aussi des sites de route (`unvalidate`, Story 15-8b) ; le commentaire du 2026-10-24
+    sur #431 nomme les sept fonctions d'audit : « tracé sur #431 ». P4-4 — (vii) : retrait des `/* … */` sur le corps
+    entier, blocs de plusieurs lignes compris. P4-5 — (b′) : `crates/kesh-db/src/test_fixtures.rs:118` ; table
+    paramétrée par des symboles, les dates de l'exercice seedé étant les seuls littéraux.
+- **Écartées** : `#![cfg_attr(not(test), forbid(unsafe_code))]` sur **le crate** — les tests de `config.rs` n'y
+  feraient pas obstacle, mais `routes/invoices.rs:1156` emploie `tokio::join!`, dont l'expansion porte un bloc
+  `unsafe` (tokio 1.52.3, `src/macros/join.rs:176`, `Pin::new_unchecked`) que le lint `unsafe_code` refuserait
+  vraisemblablement : un changement de tout le crate, hors du motif, que cette fiche ne peut vérifier sans compiler ;
+  la 32-6 ou une story dédiée peut le reprendre. Pour la même raison, un service n'emploie pas `tokio::join!`.
+- **Réversible** : oui.

@@ -3,7 +3,7 @@
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-32-3`, branche `story/32-3` partie de la spike
-`275e9b97`. Registre : `epic-32-choix-autonomes-323.md` (C-32-3-1 à C-32-3-31). Clé courte : `323`. Issue de l'epic :
+`275e9b97`. Registre : `epic-32-choix-autonomes-323.md` (C-32-3-1 à C-32-3-32). Clé courte : `323`. Issue de l'epic :
 #723 (CR « Serveur MCP intégré à Kesh ») ; issue du défaut conservé : #729 (export du grand livre tracé en consultation) ;
 issue de l'écart antérieur du manuel : #730 (rôle Consultation et clés « sans écriture ») ; toutes trois en `refs`
 seulement. Les numéros de ligne cités sont ceux de `275e9b97`.*
@@ -61,8 +61,10 @@ perdre en silence la ligne d'audit d'un rapport lorsque le MCP lira par une conn
    changerait le comportement, ce que cette story s'interdit : **#729** (`bug`, P2, ouverte), en `refs` (C-32-3-8).
 6. **Limitation L2 conservée** : les traces de lecture sont écrites en `actor_type='user'` même pour une requête par
    clé d'API (commentaire l. 1422-1425). Inchangé ici ; la question de l'acteur d'une clé MCP revient à 32-5/32-6.
-   C'est le défaut de **#431** (« le traçage par repository perd l'attribution par clé API »), sur sept sites que #431
-   ne nomme pas — elle ne couvre que les dépôts de `kesh-db` : traçage demandé à l'orchestrateur (C-32-3-31).
+   C'est le défaut de **#431** (« le traçage par repository perd l'attribution par clé API »), sur sept sites que
+   #431 ne nommait pas — son fil couvre des dépôts de `kesh-db` et des sites de route (la dévalidation `unvalidate`,
+   Story 15-8b), non ces sept fonctions d'audit : **tracé sur #431** par un commentaire du 2026-10-24 qui les nomme
+   (C-32-3-31, C-32-3-32).
 7. **Le plan comptable** (`routes/accounts.rs`) n'a qu'**une** lecture, `list_accounts` (l. 188-212) :
    `get_company_for` (`helpers.rs:66`, erreur `Internal` si la société manque), `accounts::list_by_company`
    (`&MySqlPool`), puis `letterings::letterable_account_ids` sur une connexion acquise du pool — trois lectures, aucune
@@ -111,7 +113,8 @@ handler (routes/…)            service (services/…)                        po
   seule couche de services** (`pub(in crate::services) fn pool(&self) -> &MySqlPool`) : celui de la `Lecture` passe aux
   dépôts, aux générateurs et à `helpers::company_for_ids`, celui de la `Trace` est **destiné** aux seules fonctions
   d'audit de `services/rapports.rs`. Hors de `services`, le compilateur refuse `lecture.pool()` (C-32-3-17) — c'est
-  la **garde principale**. **Dans** `services`, rien ne prouve qu'un service n'emploie pas le pool d'une poignée à
+  la **garde principale** ; dans `services`, `#![cfg_attr(not(test), forbid(unsafe_code))]` ferme par le
+  compilateur tout `unsafe`, `transmute` d'une poignée compris (AC1, C-32-3-32). **Dans** `services`, rien ne prouve qu'un service n'emploie pas le pool d'une poignée à
   autre chose qu'à son usage : la fiche ne promet **aucune preuve lexicale** de cette inaccessibilité (C-32-3-31) ;
   l'AC10 (v) pose deux gardes simples, l'AC9 prouve le comportement à l'exécution, et le paragraphe *Ce que les gardes
   ne voient pas* (AC10) dit le reste, que tiennent la revue de code puis la 32-6. En production, fabriqués
@@ -148,7 +151,16 @@ handler (routes/…)            service (services/…)                        po
    dans la garde). Un commentaire de bloc `/* … */` n'est **pas** retiré par la règle : il est lu comme du code et ne
    peut donc produire, **dans un volet d'absence ou d'égalité**, qu'un **faux rouge**, jamais masquer une ligne — d'où
    l'absence d'interdiction (C-32-3-30). Le seul volet de **présence**, l'AC10 (vii), ôte au contraire les commentaires
-   avant de chercher (C-32-3-31). Chaque élément public porte son doc-comment.
+   avant de chercher (C-32-3-31). Chaque élément public porte son doc-comment. **`services/mod.rs` porte, parmi ses
+   attributs internes de tête, `#![cfg_attr(not(test), forbid(unsafe_code))]`** (C-32-3-32) : il s'applique au module
+   et à ses sous-modules, donc à tout `services/`, dans la compilation de la lib que lient le binaire et les tests
+   d'intégration ; un `unsafe` dans `services/` — `std::mem::transmute::<Lecture, Trace>` compris — **ne compile
+   pas** (mutation M14). Un `forbid` ne se lève par aucun `allow` plus bas. Conséquence pour le motif : un service
+   n'emploie pas une macro dont l'expansion porte un bloc `unsafe` — `tokio::join!` en est une (tokio 1.52.3,
+   `macros/join.rs:176`, `Pin::new_unchecked`), raisonné, non compilé ; il lit en séquence. Le crate entier ne prend
+   pas l'attribut : ses tests de `config.rs` (l. 1691 et suivantes, sous `#[cfg(test)] mod tests`, l. 1665-1666) n'y
+   feraient pas obstacle sous `cfg_attr(not(test), …)`, mais `routes/invoices.rs:1156` emploie `tokio::join!`, que le
+   lint refuserait vraisemblablement — un changement de tout le crate, hors du motif, invérifiable sans compiler.
 2. **AC2 — contrôle d'accès dans le service, en tête.** Chaque fonction de service publique commence par
    `acces.exiger(…)?` **avant toute lecture** — y compris avant la validation de la demande. Les exigences sont
    celles du tableau de l'AC6 ; pour le canal API, elles **répliquent** le RBAC actuel des routes (fait 8) : le
@@ -167,7 +179,8 @@ handler (routes/…)            service (services/…)                        po
    32-6 ; en 32-3, les deux poignées enveloppent `pool` » (C-32-3-22). Aucune conversion `Lecture → Trace` ni
    `Trace → Lecture`, **où que ce soit** dans `src/`, `services/` compris ; aucun `impl` de trait sur les poignées.
    La garde (v-2) de l'AC10 ne laisse `Lecture::new(`/`Trace::new(` qu'au câblage de `lib.rs`, ce qui attrape la
-   conversion par reconstruction ; une conversion par un autre moyen (`impl From`, méthode de plus, `transmute`)
+   conversion par reconstruction ; un `transmute` dans `services/` ne compile pas (`forbid(unsafe_code)`, AC1,
+   C-32-3-32) ; une conversion par un autre moyen (`impl From`, méthode de plus, `transmute` **hors** de `services/`)
    n'est vue que par la revue (C-32-3-31).
 
 ### B — Les pilotes
@@ -383,13 +396,17 @@ handler (routes/…)            service (services/…)                        po
      `asof` est **celui qu'expose le `Rapport`**, lu avant `afficher`/`exporter` — le test ne recalcule pas la date, et
      ne peut donc pas franchir minuit UTC entre l'attendu et l'écrit ; une assertion de plus vérifie que cette date est
      celle du contenu (`AgedReceivables.as_of`) (C-32-3-23). La table est une **constante unique** du fichier de test,
-     que (b′) relit ;
+     que (b′) relit — **paramétrée** : ses cellules portent les **symboles** `fy`, `debut`, `fin`, `du`, `au`,
+     `compte`, `pid`, `asof`, résolus à chaque jeu (en (b) sur le `Rapport`, en (b′) comme dit ci-dessous), et non des
+     dates écrites en dur (C-32-3-32) ;
    - (b′) **la même table, par la route** : pour chacune des dix-huit lignes, la requête HTTP de la route du tableau de
      l'AC6 (routeur `kesh_api::build_router` sur `AppState::new_for_tests`, jeton JWT d'un utilisateur seedé, comme
      `reports_e2e.rs:54-80`, montage recopié dans `services_motif.rs`), puis **exactement une** ligne neuve dans
      `audit_log`, d'`action` et de `details_json` égaux à la ligne de la table — chaque ligne est jouée avec **la même
      demande** qu'en (b) : `debut`/`fin` égalent les bornes de la demande quand elle en porte, et, pour la ligne sans
-     bornes, celles de l'exercice seedé (`2020-01-01`, `2030-12-31`, `test_fixtures.rs:118`), connues du test ; `asof`
+     bornes, celles de l'exercice seedé (`2020-01-01`, `2030-12-31`, `crates/kesh-db/src/test_fixtures.rs:118`, dans
+     `seed_accounting_company`) — les seuls littéraux de date, liés aux symboles `debut`/`fin` de cette ligne-là —,
+     connues du test ; `asof`
      est accepté s'il égale la date UTC du jour lue **avant ou après** la requête (seul point où le test ne lit pas le
      `Rapport`). C'est le seul volet qui voie un **handler** appeler le mauvais **service** (un `report_type` faux) ; le
      mauvais **usage** (un export tracé `report.generated`, la forme de #729), il le voit avec l'AC10 (vii)
@@ -415,10 +432,14 @@ handler (routes/…)            service (services/…)                        po
     - (v) **deux gardes simples sur les poignées** (C-32-3-31 ; les inventaires (v-a) à (v-e) de la P2 sont
       **retirés**) :
       - **(v-1)** aucune ligne de code de `crates/kesh-api/src/` **hors** de `services/` (récursif) ne contient
-        `.pool()` — baseline vide au relevé du 2026-10-24 (`grep -rnE "\.pool\(\)" crates/kesh-api/src` → rien ;
-        `self.pool.clone()` et `state.pool` ne sont pas `.pool()`). Le compilateur refuse déjà `lecture.pool()` hors de
-        `services` ; la garde nomme le rouge si une visibilité élargie (M11) rendait l'appel possible d'un handler.
-        Elle ne regarde **pas** l'intérieur de `services/` ;
+        d'**appel ni de chemin** de l'accesseur `pool`, motif `\.\s*pool\s*\(|::\s*pool\b` (C-32-3-32) : la forme
+        méthode (`lecture.pool()`, `. pool (`), l'appel qualifié (`Lecture::pool(&x)`, `<Lecture>::pool(&x)`) et le
+        chemin passé comme fonction (`.map(Lecture::pool)`). Baseline vide au relevé du 2026-10-24 (`grep -rnE
+        "\.\s*pool\s*\(|::\s*pool\b" crates/kesh-api/src` → rien ; `self.pool.clone()` et `state.pool` — le **champ**
+        — n'y tombent pas, raison pour laquelle le motif n'est pas `\bpool\b`). Un chemin de module nommé `pool`
+        (`sqlx::pool::…`) rougirait : faux rouge d'un volet d'absence, à amender en connaissance de cause. Le
+        compilateur refuse déjà ces appels hors de `services` ; la garde nomme le rouge si une visibilité élargie
+        (M11, M11-bis) les rendait possibles d'un handler. Elle ne regarde **pas** l'intérieur de `services/` ;
       - **(v-2)** les lignes de code de tout `crates/kesh-api/src/` qui contiennent `\bLecture::new\(` ou
         `\bTrace::new\(` (frontière de mot : `DetailsTrace::new(` n'est pas compté) sont **exactement deux**, au câblage
         de `lib.rs` : le corps de `AppState::lecture()` (`Lecture::new(self.pool.clone())`, chemin éventuel compris) et
@@ -437,18 +458,19 @@ handler (routes/…)            service (services/…)                        po
       - un accesseur d'un autre nom, une visibilité élargie de `pool()` employée seulement dans `services/`, un
         `impl Deref`/`AsRef`/`From`/`Borrow` sur une poignée, une méthode de plus dans `poignees.rs` ;
       - un alias de type ou un ré-export (`type P = sqlx::MySqlPool;`, `pub use sqlx::MySqlPool as P;`), une macro ;
-      - `unsafe` et `std::mem::transmute::<Lecture, Trace>` — le crate n'a pas `#![forbid(unsafe_code)]`
-        (`grep -rn "forbid(unsafe" crates/kesh-api/src/lib.rs` → rien), et ne peut pas le prendre en entier
-        (`config.rs` emploie `unsafe` dans ses tests d'environnement, l. 1691, 1791, 1839) ; un `#![forbid(unsafe_code)]`
-        **de module**, en tête de `services/mod.rs`, fermerait cette forme dans `services/` par le compilateur — non
-        retenu par cette fiche, signalé à l'arbitrage (C-32-3-31).
+      - pour (v-1), une fois `pool()` élargi : un appel coupé **entre deux lignes** entre `.` ou `::` et `pool`
+        (`lecture.` puis `pool()` à la ligne suivante — rustfmt ne l'écrit pas, le compilateur l'accepte), un
+        commentaire de bloc glissé dans l'appel (`lecture./* */pool()`), un identifiant fabriqué par une macro ;
+      - `unsafe` et `std::mem::transmute::<Lecture, Trace>` **hors** de `services/` (un handler) : le
+        `forbid(unsafe_code)` de l'AC1 ne couvre que `services/` (C-32-3-32). Dans `services/`, cette forme est fermée
+        par le compilateur.
 
       Ce que l'**exécution** en voit : l'AC9 (a) fait échouer (1792) toute écriture sur la `Lecture`, **sur les
       branches que les fixtures exercent** ; l'AC9 (b), M1 et M1-témoin montrent qu'une trace partie sur la `Lecture`
       est vue. ⚠️ **La garantie réelle contre une écriture sur la `Lecture` est celle de la 32-6** — la lecture seule
       imposée par la base, selon la décision de Guy sur Q11. D'ici là, et pour `trace.pool()` employé hors des
       fonctions d'audit — qu'aucune base ne refusera, la `Trace` ayant le droit d'écrire —, c'est la **revue de code**
-      de la 32-3 et de chaque rollout qui lit chaque `.pool()` de `services/` ;
+      de la 32-3 et de chaque rollout qui lit chaque appel de `pool` de `services/` (`.pool(`, `::pool`) ;
     - (vi) la règle de l'AC1 (lignes de code de `services/` portant `axum`, `AppState` ou `CurrentUser` : exactement
       les deux lignes attendues d'`acces.rs`) ;
     - (vii) **le bon usage à chaque handler** (C-32-3-25) : dans `routes/reports.rs`, le corps de chaque
@@ -456,14 +478,17 @@ handler (routes/…)            service (services/…)                        po
       `.exporter(` et ne contient pas `.afficher(` ; celui de chaque `pub async fn get_…` contient `.afficher(` et ne
       contient pas `.exporter(` ; le test affirme **neuf** corps de chaque sorte (un chemin faux ou un renommage ne
       rend pas le volet vide). La **présence** se cherche dans le corps **ôté de ses commentaires** — lignes de
-      commentaire (AC1), partie de ligne qui suit `//`, texte entre `/*` et `*/` —, sans quoi un commentaire qui cite
-      l'appel ferait un faux vert ; l'**absence** se cherche sur les lignes de code de l'AC1, où un commentaire ne peut
-      produire qu'un faux rouge. Un `//` dans une chaîne littérale tronquerait la ligne et ne pourrait que masquer un
+      commentaire (AC1), partie de ligne qui suit `//`, texte entre `/*` et `*/` **y compris quand le bloc s'étend sur
+      plusieurs lignes** (le retrait des blocs se fait sur le corps entier, non ligne à ligne, C-32-3-32) —, sans quoi
+      un commentaire qui cite l'appel ferait un faux vert ; l'**absence** se cherche sur les lignes de code de l'AC1,
+      où un commentaire ne peut produire qu'un faux rouge. Un `//` dans une chaîne littérale tronquerait la ligne et ne pourrait que masquer un
       appel réel, donc rougir (aucun corps de handler n'en porte au relevé du 2026-10-24 : `grep -n '"[^"]*//'
       crates/kesh-api/src/routes/reports.rs` → rien).
 
     Chaque volet rend le fichier et la ligne fautifs. Contrôle positif écrit dans le test : chaque motif cherché est
-    d'abord trouvé dans un texte témoin (dont, pour (vii), un appel cité en commentaire, qui doit **ne pas** compter),
+    d'abord trouvé dans un texte témoin (dont, pour (vii), un appel cité en commentaire, y compris dans un bloc
+    `/* … */` de plusieurs lignes, qui doit **ne pas** compter ; pour (v-1), les trois formes `lecture.pool()`,
+    `Lecture::pool(&l)` et `.map(Lecture::pool)`, qui doivent compter, et `state.pool`, qui ne doit pas),
     pour qu'une faute de frappe dans le motif ne rende pas la garde vide ; les balayages récursifs de `src/` affirment un nombre plancher
     de fichiers lus (comme `admin_pat_denied_e2e.rs`, l. 480-485), et celui de `services/` le nombre exact de ses
     cinq fichiers, pour qu'un chemin faux ne les rende pas vides.
@@ -547,6 +572,14 @@ handler (routes/…)            service (services/…)                        po
       ne rougit rien : c'est une forme que les gardes ne voient pas (AC10), consignée comme telle. *(M11′ et M11″, qui
       ne visaient que les inventaires retirés en P3, sont retirées avec eux : `impl Deref` et l'accesseur d'un autre
       nom sont au paragraphe *Ce que les gardes ne voient pas*, C-32-3-31.)*
+    - **M11-bis — pool appelé d'un handler par chemin qualifié** (C-32-3-32) : le même élargissement **et**, dans
+      `get_balance_sheet`, `generate_balance_sheet(Lecture::pool(&state.lecture()), …)` → AC10 (v-1) rougit (une ligne
+      `::pool` hors de `services/`) ; c'est la forme que le motif `\.pool\(\)` d'avant la P4 laissait verte.
+    - **M14 — `unsafe` dans `services/`** (C-32-3-32) : dans `services/poignees.rs`, une fonction
+      `fn m14(l: Lecture) -> Trace { unsafe { std::mem::transmute::<Lecture, Trace>(l) } }` → la lib de `kesh-api` **ne
+      compile pas** (`forbid(unsafe_code)`, AC1) : gate `cargo build -p kesh-api --lib`, et le binaire `services_motif`
+      ne se construit pas. Le Dev Agent Record recopie le message du compilateur ; c'est un rouge de compilation, non
+      d'assertion, déclaré comme tel.
     - **M12 — `as_of` recalculé** : dans la **branche balance âgée de l'aiguillage `tracer`**, `Utc::now().naive_utc()
       .date()` passé à la fonction d'audit au lieu du `as_of` du `DetailsTrace` → mutation **équivalente hors minuit**,
       déclarée ; l'AC9 (b) la verrait seulement au passage de minuit UTC. Elle est consignée pour dire que la règle
@@ -605,7 +638,7 @@ handler (routes/…)            service (services/…)                        po
   seule), import `FormatExport as ExportFormat` ; gate ciblé.
 - [ ] **T4 (AC5)** — `helpers.rs::company_for_ids` (et délégation de `get_company_for`) ; `services/plan_comptable.rs` ;
   `list_accounts` mince ; gate ciblé.
-- [ ] **T5 (AC12)** — mutations M1 à M13 (M1′, M2′, M2″, M3′) et M1-témoin, chacune tuée ou déclarée
+- [ ] **T5 (AC12)** — mutations M1 à M14 (M1′, M2′, M2″, M3′, M11-bis) et M1-témoin, chacune tuée ou déclarée
   (M1 en échafaudage, M12 équivalente hors minuit).
 - [ ] **T6 (AC7, AC13, AC14)** — contrôles de l'AC7, gate complet et E2E complet au dernier commit de code ; Dev Agent
   Record : chiffres réellement exécutés, liste exacte des fichiers de l'AC7, inventaire de l'AC11.
@@ -623,7 +656,8 @@ handler (routes/…)            service (services/…)                        po
   middleware (`identite_societe`, C-32-3-27) ; pour le MCP, une portée, ou `None`.
 - **R4** — Toute lecture passe par la `Lecture` ; **aucune écriture** sur un chemin de lecture : ce qui doit écrire
   (trace, dernière utilisation) passe par la `Trace`. Le pool d'une poignée ne sort pas de `services`
-  (`pub(in crate::services)`, champ privé — le compilateur le tient) ; **dans** `services`, on n'ouvre aucun autre
+  (`pub(in crate::services)`, champ privé — le compilateur le tient ; aucun `unsafe` dans `services`,
+  `forbid(unsafe_code)` en tête de `services/mod.rs`, C-32-3-32) ; **dans** `services`, on n'ouvre aucun autre
   chemin vers lui et on n'emploie `lecture.pool()` qu'à lire, `trace.pool()` qu'aux fonctions d'audit — ce qu'aucune
   garde ne prouve : la revue le lit, l'AC9 le vérifie à l'exécution, la 32-6 l'imposera par la base pour la
   `Lecture` (AC10, *Ce que les gardes ne voient pas*, C-32-3-31) ; ce qu'un handler doit lire pour sa présentation (le contexte PDF) passe par une
@@ -638,7 +672,8 @@ handler (routes/…)            service (services/…)                        po
   ligne dans la table des traces, au service et par la route.
 - **R8** — La garde lexicale (AC10) s'étend aux handlers migrés ((i)-(ii), (vii)) ; la liste de (v-2) s'amende en
   connaissance de cause, ligne par ligne, jamais par un motif élargi. Elle ne prouve pas l'inaccessibilité du pool : la
-  revue de chaque rollout lit chaque `.pool()` de `services/`.
+  revue de chaque rollout lit chaque appel de `pool` de `services/` (`.pool(`, `::pool`). Un module de services
+  ajouté par la 32-4 hérite du `forbid(unsafe_code)` de `services/mod.rs`, qu'il ne doit pas déplacer.
 
 ### Sites
 
@@ -708,11 +743,12 @@ d'aujourd'hui selon (forme, usage) — huit chemins, l'export du grand livre gar
 - **La fabrication d'une `Lecture` en lecture seule** — décidée par Guy (Q11), réalisée par la 32-6. En 32-3, le
   compilateur refuse `lecture.pool()` hors de `services` (`pub(in crate::services)`, champ privé) : c'est la garde
   principale. La fiche **ne promet pas** de preuve lexicale que le pool d'une poignée est inaccessible **dans**
-  `services` (C-32-3-31) : l'AC10 (v) n'attrape que deux fautes décidables — un `.pool()` hors de `services/` (v-1),
-  un `Lecture::new(`/`Trace::new(` hors du câblage de `lib.rs` (v-2). **Restent à la revue**, d'ici la 32-6 : un
-  service qui écrirait par `lecture.pool()` (l'AC9 (a) le voit sur les branches exercées), un `trace.pool()` hors des
-  fonctions d'audit, un autre accesseur, un `impl` de trait sur une poignée, un alias, un ré-export, une macro,
-  `unsafe` (AC10, *Ce que les gardes ne voient pas*). La garantie réelle contre une écriture sur la `Lecture` est la
+  `services` (C-32-3-31) : l'AC10 (v) n'attrape que deux fautes décidables — un appel ou un chemin de `pool` hors de
+  `services/`, forme méthode ou qualifiée (v-1), un `Lecture::new(`/`Trace::new(` hors du câblage de `lib.rs` (v-2) ;
+  le compilateur ferme `unsafe` dans `services/` (`forbid(unsafe_code)`, AC1, C-32-3-32). **Restent à la revue**,
+  d'ici la 32-6 : un service qui écrirait par `lecture.pool()` (l'AC9 (a) le voit sur les branches exercées), un
+  `trace.pool()` hors des fonctions d'audit, un autre accesseur, un `impl` de trait sur une poignée, un alias, un
+  ré-export, une macro, `unsafe` **hors** de `services/` (AC10, *Ce que les gardes ne voient pas*). La garantie réelle contre une écriture sur la `Lecture` est la
   lecture seule imposée par la base en 32-6 (Q11). Reste **non observable** en 32-3 : un handler qui écrirait par un autre pool
   (`state.pool`) — fermé dans `routes/reports.rs` et `list_accounts` par l'AC10 (i)-(ii), **pas** dans les modules que
   la 32-4 n'a pas encore migrés ; et une `AppState::trace()` qui envelopperait le pool de la `Lecture` — **non
@@ -728,8 +764,9 @@ d'aujourd'hui selon (forme, usage) — huit chemins, l'export du grand livre gar
   `api_keys::touch_last_used` (`auth/api_key.rs:185`, AC11 (2)). Écart **antérieur** à la story, qu'elle ne déplace
   pas (AC14) ; le manuel MCP de la 32-7 (clés en lecture seule) devra en tenir compte.
 - **L2** (`actor_type='user'` via PAT, fait 6) — conservé ; l'acteur d'une clé MCP est à la 32-5/32-6. Même défaut
-  que **#431**, qui ne nomme que les dépôts : un point qu'on ne traite pas se trace — commentaire sur #431 nommant les
-  sept fonctions d'audit des rapports, ou issue neuve, **demandé à l'orchestrateur** (C-32-3-31) ; entrée de la fiche
+  que **#431**, dont le fil couvre des dépôts et des sites de route (`unvalidate`), non les sept fonctions d'audit des
+  rapports : un point qu'on ne traite pas se trace — **tracé sur #431** par un commentaire du 2026-10-24 qui les nomme
+  (C-32-3-31, C-32-3-32) ; entrée de la fiche
   32-5/32-6, dont l'agent MCP laissera des `report.generated` au nom du créateur de sa clé.
 - **Les autres modules de lecture** (écritures, postes ouverts, contacts, factures) — 32-4a/32-4b.
 - **`touch_last_used`** — middleware, hors service (AC11 (2)).
@@ -891,3 +928,36 @@ d'attention* ; `planning-artifacts/epic-32-spike-mcp.md` § 4.3, § 4.4, § 5.3.
     `M11′`, `M11″`, `huit lignes`, `tout chemin`, `attrape`, `Ce que (v)`, `n'étant appelé`, `seules fonctions d'audit` ;
     survivances laissées : relevés datés (Change Log P2, annoté ; registre C-32-3-24, annoté). Prompt de la passe P4 :
     `323-validate-prompt-p4.md` (**ciblée**, une lentille, Haiku, sur le seul diff de cette remédiation).
+    *(Annoté en P4 : (v-1) ne cherchait que `.pool()` et laissait vert l'appel qualifié — élargie, M11-bis ; le
+    `forbid(unsafe_code)` de module signalé à l'arbitrage est **retenu** ; F9 « #431 ne couvre que les dépôts » était
+    trop étroit, et le traçage est fait — C-32-3-32.)*
+- **2026-10-24 — Validation P4** (Haiku, passe **ciblée**, une lentille — regression hunter —, sur le seul diff de la
+  remédiation P3, `1269b07a` ; rapport `kesh-gate-logs/323-validate-p4.md`) : **0/0/1/4** (CRITICAL/HIGH/MEDIUM/LOW),
+  cinq findings, tous nés de la remédiation P3. Sort de chacun (registre C-32-3-32) :
+  - **P4-1 (MEDIUM)** — (v-1) ne voyait que la forme méthode `.pool()` : l'appel qualifié `Lecture::pool(&x)` et le
+    chemin `.map(Lecture::pool)` compilaient une fois `pool()` élargi et laissaient la garde verte, alors que la fiche
+    affirmait qu'elle nommait le rouge. **Corrigé** : motif `\.\s*pool\s*\(|::\s*pool\b` hors commentaires, sur tout
+    `src/` hors `services/`, baseline vide revérifiée ; témoins positifs des trois formes et témoin négatif `state.pool` ;
+    mutation **M11-bis** ; formes restées hors d'atteinte (appel coupé entre deux lignes, commentaire de bloc dans
+    l'appel, identifiant de macro) écrites à *Ce que les gardes ne voient pas* ; phrases de (v-1), R8, *Hors
+    périmètre* et du paragraphe d'exécution alignées ; entrée P3 annotée (non réécrite).
+  - **P4-2 (LOW), décision de l'orchestrateur** — « `forbid` sur le crate : impossible » était inexact (les `unsafe` de
+    `config.rs` sont tous sous `#[cfg(test)] mod tests`). **Retenu** : `#![cfg_attr(not(test), forbid(unsafe_code))]`
+    en tête de `services/mod.rs` (AC1, *Le motif*, AC3, R4, R8) ; mutation **M14** (un `transmute` dans `services/` ne
+    compile pas). Le crate entier ne le prend pas : `routes/invoices.rs:1156` emploie `tokio::join!`, dont l'expansion
+    porte un `unsafe` (tokio 1.52.3, `macros/join.rs:176`) — raisonné, non compilé. `unsafe`/`transmute` quittent *Ce
+    que les gardes ne voient pas* pour `services/`, et y restent **hors** de `services/`.
+  - **P4-3 (LOW)** — L2 : #431 couvre aussi des sites de route (`unvalidate`, Story 15-8b) ; le commentaire du
+    2026-10-24 sur #431 existe : « traçage demandé à l'orchestrateur » devient « tracé sur #431 » (fait 6, *Hors
+    périmètre*).
+  - **P4-4 (LOW)** — (vii) : le retrait des `/* … */` se fait sur le corps entier, blocs de plusieurs lignes compris ;
+    témoin positif ajouté.
+  - **P4-5 (LOW)** — (b′) : chemin complet `crates/kesh-db/src/test_fixtures.rs:118` (`seed_accounting_company`) ; la
+    table est paramétrée par des symboles (`fy`, `debut`, `fin`…), les deux dates de l'exercice seedé étant les seuls
+    littéraux, ceux de la ligne sans bornes.
+  - Propagation grepée sur la fiche, le registre et la clé, par valeur : `.pool()`, `\.pool\(`, `forbid(unsafe`,
+    `transmute`, `unsafe`, `demandé à l'orchestrateur`, `ne couvre que les dépôts`, `ne nomme que les dépôts`,
+    `test_fixtures.rs:118`, `M1 à M13`, `C-32-3-31)` en en-tête ; survivances laissées : relevés datés (Change Log P1 à
+    P3, annotés ; corps de C-32-3-31, annoté). La boucle n'est pas close : un MEDIUM appelle une passe de plus. Prompt
+    de la passe P5 : `323-validate-prompt-p5.md` (**ciblée**, une lentille — regression hunter —, **Sonnet**, sur le
+    seul diff de cette remédiation).
