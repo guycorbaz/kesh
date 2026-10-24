@@ -1038,8 +1038,10 @@ async fn ac11_b_aucune_lecture_d_une_autre_societe(pool: MySqlPool) {
 
 /// C-32-4a-6 — `ecritures::lister` ne lit **pas** la société : un contexte
 /// d'une société qui n'existe pas rend une page vide, non une erreur
-/// (`detail`, `postes_ouverts::lister` et les deux lectures du carnet, qui la
-/// lisent, rendent `Internal` — `ac9_c`). Revue de code P1, A3 = E3 : sans ce
+/// (`ecritures::detail`, `postes_ouverts::lister` et `carnet::lister`, qui la
+/// lisent d'abord ou seule, rendent `Internal` — `ac9_c` ; `carnet::detail` la
+/// lit après le contact et rend `NotFound` —
+/// `ac9_carnet_detail_lit_le_contact_avant_la_societe`). Revue de code P1, A3 = E3 : sans ce
 /// test, un `company_for_ids` ajouté en tête de `lister` laissait tout vert.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac11_b_la_liste_des_ecritures_ne_lit_pas_la_societe(pool: MySqlPool) {
@@ -1120,7 +1122,9 @@ fn libelles(corps: &Value) -> BTreeSet<String> {
 /// `amountMax`, `dateFrom`, `dateTo`, `journal` —, seul, puis les bornes
 /// d'égalité (`dateFrom == dateTo`, `amountMin == amountMax`, acceptées) et
 /// l'inclusion des deux bornes, par la route : le handler, le service et le
-/// dépôt à la fois.
+/// dépôt à la fois. Puis, en ordre rendu (revue de code P2, P2-1), `sortBy`,
+/// `sortDir` et un `offset` positif par la route, et le tri par défaut au
+/// service, demande vide (`EntryDate`, `Desc` : ce que reçoit le MCP).
 ///
 /// Fixture synthétique — trois écritures que chaque filtre sépare :
 /// « Loyer mars » (10.03.2026, Achats, 100, 4000 / 1000), « Vente comptoir »
@@ -1198,6 +1202,55 @@ async fn filtres_des_ecritures_par_la_route(pool: MySqlPool) {
             ));
         }
     }
+
+    // Revue de code P2, P2-1 — le tri et le décalage, en ordre rendu : défaut
+    // (`EntryDate`, `Desc`), `sortDir`, `sortBy` (un ordre distinct des deux
+    // autres), et un `offset` positif. Le total reste celui sans pagination.
+    let ordonnee: Vec<(&str, Vec<&str>)> = vec![
+        ("", vec![F, V, L]),
+        ("sortDir=Asc", vec![L, V, F]),
+        ("sortBy=Description&sortDir=Asc", vec![F, L, V]),
+        ("limit=1&offset=1", vec![V]),
+    ];
+    for (filtre, attendu) in ordonnee {
+        let chemin = format!("/api/v1/journal-entries?{filtre}");
+        let (statut, corps) = get_json(&app, &jwt, &chemin).await;
+        let rendu: Vec<String> = corps["items"]
+            .as_array()
+            .map(|v| {
+                v.iter()
+                    .filter_map(|e| e["description"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if statut != 200 || rendu != attendu || corps["total"] != 3 {
+            echecs.push(format!(
+                "{chemin} (ordonné) : attendu 200 {attendu:?}, total 3 ; rendu {statut} {rendu:?}, total {} — {}",
+                corps["total"], corps["error"]
+            ));
+        }
+    }
+
+    // Au service, demande vide : le tri par défaut que reçoit l'outil MCP de
+    // la 32-9a.
+    let lecture = Lecture::new(pool.clone());
+    let acces = mcp_societe(s.company_id, s.admin_user_id, &[Portee::BooksRead]);
+    match ecritures::lister(&acces, &lecture, DemandeListeEcritures::default()).await {
+        Ok(p) => {
+            let rendu: Vec<&str> = p
+                .items
+                .iter()
+                .map(|e| e.entry.description.as_str())
+                .collect();
+            if rendu != [F, V, L] {
+                echecs.push(format!(
+                    "service, demande vide : attendu {:?}, rendu {rendu:?}",
+                    [F, V, L]
+                ));
+            }
+        }
+        Err(e) => echecs.push(format!("service, demande vide : {e:?}")),
+    }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
 }
 
@@ -1248,7 +1301,7 @@ fn noms(corps: &Value) -> Vec<String> {
 /// absent → `Asc`, ce que reçoit le MCP), au service **et** par la route, puis
 /// la recopie, par le handler, de chacun des paramètres de `GET /api/v1/contacts`
 /// — `search`, `contactType`, `isClient`, `isSupplier`, `includeArchived`,
-/// `sortBy`, `sortDirection`.
+/// `sortBy`, `sortDirection` — et d'un `offset` positif (revue de code P2).
 ///
 /// Fixture synthétique — quatre contacts, dont l'ordre se distingue selon la
 /// colonne : nom (Alpha, Archivé, Mu, Zeta), création (Zeta, Mu, Alpha,
@@ -1354,6 +1407,18 @@ async fn tri_par_defaut_et_filtres_du_carnet(pool: MySqlPool) {
                 corps["total"]
             ));
         }
+    }
+
+    // Revue de code P2, P2-1 — un `offset` positif, recopié par le handler :
+    // la deuxième ligne de l'ordre par défaut, total inchangé.
+    let chemin = "/api/v1/contacts?limit=1&offset=1";
+    let (statut, corps) = get_json(&app, &jwt, chemin).await;
+    let rendu = noms(&corps);
+    if statut != 200 || rendu != [M] || corps["total"] != 3 || corps["offset"] != 1 {
+        echecs.push(format!(
+            "{chemin} : attendu 200 [{M:?}], total 3, offset 1 ; rendu {statut} {rendu:?}, total {}, offset {}",
+            corps["total"], corps["offset"]
+        ));
     }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
 }
