@@ -1213,7 +1213,10 @@ async fn ac8_a_refus_mcp_sans_la_portee(pool: MySqlPool) {
     for portees in [vec![], vec![Portee::InvoicesRead]] {
         let r = plan_comptable::lister(&mcp(&livres, &portees), &lecture, false).await;
         if !matches!(r, Err(AppError::Forbidden)) {
-            echecs.push(format!("AC8 (a) lister portées {portees:?} : {:?}", r.err()));
+            echecs.push(format!(
+                "AC8 (a) lister portées {portees:?} : {:?}",
+                r.err()
+            ));
         }
     }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
@@ -1270,7 +1273,10 @@ async fn cas_c(
     )
     .await;
     if !matches!(refuse, Err(AppError::Forbidden)) {
-        echecs.push(format!("AC8 ({volet}) {svc:?} sans portée : {}", resume(&refuse)));
+        echecs.push(format!(
+            "AC8 ({volet}) {svc:?} sans portée : {}",
+            resume(&refuse)
+        ));
     }
     let controle = jouer(
         svc,
@@ -1492,9 +1498,7 @@ async fn ac8_identite_societe(pool: MySqlPool) {
     }
     match rapports::identite_societe(&api(&livres, Role::Consultation), &lecture).await {
         Ok((nom, _)) if nom == "CI Test Company" => {}
-        autre => echecs.push(format!(
-            "AC8 identite_societe API Consultation : {autre:?}"
-        )),
+        autre => echecs.push(format!("AC8 identite_societe API Consultation : {autre:?}")),
     }
     // Contrôle : sans refus, la société inexistante échoue bien à la lecture.
     let r = rapports::identite_societe(
@@ -1564,10 +1568,7 @@ async fn ac9_a_les_services_lisent_sur_une_lecture_en_lecture_seule(pool: MySqlP
     }
     match plan_comptable::lister(&admin, &lecture, true).await {
         Ok(comptes) if comptes.len() == 5 => {}
-        autre => echecs.push(format!(
-            "AC9 (a) lister : {:?}",
-            autre.map(|c| c.len())
-        )),
+        autre => echecs.push(format!("AC9 (a) lister : {:?}", autre.map(|c| c.len()))),
     }
     if let Err(e) = rapports::identite_societe(&admin, &lecture).await {
         echecs.push(format!("AC9 (a) identite_societe : {e:?}"));
@@ -1575,13 +1576,19 @@ async fn ac9_a_les_services_lisent_sur_une_lecture_en_lecture_seule(pool: MySqlP
     // Les fixtures atteignent bien les branches visées : une ligne de TVA, une
     // ligne de balance âgée.
     match rapports::tva(&admin, &lecture, demande_periode(BORNES, &p), Affichage).await {
-        Ok(r) if !r.afficher(&trace).await.rows.is_empty() => {}
-        Ok(_) => echecs.push("AC9 (a) tva : aucune ligne — fixture inopérante".into()),
+        Ok(r) => {
+            if r.afficher(&trace).await.rows.is_empty() {
+                echecs.push("AC9 (a) tva : aucune ligne — fixture inopérante".into());
+            }
+        }
         Err(e) => echecs.push(format!("AC9 (a) tva : {e:?}")),
     }
     match rapports::balance_agee(&admin, &lecture, Affichage).await {
-        Ok(r) if !r.afficher(&trace).await.rows.is_empty() => {}
-        Ok(_) => echecs.push("AC9 (a) balance_agee : aucune ligne — fixture inopérante".into()),
+        Ok(r) => {
+            if r.afficher(&trace).await.rows.is_empty() {
+                echecs.push("AC9 (a) balance_agee : aucune ligne — fixture inopérante".into());
+            }
+        }
         Err(e) => echecs.push(format!("AC9 (a) balance_agee : {e:?}")),
     }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
@@ -1696,7 +1703,10 @@ async fn ac9_d_service_en_echec_aucune_trace(pool: MySqlPool) {
         period_end: None,
     };
     let r = rapports::bilan(&admin, &lecture, demande, Affichage).await;
-    assert!(r.is_err(), "période hors exercice : le service doit échouer");
+    assert!(
+        r.is_err(),
+        "période hors exercice : le service doit échouer"
+    );
     let traces = traces_depuis(&pool, livres.user_id(), repere).await;
     assert!(traces.is_empty(), "aucune trace attendue : {traces:?}");
 }
@@ -1712,14 +1722,23 @@ const EXCEPTIONS_V1: &[(&str, &str)] = &[];
 
 /// Les deux fabriques de poignées, au câblage de `lib.rs` (v-2).
 const FABRIQUES_V2: &[(&str, &str)] = &[
-    ("lib.rs", "services::poignees::Lecture::new(self.pool.clone())"),
-    ("lib.rs", "services::poignees::Trace::new(self.pool.clone())"),
+    (
+        "lib.rs",
+        "services::poignees::Lecture::new(self.pool.clone())",
+    ),
+    (
+        "lib.rs",
+        "services::poignees::Trace::new(self.pool.clone())",
+    ),
 ];
 
 /// Les deux lignes de code de `services/` qui nomment `axum`, `AppState` ou
 /// `CurrentUser` (AC1, (vi)).
 const RESIDUS_VI: &[(&str, &str)] = &[
-    ("services/acces.rs", "use crate::middleware::auth::CurrentUser;"),
+    (
+        "services/acces.rs",
+        "use crate::middleware::auth::CurrentUser;",
+    ),
     (
         "services/acces.rs",
         "pub fn depuis_api(u: &CurrentUser) -> Self {",
@@ -1860,15 +1879,28 @@ fn ac10_temoins_des_motifs() {
     for forme in ["lecture.pool()", "Lecture::pool(&l)", ".map(Lecture::pool)"] {
         assert!(v1.is_match(forme), "(v-1) doit voir {forme}");
     }
-    assert!(!v1.is_match("state.pool"), "(v-1) ne doit pas voir le champ");
+    assert!(
+        !v1.is_match("state.pool"),
+        "(v-1) ne doit pas voir le champ"
+    );
     let v2 = regex::Regex::new(MOTIF_V2).unwrap();
     assert!(v2.is_match("Lecture::new(p)") && v2.is_match("x::Trace::new(p)"));
-    assert!(!v2.is_match("DetailsTrace::new(p)"), "(v-2) : frontière de mot");
+    assert!(
+        !v2.is_match("DetailsTrace::new(p)"),
+        "(v-2) : frontière de mot"
+    );
     let vi = regex::Regex::new(MOTIF_VI).unwrap();
-    assert!(vi.is_match("use axum::Router;") && vi.is_match("&AppState") && vi.is_match("CurrentUser"));
-    assert!(est_commentaire("   /// doc") && est_commentaire("//! m") && !est_commentaire("x // y"));
+    assert!(
+        vi.is_match("use axum::Router;") && vi.is_match("&AppState") && vi.is_match("CurrentUser")
+    );
+    assert!(
+        est_commentaire("   /// doc") && est_commentaire("//! m") && !est_commentaire("x // y")
+    );
     let temoin = "pub async fn export_x() {\n    // rapport.exporter(&t)\n    /*\n    rapport.exporter(&t)\n    */\n    let a = 1; // r.exporter(\n}\n";
-    assert!(!sans_commentaires(temoin).contains(".exporter("), "(vii) : un commentaire ne compte pas");
+    assert!(
+        !sans_commentaires(temoin).contains(".exporter("),
+        "(vii) : un commentaire ne compte pas"
+    );
     assert!(sans_commentaires("    r.exporter(&t, f)").contains(".exporter("));
     let corps = corps_des_handlers(temoin, "export_");
     assert_eq!(corps.len(), 1);
