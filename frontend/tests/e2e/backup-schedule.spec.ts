@@ -324,10 +324,11 @@ test('états de l’écran et du bandeau (captures de l’AC40)', async ({ page 
 	await expect(page.getByTestId('server-backup-too-large')).toContainText('limite 2048 Mio');
 	await capture(page, 'r-trop-grande', page.getByTestId('server-backups-section'));
 
-	// (q) la section à largeur étroite.
+	// (q) la section à largeur étroite (la section seule : la barre latérale fixe du layout,
+	// antérieure à la story, déborde à cette largeur).
 	await page.setViewportSize({ width: 390, height: 1400 });
 	await page.reload();
 	await expect(section).toBeVisible();
-	await capture(page, 'q-largeur-etroite');
+	await capture(page, 'q-largeur-etroite', section);
 	await page.unroute('**/api/v1/admin/backups');
 });

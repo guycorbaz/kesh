@@ -36,6 +36,22 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   serveur (`.env`) n'y est pas ; après un export, l'écran annonce les pièces qu'il n'a pas pu inclure et prévient si le
   fichier dépasse la taille d'import autorisée ; après un import, il annonce les pièces restaurées et les pièces
   manquantes.
+- **Kesh fait lui-même sa sauvegarde complète** ([#503](https://github.com/guycorbaz/kesh/issues/503)). À intervalle
+  régulier — chaque jour par défaut, ou toutes les 6 ou 12 heures, ou chaque semaine —, Kesh écrit une sauvegarde
+  `.keshbackup` complète (base et pièces) dans `KESH_ADMIN_BACKUP_DIR/auto` (`./backup/auto` avec les compose
+  fournis), la relit, et n'en garde que le nombre choisi (7 par défaut) ; la dernière sauvegarde **complète** n'est
+  jamais supprimée, même après une suite de sauvegardes incomplètes (pièces absentes du dossier des documents). Avant
+  d'écrire, Kesh vérifie la place sur le disque et refuse plutôt que de le remplir ; un disque plein pendant l'écriture
+  ne laisse aucun fichier partiel et ne supprime rien. Le réglage et l'état se trouvent dans **Administration →
+  Sauvegarde complète**, avec **« Sauvegarder maintenant »** ; un échec, ou l'absence de sauvegarde réussie depuis deux
+  intervalles, s'affiche aussi en bandeau dans toute l'application pour l'administrateur. Une seule sauvegarde, export
+  ou import à la fois. Le réglage appartient à l'installation : il ne voyage pas dans le `.keshbackup`. Audit
+  `admin.backup_schedule_updated`, `admin.backup_run`.
+- **Les sauvegardes du serveur se listent et se téléchargent depuis l'écran** : sauvegardes automatiques et sauvegardes
+  de sécurité prises avant chaque import, avec leur taille et leur date — le geste SSH n'est plus nécessaire pour
+  récupérer une sauvegarde pré-import. Une sauvegarde plus grosse que la taille d'import autorisée porte la mention
+  « trop grande pour être restaurée par l'écran ». Chaque téléchargement est inscrit au journal d'audit
+  (`admin.backup_downloaded`).
 
 ### Modifié
 
@@ -46,6 +62,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 - ⚠️ **Une sauvegarde de la 0.15.0 ne s'importe pas dans une 0.14.x** : celle-ci la refuse avec « Fichier de sauvegarde
   invalide ou corrompu » (`INVALID_BACKUP_STRUCTURE`), devant une sauvegarde pourtant saine. La sauvegarde de sécurité
   prise avant chaque import emporte elle aussi les pièces : elle pèse la base **plus** le dossier des documents.
+- ⚠️ **Migration `20261024000001_backup_schedule` (non breaking)** : une table système porte le réglage et l'état de la
+  sauvegarde automatique ; `kesh_version_min_required` ne change pas. Mais, comme toute migration, elle **empêche la
+  0.14.0 de démarrer** sur une base migrée : le retour à la 0.14.0 ne passe que par **la sauvegarde d'avant la mise à
+  jour** — base, `.keshbackup` **et dossier des documents**, que le `.keshbackup` de la 0.14.0 n'emporte pas.
+- **La sauvegarde automatique est activée à la mise à jour** (chaque jour, 7 conservées) : environ cinq minutes après le
+  démarrage, une première sauvegarde complète — la base plus le dossier des documents — s'écrit dans `./backup/auto`.
+  Prévoir la place de plusieurs copies sur le disque du dossier de sauvegarde, et les copier hors du disque (Hyper
+  Backup copie déjà `./backup`).
 - **Après un import réussi, l'écran attend « Se reconnecter »** au lieu de déconnecter aussitôt : le bilan de l'import
   (pièces restaurées, pièces manquantes) se lit avant la reconnexion.
 - **L'export et l'import complets échappent au délai de 30 s de l'écran** : l'écran attend jusqu'à une heure, sans

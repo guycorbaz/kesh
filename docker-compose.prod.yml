@@ -175,7 +175,9 @@ services:
       # fichiers en 0600. Dans le périmètre de sauvegarde du dossier du compose
       # (Hyper Backup) ; à purger par l'exploitant (une sauvegarde par import,
       # qui pèse la base PLUS les pièces du dossier des documents). Reçoit aussi
-      # les temporaires de l'export et de l'import d'installation.
+      # les temporaires de l'export et de l'import d'installation et, depuis la
+      # 0.15.0, les sauvegardes automatiques faites par Kesh (./backup/auto,
+      # chaque jour par défaut, rétention réglée dans l'interface).
       - ./backup:/data/backup
     networks:
       - frontend
