@@ -436,7 +436,7 @@ de l'orchestrateur.*
   la 32-6 ou une story dédiée peut le reprendre. Pour la même raison, un service n'emploie pas `tokio::join!`.
 - **Réversible** : oui.
 - *Annoté le 2026-10-24 (validation P5, P5-1) : la prémisse des *Écartées* n'était pas établie — le lint
-  `unsafe_code` ne se déclenche pas dans l'expansion d'une macro d'une autre crate (précédent `testcontainers-0.26.3`,
+  `unsafe_code` ne se déclencherait pas — un seul précédent lu, non compilé, le suggère — dans l'expansion d'une macro d'une autre crate (précédent `testcontainers-0.26.3`,
   `#![forbid(unsafe_code)]` et `tokio::select!` en code non-test). Le `forbid` reste **posé au module `services/`** ;
   son extension au crate n'est pas écartée pour cette raison, elle est **à essayer au développement** (T1) ; la
   contrainte « un service n'emploie pas `tokio::join!` » est retirée. P5-3 : les `unsafe` de `config.rs` sont aussi
@@ -449,7 +449,7 @@ P5-1.*
 
 - **Contexte** : P5 (passe ciblée, Sonnet), **0/0/1/2**, tous nés de la remédiation P4. P5-1 (MEDIUM) : la prémisse
   « l'expansion de `tokio::join!` porte un `unsafe` que `forbid(unsafe_code)` refuserait » n'est pas établie ; le lint
-  ne se déclenche pas dans l'expansion d'une macro externe, et la crate publiée `testcontainers-0.26.3` porte
+  ne se déclencherait pas dans l'expansion d'une macro externe (suggéré par un seul précédent lu, non compilé), et la crate publiée `testcontainers-0.26.3` porte
   `#![forbid(unsafe_code)]` et emploie `tokio::select!` (même forme `Pin::new_unchecked`) en code non-test (relevé par
   lecture du registre cargo local par la passe P5, non compilé). La fiche en tirait une contrainte gratuite sur les
   services — qui serait tombée sur la 32-4b (`routes/invoices.rs:1156`) — et un rejet du crate entier sans fondement.

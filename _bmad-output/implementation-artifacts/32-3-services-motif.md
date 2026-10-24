@@ -971,7 +971,7 @@ d'attention* ; `planning-artifacts/epic-32-spike-mcp.md` § 4.3, § 4.4, § 5.3.
     de la passe P5 : `323-validate-prompt-p5.md` (**ciblée**, une lentille — regression hunter —, **Sonnet**, sur le
     seul diff de cette remédiation).
     *(Annoté en P5 : la prémisse « l'expansion de `tokio::join!` porte un `unsafe` que le lint refuserait », écrite
-    ci-dessus comme un fait, n'était pas établie — le lint ne se déclenche pas dans l'expansion d'une macro d'une autre
+    ci-dessus comme un fait, n'était pas établie — un seul précédent lu, non compilé, suggère que le lint ne se déclenche pas dans l'expansion d'une macro d'une autre
     crate, précédent `testcontainers-0.26.3` ; la contrainte « un service n'emploie pas `tokio::join!` » est retirée,
     l'extension au crate devient un essai de T1 ; P5-3 : les `unsafe` de `config.rs` sont aussi dans
     `smtp_config_tests` — C-32-3-33.)*
@@ -979,7 +979,7 @@ d'attention* ; `planning-artifacts/epic-32-spike-mcp.md` § 4.3, § 4.4, § 5.3.
   remédiation P4, `a2eb9e6f` ; rapport `kesh-gate-logs/323-validate-p5.md`) : **0/0/1/2** (CRITICAL/HIGH/MEDIUM/LOW),
   trois findings, tous nés de la remédiation P4. Sort de chacun (registre C-32-3-33) :
   - **P5-1 (MEDIUM)** — la prémisse « `tokio::join!` porte un `unsafe` que `forbid(unsafe_code)` refuserait » n'est
-    pas établie (le lint ne se déclenche pas dans l'expansion d'une macro externe ; `testcontainers-0.26.3` porte
+    pas établie (un seul précédent lu, non compilé, suggère que le lint ne se déclenche pas dans l'expansion d'une macro externe ; `testcontainers-0.26.3` porte
     `#![forbid(unsafe_code)]` et emploie `tokio::select!` en code non-test). **Retrait** : la contrainte « un service
     n'emploie pas `tokio::join!` » quitte l'AC1 (seul site vivant) ; l'attribut reste au module `services/` ; son
     extension au crate est **à essayer au développement** (T1 : poser, compiler, garder s'il passe, sinon consigner la
@@ -999,3 +999,23 @@ d'attention* ; `planning-artifacts/epic-32-spike-mcp.md` § 4.3, § 4.4, § 5.3.
     laissées : relevés datés (Change Log P4, annoté ; C-32-3-32, annoté). La boucle n'est pas close : un MEDIUM appelle
     une passe de plus. Prompt de la passe P6 : `323-validate-prompt-p6.md` (**ciblée**, une lentille — regression
     hunter —, **Haiku**, sur le seul diff de cette remédiation).
+
+### Validation P6 (2026-10-24, passe ciblée, une lentille — regression hunter —, Haiku 4.5, sur le diff de la P5)
+
+- **Résultat : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW.** Remédiation par **retrait pur** : aucune affirmation ajoutée,
+  les affirmations non établies sont atténuées.
+  - **P6-1 (MEDIUM)** — la P5 affirmait comme établi l'effet du lint `unsafe_code` sur l'expansion d'une macro d'une
+    autre crate ; un seul précédent lu, non compilé. Atténué aux deux sites de la fiche (AC1, *Le motif*) et aux deux
+    du registre : « un seul précédent lu, non compilé, suggère que le lint ne se déclenche pas » ; la mutation M14 et
+    l'essai T1 l'établissent au développement.
+  - **P6-2 (LOW)** — `config.rs` porte aussi des `unsafe` dans `cookie_secure_tests` (l. 3134-3286), sous
+    `#[cfg(test)]` comme les autres : à relever au développement (T1), avec l'essai du `forbid` crate entier.
+  - **P6-3 (LOW)** — la liste d'exceptions de (v-1), vide en 32-3, n'est pas ancrée à un nom de constante : le
+    développement la nomme dans le test et la recopie au Dev Agent Record.
+  - **P6-4 (LOW)** — si l'essai T1 garde à la fois l'attribut de `services/mod.rs` et celui de `lib.rs`, M14 se joue
+    sur les deux : le Dev Agent Record dit lequel a rougi.
+  - **P6-5 (LOW)** — `sprint-status.yaml` nommait la plage « C-32-3-1 à 16 » : portée à « C-32-3-1 à 33 ».
+- **Tendance des MEDIUM distincts : P1 6 → P2 5 → P3 1 → P4 1 → P5 1 → P6 1**, chacun né de la remédiation
+  précédente ; celle-ci ne fait que retirer. La boucle n'est pas close (un MEDIUM appelle une passe de plus) :
+  prompt de la P7, `323-validate-prompt-p7.md` (**ciblée**, une lentille, **Sonnet**, sur le seul diff de cette
+  remédiation).
