@@ -237,8 +237,17 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * reçu en paramètre, lui-même traduit à l'appel : aucun littéral, donc `conforme` **54 → 56** ;
  * `ecartee` ne bouge pas. *Identifiées en cherchant les suffixes `Label`, `Text`, `Display`
  * dans les fichiers de la story ; `failureMessage` n'en porte pas.*
+ *
+ * ⚠️ **70 → 71, et la déclaration est NOMMÉE** (Story 32-1b, #711 — l'écran de la sauvegarde
+ * automatique) : `loadErrorText` (`lib/features/admin-backup/AutoBackupSection.svelte`),
+ * extraite pour que le premier chargement et la relecture après un run partagent le texte
+ * de `loadError`. Elle délègue à `errorText` avec un repli traduit à l'appel
+ * (`admin-backup-auto-load-error`) : aucun littéral, donc `conforme` **56 → 57** ; `ecartee`
+ * ne bouge pas. *Identifiée en cherchant les suffixes `Label`, `Text`, `Display` dans le
+ * diff de la story (`b3f52733` → tête) ; `formUnchanged`, `resetForm`, `applyState`,
+ * `reread` et `isUnknownOutcome` n'en portent pas.*
  */
-const CANDIDATES_ATTENDUES = 70;
+const CANDIDATES_ATTENDUES = 71;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -755,7 +764,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 56 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 57 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

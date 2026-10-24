@@ -8,8 +8,14 @@
   rougir les specs qui exigent zéro `alert`).
 
   Lecture : au montage puis toutes les 30 minutes tant que l'application est
-  ouverte, et après chaque action du panneau (état partagé). Un échec de
-  lecture n'affiche aucun bandeau.
+  ouverte, et après chaque action du panneau (état partagé). Un échec de la
+  première lecture n'affiche aucun bandeau ; un échec ultérieur garde le
+  dernier état lu, et une réponse tardive est ignorée (Story 32-1b, #711 E-8).
+
+  Story 32-1b (#711 L-B5) : en retard, une dernière réussite datée APRÈS
+  l'heure du serveur (`lastSuccessInFuture`, calculé par le serveur — le
+  bandeau ne compare aucune date) se dit telle : l'horloge du serveur a
+  reculé, et « aucune sauvegarde réussie depuis le <date future> » serait faux.
 -->
 <script lang="ts">
 	import { authState } from '$lib/app/stores/auth.svelte';
@@ -43,6 +49,12 @@
 		<span>
 			{#if kind === 'failed'}
 				{i18nMsg('admin-backup-banner-failed', 'La dernière sauvegarde automatique a échoué.')}
+			{:else if backupScheduleState.value?.lastSuccessInFuture}
+				{i18nMsg(
+					'admin-backup-banner-future',
+					"La dernière sauvegarde automatique réussie est datée du { $date }, après l'heure du serveur : son horloge a reculé.",
+					{ date: since },
+				)}
 			{:else}
 				{i18nMsg(
 					'admin-backup-banner-overdue',

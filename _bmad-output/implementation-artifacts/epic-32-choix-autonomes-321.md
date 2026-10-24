@@ -1,6 +1,6 @@
 # Epic 32 — registre des choix autonomes de la Story 32-1 (défauts courts, clés 32-1a, 32-1b, 32-1c, 32-1d)
 
-Registre propre à la story (C-32-1-1 à C-32-1-43 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage de la 32-1b, C-32-1-38 de la validation P3, C-32-1-39 du développement de la 32-1a, C-32-1-40 et 41 du développement de la 32-1c, C-32-1-42 et 43 de sa revue de code P1 — ces quatre-là numérotés C-32-1-39 à 42 jusqu'à la fusion de `main` du 2026-10-24, où ils ont été décalés d'un rang, C-32-1-39 étant déjà porté par la 32-1a fusionnée ; les prompts versionnés `321c-review-prompt-p1.md` et `-p2.md` gardent l'ancienne numérotation), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
+Registre propre à la story (C-32-1-1 à C-32-1-43 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage de la 32-1b, C-32-1-38 de la validation P3, C-32-1-39 du développement de la 32-1a, C-32-1-40 et 41 du développement de la 32-1c, C-32-1-42 et 43 de sa revue de code P1 — ces quatre-là numérotés C-32-1-39 à 42 jusqu'à la fusion de `main` du 2026-10-24, où ils ont été décalés d'un rang, C-32-1-39 étant déjà porté par la 32-1a fusionnée ; les prompts versionnés `321c-review-prompt-p1.md` et `-p2.md` gardent l'ancienne numérotation ; C-32-1-44 à 48 du développement de la 32-1d ; C-32-1-49 à 56 du développement de la 32-1b), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
 (`docs/agents-orchestration.md` § 1). Fiche : `32-1-defauts-courts.md`. Clé courte : `321`.
 Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` sur `chore/kickoff-epic-32` (`6f0cee00`).
 
@@ -788,3 +788,99 @@ non fusionnée de la 32-1c prend C-32-1-40 à 43 ; union à la fusion.*
   recette visuelle, non un test) ; modifier le DOM pour lever les bornes de saisie (montrerait un état que l'écran
   n'atteint pas).
 - **Réversible** : oui (rien de versionné).
+
+*C-32-1-49 à C-32-1-56 : développement de la 32-1b (Opus 5.5, 2026-10-24), worktree `kesh-32-1b`, branche `story/32-1b`
+partie de `b3f52733` (`main`, les 32-1a, 32-1c et 32-1d fusionnées).*
+
+### C-32-1-49 — 32-1b : `applyState` refuse une réponse qui n'est pas un objet, avant de toucher l'état
+
+- **Contexte** : l'AC-b2 (b) suppose qu'`applyState(undefined)` « lève » (un 200 au corps illisible, que `request()` rend
+  `undefined`). Écrite naïvement (`schedule = value` d'abord, formulaire ensuite), elle ne lèverait que si la saisie
+  est inchangée — et poserait `schedule = undefined` sinon, ce qui ferait disparaître tout le panneau (`{#if schedule}`).
+- **Retenu** : un garde en tête (`typeof value !== 'object' || value === null` → `TypeError`), avant toute écriture ;
+  `runNow` le classe en issue inconnue (rejet hors `ApiError`). Le Vitest « 200 au corps illisible » assert que le
+  panneau reste affiché.
+- **Écartées** : valider dans `runBackupNow` (l'API ne valide aucune autre réponse ; la règle vit là où l'état est
+  posé) ; une validation de forme complète (hors périmètre, et `isApiError` ne le fait pas non plus).
+- **Réversible** : oui.
+
+### C-32-1-50 — 32-1b : nom et forme du prédicat extrait
+
+- **Contexte** : l'AC-b2 laisse le nom au développement ; le doc-comment d'`issueInconnue` mêle la règle (TIMEOUT,
+  NETWORK_ERROR, 502, 504) et ce qui est propre à l'import (angle mort du `COMMIT`, « Se reconnecter »).
+- **Retenu** : `isUnknownOutcome` dans `frontend/src/lib/shared/utils/unknown-outcome.ts` (+ son test, neuf cas), qui
+  importe `isApiError` de `./api-error` ; la règle générale y est documentée. `AdminRestorePanel.svelte` garde son
+  doc-comment propre à l'import sur un alias `const issueInconnue = isUnknownOutcome;` — ses deux appels inchangés,
+  aucun comportement de l'import ne bouge (`AdminRestorePanel.test.ts` vert).
+- **Écartées** : renommer les deux appels de l'import (diff plus large sans gain) ; déplacer tout le doc-comment dans
+  le module partagé (il y décrirait l'import, que le module ne connaît pas).
+- **Réversible** : oui.
+
+### C-32-1-51 — 32-1b : le texte de `loadError` partagé par `loadErrorText`
+
+- **Contexte** : l'AC-b2 prescrit, pour un échec de la relecture, « même texte que `loadSchedule` » ; l'AC-b8 compte un
+  site de plus si la relecture le réécrit.
+- **Retenu** : une fonction `loadErrorText(err)` employée par `loadSchedule` et `reread` — aucun site `i18nMsg` de plus
+  (`sitesTotal` +2 seulement). Conséquence non prévue par la fiche : son suffixe `Text` en fait une déclaration
+  candidate de la garde `i18n-libelle-en-dur.test.ts`, **70 → 71**, `conforme` **56 → 57**, la déclaration nommée au
+  commentaire daté (commit `68843cd8`, après que le Vitest complet l'a fait rougir).
+- **Écartées** : recopier l'appel `i18nMsg` (DRY) ; nommer la fonction sans suffixe pour échapper à la garde (ce serait
+  la contourner, alors que la fonction rend bien un texte affiché).
+- **Réversible** : oui.
+
+### C-32-1-52 — 32-1b : textes des deux clés neuves et de la clé modifiée
+
+- **Contexte** : la fiche donne les valeurs fr-CH ; les trois autres locales sont au développement.
+- **Retenu** : fr-CH tel que la fiche l'écrit (`admin-backup-auto-run-unknown`, `admin-backup-banner-future`), repli
+  Svelte identique. de-CH : « Die Antwort des Servers ist nicht eingetroffen: … Laden Sie die Seite in einigen
+  Minuten neu. » (tournure de `admin-restore-error-unknown-outcome`) ; « … ist auf den { $date } datiert, nach der
+  Uhrzeit des Servers: Seine Uhr wurde zurückgestellt. » ; it-CH à la deuxième personne du pluriel (`ricaricate`,
+  comme `invoices-write-off-error-unknown-due`) ; en-CH littéral. `admin-backup-server-too-large` : « soit » / « also »
+  / « ossia » / « i.e. » `{ $size }`, `$size` = `formatBackupSize(importMaxMib × 1 048 576, locale)`.
+- **Écartées** : une clé distincte pour le 200 au corps illisible (non prescrite, limite assumée de l'AC-b2).
+- **Réversible** : oui (textes).
+
+### C-32-1-53 — 32-1b : les captures sont prises par la spec E2E versionnée
+
+- **Contexte** : l'AC-b9 demande quatre captures et de dire, pour (b) et (c), si elles viennent d'une route
+  interceptée ou du serveur ; `backup-schedule.spec.ts` prend déjà les captures de la 31-1c quand
+  `KESH_E2E_CAPTURES_DIR` est posé.
+- **Retenu** : trois captures neuves dans la spec (`t-saisie-gardee` — réelle, après le 200 du vrai serveur ;
+  `u-reponse-manquante` — `POST …/run` intercepté en **504**, la relecture allant au vrai serveur ;
+  `v-bandeau-horloge-reculee` — `GET` du réglage **intercepté** avec `lastSuccessInFuture: true`, la spec n'ayant pas
+  accès à la base pour dater une réussite du futur) et la `r-trop-grande` existante, qui porte la mention neuve (liste
+  interceptée). Prises pendant l'E2E complet du dernier commit de code, copiées sous `321-captures/321b-*.png`.
+- **Écartées** : un script hors dépôt (comme la 32-1d) — la spec les prend déjà, et chaque capture y est adossée à une
+  assertion ; poser une date future en base (aucun accès depuis la spec, C-31-1-83).
+- **Réversible** : oui.
+
+### C-32-1-54 — 32-1b : isolation des Vitest d'`AutoBackupSection` (`afterEach(vi.resetAllMocks)`)
+
+- **Contexte** : au rouge d'avant correctif, une réponse `mockRejectedValueOnce` non consommée (la relecture n'avait
+  pas lieu) a fui dans le test suivant (« liste vide », sans rapport) — `clearAllMocks` garde les implémentations en
+  file.
+- **Retenu** : un `afterEach(() => vi.resetAllMocks())` au niveau du fichier ; chaque test pose ses réponses
+  (`monter` le fait déjà).
+- **Écartées** : remplacer les six `beforeEach(vi.clearAllMocks)` (diff plus large, même effet).
+- **Réversible** : oui.
+
+### C-32-1-55 — 32-1b : rédaction et placement de la phrase L-B3 au manuel
+
+- **Contexte** : l'AC-b7 donne la phrase « dans ce sens », placement et liaison au développement ; sa forme porte trois
+  tirets imbriqués (« Sinon — en particulier … —, la base n'y est couverte que par la marge — un cinquième … — : »).
+- **Retenu** : juste après la définition du seuil, avant « En dessous du seuil, il n'écrit rien » (le cas du disque
+  rempli vient plus bas : « le cas décrit plus bas ») ; la marge écrite « soit un cinquième de la taille des documents
+  plus 256 Mio » (un seul couple de tirets) — le fragment du contrôle aplati est tenu. Dernière phrase : « sans la
+  mesurer, ce seuil évite aussi, en refusant d'écrire, de remplir le volume qu'elle partage ».
+- **Écartées** : la phrase prescrite mot pour mot (lisible mal en PDF) ; la placer à la fin du paragraphe (elle doit
+  précéder le cas qu'elle annonce).
+- **Réversible** : oui (texte ; PDF à régénérer).
+
+### C-32-1-56 — 32-1b : l'équivalent décimal asserté tel qu'observé
+
+- **Contexte** : l'AC-b5 demande « 7,3 Mo » en fr-CH, « valeur à confirmer au run et écrite telle qu'observée ».
+- **Retenu** : observé `7,3 Mo` (espace fine insécable U+202F, posée par `Intl.NumberFormat`) — le Vitest l'écrit
+  ainsi, avec la raison en commentaire ; l'E2E n'assert que « soit 2,1 » (sans l'unité, pour ne pas dépendre de l'ICU du
+  navigateur). Le manuel écrit « 2,1 Go » avec une espace ordinaire (texte, non rendu `Intl`).
+- **Écartées** : normaliser l'espace dans le test (masquerait ce que l'écran affiche).
+- **Réversible** : oui.
