@@ -262,7 +262,7 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 
 - **Contexte** : l'ordre retenu à la P2 (`VatPayable`, `VatRecoverable`, `VatSettlement`, soit 2200, 1171, 2206 au plan
   PME) est l'inverse, pour ses deux premiers comptes, du verrou partagé par identifiant croissant de
-  `lock_designated_accounts_in_tx` (`company_invoice_settings.rs:865-916`, 1171 puis 2200), seul ordre opposé identifié ;
+  `lock_designated_accounts_in_tx` (`company_invoice_settings.rs:865-916`, 1171 puis 2200), seul ordre opposé identifié *(prémisse de la P3, réfutée en P4 : voir « Rectifié » ci-dessous)* ;
   `bulk_create_from_chart_in_tx` crée les comptes par longueur puis numéro, d'où 1171 < 2200 < 2206 en identifiants.
 - **Rectifié (validation P4, P4-1)** : l'« opposition » invoquée n'existe pas — les appelants de
   `lock_designated_accounts_in_tx` prennent `SALE` (créance, `VatPayable`) ou `PURCHASE` (dette, `VatRecoverable`),
