@@ -47,6 +47,12 @@ export interface BackupSchedule {
 	nextDueAt: string | null;
 	/** Dernière réussite datant d'au moins deux intervalles — calculé par le serveur. */
 	overdue: boolean;
+	/**
+	 * Story 32-1b (#711 L-B5) — la dernière réussite est datée **après** l'heure
+	 * du serveur (horloge reculée) ; calculé par le serveur (Story 32-1d), vrai
+	 * seulement si la sauvegarde est activée, et alors `overdue` l'est aussi.
+	 */
+	lastSuccessInFuture: boolean;
 }
 
 /** Corps de `PUT /api/v1/admin/backup-schedule`. */

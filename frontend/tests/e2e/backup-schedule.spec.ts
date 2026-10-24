@@ -31,6 +31,11 @@ import {
  * conflit, refus de validation, sauvegarde en cours, 409, ligne trop grande — sont posés
  * par interception réseau (`page.route`) : la spec n'a pas d'accès direct à la base
  * (C-31-1-83).
+ *
+ * Story 32-1b (#711) : la saisie non enregistrée survit à « Sauvegarder maintenant »
+ * (E-6) ; une réponse qui manque (504 intercepté) relit l'état (E-7) ; le bandeau d'une
+ * réussite datée après l'heure du serveur (L-B5) ; la limite en deux unités (L-B6).
+ * Captures t, u, v (recette visuelle de la 32-1b) ; la r porte la mention neuve.
  */
 
 const ADMIN = { username: 'admin', password: 'admin123' };
@@ -123,6 +128,7 @@ function etat(over: Record<string, unknown>) {
 		lastCompleteFile: 'kesh-auto-20261024T010000000Z.keshbackup',
 		nextDueAt: '2026-10-25T01:00:00.000Z',
 		overdue: false,
+		lastSuccessInFuture: false,
 		...over,
 	};
 }
@@ -157,6 +163,9 @@ test('Administrateur : réglage gardé, « Sauvegarder maintenant », liste et t
 	await expect(page.getByTestId('auto-backup-retention')).toHaveValue('5');
 
 	// 2. « Sauvegarder maintenant » (un 409 de la tâche de fond se réessaie une fois).
+	// Story 32-1b (#711 E-6, AC-b10) : une saisie non enregistrée du nombre conservé
+	// survit au run — à travers la frontière HTTP, la réponse portant le réglage enregistré.
+	await page.getByTestId('auto-backup-retention').fill('9');
 	const lancer = async () => {
 		const reponse = page.waitForResponse('**/api/v1/admin/backup-schedule/run');
 		await page.getByTestId('auto-backup-run').click();
@@ -169,6 +178,9 @@ test('Administrateur : réglage gardé, « Sauvegarder maintenant », liste et t
 	}
 	expect(statut).toBe(200);
 	await expect(page.getByTestId('auto-backup-last-attempt')).toContainText('réussie');
+	await expect(page.getByTestId('auto-backup-retention')).toHaveValue('9');
+	await expect(page.getByTestId('auto-backup-frequency')).toHaveValue('12');
+	await capture(page, 't-saisie-gardee', section);
 	const ligne = page.getByTestId('server-backup-row').filter({ hasText: 'kesh-auto-' }).first();
 	await expect(ligne).toBeVisible();
 	await expect(ligne).toHaveAttribute('data-kind', 'auto');
@@ -242,6 +254,16 @@ test('états de l’écran et du bandeau (captures de l’AC40)', async ({ page 
 	await expect(bandeau).toHaveAttribute('data-kind', 'overdue');
 	await expect(bandeau).toContainText('Aucune sauvegarde automatique réussie depuis le');
 	await capture(page, 'p-bandeau-aucune-reussite');
+	// Story 32-1b (#711 L-B5) : réussite datée après l'heure du serveur (drapeau servi par
+	// la 32-1d, posé ici par interception — la spec n'a pas d'accès à la base).
+	await poser(
+		page,
+		etat({ overdue: true, lastSuccessInFuture: true, lastSuccessAt: '2027-03-01T08:00:00.000Z' }),
+	);
+	await page.reload();
+	await expect(bandeau).toHaveAttribute('data-kind', 'overdue');
+	await expect(bandeau).toContainText("après l'heure du serveur : son horloge a reculé");
+	await capture(page, 'v-bandeau-horloge-reculee');
 	// `partial` n'allume pas le bandeau (C-31-1-40).
 	await poser(page, etat({ lastStatus: 'partial', lastFilesNotIncluded: 1 }));
 	await page.reload();
@@ -274,6 +296,22 @@ test('états de l’écran et du bandeau (captures de l’AC40)', async ({ page 
 	liberer();
 	await expect(page.getByTestId('auto-backup-run-error')).toContainText('déjà en cours');
 	await capture(page, 'i-409-en-cours', section);
+	await page.unroute('**/api/v1/admin/backup-schedule/run');
+
+	// Story 32-1b (#711 E-7) : un proxy qui abandonne l'attente (504) — la réponse n'est
+	// pas parvenue : message d'issue inconnue, l'état et la liste sont relus.
+	await page.route('**/api/v1/admin/backup-schedule/run', (route) =>
+		route.fulfill({ status: 504, contentType: 'text/plain', body: 'Gateway Timeout' }),
+	);
+	const relu = page.waitForResponse(
+		(r) => r.url().endsWith('/api/v1/admin/backup-schedule') && r.request().method() === 'GET',
+	);
+	await page.getByTestId('auto-backup-run').click();
+	expect((await relu).status()).toBe(200);
+	await expect(page.getByTestId('auto-backup-run-error')).toContainText(
+		"La réponse du serveur n'est pas parvenue",
+	);
+	await capture(page, 'u-reponse-manquante', section);
 	await page.unroute('**/api/v1/admin/backup-schedule/run');
 
 	// (j) conflit de version et (k) refus de validation, par interception de PUT.
@@ -322,6 +360,8 @@ test('états de l’écran et du bandeau (captures de l’AC40)', async ({ page 
 	});
 	await expect(page.getByTestId('server-backup-too-large')).toHaveCount(1);
 	await expect(page.getByTestId('server-backup-too-large')).toContainText('limite 2048 Mio');
+	// Story 32-1b (#711 L-B6) : la limite aussi dans l'unité décimale des tailles listées.
+	await expect(page.getByTestId('server-backup-too-large')).toContainText('soit 2,1');
 	await capture(page, 'r-trop-grande', page.getByTestId('server-backups-section'));
 
 	// (q) la section à largeur étroite (la section seule : la barre latérale fixe du layout,

@@ -712,7 +712,16 @@ const ATTENDU = {
 	// `BackupScheduleBanner.svelte` 0 → 3 (fichier neuf, bandeau de l'application) ;
 	// `AdminBackupPanel.svelte` 10 → 10 et `routes/(app)/+layout.svelte` 6 → 6 (ils rendent les
 	// deux composants). Que des littéraux : les autres compteurs inchangés.
-	sitesTotal: 2332,
+	// Story 32-1b (#711, écran de la sauvegarde automatique) : **2332 → 2334** (+2), mesuré
+	// par la collecte de ce test et recompté par `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('` aux
+	// deux bornes (`b3f52733` → HEAD de `story/32-1b`), périmètre : les fichiers touchés par
+	// la branche — `AutoBackupSection.svelte` 40 → 41 (réponse manquante,
+	// `admin-backup-auto-run-unknown` ; le texte de `loadError` est partagé par
+	// `loadErrorText`, sans site de plus), `BackupScheduleBanner.svelte` 3 → 4 (horloge
+	// reculée, `admin-backup-banner-future`), `AdminRestorePanel.svelte` 20 → 20 et
+	// `shared/utils/unknown-outcome.ts` 0 → 0 (prédicat extrait, sans texte). Que des
+	// littéraux : les autres compteurs inchangés.
+	sitesTotal: 2334,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -322,6 +322,10 @@ les serve — C-32-4a-1, `implementation-artifacts/epic-32-choix-autonomes-324a.
 
 ### 32-12 — Une sauvegarde antérieure reste importable 🗄️ *(ajoutée par l'orchestrateur le 2026-10-24, sous réserve de Guy — Q4)*
 
+> ⛔ **Retirée le 2026-10-24 au soir** — Q4 répondue par la négative (§ *Réponses de Guy*) : Kesh n'est pas en
+> service, l'installation se fera à neuf. Ne restent que la note du manuel et du CHANGELOG, portées par la 32-5. Le
+> texte ci-dessous reste pour l'historique.
+
 **Objet** : que les sauvegardes prises en 0.15.0 — automatiques comprises, celles des livres réels de Guy — restent
 importables par la 0.16.0, alors que l'epic ajoute des tables à l'inventaire du `.keshbackup`. Aujourd'hui,
 `parse_and_verify` exige un inventaire **identique dans les deux sens** (point 4 de *Ce que le code dit déjà*) : un
@@ -513,6 +517,23 @@ nombre de tables du NAS) : à Guy avant la release.
 7. **Les réglages MCP restaurés tels quels** (serveur activé si la sauvegarde l'était, C-32-0-8) — ou désactivés à toute
    restauration, par prudence ? *Recommandation* : tels quels — c'est le sens de « redémarrer les opérations » ; le
    manuel le dit.
+
+### Réponses de Guy (2026-10-24, soir)
+
+- **Q1** : « dans l'idéal, j'aimerais que le nombre d'issues n'augmente pas, mais il faut être pragmatique : si c'est
+  compliqué, on peut accepter un peu plus d'issues. » L'objectif du tag v0.16.0 est donc **moins de 140**, sans en
+  faire une barrière.
+- **Q2** : tranchée avec la Q12 de la spike — **validation par clé**, `requise` par défaut, `dispensée` pour une clé que
+  l'administrateur désigne, chaque envoi restant journalisé.
+- **Q4** : **non**. Kesh **n'est pas encore en service** : Guy installera une instance **neuve** quand la 0.16.0, ou une
+  version ultérieure, sera terminée ; les sauvegardes déjà prises n'ont pas à être restaurées. La **story 32-12 est
+  retirée** (`superseded` au registre ; la PR #743 de la 32-12a, en brouillon, est fermée sans fusion). Ce qui reste, à la
+  demande de Guy (« il faut le documenter au cas où ») : la limite s'écrit au **manuel d'administration** et au
+  **CHANGELOG** par la story qui change l'inventaire (32-5) — une sauvegarde ne se réimporte que dans une version qui
+  porte les mêmes tables ; pour restaurer une sauvegarde plus ancienne, installer l'image de la version qui l'a produite,
+  importer, puis mettre à jour.
+- **Q6** : fait — CR #723.
+- **Q3, Q5, Q7** : pas encore de réponse ; les recommandations restent l'hypothèse de travail des fiches 32-5 et 32-6.
 
 [#98]: https://github.com/guycorbaz/kesh/issues/98
 [#164]: https://github.com/guycorbaz/kesh/issues/164

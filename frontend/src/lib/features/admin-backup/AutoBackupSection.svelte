@@ -10,6 +10,21 @@
   d'erreur (`role="alert"`) ; `partial` en avertissement (`role="status"`) — un
   seul rôle par statut. Les dates et le retard sont ceux du serveur ; l'écran
   ne compare aucune date à l'horloge du navigateur.
+
+  Story 32-1b (#711) :
+  - E-6 — « Sauvegarder maintenant » ne réécrit pas une saisie non enregistrée
+    (`applyState`), et la saisie s'enregistre contre la version sur laquelle
+    elle a été faite (`formBase.version`) : si un autre administrateur a
+    enregistré entre-temps, le 409 existant le signale au lieu d'écraser son
+    réglage en silence.
+  - E-7 — une réponse qui manque (délai, coupure, 502, 504, ou un 200 dont le
+    corps ne se lit pas) dit que l'issue est inconnue et relit l'état et la
+    liste ; un autre 5xx dit le message du serveur et relit aussi (l'archive a
+    pu être écrite) ; un 4xx ne relit rien (rien n'a été écrit). La relecture ne
+    dit pas l'issue d'une sauvegarde encore en cours : l'état servi ne distingue
+    pas « en cours » de « terminée en échec » (#725).
+  - L-B6 — la limite d'import est dite en Mio et dans l'unité décimale des
+    tailles listées.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -17,6 +32,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nLocale, i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { isUnknownOutcome } from '$lib/shared/utils/unknown-outcome';
 	import {
 		BACKUP_FAILURE_STATUSES,
 		BACKUP_INTERVAL_HOURS,
@@ -42,6 +58,12 @@
 	let enabled = $state(true);
 	let intervalHours = $state(24);
 	let retentionCount = $state(7);
+	/**
+	 * Story 32-1b (#711 E-6) — le réglage sur lequel la saisie a été faite. Sa
+	 * `version` part avec « Enregistrer » ; il ne suit un état relu que si la
+	 * saisie n'a pas été modifiée.
+	 */
+	let formBase = $state<BackupSchedule | null>(null);
 
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
@@ -60,12 +82,59 @@
 		return isApiError(err) && err.message ? err.message : fallback;
 	}
 
-	function apply(value: BackupSchedule): void {
-		schedule = value;
+	/** Remet le formulaire au réglage `value`, qui devient sa base. */
+	function resetForm(value: BackupSchedule): void {
 		enabled = value.enabled;
 		intervalHours = value.intervalHours;
 		retentionCount = value.retentionCount;
+		formBase = value;
+	}
+
+	/**
+	 * Vrai si la saisie égale encore sa base. Les champs liés au `<select>` et à
+	 * l'`<input type="number">` peuvent être des chaînes : comparés en nombres.
+	 */
+	function formUnchanged(): boolean {
+		return (
+			formBase !== null &&
+			enabled === formBase.enabled &&
+			Number(intervalHours) === formBase.intervalHours &&
+			Number(retentionCount) === formBase.retentionCount
+		);
+	}
+
+	/** Réglage lu ou enregistré : état, état partagé, formulaire et sa base. */
+	function apply(value: BackupSchedule): void {
+		schedule = value;
+		resetForm(value);
 		setBackupScheduleState(value);
+	}
+
+	/**
+	 * Story 32-1b (#711 E-6) — état rendu par un run ou une relecture : l'état
+	 * et l'état partagé suivent ; le formulaire ne suit que s'il n'a pas été
+	 * modifié — une saisie en cours est gardée, avec sa base (donc sa version).
+	 * Lève sur une réponse qui n'est pas un objet (un 200 au corps illisible, que
+	 * le client rend `undefined`) **avant** de toucher l'état.
+	 */
+	function applyState(value: BackupSchedule): void {
+		if (typeof value !== 'object' || value === null) {
+			throw new TypeError('Réponse illisible du serveur.');
+		}
+		const unchanged = formUnchanged();
+		schedule = value;
+		setBackupScheduleState(value);
+		if (unchanged) resetForm(value);
+	}
+
+	function loadErrorText(err: unknown): string {
+		return errorText(
+			err,
+			i18nMsg(
+				'admin-backup-auto-load-error',
+				"Le réglage de la sauvegarde automatique n'a pas pu être lu.",
+			),
+		);
 	}
 
 	async function loadSchedule(): Promise<void> {
@@ -75,13 +144,7 @@
 		try {
 			apply(await fetchBackupSchedule());
 		} catch (err) {
-			loadError = errorText(
-				err,
-				i18nMsg(
-					'admin-backup-auto-load-error',
-					"Le réglage de la sauvegarde automatique n'a pas pu être lu.",
-				),
-			);
+			loadError = loadErrorText(err);
 		}
 	}
 
@@ -106,7 +169,7 @@
 	});
 
 	async function save(): Promise<void> {
-		if (!schedule || saving) return;
+		if (!formBase || saving) return;
 		saving = true;
 		saveError = null;
 		conflict = false;
@@ -116,7 +179,10 @@
 					enabled,
 					intervalHours: Number(intervalHours),
 					retentionCount: Number(retentionCount),
-					version: schedule.version,
+					// La version sur laquelle la saisie a été faite (E-6), non celle
+					// du dernier état relu : un réglage enregistré ailleurs entre-temps
+					// rend 409 au lieu d'être écrasé.
+					version: formBase.version,
 				}),
 			);
 			toast.success(
@@ -136,18 +202,47 @@
 		}
 	}
 
+	/**
+	 * Story 32-1b (#711 E-7) — relit l'état (sans toucher une saisie en cours,
+	 * ni le conflit ni l'erreur d'enregistrement) et la liste. Un échec de la
+	 * relecture de l'état pose `loadError`, le réglage affiché restant le
+	 * précédent ; celui de la liste pose `listError` (`loadBackups`).
+	 */
+	async function reread(): Promise<void> {
+		try {
+			applyState(await fetchBackupSchedule());
+		} catch (err) {
+			loadError = loadErrorText(err);
+		}
+		await loadBackups();
+	}
+
 	async function runNow(): Promise<void> {
 		if (running) return;
 		running = true;
 		runError = null;
+		loadError = null;
 		try {
-			apply(await runBackupNow());
+			applyState(await runBackupNow());
 			await loadBackups();
 		} catch (err) {
-			runError = errorText(
-				err,
-				i18nMsg('admin-backup-auto-run-error', "La sauvegarde n'a pas pu être lancée."),
-			);
+			if (!isApiError(err) || isUnknownOutcome(err)) {
+				// La réponse n'est pas parvenue (ou ne se lit pas) : la sauvegarde a
+				// peut-être été écrite, ou s'écrit encore.
+				runError = i18nMsg(
+					'admin-backup-auto-run-unknown',
+					"La réponse du serveur n'est pas parvenue : la sauvegarde a peut-être été écrite, ou s'écrit encore. L'écran relit l'état et la liste ci-dessous ; une sauvegarde encore en cours n'y paraît pas terminée : rechargez la page dans quelques minutes.",
+				);
+				await reread();
+			} else {
+				runError = errorText(
+					err,
+					i18nMsg('admin-backup-auto-run-error', "La sauvegarde n'a pas pu être lancée."),
+				);
+				// Un 5xx est une réponse du serveur, mais l'archive a pu être écrite
+				// (#725, partie 2) ; un 4xx est un refus : rien n'a été écrit.
+				if (err.status >= 500) await reread();
+			}
 		} finally {
 			running = false;
 		}
@@ -451,8 +546,11 @@
 						<span class="w-full text-xs text-destructive" data-testid="server-backup-too-large">
 							{i18nMsg(
 								'admin-backup-server-too-large',
-								"trop grande pour être restaurée par l'écran (limite { $mib } Mio)",
-								{ mib: backups.importMaxMib },
+								"trop grande pour être restaurée par l'écran (limite { $mib } Mio, soit { $size })",
+								{
+									mib: backups.importMaxMib,
+									size: formatBackupSize(backups.importMaxMib * 1_048_576, locale),
+								},
 							)}
 						</span>
 					{/if}
