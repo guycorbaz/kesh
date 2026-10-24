@@ -39,7 +39,7 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Contexte** : `insert_with_defaults_in_tx` sert la démonstration **et** la finalisation production ; aucun des deux ne
   désigne les comptes de TVA (voulu depuis la 18-1a). Pour un non-assujetti (Guy), le refus `CONFIGURATION_REQUIRED`
   d'une facture saisie par erreur avec un taux est un garde-fou.
-- **Retenu** : une fonction distincte appelée par `seed_demo` seulement ; le chemin production garde `NULL`, et le manuel
+- **Retenu** : une fonction distincte appelée par `seed_demo` seulement (deux depuis la validation P1, C-31-5-13 : la lecture verrouillante des comptes, puis l'application) ; le chemin production garde `NULL`, et le manuel
   le dit (AC3) ; un test fige ce comportement production.
 - **Écartées** : désigner les comptes dans `insert_with_defaults_in_tx` (change le comportement de toute installation
   neuve, retire le garde-fou du non-assujetti) ; manuel seul pour la démonstration (l'issue admet cette voie, mais la
@@ -115,7 +115,62 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 
 - **Contexte** : des dizaines de routes rendent des `AppError::Validation` écrits en français ; #469 ne couvre que le
   journal d'audit et aucune issue ouverte ne couvre le reste.
-- **Retenu** : hors périmètre ; issue **demandée** à l'orchestrateur (« on trace toujours »), même si elle fait remonter
-  le compte.
+- **Retenu** : hors périmètre ; issue demandée à l'orchestrateur (« on trace toujours »), même si elle fait remonter
+  le compte — **ouverte le 2026-10-24 : #710** (annotation de la validation P1 ; comprise dans le recompte de 141).
 - **Écartée** : les traduire ici — ni mécanique ni court (289 lignes au relevé grossier du 2026-10-24).
 - **Réversible** : sans objet.
+
+### C-31-5-13 — #707 : les comptes de TVA se verrouillent AVANT la ligne de réglages (validation P1, R4/F4)
+
+- **Contexte** : la fonction prescrite à la rédaction verrouillait les trois comptes de TVA **après** l'`INSERT IGNORE`
+  de `insert_with_defaults_in_tx`, d'où `accounts → company_invoice_settings → accounts`, contraire à l'ordre écrit
+  pour `seed_demo` (`docs/MULTI-TENANT-SCOPING-PATTERNS.md:326`, doc de `final_body`). L'argument de la fiche (aucun
+  concurrent sur une ligne neuve) ne couvrait pas une transaction tenant l'un des comptes.
+- **Retenu** : deux fonctions — `lock_vat_role_accounts_in_tx` (une lecture `FOR UPDATE ... ORDER BY id` des trois
+  comptes, appelée avant `insert_with_defaults_in_tx`) et `designate_vat_accounts_in_tx` (un `UPDATE ... COALESCE` de la
+  ligne de réglages, sans lecture de compte, appelée après, si `invoice_settings_created`). L'ordre documenté est tenu
+  sans exception ; la ligne 326 et le doc de `final_body` sont précisés (comptes de TVA inclus) dans la même PR.
+- **Écartées** : garder l'ordre inverse et écrire l'exception (risque faible, mais une exception de plus au Pattern 5
+  pour un gain nul) ; ajouter un paramètre à `insert_with_defaults_in_tx` (toucherait le chemin production, C-31-5-3).
+- **Réversible** : oui.
+
+### C-31-5-14 — Contrôles de l'AC16 décidables (validation P1, R1/F2/F3)
+
+- **Contexte** : `grep -rn 'format!("Facture' crates` rend deux lignes, dont `supplier_invoices.rs:512` (libellé
+  d'écriture de production), et les deux « exceptions » nommées (`:816`, `qr_decode.rs:225`) ne contiennent pas
+  `format!` ; le contrôle d'`audit_log.rs` était ligne à ligne, faux dès que rustfmt met l'argument à la ligne suivante,
+  et contredisait l'AC11.
+- **Retenu** : (a) contrôle #504 = zéro ligne hors `crates/kesh-db/src/repositories/supplier_invoices.rs` **et** compte
+  de `format!("Facture fournisseur` dans ce fichier égal à 1 — l'exception unique et nommée, avec sa raison ;
+  (b) contrôle #469 multi-ligne par aplatissement (`tr '\n' ' '`, jeton qui suit `AppError::Validation(`), six jetons,
+  tous `t`/`t_args` après correctif ; le **garde** reste le test de l'AC12, l'AC11 renvoie à l'AC16.
+- **Écartées** : `grep -Pzo` (moins lisible, dépend de PCRE) ; supprimer le contrôle et ne garder que le test.
+- **Réversible** : oui.
+
+### C-31-5-15 — Les six clés du journal d'audit entrent à la garde G9 (validation P1, F9)
+
+- **Contexte** : `les_replis_rust_suivent_le_catalogue` (G9, `crates/kesh-api/tests/textes_coherents.rs:680`) est une
+  table fermée ; sans entrée, les replis Rust des six `t`/`t_args` pourraient dériver du catalogue `fr-CH`.
+- **Retenu** : une quatrième entrée `crates/kesh-api/src/routes/audit_log.rs` avec les six clés (paramètres
+  `{ $field }` → `{nom}`, `{ $max }` → `{maximum}`). La clé `invoice-qr-message-prefix` n'y entre pas : sans repli Rust.
+- **Écartée** : laisser G9 telle quelle (facultatif, mais une dérive silencieuse pour quelques lignes).
+- **Réversible** : oui.
+
+### C-31-5-16 — Le budget d'issues n'est pas tenu par cette story : déficit déclaré, arbitrage au Project Lead (validation P1, R3/F1)
+
+- **Contexte** : recompte du 2026-10-24 : 141 ouvertes (#708, #709, #710 ouvertes ce jour) ; − #503 − 4 = 136, pas sous
+  le plafond « moins de 136 » ; + l'issue annoncée des LOW résiduels de la 31-1c = 137.
+- **Retenu** : écrire le déficit (deux retraits) dans l'*Origine* et le soumettre au Project Lead par l'orchestrateur :
+  deux défauts de plus ou publication au-dessus du plafond. Aucune fermeture pour le chiffre.
+- **Écartée** : ajouter d'office #687 ou #645 (écartées pour risque, C-31-5-2) ; taire le déficit.
+- **Réversible** : sans objet (constat).
+
+### C-31-5-17 — Libellés d'écriture en français en dur : hors périmètre, issue soumise à l'orchestrateur (validation P1)
+
+- **Contexte** : `supplier_invoices.rs:512` et `:941`, `invoice_settlements_write.rs:277`, `credit_notes.rs:590`
+  composent en dur des descriptions d'écritures en français ; ce ne sont pas des textes adressés au débiteur (hors
+  classe de #504) ; aucune issue ouverte ne les couvre.
+- **Retenu** : inventoriés au *Hors périmètre* ; l'orchestrateur décide si une issue s'ouvre (si l'on tient qu'ils
+  doivent suivre la langue comptable de la société). Seul `supplier_invoices.rs:512` intéresse l'AC16 (exception nommée).
+- **Écartée** : les traduire ici (ni mécanique ni dans le défaut).
+- **Réversible** : oui.
