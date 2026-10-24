@@ -1602,7 +1602,7 @@ L'article 10 al. 1 OLICo exige que « l'intégrité et la lisibilité des suppor
 \begin{enumerate}
     \item Provisionner une instance Kesh de test (machine virtuelle ou container isolé).
     \item Restaurer la sauvegarde la plus récente --- un \keshcommand{.keshbackup} se restaure sur l'instance neuve par la procédure \emph{Restaurer sur une nouvelle machine} (\S\ref{sec:restauration-machine-neuve}), qui vérifie aussi les pièces.
-    \item Vérifier que l'application démarre, que les écritures sont accessibles, qu'un export ZIP de souveraineté peut être généré et que son SHA-256 est identique à celui généré sur l'instance de production avant la sauvegarde.
+    \item Vérifier que l'application démarre, que les écritures sont accessibles, qu'un export ZIP de souveraineté peut être généré, et que ses tables ont les mêmes empreintes que celles de l'export produit sur l'instance de production avant la sauvegarde. L'archive entière n'a \textbf{pas} la même empreinte SHA-256, par construction (son \texttt{metadata.json} porte la date de l'export, et le journal d'audit de l'instance de test compte l'import et les connexions qui l'ont suivi) : on compare donc l'empreinte \textbf{de chaque table}, par la commande de la répétition d'une clôture (\S\ref{sec:repetition-cloture}, \emph{L'export de souveraineté de la copie}) ; seule \texttt{audit\_log.csv} doit différer.
     \item Documenter le test dans un procès-verbal écrit (date, opérateur, résultat, anomalies éventuelles). Conservation 10 ans avec les sauvegardes.
 \end{enumerate}
 
@@ -1793,7 +1793,7 @@ done
 diff "$COPIE/telechargements/empreintes-production.txt" \
   "$COPIE/telechargements/empreintes-copie.txt"
 \end{lstlisting}
-Attendu : une seule différence, \texttt{audit\_log.csv} (quelques lignes de plus dans la copie) ; toute autre table qui diffère est une anomalie de la restauration, à noter au procès-verbal. ⚠️ L'étape~3 du test périodique (\S\ref{sec:test-restauration}) demande une empreinte \textbf{identique} : elle ne peut pas l'être, et la répétition ne prétend pas la remplir à la lettre. La comparaison table par table est ce qu'elle établit ; qu'elle suffise à votre procès-verbal est à décider par vous.
+Attendu : une seule différence, \texttt{audit\_log.csv} (quelques lignes de plus dans la copie) ; toute autre table qui diffère est une anomalie de la restauration, à noter au procès-verbal. C'est la comparaison que demande l'étape~3 du test de restauration périodique (\S\ref{sec:test-restauration}) ; qu'elle suffise à votre procès-verbal est à décider par vous.
 
 \paragraph{Les gestes de la clôture.} Dans la copie, pour l'exercice à clore, \emph{Administration → Exercices comptables} :
 \begin{enumerate}
