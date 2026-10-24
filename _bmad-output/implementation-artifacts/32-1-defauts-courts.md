@@ -1203,6 +1203,9 @@ et `kesh_e2e_321b`, port 3325, `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-32-1b/
   mutations, dix exécutions. **Test faible trouvé par M-b2** : « TIMEOUT pendant l'écriture » était resté vert —
   `toContain('26')` était satisfait par « 2026 » ; la date se compare désormais à sa forme affichée et le statut de la
   précédente est asserté (commit `8cfe08c3`) ; M-b2 rejouée (`321b-mut-M-b2-test-renforce.log`) : **neuf** rouges.
+  *(Annoté le 2026-10-24, revue de code P1, A1 : « dix exécutions » compte les seules exécutions de base — M-b7 en
+  deux — ; avec le rejeu de M-b2, le répertoire porte **onze journaux** `321b-mut-*.log`. S'y ajoute, à la
+  remédiation P1, M-b12 : `321b-p1rem-mut-M-b12.{diff,log}`.)*
 - **Tests ajoutés**, recomptés aux deux bornes `b3f52733` → `68843cd8` (lignes `it(`/`test(` ; boucles comptées à
   l'exécution) : `AutoBackupSection.test.ts` 15 → 24 lignes (exécutés 17 → 30 : une boucle de cinq cas),
   `BackupScheduleBanner.test.ts` 9 → 13, `unknown-outcome.test.ts` 0 → 3 lignes (9 exécutés), spec E2E 3 → 3
@@ -1726,6 +1729,41 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/
   constaté avant (16 échecs) ; neuf mutations tuées (dix exécutions), un test faible trouvé par M-b2 et renforcé ; gate
   complet 3981/3981 (7 ignorés) ; E2E 315 / 7 KF-029 / 17 ignorés ; quatre captures. CHANGELOG : une ligne. Registre
   C-32-1-49 à C-32-1-56. Clé à `review` ; revue de code P1 (Sonnet, lentilles B, E, A) : `321b-review-prompt-p1.md`.
+- 2026-10-24 — **32-1b, revue de code P1** (Sonnet ×3 — lentilles B, E, A —, contexte frais, diff aplati
+  `b3f52733...dae40211` ; rapports `kesh-gate-logs/321b-review-p1-{B,E,A}.md`) : **B 0/0/0/3, E 0/0/1/4, A 0/0/0/2** —
+  un MEDIUM, neuf LOW. Trend : passe 1 : 1 MEDIUM → passe 2 à venir.
+  - **E1 (MEDIUM), traité par un test seulement — aucune ligne de production modifiée** (commit `9997f877`) :
+    `formUnchanged` compare `enabled`, mais aucun test ne le distinguait. Deux cas ajoutés au bloc E-6 de
+    `AutoBackupSection.test.ts` : **(iv)** la case « Activée » seule décochée survit au run (qui rend `enabled`
+    inchangé, une autre version et une autre rétention) et « Enregistrer » envoie `enabled: false`, rétention 7,
+    `version: 3` ; **(v)** la case cliquée deux fois et la fréquence 12 puis 24 — saisie remise à sa base — : le
+    formulaire suit le réglage rendu (rétention 9) et l'envoi part avec sa version (4). **Mutation M-b12**
+    (`enabled === formBase.enabled` retiré de `formUnchanged`), copie de sauvegarde, rouge : **(iv) seul**
+    (1 échec / 32), restauration depuis la copie, diff résiduel **0**, contrôle 32/32 vert
+    (`kesh-gate-logs/321b-p1rem-mut-M-b12.{diff,log}`). (v) documente le cas « remise à l'origine » ; M-b12 ne le
+    rougit pas, ce qui est attendu (la mutation rend la saisie *plus* souvent inchangée).
+  - **A1 (LOW), annoté** : « dix journaux » / « dix exécutions » → **onze** journaux (dix exécutions de base, M-b7 en
+    deux, plus le rejeu de M-b2) ; annotation datée au Dev Agent Record (sous-section 32-1b) et à
+    `321b-review-prompt-p1.md`, sans réécriture. Recompte : `ls kesh-gate-logs | grep -c '^321b-mut-.*\.log$'` = 11.
+  - **Non traités, à tracer par l'orchestrateur** : **B1** (saisie remise à l'origine après un run qui a rendu une
+    version neuve : l'envoi part avec l'ancienne version, 409, détour sans perte) ; **B2** (`runNow` range toute
+    exception non `ApiError` sous « issue inconnue », message du `TypeError` jamais affiché ni journalisé) ; **B3**
+    (`loadError` posé par une relecture ratée n'est effacé qu'au `runNow` suivant ou au rechargement) ; **E2**
+    (`apply` — chemins `loadSchedule` et `save` — sans la garde de `applyState` sur une réponse non objet : un 200 au
+    corps illisible masque le panneau) ; **E3** (« Recharger » en échec efface le conflit alors que `formBase` reste
+    périmé) ; **E4** (une lecture du panneau plus ancienne peut périmer un sondage plus récent du bandeau ; deux
+    sondages dont le second échoue perdent la réussite du premier) ; **E5** (l'état partagé du bandeau survit à une
+    déconnexion dans le même onglet) ; **A2** (L-B6 : la ligne et la limite peuvent s'afficher au même arrondi,
+    « 2,1 Go » trop grand pour « 2,1 Go »).
+  - **Gates**, révision `9997f877` (dernier commit de code) : ciblé — Vitest `AutoBackupSection.test.ts` 32/32,
+    `npm run check` 0 erreur (29 avertissements, antérieurs), `lint-i18n-ownership` PASS (`321b-p1rem-cible.log`) ;
+    **Vitest complet 163 fichiers / 1939 tests** verts (1937 + 2 ; `321b-p1rem-frontend-unit.log`) ; `build` vert
+    (`321b-p1rem-frontend-build.log`) ; **E2E complet** (montage de `CLAUDE.md` § E2E, port 3325, `kesh_e2e_321b`
+    reconstruite) : **315 passés / 7 échoués / 17 ignorés**, les sept échecs = les sept KF-029 (#97) de `docs/testing.md`
+    § *Les échecs attendus*, ligne à ligne, jugement écrit au journal (`321b-p1rem-e2e.log`). **Backend Rust non
+    touché : aucun gate Rust rejoué** (le gate complet du développement, 3981/3981 à `68843cd8`, reste celui du code
+    Rust, inchangé depuis). Clé reste `review` ; passe P2 ciblée (Opus, regression hunter, diff `dae40211...HEAD`) :
+    `321b-review-prompt-p2.md`.
 
 [#711]: https://github.com/guycorbaz/kesh/issues/711
 [#714]: https://github.com/guycorbaz/kesh/issues/714

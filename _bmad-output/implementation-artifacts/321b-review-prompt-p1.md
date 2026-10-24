@@ -117,6 +117,8 @@ preuve. Points d'appui :
   jugés fichier par fichier contre `docs/testing.md` § *Les échecs attendus* (`321b-e2e.log`) ; gate complet
   (`321b-gate-complet.log`) et ses chiffres.
 - **AC-b11** : neuf mutations (dix journaux), diff résiduel 0.
+  *(Annoté le 2026-10-24, après la passe, A1 : **onze** journaux — dix exécutions de base, M-b7 en deux, plus le
+  rejeu de M-b2, `321b-mut-M-b2-test-renforce.log`.)*
 - **Décomptes** : tests ajoutés recomptés aux deux bornes (`git show b3f52733:<f> | grep -cE "^\s*it\(" ` contre
   `HEAD`, boucles `for … it(` comptées à part), périmètre déclaré ; le Vitest complet (`321b-frontend-unit.log`)
   cohérent avec ce décompte (1911 au gate de la 32-1d).
