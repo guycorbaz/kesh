@@ -781,6 +781,89 @@ second passage (même journal).
   substitution, mais pas par l'outil Edit. Aucune autre écriture de code hors Edit/Write ; `cargo fmt` a reformaté.
 - T2 à T4 en un commit (C-32-4a-17).
 
+#### Revue de code P1 — remédiation (2026-10-24/25, Opus 5.5, en autonomie)
+
+Commits `dbf3cff4` (tests, doc-comment de `services/mod.rs`, limite de `sans_commentaires`) et `fa80ab4a`
+(doc-comments de `ecritures::lister` et `carnet::lister` — **dernier commit de code**). Choix C-32-4a-19 à 23 au
+registre.
+
+- **B1 = E1 = E2, A4 (MEDIUM)** — traité. `tests/services_rollout.rs` : `filtres_des_ecritures_par_la_route` (douze
+  lignes par la route : sans filtre ; `description`, `accountId`, `amountMin`, `amountMax`, `dateFrom`, `dateTo`,
+  `journal` chacun seul ; `amountMin == amountMax`, `dateFrom == dateTo` acceptés ; les deux bornes incluses, montants
+  et dates) et `tri_par_defaut_et_filtres_du_carnet` (tri par défaut au service, demande vide, contexte MCP
+  `ContactsRead`, puis onze lignes par la route : défaut, `sortDirection=Desc`, `sortBy=CreatedAt` dans les deux sens,
+  `sortBy=UpdatedAt`, `isClient` vrai et faux, `isSupplier`, `contactType`, `search`, `includeArchived`). Fixtures
+  synthétiques posées dans chaque test : trois écritures (« Loyer mars », « Vente comptoir », « Frais bancaires »),
+  quatre contacts dont l'ordre diffère selon la colonne de tri (C-32-4a-19).
+- **B2 (LOW)** — traité : deux lignes à la table de `ac10_a` (`accountId = -5` ; `amountMin=10, amountMax=-5` → «
+  amountMax ne peut pas être négatif », les négatifs avant le contrôle croisé) ; l'égalité des bornes est tenue par la
+  route (ci-dessus).
+- **A3 = E3 (LOW)** — traité : `ac11_b_la_liste_des_ecritures_ne_lit_pas_la_societe` (contexte MCP sur une société
+  inexistante, toutes portées → `Ok`, page vide) ; nommé au doc-comment de `ecritures::lister`.
+- **A1 (LOW)** — traité : le doc-comment de `services/mod.rs` nomme les quatre branches non atteintes, avec la raison
+  des deux ajoutées (C-32-4a-22).
+- **A2 (LOW)** — traité par la forme : une ligne par mutation ci-dessous, diffs aux journaux (C-32-4a-21).
+- **B4 (LOW)** — traité : la limite (`//` ou `/*` dans une chaîne) écrite au doc-comment de `sans_commentaires` et aux
+  limites de `ac12_iii_inventaire_des_sites_non_resolus`.
+- **B3, E5, E4 (LOW)** — **non traités dans le code**, à tracer par l'orchestrateur (C-32-4a-23) : #738 (B3, E5),
+  #742 (E4).
+- **Propagation** : `grep -rn "non atteintes"` sur le dépôt → la fiche l. 310 (AC, texte validé, « … ») et le Record
+  (quatre branches), désormais alignés sur `services/mod.rs` ; `grep -rn "sans_commentaires" crates` → l'aide de
+  `services_motif.rs` (quatre appels, tous couverts par sa doc) et une homonyme LaTeX sans rapport
+  (`tests/common/manuel.rs:145`) ; `grep -rn "ne lit pas la société\|Aucune lecture de société"` → `ecritures.rs:110`
+  (complété du nom de la garde) et la fiche (AC16).
+
+**Mutations M19 à M37** (pilote `kesh-gate-logs/324a-p1r-mutations-pilote.py`, journal
+`324a-p1r-mutations-campagne.log`, `324a-p1r-mut-<id>.{log,diff}` ; même protocole que la T6, sous verrou, motif
+vérifié unique, `git checkout -- <f> && touch <f>`, résidu nul après chacune ; binaire `services_rollout` seul,
+C-32-4a-20) — **19 tuées sur 19, aucune survivante** :
+
+| Mutation | Remplacement | Ce qui rougit (ligne de table) |
+|---|---|---|
+| M19 | `date_from`/`date_to` permutés dans `JournalEntryListQuery` | `filtres_des_ecritures_par_la_route` : `dateFrom=2026-03-15`, `dateTo=2026-03-15`, `dateFrom=…10&dateTo=…20` |
+| M20 | `amount_min`/`amount_max` permutés | idem : `amountMin=200`, `amountMax=50`, `amountMin=40&amountMax=100` |
+| M21 | `account_id: None` | idem : `accountId=<3000>` |
+| M22 | `journal: None` | idem : `journal=Ventes` |
+| M23 | `description: None` | idem : `description=Loyer` |
+| M24 | `from > to` → `from >= to` | idem : `dateFrom == dateTo` → 400 |
+| M25 | `min > max` → `min >= max` | idem : `amountMin == amountMax` → 400 |
+| M26 | `id <= 0` → `id == 0` | `ac10_a` : « 9 bis accountId négatif » (rendu `Ok`, page vide) |
+| M27 | contrôle croisé des montants placé avant les négatifs | `ac10_a` : « ordre : amountMin=10 et amountMax=-5 » |
+| M28 | `company_for_ids` ajouté en tête de `ecritures::lister` | `ac11_b_la_liste_des_ecritures_ne_lit_pas_la_societe` (`Internal`) |
+| M29 | `unwrap_or(SortDirection::Asc)` → `Desc` (carnet) | `tri_par_defaut_et_filtres_du_carnet` : service et route, demande vide |
+| M30 | `unwrap_or_default()` → `unwrap_or(ContactSortBy::CreatedAt)` | idem : service et route, demande vide |
+| M31 | `include_archived: false` (service) | idem : `includeArchived=true` |
+| M32 | `is_client: None` (service) | idem : `isClient=true`, `isClient=false` |
+| M33 | `search: None` (handler des contacts) | idem : `search=Zeta` |
+| M34 | `is_supplier: None` (handler) | idem : `isSupplier=true` |
+| M35 | `include_archived: false` (handler) | idem : `includeArchived=true` |
+| M36 | `sort_direction: None` (handler) | idem : `sortDirection=Desc`, `sortBy=CreatedAt&sortDirection=Desc` |
+| M37 | `journal: None` (handler des écritures) | `filtres_des_ecritures_par_la_route` : `journal=Ventes` |
+
+Chaque rouge a été relu à son message (`grep` des lignes d'échec de `324a-p1r-mut-<id>.log`) : aucun ne vient d'une
+compilation ni d'un montage. Non jouées (C-32-4a-20) : trois recopies du handler des contacts (`contact_type`,
+`is_client`, `sort_by`) et dix du handler des écritures — chacune a sa ligne dans la table, **non revendiquée**.
+
+**Gates** (révision `fa80ab4a`, dernier commit de code) :
+
+- **ciblé** pendant l'itération (`324a-p1r-cible-1.log`, sur l'arbre de travail commité ensuite tel quel en
+  `dbf3cff4`) : `cargo clippy --workspace
+  --all-targets -D warnings` vert, `services_rollout` + `services_motif` **35 exécutés, 35 passés** ;
+- **complet** (`324a-p1r-gate-complet.log`, `rev fa80ab4a`, bases `kesh_324a` et `kesh_e2e_324a` remises à zéro avant,
+  migrées et seedées, conteneur non touché) : `scripts/test-fast.sh --ci` sous verrou — fmt, clippy `-D warnings`,
+  garde des droits conforme, **nextest 4016 exécutés, 4016 passés, 7 ignorés** (4013 + les 3 tests neufs) ;
+- **frontend** : non relancé — `git diff 8f3b4ffe..HEAD --stat -- frontend` vide ; le gate frontend de `345bcc7f`
+  reste celui du code frontend ;
+- **E2E complet** (`324a-p1r-e2e.log`, `rev fa80ab4a`, script `324a-p1r-e2e.sh` — recette de `docs/testing.md`, port
+  3326, base `kesh_e2e_324a`, dossiers `/tmp/kesh-e2e-324a/` ; backend arrêté par PID, port libre ensuite) : **315
+  passés, 7 échecs, 17 ignorés** (12,9 min) ; les sept, jugés un par un contre `docs/testing.md` l. 394-400, sont les
+  sept lignes KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150`. Aucune régression.
+
+**Décomptes** (périmètre `8f3b4ffe` → `HEAD`, `grep -cE '#\[(sqlx::|tokio::)?test'` aux deux bornes) :
+`services_rollout.rs` 9 → 12 (+3), `services_motif.rs` 23 → 23 ; table de `ac10_a` : dix lignes → douze. Mutations de
+la story : 35 (T6) + 19 = **54**, dont 53 tuées et M8 équivalente.
+
 ### File List
 
 - `crates/kesh-api/src/services/ecritures.rs` (neuf)
@@ -797,6 +880,7 @@ second passage (même journal).
 - `crates/kesh-api/tests/services_motif.rs`
 - `docs/MULTI-TENANT-SCOPING-PATTERNS.md`
 - `_bmad-output/implementation-artifacts/324a-review-prompt-p1.md` (neuf)
+- `_bmad-output/implementation-artifacts/324a-review-prompt-p2.md` (neuf, remédiation de la revue de code P1)
 - `_bmad-output/implementation-artifacts/epic-32-choix-autonomes-324a.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 - `_bmad-output/implementation-artifacts/32-4a-services-ecritures-contacts.md`
@@ -941,3 +1025,31 @@ second passage (même journal).
   échecs = les sept KF-029. Choix C-32-4a-13 à 18 au registre. Écart : un ajout de tests par `cat >>` (consigne 14),
   déclaré. **Q1** reste à Guy. Statut : `review` ; revue de code P1 à lancer (`324a-review-prompt-p1.md`, Sonnet,
   lentilles B, E, A).
+- **2026-10-24/25 — Revue de code P1** (Sonnet ×3, lentilles B, E, A, contexte frais, lecture seule, diff aplati
+  `39939799...HEAD` ; prompt `324a-review-prompt-p1.md`, rapports hors dépôt `kesh-gate-logs/324a-review-p1-{B,E,A}.md`)
+  : **B 0/0/1/3, E 0/0/2/3, A 0/0/0/4**, soit 13 findings, **9 distincts** après recoupement (B1 = E1 = E2 avec A4 ;
+  A3 = E3) — **1 MEDIUM** distinct (B1 = E1 = E2 : aucun test n'exerçait le chemin de succès des filtres ni les
+  défauts du tri du carnet), 8 LOW distincts (B2, B3, B4, E4, E5, A1, A2, A3 = E3) ; 0 au-dessus de MEDIUM. Le code déplacé a été
+  jugé **fidèle** par les trois lentilles (ordre, neuf messages, garde déplacée, `parse_as_of`, handlers) ; le défaut
+  était de **couverture**. Remédiation par l'orchestrateur de la story (Opus 5.5), prémisses relues au code
+  (`contacts.rs` `push_where_clauses` et `ORDER BY`, `journal_entries.rs` `push_where_clauses`,
+  `letterings/open_items.rs:355`) ; commits `dbf3cff4`, `fa80ab4a` (dernier commit de code) ; détail au Dev Agent
+  Record, § *Revue de code P1 — remédiation* :
+  - **traités** : B1 = E1 = E2 + A4 (deux tests par la route, tri par défaut aussi au service), B2 (deux lignes à
+    `ac10_a`), A3 = E3 (un test, société inexistante), A1 (doc-comment de `services/mod.rs`), A2 (une ligne par
+    mutation au Record, C-32-4a-21), B4 (limite de `sans_commentaires`, deux endroits) ;
+  - **tracés, non traités dans le code** (C-32-4a-23), à verser par l'orchestrateur : B3 et E5 sur **#738**, E4 sur
+    **#742**.
+  - **Mutations** : M19 à M37, **19 tuées sur 19** (huit sur la recopie et les contrôles de `ecritures::lister`, une
+    sur la lecture de société, quatre sur le carnet au service, cinq sur les handlers) ; total de la story **54**, 53
+    tuées, M8 équivalente.
+  - **Tests** (périmètre `8f3b4ffe` → `HEAD`) : +3 (`services_rollout.rs` 9 → 12), `ac10_a` 10 → 12 lignes.
+  - **Gates à `fa80ab4a`** : ciblé (35/35, `services_rollout` + `services_motif`, clippy vert) ; complet `test-fast.sh
+    --ci` **4016/4016** (7 ignorés), bases remises à zéro avant ; frontend non relancé (`frontend/` non touché) ; E2E
+    complet **315 passés, 7 échecs = les sept KF-029**, 17 ignorés.
+  - **Propagation** : symptômes grepés sur le dépôt (`non atteintes`, `sans_commentaires`, `ne lit pas la société`) ;
+    sites traités ou relevés au Record.
+  - **Trend** : P1 = 1 MEDIUM (+ 8 LOW distincts). La remédiation ajoute des tests et des doc-comments, **aucune ligne de code de
+    production exécutable** (`git diff 8f3b4ffe..HEAD -- crates/*/src` : doc-comments seuls). La boucle ne se clôt que
+    sur une passe à 0 MEDIUM : **P2 ciblée**, une lentille (regression hunter), **Opus**, sur `8f3b4ffe..HEAD`
+    (`324a-review-prompt-p2.md`, rapport `kesh-gate-logs/324a-review-p2.md`).

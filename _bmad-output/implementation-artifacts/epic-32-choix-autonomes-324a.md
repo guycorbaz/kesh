@@ -231,3 +231,69 @@ autonomie. Relevé au code de `89d68704` (32-3 fusionnée).
   `portee_exigee`, et bruyant si un rapport l'exigeait un jour.
 - **Écartée** : rendre une portée arbitraire (le test mentirait sur « l'autre portée »).
 - **Réversible** : oui.
+
+### C-32-4a-19 — Le chemin de succès des filtres se teste par la route, sur des fixtures propres au test
+
+*(Revue de code P1, B1 = E1 = E2, A4.)*
+
+- **Contexte** : aucun test n'exerçait la recopie des filtres (`ecritures::lister` → `JournalEntryListQuery`, handler
+  des contacts → `DemandeListeContacts` → `ContactListQuery`) ni les défauts du tri du carnet.
+- **Retenu** : deux tests **par la route** dans `tests/services_rollout.rs` — `filtres_des_ecritures_par_la_route`
+  (douze lignes : chacun des sept filtres seul, l'égalité et l'inclusion des deux bornes) et
+  `tri_par_defaut_et_filtres_du_carnet` (onze lignes : tri par défaut, trois colonnes, deux sens, cinq filtres), qui
+  tiennent ensemble le handler, le service et le dépôt ; le tri par défaut est **aussi** vérifié au service, demande
+  vide, sous un contexte MCP (le chemin de la 32-9b). Fixtures synthétiques **posées dans chaque test** (trois
+  écritures, quatre contacts aux dates de création et de modification explicites), et non ajoutées à `poser_livres`,
+  dont les autres tests comptent les lignes (`total >= 1`, une écriture, un contact). Les ensembles d'écritures sont
+  comparés sans ordre (le tri des écritures n'est pas l'objet) ; les contacts dans l'ordre rendu.
+- **Écartée** : des tests au service seulement — ils ne voient pas la recopie du handler, que B1 nomme.
+- **Réversible** : oui.
+
+### C-32-4a-20 — La campagne de la remédiation ne relinke que `services_rollout`, et échantillonne les recopies du handler
+
+- **Contexte** : la consigne demande de borner les écritures disque ; le pilote de la T6 lançait
+  `cargo nextest run --workspace -E 'binary(…)'`, qui reconstruit tous les binaires de test de `kesh-api` à chaque
+  mutation de `src/`.
+- **Retenu** : pilote `kesh-gate-logs/324a-p1r-mutations-pilote.py`, même protocole (motif vérifié unique, diff
+  sauvegardé, `git checkout -- <f> && touch <f>`, résidu nul), mais `cargo nextest run -p kesh-api --test
+  services_rollout` ; dix-neuf mutations, M19 à M37. Côté handler, **quatre** des sept recopies des contacts
+  (`search`, `is_supplier`, `include_archived`, `sort_direction`) et **une** des onze des écritures (`journal`) sont
+  jouées ; les autres ont chacune leur ligne dans la table des tests, **sans** être jouées — non revendiquées comme
+  tuées.
+- **Écartée** : jouer les dix-huit recopies du handler (treize compilations de plus pour des lignes que la table
+  désigne déjà une à une).
+- **Réversible** : oui (le pilote se relance avec d'autres identifiants).
+
+### C-32-4a-21 — AC14 : les diffs restent aux journaux, une ligne par mutation au Dev Agent Record
+
+*(Revue de code P1, A2.)*
+
+- **Contexte** : l'AC14 demande les assertions « recopiées au Dev Agent Record avec leur diff » ; le Record renvoie à
+  `kesh-gate-logs/324a-mut-<id>.diff`.
+- **Retenu** : les diffs complets restent **hors dépôt** (consigne : rapports et journaux hors dépôt) ; le pilote, qui
+  porte en clair chaque couple (ancien texte, nouveau texte), y est aussi. Pour M19 à M37, le Dev Agent Record recopie
+  **en une ligne** le remplacement de chaque mutation et la ligne de table qui rougit ; pour M1a à M18, la table de la
+  T6, qui décrit chaque mutation en une phrase, n'est pas réécrite (relevé daté).
+- **Écartée** : recopier les trente-cinq diffs de la T6 dans la fiche (une centaine de lignes sans lecteur, et une
+  entrée de passe passée réécrite).
+- **Réversible** : oui.
+
+### C-32-4a-22 — A1 : le doc-comment de `services/mod.rs` nomme les quatre branches non atteintes
+
+- **Contexte** : le doc-comment en nommait deux, le Dev Agent Record quatre.
+- **Retenu** : aligner le doc-comment sur le Record — compte non lettrable (refusé par `require_viewable_account`
+  avant toute lecture des postes, `letterings/open_items.rs:355`) et contact à conditions de paiement (libellé mis en
+  forme au handler) ajoutés, avec la raison de leur place.
+- **Écartée** : dire au Record que ces deux-là sont hors inventaire — vrai, mais le doc-comment est le texte que lit
+  le développeur de la 32-6.
+- **Réversible** : oui.
+
+### C-32-4a-23 — B3, E5 et E4 ne se corrigent pas dans la 32-4a : ils se tracent
+
+- **Contexte** : B3 (commentaire de `kesh-db/src/repositories/journal_entries.rs:934`, « la source de vérité est le
+  route handler »), E5 (le plafond 500 écrit deux fois, `services::ecritures::LIMITE_MAX` et `MAX_LIMIT` du dépôt),
+  E4 (`analyser_date` sans la plage 1000-9999).
+- **Retenu** : rien dans le code — `kesh-db` reste non touché (AC15), et E4 changerait un comportement que la story
+  déplace sans le changer (déjà #742). Le texte des commentaires à verser sur **#738** (B3, E5) et **#742** (E4) est
+  demandé à l'orchestrateur, qui seul peut écrire sur GitHub.
+- **Réversible** : oui.
