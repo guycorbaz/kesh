@@ -307,8 +307,10 @@ que l'export de la production en a annoncé** (l'en-tête `X-Kesh-Backup-Files` 
 relevé à l'étape 0) ; et la lecture de l'étape 5 de *Restaurer sur une nouvelle machine* est faite telle quelle :
 **une écriture récente au journal, et la liste des factures** que la source portait y figurent. Ce critère vaut pour
 toute installation, y compris une production sans aucune pièce (aucun document importé) : le manuel ne présume rien
-de *N*. **Si l'export n'annonce aucun compte de pièces** (production antérieure à la 0.15.0, sauvegarde de format 1),
-le critère se réduit à **0 pièce manquante** et à la lecture de l'étape 5 ; le manuel le dit *(P6, T2-bis)*. **Ce que le développement exige en plus, et que le manuel ne dit pas** : la sauvegarde
+de *N*. **La répétition suppose une production en 0.15.0 ou plus**, dont la sauvegarde est de format 2 et annonce son
+compte de pièces ; une production antérieure se **met d'abord à jour** — le manuel le dit en tête de la procédure.
+Une sauvegarde de format 1 ne vaut pas répétition : ses pièces ne sont pas dans le fichier et seraient toutes
+manquantes *(P6, T2-bis ; corrigé en P7 : le critère réduit d'abord écrit était inatteignable)*. **Ce que le développement exige en plus, et que le manuel ne dit pas** : la sauvegarde
 synthétique de la T1 porte *N* ≥ 1 (au moins une pièce y est entrée par l'écran) ; *N* = 0 y serait un **échec de la
 préparation de la source** — « 0 manquante » serait alors vrai quelle que soit la qualité de la restauration des
 pièces —, et la copie contient en outre l'exercice suivant et l'écriture de régularisation de la T1. **Étapes 2 à 5
@@ -886,3 +888,15 @@ captures, mutations tuées, écarts à la fiche.)*
 - LOW L1 à L3 laissés au développement (L1 : réserve « si le navigateur le permet » à propager aux l. 226, 231, 348 ; L2 :
   la regex de G14 ne lit qu'une liste fermée de verbes ; L3 : « l'original » de l'étape 0 à définir).
 - Passe suivante : ciblée P7 (Sonnet) sur ce commit.
+
+### Validation P7 ciblée (2026-10-24) — Sonnet, lentille T sur `8aa08d3b` : 0/0/1/1 ; MEDIUM remédié par l'orchestrateur
+
+- **MEDIUM**, né de la remédiation P6 de l'orchestrateur : le critère réduit « 0 pièce manquante » pour un export de
+  format 1 était **inatteignable** dès que la production porte des documents (le format 1 ne contient aucune pièce,
+  `compter_les_pieces_manquantes` les compte toutes manquantes ; contredit la l. 188). **Retrait** : la répétition
+  suppose une production en 0.15.0 ou plus (format 2) ; une production antérieure se met d'abord à jour. Le cas du
+  format 1 sort du critère.
+- LOW : la T4 renvoie à l'AC4 en bloc pour le texte du manuel (suffisant).
+- *Troisième remédiation de l'orchestrateur sur l'Epic 31 qui introduit le défaut suivant* (31-1 P5, P6 ; 31-4 P6) : à la
+  rétrospective.
+- Passe suivante : ciblée P8 (Opus), **dernière passe permise**.
