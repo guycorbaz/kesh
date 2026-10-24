@@ -1,6 +1,6 @@
 # Story 31.5 : quatre défauts courts avant la release (#707, #589, #504, #469)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-31-5`, branche `story/31-5` sur `origin/main`
 `e71cd351`. Registre : `epic-31-choix-autonomes-315.md` (C-31-5-0 à C-31-5-22 ; 13 à 17 à la validation P1, 18 à 20 à la validation P2, 21 et 22 à la validation P3).
@@ -509,9 +509,149 @@ de l'utilisateur` (l. 13, 40, 60) ; une section **`### Corrigé`** (intitulé de
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), en autonomie, 2026-10-24 — worktree `kesh-31-5`, bases `kesh_315` / `kesh_e2e_315`, port 3315,
+`CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-31-5/target`. Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/315-*`.
+
 ### Completion Notes List
 
+**Commits de code** (dans l'ordre) : `05f8a944` (#589), `89f35d52` (#707), `46504f33` (#504, et les six clés de #469
+posées d'abord), `4a35ec1c` (#469, garde G9 et C-31-5-23) — **dernier commit de code** ; puis `d8bdffd5` (manuel FR, PDF,
+CHANGELOG) et le commit de ce compte rendu, documentaires.
+
+**Rouges constatés avant chaque correctif** (sorties copiées des journaux) :
+
+- **#589 (AC5)** — `315-rouge-589.log` : `× trois clos : l'infobulle nomme le plus récent clos, pas le plus proche` —
+  `Expected: "Exercice 2026"` / `Received: "Rouvrez d'abord l'exercice « Exercice 2025 », plus récent et encore
+  clôturé."` (1 failed | 1 passed | 27 skipped).
+- **#707 (AC2)** — `315-rouge-707.log` : `demo_validates_an_invoice_with_vat` → `left: 400 / right: 200`, corps
+  `{"error":{"code":"CONFIGURATION_REQUIRED",…}}` ; `demo_designates_the_three_vat_accounts` → `TVA due — left: None /
+  right: Some(42)` ; `full_path_b_flow` vert (garde du chemin production, vert avant comme après ; éprouvée par M8).
+- **#504 (AC9 b)** — `315-rouge-504-b.log` : `le_pdf_est_dans_la_langue_du_client` rouge à la nouvelle assertion
+  (`invoice_frozen_pdf_e2e.rs:359`, `!pdf_contains(&pdf, "Facture")`) : `pdf_contains` **voit** donc la communication
+  imprimée — l'assertion ne passe pas à vide. **(AC9 a)** — `315-rouge-504-a.log`, en deux temps (paramètre ajouté,
+  ignoré, sept appels de test à `"Facture"`) : `left: Some("Facture F-2026-0001") / right: Some("Rechnung F-2026-0001")`.
+- **#469 (AC12)** — `315-rouge-469.log`, après l'ajout des six clés aux quatre catalogues : `message de
+  ?dateFrom=pas-une-date … left: "dateFrom invalide (input contains invalid characters)" / right: "dateFrom ist
+  ungültig: Datum im Format JJJJ-MM-TT erwartet"` ; `une_date_hors_plage_…` vert.
+
+**Correctifs** :
+
+- **#707** — `lock_vat_role_accounts_in_tx` (trois lectures ponctuelles `singleton_role = ? FOR UPDATE`, ordre
+  `VatRecoverable`, `VatPayable`, `VatSettlement` ; filtre imputable **et** type du réglage), `designate_vat_accounts_in_tx`
+  (un `UPDATE … COALESCE`, aucune lecture de compte), `VatRoleAccounts`, `VatSettingAccountTypes`,
+  `VAT_SETTING_ACCOUNT_TYPES` ; `final_body` : lecture avant `insert_with_defaults_in_tx`, désignation après, sur ligne
+  neuve seulement ; la route `PUT /company/invoice-settings` lit la constante (C-31-5-25) ; Pattern 5 et doc-comment de
+  `final_body` mis à jour. Le chemin production n'appelle ni l'une ni l'autre.
+- **#589** — `latestLaterClosed` (max `startDate`), doc-comment réécrit, quatre sites renommés.
+- **#504** — clé `invoice-qr-message-prefix` × 4, résolue dans la `locale` de `render_document`, passée à
+  `build_qrbill_inputs` (`format!("{qr_message_prefix} {n}")`, troncature 140 conservée) ; commentaire du rapprochement
+  complété.
+- **#469** — six sites en `t` / `t_args` (`pub(crate)`), replis `&format!(…)` égaux au fr-CH, six clés × 4, entrée
+  `audit_log.rs` à G9 (`TABLE` `[…; 4]`) ; formulation du refus de format : C-31-5-24.
+
+**Écarts à la fiche, et incidents** :
+
+- **Garde des comptes cités (C-31-5-23)** : le gate complet d'après T2 (`315-gate-t2.log`, 3914 exécutés, 3913 passés,
+  1 échoué) a rougi `textes_coherents::les_comptes_cites_en_exemple_existent_dans_les_plans_livres` sur la clé neuve
+  `audit-log-query-error-date-out-of-range` (« 9999 » lu comme un compte). Correctif mécanique de la garde (une date ISO
+  `NNNN-MM-JJ` n'est pas un compte), commité avec T4. Défaut non prévu par la fiche.
+- **Route (C-31-5-25)** : une variable locale `vat_types` et deux lignes de commentaire, au lieu de trois chemins
+  complets — écart à la lettre « aucune autre ligne ne change », comportement identique.
+- **Commit `46504f33`** : les catalogues portent ensemble la clé de #504 et les six clés de #469 (un même fichier par
+  locale ; aucun ajout partiel par commit sans `git add -p`, indisponible ici).
+- **Outil d'édition** : les deux tests HTTP de #707 (fin de `onboarding_e2e.rs`) ont été ajoutés par un `cat >>`, contre
+  la consigne « Edit uniquement » ; contenu vérifié par le gate, aucun autre fichier du dépôt n'a été écrit hors Edit
+  (hors `cargo fmt` et `make fr`).
+- **Premier run E2E à montage incomplet** : le runner n'avait pas `KESH_INBOX_DIR` / `KESH_DOCUMENTS_DIR` — 298 passés /
+  11 échoués / 17 ignorés / 10 non exécutés, dont quatre échecs `KESH_INBOX_DIR = /tmp/kesh-e2e/inbox : répertoire
+  absent…` (`backup-restore-new-install.spec.ts:140`, `:262`, `inbox-import.spec.ts:59`, `supplier-documents.spec.ts:78`).
+  Journal gardé : `315-e2e-run1-montage-incomplet.log`. Relancé, base remise à zéro, montage corrigé : voir ci-dessous.
+  `docs/testing.md` (recette du terminal 2) ne nomme pas ces deux variables côté runner — la recette du `CLAUDE.md` non
+  plus : **issue à ouvrir** (documentation de la recette E2E).
+
+**Mutations** (`315-mutations.log`, un journal `315-mut-<id>.log` chacune ; appliquées par Edit sur motif unique,
+rejouées sous verrou, restaurées par `git checkout -- f && touch f`, diff résiduel 0) :
+
+| Id | Mutation | Résultat |
+|---|---|---|
+| M1 | `other.startDate > best.startDate` → `<` | **tuée** : `trois clos : l'infobulle nomme le plus récent clos…` |
+| M2 | appel de `designate_vat_accounts_in_tx` retiré | **tuée** : `demo_validates_an_invoice_with_vat`, `demo_designates_the_three_vat_accounts` |
+| M3 | TVA due lue sur `VatSettlement` | **tuée** : `demo_validates_…` (« l'écriture crédite le compte du rôle VatPayable de 8.10 » — `left: None`), `demo_designates_…`, et quatre tests `vat_role_accounts_*` |
+| M4 | `if invoice_settings_created` → `if true` | **équivalente** (71 tests verts : `onboarding_e2e`, `onboarding_audit_e2e`, `onboarding_path_b_e2e`, `kesh-seed`) : à l'étape 2, la ligne de réglages est toujours neuve, et `COALESCE` n'écraserait de toute façon aucune valeur posée — la seule différence observable serait une désignation sans bump de `version` sur une ligne préexistante, que la démonstration ne produit pas |
+| M5 | préfixe `"Facture"` rétabli en dur | **tuée** : `qr_message_uses_the_document_language_prefix`, `le_pdf_est_dans_la_langue_du_client` |
+| M6 | `parse_code` laissé en français | **tuée** : `les_parametres_invalides_sont_refuses_en_400`, cas `?action=…` |
+| M7a | filtre de type neutralisé | **tuée** : `vat_role_accounts_reject_payable_of_wrong_type` |
+| M7b | filtre `postable` neutralisé | **tuée** : `vat_role_accounts_reject_non_postable_recoverable` |
+| M8 | la finalisation production désigne la TVA | **tuée** : `full_path_b_flow` (« TVA due non désignée en production », `left: Some(40)`) |
+
+**Tests ajoutés** — recomptés aux deux bornes (`git show origin/main:<f> | grep -cE '#\[(sqlx::)?test'` contre le
+fichier à `HEAD`, `it(` pour Vitest), périmètre `origin/main` (`e71cd351`) → `HEAD` : `onboarding_e2e.rs` 14 → 16 (+2),
+`company_invoice_settings_repository.rs` 25 → 29 (+4), `invoice_pdf_service.rs` 9 → 10 (+1), `fiscal-years-page.test.ts`
+26 → 27 (+1) ; soit **7 tests Rust et 1 test Vitest neufs**. Tests modifiés sans changement de nombre :
+`onboarding_path_b_e2e.rs` (`full_path_b_flow`, trois assertions), `invoice_frozen_pdf_e2e.rs`
+(`le_pdf_est_dans_la_langue_du_client`), `audit_log_e2e.rs` (`les_parametres_invalides_sont_refuses_en_400`),
+`textes_coherents.rs` (G9, `nombres_isoles`).
+
+**Gates au dernier commit de code** (`4a35ec1c`, arbre identique à `d8bdffd5` pour le code), base remise à zéro avant :
+
+- **Backend** — `scripts/test-fast.sh --ci` sous verrou (`315-gate-final-backend.log`) : garde des droits, `fmt`,
+  `clippy -D warnings`, nextest **3915 exécutés, 3915 passés, 7 ignorés**.
+- **Frontend** (`315-gate-final-*.log`) : `npm run check` 0 erreur (29 avertissements, préexistants, aucun dans les
+  fichiers touchés) ; `lint-i18n-ownership` vert ; `test:unit` **159 fichiers, 1867 tests passés** ; `build` vert.
+- **E2E complet** (`315-e2e.log`, montage de `docs/testing.md`, port 3315, `kesh_e2e_315` remise à zéro) : **312 passés /
+  7 échoués / 17 ignorés** (12,7 min). Les sept, jugés fichier par fichier : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — **les sept KF-029 (#97)** de la liste
+  des échecs attendus ; ni KF-052 ni pollution. `git log origin/main..HEAD` sur ces trois fichiers : zéro commit.
+- **Gates ciblés** entre les étapes (non déclarés comme complets) : `315-vert-707-cible.log` (64/64),
+  `315-vert-504.log` (38/38), `315-vert-469.log` (570/570, dont `textes_coherents` et la parité i18n).
+- **Gate complet intermédiaire** (exception `kesh-db`, après T2) : `315-gate-t2.log`, 3913/3914 — l'échec est celui de
+  C-31-5-23, corrigé ensuite.
+
+**Contrôles de l'AC16** (après correctif) : `grep -rn 'format!("Facture' crates | grep -v '^crates/kesh-db/src/repositories/supplier_invoices.rs:'`
+→ zéro ligne ; `grep -c 'format!("Facture' crates/kesh-db/src/repositories/supplier_invoices.rs` → 1 ;
+`grep -rn "nearestLaterClosed" frontend/src` → zéro ; contrôle multi-ligne d'`audit_log.rs` → six jetons (`t` × 3,
+`t_args` × 3), zéro hors `t`/`t_args`.
+
+**Manuel** : `user-manual.tex` (l. 185, paragraphe après la l. 205, FAQ de la langue d'une facture), `make fr` sous
+verrou, `user-manual.pdf` seul gardé (`admin-manual.pdf` et `marketing-brochure.pdf` régénérés sans changement de
+source, restaurés). PDF aplati : « dont les comptes de TVA » 1, « suit elle aussi la langue de la facture » 1,
+« Configuration incomplète : configurez les paramètres de facturation avant de valider » 1 ; « Les comptes de TVA ne
+sont pas désignés d’office » et « indique lequel rouvrir d’abord » présents à l'apostrophe typographique et à la
+ligature `ﬀ` près.
+
+**Captures** (thème clair, base de démonstration synthétique — `_test/seed` `fresh`, puis `seed-demo` par l'API),
+`/home/gcorbaz/devel/kesh-gate-logs/315-captures/` : `315-ac3-facturation-demo.png` (*Administration → Facturation* :
+TVA due 2200, impôt préalable 1171, décompte 2206) ; `315-ac7-exercices-trois-clos.png` (2024, 2025, 2026 clos :
+deux boutons *Réouvrir* désactivés, celui de 2026 actif) ; `315-ac7-survol-plus-ancien.png`. Infobulles relevées au DOM
+(`315-captures-notes.txt`) : 2024 et 2025 — `title` et enveloppe « Rouvrez d’abord l’exercice « Exercice 2026 », plus
+récent et encore clôturé. » ; 2026 — actif, sans `title`.
+
+**Issues à ouvrir** (demandées à l'orchestrateur) : recette E2E — `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR` à passer
+aussi au runner (`docs/testing.md`, `CLAUDE.md`).
+
 ### File List
+
+- `crates/kesh-db/src/repositories/company_invoice_settings.rs`
+- `crates/kesh-db/tests/company_invoice_settings_repository.rs`
+- `crates/kesh-seed/src/lib.rs`
+- `crates/kesh-api/src/routes/company_invoice_settings.rs`
+- `crates/kesh-api/src/routes/invoice_pdf_service.rs`
+- `crates/kesh-api/src/routes/audit_log.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/tests/onboarding_e2e.rs`
+- `crates/kesh-api/tests/onboarding_path_b_e2e.rs`
+- `crates/kesh-api/tests/invoice_frozen_pdf_e2e.rs`
+- `crates/kesh-api/tests/audit_log_e2e.rs`
+- `crates/kesh-api/tests/textes_coherents.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/routes/(app)/settings/fiscal-years/+page.svelte`
+- `frontend/src/routes/(app)/settings/fiscal-years/fiscal-years-page.test.ts`
+- `frontend/src/lib/features/fiscal-years/fiscal-years.helpers.ts`
+- `docs/MULTI-TENANT-SCOPING-PATTERNS.md`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/31-5-defauts-courts.md`, `epic-31-choix-autonomes-315.md`,
+  `315-review-prompt-p1.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -623,3 +763,7 @@ de l'utilisateur` (l. 13, 40, 60) ; une section **`### Corrigé`** (intitulé de
     de sa rectification) et les entrées datées du Change Log. Tendance : P1 7 → P2 3 → P3 2 → P4 2 MEDIUM, ces deux
     derniers nés de la remédiation précédente. Une passe P5 **ciblée** (Sonnet) suit, sur le seul diff de cette
     remédiation.
+- 2026-10-24 — **Développement** (Opus 5.5, autonomie) : T1 à T6 ; quatre rouges constatés avant correctif ; mutations
+  M1-M8 (M4 équivalente, les huit autres tuées) ; gate complet backend 3915/3915, frontend 1867/1867, E2E 312 / 7 KF-029
+  / 17 ignorés au dernier commit de code ; choix C-31-5-23 à 25 ; statut `review`. Revue de code P1 à lancer
+  (`315-review-prompt-p1.md`, Sonnet, lentilles B, E, A).

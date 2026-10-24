@@ -286,3 +286,38 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Écartées** : un tableau `[AccountType; 3]` indexé (la position d'un réglage n'a pas de nom, une erreur d'indice ne
   rougit pas) ; trois constantes isolées (trois noms à importer pour une seule règle).
 - **Réversible** : oui (noms internes, aucun n'est d'API).
+
+### C-31-5-23 — #469 : la garde des comptes cités lit l'année d'une date ISO comme une date (développement, 2026-10-24)
+
+- **Contexte** : le gate complet après T2 a rougi `textes_coherents::les_comptes_cites_en_exemple_existent_dans_les_plans_livres`
+  sur la clé neuve `audit-log-query-error-date-out-of-range` (« … entre 1000-01-01 et 9999-12-31 ») : `nombres_isoles`
+  lisait `9999` comme un numéro de compte, absent des plans livrés (`1000` passait, Caisse). Les deux bornes doivent
+  figurer dans le message : `une_date_hors_plage_est_refusee_pour_la_plage_et_non_le_format` l'exige.
+- **Retenu** : correctif mécanique de la garde (test seulement) — un nombre de quatre chiffres sans décimales suivi
+  exactement de `-MM-JJ` (`^-\d{2}-\d{2}(\D|$)`) est l'année d'une date ISO, non un compte ; écrit dans la liste des
+  exceptions du doc-comment de la garde.
+- **Écartées** : reformuler le message sans les bornes (contredit le test existant et l'AC11) ; écrire les bornes
+  autrement (`9 999`, en lettres : texte moins exact pour un nom d'API) ; une exemption par clé (une liste à tenir).
+- **Réversible** : oui. **Angle mort créé** : un compte faux écrit `NNNN-MM-JJ` n'est plus lu — forme sans usage.
+
+### C-31-5-24 — #469 : formulation du refus de date mal formée, et `max` passé en texte (développement, 2026-10-24)
+
+- **Contexte** : l'AC11 retire le détail `chrono` (`({e})`, anglais) sans fixer la nouvelle formule ; `{ $max }` peut
+  être passé à Fluent en nombre ou en texte.
+- **Retenu** : « `{ $field }` invalide : date attendue au format AAAA-MM-JJ » (et ses trois traductions, chaque
+  locale avec son gabarit : JJJJ-MM-TT, AAAA-MM-GG, YYYY-MM-DD) ; `field` et `max` passés en **texte**
+  (`to_string()`), dans le code comme dans le test de l'AC12, pour qu'aucun formatage numérique de locale n'entre
+  dans la comparaison.
+- **Écartée** : `max` en nombre Fluent (sans effet pour 32 et 64, mais un formatage de locale possible au-delà de
+  999, sans gain).
+- **Réversible** : oui.
+
+### C-31-5-25 — #707 : la route lit la constante par une variable locale (développement, 2026-10-24)
+
+- **Contexte** : l'AC1 prescrit que les trois arguments de type deviennent `VAT_SETTING_ACCOUNT_TYPES.payable`, etc.,
+  « aucune autre ligne de la route ne change ».
+- **Retenu** : une ligne `let vat_types = company_invoice_settings::VAT_SETTING_ACCOUNT_TYPES;` et deux lignes de
+  commentaire avant les trois appels, puis `vat_types.payable` / `.recoverable` / `.settlement` — trois chemins
+  complets répétés étaient plus longs que les arguments qu'ils remplacent. Comportement identique (`AccountType` `Copy`).
+- **Écartée** : le chemin complet à chaque argument (conforme à la lettre, plus verbeux).
+- **Réversible** : oui (écart à la lettre de l'AC1, déclaré au Dev Agent Record).
