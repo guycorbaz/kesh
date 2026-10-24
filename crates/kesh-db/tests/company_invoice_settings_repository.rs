@@ -1768,3 +1768,167 @@ async fn vat_role_accounts_skip_archived_settlement(pool: MySqlPool) {
         Some(account_with_role(&pool, company_id, "VatRecoverable").await)
     );
 }
+
+// ===========================================================================
+// Story 32-1a (#716, E1) — `designate_vat_accounts_in_tx` : « jamais
+// d'écrasement » et « idempotent », sur les trois colonnes. Montage en trois
+// transactions distinctes, pour qu'aucun verrou ne s'attende lui-même :
+// (t1) la ligne de réglages créée et commitée ; (u) les `UPDATE` directs sur le
+// pool, après ce commit ; (t2), (t3) la lecture verrouillante des rôles puis la
+// désignation, chacune commitée.
+// ===========================================================================
+
+/// Les trois colonnes de TVA de la ligne de réglages, et sa `version`.
+async fn vat_columns_and_version(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> (Option<i64>, Option<i64>, Option<i64>, i32) {
+    sqlx::query_as(
+        "SELECT default_vat_payable_account_id, default_vat_recoverable_account_id, \
+         default_vat_decompte_account_id, version \
+         FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .fetch_one(pool)
+    .await
+    .expect("ligne de réglages")
+}
+
+/// (t1) — la ligne de réglages créée par `insert_with_defaults_in_tx`, commitée.
+async fn create_settings_row(pool: &MySqlPool, company_id: i64) {
+    let mut tx = pool.begin().await.unwrap();
+    company_invoice_settings::insert_with_defaults_in_tx(&mut tx, company_id)
+        .await
+        .expect("ligne de réglages");
+    tx.commit().await.unwrap();
+}
+
+/// (t2)/(t3) — la séquence de `seed_demo` : lecture verrouillante des rôles de
+/// TVA, puis désignation ; rend les comptes des rôles.
+async fn designate_vat(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> company_invoice_settings::VatRoleAccounts {
+    let mut tx = pool.begin().await.unwrap();
+    let roles = company_invoice_settings::lock_vat_role_accounts_in_tx(&mut tx, company_id)
+        .await
+        .expect("lecture des comptes de TVA");
+    company_invoice_settings::designate_vat_accounts_in_tx(&mut tx, company_id, &roles)
+        .await
+        .expect("désignation des comptes de TVA");
+    tx.commit().await.unwrap();
+    roles
+}
+
+/// L'id du compte `number` de la société, après avoir vérifié qu'il est une
+/// valeur **légitime** du réglage : imputable et du type `expected`.
+async fn legitimate_account(
+    pool: &MySqlPool,
+    company_id: i64,
+    number: &str,
+    expected: &str,
+) -> i64 {
+    let (id, account_type, postable): (i64, String, bool) = sqlx::query_as(
+        "SELECT id, account_type, postable FROM accounts WHERE company_id = ? AND number = ?",
+    )
+    .bind(company_id)
+    .bind(number)
+    .fetch_one(pool)
+    .await
+    .unwrap_or_else(|e| panic!("compte {number} : {e}"));
+    assert!(postable, "montage : le compte {number} doit être imputable");
+    assert_eq!(
+        account_type, expected,
+        "montage : le compte {number} doit être du type {expected}"
+    );
+    id
+}
+
+/// Une valeur posée sur chacune des trois colonnes n'est jamais écrasée par la
+/// désignation — chacune une valeur que la route accepterait, distincte du
+/// compte du rôle (sans quoi l'égalité finale ne prouverait rien).
+#[sqlx::test(migrations = "./test-schema")]
+async fn designate_vat_never_overwrites_a_set_value(pool: MySqlPool) {
+    let company_id = pme_company_with_chart(&pool).await;
+    create_settings_row(&pool, company_id).await;
+
+    // (u) — trois valeurs légitimes, posées après le commit de (t1).
+    let payable = legitimate_account(&pool, company_id, "2000", "Liability").await;
+    let recoverable = legitimate_account(&pool, company_id, "1170", "Asset").await;
+    let decompte = legitimate_account(&pool, company_id, "2201", "Liability").await;
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_vat_payable_account_id = ?, \
+         default_vat_recoverable_account_id = ?, default_vat_decompte_account_id = ? \
+         WHERE company_id = ?",
+    )
+    .bind(payable)
+    .bind(recoverable)
+    .bind(decompte)
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Montage : les valeurs posées diffèrent des comptes que les rôles désignent.
+    let roles = read_vat_role_accounts(&pool, company_id).await;
+    assert!(
+        roles.payable.is_some() && roles.recoverable.is_some() && roles.settlement.is_some(),
+        "montage : les trois rôles de TVA doivent être lus, rendu {roles:?}"
+    );
+    assert_ne!(roles.payable, Some(payable), "montage : TVA due");
+    assert_ne!(
+        roles.recoverable,
+        Some(recoverable),
+        "montage : impôt préalable"
+    );
+    assert_ne!(roles.settlement, Some(decompte), "montage : décompte");
+
+    // (t2)
+    designate_vat(&pool, company_id).await;
+
+    let (p, r, d, _) = vat_columns_and_version(&pool, company_id).await;
+    assert_eq!(p, Some(payable), "TVA due : la valeur posée est écrasée");
+    assert_eq!(
+        r,
+        Some(recoverable),
+        "impôt préalable : la valeur posée est écrasée"
+    );
+    assert_eq!(d, Some(decompte), "décompte : la valeur posée est écrasée");
+}
+
+/// Sur une ligne aux trois colonnes `NULL`, la désignation pose les comptes des
+/// rôles ; rejouée, elle ne change ni les colonnes ni `version`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn designate_vat_fills_nulls_and_is_idempotent(pool: MySqlPool) {
+    let company_id = pme_company_with_chart(&pool).await;
+    create_settings_row(&pool, company_id).await;
+
+    // Montage : sans quoi « remplit les NULL » passerait à vide.
+    let (p0, r0, d0, _) = vat_columns_and_version(&pool, company_id).await;
+    assert_eq!(
+        (p0, r0, d0),
+        (None, None, None),
+        "montage : la ligne de réglages créée ne doit poser aucun compte de TVA"
+    );
+
+    // (t2)
+    let roles = designate_vat(&pool, company_id).await;
+    assert!(
+        roles.payable.is_some() && roles.recoverable.is_some() && roles.settlement.is_some(),
+        "montage : les trois rôles de TVA doivent être lus, rendu {roles:?}"
+    );
+    let apres_t2 = vat_columns_and_version(&pool, company_id).await;
+    assert_eq!(
+        (apres_t2.0, apres_t2.1, apres_t2.2),
+        (roles.payable, roles.recoverable, roles.settlement),
+        "les trois colonnes égalent les comptes des rôles"
+    );
+
+    // (t3)
+    designate_vat(&pool, company_id).await;
+    let apres_t3 = vat_columns_and_version(&pool, company_id).await;
+    assert_eq!(
+        apres_t3, apres_t2,
+        "rejouée, la désignation ne change ni les colonnes ni `version`"
+    );
+}

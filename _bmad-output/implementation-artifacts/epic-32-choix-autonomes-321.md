@@ -1,6 +1,6 @@
 # Epic 32 — registre des choix autonomes de la Story 32-1 (défauts courts, clés 32-1a, 32-1b, 32-1c, 32-1d)
 
-Registre propre à la story (C-32-1-1 à C-32-1-42 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage de la 32-1b, C-32-1-38 de la validation P3, C-32-1-39 et 40 du développement de la 32-1c, C-32-1-41 et 42 de sa revue de code P1), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
+Registre propre à la story (C-32-1-1 à C-32-1-43 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage de la 32-1b, C-32-1-38 de la validation P3, C-32-1-39 du développement de la 32-1a, C-32-1-40 et 41 du développement de la 32-1c, C-32-1-42 et 43 de sa revue de code P1 — ces quatre-là numérotés C-32-1-39 à 42 jusqu'à la fusion de `main` du 2026-10-24, où ils ont été décalés d'un rang, C-32-1-39 étant déjà porté par la 32-1a fusionnée ; les prompts versionnés `321c-review-prompt-p1.md` et `-p2.md` gardent l'ancienne numérotation), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
 (`docs/agents-orchestration.md` § 1). Fiche : `32-1-defauts-courts.md`. Clé courte : `321`.
 Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` sur `chore/kickoff-epic-32` (`6f0cee00`).
 
@@ -644,7 +644,7 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   une variante de message pour le 200 illisible (F10) — une clé de plus pour un cas rare.
 - **Réversible** : oui — l'AC-a11 peut revenir tant que la 32-1a n'est pas développée, et #727 le porte d'ici là.
 
-### C-32-1-39 — 32-1c : le `literate` des listings ne prend pas, repli ASCII dans les deux scripts d'exemple
+### C-32-1-40 — 32-1c : le `literate` des listings ne prend pas, repli ASCII dans les deux scripts d'exemple
 
 - **Contexte** (développement de la 32-1c, 2026-10-24) : l'AC-c7 prescrivait `literate={✓}{{+}}1 {✗}{{x}}1 {═}{{=}}1`
   au style `kesh`, avec un repli écrit si le compte de U+FFFD le démentait. Après `make fr`, le manuel d'administration
@@ -660,7 +660,7 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   tous les listings).
 - **Réversible** : oui — trois lignes de `.tex` et un commentaire du `.sty`.
 
-### C-32-1-40 — 32-1c : trois `\needspace` de plus, pour qu'aucun listing de la sous-section ne soit coupé
+### C-32-1-41 — 32-1c : trois `\needspace` de plus, pour qu'aucun listing de la sous-section ne soit coupé
 
 - **Contexte** : l'AC-c6 exige, au contrôle du PDF, qu'« aucun listing de la sous-section » ne soit coupé. Le PDF de la
   base de la branche (`c03d3a5f`) en coupait **déjà deux** (contrôle 1, p. 54→55 ; contrôle 7, p. 57→58), sans lien
@@ -674,7 +674,7 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Réversible** : oui — trois lignes. *Limite* : un `\needspace` tient la mise en page **d'aujourd'hui** ; une
   phrase ajoutée plus haut peut déplacer une coupure — le contrôle se refait à chaque régénération.
 
-### C-32-1-41 — 32-1c, revue de code P1 : B1 réfuté à la lettre, le renvoi précisé plutôt que retourné
+### C-32-1-42 — 32-1c, revue de code P1 : B1 réfuté à la lettre, le renvoi précisé plutôt que retourné
 
 - **Contexte** (remédiation P1, 2026-10-24) : B1 (LOW) lisait « le `ls -d /var/tmp/kesh-repetition-*` écrit plus
   haut » comme un renvoi faux, le seul `ls -d` étant selon lui au cas *Reste d'une répétition antérieure*, plus bas.
@@ -687,11 +687,11 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   faux ; supprimer le renvoi (il dit où regarder).
 - **Réversible** : oui — quatre mots.
 
-### C-32-1-42 — 32-1c, revue de code P1 : `\Needspace` (exact) avant l'item, à la place du `\needspace` (approché) avant le listing
+### C-32-1-43 — 32-1c, revue de code P1 : `\Needspace` (exact) avant l'item, à la place du `\needspace` (approché) avant le listing
 
 - **Contexte** : A3 = E2 demandaient l'amorce et le listing des contrôles 1, 4 et 8 sur une même page, B5 un garde
   placé avant l'amorce, E1 la commande Synology (étape 6) d'un seul tenant. Premier essai : `\needspace{…}` avant
-  l'item, en gardant les `\needspace` posés devant les listings (C-32-1-40). Résultat au `pdftotext -layout` : la page
+  l'item, en gardant les `\needspace` posés devant les listings (C-32-1-41). Résultat au `pdftotext -layout` : la page
   qui commence par l'item 1 s'arrête après son texte, le listing partant seul à la page suivante. Cause, lue dans
   `needspace.sty` (v1.3e) : `\needspace` n'est qu'**approché** — de la colle et un `\penalty -100` qui offrent un point
   de coupure avantageux, choisi même quand la place suffit ; `\Needspace` compare `\pagegoal` à `\pagetotal` et ne coupe
@@ -706,5 +706,21 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
 - **Écartées** : garder les deux formes empilées (c'est elles qui ont coupé la page) ; agrandir les `\needspace`
   intérieurs (même défaut, plus grand) ; corriger les douze coupures antérieures hors sous-section (p. 12, 14 à 17, 21,
   36, 44, 50, 104, 125, 126 — présentes au PDF de la base, hors du périmètre de la 32-1c, relevées pour #731).
-- **Réversible** : oui — huit gardes. *Limite* : celle de C-32-1-40, inchangée — la garde tient la mise en page du jour ;
+- **Réversible** : oui — huit gardes. *Limite* : celle de C-32-1-41, inchangée — la garde tient la mise en page du jour ;
   #731 porte le contrôle outillé qui manque.
+*C-32-1-39 : développement de la 32-1a (Opus 5.5, 2026-10-24).*
+
+### C-32-1-39 — 32-1a : forme de la sonde de `TestEnv`, variante de M-a4, journal des mutations
+
+- **Contexte** : l'AC-a9 laisse le choix entre un compteur lisible et une variante `TestEnv::sonde()` ; l'AC-a3 décrit
+  deux rouges (quatre catalogues, `de-CH` seul) sous le seul identifiant M-a4 ; l'AC-a13 nomme les journaux
+  `321-mut-<id>.log`, le prompt de l'agent `321a-mutations.log`.
+- **Retenu** : un champ `mesures: Arc<AtomicUsize>` dans `TestEnv`, incrémenté par `free_bytes` ; `sonde()` rend
+  `(env, compteur)` ; `large()` délègue à `sonde()` et jette le compteur, `avec()` pose un compteur neuf — leur effet
+  sur les tests existants est inchangé, un compteur par tour (aucun partage entre tests). M-a4 jouée sous ses deux
+  formes, journalisées `321-mut-M-a4.log` (quatre catalogues) et `321-mut-M-a4-de.log` (`de-CH` seul). Les deux
+  noms de journaux tenus : un `321-mut-<id>.log` par mutation, et le résumé `321a-mutations.log`. Deux runs ratés par
+  l'outillage (Edit refusé, Vitest lancé hors de `frontend/`) gardés et annotés au résumé, non effacés.
+- **Écartées** : changer la signature de `large()` (tous les appels à toucher) ; un compteur global `static` (partagé
+  entre les tests parallèles de nextest dans un même binaire).
+- **Réversible** : oui.
