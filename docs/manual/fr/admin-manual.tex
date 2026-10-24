@@ -1442,13 +1442,13 @@ Le plan comptable peut être modifié après création (ajout de comptes auxilia
 
 \subsection{Configuration des exercices comptables}
 
-Chaque company doit définir au moins un exercice comptable (\emph{fiscal year}). Par défaut, l'exercice civil 1\textsuperscript{er} janvier -- 31 décembre est créé automatiquement à la création de la company. Pour d'autres exercices (décalés, courts, longs), aller dans \emph{Paramètres} → \emph{Exercices comptables}.
+Chaque company doit définir au moins un exercice comptable (\emph{fiscal year}). Par défaut, l'exercice civil 1\textsuperscript{er} janvier -- 31 décembre est créé automatiquement à la création de la company. Pour d'autres exercices (décalés, courts, longs), aller dans \emph{Administration} → \emph{Exercices comptables}.
 
 \paragraph{Clôture dans l'ordre (depuis la v0.13.0).}
 Les exercices se clôturent \textbf{du plus ancien vers le plus récent}, symétrique de la garde de réouverture ci-dessous~: la clôture d'un exercice est refusée tant qu'un exercice de date de début antérieure est encore ouvert (\texttt{409 EARLIER\_\allowbreak FISCAL\_\allowbreak YEAR\_\allowbreak OPEN}, qui nomme le plus ancien à clôturer d'abord), et la création d'un exercice est refusée si un exercice postérieur est déjà clôturé (\texttt{400 LATER\_\allowbreak FISCAL\_\allowbreak YEAR\_\allowbreak CLOSED}). Le bilan étant cumulatif, ces deux gardes empêchent qu'un exercice ouvert précède un exercice clôturé. ⚠️ Une \textbf{installation mise à jour} ou une \textbf{sauvegarde restaurée} peut porter cet état, hérité d'une version antérieure~: l'import l'accepte, l'écran des exercices le signale par un bandeau, et \textbf{rien ne s'enregistre} dans l'exercice ouvert concerné tant qu'il dure --- ni saisie, ni règlement, ni dévalidation, ni modification, ni suppression d'écriture (\texttt{400 LATER\_\allowbreak FISCAL\_\allowbreak YEAR\_\allowbreak CLOSED})~; il se résorbe en clôturant le plus ancien exercice ouvert, ou en rouvrant les exercices clôturés postérieurs, du plus récent vers l'ancien (section \emph{Exercices clôturés dans le désordre}).
 
 \paragraph{Réouverture d'un exercice clôturé (Admin uniquement).}
-La clôture d'un exercice est un verrou réversible et tracé. La \textbf{réouverture} est réservée aux \textbf{administrateurs} — plus strict que la clôture, accessible aux comptables — et n'est \textbf{pas} disponible via une clé API (opération privilégiée). Elle se fait depuis \emph{Paramètres} → \emph{Exercices comptables}, bouton \emph{Réouvrir}, et exige un \textbf{motif obligatoire} conservé dans le journal d'audit (\texttt{audit\_log}, action \texttt{fiscal\_year.reopened}, avec l'état avant/après et l'auteur ; conservation 10 ans). Une \textbf{garde d'ordre} impose de rouvrir du plus récent vers l'ancien : si un exercice de date de début postérieure est encore clôturé, la réouverture est refusée jusqu'à ce que celui-ci soit rouvert d'abord. Un exercice rouvert redevient éditable et pourra être re-clôturé. Aucune procédure en ligne de commande n'est nécessaire ni disponible pour cette opération.
+La clôture d'un exercice est un verrou réversible et tracé. La \textbf{réouverture} est réservée aux \textbf{administrateurs} — plus strict que la clôture, accessible aux comptables — et n'est \textbf{pas} disponible via une clé API (opération privilégiée). Elle se fait depuis \emph{Administration} → \emph{Exercices comptables}, bouton \emph{Réouvrir}, et exige un \textbf{motif obligatoire} conservé dans le journal d'audit (\texttt{audit\_log}, action \texttt{fiscal\_year.reopened}, avec l'état avant/après et l'auteur ; conservation 10 ans). Une \textbf{garde d'ordre} impose de rouvrir du plus récent vers l'ancien : si un exercice de date de début postérieure est encore clôturé, la réouverture est refusée jusqu'à ce que celui-ci soit rouvert d'abord. Un exercice rouvert redevient éditable et pourra être re-clôturé. Aucune procédure en ligne de commande n'est nécessaire ni disponible pour cette opération.
 
 \subsection{Création des utilisateurs et rôles}
 
@@ -1595,7 +1595,7 @@ docker compose start kesh-api
 curl http://localhost/health
 \end{lstlisting}
 
-\subsection{Test de restauration périodique (OLICo Art. 10 al. 1)}
+\subsection{Test de restauration périodique (OLICo Art. 10 al. 1)}\label{sec:test-restauration}
 
 L'article 10 al. 1 OLICo exige que « l'intégrité et la lisibilité des supports d'information sont régulièrement contrôlées ». Cela implique de \textbf{tester effectivement la restauration} au moins \textbf{annuellement}, sur un environnement de test isolé :
 
@@ -1609,6 +1609,274 @@ L'article 10 al. 1 OLICo exige que « l'intégrité et la lisibilité des suppor
 \begin{keshtip}
 Automatisez ce test annuel via un workflow CI/CD : provisioning Docker éphémère, restauration, exécution de tests E2E Playwright basiques, génération du procès-verbal. Cette automatisation peut être traitée comme une story Epic 10 « Déploiement \& Opérations » ou Epic ultérieur.
 \end{keshtip}
+
+La répétition d'une clôture sur une copie (\S\ref{sec:repetition-cloture}) comprend une telle restauration ; elle peut tenir lieu de ce test, aux conditions qu'elle dit.
+
+\subsection{Répéter une clôture sur une copie}\label{sec:repetition-cloture}
+% Listings en corps réduit dans cette sous-section : leurs lignes se recopient telles quelles,
+% le PDF ne doit pas les couper.
+\begingroup
+\lstset{basicstyle=\ttfamily\footnotesize\color{keshCodeText}}
+
+\paragraph{Ce qu'elle fait.} Avant de clore un exercice pour de bon, cette procédure monte une \textbf{copie isolée} de l'installation, restaurée depuis une sauvegarde complète \keshcommand{.keshbackup}, et y joue les gestes de la clôture --- préparer, contre-passer les transitoires, clôturer, rouvrir --- pour découvrir \textbf{sur la copie}, et non sur les livres, ce qui coince. Puis elle détruit la copie.
+
+\paragraph{Ce qu'elle ne fait pas.} Elle ne touche \textbf{jamais} l'installation de production, et ne la \textbf{remplace} pas par la copie : de la production, elle ne fait que lire la version et télécharger deux exports. « Clôturer » ou « rouvrir » dans la copie ne change rien à la production --- c'est le but.
+
+\paragraph{Où elle se joue.} Sur une \textbf{machine Linux} qui ne porte pas la production, avec Docker et Docker Compose v2 en version \textbf{2.24 ou plus}, et les outils \keshcommand{curl}, \keshcommand{openssl}, \keshcommand{unzip} et \keshcommand{jq}. La répétition \textbf{ne se joue jamais sur le NAS}, ni sur aucun hôte qui porte la production : le compose nomme ses conteneurs \keshpath{kesh-api} et \keshpath{kesh-mariadb} en dur, et publie le port 80, si bien que deux installations ne coexistent pas sur un même hôte. La copie vit dans un dossier \textbf{local} de \keshpath{/var/tmp}, hors du dossier personnel : jamais dans un dossier synchronisé (Synology Drive Client surveille par défaut \keshpath{\textasciitilde/SynologyDrive}) ni monté depuis le NAS, puisqu'elle contiendra les données et les pièces réelles.
+
+\paragraph{Ce qu'elle suppose.} Une production qui \textbf{exporte en format 2} (Kesh 0.15.0 ou plus) : le fichier \keshcommand{.keshbackup} emporte alors les pièces et en annonce le nombre. Cela se vérifie \textbf{avant de rien créer}, et sans rien télécharger : sur la production, la page \emph{Administration → Sauvegarde complète} dit que le fichier emporte « les pièces justificatives » ; une version antérieure ne le dit pas. Une production antérieure se \textbf{met d'abord à jour} (section \emph{Mise à jour de Kesh}, \S\ref{sec:mise-a-jour}), geste distinct de la répétition. Une sauvegarde de format 1 ne vaut pas répétition : ses pièces ne sont pas dans le fichier et, dans la copie, dont le dossier des documents est neuf, toutes les pièces référencées seraient manquantes.
+
+\begin{keshwarning}[title=\faExclamationTriangle\ La copie porte les données réelles]
+Le fichier \keshcommand{.keshbackup} est un \textbf{secret} (mots de passe hachés, jetons de session : \S\ref{sec:backup-ui-keshbackup}), et la copie restaurée contient toute la comptabilité, les pièces et une sauvegarde de sécurité. Tout ce qui touche la répétition reste dans le dossier de la copie, et la répétition se termine par sa \textbf{destruction} --- y compris si elle s'arrête en chemin.
+\end{keshwarning}
+
+\paragraph{Conventions.} Les commandes se tapent dans un même terminal, dans l'ordre. \keshcommand{COPIE} désigne le dossier de la copie, toujours écrit \textbf{sans barre finale}. Chaque commande Compose qui désigne la copie porte \keshcommand{-p kesh-repetition}, \keshcommand{-{}-project-directory "\$COPIE"} et des \keshcommand{-f} explicites : le nom de projet ne dépend ni du dossier courant ni d'une variable du terminal, le \keshpath{.env} lu est celui de la copie, et le fichier d'override est nommé, donc vu. Ne les abrégez pas par un alias ou une fonction : une session où l'alias manque retomberait sur les valeurs implicites. « \textbf{Arrêt} » veut dire, partout : détruire la copie (paragraphe \emph{Détruire la copie}), puis, pour reprendre, repartir du contrôle~1 avec une nouvelle date --- jamais un \keshcommand{mkdir -p}, jamais un \keshcommand{rm} improvisé.
+
+\paragraph{Les contrôles de la copie.} Les huit premiers précèdent tout démarrage ; chacun écrit ce qu'on doit voir, et tout écart est un arrêt --- sauf au contrôle~1, où une variable listée se retire et le contrôle se refait.
+
+\begin{enumerate}
+    \item \textbf{Environnement neutre, démon local, Compose 2.24 ou plus.} Les variables du terminal l'emportent sur le \keshpath{.env} : la première commande ne doit \textbf{rien} afficher ; sinon, retirez chaque variable listée (\keshcommand{unset}) et refaites-la. \keshcommand{DATABASE\_URL} y figure : sur une machine de développement, elle est souvent exportée par le profil du terminal, et le compose du Synology la lirait.
+\begin{lstlisting}[language=bash]
+env | grep -E '^(COMPOSE_|KESH_|MARIADB_|DATABASE_URL=)'
+env | grep -E '^DOCKER_(HOST|CONTEXT|CONFIG|TLS_VERIFY|CERT_PATH)='
+docker context show
+docker context inspect --format '{{.Endpoints.docker.Host}}'
+v=$(docker compose version --short); v=${v#v}
+[ "$(printf '%s\n' 2.24.0 "$v" | sort -V | head -n 1)" = 2.24.0 ] \
+  && echo "Compose $v : 2.24.0 ou plus"
+for o in curl openssl unzip jq; do
+  command -v "$o" > /dev/null || echo "manque : $o"
+done
+\end{lstlisting}
+    Attendu : les deux \keshcommand{env | grep} ne rendent rien ; aucun « manque » ; l'adresse du démon commence par \texttt{unix://} (jamais \texttt{tcp://} ni \texttt{ssh://} : la copie se jouerait sur un autre hôte, le NAS compris), et la dernière ligne s'affiche. En deçà de 2.24, l'override du contrôle~8 n'est pas garanti : arrêt.
+    \item \textbf{Hôte sans production ni reste d'une répétition.}
+\begin{lstlisting}[language=bash]
+docker ps -a --format '{{.Names}}' > /dev/null && echo 'démon joignable'
+docker ps -a --format '{{.Names}}' | grep -xE 'kesh-api|kesh-mariadb'
+docker ps -a -q --filter label=com.docker.compose.project=kesh-repetition
+docker volume ls -q --filter label=com.docker.compose.project=kesh-repetition
+docker network ls -q --filter label=com.docker.compose.project=kesh-repetition
+docker compose ls -a | grep -w kesh-repetition
+\end{lstlisting}
+    Attendu : \texttt{démon joignable} (un démon injoignable « ne rend rien » aussi, avec un code non nul), puis \textbf{rien} pour les cinq autres lignes. Un volume resté d'une répétition non détruite garderait son ancien mot de passe : c'est le cas \emph{Reste d'une répétition antérieure}, plus bas.
+    \item \textbf{Dossier de la copie : neuf, sous \keshpath{/var/tmp}, ni lien ni reste.} Remplacez la date :
+\begin{lstlisting}[language=bash]
+COPIE=/var/tmp/kesh-repetition-AAAAMMJJ
+mkdir -m 0700 "$COPIE"
+test ! -L "$COPIE" && echo 'pas un lien'
+[ "$(realpath -e -- "$COPIE")" = "$COPIE" ] && echo 'chemin réel'
+test -z "$(ls -A -- "$COPIE")" && echo 'vide'
+mkdir -m 0700 "$COPIE/telechargements"
+findmnt -T "$COPIE"
+\end{lstlisting}
+    Attendu : \keshcommand{mkdir} réussit --- \textbf{sans} \keshcommand{-p}, il refuse un dossier existant, et c'est voulu ; puis \texttt{pas un lien}, \texttt{chemin réel}, \texttt{vide} ; \keshcommand{findmnt} montre un système de fichiers local (ni \texttt{cifs}, ni \texttt{nfs}, ni \texttt{fuse}). Ce dernier écarte un \keshpath{/var/tmp} monté depuis le réseau, \textbf{pas} un dossier synchronisé : c'est l'emplacement fixé qui garantit celui-ci. Le mode \texttt{0700} tient la copie à l'écart des autres utilisateurs de la machine.
+\end{enumerate}
+
+\paragraph{Étape~0 : les relevés de la production.} Seulement maintenant, \textbf{sur la production} :
+\begin{itemize}
+    \item relevez la \textbf{version}, champ \texttt{version} de :
+\begin{lstlisting}[language=bash]
+curl -fsS https://<adresse de la production>/health
+\end{lstlisting}
+    \item si la répétition doit tenir lieu de test de restauration (\S\ref{sec:test-restauration}), produisez l'\textbf{export de souveraineté} (manuel utilisateur, \emph{Exports de souveraineté}), enregistré sous le nom \keshpath{souverainete-production.zip} ;
+    \item produisez le \keshcommand{.keshbackup} : \emph{Administration → Sauvegarde complète}. Le nombre de pièces annoncé se lit dans l'onglet \emph{Réseau} des outils du navigateur, en-tête \texttt{X-Kesh-Backup-Files} de la requête \texttt{full-export} --- l'écran ne l'affiche pas ---, ou après coup dans le fichier :
+\begin{lstlisting}[language=bash]
+unzip -l "$COPIE/telechargements/<fichier>.keshbackup" | grep -cE ' files/[^ ]+$'
+\end{lstlisting}
+\end{itemize}
+Ces fichiers s'enregistrent \textbf{directement} dans \keshpath{\$COPIE/telechargements/}, si le navigateur demande où enregistrer. S'il les a déposés dans son dossier de téléchargements, déplacez-les aussitôt (\keshcommand{mv <fichier> "\$COPIE/telechargements/"}) : ils ne doivent pas y rester, Synology Drive Client peut le surveiller. ⚠️ Un Firefox installé en \emph{snap} (le cas d'Ubuntu) n'a pas accès à \keshpath{/var/tmp} par lui-même ; seul son sélecteur de fichiers, qui passe par le portail du bureau, peut y écrire ou y lire --- d'où le repli par \keshcommand{mv}. Le fichier ainsi enregistré est \textbf{détruit avec la copie} : ce n'est pas une sauvegarde à conserver ; qui veut garder cette sauvegarde en garde un autre exemplaire ailleurs que dans \keshpath{\$COPIE}.
+
+\begin{enumerate}
+    \setcounter{enumi}{3}
+    \item \textbf{Compose et \keshpath{.env.example} au tag de la version relevée.} Remplacez \texttt{0.14.0} par la version relevée :
+\begin{lstlisting}[language=bash]
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.14.0
+curl -fsSL "$DEPOT/docker-compose.yml" -o "$COPIE/docker-compose.yml"
+curl -fsSL "$DEPOT/.env.example" -o "$COPIE/.env"
+\end{lstlisting}
+    \textbf{Jamais} le fichier du dossier de la production, ni le \keshpath{docker-compose.prod.yml} du Synology --- que le manuel fait d'ailleurs enregistrer, lui aussi, sous le nom \keshpath{docker-compose.yml} : le nom ne prouve rien, d'où le contrôle~7.
+    \item \textbf{\keshpath{.env} de la copie, rempli dans le fichier, jamais repris de la production.} Mots de passe de la base et secret de session \textbf{neufs} --- pour la copie, dont la base est neuve, c'est la bonne valeur ; l'avertissement du compose (« reprendre la valeur avec laquelle la base a été créée ») vaut pour une mise à jour, pas ici ---, et cookie non sécurisé, la copie étant servie en HTTP sur la machine même :
+\begin{lstlisting}[language=bash]
+sed -i \
+  -e "s|^#MARIADB_ROOT_PASSWORD=$|MARIADB_ROOT_PASSWORD=$(openssl rand -hex 32)|" \
+  -e "s|^#MARIADB_PASSWORD=$|MARIADB_PASSWORD=$(openssl rand -hex 32)|" \
+  -e "s|^KESH_JWT_SECRET=.*|KESH_JWT_SECRET=$(openssl rand -hex 32)|" \
+  -e 's|^KESH_COOKIE_SECURE=true$|KESH_COOKIE_SECURE=false|' \
+  "$COPIE/.env"
+grep -cE '^(MARIADB_ROOT_PASSWORD|MARIADB_PASSWORD|KESH_JWT_SECRET)=' "$COPIE/.env"
+grep -c '^KESH_COOKIE_SECURE=false$' "$COPIE/.env"
+\end{lstlisting}
+    Attendu : \texttt{3}, puis \texttt{1}. Les lignes existantes sont modifiées, aucune n'est ajoutée : une clé écrite deux fois, c'est la \textbf{dernière} qui l'emporte. Rien d'autre ne change : ni \keshcommand{KESH\_ADMIN\_USERNAME} ni \keshcommand{KESH\_ADMIN\_PASSWORD} (l'écran \keshpath{/setup} crée un administrateur provisoire), ni \keshcommand{KESH\_SMTP\_*} --- la copie \textbf{n'envoie aucun courriel}, si bien qu'aucun rappel importé ne part ---, ni \keshcommand{KESH\_HOST}, ni nom de projet ; \keshcommand{DATABASE\_URL}, laissée telle quelle, est sans effet (ce compose la construit lui-même).
+    \item \textbf{Aucune ligne \texttt{HOST\_DIR} active.}
+\begin{lstlisting}[language=bash]
+grep -nE '^[[:space:]]*KESH_[A-Z_]*HOST_DIR[[:space:]]*=' "$COPIE/.env"
+\end{lstlisting}
+    Attendu : rien. Posée, une telle variable rendrait un montage absolu --- un import dans la copie écrirait alors dans le dossier de la production. Les lignes commentées de \keshpath{.env.example} ne comptent pas.
+    \item \textbf{Première lecture de la configuration.} La configuration se lit en JSON, par \keshcommand{jq}, ce qui ne dépend d'aucune espace recopiée ; le filtre masque le mot de passe de la base --- la sortie complète de \keshcommand{config} contient les secrets : ne la copiez nulle part.
+\begin{lstlisting}[language=bash]
+docker compose -p kesh-repetition --project-directory "$COPIE" \
+  -f "$COPIE/docker-compose.yml" config --services
+docker compose -p kesh-repetition --project-directory "$COPIE" \
+  -f "$COPIE/docker-compose.yml" config --format json \
+  | jq -c '.name,
+      (.services["kesh-api"].environment.DATABASE_URL
+        | sub("kesh:[^@]*@"; "kesh:***@")),
+      .services["kesh-api"].environment.KESH_SMTP_HOST,
+      [.services[].volumes[]?.source]'
+\end{lstlisting}
+    Attendu, et c'est le \textbf{contrôle décisif} : \keshcommand{-{}-services} rend exactement \texttt{mariadb} et \texttt{kesh-api} (dans un ordre quelconque) ; le compose du Synology n'en rend qu'un, \texttt{kesh-api} : arrêt. Puis, ligne à ligne : \texttt{"kesh-repetition"} ; une adresse de base en \texttt{@mariadb:3306} --- second filet seulement : le Synology a la même forme ; \texttt{""} (aucun serveur de messagerie) ; et une liste dont chaque chemin est sous \keshpath{\$COPIE}, hormis \texttt{"kesh-mariadb-data"}, le volume nommé de la base.
+    \item \textbf{Override, puis configuration relue.} Choisissez un port libre, supérieur à 1023 et différent de 80 (ici 18314 ; \keshcommand{ss -ltn} montre les ports pris), et la version relevée. L'override s'écrit en YAML « en ligne », entre accolades, que l'indentation ne concerne pas :
+\begin{lstlisting}[language=bash]
+cat > "$COPIE/docker-compose.override.yml" <<'FIN'
+{"services": {"kesh-api": {"image": "gcorbaz/kesh:0.14.0",
+  "ports": !override ["127.0.0.1:18314:80"], "restart": "no"},
+  "mariadb": {"restart": "no"}}}
+FIN
+docker compose -p kesh-repetition --project-directory "$COPIE" \
+  -f "$COPIE/docker-compose.yml" -f "$COPIE/docker-compose.override.yml" \
+  config --services
+docker compose -p kesh-repetition --project-directory "$COPIE" \
+  -f "$COPIE/docker-compose.yml" -f "$COPIE/docker-compose.override.yml" \
+  config --format json \
+  | jq -c '.name,
+      (.services["kesh-api"].environment.DATABASE_URL
+        | sub("kesh:[^@]*@"; "kesh:***@")),
+      .services["kesh-api"].environment.KESH_SMTP_HOST,
+      [.services[].volumes[]?.source],
+      .services["kesh-api"].image, .services["kesh-api"].ports,
+      .services.mariadb.ports, [.services[].restart]'
+\end{lstlisting}
+    Attendu : tout le contrôle~7 de nouveau, puis l'image épinglée ; \textbf{une seule} publication pour \texttt{kesh-api}, avec \texttt{"host\_ip":"127.0.0.1"} et \texttt{"published":"18314"} --- aucun \texttt{"published":"80"} : la copie n'écoute que sur la machine même ; \texttt{null} pour \texttt{mariadb} (aucune publication) ; et \texttt{["no","no"]} (une copie oubliée ne repart pas au prochain démarrage de Docker). Deux publications, ou une sans \texttt{host\_ip}, veulent dire que l'override n'a pas remplacé la liste : arrêt. Ne posez pas \keshcommand{KESH\_HOST} : le \texttt{0.0.0.0} que le compose lui donne est l'adresse d'écoute \textbf{dans} le conteneur, non une publication.
+    \item \textbf{Seulement alors : l'image, le démarrage, la version.}
+\begin{lstlisting}[language=bash]
+docker compose -p kesh-repetition --project-directory "$COPIE" \
+  -f "$COPIE/docker-compose.yml" -f "$COPIE/docker-compose.override.yml" \
+  pull kesh-api
+docker compose -p kesh-repetition --project-directory "$COPIE" \
+  -f "$COPIE/docker-compose.yml" -f "$COPIE/docker-compose.override.yml" \
+  up -d
+for i in $(seq 1 30); do
+  curl -fsS http://127.0.0.1:18314/health && break; sleep 2
+done
+docker ps -a -q --filter label=com.docker.compose.project=kesh-repetition
+docker volume ls -q --filter label=com.docker.compose.project=kesh-repetition
+docker network ls -q --filter label=com.docker.compose.project=kesh-repetition
+\end{lstlisting}
+    Une version mal écrite échoue au \keshcommand{pull}, avant toute tentative de construction dans \keshpath{\$COPIE}. Kesh met quelques secondes à répondre après \keshcommand{up -d} (une interrogation immédiate échoue) : la boucle attend jusqu'à une minute. Attendu : \keshcommand{/health} rend \texttt{"status":"ok"} et une \texttt{version} \textbf{égale} à celle relevée sur la production (l'import ne l'exige pas, la répétition si : sinon arrêt) ; puis les trois filtres du contrôle~2 rendent \textbf{chacun au moins une ligne} --- deux conteneurs, un volume, un réseau. C'est ce qui donnera un sens au « rien » du contrôle final.
+\end{enumerate}
+
+\paragraph{La restauration.} Posez maintenant, et maintenant seulement, l'exemplaire de la sauvegarde :
+\begin{lstlisting}[language=bash]
+mv "$COPIE/telechargements/<fichier>.keshbackup" "$COPIE/source.keshbackup"
+chmod 0600 "$COPIE/source.keshbackup"
+\end{lstlisting}
+Puis suivez les \textbf{étapes 2 à 5} de \emph{Restaurer sur une nouvelle machine} (\S\ref{sec:restauration-machine-neuve}) : \keshpath{/setup}, le lien « Restaurer une sauvegarde », l'import du fichier \keshpath{\$COPIE/source.keshbackup}, la reconnexion avec les identifiants \textbf{de la production}, les vérifications. \textbf{L'étape~1 (le \keshpath{.env}) ne vaut pas ici} : le \keshpath{.env} de la copie est celui des contrôles 4 à 6, rien n'est repris de l'ancien. Ce qui est propre à la copie :
+\begin{itemize}
+    \item l'adresse est \keshpath{http://127.0.0.1:18314} ;
+    \item \textbf{critère de réussite} : le bilan annonce \textbf{autant de pièces restaurées que l'export en a annoncé}, et aucune pièce manquante ; puis, à l'étape~5, une écriture récente au journal et la liste des factures sont là. Ce critère vaut aussi pour une installation sans aucune pièce (0 annoncée, 0 restaurée) ;
+    \item la commande de journal de l'étape~5 s'écrit, pour la copie :
+\begin{lstlisting}[language=bash]
+docker compose -p kesh-repetition --project-directory "$COPIE" \
+  -f "$COPIE/docker-compose.yml" -f "$COPIE/docker-compose.override.yml" \
+  logs kesh-api
+\end{lstlisting}
+    \item un fichier téléchargé depuis la copie (un PDF de facture, l'export de souveraineté) s'enregistre lui aussi dans \keshpath{\$COPIE/telechargements/}.
+\end{itemize}
+
+\paragraph{L'export de souveraineté de la copie (pour le test de restauration).} Avant les gestes de la clôture, qui modifient la copie, produisez dans la copie l'export de souveraineté, enregistré sous le nom \keshpath{souverainete-copie.zip}. Les deux archives \textbf{n'ont pas la même empreinte SHA-256, par construction} : leur \texttt{metadata.json} porte la date de l'export, et le journal d'audit de la copie compte l'import et les connexions qui l'ont suivi. Ce qui se compare, c'est l'empreinte \textbf{de chaque table} (outil \keshcommand{jq}) :
+\begin{lstlisting}[language=bash]
+for z in production copie; do
+  unzip -p "$COPIE/telechargements/souverainete-$z.zip" metadata.json \
+    | jq -r '.tables | to_entries[] | "\(.key) \(.value.rowCount) \(.value.sha256)"' \
+    > "$COPIE/telechargements/empreintes-$z.txt"
+done
+diff "$COPIE/telechargements/empreintes-production.txt" \
+  "$COPIE/telechargements/empreintes-copie.txt"
+\end{lstlisting}
+Attendu : une seule différence, \texttt{audit\_log.csv} (quelques lignes de plus dans la copie) ; toute autre table qui diffère est une anomalie de la restauration, à noter au procès-verbal. ⚠️ L'étape~3 du test périodique (\S\ref{sec:test-restauration}) demande une empreinte \textbf{identique} : elle ne peut pas l'être, et la répétition ne prétend pas la remplir à la lettre. La comparaison table par table est ce qu'elle établit ; qu'elle suffise à votre procès-verbal est à décider par vous.
+
+\paragraph{Les gestes de la clôture.} Dans la copie, pour l'exercice à clore, \emph{Administration → Exercices comptables} :
+\begin{enumerate}
+    \item \textbf{Préparer la clôture} (manuel utilisateur, \emph{Préparer la clôture}) : les sept contrôles s'affichent, chacun « Rien à signaler » ou ce qui reste à faire ; \textbf{notez} chaque point signalé --- c'est précisément ce que la répétition sert à découvrir ---, et suivez au moins un lien jusqu'à son écran.
+    \item \textbf{Contre-passer les transitoires} (manuel utilisateur, \emph{Les transitoires de fin d'exercice}) : sur la fiche d'une écriture de régularisation (compte 1300 ou 2300), le bouton « Contre-passer au début de l'exercice suivant » ; la confirmation nomme l'écriture, la date du \textbf{premier jour de l'exercice suivant} et cet exercice ; l'écriture inverse est liée à l'origine ; le bilan de l'exercice à clore, à son dernier jour, porte la transitoire, celui de l'exercice suivant, à son premier jour, la montre soldée. Si l'exercice suivant n'existe pas, le bouton est absent et la fiche dit pourquoi : créez-le --- la préparation l'a signalé.
+    \item \textbf{Clôturer} (manuel utilisateur, \emph{Clôture d'un exercice}) : le dialogue affiche « Aucun point à vérifier », ou la liste des points restants, à noter ; l'exercice est clôturé ; une saisie datée dans cet exercice est refusée.
+    \item \textbf{Rouvrir} (manuel utilisateur, \emph{Réouverture d'un exercice clôturé} ; administrateur, motif obligatoire) : l'exercice redevient ouvert, une saisie passe de nouveau. Refermez-le si vous voulez garder l'état « clôturé » pour la suite de la répétition.
+\end{enumerate}
+
+\paragraph{Le procès-verbal.} Notez : la date, l'opérateur, la version ; la \textbf{durée} de la restauration ; les points signalés par la préparation ; les refus rencontrés, attendus ou non ; le nombre de pièces annoncées, restaurées et manquantes ; le résultat de la comparaison des exports de souveraineté. La répétition tient lieu du test de restauration annuel (OLICo art.~10 al.~1, \S\ref{sec:test-restauration}) \textbf{seulement si} l'export de souveraineté a été produit sur la production à l'étape~0 et dans la copie avant les gestes, avec la réserve écrite plus haut.
+
+\paragraph{Détruire la copie.} Dans cet ordre : le \textbf{contrôle~1 refait} (le contexte Docker a pu changer : sur un hôte distant, le \keshcommand{docker run -v} ci-dessous créerait le dossier ailleurs) ; l'arrêt de la copie et la suppression de son volume ; la suppression du dossier. Les dossiers \keshpath{log}, \keshpath{inbox}, \keshpath{documents} et \keshpath{backup} de la copie sont créés par Docker \textbf{au nom de root} : on les retire soit par \keshcommand{sudo}, soit, sans \keshcommand{sudo}, par un conteneur jetable de l'image MariaDB déjà présente. Chaque suppression passe par la \textbf{garde} ci-dessous, à écrire telle quelle :
+\begin{lstlisting}[language=bash]
+docker compose -p kesh-repetition --project-directory "$COPIE" \
+  -f "$COPIE/docker-compose.yml" -f "$COPIE/docker-compose.override.yml" \
+  down -v
+# sans sudo
+if [ -n "$COPIE" ] \
+   && [ "$(dirname -- "$COPIE")" = /var/tmp ] \
+   && case "$(basename -- "$COPIE")" in kesh-repetition-*) true ;; *) false ;; esac \
+   && [ -d "$COPIE" ] && [ ! -L "$COPIE" ] \
+   && [ "$(realpath -e -- "$COPIE")" = "$COPIE" ]; then
+  docker run --rm -v "$COPIE":/copie --entrypoint sh mariadb:10.11 \
+    -c 'rm -rf /copie/log /copie/inbox /copie/documents /copie/backup' \
+    && rm -rf "$COPIE"
+else
+  echo "refus : COPIE n'est pas le dossier de la copie"
+fi
+# ou, avec sudo
+if [ -n "$COPIE" ] \
+   && [ "$(dirname -- "$COPIE")" = /var/tmp ] \
+   && case "$(basename -- "$COPIE")" in kesh-repetition-*) true ;; *) false ;; esac \
+   && [ -d "$COPIE" ] && [ ! -L "$COPIE" ] \
+   && [ "$(realpath -e -- "$COPIE")" = "$COPIE" ]; then
+  sudo rm -rf "$COPIE"
+else
+  echo "refus : COPIE n'est pas le dossier de la copie"
+fi
+\end{lstlisting}
+La garde refuse une variable vide, un chemin relatif, un lien symbolique, un nom qui ne commence pas par \texttt{kesh-repetition-}, un dossier qui n'est pas directement sous \keshpath{/var/tmp}, une barre finale, et \keshpath{/var/tmp} lui-même. La branche \texttt{*) false} est indispensable : un \keshcommand{case} sans motif correspondant rend le code 0, donc « vrai », et laisserait passer n'importe quel dossier de \keshpath{/var/tmp} --- où le \keshcommand{docker run} tourne en root. Les deux suppressions du chemin sans \keshcommand{sudo} sont chaînées par \keshcommand{\&\&} : si le conteneur échoue, le dossier n'est pas touché. La garde ne ferme pas le terminal (ni \keshcommand{exit}, ni \keshcommand{return}). Avant le premier démarrage, aucun dossier de root n'existe : le \keshcommand{rm -rf "\$COPIE"} gardé suffit, sans \keshcommand{down -v} ni conteneur. Le dossier détruit emporte \keshpath{source.keshbackup}, le \keshpath{.env}, la sauvegarde de sécurité de l'import (\keshpath{backup/kesh-pre-import-…}) et tout le contenu de \keshpath{telechargements/}.
+
+\paragraph{Le contrôle final.} Dans le même terminal, \keshcommand{COPIE} toujours posée :
+\begin{lstlisting}[language=bash]
+env | grep -E '^(COMPOSE_|KESH_|MARIADB_|DATABASE_URL=)'
+env | grep -E '^DOCKER_(HOST|CONTEXT|CONFIG|TLS_VERIFY|CERT_PATH)='
+docker ps -a --format '{{.Names}}' | grep -xE 'kesh-api|kesh-mariadb'
+docker ps -a -q --filter label=com.docker.compose.project=kesh-repetition
+docker volume ls -q --filter label=com.docker.compose.project=kesh-repetition
+docker network ls -q --filter label=com.docker.compose.project=kesh-repetition
+test ! -e "$COPIE" && echo 'copie détruite'
+\end{lstlisting}
+Attendu : rien, sauf \texttt{copie détruite} --- les mêmes filtres rendaient des lignes au contrôle~9. Vérifiez enfin, à la main, qu'aucun fichier de la répétition (\keshcommand{.keshbackup}, ZIP de souveraineté, PDF) ne reste dans le dossier de téléchargements du navigateur. Une copie oubliée \textbf{reste} : \keshpath{/var/tmp} survit au redémarrage (il n'est nettoyé qu'au bout de trente jours sur Ubuntu) et le volume de la base n'est jamais nettoyé.
+
+\paragraph{En cas d'arrêt.}
+\begin{itemize}
+    \item \textbf{Aux contrôles 1 ou 2} : \keshpath{\$COPIE} n'existe pas encore, l'étape~0 n'a pas eu lieu : rien à détruire. Corrigez la cause (hôte, contexte) ou abandonnez.
+    \item \textbf{Au contrôle~3} : \keshpath{\$COPIE} existe et est vide ; supprimez-le par la garde (\keshcommand{rm -rf "\$COPIE"} seul). Si c'est le \keshcommand{realpath -e} qui a échoué, la garde refuse aussi : laissez le dossier vide, et traitez la cause (un \keshpath{/var/tmp} qui serait un lien).
+    \item \textbf{Après l'étape~0} : détruisez \keshpath{\$COPIE} --- \keshcommand{rm -rf "\$COPIE"} gardé seul avant le premier démarrage (contrôles 4 à 8), la destruction complète ensuite ; retirez nommément, fichier par fichier, tout exemplaire que le navigateur aurait laissé dans son dossier de téléchargements.
+    \item \textbf{Reste d'une répétition antérieure} (le contrôle~2 voit des objets, ou le \keshcommand{mkdir} du contrôle~3 refuse) : \keshcommand{ls -d /var/tmp/kesh-repetition-*}. Si le dossier de l'ancienne copie existe, affectez-lui \keshcommand{COPIE} (un à la fois), refaites le contrôle~1 et détruisez-le comme ci-dessus. Si son \keshcommand{down -v} échoue (son \keshpath{.env} manque ou est incomplet) ou si le dossier a disparu alors que des objets subsistent, retirez les objets par leurs seuls identifiants, tels que les filtres d'étiquette les rendent --- jamais un nom écrit à la main, jamais un \keshcommand{prune} :
+\begin{lstlisting}[language=bash]
+F=label=com.docker.compose.project=kesh-repetition
+for c in $(docker ps -a -q --filter "$F"); do docker rm -f "$c"; done
+for v in $(docker volume ls -q --filter "$F"); do docker volume rm "$v"; done
+for n in $(docker network ls -q --filter "$F"); do docker network rm "$n"; done
+\end{lstlisting}
+    puis le dossier, s'il existe, par la garde. Repartez ensuite du contrôle~1.
+\end{itemize}
+
+\begin{keshnote}[title=Ce que cette procédure n'a pas éprouvé]
+La procédure a été jouée en entier sur une machine Linux (Docker Engine en root, Compose 2.40), sur une sauvegarde de \textbf{démonstration} portant un exercice suivant, une écriture de régularisation, une facture au PDF figé et un document fournisseur, avec une image construite depuis les sources (elle affichait \texttt{0.14.0} et exportait en format 2) au lieu de l'image publiée, et un navigateur piloté par un outil de test. N'ont \textbf{pas} été éprouvés :
+\begin{itemize}
+    \item le \textbf{Synology} --- DSM, Container Manager, les droits des dossiers partagés, le compose à réseau externe --- et la copie du \keshcommand{.keshbackup} du NAS vers la machine de la répétition : la procédure ne s'exécute jamais sur le NAS, et le seul geste qui le concerne, récupérer le fichier, est celui de la sauvegarde ordinaire (\S\ref{sec:backup-ui-keshbackup}) ;
+    \item la \textbf{taille réelle} d'une installation : les durées et l'espace de la démonstration ne valent rien pour la vôtre --- prévoyez environ trois fois la taille du fichier sur le disque (le fichier, les pièces écrites, la sauvegarde de sécurité) ;
+    \item un autre moteur que Docker Engine en root : sous Docker Desktop, en mode \emph{rootless} ou en \emph{snap}, le partage de \keshpath{/var/tmp} avec le démon n'est pas établi ;
+    \item l'\textbf{image publiée} \keshpath{gcorbaz/kesh:<version>} et son \keshcommand{pull} ;
+    \item le navigateur \textbf{Firefox en snap} : son accès à \keshpath{/var/tmp} par le sélecteur de fichiers (envoi de \keshpath{source.keshbackup}, enregistrement dans \keshpath{telechargements/}) ;
+    \item la suppression \textbf{avec \keshcommand{sudo}} (la machine n'en avait pas) ; le chemin sans \keshcommand{sudo} l'a été ;
+    \item le retrait d'objets restés sans dossier, et le \keshcommand{down -v} d'une ancienne copie au \keshpath{.env} incomplet : les filtres d'étiquette ont été vérifiés sur une copie vivante (ils désignaient exactement ses deux conteneurs, son volume et son réseau), le retrait lui-même n'a été joué qu'à blanc ;
+    \item une Compose antérieure à 2.24.
+\end{itemize}
+Les contrôles 1 à 9 ne dépendent pas de l'hôte : ils lisent l'environnement, le démon et la sortie de \keshcommand{docker compose config}, et ont été vus refuser ce qu'ils doivent refuser (le compose du Synology au contrôle~7, un nom de projet hérité au contrôle~1, six formes de \keshcommand{COPIE} fausses à la garde).
+\end{keshnote}
+\endgroup
 
 \subsection{Backup natif sur Synology DSM (Hyper Backup + Snapshot Replication)}\label{sec:backup-dsm}
 \sloppy
@@ -1844,7 +2112,7 @@ Combiner les outils pour atteindre la règle \textbf{3-2-1} (3 copies des donné
 Les copies 2 et 3 ont le périmètre de la copie 1. Après restauration du dossier du compose par Hyper Backup, la base se recharge par la même procédure : arrêt de \keshcommand{kesh-api} --- ou, si son conteneur n'existe pas encore, sa création sans démarrage, étape 4 ---, \keshpath{kesh-restore.sh}, redémarrage (\S\ref{sec:backup-dsm-recovery}, \emph{Recovery depuis Snapshot}). Sur un NAS ou un serveur MariaDB neuf, recréez d'abord le compte Kesh et le compte de sauvegarde (ci-dessus) ; le rechargement recrée la base.
 
 \begin{keshwarning}
-\textbf{Test de restauration annuel obligatoire} (cf. sous-section précédente OLICo Art. 10 al. 1) : applicable aux backups DSM aussi. Inclure dans le procès-verbal annuel la mention explicite de la méthode utilisée (Hyper Backup, Snapshot Replication) et le temps de recovery mesuré (RTO).
+\textbf{Test de restauration annuel obligatoire} (cf. \S\ref{sec:test-restauration}, OLICo Art. 10 al. 1) : applicable aux backups DSM aussi. Inclure dans le procès-verbal annuel la mention explicite de la méthode utilisée (Hyper Backup, Snapshot Replication) et le temps de recovery mesuré (RTO).
 \end{keshwarning}
 
 \fussy

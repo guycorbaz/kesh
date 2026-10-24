@@ -348,3 +348,23 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Écartées** : la version (≥ 0.15.0) comme seul critère (imposerait une substitution de plus au développement, et rien
   ne la lit sans `/health`) ; l'export d'essai.
 - **Réversible** : oui (texte de fiche et de manuel).
+
+### C-31-4-20 — Développement : ce que la répétition réelle a changé à la procédure (agent de développement, 2026-10-24)
+
+- **Contexte** : la procédure jouée réellement (constats à blanc, répétition, second passage depuis le PDF) a contredit la
+  fiche en six points (Dev Agent Record, *Développement*).
+- **Retenu** :
+  1. contrôle 1 étendu à `DATABASE_URL` (exportée par le profil du shell de la station ; le compose Synology la lit) ;
+     filtre écrit en deux lignes (`COMPOSE_|KESH_|MARIADB_|DATABASE_URL=` puis `DOCKER_…`) pour tenir dans la page ;
+  2. contrôles 7 et 8 lus en JSON (`config --format json | jq`), override en YAML « en ligne » : le texte d'un PDF ne
+     conserve pas les espaces ; `jq`, `unzip`, `curl`, `openssl` contrôlés au contrôle 1 ;
+  3. boucle d'attente de `/health` après `up -d` ;
+  4. nombre de pièces : onglet Réseau, ou `unzip -l … | grep -cE ' files/[^ ]+$'` ; exports de souveraineté nommés
+     `souverainete-production.zip` / `souverainete-copie.zip` et comparés **table par table** (le SHA-256 global diffère
+     par construction) ; la répétition ne prétend pas remplir l'étape 3 du test périodique à la lettre ;
+  5. pilotage de l'écran par Chromium de Playwright (Firefox snap non pilotable ; son accès à `/var/tmp` par le portail
+     « non éprouvé ») ; facture de la démonstration validée à 0 % ;
+  6. listings de la sous-section en `\footnotesize`, dans un groupe local.
+- **Écartées** : ajouter une garde lexicale (C-31-4-15) ; corriger l'étape 3 du test périodique dans cette story (défaut
+  voisin, non mécanique : issue demandée) ; régler le compte de TVA de la démonstration (code du produit : issue demandée).
+- **Réversible** : oui (texte du manuel).

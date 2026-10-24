@@ -36,6 +36,13 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   serveur (`.env`) n'y est pas ; après un export, l'écran annonce les pièces qu'il n'a pas pu inclure et prévient si le
   fichier dépasse la taille d'import autorisée ; après un import, il annonce les pièces restaurées et les pièces
   manquantes.
+- **Répéter une clôture sur une copie, avant de clore pour de bon** : le manuel d'administration (*Répéter une clôture
+  sur une copie*) donne la procédure pour monter, sur une autre machine que la production — jamais le NAS —, une copie
+  isolée restaurée depuis une sauvegarde complète, y jouer la préparation de la clôture, la contre-passation des
+  transitoires, la clôture et la réouverture, puis la détruire sans rien laisser. Huit contrôles précèdent le premier
+  démarrage, dont celui qui écarte le compose du Synology, qui viserait la base de la production ; la copie n'écoute que
+  sur la machine elle-même et n'envoie aucun courriel. La procédure a été jouée de bout en bout sur une sauvegarde de
+  démonstration, et ce qu'elle n'a pas pu éprouver est écrit comme tel.
 
 ### Modifié
 
@@ -56,6 +63,13 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 - **Chaîne d'outils portée à Rust 1.97.1**, sans effet fonctionnel : `rust-toolchain.toml` et l'image Docker de
   construction (`rust:1.97-bookworm`) suivent la même version, et un test du dépôt rougit désormais si l'une bouge sans
   l'autre ([#697](https://github.com/guycorbaz/kesh/issues/697)).
+
+### Corrigé
+
+- **Les manuels disent le vrai chemin des exercices comptables** : ils écrivaient tantôt « Paramètres → Exercices
+  comptables », tantôt « Administration → Exercices comptables ». L'entrée du menu est dans le groupe *Administration*
+  de la barre latérale ; les manuels d'administration et utilisateur (PDF compris) l'écrivent désormais partout ainsi.
+  Aucun écran ne change.
 
 ### Interne, invisible de l'utilisateur
 
