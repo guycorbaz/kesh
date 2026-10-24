@@ -30,7 +30,7 @@ La pipeline `release.yml` se déclenche **uniquement** sur push de tag `v*.*.*` 
 | `backend` (Backend (Rust)) | push, PR | 120 min | — | oui |
 | `frontend` (Frontend (Svelte)) | push, PR | 20 min | — | oui |
 | `docker-build` (Docker build (sanity)) | push, PR | 20 min | — | oui |
-| `e2e-smoke` (E2E smoke (Playwright)) | push, PR | 25 min | `docker-build` | **non** — décision de Guy à prendre |
+| `e2e-smoke` (E2E smoke (Playwright)) | push, PR | 25 min | `docker-build` | oui — depuis le 2026-10-24 (décision de Guy) |
 | `docker` (release) | push tag `v*.*.*` | (défaut) | — | — |
 
 ### Le smoke E2E — job `e2e-smoke` (Story 31-2, #577)
@@ -188,9 +188,9 @@ tiré **anonymement**, et un `429` de Docker Hub faisait échouer le job `backen
   dépôt tenu par un seul développeur, sans fork actif ni `dependabot.yml`). Si le dépôt accepte un jour des PR externes,
   le repli noté est `image: mirror.gcr.io/library/mariadb:10.11`, sans secret — non adopté, la provenance de l'image n'étant
   plus celle du Docker Hub officiel.
-- **Un jeton invalide bloque les fusions.** La branche protégée `main` exige **trois** vérifications
+- **Un jeton invalide bloque les fusions.** La branche protégée `main` exige **quatre** vérifications
   (`gh api repos/guycorbaz/kesh/branches/main/protection/required_status_checks` : `Backend (Rust)`, `Docker build
-  (sanity)`, `Frontend (Svelte)`) ; les deux premières dépendent du jeton (service `credentials`, connexion). Un jeton
+  (sanity)`, `Frontend (Svelte)`, et `E2E smoke (Playwright)` depuis le 2026-10-24) ; les deux premières dépendent du jeton (service `credentials`, connexion). Un jeton
   expiré se voit donc à la première PR qui suit, par un rouge de démarrage — renouveler le secret, ne pas relancer.
 
 ## Timeouts et concurrency

@@ -1054,5 +1054,19 @@ LOW ne sont pas corrigés ici ; ils sont **à porter par les fiches** :
   « obligatoire en 0.16.0, option après la recette » — parce que la poignée rend chaque validation plus coûteuse ; la Q2
   et la Q12 sont la même question, à trancher une fois.)*
 
+### Réponses de Guy (2026-10-24, soir)
+
+- **Q10 : (c), la poignée.** L'outil rend aussitôt « envoi n° X en attente » ; Guy valide tel quel, modifie ou refuse
+  dans un écran de Kesh, à son rythme ; l'agent relit ensuite le résultat. Une table de plus (story 🗄️).
+- **Q11 : la lecture seule tenue par l'application**, sans second utilisateur MariaDB ni variable de plus au `.env` —
+  « j'aimerais éviter un système trop complexe : ne peut-on pas limiter le read only au niveau des accès du serveur MCP
+  et des API ? ». Les outils MCP et les clés de lecture n'atteignent que des services qui reçoivent une `Lecture`
+  (couche de services, 32-3/32-4) ; la connexion du MCP se déclare en outre `READ ONLY` auprès de MariaDB (mode de
+  session, aucune installation) — complément proposé à Guy et accepté (« ok »). C'est l'option (a) : **les mots « par
+  construction » disparaissent** ; la garantie repose sur le code de Kesh et sur ses tests, la base n'arrêtant pas un
+  défaut qui contournerait le mode de session.
+- **Q12 : par clé**, `requise` par défaut, `dispensée` pour une clé que l'administrateur désigne ; chaque envoi reste
+  journalisé.
+
 [#669]: https://github.com/guycorbaz/kesh/issues/669
 [#722]: https://github.com/guycorbaz/kesh/issues/722
