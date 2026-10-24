@@ -2135,3 +2135,11 @@ gates ; aucun code modifié. Journaux : `kesh-gate-logs/311b-final-{backend,fron
 Les 7 échecs E2E sont exactement les sept de la KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* :
 `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
 Aucun échec hors liste ; KF-052 (`sidebar-navigation:75`) n'a pas déclenché.
+
+### Revue de code de la 31-1b — terminée (2026-10-24)
+
+Passe ciblée **P3** (Sonnet, lentille T sur `06cc4ad4`) : **0/0/0/1** — le commentaire du `COMMIT` échoué et la
+condition d'ouverture de l'assistant au manuel sont vrais contre le code ; LOW consigné (apostrophe droite dans un
+commentaire de `admin-restore.api.ts`). Trend de la revue : P1 Sonnet B 0/0/1/5, E 0/0/0/6, A 0/0/0/6 → P2 ciblée Haiku
+0/0/2/5 → P3 ciblée Sonnet 0/0/0/1. Gates complets au dernier commit de code `06cc4ad4` : vert (entrée ci-dessus).
+Statut de la 31-1b : `done`.
