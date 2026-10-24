@@ -1,6 +1,9 @@
 # Story 30-3 — Le chemin de la facturation
 
-Status: review
+Status: done
+
+*(Annotation du 2026-10-24, Story 32-0 — action A2 de la rétrospective de l'Epic 31 : l'en-tête disait `review` ; la
+revue est terminée et la story fusionnée par la PR #692, `4663f60b` — `sprint-status.yaml` porte `done`.)*
 
 Issue : [#585](https://github.com/guycorbaz/kesh/issues/585) (bug, P4). Branche `fix/30-3-chemin-facturation`,
 depuis `origin/main` `fc3a4f7d`. Fiche courte (processus allégé : texte seulement, pas de boucle de validation).

@@ -2,6 +2,10 @@
 
 ## Status
 
+**done** — *(annotation du 2026-10-24, Story 32-0 — action A2 de la rétrospective de l'Epic 31 : les deux clés sont
+`done` au registre de sprint, 30-1a fusionnée par la PR #688, `fecc8566`, et 30-1b par la PR #690, `fc3a4f7d` ; le
+paragraphe suivant est l'état écrit à sa date, laissé tel quel.)*
+
 **30-1a done** (revue de code terminée en P1, 2026-10-15) ; **30-1b review** (développée le 2026-10-15, branche
 `story/30-1b`, reportée sur `f1508653` (30-2a) ; revue de code P1 faite et remédiée ; passe ciblée P2 à lancer :
 `30-1b-review-prompt-p2-ciblee.md`). Registre : C-30-1-1 à 64. *(Les phrases d'état ci-dessous sont celles de leur

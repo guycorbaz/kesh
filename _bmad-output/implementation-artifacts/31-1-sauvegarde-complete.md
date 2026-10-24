@@ -2,6 +2,10 @@
 
 ## Status
 
+**done** — *(annotation du 2026-10-24, Story 32-0 — action A2 de la rétrospective de l'Epic 31 : les trois clés sont
+`done` au registre de sprint, fusionnées par les PR #703 (31-1a, `a3e4bd62`), #704 (31-1b, `e71cd351`) et #713 (31-1c,
+`95ac2735`) ; le paragraphe suivant est l'état écrit à sa date, laissé tel quel.)*
+
 **ready-for-dev** (trois clés) — fiche créée le 2026-10-23 en autonomie (`bmad-create-story`, Opus 5.5), sur
 `1848012d` (kickoff de l'Epic 31), worktree `/home/gcorbaz/devel/kesh-31-1`, branche `story/31-1`. Validation P1
 faite (Sonnet, R 0/0/10/8, F 0/2/9/8) et remédiée le 2026-10-23 ; validation P2 faite (Opus, R 0/0/8/8, F 0/1/7/9)
