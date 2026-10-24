@@ -28,6 +28,10 @@
 //! Anti-IDOR (AC11) : une ligne ou une clé d'une autre société rend le même 404
 //! qu'une ligne ou une clé inexistante ; aucun message ne nomme une ligne
 //! étrangère.
+//!
+//! La lecture des postes ouverts passe par `services::postes_ouverts`
+//! (Story 32-4a) ; `get_lettering` et `get_lettering_proposals`, qu'aucun outil
+//! MCP ne sert, restent ici (C-32-4a-1).
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -47,6 +51,8 @@ use crate::AppState;
 use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
+use crate::services::acces::ContexteAcces;
+use crate::services::postes_ouverts;
 
 /// Corps du `POST /api/v1/letterings`.
 #[derive(Debug, Deserialize)]
@@ -283,16 +289,14 @@ pub async fn delete_lettering(
 // Story 15-1b — les postes ouverts et les propositions (lecture seule)
 // ---------------------------------------------------------------------------
 
-/// Défaut et plafond de la page des postes ouverts (patron de la liste des
-/// écritures).
-const OPEN_ITEMS_DEFAULT_LIMIT: i64 = 50;
-/// Défaut des propositions.
+/// Défaut des propositions. Leur plafond est celui des postes ouverts,
+/// [`postes_ouverts::LIMITE_MAX`] (une seule constante, Story 32-4a).
 const PROPOSALS_DEFAULT_LIMIT: i64 = 100;
-/// Plafond commun des deux routes.
-const MAX_LIMIT: i64 = 500;
 
+/// Défaut de la page des postes ouverts : celui du service (Story 32-4a,
+/// C-32-4a-5), qui écrête aussi.
 fn default_open_items_limit() -> i64 {
-    OPEN_ITEMS_DEFAULT_LIMIT
+    postes_ouverts::LIMITE_DEFAUT
 }
 
 fn default_proposals_limit() -> i64 {
@@ -501,53 +505,30 @@ impl From<LetteringProposals> for ProposalsResponse {
     }
 }
 
-/// `asOf` : lu en chaîne, parsé comme `dateFrom` de la liste des écritures ;
-/// mal formé → 400 `VALIDATION_ERROR` ; absent ou vide → aujourd'hui, selon la
-/// convention de la balance âgée (`Utc::now().naive_utc().date()` — l'écart
-/// UTC/heure suisse la nuit est hérité). Aucune borne métier ; seule la plage
-/// des dates de MariaDB (années 1000 à 9999) est exigée : chrono lit aussi
-/// `+10000-01-01` ou une année négative, que sqlx refuse d'encoder ou que la
-/// base lirait comme une date invalide (revue P1, B-1 = E-1) — un 400, jamais
-/// un 500 ni un solde faux.
-fn parse_as_of(as_of: Option<&str>) -> Result<NaiveDate, AppError> {
-    use chrono::Datelike;
-    match as_of {
-        Some(s) if !s.is_empty() => {
-            let date = s
-                .parse::<NaiveDate>()
-                .map_err(|e| AppError::Validation(format!("asOf invalide ({e})")))?;
-            if !(1000..=9999).contains(&date.year()) {
-                return Err(AppError::Validation(
-                    "asOf invalide (année hors de 1000 à 9999)".into(),
-                ));
-            }
-            Ok(date)
-        }
-        _ => Ok(chrono::Utc::now().naive_utc().date()),
-    }
-}
-
 /// GET /api/v1/accounts/{id}/open-items — les postes ouverts du compte à
 /// `asOf` (AC1). Ordre des refus (AC7) : paramètres (`Query` d'Axum, puis
 /// `asOf` → 400 avant toute lecture), compte introuvable ou d'une autre société
-/// (404), compte non lettrable (409 `LETTERING_ACCOUNT_NOT_LETTERABLE`).
+/// (404), compte non lettrable (409 `LETTERING_ACCOUNT_NOT_LETTERABLE`) — tenus
+/// par `services::postes_ouverts::lister` (Story 32-4a), avec l'analyse de
+/// `asOf` et les bornes.
 pub async fn get_open_items(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(account_id): Path<i64>,
     Query(params): Query<OpenItemsQuery>,
 ) -> Result<Json<OpenItemsResponse>, AppError> {
-    let as_of = parse_as_of(params.as_of.as_deref())?;
-    let limit = params.limit.clamp(1, MAX_LIMIT);
-    let offset = params.offset.max(0);
-    let company = get_company_for(&current_user, &state.pool).await?;
-    let mut conn = state
-        .pool
-        .acquire()
-        .await
-        .map_err(kesh_db::errors::map_db_error)?;
-    let vue =
-        letterings::open_items(&mut conn, company.id, account_id, as_of, limit, offset).await?;
+    let demande = postes_ouverts::DemandePostesOuverts {
+        account_id,
+        as_of: params.as_of,
+        limit: Some(params.limit),
+        offset: Some(params.offset),
+    };
+    let vue = postes_ouverts::lister(
+        &ContexteAcces::depuis_api(&current_user),
+        &state.lecture(),
+        demande,
+    )
+    .await?;
     Ok(Json(OpenItemsResponse::from(vue)))
 }
 
@@ -561,7 +542,7 @@ pub async fn get_lettering_proposals(
     Query(params): Query<ProposalsQuery>,
 ) -> Result<Json<ProposalsResponse>, AppError> {
     // `clamp(1, 500)` : la valeur est positive, la conversion ne perd rien.
-    let limit = params.limit.clamp(1, MAX_LIMIT) as usize;
+    let limit = params.limit.clamp(1, postes_ouverts::LIMITE_MAX) as usize;
     let company = get_company_for(&current_user, &state.pool).await?;
     let mut conn = state
         .pool

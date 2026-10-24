@@ -88,6 +88,47 @@
 //!    branches que ses fixtures exercent, par `tests/services_motif.rs`, qui les
 //!    exécute sur une connexion en lecture seule.
 //!
+//!    **Étendu par la 32-4a** aux cinq services du rollout : sur la fermeture
+//!    de leurs appels — appels directs (`journal_entries::{list_by_company_paginated,
+//!    find_by_id, reversal_blocker, reversed_by, modification_blocker}`,
+//!    `imported_supplier_invoices::find_source_document_of_entry`,
+//!    `letterings::open_items`, `contacts::{list_by_company_paginated,
+//!    find_by_id_in_company}`, `companies::find_by_id`) **et** transitifs,
+//!    textes SQL en `const` compris —, aucune écriture ni `get_or_create`, et
+//!    un seul `FOR UPDATE` : la branche `Lecture::Verrouillante` de
+//!    `journal_entries::lettering_guard`, **non prise** (`modification_blocker`
+//!    passe `Lecture::Conseil`). Établi par lecture statique (relevé de
+//!    l'AC13 de la 32-4a, sur le code des fichiers de dépôts tronqué à leurs
+//!    tests) ; confirmé à l'exécution, sur les branches que ses fixtures
+//!    exercent, par `tests/services_rollout.rs` (AC11 (a)), qui les exécute sur
+//!    une connexion en `SET SESSION TRANSACTION READ ONLY` — où MariaDB refuse
+//!    l'écriture **et** le `SELECT … FOR UPDATE`, en autocommit comme dans une
+//!    transaction (erreur 1792, mesuré et figé par l'AC11 (c)). Branches non
+//!    atteintes par ces fixtures : pièce source présente, motifs de blocage de
+//!    la contre-passation et de la modification présents, compte non lettrable
+//!    (refusé par `require_viewable_account` avant toute lecture des postes) et
+//!    contact portant des conditions de paiement (leur libellé est mis en forme
+//!    au handler, hors service).
+//!
+//! # Le rollout de la 32-4a — cinq lectures, sans trace
+//!
+//! | Service | Route | Exigence API / MCP |
+//! |---|---|---|
+//! | `ecritures::lister` | `GET /journal-entries` | `Consultation` / `BooksRead` |
+//! | `ecritures::detail` | `GET /journal-entries/{id}` | `Consultation` / `BooksRead` |
+//! | `postes_ouverts::lister` | `GET /accounts/{id}/open-items` | `Consultation` / `BooksRead` |
+//! | `carnet::lister` | `GET /contacts` | `Consultation` / `ContactsRead` |
+//! | `carnet::detail` | `GET /contacts/{id}` | `Consultation` / `ContactsRead` |
+//!
+//! Chacun porte ses bornes de pagination et la validation de sa demande
+//! (C-32-4a-5) : le MCP n'a pas le DTO d'Axum. Restent dans leur handler, sur
+//! `state.pool`, figées par la garde (iii) de `tests/services_motif.rs` : les
+//! dix mutations de `routes/{journal_entries,letterings,contacts}.rs`
+//! (C-32-0-4, 0.17.0), et deux lectures qu'aucun outil MCP prévu ne sert —
+//! `letterings::get_lettering` (`GET /letterings/{key}`) et
+//! `letterings::get_lettering_proposals` (`GET /accounts/{id}/lettering-proposals`),
+//! C-32-4a-1.
+//!
 //! # Ce qui reste à la 32-6
 //!
 //! La fabrication d'une `Lecture` en lecture seule — mode de session,
@@ -100,6 +141,9 @@
 #![cfg_attr(not(test), forbid(unsafe_code))]
 
 pub mod acces;
+pub mod carnet;
+pub mod ecritures;
 pub mod plan_comptable;
 pub mod poignees;
+pub mod postes_ouverts;
 pub mod rapports;

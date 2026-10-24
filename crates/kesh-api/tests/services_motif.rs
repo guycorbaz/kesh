@@ -11,6 +11,8 @@
 //! compte d'impôt préalable, et un projet portant une écriture imputée.
 #![allow(clippy::too_many_arguments)]
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -39,6 +41,8 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
+
+use common::lecture_seule::{lecture_seule, pool_lecture_seule};
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 const TEST_ADMIN_PASSWORD: &str = "e2e-test-admin-password";
@@ -548,6 +552,19 @@ const TABLE_DES_TRACES: &[Ligne] = &[
         action: "report.exported",
         details: r#"{"report_type": "project-return", "format": "csv", "project_id": "$pid", "mode": "cumulative"}"#,
     },
+    Ligne {
+        num: 19,
+        // Story 32-4a (#738 P2-2) : seule ligne qui trace les journaux SANS
+        // filtre — un filtre absent tracé comme présent n'était vu par aucune
+        // ligne ; la 7 reste filtrée (seule à exercer « affichage avec
+        // filtre »). Deuxième ligne du couple (Journaux, Affichage).
+        nom: "journaux_affichage_sans_filtre",
+        svc: Svc::Journaux,
+        usage: Usg::Affichage,
+        dem: BORNES,
+        action: "report.generated",
+        details: r#"{"report_type": "journals", "fiscal_year_id": "$fy", "period_start": "$debut", "period_end": "$fin", "journal_filter": null}"#,
+    },
 ];
 
 /// Les valeurs des symboles d'une ligne.
@@ -762,7 +779,7 @@ fn symboles_route(ligne: &Ligne, livres: &Livres, asof: NaiveDate) -> Symboles {
     }
 }
 
-/// AC9 (b′) — pour chacune des dix-huit lignes, la requête de sa route, puis
+/// AC9 (b′) — pour chacune des dix-neuf lignes, la requête de sa route, puis
 /// exactement une trace neuve égale à la ligne. Seul volet qui voie un handler
 /// appeler le mauvais service.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -772,8 +789,8 @@ async fn table_des_traces_par_la_route(pool: MySqlPool) {
     let jwt = forge_jwt(livres.user_id(), "Admin", livres.company_id());
     assert_eq!(
         TABLE_DES_TRACES.len(),
-        18,
-        "dix-huit couples (service, usage)"
+        19,
+        "dix-neuf lignes pour dix-huit couples (service, usage)"
     );
 
     let mut echecs = Vec::new();
@@ -830,29 +847,9 @@ const SERVICES: [Svc; 9] = [
 /// Un id positif qu'aucune fixture ne pose.
 const INEXISTANT: i64 = 999_999_999;
 
-/// Pool dont chaque connexion passe `SET SESSION TRANSACTION READ ONLY` — mêmes
-/// options de connexion que le pool du test, aucun privilège requis.
-async fn pool_lecture_seule(pool: &MySqlPool) -> MySqlPool {
-    let options = (*pool.connect_options()).clone();
-    sqlx::mysql::MySqlPoolOptions::new()
-        .max_connections(4)
-        .after_connect(|conn, _meta| {
-            Box::pin(async move {
-                sqlx::query("SET SESSION TRANSACTION READ ONLY")
-                    .execute(&mut *conn)
-                    .await?;
-                Ok(())
-            })
-        })
-        .connect_with(options)
-        .await
-        .expect("pool en lecture seule")
-}
-
-/// La `Lecture` du chapeau de l'AC9 : sur le pool en lecture seule.
-async fn lecture_seule(pool: &MySqlPool) -> Lecture {
-    Lecture::new(pool_lecture_seule(pool).await)
-}
+// `pool_lecture_seule` et `lecture_seule` (la `Lecture` du chapeau de l'AC9) :
+// `tests/common/lecture_seule.rs`, partagées avec `services_rollout.rs`
+// (Story 32-4a, C-32-4a-9).
 
 fn mcp(livres: &Livres, portees: &[Portee]) -> ContexteAcces {
     ContexteAcces::mcp(
@@ -866,7 +863,11 @@ fn mcp_societe(company_id: i64, user_id: i64, portees: &[Portee]) -> ContexteAcc
     ContexteAcces::mcp(company_id, user_id, portees.iter().copied().collect())
 }
 
-const TOUTES: [Portee; 2] = [Portee::BooksRead, Portee::InvoicesRead];
+const TOUTES: [Portee; 3] = [
+    Portee::BooksRead,
+    Portee::InvoicesRead,
+    Portee::ContactsRead,
+];
 
 fn api(livres: &Livres, role: Role) -> ContexteAcces {
     api_societe(livres.company_id(), livres.user_id(), role)
@@ -895,6 +896,9 @@ fn autre_portee(svc: Svc) -> Portee {
     match portee_exigee(svc) {
         Portee::BooksRead => Portee::InvoicesRead,
         Portee::InvoicesRead => Portee::BooksRead,
+        // Aucun rapport n'exige la portée du carnet (Story 32-4a) : bras posé
+        // pour l'exhaustivité, jamais atteint par `portee_exigee`.
+        Portee::ContactsRead => panic!("aucun service de rapport n'exige ContactsRead"),
     }
 }
 
@@ -1995,6 +1999,17 @@ fn attendus(liste: &[(&str, &str)]) -> Vec<(String, String)> {
 
 /// Ôte d'un corps ses commentaires : blocs `/* … */` (sur le corps entier,
 /// plusieurs lignes comprises), lignes de commentaire, fin de ligne après `//`.
+///
+/// ⚠️ **Limite** (revue de code P1 de la 32-4a, B4) : l'aide ne connaît pas
+/// les littéraux. Un `//` **dans une chaîne** (`"https://…"`) coupe la ligne
+/// comme un commentaire, si bien qu'un `state.pool` écrit après lui sur la même
+/// ligne échappe au détecteur ; de même, un `/*` dans une chaîne ouvrirait un
+/// bloc, qui avalerait tout jusqu'au `*/` suivant, sur plusieurs lignes. Aucun
+/// des quatre fichiers lus par les gardes (ii) et (iii) — `routes/accounts.rs`,
+/// `journal_entries.rs`, `letterings.rs`, `contacts.rs` — ne porte aujourd'hui
+/// de chaîne contenant `//` ou `/*` (relevé de la revue P1 sur trois fichiers
+/// et le seul `//`, étendu à `accounts.rs` et à `/*` en P2) ; la limite est
+/// écrite aussi à la doc de `ac12_iii_inventaire_des_sites_non_resolus`.
 fn sans_commentaires(corps: &str) -> String {
     let blocs = regex::Regex::new(r"(?s)/\*.*?\*/").unwrap();
     let sans_blocs = blocs.replace_all(corps, " ");
@@ -2069,7 +2084,10 @@ fn ac10_temoins_des_motifs() {
 }
 
 /// AC10 (i) et (ii) — `routes/reports.rs` sans `state.pool` ni `MySqlPool` ;
-/// le corps de `list_accounts` sans `state.pool`.
+/// le corps de `list_accounts` et des cinq lectures de la 32-4a
+/// ([`HANDLERS_MIGRES`]) sans `state.pool`, par le détecteur aplati
+/// ([`MOTIF_POOL`], AC12 de la 32-4a ; témoins :
+/// `ac12_temoins_du_detecteur_du_pool`).
 #[test]
 fn ac10_i_ii_handlers_sans_le_pool() {
     let src = racine_src();
@@ -2081,21 +2099,228 @@ fn ac10_i_ii_handlers_sans_le_pool() {
         .collect();
     assert!(fautes.is_empty(), "AC10 (i) :\n{}", fautes.join("\n"));
 
-    let accounts = std::fs::read_to_string(src.join("routes/accounts.rs")).unwrap();
-    let lignes: Vec<&str> = accounts.lines().collect();
-    let debut = lignes
-        .iter()
-        .position(|l| l.starts_with("pub async fn list_accounts"))
-        .expect("list_accounts trouvé");
-    let fin = (debut + 1..lignes.len())
-        .find(|&j| lignes[j].contains("pub async fn"))
-        .unwrap_or(lignes.len());
-    assert!(fin > debut + 2, "corps de list_accounts non vide");
-    let fautes: Vec<String> = (debut..fin)
-        .filter(|&j| !est_commentaire(lignes[j]) && lignes[j].contains("state.pool"))
-        .map(|j| format!("routes/accounts.rs:{}: {}", j + 1, lignes[j]))
-        .collect();
+    // (ii) — étendue par la Story 32-4a (AC12) aux cinq lectures du rollout :
+    // le corps de chaque handler migré ne lit pas `state.pool`.
+    let mut fautes = Vec::new();
+    for (fichier, handler) in HANDLERS_MIGRES {
+        let texte = code_avant_les_tests(&src.join(fichier));
+        let corps = corps_du_handler(&texte, handler)
+            .unwrap_or_else(|| panic!("{fichier} : {handler} introuvable"));
+        assert!(
+            corps.len() > 3,
+            "{fichier} : corps de {handler} non vide ({} lignes)",
+            corps.len()
+        );
+        let n = occurrences_du_pool(&corps.join("\n"));
+        if n > 0 {
+            fautes.push(format!("{fichier} : {handler} lit state.pool ({n} fois)"));
+        }
+    }
     assert!(fautes.is_empty(), "AC10 (ii) :\n{}", fautes.join("\n"));
+}
+
+/// Les handlers dont la lecture passe par un service : `list_accounts` (32-3)
+/// et les cinq lectures de la 32-4a.
+const HANDLERS_MIGRES: &[(&str, &str)] = &[
+    ("routes/accounts.rs", "list_accounts"),
+    ("routes/journal_entries.rs", "list_journal_entries"),
+    ("routes/journal_entries.rs", "get_journal_entry"),
+    ("routes/letterings.rs", "get_open_items"),
+    ("routes/contacts.rs", "list_contacts"),
+    ("routes/contacts.rs", "get_contact"),
+];
+
+/// AC12 (iii) — l'inventaire clos des sites non résolus des trois fichiers du
+/// rollout : (fichier, nombre de `pub async fn`, nombre d'`async fn` toutes
+/// visibilités, handlers qui lisent encore `state.pool`) — les dix mutants
+/// (C-32-0-4) et les deux lectures de lettrage qu'aucun outil ne sert
+/// (C-32-4a-1).
+const SITES_NON_RESOLUS: &[(&str, usize, usize, &[&str])] = &[
+    (
+        "routes/journal_entries.rs",
+        7,
+        7,
+        &[
+            "create_journal_entry",
+            "delete_journal_entry",
+            "reverse_journal_entry",
+            "reverse_journal_entry_at_next_fiscal_year_start",
+            "update_journal_entry",
+        ],
+    ),
+    (
+        "routes/letterings.rs",
+        5,
+        5,
+        &[
+            "create_lettering",
+            "delete_lettering",
+            "get_lettering",
+            "get_lettering_proposals",
+        ],
+    ),
+    (
+        "routes/contacts.rs",
+        5,
+        5,
+        &["archive_contact", "create_contact", "update_contact"],
+    ),
+];
+
+/// Le détecteur commun de (ii) et (iii) (Story 32-4a, AC12) : `state.pool` sur
+/// un texte **aplati** et sans commentaires — `\s` traverse les fins de ligne,
+/// si bien que la forme coupée par rustfmt (`state` / `.pool`) compte aussi
+/// (#738 B4, pour cette seule forme).
+const MOTIF_POOL: &str = r"\bstate\s*\.\s*pool\b";
+
+/// Nombre d'occurrences de [`MOTIF_POOL`] dans `texte`, commentaires ôtés.
+fn occurrences_du_pool(texte: &str) -> usize {
+    regex::Regex::new(MOTIF_POOL)
+        .unwrap()
+        .find_iter(&sans_commentaires(texte))
+        .count()
+}
+
+/// Le texte d'un fichier de `src/`, tronqué à sa première ligne `#[cfg(test)]`.
+fn code_avant_les_tests(chemin: &Path) -> String {
+    std::fs::read_to_string(chemin)
+        .unwrap_or_else(|e| panic!("{} illisible : {e}", chemin.display()))
+        .lines()
+        .take_while(|l| l.trim() != "#[cfg(test)]")
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Le corps du handler de nom **exact** `nom` (définition de
+/// [`corps_des_handlers`]) — le préfixe `get_lettering` rendrait aussi
+/// `get_lettering_proposals`.
+fn corps_du_handler<'a>(texte: &'a str, nom: &str) -> Option<Vec<&'a str>> {
+    corps_des_handlers(texte, nom)
+        .into_iter()
+        .find(|(n, _)| n == nom)
+        .map(|(_, corps)| corps)
+}
+
+/// Témoins du détecteur commun (AC12 (ii), #738 A5) : il trouve `state.pool`
+/// en une ligne, coupé par rustfmt, et dans le corps réel de `get_lettering` ;
+/// il ne le trouve ni dans un commentaire ni dans `lecture.pool()`.
+#[test]
+fn ac12_temoins_du_detecteur_du_pool() {
+    assert_eq!(occurrences_du_pool("let c = state.pool.acquire();"), 1);
+    assert_eq!(
+        occurrences_du_pool("let mut conn = state\n        .pool\n        .acquire()"),
+        1,
+        "forme coupée par rustfmt"
+    );
+    assert_eq!(occurrences_du_pool("    // state.pool"), 0, "commentaire");
+    assert_eq!(occurrences_du_pool("lecture.pool()"), 0, "poignée");
+    let letterings = code_avant_les_tests(&racine_src().join("routes/letterings.rs"));
+    let corps = corps_du_handler(&letterings, "get_lettering").expect("get_lettering");
+    assert!(
+        occurrences_du_pool(&corps.join("\n")) >= 1,
+        "corps réel de get_lettering"
+    );
+}
+
+/// AC12 (iii) — dans les trois fichiers du rollout, l'ensemble des handlers dont
+/// le corps lit `state.pool` est exactement [`SITES_NON_RESOLUS`] ; le nombre
+/// de `pub async fn` et d'`async fn` toutes visibilités est figé ; et, au
+/// niveau du fichier, aucune occurrence hors d'un corps (le compte du fichier
+/// égale la somme des corps) — ce qui voit une fonction asynchrone non `pub`
+/// ou une aide synchrone posée entre deux handlers.
+///
+/// **Limites** (#738 B4, hors périmètre) : le champ lu sous un autre nom que
+/// `state` — déstructuration `State(AppState { pool, .. })`, liaison renommée
+/// (`s.pool`, `let st = &state;` puis `st.pool`), `self.pool` dans un
+/// `impl AppState`, `(&state).pool`, `state.clone().pool` —, une macro à
+/// paramètre ident ; et, dans `accounts.rs`, une aide appelée par
+/// `list_accounts` (ce fichier porte légitimement `state.pool` hors de tout
+/// corps : il n'est pas compté au niveau du fichier) ; enfin, une chaîne qui
+/// contient `//` ou `/*`, que [`sans_commentaires`] prend pour un commentaire —
+/// elle masque un `state.pool` de la même ligne pour `//`, ou de toute ligne
+/// jusqu'au `*/` suivant pour `/*` (revue de code P1 de la 32-4a, B4).
+#[test]
+fn ac12_iii_inventaire_des_sites_non_resolus() {
+    let async_fn = regex::Regex::new(r"^\s*(pub(\([^)]*\))?\s+)?async\s+fn\b").unwrap();
+    let mut fautes = Vec::new();
+    for (fichier, nb_pub, nb_async, attendus) in SITES_NON_RESOLUS {
+        let texte = code_avant_les_tests(&racine_src().join(fichier));
+        let corps = corps_des_handlers(&texte, "");
+        if corps.len() != *nb_pub {
+            fautes.push(format!(
+                "{fichier} : {} pub async fn, {nb_pub} attendus",
+                corps.len()
+            ));
+        }
+        let n_async = lignes_de_code(&texte)
+            .iter()
+            .filter(|(_, l)| async_fn.is_match(l))
+            .count();
+        if n_async != *nb_async {
+            fautes.push(format!(
+                "{fichier} : {n_async} async fn (toutes visibilités), {nb_async} attendues"
+            ));
+        }
+        let mut lisent: Vec<&str> = Vec::new();
+        let mut somme = 0;
+        for (nom, lignes) in &corps {
+            let n = occurrences_du_pool(&lignes.join("\n"));
+            somme += n;
+            if n > 0 {
+                lisent.push(nom.as_str());
+            }
+        }
+        lisent.sort();
+        let mut attendus = attendus.to_vec();
+        attendus.sort();
+        if lisent != attendus {
+            fautes.push(format!(
+                "{fichier} : handlers sur state.pool {lisent:?}, attendus {attendus:?}"
+            ));
+        }
+        let fichier_entier = occurrences_du_pool(&texte);
+        if fichier_entier != somme {
+            fautes.push(format!(
+                "{fichier} : {fichier_entier} occurrences de state.pool dans le fichier, {somme} dans les corps — une occurrence hors d'un handler"
+            ));
+        }
+    }
+    assert!(fautes.is_empty(), "AC12 (iii) :\n{}", fautes.join("\n"));
+}
+
+/// Les trois modules de services du rollout (AC12 (viii)).
+const SERVICES_DU_ROLLOUT: [&str; 3] = [
+    "services/ecritures.rs",
+    "services/postes_ouverts.rs",
+    "services/carnet.rs",
+];
+
+const MOTIF_VIII: &str = r"\bTrace\b|\btrace\b";
+
+/// AC12 (viii) — les services du rollout ne tracent rien : leurs lignes de code
+/// ne nomment ni `Trace` ni `trace`. Témoins : le motif voit `trace: &Trace`,
+/// pas `tracing::warn!`.
+#[test]
+fn ac12_viii_les_services_du_rollout_ne_tracent_pas() {
+    let motif = regex::Regex::new(MOTIF_VIII).unwrap();
+    assert!(
+        motif.is_match("trace: &Trace"),
+        "(viii) doit voir trace: &Trace"
+    );
+    assert!(
+        !motif.is_match("tracing::warn!(\"x\")"),
+        "(viii) ne doit pas voir tracing"
+    );
+    let sources: Vec<(String, String)> = sources()
+        .into_iter()
+        .filter(|(f, _)| SERVICES_DU_ROLLOUT.contains(&f.as_str()))
+        .collect();
+    assert_eq!(sources.len(), 3, "les trois services du rollout lus");
+    let trouves = couples(&sources, &motif);
+    assert!(
+        trouves.is_empty(),
+        "AC12 (viii) : un service du rollout nomme la trace : {trouves:?}"
+    );
 }
 
 /// AC10 (v-1) — aucun appel ni chemin de l'accesseur `pool` hors de `services/`.
@@ -2137,8 +2362,8 @@ fn ac10_vi_services_sans_axum_ni_app_state() {
         .collect();
     assert_eq!(
         services.len(),
-        5,
-        "services/ : cinq fichiers attendus, {:?}",
+        8,
+        "services/ : huit fichiers attendus (cinq de la 32-3, trois de la 32-4a), {:?}",
         services.iter().map(|(f, _)| f).collect::<Vec<_>>()
     );
     assert_eq!(
