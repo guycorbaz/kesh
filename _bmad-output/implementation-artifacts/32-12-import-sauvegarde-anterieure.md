@@ -1,6 +1,6 @@
 # Stories 32.12a et 32.12b : une sauvegarde antérieure reste importable (refs #722)
 
-Status: 32-12a ready-for-dev ; 32-12b ready-for-dev — toutes deux **sous réserve de Q4** (et de la décision de
+Status: 32-12a review (2026-10-24) ; 32-12b ready-for-dev — toutes deux **sous réserve de Q4** (et de la décision de
 découpage, § *Découpage*)
 
 | Clé | Contenu | AC | Ordre |
@@ -882,9 +882,132 @@ AC10, `31-1-sauvegarde-complete.md:335-345, 1325-1335`).
 
 #### Agent Model Used
 
+Opus 5.5 (agent de développement), worktree `kesh-32-12a`, branche `story/32-12a` partie de `9ae93f4c` ; bases
+`kesh_3212a` / `kesh_e2e_3212a`, port 3319, `CARGO_TARGET_DIR` du worktree. Développement du 2026-10-24, **sous
+réserve de Q4**.
+
 #### Completion Notes List
 
+*Ne figure ici que ce qui a tourné ; journaux hors dépôt sous `kesh-gate-logs/3212a-*.log`.*
+
+- **T1 / AC15 — fixture.** `git diff --stat v0.15.0 HEAD -- crates/ frontend/src` constaté **vide** avant tout code ;
+  seed extrait (`generer_fixture`, partagé avec `generate_fixture_0_14_0`, qui garde son doc-comment et son
+  `#[ignore]`) ; `generate_fixture_0_15_0` exécuté **une fois** (`cargo nextest run --run-ignored only -E
+  'test(generate_fixture_0_15_0)'`) ; commit dédié `642c88f9`, **avant** tout changement de code. Contrôle `unzip` :
+  `formatVersion` 2, `keshVersion` `0.15.0`, `keshVersionMinRequired` `0.14.0`, **39** tables, deux entrées
+  `files/<sha>.pdf` ; `products` à 0 ligne. **91 977 octets, SHA-256
+  `5729ce13f6ee8a7280f26b05c127ca47da2b3fa5a5ac43a08de615e3f0fad5c6`.** Contenu synthétique (société du seed, « Client
+  Fictif », IBAN d'exemple SIX).
+- **AC1-AC4** (`kesh-db/backup.rs`, `post_restore.rs`) : `created_application_table -> Option<&'static str>`,
+  `normalize` et `split_statements` en `pub(crate)` (production, un seul exemplaire) ; `table_creators()` et
+  `table_creating_migrations()` (`OnceLock`, minimum) ; `IMPORT_FLOOR_MIGRATION = 20260917000001`, doc-comment avec
+  contrat (AC10) et les **quatre** migrations publiées nommées une à une ; `InventoryRules` (`creation` en pointeur de
+  fonction, C-32-12-38), `InventoryError`, `check_backup_inventory` (`HorsOrdre` cite la plus récente des présentes,
+  C-32-12-39). La fonction de test qui calculait la fenêtre est **retirée**. Tests : AC1 (i)
+  `every_inventory_table_has_exactly_one_creating_migration`, (ii) `table_creating_migrations_dates_known_tables`,
+  plus `created_application_table_reads_the_header_only` ; AC2 (i) `import_floor_is_a_real_table_creating_migration`,
+  (ii) `import_floor_is_not_beyond_the_latest_creation`, (iii) `required_and_written_tolerated_partition_the_inventory`,
+  (iv) `tolerated_tables_are_written_down` (`TOLEREES_ECRITES` vide, `tolerees_calculees`, `exigees`) ; AC3 : onze
+  tests `inventory_*` (les dix cas de la fiche ; le cas « table du plancher absente » porte trois assertions, dont
+  celle de M1) ; AC4 `restore_empties_a_table_absent_from_the_backup` (`./test-schema`).
+- **AC5** : `parse_and_verify_with` (`pub(crate)`), `parse_and_verify` l'enveloppe ; messages `Exigee` et `Inconnue`
+  inchangés mot pour mot, `HorsOrdre` à la lettre de l'AC5 ; `ParsedBackup::tables_absent` lu par le `Debug`
+  manuel — **`clippy -D warnings` vert sans le repli `cfg_attr`** (aucun lint sur le champ) ; `lib.rs` non touché.
+- **AC6** (`tests/admin_full_import_e2e.rs`) : `ac6_une_table_exigee_absente_est_refusee_sans_effet`,
+  `ac6_une_table_inconnue_est_refusee_sans_effet` (400 `INVALID_BACKUP_STRUCTURE`, société témoin relue,
+  `KESH_ADMIN_BACKUP_DIR` vide). **AC7** (`src/admin_backup/import.rs`, `mod tests`) :
+  `ac7_une_table_posterieure_absente_est_restauree_vide` (`#[sqlx::test]`), `ac7_une_table_exigee_absente_est_refusee_par_son_message_exact`.
+- **AC9, AC11** : fenêtre des deux tests P7 = `IMPORT_FLOOR_MIGRATION` ; sites récrits (doc-module, commentaire de M1,
+  phrases au présent du bloc 24-2/24-3 — relevés datés gardés —, doc d'`EXEMPT_MIGRATIONS`, doc et messages des deux
+  tests) ; compteur `checked` à **8**, son commentaire daté inchangé ; justification de l'exemption `20260917000001`
+  **non touchée** (confiée à la 32-5). AC11 : `post_floor_table_seeds_are_replayed` (vacant) et sa détection
+  `post_floor_write_targets`, nourrie de migrations fictives par `post_floor_write_targets_on_fictitious_migrations`
+  (C-32-12-40).
+- **AC16** : `TABLES_TO_TRUNCATE`, `restore_body` (l'audit_log hors inventaire ; le commentaire « garantit la
+  couverture »), `missing_sentinels` (et le commentaire de son test), en-tête et commentaire de `import.rs`,
+  `backup_schedule.rs` (message), `version.rs`, `CLAUDE.md` P7 (les **deux** paragraphes — **soumis à Guy par la
+  PR**). Aucune migration ajoutée ni touchée (P5, P6, P8 sans objet : `git diff --stat story/32-12 HEAD --
+  crates/kesh-db/migrations docs/migrations-idempotence-audit.md` vide).
+- **Rouges avant correctif** (`3212a-rouge-kesh-db.log`, `3212a-rouge-kesh-api.log`) : sous bouchons
+  (`table_creators` vide, plancher à 0, `check_backup_inventory` → `Ok(vec![])`, détection AC11 vide), **15 rouges**
+  sur 24 tests visés : les tests AC1 (i)/(ii), AC2 (i)/(ii), neuf `inventory_*`, l'exemption P7, la détection
+  fictive AC11. Restaient verts **par construction** et sont tués par mutation : `inventory_complete_is_ok`,
+  `inventory_production_rules_complete_manifest_is_ok` (`Ok(vec![])` est leur réponse juste), AC2 (iii)/(iv) (une carte
+  vide rend tout exigé, partition cohérente → tués par M3), `restore_empties_…` (comportement existant, AC4 le **fixe**
+  → tué par M4), `post_floor_table_seeds_are_replayed` (vacant → tué par M3), `registry_entries_…` (M6). Côté
+  `kesh-api` (ancienne double boucle, règles ignorées) : `ac7_…_restauree_vide` **rouge** (`table 'products' absente
+  du manifeste`) ; AC6 (i)/(ii) et AC7 (b) verts — les refus existaient, le message aussi : tués par M1 (AC7 b).
+  `created_application_table_reads_the_header_only` vert (reconnaissance réelle dès l'écriture) → tué par M8.
+- **Mutations** (`3212a-mutations.log`, sous verrou, une à la fois, `git checkout -- f && touch f`, `git status`
+  propre après) :
+  - **M1** (filtre « postérieure au plancher » retiré) → tuée : `inventory_floor_table_absent_is_required`,
+    `ac7_une_table_exigee_absente_est_refusee_par_son_message_exact`. Les AC6 restent verts (attendu, la fiche le dit).
+  - **M2** (règle du suffixe neutralisée) → tuée : `inventory_older_absent_newer_present_is_out_of_order`,
+    `inventory_same_migration_one_absent_is_out_of_order`.
+  - **M3** (plancher à `20260827000001`) → tuée : `tolerated_tables_are_written_down` (tueur), avec son écho
+    `required_and_written_tolerated_partition_the_inventory` ; aussi
+    `exemptions_claiming_out_of_window_really_are_out_of_window` et `post_floor_table_seeds_are_replayed`
+    (`20260917000001` écrit dans une table devenue postérieure).
+  - **M4** (DELETE conditionné à `tables.contains_key`) → tuée : `restore_empties_a_table_absent_from_the_backup`,
+    `ac7_une_table_posterieure_absente_est_restauree_vide`.
+  - **M6** (fenêtre = maximum de `table_creating_migrations()`), appliquée aux **deux** tests séparément (M6, M6b) →
+    **équivalente, déclarée** : les deux valeurs valent `20260917000001` aujourd'hui ; elle cesse de l'être à la
+    première table postérieure (32-5, contrat point 4).
+  - **M7** (détection AC11 : aucune cible jamais postérieure) → tuée : `post_floor_write_targets_on_fictitious_migrations`.
+  - **M8** (accents graves non retirés) → **tuée** par `created_application_table_reads_the_header_only` ; l'AC1 (i)
+    reste vert sous M8 (aucune migration n'écrit `` CREATE TABLE `x` ``) — d'où le test unitaire (C-32-12-41).
+- **Gate complet** au dernier commit de code (`c70b80e6`), base `kesh_3212a` remise à zéro (drop, migrations du
+  worktree, seed) : `scripts/test-fast.sh --ci` sous verrou — garde des droits, `fmt`, `clippy -D warnings`,
+  **3996 exécutés, 3996 passés, 8 ignorés** (`3212a-gate-1.log`). Gates frontend **sans objet** :
+  `git diff --name-only story/32-12 HEAD` ne touche ni `frontend/` ni `crates/kesh-i18n/`.
+- **E2E complet** au même commit (port 3319, `kesh_e2e_3212a` recréée vide, dossiers `/tmp/kesh-e2e-3212a/*` passés
+  au backend **et** au runner, `/health` `smtpConfigured: true`) : **315 passés, 7 échoués, 17 sautés** (14,2 min,
+  `3212a-e2e.log`). Les sept, un à un contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`,
+  `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — **les sept KF-029 (#97)** ;
+  ni KF-052 ni pollution. `backup-restore-new-install.spec.ts` (qui passe par l'import) : 3/3 passés. Backend arrêté
+  par son PID.
+- **Tests ajoutés**, recomptés aux deux bornes `story/32-12` → `HEAD` (`#[test]` + `#[sqlx::test]`) : `backup.rs`
+  28 → 47 (**+19**), `post_restore.rs` 19 → 21 (**+2**), `admin_backup/import.rs` 23 → 25 (**+2**),
+  `admin_full_import_e2e.rs` 55 → 57 (**+2**), `admin_full_export_e2e.rs` 20 → 21 (**+1**, le générateur
+  `#[ignore]`) : **+26** attributs, dont **25** exécutés par le gate.
+- **AC17, après réécriture (P5-5)** — les six commandes telles qu'écrites, depuis la racine du worktree, sur `HEAD`
+  (`c70b80e6` + docs) : **G1 58, G2 5, G3 27, G4 5, G5 14, valeur 7** (avant : 51 / 7 / 36 / 10 / 18 / 5). Sort des
+  lignes qui ont changé (comparaison ligne à ligne contre `story/32-12`) :
+  - **disparues** (sites *Récrit par la 32-12a* du tableau, tous réécrits) : `backup.rs:34-38`, `:647`, `:667-668` ;
+    `backup_schedule.rs:502` ; `version.rs:272-275` ; `post_restore.rs` doc-module l. 22/25-26/35, doc
+    d'`EXEMPT_MIGRATIONS` l. 379, `missing_sentinels` l. 718-720, test l. 918/920/925-927/930/934/1084/1095-1096,
+    fonction retirée l. 942-958 ; `import.rs:14`, `:232-233` ; `CLAUDE.md:827`, `:829` ;
+  - **neuves, toutes vraies sous la règle neuve** (sort : *écrit par la 32-12a*) — G1 : `backup.rs:42`, `:47`
+    (`TABLES_TO_TRUNCATE` : ajouter reste importable, retirer ne l'est pas), `:151`, `:160` (passé : « rendait »),
+    `:165` (relever le plancher), `:198` (citation de l'ancienne règle des quatre migrations), `:879`
+    (`audit_log` hors inventaire) ; `post_restore.rs:27`, `:262` (M1), `:825` (doc de la reconnaissance), `:996`,
+    `:1111`, `:1127`, `:1806` (test fictif) ; `CLAUDE.md:827` récrit ; G2 : `backup.rs:197` (« l'ancienne règle
+    d'égalité des inventaires », passé) ; G3 : `backup.rs:164` (« Le relever referme la fenêtre » : vrai du
+    relèvement) ;
+  - **valeur** (7) : `post_restore.rs:222`, `:434`, `:443`, `:449` (inchangés, tableau), `backup.rs:183` (contrat,
+    point 3), `:205` (la constante), `:2563` (test AC1 (ii)) — chacune relue : plancher, non « dernière créatrice ».
+  - **inchangées** : toutes les autres lignes gardent leur sort du tableau *Inventaire de la classe* (relevés datés,
+    exigées, autre contrôle, génériques, les quatre migrations P8, `post_restore.rs:441`/`:457` confié à la 32-5, les
+    trois sites du manuel confiés à la 32-12b) ; les 14 homonymes, inchangés. Aucun site neuf hors de ces sorts.
+- **Écarts** : (1) une réécriture de code (le bloc du test `registry_entries_are_within_import_window` et le retrait
+  des deux fonctions de test voisines) a été faite par un script `python3` de remplacement, contre
+  `docs/agents-orchestration.md` § 7 — résultat relu aussitôt, conforme (C-32-12-42) ; toutes les autres éditions de
+  code par l'outil d'édition. (2) La fiche (AC18a) nomme la base `kesh_3212` ; l'orchestrateur a attribué
+  `kesh_3212a` — c'est elle qui a servi. (3) M8 n'est pas équivalente mais tuée (C-32-12-41).
+
 #### File List
+
+- `crates/kesh-db/src/backup.rs` — plancher, carte, règle, tests AC1-AC4, commentaires.
+- `crates/kesh-db/src/post_restore.rs` — reconnaissance en production, fenêtre P7 au plancher, AC11, textes.
+- `crates/kesh-db/src/repositories/backup_schedule.rs` — message d'assertion.
+- `crates/kesh-db/src/version.rs` — doc-comment de `check_import_version_compat`.
+- `crates/kesh-api/src/admin_backup/import.rs` — `parse_and_verify_with`, `tables_absent`, tests AC7.
+- `crates/kesh-api/tests/admin_full_export_e2e.rs` — seed partagé, `generate_fixture_0_15_0`.
+- `crates/kesh-api/tests/admin_full_import_e2e.rs` — tests AC6.
+- `crates/kesh-api/tests/fixtures/keshbackup-0.15.0-format2.keshbackup` — neuf.
+- `CLAUDE.md` — P7, deux paragraphes.
+- `_bmad-output/implementation-artifacts/3212a-review-prompt-p1.md` — neuf ; registre `epic-32-choix-autonomes-3212.md`
+  (C-32-12-38 à 42) ; `sprint-status.yaml`.
 
 ### 32-12b
 
@@ -1055,5 +1178,9 @@ AC10, `31-1-sauvegarde-complete.md:335-345, 1325-1335`).
   (F) ») ; P5-4 (T4b) ; **P5-5 : la 32-12a consigne au Dev Agent Record les nombres que rendent les commandes de l'AC17 et
   le tableau des sites après ses réécritures — la 32-12b s'y mesure, non aux nombres d'avant** ; P5-6 (axes de l'entrée
   P4) ; P5-7 (le fichier d'epic, l. 214 et 318, et C-32-0-13 disent encore une story unique : actualisés à la fusion).
+- 2026-10-24 — **Développement de la 32-12a** (Opus 5.5, worktree `kesh-32-12a`), **sous réserve de Q4** : fixture 0.15.0 au
+  premier commit (`642c88f9`), règle d'inventaire, plancher, import, fenêtre P7, AC11 et textes (`c70b80e6`) ; gate complet
+  3996/3996, E2E 315 / 7 (KF-029) / 17, mutations M1-M4, M7, M8 tuées et M6 équivalente ; détail au Dev Agent Record
+  § 32-12a ; clé à `review`. Passe suivante : revue de code P1, Sonnet, lentilles B, E, A (`3212a-review-prompt-p1.md`).
 
 [#722]: https://github.com/guycorbaz/kesh/issues/722

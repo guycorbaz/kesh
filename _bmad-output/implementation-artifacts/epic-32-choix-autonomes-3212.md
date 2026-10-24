@@ -389,3 +389,54 @@ AC qu'elle porte.
 - **Réserve** : la 32-12a est **au seuil** (cinq modules) au grain qui a donné huit pour la story entière ; compter
   `kesh-api/tests` comme module en donnerait six. Signalé à Guy.
 - **Réversible** : oui — les deux clés se recousent sans perte si Guy en décide ainsi.
+
+## Développement de la 32-12a (2026-10-24, Opus 5.5, worktree `kesh-32-12a`)
+
+### C-32-12-38 — `InventoryRules::creation` est un pointeur de fonction
+
+- **Contexte** : l'AC3 laisse la forme des règles injectées ouverte (« ou équivalent »).
+- **Retenu** : `creation: fn(&str) -> Option<i64>` — la production passe une fermeture sans capture
+  (`table_creating_migrations().get(t).copied()`), les tests des fonctions nommées (`creation1`, `creation2`,
+  `creation_products_apres_tout`) ; `InventoryRules` reste `Copy`, sans durée de vie ni `dyn`.
+- **Écartées** : `&dyn Fn` (durée de vie à porter par la structure), une `BTreeMap` injectée (oblige les tests à
+  recopier toute la carte de production pour l'AC7).
+- **Réversible** : oui, interne à la crate et à ses tests.
+
+### C-32-12-39 — La `presente` d'un `HorsOrdre` est la plus récente des présentes
+
+- **Contexte** : l'AC3 nomme l'erreur `HorsOrdre { absente, presente }` sans dire laquelle des présentes citer.
+- **Retenu** : la plus ancienne des absentes est comparée à la **plus récente** des présentes postérieures au
+  plancher (à version égale, la plus petite de rang dans l'inventaire) — c'est la seule comparaison nécessaire et
+  suffisante pour la règle du suffixe, et la table citée est celle qui rend le fichier impossible.
+- **Écartées** : la première présente postérieure à l'absente dans l'ordre de l'inventaire (même verdict, message
+  moins parlant quand plusieurs tables sont présentes).
+- **Réversible** : oui (message seul ; aucun lecteur de production du champ).
+
+### C-32-12-40 — La détection de l'AC11 est une fonction de test nourrie de SQL littéral
+
+- **Contexte** : M7 propose une porte d'injection du registre et du `MIGRATOR`, ou une fonction de détection testée
+  sur un SQL littéral.
+- **Retenu** : la seconde — `post_floor_write_targets(sql, inventaire, creation, plancher)` dans le `mod tests` de
+  `post_restore.rs`, testée sur deux migrations fictives (créer-et-amorcer ; écrire plus tard dans une table créée
+  avant) et sur trois non-cas (table système, table exigée, DDL `ON UPDATE CURRENT_TIMESTAMP`) ; le test réel
+  `post_floor_table_seeds_are_replayed` l'applique au `MIGRATOR` (vacant aujourd'hui).
+- **Écartées** : une porte de production pour injecter un `MIGRATOR` (code de production pour un test).
+- **Réversible** : oui.
+
+### C-32-12-41 — M8 a un tueur : un test unitaire de la reconnaissance
+
+- **Contexte** : la fiche prévoit M8 (accents graves non retirés) équivalente sur le dépôt actuel, faute de
+  `` CREATE TABLE `x` `` dans les migrations.
+- **Retenu** : `created_application_table_reads_the_header_only` (`backup.rs`, `mod tests`) éprouve la graphie à
+  accents graves sur un littéral ; M8 n'est donc plus équivalente — l'AC1 (i) reste, lui, vert sous M8, ce que le Dev
+  Agent Record déclare.
+- **Réversible** : oui.
+
+### C-32-12-42 — Écart de protocole déclaré : une réécriture de code par script
+
+- **Contexte** : le bloc du test `registry_entries_are_within_import_window` (doc-comment, corps, et retrait des deux
+  fonctions de test voisines) a été remplacé par un script `python3` de remplacement de texte, contre
+  `docs/agents-orchestration.md` § 7 (« jamais de script `python3` de remplacement sur un fichier source »).
+- **Constat** : résultat relu aussitôt (`git diff`, lecture du bloc) — conforme, rien d'autre touché ; toutes les
+  autres éditions de code ont été faites par l'outil d'édition. Déclaré au Dev Agent Record et au rapport.
+- **Réversible** : sans objet (le contenu est celui qu'aurait produit l'outil d'édition).
