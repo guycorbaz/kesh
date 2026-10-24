@@ -301,8 +301,8 @@ après les deux (Dev Notes, § *Pourquoi quatre clés*).
      (`features/admin-restore/AdminRestorePanel.svelte:61-68`), à **extraire** dans un module partagé
      (`frontend/src/lib/shared/utils/`, nom au développement) et employé par les deux écrans (règle DRY ; aucun
      comportement de l'import ne change, le prédicat extrait restant faux pour une erreur qui n'est pas une
-     `ApiError`). Le module neuf importe `isApiError` de **`./api-error`**, non de `./api-client` (comme le fait
-     aujourd'hui `AdminRestorePanel.svelte:20`) : l'en-tête d'`api-error.ts` (l. 5-9) dit que dix-huit fichiers de test
+     `ApiError`). Le module neuf importe `isApiError` de **`./api-error`**, non de `./api-client` — à la différence
+     d'`AdminRestorePanel.svelte:20`, qui l'importe aujourd'hui d'`api-client` et n'est pas le modèle à suivre ici : l'en-tête d'`api-error.ts` (l. 5-9) dit que dix-huit fichiers de test
      simulent `$lib/shared/utils/api-client` par une fabrique qui ne fournit presque jamais `isApiError`, si bien
      qu'un écran qui emploierait le prédicat casserait sous ces tests ; **ou** (b) un rejet qui **n'est pas** une `ApiError` — le cas réel : un 200 dont le corps ne se lit pas,
      que `request()` rend `undefined` (`api-client.ts:480-484`, `catch { return undefined as T; }`), si bien qu'`applyState(undefined)` lève ; la tentative,
@@ -876,7 +876,10 @@ l'écriture n'a pas de chemin (E-1, E-2 de #711)** — labels `bug`, `P3`.
   (`decommente`, filtre `//` ligne à ligne) ; `crates/kesh-db/tests/test_schema_guard.rs:818-827` (profondeur de bloc
   comptée par `matches("/*")` et `matches("*/")` ligne à ligne, filtre `//` à la l. 825 — sans connaissance des
   chaînes). **Complété à la validation P3** (R3) : `crates/kesh-api/tests/admin_pat_denied_e2e.rs:124`
-  (`strip_line_comments`, `l.split("//").next()` sur la source de `lib.rs` — coupe aussi un `//` écrit dans une chaîne,
+  (`strip_line_comments`, `l.split("//").next()` sur la source de `lib.rs`, mais aussi de `routes/admin.rs` (l. 573),
+  `routes/fiscal_years.rs` (l. 581) et de tous les `.rs` de `src/` balayés à la l. 491 *(précisé à la validation P4,
+  P4-1 ; la prémisse « pas de `//` dans une chaîne » n'est vérifiée que pour `lib.rs` — `main.rs:387-388` porte
+  `http://` dans une chaîne, sans faux vert constaté)* — coupe aussi un `//` écrit dans une chaîne,
   limite que son doc-comment, l. 115-123, assume en s'appuyant sur le test compagnon
   `lib_rs_has_no_double_slash_inside_literals`). **Un analyseur juste existe déjà** : `crates/kesh-db/tests/lexique/mod.rs`
   (`decouper`, `blocs_de_test`, Story 28-4a, #642), employé par `letterings_lexical.rs` et
@@ -919,7 +922,9 @@ n'est **pas** à verser s'il ne l'a pas déjà été ; s'il l'a été, le texte 
 > un renvoi ici. #711 se ferme en renvoyant E-9 (3) à cette issue, comme E-1 et E-2 à #725.
 >
 > **2. Un piège pour l'extraction, rencontré par la dernière rédaction.** Déclarer le module partagé par
-> `#[cfg(test)] #[path = "../../kesh-db/tests/lexique/mod.rs"] mod lexique;` **en tête** d'un fichier de production
+> `#[cfg(test)] #[path = "../../kesh-db/tests/lexique/mod.rs"] mod lexique;` — l'attribut `#[cfg(test)]` **seul sur sa
+> ligne**, comme `rustfmt` l'écrit, puisque `code()` ne tronque que sur une ligne dont le contenu est exactement
+> `#[cfg(test)]` (`auto_backup.rs:1124`) — **en tête** d'un fichier de production
 > dont une garde relit la source par `include_str!` et la tronque « au premier `#[cfg(test)]` » coupe tout le code de
 > production : dans `auto_backup.rs`, l'assertion `try_lock_owned()` de `gardes_possedes` rougissait, et sa boucle des
 > jetons interdits passait à vide sur ce fichier. La déclaration doit suivre le dernier item de production (juste avant
@@ -1218,6 +1223,13 @@ n'est **pas** à verser s'il ne l'a pas déjà été ; s'il l'a été, le texte 
   - Propagation grepée dans la fiche, le registre et `sprint-status.yaml` (`AC-a11`, `lexique`, `M-a7`, `en tête`,
     `decouper`, `E-9 de #711`, `neuf ;`, `est écrite`, `Tant qu'aucune sauvegarde`, `32-1b et 32-1c`, `2332`). Les
     entrées passées du Change Log (P1, P2) ne sont pas réécrites.
+- 2026-10-24 — **Validation P4** (Haiku, passe ciblée, une lentille *regression hunter* sur `8d4c29df..7e4b7b5f` ;
+  rapport hors dépôt `321-validate-p4.md`) : **0/0/0/4** — **validation terminée**. Tendance des MEDIUM distincts :
+  P1 4 → P2 6 → P3 2 → P4 0. LOW appliqués par l'orchestrateur : P4-1 (`strip_line_comments` sert aussi
+  `routes/admin.rs`, `routes/fiscal_years.rs` et le balayage de `src/` — précisé à l'inventaire, suivi sur #727) ;
+  P4-2 (l'import d'`AdminRestorePanel.svelte:20` n'est pas le modèle) ; P4-3 (l'attribut `#[cfg(test)]` seul sur sa
+  ligne — précisé au commentaire de #727) ; P4-4 (annotation P3 de la clé 32-1b déplacée en fin de ligne, datée).
+  Signal déclaré au Project Lead, sans découpage : la 32-1a touche six modules au grain métier (C-32-1-38).
 
 [#711]: https://github.com/guycorbaz/kesh/issues/711
 [#714]: https://github.com/guycorbaz/kesh/issues/714
