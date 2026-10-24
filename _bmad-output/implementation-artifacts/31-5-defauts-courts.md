@@ -1,6 +1,9 @@
 # Story 31.5 : quatre défauts courts avant la release (#707, #589, #504, #469)
 
-Status: review
+Status: done
+
+*(Annotation du 2026-10-24, Story 32-0 — action A2 de la rétrospective de l'Epic 31 : l'en-tête disait `review` ; la
+revue est terminée et la story fusionnée par la PR #717, `85417309` — `sprint-status.yaml` porte `done`.)*
 
 *Fiche rédigée le 2026-10-24, en autonomie (Opus 5.5), worktree `kesh-31-5`, branche `story/31-5` sur `origin/main`
 `e71cd351`. Registre : `epic-31-choix-autonomes-315.md` (C-31-5-0 à C-31-5-22 ; 13 à 17 à la validation P1, 18 à 20 à la validation P2, 21 et 22 à la validation P3).

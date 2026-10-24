@@ -1,6 +1,9 @@
 # Story 31.4 : La répétition à blanc d'une clôture (ex-29-7, documentation exécutée)
 
-Status: review
+Status: done
+
+*(Annotation du 2026-10-24, Story 32-0 — action A2 de la rétrospective de l'Epic 31 : l'en-tête disait `review` ; la
+revue est terminée et la story fusionnée par la PR #715, `66114d2c` — `sprint-status.yaml` porte `done`.)*
 
 *Fiche rédigée le 2026-10-24, en autonomie ; remédiée le même jour après la validation P1 (Opus, lentilles R et F), après
 la P2 (Sonnet ; choix C-31-4-13 et C-31-4-14), puis après la P3 (Opus ; **signal de recyclage déclaré, sortie par retrait**,

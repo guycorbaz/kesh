@@ -1,6 +1,9 @@
 # Story 31-2 — L'outillage dit vrai : droits de dev, smoke E2E en CI, Docker authentifié, `.svelte-kit/`
 
-Status: review
+Status: done
+
+*(Annotation du 2026-10-24, Story 32-0 — action A2 de la rétrospective de l'Epic 31 : l'en-tête disait `review` ; la
+revue est terminée et la story fusionnée par la PR #702, `1f00b7bd` — `sprint-status.yaml` porte `done`.)*
 
 Issue : [#577](https://github.com/guycorbaz/kesh/issues/577) (bug, P3, documentation) ; actions C3 (rétrospective 29),
 A2, A3 (rétrospective 15), A-C7 et A-C9 (rétrospective 15). Branche `story/31-2`. Choix : `epic-31-choix-autonomes.md`

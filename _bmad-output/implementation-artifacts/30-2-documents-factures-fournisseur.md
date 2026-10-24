@@ -2,6 +2,10 @@
 
 ## Status
 
+**done** — *(annotation du 2026-10-24, Story 32-0 — action A2 de la rétrospective de l'Epic 31 : les trois clés sont
+`done` au registre de sprint, fusionnées par les PR #689 (30-2a, `f1508653`), #691 (30-2b, `1aca02d2`) et #693 (30-2c,
+`174c2434`) ; le paragraphe suivant est l'état écrit à sa date, laissé tel quel.)*
+
 **30-2a : review** (développée le 2026-10-15 ; reportée sur `fecc8566`, merge de la 30-1a — T-a0 fait ; revue de
 code P1 faite — B 0/0/0/5, E 0/0/2/5, A 0/0/0/8 — et remédiée le 2026-10-15 ; **passe ciblée P2** à lancer,
 `30-2a-review-prompt-p2-ciblee.md`, Haiku). *(Annotation du 2026-10-15 : la 30-2a est `done`, revue terminée, et mergée
