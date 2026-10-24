@@ -182,7 +182,7 @@ Si vous souhaitez \textbf{tester Kesh sans données réelles}, choisissez le mod
     \item Une société fictive (« Démo SA », ou sa traduction dans la langue de l'installation), avec une adresse et un numéro IDE d'exemple.
     \item Le plan comptable PME, dans la langue de l'installation.
     \item L'exercice de l'année en cours.
-    \item Les quatre taux de TVA suisses et les réglages de facturation par défaut.
+    \item Les quatre taux de TVA suisses et les réglages de facturation par défaut, dont les comptes de TVA (TVA due, impôt préalable, décompte)~: une facture avec TVA s'y valide sans réglage préalable.
 \end{itemize}
 
 \textbf{Rien d'autre} : aucun contact, aucun produit, aucune écriture. Les listes sont vides~; c'est à vous de saisir les données sur lesquelles vous voulez essayer Kesh.
@@ -203,6 +203,8 @@ Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode
 \end{enumerate}
 
 Dès que vous avez choisi la langue comptable, Kesh met en place le plan comptable de votre type d'organisation, libellé dans cette langue. À la finalisation, il crée votre premier exercice, l'année civile en cours. Vous êtes alors prêt à saisir vos premières écritures.
+
+Les comptes de TVA ne sont pas désignés d'office~: un assujetti les désigne dans \emph{Administration} → \emph{Facturation} (TVA due, impôt préalable, décompte) avant sa première facture avec TVA, sans quoi la validation est refusée («~Configuration incomplète : configurez les paramètres de facturation avant de valider.~»).
 
 \begin{keshnote}
 Vous pourrez à tout moment ajouter ou modifier vos comptes bancaires après l'onboarding (\emph{Administration} → \emph{Comptes bancaires}) et adapter votre plan comptable (cf. section \emph{Plan comptable}).
@@ -3256,6 +3258,8 @@ Que faire ensuite dépend de la transaction~:
 \subsection{Comment changer la langue d'une facture ?}
 
 La langue de la facture suit la langue de communication du client (champ \emph{Langue} du contact). Pour une facture ponctuelle dans une autre langue, vous pouvez forcer la langue dans le formulaire de création de facture.
+
+La communication du QR-code («~Facture F-…~», «~Rechnung F-…~») suit elle aussi la langue de la facture. Une facture émise avant la version 0.15.0 garde la sienne, en français, tant que son PDF n'est pas refigé.
 
 \subsection{Comment exporter mes données pour migration ?}
 

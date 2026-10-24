@@ -57,6 +57,13 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   construction (`rust:1.97-bookworm`) suivent la même version, et un test du dépôt rougit désormais si l'une bouge sans
   l'autre ([#697](https://github.com/guycorbaz/kesh/issues/697)).
 
+### Corrigé
+
+- **La démonstration valide une facture avec TVA** ([#707](https://github.com/guycorbaz/kesh/issues/707)). Elle ne désignait aucun compte de TVA, si bien que la validation d'une facture portant un taux était refusée (*Configuration incomplète*). Elle désigne désormais les comptes de TVA du plan (TVA due, impôt préalable, décompte), visibles dans *Administration → Facturation*. Le mode production ne change pas : les comptes de TVA n'y sont pas désignés d'office, un assujetti les désigne avant sa première facture avec TVA — le manuel utilisateur le dit.
+- **L'infobulle du bouton *Réouvrir* nomme l'exercice qu'il faut effectivement rouvrir** ([#589](https://github.com/guycorbaz/kesh/issues/589)). Avec trois exercices clôturés ou plus, elle nommait le plus proche exercice postérieur, que Kesh refusait à son tour de rouvrir ; elle nomme maintenant le plus récent, le seul que la réouverture accepte.
+- **La communication du QR-code suit la langue de la facture** ([#504](https://github.com/guycorbaz/kesh/issues/504)) : « Rechnung F-… » sur une facture allemande, « Fattura F-… » en italien, « Invoice F-… » en anglais, au lieu de « Facture F-… » partout. Le rapprochement bancaire, qui lit le numéro de facture, n'est pas touché. Une facture émise avant cette version garde sa communication française tant que son PDF n'est pas refigé.
+- **Les refus des filtres du journal d'audit sont traduits** ([#469](https://github.com/guycorbaz/kesh/issues/469)) : date invalide ou hors plage, plage inversée, identifiant sans type, code trop long — dans la langue de l'installation, et sans le détail technique en anglais d'une date mal formée. Le code d'erreur (`VALIDATION_ERROR`) ne change pas.
+
 ### Interne, invisible de l'utilisateur
 
 - **Les fichiers `.svelte-kit/` de la racine du dépôt sont retirés** (Story 31-2) : six résidus d'un `svelte-kit sync` lancé au mauvais endroit, que rien ne lisait ; `/.svelte-kit/` est désormais ignoré par git et par le contexte de build Docker.
