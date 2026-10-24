@@ -380,6 +380,16 @@ l'ensemble clos des chemins par lesquels une requête atteint un outil** (invent
 retire la lecture seule fait rougir un test ; une qui retire le filtrage de `tools/list` aussi. **Risque** : **élevé** —
 c'est la story de sécurité de l'epic ; boucle complète, Sonnet ↔ Opus.
 
+*Reports de la 32-5 (fiche `32-5-cles-et-reglages-mcp.md`, § Ce que reçoivent les stories suivantes ; inscrits le
+2026-10-25)* : (1) **le refus d'un PAT par l'endpoint `/mcp`** — la 32-5b ne le prouve qu'au service
+(`services::cles_mcp::authentifier`, AC-b4 (c)) ; la 32-6 l'éprouve à l'endpoint, avec un PAT actif `read-write` (401,
+`last_used_at` du PAT inchangée) ; (2) **la règle du 404 face à des réglages par société** — `mcp_server_settings` a une
+ligne par société, alors que « désactivé → 404, indiscernable d'une route absente » se décide avant l'authentification :
+la fiche 32-6 fixe la règle (par exemple : `/mcp` servi seulement si une société a `enabled = TRUE`, puis le même 404 si
+la société de la clé ne l'a pas) et la teste dans les deux branches. S'y ajoutent l'appel d'`authentifier` depuis la
+garde, la politique `CleMcpAuthentifiee::validation` au répartiteur (refus d'une clé `required` avant la 32-8) et la
+lecture des réglages sur la `Lecture`, sans écriture.
+
 ### 32-7 — L'écran « Serveur MCP » (Administration)
 
 Activation (désactivé par défaut), filtre d'adresse et proxies de confiance, **clés MCP** (création avec ses portées,
@@ -393,6 +403,15 @@ manuel d'administration (PDF), `kesh-api` (seulement si une route de réglage ma
 E2E du parcours (activer, créer une clé, la voir une fois, la révoquer) ; captures, thème clair ; le secret n'apparaît
 ni dans un journal ni dans la liste. **Risque** : moyen ; un secret affiché deux fois, ou conservé dans l'état du
 composant après fermeture.
+
+*Reports de la 32-5 (inscrits le 2026-10-25)* : (1) la section du manuel d'administration **Le serveur MCP** — création
+d'une clé, affichage unique, portées, politique de validation, ce que le filtre ne garantit pas, la clé donnée au client
+en portée `local`/`user` (jamais en `.mcp.json` versionné sauf `${VARIABLE}`, spike § 6) ; (2) la plage
+**`100.64.0.0/10`** (VPN de type Tailscale), **absente des plages admises par défaut**, à ajouter à la main — à l'écran et
+au manuel (C-32-5-10) ; (3) **la restauration d'un serveur activé** : les réglages sont restaurés tels quels (hypothèse
+Q7, C-32-5-11) — l'écran et le manuel disent qu'un serveur actif dans la sauvegarde l'est après l'import ; (4) **les
+renvois** depuis les passages corrigés par la 32-5d : `admin-manual.tex` § remise à zéro (l. 1414) et réparation
+(l. 1416, 2461), `user-manual.tex` l. 190, 3202, 3209-3212.
 
 ### 32-8 — La validation avant envoi
 
@@ -527,6 +546,11 @@ nombre de tables du NAS) : à Guy avant la release.
   **CHANGELOG** par la story qui change l'inventaire (32-5) — une sauvegarde ne se réimporte que dans une version qui
   porte les mêmes tables ; pour restaurer une sauvegarde plus ancienne, installer l'image de la version qui l'a produite,
   importer, puis mettre à jour.
+  *(Annoté le 2026-10-25, validation P2 de la 32-5, R2 — la décision de Guy est inchangée, seule la marche à suivre
+  recopiée ici par l'orchestrateur était incomplète : l'image de la version qui a produit la sauvegarde **ne démarre pas**
+  sur une base qu'une version plus récente a migrée — `sqlx` y trouve une migration qu'il ne connaît pas, `CLAUDE.md`
+  § P1. La procédure part donc d'une **base vide** — installation neuve, restauration depuis l'assistant (31-1b) —,
+  importe, puis met à jour ; la base en place n'est pas touchée. C'est la forme que la fiche 32-5 écrit au manuel.)*
 - **Q6** : fait — CR #723.
 - **Q3, Q5, Q7** : pas encore de réponse ; les recommandations restent l'hypothèse de travail des fiches 32-5 et 32-6.
 

@@ -33,7 +33,9 @@ de ligne cités sont ceux de `e59d63e8`.
   **six** modules. Elle se scinde : **b** — l'authentification (`kesh-api/auth`, `kesh-api/services`, le test de
   restauration : 3) ; **d** — la remise à zéro et la réparation (`kesh-db`, `kesh-seed`, `kesh-api/auth`
   (`bootstrap.rs`), `kesh-api/routes` (`onboarding.rs`, `admin.rs`), docs : 5). Total recompté : douze modules ; ordre
-  a → b, puis c et d dans l'un ou l'autre ordre. Jusqu'à d, la remise à zéro vide `mcp_keys` et l'authentification joint
+  a → b, puis c et d dans l'un ou l'autre ordre. *(Annoté en validation P2, F8, R10 = F9 : « douze » ne se recompte
+  pas — **dix modules distincts, dix-sept en somme** (5 + 3 + 4 + 5, la 32-5a gagnant `onboarding_audit_e2e.rs`, F3) ;
+  et l'ordre est désormais **imposé**, a → b → d → c, C-32-5-27.)* Jusqu'à d, la remise à zéro vide `mcp_keys` et l'authentification joint
   `companies` : aucun état intermédiaire n'ouvre d'accès ni ne fait mentir le manuel.
 
 ### C-32-5-2 — Deux tables neuves dans une seule migration
@@ -66,7 +68,8 @@ de ligne cités sont ceux de `e59d63e8`.
   la colonne exige l'énumération côté `kesh-db` (motif `ApiKeyScope`, `entities/api_key.rs:22-71`).
 - **Retenu** : l'énumération vit dans `kesh-db` (`McpScope`, cinq variantes aux **mêmes noms** que `Portee`, `as_str`,
   `FromStr`, dérivations `Ord` et `Hash` comprises) ; `services::acces` la réexporte (`pub use … McpScope as Portee`).
-  Les emplois de `Portee::` hors de `tests/services_motif.rs` (quatorze occurrences sur onze lignes en tout) compilent inchangés ; *révisé en validation P1 (R2 = F1, F7)* : `services_motif.rs` énumère les deux variantes (`TOUTES: [Portee; 2]`, l. 869 ; `match` exhaustif d'`autre_portee`, l. 894-898) et se réécrit (AC-b2).
+  Les emplois de `Portee::` hors de `tests/services_motif.rs` (quatorze occurrences sur onze lignes en tout) compilent inchangés ; *révisé en validation P1 (R2 = F1, F7), et de nouveau en P2 (R7 = F7) : hors de
+  `services_motif.rs`, **trois** occurrences (`rapports.rs:134`, `:172`, `plan_comptable.rs:26`), onze dedans* : `services_motif.rs` énumère les deux variantes (`TOUTES: [Portee; 2]`, l. 869 ; `match` exhaustif d'`autre_portee`, l. 894-898) et se réécrit (AC-b2).
 - **Écartées** : deux énumérations et une conversion (deux listes à tenir égales — DRY) ; l'énumération dans
   `kesh-api` et des chaînes en `kesh-db` (le décodage strict quitterait le dépôt).
 - **Réversible** : oui.
@@ -265,7 +268,7 @@ de ligne cités sont ceux de `e59d63e8`.
 - **Écartée** : exporter les réglages au CSV (aucun usage pour un autre logiciel).
 - **Réversible** : oui.
 
-### C-32-5-21 — La limite de Q4 s'écrit à trois endroits du manuel et au CHANGELOG
+### C-32-5-21 — La limite de Q4 s'écrit au manuel et au CHANGELOG
 
 - **Contexte** : Q4 (2026-10-24, soir) — documenter « au cas où » qu'une sauvegarde ne se réimporte que dans une version
   qui porte les mêmes tables. Le manuel dit aujourd'hui qu'une sauvegarde antérieure « retrouve, à l'import, le
@@ -277,6 +280,12 @@ de ligne cités sont ceux de `e59d63e8`.
   l'avertissement « secret » : les condensés des clés MCP ; CHANGELOG `[0.16.0]`, un ⚠️ en tête de *Modifié*. PDF
   régénéré.
 - **Écartée** : une note au CHANGELOG seul (le manuel est ce qu'on lit le jour de la panne).
+- ⚠️ **Révisé en validation P2** (F1, F4 = R4, F12, R2, R9) : la règle s'écrit **sans date** (elle vaut depuis la
+  v0.12.0 au moins) ; la marche à suivre part d'une **base vide** (l'image d'une version antérieure ne démarre pas sur
+  une base migrée par une version plus récente) ; cinq endroits du manuel d'administration — *Compatibilité*,
+  *Reprises* (« du registre », #528, numéros de client, `keshwarning`), l'avertissement « secret », *Ce qui reste hors
+  du fichier* (avec la sauvegarde automatique), *Restaurer sur une nouvelle machine* et les mentions du format 1
+  (`:1505`, `:2279`) — et le CHANGELOG (AC-a13).
 - **Réversible** : oui.
 
 ### C-32-5-22 — La partie qui change le comportement corrige le manuel (F4)
@@ -323,4 +332,28 @@ de ligne cités sont ceux de `e59d63e8`.
   ne change pas. La 32-5 ne ferme pas #722 (`_kesh_backup_schedule` reste à part ; les prompts sont la 32-10a) et le
   dit en `refs`.
 - **Écartée** : traiter ici l'inventaire entier de #722 (hors périmètre de la story).
+- **Réversible** : oui.
+
+### C-32-5-26 — La limite de Q4 éprouvée par la fixture 0.14.0 ; les tables neuves peuplées au test de remise à zéro
+
+- **Contexte** (validation P2, F2, F3) : la fixture figée de la vraie 0.14.0 et son test (`admin_full_import_e2e.rs:3878`,
+  AC10 de la 31-1a) attendent un import réussi, que la 32-5a rend impossible ; la liste fermée `EMPTY_BEFORE_RESET`
+  (`onboarding_audit_e2e.rs:1965`) gagnerait les deux tables neuves, vides au montage.
+- **Retenu** : le test devient celui du **refus** (400 `INVALID_BACKUP_STRUCTURE`, rien d'écrit) — seul test de la
+  limite de Q4 contre une sauvegarde réellement produite par une version antérieure ; `populate` **peuple** les deux
+  tables, de sorte que le test de la remise à zéro prouve qu'elle les vide (32-5a) puis qu'elle conserve `mcp_keys`
+  (32-5d), la liste fermée restant inchangée.
+- **Écartées** : supprimer le test (la limite n'aurait plus de preuve) ; régénérer la fixture (elle cesserait d'être
+  celle de la 0.14.0) ; ajouter les deux tables à `EMPTY_BEFORE_RESET` (le test ne prouverait plus le vidage).
+- **Réversible** : oui.
+
+### C-32-5-27 — L'ordre des parties est imposé : a → b → d → c
+
+- **Contexte** (validation P2, R10 = F9) : la fiche laissait c et d dans l'un ou l'autre ordre, tout en écrivant
+  qu'« aucune clé n'existe hors des tests » jusqu'à la 32-5d — faux si c précède d : une clé créée par les routes serait
+  effacée par la remise à zéro.
+- **Retenu** : d avant c, ce que la fiche recommandait déjà pour la série des stories `kesh-db` (C-32-0-12) ; la phrase
+  devient vraie dans l'unique ordre admis.
+- **Écartée** : laisser l'ordre libre en décrivant l'effet de c avant d (un état de `main` où une clé disparaît à la
+  remise à zéro, sans texte qui le dise).
 - **Réversible** : oui.
