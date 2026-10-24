@@ -1118,9 +1118,152 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/
 
 #### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), worktree `kesh-32-1c`, branche `story/32-1c` partie de `01b9a58b`, le 2026-10-24.
+
 #### Completion Notes List
 
+*Tout ce qui suit a tourné ; les journaux sont dans `kesh-gate-logs/` (`321c-make-fr.log`, `321c-gate-cible.log`,
+`321c-gate-vat.log`). Base de comparaison : `git merge-base origin/main HEAD` = `c03d3a5f` ; les trois PDF et les
+`.tex` y sont identiques à ceux de `01b9a58b` (`git diff --stat c03d3a5f HEAD -- docs/manual/` vide).*
+
+- **AC-c1** (l. 1625) — « elle ne fait que lire la version » retiré : de la production, la répétition **lit** la version et
+  **télécharge** deux exports, qui y **écrivent** — deux lignes au journal d'audit, une par export, les sessions, et les
+  lignes de réglages par défaut si elles manquent ; facturation = première ouverture de sa page ; relances : la page
+  pose **en plus** les trois niveaux par défaut, que l'export ne pose pas. Prémisse relue au code avant d'écrire :
+  `exports/global.rs:304` et `:313` (`get_or_create_default` des deux réglages), `routes/company_dunning_settings.rs:56`
+  (`ensure_seeded_in_tx`), `repositories/company_dunning_settings.rs:168-200` (boucle d'`INSERT INTO dunning_levels`),
+  `routes/company_invoice_settings.rs:263` (la page de facturation : `get_or_create_default` seul).
+- **AC-c2** (puce *Au contrôle~3*) — la cause nommée d'abord : barre finale dans `COPIE`, contraire aux *Conventions*
+  (`realpath` la retire, les chemins comparés diffèrent) ; puis le `/var/tmp` lien. Le geste (« laissez le dossier
+  vide ») est inchangé.
+- **AC-c3** (contrôle 4) — l'attendu dit « rien » aussi pour les deux `curl`, et, à la règle « tout autre écart y est un
+  arrêt », « y compris un message de `curl`, ou de `grep` qui ne trouve pas le fichier : l'inventaire n'a alors rien lu,
+  et son « rien » ne prouve rien ». Règle existante appliquée, non créée.
+- **AC-c4** (étape 0) — « ni intégration qui écrit par une **clé d'API** » ajouté à la liste. « Refaire les exports »
+  n'est pas écrit (#726, point 2).
+- **AC-c5** (contrôle final) — « Ce contrôle ne regarde que `$COPIE` : le dossier d'une autre répétition, resté sans objet
+  Docker, n'y paraît pas ; c'est le `ls -d /var/tmp/kesh-repetition-*` écrit plus haut qui le montre. »
+- **AC-c1 à AC-c5 au PDF aplati** (commande des Dev Notes, `sed "s/’/'/g"`) : **témoin positif d'abord** —
+  « trop grande pour être restaurée par l'écran » → 1 ; puis chaque phrase → 1 : « elle lit la version et télécharge
+  deux exports, et ces deux exports y écrivent », « deux lignes au journal d'audit, une par export », « pose en plus les
+  trois niveaux de relance par défaut, que l'export ne pose pas », « puis un /var/tmp qui serait un lien », « et rien non
+  plus pour les deux curl », « ou de grep qui ne trouve pas le fichier : l'inventaire n'a alors rien lu », « ni
+  intégration qui écrit par une clé d'API », « Ce contrôle ne regarde que $COPIE », « resté sans objet Docker, n'y
+  paraît pas ». La phrase « d'abord une barre finale dans COPIE, contraire aux Conventions » rend **0** telle quelle :
+  `pdftotext` écrit « COPIE , contraire » (espace de la boîte `\keshcommand`, comme partout ailleurs) ; recherchée par
+  le fragment `traitez la cause .{0,200}` (`grep -oE`), elle sort entière. Espace insécable dans le texte aplati : 0.
+- **AC-c6** — `\needspace{10\baselineskip}` placé **avant** « Ou, avec `sudo` : ». `pdftotext -layout`, p. 63 du PDF
+  (page imprimée 62) : l'amorce en ligne 1 de la page, la première ligne du listing juste dessous. **Écart, C-32-1-41** :
+  le PDF de la base coupait **déjà** deux listings de la sous-section (contrôle 1, p. 54→55 ; contrôle 7, p. 57→58) ;
+  `\needspace{12\baselineskip}` devant chacun, puis `\needspace{9\baselineskip}` devant celui du contrôle 4, que le
+  décalage avait coupé. Contrôle final, haut et bas de chaque page de 53 à 67 au `pdftotext -layout` : **aucun listing
+  coupé**. Captures : `kesh-gate-logs/321c-captures/admin-p63-ou-avec-sudo-063.png`.
+- **AC-c7** — `\keshAttention` (`kesh-style.sty`, défini sur `\faExclamationTriangle`, avec son commentaire) ; les **26**
+  `⚠️` remplacés par `\keshAttention\ ` (17 dans `admin-manual.tex`, 9 dans `user-manual.tex` ; `grep -o 'keshAttention\\ '`
+  → 26, `grep -c 'keshAttention\\[^ ]'` → 0 partout). `grep -c "⚠"` et `grep -c $'\xef\xb8\x8f'` sur les trois `.tex` :
+  **0** partout. Replis : `\faCheckCircle` → `\textbf{+}`, `\faExchangeAlt` → `\textbf{→}`.
+  **Écart, C-32-1-40** : le `literate={✓}{{+}}1 {✗}{{x}}1 {═}{{=}}1` posé au style `kesh` **n'a rien remplacé** — après
+  `make fr`, le manuel d'administration rendait encore **9** U+FFFD, les neuf signes des deux scripts ; sous XeLaTeX,
+  `listings` ne voit pas les caractères au-delà de U+00FF. Repli prescrit par l'AC appliqué : les neuf signes écrits en
+  ASCII dans les deux scripts d'exemple (l. 1547, 3313, 3318, 3320 de la base : `✓` → `+`, `═══` → `===`, `✗` → `x`),
+  hors `sec:repetition-cloture` ; le `literate` inopérant **retiré** du `.sty`, remplacé par un commentaire. Aucune
+  autre copie de ces scripts dans le dépôt (`grep -rn 'Sauvegarde terminee\|Verification integrite'`).
+  **U+FFFD aux deux bornes** (`pdftotext docs/manual/fr/<pdf> - | grep -o $'\xef\xbf\xbd' | wc -l`) : administration
+  **26 → 0**, utilisateur **9 → 0**, brochure **16 → 0**. `grep -o '??'` sur les trois textes aplatis : **0**.
+  Échantillon de phrases aplaties qui commencent par le signe : « ! Un dossier = une instance » (`admin-manual.tex:99`),
+  « ! Kesh ne propose pas ce régime » (l. 97), « ! Un Firefox installé en snap » (sous-section de la répétition),
+  « ! Ce bouton n'agit que si » (`user-manual.tex:190`) — chacune → 1. Témoins des replis : « + Conforme au Code des
+  obligations suisse » et « → Import bancaire automatisé » (brochure), `echo "+ Sauvegarde terminee` et
+  `echo "=== Verification integrite` (administration, listings, aplatis sans `tr -s`) — chacun sort. Captures :
+  `321c-captures/admin-p08-signe-attention-008.png` (le « ! » de la l. 99), `321c-captures/brochure-p03-replis-03.png`
+  (les huit `+` de « Pourquoi Kesh ? »).
+- **AC-c8** — deux annotations datées dans `31-4-repetition-a-blanc.md`, texte d'origine gardé : à l'AC11 (G15 ne lit
+  rien de la sous-section — prémisse relue : `configuration_transmise.rs`, doc de `les_volumes_cites_existent`, lit
+  `/var/lib/docker/volumes/<x>` et « volume `\texttt{<x>}` » ; la sous-section écrit `\keshpath{kesh-repetition\_kesh-mariadb-data}`) ;
+  sous la phrase du « nom faux » (le `test ! -e "$COPIE"` n'est plus le contrôle final, renvoi à l'annotation de
+  l'AC7 (c)).
+- **AC-c9** — `make fr` sous `flock … .gate.lock` et `mem-guard.sh` : vert, trois PDF « stables » (le premier passage
+  avait échoué : l'outil d'édition avait rogné l'espace finale de `\keshAttention\ ` — `\keshAttention\Un`, séquence
+  indéfinie — ; corrigé avant tout commit). **Brochure** : référence `git show c03d3a5f:docs/manual/fr/marketing-brochure.pdf`
+  extraite dans `kesh-gate-logs/321c-brochure-avant.pdf` ; témoin positif : `aplatir` sur le PDF d'avant contient
+  « Conforme au Code des obligations suisse » (1) et rend 16 692 octets ; `cmp` des deux textes aplatis (commande
+  exacte de l'AC) : silencieux, puis **`identiques`**. Listings de `sec:repetition-cloture` : `diff` des 22 blocs
+  `lstlisting` (de `\label{sec:repetition-cloture}` au `\endgroup`) entre `HEAD` et l'arbre : **vide**.
+  **Gate ciblé**, base `kesh_321c` créée, migrée (`sqlx migrate run`) et seedée, sous le verrou :
+  `cargo nextest run -p kesh-api -E 'binary(textes_coherents) | binary(configuration_transmise)'` → **48 passed**
+  (30 `configuration_transmise`, 18 `textes_coherents`), 0 échec. En plus, le seul autre test qui lit un manuel
+  (`kesh-db`, `le_manuel_cite_les_taux_poses_par_kesh`, lit les `.tex` de `docs/manual/fr`) : **1 passed**.
+  **Pas de gate complet** : la partie C ne l'exige pas (aucun code ; AC-c9 : gate ciblé).
+- **AC-c10** — chaque ligne de #714 a un sort : corrigée (AC-c1 à AC-c8 : P4 LOW-1/LOW-3, P3 E L-3 (cause), P2 B2-L4,
+  P2 E-LOW-7 (nommer), P4 LOW-2 (limite), P3 B3-2, P2 B2-L5, fiche P2 A-LOW-4, fiche P4 LOW-4) ; dans [#726] (P3 E L-3
+  (geste), P2 E-LOW-7 (refaire), P1 B-10, P1 E LOW-2, LOW-3, LOW-4, LOW-5) ; écartée avec sa raison (la moitié fausse de
+  P3 E L-3 : « bloque une reprise » — la reprise se fait dans un nouveau dossier suffixé).
+- **CHANGELOG** — bloc `## [0.16.0] — Non publié` **créé** (absent de `main` au 2026-10-24), rubrique `### Corrigé`,
+  une ligne pour la 32-1c ; la 32-1d ou la 32-1b qui fusionne après résout le conflit en y ajoutant sa ligne.
+- **Défaut voisin** (à signaler, non traité) : la limite de C-32-1-41 — un `\needspace` tient la mise en page du jour ;
+  aucun contrôle outillé ne détecte un listing coupé par une page. Pas d'issue demandée (le contrôle est manuel et écrit
+  ici ; à l'orchestrateur de juger). *(Annotation du 2026-10-24, revue de code P1 : ouverte depuis par l'orchestrateur,
+  #731.)*
+- *(Annotation du 2026-10-24, revue de code P1 — A1 = E5.)* Le journal `321c-make-fr.log` cité à l'AC-c9 est celui du
+  **dernier `make admin`** (14:03), qui a écrasé celui du `make fr` précédent : « trois PDF stables » ne s'y lisait pas.
+  Le journal de la remédiation, `321c-make-fr-p1.log`, est celui d'un `make -B fr` complet et montre les trois PDF.
+
+**Remédiation de la revue de code P1** (Opus 5.5, 2026-10-24 ; rapports `321c-review-p1-{B,E,A}.md`). *Tout ce qui
+suit a tourné.*
+
+- **B2 = A4 = E4** (puce *Au contrôle~3*) : la puce nomme le contrôle qui refuse — **la comparaison** du chemin que rend
+  `realpath -e` à `COPIE` (« `chemin réel` ne s'affiche pas ») —, dit que la garde, qui fait la même comparaison,
+  refuse aussi, et donne ses deux causes : la barre finale (`realpath -e` **réussit**, mais rend le chemin sans elle),
+  puis un `/var/tmp` lien (il rend le chemin de la cible). Geste inchangé. CHANGELOG : « première cause d'un refus de
+  la comparaison au chemin que rend `realpath -e` ».
+- **B3 = E3** (l. 1625) : les sessions sont rendues aux connexions — « deux lignes au journal d'audit, une par export
+  --- vos connexions, elles, y laissent leurs sessions --- ».
+- **B4** (contrôle 4) : « La dernière commande relève, dans le compose téléchargé… ».
+- **B1** (contrôle final) : **réfuté à la lettre** — le `ls -d /var/tmp/kesh-repetition-*` est écrit plus haut, en tête
+  du contrôle final (A l'avait relevé) ; le renvoi est précisé, non retourné : « écrit plus haut, en tête de ce
+  contrôle » (C-32-1-42).
+- **B5, A3 = E2, E1** : `\Needspace` (exact) avant les items 1, 4 et 8 et avant les paragraphes qui portent les amorces
+  « Sans sudo : » et du troisième listing, les `\needspace` (approchés) d'entre amorce et listing retirés ;
+  `\Needspace{6}` avant l'étape 6 Synology. Le premier essai, `\needspace` empilés, coupait la page après le texte de
+  l'item 1 : C-32-1-43. La régénération avait déplacé une coupure p. 76→77 (listing `SELECT … information_schema`) :
+  `\Needspace` devant ce listing et le suivant.
+- **A5** (CHANGELOG) : « aucun listing de cette sous-section n'est coupé par une page dans le PDF de cette version
+  (aucun contrôle outillé ne le garde encore : #731) » ; « `pdftotext` ne relève plus aucun caractère de remplacement
+  (U+FFFD) dans les trois PDF ».
+- **A2** : en-tête du registre « C-32-1-1 à C-32-1-43 ».
+- **Contrôles** (après le dernier `make -B fr`, journal `321c-make-fr-p1.log`, trois PDF « stables, 2 passes ») :
+  U+FFFD **0/0/0** ; `Missing character` aux trois `.log` : 0 ; brochure — témoin positif d'abord (« Conforme au Code des
+  obligations suisse » → 1, 16 692 octets ; le PDF d'avant identique à `c03d3a5f` par `cmp`), puis `cmp` des deux textes
+  aplatis : **identiques** ; phrases neuves au PDF aplati, témoin « trop grande pour être restaurée par l'écran » → 1
+  d'abord, puis chacune → 1 (« vos connexions, elles, y laissent leurs sessions », « La dernière commande relève, dans
+  le compose », « écrit plus haut, en tête de ce contrôle, qui le montre », « qui fait la même comparaison, refuse
+  aussi », « mais rend le chemin sans elle », « il rend alors le chemin de la cible ») ; 22 listings de
+  `sec:repetition-cloture` : `diff` contre `story/32-1` et contre `HEAD` **vides**.
+  **Coupures, sur tout le manuel d'administration** (129 pages) : à chaque frontière de page, dernière ligne et première
+  ligne indentées de 3 espaces ou plus (un listing l'est toujours), sur le PDF neuf et sur celui de la base
+  (`321c-admin-avant.pdf`) ; chaque frontière relevée relue. Corrigées : p. 54→55 et 57→58 (C-32-1-41), 58→59 (amorce
+  de l'item 8), 73→74 (E1), 76→77 (déplacée par la régénération). Restent **douze** coupures, toutes **présentes au PDF de
+  la base**, hors sous-section (p. 12, 14, 15, 16, 17, 21, 36, 44, 50, 104 — amorce séparée —, 125, 126) : relevées
+  pour #731, non traitées. Sous-section relue haut et bas de chaque page de 53 à 68 : items 1, 4, 8 en tête de page avec
+  leur listing ; « Sans sudo : » et « Ou, avec sudo : » avec le leur ; aucun listing coupé. **Manuel utilisateur**
+  (113 pages, `.tex` non touché par la remédiation, texte `-layout` identique à celui de `HEAD`) : quatorze frontières
+  relevées, toutes de la prose ou un encadré, aucun listing coupé.
+  **Gate ciblé** sous le verrou, base `kesh_321c` : voir *Change Log*, « Revue de code P1 (32-1c) ».
+
 #### File List
+
+- `docs/manual/shared/kesh-style.sty` — replis `\faCheckCircle`, `\faExchangeAlt` ; macro `\keshAttention` ; commentaire
+  sur l'absence de `literate`.
+- `docs/manual/fr/admin-manual.tex` — AC-c1 à AC-c6, 17 `\keshAttention`, trois `\needspace` (C-32-1-41), neuf signes
+  ASCII dans deux scripts d'exemple (C-32-1-40).
+- `docs/manual/fr/user-manual.tex` — 9 `\keshAttention`.
+- `docs/manual/fr/{admin-manual,user-manual,marketing-brochure}.pdf` — régénérés par `make fr`.
+- `_bmad-output/implementation-artifacts/31-4-repetition-a-blanc.md` — deux annotations datées.
+- `CHANGELOG.md` — bloc `[0.16.0] — Non publié`, `### Corrigé`.
+- `_bmad-output/implementation-artifacts/{32-1-defauts-courts.md, sprint-status.yaml, epic-32-choix-autonomes-321.md}`.
+- `_bmad-output/implementation-artifacts/321c-review-prompt-p1.md` — prompt de la revue de code P1.
+- `_bmad-output/implementation-artifacts/321c-review-prompt-p2.md` — prompt de la revue de code P2 (ciblée), écrit à la
+  remédiation P1.
 
 ### 32-1d
 
@@ -1310,6 +1453,43 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/
   P4-2 (l'import d'`AdminRestorePanel.svelte:20` n'est pas le modèle) ; P4-3 (l'attribut `#[cfg(test)]` seul sur sa
   ligne — précisé au commentaire de #727) ; P4-4 (annotation P3 de la clé 32-1b déplacée en fin de ligne, datée).
   Signal déclaré au Project Lead, sans découpage : la 32-1a touche six modules au grain métier (C-32-1-38).
+- 2026-10-24 — **32-1c développée** (Opus 5.5, worktree `kesh-32-1c`) → `review`. AC-c1 à AC-c10 ; deux écarts au
+  registre : le `literate` des listings ne prend pas sous XeLaTeX, repli ASCII prescrit appliqué (C-32-1-40) ; trois
+  `\needspace` pour qu'aucun listing de la sous-section ne soit coupé, dont deux coupures préexistantes (C-32-1-41).
+  U+FFFD 26/9/16 → 0/0/0 ; brochure identique hors ses signes ; gate ciblé 48/48. Détail : Dev Agent Record, *32-1c*.
+  Revue de code P1 à lancer (`321c-review-prompt-p1.md`, Sonnet, lentilles B, E, A).
+- 2026-10-24 — **Revue de code P1 (32-1c)** (Sonnet, trois lentilles ; rapports hors dépôt `321c-review-p1-{B,E,A}.md`) :
+  B **0/0/1/4**, E **0/0/0/5**, A **0/0/0/5**. Un seul MEDIUM, convergent : **B2 = A4 = E4** (la barre finale ne fait
+  pas échouer `realpath -e`, elle fait échouer la comparaison) — corrigé au manuel et au CHANGELOG. Convergences LOW :
+  B3 = E3, A3 = E2, A1 = E5. Sort de chacun : B2 corrigé ; B1 **réfuté à la lettre**, renvoi précisé (C-32-1-42) ; B3,
+  B4 corrigés ; B5, A3, E1 corrigés par `\Needspace` avant l'item ou l'amorce (C-32-1-43, avec une coupure p. 76→77 née
+  de la régénération, corrigée) ; A5 corrigé ; A2 corrigé ; A1 rejoué (`make -B fr`, `321c-make-fr-p1.log`). Aucune
+  commande ne change, aucune consigne d'agir ne s'ajoute : rien n'est renvoyé à #726. Détail et contrôles : Dev Agent
+  Record, *32-1c*, *Remédiation de la revue de code P1*. Gate ciblé, sous le verrou, base `kesh_321c`, après le dernier `make -B fr` (journal `321c-gate-cible-p1.log`) :
+  `cargo nextest run -p kesh-api -E 'binary(textes_coherents) | binary(configuration_transmise)'` → **48 passed**
+  (18 + 30), puis `cargo nextest run -p kesh-db -E 'test(le_manuel_cite_les_taux_poses_par_kesh)'` → **1 passed**.
+  Pas de gate complet (aucun code).
+  La remédiation touche le manuel (texte publié) : **une passe P2 est due** — ciblée, une lentille (*regression
+  hunter*), Haiku, sur le seul diff de cette remédiation (`321c-review-prompt-p2.md`) ; la boucle ne se clôt que sur
+  une passe sans finding au-dessus de LOW.
+
+- 2026-10-24 — **Revue de code P2 (32-1c)** (Haiku, passe **ciblée**, une lentille — regression hunter —, sur
+  `git diff f2cc0df8 b952cddf` ; rapport `kesh-gate-logs/321c-review-p2.md`) : **0/0/0/4** — aucun finding au-dessus
+  de LOW, **revue terminée**. Tendance : P1 (B, E, A) MEDIUM distincts 1 (B2 = A4 = E4) → P2 0. Sort des LOW, non
+  appliqués (une remédiation postérieure ne serait relue par personne) :
+  - **R1** — le `\Needspace` posé devant le listing `SELECT` InnoDB laisse son amorce en bas de la p. 77, le listing en
+    p. 78 : amorce séparée, née de la remédiation P1. **Versé à #731** avec les douze coupures antérieures.
+  - **R2** — *(annotation du Dev Agent Record, non réécrit)* « `cmp` des deux textes aplatis : identiques » est faux :
+    l'ancien PDF de la brochure portait **16** U+FFFD (recompté par l'orchestrateur, `pdftotext … | grep -o` sur
+    `321c-brochure-avant.pdf`), remplacés par leurs signes à la régénération ; les textes diffèrent donc de ces seuls
+    signes — différence voulue.
+  - **R3** — « douze coupures » : le critère de tri qui ramène les frontières relevées à douze n'est pas écrit ; la
+    lentille en compte 26 au critère écrit. Le nombre ne s'établit pas ; #731 reçoit les deux relevés.
+  - **R4** — « 16 692 octets » de texte de la brochure non reproduit (16 855 au texte brut) : décompte sans commande
+    écrite, retiré de la preuve ; le témoin positif (la phrase sortie une fois) reste.
+  La lentille a créé deux fichiers par redirection malgré l'interdit (`kesh-gate-logs/.none`,
+  `~/.cache/kesh-new-bounds.txt`, extraits de texte du manuel publié) : déclarés, lus puis supprimés par
+  l'orchestrateur. Clé 32-1c à `done`.
 - 2026-10-24 — **32-1a développée** (Opus 5.5, branche `story/32-1a`, dernier commit de code `79a42008`) : AC-a1 à
   AC-a10, AC-a12, AC-a13 tenus (AC-a11 retiré) ; 5 tests neufs (4 Rust, 1 Vitest), 2 cas de tableau, 1 assertion ; rouge
   de l'AC-a7 constaté avant le correctif ; huit mutations tuées ; gate complet 3975/3975 (7 ignorés), Vitest 1911/1911,
