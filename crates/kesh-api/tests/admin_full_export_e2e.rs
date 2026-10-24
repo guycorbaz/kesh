@@ -532,6 +532,46 @@ const FIXTURE_0_14_0: &str = "tests/fixtures/keshbackup-0.14.0-format1.keshbacku
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 #[ignore = "générateur de fixture : à n'exécuter qu'au tag v0.14.0 (Story 31-1a, AC10)"]
 async fn generate_fixture_0_14_0(pool: MySqlPool) {
+    generer_fixture(pool, "0.14.0", FIXTURE_0_14_0).await;
+}
+
+/// Chemin de la fixture de format 2 produite par le **vrai** exporteur de la
+/// 0.15.0 (Story 32-12a, AC15, T1).
+const FIXTURE_0_15_0: &str = "tests/fixtures/keshbackup-0.15.0-format2.keshbackup";
+
+/// Génère `tests/fixtures/keshbackup-0.15.0-format2.keshbackup` — **une seule
+/// fois, avec le code de la v0.15.0**, jamais ensuite.
+///
+/// ⚠️ **Pourquoi ce test est `#[ignore]` et doit le rester.** La fixture sert
+/// à prouver qu'une sauvegarde produite par une installation 0.15.0 réelle
+/// (format 2, pièces sous `files/`, inventaire de 39 tables) s'importe dans
+/// les versions suivantes, y compris celles qui ajoutent des tables (Story
+/// 32-12, #722). Elle n'a de valeur que si elle sort du code de la 0.15.0 :
+/// régénérée par une version ultérieure, elle porterait l'inventaire de cette
+/// version et le test d'import ne prouverait plus rien d'une sauvegarde
+/// antérieure. Elle a été produite le 2026-10-24 sur la branche
+/// `story/32-12a`, **au premier commit, avant tout changement de code** —
+/// `git diff --stat v0.15.0 HEAD -- crates/` constaté vide —, par ce même
+/// test, puis versionnée telle quelle ; sa taille et son empreinte SHA-256
+/// sont au Dev Agent Record de la fiche 32-12.
+///
+/// Contenu, **entièrement synthétique**, celui de la fixture 0.14.0
+/// (`generer_fixture`) ; la 0.15.0 emporte cette fois les deux pièces
+/// sous `files/`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+#[ignore = "générateur de fixture : à n'exécuter qu'avec le code de la v0.15.0 (Story 32-12a, AC15)"]
+async fn generate_fixture_0_15_0(pool: MySqlPool) {
+    generer_fixture(pool, "0.15.0", FIXTURE_0_15_0).await;
+}
+
+/// Contenu synthétique commun aux générateurs de fixture (`generate_fixture_0_14_0`,
+/// `generate_fixture_0_15_0`) : la société de `seed_accounting_company`, un
+/// client fictif, une facture validée au PDF figé et un document fournisseur
+/// sans QR ; puis la sauvegarde complète par le vrai `GET
+/// /api/v1/admin/full-export`, écrite à `sortie` (relatif à la crate).
+/// `version` ne sert qu'à nommer le dossier temporaire et à marquer le
+/// document fournisseur fictif.
+async fn generer_fixture(pool: MySqlPool, version: &str, sortie: &str) {
     use kesh_db::entities::bank_account::NewBankAccount;
     use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
     use kesh_db::entities::imported_supplier_invoice::NewImportedSupplierInvoice;
@@ -539,8 +579,11 @@ async fn generate_fixture_0_14_0(pool: MySqlPool) {
     use kesh_db::repositories::{bank_accounts, contacts, imported_supplier_invoices, invoices};
     use rust_decimal_macros::dec;
 
-    let documents =
-        std::env::temp_dir().join(format!("kesh-fixture-0-14-0-docs-{}", uuid::Uuid::new_v4()));
+    let documents = std::env::temp_dir().join(format!(
+        "kesh-fixture-{}-docs-{}",
+        version.replace('.', "-"),
+        uuid::Uuid::new_v4()
+    ));
     std::fs::create_dir_all(&documents).unwrap();
     let mut config = test_config();
     config.documents_dir = documents.to_string_lossy().to_string();
@@ -615,9 +658,11 @@ async fn generate_fixture_0_14_0(pool: MySqlPool) {
         .expect("validation");
 
     // Document fournisseur synthétique, écrit par la primitive de production.
+    let contenu =
+        format!("%PDF-1.4\n% Document fournisseur fictif - fixture Kesh {version}\n%%EOF\n");
     let doc = kesh_api::document_storage::store_document(
         &documents,
-        b"%PDF-1.4\n% Document fournisseur fictif - fixture Kesh 0.14.0\n%%EOF\n",
+        contenu.as_bytes(),
         "pdf",
         "facture-fournisseur-fictive.pdf",
         "application/pdf",
@@ -660,7 +705,7 @@ async fn generate_fixture_0_14_0(pool: MySqlPool) {
     assert_eq!(resp.status(), 200);
     let bytes = resp.bytes().await.unwrap().to_vec();
 
-    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join(FIXTURE_0_14_0);
+    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join(sortie);
     std::fs::create_dir_all(out.parent().unwrap()).unwrap();
     std::fs::write(&out, &bytes).unwrap();
     std::fs::remove_dir_all(&documents).unwrap();
