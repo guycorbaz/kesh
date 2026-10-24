@@ -804,7 +804,7 @@ hexadécimal).
     KESH\_BANK\_IMPORT\_MAX\_MB & Taille max fichier bank-import (CAMT.053/CSV), MiB. Borne [1, 100]. & \texttt{10} \\
     KESH\_ADMIN\_EXPORT\_INMEM\_MB & Plafond en mémoire de l'export \texttt{.keshbackup} (au-delà : débordement dans un temporaire du dossier de sauvegarde). Borne [1, 2048]. & \texttt{50} \\
     KESH\_ADMIN\_IMPORT\_MAX\_MB & Taille max upload \texttt{.keshbackup} à l'import (à relever avec le proxy inverse). Borne [1, 10240]. & \texttt{2048} \\
-    KESH\_ADMIN\_BACKUP\_DIR & Dossier de la sauvegarde de sécurité pré-import et des temporaires de l'export et de l'import, monté sur \texttt{./backup} par les compose fournis. Hors Docker : un dossier inscriptible. Vide = défaut. & \texttt{/data/backup} \\
+    KESH\_ADMIN\_BACKUP\_DIR & Dossier de la sauvegarde de sécurité pré-import, des sauvegardes automatiques (sous-dossier \texttt{auto/}, depuis la 0.15.0) et des temporaires de l'export et de l'import, monté sur \texttt{./backup} par les compose fournis. Hors Docker : un dossier inscriptible. Vide = défaut. & \texttt{/data/backup} \\
     \bottomrule
 \end{tabularx}
 
@@ -2037,7 +2037,7 @@ Depuis la 0.15.0, Kesh écrit \textbf{lui-même}, à intervalle régulier, une s
 
 \paragraph{Une seule instance de Kesh par base.} Le verrou qui empêche deux sauvegardes simultanées est tenu \textbf{en mémoire} : rien ne protège deux processus Kesh branchés sur la même base l'un de l'autre (deux sauvegardes peuvent s'écrire en même temps, et un import de l'un ne bloque pas la sauvegarde de l'autre). Kesh se déploie à une instance par base, comme les compose fournis le font.
 
-\paragraph{Ce qu'elle ne remplace pas.} Les sauvegardes automatiques sont sur le \textbf{même disque} que Kesh : un disque perdu les emporte avec l'installation. \textbf{Copiez-les ailleurs} --- Hyper Backup copie déjà \keshpath{./backup} avec le répertoire du compose (\S\ref{sec:backup-dsm}). Ce sont des \textbf{secrets}, comme tout fichier \keshcommand{.keshbackup}. Elles ne contiennent pas le \keshpath{.env}, et la sauvegarde ne tourne que si Kesh tourne.
+\paragraph{Ce qu'elle ne remplace pas.} Les sauvegardes automatiques sont sur le \textbf{même disque} que Kesh : un disque perdu les emporte avec l'installation. \textbf{Copiez-les ailleurs} --- sur Synology, la sauvegarde du répertoire du compose emporte déjà \keshpath{./backup} (\S\ref{sec:backup-dsm}). Ce sont des \textbf{secrets}, comme tout fichier \keshcommand{.keshbackup}. Elles ne contiennent pas le \keshpath{.env}, et la sauvegarde ne tourne que si Kesh tourne.
 
 \paragraph{Journal d'audit.} « Réglage de la sauvegarde automatique modifié » (\keshcommand{admin.backup\_schedule\_updated}, avant et après), « Sauvegarde lancée manuellement » (\keshcommand{admin.backup\_run}, statut et fichier) et « Sauvegarde du serveur téléchargée » (\keshcommand{admin.backup\_downloaded}, nom et taille). Une sauvegarde automatique réussie n'est pas inscrite (ce serait une entrée par jour) : son état se lit au panneau.
 
@@ -2082,7 +2082,7 @@ Kesh propose quatre approches complémentaires de sauvegarde. Choisissez selon l
     Hyper Backup DSM & Dossier du compose (documents, logs, \keshpath{.env}, \keshpath{backup/}) + dump de la base par une tâche planifiée (cf. \ref{sec:backup-dsm}) & Sauvegarde \textbf{planifiée automatique} quotidienne en production (NAS Synology), avec rotation et offsite. \\
     \keshcommand{mariadb-dump} CLI & Dump SQL d'une base (niveau base de données) & Sauvegarde \textbf{ponctuelle technique} ou scriptée, pour un opérateur disposant d'un accès SSH. \\
     Export/import \keshcommand{.keshbackup} (UI) & Installation Kesh complète, portable (niveau applicatif), \textbf{pièces comprises} depuis la 0.15.0 (documents fournisseur, PDF figés) --- hors \keshpath{.env} et fichiers non référencés &\textbf{Migration entre instances} ou restauration \textbf{self-service sans SSH}, déclenchée par un administrateur depuis l'interface. \\
-    Sauvegarde automatique (Kesh, depuis la 0.15.0) & Le même fichier \keshcommand{.keshbackup} complet, écrit par Kesh lui-même dans \keshpath{./backup/auto}, avec rétention (\S\ref{sec:sauvegarde-automatique}) & Filet \textbf{quotidien sans aucune configuration}, surveillé par l'écran et le bandeau ; à \textbf{copier hors du disque} (Hyper Backup copie \keshpath{./backup}). \\
+    Sauvegarde automatique (Kesh, depuis la 0.15.0) & Le même fichier \keshcommand{.keshbackup} complet, écrit par Kesh lui-même dans \keshpath{./backup/auto}, avec rétention (\S\ref{sec:sauvegarde-automatique}) & Filet \textbf{quotidien sans aucune configuration}, surveillé par l'écran et le bandeau ; à \textbf{copier hors du disque} (sur Synology, avec le répertoire du compose, \S\ref{sec:backup-dsm}). \\
     \bottomrule
 \end{tabularx}
 

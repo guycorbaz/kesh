@@ -502,7 +502,7 @@ fn ecrire(
     auto_dir: PathBuf,
     nom: String,
     derniere_taille: u64,
-    env: Arc<dyn BackupEnv>,
+    environnement: Arc<dyn BackupEnv>,
 ) -> Ecriture {
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);
@@ -516,7 +516,7 @@ fn ecrire(
 
     let documents = taille_des_documents(&documents_dir);
     let seuil = seuil_d_espace(derniere_taille, documents);
-    match env.free_bytes(&auto_dir) {
+    match environnement.free_bytes(&auto_dir) {
         Ok(libre) if libre < seuil => {
             tracing::warn!(
                 libre,
@@ -534,7 +534,7 @@ fn ecrire(
 
     let chemin = auto_dir.join(&nom);
     let ecrit = write_backup_file(&chemin, |fichier| {
-        let ecrivain = env.wrap_writer(fichier);
+        let ecrivain = environnement.wrap_writer(fichier);
         write_keshbackup(&export, &documents_dir, ecrivain).map(|(_, meta)| meta)
     });
     let meta = match ecrit {
@@ -572,7 +572,7 @@ fn ecrire(
 /// autre défaillance est un statut enregistré.
 pub async fn run_once(
     state: &AppState,
-    env: Arc<dyn BackupEnv>,
+    environnement: Arc<dyn BackupEnv>,
     now: NaiveDateTime,
     trigger: Trigger,
 ) -> Result<RunOutcome, DbError> {
@@ -604,7 +604,7 @@ pub async fn run_once(
             auto,
             nom_ecrit,
             derniere_taille,
-            env,
+            environnement,
         ))
     };
     let ecriture = match build_keshbackup(&state.pool, documents_dir, remplir).await {
