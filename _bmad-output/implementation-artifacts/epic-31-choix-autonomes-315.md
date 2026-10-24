@@ -42,8 +42,9 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Retenu** : une fonction distincte appelée par `seed_demo` seulement (deux depuis la validation P1, C-31-5-13 : la lecture verrouillante des comptes, puis l'application) ; le chemin production garde `NULL`, et le manuel
   le dit (AC3) ; un test fige ce comportement production.
 - **Écartées** : désigner les comptes dans `insert_with_defaults_in_tx` (change le comportement de toute installation
-  neuve, retire le garde-fou du non-assujetti) ; manuel seul pour la démonstration (l'issue admet cette voie, mais la
-  démonstration promet un essai sans réglage, et le correctif est court).
+  neuve, retire le garde-fou du non-assujetti) ; manuel seul pour la démonstration (l'issue admet cette voie, mais elle
+  attend de la démonstration un essai sans réglage — formule de l'issue, non du produit, annotation de la validation
+  P2 —, et le correctif est court).
 - **Réversible** : oui.
 
 ### C-31-5-4 — #707 : n'agir que sur une ligne de réglages née dans la transaction
@@ -117,7 +118,9 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   journal d'audit et aucune issue ouverte ne couvre le reste.
 - **Retenu** : hors périmètre ; issue demandée à l'orchestrateur (« on trace toujours »), même si elle fait remonter
   le compte — **ouverte le 2026-10-24 : #710** (annotation de la validation P1 ; comprise dans le recompte de 141).
-- **Écartée** : les traduire ici — ni mécanique ni court (289 lignes au relevé grossier du 2026-10-24).
+- **Écartée** : les traduire ici — ni mécanique ni court (283 lignes hors du journal d'audit au relevé grossier du
+  2026-10-24, `grep -rn "AppError::Validation(" crates | grep -v "t(" | grep -v audit_log.rs | wc -l` ; 289 sans le
+  dernier filtre, chiffre écrit ici jusqu'à la validation P2, qui comptait les six d'`audit_log.rs`).
 - **Réversible** : sans objet.
 
 ### C-31-5-13 — #707 : les comptes de TVA se verrouillent AVANT la ligne de réglages (validation P1, R4/F4)
@@ -126,8 +129,9 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   de `insert_with_defaults_in_tx`, d'où `accounts → company_invoice_settings → accounts`, contraire à l'ordre écrit
   pour `seed_demo` (`docs/MULTI-TENANT-SCOPING-PATTERNS.md:326`, doc de `final_body`). L'argument de la fiche (aucun
   concurrent sur une ligne neuve) ne couvrait pas une transaction tenant l'un des comptes.
-- **Retenu** : deux fonctions — `lock_vat_role_accounts_in_tx` (une lecture `FOR UPDATE ... ORDER BY id` des trois
-  comptes, appelée avant `insert_with_defaults_in_tx`) et `designate_vat_accounts_in_tx` (un `UPDATE ... COALESCE` de la
+- **Retenu** : deux fonctions — `lock_vat_role_accounts_in_tx` (lecture verrouillante des trois comptes, appelée avant
+  `insert_with_defaults_in_tx` ; sa forme — une requête `IN (…) ORDER BY id FOR UPDATE` à la validation P1 — est
+  remplacée par trois lectures ponctuelles à la validation P2, C-31-5-18) et `designate_vat_accounts_in_tx` (un `UPDATE ... COALESCE` de la
   ligne de réglages, sans lecture de compte, appelée après, si `invoice_settings_created`). L'ordre documenté est tenu
   sans exception ; la ligne 326 et le doc de `final_body` sont précisés (comptes de TVA inclus) dans la même PR.
 - **Écartées** : garder l'ordre inverse et écrire l'exception (risque faible, mais une exception de plus au Pattern 5
@@ -156,12 +160,16 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Écartée** : laisser G9 telle quelle (facultatif, mais une dérive silencieuse pour quelques lignes).
 - **Réversible** : oui.
 
-### C-31-5-16 — Le budget d'issues n'est pas tenu par cette story : déficit déclaré, arbitrage au Project Lead (validation P1, R3/F1)
+### C-31-5-16 — Le budget d'issues n'est pas tenu par cette story : déficit déclaré, arbitrage au Project Lead (validation P1, R3/F1 ; rendu inconditionnel à la validation P2, F2)
 
 - **Contexte** : recompte du 2026-10-24 : 141 ouvertes (#708, #709, #710 ouvertes ce jour) ; − #503 − 4 = 136, pas sous
-  le plafond « moins de 136 » ; + l'issue annoncée des LOW résiduels de la 31-1c = 137.
-- **Retenu** : écrire le déficit (deux retraits) dans l'*Origine* et le soumettre au Project Lead par l'orchestrateur :
-  deux défauts de plus ou publication au-dessus du plafond. Aucune fermeture pour le chiffre.
+  le plafond « moins de 136 » ; + l'issue annoncée des LOW résiduels de la 31-1c = 137 ; + l'issue des libellés
+  d'écriture (C-31-5-17), non ouverte, si elle s'ouvre = 138.
+- **Retenu** : écrire les deux comptes dans l'*Origine* — **137** attendues au tag si rien d'autre ne s'ouvre (deux
+  retraits manquent), **138** si l'issue des libellés s'ouvre (trois manquent) — et les soumettre au Project Lead par
+  l'orchestrateur : d'autres défauts corrigés ou publication au-dessus du plafond. Aucune fermeture pour le chiffre.
+  *(La validation P1 n'écrivait que 137 et « deux retraits », sans l'issue que la fiche soumet elle-même : chiffre
+  conditionnel sans le dire, F2 de la P2.)*
 - **Écartée** : ajouter d'office #687 ou #645 (écartées pour risque, C-31-5-2) ; taire le déficit.
 - **Réversible** : sans objet (constat).
 
@@ -170,7 +178,61 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
 - **Contexte** : `supplier_invoices.rs:512` et `:941`, `invoice_settlements_write.rs:277`, `credit_notes.rs:590`
   composent en dur des descriptions d'écritures en français ; ce ne sont pas des textes adressés au débiteur (hors
   classe de #504) ; aucune issue ouverte ne les couvre.
-- **Retenu** : inventoriés au *Hors périmètre* ; l'orchestrateur décide si une issue s'ouvre (si l'on tient qu'ils
-  doivent suivre la langue comptable de la société). Seul `supplier_invoices.rs:512` intéresse l'AC16 (exception nommée).
+- **Retenu** : inventoriés au *Hors périmètre* ; l'orchestrateur soumet au **Project Lead** l'ouverture d'une issue (si
+  l'on tient qu'ils doivent suivre la langue comptable de la société). **Non ouverte** au 2026-10-24 ; le budget la
+  compte dans les deux cas (C-31-5-16). Seul `supplier_invoices.rs:512` intéresse l'AC16 (exception nommée).
 - **Écartée** : les traduire ici (ni mécanique ni dans le défaut).
 - **Réversible** : oui.
+
+### C-31-5-18 — #707 : trois lectures ponctuelles, l'ordre des verrous est celui du code (validation P2, R1 = F1)
+
+- **Contexte** : la P1 prescrivait `… singleton_role IN (?, ?, ?) ORDER BY id FOR UPDATE` en annonçant un « ordre des
+  verrous par clé primaire ». C'est faux : InnoDB pose ses verrous au fil de l'index parcouru —
+  `uq_accounts_company_singleton_role (company_id, singleton_role)`, ordre alphabétique des rôles —, le tri vient après ;
+  et l'ensemble même des verrous dépend du plan (accès par plages sur l'index unique, ou par le seul préfixe
+  `company_id`, verrous *next-key* sur tous les comptes de la société). Le remède du dépôt, `FORCE INDEX (PRIMARY)`
+  (`company_invoice_settings.rs:897-905`), suppose une liste d'`id`, que la requête n'a pas.
+- **Retenu** : trois lectures `SELECT id, account_type, postable FROM accounts WHERE company_id = ? AND singleton_role = ?
+  FOR UPDATE`, sur le patron d'`insert_with_defaults_in_tx` (`:1076-1105`), dans l'ordre écrit dans le code —
+  `VatPayable`, `VatRecoverable`, `VatSettlement` ; chacune est un accès `const` à l'index unique, verrouille l'entrée de
+  l'index puis l'enregistrement du compte, et ne laisse qu'un verrou d'intervalle pour un rôle absent. Le doc-comment, les
+  AC1, Dev Notes et T2 disent cet ordre-là, sans promettre l'ordre des identifiants. L'ordre **entre tables**
+  (`accounts → company_invoice_settings`, Pattern 5) reste tenu.
+- **Écartées** : garder l'`IN` en corrigeant seulement le texte (plan dépendant de l'optimiseur, verrous possiblement
+  étendus à toute la société) ; la forme en deux temps du précédent (lecture non verrouillante des `id`, puis
+  `FORCE INDEX (PRIMARY) … id IN (…) ORDER BY id FOR UPDATE`) — rien, dans cette transaction, ne requiert l'ordre
+  par `id`, et la lecture préalable non verrouillante ouvre une fenêtre entre les deux temps.
+- **Réversible** : oui.
+
+### C-31-5-19 — #707 : le filtre de type est celui du réglage, écrit une fois en `kesh-db` ; test et mutations des filtres (validation P2, R2, F10)
+
+- **Contexte** : R2 — la branche « un rôle sans compte utilisable donne `None` » n'avait ni test ni mutation, alors
+  qu'elle peut se produire (`VatPayable` admis sur un actif par la règle du rôle ; fenêtre de #538 entre la validation
+  du plan et la dernière transaction). F10 — la fiche recopiait les types de la route, troisième copie d'une règle de
+  type ; l'orchestrateur demandait de réutiliser `accepts_account_type` (`accounts.rs:89`). Établi au code :
+  `accepts_account_type` (`kesh-core/src/chart_of_accounts/mod.rs:161`) est la règle du **rôle** — `Asset` ou
+  `Liability` pour les trois rôles de TVA, appliquée à l'écriture de tout compte qui porte un rôle ; la réappliquer est
+  une tautologie et laisse passer un `VatPayable` porté par un actif, que la route refuse (`Liability` exigé,
+  `routes/company_invoice_settings.rs:337-364`). La règle du **réglage** n'existe qu'à la route, dans `kesh-api`, que
+  `kesh-db` n'importe pas.
+- **Retenu** : les trois types du réglage écrits **une fois** dans `kesh-db`, en une constante nommée dont le doc-comment
+  désigne la route comme sa jumelle ; la route n'est pas touchée (périmètre minimal). Test `kesh-db` de la lecture à
+  quatre cas (heureux ; `VatPayable` retypé en actif ; `VatRecoverable` non imputable ; `VatSettlement` archivé) ;
+  mutations M7a (filtre de type retiré) et M7b (filtre `postable` retiré), chacune tuée par un cas nommé ; M8 pour le
+  test de garde du chemin production (R3).
+- **Écartées** : réutiliser `accepts_account_type` (filtre inopérant, cf. contexte — **écart assumé à la consigne de
+  l'orchestrateur**, signalé dans le rapport) ; déplacer la règle du réglage en `kesh-core` et y brancher la route (juste,
+  mais touche une route de plus pour un défaut de la démonstration : à proposer en issue si l'on veut une seule copie).
+- **Réversible** : oui.
+
+### C-31-5-20 — #469 : préfixe `audit-log-query-error-*` pour les six refus du serveur (validation P2, R9)
+
+- **Contexte** : `audit-log-filter-*` (`fr-CH` l. 2719-2726) désigne les libellés du formulaire de filtre de l'écran, et
+  `audit-log-error-date-range` (l. 2739) le contrôle de plage fait par l'écran ; `audit-log-api-key` (l. 2734) occupe
+  déjà `audit-log-api-`. `grep -rn "audit-log-query" crates frontend/src` ne rend rien. Le précédent serveur du même
+  fichier est `audit-log-export-error-too-large`.
+- **Retenu** : `audit-log-query-error-*` (les refus portent sur les paramètres de la requête de consultation), dans
+  l'espace `audit-log-` comme le précédent.
+- **Écartées** : `audit-log-filter-error-*` (mêle refus du serveur et libellés de l'écran) ; `audit-log-api-error-*`
+  (voisin de `audit-log-api-key`, sans rapport) ; `error-audit-log-*` (rompt avec le précédent du fichier).
+- **Réversible** : oui (clés neuves, aucune lue par le frontend).
