@@ -870,6 +870,10 @@ C-32-3-41 (registre `epic-32-choix-autonomes-323.md`).
 - **AC10, mise en forme rustfmt des deux lignes de (v-2)** : `services::poignees::Lecture::new(self.pool.clone())` et
   `services::poignees::Trace::new(self.pool.clone())` (`lib.rs:153`, `:162`). Plancher du balayage de `src/` : 80 (85
   fichiers lus) ; `services/` : 5 exactement. « Ligne réduite » = `trim()` (C-32-3-39).
+  *Annotation du 2026-10-24, revue de code P1 (A1)* : « 85 fichiers lus » était faux à sa date. Recompté :
+  `find crates/kesh-api/src -name '*.rs' | wc -l` → **87** à `be6043e6` (identique à `210c5808`, commit de
+  documentation seule) ; `git ls-tree -r --name-only 08a6f1af crates/kesh-api/src | grep -c '\.rs$'` → **82** à la
+  base, soit 82 + les cinq de `services/`. Le plancher de 80 reste valide (annotation jumelle à C-32-3-39).
 - **AC11 — inventaire clos** (écrit aussi au doc-comment de `services/mod.rs`) : (1) les sept fonctions d'audit, dix-huit
   sites d'appel (un par handler, par l'aiguillage `tracer`), toutes sur `Trace` ; (2) `api_keys::touch_last_used`
   (middleware, hors service, inchangée) ; (3) aucune autre — générateurs de `kesh-report`, `ReportPeriod::resolve`,
@@ -925,7 +929,11 @@ plus le binaire nommé :
   `letterings_e2e` 11, `vat_report_e2e` 10, `project_reports_e2e` 7, `open_items_e2e` 7 ; gardes :
   `configuration_transmise` 30, `textes_coherents` 18, `admin_pat_denied_e2e` 16, `audit_label_registry` 11,
   `audit_route_registry` 11, `bank_account_closed_inventory` 9, `test_schema_guard` 7, `letterings_lexical` 7 ;
-  lib `kesh-api` 523. ⚠️ Les comptes de la fiche (`grep -c "sqlx::test"`) dépassent d'une unité les tests exécutés
+  lib `kesh-api` 523. *Annotation du 2026-10-24, revue de code P1 (A2)* : `323-t3-cible.log` ne porte **que** le
+  `nextest` — la ligne de `mem-guard`, la compilation de `kesh-api` et `kesh-db`, puis `Starting 808 tests across 19
+  binaries` et `Summary … 808 tests run: 808 passed, 1 skipped` ; `grep -c "fmt\|clippy"` y rend **0**. Le `fmt` et le
+  `clippy -D warnings` verts au même commit `be6043e6` sont attestés par `323-gate-complet.log` (étapes `▶ cargo fmt
+  --check` et `▶ cargo clippy (all-targets, -D warnings)`), non par ce journal. ⚠️ Les comptes de la fiche (`grep -c "sqlx::test"`) dépassent d'une unité les tests exécutés
   pour `reports_e2e` (39), `reports_export_e2e` (21), `vat_report_e2e` (11), `project_reports_e2e` (8) : la mention
   `sqlx::test` de leur commentaire d'en-tête est comptée ; `grep -c '^#\[sqlx::test'` rend 38, 20, 10, 7.
 - **AC7, relancé au dernier commit de code** : `git diff --diff-filter=MDR --name-only $(git merge-base HEAD
@@ -962,6 +970,7 @@ plus le binaire nommé :
 - `_bmad-output/implementation-artifacts/epic-32-choix-autonomes-323.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 - `_bmad-output/implementation-artifacts/323-review-prompt-p1.md` (neuf)
+- `_bmad-output/implementation-artifacts/323-review-prompt-p2.md` (neuf, revue de code P1)
 
 ## Change Log
 
@@ -1186,3 +1195,68 @@ plus le binaire nommé :
 - Choix C-32-3-34 à C-32-3-41 ; essai T1 concluant (`forbid(unsafe_code)` sur la lib). Écart à la fiche : aucun sur le
   comportement ; les quatre comptes `sqlx::test` de l'AC7 comptaient une mention de commentaire (Dev Agent Record).
 - Prompt de la revue de code P1 : `323-review-prompt-p1.md` (complète, **Sonnet**, lentilles B, E, A).
+
+### Revue de code P1 (2026-10-24, complète, trois lentilles en contexte frais — B, E, A —, Sonnet ×3 ; rapports `kesh-gate-logs/323-review-p1-{B,E,A}.md`)
+
+- **Résultat : B 0/0/0/5, E 0/0/1/3, A 0/0/0/5** (CRITICAL/HIGH/MEDIUM/LOW) — **un MEDIUM** (E1), quatorze LOW. Trend de
+  la boucle de revue : **P1 1 MEDIUM** ; une passe P2 est due (`CLAUDE.md` : une boucle ne se clôt que sur une passe à
+  0 MEDIUM+). Prompt versionné : `323-review-prompt-p2.md` (passe **ciblée**, une lentille — regression hunter —,
+  **Opus**, sur le seul diff `210c5808..HEAD`).
+- **Remédiation : tests et comptes rendus seulement, aucune ligne de production** (`git diff --stat 210c5808 HEAD` :
+  `crates/kesh-api/tests/services_motif.rs` et trois artefacts de `_bmad-output/`). Commits `1d27f065` (test) et le
+  commit de documentation qui porte cette entrée.
+  - **E1 (MEDIUM) — appliqué.** Prémisse lue au code du générateur : `kesh-report/src/general_ledger.rs`, `generate`
+    écrête `limit` à `[1, MAX_LEDGER_LIMIT]` (`options.limit.map(|l| l.clamp(1, MAX_LEDGER_LIMIT))`) et `fetch_lines`
+    pagine **par compte** (`WHERE jel.account_id = ? … LIMIT ? OFFSET ?`, `None` → `i64::MAX`). Test neuf
+    `grand_livre_les_deux_regimes` : une écriture synthétique de `MAX_LEDGER_LIMIT + 2` lignes, dont
+    `MAX_LEDGER_LIMIT + 1` (501) sur le compte `1100` ; export sans paramètre → 501 lignes ; export avec `offset=1`,
+    `limit=1` → les mêmes 501 ; affichage sans paramètre → les 500 premières ; affichage `offset=1`, `limit=1` → la
+    deuxième seule ; `line_count` 501 partout. **Quatre mutations jouées, toutes tuées** (une à la fois, copie de
+    sauvegarde, restauration `git checkout -- <f> && touch <f>`, diff résiduel nul et `cmp` à la copie vérifiés ;
+    gate `binary(services_motif)`, campagne `323-p1rem-campagne.log`, diffs `323-p1rem-mut-<nom>.diff`, journaux
+    `.log`) :
+
+    | Mutation (`services/rapports.rs::grand_livre`) | Rouge constaté |
+    |---|---|
+    | (a) export `(0, Some(MAX_LEDGER_LIMIT))` | `grand_livre_les_deux_regimes` : « export : le livre entier (501 lignes), jamais tronqué au plafond 500 » (500 ≠ 501) |
+    | (b) export `(demande.offset.unwrap_or(0), None)` | même test : « export : `offset` et `limit` sont ignorés » (lignes 2…501 ≠ 1…501) |
+    | (c1) affichage `limit: demande.limit` (sans plafond par défaut) | même test : « affichage : le défaut est le plafond (500 lignes) » (501 ≠ 500) |
+    | (c2) affichage `offset` à `0` (non lu) | même test : « affichage : `offset=1&limit=1` rend la deuxième ligne seule » (`[1]` ≠ `[2]`) |
+
+  - **E2 (LOW) — appliqué, test court.** La ligne 8 de `TABLE_DES_TRACES` devient un export **filtré**
+    (`journaux_export_csv_filtre_achats`, `journal: Some("Achats")`, `"journal_filter": "Achats"`) ; le `null` d'un
+    export à période reste tenu par les lignes 2, 4, 6 et 10. Table toujours de dix-huit lignes. Mutation jouée
+    (`journal_filter.as_deref()` → `None` dans la seule branche d'export de `tracer`) : **tuée** par
+    `ac9_b_table_des_traces_au_service` (`service#8`) et `table_des_traces_par_la_route` (`route#8`).
+  - **A1 (LOW) — appliqué par annotation datée** au Dev Agent Record et à C-32-3-39 du registre : 87 fichiers `.rs` à
+    `be6043e6` (`find crates/kesh-api/src -name '*.rs' | wc -l`), 82 à `08a6f1af` (`git ls-tree`), jamais 85.
+  - **A2 (LOW) — appliqué par annotation datée** au Dev Agent Record : `323-t3-cible.log` ne porte que le `nextest`
+    (`grep -c "fmt\|clippy"` → 0) ; `fmt` et `clippy` verts au même commit sont attestés par `323-gate-complet.log`.
+  - **Non traités, à verser à une issue par l'orchestrateur** : **B1** (`Rapport` sans `#[must_use]` : lecture sans
+    trace possible si le `Rapport` est abandonné) ; **B2** (le contenu d'un export lisible dans la fermeture `rendre`
+    qui rend `Err`, sans trace — doc de module plus fort que le type) ; **B3** (accesseurs `Option` + `attendu(…)` : un
+    état impossible exprimé à l'exécution) ; **B4** (gardes lexicales non étanches : alias, `<Lecture>::new(`,
+    déstructuration de `AppState`, `ContexteAcces::mcp(` non gardé) ; **B5** (doc-comment `/// GET
+    /api/v1/reports/trial-balance` mal placé sur `get_general_ledger`, hérité) ; **E3** (l'ordre `project_id <= 0` →
+    `resolve_scope` → `fiscalYearId` requis n'est figé par aucun test) ; **E4** (la branche « trace en échec, réponse
+    intacte » n'est exercée nulle part) ; **A3** (diffs de M1/M1′ non recopiés au Dev Agent Record, renvoyés à
+    `kesh-gate-logs/`) ; **A4** (texte de l'AC1 resté périmé sur trois points réglés à l'Étape 0) ; **A5** (AC10 (i)/(ii)
+    sans témoin positif, (ii) sans mutation) ; **A6** (non vérifiable en lecture seule : remise à zéro des bases avant
+    le gate, révision des journaux frontend, campagne non rejouée).
+- **Gates réellement exécutés** (au commit de test `1d27f065`, dernier commit de code de la remédiation) :
+  - **gate ciblé** avant la campagne : `cargo fmt --all -- --check` vert (`323-p1rem-fmt.log`, après `cargo fmt` du
+    seul fichier de test), `cargo clippy --workspace --all-targets -- -D warnings` vert (`323-p1rem-clippy.log`),
+    `nextest -E 'binary(services_motif)'` **20 passés** (`323-p1rem-cible.log`) ;
+  - **gate complet** `scripts/test-fast.sh --ci`, bases `kesh_323` et `kesh_e2e_323` remises à zéro d'abord (drop,
+    create, migrations du worktree, seed) : garde des droits conforme, `fmt`, `clippy`, **3991 passés, 7 ignorés,
+    0 échec** (`323-p1rem-gate-complet.log`, première ligne `1d27f065`) — 3990 + 1 ;
+  - **E2E complet** (recette de `CLAUDE.md` § E2E, port 3323, base `kesh_e2e_323`, dossiers `/tmp/kesh-e2e-323`,
+    `KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR` passés aux deux côtés ; frontend `build` de `be6043e6`, aucun fichier de
+    `frontend/` changé depuis) : **315 passés, 7 échecs, 17 ignorés** (`323-p1rem-e2e.log`, révision
+    `323-p1rem-e2e-revision.txt` = `1d27f065`). Les sept échecs, jugés fichier par fichier contre `docs/testing.md`
+    § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+    `onboarding.spec.ts:57`, `:77`, `:150` — les sept de la **KF-029 (#97)** ; aucun autre. Backend arrêté par PID.
+  - Gates frontend non rejoués : aucun fichier de `frontend/` touché par la remédiation.
+- **Décompte** (de `210c5808` à `1d27f065`) : **un test ajouté**, `grand_livre_les_deux_regimes` ; `services_motif.rs`
+  passe de 19 à **20** (`grep -c '#\[sqlx::test'` → 14, `grep -cE '^#\[test\]'` → 6) ; une ligne de la table modifiée.
+- Statut inchangé : `review`.

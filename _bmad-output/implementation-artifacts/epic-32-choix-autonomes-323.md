@@ -535,6 +535,10 @@ P5-1.*
   nommée `EXCEPTIONS_V1`, vide (P6-3) ; fabriques de (v-2) `FABRIQUES_V2` ; résidus de (vi) `RESIDUS_VI`. Plancher de
   fichiers lus : 80 (85 au relevé du 2026-10-24) ; `services/` : cinq exactement.
 - **Réversible** : oui.
+- *Annotation du 2026-10-24, revue de code P1 (A1)* : « 85 au relevé » était faux à sa date. Recompté :
+  `find crates/kesh-api/src -name '*.rs' | wc -l` → **87** à `be6043e6`/HEAD (82 à `08a6f1af` par
+  `git ls-tree -r --name-only 08a6f1af crates/kesh-api/src | grep -c '\.rs$'`, plus les cinq de `services/`). Le
+  plancher de 80 reste valide ; l'entrée ci-dessus n'est pas réécrite.
 
 ### C-32-3-40 — `mesurer(span, start, body)` au handler
 
