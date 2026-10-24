@@ -185,8 +185,12 @@ qui ne porte pas la production, **machine Linux** *(P4, F5 : `realpath -e` et `f
 `/var/tmp` est un lien et le contrôle 3 échouerait toujours — arrêt sûr, mais la procédure n'y passe jamais)*, avec Docker et Compose v2 ≥ 2.24 ; **jamais le NAS** : noms de conteneurs fixes, § État
 des lieux ; un dossier **local**, jamais synchronisé ni monté depuis le NAS — `/var/tmp`, hors de `$HOME`, AC3
 contrôle 3) ; *ce qu'elle suppose* (une installation en
-**0.15.0 ou plus** : le fichier `.keshbackup` est de format 2 et emporte les pièces ; une sauvegarde de format 1 se
-restaure aussi, ses pièces manquent, ce que la copie montrera) ; *que la copie contient les données réelles et se détruit
+une production qui **exporte en format 2** — Kesh 0.15.0 ou plus : le fichier `.keshbackup` emporte les pièces et
+annonce leur nombre ; une production antérieure se **met d'abord à jour** (renvoi en prose à la section *Mise à jour*,
+`sec:mise-a-jour`), et une sauvegarde de format 1 **ne vaut pas répétition** — ses pièces ne sont pas dans le fichier
+et, dans la copie neuve, seraient toutes manquantes ; ce prérequis se vérifie **avant le contrôle 1**, avant de rien
+créer : *Administration* → sauvegarde, la version affichée, ou un export d'essai dont l'en-tête `X-Kesh-Backup-Files` est
+présent ; *P8, M1/M2*) ; *que la copie contient les données réelles et se détruit
 à la fin* (AC7) ; et que **le fichier `.keshbackup` est un secret** (mots de passe hachés, jetons de session — rappel de
 `Exporter`, sans le recopier).
 
@@ -307,8 +311,9 @@ que l'export de la production en a annoncé** (l'en-tête `X-Kesh-Backup-Files` 
 relevé à l'étape 0) ; et la lecture de l'étape 5 de *Restaurer sur une nouvelle machine* est faite telle quelle :
 **une écriture récente au journal, et la liste des factures** que la source portait y figurent. Ce critère vaut pour
 toute installation, y compris une production sans aucune pièce (aucun document importé) : le manuel ne présume rien
-de *N*. **La répétition suppose une production en 0.15.0 ou plus**, dont la sauvegarde est de format 2 et annonce son
-compte de pièces ; une production antérieure se **met d'abord à jour** — le manuel le dit en tête de la procédure.
+de *N*. **La répétition suppose une production qui exporte en format 2** (Kesh 0.15.0 ou plus), dont la sauvegarde
+annonce son compte de pièces ; le prérequis est vérifié avant le contrôle 1, et une production antérieure se **met
+d'abord à jour** — le manuel le dit en tête de la procédure (AC2).
 Une sauvegarde de format 1 ne vaut pas répétition : ses pièces ne sont pas dans le fichier et seraient toutes
 manquantes *(P6, T2-bis ; corrigé en P7 : le critère réduit d'abord écrit était inatteignable)*. **Ce que le développement exige en plus, et que le manuel ne dit pas** : la sauvegarde
 synthétique de la T1 porte *N* ≥ 1 (au moins une pièce y est entrée par l'écran) ; *N* = 0 y serait un **échec de la
@@ -900,3 +905,21 @@ captures, mutations tuées, écarts à la fiche.)*
 - *Troisième remédiation de l'orchestrateur sur l'Epic 31 qui introduit le défaut suivant* (31-1 P5, P6 ; 31-4 P6) : à la
   rétrospective.
 - Passe suivante : ciblée P8 (Opus), **dernière passe permise**.
+
+### Validation P8 ciblée (2026-10-24) — Opus, lentille T sur `HEAD~2..HEAD` : 0/0/2/3 — **plafond de huit passes atteint**
+
+- **M1** (résidu de la remédiation P7, de l'orchestrateur) : l'AC2 disait encore « une sauvegarde de format 1 se restaure
+  aussi, ses pièces manquent » ; corrigé — le format 1 ne vaut pas répétition, une production antérieure se met d'abord à
+  jour (renvoi en prose à la section *Mise à jour*, `sec:mise-a-jour`).
+- **M2** : le prérequis était exprimé par la **version**, que l'image de développement (construite depuis `main`, crates
+  0.14.0) ne peut pas afficher ; il s'exprime désormais par le **format constaté** (export de format 2, en-tête
+  `X-Kesh-Backup-Files` présent), et se vérifie **avant le contrôle 1**, avant de rien créer. Pendant le développement
+  (T8), l'image de `main` exporte en format 2 : le prérequis est rempli par le format, la version affichée étant une
+  substitution déjà déclarée (T8, AC10).
+- LOW laissés au développement : « toutes manquantes » vaut parce que le dossier des documents de la copie est neuf (à
+  dire au manuel) ; chapeau de la fiche arrêté à la P4 ; « Corrigé » de l'entrée P6 périmé (non réécrit).
+- **Fin de la validation au plafond.** Trend : P1 Opus R 0/1/9/7 F 0/0/10/9 → P2 Sonnet R 0/0/5/8 F 0/0/6/9 → P3 Opus R
+  0/0/7/8 F 0/1/3/9 (signal de recyclage, retrait C-31-4-15) → P4 Sonnet R 0/0/3/5 F 0/0/1/6 → P5 ciblée Opus 0/0/2/5 →
+  P6 ciblée Haiku 0/0/1/3 → P7 ciblée Sonnet 0/0/1/1 → P8 ciblée Opus 0/0/2/3. **Les deux MEDIUM de la P8 sont corrigés
+  par l'orchestrateur sans passe de vérification** : l'agent de développement les recontrôle à son étape 0, et la revue de
+  code relit le manuel contre la fiche. Les P6 à P8 n'ont trouvé que des défauts des remédiations elles-mêmes.
