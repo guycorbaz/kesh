@@ -43,7 +43,7 @@ const LIB_RS: &str = include_str!("../src/lib.rs");
 const MARKER_BEGIN: &str = "KESH-ADMIN-ROUTES-BEGIN";
 const MARKER_END: &str = "KESH-ADMIN-ROUTES-END";
 
-/// Les **28 constructeurs de méthode** du bloc `admin_routes`, un par couple
+/// Les **33 constructeurs de méthode** du bloc `admin_routes`, un par couple
 /// (méthode, chemin). Les identifiants de chemin sont arbitraires : la couche
 /// répond **avant** le handler, donc aucune donnée n'a besoin d'exister.
 ///
@@ -84,6 +84,16 @@ const ADMIN_COUPLES: &[(&str, &str)] = &[
     // réouverture d'exercice ci-dessus et pour la même raison — la POSE, elle,
     // vit dans `comptable_routes` et n'a pas à figurer ici.
     ("POST", "/api/v1/companies/current/books-lock/release"),
+    // Story 31-1c (#503) — sauvegarde automatique et sauvegardes du serveur.
+    // Le téléchargement porte en plus `ensure_not_pat` (GUARDED_BY_HANDLER).
+    ("GET", "/api/v1/admin/backup-schedule"),
+    ("PUT", "/api/v1/admin/backup-schedule"),
+    ("POST", "/api/v1/admin/backup-schedule/run"),
+    ("GET", "/api/v1/admin/backups"),
+    (
+        "GET",
+        "/api/v1/admin/backups/auto/kesh-auto-20261024T000000000Z.keshbackup",
+    ),
 ];
 
 /// Les chemins que `axum` sert **aussi** en `HEAD`, en rejouant le handler `get`
@@ -310,7 +320,7 @@ fn block_uses_no_unlisted_route_constructor() {
     // Le compteur ne reconnaît que sept constructeurs ; `axum` en exporte
     // vingt-deux. Plutôt que d'énumérer les quinze autres, on asserte le
     // COMPLÉMENT — sinon `any(handler)` enregistrerait NEUF méthodes en
-    // laissant le compteur à 28 : la route serait protégée, mais absente de la
+    // laissant le compteur à 33 : la route serait protégée, mais absente de la
     // couverture, et rien ne le signalerait.
     let block = admin_block();
     for forbidden in ["any", "on", "trace", "connect"] {
@@ -369,7 +379,7 @@ fn no_route_enters_the_block_by_composition() {
     // assemblé — mais ses constructeurs `get(`/`post(` vivent dans un AUTRE
     // fichier, invisibles à `count_method_constructors`, qui ne lit que `lib.rs`.
     //
-    // Conséquence : le compteur reste à 28, `ADMIN_COUPLES` ne gagne pas le
+    // Conséquence : le compteur reste à 33, `ADMIN_COUPLES` ne gagne pas le
     // couple, et **aucun test HTTP n'exerce jamais cette route**. La protection
     // tient ; c'est le RAPPEL qui tombe — or c'est le rappel qui est l'objet de
     // cette story, et ce qui avait laissé 16 routes sur 19 sans garde.
@@ -396,7 +406,7 @@ fn the_admin_guards_exist_once_each_and_live_inside_the_block() {
     // ⚠️ Le trou que ferme ce test a été DÉMONTRÉ : un SECOND routeur admin,
     // déclaré hors du bloc et mergé dans `protected` avec `require_admin_role`
     // mais SANS `require_not_pat`, échappe à la totalité du dispositif. Le
-    // compteur reste à 28, `admin_routes` apparaît toujours 2 fois, il y a
+    // compteur reste à 33, `admin_routes` apparaît toujours 2 fois, il y a
     // toujours 2 `.route_layer(` dans le bloc — et une route d'administration
     // redevient atteignable par un PAT. C'est **littéralement le mode d'échec
     // de #167**, rouvert par une autre porte.
@@ -756,7 +766,7 @@ async fn error_code(resp: reqwest::Response) -> String {
 // Tests HTTP — le comportement
 // ============================================================================
 
-/// AC1, jambe `read-write` : les 28 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
+/// AC1, jambe `read-write` : les 33 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
 ///
 /// ⚠️ On asserte le **code**, pas le statut. Trois gardes distinctes rendent
 /// `403` sur ces routes — le RBAC, le gate de portée, et la couche : un test
@@ -782,9 +792,9 @@ async fn every_admin_couple_denies_a_read_write_pat(pool: MySqlPool) {
 /// AC1, jambe `read-only` — et elle se lit par couple, parce que le gate de
 /// portée répond **avant** la couche.
 ///
-/// Les 5 `get` atteignent la couche ; les 23 méthodes mutantes sont arrêtées en
+/// Les 8 `get` atteignent la couche ; les 25 méthodes mutantes sont arrêtées en
 /// amont par `require_auth` avec `API_KEY_READ_ONLY`, **qui existait avant cette
-/// story**. Prescrire `403` partout ferait un test muet sur ces vingt-trois-là : la
+/// story**. Prescrire `403` partout ferait un test muet sur ces vingt-cinq-là : la
 /// mutation « retirer la couche doit faire rougir » y est insatisfaisable.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlPool) {
@@ -818,7 +828,10 @@ async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlP
         // dans le bloc. Le nombre est codé en dur À DESSEIN — l'incrémenter est le
         // geste qui force à relire la route qu'on vient d'y ajouter.
         // 22 → 23 : Story 25-6-b (#387), `POST /api/v1/invoices/{id}/pdf/refreeze`.
-        (5, 23),
+        // (5, 23) → (8, 25) : Story 31-1c (#503) — trois `GET` de plus atteignent
+        // la couche (`backup-schedule`, `backups`, le téléchargement), un `PUT`
+        // et un `POST` de plus sont arrêtés par le gate de portée.
+        (8, 25),
         "la répartition attendue entre la couche et le gate de portée a changé"
     );
 }
@@ -830,10 +843,11 @@ async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlP
 /// faible que celle des autres couples — assumée, parce que `HEAD` emprunte
 /// exactement la pile de couches de son `GET`, déjà couvert au code.
 ///
-/// ⚠️⚠️ **Et sur un chemin, la preuve est NULLE, non pas seulement faible.**
+/// ⚠️⚠️ **Et sur deux chemins, la preuve est NULLE, non pas seulement faible.**
 /// `/api/v1/admin/full-export` porte la garde intrinsèque `ensure_not_pat` de la
-/// décision D3, qui rend elle aussi un `403` : couche retirée, ce couple resterait
-/// **vert**. Les autres chemins n'ont pas de garde dans leur handler et sont donc
+/// décision D3, et — Story 31-1c — le téléchargement d'une sauvegarde du serveur
+/// aussi ; elle rend elle aussi un `403` : couche retirée, ces couples
+/// resteraient **verts**. Les autres chemins n'ont pas de garde dans leur handler et sont donc
 /// bien sensibles. Le fait est nommé ici plutôt que masqué — c'est le prix d'une
 /// redondance assumée, et il faut savoir où elle rend un test aveugle.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -843,7 +857,13 @@ async fn head_couples_are_denied_too(pool: MySqlPool) {
 
     // Les chemins dont le handler porte une garde intrinsèque : leur `403` peut
     // venir d'ailleurs que de la couche, donc ils ne discriminent pas.
-    const GUARDED_BY_HANDLER: &[&str] = &["/api/v1/admin/full-export"];
+    // Story 31-1c (#503) : le téléchargement d'une sauvegarde du serveur porte
+    // lui aussi `ensure_not_pat` ; `backup-schedule` et `backups` n'en ont pas,
+    // et PROUVENT la couche.
+    const GUARDED_BY_HANDLER: &[&str] = &[
+        "/api/v1/admin/full-export",
+        "/api/v1/admin/backups/auto/kesh-auto-20261024T000000000Z.keshbackup",
+    ];
 
     let mut discriminating = 0usize;
     for path in admin_head_paths() {
@@ -857,11 +877,14 @@ async fn head_couples_are_denied_too(pool: MySqlPool) {
             discriminating += 1;
         }
     }
-    assert!(
-        discriminating >= 4,
-        "moins de quatre couples HEAD discriminants : la preuve de ce test \
-         reposerait presque entièrement sur des chemins dont le handler rend \
-         déjà 403 par lui-même"
+    // Égalité et non seuil (Story 31-1c, R14 de la P4) : un seuil, même relevé
+    // à 6, resterait vert si l'on oubliait un chemin gardé par son handler dans
+    // GUARDED_BY_HANDLER (la preuve compterait alors un chemin aveugle) ;
+    // l'égalité le voit.
+    assert_eq!(
+        discriminating, 6,
+        "le nombre de couples HEAD discriminants a changé : un chemin dont le \
+         handler rend déjà 403 par lui-même doit figurer dans GUARDED_BY_HANDLER"
     );
 }
 

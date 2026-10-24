@@ -36,6 +36,31 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   serveur (`.env`) n'y est pas ; après un export, l'écran annonce les pièces qu'il n'a pas pu inclure et prévient si le
   fichier dépasse la taille d'import autorisée ; après un import, il annonce les pièces restaurées et les pièces
   manquantes.
+- **Kesh fait lui-même sa sauvegarde complète** ([#503](https://github.com/guycorbaz/kesh/issues/503)). À intervalle
+  régulier — chaque jour par défaut, ou toutes les 6 ou 12 heures, ou chaque semaine —, Kesh écrit une sauvegarde
+  `.keshbackup` complète (base et pièces) dans `KESH_ADMIN_BACKUP_DIR/auto` (`./backup/auto` avec les compose
+  fournis), la relit, et n'en garde que le nombre choisi (7 par défaut) ; la dernière sauvegarde **complète** n'est
+  jamais supprimée, même après une suite de sauvegardes incomplètes (pièces absentes du dossier des documents). Avant
+  d'écrire, Kesh vérifie la place sur le disque et refuse plutôt que de le remplir ; un disque plein pendant l'écriture
+  ne laisse aucun fichier partiel et ne supprime rien. Le réglage et l'état se trouvent dans **Administration →
+  Sauvegarde complète**, avec **« Sauvegarder maintenant »** ; un échec, ou l'absence de sauvegarde réussie depuis au moins
+  deux intervalles, s'affiche aussi en bandeau dans toute l'application pour l'administrateur. Une seule sauvegarde, export
+  ou import à la fois. Le réglage appartient à l'installation : il ne voyage pas dans le `.keshbackup`. Audit
+  `admin.backup_schedule_updated`, `admin.backup_run`.
+- **Les sauvegardes du serveur se listent et se téléchargent depuis l'écran** : sauvegardes automatiques et sauvegardes
+  de sécurité prises avant chaque import, avec leur taille et leur date — le geste SSH n'est plus nécessaire pour
+  récupérer une sauvegarde pré-import. Une sauvegarde plus grosse que la taille d'import autorisée porte la mention
+  « trop grande pour être restaurée par l'écran ». Chaque téléchargement est inscrit au journal d'audit
+  (`admin.backup_downloaded`).
+- **Répéter une clôture sur une copie, avant de clore pour de bon** : le manuel d'administration (*Répéter une clôture
+  sur une copie*) donne la procédure pour monter, sur une autre machine que la production — jamais le NAS —, une copie
+  isolée restaurée depuis une sauvegarde complète, y jouer la préparation de la clôture, la contre-passation des
+  transitoires, la clôture et la réouverture, puis la détruire sans rien laisser. Huit contrôles précèdent le premier
+  démarrage, dont celui qui écarte le compose du Synology, qui viserait la base de la production ; la copie n'écoute que
+  sur la machine elle-même et n'envoie aucun courriel. La procédure a été jouée sur une sauvegarde de démonstration,
+  dans une rédaction antérieure ; ce qui n'a pas été éprouvé — dont les commandes ajoutées depuis, jamais jouées dans
+  une répétition réelle — est écrit comme tel. Elle ne remplace pas le test de restauration périodique tant que son
+  critère n'est pas tranché ([#709](https://github.com/guycorbaz/kesh/issues/709)).
 
 ### Modifié
 
@@ -46,6 +71,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 - ⚠️ **Une sauvegarde de la 0.15.0 ne s'importe pas dans une 0.14.x** : celle-ci la refuse avec « Fichier de sauvegarde
   invalide ou corrompu » (`INVALID_BACKUP_STRUCTURE`), devant une sauvegarde pourtant saine. La sauvegarde de sécurité
   prise avant chaque import emporte elle aussi les pièces : elle pèse la base **plus** le dossier des documents.
+- ⚠️ **Migration `20261024000001_backup_schedule` (non breaking)** : une table système porte le réglage et l'état de la
+  sauvegarde automatique ; `kesh_version_min_required` ne change pas. Mais, comme toute migration, elle **empêche la
+  0.14.0 de démarrer** sur une base migrée : le retour à la 0.14.0 ne passe que par **la sauvegarde d'avant la mise à
+  jour** — base, `.keshbackup` **et dossier des documents**, que le `.keshbackup` de la 0.14.0 n'emporte pas.
+- **La sauvegarde automatique est activée à la mise à jour** (chaque jour, 7 conservées) : environ cinq minutes après le
+  démarrage, une première sauvegarde complète — la base plus le dossier des documents — s'écrit dans `./backup/auto`.
+  Prévoir la place de plusieurs copies sur le disque du dossier de sauvegarde, et les copier hors du disque (Hyper
+  Backup copie déjà `./backup`).
 - **Après un import réussi, l'écran attend « Se reconnecter »** au lieu de déconnecter aussitôt : le bilan de l'import
   (pièces restaurées, pièces manquantes) se lit avant la reconnexion.
 - **L'export et l'import complets échappent au délai de 30 s de l'écran** : l'écran attend jusqu'à une heure, sans
@@ -59,6 +92,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Corrigé
 
+- **Les manuels disent le vrai chemin des exercices comptables** : ils écrivaient tantôt « Paramètres → Exercices
+  comptables », tantôt « Administration → Exercices comptables ». L'entrée du menu est dans le groupe *Administration*
+  de la barre latérale ; les manuels d'administration et utilisateur (PDF compris) l'écrivent désormais partout ainsi.
+  Aucun écran ne change.
 - **La démonstration valide une facture avec TVA** ([#707](https://github.com/guycorbaz/kesh/issues/707)). Elle ne désignait aucun compte de TVA, si bien que la validation d'une facture portant un taux était refusée (*Configuration incomplète*). Elle désigne désormais les comptes de TVA du plan (TVA due, impôt préalable, décompte), visibles dans *Administration → Facturation*. Le mode production ne change pas : les comptes de TVA n'y sont pas désignés d'office, un assujetti les désigne avant sa première facture avec TVA — le manuel utilisateur le dit.
 - **L'infobulle du bouton *Réouvrir* nomme l'exercice qu'il faut effectivement rouvrir** ([#589](https://github.com/guycorbaz/kesh/issues/589)). Avec trois exercices clôturés ou plus, elle nommait le plus proche exercice postérieur, que Kesh refusait à son tour de rouvrir ; elle nomme maintenant le plus récent, le seul que la réouverture accepte.
 - **La communication du QR-code suit la langue de la facture** ([#504](https://github.com/guycorbaz/kesh/issues/504)) : « Rechnung F-… » sur une facture allemande, « Fattura F-… » en italien, « Invoice F-… » en anglais, au lieu de « Facture F-… » partout. Le rapprochement bancaire, qui lit le numéro de facture, n'est pas touché. Une facture dont le PDF a été **figé avant cette version** (téléchargée ou envoyée) garde sa communication française tant que ce PDF n'est pas refigé ; une facture validée avant cette version mais jamais téléchargée ni envoyée prend la communication de sa langue à son premier PDF. Les rappels, produits à chaque envoi, portent toujours celle de la langue du client : le rappel d'une facture figée en français peut donc porter « Rechnung F-… ».

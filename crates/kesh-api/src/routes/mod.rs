@@ -3,6 +3,7 @@ pub mod admin;
 pub mod api_keys;
 pub mod audit_log;
 pub mod auth;
+pub mod backup_schedule;
 pub mod bank_accounts;
 pub(crate) mod bank_import_fingerprint;
 pub mod bank_imports;

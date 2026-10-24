@@ -16,6 +16,16 @@ vi.mock('./admin-backup.api', () => ({
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 	i18nMsg: (_key: string, fallback: string, args?: Record<string, string | number>) =>
 		args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_m, k: string) => String(args[k] ?? '')) : fallback,
+	i18nLocale: () => 'fr-CH',
+}));
+
+// Story 31-1c — la section « Sauvegarde automatique » rendue par le panneau
+// lit l'état et la liste du serveur : simulés ici (ses tests propres vivent
+// dans `AutoBackupSection.test.ts`).
+vi.mock('./backup-schedule.api', async (importOriginal) => ({
+	...(await importOriginal<typeof import('./backup-schedule.api')>()),
+	fetchBackupSchedule: vi.fn(() => new Promise(() => {})),
+	fetchServerBackups: vi.fn(() => new Promise(() => {})),
 }));
 
 // Mock toast svelte-sonner.

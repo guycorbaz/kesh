@@ -2676,6 +2676,41 @@ async fn reset_failure_erases_nothing_and_never_returns_its_connection(pool: MyS
     assert!(outcome.principals.is_empty());
 }
 
+/// Story 31-1c (#503, AC24) — la réinitialisation de démonstration ne touche
+/// pas la table système `_kesh_backup_schedule` : réglage et état de la
+/// sauvegarde automatique appartiennent à l'installation, non aux livres.
+/// Assertion de montage : la réinitialisation a bien effacé quelque chose.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_keeps_the_backup_schedule(pool: MySqlPool) {
+    let (_app, _token, _) = seeded_demo(&pool).await;
+    sqlx::query(
+        "UPDATE _kesh_backup_schedule SET enabled = FALSE, interval_hours = 6, \
+         retention_count = 12, last_status = 'partial', last_files_not_included = 2 \
+         WHERE id = 1",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let ligne = || async {
+        sqlx::query_as::<_, (bool, i32, i32, Option<String>, Option<i32>, i32)>(
+            "SELECT enabled, interval_hours, retention_count, last_status, \
+             last_files_not_included, version FROM _kesh_backup_schedule WHERE id = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    };
+    let avant = ligne().await;
+    let outcome = kesh_seed::reset_demo(&pool, (admin_user_id(&pool).await, None), true)
+        .await
+        .expect("réinitialisation");
+    assert!(
+        outcome.audit_entries_erased > 0,
+        "montage : la réinitialisation a effacé la piste"
+    );
+    assert_eq!(ligne().await, avant, "la table système est intacte");
+}
+
 // --- Test 9 (15-7b2) --------------------------------------------------------
 
 /// Test 9 (15-7b2, AC 5) — piste vide avant la remise à zéro : rien d'effacé,

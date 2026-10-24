@@ -69,7 +69,14 @@ pub async fn full_export(
         .await
         .map_err(AppError::AdminFullExportFailed)?;
     let seuil = (state.config.admin_export_inmem_mib as usize) * 1024 * 1024;
+    // Story 31-1c (AC27) — une seule sauvegarde à la fois. Garde POSSÉDÉ, pris
+    // avant la lecture de la base et DÉPLACÉ dans la fermeture : il vit dans
+    // le `spawn_blocking` d'assemblage et n'est rendu qu'à la fin de
+    // l'assemblage, quel que soit le sort du client (C-31-1-55) ; il est rendu
+    // avant la diffusion (un téléchargement lent ne bloque rien).
+    let garde = state.backup_lock.clone().lock_owned().await;
     let remplir = move |export: InstallationExport, documents: PathBuf| {
+        let _garde = garde;
         let temporaire = tempfile::spooled_tempfile_in(seuil, &backup_dir);
         write_keshbackup(&export, &documents, temporaire)
     };
@@ -198,6 +205,13 @@ pub async fn full_import(
             .await
             .map_err(|e| AppError::Internal(format!("vérification de l'archive : {e}")))??;
 
+        // Story 31-1c (AC27) — une seule sauvegarde à la fois : garde POSSÉDÉ,
+        // pris dans la tâche (un client parti ne le relâche pas), APRÈS la
+        // réception et la vérification (un envoi lent ne bloque pas les
+        // sauvegardes), tenu jusqu'à la fin de la restauration, et toujours
+        // AVANT le `FOR UPDATE` de `_kesh_version` (`run_backup_and_restore`).
+        let _garde = state.backup_lock.clone().lock_owned().await;
+
         // 3b. Compat version (DC4) : 409 si le backup exige plus récent que nous.
         match kesh_db::version::check_import_version_compat(
             &parsed.manifest.kesh_version_min_required,
@@ -231,6 +245,18 @@ pub async fn full_import(
         //    transaction de restore** (cf. `run_backup_and_restore`) — pattern
         //    Story 17-1, auto-relâché au COMMIT/rollback.
         let source_version = parsed.manifest.kesh_version.clone();
+        // Story 31-1c (AC28, F9) — sous le verrou, avant la sauvegarde de
+        // sécurité : les `kesh-pre-import-*.keshbackup.partial` laissés par un
+        // arrêt brutal sont supprimés (sinon jamais : exclus de la liste du
+        // serveur). Un échec est journalisé et ne refuse pas l'import.
+        let dossier = PathBuf::from(&state.config.admin_backup_dir);
+        if let Err(e) = tokio::task::spawn_blocking(move || {
+            crate::auto_backup::supprimer_les_partiels(&dossier, "kesh-pre-import-")
+        })
+        .await
+        {
+            tracing::warn!("nettoyage des sauvegardes pré-import partielles : {e}");
+        }
         let issue = run_backup_and_restore(&state, parsed, &current_user).await?;
 
         let body = serde_json::json!({
@@ -706,7 +732,7 @@ async fn write_pre_import_backup(state: &AppState) -> Result<bool, AppError> {
 /// - `try_exists` **suit** les liens symboliques : un lien pendant au nom
 ///   final est vu absent, et `rename` remplace le lien (pas sa cible) ; sans
 ///   portée (nom unique, dossier `0700` créé par Kesh).
-fn write_backup_file<T>(
+pub(crate) fn write_backup_file<T>(
     path: &Path,
     remplir: impl FnOnce(std::fs::File) -> Result<T, BackupWriteError>,
 ) -> Result<T, BackupWriteError> {

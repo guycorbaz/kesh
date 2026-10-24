@@ -114,6 +114,7 @@ async fn spawn_app(pool: MySqlPool, mailer: MockMailer, documents: PathBuf) -> T
         mailer: Arc::new(mailer),
         smtp_ready: true,
         test_mock_mailer: None,
+        backup_lock: Arc::new(tokio::sync::Mutex::new(())),
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());

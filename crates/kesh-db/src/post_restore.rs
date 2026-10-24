@@ -591,6 +591,13 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
          30-2a) : les lignes d'une sauvegarde antérieure portent toutes un QR et satisfont la \
          contrainte telles quelles ; aucune valeur n'est à recalculer.",
     ),
+    (
+        20261024000001,
+        ExemptionBasis::Durable,
+        "INSERT sur _kesh_backup_schedule, table système hors TABLES_TO_TRUNCATE : jamais \
+         exportée ni restaurée (réglage et état de la sauvegarde automatique, Story 31-1c). \
+         Ce n'est pas un backfill de données applicatives — patron de 20260522000001.",
+    ),
 ];
 
 /// Rejoue les backfills du registre canonique dans la transaction de restore.
@@ -1213,9 +1220,12 @@ mod tests {
         // `20261009000001` (table système jamais restaurée, DDL pur sinon).
         // ⚠️ **18 → 19 (Story 30-2a, #685)** : `20261015000001`, le bump
         // `kesh_version_min_required` à 0.14.0 — `Durable`, même patron.
+        // ⚠️ **19 → 20 (Story 31-1c, #503)** : `20261024000001`, l'INSERT du
+        // singleton `_kesh_backup_schedule` — `Durable`, patron de
+        // `20260522000001` (table système jamais exportée ni restaurée).
         assert_eq!(
             EXEMPT_MIGRATIONS.len(),
-            19,
+            20,
             "le registre d'exemptions a changé de taille : déclarer le fondement de l'entrée \
              neuve (Durable, ou PerishableSince(<borne>) si elle argumente sur un fait daté), \
              puis bumper ce nombre."

@@ -705,7 +705,14 @@ const ATTENDU = {
 	// `routes/onboarding/+page.svelte` 57 → 59 (relais `msg` : invite et lien),
 	// `routes/onboarding/restore/+page.svelte` 0 → 1 (fichier neuf, retour à l'assistant).
 	// Que des littéraux : les autres compteurs inchangés.
-	sitesTotal: 2289,
+	// Story 31-1c (#503, sauvegarde automatique) : **2289 → 2332** (+43), mesuré par la
+	// collecte de ce test et recompté par `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('` aux deux
+	// bornes (`e71cd351` → HEAD de `story/31-1c`) : `AutoBackupSection.svelte` 0 → 40 (fichier
+	// neuf : réglage, état, statuts, « Sauvegarder maintenant », sauvegardes du serveur),
+	// `BackupScheduleBanner.svelte` 0 → 3 (fichier neuf, bandeau de l'application) ;
+	// `AdminBackupPanel.svelte` 10 → 10 et `routes/(app)/+layout.svelte` 6 → 6 (ils rendent les
+	// deux composants). Que des littéraux : les autres compteurs inchangés.
+	sitesTotal: 2332,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

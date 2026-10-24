@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 82 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 83 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -17,6 +17,30 @@
 /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
 /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+DROP TABLE IF EXISTS `_kesh_backup_schedule`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `_kesh_backup_schedule` (
+  `id` tinyint(3) unsigned NOT NULL DEFAULT 1,
+  `enabled` tinyint(1) NOT NULL DEFAULT 1,
+  `interval_hours` int(11) NOT NULL DEFAULT 24,
+  `retention_count` int(11) NOT NULL DEFAULT 7,
+  `last_attempt_at` datetime(3) DEFAULT NULL,
+  `last_success_at` datetime(3) DEFAULT NULL,
+  `last_success_file` varchar(255) DEFAULT NULL,
+  `last_success_bytes` bigint(20) DEFAULT NULL,
+  `last_status` varchar(32) DEFAULT NULL,
+  `last_files_not_included` int(11) DEFAULT NULL,
+  `last_complete_file` varchar(255) DEFAULT NULL,
+  `version` int(11) NOT NULL DEFAULT 1,
+  `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `chk_kesh_backup_schedule_single_row` CHECK (`id` = 1),
+  CONSTRAINT `chk_kesh_backup_schedule_interval` CHECK (`interval_hours` in (6,12,24,168)),
+  CONSTRAINT `chk_kesh_backup_schedule_retention` CHECK (`retention_count` between 1 and 60),
+  CONSTRAINT `chk_kesh_backup_schedule_status` CHECK (`last_status` in ('ok','partial','failed','insufficient_space','disk_full'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `_kesh_version`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -1166,3 +1190,8 @@ CREATE TABLE `vat_rates` (
 -- chaque bump P2 de kesh_version_min_required la déplace).
 INSERT INTO `_kesh_version` (`id`, `kesh_version_min_required`, `kesh_version_last_applied`)
 VALUES (1, '0.14.0', '0.1.0');
+
+-- Réglage de la sauvegarde automatique, RELEVÉ dans la base migrée
+-- (Story 31-1c : défauts posés par la migration ; dump --no-data).
+INSERT INTO `_kesh_backup_schedule` (`id`, `enabled`, `interval_hours`, `retention_count`, `version`)
+VALUES (1,1,24,7,1);
