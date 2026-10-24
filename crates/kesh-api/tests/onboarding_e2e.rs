@@ -624,3 +624,170 @@ async fn fresh_install_stub_cleared_by_seed_demo(pool: MySqlPool) {
     assert_eq!(body["stepCompleted"], 3);
     assert_eq!(body["isStub"], false);
 }
+
+// --- Story 31-5 (#707) : la démonstration valide une facture avec TVA ---
+
+/// Mène le chemin démonstration jusqu'à `seed-demo` (étapes 0 → 3) et rend l'id
+/// de la société démo.
+async fn reach_demo(app: &TestApp, pool: &MySqlPool, token: &str) -> i64 {
+    for (path, body) in [
+        ("/api/v1/onboarding/language", json!({ "language": "FR" })),
+        ("/api/v1/onboarding/mode", json!({ "mode": "guided" })),
+    ] {
+        let resp = app
+            .client
+            .post(app.url(path))
+            .header("Authorization", auth(token))
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "{path}");
+    }
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/seed-demo"))
+        .header("Authorization", auth(token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "seed-demo");
+    sqlx::query_scalar::<_, i64>("SELECT id FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Le compte qui porte un rôle singleton dans la société, relu en base (jamais
+/// un numéro codé en dur : l'utilisateur peut renuméroter).
+async fn role_account(pool: &MySqlPool, company_id: i64, role: &str) -> i64 {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ?",
+    )
+    .bind(company_id)
+    .bind(role)
+    .fetch_one(pool)
+    .await
+    .unwrap_or_else(|e| panic!("compte du rôle {role} : {e}"))
+}
+
+/// AC2 (#707) — après `seed-demo`, une facture d'une ligne à 8,1 % se **valide**
+/// (`200`), et l'écriture produite crédite du montant de TVA le compte du rôle
+/// `VatPayable`. Rouge avant le correctif : `400 CONFIGURATION_REQUIRED`
+/// (aucun compte de TVA désigné par la démonstration).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn demo_validates_an_invoice_with_vat(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    let company_id = reach_demo(&app, &pool, &token).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/contacts"))
+        .header("Authorization", auth(&token))
+        .json(&json!({
+            "contactType": "Entreprise",
+            "name": "Client Démo Synthétique SA",
+            "isClient": true,
+            "isSupplier": false,
+            "email": "client@example.invalid",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "contact");
+    let contact_id = resp.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_i64()
+        .unwrap();
+
+    // Date dans l'exercice que crée la démonstration (année courante).
+    let today = chrono::Utc::now().date_naive().to_string();
+    let resp = app
+        .client
+        .post(app.url("/api/v1/invoices"))
+        .header("Authorization", auth(&token))
+        .json(&json!({
+            "contactId": contact_id,
+            "date": today,
+            "lines": [
+                {"description": "Conseil", "quantity": "1", "unitPrice": "100.00", "vatRate": "8.10"}
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "facture");
+    let invoice_id = resp.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_i64()
+        .unwrap();
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/validate")))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    let body = resp.text().await.unwrap();
+    assert_eq!(status, 200, "validation de la facture démo : {body}");
+
+    let vat_payable = role_account(&pool, company_id, "VatPayable").await;
+    let credit: Option<rust_decimal::Decimal> = sqlx::query_scalar(
+        "SELECT jel.credit FROM journal_entry_lines jel \
+         JOIN invoices i ON i.journal_entry_id = jel.entry_id \
+         WHERE i.id = ? AND jel.account_id = ?",
+    )
+    .bind(invoice_id)
+    .bind(vat_payable)
+    .fetch_optional(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        credit,
+        Some(rust_decimal::Decimal::new(81000, 4)),
+        "l'écriture crédite le compte du rôle VatPayable de 8.10"
+    );
+}
+
+/// AC2 (#707) — après `seed-demo`, `GET /company/invoice-settings` porte les
+/// **trois** comptes de TVA : chacun égal au compte qui porte son rôle.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn demo_designates_the_three_vat_accounts(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    let company_id = reach_demo(&app, &pool, &token).await;
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/company/invoice-settings"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+
+    let payable = role_account(&pool, company_id, "VatPayable").await;
+    let recoverable = role_account(&pool, company_id, "VatRecoverable").await;
+    let settlement = role_account(&pool, company_id, "VatSettlement").await;
+    assert_eq!(
+        body["defaultVatPayableAccountId"].as_i64(),
+        Some(payable),
+        "TVA due"
+    );
+    assert_eq!(
+        body["defaultVatRecoverableAccountId"].as_i64(),
+        Some(recoverable),
+        "impôt préalable"
+    );
+    assert_eq!(
+        body["defaultVatDecompteAccountId"].as_i64(),
+        Some(settlement),
+        "décompte TVA"
+    );
+}
