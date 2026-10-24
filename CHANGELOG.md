@@ -97,7 +97,6 @@ Le compose ne change pas (seuls ses commentaires et ceux de `.env.example` suive
   jamais renvoyer la demande. Si la réponse d'un import ne revient pas (délai dépassé, connexion coupée, proxy qui
   abandonne en 502 ou 504), l'écran le dit — « l'import a pu aboutir, reconnectez-vous pour vérifier » — au lieu
   d'inviter à recommencer un remplacement peut-être déjà fait.
-
 - **Chaîne d'outils portée à Rust 1.97.1**, sans effet fonctionnel : `rust-toolchain.toml` et l'image Docker de
   construction (`rust:1.97-bookworm`) suivent la même version, et un test du dépôt rougit désormais si l'une bouge sans
   l'autre ([#697](https://github.com/guycorbaz/kesh/issues/697)).
