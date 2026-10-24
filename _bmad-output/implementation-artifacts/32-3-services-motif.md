@@ -1019,3 +1019,21 @@ d'attention* ; `planning-artifacts/epic-32-spike-mcp.md` § 4.3, § 4.4, § 5.3.
   précédente ; celle-ci ne fait que retirer. La boucle n'est pas close (un MEDIUM appelle une passe de plus) :
   prompt de la P7, `323-validate-prompt-p7.md` (**ciblée**, une lentille, **Sonnet**, sur le seul diff de cette
   remédiation).
+
+### Validation P7 (2026-10-24, passe ciblée, une lentille — regression hunter —, Sonnet, sur `26731b29` ; rapport `kesh-gate-logs/323-validate-p7.md`)
+
+- **Résultat : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW**, tous nés de la remédiation P6. **La boucle de validation est
+  terminée** : P7 ne rend aucun finding au-dessus de LOW. Tendance des MEDIUM distincts : **P1 6 → P2 5 → P3 1 → P4 1
+  → P5 1 → P6 1 → P7 0** (modèles : Sonnet, Opus, Sonnet, Haiku, Sonnet, Haiku, Sonnet).
+- Les quatre LOW **ne sont pas appliqués au texte** — une remédiation écrite après la dernière passe ne serait relue
+  par personne (`CLAUDE.md`, *Review Iteration Rule*) — et se **recontrôlent à l'étape 0 du développement**, ligne lue
+  citée au Dev Agent Record :
+  - **P7-1** — l'entrée « Validation P6 » ci-dessus dit avoir atténué « l'AC1 et *Le motif* » : le diff `26731b29`
+    atténue en réalité deux annotations du Change Log (entrée P4 annotée et entrée P5). Relevé daté inexact à sa date,
+    corrigé par cette annotation, non réécrit.
+  - **P7-2** — l'AC1 garde « un précédent publié le contredit », plus affirmatif que « un seul précédent lu, non
+    compilé, suggère » : **à lire au développement comme ce dernier** ; l'essai T1 et M14 tranchent.
+  - **P7-3** — `config.rs` porte aussi `cookie_secure_tests` (l. 3134-3286, sous `#[cfg(test)]`) ; aucun `unsafe` hors
+    des modules de test (relu par la lentille) : l'énumération de l'AC1 est à compléter de lui à T1.
+  - **P7-4** — P6-3 (nommer la constante d'exceptions de la garde (v-1)) et P6-4 (M14 sur les deux attributs si
+    l'essai T1 les garde) font partie des tâches T1 et M14, bien qu'écrits seulement ici.
