@@ -105,7 +105,10 @@
 //!    l'écriture **et** le `SELECT … FOR UPDATE`, en autocommit comme dans une
 //!    transaction (erreur 1792, mesuré et figé par l'AC11 (c)). Branches non
 //!    atteintes par ces fixtures : pièce source présente, motifs de blocage de
-//!    la contre-passation et de la modification présents.
+//!    la contre-passation et de la modification présents, compte non lettrable
+//!    (refusé par `require_viewable_account` avant toute lecture des postes) et
+//!    contact portant des conditions de paiement (leur libellé est mis en forme
+//!    au handler, hors service).
 //!
 //! # Le rollout de la 32-4a — cinq lectures, sans trace
 //!

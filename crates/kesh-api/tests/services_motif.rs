@@ -1999,6 +1999,14 @@ fn attendus(liste: &[(&str, &str)]) -> Vec<(String, String)> {
 
 /// Ôte d'un corps ses commentaires : blocs `/* … */` (sur le corps entier,
 /// plusieurs lignes comprises), lignes de commentaire, fin de ligne après `//`.
+///
+/// ⚠️ **Limite** (revue de code P1 de la 32-4a, B4) : l'aide ne connaît pas
+/// les littéraux. Un `//` **dans une chaîne** (`"https://…"`) coupe la ligne
+/// comme un commentaire, si bien qu'un `state.pool` écrit après lui sur la même
+/// ligne échappe au détecteur ; de même, un `/*` dans une chaîne ouvrirait un
+/// bloc. Aucun des fichiers lus par les gardes (ii) et (iii) n'en porte avant
+/// un `state.pool` aujourd'hui (relevé de la revue) ; la limite est écrite
+/// aussi à la doc de `ac12_iii_inventaire_des_sites_non_resolus`.
 fn sans_commentaires(corps: &str) -> String {
     let blocs = regex::Regex::new(r"(?s)/\*.*?\*/").unwrap();
     let sans_blocs = blocs.replace_all(corps, " ");
@@ -2224,7 +2232,9 @@ fn ac12_temoins_du_detecteur_du_pool() {
 /// `impl AppState`, `(&state).pool`, `state.clone().pool` —, une macro à
 /// paramètre ident ; et, dans `accounts.rs`, une aide appelée par
 /// `list_accounts` (ce fichier porte légitimement `state.pool` hors de tout
-/// corps : il n'est pas compté au niveau du fichier).
+/// corps : il n'est pas compté au niveau du fichier) ; enfin, un `//` ou un
+/// `/*` dans une chaîne, avant un `state.pool` de la même ligne, que
+/// [`sans_commentaires`] prend pour un commentaire (revue de code P1, B4).
 #[test]
 fn ac12_iii_inventaire_des_sites_non_resolus() {
     let async_fn = regex::Regex::new(r"^\s*(pub(\([^)]*\))?\s+)?async\s+fn\b").unwrap();

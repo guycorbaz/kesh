@@ -10,7 +10,9 @@
 //!
 //! Fixtures **synthétiques** : `seed_accounting_company`, une écriture sur deux
 //! comptes lettrables (1000 et 2000 — aucun compte bancaire n'y est lié dans le
-//! seed), un contact.
+//! seed), un contact ; et, pour le chemin de succès des filtres et le tri par
+//! défaut du carnet (revue de code P1), trois écritures et quatre contacts que
+//! chaque filtre et chaque colonne de tri séparent.
 
 mod common;
 
@@ -672,7 +674,10 @@ fn message_de_validation<T: std::fmt::Debug>(r: &Result<T, AppError>) -> Result<
 
 /// AC10 (a) — les neuf refus de `ecritures::lister`, dans l'ordre d'avant la
 /// 32-4a, messages en entier (les quatre erreurs d'analyse comparées jusqu'à la
-/// parenthèse ouvrante incluse) ; un cas d'ordre ; une description blanche.
+/// parenthèse ouvrante incluse) ; deux cas d'ordre (date avant `accountId`,
+/// montants négatifs avant le contrôle croisé) ; un `accountId` négatif ; une
+/// description blanche. Le chemin de succès des filtres et l'égalité des
+/// bornes : `filtres_des_ecritures_par_la_route`.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac10_a_les_neuf_refus_de_la_liste_des_ecritures(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
@@ -778,6 +783,27 @@ async fn ac10_a_les_neuf_refus_de_la_liste_des_ecritures(pool: MySqlPool) {
             },
             "dateFrom invalide (",
             true,
+        ),
+        // Revue de code P1, B2 : un identifiant négatif (pas seulement 0), et
+        // les montants négatifs contrôlés avant le contrôle croisé.
+        (
+            "9 bis accountId négatif",
+            DemandeListeEcritures {
+                account_id: Some(-5),
+                ..d()
+            },
+            "accountId doit être un identifiant positif",
+            false,
+        ),
+        (
+            "ordre : amountMin=10 et amountMax=-5",
+            DemandeListeEcritures {
+                amount_min: s("10"),
+                amount_max: s("-5"),
+                ..d()
+            },
+            "amountMax ne peut pas être négatif",
+            false,
         ),
     ];
     let mut echecs = Vec::new();
@@ -1006,6 +1032,328 @@ async fn ac11_b_aucune_lecture_d_une_autre_societe(pool: MySqlPool) {
             "AC11 (b) carnet::lister : {:?}",
             autre.map(|p| p.page.total)
         )),
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// C-32-4a-6 — `ecritures::lister` ne lit **pas** la société : un contexte
+/// d'une société qui n'existe pas rend une page vide, non une erreur
+/// (`detail`, `postes_ouverts::lister` et les deux lectures du carnet, qui la
+/// lisent, rendent `Internal` — `ac9_c`). Revue de code P1, A3 = E3 : sans ce
+/// test, un `company_for_ids` ajouté en tête de `lister` laissait tout vert.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac11_b_la_liste_des_ecritures_ne_lit_pas_la_societe(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = Lecture::new(pool.clone());
+    let acces = mcp_societe(INEXISTANT, livres.s.admin_user_id, &TOUTES);
+    match ecritures::lister(&acces, &lecture, DemandeListeEcritures::default()).await {
+        Ok(p) if p.total == 0 && p.items.is_empty() => {}
+        autre => panic!(
+            "ecritures::lister sur une société inexistante : attendu une page vide, rendu {:?}",
+            autre.map(|p| p.total)
+        ),
+    }
+}
+
+// ============================================================
+// Revue de code P1 (B1 = E1 = E2, A4) — le chemin de succès des filtres
+// et le tri par défaut, par la route
+// ============================================================
+
+/// Une écriture synthétique à deux lignes : `montant` au débit de `debit`, au
+/// crédit de `credit`.
+#[allow(clippy::too_many_arguments)]
+async fn poser_ecriture(
+    pool: &MySqlPool,
+    s: &SeededCompany,
+    date: (i32, u32, u32),
+    journal: Journal,
+    description: &str,
+    debit: &str,
+    credit: &str,
+    montant: Decimal,
+) {
+    journal_entries::create(
+        pool,
+        s.fiscal_year_id,
+        s.admin_user_id,
+        NewJournalEntry {
+            company_id: s.company_id,
+            entry_date: NaiveDate::from_ymd_opt(date.0, date.1, date.2).unwrap(),
+            journal,
+            description: description.into(),
+            project_id: None,
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: s.accounts[debit],
+                    debit: montant,
+                    credit: Decimal::ZERO,
+                    project_id: None,
+                },
+                NewJournalEntryLine {
+                    account_id: s.accounts[credit],
+                    debit: Decimal::ZERO,
+                    credit: montant,
+                    project_id: None,
+                },
+            ],
+        },
+    )
+    .await
+    .expect("écriture synthétique");
+}
+
+/// Les libellés d'une page de `GET /api/v1/journal-entries`, en ensemble.
+fn libelles(corps: &Value) -> BTreeSet<String> {
+    corps["items"]
+        .as_array()
+        .map(|v| {
+            v.iter()
+                .filter_map(|e| e["description"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Chacun des filtres que `ecritures::lister` recopie vers
+/// `JournalEntryListQuery` — `description`, `accountId`, `amountMin`,
+/// `amountMax`, `dateFrom`, `dateTo`, `journal` —, seul, puis les bornes
+/// d'égalité (`dateFrom == dateTo`, `amountMin == amountMax`, acceptées) et
+/// l'inclusion des deux bornes, par la route : le handler, le service et le
+/// dépôt à la fois.
+///
+/// Fixture synthétique — trois écritures que chaque filtre sépare :
+/// « Loyer mars » (10.03.2026, Achats, 100, 4000 / 1000), « Vente comptoir »
+/// (20.03.2026, Ventes, 250, 1100 / 3000), « Frais bancaires » (05.04.2026,
+/// Banque, 40, 4000 / 1100). Chaque ligne de la table est choisie pour qu'une
+/// recopie perdue (`None`) ou deux bornes permutées rendent un autre ensemble,
+/// et qu'un contrôle croisé devenu strict (`>=`) rende un 400.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn filtres_des_ecritures_par_la_route(pool: MySqlPool) {
+    let s = societe(&pool).await;
+    poser_ecriture(
+        &pool,
+        &s,
+        (2026, 3, 10),
+        Journal::Achats,
+        "Loyer mars",
+        "4000",
+        "1000",
+        dec!(100),
+    )
+    .await;
+    poser_ecriture(
+        &pool,
+        &s,
+        (2026, 3, 20),
+        Journal::Ventes,
+        "Vente comptoir",
+        "1100",
+        "3000",
+        dec!(250),
+    )
+    .await;
+    poser_ecriture(
+        &pool,
+        &s,
+        (2026, 4, 5),
+        Journal::Banque,
+        "Frais bancaires",
+        "4000",
+        "1100",
+        dec!(40),
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(s.admin_user_id, "Consultation", s.company_id);
+
+    const L: &str = "Loyer mars";
+    const V: &str = "Vente comptoir";
+    const F: &str = "Frais bancaires";
+    let compte_ventes = s.accounts["3000"];
+    let table: Vec<(String, Vec<&str>)> = vec![
+        (String::new(), vec![L, V, F]),
+        ("description=Loyer".into(), vec![L]),
+        (format!("accountId={compte_ventes}"), vec![V]),
+        ("amountMin=200".into(), vec![V]),
+        ("amountMax=50".into(), vec![F]),
+        ("amountMin=250&amountMax=250".into(), vec![V]),
+        ("amountMin=40&amountMax=100".into(), vec![L, F]),
+        ("dateFrom=2026-03-15".into(), vec![V, F]),
+        ("dateTo=2026-03-15".into(), vec![L]),
+        ("dateFrom=2026-03-20&dateTo=2026-03-20".into(), vec![V]),
+        ("dateFrom=2026-03-10&dateTo=2026-03-20".into(), vec![L, V]),
+        ("journal=Ventes".into(), vec![V]),
+    ];
+    let mut echecs = Vec::new();
+    for (filtre, attendu) in table {
+        let chemin = format!("/api/v1/journal-entries?{filtre}");
+        let (statut, corps) = get_json(&app, &jwt, &chemin).await;
+        let attendu: BTreeSet<String> = attendu.iter().map(|x| x.to_string()).collect();
+        let rendu = libelles(&corps);
+        if statut != 200 || rendu != attendu || corps["total"] != attendu.len() {
+            echecs.push(format!(
+                "{chemin} : attendu 200 {attendu:?} ; rendu {statut} {rendu:?}, total {} — {}",
+                corps["total"], corps["error"]
+            ));
+        }
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// Un contact synthétique ; dates de création et de modification posées, pour
+/// que les trois colonnes de tri rendent trois ordres distincts.
+#[allow(clippy::too_many_arguments)]
+async fn poser_contact(
+    pool: &MySqlPool,
+    company_id: i64,
+    nom: &str,
+    type_: &str,
+    client: bool,
+    fournisseur: bool,
+    actif: bool,
+    cree: &str,
+    modifie: &str,
+) {
+    sqlx::query(
+        "INSERT INTO contacts (company_id, contact_type, name, is_client, is_supplier, active, \
+         created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(company_id)
+    .bind(type_)
+    .bind(nom)
+    .bind(client)
+    .bind(fournisseur)
+    .bind(actif)
+    .bind(cree)
+    .bind(modifie)
+    .execute(pool)
+    .await
+    .expect("contact synthétique");
+}
+
+/// Les noms d'une page de `GET /api/v1/contacts`, dans l'ordre rendu.
+fn noms(corps: &Value) -> Vec<String> {
+    corps["items"]
+        .as_array()
+        .map(|v| {
+            v.iter()
+                .filter_map(|c| c["name"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Le tri par défaut du carnet (AC6 : `sort_by` absent → `Name`, `sort_direction`
+/// absent → `Asc`, ce que reçoit le MCP), au service **et** par la route, puis
+/// la recopie, par le handler, de chacun des paramètres de `GET /api/v1/contacts`
+/// — `search`, `contactType`, `isClient`, `isSupplier`, `includeArchived`,
+/// `sortBy`, `sortDirection`.
+///
+/// Fixture synthétique — quatre contacts, dont l'ordre se distingue selon la
+/// colonne : nom (Alpha, Archivé, Mu, Zeta), création (Zeta, Mu, Alpha,
+/// Archivé), modification (Mu, Alpha, Zeta, Archivé) ; « Archivé SA » est
+/// inactif, client et fournisseur.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn tri_par_defaut_et_filtres_du_carnet(pool: MySqlPool) {
+    let s = societe(&pool).await;
+    let c = s.company_id;
+    poser_contact(
+        &pool,
+        c,
+        "Alpha SA",
+        "Entreprise",
+        true,
+        false,
+        true,
+        "2026-03-01 00:00:00",
+        "2026-01-20 00:00:00",
+    )
+    .await;
+    poser_contact(
+        &pool,
+        c,
+        "Mu Personne",
+        "Personne",
+        false,
+        false,
+        true,
+        "2026-02-01 00:00:00",
+        "2026-01-10 00:00:00",
+    )
+    .await;
+    poser_contact(
+        &pool,
+        c,
+        "Zeta SA",
+        "Entreprise",
+        false,
+        true,
+        true,
+        "2026-01-01 00:00:00",
+        "2026-01-30 00:00:00",
+    )
+    .await;
+    poser_contact(
+        &pool,
+        c,
+        "Archivé SA",
+        "Entreprise",
+        true,
+        true,
+        false,
+        "2026-04-01 00:00:00",
+        "2026-04-01 00:00:00",
+    )
+    .await;
+
+    const A: &str = "Alpha SA";
+    const M: &str = "Mu Personne";
+    const Z: &str = "Zeta SA";
+    const X: &str = "Archivé SA";
+    let mut echecs = Vec::new();
+
+    // Au service, demande vide : ce que reçoit l'outil MCP de la 32-9b.
+    let lecture = Lecture::new(pool.clone());
+    let acces = mcp_societe(c, s.admin_user_id, &[Portee::ContactsRead]);
+    match carnet::lister(&acces, &lecture, DemandeListeContacts::default()).await {
+        Ok(p) => {
+            let rendu: Vec<&str> = p.page.items.iter().map(|x| x.name.as_str()).collect();
+            if rendu != [A, M, Z] {
+                echecs.push(format!(
+                    "service, demande vide : attendu {:?}, rendu {rendu:?}",
+                    [A, M, Z]
+                ));
+            }
+        }
+        Err(e) => echecs.push(format!("service, demande vide : {e:?}")),
+    }
+
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(s.admin_user_id, "Consultation", c);
+    let table: Vec<(&str, Vec<&str>)> = vec![
+        ("", vec![A, M, Z]),
+        ("sortDirection=Desc", vec![Z, M, A]),
+        ("sortBy=CreatedAt", vec![Z, M, A]),
+        ("sortBy=CreatedAt&sortDirection=Desc", vec![A, M, Z]),
+        ("sortBy=UpdatedAt", vec![M, A, Z]),
+        ("isClient=true", vec![A]),
+        ("isClient=false", vec![M, Z]),
+        ("isSupplier=true", vec![Z]),
+        ("contactType=Personne", vec![M]),
+        ("search=Zeta", vec![Z]),
+        ("includeArchived=true", vec![A, X, M, Z]),
+    ];
+    for (filtre, attendu) in table {
+        let chemin = format!("/api/v1/contacts?{filtre}");
+        let (statut, corps) = get_json(&app, &jwt, &chemin).await;
+        let rendu = noms(&corps);
+        if statut != 200 || rendu != attendu || corps["total"] != attendu.len() {
+            echecs.push(format!(
+                "{chemin} : attendu 200 {attendu:?} ; rendu {statut} {rendu:?}, total {}",
+                corps["total"]
+            ));
+        }
     }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
 }
