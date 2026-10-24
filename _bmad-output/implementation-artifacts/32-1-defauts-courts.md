@@ -1407,6 +1407,16 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/
   (7 ignorés), Vitest 1911, E2E 315 / 7 KF-029 / 17 ignorés ; capture du refus en allemand, message du serveur ;
   CHANGELOG `[0.16.0] — Non publié` créé. Registre C-32-1-44 à C-32-1-48. Clé à `review` ; revue de code P1 (Sonnet,
   lentilles B, E, A) : `321d-review-prompt-p1.md`.
+- 2026-10-24 — **32-1d, revue de code P1** (Sonnet, trois lentilles, contexte frais ; rapports
+  `kesh-gate-logs/321d-review-p1-{B,E,A}.md`) : **B 0/0/0/1, E 0/0/0/2, A 0/0/0/0** — aucun finding au-dessus de LOW,
+  **revue terminée en une passe**. La lentille A recoupe AC-d1 à AC-d6, les deux rouges, M-d1 et M-d2, le gate complet
+  et l'E2E (révision `2deedf42`) contre les journaux. LOW distincts : deux. B1 = E1 (deux tests de `i18n_e2e.rs`
+  remettent la locale globale sans `get_i18n_lock`, flake possible en `cargo test` parallèle, antérieur) — **non
+  appliqué**, la boucle se clôt sur cette passe, **tracé sur [#736]** ; E2 (le type frontend `BackupSchedule` ne
+  déclare pas `lastSuccessInFuture`) — c'est le périmètre de la 32-1b (le bandeau lit le drapeau), pas d'issue.
+  Décompte « refus en français seul » recompté par l'orchestrateur aux deux bornes, commandes de la fiche : **145 →
+  144** (chaîne littérale), **101 → 101** (formatée) — le « 101 → 100 » de la lentille E venait d'une autre méthode.
+  Note A : « exit 0 » des journaux frontend `check` et `build` se lit au contenu, sans ligne `exit`. Clé à `done`.
 
 [#711]: https://github.com/guycorbaz/kesh/issues/711
 [#714]: https://github.com/guycorbaz/kesh/issues/714
@@ -1416,3 +1426,4 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie, 2026-10-24. Worktree `/home/gcorbaz/
 [#726]: https://github.com/guycorbaz/kesh/issues/726
 [#727]: https://github.com/guycorbaz/kesh/issues/727
 [#732]: https://github.com/guycorbaz/kesh/issues/732
+[#736]: https://github.com/guycorbaz/kesh/issues/736
