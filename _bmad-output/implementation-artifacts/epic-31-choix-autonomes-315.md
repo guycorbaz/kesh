@@ -321,3 +321,18 @@ Versé par union dans `epic-31-choix-autonomes.md` au merge.
   complets répétés étaient plus longs que les arguments qu'ils remplacent. Comportement identique (`AccountType` `Copy`).
 - **Écartée** : le chemin complet à chaque argument (conforme à la lettre, plus verbeux).
 - **Réversible** : oui (écart à la lettre de l'AC1, déclaré au Dev Agent Record).
+
+### C-31-5-26 — recette E2E d'un worktree : le défaut voisin est intégré, aucune issue (revue de code P1, 2026-10-24)
+
+- **Contexte** : le premier run E2E du développement (298 / 11 / 17 / 10 non exécutés) a rougi quatre specs qui
+  déposent ou lisent un fichier : le backend tournait sur des dossiers propres au worktree, le runner sur les défauts
+  `/tmp/kesh-e2e/{inbox,documents}` de `frontend/tests/e2e/helpers/inbox.ts`. Le Dev Agent Record en accusait
+  `docs/testing.md` et demandait une issue ; la revue de code P1 (A1, MEDIUM) a établi que `docs/testing.md`
+  l. 244-250 le disait déjà, et que seul `docs/agents-orchestration.md` § 4, point 2, le disait à moitié.
+- **Retenu** : le défaut voisin est intégré à la story — précision portée par l'orchestrateur au commit `adff757c`
+  (« des dossiers propres au worktree se passent au backend ET au runner ») ; le Dev Agent Record est annoté, non
+  réécrit ; `docs/agents-orchestration.md` entre à la File List ; **aucune issue n'est ouverte**, la documentation
+  n'ayant plus rien de faux à suivre.
+- **Écartée** : ouvrir l'issue demandée par le Record (elle aurait décrit un défaut absent de `docs/testing.md`, et
+  fait remonter le compte d'issues sans rien tracer de réel).
+- **Réversible** : oui (documentation seule).

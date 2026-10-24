@@ -3259,7 +3259,7 @@ Que faire ensuite dépend de la transaction~:
 
 La langue de la facture suit la langue de communication du client (champ \emph{Langue} du contact). Pour une facture ponctuelle dans une autre langue, vous pouvez forcer la langue dans le formulaire de création de facture.
 
-La communication du QR-code («~Facture F-…~», «~Rechnung F-…~») suit elle aussi la langue de la facture. Une facture émise avant la version 0.15.0 garde la sienne, en français, tant que son PDF n'est pas refigé.
+La communication du QR-code («~Facture F-…~», «~Rechnung F-…~») suit elle aussi la langue de la facture. Une facture dont le PDF a été \textbf{figé avant la version 0.15.0} (téléchargée ou envoyée par e-mail) garde la sienne, en français, tant que ce PDF n'est pas refigé ; une facture validée avant cette version mais jamais téléchargée ni envoyée prend la communication de sa langue à son premier PDF. Les \textbf{rappels}, produits à chaque envoi, portent toujours celle de la langue du client : le rappel d'une facture figée en français peut donc porter «~Rechnung F-…~». Le rapprochement bancaire n'en est pas touché : il lit le numéro de la facture, non le mot qui le précède.
 
 \subsection{Comment exporter mes données pour migration ?}
 

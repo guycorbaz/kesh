@@ -244,6 +244,11 @@ code commun), si bien qu'une passe de revue peut les lire un par un (C-31-5-1). 
     jusqu'à un refigeage ; aucune migration, aucun refigeage d'office. Manuel `user-manual.tex:3258` : ajouter que la
     communication du QR-code suit aussi la langue de la facture, et qu'une facture émise avant la 0.15.0 garde la
     sienne. PDF régénéré.
+    *Annotation du 2026-10-24, revue de code P1 (A2, B1, E4) : « émise avant la 0.15.0 » est trop large — seule une
+    facture dont le PDF est **déjà figé** garde « Facture » ; une facture validée mais jamais téléchargée ni envoyée
+    prend le préfixe de sa langue à son premier PDF, et ses rappels, régénérés à chaque envoi, portent toujours le
+    préfixe de la langue du client. Manuel (l. 3262) et CHANGELOG reformulés en conséquence ; la première phrase de
+    l'AC10 (« un PDF émis (figé) ») était juste.*
 
 ### D — #469 : les refus du journal d'audit sont traduits
 
@@ -568,6 +573,13 @@ CHANGELOG) et le commit de ce compte rendu, documentaires.
   Journal gardé : `315-e2e-run1-montage-incomplet.log`. Relancé, base remise à zéro, montage corrigé : voir ci-dessous.
   `docs/testing.md` (recette du terminal 2) ne nomme pas ces deux variables côté runner — la recette du `CLAUDE.md` non
   plus : **issue à ouvrir** (documentation de la recette E2E).
+  *⚠️ Annotation du 2026-10-24, revue de code P1 (finding A1, MEDIUM) : la phrase précédente est fausse.
+  `docs/testing.md` l. 244-250 (depuis la Story 30-2a) dit que le runner lit `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`
+  avec pour défauts ceux de la recette, et qu'un backend lancé avec d'autres dossiers exige de passer les mêmes
+  valeurs au runner. Le run 1 venait d'un backend lancé sur des dossiers propres au worktree, non passés au runner :
+  la recette était juste, le défaut était dans `docs/agents-orchestration.md` § 4, point 2 (montage E2E), qui ne
+  disait la chose qu'à moitié — précisé par l'orchestrateur au commit `adff757c`, défaut voisin intégré (C-31-5-26).
+  **Aucune issue n'est à ouvrir.***
 
 **Mutations** (`315-mutations.log`, un journal `315-mut-<id>.log` chacune ; appliquées par Edit sur motif unique,
 rejouées sous verrou, restaurées par `git checkout -- f && touch f`, diff résiduel 0) :
@@ -583,6 +595,13 @@ rejouées sous verrou, restaurées par `git checkout -- f && touch f`, diff rés
 | M7a | filtre de type neutralisé | **tuée** : `vat_role_accounts_reject_payable_of_wrong_type` |
 | M7b | filtre `postable` neutralisé | **tuée** : `vat_role_accounts_reject_non_postable_recoverable` |
 | M8 | la finalisation production désigne la TVA | **tuée** : `full_path_b_flow` (« TVA due non désignée en production », `left: Some(40)`) |
+
+*Annotation du 2026-10-24, revue de code P1 (finding A4, LOW) : M1 figure deux fois dans `315-mutations.log` pour
+**une seule exécution**. M1 est une mutation Vitest, jouée à la main avant l'écriture du script `315-mut-run.sh`
+(07:11:25), qui ne sait lancer que `cargo nextest` ; `315-mut-M1.log` ne porte qu'un run (`Start at 07:11:00`, un
+seul résumé `1 failed | 28 passed (29)`). La première ligne est l'extrait brut du journal (signe `×`, apostrophe
+typographique, durée `20ms`), la seconde sa recopie normalisée, ajoutée par erreur à côté au lieu de la remplacer.
+Les deux décrivent le même rouge ; le journal, relevé daté, n'est pas réécrit.*
 
 **Tests ajoutés** — recomptés aux deux bornes (`git show origin/main:<f> | grep -cE '#\[(sqlx::)?test'` contre le
 fichier à `HEAD`, `it(` pour Vitest), périmètre `origin/main` (`e71cd351`) → `HEAD` : `onboarding_e2e.rs` 14 → 16 (+2),
@@ -628,6 +647,8 @@ récent et encore clôturé. » ; 2026 — actif, sans `title`.
 
 **Issues à ouvrir** (demandées à l'orchestrateur) : recette E2E — `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR` à passer
 aussi au runner (`docs/testing.md`, `CLAUDE.md`).
+*Annotation du 2026-10-24, revue de code P1 (A1) : demande retirée — `docs/testing.md` le disait déjà ; la précision
+manquante était dans `docs/agents-orchestration.md` § 4, portée par `adff757c` (C-31-5-26). Aucune issue à ouvrir.*
 
 ### File List
 
@@ -648,10 +669,11 @@ aussi au runner (`docs/testing.md`, `CLAUDE.md`).
 - `frontend/src/routes/(app)/settings/fiscal-years/fiscal-years-page.test.ts`
 - `frontend/src/lib/features/fiscal-years/fiscal-years.helpers.ts`
 - `docs/MULTI-TENANT-SCOPING-PATTERNS.md`
+- `docs/agents-orchestration.md` (§ 4, point 2 — commit `adff757c` de l'orchestrateur, défaut voisin intégré, C-31-5-26)
 - `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
 - `CHANGELOG.md`
 - `_bmad-output/implementation-artifacts/31-5-defauts-courts.md`, `epic-31-choix-autonomes-315.md`,
-  `315-review-prompt-p1.md`, `sprint-status.yaml`
+  `315-review-prompt-p1.md`, `315-review-prompt-p2.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -767,3 +789,40 @@ aussi au runner (`docs/testing.md`, `CLAUDE.md`).
   M1-M8 (M4 équivalente, les huit autres tuées) ; gate complet backend 3915/3915, frontend 1867/1867, E2E 312 / 7 KF-029
   / 17 ignorés au dernier commit de code ; choix C-31-5-23 à 25 ; statut `review`. Revue de code P1 à lancer
   (`315-review-prompt-p1.md`, Sonnet, lentilles B, E, A).
+- 2026-10-24 — **Revue de code P1** (Sonnet, trois lentilles en contexte frais, lecture seule ; rapports hors dépôt
+  `kesh-gate-logs/315-review-p1-{B,E,A}.md`). Lentille B : 0 CRITICAL / 0 HIGH / 0 MEDIUM / 3 LOW (B1-B3). Lentille E :
+  0 / 0 / 0 / 7 LOW (E1-E7). Lentille A : 0 / 0 / 1 MEDIUM (A1) / 3 LOW (A2-A4). Recoupements : B1 = E4 (même constat,
+  facture figée et rappel) et rejoint A2 ; B3 = E3. Aucun défaut de code de production. Remédiation **documentaire
+  seulement** (aucune ligne de `crates/`, `frontend/src/` ni des tests), chaque affirmation revérifiée avant écriture :
+  - **A1** (MEDIUM, Record faux sur `docs/testing.md`) — corrigé par annotation datée des deux paragraphes du Record
+    (premier run E2E, *Issues à ouvrir*) : `docs/testing.md` l. 244-250 disait déjà que le runner reçoit les mêmes
+    dossiers que le backend ; le défaut était dans `docs/agents-orchestration.md` § 4, point 2, précisé par
+    l'orchestrateur (`adff757c`) ; fichier ajouté à la File List ; demande d'issue retirée (C-31-5-26).
+  - **A2** (LOW), avec la partie documentaire de **B1/E4** — vérifié au code (`issued_invoice_pdf.rs` : un PDF figé est
+    servi tel quel, `get_or_freeze` l. 95-105 ; une facture non figée est rendue au premier PDF par le code courant ;
+    les rappels, `PdfDocument::Reminder`, sont rendus à chaque envoi, `invoice_email.rs:566`, `:1266`) : manuel
+    (`user-manual.tex` l. 3262) et CHANGELOG (l. 64) visent désormais la facture **dont le PDF est déjà figé**, disent
+    qu'une facture validée mais jamais téléchargée ni envoyée prend le préfixe de sa langue, et que ses rappels portent
+    celui de la langue du client ; AC10 annotée. `make fr` sous verrou (`315-make-fr-p1.log`) : seul `user-manual.pdf`
+    reconstruit (2 passes, stable), `admin-manual.pdf` et `marketing-brochure.pdf` inchangés. PDF aplati : 0 `??` ;
+    « figé avant la version 0.15.0 » 1, « portent toujours celle de la langue du client » 1, « peut donc porter
+    « Rechnung F-… » » 1, « non le mot qui le précède » 1, « suit elle aussi la langue de la facture » 1, « émise
+    avant la version 0.15.0 » 0 ; la phrase « …jamais téléchargée ni envoyée prend la communication de sa / langue à
+    son premier PDF » est coupée par un saut de page (pied de page entre les deux), chacune de ses deux moitiés présente.
+  - **A4** (LOW, M1 écrit deux fois) — expliqué au Record (annotation sous le tableau des mutations) : une seule
+    exécution, deux lignes (extrait brut et recopie normalisée).
+  - **A3** (LOW, trois commits sans `refs`) — sans effet au squash ; à rappeler au titre de la PR. Non traité ici
+    (réécrire des commits poussés ou non n'est pas de la remédiation documentaire).
+  - **Non traités, tracés** : B1-commentaire (commentaire de `invoice_pdf_service.rs`, du code), B2, B3 = E3, E1, E2,
+    E5, E6, E7 — liste exacte, avec fichier et ligne, dans `kesh-gate-logs/315-low-residuels.md`, pour une issue que
+    l'orchestrateur ouvrira (règle « on trace toujours »).
+  - Propagation : `émise avant`, `garde sa communication`, `garde la sienne`, `issue à ouvrir`, `Issues à ouvrir`,
+    `recette E2E` grepés dans le dépôt (code, fiche, registre, manuel, CHANGELOG, `website/`) ; restent l'AC10
+    (annotée) et les relevés datés du Record (annotés, non réécrits).
+  - **Gate ciblé** (sous verrou, `kesh_315`, cible du worktree, `scripts/mem-guard.sh`, `315-review-p1-gate.log`) :
+    `cargo fmt --all -- --check` vert, `cargo clippy --workspace --all-targets -- -D warnings` vert,
+    `cargo nextest run -E 'binary(textes_coherents) | binary(configuration_transmise)'` **47 exécutés, 47 passés**
+    (17 + 30). Ni gate complet ni E2E rejoués : aucun code n'a changé depuis le dernier commit de code (`4a35ec1c`).
+  - La passe a rendu un MEDIUM : une passe P2 suit — **ciblée** (Haiku, une lentille *regression hunter*, sur le seul
+    diff aplati `adff757c..HEAD`, manuel et PDF nommés, `315-review-prompt-p2.md`) ; la boucle ne se clôt que sur une
+    passe sans finding au-dessus de LOW.
