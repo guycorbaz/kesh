@@ -187,7 +187,7 @@ Si vous souhaitez \textbf{tester Kesh sans données réelles}, choisissez le mod
 
 \textbf{Rien d'autre} : aucun contact, aucun produit, aucune écriture. Les listes sont vides~; c'est à vous de saisir les données sur lesquelles vous voulez essayer Kesh.
 
-Vous pouvez librement créer, modifier, supprimer des données dans ce mode. L'installation ne porte qu'une société~: pour passer en mode production, réinitialisez-la par le bouton \emph{Réinitialiser pour la production} de la bannière de démonstration, qui ramène l'assistant au début. ⚠️ \emph{Ce bouton n'agit que si l'administrateur de l'installation l'a autorisé au préalable} (variable \texttt{KESH\_PRODUCTION\_RESET}, voir le manuel d'administration)~: sans cette autorisation, la réinitialisation est refusée, \textbf{même à un administrateur}. Elle vide \textbf{toutes} les données de la société --- y compris ce que vous avez saisi pendant l'exploration --- et \textbf{conserve} les utilisateurs et les clés d'API.
+Vous pouvez librement créer, modifier, supprimer des données dans ce mode. L'installation ne porte qu'une société~: pour passer en mode production, réinitialisez-la par le bouton \emph{Réinitialiser pour la production} de la bannière de démonstration, qui ramène l'assistant au début. \keshAttention\ \emph{Ce bouton n'agit que si l'administrateur de l'installation l'a autorisé au préalable} (variable \texttt{KESH\_PRODUCTION\_RESET}, voir le manuel d'administration)~: sans cette autorisation, la réinitialisation est refusée, \textbf{même à un administrateur}. Elle vide \textbf{toutes} les données de la société --- y compris ce que vous avez saisi pendant l'exploration --- et \textbf{conserve} les utilisateurs et les clés d'API.
 
 \subsection{Chemin B — Mode production}
 
@@ -892,7 +892,7 @@ La génération n'est disponible que tant que la société ne contient \textbf{a
 Une fois l'ouverture générée, l'écran passe en mode \emph{compléter}~: sous le rappel de ce qui a été généré, il propose les comptes de bilan --- actifs et passifs --- \textbf{jamais mouvementés}~: en service, imputables, sans aucune ligne d'écriture dans aucun exercice. Il faut pour cela un compte de rôle \emph{Bénéfice/perte reporté} en service et imputable et, pour une régularisation, un exercice ouvert qui couvre la date du jour~; à défaut, l'écran dit ce qui manque. Saisissez le solde des seuls comptes oubliés, puis \emph{Compléter}~: Kesh crée une écriture OD «~Complément des soldes de départ~», dont il \textbf{calcule lui-même la contrepartie} sur le compte de rôle \emph{Bénéfice/perte reporté}~: elle équilibre l'ensemble des lignes saisies --- au crédit quand leurs débits l'emportent (un actif oublié, saisi au débit), au débit dans le cas contraire (un passif, saisi au crédit). Si les lignes saisies s'équilibrent entre elles, il n'y a pas de contrepartie.
 
 \begin{itemize}
-    \item \textbf{La date.} Si votre premier exercice est encore ouvert et que son premier jour n'est pas dans la période verrouillée, le complément est daté de ce premier jour~: le compte oublié faisait partie de l'ouverture, et les soldes d'ouverture --- donc tout rapport déjà tiré sur cet exercice --- en sont modifiés. Si un exercice suivant est déjà clôturé --- ce qui ne se rencontre plus qu'avec des données antérieures à la v0.13.0, les exercices se clôturant désormais dans l'ordre ---, le complément est \textbf{refusé} tant qu'il l'est (\S\ref{sec:exercices-desordre})~: il changerait son bilan reporté. ⚠️ L'écran ne le prévoit pas et propose le complément~; le refus vient à l'enregistrement, et nomme l'exercice clôturé. Sinon, le complément est une \textbf{régularisation datée du jour}, dans l'exercice ouvert qui couvre cette date. La date annoncée par l'écran est indicative~; elle est confirmée à l'enregistrement.
+    \item \textbf{La date.} Si votre premier exercice est encore ouvert et que son premier jour n'est pas dans la période verrouillée, le complément est daté de ce premier jour~: le compte oublié faisait partie de l'ouverture, et les soldes d'ouverture --- donc tout rapport déjà tiré sur cet exercice --- en sont modifiés. Si un exercice suivant est déjà clôturé --- ce qui ne se rencontre plus qu'avec des données antérieures à la v0.13.0, les exercices se clôturant désormais dans l'ordre ---, le complément est \textbf{refusé} tant qu'il l'est (\S\ref{sec:exercices-desordre})~: il changerait son bilan reporté. \keshAttention\ L'écran ne le prévoit pas et propose le complément~; le refus vient à l'enregistrement, et nomme l'exercice clôturé. Sinon, le complément est une \textbf{régularisation datée du jour}, dans l'exercice ouvert qui couvre cette date. La date annoncée par l'écran est indicative~; elle est confirmée à l'enregistrement.
     \item \textbf{Le jour est celui du serveur, en temps universel}~: entre minuit et une ou deux heures du matin, heure suisse, c'est encore la veille --- le 1\textsuperscript{er} janvier, une régularisation peut tomber dans l'exercice précédent, ou être refusée s'il est clôturé.
     \item \textbf{La numérotation.} Daté du premier jour, le complément porte pourtant le numéro suivant du journal~: dans cet exercice, l'ordre des numéros cesse de suivre l'ordre des dates.
 \end{itemize}
@@ -1153,7 +1153,7 @@ Le PDF d'une facture est produit \textbf{une seule fois} : au premier téléchar
     \item \textbf{Modifier ensuite} vos coordonnées, l'adresse, le numéro ou la langue du client, ou la mise en page, \textbf{ne change pas} une facture déjà émise : seules les factures non encore figées en tiennent compte. C'est ce qui permet de reproduire, des années plus tard, la copie exacte de la pièce envoyée.
     \item \textbf{Qui que ce soit} qui télécharge le premier --- y compris un utilisateur en consultation ou une clé d'API en lecture --- fige le document : une pièce sortie de Kesh est figée. Le gel est inscrit au \textbf{journal d'audit}, avec l'empreinte et le nom de qui l'a déclenché.
     \item Une facture \textbf{annulée par un avoir} garde le PDF qu'elle a émis, et la fiche continue de le proposer. Ce PDF ne porte pas de mention d'annulation : c'est l'avoir qui la porte. Une facture annulée dont le PDF n'a \textbf{jamais été figé} --- jamais téléchargée ni envoyée, ou envoyée seulement avant la v0.12.1 --- n'a pas de PDF.
-    \item Une facture validée \textbf{avant la version v0.12.1} est figée à son prochain téléchargement, avec les données du moment : ses PDF antérieurs n'avaient pas été conservés. ⚠️ Si elle avait déjà été envoyée, le document figé \textbf{n'est pas forcément celui que le client a reçu} --- la date de la mention \emph{Document figé le} est alors postérieure à celle de l'envoi.
+    \item Une facture validée \textbf{avant la version v0.12.1} est figée à son prochain téléchargement, avec les données du moment : ses PDF antérieurs n'avaient pas été conservés. \keshAttention\ Si elle avait déjà été envoyée, le document figé \textbf{n'est pas forcément celui que le client a reçu} --- la date de la mention \emph{Document figé le} est alors postérieure à celle de l'envoi.
     \item La \textbf{restauration d'une sauvegarde} antérieure au gel ramène la facture à l'état non figé : son prochain téléchargement figera un \textbf{nouveau} document. L'ancien reste dans le répertoire des documents, et son empreinte au journal d'audit.
     \item La \textbf{dévalidation} détache le document figé (son empreinte reste au journal d'audit) ; la revalidation en figera un nouveau au premier téléchargement.
     \item Les \textbf{rappels}, eux, sont produits à chaque envoi (cf. \S\ref{sec:relances-user}) : seul le PDF de la facture est figé.
@@ -1531,7 +1531,7 @@ Le refus \textbf{nomme toujours son motif}~:
           recouvrement~;
     \item facture \textbf{envoyée au client} par Kesh~: refus \textbf{sec}, que rien ne lève. Une
           facture que le client détient se corrige par un \textbf{avoir} (\S\ref{sec:avoirs}).
-          ⚠️ Kesh ne connaît que ce qu'il a envoyé lui-même~: un PDF téléchargé puis transmis à la
+          \keshAttention\ Kesh ne connaît que ce qu'il a envoyé lui-même~: un PDF téléchargé puis transmis à la
           main ne bloque pas la dévalidation. Son premier téléchargement est bien inscrit au
           journal d'audit (gel du document, cf. \S\ref{sec:pdf-fige}), et la dévalidation
           \textbf{détache} ce document~: celui que vous avez transmis reste valable, mais n'est plus
@@ -2493,7 +2493,7 @@ raison~:
           ou d'une sauvegarde restaurée~;
     \item \textbf{l'exercice de l'écriture du rapprochement est clôturé}~: un administrateur
           doit d'abord rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le
-          plus récent. ⚠️ C'est l'exercice du \textbf{paiement} qui compte, jamais
+          plus récent. \keshAttention\ C'est l'exercice du \textbf{paiement} qui compte, jamais
           celui de la facture~: une facture de décembre dont l'exercice est clôturé, payée en
           janvier, se rapproche et se dé-rapproche normalement~;
     \item \textbf{le lettrage de la facture est figé par une période close}~: ce rapprochement
@@ -3030,7 +3030,7 @@ fuite), le \textbf{registre des utilisateurs} (sans perte~: chaque entrée du jo
 porte le nom de son auteur \emph{au moment de l'écriture}), les \textbf{gabarits d'e-mail} et
 l'\textbf{état d'installation} (configuration, non comptabilité).
 
-⚠️ Les \textbf{pièces justificatives} --- les fichiers eux-mêmes --- ne sont \textbf{pas encore}
+\keshAttention\ Les \textbf{pièces justificatives} --- les fichiers eux-mêmes --- ne sont \textbf{pas encore}
 incluses. Le chemin de chaque pièce figure dans \texttt{imported\_supplier\_invoices.csv}, mais
 le document doit être sauvegardé séparément. Il en va de même des \textbf{PDF des factures
 émises} (\S\ref{sec:pdf-fige}) : \texttt{invoices.csv} porte leur empreinte, la date et la langue
@@ -3111,7 +3111,7 @@ imports, réconciliations, exports, gestion des utilisateurs, modification de
 la société et la configuration initiale de l'installation — avec l'auteur,
 l'horodatage et le contexte.
 
-⚠️ \textbf{Une famille d'opérations n'y figure pas encore} : les \emph{gestes de
+\keshAttention\ \textbf{Une famille d'opérations n'y figure pas encore} : les \emph{gestes de
 session} --- connexion, déconnexion, changement de votre propre mot de passe. C'est
 un manque connu et suivi, pas un oubli.
 
@@ -3183,7 +3183,7 @@ démonstration} s'inscrit en \textbf{une seule entrée} (\emph{Données de
 démonstration chargées}, type \emph{Installation}), suivie de l'étape franchie~;
 son détail donne la société, le nombre de comptes créés, l'exercice, le nombre de
 taux de TVA créés et si les réglages de facturation l'ont été. Les données
-elles-mêmes n'ont pas d'entrée chacune. ⚠️ \emph{Cette entrée n'est écrite que
+elles-mêmes n'ont pas d'entrée chacune. \keshAttention\ \emph{Cette entrée n'est écrite que
 lorsque le chargement aboutit.} Un chargement interrompu peut laisser une partie
 des données de démonstration --- la société renommée, le plan comptable,
 l'exercice --- \textbf{sans entrée au journal}, et un nouveau chargement échoue
@@ -3375,7 +3375,7 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[Grand-livre] Ensemble des comptes individuels reprenant toutes les écritures qui les concernent.
     \item[IDE] Identifiant Unique des Entreprises (Suisse), format CHE-XXX.XXX.XXX.
     \item[Journal] Enregistrement chronologique de toutes les écritures comptables.
-    \item[Journal d'audit (angl. audit log)] Registre des modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. ⚠️ \emph{La couverture n'est pas totale --- voir la section «~Traçabilité~» pour la famille d'opérations qui n'y figure pas encore (les gestes de session).} Il se consulte à l'écran, \emph{Administration} → \emph{Journal d'audit} (\S\ref{sec:tracabilite}). À ne pas confondre avec le \emph{journal} des écritures, ci-dessus. Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service.
+    \item[Journal d'audit (angl. audit log)] Registre des modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. \keshAttention\ \emph{La couverture n'est pas totale --- voir la section «~Traçabilité~» pour la famille d'opérations qui n'y figure pas encore (les gestes de session).} Il se consulte à l'écran, \emph{Administration} → \emph{Journal d'audit} (\S\ref{sec:tracabilite}). À ne pas confondre avec le \emph{journal} des écritures, ci-dessus. Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service.
     \item[Lettrage] Marque posée sur des lignes d'un même compte d'actif ou de passif dont la
           somme est nulle, pour dire qu'elles se soldent entre elles (une écriture et sa
           contre-passation, un acompte et sa reprise\ldots). Le lettrage manuel, les

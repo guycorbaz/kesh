@@ -1,6 +1,6 @@
 # Epic 32 — registre des choix autonomes de la Story 32-1 (défauts courts, clés 32-1a, 32-1b, 32-1c, 32-1d)
 
-Registre propre à la story (C-32-1-1 à C-32-1-38 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage de la 32-1b, C-32-1-38 de la validation P3), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
+Registre propre à la story (C-32-1-1 à C-32-1-43 ; C-32-1-20 à 28 de la validation P1, C-32-1-29 à 36 de la validation P2, C-32-1-37 du découpage de la 32-1b, C-32-1-38 de la validation P3, C-32-1-39 du développement de la 32-1a, C-32-1-40 et 41 du développement de la 32-1c, C-32-1-42 et 43 de sa revue de code P1 — ces quatre-là numérotés C-32-1-39 à 42 jusqu'à la fusion de `main` du 2026-10-24, où ils ont été décalés d'un rang, C-32-1-39 étant déjà porté par la 32-1a fusionnée ; les prompts versionnés `321c-review-prompt-p1.md` et `-p2.md` gardent l'ancienne numérotation), à verser **par union** dans `epic-32-choix-autonomes.md` au merge
 (`docs/agents-orchestration.md` § 1). Fiche : `32-1-defauts-courts.md`. Clé courte : `321`.
 Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` sur `chore/kickoff-epic-32` (`6f0cee00`).
 
@@ -644,6 +644,70 @@ Rédigé le 2026-10-24 (Opus 5.5), worktree `kesh-32-1`, branche `story/32-1` su
   une variante de message pour le 200 illisible (F10) — une clé de plus pour un cas rare.
 - **Réversible** : oui — l'AC-a11 peut revenir tant que la 32-1a n'est pas développée, et #727 le porte d'ici là.
 
+### C-32-1-40 — 32-1c : le `literate` des listings ne prend pas, repli ASCII dans les deux scripts d'exemple
+
+- **Contexte** (développement de la 32-1c, 2026-10-24) : l'AC-c7 prescrivait `literate={✓}{{+}}1 {✗}{{x}}1 {═}{{=}}1`
+  au style `kesh`, avec un repli écrit si le compte de U+FFFD le démentait. Après `make fr`, le manuel d'administration
+  rendait encore **9** U+FFFD — exactement les neuf signes des deux scripts d'exemple ; les replis d'icônes et la macro
+  `\keshAttention` avaient porté les deux autres PDF à 0. Sous XeLaTeX, `listings` ne traite pas les caractères au-delà
+  de U+00FF : le `literate` sur eux ne remplace rien.
+- **Retenu** : le repli que la fiche prescrit — les neuf signes écrits en ASCII dans les deux scripts (`+`, `x`, `=`),
+  hors `sec:repetition-cloture` ; le `literate`, inopérant, est **retiré** du `.sty` et remplacé par un commentaire qui
+  dit pourquoi (un réglage qui ne fait rien et paraît fonctionner est le pire des deux). Après reconstruction :
+  administration **0** U+FFFD.
+- **Écartées** : garder le `literate` « pour le jour où » (code mort qui paraît actif) ; `extendedchars`/`inputencoding`
+  (sans effet sur des caractères hors de l'octet sous XeTeX) ; changer la police des listings (hors périmètre, effet sur
+  tous les listings).
+- **Réversible** : oui — trois lignes de `.tex` et un commentaire du `.sty`.
+
+### C-32-1-41 — 32-1c : trois `\needspace` de plus, pour qu'aucun listing de la sous-section ne soit coupé
+
+- **Contexte** : l'AC-c6 exige, au contrôle du PDF, qu'« aucun listing de la sous-section » ne soit coupé. Le PDF de la
+  base de la branche (`c03d3a5f`) en coupait **déjà deux** (contrôle 1, p. 54→55 ; contrôle 7, p. 57→58), sans lien
+  avec la 32-1c ; l'en-tête de la sous-section dit aussi que le PDF ne doit pas couper ses listings.
+- **Retenu** : `\needspace{12\baselineskip}` avant les listings des contrôles 1 et 7 ; le décalage coupant alors celui
+  du contrôle 4, `\needspace{9\baselineskip}` avant lui. Aucune ligne d'aucun listing ne change (`git diff` des
+  `lstlisting` de la sous-section vide, AC-c9) ; contrôle page par page au `pdftotext -layout` (haut et bas de chaque
+  page de 53 à 67) : aucune coupure.
+- **Écartées** : laisser les deux coupures préexistantes (l'AC ne serait pas tenue) ; un `\needspace` devant chacun des
+  vingt-deux listings (bruit, et une page presque vide à chaque fois).
+- **Réversible** : oui — trois lignes. *Limite* : un `\needspace` tient la mise en page **d'aujourd'hui** ; une
+  phrase ajoutée plus haut peut déplacer une coupure — le contrôle se refait à chaque régénération.
+
+### C-32-1-42 — 32-1c, revue de code P1 : B1 réfuté à la lettre, le renvoi précisé plutôt que retourné
+
+- **Contexte** (remédiation P1, 2026-10-24) : B1 (LOW) lisait « le `ls -d /var/tmp/kesh-repetition-*` écrit plus
+  haut » comme un renvoi faux, le seul `ls -d` étant selon lui au cas *Reste d'une répétition antérieure*, plus bas.
+  Faux à la lettre : la commande est écrite **plus haut**, en tête du contrôle final (`admin-manual.tex`, paragraphe
+  *Le contrôle final* : « `ls -d /var/tmp/kesh-repetition-*` montre les dossiers qui restent ») — la lentille A l'avait
+  relevé (« Le `ls -d` est bien écrit plus haut »).
+- **Retenu** : garder « plus haut », et lever l'ambiguïté qui a égaré B1 : « écrit plus haut, en tête de ce
+  contrôle ». Aucune commande ne change.
+- **Écartées** : « plus bas » (prescrit par la consigne de remédiation, sur la foi de B1) — il aurait rendu le renvoi
+  faux ; supprimer le renvoi (il dit où regarder).
+- **Réversible** : oui — quatre mots.
+
+### C-32-1-43 — 32-1c, revue de code P1 : `\Needspace` (exact) avant l'item, à la place du `\needspace` (approché) avant le listing
+
+- **Contexte** : A3 = E2 demandaient l'amorce et le listing des contrôles 1, 4 et 8 sur une même page, B5 un garde
+  placé avant l'amorce, E1 la commande Synology (étape 6) d'un seul tenant. Premier essai : `\needspace{…}` avant
+  l'item, en gardant les `\needspace` posés devant les listings (C-32-1-41). Résultat au `pdftotext -layout` : la page
+  qui commence par l'item 1 s'arrête après son texte, le listing partant seul à la page suivante. Cause, lue dans
+  `needspace.sty` (v1.3e) : `\needspace` n'est qu'**approché** — de la colle et un `\penalty -100` qui offrent un point
+  de coupure avantageux, choisi même quand la place suffit ; `\Needspace` compare `\pagegoal` à `\pagetotal` et ne coupe
+  que si la place manque.
+- **Retenu** : `\Needspace` avant les items 1 (23 lignes), 4 (15) et 8 (24), les trois `\needspace` intérieurs retirés
+  (contrôles 1 et 4, posés par la 32-1c ; contrôle 8, `\needspace{19}` antérieur) ; `\Needspace` avant le paragraphe qui
+  porte l'amorce « Sans sudo : » (18) et celui du troisième listing (13), à la place des deux `\needspace` posés entre
+  l'amorce et le listing ; `\Needspace{6}` avant l'étape 6 de la restauration Synology. La régénération déplaçait une
+  coupure de la p. 76→77 (le listing `SELECT … information_schema.TABLES`, qui succédait à celle du listing
+  `ALTER TABLE contact_persons`, déjà coupé au PDF de la base) : `\Needspace{6}` et `{4}` devant ces deux listings.
+  Les `\needspace` de « Ou, avec sudo : » (AC-c6), du contrôle 7 et du *Contrôle final* restent : ils tiennent.
+- **Écartées** : garder les deux formes empilées (c'est elles qui ont coupé la page) ; agrandir les `\needspace`
+  intérieurs (même défaut, plus grand) ; corriger les douze coupures antérieures hors sous-section (p. 12, 14 à 17, 21,
+  36, 44, 50, 104, 125, 126 — présentes au PDF de la base, hors du périmètre de la 32-1c, relevées pour #731).
+- **Réversible** : oui — huit gardes. *Limite* : celle de C-32-1-41, inchangée — la garde tient la mise en page du jour ;
+  #731 porte le contrôle outillé qui manque.
 *C-32-1-39 : développement de la 32-1a (Opus 5.5, 2026-10-24).*
 
 ### C-32-1-39 — 32-1a : forme de la sonde de `TestEnv`, variante de M-a4, journal des mutations

@@ -32,14 +32,17 @@
 
 % Icônes textuelles simples (compatibles toutes polices, look minimaliste moderne)
 % Remplace fontawesome5 (non disponible par défaut sur tous les TeX Live)
+% Chaque repli est un signe que TeX Gyre Heros possède : ✓ (U+2713) et ⇄ (U+21C4), replis
+% d'origine de \faCheckCircle et \faExchangeAlt, n'y ont pas de glyphe et sortaient du PDF
+% en U+FFFD (Story 32-1c, #714 : `pdftotext <pdf> - | grep -o $'\xef\xbf\xbd' | wc -l`).
 \providecommand{\faInfoCircle}{\textbf{i}}
 \providecommand{\faLightbulb}{\textbf{!}}
 \providecommand{\faExclamationTriangle}{\textbf{!}}
 \providecommand{\faRadiation}{\textbf{X}}
-\providecommand{\faCheckCircle}{\textbf{✓}}
+\providecommand{\faCheckCircle}{\textbf{+}}
 \providecommand{\faUniversity}{\textbf{§}}
 \providecommand{\faQrcode}{\textbf{::}}
-\providecommand{\faExchangeAlt}{\textbf{⇄}}
+\providecommand{\faExchangeAlt}{\textbf{→}}
 \providecommand{\faLanguage}{\textbf{A/B}}
 \providecommand{\faLock}{\textbf{[lock]}}
 \providecommand{\faUsers}{\textbf{[users]}}
@@ -48,6 +51,11 @@
 \providecommand{\faHandshake}{\textbf{[deal]}}
 \providecommand{\faBalanceScale}{\textbf{[fid]}}
 \providecommand{\faCog}{\textbf{[cfg]}}
+
+% Signe d'avertissement du texte courant. Le caractère ⚠️ (U+26A0 suivi de U+FE0F) n'a pas
+% de glyphe dans TeX Gyre Heros et ne s'imprimait pas (Story 32-1c, #714). Sans argument, la
+% macro avale l'espace qui la suit : s'écrit `\keshAttention\ Texte` ou `\keshAttention{}`.
+\newcommand{\keshAttention}{\faExclamationTriangle}
 \providecommand{\faClock}{\textbf{[time]}}
 \providecommand{\faRocket}{\textbf{→}}
 \providecommand{\faGithub}{\textbf{[GH]}}
@@ -239,6 +247,10 @@
     keywordstyle      = \color{keshInfo}\bfseries,
     commentstyle      = \color{keshTextMuted}\itshape,
     stringstyle       = \color{keshSuccess}
+    % Pas de `literate` pour les signes sans glyphe dans TeX Gyre Cursor (✓ ✗ ═…) : sous
+    % XeLaTeX, listings ne voit pas les caractères au-delà de U+00FF, et un `literate` sur
+    % eux ne remplace rien (essayé, Story 32-1c, #714). Un listing s'écrit donc en signes
+    % que la police possède (ASCII), et le compte de U+FFFD du PDF aplati le vérifie.
 }
 \lstset{style=kesh}
 
