@@ -96,6 +96,9 @@
 - **Retenu** : inchangé ; `ContexteAcces` ne porte pas l'identifiant de clé en 32-3 ; l'acteur d'une clé MCP est à la
   32-5/32-6.
 - **Réversible** : oui.
+- *Amendé le 2026-10-24 (validation P3, F9) : même défaut que #431, qui ne nomme que les dépôts de `kesh-db` ; le
+  traçage des sept fonctions d'audit des rapports (commentaire sur #431 ou issue neuve) est demandé à l'orchestrateur
+  (C-32-3-31).*
 
 ### C-32-3-10 — `load_pdf_context` reste au handler, et lit par la `Lecture`
 
@@ -176,7 +179,8 @@
 - *Amendé le 2026-10-24 (validation P2) : le champ de la `Trace` devient **privé**, lu par un accesseur
   `pub(in crate::services) fn pool()` ; l'AC10 (iii)-(iv) et l'ancien (v) sont remplacés par l'inventaire clos de
   l'AC10 (v) (C-32-3-24) — l'ancien (v), liste de trois formes dans un seul fichier, ne fermait pas ce qu'il disait
-  fermer.*
+  fermer.* *(Annoté en P3 : l'inventaire clos est retiré à son tour, C-32-3-31 ; la visibilité reste la garde
+  principale.)*
 
 ### C-32-3-18 — M1 par échafaudage nommé, sur un aiguillage commun
 
@@ -240,7 +244,7 @@
   32-6 amende en connaissance de cause.
 - **Réversible** : oui.
 - *Amendé le 2026-10-24 (validation P2) : l'AC10 (iv) est absorbé par l'inventaire (v-d) (C-32-3-24), qui porte la
-  même réserve.*
+  même réserve.* *(Annoté en P3 : (v-d) devient la garde (v-2), même réserve, C-32-3-31.)*
 
 ### C-32-3-23 — `as_of` calculé une fois, et ce que le `Rapport` expose
 
@@ -276,6 +280,10 @@
   modules non migrés : ingérable et sans rapport avec les poignées) ; une garde par `syn` (plus juste, mais un outil
   neuf pour une story de motif — la 32-4 peut y venir).
 - **Réversible** : oui.
+- *Annoté le 2026-10-24 (validation P3, R1 = F1, troisième forme recyclée) : **retiré**. Les cinq inventaires ne
+  cherchaient pas `.pool()` lui-même — le seul chemin réel vers le pool —, ni son usage dans `services/`. Remplacés par
+  deux gardes simples ((v-1), (v-2)) et un paragraphe *Ce que les gardes ne voient pas* ; M11′ et M11″ retirées
+  (C-32-3-31). Le texte ci-dessus reste comme relevé daté.*
 
 ### C-32-3-25 — Les traces se figent sur les dix-huit couples, au service et par la route
 
@@ -289,6 +297,10 @@
 - **Écartée** : (vii) seul (lexical, il ne voit pas le mauvais service) ; (b′) seul (il ne dit pas lequel des deux
   usages manque quand une trace est fausse).
 - **Réversible** : oui.
+- *Annoté le 2026-10-24 (validation P3, R3 = F4, F6, F8, R8) : (vii) cherche la présence hors commentaires ; (b′) est
+  joué vert sur le code d'avant T3, premier commit de T2 ; (b) passe la `Lecture` en lecture seule ; (b′) rejoue la
+  ligne sans bornes ; (b′) est le seul volet du mauvais **service**, le mauvais usage étant vu aussi par (vii)
+  (C-32-3-31).*
 
 ### C-32-3-26 — Le refus précède la validation : un cas par service qui échoue à la validation
 
@@ -317,6 +329,8 @@
   aujourd'hui ; la validation sous le `span` est un changement **assumé**, sans effet sur l'API (aucun champ
   enregistré sur une erreur, comme aujourd'hui pour toute erreur postérieure à l'ouverture).
 - **Réversible** : oui.
+- *Annoté le 2026-10-24 (validation P3, R7 = F3) : les validations qui passent sous le `span` sont **six** (l. 330,
+  462, 660, 970, 1034, 1144), non deux ; trois exports n'ont pas de `span` (C-32-3-31).*
 
 ### C-32-3-29 — `ContexteAcces` à champs privés
 
@@ -341,4 +355,42 @@
 - **`AppState::trace()`** (R6) : sa mutation est non exprimable en 32-3 ; à poser par la 32-6.
 - **M12** (R10 = F6) : située dans la branche balance âgée de `tracer` ; « une seule variable `as_of` ».
 - **`invoice_settlements`** (R11) : nommé à l'AC11 (3), fragments SQL et analyse pure.
+- **Réversible** : oui.
+- *Annoté le 2026-10-24 (validation P3, R3 = F4) : l'argument « un `/* */` ne peut produire qu'un faux rouge » ne vaut
+  que pour les volets d'absence ou d'égalité ; (vii), volet de présence, ôte les commentaires (C-32-3-31).*
+
+---
+
+*Choix C-32-3-31 : remédiation de la validation P3 (2026-10-24, agent de remédiation, Opus 5.5), sur décision de
+l'orchestrateur.*
+
+### C-32-3-31 — Retrait de la preuve lexicale d'inaccessibilité du pool
+
+- **Contexte** : P3 (R1 MEDIUM = F1 LOW) : **troisième forme recyclée** de « le pool d'une poignée est atteignable »
+  — P1 F2 (visibilité `pub(crate)`), P2 R1 = F1 (formes énumérées dans un seul fichier), P3 R1 = F1 (les cinq
+  inventaires cherchent des noms de type, pas `.pool()`, ni son usage dans `services/`). Chaque correction lexicale a
+  ouvert une échappée nouvelle ; une garde lexicale ne peut pas prouver qu'un code Rust n'atteint pas une valeur.
+- **Retenu (décision de l'orchestrateur)** : la fiche cesse de promettre cette preuve. Elle garde (1) la **visibilité
+  Rust** comme garde principale — champs privés, `Lecture::pool()` et `Trace::pool()` en `pub(in crate::services)` ;
+  (2) deux **gardes lexicales simples et décidables** — (v-1) aucun `.pool()` hors de `services/`, (v-2)
+  `\bLecture::new\(`/`\bTrace::new\(` au seul câblage de `lib.rs` —, avec (i), (ii), (vi) et (vii) ; (3)
+  l'**exécution** comme preuve de comportement — AC9 (b) sur la `Lecture` en lecture seule, dit explicitement, M1,
+  M1-témoin ; (4) un paragraphe *Ce que les gardes ne voient pas* (usage de `lecture.pool()` pour écrire, de
+  `trace.pool()` hors des fonctions d'audit, autre accesseur, `impl` de trait, alias, ré-export, macro,
+  `unsafe`/`transmute`) : **la garantie réelle contre une écriture sur la `Lecture` est celle de la 32-6** (lecture
+  seule imposée par la base, Q11), et la revue de code d'ici là — ainsi que, durablement, pour `trace.pool()`, que
+  la base ne refusera pas.
+- **Écartées** : un relevé de plus (`.pool()` dans `services/` par nom de récepteur, R1 proposition 1) — une convention
+  de nom, contournable par un renommage, quatrième forme en attente ; `pub(in crate::services::rapports)` pour
+  `Trace::pool()` (F1 proposition 1) — **non écrivable** : `pub(in …)` n'accepte qu'un module ancêtre (E0742), et
+  `rapports` n'est pas un ancêtre de `poignees` ; y parvenir obligerait à définir la `Trace` dans `rapports.rs`, alors
+  que la 32-5 y fera passer aussi la dernière utilisation d'une clé ; `#![forbid(unsafe_code)]` sur le crate —
+  impossible (`config.rs` emploie `unsafe` dans ses tests). **Signalé à l'arbitrage, non retenu** : un
+  `#![forbid(unsafe_code)]` de module en tête de `services/mod.rs`.
+- **LOW de la P3 traités ici** : R3 = F4 ((vii) hors commentaires), R4 (`\b`), R6 = F2 (esquisse), R7 = F3 (six
+  validations sous le `span`), R8 ((b′) et le mauvais service ; M1′ et (v-2)), R9 (M10 dans les deux fonctions), F6
+  (T2 en deux commits), F7 (forme du service pour M3/M3′), F8 ((b) sur la `Lecture` en lecture seule ; ligne sans
+  bornes en (b′)), F9 (L2 et #431 ; AC14 nomme `docs/MULTI-TENANT-SCOPING-PATTERNS.md` et `architecture.md`), F10
+  (doc-comment de conventions rattaché à `emit_report_audit`) ; R2 au paragraphe *Ce que les gardes ne voient pas* ;
+  R5 = F5 sans objet ((v-b) retiré).
 - **Réversible** : oui.
