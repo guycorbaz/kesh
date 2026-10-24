@@ -270,7 +270,10 @@ pub async fn list_invoices(
 
 ### Invariant
 
-- **Every handler validates company exists** — Catches edge cases
+- **Every handler validates company exists** — Catches edge cases. *(Story 32-3 : for the reads migrated to the
+  service layer — `GET /api/v1/accounts` first — the check runs in the service, through
+  `helpers::company_for_ids`, to which `get_company_for` delegates; see the module doc-comment of
+  `crates/kesh-api/src/services/mod.rs`.)*
 - **Fast failure:** If company missing, error returned immediately
 - **Clear error:** `Forbidden` indicates permission issue, not data absence
 

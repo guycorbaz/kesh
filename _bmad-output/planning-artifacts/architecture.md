@@ -484,6 +484,7 @@ kesh/
 │   │       ├── middleware/
 │   │       │   ├── auth.rs             # JWT extraction, RBAC
 │   │       │   └── rate_limit.rs       # Rate limiting login
+│   │       ├── services/               # Story 32-3 — lectures partagées API/MCP, contrôle d'accès inclus
 │   │       ├── extractors.rs           # Axum extractors (CurrentUser, Role)
 │   │       ├── errors.rs               # AppError → IntoResponse
 │   │       └── static_files.rs         # ServeDir frontend SPA

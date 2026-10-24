@@ -1,4 +1,8 @@
 //! Routes CRUD pour les comptes du plan comptable.
+//!
+//! La lecture du plan (`list_accounts`) passe par la couche de services
+//! (`crate::services::plan_comptable`, Story 32-3), qui porte son contrôle
+//! d'accès ; les mutations restent ici.
 
 use axum::extract::{Path, Query, State};
 use axum::{Extension, Json};
@@ -13,6 +17,8 @@ use crate::AppState;
 use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
+use crate::services::acces::ContexteAcces;
+use crate::services::plan_comptable;
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -190,24 +196,12 @@ pub async fn list_accounts(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListAccountsQuery>,
 ) -> Result<Json<Vec<AccountResponse>>, AppError> {
-    // Validate company exists (defensive: company_id staleness window)
-    let _ = get_company_for(&current_user, &state.pool).await?;
-
-    let list = accounts::list_by_company(
-        &state.pool,
-        current_user.company_id,
-        params.include_archived,
-    )
-    .await?;
-    // Story 15-1b (AC11) : la lettrabilité de tout le plan en UNE requête.
-    let mut conn = state.pool.acquire().await.map_err(map_db_error)?;
-    let lettrables = letterings::letterable_account_ids(&mut conn, current_user.company_id).await?;
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let comptes = plan_comptable::lister(&acces, &state.lecture(), params.include_archived).await?;
     Ok(Json(
-        list.into_iter()
-            .map(|a| {
-                let letterable = lettrables.contains(&a.id);
-                AccountResponse::new(a, letterable)
-            })
+        comptes
+            .into_iter()
+            .map(|c| AccountResponse::new(c.compte, c.lettrable))
             .collect(),
     ))
 }

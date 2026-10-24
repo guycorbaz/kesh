@@ -67,12 +67,22 @@ pub async fn get_company_for(
     current_user: &CurrentUser,
     pool: &MySqlPool,
 ) -> Result<Company, AppError> {
-    companies::find_by_id(pool, current_user.company_id)
+    company_for_ids(pool, current_user.company_id, current_user.user_id).await
+}
+
+/// Forme de [`get_company_for`] par identifiants, pour la couche de services
+/// (Story 32-3), qui ne reçoit pas de `CurrentUser` : même lecture, même erreur
+/// `Internal`, même message.
+pub async fn company_for_ids(
+    pool: &MySqlPool,
+    company_id: i64,
+    user_id: i64,
+) -> Result<Company, AppError> {
+    companies::find_by_id(pool, company_id)
         .await?
         .ok_or_else(|| {
             AppError::Internal(format!(
-                "company_id {} from JWT not found in DB (user {} orphaned?)",
-                current_user.company_id, current_user.user_id
+                "company_id {company_id} from JWT not found in DB (user {user_id} orphaned?)"
             ))
         })
 }
