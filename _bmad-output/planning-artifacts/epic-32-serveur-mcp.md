@@ -409,7 +409,7 @@ n'établit. Guy, le 2026-10-25 : « on vérifiera lors de la mise à jour : ajou
 où ». La 32-6c ajoute **un évènement par décision du filtre** (par société) — pair, présence et forme des en-têtes de
 mandataire, client retenu, verdict ; refus en `warn`, admission en `debug` ; aucune clé, aucun en-tête
 `Authorization`, aucun corps, aucune valeur d'en-tête —, sans rien changer à ce que reçoit le client, et le manuel
-d'administration dit comment lire ce journal (`RUST_LOG` ciblé, `docker compose logs`). Fiche
+d'administration dit comment lire ce journal (`RUST_LOG` ciblé, fichier de log `./log/kesh.*.log`). Fiche
 `32-6c-journal-filtre-adresse.md`, registre `epic-32-choix-autonomes-326c.md`. Modules : `mcp`, `logging` (tests), manuel
 — **3**. Après la 32-6b ; indépendante des 32-7 et 32-8.
 
@@ -527,6 +527,13 @@ parcours est décrit pas à pas au manuel **et rejoué depuis le PDF** ; le test
 de la révision figée ; aucun texte ne promet une écriture. **Risque** : moyen — documentation exécutée (31-4) ; la fiche
 **fixe le périmètre du parcours** dès le départ pour éviter le recyclage qu'a connu la 31-4.
 
+**La description détaillée du fonctionnement de MCP** *(ajoutée le 2026-10-25, décision de Guy à la fiche 32-6c,
+point 5 : « ajoute la description détaillée du fonctionnement de MCP »)* : manuels d'administration **et**
+utilisateur — ce qu'est MCP ; le parcours d'une requête, de l'agent jusqu'au journal (pair et filtre d'adresse,
+origine, clé et portées, outil, validation avant envoi, journal d'audit) ; les portées ; les outils ; les prompts ;
+la validation avant envoi ; ce que Kesh garantit et ce qu'il ne garantit pas. La 32-6c ne l'écrit pas : elle
+livre seulement le mode d'emploi du journal du filtre (`sec:mcp-journal-filtre`), auquel cette description renvoie.
+
 *(Ajouté le 2026-10-25 par l'orchestrateur, sur report des fiches 32-6 (R13) et 32-10a (C-32-10a-29) : deux textes
 publiés deviennent faux pendant l'epic et reviennent à la 32-11 — `README.md:233` (« montrées avant de partir », faux
 pour une clé `dispensée` ; « aucune écriture par l'agent dans cette version », faux dès `proposer_prompt`) et
@@ -629,6 +636,11 @@ Toutes les recommandations soumises le 2026-10-25 sont **acceptées** (« oui po
   QR-IBAN et l'adresse d'envoi sont masqués sans `contacts:read`.
 - **32-8b0** : la description d'un compte bancaire refuse les caractères invisibles de plus (catégorie générale) —
   durcissement accepté.
+- **32-6c (journal du filtre d'adresse)** : refus en `warn` ; formes et présences des en-têtes seulement, jamais leurs
+  valeurs ; journaliser aussi filtre coupé ; **pas** de conseil `X-Forwarded-For` à DSM avant vérification ; la
+  sous-section du manuel précède la section MCP de la 32-7 — « ajoute la description détaillée du fonctionnement de
+  MCP », qui revient à la **32-11** (§ 32-11). La réserve sur la déclaration du pair comme mandataire (un poste qui
+  atteint le port sans passer par le mandataire peut forger `X-Forwarded-For`) est écrite au manuel dès la 32-6c.
 - **Permission** : les agents peuvent supprimer leurs dossiers `/tmp/kesh-e2e-*` ; la règle est à poser par Guy
   (`/permissions`), l'orchestrateur ne modifiant pas ses propres permissions.
 

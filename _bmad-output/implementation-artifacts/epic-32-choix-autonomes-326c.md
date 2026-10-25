@@ -44,6 +44,8 @@ réversibilité.
 - **Écartées** : des `contains` par champ (`pair=172.18.0.1` contient aussi `pair=172.18.0.10`, et un champ de trop
   passe) ; le nombre de mandataires déclarés (lisible à l'écran des réglages, sans valeur pour trancher).
 - **Réversible** : oui (les tests suivent).
+- **Annoté à la validation P1 (F1, R5)** : l'AC-T1 compte désormais **quatorze** cas (13 et 14 ajoutés) ; la
+  ligne attendue commence par le message, puis les onze champs.
 
 ### C-32-6c-4 — Refus en `warn`, admission en `debug` (décision de l'orchestrateur, retenue)
 
@@ -55,6 +57,8 @@ réversibilité.
 - **Écartées** : tout en `debug` (un poste légitime refusé ne se verrait qu'après avoir changé `RUST_LOG`) ; tout en
   `info` (une ligne par appel d'agent au niveau par défaut).
 - **Réversible** : oui.
+- **Confirmé par Guy le 2026-10-25** (point 1 : « oui »). Complément de la validation P1 (F3) : le manuel dit
+  qu'un `warn` part par société qui refuse et que le cas DSM non déclaré ne s'écrit qu'en `debug`.
 
 ### C-32-6c-5 — Le filtre désactivé journalise le client qu'il retiendrait
 
@@ -67,6 +71,7 @@ réversibilité.
   avec un en-tête illisible : `client=aucun`) ; l'évènement part en `debug`, `filtre=false`.
 - **Écartées** : ne rien journaliser filtre coupé (le diagnostic exigerait d'activer le filtre à l'aveugle).
 - **Réversible** : oui. Risque : avancer le calcul peut changer le verdict par mégarde — mutation M15, cas 9.
+- **Confirmé par Guy le 2026-10-25** (point 3 : « oui »).
 
 ### C-32-6c-6 — La forme des en-têtes, jamais leur valeur ; `Forwarded` avec `X-Real-IP`
 
@@ -80,6 +85,8 @@ réversibilité.
   retenu) ; une classification de la forme d'une entrée illisible (port, `unknown`…) : un angle d'analyse de plus pour
   un cas que `client=aucun` signale déjà.
 - **Réversible** : oui.
+- **Confirmé par Guy le 2026-10-25** (point 2 : « oui »). Validation P1 (F1) : le comptage « sur les octets » et
+  « valides ou non » est désormais gardé par les cas 13 et 14 et les mutations M17 à M19.
 
 ### C-32-6c-7 — Le niveau se règle par `RUST_LOG`, ciblé sur le filtre ; aucune configuration neuve
 
@@ -91,6 +98,8 @@ réversibilité.
 - **Écartées** : une variable `KESH_MCP_JOURNAL_FILTRE` (une configuration de plus pour une vérification ponctuelle) ;
   `RUST_LOG=debug` (tout Kesh en `debug`) ; une ligne commentée à `.env.example` (le manuel suffit, un module de moins).
 - **Réversible** : oui.
+- **Annoté à la validation P1 (R1)** : `RUST_LOG` est déjà décrit au manuel (`admin-manual.tex:792`) ; la
+  sous-section y renvoie, et dit que les variables du terminal l'emportent sur le `.env` (`:1641`).
 
 ### C-32-6c-8 — L'exemple de ligne du manuel se copie d'une sortie réelle
 
@@ -110,6 +119,9 @@ réversibilité.
 - **Écartées** : attendre la 32-7 (la story livrerait un journal sans mode d'emploi) ; conseiller
   `X-Forwarded-For: $proxy_add_x_forwarded_for` à DSM (non vérifié).
 - **Réversible** : oui.
+- **Confirmé par Guy le 2026-10-25** (point 4 : « non » au conseil DSM ; point 5 : « oui », avec la description
+  détaillée du fonctionnement de MCP, renvoyée à la 32-11). Validation P1 (R4) : la réserve sur la déclaration du
+  pair comme mandataire est écrite dès la 32-6c (AC-9 (ii)).
 
 ### C-32-6c-10 — Le CHANGELOG ne change pas
 
@@ -117,4 +129,41 @@ réversibilité.
   `CHANGELOG.md:15-23`) ; la 32-11 l'annoncera.
 - **Retenu** : aucune entrée ; le journal du filtre entrera dans l'annonce du serveur MCP.
 - **Écartées** : une entrée isolée pour une fonction qu'aucune entrée ne présente encore.
+- **Réversible** : oui.
+
+### C-32-6c-11 — Le journal se lit dans le fichier de log ; la sortie standard, par un filtre de repli
+
+- **Contexte** (validation P1, R2 = F2) : la sortie standard émet des codes couleur (`logging.rs:135`, sans
+  `with_ansi(false)` ; `tracing-subscriber-0.3.23/src/fmt/fmt_layer.rs:305-312` : ANSI par défaut sauf `NO_COLOR`), si
+  bien qu'un `grep` sur `champ=valeur` échoue sur `docker compose logs` ; le fichier de log est sans couleurs
+  (`logging.rs:143`) et actif par défaut dans les deux composes (`docker-compose.yml:96`, `docker-compose.prod.yml:119`).
+- **Retenu** : le manuel fait lire `./log/kesh.*.log` (`sudo grep "filtre d'adresse"`) ; si le fichier est désactivé,
+  `docker compose logs … | sed 's/\x1b\[[0-9;]*m//g' | grep …` ; la ligne d'exemple du manuel vient du fichier.
+  **Aucun changement du format global du journal.**
+- **Écartées** : `.with_ansi(false)` sur la sortie standard (une ligne, mais un changement visible de tout le journal
+  de Kesh — `docker logs` perdrait ses couleurs pour tous — hors du périmètre d'une story de diagnostic) ; `NO_COLOR`
+  posé par les composes (deux fichiers de plus, un module de plus, même effet global) ; dire seulement « ne greppez
+  que le message » (le tableau de lecture se lit champ par champ).
+- **Réversible** : oui.
+
+### C-32-6c-12 — Une mutation de plus que les deux demandées pour le comptage, et une pour l'AC-T3 et l'AC-T5
+
+- **Contexte** (validation P1, F1 et R7) : l'orchestrateur demande les cas 13 et 14 et deux mutations (M17 : `plages`
+  sur les entrées valides ; M18 : lignes non ASCII ignorées), tuées par le cas 13. Le cas 14 (ligne vide, virgule
+  finale) ne serait alors tué par rien de neuf — M6 l'est déjà par les cas 5 et 7.
+- **Retenu** : M19 (`xff_entrees` saute les morceaux vides), tuée par le cas 14 ; M20 (évènement au transport quand
+  `servies` est vide, AC-T3) et M21 (une seule décision journalisée par requête, AC-T5), demandées par R7. **21
+  mutations.**
+- **Écartées** : retirer le cas 14 (la propriété « une ligne vide compte 1 » resterait sans garde).
+- **Réversible** : oui — une mutation se retire sans toucher à la conception.
+
+### C-32-6c-13 — Le nom réel du fichier de log : un défaut préexistant, hors périmètre, à tracer
+
+- **Contexte** : avec la rotation `daily`, `tracing-appender-0.2.5` nomme le fichier `kesh.<AAAA-MM-JJ>.log`
+  (`src/rolling.rs:648`, `:564`) ; `admin-manual.tex:957` et `.env.example:289` écrivent `./log/kesh.log`, qui
+  n'existe pas.
+- **Retenu** : la sous-section de la 32-6c écrit le nom réel (`kesh.*.log`) ; les deux lignes existantes ne sont pas
+  touchées ; l'orchestrateur ouvre une issue (P3, manuel qui décrit autre chose que le code) — « on trace toujours ».
+- **Écartées** : corriger `:957` et `.env.example` dans la story (un fichier de configuration de plus, hors du but
+  diagnostique ; la correction mérite sa propre vérification au NAS).
 - **Réversible** : oui.
