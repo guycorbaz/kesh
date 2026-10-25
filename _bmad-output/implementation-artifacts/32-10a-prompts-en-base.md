@@ -1442,6 +1442,10 @@ de la 32-10a-ii : l'AC-ii1 devient « **réemployer** le prédicat livré par la
 Mii12 et Mii13 se constatent sur le code fusionné ; l'AC-iii3 appelle `entree_appel` avec `envoi: None` (signature fixée par
 la 32-8b, `entree_appel(cle, outil, issue, duree_ms, envoi: Option<i64>)`). Les migrations : celle de la 32-8a précède
 celle de la 32-10a-i ; les compteurs (tables, migrations, P6) se recomptent.
+*(Précision de l'orchestrateur, 2026-10-25, validation P2 de la fiche 32-8, R5 : `entree_appel` prend
+`cle: &CleMcpAuthentifiee`. En conséquence, le service `proposer` de l'AC-iii2 reçoit **`&CleMcpAuthentifiee`** et non
+`acces`, `cle_id` et `validation` séparés : il en tire les trois. La fiche 32-8 (§ *Note pour la 32-10a*) porte aussi la
+liaison unique du pool en lecture seule et la signature amendée de `journaliser_appel`, à constater à l'étape 0.)*
 
 - **La 32-6a fusionnée** : les noms et lignes que cette fiche reprend de sa fiche — `McpPrompt` (signature de `rendre`),
   le sceau, `PromptEnBase` absent, `ReponseMcp`, `reponse::rendre`, `textes.rs` et la constante de `-32602`, `Registre`
