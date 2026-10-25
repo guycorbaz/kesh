@@ -916,6 +916,22 @@ développement fait chaque correction **à l'étape 0**, et la déclare au Chang
   pas. Vrai aujourd'hui ; à garder, ou à reformuler, à la prochaine story qui touche `EXEMPT_MIGRATIONS` (32-5c n'en
   touche pas : relire, constater, reporter à la suivante si rien ne change).
 
+*Ajoutés à la revue de code P1 de la 32-5b (LOW reportés) :*
+
+- **E5 — `docs/api-external.md:29`** dit « Une clé Kesh a toujours la forme **`kesh_pat_`** … 36 caractères » ;
+  `generate_mcp_key` rend `kesh_mcp_` + 27 base62 (36 caractères aussi). Vrai pour le lecteur tant qu'aucune route ne
+  crée de clé MCP ; **faux dès la 32-5c**, qui les crée : AC-c7 réécrit ce paragraphe (deux types de clé, deux
+  préfixes, une clé MCP n'ouvre pas `/api/v1`), et relit `:183` et `:829` (« pas de serveur MCP Kesh-natif ») —
+  C-32-5-42.
+- **B2 — assertions de `last_used_at` peu discriminantes** (`cles_mcp_e2e.rs`) : `b4_d_…` asserte que
+  `api_keys.last_used_at` reste `NULL` alors qu'aucune implémentation plausible n'y écrit ; `cle_revoquee_refusee` et
+  `createur_inactif_refuse` ne détectent que la mutation « dernière utilisation posée avant les contrôles ». Pas de
+  défaut ; si la 32-5c touche ces tests, garder le 401 comme garde-fou principal et ne pas y voir une preuve de plus.
+- **A2 — les refus d'ordre de `services_motif.rs`** (`cas_c`, `:1274`, et `:1359`) éprouvent une clé **sans
+  portée**, que `McpScopes` rend impossible en production. Ils prouvent l'ordre (refus avant la validation et avant la
+  lecture) ; la portée mal choisie est tuée par `ac8_a`. Passer `autres_portees(svc)` dans `cas_c` en ferait le refus
+  d'une clé réelle — à la prochaine story qui touche `services_motif.rs`.
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -1592,4 +1608,51 @@ Fichiers de `services/` : 10 → 11. Aucune migration, aucun fichier de `docs/` 
   - Écart à la consigne « Edit seul » (un `cat >>`, annulé et refait par Edit avant compilation), déclaré.
   - Clé `32-5b-authentification-cle-mcp` à **`review`** ; prompt de revue P1 : `325b-review-prompt-p1.md` (Sonnet,
     lentilles B, E, A).
+- **2026-10-25 — Revue de code P1 de la 32-5b** (passe complète, trois lentilles en contexte frais, **Sonnet** ×3 :
+  B, E, A ; rapports `kesh-gate-logs/325b-review-p1-{B,E,A}.md`). **Trend : B 0/0/0/3, E 0/0/1/5, A 0/0/0/3 —
+  1 MEDIUM, 11 LOW.** Convergents : B1 = E3, B3 = E4. Remédiation (Opus 5.5), commit de code **`e2557b47`** :
+  - **E1 (MEDIUM)** — `company_id` et `user_id` valaient tous deux 1 dans les montages, si bien qu'un contexte qui les
+    intervertirait passait toutes les assertions. `livres()` (`cles_mcp_e2e.rs`) crée d'abord une société leurre ;
+    `full_import_restores_mcp_keys_that_authenticate` fait créer les clés par un second administrateur
+    (`createur_mcp`) ; chaque montage asserte `assert_ne!`. **Mutation mx1** (les deux arguments de
+    `ContexteAcces::mcp` intervertis) **tuée** par `authentifier_rend_le_contexte_de_la_cle` et
+    `full_import_restores_mcp_keys_that_authenticate`.
+  - **B1 = E3 (LOW)** — `find_active_auth_by_key_hash` exige `u.company_id = k.company_id` (C-32-5-43) ; test
+    `auth_lookup_ignores_a_key_whose_creator_is_in_another_company` (ligne forgée par SQL, contrôle positif à côté) ;
+    **mutation mx2** (condition retirée) **tuée**. ⚠️ **Conséquence relevée en l'écrivant** : le montage de
+    `auth_lookup_ignores_an_orphan_key` (créateur de la société A) devenait refusé par deux conditions, et Ma4c y
+    aurait survécu ; le créateur y est désormais orphelin de la même société absente que la clé (C-32-5-44) ;
+    **mutation mx5** (Ma4c rejouée : `JOIN companies` retiré) **tuée** par ce test.
+  - **B3 = E4 (LOW)** — après l'import, `revoked_at` est relu (`mcp_key_revoked`) : K2 absente, la clé révoquée avant
+    l'export revient révoquée, K3, révoquée **après** l'export, revient active et authentifie (ce que dit
+    `admin-manual.tex:2237`).
+  - **E2 (LOW)** — **aucun test ajouté** : `touch_last_used_sets_it_but_never_on_a_revoked_key`
+    (`mcp_keys_repository.rs:842` à `bdb1588c`, `:890` à `e2557b47`, 32-5a) l'exerçait déjà, la lentille ne l'a pas vu ; **mutation mx3**
+    (`AND revoked_at IS NULL` retiré de `touch_last_used`) **tuée** par lui.
+  - **A3 (LOW)** — **mutation mx4** (`.await?` changé en `.map_err(|_| refus("db"))?` : toute erreur de base devient
+    un 401) **tuée** par `beta_avec_prefixe_l_erreur_de_base_se_propage`.
+  - **E6 (LOW)** — `jetons_hostiles_avec_le_prefixe` : `kesh_mcp_` seul, un corps non ASCII (avec `\u{0}`), un corps de
+    100 000 caractères → 401.
+  - **A1 (LOW)** — la ligne de `sprint-status.yaml` qui disait « sans kesh-db » est **annotée**, datée, sans réécriture.
+  - **LOW reportés** au § *Pour la 32-5c* : **E5** (`api-external.md:29`), **B2** (assertions de `last_used_at` peu
+    discriminantes), **A2** (refus d'ordre sur une clé sans portée).
+  - **Valeurs grepées** : la jointure `JOIN users u ON u.id = k.created_by_user_id` (`git grep`) — un seul site,
+    `mcp_keys.rs` ; les montages à une société et un utilisateur dans les tests de la partie b (`fn livres`,
+    `seed_admin(&pool, "Mcp")`) — tous deux traités, les autres tests d'`admin_full_import_e2e.rs` n'éprouvent pas le
+    contexte MCP ; `revoked_at IS NULL` de `touch_last_used` — couvert par le test existant.
+  - **Gates** : ciblé — `cargo fmt`, `cargo clippy --workspace --all-targets -D warnings` vert
+    (`325b-p1r-clippy.log`), nextest `cles_mcp_e2e`, `mcp_keys_repository` et les tests `mcp` d'`admin_full_import_e2e`
+    **44 réussis** (`325b-p1r-cible.log`) ; **gate complet au dernier commit de code `e2557b47`**, `kesh_325b` remise à
+    zéro juste avant : garde des droits conforme, fmt, clippy, **4085 réussis, 7 ignorés** (`325b-p1r-gate-complet.log`)
+    — 4083 + les deux tests neufs ; **E2E complet** à `e2557b47`, binaire reconstruit après le commit (05:52:26, commit
+    05:29:52) et vérifié par `/proc/<pid>/exe`, `kesh_e2e_325b` reconstruite, dossier neuf `/tmp/kesh-e2e-325b-p1r/`
+    passé au backend **et** au runner, arrêt par PID : **315 passés, 7 échecs, 17 ignorés** (12,9 min,
+    `325b-p1r-e2e.log`) — les 7 KF-029 seuls. Frontend non touché, non rejoué.
+  - **Mutations de la remédiation** (`325b-p1r-mutations.log`) : **5 jouées, 5 tuées** (mx1 à mx5) ; chaque motif
+    vérifié unique, restauration par `git checkout --` puis `touch`, diff résiduel nul.
+  - **Décomptes** (périmètre `bdb1588c..e2557b47`, code) : 4 fichiers modifiés (`mcp_keys.rs`, `mcp_keys_repository.rs`,
+    `cles_mcp_e2e.rs`, `admin_full_import_e2e.rs`), dont 2 de `kesh-db` ; tests `cles_mcp_e2e.rs` 17 → 18,
+    `mcp_keys_repository.rs` 24 → 25, `admin_full_import_e2e.rs` 56 → 56 (un test complété) : **+2 nets**.
+  - Choix C-32-5-43 et C-32-5-44. La remédiation touche du code de production (`repositories/mcp_keys.rs`) : passe
+    suivante **ciblée** (P2, regression hunter, **Opus**, `325b-review-prompt-p2.md`, SHA `e2557b47` en dur).
 

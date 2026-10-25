@@ -563,3 +563,28 @@ liste) est fermée par C-32-5-37.
   fiche : `docs/api-external.md` est au périmètre de la **32-5c** (AC-c7), qui crée les clés.
 - **Réversible** : sans objet.
 
+## Remédiation de la revue de code P1 de la 32-5b (2026-10-25)
+
+### C-32-5-43 — Le créateur d'une clé MCP doit appartenir à la société de la clé (revue P1, B1 = E3)
+
+- **Contexte** : `find_active_auth_by_key_hash` joignait `users u ON u.id = k.created_by_user_id` sans condition de
+  société ; `authentifier` construit le contexte avec la société **de la clé** et l'utilisateur **créateur** : une
+  ligne dont le créateur serait d'une autre société (SQL à la main, sauvegarde fabriquée, futur déplacement d'un
+  utilisateur) mêlerait deux sociétés dans la trace d'audit. Aucun chemin actuel ne la produit.
+- **Retenu** : `AND u.company_id = k.company_id` dans la jointure ; une telle clé n'est jamais trouvée, donc 401.
+  Test `auth_lookup_ignores_a_key_whose_creator_is_in_another_company` (ligne forgée, contrôle positif à côté) et sa
+  mutation. Compatible avec la 32-5d : la règle des principaux orphelins rattache les utilisateurs **et** repointe les
+  clés vers la même société cible.
+- **Écartée** : le noter comme invariant porté par la 32-5c (une garde qui ne vit que dans une route ne protège pas
+  d'une restauration).
+- **Réversible** : oui.
+
+### C-32-5-44 — Le test de la clé orpheline monte un créateur orphelin de la même société
+
+- **Contexte** : avec C-32-5-43, le montage de `auth_lookup_ignores_an_orphan_key` (créateur de la société A, clé
+  d'une société absente) est refusé par **deux** conditions : la mutation Ma4c (`JOIN companies` retiré) y aurait
+  survécu.
+- **Retenu** : le créateur est inséré, sous `FOREIGN_KEY_CHECKS = 0`, dans la **même** société absente que la clé —
+  l'état que laisse #528 —, si bien que seule la jointure à `companies` refuse la clé. Ma4c est rejouée (mutation mx5).
+- **Réversible** : oui.
+
