@@ -1,18 +1,22 @@
 //! Story 32-4a — le rollout de la couche de services aux lectures des
 //! écritures comptables, des postes ouverts et du carnet d'adresses.
 //!
-//! Ce fichier porte, pour les cinq services du rollout
-//! (`services::{ecritures, postes_ouverts, carnet}`) : les tests de refus et
-//! leur contrôle positif (AC9), la validation et les bornes de pagination au
-//! service et par la route (AC10), la lecture seule et le filtre de société
-//! (AC11). La garde lexicale reste dans `tests/services_motif.rs` (AC12).
-//! La 32-4b y ajoute ses tests, sans le recréer (C-32-4a-9).
+//! Ce fichier porte, pour les onze services du rollout — cinq de la 32-4a
+//! (`services::{ecritures, postes_ouverts, carnet}`), six de la 32-4b
+//! (`services::{factures, factures_fournisseur}`) — : les tests de refus et
+//! leur contrôle positif (AC9 de la 32-4a, AC10 de la 32-4b), la validation et
+//! les bornes de pagination au service et par la route (AC10, AC11), la lecture
+//! seule et le filtre de société (AC11, AC12). La garde lexicale reste dans
+//! `tests/services_motif.rs`. La 32-4b y a ajouté ses tests, sans le recréer
+//! (C-32-4a-9) ; les siens portent le préfixe `ac324b_`.
 //!
 //! Fixtures **synthétiques** : `seed_accounting_company`, une écriture sur deux
 //! comptes lettrables (1000 et 2000 — aucun compte bancaire n'y est lié dans le
-//! seed), un contact ; et, pour le chemin de succès des filtres et le tri par
-//! défaut du carnet (revue de code P1), trois écritures et quatre contacts que
-//! chaque filtre et chaque colonne de tri séparent.
+//! seed), un contact, un brouillon, une facture validée partiellement réglée et
+//! une facture fournisseur ; et, pour le chemin de succès des filtres et le tri
+//! par défaut (revues de code de la 32-4a), trois écritures, quatre contacts,
+//! cinq factures clientes et trois factures fournisseur que chaque filtre et
+//! chaque colonne de tri séparent.
 
 mod common;
 
@@ -30,6 +34,8 @@ use kesh_api::middleware::auth::CurrentUser;
 use kesh_api::services::acces::{ContexteAcces, Portee};
 use kesh_api::services::carnet::{self, DemandeListeContacts};
 use kesh_api::services::ecritures::{self, DemandeListeEcritures};
+use kesh_api::services::factures::{self, DemandeEcheances, DemandeListeFactures};
+use kesh_api::services::factures_fournisseur::{self, DemandeListeFacturesFournisseur};
 use kesh_api::services::poignees::Lecture;
 use kesh_api::services::postes_ouverts::{self, DemandePostesOuverts};
 use kesh_api::{AppState, build_router};
@@ -41,6 +47,7 @@ use kesh_db::entities::{
     NewSupplierInvoiceLine, OrgType, Role, SettlementChoice,
 };
 use kesh_db::errors::DbError;
+use kesh_db::repositories::invoices::PaymentStatusFilter;
 use kesh_db::repositories::{
     companies, invoice_settlements_write, invoices, journal_entries, supplier_invoices,
 };
@@ -527,10 +534,10 @@ async fn ac11_c_un_verrou_est_refuse_sur_la_lecture_de_test(pool: MySqlPool) {
 }
 
 // ============================================================
-// Les cinq services, joués de façon uniforme
+// Les onze services, joués de façon uniforme
 // ============================================================
 
-/// Les cinq services du rollout.
+/// Les onze services du rollout (cinq de la 32-4a, six de la 32-4b).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Svc {
     EcrituresLister,
@@ -538,20 +545,38 @@ enum Svc {
     PostesOuvertsLister,
     CarnetLister,
     CarnetDetail,
+    FacturesLister,
+    FacturesDetail,
+    FacturesEcheances,
+    FacturesReglements,
+    FournisseurLister,
+    FournisseurDetail,
 }
 
-const SERVICES: [Svc; 5] = [
+const SERVICES: [Svc; 11] = [
     Svc::EcrituresLister,
     Svc::EcrituresDetail,
     Svc::PostesOuvertsLister,
     Svc::CarnetLister,
     Svc::CarnetDetail,
+    Svc::FacturesLister,
+    Svc::FacturesDetail,
+    Svc::FacturesEcheances,
+    Svc::FacturesReglements,
+    Svc::FournisseurLister,
+    Svc::FournisseurDetail,
 ];
 
 /// Portée qu'exige un service.
 fn portee_exigee(svc: Svc) -> Portee {
     match svc {
         Svc::CarnetLister | Svc::CarnetDetail => Portee::ContactsRead,
+        Svc::FacturesLister
+        | Svc::FacturesDetail
+        | Svc::FacturesEcheances
+        | Svc::FacturesReglements
+        | Svc::FournisseurLister
+        | Svc::FournisseurDetail => Portee::InvoicesRead,
         _ => Portee::BooksRead,
     }
 }
@@ -561,7 +586,8 @@ fn portee_exigee(svc: Svc) -> Portee {
 enum Cas {
     /// Une demande qui réussit.
     Normal,
-    /// Une demande qui échoue à l'analyse (`dateFrom = "x"`, `asOf = "2026-13-01"`).
+    /// Une demande qui échoue à l'analyse (`dateFrom = "x"`, `asOf = "2026-13-01"`)
+    /// ou à la validation (`limit = Some(0)`, listes de factures clientes).
     Invalide,
     /// Une demande qui nomme une entité inexistante (écriture, compte, contact).
     Inexistant,
@@ -609,6 +635,38 @@ async fn jouer(
         Svc::CarnetDetail => carnet::detail(acces, lecture, id(livres.contact_id))
             .await
             .map(drop),
+        Svc::FacturesLister => {
+            let demande = DemandeListeFactures {
+                limit: (cas == Cas::Invalide).then_some(0),
+                ..Default::default()
+            };
+            factures::lister(acces, lecture, demande).await.map(drop)
+        }
+        Svc::FacturesDetail => factures::detail(acces, lecture, id(livres.brouillon_id))
+            .await
+            .map(drop),
+        Svc::FacturesEcheances => {
+            let demande = DemandeEcheances {
+                limit: (cas == Cas::Invalide).then_some(0),
+                ..Default::default()
+            };
+            factures::echeances(acces, lecture, demande).await.map(drop)
+        }
+        Svc::FacturesReglements => {
+            factures::reglements(acces, lecture, id(livres.facture_reglee_id))
+                .await
+                .map(drop)
+        }
+        Svc::FournisseurLister => {
+            factures_fournisseur::lister(acces, lecture, DemandeListeFacturesFournisseur::default())
+                .await
+                .map(drop)
+        }
+        Svc::FournisseurDetail => {
+            factures_fournisseur::detail(acces, lecture, id(livres.facture_fournisseur_id))
+                .await
+                .map(drop)
+        }
     }
 }
 
@@ -640,7 +698,8 @@ fn est_validation(r: &Result<(), AppError>) -> bool {
 // AC9 — refus, contrôle positif, canal API
 // ============================================================
 
-/// AC9 (a), (b), (e) — pour chacun des cinq services : MCP sans portée, puis
+/// AC9 (a), (b), (e) — pour chacun des onze services (AC10 de la 32-4b pour
+/// les six des factures) : MCP sans portée, puis
 /// avec chacune des deux autres portées seule → `Forbidden` ; MCP avec la
 /// portée exigée → `Ok` ; API `Consultation` → `Ok`.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -703,6 +762,15 @@ async fn ac9_a_b_e_refus_et_controle_positif(pool: MySqlPool) {
 /// (aucune entité nommée par la demande n'est lue avant la page), (c-val) pour
 /// `ecritures::detail`, `carnet::lister`, `carnet::detail` (leur demande ne
 /// porte rien qui échoue à l'analyse).
+///
+/// Story 32-4b (AC10 (c-val), (c-lec)) — neuf cas de plus : `limit = Some(0)`
+/// pour `factures::lister` et `factures::echeances` ; `id` inexistant pour
+/// `factures::{detail, reglements}` et `factures_fournisseur::detail` ; société
+/// inexistante pour `factures::{lister, reglements}` et
+/// `factures_fournisseur::{lister, detail}`. Sans objet : (c-val) pour
+/// `factures::{detail, reglements}` et `factures_fournisseur::*` (aucun refus
+/// d'analyse ; la liste fournisseur écrête), (c-lec) pour `factures::echeances`
+/// (rien de nommé ni de lu avant la page).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac9_c_le_refus_precede_validation_et_lecture(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
@@ -710,7 +778,7 @@ async fn ac9_c_le_refus_precede_validation_et_lecture(pool: MySqlPool) {
     let (c, u) = (livres.s.company_id, livres.s.admin_user_id);
     type Attendu = fn(&Result<(), AppError>) -> bool;
     // (nom, service, société du contexte, cas, erreur attendue avec la portée)
-    let table: [(&str, Svc, i64, Cas, Attendu); 8] = [
+    let table: [(&str, Svc, i64, Cas, Attendu); 17] = [
         (
             "c-val ecritures::lister dateFrom=x",
             Svc::EcrituresLister,
@@ -763,6 +831,69 @@ async fn ac9_c_le_refus_precede_validation_et_lecture(pool: MySqlPool) {
         (
             "c-lec carnet::lister société inexistante",
             Svc::CarnetLister,
+            INEXISTANT,
+            Cas::Normal,
+            est_interne,
+        ),
+        (
+            "c-val factures::lister limit=0",
+            Svc::FacturesLister,
+            c,
+            Cas::Invalide,
+            est_validation,
+        ),
+        (
+            "c-val factures::echeances limit=0",
+            Svc::FacturesEcheances,
+            c,
+            Cas::Invalide,
+            est_validation,
+        ),
+        (
+            "c-lec factures::detail id inexistant",
+            Svc::FacturesDetail,
+            c,
+            Cas::Inexistant,
+            est_introuvable,
+        ),
+        (
+            "c-lec factures::reglements id inexistant",
+            Svc::FacturesReglements,
+            c,
+            Cas::Inexistant,
+            est_introuvable,
+        ),
+        (
+            "c-lec factures_fournisseur::detail id inexistant",
+            Svc::FournisseurDetail,
+            c,
+            Cas::Inexistant,
+            est_introuvable,
+        ),
+        (
+            "c-lec factures::lister société inexistante",
+            Svc::FacturesLister,
+            INEXISTANT,
+            Cas::Normal,
+            est_interne,
+        ),
+        (
+            "c-lec factures::reglements société inexistante",
+            Svc::FacturesReglements,
+            INEXISTANT,
+            Cas::Normal,
+            est_interne,
+        ),
+        (
+            "c-lec factures_fournisseur::lister société inexistante",
+            Svc::FournisseurLister,
+            INEXISTANT,
+            Cas::Normal,
+            est_interne,
+        ),
+        (
+            "c-lec factures_fournisseur::detail société inexistante",
+            Svc::FournisseurDetail,
             INEXISTANT,
             Cas::Normal,
             est_interne,
@@ -1092,14 +1223,17 @@ async fn ac10_b_les_bornes_des_trois_listes(pool: MySqlPool) {
 // AC11 — lecture seule, et filtre de société
 // ============================================================
 
-/// AC11 (a) — les cinq services réussissent sur une `Lecture` en lecture seule
+/// AC11 (a) — les onze services réussissent sur une `Lecture` en lecture seule
 /// (le détail d'écriture : `BEGIN`, quatre lectures, `ROLLBACK` ; les postes
-/// ouverts : leur transaction propre), et les fixtures atteignent bien les
-/// branches visées (une écriture, un poste ouvert, un contact). Avec
-/// l'AC11 (c), confirme l'absence d'écriture **et** de verrou sur les branches
-/// exercées.
+/// ouverts : leur transaction propre ; les règlements d'une facture et la fiche
+/// fournisseur : `BEGIN`, lectures, `COMMIT`), et les fixtures atteignent bien
+/// les branches visées (une écriture, un poste ouvert, un contact ; pour la
+/// 32-4b, AC12 (a) : un brouillon — le réglage d'arrondi lu —, une facture
+/// validée portant un règlement — `settlement_cancel_blocker` exécuté —, une
+/// facture fournisseur). Avec l'AC11 (c), confirme l'absence d'écriture **et**
+/// de verrou sur les branches exercées. Renommé par la 32-4b (C-32-4b-13).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn ac11_a_les_cinq_services_lisent_en_lecture_seule(pool: MySqlPool) {
+async fn ac11_a_les_services_lisent_en_lecture_seule(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
     let lecture = lecture_seule(&pool).await;
     let acces = api_societe(
@@ -1145,6 +1279,51 @@ async fn ac11_a_les_cinq_services_lisent_en_lecture_seule(pool: MySqlPool) {
         autre => echecs.push(format!(
             "AC11 (a) carnet::detail : {:?}",
             autre.map(|f| f.contact.id)
+        )),
+    }
+    // Story 32-4b (AC12 (a)) — les six services des factures.
+    match factures::lister(&acces, &lecture, DemandeListeFactures::default()).await {
+        Ok(p) if p.total >= 2 => {}
+        autre => echecs.push(format!(
+            "AC12 (a) factures::lister : {:?}",
+            autre.map(|p| p.total)
+        )),
+    }
+    match factures::detail(&acces, &lecture, livres.brouillon_id).await {
+        Ok(f) if f.facture.id == livres.brouillon_id && f.arrondi_5_centimes.is_some() => {}
+        autre => echecs.push(format!(
+            "AC12 (a) factures::detail (brouillon, réglage lu) : {:?}",
+            autre.map(|f| (f.facture.id, f.arrondi_5_centimes))
+        )),
+    }
+    match factures::echeances(&acces, &lecture, DemandeEcheances::default()).await {
+        Ok(e) if e.page.total >= 1 => {}
+        autre => echecs.push(format!(
+            "AC12 (a) factures::echeances : {:?}",
+            autre.map(|e| e.page.total)
+        )),
+    }
+    match factures::reglements(&acces, &lecture, livres.facture_reglee_id).await {
+        Ok(r) if r.len() == 1 => {}
+        autre => echecs.push(format!(
+            "AC12 (a) factures::reglements : {:?}",
+            autre.map(|r| r.len())
+        )),
+    }
+    match factures_fournisseur::lister(&acces, &lecture, DemandeListeFacturesFournisseur::default())
+        .await
+    {
+        Ok(p) if p.total >= 1 => {}
+        autre => echecs.push(format!(
+            "AC12 (a) factures_fournisseur::lister : {:?}",
+            autre.map(|p| p.total)
+        )),
+    }
+    match factures_fournisseur::detail(&acces, &lecture, livres.facture_fournisseur_id).await {
+        Ok(v) if v.invoice.id == livres.facture_fournisseur_id => {}
+        autre => echecs.push(format!(
+            "AC12 (a) factures_fournisseur::detail : {:?}",
+            autre.map(|v| v.invoice.id)
         )),
     }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
@@ -1193,6 +1372,56 @@ async fn ac11_b_aucune_lecture_d_une_autre_societe(pool: MySqlPool) {
         autre => echecs.push(format!(
             "AC11 (b) carnet::lister : {:?}",
             autre.map(|p| p.page.total)
+        )),
+    }
+    // Story 32-4b (AC12 (b)) — la fiche et les règlements d'une facture, la
+    // fiche fournisseur : `NotFound` ; les deux listes et l'échéancier : rien.
+    let r = factures::detail(&acces, &lecture, livres.facture_reglee_id)
+        .await
+        .map(drop);
+    if !est_introuvable(&r) {
+        echecs.push(format!("AC12 (b) factures::detail : {}", resume(&r)));
+    }
+    let r = factures::reglements(&acces, &lecture, livres.facture_reglee_id)
+        .await
+        .map(drop);
+    if !est_introuvable(&r) {
+        echecs.push(format!("AC12 (b) factures::reglements : {}", resume(&r)));
+    }
+    let r = factures_fournisseur::detail(&acces, &lecture, livres.facture_fournisseur_id)
+        .await
+        .map(drop);
+    if !est_introuvable(&r) {
+        echecs.push(format!(
+            "AC12 (b) factures_fournisseur::detail : {}",
+            resume(&r)
+        ));
+    }
+    match factures::lister(&acces, &lecture, DemandeListeFactures::default()).await {
+        Ok(p) if p.total == 0 && p.items.is_empty() => {}
+        autre => echecs.push(format!(
+            "AC12 (b) factures::lister : {:?}",
+            autre.map(|p| p.total)
+        )),
+    }
+    let demande = DemandeEcheances {
+        payment_status: Some(PaymentStatusFilter::All),
+        ..Default::default()
+    };
+    match factures::echeances(&acces, &lecture, demande).await {
+        Ok(e) if e.page.total == 0 && e.page.items.is_empty() => {}
+        autre => echecs.push(format!(
+            "AC12 (b) factures::echeances : {:?}",
+            autre.map(|e| e.page.total)
+        )),
+    }
+    match factures_fournisseur::lister(&acces, &lecture, DemandeListeFacturesFournisseur::default())
+        .await
+    {
+        Ok(p) if p.total == 0 && p.items.is_empty() => {}
+        autre => echecs.push(format!(
+            "AC12 (b) factures_fournisseur::lister : {:?}",
+            autre.map(|p| p.total)
         )),
     }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
@@ -1851,6 +2080,19 @@ async fn ac324b_d_e_f_la_liste_des_factures_par_la_route(pool: MySqlPool) {
             ));
         }
     }
+    // T1 (ii) — au service, demande vide, sous le contexte MCP `InvoicesRead`
+    // (le chemin de l'outil de la 32-9a) : le tri par défaut (`Date`, `Desc`).
+    let lecture = Lecture::new(pool.clone());
+    let acces = mcp_societe(f.s.company_id, f.s.admin_user_id, &[Portee::InvoicesRead]);
+    match factures::lister(&acces, &lecture, DemandeListeFactures::default()).await {
+        Ok(p) => {
+            let rendu: Vec<String> = p.items.iter().map(|i| f.libelle(i.id)).collect();
+            if rendu != ["F5", "F4", "F3", "F2", "F1"] {
+                echecs.push(format!("service, demande vide : rendu {rendu:?}"));
+            }
+        }
+        Err(e) => echecs.push(format!("service, demande vide : {e:?}")),
+    }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
 }
 
@@ -1924,6 +2166,19 @@ async fn ac324b_d_e_f_l_echeancier_par_la_route(pool: MySqlPool) {
             sans["summary"], payees["summary"]
         ));
     }
+    // T1 (ii) — au service, demande vide, contexte MCP `InvoicesRead` : le tri
+    // par défaut (`DueDate`, `Asc`) sur les impayées.
+    let lecture = Lecture::new(pool.clone());
+    let acces = mcp_societe(f.s.company_id, f.s.admin_user_id, &[Portee::InvoicesRead]);
+    match factures::echeances(&acces, &lecture, DemandeEcheances::default()).await {
+        Ok(e) => {
+            let rendu: Vec<String> = e.page.items.iter().map(|i| f.libelle(i.id)).collect();
+            if rendu != ["F3", "F1", "F2"] {
+                echecs.push(format!("service, demande vide : rendu {rendu:?}"));
+            }
+        }
+        Err(e) => echecs.push(format!("service, demande vide : {e:?}")),
+    }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
 }
 
@@ -1981,6 +2236,27 @@ async fn ac324b_d_f_la_liste_fournisseur_par_la_route(pool: MySqlPool) {
             ));
         }
     }
+    // T1 (ii) — au service, demande vide, contexte MCP `InvoicesRead`.
+    let lecture = Lecture::new(pool.clone());
+    let acces = mcp_societe(s.company_id, s.admin_user_id, &[Portee::InvoicesRead]);
+    match factures_fournisseur::lister(&acces, &lecture, DemandeListeFacturesFournisseur::default())
+        .await
+    {
+        Ok(p) => {
+            let rendu: Vec<&str> = p
+                .items
+                .iter()
+                .filter_map(|i| i.supplier_invoice_number.as_deref())
+                .collect();
+            if rendu != ["FA", "FC", "FB"] || (p.limit, p.offset) != (50, 0) {
+                echecs.push(format!(
+                    "service, demande vide : rendu {rendu:?}, ({}, {})",
+                    p.limit, p.offset
+                ));
+            }
+        }
+        Err(e) => echecs.push(format!("service, demande vide : {e:?}")),
+    }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
 }
 
@@ -2022,6 +2298,610 @@ async fn ac324b_g_le_detail_d_une_facture_par_la_route(pool: MySqlPool) {
             "F2 validée : attendu roundingIsPreview false ; rendu {statut} {}",
             corps["roundingIsPreview"]
         ));
+    }
+    // T1 (ii) — au service : le réglage n'est lu que pour un brouillon ; les
+    // deux montants de F1.
+    let lecture = Lecture::new(pool.clone());
+    let acces = mcp_societe(f.s.company_id, f.s.admin_user_id, &[Portee::InvoicesRead]);
+    for (i, attendu) in [(0, None), (1, None), (4, Some(true))] {
+        match factures::detail(&acces, &lecture, f.ids[i]).await {
+            Ok(fiche) if fiche.arrondi_5_centimes == attendu => {
+                if i == 0 && (fiche.montant_regle, fiche.reste_du) != (dec!(50.00), dec!(166.20)) {
+                    echecs.push(format!(
+                        "service, F1 : réglé {}, dû {}",
+                        fiche.montant_regle, fiche.reste_du
+                    ));
+                }
+            }
+            autre => echecs.push(format!(
+                "service, F{} : attendu arrondi {attendu:?} ; rendu {:?}",
+                i + 1,
+                autre.map(|x| x.arrondi_5_centimes)
+            )),
+        }
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+// ============================================================
+// Story 32-4b — la validation, les bornes et l'ordre des lectures, au service
+// ============================================================
+
+/// Une recherche de `n` caractères `a`.
+fn a_fois(n: usize) -> Option<String> {
+    Some("a".repeat(n))
+}
+
+/// AC11 (a) — la table des refus, au service : les cinq refus de
+/// `factures::lister` et les sept de `factures::echeances` (portés par
+/// `requete_echeances`), chacun seul, message attendu **en entier** ; leurs
+/// voisines acceptées (les bornes) ; et les cas d'ordre (deux refus à la fois :
+/// le premier dans l'ordre du code gagne). La recherche
+/// `" " + "a"×100 + " "` (102 caractères bruts, 100 rognés) est acceptée et
+/// rend le même total que `"a"×100` : seule la longueur comparée à
+/// `RECHERCHE_MAX` voit le rognage du service, le dépôt rognant lui-même
+/// (témoin de M12b).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac324b_a_les_refus_de_la_liste_et_de_l_echeancier(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = Lecture::new(pool.clone());
+    let acces = mcp_societe(
+        livres.s.company_id,
+        livres.s.admin_user_id,
+        &[Portee::InvoicesRead],
+    );
+    let jour = |a, m, j| NaiveDate::from_ymd_opt(a, m, j);
+    let s = |v: &str| Some(v.to_string());
+    let l = DemandeListeFactures::default;
+    let e = DemandeEcheances::default;
+    const LIMIT: &str = "limit doit être compris entre 1 et 100";
+    const OFFSET: &str = "offset doit être positif ou nul";
+    const SEARCH: &str = "search doit faire au plus 100 caractères";
+    const STATUS: &str = "status invalide";
+    const DATES: &str = "dateFrom doit être antérieur ou égal à dateTo";
+    // (nom, demande, message attendu ; `None` : acceptée)
+    let liste: Vec<(&str, DemandeListeFactures, Option<&str>)> = vec![
+        (
+            "limit 0",
+            DemandeListeFactures {
+                limit: Some(0),
+                ..l()
+            },
+            Some(LIMIT),
+        ),
+        (
+            "limit 101",
+            DemandeListeFactures {
+                limit: Some(101),
+                ..l()
+            },
+            Some(LIMIT),
+        ),
+        (
+            "offset -1",
+            DemandeListeFactures {
+                offset: Some(-1),
+                ..l()
+            },
+            Some(OFFSET),
+        ),
+        (
+            "search 101",
+            DemandeListeFactures {
+                search: a_fois(101),
+                ..l()
+            },
+            Some(SEARCH),
+        ),
+        (
+            "status x",
+            DemandeListeFactures {
+                status: s("x"),
+                ..l()
+            },
+            Some(STATUS),
+        ),
+        (
+            "dateFrom > dateTo",
+            DemandeListeFactures {
+                date_from: jour(2021, 2, 2),
+                date_to: jour(2021, 2, 1),
+                ..l()
+            },
+            Some(DATES),
+        ),
+        (
+            "ordre limit avant offset",
+            DemandeListeFactures {
+                limit: Some(0),
+                offset: Some(-1),
+                ..l()
+            },
+            Some(LIMIT),
+        ),
+        (
+            "ordre offset avant status",
+            DemandeListeFactures {
+                offset: Some(-1),
+                status: s("x"),
+                ..l()
+            },
+            Some(OFFSET),
+        ),
+        (
+            "ordre search avant status",
+            DemandeListeFactures {
+                search: a_fois(101),
+                status: s("x"),
+                ..l()
+            },
+            Some(SEARCH),
+        ),
+        (
+            "ordre status avant dates",
+            DemandeListeFactures {
+                status: s("x"),
+                date_from: jour(2021, 2, 2),
+                date_to: jour(2021, 2, 1),
+                ..l()
+            },
+            Some(STATUS),
+        ),
+        (
+            "limit 1",
+            DemandeListeFactures {
+                limit: Some(1),
+                ..l()
+            },
+            None,
+        ),
+        (
+            "limit 100",
+            DemandeListeFactures {
+                limit: Some(100),
+                ..l()
+            },
+            None,
+        ),
+        (
+            "offset 0",
+            DemandeListeFactures {
+                offset: Some(0),
+                ..l()
+            },
+            None,
+        ),
+        (
+            "offset 1000001 (pas de plafond)",
+            DemandeListeFactures {
+                offset: Some(1_000_001),
+                ..l()
+            },
+            None,
+        ),
+        (
+            "search 100",
+            DemandeListeFactures {
+                search: a_fois(100),
+                ..l()
+            },
+            None,
+        ),
+        (
+            "status draft",
+            DemandeListeFactures {
+                status: s("draft"),
+                ..l()
+            },
+            None,
+        ),
+        (
+            "status validated",
+            DemandeListeFactures {
+                status: s("validated"),
+                ..l()
+            },
+            None,
+        ),
+        (
+            "status cancelled",
+            DemandeListeFactures {
+                status: s("cancelled"),
+                ..l()
+            },
+            None,
+        ),
+        (
+            "dateFrom == dateTo",
+            DemandeListeFactures {
+                date_from: jour(2021, 2, 1),
+                date_to: jour(2021, 2, 1),
+                ..l()
+            },
+            None,
+        ),
+    ];
+    let mut echecs = Vec::new();
+    for (nom, demande, attendu) in liste {
+        let r = factures::lister(&acces, &lecture, demande).await;
+        match (attendu, &r) {
+            (None, Ok(_)) => {}
+            (Some(m), _) if message_de_validation(&r).as_deref() == Ok(m) => {}
+            _ => echecs.push(format!(
+                "lister {nom} : attendu {attendu:?}, rendu {:?}",
+                message_de_validation(&r)
+            )),
+        }
+    }
+
+    const PLAFOND: &str = "offset doit être ≤ 1000000";
+    const DB_FROM: &str = "dueBefore doit être ≥ dateFrom";
+    const DB_TO: &str = "dueBefore doit être ≥ dateTo";
+    let echeancier: Vec<(&str, DemandeEcheances, Option<&str>)> = vec![
+        (
+            "limit 0",
+            DemandeEcheances {
+                limit: Some(0),
+                ..e()
+            },
+            Some(LIMIT),
+        ),
+        (
+            "limit 101",
+            DemandeEcheances {
+                limit: Some(101),
+                ..e()
+            },
+            Some(LIMIT),
+        ),
+        (
+            "offset -1",
+            DemandeEcheances {
+                offset: Some(-1),
+                ..e()
+            },
+            Some(OFFSET),
+        ),
+        (
+            "offset 1000001",
+            DemandeEcheances {
+                offset: Some(1_000_001),
+                ..e()
+            },
+            Some(PLAFOND),
+        ),
+        (
+            "search 101",
+            DemandeEcheances {
+                search: a_fois(101),
+                ..e()
+            },
+            Some(SEARCH),
+        ),
+        (
+            "dateFrom > dateTo",
+            DemandeEcheances {
+                date_from: jour(2021, 2, 2),
+                date_to: jour(2021, 2, 1),
+                ..e()
+            },
+            Some(DATES),
+        ),
+        (
+            "dueBefore < dateFrom",
+            DemandeEcheances {
+                date_from: jour(2021, 2, 2),
+                due_before: jour(2021, 2, 1),
+                ..e()
+            },
+            Some(DB_FROM),
+        ),
+        (
+            "dueBefore < dateTo",
+            DemandeEcheances {
+                date_to: jour(2021, 2, 2),
+                due_before: jour(2021, 2, 1),
+                ..e()
+            },
+            Some(DB_TO),
+        ),
+        (
+            "ordre plafond avant search",
+            DemandeEcheances {
+                offset: Some(1_000_001),
+                search: a_fois(101),
+                ..e()
+            },
+            Some(PLAFOND),
+        ),
+        (
+            "ordre dates avant dueBefore < dateFrom",
+            DemandeEcheances {
+                date_from: jour(2021, 3, 1),
+                date_to: jour(2021, 2, 1),
+                due_before: jour(2021, 1, 1),
+                ..e()
+            },
+            Some(DATES),
+        ),
+        (
+            "ordre dueBefore < dateFrom avant dueBefore < dateTo",
+            DemandeEcheances {
+                date_from: jour(2021, 1, 1),
+                date_to: jour(2021, 2, 1),
+                due_before: jour(2020, 12, 1),
+                ..e()
+            },
+            Some(DB_FROM),
+        ),
+        (
+            "limit 1",
+            DemandeEcheances {
+                limit: Some(1),
+                ..e()
+            },
+            None,
+        ),
+        (
+            "limit 100",
+            DemandeEcheances {
+                limit: Some(100),
+                ..e()
+            },
+            None,
+        ),
+        (
+            "offset 0",
+            DemandeEcheances {
+                offset: Some(0),
+                ..e()
+            },
+            None,
+        ),
+        (
+            "offset 1000000",
+            DemandeEcheances {
+                offset: Some(1_000_000),
+                ..e()
+            },
+            None,
+        ),
+        (
+            "search 100",
+            DemandeEcheances {
+                search: a_fois(100),
+                ..e()
+            },
+            None,
+        ),
+        (
+            "dateFrom == dateTo",
+            DemandeEcheances {
+                date_from: jour(2021, 2, 1),
+                date_to: jour(2021, 2, 1),
+                ..e()
+            },
+            None,
+        ),
+        (
+            "dueBefore == dateFrom",
+            DemandeEcheances {
+                date_from: jour(2021, 2, 1),
+                due_before: jour(2021, 2, 1),
+                ..e()
+            },
+            None,
+        ),
+        (
+            "dueBefore == dateTo",
+            DemandeEcheances {
+                date_to: jour(2021, 2, 1),
+                due_before: jour(2021, 2, 1),
+                ..e()
+            },
+            None,
+        ),
+        (
+            "dueBefore == dateTo, dateFrom ≤ dateTo",
+            DemandeEcheances {
+                date_from: jour(2021, 1, 1),
+                date_to: jour(2021, 2, 1),
+                due_before: jour(2021, 2, 1),
+                ..e()
+            },
+            None,
+        ),
+    ];
+    for (nom, demande, attendu) in echeancier {
+        let r = factures::echeances(&acces, &lecture, demande).await;
+        match (attendu, &r) {
+            (None, Ok(_)) => {}
+            (Some(m), _) if message_de_validation(&r).as_deref() == Ok(m) => {}
+            _ => echecs.push(format!(
+                "echeances {nom} : attendu {attendu:?}, rendu {:?}",
+                message_de_validation(&r)
+            )),
+        }
+    }
+
+    // Le rognage (témoin de M12b) et la recherche blanche, pour les deux.
+    let encadree = Some(format!(" {} ", "a".repeat(100)));
+    let liste_total = |d: DemandeListeFactures| {
+        let (acces, lecture) = (&acces, &lecture);
+        async move { factures::lister(acces, lecture, d).await.map(|p| p.total) }
+    };
+    let (nu, encadre, blanc, sans) = (
+        liste_total(DemandeListeFactures {
+            search: a_fois(100),
+            ..l()
+        })
+        .await,
+        liste_total(DemandeListeFactures {
+            search: encadree.clone(),
+            ..l()
+        })
+        .await,
+        liste_total(DemandeListeFactures {
+            search: s("   "),
+            ..l()
+        })
+        .await,
+        liste_total(l()).await,
+    );
+    if nu.is_err()
+        || encadre.as_ref().ok() != nu.as_ref().ok()
+        || !matches!(sans, Ok(t) if t >= 1)
+        || blanc.as_ref().ok() != sans.as_ref().ok()
+    {
+        echecs.push(format!(
+            "lister rognage : a×100 {nu:?}, encadrée {encadre:?} ; blanche {blanc:?}, sans {sans:?}"
+        ));
+    }
+    let echeancier_total = |d: DemandeEcheances| {
+        let (acces, lecture) = (&acces, &lecture);
+        async move {
+            factures::echeances(acces, lecture, d)
+                .await
+                .map(|e| e.page.total)
+        }
+    };
+    let (nu, encadre, blanc, sans) = (
+        echeancier_total(DemandeEcheances {
+            search: a_fois(100),
+            ..e()
+        })
+        .await,
+        echeancier_total(DemandeEcheances {
+            search: encadree,
+            ..e()
+        })
+        .await,
+        echeancier_total(DemandeEcheances {
+            search: s("   "),
+            ..e()
+        })
+        .await,
+        echeancier_total(e()).await,
+    );
+    if nu.is_err()
+        || encadre.as_ref().ok() != nu.as_ref().ok()
+        || !matches!(sans, Ok(t) if t >= 1)
+        || blanc.as_ref().ok() != sans.as_ref().ok()
+    {
+        echecs.push(format!(
+            "echeances rognage : a×100 {nu:?}, encadrée {encadre:?} ; blanche {blanc:?}, sans {sans:?}"
+        ));
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// AC11 (b) — les bornes de `factures_fournisseur::lister` (défaut 50,
+/// plafond 200, écrêtage), et les défauts des deux listes clientes
+/// (`(None, None)` → `limit` 20, `offset` 0).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac324b_b_les_bornes_des_listes_de_factures(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = Lecture::new(pool.clone());
+    let acces = api_societe(
+        livres.s.company_id,
+        livres.s.admin_user_id,
+        Role::Consultation,
+    );
+    let mut echecs = Vec::new();
+    for ((limit, offset), attendu) in table_des_bornes(50, 200) {
+        let r = factures_fournisseur::lister(
+            &acces,
+            &lecture,
+            DemandeListeFacturesFournisseur { limit, offset },
+        )
+        .await
+        .map(|p| (p.limit, p.offset));
+        if r.as_ref().ok() != Some(&attendu) {
+            echecs.push(format!(
+                "fournisseur ({limit:?}, {offset:?}) : attendu {attendu:?}, rendu {r:?}"
+            ));
+        }
+    }
+    let r = factures::lister(&acces, &lecture, DemandeListeFactures::default())
+        .await
+        .map(|p| (p.limit, p.offset));
+    if r.as_ref().ok() != Some(&(20, 0)) {
+        echecs.push(format!("factures::lister défauts : {r:?}"));
+    }
+    let r = factures::echeances(&acces, &lecture, DemandeEcheances::default())
+        .await
+        .map(|e| (e.page.limit, e.page.offset));
+    if r.as_ref().ok() != Some(&(20, 0)) {
+        echecs.push(format!("factures::echeances défauts : {r:?}"));
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// AC12 (c) — l'ordre des lectures : `factures::lister` lit la société avant
+/// de valider (société inexistante **et** `limit = 0` → `Internal`) ;
+/// `factures::reglements` et `factures_fournisseur::detail` lisent la société
+/// avant la facture (société et facture inexistantes → `Internal`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac324b_c_la_societe_est_lue_d_abord(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = Lecture::new(pool.clone());
+    let acces = mcp_societe(INEXISTANT, livres.s.admin_user_id, &[Portee::InvoicesRead]);
+    let mut echecs = Vec::new();
+    let r = factures::lister(
+        &acces,
+        &lecture,
+        DemandeListeFactures {
+            limit: Some(0),
+            ..Default::default()
+        },
+    )
+    .await
+    .map(drop);
+    if !est_interne(&r) {
+        echecs.push(format!("factures::lister : {}", resume(&r)));
+    }
+    let r = factures::reglements(&acces, &lecture, INEXISTANT)
+        .await
+        .map(drop);
+    if !est_interne(&r) {
+        echecs.push(format!("factures::reglements : {}", resume(&r)));
+    }
+    let r = factures_fournisseur::detail(&acces, &lecture, INEXISTANT)
+        .await
+        .map(drop);
+    if !est_interne(&r) {
+        echecs.push(format!("factures_fournisseur::detail : {}", resume(&r)));
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// AC12 (d) — ce qui ne lit pas la société, figé (leçon 3 de la 32-4a) : sous
+/// un contexte MCP d'une société inexistante, `InvoicesRead`,
+/// `factures::detail` d'une facture existante → `NotFound` (non `Internal`) ;
+/// `factures::echeances` → `Ok`, page vide, résumé à zéro.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac324b_d_detail_et_echeances_ne_lisent_pas_la_societe(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = Lecture::new(pool.clone());
+    let acces = mcp_societe(INEXISTANT, livres.s.admin_user_id, &[Portee::InvoicesRead]);
+    let mut echecs = Vec::new();
+    let r = factures::detail(&acces, &lecture, livres.brouillon_id)
+        .await
+        .map(drop);
+    if !est_introuvable(&r) {
+        echecs.push(format!("factures::detail : {}", resume(&r)));
+    }
+    match factures::echeances(&acces, &lecture, DemandeEcheances::default()).await {
+        Ok(e)
+            if e.page.total == 0
+                && e.page.items.is_empty()
+                && e.resume.unpaid_count == 0
+                && e.resume.overdue_count == 0
+                && e.resume.unpaid_total == Decimal::ZERO => {}
+        autre => echecs.push(format!(
+            "factures::echeances : {:?}",
+            autre.map(|e| (e.page.total, e.resume.unpaid_count))
+        )),
     }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
 }
