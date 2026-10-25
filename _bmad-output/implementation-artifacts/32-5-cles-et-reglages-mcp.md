@@ -571,17 +571,17 @@ passages du manuel qui les décrivent (C-32-5-22).
 ## Tâches
 
 ### 32-5a
-- [ ] **T-a0** — recontrôle au code des faits 7, 10, 11, 14, 15, 16, 17 (ligne lue citée au Change Log) ; `git log -1`
+- [x] **T-a0** — recontrôle au code des faits 7, 10, 11, 14, 15, 16, 17 (ligne lue citée au Change Log) ; `git log -1`
   = partie de `main` à jour ; version de migration libre.
-- [ ] **T-a1** — migration (AC-a1), `CHECK` éprouvés **à la main** sur `kesh_325` (le fichier peut encore changer).
-- [ ] **T-a2** — entités et dépôts, leurs tests (AC-a2 à AC-a5) ; **puis**, les `CHECK` éprouvés par les tests
+- [x] **T-a1** — migration (AC-a1), `CHECK` éprouvés **à la main** sur `kesh_325` (le fichier peut encore changer).
+- [x] **T-a2** — entités et dépôts, leurs tests (AC-a2 à AC-a5) ; **puis**, les `CHECK` éprouvés par les tests
   d'AC-a2, squash régénéré et ligne de `migrations.sha384` **en dernier** (AC-a12) — à partir de là, P8.
-- [ ] **T-a3** — inventaire, export global, aller-retour (AC-a6 à AC-a8).
-- [ ] **T-a4** — fenêtre de P7, justifications, tests d'import du lettrage, refus de la 0.14.0 (AC-a9, AC-a10,
+- [x] **T-a3** — inventaire, export global, aller-retour (AC-a6 à AC-a8).
+- [x] **T-a4** — fenêtre de P7, justifications, tests d'import du lettrage, refus de la 0.14.0 (AC-a9, AC-a10,
   AC-a15).
-- [ ] **T-a5** — audit d'idempotence, P6 (AC-a11).
-- [ ] **T-a6** — manuels, PDF, CHANGELOG, propagation (AC-a13, AC-a14) — et § *À recontrôler à l'étape 0 du développement* (P8-1 à P8-4, `user-manual.tex:1914`).
-- [ ] **T-a7** — mutations Ma1 à Ma7, gates (§ *Gates*).
+- [x] **T-a5** — audit d'idempotence, P6 (AC-a11).
+- [x] **T-a6** — manuels, PDF, CHANGELOG, propagation (AC-a13, AC-a14) — et § *À recontrôler à l'étape 0 du développement* (P8-1 à P8-4, `user-manual.tex:1914`).
+- [x] **T-a7** — mutations Ma1 à Ma7, gates (§ *Gates*).
 
 ### 32-5b
 - [ ] **T-b0** — recontrôle des faits 1, 2, 6 ; 32-5a fusionnée ; **recompte**, sur `main` au départ de la 32-5b, des
@@ -884,19 +884,167 @@ développement fait chaque correction **à l'étape 0**, et la déclare au Chang
 
 ### Agent Model Used
 
-*(à remplir)*
+- **32-5a** : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-5`, départ `deb3b250`.
 
 ### Étape 0 — recontrôle (ligne lue citée)
 
-*(à remplir, par partie)*
+#### 32-5a (le 2026-10-25, contre `deb3b250`)
+
+`git diff --stat e59d63e8 deb3b250` : la 32-4a ne touche ni `kesh-db`, ni les tests d'administration, ni les manuels ;
+les lignes citées par la fiche pour les faits 7, 10, 11, 14 à 17 tiennent.
+
+- **Fait 7** : `awk '/^pub const TABLES_TO_TRUNCATE/,/^\];/' crates/kesh-db/src/backup.rs | grep -cE '^\s+"[a-z_]+",'` → 39 ;
+  `backup.rs:75` `"api_keys", // Story 17-2a (#100) — enfant de companies + users (RESTRICT).` ;
+  `admin_full_export_e2e.rs:282` `data_count, 39,` ; `import.rs:236` `return Err(invalide(format!("table '{t}' absente du manifeste")));`.
+- **Fait 10** : `post_restore.rs:250` `// Hors fenêtre ? Non : aucune table applicative n'est créée depuis` ; `:1155` `8,` ;
+  `:1255` `20,`.
+- **Fait 11** : `exports/global.rs:166-167` « Les dix ci-dessous … les 39 tables » ; la liste compte **neuf** entrées
+  (`awk … | grep -cE '^\s+"[a-z_]+",$'` → 9) ; `user-manual.tex:3027` « clés d'API et jetons de session ».
+- **Fait 14** : `bank_profiles.sql:49` `CHECK (JSON_VALID(column_mapping)),` ; `grep -rln "JSON_TYPE\|JSON_LENGTH" crates/kesh-db/migrations` → rien.
+  **Éprouvé sur `kesh_325` (MariaDB 10.11.19, la version de `docker-compose.yml:4` et de la CI)** : `JSON_TYPE` et
+  `JSON_LENGTH` sont admis dans un `CHECK` (`{}`, `[]`, `"s"` refusés en 4025) — **le repli des Dev Notes n'a pas servi**.
+- **Fait 15** : `migrations_upgrade_path.rs:121` `total, 83,` ; `:208` `let n_before_upgrade_window = total - 49;` ; quinze
+  lignes `\b(83|49)\b` au départ ; les autres sites de P6 (`:588`, `:667`, `lettering_documents_backfill.rs:778`,
+  `journal_entry_number_sequences_bootstrap.rs:91`) résolvent par `migrations_before(<version>, …)`.
+- **Fait 16** : `migrations.sha384:13-14` « Une ligne s'AJOUTE quand une migration est créée ; elle ne se MODIFIE
+  jamais. » ; 98 lignes au départ ; `scripts/regen-test-schema.sh` présent.
+- **Fait 17** : `admin-manual.tex:2230` « condensés des clés API (PAT) » ; `:2246` « La 0.15.0 importe les sauvegardes
+  des deux formats. » ; `:2317` « rejoue donc ces reprises à la fin de chaque import » ; `:2373` « format 2 (0.15.0 ou
+  plus récente) » ; `:2376` « égale ou plus récente » ; `CHANGELOG.md:11-13` `## [0.16.0] — Non publié` puis `### Corrigé`.
+- **Écart pour la 32-5b (fait 6)** : la 32-4a a ajouté `Portee::ContactsRead` (`services/acces.rs:29-31`) — trois
+  variantes et non deux ; les comptes de l'AC-b2 se recomptent à T-b0. L'ordre des variantes de `McpScope`
+  (`BooksRead`, `InvoicesRead`, `ContactsRead`, …) prolonge celui de `Portee`.
+- **Version de migration libre** : `ls crates/kesh-db/migrations | grep 20261025` → rien au départ.
+
+Points de *À recontrôler à l'étape 0 du développement* :
+
+- **P7-6** : la phrase est écrite sans redite — « Après la mise à jour vers la 0.16.0, prenez sans attendre une
+  sauvegarde complète » ; le contrôle aplati cherche « sans attendre une sauvegarde complète ».
+- **P8-1** : appliqué — grep de classe sur le `.tex` des deux § seulement, motif `égale ou`. Sorties (à HEAD,
+  *Compatibilité* l. 2249, *Restaurer sur une nouvelle machine* l. 2377-2406) :
+  - l. 2249 : « elle **refuse** donc les sauvegardes de la 0.15.0 et des versions antérieures » (vrai) ; « La 0.15.0
+    importait les sauvegardes des deux formats » (passé, vrai) ; « une sauvegarde de la 0.15.0 ne s'importe pas dans
+    une 0.14.x » (vrai) ;
+  - l. 2379 : « Une sauvegarde de format 2 emporte les pièces » (vrai) ; « Une sauvegarde de format 1 (0.14.x et
+    avant) ne s'importe plus dans la 0.16.0 » (vrai).
+  Le PDF est contrôlé par la liste d'absence (sorties plus bas).
+- **P8-2** : `git log --oneline -1 00475d19` → « remédiation de la passe P4 de la validation de la fiche » ;
+  `481116dd` → « prompt de la passe ciblée P6 ». Corrigé par **annotation datée** au fichier d'epic (puce Q4,
+  `epic-32-serveur-mcp.md:563`), sans réécrire le texte (C-32-5-36) ; l'entrée *Validation P7* de ce Change Log reste
+  telle quelle, l'annotation est ici.
+- **P8-3** : le renvoi de T-a6 suffit — c'est lui qui a mené à cette section.
+- **P8-4** : annotation au registre (C-32-5-21 : « réduite » plutôt que « remplacée ») et au point 7 (« aucune procédure
+  détaillée de restauration », l'ancien mot annoté).
+- **`user-manual.tex:1914`** : « restaurée sur une autre machine » devient « restaurée par une 0.15.x sur une autre
+  machine … ; la 0.16.0, elle, ne l'importe plus (le manuel administrateur dit pourquoi) ».
 
 ### Completion Notes List
 
-*(à remplir)*
+#### 32-5a
+
+- **Migration** `20261025000001_mcp_keys_and_server_settings.sql` : le schéma des Dev Notes, à deux écarts près,
+  trouvés **par les tests d'AC-a2** avant l'inscription de la ligne de checksum (C-32-5-29) : le nom se contrôle par
+  `REGEXP '[^[:space:]]'` (`TRIM` laissait passer une tabulation) ; le `CHECK` de `send_validation` compare en
+  `utf8mb4_nopad_bin` (la collation `_ci` acceptait `Required`, `EXEMPT`, `required `). Une collation binaire **de
+  colonne** a été essayée et retirée : sqlx la lit en `VARBINARY`. Aucune instruction n'écrit de données
+  (`grep -nE "^\s*(INSERT|UPDATE|DELETE|REPLACE)\b"` → rien ; `every_data_backfill_migration_is_triaged` vert).
+- **Squash** régénéré par `scripts/regen-test-schema.sh` (43 tables, rejeu vérifié) ; ligne
+  `20261025000001 aa425d40…3e7` ajoutée **en dernier** à `migrations.sha384` (commit `67e31b36`). Le fichier de migration
+  n'a pas changé depuis (P8).
+- **Entités, dépôts** : `McpScope` (cinq, `ALL`), `McpScopes` (non vide, trié, strict), `McpScopeError`,
+  `SendValidation`, `McpKey`, `NewMcpKey` (ni `Serialize` ni `Deserialize`, `Debug` masquant le condensat),
+  `McpServerSettings::defaults` et constantes nommées ; `mcp_keys` (sept fonctions de l'AC-a5) et
+  `mcp_server_settings` (`get`, `get_or_defaults`, `save_in_tx`). Choix C-32-5-30 à 33.
+- **Inventaire** : 39 → 41 ; `TABLES_HORS_EXPORT` 9 → 11, commentaire « onze … 41 » ; `populate` peuple les deux
+  tables, `EMPTY_BEFORE_RESET` inchangée ; aller-retour colonne par colonne et serveur activé après l'import (Q7).
+- **P7** : registre de production vide ; `20261010000001` au registre retiré (contenu inchangé) et à `EXEMPT_MIGRATIONS`
+  (`Durable`, « Hors fenêtre depuis 20261025000001 ») ; compteurs 9 et 21 ; justifications et commentaires réécrits.
+  **Les neuf autres appelants de `replay_retired` rejouent désormais aussi le lettrage** : tous verts au gate ciblé de
+  T-a4 et au gate complet.
+- **Tests convertis** : les quatre tests du lettrage gardent chacun une assertion sur une marque posée par le rejeu ;
+  le miroir du registre asserte un rapport vide (C-32-5-34) ; l'ordre de rejeu, cinq entrées ;
+  `ac10_la_sauvegarde_de_la_0_14_0_est_refusee`.
+- **Hors périmètre, signalés** (AC-a9, AC-a11) : les justifications de `20260909000001` et `20260915000001` qui se disent
+  « dans la fenêtre », et les lignes `:85` et `:89` de l'audit d'idempotence restées au présent depuis la 25-2-c —
+  tracés en **#748**. Constaté en écrivant C-32-5-29 : le `CHECK` de `api_keys.scope` a le même défaut de collation —
+  **#747**.
+- **Manuel** (AC-a13) : les points (1) à (5) appliqués, manuel utilisateur `:1914` et `:3027` ; deux PDF régénérés
+  (`make fr`), la brochure rendue à son état (C-32-5-35). Contrôles du PDF aplati
+  (`pdftotext … | tr '\n' ' ' | tr -s ' '`), sorties abrégées :
+  - présents : « … qui porte les mêmes tables qu'elle : l'import compare, dans les deux sens … » ; « … dans le dépôt de
+    Kesh, au tag de cette version ; ensuite, on met à jour. » ; « Après la mise à jour vers la 0.16.0, prenez sans
+    attendre une sauvegarde complète : les sauvegardes précédentes, automatiques comprises, ne s'y importent plus. » ;
+    « … depuis la 0.16.0 les condensés des clés du serveur MCP … » ; « … le réglage et l'état de la sauvegarde
+    automatique (activation, intervalle, … » ; « Depuis la 0.16.0, aucune de ces reprises n'est plus rejouée … » ;
+    manuel utilisateur : « … les clés d'API, les clés du serveur MCP et les jetons de session … », « … la 0.16.0, elle,
+    ne l'importe plus … » ;
+  - absents (`grep -c`) : « égale ou plus récente » 0, « 0.15.0 ou plus récente » 0, « appliquera cette fois » 0,
+    « rejoue donc ces reprises » 0, « format 1 restaure » 0.
+  - **AC-a14** : `\b39\b` + « table » → rien ; « dix ci-dessous » → rien ; « aucune table applicative n'est créée
+    depuis » → rien ; « n'est PAS vide » → rien ; motifs du manuel → rien ; motifs du registre → quatre lignes, toutes
+    attendues : `post_restore.rs:427` et `:504` (historiques datés « Figurait au registre de rejeu jusque-là »), `:578`
+    (la justification de `20261010000002` qui **cite** l'en-tête périmé de sa migration), `letterings_lexical.rs:19`
+    (« rejouée à l'import jusqu'à la Story 32-5a »). En-têtes de migration `20261010000002…sql:3` et
+    `20260909000001…sql:52` non modifiés (P8).
+- **CHANGELOG** : `### Modifié` créé dans `[0.16.0]`, entrée ⚠️ de même substance.
+
+**Gates (32-5a)** — journaux `kesh-gate-logs/325a-*` :
+
+- **gates ciblés** pendant l'itération : T-a2 36/36 (dont `test_schema_guard` 7/7), T-a3 128/128, T-a4 89/89,
+  T-a5 14/14 ;
+- **gate complet** au dernier commit de code (`e548574c`), `kesh_325` remise à zéro juste avant :
+  `scripts/test-fast.sh --ci` — garde des droits, `cargo fmt --check`, `cargo clippy --all-targets -D warnings`,
+  nextest **4046 réussis, 7 ignorés** (`325a-gate-complet.log`) ;
+- **frontend** (aucun fichier de `frontend/` touché ; les gates tournés pour déclarer le dernier commit de code) :
+  `npm run check` 0 erreur, 29 avertissements préexistants ; `lint-i18n-ownership` vert ; `test:unit` 163 fichiers,
+  **1939 tests** verts ; `npm run build` vert (`325a-front-gates.log`, `325a-front-build.log`) ;
+- **E2E complet** au commit `e548574c` (`325a-e2e.log`), recette de `docs/testing.md`, port 3325, base `kesh_e2e_325`
+  reconstruite, dossiers neufs `/tmp/kesh-e2e-325a/` : **314 passés, 8 échecs, 17 ignorés** (13,0 min). Échecs jugés
+  fichier par fichier contre `docs/testing.md` § *Les échecs attendus* : les **7 KF-029** (`mode-expert.spec.ts:26`,
+  `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`) et
+  `sidebar-navigation.spec.ts:75` (**KF-052, #424**, inscrite à la liste), **rejouée seule : 1 passé**
+  (`325a-e2e-rejeu-sidebar.log`). Aucune régression. ⚠️ **L'E2E a tourné après une première commande refusée** : un
+  montage en un seul tenant (dont `rm -rf /tmp/kesh-e2e-325`) a été refusé par le système de permissions ; rien n'en a
+  tourné. Reprise sur instruction de l'orchestrateur, en commandes séparées, sans aucune suppression, avec un dossier
+  neuf.
+
+**Mutations (32-5a)** — `325a-mutations.log`, une à la fois, motif vérifié unique, binaire concerné seul relinké
+(`-p … --lib` ou `--test …`), restauration `git checkout --` puis `touch`, diff résiduel nul : **10 jouées, 10 tuées**.
+
+| # | Rougit |
+|---|---|
+| Ma1a (`mcp_keys` retirée de l'inventaire) | `backup_inventory_matches_schema` |
+| Ma1b (`mcp_server_settings` retirée) | `backup_inventory_matches_schema` |
+| Ma2 (`mcp_keys` retirée de `TABLES_HORS_EXPORT`) | `export_couvre_toutes_les_tables` — « ni exportées ni exclues : ["mcp_keys"] » |
+| Ma3 (décodage qui ignore une portée inconnue) | `unknown_scope_string_is_refused` |
+| Ma4a (sans `revoked_at IS NULL`) | `auth_lookup_ignores_a_revoked_key` |
+| Ma4b (sans filtre d'expiration) | `auth_lookup_ignores_an_expired_key` |
+| Ma4c (sans `JOIN companies`) | `auth_lookup_ignores_an_orphan_key` |
+| Ma5 (lettrage remis au registre de production) | `registry_entries_are_within_import_window` |
+| Ma6 (`allowed_networks` rebindée à `[]` à l'import) | `mcp_tables_roundtrip_column_by_column_and_enabled_server_stays_enabled` |
+| Ma7 (`parse_and_verify` tolère une table absente) | `ac10_la_sauvegarde_de_la_0_14_0_est_refusee` — la fixture s'importait en 200 |
+
+**Décomptes** (recomptés, périmètre `deb3b250..e548574c`) : **28 fichiers** hors `_bmad-output` (`git diff --name-status
+deb3b250 e548574c | grep -vc _bmad-output`), dont 7 neufs ; **30 tests neufs** (`grep -cE '#\[(sqlx::)?test'` aux deux
+bornes) : `mcp_keys_repository.rs` 0 → 21, `entities/mcp_key.rs` 0 → 7, `entities/mcp_server_settings.rs` 0 → 1,
+`admin_backup_e2e.rs` 3 → 4 ; `admin_full_import_e2e.rs` 55 → 55 (`ac10` renommé, non ajouté). Migrations 83 → 84.
 
 ### File List
 
-*(à remplir)*
+#### 32-5a
+
+- Neufs : `crates/kesh-db/migrations/20261025000001_mcp_keys_and_server_settings.sql`,
+  `crates/kesh-db/src/entities/{mcp_key.rs, mcp_server_settings.rs}`,
+  `crates/kesh-db/src/repositories/{mcp_keys.rs, mcp_server_settings.rs}`, `crates/kesh-db/tests/mcp_keys_repository.rs`.
+- Modifiés : `crates/kesh-db/{migrations.sha384, test-schema/0001_schema_squash.sql}` ;
+  `crates/kesh-db/src/{backup.rs, post_restore.rs, entities/mod.rs, repositories/mod.rs, repositories/letterings.rs}` ;
+  `crates/kesh-db/tests/{migrations_upgrade_path.rs, post_restore_class_a.rs, lettering_documents_backfill.rs,
+  letterings_lexical.rs}` ; `crates/kesh-api/src/exports/global.rs` ;
+  `crates/kesh-api/tests/{admin_backup_e2e.rs, admin_full_export_e2e.rs, admin_full_import_e2e.rs,
+  onboarding_audit_e2e.rs}` ; `docs/migrations-idempotence-audit.md` ;
+  `docs/manual/fr/{admin-manual,user-manual}.{tex,pdf}` ; `CHANGELOG.md`.
+- Artefacts : cette fiche, `epic-32-choix-autonomes-325.md` (C-32-5-29 à 36), `planning-artifacts/epic-32-serveur-mcp.md`
+  (annotation P8-2), `sprint-status.yaml`, `325a-review-prompt-p1.md`.
 
 ## Change Log
 
@@ -1123,4 +1271,12 @@ développement fait chaque correction **à l'étape 0**, et la déclare au Chang
     décidés par l'orchestrateur.
   - Totaux : 31 AC, 23 tâches, 23 mutations ; registre C-32-5-1 à C-32-5-28. La fiche est prête pour le développement
     des quatre parties, dans l'ordre a → b → d → c.
+- **2026-10-25 — Développement 32-5a** (Opus 5.5, en autonomie, `deb3b250` → `e548574c`, cinq commits de code et de
+  documentation). T-a0 à T-a7 faites ; étape 0 traitée (P7-6, P8-1 à P8-4, `user-manual.tex:1914`), ligne lue citée au
+  Dev Agent Record. Deux écarts au schéma, trouvés par les tests des `CHECK` avant l'inscription de la ligne de
+  checksum (C-32-5-29). Choix C-32-5-29 à C-32-5-36 ; hors périmètre tracés en #747 et #748. Gate complet **4046/4046**
+  (7 ignorés) ; frontend vert (1939 tests) ; E2E **314 passés, 8 échecs attendus** (7 KF-029 + KF-052, rejouée seule
+  verte) — **après une première commande refusée**, montage repris en commandes séparées sans suppression ; mutations
+  **10/10 tuées**. 30 tests neufs, 28 fichiers hors artefacts (périmètre `deb3b250..e548574c`). Clé
+  `32-5a-tables-et-sauvegarde-mcp` à `review`. Revue P1 à lancer : `325a-review-prompt-p1.md` (Sonnet, B, E, A).
 

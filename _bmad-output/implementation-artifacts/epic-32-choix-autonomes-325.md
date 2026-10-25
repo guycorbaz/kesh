@@ -387,3 +387,76 @@ de ligne cités sont ceux de `e59d63e8`.
   une règle de plus à tenir pour une version ancienne).
 - **Réversible** : oui.
 
+### C-32-5-29 — Deux contraintes de `mcp_keys` s'écartent du patron d'`api_keys` (développement 32-5a)
+
+- **Contexte** : à T-a1/T-a2, les tests d'AC-a2 ont rougi sur le schéma de la fiche. `CHAR_LENGTH(TRIM(name)) > 0`
+  laisse passer un nom fait d'une tabulation (`TRIM` ne retire que les espaces). Et la collation `utf8mb4_unicode_ci` de
+  la table fait accepter au `CHECK (send_validation IN ('required', 'exempt'))` les valeurs `'Required'`, `'EXEMPT'` et
+  `'required '`, que le décodage strict de `SendValidation` refuse — une ligne qu'aucune lecture ne décoderait.
+- **Retenu** : `CHECK (name REGEXP '[^[:space:]]')` ; `CHECK (send_validation COLLATE utf8mb4_nopad_bin IN (…))` —
+  comparaison binaire sans remplissage, la colonne gardant la collation de la table. Éprouvé à la main sur `kesh_325`,
+  puis par `mcp_keys_repository.rs`, avant l'inscription de la ligne de `migrations.sha384` (P8).
+- **Écartées** : la collation `ascii_bin` sur la colonne (essayée : sqlx la lit en `VARBINARY` et le décodage échoue —
+  l'export de la sauvegarde aurait le même défaut) ; garder le patron d'`api_keys` et laisser Rust seul refuser.
+- **Constat hors périmètre** : `api_keys.scope` a le même défaut de collation — tracé en **#747**.
+- **Réversible** : par une migration suivante seulement (P8).
+
+### C-32-5-30 — `set_send_validation_in_tx` refuse une clé révoquée
+
+- **Contexte** : AC-a5 demande un verrou optimiste, sans dire ce que devient une clé révoquée.
+- **Retenu** : `WHERE … AND revoked_at IS NULL`, soit `OptimisticLockConflict` sur une clé révoquée (même garde que
+  `revoke_in_tx`) ; la fonction rend la version nouvelle.
+- **Écartée** : permettre de changer la politique d'une clé révoquée (sans effet, et une trace d'audit trompeuse en 32-5c).
+- **Réversible** : oui.
+
+### C-32-5-31 — `save_in_tx` : jamais d'écrasement à `version = 0`, conflit sur une version négative
+
+- **Contexte** : C-32-5-8 (`version = 0` = aucune ligne).
+- **Retenu** : à `version = 0`, un `INSERT` qui heurte la clé primaire rend `OptimisticLockConflict` (jamais un
+  `UniqueConstraintViolation` ni un écrasement) ; une version négative rend `OptimisticLockConflict` sans requête.
+- **Écartée** : `INSERT … ON DUPLICATE KEY UPDATE` (écraserait une ligne apparue entre-temps — mutation Mc4).
+- **Réversible** : oui.
+
+### C-32-5-32 — `mcp_server_settings::get_or_defaults`
+
+- **Contexte** : la 32-6 lira les réglages par `get` puis `defaults` ; chaque appelant répéterait le `unwrap_or_else`.
+- **Retenu** : une fonction de plus, sans écriture, qui rend la ligne ou les défauts (`version == 0`). `get` reste.
+- **Réversible** : oui.
+
+### C-32-5-33 — `McpScopeError` et `McpScopes::parse`
+
+- **Contexte** : la 32-5c devra traduire en 400 une portée inconnue ou une liste vide, sans analyser une chaîne.
+- **Retenu** : une erreur typée (`Unknown`, `Empty`, `InvalidJson`, `thiserror`) et `McpScopes::parse` pour les
+  chaînes d'une route, que `from_json` réutilise (DRY).
+- **Écartée** : `String` comme erreur (motif d'`ApiKeyScope`).
+- **Réversible** : oui.
+
+### C-32-5-34 — Le test du miroir du registre asserte un rapport vide
+
+- **Contexte** : AC-a10 ramène `full_import_report_mirrors_the_production_registry` à l'état de la 25-2-c.
+- **Retenu** : en plus de l'égalité avec le registre (vide), `assert!(report.is_empty())`, avec un commentaire : le test
+  rougira à la prochaine entrée du registre, et forcera à relire le triage — comme à la 24-3.
+- **Écartée** : l'égalité seule (vacuement verte tant que le registre est vide, sans signal à la prochaine entrée).
+- **Réversible** : oui.
+
+### C-32-5-35 — Le PDF de la brochure n'est pas recommité
+
+- **Contexte** : `make fr` régénère les trois PDF ; la source de la brochure n'a pas changé.
+- **Retenu** : son PDF est rendu à l'état du dépôt (`git checkout --`) : un diff d'octets sans changement de contenu
+  n'a rien à faire dans la PR.
+- **Réversible** : oui.
+
+### C-32-5-36 — P8-2 et P8-4 par annotation, non par remplacement
+
+- **Contexte** : P8-2 prescrivait de « remplacer » un SHA dans une annotation du fichier d'epic, P8-4 de remplacer un
+  mot au registre — deux relevés datés.
+- **Retenu** : une annotation datée à chaque site (« rectifié à l'étape 0 de la 32-5a »), le texte d'origine laissé
+  lisible (`CLAUDE.md` : un compte rendu passé ne se réécrit pas).
+- **Réversible** : oui.
+
+### Constats hors périmètre (développement 32-5a)
+
+- **#747** — `api_keys.scope` : le `CHECK` en collation `_ci` accepte `'READ'` ou `'read '` (C-32-5-29).
+- **#748** — audit d'idempotence (`:85`, `:89`, au présent depuis la 25-2-c) et justifications de `20260909000001` et
+  `20260915000001` qui se disent « dans la fenêtre ».
+
