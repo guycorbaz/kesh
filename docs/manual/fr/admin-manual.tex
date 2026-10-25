@@ -653,6 +653,7 @@ DSM intègre nativement un reverse proxy HTTPS via le \emph{Portail des applicat
             \item \keshcommand{X-Forwarded-Proto} : \keshcommand{https}
             \item \keshcommand{X-Real-IP} : \keshcommand{\$remote\_addr}
         \end{itemize}
+        Le serveur MCP (\keshpath{/mcp}) n'emploie pas \texttt{X-Real-IP} : ce que son filtre d'adresse voit derrière le proxy de DSM se vérifie au journal (\S\ref{sec:mcp-journal-filtre}).
     \item Onglet \textbf{Avancé} → cocher \keshcommand{HTTP/2} et \keshcommand{HSTS} (Strict-Transport-Security).
     \item Cliquer \textbf{Enregistrer}.
 \end{enumerate}
@@ -3025,6 +3026,83 @@ docker compose logs -f kesh-api
 docker compose logs --tail=100 kesh-api
 docker compose logs --since=1h kesh-api
 \end{lstlisting}
+
+\subsection{Diagnostiquer le filtre d'adresse du serveur MCP}\label{sec:mcp-journal-filtre}
+
+Depuis la 0.16.0, chaque décision du filtre d'adresse du serveur MCP (\keshpath{/mcp}) s'écrit au journal du serveur : \textbf{une ligne par société} dont le serveur MCP est activé, et par requête. La ligne dit ce que voit Kesh --- le pair TCP, la forme des en-têtes de mandataire reçus, le client que le filtre retient --- et le verdict. C'est ce qui permet de vérifier, derrière un proxy inversé (celui de DSM, \S\ref{sec:synology}), si le filtre distingue vraiment les postes, et de régler les mandataires de confiance en connaissance de cause.
+
+\paragraph{Ce qui s'écrit, et à quel niveau.} Un \textbf{refus} s'écrit toujours, au niveau \texttt{warn}. Une \textbf{admission} ne s'écrit qu'au niveau \texttt{debug}.
+
+\begin{keshwarning}
+Le cas qu'une mise à jour derrière DSM doit établir --- le proxy vu comme un poste du réseau local, \textbf{admis} par les plages par défaut --- n'écrit \textbf{rien} au niveau par défaut (\texttt{info}). Pour le vérifier, passez le filtre au niveau \texttt{debug} le temps du test (paragraphe suivant).
+\end{keshwarning}
+
+\paragraph{Passer le filtre au niveau \texttt{debug}.} La variable \keshcommand{RUST\_LOG} est décrite au tableau \emph{Journalisation} (\S\ref{sec:env-vars}). Dans le \keshpath{.env} de l'installation, remplacez la ligne \keshcommand{RUST\_LOG=info} par :
+
+\begin{lstlisting}[language=bash]
+RUST_LOG=info,kesh_api::mcp::reseau=debug
+\end{lstlisting}
+
+puis appliquez-la par \keshcommand{sudo docker compose up -d}. Seul le filtre d'adresse passe en \texttt{debug} : le reste de Kesh reste en \texttt{info}, la couche SQL en \texttt{warn}. N'employez pas \keshcommand{RUST\_LOG=debug} tout court, qui fait passer tout Kesh en \texttt{debug}. \textbf{Vérifiez l'effet} : provoquez une requête vers \keshpath{/mcp} depuis un poste du réseau local (l'agent configuré, ou \keshcommand{curl -k -X POST https://kesh.local/mcp} --- la réponse importe peu, la ligne de décision s'écrit avant), puis cherchez une ligne \texttt{DEBUG} de décision au journal ; si aucune n'apparaît, voyez le cas \emph{aucune ligne de décision} ci-dessous. \textbf{Revenez ensuite à} \keshcommand{RUST\_LOG=info}, par le même geste.
+
+\paragraph{Où lire.} Dans le \textbf{fichier de log}, qui est sans couleurs, depuis le dossier de l'installation :
+
+\begin{lstlisting}[language=bash]
+sudo grep "filtre d'adresse" ./log/kesh.*.log
+\end{lstlisting}
+
+Avec la rotation quotidienne (le défaut), le fichier s'appelle \keshpath{kesh.<AAAA-MM-JJ>.log}. Les limites de cette commande, en une phrase : avec la rotation \texttt{never} le fichier s'appelle \keshpath{kesh.log} ; avec le compose \keshpath{docker-compose.yml} du dépôt et \keshcommand{KESH\_LOG\_HOST\_DIR}, il est dans ce dossier-là (le compose du Synology monte toujours \keshpath{./log}) ; avec \keshcommand{KESH\_LOG\_FILE\_PATH} vide, le journal fichier est désactivé et la commande ne trouve rien ; et le motif \keshpath{kesh.*.log} est développé par le shell de l'utilisateur \textbf{avant} \keshcommand{sudo}, si bien que le dossier \keshpath{./log} doit lui être lisible (\S\ref{sec:logs-fichier}). Le format est \texttt{pretty} par défaut ; avec \keshcommand{KESH\_LOG\_FILE\_FORMAT=json}, chaque évènement est une ligne JSON, avec les mêmes champs. La sortie standard (\keshcommand{docker compose logs}) porte des codes couleur qui coupent les recherches sur \texttt{champ=valeur} : lisez le fichier.
+
+\paragraph{Une ligne.} Un refus, tel que l'écrit le fichier de log : le mandataire déclaré (ici \texttt{127.0.0.1}) transmet \texttt{X-Forwarded-For: 198.51.100.7}, adresse que les plages n'admettent pas (adresses de bouclage et de documentation) :
+
+\begin{lstlisting}[]
+2026-10-25T21:22:45.945713Z  WARN kesh_api::mcp::reseau: serveur MCP : décision du filtre d'adresse company_id=1 filtre=true plages=7 pair=127.0.0.1 pair_mandataire=true xff_lignes=1 xff_entrees=1 x_real_ip=false forwarded=false client=198.51.100.7 verdict="refuse"
+\end{lstlisting}
+
+Une admission a la même forme, au niveau \texttt{DEBUG}, avec \texttt{verdict="admis"}.
+
+\paragraph{Les champs.}\mbox{}\\
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lX}
+    \toprule
+    \keshtableheader{Champ} & \keshtableheader{Ce qu'il dit} \\
+    \midrule
+    company\_id & La société dont le réglage a décidé. \\
+    filtre & Le filtre d'adresse est-il activé ? \\
+    plages & Le nombre d'entrées des réseaux autorisés, valides ou non. \\
+    pair & L'adresse qui a ouvert la connexion TCP vers Kesh (une IPv4 mappée s'écrit en IPv4). \\
+    pair\_mandataire & Le pair est-il un mandataire de confiance déclaré ? \\
+    xff\_lignes & Le nombre de lignes \texttt{X-Forwarded-For} reçues (\texttt{0} : absent). \\
+    xff\_entrees & Le nombre d'entrées séparées par des virgules, toutes lignes comprises. \\
+    x\_real\_ip & Un en-tête \texttt{X-Real-IP} est-il présent ? \\
+    forwarded & Un en-tête \texttt{Forwarded} est-il présent ? \\
+    client & L'adresse que le filtre compare aux plages, ou \texttt{aucun}. \\
+    verdict & \texttt{admis} ou \texttt{refuse}. \\
+    \bottomrule
+\end{tabularx}
+
+\paragraph{Lire une ligne.}
+\begin{itemize}
+    \item \texttt{pair} = une adresse de passerelle Docker, \texttt{pair\_mandataire=false}, \texttt{xff\_lignes=0} : le proxy ne pose pas \texttt{X-Forwarded-For} ; Kesh voit tous les clients sous l'adresse du proxy, et le filtre \textbf{ne distingue personne}. L'adresse de la passerelle vient de la publication de port de Docker (son mandataire en espace utilisateur) ; l'absence d'en-tête vient du proxy. La protection de \keshpath{/mcp} repose alors sur l'infrastructure (réseau, pare-feu), non sur le filtre.
+    \item \texttt{pair\_mandataire=false}, \texttt{xff\_lignes} $\geq$ 1 : l'en-tête est posé, mais \textbf{ignoré}, le pair n'étant pas déclaré ; le filtre ne distingue pas davantage --- par exemple un Traefik non déclaré, dont le pair est l'adresse du conteneur (non éprouvé). Pour que le filtre voie le poste, déclarez ce pair parmi les mandataires de confiance, avec la réserve qui suit.
+\end{itemize}
+
+\begin{keshwarning}
+Si le mandataire déclaré est une adresse par laquelle passent \textbf{tous} les clients (la passerelle Docker), tout poste qui joint directement le port publié de Kesh peut forger \texttt{X-Forwarded-For}, ou, sans en-tête, être vu comme la passerelle elle-même, admise par les plages par défaut. Le filtre est une défense en profondeur, non une barrière.
+\end{keshwarning}
+
+\begin{itemize}
+    \item \texttt{pair\_mandataire=true}, \texttt{client} = l'adresse du poste : le filtre voit le vrai client.
+    \item \texttt{pair\_mandataire=true}, \texttt{xff\_lignes=0}, \texttt{client} = le pair : le mandataire est déclaré mais ne pose pas \texttt{X-Forwarded-For} ; le client est le mandataire lui-même.
+    \item \texttt{client=aucun} : l'en-tête du mandataire porte une entrée qui n'est pas une adresse nue (un port, \texttt{unknown}) ; filtre activé, la requête est refusée ; filtre coupé, elle est admise.
+    \item \texttt{x\_real\_ip=true} ou \texttt{forwarded=true} : ces en-têtes ne sont \textbf{jamais} lus par \keshpath{/mcp} ; seul \texttt{X-Forwarded-For} compte, et seulement venant d'un mandataire déclaré.
+    \item \texttt{filtre=false} : la ligne dit ce que le filtre retiendrait ; rien n'est refusé. C'est le moyen de vérifier le client vu \textbf{avant} d'activer le filtre.
+    \item \texttt{filtre=true}, \texttt{plages=0} : personne n'est admis.
+    \item \textbf{Aucune ligne de décision pour une société}, le filtre étant en \texttt{debug} : Kesh n'a rien décidé pour elle. Avec une erreur du serveur MCP au journal : \emph{« réglages illisibles, /mcp n'est pas servi »} --- la base n'a pas pu être lue, aucune société n'est servie ; \emph{« ligne de réglages illisible, la société n'est pas servie »} --- les réglages de cette société (\texttt{company\_id} donné) ne se décodent pas ; \emph{« une entrée de trusted\_proxies ne s'analyse pas »} --- la société est écartée. Sans erreur : le serveur MCP n'est pas activé pour cette société (sans aucune ligne de décision pour aucune société, il ne l'est pour aucune) ; ou la requête est arrivée sur un chemin voisin (\keshpath{/mcp/}, \keshpath{/MCP}), servi comme une page absente ; ou elle n'est pas parvenue à Kesh.
+\end{itemize}
+
+Avec plusieurs sociétés activées, chaque requête écrit \textbf{une ligne par société} (\texttt{company\_id}) : un refus pour l'une n'empêche pas l'autre de servir le même client. Une requête refusée écrit sa ligne pour chaque société qui la refuse, sans limite de débit.
+
+\textbf{Ce que ce journal ne contient jamais} : aucune clé, aucun en-tête \texttt{Authorization}, aucun corps de requête, aucune valeur d'en-tête reçue (des comptes et des présences seulement), aucune donnée comptable. Il contient en revanche l'\textbf{adresse} des clients, comme le journal de connexion.
 
 \subsection{Centralisation des logs}
 
