@@ -20,6 +20,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   protocole (un état intermédiaire servi sans filtre ni `Origin` : à éviter pour la story de sécurité) ; trois parties
   (le protocole seul n'a pas de garde à éprouver).
 - **Réversible** : oui (avant développement).
+- *(Annoté le 2026-10-25, validation P2, F5 = R6 : depuis la validation P1, la 32-6b compte **5** modules — `routes` y entre par `audit_route_registry.rs` (AC-b6) — et la somme est **neuf**, non huit ; les nombres ci-dessus sont ceux de la création.)*
 
 ### C-32-6-2 — « Désactivé » est indiscernable d'une route absente : délégation au service statique, non un 404 littéral
 
@@ -51,6 +52,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   société désactivée lirait) ; un cache des réglages (un serveur désactivé resterait ouvert jusqu'à l'expiration) ; une
   erreur 500 (révélerait l'existence de réglages).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P2, F5 = R6 : la phrase « sinon route absente » du *Retenu* est **remplacée** par la révision P1 qui la suit — une clé dont la société n'est pas dans S reçoit le 401 fixe ; c'est la seule règle en vigueur.)*
 
 ### C-32-6-4 — Un pair refusé par le filtre voit une route absente (pas un 403)
 
@@ -103,6 +105,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : authentifier avant la règle « servi » (une clé serait vérifiée, et sa dernière utilisation écrite, pour
   un serveur désactivé ou un pair refusé) ; lire le corps avant l'authentification (analyse de données anonymes).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P2, F5 : l'étape « société de la clé (route absente) » rend le **401 fixe** depuis la révision P1 de C-32-6-3 ; deux étapes s'ajoutent : `politique::autoriser` avant `executer` (C-32-6-36) et `reponse::rendre` comme seule sortie (C-32-6-37). L'ordre en vigueur est celui des Dev Notes de la fiche.)*
 
 ### C-32-6-9 — Le pool du MCP dérivé du pool de production dans `build_router`, par une fabrique de `kesh-db` ; aucun champ dans `AppState`
 
@@ -119,6 +122,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   pool construit dans `main.rs` (les tests ne l'emprunteraient pas) ; régler #669 ici (changement de comportement de la
   production sur des livres réels, hors périmètre) ; un second utilisateur MariaDB (refusé par Guy, Q11).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P2, R4 : le `before_acquire` est **remplacé** par un `after_release` qui ferme toute connexion à sa restitution (C-32-6-35) ; et le canal (C-32-6-31) ne porte plus `AppState`.)*
 
 ### C-32-6-10 — Trois connexions pour le pool du MCP
 
@@ -138,6 +142,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : interdire `tx_read_only` sans `=` (empêcherait `before_acquire`) ; aucune garde (Q11 rend la garantie
   applicative : il faut l'outiller).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P2, R9 = F8 : le motif `tx_read_only\s*=` est **remplacé** par l'interdiction du nom entier `tx_read_only` (comme la spike, § 4.3 (a)), exceptions écrites ; les commentaires de bloc sont retirés de la ligne avant l'analyse, et `\bread\W+write\b` remplace `read\s+write`.)*
 
 ### C-32-6-12 — `kesh_version` rend la version et l'état de la session, aucune donnée des livres
 
@@ -168,6 +173,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : exécuter puis refuser (une lecture faite pour rien, et des données en mémoire) ; une exemption par outil
   (Q12 : la politique est celle de la clé) ; une erreur JSON-RPC (le refus n'est pas une faute de protocole).
 - **Réversible** : oui (c'est le point de branchement de la 32-8).
+- *(Annoté le 2026-10-25, validation P2, F2 : le contrôle se fait par une fonction nommée, `politique::autoriser`, **avant** `executer` (C-32-6-36) ; `appliquer` ne fait que construire la réponse. La 32-8 change les deux fonctions, signatures comprises, et leurs deux sites d'appel — non « ce seul bras ».)*
 
 ### C-32-6-15 — `DonneesEnvoyables`, à champ privé, défini dans `politique.rs`
 
@@ -180,6 +186,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : un `enum Reponse` public à variantes publiques (spike : ne ferme aucun chemin) ; une garde lexicale
   seule (le compilateur est plus fort, la garde nomme le rouge).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P2, F2 : `appliquer` prend un jeton `Autorisation`, que seul `autoriser` fabrique (C-32-6-36).)*
 
 ### C-32-6-16 — `schema_entree()` rend un `&'static str`
 
@@ -341,6 +348,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   fournir un pool que rien ne garantirait en lecture seule (repli écrit si la fusion d'Axum ne se prêtait pas au
   sous-routeur) ; une `Extension` (500 si absente) ; une fermeture (illisible par le registre des routes).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P2, F3, R7, R12 = F11 : `EtatMcp` ne porte **plus** `app: AppState` — son champ public `pool` (`lib.rs:56`) mettait le pool ordinaire à portée de tout `src/mcp/` — mais `config: Arc<Config>` ; le délai vit dans le registre seul ; garde `mcp_sans_pool` sur tout `src/mcp/`. Les constructions par littéral sont **huit** (la production et sept de test), non sept.)*
 
 ### C-32-6-32 — Le détecteur du registre des routes lit `fallback(routes::…)` (validation P1, R2 = F8)
 
@@ -354,6 +362,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   `.fallback(` pourrait demain muter sans que rien le signale) ; monter `get`/`put`/`delete`/`patch` séparément (OPTIONS
   et les méthodes non nommées tomberaient au 405 d'Axum, distinct de celui de `ServeDir`).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P2, R3 = F4 : **tout** `fallback(` est extrait ; un argument non `routes::` va à l'inventaire des non-résolus, moins une liste écrite des sites `ServeFile::new(` (une occurrence, `service_statique`) — le filtre « seulement si `routes::` » rendait muet un `.fallback(h)` écrit après un `use`.)*
 
 ### C-32-6-33 — Une seule traduction `AppError` → réponse MCP, exhaustive ; aucun `IntoResponse` d'`AppError` (validation P1, F5, R15)
 
@@ -366,6 +375,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : laisser `?` remonter une `AppError` au framework (corps de l'API, message recopié) ; un `_ =>
   Interne` (une variante neuve passerait sans examen).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P2, R1 = F1 et R2 : le `match` exhaustif sans `_` est **remplacé** par une liste blanche courte — `Forbidden`, `Database(DbError::NotFound)`, `Validation(_)` —, tout le reste en erreur interne fixe (`AppError` compte environ 125 variantes et n'a ni `NotFound` ni `Conflict`) ; la garde de formes est remplacée par une sortie unique, `reponse::rendre(ReponseMcp)` (C-32-6-37), et un inventaire des lignes qui nomment `AppError`, `IntoResponse` ou `into_response`.)*
 
 ### C-32-6-34 — Les gardes lexicales : frontières de mot, forme qualifiée, commentaires écartés, témoins des deux sens (validation P1, F12, R12)
 
@@ -376,4 +386,42 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   `crates/kesh-api/src` et le dit.
 - **Écartées** : des gardes syntaxiques par `syn` pour toutes (plus lourdes ; gardées pour le seul cas où le texte ne
   suffirait pas, à juger au développement).
+- **Réversible** : oui.
+
+### C-32-6-35 — Toute connexion du pool du MCP est fermée à sa restitution (validation P2, R4)
+
+- **Contexte** : la forme 2 de la spike (`SET TRANSACTION READ WRITE`, caractéristique de la transaction **suivante**,
+  § 4.1) n'apparaît pas dans `@@session.tx_read_only` : un `before_acquire` qui relit cette variable garderait la
+  connexion, et la première écriture de l'emprunt suivant passerait.
+- **Retenu** : `after_release` → `Ok(false)` (`sqlx-core-0.8.6/src/pool/connection.rs:289-296` ferme la connexion) ;
+  chaque emprunt part d'une connexion neuve passée par `after_connect` : aucun état de session ne survit d'un emprunt à
+  l'autre, quelle que soit la forme. Tests (e) forme 4 et (e bis) forme 2. Le `before_acquire` est retiré.
+- **Écartées** : un `before_acquire` qui exécuterait une transaction vide pour consommer la caractéristique en attente
+  (raisonnement sur MariaDB non essayé, et une garde de plus) ; écrire la forme 2 en angle mort (le test est faisable
+  sans infrastructure nouvelle).
+- **Coût** : une connexion par emprunt (quelques millisecondes), pour un trafic MCP faible.
+- **Réversible** : oui.
+
+### C-32-6-36 — La politique en deux temps : `autoriser` avant l'exécution, `appliquer` ensuite (validation P2, F2)
+
+- **Contexte** : `appliquer(validation, Donnees)` prenait le résultat de l'exécution, si bien qu'un second contrôle,
+  innommé, devait refuser une clé `required` **avant** ; la mutation « bras intervertis » ne voyait pas ce contrôle.
+- **Retenu** : `autoriser(validation) -> Result<Autorisation, Refus>`, seule lectrice de la politique, appelée avant
+  `executer` ; `appliquer(Autorisation, Donnees) -> DonneesEnvoyables` ne fait que construire la réponse ; `Autorisation`
+  à champ privé, fabriquée par `autoriser` seule — appeler `appliquer` sans autorisation ne compile pas. Mutations :
+  `autoriser` qui laisse passer `Required` (tuée par le compteur et E1) ; `appliquer` sans `autoriser` (ne compile pas).
+- **Écartées** : `executer_sous(validation, fermeture)` (une fermeture asynchrone empruntée, plus lourde à écrire et à
+  lire) ; un contrôle préalable dans le répartiteur, hors de `politique.rs` (deux lieux pour une règle).
+- **Réversible** : oui (c'est le point de branchement de la 32-8).
+
+### C-32-6-37 — Une seule sortie : `reponse::rendre(ReponseMcp)` (validation P2, R2)
+
+- **Contexte** : une garde lexicale sur les **formes** qui mèneraient une `AppError` à `IntoResponse` ne voyait pas un
+  `Result<_, AppError>` remonté par une fonction intermédiaire puis rendu par `e.into_response()`.
+- **Retenu** : toute réponse de `/mcp` sort de `mcp::reponse::rendre`, à partir de `ReponseMcp`, énumération propre au MCP
+  sans `AppError` ni `Response` ; `AppError` n'est convertible que par `depuis_app_error` et par le `match` du résultat
+  d'`authentifier` ; garde d'**inventaire des sites** (lignes qui nomment `AppError`, `IntoResponse` ou `into_response`
+  dans `src/mcp/**` et `routes/mcp.rs`, liste écrite).
+- **Écartées** : garder la garde de formes (une énumération de ce qui marche, `CLAUDE.md` § *Inventorier les sites NON
+  RÉSOLUS*) ; une analyse par `syn` des types de retour (plus lourde, sans fermer davantage).
 - **Réversible** : oui.
