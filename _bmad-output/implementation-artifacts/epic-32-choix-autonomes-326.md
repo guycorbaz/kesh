@@ -243,6 +243,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : `any(…)` (forme non lue par l'extracteur) ; un `nest`/`merge` d'un routeur MCP après `build_router`
   (hors CSP : un `GET /mcp` désactivé se distinguerait d'une route absente par l'en-tête CSP).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P4, F1 : le montage `post(routes::mcp::recevoir).fallback(routes::mcp::autre_methode)` est **remplacé** par `route_service("/mcp", routes::mcp::recevoir.with_state(etat))` (C-32-6-40) : un `MethodRouter` ajoute `Allow` et `content-length` à ses réponses, ce qui rendait `/mcp` désactivé discernable. `autre_methode` disparaît ; l'entrée du registre des routes devient `("route_service", "mcp::recevoir", …)`.)*
 
 ### C-32-6-21 — Le journal : `mcp.tool_called`, au nom du créateur de la clé, la clé au détail ; « inconnu » couvre hors portée
 
@@ -350,6 +351,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   fournir un pool que rien ne garantirait en lecture seule (repli écrit si la fusion d'Axum ne se prêtait pas au
   sous-routeur) ; une `Extension` (500 si absente) ; une fermeture (illisible par le registre des routes).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P4, F1 et F2 = R1 : il n'y a plus de sous-routeur — l'état est porté par le service, `routes::mcp::recevoir.with_state(etat)` (C-32-6-40) ; la lecture des outils est un type propre, `LectureOutils` (C-32-6-41).)*
 - *(Annoté le 2026-10-25, validation P3, F3 = R8, R9 : `EtatMcp` ne porte plus `config: Arc<Config>` (qui porte `database_url` et `admin_password`) mais `origines_propres`, calculées une fois ; il gagne `garde: Lecture` — la `Lecture` ordinaire, pour la règle « servi » et l'authentification (C-32-6-38).)*
 - *(Annoté le 2026-10-25, validation P2, F3, R7, R12 = F11 : `EtatMcp` ne porte **plus** `app: AppState` — son champ public `pool` (`lib.rs:56`) mettait le pool ordinaire à portée de tout `src/mcp/` — mais `config: Arc<Config>` ; le délai vit dans le registre seul ; garde `mcp_sans_pool` sur tout `src/mcp/`. Les constructions par littéral sont **huit** (la production et sept de test), non sept.)*
 
@@ -365,6 +367,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   `.fallback(` pourrait demain muter sans que rien le signale) ; monter `get`/`put`/`delete`/`patch` séparément (OPTIONS
   et les méthodes non nommées tomberaient au 405 d'Axum, distinct de celui de `ServeDir`).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P4, F1 : l'extension du détecteur à `fallback(` **disparaît** avec `autre_methode` ; le détecteur lit désormais `route_service(` — argument après la première virgule, rogné, jusqu'à `.with_state` —, un argument non `routes::` allant à l'inventaire des non-résolus, et `extract_counted` s'applique à `lib.rs` lignes de commentaire retirées.)*
 - *(Annoté le 2026-10-25, validation P2, R3 = F4 : **tout** `fallback(` est extrait ; un argument non `routes::` va à l'inventaire des non-résolus, moins une liste écrite des sites `ServeFile::new(` (une occurrence, `service_statique`) — le filtre « seulement si `routes::` » rendait muet un `.fallback(h)` écrit après un `use`.)*
 
 ### C-32-6-33 — Une seule traduction `AppError` → réponse MCP, exhaustive ; aucun `IntoResponse` d'`AppError` (validation P1, F5, R15)
@@ -447,6 +450,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Ce qui reste** : une inondation du réseau local occupe les connexions ordinaires, comme `/api/v1/auth/login` le
   permet déjà — angle mort écrit, point 8 pour Guy.
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P4, F2 = R1 et F12 : la `garde` et la lecture des outils ne sont plus du même type (C-32-6-41) ; la lecture de Q11 que ce choix suppose — la connexion des outils en lecture seule, non celle de la garde — est soumise à Guy (point 8 de la fiche).)*
 
 ### C-32-6-39 — `rendre` est asynchrone et reçoit l'état ; `ReponseMcp::RouteAbsente(Request)` (validation P3, R4 = F4)
 
@@ -458,4 +462,31 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   corps des gestionnaires : `rendre(&etat, transport::traiter(&etat, pair, requete).await).await`.
 - **Écartées** : une variante qui porterait déjà la `Response` statique (une deuxième sortie de réponse, hors de
   `rendre`) ; deux fonctions de sortie (statique et MCP).
+- **Réversible** : oui.
+
+### C-32-6-40 — `/mcp` monté par `route_service`, comme le repli (validation P4, F1)
+
+- **Contexte** : un `MethodRouter` (`post(…)`, `.fallback(…)`, `any(…)`) rend un futur « top level » qui ajoute `Allow`
+  (l'en-tête accumulé, attaché au repli du `MethodRouter`, `axum-0.8.9/src/routing/method_routing.rs:1168-1174`) et
+  `content-length` (`routing/route.rs:163-167`) ; le repli statique, lui, est un `Endpoint::Route` appelé
+  `not_top_level` (`routing/mod.rs:366-370`, `routing/path_router.rs:413`, `routing/route.rs:44-46`). Un `GET /mcp`
+  désactivé aurait porté `Allow: POST`, la route absente non.
+- **Retenu** : `main_router.route_service("/mcp", routes::mcp::recevoir.with_state(etat))` — un `Endpoint::Route`
+  (`path_router.rs:138`) appelé par le même `call_owned` que le repli ; la méthode est tranchée par le transport ;
+  `Handler::with_state` (`handler/mod.rs:202`) garde les extracteurs. Le registre des routes lit `route_service(`.
+- **Écartées** : `any(…)`, qui retire `Allow` (`skip_allow_header`) mais garde le `content-length` du « top level » ; une
+  couche qui retirerait les en-têtes ajoutés (une garde de plus, fragile à la version d'Axum).
+- **Réversible** : oui.
+
+### C-32-6-41 — La lecture des outils a un type propre, `LectureOutils` (validation P4, F2 = R1)
+
+- **Contexte** : depuis la P3, `EtatMcp` porte deux `Lecture` du même type : la `garde` (pool ordinaire) et celle des
+  outils (lecture seule). Les confondre — les outils sur la `garde`, ou la règle « servi » sur le pool des outils —
+  compilait, et la seconde confusion n'était vue par aucun test.
+- **Retenu** : `LectureOutils`, défini en `mcp/outil.rs`, champ privé, construit une fois en `lib.rs`, jamais déballé
+  hors de ce fichier ; `ContexteMcp::nouveau` l'exige et `ContexteMcp::lecture()` rend seul la `&Lecture` à l'outil.
+  Les deux confusions sont des erreurs de type (Ma51, Ma52, déclarées non compilables).
+- **Écartées** : une garde lexicale « `etat.lecture` n'est nommé qu'au répartiteur » (le type ferme la classe sans
+  garde) ; ne remettre au répartiteur que `(&Registre, &LectureOutils, &Trace)` (même effet, plus de signatures).
+- **Angle mort** : un accesseur public ajouté à `LectureOutils` — la revue.
 - **Réversible** : oui.
