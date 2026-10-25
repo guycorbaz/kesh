@@ -17,6 +17,7 @@
 - **Écartées** : une seule partie (dix modules) ; deux parties (la partie des écritures et du catalogue montait à six
   avec `kesh-core`) ; dupliquer la liste des caractères refusés pour économiser `kesh-core` (contraire à DRY).
 - **Réversible** : oui, tant qu'aucune partie n'est développée.
+- *Annoté le 2026-10-25, après la validation P1* : découpage **confirmé** par l'orchestrateur.
 
 ### C-32-10a-2 — Les prompts sont des données de société
 
@@ -90,6 +91,13 @@
   plus, dans `routes` et `kesh-seed` ; gain faible : après une remise à zéro la base ne porte aucun livre réel, après un
   import les textes sont ceux que Kesh a écrits) ; un échec fatal (bloquerait la comptabilité pour un prompt).
 - **Réversible** : oui.
+- *Annoté le 2026-10-25, validation P1 (F5), décision de l'orchestrateur* : la prémisse de l'« Écartée » — « après une
+  remise à zéro la base ne porte aucun livre réel » — était **fausse pour l'usage visé** : la remise à zéro est la
+  sortie de la démonstration, donc l'entrée des livres réels (`admin-manual.tex:1412`), et rien n'oblige à redémarrer
+  avant de réactiver le serveur MCP. **Retenu désormais** : deux appels de la même fonction, au démarrage (après
+  `ensure_admin_user`, ordre gardé) **et** à la fin de la remise à zéro, dans `routes::onboarding::reset`, après le
+  succès de `reset_demo` ; non fatal dans les deux cas. Écartés toujours : l'activation du serveur MCP et la fin d'un
+  import (une restauration rend les textes de la sauvegarde ; un standard altéré revient au démarrage suivant).
 
 ### C-32-10a-9 — Deux standards, en français, en constantes de `kesh-db`
 
@@ -134,6 +142,11 @@
   (DRY) ; `kesh_core::text::is_invisible` (refuse l'espace insécable, courant en français, et ne couvre pas le
   bidirectionnel).
 - **Réversible** : oui.
+- *Annoté le 2026-10-25, validation P1 (F4), décision de l'orchestrateur* : le prédicat partagé est **complété** des
+  points de code que l'angle mort de `bank_accounts.rs:297-302` énumérait (U+115F, U+1160, U+FFA0, U+17B4, U+17B5,
+  U+180B–U+180D et U+180F, U+2065, U+1D173–U+1D17A, U+E0100–U+E01EF), retirés de cet angle mort ; la description d'un
+  compte bancaire en profite (changement de comportement voulu). Reste écrit : les caractères de format d'une version
+  future d'Unicode, les homoglyphes.
 
 ### C-32-10a-13 — Bornes : texte 16 000 caractères, description 500, vingt propositions en attente
 
@@ -182,6 +195,11 @@
 - **Écartées** : un trait de plus pour un seul outil (la forme se décide au code : la propriété est exigée, pas la
   forme) ; l'accusé avec numéro (spike ; petit oracle sans usage, l'agent ne relit rien).
 - **Réversible** : oui.
+- *Annoté le 2026-10-25, validation P1 (R1, F11)* : la forme est **fixée** — l'outil n'est ni un `McpTool` ni au
+  `Registre` ; la 32-10a-iii ajoute `ReponseMcp::Accuse(AccuseProposition)` (charge à champ privé, construite en un
+  seul lieu), n'appelle pas `politique::autoriser`, et ajoute à `tools/list` un descripteur statique à
+  `readOnlyHint: false` (explicite) sous `prompts:write` ; `registre_coherent` et `registre_standard_inventaire` restent
+  inchangés, `tools_list_filtre` gagne deux cas (AC-iii2 de la fiche). Le nom réservé sort en `arguments_invalides`.
 
 ### C-32-10a-18 — Le journal : `prompts/get` tracé et fail closed ; `prompts/list` non ; une issue de plus
 
@@ -261,4 +279,34 @@
 - **Retenu** : `prompts/list` et `prompts/get` sous une clé `required` sont servis ; `proposer_prompt` aussi.
 - **Écartée** : soumettre un prompt à la validation avant envoi (il ne porte aucune donnée lue ; la validation
   deviendrait une approbation bis, sans objet).
+- **Réversible** : oui.
+
+### C-32-10a-27 — Un agent ne propose jamais sur un nom en `kesh`
+
+- **Contexte** : validation P1, F12 — un standard (`kesh-developpement`) porte les règles de Guy sur les données
+  réelles ; une proposition d'agent approuvée le remplacerait en vigueur, règles comprises.
+- **Retenu** (recommandation de l'orchestrateur, hypothèse de travail, soumis à Guy) : `proposer_version_agent` refuse
+  tout nom commençant par `kesh`, existant ou non ; l'agent propose sous un autre nom ; seul l'administrateur
+  personnalise un standard.
+- **Écartée** : permettre la proposition sur un standard, l'approbation en tenant lieu (un agent proposerait de
+  modifier ses propres règles).
+- **Réversible** : oui (règle de dépôt).
+
+### C-32-10a-28 — Le plafond et les noms neufs sous le verrou de la société
+
+- **Contexte** : validation P1, F10 — un verrou de prompt ne rend pas atomique un plafond compté sur la société, et un
+  nom neuf n'a pas de ligne à verrouiller.
+- **Retenu** : toute écriture qui crée un prompt ou une version `pending` prend d'abord `companies` en `FOR UPDATE`
+  (Pattern 5 du dépôt), puis le prompt ; un conflit d'unicité résiduel remonte en erreur de base.
+- **Écartées** : une reprise sur conflit d'unicité (une branche de plus pour un cas que le verrou exclut) ; un plafond
+  approximatif écrit comme borne.
+- **Réversible** : oui.
+
+### C-32-10a-29 — Le README et la feuille de route du site, à la 32-11
+
+- **Contexte** : validation P1, F7 = R10 — `README.md:233` et `website/roadmap.html:375` disent que l'agent n'écrit rien
+  en 0.16.0 ; `proposer_prompt` écrit une version de prompt (non les livres).
+- **Retenu** (décision de l'orchestrateur) : la reformulation est affectée à la 32-11, qui réécrit les textes publics
+  du serveur MCP ; la fiche le note (§ *Le manuel*), l'orchestrateur l'inscrit au fichier d'epic.
+- **Écartée** : la corriger en 32-10a-iii (un module de plus, docs, pour une partie déjà à cinq).
 - **Réversible** : oui.

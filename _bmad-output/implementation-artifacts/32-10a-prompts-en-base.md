@@ -3,7 +3,7 @@
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-10a`, branche `story/32-10a` partie de `main`
-`d993106c` (32-5a et 32-5b fusionnées). Registre : `epic-32-choix-autonomes-3210a.md` (C-32-10a-1 à C-32-10a-26). Clé
+`d993106c` (32-5a et 32-5b fusionnées). Registre : `epic-32-choix-autonomes-3210a.md` (C-32-10a-1 à C-32-10a-29). Clé
 courte : `3210a`. Issue de l'epic : #723 (CR « Serveur MCP intégré à Kesh »), en `refs` seulement. Les numéros de ligne
 cités sont ceux de `d993106c`, sauf mention de la fiche 32-6 (worktree `kesh-32-6`, lue en lecture seule).*
 
@@ -13,13 +13,14 @@ dont elle dépend (fiche 32-6, en tête). La fiche 32-6 est **validée, non fusi
 `mcp_gardes_lexicales.rs` — est cité **d'après sa fiche** et **se recompte à l'étape 0** (§ *À recontrôler à l'étape 0*),
 ligne lue citée au Change Log.
 
-⚠️ **Une fiche, trois parties** (C-32-10a-1, découpage préventif : dix modules distincts sans découpage). Ordre
+⚠️ **Une fiche, trois parties** (C-32-10a-1, découpage préventif : dix modules distincts sans découpage ; **confirmé par
+l'orchestrateur** le 2026-10-25, après la validation P1). Ordre
 **imposé** : i → ii → iii. Clés au registre de sprint : `32-10a-i-prompts-tables-sauvegarde`,
 `32-10a-ii-prompts-catalogue-servi`, `32-10a-iii-prompts-ecritures` ; la clé `32-10a-prompts-en-base` passe à `split`.
 
 | Partie | Objet | Après |
 |---|---|---|
-| **32-10a-i** 🗄️ | les deux tables, leurs entités et leur dépôt, les prompts standard en code et leur amorçage au démarrage, la sauvegarde, l'export, les textes du manuel que les tables rendent faux | 32-6a (consigne), 32-5d |
+| **32-10a-i** 🗄️ | les deux tables, leurs entités et leur dépôt, les prompts standard en code et leur amorçage au démarrage **et à la remise à zéro**, la sauvegarde, l'export, les textes du manuel que les tables rendent faux | 32-6a (consigne), 32-5d |
 | **32-10a-ii** | le prédicat des caractères refusés (partagé), la validation d'un texte, le catalogue servi par `prompts/list` et `prompts/get`, la marque d'un prompt d'agent | 32-10a-i |
 | **32-10a-iii** | l'outil `proposer_prompt` (`prompts:write`), les routes de gestion de l'administrateur, le journal (`prompts/get`, propositions), l'audit et ses libellés | 32-10a-ii, 32-6b |
 
@@ -79,7 +80,11 @@ Chaque fait a été lu ; la ligne ou la commande est citée.
    (`auth/bootstrap.rs:447`, `companies::insert_stub`) ; puis `auto_backup::spawn` « ici et ici seulement »
    (`main.rs:380-383`, garde lexicale `auto_backup::tests::lancement_par_main_seulement`, `auto_backup.rs:1195-1215`) et
    `build_router` (`:385`). Un échec non critique au démarrage est journalisé et le démarrage continue (nettoyage des
-   jetons, `main.rs:205-218`).
+   jetons, `main.rs:205-218`). La remise à zéro est servie par `routes::onboarding::reset` (`routes/onboarding.rs:275-299`) :
+   `kesh_seed::reset_demo` (`:282`), qui porte toute l'opération dans sa transaction, puis la relecture de l'état
+   (`:297-298`) ; le manuel fait suivre la sortie de la démonstration d'un `docker compose up -d`
+   (`admin-manual.tex:1412`), mais **rien n'oblige** à redémarrer entre la remise à zéro et la réactivation du serveur
+   MCP (validation P1, F5).
 3. **Les sociétés naissent ailleurs qu'au démarrage** : à l'assistant, pour une base sans société
    (`routes/onboarding.rs:1222-1233`, `insert_stub` puis rattachement) ; à la remise à zéro de démonstration
    (`kesh-seed/src/lib.rs:581`, `[] => insert_stub`) ; à l'import d'installation (toutes les tables remplacées). La
@@ -119,8 +124,10 @@ Chaque fait a été lu ; la ligne ou la commande est citée.
    (v-1) n'a aucune exception (`:1885`), (vi) compte **onze** fichiers dans `services/` (`:2550-2563`).
 10. **Un prédicat de caractères refusés existe déjà, privé** : `is_forbidden_in_description` (`routes/bank_accounts.rs:
     292-323`) — `char::is_control` **plus** une liste fermée de caractères invisibles et de contrôles bidirectionnels
-    (`U+200B`–`U+200F`, `U+202A`–`U+202E`, `U+2066`–`U+2069`, `U+FEFF`…), avec son angle mort écrit (`:297-302`) et ses
-    tests (`:1490-1530`). `kesh_core::text::is_invisible` est l'« unique source » d'un autre prédicat
+    (`U+200B`–`U+200F`, `U+202A`–`U+202E`, `U+2066`–`U+2069`, `U+FEFF`…), avec son angle mort écrit (`:297-302` :
+    U+115F, U+1160, U+FFA0, U+17B4, U+17B5, U+180B–U+180D, U+2065, U+1D173–U+1D17A, U+E0100–U+E01EF) et ses tests
+    (`:1462-1530`, dont `ensemble_refuse_borne_par_borne`, `:1466-1513`, qui **asserte acceptés les voisins** de chaque
+    plage — U+180D et U+180F, voisins de `(0x180E, 0x180E)` à `:1475`, y sont acceptés). `kesh_core::text::is_invisible` est l'« unique source » d'un autre prédicat
     (`kesh-core/src/text.rs:1-7`, `:33-38`), qui ne couvre pas les contrôles bidirectionnels. `kesh-db` et `kesh-api`
     dépendent de `kesh-core` (`crates/kesh-db/Cargo.toml:8`, `crates/kesh-api/Cargo.toml:8`).
 11. **Le journal d'audit** : types d'entité et actions à `audit_labels.rs` (`api_key` l. 26, `api_key.created`/`revoked`
@@ -135,7 +142,10 @@ Chaque fait a été lu ; la ligne ou la commande est citée.
     `grep -rn 'amorcer\|amorcage' crates --include=*.rs | wc -l` → 0 ; `grep -rn
     'EcriturePrompts\|PromptEnBase\|proposer_prompt\|marque_agent' crates | wc -l` → 0 ;
     `grep -rniE '(insert|update|delete|replace)[^;"]{0,40}mcp_prompt' crates --include=*.rs --include=*.sql | wc -l`
-    → 0.
+    → 0. ⚠️ **Ces mesures sont vides par construction** (les noms n'existent pas) : elles ne disent rien de la largeur ni
+    des faux positifs d'un motif (validation P1, R9, F1). Les gardes de cette fiche sont donc **mesurées sur l'analogue
+    existant** — `mcp_key` pour `mcp_prompt`, `api_keys` pour `mcp_prompts` —, mesure citée à chaque garde (AC-i14,
+    AC-ii9, AC-ii10), puis **re-mesurées après la partie qui crée les noms**.
 14. **Dépendances lues à leur source** (`~/.cargo/registry/src/`, versions de `Cargo.lock`) : `sqlx-mysql 0.8.6`
     (`Cargo.lock:3934-3935`) décode un `String` depuis `VarChar`, `Blob` (dont `TEXT`) ou `VarString` **à condition que
     la colonne ne porte pas le drapeau `BINARY`** (`sqlx-mysql-0.8.6/src/types/str.rs:19-32`) — d'où la règle de la
@@ -155,9 +165,9 @@ documentation ; un module de second niveau pour `kesh-api` (`mcp`, `services`, `
 
 | Partie | Modules | 🗄️ |
 |---|---|---|
-| **32-10a-i** | `kesh-db` (migration, entités, dépôt, standards, `backup.rs`, squash, `migrations.sha384`, leurs tests) ; `kesh-api/exports` (`TABLES_HORS_EXPORT`) ; `kesh-api/admin_backup` (`tests/admin_full_export_e2e.rs`, `tests/admin_backup_e2e.rs`) ; `kesh-api/routes` (`main.rs`, `tests/onboarding_audit_e2e.rs`, `tests/prompts_amorcage.rs`) ; docs (`migrations-idempotence-audit.md`, manuels FR, CHANGELOG) — **5** | oui |
-| **32-10a-ii** | `kesh-core` (`text.rs`) ; `kesh-api/routes` (`routes/bank_accounts.rs`, refactor du prédicat) ; `kesh-api/services` (`prompts_mcp.rs`, `tests/services_motif.rs`) ; `kesh-api/mcp` (`prompts.rs`, `textes.rs`, `repartiteur.rs`, `reponse.rs`, `tests/mcp_prompts_e2e.rs`, `tests/mcp_gardes_lexicales.rs`) — **4** | non |
-| **32-10a-iii** | `kesh-api/mcp` (outil `proposer_prompt`, `registre.rs`, `repartiteur.rs`) ; `kesh-api/services` (`poignees.rs`, `prompts_mcp.rs`, `serveur_mcp.rs`) ; `kesh-api/routes` (`routes/mcp_prompts.rs`, `lib.rs`, `tests/audit_route_registry.rs`, `tests/admin_pat_denied_e2e.rs`, `tests/mcp_prompts_admin_e2e.rs`) ; `kesh-api/audit_labels` ; `kesh-i18n` (quatre locales) — **5** | non |
+| **32-10a-i** | `kesh-db` (migration, entités, dépôt, standards, `backup.rs`, squash, `migrations.sha384`, leurs tests) ; `kesh-api/exports` (`TABLES_HORS_EXPORT`) ; `kesh-api/admin_backup` (`tests/admin_full_export_e2e.rs`, `tests/admin_backup_e2e.rs`) ; `kesh-api/routes` (`main.rs`, `routes/onboarding.rs`, `tests/onboarding_audit_e2e.rs`, `tests/prompts_amorcage.rs`) ; docs (`migrations-idempotence-audit.md`, manuels FR, CHANGELOG) — **5** | oui |
+| **32-10a-ii** | `kesh-core` (`text.rs` et ses tests) ; `kesh-api/routes` (`routes/bank_accounts.rs`, refactor du prédicat et de ses tests) ; `kesh-api/services` (`prompts_mcp.rs`, `tests/services_motif.rs`) ; `kesh-api/mcp` (`prompts.rs`, `textes.rs`, `repartiteur.rs`, `reponse.rs`, `tests/mcp_prompts_e2e.rs`, `tests/mcp_gardes_lexicales.rs`) — **4** | non |
+| **32-10a-iii** | `kesh-api/mcp` (`mod.rs`, `repartiteur.rs`, `reponse.rs`, `prompts.rs`, `textes.rs`, `tests/mcp_transport_e2e.rs`, `tests/mcp_journal_e2e.rs`, `tests/mcp_gardes_lexicales.rs`, `tests/mcp_prompts_e2e.rs` — validation P1, R1) ; `kesh-api/services` (`acces.rs`, `poignees.rs`, `prompts_mcp.rs`, `serveur_mcp.rs`, `mod.rs`, `tests/services_motif.rs`) ; `kesh-api/routes` (`routes/mcp_prompts.rs`, `lib.rs`, `tests/audit_route_registry.rs`, `tests/admin_pat_denied_e2e.rs`, `tests/mcp_prompts_admin_e2e.rs`) ; `kesh-api/audit_labels` ; `kesh-i18n` (quatre locales) — **5** | non |
 
 **Sans découpage : dix modules distincts** (`kesh-db`, `kesh-core`, docs, `exports`, `admin_backup`, `routes`,
 `services`, `mcp`, `audit_labels`, `kesh-i18n`), **quatorze en somme** (5 + 4 + 5) — le double du plafond. Le
@@ -168,9 +178,24 @@ zéro, ni les textes que deux tables de plus rendent faux, ni l'audit et ses lib
 ⚠️ **La 32-10a-iii ne touche pas `kesh-db`** : la 32-10a-i livre **tout** le dépôt (lectures et écritures, règles
 d'approbation, plafond), éprouvé en base. Si la 32-10a-iii a besoin d'une fonction de dépôt de plus, c'est un écart à
 déclarer : elle devient 🗄️ (gate complet en boucle) et passe à six modules — la fiche se redécoupe alors.
+*Démonstration, par route et par outil (validation P1, F6)* — chaque besoin de la iii a sa fonction de la i (AC-i5) :
+
+| Besoin de la iii | Fonction de la i | Ce qu'elle rend |
+|---|---|---|
+| `GET /admin/mcp/prompts` (liste, nombre à valider **par prompt**, retraits et prompts sans version approuvée compris, « le standard diffère ») | `synthese_par_societe(company, standards)` — **une** requête | `Vec<SynthesePrompt>` |
+| `GET /admin/mcp/prompts/{id}` | `historique(company, prompt_id)` | `Option<(McpPrompt, Vec<McpPromptVersion>)>` |
+| `POST` (prompt neuf) | `creer_prompt_admin` | `VersionEcrite` |
+| `POST …/versions` (texte ou retrait) | `ajouter_version_admin` | `VersionEcrite` |
+| `…/approve`, `…/refuse` | `approuver`, `refuser` | `VersionEcrite` |
+| `POST …/standard` | `revenir_au_standard` | `VersionEcrite` |
+| `proposer_prompt` | `proposer_version_agent` | `VersionEcrite` |
+| catalogue (ii) | `en_vigueur_par_societe`, `en_vigueur_par_nom` | `Vec<VersionEnVigueur>`, `Option<VersionEnVigueur>` |
+
+`VersionEcrite` porte `prompt_id`, `nom`, `numero`, `origine`, `nature`, `etat` et la nouvelle `version` du prompt :
+tout ce que l'audit de l'AC-iii9 et les réponses des routes écrivent. Aucune route ne fait de N+1.
 
 **Aucun état intermédiaire n'ouvre d'accès ni ne fait mentir un texte** :
-- après **i** : les tables existent, les standards s'y amorcent au démarrage, la sauvegarde les emporte, l'export les
+- après **i** : les tables existent, les standards s'y amorcent au démarrage et à la remise à zéro, la sauvegarde les emporte, l'export les
   écarte ; **rien n'est servi** (`prompts/list` rend toujours `{"prompts": []}`, AC-a24 de la 32-6) ; le manuel et le
   CHANGELOG disent ce que porte la sauvegarde — vrai ;
 - après **ii** : les standards approuvés sont servis ; aucune écriture n'est possible ni par l'agent ni par
@@ -209,44 +234,71 @@ montage) lit d'abord ce que l'outillage **capte**, et porte un **témoin** qui p
    base qui la porte ; idempotence `tracked-by-sqlx` ; triage P7 : aucune instruction n'écrit de données. **P8** : le
    fichier ne se modifie plus dès qu'une base partagée (`kesh_e2e_3210a` comprise) l'a appliqué.
 2. **AC-i2 — `mcp_prompts`, l'identité d'un prompt.** Une ligne par prompt et par société : `id`, `company_id` (FK
-   `companies`, `RESTRICT`), `name`, `is_standard` (booléen), `version` (verrou optimiste, `DEFAULT 1`), `created_at`,
+   `companies`, `RESTRICT`), `name`, `is_standard` (booléen, **sans `DEFAULT`** : le dépôt le pose toujours, et une
+   colonne sans défaut reste « requise » à l'import — `ColumnConstraint::is_required`, `backup.rs:543` ; validation P1,
+   F16 (b)), `version` (verrou optimiste, `DEFAULT 1`), `created_at`,
    `updated_at`. Contraintes : `UNIQUE (company_id, name)` ; `name` conforme à `^[a-z0-9_-]{1,64}$` comparé en
    `utf8mb4_nopad_bin` (aucune majuscule, aucun blanc final ; la colonne garde la collation de la table, fait 14) ;
-   **préfixe réservé** — `is_standard` vrai si et seulement si `name` commence par `kesh-` (C-32-10a-7), si bien qu'aucun
-   prompt d'administrateur ou d'agent ne porte un nom de standard, présent ou futur. Pas de renommage en 0.16.0.
+   **préfixe réservé** (C-32-10a-7) — un prompt standard a un nom en `kesh-…` ; un prompt **non** standard n'a **aucun**
+   nom commençant par `kesh` (`kesh-x`, `kesh_x`, `keshx` refusés ; validation P1, F16 (c)), si bien qu'aucun prompt
+   d'administrateur ou d'agent ne porte un nom de standard, présent ou futur. Pas de renommage en 0.16.0.
 3. **AC-i3 — `mcp_prompt_versions`, l'historique.** Une ligne par version : `id`, `prompt_id` (FK `mcp_prompts`,
    `RESTRICT`), `number` (1, 2, … par prompt, `UNIQUE (prompt_id, number)`), `origin` ∈ {`standard`, `admin`, `agent`},
-   `state` ∈ {`approved`, `pending`, `refused`}, `nature` ∈ {`text`, `withdrawal`}, `description` (≤ 500 caractères),
+   `state` ∈ {`approved`, `pending`, `refused`}, `nature` ∈ {`text`, `withdrawal`} (**sans `DEFAULT`**, F16 (b)), `description` (≤ 500 caractères),
    `body` (`TEXT`, ≤ 16 000 caractères, C-32-10a-13), `author_user_id` (FK `users`), `author_mcp_key_id` (FK
    `mcp_keys`), `decided_by_user_id` (FK `users`), `decided_at`, `created_at` — toutes les FK en `RESTRICT`. Valeurs
    d'énumération contrôlées en `COLLATE utf8mb4_nopad_bin` (patron de `chk_mcp_keys_send_validation`). **Cohérences en
    `CHECK`** :
    - `standard` ⇒ `approved`, sans auteur ni décision ;
    - `admin` ⇒ `approved`, `author_user_id` non nul, `author_mcp_key_id` nul, sans décision ;
-   - `agent` ⇒ `author_mcp_key_id` non nul, `author_user_id` nul, `nature = 'text'` ; `pending` ⇔ `decided_by_user_id`
-     et `decided_at` nuls ;
+   - `agent` ⇒ `author_mcp_key_id` non nul, `author_user_id` nul, `nature = 'text'` ; **pour une version `agent`
+     seulement** : `pending` ⇒ `decided_by_user_id` et `decided_at` nuls, `approved` ou `refused` ⇒ les deux non nuls
+     (validation P1, R5 : l'équivalence ne vaut pas pour `standard` et `admin`, approuvées sans décision) ;
    - `text` ⇔ `description` et `body` non nuls, chacun portant un caractère qui n'est pas un blanc (`REGEXP
      '[^[:space:]]'`, patron de `chk_mcp_keys_name_nonempty`) ; `withdrawal` ⇒ `description` et `body` nuls.
-   Test `mcp_prompts_contraintes` (`crates/kesh-db/tests/mcp_prompts_repository.rs`) : un `INSERT` brut qui viole
-   **chaque** contrainte ci-dessus (une par cas, liste écrite dans le test et comptée) est refusé ; un `INSERT` brut
+   Test `mcp_prompts_contraintes` (`crates/kesh-db/tests/mcp_prompts_repository.rs`, monté sur le squash
+   `./test-schema`, comme `mcp_keys_repository.rs:176`) : un `INSERT` brut qui viole **chaque** contrainte ci-dessus
+   (une par cas, liste écrite dans le test et comptée — dont le nom `"valide\n"`, validation P1, R7 = F16 (a) : le `$`
+   du `REGEXP` de MariaDB, non relu à sa source, pourrait s'apparier avant un `\n` final ; s'il est accepté, le
+   `CHECK` se reformule sans `$`, et le dépôt refuse de toute façon le caractère) est refusé ; un `INSERT` brut
    conforme de chaque combinaison permise passe (**témoin**).
 4. **AC-i4 — les entités** (`crates/kesh-db/src/entities/mcp_prompt.rs`) : `McpPrompt`, `McpPromptVersion`, et trois
    énumérations `Origine`, `Etat`, `Nature` (noms indicatifs) à décodage **strict** (une valeur inconnue est une erreur,
    patron de `SendValidation`, 32-5a) ; `Contenu` = `Texte { description, texte }` | `Retrait`. Aucune entité ne dérive
    `Serialize` (les routes de la 32-10a-iii construisent leurs DTO).
-5. **AC-i5 — le dépôt, liste close** (`crates/kesh-db/src/repositories/mcp_prompts.rs`). **Lectures** (sur `&MySqlPool`,
-   toutes filtrées par `company_id`) : `lister_par_societe`, `historique(company, prompt_id)`,
-   `en_vigueur_par_societe(company)` (une entrée par prompt dont la version en vigueur est un **texte**, AC-i6, triée par
-   nom), `en_vigueur_par_nom(company, nom)`, `compter_a_valider(company)`. **Écritures** (sur une transaction ; chacune
-   verrouille d'abord la ligne du prompt par `SELECT … FOR UPDATE`, attribue `MAX(number) + 1` sous ce verrou et
-   incrémente `mcp_prompts.version`) : `creer_prompt_admin`, `ajouter_version_admin(…, version_attendue, Contenu)`,
+5. **AC-i5 — le dépôt, liste close** (`crates/kesh-db/src/repositories/mcp_prompts.rs` ; validation P1, F6, F10).
+   **Lectures** (sur `&MySqlPool`, toutes filtrées par `company_id`) :
+   - `synthese_par_societe(company, standards: &[Standard]) -> Vec<SynthesePrompt>` — **une** requête : pour chaque
+     prompt de la société, triés par nom, l'identité (`id`, `nom`, `is_standard`, `version`), la **dernière** version
+     (numéro, origine, état, nature), la version **en vigueur de toute nature** ou aucune (numéro, origine, nature), le
+     **nombre de versions `pending` du prompt**, et `standard_differe` (prompt standard dont la version en vigueur n'est
+     pas d'origine `standard`, ou dont le contenu diffère de `standards`) — les retraits et les prompts sans version
+     approuvée **compris** (l'écran d'approbation les liste) ;
+   - `historique(company, prompt_id) -> Option<(McpPrompt, Vec<McpPromptVersion>)>` (toutes les versions, textes
+     compris, par numéro) ;
+   - `en_vigueur_par_societe(company) -> Vec<VersionEnVigueur>` (une entrée par prompt dont la version en vigueur est
+     un **texte**, AC-i6, triée par nom) et `en_vigueur_par_nom(company, nom) -> Option<VersionEnVigueur>` ;
+     `VersionEnVigueur` porte nom, numéro, origine, description, texte, clé auteur.
+   **Écritures** (sur une transaction ; **ordre des verrous** : la ligne de la société par `SELECT id FROM companies
+   WHERE id = ? FOR UPDATE` **d'abord** pour toute écriture qui crée un prompt ou une version `pending`
+   (`creer_prompt_admin`, `proposer_version_agent`) — ce qui rend le plafond **atomique** et sérialise deux créations du
+   même nom neuf ; puis la ligne du prompt par `SELECT … FOR UPDATE` ; `MAX(number) + 1` sous ce verrou ;
+   `mcp_prompts.version` incrémentée) : `creer_prompt_admin`, `ajouter_version_admin(…, version_attendue, Contenu)`,
    `proposer_version_agent(…, cle_id, nom, description, texte, plafond)`, `approuver(…, numero, version_attendue,
-   user)`, `refuser(…, numero, version_attendue, user)`, `revenir_au_standard(…, version_attendue, &Standard)` ; et
-   `amorcer_standards(pool, &[Standard])` (AC-i10). Erreurs **énumérées** (aucune chaîne libre) : `NotFound` (autre
-   société comprise — indiscernable), conflit de verrou optimiste, et une énumération propre : version non la
-   dernière, version déjà décidée, nom réservé, nom déjà pris, plafond atteint, standard inconnu du code, prompt non
-   standard. **Le contenu d'une version ne se modifie jamais** : la seule instruction `UPDATE mcp_prompt_versions` du
-   dépôt pose `state`, `decided_by_user_id`, `decided_at` (garde `versions_jamais_reecrites`, AC-i14).
+   user)`, `refuser(…, numero, version_attendue, user)`, `revenir_au_standard(…, version_attendue, &Standard)` —
+   **chacune rend `VersionEcrite`** (`prompt_id`, `nom`, `numero`, `origine`, `nature`, `etat`, nouvelle `version` du
+   prompt) ; et `amorcer_standards(pool, &[Standard])` (AC-i10), dont chaque transaction de société prend le même
+   verrou de société d'abord. Un conflit d'unicité résiduel (`UNIQUE (company_id, name)` ou `(prompt_id, number)`)
+   n'est plus atteignable sous ces verrous ; s'il survient, il remonte en erreur de base, **non** en « nom déjà pris ».
+   Erreurs **énumérées** (aucune chaîne libre) : `NotFound` (autre société comprise — indiscernable), conflit de verrou
+   optimiste, et une énumération propre : version non la dernière, version déjà décidée, nom réservé, nom déjà pris,
+   plafond atteint, standard inconnu du code, prompt non standard. **Le contenu d'une version ne se modifie jamais**,
+   et aucune version ne s'efface : la seule instruction du dépôt qui écrit une version **existante** est un `UPDATE
+   mcp_prompt_versions` de `state`, `decided_by_user_id`, `decided_at` (garde `versions_jamais_reecrites`, AC-i14).
+   L'ordre « société puis prompt » suit le Pattern 5 du dépôt — la société d'abord : `reset_demo` prend `companies` en
+   `FOR UPDATE` avant de vider (`kesh-seed/src/lib.rs:576`), la règle des principaux l'exige de son appelant
+   (`companies.rs:305`) ; une remise à zéro et une proposition simultanées se sérialisent donc sur la société (à
+   recontrôler à l'étape 0, avec `docs/MULTI-TENANT-SCOPING-PATTERNS.md`).
 6. **AC-i6 — la version en vigueur** (C-32-10a-4) : la version **approuvée** de **plus grand numéro** du prompt ; un
    prompt dont la version en vigueur est un **retrait**, ou qui n'a aucune version approuvée, **n'est pas servi**. Aucun
    pointeur, aucune horloge. Tests : une version `pending` postérieure à la version approuvée ne change pas la version en
@@ -258,19 +310,26 @@ montage) lit d'abord ce que l'outillage **capte**, et porte un **témoin** qui p
    `refused` et `refused` → `approved` refusés). Tests : approbation d'une version qui n'est plus la dernière (un
    standard ou une version d'administrateur est venu entre-temps) → erreur énumérée, rien d'écrit ; double décision →
    erreur ; verrou périmé → conflit ; une version `standard` ou `admin` ne s'approuve ni ne se refuse.
-8. **AC-i8 — les noms et le plafond.** `creer_prompt_admin` et `proposer_version_agent` (pour un nom **neuf**) refusent
-   un nom non conforme ou commençant par `kesh` (préfixe réservé, contrôlé par le dépôt **et** par le `CHECK`) ;
-   `creer_prompt_admin` refuse un nom pris. `proposer_version_agent` sur un nom **existant** — standard compris — ajoute
-   une version `pending` à ce prompt ; sur un nom neuf, crée le prompt et sa version 1 `pending`. Le **plafond** :
-   au plus `plafond` versions `pending` par société (production : `PLAFOND_A_VALIDER` = 20, C-32-10a-13) ; au-delà,
-   erreur énumérée, rien d'écrit. Tests pour chaque branche.
+8. **AC-i8 — les noms et le plafond.** `creer_prompt_admin` et `proposer_version_agent` refusent un nom non conforme
+   (motif de l'AC-i2, `\n` final compris) ou commençant par `kesh` (préfixe réservé, contrôlé par le dépôt **et** par le
+   `CHECK`) ; `creer_prompt_admin` refuse un nom pris. **`proposer_version_agent` refuse tout nom en `kesh`, même
+   existant** (C-32-10a-27, validation P1, F12 : un agent ne propose pas de modifier les règles que lui donne un
+   standard, dont `kesh-developpement`) ; sur un nom **existant** non standard, il ajoute une version `pending` à ce
+   prompt ; sur un nom neuf, il crée le prompt et sa version 1 `pending`. Le **plafond** : au plus `plafond` versions
+   `pending` par société (production : `PLAFOND_A_VALIDER` = 20, C-32-10a-13), compté **sous le verrou de société**
+   (AC-i5) ; au-delà, erreur énumérée, rien d'écrit. Tests pour chaque branche, dont la proposition sur
+   `kesh-developpement` et sur `kesh-assistant` (refusées, aucune version ajoutée), et un **test de concurrence** du
+   plafond (validation P1, F10) : dix-neuf propositions posées, deux transactions proposent chacune sur un prompt
+   **différent** — la seconde attend le verrou de société de la première (constaté par un délai d'attente borné, puis
+   le `commit` de la première) et reçoit « plafond atteint » ; aucune vingt et unième version `pending`.
 9. **AC-i9 — les prompts standard, en code** (`crates/kesh-db/src/entities/mcp_prompt_standards.rs`, motif du fait 1).
    `pub const STANDARDS: &[Standard]` porte **deux** standards (C-32-10a-9) : **`kesh-developpement`** (l'agent de
    développement, qui porte les règles de Guy sur les données réelles) et **`kesh-assistant`** (l'agent qui lit les
    livres pour l'utilisateur). Textes : § *Dev Notes — Les textes standard* (exigés dans le fond, la rédaction peut
    s'affiner en revue). Tests unitaires d'auto-cohérence : noms uniques, conformes, préfixés `kesh-` ; description et
    texte non vides et dans les bornes ; **le standard de développement contient chacune des règles** — test
-   `regles_de_guy_presentes`, qui cherche, dans le texte **aplati** (blancs réduits), chacune des phrases écrites en dur
+   `regles_de_guy_presentes`, qui cherche, dans le texte **aplati** (blancs réduits) **et mis en minuscules** (les règles
+   commencent par une majuscule dans le texte : validation P1, R6 = F8), chacune des phrases écrites en dur
    dans le test (« jamais un montant, un nom, un IBAN ni un libellé réel », « par sa structure », « la base de
    démonstration », « en cas de doute », « tu demandes ») ; **témoin** : la même fonction sur un texte privé d'une règle
    rend faux.
@@ -293,48 +352,98 @@ montage) lit d'abord ce que l'outillage **capte**, et porte un **témoin** qui p
     version standard, `pending` toujours `pending` et non approuvable ; standard retiré du code → retrait ; standard
     altéré en base (`UPDATE` brut du test sur une version `standard`) → nouvelle version au texte du code ; deux sociétés
     → amorcées chacune.
-11. **AC-i11 — l'appel au démarrage, en un seul lieu.** `main.rs` appelle `amorcer_standards(&pool, STANDARDS)`
-    **une fois**, **après** le bootstrap (`:189-198` — la société provisoire existe alors) et **avant** `build_router`
-    (`:385`) ; un échec est **non fatal** : `tracing::error!` sans texte de prompt, et le démarrage continue
-    (C-32-10a-8) ; un succès écrit le rapport en `tracing::info!`. Garde `amorcage_par_main_seulement`
-    (`crates/kesh-api/tests/prompts_amorcage.rs`, patron de `lancement_par_main_seulement`, `auto_backup.rs:1195-1215`) —
-    *propriété* : dans `crates/` hors des tests de `kesh-db`, `amorcer_standards(` n'est appelé qu'en `main.rs`, une
-    fois, et avec `STANDARDS` ; *formes* : appel direct, chemin qualifié ; *mesure* : `grep -rn 'amorcer' crates
-    --include=*.rs` → 0 au relevé (fait 13) ; *témoin rouge* : source factice qui l'appelle dans `lib.rs` ; *témoin
-    vert* : une ligne de commentaire `// amorcer_standards(` (troncature des commentaires, comme `auto_backup.rs:1208-1214`).
+11. **AC-i11 — deux appels, au démarrage et à la remise à zéro, et nulle part ailleurs** (C-32-10a-8 annoté :
+    décision de l'orchestrateur sur F5, validation P1).
+    - **Au démarrage** : `main.rs` appelle `amorcer_standards(&pool, STANDARDS)` **une fois**, **après**
+      `bootstrap::ensure_admin_user(` (`:192` — c'est lui qui pose la société provisoire d'une base neuve,
+      `auth/bootstrap.rs:447` ; avant lui, l'amorçage ne trouverait aucune société et ne laisserait aucune trace) et
+      **avant** `build_router(` (`:385`).
+    - **À la remise à zéro** : `routes::onboarding::reset` appelle `amorcer_standards(&state.pool, STANDARDS)` **une
+      fois**, **après** le succès de `kesh_seed::reset_demo(` (`routes/onboarding.rs:282`, dont la transaction est alors
+      validée) et **avant** la relecture de l'état (`:297`). Aucune base neuve ne reste ainsi sans prompts jusqu'à un
+      redémarrage — la sortie de la démonstration **est** le passage aux livres réels (`admin-manual.tex:1412`,
+      validation P1, F5), et rien n'oblige à redémarrer avant de réactiver le serveur MCP (fait 2).
+    - **Échec non fatal dans les deux cas** : `tracing::error!` sans texte de prompt ; le démarrage continue ; la
+      remise à zéro, **faite**, répond comme aujourd'hui (une opération enregistrée ne s'annonce pas en échec, P2 de
+      `CLAUDE.md`) — les standards reviennent alors au démarrage suivant. Un succès écrit le rapport en `tracing::info!`.
+    - **Garde `amorcage_par_main_et_remise_a_zero_seulement`** (`crates/kesh-api/tests/prompts_amorcage.rs`, patron de
+      `lancement_par_main_seulement`, `auto_backup.rs:1195-1215`, et de son `code()`, `:1181-1187`, qui écarte les lignes
+      de commentaire et le `#[cfg(test)]`) — *propriété* : dans `crates/*/src/**/*.rs` (code seul), `amorcer_standards(`
+      apparaît **exactement** en trois lignes : sa définition `fn amorcer_standards(` (`kesh-db/src/repositories/
+      mcp_prompts.rs`, liste blanche), l'appel de `main.rs` et l'appel de `routes/onboarding.rs` ; les deux appels
+      portent `STANDARDS` ; **ordre** — dans `main.rs`, l'appel suit `ensure_admin_user(` et précède `build_router(` ;
+      dans `routes/onboarding.rs`, il suit `reset_demo(` et précède la fin de `fn reset` (le `pub async fn` suivant).
+      *Formes* : appel direct, chemin qualifié (`kesh_db::repositories::mcp_prompts::amorcer_standards(`), appel dans
+      `lib.rs` ou dans une autre route. Les fichiers de `crates/*/tests/` sont **hors** du périmètre (les tests amorcent
+      des standards de test : AC-i10, AC-i12, AC-i13, AC-ii5 ; validation P1, F2, R8). *Mesures* (règle commune,
+      validation P1, F2) : l'**ordre** se mesure sur l'analogue existant — `auto_backup::spawn(` (`main.rs:383`) suit
+      `ensure_admin_user(` (`:192`) et précède `build_router(` (`:385`) : la fonction d'ordre de la garde rend **vrai**
+      sur le vrai `main.rs` (**témoin vert existant**) ; et `get_or_init_state(` (`routes/onboarding.rs:297`) suit
+      `reset_demo(` (`:282`) dans `fn reset` (**témoin vert existant** de l'ordre dans une fonction). *Témoins rouges*
+      (factices) : l'appel placé avant `ensure_admin_user(` ; un appel dans `lib.rs` ; un appel sans `STANDARDS`.
+      *Témoin vert de la troncature* : la ligne de commentaire existante `` // `auto_backup::tests::lancement_par_main_seulement`. ``
+      (`main.rs:382`), qui ne compte pas.
+    - **Test d'exécution** de la remise à zéro : AC-i12.
 12. **AC-i12 — la sauvegarde, l'export, la remise à zéro.** `mcp_prompt_versions` puis `mcp_prompts` entrent à
     `TABLES_TO_TRUNCATE`, **avant** `mcp_keys` (enfants → parents : les versions référencent `mcp_keys`, `users` et
     `mcp_prompts` ; les prompts, `companies`), chacune avec son commentaire de place ; `backup_inventory_matches_schema`
     vert ; **ni l'une ni l'autre** à `RESET_PRESERVED_TABLES` : la remise à zéro les **vide** (règle 1 : elles rejoignent
-    `companies` ; règle 3 : elles référencent des tables conservées, jamais l'inverse) — elles reviennent au démarrage
-    suivant (C-32-10a-11). `reset_partition_is_guarded_by_the_schema` vert **sans modification** (à constater). Le test de
-    la remise à zéro (`onboarding_audit_e2e.rs`) **peuple** les deux tables dans son montage (amorçage de standards de
-    test, une proposition d'agent) et les asserte peuplées avant, vides après — `EMPTY_BEFORE_RESET` **inchangée**. Export
-    global : deux entrées à `TABLES_HORS_EXPORT`, motif écrit (« configuration du serveur MCP et instructions données à
-    un agent, sans valeur comptable ; la sauvegarde les emporte, versions à valider et refusées comprises ») ; le
-    commentaire `exports/global.rs:166-167` recompté (**treize** tables hors export, **43** tables) ; l'export
-    d'installation compte **43** fichiers de données (`admin_full_export_e2e.rs:282`, avec sa généalogie).
+    `companies` ; règle 3 : elles référencent des tables conservées, jamais l'inverse) **puis la route les ré-amorce**
+    (AC-i11). `reset_partition_is_guarded_by_the_schema` vert **sans modification** (à constater). Le test de la remise
+    à zéro (`onboarding_audit_e2e.rs`, `reset_clears_every_company_table_and_traces_itself`) **peuple** les deux tables
+    dans son montage (amorçage, une version d'administrateur, une proposition d'agent) et les asserte peuplées avant ;
+    après la remise à zéro **par la route**, la boucle « vidée » (`:2095-2099`, qui écarte déjà `audit_log`) écarte aussi
+    les deux tables des prompts, et le test asserte **à la place** qu'elles portent **exactement** les standards de
+    `STANDARDS` — un prompt `is_standard` par standard, une seule version, `standard`, `approved`, au texte du code —
+    et rien d'autre (la version d'administrateur et la proposition ont disparu). `EMPTY_BEFORE_RESET` **inchangée**
+    (deux tables peuplées n'y entrent pas, `:2034-2041`). Le détail d'`installation.reset` (`tables_cleared`) les nomme,
+    vidées : il dit vrai. Export global : deux entrées à `TABLES_HORS_EXPORT`, motif écrit (« configuration du serveur
+    MCP et instructions données à un agent, sans valeur comptable ; la sauvegarde les emporte, versions à valider et
+    refusées comprises ») ; le commentaire `exports/global.rs:166-167` recompté (**treize** tables hors export — onze au
+    relevé —, **43** tables) ; l'export d'installation compte **43** fichiers de données (`admin_full_export_e2e.rs:282`,
+    avec sa généalogie).
 13. **AC-i13 — la restauration jouée** (`tests/admin_backup_e2e.rs`, à côté du peuplement de la 32-5a, fait 7).
     Montage : une version `standard` amorcée, une version `admin`, un retrait, une version `agent` `pending`, une
     `refused`, une `approved` (toutes par le dépôt). Export puis import d'installation → les **deux tables sont égales
     ligne pour ligne, colonne pour colonne** (identifiants, numéros, origines, états, natures, textes, auteurs, décisions,
     dates à la milliseconde) à leur état d'avant l'export, et `en_vigueur_par_societe` rend la même liste. **Témoin** :
     le test constate d'abord que chaque table est non vide.
-14. **AC-i14 — gardes lexicales de la partie i** (`crates/kesh-db/tests/mcp_prompts_lexical.rs` ; règle commune).
-    - `tables_des_prompts_ecrites_par_leur_depot` — *propriété* : dans `crates/` (`.rs`, `.sql`, lignes de commentaire
-      écartées), une instruction d'écriture qui nomme une table des prompts n'apparaît qu'en
-      `kesh-db/src/repositories/mcp_prompts.rs` et dans les fichiers de test (liste écrite). *Formes* : `INSERT [IGNORE]
-      INTO`, `UPDATE`, `DELETE FROM`, `REPLACE INTO` suivis de `mcp_prompts` ou `mcp_prompt_versions`, sur une ou deux
-      lignes. *Mesure* : `grep -rniE '(insert|update|delete|replace)[^;"]{0,40}mcp_prompt' crates --include=*.rs
-      --include=*.sql` → **0** au relevé (fait 13). *Témoin rouge* : `"UPDATE mcp_prompt_versions SET body = ?"` dans
-      une source factice de `routes/`. *Témoin vert existant* : `INSERT INTO mcp_keys (company_id, …` (`tests/
-      admin_backup_e2e.rs:389`), qui ne doit pas être pris pour une table des prompts. ⚠️ La restauration générique
-      (`backup.rs`, `format!` sur le nom de table) n'écrit pas le nom en clair : elle échappe à la garde — c'est voulu,
-      et dit.
-    - `versions_jamais_reecrites` — *propriété* : dans `repositories/mcp_prompts.rs`, toute instruction `UPDATE
-      mcp_prompt_versions` ne pose que `state`, `decided_by_user_id`, `decided_at`. *Témoin rouge* (factice) : `UPDATE
-      mcp_prompt_versions SET state = ?, body = ?`. *Témoin vert* (factice, aucun n'existe au dépôt : dit tel) : `UPDATE
-      mcp_prompt_versions SET state = ?, decided_by_user_id = ?, decided_at = ?`.
+14. **AC-i14 — gardes lexicales de la partie i** (`crates/kesh-db/tests/mcp_prompts_lexical.rs` ; règle commune ;
+    validation P1, F1, R3, R9).
+    - `tables_des_prompts_ecrites_par_leur_depot` — *propriété* : dans `crates/` (`.rs` et `.sql`, lignes de
+      commentaire écartées, texte lu **par instruction**, sauts de ligne compris), une instruction qui **écrit** une table
+      des prompts n'apparaît qu'en `kesh-db/src/repositories/mcp_prompts.rs` et dans les fichiers de `crates/*/tests/`.
+      *Formes* (verbe **et** nom de table adjacents, sans tolérance de distance) : `\b(INSERT\s+(IGNORE\s+)?INTO|REPLACE\s+INTO|DELETE\s+FROM|UPDATE)\s+`?mcp_prompt`,
+      insensible à la casse ; un `ON DELETE RESTRICT,` ou un `ON UPDATE CURRENT_TIMESTAMP(3)` suivi d'une contrainte qui
+      porte le nom de la table **n'est pas** une écriture — le motif de la première rédaction (`[^;"]{0,40}`) les prenait.
+      *Mesure sur l'analogue existant* (`mcp_key` pour `mcp_prompt`, motif ci-dessus, `grep -rlPzi … crates --include=*.rs
+      --include=*.sql`) : **six fichiers**, `kesh-db/src/repositories/mcp_keys.rs` et cinq fichiers de test
+      (`kesh-db/tests/mcp_keys_repository.rs`, `kesh-api/tests/{admin_backup_e2e, admin_full_import_e2e, cles_mcp_e2e,
+      onboarding_audit_e2e}.rs`), **aucune migration** — l'analogue tient la propriété. *Témoin vert existant* : les
+      `… ON DELETE RESTRICT,` suivis de `CONSTRAINT fk_mcp_keys_created_by` et `CONSTRAINT chk_mcp_keys_name_nonempty`
+      de `migrations/20261025000001_mcp_keys_and_server_settings.sql` (l. 61-63), que l'ancien motif prenait (validation
+      P1, F1) et que le nouveau ne prend pas ; sur le code de la partie i, la migration `<horodatage>_mcp_prompts.sql`
+      porte la même forme et doit rester verte. *Témoin rouge* (factice) : `"UPDATE mcp_prompt_versions SET body = ?"`
+      dans une source de `routes/`, et `"INSERT INTO mcp_prompts (…)"` coupé sur deux lignes. *Re-mesure* : à la fin de
+      T-i3, sur le dépôt qui porte la migration et le dépôt des prompts, sortie citée.
+    - `versions_jamais_reecrites` — *propriété* : dans `repositories/mcp_prompts.rs`, une instruction qui touche une
+      version **existante** est un `UPDATE mcp_prompt_versions` qui ne pose que `state`, `decided_by_user_id`,
+      `decided_at` ; **aucune** instruction `REPLACE INTO mcp_prompt_versions`, `INSERT … ON DUPLICATE KEY UPDATE` sur
+      cette table, ni `DELETE FROM mcp_prompt_versions` (validation P1, R3 : la contrainte `UNIQUE (prompt_id, number)`
+      rendrait les deux premières capables de réécrire une version). *Formes* : les quatre, sur une ou plusieurs lignes ;
+      la liste du `SET` lue jusqu'au `WHERE`. *Mesure sur l'analogue existant* : `repositories/mcp_keys.rs` porte trois
+      `UPDATE mcp_keys` (`:282`, `:312`, `:336`), dont `:282-284` sur trois lignes (`SET revoked_at = NOW(3), version =
+      version + 1`) ; la fonction qui extrait la liste du `SET` rend `{revoked_at, version}` sur cette instruction
+      (**témoin vert existant** du découpage multi-ligne). *Témoins rouges* (factices) : `UPDATE mcp_prompt_versions SET
+      state = ?, body = ?` ; `REPLACE INTO mcp_prompt_versions …` ; `INSERT INTO mcp_prompt_versions (…) VALUES (…) ON
+      DUPLICATE KEY UPDATE body = VALUES(body)` (la forme existe au dépôt pour une autre table :
+      `repositories/journal_entries.rs:3956-3958`, `INSERT INTO fiscal_years … ON DUPLICATE KEY UPDATE status = 'Closed'`,
+      que la garde, limitée à `mcp_prompt_versions`, ne prend pas — **témoin vert existant**) ; `DELETE FROM
+      mcp_prompt_versions WHERE …`.
+    - ⚠️ **Écrivains génériques**, hors de portée des deux gardes, qui composent le nom de table : la restauration
+      (`backup.rs`, `restore_tables_in_tx`), le vidage de test (`test_fixtures.rs:402-403`, `TRUNCATE TABLE {table}`), la
+      remise à zéro (`kesh-seed/src/lib.rs:602`, `reset_cleared_tables()`), l'import (`admin_backup/import.rs:234`, `:726`,
+      `:857`, boucles sur `TABLES_TO_TRUNCATE`). Voulu et écrit (validation P1, F15).
 15. **AC-i15 — P5 à P8 et les compteurs positionnels.** **P5** : une ligne à `docs/migrations-idempotence-audit.md`
     (`tracked-by-sqlx`, justification sur le patron de la ligne de `20261025000001`, l. 106), le total aux **deux** sites
     (`:17`, `:110`, généalogie « + 1 Story 32-10a ») et la partition **recomptés depuis le tableau** (commandes de
@@ -351,7 +460,9 @@ montage) lit d'abord ce que l'outillage **capte**, et porte un **témoin** qui p
     refusées comprises, origines, décisions), restaurés tels quels ; un prompt standard non personnalisé reprend le texte
     de la version installée **au démarrage suivant** ; `:2249` — « ajoute deux tables » → **quatre** (clés, réglages,
     prompts et leurs versions) ; le paragraphe de la **remise à zéro** (`:1414` au relevé, à recontrôler après la 32-5d)
-    — les prompts sont effacés avec les données de la société et les standards se réinstallent au démarrage suivant.
+    — les prompts sont effacés avec les données de la société et **les prompts standard sont réinstallés aussitôt**, à
+    la version du code (si cette réinstallation échoue, ils reviennent au démarrage suivant, et le journal du serveur
+    le dit) ; validation P1, F5.
     Manuel utilisateur `:3027-3030` — l'export ne contient pas non plus **les prompts du serveur MCP** (sans valeur
     comptable). `CHANGELOG.md:16-17` — « en ajoute deux » → quatre, prompts nommés. **PDF régénérés** (`make fr` dans
     `docs/manual/`) et contrôlés **aplatis** : `pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' |
@@ -360,14 +471,27 @@ montage) lit d'abord ce que l'outillage **capte**, et porte un **témoin** qui p
 
 ### Partie ii — 32-10a-ii : le prédicat, la validation et le catalogue servi
 
-17. **AC-ii1 — un prédicat partagé** (`kesh-core/src/text.rs`, DRY avec le fait 10 ; C-32-10a-12). La liste fermée de
-    `is_forbidden_in_description` **hors** `char::is_control` devient `kesh_core::text::is_hidden_format(c)`, avec son
-    angle mort écrit (`bank_accounts.rs:297-302`, déplacé) ; `is_forbidden_in_description` devient `c.is_control() ||
-    is_hidden_format(c)` — **comportement inchangé**, tests `bank_accounts.rs:1490-1530` verts sans modification ;
-    `kesh_core::text::is_forbidden_in_prompt(c)` = `(c.is_control() && c != '\n' && c != '\t') || is_hidden_format(c)`.
-    Tests unitaires : `\n` et `\t` admis, `\r`, `U+0000`, `U+202E`, `U+2066`, `U+200B`, `U+FEFF` refusés ; **le test
-    constate que `'\n'.is_control()` est vrai** (fait 14 : affirmation non relue à la source). L'espace insécable
-    (`U+00A0`, courant en français) est **admis** (test).
+17. **AC-ii1 — un prédicat partagé, complété** (`kesh-core/src/text.rs`, DRY avec le fait 10 ; C-32-10a-12 annoté :
+    décision de l'orchestrateur sur F4, validation P1). La liste fermée de `is_forbidden_in_description` **hors**
+    `char::is_control` devient `kesh_core::text::is_hidden_format(c)`, **complétée** des points de code que son angle mort
+    énumérait (`bank_accounts.rs:297-302`) — remplissages hangûl **U+115F**, **U+1160**, **U+FFA0** ; voyelles inhérentes
+    khmères **U+17B4**, **U+17B5** ; sélecteurs de variante mongols **U+180B–U+180D** (et **U+180F**, quatrième de la même
+    famille) ; **U+2065** ; contrôles de format musicaux **U+1D173–U+1D17A** ; sélecteurs de variante supplémentaires
+    **U+E0100–U+E01EF** —, qui **sortent du doc-comment d'angles morts** ; ce qui reste écrit comme angle mort : les
+    caractères de format qu'une version future d'Unicode attribuerait, et les homoglyphes (autre classe : ils se voient).
+    `is_forbidden_in_description` devient `c.is_control() || is_hidden_format(c)` : **l'usage existant en profite** — une
+    description de compte bancaire refuse désormais aussi ces caractères (changement de comportement **voulu**, à
+    écrire au Change Log de la partie ii ; aucun texte du manuel ne liste l'ensemble refusé : à constater par `grep -n
+    'U+2' docs/manual/fr/*.tex` à l'étape 0). `kesh_core::text::is_forbidden_in_prompt(c)` = `(c.is_control() && c !=
+    '\n' && c != '\t') || is_hidden_format(c)`. **Tests** : le test des plages `ensemble_refuse_borne_par_borne`
+    (`bank_accounts.rs:1466-1513`) **déménage** en `kesh-core` avec la liste, gagne les nouvelles plages — fusionnées
+    là où elles touchent une plage existante (`U+2060–U+2069` d'un tenant, `U+180B–U+180F` d'un tenant), ce qui change les
+    voisins qu'il asserte acceptés — et reste appelé sur `is_hidden_format` ; **un test par famille** ajoutée (hangûl,
+    khmer, mongol, `U+2065`, musical, sélecteurs supplémentaires), chacune par ses deux bornes ; `controles_cc_refuses`
+    et `lettres_et_espaces_ordinaires_acceptes` (`bank_accounts.rs:1516-1530`) restent en place, verts. Pour
+    `is_forbidden_in_prompt` : `\n` et `\t` admis ; `\r`, `U+0000`, `U+202E`, `U+2066`, `U+200B`, `U+FEFF`,
+    `U+E0100` refusés ; **le test constate que `'\n'.is_control()` est vrai** (fait 14 : affirmation non relue à la
+    source) ; l'espace insécable (`U+00A0`, courant en français) est **admis**.
 18. **AC-ii2 — la validation d'un contenu** (`services::prompts_mcp::valider_contenu`, une seule fonction, employée au
     service — AC-ii3 — et aux écritures — 32-10a-iii) : fins de ligne normalisées (`\r\n` → `\n`) **avant** le contrôle ;
     description et texte non vides après rognage, dans les bornes de l'AC-i3, sans caractère refusé (AC-ii1). Erreur
@@ -392,7 +516,8 @@ montage) lit d'abord ce que l'outillage **capte**, et porte un **témoin** qui p
     champs exacts du type `Prompt` de la révision `2025-11-25` se relèvent **au schéma** à l'étape 0, source citée
     (`title` non servi, C-32-10a-10) ; seuls les prompts **en vigueur, approuvés, de nature texte, valides**, de la
     **société de la clé** ; une clé sans `books:read` reçoit `{"prompts": []}` (le refus `Forbidden` du service traduit
-    en liste vide, non en erreur : aucun oracle). Tests (`crates/kesh-api/tests/mcp_prompts_e2e.rs`, montage de la 32-6,
+    en liste vide, non en erreur : aucun oracle). Un `cursor` fourni → `-32602` à texte fixe, comme `tools/list`
+    (AC-a17 de la 32-6 ; validation P1, R13) : la liste n'est pas paginée. Tests (`crates/kesh-api/tests/mcp_prompts_e2e.rs`, montage de la 32-6,
     standards et versions posés par le dépôt) : corps **égal** à la réponse attendue pour une société portant un
     standard, un prompt d'administrateur, un prompt d'agent approuvé, une proposition `pending`, une `refused`, un retrait
     et un prompt d'une autre société ; ces quatre derniers absents.
@@ -418,52 +543,101 @@ montage) lit d'abord ce que l'outillage **capte**, et porte un **témoin** qui p
 25. **AC-ii9 — la politique de la clé ne s'applique pas aux prompts, et aucun livre n'est lu** (spike E1, E2 ; AC-a15
     de la 32-6). Sous une clé `required`, `prompts/list` et `prompts/get` sont servis ; `e1_rien_ne_part_sous_cle_requise`
     de la 32-6 reste vert, prompts présents. Le chemin des prompts ne lit **que** les tables des prompts : garde
-    `service_des_prompts_sans_livres` — *propriété* : `services/prompts_mcp.rs` ne nomme aucun dépôt de `kesh_db` autre
-    que `mcp_prompts`, ni `kesh_report`, ni un autre service ; *formes* : `repositories::<x>`, `use
-    kesh_db::repositories::{…}` (listes comprises), `kesh_report::`, `super::<service>::` ; *témoin rouge* (factice) :
-    `use kesh_db::repositories::{accounts, mcp_prompts};` ; *témoin vert existant* : `mcp_keys::find_active_auth_by_key_hash`
-    (`services/cles_mcp.rs:88`) est hors périmètre — la garde, appliquée à `cles_mcp.rs`, le refuserait (le témoin prouve
-    la largeur du motif, non son absence de faux positif ; un témoin vert factice `mcp_prompts::en_vigueur_par_nom` est
-    écrit à côté).
+    `service_des_prompts_sans_livres` (validation P1, R2, F13) — *propriété* : `services/prompts_mcp.rs` (code seul)
+    n'importe et ne nomme, de `kesh_db::repositories`, **que** `mcp_prompts`, de `crate::services` (ou `super::`) **que**
+    `acces` et `poignees` (liste blanche écrite), et rien de `kesh_report`. *Formes* : `use
+    kesh_db::repositories::<x>`, `use kesh_db::repositories::{…}` (listes, sur plusieurs lignes comprises),
+    `repositories::<x>::` en chemin, `crate::services::<x>`, `super::<x>`, `kesh_report::`. *Mesure sur l'analogue
+    existant* : appliquée à `services/cles_mcp.rs` avec `mcp_keys` pour dépôt admis, la garde rend **vert** — le fichier
+    n'importe que `kesh_db::repositories::mcp_keys` (`:36`), `crate::services::acces::ContexteAcces` (`:40`) et
+    `crate::services::poignees::{Lecture, Trace}` (`:41`) (**témoin vert existant**) ; appliquée de même à
+    `services/plan_comptable.rs`, elle rend **rouge** sur `use kesh_db::repositories::{accounts, letterings};` (`:7`)
+    (**témoin rouge existant**) ; dans tout `services/`, `crate::services::` ne nomme aujourd'hui qu'`acces` et
+    `poignees` (`grep -rhoE '(crate::services::|super::)[a-zA-Z_]+' crates/kesh-api/src/services/*.rs | sort | uniq -c` →
+    8 `acces`, 8 `poignees`, et `super::Affichage`, `super::Export`, deux types de `rapports.rs`). *Témoin rouge*
+    (factice) : `use crate::services::factures::lister;` dans le fichier des prompts.
 26. **AC-ii10 — gardes de la partie ii** (`tests/mcp_gardes_lexicales.rs`, règle commune) : `prompts_scelles` amendée
     (`impl … McpPrompt for` n'apparaît qu'en `mcp/prompts.rs`, **une** fois, pour `PromptEnBase`) ; `marque_en_un_lieu`
     (AC-ii7) ; `prompts_construits_par_le_catalogue` (AC-ii8) ; `service_des_prompts_sans_livres` (AC-ii9) ;
-    `prompts_lus_par_leur_service` — *propriété* : dans `crates/kesh-api/src`, le chemin `mcp_prompts::` (dépôt) n'est
-    nommé qu'en `services/prompts_mcp.rs`, `routes/mcp_prompts.rs` (32-10a-iii) et `main.rs` (AC-i11) ; aucun outil de
-    données (`src/mcp/outils/`) ni aucune autre route ne lit les prompts — **un agent ne relit jamais une proposition**,
-    la sienne comprise ; *mesure* : `grep -rn 'mcp_prompt' crates` → 0 au relevé (fait 13) ; *témoin vert existant* :
-    `mcp_keys::` (`services/cles_mcp.rs:88`, `:101`), qui ne doit pas être pris pour `mcp_prompts::`.
+    `prompts_lus_par_leur_service` (validation P1, R2, F3) — *propriété* : dans `crates/kesh-api/src` (code seul), le
+    **dépôt** des prompts n'est importé ou nommé qu'en `services/prompts_mcp.rs`, `routes/mcp_prompts.rs` (32-10a-iii),
+    `main.rs` et `routes/onboarding.rs` (les deux appels d'`amorcer_standards`, AC-i11) ; aucun outil de données
+    (`src/mcp/outils/`) ni aucune autre route ne lit les prompts — **un agent ne relit jamais une proposition**, la
+    sienne comprise. *Formes* : `repositories::mcp_prompts` (import ou chemin), `repositories::{…, mcp_prompts, …}`
+    (liste, sur plusieurs lignes comprises), `repositories::*` (import global, refusé partout dans le périmètre : aucun
+    n'existe, `grep -rnE 'repositories::\*' crates/kesh-api/src` → 0) ; **non** le module de route
+    `routes::mcp_prompts::`, que `lib.rs` nomme pour monter les routes (motif de la première rédaction, `mcp_prompts::`
+    nu, qui l'aurait pris). *Mesure sur l'analogue existant* (`api_keys`) : `grep -rlE '\brepositories::api_keys\b'
+    crates/kesh-api/src` et la forme en liste rendent **trois** fichiers, `auth/api_key.rs`, `auth/bootstrap.rs`,
+    `routes/api_keys.rs` ; **témoin vert existant** : `get(routes::api_keys::list).post(routes::api_keys::create),`
+    (`lib.rs:809`), que le motif ne prend pas. *Témoin rouge* (factice) : `use kesh_db::repositories::{accounts,
+    mcp_prompts};` dans `src/mcp/outils/kesh_version.rs`.
 
 ### Partie iii — 32-10a-iii : les écritures, le journal et l'audit
 
 27. **AC-iii1 — la poignée d'écriture des prompts.** `services::poignees::EcriturePrompts(MySqlPool)`, champ privé,
     `pool()` en `pub(in crate::services)` (patron des deux autres) ; fabriquée **une fois**, en `lib.rs`, sur le pool
     ordinaire, et placée dans `EtatMcp` (`ecriture_prompts`) ; `FABRIQUES_V2` de `services_motif.rs` gagne ce site (ligne
-    recomptée à l'étape 0, avec son commentaire). Elle n'écrit que par `services::prompts_mcp::proposer`.
-28. **AC-iii2 — l'outil `proposer_prompt`** (C-32-10a-17). Descripteur **statique** (`&'static str` : nom
-    `proposer_prompt`, description, schéma `{"type":"object","properties":{"nom":{…},"description":{…},"texte":{…}},
-    "required":["nom","description","texte"],"additionalProperties":false}`), `readOnlyHint` **absent** (l'outil écrit :
-    `false`, à constater contre la règle « `readOnlyHint: true` sur tout outil » de la 32-6, amendée ici pour ce seul
-    outil) ; listé par `tools/list` **seulement** pour une clé qui porte `prompts:write` ; appelé sans cette portée → la
-    même réponse qu'un outil inconnu (corps égal). L'outil ne reçoit **ni** `Lecture` **ni** `LectureOutils` : le
-    répartiteur appelle `proposer(&acces, &etat.ecriture_prompts, cle_id, proposition)` ; il ne passe **pas** par
-    `politique::autoriser` (il n'envoie rien des livres, spike E2) — sous une clé `required`, il est servi (test).
-    `registre_standard_inventaire` (32-6) amendé en connaissance de cause.
+    recomptée à l'étape 0, avec son commentaire). Elle n'écrit que par `services::prompts_mcp::proposer`. Les
+    doc-comments que la partie iii rend faux se corrigent ici : `services/acces.rs:29` (« `DocumentsRead`,
+    `PromptsWrite` — aucun service encore » : `PromptsWrite` ouvre désormais `prompts_mcp::proposer`) ; `Trace::pool`
+    (`services/poignees.rs`) et l'inventaire des écritures de `services/mod.rs` (`:77-90`), qui gagnent
+    `journaliser_prompt` et la poignée `EcriturePrompts` (validation P1, F14).
+28. **AC-iii2 — l'outil `proposer_prompt`, et l'amendement exact des types de la 32-6a** (C-32-10a-17 annoté ;
+    validation P1, R1). L'outil **n'est pas un `McpTool`** et **n'entre pas au `Registre`** : il ne rend pas de
+    `Donnees` et ne reçoit pas de `ContexteMcp`. Ce que la 32-10a-iii change dans le code de la 32-6a, et **rien d'autre** :
+    1. **`mcp/reponse.rs`** : une variante neuve `ReponseMcp::Accuse(AccuseProposition)`. `AccuseProposition` est définie
+       en `mcp/prompts.rs`, champ privé (le nom **validé**), **sans** `Serialize`, `Default`, `Debug` ni `Clone`,
+       construite par une seule fonction `pub(in crate::mcp)` de ce fichier, à partir du `VersionEcrite` rendu par le
+       service (AC-iii3) ; `rendre` la convertit en `result` `{"content": [{"type": "text", "text": <TEXTE_ACCUSE>}],
+       "structuredContent": {"nom": <nom>, "etat": "a_valider"}, "isError": false}`. Elle ne contient ni
+       `DonneesEnvoyables` ni `Autorisation` : **aucune donnée lue** n'y entre (spike § 5.3.1, E2 : l'accusé de
+       `proposer_prompt` ne passe pas par la validation). Les refus de l'outil sortent par la variante d'erreur d'outil
+       existante (`isError: true`, texte fixe), non par une variante neuve.
+    2. **La politique de la clé** : pour `proposer_prompt`, `politique::autoriser` n'est **pas** appelé — une clé
+       `required` propose comme une clé `exempt` (C-32-10a-26) ; `autoriser`, `appliquer`, `Autorisation`, `Donnees`,
+       `DonneesEnvoyables` et la garde `donnees_construites_par_la_politique_seule` sont **inchangés** ; la garde
+       `outils_et_politique_en_leur_lieu` aussi (aucun appel neuf d'`autoriser`/`appliquer`).
+    3. **`mcp/repartiteur.rs`** : `tools/call` dont le nom est `OUTIL_PROPOSER_PROMPT` (constante de `textes.rs`)
+       **et** dont la clé porte `PromptsWrite` → `services::prompts_mcp::proposer(&acces, &etat.ecriture_prompts,
+       cle_id, arguments)` ; nom égal sans la portée → le chemin d'un outil inconnu (`-32602`, corps égal). Le
+       contrôle de portée précède tout le reste, comme `outil_pour` (AC-a21).
+    4. **`tools/list`** : la liste = `descripteurs_pour(portées)` du registre (inchangé), **suivie**, si la clé porte
+       `PromptsWrite`, du descripteur **statique** de `proposer_prompt` (`&'static str` : nom, description, schéma
+       `{"type":"object","properties":{"nom":{…},"description":{…},"texte":{…}},"required":["nom","description","texte"],
+       "additionalProperties":false}`) avec **`annotations: {"readOnlyHint": false}`** — explicite, non absent (F11) ;
+       la pose de `readOnlyHint: true` par le répartiteur (AC-a17 de la 32-6) ne vise que les outils du registre.
+       **`tools_list_filtre`** (32-6) gagne deux cas : clé `books:read` seule → liste inchangée ; clé `books:read` +
+       `prompts:write` → la même, plus le descripteur, corps égal.
+    5. **`registre_coherent`** et **`registre_standard_inventaire`** (32-6) : **inchangés** — l'outil n'est pas au
+       registre, et « aucun `McpTool` n'a la portée `PromptsWrite` » reste vrai ; un test neuf
+       `proposer_prompt_hors_registre` le fige (`Registre::standard()` ne contient pas ce nom ; le nom n'entre en
+       collision avec aucun outil du registre).
+    6. **`mcp/mod.rs`** : `EtatMcp` gagne `ecriture_prompts: services::poignees::EcriturePrompts` (AC-iii1) ; la garde
+       `mcp_sans_pool` reste verte (la poignée ne laisse voir aucun pool hors de `services`).
+    7. **Journal (32-6b)** : AC-iii5.
+    L'outil ne reçoit **ni** `Lecture` **ni** `LectureOutils`. Garde `accuse_construit_en_un_lieu` : le constructeur
+    d'`AccuseProposition` n'est appelé qu'en `mcp/repartiteur.rs` (une ligne) et défini en `mcp/prompts.rs`.
 29. **AC-iii3 — le service `proposer`** : `exiger(EXIGENCE_PROPOSER)` (`portee_mcp: Some(PromptsWrite)`) d'abord ;
     arguments désérialisés strictement (tout autre champ → `arguments_invalides`) ; `valider_contenu` (AC-ii2) ; nom
     conforme ; puis `proposer_version_agent` dans une transaction de l'`EcriturePrompts`, auteur = `cle_id`. **Accusé**
     (C-32-10a-17) : `structuredContent` `{"nom": <nom>, "etat": "a_valider"}` et un bloc texte **constant** à une seule
     valeur interpolée, le nom **validé** (`[a-z0-9_-]`) — **ni numéro, ni texte, ni description**. Refus à textes fixes
-    (`mcp/textes.rs`) : arguments invalides (champ et motif énumérés), nom réservé, plafond atteint (`isError: true`) ;
+    (`mcp/textes.rs`) : arguments invalides (champ et motif énumérés), nom réservé — y compris tout nom en `kesh`,
+    existant ou non (C-32-10a-27) —, plafond atteint (`isError: true`) ;
     une erreur de base → erreur interne fixe. Test : corps **égal** pour chaque cas ; le piège posé dans le texte
     (`PIEGE_TEXTE_3210A`) n'apparaît dans **aucune** réponse.
 30. **AC-iii4 — jamais servi avant l'approbation.** Bout en bout (`mcp_prompts_e2e.rs`) : une proposition sur un nom
     neuf, puis `prompts/list` → corps égal à celui d'avant ; `prompts/get` de ce nom → la réponse d'un nom inconnu ; une
-    proposition sur le standard `kesh-assistant` → `prompts/get` rend toujours le standard ; après approbation par la
+    proposition sur le standard `kesh-assistant`, puis sur `kesh-developpement` → refusées (nom réservé, aucune version
+    ajoutée, `prompts/get` rend toujours le standard) ; après approbation par la
     route (AC-iii7), le texte d'agent est servi **avec sa marque** ; après refus, rien ne change.
 31. **AC-iii5 — le journal des appels** (32-6b ; C-32-10a-18). Un `tools/call` de `proposer_prompt` est journalisé par
-    `journaliser_appel` comme tout appel (`outil` = `proposer_prompt`), l'énumération fermée des issues gagnant
-    **`limite_atteinte`** (amendement de l'AC-b1 de la 32-6b, en connaissance de cause) ; `prompts/get` est journalisé
+    `journaliser_appel` comme tout appel : `outil` = `proposer_prompt` (l'AC-b1 de la 32-6b — « le nom d'un outil du
+    registre, ou `"(inconnu)"` » — devient « … du registre, `proposer_prompt`, ou `"(inconnu)"` ») ; `validation` =
+    **la politique de la clé**, comme pour tout appel (validation P1, R12), bien qu'elle ne s'applique pas à cet outil ;
+    issues : `servi`, `inconnu` (hors portée), `arguments_invalides` (champ invalide **et nom réservé**, F11), `erreur`,
+    et **`limite_atteinte`**, ajoutée à l'énumération fermée (amendement de l'AC-b1, en connaissance de cause) ; `prompts/get` est journalisé
     (action **`mcp.prompt_served`**, type d'entité `mcp_key`, détail **exactement** `{"cleMcpId", "prompt", "numero",
     "issue"}`, `prompt` = un nom **du catalogue** ou `"(inconnu)"`, `numero` nul hors `servi`, `issue` ∈ {`servi`,
     `inconnu`, `erreur`}), **fail closed** comme `tools/call` (AC-b3 de la 32-6b : si l'écriture échoue, rien n'est
@@ -492,7 +666,10 @@ montage) lit d'abord ce que l'outillage **capte**, et porte un **témoin** qui p
     `mcp_prompt.standard_restored` — type d'entité **`mcp_prompt`**, détail `{"promptId", "nom", "numero", …}`, **jamais
     la description ni le texte** (l'`audit_log` est exporté et lisible, fait 6). Test : un texte et une description
     piégés n'apparaissent dans aucun `audit_log.details_json` ni `actor_label`. Les six actions (celles-ci et
-    `mcp.prompt_served`) et le type à `audit_labels.rs` (ordre trié), libellés dans les quatre locales ;
+    `mcp.prompt_served`) et le type à `audit_labels.rs` (ordre trié), libellés dans les quatre locales ; le commentaire
+    de compte `# 28 types d'entité, 93 actions, 2 types d'auteur.` (`fr-CH/messages.ftl:2601`, seule locale qui le
+    porte ; validation P1, R11, F14) recompté depuis `ENTITY_TYPES` et `ACTIONS` après les 32-5c et 32-6b, valeurs avant
+    et après citées ;
     `audit_label_registry.rs` vert ; l'action est un **littéral** à chaque site `NewAuditLogEntry::user(`.
 36. **AC-iii10 — le registre des routes suit.** `tests/audit_route_registry.rs` : les cinq routes mutantes entrent
     (`Traced`, classe de rejeu établie par l'inventaire) ; inventaires, `traced`, partition de rejeu et leurs messages
@@ -528,7 +705,7 @@ journalisé, fail closed] → client.
 
 | # | Site non résolu | Comment il se ferme | Par quoi |
 |---|---|---|---|
-| P1 | `prompts/list` servirait une version non approuvée | en vigueur = approuvée de plus grand numéro, de nature texte | AC-i6, AC-ii5 (corps égal), Mii1 |
+| P1 | `prompts/list` servirait une version non approuvée | en vigueur = approuvée de plus grand numéro, **de toute nature** ; servie seulement si c'est un texte (un retrait en vigueur ôte le prompt, il ne ressert pas le texte précédent — F11) | AC-i6, AC-ii5 (corps égal), Mii1 |
 | P2 | `prompts/get` d'un nom dont seule une proposition existe | même `-32602` qu'un nom inconnu | AC-ii6, Mii5 |
 | P3 | une proposition `pending` **postérieure** à la version approuvée prendrait sa place | règle de l'AC-i6 | AC-i6, Mi4 |
 | P4 | une version `refused`, ou une version décidée re-décidée | états terminaux | AC-i7, Mi6, Mi17 |
@@ -538,16 +715,16 @@ journalisé, fail closed] → client.
 | P8 | `tools/list` (descriptions, schémas) | `&'static str` du binaire (N18 de la 32-6) ; `proposer_prompt` listé seulement sous `prompts:write` | AC-iii2, Miii1 |
 | P9 | `initialize.instructions` | constante du binaire (AC-a13 de la 32-6), jamais lue en base | 32-6 ; garde `prompts_lus_par_leur_service` |
 | P10 | une erreur qui porterait un texte reçu ou lu | textes fixes, motifs énumérés | AC-ii2, AC-iii3, AC-ii6 |
-| P11 | un **outil de données** (32-9) ou une autre route qui lirait les tables des prompts — dont **un agent qui relit les propositions**, la sienne ou celle d'une autre clé | `mcp_prompts::` nommé en trois fichiers seulement ; aucun outil de relecture | garde `prompts_lus_par_leur_service` (AC-ii10), Mii8 |
+| P11 | un **outil de données** (32-9) ou une autre route qui lirait les tables des prompts — dont **un agent qui relit les propositions**, la sienne ou celle d'une autre clé | le dépôt importé en quatre fichiers seulement ; aucun outil de relecture | garde `prompts_lus_par_leur_service` (AC-ii10), Mii8 |
 | P12 | l'API `/api/v1` lue par un PAT (agent branché sur l'API) | routes de gestion dans `admin_routes` : PAT 403, clé MCP 401 | AC-iii7, Miii7 |
 | P13 | l'export global (`global.zip`) | tables à `TABLES_HORS_EXPORT` | AC-i12, Mi10 |
 | P14 | le **journal d'audit** (exporté, lisible par l'API) | détails sans description ni texte | AC-iii9, Miii6 |
 | P15 | le **journal du serveur**, que l'agent de développement lit | aucun texte ni description journalisé ; identifiants seuls | AC-iii12, AC-ii3, Miii8 |
 | P16 | les arguments du client interpolés dans le texte | aucun gabarit : arguments ignorés | AC-ii6, Mii6 |
-| P17 | un texte aux caractères invisibles ou bidirectionnels (ce que l'administrateur lit ≠ ce que l'agent reçoit) | refus à l'écriture (iii) **et** au service (ii, revalidation) | AC-ii1 à AC-ii3, AC-iii8, Mii7 |
+| P17 | un texte aux caractères invisibles ou bidirectionnels (ce que l'administrateur lit ≠ ce que l'agent reçoit) | refus à l'écriture (iii) **et** au service (ii, revalidation), sur la liste fermée complétée (AC-ii1) | AC-ii1 à AC-ii3, AC-iii8, Mii7, Mii10 — **fermé sur la liste écrite ; angle mort** : un caractère de format qu'une version future d'Unicode attribuerait ; les homoglyphes (visibles, autre classe) |
 | P18 | un texte d'agent qui imite une marque ou un texte standard | la vraie marque **précède** le texte, calculée sur l'origine en base | AC-ii7, Mii3 |
 | P19 | une **donnée des livres** logée dans un prompt par le code | le chemin des prompts ne lit que les tables des prompts ; `Donnees` illisible hors de `politique.rs` | garde `service_des_prompts_sans_livres`, AC-ii8 (compilateur), Mii9 |
-| P20 | un **standard** : texte du binaire | `STANDARDS` en constante, passé par `valider_contenu` | AC-i9, AC-ii2 |
+| P20 | un **standard** : texte du binaire ; **un agent qui réécrirait un standard** (les règles de `kesh-developpement`) | `STANDARDS` en constante, passé par `valider_contenu` ; aucune proposition d'agent sur un nom en `kesh` (C-32-10a-27) | AC-i9, AC-ii2, AC-i8, Miii11 |
 | P21 | une écriture des tables hors du dépôt (route, outil, seed, migration) | garde `tables_des_prompts_ecrites_par_leur_depot` ; migration DDL seule | AC-i14, AC-i1 |
 | P22 | l'approbation par une clé (l'agent approuve sa propre proposition) | aucune route d'approbation atteignable par une clé | AC-iii7, Miii7 |
 | P23 | une **restauration** d'un `.keshbackup` (versions approuvées d'agent, standard altéré) | restauré tel quel ; le standard altéré revient au texte du code **au démarrage suivant** ; revalidation au service | AC-i10, AC-i13 — **angle mort** : jusqu'au démarrage, un standard altéré est servi s'il est valide |
@@ -556,8 +733,9 @@ journalisé, fail closed] → client.
 | P26 | l'écran de la 32-10b, lu par un humain qui recopie un texte (cas assumé d'E1) ; un administrateur qui enregistre un texte d'agent comme **sa** version, ce qui **ôte la marque** | l'approbation, ou l'enregistrement, en tient lieu | **angle mort assumé** : la marque dit qui a écrit la version, non d'où viennent ses mots — écrit au manuel par la 32-10b |
 | P27 | **un prompt approuvé est une instruction** : bien formé, marqué, il peut dire à l'agent de mal faire | l'agent n'a que les portées de sa clé, en lecture, sous la politique de validation de la clé ; un prompt n'ouvre aucun droit | **angle mort assumé** (§ *Ce que les gardes ne voient pas*) |
 
-**Angles morts assumés** (écrits, non fermés) : P23 à P27 ; une macro qui fabriquerait un identifiant (gardes
-lexicales) ; un SQL de restauration composé (`format!`, AC-i14).
+**Angles morts assumés** (écrits, non fermés) : P23 à P27 ; le reste écrit de P17 ; une macro qui fabriquerait un
+identifiant (gardes lexicales) ; les écrivains génériques qui composent le nom de table (restauration, vidage de test,
+remise à zéro, import : AC-i14).
 
 ## La frontière avec la 32-10b (l'écran) et la 32-7
 
@@ -581,19 +759,20 @@ d'une, c'est un écart déclaré, qui touche `routes` et l'audit.
   jour ; recomptes et relectures, ligne lue citée au Change Log ; horodatage de la migration choisi après la dernière.
 - [ ] **T-i1** — migration, entités, dépôt, standards et leurs tests (AC-i1 à AC-i10) ; squash régénéré ;
   `migrations.sha384`.
-- [ ] **T-i2** — appel au démarrage et sa garde (AC-i11).
+- [ ] **T-i2** — les deux appels, au démarrage et à la remise à zéro, et leur garde d'ordre (AC-i11).
 - [ ] **T-i3** — sauvegarde, export, remise à zéro, restauration jouée, gardes lexicales (AC-i12 à AC-i14).
 - [ ] **T-i4** — P5, P6, P7, P8 (AC-i15) ; textes et PDF (AC-i16).
-- [ ] **T-i5** — mutations Mi1 à Mi17, gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
+- [ ] **T-i5** — mutations Mi1 à Mi20, gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
 
 ### 32-10a-ii
 - [ ] **T-ii0** — étape 0 : 32-10a-i fusionnée ; schéma `2025-11-25` (`Prompt`, `GetPromptResult`) relevé, source
   citée ; recontrôle des noms de la 32-6 (trait, sortie, gardes).
-- [ ] **T-ii1** — prédicat partagé et refactor de `bank_accounts.rs` (AC-ii1).
+- [ ] **T-ii1** — prédicat partagé, complété, son test des plages déménagé et ses tests par famille ; refactor de
+  `bank_accounts.rs` (AC-ii1).
 - [ ] **T-ii2** — `valider_contenu`, service de lecture et ses tests R7 (AC-ii2, AC-ii3).
 - [ ] **T-ii3** — `PromptEnBase`, catalogue, `prompts/list`, `prompts/get`, marque, sortie (AC-ii4 à AC-ii9) ;
   `mcp_prompts_e2e.rs`.
-- [ ] **T-ii4** — gardes (AC-ii10) ; mutations Mii1 à Mii9, gates.
+- [ ] **T-ii4** — gardes (AC-ii10) ; mutations Mii1 à Mii10, gates.
 
 ### 32-10a-iii
 - [ ] **T-iii0** — étape 0 : 32-10a-ii et 32-6b fusionnées ; recomptes d'`admin_pat_denied_e2e.rs`,
@@ -602,14 +781,19 @@ d'une, c'est un écart déclaré, qui touche `routes` et l'audit.
 - [ ] **T-iii2** — journal (AC-iii5).
 - [ ] **T-iii3** — routes de gestion, gardes, validation, audit, libellés, registre des routes (AC-iii6 à AC-iii10).
 - [ ] **T-iii4** — tests de l'approbation par mégarde, journal du serveur, inventaire (AC-iii11 à AC-iii13) ; mutations
-  Miii1 à Miii10, gates.
+  Miii1 à Miii11, gates.
 
 ## Tests et mutations prévus
 
 Une mutation à la fois, restaurée par `git checkout -- <f> && touch <f>` (`memory/mutation-restauree-binaire-perime`),
 diff résiduel nul vérifié ; chacune nomme le test qui doit rougir. Une mutation qui survit se déclare ; une mutation qui
-**ne compile pas** se déclare comme telle et ne compte pas comme tuée. Une mutation de la migration se joue sur une
-**copie** de base `#[sqlx::test]` (P8 : jamais sur un fichier appliqué à une base partagée).
+**ne compile pas** se déclare comme telle et ne compte pas comme tuée. **Une mutation de DDL** (Mi7, Mi14 ; validation
+P1, R4 = F9) se joue sur le **squash** `crates/kesh-db/test-schema/0001_schema_squash.sql` — que montent
+`mcp_prompts_contraintes` et les autres tests de `#[sqlx::test(migrations = "./test-schema")]` —, édité à la main pour
+la seule durée de la mutation (il « se régénère, il ne s'édite jamais » hors de ce geste : `test-schema/README.md`),
+puis restauré par `git checkout -- <squash> && touch <squash>` ; **jamais** sur le fichier de migration (P8). Deux tests
+rougissent alors : celui que nomme la ligne, **et** `squash_matches_real_schema_structure` (`test_schema_guard.rs:366`),
+qui compare le squash au schéma des vraies migrations — ce second rouge est attendu et se déclare.
 
 | # | Mutation | Doit rougir |
 |---|---|---|
@@ -619,17 +803,20 @@ diff résiduel nul vérifié ; chacune nomme le test qui doit rougir. Une mutati
 | Mi4 | version en vigueur = plus grand numéro, **quel que soit l'état** | AC-i6 (`pending` postérieure) |
 | Mi5 | `approuver` n'exige plus d'être la dernière version | AC-i7 (standard venu entre-temps) |
 | Mi6 | `approuver` accepte une version `refused` | AC-i7 (double décision) |
-| Mi7 | `CHECK` de cohérence `standard ⇒ approved` retiré | `mcp_prompts_contraintes` |
+| Mi7 | `CHECK` de cohérence `standard ⇒ approved` retiré **du squash** | `mcp_prompts_contraintes` ; `squash_matches_real_schema_structure` (attendu) |
 | Mi8 | préfixe réservé non contrôlé par le dépôt (le `CHECK` reste) | AC-i8 : l'erreur attendue est l'erreur **énumérée**, non une erreur de base |
 | Mi9 | `mcp_prompts` retirée de `TABLES_TO_TRUNCATE` | `backup_inventory_matches_schema` |
 | Mi10 | une table des prompts retirée de `TABLES_HORS_EXPORT` | garde de l'export global (`exports/global.rs`) |
-| Mi11 | l'appel d'`amorcer_standards` retiré de `main.rs` | `amorcage_par_main_seulement` |
+| Mi11 | l'appel d'`amorcer_standards` retiré de `main.rs` | `amorcage_par_main_et_remise_a_zero_seulement` |
 | Mi12 | `mcp_prompt_versions` ajoutée à `RESET_PRESERVED_TABLES` | test de la remise à zéro (vide après) ; `reset_partition_is_guarded_by_the_schema` |
 | Mi13 | l'import omet `mcp_prompt_versions` (table retirée de la liste parcourue par la restauration, mutation de test) | AC-i13 (égalité des tables) |
-| Mi14 | `UNIQUE (prompt_id, number)` retirée | `mcp_prompts_contraintes` (doublon de numéro accepté) |
+| Mi14 | `UNIQUE (prompt_id, number)` retirée **du squash** | `mcp_prompts_contraintes` (doublon de numéro accepté) ; `squash_matches_real_schema_structure` (attendu) |
 | Mi15 | `en_vigueur_par_nom` sans filtre `company_id` | AC-i6 (deux sociétés) |
 | Mi16 | standard retiré du code non retiré du catalogue | AC-i10 (standard retiré) |
 | Mi17 | `refuser` accepte une version `approved` | AC-i7 |
+| Mi18 | l'appel de `main.rs` déplacé **avant** `ensure_admin_user(` (validation P1, F2) | `amorcage_par_main_et_remise_a_zero_seulement` (ordre) |
+| Mi19 | l'appel de `routes::onboarding::reset` retiré | `reset_clears_every_company_table_and_traces_itself` (les standards attendus après la remise à zéro manquent) ; `amorcage_par_main_et_remise_a_zero_seulement` |
+| Mi20 | le plafond compté hors du verrou de société (verrou de prompt seul) | AC-i8 : test des propositions concurrentes sur deux prompts (deux transactions, la seconde attend la première ; vingt et une → la dernière refusée) |
 | Mii1 | le service sert la version `pending` la plus récente | AC-ii5, AC-iii4 |
 | Mii2 | le service ignore la société du contexte | AC-ii5 (prompt d'une autre société absent) |
 | Mii3 | la marque retirée | AC-ii7 (corps égal) |
@@ -639,6 +826,7 @@ diff résiduel nul vérifié ; chacune nomme le test qui doit rougir. Une mutati
 | Mii7 | revalidation au service retirée | AC-ii3 (version à `U+202E` insérée en SQL brut : servie) |
 | Mii8 | un outil de démonstration de test lit `mcp_prompts::` | garde `prompts_lus_par_leur_service` |
 | Mii9 | `services/prompts_mcp.rs` importe `repositories::accounts` | garde `service_des_prompts_sans_livres` |
+| Mii10 | une famille ajoutée retirée d'`is_hidden_format` (les sélecteurs U+E0100–U+E01EF, par exemple) | le test de la famille (`kesh-core`) ; AC-ii3 (version piégée insérée en SQL brut : servie) |
 | Miii1 | `proposer_prompt` listé sans `prompts:write` | AC-iii2 (`tools/list` égal) |
 | Miii2 | la proposition crée une version `approved` | AC-iii4 |
 | Miii3 | plafond non appliqué | AC-iii3 / AC-i8 (21ᵉ proposition) |
@@ -649,6 +837,7 @@ diff résiduel nul vérifié ; chacune nomme le test qui doit rougir. Une mutati
 | Miii8 | un `tracing::warn!` qui porte le texte refusé | `textes_jamais_journalises` |
 | Miii9 | approbation sans contrôle de la `version` attendue | AC-iii6 (409) |
 | Miii10 | `proposer` passé par `politique::autoriser` (refusé sous clé `required`) | AC-iii2 (servi sous clé `required`) |
+| Miii11 | `proposer_version_agent` accepte un nom en `kesh` existant | AC-i8 ; AC-iii4 (proposition sur `kesh-developpement` refusée) |
 
 Tests hors mutations, nommés au Dev Agent Record : `regles_de_guy_presentes` et son témoin, `standards_valides`,
 `mcp_prompts_contraintes` (liste comptée), les témoins de chaque garde lexicale, `reset_partition_is_guarded_by_the_schema`
@@ -663,10 +852,13 @@ Tests hors mutations, nommés au Dev Agent Record : `regles_de_guy_presentes` et
   `scripts/regen-test-schema.sh` sur la base du worktree. Les PDF : `make fr` dans `docs/manual/`.
 - **32-10a-ii** et **32-10a-iii** : gate ciblé entre les passes (`binary(mcp_prompts_e2e)`, `binary(mcp_gardes_lexicales)`,
   `binary(services_motif)`, et pour iii `binary(mcp_prompts_admin_e2e)`, `binary(audit_label_registry)`,
-  `binary(audit_route_registry)`, `binary(admin_pat_denied_e2e)` ; `cargo test -p kesh-core` pour ii), fmt et clippy
+  `binary(audit_route_registry)`, `binary(admin_pat_denied_e2e)` ; pour ii, `cargo test -p kesh-core` **et** les tests
+  unitaires de la bibliothèque `kesh-api`, où vivent ceux de `bank_accounts.rs` — `cargo nextest run -E 'package(kesh-api)
+  & kind(lib)'` (validation P1, F14)), fmt et clippy
   sur le workspace ; **complet au push** ; pour iii, frontend `npm run check`, `lint-i18n-ownership`, `test:unit`,
   `build` (les `.ftl` changent).
-- **E2E complet au dernier commit de code de chaque partie** (i : le démarrage amorce `kesh_e2e_3210a` ; ii, iii : le
+- **E2E complet au dernier commit de code de chaque partie** (i : le démarrage amorce `kesh_e2e_3210a`, et la suite
+  passe par la remise à zéro ; ii, iii : le
   répartiteur et les routes changent) ; échecs attendus jugés fichier par fichier contre `docs/testing.md` § *Les
   échecs attendus*.
 - **Recette visuelle : sans objet** — aucun contrôle visible ne change (l'écran est la 32-10b).
@@ -685,14 +877,14 @@ Tests hors mutations, nommés au Dev Agent Record : `regles_de_guy_presentes` et
 - **Un client peut ne pas servir les prompts**, ou l'utilisateur ne pas les invoquer : un prompt MCP est **choisi** par
   l'utilisateur (`/kesh:kesh-developpement` dans Claude Code, spike § 2.1). Le texte standard n'atteint l'agent que si
   on le lui donne ; la 32-11 et le manuel le disent.
-- **Entre une restauration ou une remise à zéro et le démarrage suivant** (C-32-10a-8, C-32-10a-11) : après une
-  restauration, les standards sont ceux de la sauvegarde (un standard altéré y est servi s'il est valide) ; après une
-  remise à zéro, **aucun** prompt n'est servi — la base ne porte alors aucun livre réel, et le serveur MCP y est
-  désactivé (32-5d). Une société créée par l'assistant sur une base sans société (fait 3) n'a ses standards qu'au
-  démarrage suivant.
-- **L'invisibilité est une liste fermée**, avec son angle mort écrit (`bank_accounts.rs:297-302`, déplacé en
-  `kesh-core`) : d'autres caractères de largeur nulle passent. Les **homoglyphes** (un `а` cyrillique pour un `a`) ne
-  sont pas refusés.
+- **Entre une restauration et le démarrage suivant** (C-32-10a-8 annoté, C-32-10a-11) : après une restauration, les
+  standards sont ceux de la sauvegarde (un standard altéré y est servi s'il est valide). La remise à zéro, elle,
+  ré-amorce aussitôt (AC-i11) ; si cette réinstallation échoue, aucun prompt n'est servi jusqu'au démarrage suivant, et
+  seul le journal du serveur le dit. Une société créée par l'assistant sur une base sans société (fait 3) n'a ses
+  standards qu'au démarrage suivant.
+- **L'invisibilité est une liste fermée**, complétée des points de code que son ancien angle mort énumérait (AC-ii1) :
+  ce qui passe encore est un caractère de format qu'une version **future** d'Unicode attribuerait. Les **homoglyphes**
+  (un `а` cyrillique pour un `a`) ne sont pas refusés : ils se voient, mais trompent.
 - **Le plafond borne les propositions en attente, non leur nombre total** : un agent dont l'administrateur refuse au fil
   de l'eau accumule des versions refusées (jamais supprimées). Borne : le rythme de l'administrateur.
 - **Les gardes lexicales** ne voient ni une macro qui fabriquerait un nom de table, ni un SQL composé à l'exécution (la
@@ -708,7 +900,7 @@ CREATE TABLE mcp_prompts (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     company_id BIGINT NOT NULL,
     name VARCHAR(64) NOT NULL COMMENT '[a-z0-9_-]{1,64} ; préfixe kesh- réservé aux standards',
-    is_standard BOOLEAN NOT NULL DEFAULT FALSE,
+    is_standard BOOLEAN NOT NULL,                    -- sans DEFAULT : « requise » à l'import (F16 (b))
     version INT NOT NULL DEFAULT 1,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
@@ -725,7 +917,7 @@ CREATE TABLE mcp_prompt_versions (
     number INT NOT NULL,
     origin VARCHAR(16) NOT NULL COMMENT 'standard | admin | agent',
     state VARCHAR(16) NOT NULL COMMENT 'approved | pending | refused',
-    nature VARCHAR(16) NOT NULL DEFAULT 'text' COMMENT 'text | withdrawal',
+    nature VARCHAR(16) NOT NULL COMMENT 'text | withdrawal',  -- sans DEFAULT (F16 (b))
     description VARCHAR(500) NULL,
     body TEXT NULL,
     author_user_id BIGINT NULL,
@@ -826,8 +1018,9 @@ crates/kesh-db/src/entities/mcp_prompt_standards.rs  — Standard, STANDARDS (de
 crates/kesh-db/src/repositories/mcp_prompts.rs       — lectures, écritures, amorcer_standards
 crates/kesh-core/src/text.rs                         — is_hidden_format, is_forbidden_in_prompt (ii)
 crates/kesh-api/src/services/prompts_mcp.rs          — valider_contenu, lister, obtenir (ii) ; proposer (iii)
-crates/kesh-api/src/mcp/prompts.rs                   — McpPrompt scellé, PromptEnBase, catalogue, ListePrompts, PromptRendu (ii)
-crates/kesh-api/src/mcp/textes.rs                    — marque_agent (ii) ; accusé et refus de proposer_prompt (iii)
+crates/kesh-api/src/mcp/prompts.rs                   — McpPrompt scellé, PromptEnBase, catalogue, ListePrompts, PromptRendu (ii) ; AccuseProposition (iii)
+crates/kesh-api/src/mcp/textes.rs                    — marque_agent (ii) ; OUTIL_PROPOSER_PROMPT, descripteur, accusé et refus (iii)
+crates/kesh-api/src/mcp/reponse.rs                   — variantes ListePrompts, PromptRendu (ii), Accuse (iii)
 crates/kesh-api/src/routes/mcp_prompts.rs            — routes de gestion (iii)
 ```
 
@@ -856,18 +1049,21 @@ crates/kesh-api/src/routes/mcp_prompts.rs            — routes de gestion (iii)
   mcp_prompt.rs, mcp_prompt_standards.rs}` ; `crates/kesh-db/src/repositories/{mod.rs, mcp_prompts.rs}` ;
   `crates/kesh-db/src/backup.rs` ; `crates/kesh-db/tests/{mcp_prompts_repository.rs, mcp_prompts_lexical.rs,
   migrations_upgrade_path.rs}` ; `crates/kesh-api/src/exports/global.rs` ; `crates/kesh-api/src/main.rs` ;
+  `crates/kesh-api/src/routes/onboarding.rs` ;
   `crates/kesh-api/tests/{admin_full_export_e2e.rs, admin_backup_e2e.rs, onboarding_audit_e2e.rs,
   prompts_amorcage.rs}` ; `docs/migrations-idempotence-audit.md` ; `docs/manual/fr/{admin-manual,user-manual}.{tex,pdf}` ;
   `CHANGELOG.md`.
-- **ii** : `crates/kesh-core/src/text.rs` ; `crates/kesh-api/src/routes/bank_accounts.rs` ;
+- **ii** : `crates/kesh-core/src/text.rs` (prédicat et test des plages déménagé) ; `crates/kesh-api/src/routes/bank_accounts.rs` ;
   `crates/kesh-api/src/services/{mod.rs, prompts_mcp.rs}` ; `crates/kesh-api/src/mcp/{prompts.rs, textes.rs,
   repartiteur.rs, reponse.rs}` ; `crates/kesh-api/tests/{mcp_prompts_e2e.rs, mcp_gardes_lexicales.rs,
   services_motif.rs}`.
-- **iii** : `crates/kesh-api/src/services/{poignees.rs, prompts_mcp.rs, serveur_mcp.rs, mod.rs}` ;
-  `crates/kesh-api/src/mcp/{mod.rs, registre.rs, repartiteur.rs, textes.rs}` ; `crates/kesh-api/src/routes/{mod.rs,
+- **iii** : `crates/kesh-api/src/services/{acces.rs, poignees.rs, prompts_mcp.rs, serveur_mcp.rs, mod.rs}` ;
+  `crates/kesh-api/src/mcp/{mod.rs, repartiteur.rs, reponse.rs, prompts.rs, textes.rs}` (`registre.rs`, `outil.rs`,
+  `politique.rs` **non** touchés : AC-iii2) ; `crates/kesh-api/src/routes/{mod.rs,
   mcp_prompts.rs}` ; `crates/kesh-api/src/lib.rs` ; `crates/kesh-api/src/audit_labels.rs` ;
   `crates/kesh-i18n/locales/*/messages.ftl` ; `crates/kesh-api/tests/{mcp_prompts_e2e.rs, mcp_prompts_admin_e2e.rs,
-  mcp_journal_e2e.rs, audit_route_registry.rs, admin_pat_denied_e2e.rs, services_motif.rs, audit_label_registry.rs}`.
+  mcp_journal_e2e.rs, mcp_transport_e2e.rs, mcp_gardes_lexicales.rs, audit_route_registry.rs, admin_pat_denied_e2e.rs,
+  services_motif.rs, audit_label_registry.rs}`.
 
 ### Le manuel (axe de revue)
 
@@ -879,12 +1075,17 @@ crates/kesh-api/src/routes/mcp_prompts.rs            — routes de gestion (iii)
   l'approbation et le refus d'une version d'agent, la marque, le retrait, le retour au standard, la conduite devant une
   version **approuvée par mégarde** (§ *Dev Notes*), le refus des caractères invisibles, le plafond de vingt
   propositions, l'angle mort P26 (un texte d'agent enregistré par l'administrateur perd sa marque), les fenêtres du
-  démarrage (restauration, remise à zéro) ; le compte « N des M routes à verbe mutant » (`admin-manual.tex:2935`),
+  démarrage (après une restauration) ; le refus d'une proposition d'agent sur un nom en `kesh` (C-32-10a-27) ; le compte « N des M routes à verbe mutant » (`admin-manual.tex:2935`),
   recompté après les cinq routes mutantes de la 32-10a-iii ; captures.
 - **Ce qu'elle laisse à la 32-7** : à la création d'une clé, la portée `prompts:write` — ce qu'elle permet (proposer),
   ce qu'elle ne permet pas (approuver, lire une proposition) — et qu'une clé `required` peut proposer.
 - **Ce qu'elle laisse à la 32-11** : le manuel utilisateur (invoquer un prompt dans le client), `docs/api-external.md`
-  § 6.4 et § 9.
+  § 6.4 et § 9 ; et **deux textes publiés que la partie iii rend ambigus** (décision de l'orchestrateur sur F7 = R10,
+  validation P1) — `README.md:233` (« Aucune écriture par l'agent dans cette version (les propositions de l'agent sont
+  prévues pour la 0.17.0) ») et `website/roadmap.html:375` (« The agent writes nothing in this version: its proposals
+  are planned for v0.17.0 ») : depuis `proposer_prompt`, l'agent **écrit** une version de prompt « à valider », mais
+  rien dans les livres. Reformulation attendue : « aucune écriture dans les livres ; l'agent peut proposer un prompt,
+  jamais l'approuver ». L'orchestrateur l'inscrit aussi au fichier d'epic (§ *32-11*).
 
 ### Références
 
@@ -896,24 +1097,27 @@ crates/kesh-api/src/routes/mcp_prompts.rs            — routes de gestion (iii)
 
 ## Points à soumettre à Guy
 
-1. **Le découpage en trois parties** (C-32-10a-1) : la consigne était « `32-10a-prompts-en-base` → `ready-for-dev` » ;
-   la fiche compte dix modules distincts et applique la règle de découpage — clé `split`, trois sous-clés. *Hypothèse
-   de travail* : les trois parties, dans l'ordre i → ii → iii.
-2. **Les règles du prompt de développement** : la fiche reprend l'epic à la lettre (montant, nom, IBAN, libellé). La
+*Le découpage en trois parties, question 1 de la première rédaction, est **confirmé** par l'orchestrateur
+(2026-10-25) ; la question des fenêtres du démarrage est tranchée par lui aussi (F5 : amorçage à la remise à zéro,
+C-32-10a-8 annoté). Restent :*
+
+1. **Les règles du prompt de développement** : la fiche reprend l'epic à la lettre (montant, nom, IBAN, libellé). La
    mémoire du projet sur les données réelles nomme aussi **le solde, la ligne et l'agrégat**. Faut-il les ajouter à la
    règle 1 ? *Recommandation* : oui (« jamais un montant, un solde, un agrégat, un nom, un IBAN, un libellé ni une
    ligne réels ») — plus strict, sans coût ; la fiche ne le fait pas sans ta réponse.
-3. **Les fenêtres du démarrage** (C-32-10a-8, C-32-10a-11) : les standards ne s'amorcent qu'au démarrage ; après une
-   remise à zéro, aucun prompt n'est servi jusqu'au redémarrage, et après une restauration, ce sont ceux de la
-   sauvegarde. *Recommandation* : accepter (aucun livre réel après une remise à zéro ; une restauration rend des textes
-   que Kesh a lui-même écrits). Sinon, amorcer aussi à l'activation du serveur MCP.
-4. **Les standards en français seulement** (C-32-10a-9) en 0.16.0 ? *Recommandation* : oui ; les quatre langues plus
+2. **Un agent ne propose jamais de modifier un prompt standard** (C-32-10a-27, validation P1, F12) — ni
+   `kesh-developpement`, qui porte tes règles, ni `kesh-assistant`. *Recommandation* (de l'orchestrateur, retenue comme
+   hypothèse de travail) : l'interdire ; l'agent propose sous un autre nom, et toi seul personnalises un standard.
+3. **Les standards en français seulement** (C-32-10a-9) en 0.16.0 ? *Recommandation* : oui ; les quatre langues plus
    tard si un utilisateur non francophone branche un agent.
-5. **Aucun argument de prompt** en 0.16.0 (C-32-10a-10) — un prompt est un texte fixe ? *Recommandation* : oui.
-6. **Le plafond de vingt propositions en attente** par société (C-32-10a-13) ? *Recommandation* : oui.
-7. **Une version d'agent approuvée ne se « désapprouve » pas** (C-32-10a-20) : on la remplace par une nouvelle version,
+4. **Aucun argument de prompt** en 0.16.0 (C-32-10a-10) — un prompt est un texte fixe ? *Recommandation* : oui.
+5. **Le plafond de vingt propositions en attente** par société (C-32-10a-13) ? *Recommandation* : oui.
+6. **Une version d'agent approuvée ne se « désapprouve » pas** (C-32-10a-20) : on la remplace par une nouvelle version,
    un retrait ou le retour au standard. *Recommandation* : oui — l'historique dit alors ce qui a été servi.
-8. **Le texte de la marque** (§ *Dev Notes*) te convient-il ?
+7. **Le texte de la marque** (§ *Dev Notes*) te convient-il ?
+8. **La description d'un compte bancaire refuse désormais quelques caractères invisibles de plus** (AC-ii1 : le
+   prédicat partagé, complété). Changement de comportement voulu, sans effet attendu sur une saisie ordinaire ;
+   *recommandation* : l'accepter.
 
 ## À recontrôler à l'étape 0 du développement
 
@@ -938,7 +1142,17 @@ crates/kesh-api/src/routes/mcp_prompts.rs            — routes de gestion (iii)
   et le comportement attendu d'arguments inattendus.
 - **Le prédicat** : `is_forbidden_in_description` toujours en `bank_accounts.rs:303`, sans autre appelant hors de ce
   fichier (`grep -rn is_forbidden_in_description crates` → 7 lignes, toutes dans `bank_accounts.rs`, au relevé).
-- **Chaque motif des gardes** greppé sur le dépôt réel (règle commune), sortie citée.
+- **Chaque motif des gardes** greppé sur le dépôt réel (règle commune), sortie citée — **sur l'analogue existant**
+  avant la partie qui crée les noms, puis re-mesuré après (fait 13).
+- **Le schéma `2025-11-25`** (pour iii) : la forme de `annotations.readOnlyHint` d'un `Tool` et du `structuredContent`
+  d'un `CallToolResult` (source citée).
+- **L'ordre des verrous** « société puis prompt » (AC-i5) contre `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (Pattern 5) et
+  les écritures qui prennent `companies` (`kesh-seed/src/lib.rs:576`, `companies.rs:305`).
+- **La route de remise à zéro** : `routes/onboarding.rs:275-299` (`reset_demo(` `:282`, relecture `:297`) ; et le
+  test `reset_clears_every_company_table_and_traces_itself` (`onboarding_audit_e2e.rs:2011`, boucle `:2095-2099`).
+- **Les familles ajoutées au prédicat** (AC-ii1) : chaque point de code relu dans `UnicodeData` (catégorie : `Cf`,
+  `Mn` ou `Lo` de remplissage) si une table Unicode est disponible, ou à défaut, la liste reprise de `bank_accounts.rs:
+  297-302` et la propriété constatée par les tests de famille.
 
 ## Dev Agent Record
 
@@ -961,3 +1175,4 @@ crates/kesh-api/src/routes/mcp_prompts.rs            — routes de gestion (iii)
 | Date | Étape | Résumé |
 |---|---|---|
 | 2026-10-25 | création | Fiche rédigée en autonomie (Opus 5.5) contre `d993106c` ; registre C-32-10a-1 à C-32-10a-26 ; découpage en trois parties (i 5 modules, ii 4, iii 5 ; dix distincts, quatorze en somme) ; **39 AC** (16 / 10 / 13), **16 tâches** (6 / 5 / 5 — T-i0 à T-i5, T-ii0 à T-ii4, T-iii0 à T-iii4), **36 mutations** (17 / 9 / 10) ; inventaire P1 à P27 ; prompt de validation P1 `3210a-validate-prompt-p1.md` (Sonnet, lentilles R et F). |
+| 2026-10-25 | validation P1 | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `3210a-validate-prompt-p1.md` ; rapports `kesh-gate-logs/3210a-validate-p1-{R,F}.md`) : R 0/0/4/9, F 0/0/7/9 ⇒ **trend P1 : 0 CRITICAL / 0 HIGH / 11 MEDIUM / 18 LOW** (doublons R2 ⊃ F3 et F13, R4 = F9, R6 = F8, R7 = F16 (a), R10 = F7, R11 ⊂ F14, comptés une fois par lentille). Motif dominant : des **gardes mesurées sur des noms qui n'existent pas encore** (mesures vides par construction, R9, F1, F3) et une **prémisse fausse** sur la remise à zéro (F5). **Découpage confirmé** par l'orchestrateur. **MEDIUM remédiés** : R1 → l'amendement exact des types de la 32-6a nommé (AC-iii2 : `ReponseMcp::Accuse(AccuseProposition)`, aucun `autoriser`, descripteur statique à `readOnlyHint: false`, `registre_coherent` et `registre_standard_inventaire` inchangés, `tools_list_filtre` à deux cas, `mcp/reponse.rs` et `prompts.rs` aux fichiers ; modules inchangés), C-32-10a-17 annoté ; R2 = F3 = F13 → `service_des_prompts_sans_livres` (liste blanche `acces`, `poignees` ; témoins existants `cles_mcp.rs:36-41` vert, `plan_comptable.rs:7` rouge) et `prompts_lus_par_leur_service` (motif `repositories::mcp_prompts`, non `mcp_prompts::` nu ; mesure sur l'analogue `api_keys`, trois fichiers ; témoin vert `lib.rs:809`) ; R3 → `versions_jamais_reecrites` couvre `REPLACE`, `ON DUPLICATE KEY UPDATE`, `DELETE FROM` (témoin vert existant `journal_entries.rs:3956-3958`, découpage multi-ligne éprouvé sur `mcp_keys.rs:282-284`) ; R4 = F9 → mutations de DDL sur le squash `crates/kesh-db/test-schema/0001_schema_squash.sql`, `squash_matches_real_schema_structure` en second rouge déclaré ; F1 → motif d'écriture à verbe et table adjacents (`ON DELETE RESTRICT,` n'est plus pris), mesuré sur l'analogue `mcp_key` (six fichiers, aucune migration), témoin vert `20261025000001_…sql:61-63` ; F2 → la garde ne vise que `crates/*/src`, définition en liste blanche, **ordre** gardé (après `ensure_admin_user(`, avant `build_router(`), témoin vert existant `auto_backup::spawn(` (`main.rs:383`), Mi18 ; **F5 (décision de l'orchestrateur)** → amorçage **aussi à la fin de la remise à zéro** (`routes::onboarding::reset`, après `reset_demo(`), non fatal, garde `amorcage_par_main_et_remise_a_zero_seulement`, test de la remise à zéro qui attend exactement les standards après, Mi19, C-32-10a-8 annoté, manuel (`:1414`) « réinstallés aussitôt » ; **F4 (décision)** → prédicat partagé **complété** des points de code de l'ancien angle mort (dont U+180F), retirés du doc-comment, `bank_accounts` en profite, test des plages déménagé en `kesh-core`, un test par famille, Mii10, P17 « fermé sur la liste écrite » avec son reste en angle mort, C-32-10a-12 annoté ; F6 → table de correspondance besoin → fonction de dépôt, `synthese_par_societe` (une requête), `VersionEcrite` rendu par chaque écriture : la iii ne touche pas `kesh-db` ; **F7 = R10 (décision)** → `README.md:233` et `website/roadmap.html:375` affectés à la 32-11 (§ *Le manuel*, C-32-10a-29). **LOW remédiés** : R5 (équivalence `pending` bornée à `agent`), R6 = F8 (comparaison en minuscules), R7 = F16 (a) (cas `"valide\n"`), R8 (dans F2), R9 (dans F1), R11 = F14 (compteur `fr-CH/messages.ftl:2601`, `acces.rs:29`, gate des tests de bibliothèque), R12 (`validation` = politique de la clé au journal), R13 (`cursor` → `-32602`), F10 (plafond et noms neufs sous le verrou de société, Pattern 5, test de concurrence, Mi20, C-32-10a-28), F11 (`readOnlyHint: false` explicite, nom réservé en `arguments_invalides`, P1 réécrit), **F12 (recommandation de l'orchestrateur)** → aucune proposition d'agent sur un nom en `kesh` (C-32-10a-27, Miii11, point 2 pour Guy), F15 (écrivains génériques à l'angle mort), F16 (b) (`is_standard` et `nature` sans `DEFAULT`), F16 (c) (aucun nom non standard en `kesh`). **Propagation** : greppés sur la fiche, le registre et `sprint-status.yaml` — `amorcage_par_main_seulement`, `36 mutations`, `(17 / 9 / 10)`, `readOnlyHint` « absent », « standard compris », « vides après », `{0,40}`, `DEFAULT 'text'`, `DEFAULT FALSE`, `super::<service>`, « démarrage suivant » ; ne restent que l'entrée « création » (relevé daté), la mesure historique du fait 13 et les phrases justes sur la restauration. **Décomptes** (recomptés par `grep`) : 39 AC (16 / 10 / 13), 16 tâches (6 / 5 / 5), **41 mutations** (20 / 10 / 11), C-32-10a-1 à **29** (C-1, 8, 12, 17 annotés), P1 à P27 ; modules inchangés : i **5** (`routes` gagne `routes/onboarding.rs`), ii **4**, iii **5** ; dix distincts, quatorze en somme. **1 passe sur 8.** Prompt de la passe suivante : `3210a-validate-prompt-p2.md` (Opus, R et F). |
