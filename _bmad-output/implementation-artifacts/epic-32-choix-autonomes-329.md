@@ -53,7 +53,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 
 ### C-32-9-4 — La règle de classement : toute chaîne lue en base est enveloppée, sauf retypée en énumération fermée
 
-- **Contexte** : un numéro de compte (dix caractères quelconques, `routes/accounts.rs:224`), un numéro de facture (formé
+- **Contexte** : un numéro de compte (dix octets quelconques, `routes/accounts.rs:223`), un numéro de facture (formé
   sur un format saisi par l'administrateur), un code de lettrage (calculé) sont des `String` ; les juger « fiables » un à
   un est un jugement qu'aucun test ne décide.
 - **Retenu** : **toute** `String` d'un type rendu par un service est soit `TexteNonFiable`, soit `Tiers` (C-32-9-9),
@@ -91,40 +91,63 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 
 - **Contexte** : Claude Code avertit au-delà de 10 000 jetons et coupe à 25 000 (spike § 2.1) ; la 32-8 refuse un dépôt
   de plus de 65 536 octets (AC-B4 de la 32-8).
-- **Retenu** : `donnees` refuse un bloc texte de plus de `services::envois_mcp::MCP_ENVOI_OCTETS_MAX` octets par
+- **Retenu** : `texte_et_valeur` refuse un bloc texte de plus de `services::envois_mcp::MCP_ENVOI_OCTETS_MAX` octets par
   `ErreurOutil::TropVolumineux` (32-8b) et son texte « Restreignez la demande », **sous les deux politiques** : une
-  réponse servie à une clé `exempt` n'est jamais plus grosse qu'un dépôt. Les **défauts** de pagination des outils sont
-  choisis pour qu'une réponse ordinaire reste sous ≈ 10 000 jetons (C-32-9-8).
-- **Écartées** : 32 Kio (refuserait un plan comptable de PME ordinaire, ≈ 86 comptes) ; aucun plafond sous `exempt`
-  (une réponse de 25 000 jetons coupée par le client).
+  réponse servie à une clé `exempt` n'est jamais plus grosse qu'un dépôt. ⚠️ 65 536 octets font ≈ 16 000 à 20 000
+  jetons (à 3-4 octets par jeton, estimation) : **au-dessus de l'avertissement de 10 000** de Claude Code, sous sa limite
+  de 25 000. C'est pourquoi les défauts visent ≈ 30 Kio (≈ 8 000 à 10 000 jetons) et les maximums ≈ 56 Kio, mesurés
+  (C-32-9-8).
+- **Écartées** : 32 Kio comme plafond (refuserait un plan comptable de PME ordinaire, ≈ 86 comptes, et les maximums
+  utiles) ; aucun plafond sous `exempt` (une réponse de 25 000 jetons coupée par le client).
 - **Réversible** : oui (une constante).
+- *(Révisé le 2026-10-25, validation P1, F4 = R4 : la première rédaction disait que les défauts « visent ≈ 10 000
+  jetons » sans mesure, et ne disait pas que le plafond dépasse l'avertissement.)*
 
-### C-32-9-8 — Les bornes : le plafond du service, un défaut d'outil parfois plus bas
+### C-32-9-8 — Les bornes : mesurées, le plus petit du plafond du service et du maximum de l'outil
 
 - **Contexte** : chaque service porte ses bornes (32-4a, 32-4b, fait 5 de la fiche) ; certaines listes refusent hors
-  bornes (factures clientes), d'autres écrêtent.
-- **Retenu** : le `maximum` du schéma d'entrée de chaque outil **égale** la constante du service (test
-  `bornes_des_schemas`) ; la valeur reçue est passée au service, qui garde son comportement (refus ou écrêtage). Le
-  **défaut** de l'outil est celui du service, sauf deux, abaissés pour la taille : écritures 20 (service 50), grand
-  livre 100 lignes par compte (service 500). Le plan comptable, que le service ne pagine pas, est tranché dans l'outil
-  (défaut 200, plafond 500, en mémoire — le motif de C-32-9-13) ; les exercices ne sont pas paginés (un par an).
-- **Écartées** : des plafonds propres au MCP (deux bornes à tenir pour la même lecture).
-- **Réversible** : oui.
+  bornes (factures clientes), d'autres écrêtent. La validation P1 (F4 = R4) a montré que les défauts de la création ne
+  tenaient pas : cent lignes de grand livre indentées dépassent à elles seules le plafond, et le grand livre sans
+  `accountIds` n'avait aucune borne sur le nombre de comptes.
+- **Retenu** : la taille d'un élément de chaque outil a été **mesurée** (`wc -c`, forme prescrite, fixture ordinaire ;
+  fiche, § *Les tailles mesurées*) ; défaut ≈ 30 Kio, maximum ≈ 56 Kio. Le `maximum` du schéma est `min(plafond du
+  service, LIMITE_MAX_MCP)` ; au-delà de `LIMITE_MAX_MCP`, la structure d'arguments refuse (`HorsBornes`). Valeurs : plan
+  100 / 180 (tranche dans l'outil), écritures 30 / 60, grand livre 40 / 80 lignes d'**un seul compte** (`accountId`
+  requis), postes ouverts 30 / 65, factures et échéancier 20 / 100, fournisseur 50 / 180, contacts 20 / 55, pièces 50 /
+  160. Des textes plus longs que la fixture font refuser un appel au maximum : dit dans la description de l'outil et
+  testé (`plafond_au_maximum`). Les rapports non paginés refusent au-delà de ≈ 160 comptes mouvementés : dit.
+- **Écartées** : le `maximum` égal à la constante du service (500 écritures indentées feraient ≈ 450 Kio) ; borner le
+  nombre de comptes du grand livre en gardant `accountIds` (deux bornes croisées, une taille encore imprévisible).
+- **Réversible** : oui (des constantes).
+- *(Réécrit le 2026-10-25, validation P1 ; la version de la création retenait « le `maximum` égale la constante du
+  service » et des défauts de 20 écritures et 100 lignes de grand livre.)*
 
-### C-32-9-9 — Q1 de la 32-4b, en hypothèse : les données de tiers masquées sans `contacts:read`
+### C-32-9-9 — Q1 de la 32-4b, en hypothèse : les coordonnées structurées des tiers masquées sans `contacts:read`, non leurs noms
 
 - **Contexte** : sous `invoices:read`, la liste des factures rend le nom du client, la fiche fournisseur l'IBAN du
-  créancier ; les contacts ont leur portée « parce qu'ils portent des noms et des IBAN » (Q5, sans réponse).
-- **Retenu** : un type `Tiers` — `Visible(TexteNonFiable)` ou `Masque` (`"(masqué : portée contacts:read requise)"`) —,
-  construit par `Tiers::selon(ctx, texte)`, qui rend `Visible` si la constante `PORTEE_DES_TIERS` vaut `None` ou si la
-  clé porte cette portée. `PORTEE_DES_TIERS = Some(Portee::ContactsRead)` en hypothèse. Champs de tiers (inventaire) :
-  nom du client (factures, échéancier, balance âgée), nom du fournisseur (liste fournisseur), adresse d'envoi de la
-  facture, IBAN et QR-IBAN du créancier.
-- **Écartées** : (a) tout visible sous `invoices:read` (C-32-0-7 à la lettre) — la séparation des contacts ne
-  protégerait plus rien ; (c) exiger les deux portées pour l'outil entier — une clé `invoices:read` ne lirait plus la
-  balance âgée du tout.
-- **Réversible** : oui, **par la constante** : `None` rend (a) sans autre changement ; un test éprouve les deux valeurs
-  par la fonction pure `tiers_visibles`. Soumis à Guy (Q1).
+  créancier ; les contacts ont leur portée « parce qu'ils portent des noms et des IBAN » (Q5, sans réponse). ⚠️ La
+  validation P1 (F1 = R2, décision de l'orchestrateur) a montré que **Kesh écrit lui-même le nom du tiers dans les
+  libellés des écritures** : « Facture fournisseur {numéro} - {nom} » (`kesh-db/src/repositories/supplier_invoices.rs:512`),
+  « Règlement fournisseur {numéro} - {nom} » (`:941`), « Avoir {numéro} (annule {facture}) - {nom} »
+  (`credit_notes.rs:590`), et le nom du client si le gabarit du libellé des ventes contient `{CONTACT_NAME}`
+  (`kesh-core/src/invoice_format.rs:259`) — libellés lisibles sous `books:read` seule. Masquer le nom dans la liste des
+  factures ne protégeait donc rien.
+- **Retenu** : les **noms** des tiers ne sont pas masqués (enveloppés). `Tiers` — `Visible(TexteNonFiable)` ou `Masque`
+  (`"(masqué : portée contacts:read requise)"`), construit par `Tiers::selon(ctx, texte)`, `Visible` si
+  `PORTEE_DES_TIERS` vaut `None` ou si la clé porte cette portée — ne s'applique qu'aux **coordonnées structurées
+  qu'aucun texte ne recopie** : IBAN et QR-IBAN du créancier, adresse d'envoi d'une facture (`emailed_to`). Mesuré : aucun
+  `format!` de libellé ne les recopie (grep cité à l'AC-a6), et aucun autre champ rendu n'en est une. La recherche
+  `search` des factures, qui confirmait une sous-chaîne d'un nom masqué (F3), cesse d'être un oracle : elle ne lit ni
+  l'IBAN ni l'adresse d'envoi (`factures.rs:80`).
+- **Écartées** : (a) tout visible sous `invoices:read` (C-32-0-7 à la lettre) — l'IBAN d'un créancier n'a pas à sortir
+  sans `contacts:read` ; (b) masquer aussi les noms (la conception de la création) — une protection affichée, non tenue ;
+  (c) masquer le libellé des écritures liées à une pièce sans `contacts:read` — le grand livre perdrait son sens, et le
+  libellé saisi à la main resterait ; (d) exiger les deux portées pour l'outil entier.
+- **Réversible** : oui, **par une constante et trois textes** : `PORTEE_DES_TIERS = None` rend (a) ; changent aussi la
+  phrase de l'en-tête sur la valeur masquée, le point (3) du manuel et `coordonnees_masquees_sans_contacts_read`
+  (validation P1, F10). Soumis à Guy (Q1, prémisse corrigée).
+- *(Réécrit le 2026-10-25, validation P1 ; la version de la création masquait aussi les noms des clients et des
+  fournisseurs.)*
 
 ### C-32-9-10 — Les rapports : `ContexteMcp` porte la `Trace` en privé et n'offre que `afficher`
 
@@ -152,6 +175,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - **Écartées** : servir journaux, TVA, rapports de projet, règlements d'une facture, export CSV (hors liste du kickoff ;
   la TVA n'est pas opposable) ; laisser l'agent deviner l'exercice.
 - **Réversible** : oui (un outil s'ajoute sans toucher le socle). Soumis à Guy (Q4).
+- *(Annoté le 2026-10-25, validation P1, F4 = R4 : `kesh_grand_livre` prend un **`accountId` requis** (un seul compte par appel) au lieu d'`accountIds` facultatif — sans quoi un appel sans comptes ne tenait sur aucune base ordinaire (C-32-9-8).)*
 
 ### C-32-9-12 — Les noms d'outils : `kesh_` puis le nom français, en minuscules
 
@@ -175,6 +199,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - **Écartées** : rendre les données du QR (personnelles, et contenu) ; une ressource MCP (E3) ; paginer le dépôt
   (`kesh-db` : un sixième module).
 - **Réversible** : oui. Soumis à Guy (Q5).
+- *(Annoté le 2026-10-25, validation P1, F5, R3 = F9 : le service rend `PiecePublique`, sans `file_hash`, `storage_path` ni champ du QR — le typage tient « aucun outil n'ouvre un fichier » —, et `lister_tout` pour l'API ; il **lit la société d'abord**, comme `list_imported` aujourd'hui (`routes/imported_supplier_invoices.rs:93`), ordre conservé (R6) ; plafond 160, mesuré.)*
 
 ### C-32-9-14 — Les fixtures piégées : un module `kesh_seed::pieges`, hors de `seed_demo`
 
@@ -189,6 +214,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - **Écartées** : dans `seed_demo` (démonstration publique altérée) ; dans les seuls tests (le kickoff les veut dans
   `kesh-seed`).
 - **Réversible** : oui (un appel de plus dans `seed_demo`). Soumis à Guy (Q2).
+- *(Annoté le 2026-10-25, validation P1, F2, R9, F11 : `semer(pool, acteur, company_id, marque)` — les dépôts exigent un `user_id` ; le texte d'un piège dépend de la **largeur de sa colonne**, mesurée sur le schéma (formes L, C, T, ou exemption sous sept caractères ; fiche, § *Les pièges et la largeur des colonnes*), vérifiée par `largeurs_des_pieges` ; le module est derrière la fonctionnalité `pieges`, activée par la seule dépendance de développement de `kesh-api` : les textes d'injection n'entrent pas dans le binaire de production ; la forme `PIEGE_329_<marque>_<champ>` de 143 caractères ne tenait pas dans une vingtaine de colonnes.)*
 
 ### C-32-9-15 — Le test d'enveloppe parcourt la sortie, il n'énumère pas les champs
 
@@ -212,6 +238,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - **Écartées** : un accesseur `Registre::matrice()` (une surface de plus) ; le manuel utilisateur (la clé se crée dans
   l'administration).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P1, R10 = F10, R1 : il n'existe pas de « chapitre de l'API » ; à défaut de la section de la 32-7, la sous-section est une `\subsection` neuve de la `\section{Sécurité}`, entre la fin des clés d'API (l. 2926) et `RBAC et permissions` (l. 2927). `kesh_lire_envoi`, listé pour toute clé (32-8b), entre au bloc comme « toute clé ».)*
 
 ### C-32-9-17 — La lecture seule par outil : la somme de contrôle de chaque table, avant et après
 
@@ -264,6 +291,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
   story qui touche `kesh-db`).
 - **Écartées** : la 32-9a amende les standards (six modules).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P1, R17 : la demande est **déjà satisfaite** — la fiche 32-10a porte la forme dans ses deux standards, « Précision de l'orchestrateur, 2026-10-25, fiche 32-9 », l. 1455-1459 ; la demande est retirée de la fiche 32-9. La 32-9a ajoute en outre la même phrase à `instructions` d'`initialize` (F11).)*
 
 ### C-32-9-22 — Ce qui n'est pas rendu, et pourquoi
 
@@ -304,4 +332,41 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
   32-6 reste inchangée.
 - **Écartées** : élargir la garde aux seuls `use` de types (une exception de plus à tenir) ; projeter sans nommer les
   types (impossible pour un `match` exhaustif).
+- **Réversible** : oui.
+
+### C-32-9-26 — Trois erreurs de demande rendent un texte fixe compréhensible : la liste blanche de la 32-6a amendée
+
+- **Contexte** (validation P1, R12 ; décision de l'orchestrateur) : la liste blanche de `depuis_app_error` (32-6a,
+  AC-a18) rend « erreur interne » pour toute variante hors `Forbidden`, `Database(NotFound)` et `Validation(_)` ; or un
+  `fiscalYearId` inexistant (`AppError::ReportFiscalYearNotFound`, `errors.rs:1070`), une période hors exercice
+  (`AppError::ReportPeriodOutOfFiscalYear`, `:1082`) et un compte non lettrable (`DbError::LetteringAccountNotLetterable`)
+  sont des erreurs de l'agent, qu'il doit pouvoir corriger.
+- **Retenu** : **amendement nommé** des AC-a18 et AC-a20 de la 32-6a : trois variantes d'`ErreurOutil` sans champ
+  (`ExerciceIntrouvable`, `PeriodeHorsExercice`, `CompteNonLettrable`), trois textes fixes qui disent quoi faire, sans
+  recopier les dates ni l'identifiant ; issues du journal `introuvable` et `arguments_invalides` (énumération de la 32-6b
+  inchangée). Un exercice d'une autre société rend le même texte qu'un exercice inexistant.
+- **Écartées** : recopier le message de l'API (dates de l'exercice : un oracle entre sociétés) ; laisser « erreur
+  interne » (l'agent ne peut rien corriger, et le serveur journalise une erreur qui n'en est pas une).
+- **Réversible** : oui.
+
+### C-32-9-27 — Aucun type qui porte un chemin de fichier n'atteint `src/mcp/`
+
+- **Contexte** (validation P1, F5) : `SupplierInvoiceSettlementView.source_document` et `ImportedSupplierInvoice` portent
+  `storage_path` ; une garde sur le seul jeton `document_storage` laissait passer `tokio::fs::read(&piece.storage_path)`.
+- **Retenu** : par le typage d'abord — `factures_fournisseur::detail_sans_fichier` (32-9a) et `pieces::PiecePublique`
+  (32-9b) ne rendent que l'identifiant de la pièce et ses métadonnées ; puis une garde `mcp_sans_fichier` (`std::fs`,
+  `tokio::fs`, `File::`, `OpenOptions`, `read_to_string`, `document_storage`, `storage_path`), posée dès la 32-9a.
+- **Écartées** : la garde seule (une forme imprévue la contourne) ; réexporter la vue entière.
+- **Réversible** : oui.
+
+### C-32-9-28 — `kesh_lire_envoi` dans les tests dérivés de `tools/list`
+
+- **Contexte** (validation P1, R1) : la 32-8b liste `kesh_lire_envoi`, hors registre, pour **toute** clé ; six tests de
+  la fiche comparaient `tools/list` aux seuls outils du registre, et le test `tools_list_filtre` de la 32-6 casse dès la
+  32-9a sur sa clause `books:read`.
+- **Retenu** : une constante `HORS_REGISTRE = [NOM_LIRE_ENVOI]` entre dans chaque ensemble attendu (inventaire, témoins,
+  `tools/list` par portée — en dernier —, matrice — « toute clé ») ; `tools_list_filtre` est amendé par la 32-9a
+  (`books:read` → dix outils puis `kesh_lire_envoi`) et par la 32-9b (`contacts:read` → `kesh_contacts`,
+  `kesh_contact`, `kesh_lire_envoi`).
+- **Écartées** : retirer `kesh_lire_envoi` de la liste lue avant comparaison (le test ne verrait plus qu'il est listé).
 - **Réversible** : oui.
