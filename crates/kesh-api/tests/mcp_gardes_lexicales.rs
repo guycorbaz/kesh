@@ -986,6 +986,12 @@ fn lecture_seule_jamais_defaite() {
                 "kesh-api/src/services/serveur_mcp.rs",
                 "sqlx::query_as(\"SELECT @@session.tx_read_only, @@session.max_statement_time\")"
             ),
+            // Story 32-8b (règle R7) : le témoin de `lire_pour_cle_en_lecture_seule`
+            // lit le mode de la connexion, il ne le change pas.
+            (
+                "kesh-api/tests/mcp_envois_e2e.rs",
+                "let mode: i64 = sqlx::query_scalar(\"SELECT @@session.tx_read_only\")"
+            ),
             // C-32-6-54 : la pose de la borne, et sa lecture par le test (g).
             (
                 "kesh-db/src/pool.rs",
