@@ -1499,6 +1499,15 @@ mod tests {
         for c in ['a', 'É', 'é', ' ', '-', '\u{00A0}', '’', '«', '»', '—'] {
             assert!(!is_forbidden_in_description(c), "{:?} doit être accepté", c);
         }
+        // Story 32-8b0 (revue P1, B-M1) : une saisie **décomposée** (`e` suivi
+        // de l'accent aigu combinant U+0301, `Mn` visible) est admise telle
+        // quelle — `normalize_description` ne recompose pas en NFC.
+        let decomposee = "Re\u{0301}serve";
+        assert_eq!(
+            normalize_description(Some(decomposee)).unwrap().as_deref(),
+            Some(decomposee),
+            "{decomposee:?} (forme décomposée) doit être admise"
+        );
     }
 
     #[test]

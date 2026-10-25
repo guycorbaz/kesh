@@ -490,7 +490,9 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
   0.16.0 : « La description d'un compte bancaire refuse aussi les caractères invisibles qu'elle laissait passer
   (marques de format de certaines écritures, sélecteurs de variante), les caractères d'usage privé — tel le logo Apple
   collé depuis un Mac — et les caractères non attribués ; les emojis composés l'étaient déjà, les emojis simples restent
-  admis. » Le test `ensemble_refuse_borne_par_borne` (`bank_accounts.rs:1470` au relevé de `fa5b3468` ;
+  admis. » *(Annoté le 2026-10-25, revue de code P1 de la 32-8b0, B-L3 = E2, A-L2 : « composés » est trop large — un
+  drapeau ou un teint, composés, restent admis ; le critère est le sélecteur U+FE0E/U+FE0F ou le liant U+200D ; et un
+  emoji postérieur à Unicode 17.0 est refusé, comme tout point non attribué. Le CHANGELOG le dit ainsi.)* Le test `ensemble_refuse_borne_par_borne` (`bank_accounts.rs:1470` au relevé de `fa5b3468` ;
   `:1466-1513` dans la fiche 32-10a) **déménage** en `kesh-core` comme test de non-régression (toute plage de l'ancienne
   liste reste refusée), sans son contrôle des voisins, que la catégorie rend sans objet ; `controles_cc_refuses` et
   `lettres_et_espaces_ordinaires_acceptes` (`:1516`, `:1525`) restent en place, verts. **Test neuf dans
@@ -1433,7 +1435,10 @@ l. 497-503 (routes de la 32-5c).
    nouveau. Le point 8 de ses points pour Guy (description d'un compte) est porté par la 32-8b0 (point 11 ici) —
    **rectifié en validation P2 (R1 = F1)** : les emojis composés y étaient **déjà** refusés (`bank_accounts.rs:312`,
    `:318`), comme l'AC-ii1 le dit elle-même ; le changement réel est la liste mesurée de l'AC-03 (Cf omis, Co, Cn, points
-   des deux listes).
+   des deux listes). La **description** d'un prompt (AC-ii2) emploie `kesh_core::text::is_hidden_in_line` (=
+   `c.is_control() || is_hidden_format(c)`, C-32-8-31), que `is_forbidden_in_description` délègue, et **non**
+   `is_hidden_in_text` : elle n'admet ni `\n` ni `\t` ; aucune seconde définition. *(Ajouté le 2026-10-25, revue de code
+   P1 de la 32-8b0, A-M1 — P3-R4 (b).)*
 2. **32-10a-iii, AC-iii2 et AC-iii3 — `entree_appel` et `ErreurOutil::LimiteAtteinte` existent.** La signature est
    celle de l'AC-B11 de la 32-8 : **`entree_appel(cle: &CleMcpAuthentifiee, outil: &str, issue: IssueAppel, duree_ms:
    u64, envoi: Option<i64>) -> NewAuditLogEntry`** ; la proposition d'un prompt l'appelle avec **`None`** — détail à cinq
@@ -1505,7 +1510,9 @@ boucle de revue* et son exception `kesh-db`, *Recompter*) ; `docs/agents-orchest
     (U+115F, U+1160, U+FFA0, U+17B4, U+17B5, U+180B–U+180D, U+180F, U+E0100–U+E01EF). Les **emojis composés** (`⚠️`,
     `👨‍💻`) y étaient **déjà** refusés, et les emojis simples restent admis ; rien de ce qui est refusé aujourd'hui ne
     devient admis. C'est le prédicat partagé de la 32-8b0, que la fiche 32-10a prévoyait (son point 8) ; une entrée
-    *Modifié* au CHANGELOG le dit. *Recommandation* : l'accepter.
+    *Modifié* au CHANGELOG le dit. *Recommandation* : l'accepter. *(Précisé le 2026-10-25, revue de code P1 de la
+    32-8b0 : les emojis refusés sont ceux qui portent un sélecteur de variante ou un liant invisible — un drapeau ou un
+    teint restent admis — ; un emoji plus récent qu'Unicode 17.0 est refusé, comme tout point non attribué.)*
 12. **Rien ne t'avertit qu'un envoi attend** (validation P1, F9) : l'agent te le dit, et l'écran a son entrée de menu,
     mais aucun compteur ni pastille. Faut-il un compteur dans le menu (à la 32-7 ou après la recette) ?
 13. **Une dérogation à la règle d'inclusion de `CLAUDE.md`** (« tout update de doc déclenché par la story DOIT être
@@ -1562,6 +1569,10 @@ Ligne lue citée au Change Log pour chacun :
   reproduit ; l'AC-iii3, dont la 32-8b fixe `entree_appel`) et toute modification depuis `00114c6d` se cite. Pour la
   32-8b : `is_hidden_in_text` présent (32-8b0 fusionnée) ; le lieu du pool en lecture seule dans `lib.rs`, où
   `LectureEnvois` sera posée.
+- **P3-R4 (a), renvoyé à la 32-8b** (revue de code P1 de la 32-8b0, A-L4, 2026-10-25) : la 32-8b0 n'a traité que le
+  (b) ; à l'étape 0 de la 32-8b, écrire au point 3 de la *Note pour la 32-10a* l'**ordre** de `tools/list` après la
+  32-8b (registre, puis `kesh_lire_envoi`, puis `proposer_prompt`) et le fait que les corps attendus de
+  `tools_list_filtre` partent de la liste amendée (AC-iii2, point 4, de la 32-10a), ligne lue citée.
 - **La 32-5c** : routes `/api/v1/admin/mcp/keys…` (forme réelle, pour l'E2E de la 32-8c), compte d'`ADMIN_COUPLES`,
   compteurs d'`audit_route_registry.rs`, nom de `repositories::mcp_keys` dans ses routes (mesure de
   `envois_lus_par_leurs_lieux`).

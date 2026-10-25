@@ -64,10 +64,13 @@ pub fn is_invisible(c: char) -> bool {
 ///    séparateurs de ligne et de paragraphe (`Zl`, `Zp`).
 ///
 /// ⚠️ **Les sélecteurs de variante U+FE0E et U+FE0F et le liant U+200D sont
-/// refusés**, si bien qu'un emoji **composé** (`⚠️` = U+26A0 U+FE0F,
+/// refusés**, si bien qu'un emoji qui **en porte un** (`⚠️` = U+26A0 U+FE0F,
 /// `👨‍💻` = U+1F468 U+200D U+1F4BB) l'est aussi : admis, ces trois caractères
 /// formeraient un alphabet invisible à glisser après n'importe quelle lettre.
-/// Un emoji **simple** (U+26A0, U+1F4BB : `OtherSymbol`) passe.
+/// Un emoji **simple** (U+26A0, U+1F4BB : `OtherSymbol`) passe, comme les
+/// séquences qui n'en portent aucun : un drapeau (deux indicateurs régionaux,
+/// `OtherSymbol`) ou un teint (U+1F3FB–U+1F3FF, `ModifierSymbol`), dont chaque
+/// caractère se voit.
 ///
 /// Les contrôles `Cc` (`\n`, `\t`, U+0000…) n'en relèvent **pas** : c'est à
 /// l'emploi de dire lesquels il admet — [`is_hidden_in_text`] admet `\n` et
@@ -75,8 +78,11 @@ pub fn is_invisible(c: char) -> bool {
 ///
 /// **Angle mort, qualifié** : la classification est celle d'Unicode 17.0.0,
 /// la version de `unicode-properties` 0.1.4 ; reste admis un invisible d'une
-/// catégorie **autre** que Cf, Co, Cn que les listes ne nomment pas (un `Mn`,
-/// un `Lo` ou un `Zs` sans rendu), et les homoglyphes, qui sont visibles.
+/// catégorie **autre** que Cf, Co, Cn que les listes ne nomment pas — ainsi le
+/// motif braille vide U+2800 et la tête de note nulle U+1D159 (`So`), le
+/// remplissage khitan U+16FE4 (`Mn`), les espaces `Zs` (U+1680, U+2000–U+200A,
+/// U+202F, U+205F, U+3000), qui occupent une largeur —, et les homoglyphes,
+/// qui sont visibles.
 pub fn is_hidden_format(c: char) -> bool {
     matches!(
         c.general_category(),
@@ -106,8 +112,10 @@ pub fn is_hidden_format(c: char) -> bool {
 /// C'est le prédicat d'un envoi du serveur MCP (32-8b) et du texte d'un prompt
 /// (32-10a-ii, qui le nommait `is_forbidden_in_prompt`) : une seule définition,
 /// sous un nom qui ne dit ni l'un ni l'autre. Le retour chariot `\r` est
-/// refusé : un texte qui en porte se normalise avant le contrôle (`\r\n` →
-/// `\n`), il ne se corrige pas ici.
+/// refusé, et le prédicat ne normalise rien : c'est à chaque emploi de
+/// normaliser `\r\n` en `\n` avant le contrôle (le texte d'un prompt, 32-10a)
+/// ou de refuser le texte tel qu'il est reçu (un envoi modifié, 32-8b, AC-B9 :
+/// aucune normalisation).
 pub fn is_hidden_in_text(c: char) -> bool {
     (c.is_control() && c != '\n' && c != '\t') || is_hidden_format(c)
 }
@@ -387,11 +395,25 @@ mod tests {
         }
     }
 
-    /// Les voisins **visibles** des listes, de part et d'autre, sont admis :
-    /// la liste nomme des points, non des plages qui déborderaient.
+    /// Les voisins **visibles** des listes, de part et d'autre de chaque point
+    /// ou plage, sont admis : la liste nomme des points, non des plages qui
+    /// déborderaient. Un côté manque là où le voisin est lui-même caché :
+    /// U+1160 (liste), U+180E et U+202A (Cf), U+E00FF et U+E01F0 (Cn). S'y
+    /// ajoutent des diacritiques combinants visibles (`Mn`, comme la moitié des
+    /// listes) : U+0301 (accent aigu, que produit une saisie décomposée) et
+    /// U+17B7 (voyelle khmère).
     #[test]
     fn voisins_visibles_admis() {
-        for cp in [0x1161, 0x17B6, 0x180A, 0xFE10] {
+        let voisins = [
+            // U+115F–U+1160, U+3164, U+FFA0.
+            0x115E, 0x1161, 0x3163, 0x3165, 0xFF9F, 0xFFA1,
+            // U+034F, U+17B4–U+17B5, U+180B–U+180D, U+180F, U+FE00–U+FE0F.
+            0x034E, 0x0350, 0x17B3, 0x17B6, 0x180A, 0x1810, 0xFDFF, 0xFE10,
+            // U+2028–U+2029.
+            0x2027,
+        ];
+        let diacritiques_visibles = [0x0301, 0x17B7];
+        for cp in voisins.into_iter().chain(diacritiques_visibles) {
             let c = ch(cp);
             assert!(!is_hidden_format(c), "U+{cp:04X} doit être admis");
             assert!(!is_hidden_in_text(c), "U+{cp:04X} admis dans un texte");
@@ -400,7 +422,8 @@ mod tests {
     }
 
     /// U+FE0E, U+FE0F et U+200D refusés isolés ; un emoji simple admis, un
-    /// emoji composé refusé (M05 : U+FE0F ; M06 : U+200D).
+    /// emoji qui porte un sélecteur ou un liant refusé (M05 : U+FE0F ; M06 :
+    /// U+200D).
     #[test]
     fn emojis_simples_admis_composes_refuses() {
         for cp in [0xFE0E, 0xFE0F, 0x200D] {
@@ -434,6 +457,10 @@ mod tests {
         for c in [
             '\r',
             '\u{0000}',
+            '\u{000B}',
+            '\u{001B}',
+            '\u{007F}',
+            '\u{0085}',
             '\u{202E}',
             '\u{2066}',
             '\u{200B}',
