@@ -1902,7 +1902,10 @@ async fn call(
 /// Peuple la société d'une démonstration au-delà du seed : un contact, un
 /// article, une facture **validée** (écriture), un avoir, une clé d'API saine
 /// et un jeton de réinitialisation de mot de passe — L4-3 de la P4 : sans eux,
-/// « inchangés » serait vrai à vide.
+/// « inchangés » serait vrai à vide. Depuis la Story 32-5a (AC-a6, C-32-5-26),
+/// aussi une clé MCP et une ligne de réglages du serveur MCP : le test de la
+/// remise à zéro prouve ainsi qu'elle les VIDE, et non qu'elles l'étaient déjà
+/// (`EMPTY_BEFORE_RESET` reste inchangée).
 async fn populate(pool: &MySqlPool, app: &TestApp, token: &str, company_id: i64) -> i64 {
     let (contact_id, _product_id) =
         kesh_db::test_fixtures::seed_contact_and_product(pool, company_id)
@@ -1951,6 +1954,24 @@ async fn populate(pool: &MySqlPool, app: &TestApp, token: &str, company_id: i64)
          VALUES (?, SHA2('jeton', 256), NOW(3) + INTERVAL 1 HOUR)",
     )
     .bind(admin_user_id(pool).await)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO mcp_keys (company_id, created_by_user_id, name, key_hash, scopes) \
+         VALUES (?, ?, 'démonstration', SHA2('cle-mcp', 256), '[\"books:read\"]')",
+    )
+    .bind(company_id)
+    .bind(admin_user_id(pool).await)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO mcp_server_settings \
+         (company_id, enabled, allowed_networks, trusted_proxies, allowed_origins) \
+         VALUES (?, TRUE, '[\"10.0.0.0/8\"]', '[]', '[]')",
+    )
+    .bind(company_id)
     .execute(pool)
     .await
     .unwrap();
@@ -2006,6 +2027,8 @@ async fn reset_clears_every_company_table_and_traces_itself(pool: MySqlPool) {
         "journal_entries",
         "journal_entry_lines",
         "audit_log",
+        "mcp_keys",
+        "mcp_server_settings",
     ] {
         assert!(before[t] > 0, "montage : {t} doit être peuplée");
     }

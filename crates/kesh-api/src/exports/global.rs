@@ -163,8 +163,8 @@ pub const TABLES_EXPORTEES: &[&str] = &[
 /// ⚠️ **Critère de tri, arbitré le 2026-09-23** : *« l'export CSV pour migrer
 /// vers une autre application n'a besoin que des données comptables ; seuls les
 /// backups de Kesh pour restaurer dans Kesh ont besoin de toutes les
-/// informations »*. Les dix ci-dessous sont **dans la sauvegarde**, qui porte
-/// les 39 tables.
+/// informations »*. Les onze ci-dessous sont **dans la sauvegarde**, qui porte
+/// les 41 tables (Story 32-5a : + `mcp_keys`, `mcp_server_settings`).
 pub const TABLES_HORS_EXPORT: &[(&str, &str)] = &[
     (
         "invoice_number_sequences",
@@ -185,6 +185,11 @@ pub const TABLES_HORS_EXPORT: &[(&str, &str)] = &[
         "SECRET. Contient les condensés des clés d'API. Les exporter dans un fichier \
          destiné à être transmis à un tiers serait une fuite, et le condensé ne permet \
          de toute façon pas de restaurer la clé.",
+    ),
+    (
+        "mcp_keys",
+        "SECRET, cf. `api_keys` : condensés des clés du serveur MCP (Story 32-5a). Un \
+         export destiné à un tiers ne les porte pas ; la sauvegarde, elle, les emporte.",
     ),
     (
         "refresh_tokens",
@@ -210,6 +215,12 @@ pub const TABLES_HORS_EXPORT: &[(&str, &str)] = &[
     (
         "onboarding_state",
         "État d'installation de l'instance, non comptabilité.",
+    ),
+    (
+        "mcp_server_settings",
+        "Réglage du serveur MCP (activation, filtre d'adresse, plages, mandataires, \
+         origines — Story 32-5a), sans valeur comptable : il n'a aucun sens dans un autre \
+         logiciel.",
     ),
 ];
 

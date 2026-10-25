@@ -21,9 +21,11 @@
 //! nommées : les **deux migrations de rattrapage** de la 15-1a2-ii
 //! (`20261010000001_lettering_documents_backfill.sql`,
 //! `20261010000002_lettering_reversal_pairs_backfill.sql` — SQL de migration) ;
-//! le **rejeu à l'import** de la première (`post_restore::replay_post_restore_backfills`,
-//! entrée de classe A de `POST_RESTORE_BACKFILLS`) — un écrivain de production
-//! de la marque, hors des deux corps et **sans audit**, à chaque import ; la
+//! le **rejeu à l'import** de la première — un écrivain de production de la
+//! marque, hors des deux corps et **sans audit**, à chaque import, tant qu'elle
+//! était au registre de production (de la 15-1a2-ii à la Story 32-5a, qui l'a
+//! déplacée dans `post_restore::RETIRED_BACKFILLS` : elle ne se rejoue plus en
+//! production, seulement par les tests de la machinerie) ; la
 //! **restauration d'une sauvegarde** (`backup.rs`, colonnes lues
 //! dynamiquement — un groupe restauré est celui qui existait) ; et les
 //! suppressions en bloc qui emportent les lignes **avec** leurs marques

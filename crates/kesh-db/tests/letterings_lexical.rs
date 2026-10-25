@@ -16,7 +16,8 @@
 //! migrations de rattrapage de la 15-1a2-ii
 //! (`20261010000001_lettering_documents_backfill.sql`,
 //! `20261010000002_lettering_reversal_pairs_backfill.sql`) sont des fichiers
-//! `.sql` — et la première, rejouée à l'import (`post_restore.rs`), y est
+//! `.sql` — et la première, rejouée à l'import jusqu'à la Story 32-5a puis par
+//! les seuls tests de la machinerie (`post_restore::RETIRED_BACKFILLS`), y est
 //! embarquée par `include_str!`, sans littéral Rust ; la
 //! restauration d'une sauvegarde (`backup.rs`) nomme ses colonnes
 //! **dynamiquement** — aucun littéral ne les porte — et rétablit les marques

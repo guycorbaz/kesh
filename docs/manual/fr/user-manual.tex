@@ -1911,9 +1911,10 @@ tant qu'aucune facture n'en est créée et qu'il n'est pas retiré de la liste.
 \textbf{Depuis la version 0.15.0, la sauvegarde \texttt{.keshbackup} emporte les
 documents}~: leur fichier voyage avec la sauvegarde et revient à la restauration
 (\href{https://github.com/guycorbaz/kesh/issues/503}{\#503}). Une sauvegarde faite
-\textbf{avant} la 0.15.0 n'en contient que la trace, pas le fichier : restaurée sur une
-autre machine, un document dont le fichier manque répond « Le document n'a pas été
-restauré ». Avec une telle sauvegarde, ou une sauvegarde de la base par un dump, le
+\textbf{avant} la 0.15.0 n'en contient que la trace, pas le fichier : restaurée par une
+0.15.x sur une autre machine, un document dont le fichier manque répond « Le document n'a
+pas été restauré » ; la 0.16.0, elle, ne l'importe plus (le manuel administrateur dit
+pourquoi). Avec une telle sauvegarde, ou une sauvegarde de la base par un dump, le
 dossier des documents (\texttt{KESH\_DOCUMENTS\_DIR}) se sauvegarde à part, comme le décrit
 le manuel administrateur.
 \end{keshwarning}
@@ -3024,9 +3025,10 @@ couvrent l'ensemble de votre comptabilité~:
 
 \begin{keshnote}
 \textbf{Ce que l'export ne contient pas, et pourquoi.} Les \textbf{compteurs de numérotation}
-(les numéros attribués figurent déjà sur les pièces), les \textbf{clés d'API et jetons de
-session} (ce sont des secrets~: les exporter dans un fichier destiné à être transmis serait une
-fuite), le \textbf{registre des utilisateurs} (sans perte~: chaque entrée du journal d'audit
+(les numéros attribués figurent déjà sur les pièces), les \textbf{clés d'API, les clés du
+serveur MCP et les jetons de session} (ce sont des secrets~: les exporter dans un fichier destiné
+à être transmis serait une fuite), les \textbf{réglages du serveur MCP} (sans valeur comptable),
+le \textbf{registre des utilisateurs} (sans perte~: chaque entrée du journal d'audit
 porte le nom de son auteur \emph{au moment de l'écriture}), les \textbf{gabarits d'e-mail} et
 l'\textbf{état d'installation} (configuration, non comptabilité).
 

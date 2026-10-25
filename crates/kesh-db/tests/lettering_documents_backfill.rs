@@ -1,5 +1,6 @@
 //! Le rattrapage du lettrage — Story 15-1a2-ii (#518), AC6 : les migrations
-//! `20261010000001_lettering_documents_backfill.sql` (M1, registre de rejeu)
+//! `20261010000001_lettering_documents_backfill.sql` (M1, au registre de
+//! production jusqu'à la Story 32-5a, depuis au registre retiré)
 //! et `20261010000002_lettering_reversal_pairs_backfill.sql` (M2, exemptée)
 //! posent, sur des données d'avant la mise à jour, **ce que les gestes vivants
 //! auraient posé** — la règle de la synchronisation des pièces
@@ -43,7 +44,7 @@ use common::{apply_migrations_up_to, migrations_before};
 mod lettering_support;
 use lettering_support::*;
 
-/// Version de M1 (registre de rejeu).
+/// Version de M1 (registre retiré depuis la Story 32-5a).
 const M1: i64 = 20261010000001;
 /// Version de M2 (exemptée du rejeu).
 const M2: i64 = 20261010000002;
