@@ -98,6 +98,11 @@
   `ensure_admin_user`, ordre gardé) **et** à la fin de la remise à zéro, dans `routes::onboarding::reset`, après le
   succès de `reset_demo` ; non fatal dans les deux cas. Écartés toujours : l'activation du serveur MCP et la fin d'un
   import (une restauration rend les textes de la sauvegarde ; un standard altéré revient au démarrage suivant).
+- *Annoté le 2026-10-25, validation P3 (R1, R10), décision de l'orchestrateur* : la propriété devient **« toute
+  société créée reçoit les standards »**, tenue par **l'inventaire clos des sites qui créent une société** (C-32-10a-33)
+  et un appel de la même fonction à la fin de **chaque** point d'entrée qui crée — démarrage, changement de langue de
+  l'assistant, remise à zéro, import d'installation, préréglage de test, `_test/reset` ; les « deux » puis « trois »
+  appels écrits jusqu'ici sont remplacés.
 
 ### C-32-10a-9 — Deux standards, en français, en constantes de `kesh-db`
 
@@ -157,6 +162,10 @@
   (Unicode 17.0.0), plus deux listes écrites (remplissages `Lo`, marques `Mn` sans rendu, Zl/Zp). L'angle mort devient
   « une autre catégorie hors des listes, selon Unicode 17.0.0 ». Écartée : la table `FORMAT` de `regex-syntax` (Unicode
   16.0.0, crate de syntaxe d'expressions, non faite pour cet usage).
+- *Annoté le 2026-10-25, validation P3 (F7 = R12), décision de l'orchestrateur* : U+200D, U+FE0E et U+FE0F sont
+  **admis** (ils composent les emojis et ne cachent aucun texte), dans le texte et la description d'un prompt comme
+  dans la description d'un compte bancaire (un seul prédicat) ; les étiquettes U+E0000–U+E007F et les bidirectionnels
+  restent refusés (C-32-10a-34).
 
 ### C-32-10a-13 — Bornes : texte 16 000 caractères, description 500, vingt propositions en attente
 
@@ -186,6 +195,9 @@
 - **Réversible** : oui.
 - *Annoté le 2026-10-25, validation P2 (F6)* : le catalogue ne lit plus sur `etat.garde` mais par une poignée propre,
   `LecturePrompts`, **sans pool visible** (C-32-10a-30), placée dans `EtatMcp`.
+- *Annoté le 2026-10-25, validation P3 (F6)* : `LecturePrompts` est posée **sur le pool en lecture seule du MCP** (le
+  même que `LectureOutils`, lié une fois en `lib.rs`), non sur le pool ordinaire : servir un prompt est une lecture du
+  MCP, que Q11 pose sur la connexion `READ ONLY`.
 
 ### C-32-10a-16 — La portée des prompts est `books:read`, sans colonne
 
@@ -352,6 +364,7 @@
   garde l'admet (trois appels).
 - **Écartée** : laisser la 32-10b amender la garde.
 - **Réversible** : oui.
+- *Annoté le 2026-10-25, validation P3 (R1)* : absorbé par C-32-10a-33 (`_test/reset` compris).
 
 ### C-32-10a-32 — Le verrou de société en tête de toute écriture des prompts
 
@@ -360,4 +373,28 @@
 - **Retenu** : toute écriture du dépôt, l'amorçage compris, prend `companies` d'abord (Pattern 5) ; la table des ordres
   de verrous de `docs/MULTI-TENANT-SCOPING-PATTERNS.md` gagne la ligne.
 - **Écartée** : nommer le cycle et compter sur le rejeu.
+- **Réversible** : oui.
+
+### C-32-10a-33 — Toute société créée reçoit les standards : un inventaire clos et un appel par point d'entrée
+
+- **Contexte** : validation P3, R1 — `POST /api/v1/_test/reset` recréait une société sans l'amorcer ; ajouter un lieu de
+  plus à la garde réparait le site, non la classe.
+- **Retenu** : l'inventaire clos des créateurs (`companies::create`, `companies::insert_stub`, la restauration
+  générique, quatre fixtures) et de leurs dix appelants de production, chacun rattaché à un point d'entrée qui appelle
+  `amorcer_standards` après la création ; une garde rougit à tout appelant neuf et à tout appel d'amorçage déplacé
+  avant la création.
+- **Écartées** : amorcer **dans** les créateurs (changer la signature d'`insert_stub`, générique sur l'exécuteur,
+  touchait `auth` et `kesh-seed` : six modules en partie i) ; une garde de « lieux » énumérés (elle ne voyait pas un
+  créateur neuf) ; amorcer à la lecture (deux sources).
+- **Réversible** : oui.
+
+### C-32-10a-34 — Les emojis admis, les étiquettes refusées
+
+- **Contexte** : validation P3, F7 = R12 — U+200D et U+FE0F, refusés par héritage, refusaient `⚠️` et les emojis
+  composés que les textes du projet emploient.
+- **Retenu** (décision de l'orchestrateur ; tranché pour les comptes bancaires) : U+200D, U+FE0E, U+FE0F admis partout
+  où le prédicat partagé s'applique ; U+E0000–U+E007F (étiquettes, qui encodent du texte invisible) et les
+  bidirectionnels refusés ; un test par cas.
+- **Écartées** : admettre U+FE0F seulement après un symbole (une règle de séquence, pour un gain faible) ; garder le
+  refus pour les comptes bancaires (deux prédicats, contre DRY).
 - **Réversible** : oui.
