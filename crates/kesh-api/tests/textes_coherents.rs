@@ -723,8 +723,13 @@ fn les_replis_rust_suivent_le_catalogue() {
     const DEVISES: &[(&str, &str)] = &[("{ $currencies }", "{currencies}")];
     const CHAMP: &[(&str, &str)] = &[("{ $field }", "{nom}")];
     const CHAMP_MAX: &[(&str, &str)] = &[("{ $field }", "{nom}"), ("{ $max }", "{maximum}")];
+    // Story 32-5c (refs #723) — les refus des routes de gestion du serveur MCP.
+    const PORTEE: &[(&str, &str)] = &[("{ $scope }", "{portee}")];
+    const ENTREE: &[(&str, &str)] = &[("{ $entry }", "{entree}")];
+    const ENTREE_ATTENDU: &[(&str, &str)] =
+        &[("{ $entry }", "{entree}"), ("{ $expected }", "{attendu}")];
     type Cles = &'static [(&'static str, usize, &'static [(&'static str, &'static str)])];
-    const TABLE: [(&str, Cles); 5] = [
+    const TABLE: [(&str, Cles); 7] = [
         // Story 31-5 (#469, C-31-5-15) — les six refus du journal d'audit.
         (
             "crates/kesh-api/src/routes/audit_log.rs",
@@ -821,6 +826,36 @@ fn les_replis_rust_suivent_le_catalogue() {
         (
             "crates/kesh-api/src/routes/backup_schedule.rs",
             &[("admin-backup-schedule-error-out-of-domain", 1, &[])],
+        ),
+        // Story 32-5c (refs #723, AC-c3) — les refus de la gestion des clés MCP.
+        (
+            "crates/kesh-api/src/routes/mcp_keys.rs",
+            &[
+                ("admin-mcp-keys-error-name-required", 1, &[]),
+                ("admin-mcp-keys-error-name-too-long", 1, &[]),
+                ("admin-mcp-keys-error-scopes-empty", 1, &[]),
+                ("admin-mcp-keys-error-scope-unknown", 1, PORTEE),
+                ("admin-mcp-keys-error-expiry-past", 1, &[]),
+                // Revue de code P1 de la 32-5c (E1 = B9) — l'an 9999 de `DATETIME`.
+                ("admin-mcp-keys-error-expiry-out-of-range", 1, &[]),
+                ("admin-mcp-keys-error-send-validation-unknown", 1, &[]),
+                ("admin-mcp-keys-error-version-invalid", 1, &[]),
+            ],
+        ),
+        // Story 32-5c (refs #723, AC-c4) — les refus des réglages du serveur MCP.
+        (
+            "crates/kesh-api/src/routes/mcp_server_settings.rs",
+            &[
+                ("admin-mcp-settings-error-too-many-entries", 1, &[]),
+                ("admin-mcp-settings-error-entry-too-long", 1, &[]),
+                ("admin-mcp-settings-error-network-invalid", 1, ENTREE),
+                (
+                    "admin-mcp-settings-error-network-host-bits",
+                    1,
+                    ENTREE_ATTENDU,
+                ),
+                ("admin-mcp-settings-error-origin-invalid", 1, ENTREE),
+            ],
         ),
     ];
     let continuation = Regex::new(r"\\\n\s*").unwrap();
