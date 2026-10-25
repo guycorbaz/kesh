@@ -9,10 +9,12 @@
 //! ⚠️ La colonne `scopes` est `JSON` : MariaDB la rend en `BLOB`, d'où le
 //! `CAST(scopes AS CHAR)` de chaque lecture (motif `bank_profiles`).
 //!
-//! **Différence avec les clés d'API** : la recherche d'authentification
+//! **Deux différences avec les clés d'API** : la recherche d'authentification
 //! ([`find_active_auth_by_key_hash`]) joint aussi `companies` — une clé
 //! orpheline (société absente) n'est jamais trouvée, avant même toute
-//! réparation (C-32-5-12).
+//! réparation (C-32-5-12) — et exige un créateur de la **société de la clé**
+//! (`u.company_id = k.company_id`, C-32-5-43, Story 32-5b) — une clé dont le
+//! créateur est d'une autre société n'est jamais trouvée.
 //!
 //! **Portées lues avec tolérance** (C-32-5-37, revue P1 E1) : une portée que
 //! cette version ne connaît pas est mise de côté et journalisée (id de la clé,

@@ -346,20 +346,34 @@ async fn createur_non_administrateur_refuse(pool: MySqlPool) {
 }
 
 /// Société absente (clé orpheline, montée sous `FOREIGN_KEY_CHECKS = 0`) → 401.
+///
+/// Le créateur est un administrateur actif orphelin de la **même** société
+/// absente que la clé — l'état que laisse #528 —, sur la même connexion : la
+/// condition `u.company_id = k.company_id` (C-32-5-43) est satisfaite, le rôle
+/// et l'état aussi, si bien que seule la jointure à `companies` refuse la clé
+/// (revue P2, R1 ; mutation mx5).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn societe_absente_refusee(pool: MySqlPool) {
-    let (_, u) = livres(&pool).await;
+    livres(&pool).await;
     let (jeton, key_hash) = generate_mcp_key();
     let mut conn = pool.acquire().await.unwrap();
     sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
         .execute(&mut *conn)
         .await
         .unwrap();
+    let orphelin = sqlx::query(
+        "INSERT INTO users (username, password_hash, role, active, company_id) \
+         VALUES ('admin-orphelin', '$argon2id$v=19$m=19456,t=2,p=1$dGVzdA$dGVzdA', 'Admin', TRUE, 999999)",
+    )
+    .execute(&mut *conn)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
     sqlx::query(
         "INSERT INTO mcp_keys (company_id, created_by_user_id, name, key_hash, scopes) \
          VALUES (999999, ?, 'orpheline', ?, '[\"books:read\"]')",
     )
-    .bind(u)
+    .bind(orphelin)
     .bind(&key_hash)
     .execute(&mut *conn)
     .await
@@ -436,8 +450,11 @@ async fn prefixe_exact(pool: MySqlPool) {
 }
 
 /// Jetons hostiles **portant** le préfixe (revue P1, E6) : le préfixe seul, un
-/// corps non ASCII, un corps de 100 000 caractères → 401, sans panique ni
-/// erreur de base (le condensat ne se trouve pas).
+/// corps non ASCII, un corps de 100 000 caractères → 401, sans panique. Le
+/// jeton est condensé avant toute requête : la base ne reçoit qu'un condensat
+/// de 64 caractères, introuvable — l'absence d'erreur de base tient au hachage,
+/// non à ce test (revue P2, R3) ; ce que le test prouve, c'est le 401 et
+/// l'absence de panique sur ces entrées.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn jetons_hostiles_avec_le_prefixe(pool: MySqlPool) {
     let (c, u) = livres(&pool).await;

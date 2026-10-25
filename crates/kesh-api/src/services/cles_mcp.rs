@@ -14,8 +14,9 @@
 //! 2. Condensat `SHA-256(jeton)` et recherche de la clé **active** (non
 //!    révoquée, non expirée, jointe à son créateur et à sa société,
 //!    `mcp_keys::find_active_auth_by_key_hash`) sur la **`Lecture`** : une clé
-//!    orpheline, ou sans aucune portée connue de cette version (C-32-5-37), n'y
-//!    est jamais trouvée.
+//!    orpheline, dont le créateur appartient à une autre société (C-32-5-43),
+//!    ou sans aucune portée connue de cette version (C-32-5-37), n'y est jamais
+//!    trouvée.
 //! 3. Le créateur doit être **actif** et de rôle au moins [`ROLE_CLE_MCP`],
 //!    relus à chaque requête (C-32-5-7, hypothèse Q3).
 //! 4. Dernière utilisation *best-effort* sur la **`Trace`** : un échec est
@@ -71,7 +72,8 @@ fn refus(detail: &str) -> AppError {
 ///
 /// `Err(AppError::Unauthenticated)` pour : préfixe absent ou autre (dont un
 /// PAT), clé inconnue, révoquée, expirée, orpheline ou sans portée connue,
-/// créateur inactif, créateur de rôle inférieur à [`ROLE_CLE_MCP`].
+/// créateur d'une autre société que la clé, créateur inactif, créateur de rôle
+/// inférieur à [`ROLE_CLE_MCP`].
 /// `Err(AppError::Database)` si la recherche échoue.
 pub async fn authentifier(
     lecture: &Lecture,
@@ -85,7 +87,9 @@ pub async fn authentifier(
     let key_hash = sha256_hex(jeton);
     let row = mcp_keys::find_active_auth_by_key_hash(lecture.pool(), &key_hash)
         .await?
-        .ok_or_else(|| refus("unknown, revoked, expired, orphan or scopeless key"))?;
+        .ok_or_else(|| {
+            refus("unknown, revoked, expired, orphan, foreign-creator or scopeless key")
+        })?;
 
     if !row.creator_active {
         return Err(refus("creator user is inactive"));
