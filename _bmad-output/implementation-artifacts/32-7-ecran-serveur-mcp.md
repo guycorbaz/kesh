@@ -1402,6 +1402,8 @@ C-32-7-3). Elles restent ici barrées pour l'historique.)*
   - **Hermes est hors du projet pour l'instant** (« hermes n'est pas installé pour l'instant : je prévois de m'en occuper probablement début de l'année prochaine : sors-le donc du contexte de ce projet ») : à l'AC-18 (8), le paragraphe *Hermes Agent (Nous Research)* est **retiré** ; le manuel ne nomme qu'un client, **Claude Code** ; la phrase « la configuration de ces deux clients n'est pas éprouvée » devient « la configuration de ce client n'est pas éprouvée » ; le point 5 et la **Q9** de la spike sont **sans objet**. Greper `Hermes` et `hermes` sur la fiche, le manuel et les captures prescrites : aucun site vivant ne doit rester. Les motifs de l'AC-21 qui viseraient Hermes sont retirés (aucun ne le vise au 2026-10-25 : à vérifier).
   - **Le NAS (proxy inversé de DSM)** : la pose de `X-Forwarded-For` se vérifiera lors de la mise à jour ; les journaux nécessaires sont portés par la **Story 32-6c** (journal du filtre d'adresse). Si la 32-6c est fusionnée avant la 32-7, le `keshwarning` de l'AC-18 (4) renvoie au moyen de diagnostic qu'elle documente (sa section du manuel), sans le redécrire.
 
+- **Note de la fiche 32-6c (2026-10-25, relayée par l'orchestrateur)** : si la 32-6c est fusionnée, le `keshwarning` de l'AC-18 (4) renvoie à `sec:mcp-journal-filtre` (lecture du journal du filtre, `RUST_LOG=info,kesh_api::mcp::reseau=debug`) sans le redécrire ; et il garde la mise en garde, sourcée à `reseau.rs:63-86` : déclarer comme mandataire une adresse par laquelle passent tous les clients (la passerelle Docker d'un port publié) fait lire `X-Forwarded-For` à tout poste qui atteint ce port sans passer par le mandataire, et qui peut alors le forger.
+
 ## Dev Agent Record
 
 ### Agent Model Used
