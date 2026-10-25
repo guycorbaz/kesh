@@ -28,7 +28,9 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   Un 404 littéral rendrait `/mcp` reconnaissable.
 - **Retenu** : quand `/mcp` n'est pas servi, le gestionnaire **remet la requête au même service statique** que le repli
   (une fonction `service_statique(static_dir)` dans `lib.rs`), sous la même couche CSP ; test d'égalité statut,
-  en-têtes, octets contre un chemin absent. Indiscernable par construction de l'appel, non par imitation.
+  en-têtes, octets contre un chemin absent. Indiscernable par **délégation au même service**, non par imitation
+  *(« par construction », écrit d'abord, retiré en validation P1, R14 : l'oracle temporel reste ouvert)*. La
+  `Request` est remise **entière, corps non lu** (validation P1, F2).
 - **Écartées** : un 404 littéral (oracle) ; recopier à la main le 405 de `ServeDir` (dérive au premier changement de
   `tower-http`) ; changer le repli de toute l'application pour rendre 404 à toute méthode non `GET` (hors périmètre,
   soumis à Guy).
@@ -42,7 +44,9 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   `services::serveur_mcp::reglages_actifs` ; S = réglages actifs dont le filtre admet le client ; S vide → route
   absente ; après l'authentification, la société de la clé doit être dans S, sinon route absente. Une erreur de la base
   pendant la décision → route absente et `tracing::error!`. Aucun cache : un changement de réglage vaut à la requête
-  suivante.
+  suivante. *(Révisé en validation P1, F11)* : après l'authentification, une clé dont la société n'est pas dans S
+  reçoit le **401 fixe** d'une clé inconnue, non la réponse de route absente — sans quoi `/mcp` dirait à qui détient une
+  clé volée qu'elle est valide. Une ligne de réglages illisible est écartée seule (F16).
 - **Écartées** : « servi si une société au moins est activée » sans contrôle de la société de la clé (une clé d'une
   société désactivée lirait) ; un cache des réglages (un serveur désactivé resterait ouvert jusqu'à l'expiration) ; une
   erreur 500 (révélerait l'existence de réglages).
@@ -105,12 +109,13 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Contexte** : Q11 (mode de session `READ ONLY`, aucune variable) ; prémisse 7 du kickoff (le pool doit naître sur
   le chemin de production) ; six sites de test et `middleware/auth.rs:267` construisent `AppState` par littéral (fiche
   32-3, l. 782-783) ; `Pool::connect_options()` et `connect_lazy_with` existent (`sqlx-core 0.8.6`).
-- **Retenu** : `kesh_db::pool::pool_lecture_seule(&state.pool, n)` — mêmes options de connexion et délai
+- **Retenu** *(le canal qui porte ce pool au gestionnaire : C-32-6-31)* : `kesh_db::pool::pool_lecture_seule(&state.pool, n)` — mêmes options de connexion et délai
   d'acquisition, `after_connect` `SET SESSION TRANSACTION READ ONLY`, `before_acquire` qui jette une connexion dont
   `@@session.tx_read_only` ≠ 1, construction paresseuse — appelée dans `build_router_avec_registre`, que la production
   et les tests empruntent. **Aucun autre réglage de session** : le pool de production n'en a pas (#669), et une lecture
   doit rendre la même chose par l'API et par le MCP. `tests/common/lecture_seule.rs` emploie la même fabrique.
-- **Écartées** : un champ `AppState` (sept littéraux à modifier, et des tests qui y mettraient un pool ordinaire) ; un
+- **Écartées** : un champ `AppState` (sept littéraux à modifier, et des tests qui y mettraient un pool ordinaire ; *reconsidéré
+  en validation P1 sur rappel de l'orchestrateur — Q11 n'interdit pas un champ — et écarté pour ces raisons, C-32-6-31*) ; un
   pool construit dans `main.rs` (les tests ne l'emprunteraient pas) ; régler #669 ici (changement de comportement de la
   production sur des livres réels, hors périmètre) ; un second utilisateur MariaDB (refusé par Guy, Q11).
 - **Réversible** : oui.
@@ -168,7 +173,10 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 
 - **Contexte** : spike § 5.3.3 (« l'énumération de réponse est ouverte ») ; E6, mutation 2.
 - **Retenu** : le seul type qui porte des données d'outil vers le transport est construit par `politique::appliquer`
-  seul ; les réponses statiques ne prennent que des `&'static str` et les descripteurs du registre.
+  seul ; les réponses statiques ne prennent que des `&'static str` et les descripteurs du registre. *(Révisé en
+  validation P1, F6)* : `Donnees` vit **aussi** dans `politique.rs`, champs privés, constructeur public, aucun
+  accesseur public ; ni `Serialize`, ni `Default`, ni `Debug` sur l'un ou l'autre — sans quoi le répartiteur pourrait
+  sérialiser `Donnees` sans passer par `appliquer`, ou en fabriquer un par `Default::default()`.
 - **Écartées** : un `enum Reponse` public à variantes publiques (spike : ne ferme aucun chemin) ; une garde lexicale
   seule (le compilateur est plus fort, la garde nomme le rouge).
 - **Réversible** : oui.
@@ -218,9 +226,11 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Contexte** : le registre des routes mutantes n'extrait que `post(routes::m::h)` et fait rougir toute autre forme
   (`audit_route_registry.rs:540-567`) ; un routeur monté depuis `crate::mcp` y échapperait **en silence** — ou, s'il
   était lu, la ferait rougir ; la couche CSP ne couvre que ce qui précède `.layer` (`lib.rs:1225-1227`).
-- **Retenu** : gestionnaire mince dans `routes/mcp.rs`, route sur `main_router` avant le repli ; entrée
-  `("post", "mcp::recevoir", Traced, SansEcritureAuJournal)` ; `routes::mcp::autre_methode` inscrit aux appels
-  non-handlers.
+- **Retenu** : gestionnaire mince dans `routes/mcp.rs`, route sur un sous-routeur fusionné dans `main_router` avant le
+  repli (C-32-6-31) ; entrées `("post", "mcp::recevoir", Exempt("issue #723 — …"), SansEcritureAuJournal)` en 32-6a,
+  `Traced` en 32-6b, et `("fallback", "mcp::autre_methode", NoMatter(…), SansEcritureAuJournal)` ; le détecteur du
+  registre est étendu à `fallback(` (C-32-6-32). *(Révisé en validation P1, R2 = F8 et R8 = F7 : « inscrit aux appels
+  non-handlers » était impossible — `appels_non_handlers` ne voit pas ce site — et `Traced` faux avant la 32-6b.)*
 - **Écartées** : `any(…)` (forme non lue par l'extracteur) ; un `nest`/`merge` d'un routeur MCP après `build_router`
   (hors CSP : un `GET /mcp` désactivé se distinguerait d'une route absente par l'en-tête CSP).
 - **Réversible** : oui.
@@ -316,4 +326,54 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   fixe, sans donnée.
 - **Écartées** : *best-effort* (un envoi sans trace, muet) ; écrire après l'envoi (la durée serait exacte, l'envoi non
   garanti tracé).
+- **Réversible** : oui.
+
+### C-32-6-31 — Le canal : un sous-routeur à état propre, `EtatMcp` (validation P1, F3 = R6)
+
+- **Contexte** : la forme `post(routes::mcp::recevoir)` exclut une fermeture (registre des routes) ; le gestionnaire a
+  besoin de la `Lecture` du MCP, de la `Trace`, du registre, du service statique et du délai, qu'`AppState` ne porte
+  pas ; une `Extension` manquante rendrait un 500, donc un `/mcp` reconnaissable. L'orchestrateur rappelle que Q11
+  interdit une variable `.env` et un second compte MariaDB, **non** un champ d'`AppState`.
+- **Retenu** : `Router::<EtatMcp>::new().route("/mcp", …).with_state(EtatMcp { … })`, construit dans
+  `build_router_avec_registre`, fusionné dans `main_router` avant le repli et la couche CSP. L'état est **obligatoire à la
+  compilation** ; `EtatMcp` porte `app: AppState`, `lecture`, `trace`, `registre`, `statique`, `delai_outil`.
+- **Écartées** : un champ d'`AppState` — `AppState` ignore `static_dir`, et les sept constructions par littéral devraient
+  fournir un pool que rien ne garantirait en lecture seule (repli écrit si la fusion d'Axum ne se prêtait pas au
+  sous-routeur) ; une `Extension` (500 si absente) ; une fermeture (illisible par le registre des routes).
+- **Réversible** : oui.
+
+### C-32-6-32 — Le détecteur du registre des routes lit `fallback(routes::…)` (validation P1, R2 = F8)
+
+- **Contexte** : `extract_counted` ne lit que `post`, `put`, `delete`, `patch` (`audit_route_registry.rs:496-517`) ;
+  `appels_non_handlers` écarte tout chemin qui contient un blanc avant la première `(` (`:681-684`) : un
+  `.fallback(routes::m::h)` échappe aux deux.
+- **Retenu** : `fallback` devient un « verbe » d'`extract_counted`, **seulement** si l'argument commence par `routes::`
+  (le `ServeDir::new(…).fallback(ServeFile::new(…))` du repli n'est pas une route) ; `appels_non_handlers` compte
+  `fallback(` parmi les constructeurs de gestionnaire ; témoins sur source factice.
+- **Écartées** : retirer l'instruction et laisser `autre_methode` hors registre (un gestionnaire accroché par
+  `.fallback(` pourrait demain muter sans que rien le signale) ; monter `get`/`put`/`delete`/`patch` séparément (OPTIONS
+  et les méthodes non nommées tomberaient au 405 d'Axum, distinct de celui de `ServeDir`).
+- **Réversible** : oui.
+
+### C-32-6-33 — Une seule traduction `AppError` → réponse MCP, exhaustive ; aucun `IntoResponse` d'`AppError` (validation P1, F5, R15)
+
+- **Contexte** : `impl IntoResponse for AppError` (`errors.rs:1520`) rend le corps de l'API, et `Validation(msg)`
+  recopie `msg` (`:1538-1540`) ; seule la traduction de `Forbidden` était écrite.
+- **Retenu** : `mcp::textes::depuis_app_error`, `match` exhaustif sans `_` : `Forbidden` → outil inconnu, `NotFound` →
+  `Introuvable`, demandes invalides → `ArgumentsInvalides { argument: "(demande)", … }` sans le message, le reste →
+  `Interne` ; l'authentification a ses 401 et 500 fixes ; les gestionnaires rendent `Response` ; garde
+  `mcp_ne_rend_jamais_une_app_error`.
+- **Écartées** : laisser `?` remonter une `AppError` au framework (corps de l'API, message recopié) ; un `_ =>
+  Interne` (une variante neuve passerait sans examen).
+- **Réversible** : oui.
+
+### C-32-6-34 — Les gardes lexicales : frontières de mot, forme qualifiée, commentaires écartés, témoins des deux sens (validation P1, F12, R12)
+
+- **Contexte** : `mcp::` attrapait `cles_mcp::` ; `.executer(` ratait `McpTool::executer(…)` ; un doc-comment
+  décrivant une forme interdite aurait fait rougir la garde de lecture seule.
+- **Retenu** : `\bmcp::`, `\bexecuter\s*\(` hors `fn executer`, lignes de commentaire écartées partout, chaque garde
+  éprouvée sur une source factice qui doit rougir et une qui ne doit pas ; `pool_lecture_seule_en_un_lieu` ne balaie que
+  `crates/kesh-api/src` et le dit.
+- **Écartées** : des gardes syntaxiques par `syn` pour toutes (plus lourdes ; gardées pour le seul cas où le texte ne
+  suffirait pas, à juger au développement).
 - **Réversible** : oui.
