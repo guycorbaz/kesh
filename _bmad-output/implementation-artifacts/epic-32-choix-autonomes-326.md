@@ -510,6 +510,9 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   `CORPS_JSON_INVALIDE`, `CORPS_REQUETE_INVALIDE`) n'ont pas d'`id` ; le test `aucun_refus_au_format_de_l_api` le fige.
 - **Écartée** : `"id": null`, qu'un client qui valide les messages contre le schéma de la révision servie refuserait.
 - **Réversible** : oui (cinq constantes).
+- *(Annoté le 2026-10-25, revue de code P1 de la 32-6a : écart à la fiche **accepté par l'orchestrateur**. La lentille A
+  note que la spike montre le serveur de référence rendant `"id":null` (`epic-32-spike-mcp.md:124`) ; le schéma figé,
+  qui prime, le déclare facultatif et non nul.)*
 
 ### C-32-6-43 — Les tests de transport passent par `oneshot`, un seul sur le fil
 
@@ -594,3 +597,47 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   l'AC-a9 et son témoin) ; `/0` est accepté à l'écriture — à la lecture, `0.0.0.0/0` admet tout client IPv4 : c'est
   un choix d'administrateur, que le manuel (32-7) devra nommer ; rien n'est changé à l'écriture.
 - **Réversible** : sans objet.
+
+## Choix de la remédiation de la revue de code P1 de la 32-6a (2026-10-25)
+
+### C-32-6-52 — L'`Origin` refusée par la société de la clé rend le 401 fixe ; le 403 reste avant la clé
+
+- **Contexte** : B1 = E3 = A4 — à l'étape 9, une clé **valide** présentée sous une origine admise par une autre société
+  servie rendait 403, une clé inconnue 401 : un oracle de validité de la clé, sur une installation à plusieurs sociétés.
+- **Retenu** : l'étape 9 rend `ReponseMcp::NonAuthentifie`, octet pour octet le 401 d'une clé inconnue (test `origine`,
+  mutation P1-Mp4). Le refus d'une origine qu'**aucune** société servie n'admet reste un 403 à l'étape 4, **avant**
+  l'authentification : il ne dépend pas de la clé.
+- **Ce qui reste** : la clé a posé sa dernière utilisation (comme au 401 de l'étape 8, angle mort écrit).
+- **Réversible** : oui.
+
+### C-32-6-53 — Les en-têtes de contrôle répétés sont refusés
+
+- **Retenu** (E4) : deux lignes `Origin` → 403, deux `Authorization` → 401, deux `Content-Type` → 415, deux
+  `MCP-Protocol-Version` → 400 — jamais la première lue en silence (fonction `transport::unique`, test
+  `en_tetes_repetes_refuses`, mutations P1-Mp5 à Mp8). Les blancs autour du jeton sont rognés (`Bearer  x` admis, témoin
+  au même test). Les autres en-têtes ne gouvernent rien et ne sont pas lus ; `X-Forwarded-For` répété est lu ligne par
+  ligne (AC-a9 (p)), à dessein.
+- **Réversible** : oui.
+
+### C-32-6-54 — `max_statement_time` sur le pool des outils, et `kesh_version` le rend
+
+- **Contexte** : E1 = B2 — le délai d'un outil abandonnait le futur, mais MariaDB poursuivait l'instruction après la
+  fermeture de sa connexion (mesuré : `326a-mut-P1-Mp1-g2-seul.log`), si bien que le pool de trois connexions ne bornait
+  plus la charge.
+- **Retenu** : `kesh_db::pool::pool_lecture_seule(depuis, max, delai_instruction)` pose, dans `after_connect`, `SET
+  SESSION max_statement_time = <délai>` (secondes au millième) à côté du `READ ONLY` ; le câblage de `lib.rs` lui passe
+  le délai **du registre** (une seule source). Pour que le câblage s'éprouve sans service de test qui dormirait,
+  `serveur_mcp::etat` lit aussi `@@session.max_statement_time` et `kesh_version` le rend (`delaiInstructionS`) — un
+  réglage de la session, comme `lectureSeule`, aucune donnée des livres. Tests (g) de `pool_lecture_seule.rs` et
+  `le_delai_du_registre_borne_l_instruction` ; mutations P1-Mp1, P1-Mp2.
+- **Écartée** : un outil de test qui lancerait `SELECT SLEEP(n)` par l'API — impossible sans ouvrir le pool hors de
+  `services` (`Lecture::pool` est `pub(in crate::services)`), ou sans un service de test en production ; la preuve
+  côté serveur est faite sur la fabrique de production, au dépôt.
+- **Réversible** : oui.
+
+### C-32-6-55 — Le sous-chemin de `KESH_PUBLIC_BASE_URL` est retiré avant d'en tirer l'origine propre
+
+- **Retenu** (A2) : `https://kesh.example/app` donne l'origine propre `https://kesh.example`, comme l'AC-a10 l'écrit
+  (« réduite à son origine ») ; une base avec identifiants, sans schéma ou de schéma autre n'en donne toujours aucune.
+  Test unitaire `origines_normalisees`, mutation P1-Mp11.
+- **Réversible** : oui.
