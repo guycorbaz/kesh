@@ -1050,6 +1050,47 @@ Points de *À recontrôler à l'étape 0 du développement* :
 - **Points P7-6, P8-1 à P8-4** : propres à la partie a (manuel, fiche d'epic, registre), traités à son étape 0 ; aucun
   ne concerne la partie b.
 
+#### 32-5d (le 2026-10-25, contre `d993106c`)
+
+`git log -1` au départ : `d993106c Story 32-5b : l'authentification par clé MCP (refs #723) (#752)` — 32-5a (`b723e3d9`)
+et 32-5b fusionnées. Les lignes ci-dessous sont celles de `d993106c` (`git show d993106c:<fichier> | sed -n …`) ; la fiche
+citait `e59d63e8`, et la 32-5a a déplacé plusieurs passages.
+
+- **Fait 8** (`backup.rs`) : doc de `RESET_PRESERVED_TABLES` l. 105-117 (la fiche : 99-110), dont l. 111 « les clés
+  d'API — un principal n'est pas une donnée de la société » ; la liste l. 118-125, **six** noms (`api_keys`,
+  `companies`, `onboarding_state`, `password_reset_tokens`, `refresh_tokens`, `users`) ; `reset_cleared_tables` l. 136 ;
+  « les six tables » l. 855 (la fiche : 848-851) ; règle 4, doc l. 916-919 « sont exactement `users` et `api_keys` »,
+  assertion l. 1039-1041 `BTreeSet::from(["api_keys", "users"]),` (la fiche : 1025-1036). `mcp_keys` est bien à
+  `TABLES_TO_TRUNCATE` depuis la 32-5a (l. 78, enfant de `companies` et `users`) : la remise à zéro la **vide** à
+  `d993106c`, ce que la fiche annonçait (« jusqu'à 32-5d, la remise à zéro vide `mcp_keys` »). `kesh-seed` : toujours
+  aucun test de base (fait 8, inchangé).
+- **Fait 9** (`companies.rs`) : `RevokedApiKey` l. 247, `OrphanPrincipals` l. 257, `is_empty` l. 269-271
+  (`self.user_ids.is_empty() && self.api_keys_revoked.is_empty() && self.api_keys_repointed == 0`) ;
+  `reattach_orphan_principals_in_tx` l. 308 (la fiche : 278-385), ordre des verrous l. 306-307 « `users` puis
+  `api_keys` » ; les **quatre** consommateurs : `companies.rs:682-683`, `kesh-seed/src/lib.rs:646-647`,
+  `routes/onboarding.rs:1245-1246`, `auth/bootstrap.rs:432-433` (inchangés). Tests à égalité stricte :
+  `onboarding_audit_e2e.rs:2090-2091` (la fiche : 2055-2070) et `:2491-2492` (6c ; la fiche : 2460-2472), lectures de
+  champ `:2385-2388`, `:2430` ; `bootstrap.rs:1237-1238`, `:1307`, `:1336` (inchangés) ;
+  `companies_repository.rs:619-862` (inchangés). Montage commun `installations_atteintes.rs:39-40` (la fiche : 38-41).
+  **Écart non nommé par la fiche** : `onboarding_audit_e2e.rs` a **son propre** montage d'orphelins, `make_orphans`
+  (l. 2268-2292, `UPDATE api_keys` l. 2286), distinct de celui de `installations_atteintes.rs` — traité de même
+  (C-32-5-47). Ordre des verrous écrit à : `companies.rs:563`, `kesh-seed/src/lib.rs:489`, `bootstrap.rs:11-12`,
+  `routes/admin.rs:510-511`, et **`MULTI-TENANT-SCOPING-PATTERNS.md:339-340`** (la fiche : 327-328).
+- **Fait 17** (manuels, inchangés depuis la 32-5a sur ces passages) : `admin-manual.tex:1414` « Elle \textbf{conserve}
+  les utilisateurs et les clés d'API » ; `:1416` « \textbf{révoque} les clés d'API qui la désignaient » ; **`:2467`**
+  (la fiche : 2461) « Les clés d'API qui la désignaient sont \textbf{révoquées} » ; `user-manual.tex:190` « \textbf{conserve}
+  les utilisateurs et les clés d'API » ; **`:3204`** (la fiche : 3202) « les utilisateurs ou clés d'API rattachés à la
+  société » ; **`:3213`** (la fiche : 3209-3212) « les clés d'API révoquées ». Le manuel ne porte encore aucune section
+  *Le serveur MCP* (32-7) : `grep -n 'MCP' admin-manual.tex` → l. 2230, 2237, 2249, 2324 (sauvegarde, 32-5a) et 2925.
+- **32-5b** : `mcp_keys::revoke_in_tx(tx, company_id, id, version)` existe (`repositories/mcp_keys.rs:275`, verrou
+  optimiste `revoked_at IS NULL`) ; `find_active_auth_by_key_hash` joint `companies` **et** exige
+  `u.company_id = k.company_id` (C-32-5-43) : une clé repointée **avec** son créateur rattaché à la même société
+  reste compatible avec la règle des orphelins, qui rattache utilisateurs et clés à la même cible.
+- **§ *À recontrôler à l'étape 0 du développement*** : P7-6, P8-1 à P8-4 et `user-manual.tex:1914` sont propres à la
+  partie a, traités à son étape 0 (ci-dessus) ; **aucun ne concerne la partie d**. § *Pour la 32-5b* et § *Pour la
+  32-5c* : rien pour la partie d (E3, sur `EXEMPT_MIGRATIONS`, ne la concerne pas : la 32-5d ne touche pas
+  `post_restore.rs`). Aucune section « Pour la 32-5d » n'existe.
+
 ### Completion Notes List
 
 #### 32-5a
