@@ -399,7 +399,7 @@ async fn caisse_id(pool: &MySqlPool, company_id: i64) -> i64 {
 /// la correction de #372 vue du client : le mode n'y change rien.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn settle_in_cash_returns_200_and_settles(pool: MySqlPool) {
-    let (company_id, admin_id) = seed_base(&pool).await;
+    let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
     let (id, _v) = create_validated_invoice(
         &pool,
@@ -450,7 +450,7 @@ async fn settle_in_cash_returns_200_and_settles(pool: MySqlPool) {
 /// facture validée se règle.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn settle_on_draft_invoice_returns_409(pool: MySqlPool) {
-    let (company_id, admin_id) = seed_base(&pool).await;
+    let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
     let (inv, _) = invoices::create(
         &pool,
@@ -497,7 +497,7 @@ async fn settle_on_draft_invoice_returns_409(pool: MySqlPool) {
 /// tolérance d'un jour — voir le doc-comment de `settle_invoice`.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn settle_rejects_settled_on_before_invoice_date(pool: MySqlPool) {
-    let (company_id, admin_id) = seed_base(&pool).await;
+    let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
     let (id, _v) = create_validated_invoice(
         &pool,
@@ -535,7 +535,7 @@ async fn settle_rejects_settled_on_before_invoice_date(pool: MySqlPool) {
 async fn removed_mark_paid_routes_are_gone(pool: MySqlPool) {
     // ⚠️ Le seed est nécessaire au LOGIN, pas au cas lui-même : sans utilisateur,
     // `login` échoue avant d'atteindre la route qu'on veut voir absente.
-    let (_company_id, _admin_id) = seed_base(&pool).await;
+    let (_admin_id, _company_id) = seed_base(&pool).await;
     let app = spawn_app(pool.clone()).await;
     let token = login(&app).await;
     for chemin in ["mark-paid", "unmark-paid"] {
