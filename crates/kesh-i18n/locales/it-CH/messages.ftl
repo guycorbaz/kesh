@@ -2689,6 +2689,7 @@ audit-log-action-mcp-key-created = Chiave del server MCP creata
 audit-log-action-mcp-key-revoked = Chiave del server MCP revocata
 audit-log-action-mcp-key-send-validation-changed = Convalida prima dell'invio di una chiave del server MCP modificata
 audit-log-action-mcp-server-settings-updated = Impostazioni del server MCP modificate
+audit-log-action-mcp-tool-called = Strumento del server MCP chiamato
 audit-log-action-auth-password-reset-requested = Reimpostazione della password richiesta
 audit-log-action-auth-password-reset-completed = Reimpostazione della password completata
 audit-log-action-admin-break-glass-reset = Reimpostazione d'emergenza dell'amministratore

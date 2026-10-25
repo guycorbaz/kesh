@@ -24,6 +24,8 @@
 //! 11. répartiteur : liste close des méthodes ; tools/call → outil_pour(nom,
 //!     portées) → politique::autoriser → executer (dans une tâche qui possède
 //!     ses connexions, attendue sous le délai — C-32-6-56) → politique::appliquer
+//!     → serveur_mcp::journaliser_appel (fail closed) — le tout dans la tâche de
+//!     l'appel, qu'un abandon du client n'annule pas (C-32-6-58)
 //! 12. reponse::rendre — seule sortie
 //! ```
 //!
@@ -102,7 +104,8 @@ pub struct EtatMcp {
     pub(crate) garde: Lecture,
     /// La lecture **des outils**, en lecture seule (AC-a26, C-32-6-41).
     pub(crate) lecture: LectureOutils,
-    /// La trace (dernière utilisation de la clé ; journal, 32-6b).
+    /// La trace : dernière utilisation de la clé, journal des appels d'outil
+    /// (32-6b).
     pub(crate) trace: Trace,
     /// Les outils servis et leur délai.
     pub(crate) registre: Arc<Registre>,
