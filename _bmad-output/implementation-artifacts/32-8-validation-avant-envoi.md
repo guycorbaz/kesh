@@ -1543,7 +1543,9 @@ jeton). À l'étape 0 de la 32-8b, **greper la valeur** dans cette fiche et dans
 la remplacer partout par 24 576 / 24 577 / 24 Kio — AC-B4, AC-B9, `taille_des_envois`, `contenu_modifie_controle`
 (65 536 admis, 65 537 refusé), le compteur d'écran « N octets sur … » de la 32-8c, le point 6 pour Guy et le manuel de la
 32-8c ; liste non close, c'est le grep qui la ferme. Si la 32-8 est déjà fusionnée avec 65 536, c'est la 32-9a qui amende
-la constante et ces sites. *(Note corrigée le 2026-10-25, validation P3 de la fiche 32-9, R1 : la première version ne
+la constante et les sites **serveur**, ainsi que le manuel et le CHANGELOG ; le compteur d'écran et son texte i18n
+(frontend, `kesh-i18n`) sont relevés et déclarés par la 32-9a, et corrigés par une story frontend ou par la 32-11 (fiche
+32-9, règle des cinq modules). *(Note corrigée le 2026-10-25, validation P3 de la fiche 32-9, R1 : la première version ne
 nommait que quatre sites ; motif élargi le même jour, validation P4 de la 32-9, H2.)*
 
 Ligne lue citée au Change Log pour chacun :
