@@ -423,7 +423,10 @@ en portée `local`/`user` (jamais en `.mcp.json` versionné sauf `${VARIABLE}`, 
 au manuel (C-32-5-10) ; (3) **la restauration d'un serveur activé** : les réglages sont restaurés tels quels (hypothèse
 Q7, C-32-5-11) — l'écran et le manuel disent qu'un serveur actif dans la sauvegarde l'est après l'import ; (4) **les
 renvois** depuis les passages corrigés par la 32-5d : `admin-manual.tex` § remise à zéro (l. 1414) et réparation
-(l. 1416, 2461), `user-manual.tex` l. 190, 3202, 3209-3212.
+(l. 1416, 2461), `user-manual.tex` l. 190, 3202, 3209-3212. *(Annoté le 2026-10-25, développement de la 32-5d : à
+`20cbf50a`, ces passages sont aux l. 1414, 1416, 2467 et 2472 du manuel d'administration, et aux l. 190, 3204-3205 et
+3214-3215 du manuel utilisateur ; aucune phrase n'y renvoie encore à une page des clés MCP, que la 32-7 écrira —
+C-32-5-48.)*
 
 ### 32-8 — La validation avant envoi
 
