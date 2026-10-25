@@ -124,9 +124,10 @@ impl McpScopes {
         Self::new(parsed)
     }
 
-    /// Décode la colonne `scopes` (tableau JSON de chaînes). **Strict** : JSON
+    /// Lit une **entrée d'API** (tableau JSON de chaînes). **Strict** : JSON
     /// invalide, autre chose qu'un tableau de chaînes, chaîne inconnue ou
-    /// tableau vide → erreur.
+    /// tableau vide → erreur. Une ligne **stockée**, elle, se lit avec
+    /// tolérance par [`StoredMcpScopes::from_stored_json`] (C-32-5-37).
     pub fn from_json(json: &str) -> Result<Self, McpScopeError> {
         let raw: Vec<String> =
             serde_json::from_str(json).map_err(|e| McpScopeError::InvalidJson(e.to_string()))?;
@@ -411,8 +412,9 @@ mod tests {
                 "{s:?} doit être refusée"
             );
         }
-        // Au décodage de la colonne : une chaîne inconnue parmi des connues
-        // fait échouer TOUT l'ensemble — jamais ignorée (mutation Ma3).
+        // En entrée d'API : une chaîne inconnue parmi des connues fait échouer
+        // TOUT l'ensemble (mutation Ma3). La lecture d'une ligne stockée, elle,
+        // l'ignore (C-32-5-37, `stored_scopes_*`).
         assert_eq!(
             McpScopes::from_json(r#"["books:read","books:write"]"#),
             Err(McpScopeError::Unknown("books:write".into()))
@@ -473,7 +475,17 @@ mod tests {
 
     #[test]
     fn stored_scopes_without_any_known_scope_are_not_usable() {
-        for j in [r#"["books:write"]"#, "[1, null]", "{}", "pas du json", "[]"] {
+        // Revue P2 (R3) : la comparaison reste exacte — une portée connue en
+        // majuscules ou entourée d'espaces n'est PAS reconnue.
+        for j in [
+            r#"["books:write"]"#,
+            r#"["BOOKS:READ"]"#,
+            r#"[" books:read"]"#,
+            "[1, null]",
+            "{}",
+            "pas du json",
+            "[]",
+        ] {
             let s = StoredMcpScopes::from_stored_json(j);
             assert!(s.known().is_empty(), "{j}");
             assert_eq!(
@@ -487,6 +499,10 @@ mod tests {
             ["1", "null"]
         );
         assert_eq!(StoredMcpScopes::from_stored_json("{}").unknown(), ["{}"]);
+        assert_eq!(
+            StoredMcpScopes::from_stored_json(r#"["BOOKS:READ"," books:read"]"#).unknown(),
+            ["BOOKS:READ", " books:read"]
+        );
         // L'entrée d'une API, elle, reste stricte (mutation Ma3).
         assert!(McpScopes::from_json(r#"["books:write","books:read"]"#).is_err());
     }
