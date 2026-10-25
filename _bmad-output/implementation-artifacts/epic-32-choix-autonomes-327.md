@@ -321,3 +321,19 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
   des gardes quand l'écran ne peut pas calculer l'état.
 - **Réversible** : oui — un état ajouté plus tard ne change rien au manuel ; lié au point 4 soumis à Guy (créateur
   non affiché).
+- *Annotation du 2026-10-25, validation P4 (R7 (a), F8)* : « refus avant `touch_last_used`, `:100` » se lit `:94-99`
+  pour les refus et `:101` pour la pose (la l. 100 est vide). Et « quand l'écran ne peut pas calculer l'état » ci-dessus
+  est trop fort : il le pourrait par `/api/v1/users` (`UserResponse` porte `role` et `active`,
+  `routes/users.rs:82-86`) — voie écartée ci-dessus pour une requête et un couplage de plus, non pour impossibilité.
+
+### C-32-7-26 — `'admin-mcp-sends'` n'est pas ajouté à `FAMILLES_RESOLUES['nav-']`
+
+- **Contexte** (validation P4, R9 = F7) : l'AC-14 (d) traitait l'absence de `'admin-mcp-sends'` comme « un écart à
+  déclarer » de la 32-8c ; la fiche 32-8 ne prescrit ni l'entrée de famille ni le recompte de `sitesTotal`
+  (`command grep -nF 'FAMILLES_RESOLUES'` sur la fiche 32-8 → rien). `'nav-'` n'est pas à couverture close
+  (fait 21) : l'absence ne fait rougir aucun test.
+- **Retenu** : écrire le fait — son absence est l'état attendu, constatée à l'étape 0 ; la 32-7 n'ajoute que
+  `'admin-mcp'` (correction de R9).
+- **Écartées** : l'ajouter aussi et le déclarer (correction de F7) — une entrée d'une autre story, qu'aucun test
+  n'exige, élargirait le diff sans rien prouver.
+- **Réversible** : oui — une ligne d'un tableau de test.
