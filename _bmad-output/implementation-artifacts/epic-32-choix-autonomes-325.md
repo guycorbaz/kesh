@@ -460,3 +460,37 @@ de ligne cités sont ceux de `e59d63e8`.
 - **#748** — audit d'idempotence (`:85`, `:89`, au présent depuis la 25-2-c) et justifications de `20260909000001` et
   `20260915000001` qui se disent « dans la fenêtre ».
 
+### C-32-5-37 — Une portée inconnue se tolère à la lecture (revue de code P1 de la 32-5a, E1 ; décision de l'orchestrateur)
+
+- **Contexte** (E1, MEDIUM ; B2) : le `CHECK` de `scopes` ne contrôle que « tableau JSON non vide », et l'import ne
+  contrôle pas le contenu des cellules ; une sauvegarde d'une version future qui ajoute une portée sans ajouter de table
+  s'importe donc dans la 0.16.0. Le décodage strict de la lecture rendait alors **toute** `list_by_company` en erreur
+  (un `fetch_all`), la clé fautive impossible à relire donc à révoquer (`find_by_id_for_company` décodait aussi), et
+  l'authentification en erreur de base (un 500) plutôt qu'en refus.
+- **Retenu** : un type de lecture, `StoredMcpScopes` (`entities/mcp_key.rs`), qui n'échoue jamais — portées connues
+  gardées, le reste (chaîne inconnue, élément qui n'est pas une chaîne, texte qui n'est pas un tableau) mis de côté ; le
+  dépôt lit les lignes en texte brut et journalise ce qui est mis de côté par `tracing::warn!`, **en nommant l'id de la
+  clé, jamais le condensat**. `McpKey.scopes` devient un `StoredMcpScopes` ; `McpKeyAuthRow.scopes` reste un
+  `McpScopes` **non vide** : `find_active_auth_by_key_hash` rend `None` pour une clé sans aucune portée connue (et le
+  journalise). **Le type et le dépôt suffisent à l'obligation** « une clé sans portée connue n'authentifie pas » : rien
+  n'est reporté à la 32-5b, qui doit seulement s'appuyer sur `McpKeyAuthRow` (cf. fiche, *À recontrôler à l'étape 0*,
+  32-5b). L'`impl Decode for McpScopes` est retirée : plus rien ne lit une portée strictement depuis la base.
+- **Ce qui ne change pas** : l'écriture (on ne stocke qu'un `McpScopes`) et les entrées d'API (`McpScopes::parse`,
+  `from_json`) restent strictes ; Ma3 reste vraie et tuée par le même test.
+- **Écartées** : garder le décodage strict et reporter la tolérance à la 32-5b/c (l'option du rapport E1 — la liste
+  serait restée cassée dans `main` entre deux parties) ; ignorer silencieusement sans journal (une portée qu'on croit
+  accordée disparaîtrait sans trace).
+- **Mutations** : Mp1 (décodage redevenu strict) tuée ; Mp2 (clé sans portée connue qui authentifie, par une portée
+  inventée) tuée. « Portée inconnue acceptée telle quelle » **n'est pas écrivable** : `McpScope` est un `enum` clos, et
+  `McpKeyAuthRow.scopes` un `McpScopes` — une chaîne inconnue n'a aucune représentation où la porter.
+- **Réversible** : oui.
+
+### Constat B2 de la revue P1 — l'en-tête de la migration dit « tableau trié » (P8 : il ne se corrige pas)
+
+Le commentaire de colonne `scopes` et l'en-tête de `20261025000001_mcp_keys_and_server_settings.sql` disent « tableau
+trié » ; l'ordre stocké est celui de `McpScope::ALL` (`books`, `invoices`, `contacts`, `documents`, `prompts`), non
+l'ordre alphabétique. La ligne de la migration est inscrite à `crates/kesh-db/migrations.sha384` depuis `67e31b36` :
+**P8 interdit de toucher au fichier**, même pour un commentaire. La précision vit ici, et au doc-comment de
+`McpScopes` (« l'ordre est celui de `McpScope::ALL` »). L'autre moitié de B2 (une ligne illisible qui faisait échouer la
+liste) est fermée par C-32-5-37.
+

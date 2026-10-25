@@ -880,6 +880,32 @@ développement fait chaque correction **à l'étape 0**, et la déclare au Chang
   hors des deux § que vise le grep. À relire à l'étape 0 : la phrase doit rester vraie après la 32-5a (une version qui
   importe encore cette sauvegarde) ; sinon, la borner comme les mentions du format 1 du manuel d'administration.
 
+### Pour la 32-5b (ajouté à la revue de code P1 de la 32-5a)
+
+- **Les portées se lisent avec tolérance depuis la 32-5a** (C-32-5-37) : `McpKey.scopes` est un `StoredMcpScopes`
+  (portées connues + `unknown()`), non plus un `McpScopes` ; `McpKeyAuthRow.scopes` reste un `McpScopes` non vide, et
+  `find_active_auth_by_key_hash` rend déjà `None` pour une clé sans aucune portée connue. `authentifier` (AC-b3)
+  s'appuie sur `McpKeyAuthRow` et **n'a pas à refaire ce refus** ; il ne relit jamais les portées par un autre chemin.
+  L'`impl Decode for McpScopes` n'existe plus. `McpScope` (alias `Portee` en AC-b2) est inchangé.
+- Le test AC-b6 (clé restaurée) peut s'appuyer sur `mcp_tables_roundtrip_…` (`admin_backup_e2e.rs`), qui éprouve déjà
+  qu'une clé révoquée après l'export redevient active à l'import.
+
+### Pour la 32-5c (ajouté à la revue de code P1 de la 32-5a ; LOW reportés)
+
+- **B1 = E4 — les blancs Unicode du nom.** `chk_mcp_keys_name_nonempty` (`REGEXP '[^[:space:]]'`) refuse U+00A0 en base
+  (éprouvé à la main au développement), mais U+3000 et U+200B ne sont pas éprouvés, et la migration ne se modifie plus
+  (P8). La validation de la route (AC-c3) rogne et refuse un nom fait de blancs **Unicode** (`char::is_whitespace`, plus
+  les caractères de largeur nulle), avec ses cas de test.
+- **B3 — `mcp_server_settings.version` sans `CHECK (version >= 1)`.** Une ligne à `version = 0` (SQL à la main,
+  sauvegarde fabriquée) serait lue comme existante, et tout enregistrement à `version = 0` rendrait un conflit à
+  jamais. Une contrainte exigerait une migration de plus : la route (AC-c4) ne fait jamais confiance à une version 0
+  **lue** (elle rend la version de la ligne), et la 32-5c décide, au registre, si la migration se justifie.
+- **E3 — les justifications `Durable` réécrites par la 32-5a** (`20260917000001`, `20261009000001`, `20261010000002`,
+  `20261011000001`, `20261015000001`) disent « sans objet depuis 20261025000001 … refusée au contrôle de couverture »
+  sans porter le marqueur `Hors fenêtre` : `exemptions_claiming_out_of_window_really_are_out_of_window` ne les contrôle
+  pas. Vrai aujourd'hui ; à garder, ou à reformuler, à la prochaine story qui touche `EXEMPT_MIGRATIONS` (32-5c n'en
+  touche pas : relire, constater, reporter à la suivante si rien ne change).
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -1025,7 +1051,9 @@ Points de *À recontrôler à l'étape 0 du développement* :
 | Ma7 (`parse_and_verify` tolère une table absente) | `ac10_la_sauvegarde_de_la_0_14_0_est_refusee` — la fixture s'importait en 200 |
 
 **Décomptes** (recomptés, périmètre `deb3b250..e548574c`) : **28 fichiers** hors `_bmad-output` (`git diff --name-status
-deb3b250 e548574c | grep -vc _bmad-output`), dont 7 neufs ; **30 tests neufs** (`grep -cE '#\[(sqlx::)?test'` aux deux
+deb3b250 e548574c | grep -vc _bmad-output`), dont 7 neufs *(annoté à la revue de code P1, A1 : faux — **6** neufs,
+`git diff --name-status deb3b250 e548574c | grep -v _bmad-output | awk '{print $1}' | sort | uniq -c` → 6 `A`, 22 `M` ;
+la File List en nommait bien six)* ; **30 tests neufs** (`grep -cE '#\[(sqlx::)?test'` aux deux
 bornes) : `mcp_keys_repository.rs` 0 → 21, `entities/mcp_key.rs` 0 → 7, `entities/mcp_server_settings.rs` 0 → 1,
 `admin_backup_e2e.rs` 3 → 4 ; `admin_full_import_e2e.rs` 55 → 55 (`ac10` renommé, non ajouté). Migrations 83 → 84.
 
