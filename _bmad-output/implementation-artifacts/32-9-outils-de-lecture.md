@@ -41,7 +41,7 @@ texte qu'il pourrait prendre pour une consigne — afin qu'un libellé piégé n
   enveloppe « donnée non fiable »**, que les prompts standard apprennent à ne pas suivre ; des **fixtures piégées** dans
   `kesh-seed` et un test qui les voit sortir enveloppées ; la **matrice portée × outil générée** et comparée au manuel
   (aussi au § *Points d'attention*, l. 178 : « Inventaire outil → portée testé […] matrice portée × outil générée et
-  comparée au manuel », 32-6 et 32-9 — la fiche 32-6 la renvoie à la 32-9a, l. 1239-1240). AC : test d'autorisation et
+  comparée au manuel », 32-6 et 32-9 — la fiche 32-6 la renvoie à la 32-9a, l. 1246-1247). AC : test d'autorisation et
   de lecture seule par outil ; enveloppe sur chaque champ libre, **inventaire clos** ; matrice égale au manuel. 32-9a :
   plan comptable, écritures (liste, détail), grand livre, balance, bilan, compte de résultat, postes ouverts ; factures
   clientes (liste, détail, échéances, impayées), balance âgée, factures fournisseur (liste, détail). 32-9b : contacts
@@ -56,12 +56,12 @@ texte qu'il pourrait prendre pour une consigne — afin qu'un libellé piégé n
 - **Fiche 32-6** : trait `McpTool` (`portee()` sans défaut, `schema_entree() -> &'static str`, `executer(&self,
   &ContexteMcp, Value) -> … Result<Donnees, ErreurOutil>`) et `ContexteMcp` (`acces()`, `lecture()`, rien d'autre ;
   constructeur `pub(super)` ; « la 32-9a amendera `ContexteMcp` et cette garde en connaissance de cause » pour la `Trace`
-  des rapports) — AC-a16, l. 477-494 ; `tools/list` filtré (AC-a17, l. 495-501, dont « clé `contacts:read` seule →
+  des rapports) — AC-a16, l. 484-501 ; `tools/list` filtré (AC-a17, l. 502-508, dont « clé `contacts:read` seule →
   `[]` ») ; hors portée = inconnu, liste blanche des erreurs de service (AC-a18) ; `arguments::<T>()` à
-  `deny_unknown_fields` (AC-a19, l. 527) ; erreurs sans texte libre (AC-a20) ; registre et outils de test (AC-a21,
-  l. 550) ; « `Registre::standard()` porte exactement `["kesh_version"]` — la 32-9 l'amendera » (AC-a13, l. 421-426) ;
-  `Donnees` sans `Debug`, `Donnees::nouvelles` public, appelé en `src/mcp/outils/` seulement (AC-a23, l. 571 ; AC-a30,
-  l. 710) ; `kesh_version` (AC-a28, l. 662) ; règle commune des gardes lexicales (en tête des AC).
+  `deny_unknown_fields` (AC-a19, l. 534) ; erreurs sans texte libre (AC-a20) ; registre et outils de test (AC-a21,
+  l. 557) ; « `Registre::standard()` porte exactement `["kesh_version"]` — la 32-9 l'amendera » (AC-a13, l. 428-433) ;
+  `Donnees` sans `Debug`, `Donnees::nouvelles` public, appelé en `src/mcp/outils/` seulement (AC-a23, l. 578 ; AC-a30,
+  l. 710) ; `kesh_version` (AC-a28, l. 669) ; règle commune des gardes lexicales (en tête des AC).
 - **Fiche 32-8** : une seule représentation sous une clé `required`, **le texte** des blocs, joints par une ligne vide
   ; `structuredContent` ni déposé ni envoyé ; `BlocContenu` à relire à l'étape 0 (AC-B2, l. 528-539) ; rendu visible des
   caractères cachés par `rendre_visible` (AC-B3) ; plafond `MCP_ENVOI_OCTETS_MAX` = 65 536 octets (que la 32-9 ramène à 24 576, § *Les tailles mesurées*), `TropVolumineux`
@@ -185,7 +185,7 @@ Chaque fait a été lu ; la ligne est citée.
 
 Convention de compte (celle des 32-5, 32-6 et 32-8) : un crate pour `kesh-db`, `kesh-seed` et `kesh-i18n` ; un module de
 second niveau pour `kesh-api` ; `lib.rs` compte avec `routes` ; un fichier de test compte avec le module qu'il éprouve ;
-le manuel pour un.
+le manuel pour un, **le `CHANGELOG.md` avec lui** (validation P3, R9 : la documentation publiée à la release ; la convention de la 32-8 compte « docs, CHANGELOG » à part — écart déclaré, à trancher par l'orchestrateur ; compté à part, la 32-9a passerait à **six** modules et se redécouperait, le CHANGELOG revenant alors à la story de release).
 
 | Partie | Objet | Modules | 🗄️ |
 |---|---|---|---|
@@ -331,6 +331,42 @@ facture (`InvoiceSettlement.settlement_type`, `write_off_nature`) ne sont rendus
 | `kesh_pieces` | — | `.file_hash`, `.storage_path` | K | **non rendus, et non transmis à `src/mcp/`** : `pieces::lister` rend `PiecePublique`, qui ne les porte pas (AC-b1) | — |
 | `kesh_pieces` | — | `.creditor_iban`, `.is_qr_iban`, `.creditor_address_type`, `.creditor_name`, `.creditor_line1`, `.creditor_line2`, `.creditor_postal_code`, `.creditor_town`, `.creditor_country`, `.reference_type`, `.reference_value`, `.amount`, `.currency`, `.unstructured_message`, `.billing_information` | I | **non rendus, et non transmis** (`PiecePublique`) : contenu lu de la pièce, 0.17.0 (C-32-9-13) ; seul `qrLu` (booléen) en dit la présence | selon la largeur, posés et **jamais trouvés** (AC-b3) |
 
+### Les jeux d'arguments de l'inventaire (validation P3, F1)
+
+Chaque ligne à piège de l'inventaire sort sous **un** jeu d'arguments nommé ; `TEMOINS` (AC-a17) porte ces jeux, et
+`INVENTAIRE` (AC-a13) nomme celui de chaque ligne. Identifiants rendus par `semer` (`Pieges`) : **K1** (compte `Asset`
+lettrable, non bancaire), **K2** (compte `Expense`), **E** (l'écriture piégée, K2 au débit, K1 au crédit), **EA**
+(l'écriture d'achat de la facture fournisseur, que le dépôt libelle « Facture fournisseur … - {fournisseur} »), **CR**
+(le compte de rôle `Payable` de la société, contrepartie de l'achat), **F** (la facture), **FF** (la facture
+fournisseur), **X** (l'exercice renommé), **C**, **Fo** (le client, le fournisseur) ; en 32-9b, **P2** (la seconde
+pièce).
+
+| Outil | Jeu | Arguments | Lignes de l'inventaire qu'il fait sortir |
+|---|---|---|---|
+| `kesh_exercices` | J1 | `{}` | `nom` (X) |
+| `kesh_plan_comptable` | J1 | `{"limit": 70}` | `numero`, `nom` de K1 et de K2 |
+| `kesh_ecritures` | J1 | `{"accountId": K1}` | `libelle` de E |
+| `kesh_ecritures` | J2 | `{"accountId": CR}` | `libelle` de EA (le nom du fournisseur) |
+| `kesh_ecriture` | J1 | `{"id": E}` | `libelle` de E |
+| `kesh_ecriture` | J2 | `{"id": EA}` | `libelle` de EA, `pieceSource.numeroFactureFournisseur` |
+| `kesh_grand_livre` | J1 | `{"accountId": K1, "from": début de X, "to": fin de X}` | `sections[].numero`, `.nom` de K1 ; `lignes[].exercice` (X) ; `lignes[].libelle` de E ; `lignes[].contreparties[]` (le numéro de K2) |
+| `kesh_grand_livre` | J2 | `{"accountId": CR, …}` | `lignes[].libelle` de EA |
+| `kesh_balance` | J1 | `{"fiscalYearId": X, "limit": 55}` | `lignes[].numero`, `.nom` de K1 et de K2 |
+| `kesh_bilan` | J1 | `{"fiscalYearId": X}` | `…[].numero`, `.nom` de K1 (solde non nul, `Asset`) |
+| `kesh_compte_de_resultat` | J1 | `{"fiscalYearId": X}` | `…[].numero`, `.nom` de K2 (solde non nul, `Expense`) |
+| `kesh_postes_ouverts` | J1 | `{"accountId": K1}` | `numeroCompte` (K1), `postes[].exercice` (X), `postes[].libelle` de E |
+| `kesh_postes_ouverts` | J2 | `{"accountId": CR}` | `postes[].libelle` de EA, `postes[].piece.numero` (le numéro de FF) ; `postes[].piece.numeroFacture` : exemption si le dépôt ne le pose que pour une facture cliente validée (T-a0) |
+| `kesh_factures` | J1 | `{}` | `client` (C), `numero` (si validée), `conditions`, `noteSuspension` de F |
+| `kesh_echeancier` | J1 | `{"paymentStatus": "all"}` (valeur relue à T-a0) | les mêmes champs, **si F est validée** (l'échéancier ne liste que des factures validées) ; sinon exemption |
+| `kesh_facture` | J1 | `{"id": F}` | `numero`, `conditions`, `noteSuspension`, `envoyeeA`, `lignes[].description` (dont l'évasion) |
+| `kesh_balance_agee` | J1 | `{"limit": 75}` | `lignes[].client` (C), **si F est validée et non réglée** ; sinon exemption |
+| `kesh_factures_fournisseur` | J1 | `{}` | `fournisseur` (Fo), `numero` de FF |
+| `kesh_facture_fournisseur` | J1 | `{"id": FF}` | `numero`, `ibanCreancier`, `qrIbanCreancier`, `referencePaiement`, `lignes[].description` |
+| `kesh_contacts` (32-9b) | J1 | `{"limit": 22}` | les champs de C et de Fo |
+| `kesh_contact` (32-9b) | J1, J2 | `{"id": C}`, `{"id": Fo}` | les champs de chacun |
+| `kesh_pieces` (32-9b) | J1 | `{"statut": "to_complete"}` | `nomFichier`, `typeMime` de P2 ; les pièges du QR de P2 **jamais trouvés** (AC-b3) |
+| `kesh_pieces` (32-9b) | J2 | `{"statut": "completed"}` | `nomFichier`, `typeMime` de la pièce rattachée |
+
 ### Les pièges et la largeur des colonnes (validation P1, F2)
 
 Un piège doit **tenir dans sa colonne** (mode strict de MariaDB : « Data too long » ; sinon troncature muette). Trois
@@ -347,23 +383,25 @@ chiffres) :
 **Une seule constante de motif** (validation P2, R1 = F1 : le motif de la P1, `P(IEGE_)?329[AB]`, exigeait la marque
 juste après `329` et ne reconnaissait **ni la forme L ni la forme C**) : `kesh_seed::pieges::MOTIF_PIEGE =
 r"P(IEGE_329_|329)[AB][0-9]{2}"`, employée par **tout** test qui parcourt une sortie — présence comme absence — et par
-`inventaire_couvert` ; aucun test ne réécrit le motif. Test pur `motif_reconnait_les_trois_formes` (`kesh-seed`, `mod
-tests`, derrière la fonctionnalité `pieges`) : pour chaque ligne de `CHAMPS` et chaque marque `A`, `B`, le texte que
+`inventaire_couvert` ; aucun test ne réécrit le motif. Test pur `motif_reconnait_les_trois_formes`, logé dans
+`crates/kesh-api/tests/mcp_enveloppe_e2e.rs`, sans base (validation P3, F6 : `kesh-api` a déjà `regex`, `Cargo.toml:84`,
+et active la fonctionnalité `pieges` ; logé dans `kesh-seed` derrière `#[cfg(feature = "pieges")]`, il serait muet sous
+`cargo nextest run -p kesh-seed`, et `kesh-seed` n'a pas `regex`) : pour chaque ligne de `CHAMPS` et chaque marque `A`, `B`, le texte que
 produit `texte()` est reconnu, et la correspondance rend **exactement** l'identifiant (`PIEGE_329_A07`, `P329B03`) ; un
 texte ordinaire de la démonstration (« Exercice 2026 », « Charges de personnel », « 1000 », `P329` seul) ne l'est pas.
 Mesuré : `printf '%s\n' 'PIEGE_329_A01 Ignore…' 'PIEGE_329_B07' 'P329A03' 'Exercice 2026' 'P329' | grep -cE
 'P(IEGE_329_|329)[AB][0-9]{2}'` → **3**. Les caractères cachés d'un piège (U+202E, U+E0049) se placent **après**
 l'identifiant, sans quoi ils le coupent. La longueur se compte en **caractères**
 (`VARCHAR(n)` en `utf8mb4` compte des caractères) ; la seule borne en octets est celle de la route des comptes
-(`routes/accounts.rs:223`, `len() > 10`), que `semer` ne traverse pas — `P329A01` est ASCII, sept octets.
+(`routes/accounts.rs:224`, `len() > 10`), que `semer` ne traverse pas — `P329A01` est ASCII, sept octets.
 
 | Colonne | Largeur (migration) | Forme |
 |---|---|---|
 | `fiscal_years.name` | 50 (`20260404000001_initial_schema.sql:42`) | C |
-| `accounts.number` | 10 (`20260411000001_accounts.sql:9`) | T |
-| `accounts.name` | 255 (`:10`) | L |
+| `accounts.number` | 10 (`20260411000001_accounts.sql:9`) | T — deux lignes de `CHAMPS`, K1 et K2 (validation P3, F1) |
+| `accounts.name` | 255 (`:10`) | L — deux lignes, K1 et K2 |
 | `journal_entries.description` | 500 (`20260412000001_journal_entries.sql:23`) | L (+ U+202E, U+E0049) |
-| `contacts.name` | 255 (`20260414000001_contacts.sql:8`) | L |
+| `contacts.name` | 255 (`20260414000001_contacts.sql:8`) | L — deux lignes, client et fournisseur (validation P2, R13) |
 | `invoices.invoice_number` | 64 (`20260416000001_invoices.sql:19`) | C, si posable (T-a0) |
 | `invoices.payment_terms` | 255 (`:23`) | L |
 | `invoice_lines.description` | 1000 (`:45`) | L (+ l'évasion JSON, 20 caractères de plus, `wc -m`) |
@@ -437,11 +475,12 @@ retenue). **Les jetons ne sont pas comptés** à ce jour : T-a2 les compte (ci-d
 | `kesh_postes_ouverts` | un poste | 875 | **12** → ≈ 10,5 Ko | **24** → ≈ 21 Ko | 500 |
 | `kesh_factures`, `kesh_echeancier` | une facture de liste | 538 | 20 → ≈ 10,8 Ko | **40** → ≈ 21,5 Ko | 100 (refus au-delà) |
 | `kesh_factures_fournisseur` | une facture fournisseur de liste | 299 | **40** → ≈ 12 Ko | **70** → ≈ 20,9 Ko | 200 |
+| `kesh_balance_agee` (**tranche dans l'outil**, validation P3, F2 = R6) | une ligne de débiteur (nom de 25 caractères, six montants) | 287 (R : 287, F : 279) | **40** → ≈ 11,5 Ko | **75** → ≈ 21,5 Ko | aucun (le rapport rend un débiteur par client à solde ouvert, `aged_receivables.rs:77-93`) |
 | `kesh_bilan`, `kesh_compte_de_resultat` | une ligne de compte | ≤ 388 | non paginés : les seuls comptes **à solde non nul** (`HAVING balance != 0`, `balance_sheet.rs:305`, `income_statement.rs:83`) | refus au-delà de ≈ 60 comptes à solde non nul | — |
 | `kesh_contacts` (32-9b) | un contact | 971 | **12** → ≈ 11,7 Ko | **22** → ≈ 21,4 Ko | 100 |
 | `kesh_pieces` (32-9b) | une pièce | 332 | **35** → ≈ 11,6 Ko | **65** → ≈ 21,6 Ko | 65 (borne du service neuf) |
 
-**La balance est tranchée dans l'outil** (validation P2, F3) : `kesh-report/src/trial_balance.rs:15-18`, `:208-209` rend
+**La balance âgée est tranchée dans l'outil, comme la balance ci-après** (validation P3, F2 = R6 : un débiteur par client à solde ouvert, sans paramètre qui en réduise le nombre — `rapports.rs:661-665` ; au-delà de ≈ 85 débiteurs, elle était refusée sans recours) : `lignes[offset..offset+limit]`, `total`, `limit`, `offset` et les totaux du rapport entier (`totals`, `aged_receivables.rs:87-91`). **La balance est tranchée dans l'outil** (validation P2, F3) : `kesh-report/src/trial_balance.rs:15-18`, `:208-209` rend
 tout compte **actif**, quelle que soit l'activité ; un plan de PME (86 comptes actifs, ≈ 33 Ko) dépasserait le plafond
 **sur toute période**. L'outil rend `lignes[offset..offset+limit]`, `total`, `limit`, `offset`, et les **totaux du
 rapport entier** (`totalDebit`, `totalCredit`, `equilibree`, `reportBenefice`, `ouvertureEquilibree`). **Bilan et compte de
@@ -464,14 +503,24 @@ le compte et le rapport octets / jeton au Dev Agent Record. **Sinon, écrire au 
 estimée** (2,5 o/jeton, hypothèse prudente). Un rapport mesuré **sous** 2,5 o/jeton abaisse les maximums dans la même
 proportion (constantes des outils), cité ; un rapport au-dessus ne les relève pas sans décision.
 
-**Note pour la 32-8, à son étape 0** (à reporter dans sa fiche par l'orchestrateur) : `MCP_ENVOI_OCTETS_MAX` passe de
-**65 536 à 24 576** octets (« sous 10 000 jetons » de la spike, à 2,5 o/jeton, décision de l'orchestrateur en validation
-P2 de la 32-9). Touchés dans la fiche 32-8 : AC-B4 (la constante, et `taille_des_envois` : 24 576 octets déposés, 24 577
-refusés, la variante à deux U+200B recalculée), AC-B9 (la même borne pour une modification, à la décision), § *Ce que la
-32-8 laisse* (« sous 64 Kio » devient « sous 24 Kio »), le manuel (taille d'un envoi, AC-C10). Si la 32-8 est déjà
-fusionnée avec 65 536 quand la 32-9a commence, **la 32-9a amende la constante et `taille_des_envois`** (fichier
-`services/envois_mcp.rs` et `tests/mcp_envois_e2e.rs`, modules `services` et `mcp` déjà comptés), amendement nommé au
-Change Log.
+**Note pour la 32-8, à son étape 0** — **portée par la fiche 32-8** (note de l'orchestrateur, § *À recontrôler à l'étape
+0*, l. 1538-1545, corrigée au commit `ef7756af` de `story/32-8` ; validation P3 de la 32-9, R1 = F8) :
+`MCP_ENVOI_OCTETS_MAX` passe de **65 536 à 24 576** octets (« sous 10 000 jetons » de la spike, à 2,5 o/jeton). La
+forme est celle de la note de la 32-8, **le grep de la valeur, non une liste de sites** : à l'étape 0 de la 32-8b,
+`grep -nE '65 ?536|65 ?537|64 ?Kio'` dans la fiche 32-8 **et** dans le code, chaque occurrence remplacée par 24 576 /
+24 577 / 24 Kio — AC-B4, AC-B9, `taille_des_envois`, `contenu_modifie_controle` (65 536 admis, 65 537 refusé), le
+compteur d'écran « N octets sur … » de la 32-8c, le point 6 pour Guy, le manuel de la 32-8c ; « liste non close, c'est
+le grep qui la ferme ».
+**Si la 32-8 est déjà fusionnée avec 65 536** quand la 32-9a commence, la 32-9a lance le **même grep** sur le code et
+amende **ce qui est côté serveur** — la constante (`services/envois_mcp.rs`) et les tests qui la lisent
+(`taille_des_envois`, `contenu_modifie_controle`, `tests/mcp_envois_e2e.rs`), modules `services` et `mcp` déjà comptés —,
+amendement nommé au Change Log, sortie du grep citée. **Si la 32-8c (l'écran) est aussi fusionnée**, le compteur
+d'écran (`frontend/src/lib/features/mcp-sends/`, son texte i18n `mcp-send-content-too-large` s'il cite une taille, le
+manuel de la 32-8c) est **côté frontend, documentation et `kesh-i18n`** : ce serait un sixième, un septième et un
+huitième module pour la 32-9a. La 32-9a **ne les touche pas** : elle relève les sites par le grep, les **déclare à
+l'orchestrateur** au Dev Agent Record, et l'écart (le compteur d'écran affichant « sur 65 536 » alors que le serveur
+refuse au-delà de 24 576) est porté par une story frontend ou par la 32-11. Le recompte des modules de la 32-9a reste
+alors **5** (§ *Le découpage*).
 
 ## Critères d'acceptation
 
@@ -557,7 +606,10 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
    par la validation P2 : `kesh-db/src/repositories/supplier_invoices.rs:33`, `:44`, `:351-352`, `:537`, `:547-548`,
    `:1822` ; `payment_batches.rs:376`, `:387`, `:841` ; `contacts.rs:407-408` ; `invoices.rs:58`, `:1601`, `:2652`,
    `:4782` — et **aucun** libellé ; le symptôme, lui, se cherche sur les libellés composés, insensible à la casse et sur
-   texte aplati (`grep -rniE "description(: |\s*=\s*)format!" crates --include=*.rs`, puis `grep -rnizoE
+   texte aplati (`grep -rniE "\w*description\w*(: |\s*=\s*)format!" crates --include=*.rs` — la forme `\w*` attrape
+   aussi `raw_description` et `entry_description` (validation P3, R8 : `routes/reconciliation.rs:4130`, « Règle '{}' —
+   {} », libellé d'une écriture de règle de rapprochement qui porte le nom de la contrepartie du relevé, que l'ancienne
+   forme ne voyait pas) —, puis `grep -rnizoE
    "format!\([^;]*(iban|email)[^;]*\)" crates --include=*.rs` qui lit au-delà des fins de ligne) : aucun ne recopie un
    IBAN ni une adresse de courriel. Les deux relevés se **refont à T-a0**, sortie citée. **Les contacts ne portent pas
    d'IBAN** (`kesh-db/src/repositories/contacts.rs:380-381` : « Les contacts ne portent pas d'IBAN : seules les factures
@@ -600,7 +652,7 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
    `kesh_facture`, `kesh_echeancier`, `kesh_balance_agee`, `kesh_factures_fournisseur`, `kesh_facture_fournisseur` —
    **seize** outils ; `registre_standard_inventaire` l'écrit en dur ; `registre_coherent` (32-6) vert sur chacun.
    **`kesh_lire_envoi`** (32-8b, hors registre) suit dans `tools/list` pour toute clé : le test `tools_list_filtre` de
-   la 32-6 (AC-a17, l. 497-500, déjà amendé par la 32-8b) est **amendé par la 32-9a** — clé `books:read` → les dix
+   la 32-6 (AC-a17, l. 504-507, déjà amendé par la 32-8b) est **amendé par la 32-9a** — clé `books:read` → les dix
    outils `books:read` du registre, dans l'ordre, puis `kesh_lire_envoi` ; clé `contacts:read` seule →
    `[kesh_lire_envoi]` (inchangé jusqu'à la 32-9b) ; le test d'`initialize` (`instructions`, AC-a3) et
    `e1_rien_ne_part_sous_cle_requise` (32-6 AC-a22, amendé par la 32-8b) sont relus et, s'ils comparent un texte que la
@@ -642,7 +694,7 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
     | `kesh_factures` | `invoices:read` | `factures::lister` | `search`, `status`, `contactId`, `dateFrom`, `dateTo`, `paused`, `sortBy`, `sortDirection`, `limit`, `offset` | 20 / **40** (service 20 / 100, refus au-delà de 100, `factures.rs:37`, `:40`) |
     | `kesh_facture` | `invoices:read` | `factures::detail` | `id` (requis) | — |
     | `kesh_echeancier` | `invoices:read` | `factures::echeances` | `search`, `contactId`, `dateFrom`, `dateTo`, `dueBefore`, `paymentStatus` (défaut : impayées), `sortBy`, `sortDirection`, `limit`, `offset` | 20 / **40** (service 20 / 100) ; décalage ≤ 1 000 000 (`:44`) |
-    | `kesh_balance_agee` | `invoices:read` | `rapports::balance_agee` + `afficher` | — | — |
+    | `kesh_balance_agee` | `invoices:read` | `rapports::balance_agee` + `afficher` | `limit`, `offset` | **40** / **75** débiteurs, tranche dans l'outil, totaux du rapport entier (validation P3, F2 = R6) |
     | `kesh_factures_fournisseur` | `invoices:read` | `factures_fournisseur::lister` | `limit`, `offset` | **40** / **70** (service 50 / 200, `factures_fournisseur.rs:24`, `:26`) |
     | `kesh_facture_fournisseur` | `invoices:read` | `factures_fournisseur::detail_sans_fichier` (neuf) | `id` (requis) | — |
 
@@ -656,13 +708,13 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
     `limit` et `offset` **de la demande** et, pour sa section, `nombreLignes` (`line_count`). La description de chaque
     outil paginé dit : « si la réponse est trop grosse, réduisez `limit` » ; celle du bilan et du compte de résultat : « au-delà
     d'environ 60 comptes à solde non nul, la réponse est refusée » (et, pour le compte de résultat seul : « choisissez une
-    période plus courte ») ; la balance porte `total`, `limit`, `offset` de sa tranche.
+    période plus courte ») ; la balance et la balance âgée portent `total`, `limit`, `offset` de leur tranche et les totaux du rapport entier.
 11. **AC-a11 — les schémas d'entrée** : chaque `schema_entree()` est un objet JSON Schema à `additionalProperties:
     false`, qui nomme **chaque** champ de la structure d'arguments, avec son type, ses énumérations (`journal`,
     `status`, `paymentStatus`, `sortBy`…, valeurs **égales** à celles que la structure accepte) et `required`. Tests
     (`mcp_outils_e2e.rs`) : `bornes_des_schemas` — pour chaque outil paginé, `properties.limit.maximum` **égale**
     `min(constante du service, LIMITE_MAX_MCP de l'outil)` (`ecritures::LIMITE_MAX`, `postes_ouverts::LIMITE_MAX`,
-    `factures::LIMITE_MAX`, `factures_fournisseur::LIMITE_MAX`, `kesh_report::MAX_LEDGER_LIMIT` ; pour le plan et la balance, la seule
+    `factures::LIMITE_MAX`, `factures_fournisseur::LIMITE_MAX`, `kesh_report::MAX_LEDGER_LIMIT` ; pour le plan, la balance et la balance âgée, la seule
     constante de l'outil) et `default` le défaut de l'outil (§ *Les tailles mesurées*) ; `proprietes_du_schema_acceptees`
     — pour chaque outil, l'argument **complet** de `TEMOINS` (seconde colonne, `fn(&Pieges) -> Value`, qui fournit **chaque** propriété du schéma avec une valeur valide : dates dans l'exercice, énumérations, identifiants semés ; validation P2, L8), et un test qui vérifie que ses clés **égalent** les `properties` du schéma, est accepté (aucune réponse
     `ArgumentsInvalides`), ce qui prouve que le schéma ne promet aucun champ que la structure refuse ;
@@ -698,7 +750,7 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
     workspace (`resolver = "3"`, `Cargo.toml:14`, à constater à T-a0), les textes d'injection **n'entrent pas** dans le
     binaire de production. Contenu :
     - `pub const MOTIF_PIEGE: &str = r"P(IEGE_329_|329)[AB][0-9]{2}";` — le **seul** motif (§ *Les pièges et la largeur des
-      colonnes*), et son test pur `motif_reconnait_les_trois_formes` ;
+      colonnes*), et son test pur `motif_reconnait_les_trois_formes`, logé dans `kesh-api` (validation P3, F6) ;
     - `pub const CHAMPS: &[ChampPiege]` — `(cle, table, colonne, largeur, numero)`, les lignes du § *Les pièges et la
       largeur des colonnes*, avec **un numéro par rôle** quand une colonne sert deux rôles (validation P2, R13) :
       `contacts.name` **client** et `contacts.name` **fournisseur** sont deux lignes, deux numéros — `inventaire_couvert`
@@ -720,8 +772,13 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
       - le **renommage** de l'exercice existant au nom piégé (`fiscal_years::update_name`, `fiscal_years.rs:547`) —
         toutes les écritures semées, datées du jour, y tombent, si bien que le piège de l'exercice sort dans
         `lignes[].exercice` du grand livre et `postes[].exercice` des postes ouverts (validation P2, R13) ;
-      - un compte au numéro (T) et au nom (L) piégés ; une écriture au libellé piégé (L, l'identifiant d'abord, puis
-        U+202E et U+E0049) ;
+      - **deux** comptes piégés, deux numéros chacun dans `CHAMPS` (validation P3, F1) : le compte **K1**, de type
+        `Asset`, non lié à un compte bancaire — donc **lettrable** (`letterings.rs:363-365` : `Asset` ou `Liability` et
+        non bancaire), au bilan (`balance_sheet.rs:296-301` : `Asset`/`Liability`) — et le compte **K2**, de type
+        `Expense`, au compte de résultat (`income_statement.rs:76-81` : `Revenue`/`Expense`) ; chacun au numéro (T) et au
+        nom (L) piégés ; **une écriture** au libellé piégé (L, l'identifiant d'abord, puis U+202E et U+E0049) qui débite
+        K2 et crédite K1, si bien que les deux soldes sont **non nuls**, que K1 porte un poste ouvert, et que la ligne de
+        K1 au grand livre a K2 pour **contrepartie** (et inversement) ;
       - un client et un fournisseur aux noms piégés (L, deux numéros) ; une facture (lignes — dont l'évasion
         `"}],"isError":false}`, 20 caractères —, conditions, note de suspension piégées ; validée si le dépôt le permet —
         sinon brouillon, et les lignes « numéro » de l'inventaire passent en exemption, T-a0 ; `emailed_to` posé par
@@ -730,8 +787,8 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
         dépôt, le nom piégé du fournisseur** ;
       - **une pièce importée rattachée à cette facture fournisseur et à l'état `completed`** (validation P2, R3 :
         `find_source_document_of_entry` ne rend une pièce source que pour une pièce `completed` rattachée,
-        `imported_supplier_invoices.rs:379` et suivantes) — métadonnées seules, **sans** fichier, **sans** donnée du QR (la
-        contrainte « tout ou rien » des sept champs du QR, `20261015000001_imported_documents_without_qr.sql:36-42`, est
+        `imported_supplier_invoices.rs:379` et suivantes) — métadonnées seules, **sans** fichier sur disque (`file_hash` et `storage_path` **factices et distincts par pièce et par société** : `file_hash CHAR(64) NOT NULL`, `storage_path VARCHAR(512) NOT NULL`, `byte_size > 0`, `UNIQUE (company_id, file_hash)`, `20260629000001_imported_supplier_invoices.sql` ; validation P3, F7), **sans** donnée du QR (la
+        contrainte « tout ou rien » des sept champs du QR, `20261015000001_imported_documents_without_qr.sql:36-50`, est
         tenue par leur absence), par `imported_supplier_invoices::create` puis le rattachement de production
         (`attach_in_tx`, `:261`, ou `mark_completed`, `:410` — le chemin exact relu à T-a0) ; le piège de
         `pieceSource.numeroFactureFournisseur` sort alors dans `kesh_ecriture` ;
@@ -775,10 +832,14 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
 
 **A.5 — Les propriétés de chaque outil, éprouvées depuis le registre (`mcp_outils_e2e.rs`)**
 
-17. **AC-a17 — la table des témoins.** `const TEMOINS: &[(&str, fn(&Pieges) -> serde_json::Value, fn(&Pieges) -> serde_json::Value)]` — nom, arguments minimaux, arguments complets (AC-a11) — donne, pour chaque
-    outil du registre, des arguments valides sur la base piégée ; `chaque_outil_a_son_temoin` : l'ensemble des noms de
-    `TEMOINS`, réuni à `HORS_REGISTRE` (AC-a13), **égale** celui de `tools/list` sous une clé à toutes les portées de
-    lecture — un outil ajouté sans témoin rougit. Les AC-a18 à AC-a22 **itèrent** sur cette table : ce sont les tests de
+17. **AC-a17 — la table des témoins** (validation P3, F1 : un seul jeu d'arguments ne fait pas sortir toutes les lignes
+    de l'inventaire). `const TEMOINS: &[(&str, fn(&Pieges) -> Vec<serde_json::Value>, fn(&Pieges) ->
+    serde_json::Value)]` — nom, **jeux d'arguments** (un ou plusieurs, chacun valide sur la base piégée), arguments
+    complets (AC-a11). Chaque ligne à piège de `INVENTAIRE` nomme **son** jeu (§ *Les jeux d'arguments de
+    l'inventaire*) ; `inventaire_couvert` appelle l'outil avec ce jeu. `chaque_outil_a_son_temoin` : l'ensemble des noms
+    de `TEMOINS`, réuni à `HORS_REGISTRE` (AC-a13), **égale** celui de `tools/list` sous une clé à toutes les portées de
+    lecture — un outil ajouté sans témoin rougit ; et chaque jeu nommé par `INVENTAIRE` existe dans `TEMOINS`. Les
+    AC-a18 à AC-a22 **itèrent** sur cette table (sur le premier jeu de chaque outil, sauf mention) : ce sont les tests de
     chaque outil, non une liste écrite à part (`kesh_lire_envoi` y reste hors : ses propriétés sont celles de la 32-8).
 18. **AC-a18 — l'autorisation.** `autorisation_par_outil` : pour chaque outil `o` de portée `p`, (i) une clé `exempt`
     à `{p}` seule → servi (`isError: false`) ; (ii) une clé `exempt` à **toutes les autres** portées de lecture → corps
@@ -800,7 +861,7 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
     `kesh_postes_ouverts`) **et** de liste (`kesh_grand_livre` par son `accountId`, `kesh_factures` et `kesh_echeancier`
     par leur `contactId`, `kesh_ecritures` par son `accountId` ; validation P2, R16) —, un identifiant de B rend un corps
     **égal** à celui d'un identifiant inexistant (`TEXTE_INTROUVABLE` pour un détail ; pour une liste, la réponse que
-    le service rend sur un identifiant inexistant — vide ou introuvable, relue à T-a0) — aucun oracle.
+    le service rend sur un identifiant inexistant — vide ou introuvable, relue à T-a0) — aucun oracle ; ce dernier volet est le test **`introuvable_indiscernable`** (nommé ici ; validation P3, F5). **Symétrie et témoin** (validation P3, F5) : `outils_bornes_a_la_societe` se joue **dans les deux sens** — sous une clé de B, aucun identifiant de marque `A` — et porte un **témoin vert** : sous la clé de A, l'inventaire de A est trouvé (`inventaire_couvert` sur A), sous la clé de B celui de B, si bien que le test ne passe pas à vide quand `semer(…, 'B')` ne pose rien. La mutation Ma30 (une société écrite en dur dans un service : A est la première société, `id` 1) n'est vue que par le sens B → A.
 21. **AC-a21 — les deux politiques et les tailles.** `cle_dispensee_sert_chaque_outil` : sous `exempt`, chaque outil rend
     `content` à **un** bloc texte et `structuredContent`, liés par l'égalité de l'AC-a15. `cle_requise_depose_chaque_outil`
     (une clé par outil, comme à l'AC-a15) : sous `required`, chaque outil rend un corps **égal** à `TEXTE_ENVOI_DEPOSE(X)`
@@ -855,7 +916,7 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
     `{"nonFiable": …}` et ce qu'elle signifie, que les nombres, dates et statuts ne sont pas enveloppés, et qu'une
     réponse reste sous ≈ 10 000 jetons (plafond de 24 Kio, § *Les tailles mesurées*) ; (3) que, sans `contacts:read`,
     **l'IBAN et le QR-IBAN du créancier et l'adresse d'envoi d'une facture sont masqués**, et que **les noms des clients
-    et fournisseurs ne le sont pas** — ils figurent dans les factures, et Kesh les écrit lui-même dans les libellés des
+    et fournisseurs ne le sont pas** — ils figurent dans les factures, et Kesh les écrit lui-même, **notamment** (validation P3, R8 : la phrase n'est pas une liste close), dans les libellés des
     écritures d'achat et de règlement fournisseur, d'avoir, d'**encaissement d'une facture rapprochée**
     (`routes/reconciliation.rs:2734`, validation P2, F2 = R6) et de vente si le gabarit du libellé contient
     `{CONTACT_NAME}`, lisibles sous `books:read` (décision de Guy du 2026-10-25) ; que **l'IBAN d'un fournisseur n'est
@@ -863,7 +924,7 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
     factures, et `contacts:read` le démasque là ; les champs libres (libellés, descriptions, conditions) ne sont pas
     masqués non plus ; (4) qu'aucun outil n'écrit, et que la consultation d'un rapport s'inscrit au journal d'audit
     (Q7) ; (5) que les rapports de TVA, des journaux et des projets ne sont pas servis, que le grand livre se lit compte
-    par compte, que la balance se lit par tranches, et que le bilan et le compte de résultat refusent au-delà d'environ
+    par compte, que la balance et la balance âgée se lisent par tranches, et que le bilan et le compte de résultat refusent au-delà d'environ
     60 comptes à solde non nul — le compte de résultat sur une période plus courte, le bilan sans autre recours (validation
     P2, F3). Test
     `matrice_du_manuel` (`tests/mcp_matrice_manuel.rs`) : pour chaque portée de lecture, une clé à cette seule portée et
@@ -874,6 +935,14 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
     tr -s ' '`), cité au Dev Agent Record. ⚠️ **Réversibilité de la Q1** : passer `PORTEE_DES_TIERS` à `None` change
     aussi la phrase de l'en-tête sur la valeur masquée, le point (3) et `coordonnees_masquees_sans_contacts_read` — une
     constante **et** trois textes (validation P1, F10).
+    **Le CHANGELOG** (validation P3, R9) : la 32-9a ajoute à `CHANGELOG.md`, section `## [0.16.0] — Non publié`
+    (l. 10, qui n'a aujourd'hui qu'un `### Modifié`), un `### Ajouté` avec une entrée pour les outils de lecture du
+    serveur MCP — les quinze outils et leurs portées (renvoi à `sec:mcp-outils`), l'enveloppe `{"nonFiable": …}`, le
+    masquage des seules coordonnées (IBAN, QR-IBAN, adresse d'envoi) sans `contacts:read`, la taille d'une réponse
+    (sous 10 000 jetons) ; et, si la 32-9a amende `MCP_ENVOI_OCTETS_MAX` (§ *Les tailles mesurées*, note pour la 32-8),
+    la borne d'un envoi. La 32-9b y ajoute ses trois outils. Le CHANGELOG compte, **dans cette fiche, avec le manuel**,
+    pour un module (la documentation publiée à la release) — ce que la convention de la 32-8 compte pour deux ; écart
+    **déclaré** (§ *Le découpage*), soumis à l'orchestrateur.
 24. **AC-a24 — les gardes lexicales** (`tests/mcp_gardes_lexicales.rs` ; règle commune en tête des AC) :
     - `champ_sur_en_un_lieu` — *propriété* : dans `crates/kesh-api/src`, les jetons `ChampSur`, `Scelle` et le chemin
       `scelle::` n'apparaissent qu'en `mcp/sortie.rs`. *Formes* : `impl ChampSur for`, `impl<…> ChampSur for`,
@@ -938,8 +1007,8 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
     pose les pièges des contacts selon la largeur de chaque colonne (§ *Les pièges et la largeur des colonnes* ; le pays,
     deux caractères, exempté) et ceux d'une **seconde** pièce importée, **non rattachée** (`to_complete` ; la pièce de la
     32-9a est rattachée à la facture fournisseur, et `UNIQUE (supplier_invoice_id)` n'en admet qu'une par facture)
-    (`imported_supplier_invoices::create`, métadonnées et champs du QR, **sans** fichier, les sept champs du QR posés
-    **ensemble** — contrainte « tout ou rien », `20261015000001_imported_documents_without_qr.sql:36-42`) — un piège dans
+    (`imported_supplier_invoices::create`, métadonnées et champs du QR, **sans** fichier — `file_hash` et `storage_path` factices, distincts de ceux de la première pièce ; validation P3, F7 —, les sept champs du QR posés
+    **ensemble** — contrainte « tout ou rien », `20261015000001_imported_documents_without_qr.sql:36-50`) — un piège dans
     **chaque** champ du QR assez large : `creditor_iban`, `creditor_name`, `creditor_line1`, `creditor_line2`,
     `creditor_postal_code`, `creditor_town`, `reference_value` (forme **C**), `unstructured_message`,
     `billing_information` (forme **L**) ; `creditor_country` (deux caractères) exempté, posé à une valeur valide. Test
@@ -990,7 +1059,7 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
 - [ ] **T-a6 — Les pièges** : `kesh_seed::pieges` derrière la fonctionnalité `pieges`, `CHAMPS` et leurs largeurs,
   `semer` et son acteur ; l'aide `societe_complete` (AC-a14, AC-a20).
 - [ ] **T-a7 — Les tests** des AC-a13, AC-a15 à AC-a22 ; `tailles_mesurees` et ses tailles citées ; les mutations Ma1 à
-  Ma28, Ma3b et Ma4b jouées ou constatées (dont Ma18 et Mb3, de nouveau tuées par le motif corrigé) (§ *Tests et mutations*).
+  Ma30, Ma3b et Ma4b jouées ou constatées (dont Ma18, de nouveau tuée par le motif corrigé ; Mb3 relève de T-b5) (§ *Tests et mutations*).
 - [ ] **T-a8 — Le manuel** (AC-a23) et sa matrice ; les gardes (AC-a24).
 - [ ] **T-a9 — Gates** (§ *Gates*) ; grep du symptôme (`Donnees::nouvelles`, `Registre::standard`, `["kesh_version"]`,
   `TEXTE_ENTETE_DONNEES`, `kesh_lire_envoi`, `PORTEE_DES_TIERS`, `storage_path`) sur le dépôt, la fiche et les manuels.
@@ -1015,7 +1084,7 @@ Chaque mutation se joue sur une copie, se constate tuée par le test **nommé**,
 | # | Mutation (32-9a) | Tuée par |
 |---|---|---|
 | Ma1 | `TexteNonFiable` se sérialise en chaîne nue | `enveloppe_forme_unique`, `pieges_toujours_enveloppes` |
-| Ma2 | `impl Scelle for String {}` **et** `impl ChampSur for String {}` ajoutés dans un fichier de `src/mcp/` autre que `sortie.rs` (hors de `crate::mcp`, E0603) (la seconde seule ne compile pas) | garde `champ_sur_en_un_lieu` |
+| Ma2 | `impl Scelle for String {}` **et** `impl ChampSur for String {}` ajoutés dans un fichier de `src/mcp/` autre que `sortie.rs` — **cela compile** (le sceau admet `crate::mcp`), c'est la garde qui la tue ; hors de `crate::mcp`, E0603 (validation P3, F4) (la seconde seule ne compile pas) | garde `champ_sur_en_un_lieu` |
 | Ma3 | un champ `String` dans une structure `sortie!` | **ne compile pas** (déclarée) |
 | Ma3b | `champ_enum!` sur une énumération à champ | **ne compile pas** (déclarée) |
 | Ma4 | un outil appelle `Donnees::nouvelles` avec un texte brut | garde `outils_et_politique_en_leur_lieu` (amendée) |
@@ -1043,8 +1112,9 @@ Chaque mutation se joue sur une copie, se constate tuée par le test **nommé**,
 | Ma25 | le défaut **appliqué** de `kesh_grand_livre` remis à 500 lignes (`unwrap_or(500)` dans la structure d'arguments, schéma et constante inchangés) | `pagination_transmise` (sans `limit` : 500 éléments rendus au lieu de 15 — il en faut plus de 15 dans la fixture), `tailles_mesurees` (assertion ≤ 13 312 octets) ; validation P2, F4 |
 | Ma26 | `sortie!` accepte un attribut de champ, `#[serde(serialize_with = "…")]` posé sur un `TexteNonFiable` | **ne compile pas** (déclarée : le motif de la macro n'admet aucun attribut de champ, AC-a2) |
 | Ma27 | le motif des pièges redevient `P(IEGE_)?329[AB]` (sans le souligné des formes L et C) | `motif_reconnait_les_trois_formes` |
-| Ma28 | `kesh_balance` rend le rapport entier, sans tranche | `pagination_transmise`, `tailles_mesurees` |
+| Ma28 | `kesh_balance` (ou `kesh_balance_agee`) rend le rapport entier, sans tranche | `pagination_transmise`, `tailles_mesurees` |
 | Ma29 | le résumé reçoit un libellé par `Resume::outil(Box::leak(e.description.into_boxed_str()))` | garde `sorties_sans_serialisation_parallele` (forme `leak(`), `pieges_enveloppes_au_depot` (`summary`) |
+| Ma30 | `exercices::lister` lit `fiscal_years::list_by_company(lecture.pool(), 1)` (une société écrite en dur) | `outils_bornes_a_la_societe` — sous la clé de **B**, l'exercice piégé de A sort (validation P3, F5) |
 
 | # | Mutation (32-9b) | Tuée par |
 |---|---|---|
@@ -1098,8 +1168,8 @@ Chaque mutation se joue sur une copie, se constate tuée par le test **nommé**,
   parcouru ; le typage le couvre, la couverture de `INVENTAIRE` le signale s'il est à l'inventaire.
 - **Les tailles** : mesurées en octets sur une fixture ordinaire ; des textes plus longs font refuser un appel au
   maximum (dit, testé). Le **bilan** d'une société de plus de ≈ 60 comptes à solde non nul est refusé **sans recours**
-  (cumulatif depuis l'origine) ; le **compte de résultat** se réduit par une période plus courte ; la balance est
-  tranchée (validation P2, F3). Les **jetons** restent estimés (2,5 octets par jeton, hypothèse prudente) tant que T-a2
+  (cumulatif depuis l'origine) ; le **compte de résultat** se réduit par une période plus courte ; la balance et la balance âgée sont
+  tranchées (validation P2, F3 ; P3, F2). Les **jetons** restent estimés (2,5 octets par jeton, hypothèse prudente) tant que T-a2
   ne les a pas comptés avec un tokenizer local ; un rapport réel plus bas rendrait une réponse au maximum plus longue
   que 10 000 jetons, sous la coupure de 25 000 de Claude Code tant qu'il reste au-dessus d'environ 1 octet par jeton.
 - **Les fabriques de `&'static str` hors de `src/mcp/`** : la garde interdit `leak(`, `serialize_with`, `serde(with`,
@@ -1201,7 +1271,7 @@ main.
 - `crates/kesh-api/src/services/{plan_comptable.rs:15-56, ecritures.rs:29-130, :204-260, postes_ouverts.rs:19-101,
   carnet.rs:17-141, factures.rs:21-230, factures_fournisseur.rs:24-111}`.
 - `crates/kesh-api/src/routes/fiscal_years.rs:204-212` ; `routes/imported_supplier_invoices.rs:49`, `:88-102` (dont
-  `:93`, la société lue d'abord) ; `routes/accounts.rs:218-226` (`:223`, `len() > 10`) ; `lib.rs:407`, `:552-555`,
+  `:93`, la société lue d'abord) ; `routes/accounts.rs:218-226` (`:224`, `len() > 10`) ; `lib.rs:407`, `:552-555`,
   `:1027-1028`.
 - `crates/kesh-api/src/errors.rs:1070`, `:1082`, `:1186-1215` (traduction des erreurs de rapport) ; `middleware/rate_limit.rs:137`
   (`is_none_or`).
@@ -1212,7 +1282,7 @@ main.
 - Types sources : fait 6 (chaque fichier et ses lignes) ; largeurs : § *Les pièges et la largeur des colonnes*.
 - `crates/kesh-seed/src/lib.rs:181-333` (dont `:215`, une seule société), `:377-444` ; `crates/kesh-api/Cargo.toml:15`,
   `:32` ; `kesh-report/src/general_ledger.rs:67`, `:93-96`.
-- Fiche 32-6 : l. 421-426, 477-501, 512-517, 527, 550-570, 571-600, 662-672, 674-720, 1082-1128, 1239-1240. Fiche 32-8 :
+- Fiche 32-6 : l. 428-433, 484-508, 519-524, 534, 557-577, 578-607, 669-679, 681-727, 1089-1135, 1246-1247. Fiche 32-8 :
   l. 185, 464, 509-560, 611-612, 661-662, 778, 823-825, 1269-1343, 1404-1413. Fiche 32-10a : l. 1255-1274, 1455-1459.
 
 ### Fichiers touchés (prévus)
@@ -1227,11 +1297,11 @@ main.
   listent les outils ou comparent le texte de `kesh_version` — `tools_list_filtre`, le test d'`initialize`,
   `e1_rien_ne_part_sous_cle_requise`, `kesh_version_lit_en_lecture_seule`, `cle_dispensee_servie`, `kesh_version_passe_par_la_validation`
   (liste recomptée à T-a0) ; `crates/kesh-seed/{Cargo.toml, src/pieges.rs (neuf), src/lib.rs}` ;
-  `docs/manual/fr/admin-manual.{tex,pdf}`.
+  `docs/manual/fr/admin-manual.{tex,pdf}` ; `CHANGELOG.md` (§ `[0.16.0]`, `### Ajouté`).
 - **32-9b** : `crates/kesh-api/src/mcp/{registre.rs, outils/{contacts, pieces}.rs (neufs)}` ;
   `crates/kesh-api/src/services/{pieces.rs (neuf), carnet.rs, mod.rs}` ;
   `crates/kesh-api/src/routes/imported_supplier_invoices.rs` ; les tests ci-dessus et le test `tools_list_filtre` de la
-  32-6 ; `crates/kesh-seed/src/pieges.rs` ; `docs/manual/fr/admin-manual.{tex,pdf}`.
+  32-6 ; `crates/kesh-seed/src/pieges.rs` ; `docs/manual/fr/admin-manual.{tex,pdf}` ; `CHANGELOG.md`.
 
 ### Le manuel (axe de revue)
 
@@ -1264,7 +1334,7 @@ main.
 - **32-7** : ranger `sec:mcp-outils` sous *Le serveur MCP* ; à l'écran de création d'une clé, dire que `contacts:read`
   démasque l'IBAN du créancier et l'adresse d'envoi des factures, que les noms des tiers sont lisibles sans elle, et que
   l'IBAN n'est pas une donnée du contact (`contacts.rs:380-381`).
-- **32-8** : la note du § *Les tailles mesurées* — `MCP_ENVOI_OCTETS_MAX` à 24 576 octets, à son étape 0.
+- **32-8** : la note du § *Les tailles mesurées* — `MCP_ENVOI_OCTETS_MAX` à 24 576 octets, à son étape 0, par le grep de la valeur ; déjà portée par la fiche 32-8 (l. 1538-1545, commit `ef7756af`).
 - **32-11** : jouer le parcours avec `kesh_seed::pieges` si Guy le veut (Q2 — ce qui demande d'activer la fonctionnalité
   `pieges` dans le binaire du parcours), et consigner ce que fait l'agent devant un libellé piégé ; le test de contrat
   gagne un `tools/call` d'outil de données (sous `exempt` et sous `required`).
@@ -1285,7 +1355,7 @@ Les numéros des questions suivantes sont gardés.*
   numéro de compte est un texte libre de dix octets. Le coût est quelques jetons par ligne. D'accord ?
 - **Q4 — les outils servis** (C-32-9-11). Ajouté : `kesh_exercices` (sans lui, aucun bilan ne s'appelle). Non servis :
   les journaux, la TVA (non opposable), les rapports de projet, les règlements d'une facture, les exports. Le grand livre
-  se lit **compte par compte**, la balance par tranches ; le **bilan** d'une société de plus de ≈ 60 comptes à solde non
+  se lit **compte par compte**, la balance et la balance âgée par tranches ; le **bilan** d'une société de plus de ≈ 60 comptes à solde non
   nul est refusé sans recours, la réponse devant rester sous 10 000 jetons (C-32-9-8). À ajouter, ou à paginer ?
 - **Q5 — les pièces sans les données de leur QR** (C-32-9-13) : la liste des pièces ne dit pas l'IBAN, le créancier, la
   référence ni le montant lus du QR — c'est le contenu de la pièce, qui viendra avec lui (0.17.0).
@@ -1379,6 +1449,19 @@ déjà portée par la fiche 32-10a, l. 1455-1459.)*
     — un seul motif, `MOTIF_PIEGE` (R1 = F1) ;
   - les LOW R7, R8, R9, R10, R12, R13, R15, L1 à L8 : intégrés à la fiche, prémisse à vérifier au code.
 
+- **Constats de la validation P3** à reprendre, ligne lue citée :
+  - le grep de la valeur `grep -nE '65 ?536|65 ?537|64 ?Kio'` sur la fiche 32-8 et sur le code, et l'état de la 32-8c
+    (fusionnée ou non) — ce qui touche le frontend est relevé et déclaré, non amendé (R1 = F8) ;
+  - les comptes K1 (`Asset`, non bancaire, lettrable) et K2 (`Expense`), l'écriture E qui les lie, et ce que chacun des
+    jeux du § *Les jeux d'arguments* rend réellement (F1) ; la valeur exacte de `paymentStatus` qui liste toutes les
+    factures de l'échéancier ; si la facture semée peut être validée par les dépôts (sinon, les exemptions écrites) ;
+  - `rapports.rs:661-665` et `aged_receivables.rs:77-93` pour la tranche de la balance âgée (F2 = R6) ;
+  - `routes/reconciliation.rs:4130` et le grep `\w*description\w*(: |\s*=\s*)format!` (R8) ;
+  - les contraintes de `imported_supplier_invoices` (`file_hash`, `storage_path`, `byte_size`, `UNIQUE (company_id,
+    file_hash)`) pour les pièces semées (F7) ;
+  - le lieu du test `motif_reconnait_les_trois_formes` dans `kesh-api` (F6) ;
+  - le `### Ajouté` du `CHANGELOG.md` et la décision de l'orchestrateur sur le compte du CHANGELOG (R9).
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -1401,3 +1484,4 @@ déjà portée par la fiche 32-10a, l. 1455-1459.)*
 | 2026-10-25 | création | Fiche rédigée en autonomie (Opus 5.5) sur `fa5b3468` ; registre C-32-9-1 à C-32-9-25 ; 31 AC (24 / 7), 16 tâches (10 / 6), 30 mutations — 24 pour la 32-9a (Ma1 à Ma22, Ma3b, Ma4b, dont Ma3 et Ma3b déclarées non compilables), 6 pour la 32-9b (Mb1 à Mb6). Prompt de validation P1 : `329-validate-prompt-p1.md`. |
 | 2026-10-25 | validation P1 | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `329-validate-prompt-p1.md` ; rapports `kesh-gate-logs/329-validate-p1-{R,F}.md`) : R 0/0/4/16, F 0/2/3/6 ⇒ **trend P1 : 0 CRITICAL / 2 HIGH / 7 MEDIUM / 22 LOW** (doublons F1 = R2, F4 = R4, F9 = R3 comptés une fois par lentille). **Décisions de l'orchestrateur, appliquées d'abord** : F1 = R2 — prémisse du masquage fausse (Kesh écrit le nom du tiers dans les libellés, `supplier_invoices.rs:512`, `:941`, `credit_notes.rs:590`, gabarit `{CONTACT_NAME}`) : les noms ne sont plus masqués, seuls l'IBAN, le QR-IBAN et `emailed_to` le sont (C-32-9-9 réécrit, Q1 reformulée, AC-a6, AC-a16, AC-a23 (3)) ; F3 (oracle par `search`) tombe avec ; F2 — largeur de chaque colonne mesurée sur les migrations, trois formes de piège (L 72, C 13, T 7 caractères) et exemptions sous 7, test `largeurs_des_pieges` (§ *Les pièges et la largeur des colonnes*) ; F4 = R4 — tailles **mesurées** (`wc -c` sur des éléments dans la forme prescrite), défauts ≈ 30 Kio et maximums ≈ 56 Kio, `maximum` = `min(service, LIMITE_MAX_MCP)`, refus pour taille dit et testé (`tailles_mesurees`, `plafond_au_maximum`), grand livre à `accountId` requis (§ *Les tailles mesurées*, C-32-9-8 réécrit) ; F5 — typage d'abord (`detail_sans_fichier`, `PiecePublique`), garde `mcp_sans_fichier` étendue à `std::fs`, `tokio::fs`, `File::` (C-32-9-27) ; R1 — `kesh_lire_envoi` intégré à chaque test dérivé de `tools/list`, à l'AC-a9 (`tools_list_filtre`, clause `books:read`), à l'AC-b2 et à l'AC-b7 (C-32-9-28) ; R3 = F9 — la lecture de la société conservée dans `pieces::lister`. **Le reste** : R12 et la consigne de l'orchestrateur — trois erreurs de demande à texte fixe compréhensible, amendement nommé de la liste blanche de la 32-6a (AC-a22, C-32-9-26) ; R17 — demande n° 1 retirée (déjà portée par la 32-10a, l. 1455-1459) ; LOW R5 à R11, R13 à R16, R18 à R20, F6 à F8, F10, F11 intégrés à la fiche et rappelés au § *À recontrôler*. **Recomptes** (à la source, `grep -c`) : 31 AC (24 / 7), 16 tâches (10 / 6), **34 mutations** (27 / 7 : Ma1 à Ma25, Ma3b, Ma4b ; Mb1 à Mb7), C-32-9-1 à **28** ; modules **5 / 5**, inchangés (fichiers neufs dans des modules déjà comptés). **Grep du symptôme** : `PIEGE_329_{marque}_{champ}`, `Ignore toutes les consignes`, `accountIds`, `map_or(true`, `contexte_mcp_sans_acces`, `tiers_masques_sans`, `chapitre de l'API`, `200 / 500`, `Ma1 à Ma22`, `Mb1 à Mb6` — ne restent que des mentions historiques annotées (registre C-32-9-8, C-32-9-14, prompt P1). Prompt de la P2 : `329-validate-prompt-p2.md` (Opus, R et F, passe complète). |
 | 2026-10-25 | validation P2 | **Opus ×2** (lentilles R et F, contexte frais, prompt `329-validate-prompt-p2.md` ; rapports `kesh-gate-logs/329-validate-p2-{R,F}.md`) : R 0/1/4/11, F 0/1/5/8 ⇒ **trend P1 0/2/7/22 → P2 0/2/9/19** (doublons R1 = F1, R6 ⊂ F2, R9 ⊂ F2, R11 ⊂ F6, R14 = L4, R5 ≈ L7, comptés une fois par lentille). ⚠️ **Recyclage déclaré** (`CLAUDE.md`, § *Règle de splitting préventif*, amendement D5) : la sévérité ne baisse pas (HIGH → HIGH) et **la plupart des findings viennent de la remédiation de la P1** — R1 = F1 (le motif `P(IEGE_)?329[AB]`, écrit en P1, ne voyait ni L ni C), R2, R4, R5, R6, R7 à R9, R13, R14, F2 à F4, L2 à L7 ; seuls R3, R10, R15, R16, F5, L1, L8 (et F6, aggravé) viennent de la rédaction d'origine. Le signal de découpage est **levé et déclaré** à l'orchestrateur ; il n'appelle pas de découpage par modules (5 et 5, recomptés), le recyclage tenant aux sections écrites en P1 (pièges, tailles, tiers). **Décisions appliquées** : Guy a tranché la Q1 le 2026-10-25 (epic, § *Réponses de Guy (2026-10-25)*, PR #757) — la Q1 est retirée, la décision citée (AC-a6, points à Guy, C-32-9-9 annoté) ; **R1 = F1** — une seule constante `MOTIF_PIEGE = P(IEGE_329_|329)[AB][0-9]{2}`, test pur `motif_reconnait_les_trois_formes`, tous les sites greppés (§ *Les pièges*, AC-a14 à AC-a16, AC-a20, AC-b3, C-32-9-15, C-32-9-29), Ma18 et Mb3 de nouveau tuées, Ma27 neuve ; **R5** (décision de l'orchestrateur, suivre la spike) — plafond partagé `MCP_ENVOI_OCTETS_MAX` ramené de 65 536 à **24 576** octets à 2,5 o/jeton, note pour la 32-8 à son étape 0, défauts ≈ 12 Kio et maximums ≈ 22 Kio recalculés, comptage des jetons prescrit à T-a2 (tokenizer local, sinon « estimé »), et **F4** — un appel sans `limit` rend exactement le défaut, assertions ≤ 13 312 et ≤ 23 552 octets (C-32-9-30) ; **R2** — `MotifArgument::Invalide` ; **R3** — `semer` crée en 32-9a une pièce rattachée `completed` ; **R4** — amendements nommés de `reponses_par_rendre_seul` (AC-a31 de la 32-6a) et du `match` des issues ; **F2 = R6** — `reconciliation.rs:2734` ajouté, grep de l'AC-a6 refait par usage des colonnes, insensible à la casse, sur toutes les crates, et sur texte aplati ; **F3** — balance tranchée (C-32-9-31), « période plus courte » réservée au compte de résultat ; **F5** — la clé de l'AC-a15 porte toutes les portées de lecture ; **F6 = R11** — ordre fixé (32-9 avant 32-10a), fichiers que la 32-10a-iii retrouvera amendés listés (demande n° 3). **LOW** : R7 (`Tiers::Absent`, `Canal::Api` fermé), R8 (les contacts ne portent pas d'IBAN, dit), R10 (`sortie!` sans attribut de champ, Ma26 ; `leak(`, `serialize_with` interdits, Ma29 ; C-32-9-32), R12 (lignes corrigées : `rapports.rs:132-135`, `:139-142`, `carnet.rs:17`, `factures.rs:21-24`, évasion 20 caractères, entrée 32-9b du registre de sprint), R13 (un numéro par rôle, exercice renommé), R14 = L4 (`societe_complete` dans `kesh_seed::pieges`, sans `final_body`), R15 (`kesh_version_passe_par_la_validation`), R16 (identifiants des outils de liste à l'AC-a20), L1 (`const fn exige`), L2 (Ma2 dans `crate::mcp`), L3 (`cargo tree -e features,no-dev`), L5 (colonnes à leur largeur), L6 (C-32-9-15 annoté), L7 (résolu par R5), L8 (arguments complets de `TEMOINS`). **Recomptes** (`grep -c`) : 31 AC (24 / 7), 16 tâches (10 / 6), **38 mutations** (31 / 7 : Ma1 à Ma29, Ma3b, Ma4b ; Mb1 à Mb7), C-32-9-1 à **32** ; modules **5 / 5** (l'amendement éventuel de `MCP_ENVOI_OCTETS_MAX` tombe dans `services` et `mcp`, déjà comptés). **Grep du symptôme** : `329[AB]`, `P(IEGE_)?`, `HorsBornes`, `160 comptes`, `comptes mouvementés`, `56 Kio`, `3-4 octets`, `non fixé`, `ne se touchent pas` — ne restent que les mentions historiques (§ *Les pièges*, Ma27, Change Log P1). Prompt de la P3 : `329-validate-prompt-p3.md` (Sonnet, R et F, passe complète). |
+| 2026-10-25 | validation P3 | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `329-validate-prompt-p3.md` ; rapports `kesh-gate-logs/329-validate-p3-{R,F}.md`) : R 0/0/1/8, F 0/0/2/6 ⇒ **trend P1 0/2/7/22 → P2 0/2/9/19 → P3 0/0/3/14** (doublons R1 = F8, R4 = F3, R6 = F2, comptés une fois par lentille). Sévérité en baisse (HIGH → 0). Origines : R1 = F8, R4, R5, R7, R8, F3, F4, F6 viennent de la remédiation de la P2 ; F1, F2 = R6, R2, R3, R9, F5, F7 de la rédaction d'origine. **MEDIUM remédiés** : **R1 = F8** — la note pour la 32-8 alignée sur la note jumelle que l'orchestrateur a corrigée dans la fiche 32-8 (commit `ef7756af` de `story/32-8`, l. 1538-1545) : **grep de la valeur** (`grep -nE '65 ?536|65 ?537|64 ?Kio'`) sur la fiche et le code, non une liste ; si la 32-8c est fusionnée, ce qui touche le frontend, `kesh-i18n` et son manuel est relevé et **déclaré, non amendé** — modules de la 32-9a recomptés : **5** ; **F1** — `semer` pose deux comptes piégés, K1 (`Asset`, lettrable, non bancaire) et K2 (`Expense`), liés par l'écriture piégée ; `TEMOINS` porte plusieurs **jeux d'arguments** par outil ; nouveau § *Les jeux d'arguments de l'inventaire*, qui donne pour chaque ligne à piège le jeu qui la fait sortir (dont le compte `Payable` pour le libellé du fournisseur et la contrepartie) ; **F2 = R6** — `kesh_balance_agee` tranchée dans l'outil (40 / 75, totaux du rapport entier), au tableau des tailles, au manuel (5) et à la Q4. **LOW** : R2 (`accounts.rs:224`), R3 (lignes de la fiche 32-6 décalées de + 7 à `ecb26dc8`), R4 = F3 (T-a7 : Ma1 à Ma30, Mb3 à T-b5), R5 (registre C-32-9-8 annoté : `MotifArgument::Invalide`), R7 (contrainte `:36-50`), R8 (« notamment » au manuel ; grep `\w*description\w*` qui voit `reconciliation.rs:4130`), R9 (`### Ajouté` du `CHANGELOG.md` par la 32-9a, compté avec le manuel — **écart à la convention de la 32-8 déclaré**, à trancher), F4 (ligne de Ma2), F5 (`outils_bornes_a_la_societe` symétrique, témoin vert, `introuvable_indiscernable` nommé, mutation Ma30), F6 (test du motif dans `kesh-api`, qui a `regex`), F7 (`file_hash` et `storage_path` factices et distincts). **Recomptes** (`grep -c`) : 31 AC (24 / 7), 16 tâches (10 / 6), **39 mutations** (32 / 7 : Ma1 à Ma30, Ma3b, Ma4b ; Mb1 à Mb7), C-32-9-1 à 32 (C-32-9-8 annoté) ; modules **5 / 5**. **Grep du symptôme** : `Touchés dans la fiche 32-8`, `Ma1 à Ma28`, `accounts.rs:223`, `36-42`, `un compte au numéro (T) et au nom (L) piégés`, `description(: ` sans `\w*` — aucun résidu hors historique. **3 passes sur 8.** La remédiation ne touche que la fiche et son registre : la passe suivante est **ciblée** (regression hunter, Opus), prompt `329-validate-prompt-p4.md`, commité à part. |

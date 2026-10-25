@@ -53,7 +53,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 
 ### C-32-9-4 — La règle de classement : toute chaîne lue en base est enveloppée, sauf retypée en énumération fermée
 
-- **Contexte** : un numéro de compte (dix octets quelconques, `routes/accounts.rs:223`), un numéro de facture (formé
+- **Contexte** : un numéro de compte (dix octets quelconques, `routes/accounts.rs:224`), un numéro de facture (formé
   sur un format saisi par l'administrateur), un code de lettrage (calculé) sont des `String` ; les juger « fiables » un à
   un est un jugement qu'aucun test ne décide.
 - **Retenu** : **toute** `String` d'un type rendu par un service est soit `TexteNonFiable`, soit `Tiers` (C-32-9-9),
@@ -123,6 +123,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - *(Réécrit le 2026-10-25, validation P1 ; la version de la création retenait « le `maximum` égale la constante du
   service » et des défauts de 20 écritures et 100 lignes de grand livre.)*
 
+- *(Annoté le 2026-10-25, validation P3, R5 : le refus d'un `limit` au-delà de `LIMITE_MAX_MCP` est `ErreurOutil::ArgumentsInvalides { argument: "limit", motif: MotifArgument::Invalide }` — `HorsBornes`, écrit ci-dessus, n'existe pas dans la fiche 32-6 (validation P2, R2). La balance âgée est tranchée comme la balance, 40 / 75 (validation P3, F2 = R6).)*
 - *(Annoté le 2026-10-25, validation P2, R5 et F3 : valeurs recalculées sous le plafond de 24 576 octets — plan 40 / 70, écritures 12 / 22, grand livre 15 / 30, balance 30 / 55 (**tranchée dans l'outil** : le rapport rend tout compte actif, `trial_balance.rs:15-18`), postes ouverts 12 / 24, factures et échéancier 20 / 40, fournisseur 40 / 70, contacts 12 / 22, pièces 35 / 65 ; bilan et compte de résultat non paginés, refus au-delà de ≈ 60 comptes à solde non nul, recours par la période pour le seul compte de résultat ; un appel sans `limit` rend exactement le défaut, avec assertions de taille (F4).)*
 ### C-32-9-9 — Q1 de la 32-4b, en hypothèse : les coordonnées structurées des tiers masquées sans `contacts:read`, non leurs noms
 
@@ -155,7 +156,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 ### C-32-9-10 — Les rapports : `ContexteMcp` porte la `Trace` en privé et n'offre que `afficher`
 
 - **Contexte** : un rapport ne se lit que par `Rapport::afficher(self, &Trace)` (règle R5, `services/rapports.rs:347`) ;
-  la 32-6 a prévu que la 32-9a amende `ContexteMcp` (AC-a16 de la 32-6, l. 490-492).
+  la 32-6 a prévu que la 32-9a amende `ContexteMcp` (AC-a16 de la 32-6, l. 497-499).
 - **Retenu** : `ContexteMcp` gagne un champ privé `trace: &Trace` et **une** méthode `async fn afficher<T>(&self,
   rapport: Rapport<T, Affichage>) -> T` ; aucun accesseur de la `Trace`. Un outil ne peut donc écrire que la trace de
   consultation d'un rapport. Le répartiteur passe `&etat.trace` à `ContexteMcp::nouveau`.
