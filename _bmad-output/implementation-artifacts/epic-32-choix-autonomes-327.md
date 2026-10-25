@@ -1,0 +1,206 @@
+# Epic 32 — registre des choix autonomes de la Story 32-7
+
+Registre propre à la story (`docs/agents-orchestration.md` § 1), à verser **par union** dans
+`epic-32-choix-autonomes.md` au merge. Fiche : `32-7-ecran-serveur-mcp.md`. Numérotation `C-32-7-k`. Les numéros de
+ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § *Points à soumettre à Guy*.
+
+---
+
+### C-32-7-1 — Une seule clé, pas de découpage
+
+- **Contexte** : règle de découpage préventif (au plus cinq modules). La fiche touche le **frontend** (feature neuve,
+  route, navigation, E2E), **`kesh-i18n`** (quatre catalogues), les **docs** (deux manuels et leurs PDF, CHANGELOG) et
+  **`kesh-api`** par un seul fichier de test (`tests/textes_coherents.rs`, G23). Aucune route ne manque (fait 1 de la
+  fiche : `lib.rs:321-340`).
+- **Retenu** : **4** modules, une clé `32-7-ecran-serveur-mcp`, une boucle de revue.
+- **Écartées** : deux clés d'office (écran, manuel) — la seconde ne vivrait que de la première, et un écran fusionné
+  sans sa section ferait parler Kesh d'un serveur que le manuel ne décrit pas ; ajouter une route (créateur affiché,
+  C-32-7-16) — un cinquième module pour un confort.
+- **Réversible** : oui — l'ordre de rechange (C-32-7-3) découpe sans réécrire.
+
+### C-32-7-2 — `/admin/mcp`, feature `mcp-server`, préfixe `mcp-server-`
+
+- **Contexte** : la 32-8c pose `/admin/mcp/sends` et la feature `mcp-sends` (fiche 32-8, l. 214, 861-863) ; la 32-10a
+  sert `/api/v1/admin/mcp/prompts` ; la règle d'appartenance i18n juge une feature à nom composé par le préfixe
+  `${feature}-` (`lint-i18n-ownership.js:177-186`).
+- **Retenu** : page `/admin/mcp` (racine des écrans MCP), dossier `features/mcp-server/`, clés `mcp-server-*` et
+  `nav-admin-mcp`, `data-testid` préfixés `mcp-server-`.
+- **Écartées** : `/settings/mcp` (les clés d'API y vivent, mais elles sont ouvertes au Comptable ; l'écran MCP est
+  Administrateur seul, comme `/admin/backup`) ; préfixe `mcp-` seul (avalerait `mcp-sends-*` à la règle d'appartenance
+  d'un dossier `mcp`).
+- **Réversible** : oui, avant publication.
+
+### C-32-7-3 — L'ordre de développement : en dernier ; un ordre de rechange décrit
+
+- **Contexte** : la consigne place la 32-7 après les 32-6a/b, 32-8, 32-9 et 32-10a. L'écran seul ne dépend que de la
+  32-5 ; le manuel décrit le code de ces stories et range leurs sous-sections.
+- **Retenu** : développement **après** ces fusions ; les AC sont groupés A (écran), B (manuel), C (garde). **Ordre de
+  rechange** écrit en tête de fiche : `32-7a` (groupe A sans trois exceptions nommées — AC-16 (c), AC-13 (d), AC-10) sur
+  la seule 32-5, puis `32-7b` (B, C et les exceptions).
+- **Écartées** : développer l'écran tout de suite et le manuel « plus tard » sans le dire (une fusion où l'écran existe
+  sans texte) ; écrire le manuel d'après les fiches voisines plutôt que d'après leur code (il mentirait à la première
+  remédiation de leur revue).
+- **Réversible** : oui — l'orchestrateur choisit à l'étape de lancement.
+
+### C-32-7-4 — *Le serveur MCP* est une `\section`, après *Sécurité*
+
+- **Contexte** : `admin-manual.tex` est un `article` (`\documentclass…{article}`, l. 5) : `\section` est le plus haut
+  niveau. Les 32-8 et 32-9 écrivent des `\subsection` (`sec:mcp-envois`, `sec:mcp-outils`), la 32-9 en repli dans
+  `\section{Sécurité}` (l. 2862) entre les clés d'API (l. 2898) et le RBAC (l. 2927).
+- **Retenu** : `\section{Le serveur MCP}\label{sec:mcp}` entre la fin de *Sécurité* et `\section{Monitoring et logs}`
+  (l. 3017) ; les sous-sections des 32-8, 32-9 (et 32-10b si elle existe) y sont **déplacées sans rétrogradation**,
+  étiquettes inchangées.
+- **Écartées** : une `\subsection` de *Sécurité* (les sous-sections voisines deviendraient des `\subsubsection`,
+  renumérotées, et le test de la matrice de la 32-9 pourrait dépendre du niveau) ; un chapitre neuf (la classe n'en a
+  pas).
+- **Réversible** : oui — un déplacement de bloc.
+
+### C-32-7-5 — Le secret : séparé à la couche d'API, tenu par une instance locale au composant
+
+- **Contexte** : la réponse 201 aplatit la clé et le secret dans un seul objet (`mcp_keys.rs:108-116`) ; la page des
+  clés d'API fait circuler l'objet de création entier dans son code (`created`, `api-keys/+page.svelte:154`) et en tire
+  le secret pour l'encart (l. 155) : rien ne le sépare de la clé à la frontière de l'API.
+- **Retenu** : `createMcpKey` rend `{ cle, secret }`, `cle` construite champ par champ (type sans `key`) ; le secret
+  vit dans une instance de `SecretUnique` créée dans le `<script>` du composant, effacée par *Fermer* et par toute
+  nouvelle création, perdue au démontage ; la liste se recharge par `GET`. Cinq « ni » testés (DOM, état, liste,
+  journal, stockage et adresse) ; garde G-b contre une instance de module.
+- **Écartées** : recopier la page des clés d'API (l'objet complet circulerait) ; un magasin global (survivrait à la
+  navigation) ; masquer le secret sans l'effacer (mutation M1).
+- **Réversible** : oui.
+
+### C-32-7-6 — Aucune portée cochée par défaut
+
+- **Contexte** : le serveur exige au moins une portée (`mcp_keys.rs:197-200`) ; chaque portée ouvre une part
+  différente des livres, `contacts:read` des données personnelles.
+- **Retenu** : cinq cases vides ; refus à l'écran si aucune n'est cochée.
+- **Écartées** : `books:read` d'office (le geste le plus fréquent, mais une clé à portée non choisie).
+- **Réversible** : oui — soumis à Guy (point 1).
+
+### C-32-7-7 — `sendValidation` toujours envoyé
+
+- **Contexte** : absent, le serveur prend `required` (`mcp_keys.rs:277-280`) ; `null` y retombe aussi sans test
+  (#738 B5 = E2).
+- **Retenu** : l'écran envoie toujours `"required"` ou `"exempt"` ; un test compare le corps entier.
+- **Écartées** : se fier au défaut du serveur (un changement de défaut côté serveur changerait l'écran en silence).
+- **Réversible** : oui.
+
+### C-32-7-8 — Les dates : naïf lu en UTC, affichage local, expiration en fin de journée locale
+
+- **Contexte** : #738 B7 = E6 — clés en `NaiveDateTime` sans `Z` (`mcp_keys.rs:68-71`), réglages avec `Z`
+  (`mcp_server_settings.rs:74-75`) ; la page des clés d'API envoie `T23:59:59Z` et affiche par `slice` (l. 73-77,
+  150-153), donc en journées UTC.
+- **Retenu** : `depuisUtcNaif` ajoute `Z` à une chaîne sans fuseau ; affichage par `Intl.DateTimeFormat` dans le
+  fuseau du navigateur ; expiration = `23:59:59.999` locale du jour choisi, envoyée en `toISOString()`. Tests sous
+  `TZ=Europe/Zurich`, avec un témoin du fuseau.
+- **Écartées** : le motif des clés d'API (une clé suisse expirerait à 01:59 ou 00:59 le lendemain, et la date
+  affichée serait celle d'UTC) ; corriger le serveur pour qu'il rende des `Z` (route de la 32-5c, cinquième module ;
+  reste sur #738).
+- **Réversible** : oui.
+
+### C-32-7-9 — La révocation offerte à toute clé non révoquée, expirée comprise
+
+- **Contexte** : la page des clés d'API cache la révocation d'une clé expirée (`api-keys/+page.svelte:375`) ; le serveur
+  révoque toute clé non révoquée (`mcp_keys.rs:340-372`).
+- **Retenu** : offerte tant que `revokedAt` est vide.
+- **Écartées** : le motif des clés d'API (une clé expirée resterait « non révoquée » au journal et dans une
+  sauvegarde).
+- **Réversible** : oui — soumis à Guy (point 2).
+
+### C-32-7-10 — Confirmation vers `dispensée` seulement
+
+- **Contexte** : passer en `exempt` fait partir les données sans les montrer ; revenir en `required` ne fait que
+  restreindre.
+- **Retenu** : confirmation au seul passage vers `exempt`.
+- **Écartées** : deux confirmations (friction sans risque) ; aucune (un clic suffirait à lever la validation).
+- **Réversible** : oui.
+
+### C-32-7-11 — Les réglages en un seul formulaire, une entrée par ligne
+
+- **Contexte** : le `PUT` remplace tout (`mcp_server_settings.rs:7-11`) ; une entrée vide est refusée (l. 116) ; le
+  serveur met chaque entrée en forme canonique sans le signaler (#738 B2 = E4).
+- **Retenu** : un formulaire, *Enregistrer* unique ; zones de texte à une entrée par ligne, lignes vides retirées ;
+  après succès, les champs sont **remplacés par la réponse** (la forme canonique devient visible).
+- **Écartées** : une liste d'entrées à ajouter une à une (plus de composants, même contrat) ; une case d'activation
+  enregistrée seule (deux `PUT` concurrents sur une même version).
+- **Réversible** : oui.
+
+### C-32-7-12 — Des avertissements informatifs, jamais bloquants
+
+- **Contexte** : `/0` est accepté (#738 B3 = E5) ; un filtre désactivé ou une liste vide sont des réglages légitimes ;
+  la sécurité relève de l'infrastructure (décision de Guy).
+- **Retenu** : quatre avertissements calculés sur le texte affiché (filtre désactivé, plage `/0`, mandataire `/0`,
+  liste vide filtre activé), sans empêcher l'enregistrement.
+- **Écartées** : refuser `/0` à l'écran (la route l'accepte : deux règles divergentes) ; ne rien dire.
+- **Réversible** : oui.
+
+### C-32-7-13 — « Configurer un client » écrit par la 32-7, éprouvé par la 32-11
+
+- **Contexte** : la consigne demande au manuel la configuration d'un client (Claude Code) ; la spike la donne à la 32-7
+  (l. 945-946) ; l'epic donne *Brancher un agent* (parcours pas à pas, rejoué depuis le PDF) à la 32-11.
+- **Retenu** : une sous-section courte `sec:mcp-client` — où va la clé, portée `user`/`local`, jamais `project` sauf
+  `${KESH_MCP_KEY}`, `~/.claude.json` en clair, l'historique du shell, 25 000 jetons, Hermes —, qui dit qu'elle n'est
+  pas éprouvée et renvoie à la 32-11.
+- **Écartées** : tout laisser à la 32-11 (l'écran qui montre le secret ne dirait pas où le mettre) ; écrire le parcours
+  complet ici (doublon de la 32-11, non éprouvé).
+- **Réversible** : oui.
+
+### C-32-7-14 — Les textes que la 32-7 ne porte pas
+
+- **Contexte** : la consigne demande de corriger `admin-manual.tex:2935` et `api-external.md:185`, `:831` « si c'est la
+  32-7 qui les porte selon les fiches ». La fiche 32-6 (l. 1279-1283) les donne à la **32-11** ; la fiche 32-10a
+  (l. 1008, 1384) donne le compte de l. 2935 à la **32-10b**, après ses routes. La 32-7 n'ajoute aucune route.
+- **Retenu** : la 32-7 ne les corrige pas ; elle les relit à l'étape 0 et écrit au Dev Agent Record s'ils sont faux
+  (AC-20) ; l'orchestrateur est prié de fixer le propriétaire unique du compte (demande 1).
+- **Écartées** : corriger 128 → 129 ici (le compte bougera encore avec les 32-8 et 32-10a : une correction à refaire).
+- **Réversible** : oui.
+
+### C-32-7-15 — Pas de compteur des envois au menu
+
+- **Contexte** : question 12 de la fiche 32-8 (l. 1506-1507), sans réponse.
+- **Retenu** : rien ici ; soumis à Guy (point 3).
+- **Réversible** : oui.
+
+### C-32-7-16 — Le créateur d'une clé n'est pas affiché
+
+- **Contexte** : la réponse ne porte que `createdByUserId` (`mcp_keys.rs:67`) ; la liste des utilisateurs est un autre
+  écran.
+- **Retenu** : non affiché ; le manuel dit qu'un appel paraît au journal au nom du créateur.
+- **Écartées** : joindre `/api/v1/users` (une requête et un couplage de plus) ; changer la route (cinquième module).
+- **Réversible** : oui — soumis à Guy (point 4).
+
+### C-32-7-17 — Une garde G23 lie le manuel au code
+
+- **Contexte** : la liste des plages par défaut et les cinq portées sont écrites au manuel ; une liste recopiée dérive
+  en silence (précédent G22, `textes_coherents.rs:1673`).
+- **Retenu** : G23 compare deux blocs balisés du manuel à `DEFAULT_ALLOWED_NETWORKS` et `McpScope::ALL`, et vérifie
+  `100.64.0.0/10`, `Traefik` et `Docker` dans les quatre catalogues ; témoin du bloc absent.
+- **Écartées** : une relecture seule (le motif « aucun gate ne lit le manuel ») ; une garde frontend (elle ne lit pas
+  les constantes Rust).
+- **Réversible** : oui.
+
+### C-32-7-18 — L'adresse du serveur affichée depuis l'origine du navigateur
+
+- **Contexte** : l'administrateur doit donner une adresse au client ; Kesh ne connaît pas sûrement la sienne
+  (`KESH_PUBLIC_BASE_URL` facultatif).
+- **Retenu** : `new URL('/mcp', window.location.origin)`, avec la mention « exactement `/mcp` » et la réserve qu'un agent
+  du réseau local peut devoir en employer une autre.
+- **Écartées** : ne rien afficher ; la déduire de `KESH_PUBLIC_BASE_URL` (une route de plus).
+- **Réversible** : oui.
+
+### C-32-7-19 — L'E2E présente la clé à `/mcp`, et range derrière lui
+
+- **Contexte** : un secret affiché peut être faux sans qu'un test d'écran le voie ; la base E2E est partagée entre
+  specs.
+- **Retenu** : la clé lue à l'écran fait un `initialize` 200, puis un 401 après révocation ; un `afterAll` désactive le
+  serveur et révoque les clés **si** `seedTestState` ne vide pas `mcp_keys` et `mcp_server_settings` (constaté à
+  l'étape 0).
+- **Écartées** : vérifier seulement la forme du secret (un secret faux bien formé passerait).
+- **Réversible** : oui.
+
+### C-32-7-20 — « Dernière utilisation », avec sa note, jamais « dernier appel »
+
+- **Contexte** : `last_used_at` est posée à l'authentification, même pour un appel non servi ensuite (fiche 32-6,
+  l. 1015-1018).
+- **Retenu** : libellé « Dernière utilisation » et une note qui dit ce qu'il mesure ; formulation relue à l'étape 0.
+- **Écartées** : « Dernier appel » (faux) ; masquer la colonne (le kickoff la demande).
+- **Réversible** : oui.
