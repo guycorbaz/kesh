@@ -6,6 +6,9 @@
 //! - `POST   /api/v1/supplier-invoices/{id}/pay` régler binaire (Comptable+)
 //! - `POST   /api/v1/supplier-invoices/{id}/cancel` annuler, même payée (Comptable+)
 //!
+//! Les deux lectures (liste, détail) passent par `services::factures_fournisseur`
+//! (Story 32-4b).
+//!
 //! Erreurs métier (config absente, déjà payée, compte étranger/inactif, etc.)
 //! → `AppError` typée 4xx, jamais 500 (AC5/AC9).
 
@@ -26,6 +29,8 @@ use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
+use crate::services::acces::ContexteAcces;
+use crate::services::factures_fournisseur::{self, DemandeListeFacturesFournisseur};
 
 // ---------------------------------------------------------------------------
 // Réponses
@@ -209,6 +214,15 @@ impl SupplierInvoiceResponse {
         let view = supplier_invoices::get_settlement_view(pool, company_id, id)
             .await?
             .ok_or(AppError::Database(DbError::NotFound))?;
+        Ok(Self::from_view(view))
+    }
+
+    /// Story 32-4b (C-32-4b-5) — la mise en forme **pure** d'une vue de
+    /// règlement : la seule, employée par
+    /// [`Self::load_with_settlement_cancellation`] (les mutants, et les trois
+    /// sites de `imported_supplier_invoices.rs`) et par le handler de la fiche,
+    /// qui lit la vue par `services::factures_fournisseur::detail`.
+    pub fn from_view(view: supplier_invoices::SupplierInvoiceSettlementView) -> Self {
         let hit = view.settlement_cancel_blocker;
         let invoice_hit = view.invoice_cancel_blocker;
         let mut resp = Self::from_parts(view.invoice, view.lines);
@@ -222,7 +236,7 @@ impl SupplierInvoiceResponse {
             .last_confirmed_batch
             .map(|(id, confirmed_at)| LastConfirmedBatchResponse { id, confirmed_at });
         resp.source_document = Some(view.source_document.map(SourceDocumentInfo::from));
-        Ok(resp)
+        resp
     }
 }
 
@@ -553,15 +567,22 @@ pub async fn list_supplier_invoices(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListSupplierInvoicesQuery>,
 ) -> Result<Json<ListResponse<SupplierInvoiceListItemResponse>>, AppError> {
-    let company = get_company_for(&current_user, &state.pool).await?;
-    let limit = params.limit.unwrap_or(50).clamp(1, 200);
-    let offset = params.offset.unwrap_or(0).max(0);
-    let (items, total) = supplier_invoices::list(&state.pool, company.id, limit, offset).await?;
+    // Story 32-4b — la société, les bornes (écrêtage) et la page passent par le
+    // service (`services::factures_fournisseur::lister`).
+    let page = factures_fournisseur::lister(
+        &ContexteAcces::depuis_api(&current_user),
+        &state.lecture(),
+        DemandeListeFacturesFournisseur {
+            limit: params.limit,
+            offset: params.offset,
+        },
+    )
+    .await?;
     Ok(Json(ListResponse {
-        items: items.into_iter().map(Into::into).collect(),
-        total,
-        offset,
-        limit,
+        items: page.items.into_iter().map(Into::into).collect(),
+        total: page.total,
+        offset: page.offset,
+        limit: page.limit,
     }))
 }
 
@@ -571,11 +592,16 @@ pub async fn get_supplier_invoice(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
-    let company = get_company_for(&current_user, &state.pool).await?;
-    Ok(Json(
-        SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
-            .await?,
-    ))
+    // Story 32-4b — la société et la vue passent par le service
+    // (`services::factures_fournisseur::detail`) ; la mise en forme est celle de
+    // `load_with_settlement_cancellation` (`from_view`).
+    let vue = factures_fournisseur::detail(
+        &ContexteAcces::depuis_api(&current_user),
+        &state.lecture(),
+        id,
+    )
+    .await?;
+    Ok(Json(SupplierInvoiceResponse::from_view(vue)))
 }
 
 /// `POST /api/v1/supplier-invoices` — enregistre une facture fournisseur (Comptable+).

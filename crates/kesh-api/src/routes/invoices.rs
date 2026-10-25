@@ -1,6 +1,9 @@
 //! Routes CRUD pour les factures brouillon (Story 5.1 — FR31, FR32).
 //!
 //! - GETs (`list`, `get`) → `authenticated_routes` (tout rôle).
+//! - Les lectures de la liste, de la fiche, de l'échéancier et des règlements
+//!   passent par `services::factures` (Story 32-4b) ; l'export CSV de
+//!   l'échéancier n'en emploie que la validation (`requete_echeances`).
 //! - Mutations `create`, `update` → `comptable_routes`.
 //! - `delete` (#219, restreint par #440 — **brouillons seulement**) → `admin_routes`.
 //!
@@ -27,8 +30,7 @@ use kesh_db::errors::DbError;
 use kesh_db::repositories::{
     contacts,
     invoices::{
-        self, DueDatesSummary, InvoiceListItem, InvoiceListQuery, InvoiceSortBy, PausedFilter,
-        PaymentStatusFilter,
+        self, DueDatesSummary, InvoiceListItem, InvoiceSortBy, PausedFilter, PaymentStatusFilter,
     },
 };
 use kesh_i18n::formatting::{format_date, format_money};
@@ -43,6 +45,8 @@ use crate::routes::limits::{
     MAX_DECIMAL_SCALE, MAX_LINE_TOTAL, MAX_QUANTITY, MAX_UNIT_PRICE, scale_within,
 };
 use crate::routes::vat;
+use crate::services::acces::ContexteAcces;
+use crate::services::factures::{self, DemandeEcheances, DemandeListeFactures, ReglementFacture};
 use crate::util::csv_sanitize;
 
 // ---------------------------------------------------------------------------
@@ -51,9 +55,6 @@ use crate::util::csv_sanitize;
 
 const MAX_DESCRIPTION_LEN: usize = 1000;
 const MAX_PAYMENT_TERMS_LEN: usize = 255;
-const MAX_LIST_LIMIT: i64 = 100;
-const DEFAULT_LIST_LIMIT: i64 = 20;
-const MAX_SEARCH_LEN: usize = 100;
 /// Cap lignes par facture : anti-DoS (N+1 INSERT dans transaction) + anti-overflow
 /// `total_amount` (avec MAX_LINE_TOTAL = 10¹², 200 lignes = 2·10¹⁴ < DECIMAL(19,4) max).
 const MAX_LINES: usize = 200;
@@ -599,71 +600,26 @@ pub async fn list_invoices(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListInvoicesQuery>,
 ) -> Result<Json<ListResponse<InvoiceListItemResponse>>, AppError> {
-    // Validate company exists (defensive: company_id staleness window)
-    let _ = get_company_for(&current_user, &state.pool).await?;
-
-    let limit = params.limit.unwrap_or(DEFAULT_LIST_LIMIT);
-    if !(1..=MAX_LIST_LIMIT).contains(&limit) {
-        return Err(AppError::Validation(format!(
-            "limit doit être compris entre 1 et {MAX_LIST_LIMIT}"
-        )));
-    }
-    let offset = params.offset.unwrap_or(0);
-    if offset < 0 {
-        return Err(AppError::Validation(
-            "offset doit être positif ou nul".into(),
-        ));
-    }
-
-    // Normalisation search : trim côté handler, collapse empty → None (cohérent payment_terms).
-    let search = match params
-        .search
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        Some(s) if s.chars().count() > MAX_SEARCH_LEN => {
-            return Err(AppError::Validation(format!(
-                "search doit faire au plus {MAX_SEARCH_LEN} caractères"
-            )));
-        }
-        Some(s) => Some(s.to_string()),
-        None => None,
-    };
-
-    if let Some(ref st) = params.status
-        && !matches!(st.as_str(), "draft" | "validated" | "cancelled")
-    {
-        return Err(AppError::Validation("status invalide".into()));
-    }
-
-    if let (Some(df), Some(dt)) = (params.date_from, params.date_to)
-        && df > dt
-    {
-        return Err(AppError::Validation(
-            "dateFrom doit être antérieur ou égal à dateTo".into(),
-        ));
-    }
-
-    let query = InvoiceListQuery {
-        search,
+    // Story 32-4b — la lecture, sa validation et ses bornes passent par le
+    // service (`services::factures::lister`).
+    let demande = DemandeListeFactures {
+        search: params.search,
         status: params.status,
         contact_id: params.contact_id,
         date_from: params.date_from,
         date_to: params.date_to,
-        payment_status: None,
-        due_before: None,
-        // Story 21-6a (D10) — seule surface qui expose ce filtre. `None` quand
-        // le client ne fournit rien → `All` → no-op.
         paused: params.paused.map(PausedFilter::from),
-        sort_by: params.sort_by.unwrap_or_default(),
-        sort_direction: params.sort_direction.unwrap_or(SortDirection::Desc),
-        limit,
-        offset,
+        sort_by: params.sort_by,
+        sort_direction: params.sort_direction,
+        limit: params.limit,
+        offset: params.offset,
     };
-
-    let result =
-        invoices::list_by_company_paginated(&state.pool, current_user.company_id, query).await?;
+    let result = factures::lister(
+        &ContexteAcces::depuis_api(&current_user),
+        &state.lecture(),
+        demande,
+    )
+    .await?;
     Ok(Json(ListResponse {
         items: result
             .items
@@ -681,28 +637,21 @@ pub async fn get_invoice(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
-    let (invoice, lines) =
-        invoices::find_by_id_with_lines(&state.pool, current_user.company_id, id)
-            .await?
-            .ok_or(AppError::Database(DbError::NotFound))?;
-    // Story 24-2 (#371) — la fiche calcule le résiduel par la forme SCALAIRE.
-    // ⚠️ Une requête de plus, sur UNE facture : pas de N+1 possible ici. Les
-    // agrégats (échéancier : liste, export, résumé ; balance âgée) le calculent
-    // par la forme JOINTE `amount_due_derived_joins` depuis la Story 25-4-b1 —
-    // les deux sont tenues à parité par `invoice_amount_due_parity.rs`.
-    let settled = kesh_db::repositories::invoice_settlements::amount_settled(&state.pool, id)
-        .await
-        .map_err(AppError::Database)?;
-    let due = kesh_db::repositories::invoice_settlements::amount_due(&state.pool, id)
-        .await
-        .map_err(AppError::Database)?;
-    Ok(Json(
-        with_draft_rounding_preview(
-            &state,
-            InvoiceResponse::from_parts(invoice, lines).with_settlement(settled, due),
-        )
-        .await?,
-    ))
+    // Story 32-4b — la fiche, le réglé, le reste dû et, pour un brouillon, le
+    // réglage d'arrondi passent par le service (`services::factures::detail`) ;
+    // l'aperçu se compose ici, sans relire le réglage.
+    let fiche = factures::detail(
+        &ContexteAcces::depuis_api(&current_user),
+        &state.lecture(),
+        id,
+    )
+    .await?;
+    let response = InvoiceResponse::from_parts(fiche.facture, fiche.lignes)
+        .with_settlement(fiche.montant_regle, fiche.reste_du);
+    Ok(Json(match fiche.arrondi_5_centimes {
+        Some(arrondi) => response.with_rounding_preview(arrondi),
+        None => response,
+    }))
 }
 
 pub async fn create_invoice(
@@ -1039,102 +988,23 @@ pub struct DueDatesResponse {
 // fait, et deux règlements concurrents ne se contredisent pas. Le garde qui
 // compte est le refus du trop-perçu, calculé sous verrou.
 
-/// Construit une `InvoiceListQuery` pour l'échéancier — force `status =
-/// 'validated'` et applique les défauts de tri (`due_date ASC`).
-fn build_due_dates_query(params: ListDueDatesQuery) -> Result<InvoiceListQuery, AppError> {
-    let limit = params.limit.unwrap_or(DEFAULT_LIST_LIMIT);
-    if !(1..=MAX_LIST_LIMIT).contains(&limit) {
-        return Err(AppError::Validation(format!(
-            "limit doit être compris entre 1 et {MAX_LIST_LIMIT}"
-        )));
-    }
-    let offset = params.offset.unwrap_or(0);
-    if offset < 0 {
-        return Err(AppError::Validation(
-            "offset doit être positif ou nul".into(),
-        ));
-    }
-    // B16 (review pass 1 G2 B) : cap raisonnable (cf. list_invoices).
-    const MAX_OFFSET: i64 = 1_000_000;
-    if offset > MAX_OFFSET {
-        return Err(AppError::Validation(format!(
-            "offset doit être ≤ {MAX_OFFSET}"
-        )));
-    }
-
-    let search = match params
-        .search
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        Some(s) if s.chars().count() > MAX_SEARCH_LEN => {
-            return Err(AppError::Validation(format!(
-                "search doit faire au plus {MAX_SEARCH_LEN} caractères"
-            )));
-        }
-        Some(s) => Some(s.to_string()),
-        None => None,
-    };
-
-    if let (Some(df), Some(dt)) = (params.date_from, params.date_to)
-        && df > dt
-    {
-        return Err(AppError::Validation(
-            "dateFrom doit être antérieur ou égal à dateTo".into(),
-        ));
-    }
-    // B11 (review pass 1 G2 B) : `dueBefore` doit être ≥ `dateFrom` (sinon
-    // intersection vide silencieuse — l'utilisateur s'attend à un message
-    // explicite).
-    if let (Some(df), Some(db)) = (params.date_from, params.due_before)
-        && db < df
-    {
-        return Err(AppError::Validation(
-            "dueBefore doit être ≥ dateFrom".into(),
-        ));
-    }
-    // B21 (review pass 2 G2 B) : pareil pour `dateTo` — une intersection
-    // vide due_before < date_to mérite un 400 explicite (uniquement quand
-    // les deux sont posés ; le cas indépendant reste autorisé).
-    if let (Some(dt), Some(db)) = (params.date_to, params.due_before)
-        && db < dt
-    {
-        return Err(AppError::Validation("dueBefore doit être ≥ dateTo".into()));
-    }
-
-    Ok(InvoiceListQuery {
-        search,
-        // Forcé côté backend — sécurité par défaut (Scope §5).
-        status: Some("validated".into()),
+/// La demande de l'échéancier, depuis les paramètres de la route — **une**
+/// conversion, partagée par la page et par l'export CSV (C-32-4b-4) ; la
+/// validation et les constantes de l'échéancier sont celles du service
+/// (`services::factures::requete_echeances`).
+fn demande_echeances(params: ListDueDatesQuery) -> DemandeEcheances {
+    DemandeEcheances {
+        search: params.search,
         contact_id: params.contact_id,
         date_from: params.date_from,
         date_to: params.date_to,
-        // B1 (review pass 1 G2 B) : défaut backend = `Unpaid` pour respecter
-        // AC#3 (échéancier chargé par défaut → impayées). Tout override
-        // explicite du caller (`?paymentStatus=all|paid|overdue`) reste
-        // honoré — seul le cas « pas de valeur fournie » bascule sur Unpaid.
-        payment_status: Some(
-            params
-                .payment_status
-                .map(Into::into)
-                .unwrap_or(PaymentStatusFilter::Unpaid),
-        ),
         due_before: params.due_before,
-        // Story 21-6a (D10) — INVARIANT ANTI-DISSIMULATION : l'échéancier ne
-        // filtre JAMAIS sur la suspension. Une facture suspendue sort de la
-        // liste « à rappeler » (`dunning_eligibility`) et de nulle part
-        // ailleurs. `None` → `PausedFilter::All` → no-op dans
-        // `push_where_clauses`, que les items de cette page traversent via
-        // `list_by_company_paginated`. L'échéancier n'expose aucun `?paused=`.
-        // Ne PAS remplacer par `params.paused` : `ListDueDatesQuery` n'a
-        // volontairement pas ce champ.
-        paused: None,
-        sort_by: params.sort_by.unwrap_or(InvoiceSortBy::DueDate),
-        sort_direction: params.sort_direction.unwrap_or(SortDirection::Asc),
-        limit,
-        offset,
-    })
+        payment_status: params.payment_status.map(Into::into),
+        sort_by: params.sort_by,
+        sort_direction: params.sort_direction,
+        limit: params.limit,
+        offset: params.offset,
+    }
 }
 
 /// `GET /api/v1/invoices/due-dates` — page échéancier.
@@ -1143,22 +1013,16 @@ pub async fn list_due_dates_handler(
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListDueDatesQuery>,
 ) -> Result<Json<DueDatesResponse>, AppError> {
-    let query = build_due_dates_query(params)?;
-
-    // B15 (review pass 1 G2 B) : strip explicite de `payment_status` avant
-    // la summary — rend l'invariant AC#11 (« le summary ignore paymentStatus »)
-    // visible côté handler au lieu de dépendre uniquement du contrat repo.
-    let summary_query = InvoiceListQuery {
-        payment_status: None,
-        ..query.clone()
-    };
-    // List + summary en parallèle (read-only, pas de tx commune).
-    let (list_res, summary_res) = tokio::join!(
-        invoices::list_by_company_paginated(&state.pool, current_user.company_id, query.clone()),
-        invoices::due_dates_summary(&state.pool, current_user.company_id, &summary_query),
-    );
-    let list = list_res?;
-    let summary = summary_res?;
+    // Story 32-4b — la validation, la page et le résumé passent par le service
+    // (`services::factures::echeances`).
+    let echeancier = factures::echeances(
+        &ContexteAcces::depuis_api(&current_user),
+        &state.lecture(),
+        demande_echeances(params),
+    )
+    .await?;
+    let list = echeancier.page;
+    let summary = echeancier.resume;
 
     // B22 (review pass 2 G2 B) : `is_overdue` est désormais calculé dans le
     // `From<InvoiceListItem>` — chaque item porte sa propre valeur. Le `today`
@@ -1429,44 +1293,35 @@ pub async fn list_invoice_settlements_handler(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<Vec<InvoiceSettlementResponse>>, AppError> {
-    let company = get_company_for(&current_user, &state.pool).await?;
-    // 404 si la facture n'est pas de la société, en plus du scoping des lignes.
-    invoices::find_by_id_with_lines(&state.pool, company.id, id)
-        .await?
-        .ok_or(AppError::Database(DbError::NotFound))?;
-    // ⛔ Une transaction de lecture, pour un seul instantané (revue P1 de la
-    // 25-3-a-2) : lus séparément, un règlement annulé entre la liste et son
-    // motif rendait `NotFound` — un 404 sur toute la liste.
-    let mut tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?;
-    let settlements =
-        kesh_db::repositories::invoice_settlements::list_for_invoice(&mut *tx, company.id, id)
-            .await?;
-    let mut out = Vec::with_capacity(settlements.len());
-    for s in settlements {
-        let hit = kesh_db::repositories::invoice_settlements_write::settlement_cancel_blocker(
-            &mut tx, company.id, s.id,
+    // Story 32-4b — la société, la facture (404), puis la liste et les motifs
+    // dans une transaction de lecture passent par le service
+    // (`services::factures::reglements`) ; la mise en forme reste ici.
+    let reglements = factures::reglements(
+        &ContexteAcces::depuis_api(&current_user),
+        &state.lecture(),
+        id,
+    )
+    .await?;
+    let out = reglements
+        .into_iter()
+        .map(
+            |ReglementFacture {
+                 reglement: s,
+                 motif: hit,
+             }| InvoiceSettlementResponse {
+                id: s.id,
+                journal_entry_id: s.journal_entry_id,
+                amount: s.amount,
+                settled_on: s.settled_on,
+                settlement_type: s.settlement_type,
+                write_off_nature: s.write_off_nature,
+                cancellable: hit.is_none(),
+                cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
+                cancel_blocked_label: hit.as_ref().and_then(|h| h.2.clone()),
+                cancel_blocked_document_id: hit.as_ref().and_then(|h| h.1),
+            },
         )
-        .await?;
-        out.push(InvoiceSettlementResponse {
-            id: s.id,
-            journal_entry_id: s.journal_entry_id,
-            amount: s.amount,
-            settled_on: s.settled_on,
-            settlement_type: s.settlement_type,
-            write_off_nature: s.write_off_nature,
-            cancellable: hit.is_none(),
-            cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
-            cancel_blocked_label: hit.as_ref().and_then(|h| h.2.clone()),
-            cancel_blocked_document_id: hit.as_ref().and_then(|h| h.1),
-        });
-    }
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?;
+        .collect();
     Ok(Json(out))
 }
 
@@ -1562,12 +1417,12 @@ pub async fn export_due_dates_csv_handler(
 
     // M4 (review pass 1 G2) : le `limit`/`offset` côté client ne s'appliquent
     // pas à l'export CSV (pas de pagination). On les force à des valeurs
-    // validables pour que `build_due_dates_query` ne rejette pas l'appel
+    // validables pour que `requete_echeances` ne rejette pas l'appel
     // avec un 400 sur un paramètre sans effet. La limite réelle est
     // appliquée par `list_for_export(MAX_EXPORT_ROWS + 1)`.
     params.limit = None;
     params.offset = None;
-    let query = build_due_dates_query(params)?;
+    let query = factures::requete_echeances(demande_echeances(params))?;
 
     // +1 pour détecter le dépassement de la limite dure.
     // `truncated` (P3 review pass 3 A) capte le cas où le clamp repo 50_000

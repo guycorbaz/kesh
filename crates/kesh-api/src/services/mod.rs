@@ -49,8 +49,9 @@
 //!   **dans** `services`, on n'ouvre aucun autre chemin vers lui et on n'emploie
 //!   `lecture.pool()` qu'à lire, `trace.pool()` qu'aux fonctions d'audit — ce
 //!   qu'aucune garde ne prouve : la revue le lit, le test
-//!   `tests/services_motif.rs` le vérifie à l'exécution, la 32-6 l'imposera par
-//!   la base pour la `Lecture`. Ce qu'un handler doit lire pour sa présentation
+//!   `tests/services_motif.rs` le vérifie à l'exécution, et la connexion du
+//!   MCP se déclarera en outre `READ ONLY` (mode de session, 32-6 ; Q11,
+//!   tranchée le 2026-10-24). Ce qu'un handler doit lire pour sa présentation
 //!   (le contexte PDF) passe par une fonction de service. L'action d'audit reste
 //!   un **littéral** à chaque `NewAuditLogEntry::user(` (garde
 //!   `tests/audit_label_registry.rs`).
@@ -110,6 +111,42 @@
 //!    contact portant des conditions de paiement (leur libellé est mis en forme
 //!    au handler, hors service).
 //!
+//!    **Étendu par la 32-4b** aux six services des factures : sur la fermeture
+//!    de leurs appels — appels directs (`invoices::{list_by_company_paginated,
+//!    find_by_id_with_lines, due_dates_summary}`,
+//!    `invoice_settlements::{amount_settled, amount_due, list_for_invoice}`,
+//!    `invoice_settlements_write::settlement_cancel_blocker`,
+//!    `company_invoice_settings::round_to_5_centimes` — une lecture, **pas** le
+//!    `get_or_create` du réglage —, `supplier_invoices::{list,
+//!    get_settlement_view}`, `companies::find_by_id`) **et** transitifs
+//!    (`settlement_cancel_blocker_unlinking`,
+//!    `settlement_cancellation::settlement_entry_cancel_blocker`,
+//!    `letterings::{document_group_frozen_by_periods, lines_in_open_period,
+//!    open_period_rule, books_locked_through}`,
+//!    `journal_entries::{reversal_blocker, reversal_blockers, reversed_by,
+//!    document_owners}`, `fiscal_years::{has_open_covering_date,
+//!    find_later_closed}`, `supplier_invoices::{fetch_lines,
+//!    supplier_settlement_cancel_blocker, supplier_invoice_cancel_blocker,
+//!    in_generated_batch}`, `payment_batches::last_confirmed_batch_for_invoice`,
+//!    `imported_supplier_invoices::find_by_supplier_invoice_id_scoped`, les aides
+//!    pures de `util::search` et `invoices::push_where_clauses`), textes SQL en
+//!    `const` et les deux macros SQL (`invoice_columns!`, `line_ttc_sql!`)
+//!    compris — cinquante-neuf éléments —, **aucune** écriture, aucun
+//!    `get_or_create`, aucun `FOR UPDATE` ni verrou partagé. Établi par lecture
+//!    statique (relevé de l'AC14 de la 32-4b, sur le code des fichiers de
+//!    dépôts tronqué à leurs tests, commentaires écartés) ; confirmé à
+//!    l'exécution, sur les branches que ses fixtures exercent, par
+//!    `tests/services_rollout.rs` (`ac11_a_les_services_lisent_en_lecture_seule`)
+//!    sur la même connexion en lecture seule — un brouillon (le réglage lu),
+//!    une facture validée portant un règlement (la transaction des règlements,
+//!    son `commit` et `settlement_cancel_blocker` exécutés), une facture
+//!    fournisseur (la transaction de `get_settlement_view` et son `commit`).
+//!    Branches non atteintes par ces fixtures : motifs de refus d'annulation
+//!    présents, pièce source et lot confirmé présents, facture fournisseur
+//!    réglée, et les variantes de filtre des listes (recherche, statut de
+//!    paiement, suspension, tri) — des clauses de `SELECT`, lues ailleurs par
+//!    la route.
+//!
 //! # Le rollout de la 32-4a — cinq lectures, sans trace
 //!
 //! | Service | Route | Exigence API / MCP |
@@ -129,20 +166,51 @@
 //! `letterings::get_lettering_proposals` (`GET /accounts/{id}/lettering-proposals`),
 //! C-32-4a-1.
 //!
-//! # Ce qui reste à la 32-6
+//! # Le rollout de la 32-4b — six lectures des factures, sans trace
 //!
-//! La fabrication d'une `Lecture` en lecture seule — mode de session,
-//! utilisateur MariaDB limité au `SELECT`, ou les deux, et le lieu où elle se
-//! fabrique — est décidée par Guy (Q11) et réalisée par la 32-6. En 32-3, les
-//! deux poignées enveloppent le même pool de production ; seule leur
-//! **distinction** est posée ici. La garantie réelle contre une écriture sur la
-//! `Lecture` sera celle de la base, en 32-6 ; d'ici là, c'est la revue de code.
+//! | Service | Route | Exigence API / MCP |
+//! |---|---|---|
+//! | `factures::lister` | `GET /invoices` | `Consultation` / `InvoicesRead` |
+//! | `factures::detail` | `GET /invoices/{id}` | `Consultation` / `InvoicesRead` |
+//! | `factures::echeances` | `GET /invoices/due-dates` | `Consultation` / `InvoicesRead` |
+//! | `factures::reglements` | `GET /invoices/{id}/settlements` | `Consultation` / `InvoicesRead` |
+//! | `factures_fournisseur::lister` | `GET /supplier-invoices` | `Consultation` / `InvoicesRead` |
+//! | `factures_fournisseur::detail` | `GET /supplier-invoices/{id}` | `Consultation` / `InvoicesRead` |
+//!
+//! Chacun porte ses bornes et sa validation (les listes clientes **refusent**
+//! une taille de page hors bornes, la liste fournisseur l'écrête —
+//! C-32-4b-6) ; `factures::detail` et `factures::echeances` ne lisent pas la
+//! société (C-32-4b-8). Restent dans leur handler, sur `state.pool`, figés par
+//! la garde (iii) : les douze mutations de `routes/{invoices,supplier_invoices}.rs`
+//! (C-32-0-4) et leurs deux aides de `invoices.rs`
+//! (`with_draft_rounding_preview`, `ensure_contact_belongs_to_company`) ;
+//! l'export CSV de l'échéancier (`GET /invoices/due-dates/export.csv`,
+//! Comptable+), qu'aucun outil ne sert et qui n'emploie du service que la
+//! fonction pure `factures::requete_echeances` (C-32-4b-1, C-32-4b-4) ; et
+//! `scan_qr_supplier_invoice`, qui ne lit pas la base. La balance âgée des
+//! débiteurs (`GET /reports/aged-receivables`) est **déjà** un service
+//! (`rapports::balance_agee`, 32-3) : l'outil de la 32-9a l'appellera tel
+//! quel.
+//!
+//! # La lecture seule du MCP — Q11, tranchée le 2026-10-24
+//!
+//! La réponse de Guy à Q11 : la lecture seule est **tenue par l'application**
+//! — les outils MCP n'atteignent que des services qui reçoivent une `Lecture`
+//! —, et la connexion du MCP se déclare en outre `READ ONLY` (mode de session),
+//! l'une et l'autre réalisées par la 32-6 ; **aucun second compte MariaDB**.
+//! En 32-3, les deux poignées enveloppent le même pool de production ; seule
+//! leur **distinction** est posée ici. La garantie repose donc sur le code de
+//! Kesh et ses tests (la revue, les gardes, l'exécution sur une `Lecture` en
+//! lecture seule) : la base n'arrête pas un défaut qui contournerait le mode
+//! de session.
 
 #![cfg_attr(not(test), forbid(unsafe_code))]
 
 pub mod acces;
 pub mod carnet;
 pub mod ecritures;
+pub mod factures;
+pub mod factures_fournisseur;
 pub mod plan_comptable;
 pub mod poignees;
 pub mod postes_ouverts;

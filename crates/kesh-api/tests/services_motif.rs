@@ -2099,8 +2099,9 @@ fn ac10_i_ii_handlers_sans_le_pool() {
         .collect();
     assert!(fautes.is_empty(), "AC10 (i) :\n{}", fautes.join("\n"));
 
-    // (ii) — étendue par la Story 32-4a (AC12) aux cinq lectures du rollout :
-    // le corps de chaque handler migré ne lit pas `state.pool`.
+    // (ii) — étendue par la Story 32-4a (AC12) aux cinq lectures du rollout,
+    // puis par la 32-4b (AC13) aux six lectures des factures : le corps de
+    // chaque handler migré ne lit pas `state.pool`.
     let mut fautes = Vec::new();
     for (fichier, handler) in HANDLERS_MIGRES {
         let texte = code_avant_les_tests(&src.join(fichier));
@@ -2119,8 +2120,9 @@ fn ac10_i_ii_handlers_sans_le_pool() {
     assert!(fautes.is_empty(), "AC10 (ii) :\n{}", fautes.join("\n"));
 }
 
-/// Les handlers dont la lecture passe par un service : `list_accounts` (32-3)
-/// et les cinq lectures de la 32-4a.
+/// Les handlers dont la lecture passe par un service : `list_accounts` (32-3),
+/// les cinq lectures de la 32-4a et les six de la 32-4b (factures clientes et
+/// fournisseur).
 const HANDLERS_MIGRES: &[(&str, &str)] = &[
     ("routes/accounts.rs", "list_accounts"),
     ("routes/journal_entries.rs", "list_journal_entries"),
@@ -2128,14 +2130,32 @@ const HANDLERS_MIGRES: &[(&str, &str)] = &[
     ("routes/letterings.rs", "get_open_items"),
     ("routes/contacts.rs", "list_contacts"),
     ("routes/contacts.rs", "get_contact"),
+    ("routes/invoices.rs", "list_invoices"),
+    ("routes/invoices.rs", "get_invoice"),
+    ("routes/invoices.rs", "list_due_dates_handler"),
+    ("routes/invoices.rs", "list_invoice_settlements_handler"),
+    ("routes/supplier_invoices.rs", "list_supplier_invoices"),
+    ("routes/supplier_invoices.rs", "get_supplier_invoice"),
 ];
 
-/// AC12 (iii) — l'inventaire clos des sites non résolus des trois fichiers du
+/// Une ligne de [`SITES_NON_RESOLUS`] : (fichier, `pub async fn`, `async fn`
+/// toutes visibilités, handlers sur `state.pool`, aides sur `state.pool`).
+type SiteNonResolu = (
+    &'static str,
+    usize,
+    usize,
+    &'static [&'static str],
+    &'static [&'static str],
+);
+
+/// AC12 (iii) — l'inventaire clos des sites non résolus des fichiers du
 /// rollout : (fichier, nombre de `pub async fn`, nombre d'`async fn` toutes
-/// visibilités, handlers qui lisent encore `state.pool`) — les dix mutants
-/// (C-32-0-4) et les deux lectures de lettrage qu'aucun outil ne sert
-/// (C-32-4a-1).
-const SITES_NON_RESOLUS: &[(&str, usize, usize, &[&str])] = &[
+/// visibilités, handlers qui lisent encore `state.pool`, **aides hors corps**
+/// qui lisent `state.pool`) — les dix mutants de la 32-4a (C-32-0-4), les deux
+/// lectures de lettrage qu'aucun outil ne sert (C-32-4a-1) ; pour la 32-4b,
+/// les douze mutants des factures, l'export CSV de l'échéancier (C-32-4b-1) et
+/// les deux aides des mutants de `invoices.rs` (AC13 (iii)).
+const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
     (
         "routes/journal_entries.rs",
         7,
@@ -2147,6 +2167,7 @@ const SITES_NON_RESOLUS: &[(&str, usize, usize, &[&str])] = &[
             "reverse_journal_entry_at_next_fiscal_year_start",
             "update_journal_entry",
         ],
+        &[],
     ),
     (
         "routes/letterings.rs",
@@ -2158,12 +2179,46 @@ const SITES_NON_RESOLUS: &[(&str, usize, usize, &[&str])] = &[
             "get_lettering",
             "get_lettering_proposals",
         ],
+        &[],
     ),
     (
         "routes/contacts.rs",
         5,
         5,
         &["archive_contact", "create_contact", "update_contact"],
+        &[],
+    ),
+    (
+        "routes/invoices.rs",
+        13,
+        15,
+        &[
+            "cancel_invoice_settlement_handler",
+            "create_invoice",
+            "delete_invoice",
+            "export_due_dates_csv_handler",
+            "settle_invoice_handler",
+            "unvalidate_invoice_handler",
+            "update_invoice",
+            "validate_invoice_handler",
+            "write_off_invoice_handler",
+        ],
+        &[
+            "ensure_contact_belongs_to_company",
+            "with_draft_rounding_preview",
+        ],
+    ),
+    (
+        "routes/supplier_invoices.rs",
+        7,
+        8,
+        &[
+            "cancel_supplier_invoice",
+            "cancel_supplier_invoice_settlement",
+            "create_supplier_invoice",
+            "pay_supplier_invoice",
+        ],
+        &[],
     ),
 ];
 
@@ -2222,12 +2277,39 @@ fn ac12_temoins_du_detecteur_du_pool() {
     );
 }
 
-/// AC12 (iii) — dans les trois fichiers du rollout, l'ensemble des handlers dont
+/// Les corps des **aides** d'un texte (Story 32-4b, AC13 (iii)) : les fonctions
+/// de premier niveau dont la ligne d'ouverture **commence** par `fn ` ou
+/// `async fn ` (non `pub`), de la ligne d'ouverture à la première ligne égale à
+/// `}` — la définition du corps d'un handler ([`corps_des_handlers`]).
+fn corps_des_aides(texte: &str) -> Vec<(String, Vec<&str>)> {
+    let lignes: Vec<&str> = texte.lines().collect();
+    let mut v = Vec::new();
+    let mut i = 0;
+    while i < lignes.len() {
+        let reste = lignes[i]
+            .strip_prefix("async fn ")
+            .or_else(|| lignes[i].strip_prefix("fn "));
+        if let Some(reste) = reste {
+            let nom = reste.split(['(', '<']).next().unwrap().trim().to_string();
+            let fin = (i..lignes.len())
+                .find(|&j| lignes[j] == "}")
+                .expect("corps d'aide fermé");
+            v.push((nom, lignes[i..=fin].to_vec()));
+            i = fin;
+        }
+        i += 1;
+    }
+    v
+}
+
+/// AC12 (iii) — dans les fichiers du rollout, l'ensemble des handlers dont
 /// le corps lit `state.pool` est exactement [`SITES_NON_RESOLUS`] ; le nombre
 /// de `pub async fn` et d'`async fn` toutes visibilités est figé ; et, au
 /// niveau du fichier, aucune occurrence hors d'un corps (le compte du fichier
-/// égale la somme des corps) — ce qui voit une fonction asynchrone non `pub`
-/// ou une aide synchrone posée entre deux handlers.
+/// égale la somme des corps des handlers **et des aides**, Story 32-4b) — ce
+/// qui voit une fonction asynchrone non `pub` ou une aide synchrone posée entre
+/// deux handlers ; l'ensemble des aides ([`corps_des_aides`]) qui lisent
+/// `state.pool` est figé lui aussi (cinquième champ).
 ///
 /// **Limites** (#738 B4, hors périmètre) : le champ lu sous un autre nom que
 /// `state` — déstructuration `State(AppState { pool, .. })`, liaison renommée
@@ -2243,7 +2325,7 @@ fn ac12_temoins_du_detecteur_du_pool() {
 fn ac12_iii_inventaire_des_sites_non_resolus() {
     let async_fn = regex::Regex::new(r"^\s*(pub(\([^)]*\))?\s+)?async\s+fn\b").unwrap();
     let mut fautes = Vec::new();
-    for (fichier, nb_pub, nb_async, attendus) in SITES_NON_RESOLUS {
+    for (fichier, nb_pub, nb_async, attendus, aides_attendues) in SITES_NON_RESOLUS {
         let texte = code_avant_les_tests(&racine_src().join(fichier));
         let corps = corps_des_handlers(&texte, "");
         if corps.len() != *nb_pub {
@@ -2278,21 +2360,133 @@ fn ac12_iii_inventaire_des_sites_non_resolus() {
                 "{fichier} : handlers sur state.pool {lisent:?}, attendus {attendus:?}"
             ));
         }
-        let fichier_entier = occurrences_du_pool(&texte);
-        if fichier_entier != somme {
+        // Story 32-4b — les aides hors corps qui lisent `state.pool`.
+        let mut aides: Vec<&str> = Vec::new();
+        let mut somme_aides = 0;
+        let corps_aides = corps_des_aides(&texte);
+        for (nom, lignes) in &corps_aides {
+            let n = occurrences_du_pool(&lignes.join("\n"));
+            somme_aides += n;
+            if n > 0 {
+                aides.push(nom.as_str());
+            }
+        }
+        aides.sort();
+        let mut aides_attendues = aides_attendues.to_vec();
+        aides_attendues.sort();
+        if aides != aides_attendues {
             fautes.push(format!(
-                "{fichier} : {fichier_entier} occurrences de state.pool dans le fichier, {somme} dans les corps — une occurrence hors d'un handler"
+                "{fichier} : aides sur state.pool {aides:?}, attendues {aides_attendues:?}"
+            ));
+        }
+        let fichier_entier = occurrences_du_pool(&texte);
+        if fichier_entier != somme + somme_aides {
+            fautes.push(format!(
+                "{fichier} : {fichier_entier} occurrences de state.pool dans le fichier, {somme} dans les corps des handlers et {somme_aides} dans ceux des aides — une occurrence hors d'un handler ou d'une aide"
             ));
         }
     }
     assert!(fautes.is_empty(), "AC12 (iii) :\n{}", fautes.join("\n"));
 }
 
-/// Les trois modules de services du rollout (AC12 (viii)).
-const SERVICES_DU_ROLLOUT: [&str; 3] = [
+/// Les formes permises de `state` dans le corps d'un handler migré (Story
+/// 32-4b, AC13 (ix)) : l'extracteur `State(state)`, et les poignées
+/// `state.lecture()`, `state.trace()` et le bundle `state.i18n` — blancs
+/// tolérés (rustfmt peut couper).
+const FORMES_PERMISES_DE_STATE: [&str; 3] = [
+    r"State\s*\(\s*state\s*\)",
+    r"\bstate\s*\.\s*(lecture|trace)\s*\(\s*\)",
+    r"\bstate\s*\.\s*i18n\b",
+];
+
+/// Ce que (ix) reproche à un corps de handler migré, aplati et sans
+/// commentaires : l'absence de `State(state)`, ou une occurrence de `state` qui
+/// n'est aucune des [`FORMES_PERMISES_DE_STATE`] (le compte des `\bstate\b`
+/// doit égaler la somme des comptes des formes permises).
+fn usages_interdits_de_state(corps: &str) -> Option<String> {
+    let texte = sans_commentaires(corps);
+    let extracteur = regex::Regex::new(FORMES_PERMISES_DE_STATE[0]).unwrap();
+    if !extracteur.is_match(&texte) {
+        return Some("pas d'extracteur State(state)".into());
+    }
+    let permis: usize = FORMES_PERMISES_DE_STATE
+        .iter()
+        .map(|m| regex::Regex::new(m).unwrap().find_iter(&texte).count())
+        .sum();
+    let tous = regex::Regex::new(r"\bstate\b")
+        .unwrap()
+        .find_iter(&texte)
+        .count();
+    (tous != permis)
+        .then(|| format!("{tous} occurrences de state, {permis} sous une forme permise"))
+}
+
+/// AC13 (ix) — Story 32-4b (C-32-4b-9) : dans le corps de chacun des
+/// [`HANDLERS_MIGRES`], les **seuls** usages de `state` sont `State(state)`,
+/// `state.lecture()`, `state.trace()` et `state.i18n`. Ferme, pour les handlers
+/// migrés, les formes de #738 B4 que (ii) ne voit pas : une aide appelée avec
+/// `&state` (le trou de `get_invoice`, qui passait `&state` à une aide lisant le
+/// pool), une liaison renommée (`let st = &state;`), un `state.clone()`, et une
+/// déstructuration (`State(AppState { pool, .. })`, faute de `State(state)`).
+/// Ne lit que les corps des handlers migrés : une aide appelée **depuis une
+/// aide** n'est vue que par (iii).
+#[test]
+fn ac13_ix_les_seuls_usages_de_state_d_un_handler_migre() {
+    // Témoins : chaque forme interdite est vue, chaque forme permise acceptée.
+    let ouvre = "pub async fn h(\n    State(state): State<AppState>,\n) -> R {\n";
+    for interdite in [
+        "    f(&state, x).await?;",
+        "    let p = &state.pool;",
+        "    let st = &state;",
+        "    let s = state.clone();",
+    ] {
+        assert!(
+            usages_interdits_de_state(&format!("{ouvre}{interdite}\n}}")).is_some(),
+            "(ix) doit voir {interdite}"
+        );
+    }
+    assert!(
+        usages_interdits_de_state(
+            "pub async fn h(\n    State(AppState { pool, .. }): State<AppState>,\n) -> R {\n    f(&pool)\n}"
+        )
+        .is_some(),
+        "(ix) doit refuser un corps sans State(state)"
+    );
+    for permise in [
+        "    s(&state.lecture()).await?;",
+        "    s(&state . lecture ()).await?;",
+        "    let t = state\n        .trace();",
+        "    let m = state.i18n.format(&l, k, None);",
+        "    // f(&state, x) : un commentaire ne compte pas",
+    ] {
+        assert_eq!(
+            usages_interdits_de_state(&format!("{ouvre}{permise}\n}}")),
+            None,
+            "(ix) doit accepter {permise}"
+        );
+    }
+
+    let src = racine_src();
+    let mut fautes = Vec::new();
+    for (fichier, handler) in HANDLERS_MIGRES {
+        let texte = code_avant_les_tests(&src.join(fichier));
+        let corps = corps_du_handler(&texte, handler)
+            .unwrap_or_else(|| panic!("{fichier} : {handler} introuvable"));
+        if let Some(faute) = usages_interdits_de_state(&corps.join("\n")) {
+            fautes.push(format!("{fichier} : {handler} — {faute}"));
+        }
+    }
+    assert!(fautes.is_empty(), "AC13 (ix) :\n{}", fautes.join("\n"));
+}
+
+/// Les cinq modules de services du rollout (AC12 (viii)) : trois de la 32-4a,
+/// deux de la 32-4b.
+const SERVICES_DU_ROLLOUT: [&str; 5] = [
     "services/ecritures.rs",
     "services/postes_ouverts.rs",
     "services/carnet.rs",
+    "services/factures.rs",
+    "services/factures_fournisseur.rs",
 ];
 
 const MOTIF_VIII: &str = r"\bTrace\b|\btrace\b";
@@ -2315,7 +2509,7 @@ fn ac12_viii_les_services_du_rollout_ne_tracent_pas() {
         .into_iter()
         .filter(|(f, _)| SERVICES_DU_ROLLOUT.contains(&f.as_str()))
         .collect();
-    assert_eq!(sources.len(), 3, "les trois services du rollout lus");
+    assert_eq!(sources.len(), 5, "les cinq services du rollout lus");
     let trouves = couples(&sources, &motif);
     assert!(
         trouves.is_empty(),
@@ -2362,8 +2556,8 @@ fn ac10_vi_services_sans_axum_ni_app_state() {
         .collect();
     assert_eq!(
         services.len(),
-        8,
-        "services/ : huit fichiers attendus (cinq de la 32-3, trois de la 32-4a), {:?}",
+        10,
+        "services/ : dix fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b), {:?}",
         services.iter().map(|(f, _)| f).collect::<Vec<_>>()
     );
     assert_eq!(

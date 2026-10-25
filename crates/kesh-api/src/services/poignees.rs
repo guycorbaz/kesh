@@ -6,10 +6,11 @@
 //! d'une poignée n'est lisible que dans `crate::services`. En production, elles
 //! ne se fabriquent que par `AppState::lecture()` et `AppState::trace()`.
 //!
-//! La fabrication d'une `Lecture` en lecture seule — mode de session,
-//! utilisateur MariaDB limité au `SELECT`, ou les deux — est la 32-6, selon la
-//! décision de Guy sur Q11 ; rien ici n'en préjuge : en 32-3, les deux poignées
-//! enveloppent le même pool.
+//! La lecture seule du MCP (Q11, tranchée le 2026-10-24) est tenue par
+//! l'application — les outils n'atteignent que des services qui reçoivent une
+//! `Lecture` — et par le mode de session `READ ONLY` de la connexion du MCP,
+//! réalisés par la 32-6 ; aucun second compte MariaDB. En 32-3, les deux
+//! poignées enveloppent le même pool.
 
 use sqlx::MySqlPool;
 

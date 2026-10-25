@@ -144,9 +144,10 @@ impl AppState {
     /// Story 32-3 — la poignée de **lecture** des livres que reçoivent les
     /// services (`crate::services`).
     ///
-    /// La fabrication d'une `Lecture` en lecture seule (mode de session,
-    /// utilisateur `SELECT`, ou les deux, et son lieu) est décidée par Guy (Q11)
-    /// et réalisée par la 32-6 ; en 32-3, les deux poignées enveloppent `pool`.
+    /// La lecture seule du MCP (Q11, tranchée le 2026-10-24) est tenue par
+    /// l'application et par le mode de session `READ ONLY` de sa connexion,
+    /// réalisés par la 32-6, sans second compte MariaDB ; en 32-3, les deux
+    /// poignées enveloppent `pool`.
     /// Méthode, et non champ : `AppState` se construit aussi par littéral dans
     /// des tests.
     pub fn lecture(&self) -> services::poignees::Lecture {
@@ -155,9 +156,9 @@ impl AppState {
 
     /// Story 32-3 — la poignée d'écriture de la **trace** d'audit des lectures.
     ///
-    /// La fabrication d'une `Lecture` en lecture seule (mode de session,
-    /// utilisateur `SELECT`, ou les deux, et son lieu) est décidée par Guy (Q11)
-    /// et réalisée par la 32-6 ; en 32-3, les deux poignées enveloppent `pool`.
+    /// Distincte de la `Lecture` : la lecture seule du MCP (Q11, tranchée le
+    /// 2026-10-24, réalisée par la 32-6) vise la seule `Lecture`, la trace
+    /// devant écrire ; en 32-3, les deux poignées enveloppent `pool`.
     pub fn trace(&self) -> services::poignees::Trace {
         services::poignees::Trace::new(self.pool.clone())
     }

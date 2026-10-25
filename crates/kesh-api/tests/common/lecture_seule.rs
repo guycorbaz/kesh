@@ -5,8 +5,9 @@
 //! Chaque connexion du pool passe `SET SESSION TRANSACTION READ ONLY` : toute
 //! écriture y est refusée par MariaDB (erreur 1792, témoin
 //! `ac9_temoin_la_lecture_de_test_refuse_l_ecriture` de `services_motif.rs`).
-//! Aucun privilège requis. Ce n'est **pas** la lecture seule de production,
-//! que décide la 32-6 (Q11).
+//! Aucun privilège requis. C'est le mode de session que la connexion du MCP
+//! emploiera (Q11, tranchée le 2026-10-24 ; réalisé par la 32-6), sur un pool
+//! de test et sans la fabrication de production (`AppState::lecture()`).
 
 use kesh_api::services::poignees::Lecture;
 use sqlx::MySqlPool;
