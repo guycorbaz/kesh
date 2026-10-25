@@ -1366,4 +1366,42 @@ bornes) : `mcp_keys_repository.rs` 0 → 21, `entities/mcp_key.rs` 0 → 7, `ent
   - Choix C-32-5-37 ; registre jusqu'à C-32-5-37. La remédiation touche du code de production
     (`repositories/mcp_keys.rs`, `entities/mcp_key.rs`) : passe suivante **ciblée** (P2, regression hunter, **Opus**,
     `325a-review-prompt-p2.md`, commits `24f80e91`, `034d2a3b`, `a5cc29c4`).
+- **2026-10-25 — Revue de code P2 de la 32-5a** (passe **ciblée**, regression hunter, contexte frais, **Opus**, sur
+  `24f80e91`, `034d2a3b`, `a5cc29c4` ; rapport `kesh-gate-logs/325a-review-p2.md`). **Trend : P1 1 MEDIUM / 11 LOW → P2
+  0 / 0 / 1 MEDIUM / 4 LOW**, les cinq **nés de la remédiation** P1. Remédiation (Opus 5.5), commits `88eae2b2` (code :
+  deux commentaires et un test unitaire de `kesh-db`) et `a08c17ee` (artefacts) :
+  - **R1 (MEDIUM), propagation incomplète de C-32-5-37** : `mcp_key.rs:127` (doc-comment de `from_json`, « Décode la
+    colonne ») et `:414` (« Au décodage de la colonne … jamais ignorée ») réécrits — l'entrée d'API est stricte, la
+    ligne stockée se lit par `StoredMcpScopes`. **Annotations datées**, sans réécriture : AC-a4, Dev Notes (esquisse de
+    `McpScopes`), « Retenu » de C-32-5-3 (renvoi à C-32-5-37), et la phrase fausse de l'entrée « Revue de code P1 »
+    (« les autres occurrences parlent de l'entrée d'API … »). **Valeurs grepées** sur tout le dépôt —
+    `Strict|strict|jamais ignorée|décod` (`crates`, `docs`, `_bmad-output`, `CHANGELOG.md`) — et chaque site trié :
+    restent vrais `mcp_key.rs:17-19` (module), `:118` (`parse`, entrée de route), `:127` (réécrit), `:183` et `:191`
+    (doc de `StoredMcpScopes`), `:506` (test, entrée d'API) ; `send_validation` (migration `:39`, test `:275`, registre
+    C-32-5-29) ; `mcp_server_settings.rs:13` et le test `:1072` (les **réglages**, dont le décodage reste strict — une
+    liste qui ne porte pas de chaînes est une erreur d'invariant : même famille que E1, mais les listes portent des
+    chaînes libres qu'une version future ne rendrait pas illisibles ; **angle mort assumé**, non traité) ; la fiche
+    (`:620`, `:1055` Ma3 — `McpScopes` ; `:990` — `McpScopes` reste strict ; `:1329`, `:1343` annotée, `:1348`) et le
+    registre (C-32-5-37, historique) ; le reste du dépôt parle d'autres sujets (cookies `SameSite=Strict`, permissions,
+    décodage des PDF et des images, `sql_mode`).
+  - **R3 (LOW)** : `"BOOKS:READ"` et `" books:read"` ajoutés à `stored_scopes_without_any_known_scope_are_not_usable`
+    (non reconnus, `usable() == None`, rendus tels quels par `unknown()`). **Mutation Mq1**
+    (`s.trim().to_ascii_lowercase().parse()` dans `from_stored_json`) **tuée** par ce test
+    (`325a-p2r-mutations.log`).
+  - **R4 (LOW)** : « U+00A0 refusé en base, éprouvé à la main » → **non éprouvé** (§ *Pour la 32-5c*, annoté) ; un essai
+    sur une table jetable au développement l'avait vu refusé, mais rien ne le consigne. Aucun test ajouté (consigne).
+  - **R2 (LOW), angle mort déclaré** : le journal de `read_scopes` et d'`auth_row` n'est éprouvé par aucun test — le
+    dépôt n'a pas d'outil de capture de `tracing` (`tracing-test` absent) ; la mutation « ne journalise plus », ou
+    « journalise `key_hash` », survivrait. Le test suivra si une story introduit un tel outil.
+  - **R5 (LOW), angle mort déclaré et reporté** au § *Pour la 32-5b* : double `warn!` pour une clé sans portée connue,
+    un `warn!` par requête pour une clé mixte.
+  - **Gates** : ciblé — fmt, clippy `-D warnings` workspace vert, `entities::mcp_key` 9/9 (`325a-p2r-cible.log`) ;
+    **gate complet au dernier commit de code (`88eae2b2`)**, `kesh_325` remise à zéro juste avant : **4051 réussis,
+    7 ignorés** (`325a-p2r-gate-complet.log`) ; **E2E non rejoué** — la remédiation ne touche que des commentaires et un
+    test unitaire de `kesh-db`, rien de ce que sert le backend (consigne de l'orchestrateur) ; le dernier E2E complet
+    reste celui de `a5cc29c4` (314 passés, 8 échecs attendus). Mutations : **1 jouée, 1 tuée**.
+  - **Décomptes** : 1 fichier de code (`mcp_key.rs`), aucun test ajouté (un test complété : 2 cas de plus) ; artefacts :
+    la fiche et le registre. Aucune migration touchée.
+  - La remédiation touche un fichier de `crates/` (commentaires et test) : passe suivante **ciblée** (P3, regression
+    hunter, **Sonnet**, `325a-review-prompt-p3.md`, commits `88eae2b2` et `a08c17ee`).
 
