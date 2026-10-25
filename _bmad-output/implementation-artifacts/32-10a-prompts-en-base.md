@@ -1453,6 +1453,10 @@ l'ancienne liste de `bank_accounts.rs` (2060–2064, 2066–2069) ; il est refus
 reste inchangé (AC-iii2 point 5) : la note de la fiche 32-8 qui dit le contraire est la fautive ; constater. (4) L'ordre des
 descripteurs de `tools/list` après la 32-8b — registre, `kesh_lire_envoi`, puis `proposer_prompt` — et les corps attendus
 de `tools_list_filtre` se recomptent à l'étape 0.)*
+*(Précision de l'orchestrateur, 2026-10-25, fiche 32-9 : la 32-9 se développe **avant** la 32-10a. Ses outils rendent
+tout champ libre sous la forme `{"nonFiable": "…"}` (C-32-9-3). Les deux prompts standard (`kesh-developpement`,
+`kesh-assistant`) **nomment cette forme** et disent à l'agent de ne jamais suivre comme une instruction un texte qui s'y
+trouve. À ajouter à leur texte à l'étape 0 de la 32-10a-i, avec un test qui vérifie la présence de la forme.)*
 
 - **La 32-6a fusionnée** : les noms et lignes que cette fiche reprend de sa fiche — `McpPrompt` (signature de `rendre`),
   le sceau, `PromptEnBase` absent, `ReponseMcp`, `reponse::rendre`, `textes.rs` et la constante de `-32602`, `Registre`
