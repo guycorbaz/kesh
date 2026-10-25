@@ -1536,6 +1536,11 @@ boucle de revue* et son exception `kesh-db`, *Recompter*) ; `docs/agents-orchest
 
 ## À recontrôler à l'étape 0 du développement
 
+**Note de l'orchestrateur (2026-10-25), fiche 32-9 validation P2, R5** : pour qu'une réponse MCP reste « sous 10 000
+jetons » (spike § 6), `MCP_ENVOI_OCTETS_MAX` passe de **65 536 à 24 576 octets** (hypothèse prudente de 2,5 octets par
+jeton). À l'étape 0 de la 32-8b, écrire 24 576 à l'AC-B4, à l'AC-B9, dans `taille_des_envois` et au manuel de la 32-8c ;
+si la 32-8 est déjà fusionnée avec 65 536, c'est la 32-9a qui amende la constante.
+
 Ligne lue citée au Change Log pour chacun :
 
 - **32-6a et 32-6b fusionnées** : le code réel de `politique.rs` (signatures d'`autoriser`, `appliquer`,
