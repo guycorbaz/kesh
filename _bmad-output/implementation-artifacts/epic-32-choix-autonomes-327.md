@@ -337,3 +337,16 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
 - **Écartées** : l'ajouter aussi et le déclarer (correction de F7) — une entrée d'une autre story, qu'aucun test
   n'exige, élargirait le diff sans rien prouver.
 - **Réversible** : oui — une ligne d'un tableau de test.
+
+### C-32-7-27 — l'entrée refusée et stockée hors de l'écran est un angle mort écrit, non un test ni une capture
+
+- **Contexte** (validation P5, F4) : la P4 a ajouté à l'AC-5 (*Ce qui se répare à l'écran*) et à l'AC-18 (1) qu'une
+  entrée que l'écran refuse, posée hors de l'écran, bloque tout enregistrement ; aucun test ni aucune capture ne pose
+  une telle entrée — le cas (d) et la capture (7) montrent le 400 d'une entrée **saisie**, au même rendu.
+- **Retenu** : l'écrire comme angle mort au § *Ce que les gardes ne voient pas* ; la phrase du manuel reste tenue
+  par la relecture de `validate_settings` à l'étape 0 (§ *À recontrôler*, P4). Option la plus simple, consigne de
+  l'orchestrateur (« choisis le plus simple »), et remédiation par retrait de la prétention de couverture.
+- **Écartées** : un cas de test et une capture neufs (une entrée posée par SQL, l'écran rechargé, *Enregistrer*
+  cliqué) — l'écran n'a aucun rendu propre à ce cas, le 400 est générique ; le test vérifierait surtout le serveur,
+  et ajouterait une recette SQL de plus à la base de démonstration.
+- **Réversible** : oui — une capture et un cas de test à ajouter en développement ou en revue.
