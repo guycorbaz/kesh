@@ -402,6 +402,17 @@ la société de la clé ne l'a pas) et la teste dans les deux branches. S'y ajou
 garde, la politique `CleMcpAuthentifiee::validation` au répartiteur (refus d'une clé `required` avant la 32-8) et la
 lecture des réglages sur la `Lecture`, sans écriture.
 
+### 32-6c — Le journal du filtre d'adresse *(ajoutée le 2026-10-25, sur demande de Guy)*
+
+Derrière le proxy inversé de DSM, le filtre d'adresse ne filtre que si DSM pose `X-Forwarded-For`, ce que rien
+n'établit. Guy, le 2026-10-25 : « on vérifiera lors de la mise à jour : ajoute le nécessaire dans les logs au cas
+où ». La 32-6c ajoute **un évènement par décision du filtre** (par société) — pair, présence et forme des en-têtes de
+mandataire, client retenu, verdict ; refus en `warn`, admission en `debug` ; aucune clé, aucun en-tête
+`Authorization`, aucun corps, aucune valeur d'en-tête —, sans rien changer à ce que reçoit le client, et le manuel
+d'administration dit comment lire ce journal (`RUST_LOG` ciblé, `docker compose logs`). Fiche
+`32-6c-journal-filtre-adresse.md`, registre `epic-32-choix-autonomes-326c.md`. Modules : `mcp`, `logging` (tests), manuel
+— **3**. Après la 32-6b ; indépendante des 32-7 et 32-8.
+
 ### 32-7 — L'écran « Serveur MCP » (Administration)
 
 Activation (désactivé par défaut), filtre d'adresse et proxies de confiance, **clés MCP** (création avec ses portées,
