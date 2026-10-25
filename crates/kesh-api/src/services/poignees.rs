@@ -4,13 +4,16 @@
 //! Deux types distincts, sans conversion de l'un à l'autre, à champ privé : un
 //! service qui reçoit une `Lecture` ne peut pas en faire une `Trace`, et le pool
 //! d'une poignée n'est lisible que dans `crate::services`. En production, elles
-//! ne se fabriquent que par `AppState::lecture()` et `AppState::trace()`.
+//! ne se fabriquent que par `AppState::lecture()`, `AppState::trace()` et, pour
+//! la lecture des outils du MCP, au câblage de `build_router_avec_registre`
+//! (Story 32-6a).
 //!
 //! La lecture seule du MCP (Q11, tranchée le 2026-10-24) est tenue par
 //! l'application — les outils n'atteignent que des services qui reçoivent une
-//! `Lecture` — et par le mode de session `READ ONLY` de la connexion du MCP,
-//! réalisés par la 32-6 ; aucun second compte MariaDB. En 32-3, les deux
-//! poignées enveloppent le même pool.
+//! `Lecture` — et par le mode de session `READ ONLY` de la connexion des
+//! outils (`kesh_db::pool::pool_lecture_seule`, 32-6a) ; aucun second compte
+//! MariaDB. `AppState::lecture()` et `AppState::trace()` enveloppent le pool
+//! ordinaire.
 
 use sqlx::MySqlPool;
 
@@ -21,7 +24,9 @@ use sqlx::MySqlPool;
 pub struct Lecture(MySqlPool);
 
 impl Lecture {
-    /// Enveloppe un pool. En production, seul `AppState::lecture()` l'appelle.
+    /// Enveloppe un pool. En production, `AppState::lecture()` et le câblage du
+    /// MCP, `build_router_avec_registre` (sur le pool en lecture seule des
+    /// outils), l'appellent.
     pub fn new(pool: MySqlPool) -> Self {
         Self(pool)
     }

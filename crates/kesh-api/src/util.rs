@@ -240,6 +240,37 @@ pub(crate) fn csv_sanitize(raw: String) -> String {
 }
 
 // ===========================================================================
+// Origine web (Story 32-5c, factorisée Story 32-6a)
+// ===========================================================================
+
+/// Une origine `http(s)://hôte[:port]` sous sa sérialisation ASCII (schéma et
+/// hôte en minuscules, port par défaut **du schéma** retiré — `:80` pour
+/// `http`, `:443` pour `https`, et seulement eux —, nom international en
+/// `xn--`) ; `None` si le texte n'en est pas une (sans schéma, schéma autre,
+/// chemin, requête, fragment, identifiants, blancs, `null`).
+///
+/// Une seule règle, deux consommateurs (AC-a10 de la 32-6a) : la validation des
+/// origines admises à l'écriture (`routes::mcp_server_settings::canonical_origin`)
+/// et la comparaison de l'en-tête `Origin` reçu par `/mcp` (`mcp::reseau`), si
+/// bien que l'en-tête et l'entrée stockée se normalisent de la même façon.
+pub(crate) fn origine_canonique(brut: &str) -> Option<String> {
+    let entree = brut.trim();
+    // « Sans chemin » se lit sur le texte saisi : `url` rend « / » pour
+    // `http://h` comme pour `http://h/`.
+    let (schema, autorite) = entree.split_once("://")?;
+    if !matches!(schema.to_ascii_lowercase().as_str(), "http" | "https")
+        || autorite.is_empty()
+        || autorite.contains(['/', '?', '#', '@', '\\'])
+        || autorite.chars().any(char::is_whitespace)
+    {
+        return None;
+    }
+    let url = url::Url::parse(entree).ok()?;
+    url.host()?;
+    Some(url.origin().ascii_serialization())
+}
+
+// ===========================================================================
 // Tests
 // ===========================================================================
 

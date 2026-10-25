@@ -60,8 +60,9 @@ pub struct Exigence {
 ///
 /// Champs privés : un contexte ne se construit que par [`ContexteAcces::depuis_api`]
 /// (l'API) ou [`ContexteAcces::mcp`] — en production par
-/// `services::cles_mcp::authentifier` (Story 32-5b), que la 32-6 appellera, et
-/// par les tests.
+/// `services::cles_mcp::authentifier` (Story 32-5b), qu'appelle la garde de
+/// `/mcp` (Story 32-6a), et par les tests (garde
+/// `contexte_acces_mcp_construit_par_authentifier_seul`).
 #[derive(Debug, Clone)]
 pub struct ContexteAcces {
     company_id: i64,
