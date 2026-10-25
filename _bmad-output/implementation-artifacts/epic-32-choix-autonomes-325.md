@@ -497,3 +497,69 @@ l'ordre alphabétique. La ligne de la migration est inscrite à `crates/kesh-db/
 `McpScopes` (« l'ordre est celui de `McpScope::ALL` »). L'autre moitié de B2 (une ligne illisible qui faisait échouer la
 liste) est fermée par C-32-5-37.
 
+## Développement de la 32-5b (2026-10-25, Opus 5.5, en autonomie)
+
+### C-32-5-38 — Le chemin d'authentification n'avertit qu'une fois, et seulement pour un refus (R5 de la revue de la 32-5a)
+
+- **Contexte** : `auth_row` (`repositories/mcp_keys.rs:116` à `b723e3d9`) passait par `read_scopes`, qui avertit dès
+  qu'une portée est inconnue, puis avertissait de nouveau pour le refus : deux `warn!` pour une clé sans portée connue,
+  et un `warn!` à **chaque** requête MCP pour une clé mixte (connues + inconnues), qui authentifie.
+- **Retenu** : `auth_row` lit les portées par `StoredMcpScopes::from_stored_json` directement ; une clé sans portée
+  connue est refusée par **un** `warn!` (id de la clé et portées inconnues, jamais le condensat) ; une clé mixte n'émet
+  qu'un `debug!` sur ce chemin. L'avertissement de lecture reste aux chemins d'administration (`read_scopes`, par
+  `From<KeyRow>` : liste et recherche par id), où l'administrateur peut agir sur la clé.
+- **Écartées** : dédupliquer par un état mémorisé (un cache par clé, pour un journal) ; ne rien journaliser sur le
+  chemin d'authentification (le refus d'une clé sans portée connue deviendrait muet).
+- **Angle mort** : aucun test ne capture `tracing` (R2 de la revue P2 de la 32-5a, toujours vrai) ; une mutation « le
+  refus ne journalise plus » survivrait. Déclaré, non écrit.
+- **Réversible** : oui. Le fichier est un dépôt de `kesh-db` : gate complet au dernier commit de code (exception
+  `kesh-db`).
+
+### C-32-5-39 — Le jeton de réinitialisation partage aussi le cœur commun
+
+- **Contexte** : AC-b1 demande une fonction privée commune à `generate_pat` et `generate_mcp_key`, et que
+  `grep -c "OsRng.fill_bytes"` ne croisse pas (2 au départ : `generate_pat` et `generate_reset_token`).
+- **Retenu** : `generate_prefixed(prefix)` sert les trois générateurs, `generate_reset_token` avec un préfixe vide —
+  même entropie, même encodage, même condensat, jeton identique octet pour octet à l'ancien. Le compte passe à **1**.
+  Les tests existants de `generate_reset_token` (format, absence du préfixe PAT, condensat) sont inchangés et verts ;
+  `prefixes_are_disjoint` vérifie en plus qu'il ne porte aucun des deux préfixes.
+- **Écartée** : laisser `generate_reset_token` à part (deux copies du cœur, l'AC tolérait le statu quo mais non le
+  DRY).
+- **Réversible** : oui.
+
+### C-32-5-40 — Les refus de portée par « toutes les autres » : remplacés dans `services_motif.rs`, ajoutés dans `services_rollout.rs`
+
+- **Contexte** : AC-b2 — « chaque test de refus de portée éprouve la clé qui porte les quatre autres portées ». Au
+  départ (`b723e3d9`), `services_motif.rs` refusait **une** autre portée (`autre_portee`, l. 895) et
+  `services_rollout.rs`, que la fiche (rédigée à `e59d63e8`) ne connaissait pas, refusait chacune des autres portées
+  **seule** (AC9 (a)).
+- **Retenu** : dans `services_motif.rs`, `autre_portee` devient `autres_portees` (toutes sauf l'exigée, par
+  `toutes_sauf`), aux deux sites (`ac8_a`, dont le second refus de `plan_comptable::lister`, auparavant en dur) ; dans
+  `services_rollout.rs`, l'AC9 (a) **garde** les refus d'une autre portée seule (désormais quatre par service) et
+  **ajoute** le refus des quatre ensemble. `TOUTES` devient `Portee::ALL` dans les deux fichiers.
+- **Écartée** : remplacer aussi, dans `services_rollout.rs`, les refus une à une par le seul refus d'ensemble (une
+  couverture de moins, sans gain).
+- **Réversible** : oui.
+
+### C-32-5-41 — Un refus, une réponse ; le motif au journal seulement
+
+- **Contexte** : AC-b3 — « même erreur, au texte près côté client », pour chaque motif de refus.
+- **Retenu** : tous les refus rendent `AppError::Unauthenticated(detail)`, dont la réponse HTTP (401
+  `UNAUTHENTICATED`, message traduit) ne dépend pas du détail (`errors.rs`, bras `Unauthenticated`) ; le détail
+  (`mcp: …`) ne va qu'au `warn!` du serveur, et distingue le préfixe, la clé introuvable (inconnue, révoquée, expirée,
+  orpheline ou sans portée — **un** seul message, la base ne dit pas laquelle), le créateur inactif et le créateur
+  rétrogradé. Le préfixe se compare aux octets (`as_bytes().starts_with`). Le témoin (β) attend précisément
+  `AppError::Database(DbError::ConnectionUnavailable(_))`, ce que rend `map_db_error` pour un port fermé.
+- **Écartée** : un détail unique pour tous les refus (le journal ne permettrait plus de diagnostiquer une clé coupée
+  par la rétrogradation de son créateur).
+- **Réversible** : oui.
+
+### C-32-5-42 — `api-external.md` n'est pas touché par la partie b
+
+- **Contexte** : `docs/api-external.md:29` dit « Une clé Kesh a toujours la forme `kesh_pat_` … » et `:183` « Il
+  n'existe pas de serveur MCP « Kesh-natif » » ; le prompt de revue de la partie b porte l'axe `api-external.md`.
+- **Retenu** : rien n'est écrit en 32-5b — aucune route ne crée de clé MCP avant la 32-5c, aucun endpoint ne la
+  consomme avant la 32-6 ; les deux phrases restent vraies pour un lecteur de la documentation. Leur révision suit la
+  fiche : `docs/api-external.md` est au périmètre de la **32-5c** (AC-c7), qui crée les clés.
+- **Réversible** : sans objet.
+

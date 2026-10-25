@@ -586,13 +586,13 @@ passages du manuel qui les décrivent (C-32-5-22).
 - [x] **T-a7** — mutations Ma1 à Ma7, gates (§ *Gates*).
 
 ### 32-5b
-- [ ] **T-b0** — recontrôle des faits 1, 2, 6 ; 32-5a fusionnée ; **recompte**, sur `main` au départ de la 32-5b, des
+- [x] **T-b0** — recontrôle des faits 1, 2, 6 ; 32-5a fusionnée ; **recompte**, sur `main` au départ de la 32-5b, des
   fichiers de `services/`, des emplois de `Portee::` et des refus de portée de `services_motif.rs` (la 32-4a, PR #745,
   et sans doute la 32-4b, seront fusionnées avant : leurs comptes changent) — écrits au Dev Agent Record.
-- [ ] **T-b1** — génération DRY, `Portee`, `services_motif.rs` (AC-b1, AC-b2).
-- [ ] **T-b2** — `services::cles_mcp::authentifier` et ses tests (AC-b3, AC-b5).
-- [ ] **T-b3** — refus croisés et clé restaurée (AC-b4, AC-b6).
-- [ ] **T-b4** — mutations Mb1 à Mb6, gates.
+- [x] **T-b1** — génération DRY, `Portee`, `services_motif.rs` (AC-b1, AC-b2).
+- [x] **T-b2** — `services::cles_mcp::authentifier` et ses tests (AC-b3, AC-b5).
+- [x] **T-b3** — refus croisés et clé restaurée (AC-b4, AC-b6).
+- [x] **T-b4** — mutations Mb1 à Mb6, gates.
 
 ### 32-5c
 - [ ] **T-c0** — recontrôle des faits 4, 5, 12, 13, 18 ; 32-5d fusionnée (ordre imposé, C-32-5-27).
@@ -921,13 +921,18 @@ développement fait chaque correction **à l'étape 0**, et la déclare au Chang
 ### Agent Model Used
 
 - **32-5a** : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-5`, départ `deb3b250`.
+- **32-5b** : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-5b`, branche `story/32-5b`, départ `b723e3d9`
+  (32-5a, 32-4a et 32-4b fusionnées).
 
 ### Statut des parties
 
 - **32-5a — `done`** (2026-10-25) : revue de code terminée (P3 ciblée, 0 finding au-dessus de LOW), gate complet et
   E2E complet au dernier commit de code `88eae2b2`. Clé `32-5a-tables-et-sauvegarde-mcp` à `done` dans
   `sprint-status.yaml`.
-- **32-5b, 32-5d, 32-5c** — `ready-for-dev`, dans l'ordre a → b → d → c (C-32-5-27).
+- **32-5b — `review`** (2026-10-25) : développement terminé, dernier commit de code `3afa49e8` ; gate complet et E2E
+  complet à ce commit ; prompt de revue P1 `325b-review-prompt-p1.md`. Clé `32-5b-authentification-cle-mcp` à
+  `review`.
+- **32-5d, 32-5c** — `ready-for-dev`, dans l'ordre a → b → d → c (C-32-5-27).
 
 ### Étape 0 — recontrôle (ligne lue citée)
 
@@ -980,6 +985,51 @@ Points de *À recontrôler à l'étape 0 du développement* :
   détaillée de restauration », l'ancien mot annoté).
 - **`user-manual.tex:1914`** : « restaurée sur une autre machine » devient « restaurée par une 0.15.x sur une autre
   machine … ; la 0.16.0, elle, ne l'importe plus (le manuel administrateur dit pourquoi) ».
+
+#### 32-5b (le 2026-10-25, contre `b723e3d9`)
+
+`git log -1` au départ : `b723e3d9 Story 32-5a : les tables MCP …` — la 32-5a fusionnée, la 32-4a (`592ee430`) et la
+32-4b (`49db2265`) aussi. Les comptes de l'AC-b2 sont **relatifs à `b723e3d9`** (consigne de l'orchestrateur), non à
+`e59d63e8`.
+
+- **Fait 1** : `api_key.rs:30` `pub const PAT_PREFIX: &str = "kesh_pat_";` ; `:153` `pub async fn validate_pat(` ;
+  `:185` `if let Err(e) = api_keys::touch_last_used(pool, &key_hash).await {` ; `grep -c "OsRng.fill_bytes"` → **2**
+  (l. 115, 136), comme la fiche.
+- **Fait 2** : `middleware/auth.rs:83` `… if let Some(cookie) = jar.get("kesh_access_token") {` ; `:134`
+  `let current_user = if token.starts_with(crate::auth::api_key::PAT_PREFIX) {` ; `:146` `let claims =
+  jwt::decode(&token, …)?;`. `grep -rln "kesh_mcp_" crates frontend/src docs` → deux fichiers de la 32-5a seulement
+  (`entities/mcp_key.rs:4`, en-tête de la migration `20261025000001`) : aucun test ne figeait le refus.
+- **Fait 6, recompté** (`git grep … b723e3d9`) : `Portee` a **trois** variantes (`acces.rs:23` `pub enum Portee {`,
+  `:32` `ContactsRead,`) ; `services/` compte **dix** fichiers (`git ls-tree --name-only b723e3d9
+  crates/kesh-api/src/services/ | wc -l` → 10 ; `services_motif.rs:2559` `10,`) ; `Portee::` : **43 occurrences sur
+  41 lignes** dans `crates/` (`git grep -o` / `git grep -n` → 43 / 41), dont **14** dans `src/` (sept fichiers de
+  services — la fiche en comptait trois à `e59d63e8`), **13** dans `services_motif.rs` (onze à `e59d63e8`) et **16**
+  dans `services_rollout.rs` (absent à `e59d63e8`). Refus de portée de `services_motif.rs` : `const TOUTES: [Portee; 3]`
+  (`:866`), `fn autre_portee` (`:895`, `match` exhaustif sur trois bras), `:1205` `for portees in [vec![],
+  vec![autre_portee(svc)]] {`, `:1224` `for portees in [vec![], vec![Portee::InvoicesRead]] {`. **Écart non prévu par
+  la fiche** : `services_rollout.rs:431` porte aussi un `const TOUTES: [Portee; 3]`, et son AC9 (a) refuse chaque autre
+  portée **seule** ; il est revu de même (C-32-5-40).
+- **`mod common;` et `pool_lecture_seule`** : déjà faits par la 32-4a — `services_motif.rs:14` `mod common;`, `:45`
+  `use common::lecture_seule::{lecture_seule, pool_lecture_seule};`, helper à `tests/common/lecture_seule.rs`. La partie
+  b ne déplace rien : elle l'appelle.
+- **Doc-comments de la Q11** : déjà corrigés par la 32-4b — `poignees.rs:9-12` « … réalisés par la 32-6 ; aucun second
+  compte MariaDB » ; `services/mod.rs` § *La lecture seule du MCP — Q11* ; `lib.rs:147-150` et `:158-161` disent la
+  décision (« sans second compte MariaDB »). `grep -rn "limité au .SELECT\|utilisateur MariaDB" crates --include=*.rs`
+  → rien. **Rien refait.** Restaient
+  à la 32-5b le **nouvel usage** de la `Trace` (`poignees.rs:46-49` « destiné aux seules fonctions d'audit de
+  `services/rapports.rs` » ; `services/mod.rs:83` « la clé MCP de la 32-5 écrira sa dernière utilisation ») et le
+  doc-comment de `ContexteAcces` (`acces.rs:64` « (les tests et la 32-6) ») : faits.
+- **R5 de la revue de la 32-5a** (§ *Pour la 32-5b*) : `mcp_keys.rs:116` `let Some(scopes) = read_scopes(r.mcp_key_id,
+  &r.scopes).usable() else {` — confirmé, le chemin d'authentification émet deux `warn!` pour une clé sans portée connue
+  et un `warn!` par requête pour une clé mixte. Traité (C-32-5-38). ⚠️ C'est un fichier de **dépôt** de `kesh-db` : la
+  partie b, déclarée « non 🗄️ » au découpage, en touche un ; l'exception `kesh-db` du `CLAUDE.md` s'applique, le gate
+  complet a tourné au dernier commit de code.
+- **§ *Pour la 32-5b***, deux autres points : `McpKeyAuthRow.scopes` est un `McpScopes` non vide
+  (`mcp_keys.rs:43` `pub scopes: McpScopes,`), `authentifier` s'appuie sur lui et ne relit pas les portées ; le test AC-b6 est écrit dans
+  `admin_full_import_e2e.rs` comme l'exige l'AC (le précédent `mcp_tables_roundtrip_…` d'`admin_backup_e2e.rs` couvre
+  le dépôt, non le service).
+- **Points P7-6, P8-1 à P8-4** : propres à la partie a (manuel, fiche d'epic, registre), traités à son étape 0 ; aucun
+  ne concerne la partie b.
 
 ### Completion Notes List
 
@@ -1090,6 +1140,16 @@ bornes) : `mcp_keys_repository.rs` 0 → 21, `entities/mcp_key.rs` 0 → 7, `ent
   `docs/manual/fr/{admin-manual,user-manual}.{tex,pdf}` ; `CHANGELOG.md`.
 - Artefacts : cette fiche, `epic-32-choix-autonomes-325.md` (C-32-5-29 à 36), `planning-artifacts/epic-32-serveur-mcp.md`
   (annotation P8-2), `sprint-status.yaml`, `325a-review-prompt-p1.md`.
+
+#### 32-5b
+
+- Neufs : `crates/kesh-api/src/services/cles_mcp.rs`, `crates/kesh-api/tests/cles_mcp_e2e.rs`.
+- Modifiés : `crates/kesh-api/src/auth/api_key.rs` ; `crates/kesh-api/src/services/{acces.rs, mod.rs, poignees.rs}` ;
+  `crates/kesh-api/tests/{admin_full_import_e2e.rs, services_motif.rs, services_rollout.rs}` ;
+  `crates/kesh-db/src/repositories/mcp_keys.rs` (R5).
+- Artefacts : cette fiche, `epic-32-choix-autonomes-325.md` (C-32-5-38 à 42), `sprint-status.yaml`,
+  `325b-review-prompt-p1.md`.
+- Aucun fichier de `docs/`, de `frontend/` ni de `crates/kesh-db/migrations/`.
 
 ## Change Log
 
