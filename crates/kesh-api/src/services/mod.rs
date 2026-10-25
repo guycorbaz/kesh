@@ -80,8 +80,10 @@
 //!    sites d'appel — un par handler de rapport —, toutes sur la `Trace`.
 //! 2. `api_keys::touch_last_used` (`auth/api_key.rs`), écrite par le
 //!    **middleware** sur `AppState::pool` pour une requête par clé d'API — hors
-//!    service, inchangée ; la clé MCP de la 32-5 écrira sa dernière utilisation
-//!    sur la `Trace`.
+//!    service, inchangée. La clé MCP écrit la sienne
+//!    (`mcp_keys::touch_last_used`) sur la `Trace`, dans
+//!    `cles_mcp::authentifier` (Story 32-5b) — une écriture d'authentification,
+//!    non d'un chemin de lecture des livres.
 //! 3. Aucune autre : les générateurs de `kesh-report`, `ReportPeriod::resolve`,
 //!    `resolve_scope`, `rapports::identite_societe`, `helpers::company_for_ids`,
 //!    `accounts::list_by_company` et `letterings::letterable_account_ids` ne
@@ -203,11 +205,21 @@
 //! Kesh et ses tests (la revue, les gardes, l'exécution sur une `Lecture` en
 //! lecture seule) : la base n'arrête pas un défaut qui contournerait le mode
 //! de session.
+//!
+//! # L'authentification d'une clé MCP — Story 32-5b
+//!
+//! `cles_mcp::authentifier(&Lecture, &Trace, jeton)` est le **seul**
+//! constructeur de production d'un `ContexteAcces` du canal MCP : il cherche la
+//! clé sur la `Lecture` et écrit sa dernière utilisation sur la `Trace`, si
+//! bien qu'il fonctionne sur une `Lecture` en `READ ONLY`. Il n'est branché
+//! nulle part : le middleware de `/api/v1` ne le connaît pas (une clé MCP y
+//! échoue en 401), et la garde de l'endpoint `/mcp` (32-6) l'appellera.
 
 #![cfg_attr(not(test), forbid(unsafe_code))]
 
 pub mod acces;
 pub mod carnet;
+pub mod cles_mcp;
 pub mod ecritures;
 pub mod factures;
 pub mod factures_fournisseur;

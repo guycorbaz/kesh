@@ -9,10 +9,12 @@
 //! ⚠️ La colonne `scopes` est `JSON` : MariaDB la rend en `BLOB`, d'où le
 //! `CAST(scopes AS CHAR)` de chaque lecture (motif `bank_profiles`).
 //!
-//! **Différence avec les clés d'API** : la recherche d'authentification
+//! **Deux différences avec les clés d'API** : la recherche d'authentification
 //! ([`find_active_auth_by_key_hash`]) joint aussi `companies` — une clé
 //! orpheline (société absente) n'est jamais trouvée, avant même toute
-//! réparation (C-32-5-12).
+//! réparation (C-32-5-12) — et exige un créateur de la **société de la clé**
+//! (`u.company_id = k.company_id`, C-32-5-43, Story 32-5b) — une clé dont le
+//! créateur est d'une autre société n'est jamais trouvée.
 //!
 //! **Portées lues avec tolérance** (C-32-5-37, revue P1 E1) : une portée que
 //! cette version ne connaît pas est mise de côté et journalisée (id de la clé,
@@ -78,7 +80,9 @@ struct AuthRow {
 }
 
 /// Lit les portées stockées ; journalise ce qui est mis de côté, en nommant
-/// l'id de la clé (jamais le condensat).
+/// l'id de la clé (jamais le condensat). Chemins d'**administration** seulement
+/// (liste, recherche par id) : le chemin d'authentification a son propre
+/// journal, [`auth_row`] (Story 32-5b, R5 de la revue de la 32-5a).
 fn read_scopes(mcp_key_id: i64, json: &str) -> StoredMcpScopes {
     let stored = StoredMcpScopes::from_stored_json(json);
     if !stored.unknown().is_empty() {
@@ -112,14 +116,31 @@ impl From<KeyRow> for McpKey {
 }
 
 /// `None` si la clé n'a aucune portée connue : elle n'authentifie pas.
+///
+/// **Un seul avertissement, et seulement pour un refus** (Story 32-5b, R5 de la
+/// revue de la 32-5a, C-32-5-38) : ce chemin sert chaque requête MCP. Une clé
+/// sans aucune portée connue est refusée par un `warn!` unique (ses portées
+/// inconnues comprises) ; une clé **mixte**, qui authentifie par ses portées
+/// connues, n'émet qu'un `debug!` par requête — son avertissement relève des
+/// chemins d'administration ([`read_scopes`], à la liste des clés). Jamais le
+/// condensat.
 fn auth_row(r: AuthRow) -> Option<McpKeyAuthRow> {
-    let Some(scopes) = read_scopes(r.mcp_key_id, &r.scopes).usable() else {
+    let stored = StoredMcpScopes::from_stored_json(&r.scopes);
+    let Some(scopes) = stored.usable() else {
         tracing::warn!(
             mcp_key_id = r.mcp_key_id,
+            unknown = ?stored.unknown(),
             "clé MCP sans aucune portée connue de cette version : elle n'authentifie pas"
         );
         return None;
     };
+    if !stored.unknown().is_empty() {
+        tracing::debug!(
+            mcp_key_id = r.mcp_key_id,
+            unknown = ?stored.unknown(),
+            "clé MCP : portées inconnues de cette version, ignorées à l'authentification"
+        );
+    }
     Some(McpKeyAuthRow {
         mcp_key_id: r.mcp_key_id,
         company_id: r.company_id,
@@ -216,8 +237,10 @@ pub async fn find_by_id_for_company(
 
 /// Recherche d'authentification : une clé **active** (non révoquée, non
 /// expirée) par son condensat, jointe à son créateur **et à sa société**.
-/// `None` si aucune clé active, si la société a disparu (clé orpheline), ou si
-/// la clé ne porte **aucune portée connue** de cette version (C-32-5-37).
+/// `None` si aucune clé active, si la société a disparu (clé orpheline), si le
+/// créateur n'appartient pas à la société de la clé (C-32-5-43 : le contexte
+/// rendu ne mêle jamais deux sociétés), ou si la clé ne porte **aucune portée
+/// connue** de cette version (C-32-5-37).
 ///
 /// Le rôle et l'état du créateur sont rendus, non filtrés : c'est
 /// l'authentification (32-5b) qui décide de leur sens.
@@ -231,7 +254,7 @@ pub async fn find_active_auth_by_key_hash(
                 CAST(k.scopes AS CHAR) AS scopes, k.send_validation AS send_validation, \
                 k.expires_at AS expires_at, u.role AS creator_role, u.active AS creator_active \
          FROM mcp_keys k \
-         JOIN users u ON u.id = k.created_by_user_id \
+         JOIN users u ON u.id = k.created_by_user_id AND u.company_id = k.company_id \
          JOIN companies c ON c.id = k.company_id \
          WHERE k.key_hash = ? AND k.revoked_at IS NULL \
            AND (k.expires_at IS NULL OR k.expires_at > NOW(3)) \

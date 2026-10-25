@@ -863,11 +863,15 @@ fn mcp_societe(company_id: i64, user_id: i64, portees: &[Portee]) -> ContexteAcc
     ContexteAcces::mcp(company_id, user_id, portees.iter().copied().collect())
 }
 
-const TOUTES: [Portee; 3] = [
-    Portee::BooksRead,
-    Portee::InvoicesRead,
-    Portee::ContactsRead,
-];
+/// Les cinq portées : l'énumération unique de la base (Story 32-5b, AC-b2).
+const TOUTES: [Portee; 5] = Portee::ALL;
+
+/// Toutes les portées **sauf** `p` — la clé la plus riche à qui manque la
+/// portée exigée (Story 32-5b, AC-b2) : un refus qui tient contre elle tient
+/// contre toute clé privée de `p`.
+fn toutes_sauf(p: Portee) -> Vec<Portee> {
+    TOUTES.into_iter().filter(|q| *q != p).collect()
+}
 
 fn api(livres: &Livres, role: Role) -> ContexteAcces {
     api_societe(livres.company_id(), livres.user_id(), role)
@@ -891,15 +895,9 @@ fn portee_exigee(svc: Svc) -> Portee {
     }
 }
 
-/// L'autre portée — insuffisante seule.
-fn autre_portee(svc: Svc) -> Portee {
-    match portee_exigee(svc) {
-        Portee::BooksRead => Portee::InvoicesRead,
-        Portee::InvoicesRead => Portee::BooksRead,
-        // Aucun rapport n'exige la portée du carnet (Story 32-4a) : bras posé
-        // pour l'exhaustivité, jamais atteint par `portee_exigee`.
-        Portee::ContactsRead => panic!("aucun service de rapport n'exige ContactsRead"),
-    }
+/// Les quatre autres portées — insuffisantes, même ensemble.
+fn autres_portees(svc: Svc) -> Vec<Portee> {
+    toutes_sauf(portee_exigee(svc))
 }
 
 /// Demande par défaut d'un service.
@@ -1193,8 +1191,9 @@ fn resume(r: &Result<Releve, AppError>) -> String {
 // AC8 — un test de refus par service, et son contrôle positif
 // ============================================================
 
-/// AC8 (a) — canal MCP sans la portée exigée (portées vides, puis l'autre
-/// portée seule) → `Forbidden`, pour les dix services.
+/// AC8 (a) — canal MCP sans la portée exigée (portées vides, puis les quatre
+/// autres portées ensemble — Story 32-5b, AC-b2) → `Forbidden`, pour les dix
+/// services.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac8_a_refus_mcp_sans_la_portee(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
@@ -1202,7 +1201,7 @@ async fn ac8_a_refus_mcp_sans_la_portee(pool: MySqlPool) {
     let p = Params::de(&livres);
     let mut echecs = Vec::new();
     for svc in SERVICES {
-        for portees in [vec![], vec![autre_portee(svc)]] {
+        for portees in [vec![], autres_portees(svc)] {
             let r = jouer(
                 svc,
                 Usg::Affichage,
@@ -1221,7 +1220,7 @@ async fn ac8_a_refus_mcp_sans_la_portee(pool: MySqlPool) {
             }
         }
     }
-    for portees in [vec![], vec![Portee::InvoicesRead]] {
+    for portees in [vec![], toutes_sauf(Portee::BooksRead)] {
         let r = plan_comptable::lister(&mcp(&livres, &portees), &lecture, false).await;
         if !matches!(r, Err(AppError::Forbidden)) {
             echecs.push(format!(
@@ -2556,8 +2555,9 @@ fn ac10_vi_services_sans_axum_ni_app_state() {
         .collect();
     assert_eq!(
         services.len(),
-        10,
-        "services/ : dix fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b), {:?}",
+        11,
+        "services/ : onze fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b, \
+         cles_mcp.rs de la 32-5b), {:?}",
         services.iter().map(|(f, _)| f).collect::<Vec<_>>()
     );
     assert_eq!(
