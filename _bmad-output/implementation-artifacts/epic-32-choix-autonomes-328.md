@@ -267,6 +267,7 @@ elles. Chaque choix : contexte, option retenue, alternatives écartées, révers
   32-10a (la 32-8 ne dépend pas de ses tables).
 - **Réversible** : oui.
 - *(Annoté le 2026-10-25, validation P1, R3 = F1, R8, décision de l'orchestrateur : l'ordre est fixé — 32-6a, 32-6b, 32-8a, 32-8b0, 32-8b, puis 32-10a. La « recommandation » et le « sinon » ci-dessus sont tranchés : la **32-8b0** crée le prédicat selon l'AC-ii1 de la 32-10a (C-32-8-28) ; la **32-8b** introduit `entree_appel` sous la signature de son AC-B11 (`envoi: Option<i64>`, cinq ou six clés) et `LimiteAtteinte` ; la 32-10a les réemploie — note au § *Note pour la 32-10a* de la fiche.)*
+- *(Annoté le 2026-10-25, validation P3, R2 : l'ordre ci-dessus omettait la 32-8c ; il se lit 32-6a, 32-6b, 32-8a, 32-8b0, 32-8b, **32-8c**, puis 32-10a.)*
 
 ### C-32-8-24 — L'epic est annoté : la table remplace « l'état en mémoire »
 
