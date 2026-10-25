@@ -1,6 +1,6 @@
 # Story 32.4b : la couche de services — rollout des lectures : factures clientes, échéancier, règlements, factures fournisseur
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-4b`, branche `story/32-4b` partie de `main`
 `592ee430` (la 32-4a fusionnée). Registre : `epic-32-choix-autonomes-324b.md` (C-32-4b-1 à C-32-4b-18). Clé courte :
@@ -578,7 +578,7 @@ base), et les **douze** mutants (C-32-0-4).
 
 ## Tâches
 
-- [ ] **T0** — Worktree et branche (posés) ; bases `kesh_324b`, `kesh_e2e_324b` créées, migrées depuis les migrations du
+- [x] **T0** — Worktree et branche (posés) ; bases `kesh_324b`, `kesh_e2e_324b` créées, migrées depuis les migrations du
   worktree, seedées ; port attribué par l'orchestrateur ; `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-32-4b/target` ;
   `node_modules` par `cp -al` (`docs/agents-orchestration.md` § 4). **Étape 0** : recontrôler au code les lignes citées
   des faits 1 à 10 (une ligne lue citée par fait au Dev Agent Record), et la faisabilité des fixtures de l'AC11 (une
@@ -589,22 +589,22 @@ base), et les **douze** mutants (C-32-0-4).
   (validation P2, F8). **Ordre de fusion** (décision de l'orchestrateur, validation P2, F5) : la 32-4b fusionne
   **avant** la 32-5b ; si `main` porte déjà la 32-5b au développement, recompter `services/` (garde (vi)) et
   `Portee` (AC10 (a)) sur `main` et le porter au Change Log (C-32-4b-18).
-- [ ] **T1 (AC10-AC12 — rouge d'abord)** — `tests/services_rollout.rs` complété, en **deux commits** : (i) AC11 (c), et
+- [x] **T1 (AC10-AC12 — rouge d'abord)** — `tests/services_rollout.rs` complété, en **deux commits** : (i) AC11 (c), et
   les lignes **par la route** de l'AC11 (d), (e), (f), (g) — elles ne réfèrent à aucun service neuf —, **jouées sur le
   code d'avant T2** : le relevé établit que les tables décrivent le code d'aujourd'hui (un rouge ici est une prémisse
   fausse de la fiche, à porter au Change Log, non à corriger dans la table) ; (ii) le reste, dont on constate qu'il ne
   compile pas avant T2.
-- [ ] **T2 (AC1-AC6, AC8)** — `services/factures.rs` (`lister`, `detail`, `requete_echeances`, `echeances`,
+- [x] **T2 (AC1-AC6, AC8)** — `services/factures.rs` (`lister`, `detail`, `requete_echeances`, `echeances`,
   `reglements`, la garde de transaction) ; les quatre handlers minces ; l'export sur `requete_echeances` ; gate ciblé.
-- [ ] **T3 (AC7, AC8)** — `services/factures_fournisseur.rs` ; `from_view` ; les deux handlers minces ; gate ciblé.
-- [ ] **T3-bis (AC18)** — les quatre liaisons de `invoice_echeancier_e2e.rs` ; binaire `invoice_echeancier_e2e`.
-- [ ] **T4 (AC9, AC13)** — amendements de `services_motif.rs` (liste fermée de l'AC9 (1)), garde (ix) et ses témoins.
-- [ ] **T5 (AC14, AC17)** — inventaire de la fermeture ; les sites Q11 de l'AC17 (3) (`services/mod.rs`, `poignees.rs`,
+- [x] **T3 (AC7, AC8)** — `services/factures_fournisseur.rs` ; `from_view` ; les deux handlers minces ; gate ciblé.
+- [x] **T3-bis (AC18)** — les quatre liaisons de `invoice_echeancier_e2e.rs` ; binaire `invoice_echeancier_e2e`.
+- [x] **T4 (AC9, AC13)** — amendements de `services_motif.rs` (liste fermée de l'AC9 (1)), garde (ix) et ses témoins.
+- [x] **T5 (AC14, AC17)** — inventaire de la fermeture ; les sites Q11 de l'AC17 (3) (`services/mod.rs`, `poignees.rs`,
   `lib.rs`, `tests/common/lecture_seule.rs`) et leur `grep` sur `crates/` ; textes de l'AC17.
-- [ ] **T6 (AC15)** — mutations M1 à M29, chacune tuée sauf M21d (jouée, survie recopiée) (pilote hors dépôt, `kesh-gate-logs/324b-mutations-pilote.py`,
+- [x] **T6 (AC15)** — mutations M1 à M29, chacune tuée sauf M21d (jouée, survie recopiée) (pilote hors dépôt, `kesh-gate-logs/324b-mutations-pilote.py`,
   au patron de `324a-p1r-mutations-pilote.py` ; binaire `services_rollout` seul quand la mutation ne vise pas une
   garde de `services_motif` ou un test existant nommé).
-- [ ] **T7 (AC9, AC14, AC16, AC17)** — contrôles de l'AC8 et de l'AC9, gate complet et E2E complet au dernier commit de
+- [x] **T7 (AC9, AC14, AC16, AC17)** — contrôles de l'AC8 et de l'AC9, gate complet et E2E complet au dernier commit de
   code ; Dev Agent Record : chiffres réellement exécutés, listes exactes, inventaire, décomptes recomptés (périmètre
   déclaré).
 
@@ -784,9 +784,213 @@ registres `epic-32-choix-autonomes.md` (C-32-0-4, C-32-0-7), `-323.md`, `-324a.m
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie, worktree `kesh-32-4b`, branche `story/32-4b`, partie de `9f29880f` sur
+`main` `592ee430`. Clé `324b` ; bases `kesh_324b`, `kesh_e2e_324b` ; port E2E 3327 ; dossiers E2E
+`/tmp/kesh-e2e-324b/` ; `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-32-4b/target`.
+
 ### Completion Notes List
 
+**Étape 0.**
+
+- **P3-1** — ligne lue, `services_rollout.rs:402` à `592ee430` :
+  `/// Une demande qui échoue à l'analyse (`dateFrom = "x"`, `asOf = "2026-13-01"`).` — elle ne nomme pas
+  `limit = Some(0)` ; l'AC9 (2) se lit « le doc-comment de `Cas::Invalide`, qui **devra** nommer aussi
+  `limit = Some(0)` » : fait en T1 (ii) (« ou à la validation (`limit = Some(0)`, listes de factures clientes) »).
+- **`origin/main`** après `git fetch` : `592ee430`, inchangé ; `services/cles_mcp.rs` absent, `Portee` à trois
+  variantes (`acces.rs:22-31`) : la 32-5b n'est pas fusionnée, rien à recompter (C-32-4b-18).
+- **Faits 1 à 10, recomptés au code** (une ligne lue par fait) : 1 — `grep -n '^pub async fn'` : `invoices.rs` 13
+  (`list_invoices` l. 597 … `export_due_dates_csv_handler` l. 1552), `supplier_invoices.rs` 7 ; `async fn` toutes
+  visibilités tronquées au `#[cfg(test)]` (l. 1696, 790) : 15 et 8 ; 2 — `lib.rs:897` `.route("/api/v1/invoices",
+  get(routes::invoices::list_invoices))`, l. 608-611 l'export dans `comptable_routes` ; 3 — `kesh-db/…/invoices.rs:899`
+  `items_qb.push_bind(query.limit);`, `supplier_invoices.rs:228` `ORDER BY si.invoice_date DESC, si.id DESC LIMIT ?
+  OFFSET ?`, le `grep` des refus sur `crates/kesh-api/tests` → rien ; 4 — `sed -n '1,/^#\[cfg(test)\]/p' … | grep -c
+  'AppError::Validation'` → 34 ; 5 — `invoices.rs:1432` `let company = get_company_for(&current_user, &state.pool)
+  .await?;` ; 6 — détecteur reproduit (corps aplatis, commentaires ôtés, `324b-detecteur-state-pool.py`) :
+  `invoices.rs` 40 = 38 + 2 (aides `ensure_contact_belongs_to_company`, `with_draft_rounding_preview`),
+  `supplier_invoices.rs` 15 = 15 + 0 ; 7 — repris à l'AC14 ci-dessous ; 8 — `reports.rs:440` `let rapport =
+  rapports::balance_agee(&acces, &state.lecture(), Affichage).await?;` ; 9 — `journal_entries.rs` 11, `letterings.rs`
+  8, `contacts.rs` 8, chacun égal à la somme de ses corps ; 10 — le `grep` Q11 sur `crates/` rend les dix lignes
+  (`lib.rs` 148, 159 ; `poignees.rs` 10, 11 ; `mod.rs` 52, 135, 136, 139 ; `lecture_seule.rs` 8, 9). **Aucun écart.**
+- **Fixtures** : faisables sur `seed_accounting_company` — prouvé par T1 (i) joué sur le code d'avant.
+
+**T1 (i), joué sur le code d'avant le déplacement** (`e9ee2196`, journal `324b-t1i-services_rollout-avant-T2.log`) :
+binaire `services_rollout` **17/17** — les cinq tests neufs par la route (AC11 (c) à (g)) décrivent le code
+d'aujourd'hui ; les douze de la 32-4a restent verts avec `poser_livres` étendu. **Aucune prémisse de la fiche n'a
+rougi.** T1 (ii) (`eaf6ac09`) : constaté ne pas compiler avant T2 (E0432 sur `services::factures` et
+`services::factures_fournisseur`).
+
+**AC10 — les « sans objet »** : (c-val) pour `factures::{detail, reglements}` et `factures_fournisseur::*` (aucun refus
+d'analyse ; la liste fournisseur écrête) ; (c-lec) pour `factures::echeances` (rien de nommé ni de lu avant la page).
+
+**AC8 — contrôles au dernier commit de code (`bb51e779`), sortie recopiée** :
+`grep -nE '\b(MAX_LIST_LIMIT|DEFAULT_LIST_LIMIT|MAX_SEARCH_LEN)\b' …/routes/invoices.rs` → rien ;
+`grep -nE 'clamp\(|\.max\(0\)|unwrap_or\(50\)' …/routes/supplier_invoices.rs` → rien ; le compte des
+`AppError::Validation` avant `#[cfg(test)]` → **22** ; `grep -rnF 'build_due_dates_query' crates/kesh-api/src` → rien.
+`diff` des `mod tests` de `routes/invoices.rs` et de `mod scan_qr_tests` de `routes/supplier_invoices.rs` aux deux
+bornes → **vides**.
+
+**AC9** : `git diff --name-only $(git merge-base HEAD origin/main) HEAD -- crates/kesh-api/tests` → exactement
+`common/lecture_seule.rs`, `invoice_echeancier_e2e.rs`, `services_motif.rs`, `services_rollout.rs`. Les lignes ôtées de
+`services_rollout.rs` (`git diff 592ee430 HEAD -- … | grep -E '^-[^-]'`) sont des doc-comments (module, `Livres`,
+« cinq services »), deux imports élargis, `[Svc; 5]`, `; 8]`, le doc-comment de `Cas::Invalide` et le nom
+`ac11_a_les_cinq_services_lisent_en_lecture_seule` — aucun bras, aucune assertion de la 32-4a. **Relevé large** :
+`grep -lE '/api/v1/invoices|/api/v1/supplier-invoices' crates/kesh-api/tests/*.rs` → **26** fichiers (les 25 de la
+fiche, plus `services_rollout.rs`, qui nomme désormais ces routes) ; comptes **exécutés au gate complet** (journal
+`324b-gate-complet-bb51e779.log`) : `invoice_echeancier_e2e` 34/34, `invoice_ttc_e2e` 3/3, `dunning_reminders_e2e`
+10/10, `idor_multi_tenant_e2e` 14/14, `supplier_settlement_cancel_e2e` 9/9, `bank_accounts_closed_e2e` 28/28,
+`inbox_import_e2e` 39/39, `services_rollout` 21/21, et les dix-huit autres du relevé tous verts
+(`admin_full_export_e2e` 19, `admin_full_import_e2e` 54, `admin_pat_denied_e2e` 16, `audit_route_registry` 11,
+`company_invoice_settings_postable_e2e` 12, `contact_payment_terms_e2e` 9, `invoice_delete_e2e` 4,
+`invoice_frozen_pdf_e2e` 28, `invoice_pdf_e2e` 12, `invoice_send_email_e2e` 43, `invoice_unvalidate_e2e` 6,
+`kf004_no_op_e2e` 6, `onboarding_audit_e2e` 47, `onboarding_e2e` 16, `reconciliation_e2e` 129,
+`reconciliation_link_e2e` 24, `rejeu_interblocage_e2e` 19, `supplier_invoice_scan_qr_e2e` 4). Je n'ai **pas** trié au
+site lesquels frappent l'une des six routes en `GET` : tous ont tourné, verts. Les huit gardes de l'AC8 de la 32-4a :
+`audit_label_registry` 11/11, `textes_coherents` 19/19, `admin_pat_denied_e2e` 16/16, `audit_route_registry` 11/11,
+`test_schema_guard` 7/7, `configuration_transmise` 30/30, `bank_account_closed_inventory` 9/9, `letterings_lexical` 7/7.
+
+**AC13** — relevé au dernier commit (détecteur reproduit) : `invoices.rs` **30 = 28 + 2**, `supplier_invoices.rs`
+**11 = 11 + 0** ; 32-4a **11 / 8 / 8** inchangés. La garde (ix) est verte au premier passage sur les douze handlers
+migrés (la prémisse « trop stricte » des *Risques* ne s'est pas réalisée).
+
+**AC14 — inventaire clos** (relevé `324b-ac14-fermeture.txt`, script `324b-ac14-fermeture.py`, hors dépôt) : graphe
+d'appels des fichiers de `kesh-db/src/repositories/` et de `util/search.rs`, chacun tronqué à son `#[cfg(test)]`,
+lignes de commentaire écartées, appels qualifiés par module, noms du même module et noms importés par `use
+crate::repositories::…`/`crate::util::search::…` ; racines : les onze appels directs du fait 7. **Fermeture : 59
+éléments** — `companies::{FIND_BY_ID_SQL, find_by_id}` ; `company_invoice_settings::round_to_5_centimes` ;
+`fiscal_years::{FIND_LATER_CLOSED_SQL, OPEN_COVERING_DATE_SQL, find_later_closed, has_open_covering_date}` ;
+`imported_supplier_invoices::find_by_supplier_invoice_id_scoped` ; `invoice_settlements::{COLUMNS,
+INVOICE_AMOUNT_DUE_DERIVED_SQL, INVOICE_AMOUNT_SETTLED_DERIVED_SQL, INVOICE_CREDITED_DERIVED_JOIN_SQL,
+INVOICE_CREDITED_SUBQUERY_SQL, INVOICE_SETTLED_DERIVED_JOIN_SQL, INVOICE_SETTLED_SUBQUERY_SQL, amount_due,
+amount_due_derived_joins, amount_due_scalar_sql, amount_settled, list_for_invoice}` ;
+`invoice_settlements_write::{settlement_cancel_blocker, settlement_cancel_blocker_unlinking}` ;
+`invoices::{FIND_INVOICE_SCOPED_SQL, INVOICE_TTC_DERIVED_JOIN_SQL, INVOICE_TTC_DERIVED_SQL, INVOICE_TTC_SUBQUERY_SQL,
+LINE_COLUMNS, due_dates_summary, find_by_id_with_lines, list_by_company_paginated, push_where_clauses, total_ttc}` ;
+`journal_entries::{DOCUMENT_OWNERS_BATCH, document_owners, reversal_blocker, reversal_blockers, reversed_by}` ;
+`letterings::{DOCUMENT_KEYS_OF_ENTRY_SQL, GROUP_LINE_PERIODS_SQL, OPEN_PERIOD_RULE_FISCAL_YEARS_SQL,
+books_locked_through, document_group_frozen_by_periods, lines_in_open_period, open_period_rule, with_placeholders}` ;
+`payment_batches::last_confirmed_batch_for_invoice` ; `util::search::{BOOLEAN_FT_OPERATORS, escape_boolean_ft,
+escape_like}` ; `settlement_cancellation::settlement_entry_cancel_blocker` ; `supplier_invoices::{FIND_SCOPED_SQL,
+LINE_COLUMNS, fetch_lines, get_settlement_view, in_generated_batch, list, supplier_invoice_cancel_blocker,
+supplier_settlement_cancel_blocker, supplier_settlement_cancel_blocker_unlinking}` ; plus les deux macros SQL
+atteintes, `invoice_columns!` (l. 55-62) et `line_ttc_sql!` (l. 186-197), lues : des littéraux. Puis
+`INSERT|UPDATE |DELETE|FOR UPDATE|get_or_create` sur le code de chacun → **aucune occurrence** ; par prudence aussi
+`LOCK|FOR SHARE|NOWAIT|SKIP LOCKED` → aucune (`324b-ac14-verrous-et-macros.txt`). Fait 7 confirmé ; rien à porter au
+Project Lead. ⚠️ *Ce que le script ne voit pas* : un appel par pointeur de fonction, un trait, ou une macro autre que
+les deux relevées ; il ne lit pas `kesh-db/src/` hors de `repositories/` et `util/search.rs`. Point (2) inchangé.
+**Branches non atteintes** par les fixtures de l'AC12 (a) : motifs de refus d'annulation présents (règlement client
+ou fournisseur), pièce source et lot confirmé présents, facture fournisseur réglée, et les variantes de filtre des
+listes (recherche, statut de paiement, suspension, tri) sur la `Lecture` en lecture seule.
+
+**AC15 — mutations** (pilote `kesh-gate-logs/324b-mutations-pilote.py`, synthèse `324b-mutations-resultats.txt`,
+journaux et diffs `324b-mut-<id>.{log,diff}`, campagne sous `flock`) : motifs vérifiés uniques par un essai à blanc
+(100 motifs, aucun vide), puis chacune jouée sur son seul binaire (`--test services_rollout` ; `--lib` pour M23 ;
+`--test services_motif` pour M25 à M29 ; `services_rollout` + `invoice_echeancier_e2e` pour M22), restaurée par
+`git checkout -- <f> && touch <f>`, diff résiduel **nul** à chacune. **Résultat : 99 tuées, M21d survivante (équivalente
+déclarée)**. Premier jeu : 98 tuées, M21d survivante, **M23 en erreur de compilation** (E0308 : `&mut PoolConnection`
+passé où `&mut MySqlConnection` est attendu — une erreur de compilation n'est pas un rouge) ; pilote corrigé
+(`&mut *lecture.pool().acquire()…`), M23 rejouée seule : **tuée** par
+`services::factures::tests::reglements_lisent_dans_une_transaction` (« aucune connexion acquise à côté de la
+transaction »). La synthèse garde les deux lignes de M23, dans l'ordre. Une ligne par mutation (assertion relevée) :
+
+| Mutation(s) | Tuée(s) par |
+|---|---|
+| M1a-f | `ac9_a_b_e_refus_et_controle_positif` (« AC9 (a) … sans portée ») |
+| M2a-b | `ac9_c_le_refus_precede_validation_et_lecture` (c-val `limit=0`) |
+| M3a-e | `ac9_c_…` (c-lec : id inexistant, société inexistante) |
+| M4a, M4b | `ac9_a_b_e_…` (portée exigée) |
+| M5 | `ac9_a_b_e_…` (« AC9 (e) … API Consultation ») |
+| M6 | `ac324b_c_la_societe_est_lue_d_abord` |
+| M7a-b | `ac324b_d_detail_et_echeances_ne_lisent_pas_la_societe` |
+| M8a-b | `ac324b_c_la_societe_est_lue_d_abord` |
+| M9a-b | `ac11_b_aucune_lecture_d_une_autre_societe` (AC12 (b)) |
+| M10a-d, M11a-d, M12a-b | `ac324b_a_les_refus_de_la_liste_et_de_l_echeancier` (et, selon la mutation, `ac324b_c_bornes_…`, `ac324b_b_les_bornes_…`, `ac9_c_…`) |
+| M13 | `ac324b_c_bornes_et_refus_des_factures_par_la_route` (`?status=cancelled`) et `ac324b_a_…` (`status cancelled`) |
+| M14a-d | `ac324b_b_les_bornes_des_listes_de_factures` (M14a, c, d aussi `ac324b_c_…` par la route ; M14b par la seule table des bornes) |
+| M15-*, M16-* (vingt) | `ac324b_d_e_f_la_liste_des_factures_par_la_route` (la ligne du champ ; `limit` aussi par `ac324b_c_…`) |
+| M17-*, M18-* (vingt) | `ac324b_d_e_f_l_echeancier_par_la_route` |
+| M19a-d | `ac324b_d_f_la_liste_fournisseur_par_la_route` (M19c aussi `ac324b_c_…`) |
+| M20a-d | les tests (d)(e)(f) de la liste et de l'échéancier (ligne « ordonné » vide) |
+| M21a, M21b, M21c | `ac324b_d_e_f_l_echeancier_par_la_route` (`paymentStatus=all` ; ligne sans paramètre) |
+| **M21d** | **survivante, équivalente** : 21/21 verts ; `due_dates_summary` ne lit pas `query.payment_status` (`kesh-db/src/repositories/invoices.rs:937-938`, corps l. 943-1024) |
+| M22a, M22b | `ac324b_g_le_detail_d_une_facture_par_la_route` **et** les témoins d'`invoice_echeancier_e2e` (`the_invoice_carries_its_frozen_or_previewed_rounding`, `reading_a_draft_writes_nothing`…) |
+| M22c | `ac324b_g_…` (« F1 : … rendu 166.2000, 50.0000 ») — les témoins d'`invoice_echeancier_e2e` ne la voient pas |
+| M23 | `reglements_lisent_dans_une_transaction` (lib) |
+| M24 | `ac11_a_les_services_lisent_en_lecture_seule` — erreur **1792** recopiée du journal |
+| M25 | `services_motif` : `ac10_i_ii_handlers_sans_le_pool`, `ac12_iii_…`, `ac13_ix_…` |
+| M26 | `ac13_ix_les_seuls_usages_de_state_d_un_handler_migre` **seule** — (ii) reste vert : (ix) voit ce que (ii) ne voit pas |
+| M27 | `ac13_ix_…` et `ac10_v2_les_poignees_ne_se_fabriquent_qu_au_cablage` |
+| M28 | `ac12_iii_inventaire_des_sites_non_resolus` |
+| M29 | `ac12_viii_les_services_du_rollout_ne_tracent_pas` |
+
+Décompte : 16 + 7 + 15 + 44 + 4 + 4 + 5 + 5 = **100** (le pilote en définit 100, compté par l'essai à blanc).
+
+**AC16 — gates réellement exécutés.**
+
+- **Gate ciblé**, pendant l'itération : `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D
+  warnings` (vert ; un `clippy::type_complexity` sur `SITES_NON_RESOLUS` vu et corrigé en T5), `cargo nextest` :
+  `package(kesh-api) & kind(lib)` + `services_rollout` **551/551** (1 ignoré) ; `services_motif` **24/24** ;
+  `invoice_echeancier_e2e` **34/34** ; lib + `services_rollout` + `services_motif` + `textes_coherents` **594/594**
+  (1 ignoré).
+- **Gate complet**, au dernier commit de code **`bb51e779`**, bases `kesh_324b` et `kesh_e2e_324b` remises à zéro
+  juste avant (sans toucher au conteneur), sous `flock` : `scripts/test-fast.sh --ci` — garde des droits, `fmt`,
+  `clippy`, nextest — **4027 exécutés, 4027 passés, 7 ignorés**, code 0 (`324b-gate-complet-bb51e779.log`).
+- **Frontend** : `frontend/` non touché → **build seul** (`npm run build`, vert, `324b-frontend-build.log`) ; ni
+  `check`, ni `test:unit`, ni `lint-i18n-ownership` n'ont tourné.
+- **E2E complet**, même commit, recette de `docs/testing.md` (base `kesh_e2e_324b` remise à zéro, migrée, seedée ;
+  backend `target/debug/kesh-api` sur 3327, `/health` attendu, dossiers `/tmp/kesh-e2e-324b/` passés au backend et au
+  runner ; Playwright sous `flock` ; backend arrêté par son PID, 2900039) : **315 passés, 7 échecs, 17 ignorés**
+  (12,9 min, `324b-e2e-bb51e779.log`). Les sept échecs, fichier par fichier contre § *Les échecs attendus* : les sept
+  **KF-029** (#97) — `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+  `:77`, `:150`. Aucun autre.
+
+**AC17** — contrôles, sortie relue : `api-external.md` l. 215 (`GET /invoices`, `GET /invoices/{id}`), l. 497
+(règlements : champs `cancellable`, `cancelBlockedBy`, `cancelBlockedLabel`, `cancelBlockedDocumentId` — ceux que
+le handler met en forme, inchangés), l. 552-566 et 723-757 (champs d'annulation, `lastConfirmedBatch`,
+`sourceDocument` : `from_view` les pose tous, `null` = non calculé ailleurs), l. 667 (sans rapport) — rien à changer.
+`grep -niE "par page|pagination" docs/manual/fr/user-manual.tex` → rien ; PDF aplati : un seul passage (« 200
+factures ouvertes ou davantage », rapprochement), sans rapport avec les bornes. Le contrôle Q11 sur `crates/` → **rien**
+(dix lignes avant). Textes qui bougent : `MULTI-TENANT-SCOPING-PATTERNS.md`, `services/mod.rs` (inventaire, rollout,
+Q11), `poignees.rs`, `lib.rs`, `tests/common/lecture_seule.rs`, `acces.rs` (portée), les doc-comments de module des
+deux fichiers de routes.
+
+**AC18** — `grep -nE 'let \(_?company_id, _?admin_id\) = seed_base' …/invoice_echeancier_e2e.rs` → rien ; 8 lignes
+de diff ; binaire 34/34.
+
+**Décomptes** (périmètre : `592ee430` → `bb51e779`, revue non comprise ; `grep -cE '#\[(sqlx::)?test'` aux deux
+bornes) : `services_rollout.rs` 12 → 21 (+9, les neuf `ac324b_*`) ; `services_motif.rs` 23 → 24 (+1, la garde (ix)) ;
+`services/factures.rs` 0 → 1 (+1, la garde de transaction) — **+11** tests. Fichiers de code et de tests touchés : 13
+(`git diff --name-only 592ee430 bb51e779`, hors `_bmad-output/` : 13 sur 20).
+
+**Écart de méthode, déclaré.** La consigne voulait le code édité par l'outil Edit seul, hors mutations : une
+modification de `tests/services_rollout.rs` (T1 (ii), avant son commit `eaf6ac09`) a été faite par un script Python —
+deux conditions récrites en `matches!`, et un import retiré. Le changement est mécanique et compris dans le commit ;
+tout le reste du code a été édité par Edit.
+
+**Choix** : C-32-4b-19 à C-32-4b-24 au registre.
+
+**Points à tracer par l'orchestrateur** (ceux des *Dev Notes*, inchangés) : les deux commentaires rendus faux hors
+périmètre (`kesh-db/src/repositories/invoices.rs:410-415`, `kesh-api/tests/dunning_reminders_e2e.rs:715-718`) → #738 ;
+la plage des dates des listes de factures → commentaire sur #742. Q1 et Q2 restent à Guy.
+
 ### File List
+
+- `crates/kesh-api/src/services/factures.rs` (neuf)
+- `crates/kesh-api/src/services/factures_fournisseur.rs` (neuf)
+- `crates/kesh-api/src/services/mod.rs`
+- `crates/kesh-api/src/services/acces.rs`
+- `crates/kesh-api/src/services/poignees.rs`
+- `crates/kesh-api/src/routes/invoices.rs`
+- `crates/kesh-api/src/routes/supplier_invoices.rs`
+- `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/tests/services_rollout.rs`
+- `crates/kesh-api/tests/services_motif.rs`
+- `crates/kesh-api/tests/invoice_echeancier_e2e.rs`
+- `crates/kesh-api/tests/common/lecture_seule.rs`
+- `docs/MULTI-TENANT-SCOPING-PATTERNS.md`
+- `_bmad-output/implementation-artifacts/32-4b-services-factures.md`
+- `_bmad-output/implementation-artifacts/epic-32-choix-autonomes-324b.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/324b-review-prompt-p1.md` (neuf)
 
 ## Change Log
 
@@ -867,3 +1071,15 @@ registres `epic-32-choix-autonomes.md` (C-32-0-4, C-32-0-7), `-323.md`, `-324a.m
   nommer aussi ») est **renvoyé à l'étape 0 du développement**, ligne lue citée au Change Log : une remédiation après
   la dernière passe ne serait relue par personne. **Trend** : P1 0/0/5/14 (Sonnet ×2) → P2 0/0/1/10 (Opus ×2) → P3
   0/0/0/1 (Sonnet). Prête pour le développement.
+- **2026-10-25 — Développement** (Opus 5.5, en autonomie, `bmad-dev-story`, worktree `kesh-32-4b`) : commits
+  `e9ee2196` (T1 (i), joué sur le code d'avant : 17/17), `eaf6ac09` (T1 (ii), ne compile pas avant T2), `642437ab`
+  (T2), `72b1c4ef` (T3), `010c3030` (T3-bis), `21399a5f` (T4), `bb51e779` (T5, dernier commit de code), puis ce compte
+  rendu. **Étape 0** : P3-1 traité — ligne lue `services_rollout.rs:402` (`/// Une demande qui échoue à l'analyse
+  (`dateFrom = "x"`, `asOf = "2026-13-01"`).`), lue « qui devra nommer aussi `limit = Some(0)` », fait en T1 (ii) ;
+  `origin/main` à `592ee430`, la 32-5b non fusionnée ; faits 1 à 10 recomptés, **aucun écart**. **Mutations** : 100,
+  **99 tuées, M21d équivalente** (M23 d'abord en erreur de compilation, pilote corrigé, rejouée et tuée). **Gates au
+  dernier commit de code `bb51e779`** : complet **4027/4027** (7 ignorés) ; frontend non touché, build seul ; E2E
+  **315 passés / 7 échecs (les sept KF-029) / 17 ignorés**. **AC14** : fermeture de 59 éléments, aucune écriture,
+  aucun `get_or_create`, aucun verrou. Tests : **+11** (`592ee430` → `bb51e779`). Choix C-32-4b-19 à 24. Écart de
+  méthode déclaré au Dev Agent Record (une édition de test par script). Revue de code P1 à lancer :
+  `324b-review-prompt-p1.md` (Sonnet, lentilles B, E, A).

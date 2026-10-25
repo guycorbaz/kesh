@@ -282,3 +282,64 @@ Relevé au code de `592ee430` (32-4a fusionnée).
 - **Écartées** : des comptes relatifs dans la 32-4b (`>= 10`) — une garde qui ne compte plus exactement ne voit plus un
   fichier ajouté ; laisser l'ordre au hasard des fusions.
 - **Réversible** : oui (l'ordre se renverse en recomptant).
+
+---
+
+## Choix du développement (2026-10-25, Opus 5.5, en autonomie)
+
+### C-32-4b-19 — Les fixtures de factures de `poser_livres` entrent au premier commit de T1
+
+- **Contexte** : T1 (i) ne devait porter que les lignes par la route ; `Livres`/`poser_livres` gagnent trois
+  fixtures (C-32-4b-15) dont seule la matrice de T1 (ii) se sert.
+- **Retenu** : les fixtures entrent en T1 (i), pour que les huit tests de la 32-4a qui appellent `poser_livres` soient
+  joués **sur le code d'avant le déplacement** avec elles (binaire `services_rollout` 17/17 : leurs assertions restent
+  vraies — l'étape 0 le demandait une à une). Contrepartie : un avertissement `dead_code` transitoire sur les trois
+  champs, levé en T1 (ii).
+- **Écartée** : les poser en T1 (ii) — leurs effets sur les tests de la 32-4a n'auraient été vus qu'avec le code
+  déplacé.
+- **Réversible** : oui.
+
+### C-32-4b-20 — Le contrôle `dateFrom > dateTo` est partagé lui aussi
+
+- **Contexte** : l'AC3 nomme trois contrôles communs à écrire une fois (`limit`, `offset`, `search`) ; le quatrième,
+  `dateFrom > dateTo`, est le même texte, au même rang relatif, dans la liste et dans l'échéancier.
+- **Retenu** : une quatrième aide privée, `periode`, appelée par les deux (DRY). Le message et l'ordre ne changent pas
+  (AC11 (a), cas d'ordre compris).
+- **Écartée** : le recopier dans les deux fonctions.
+- **Réversible** : oui.
+
+### C-32-4b-21 — Les valeurs neutres des mutations de recopie du tri sont les défauts du service
+
+- **Contexte** : AC15, M15 et M17 : « valeur neutre (`None`, `Default::default()`, ou le défaut du service) ».
+- **Retenu** : au service, le **défaut du service** pour `sort_by` et `sort_direction` (`Date`/`Desc` pour la liste,
+  `DueDate`/`Asc` pour l'échéancier) — la forme la plus difficile à tuer, qui exige une ligne de tri hors défaut ;
+  `Some(Unpaid)` pour `payment_status` de l'échéancier ; `LIMITE_DEFAUT` pour `limit` ; 0 pour `offset` ; `None`
+  ailleurs. Au handler (M16, M18, M19c-d), `None`.
+- **Réversible** : oui.
+
+### C-32-4b-22 — Les commits T2 et T3 séparés, au prix d'un T2 qui ne compile pas le banc
+
+- **Contexte** : `services_rollout.rs` nomme les deux modules dès T1 (ii) ; T2 n'introduit que `services::factures`.
+- **Retenu** : T2 (`642437ab`) déclare le seul module `factures` (la ligne `factures_fournisseur` de `services/mod.rs`
+  retirée le temps du commit) : la bibliothèque compile, le banc ne compile qu'à T3 (`72b1c4ef`), ce que disent les
+  deux messages ; le gate ciblé déclaré à T2 a tourné avec T3 en place.
+- **Écartée** : un commit commun T2+T3.
+- **Réversible** : oui.
+
+### C-32-4b-23 — Les tris de l'AC11 (e) se jouent sous un filtre qui écarte le brouillon
+
+- **Contexte** : l'AC11 (d) exige un brouillon parmi les fixtures de la liste (`status=draft`), l'AC11 (e) dix ordres
+  sur « les quatre factures ».
+- **Retenu** : les dix ordres de la liste se jouent avec `status=validated` en plus, ceux de l'échéancier avec
+  `paymentStatus=all` (F4 payée y reparaît, le brouillon en reste absent) ; le tri **par défaut** (AC11 (f)) se joue
+  sans filtre, brouillon compris. Chacun de ces filtres a sa propre ligne : il ne masque aucune recopie.
+- **Écartée** : un brouillon placé dans les dix ordres — une cinquième facture à faire tenir dans dix permutations.
+- **Réversible** : oui.
+
+### C-32-4b-24 — Trois factures fournisseur pour la recopie de `limit`
+
+- **Contexte** : M19a remplace la `limit` passée au dépôt par le défaut (50) ; sur deux factures,
+  `limit=1&offset=1` rendrait la même ligne avec ou sans la mutation.
+- **Retenu** : trois factures (FA, FB, FC), dont l'ordre du dépôt (`invoice_date DESC, id DESC`) se distingue de celui
+  des ids dans les deux sens.
+- **Réversible** : oui.
