@@ -90,6 +90,11 @@ tempfile = "3"
 # neuf.
 rustix = { version = "1.1", features = ["fs"] }
 
+# Story 32-5c (refs #723, C-32-5-19) — `ipnet` : plages admises et mandataires
+# de confiance du serveur MCP, lus et mis en forme canonique à l'écriture.
+# Déjà au Cargo.lock (2.12.0, dépendance transitive) : aucun paquet neuf.
+ipnet = "2.12"
+
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"

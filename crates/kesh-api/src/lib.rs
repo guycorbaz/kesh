@@ -222,7 +222,7 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
     // KESH-ADMIN-ROUTES-BEGIN
     // ⚠️ Bloc borné — Story 22-4a (#167). Le test `admin_pat_denied_e2e` lit CE
     // fichier par `include_str!`, compte les constructeurs de méthode entre les
-    // deux marqueurs, et exige exactement 33 (Story 31-1c). Toute route ajoutée ici sans son
+    // deux marqueurs, et exige exactement 39 (Story 32-5c). Toute route ajoutée ici sans son
     // couple dans la liste du test fait ROUGIR le test : c'est le rappel qui
     // manquait, et qui a laissé 16 routes sur 19 sans garde anti-PAT.
     // Ne pas déplacer ni reformuler les marqueurs sans ajuster le test.
@@ -316,6 +316,27 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/admin/backups/{kind}/{name}",
             get(routes::backup_schedule::download_backup),
+        )
+        // Story 32-5c (refs #723) : les clés du serveur MCP et ses réglages
+        // (Admin ; un PAT reçoit la couche anti-PAT, une clé MCP n'est pas
+        // reconnue par `require_auth` — 401). Les deux `GET` ne portent pas
+        // `ensure_not_pat` : la couche suffit (C-32-5-17).
+        .route(
+            "/api/v1/admin/mcp/keys",
+            get(routes::mcp_keys::list_mcp_keys).post(routes::mcp_keys::create_mcp_key),
+        )
+        .route(
+            "/api/v1/admin/mcp/keys/{id}",
+            delete(routes::mcp_keys::revoke_mcp_key),
+        )
+        .route(
+            "/api/v1/admin/mcp/keys/{id}/send-validation",
+            put(routes::mcp_keys::set_mcp_key_send_validation),
+        )
+        .route(
+            "/api/v1/admin/mcp/settings",
+            get(routes::mcp_server_settings::get_mcp_server_settings)
+                .put(routes::mcp_server_settings::update_mcp_server_settings),
         )
         // Story 20-1 : socle templates d'e-mail (Admin-only — pas de lecture
         // Comptable+ v1, seul consommateur = section Admin dédiée 20-2).

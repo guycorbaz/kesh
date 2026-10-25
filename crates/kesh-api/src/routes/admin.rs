@@ -507,8 +507,8 @@ async fn run_backup_and_restore(
     //    `admin.full_import` : leur `company_id` (sous-SELECT sur `users`)
     //    désigne ainsi la société vivante. Une erreur annule l'import entier,
     //    comme toute autre — la règle non bloquante ne vaut qu'au démarrage.
-    //    Aucun verrou neuf : `companies`, `users` et `api_keys` viennent d'être
-    //    vidées puis réinsérées par cette transaction.
+    //    Aucun verrou neuf : `companies`, `users`, `api_keys` et `mcp_keys`
+    //    viennent d'être vidées puis réinsérées par cette transaction.
     kesh_db::repositories::companies::repair_installation_in_tx(
         &mut tx,
         kesh_db::repositories::companies::RepairTrigger::Restore {

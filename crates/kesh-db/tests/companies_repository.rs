@@ -509,18 +509,24 @@ async fn clear_stub_in_tx_clears_only_a_stub_and_bumps_version(pool: MySqlPool) 
 const DEAD_COMPANY: i64 = 987_654;
 
 /// Les ids du montage : société vivante, utilisateur sain, utilisateur
-/// orphelin, clé active orpheline, clé déjà révoquée orpheline, clé saine.
+/// orphelin, et, pour chacune des deux natures de clé (d'API, puis MCP —
+/// Story 32-5d), une clé active orpheline, une clé déjà révoquée orpheline et
+/// une clé saine.
 struct Orphans {
     company: i64,
     orphan_user: i64,
     active_orphan_key: i64,
     revoked_orphan_key: i64,
     sane_key: i64,
+    active_orphan_mcp: i64,
+    revoked_orphan_mcp: i64,
+    sane_mcp: i64,
 }
 
 /// Montage sur une connexion **détachée du pool** (`FOREIGN_KEY_CHECKS=0`
-/// n'y retourne jamais) : un utilisateur et deux clés désignent
-/// `DEAD_COMPANY` — l'état qu'a laissé la remise à zéro v0.12.x (#528).
+/// n'y retourne jamais) : un utilisateur, deux clés d'API et deux clés MCP
+/// désignent `DEAD_COMPANY` — l'état qu'a laissé la remise à zéro v0.12.x
+/// (#528), étendu aux clés MCP (32-5d).
 async fn mount_orphans(pool: &MySqlPool) -> Orphans {
     use sqlx::Connection;
     let company = companies::create(pool, sample_new_company())
@@ -571,6 +577,23 @@ async fn mount_orphans(pool: &MySqlPool) -> Orphans {
     let active_orphan_key = insert_key("active orpheline", DEAD_COMPANY, false).await;
     let revoked_orphan_key = insert_key("révoquée orpheline", DEAD_COMPANY, true).await;
     let sane_key = insert_key("saine", company, false).await;
+    let active_orphan_mcp = insert_mcp_key(
+        &mut conn,
+        "mcp active orpheline",
+        DEAD_COMPANY,
+        sane_user,
+        false,
+    )
+    .await;
+    let revoked_orphan_mcp = insert_mcp_key(
+        &mut conn,
+        "mcp révoquée orpheline",
+        DEAD_COMPANY,
+        sane_user,
+        true,
+    )
+    .await;
+    let sane_mcp = insert_mcp_key(&mut conn, "mcp saine", company, sane_user, false).await;
     conn.close().await.unwrap();
     Orphans {
         company,
@@ -578,7 +601,84 @@ async fn mount_orphans(pool: &MySqlPool) -> Orphans {
         active_orphan_key,
         revoked_orphan_key,
         sane_key,
+        active_orphan_mcp,
+        revoked_orphan_mcp,
+        sane_mcp,
     }
+}
+
+/// Insère une clé MCP (`books:read`) — condensat `SHA2(name, 256)`, date
+/// d'usage posée, révoquée (`version = 2`) si `revoked` — sur la connexion du
+/// montage (Story 32-5d).
+async fn insert_mcp_key(
+    conn: &mut sqlx::MySqlConnection,
+    name: &str,
+    company_id: i64,
+    creator: i64,
+    revoked: bool,
+) -> i64 {
+    sqlx::query(
+        "INSERT INTO mcp_keys (company_id, created_by_user_id, name, key_hash, scopes, \
+                               last_used_at, revoked_at, version) \
+         VALUES (?, ?, ?, SHA2(?, 256), '[\"books:read\"]', '2026-01-02 03:04:05.678', \
+                 IF(?, NOW(3), NULL), IF(?, 2, 1))",
+    )
+    .bind(company_id)
+    .bind(creator)
+    .bind(name)
+    .bind(name)
+    .bind(revoked)
+    .bind(revoked)
+    .execute(conn)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// `(company_id, revoked_at IS NOT NULL, version)` d'une clé MCP.
+async fn mcp_key_row(pool: &MySqlPool, id: i64) -> (i64, bool, i32) {
+    sqlx::query_as("SELECT company_id, revoked_at IS NOT NULL, version FROM mcp_keys WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Ce que l'entrée d'audit doit dire d'une clé MCP révoquée, relu de la base.
+async fn revoked_mcp(pool: &MySqlPool, id: i64) -> companies::RevokedMcpKey {
+    let (name, created_by_user_id, created_at, last_used_at): (
+        String,
+        i64,
+        chrono::NaiveDateTime,
+        Option<chrono::NaiveDateTime>,
+    ) = sqlx::query_as(
+        "SELECT name, created_by_user_id, created_at, last_used_at FROM mcp_keys WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    companies::RevokedMcpKey {
+        id,
+        name,
+        created_by_user_id,
+        created_at,
+        last_used_at,
+    }
+}
+
+/// `true` si la clé MCP `id` s'authentifie au dépôt (son condensat est lu en
+/// base : le montage le pose par `SHA2`).
+async fn mcp_authenticates(pool: &MySqlPool, id: i64) -> bool {
+    let hash: String = sqlx::query_scalar("SELECT key_hash FROM mcp_keys WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    kesh_db::repositories::mcp_keys::find_active_auth_by_key_hash(pool, &hash)
+        .await
+        .unwrap()
+        .is_some()
 }
 
 /// `(company_id, revoked_at IS NOT NULL, version)` d'une clé.
@@ -670,6 +770,91 @@ async fn reattach_orphans_with_a_target_revokes_then_repoints(pool: MySqlPool) {
     );
 }
 
+/// Test 6f (i) de la Story 32-5d (AC-d2 (i)) — avec une cible, la clé MCP
+/// active orpheline, à côté de l'utilisateur et des clés d'API orphelins, est
+/// **révoquée** (`version` + 1) **puis** repointée, et n'authentifie pas ; la
+/// clé MCP déjà révoquée est repointée sans changer ; la clé MCP saine est
+/// intacte et authentifie (contrôle positif). `mcp_keys_revoked` dit la seule
+/// clé MCP active orpheline ; les clés d'API ne s'y mêlent pas.
+#[sqlx::test(migrations = "./test-schema")]
+async fn reattach_orphans_with_a_target_revokes_then_repoints_mcp_keys(pool: MySqlPool) {
+    let m = mount_orphans(&pool).await;
+    let sane_before = mcp_key_row(&pool, m.sane_mcp).await;
+    assert_eq!(
+        mcp_key_row(&pool, m.active_orphan_mcp).await,
+        (DEAD_COMPANY, false, 1),
+        "montage"
+    );
+    assert_eq!(
+        mcp_key_row(&pool, m.revoked_orphan_mcp).await,
+        (DEAD_COMPANY, true, 2),
+        "montage"
+    );
+    let expected = revoked_mcp(&pool, m.active_orphan_mcp).await;
+    assert!(
+        expected.last_used_at.is_some(),
+        "montage : date d'usage posée"
+    );
+
+    let out = reattach(&pool, Some(m.company)).await;
+
+    assert_eq!(out.mcp_keys_revoked, vec![expected]);
+    assert_eq!(out.mcp_keys_repointed, 2);
+    assert_eq!(
+        out.api_keys_revoked
+            .iter()
+            .map(|k| k.id)
+            .collect::<Vec<_>>(),
+        vec![m.active_orphan_key],
+        "les clés d'API restent dans leur liste"
+    );
+    assert_eq!(
+        mcp_key_row(&pool, m.active_orphan_mcp).await,
+        (m.company, true, 2),
+        "clé MCP active orpheline : révoquée, version + 1, repointée"
+    );
+    assert_eq!(
+        mcp_key_row(&pool, m.revoked_orphan_mcp).await,
+        (m.company, true, 2),
+        "clé MCP déjà révoquée : repointée, version inchangée"
+    );
+    assert_eq!(mcp_key_row(&pool, m.sane_mcp).await, sane_before);
+    assert!(
+        !mcp_authenticates(&pool, m.active_orphan_mcp).await,
+        "repointée, la clé révoquée n'authentifie pas"
+    );
+    assert!(
+        mcp_authenticates(&pool, m.sane_mcp).await,
+        "contrôle positif : la clé saine authentifie"
+    );
+}
+
+/// Test 6f (ii) de la Story 32-5d (AC-d2 (i), sans cible) — la clé MCP active
+/// orpheline est révoquée et **non** repointée, et n'authentifie pas.
+#[sqlx::test(migrations = "./test-schema")]
+async fn reattach_orphans_without_target_only_revokes_mcp_keys(pool: MySqlPool) {
+    let m = mount_orphans(&pool).await;
+    let out = reattach(&pool, None).await;
+    assert_eq!(out.mcp_keys_repointed, 0);
+    assert_eq!(
+        out.mcp_keys_revoked
+            .iter()
+            .map(|k| k.id)
+            .collect::<Vec<_>>(),
+        vec![m.active_orphan_mcp]
+    );
+    assert_eq!(
+        mcp_key_row(&pool, m.active_orphan_mcp).await,
+        (DEAD_COMPANY, true, 2)
+    );
+    assert_eq!(
+        mcp_key_row(&pool, m.revoked_orphan_mcp).await,
+        (DEAD_COMPANY, true, 2)
+    );
+    assert!(!mcp_authenticates(&pool, m.active_orphan_mcp).await);
+    assert!(mcp_authenticates(&pool, m.sane_mcp).await);
+}
+
 /// Test 6f (ii) — sans cible : la clé active orpheline est révoquée et **non**
 /// repointée ; l'utilisateur n'est pas rattaché.
 #[sqlx::test(migrations = "./test-schema")]
@@ -699,12 +884,18 @@ async fn reattach_without_orphans_writes_nothing(pool: MySqlPool) {
     // On rattache d'abord, puis on rejoue : plus aucun orphelin.
     reattach(&pool, Some(m.company)).await;
     let snapshot = |pool: MySqlPool| async move {
-        sqlx::query_as::<_, (i64, i64, i32, Option<chrono::NaiveDateTime>)>(
-            "SELECT id, company_id, version, revoked_at FROM api_keys ORDER BY id",
-        )
-        .fetch_all(&pool)
-        .await
-        .unwrap()
+        let mut rows = Vec::new();
+        for table in ["api_keys", "mcp_keys"] {
+            rows.push(
+                sqlx::query_as::<_, (i64, i64, i32, Option<chrono::NaiveDateTime>)>(&format!(
+                    "SELECT id, company_id, version, revoked_at FROM {table} ORDER BY id"
+                ))
+                .fetch_all(&pool)
+                .await
+                .unwrap(),
+            );
+        }
+        rows
     };
     let before = snapshot(pool.clone()).await;
     let out = reattach(&pool, Some(m.company)).await;
@@ -817,6 +1008,66 @@ async fn repair_with_only_orphan_keys(pool: MySqlPool) {
     );
     assert_eq!(out.principals.api_keys_repointed, 1);
     assert_eq!(key_row(&pool, key).await, (company, true, 2));
+}
+
+/// Test 3 (a') de la Story 32-5d (AC-d2 (ii)) — **la clé MCP est le seul
+/// orphelin** : aucun utilisateur ni clé d'API orphelin (la clé d'API saine le
+/// reste). `is_empty()` est faux, la réparation écrit son entrée
+/// `installation.repaired`, la clé MCP y est — révoquée puis repointée, elle
+/// n'authentifie pas. Tue les mutations Md3 (`is_empty` qui ignore les clés
+/// MCP) et Md4 (détail sans `mcp_keys_revoked`).
+#[sqlx::test(migrations = "./test-schema")]
+async fn repair_with_only_an_orphan_mcp_key(pool: MySqlPool) {
+    use sqlx::Connection;
+    let company = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap()
+        .id;
+    let admin = insert_admin(&pool, "a", company).await;
+    let api_key = insert_active_key(&pool, company, admin, "saine").await;
+    let mut conn = pool.acquire().await.unwrap().detach();
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    let mcp = insert_mcp_key(&mut conn, "mcp orpheline", DEAD_COMPANY, admin, false).await;
+    conn.close().await.unwrap();
+    let expected = revoked_mcp(&pool, mcp).await;
+
+    let out = repair(&pool, companies::RepairTrigger::Startup)
+        .await
+        .expect("Some : la clé MCP orpheline seule est une réparation");
+    assert_eq!(out.company_id, Some(company));
+    assert!(out.principals.user_ids.is_empty());
+    assert!(out.principals.api_keys_revoked.is_empty());
+    assert_eq!(out.principals.api_keys_repointed, 0);
+    assert_eq!(out.principals.mcp_keys_revoked, vec![expected.clone()]);
+    assert_eq!(out.principals.mcp_keys_repointed, 1);
+    assert_eq!(mcp_key_row(&pool, mcp).await, (company, true, 2));
+    assert!(!mcp_authenticates(&pool, mcp).await);
+    assert_eq!(
+        key_row(&pool, api_key).await,
+        (company, false, 1),
+        "clé d'API saine intacte"
+    );
+
+    let entries = repaired_entries(&pool).await;
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0].0, admin);
+    assert_eq!(
+        entries[0].1,
+        serde_json::json!({
+            "company_id": company,
+            "stub_companies_removed": [],
+            "users_repointed": 0,
+            "user_ids": [],
+            "api_keys_revoked": [],
+            "api_keys_repointed": 0,
+            "mcp_keys_revoked": [expected],
+            "mcp_keys_repointed": 1,
+            "trigger": "startup",
+        })
+    );
 }
 
 /// Test 3 (b) — base sans société, utilisateurs orphelins, aucune clé :

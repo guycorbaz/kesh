@@ -16,21 +16,19 @@ use crate::middleware::auth::CurrentUser;
 
 /// Portée d'une clé MCP — ce qu'elle a le droit de lire.
 ///
-/// La 32-3 a posé les deux portées dont ses pilotes ont besoin, la 32-4a celle
-/// du carnet d'adresses ; la 32-5 ajoute les autres, leurs chaînes et leur
-/// persistance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Portee {
-    /// Lecture des livres : plan comptable, écritures, rapports comptables.
-    BooksRead,
-    /// Lecture des factures, dont la balance âgée des débiteurs — factures
-    /// clientes et fournisseur, échéancier, règlements (Story 32-4b,
-    /// C-32-4b-3).
-    InvoicesRead,
-    /// Lecture du carnet d'adresses : contacts, données personnelles (Story
-    /// 32-4a, C-32-4a-4).
-    ContactsRead,
-}
+/// **Une seule énumération** (Story 32-5b, C-32-5-4) : celle que la base
+/// persiste, `kesh_db::entities::McpScope`, réexportée sous le nom que lui
+/// donnent les services. Ce que chaque portée ouvre aux services :
+///
+/// - `BooksRead` — plan comptable, écritures, postes ouverts, rapports
+///   comptables (32-3, 32-4a) ;
+/// - `InvoicesRead` — factures clientes et fournisseur, échéancier,
+///   règlements, balance âgée des débiteurs (32-3, 32-4b, C-32-4b-3) ;
+/// - `ContactsRead` — carnet d'adresses, données personnelles (32-4a,
+///   C-32-4a-4) ;
+/// - `DocumentsRead`, `PromptsWrite` — aucun service encore (les pièces et les
+///   prompts viennent avec les stories suivantes de l'Epic 32).
+pub use kesh_db::entities::McpScope as Portee;
 
 /// Canal par lequel arrive une lecture.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,7 +59,9 @@ pub struct Exigence {
 /// Le contexte d'accès d'une lecture : société, utilisateur, canal.
 ///
 /// Champs privés : un contexte ne se construit que par [`ContexteAcces::depuis_api`]
-/// (l'API) ou [`ContexteAcces::mcp`] (les tests et la 32-6).
+/// (l'API) ou [`ContexteAcces::mcp`] — en production par
+/// `services::cles_mcp::authentifier` (Story 32-5b), que la 32-6 appellera, et
+/// par les tests.
 #[derive(Debug, Clone)]
 pub struct ContexteAcces {
     company_id: i64,

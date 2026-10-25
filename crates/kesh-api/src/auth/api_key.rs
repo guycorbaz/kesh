@@ -1,4 +1,6 @@
 //! Génération et validation des clés d'accès API (PAT) — Story 17-2a (#100).
+//! La génération des clés du serveur MCP (`kesh_mcp_`, Story 32-5b) partage le
+//! même cœur ; leur **validation** est un service, `services::cles_mcp`.
 //!
 //! Format de clé : `kesh_pat_<base62>` où `<base62>` encode ≥ 160 bits
 //! d'entropie cryptographique (DC1/AC2). Le secret en clair n'existe qu'en
@@ -106,16 +108,45 @@ pub fn sha256_hex(token: &str) -> String {
     hex
 }
 
+/// Préfixe discriminant des clés du serveur MCP (Story 32-5b, refs #723).
+///
+/// Un second type de clé, **distinct** des PAT : une clé MCP n'ouvre jamais
+/// `/api/v1` (le middleware ne connaît que [`PAT_PREFIX`] et le JWT : un jeton
+/// `kesh_mcp_…` y échoue en 401), et un PAT n'ouvre jamais le serveur MCP
+/// (`services::cles_mcp::authentifier` exige ce préfixe-ci). Aucun des deux
+/// préfixes n'est préfixe de l'autre (test `prefixes_are_disjoint`).
+pub const MCP_PREFIX: &str = "kesh_mcp_";
+
+/// Cœur commun des jetons (C-32-5-15) : 160 bits `OsRng`, base62 à largeur
+/// fixe derrière `prefix` (vide pour un jeton de réinitialisation), condensat
+/// `SHA-256(jeton)` hex. Rend `(jeton_clair, condensat)`.
+fn generate_prefixed(prefix: &str) -> (String, String) {
+    let mut buf = [0u8; PAT_ENTROPY_BYTES];
+    OsRng.fill_bytes(&mut buf);
+    let token = format!("{prefix}{}", base62_fixed_width(&buf));
+    let key_hash = sha256_hex(&token);
+    (token, key_hash)
+}
+
 /// Génère une nouvelle clé PAT. Retourne `(token_clair, key_hash)` :
 /// - `token_clair` = `kesh_pat_<base62>` — affiché **une seule fois** au client,
 ///   jamais persisté.
 /// - `key_hash` = `SHA-256(token_clair)` hex — stocké en DB.
 pub fn generate_pat() -> (String, String) {
-    let mut buf = [0u8; PAT_ENTROPY_BYTES];
-    OsRng.fill_bytes(&mut buf);
-    let token = format!("{PAT_PREFIX}{}", base62_fixed_width(&buf));
-    let key_hash = sha256_hex(&token);
-    (token, key_hash)
+    generate_prefixed(PAT_PREFIX)
+}
+
+/// Génère une nouvelle clé du serveur MCP (Story 32-5b). Retourne
+/// `(jeton_clair, key_hash)` :
+/// - `jeton_clair` = `kesh_mcp_<base62>` (36 caractères : le préfixe et 27
+///   chiffres base62) — affiché **une seule fois**, jamais persisté ;
+/// - `key_hash` = `SHA-256(jeton_clair)` hex — seul élément stocké
+///   (`mcp_keys.key_hash`).
+///
+/// Même entropie, même encodage et même condensat que [`generate_pat`], par
+/// le même cœur (DRY).
+pub fn generate_mcp_key() -> (String, String) {
+    generate_prefixed(MCP_PREFIX)
 }
 
 /// Story 17-4c (DC3) — Génère un token de réinitialisation de mot de passe.
@@ -129,14 +160,11 @@ pub fn generate_pat() -> (String, String) {
 ///   (`password_reset_tokens.token_hash`). Le brut ne vit que dans l'URL envoyée
 ///   par email.
 ///
-/// Généralise le cœur entropique de [`generate_pat`] (mêmes 160 bits `OsRng` +
-/// `base62_fixed_width`) sans dupliquer l'encodage base62 (DC3).
+/// Même cœur que [`generate_pat`] et [`generate_mcp_key`] (mêmes 160 bits
+/// `OsRng`, `base62_fixed_width`, condensat), avec un préfixe **vide** (DC3 ;
+/// Story 32-5b, C-32-5-15).
 pub fn generate_reset_token() -> (String, String) {
-    let mut buf = [0u8; PAT_ENTROPY_BYTES];
-    OsRng.fill_bytes(&mut buf);
-    let token = base62_fixed_width(&buf);
-    let token_hash = sha256_hex(&token);
-    (token, token_hash)
+    generate_prefixed("")
 }
 
 /// Valide un PAT et construit le `CurrentUser` correspondant (DC2/AC5).
@@ -221,6 +249,38 @@ mod tests {
         let (t2, h2) = generate_pat();
         assert_ne!(t1, t2, "deux clés générées doivent différer");
         assert_ne!(h1, h2);
+    }
+
+    /// Story 32-5b (AC-b1) — `kesh_mcp_` + 27 base62, condensat = `sha256_hex`.
+    #[test]
+    fn generate_mcp_key_format_and_hash() {
+        let (token, hash) = generate_mcp_key();
+        assert_eq!(token.len(), 36, "kesh_mcp_ (9) + 27 base62");
+        let body = token.strip_prefix(MCP_PREFIX).expect("préfixe kesh_mcp_");
+        assert_eq!(body.len(), PAT_BASE62_LEN);
+        assert!(body.bytes().all(|b| b.is_ascii_alphanumeric()), "base62");
+        assert!(!token.starts_with(PAT_PREFIX), "jamais le préfixe d'un PAT");
+        assert_eq!(hash, sha256_hex(&token), "condensat = sha256_hex(jeton)");
+    }
+
+    #[test]
+    fn generate_mcp_key_is_unique() {
+        let (t1, h1) = generate_mcp_key();
+        let (t2, h2) = generate_mcp_key();
+        assert_ne!(t1, t2, "deux clés MCP générées doivent différer");
+        assert_ne!(h1, h2);
+    }
+
+    /// Story 32-5b (AC-b1) — aucun des deux préfixes n'est préfixe de l'autre,
+    /// et aucun jeton généré ne porte le préfixe d'un autre type.
+    #[test]
+    fn prefixes_are_disjoint() {
+        assert_eq!(MCP_PREFIX, "kesh_mcp_");
+        assert!(!MCP_PREFIX.starts_with(PAT_PREFIX));
+        assert!(!PAT_PREFIX.starts_with(MCP_PREFIX));
+        assert!(!generate_pat().0.starts_with(MCP_PREFIX));
+        let reset = generate_reset_token().0;
+        assert!(!reset.starts_with(MCP_PREFIX) && !reset.starts_with(PAT_PREFIX));
     }
 
     #[test]

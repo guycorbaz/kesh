@@ -24,12 +24,12 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 124 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 128 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (124 routes) ; celui du
-//! REGISTRE est plus large (127), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (128 routes) ; celui du
+//! REGISTRE est plus large (131), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -325,6 +325,15 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     // « Sauvegarder maintenant » (`admin.backup_run`, best-effort).
     ("put", "backup_schedule::update_backup_schedule", Traced, SansEcritureAuJournal),
     ("post", "backup_schedule::run_backup_now", Traced, SansEcritureAuJournal),
+    // Story 32-5c (refs #723) — les clés du serveur MCP (`mcp_key.created`,
+    // `.revoked`, `.send_validation_changed`) et ses réglages
+    // (`mcp_server_settings.updated`), chacune dans la transaction de son
+    // écriture. Aucune n'écrit au journal comptable ; chacune est une
+    // transaction courte sur une seule table métier, sans verrou nommé.
+    ("post", "mcp_keys::create_mcp_key", Traced, SansEcritureAuJournal),
+    ("delete", "mcp_keys::revoke_mcp_key", Traced, SansEcritureAuJournal),
+    ("put", "mcp_keys::set_mcp_key_send_validation", Traced, SansEcritureAuJournal),
+    ("put", "mcp_server_settings::update_mcp_server_settings", Traced, SansEcritureAuJournal),
     ("put", "email_templates::update_email_template", Traced, SansEcritureAuJournal),
     ("delete", "email_templates::restore_email_template_default", Traced, SansEcritureAuJournal),
     ("put", "companies::update_company_email", Traced, SansEcritureAuJournal),
@@ -765,10 +774,10 @@ fn the_registry_partition_is_what_the_story_declares() {
         .filter(|(_, _, s, _)| matches!(s, NoMatter(_)))
         .count();
 
-    assert_eq!(LIB_ROUTES.len(), 124, "l'inventaire porte sur 124 routes");
+    assert_eq!(LIB_ROUTES.len(), 128, "l'inventaire porte sur 128 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 118,
+        traced, 122,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -783,7 +792,9 @@ fn the_registry_partition_is_what_the_story_declares() {
          rattachement d'une transaction à un règlement (29-8, #670), plus la \
          contre-passation au début de l'exercice suivant (29-1b, #232), plus le \
          rattachement et le détachement d'un document fournisseur (30-2c, #685), plus le \
-         réglage et « Sauvegarder maintenant » de la sauvegarde automatique (31-1c, #503)"
+         réglage et « Sauvegarder maintenant » de la sauvegarde automatique (31-1c, #503), \
+         plus la création, la révocation et la politique de validation d'une clé du serveur \
+         MCP et l'enregistrement de ses réglages (32-5c, refs #723)"
     );
     assert_eq!(exempt, 4, "4 routes d'auth (#435)");
     assert_eq!(
@@ -792,7 +803,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        127,
+        131,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1117,16 +1128,17 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 99,
-        "98 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
+        sans_ecriture, 103,
+        "102 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
          import, 27-1 ; l'annulation d'un rejet, 28-5a ; la clôture et la réouverture d'un \
          compte bancaire, 28-4a ; le rattachement d'une transaction à un règlement, 29-8 ; \
          le rattachement et le détachement d'un document fournisseur, 30-2c ; le réglage et \
-         « Sauvegarder maintenant » de la sauvegarde automatique, 31-1c), \
+         « Sauvegarder maintenant » de la sauvegarde automatique, 31-1c ; les quatre routes \
+         mutantes des clés et des réglages du serveur MCP, 32-5c), \
          plus /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
-    assert_eq!(tout.len(), 127);
+    assert_eq!(tout.len(), 131);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

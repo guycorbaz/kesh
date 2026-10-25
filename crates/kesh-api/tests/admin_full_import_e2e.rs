@@ -4092,3 +4092,197 @@ async fn import_dossier_de_sauvegarde_non_inscriptible(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "ADMIN_PRE_IMPORT_BACKUP_FAILED");
     assert!(ghost_present(&pool).await, "base intacte");
 }
+
+// ---------------------------------------------------------------------------
+// Story 32-5b (AC-b6, C-32-5-23) — une clé MCP restaurée authentifie
+// ---------------------------------------------------------------------------
+
+/// Crée une clé MCP par le dépôt et `generate_mcp_key`, pour la société
+/// `company_id` et le créateur `createur` ; rend `(id, jeton)`.
+async fn cle_mcp_restauree(
+    pool: &MySqlPool,
+    company_id: i64,
+    createur: i64,
+    nom: &str,
+    portees: &[kesh_db::entities::McpScope],
+    validation: kesh_db::entities::SendValidation,
+) -> (i64, String) {
+    let (jeton, key_hash) = kesh_api::auth::api_key::generate_mcp_key();
+    let mut tx = pool.begin().await.unwrap();
+    let id = kesh_db::repositories::mcp_keys::create_in_tx(
+        &mut tx,
+        kesh_db::entities::NewMcpKey {
+            company_id,
+            created_by_user_id: createur,
+            name: nom.into(),
+            key_hash,
+            scopes: kesh_db::entities::McpScopes::new(portees.iter().copied()).unwrap(),
+            send_validation: validation,
+            expires_at: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    tx.commit().await.unwrap();
+    (id, jeton)
+}
+
+/// `revoked_at IS NOT NULL` de la clé `id`, ou `None` si la ligne n'existe pas.
+async fn mcp_key_revoked(pool: &MySqlPool, id: i64) -> Option<bool> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT CAST(revoked_at IS NOT NULL AS SIGNED) FROM mcp_keys WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .unwrap()
+    .map(|v| v != 0)
+}
+
+/// AC-b6 — une clé MCP restaurée **authentifie**, avec ses portées et sa
+/// politique d'origine : K1 est exportée puis supprimée, K2 créée après
+/// l'export ; après l'import, K1 authentifie et K2 non (absente de la
+/// sauvegarde) ; une clé révoquée avant l'export reste refusée **et revient
+/// révoquée** ; une clé révoquée **après** l'export redevient active, comme le
+/// dit le manuel d'administration (revue P1, B3 = E4). Le créateur des clés
+/// est un second administrateur, d'identifiant distinct de la société (revue
+/// P1, E1). Aucun privilège posé à la main : l'authentification passe par le
+/// service.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_restores_mcp_keys_that_authenticate(pool: MySqlPool) {
+    use kesh_api::errors::AppError;
+    use kesh_api::services::acces::{Canal, Portee};
+    use kesh_api::services::cles_mcp::authentifier;
+    use kesh_api::services::poignees::{Lecture, Trace};
+    use kesh_db::entities::{McpScope, SendValidation};
+
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Mcp").await;
+    let createur = users::create(
+        &pool,
+        NewUser {
+            username: "createur_mcp".into(),
+            password_hash: hash_password("password123").unwrap(),
+            role: Role::Admin,
+            active: true,
+            company_id: admin.company_id,
+            email: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    assert_ne!(
+        createur, admin.company_id,
+        "montage : créateur et société d'identifiants distincts"
+    );
+    let c = admin.company_id;
+    let (k1, jeton_k1) = cle_mcp_restauree(
+        &pool,
+        c,
+        createur,
+        "K1",
+        &[McpScope::ContactsRead, McpScope::BooksRead],
+        SendValidation::Exempt,
+    )
+    .await;
+    let (kr, jeton_kr) = cle_mcp_restauree(
+        &pool,
+        c,
+        createur,
+        "révoquée",
+        &[McpScope::BooksRead],
+        SendValidation::Required,
+    )
+    .await;
+    let (k3, jeton_k3) = cle_mcp_restauree(
+        &pool,
+        c,
+        createur,
+        "révoquée après l'export",
+        &[McpScope::InvoicesRead],
+        SendValidation::Required,
+    )
+    .await;
+    let mut tx = pool.begin().await.unwrap();
+    kesh_db::repositories::mcp_keys::revoke_in_tx(&mut tx, c, kr, 1)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    let sauvegarde = export_backup(&app, &admin.jwt).await;
+
+    sqlx::query("DELETE FROM mcp_keys WHERE id = ?")
+        .bind(k1)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    kesh_db::repositories::mcp_keys::revoke_in_tx(&mut tx, c, k3, 1)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let (k2, jeton_k2) = cle_mcp_restauree(
+        &pool,
+        c,
+        createur,
+        "K2",
+        &[McpScope::InvoicesRead],
+        SendValidation::Required,
+    )
+    .await;
+    let lecture = Lecture::new(pool.clone());
+    let trace = Trace::new(pool.clone());
+    // Montage : avant l'import, K1 (supprimée) et K3 (révoquée) n'authentifient
+    // pas, K2 si.
+    for jeton in [&jeton_k1, &jeton_k3] {
+        assert!(matches!(
+            authentifier(&lecture, &trace, jeton).await,
+            Err(AppError::Unauthenticated(_))
+        ));
+    }
+    assert!(authentifier(&lecture, &trace, &jeton_k2).await.is_ok());
+
+    let resp = post_import(&app, &admin.jwt, sauvegarde).await;
+    assert_eq!(resp.status(), 200, "l'import doit réussir");
+
+    let cle = authentifier(&lecture, &trace, &jeton_k1)
+        .await
+        .expect("K1 restaurée authentifie");
+    assert_eq!(cle.cle_id, k1);
+    assert_eq!(cle.validation, SendValidation::Exempt);
+    assert_eq!(cle.acces.company_id(), c);
+    assert_eq!(cle.acces.user_id(), createur);
+    assert_eq!(
+        cle.acces.canal(),
+        &Canal::Mcp {
+            portees: [Portee::BooksRead, Portee::ContactsRead].into()
+        }
+    );
+    for (nom, jeton) in [("K2", &jeton_k2), ("révoquée", &jeton_kr)] {
+        let r = authentifier(&lecture, &trace, jeton).await;
+        assert!(
+            matches!(r, Err(AppError::Unauthenticated(_))),
+            "{nom} après l'import : {:?}",
+            r.err()
+        );
+    }
+    // Les lignes elles-mêmes, et non le seul refus : K2 absente, la révoquée
+    // revenue révoquée, K3 revenue active.
+    assert_eq!(mcp_key_revoked(&pool, k2).await, None, "K2 absente");
+    assert_eq!(
+        mcp_key_revoked(&pool, kr).await,
+        Some(true),
+        "révoquée avant l'export : restaurée révoquée"
+    );
+    assert_eq!(
+        mcp_key_revoked(&pool, k3).await,
+        Some(false),
+        "révoquée après l'export : restaurée active"
+    );
+    let cle3 = authentifier(&lecture, &trace, &jeton_k3)
+        .await
+        .expect("K3, révoquée après l'export, authentifie de nouveau");
+    assert_eq!(cle3.cle_id, k3);
+}
