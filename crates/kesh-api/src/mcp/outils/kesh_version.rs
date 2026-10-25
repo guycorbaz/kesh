@@ -23,8 +23,8 @@ impl McpTool for KeshVersion {
     }
 
     fn description(&self) -> &'static str {
-        "Version de Kesh et mode de la session de lecture (lecture seule ou non). \
-         Ne lit aucune donnée comptable."
+        "Version de Kesh, mode de la session de lecture (lecture seule ou non) et délai \
+         au-delà duquel la base interrompt une instruction. Ne lit aucune donnée comptable."
     }
 
     fn schema_entree(&self) -> &'static str {
@@ -48,6 +48,7 @@ impl McpTool for KeshVersion {
             let structure = serde_json::json!({
                 "version": etat.version,
                 "lectureSeule": etat.lecture_seule,
+                "delaiInstructionS": etat.delai_instruction_s,
             });
             Ok(Donnees::nouvelles(structure.to_string(), Some(structure)))
         })

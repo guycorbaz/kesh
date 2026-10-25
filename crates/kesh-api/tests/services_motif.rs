@@ -1888,7 +1888,7 @@ const EXCEPTIONS_V1: &[(&str, &str)] = &[
     // `pool` d'une poignée.
     (
         "lib.rs",
-        "let pool_outils = kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS);",
+        "kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);",
     ),
 ];
 

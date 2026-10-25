@@ -8,14 +8,22 @@
 //! - (e) et (e bis) : une forme qui défait le mode de session sur un emprunt ne
 //!   survit pas à la restitution — la connexion est fermée, la suivante est
 //!   neuve (`CONNECTION_ID()` change) ;
-//! - (f) une connexion tuée pendant un emprunt n'empêche pas le suivant.
+//! - (f) une connexion tuée pendant un emprunt n'empêche pas le suivant ;
+//! - (g) une instruction plus longue que le délai d'instruction est
+//!   **interrompue par MariaDB** (erreur 1969), même quand le futur qui
+//!   l'attendait a été abandonné (revue P1 de la 32-6a, E1 = B2).
 //!
 //! ⚠️ (e) et (e bis) exécutent **volontairement** une forme interdite : ce sont
 //! les deux exceptions écrites de la garde `lecture_seule_jamais_defaite`
 //! (`kesh-api/tests/mcp_gardes_lexicales.rs`).
 
+use std::time::{Duration, Instant};
+
 use kesh_db::pool::pool_lecture_seule;
 use sqlx::{Executor, MySqlPool};
+
+/// Le délai d'instruction des tests (a) à (f) : large, sans effet sur eux.
+const DELAI: Duration = Duration::from_secs(30);
 
 async fn table(pool: &MySqlPool) {
     pool.execute("CREATE TABLE t326 (id INT PRIMARY KEY, v INT NOT NULL)")
@@ -51,7 +59,7 @@ async fn id_connexion(c: &mut sqlx::MySqlConnection) -> u64 {
 #[sqlx::test(migrations = "./test-schema")]
 async fn a_b_c_d_ecritures_et_verrous_refuses_lecture_admise(pool: MySqlPool) {
     table(&pool).await;
-    let ro = pool_lecture_seule(&pool, 2);
+    let ro = pool_lecture_seule(&pool, 2, DELAI);
 
     // (a) autocommit
     for sql in [
@@ -97,7 +105,7 @@ async fn a_b_c_d_ecritures_et_verrous_refuses_lecture_admise(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn e_la_forme_session_ne_survit_pas_a_la_restitution(pool: MySqlPool) {
     table(&pool).await;
-    let ro = pool_lecture_seule(&pool, 1);
+    let ro = pool_lecture_seule(&pool, 1, DELAI);
     let premier = {
         let mut c = ro.acquire().await.unwrap();
         let id = id_connexion(&mut c).await;
@@ -122,7 +130,7 @@ async fn e_la_forme_session_ne_survit_pas_a_la_restitution(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn e_bis_la_forme_transaction_ne_survit_pas_a_la_restitution(pool: MySqlPool) {
     table(&pool).await;
-    let ro = pool_lecture_seule(&pool, 1);
+    let ro = pool_lecture_seule(&pool, 1, DELAI);
     let premier = {
         let mut c = ro.acquire().await.unwrap();
         let id = id_connexion(&mut c).await;
@@ -148,7 +156,7 @@ async fn e_bis_la_forme_transaction_ne_survit_pas_a_la_restitution(pool: MySqlPo
 #[sqlx::test(migrations = "./test-schema")]
 async fn f_une_connexion_tuee_n_empeche_pas_l_emprunt_suivant(pool: MySqlPool) {
     table(&pool).await;
-    let ro = pool_lecture_seule(&pool, 1);
+    let ro = pool_lecture_seule(&pool, 1, DELAI);
     let tuee = {
         let mut c = ro.acquire().await.unwrap();
         let id = id_connexion(&mut c).await;
@@ -170,4 +178,76 @@ async fn f_une_connexion_tuee_n_empeche_pas_l_emprunt_suivant(pool: MySqlPool) {
             .await,
         "UPDATE sur la connexion suivante",
     );
+}
+
+/// Les instructions `SLEEP` encore en cours côté serveur, toutes sessions de
+/// l'utilisateur confondues (l'utilisateur voit ses propres sessions sans
+/// privilège `PROCESS`).
+async fn sommeils_en_cours(pool: &MySqlPool, marque: &str) -> i64 {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.PROCESSLIST \
+         WHERE INFO LIKE CONCAT('%', ?, '%') AND INFO NOT LIKE '%PROCESSLIST%'",
+    )
+    .bind(marque)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// (g) — `max_statement_time` : une instruction plus longue que le délai est
+/// interrompue **par MariaDB**. (1) attendue jusqu'au bout, elle échoue en 1969
+/// bien avant sa fin ; (2) abandonnée par son futur (comme au délai d'un outil
+/// MCP), elle ne survit pas côté serveur : après le délai, plus aucune session
+/// ne l'exécute — sans la borne, le serveur la poursuivrait jusqu'à son terme ;
+/// (3) l'emprunt suivant part d'une connexion neuve.
+#[sqlx::test(migrations = "./test-schema")]
+async fn g_une_instruction_trop_longue_est_interrompue_par_le_serveur(pool: MySqlPool) {
+    let ro = pool_lecture_seule(&pool, 1, Duration::from_millis(500));
+    let borne: f64 = {
+        let mut c = ro.acquire().await.unwrap();
+        sqlx::query_scalar("SELECT @@session.max_statement_time")
+            .fetch_one(&mut *c)
+            .await
+            .unwrap()
+    };
+    assert_eq!(borne, 0.5, "la borne est posée sur chaque connexion");
+
+    // (1) attendue jusqu'au bout.
+    let debut = Instant::now();
+    let premier = {
+        let mut c = ro.acquire().await.unwrap();
+        let id = id_connexion(&mut c).await;
+        let e = sqlx::query("SELECT SLEEP(5) AS sommeil_g1_326")
+            .fetch_one(&mut *c)
+            .await
+            .expect_err("interrompue par max_statement_time");
+        assert_eq!(code_mariadb(&e), Some(1969), "{e}");
+        id
+    };
+    assert!(debut.elapsed() < Duration::from_secs(3), "interrompue tôt");
+
+    // (2) abandonnée par son futur.
+    let abandon = tokio::time::timeout(Duration::from_millis(100), async {
+        let mut c = ro.acquire().await.unwrap();
+        sqlx::query("SELECT SLEEP(5) AS sommeil_g2_326")
+            .fetch_one(&mut *c)
+            .await
+    })
+    .await;
+    assert!(abandon.is_err(), "le futur est abandonné en vol");
+    assert_eq!(
+        sommeils_en_cours(&pool, "sommeil_g2_326").await,
+        1,
+        "témoin : juste après l'abandon, le serveur exécute encore l'instruction"
+    );
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert_eq!(
+        sommeils_en_cours(&pool, "sommeil_g2_326").await,
+        0,
+        "après le délai, le serveur a interrompu l'instruction abandonnée"
+    );
+
+    // (3) l'emprunt suivant part d'une connexion neuve.
+    let mut c = ro.acquire().await.unwrap();
+    assert_ne!(id_connexion(&mut c).await, premier, "connexion neuve");
 }

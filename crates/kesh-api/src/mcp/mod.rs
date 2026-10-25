@@ -19,7 +19,7 @@
 //! 6. MCP-Protocol-Version                        non servie        → 400 ; absente → debug!
 //! 7. Authorization: Bearer → authentifier        refus / erreur    → 401 fixe / 500 fixe
 //! 8. société de la clé ∈ S                       non               → 401 fixe
-//! 9. Origin (propres ∪ celles de la société)     refusée           → 403
+//! 9. Origin (propres ∪ celles de la société)     refusée           → 401 fixe (le même qu'en 7)
 //! 10. corps (1 Mio) puis JSON-RPC                (transport)
 //! 11. répartiteur : liste close des méthodes ; tools/call → outil_pour(nom,
 //!     portées) → politique::autoriser → executer (délai) → politique::appliquer

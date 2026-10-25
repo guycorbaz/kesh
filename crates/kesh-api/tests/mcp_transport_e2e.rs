@@ -93,9 +93,18 @@ fn en_tetes(jeton: Option<&str>) -> HeaderMap {
 
 const LISTE: &str = r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#;
 
-/// La réponse attendue d'un `kesh_version` servi.
+/// La réponse attendue d'un `kesh_version` servi, sous le délai de production.
 fn attendu_version(id: i64) -> serde_json::Value {
-    let s = json!({ "version": env!("CARGO_PKG_VERSION"), "lectureSeule": true });
+    attendu_version_delai(id, 30.0)
+}
+
+/// La réponse attendue d'un `kesh_version` servi, délai d'instruction donné.
+fn attendu_version_delai(id: i64, delai_s: f64) -> serde_json::Value {
+    let s = json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "lectureSeule": true,
+        "delaiInstructionS": delai_s,
+    });
     json!({
         "jsonrpc": "2.0", "id": id,
         "result": {
@@ -110,8 +119,9 @@ fn attendu_version(id: i64) -> serde_json::Value {
 fn descripteur_version() -> serde_json::Value {
     json!({
         "name": "kesh_version",
-        "description": "Version de Kesh et mode de la session de lecture (lecture seule ou non). \
-                        Ne lit aucune donnée comptable.",
+        "description": "Version de Kesh, mode de la session de lecture (lecture seule ou non) et \
+                        délai au-delà duquel la base interrompt une instruction. Ne lit aucune \
+                        donnée comptable.",
         "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
         "annotations": { "readOnlyHint": true },
     })
@@ -397,22 +407,32 @@ async fn chemins_voisins(pool: MySqlPool) {
     let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
     let b = banc(&pool, Registre::standard());
     let corps = appel(1, "kesh_version", json!({}));
-    for chemin in ["/mcp/", "/MCP", "/%6Dcp", "//mcp", "/mcp/x", "/mcp?x=1"] {
+    // Chaque chemin a **son** attendu (revue P1, E5) : la requête à `/mcp`
+    // seule est `/mcp` ; tout voisin est une route absente.
+    for (chemin, est_mcp) in [
+        ("/mcp/", false),
+        ("/MCP", false),
+        ("/%6Dcp", false),
+        ("//mcp", false),
+        ("/mcp/x", false),
+        ("/mcp?x=1", true),
+    ] {
         for j in [None, Some(jeton.as_str())] {
             let h = en_tetes(j);
             let r = b.avec("POST", chemin, &h, &corps).await;
-            let absente = b.avec("POST", ABSENTE, &h, &corps).await;
-            let meme = b.avec("POST", "/mcp", &h, &corps).await;
-            assert!(
-                r == absente || r == meme,
-                "{chemin} (clé : {}) : ni route absente, ni /mcp : {r:?}",
-                j.is_some()
-            );
-            if j.is_none() {
-                assert_ne!(r.statut, StatusCode::OK, "{chemin} : jamais servi sans clé");
-            }
+            let attendu = if est_mcp {
+                b.avec("POST", "/mcp", &h, &corps).await
+            } else {
+                b.avec("POST", ABSENTE, &h, &corps).await
+            };
+            assert_eq!(r, attendu, "{chemin} (clé : {})", j.is_some());
         }
     }
+    // Témoin : avec la clé, `/mcp?x=1` est servi.
+    let r = b
+        .avec("POST", "/mcp?x=1", &en_tetes(Some(&jeton)), &corps)
+        .await;
+    assert_eq!(r.statut, StatusCode::OK);
 }
 
 // ---------------------------------------------------------------------------
@@ -578,7 +598,9 @@ async fn origine(pool: MySqlPool) {
         )
         .await;
     assert_eq!(r.statut, StatusCode::FORBIDDEN, "Origin = Host forgé");
-    // Origine de A, clé de A → servi ; clé de B (servie) → 403 après authentification.
+    // Origine de A, clé de A → servi ; clé **valide** de B (servie) → le même
+    // 401 qu'une clé inconnue, octet pour octet (revue P1, B1 = E3 = A4 :
+    // aucun oracle de validité de la clé).
     let h = avec_origine(Some(&ja), Some("https://kesh.example"), None);
     assert_eq!(
         b.avec("POST", "/mcp", &h, LISTE).await.statut,
@@ -586,9 +608,25 @@ async fn origine(pool: MySqlPool) {
     );
     let h = avec_origine(Some(&jb), Some("https://kesh.example"), None);
     let r = b.avec("POST", "/mcp", &h, LISTE).await;
+    let inconnue = b
+        .avec(
+            "POST",
+            "/mcp",
+            &avec_origine(
+                Some("kesh_mcp_inconnue_326"),
+                Some("https://kesh.example"),
+                None,
+            ),
+            LISTE,
+        )
+        .await;
     assert_eq!(
         (r.statut, r.corps.as_slice()),
-        (StatusCode::FORBIDDEN, TEXTE_ORIGINE_REFUSEE.as_bytes())
+        (StatusCode::UNAUTHORIZED, TEXTE_NON_AUTHENTIFIE.as_bytes())
+    );
+    assert_eq!(
+        r, inconnue,
+        "clé valide de B = clé inconnue, sous l'origine de A"
     );
 
     // `public_base_url` sans schéma : aucune origine propre n'en vient.
@@ -774,6 +812,115 @@ async fn enveloppe_http(pool: MySqlPool) {
     );
     assert_eq!(r.en_tete("cache-control").as_deref(), Some("no-store"));
     assert_eq!(r.json(), json!({"jsonrpc":"2.0","id":"a-1","result":{}}));
+}
+
+/// L'ordre de l'AC-a11 **prouvé** (revue P1, E2) : un `Content-Type` ou une
+/// `MCP-Protocol-Version` faux rendent **la même** réponse sans clé, sous une
+/// clé inconnue et sous une clé valide — sans quoi ces refus, venus après
+/// l'authentification, distingueraient une clé valide.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn enveloppe_avant_la_cle(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(&pool, Registre::standard());
+    let cas: [(&str, &str, StatusCode); 4] = [
+        (
+            "content-type",
+            "text/plain",
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        ),
+        (
+            "content-type",
+            "application/jsonx",
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        ),
+        (
+            "mcp-protocol-version",
+            "2026-07-28",
+            StatusCode::BAD_REQUEST,
+        ),
+        ("mcp-protocol-version", "x", StatusCode::BAD_REQUEST),
+    ];
+    for (nom, valeur, statut) in cas {
+        let mut rendus = Vec::new();
+        for j in [None, Some("kesh_mcp_inconnue_326"), Some(jeton.as_str())] {
+            let mut h = en_tetes(j);
+            h.insert(nom, HeaderValue::from_static(valeur));
+            rendus.push(b.avec("POST", "/mcp", &h, LISTE).await);
+        }
+        assert_eq!(rendus[0].statut, statut, "{nom}: {valeur}");
+        assert_eq!(
+            rendus[0], rendus[1],
+            "{nom}: {valeur} — sans clé = clé inconnue"
+        );
+        assert_eq!(
+            rendus[0], rendus[2],
+            "{nom}: {valeur} — sans clé = clé valide"
+        );
+    }
+}
+
+/// Les en-têtes de contrôle répétés sont refusés (revue P1, E4 ; C-32-6-53) :
+/// deux `Origin` → 403, deux `Authorization` → 401, deux `Content-Type` → 415,
+/// deux `MCP-Protocol-Version` → 400 — chacun avec deux valeurs **valides**, et
+/// son témoin à une seule ligne servi. `Bearer  <jeton>` (deux espaces) est
+/// admis.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn en_tetes_repetes_refuses(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(&pool, Registre::standard());
+    let bearer = format!("Bearer {jeton}");
+    let cas: [(&'static str, String, StatusCode, &str); 4] = [
+        (
+            "origin",
+            "http://localhost".to_string(),
+            StatusCode::FORBIDDEN,
+            TEXTE_ORIGINE_REFUSEE,
+        ),
+        (
+            "authorization",
+            bearer.clone(),
+            StatusCode::UNAUTHORIZED,
+            TEXTE_NON_AUTHENTIFIE,
+        ),
+        (
+            "content-type",
+            "application/json".to_string(),
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            CORPS_TYPE_NON_ADMIS,
+        ),
+        (
+            "mcp-protocol-version",
+            "2025-11-25".to_string(),
+            StatusCode::BAD_REQUEST,
+            CORPS_VERSION_NON_SERVIE,
+        ),
+    ];
+    for (nom, valeur, statut, corps) in cas {
+        let mut h = en_tetes(Some(&jeton));
+        h.insert(nom, HeaderValue::from_str(&valeur).unwrap());
+        assert_eq!(
+            b.avec("POST", "/mcp", &h, LISTE).await.statut,
+            StatusCode::OK,
+            "témoin : {nom} une fois"
+        );
+        h.append(nom, HeaderValue::from_str(&valeur).unwrap());
+        let r = b.avec("POST", "/mcp", &h, LISTE).await;
+        assert_eq!(
+            (r.statut, r.corps.as_slice()),
+            (statut, corps.as_bytes()),
+            "{nom} deux fois"
+        );
+    }
+    let mut h = en_tetes(None);
+    h.insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer  {jeton}")).unwrap(),
+    );
+    assert_eq!(
+        b.avec("POST", "/mcp", &h, LISTE).await.statut,
+        StatusCode::OK,
+        "deux espaces"
+    );
 }
 
 /// Une notification complète `tools/call`, sans `id`, sous une clé `exempt`,
@@ -1468,6 +1615,22 @@ async fn kesh_version_lit_en_lecture_seule(pool: MySqlPool) {
         .mcp(Some(&jeton), &appel(1, "kesh_version", json!({})))
         .await;
     assert_eq!(r.json(), attendu_version(1));
+}
+
+/// Le câblage de `lib.rs` donne au pool des outils le délai **du registre**
+/// comme borne d'instruction côté serveur (revue P1, E1) : un registre au délai
+/// de 2,5 s fait lire `max_statement_time = 2.5` à `kesh_version`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_delai_du_registre_borne_l_instruction(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(
+        &pool,
+        Registre::standard().avec_delai(Duration::from_millis(2500)),
+    );
+    let r = b
+        .mcp(Some(&jeton), &appel(1, "kesh_version", json!({})))
+        .await;
+    assert_eq!(r.json(), attendu_version_delai(1, 2.5));
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

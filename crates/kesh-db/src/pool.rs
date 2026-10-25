@@ -52,11 +52,16 @@ pub async fn create_pool(
 /// (AC-a25, C-32-6-9, C-32-6-35 ; Q11, tranchée le 2026-10-24).
 ///
 /// Copié de `depuis` (mêmes options de connexion, même délai d'acquisition) ;
-/// **aucun autre réglage de session** que celui-ci, le pool de production n'en
-/// ayant pas (#669) : l'API et le MCP lisent la même chose.
+/// **aucun autre réglage de session** que ces deux-là, le pool de production
+/// n'en ayant pas (#669) : l'API et le MCP lisent la même chose.
 ///
 /// - `after_connect` : `SET SESSION TRANSACTION READ ONLY` — MariaDB refuse
 ///   alors toute écriture et tout `SELECT … FOR UPDATE` (erreur 1792) ;
+/// - `after_connect` encore : `SET SESSION max_statement_time = <delai_instruction>`
+///   (secondes, au millième) — **MariaDB interrompt lui-même** toute instruction
+///   qui dépasse ce délai (erreur 1969), si bien qu'une requête dont le futur a
+///   été abandonné au délai de l'outil ne continue pas côté serveur après la
+///   fermeture de sa connexion (revue P1 de la 32-6a, E1 = B2 ; test (g)) ;
 /// - `after_release` rend **toujours** `Ok(false)` : **chaque connexion est
 ///   fermée à sa restitution** (`sqlx-core` 0.8.6, `pool/connection.rs`), si
 ///   bien que chaque emprunt part d'une connexion neuve, passée par
@@ -73,13 +78,31 @@ pub async fn create_pool(
 ///
 /// ⚠️ `connect_lazy_with` lance les tâches d'entretien du pool : l'appel exige
 /// un runtime Tokio.
-pub fn pool_lecture_seule(depuis: &MySqlPool, max_connections: u32) -> MySqlPool {
+///
+/// # Panics
+///
+/// Si `delai_instruction` est nul : `max_statement_time = 0` voudrait dire
+/// « aucune limite ».
+pub fn pool_lecture_seule(
+    depuis: &MySqlPool,
+    max_connections: u32,
+    delai_instruction: Duration,
+) -> MySqlPool {
+    let millis = delai_instruction.as_millis();
+    assert!(millis > 0, "pool_lecture_seule : délai d'instruction nul");
+    let borne = format!(
+        "SET SESSION max_statement_time = {}.{:03}",
+        millis / 1000,
+        millis % 1000
+    );
     MySqlPoolOptions::new()
         .max_connections(max_connections)
         .acquire_timeout(depuis.options().get_acquire_timeout())
-        .after_connect(|conn, _meta| {
+        .after_connect(move |conn, _meta| {
+            let borne = borne.clone();
             Box::pin(async move {
                 conn.execute("SET SESSION TRANSACTION READ ONLY").await?;
+                conn.execute(borne.as_str()).await?;
                 Ok(())
             })
         })

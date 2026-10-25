@@ -46,28 +46,35 @@ pub const EXIGENCE_ETAT: Exigence = Exigence {
 };
 
 /// L'état de la session qui sert un outil.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EtatServeur {
     /// `CARGO_PKG_VERSION` du binaire.
     pub version: &'static str,
     /// La session qui a lu est-elle en `READ ONLY` ? Lu par **une** requête sur
     /// la `Lecture` reçue, dans la requête même.
     pub lecture_seule: bool,
+    /// Le délai au-delà duquel MariaDB interrompt une instruction de cette
+    /// session (`@@session.max_statement_time`, secondes ; `0` : aucun) — revue
+    /// P1 de la 32-6a, E1.
+    pub delai_instruction_s: f64,
 }
 
-/// La version du binaire et le mode de la session de `lecture` (AC-a28).
+/// La version du binaire, le mode et le délai d'instruction de la session de
+/// `lecture` (AC-a28).
 ///
 /// ⚠️ La lecture du nom de variable de session est l'**exception écrite** de la
 /// garde `lecture_seule_jamais_defaite` (`tests/mcp_gardes_lexicales.rs`) : elle
 /// lit le mode, elle ne le change pas.
 pub async fn etat(acces: &ContexteAcces, lecture: &Lecture) -> Result<EtatServeur, AppError> {
     acces.exiger(EXIGENCE_ETAT)?;
-    let mode: i64 = sqlx::query_scalar("SELECT @@session.tx_read_only")
-        .fetch_one(lecture.pool())
-        .await
-        .map_err(kesh_db::errors::map_db_error)?;
+    let (mode, delai): (i64, f64) =
+        sqlx::query_as("SELECT @@session.tx_read_only, @@session.max_statement_time")
+            .fetch_one(lecture.pool())
+            .await
+            .map_err(kesh_db::errors::map_db_error)?;
     Ok(EtatServeur {
         version: env!("CARGO_PKG_VERSION"),
         lecture_seule: mode != 0,
+        delai_instruction_s: delai,
     })
 }

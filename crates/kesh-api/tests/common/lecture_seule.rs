@@ -16,9 +16,10 @@ use sqlx::MySqlPool;
 
 /// Pool dont chaque connexion passe `SET SESSION TRANSACTION READ ONLY` — mêmes
 /// options de connexion que le pool du test, aucun privilège requis, quatre
-/// connexions au plus (signature inchangée depuis la 32-4a).
+/// connexions au plus, délai d'instruction de production (signature inchangée
+/// depuis la 32-4a).
 pub async fn pool_lecture_seule(pool: &MySqlPool) -> MySqlPool {
-    kesh_db::pool::pool_lecture_seule(pool, 4)
+    kesh_db::pool::pool_lecture_seule(pool, 4, kesh_api::mcp::DELAI_OUTIL)
 }
 
 /// Une `Lecture` sur [`pool_lecture_seule`].

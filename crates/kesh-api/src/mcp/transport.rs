@@ -18,23 +18,38 @@ use crate::mcp::reseau::{self, Decision};
 use crate::mcp::{EtatMcp, MCP_CORPS_MAX, VERSIONS_SERVIES, repartiteur};
 use crate::services::{cles_mcp, serveur_mcp};
 
-/// `Content-Type` est-il `application/json` (paramètres admis, casse ignorée) ?
+/// La valeur d'un en-tête présent **une seule fois** : `Ok(None)` s'il est
+/// absent, `Err(())` s'il est répété (C-32-6-53 : un en-tête de contrôle répété
+/// est refusé, jamais lu à moitié).
+fn unique<'a>(
+    en_tetes: &'a HeaderMap,
+    nom: &str,
+) -> Result<Option<&'a axum::http::HeaderValue>, ()> {
+    let mut valeurs = en_tetes.get_all(nom).iter();
+    let premiere = valeurs.next();
+    if valeurs.next().is_some() {
+        return Err(());
+    }
+    Ok(premiere)
+}
+
+/// `Content-Type` est-il `application/json` (paramètres admis, casse ignorée),
+/// présent une seule fois ?
 fn est_json(en_tetes: &HeaderMap) -> bool {
-    en_tetes
-        .get(header::CONTENT_TYPE)
+    unique(en_tetes, header::CONTENT_TYPE.as_str())
+        .ok()
+        .flatten()
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.split(';').next())
         .is_some_and(|t| t.trim().eq_ignore_ascii_case("application/json"))
 }
 
 /// Le jeton de `Authorization: Bearer <jeton>` (schéma insensible à la casse) ;
-/// `None` pour tout le reste — le cookie de session n'est jamais lu.
+/// `None` pour tout le reste — le cookie de session n'est jamais lu, un en-tête
+/// répété est refusé. Les blancs autour du jeton sont rognés (`Bearer  x` vaut
+/// `Bearer x`, C-32-6-53).
 fn jeton_bearer(en_tetes: &HeaderMap) -> Option<&str> {
-    let mut valeurs = en_tetes.get_all(header::AUTHORIZATION).iter();
-    let valeur = valeurs.next()?;
-    if valeurs.next().is_some() {
-        return None;
-    }
+    let valeur = unique(en_tetes, header::AUTHORIZATION.as_str()).ok()??;
     let (schema, jeton) = valeur.to_str().ok()?.split_once(' ')?;
     let jeton = jeton.trim();
     (schema.eq_ignore_ascii_case("bearer") && !jeton.is_empty()).then_some(jeton)
@@ -101,14 +116,15 @@ pub(crate) async fn traiter(
         return ReponseMcp::TypeNonAdmis;
     }
 
-    // 6. MCP-Protocol-Version.
-    match en_tetes.get("mcp-protocol-version") {
-        None => tracing::debug!("serveur MCP : requête sans MCP-Protocol-Version"),
-        Some(v) => {
+    // 6. MCP-Protocol-Version (répété → refusé).
+    match unique(en_tetes, "mcp-protocol-version") {
+        Ok(None) => tracing::debug!("serveur MCP : requête sans MCP-Protocol-Version"),
+        Ok(Some(v)) => {
             if !v.to_str().is_ok_and(|v| VERSIONS_SERVIES.contains(&v)) {
                 return ReponseMcp::VersionNonServie;
             }
         }
+        Err(()) => return ReponseMcp::VersionNonServie,
     }
 
     // 7. La clé.
@@ -132,13 +148,18 @@ pub(crate) async fn traiter(
         return ReponseMcp::NonAuthentifie;
     };
 
-    // 9. Origin, contre les origines de la société de la clé.
+    // 9. Origin, contre les origines de la société de la clé. Le refus est le
+    // **même 401** qu'une clé inconnue, non un 403 : sinon, avec plusieurs
+    // sociétés servies, une origine admise par l'une distinguerait une clé
+    // valide d'une autre d'une clé inconnue (revue P1, B1 = E3 = A4 ;
+    // C-32-6-52). Le 403 reste à l'étape 4, avant l'authentification, pour une
+    // origine qu'aucune société servie n'admet.
     if !reseau::origine_admise(
         en_tetes,
         &etat.origines_propres,
         societe.allowed_origins.iter(),
     ) {
-        return ReponseMcp::OrigineRefusee;
+        return ReponseMcp::NonAuthentifie;
     }
 
     // 10. Le corps, borné, puis le message JSON-RPC.

@@ -140,10 +140,12 @@ fn dans_mcp(f: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 /// `crate::mcp`, `super::mcp`, `use crate::mcp`, et `mcp::` **en tête de
-/// chemin** (non précédé d'un identifiant ni de `::`). Ne voit pas
-/// `ContexteAcces::mcp(`, `portee_mcp`, `cles_mcp::`, `serveur_mcp::`.
+/// chemin** (non précédé d'un identifiant ni de `::`), et la forme qualifiée par
+/// le nom du crate, `kesh_api::mcp` (revue P1, E6 : `main.rs` est un autre
+/// crate et la nommerait ainsi). Ne voit pas `ContexteAcces::mcp(`,
+/// `portee_mcp`, `cles_mcp::`, `serveur_mcp::`.
 const MOTIF_MODULE_MCP: &str =
-    r"\bcrate\s*::\s*mcp\b|\bsuper\s*::\s*mcp\b|(^|[^A-Za-z0-9_:])mcp\s*::";
+    r"\bcrate\s*::\s*mcp\b|\bsuper\s*::\s*mcp\b|\bkesh_api\s*::\s*mcp\b|(^|[^A-Za-z0-9_:])mcp\s*::";
 
 /// Les lignes de `lib.rs` qui nomment le module (déclaration et câblage).
 const LIB_NOMME_MCP: &[(&str, &str)] = &[
@@ -158,7 +160,7 @@ const LIB_NOMME_MCP: &[(&str, &str)] = &[
     ("lib.rs", "registre: mcp::Registre,"),
     (
         "lib.rs",
-        "let pool_outils = kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS);",
+        "kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);",
     ),
     (
         "lib.rs",
@@ -177,6 +179,8 @@ fn un_seul_point_d_entree() {
         "use super::mcp::reponse;",
         "    mcp::reponse::rendre(&e, r)",
         "let x = (mcp::Registre::standard());",
+        "    let r = kesh_api::mcp::Registre::standard();",
+        "use kesh_api :: mcp;",
     ] {
         assert_eq!(sites_factices(rouge, &motif), 1, "rouge : {rouge}");
     }
@@ -392,13 +396,19 @@ fn registre_standard_en_un_lieu() {
 #[test]
 fn un_seul_ecouteur() {
     // Périmètre : `kesh-api/src` ; les fichiers de test qui lient un écouteur
-    // sont hors du compte.
-    let motif = re(r"\bTcpListener\b|\bTcpSocket\b|\bUnixListener\b");
+    // sont hors du compte. ⚠️ Angle mort écrit (revue P1, A6) : un écouteur
+    // construit par un crate que `kesh-api` ne dépend pas aujourd'hui
+    // (`socket2`, un descripteur hérité passé à `hyper_util`) — `socket2` et
+    // `from_raw_fd` sont attrapés, les autres formes relèvent de la revue d'une
+    // dépendance ajoutée.
+    let motif = re(r"\bTcpListener\b|\bTcpSocket\b|\bUnixListener\b|\bsocket2\b|\bfrom_raw_fd\b");
     for rouge in [
         "    let l = tokio::net::TcpListener::bind(a).await?;",
         "    let l = std::net::TcpListener::bind(a)?;",
         "    let s = tokio::net::TcpSocket::new_v4()?;",
         "    let u = tokio::net::UnixListener::bind(p)?;",
+        "    let s = socket2::Socket::new(d, t, None)?;",
+        "    let l = unsafe { std::net::TcpListener::from_raw_fd(3) };",
     ] {
         assert_eq!(sites_factices(rouge, &motif), 1, "rouge : {rouge}");
     }
@@ -437,7 +447,7 @@ fn pool_lecture_seule_en_un_lieu() {
         sites(&sources_src(), tout, &motif),
         liste(&[(
             "lib.rs",
-            "let pool_outils = kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS);"
+            "kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);"
         )])
     );
 }
@@ -446,7 +456,10 @@ fn pool_lecture_seule_en_un_lieu() {
 // AC-a30 — mcp_sans_pool (N19, N27)
 // ---------------------------------------------------------------------------
 
-const MOTIF_SANS_POOL: &str = r"\bMySqlPool\b|\bsqlx\b|\bAppState\b|\.\s*pool\b|\bkesh_db\s*::\s*repositories\b|\bkesh_db\s*::\s*pool\b|\bcreate_pool\b|\bdatabase_url\b|\bConfig\b";
+/// Les noms d'un pool et de ce qui en fabrique un ; `kesh_db::{…, repositories…}`
+/// et `kesh_db::{…, pool…}` (import groupé que produit rustfmt) compris (revue
+/// P1, A6).
+const MOTIF_SANS_POOL: &str = r"\bMySqlPool\b|\bsqlx\b|\bAppState\b|\.\s*pool\b|\bkesh_db\s*::\s*repositories\b|\bkesh_db\s*::\s*pool\b|\bkesh_db\s*::\s*\{[^}]*\b(repositories|pool)\b|\bcreate_pool\b|\bdatabase_url\b|\bConfig\b";
 
 #[test]
 fn mcp_sans_pool() {
@@ -460,6 +473,8 @@ fn mcp_sans_pool() {
         "    config: Arc<Config>,",
         "    let u = cfg.database_url.clone();",
         "    let p = kesh_db::pool::create_pool(u, 5, t);",
+        "use kesh_db::{entities::McpServerSettings, repositories::accounts};",
+        "use kesh_db::{entities::X, pool::pool_lecture_seule};",
     ] {
         assert_eq!(sites_factices(rouge, &motif), 1, "rouge : {rouge}");
     }
@@ -708,30 +723,62 @@ fn prompts_scelles() {
 // ---------------------------------------------------------------------------
 
 /// Les quatre formes de la spike (§ 4.1) qui défont `SET SESSION TRANSACTION
-/// READ ONLY`, et le nom de la variable de session, quelle que soit la casse.
+/// READ ONLY` et le nom de la variable de session, quelle que soit la casse.
+/// Les commentaires exécutables de MariaDB (`/*!…*/`, `/*M!…*/`) ne sont **pas**
+/// effacés (ils sont exécutés) : une forme qu'ils logent est vue (revue P1, A1).
 const MOTIF_LECTURE_SEULE: &str =
     r"(?i)\bread\s+write\b|\btx_read_only\b|\btransaction_read_only\b";
 
-/// Les lignes d'un texte, commentaires de bloc remplacés **par une espace**
-/// (comme le fait MariaDB), lignes de commentaire (`//`, `--`, `#` en SQL)
-/// écartées.
+/// En plus, dans le **Rust** : tout commentaire exécutable, refusé en lui-même
+/// — aucun code de Kesh n'en émet, et un SQL émis sur la connexion du MCP n'a
+/// pas à en porter. Les `.sql` en sont exemptés : le squash de test
+/// (`test-schema/0001_schema_squash.sql`, produit par `mysqldump`) en porte des
+/// dizaines (`/*!40101 SET … */`), qui ne passent jamais sur la connexion du
+/// MCP ; leur contenu reste lu par [`MOTIF_LECTURE_SEULE`].
+const MOTIF_COMMENTAIRE_EXECUTABLE: &str = r"/\*M?!";
+
+/// Les lignes d'un texte : lignes de commentaire (`//`, `--`, `#` en SQL)
+/// écartées **d'abord** — un `/*` de glob dans un commentaire de doc
+/// (`crates/*/src`) n'ouvre donc pas de bloc —, puis commentaires de bloc
+/// remplacés **par une espace** (comme le fait MariaDB), **sauf** les
+/// commentaires exécutables `/*!` et `/*M!`, gardés tels quels pour que le
+/// motif les voie.
+///
+/// ⚠️ **Limite écrite** (revue P1, A1) : l'aide ne connaît pas les littéraux.
+/// Un `/*` **dans une chaîne** d'une ligne de code ouvre un bloc qui avale tout
+/// jusqu'au `*/` suivant, sur plusieurs lignes ; aucun fichier de `crates/` ne
+/// porte aujourd'hui une telle chaîne suivie d'une forme interdite (mesuré par
+/// cette garde même : sa liste blanche est exacte), mais une forme placée là
+/// échapperait. Même limite que `sans_commentaires` de `services_motif.rs`.
 fn lignes_decommentees(texte: &str, sql: bool) -> Vec<String> {
-    let sans_blocs = re(r"(?s)/\*.*?\*/").replace_all(texte, " ").into_owned();
-    sans_blocs
+    let sans_lignes: String = texte
         .lines()
         .filter(|l| {
             let t = l.trim_start();
             !(t.starts_with("//") || (sql && (t.starts_with("--") || t.starts_with('#'))))
         })
+        .collect::<Vec<_>>()
+        .join("\n");
+    re(r"(?s)/\*.*?\*/")
+        .replace_all(&sans_lignes, |c: &regex::Captures| {
+            let bloc = &c[0];
+            if bloc.starts_with("/*!") || bloc.starts_with("/*M!") {
+                bloc.to_string()
+            } else {
+                " ".to_string()
+            }
+        })
+        .lines()
         .map(str::to_string)
         .collect()
 }
 
 fn formes_interdites(texte: &str, sql: bool) -> Vec<String> {
     let motif = re(MOTIF_LECTURE_SEULE);
+    let executable = re(MOTIF_COMMENTAIRE_EXECUTABLE);
     lignes_decommentees(texte, sql)
         .into_iter()
-        .filter(|l| motif.is_match(l))
+        .filter(|l| motif.is_match(l) || (!sql && executable.is_match(l)))
         .map(|l| l.trim().to_string())
         .collect()
 }
@@ -748,6 +795,9 @@ fn lecture_seule_jamais_defaite() {
         "SET TRANSACTION READ/**/WRITE",
         "SET SESSION transaction_read_only = 0",
         "set transaction read  write",
+        // une forme logée dans un commentaire exécutable (revue P1, A1)
+        "SET TRANSACTION /*M!100000 READ WRITE */",
+        "SET /*!50000 SESSION TRANSACTION READ WRITE */",
     ] {
         assert_eq!(
             formes_interdites(rouge, true).len(),
@@ -772,6 +822,27 @@ fn lecture_seule_jamais_defaite() {
     ] {
         assert!(formes_interdites(vert, true).is_empty(), "vert : {vert}");
     }
+    // Un `/*` de glob dans un commentaire de doc (forme existante :
+    // `configuration_transmise.rs:16`, « `crates/*/src` ») n'avale plus le code
+    // qui suit : la forme interdite placée entre lui et un `*/` lointain est vue.
+    let glob = "//! (`crates/*/src`) : chaque occurrence\nq(\"SET TRANSACTION READ WRITE\")\n/// `crates/*/src/**/*.rs`\n";
+    assert_eq!(
+        formes_interdites(glob, false).len(),
+        1,
+        "rouge : sous un glob"
+    );
+    // Dans le Rust, un commentaire exécutable est refusé en lui-même ; dans le
+    // SQL, seul son contenu est lu (témoin vert existant : le squash de test).
+    let execute = "q(\"SELECT /*!50000 1 */\")";
+    assert_eq!(formes_interdites(execute, false).len(), 1, "rouge (Rust)");
+    assert!(
+        formes_interdites(
+            "/*!40101 SET @saved_cs_client     = @@character_set_client */;",
+            true
+        )
+        .is_empty(),
+        "vert (SQL) : la ligne existante du squash"
+    );
 
     let mut v = Vec::new();
     fichiers(&racine_crates(), &["rs", "sql"], &mut v);
@@ -807,7 +878,7 @@ fn lecture_seule_jamais_defaite() {
             // AC-a28 : la lecture du mode par `kesh_version`.
             (
                 "kesh-api/src/services/serveur_mcp.rs",
-                "let mode: i64 = sqlx::query_scalar(\"SELECT @@session.tx_read_only\")"
+                "sqlx::query_as(\"SELECT @@session.tx_read_only, @@session.max_statement_time\")"
             ),
         ]),
         "forme qui défait le mode de session hors des exceptions écrites"

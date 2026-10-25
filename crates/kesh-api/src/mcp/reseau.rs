@@ -141,11 +141,21 @@ pub fn decider(s: &McpServerSettings, pair: IpAddr, en_tetes: &HeaderMap) -> Dec
 
 /// Les origines propres de Kesh (AC-a10), normalisées : `public_base_url`
 /// réduite à son origine, et `http://127.0.0.1:<port>`, `http://localhost:<port>`,
-/// `http://[::1]:<port>`. Un `public_base_url` qui n'est pas une origine
-/// `http(s)` n'en donne **aucune**, avec un avertissement.
+/// `http://[::1]:<port>`. Un chemin de `public_base_url` (installation sous un
+/// sous-chemin, `https://h/app`) est retiré avant la normalisation (revue P1,
+/// A2) ; un `public_base_url` qui n'est pas une origine `http(s)` (sans schéma,
+/// identifiants, schéma autre) n'en donne **aucune**, avec un avertissement.
 pub fn origines_propres(port: u16, public_base_url: Option<&str>) -> Arc<[String]> {
     let mut v: Vec<String> = Vec::with_capacity(4);
     if let Some(base) = public_base_url {
+        let base = base.trim();
+        let base = match base.split_once("://") {
+            Some((schema, reste)) => {
+                let autorite = reste.split(['/', '?', '#']).next().unwrap_or("");
+                &base[..schema.len() + 3 + autorite.len()]
+            }
+            None => base,
+        };
         match crate::util::origine_canonique(base) {
             Some(o) => v.push(o),
             None => tracing::warn!(
@@ -312,6 +322,30 @@ mod tests {
             ]
         );
         assert_eq!(origines_propres(3000, Some("kesh.example")).len(), 3);
+        // Un sous-chemin est retiré : l'origine propre reste (revue P1, A2).
+        for base in [
+            "https://kesh.example/app",
+            "https://kesh.example:443/app/?x#y",
+        ] {
+            assert_eq!(
+                origines_propres(80, Some(base))[0],
+                "https://kesh.example",
+                "{base}"
+            );
+        }
+        assert_eq!(
+            origines_propres(80, Some("https://moi@kesh.example/app")).len(),
+            3,
+            "identifiants : aucune origine propre"
+        );
+        // Lignes multiples : refusées (revue P1, E4).
+        let mut deux = HeaderMap::new();
+        deux.append("origin", HeaderValue::from_static("http://localhost"));
+        deux.append("origin", HeaderValue::from_static("http://localhost"));
+        assert!(
+            !origine_admise(&deux, &p, &Vec::new()),
+            "deux lignes Origin"
+        );
         let mut h = HeaderMap::new();
         assert!(origine_admise(&h, &p, &Vec::new()), "absente");
         for (o, admise) in [

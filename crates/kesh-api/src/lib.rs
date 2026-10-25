@@ -1256,8 +1256,12 @@ pub fn build_router_avec_registre(
     // `content-length` — un `/mcp` non servi est indiscernable d'une route
     // absente (C-32-6-2, C-32-6-40). Hors de `require_auth` : sa garde est la
     // sienne (clé MCP seulement). Les outils lisent sur un pool en lecture
-    // seule, construit ici une fois ; la `garde` est la `Lecture` ordinaire.
-    let pool_outils = kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS);
+    // seule, construit ici une fois, dont MariaDB interrompt toute instruction
+    // au-delà du délai d'un outil (revue P1, E1) ; la `garde` est la `Lecture`
+    // ordinaire.
+    let delai = registre.delai();
+    let pool_outils =
+        kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);
     let lecture_outils =
         mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils));
     let etat_mcp = mcp::EtatMcp {
