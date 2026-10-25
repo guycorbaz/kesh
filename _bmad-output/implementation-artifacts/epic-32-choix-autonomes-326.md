@@ -84,6 +84,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : faire échouer tout le filtre (le serveur deviendrait inaccessible pour une entrée) ; traiter l'erreur
   comme « tout admettre » ; une liste vide qui signifierait « privé » (règle invisible, déjà écartée par C-32-5-10).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P3, R7 : l'entrée invalide est journalisée **à chaque requête en `tracing::debug!`**, sans état partagé, depuis la validation P2 (R8 = F10) — non plus en `warn!`.)*
 
 ### C-32-6-7 — `Origin` : absent admis ; présent, admis s'il est propre à Kesh ou listé ; 403 sinon ; jamais déduit de `Host`
 
@@ -142,6 +143,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : interdire `tx_read_only` sans `=` (empêcherait `before_acquire`) ; aucune garde (Q11 rend la garantie
   applicative : il faut l'outiller).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P3, R1 = F1 : le motif `\bread\W+write\b` de l'annotation P2 rendait **53 lignes** (le `scope` `read-write` des clés d'API, `use std::io::{Read, Write}`) : il est retiré. La fiche prescrit désormais la **propriété** et les **formes à attraper**, avec des témoins rouges et verts, et la règle commune des gardes lexicales ; l'exemple mesuré est `(?i)\bread\s+write\b` après remplacement des commentaires de bloc par une espace — 0 ligne au relevé.)*
 - *(Annoté le 2026-10-25, validation P2, R9 = F8 : le motif `tx_read_only\s*=` est **remplacé** par l'interdiction du nom entier `tx_read_only` (comme la spike, § 4.3 (a)), exceptions écrites ; les commentaires de bloc sont retirés de la ligne avant l'analyse, et `\bread\W+write\b` remplace `read\s+write`.)*
 
 ### C-32-6-12 — `kesh_version` rend la version et l'état de la session, aucune donnée des livres
@@ -348,6 +350,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   fournir un pool que rien ne garantirait en lecture seule (repli écrit si la fusion d'Axum ne se prêtait pas au
   sous-routeur) ; une `Extension` (500 si absente) ; une fermeture (illisible par le registre des routes).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P3, F3 = R8, R9 : `EtatMcp` ne porte plus `config: Arc<Config>` (qui porte `database_url` et `admin_password`) mais `origines_propres`, calculées une fois ; il gagne `garde: Lecture` — la `Lecture` ordinaire, pour la règle « servi » et l'authentification (C-32-6-38).)*
 - *(Annoté le 2026-10-25, validation P2, F3, R7, R12 = F11 : `EtatMcp` ne porte **plus** `app: AppState` — son champ public `pool` (`lib.rs:56`) mettait le pool ordinaire à portée de tout `src/mcp/` — mais `config: Arc<Config>` ; le délai vit dans le registre seul ; garde `mcp_sans_pool` sur tout `src/mcp/`. Les constructions par littéral sont **huit** (la production et sept de test), non sept.)*
 
 ### C-32-6-32 — Le détecteur du registre des routes lit `fallback(routes::…)` (validation P1, R2 = F8)
@@ -387,6 +390,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : des gardes syntaxiques par `syn` pour toutes (plus lourdes ; gardées pour le seul cas où le texte ne
   suffirait pas, à juger au développement).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P3, R1, R2 : les motifs écrits ici étaient des formes non mesurées (`lister(` rougissait sur onze services). Les gardes sont désormais prescrites par leur **propriété**, leur périmètre et leurs formes, sous une règle commune écrite en tête des AC de la fiche : motif greppé sur le dépôt réel à l'étape 0, vide hors liste blanche, un témoin rouge et un témoin vert existant, sorties citées. Les points d'accès du registre s'appellent `outil_pour` et `descripteurs_pour`.)*
 
 ### C-32-6-35 — Toute connexion du pool du MCP est fermée à sa restitution (validation P2, R4)
 
@@ -424,4 +428,34 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   dans `src/mcp/**` et `routes/mcp.rs`, liste écrite).
 - **Écartées** : garder la garde de formes (une énumération de ce qui marche, `CLAUDE.md` § *Inventorier les sites NON
   RÉSOLUS*) ; une analyse par `syn` des types de retour (plus lourde, sans fermer davantage).
+- **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P3, R4 = F4 : `rendre` est **`async fn rendre(&EtatMcp, ReponseMcp) -> Response`** et `ReponseMcp` porte `RouteAbsente(Request)` — C-32-6-39.)*
+
+### C-32-6-38 — La règle « servi » et l'authentification lisent sur la `Lecture` ordinaire, avant tout emprunt du pool des outils (validation P3, R9)
+
+- **Contexte** : depuis `after_release` (C-32-6-35), chaque emprunt du pool des outils ouvre une connexion neuve ;
+  la règle « servi » s'y faisait **avant** le filtre et l'authentification, si bien que toute requête anonyme — même
+  sur une installation où le MCP n'a jamais été activé — ouvrait et fermait une connexion MariaDB, et qu'un poste
+  pouvait saturer les trois connexions du pool des outils au détriment de l'agent légitime.
+- **Retenu** : `EtatMcp.garde = state.lecture()` (la `Lecture` ordinaire de l'API, connexions réutilisées) pour
+  `reglages_actifs` et `cles_mcp::authentifier` — comme `validate_pat` de l'API lit sur le pool ordinaire ; le pool des
+  outils, en lecture seule, n'est emprunté qu'**après** l'authentification et `autoriser`. Ces deux lectures sont du
+  code fixe de Kesh, sans outil ni donnée de l'agent : Q11 (les outils lisent en lecture seule) est tenue.
+- **Écartées** : un troisième pool en lecture seule pour la garde (un pool de plus pour deux requêtes fixes) ; un cache
+  des réglages (un serveur désactivé resterait ouvert jusqu'à l'expiration) ; une limite de débit (soumise à Guy,
+  point 8).
+- **Ce qui reste** : une inondation du réseau local occupe les connexions ordinaires, comme `/api/v1/auth/login` le
+  permet déjà — angle mort écrit, point 8 pour Guy.
+- **Réversible** : oui.
+
+### C-32-6-39 — `rendre` est asynchrone et reçoit l'état ; `ReponseMcp::RouteAbsente(Request)` (validation P3, R4 = F4)
+
+- **Contexte** : la réponse de route absente est celle du service statique, qui ne se produit qu'en l'appelant avec la
+  `Request` ; une `rendre(ReponseMcp) -> Response` synchrone et sans état ne le pouvait pas, et `DonneesEnvoyables`
+  n'avait pas de lecture prévue.
+- **Retenu** : `pub async fn rendre(etat: &EtatMcp, r: ReponseMcp) -> Response` ; `RouteAbsente(Request)` remise à
+  `etat.statique` par `oneshot`, puis `.map(Body::new)` ; `DonneesEnvoyables::en_resultat`, définie en `politique.rs` ;
+  corps des gestionnaires : `rendre(&etat, transport::traiter(&etat, pair, requete).await).await`.
+- **Écartées** : une variante qui porterait déjà la `Response` statique (une deuxième sortie de réponse, hors de
+  `rendre`) ; deux fonctions de sortie (statique et MCP).
 - **Réversible** : oui.

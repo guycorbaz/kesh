@@ -3,7 +3,7 @@
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-6`, branche `story/32-6` partie de `main`
-`b723e3d9` (32-5a fusionnée). Registre : `epic-32-choix-autonomes-326.md` (C-32-6-1 à C-32-6-37). Clé courte : `326`.
+`b723e3d9` (32-5a fusionnée). Registre : `epic-32-choix-autonomes-326.md` (C-32-6-1 à C-32-6-39). Clé courte : `326`.
 Issue de l'epic : #723 (CR « Serveur MCP intégré à Kesh »), en `refs` seulement. Les numéros de ligne cités sont ceux
 de `b723e3d9`.*
 
@@ -165,6 +165,18 @@ aucune donnée compare le corps **entier** à la constante attendue de `mcp/text
 absente), jamais à l'absence d'une sous-chaîne devinée. Une absence de sous-chaîne ne s'emploie qu'en complément, pour un
 marqueur que le test a lui-même posé là où la donnée **serait** émise (`PIEGE_*`).
 
+⛔ **Règle commune des gardes lexicales** (validation P3, décision de l'orchestrateur : R1 = F1, R2 et R3 venaient de
+gardes et de tests écrits dans la fiche sans être confrontés au dépôt). La fiche prescrit, pour chaque garde, la
+**propriété** à garantir, son **périmètre** et les **formes à attraper** ; un motif qu'elle écrit n'est qu'un **exemple**,
+et ne vaut que s'il porte sa mesure. Au développement :
+1. **à l'étape 0**, chaque motif retenu est greppé sur le **dépôt réel**, dans le périmètre de sa garde, et doit rendre
+   **vide** hors des sites écrits en liste blanche (fichier, ligne réduite de ses blancs) ;
+2. chaque garde a **un témoin rouge** (une forme qu'elle doit attraper) et **un témoin vert** (une forme **légitime et
+   existante** au dépôt qu'elle ne doit pas attraper), sur source factice, par une fonction pure ;
+3. les commandes et leurs sorties sont **citées au Dev Agent Record**.
+Il en va de même des tests qui reposent sur un outillage existant (une capture, un montage) : on lit ce que l'outillage
+**capte** avant de s'y adosser, et le test porte un **témoin** qui prouve qu'il ne passe pas à vide.
+
 ### Partie A — 32-6a : le point d'entrée et ses gardes
 
 **A.1 — Le montage, le canal et la règle « servi »**
@@ -174,19 +186,25 @@ marqueur que le test a lui-même posé là où la donnée **serait** émise (`PI
    `Router::<EtatMcp>::new().route("/mcp", post(routes::mcp::recevoir).fallback(routes::mcp::autre_methode))`
    puis le ferme par `.with_state(EtatMcp { … })`, ce qui en fait un `Router<AppState>` qu'il fusionne dans
    `main_router` **avant** `.fallback_service(…)` et `.layer(csp_html)` (`lib.rs:1225-1227`). `EtatMcp` (défini dans
-   `mcp/mod.rs`, `Clone`) porte **seulement** `config: Arc<Config>` (port et `public_base_url`, AC-a10), `lecture:
-   Lecture` (la `Lecture` du MCP, AC-a26), `trace: Trace` (`state.trace()`), `registre: Arc<Registre>` (qui porte aussi
-   le délai d'outil, AC-a21) et `statique` (le **même** service que le repli, AC-a3) — **pas d'`AppState`**, dont le
-   champ public `pool` (`lib.rs:56`) mettrait le pool ordinaire à portée de tout `src/mcp/` (validation P2, F3).
+   `mcp/mod.rs`, `Clone`) porte **seulement** : `origines_propres: Arc<[String]>` (calculées **une fois**, en `lib.rs`,
+   depuis `config.port` et `config.public_base_url`, AC-a10 — pas de `Config` entier, qui porte `database_url` et
+   `admin_password`, `config.rs:179`, `:193` ; validation P3, F3 = R8), `garde: Lecture` (`state.lecture()`, la
+   `Lecture` **ordinaire** de l'API, pour la règle « servi » et l'authentification seulement, C-32-6-38), `lecture:
+   Lecture` (la `Lecture` **des outils**, en lecture seule, AC-a26), `trace: Trace` (`state.trace()`), `registre:
+   Arc<Registre>` (qui porte aussi le délai d'outil, AC-a21) et `statique` (le **même** service que le repli, AC-a3) —
+   **pas d'`AppState`**, dont le champ public `pool` (`lib.rs:56`) mettrait le pool ordinaire à portée de tout
+   `src/mcp/` (validation P2, F3).
    **Aucun champ neuf dans `AppState`, aucune `Extension`** : un `EtatMcp` manquant **ne compile pas** (le
    gestionnaire extrait `State<EtatMcp>`), si bien qu'aucun 500 d'extension manquante n'est possible. Signature imposée :
    `pub async fn recevoir(State(etat): State<EtatMcp>, pair: Result<ConnectInfo<SocketAddr>, ExtensionRejection>,
    requete: Request) -> Response` (idem `autre_methode`) — `Request` **dernier** extracteur, **aucun** extracteur de
-   corps (`Bytes`, `String`, `Json`), retour `Response` produit par la seule fonction `mcp::reponse::rendre` (AC-a31).
+   corps (`Bytes`, `String`, `Json`) ; le corps du gestionnaire est **exactement** `reponse::rendre(&etat,
+   transport::traiter(&etat, pair, requete).await).await` (AC-a31).
    Aucun `TcpListener::bind` neuf
    (garde `un_seul_ecouteur`, AC-a30).
 2. **AC-a2 — l'ensemble des réglages qui « servent » ce pair.** Pour chaque requête vers `/mcp`, juste après
-   l'extraction du pair (étape 1 des Dev Notes, dont elle est une entrée — validation P2, R16), le service `services::serveur_mcp::reglages_actifs(&Lecture)` lit sur la **`Lecture` du MCP** les lignes
+   l'extraction du pair (étape 1 des Dev Notes, dont elle est une entrée — validation P2, R16), le service `services::serveur_mcp::reglages_actifs(&Lecture)` lit sur **`etat.garde`** (la `Lecture` ordinaire,
+   connexions réutilisées — **jamais** sur le pool des outils, C-32-6-38 ; validation P3, R9) les lignes
    `enabled = TRUE` (dépôt neuf `mcp_server_settings::list_enabled`, **sans écriture**, testé : aucune, une, deux
    sociétés ; une ligne `enabled = FALSE` absente ; **une ligne dont une colonne JSON n'est pas un tableau de chaînes
    — écrite `[1]` dans le test, le `CHECK` de la migration imposant un tableau (`20261025000001_…sql:81-83`) — est
@@ -229,7 +247,9 @@ marqueur que le test a lui-même posé là où la donnée **serait** émise (`PI
    ni `appels_non_handlers` (`:676-698`, dont l'analyse du chemin s'arrête à la première `(` et écarte tout chemin
    portant un blanc, `:681-684`) ne voient un `.fallback(routes::m::h)` : un gestionnaire accroché ainsi échapperait aux
    deux gardes. La 32-6a **étend le détecteur** :
-   - `extract_counted` lit **tout** `fallback(` comme un « verbe », et **rogne** chaque argument (blancs de tête, virgule
+   - `extract_counted` s'applique à `lib.rs` **lignes de commentaire retirées** (un commentaire qui citerait
+     `.fallback(…)` deviendrait sinon un site non résolu ; témoin factice `// .fallback(x)` → rien — validation P3,
+     F7) ; il lit **tout** `fallback(` comme un « verbe », et **rogne** chaque argument (blancs de tête, virgule
      et blancs de fin) pour qu'une forme coupée par rustfmt donne la même clé (validation P2, R10) ; tout argument de
      `fallback(` qui ne commence pas par `routes::` va à l'**inventaire des non-résolus** (`:554-567`), **moins** une
      liste **écrite** dans le test des sites connus : la forme `ServeFile::new(` du repli, **une** occurrence (la
@@ -303,7 +323,10 @@ marqueur que le test a lui-même posé là où la donnée **serait** émise (`PI
    - (n) entrée stockée invalide (`"pas-un-réseau"`, écrite par SQL dans le test) à côté de `192.168.0.0/16` →
      `192.168.1.10` admis, `8.8.8.8` refusé ; (o) filtre activé, liste vide → `127.0.0.1` refusé ;
    - (p) mandataire déclaré, **deux lignes** d'en-tête `X-Forwarded-For: 192.168.1.20` puis `X-Forwarded-For: 8.8.8.8`
-     → refusé (toutes les lignes sont lues) ; (q) mandataire déclaré, `X-Forwarded-For: ::ffff:8.8.8.8` → refusé et
+     → refusé (tue la lecture de la **première** ligne seule, qui rendrait `192.168.1.20`) ; (p') mandataire
+     `172.18.0.2` déclaré, deux lignes `8.8.8.8` puis `172.18.0.2` → refusé (toutes lues : `8.8.8.8` ; tue la lecture de
+     la **dernière** ligne seule, qui ne verrait que le mandataire et le prendrait pour client, admis par
+     `172.16.0.0/12`) — validation P3, F6 ; (q) mandataire déclaré, `X-Forwarded-For: ::ffff:8.8.8.8` → refusé et
      `::ffff:192.168.1.20` → admis ; (r) valeur d'en-tête non ASCII → refusé.
 
 **A.3 — L'`Origin` (C-32-6-7)**
@@ -360,7 +383,9 @@ marqueur que le test a lui-même posé là où la donnée **serait** émise (`PI
 
 14. **AC-a14 — clé MCP seulement.** Le jeton se lit **uniquement** dans `Authorization: Bearer <jeton>` (schéma
     insensible à la casse, RFC 7235) ; **le cookie `kesh_access_token` est ignoré** ; il est passé à
-    `services::cles_mcp::authentifier(&etat.lecture, &etat.trace, jeton)` (32-5b), dont le résultat est **filtré** en
+    `services::cles_mcp::authentifier(&etat.garde, &etat.trace, jeton)` (32-5b ; sur la `Lecture` ordinaire, comme
+    `validate_pat` de l'API, `auth/api_key.rs:153-155` — le pool des outils n'est emprunté qu'après l'authentification,
+    C-32-6-38), dont le résultat est **filtré** en
     `ReponseMcp::NonAuthentifie` ou `ReponseMcp::ErreurInterne` par un `match` du transport, l'un des deux seuls sites
     qui nomment `AppError` (AC-a31). **Même réponse 401** — statut,
     en-têtes hors `date`, corps **égal** à `TEXTE_NON_AUTHENTIFIE` (JSON-RPC sans `id`, **aucun `WWW-Authenticate`**,
@@ -371,9 +396,14 @@ marqueur que le test a lui-même posé là où la donnée **serait** émise (`PI
     `session_refusee`, `refus_indiscernables`. Une erreur de la base pendant l'authentification n'est pas un 401 :
     **500**, corps **égal** à `TEXTE_ERREUR_INTERNE` (test : réglages actifs, puis `ALTER TABLE mcp_keys RENAME TO
     mcp_keys_cachee` → 500 et corps égal à la constante — validation P1, R3). Le jeton, l'en-tête et le corps ne sont
-    **jamais** journalisés : test `jeton_jamais_journalise`, par l'abonné de capture de `tracing` qui existe déjà
-    (`tests/common/capture_rejeu.rs:10`, `:85` — validation P2, F10) : une requête à jeton `kesh_mcp_PIEGE…` et corps
-    piégé, refusée puis servie, ne laisse ni le jeton ni le piège dans les évènements capturés ; et `grep -rnE
+    **jamais** journalisés : test `jeton_jamais_journalise`, par une **couche de capture générique** neuve
+    (`tests/common/capture_trace.rs` : tous niveaux, `TRACE` et `DEBUG` compris, toutes cibles, message et champs
+    formatés) montée par `tracing::subscriber::set_default`, le montage par fil de `tests/common/capture_rejeu.rs:10`,
+    `:85` — **non** sa couche, qui ne retient que le champ `operation` des `WARN`/`ERROR` de cible `kesh_db::retry`
+    (`capture_rejeu.rs:34-64` ; validation P3, R3). ⛔ **Le test exige un témoin** : il émet lui-même un évènement
+    `debug!` portant `PIEGE_TRACE_326` et constate qu'il est capté **avant** de constater qu'une requête à jeton
+    `kesh_mcp_PIEGE…` et corps piégé, refusée puis servie, ne laisse ni le jeton ni le piège dans les évènements
+    capturés — sans témoin, le test passerait à vide ; et `grep -rnE
     "jeton|token|authorization|corps|body" crates/kesh-api/src/mcp crates/kesh-api/src/routes/mcp.rs` relu ligne à
     ligne, sortie citée au Dev Agent Record.
 15. **AC-a15 — la politique de validation, contrôlée AVANT l'exécution (Q12 ; frontière avec la 32-8 ; validation P2,
@@ -386,8 +416,11 @@ marqueur que le test a lui-même posé là où la donnée **serait** émise (`PI
     fait **que** construire la réponse (elle ne relit pas la politique, et ne s'appelle pas sans `Autorisation`). Tests :
     `cle_requise_refusee_sans_execution` (outil de test à compteur : 0 exécution ; corps égal à la réponse attendue),
     `cle_dispensee_servie` (compteur à 1 ; corps égal à la réponse attendue). Mutation Ma23 : `autoriser` rend `Ok` pour
-    `Required` → les deux tests rougissent ; Ma23b : appeler `appliquer` sans `autoriser` **ne compile pas**
-    (`Autorisation` introuvable hors de `politique.rs`) — déclarée comme telle. Les méthodes de métadonnées (`initialize`, `ping`, `tools/list`, `prompts/*`)
+    `Required` → `cle_requise_refusee_sans_execution` et `e1_rien_ne_part_sous_cle_requise` rougissent (non
+    `cle_dispensee_servie`, que la mutation ne touche pas ; validation P3, R5) ; Ma50 : `executer` appelé **avant**
+    `autoriser` → `cle_requise_refusee_sans_execution` (compteur à 1) ; Ma23b : appeler `appliquer` sans `autoriser` **ne compile pas**
+    (le **constructeur** d'`Autorisation`, champ privé, est inaccessible hors de `politique.rs` : E0451) — déclarée comme
+    telle. Les méthodes de métadonnées (`initialize`, `ping`, `tools/list`, `prompts/*`)
     sont servies quelle que soit la politique (E2 : textes du binaire).
 
 **A.6 — Les outils, les portées, les erreurs et l'absence d'oracle**
@@ -429,7 +462,9 @@ marqueur que le test a lui-même posé là où la donnée **serait** émise (`PI
     | **toute autre variante**, `Database(_)` compris (bras `_`) | `ErreurOutil::Interne`, `TEXTE_ERREUR_INTERNE` |
 
     Le bras `_` est **voulu** : une variante neuve tombe dans l'erreur interne fixe, le cas le plus fermé ; élargir la
-    liste blanche est un choix écrit à la fiche qui le fait. Test unitaire `traduction_des_erreurs_de_service` : chaque
+    liste blanche est un choix écrit à la fiche qui le fait. Test `traduction_des_erreurs_de_service`, dans
+    **`crates/kesh-api/tests/mcp_traduction.rs`** (hors de `src/`, pour que ses constructions d'`AppError` ne tombent pas
+    sous la garde d'inventaire de l'AC-a31 ; `depuis_app_error` est donc `pub`, `#[doc(hidden)]` — validation P3, R10) : chaque
     bras de la liste rend sa constante (corps **égal**, `Validation("PIEGE_APP_326")` compris) ; et des variantes **hors
     liste**, prises dans plusieurs familles — `Internal("PIEGE_APP_326")`, `Database(DbError::OptimisticLockConflict)`,
     `FiscalYearClosed { … }`, `AccountNotFound`, `RateLimited { … }`, `IllegalState("PIEGE_APP_326")` (noms recontrôlés
@@ -455,7 +490,10 @@ marqueur que le test a lui-même posé là où la donnée **serait** émise (`PI
 21. **AC-a21 — le registre de test.** `kesh_api::build_router_avec_registre(state, static_dir, registre)`
     (`#[doc(hidden)]`) ; `build_router` l'appelle avec `Registre::standard()` ; `main.rs` n'appelle que `build_router`
     (garde lexicale). `Registre::vide()`, et les **méthodes** `avec(self, Box<dyn McpTool>) -> Self` et
-    `avec_delai(self, Duration) -> Self`, sont publics pour les tests ; `Registre::standard()` porte `DELAI_OUTIL` ; le
+    `avec_delai(self, Duration) -> Self`, sont publics pour les tests ; les deux points d'accès du répartiteur s'appellent
+    **`outil_pour(nom, portées)`** et **`descripteurs_pour(portées)`** — noms qui n'existent nulle part dans le dépôt
+    (`grep -rnE "\b(outil_pour|descripteurs_pour)\s*\(" crates` → 0 au relevé de `c6523903` (code de `b723e3d9`)), là où `lister` est le nom
+    de onze services de lecture (validation P3, R2) ; `Registre::standard()` porte `DELAI_OUTIL` ; le
     délai ne vit **que** dans le registre (`Registre::delai()`), `EtatMcp` n'en a pas de copie. Outils de test
     (`tests/common/mcp.rs`, neuf) : **compteur**, **piégé** (lit par `services::plan_comptable::lister` un compte dont
     le nom porte `PIEGE_E1_326`), **refus de service** (AC-a18), **lent** (dort plus que le délai réduit), et, pour la
@@ -475,12 +513,16 @@ marqueur que le test a lui-même posé là où la donnée **serait** émise (`PI
       compris de test, l'emploient), **aucun accesseur public** — ses champs ne se lisent qu'en `politique.rs` ;
     - `DonneesEnvoyables` : champ privé, construit par `politique::appliquer(Autorisation, Donnees)` seul (AC-a15) ;
       `ReponseMcp::Outil` n'accepte que `DonneesEnvoyables` ;
-    - **ni l'un ni l'autre** ne dérive ni n'implémente `Serialize`, `Default` ni `Debug` (un `Debug` permettrait
-      `format!("{:?}")` vers un texte) ; `Clone` est permis ;
+    - **ni l'un ni l'autre**, **ni `Autorisation`** (validation P3, R6), ne dérive ni n'implémente `Serialize`, `Default`
+      ni `Debug` (un `Debug` permettrait `format!("{:?}")` vers un texte) ; `Clone` est permis pour `Donnees`, **ni
+      `Clone` ni `Copy`** pour `Autorisation` (une autorisation ne se duplique pas) ;
+    - `reponse::rendre` tire le JSON de `DonneesEnvoyables` par **une** méthode définie en `politique.rs`,
+      `pub(in crate::mcp) fn en_resultat(self) -> serde_json::Value` (validation P3, F4) ;
     - garde `donnees_construites_par_la_politique_seule` : dans `crates/kesh-api/src`, `DonneesEnvoyables {`,
       `DonneesEnvoyables::` et `impl … for DonneesEnvoyables` n'apparaissent qu'en `mcp/politique.rs` ; les attributs
-      `#[derive(…)]` qui précèdent `struct Donnees` et `struct DonneesEnvoyables` ne nomment ni `Serialize`, ni
-      `Default`, ni `Debug` ; aucun `impl (Default|Serialize|Debug) for (Donnees|DonneesEnvoyables)` hors du fichier
+      `#[derive(…)]` qui précèdent `struct Donnees`, `struct DonneesEnvoyables` et `struct Autorisation` ne nomment ni
+      `Serialize`, ni `Default`, ni `Debug` (ni `Clone`/`Copy` pour `Autorisation`) ; aucun `impl
+      (Default|Serialize|Debug|Clone|Copy) for (Donnees|DonneesEnvoyables|Autorisation)` hors des combinaisons permises
       — ce qui ferme `Default::default()` et `<DonneesEnvoyables as Default>::default()` (aucune implémentation n'existe
       à appeler) ;
     - les réponses statiques (`initialize`, `tools/list`, erreurs, `prompts/list`) ne se construisent qu'à partir de
@@ -509,14 +551,18 @@ marqueur que le test a lui-même posé là où la donnée **serait** émise (`PI
     Appelée **une seule fois** en production, dans `build_router_avec_registre`, `max_connections` =
     `MCP_POOL_CONNEXIONS` (3, C-32-6-10) ; et par `tests/common/lecture_seule.rs`, dont la fonction `async fn
     pool_lecture_seule(pool: &MySqlPool) -> MySqlPool` **garde sa signature** (ses appelants, dont
-    `services_motif.rs:45` et `:1537`, ne changent pas) et délègue à la fabrique avec `max_connections = 4` (C-32-6-26).
+    `services_motif.rs:45` et `:1537`, `services_rollout.rs:60` et `:519` — l'AC11 (c) de la 32-4a, qui rejoue désormais
+    sur un pool dont chaque emprunt est neuf —, ne changent pas ; validation P3, R13) et délègue à la fabrique avec `max_connections = 4` (C-32-6-26).
     Tests `crates/kesh-db/tests/pool_lecture_seule.rs`, utilisateur `kesh`, base `#[sqlx::test]` : (a) `INSERT`,
     `UPDATE`, `DELETE` en autocommit → **1792** ; (b) les trois dans `pool.begin()` → 1792 ; (c) `SELECT … FOR UPDATE`
     → 1792 ; (d) `SELECT` → OK ; (e) **séquence B de la spike** (§ 4.2), forme 4 : `max_connections(1)`, `SET SESSION
     TRANSACTION READ WRITE` sur une connexion, rendue, réacquise → un `UPDATE` en autocommit est **refusé**, et
     l'identifiant de connexion (`CONNECTION_ID()`) a changé ; (e bis) **forme 2** (validation P2, R4) : même montage,
     `SET TRANSACTION READ WRITE` (sans `SESSION`), rendue sans autre instruction, réacquise → `UPDATE` **refusé**,
-    identifiant changé ; (f) une connexion perdue (`KILL`) est remplacée par une connexion qui repasse `after_connect`.
+    identifiant changé ; (f) une connexion tuée **pendant** un emprunt (`max_connections(1)`, `CONNECTION_ID()` lu, `KILL`
+    par le pool ordinaire, requête suivante du même emprunt en échec) n'empêche pas l'emprunt suivant, qui part d'une
+    connexion neuve, refuse une écriture en 1792 et porte un autre identifiant (validation P3, F5 : depuis
+    `after_release`, aucune connexion ne reste au repos, et l'ancien (f) passait à vide).
     ⚠️ (e) et (e bis) exécutent volontairement une forme interdite : ce sont les exceptions écrites de l'AC-a27. Aucune
     infrastructure nouvelle : même fichier, même base `#[sqlx::test]`.
 26. **AC-a26 — le câblage : les outils lisent sur ce pool, la trace écrit sur l'autre.** `EtatMcp.lecture` est
@@ -529,15 +575,25 @@ marqueur que le test a lui-même posé là où la donnée **serait** émise (`PI
     `mcp_keys.last_used_at` de la clé est posée (la `Trace` du MCP écrit : elle n'est pas sur le pool en lecture
     seule ; `touch_last_used` étant *best-effort*, c'est ce test qui rend sa perte audible).
 27. **AC-a27 — garde lexicale des formes qui défont le mode de session** (`mcp_gardes_lexicales.rs`,
-    `lecture_seule_jamais_defaite`) : dans tous les `.rs` et `.sql` de `crates/` (squash compris), **lignes de
-    commentaire écartées** (`//`, `///`, `//!`, `--` et blocs `/* … */`, motif des gardes de l'AC-a30 ; validation P1,
-    R12), et après retrait des commentaires de bloc **dans** une ligne (`READ/**/WRITE`), aucune occurrence de
-    `(?i)\bread\W+write\b`, de `(?i)tx_read_only` **sous toutes ses formes** (`=`, `:=`, accent grave — la spike
-    interdisait le nom entier, § 4.3 (a) ; validation P2, R9 = F8) ni de `(?i)transaction_read_only`, hors des exceptions
-    **écrites** (fichier, ligne) : les tests (e) et (e bis) de l'AC-a25, la lecture `SELECT @@session.tx_read_only` de
-    `services::serveur_mcp::etat` (AC-a28), et le fichier de la garde lui-même. Témoins sur source factice : rougissent
-    `SET SESSION TRANSACTION READ WRITE`, `SET @@session.tx_read_only := 0`, ``SET SESSION `tx_read_only`=0``,
-    `READ/**/WRITE` ; ne rougit pas une ligne `/// … READ WRITE …` (fonction pure, motif d'`appels_non_handlers`).
+    `lecture_seule_jamais_defaite` ; règle commune des gardes lexicales, en tête des AC).
+    - **Propriété** : aucun texte de `crates/` (`.rs` et `.sql`, squash compris, lignes de commentaire écartées) n'émet
+      une des quatre formes de la spike § 4.1 qui défont `SET SESSION TRANSACTION READ ONLY`, hors des sites écrits en
+      liste blanche.
+    - **Formes à attraper** (témoins rouges sur source factice) : `SET SESSION TRANSACTION READ WRITE`, `START
+      TRANSACTION READ WRITE`, `SET TRANSACTION READ WRITE`, `SET SESSION tx_read_only=0`, `SET @@session.tx_read_only
+      := 0`, ``SET SESSION `tx_read_only`=0``, `READ/**/WRITE` (le commentaire de bloc est remplacé **par une espace**
+      avant l'analyse, comme le fait MariaDB), `transaction_read_only`.
+    - **Formes légitimes à ne pas attraper** (témoins verts, **existants** au dépôt — validation P3, R1 = F1) : le
+      `scope` de clé d'API `read-write` (`routes/api_keys.rs:136`, `migrations/20260605000001_api_keys.sql:34`, une
+      trentaine de tests), `use std::io::{Read, Write};` (`document_storage.rs:18`), une ligne `/// … READ WRITE …`.
+      ⚠️ Le motif `\bread\W+write\b` de la P2 rendait **53 lignes** de code et de SQL (mesuré par la P3) : il est
+      retiré.
+    - **Exemples mesurés** (au relevé de `c6523903` (code de `b723e3d9`), sur `crates`, `.rs` et `.sql`) : `(?i)\bread\s+write\b` → **0**
+      ligne ; `(?i)tx_read_only|transaction_read_only` → **0** ligne. À re-mesurer à l'étape 0.
+    - **Liste blanche** (fichier, ligne) : les tests (e), (e bis) et (f) de l'AC-a25, la lecture `SELECT
+      @@session.tx_read_only` de `services::serveur_mcp::etat` (AC-a28), le fichier de la garde.
+    - **Angle mort écrit** : une forme coupée sur deux lignes (`READ` puis `WRITE` à la ligne suivante) échappe à une
+      garde par ligne (§ *Ce que les gardes ne voient pas*).
 28. **AC-a28 — l'outil `kesh_version`** (`mcp/outils/kesh_version.rs`), portée `BooksRead`, schéma `{"type":"object",
     "properties":{},"additionalProperties":false}`, appelle `services::serveur_mcp::etat(&ContexteAcces, &Lecture)` —
     `exiger(EXIGENCE_ETAT)` d'abord (`role_api: Consultation`, `portee_mcp: Some(BooksRead)`), puis **une** requête
@@ -550,51 +606,66 @@ marqueur que le test a lui-même posé là où la donnée **serait** émise (`PI
 29. **AC-a29 — l'inventaire clos des chemins vers un outil** (§ *L'inventaire clos*, N1 à N27) est tenu par les gardes
     de l'AC-a30 et les tests nommés ; chaque site **non résolu** y est soit fermé, soit écrit comme angle mort. Aucune
     donnée réelle : fixtures de démonstration et valeurs piégées seulement ; `~/kesh-test/` jamais ouvert.
-30. **AC-a30 — gardes lexicales** (`mcp_gardes_lexicales.rs`, fonctions pures éprouvées chacune sur une source
-    factice qui doit rougir **et** sur une qui ne doit pas ; lignes de commentaire écartées ; frontières de mot,
-    validation P1, F12) :
-    - `un_seul_point_d_entree` : dans `crates/kesh-api/src`, `\bcrate::mcp\b` et `\bmcp::` (frontière de mot : ni
-      `cles_mcp::`, ni `serveur_mcp::`) hors de `src/mcp/` n'apparaissent qu'en `lib.rs` (déclaration du module,
-      `build_router_avec_registre`) et `routes/mcp.rs` ; `routes::mcp::` qu'à la ligne de route de l'AC-a1 ;
-    - `executer_appele_par_le_repartiteur_seul` : `\bexecuter\s*\(` hors des lignes `fn executer` (définition du trait
-      et implémentations) n'apparaît qu'en `mcp/repartiteur.rs` — forme méthode **et** forme qualifiée
-      (`McpTool::executer(&*outil, …)`) ; idem `\btrouver\s*\(` et `\blister\s*\(` pour le registre ;
-    - `contexte_mcp_construit_par_le_repartiteur_seul` : `ContexteMcp::nouveau(` en `mcp/repartiteur.rs` seulement ;
-    - `contexte_acces_mcp_construit_par_authentifier_seul` (validation P1, F4, N24) : `\bContexteAcces\s*::\s*mcp\b`
-      (sans exiger la parenthèse : `let f = ContexteAcces::mcp;` est vu) n'apparaît dans `crates/kesh-api/src` qu'en
-      `services/acces.rs` (définition) et `services/cles_mcp.rs` (`authentifier`) ; `use … ContexteAcces as …` et
-      `type … = …ContexteAcces` sont refusés dans `src/` (ils contourneraient le motif) (validation P2, R11 : la clause
-      « sous un `use` » ne correspondait à aucune forme Rust, retirée) ;
-    - `registre_standard_en_un_lieu` : `Registre::standard()` n'est appelé qu'en `lib.rs` ; `main.rs` n'appelle ni
-      `build_router_avec_registre` ni `Registre::` ;
-    - `mcp_sans_pool` (élargie à **tout** `src/mcp/**` et `routes/mcp.rs` — validation P2, F3) : ni `MySqlPool`, ni
-      `sqlx`, ni `AppState`, ni `.pool`, ni `kesh_db::repositories` ; et, dans `src/mcp/outils/`, en plus, ni `EtatMcp`,
-      ni `ContexteAcces::` (un outil reçoit son contexte, il ne le fabrique pas) ;
-    - `outils_et_politique_en_leur_lieu` (validation P2, F3, N27) : `impl … McpTool for` n'apparaît dans
-      `crates/kesh-api/src` qu'en `src/mcp/outils/` ; `appliquer(` et `autoriser(` de la politique ne sont appelés qu'en
-      `mcp/repartiteur.rs` ; `Donnees::nouvelles(` qu'en `src/mcp/outils/` (les outils de test vivent hors de `src/`) ;
-    - `un_seul_ecouteur` : `TcpListener::bind` en `main.rs` seulement ; `pool_lecture_seule_en_un_lieu` : dans
-      `crates/kesh-api/src`, appelé en `lib.rs` seulement (une ligne) — `tests/common/lecture_seule.rs` et
-      `crates/kesh-db/tests/pool_lecture_seule.rs` sont **hors** du périmètre balayé, ce que la garde dit (validation
-      P1, R12) ;
+30. **AC-a30 — gardes lexicales des chemins** (`mcp_gardes_lexicales.rs` ; règle commune en tête des AC). Pour chacune,
+    la **propriété**, son **périmètre** et les **formes à attraper** ; le motif exact se fixe au développement, mesuré
+    sur le dépôt réel. Témoins rouges : les formes listées ; témoins verts : une forme légitime **existante**.
+    - `un_seul_point_d_entree` — *propriété* : dans `crates/kesh-api/src`, hors de `src/mcp/`, seuls `lib.rs`
+      (déclaration du module, `build_router_avec_registre`) et `routes/mcp.rs` nomment le module `mcp` ; `routes::mcp::`
+      n'apparaît qu'à la ligne de route de l'AC-a1. *Formes* : `crate::mcp::…`, `mcp::…` en tête de chemin, `use
+      crate::mcp`, `super::mcp`. *Témoin vert* : `cles_mcp::authentifier`, `serveur_mcp::reglages_actifs` (frontière de
+      mot).
+    - `executer_appele_par_le_repartiteur_seul` — *propriété* : dans `crates/kesh-api/src`, l'appel d'`executer` d'un
+      `McpTool` et des deux points d'accès du registre (`outil_pour`, `descripteurs_pour`, AC-a21) ne se fait qu'en
+      `mcp/repartiteur.rs` ; les lignes de **définition** (`fn executer`, `fn outil_pour`, `fn descripteurs_pour`, dans
+      le trait, les `impl` et `registre.rs`) sont hors du compte. *Formes* : appel de méthode, forme qualifiée
+      (`McpTool::executer(&*o, …)`, `Registre::outil_pour(&r, …)`). *Témoin vert* : les définitions ; l'`executer` d'un
+      test existant (`tests/bank_accounts_closed_e2e.rs:1692`), hors périmètre. *Mesure* : `\b(executer|outil_pour|
+      descripteurs_pour)\s*\(` sur `crates/kesh-api/src` → 0 au relevé (validation P3, R2 : `lister` et `trouver`,
+      retenus en P1, rougissaient sur onze services).
+    - `contexte_mcp_construit_par_le_repartiteur_seul` — *propriété* : `ContexteMcp::nouveau` n'est appelé qu'en
+      `mcp/repartiteur.rs`.
+    - `contexte_acces_mcp_construit_par_authentifier_seul` (N24) — *propriété* : dans `crates/kesh-api/src`, la
+      fonction `ContexteAcces::mcp` n'est nommée qu'en `services/acces.rs` (définition) et `services/cles_mcp.rs`.
+      *Formes* : appel, référence sans parenthèse (`let f = ContexteAcces::mcp;`), alias (`use … ContexteAcces as …`,
+      `type … = …ContexteAcces`), blancs autour de `::`.
+    - `registre_standard_en_un_lieu` — *propriété* : `Registre::standard()` n'est appelé qu'en `lib.rs` ; `main.rs`
+      n'appelle ni `build_router_avec_registre` ni `Registre::`.
+    - `mcp_sans_pool` (tout `src/mcp/**` et `routes/mcp.rs` — validation P2 F3, P3 F3) — *propriété* : aucun accès à
+      un pool ni à ce qui en fabrique un. *Formes* : `MySqlPool`, `sqlx`, `AppState`, `.pool`, `kesh_db::repositories`,
+      **`kesh_db::pool`**, **`create_pool`**, **`database_url`**, **`Config`** ; et, dans `src/mcp/outils/`, en plus,
+      `EtatMcp` et `ContexteAcces::`.
+    - `outils_et_politique_en_leur_lieu` (N27) — *propriété* : `impl … McpTool for` n'apparaît dans `crates/kesh-api/src`
+      qu'en `src/mcp/outils/` ; `autoriser` et `appliquer` de la politique ne sont appelés qu'en `mcp/repartiteur.rs` ;
+      `Donnees::nouvelles` qu'en `src/mcp/outils/`. *Mesure* : `\b(autoriser|appliquer)\s*\(` sur `crates` → 0 au
+      relevé.
+    - `un_seul_ecouteur` — `TcpListener::bind` en `main.rs` seulement ; `pool_lecture_seule_en_un_lieu` — dans
+      `crates/kesh-api/src`, appelé en `lib.rs` seulement (une ligne) ; `tests/common/lecture_seule.rs` et
+      `crates/kesh-db/tests/pool_lecture_seule.rs` sont **hors** du périmètre, ce que la garde dit.
     - `donnees_construites_par_la_politique_seule` (AC-a23) ; `prompts_scelles` (AC-a24) ;
       `lecture_seule_jamais_defaite` (AC-a27) ; `reponses_par_rendre_seul` (AC-a31).
 31. **AC-a31 — une seule fonction produit les réponses de `/mcp`, à partir de types propres au MCP (validation P2,
     R2, C-32-6-33 révisé, C-32-6-37 ; N25).** `impl IntoResponse for AppError` (`errors.rs:1520`) rend le corps **de l'API**, dont
     `Validation(msg)` recopie le message (`errors.rs:1538-1540`). Plutôt qu'une garde sur les formes qui y mèneraient, la
     conception ferme la classe :
-    - toute réponse de `/mcp` sort de **`mcp::reponse::rendre(ReponseMcp) -> Response`**, où `ReponseMcp` est une
-      énumération **propre au MCP** (route absente remise au service statique, 401, 403, 405, 413, 415, 400 texte,
-      erreur JSON-RPC, `result`, 202, 500) qui ne contient **ni** `AppError` **ni** `Response` ; les deux gestionnaires
-      de `routes/mcp.rs` rendent `rendre(transport::traiter(…).await)` et rien d'autre ;
+    - toute réponse de `/mcp` sort de **`pub async fn rendre(etat: &EtatMcp, r: ReponseMcp) -> Response`**
+      (`mcp/reponse.rs`), où `ReponseMcp` est une énumération **propre au MCP** — `RouteAbsente(Request)` (la requête
+      entière, corps non lu, que `rendre` remet à `etat.statique` par `ServiceExt::oneshot` puis convertit en `Response`
+      par `.map(Body::new)`), 401, 403, 405, 413, 415, 400 texte, erreur JSON-RPC, `Outil(DonneesEnvoyables)` (JSON tiré
+      par `en_resultat`, AC-a23), `result` statique, 202, 500 — qui ne contient **ni** `AppError` **ni** `Response` ; les
+      deux gestionnaires de `routes/mcp.rs` ont pour corps **exactement** `rendre(&etat, transport::traiter(&etat, pair,
+      requete).await).await`. *Pourquoi `async` et un état* (validation P3, R4 = F4, C-32-6-39) : la réponse de route
+      absente est celle du service statique, qui ne se produit qu'en l'appelant avec la `Request` ; une `rendre`
+      synchrone et sans état ne le pouvait pas. C'est la forme la plus simple qui garde **une** sortie, la délégation
+      comprise ;
     - `transport::traiter` et le répartiteur rendent `ReponseMcp`, jamais `Result<_, AppError>` vers le framework ;
     - `AppError` n'est **convertible** que par `textes::depuis_app_error` (AC-a18) et par le `match` du résultat
       d'`authentifier` (AC-a14) ;
     - garde `reponses_par_rendre_seul` — **inventaire des sites** (non des formes) : dans `src/mcp/**` et
       `routes/mcp.rs`, les lignes de code qui contiennent `into_response`, `IntoResponse` ou `AppError` appartiennent à
-      une liste **écrite** dans le test (fichier, ligne réduite de ses blancs) : la fonction `rendre` (`reponse.rs`),
-      `depuis_app_error` (`textes.rs`), le `match` d'`authentifier` (`transport.rs`) et leurs `use` ; toute autre ligne
-      rougit. Témoin sur source factice, la forme que la P2 donnait : `match traiter(…).await { Ok(j) =>
+      une liste **écrite** dans le test (fichier, ligne réduite de ses blancs) : les lignes de `rendre` (`reponse.rs`,
+      dont la conversion de la branche statique), `depuis_app_error` (`textes.rs`), le `match` d'`authentifier`
+      (`transport.rs`) et leurs `use` ; toute autre ligne rougit ; le test `traduction_des_erreurs_de_service` vit hors
+      de `src/` (AC-a18). Témoin sur source factice, la forme que la P2 donnait : `match traiter(…).await { Ok(j) =>
       j.into_response(), Err(e) => e.into_response() }` → rouge.
     Test : pour chaque refus (route absente, 401, 403, 405, 413, 415, 400, 500), le corps est **égal** à sa constante —
     aucune réponse au format `{"error":{"code":…}}` de l'API (`build_response`, `errors.rs`).
@@ -620,9 +691,11 @@ marqueur que le test a lui-même posé là où la donnée **serait** émise (`PI
     dans `audit_log.details_json` ni `actor_label` ; chaque entrée a **exactement** les cinq clés de l'AC-b1.
 34. **AC-b3 — le journal fail closed (C-32-6-30).** Si l'écriture du journal échoue, **rien ne part** : la réponse
     devient `isError: true` à texte fixe, sans `structuredContent` ni donnée. Test `journal_indisponible_rien_ne_part` :
-    pool de l'application fermé après la construction du routeur (la `Lecture` du MCP, pool distinct dérivé par
-    `connect_lazy_with`, reste ouverte ; `touch_last_used` échoue en silence, *best-effort*) → `tools/call` de l'outil
-    piégé sous clé `exempt` rend un corps **égal** à la réponse d'erreur attendue.
+    `ALTER TABLE audit_log RENAME TO audit_log_cachee_326` par le pool ordinaire, après la construction du routeur
+    (l'authentification, sur `mcp_keys`, et l'outil, sur `accounts`, restent possibles ; seule l'écriture du journal
+    échoue — validation P3 : fermer le pool de l'application, comme l'écrivait la P1, ferait désormais échouer
+    l'authentification, qui lit sur `etat.garde`) → `tools/call` de l'outil piégé sous clé `exempt` rend un corps
+    **égal** à la réponse d'erreur attendue.
 35. **AC-b4 — ce qui n'est pas journalisé, et pourquoi** (C-32-6-24) : `initialize`, `ping`, `tools/list`,
     `prompts/*` (la 32-10a journalisera `prompts/get` quand il servira un texte), les notifications, et **les refus du
     transport, avant le répartiteur** (route absente, 401, 403, 405, 413, 415, 400 — certains après l'authentification,
@@ -648,7 +721,7 @@ contexte qui ouvrirait les services au nom d'une clé**.
 **Le seul chemin servi** : écouteur de `main.rs` → routeur de `build_router` → sous-routeur `EtatMcp` →
 `post(routes::mcp::recevoir)` → `mcp::transport` (pair → règle « servi » → méthode → `Origin` → `Content-Type` →
 `MCP-Protocol-Version` → clé → société de la clé servie et son `Origin` → corps borné → JSON-RPC) →
-`mcp::repartiteur` (méthode de la liste close → `tools/call` → `Registre::trouver(nom, portées)` → politique de la clé
+`mcp::repartiteur` (méthode de la liste close → `tools/call` → `Registre::outil_pour(nom, portées)` → `politique::autoriser`
 → `executer` sous délai → `politique::appliquer` → [32-6b : journal] → réponse).
 
 | # | Site non résolu | Comment il se ferme | Par quoi |
@@ -656,7 +729,7 @@ contexte qui ouvrirait les services au nom d'une clé**.
 | N1 | une autre route, un `nest`/`merge`, une tâche de fond (`auto_backup`), un point de test (`/api/v1/_test`) qui appellerait `crate::mcp` | aucun code hors de `src/mcp/`, `lib.rs`, `routes/mcp.rs` ne nomme `crate::mcp`/`mcp::` | garde `un_seul_point_d_entree` (AC-a30) |
 | N2 | un second écouteur (port dédié, socket) | une seule ligne `TcpListener::bind`, celle de `main.rs` | garde `un_seul_ecouteur` |
 | N3 | un appel de `executer` hors du répartiteur | `executer(` (méthode et forme qualifiée) en `mcp/repartiteur.rs` seulement | garde `executer_appele_par_le_repartiteur_seul` |
-| N4 | `trouver`/`lister` court-circuités, un outil obtenu sans filtre de portée | seuls points d'accès au registre, en `repartiteur.rs` ; `outils` privé au `Registre` | garde ; champ privé (compilateur) |
+| N4 | `outil_pour`/`descripteurs_pour` court-circuités, un outil obtenu sans filtre de portée | seuls points d'accès au registre, en `repartiteur.rs` ; `outils` privé au `Registre` | garde ; champ privé (compilateur) |
 | N5 | une méthode JSON-RPC servie hors liste (`resources/read`…) | énumération fermée, repli `-32601` | test d'inventaire (AC-a12) |
 | N6 | une **notification** `tools/call` (sans `id`) | jamais remise à un gestionnaire de requête : 202 | test au compteur (AC-a11) |
 | N7 | un **lot** dont un élément serait traité | 400 avant tout traitement | test (AC-a11) |
@@ -723,7 +796,7 @@ phrase « son bras `Required` et rien d'autre » allait au-delà de ce que la co
   (AC-a6) ; `services_motif.rs` (v-1, v-2, vi) ; `tests/common/lecture_seule.rs` (AC-a1 à AC-a6, AC-a26).
 - [ ] **T-a5** — `mcp_transport_e2e.rs`, `tests/common/mcp.rs`, gardes lexicales (AC-a14, AC-a15, AC-a17 à AC-a23,
   AC-a27, AC-a30, AC-a31).
-- [ ] **T-a6** — mutations Ma1 à Ma49, gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
+- [ ] **T-a6** — mutations Ma1 à Ma50, gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
 
 ### 32-6b
 - [ ] **T-b0** — étape 0 : 32-6a fusionnée ; recontrôle des faits 8, 9, de `audit_labels.rs` et des compteurs
@@ -745,7 +818,7 @@ diff résiduel nul vérifié ; chacune nomme le test qui doit rougir. Une mutati
 | Ma3 | `EtatMcp.lecture` sur `state.pool` (pool ordinaire) | `kesh_version_lit_en_lecture_seule` ; garde v-2 |
 | Ma4 | `EtatMcp.trace` construite sur le pool en lecture seule (site de `lib.rs`) | `l_appel_pose_la_derniere_utilisation` |
 | Ma5 | `tools/list` non filtré par les portées | `tools_list_filtre` |
-| Ma6 | `trouver` ignore la portée | `hors_portee_indiscernable` (compteur) |
+| Ma6 | `outil_pour` ignore la portée | `hors_portee_indiscernable` (compteur) |
 | Ma7 | hors portée → message distinct | `hors_portee_indiscernable` (égalité des corps) |
 | Ma8 | `Forbidden` d'un service rendu en `Interne` (ou tel quel) | `hors_portee_indiscernable` (cas service) |
 | Ma9 | filtre d'adresse retiré (tout pair admis) | `mcp_reseau_e2e` (a), (c) |
@@ -756,7 +829,7 @@ diff résiduel nul vérifié ; chacune nomme le test qui doit rougir. Une mutati
 | Ma14 | `X-Real-IP` ou `Forwarded` lu | (m) |
 | Ma15 | vérification d'`Origin` retirée | tests de l'AC-a10 (403) |
 | Ma16 | `Origin` admise si égale à `Host` | AC-a10 (`Host` forgé) |
-| Ma17 | **un PAT accepté** : une branche ajoutée dans `mcp/transport.rs` qui route un jeton `kesh_pat_` vers `auth::api_key::validate_pat` (le code d'`authentifier`, de la 32-5b, n'est pas muté ici) | `pat_refuse_a_l_endpoint` |
+| Ma17 | **un PAT accepté** : dans `services/cles_mcp.rs` (32-5b), le refus du préfixe d'`authentifier` est retiré et un jeton `kesh_pat_` est cherché dans `api_keys` par la `Lecture` (le seul site où un PAT pourrait passer : depuis la P2, `src/mcp/` ne peut nommer aucun pool, `validate_pat` exige un `&MySqlPool`, `auth/api_key.rs:153-155` — validation P3, F2) | `pat_refuse_a_l_endpoint`, dont le **témoin inverse** (même route, même requête au jeton près : une clé MCP valide passe, un PAT actif rend le 401) |
 | Ma18 | cookie de session lu | `session_refusee` |
 | Ma19 | refus d'authentification à corps distincts selon la cause | `refus_indiscernables` |
 | Ma20 | désactivé → `404` littéral (au lieu de déléguer au service statique) | `desactive_indiscernable_d_une_route_absente` |
@@ -789,11 +862,12 @@ diff résiduel nul vérifié ; chacune nomme le test qui doit rougir. Une mutati
 | Ma47 | `Validation(msg)` recopie `msg` | `traduction_des_erreurs_de_service` (égalité, `PIEGE_APP_326`) |
 | Ma48 | `EtatMcp` regagne un champ `app: AppState` (ou `pool`) | garde `mcp_sans_pool` |
 | Ma49 | `X-Real-IP` lu dans la branche mandataire | AC-a9 (m') |
+| Ma50 | `executer` appelé **avant** `autoriser` | `cle_requise_refusee_sans_execution` (compteur à 1) |
 | Mb1 | appel de `journaliser_appel` retiré | `chaque_appel_est_journalise` |
 | Mb2 | arguments recopiés au détail | `journal_sans_arguments_ni_donnees` |
 | Mb3 | nom d'outil fourni par le client écrit au journal | `journal_sans_arguments_ni_donnees` (`PIEGE_NOM_326`) |
 | Mb4 | journal *best-effort* (échec avalé, réponse envoyée) | `journal_indisponible_rien_ne_part` |
-| Mb5 | `journaliser_appel` appelé avec la `Lecture` du MCP au lieu de la `Trace` (signature élargie : site distinct de Ma4, qui mute la construction de `EtatMcp`) | `chaque_appel_est_journalise` (1792, puis fail closed) |
+| Mb5 | `journaliser_appel` appelé avec la `Lecture` des outils au lieu de la `Trace` (signature élargie : site distinct de Ma4, qui mute la construction de `EtatMcp`) | `chaque_appel_est_journalise` (1792, puis fail closed) |
 | Mb6 | un 401 journalisé en base | AC-b4 |
 
 Tests hors mutations, nommés au Dev Agent Record : `chemins_voisins` (N10), `registre_coherent`,
@@ -834,6 +908,12 @@ Tests hors mutations, nommés au Dev Agent Record : `chemins_voisins` (N10), `re
 - **`Origin` ne protège que d'un navigateur.** La vraie barrière est la clé ; `Host` n'est pas contrôlé.
 - **Indiscernable, mais pas invisible au temps de réponse** : la décision « servi » lit la base, une route absente non
   (oracle temporel, non fermé) ; une requête anonyme provoque une lecture en base (aucune limite de débit sur `/mcp`).
+- **Une inondation du réseau local** (validation P3, R9, C-32-6-38) : la règle « servi » et l'authentification lisent
+  sur `etat.garde` — la `Lecture` ordinaire, cinq connexions **réutilisées** (`main.rs:75`) — et **jamais** sur le pool
+  des outils, qui n'est emprunté qu'après l'authentification : une requête anonyme n'ouvre donc aucune connexion neuve.
+  Mais un pair admis qui inonde `/mcp` occupe ces cinq connexions comme il occuperait celles de `/api/v1/auth/login` ;
+  Kesh ralentit pour tous, et le MCP rend alors la route absente (fail closed). **Non fermé** : aucune limite de débit
+  sur `/mcp` ; soumis à Guy (point 8).
 - **La clé valide d'une société qui ne sert pas** reçoit le 401 d'une clé inconnue, mais `authentifier` a posé sa
   dernière utilisation (validation P1, F11) : la colonne `last_used_at` ne prouve donc pas qu'un appel a été **servi**.
   Fermer ce point demanderait de séparer la vérification de la clé de l'écriture de sa dernière utilisation dans la
@@ -867,9 +947,9 @@ Tests hors mutations, nommés au Dev Agent Record : `chemins_voisins` (N10), `re
 8. société de la clé ∈ S                                  non                 → 401 fixe (même corps qu'en 7)
 9. Origin (propres ∪ allowed_origins de la société)       refusée             → 403
 10. to_bytes(corps, 1 Mio), JSON-RPC                      (AC-a11)
-11. répartiteur : liste close → tools/call → trouver(nom, portées) → politique::autoriser (Required → refus, sans
-    exécution) → executer (délai du registre) → politique::appliquer → [32-6b] journaliser_appel (fail closed)
-12. reponse::rendre(ReponseMcp) → Response — seule sortie, à chaque étape
+11. répartiteur : liste close → tools/call → outil_pour(nom, portées) → politique::autoriser (Required → refus, sans
+    exécution ; premier emprunt du pool des outils après ce point seulement) → executer (délai du registre) → politique::appliquer → [32-6b] journaliser_appel (fail closed)
+12. reponse::rendre(&etat, ReponseMcp).await → Response — seule sortie, à chaque étape (route absente comprise)
 ```
 
 ### Le canal (C-32-6-31)
@@ -880,7 +960,8 @@ let statique = service_statique(&static_dir);              // même fonction que
 let mcp = Router::<mcp::EtatMcp>::new()
     .route("/mcp", post(routes::mcp::recevoir).fallback(routes::mcp::autre_methode))
     .with_state(mcp::EtatMcp {
-        config: state.config.clone(),                        // Arc<Config> : port, public_base_url — pas d'AppState
+        origines_propres: mcp::origines_propres(state.config.port, state.config.public_base_url.as_deref()), // pas de Config entier
+        garde: state.lecture(),                              // Lecture ordinaire : règle « servi », authentification
         lecture: services::poignees::Lecture::new(kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS)),
         trace: state.trace(),
         registre: Arc::new(registre),                        // porte le délai d'outil (une seule source)
@@ -913,7 +994,7 @@ crates/kesh-api/src/mcp/
   repartiteur.rs  — liste close des méthodes, seul appelant de `executer`, construit `ContexteMcp`
   politique.rs    — `Donnees`, `Autorisation`, `DonneesEnvoyables` (champs privés), `autoriser(validation)`,
                     `appliquer(Autorisation, Donnees)`
-  registre.rs     — `Registre::{standard, vide}`, méthodes `avec`, `avec_delai`, `delai`, `trouver`, `lister`
+  registre.rs     — `Registre::{standard, vide}`, méthodes `avec`, `avec_delai`, `delai`, `outil_pour`, `descripteurs_pour`
   outil.rs        — `McpTool`, `ContexteMcp` (`pub(super) fn nouveau`), `ErreurOutil`, `arguments::<T>()`
   prompts.rs      — `McpPrompt` scellé, catalogue vide
   textes.rs       — toutes les chaînes envoyées au client (constantes) ; `depuis_app_error`
@@ -939,6 +1020,7 @@ pub struct Autorisation { _prive: () }                 // seul `autoriser` le fa
 pub struct DonneesEnvoyables { donnees: Donnees }
 pub(crate) fn autoriser(validation: SendValidation) -> Result<Autorisation, Refus> { /* Required → Err, Exempt → Ok */ }
 pub(crate) fn appliquer(_: Autorisation, d: Donnees) -> DonneesEnvoyables { /* construit la réponse, rien d'autre */ }
+impl DonneesEnvoyables { pub(in crate::mcp) fn en_resultat(self) -> serde_json::Value { /* content + structuredContent */ } }
 ```
 
 ⚠️ Le futur boxé rend le trait compatible `dyn` sans `async-trait` (spike § 5.3.2, note). ⚠️ Un type défini dans
@@ -978,7 +1060,9 @@ production (aucun), pour que l'API et le MCP lisent la même chose (demande 3 à
 `middleware/csp.rs:52-60` ; `main.rs:74-78` (pool sans `after_connect`), `:355`, `:385`, `:397-400` (`connect_info`) ;
 `lib.rs:56` (`AppState.pool` public) ; `errors.rs:139-1182` (l'énumération), `:153`, `:165`, `:170`, `:1520`,
 `:1538-1540` ; `kesh-db/src/errors.rs:575` (`DbError::NotFound`) ; `services/ecritures.rs:241`, `services/carnet.rs:135` ;
-`tests/common/capture_rejeu.rs:10`, `:85` ; `axum-0.8.9/src/routing/mod.rs:252-254`, `:408` ;
+`tests/common/capture_rejeu.rs:10`, `:34-64`, `:85` ; `config.rs:179`, `:193` ; `auth/api_key.rs:153-155` ; `main.rs:75` ;
+`routes/api_keys.rs:136`, `migrations/20260605000001_api_keys.sql:34`, `document_storage.rs:18` (témoins verts de
+l'AC-a27) ; `tests/services_rollout.rs:60`, `:519` ; `axum-0.8.9/src/routing/mod.rs:252-254`, `:408` ;
 `sqlx-core-0.8.6/src/pool/options.rs:492`, `pool/connection.rs:289-296` ; `kesh-db/src/pool.rs:28-49` ; `repositories/mcp_server_settings.rs:40-46` (`decode_list`),
 `:69-79`, `:83-90` ; `services/poignees.rs:21-33`, `:38-52` ; `services/acces.rs:23-33` (`Portee`), `:84-90` (`mcp`),
 `:113-123` (`exiger`) ; `services/mod.rs:207` ; `services/rapports.rs:347` ; `tests/common/lecture_seule.rs:17-32` ;
@@ -1012,7 +1096,8 @@ production (aucun), pour que l'API et le MCP lisent la même chose (demande 3 à
 
 - **Ce que la 32-6 dit au manuel : rien.** Aucune ligne des manuels ne décrit `/mcp` (fait 12). Elle **vérifie**
   qu'aucun texte ne devient faux : `docs/api-external.md:183` (borné à « v0.2 ») et `:829` (« Hors périmètre … serveur
-  MCP Kesh-natif », non borné, à la 32-11 avant la release), `admin-manual.tex:2925`, la brochure
+  MCP Kesh-natif », borné lui aussi à la v0.2 par sa parenthèse « non planifié pour v0.2 » — validation P3, R11 ; tous
+  deux trompeurs à la release, à la 32-11), `admin-manual.tex:2925`, la brochure
   (`marketing-brochure.tex:480`) — tous à la 32-11 ; les passages de la 32-5 (`admin-manual.tex:2230`, `:2237`,
   `user-manual.tex:3028-3030`) restent vrais. Contrôle : `grep -n "MCP" docs/manual/fr/*.tex docs/api-external.md` et le
   PDF aplati (`pdftotext … - | tr '\n' ' ' | tr -s ' ' | grep -oiE ".{60}MCP.{80}"`), sorties citées au Dev Agent Record.
@@ -1031,7 +1116,10 @@ production (aucun), pour que l'API et le MCP lisent la même chose (demande 3 à
   que les gardes ne voient pas*) ; un `KESH_PUBLIC_BASE_URL` invalide supprime **en silence** (avertissement au seul
   journal du serveur) l'origine propre qui en viendrait (AC-a10) ; une ligne de réglages illisible fait paraître la
   société **désactivée** (AC-a2) ; toute requête anonyme vers `/mcp` lit la base, sans limite de débit (validation P2,
-  R13).
+  R13) ; `Forwarded` et `X-Real-IP` sont **toujours ignorés** — derrière un mandataire qui ne pose que `X-Real-IP`, le
+  client vu est le mandataire ; `Content-Type: application/json` est exigé (415) et une `MCP-Protocol-Version` autre
+  que `2025-11-25`/`2025-06-18` est refusée (400) — un client mal configuré le verra ; chaque appel d'outil ouvre une
+  connexion MariaDB neuve (AC-a25) (validation P3, R12).
 - **Deux textes publics qu'une clé `dispensée` rend faux, à la 32-7 ou à la 32-11** (validation P2, R13 ;
   l'orchestrateur l'inscrit aussi au registre de l'epic) : `README.md:233` (« les données **montrées à l'utilisateur
   avant de partir à l'agent** ») et `website/roadmap.html:375` (« the data shown to the user before it is sent to the
@@ -1085,6 +1173,11 @@ boucle de revue* et son exception `kesh-db`, *Recompter*, *Recette visuelle*) ; 
 6. **D'ici la 32-8, une clé `required` (le défaut) ne peut appeler aucun outil** — seules les métadonnées passent. Pour
    éprouver la 32-6, il faudra une clé `dispensée` (le seul outil, `kesh_version`, ne rend aucune donnée des livres).
 7. **Hypothèses héritées** Q3, Q5, Q7 — inchangées.
+8. **Une inondation du réseau local** (validation P3, R9, C-32-6-38) : j'ai fait passer la règle « servi » et
+   l'authentification sur la connexion ordinaire de Kesh, réutilisée, avant tout emprunt du pool des outils — une
+   requête anonyme n'ouvre donc aucune connexion neuve. Reste qu'un poste du réseau local qui inonderait `/mcp`
+   ralentirait Kesh pour tous, comme il le peut déjà par la page de connexion ; aucune limite de débit n'est posée.
+   Faut-il en poser une (par adresse, comme celle du login), ou l'accepter pour un serveur qui n'est pas exposé ?
 
 ## À recontrôler à l'étape 0 du développement
 
@@ -1115,9 +1208,10 @@ Ligne lue citée au Change Log pour chacun :
   validation d'arguments (`isError` ou `-32602`, AC-a19).
 - **Le comportement de MariaDB 1146** : une requête sur une table renommée nomme la table **demandée** (raisonné en
   validation P1, R3, non exécuté) — sans incidence sur les tests, qui comparent le corps entier à sa constante.
-- **La capture de `tracing` dans les tests** existe (`tests/common/capture_rejeu.rs:10`, `:85`, validation P2, F10) :
-  l'AC-a14 l'emploie (`jeton_jamais_journalise`) ; vérifier à T-a0 qu'elle s'emploie hors de son fichier d'origine
-  (abonné par fil, `set_default`) ou la déplacer en connaissance de cause.
+- **La capture de `tracing`** : `tests/common/capture_rejeu.rs` ne retient que le champ `operation` des `WARN`/`ERROR`
+  de cible `kesh_db::retry` (`:34-64`) — la 32-6a écrit une **couche générique** (`tests/common/capture_trace.rs`),
+  reprend seulement le montage par fil (`set_default`, `:10`, `:85`), et son test porte un **témoin** (AC-a14 ;
+  validation P3, R3).
 - **`touch_last_used` de la clé MCP, *best-effort* et sur la `Trace`** (32-5b, AC-b3 ; spike § 6) : l'AC-a26 (ii) et
   l'AC-b3 en dépendent (validation P2, F15) — à constater au code de la 32-5b.
 - **Les noms des variantes « hors liste »** de l'AC-a18 (`FiscalYearClosed`, `AccountNotFound`, `RateLimited`,
@@ -1144,3 +1238,4 @@ Ligne lue citée au Change Log pour chacun :
 | 2026-10-25 | création | Fiche rédigée en autonomie (Opus 5.5) contre `b723e3d9` ; registre C-32-6-1 à C-32-6-30 ; découpage en 32-6a / 32-6b (six modules distincts sans découpage) ; prompt de validation P1 `326-validate-prompt-p1.md` (Sonnet, lentilles R et F). |
 | 2026-10-25 | validation P1 | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `326-validate-prompt-p1.md` ; rapports `kesh-gate-logs/326-validate-p1-{R,F}.md`) : R 0/0/3/14, F 0/0/8/8 ⇒ **trend P1 : 0 CRITICAL / 0 HIGH / 11 MEDIUM / 22 LOW** (doublons R1 = F1, R2 = F8, R4 = F9, R6 = F3, R8 ⊂ F7, R13 ⊂ F15 comptés une fois par lentille). **Prémisse R1 = F1 vérifiée par l'orchestrateur** (`connect_info.rs:153`, aucun `OptionalFromRequestParts`). **MEDIUM remédiés** : R1 = F1 → `Result<ConnectInfo<_>, ExtensionRejection>` (AC-a7, Ma31) ; R2 = F8 → détecteur du registre étendu à `fallback(`, avec témoins sur source factice (AC-a6, C-32-6-32, Ma43) ; R3 → tout test de non-fuite compare le corps **entier** à sa constante (principe en tête des AC ; AC-a2, a14, a19, a20) ; F2 → aucun extracteur de corps, `Request` dernier, remise entière au service statique, test du corps de 3 Mio (AC-a1, a3, a11, Ma32, Ma39) ; F3 = R6 → **sous-routeur à état propre `EtatMcp`**, aucun champ d'`AppState` ni `Extension` (AC-a1, C-32-6-31, Dev Notes *Le canal*) ; F4 → N24, garde `contexte_acces_mcp_construit_par_authentifier_seul` (Ma40) ; F5 → N25, AC-a31, garde `mcp_ne_rend_jamais_une_app_error` (Ma41) ; F6 → `Donnees` et `DonneesEnvoyables` en `politique.rs`, sans `Serialize`/`Default`/`Debug`, garde élargie (AC-a23, C-32-6-15 révisé, Ma42) ; F7 → `Exempt("issue #723 …")` en 32-6a puis `Traced` en 32-6b, compteurs littéraux nommés, `audit_route_registry.rs` aux fichiers de la 32-6b (AC-a6, AC-b6). **Écart à F7** : le rejeu reste `SansEcritureAuJournal` (la colonne parle du journal comptable ; précédent `backup_schedule::update_backup_schedule`, `audit_route_registry.rs:326`). **LOW remédiés** : R4 = F9 (normalisation des deux côtés, Ma44), R5 (lignes d'`acces.rs`), R7 (version absente notée), R8 (dans F7), R9 (runtime Tokio), R10 (manuel : marque « clé API », `api-external.md:829`), R11 (R5 de la 32-5a à l'étape 0, avertissements dédupliqués), R12 (commentaires écartés, périmètre des gardes, mutations Ma31–Ma39), R13 (entrées `X-Forwarded-For` normalisées, non-ASCII, tests (p)–(r)), R14 (« par construction » retiré de C-32-6-2), R15 (traduction complète `AppError` → `ErreurOutil`, `match` exhaustif, AC-a18), R16 (note pour la 32-9 : `Trace` des rapports), R17 (dans F7) ; F10 (`public_base_url` invalide), F11 (clé d'une société qui ne sert pas → 401 fixe, C-32-6-3 révisé ; dernière utilisation en angle mort), F12 (frontières de mot, forme qualifiée, `ContexteMcp::nouveau` en `pub(super)`), F13 (tests `chaque_appel_est_journalise` et `tools_list_filtre` définis ; N26 panic et abandon), F14 (mutations Ma31–Ma39 ; Ma17 localisée ; Mb5 distinguée), F16 (ligne de réglages corrompue écartée). **F15 = R13 (garde derrière Traefik)** : proposée à Guy (point 2 bis), non imposée. **Décomptes après remédiation** (recomptés par `grep` sur la fiche) : **37 AC** (31 / 6), 11 tâches, **50 mutations** (44 / 6), registre C-32-6-1 à **34** ; modules : 32-6a **4** (inchangée), 32-6b **5** (`routes` entre par `audit_route_registry.rs`) — plafond tenu, pas de nouveau découpage ; six distincts, neuf en somme. Prompt de la passe suivante : `326-validate-prompt-p2.md` (Opus, R et F). |
 | 2026-10-25 | validation P2 | **Opus ×2** (lentilles R et F, contexte frais, prompt `326-validate-prompt-p2.md` ; rapports `kesh-gate-logs/326-validate-p2-{R,F}.md`) : R 0/0/4/12, F 0/0/5/11 ⇒ **trend P1 0/0/11/22 → P2 0/0/9/23** (doublons R1 = F1, R3 = F4, R5 = F6, R6 ⊂ F5, R9 = F8, R10 = F7, R12 = F11 comptés une fois par lentille). ⚠️ **Recyclage déclaré** : **sept des neuf MEDIUM sont nés de la remédiation P1** (R1 = F1 par R15, R2 par F5, R3 = F4 par R2 = F8, F3 par C-32-6-31, F5 par la non-propagation au registre) ; deux sont d'origine (R4, et F2, que la P1 a rendu plus net). Sévérité égale (MEDIUM → MEDIUM) **par recyclage** : c'est le signal de découpage de `CLAUDE.md` (amendement D5) — **déclaré au Project Lead** ; consigne de l'orchestrateur appliquée en réponse : **la conception la plus simple qui ferme la classe, plutôt qu'une garde de plus**. **MEDIUM remédiés** : R1 = F1 → liste blanche courte et écrite (`Forbidden`, `Database(DbError::NotFound)`, `Validation(_)`), tout le reste en erreur interne fixe, exigence « sans `_` » retirée, test sur les bras et sur des variantes hors liste de plusieurs familles (AC-a18, C-32-6-33 annoté, Ma46, Ma47) ; R2 → **sortie unique** `reponse::rendre(ReponseMcp)`, énumération propre au MCP, `AppError` convertie en deux sites seulement, garde d'inventaire des sites (AC-a31, C-32-6-37, Ma41) ; F2 → `politique::autoriser` **avant** l'exécution, jeton `Autorisation`, `appliquer` ne fait que construire, phrase sur la 32-8 corrigée (AC-a15, frontière, C-32-6-36, Ma23, Ma23b) ; F3 → `AppState` retiré d'`EtatMcp` (`config: Arc<Config>`), garde `mcp_sans_pool` sur tout `src/mcp/`, N27 (sites de la politique et des `impl McpTool`) (AC-a1, AC-a30, C-32-6-31 annoté, Ma48) ; R3 = F4 → **tout** `fallback(` extrait, argument non `routes::` à l'inventaire des non-résolus moins une liste écrite `ServeFile::new(` (AC-a6, C-32-6-32 annoté, Ma45) ; R4 → **`after_release` qui ferme toute connexion à sa restitution**, `before_acquire` retiré, test (e bis) de la forme 2 (AC-a25, C-32-6-35, Ma2) ; F5 = R6 → C-32-6-1, 3 et 8 **annotés** et datés, sans réécriture. **LOW remédiés** : R5 = F6 (renvoi AC-a14), R7 (huit constructions), R8 = F10 (avertissement en `debug!`, sans état ; capture de `tracing` existante, test `jeton_jamais_journalise`), R9 = F8 (nom `tx_read_only` interdit en entier, commentaires de bloc, témoins `:=` et accent grave), R10 = F7 (rognage, témoin discriminant), R11 (motif `ContexteAcces\s*::\s*mcp`, `type … =` refusé), R12 = F11 (délai dans le registre seul), R13 (`README.md:233`, `website/roadmap.html:375`, trois comportements, pour la 32-7 ou la 32-11), R14 (dérogations R1/R2/R7 écrites, `services/mod.rs` à la 32-6b), R15 (pas de `Debug` : note pour la 32-9 ; phrase sur la 32-8), R16 (`Content-Type` des témoins 401, ordre de l'AC-a2, ligne corrompue `[1]`), F9 (Ma31 avec une ligne active, (m') et Ma49), F12 (3 Mio par `oneshot`), F13 (motif de l'AC-b4), F14 (outil introuvable, `tests/common/mcp.rs` à la 32-6b), F15 (`touch_last_used` à l'étape 0 ; oracle temporel du 401 écrit), F16 (point 2 bis complété ; matrice portée × outil attribuée à la 32-9a). **Décomptes** (recomptés par `grep` sur la fiche) : 37 AC (31 / 6), 11 tâches, **55 mutations** (49 / 6), registre C-32-6-1 à **37** ; modules inchangés : 32-6a **4**, 32-6b **5**, six distincts, neuf en somme — pas de nouveau découpage. Prompt de la passe suivante : `326-validate-prompt-p3.md` (Sonnet, R et F). |
+| 2026-10-25 | validation P3 | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `326-validate-prompt-p3.md` ; rapports `kesh-gate-logs/326-validate-p3-{R,F}.md`) : R 0/0/4/9, F 0/0/3/4 ⇒ **trend P1 0/0/11/22 → P2 0/0/9/23 → P3 0/0/7/13** (doublons R1 = F1, R8 ⊂ F3, R4 ⊂ F4 comptés une fois par lentille). ⚠️ **Recyclage déclaré** : **les sept MEDIUM sont nés d'une remédiation** — R1 = F1 (le motif `read\W+write` de la P2, 53 lignes au dépôt), R2 (les motifs `lister(`/`trouver(` de la P1), R3 (la « capture qui existe déjà » de la P2), R4 (la `rendre` synchrone de la P2), F2 (Ma17 sans mutant depuis la P2), F3 (le `Config` entier laissé par la P2). Motif dominant : **des gardes et des tests écrits dans la fiche sans être confrontés au dépôt réel**. Décision de l'orchestrateur appliquée : une **règle commune des gardes lexicales** en tête des AC (propriété, périmètre et formes ; motif greppé sur le dépôt réel à l'étape 0, vide hors liste blanche ; un témoin rouge et un témoin vert existant ; sorties citées) ; les motifs ne restent qu'à titre d'exemples **mesurés**. **MEDIUM remédiés** : R1 = F1 → AC-a27 réécrit en propriété et formes, témoins verts existants (`read-write`, `use std::io::{Read, Write}`), exemple mesuré `\bread\s+write\b` (0 ligne) ; R2 → points d'accès du registre renommés `outil_pour` / `descripteurs_pour` (0 occurrence au dépôt), AC-a30 réécrit ; R3 → couche de capture **générique** neuve (`tests/common/capture_trace.rs`), témoin `PIEGE_TRACE_326` exigé ; R4 = F4 → `async fn rendre(&EtatMcp, ReponseMcp)`, `RouteAbsente(Request)`, `DonneesEnvoyables::en_resultat` (C-32-6-39) ; F2 → Ma17 visé sur le refus du préfixe d'`authentifier` (`services/cles_mcp.rs`), test inverse au même test ; F3 = R8 → `EtatMcp.origines_propres` au lieu de `Config`, `mcp_sans_pool` étendue à `kesh_db::pool`, `create_pool`, `database_url`, `Config`. **R9** (une connexion par requête anonyme) → la règle « servi » et l'authentification lisent sur `etat.garde`, la `Lecture` ordinaire réutilisée, avant tout emprunt du pool des outils (C-32-6-38) ; l'inondation du réseau local reste un angle mort, soumis à Guy (point 8) ; le test fail closed du journal (AC-b3) passe en conséquence par une table `audit_log` renommée. **LOW remédiés** : R5 (Ma23 : les tests qu'elle rougit), R6 (`Autorisation` à la garde de dérivations, ni `Clone` ni `Copy` ; Ma50 « `executer` avant `autoriser` »), R7 (C-32-6-6 annoté), R10 (`traduction_des_erreurs_de_service` dans `tests/mcp_traduction.rs`), R11 (`api-external.md:829` borné à la v0.2), R12 (trois comportements de plus pour la 32-7), R13 (`services_rollout.rs:60`, `:519`), F5 (test (f) : `KILL` pendant un emprunt), F6 (cas (p) et (p') qui distinguent première et dernière ligne), F7 (`extract_counted` sur `lib.rs` lignes de commentaire retirées). **Décomptes** (recomptés par `grep` sur la fiche) : 37 AC (31 / 6), 11 tâches, **56 mutations** (50 / 6), registre C-32-6-1 à **39** ; modules inchangés : 32-6a **4**, 32-6b **5**, six distincts, neuf en somme. **3 passes sur 8.** Prompt de la passe suivante : `326-validate-prompt-p4.md` (Opus, R et F, chaque motif encore écrit greppé sur le dépôt réel). |
