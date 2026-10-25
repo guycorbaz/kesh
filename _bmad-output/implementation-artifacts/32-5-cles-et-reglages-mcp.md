@@ -1307,4 +1307,51 @@ bornes) : `mcp_keys_repository.rs` 0 → 21, `entities/mcp_key.rs` 0 → 7, `ent
   verte) — **après une première commande refusée**, montage repris en commandes séparées sans suppression ; mutations
   **10/10 tuées**. 30 tests neufs, 28 fichiers hors artefacts (périmètre `deb3b250..e548574c`). Clé
   `32-5a-tables-et-sauvegarde-mcp` à `review`. Revue P1 à lancer : `325a-review-prompt-p1.md` (Sonnet, B, E, A).
+- **2026-10-25 — Revue de code P1 de la 32-5a** (passe complète, trois lentilles en contexte frais, **Sonnet** ×3 :
+  B, E, A ; rapports `kesh-gate-logs/325a-review-p1-{B,E,A}.md`). **Trend : B 0/0/0/4, E 0/0/1/4, A 0/0/0/3 —
+  1 MEDIUM, 11 LOW.** Convergents : B1 = E4, B2 ≈ E1 (la moitié « une ligne illisible fait échouer la liste »).
+  Remédiation (Opus 5.5), commits `24f80e91` (code), `034d2a3b` (PDF, registre, fiche), `a5cc29c4` (doc-comment) :
+  - **E1 (MEDIUM), décision de l'orchestrateur, C-32-5-37** : la lecture tolère une portée inconnue —
+    `StoredMcpScopes` (connues gardées, le reste mis de côté), journalisée par `tracing::warn!` avec l'id de la clé,
+    jamais le condensat ; `list_by_company`, `find_by_id_for_company` et `create_in_tx` lisent une ligne brute ;
+    `find_active_auth_by_key_hash` rend `None` pour une clé sans portée connue, et `McpKeyAuthRow.scopes` reste un
+    `McpScopes` non vide — **le type et le dépôt suffisent**, rien n'est reporté à la 32-5b hors une note (§ *Pour la
+    32-5b*). L'`impl Decode for McpScopes` est retirée ; l'écriture et l'entrée d'API restent strictes (Ma3 vraie).
+    Deux tests (connues gardées et clé saine listée à côté ; clé sans portée connue listée, relue, révoquée, jamais
+    authentifiée — inconnue seule et `[1, null]`), deux tests unitaires de `StoredMcpScopes`.
+  - **LOW traités** : B2 (l'en-tête « tableau trié » de la migration ne se corrige pas, P8 : dit au registre ; l'autre
+    moitié fermée par E1) ; B4 (RESTRICT des FK `fk_mcp_keys_company` et `fk_mcp_server_settings_company` à la
+    suppression, sur des sociétés dont la ligne testée est la seule référence ; assertions « pas du json » resserrées
+    sur le nom de la contrainte implicite) ; E2 (manuel : la restauration rétablit l'état des clés, une clé révoquée
+    depuis redevient active, une clé créée depuis disparaît ; le test d'aller-retour révoque la clé active et en crée
+    une après l'export, au lieu de la supprimer) ; E5 (ordre de `list_by_company` ; frontière d'expiration à ±1 s /
+    +1 min) ; A1 (« 7 neufs » → 6, par annotation datée) ; A2 (renvoi au paragraphe *Compatibilité*, `§7.10` au PDF) ;
+    A3 (« ou dont une forme normalisée serait trop longue »).
+  - **LOW reportés** à la 32-5c (§ *Pour la 32-5c*) : B1 = E4 (blancs Unicode du nom), B3 (`CHECK` de version, une
+    migration de plus), E3 (justifications `Durable` sans le marqueur).
+  - **Propagation** : `strict`, `jamais ignorée`, `fails_to_decode` grepés sur le code, les tests et le manuel → le
+    doc-comment du module `mcp_key.rs` disait encore la lecture stricte : corrigé (`a5cc29c4`) ; les autres occurrences
+    parlent de l'entrée d'API, de `send_validation` ou d'autres sujets.
+  - **Mutations de la remédiation** (`325a-p1r-mutations.log`) : **5 jouées, 5 tuées** — Mp1 (lecture redevenue
+    stricte) → `a_stored_unknown_scope_is_ignored_and_the_known_ones_remain` ; Mp2 (clé sans portée connue qui
+    authentifie, portée inventée) → `a_key_without_any_known_scope_is_listed_and_revocable_but_never_authenticates` ;
+    Mp3 (`id ASC`) et Mp4 (`created_at ASC`) → `list_by_company_orders_by_creation_then_id_descending` ; Mp5
+    (tolérance `- INTERVAL 1 HOUR`) → `auth_lookup_expiry_boundary`. **Déclarées non écrivables ou non jouées** :
+    « portée inconnue acceptée telle quelle » (`McpScope` est un `enum` clos, `McpKeyAuthRow.scopes` un `McpScopes`) ;
+    `>` → `>=` à l'expiration (il faudrait une clé qui expire exactement à `NOW(3)`) ; les RESTRICT (le schéma ne se
+    mute pas, P8).
+  - **Gates** : ciblé 38/38 (`325a-p1r-cible.log`), clippy `-D warnings` vert ; **gate complet au dernier commit de code
+    (`a5cc29c4`)**, `kesh_325` remise à zéro juste avant : **4051 réussis, 7 ignorés**
+    (`325a-p1r-gate-complet-final.log` ; le même résultat sur `034d2a3b`, `325a-p1r-gate-complet.log`) ; **E2E complet**
+    à `a5cc29c4`, dossier neuf `/tmp/kesh-e2e-325a-p1r/`, `kesh_e2e_325` reconstruite : **314 passés, 8 échecs,
+    17 ignorés** — les 7 KF-029 et `sidebar-navigation.spec.ts:75` (KF-052), rejouée seule : 1 passé
+    (`325a-p1r-e2e.log`, `325a-p1r-e2e-rejeu-sidebar.log`). ⚠️ Un premier backend avait démarré sur un binaire antérieur,
+    pendant que la reconstruction attendait le verrou (tenu par l'E2E d'un autre agent) : arrêté par son PID, base E2E
+    reconstruite, backend relancé sur le binaire neuf avant la suite. PDF du manuel d'administration régénéré et contrôlé
+    aplati. Frontend non touché, non rejoué.
+  - **Décomptes** (périmètre `e548574c..a5cc29c4`) : 7 fichiers hors artefacts ; tests `mcp_keys_repository.rs` 21 → 24,
+    `entities/mcp_key.rs` 7 → 9, `admin_backup_e2e.rs` 4 → 4 ; **+5 nets**, soit 4046 → 4051 au gate.
+  - Choix C-32-5-37 ; registre jusqu'à C-32-5-37. La remédiation touche du code de production
+    (`repositories/mcp_keys.rs`, `entities/mcp_key.rs`) : passe suivante **ciblée** (P2, regression hunter, **Opus**,
+    `325a-review-prompt-p2.md`, commits `24f80e91`, `034d2a3b`, `a5cc29c4`).
 
