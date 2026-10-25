@@ -481,6 +481,10 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : `any(…)`, qui retire `Allow` (`skip_allow_header`) mais garde le `content-length` du « top level » ; une
   couche qui retirerait les en-têtes ajoutés (une garde de plus, fragile à la version d'Axum).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, étape 0 de la 32-6a — P7-H2 : le *Contexte* vaut pour `post(…)` et `.fallback(…)` ; `any` et
+  `any_service` n'ajoutent pas `Allow` (`skip_allow_header`, `method_routing.rs:514`, `:436`), comme le dit la ligne
+  « Écartées ». Constaté au développement : les deux formes de Ma20b sont tuées par le `content-length: 0` qu'ajoute le
+  « top level » à la 405 d'un `POST` (journaux `326a-mut-Ma20b-i.log`, `-ii.log`).)*
 
 ### C-32-6-41 — La lecture des outils a un type propre, `LectureOutils` (validation P4, F2 = R1)
 
@@ -494,3 +498,99 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   garde) ; ne remettre au répartiteur que `(&Registre, &LectureOutils, &Trace)` (même effet, plus de signatures).
 - **Angle mort** : un accesseur public ajouté à `LectureOutils` — la revue.
 - **Réversible** : oui.
+
+## Choix du développement de la 32-6a (2026-10-25, Opus 5.5, en autonomie)
+
+### C-32-6-42 — Une erreur JSON-RPC qu'on ne peut rattacher à une requête est rendue **sans `id`**
+
+- **Contexte** : la fiche retenait `"id": null` (JSON-RPC 2.0 § 5), à recontrôler contre le schéma `2025-11-25`
+  (validation P4, R8). Relevé à l'étape 0 : `schema/2025-11-25/schema.ts` déclare `interface JSONRPCErrorResponse {
+  jsonrpc; id?: RequestId; error: Error }` et `type RequestId = string | number` — `id` facultatif, **jamais** `null`.
+- **Retenu** : les corps fixes (`TEXTE_NON_AUTHENTIFIE`, `TEXTE_ORIGINE_REFUSEE`, `CORPS_ERREUR_INTERNE`,
+  `CORPS_JSON_INVALIDE`, `CORPS_REQUETE_INVALIDE`) n'ont pas d'`id` ; le test `aucun_refus_au_format_de_l_api` le fige.
+- **Écartée** : `"id": null`, qu'un client qui valide les messages contre le schéma de la révision servie refuserait.
+- **Réversible** : oui (cinq constantes).
+
+### C-32-6-43 — Les tests de transport passent par `oneshot`, un seul sur le fil
+
+- **Contexte** : la fiche prévoyait `mcp_transport_e2e.rs` « par HTTP réel, motif `spawn_app` », sauf l'AC-a3. Or hyper
+  ajoute sur le fil un `content-length: 0` à une réponse vide (validation P6, H4), si bien qu'une comparaison sur le
+  fil masque ce qui distingue `/mcp` d'une route absente ; et `MockConnectInfo` ne se pose que sur le routeur.
+- **Retenu** : tout `mcp_transport_e2e.rs` et `mcp_reseau_e2e.rs` par `oneshot`, sur le routeur de production
+  (`build_router_avec_registre`) ; **un** test, `par_le_fil_connect_info_reel`, sur une vraie connexion
+  (`into_make_service_with_connect_info`, comme `main.rs`), pour l'extracteur réel.
+- **Réversible** : oui.
+
+### C-32-6-44 — La règle d'une origine est factorisée en `util::origine_canonique`
+
+- **Contexte** : l'AC-a10 veut la **même** normalisation de l'`Origin` reçue et des origines stockées ; la 32-5c écrit
+  les secondes par `routes::mcp_server_settings::canonical_origin`. Le module `mcp` ne peut pas nommer `routes::…` hors
+  de `routes/mcp.rs`, ni recevoir une `AppError` (garde `reponses_par_rendre_seul`).
+- **Retenu** : la règle pure (`Option<String>`) en `util.rs` ; `canonical_origin` l'appelle et garde son message
+  traduit ; `mcp::reseau` l'appelle des deux côtés (DRY).
+- **Réversible** : oui.
+
+### C-32-6-45 — `http-body-util` en dépendance normale
+
+- **Contexte** : distinguer le dépassement de `MCP_CORPS_MAX` (413) d'un flux interrompu (400) exige
+  `http_body_util::LengthLimitError` dans la chaîne des causes (`axum-0.8.9/src/body/mod.rs:30-48`, doc d'`to_bytes`).
+- **Retenu** : `http-body-util = "0.1"` en dépendance normale de `kesh-api` (déjà au `Cargo.lock`, 0.1.3, et aux
+  dépendances de test) ; aucun paquet neuf.
+- **Réversible** : oui.
+
+### C-32-6-46 — `Donnees::nouvelles(texte, structure)`, et une variante `ErreurOutil::Inconnu`
+
+- **Contexte** : l'esquisse donnait `Donnees::nouvelles(resume, contenu, structure)` et `ErreurOutil { ArgumentsInvalides,
+  Introuvable, Interne }`, « indicative dans la forme ». La révision `2025-11-25` veut qu'un résultat structuré soit aussi
+  sérialisé dans un bloc de texte (`server/tools`, *Structured Content*).
+- **Retenu** : `Donnees` porte un texte et un contenu structuré facultatif ; `en_resultat` rend `content` (un bloc
+  texte), `structuredContent` s'il y en a, `isError: false`. `ErreurOutil::Inconnu` porte le `Forbidden` d'un service
+  (AC-a18), rendu `-32602` `TEXTE_OUTIL_INCONNU` comme un outil inconnu ; les trois autres variantes rendent
+  `isError: true` à texte fixe.
+- **Pour la 32-8** : la représentation source à montrer (M-2 de la spike) est le texte ou la structure, lus en
+  `politique.rs`.
+- **Réversible** : oui.
+
+### C-32-6-47 — Codes et textes des refus
+
+- **Retenu** : 401 → code `-32001`, 403 → `-32003`, 500 → `-32603`, corps JSON-RPC sans `id` ; 415, 400 de version et
+  de corps, 413 → `text/plain` à texte fixe ; 405 → corps vide, `Allow: POST` ; message de type réponse, lot, `jsonrpc`,
+  `method` ou `id` invalides → 400 `CORPS_REQUETE_INVALIDE` (`-32600`) ; JSON illisible → 400 `CORPS_JSON_INVALIDE`
+  (`-32700`). Textes en français (le lecteur est un agent que Guy fait travailler en français). Plusieurs lignes
+  `Origin` → refus ; plusieurs lignes `Authorization` → 401 ; `MCP-Protocol-Version` non ASCII → 400.
+- **Écartées** : `-32600` pour le 401 (code d'un message mal formé, non d'un refus d'accès).
+- **Réversible** : oui (constantes de `mcp/textes.rs`).
+
+### C-32-6-48 — Toute notification est acceptée (202), quelle que soit sa méthode
+
+- **Contexte** : l'AC-a12 dit « notifications acceptées : toute `notifications/*` » ; l'AC-a11 « notification → 202,
+  jamais traitée ».
+- **Retenu** : toute notification (message sans `id`) → 202, sans en lire la méthode ; aucune n'est jamais remise au
+  répartiteur (test `notification_jamais_traitee`, Ma27). Refuser une notification de méthode inconnue n'apprendrait
+  rien au client (il n'attend pas de réponse).
+- **Réversible** : oui.
+
+### C-32-6-49 — Le trait `McpPrompt` du socle : `rendre(&self) -> &'static str`
+
+- **Retenu** : `nom`, `description`, `rendre` (un texte du binaire, sans arguments ni `Lecture`), scellé ; aucune
+  implémentation. La 32-10a amende la signature en connaissance de cause (C-32-6-23).
+- **Réversible** : oui.
+
+### C-32-6-50 — Le registre : `inventaire()` pour les tests, `avec()` qui refuse un schéma illisible
+
+- **Retenu** : `Registre::inventaire()` (`#[doc(hidden)]`, `(nom, schéma, portée)`) sert `registre_coherent` et
+  `registre_standard_inventaire` sans exposer les outils ; `avec()` analyse le schéma une fois et **panique** s'il n'est
+  pas du JSON (un texte du binaire : le registre de production se construit au démarrage, sous le test
+  `registre_coherent`).
+- **Réversible** : oui.
+
+### C-32-6-51 — Les écarts constatés à l'issue #738 et à l'issue #754
+
+- **#754** (`CHECK (version >= 1)` sur `mcp_server_settings`) : la 32-6a ne porte **aucune** migration
+  (`ls crates/kesh-db/migrations/*.sql | wc -l` → 84, inchangé depuis `76869cc9`) : rien n'est fait, l'issue reste
+  ouverte.
+- **#738, LOW de la 32-5c** : une IPv4 mappée est stockée en `/128` IPv6 (`canonical_network`,
+  `routes/mcp_server_settings.rs:111-115`) — la lecture la normalise (`mcp::reseau::reseau_canonique`, cas (s) de
+  l'AC-a9 et son témoin) ; `/0` est accepté à l'écriture — à la lecture, `0.0.0.0/0` admet tout client IPv4 : c'est
+  un choix d'administrateur, que le manuel (32-7) devra nommer ; rien n'est changé à l'écriture.
+- **Réversible** : sans objet.
