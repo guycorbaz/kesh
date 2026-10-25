@@ -49,8 +49,10 @@ impl Trace {
     }
 
     /// Le pool de la trace, destiné aux seules fonctions d'audit de
-    /// `services/rapports.rs` et à la dernière utilisation d'une clé MCP
-    /// (`services/cles_mcp.rs`, Story 32-5b). ⚠️ La visibilité ne peut pas être
+    /// `services/rapports.rs`, à la dernière utilisation d'une clé MCP
+    /// (`services/cles_mcp.rs`, Story 32-5b) et au journal des appels d'outil
+    /// MCP (`serveur_mcp::journaliser_appel`, Story 32-6b — la seule de ces
+    /// écritures qui n'est pas *best-effort*). ⚠️ La visibilité ne peut pas être
     /// plus étroite (`pub(in …)` n'accepte qu'un module ancêtre, E0742) :
     /// qu'aucun autre service ne l'appelle est tenu par la revue.
     pub(in crate::services) fn pool(&self) -> &MySqlPool {

@@ -1597,13 +1597,16 @@ async fn deverrouiller_et_sonder(
     assert_eq!(r.json(), attendu_version_delai(1, delai_s));
 }
 
-/// (1) Abandon **au délai de Kesh**. L'outil attend 600 ms puis lit le plan,
-/// tenu verrouillé : sa lecture part après le début du délai (1 s), si bien
-/// qu'au délai elle tourne encore côté serveur — `max_statement_time` (1 s)
-/// ne l'interromprait qu'à ≈ 1,6 s. Trois appels prennent les trois permis ;
-/// juste après leurs trois « délai dépassé », un `kesh_version` ne trouve aucun
-/// permis libre. Avant C-32-6-56, le futur de l'outil était abandonné, sa
-/// connexion fermée et son permis rendu sur-le-champ : la sonde était servie.
+/// (1) Abandon **au délai de Kesh**. L'outil attend 1,2 s puis lit le plan,
+/// tenu verrouillé : sa lecture part après le début du délai (2 s), si bien
+/// qu'au délai elle tourne encore côté serveur — `max_statement_time` (2 s)
+/// ne l'interromprait qu'à ≈ 3,2 s, plus l'ouverture de la connexion. Trois
+/// appels prennent les trois permis ; juste après leurs trois « délai
+/// dépassé » (≈ 2 s), un `kesh_version` ne trouve aucun permis libre pendant
+/// la sonde de 300 ms (≈ 2,3 s) : environ 0,9 s de marge. Avant C-32-6-56, le
+/// futur de l'outil était abandonné, sa connexion fermée et son permis rendu
+/// sur-le-champ : la sonde était servie. *(Marges élargies par la 32-6b, issue
+/// #759 — revue P3 de la 32-6a, R1 : attente 600 ms → 1,2 s, délai 1 s → 2 s.)*
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn abandon_au_delai_le_permis_reste_pris(pool: MySqlPool) {
     assert_eq!(kesh_api::mcp::MCP_POOL_CONNEXIONS, 3, "trois appels");
@@ -1612,9 +1615,9 @@ async fn abandon_au_delai_le_permis_reste_pris(pool: MySqlPool) {
         &pool,
         Registre::standard()
             .avec(Box::new(LecteurRetarde {
-                attente: Duration::from_millis(600),
+                attente: Duration::from_millis(1200),
             }))
-            .avec_delai(Duration::from_millis(1000)),
+            .avec_delai(Duration::from_millis(2000)),
     );
     assert!(!sonde_bloquee(&b, &jeton).await, "témoin : sonde servie");
     let verrou = verrouiller_le_plan(&pool).await;
@@ -1636,12 +1639,15 @@ async fn abandon_au_delai_le_permis_reste_pris(pool: MySqlPool) {
         sonde_bloquee(&b, &jeton).await,
         "après l'abandon au délai, le permis n'est pas rendu avant la fin de l'instruction"
     );
-    deverrouiller_et_sonder(verrou, &b, &jeton, 1.0).await;
+    deverrouiller_et_sonder(verrou, &b, &jeton, 2.0).await;
 }
 
-/// (2) Abandon **par déconnexion** : le futur de la requête est abandonné
-/// (c'est ce que fait hyper quand le client coupe sa connexion en pleine
-/// requête), le délai de Kesh (10 s) est loin. Mêmes constats qu'en (1).
+/// (2) Abandon **par déconnexion** : le futur de la requête est abandonné au
+/// bout de 1 s (c'est ce que fait hyper quand le client coupe sa connexion en
+/// pleine requête), le délai de Kesh (10 s) est loin. Mêmes constats qu'en
+/// (1). *(Coupure à 1 s au lieu de 400 ms depuis la 32-6b, issue #759 : la
+/// fenêtre doit contenir l'ouverture d'une connexion neuve, `after_release`
+/// fermant chaque connexion du pool des outils.)*
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn abandon_par_deconnexion_le_permis_reste_pris(pool: MySqlPool) {
     let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
@@ -1660,7 +1666,7 @@ async fn abandon_par_deconnexion_le_permis_reste_pris(pool: MySqlPool) {
         let b = &b;
         let jeton = &jeton;
         async move {
-            tokio::time::timeout(Duration::from_millis(400), b.mcp(Some(jeton), &c))
+            tokio::time::timeout(Duration::from_secs(1), b.mcp(Some(jeton), &c))
                 .await
                 .is_err()
         }

@@ -687,3 +687,77 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   P2-Mq2 (motif sans la borne : le témoin rouge rougit) et P2-Mq3 (une pose `= 0` ajoutée à `pool.rs` : le balayage la
   trouve).
 - **Réversible** : oui.
+
+## Choix du développement de la 32-6b (2026-10-25, Opus 5.5, en autonomie)
+
+### C-32-6-58 — Le journal s'écrit dans une tâche de l'appel, qui englobe la tâche de l'outil
+
+- **Contexte** : depuis C-32-6-56, l'outil s'exécute dans un `tokio::spawn` que l'abandon n'annule pas ; le
+  gestionnaire, lui, est abandonné par hyper quand le client coupe. AC-b1 veut l'entrée « après son issue et avant
+  l'envoi de la réponse », AC-b3 (C-32-6-30) qu'aucune donnée ne parte sans elle ; N26 laissait à la 32-6b de décider
+  si un appel abandonné s'écrit. Trois questions : qui écrit, quand, et que devient l'entrée d'un appel abandonné ou
+  d'un outil qui panique.
+- **Retenu** — une règle en quatre points, écrite en tête de `mcp/repartiteur.rs` :
+  1. chaque `tools/call` (demande mal formée comprise) est traité dans une **tâche de l'appel** (`tokio::spawn`,
+     `repartiteur::appeler`), qui va de la résolution de l'outil à l'écriture de l'entrée ; l'entrée s'écrit **dans
+     cette tâche**, une fois, quand l'issue est connue — délai dépassé (`delai_depasse`, la tâche de l'outil
+     continuant, C-32-6-56) et panic de l'outil (`erreur`, pris par la tâche de l'outil) compris —, **avant** que la
+     réponse ne soit rendue au gestionnaire ;
+  2. la réponse ne sort que si l'écriture a réussi ; sinon `isError: true`, `TEXTE_ERREUR_INTERNE`, sans donnée ;
+  3. le gestionnaire n'attend que la tâche de l'appel : un abandon par le client ne l'annule pas — l'appel est
+     journalisé avec son **issue réelle** (l'outil allé au bout), la réponse jetée ;
+  4. un échec de la tâche de l'appel elle-même (panic hors de l'outil, arrêt du runtime) : aucune donnée, **aucune
+     entrée**, le journal du serveur seul.
+  Fail closed : aucune donnée ne part sans entrée écrite — la seule sortie de données est le bras `Ok(())` de
+  l'écriture. Tests : `chaque_appel_est_journalise` (dont le cas `panique`), `journal_indisponible_rien_ne_part`,
+  `appel_abandonne_journalise` (le client coupe à 100 ms, l'outil va au bout en 500 ms, l'entrée `servi` paraît, avec
+  `dureeMs ≥ 500`) ; mutation Mb7 (tâche de l'appel retirée : le journal s'écrit dans le futur du gestionnaire).
+- **Écartées** : (a) écrire l'entrée dans le gestionnaire, après l'attente de la tâche de l'outil — plus simple d'une
+  tâche, fail closed aussi, mais un abandon ne laisse **aucune** entrée alors que l'outil a lu : un porteur de clé
+  peut lire sans trace en coupant ; (b) écrire l'entrée dans la tâche **de l'outil**, à sa fin — au délai, le
+  gestionnaire répond « délai dépassé » avant que la tâche n'écrive, d'où deux écrivains, deux entrées possibles et une
+  issue au journal différente de la réponse ; (c) un garde `Drop` qui écrirait l'entrée à l'abandon — `Drop` est
+  synchrone, il lancerait une tâche de toute façon, sans l'issue.
+- **Ce qui reste** : la règle 4 n'est pas éprouvée par un test (aucun moyen propre de faire paniquer la tâche de
+  l'appel hors de l'outil) ; elle se lit au code (bras `Err(panne)` de `appeler`). Un appel abandonné écrit son
+  entrée **après** la coupure : un porteur de clé qui coupe en boucle remplit le journal comme sans couper (aucune
+  limite de débit, point 8). Le coût : une tâche de plus et un clonage d'`EtatMcp` par appel.
+- **Réversible** : oui.
+
+### C-32-6-59 — Le nom d'outil au journal : celui de l'outil résolu dans les portées, sinon `(inconnu)`
+
+- **Contexte** : AC-b1 (« un nom du registre ou `(inconnu)` »), AC-a19 (demande mal formée → `(inconnu)`), C-32-6-21
+  (« inconnu couvre hors portée et refus de service »).
+- **Retenu** : `outil` = `nom()` de l'outil que rend `outil_pour(nom, portées)` ; `(inconnu)` (`OUTIL_INCONNU`) pour
+  une demande mal formée — même si le nom reçu est celui d'un outil servi — et pour un nom inconnu ou hors des
+  portées. Le refus d'un **service** (`ErreurOutil::Inconnu`) écrit l'issue `inconnu` avec le nom de l'outil, résolu
+  dans les portées de la clé. Le champ est un `&'static str` : le nom reçu du client, emprunté au corps, ne peut pas y
+  entrer sans une fuite délibérée (`Box::leak`, mutation Mb3).
+- **Écartées** : le nom d'un outil hors portée (le journal distinguerait hors portée d'inconnu, contre C-32-6-21) ;
+  `(inconnu)` pour le refus de service (perd le nom d'un outil que la clé pouvait appeler).
+- **Réversible** : oui avant publication.
+
+### C-32-6-60 — Le journal indisponible rend `TEXTE_ERREUR_INTERNE`, quelle que soit l'issue
+
+- **Retenu** : quand l'écriture échoue, la réponse est `isError: true` à `TEXTE_ERREUR_INTERNE`, pour **toute** issue
+  — un refus (`-32602`) comme un appel servi. Une seule règle, aucun texte neuf ; l'état du journal est un fait du
+  serveur, non de la clé, et ne fait donc pas oracle.
+- **Écartées** : un texte propre (« journal indisponible ») — il dirait à l'agent un état interne du serveur ; garder
+  la réponse d'un refus quand le journal tombe — deux règles au lieu d'une.
+- **Réversible** : oui.
+
+### C-32-6-61 — Les tests d'abandon de #759 : marges élargies, et la mutation « attente directe » dédoublée
+
+- **Contexte** : issue #759, LOW R1 de la revue P3 de la 32-6a — les fenêtres de `abandon_au_delai_le_permis_reste_pris`
+  et `abandon_par_deconnexion_le_permis_reste_pris` donnaient un faux rouge possible sur une station chargée. Et
+  C-32-6-58 change ce que le second éprouve : depuis la tâche de l'appel, une déconnexion n'annule plus le futur de
+  l'outil **même sans** la tâche de l'outil, la tâche de l'appel le portant.
+- **Retenu** : test 1 — attente 600 ms → 1,2 s, délai 1 s → 2 s (marge ≈ 0,9 s entre la fin de la sonde et
+  l'interruption par MariaDB, contre ≈ 0,3 s) ; test 2 — coupure 400 ms → 1 s. La mutation « attente directe du futur »
+  se joue en deux formes : **Mq1a** (tâche de l'outil seule retirée) tue `abandon_au_delai_le_permis_reste_pris` (le
+  délai abandonne le futur de l'outil) et le cas `panique` de `chaque_appel_est_journalise` (le panic tue la tâche de
+  l'appel : ni entrée, ni donnée) ; `abandon_par_deconnexion_le_permis_reste_pris` **passe**, tenu par la tâche de
+  l'appel — voulu ; **Mq1b** (les deux tâches retirées, l'état d'avant C-32-6-56) tue les deux tests d'abandon.
+- **Écartée** : réduire le test 2 à la tâche de l'outil seule (il ne peut pas l'isoler : c'est la composition des deux
+  tâches qui tient le permis à la déconnexion).
+- **Réversible** : oui.

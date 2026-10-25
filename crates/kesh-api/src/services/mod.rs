@@ -84,6 +84,12 @@
 //!    (`mcp_keys::touch_last_used`) sur la `Trace`, dans
 //!    `cles_mcp::authentifier` (Story 32-5b) — une écriture d'authentification,
 //!    non d'un chemin de lecture des livres.
+//!
+//!    Et, depuis la Story 32-6b, `serveur_mcp::journaliser_appel` : l'entrée
+//!    `mcp.tool_called` de chaque appel d'outil MCP, sur la `Trace`, écrite par
+//!    le répartiteur du MCP avant l'envoi de la réponse — **fail closed** : si
+//!    elle échoue, aucune donnée ne part (C-32-6-30). Dérogation écrite aux
+//!    règles R1, R2 et R7 (une écriture d'audit, sans `exiger`).
 //! 3. Aucune autre : les générateurs de `kesh-report`, `ReportPeriod::resolve`,
 //!    `resolve_scope`, `rapports::identite_societe`, `helpers::company_for_ids`,
 //!    `accounts::list_by_company` et `letterings::letterable_account_ids` ne

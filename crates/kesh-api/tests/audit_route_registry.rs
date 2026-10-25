@@ -337,10 +337,10 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("put", "mcp_server_settings::update_mcp_server_settings", Traced, SansEcritureAuJournal),
     // Story 32-6a (refs #723) — l'endpoint `/mcp`, monté par `route_service`
     // (toute méthode, dont `POST`). Ses outils ne lisent qu'en lecture seule ;
-    // il écrit la dernière utilisation de la clé, et le journal de chaque appel
-    // d'outil viendra avec la 32-6b, qui passera l'entrée à `Traced`. Le rejeu
-    // parle du journal comptable : `/mcp` n'y écrit rien.
-    ("route_service", "mcp::recevoir", Exempt("issue #723 — journal des appels MCP : Story 32-6b"), SansEcritureAuJournal),
+    // il écrit la dernière utilisation de la clé et, depuis la 32-6b, l'entrée
+    // `mcp.tool_called` de chaque appel d'outil (`serveur_mcp::journaliser_appel`,
+    // fail closed). Le rejeu parle du journal comptable : `/mcp` n'y écrit rien.
+    ("route_service", "mcp::recevoir", Traced, SansEcritureAuJournal),
     ("put", "email_templates::update_email_template", Traced, SansEcritureAuJournal),
     ("delete", "email_templates::restore_email_template_default", Traced, SansEcritureAuJournal),
     ("put", "companies::update_company_email", Traced, SansEcritureAuJournal),
@@ -893,7 +893,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 122,
+        traced, 123,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -910,12 +910,10 @@ fn the_registry_partition_is_what_the_story_declares() {
          rattachement et le détachement d'un document fournisseur (30-2c, #685), plus le \
          réglage et « Sauvegarder maintenant » de la sauvegarde automatique (31-1c, #503), \
          plus la création, la révocation et la politique de validation d'une clé du serveur \
-         MCP et l'enregistrement de ses réglages (32-5c, refs #723)"
+         MCP et l'enregistrement de ses réglages (32-5c, refs #723), plus chaque appel \
+         d'outil MCP (32-6b, #723)"
     );
-    assert_eq!(
-        exempt, 5,
-        "4 routes d'auth (#435), + 1 : `/mcp` (32-6a), jusqu'au journal de ses appels (32-6b, #723)"
-    );
+    assert_eq!(exempt, 4, "4 routes d'auth (#435)");
     assert_eq!(
         no_matter, 2,
         "deux routes mutantes qui ne mutent rien (le `PUT` des écritures en est sorti, 15-8a)"
