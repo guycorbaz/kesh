@@ -840,7 +840,7 @@ Rule*, *Règle de splitting préventif*, *Recette visuelle*, *Test Locally First
 7. **Pour information — une conséquence de Q4** : la 0.16.0 refuse les sauvegardes de la 0.15.0, et, du même coup, le
    rattrapage du lettrage rejoué à l'import (0.13.0) n'a plus d'objet et se retire (C-32-5-13). Rien n'est perdu pour
    une installation neuve ; le manuel dit la règle, la phrase sur une sauvegarde plus ancienne et le rappel de la sauvegarde
-   complète (AC-a13 (1), C-32-5-28) ; il ne décrit aucune marche de restauration : la 0.14.0 n'a pas de restauration sur machine neuve, et la 32-5 ne la pallie pas,
+   complète (AC-a13 (1), C-32-5-28) ; il ne décrit aucune procédure détaillée de restauration *(« aucune marche » jusqu'à l'étape 0 de la 32-5a, P8-4)* : la 0.14.0 n'a pas de restauration sur machine neuve, et la 32-5 ne la pallie pas,
    puisque tu installeras à neuf. ⚠️ Si une installation existante (celle du NAS) était
    mise à jour en 0.16.0 au lieu d'une installation neuve, **toutes** ses sauvegardes antérieures, automatiques
    comprises, cesseraient de se restaurer sur la 0.16.0 : d'où la sauvegarde complète juste après la mise à jour, que le manuel et le CHANGELOG prescrivent (AC-a13 (1)).

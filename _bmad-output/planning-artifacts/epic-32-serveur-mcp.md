@@ -560,7 +560,9 @@ nombre de tables du NAS) : à Guy avant la release.
   version ancienne — « restauration depuis l'assistant » n'existe qu'à partir de la 0.15.0. Réduit aux
   validations P5 et P6 : la seule phrase prescrite au manuel est celle de l'AC-a13 (1) de la fiche 32-5 ; aucune
   procédure, aucun fichier de release, cf. #746.)* *(Annoté en validation P7, P7-4 : cette précision datée P4 a été
-  **réécrite** en P5 et P6 au lieu d'être annotée ; son texte d'origine se lit au commit `481116dd`.)*
+  **réécrite** en P5 et P6 au lieu d'être annotée ; son texte d'origine se lit au commit `481116dd`.)* *(Rectifié le
+  2026-10-25, étape 0 de la 32-5a, P8-2 : le texte d'origine se lit au commit **`00475d19`** — `481116dd` est celui d'un
+  prompt de validation.)*
 - **Q6** : fait — CR #723.
 - **Q3, Q5, Q7** : pas encore de réponse ; les recommandations restent l'hypothèse de travail des fiches 32-5 et 32-6.
 

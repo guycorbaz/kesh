@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 83 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 84 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -859,6 +859,54 @@ CREATE TABLE `journal_entry_number_sequences` (
   CONSTRAINT `fk_jens_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
   CONSTRAINT `fk_jens_fiscal_year` FOREIGN KEY (`fiscal_year_id`) REFERENCES `fiscal_years` (`id`),
   CONSTRAINT `chk_jens_next_positive` CHECK (`next_number` >= 1)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `mcp_keys`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `mcp_keys` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` bigint(20) NOT NULL,
+  `created_by_user_id` bigint(20) NOT NULL COMMENT 'Créateur — la clé lit en son nom, tant qu''il est actif et Administrateur',
+  `name` varchar(255) NOT NULL,
+  `key_hash` char(64) NOT NULL COMMENT 'SHA-256(jeton) hex — jamais le secret',
+  `scopes` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'Tableau trié, sans doublon : books:read, invoices:read, contacts:read, documents:read, prompts:write' CHECK (json_valid(`scopes`)),
+  `send_validation` varchar(16) NOT NULL DEFAULT 'required' COMMENT 'required | exempt (Q12)',
+  `expires_at` datetime(3) DEFAULT NULL,
+  `last_used_at` datetime(3) DEFAULT NULL,
+  `revoked_at` datetime(3) DEFAULT NULL,
+  `version` int(11) NOT NULL DEFAULT 1,
+  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mcp_keys_key_hash` (`key_hash`),
+  KEY `fk_mcp_keys_created_by` (`created_by_user_id`),
+  KEY `idx_mcp_keys_company` (`company_id`),
+  KEY `idx_mcp_keys_created` (`created_at` DESC),
+  CONSTRAINT `fk_mcp_keys_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
+  CONSTRAINT `fk_mcp_keys_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `chk_mcp_keys_name_nonempty` CHECK (`name` regexp '[^[:space:]]'),
+  CONSTRAINT `chk_mcp_keys_scopes` CHECK (json_valid(`scopes`) and json_type(`scopes`) = 'ARRAY' and json_length(`scopes`) >= 1),
+  CONSTRAINT `chk_mcp_keys_send_validation` CHECK (`send_validation` collate utf8mb4_nopad_bin in ('required','exempt'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `mcp_server_settings`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `mcp_server_settings` (
+  `company_id` bigint(20) NOT NULL,
+  `enabled` tinyint(1) NOT NULL DEFAULT 0,
+  `address_filter_enabled` tinyint(1) NOT NULL DEFAULT 1,
+  `allowed_networks` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`allowed_networks`)),
+  `trusted_proxies` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`trusted_proxies`)),
+  `allowed_origins` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`allowed_origins`)),
+  `version` int(11) NOT NULL DEFAULT 1,
+  `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+  PRIMARY KEY (`company_id`),
+  CONSTRAINT `fk_mcp_server_settings_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
+  CONSTRAINT `chk_mcp_settings_networks` CHECK (json_valid(`allowed_networks`) and json_type(`allowed_networks`) = 'ARRAY'),
+  CONSTRAINT `chk_mcp_settings_proxies` CHECK (json_valid(`trusted_proxies`) and json_type(`trusted_proxies`) = 'ARRAY'),
+  CONSTRAINT `chk_mcp_settings_origins` CHECK (json_valid(`allowed_origins`) and json_type(`allowed_origins`) = 'ARRAY')
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `onboarding_state`;

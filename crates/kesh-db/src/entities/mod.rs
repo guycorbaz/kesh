@@ -29,6 +29,8 @@ pub mod invoice_number_sequence;
 pub mod invoice_reminder;
 pub mod invoice_settlement;
 pub mod journal_entry;
+pub mod mcp_key;
+pub mod mcp_server_settings;
 pub mod onboarding;
 pub mod password_reset_token;
 pub mod payment_batch;
@@ -70,6 +72,8 @@ pub use journal_entry::{
     Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,
 };
+pub use mcp_key::{McpKey, McpScope, McpScopeError, McpScopes, NewMcpKey, SendValidation};
+pub use mcp_server_settings::{McpServerSettings, McpServerSettingsUpdate};
 pub use onboarding::{OnboardingState, UiMode};
 pub use password_reset_token::PasswordResetToken;
 pub use payment_batch::{NewPaymentBatch, PaymentBatch, PaymentBatchItem};
