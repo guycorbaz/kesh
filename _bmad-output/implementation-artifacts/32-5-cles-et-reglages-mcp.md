@@ -947,9 +947,10 @@ développement fait chaque correction **à l'étape 0**, et la déclare au Chang
 - **32-5a — `done`** (2026-10-25) : revue de code terminée (P3 ciblée, 0 finding au-dessus de LOW), gate complet et
   E2E complet au dernier commit de code `88eae2b2`. Clé `32-5a-tables-et-sauvegarde-mcp` à `done` dans
   `sprint-status.yaml`.
-- **32-5b — `review`** (2026-10-25) : développement terminé, dernier commit de code `3afa49e8` ; gate complet et E2E
-  complet à ce commit ; prompt de revue P1 `325b-review-prompt-p1.md`. Clé `32-5b-authentification-cle-mcp` à
-  `review`.
+- **32-5b — `done`** (2026-10-25) : revue de code terminée (P3 ciblée, 0 finding au-dessus de LOW ; S1 et S2 tracés
+  sur #738), gate complet et E2E complet au dernier commit de code `e64ef129`. Clé `32-5b-authentification-cle-mcp` à
+  `done` dans `sprint-status.yaml`. *(Statut au développement, le 2026-10-25 : `review`, dernier commit de code
+  `3afa49e8`.)*
 - **32-5d, 32-5c** — `ready-for-dev`, dans l'ordre a → b → d → c (C-32-5-27).
 
 ### Étape 0 — recontrôle (ligne lue citée)
@@ -1697,4 +1698,27 @@ Fichiers de `services/` : 10 → 11. Aucune migration, aucun fichier de `docs/` 
     aucun test ajouté (`cles_mcp_e2e.rs` 18 → 18, un montage réécrit) ; deux doc-comments de production.
   - La remédiation touche du code de production (un libellé de journal dans `cles_mcp.rs`, des doc-comments) : passe
     suivante **ciblée** (P3, regression hunter, **Sonnet**, `325b-review-prompt-p3.md`, SHA `e64ef129` en dur).
+- **2026-10-25 — Revue de code P3 de la 32-5b — REVUE TERMINÉE** (passe **ciblée**, regression hunter, contexte frais,
+  **Sonnet**, sur `e64ef129` ; rapport `kesh-gate-logs/325b-review-p3.md` : **0 / 0 / 0 / 2**).
+  - **Trend de la boucle** : P1 complète (Sonnet ×3) — B 0/0/0/3, E 0/0/1/5, A 0/0/0/3 (1 MEDIUM, 11 LOW ;
+    `325b-review-p1-{B,E,A}.md`) → P2 ciblée (Opus) 0/0/1/2, les trois nés de la remédiation P1 (`325b-review-p2.md`) →
+    **P3 ciblée (Sonnet) 0/0/0/2** (`325b-review-p3.md`). La boucle se clôt sur une passe sans aucun finding au-dessus de
+    LOW (`CLAUDE.md`, *Review Iteration Rule*, décision Q3 (c)) ; aucune remédiation n'est écrite après elle. Modèles :
+    Sonnet → Opus → Sonnet.
+  - **LOW de la P3, tracés par l'orchestrateur sur #738, non corrigés** (aucune passe ne les relirait) : **S1** — le
+    doc-comment de `jetons_hostiles_avec_le_prefixe` dit que l'absence d'erreur de base ne tient pas au test, alors que
+    `est_401` ferait rougir le test sur une `AppError::Database` (même formulation dans l'entrée P2 ci-dessus, point R3) ;
+    **S2** — une phrase ambiguë du point 2 de la doc du module `cles_mcp.rs`.
+  - **Gates du dernier commit de code (`e64ef129`)** : gate complet `scripts/test-fast.sh --ci`, `kesh_325b` remise à
+    zéro juste avant — garde des droits, fmt, clippy `-D warnings`, **4085 réussis, 7 ignorés**
+    (`325b-p2r-gate-complet.log`) ; **E2E complet** à `e64ef129`, binaire reconstruit après le commit et vérifié, dossier
+    neuf `/tmp/kesh-e2e-325b-p2r/` : **315 passés, 7 échecs (les 7 KF-029), 17 ignorés** (`325b-p2r-e2e.log`). Frontend
+    non touché ; build seul vert au développement (`325b-front-build.log`).
+  - **Mutations de la partie b, au total : 13 jouées, 13 tuées** — Mb1, Mb2, Mb3, Mb4, Mb5, Mb6a, Mb6b (développement,
+    7, `325b-mutations.log`) ; mx1 à mx5 (revue P1, 5, `325b-p1r-mutations.log`) ; mx5 rejouée sur deux binaires (revue
+    P2, 1, `325b-p2r-mutations.log`) — soit 12 mutations distinctes. Déclarées non jouées : le journal d'`auth_row`
+    (aucune capture de `tracing`, C-32-5-38) ; les mutations de l'énumération des portées dans les services (couvertes
+    par les tests de la 32-3 et de la 32-4).
+  - **Reports** : § *Pour la 32-5c* (E5, B2, A2 de la revue P1) ; #738 (S1, S2).
+  - Clé `32-5b-authentification-cle-mcp` à **`done`** ; 32-5d et 32-5c `ready-for-dev`, dans cet ordre (C-32-5-27).
 
