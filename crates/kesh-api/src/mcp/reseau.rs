@@ -16,6 +16,13 @@
 //!   prendre le mandataire pour le client).
 //! - **L'`Origin`** se normalise par la même règle que l'écriture des
 //!   origines admises (`util::origine_canonique`), des deux côtés.
+//! - **Chaque décision `Admis` ou `Refuse` s'écrit au journal du serveur**
+//!   (Story 32-6c) : un évènement par société décidée et par requête, refus
+//!   en `warn!`, admission en `debug!` — le pair, la forme des en-têtes de
+//!   mandataire (comptes et présences, **jamais** leurs valeurs), le client
+//!   retenu (calculé même filtre coupé) et le verdict. C'est le diagnostic de
+//!   ce que voit le filtre derrière un proxy inversé (manuel d'administration,
+//!   § *Diagnostiquer le filtre d'adresse du serveur MCP*).
 //!
 //! ⚠️ Ce que le filtre ne garantit pas : il voit le pair que voit Kesh, non le
 //! client réel — derrière un mandataire non déclaré ou la passerelle de
@@ -100,7 +107,13 @@ pub enum Decision {
 
 /// La décision d'un réglage `s` pour le pair `pair` (AC-a8). Journalise,
 /// sans état partagé et sans la valeur, l'entrée ignorée de `allowed_networks`
-/// (`debug!`) et l'exclusion pour `trusted_proxies` (`error!`).
+/// (`debug!`) et l'exclusion pour `trusted_proxies` (`error!`) ; et, pour
+/// chaque décision `Admis` ou `Refuse`, **un** évènement de décision
+/// (Story 32-6c, `journaliser_decision`) — `Ecartee` n'a que son `error!`.
+///
+/// Le client est calculé **avant** de consulter l'état du filtre, pour que le
+/// journal dise ce que le filtre retiendrait quand il est coupé ; la décision,
+/// elle, reste `Admis` filtre coupé, quel que soit ce client (C-32-6c-5).
 pub fn decider(s: &McpServerSettings, pair: IpAddr, en_tetes: &HeaderMap) -> Decision {
     let mut mandataires = Vec::with_capacity(s.trusted_proxies.len());
     for entree in &s.trusted_proxies {
@@ -116,26 +129,103 @@ pub fn decider(s: &McpServerSettings, pair: IpAddr, en_tetes: &HeaderMap) -> Dec
             }
         }
     }
-    if !s.address_filter_enabled {
-        return Decision::Admis;
-    }
-    let Some(client) = client(pair, en_tetes, &mandataires) else {
-        return Decision::Refuse;
-    };
-    let mut admis = false;
-    for entree in &s.allowed_networks {
-        match analyser_reseau(entree) {
-            Some(r) => admis |= r.contains(&client),
-            None => tracing::debug!(
-                company_id = s.company_id,
-                "serveur MCP : une entrée de allowed_networks ne s'analyse pas, ignorée"
-            ),
-        }
-    }
-    if admis {
+    let pair = pair.to_canonical();
+    let retenu = client(pair, en_tetes, &mandataires);
+    let decision = if !s.address_filter_enabled {
         Decision::Admis
+    } else if let Some(client) = retenu {
+        let mut admis = false;
+        for entree in &s.allowed_networks {
+            match analyser_reseau(entree) {
+                Some(r) => admis |= r.contains(&client),
+                None => tracing::debug!(
+                    company_id = s.company_id,
+                    "serveur MCP : une entrée de allowed_networks ne s'analyse pas, ignorée"
+                ),
+            }
+        }
+        if admis {
+            Decision::Admis
+        } else {
+            Decision::Refuse
+        }
     } else {
         Decision::Refuse
+    };
+    journaliser_decision(
+        s,
+        pair,
+        contient(&mandataires, pair),
+        en_tetes,
+        retenu,
+        decision,
+    );
+    decision
+}
+
+/// Le client retenu, tel que l'écrit le journal : l'adresse, ou `aucun`.
+struct ClientJournal(Option<IpAddr>);
+
+impl std::fmt::Display for ClientJournal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(a) => a.fmt(f),
+            None => f.write_str("aucun"),
+        }
+    }
+}
+
+/// L'évènement de décision du filtre d'adresse (Story 32-6c, AC-1 à AC-5) :
+/// cible `kesh_api::mcp::reseau`, message fixe, onze champs dans un ordre fixe
+/// — `Refuse` en `warn!`, `Admis` en `debug!`, `Ecartee` sans évènement.
+///
+/// ⚠️ **Rien que des valeurs dérivées** (C-32-6c-6) : des adresses analysées
+/// (`IpAddr`), des comptes, des booléens, l'id de société et deux mots fixes.
+/// Aucune valeur d'en-tête reçue n'est écrite, ni convertie en texte : les
+/// lignes et morceaux de `X-Forwarded-For` se comptent **sur les octets** (une
+/// ligne non ASCII compte ; une ligne vide compte un morceau), `X-Real-IP` et
+/// `Forwarded` ne se lisent qu'en présence.
+fn journaliser_decision(
+    s: &McpServerSettings,
+    pair: IpAddr,
+    pair_mandataire: bool,
+    en_tetes: &HeaderMap,
+    retenu: Option<IpAddr>,
+    decision: Decision,
+) {
+    let xff = en_tetes.get_all("x-forwarded-for");
+    let xff_lignes = xff.iter().count();
+    let xff_entrees: usize = xff
+        .iter()
+        .map(|v| v.as_bytes().split(|b| *b == b',').count())
+        .sum();
+    let x_real_ip = en_tetes.contains_key("x-real-ip");
+    let forwarded = en_tetes.contains_key("forwarded");
+    let client = ClientJournal(retenu);
+    // Un niveau `tracing` est une constante : une macro locale tient le jeu de
+    // champs, unique pour les deux niveaux.
+    macro_rules! evenement {
+        ($niveau:ident, $verdict:literal) => {
+            tracing::$niveau!(
+                company_id = s.company_id,
+                filtre = s.address_filter_enabled,
+                plages = s.allowed_networks.len(),
+                pair = %pair,
+                pair_mandataire,
+                xff_lignes,
+                xff_entrees,
+                x_real_ip,
+                forwarded,
+                client = %client,
+                verdict = $verdict,
+                "serveur MCP : décision du filtre d'adresse"
+            )
+        };
+    }
+    match decision {
+        Decision::Refuse => evenement!(warn, "refuse"),
+        Decision::Admis => evenement!(debug, "admis"),
+        Decision::Ecartee => {}
     }
 }
 

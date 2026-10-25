@@ -13,6 +13,7 @@
 //! ```text
 //! 1. pair TCP (ConnectInfo), normalisé           absent            → route absente
 //! 2. S = sociétés activées dont le filtre admet  vide ou erreur    → route absente
+//!    (un évènement de décision par société décidée : warn! refus, debug! admis)
 //! 3. méthode HTTP                                ≠ POST            → 405 Allow: POST
 //! 4. Origin (origines propres ∪ celles de S)     refusée           → 403
 //! 5. Content-Type                                ≠ JSON            → 415
