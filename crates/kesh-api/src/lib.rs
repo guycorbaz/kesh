@@ -24,6 +24,7 @@ pub mod helpers;
 pub mod inbox_import;
 pub mod logging;
 pub mod mail;
+pub mod mcp;
 pub mod middleware;
 pub mod qr_decode;
 pub mod retry;
@@ -35,6 +36,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use axum::Router;
+use axum::handler::Handler;
 use axum::routing::{delete, get, patch, post, put};
 use sqlx::MySqlPool;
 use tower_http::services::{ServeDir, ServeFile};
@@ -142,12 +144,12 @@ impl AppState {
     }
 
     /// Story 32-3 — la poignée de **lecture** des livres que reçoivent les
-    /// services (`crate::services`).
+    /// services (`crate::services`), sur `pool`.
     ///
-    /// La lecture seule du MCP (Q11, tranchée le 2026-10-24) est tenue par
-    /// l'application et par le mode de session `READ ONLY` de sa connexion,
-    /// réalisés par la 32-6, sans second compte MariaDB ; en 32-3, les deux
-    /// poignées enveloppent `pool`.
+    /// C'est la `Lecture` **ordinaire** : celle de l'API, et la `garde` du MCP
+    /// (règle « servi », authentification). Les outils du MCP lisent, eux, sur
+    /// le pool en lecture seule que construit `build_router_avec_registre`
+    /// (Q11, tranchée le 2026-10-24 ; Story 32-6a).
     /// Méthode, et non champ : `AppState` se construit aussi par littéral dans
     /// des tests.
     pub fn lecture(&self) -> services::poignees::Lecture {
@@ -157,8 +159,8 @@ impl AppState {
     /// Story 32-3 — la poignée d'écriture de la **trace** d'audit des lectures.
     ///
     /// Distincte de la `Lecture` : la lecture seule du MCP (Q11, tranchée le
-    /// 2026-10-24, réalisée par la 32-6) vise la seule `Lecture`, la trace
-    /// devant écrire ; en 32-3, les deux poignées enveloppent `pool`.
+    /// 2026-10-24, réalisée par la 32-6a) vise la seule lecture des outils, la
+    /// trace devant écrire ; elle enveloppe `pool`.
     pub fn trace(&self) -> services::poignees::Trace {
         services::poignees::Trace::new(self.pool.clone())
     }
@@ -209,9 +211,32 @@ pub fn build_send_email_rate_limiter() -> RateLimiter<(i64, i64)> {
 ///
 /// Le `static_dir` contient le SPA SvelteKit buildé (`frontend/build`),
 /// servi en fallback par `ServeDir`/`ServeFile`.
+///
+/// Story 32-6a — monte aussi `/mcp` avec le registre de production
+/// ([`mcp::Registre::standard`]) ; `main.rs` n'appelle que cette fonction.
 pub fn build_router(state: AppState, static_dir: String) -> Router {
-    let fallback =
-        ServeDir::new(&static_dir).fallback(ServeFile::new(format!("{}/index.html", static_dir)));
+    build_router_avec_registre(state, static_dir, mcp::Registre::standard())
+}
+
+/// Le service de fichiers statiques du repli — **une** fonction, appelée pour
+/// le repli du routeur et pour la réponse de route absente de `/mcp` (Story
+/// 32-6a, AC-a3) : les deux réponses sont celles du même service.
+fn service_statique(static_dir: &str) -> mcp::ServiceStatique {
+    ServeDir::new(static_dir).fallback(ServeFile::new(format!("{}/index.html", static_dir)))
+}
+
+/// [`build_router`] avec un registre d'outils MCP choisi — pour les tests.
+///
+/// ⚠️ Exige un runtime Tokio : le pool des outils du MCP
+/// (`kesh_db::pool::pool_lecture_seule`) est paresseux mais lance ses tâches
+/// d'entretien.
+#[doc(hidden)]
+pub fn build_router_avec_registre(
+    state: AppState,
+    static_dir: String,
+    registre: mcp::Registre,
+) -> Router {
+    let fallback = service_statique(&static_dir);
 
     // Story 1.8 : sous-routeurs par niveau de rôle (RBAC)
     //
@@ -1223,6 +1248,34 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
     }
 
     main_router = main_router.merge(protected);
+
+    // Story 32-6a (refs #723) — l'endpoint `/mcp`, monté par `route_service`
+    // comme un **service** à état propre (`EtatMcp`), non par un `MethodRouter` :
+    // son futur suit le même chemin que le repli statique (`Endpoint::Route`,
+    // non « top level »), si bien qu'Axum n'y ajoute ni `Allow` ni
+    // `content-length` — un `/mcp` non servi est indiscernable d'une route
+    // absente (C-32-6-2, C-32-6-40). Hors de `require_auth` : sa garde est la
+    // sienne (clé MCP seulement). Les outils lisent sur un pool en lecture
+    // seule, construit ici une fois, dont MariaDB interrompt toute instruction
+    // au-delà du délai d'un outil (revue P1, E1) ; la `garde` est la `Lecture`
+    // ordinaire.
+    let delai = registre.delai();
+    let pool_outils =
+        kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);
+    let lecture_outils =
+        mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils));
+    let etat_mcp = mcp::EtatMcp {
+        origines_propres: mcp::origines_propres(
+            state.config.port,
+            state.config.public_base_url.as_deref(),
+        ),
+        garde: state.lecture(),
+        lecture: lecture_outils,
+        trace: state.trace(),
+        registre: Arc::new(registre),
+        statique: fallback.clone(),
+    };
+    main_router = main_router.route_service("/mcp", routes::mcp::recevoir.with_state(etat_mcp));
 
     // Story 6.4 : routes /api/v1/_test/* gated par test_mode (runtime branch,
     // pas Cargo feature — évite drift build CI vs prod). Le garde-fou

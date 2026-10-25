@@ -1882,9 +1882,17 @@ async fn grand_livre_les_deux_regimes(pool: MySqlPool) {
 /// Exceptions écrites de la garde (v-1) : (fichier relatif à `src/`, ligne
 /// réduite de ses blancs de tête et de fin). **Vide en 32-3** ; un faux rouge
 /// s'y inscrit, jamais par un motif affaibli.
-const EXCEPTIONS_V1: &[(&str, &str)] = &[];
+const EXCEPTIONS_V1: &[(&str, &str)] = &[
+    // Story 32-6a (AC-a26) — un faux rouge : le chemin du module
+    // `kesh_db::pool` (la fabrique du pool des outils du MCP), non l'accesseur
+    // `pool` d'une poignée.
+    (
+        "lib.rs",
+        "kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);",
+    ),
+];
 
-/// Les deux fabriques de poignées, au câblage de `lib.rs` (v-2).
+/// Les trois fabriques de poignées, au câblage de `lib.rs` (v-2).
 const FABRIQUES_V2: &[(&str, &str)] = &[
     (
         "lib.rs",
@@ -1893,6 +1901,12 @@ const FABRIQUES_V2: &[(&str, &str)] = &[
     (
         "lib.rs",
         "services::poignees::Trace::new(self.pool.clone())",
+    ),
+    // Story 32-6a (AC-a26) — la lecture des outils du MCP, sur le pool en
+    // lecture seule, enveloppée une fois dans `LectureOutils`.
+    (
+        "lib.rs",
+        "mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils));",
     ),
 ];
 
@@ -2532,8 +2546,8 @@ fn ac10_v1_aucun_acces_au_pool_hors_des_services() {
     );
 }
 
-/// AC10 (v-2) — `Lecture::new(`/`Trace::new(` aux deux seules lignes du câblage
-/// de `lib.rs`.
+/// AC10 (v-2) — `Lecture::new(`/`Trace::new(` aux seules lignes du câblage de
+/// `lib.rs` (deux en 32-3 ; trois depuis la 32-6a, la lecture des outils du MCP).
 #[test]
 fn ac10_v2_les_poignees_ne_se_fabriquent_qu_au_cablage() {
     let motif = regex::Regex::new(MOTIF_V2).unwrap();
@@ -2555,9 +2569,9 @@ fn ac10_vi_services_sans_axum_ni_app_state() {
         .collect();
     assert_eq!(
         services.len(),
-        11,
-        "services/ : onze fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b, \
-         cles_mcp.rs de la 32-5b), {:?}",
+        12,
+        "services/ : douze fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b, \
+         cles_mcp.rs de la 32-5b, serveur_mcp.rs de la 32-6a), {:?}",
         services.iter().map(|(f, _)| f).collect::<Vec<_>>()
     );
     assert_eq!(

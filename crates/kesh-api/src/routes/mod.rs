@@ -30,6 +30,7 @@ pub mod issued_invoice_pdf;
 pub mod journal_entries;
 pub mod letterings;
 pub mod limits;
+pub mod mcp;
 pub mod mcp_keys;
 pub mod mcp_server_settings;
 pub mod onboarding;

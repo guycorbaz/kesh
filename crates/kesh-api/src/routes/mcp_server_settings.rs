@@ -136,10 +136,12 @@ pub fn canonical_network(raw: &str) -> Result<String, AppError> {
     Ok(reseau.to_string())
 }
 
-/// Une origine `http(s)://hôte[:port]`, sous sa sérialisation ASCII.
+/// Une origine `http(s)://hôte[:port]`, sous sa sérialisation ASCII — la règle
+/// est `util::origine_canonique`, la même que celle qui normalise l'en-tête
+/// `Origin` reçu par `/mcp` (Story 32-6a, AC-a10).
 pub fn canonical_origin(raw: &str) -> Result<String, AppError> {
     let entree = raw.trim();
-    let invalide = || {
+    crate::util::origine_canonique(entree).ok_or_else(|| {
         AppError::Validation(t_args(
             "admin-mcp-settings-error-origin-invalid",
             &format!(
@@ -148,22 +150,7 @@ pub fn canonical_origin(raw: &str) -> Result<String, AppError> {
             ),
             &entry_args(entree),
         ))
-    };
-    // « Sans chemin » se lit sur le texte saisi : `url` rend « / » pour
-    // `http://h` comme pour `http://h/`.
-    let (schema, autorite) = entree.split_once("://").ok_or_else(invalide)?;
-    if !matches!(schema.to_ascii_lowercase().as_str(), "http" | "https")
-        || autorite.is_empty()
-        || autorite.contains(['/', '?', '#', '@', '\\'])
-        || autorite.chars().any(char::is_whitespace)
-    {
-        return Err(invalide());
-    }
-    let url = url::Url::parse(entree).map_err(|_| invalide())?;
-    if url.host().is_none() {
-        return Err(invalide());
-    }
-    Ok(url.origin().ascii_serialization())
+    })
 }
 
 /// Met une liste en forme : bornes, mise en forme canonique de chaque entrée,

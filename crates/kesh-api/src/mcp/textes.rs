@@ -1,0 +1,140 @@
+//! Toutes les chaînes que `/mcp` envoie au client — des constantes du binaire
+//! (E5, AC-a20) — et la seule traduction d'une `AppError` de service
+//! ([`depuis_app_error`], AC-a18).
+//!
+//! Deux familles :
+//!
+//! - les **corps entiers** (`TEXTE_NON_AUTHENTIFIE`, `TEXTE_ORIGINE_REFUSEE`,
+//!   `CORPS_*`) des refus que le transport rend avant de connaître l'`id` de
+//!   la requête. Les erreurs JSON-RPC y sont **sans `id`** : le schéma de la
+//!   révision `2025-11-25` déclare `JSONRPCErrorResponse.id` facultatif et de
+//!   type `string | number`, jamais `null` (C-32-6-42, relevé à l'étape 0) ;
+//! - les **messages** (`MESSAGE_*`) et les **textes d'outil** (`TEXTE_*`)
+//!   qu'une réponse portant l'`id` de la requête enveloppe.
+
+use kesh_db::errors::DbError;
+
+use crate::errors::AppError;
+use crate::mcp::outil::{ErreurOutil, MotifArgument};
+
+/// Code JSON-RPC : JSON illisible.
+pub const CODE_JSON_INVALIDE: i64 = -32700;
+/// Code JSON-RPC : message qui n'est pas une requête valide.
+pub const CODE_REQUETE_INVALIDE: i64 = -32600;
+/// Code JSON-RPC : méthode non servie.
+pub const CODE_METHODE_INCONNUE: i64 = -32601;
+/// Code JSON-RPC : paramètres refusés — dont l'outil inconnu ou hors portée.
+pub const CODE_PARAMS_INVALIDES: i64 = -32602;
+
+/// 401 — clé absente, refusée, ou d'une société qui ne sert pas : **un seul
+/// corps** pour toutes les causes (AC-a14), sans `WWW-Authenticate`
+/// (C-32-6-27).
+pub const TEXTE_NON_AUTHENTIFIE: &str =
+    r#"{"jsonrpc":"2.0","error":{"code":-32001,"message":"Non authentifié."}}"#;
+
+/// 403 — en-tête `Origin` refusé (AC-a10).
+pub const TEXTE_ORIGINE_REFUSEE: &str =
+    r#"{"jsonrpc":"2.0","error":{"code":-32003,"message":"Origine refusée."}}"#;
+
+/// 500 — erreur de la base pendant l'authentification (AC-a14).
+pub const CORPS_ERREUR_INTERNE: &str =
+    r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Erreur interne."}}"#;
+
+/// 400 — corps qui n'est pas du JSON.
+pub const CORPS_JSON_INVALIDE: &str =
+    r#"{"jsonrpc":"2.0","error":{"code":-32700,"message":"JSON illisible."}}"#;
+
+/// 400 — lot, message de type réponse, `jsonrpc`, `method` ou `id` invalides.
+pub const CORPS_REQUETE_INVALIDE: &str =
+    r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Requête JSON-RPC invalide."}}"#;
+
+/// 415 — `Content-Type` autre que `application/json` (texte brut).
+pub const CORPS_TYPE_NON_ADMIS: &str = "Content-Type: application/json attendu.";
+
+/// 400 — `MCP-Protocol-Version` non servie (texte brut, jamais `-32022`).
+pub const CORPS_VERSION_NON_SERVIE: &str =
+    "MCP-Protocol-Version non servie : 2025-11-25 ou 2025-06-18 attendue.";
+
+/// 413 — corps au-delà de `MCP_CORPS_MAX` (texte brut).
+pub const CORPS_TROP_GROS: &str = "Corps de requête trop volumineux.";
+
+/// 400 — corps interrompu ou illisible (texte brut).
+pub const CORPS_ILLISIBLE: &str = "Corps de requête illisible.";
+
+/// Message d'une méthode JSON-RPC non servie.
+pub const MESSAGE_METHODE_INCONNUE: &str = "Méthode non servie.";
+
+/// Message de paramètres JSON-RPC mal formés (`params`, `name`, `arguments`,
+/// `cursor`).
+pub const TEXTE_PARAMS_INVALIDES: &str = "Paramètres invalides.";
+
+/// Message d'un outil inconnu, hors portée de la clé, ou refusé par son
+/// service — **le même** pour les trois (aucun oracle, AC-a18).
+pub const TEXTE_OUTIL_INCONNU: &str = "Outil inconnu.";
+
+/// Message d'un prompt inconnu (aucun prompt en 32-6).
+pub const TEXTE_PROMPT_INCONNU: &str = "Prompt inconnu.";
+
+/// Texte d'outil : la clé est soumise à la validation avant envoi, qui
+/// n'existe pas encore (AC-a15).
+pub const TEXTE_VALIDATION_REQUISE: &str = "Cette clé est soumise à la validation avant envoi, \
+     qui n'est pas encore disponible : aucun outil ne peut être appelé avec elle.";
+
+/// Texte d'outil : arguments refusés.
+pub const TEXTE_ARGUMENTS_INVALIDES: &str = "Arguments invalides.";
+
+/// Texte d'outil : l'objet demandé n'existe pas.
+pub const TEXTE_INTROUVABLE: &str = "Introuvable.";
+
+/// Texte d'outil : toute autre erreur (le détail est au journal du serveur).
+pub const TEXTE_ERREUR_INTERNE: &str = "Erreur interne.";
+
+/// Texte d'outil : délai d'exécution dépassé.
+pub const TEXTE_DELAI_DEPASSE: &str = "Délai d'exécution dépassé.";
+
+/// Les `instructions` d'`initialize` : une constante neutre (la 32-8 y ajoutera
+/// la consigne de relecture).
+pub const INSTRUCTIONS: &str = "Serveur MCP de Kesh, en lecture seule : les outils lisent les \
+     livres dans les portées de la clé, sans jamais les modifier.";
+
+/// Le texte fixe d'une erreur d'outil rendue en `isError: true` ; `None` pour
+/// [`ErreurOutil::Inconnu`], qui est une erreur JSON-RPC (`-32602`).
+pub(crate) fn texte_erreur_outil(e: ErreurOutil) -> Option<&'static str> {
+    match e {
+        ErreurOutil::ArgumentsInvalides {
+            motif: MotifArgument::Invalide,
+            ..
+        } => Some(TEXTE_ARGUMENTS_INVALIDES),
+        ErreurOutil::Inconnu => None,
+        ErreurOutil::Introuvable => Some(TEXTE_INTROUVABLE),
+        ErreurOutil::Interne => Some(TEXTE_ERREUR_INTERNE),
+    }
+}
+
+/// La **seule** traduction d'une erreur de service en erreur d'outil — une
+/// liste blanche courte et écrite (C-32-6-33) :
+///
+/// | Variante | Rend |
+/// |---|---|
+/// | `Forbidden` | [`ErreurOutil::Inconnu`] (outil inconnu, aucun oracle) |
+/// | `Database(DbError::NotFound)` | [`ErreurOutil::Introuvable`] |
+/// | `Validation(_)` | [`ErreurOutil::ArgumentsInvalides`] — le message n'est **jamais** recopié |
+/// | toute autre | [`ErreurOutil::Interne`], détail au journal du serveur |
+///
+/// Le bras `_` est voulu : une variante neuve tombe dans l'erreur interne
+/// fixe, le cas le plus fermé. Public pour le test `mcp_traduction.rs`.
+#[doc(hidden)]
+pub fn depuis_app_error(e: AppError) -> ErreurOutil {
+    match e {
+        AppError::Forbidden => ErreurOutil::Inconnu,
+        AppError::Database(DbError::NotFound) => ErreurOutil::Introuvable,
+        AppError::Validation(_) => ErreurOutil::ArgumentsInvalides {
+            argument: "(demande)",
+            motif: MotifArgument::Invalide,
+        },
+        autre => {
+            tracing::error!("outil MCP : erreur de service : {autre}");
+            ErreurOutil::Interne
+        }
+    }
+}
