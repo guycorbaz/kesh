@@ -292,34 +292,16 @@ struct ValidatedBankInput {
 /// Caractères refusés dans une description de compte bancaire — Story 26-2a
 /// (#622, C-26-2-17, C-26-2-28).
 ///
-/// Ensemble **fermé et nommé** : `char::is_control` (catégorie Cc, dont `\n`,
-/// `\r`, `\t`), plus les caractères de mise en page invisibles ou de contrôle
-/// bidirectionnel listés ci-dessous. **Angle mort assumé** : d'autres
-/// invisibles hors de cette liste passent — notamment U+115F, U+1160, U+FFA0,
-/// U+17B4 et U+17B5, les sélecteurs de variante mongols U+180B à U+180D, U+2065
-/// (non attribué), les contrôles de format musicaux U+1D173 à U+1D17A et les
-/// sélecteurs de variante supplémentaires U+E0100 à U+E01EF. Liste non exhaustive :
-/// l'ensemble refusé, lui, est fermé (revue de code P1 de la 26-2a, E2).
+/// Depuis la Story 32-8b0, c'est le prédicat partagé d'une **valeur d'une
+/// ligne**, [`kesh_core::text::is_hidden_in_line`] : tout contrôle Cc (dont
+/// `\n`, `\r`, `\t`) et tout caractère caché de
+/// [`kesh_core::text::is_hidden_format`] — catégories Unicode Cf, Co, Cn et
+/// deux listes écrites d'invisibles d'autres catégories. Il remplace la liste
+/// fermée de la 26-2a, dont chaque point reste refusé (test
+/// `ancienne_liste_reste_refusee` de `kesh-core`) ; l'angle mort qui reste est
+/// écrit sur `is_hidden_format`.
 fn is_forbidden_in_description(c: char) -> bool {
-    c.is_control()
-        || matches!(
-            c,
-            '\u{00AD}'                    // tiret conditionnel
-            | '\u{034F}'                  // combining grapheme joiner
-            | '\u{061C}'                  // marque arabe (contrôle bidi)
-            | '\u{180E}'                  // séparateur de voyelles mongol
-            | '\u{2028}'..='\u{2029}'     // séparateurs de ligne et de paragraphe
-            | '\u{200B}'..='\u{200F}'     // espaces de largeur nulle, LRM, RLM
-            | '\u{202A}'..='\u{202E}'     // enchâssements et forçages bidi
-            | '\u{2060}'..='\u{2064}'     // gluon de mots, opérateurs invisibles
-            | '\u{2066}'..='\u{2069}'     // isolats bidi
-            | '\u{206A}'..='\u{206F}'     // contrôles de mise en forme désuets
-            | '\u{3164}'                  // remplissage hangûl
-            | '\u{FE00}'..='\u{FE0F}'     // sélecteurs de variante
-            | '\u{FEFF}'                  // indicateur d'ordre des octets
-            | '\u{FFF9}'..='\u{FFFB}'     // annotations interlinéaires
-            | '\u{E0000}'..='\u{E007F}' // étiquettes
-        )
+    kesh_core::text::is_hidden_in_line(c)
 }
 
 /// Normalise et valide la description d'un compte bancaire — Story 26-2a
@@ -1463,52 +1445,43 @@ async fn patch_once(
 mod tests {
     use super::*;
 
-    /// AC3 (C-26-2-28) — chaque plage de l'ensemble refusé, par ses deux bornes,
-    /// et un voisin immédiat accepté de part et d'autre (quand il n'est ni
-    /// contrôle ni dans une autre plage).
+    // Le test `ensemble_refuse_borne_par_borne` de la 26-2a a déménagé en
+    // `kesh-core` (`text::tests::ancienne_liste_reste_refusee`), Story 32-8b0.
+
+    /// Story 32-8b0 (AC-03) — un point **hors de l'ancienne liste fermée** pour
+    /// chaque voie neuve du prédicat partagé : contrôle de format attribué
+    /// (U+0600, Cf), usage privé (U+F8FF, le logo Apple), non attribué (U+0378),
+    /// remplissage `Lo` (U+115F), sélecteur de variante supplémentaire `Mn`
+    /// (U+E0100). Tous étaient admis avant la 32-8b0 (M08).
     #[test]
-    fn ensemble_refuse_borne_par_borne() {
-        let plages: &[(u32, u32)] = &[
-            (0x00AD, 0x00AD),
-            (0x034F, 0x034F),
-            (0x061C, 0x061C),
-            (0x180E, 0x180E),
-            (0x2028, 0x2029),
-            (0x200B, 0x200F),
-            (0x202A, 0x202E),
-            (0x2060, 0x2064),
-            (0x2066, 0x2069),
-            (0x206A, 0x206F),
-            (0x3164, 0x3164),
-            (0xFE00, 0xFE0F),
-            (0xFEFF, 0xFEFF),
-            (0xFFF9, 0xFFFB),
-            (0xE0000, 0xE007F),
-        ];
-        let dans_une_plage = |cp: u32| plages.iter().any(|&(a, b)| (a..=b).contains(&cp));
-        for &(debut, fin) in plages {
-            for cp in [debut, fin] {
-                let c = char::from_u32(cp).unwrap();
-                assert!(
-                    is_forbidden_in_description(c),
-                    "U+{cp:04X} doit être refusé"
-                );
-            }
-            for cp in [debut - 1, fin + 1] {
-                if dans_une_plage(cp) {
-                    continue;
-                }
-                let Some(c) = char::from_u32(cp) else {
-                    continue;
-                };
-                if c.is_control() {
-                    continue;
-                }
-                assert!(
-                    !is_forbidden_in_description(c),
-                    "U+{cp:04X}, voisin d'une plage, doit être accepté"
-                );
-            }
+    fn description_refuse_par_categorie() {
+        for c in ['\u{0600}', '\u{F8FF}', '\u{0378}', '\u{115F}', '\u{E0100}'] {
+            assert!(is_forbidden_in_description(c), "{c:?} doit être refusé");
+            let saisie = format!("Épargne {c}");
+            assert!(
+                normalize_description(Some(&saisie)).is_err(),
+                "{saisie:?} doit être refusée"
+            );
+        }
+    }
+
+    /// Story 32-8b0 (AC-04), non-régression : un emoji simple est admis dans
+    /// une description, un emoji composé (sélecteur U+FE0F, liant U+200D) y est
+    /// refusé — l'ancienne liste le tenait déjà.
+    #[test]
+    fn emojis_simples_admis_composes_refuses() {
+        for simple in ["Épargne \u{26A0}", "Pro \u{1F4BB}"] {
+            assert_eq!(
+                normalize_description(Some(simple)).unwrap().as_deref(),
+                Some(simple),
+                "{simple:?} (emoji simple) doit être admis"
+            );
+        }
+        for compose in ["Épargne \u{26A0}\u{FE0F}", "Pro \u{1F468}\u{200D}\u{1F4BB}"] {
+            assert!(
+                normalize_description(Some(compose)).is_err(),
+                "{compose:?} (emoji composé) doit être refusé"
+            );
         }
     }
 
@@ -1526,6 +1499,15 @@ mod tests {
         for c in ['a', 'É', 'é', ' ', '-', '\u{00A0}', '’', '«', '»', '—'] {
             assert!(!is_forbidden_in_description(c), "{:?} doit être accepté", c);
         }
+        // Story 32-8b0 (revue P1, B-M1) : une saisie **décomposée** (`e` suivi
+        // de l'accent aigu combinant U+0301, `Mn` visible) est admise telle
+        // quelle — `normalize_description` ne recompose pas en NFC.
+        let decomposee = "Re\u{0301}serve";
+        assert_eq!(
+            normalize_description(Some(decomposee)).unwrap().as_deref(),
+            Some(decomposee),
+            "{decomposee:?} (forme décomposée) doit être admise"
+        );
     }
 
     #[test]
