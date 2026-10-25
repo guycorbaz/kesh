@@ -278,7 +278,14 @@ pub async fn list_invoices(
   `GET /api/v1/contacts/{id}`. ⚠️ **Exception, unchanged by the move:** the journal-entry list
   (`services::ecritures::lister`) does **not** read the company — it passes the context's `company_id` to the
   repository, which filters by it, so an orphaned token yields an empty page rather than an error.
-  `GET /api/v1/contacts/{id}` reads the contact first (404 if absent or foreign), then the company.)*
+  `GET /api/v1/contacts/{id}` reads the contact first (404 if absent or foreign), then the company.
+  Story 32-4b adds six reads: `GET /api/v1/invoices`, `GET /api/v1/invoices/{id}`,
+  `GET /api/v1/invoices/due-dates`, `GET /api/v1/invoices/{id}/settlements`, `GET /api/v1/supplier-invoices` and
+  `GET /api/v1/supplier-invoices/{id}` (`services::{factures, factures_fournisseur}`). ⚠️ **Two more exceptions,
+  unchanged by the move:** `GET /api/v1/invoices/{id}` (`factures::detail`) and `GET /api/v1/invoices/due-dates`
+  (`factures::echeances`) do **not** read the company — the invoice is read under the context's `company_id`
+  (404 for an orphaned token), and the due-date page and summary are filtered by it (an empty page and a zero
+  summary).)*
 - **Fast failure:** If company missing, error returned immediately
 - **Clear error:** `Forbidden` indicates permission issue, not data absence
 

@@ -23,7 +23,9 @@ use crate::middleware::auth::CurrentUser;
 pub enum Portee {
     /// Lecture des livres : plan comptable, écritures, rapports comptables.
     BooksRead,
-    /// Lecture des factures, dont la balance âgée des débiteurs.
+    /// Lecture des factures, dont la balance âgée des débiteurs — factures
+    /// clientes et fournisseur, échéancier, règlements (Story 32-4b,
+    /// C-32-4b-3).
     InvoicesRead,
     /// Lecture du carnet d'adresses : contacts, données personnelles (Story
     /// 32-4a, C-32-4a-4).

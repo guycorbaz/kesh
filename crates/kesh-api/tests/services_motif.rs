@@ -2138,6 +2138,16 @@ const HANDLERS_MIGRES: &[(&str, &str)] = &[
     ("routes/supplier_invoices.rs", "get_supplier_invoice"),
 ];
 
+/// Une ligne de [`SITES_NON_RESOLUS`] : (fichier, `pub async fn`, `async fn`
+/// toutes visibilités, handlers sur `state.pool`, aides sur `state.pool`).
+type SiteNonResolu = (
+    &'static str,
+    usize,
+    usize,
+    &'static [&'static str],
+    &'static [&'static str],
+);
+
 /// AC12 (iii) — l'inventaire clos des sites non résolus des fichiers du
 /// rollout : (fichier, nombre de `pub async fn`, nombre d'`async fn` toutes
 /// visibilités, handlers qui lisent encore `state.pool`, **aides hors corps**
@@ -2145,7 +2155,7 @@ const HANDLERS_MIGRES: &[(&str, &str)] = &[
 /// lectures de lettrage qu'aucun outil ne sert (C-32-4a-1) ; pour la 32-4b,
 /// les douze mutants des factures, l'export CSV de l'échéancier (C-32-4b-1) et
 /// les deux aides des mutants de `invoices.rs` (AC13 (iii)).
-const SITES_NON_RESOLUS: &[(&str, usize, usize, &[&str], &[&str])] = &[
+const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
     (
         "routes/journal_entries.rs",
         7,
