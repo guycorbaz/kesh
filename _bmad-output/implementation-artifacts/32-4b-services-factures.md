@@ -3,10 +3,10 @@
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-4b`, branche `story/32-4b` partie de `main`
-`592ee430` (la 32-4a fusionnée). Registre : `epic-32-choix-autonomes-324b.md` (C-32-4b-1 à C-32-4b-14). Clé courte :
+`592ee430` (la 32-4a fusionnée). Registre : `epic-32-choix-autonomes-324b.md` (C-32-4b-1 à C-32-4b-17). Clé courte :
 `324b`. Issue de l'epic : #723 (CR « Serveur MCP intégré à Kesh »), en `refs`. Les numéros de ligne cités sont ceux de
 `592ee430`. Modèle direct : la 32-4a (`32-4a-services-ecritures-contacts.md`), dont les leçons de revue sont intégrées
-dès cette fiche (§ *Les leçons de la 32-4a*).*
+dès cette fiche (§ *Les leçons de la 32-4a*). Remédiée après la validation P1 (Sonnet ×2) : Change Log.*
 
 ## Story
 
@@ -26,8 +26,9 @@ ne reçoit pas.
   directement (inventaire clos, garde lexicale si elle est simple). **Risque nommé** : une liste paginée dont les bornes
   (`clamp(1, 200)`) se perdent — **c'est ici** que ce plafond existe (fait 3).
 - L'annotation qui suit l'AC (l. 318-321) : la 32-4a a laissé deux lectures de ses fichiers hors services, faute
-  d'outil ; Guy a confirmé cette lecture le 2026-10-24 (fiche 32-4a, Change Log, « Q1 confirmée par Guy »). La 32-4b
-  l'applique (C-32-4b-1).
+  d'outil ; Guy a confirmé cette lecture le 2026-10-24 (fiche 32-4a, Change Log, « Q1 confirmée par Guy »), pour
+  ces deux lectures-là. La 32-4b l'applique à l'export CSV (C-32-4b-1), écart qu'elle soumet à Guy (Q2) et que l'epic
+  porte en annotation datée (validation P1, F3 = R12).
 - `planning-artifacts/epic-32-spike-mcp.md` l. 925-926 : « **32-4a / 32-4b** — AC ajouté : aucun service de lecture
   n'appelle un `get_or_create_*` ni un dépôt qui écrit ; inventaire clos des appels » (AC14 ici) ; l. 961 : les bornes
   des outils de la 32-9a sont « choisies pour rester sous 10 000 jetons par réponse » — elles le seront **à l'outil**,
@@ -38,8 +39,8 @@ ne reçoit pas.
 - **Q11 (Guy, 2026-10-24 au soir, `epic-32-spike-mcp.md` l. 1061-1067)** : la lecture seule est **tenue par
   l'application** — les outils n'atteignent que des services qui reçoivent une `Lecture` —, la connexion du MCP se
   déclarant en outre `READ ONLY` (mode de session) ; **aucun second utilisateur MariaDB** ; « les mots par
-  construction disparaissent ». La fiche n'en préjuge rien d'autre ; elle corrige les deux doc-comments que cette
-  réponse rend faux (AC17, C-32-4b-12).
+  construction disparaissent ». La fiche n'en préjuge rien d'autre ; elle corrige les six sites que cette
+  réponse contredit ou rend périmés, dans `services/`, `lib.rs` et `tests/common/` (AC17 (3), C-32-4b-12, C-32-4b-16).
 - **Le motif** : `services/mod.rs` (l. 1-139, règles R1 à R8) ; la 32-4a l'a appliqué à cinq lectures
   (`services/{ecritures,postes_ouverts,carnet}.rs`). Une lecture **sans trace** rend directement (R5) : aucune des six
   lectures de cette story n'écrit au journal d'audit (fait 7).
@@ -106,8 +107,8 @@ Ses trois passes de revue de code ont toutes porté sur la **couverture**, non s
      **forcé** à `None` (« INVARIANT ANTI-DISSIMULATION », l. 1124-1132), tri défaut `DueDate` / `Asc` (l. 1133-1134).
    Les dates (`dateFrom`, `dateTo`, `dueBefore`) sont des `Option<NaiveDate>` du DTO (l. 130-132, 1002-1006) : une date
    mal formée est un refus de l'extracteur `Query` d'Axum, **avant** le handler. `ListInvoicesQuery.paused` et
-   `ListDueDatesQuery.payment_status` sont des enums de route (`PausedParam` l. 980-985, `PaymentStatusParam`
-   l. 953-959), convertis vers ceux du dépôt par `From` (l. 961-970, 987-995).
+   `ListDueDatesQuery.payment_status` sont des enums de route (`PausedParam` l. 978-982, `PaymentStatusParam`
+   l. 953-958), convertis vers ceux du dépôt par `From` (l. 960-969, 984-992).
 5. **Les lectures et la société** :
    - `list_invoices` lit la société **d'abord** (l. 603), puis valide, puis lit la page sur `current_user.company_id`
      (l. 665-666) ;
@@ -139,7 +140,7 @@ Ses trois passes de revue de code ont toutes porté sur la **couverture**, non s
 7. **Aucune des six lectures n'écrit, ni ne verrouille — relevé au premier niveau, à fermer par l'AC14** (chemins
    `kesh-db/src/repositories/`) :
    - appels directs : `invoices::{list_by_company_paginated, find_by_id_with_lines, due_dates_summary}` (`SELECT`
-     seuls, l. 829-1058), `invoice_settlements::{amount_settled, amount_due, list_for_invoice}` (`SELECT`, l. 485-563),
+     seuls, l. 829-1024), `invoice_settlements::{amount_settled, amount_due, list_for_invoice}` (`SELECT`, l. 485-563),
      `invoice_settlements_write::settlement_cancel_blocker` (l. 740 → `settlement_cancel_blocker_unlinking`, l. 752, un
      `SELECT` l. 760-773, puis `settlement_cancellation::settlement_entry_cancel_blocker`, l. 87, dont le doc-comment dit
      « **Lecture seule** : aucun verrou n'est posé ici », l. 68), `company_invoice_settings::round_to_5_centimes`
@@ -168,17 +169,23 @@ Ses trois passes de revue de code ont toutes porté sur la **couverture**, non s
    ligne de trace est dans `TABLE_DES_TRACES` de `services_motif.rs`. **Rien à déplacer**, `routes/reports.rs` n'est pas
    touché : « appel seulement » se lit « l'outil de la 32-9a l'appellera tel quel ».
 9. **Le motif tel qu'il est après la 32-4a** : `Portee { BooksRead, InvoicesRead, ContactsRead }` (`services/acces.rs:22-31`) ;
-   huit fichiers dans `services/` (`services_motif.rs:2365-2369`) ; `HANDLERS_MIGRES` à six (l. 2126-2133) ;
+   huit fichiers dans `services/` (`services_motif.rs:2363-2368`) ; `HANDLERS_MIGRES` à six (l. 2124-2133) ;
    `SITES_NON_RESOLUS` à trois fichiers (l. 2138-2168) ; `SERVICES_DU_ROLLOUT` à trois (l. 2292-2296) ;
    `corps_des_handlers` n'ouvre que les lignes qui **commencent** par `pub async fn` (l. 2026-2050 — une méthode
    indentée n'est pas un handler) ; `services_rollout.rs` porte la matrice `Svc` / `SERVICES` à cinq (l. 373-388) et
    `jouer` (l. 409-452).
 10. **Documentation** : `docs/api-external.md` ne nomme que `GET /invoices`, `GET /invoices/{id}` (l. 215) et la fiche
-    fournisseur (l. 552-566, 723-757 : champs d'annulation et de document) — **aucune** borne, aucun refus de liste,
-    ni l'échéancier, ni les règlements. `docs/MULTI-TENANT-SCOPING-PATTERNS.md:273-281` nomme les six lectures de la
+    fournisseur (l. 552-566, 723-757 : champs d'annulation et de document), et les règlements d'une facture (l. 497 :
+    « **`GET /api/v1/invoices/{id}/settlements`** — lecture », `cancellable`, `cancelBlockedBy`…) — **aucune** borne,
+    aucun refus de liste, ni l'échéancier. *(Validation P1, R8 : la l. 497 manquait.)* `docs/MULTI-TENANT-SCOPING-PATTERNS.md:273-281` nomme les six lectures de la
     32-3 et de la 32-4a. `services/mod.rs:132-139` et `services/poignees.rs:9-12` disent la lecture seule « décidée par
-    Guy (Q11) » à venir et « la garantie réelle […] celle de la base, en 32-6 » : **faux depuis la réponse Q11**
-    (origine).
+    Guy (Q11) » à venir et « la garantie réelle […] celle de la base, en 32-6 ». Depuis la réponse Q11 (origine),
+    `mod.rs:139` et `mod.rs:52-53` (« la 32-6 l'imposera par la base ») la **contredisent** ; `poignees.rs:9-12`,
+    `lib.rs:147-148` et `:158-159` (doc-comments d'`AppState::lecture()` et `trace()`) et `tests/common/lecture_seule.rs:9`
+    sont **périmés** (ils disent la décision à prendre). Relevé de la valeur sur `crates/` entier (validation P1, R4) :
+    `grep -rnE 'limité au .SELECT.|utilisateur .SELECT.|l.imposera par|sera celle de la base|par Guy \(Q11\)|Guy sur Q11|la 32-6 \(Q11\)' crates/`
+    → ces six sites (neuf lignes : `lib.rs` 148, 159 ; `poignees.rs` 10, 11 ; `mod.rs` 52, 135, 136, 139 ;
+    `lecture_seule.rs` 9), rien d'autre.
 
 ## Le rollout (ce que la story déplace)
 
@@ -268,8 +275,9 @@ base), et les **douze** mutants (C-32-0-4).
    du résumé **sans** `payment_status` (« B15 »), puis la page et le résumé en parallèle (`tokio::join!` sur
    `lecture.pool()`) ; **aucune lecture de société** (fait 5). L'export CSV appelle `requete_echeances` à la place de
    `build_due_dates_query`, **après** sa lecture de société et avec `limit`/`offset` à `None` (l. 1561-1570) — son ordre
-   ne change pas. La conversion `ListDueDatesQuery → DemandeEcheances` est **une** fonction du handler, partagée par la
-   liste et l'export (C-32-4b-4). `build_due_dates_query` disparaît.
+   ne change pas ; son commentaire « M4 » (l. 1562-1566), qui nomme `build_due_dates_query`, nomme `requete_echeances`.
+   La conversion `ListDueDatesQuery → DemandeEcheances` est **une** fonction du handler, partagée par la liste et
+   l'export (C-32-4b-4). `build_due_dates_query` disparaît.
 6. **AC6 — `factures::reglements`.** `(&ContexteAcces, &Lecture, id)`. Après `exiger` : `company_for_ids` (`Internal`),
    `find_by_id_with_lines(lecture.pool(), company.id, id)` → `NotFound`, puis **une** transaction
    `lecture.pool().begin()` portant `list_for_invoice(&mut *tx, …)` et, par règlement, `settlement_cancel_blocker(&mut
@@ -300,21 +308,31 @@ base), et les **douze** mutants (C-32-0-4).
    - `grep -nE 'clamp\(|\.max\(0\)|unwrap_or\(50\)' crates/kesh-api/src/routes/supplier_invoices.rs` → rien ;
    - `sed -n '1,/^#\[cfg(test)\]/p' crates/kesh-api/src/routes/invoices.rs | grep -c 'AppError::Validation'` → **22**
      (34 aujourd'hui, moins les douze du fait 4) — un refus recopié au handler sous une autre forme se verrait ici ;
-   - `grep -n 'build_due_dates_query' crates/kesh-api/src` → rien.
-   Les mutants, l'export (hors l'appel de `requete_echeances` et de la conversion partagée) et `scan_qr` ne changent pas.
+   - `grep -rnF 'build_due_dates_query' crates/kesh-api/src` → rien (aujourd'hui l. 1044, 1146, 1565, 1570 ; le commentaire
+     de l'export compris, AC5 ; validation P1, F1 = R7) — `crates/kesh-api/tests/dunning_reminders_e2e.rs:717`, hors
+     `src/`, reste aux *Points à tracer*.
+   Les mutants, l'export (hors l'appel de `requete_echeances`, de la conversion partagée et de son commentaire « M4 »)
+   et `scan_qr` ne changent pas.
 
 ### C — Les tests
 
 9. **AC9 — les tests existants restent verts ; les seules modifications sont celles-ci** (liste fermée) :
    (1) `tests/services_motif.rs` : la garde étendue de l'AC13 ; le compte de `services/` à **dix** fichiers
-   (l. 2365-2369 et son message) ; rien d'autre. (2) `tests/services_rollout.rs` **complété, non recréé** : des
+   (l. 2363-2368 et son message) ; rien d'autre. (2) `tests/services_rollout.rs` **complété, non recréé** : des
    variantes ajoutées à `Svc` et à `SERVICES` (l. 373-388), des bras à `portee_exigee` (l. 390-395) et à `jouer`
    (l. 409-452), des cas ajoutés à `ac9_c_le_refus_precede_validation_et_lecture`, `ac11_a_…` et `ac11_b_aucune_lecture_d_une_autre_societe`,
    et des tests neufs ; **les bras, lignes et assertions des cinq services de la 32-4a restent identiques** ;
    `ac11_a_les_cinq_services_lisent_en_lecture_seule` est renommé `ac11_a_les_services_lisent_en_lecture_seule`
-   (C-32-4b-13), son doc-comment et celui du module mis à jour. (3) Aucun autre fichier de `tests/`. Contrôles :
-   `git diff --diff-filter=MDR --name-only $(git merge-base HEAD origin/main) HEAD -- crates/kesh-api/tests` →
-   **exactement** `crates/kesh-api/tests/services_motif.rs` et `crates/kesh-api/tests/services_rollout.rs` ; `diff` des
+   (C-32-4b-13), son doc-comment et celui du module mis à jour, comme les commentaires qui disent « les cinq services »
+   (l. 4, 368, 371, 481, 933 ; validation P1, R14) ; `Livres` et `poser_livres` gagnent les fixtures de factures
+   (C-32-4b-15), les assertions des huit tests de la 32-4a qui appellent `poser_livres` (l. 486, 546, 639, 683, 863,
+   941, 995, 1048) restant identiques et vraies — vérifiées une à une à l'étape 0 ; les tests neufs portent le préfixe
+   `ac324b_` (validation P1, F6). (3) `tests/invoice_echeancier_e2e.rs` : les seules liaisons de l'AC18. (4)
+   `tests/common/lecture_seule.rs` : son seul doc-comment (l. 9, AC17 (3)). (5) Aucun autre fichier de `tests/`.
+   Contrôles : `git diff --name-only $(git merge-base HEAD origin/main) HEAD -- crates/kesh-api/tests` (sans filtre :
+   un fichier ajouté compte aussi ; validation P1, R13) → **exactement** `crates/kesh-api/tests/common/lecture_seule.rs`,
+   `crates/kesh-api/tests/invoice_echeancier_e2e.rs`, `crates/kesh-api/tests/services_motif.rs` et
+   `crates/kesh-api/tests/services_rollout.rs` ; `diff` des
    `mod tests` de `routes/invoices.rs` et de `mod scan_qr_tests` de `routes/supplier_invoices.rs` (patron de l'AC8 de la
    32-4a : `sed -n '/^#\[cfg(test)\]/,$p'` aux deux bornes) → **vides**. Fichiers qui doivent rester verts, relevé
    **large** (`grep -lE '/api/v1/invoices|/api/v1/supplier-invoices' crates/kesh-api/tests/*.rs` → **25** fichiers au
@@ -339,15 +357,20 @@ base), et les **douze** mutants (C-32-0-4).
       lu avant la page) ;
     - (e) API `Consultation` → `Ok`.
 11. **AC11 — la validation, les bornes, les filtres et le tri, au service et par la route.** Fixtures **synthétiques**
-    posées dans le test (AC9 de la 32-4a : `seed_accounting_company`, exercice 2020-2030 ; factures par
-    `invoices::create` et `invoices::validate_invoice`, règlements par la route `POST /invoices/{id}/settlements` en
-    `internal_account` sur 1000, factures fournisseur au patron de `supplier_settlement_cancel_e2e.rs:109-177` —
-    C-32-4b-10) :
+    (AC9 de la 32-4a : `seed_accounting_company`, exercice 2020-2030). **Deux montages** (C-32-4b-15, validation P1,
+    F4) : pour la matrice (AC10, AC12), `poser_livres` pose aussi, **par les dépôts**, un brouillon, une facture validée
+    partiellement réglée (`invoices::create`, `invoices::validate_invoice`, `invoice_settlements_write::settle_invoice`
+    en `SettlementChoice::InternalAccount` sur 1000, `kesh-db/src/repositories/invoice_settlements_write.rs:67-75`) et
+    une facture fournisseur (au patron de `supplier_settlement_cancel_e2e.rs:109-177`) ; pour l'AC11 (d) à (g), chaque
+    test pose ses propres fixtures — **au moins quatre** factures, `created_at` posé par un `UPDATE` explicite et
+    distinct pour chacune (le départage `i.id DESC` et `DATETIME(3)` rendraient `CreatedAt` ambigu ; validation P1, F5),
+    dates d'échéance en 2021 (échue) et en 2030 (à échoir), indépendantes de l'horloge :
     - (a) **table des refus**, au service, message attendu **en entier** : les cinq de `lister` et les sept de
       `requete_echeances`, chacun seul ; les **bornes acceptées** — `limit` 1 et 100, `offset` 0, `offset` 1 000 000
       (échéancier), `search` de 100 caractères, `dateFrom == dateTo`, `dueBefore == dateFrom`, `dueBefore == dateTo`,
       `search = "   "` (aucun filtre : même total que sans) — et leurs voisines refusées (`limit` 0 et 101, `offset`
-      −1 et 1 000 001, `search` de 101 caractères) ; des **cas d'ordre** : `limit = 0` **et** `offset = −1` → message de
+      −1, et 1 000 001 pour l'échéancier seul — la liste n'a pas de plafond d'`offset` ; validation P1, R10 —, `search`
+      de 101 caractères) ; des **cas d'ordre** : `limit = 0` **et** `offset = −1` → message de
       `limit` ; `offset = −1` et `status = "x"` → `offset` ; `search` de 101 caractères et `status = "x"` → `search` ;
       `status = "x"` et `dateFrom > dateTo` → `status` ; échéancier : `offset = 1 000 001` et `search` trop long →
       `offset` ; `dateFrom > dateTo` et `dueBefore < dateFrom` → `dateFrom doit être…` ; `dueBefore < dateFrom` et
@@ -364,12 +387,14 @@ base), et les **douze** mutants (C-32-0-4).
       (bornes incluses), `paused` (`paused`, `not-paused`, `all`), `limit=1&offset=1` (offset positif) ; **chaque
       filtre de l'échéancier**, de même : `search`, `contactId`, `dateFrom`, `dateTo`, `dueBefore`, `paymentStatus`
       (`all`, `paid`, `unpaid`, `overdue`), `limit=1&offset=1` ; les **constantes** de l'échéancier : un brouillon n'y
-      paraît jamais (`status` forcé), une facture suspendue y paraît (`paused` forcé), une facture payée n'y paraît pas
-      sans `paymentStatus` (défaut `Unpaid`), le **résumé** est le même pour `paymentStatus=paid` et sans paramètre
-      (« B15 ») ; la liste fournisseur : `limit=1&offset=1` ;
+      paraît jamais, **y compris avec `paymentStatus=all`** (`status` forcé : sans `all`, le dépôt l'exclut lui-même ;
+      validation P1, R6), une facture suspendue **et** une non suspendue y paraissent toutes deux (`paused` forcé ;
+      R5), une facture payée n'y paraît pas sans `paymentStatus` (défaut `Unpaid`) ; le **résumé** est le même pour
+      `paymentStatus=paid` et sans paramètre — contrat de la route, qui ne distingue **pas** le retrait « B15 » : le
+      dépôt ignore lui-même `payment_status` (M21d, équivalente) ; la liste fournisseur : `limit=1&offset=1` ;
     - (e) **chaque colonne et chaque sens du tri, par la route, en ordre rendu** : liste — `sortBy` = `Date`, `DueDate`,
       `TotalAmount`, `ContactName`, `CreatedAt`, chacun dans les deux sens, sur des fixtures où les cinq ordres
-      **diffèrent** deux à deux (au moins trois factures) ; échéancier — de même, sur les factures validées ;
+      **diffèrent** deux à deux (les quatre factures ci-dessus) ; échéancier — de même, sur les factures validées ;
     - (f) **tri par défaut, au service et par la route**, en ordre rendu, avec au moins deux lignes distinguables :
       liste → `Date` `Desc` (ordre distinct de `DueDate` `Desc` et de `Date` `Asc`) ; échéancier → `DueDate` `Asc` ;
       fournisseur → `invoice_date DESC, id DESC` (l'ordre du dépôt, `supplier_invoices.rs:228`, non déplacé : test
@@ -388,8 +413,8 @@ base), et les **douze** mutants (C-32-0-4).
       sont **nommées** au Dev Agent Record, non revendiquées ;
     - (b) **filtre de société** : une seconde société (`seconde_societe`, l. 229-256) ; un contexte MCP de cette
       société, `InvoicesRead`, demande la fiche et les règlements d'une facture de la première, et la fiche d'une
-      facture fournisseur de la première → `AppError::Database(DbError::NotFound)` ; les trois listes et l'échéancier →
-      aucune ligne de la première ;
+      facture fournisseur de la première → `AppError::Database(DbError::NotFound)` ; les deux listes et l'échéancier →
+      aucune ligne de la première (validation P1, R9) ;
     - (c) **ordres** : société inexistante **et** `limit = 0` pour `factures::lister` → `Internal` (la société est lue
       avant la validation) ; société inexistante et facture inexistante pour `factures::reglements` et
       `factures_fournisseur::detail` → `Internal` ;
@@ -408,7 +433,9 @@ base), et les **douze** mutants (C-32-0-4).
       ligne égale à `}`, comme un handler). L'égalité au niveau du fichier devient : occurrences du fichier = somme
       sur les corps des handlers **+** somme sur les corps des aides ; et l'ensemble des aides qui lisent égale la liste
       attendue. Relevé attendu au dernier commit : `invoices.rs` **30** = 28 + 2, `supplier_invoices.rs` **11** = 11 + 0
-      (aujourd'hui 40 = 38 + 2 et 15 = 15 + 0) ; les trois fichiers de la 32-4a inchangés (15 / 10 / 12) ;
+      (aujourd'hui 40 = 38 + 2 et 15 = 15 + 0) ; les trois fichiers de la 32-4a inchangés, **11 / 8 / 8**
+      = somme des corps, aucune aide (relevé à `592ee430` ; les « 15 / 10 / 12 » de la fiche 32-4a étaient ceux d'avant
+      sa migration — validation P1, R1) ;
     - (vi) le compte de `services/` à **dix** ; (viii) `SERVICES_DU_ROLLOUT` à **cinq** (`services/factures.rs`,
       `services/factures_fournisseur.rs` ajoutés ; l'assertion `sources.len()` à 5) ;
     - (ix) **neuve — les seuls usages de `state` d'un handler migré.** Pour chacun des douze `HANDLERS_MIGRES`, sur le
@@ -439,7 +466,7 @@ base), et les **douze** mutants (C-32-0-4).
 15. **AC15 — mutations qui doivent rougir** (une à la fois, motif vérifié unique, restauration `git checkout -- <f> &&
     touch <f>`, diff résiduel nul ; chacune rougit **au moins une assertion nommée**, relevée à son message — une
     erreur de compilation ou de montage n'est pas un rouge ; une ligne par mutation au Dev Agent Record, diffs aux
-    journaux hors dépôt, C-32-4a-21) — **100**, toutes à tuer, aucune équivalente déclarée d'avance :
+    journaux hors dépôt, C-32-4a-21) — **100** : **99 à tuer, et M21d, équivalente déclarée** (validation P1, R2) :
     - **Accès** — **M1a-f** : `exiger` retiré de chacun des six services → AC10 (a) ; **M2a-b** : `exiger` après la
       validation (`factures::lister`, `factures::echeances`) → AC10 (c-val) ; **M3a-e** : `exiger` après la première
       lecture (`factures::{lister, detail, reglements}`, `factures_fournisseur::{lister, detail}`) → (c-lec) ;
@@ -469,8 +496,13 @@ base), et les **douze** mutants (C-32-0-4).
     - **Défauts du tri (leçon 2)** — **M20a** : défaut de `sort_by` de la liste → `DueDate` ; **M20b** : sens → `Asc` ;
       **M20c** : défaut de l'échéancier → `Date` ; **M20d** : sens → `Desc` → AC11 (f) ;
     - **Constantes de l'échéancier** — **M21a** : `status` → `None` ; **M21b** : `paused` → `Some(PausedFilter::Paused)` ;
-      **M21c** : défaut de `payment_status` → `All` ; **M21d** : le résumé reçoit `payment_status` → AC11 (d) (et
-      `dunning_reminders_e2e::paused_invoice_stays_visible_in_due_dates` pour M21b) ;
+      **M21c** : défaut de `payment_status` → `All` → AC11 (d) (M21a par la ligne `paymentStatus=all` avec un
+      brouillon présent ; M21b par la facture **non** suspendue attendue — `paused_invoice_stays_visible_in_due_dates`
+      ne la tue pas, sa seule facture étant suspendue) ; **M21d** : le résumé reçoit `payment_status` — **équivalente**,
+      jouée et déclarée : `due_dates_summary` ne lit pas `query.payment_status` (« Filtres ignorés : `payment_status` »,
+      `kesh-db/src/repositories/invoices.rs:937-938` ; corps l. 943-1024, filtres `contact_id`, `date_from`, `date_to`,
+      `due_before`, `search` seuls ; test du dépôt `test_due_dates_summary_ignores_payment_status_filter`, l. 5349) — le
+      retrait « B15 » est une défense en profondeur, gardé tel quel ; le Dev Agent Record recopie sa survie ;
     - **Détail et règlements** — **M22a** : `arrondi_5_centimes` toujours `None` ; **M22b** : condition du brouillon
       inversée ; **M22c** : `montant_regle` et `reste_du` permutés → AC11 (g) et les témoins de `invoice_echeancier_e2e` ;
       **M23** : `settlement_cancel_blocker` sur une connexion acquise de la `Lecture` au lieu de `&mut tx` → garde
@@ -486,7 +518,8 @@ base), et les **douze** mutants (C-32-0-4).
       → (iii), liste des aides ; **M29** : `let _t: Option<&crate::services::poignees::Trace> = None;` dans
       `factures::detail` → (viii).
     Décompte : 6 + 2 + 5 + 2 + 1 = 16 (accès) ; 1 + 2 + 2 + 2 = 7 (société) ; 4 + 4 + 2 + 1 + 4 = 15 (bornes) ;
-    10 + 10 + 10 + 10 + 4 = 44 (recopies) ; 4 (tri) ; 4 (constantes) ; 3 + 1 + 1 = 5 (détail) ; 5 (gardes) — **100**.
+    10 + 10 + 10 + 10 + 4 = 44 (recopies) ; 4 (tri) ; 4 (constantes, dont M21d équivalente) ; 3 + 1 + 1 = 5 (détail) ;
+    5 (gardes) — **100**, dont 99 à tuer.
 16. **AC16 — gates.** `kesh-db` n'est **pas** touché (aucun dépôt, aucune migration, ni `post_restore.rs`). En boucle,
     **gate ciblé** : `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, puis
     `cargo nextest run -E 'package(kesh-api) & kind(lib)'` et les binaires `services_rollout`, `services_motif`, ceux de
@@ -496,21 +529,36 @@ base), et les **douze** mutants (C-32-0-4).
     `docs/testing.md`, port attribué par l'orchestrateur, jugé fichier par fichier contre § *Les échecs attendus*).
     ⛔ « Rejouée au push » est interdit. Ne déclarer que ce qui a tourné, avec les chiffres.
 17. **AC17 — documentation.** Rien de visible ne change (C-32-4b-14) : ni manuel, ni CHANGELOG, ni README, ni
-    `docs/api-external.md`. **Le contrôle se fait quand même**, sortie recopiée : `api-external.md` l. 215, 552-566,
-    723-757 relues contre le code déplacé (champs de la fiche fournisseur, `null` = non calculé) ;
+    `docs/api-external.md`. **Le contrôle se fait quand même**, sortie recopiée : `api-external.md` l. 215, 497, 552-566,
+    667, 723-757 relues contre le code déplacé (champs de la fiche fournisseur, `null` = non calculé) ;
     `grep -niE "factures|échéancier|par page|pagination" docs/manual/fr/user-manual.tex` et les PDF aplatis
     (`pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oiE ".{60}(par page|pagination|100 factures|200 factures).{60}"`)
     → aucun texte ne décrit autrement les bornes. **Textes qui bougent** : (1) la note de
     `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (l. 273-281) nomme les six lectures et dit que `GET /invoices/{id}` et
     `GET /invoices/due-dates` ne lisent pas la société (C-32-4b-8) ; (2) le doc-comment de `services/mod.rs` : le tableau
     du rollout de la 32-4b, l'inventaire de l'AC14, les lectures laissées et leur raison, la balance âgée « déjà un
-    service » ; (3) **Q11** — le paragraphe « Ce qui reste à la 32-6 » de `services/mod.rs` (l. 132-139) et le
-    doc-comment de `services/poignees.rs` (l. 9-12) disent la décision **prise** : lecture seule tenue par l'application
-    (les outils n'atteignent que des services qui reçoivent une `Lecture`) et mode de session `READ ONLY` sur la
-    connexion du MCP, réalisés par la 32-6, sans utilisateur MariaDB limité ; la garantie repose sur le code de Kesh et
-    ses tests — non « celle de la base » (C-32-4b-12) ; `grep -rnE "utilisateur MariaDB|celle de la base|ou les deux"
-    crates/kesh-api/src/services` → rien après ; (4) les doc-comments de module de `routes/{invoices,supplier_invoices}.rs`
+    service » ; (3) **Q11 — tous les sites du texte antérieur** (décision de l'orchestrateur, validation P1, R4 ;
+    C-32-4b-12, C-32-4b-16) : `services/mod.rs` — R4 (l. 52-53, « la 32-6 l'imposera par la base ») et « Ce qui reste à
+    la 32-6 » (l. 132-139, dont l. 134-136, ceux que le registre de la 32-5 cite « 93-95 » sur sa base `89d68704`) —,
+    `services/poignees.rs:9-12`, `lib.rs:147-148` et `:158-159`, `tests/common/lecture_seule.rs:9`, et tout autre site que
+    rend le relevé ci-dessous, disent la décision **prise** : lecture seule tenue par l'application (les outils
+    n'atteignent que des services qui reçoivent une `Lecture`) et mode de session `READ ONLY` sur la connexion du MCP,
+    réalisés par la 32-6, **aucun second compte MariaDB** ; la garantie repose sur le code de Kesh et ses tests, la base
+    n'arrêtant pas un défaut qui contournerait le mode de session. ⚠️ Le texte écrit n'emploie aucune des chaînes du
+    contrôle (validation P1, R3 = F2). Contrôle, sur `crates/` **entier** :
+    `grep -rnE 'limité au .SELECT.|utilisateur .SELECT.|l.imposera par|sera celle de la base|par Guy \(Q11\)|Guy sur Q11|la 32-6 \(Q11\)' crates/`
+    → **rien** après (neuf lignes, six sites avant, fait 10) ; (4) les doc-comments de module de `routes/{invoices,supplier_invoices}.rs`
     renvoient en une ligne aux services pour les lectures migrées. Aucun écran ne change : recette visuelle sans objet.
+18. **AC18 — un défaut de test voisin, intégré** (décision de l'orchestrateur, validation P1 ; C-32-4b-17).
+    `tests/invoice_echeancier_e2e.rs` : `seed_base` rend `(seeded.admin_user_id, seeded.company_id)` (l. 112-117) ; les
+    l. 402, 453 et 500 le lient en `let (company_id, admin_id) = …`, et la l. 538 en `(_company_id, _admin_id)` —
+    verts par la seule coïncidence des deux identifiants dans une base éphémère. Correction : ces quatre liaisons en
+    `(admin_id, company_id)` (resp. `(_admin_id, _company_id)`), **aucune autre ligne** du fichier. Contrôles :
+    `grep -nE 'let \(_?company_id, _?admin_id\) = seed_base' crates/kesh-api/tests/invoice_echeancier_e2e.rs` → rien ;
+    `git diff $(git merge-base HEAD origin/main) HEAD -- crates/kesh-api/tests/invoice_echeancier_e2e.rs | grep -cE '^[-+]\s'`
+    → **8** (quatre lignes ôtées, quatre ajoutées) ; le binaire `invoice_echeancier_e2e` vert, compte exécuté recopié.
+    Ce que le contrôle ne prouve pas : que les trois tests auraient rougi avec des identifiants distincts — aucune
+    mutation n'est demandée (correction d'un test, non d'une règle).
 
 ## Tâches
 
@@ -527,10 +575,11 @@ base), et les **douze** mutants (C-32-0-4).
 - [ ] **T2 (AC1-AC6, AC8)** — `services/factures.rs` (`lister`, `detail`, `requete_echeances`, `echeances`,
   `reglements`, la garde de transaction) ; les quatre handlers minces ; l'export sur `requete_echeances` ; gate ciblé.
 - [ ] **T3 (AC7, AC8)** — `services/factures_fournisseur.rs` ; `from_view` ; les deux handlers minces ; gate ciblé.
+- [ ] **T3-bis (AC18)** — les quatre liaisons de `invoice_echeancier_e2e.rs` ; binaire `invoice_echeancier_e2e`.
 - [ ] **T4 (AC9, AC13)** — amendements de `services_motif.rs` (liste fermée de l'AC9 (1)), garde (ix) et ses témoins.
-- [ ] **T5 (AC14, AC17)** — inventaire de la fermeture ; doc-comments de `services/mod.rs` et `poignees.rs` ; textes de
-  l'AC17.
-- [ ] **T6 (AC15)** — mutations M1 à M29, chacune tuée (pilote hors dépôt, `kesh-gate-logs/324b-mutations-pilote.py`,
+- [ ] **T5 (AC14, AC17)** — inventaire de la fermeture ; les sites Q11 de l'AC17 (3) (`services/mod.rs`, `poignees.rs`,
+  `lib.rs`, `tests/common/lecture_seule.rs`) et leur `grep` sur `crates/` ; textes de l'AC17.
+- [ ] **T6 (AC15)** — mutations M1 à M29, chacune tuée sauf M21d (jouée, survie recopiée) (pilote hors dépôt, `kesh-gate-logs/324b-mutations-pilote.py`,
   au patron de `324a-p1r-mutations-pilote.py` ; binaire `services_rollout` seul quand la mutation ne vise pas une
   garde de `services_motif` ou un test existant nommé).
 - [ ] **T7 (AC9, AC14, AC16, AC17)** — contrôles de l'AC8 et de l'AC9, gate complet et E2E complet au dernier commit de
@@ -567,7 +616,7 @@ compile et laisse les gardes vertes ; **la revue de code les lit** :
 - `crates/kesh-api/src/routes/invoices.rs` — constantes l. 52-59 ; `ListInvoicesQuery` l. 120-145 ; `InvoiceResponse`
   et `with_settlement`/`with_rounding_preview` l. 268-292 ; `with_draft_rounding_preview` l. 299-313 ;
   `ensure_contact_belongs_to_company` l. 552-566 ; `list_invoices` l. 597-677 ; `get_invoice` l. 679-706 ;
-  `PaymentStatusParam`/`PausedParam` l. 951-995 ; `ListDueDatesQuery` l. 994-1019 ; `build_due_dates_query`
+  `PaymentStatusParam`/`PausedParam` l. 951-992 ; `ListDueDatesQuery` l. 994-1019 (struct l. 996) ; `build_due_dates_query`
   l. 1044-1138 ; `list_due_dates_handler` l. 1141-1180 ; `InvoiceSettlementResponse` l. 1397-1417 ;
   `list_invoice_settlements_handler` l. 1427-1471 ; `export_due_dates_csv_handler` l. 1552-1690 ; `mod tests` l. 1696.
 - `crates/kesh-api/src/routes/supplier_invoices.rs` — `SupplierInvoiceResponse` l. 62-128 ;
@@ -642,23 +691,26 @@ plafond de l'écran.
 - **La plage des dates des listes de factures** : `dateFrom`, `dateTo`, `dueBefore` sont des `NaiveDate` du DTO sans la
   plage 1000-9999 qu'exige `parse_as_of` — même classe que **#742** (écritures), **non établie à l'exécution**. Hors
   périmètre (comportement inchangé) ; à ajouter en commentaire sur #742.
-- **Un défaut de test voisin, relevé à la lecture** : `invoice_echeancier_e2e.rs:112-117`, `seed_base` rend
-  `(admin_user_id, company_id)`, et trois appelants le lient en `(company_id, admin_id)` (l. 402, 453, 500) — verts par
-  coïncidence tant que les deux identifiants valent la même chose dans une base éphémère. Issue P3 (`bug`, test).
+- *(Le défaut de `seed_base` d'`invoice_echeancier_e2e.rs`, d'abord proposé ici en issue P3, est intégré à la story :
+  AC18, décision de l'orchestrateur à la validation P1.)*
 
 ### Fichiers touchés (prévus)
 
 `crates/kesh-api/src/services/{factures,factures_fournisseur}.rs` (neufs) ; `services/mod.rs`, `services/acces.rs`
 (doc-comment), `services/poignees.rs` (doc-comment) ; `crates/kesh-api/src/routes/{invoices,supplier_invoices}.rs` ;
-`crates/kesh-api/tests/services_rollout.rs`, `tests/services_motif.rs` ; `docs/MULTI-TENANT-SCOPING-PATTERNS.md`.
-**Non touchés** : `kesh-db`, `lib.rs` (aucune route ni poignée neuve), `helpers.rs`, `routes/reports.rs`,
+`crates/kesh-api/src/lib.rs` (deux doc-comments seuls, l. 147-148 et 158-159 — aucune route ni poignée neuve) ;
+`crates/kesh-api/tests/services_rollout.rs`, `tests/services_motif.rs`, `tests/invoice_echeancier_e2e.rs` (AC18),
+`tests/common/lecture_seule.rs` (doc-comment) ; `docs/MULTI-TENANT-SCOPING-PATTERNS.md` ;
+`_bmad-output/planning-artifacts/epic-32-serveur-mcp.md` (annotation de l'AC de la 32-4, C-32-4b-1).
+**Non touchés** : `kesh-db`, `helpers.rs`, `routes/reports.rs`,
 `routes/imported_supplier_invoices.rs`, frontend, i18n, manuels, CHANGELOG, `docs/api-external.md`.
 
 ### Découpage préventif — verdict
 
 Modules de premier niveau touchés : `kesh-api/services`, `kesh-api/routes/invoices`,
-`kesh-api/routes/supplier_invoices` — **3**, comme l'annonçait l'epic ; deux fichiers de tests et un document en plus.
-La balance âgée (`routes/reports`) n'est **pas** touchée (fait 8). Sous le seuil de 5 : **non découpée**. Le second
+`kesh-api/routes/supplier_invoices`, et la racine `kesh-api/lib.rs` pour deux doc-comments (validation P1, R4) — **4** ;
+quatre fichiers de tests (dont un helper, `tests/common/`) et deux documents en plus, que le critère ne compte pas. La
+balance âgée (`routes/reports`) n'est **pas** touchée (fait 8). Sous le seuil de 5 : **non découpée**. Le second
 critère (non-convergence) se jugera en validation.
 
 ### Risques
@@ -669,7 +721,8 @@ critère (non-convergence) se jugera en validation.
   M15 à M19, toutes jouées.
 - **Faible — l'instantané des règlements** perdu au déplacement (aucune garde aujourd'hui) : garde neuve (AC6), M23.
 - **Faible — l'aperçu d'arrondi** déplacé : AC11 (g), M22, et les deux témoins existants.
-- **Faible — la garde (ix) trop stricte** pour un handler de la 32-4a : ses six handlers n'emploient que `State(state)`,
+- **Faible — la garde (ix) trop stricte** pour un handler déjà migré : les six de `HANDLERS_MIGRES` (`list_accounts` de
+  la 32-3, cinq de la 32-4a ; validation P1, R11 = F6) n'emploient que `State(state)`,
   `state.lecture()` et `state.i18n` (relevé `awk` sur leurs corps, 2026-10-25) ; un rouge sur eux au premier passage
   est une prémisse fausse, à porter au Change Log.
 
@@ -690,6 +743,15 @@ registres `epic-32-choix-autonomes.md` (C-32-0-4, C-32-0-7), `-323.md`, `-324a.m
   (C-32-4b-3). **La question** : une clé `invoices:read` sans `contacts:read` peut-elle lire ces champs — ou faut-il
   que la 32-9a les retire, ou qu'elle exige les deux portées pour la fiche fournisseur ? Le développement peut partir :
   la réponse se traite à l'outil (32-9a) ou par une constante d'exigence, sans défaire la story.
+- **Q2 — l'export CSV de l'échéancier, écart à la lettre de l'AC de l'epic** (validation P1, F3 = R12). L'AC de la 32-4
+  écrit « aucun handler de lecture des modules visés n'appelle plus un dépôt directement » (`epic-32-serveur-mcp.md`,
+  § 32-4) ; la story laisse `export_due_dates_csv_handler` (`GET /invoices/due-dates/export.csv`, Comptable+) sur
+  `state.pool`, faute d'outil qui rende un CSV — inventorié, figé par la garde (iii), sa validation étant celle du
+  service. C'est le motif de la Q1 de la 32-4a, que Guy a confirmée pour les deux lectures du lettrage ; sa
+  confirmation ne couvre pas celle-ci. L'epic est annoté d'une ligne datée. **La question** : acceptez-vous la même
+  lecture pour l'export — ou faut-il le migrer (un service `Comptable` / jamais servi au MCP) ? Le développement part
+  sur la première ; la seconde s'ajoute sans défaire le travail. À noter aussi, une asymétrie écrite au registre
+  (C-32-4b-1) : les règlements sont migrés parce que l'epic les nomme, bien que la 32-9a ne les nomme pas.
 
 ## Dev Agent Record
 
@@ -706,3 +768,36 @@ registres `epic-32-choix-autonomes.md` (C-32-0-4, C-32-0-7), `-323.md`, `-324a.m
   `epic-32-choix-autonomes-324b.md`, C-32-4b-1 à 14 ; les trois leçons de revue de la 32-4a intégrées (recopies,
   tri par défaut, lectures sans société) ; la garde (ix) neuve, pour le trou que `get_invoice` rencontre (une aide
   appelée par `&state`). Validation P1 à lancer (`324b-validate-prompt-p1.md`, Sonnet, lentilles R et F).
+- **2026-10-25 — validation P1** (Sonnet ×2, contexte frais, lecture seule ; prompt `324b-validate-prompt-p1.md` ;
+  rapports hors dépôt `kesh-gate-logs/324b-validate-p1-{R,F}.md`) : **R 0/0/4/10, F 0/0/1/6**, soit 21 findings,
+  **19 distincts** après recoupement (R3 = F2, R7 = F1 ; R12 = F3, R11 recoupe F6 en partie) — **5 MEDIUM** (R1, R2,
+  R3 = F2, R4, F1 = R7), le reste LOW. Le code déplacé et les décomptes neufs (40 / 38 / 2, 15, 34 → 22, 25, 100) se
+  recomptent à la source ; les défauts sont de **rédaction des contrôles** et d'un symptôme non propagé. Remédiation
+  par l'orchestrateur de la fiche (Opus 5.5), chaque prémisse relue au code :
+  - **R1** — appliqué : les comptes de la 32-4a recomptés à `592ee430` par le relevé du détecteur (corps aplatis,
+    commentaires ôtés) : `journal_entries.rs` 11, `letterings.rs` 8, `contacts.rs` 8, chacun égal à la somme de ses corps
+    — les « 15 / 10 / 12 » étaient ceux d'avant la migration de la 32-4a (AC13 (iii)).
+  - **R2** — appliqué : M21d **déclarée équivalente**, preuve au dépôt (`invoices.rs:937-938`, `:5349`) ; AC15 : « 99 à
+    tuer, et M21d » ; l'assertion « B15 » de l'AC11 (d) dite contrat de la route, non témoin du retrait.
+  - **R3 = F2** — appliqué : le texte prescrit n'emploie plus les chaînes du contrôle (« aucun second compte
+    MariaDB ») ; le motif du `grep` porte sur les valeurs d'origine.
+  - **R4** — appliqué selon la décision de l'orchestrateur : **tous** les sites antérieurs à Q11 — `services/mod.rs`
+    (l. 52-53, 132-139), `poignees.rs:9-12`, `lib.rs:147-148` et `:158-159`, `tests/common/lecture_seule.rs:9` —,
+    relevés par le `grep` de la valeur sur `crates/` entier (six sites, aucun autre ; les « par la base » et « ou les
+    deux » du reste de `crates/` sont sans rapport, relus) ; `lib.rs` et le fichier de test entrent au périmètre ;
+    modules recomptés : **4** (C-32-4b-16, mention de la 32-5 b et c au registre).
+  - **F1 = R7** — appliqué : `grep -rnF`, et le commentaire « M4 » de l'export (l. 1562-1566) reformulé par l'AC5.
+  - **Défaut voisin intégré** (décision de l'orchestrateur) : `seed_base` d'`invoice_echeancier_e2e.rs` — **AC18**,
+    T3-bis, C-32-4b-17 ; le fichier entre à la liste fermée de l'AC9 ; la l. 538 (liaison `_`-préfixée inversée)
+    comprise, relevée en relisant les appelants (`grep -n 'seed_base(&pool)'` : 32 appels, quatre inversés).
+  - **F3 = R12** — appliqué : écart consigné (C-32-4b-1), epic annoté, **Q2** posée.
+  - **LOW traités** : R5, R6 (AC11 (d), M21a/b), R8 (`api-external.md:497`, `:667`), R9, R10, R11 (lignes, « six
+    handlers migrés »), R13 (`git diff --name-only` sans filtre), R14 (commentaires « cinq services »), F4 (deux
+    montages, C-32-4b-15), F5 (quatre factures, `created_at` posé), F6 (préfixe `ac324b_`), F7 (« périmé » au fait 10).
+  - **Propagation** (grep des valeurs) : `15 / 10 / 12` → seule l'entrée vivante de l'AC13 (la fiche 32-4a, relevé
+    daté, non touchée) ; `aucune équivalente` → AC15 et l'entrée « fiche rédigée » ci-dessus (relevé daté, laissée) ;
+    `diff-filter=MDR`, `grep -n 'build_due_dates_query'`, `utilisateur MariaDB limité`, `les trois listes`,
+    `2365-2369`, `2126-2133`, `980-985`, `961-970`, `987-995` → traités ; `C-32-4b-1 à 14` → `1 à 17` dans l'en-tête
+    et `sprint-status.yaml` ; `17 AC` → **18 AC**.
+  - **Trend** : P1 = 5 MEDIUM (+ 14 LOW distincts). La boucle ne se clôt que sur une passe à 0 MEDIUM : **P2 complète**,
+    **Opus**, lentilles R et F (`324b-validate-prompt-p2.md`).

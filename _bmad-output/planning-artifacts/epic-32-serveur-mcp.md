@@ -320,6 +320,13 @@ faible à moyen ; une liste paginée dont les bornes (`clamp(1, 200)`) se perden
 les serve — C-32-4a-1, `implementation-artifacts/epic-32-choix-autonomes-324a.md` ; écart à la lettre de cet AC soumis
 à Guy, fiche 32-4a, Q1. Les plafonds réels sont 500, 500 et 100, non `clamp(1, 200)` : fiche 32-4a, fait 3.)*
 
+*(Annoté le 2026-10-25, validation P1 de la 32-4b : la 32-4b migre six des sept lectures de ses fichiers et laisse
+`export_due_dates_csv_handler` (`GET /invoices/due-dates/export.csv`, Comptable+) sur `state.pool`, inventorié et figé
+par la garde, faute d'outil qui rende un CSV — sa validation est celle du service ; la balance âgée est déjà un service
+(32-3) — C-32-4b-1, `implementation-artifacts/epic-32-choix-autonomes-324b.md` ; écart à la lettre de cet AC soumis à
+Guy, fiche 32-4b, Q2. Le `clamp(1, 200)` est celui des factures fournisseur ; les listes clientes refusent hors de
+1 à 100 : fiche 32-4b, fait 3.)*
+
 ### 32-12 — Une sauvegarde antérieure reste importable 🗄️ *(ajoutée par l'orchestrateur le 2026-10-24, sous réserve de Guy — Q4)*
 
 > ⛔ **Retirée le 2026-10-24 au soir** — Q4 répondue par la négative (§ *Réponses de Guy*) : Kesh n'est pas en

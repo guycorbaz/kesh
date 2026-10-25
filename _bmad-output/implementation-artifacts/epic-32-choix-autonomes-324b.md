@@ -19,6 +19,15 @@ Relevé au code de `592ee430` (32-4a fusionnée).
 - **Écartées** : migrer l'export (un service sans consommateur, une exigence `Comptable` / `None` jamais servie au MCP,
   contraire à C-32-0-4) ; laisser l'export sur sa propre copie de `build_due_dates_query` (deux copies des sept refus).
 - **Réversible** : oui ; un outil qui servirait l'export le migrerait — aucune échéance planifiée.
+- *(Complété le 2026-10-25, validation P1, F3 = R12.)* **Écart à la lettre de l'AC de l'epic** (« aucun handler de
+  lecture des modules visés n'appelle plus un dépôt directement ») : l'export reste sur `state.pool`. La confirmation de
+  Guy pour la 32-4a ne couvrait que les deux lectures du lettrage ; l'écart est donc **soumis à Guy** (fiche, Q2) et
+  l'epic est annoté d'une ligne datée, comme pour la 32-4a ; le développement part sur cette lecture. **Asymétrie
+  assumée** : les règlements (`GET /invoices/{id}/settlements`) sont migrés parce que l'epic les nomme, bien que la
+  32-9a ne les nomme pas ; l'export est laissé bien que l'epic nomme « échéances », parce qu'il rend un fichier, non une
+  lecture que l'outil servirait. Le critère de C-32-0-4 (« ce que serviront les outils ») cède donc ici à la lettre de
+  l'epic dans un sens (les règlements), et la lettre cède au critère dans l'autre (l'export) — écrit pour être
+  contesté.
 
 ### C-32-4b-2 — Noms des modules : `factures`, `factures_fournisseur`
 
@@ -138,8 +147,9 @@ Relevé au code de `592ee430` (32-4a fusionnée).
   le permet. Fixtures synthétiques posées dans chaque test : factures par `invoices::create` et
   `invoices::validate_invoice` (comme `invoice_echeancier_e2e.rs:162-194`), règlements par la route
   (`internal_account` sur 1000), factures fournisseur au patron de `supplier_settlement_cancel_e2e.rs:109-177` —
-  **non** par l'aide `seed_base` d'`invoice_echeancier_e2e.rs`, dont trois appelants inversent le couple (fiche, *Points
-  à tracer*).
+  **non** par l'aide `seed_base` d'`invoice_echeancier_e2e.rs`, dont trois appelants inversent le couple (corrigé par
+  l'AC18, C-32-4b-17). *(Précisé à la validation P1, F4 : la matrice reçoit ses fixtures de factures par `poser_livres`,
+  par les dépôts — C-32-4b-15 ; les tests de l'AC11 (d) à (g) posent les leurs.)*
 - **Écartées** : échantillonner (le défaut répété de la 32-4a) ; des tests au service seulement (ils ne voient pas la
   recopie du handler).
 - **Réversible** : oui.
@@ -170,6 +180,8 @@ Relevé au code de `592ee430` (32-4a fusionnée).
 - **Écartées** : laisser la correction à la 32-6 (le texte que lit le développeur de la 32-6 serait faux jusque-là, sur
   un fichier que cette story réécrit) ; décrire la fabrication (32-6).
 - **Réversible** : oui.
+- *(Étendu le 2026-10-25, validation P1, R4 : la correction porte sur **tous** les sites du texte antérieur à Q11, non
+  sur deux — C-32-4b-16.)*
 
 ### C-32-4b-13 — La matrice de `services_rollout.rs` s'étend ; un test renommé
 
@@ -187,4 +199,61 @@ Relevé au code de `592ee430` (32-4a fusionnée).
 - **Contexte** : comme la 32-3 (C-32-3-41) et la 32-4a (C-32-4a-12), aucun statut, corps, borne ni ordre ne change.
 - **Retenu** : contrôle exigé (AC17) — `api-external.md` l. 215, 552-566, 723-757, les manuels et leurs PDF —, aucune
   modification ; la note du document des motifs, les doc-comments de `services/` et des deux fichiers de routes.
+- **Réversible** : oui.
+
+---
+
+## Choix de la remédiation de la validation P1 (2026-10-25, Opus 5.5, en autonomie)
+
+### C-32-4b-15 — Deux montages de fixtures : `poser_livres` étendu pour la matrice, fixtures propres aux tests de l'AC11
+
+*(Validation P1, F4 et F5.)*
+
+- **Contexte** : `jouer(svc, acces, lecture, livres, cas)` reçoit `&Livres` (`services_rollout.rs:409-452`) ; les six
+  services neufs ont besoin d'une facture, d'une facture réglée et d'une facture fournisseur. Les huit tests de la
+  32-4a qui appellent `poser_livres` (l. 486, 546, 639, 683, 863, 941, 995, 1048) comptent des lignes de façon
+  relative (`total >= 1`, total sans filtre, `total == 0` pour la seconde société).
+- **Retenu** : `Livres` gagne les identifiants d'un brouillon, d'une facture validée **partiellement** réglée et d'une
+  facture fournisseur, posés **par les dépôts** dans `poser_livres` (`invoices::create`, `validate_invoice`,
+  `invoice_settlements_write::settle_invoice` en `InternalAccount`, `supplier_invoices::create`) ; la signature de
+  `jouer` ne change pas ; l'étape 0 relit chaque assertion des huit tests et confirme qu'elle reste vraie avec ces
+  écritures et ces contacts de plus. Les tests de l'AC11 (d) à (g) posent leurs propres fixtures : **au moins quatre**
+  factures, `created_at` posé par `UPDATE` explicite (le départage `i.id DESC` et `DATETIME(3)` rendraient `CreatedAt`
+  ambigu), échéances en 2021 et en 2030.
+- **Écartées** : une seconde structure passée en paramètre de plus à `jouer` (toutes ses lignes d'appel modifiées) ; les
+  fixtures de la matrice par la route (un `TestApp` dans chaque test de refus, sans gain).
+- **Réversible** : oui.
+
+### C-32-4b-16 — Tous les sites du texte antérieur à Q11 ; `lib.rs` et `tests/common/lecture_seule.rs` entrent au périmètre
+
+*(Validation P1, R4 ; décision de l'orchestrateur, pour que deux stories ne corrigent pas les mêmes lignes.)*
+
+- **Contexte** : le relevé de la valeur sur `crates/` entier (`grep -rnE 'limité au .SELECT.|utilisateur .SELECT.|l.imposera
+  par|sera celle de la base|par Guy \(Q11\)|Guy sur Q11|la 32-6 \(Q11\)' crates/`) rend six sites, neuf lignes :
+  `services/mod.rs:52` (« la 32-6 l'imposera par la base »), `:135-136`, `:139` ; `services/poignees.rs:10-11` ;
+  `lib.rs:148` et `:159` (doc-comments d'`AppState::lecture()` et `trace()`) ; `tests/common/lecture_seule.rs:9`. Les
+  autres « par la base » et « ou les deux » de `crates/` (sauvegarde, interblocage, lettrage) sont sans rapport, relus.
+- **Retenu** : la 32-4b les corrige **tous** (AC17 (3)), sans employer les chaînes du contrôle (« aucun second compte
+  MariaDB ») ; le contrôle porte sur `crates/` entier et doit rendre rien. `lib.rs` (deux doc-comments seuls) compte
+  comme un module de plus : **4**, sous le seuil de 5 ; `tests/common/lecture_seule.rs` entre à la liste fermée de
+  l'AC9. **La fiche 32-5** (`kesh-32-5`, `32-5-cles-et-reglages-mcp.md`, AC de la partie **b** l. 464-467 :
+  `poignees.rs:9-12` et `services/mod.rs:93-95` ; partie **c** l. 506-507 : `lib.rs:147-148` et `:158-159`) prévoyait les
+  mêmes corrections — ses « 93-95 » de `services/mod.rs` sont, sur sa base `89d68704`, les lignes 94-98 du paragraphe
+  aujourd'hui aux l. 132-139 : **elle les trouvera faites à son étape 0**, et l'orchestrateur le lui signale.
+- **Écartées** : ne corriger que les deux sites de `services/` (R4 : quatre autres sites diraient encore la décision à
+  prendre) ; laisser `lib.rs` à la 32-5c (deux stories sur les mêmes lignes) ; tracer `lecture_seule.rs:9` au lieu de
+  le corriger (un fichier de test hors de la liste fermée — l'orchestrateur l'y fait entrer).
+- **Réversible** : oui.
+
+### C-32-4b-17 — Le défaut de `seed_base` corrigé dans la story, non ouvert en issue
+
+*(Décision de l'orchestrateur, validation P1.)*
+
+- **Contexte** : `invoice_echeancier_e2e.rs:112-117`, `seed_base` rend `(seeded.admin_user_id, seeded.company_id)` ; les
+  l. 402, 453, 500 le lient en `(company_id, admin_id)`, la l. 538 en `(_company_id, _admin_id)` (relevé
+  `grep -n 'seed_base(&pool)'` : 32 appels, ces quatre inversés). Verts par coïncidence d'identifiants.
+- **Retenu** : AC18 — les quatre liaisons rétablies, aucune autre ligne ; le fichier entre à la liste fermée de l'AC9 ;
+  une ligne au Change Log. Pas de mutation (correction d'un test).
+- **Écartées** : une issue P3 (proposée à la rédaction ; le budget d'issues et la taille du correctif plaident pour
+  l'intégration) ; corriger aussi `seed_base` pour rendre `(company_id, admin_id)` (touche les 28 autres appels).
 - **Réversible** : oui.
