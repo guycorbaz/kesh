@@ -138,7 +138,7 @@ Chaque fait a été lu ; la ligne est citée.
 ## Le découpage (C-32-6-1)
 
 Convention de compte (celle de la 32-5) : un crate pour `kesh-db` et `kesh-i18n` ; un module de second niveau pour
-`kesh-api` ; `lib.rs` compte avec `routes` ; un fichier de test compte avec le module qu'il éprouve ; `tests/common/`
+`kesh-api` ; `lib.rs` et le `Cargo.toml` de `kesh-api` comptent avec `routes` (validation P6, H8) ; un fichier de test compte avec le module qu'il éprouve ; `tests/common/`
 avec le module dont il sert les tests.
 
 | Partie | Objet | Modules | 🗄️ |
@@ -195,9 +195,9 @@ Il en va de même des tests qui reposent sur un outillage existant (une capture,
    *Pourquoi, prouvé au code d'Axum* : `route_service` enregistre un `Endpoint::Route` (`routing/path_router.rs:138`),
    appelé par `call_owned` (`:413`), qui marque son futur **non « top level »** (`routing/route.rs:44-46`) — **le même
    chemin** que le repli statique (`routing/mod.rs:366-370`, `Endpoint::Route` du routeur de repli). Un `MethodRouter`
-   (`post(…)`, `.fallback(…)`, `any(…)`) rend au contraire un futur « top level », qui **ajoute** `Allow` et
-   `content-length` à toute réponse (`route.rs:163-167`, et `method_routing.rs:1168-1174` qui attache l'`Allow`
-   accumulé au repli du `MethodRouter`) : un `GET /mcp` désactivé porterait `Allow: POST` là où la route absente n'en
+   (`post(…)`, `.fallback(…)`, `any(…)`) rend au contraire un futur « top level », qui **ajoute** `content-length`
+   (`route.rs:163-167`) et, **sauf `any`/`any_service`** (`skip_allow_header`, `method_routing.rs:514`, `:436`),
+   l'`Allow` accumulé sur son **repli** (`method_routing.rs:1168-1174`) — validation P6, H3 : un `GET /mcp` désactivé porterait `Allow: POST` là où la route absente n'en
    porte pas — l'oracle que l'AC-a3 ferme. La **méthode** est donc tranchée par le transport (étape 3 des Dev Notes) ;
    `autre_methode` et l'extension du détecteur à `fallback(` disparaissent (C-32-6-20, C-32-6-32 annotés).
    `EtatMcp` (défini dans `mcp/mod.rs`, `Clone`) porte **seulement** : `origines_propres: Arc<[String]>` (calculées une
@@ -242,9 +242,10 @@ Il en va de même des tests qui reposent sur un outillage existant (une capture,
    test compare aussi à un **`static_dir` réel** (un `index.html` de test) pour que le `GET` ne passe pas à vide sur
    deux 404 identiques. ⛔ **Toute la matrice méthodes × états passe par `tower::ServiceExt::oneshot`** sur le routeur
    (avec `MockConnectInfo`), non par une connexion TCP : hyper pose lui-même `content-length: 0` sur toute réponse vide
-   qui n'en porte pas (`hyper-1.10.1/src/proto/h1/role.rs:924-931`), si bien que sur le fil un retour à `any_service`
-   (Ma20b (ii)), qui ne diffère que par ce `content-length`, passerait à vide ; seuls les témoins 401 et 200 gardent une
-   vraie connexion (validation P5, F1 = R2). Témoins : `enabled = TRUE` et pair admis → `POST` sans clé rend **401**, y compris avec un corps
+   qui n'en porte pas, quand statut et méthode le permettent — ni 1xx, ni 204, ni 304, ni `HEAD` (`hyper-1.10.1/src/
+   proto/h1/role.rs:512-521`, `:924-931`), donc sur les 405 de `POST`, `DELETE`, `OPTIONS` en jeu (validation P6, H4), si bien que sur le fil un retour à `any_service`
+   (Ma20b (ii)), qui ne diffère que par ce `content-length`, passerait à vide ; **les témoins de ce test passent aussi par `oneshot`** —
+   aucun ne garde une vraie connexion (validation P6, H2 ; la P5 écrivait « 401 et 200 », dont aucun 200 n'existait). Témoins : `enabled = TRUE` et pair admis → `POST` sans clé rend **401**, y compris avec un corps
    de 3 Mio (le corps n'est pas lu avant l'authentification) ; avec une clé valide **dont la société est dans S** (sinon 401, AC-a4 ; validation P5,
    F7), ce corps rend **413**. Tous les
    témoins « 401 » portent `Content-Type: application/json` (le 415 les précède, AC-a11 ; validation P2, R16). ⚠️ **Les
@@ -324,9 +325,11 @@ Il en va de même des tests qui reposent sur un outillage existant (une capture,
    **personne**. Une entrée stockée de `allowed_networks` qui ne s'analyse pas est **ignorée** — jamais élargissante —
    ; une entrée invalide de **`trusted_proxies`**, elle, **écarte la société de S** (fail closed, comme la ligne
    illisible de l'AC-a2), car l'ignorer ferait prendre le mandataire pour le client et admettrait tout client derrière
-   lui (validation P5, F2) ; dans les deux cas elle est journalisée **à chaque requête en `tracing::debug!`** (colonne et id de société, sans la
-   valeur), sans état partagé (validation P2, R8 = F10 : la déduplication de la P1 exigeait un ensemble mutable que
-   rien ne portait ; la 32-5c valide la forme à l'écriture, si bien qu'une entrée invalide vient d'un SQL à la main).
+   lui (validation P5, F2). Journal, à chaque requête, sans état partagé, colonne et id de société sans la valeur :
+   l'entrée ignorée de `allowed_networks` en **`tracing::debug!`** (validation P2, R8 = F10 : la 32-5c valide la forme
+   à l'écriture, si bien qu'une entrée invalide vient d'un SQL à la main) ; l'**exclusion** de la société pour
+   `trusted_proxies` en **`tracing::error!`**, comme la ligne illisible de l'AC-a2 — sans quoi le serveur MCP d'une
+   société cesserait de répondre sans trace visible au niveau de journal par défaut (validation P6, H1).
 9. **AC-a9 — les tests réseau** (`mcp_reseau_e2e.rs`, réglages posés par le dépôt de la 32-5a, `enabled = TRUE`) ;
    « refusé » s'entend **réponse égale à celle d'une route absente** (AC-a3), « admis » s'entend **401 sans clé** (puis
    200 avec clé) :
@@ -344,7 +347,11 @@ Il en va de même des tests qui reposent sur un outillage existant (une capture,
      pair public → refusé ; (m') mandataire déclaré, `X-Forwarded-For: 8.8.8.8`, `X-Real-IP: 192.168.1.10` → refusé
      (`X-Real-IP` n'est pas lu non plus dans la branche mandataire ; validation P2, F9) ;
    - (n) entrée stockée invalide (`"pas-un-réseau"`, écrite par SQL dans le test) à côté de `192.168.0.0/16` →
-     `192.168.1.10` admis, `8.8.8.8` refusé ; (o) filtre activé, liste vide → `127.0.0.1` refusé ;
+     `192.168.1.10` admis, `8.8.8.8` refusé ; (n') entrée invalide de **`trusted_proxies`** (`["pas-un-mandataire",
+     "172.18.0.2"]`, écrite par SQL) : pair `172.18.0.2` avec `X-Forwarded-For: 192.168.1.20` → refusé, et pair
+     `192.168.1.10` sans en-tête → refusé **aussi** (la société entière est écartée de S, non la seule entrée), avec un
+     évènement `error!` capté ; témoin : la même ligne sans l'entrée invalide admet les deux (validation P6, H1) ;
+     (o) filtre activé, liste vide → `127.0.0.1` refusé ;
    - (p) mandataire déclaré, **deux lignes** d'en-tête `X-Forwarded-For: 192.168.1.20` puis `X-Forwarded-For: 8.8.8.8`
      → refusé (tue la lecture de la **première** ligne seule, qui rendrait `192.168.1.20`) ; (p') mandataire
      `172.18.0.2` déclaré, deux lignes `8.8.8.8` puis `172.18.0.2` → refusé (toutes lues : `8.8.8.8` ; tue la lecture de
@@ -372,8 +379,11 @@ Il en va de même des tests qui reposent sur un outillage existant (une capture,
     Tests : `Origin` absent → 401 sans clé ; `http://localhost:<port>` → admis ; `https://evil.example` → 403 ;
     `Origin: null` → 403 ; `Origin` égale à `Host` forgé (`Host: evil.example`, `Origin: http://evil.example`) → 403 ;
     origine listée dans la société A, clé de B — **B servie** (dans S), sinon l'étape 8 rend le 401 avant l'étape 9
-    (validation P4, F11) — → 403 après authentification ; `HTTP://LOCALHOST:<port>` → admis ; ⚠️ `<port>` est le `config.port` **du test** (`port: 80` dans `test_config()`,
-    `config.rs:502`, `:1623`, normalisé en `http://localhost`), **non** le port de l'écouteur lié sur `127.0.0.1:0` —
+    (validation P4, F11) — → 403 après authentification ; `HTTP://LOCALHOST:<port>` → admis ; ⚠️ `<port>` est le `config.port` **du test** — un test d'intégration
+    obtient sa `Config` par une fonction locale `fn test_config()` de son propre fichier (p. ex.
+    `tests/accounts_e2e.rs:51`, `tests/api_keys_e2e.rs:47` ; `tests/common/` n'en fournit aucune), qui appelle
+    `Config::from_fields_for_test` (`config.rs:443`, `port: 80` à `:502`) ; `<port>` vaut donc 80, normalisé en
+    `http://localhost` (validation P6, H4), **non** le port de l'écouteur lié sur `127.0.0.1:0` —
     un test qui l'écrirait rougirait à tort (validation P5, R4) ;
     entrée stockée `https://kesh.example:443` et `Origin: https://kesh.example` → admis ; `public_base_url =
     "kesh.example"` (sans schéma) → `Origin: https://kesh.example` refusée.
@@ -519,7 +529,12 @@ Il en va de même des tests qui reposent sur un outillage existant (une capture,
     `ErreurOutil::ArgumentsInvalides { argument: &'static str, motif }` — **jamais** le message de `serde`. Réponse :
     `isError: true`, texte fixe par motif (C-32-6-17 ; la forme « erreur d'exécution » plutôt que `-32602` est à
     recontrôler à l'étape 0 contre la page `server/tools` de la révision `2025-11-25`). Test : `kesh_version` avec
-    `{"PIEGE_ARG_326": 1}` → corps **égal** à la réponse attendue.
+    `{"PIEGE_ARG_326": 1}` → corps **égal** à la réponse attendue. **Demande mal formée** (validation P6, H5) : `params`
+    absent, `name` absent ou non chaîne, `arguments` qui n'est pas un objet → au **répartiteur** (non au transport :
+    le message JSON-RPC est déjà valide), erreur `-32602` à texte fixe `TEXTE_PARAMS_INVALIDES`, corps **égal** ; test
+    `params_mal_formes` (trois cas). Étant au répartiteur, elle **est journalisée** en 32-6b (issue
+    `arguments_invalides`, `outil` = `"(inconnu)"`) — ce qui ne contredit pas l'AC-b4, qui n'exclut que les refus **du
+    transport**.
 20. **AC-a20 — les erreurs sans texte libre (E5).** `ErreurOutil` n'a **aucun** champ `String`, `Value` ni
     `Box<dyn Error>` ; chaque variante se traduit en un texte **fixe** (`mcp/textes.rs`, constantes) ; le détail d'une
     erreur interne part au journal du serveur (`tracing::error!`), jamais au client. Délai d'exécution d'un outil borné
@@ -742,7 +757,9 @@ Il en va de même des tests qui reposent sur un outillage existant (une capture,
     R1, R2 et R7 (une écriture d'audit, sans `exiger`), et l'inventaire clos des écritures sur les chemins de lecture
     (`services/mod.rs:77-90`, « 3. Aucune autre ») gagne cette écriture — `services/mod.rs` est aux fichiers de la 32-6b
     (validation P2, R14). Test
-    `chaque_appel_est_journalise` (validation P1, F13) : un `tools/call` pour chaque issue (registre de test) ajoute
+    `chaque_appel_est_journalise` (validation P1, F13) : un `tools/call` pour chaque issue — et, pour
+    `arguments_invalides`, ses **deux** sources, argument refusé par l'outil et demande mal formée (AC-a19 ; validation
+    P6, H5) — (registre de test) ajoute
     **exactement une** ligne, dont le détail est **égal** au JSON attendu (`dureeMs` contrôlé par son type et ≥ 0).
 33. **AC-b2 — sans arguments ni données.** Test `journal_sans_arguments_ni_donnees` : `tools/call` de l'outil piégé
     (clé `exempt`) avec un argument `PIEGE_ARG_326` et un nom d'outil inconnu `PIEGE_NOM_326` → aucun des trois pièges
@@ -863,7 +880,7 @@ phrase « son bras `Required` et rien d'autre » allait au-delà de ce que la co
   pas (validation P5, R12 (a)).
 - [ ] **T-a5** — `mcp_transport_e2e.rs`, `tests/common/mcp.rs`, gardes lexicales (AC-a14, AC-a15, AC-a17 à AC-a23,
   AC-a27, AC-a30, AC-a31).
-- [ ] **T-a6** — mutations Ma1 à Ma52 (et Ma20b, Ma23b), gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
+- [ ] **T-a6** — mutations Ma1 à Ma52 (et Ma13b, Ma20b, Ma23b), gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
 
 ### 32-6b
 - [ ] **T-b0** — étape 0 : 32-6a fusionnée ; recontrôle des faits 8, 9, de `audit_labels.rs` et des compteurs
@@ -892,7 +909,8 @@ diff résiduel nul vérifié ; chacune nomme le test qui doit rougir. Une mutati
 | Ma10 | `X-Forwarded-For` lu d'un pair non déclaré | (e) |
 | Ma11 | `X-Forwarded-For` lu de gauche à droite | (i) |
 | Ma12 | pair mappé non normalisé | (c) |
-| Ma13 | entrée stockée invalide traitée comme « tout admettre » (ou faisant échouer tout le filtre) | (n) |
+| Ma13 | entrée invalide de **`allowed_networks`** traitée comme « tout admettre » (ou faisant écarter la société) | (n) |
+| Ma13b | entrée invalide de **`trusted_proxies`** ignorée (la société reste dans S) | (n') |
 | Ma14 | `X-Real-IP` ou `Forwarded` lu | (m) |
 | Ma15 | vérification d'`Origin` retirée | tests de l'AC-a10 (403) |
 | Ma16 | `Origin` admise si égale à `Host` | AC-a10 (`Host` forgé) |
@@ -900,7 +918,7 @@ diff résiduel nul vérifié ; chacune nomme le test qui doit rougir. Une mutati
 | Ma18 | cookie de session lu | `session_refusee` |
 | Ma19 | refus d'authentification à corps distincts selon la cause | `refus_indiscernables` |
 | Ma20 | désactivé → `404` littéral (au lieu de déléguer au service statique) | `desactive_indiscernable_d_une_route_absente` |
-| Ma20b | `/mcp` remonté par un `MethodRouter`, sous ses **deux formes compilables** (validation P5, F1 = R2 : `any(routes::mcp::recevoir)` exigeait `EtatMcp: FromRef<AppState>` et ne compilait pas) : **(i)** `.route("/mcp", post_service(routes::mcp::recevoir.with_state(etat)))` → un `GET` gagne `Allow: POST` (`method_routing.rs:1168-1170`) ; **(ii)** `.route("/mcp", any_service(routes::mcp::recevoir.with_state(etat)))` → aucun `Allow` (`skip_allow_header`, `method_routing.rs:427-436`), mais une 405 gagne `content-length: 0` (`route.rs:163-167`) | (i) et (ii) : `desactive_indiscernable_d_une_route_absente`, **par `oneshot`** — (i) aussi sur le fil, (ii) **seulement** par `oneshot` : sur une vraie connexion, hyper pose lui-même `content-length: 0` sur toute réponse vide (`hyper-1.10.1/src/proto/h1/role.rs:924-931`) |
+| Ma20b | `/mcp` remonté par un `MethodRouter`, sous ses **deux formes compilables** (validation P5, F1 = R2 : `any(routes::mcp::recevoir)` exigeait `EtatMcp: FromRef<AppState>` et ne compilait pas) : **(i)** `.route("/mcp", post_service(routes::mcp::recevoir.with_state(etat)))` → un `GET` gagne `Allow: POST` (`method_routing.rs:1168-1171`, écrit en `route.rs:164`) ; **(ii)** `.route("/mcp", any_service(routes::mcp::recevoir.with_state(etat)))` → aucun `Allow` (`skip_allow_header`, `method_routing.rs:427-436`), mais une 405 gagne `content-length: 0` (`route.rs:163-167`) | (i) et (ii) : `desactive_indiscernable_d_une_route_absente`, **par `oneshot`** — (i) aussi sur le fil, (ii) **seulement** par `oneshot` : sur une vraie connexion, hyper pose lui-même `content-length: 0` sur une réponse vide dont statut et méthode le permettent (`hyper-1.10.1/src/proto/h1/role.rs:512-521`, `:924-931`) |
 | Ma21 | contrôle « société de la clé servie » retiré | AC-a4 (i), (ii) |
 | Ma22 | erreur de base dans la règle « servi » → 500 | AC-a2 (table renommée, égalité à la route absente) |
 | Ma23 | `politique::autoriser` rend `Ok` pour `Required` | `cle_requise_refusee_sans_execution` ; `e1_rien_ne_part_sous_cle_requise` (E6-1) |
@@ -1165,8 +1183,8 @@ l'AC-a27) ; `tests/services_rollout.rs:60`, `:519` ; `axum-0.8.9/src/routing/mod
   `kesh-db`) ; `crates/kesh-api/src/mcp/**` (neuf) ; `crates/kesh-api/src/routes/{mcp.rs (neuf), mod.rs}` ;
   `crates/kesh-api/src/lib.rs` ; `crates/kesh-api/Cargo.toml` (`tower = { version = "0.5", features = ["util"] }` en
   dépendance **normale** : `rendre` emploie `ServiceExt::oneshot` en production, que seule l'unification des
-  fonctionnalités par Axum rend aujourd'hui disponible, `axum-0.8.9/Cargo.toml:268-271` — validation P5, R3 ; le module
-  ne change pas, `Cargo.toml` comptant avec `routes`) ; `crates/kesh-api/src/services/{serveur_mcp.rs (neuf), mod.rs,
+  fonctionnalités par Axum rend aujourd'hui disponible, `axum-0.8.9/Cargo.toml:268-271` — validation P5, R3 ; aucun module
+  de plus, selon la convention du découpage) ; `crates/kesh-api/src/services/{serveur_mcp.rs (neuf), mod.rs,
   poignees.rs (doc)}` ;
   `crates/kesh-api/tests/{mcp_transport_e2e.rs, mcp_reseau_e2e.rs, mcp_gardes_lexicales.rs, mcp_traduction.rs,
   common/mcp.rs, common/capture_trace.rs (neufs),
@@ -1190,7 +1208,9 @@ l'AC-a27) ; `tests/services_rollout.rs:60`, `:519` ; `axum-0.8.9/src/routing/mod
   le fait** : désactivé, `/mcp` se comporte comme une route absente (C-32-6-2) ; l'activation est par société, et une
   clé d'une société qui ne sert pas est refusée comme une clé inconnue ; le filtre porte sur le pair TCP,
   `X-Forwarded-For` n'est lu que des mandataires déclarés, de droite à gauche ; refusé, le client voit une route
-  absente ; filtre activé et liste vide = personne ; une entrée invalide est ignorée ; l'`Origin` et ses origines
+  absente ; filtre activé et liste vide = personne ; une entrée invalide de la liste des réseaux admis est ignorée, mais une entrée
+  invalide de la liste des **mandataires** **coupe le serveur MCP de la société** (réponse de route absente, erreur au
+  journal du serveur) ; l'`Origin` et ses origines
   propres (`KESH_PUBLIC_BASE_URL`, `localhost`/`127.0.0.1`/`[::1]` au port de Kesh), la normalisation du port par
   défaut ; **ce que le filtre ne garantit pas** (Traefik à déclarer, passerelle Docker, pas un pare-feu) ; une clé
   `required` ne peut appeler aucun outil avant la 32-8 ; **seul `Authorization: Bearer <clé MCP>` est lu** — un PAT ou
@@ -1302,9 +1322,8 @@ Ligne lue citée au Change Log pour chacun :
 - **`list_enabled` et la ligne illisible** (validation P5, R12 (b)) : le dépôt rend `(Vec<McpServerSettings>, Vec<i64>)`
   — les lignes lues et les identifiants de société des lignes écartées —, que `reglages_actifs` journalise ; signature
   à confirmer au code de `decode_list` (`repositories/mcp_server_settings.rs:40-46`).
-- **`tools/call` à `params` mal formés** (validation P5, F5) : `params` absent, `name` absent ou non chaîne,
-  `arguments` qui n'est pas un objet → `-32602` à texte fixe (`TEXTE_PARAMS_INVALIDES`), journalisé en 32-6b sous
-  l'issue `arguments_invalides`, `outil` = `"(inconnu)"` ; forme à confronter au schéma `2025-11-25` avec le reste.
+- **`tools/call` à `params` mal formés** : la règle est désormais à l'AC-a19 (validation P6, H5) ; seule la forme
+  `-32602` reste à confronter au schéma `2025-11-25`, avec le reste.
 - **`tower-http`** : le comportement du fait 1 (405, `Allow: GET,HEAD`) à la version du `Cargo.lock` d'alors.
 - **Spike § 2.4 (h)** : la `protocolVersion` que demandent Claude Code et Hermes — si Guy l'a observée, la liste
   acceptée (AC-a13) s'y ajuste ; sinon, liste inchangée et le Change Log le dit.
@@ -1349,3 +1368,4 @@ Ligne lue citée au Change Log pour chacun :
 | 2026-10-25 | validation P3 | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `326-validate-prompt-p3.md` ; rapports `kesh-gate-logs/326-validate-p3-{R,F}.md`) : R 0/0/4/9, F 0/0/3/4 ⇒ **trend P1 0/0/11/22 → P2 0/0/9/23 → P3 0/0/7/13** (doublons R1 = F1, R8 ⊂ F3, R4 ⊂ F4 comptés une fois par lentille). ⚠️ **Recyclage déclaré** : **les sept MEDIUM sont nés d'une remédiation** — R1 = F1 (le motif `read\W+write` de la P2, 53 lignes au dépôt), R2 (les motifs `lister(`/`trouver(` de la P1), R3 (la « capture qui existe déjà » de la P2), R4 (la `rendre` synchrone de la P2), F2 (Ma17 sans mutant depuis la P2), F3 (le `Config` entier laissé par la P2). Motif dominant : **des gardes et des tests écrits dans la fiche sans être confrontés au dépôt réel**. Décision de l'orchestrateur appliquée : une **règle commune des gardes lexicales** en tête des AC (propriété, périmètre et formes ; motif greppé sur le dépôt réel à l'étape 0, vide hors liste blanche ; un témoin rouge et un témoin vert existant ; sorties citées) ; les motifs ne restent qu'à titre d'exemples **mesurés**. **MEDIUM remédiés** : R1 = F1 → AC-a27 réécrit en propriété et formes, témoins verts existants (`read-write`, `use std::io::{Read, Write}`), exemple mesuré `\bread\s+write\b` (0 ligne) ; R2 → points d'accès du registre renommés `outil_pour` / `descripteurs_pour` (0 occurrence au dépôt), AC-a30 réécrit ; R3 → couche de capture **générique** neuve (`tests/common/capture_trace.rs`), témoin `PIEGE_TRACE_326` exigé ; R4 = F4 → `async fn rendre(&EtatMcp, ReponseMcp)`, `RouteAbsente(Request)`, `DonneesEnvoyables::en_resultat` (C-32-6-39) ; F2 → Ma17 visé sur le refus du préfixe d'`authentifier` (`services/cles_mcp.rs`), test inverse au même test ; F3 = R8 → `EtatMcp.origines_propres` au lieu de `Config`, `mcp_sans_pool` étendue à `kesh_db::pool`, `create_pool`, `database_url`, `Config`. **R9** (une connexion par requête anonyme) → la règle « servi » et l'authentification lisent sur `etat.garde`, la `Lecture` ordinaire réutilisée, avant tout emprunt du pool des outils (C-32-6-38) ; l'inondation du réseau local reste un angle mort, soumis à Guy (point 8) ; le test fail closed du journal (AC-b3) passe en conséquence par une table `audit_log` renommée. **LOW remédiés** : R5 (Ma23 : les tests qu'elle rougit), R6 (`Autorisation` à la garde de dérivations, ni `Clone` ni `Copy` ; Ma50 « `executer` avant `autoriser` »), R7 (C-32-6-6 annoté), R10 (`traduction_des_erreurs_de_service` dans `tests/mcp_traduction.rs`), R11 (`api-external.md:829` borné à la v0.2), R12 (trois comportements de plus pour la 32-7), R13 (`services_rollout.rs:60`, `:519`), F5 (test (f) : `KILL` pendant un emprunt), F6 (cas (p) et (p') qui distinguent première et dernière ligne), F7 (`extract_counted` sur `lib.rs` lignes de commentaire retirées). **Décomptes** (recomptés par `grep` sur la fiche) : 37 AC (31 / 6), 11 tâches, **56 mutations** (50 / 6), registre C-32-6-1 à **39** ; modules inchangés : 32-6a **4**, 32-6b **5**, six distincts, neuf en somme. **3 passes sur 8.** Prompt de la passe suivante : `326-validate-prompt-p4.md` (Opus, R et F, chaque motif encore écrit greppé sur le dépôt réel). |
 | 2026-10-25 | validation P4 | **Opus ×2** (lentilles R et F, contexte frais, prompt `326-validate-prompt-p4.md` ; rapports `kesh-gate-logs/326-validate-p4-{R,F}.md`) : F 0/1/4/7, R 0/0/1/12 ⇒ **trend P1 0/0/11/22 → P2 0/0/9/23 → P3 0/0/7/13 → P4 0/1/5/19** (doublons F2 = R1 = F3 en partie, F3 ⊃ R2, F7 = R4, F8 = R3, F10 = R12 comptés une fois par lentille). ⚠️ **Recyclage déclaré** : quatre des six findings au-dessus de LOW sont nés de la remédiation P3 (F2 = R1, F3, F4) ; le **HIGH F1** (le montage par `MethodRouter`, discernable) et F5 (Ma27 à vide) étaient **d'origine**, présents depuis la création ou la P1, et c'est l'axe neuf de la P4 — chaque motif et chaque affirmation sur une dépendance confrontés à la source — qui les a trouvés. **F1 vérifié par l'orchestrateur au code d'Axum 0.8.9** (`route.rs:163-167`, `method_routing.rs:1168-1174`). **Remédiés** : F1 → `/mcp` monté par **`route_service`** (`Endpoint::Route` appelé `not_top_level`, comme le repli : `path_router.rs:138`, `:413`, `route.rs:44-46`, `mod.rs:366-370`), méthode tranchée par le transport, `autre_methode` et l'extension du détecteur à `fallback(` **retirées**, le détecteur lisant `route_service(` ; l'AC-a3 compare `Allow` et `content-length` ; Ma20b (C-32-6-40, C-32-6-20 et 32 annotés) ; F2 = R1 = F3 → **type propre `LectureOutils`**, jamais déballé hors de `mcp/outil.rs` ; Ma51 et Ma52 **déclarées non compilables** ; N28 ; ordre des contrôles (étape 2) et esquisse d'`EtatMcp` corrigés (C-32-6-41) ; F4 → le témoin de `jeton_jamais_journalise` est le `debug!` émis par le serveur pendant la requête éprouvée ; F5 → notification complète sous clé `exempt`, témoin à `id` dont le compteur vaut 1. **LOW remédiés** : F6 (témoins verts existants `ContexteAcces::mcp`, `portee_mcp` ; témoin factice dit tel), F7 = R4 ((f) hors liste blanche), F8 = R3 (`mcp_traduction.rs`, `capture_trace.rs` aux listes), F9 (garde N24 simplifiée), F10 = R12 (périmètres et formes d'`un_seul_ecouteur`, définitions de la politique hors du compte), F11 (préconditions : clé `exempt`, société B servie), F12 (deux points à Guy : la lecture de Q11 par C-32-6-38, le 401 au lieu du « même 404 »), R2, R5 (`:713`, `:729-749`, `:1174-1184`), R6 (doc-comments nommés à T-a4), R7 (`origines_propres` en `reseau.rs`, garde `lib_rs_has_no_double_slash_inside_literals`), R8 (`"id": null`, à recontrôler), R9 (entrées stockées normalisées, cas (s)), R10 ((k) et (k')), R11 (`:2249`, `:2324`), R13 (**pas de CORS, à dessein** ; à la liste de la 32-7). **Décomptes** (recomptés par `grep` sur la fiche) : 37 AC (31 / 6), 11 tâches, **59 mutations** (53 / 6 : Ma1 à Ma52 et Ma20b ; Ma23b déclarée hors tableau), registre C-32-6-1 à **41** ; modules inchangés : 32-6a **4**, 32-6b **5**. **4 passes sur 8.** Prompt de la passe suivante : `326-validate-prompt-p5.md` (Sonnet, R et F). |
 | 2026-10-25 | validation P5 | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `326-validate-prompt-p5.md` ; rapports `kesh-gate-logs/326-validate-p5-{R,F}.md`) : R 0/0/1/12, F 0/0/1/6 ⇒ **trend P1 0/0/11/22 → P2 0/0/9/23 → P3 0/0/7/13 → P4 0/1/5/19 → P5 0/0/2/18** (doublons F1 = R2, F6 = R5 comptés une fois par lentille). ⚠️ **Recyclage déclaré** : les deux MEDIUM sont **nés de la remédiation P4** — R1 (l'AC-b6 au verbe `"post"` et l'AC-a31 aux « deux gestionnaires », que le changement de montage n'avait pas suivis) et F1 = R2 (Ma20b écrite sous une forme qui ne compilait pas, et le dernier maillon de l'argument « `content-length` discrimine », faux sur le fil). Les deux lentilles ont **confirmé à la source** la remédiation P4 elle-même (`route_service`, `LectureOutils`). **MEDIUM remédiés** : R1 → AC-b6 en `("route_service", "mcp::recevoir", …)`, AC-a31 « le gestionnaire `recevoir` » ; grep de `autre_methode`, « deux gestionnaires », `"post", "mcp::recevoir"`, « sous-routeur » sur la fiche et le registre — ne restent que les explications du retrait et les choix annotés ; F1 = R2 → Ma20b sous ses deux formes compilables, **(i)** `post_service(recevoir.with_state(etat))` (tuée par `Allow: POST` sur un `GET`, par `oneshot` comme sur le fil) et **(ii)** `any_service(…)` (tuée par `content-length: 0` sur une 405, **seulement** par `oneshot` : hyper pose lui-même ce `content-length` sur le fil, `hyper-1.10.1/src/proto/h1/role.rs:924-931`) ; **toute la matrice** méthodes × états de `desactive_indiscernable_d_une_route_absente` passe par `oneshot`. **LOW remédiés** (une ligne de fiche chacun) : F2 (entrée invalide de `trusted_proxies` : société écartée de S), F3 (ligne Axum de l'étape 0), F4 (témoin multi-ligne d'`appels_non_handlers`), F5 (`params` mal formés → `-32602`, issue `arguments_invalides`, à l'étape 0), F6 = R5 (six fonctions `lister` ; motif des gates frontend), F7 (413 : société dans S), R3 (`tower` avec `util` en dépendance normale, `Cargo.toml` aux fichiers), R4 (`<port>` = `config.port` du test), R6 (port par défaut **du schéma**, cas `http://…:443`), R7 (témoins verts factices pour `executer`, `autoriser`, `appliquer`), R8 (toute autre erreur de lecture du corps → 400), R9 (seul `Bearer <clé MCP>` lu, à la liste de la 32-7), R10 (L-7 et l'analyseur de `SHOW GRANTS` sans objet sous Q11), R11 (préfixes IPv6 mappés convertis), R12 ((a) `route_service` avant le marqueur `// NOTE: …` ; (b) signature de `list_enabled` à l'étape 0). **Décomptes** (recomptés par `grep`) : 37 AC, 11 tâches, 59 mutations (53 / 6 ; Ma20b en deux variantes sur une ligne), registre C-32-6-1 à 41 (C-32-6-34 annoté) ; modules inchangés (4 et 5). **5 passes sur 8.** La remédiation ne touche que la fiche et le registre : la passe suivante est **ciblée** (regression hunter, Opus, `326-validate-prompt-p6.md`, commit à part). |
+| 2026-10-25 | validation P6 | **Passe ciblée** (regression hunter, **Opus**, une lentille, braquée sur `ac52657a` ; prompt `326-validate-prompt-p6.md` ; rapport `kesh-gate-logs/326-validate-p6.md`) : **0/0/1/8** ⇒ trend P1 0/0/11/22 → P2 0/0/9/23 → P3 0/0/7/13 → P4 0/1/5/19 → P5 0/0/2/18 → **P6 0/0/1/8**. ⚠️ **Recyclage déclaré** : le MEDIUM H1 et six des huit LOW (H2, H4, H5, H7, H8, et H6 par propagation manquée) sont nés du commit P5 ; H3 et H9 lui sont antérieurs. **H1 (MEDIUM) remédié, règle gardée** (« une entrée invalide de `trusted_proxies` écarte la société de S ») et propagée : C-32-6-6 annoté (titre et « Écartées ») ; Ma13 bornée à `allowed_networks` ; Ma13b et le test (n') à l'AC-a9 ; la liste de la 32-7 nuancée ; l'exclusion journalisée en `error!`, comme la ligne illisible de l'AC-a2. **Tri du grep « ignor »** sur la fiche et le registre : relèvent de la règle et ont été corrigés — AC-a8, Ma13, la liste de la 32-7, C-32-6-6 ; sans rapport, laissés tels quels — `X-Forwarded-For` d'un pair non déclaré (AC-a7, AC-a9 (e), (f), point 2 bis), `Forwarded` et `X-Real-IP` (AC-a7, liste de la 32-7, C-32-6-5), casse du `Content-Type` (AC-a11), cookie de session (AC-a14, C-32-6-29), `outil_pour` qui « ignore la portée » (Ma6), « `AppState` ignore `static_dir` » (C-32-6-31). **LOW remédiés** : H2 (les témoins de `desactive_indiscernable_d_une_route_absente` aussi par `oneshot` ; « 200 » retiré), H3 (`any`/`any_service` sans `Allow`, `method_routing.rs:514`, `:436`), H4 (`method_routing.rs:1168-1171` et `route.rs:164` ; hyper n'ajoute `content-length: 0` que si statut et méthode le permettent, `role.rs:512-521` ; la `Config` d'un test d'intégration vient d'une fonction locale `test_config()` — `tests/accounts_e2e.rs:51` — qui appelle `Config::from_fields_for_test`, `config.rs:443`, `tests/common/` n'en fournissant aucune), H5 (AC court à l'AC-a19 : demande mal formée au **répartiteur**, `-32602`, journalisée — l'AC-b4 n'exclut que les refus du transport ; deuxième source de `arguments_invalides` dans `chaque_appel_est_journalise`), H6 (C-32-6-37 et 39 annotés au singulier), H7 (*annotation de l'entrée P5, datée du 2026-10-25* : « R 0/0/1/12 » compte R12 (a) et (b) à part — onze identifiants LOW au rapport R ; le trend P5 0/0/2/18 suit cette convention), H8 (convention du découpage : le `Cargo.toml` de `kesh-api` compte avec `routes`), H9 (ligne `32-6a` de `sprint-status.yaml` : `after_release`, non `before_acquire`). **Décomptes** (recomptés par `grep`) : 37 AC, 11 tâches, **60 mutations** (54 / 6 : Ma1 à Ma52, Ma13b, Ma20b), registre C-32-6-1 à 41 (C-32-6-6, 37, 39 annotés) ; modules inchangés (4 et 5). **6 passes sur 8.** Remédiation sur la fiche, le registre et `sprint-status.yaml` seulement : passe suivante **ciblée** (regression hunter, Sonnet, `326-validate-prompt-p7.md`, commit à part). |

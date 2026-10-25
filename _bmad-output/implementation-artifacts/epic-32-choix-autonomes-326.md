@@ -84,6 +84,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : faire échouer tout le filtre (le serveur deviendrait inaccessible pour une entrée) ; traiter l'erreur
   comme « tout admettre » ; une liste vide qui signifierait « privé » (règle invisible, déjà écartée par C-32-5-10).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P6, H1 : le titre et la ligne « Écartées » ne valent plus que pour `allowed_networks`. Depuis la validation P5 (F2), une entrée invalide de **`trusted_proxies`** **écarte la société de S** — exactement « faire échouer le filtre », pour la seule société — car l'ignorer ferait prendre le mandataire pour le client et admettrait tout client derrière lui ; l'exclusion est journalisée en `tracing::error!`, comme la ligne illisible de l'AC-a2. Test (n'), mutation Ma13b.)*
 - *(Annoté le 2026-10-25, validation P3, R7 : l'entrée invalide est journalisée **à chaque requête en `tracing::debug!`**, sans état partagé, depuis la validation P2 (R8 = F10) — non plus en `warn!`.)*
 
 ### C-32-6-7 — `Origin` : absent admis ; présent, admis s'il est propre à Kesh ou listé ; 403 sinon ; jamais déduit de `Host`
@@ -433,6 +434,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : garder la garde de formes (une énumération de ce qui marche, `CLAUDE.md` § *Inventorier les sites NON
   RÉSOLUS*) ; une analyse par `syn` des types de retour (plus lourde, sans fermer davantage).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P6, H6 : « les gestionnaires » est au singulier depuis la P4 — le seul gestionnaire est `recevoir`.)*
 - *(Annoté le 2026-10-25, validation P3, R4 = F4 : `rendre` est **`async fn rendre(&EtatMcp, ReponseMcp) -> Response`** et `ReponseMcp` porte `RouteAbsente(Request)` — C-32-6-39.)*
 
 ### C-32-6-38 — La règle « servi » et l'authentification lisent sur la `Lecture` ordinaire, avant tout emprunt du pool des outils (validation P3, R9)
@@ -464,6 +466,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : une variante qui porterait déjà la `Response` statique (une deuxième sortie de réponse, hors de
   `rendre`) ; deux fonctions de sortie (statique et MCP).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P6, H6 : « corps des gestionnaires » se lit « corps du gestionnaire `recevoir` », seul depuis la P4.)*
 
 ### C-32-6-40 — `/mcp` monté par `route_service`, comme le repli (validation P4, F1)
 
