@@ -165,7 +165,9 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
   32-7 qui les porte selon les fiches ». La fiche 32-6 (l. 1279-1283) les donne à la **32-11** ; la fiche 32-10a
   (l. 1008, 1384) donne le compte de l. 2935 à la **32-10b**, après ses routes. La 32-7 n'ajoute aucune route.
 - **Retenu** : la 32-7 ne les corrige pas ; elle les relit à l'étape 0 et écrit au Dev Agent Record s'ils sont faux
-  (AC-20) ; l'orchestrateur est prié de fixer le propriétaire unique du compte (demande 1).
+  (AC-20) ; l'orchestrateur est prié de fixer le propriétaire unique du compte (demande 1). *(Amendé en validation
+  P2, F4 : tranché par l'orchestrateur en validation P1 — le compte à la 32-10b, puis à la 32-11 au dernier état ;
+  demande 1 close.)*
 - **Écartées** : corriger 128 → 129 ici (le compte bougera encore avec les 32-8 et 32-10a : une correction à refaire).
 - **Réversible** : oui.
 
@@ -241,6 +243,10 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
   test neuf (redoublerait `replisParCle` et `valeurDuCatalogueFr`, contre la règle DRY) ; retirer la propriété de
   l'AC-14 (le repli de l'encadré de l'AC-6 porte une décision de Guy).
 - **Réversible** : oui — une liste et un test.
+- *(Amendé en validation P2, F1 = R1 : `nav-admin-mcp` est **retirée** de l'extension — clé de donnée du menu, résolue
+  par `i18nMsg(item.i18nKey, item.fallback)`, que `replisParCle()` ne relève pas ; voir C-32-7-23. La recherche par
+  préfixe se fait par `startsWith` : le FTL porte deux clés `audit-log-…-mcp-server-…` qui contiennent la chaîne. Le
+  trou de `admin-backup-` est tracé par #758, ouverte par l'orchestrateur.)*
 
 ### C-32-7-22 — `sec:mcp-client` appartient à la 32-7 ; la 32-11 l'amende en place
 
@@ -255,3 +261,37 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
 - **Écartées** : donner la configuration à la 32-11 (l'encart renverrait à une étiquette absente, `??` au PDF, jusqu'à
   la 32-11) ; laisser deux textes (dérive assurée).
 - **Réversible** : oui — un déplacement de texte entre deux stories du même epic.
+
+### C-32-7-23 — `nav-admin-mcp` hors de l'extension de G13, tenue par `FAMILLES_RESOLUES['nav-']`
+
+- **Contexte** (validation P2, F1 = R1 ; recyclage de la remédiation P1, C-32-7-21) : la P1 avait nommé `nav-admin-mcp`
+  dans l'extension de G13. Or `replisParCle()` ne retient que les sites à clé et repli littéraux
+  (`i18n-repli-divergent-actif.test.ts:120-123`), et le menu résout ses clés par `i18nMsg(item.i18nKey, item.fallback)`
+  (`+layout.svelte:174-176`) : le relevé n'a jamais d'entrée pour elle, le test prescrit était rouge par construction.
+- **Retenu** (décision de l'orchestrateur, la plus simple qui ne rougit pas par construction) : la retirer de
+  l'extension ; elle est tenue, comme les autres clés de menu, par `FAMILLES_RESOLUES['nav-']` de `i18n-keys.test.ts`
+  (`'admin-mcp'` ajouté), qui exige son existence au catalogue fr-CH (l. 1037-1045) — **sans** comparer son repli au
+  fr-CH ni voir un oubli à la famille (`'nav-'` n'est pas à couverture close, l. 932) : angle mort écrit, classe tracée
+  par #758. `ATTENDU.sitesTotal` (l. 724, assertion l. 1034) recompté et commenté par la story (AC-14 (d)) ; mutation
+  M26.
+- **Écartées** : un relevé propre lisant le `fallback:` qui suit `i18nKey: 'nav-admin-mcp'` dans `+layout.svelte`
+  (une fonction et deux témoins pour une clé : à porter par #758 pour toute la famille, non par la 32-7) ; ajouter
+  `'nav-'` à `PREFIXES_A_COUVERTURE_CLOSE` (ferait rougir toute clé `nav-` du catalogue que le menu ne demande pas,
+  hors périmètre).
+- **Réversible** : oui.
+
+### C-32-7-24 — Une ligne de réglages illisible : l'écran le dit, le manuel donne les voies hors de l'écran
+
+- **Contexte** (validation P2, R3 ; #738 B8, seconde moitié) : une ligne `mcp_server_settings` dont un tableau JSON est
+  illisible rend `DbError::Invariant` au décodage (`kesh-db/src/repositories/mcp_server_settings.rs:40-45`), traduit en
+  500 (`kesh-api/src/errors.rs:4270-4276`) ; `/mcp` paraît désactivé (32-6, AC-a2) et l'écran ne lit pas la
+  `version`, donc n'enregistre rien (AC-5 (g)). Aucune voie de réparation dans Kesh sur une installation de
+  production : la remise à zéro efface la ligne (`backup.rs:105-129`) mais est refusée au-delà de l'étape 2
+  (`routes/onboarding.rs:252-268`), et la réparation au démarrage (#528) ne la touche pas.
+- **Retenu** : à l'écran, une phrase fixe dans l'état d'échec de lecture (AC-5 (g)) ; au manuel (AC-18 (1)), les deux
+  états qui ne se réparent pas depuis l'écran (ligne à `version = 0`, ligne corrompue) et les voies qui existent :
+  restaurer une sauvegarde antérieure, ou supprimer la ligne par SQL (le `GET` rend alors les défauts, serveur
+  désactivé). Voies relues au code à l'étape 0.
+- **Écartées** : un bouton « rétablir les défauts » à l'écran (exigerait une route qui supprime la ligne : `kesh-api`
+  hors périmètre, la story n'ajoute aucune route) ; un `PUT` toléré sans version lue (contournerait le verrou optimiste).
+- **Réversible** : oui — une phrase et un paragraphe.
