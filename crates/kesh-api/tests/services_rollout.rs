@@ -427,12 +427,8 @@ async fn seconde_societe(pool: &MySqlPool) -> i64 {
 /// Un id positif qu'aucune fixture ne pose.
 const INEXISTANT: i64 = 999_999_999;
 
-/// Les trois portées.
-const TOUTES: [Portee; 3] = [
-    Portee::BooksRead,
-    Portee::InvoicesRead,
-    Portee::ContactsRead,
-];
+/// Les cinq portées : l'énumération unique de la base (Story 32-5b, AC-b2).
+const TOUTES: [Portee; 5] = Portee::ALL;
 
 fn mcp_societe(company_id: i64, user_id: i64, portees: &[Portee]) -> ContexteAcces {
     ContexteAcces::mcp(
@@ -700,8 +696,9 @@ fn est_validation(r: &Result<(), AppError>) -> bool {
 
 /// AC9 (a), (b), (e) — pour chacun des onze services (AC10 de la 32-4b pour
 /// les six des factures) : MCP sans portée, puis
-/// avec chacune des deux autres portées seule → `Forbidden` ; MCP avec la
-/// portée exigée → `Ok` ; API `Consultation` → `Ok`.
+/// avec chacune des quatre autres portées seule, puis avec les quatre ensemble
+/// (Story 32-5b, AC-b2) → `Forbidden` ; MCP avec la portée exigée → `Ok` ; API
+/// `Consultation` → `Ok`.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn ac9_a_b_e_refus_et_controle_positif(pool: MySqlPool) {
     let livres = poser_livres(&pool).await;
@@ -729,6 +726,21 @@ async fn ac9_a_b_e_refus_et_controle_positif(pool: MySqlPool) {
                     resume(&r)
                 ));
             }
+        }
+        let autres: Vec<Portee> = TOUTES.into_iter().filter(|p| *p != exigee).collect();
+        let r = jouer(
+            svc,
+            &mcp_societe(c, u, &autres),
+            &lecture,
+            &livres,
+            Cas::Normal,
+        )
+        .await;
+        if !est_interdit(&r) {
+            echecs.push(format!(
+                "AC9 (a) {svc:?} avec les quatre autres portées : {}",
+                resume(&r)
+            ));
         }
         let r = jouer(
             svc,

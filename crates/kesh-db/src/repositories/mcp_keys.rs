@@ -78,7 +78,9 @@ struct AuthRow {
 }
 
 /// Lit les portées stockées ; journalise ce qui est mis de côté, en nommant
-/// l'id de la clé (jamais le condensat).
+/// l'id de la clé (jamais le condensat). Chemins d'**administration** seulement
+/// (liste, recherche par id) : le chemin d'authentification a son propre
+/// journal, [`auth_row`] (Story 32-5b, R5 de la revue de la 32-5a).
 fn read_scopes(mcp_key_id: i64, json: &str) -> StoredMcpScopes {
     let stored = StoredMcpScopes::from_stored_json(json);
     if !stored.unknown().is_empty() {
@@ -112,14 +114,31 @@ impl From<KeyRow> for McpKey {
 }
 
 /// `None` si la clé n'a aucune portée connue : elle n'authentifie pas.
+///
+/// **Un seul avertissement, et seulement pour un refus** (Story 32-5b, R5 de la
+/// revue de la 32-5a, C-32-5-38) : ce chemin sert chaque requête MCP. Une clé
+/// sans aucune portée connue est refusée par un `warn!` unique (ses portées
+/// inconnues comprises) ; une clé **mixte**, qui authentifie par ses portées
+/// connues, n'émet qu'un `debug!` par requête — son avertissement relève des
+/// chemins d'administration ([`read_scopes`], à la liste des clés). Jamais le
+/// condensat.
 fn auth_row(r: AuthRow) -> Option<McpKeyAuthRow> {
-    let Some(scopes) = read_scopes(r.mcp_key_id, &r.scopes).usable() else {
+    let stored = StoredMcpScopes::from_stored_json(&r.scopes);
+    let Some(scopes) = stored.usable() else {
         tracing::warn!(
             mcp_key_id = r.mcp_key_id,
+            unknown = ?stored.unknown(),
             "clé MCP sans aucune portée connue de cette version : elle n'authentifie pas"
         );
         return None;
     };
+    if !stored.unknown().is_empty() {
+        tracing::debug!(
+            mcp_key_id = r.mcp_key_id,
+            unknown = ?stored.unknown(),
+            "clé MCP : portées inconnues de cette version, ignorées à l'authentification"
+        );
+    }
     Some(McpKeyAuthRow {
         mcp_key_id: r.mcp_key_id,
         company_id: r.company_id,
