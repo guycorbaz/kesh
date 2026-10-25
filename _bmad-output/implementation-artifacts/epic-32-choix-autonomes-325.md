@@ -547,7 +547,8 @@ liste) est fermée par C-32-5-37.
 - **Retenu** : tous les refus rendent `AppError::Unauthenticated(detail)`, dont la réponse HTTP (401
   `UNAUTHENTICATED`, message traduit) ne dépend pas du détail (`errors.rs`, bras `Unauthenticated`) ; le détail
   (`mcp: …`) ne va qu'au `warn!` du serveur, et distingue le préfixe, la clé introuvable (inconnue, révoquée, expirée,
-  orpheline ou sans portée — **un** seul message, la base ne dit pas laquelle), le créateur inactif et le créateur
+  orpheline ou sans portée — **un** seul message, la base ne dit pas laquelle ; *annoté le 2026-10-25, revue P2 R2 :
+  et créateur d'une autre société, C-32-5-43*), le créateur inactif et le créateur
   rétrogradé. Le préfixe se compare aux octets (`as_bytes().starts_with`). Le témoin (β) attend précisément
   `AppError::Database(DbError::ConnectionUnavailable(_))`, ce que rend `map_db_error` pour un port fermé.
 - **Écartée** : un détail unique pour tous les refus (le journal ne permettrait plus de diagnostiquer une clé coupée

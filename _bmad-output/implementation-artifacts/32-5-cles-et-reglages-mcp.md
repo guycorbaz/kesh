@@ -455,7 +455,9 @@ passages du manuel qui les décrivent (C-32-5-22).
     `CleMcpAuthentifiee { cle_id, acces: ContexteAcces /* canal Mcp, portées de la clé */, validation: SendValidation }`
     ou `AppError::Unauthenticated` (401) — **même** erreur, au texte près côté client, pour : préfixe absent ou autre
     (dont un PAT **valide et actif**), clé inconnue, révoquée, expirée, créateur inactif, créateur qui n'est plus
-    Administrateur (**hypothèse Q3**, constante `ROLE_CLE_MCP`, C-32-5-7), société absente. **Une erreur de la base n'est jamais
+    Administrateur (**hypothèse Q3**, constante `ROLE_CLE_MCP`, C-32-5-7), société absente *(annoté le 2026-10-25, revue
+    de code P2 de la 32-5b, R2 : s'y ajoute « créateur d'une autre société que la clé », C-32-5-43, né de la revue P1)*.
+    **Une erreur de la base n'est jamais
     un 401** : elle se propage (`AppError::Database`, par `?`, motif `validate_pat`, `auth/api_key.rs:159-161`). Ordre :
     préfixe exact (octets) **avant tout accès à la base** — prouvé par deux cas, poignées sur un pool `connect_lazy` vers
     un **port fermé** (`127.0.0.1:1`) avec un `acquire_timeout` court (le `stub_pool` de `middleware/auth.rs:231-235`
@@ -1655,4 +1657,44 @@ Fichiers de `services/` : 10 → 11. Aucune migration, aucun fichier de `docs/` 
     `mcp_keys_repository.rs` 24 → 25, `admin_full_import_e2e.rs` 56 → 56 (un test complété) : **+2 nets**.
   - Choix C-32-5-43 et C-32-5-44. La remédiation touche du code de production (`repositories/mcp_keys.rs`) : passe
     suivante **ciblée** (P2, regression hunter, **Opus**, `325b-review-prompt-p2.md`, SHA `e2557b47` en dur).
+- **2026-10-25 — Revue de code P2 de la 32-5b** (passe **ciblée**, regression hunter, contexte frais, **Opus**, sur
+  `e2557b47` ; rapport `kesh-gate-logs/325b-review-p2.md`). **Trend : P1 1 MEDIUM / 11 LOW → P2 0 / 0 / 1 MEDIUM /
+  2 LOW**, les trois **nés de la remédiation P1**. Remédiation (Opus 5.5), commit de code **`e64ef129`** :
+  - **R1 (MEDIUM), propagation incomplète de C-32-5-44** : `societe_absente_refusee` (`cles_mcp_e2e.rs`) montait la clé
+    d'une société absente avec un créateur de la société existante ; depuis C-32-5-43, la condition `u.company_id =
+    k.company_id` la refusait, et le test ne prouvait plus le refus de la société absente. Le créateur est désormais un
+    administrateur actif orphelin de la **même** société `999999`, inséré sur la même connexion sous
+    `FOREIGN_KEY_CHECKS = 0`, si bien que seule la jointure à `companies` refuse. **Mutation mx5 rejouée** (`JOIN
+    companies` retiré) sur `cles_mcp_e2e` **et** `mcp_keys_repository` cette fois : **tuée** par
+    `societe_absente_refusee` et `auth_lookup_ignores_an_orphan_key` (`325b-p2r-mutations.log`). ⚠️ À la remédiation P1,
+    mx5 n'avait tourné que sur le binaire du dépôt : c'est ce qui laissait le test de service muet.
+  - **Montages « orphelins » et « société absente » grepés** (`grep -rnE "999_?999|orphel|absente"` sur
+    `cles_mcp_e2e.rs`, `mcp_keys_repository.rs`, `admin_backup_e2e.rs`, `admin_full_import_e2e.rs`, `services_motif.rs`,
+    `services_rollout.rs`) ; chacun relu : `mcp_keys_repository.rs:316`, `:328` (refus de **clé étrangère**, assertés
+    sur le nom de la contrainte — sans lien avec la jointure) et `:409` (réglages, même famille) ; `:726-771` (montage
+    orphelin de C-32-5-44) ; `INEXISTANT` de `services_motif.rs:848` et `services_rollout.rs:428` (société d'un
+    `ContexteAcces`, sans clé MCP) ; `DEAD_COMPANY_15_7B3` d'`admin_full_import_e2e.rs:3344` (#528, par `api_keys`, dont
+    la recherche n'a pas changé). Chacun prouve encore ce que dit son nom. Les autres occurrences d'« absente » parlent de
+    colonnes, de tables ou de lignes de manifeste.
+  - **R2 (LOW)** : les textes qui énumèrent les refus nomment le créateur d'une autre société — `cles_mcp.rs` (point 2
+    du module, doc d'`authentifier`, libellé du journal `… foreign-creator …`), `mcp_keys.rs` (doc du module : « deux
+    différences avec les clés d'API ») ; **AC-b3** de la fiche et **C-32-5-41** du registre annotés, datés, sans
+    réécriture.
+  - **R3 (LOW)** : le doc-comment de `jetons_hostiles_avec_le_prefixe` dit ce que le test prouve (le 401, l'absence de
+    panique) ; l'absence d'erreur de base tient au hachage, qui précède toute requête.
+  - **Valeurs grepées** : `orpheline ou sans portée connue`, `orphan or scopeless`, `joint aussi .companies` → seuls les
+    deux textes mis à jour.
+  - **Gates** : ciblé — fmt, clippy `--workspace --all-targets -D warnings` vert (`325b-p2r-clippy.log`), nextest
+    `cles_mcp_e2e`, `mcp_keys_repository` et les tests `mcp` d'`admin_full_import_e2e` **44 réussis**
+    (`325b-p2r-cible.log`) ; **gate complet au dernier commit de code `e64ef129`**, `kesh_325b` remise à zéro juste
+    avant : garde des droits conforme, fmt, clippy, **4085 réussis, 7 ignorés** (`325b-p2r-gate-complet.log`) ; **E2E
+    complet** à `e64ef129`, binaire reconstruit après le commit (06:26:07, commit 06:15:27) et vérifié par
+    `/proc/<pid>/exe`, `kesh_e2e_325b` reconstruite, dossier neuf `/tmp/kesh-e2e-325b-p2r/` passé au backend et au
+    runner, arrêt par PID : **315 passés, 7 échecs, 17 ignorés** (12,8 min, `325b-p2r-e2e.log`) — les 7 KF-029 seuls.
+    Frontend non touché, non rejoué.
+  - **Mutations** : 1 rejouée (mx5, sur deux binaires), tuée.
+  - **Décomptes** (périmètre `e2557b47..e64ef129`, code) : 3 fichiers (`cles_mcp.rs`, `mcp_keys.rs`, `cles_mcp_e2e.rs`) ;
+    aucun test ajouté (`cles_mcp_e2e.rs` 18 → 18, un montage réécrit) ; deux doc-comments de production.
+  - La remédiation touche du code de production (un libellé de journal dans `cles_mcp.rs`, des doc-comments) : passe
+    suivante **ciblée** (P3, regression hunter, **Sonnet**, `325b-review-prompt-p3.md`, SHA `e64ef129` en dur).
 
