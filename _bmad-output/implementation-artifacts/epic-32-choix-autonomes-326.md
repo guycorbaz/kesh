@@ -394,6 +394,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   suffirait pas, à juger au développement).
 - **Réversible** : oui.
 - *(Annoté le 2026-10-25, validation P3, R1, R2 : les motifs écrits ici étaient des formes non mesurées (`lister(` rougissait sur onze services). Les gardes sont désormais prescrites par leur **propriété**, leur périmètre et leurs formes, sous une règle commune écrite en tête des AC de la fiche : motif greppé sur le dépôt réel à l'étape 0, vide hors liste blanche, un témoin rouge et un témoin vert existant, sorties citées. Les points d'accès du registre s'appellent `outil_pour` et `descripteurs_pour`.)*
+- *(Annoté le 2026-10-25, validation P5, R5 = F6 : « onze services » est faux — `lister` est le nom de **six** fonctions de services (`grep -n "pub async fn lister" crates/kesh-api/src/services/*.rs` → 6) ; onze est le nombre de services du rollout. La conclusion tient.)*
 
 ### C-32-6-35 — Toute connexion du pool du MCP est fermée à sa restitution (validation P2, R4)
 
