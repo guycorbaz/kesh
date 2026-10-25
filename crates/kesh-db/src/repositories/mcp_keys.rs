@@ -235,8 +235,10 @@ pub async fn find_by_id_for_company(
 
 /// Recherche d'authentification : une clé **active** (non révoquée, non
 /// expirée) par son condensat, jointe à son créateur **et à sa société**.
-/// `None` si aucune clé active, si la société a disparu (clé orpheline), ou si
-/// la clé ne porte **aucune portée connue** de cette version (C-32-5-37).
+/// `None` si aucune clé active, si la société a disparu (clé orpheline), si le
+/// créateur n'appartient pas à la société de la clé (C-32-5-43 : le contexte
+/// rendu ne mêle jamais deux sociétés), ou si la clé ne porte **aucune portée
+/// connue** de cette version (C-32-5-37).
 ///
 /// Le rôle et l'état du créateur sont rendus, non filtrés : c'est
 /// l'authentification (32-5b) qui décide de leur sens.
@@ -250,7 +252,7 @@ pub async fn find_active_auth_by_key_hash(
                 CAST(k.scopes AS CHAR) AS scopes, k.send_validation AS send_validation, \
                 k.expires_at AS expires_at, u.role AS creator_role, u.active AS creator_active \
          FROM mcp_keys k \
-         JOIN users u ON u.id = k.created_by_user_id \
+         JOIN users u ON u.id = k.created_by_user_id AND u.company_id = k.company_id \
          JOIN companies c ON c.id = k.company_id \
          WHERE k.key_hash = ? AND k.revoked_at IS NULL \
            AND (k.expires_at IS NULL OR k.expires_at > NOW(3)) \

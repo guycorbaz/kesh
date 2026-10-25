@@ -97,10 +97,18 @@ async fn utilisateur(pool: &MySqlPool, company_id: i64, nom: &str, role: Role) -
     .id
 }
 
-/// Une société et son administrateur.
+/// Une société et son administrateur, d'identifiants **distincts** : une
+/// société leurre est créée d'abord, si bien que `company_id` et `user_id` ne
+/// valent pas tous deux 1 — sans quoi un contexte qui les intervertirait
+/// passerait toutes les assertions (revue P1, E1).
 async fn livres(pool: &MySqlPool) -> (i64, i64) {
+    societe(pool, "Leurre").await;
     let c = societe(pool, "Livres MCP").await;
     let u = utilisateur(pool, c, "admin-mcp", Role::Admin).await;
+    assert_ne!(
+        c, u,
+        "montage : société et utilisateur d'identifiants distincts"
+    );
     (c, u)
 }
 
@@ -425,6 +433,29 @@ async fn prefixe_exact(pool: MySqlPool) {
         authentifier(&lecture, &trace, &jeton).await.is_ok(),
         "contrôle"
     );
+}
+
+/// Jetons hostiles **portant** le préfixe (revue P1, E6) : le préfixe seul, un
+/// corps non ASCII, un corps de 100 000 caractères → 401, sans panique ni
+/// erreur de base (le condensat ne se trouve pas).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn jetons_hostiles_avec_le_prefixe(pool: MySqlPool) {
+    let (c, u) = livres(&pool).await;
+    cle_livres(&pool, c, u).await;
+    let (lecture, trace) = poignees(&pool);
+    for hostile in [
+        MCP_PREFIX.to_string(),
+        format!("{MCP_PREFIX}écritures€✓\u{0}"),
+        format!("{MCP_PREFIX}{}", "A".repeat(100_000)),
+    ] {
+        let r = authentifier(&lecture, &trace, &hostile).await;
+        assert!(
+            est_401(&r),
+            "{} caractères : {:?}",
+            hostile.chars().count(),
+            r.err()
+        );
+    }
 }
 
 /// AC-b3 (α) — sans le préfixe, le refus précède **tout** accès à la base : sur

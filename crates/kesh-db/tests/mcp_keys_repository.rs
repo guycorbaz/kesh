@@ -727,20 +727,31 @@ async fn auth_lookup_ignores_an_expired_key(pool: MySqlPool) {
 async fn auth_lookup_ignores_an_orphan_key(pool: MySqlPool) {
     // Une clé dont la société a disparu (montage sous FOREIGN_KEY_CHECKS = 0,
     // motif `mount_orphans`) : la jointure à `companies` l'écarte, avant toute
-    // réparation (C-32-5-12).
-    let a = company(&pool, "A").await;
-    let ua = user(&pool, a, "admin-a", Role::Admin).await;
+    // réparation (C-32-5-12). Le créateur est orphelin **de la même société**,
+    // comme le laisse #528 (`users` et clés pointent la société effacée) : la
+    // condition `u.company_id = k.company_id` (C-32-5-43) est alors satisfaite,
+    // et seule la jointure à `companies` refuse la clé (Story 32-5b).
+    company(&pool, "A").await;
     let mut conn = pool.acquire().await.unwrap();
     sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
         .execute(&mut *conn)
         .await
         .unwrap();
+    let uo = sqlx::query(
+        "INSERT INTO users (username, password_hash, role, active, company_id) \
+         VALUES ('admin-orphelin', '$argon2id$v=19$m=19456,t=2,p=1$dGVzdA$dGVzdA', 'Admin', TRUE, ?)",
+    )
+    .bind(999_999_i64)
+    .execute(&mut *conn)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
     sqlx::query(
         "INSERT INTO mcp_keys (company_id, created_by_user_id, name, key_hash, scopes) \
          VALUES (?, ?, 'orpheline', ?, '[\"books:read\"]')",
     )
     .bind(999_999_i64)
-    .bind(ua)
+    .bind(uo)
     .bind(hash('1'))
     .execute(&mut *conn)
     .await
@@ -757,6 +768,43 @@ async fn auth_lookup_ignores_an_orphan_key(pool: MySqlPool) {
             .is_none(),
         "clé orpheline : jamais trouvée (mutation Ma4, JOIN companies)"
     );
+}
+
+/// Story 32-5b (C-32-5-43, revue P1 B1 = E3) — une clé de la société A dont le
+/// créateur appartient à la société B (ligne forgée par SQL : aucune route ne
+/// la produit) n'est jamais trouvée : le contexte d'accès rendu ne mêle pas la
+/// société de la clé et l'utilisateur d'une autre. Contrôle : le même montage
+/// avec un créateur de A est trouvé.
+#[sqlx::test(migrations = "./test-schema")]
+async fn auth_lookup_ignores_a_key_whose_creator_is_in_another_company(pool: MySqlPool) {
+    let a = company(&pool, "A").await;
+    let b = company(&pool, "B").await;
+    let ua = user(&pool, a, "admin-a", Role::Admin).await;
+    let ub = user(&pool, b, "admin-b", Role::Admin).await;
+    for (createur, h) in [(ub, hash('1')), (ua, hash('2'))] {
+        sqlx::query(
+            "INSERT INTO mcp_keys (company_id, created_by_user_id, name, key_hash, scopes) \
+             VALUES (?, ?, 'forgée', ?, '[\"books:read\"]')",
+        )
+        .bind(a)
+        .bind(createur)
+        .bind(&h)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    assert!(
+        mcp_keys::find_active_auth_by_key_hash(&pool, &hash('1'))
+            .await
+            .unwrap()
+            .is_none(),
+        "créateur d'une autre société : jamais trouvée"
+    );
+    let row = mcp_keys::find_active_auth_by_key_hash(&pool, &hash('2'))
+        .await
+        .unwrap()
+        .expect("contrôle : créateur de la société de la clé");
+    assert_eq!((row.company_id, row.created_by_user_id), (a, ua));
 }
 
 #[sqlx::test(migrations = "./test-schema")]
