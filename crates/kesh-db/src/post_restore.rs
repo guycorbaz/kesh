@@ -208,50 +208,22 @@ pub struct ReplayedBackfill {
 /// système, et sont énumérées avec leur justification dans
 /// [`EXEMPT_MIGRATIONS`].
 pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
-    // ⚠️ **VIDE de la Story 25-2-c (#381) à la Story 15-1a2-ii (#518)** — la
-    // création de `journal_entry_number_sequences` (20260917000001) avait refermé
-    // la fenêtre d'importabilité au-delà des deux entrées qu'il portait
-    // (`20260828000001`, `20260910000001`, désormais dans [`RETIRED_BACKFILLS`]).
-    // Il n'était pas mort, il attendait : M1 ci-dessous le remplit de nouveau.
+    // ⚠️ **VIDE depuis la Story 32-5a (#723)** — la création de `mcp_keys` et de
+    // `mcp_server_settings` (20261025000001) a refermé la fenêtre d'importabilité
+    // sur la seule entrée qu'il portait, le rejeu du lettrage `20261010000001`
+    // (Story 15-1a2-ii, #518), désormais dans [`RETIRED_BACKFILLS`] : une
+    // sauvegarde assez ancienne pour en avoir besoin ne porte pas `mcp_keys`, donc
+    // est refusée au contrôle de couverture bien avant tout rejeu. Il avait déjà été
+    // vide de la Story 25-2-c (#381) à la Story 15-1a2-ii, pour la même raison
+    // (création de `journal_entry_number_sequences`, 20260917000001). Il n'est pas
+    // mort, il attend la prochaine migration de backfill postérieure à la dernière
+    // créatrice de table.
     //
-    // ⚠️ **Ce que M1 rend aux tests unitaires qui ne parcourent QUE ce registre**
-    // (décompte de la 15-1a2-ii) : TROIS reprennent matière — couverture des
-    // statements d'écriture, absence de DDL, littéraux dangereux ; DEUX restent
-    // sans prise sur M1 — `class_b_sentinel_column_is_added_by_its_own_migration`
-    // saute toute entrée qui n'est pas `Sentinels`, et l'extraction verbatim
-    // compare, pour un `include_str!` de la migration entière, la source à
-    // elle-même. Les tests de la machinerie de rejeu gardent leur matière par
-    // `post_restore_class_a.rs` (`.chain(RETIRED_BACKFILLS.iter())`).
-    PostRestoreBackfill {
-        version: 20261010000001,
-        label: "20261010000001_lettering_documents_backfill.sql",
-        // CLASSE A. Les trois `UPDATE` (groupes `document` des factures clientes,
-        // des factures fournisseurs payées, paires `reversal` des achats annulés)
-        // sont gardés `lettering_key IS NULL` sur TOUTES les lignes du groupe
-        // candidat : le rejeu ne délettre jamais et ne réécrit jamais une marque
-        // posée. Aucune des lignes visées ne peut porter un `NULL` CHOISI : un
-        // groupe `document` ne se dissout pas à la main (`LETTERING_IS_DOCUMENT`)
-        // et se recalcule depuis les pièces — un groupe dissous à bon droit
-        // (règlement annulé) ne se reforme pas, la pièce ayant changé ; une paire
-        // `reversal` dont une ligne est celle d'une pièce ne se dissout pas à la
-        // main non plus (C106).
-        //
-        // ⚠️ **Ce que la classe A ne garantit PAS ici** (C-15-1a2-16) : ce n'est
-        // pas un « no-op strict ». Le rejeu PEUT LETTRER ce que la base à jour
-        // avait laissé ouvert à bon droit — (1) une pièce historique entièrement
-        // close à la mise à jour, dont un administrateur a depuis rouvert
-        // l'exercice ou reculé la borne (rien ne la resynchronise en vivant) ;
-        // (2) une pièce dont le compte n'était pas lettrable au geste et l'est
-        // devenu. Le groupe posé est celui que la synchronisation poserait
-        // aujourd'hui, et aucun geste de l'utilisateur ne l'avait défait (une
-        // ligne de pièce n'est jamais délettrable à la main) — ce n'est pas
-        // écraser un choix. Le manuel d'administration le dit.
-        //
-        // Hors fenêtre ? Non : aucune table applicative n'est créée depuis
-        // `20260917000001` (`registry_entries_are_within_import_window`).
-        trigger: BackfillTrigger::Unconditional,
-        sql: include_str!("../migrations/20261010000001_lettering_documents_backfill.sql"),
-    },
+    // ⚠️ **Ce que le registre vide coûte aux tests unitaires qui ne parcourent QUE
+    // lui** : ils retournent à vide (état connu de la 25-2-c). Les tests de la
+    // machinerie de rejeu gardent leur matière par `post_restore_class_a.rs`
+    // (`.chain(RETIRED_BACKFILLS.iter())`) et par `replay_retired`
+    // (`admin_full_import_e2e.rs`).
 ];
 
 // ⚠️ **Le registre a été VIDE entre les Stories 24-2 et 24-3, et ce n'était pas
@@ -366,6 +338,40 @@ pub const RETIRED_BACKFILLS: &[PostRestoreBackfill] = &[
         trigger: BackfillTrigger::Sentinels(&[("audit_log", "actor_label")]),
         sql: include_str!("post_restore/20260910000001_audit_log_actor_label.sql"),
     },
+    PostRestoreBackfill {
+        version: 20261010000001,
+        label: "20261010000001_lettering_documents_backfill.sql",
+        // ⚠️ **Retirée du registre de production par la Story 32-5a (#723)** : la
+        // création de `mcp_keys` (20261025000001) a refermé la fenêtre. Contenu
+        // inchangé ; ce qui suit est son commentaire de classe d'origine.
+        //
+        // CLASSE A. Les trois `UPDATE` (groupes `document` des factures clientes,
+        // des factures fournisseurs payées, paires `reversal` des achats annulés)
+        // sont gardés `lettering_key IS NULL` sur TOUTES les lignes du groupe
+        // candidat : le rejeu ne délettre jamais et ne réécrit jamais une marque
+        // posée. Aucune des lignes visées ne peut porter un `NULL` CHOISI : un
+        // groupe `document` ne se dissout pas à la main (`LETTERING_IS_DOCUMENT`)
+        // et se recalcule depuis les pièces — un groupe dissous à bon droit
+        // (règlement annulé) ne se reforme pas, la pièce ayant changé ; une paire
+        // `reversal` dont une ligne est celle d'une pièce ne se dissout pas à la
+        // main non plus (C106).
+        //
+        // ⚠️ **Ce que la classe A ne garantit PAS ici** (C-15-1a2-16) : ce n'est
+        // pas un « no-op strict ». Le rejeu PEUT LETTRER ce que la base à jour
+        // avait laissé ouvert à bon droit — (1) une pièce historique entièrement
+        // close à la mise à jour, dont un administrateur a depuis rouvert
+        // l'exercice ou reculé la borne (rien ne la resynchronise en vivant) ;
+        // (2) une pièce dont le compte n'était pas lettrable au geste et l'est
+        // devenu. Le groupe posé est celui que la synchronisation poserait
+        // aujourd'hui, et aucun geste de l'utilisateur ne l'avait défait (une
+        // ligne de pièce n'est jamais délettrable à la main) — ce n'est pas
+        // écraser un choix.
+        //
+        // Hors fenêtre depuis 20261025000001 : cf. son exemption, dans
+        // [`EXEMPT_MIGRATIONS`].
+        trigger: BackfillTrigger::Unconditional,
+        sql: include_str!("../migrations/20261010000001_lettering_documents_backfill.sql"),
+    },
 ];
 
 /// Migrations qui écrivent des données mais que ce mécanisme n'a **pas** à
@@ -438,10 +444,11 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
          restaure puisque la table est dans TABLES_TO_TRUNCATE. Le cas de déclenchement ne peut \
          se présenter d'aucun côté. ⚠️ NE PAS écrire « Hors fenêtre » ici, quoique le fondement \
          ressemble à celui de 20260428000001 (vat_rates) : ce marqueur est réservé à un fait de \
-         CHRONOLOGIE, et cette migration EST la dernière créatrice de table applicative — donc la \
-         fenêtre elle-même. `exemptions_claiming_out_of_window_really_are_out_of_window` exige \
-         version < window et l'a refusé, à juste titre. Le fondement est ici la COUVERTURE, pas \
-         la fenêtre.",
+         CHRONOLOGIE, et cette migration ÉTAIT, quand cette justification a été écrite, la \
+         dernière créatrice de table applicative — donc la fenêtre elle-même. \
+         `exemptions_claiming_out_of_window_really_are_out_of_window` exige version < window et \
+         l'a refusé, à juste titre. Elle ne l'est plus depuis 20261025000001 (mcp_keys, Story \
+         32-5) ; le fondement reste la COUVERTURE, pas la fenêtre, et il ne change pas.",
     ),
     (
         20260909000001,
@@ -563,24 +570,32 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
         ExemptionBasis::Durable,
         "Rejeu exclu à dessein : un groupe reversal sans ligne de pièce se délettre à la main \
          (DELETE /letterings) ; un NULL peut y être un choix de l'utilisateur, qu'un rejeu à \
-         chaque import réécrirait en silence. Coût assumé : une sauvegarde d'avant la 15-1a2-ii \
-         importée laisse ces paires ouvertes, lettrables à la main. Les paires des écritures \
-         d'achat, elles, sont portées par 20261010000001, au registre (Story 15-1a2-ii, #518).",
+         chaque import réécrirait en silence. Le coût assumé à l'origine (une sauvegarde d'avant \
+         la 15-1a2-ii importée laissait ces paires ouvertes) est sans objet depuis \
+         20261025000001 : une sauvegarde qui ne porte pas mcp_keys est refusée au contrôle de \
+         couverture. Les paires des écritures d'achat étaient portées par 20261010000001, qui \
+         a quitté le registre à la même date (Story 32-5a). L'en-tête de la migration, qui la dit \
+         « au registre de rejeu », est donc périmé et ne se corrige pas (P8, migration \
+         publiée).",
     ),
     (
         20261009000001,
         ExemptionBasis::Durable,
         "UPDATE sur _kesh_version (bump kesh_version_min_required), table système jamais \
          restaurée. Le reste de la migration est du DDL pur (colonnes de lettrage, Story \
-         15-1a-i) : une sauvegarde antérieure les restaure à NULL, aucun groupe n'existait.",
+         15-1a-i). Ce qu'une sauvegarde antérieure deviendrait à l'import est sans objet depuis \
+         20261025000001 : une sauvegarde antérieure à cette migration ne porte pas mcp_keys et \
+         est refusée au contrôle de couverture.",
     ),
     (
         20261011000001,
         ExemptionBasis::Durable,
         "UPDATE sur _kesh_version (bump kesh_version_min_required), table système jamais \
          restaurée. Le reste de la migration est du DDL pur (colonne debit_sign, plafond de \
-         header_row_count, Story 26-1) : une sauvegarde antérieure restaure la colonne à son \
-         DEFAULT 'positive', qui est la sémantique des profils d'avant.",
+         header_row_count, Story 26-1). Ce qu'une sauvegarde antérieure deviendrait à l'import \
+         (la colonne à son DEFAULT 'positive', sémantique des profils d'avant) est sans objet \
+         depuis 20261025000001 : une sauvegarde antérieure à cette migration ne porte pas \
+         mcp_keys et est refusée au contrôle de couverture.",
     ),
     (
         20261015000001,
@@ -588,8 +603,9 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
         "UPDATE sur _kesh_version (bump kesh_version_min_required), table système jamais \
          restaurée. Le reste de la migration est du DDL pur (sept colonnes QR rendues \
          facultatives, contrainte « tout ou rien », unicité de supplier_invoice_id, Story \
-         30-2a) : les lignes d'une sauvegarde antérieure portent toutes un QR et satisfont la \
-         contrainte telles quelles ; aucune valeur n'est à recalculer.",
+         30-2a) : aucune valeur n'est à recalculer. Ce qu'une sauvegarde antérieure deviendrait \
+         à l'import est sans objet depuis 20261025000001 : une sauvegarde antérieure à cette \
+         migration ne porte pas mcp_keys et est refusée au contrôle de couverture.",
     ),
     (
         20261024000001,
@@ -597,6 +613,17 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
         "INSERT sur _kesh_backup_schedule, table système hors TABLES_TO_TRUNCATE : jamais \
          exportée ni restaurée (réglage et état de la sauvegarde automatique, Story 31-1c). \
          Ce n'est pas un backfill de données applicatives — patron de 20260522000001.",
+    ),
+    (
+        20261010000001,
+        ExemptionBasis::Durable,
+        "Hors fenêtre depuis 20261025000001 (mcp_keys, Story 32-5) : une sauvegarde assez \
+         ancienne pour porter des pièces soldées sans leur lettrage (antérieure à la 15-1a2-ii) \
+         ne porte pas mcp_keys, donc est refusée au contrôle de couverture. Figurait au registre \
+         de rejeu, en CLASSE A, de la Story 15-1a2-ii (#518) à la Story 32-5a ; l'y laisser \
+         aurait fait exécuter à chaque import un backfill dont le cas de déclenchement ne peut \
+         plus se présenter. L'entrée reste dans RETIRED_BACKFILLS pour les tests de la \
+         machinerie.",
     ),
 ];
 
@@ -1123,10 +1150,14 @@ mod tests {
         // l'a refusée, à juste titre, et le fondement a été réécrit en termes de
         // COUVERTURE. *Le marqueur dit un fait de chronologie, pas une famille
         // d'arguments qui se ressemblent.*
+        // ⚠️ **8 → 9 (Story 32-5a, #723)**, et l'entrante vient encore du
+        // REGISTRE : `20261010000001` y figurait jusqu'à ce que la création de
+        // `mcp_keys` referme la fenêtre au-delà d'elle. Troisième fois le même
+        // mouvement.
         assert_eq!(
             checked,
-            8,
-            "attendu 8 exemptions marquées « Hors fenêtre » sur {}, trouvé {checked} — soit une \
+            9,
+            "attendu 9 exemptions marquées « Hors fenêtre » sur {}, trouvé {checked} — soit une \
              justification a été ajoutée sans le marqueur (et échappe alors au contrôle), soit le \
              marqueur a dérivé et ce test est devenu MUET.",
             EXEMPT_MIGRATIONS.len()
@@ -1223,9 +1254,12 @@ mod tests {
         // ⚠️ **19 → 20 (Story 31-1c, #503)** : `20261024000001`, l'INSERT du
         // singleton `_kesh_backup_schedule` — `Durable`, patron de
         // `20260522000001` (table système jamais exportée ni restaurée).
+        // ⚠️ **20 → 21 (Story 32-5a, #723)** : `20261010000001`, le rejeu du
+        // lettrage, sorti du registre quand `mcp_keys` a refermé la fenêtre —
+        // `Durable`, « Hors fenêtre », patron de `20260828000001`.
         assert_eq!(
             EXEMPT_MIGRATIONS.len(),
-            20,
+            21,
             "le registre d'exemptions a changé de taille : déclarer le fondement de l'entrée \
              neuve (Durable, ou PerishableSince(<borne>) si elle argumente sur un fait daté), \
              puis bumper ce nombre."

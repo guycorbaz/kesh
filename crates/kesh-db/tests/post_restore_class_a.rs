@@ -42,7 +42,9 @@
 //!
 //! ⚠️ **Compté PAR ENTRÉE, depuis la Story 15-1a2-ii (#518).** Le rattrapage du
 //! lettrage (`20261010000001`, M1) entre au registre en classe A, à côté de
-//! l'entrée retirée `20260729000001`. Une somme sur toutes les entrées laisserait
+//! l'entrée retirée `20260729000001` ; la Story 32-5a l'a retirée à son tour
+//! (`RETIRED_BACKFILLS`), et ce test la parcourt toujours par le même `.chain`.
+//! Une somme sur toutes les entrées laisserait
 //! l'une tourner à vide sans que rien ne rougisse : chaque entrée doit toucher
 //! au moins une ligne sur la base d'avant, et aucune sur la base à jour. La
 //! fixture porte donc aussi une facture client **soldée** et une facture

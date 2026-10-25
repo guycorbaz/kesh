@@ -950,11 +950,12 @@ fn strip_column(manifest: &mut Value, table: &str, column: &str) {
 /// tout rejeu. Ces deux entrées-là ont donc quitté `POST_RESTORE_BACKFILLS` —
 /// c'est le mécanisme qui fonctionne, pas une régression.
 ///
-/// ⚠️ **Le registre de production, lui, n'est PAS vide** — il l'a été entre les
-/// Stories 24-2 et 24-3, et cette phrase l'a affirmé trop longtemps. Il porte
-/// depuis des entrées postérieures à la table qui avait refermé la fenêtre
-/// (24-3, puis 25-1a). Ce que ce helper injecte, ce sont les entrées RETIRÉES,
-/// et elles seules.
+/// ⚠️ **Le registre de production est VIDE depuis la Story 32-5a (#723)** — il
+/// l'a été entre les Stories 24-2 et 24-3, puis de la 25-2-c à la 15-1a2-ii, et
+/// la création de `mcp_keys` l'a vidé de nouveau en refermant la fenêtre sur le
+/// rejeu du lettrage (`20261010000001`), passé à son tour au registre retiré. Ce
+/// que ce helper injecte, ce sont les entrées RETIRÉES, et elles seules — le
+/// lettrage compris depuis la 32-5a.
 ///
 /// Ces cas gardent pourtant toute leur substance : ils éprouvent la MACHINERIE
 /// (ordre, sémantique OU des sentinelles, classes A/B, codes de sortie, nombre
@@ -1090,7 +1091,7 @@ async fn full_import_replays_revenue_account_backfill(pool: MySqlPool) {
     // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
     // production (fenêtre refermée), le rejeu est donc déclenché explicitement
     // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
-    // registre, lui, n'est PAS vide.
+    // registre de production, lui, est vide depuis la Story 32-5a.
     let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
@@ -1173,7 +1174,7 @@ async fn full_import_replays_class_a_even_when_column_is_present(pool: MySqlPool
     // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
     // production (fenêtre refermée), le rejeu est donc déclenché explicitement
     // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
-    // registre, lui, n'est PAS vide.
+    // registre de production, lui, est vide depuis la Story 32-5a.
     let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
@@ -1220,7 +1221,7 @@ async fn full_import_replays_role_and_postable_when_both_columns_absent(pool: My
     // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
     // production (fenêtre refermée), le rejeu est donc déclenché explicitement
     // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
-    // registre, lui, n'est PAS vide.
+    // registre de production, lui, est vide depuis la Story 32-5a.
     let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
@@ -1313,7 +1314,7 @@ async fn full_import_replays_when_only_one_sentinel_is_absent(pool: MySqlPool) {
     // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
     // production (fenêtre refermée), le rejeu est donc déclenché explicitement
     // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
-    // registre, lui, n'est PAS vide.
+    // registre de production, lui, est vide depuis la Story 32-5a.
     let report = replay_retired(&pool, &manifest).await;
 
     let e = retired_entry(&report, ROLE_POSTABLE);
@@ -1385,7 +1386,7 @@ async fn full_import_skips_role_backfill_when_sentinels_are_present(pool: MySqlP
     // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
     // production (fenêtre refermée), le rejeu est donc déclenché explicitement
     // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
-    // registre, lui, n'est PAS vide.
+    // registre de production, lui, est vide depuis la Story 32-5a.
     let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
@@ -1499,7 +1500,7 @@ async fn full_import_replays_backfills_in_increasing_version_order(pool: MySqlPo
     // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
     // production (fenêtre refermée), le rejeu est donc déclenché explicitement
     // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
-    // registre, lui, n'est PAS vide.
+    // registre de production, lui, est vide depuis la Story 32-5a.
     let report = replay_retired(&pool, &manifest).await;
 
     assert!(
@@ -1525,13 +1526,17 @@ async fn full_import_replays_backfills_in_increasing_version_order(pool: MySqlPo
     // donc rejoint le registre des retirés. Ce test n'observe pas un défaut : il
     // observe une liste qui s'est allongée, et l'ordre CROISSANT — le seul objet
     // de son assertion — reste vérifié.
+    // ⚠️ Story 32-5a (#723) — **cinq** entrées : la création de `mcp_keys` a
+    // refermé la fenêtre sur le rejeu du lettrage (`LETTERING_BACKFILL`), passé à
+    // son tour au registre retiré, en dernier.
     assert_eq!(
         versions,
         vec![
             ROLE_POSTABLE,
             REVENUE_BACKFILL,
             SETTLEMENT_TYPE,
-            AUDIT_ACTOR_LABEL
+            AUDIT_ACTOR_LABEL,
+            LETTERING_BACKFILL
         ],
         "le rejeu suit l'ordre de version CROISSANT"
     );
@@ -1580,11 +1585,16 @@ async fn full_import_report_mirrors_the_production_registry(pool: MySqlPool) {
     // SAUTÉE — un `REPLAYED_*` signalerait une sentinelle qui ne détecte plus
     // rien. Une entrée de classe A est rejouée à chaque import, et sur cette
     // base à jour (une facture validée, non soldée) elle ne touche rien.
-    // Première fois depuis la 25-2-c que ce test exerce une entrée : la boucle
-    // était vacuement verte tant que le registre était vide.
+    //
+    // ⚠️ **Story 32-5a (#723) : le registre de production est VIDE**, comme de
+    // la 25-2-c à la 15-1a2-ii — la création de `mcp_keys` a refermé la fenêtre
+    // sur le rejeu du lettrage. Le rapport est donc vide, égal au registre vide
+    // (assertion ci-dessus), et la boucle qui suit est vacuement verte ; elle
+    // reprendra matière à la prochaine entrée. L'assertion de montage « au moins
+    // une entrée » de la 15-1a2-ii est retirée avec elle.
     assert!(
-        !report.is_empty(),
-        "montage : le registre de production porte au moins une entrée (M1, Story 15-1a2-ii)"
+        report.is_empty(),
+        "registre de production vide depuis la Story 32-5a : got {report:?}"
     );
     for (e, entree) in report
         .iter()
@@ -1609,9 +1619,14 @@ async fn full_import_report_mirrors_the_production_registry(pool: MySqlPool) {
 
 // ============================================================================
 // Story 15-1a2-ii (#518) — AC16 : le rattrapage du lettrage rejoué à l'import
+//
+// ⚠️ Story 32-5a (#723) : M1 a quitté le registre de production (la création
+// de `mcp_keys` a refermé la fenêtre). Les cas ci-dessous la rejouent par
+// `replay_retired`, sur la base que l'import vient de restaurer, et lisent son
+// entrée au rapport typé (`retired_entry`) — motif de la 24-2.
 // ============================================================================
 
-/// Version de M1, au registre (classe A).
+/// Version de M1, au registre retiré (classe A) depuis la Story 32-5a.
 const LETTERING_BACKFILL: i64 = 20261010000001;
 
 /// Les marques de toutes les lignes, triées par ligne.
@@ -1651,14 +1666,6 @@ async fn line_mark(
     .fetch_one(pool)
     .await
     .expect("marque de la ligne")
-}
-
-/// L'entrée M1 du rapport de rejeu.
-fn lettering_entry(report: &[Value]) -> &Value {
-    report
-        .iter()
-        .find(|e| e["version"].as_i64() == Some(LETTERING_BACKFILL))
-        .expect("M1 au rapport de rejeu")
 }
 
 /// Les pièces du lettrage, posées par les GESTES (qui lettrent) : une facture
@@ -1853,9 +1860,10 @@ async fn erase_marks(pool: &MySqlPool) -> u64 {
 }
 
 /// AC16 (a) — une sauvegarde **sans** lettrage (marques à `NULL` dans l'archive)
-/// importée : les groupes `document` et la paire `reversal` de l'achat annulé
-/// sont posés, le rapport nomme M1 `REPLAYED_UNCONDITIONAL` ; la paire de la
-/// contre-passation manuelle reste **ouverte** (M2 n'est pas rejouée).
+/// importée puis rejouée par le registre retiré (Story 32-5a) : les groupes
+/// `document` et la paire `reversal` de l'achat annulé sont posés, le rapport
+/// typé nomme M1 `REPLAYED_UNCONDITIONAL` ; la paire de la contre-passation
+/// manuelle reste **ouverte** (M2 n'est pas rejouée).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_replays_document_lettering(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
@@ -1867,10 +1875,10 @@ async fn full_import_replays_document_lettering(pool: MySqlPool) {
     let (manifest, data) = unzip(&backup);
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
 
-    let report = backfill_report(&pool).await;
-    let m1 = lettering_entry(&report);
-    assert_eq!(m1["outcome"], "REPLAYED_UNCONDITIONAL", "{m1:?}");
-    assert!(m1["rows_affected"].as_u64() > Some(0), "{m1:?}");
+    let report = replay_retired(&pool, &manifest).await;
+    let m1 = retired_entry(&report, LETTERING_BACKFILL);
+    assert_eq!(m1.outcome.code(), "REPLAYED_UNCONDITIONAL", "{m1:?}");
+    assert!(m1.rows_affected > 0, "{m1:?}");
 
     let vente = line_mark(&pool, p.sale_entry, p.receivable).await;
     assert_eq!(vente.1.as_deref(), Some("document"), "vente lettrée");
@@ -1925,8 +1933,9 @@ async fn full_import_keeps_a_dissolved_free_reversal_pair(pool: MySqlPool) {
     let (manifest, data) = unzip(&backup);
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
 
+    let report = replay_retired(&pool, &manifest).await;
     assert_eq!(
-        lettering_entry(&backfill_report(&pool).await)["outcome"],
+        retired_entry(&report, LETTERING_BACKFILL).outcome.code(),
         "REPLAYED_UNCONDITIONAL"
     );
     assert!(
@@ -1956,10 +1965,11 @@ async fn full_import_of_an_up_to_date_base_is_a_noop(pool: MySqlPool) {
     let (manifest, data) = unzip(&backup);
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
 
-    let m1 = lettering_entry(&backfill_report(&pool).await).clone();
-    assert_eq!(m1["outcome"], "REPLAYED_UNCONDITIONAL", "{m1:?}");
+    let report = replay_retired(&pool, &manifest).await;
+    let m1 = retired_entry(&report, LETTERING_BACKFILL);
+    assert_eq!(m1.outcome.code(), "REPLAYED_UNCONDITIONAL", "{m1:?}");
     assert_eq!(
-        m1["rows_affected"], 0,
+        m1.rows_affected, 0,
         "M1 ne touche rien sur une base à jour : {m1:?}"
     );
     assert_eq!(lettering_marks(&pool).await, avant, "marques inchangées");
@@ -2004,8 +2014,9 @@ async fn full_import_letters_a_reopened_historical_piece(pool: MySqlPool) {
     let (manifest, data) = unzip(&backup);
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
 
-    let m1 = lettering_entry(&backfill_report(&pool).await).clone();
-    assert!(m1["rows_affected"].as_u64() > Some(0), "{m1:?}");
+    let report = replay_retired(&pool, &manifest).await;
+    let m1 = retired_entry(&report, LETTERING_BACKFILL);
+    assert!(m1.rows_affected > 0, "{m1:?}");
     let vente = line_mark(&pool, p.sale_entry, p.receivable).await;
     assert_eq!(
         vente.1.as_deref(),
@@ -3874,29 +3885,51 @@ async fn format_1_restauree_sur_la_meme_installation(pool: MySqlPool) {
     );
 }
 
-/// AC10 — la sauvegarde produite par la **vraie** 0.14.0 s'importe : 200,
-/// aucune pièce restaurée, les deux pièces qu'elle référence comptées
-/// manquantes (le dossier des documents du test est vide).
+/// AC-a15 de la Story 32-5a (C-32-5-26) — la sauvegarde produite par la
+/// **vraie** 0.14.0 est **refusée** : 400 `INVALID_BACKUP_STRUCTURE`, aucune
+/// entrée `admin.full_import`, aucune table changée.
+///
+/// ⚠️ **L'AC10 de la Story 31-1a, que ce test portait (« la sauvegarde de la
+/// 0.14.0 s'importe », 200), est dépassé par la Q4 de Guy (2026-10-24)** : la
+/// 0.16.0 ajoute `mcp_keys` et `mcp_server_settings` à l'inventaire, et le
+/// contrôle de couverture de l'import (`parse_and_verify`) exige l'égalité des
+/// inventaires de tables — une sauvegarde qui ne les porte pas est refusée
+/// (« table 'mcp_keys' absente du manifeste »). C'est le seul test de cette
+/// limite contre une sauvegarde **réellement produite** par une version
+/// antérieure ; le format 1 lui-même reste éprouvé par
+/// `format_1_restauree_sur_la_meme_installation`, qui part d'un export courant.
+/// Tue la mutation Ma7 (un `parse_and_verify` qui tolérerait une table absente).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn ac10_la_sauvegarde_de_la_0_14_0_s_importe(pool: MySqlPool) {
+async fn ac10_la_sauvegarde_de_la_0_14_0_est_refusee(pool: MySqlPool) {
     let docs = pieces::dossier();
     let backup = pieces::dossier();
     let admin = seed_admin(&pool, "Acme").await;
     let app = spawn_app_with(pool.clone(), config_docs(docs.path(), backup.path())).await;
+
+    async fn counts(pool: &MySqlPool) -> Vec<(&'static str, i64)> {
+        let mut v = Vec::new();
+        for &t in kesh_db::backup::TABLES_TO_TRUNCATE {
+            let n: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM `{t}`"))
+                .fetch_one(pool)
+                .await
+                .unwrap_or_else(|e| panic!("count {t}: {e}"));
+            v.push((t, n));
+        }
+        v
+    }
+    let avant = counts(&pool).await;
+
     let resp = post_import(&app, &admin.jwt, FIXTURE_0_14_0.to_vec()).await;
-    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(resp.status(), 400, "{}", resp.text().await.unwrap());
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["sourceVersion"], "0.14.0");
-    assert_eq!(body["filesRestored"], 0);
-    assert_eq!(body["filesMissing"], 2);
-    let details: Value = sqlx::query_scalar(
-        "SELECT details_json FROM audit_log WHERE action = 'admin.full_import' \
-         ORDER BY id DESC LIMIT 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(details["source_format_version"], 1);
+    assert_eq!(body["error"]["code"], "INVALID_BACKUP_STRUCTURE", "{body}");
+    let imports: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'admin.full_import'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(imports, 0, "aucune entrée admin.full_import");
+    assert_eq!(counts(&pool).await, avant, "aucune table changée");
 }
 
 /// AC7 (format 2) — une pièce de `files` qu'aucune ligne restaurée ne
