@@ -1434,6 +1434,15 @@ C-32-10a-8 annoté). Restent :*
 
 ## À recontrôler à l'étape 0 du développement
 
+**Note de l'orchestrateur (2026-10-25), ordre de développement fixé après la validation de cette fiche** : 32-6a,
+32-6b, 32-8a, **32-8b0**, 32-8b, 32-8c, puis la 32-10a. La sous-partie **32-8b0** (fiche
+`32-8-validation-avant-envoi.md`, AC-01 à AC-04) crée `kesh_core::text::is_hidden_format` et `is_hidden_in_text`
+**exactement selon l'AC-ii1 de la présente fiche**, et déménage le test des comptes bancaires. En conséquence, à l'étape 0
+de la 32-10a-ii : l'AC-ii1 devient « **réemployer** le prédicat livré par la 32-8b0 » (constater, ne pas recréer) ; Mii10,
+Mii12 et Mii13 se constatent sur le code fusionné ; l'AC-iii3 appelle `entree_appel` avec `envoi: None` (signature fixée par
+la 32-8b, `entree_appel(cle, outil, issue, duree_ms, envoi: Option<i64>)`). Les migrations : celle de la 32-8a précède
+celle de la 32-10a-i ; les compteurs (tables, migrations, P6) se recomptent.
+
 - **La 32-6a fusionnée** : les noms et lignes que cette fiche reprend de sa fiche — `McpPrompt` (signature de `rendre`),
   le sceau, `PromptEnBase` absent, `ReponseMcp`, `reponse::rendre`, `textes.rs` et la constante de `-32602`, `Registre`
   et `registre_standard_inventaire`, `EtatMcp` (`garde`, `trace`), `prompts_scelles`, `mcp_sans_pool`,
