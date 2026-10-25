@@ -257,3 +257,28 @@ Relevé au code de `592ee430` (32-4a fusionnée).
 - **Écartées** : une issue P3 (proposée à la rédaction ; le budget d'issues et la taille du correctif plaident pour
   l'intégration) ; corriger aussi `seed_base` pour rendre `(company_id, admin_id)` (touche les 28 autres appels).
 - **Réversible** : oui.
+- *(Précisé le 2026-10-25, validation P2, R2 = F6 et R3 : les bornes sont `lib.rs:147-149` et `:158-160` et
+  `tests/common/lecture_seule.rs:8-9` — la l. 8, « Ce n'est **pas** la lecture seule de production », devient inexacte
+  puisque la connexion du MCP emploiera le même mode de session ; le motif du contrôle vise les formules périmées
+  (`est décidée par Guy`, `rien ici n'en préjuge`, `que décide la 32-6`, la l. 8…), non une citation juste de la
+  décision — dix lignes aujourd'hui.)*
+
+---
+
+## Choix de la remédiation de la validation P2 (2026-10-25, Opus 5.5, en autonomie)
+
+### C-32-4b-18 — Ordre de fusion avec la 32-5b : la 32-4b d'abord
+
+*(Validation P2, F5 ; décision de l'orchestrateur.)*
+
+- **Contexte** : la 32-5 se développe en parallèle (`kesh-32-5`, partie de `592ee430`) ; sa partie b ajoute
+  `services/cles_mcp.rs` et porte `Portee` à cinq variantes (fiche 32-5, AC-b2) ; la 32-4b compte `services/` à dix
+  fichiers (garde (vi)) et joue ses refus sur trois portées (AC10 (a)), en dur. Si la 32-5b fusionnait la première, ces
+  assertions rougiraient — rien de muet, mais un cycle de plus.
+- **Retenu** : la 32-4b fusionne **avant** la 32-5b. La 32-5b compte relativement à `main` (ses nombres sont ceux de
+  `main` plus ce qu'elle ajoute) et **recompte à son étape 0**, comme elle trouvera faites les corrections Q11
+  (C-32-4b-16). Si, au développement de la 32-4b, `main` portait déjà la 32-5b, la 32-4b recompterait `services/` et
+  `Portee` sur `main` et l'écrirait au Change Log (T0).
+- **Écartées** : des comptes relatifs dans la 32-4b (`>= 10`) — une garde qui ne compte plus exactement ne voit plus un
+  fichier ajouté ; laisser l'ordre au hasard des fusions.
+- **Réversible** : oui (l'ordre se renverse en recomptant).
