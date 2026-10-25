@@ -958,10 +958,11 @@ développement fait chaque correction **à l'étape 0**, et la déclare au Chang
 - **32-5d — `done`** (2026-10-25) : revue de code terminée en P1 (0 finding au-dessus de LOW ; LOW tracés sur #738),
   gate complet et E2E complet au dernier commit de code `f123f12d`. Clé `32-5d-cle-mcp-principal` à `done` dans
   `sprint-status.yaml`. *(Statut au développement, le 2026-10-25 : `review` — annoté au développement de la 32-5c.)*
-- **32-5c — `review`** (2026-10-25) : développement terminé, dernier commit de code `30989e3e` ; gate complet,
-  frontend et E2E complet à ce code ; mutations Mc1 à Mc6, mc7 et mc8 tuées. Revue de code P1 à lancer :
-  `325c-review-prompt-p1.md` (Sonnet, lentilles B, E et A). Clé `32-5c-routes-gestion-cles-mcp` à `review`.
-  *(Statut au départ du développement : `ready-for-dev`, après la 32-5d, C-32-5-27.)*
+- **32-5c — `done`** (2026-10-25) : revue de code terminée en P2 ciblée (0 finding au-dessus de LOW ; LOW tracés sur
+  #738, défaut d'`api_keys.rs` sur #755), gate complet (4113) et E2E complet au dernier commit de code `277b7b88` ;
+  11 mutations jouées, 11 tuées. Clé `32-5c-routes-gestion-cles-mcp` à `done` dans `sprint-status.yaml`. *(Statut au
+  développement, le 2026-10-25 : `review`, dernier commit de code `30989e3e` ; au départ : `ready-for-dev`, après la
+  32-5d, C-32-5-27.)*
 
 ### Étape 0 — recontrôle (ligne lue citée)
 
@@ -2133,6 +2134,23 @@ non testable sans concurrence forcée).
     `c3_an_expiry_beyond_year_9999_is_refused_not_a_500`.
   - **Décomptes** (périmètre `7200ac0d..277b7b88`) : 8 fichiers ; 2 tests neufs (`routes/mcp_keys.rs` 5 → 6,
     `mcp_admin_routes_e2e.rs` 9 → 10) ; 1 clé i18n neuve par locale (18 → 19).
+    *(Annoté le 2026-10-25, revue P2, R-décomptes : le périmètre de « 9 → 10 » est celui des **attributs**
+    `grep -cE '#\[sqlx::test'` — 9 à `7200ac0d`, 10 à `277b7b88`. Le « 10 → 11 » de la passe P2 compte toutes les
+    occurrences de la chaîne `sqlx::test` (`grep -c 'sqlx::test'`), dont la mention du doc-comment de tête, l. 16. Le
+    « +1 » est le même.)*
   - Passe suivante : **P2 ciblée** (regression hunter, Sonnet), prompt `325c-review-prompt-p2.md` (commit `4a1b9623`),
     rapport attendu `kesh-gate-logs/325c-review-p2.md`.
+- **2026-10-25 — Revue de code P2 de la 32-5c — REVUE TERMINÉE** (passe **ciblée**, regression hunter, contexte frais,
+  **Sonnet**, lecture seule, sur `277b7b88` ; prompt `325c-review-prompt-p2.md`, rapport `kesh-gate-logs/325c-review-p2.md`) :
+  **0/0/0/2** — aucun finding au-dessus de LOW ; la remédiation de la P1 ne touche plus la production après elle.
+  - **Trend** : P1 complète, Sonnet ×3 — B **0/0/1/8**, E **0/0/0/8**, A **0/0/0/3** → P2 ciblée, Sonnet **0/0/0/2**.
+  - **LOW non traités, tracés sur #738** par l'orchestrateur : R1 et R2 de la P2 ; B2 = E4, B3 = E5, B5 = E2, B6,
+    B7 = E6, B8, E7, E8, A3 de la P1. Le défaut d'expiration de `routes/api_keys.rs` (même chemin que E1 = B9) : **#755**.
+    B3 de la revue de la 32-5a (`CHECK (version >= 1)`, C-32-5-53) : issue demandée à l'orchestrateur.
+  - **Gates** au dernier commit de code `277b7b88` : gate complet **4113 réussis, 7 ignorés** ; E2E complet **315 passés,
+    7 échecs (les 7 KF-029), 17 ignorés**.
+  - **Mutations de la partie c** : **11 jouées, 11 tuées** (Mc1 à Mc6, mc7, mc8 au développement ; Mp1a, Mp1b, Mp2 à la
+    remédiation de la P1).
+  - Statut **`done`** ; clé `32-5c-routes-gestion-cles-mcp` à `done` dans `sprint-status.yaml`. Les quatre parties de la
+    Story 32-5 sont `done`.
 
