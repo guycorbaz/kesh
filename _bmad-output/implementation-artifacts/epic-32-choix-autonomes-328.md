@@ -21,6 +21,7 @@ elles. Chaque choix : contexte, option retenue, alternatives écartées, révers
   routes de décision séparées du dépôt : une partie sans test de bout en bout possible côté serveur) ; laisser les
   routes de décision à la 32-8c (elles sont de la sécurité — qui peut valider — non de l'écran).
 - **Réversible** : oui — les parties se fusionnent sans rien réécrire.
+- *(Annoté le 2026-10-25, validation P1, R1, R3 = F1 : **quatre parties**, ordre a → b0 → b → c. La **32-8b0** (prédicat partagé, `kesh-core`, `routes`, docs : 3 modules) est née de l'ordre fixé par l'orchestrateur (C-32-8-28). L'export global entre à la 32-8a, dont la partie documentaire passe à la 32-8c (C-32-8-29). Modules 5 / 3 / 5 / 4, douze distincts.)*
 
 ### C-32-8-2 — Une table, trois états stockés, « échu » dérivé
 
@@ -71,6 +72,7 @@ elles. Chaque choix : contexte, option retenue, alternatives écartées, révers
   lecture) ; marquer les caractères à l'écran seulement (ce qui part différerait de ce qui est vu) ; corriger la
   modification côté serveur (idem) ; supprimer les caractères (une donnée silencieusement altérée).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P1, R17 : le prédicat n'est plus une fonction locale `est_cache` ; c'est `kesh_core::text::is_hidden_in_text` de la 32-8b0 (C-32-8-28), le même que celui des prompts. Et un code `\u{…}` écrit tel quel dans la donnée ne se distingue pas d'un caractère remplacé : l'avis de l'écran et le manuel le disent (F6).)*
 
 ### C-32-8-6 — La politique à deux sorties : `Autorisation::{Envoi, Depot}`, `Sortie::{Envoyer, Deposer}`
 
@@ -261,6 +263,7 @@ elles. Chaque choix : contexte, option retenue, alternatives écartées, révers
 - **Écartées** : un prédicat propre à la 32-8 (deux prédicats des caractères cachés, contre DRY) ; attendre toute la
   32-10a (la 32-8 ne dépend pas de ses tables).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P1, R3 = F1, R8, décision de l'orchestrateur : l'ordre est fixé — 32-6a, 32-6b, 32-8a, 32-8b0, 32-8b, puis 32-10a. La « recommandation » et le « sinon » ci-dessus sont tranchés : la **32-8b0** crée le prédicat selon l'AC-ii1 de la 32-10a (C-32-8-28) ; la **32-8b** introduit `entree_appel` sous la signature de son AC-B11 (`envoi: Option<i64>`, cinq ou six clés) et `LimiteAtteinte` ; la 32-10a les réemploie — note au § *Note pour la 32-10a* de la fiche.)*
 
 ### C-32-8-24 — L'epic est annoté : la table remplace « l'état en mémoire »
 
@@ -290,3 +293,48 @@ elles. Chaque choix : contexte, option retenue, alternatives écartées, révers
 - **Écartées** : une notification au client quand l'envoi est décidé (le serveur est sans session et sans flux,
   32-6a) ; une attente côté serveur (la forme (b), écartée par Q10).
 - **Réversible** : oui — la 32-11 ajustera les textes à l'observation (d).
+
+### C-32-8-27 — L'observation (d) de la spike n'est pas rejouée avant la 32-8 : un écart déclaré (validation P1, R11)
+
+- **Contexte** : la spike (§ 6, entrée 32-8) demande que « avant la 32-8, Guy ou la 32-8 elle-même rejoue § 2.4 (d) » —
+  un agent réel rappelle-t-il l'outil de relecture, et combien de fois ? Ce rejeu demande un client réel (Claude Code,
+  Hermes) ; les agents de fiche n'en lancent pas, et seul Guy le peut.
+- **Retenu** (décision de l'orchestrateur) : l'écrire comme un **écart déclaré** au § *Ce que les gardes ne voient pas*
+  et le poser à Guy (point 10), sans bloquer la fiche. Si l'agent oublie de relire, rien ne part : l'échec est du bon
+  côté, et la correction est un texte (`TEXTE_ENVOI_DEPOSE`, `instructions`), non la conception.
+- **Écartées** : attendre le rejeu (la fiche resterait bloquée sur un geste qui n'est pas le sien) ; une tâche d'essai
+  sur le prototype de la spike pendant le développement (le prototype n'est pas un client réel : il ne dit rien de
+  l'agent).
+- **Réversible** : oui — les textes s'ajustent à l'observation, à la 32-11 au plus tard.
+
+### C-32-8-28 — La sous-partie 32-8b0 : le prédicat partagé, créé par la 32-8, réemployé par la 32-10a (validation P1, R3 = F1, R17)
+
+- **Contexte** : sous l'ordre fixé (32-8 avant 32-10a), la 32-8b devenait la créatrice de `is_hidden_format`, que la
+  fiche 32-10a plaçait en 32-10a-ii : `kesh-core`, une dépendance, le refactor de `routes/bank_accounts.rs` — la 32-8b
+  passait à six modules. Et `est_cache` de la 32-8 était, octet pour octet, le `is_forbidden_in_prompt` de la 32-10a :
+  deux définitions d'une même règle.
+- **Retenu** (décision de l'orchestrateur) : une sous-partie amont **32-8b0**, avant la 32-8b, qui porte seule le
+  prédicat **exactement** selon l'AC-ii1 de la 32-10a (citée l. 583-635), la dépendance, la description d'un compte
+  bancaire et le test déménagé, avec ses AC (AC-01 à AC-04), ses tests et ses mutations (M01 à M08) ; le prédicat des
+  textes multi-lignes est **un seul** : `kesh_core::text::is_hidden_in_text`, nom neutre, que la 32-8b emploie tel quel
+  et que la 32-10a-ii emploiera pour le texte d'un prompt (son `is_forbidden_in_prompt`). Le changement de comportement
+  des descriptions de comptes est soumis à Guy (point 11). Une note pour la 32-10a dit que son AC-ii1 devient
+  « réemployer ».
+- **Écartées** : le prédicat dans la 32-8b (six modules) ; un prédicat propre à la 32-8 (contre DRY) ; garder le nom
+  `is_forbidden_in_prompt` (il dirait « prompt » d'une règle qui sert aussi aux envois).
+- **Réversible** : oui.
+
+### C-32-8-29 — La partie documentaire de la 32-8a passe à la 32-8c (validation P1, R1, R5)
+
+- **Contexte** : l'export global (`exports/global.rs`), qui rougit si une table n'y est pas classée, portait la 32-8a à
+  six modules ; la consigne de l'orchestrateur : redécouper, ou déplacer la partie documentaire vers la 32-8c, en
+  motivant le choix.
+- **Retenu** : les passages de `admin-manual.tex` (`:1414`, `:2230`, `:2237`, `:2249`), de `user-manual.tex:3027-3033`,
+  leurs PDF et la phrase de `CHANGELOG.md:15-16` passent à la 32-8c (AC-C11), qui écrit déjà le manuel d'administration
+  et le CHANGELOG : **aucun module de plus** en 32-8c (4), la 32-8a revient à 5. Ces textes décrivent l'installation
+  publiée, et aucune partie n'est publiable seule : aucun utilisateur ne les lit en retard.
+- **Écartées** : une 32-8a-bis (une partie de plus pour quelques tests) ; sortir de la 32-8a le test de remise à zéro
+  ou l'aller-retour d'import (la table séparée de la preuve de sa sauvegarde) ; une dérogation à la règle de découpage
+  (rien ne la justifiait, un déplacement suffisant).
+- **Réversible** : oui. *Coût* : entre les fusions de la 32-8a et de la 32-8c, deux textes de `main`, non publiés,
+  comptent deux tables pour trois.

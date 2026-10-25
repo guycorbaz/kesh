@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-8`, branche `story/32-8` partie de `main`
 `fa5b3468` (32-5a, 32-5b et 32-5d fusionnées ; 32-5c en développement). Registre : `epic-32-choix-autonomes-328.md`
-(C-32-8-1 à C-32-8-26). Clé courte : `328`. Issue de l'epic : #723 (CR « Serveur MCP intégré à Kesh »), en `refs`
+(C-32-8-1 à C-32-8-29). Clé courte : `328`. Issue de l'epic : #723 (CR « Serveur MCP intégré à Kesh »), en `refs`
 seulement. Les numéros de ligne du dépôt sont ceux de `fa5b3468` ; ceux des fiches 32-6 (worktree `kesh-32-6`, commit
 `ecb26dc8`) et 32-10a (worktree `kesh-32-10a`, commit `00114c6d`), validées mais non fusionnées, sont cités d'après ces
 fiches, lues en lecture seule.*
@@ -14,19 +14,24 @@ parties créent — module `kesh-api/src/mcp/`, `politique::autoriser` et `appli
 `Autorisation`, `ReponseMcp` et `reponse::rendre`, `textes.rs`, `Registre`, `EtatMcp`, `journaliser_appel` et
 l'énumération des issues, les gardes de `tests/mcp_gardes_lexicales.rs`, `tests/common/{mcp,capture_trace}.rs` — est
 cité **d'après la fiche 32-6** et **se recompte à l'étape 0** (§ *À recontrôler à l'étape 0*), ligne lue citée au Change
-Log. Trois éléments viennent de la **32-10a** et se traitent selon l'ordre réel des fusions (C-32-8-23) : le prédicat
-partagé `kesh_core::text::is_hidden_format` (32-10a-ii, AC-ii1), la fonction `entree_appel` extraite de
-`journaliser_appel` et la variante `ErreurOutil::LimiteAtteinte` (32-10a-iii, AC-iii2, AC-iii3).
+Log. **L'ordre de développement est fixé** par l'orchestrateur (validation P1) : **32-6a, 32-6b, 32-8a, 32-8b0, 32-8b,
+32-8c, puis 32-10a**. La 32-8 vient donc **avant** la 32-10a : elle **crée** ce que la fiche 32-10a prévoyait de créer
+et qu'elle emploie (C-32-8-23 révisé) — le prédicat partagé `kesh_core::text::is_hidden_format`, **défini exactement
+selon l'AC-ii1 de la fiche 32-10a** (sous-partie amont **32-8b0**), la fonction `entree_appel` extraite de
+`journaliser_appel` (signature fixée ici, AC-B5) et la variante `ErreurOutil::LimiteAtteinte` (32-8b) ; la 32-10a les
+**réemploiera** (§ *Note pour la 32-10a*).
 
-⚠️ **Une fiche, trois parties** (C-32-8-1, découpage préventif : dix modules distincts sans découpage). Ordre
-**imposé** : a → b → c. Clés au registre de sprint : `32-8a-table-envois-sauvegarde`, `32-8b-poignee-serveur`,
+⚠️ **Une fiche, quatre parties** (C-32-8-1 révisé, découpage préventif : douze modules distincts sans découpage). Ordre
+**imposé** : a → b0 → b → c (b0 ne dépend pas de a ; l'ordre est celui de l'orchestrateur). Clés au registre de
+sprint : `32-8a-table-envois-sauvegarde`, `32-8b0-predicat-caracteres-caches`, `32-8b-poignee-serveur`,
 `32-8c-ecran-envois` ; la clé `32-8-validation-avant-envoi` passe à `split`.
 
 | Partie | Objet | Après |
 |---|---|---|
-| **32-8a** 🗄️ | la table des envois, son entité, son dépôt complet, sa place dans la sauvegarde et la remise à zéro, les textes du manuel qu'une table de plus rend faux | 32-6a, 32-6b ; une migration à la fois (C-32-0-12) |
-| **32-8b** | la poignée côté serveur : la politique à deux sorties, le dépôt, l'outil `kesh_lire_envoi`, les routes de décision de l'administrateur, le journal et l'audit | 32-8a |
-| **32-8c** | l'écran : la liste et le détail des envois, la décision, la recette visuelle, le manuel, le CHANGELOG | 32-8b |
+| **32-8a** 🗄️ | la table des envois, son entité, son dépôt complet, sa place dans la sauvegarde, l'export global et la remise à zéro | 32-6a, 32-6b ; une migration à la fois (C-32-0-12) |
+| **32-8b0** | le prédicat partagé des caractères cachés (`kesh-core`), selon l'AC-ii1 de la 32-10a ; la description d'un compte bancaire l'emploie | 32-8a (ordre de l'orchestrateur) |
+| **32-8b** | la poignée côté serveur : la politique à deux sorties, le dépôt, l'outil `kesh_lire_envoi`, les routes de décision de l'administrateur, le journal et l'audit | 32-8b0 |
+| **32-8c** | l'écran : la liste et le détail des envois, la décision, la recette visuelle ; **les textes** — manuels d'administration et utilisateur, CHANGELOG — que la table et l'écran rendent faux ou neufs | 32-8b |
 
 ## Story
 
@@ -118,9 +123,13 @@ Chaque fait a été lu ; la ligne est citée.
    210-216`) : une table de plus ne retire aucune entrée.
 6. **Le registre d'audit des migrations** : en-tête `## Table d'audit (84 migrations)` (`docs/migrations-idempotence-
    audit.md:17`), ligne `Total` (`:110`) ; `ls crates/kesh-db/migrations/*.sql | wc -l` → **84** ; `grep -c '^| \`20'`
-   → **84**. P6 : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` ne rend que des montages **résolus par
-   version** (`migrations_before(<version>, …)`, p. ex. `kesh-db/tests/lettering_documents_backfill.rs:583`) — à
-   reprendre à l'étape 0.
+   → **84**. P6 : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` rend des montages **résolus par version**
+   (`migrations_before(<version>, …)`, p. ex. `kesh-db/tests/lettering_documents_backfill.rs:583`) **et un site
+   positionnel assumé**, `kesh-db/tests/migrations_upgrade_path.rs` : `let total = kesh_db::MIGRATOR.migrations.len();`
+   (`:120`), `assert_eq!(total, 84, …)` (`:121-125`), `let n_before_upgrade_window = total - 50;` (`:211`), la généalogie
+   (`:115-119`, `:198-204`) et le commentaire du double geste (`:133-145`, `:206-210` : « Les deux nombres se bougent du
+   même pas ») — à reprendre à l'étape 0. *(Rectifié en validation P1, R4 : la première rédaction disait « ne rend que
+   des montages résolus par version ».)*
 7. **Les routes d'administration** vivent entre `// KESH-ADMIN-ROUTES-BEGIN` (`lib.rs:222`) et `-END` (`:403`), sous
    `require_admin_role` puis `require_not_pat` (`:393-402` ; `middleware/rbac.rs:31`, `:58-67` : un PAT reçoit
    `API_KEY_ADMIN_FORBIDDEN` **quel que soit** le rôle de son créateur, le discriminant étant `api_key_id`, `:44-52`).
@@ -134,8 +143,25 @@ Chaque fait a été lu ; la ligne est citée.
    traduite dans les quatre locales (`:261-276`, `:341-360`) ; motif d'action `api_key.created` (`:79`).
 10. **Le prédicat des caractères cachés n'existe pas encore sous sa forme partagée.** `kesh_core::text::is_invisible`
     (`kesh-core/src/text.rs:33-38`) ne couvre pas les contrôles bidirectionnels ; `is_forbidden_in_description` est
-    privé à `routes/bank_accounts.rs:303` ; `grep -rn is_hidden_format crates` → **0**. La 32-10a-ii le crée (AC-ii1 :
-    catégories Cf, Co, Cn par `unicode-properties 0.1.4`, déjà au `Cargo.lock`, l. 4606-4607, plus deux listes écrites).
+    privé à `routes/bank_accounts.rs:303` ; `grep -rn is_hidden_format crates` → **0** ; `grep -rn 'unicode-properties'
+    crates/*/Cargo.toml` → **0** (la crate n'est au `Cargo.lock`, l. 4606-4607, que par `stringprep`). La fiche 32-10a
+    le prévoyait en 32-10a-ii (AC-ii1 : catégories Cf, Co, Cn par `unicode-properties 0.1.4`, plus deux listes écrites) ;
+    **sous l'ordre fixé, c'est la 32-8b0 qui le crée** (AC-01 à AC-04).
+15. **L'export global a son propre registre de tables** (`crates/kesh-api/src/exports/global.rs`) : une table de
+    `TABLES_TO_TRUNCATE` qui n'est ni dans `TABLES_EXPORTEES` ni dans `TABLES_HORS_EXPORT` « fait **rougir le gate** »
+    (`:109-111`) — test `export_couvre_toutes_les_tables` (`:653-672`) ; chaque exclusion porte un motif d'au moins vingt
+    caractères (`toute_exclusion_porte_un_motif`, `:677`) ; le doc-comment `:167` dit « les 41 tables (Story 32-5a : +
+    `mcp_keys`, `mcp_server_settings`) » ; motifs de `mcp_keys` (`:189-192`) et `mcp_server_settings` (`:219-224`).
+    Précédent : la 32-5a a touché ce fichier (`git show b723e3d9 --stat`). *(Fait ajouté en validation P1, R1.)*
+16. **Deux textes publiés comptent les tables de la 0.16.0** : `CHANGELOG.md:15-16` (« la 0.16.0 en ajoute **deux** — les
+    clés et les réglages du futur serveur MCP, qui entrent au fichier `.keshbackup` (activation comprise) et restent hors
+    de l'export global ») et `admin-manual.tex:2249` (« La 0.16.0 ajoute deux tables ») ; le manuel utilisateur dit ce que
+    l'**export global** ne contient pas (`user-manual.tex:3027-3033` : « les clés d'API, les clés du serveur MCP et les
+    jetons de session … les réglages du serveur MCP (sans valeur comptable) »). *(Fait ajouté en validation P1, R1, R5.)*
+17. **Le registre des sommes des migrations publiées** : `crates/kesh-db/migrations.sha384`, dont la dernière ligne est
+    celle de la 32-5a (`20261025000001 …`) ; `published_migrations_keep_their_checksums`
+    (`crates/kesh-db/tests/test_schema_guard.rs:602-695`) rougit dès qu'un fichier du `MIGRATOR` n'y figure pas. *(Fait
+    ajouté en validation P1, R2.)*
 11. **La sérialisation JSON d'une chaîne est fidèle.** `serde_json 1.0.150` (`Cargo.lock:3656-3657`) n'échappe que les
     octets ASCII de contrôle, le guillemet et la barre oblique inverse (`ser.rs:2079-2119`, table `ESCAPE` `:2147`,
     `UU` = « `\x00…\x1F` except the ones above », `:2142`) ; tout autre octet est écrit tel quel : la chaîne que décode le
@@ -170,8 +196,9 @@ Chaque fait a été lu ; la ligne est citée.
   `inconnu`, `arguments_invalides`, `introuvable`, `erreur`, `delai_depasse`} (AC-b1), sans arguments ni données
   (AC-b2), fail closed (AC-b3).
 - **32-10a** : `ReponseMcp::Accuse(AccuseProposition)` et `proposer_prompt` hors registre (iii) ; `LecturePrompts` posée
-  sur **le pool en lecture seule du MCP**, lié une fois puis enveloppé deux fois (AC-ii3) ; `is_hidden_format` (ii) ;
-  `entree_appel` et `ErreurOutil::LimiteAtteinte` (iii).
+  sur **le pool en lecture seule du MCP**, lié une fois puis enveloppé deux fois (AC-ii3) ; `is_hidden_format` et
+  `is_forbidden_in_prompt` (ii, AC-ii1, l. 583-635) ; `entree_appel` aux cinq clés exactes et `ErreurOutil::LimiteAtteinte`
+  (iii, AC-iii2, AC-iii3). Sous l'ordre fixé, ces trois éléments **naissent dans la 32-8** et la 32-10a les réemploie.
 
 ## Le découpage (C-32-8-1)
 
@@ -181,15 +208,30 @@ documentation (`docs/`, CHANGELOG) compte pour un ; le manuel pour un ; le front
 
 | Partie | Modules | 🗄️ |
 |---|---|---|
-| **32-8a** | `kesh-db` (migration, entité, dépôt, `backup.rs`, squash de test, leurs tests) ; docs (`migrations-idempotence-audit.md`) ; `kesh-api/admin_backup` (`tests/admin_full_export_e2e.rs`, `tests/admin_full_import_e2e.rs`) ; `kesh-api/routes` (`tests/onboarding_audit_e2e.rs`, qui éprouve la remise à zéro de `routes/onboarding.rs`) ; manuel (`admin-manual.tex`, PDF) — **5** | oui (migration : gate complet en boucle, P1 à P8) |
+| **32-8a** | `kesh-db` (migration, entité, dépôt, `backup.rs`, squash de test, `migrations.sha384`, `tests/migrations_upgrade_path.rs`, leurs tests) ; docs (`migrations-idempotence-audit.md`) ; `kesh-api/admin_backup` (`tests/admin_full_export_e2e.rs`, `tests/admin_full_import_e2e.rs`) ; `kesh-api/routes` (`tests/onboarding_audit_e2e.rs`, qui éprouve la remise à zéro de `routes/onboarding.rs`) ; `kesh-api/exports` (`exports/global.rs` : `TABLES_HORS_EXPORT` et son doc-comment) — **5** | oui (migration : gate complet en boucle, P1 à P8) |
+| **32-8b0** | `kesh-core` (`src/text.rs` et ses tests, `Cargo.toml` — la dépendance `unicode-properties` —, la ligne de `Cargo.lock`) ; `kesh-api/routes` (`routes/bank_accounts.rs` : `is_forbidden_in_description` et ses tests) ; docs (`CHANGELOG.md`, entrée *Modifié*) — **3** | non |
 | **32-8b** | `kesh-api/mcp` (`politique.rs`, `repartiteur.rs`, `reponse.rs`, `textes.rs`, `outil.rs`, `mod.rs` et leurs tests) ; `kesh-api/services` (`envois_mcp.rs` neuf, `poignees.rs`, `serveur_mcp.rs`, `mod.rs`, `tests/services_motif.rs`) ; `kesh-api/routes` (`routes/mcp_envois.rs` neuf, `lib.rs`, `tests/admin_pat_denied_e2e.rs`, `tests/audit_route_registry.rs`) ; `kesh-api/audit_labels` ; `kesh-i18n` (quatre locales) — **5** | non (aucun fichier de `kesh-db` : le dépôt de la 32-8a est complet, § *Dev Notes — Ce que le dépôt fournit*) |
-| **32-8c** | frontend (`features/mcp-sends/` neuf, `routes/(app)/admin/mcp/sends/` neuf, `+layout.svelte`, `tests/e2e/mcp-sends.spec.ts`) ; `kesh-i18n` ; manuel (`admin-manual.tex`, PDF) ; docs (`CHANGELOG.md`) — **4** | non |
+| **32-8c** | frontend (`features/mcp-sends/` neuf, `routes/(app)/admin/mcp/sends/` neuf, `+layout.svelte`, `tests/e2e/mcp-sends.spec.ts`) ; `kesh-i18n` ; manuel (`admin-manual.tex`, `user-manual.tex`, leurs PDF) ; docs (`CHANGELOG.md`) — **4** | non |
 
-**Sans découpage : dix modules distincts** (`kesh-db`, docs, `admin_backup`, `routes`, manuel, `mcp`, `services`,
-`audit_labels`, `kesh-i18n`, frontend), **quatorze en somme** (5 + 5 + 4) — au-delà du plafond de cinq. Les parties se détachent sans ouvrir d'accès : après la 32-8a, la table existe et rien ne l'écrit ; après la 32-8b,
-une clé `required` dépose et l'envoi se décide par l'API d'administration (session d'un Administrateur), l'écran
-manquant ; la 32-8c l'ajoute. **Aucune partie n'est publiable seule** : la 32-11 précède la release. ⚠️ La 32-8a et la
-32-8b sont **à cinq modules**, au plafond : une remédiation qui en ajouterait un se déclare et redécoupe.
+**Sans découpage : douze modules distincts** (`kesh-core`, `kesh-db`, docs, `admin_backup`, `routes`, `exports`,
+manuel, `mcp`, `services`, `audit_labels`, `kesh-i18n`, frontend), **dix-sept en somme** (5 + 3 + 5 + 4) — au-delà du
+plafond de cinq. Les parties se détachent sans ouvrir d'accès : après la 32-8a, la table existe et rien ne l'écrit ;
+la 32-8b0 ne touche aucun chemin du MCP ; après la 32-8b, une clé `required` dépose et l'envoi se décide par l'API
+d'administration (session d'un Administrateur), l'écran manquant ; la 32-8c l'ajoute. **Aucune partie n'est publiable
+seule** : la 32-11 précède la release. ⚠️ La 32-8a et la 32-8b sont **à cinq modules**, au plafond : une remédiation qui
+en ajouterait un se déclare et redécoupe.
+
+*Le choix de la validation P1 (C-32-8-1 révisé, C-32-8-29 ; décision de l'orchestrateur sur R1).* Intégrer l'export global
+(`exports/global.rs`) portait la 32-8a à **six** modules. Plutôt qu'une cinquième partie, **la partie documentaire de la
+32-8a passe à la 32-8c** — les passages de `admin-manual.tex` (`:1414`, `:2230`, `:2237`, `:2249`), la phrase de
+`user-manual.tex:3027-3033`, leurs PDF et la phrase du `CHANGELOG.md:15-16` (AC-C11). *Pourquoi ce déplacement et non
+un autre* : (1) ces textes décrivent l'**installation publiée**, et aucune partie n'est publiable seule — la release ne
+part qu'après la 32-8c, si bien qu'aucun utilisateur ne lit le texte en retard ; (2) la 32-8c écrit déjà le manuel
+d'administration et le CHANGELOG (AC-C10) : le déplacement n'y ajoute **aucun** module, alors que garder le manuel en
+32-8a et en sortir un test (`onboarding_audit_e2e.rs` ou `admin_full_import_e2e.rs`) aurait séparé la table de la preuve
+de sa remise à zéro ou de son aller-retour ; (3) la 32-8a garde tout ce qui fait rougir un gate (export global compris).
+*Le coût* : entre la fusion de la 32-8a et celle de la 32-8c, `admin-manual.tex:2249` et `CHANGELOG.md:16` comptent deux
+tables pour trois — sur `main`, non publiés.
 
 ## La conception, en une page
 
@@ -280,13 +322,17 @@ vide.
 ### Partie A — 32-8a : la table, son dépôt, la sauvegarde 🗄️
 
 1. **AC-A1 — une migration, DDL seul.** `crates/kesh-db/migrations/<horodatage>_mcp_sends.sql`, horodatée **après** la
-   dernière migration de `main` à l'étape 0 (la 32-10a-i peut en avoir ajouté une : C-32-10a-23), qui crée **une**
+   dernière migration de `main` à l'étape 0 (sous l'ordre fixé, la 32-10a-i vient après : C-32-10a-23), qui crée **une**
    table et **n'écrit aucune donnée**. En-tête sur le patron de `20261025000001_…sql:1-44` : objet ; table applicative,
    donc au `.keshbackup` ; l'inventaire des tables change, si bien qu'une sauvegarde antérieure ne s'importe pas (déjà
    vrai depuis la 32-5a, Q4) ; **non breaking** (`CREATE TABLE`), pas de bump de `kesh_version_min_required` ni de
    version Cargo (P2, P3) ; comme toute migration, l'image précédente refuse de démarrer sur une base qui la porte
    (P1) ; idempotence `tracked-by-sqlx` ; triage P7 : aucune instruction n'écrit de données. **P8** : le fichier ne se
-   modifie plus dès qu'une base partagée (`kesh_e2e_328` comprise) l'a appliqué.
+   modifie plus dès qu'une base partagée (`kesh_e2e_328` comprise) l'a appliqué. **La somme du fichier** (fait 17) :
+   sa ligne est ajoutée à `crates/kesh-db/migrations.sha384` **en dernier** — après les tests des contraintes de
+   l'AC-A2 et la dernière retouche du fichier, comme à la 32-5a (validation P1 de la 32-5a, R1) ; la somme se colle telle
+   que `published_migrations_keep_their_checksums` (`test_schema_guard.rs:602-695`) la donne dans son message ; ce test
+   vert est le constat. *(Ajouté en validation P1, R2, décision de l'orchestrateur.)*
 2. **AC-A2 — la table `mcp_sends`** (schéma au § *Dev Notes*). Colonnes : `id` (le « n° X »), `company_id` (FK
    `companies`, `RESTRICT`), `mcp_key_id` (FK `mcp_keys`, `RESTRICT`), `tool_name VARCHAR(64)`, `state VARCHAR(16)`
    **sans `DEFAULT`**, `summary TEXT NULL`, `content MEDIUMTEXT NULL`, `modified BOOLEAN` **sans `DEFAULT`**,
@@ -325,10 +371,16 @@ vide.
    Tests : chacun des quatre refus ; une valeur identique à la stockée soumise comme modification donne
    `modified = FALSE` ; une valeur qui ne diffère que par la casse (`É`/`é`) ou par un blanc final donne `modified =
    TRUE` et est stockée telle quelle (la collation `utf8mb4_unicode_ci` les tiendrait pour égales) ; un refus efface
-   contenu et résumé.
+   contenu et résumé ; **`decision_modifiee_ecrit_le_texte_recu`** — une validation avec un texte `C2` ≠ `C1` relue par
+   `trouver` et par `lire_pour_cle` rend `C2`, octet pour octet (mutation MA15 ; validation P1, R10).
 7. **AC-A7 — la relecture pour une clé** (`lire_pour_cle(pool, company_id, mcp_key_id, id)`) : `None` pour un envoi
    inexistant, **d'une autre clé** ou **d'une autre société** — le même `None` ; sinon l'état dérivé, `modified`, et le
-   contenu **seulement** si l'état est `Valide`. Tests : les trois `None` ; un envoi en attente, refusé ou échu rend son
+   contenu **seulement** si l'état est `Valide`. Le filtre porte sur `company_id` **et** sur `mcp_key_id`, l'un et
+   l'autre : aucune clé étrangère composite ne garantit que la société d'une ligne est celle de sa clé (validation P1,
+   F2). Tests : les trois `None`, **et** une ligne **incohérente** — insérée par le pool du test avec la clé de l'appel
+   et le `company_id` d'une **autre** société — lue avec la société de la clé → `None` (sans quoi lever le filtre de
+   société serait une mutation équivalente, le filtre de clé suffisant à exclure la ligne d'une clé étrangère) ; un
+   envoi en attente, refusé ou échu rend son
    état sans contenu ; un validé vivant rend un contenu **égal** à celui posé — chaîne de 65 536 octets portant des
    lettres accentuées, des tabulations, une suite littérale `\u{202E}`, un symbole `⚠` (U+26A0), un idéogramme, une
    ligne vide finale.
@@ -343,7 +395,8 @@ vide.
    validé, échu en attente) d'une société et un échu d'une autre → seuls les deux échus de la première sont purgés.
 10. **AC-A10 — la sauvegarde et la remise à zéro.** `"mcp_sends"` entre à `TABLES_TO_TRUNCATE` **juste avant
     `"mcp_keys"`** (enfant de `mcp_keys`, `companies` et `users` ; commentaire sur le patron de `:76-78`) ; **pas** à
-    `RESET_PRESERVED_TABLES`. Constats attendus, tests existants verts **sans modification** de leurs listes :
+    `RESET_PRESERVED_TABLES`. Constats attendus, tests de la partition verts **sans modification** de leurs listes
+    (relus par les deux lentilles de la validation P1) :
     `backup_inventory_matches_schema` ; `reset_partition_is_guarded_by_the_schema` — règle 1 (la table rejoint
     `companies` par `company_id`), règle 2 (l'ensemble reste `{password_reset_tokens, refresh_tokens}` : la table
     rejoint `companies`), règle 3 (aucune table conservée ne la référence), règle 4 (inchangée) ;
@@ -362,17 +415,66 @@ vide.
     (`tracked-by-sqlx`), l'en-tête `## Table d'audit (N migrations)` et la ligne `Total` **recomptés** (`ls
     crates/kesh-db/migrations/*.sql | wc -l` = `grep -c '^| \`20' …`), le compteur `tracked-by-sqlx` recompté, la
     généalogie du `Total` gagnant « + 1 Story 32-8a ». **P6** : `grep -rn "migrations.len()\|apply_migrations_up_to"
-    crates/` relu, chaque site inspecté, sortie citée. **P7** : aucune donnée écrite — ni registre ni exemption ;
+    crates/` relu, chaque site inspecté, sortie citée — dont le **site positionnel assumé** de
+    `kesh-db/tests/migrations_upgrade_path.rs` (fait 6) : `assert_eq!(total, 84, …)` (`:121-125`) passe à **85** et son
+    message suit, **et** `total - 50` (`:211`, et le message du `expect` qui le répète) passe à **`total - 51`** du même
+    pas — la frontière reste **34** ; la généalogie (`:115-119`) gagne « + mcp_sends (Story 32-8a, refs #723) = 85 » et
+    celle du soustracteur (`:198-204`) « Story 32-8a : 50 → 51, frontière inchangée (85 - 51 = 34) » ; les mentions
+    « `total == 84` » et « `total = 84` » du commentaire (`:133-145`) suivent (valeurs recomptées à l'étape 0 si une autre
+    migration a fusionné ; validation P1, R4). **P7** : aucune donnée écrite — ni registre ni exemption ;
     `every_data_backfill_migration_is_triaged` et `registry_entries_are_within_import_window` verts (registre vide, fait
     5). **P2/P3** : aucun `DROP`, `RENAME`, `MODIFY`, `CHANGE`.
-12. **AC-A12 — le manuel d'administration** (`docs/manual/fr/admin-manual.tex`, lignes recomptées à l'étape 0) :
-    `:2230` (le fichier est un secret) et `:2237` (ce que le fichier porte depuis la 0.16.0) gagnent **les envois du
-    serveur MCP**, contenu en attente ou validé compris — y compris une version **modifiée** par l'utilisateur — et le
-    fait qu'une restauration les rétablit avec leurs clés ; `:2249` (« La 0.16.0 ajoute deux tables ») suit le compte réel
-    des tables ajoutées par la 0.16.0 au moment du développement (trois avec `mcp_sends`, cinq si la 32-10a-i a
-    fusionné — recompté) ; `:1414` (la remise à zéro) dit que les envois du serveur MCP sont **effacés**. PDF régénéré ;
-    contrôle par `pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oiE ".{60}envois? du serveur MCP.{80}"`,
-    sortie citée.
+12. **AC-A12 — l'export global exclut la table** (fait 15 ; validation P1, R1, décision de l'orchestrateur).
+    `crates/kesh-api/src/exports/global.rs` : `TABLES_HORS_EXPORT` gagne `("mcp_sends", "…")` après `mcp_keys`, motif
+    écrit (au moins vingt caractères) — par exemple « Copies de données lues dans les livres, montrées puis
+    éventuellement modifiées avant leur envoi à un agent (Story 32-8a) : un état transitoire du serveur MCP, sans valeur
+    comptable ; la sauvegarde, elle, les emporte. » ; le doc-comment `:167` passe à « les 42 tables (Story 32-5a : +
+    `mcp_keys`, `mcp_server_settings` ; Story 32-8a : + `mcp_sends`) » (compte recompté à l'étape 0).
+    `export_couvre_toutes_les_tables` et `toute_exclusion_porte_un_motif` verts. *(L'AC-A12 de la première rédaction —
+    le manuel d'administration — passe à la 32-8c, AC-C11 : § *Le découpage*.)*
+
+### Partie B0 — 32-8b0 : le prédicat partagé des caractères cachés
+
+*Sous-partie amont, créée en validation P1 (R3 = F1, décision de l'orchestrateur ; C-32-8-23 révisé, C-32-8-28). Elle
+porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 32-10a
+(`kesh-32-10a/_bmad-output/implementation-artifacts/32-10a-prompts-en-base.md`, l. 583-635, commit `00114c6d`), que la
+32-8b et la 32-10a-ii **réemploient**. Elle ne touche aucun chemin du MCP.*
+
+- **AC-01 — `kesh_core::text::is_hidden_format(c: char) -> bool`** (`crates/kesh-core/src/text.rs`), selon l'AC-ii1 de
+  la 32-10a, à la lettre : **vrai** si la catégorie générale de `c`
+  (`unicode_properties::UnicodeGeneralCategory::general_category`) est `Format` (Cf), `PrivateUse` (Co) ou `Unassigned`
+  (Cn) — un point absent de la table rend `Unassigned` (`unicode-properties-0.1.4/src/tables.rs:129-131`) — **ou** si `c`
+  appartient aux deux listes écrites de l'AC-ii1 : les remplissages `Lo` U+115F, U+1160, U+3164, U+FFA0 ; les marques
+  `Mn` sans rendu U+034F, U+17B4, U+17B5, U+180B–U+180D, U+180F, U+FE00–U+FE0F, U+E0100–U+E01EF ; et les séparateurs
+  U+2028, U+2029 — chacun **relu** dans `tables.rs` au développement et cité (l'exception des emojis de la P3 de la
+  32-10a reste **retirée** : U+200D, U+FE0E, U+FE0F refusés). **Dépendance** : `kesh-core/Cargo.toml` gagne
+  `unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }` (aucune
+  crate de plus à télécharger : la même version est au graphe par `stringprep`, `Cargo.lock:4606-4607`, fait 10 ; une
+  ligne de plus aux dépendances de `kesh-core` au `Cargo.lock`) ; `kesh-core` reste sans I/O ; `kesh-import`, seul
+  crate publié, n'en dépend pas (`cargo publish --dry-run -p kesh-import` au gate).
+- **AC-02 — `kesh_core::text::is_hidden_in_text(c: char) -> bool`** = `(c.is_control() && c != '\n' && c != '\t') ||
+  is_hidden_format(c)` — **c'est** le `is_forbidden_in_prompt` de l'AC-ii1 de la 32-10a, défini **une fois** sous un nom
+  qui ne dit pas « prompt », parce qu'il sert aussi aux envois (validation P1, R17, décision de l'orchestrateur : le
+  prédicat des envois **est** celui-ci, il n'en est pas une copie). La 32-8b l'emploie directement (aucune fonction
+  `est_cache` ne l'enveloppe) ; la 32-10a-ii l'emploie pour le texte d'un prompt.
+- **AC-03 — la description d'un compte bancaire l'emploie** (`routes/bank_accounts.rs:303`) :
+  `is_forbidden_in_description(c)` devient `c.is_control() || kesh_core::text::is_hidden_format(c)` ; sa liste fermée et
+  son angle mort écrit (au-dessus de `:303`) disparaissent. **Changement de comportement voulu** : la
+  description refuse quelques caractères invisibles de plus, et les emojis **composés** (`⚠️`, `👨‍💻`) — point 11 pour
+  Guy, comme le point 8 de la fiche 32-10a. Le test `ensemble_refuse_borne_par_borne` (`bank_accounts.rs:1470` au relevé de `fa5b3468` ;
+  `:1466-1513` dans la fiche 32-10a) **déménage** en `kesh-core` comme test de non-régression (toute plage de l'ancienne
+  liste reste refusée), sans son contrôle des voisins, que la catégorie rend sans objet ; `controles_cc_refuses` et
+  `lettres_et_espaces_ordinaires_acceptes` restent en place, verts. **CHANGELOG** : une entrée *Modifié* de la 0.16.0
+  (« la description d'un compte bancaire refuse quelques caractères invisibles de plus, dont les emojis composés »).
+- **AC-04 — les tests du prédicat** (`kesh-core/src/text.rs`, `mod tests`), un par cas, tels que l'AC-ii1 les écrit :
+  un point de chaque famille de catégorie (U+0600, U+13430, U+1BCA0 en Cf ; U+E000 en Co ; U+0378 en Cn) et chaque point
+  ou borne des deux listes, refusés ; U+202E, U+2066, U+E0041 refusés ; U+FE0E, U+FE0F, U+200D refusés isolés ; les
+  **voisins visibles** U+1161, U+17B6, U+180A, U+FE10 acceptés ; U+26A0 et U+1F4BB seuls **admis**, `⚠️` et `👨‍💻`
+  refusés — dans un texte (`is_hidden_in_text`) **et** dans une description de compte (`bank_accounts.rs`, test
+  `emojis_simples_admis_composes_refuses`) ; pour `is_hidden_in_text` : `\n` et `\t` admis, `\r`, U+0000, U+202E, U+2066,
+  U+200B, U+FEFF, U+E0100 refusés, `'\n'.is_control()` constaté vrai, U+00A0 admis. **Angle mort qualifié** (repris de
+  l'AC-ii1) : la classification d'Unicode 17.0.0 (`tables.rs:17`) ; un invisible d'une autre catégorie hors des listes ;
+  les homoglyphes.
 
 ### Partie B — 32-8b : la poignée côté serveur
 
@@ -397,23 +499,30 @@ vide.
     `.deposer(` d'un `EnvoiAValider` (appelé en `repartiteur.rs` seulement, définition hors compte).
 14. **AC-B2 — une seule représentation, le texte** (C-32-8-4 ; E1, M-2). `fn texte_a_valider(d: &Donnees) -> String`
     (`politique.rs`) : les textes des blocs de `contenu`, **dans l'ordre**, joints par une ligne vide (`"\n\n"`) ; un
-    seul bloc → son texte tel quel ; `match` **exhaustif** sur `BlocContenu` (une variante non textuelle future ne
-    compile pas sans décision écrite). `structure` n'est **ni déposée, ni montrée, ni envoyée** sous une clé `required` ;
+    seul bloc → son texte tel quel ; `match` **exhaustif** sur `BlocContenu`. `BlocContenu` n'est fixé par aucune AC de
+    la 32-6 (esquisse seulement) : à l'étape 0, ses variantes réelles sont relues ; **une variante non textuelle** (image,
+    ressource embarquée), sous une clé `required`, n'est **ni déposée ni envoyée** — l'appel rend `ErreurOutil::Interne`
+    à texte fixe et le dit au journal du serveur (outil, sans contenu), avec un test `bloc_non_textuel_refuse` si la
+    32-6a en livre une ; sinon le `match` n'a qu'un bras et le Change Log le constate (validation P1, F5). `structure` n'est **ni déposée, ni montrée, ni envoyée** sous une clé `required` ;
     `resume` est déposé à part, montré à l'écran, **jamais envoyé** (C-32-8-25, D6). Test `une_seule_representation` : un
     outil de test (`tests/common/mcp.rs`) à deux blocs (`"PIEGE_BLOC1_328"`, `"bloc 2"`), une structure
     `{"x":"PIEGE_STRUCT_328"}` et un résumé `"PIEGE_RESUME_328"`, sous une clé `required` → `content` en base **égal** à
     `"PIEGE_BLOC1_328\n\nbloc 2"`, `summary` égal à `"PIEGE_RESUME_328"` ; après validation tel quel, le corps de
     `kesh_lire_envoi` est **égal** à la réponse attendue, et ne porte ni `PIEGE_STRUCT_328` ni `PIEGE_RESUME_328`.
-15. **AC-B3 — rendre visible** (C-32-8-5). `services::envois_mcp::est_cache(c: char) -> bool` = `(c.is_control() && c
-    != '\n' && c != '\t') || kesh_core::text::is_hidden_format(c)` — **une seule définition** (DRY), employée au dépôt
-    et à la décision ; `rendre_visible(s: &str) -> String` remplace chaque caractère `est_cache` par `\u{XXXX}` (Rust,
+15. **AC-B3 — rendre visible** (C-32-8-5). Le prédicat est **`kesh_core::text::is_hidden_in_text`** de la 32-8b0
+    (AC-02), employé tel quel au dépôt et à la décision — aucune fonction locale ne le recopie ni ne l'enveloppe (DRY ;
+    validation P1, R17) ; `services::envois_mcp::rendre_visible(s: &str) -> String` remplace chaque caractère dont
+    `is_hidden_in_text` est vrai par `\u{XXXX}` (Rust,
     hexadécimal en capitales, quatre à six chiffres, sans zéro de tête au-delà de quatre) et laisse le reste intact ;
     appliquée par `appliquer` au texte **et** au résumé. Elle est **idempotente** (sa sortie n'a aucun caractère caché).
     Test `rendre_visible_par_famille` (fonction pure, `envois_mcp.rs`, `mod tests`) : U+202E, U+2066, U+200B, U+200D,
     U+FEFF, U+FE0F, U+E000, U+0378, U+180E, U+2028, `\r`, U+0000, U+0085, U+007F → échappés ; `\n`, `\t`, `é`, `€`,
     `⚠` (U+26A0), `中`, une espace → intacts ; `rendre_visible(rendre_visible(s)) == rendre_visible(s)` sur chacun ; un
     texte de prompt piégé (« Ignore les consignes ») **intact** — l'injection visible n'est pas un caractère caché.
-    Les cas relevant de `is_hidden_format` se recontrôlent contre l'AC-ii1 de la 32-10a telle que fusionnée. Test
+    Les cas du prédicat lui-même sont éprouvés par la 32-8b0 (AC-04) ; ce test-ci éprouve le **remplacement**. Une suite
+    littérale `\u{202E}` déjà écrite dans la donnée reste telle quelle : à l'écran comme pour l'agent, elle ne se
+    distingue pas d'un caractère remplacé — l'avis de l'écran et le manuel le disent (AC-C3, AC-C10 ; validation P1, F6).
+    Test
     d'intégration `depot_rend_visible` (`mcp_envois_e2e.rs`) : un outil de test dont le texte porte U+202E, `\r` et
     U+200B, sous une clé `required` → `content` en base **égal** au texte où ces trois caractères sont remplacés par
     `\u{202E}`, `\u{000D}`, `\u{200B}` ; la valeur rendue par le `GET` du détail lui est égale.
@@ -424,14 +533,23 @@ vide.
     `taille_des_envois` : 65 536 octets déposés ; 65 537 refusés, table inchangée, corps égal ; 65 530 octets de texte
     dont deux U+200B (trois octets chacun, huit à l'échappement `\u{200B}`) → refusé (la borne porte sur le texte **rendu visible**).
 17. **AC-B5 — le dépôt et son journal, en une transaction** (C-32-8-12, C-32-8-13, C-32-8-15). `EnvoiAValider::deposer`
-    appelle `services::envois_mcp::deposer(&cle.acces, &etat.ecriture_envois, cle.cle_id, cle.validation, outil.nom(),
-    debut, resume, contenu)` (sans nommer `ContexteAcces`, garde N24 de la 32-6a tenue). Le service : (1) contrôle les
-    tailles (AC-B4) ; (2) purge les contenus échus de la société (`purger_echus`, **hors** transaction, *best-effort* :
-    un échec est journalisé au journal du serveur par l'id de société seul, et n'empêche pas le dépôt) ; (3)
-    `EcritureEnvois::deposer` ouvre **une** transaction qui dépose (`deposer_in_tx`, durée **86 400 s**, plafond **20**)
-    **et** écrit l'entrée d'audit de l'appel (`entree_appel`, issue `envoi_depose`, détail gagnant `"envoi": <id>`,
-    AC-B11), puis valide ; (4) rend `AccuseEnvoi` (champ privé `numero`, accesseur, construit **en ce fichier
-    seulement**). Pour un dépôt, `journaliser_appel` n'est **pas** appelé en plus. `TropNombreux` →
+    reçoit **la clé authentifiée entière** — `pub(in crate::mcp) async fn deposer(self, cle: &CleMcpAuthentifiee,
+    ecriture: &EcritureEnvois, outil: &'static str, debut: Instant) -> Result<AccuseEnvoi, RefusDepot>` — et appelle
+    `services::envois_mcp::deposer(cle, ecriture, outil, debut, resume, contenu)` : aucune ligne de `src/mcp/` ne nomme
+    `ContexteAcces` (garde N24 de la 32-6a, point (2), tenue **à la lettre** ; le type `CleMcpAuthentifiee` n'y est pas
+    visé), et le service lit `cle.acces`, `cle.cle_id`, `cle.validation` lui-même (validation P1, R6 = F4, décision de
+    l'orchestrateur). Le service : (1) contrôle les tailles (AC-B4) ; (2) purge les contenus échus de la société
+    (`purger_echus`, **hors** transaction, *best-effort* : un échec est journalisé au journal du serveur par l'id de
+    société seul, et n'empêche pas le dépôt) ; (3) `EcritureEnvois::deposer` ouvre **une** transaction qui dépose
+    (`deposer_in_tx`, durée **86 400 s**, plafond **20**) **et** écrit l'entrée d'audit de l'appel —
+    `services::serveur_mcp::entree_appel(cle, outil, IssueAppel::EnvoiDepose, duree_ms, Some(id))`, signature fixée à
+    l'AC-B11 —, puis valide ; (4) rend `AccuseEnvoi` (champ privé `numero`, accesseur, construit **en ce fichier
+    seulement**). **Règles des services** (validation P1, R9) : `deposer` et `purger_echus` sont des **écritures** sur un
+    chemin du MCP, que la règle R4 de `services/mod.rs` (`:44-56`) et l'« inventaire clos des écritures » (`:77-90`,
+    « 3. Aucune autre ») ne connaissent pas : l'inventaire gagne **deux** entrées (4. le dépôt d'un envoi et l'entrée
+    d'appel, en une transaction, sur `EcritureEnvois` ; 5. la purge des contenus échus, sur `EcritureEnvois`), R4 gagne
+    la phrase qui les nomme, et la **dérogation à R2** est écrite pour `deposer` comme pour `lire` (AC-B6) : la portée a
+    été exigée par le **service de l'outil** avant la lecture, et le dépôt ne lit rien des livres. Pour un dépôt, `journaliser_appel` n'est **pas** appelé en plus. `TropNombreux` →
     `ErreurOutil::LimiteAtteinte`, `TEXTE_ENVOIS_TROP_NOMBREUX`, issue `limite_atteinte` ; toute erreur de base →
     `ErreurOutil::Interne`. Réponse : `ReponseMcp::Envoi(ReponseEnvoi::Depose(AccuseEnvoi))` → `{"content":[{"type":"text",
     "text":<TEXTE_ENVOI_DEPOSE(X)>}],"structuredContent":{"envoi":X,"etat":"en_attente"},"isError":false}`. Tests :
@@ -444,13 +562,17 @@ vide.
     ligne déposée.
 18. **AC-B6 — `kesh_lire_envoi`, hors registre** (C-32-8-7, C-32-8-8, C-32-8-9). Nom réservé, constante
     `NOM_LIRE_ENVOI`. **Pas** un `McpTool`, **pas** au `Registre` ; le répartiteur le résout **avant** le registre ;
-    `registre_coherent` (AC-a16) refuse un outil du registre à nom réservé (`kesh_lire_envoi`, et `proposer_prompt` si la
-    32-10a-iii a fusionné). Descripteur **statique** (nom, description, `inputSchema` `{"type":"object","properties":
+    `registre_coherent` (AC-a16) refuse un outil du registre à nom réservé (`kesh_lire_envoi` ; la 32-10a-iii, qui vient après,
+    y ajoutera `proposer_prompt`). Descripteur **statique** (nom, description, `inputSchema` `{"type":"object","properties":
     {"envoi":{"type":"integer","minimum":1}},"required":["envoi"],"additionalProperties":false}`, `annotations:
     {readOnlyHint: true}`), listé par `tools/list` **pour toute clé**, après les outils du registre ; `tools_list_filtre`
     amendé (`books:read` → `[kesh_version, kesh_lire_envoi]` ; `contacts:read` seule → `[kesh_lire_envoi]`).
-    `tools/call` : arguments par `arguments::<ArgsLireEnvoi>()` (`envoi: u64`, 0 ou > `i64::MAX` → `HorsBornes`) ;
-    `services::envois_mcp::lire(&cle.acces, &etat.lecture_envois, cle.cle_id, numero)` → `EnvoiLu` ∈ {`EnAttente`,
+    `tools/call` : arguments par `arguments::<ArgsLireEnvoi>()` (`envoi: u64` ; 0 ou > `i64::MAX` rendent la même
+    `ErreurOutil::ArgumentsInvalides { argument: "envoi", motif: MotifArgument::Invalide }` qu'un mauvais type — **aucune
+    variante neuve de `MotifArgument`**, la fiche 32-6 ne nommant que `Invalide` (AC-a18, l. 516) ; validation P1,
+    R13). Test `arguments_de_kesh_lire_envoi` : `{"envoi": 0}`, `-1`, `1.5`, `"1"`, `18446744073709551615`, `{}`,
+    `{"envoi": 1, "x": 1}` → sept corps **égaux** à la réponse attendue, aucun appel du dépôt ;
+    `services::envois_mcp::lire(cle, &etat.lecture_envois, numero)` (la clé entière, comme `deposer`) → `EnvoiLu` ∈ {`EnAttente`,
     `Valide(ContenuValide)`, `Refuse`, `Echu`, `Inconnu`} ; **jamais** `autoriser`, **jamais** `Donnees` ni
     `DonneesEnvoyables`. `ContenuValide` : champs privés (`numero`, `modifie`, `texte`), accesseurs, **construit en
     `services/envois_mcp.rs` seulement**, à partir d'une ligne `Valide` rendue par `lire_pour_cle` pour **la société et
@@ -483,7 +605,12 @@ vide.
       entrées d'audit `servi` ;
     - `autre_cle_et_autre_societe_indiscernables` : la relecture d'un envoi validé par une **autre clé** de la même
       société, par la clé d'une **autre société** (deux sociétés activées), et d'un numéro **inexistant** rend trois
-      corps égaux, `id` mis à part (E6, mutation 6) ;
+      corps égaux, `id` mis à part (E6, mutation 6) — et une **quatrième** relecture, d'une ligne incohérente posée par
+      le pool du test (la clé de l'appel, le `company_id` d'une autre société ; AC-A7), rend le même corps ;
+    - `politique_changee_entre_depot_et_relecture` : dépôt sous `required`, politique passée à `exempt` par
+      `set_send_validation_in_tx` (32-5a), validation, relecture → le contenu validé, rien de plus ; et l'inverse
+      (`exempt` → `required`) après une validation : la relecture rend toujours le contenu — `kesh_lire_envoi` ne lit
+      pas la politique (D25 ; validation P1, F7) ;
     - `survit_au_redemarrage` : dépôt sur une application, application détruite, seconde application sur la **même**
       base, validation et relecture réussies ;
     - `kesh_version_passe_par_la_validation` (« l'outil de démonstration y passe ») : sous `required`, accusé ; validé
@@ -509,13 +636,18 @@ vide.
     `decision_et_audit_dans_la_meme_transaction` (`audit_log` renommée → 500, l'envoi reste `pending`) ;
     `decision_journalisee_sans_contenu` (piège dans le contenu modifié et le résumé, absent de `audit_log`). Registres :
     `admin_pat_denied_e2e.rs` — `ADMIN_COUPLES` gagne les trois couples, le compte de `:46-53` et de `lib.rs:225` suit
-    (33 + ceux de la 32-5c + 3, recompté) ; `audit_route_registry.rs` — la route `POST` entre à `LIB_ROUTES` en
-    `Traced`, `SansEcritureAuJournal` (le journal comptable n'est pas touché), chaque compteur littéral qui bouge
-    nommé et recompté à l'étape 0 (comme l'AC-a6 de la 32-6a). Libellés : `audit-log-entity-mcp-send`,
-    `audit-log-action-mcp-send-approved`, `-refused` dans les **quatre** locales ; `audit_label_registry.rs` vert.
+    (33 + ceux de la 32-5c + 3, recompté), **et ses autres littéraux** (validation P1, R14) : la répartition
+    `(reached_layer, stopped_by_scope) = (8, 25)` (`admin_pat_denied_e2e.rs:826-836`) — deux `GET` de plus atteignent la
+    couche, un `POST` de plus est arrêté par le gate de portée — et `discriminating = 6` (`:880-887`, les `HEAD` des deux
+    `GET` neufs), chacun recompté depuis la liste à l'étape 0, après la 32-5c, avec sa généalogie (« Story 32-8b ») ;
+    `audit_route_registry.rs` — la route `POST` entre à `LIB_ROUTES` en `Traced`, `SansEcritureAuJournal` (le journal
+    comptable n'est pas touché), chaque compteur littéral qui bouge nommé et recompté à l'étape 0 (comme l'AC-a6 de la
+    32-6a). Libellés : `audit-log-entity-mcp-send`, `audit-log-action-mcp-send-approved`, `-refused` dans les **quatre**
+    locales ; `audit_label_registry.rs` vert. **Replis** (validation P1, R16) : le repli Rust de chaque `t("mcp-send-…")`
+    (AC-B8, AC-B9) égale la valeur fr-CH de sa clé — garde G9 de `tests/textes_coherents.rs` (`:19`), verte.
 21. **AC-B9 — le contenu modifié, contrôlé, jamais corrigé** (C-32-8-19). `envois_mcp::verifier_contenu_modifie(&str)
     -> Result<(), MotifContenu>` : `TropVolumineux` au-delà de `MCP_ENVOI_OCTETS_MAX`, `CaractereCache` si un caractère
-    `est_cache` (AC-B3) ; **aucun** rognage, **aucune** normalisation. Le gestionnaire rend 400 avec
+    vérifie `kesh_core::text::is_hidden_in_text` (AC-02, AC-B3) ; **aucun** rognage, **aucune** normalisation. Le gestionnaire rend 400 avec
     `t("mcp-send-content-too-large")` ou `t("mcp-send-content-hidden-character")`. Test `contenu_modifie_controle` :
     `"a\r\nb"` refusé ; U+202E refusé ; U+0378 refusé ; `"⚠ é"` admis et stocké égal ; chaîne vide admise ; 65 536 octets
     admis, 65 537 refusés ; un blanc final conservé.
@@ -526,23 +658,49 @@ vide.
     (transaction du dépôt et de l'audit) et `purger_echus(…)`. Champ privé, **aucune** méthode `pool()`. Fabriquées
     **une fois** en `lib.rs`, placées dans `EtatMcp` (`lecture_envois`, `ecriture_envois`) ; `FABRIQUES_V2` gagne ces
     sites et `MOTIF_V2` gagne `\bLectureEnvois::new\(|\bEcritureEnvois::new\(` (sans quoi l'entrée ajoutée ne serait
-    jamais captée) ; (vi) recompte les fichiers de `services/` (onze au relevé, + `serveur_mcp.rs`, + `prompts_mcp.rs`
+    jamais captée), et **ses témoins** dans `ac10_temoins_des_motifs` (`services_motif.rs:2052-2066`) : `v2` voit
+    `LectureEnvois::new(p)` et `x::EcritureEnvois::new(p)`, ne voit pas `DetailsLectureEnvois::new(p)` (frontière de
+    mot ; validation P1, R15) ; (vi) recompte les fichiers de `services/` (onze au relevé, + `serveur_mcp.rs`, + `prompts_mcp.rs`
     si fusionné, + `envois_mcp.rs`). Test `lire_pour_cle` exécuté sur une `LectureEnvois` en lecture seule (règle R7).
     Les routes d'administration n'emploient **pas** ces poignées : elles lisent et écrivent sur `state.pool` (AC-B8).
 23. **AC-B11 — le journal des appels, amendé** (AC-b1 de la 32-6b, en connaissance de cause ; C-32-8-12). L'énumération
     close des issues perd `validation_requise` et gagne `envoi_depose`, `envoi_en_attente`, `envoi_refuse`,
-    `envoi_echu`, `envoi_trop_volumineux` et, si la 32-10a-iii ne l'a pas déjà posé, `limite_atteinte` ; une relecture
-    validée a l'issue `servi`, un numéro inconnu `inconnu`. `outil` peut valoir `kesh_lire_envoi`. Le détail garde ses
-    cinq clés et gagne **`"envoi": <entier>`** pour un dépôt et pour tout appel de `kesh_lire_envoi` aux arguments
-    valides (le numéro **demandé**, entier analysé). `chaque_appel_est_journalise` (32-6b) amendé : une ligne par issue
-    neuve, détail **égal** au JSON attendu. `journal_sans_arguments_ni_donnees` étendu : un dépôt et une relecture
-    piégés ne laissent aucun piège dans `audit_log`.
+    `envoi_echu`, `envoi_trop_volumineux` et `limite_atteinte` (sous l'ordre fixé, la 32-8b la pose avant la 32-10a-iii) ; une relecture
+    validée a l'issue `servi`, un numéro inconnu `inconnu`. `outil` peut valoir `kesh_lire_envoi`. **`entree_appel`,
+    signature fixée ici** (validation P1, R8, décision de l'orchestrateur) : `pub(crate) fn entree_appel(cle:
+    &CleMcpAuthentifiee, outil: &str, issue: IssueAppel, duree_ms: u64, envoi: Option<i64>) -> NewAuditLogEntry`
+    (`services/serveur_mcp.rs`), fonction **pure** extraite de `journaliser_appel`, qui l'appelle désormais et ne fait
+    plus qu'écrire son résultat ; `IssueAppel` est l'énumération close de l'AC-b1 de la 32-6b ; `outil` est le nom d'un
+    outil du registre, un nom réservé, ou `"(inconnu)"`. Le détail a **cinq clés** quand `envoi` vaut `None` —
+    `{cleMcpId, outil, issue, dureeMs, validation}`, exactement comme aujourd'hui — et **six** quand il vaut `Some(n)` :
+    les cinq et **`"envoi": n`**, pour un dépôt et pour tout appel de `kesh_lire_envoi` aux arguments valides (le numéro
+    **demandé**, entier analysé). **Celle des deux stories qui fusionne la première l'introduit sous cette forme** — sous
+    l'ordre fixé, la 32-8b ; la 32-10a-iii l'appelle avec `None` (§ *Note pour la 32-10a*). Amendements de la 32-6b, en
+    connaissance de cause : AC-b1 (l'énumération), **AC-b2** (« chaque entrée a exactement les cinq clés » devient « cinq,
+    ou six avec `envoi` pour les issues d'un envoi ») ; `chaque_appel_est_journalise` : une ligne par issue neuve, détail
+    **égal** au JSON attendu ; `journal_sans_arguments_ni_donnees` : son contrôle « exactement cinq clés » suit la règle
+    ci-dessus, et un dépôt et une relecture piégés ne laissent aucun piège dans `audit_log`. Test pur
+    `entree_appel_cinq_ou_six_cles` (`serveur_mcp.rs`, `mod tests`).
 24. **AC-B12 — jamais au journal du serveur** (`contenu_jamais_dans_le_journal_du_serveur`, par la couche
     `tests/common/capture_trace.rs` de la 32-6a, avec son **témoin** : le `tracing::debug!` du transport émis pendant la
     requête éprouvée, requête envoyée sans `MCP-Protocol-Version`) : un dépôt piégé, une décision modifiée piégée
-    (`PIEGE_MODIF_328`), une relecture → aucun des pièges dans les évènements capturés ; et `grep -rnE
-    "content|contenu|resume|summary" crates/kesh-api/src/services/envois_mcp.rs crates/kesh-api/src/routes/mcp_envois.rs
-    crates/kesh-api/src/mcp/politique.rs | grep -E "tracing::|warn!|error!|info!|debug!"` relu, sortie citée.
+    (`PIEGE_MODIF_328`), une relecture → aucun des pièges dans les évènements capturés. Ce test ne voit que les chemins
+    qu'il **exécute** : le `warn!` d'une purge en échec, par exemple, ne s'émet jamais sur un dépôt réussi (validation
+    P1, F3). Les chemins d'erreur sont donc tenus par une **garde lexicale**, `aucun_evenement_ne_nomme_le_contenu`
+    (`tests/mcp_gardes_lexicales.rs`, règle commune ; elle remplace le `grep` mono-ligne de la première rédaction,
+    R20) — *propriété* : dans `services/envois_mcp.rs`, `routes/mcp_envois.rs`, `mcp/politique.rs` et les deux poignées
+    de `services/poignees.rs` (code seul), aucun **appel** d'une macro de `tracing` (`tracing::…!(` ou `trace!`,
+    `debug!`, `info!`, `warn!`, `error!`, `event!` — de la parenthèse ouvrante à la parenthèse fermante qui lui répond, sur
+    le texte **aplati**, lignes multiples comprises) ne nomme un des identifiants `content`, `contenu`, `resume`,
+    `summary`, `texte`, `body`. *Formes* : l'identifiant en argument nommé (`contenu = %c`), en valeur de format
+    (`"{}", contenu`), en interpolation (`"{contenu}"`), sur une ou plusieurs lignes. *Témoin vert existant* : le
+    `tracing::warn!(` de `services/cles_mcp.rs:102-105` (quatre lignes, `mcp_key_id = row.mcp_key_id`), appliqué à son
+    fichier, que la garde ne prend pas ; *témoin rouge factice* : `tracing::warn!(\n    company_id,\n    "purge : {}",
+    contenu\n);`. *Mesure* (au relevé de `fa5b3468`) : les fichiers visés sont neufs ; sur le dépôt, `grep -rnE
+    "(warn|error|info|debug|trace)!\(" crates/kesh-api/src | wc -l` → **255** appels, dont **117** ouverts en fin de
+    ligne (`grep -rnE "…!\($"`, forme multi-ligne : la garde **doit** aplatir) ; le témoin vert `cles_mcp.rs` ne nomme
+    aucun des identifiants visés (`grep -cwE 'content|contenu|resume|summary|texte|body' services/cles_mcp.rs` → **0**).
+    À re-mesurer à l'étape 0.
 25. **AC-B13 — les consignes à l'agent** (C-32-8-26). `instructions` d'`initialize` (constante de la 32-6a) gagne la
     consigne de relecture (texte au § *Dev Notes*) ; la description statique de `kesh_lire_envoi` aussi. Le test
     d'`initialize` de la 32-6a compare le corps **égal** à la constante amendée.
@@ -569,6 +727,36 @@ vide.
       `ContenuValide { numero: 1, modifie: false, texte: s }` dans `src/mcp/repartiteur.rs`.
     - `donnees_construites_par_la_politique_seule` et `outils_et_politique_en_leur_lieu` (32-6a) **étendues** (AC-B1).
     - La garde (v-2) de `services_motif.rs` étendue (AC-B10).
+    - `aucun_evenement_ne_nomme_le_contenu` (AC-B12).
+27. **AC-B15 — ce que la 32-8b change du code de la 32-6, et rien d'autre** (validation P1, R7, R12 ; modèle :
+    l'AC-iii2 de la 32-10a). La frontière de la fiche 32-6 (§ *La frontière avec la 32-8*) donne à la 32-8 `autoriser`,
+    `appliquer` et leurs deux sites d'appel. **Tout le reste est un amendement en connaissance de cause**, nommé ici et
+    seulement ici :
+    1. **`politique.rs`** : `autoriser` sans `Refus`, `Autorisation` à deux variantes, `appliquer` → `Sortie`,
+       `EnvoiAValider` (AC-B1) ; `texte_a_valider` (AC-B2) ; AC-a15 et AC-a23 de la 32-6a amendées ;
+    2. **`repartiteur.rs`** : (a) le **nom réservé** `kesh_lire_envoi` résolu **avant** `outil_pour` (AC-B6) ; (b) la
+       **troisième branche** d'un `tools/call` — `Sortie::Deposer` → `.deposer(…)` — qui **n'appelle pas**
+       `journaliser_appel`, l'entrée d'appel étant écrite dans la transaction du dépôt (AC-B5 ; amende l'AC-b1 et l'AC-b3
+       de la 32-6b : « chaque `tools/call` est journalisé » reste vrai, par un autre chemin) ; (c) `tools/list` ajoute le
+       descripteur statique de `kesh_lire_envoi` **pour toute clé**, après les outils de ses portées (amende l'AC-a17 :
+       « les seuls outils dont la portée appartient aux portées de la clé ») ;
+    3. **`mod.rs`** : `EtatMcp` gagne `lecture_envois: LectureEnvois` et `ecriture_envois: EcritureEnvois` (amende
+       l'AC-a1, « `EtatMcp` porte **seulement** … ») — et tout test ou garde de la 32-6a qui énumère ses champs (à relever
+       à l'étape 0) ; `lib.rs` les fabrique (AC-B10) ;
+    4. **`reponse.rs`** : `ReponseMcp::Envoi(ReponseEnvoi)` et sa conversion par `rendre` (amende l'AC-a31 ; aucune ligne
+       neuve ne nomme `AppError`, `IntoResponse` ni `into_response` : `reponses_par_rendre_seul` inchangée) ;
+    5. **`outil.rs`** : `ErreurOutil::TropVolumineux` et `ErreurOutil::LimiteAtteinte` (posée ici, avant la 32-10a-iii, qui la réemploie),
+       toutes deux sans champ (AC-a20 tenue) ;
+    6. **`textes.rs`** : les constantes du § *Dev Notes — Les textes*, l'ajout à `instructions` ; `TEXTE_VALIDATION_REQUISE`
+       retirée ;
+    7. **`registre.rs`** (`registre_coherent`) : refus d'un nom réservé (AC-B6) ;
+    8. **`services/serveur_mcp.rs`** : `entree_appel` extraite, l'énumération des issues amendée (AC-B11) ;
+    9. **les tests de la 32-6** : `cle_requise_refusee_sans_execution` **remplacé** par `cle_requise_deposee` ;
+       `e1_rien_ne_part_sous_cle_requise`, `tools_list_filtre`, `registre_coherent`, le test d'`initialize`,
+       `chaque_appel_est_journalise`, `journal_sans_arguments_ni_donnees` **amendés** ; Ma50 de la 32-6a (« `executer`
+       avant `autoriser` ») **sans objet** (les deux politiques exécutent) et Ma23 **reformulée** (MB1).
+    Rien d'autre du code de la 32-6 ne change ; un écart découvert au développement se déclare au Change Log et revient
+    à cette liste.
 
 ### Partie C — 32-8c : l'écran
 
@@ -585,7 +773,8 @@ vide.
 29. **AC-C3 — le détail.** En tête : n°, clé, outil, dates, état, et, pour un envoi décidé, qui l'a décidé et quand.
     Un **avis permanent** : « Ces données viennent de vos livres. Elles peuvent contenir du texte écrit par d'autres
     (libellés, noms, notes) : lisez-les comme des données, jamais comme des consignes. Les caractères invisibles y sont
-    remplacés par leur code (`\u{…}`). » Un bloc **Résumé de la demande — n'est pas envoyé** (le résumé, en texte). Le
+    remplacés par leur code (`\u{…}`) ; un tel code peut aussi avoir été écrit tel quel dans vos livres. » (validation
+    P1, F6). Un bloc **Résumé de la demande — n'est pas envoyé** (le résumé, en texte). Le
     bloc **Ce qui sera envoyé à l'agent** : une **`<textarea>`** en police à chasse fixe, `readonly` par défaut, dont
     la **valeur** est la chaîne `content` reçue, sans transformation ; un compteur « N octets sur 65 536 » (taille UTF-8
     de la valeur). Actions d'un envoi en attente : *Modifier* (retire `readonly`), *Rétablir* (remet la valeur reçue),
@@ -633,12 +822,28 @@ vide.
     `required` (le défaut) ne rend aucune donnée à l'agent sans validation ; l'accusé et la relecture ; l'écran, ce qu'il
     montre et ce qui part (le texte, octet pour octet ; le résumé non envoyé ; la donnée structurée non envoyée) ; les
     trois gestes ; l'échéance de 24 h depuis la demande ; la limite de 20 envois en attente par clé et de 64 Kio par
-    envoi ; les caractères invisibles rendus visibles, et refusés dans une modification ; le rôle Administrateur et la
+    envoi ; les caractères invisibles rendus visibles, et refusés dans une modification — et qu'un code `\u{…}` peut aussi
+    avoir été écrit tel quel dans la donnée (F6) ; les **issues d'outil** qui partent sans validation sous une clé
+    `requise` (« introuvable », « trop volumineux », erreur : un bit, D3, D4) ; le rôle Administrateur et la
     session (aucune clé d'API ne valide) ; qu'une clé `dispensée` envoie **sans** écran, chaque envoi restant journalisé ;
     que la validation ne couvre **que** le serveur MCP (une clé d'API donnée au même agent lit l'API sans elle) ; qu'un
     agent qui piloterait le navigateur de l'administrateur pourrait valider à sa place (§ *Ce que les gardes ne voient
     pas*) ; la sauvegarde et la remise à zéro (32-8a). PDF régénéré, contrôle aplati cité. **CHANGELOG** : entrée
     `Ajouté` de la version en cours (« la validation avant envoi du serveur MCP »), sans date (la release la pose).
+37. **AC-C11 — les textes que la table rend faux** (l'AC-A12 de la première rédaction, déplacée ici en validation P1 ;
+    R1, R5 ; § *Le découpage*). Lignes recomptées à l'étape 0 :
+    - `admin-manual.tex:2230` (le fichier est un secret) et `:2237` (ce que le fichier porte depuis la 0.16.0) gagnent
+      **les envois du serveur MCP**, contenu en attente ou validé compris — y compris une version **modifiée** par
+      l'utilisateur — et le fait qu'une restauration les rétablit avec leurs clés ; `:2249` (« La 0.16.0 ajoute deux
+      tables ») suit le compte réel des tables ajoutées par la 0.16.0 (trois avec `mcp_sends` ; plus si une autre story a
+      fusionné une table — recompté) ; `:1414` (la remise à zéro) dit que les envois du serveur MCP sont **effacés** ;
+    - `user-manual.tex:3027-3033` (« Ce que l'export ne contient pas, et pourquoi ») nomme **les envois du serveur MCP**
+      (copies transitoires de données des livres, sans valeur comptable), comme `TABLES_HORS_EXPORT` (AC-A12) ;
+    - `CHANGELOG.md:15-16` (« la 0.16.0 en ajoute deux — les clés et les réglages du futur serveur MCP, … et restent hors
+      de l'export global ») suit le même compte et nomme les envois, au fichier `.keshbackup` et hors de l'export global ;
+    - **les deux PDF** régénérés ; contrôle par `pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' |
+      grep -oiE ".{60}envois? du serveur MCP.{80}"`, idem `user-manual.pdf`, sorties citées ; et `grep -rnE "ajoute deux
+      tables|en ajoute deux" CHANGELOG.md docs/manual/fr/*.tex` → **0** après correction.
 
 ## L'inventaire clos des chemins par lesquels une donnée lue atteint l'agent
 
@@ -661,19 +866,23 @@ servies** (liste close de l'AC-a12 de la 32-6a, E2 de la spike) et des **autres 
 | D10 | `initialize`, `ping`, `tools/list`, notifications | constantes et descripteurs statiques | `&'static str` (AC-a16, AC-a23) ; descripteur de `kesh_lire_envoi` statique | 32-6a ; AC-B6 |
 | D11 | les refus du transport (route absente, 401, 403, 405, 413, 415, 400, 500) | constantes | AC-a31 | 32-6a |
 | D12 | le **journal d'audit** (appels, décisions) | jamais le contenu ni le résumé | détails à clés fixées | `journal_sans_arguments_ni_donnees`, `decision_journalisee_sans_contenu` (AC-B8, AC-B11) |
-| D13 | le **journal du serveur** (`tracing`) | jamais le contenu ni le résumé | aucun évènement ne les nomme | `contenu_jamais_dans_le_journal_du_serveur` (AC-B12) |
+| D13 | le **journal du serveur** (`tracing`) | jamais le contenu ni le résumé | aucun évènement ne les nomme | `contenu_jamais_dans_le_journal_du_serveur` (chemins exécutés) + garde `aucun_evenement_ne_nomme_le_contenu` (chemins d'erreur ; AC-B12) |
 | D14 | les **routes d'administration** des envois | le contenu en attente, à une **session d'Administrateur** | `admin_routes` : RBAC Admin + `require_not_pat` ; `/api/v1` refuse la clé MCP | `pat_ne_valide_pas`, `admin_pat_denied_e2e`, test Comptable (AC-B8) |
 | D15 | une autre route, un autre service ou un outil qui lirait la table des envois | — | dépôt nommé en deux fichiers seulement | garde `envois_lus_par_leurs_lieux` (AC-B14) |
-| D16 | le **`.keshbackup`** | les envois, contenu compris | export d'Administrateur (route existante d'`admin_routes`) ; le fichier est un secret | manuel (AC-A12) — **pas un chemin vers l'agent** |
+| D16 | le **`.keshbackup`** | les envois, contenu compris | export d'Administrateur (route existante d'`admin_routes`) ; le fichier est un secret | manuel (AC-C11) — **pas un chemin vers l'agent** ; l'**export global**, lui, l'exclut (AC-A12) |
 | D17 | **`/api/v1` par une clé d'API (PAT)** donnée au même agent | les livres, **sans validation** | hors du canal MCP : la validation ne couvre que le MCP | **angle mort** écrit au manuel (AC-C10) |
 | D18 | le **navigateur de l'administrateur piloté par un agent** (extension, « computer use ») | une décision prise par l'agent | Kesh ne distingue pas un humain d'un agent qui conduit une session ouverte | **angle mort** écrit au manuel (AC-C10) |
 | D19 | le **temps** de réponse d'un dépôt (durée de l'outil) | un oracle temporel faible | — | **angle mort** |
 | D20 | le **numéro** d'envoi, séquentiel pour l'installation | le nombre d'envois créés entre deux appels | — | **angle mort** (C-32-8-17) |
-| D21 | un **panic** ou l'**abandon** d'un dépôt ou d'une relecture | rien | N26 de la 32-6 | angle mort de la 32-6 (non journalisé) |
-| D22 | une **restauration** | les envois et les clés de la sauvegarde, ensemble | la règle « même clé, même société » vaut sur les identifiants restaurés ; une clé révoquée depuis redevient active (`admin-manual.tex:2237`) et relit ses envois validés non échus | manuel (AC-A12) |
+| D21 | un **panic** ou l'**abandon** d'un dépôt ou d'une relecture **avant** la validation de sa transaction | rien | N26 de la 32-6 | angle mort de la 32-6 (non journalisé) |
+| D22 | une **restauration** | les envois et les clés de la sauvegarde, ensemble | la règle « même clé, même société » vaut sur les identifiants restaurés ; une clé révoquée depuis redevient active (`admin-manual.tex:2237`) et relit ses envois validés non échus | manuel (AC-C11) |
 | D23 | SSE, élicitation, ressources, progression | rien | non servis (32-6a : JSON partout, E3) | 32-6a |
+| D24 | la politique passée de `exempt` à `required` (PUT de la 32-5c) **pendant** un `tools/call` déjà authentifié | les données de cet appel, sans écran | `cle.validation` est lue à l'authentification : l'appel en vol garde la politique qu'il avait | **angle mort** (fenêtre = durée de l'outil, 30 s au plus ; validation P1, F7) |
+| D25 | la politique changée **entre** un dépôt et sa relecture | le contenu validé, rien d'autre | `kesh_lire_envoi` ne lit pas la politique (C-32-8-7) : ce qui a été validé reste lisible, rien de plus | `politique_changee_entre_depot_et_relecture` (AC-B7) |
+| D26 | une clé **révoquée** ou **expirée** entre le dépôt et la relecture ; une portée changée | rien | refus à l'authentification (32-5b) ; les portées ne se changent pas après la création (fiche 32-5, routes de la 32-5c : aucun `PUT` des portées) | 32-5b, 32-5c |
+| D27 | un dépôt dont la réponse se **perd** après la validation de sa transaction (client parti, connexion coupée) | rien vers l'agent ; l'envoi et son entrée d'appel existent | l'agent n'apprend pas le numéro ; l'envoi paraît à l'écran, peut être validé, et n'est relu que par qui connaît son numéro (même clé) | **angle mort** (l'agent redépose, borné à 20 ; validation P1, R19) |
 
-**Angles morts assumés** — chacun au § *Ce que les gardes ne voient pas* : D3, D4, D17, D18, D19, D20, D21.
+**Angles morts assumés** — chacun au § *Ce que les gardes ne voient pas* : D3, D4, D17, D18, D19, D20, D21, D24, D27.
 
 ## Les points à traiter, et où ils le sont
 
@@ -697,20 +906,31 @@ servies** (liste close de l'AC-a12 de la 32-6a, E2 de la spike) et des **autres 
   (`TABLES_TO_TRUNCATE`, export, migrations, `EMPTY_BEFORE_RESET`), ligne lue citée au Change Log.
 - [ ] **T-A1** — migration, entité, dépôt, tests du dépôt (AC-A1 à AC-A9).
 - [ ] **T-A2** — `backup.rs`, squash régénéré, tests de sauvegarde, d'export, d'import et de remise à zéro (AC-A10).
-- [ ] **T-A3** — audit d'idempotence, P5 à P7 (AC-A11) ; manuel et PDF (AC-A12).
-- [ ] **T-A4** — mutations MA1 à MA14, gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
+- [ ] **T-A3** — audit d'idempotence, P5 à P7, `migrations_upgrade_path.rs` (AC-A11) ; export global (AC-A12) ; la
+  ligne de `migrations.sha384` **en dernier** (AC-A1).
+- [ ] **T-A4** — mutations MA1 à MA16, gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
+
+### 32-8b0
+- [ ] **T-00** — étape 0 : l'AC-ii1 de la fiche 32-10a relue telle qu'elle est alors (si elle a été amendée depuis
+  `00114c6d`, la version courante fait foi et l'écart se cite) ; `bank_accounts.rs` relu (lignes du prédicat et de ses
+  tests) ; `tables.rs` de `unicode-properties-0.1.4` relu pour chaque point des deux listes, ligne citée.
+- [ ] **T-01** — `is_hidden_format`, `is_hidden_in_text`, la dépendance, les tests (AC-01, AC-02, AC-04) ; la description
+  d'un compte bancaire, le test déménagé, le CHANGELOG (AC-03).
+- [ ] **T-02** — mutations M01 à M08 ; gates (dont `cargo publish --dry-run -p kesh-import`) ; Dev Agent Record.
 
 ### 32-8b
-- [ ] **T-B0** — étape 0 : 32-8a fusionnée ; le code réel de la 32-6a et de la 32-6b relu (signatures de la politique,
-  `BlocContenu`, `EtatMcp`, `arguments`, `journaliser_appel`, textes, gardes) ; l'état des dépendances de la 32-10a
-  (C-32-8-23) ; recomptes des registres de routes et de `services_motif.rs`.
-- [ ] **T-B1** — `services/envois_mcp.rs` (prédicat, rendu visible, contrôles, dépôt, lecture, types) et les deux
-  poignées (AC-B3, AC-B4, AC-B9, AC-B10).
+- [ ] **T-B0** — étape 0 : 32-8a et 32-8b0 fusionnées ; le code réel de la 32-6a et de la 32-6b relu (signatures de la
+  politique, `BlocContenu`, `EtatMcp` et ce qui énumère ses champs, `arguments`, `MotifArgument`, `journaliser_appel`,
+  textes, gardes) ; recomptes des registres de routes (`ADMIN_COUPLES`, `(reached_layer, stopped_by_scope)`,
+  `discriminating`) et de `services_motif.rs`.
+- [ ] **T-B1** — `services/envois_mcp.rs` (rendu visible, contrôles, dépôt, lecture, types), les deux poignées,
+  `entree_appel`, `services/mod.rs` (R2, R4, inventaire des écritures) (AC-B3, AC-B4, AC-B5, AC-B9, AC-B10, AC-B11).
 - [ ] **T-B2** — `mcp/` : politique à deux sorties, représentation source, `ReponseMcp::Envoi`, `kesh_lire_envoi`,
-  textes, consignes ; amendements des tests de la 32-6a et de la 32-6b (AC-B1, AC-B2, AC-B5, AC-B6, AC-B11, AC-B13).
+  textes, consignes ; amendements du code et des tests de la 32-6a et de la 32-6b, **et seulement ceux de l'AC-B15**
+  (AC-B1, AC-B2, AC-B5, AC-B6, AC-B11, AC-B13, AC-B15).
 - [ ] **T-B3** — `routes/mcp_envois.rs`, montage dans `admin_routes`, audit, libellés, messages, registres (AC-B8).
 - [ ] **T-B4** — `mcp_envois_e2e.rs`, gardes lexicales (AC-B7, AC-B12, AC-B14).
-- [ ] **T-B5** — mutations MB1 à MB27, gates ; Dev Agent Record.
+- [ ] **T-B5** — mutations MB1 à MB29, gates ; Dev Agent Record.
 
 ### 32-8c
 - [ ] **T-C0** — étape 0 : 32-8b fusionnée ; l'état de la 32-7 (section du manuel, écran `/admin/mcp`) ; les routes de
@@ -718,7 +938,8 @@ servies** (liste close de l'AC-a12 de la 32-6a, E2 de la spike) et des **autres 
 - [ ] **T-C1** — feature `mcp-sends` (API, types, composants, tests Vitest), pages, navigation, i18n (AC-C1 à AC-C6,
   AC-C8).
 - [ ] **T-C2** — E2E (AC-C7) ; recette visuelle (AC-C9).
-- [ ] **T-C3** — manuel, PDF, CHANGELOG (AC-C10) ; mutations MC1 à MC6, gates ; Dev Agent Record.
+- [ ] **T-C3** — manuels d'administration et utilisateur, PDF, CHANGELOG (AC-C10, AC-C11) ; mutations MC1 à MC6, gates ;
+  Dev Agent Record.
 
 ## Tests et mutations prévus
 
@@ -742,19 +963,29 @@ Les mutations de DDL se jouent **aussi** sur le squash de test (`0001_schema_squ
 | MA9 | `decider_in_tx` sans contrôle d'échéance | refus `Echue` |
 | MA10 | `modified` calculé par la collation (`content = ?` en SQL) | cas `É`/`é` et blanc final (AC-A6) |
 | MA11 | `lire_pour_cle` sans filtre `mcp_key_id` | `None` d'une autre clé (AC-A7) |
-| MA12 | `lire_pour_cle` sans filtre `company_id` | `None` d'une autre société (AC-A7) |
+| MA12 | `lire_pour_cle` sans filtre `company_id` | la **ligne incohérente** (clé de l'appel, société d'autrui) → `None` (AC-A7) — le cas « clé d'une autre société » seul laisserait la mutation équivalente (validation P1, F2) |
 | MA13 | le compte du plafond inclut les échus | `deposer_in_tx` (« un échu ne compte pas », AC-A5) |
 | MA14 | `purger_echus` sans filtre de société | `purger_echus` (AC-A9) |
+| MA15 | `decider_in_tx` n'écrit pas le texte reçu à une validation modifiée (`content` inchangé ; E6, mutation 4 — « modification ignorée ») | `decision_modifiee_ecrit_le_texte_recu` (AC-A6) ; `modification_recue_octet_pour_octet` (AC-B7) |
+| MA16 | `"mcp_sends"` retiré de `TABLES_HORS_EXPORT` | `export_couvre_toutes_les_tables` (AC-A12) |
+| M01 | la catégorie `Format` retirée d'`is_hidden_format` (seules les listes restent) | test de la famille Cf (U+0600, U+13430, U+1BCA0 ; AC-04) |
+| M02 | la catégorie `Unassigned` retirée | test U+0378 (AC-04) |
+| M03 | la catégorie `PrivateUse` retirée | test U+E000 (AC-04) |
+| M04 | les sélecteurs U+E0100–U+E01EF retirés de la liste des `Mn` (Mii10 de la 32-10a) | test de la liste (AC-04) |
+| M05 | U+FE0F admis (Mii12 de la 32-10a) | test « `⚠️` refusé », texte et description (AC-04) |
+| M06 | U+200D admis (Mii13 de la 32-10a) | test « `👨‍💻` refusé » (AC-04) |
+| M07 | `is_hidden_in_text` admet `\r` (`c != '\r'` ajouté à l'exception) | test de `is_hidden_in_text` (AC-04) ; `rendre_visible_par_famille` (32-8b) |
+| M08 | `is_forbidden_in_description` garde son ancienne liste fermée au lieu d'`is_hidden_format` | `emojis_simples_admis_composes_refuses` ; test U+0600 en description (AC-03, AC-04) |
 | MB1 | `autoriser` rend `Envoi` pour `Required` | `e1_rien_ne_part_sous_cle_requise` ; `cle_requise_deposee` |
 | MB2 | `appliquer` rend `Envoyer` pour `Depot` (le jeton se fabrique librement dans `politique.rs` : la mutation compile) | `e1_rien_ne_part_sous_cle_requise` ; `cle_requise_deposee` |
 | MB3 | `appliquer` ne rend plus visible (texte brut déposé) | `depot_rend_visible` (AC-B3) |
 | MB4 | `rendre_visible` laisse `\r` | `rendre_visible_par_famille` |
 | MB5 | `texte_a_valider` y ajoute la sérialisation de `structure` | `une_seule_representation` (`PIEGE_STRUCT_328`) |
 | MB6 | le résumé recopié dans la réponse de `kesh_lire_envoi` | `une_seule_representation` (`PIEGE_RESUME_328`) |
-| MB7 | `kesh_lire_envoi` rend le contenu **proposé** (gardé à part) au lieu du validé (E6, mutation 4) | `modification_recue_octet_pour_octet` |
+| MB7 | la route de décision ne transmet pas le `content` reçu au dépôt (`Decision::Valider { contenu: None }` pour une modification) — la forme réalisable de la « modification ignorée » côté route ; aucune colonne ne garde la proposition (validation P1, R10, F8) | `modification_recue_octet_pour_octet` |
 | MB8 | contrôle « même clé » levé dans `lire` | `autre_cle_et_autre_societe_indiscernables` (E6, mutation 6) |
-| MB9 | contrôle « même société » levé | idem |
-| MB10 | `Refuse` rendu comme `Valide` (contenu non effacé, lu) | `refus_ne_transmet_rien` |
+| MB9 | `lire` passe au dépôt une société autre que celle de la clé (la société de la ligne, relue) | `autre_cle_et_autre_societe_indiscernables` (ligne incohérente) — la levée du filtre lui-même est MA12 (validation P1, F2) |
+| MB10 | `lire` traduit l'état `Refuse` en `Valide` (texte vide, le `CHECK` `chk_mcp_sends_refused_empty` interdisant un refusé avec contenu) | `refus_ne_transmet_rien` (validation P1, F8) |
 | MB11 | `Echu` non dérivé dans `lire` | `echeance_ne_transmet_rien` |
 | MB12 | `kesh_lire_envoi` passé par `autoriser` (dépôt d'une relecture) | `relecture_sans_nouvelle_validation` |
 | MB13 | les trois routes montées hors `admin_routes` (après le marqueur) | `admin_pat_denied_e2e` ; `pat_ne_valide_pas` |
@@ -764,7 +995,7 @@ Les mutations de DDL se jouent **aussi** sur le squash de test (`0001_schema_squ
 | MB17 | borne appliquée **avant** le rendu visible | `taille_des_envois` (cas U+200B) |
 | MB18 | borne de taille retirée à la modification | `contenu_modifie_controle` |
 | MB19 | le contenu recopié au détail d'audit d'une décision | `decision_journalisee_sans_contenu` |
-| MB20 | le contenu dans un `tracing::warn!` de la purge | `contenu_jamais_dans_le_journal_du_serveur` |
+| MB20 | le contenu nommé dans un `tracing::warn!` multi-ligne du chemin d'échec de la purge | garde `aucun_evenement_ne_nomme_le_contenu` (AC-B12) — le test par capture ne l'exécute pas (validation P1, F3) |
 | MB21 | plafond d'envois en attente retiré | `limite_d_envois_en_attente` |
 | MB22 | audit d'une décision écrit hors de sa transaction | `decision_et_audit_dans_la_meme_transaction` |
 | MB23 | entrée d'appel d'un dépôt écrite hors de sa transaction (par `journaliser_appel` après) | `depot_et_journal_dans_la_meme_transaction` |
@@ -772,6 +1003,8 @@ Les mutations de DDL se jouent **aussi** sur le squash de test (`0001_schema_squ
 | MB25 | `instructions` sans la consigne de relecture | test d'`initialize` (égalité) |
 | MB26 | `ContenuValide` à champs `pub`, construit au répartiteur depuis `texte_a_valider` | garde `envoi_valide_construit_par_le_service_seul` |
 | MB27 | une décision admise d'un Comptable (`comptable_routes`) | test Comptable → 403 (AC-B8) |
+| MB28 | `entree_appel` pose `"envoi"` même quand `envoi` vaut `None` (`"envoi": null`) | `entree_appel_cinq_ou_six_cles` ; `chaque_appel_est_journalise` |
+| MB29 | `0` admis pour `envoi` (`minimum` contrôlé, borne retirée) | `arguments_de_kesh_lire_envoi` |
 | MC1 | `trim()` sur la valeur envoyée | `envoie_la_valeur_exacte` ; E2E (1) |
 | MC2 | « tel quel » envoie `content` | `tel_quel_n_envoie_pas_de_contenu` |
 | MC3 | contenu affiché par `{@html}` | `ecran_sans_html_brut` |
@@ -781,7 +1014,8 @@ Les mutations de DDL se jouent **aussi** sur le squash de test (`0001_schema_squ
 
 Tests hors mutations, nommés au Dev Agent Record : `survit_au_redemarrage`, `kesh_version_passe_par_la_validation`,
 `relu_deux_fois_memes_octets`, `tel_quel_recu_octet_pour_octet`, `decisions_concurrentes`,
-`full_import_restores_mcp_sends_byte_for_byte`, `bouton_selon_modification`, les témoins des gardes sur source factice.
+`full_import_restores_mcp_sends_byte_for_byte`, `politique_changee_entre_depot_et_relecture`, `bloc_non_textuel_refuse`
+(s'il y a lieu), `bouton_selon_modification`, les témoins des gardes sur source factice.
 
 ## Gates
 
@@ -791,6 +1025,11 @@ Tests hors mutations, nommés au Dev Agent Record : `survit_au_redemarrage`, `ke
   fmt, clippy `-D warnings`, build `--all-targets`. **P8** : la base `kesh_e2e_328` ayant appliqué la migration, le
   fichier ne se modifie plus. L'E2E complet au dernier commit de code (le démarrage applique la migration sur une base
   persistante : seul ce gate révèle un défaut de P8).
+- **32-8b0** : `cargo nextest run -p kesh-core` et les tests de bibliothèque de `kesh-api` qui portent ceux de
+  `routes/bank_accounts.rs`, entre les passes, fmt et clippy sur le workspace ; **`cargo publish --dry-run -p
+  kesh-import`** (la dépendance neuve ne touche pas le crate publié) ; gate complet au push ; E2E complet au dernier
+  commit de code (la description d'un compte bancaire change de comportement ; `bank-accounts-crud.spec.ts`, l. 199-220,
+  la saisit).
 - **32-8b** : gate ciblé entre les passes (`binary(mcp_envois_e2e)`, `binary(mcp_transport_e2e)`,
   `binary(mcp_journal_e2e)`, `binary(mcp_gardes_lexicales)`, `binary(admin_pat_denied_e2e)`,
   `binary(audit_route_registry)`, `binary(audit_label_registry)`, `binary(services_motif)`, fmt et clippy sur le
@@ -804,6 +1043,14 @@ Tests hors mutations, nommés au Dev Agent Record : `survit_au_redemarrage`, `ke
 
 ## Ce que les gardes ne voient pas
 
+- **Une politique changée pendant un appel** (D24) : un `tools/call` authentifié sous `exempt` garde cette politique
+  jusqu'à sa réponse, même si l'administrateur passe la clé à `required` entre-temps (au plus le délai d'un outil).
+- **Un dépôt dont la réponse se perd** (D27) : l'envoi existe, l'agent n'en sait pas le numéro ; il paraît à l'écran.
+- **Le plafond de 20 se contrôle après l'exécution de l'outil** (validation P1, F9) : une clé au plafond lit encore les
+  livres à chaque appel avant d'être refusée — rien ne part, mais la lecture a lieu.
+- **Les lignes de `mcp_sends` ne se suppriment jamais** (validation P1, F9) : la purge n'efface que le contenu et le
+  résumé ; les métadonnées (clé, outil, dates, état) croissent avec l'usage et entrent dans chaque sauvegarde — point 5
+  pour Guy.
 - **La validation est humaine.** Kesh garantit que ce qui part est ce qui a été montré et accepté ; il ne garantit pas
   que l'utilisateur a **lu** 64 Kio de texte, ni qu'il a repéré un **homoglyphe** (un « а » cyrillique visible n'est pas
   un caractère caché), ni l'effet de l'algorithme bidirectionnel sur des lettres **visibles** de droite à gauche
@@ -831,9 +1078,13 @@ Tests hors mutations, nommés au Dev Agent Record : `survit_au_redemarrage`, `ke
 - **Un panic ou un abandon** (D21) : rien ne part, rien n'est journalisé (angle mort N26 de la 32-6).
 - **Les gardes lexicales** ne voient ni une macro qui fabriquerait un identifiant, ni un alias de chemin hors des formes
   refusées (`use … as`) : la revue.
-- **Le comportement des clients réels** — un agent rappelle-t-il `kesh_lire_envoi` de lui-même, et combien de fois tant
-  que l'envoi est « en attente » (observation (d) de la spike § 2.4, forme (c)) — n'est pas éprouvé ici : Guy ou la
-  32-11.
+- **Le comportement des clients réels — un écart déclaré à la spike** (validation P1, R11, décision de l'orchestrateur ;
+  C-32-8-27). La spike demande que « **avant la 32-8**, Guy ou la 32-8 elle-même rejoue § 2.4 (d) » : un agent
+  rappelle-t-il `kesh_lire_envoi` de lui-même, et combien de fois tant que l'envoi est « en attente » ? Ce rejeu exige un
+  **client réel** (Claude Code, Hermes), que seul Guy peut lancer ; il n'a pas eu lieu, et la fiche ne l'attend pas. Les
+  textes de l'accusé, de la relecture et d'`instructions` (C-32-8-26) reposent donc sur une hypothèse non éprouvée ;
+  s'ils ne suffisent pas, c'est un texte à changer, non la poignée (rien ne part si l'agent oublie de relire). Point 10
+  pour Guy ; la 32-11 consigne l'observation.
 - **Le manuel** : aucun gate ne le lit ; les prompts de revue nomment l'axe et exigent le PDF aplati.
 
 ## Dev Notes
@@ -902,7 +1153,7 @@ comparaison d'égalité se fait en Rust, sur les octets (AC-A6). Les noms des co
 ### Le flux d'un `tools/call` (32-8b)
 
 ```text
-outil_pour(nom, portées) ─ nom réservé ? ── kesh_lire_envoi ─► arguments ─► envois_mcp::lire(acces, lecture_envois, cle_id, n)
+outil_pour(nom, portées) ─ nom réservé ? ── kesh_lire_envoi ─► arguments ─► envois_mcp::lire(cle, lecture_envois, n)
         │                                                          └─► ReponseMcp::Envoi(EnAttente|Valide(ContenuValide)|Refuse|Echu|Inconnu)
         ▼                                                              puis journaliser_appel (fail closed)
 politique::autoriser(cle.validation) ─► Autorisation::{Envoi, Depot}
@@ -924,8 +1175,8 @@ pub(crate) enum Sortie { Envoyer(DonneesEnvoyables), Deposer(EnvoiAValider) }
 pub(crate) fn appliquer(a: Autorisation, d: Donnees) -> Sortie { /* Envoi → Envoyer ; Depot → Deposer(rendu visible) */ }
 pub struct EnvoiAValider { resume: String, contenu: String }            // aucun accesseur
 impl EnvoiAValider {
-    pub(in crate::mcp) async fn deposer(self, acces: &…, ecriture: &EcritureEnvois, cle_id: i64,
-        validation: SendValidation, outil: &'static str, debut: Instant) -> Result<AccuseEnvoi, RefusDepot> { … }
+    pub(in crate::mcp) async fn deposer(self, cle: &CleMcpAuthentifiee, ecriture: &EcritureEnvois,
+        outil: &'static str, debut: Instant) -> Result<AccuseEnvoi, RefusDepot> { … }   // aucun `ContexteAcces` nommé
 }
 fn texte_a_valider(d: &Donnees) -> String { /* blocs de texte, dans l'ordre, joints par "\n\n" */ }
 
@@ -934,14 +1185,22 @@ pub const MCP_ENVOI_OCTETS_MAX: usize = 65_536;
 pub const MCP_ENVOI_RESUME_OCTETS_MAX: usize = 1_024;
 pub const MCP_ENVOI_DUREE_S: u32 = 86_400;
 pub const MCP_ENVOIS_EN_ATTENTE_MAX: u32 = 20;
-pub fn est_cache(c: char) -> bool { (c.is_control() && c != '\n' && c != '\t') || kesh_core::text::is_hidden_format(c) }
-pub fn rendre_visible(s: &str) -> String { /* \u{XXXX} pour chaque est_cache */ }
+pub fn rendre_visible(s: &str) -> String { /* \u{XXXX} pour chaque c où kesh_core::text::is_hidden_in_text(c) (32-8b0) */ }
 pub fn verifier_contenu_modifie(s: &str) -> Result<(), MotifContenu> { … }
 pub struct AccuseEnvoi { numero: i64 }                                 // construit ici seulement
 pub struct ContenuValide { numero: i64, modifie: bool, texte: String } // construit ici seulement
 pub enum EnvoiLu { EnAttente { numero: i64 }, Valide(ContenuValide), Refuse { numero: i64 }, Echu { numero: i64 }, Inconnu { numero: i64 } }
-pub async fn deposer(…) -> Result<AccuseEnvoi, RefusDepot> { … }       // RefusDepot = TropVolumineux | TropNombreux | Interne
-pub async fn lire(acces: &ContexteAcces, lecture: &LectureEnvois, cle_id: i64, numero: i64) -> Result<EnvoiLu, ErreurEnvoi> { … }
+pub async fn deposer(cle: &CleMcpAuthentifiee, ecriture: &EcritureEnvois, outil: &'static str, debut: Instant,
+    resume: &str, contenu: &str) -> Result<AccuseEnvoi, RefusDepot> { … }  // RefusDepot = TropVolumineux | TropNombreux | Interne
+pub async fn lire(cle: &CleMcpAuthentifiee, lecture: &LectureEnvois, numero: i64) -> Result<EnvoiLu, ErreurEnvoi> { … }
+
+// services/serveur_mcp.rs — fixée ici (AC-B11) ; la 32-10a-iii l'appelle avec `None`
+pub(crate) fn entree_appel(cle: &CleMcpAuthentifiee, outil: &str, issue: IssueAppel, duree_ms: u64,
+    envoi: Option<i64>) -> NewAuditLogEntry { … }  // cinq clés ; six avec "envoi"
+
+// kesh-core/src/text.rs (32-8b0)
+pub fn is_hidden_format(c: char) -> bool { … }    // Cf, Co, Cn + deux listes (AC-ii1 de la 32-10a)
+pub fn is_hidden_in_text(c: char) -> bool { (c.is_control() && c != '\n' && c != '\t') || is_hidden_format(c) }
 
 // services/poignees.rs — patron de LecturePrompts / EcriturePrompts (32-10a)
 pub struct LectureEnvois(MySqlPool);   // pool en lecture seule du MCP ; une méthode : lire_pour_cle
@@ -953,8 +1212,8 @@ pub enum ReponseEnvoi { Depose(AccuseEnvoi), EnAttente(i64), Valide(ContenuValid
 ```
 
 ⚠️ `ReponseMcp::Accuse(AccuseProposition)` de la 32-10a-iii est **un autre accusé** (une version de prompt) : la 32-8b
-ne le réemploie pas et ne le nomme pas (C-32-8-7). ⚠️ `src/mcp/` passe `&cle.acces` sans nommer `ContexteAcces` (garde
-N24 de la 32-6a, point (2)).
+ne le réemploie pas et ne le nomme pas (C-32-8-7). ⚠️ `src/mcp/` passe la clé entière (`&CleMcpAuthentifiee`) et ne
+nomme jamais `ContexteAcces` (garde N24 de la 32-6a, point (2)) ; le service lit `cle.acces`.
 
 ### Les textes envoyés à l'agent (constantes françaises, C-32-6-22 ; `mcp/textes.rs`)
 
@@ -997,16 +1256,26 @@ entiers et un booléen.
 `frontend/src/routes/(app)/+layout.svelte:147-170` ; `frontend/scripts/lint-i18n-ownership.js:3-6` ;
 `crates/kesh-i18n/locales/fr-CH/messages.ftl:1695` ; `frontend/src/lib/features/open-items/panels.test.ts:5`, `:164` ;
 `frontend/src/lib/features/reminders/ReminderHistory.svelte:51` ; `docs/manual/fr/admin-manual.tex:1414`, `:2230`,
-`:2237`, `:2249`.
+`:2237`, `:2249`. Ajoutées en validation P1 : `kesh-db/tests/migrations_upgrade_path.rs:115-125`, `:133-145`,
+`:198-213` ; `crates/kesh-db/migrations.sha384` (dernière ligne) ; `kesh-db/tests/test_schema_guard.rs:602-695` ;
+`kesh-api/src/exports/global.rs:109-111`, `:167`, `:189-192`, `:219-224`, `:653-672`, `:677` ; `CHANGELOG.md:15-16` ;
+`docs/manual/fr/user-manual.tex:3027-3033` ; `kesh-db/src/repositories/mcp_keys.rs:304` (`set_send_validation_in_tx`) ;
+`services/cles_mcp.rs:102-105` ; `services/mod.rs:44-56`, `:77-90` ; `tests/admin_pat_denied_e2e.rs:826-836`, `:885` ;
+`tests/services_motif.rs:2052-2066` ; `tests/textes_coherents.rs:19` ; `frontend/tests/e2e/bank-accounts-crud.spec.ts:199-220` ;
+fiche 32-10a, l. 583-635 (AC-ii1) ; fiche 32-6, l. 516 (`MotifArgument::Invalide`), l. 693-698 (garde N24) ; fiche 32-5,
+l. 497-503 (routes de la 32-5c).
 
 ### Fichiers touchés (prévus)
 
 - **32-8a** : `crates/kesh-db/migrations/<horodatage>_mcp_sends.sql` (neuf) ; `crates/kesh-db/src/entities/{mcp_send.rs
   (neuf), mod.rs}` ; `crates/kesh-db/src/repositories/{mcp_sends.rs (neuf), mod.rs}` ; `crates/kesh-db/src/backup.rs` ;
   `crates/kesh-db/test-schema/0001_schema_squash.sql` ; `crates/kesh-db/tests/mcp_sends_repository.rs` (neuf) ;
+  `crates/kesh-db/migrations.sha384` ; `crates/kesh-db/tests/migrations_upgrade_path.rs` ;
   `docs/migrations-idempotence-audit.md` ; `crates/kesh-api/tests/{admin_full_export_e2e.rs, admin_full_import_e2e.rs,
-  onboarding_audit_e2e.rs}` ; `docs/manual/fr/admin-manual.{tex,pdf}`.
-- **32-8b** : `crates/kesh-api/src/mcp/{politique.rs, repartiteur.rs, reponse.rs, textes.rs, outil.rs, mod.rs}` ;
+  onboarding_audit_e2e.rs}` ; `crates/kesh-api/src/exports/global.rs`.
+- **32-8b0** : `crates/kesh-core/{Cargo.toml, src/text.rs}` ; `Cargo.lock` ; `crates/kesh-api/src/routes/bank_accounts.rs` ;
+  `CHANGELOG.md`.
+- **32-8b** : `crates/kesh-api/src/mcp/{politique.rs, repartiteur.rs, reponse.rs, textes.rs, outil.rs, registre.rs, mod.rs}` ;
   `crates/kesh-api/src/services/{envois_mcp.rs (neuf), poignees.rs, serveur_mcp.rs, mod.rs}` ;
   `crates/kesh-api/src/routes/{mcp_envois.rs (neuf), mod.rs}` ; `crates/kesh-api/src/lib.rs` ;
   `crates/kesh-api/src/audit_labels.rs` ; `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ;
@@ -1014,17 +1283,22 @@ entiers et un booléen.
   common/mcp.rs, services_motif.rs, admin_pat_denied_e2e.rs, audit_route_registry.rs}`.
 - **32-8c** : `frontend/src/lib/features/mcp-sends/**` (neuf) ; `frontend/src/routes/(app)/admin/mcp/sends/{+page.svelte,
   [id]/+page.svelte}` (neufs) ; `frontend/src/routes/(app)/+layout.svelte` ; `frontend/tests/e2e/mcp-sends.spec.ts`
-  (neuf) ; `crates/kesh-i18n/locales/*/messages.ftl` ; `docs/manual/fr/admin-manual.{tex,pdf}` ; `CHANGELOG.md`.
+  (neuf) ; `crates/kesh-i18n/locales/*/messages.ftl` ; `docs/manual/fr/{admin-manual,user-manual}.{tex,pdf}` ;
+  `CHANGELOG.md`.
 
 ### Le manuel (axe de revue)
 
-- **32-8a** : les quatre passages de l'AC-A12 ; contrôle `grep -n "MCP" docs/manual/fr/admin-manual.tex` et PDF
-  aplati.
+- **32-8a** : aucun texte (déplacés à la 32-8c, AC-C11) ; la revue vérifie qu'aucun n'est oublié : `grep -nE "MCP|deux
+  tables|en ajoute deux" docs/manual/fr/*.tex CHANGELOG.md`.
+- **32-8b0** : l'entrée *Modifié* du CHANGELOG (AC-03) ; aucun manuel ne décrit les caractères refusés d'une
+  description de compte (`grep -ni invisible docs/manual/fr/*.tex` → trois lignes, aucune sur ce point).
 - **32-8b** : **aucun** texte du manuel ne décrit encore l'écran ; mais deux phrases **deviennent fausses** et se
   corrigent à la 32-8c ou à la 32-7 : la liste de la 32-7 de la fiche 32-6 (« une clé `required` ne peut appeler aucun
-  outil avant la 32-8 ») ; et `README.md:233`, `website/roadmap.html:375` (« montrées avant de partir ») deviennent
-  **vraies** pour une clé `required` et restent fausses pour une clé `dispensée` — à la 32-11 (C-32-10a-29).
-- **32-8c** : la section de l'AC-C10.
+  outil avant la 32-8 ») ; et `README.md:233` (« les données montrées à l'utilisateur avant de partir à l'agent ») et
+  `website/roadmap.html:375` (en anglais : « the data shown to the user before it is sent to the agent » ; citation
+  rectifiée en validation P1, R18) deviennent **vraies** pour une clé `required` et restent fausses pour une clé
+  `dispensée` — à la 32-11 (C-32-10a-29).
+- **32-8c** : la section de l'AC-C10 et les textes de l'AC-C11.
 
 ### Ce que la 32-8 laisse aux stories suivantes
 
@@ -1036,12 +1310,30 @@ entiers et un booléen.
   64 Kio de texte **après** le rendu visible (et sous les 10 000 jetons de Claude Code) ; l'enveloppe « donnée non
   fiable » paraît telle quelle à l'écran ; le **résumé** de chaque outil est court (≤ 1 Kio), écrit par Kesh, et dit la
   demande.
-- **32-10a** : si la 32-8b fusionne avant la 32-10a-iii, celle-ci réemploie `entree_appel`, `LimiteAtteinte` et le
-  nom réservé dans `registre_coherent` ; le prompt standard de l'agent de développement (clé souvent `dispensée`) peut
-  dire la poignée pour une clé `requise`.
+- **32-10a** : voir § *Note pour la 32-10a* ; le prompt standard de l'agent de développement (clé souvent
+  `dispensée`) peut dire la poignée pour une clé `requise`.
 - **32-11** : le parcours de bout en bout avec un client réel, dont l'observation (d) du § 2.4 (l'agent rappelle-t-il
   `kesh_lire_envoi`, combien de fois) ; le test de contrat gagne le dépôt et la relecture ; le manuel utilisateur (ce
   qu'on montre avant l'envoi) ; `README.md:233` et `website/roadmap.html:375` ; `docs/api-external.md`.
+
+### Note pour la 32-10a (à reporter dans sa fiche par l'orchestrateur ; constatée à son étape 0)
+
+*Écrite en validation P1, sur décision de l'orchestrateur : l'ordre est 32-8a, 32-8b0, 32-8b, puis 32-10a.*
+
+1. **32-10a-ii, AC-ii1 — « créer » devient « réemployer ».** `kesh_core::text::is_hidden_format` et la dépendance
+   `unicode-properties` sont posés par la **32-8b0**, exactement selon l'AC-ii1 (catégories, deux listes, exception des
+   emojis retirée, tests un par cas, test déménagé de `bank_accounts.rs`) ; la description d'un compte bancaire
+   l'emploie déjà. Le `is_forbidden_in_prompt(c)` de l'AC-ii1 **est** `kesh_core::text::is_hidden_in_text(c)` (même
+   expression) : la 32-10a-ii l'emploie sous ce nom, sans en écrire une seconde définition. Ses mutations Mii10, Mii12,
+   Mii13 sont les M04, M05, M06 de la 32-8b0 : la 32-10a-ii les **constate** (les tests existent) au lieu de les jouer de
+   nouveau. Le point 8 de ses points pour Guy (description d'un compte) est porté par la 32-8b0 (point 11 ici).
+2. **32-10a-iii, AC-iii2 et AC-iii3 — `entree_appel` et `ErreurOutil::LimiteAtteinte` existent.** La signature est
+   celle de l'AC-B11 de la 32-8 : `entree_appel(cle, outil, issue, duree_ms, envoi: Option<i64>)` ; la proposition d'un
+   prompt l'appelle avec **`None`** — détail à cinq clés, comme l'AC-iii3 l'exige. `LimiteAtteinte` et l'issue
+   `limite_atteinte` sont posées ; la 32-10a-iii les réemploie pour son plafond.
+3. **`registre_coherent`** refuse déjà le nom réservé `kesh_lire_envoi` ; la 32-10a-iii y ajoute `proposer_prompt`.
+4. **Les compteurs** que la 32-10a recompte (`TABLES_TO_TRUNCATE`, l'export, `admin-manual.tex:2249`, le CHANGELOG,
+   `migrations_upgrade_path.rs`, `admin_pat_denied_e2e.rs`) partent des valeurs que la 32-8 aura posées.
 
 ### Références
 
@@ -1069,7 +1361,9 @@ boucle de revue* et son exception `kesh-db`, *Recompter*) ; `docs/agents-orchest
    suivre fidèlement. Pour information.
 5. **Les envois sont dans la sauvegarde**, contenu compris — y compris une version que tu as modifiée — et vidés à la
    remise à zéro (C-32-8-16, #722). Le contenu d'un envoi échu n'est effacé qu'au dépôt suivant (C-32-8-15) ; une purge
-   périodique serait une tâche de fond de plus. Faut-il l'ajouter ?
+   périodique serait une tâche de fond de plus. Et les **lignes** elles-mêmes ne se suppriment jamais : seuls le contenu
+   et le résumé s'effacent, les métadonnées (clé, outil, dates, état) restent et entrent dans chaque sauvegarde
+   (validation P1, F9). Faut-il une purge périodique, et faut-il supprimer les lignes anciennes ?
 6. **Les bornes** : 20 envois en attente par clé, 64 Kio par envoi, 1 Kio de résumé (C-32-8-13, C-32-8-14). Pour
    information.
 7. **Les caractères invisibles** (contrôles bidirectionnels, espaces de largeur nulle…) sont remplacés par leur code
@@ -1079,25 +1373,33 @@ boucle de revue* et son exception `kesh-db`, *Recompter*) ; `docs/agents-orchest
    un agent qui conduirait ton navigateur connecté pourrait valider à ta place (D18). Le manuel le dira.
 9. **Le numéro d'envoi est séquentiel** (C-32-8-17) : l'agent voit combien d'envois ont été créés entre deux des siens.
    Pour information.
+10. **Un écart à la spike, déclaré** (C-32-8-27 ; validation P1, R11) : la spike voulait que tu rejoues, **avant** la
+    32-8, l'observation (d) du § 2.4 — un agent réel rappelle-t-il `kesh_lire_envoi` de lui-même, et combien de fois
+    tant que l'envoi attend ? Ce rejeu demande un client réel, que toi seul peux lancer ; la fiche ne l'attend pas. Si
+    l'agent oublie de relire, rien ne part, et c'est un texte à ajuster. Veux-tu le faire avant le développement de la
+    32-8b, ou le laisser à la 32-11 ?
+11. **La description d'un compte bancaire refuse désormais quelques caractères invisibles de plus**, dont les emojis
+    composés (`⚠️`, `👨‍💻` ; les emojis simples restent admis) : c'est le prédicat partagé de la 32-8b0, que la fiche
+    32-10a prévoyait (son point 8). Changement de comportement voulu, sans effet attendu sur une saisie ordinaire ;
+    *recommandation* : l'accepter.
+12. **Rien ne t'avertit qu'un envoi attend** (validation P1, F9) : l'agent te le dit, et l'écran a son entrée de menu,
+    mais aucun compteur ni pastille. Faut-il un compteur dans le menu (à la 32-7 ou après la recette) ?
 
 ## Demandes à l'orchestrateur
 
-1. **L'ordre des migrations** (C-32-0-12) : la 32-8a et la 32-10a-i sont toutes deux 🗄️ et viennent après la 32-6a ;
-   une seule à la fois en développement. Laquelle d'abord ? Chacune recompte à son étape 0.
-2. **Le prédicat partagé** (C-32-8-23) : la 32-8b emploie `kesh_core::text::is_hidden_format` (32-10a-ii, AC-ii1).
-   Recommandation : développer la 32-8b **après** la 32-10a-ii. Sinon, la 32-8b crée le prédicat **exactement** selon
-   l'AC-ii1 de la 32-10a (tests compris), et la 32-10a-ii le réemploie — à inscrire aux deux fiches.
-3. **`entree_appel` et `ErreurOutil::LimiteAtteinte`** (32-10a-iii) : celle des deux stories qui fusionne la première
-   les introduit selon la forme des AC-iii2 et AC-iii3 de la 32-10a ; l'autre les réemploie.
-4. **Les amendements de la 32-6** que la 32-8b fait en connaissance de cause : `autoriser` sans `Refus`, `appliquer` à
-   deux sorties (AC-a15, AC-a23) ; `cle_requise_refusee_sans_execution` remplacé par `cle_requise_deposee` ; Ma50
-   (« `executer` avant `autoriser` ») sans objet ; `e1_rien_ne_part_sous_cle_requise`, `tools_list_filtre`,
-   `registre_coherent`, le test d'`initialize`, l'énumération des issues de l'AC-b1 et `chaque_appel_est_journalise`
-   amendés. À noter dans la fiche 32-6 si elle n'est pas encore développée.
+1. **L'ordre** (décidé en validation P1) : 32-6a, 32-6b, 32-8a, 32-8b0, 32-8b, 32-8c, puis 32-10a — la 32-8a avant la
+   32-10a-i pour les migrations. Rien à décider ; à reporter au fichier d'epic (demande 6).
+2. **La note pour la 32-10a** (§ *Dev Notes — Note pour la 32-10a*) : à reporter dans la fiche 32-10a, dont l'AC-ii1
+   devient « réemployer », l'AC-iii3 « appeler `entree_appel` avec `None` » ; je n'écris pas dans son worktree.
+3. **Les amendements de la 32-6** que la 32-8b fait en connaissance de cause : la liste close de l'**AC-B15**. À noter
+   dans la fiche 32-6 si elle n'est pas encore développée.
+4. **La clé `32-8b0-predicat-caracteres-caches`** est ajoutée au registre de sprint de ce worktree ; à verser avec les
+   autres au merge.
 5. **Le registre de l'epic** : verser `epic-32-choix-autonomes-328.md` par union au merge.
 6. **Le fichier d'epic, au-delà de l'annotation du § 32-8** : l'*Ordre de dépendance* (« les trois stories 🗄️ se
    suivent, 32-5 → 32-6 → 32-10a ») et le § *Release v0.16.0* (« trois migrations non breaking au plus ») ignorent la
-   32-8a ; la spike le relevait déjà (§ 6.1). Je ne les ai pas réécrits — l'ordre des migrations est la demande 1.
+   32-8a ; la spike le relevait déjà (§ 6.1). Je ne les ai pas réécrits : l'ordre confirmé (demande 1) est à y porter
+   par l'orchestrateur.
 
 ## À recontrôler à l'étape 0 du développement
 
@@ -1108,14 +1410,16 @@ Ligne lue citée au Change Log pour chacun :
   `ReponseMcp` et de `rendre`, d'`arguments::<T>()`, de `ErreurOutil` et `MotifArgument`, de `textes.rs` (constantes,
   dont `TEXTE_VALIDATION_REQUISE` à retirer), de `journaliser_appel` et de l'énumération des issues ; les noms et les
   périmètres réels des gardes de `mcp_gardes_lexicales.rs` ; `tests/common/{mcp,capture_trace}.rs`.
-- **La 32-10a** (C-32-8-23) : `is_hidden_format` présent ? `entree_appel`, `LimiteAtteinte`, la variante
-  `ReponseMcp::Accuse`, `LecturePrompts`/`EcriturePrompts` et le lieu du pool en lecture seule (`let pool_mcp = …`) ;
-  sa migration, si elle a fusionné (horodatage, compteurs P5, `TABLES_TO_TRUNCATE`, `admin_full_export_e2e.rs:282`, le
-  manuel `:2249`).
+- **La 32-10a** (C-32-8-23) : sous l'ordre fixé, elle n'a pas fusionné ; sa fiche est relue (l'AC-ii1, que la 32-8b0
+  reproduit ; l'AC-iii3, dont la 32-8b fixe `entree_appel`) et toute modification depuis `00114c6d` se cite. Pour la
+  32-8b : `is_hidden_in_text` présent (32-8b0 fusionnée) ; le lieu du pool en lecture seule dans `lib.rs`, où
+  `LectureEnvois` sera posée.
 - **La 32-5c** : routes `/api/v1/admin/mcp/keys…` (forme réelle, pour l'E2E de la 32-8c), compte d'`ADMIN_COUPLES`,
   compteurs d'`audit_route_registry.rs`, nom de `repositories::mcp_keys` dans ses routes (mesure de
   `envois_lus_par_leurs_lieux`).
-- **Les comptes** : `TABLES_TO_TRUNCATE` (41 au relevé), l'export (41), les migrations (84), `EMPTY_BEFORE_RESET`,
+- **Les comptes** : `TABLES_TO_TRUNCATE` (41 au relevé), l'export (41), `TABLES_HORS_EXPORT` et le doc-comment
+  `global.rs:167` (41), les migrations (84), `migrations_upgrade_path.rs` (`84`, `total - 50`), la dernière ligne de
+  `migrations.sha384`, `EMPTY_BEFORE_RESET`,
   les fichiers de `services/` de (vi) (onze au relevé), `FABRIQUES_V2`, la ligne du marqueur des routes d'administration
   (`lib.rs:381` au relevé).
 - **MariaDB 10.11** : l'expression des `CHECK` du schéma, `NOW(3) + INTERVAL ? SECOND` lié en paramètre, l'état dérivé
@@ -1133,7 +1437,8 @@ Ligne lue citée au Change Log pour chacun :
 ### Statut des parties
 
 - **32-8a** — `ready-for-dev`, après la 32-6a et la 32-6b ; une migration à la fois.
-- **32-8b** — `ready-for-dev`, après la 32-8a (et, recommandé, la 32-10a-ii).
+- **32-8b0** — `ready-for-dev`, après la 32-8a (ordre de l'orchestrateur).
+- **32-8b** — `ready-for-dev`, après la 32-8b0.
 - **32-8c** — `ready-for-dev`, après la 32-8b.
 
 ### Completion Notes List
@@ -1145,3 +1450,4 @@ Ligne lue citée au Change Log pour chacun :
 | Date | Étape | Résumé |
 |---|---|---|
 | 2026-10-25 | création | Fiche rédigée en autonomie (Opus 5.5) contre `fa5b3468`, fiches 32-6 (`ecb26dc8`) et 32-10a (`00114c6d`) lues en lecture seule ; registre C-32-8-1 à C-32-8-26 ; découpage en 32-8a / 32-8b / 32-8c (dix modules distincts sans découpage, quatorze en somme ; 5 / 5 / 4) ; epic annoté (§ 32-8 : la table remplace « l'état en mémoire ») ; `sprint-status.yaml` : `32-8-validation-avant-envoi` en `split`, trois sous-clés `ready-for-dev` ; prompt de validation P1 `328-validate-prompt-p1.md` (Sonnet, lentilles R et F). Décomptes (recomptés par `grep` sur la fiche) : 36 AC (12 / 14 / 10), 15 tâches (5 / 6 / 4), 47 mutations (14 / 27 / 6), inventaire D1 à D23. |
+| 2026-10-25 | validation P1 | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `328-validate-prompt-p1.md` ; rapports `kesh-gate-logs/328-validate-p1-{R,F}.md`) : R 0/3/8/9, F 0/1/2/6 ⇒ **trend P1 : 0 CRITICAL / 4 HIGH / 10 MEDIUM / 15 LOW** (doublons R3 = F1, R6 = F4, R10 ⊂ F8, R20 ⊂ F3 comptés une fois par lentille). Motif dominant : **des sites du dépôt que la fiche n'avait pas confrontés** (l'export global, `migrations.sha384`, le site positionnel de `migrations_upgrade_path.rs`, le CHANGELOG, le manuel utilisateur) et **l'ordre des stories**, qui faisait de la 32-8 la créatrice du prédicat. **Décisions de l'orchestrateur appliquées** : ordre fixé 32-6a, 32-6b, 32-8a, 32-8b, puis 32-10a ; **R3 = F1** → sous-partie amont **32-8b0** (prédicat `is_hidden_format` selon l'AC-ii1 de la 32-10a, citée l. 583-635, dépendance `unicode-properties`, description d'un compte bancaire, test déménagé ; AC-01 à AC-04, M01 à M08, point 11 pour Guy, note pour la 32-10a-ii ; **R17** : `est_cache` supprimé, le prédicat des envois **est** `kesh_core::text::is_hidden_in_text`) ; **R1** → `exports/global.rs` intégré à la 32-8a (AC-A12, MA16, fait 15) ; la 32-8a passant à six modules, **sa partie documentaire passe à la 32-8c** (AC-C11 : `admin-manual.tex`, `user-manual.tex:3027-3033`, les deux PDF, `CHANGELOG.md:15-16` — R5), motivé au § *Le découpage* (C-32-8-29) ; **R2** → ligne de `migrations.sha384` en dernier, après les tests des `CHECK` (AC-A1, fait 17) ; **R11** → écart à la spike déclaré, point 10 pour Guy, sans bloquer (C-32-8-27). **MEDIUM remédiés** : R4 (fait 6 rectifié ; `migrations_upgrade_path.rs` 84 → 85 **et** `total - 50` → `total - 51` du même pas, AC-A11) ; R6 = F4 (`deposer` et `lire` reçoivent `&CleMcpAuthentifiee` ; aucun `ContexteAcces` dans `src/mcp/`) ; R7 (AC-B15 : liste close des amendements du code de la 32-6, dont le nom réservé avant `outil_pour`, la branche de dépôt sans `journaliser_appel`, `tools/list`, les champs d'`EtatMcp`) ; R8 (signature d'`entree_appel`, cinq ou six clés, la 32-8b l'introduit, la 32-10a-iii l'appelle avec `None` ; AC-b2 de la 32-6b amendée ; MB28) ; R9 (R2, R4 et l'inventaire des écritures de `services/mod.rs` amendés pour `deposer` et `purger_echus`) ; R10 (test `decision_modifiee_ecrit_le_texte_recu`, MA15 ; MB7 reformulée) ; F2 (ligne incohérente clé/société aux AC-A7 et AC-B7, MA12 et MB9 non équivalentes) ; F3 (garde `aucun_evenement_ne_nomme_le_contenu` sur texte aplati, mesurée : 255 appels de macros `tracing`, 117 ouverts en fin de ligne ; MB20 rattachée à elle ; remplace le `grep` mono-ligne, R20). **LOW remédiés** : R12 (champs d'`EtatMcp` à l'AC-B15), R13 (`MotifArgument::Invalide`, pas de `HorsBornes` ; test `arguments_de_kesh_lire_envoi`, MB29), R14 (`(8, 25)` et `discriminating = 6` nommés), R15 (témoins de `MOTIF_V2`), R16 (G9), R18 (citation du site en anglais), R19 (D27), F5 (variante non textuelle de `BlocContenu` refusée), F6 (un code `\u{…}` peut être d'origine : avis et manuel), F7 (D24 à D26, test `politique_changee_entre_depot_et_relecture`), F8 (MB7, MB10 reformulées), F9 (plafond après l'exécution et lignes jamais supprimées au § *Ce que les gardes ne voient pas* ; points 5 et 12 pour Guy). **Propagation** : greppés sur la fiche et le registre — `est_cache`, `HorsBornes`, `AC-A12` (renvois au manuel), « dix modules », « quatorze », `5 / 5 / 4`, « après la 32-10a-ii », « si la 32-10a-iii », « telle que fusionnée », `&cle.acces`, `cle_id, cle.validation`, `D1 à D23`, `47 mutations` ; ne restent que l'entrée « création » (relevé daté), les mentions explicites du retrait et l'AC-A12 nouvelle (export global). **Décomptes** (recomptés par `grep`) : **42 AC** (A 12 / B0 4 / B 15 / C 11), **18 tâches** (5 / 3 / 6 / 4), **59 mutations** (MA 16 / M0 8 / MB 29 / MC 6), inventaire D1 à D27, registre C-32-8-1 à **29** (C-1, 5, 23 annotés) ; modules **5 / 3 / 5 / 4**, douze distincts, dix-sept en somme. **1 passe sur 8.** Prompt de la passe suivante : `328-validate-prompt-p2.md` (Opus, R et F). |

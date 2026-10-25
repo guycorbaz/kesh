@@ -455,6 +455,11 @@ journalisé. **Découpage** (règle préventive, dix modules) : **32-8a** 🗄�
 **32-8b** (la poignée côté serveur et les routes de décision de l'Administrateur), **32-8c** (l'écran, le manuel) —
 5, 5 et 4 modules.)*
 
+*(Annoté de nouveau le 2026-10-25, validation P1 de la fiche 32-8 : **quatre parties**. L'ordre est fixé par
+l'orchestrateur — 32-6a, 32-6b, 32-8a, 32-8b0, 32-8b, 32-8c, puis 32-10a — si bien que la 32-8 crée le prédicat partagé
+des caractères cachés que la 32-10a prévoyait (sous-partie **32-8b0**, `kesh-core`, 3 modules) ; la 32-8a gagne l'export
+global et cède sa partie documentaire à la 32-8c. Modules 5, 3, 5 et 4.)*
+
 ### 32-9 — Les outils de lecture (deux clés)
 
 Chaque outil est un `McpTool` sur un service de la 32-3 / 32-4, sa portée déclarée, son schéma d'entrée strict, ses
