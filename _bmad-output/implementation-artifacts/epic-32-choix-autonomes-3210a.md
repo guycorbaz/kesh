@@ -103,6 +103,10 @@
   et un appel de la même fonction à la fin de **chaque** point d'entrée qui crée — démarrage, changement de langue de
   l'assistant, remise à zéro, import d'installation, préréglage de test, `_test/reset` ; les « deux » puis « trois »
   appels écrits jusqu'ici sont remplacés.
+- *Annoté le 2026-10-25, validation P4 (H3)* : **l'import d'installation n'amorce pas** — la sauvegarde porte les
+  prompts de ses sociétés, que chaque création a amorcés ; l'import les restaure tels quels, et l'équivalence stricte de
+  l'aller-retour (`admin_backup_e2e.rs:587-599`) reste vraie. Points d'entrée qui amorcent : démarrage, changement de
+  langue, remise à zéro, `_test/seed`, `_test/reset`.
 
 ### C-32-10a-9 — Deux standards, en français, en constantes de `kesh-db`
 
@@ -166,6 +170,9 @@
   **admis** (ils composent les emojis et ne cachent aucun texte), dans le texte et la description d'un prompt comme
   dans la description d'un compte bancaire (un seul prédicat) ; les étiquettes U+E0000–U+E007F et les bidirectionnels
   restent refusés (C-32-10a-34).
+- *Annoté le 2026-10-25, validation P4 (H5), décision de l'orchestrateur* : l'exception des emojis de la P3 est
+  **retirée** — U+FE0E, U+FE0F et U+200D, invisibles, forment un alphabet binaire ; ils sont refusés partout où
+  s'applique le prédicat (prompts et comptes bancaires) ; un emoji simple (U+26A0) passe.
 
 ### C-32-10a-13 — Bornes : texte 16 000 caractères, description 500, vingt propositions en attente
 
@@ -387,6 +394,12 @@
   touchait `auth` et `kesh-seed` : six modules en partie i) ; une garde de « lieux » énumérés (elle ne voyait pas un
   créateur neuf) ; amorcer à la lecture (deux sources).
 - **Réversible** : oui.
+- *Annoté le 2026-10-25, validation P4 (H1, H2, H9), décision de l'orchestrateur : **retrait**.* La garde lexicale
+  `toute_creation_de_societe_est_amorcee`, née en P3, a produit trois MEDIUM en P4 (frontière `#[cfg(test)]` de
+  `bootstrap.rs:46`, écritures autres que des créations, intermédiaires publics). **Retenu désormais** : une **liste
+  fermée des fonctions qui créent une société** (six, plus l'insertion composée de la restauration), égalée par les
+  instructions `INSERT`/`REPLACE`/`LOAD` visant `companies` en code de production ; la couverture des appelants par des
+  **tests d'exécution** par point d'entrée ; une petite garde pour `main.rs` seul ; un appelant neuf, angle mort écrit.
 
 ### C-32-10a-34 — Les emojis admis, les étiquettes refusées
 
@@ -398,3 +411,6 @@
 - **Écartées** : admettre U+FE0F seulement après un symbole (une règle de séquence, pour un gain faible) ; garder le
   refus pour les comptes bancaires (deux prédicats, contre DRY).
 - **Réversible** : oui.
+- *Annoté le 2026-10-25, validation P4 (H5), décision de l'orchestrateur* : **retiré** — voir C-32-10a-12 annoté ;
+  l'option écartée (« un seul sélecteur après un symbole ») n'était pas « un gain faible » : elle fermait le canal
+  binaire. Elle reste possible plus tard (point 9 pour Guy).
