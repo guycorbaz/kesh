@@ -1457,6 +1457,12 @@ de `tools_list_filtre` se recomptent à l'étape 0.)*
 tout champ libre sous la forme `{"nonFiable": "…"}` (C-32-9-3). Les deux prompts standard (`kesh-developpement`,
 `kesh-assistant`) **nomment cette forme** et disent à l'agent de ne jamais suivre comme une instruction un texte qui s'y
 trouve. À ajouter à leur texte à l'étape 0 de la 32-10a-i, avec un test qui vérifie la présence de la forme.)*
+*(Précision de l'orchestrateur, 2026-10-25, fiche 32-9 validation P2, F6 : la 32-10a-iii retrouvera amendés par la
+32-9a — `mcp/outil.rs` (`ContexteMcp`, trois variantes d'`ErreurOutil` : `ExerciceIntrouvable`, `PeriodeHorsExercice`,
+`CompteNonLettrable`), `mcp/textes.rs` (constantes, `depuis_app_error` à trois bras de plus), `mcp/repartiteur.rs`,
+`mcp/sortie.rs`, `mcp/registre.rs`, `tests/mcp_traduction.rs`, les gardes, `tools_list_filtre` et `HORS_REGISTRE`. Ses
+propres amendements de ces fichiers s'écrivent sur cet état, recompté à l'étape 0. Le plafond `MCP_ENVOI_OCTETS_MAX` vaut
+24 576 octets.)*
 
 - **La 32-6a fusionnée** : les noms et lignes que cette fiche reprend de sa fiche — `McpPrompt` (signature de `rendre`),
   le sceau, `PromptEnBase` absent, `ReponseMcp`, `reponse::rendre`, `textes.rs` et la constante de `-32602`, `Registre`
