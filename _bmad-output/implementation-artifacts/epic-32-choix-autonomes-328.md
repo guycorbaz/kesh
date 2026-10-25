@@ -346,3 +346,45 @@ elles. Chaque choix : contexte, option retenue, alternatives écartées, révers
   update de doc … dans le même commit ou la même PR que le code qui le motive »), déclarée et soumise à Guy (point 13).
   Le coût réel est de **six** sites incomplets sur `main` entre les deux fusions, non deux : `admin-manual.tex:1414`,
   `:2230`, `:2237`, `:2249`, `user-manual.tex:3027-3033`, `CHANGELOG.md:15-16` — jamais dans une version publiée.)*
+
+### C-32-8-30 — La 32-8b0 se développe avant la 32-8a (décision de l'orchestrateur, 2026-10-25)
+
+- **Contexte** : la fiche place la 32-8b0 après la 32-8a (ordre 32-6a, 32-6b, 32-8a, 32-8b0, 32-8b, 32-8c). La 32-6b est
+  en revue, la 32-8a pas commencée.
+- **Retenu** (décision de l'orchestrateur) : la 32-8b0 se développe **maintenant**, sur `story/32-8b0`, partie de
+  `story/32-8` et intégrant `origin/main` à `7e47bff4` (32-6a fusionnée). Elle ne dépend pas de la 32-8a : elle touche
+  `kesh-core`, la description d'un compte bancaire et le CHANGELOG — ni la table des envois, ni le MCP. Constaté à
+  l'étape 0 : aucun fichier de `crates/kesh-api/src/mcp/` ni de `crates/kesh-db/migrations/` dans son diff (`git diff
+  --stat origin/main...HEAD`, cité au Change Log de la fiche).
+- **Écartées** : attendre la 32-8a (rien ne l'impose) ; développer la 32-8b0 dans la branche de la 32-8a (les mêler
+  rendrait la revue de la 32-8a, 🗄️, plus large qu'elle ne l'est).
+- **Réversible** : oui. *Ce qu'il reste à tenir* : l'ordre **b0 avant b** est inchangé (la 32-8b emploie
+  `is_hidden_in_text`) ; la 32-8a et la 32-8b0 se fusionnent dans l'ordre que l'orchestrateur choisira, sans conflit
+  attendu (fichiers disjoints, sauf `CHANGELOG.md` et la fiche).
+
+### C-32-8-31 — Un troisième prédicat public, `is_hidden_in_line`, pour les valeurs d'une ligne (P3-R4, étape 0 de la 32-8b0)
+
+- **Contexte** : la validation P3 (R4) relevait que la 32-10a-ii emploie, pour la **description** d'un prompt, « sans
+  caractère de `is_forbidden_in_description` » (son AC-ii2), fonction **privée** à `routes/bank_accounts.rs` ; à
+  trancher à l'étape 0 de la 32-8b0. La note de l'orchestrateur dans la fiche 32-10a (§ *À recontrôler*, précision (2)
+  de la validation P3 de la 32-8) dit : « la description d'un prompt emploie le prédicat public livré par la 32-8b0 ».
+- **Retenu** : `kesh_core::text::is_hidden_in_line(c) = c.is_control() || is_hidden_format(c)`, public, à côté
+  d'`is_hidden_in_text` ; `is_forbidden_in_description` (privée, `bank_accounts.rs`) le délègue, si bien que l'AC-03
+  (« devient `c.is_control() || is_hidden_format(c)` ») est tenue à la lettre par une seule définition. La 32-10a-ii
+  l'emploiera pour la description d'un prompt, sans recopier la route.
+- **Écartées** : rendre `is_forbidden_in_description` publique (une route n'exporte pas un prédicat que `kesh-core`
+  peut porter, et son nom dit « compte ») ; laisser la 32-10a-ii écrire `c.is_control() || is_hidden_format(c)` à son
+  tour (deux définitions d'une même règle, contre DRY).
+- **Réversible** : oui (une fonction de trois lignes).
+
+### C-32-8-32 — Le message de refus d'une description de compte reste inchangé (étape 0 de la 32-8b0)
+
+- **Contexte** : la description refuse désormais aussi les caractères d'usage privé et non attribués ; le message
+  (« La description ne peut pas contenir de saut de ligne ni de caractère de contrôle ou de mise en page »,
+  `bank_accounts.rs`, chaîne française codée en dur, non i18n) ne les nomme pas expressément, et il est épinglé à
+  l'octet par `tests/bank_accounts_e2e.rs:2106`.
+- **Retenu** : message inchangé ; aucun libellé ni aucune clé i18n ajoutée. La note de l'orchestrateur sur le repli
+  égal à la valeur fr-CH (fiche l. ≈908, issue #758) est donc **sans objet** pour la 32-8b0.
+- **Écartées** : réécrire le message (« … ni de caractère invisible ») — gain faible pour un cas qu'une saisie ordinaire
+  ne rencontre qu'au copier-coller du logo Apple, au prix d'un test e2e et d'un texte à revoir.
+- **Réversible** : oui.
