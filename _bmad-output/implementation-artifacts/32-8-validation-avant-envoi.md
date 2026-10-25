@@ -1538,12 +1538,13 @@ boucle de revue* et son exception `kesh-db`, *Recompter*) ; `docs/agents-orchest
 
 **Note de l'orchestrateur (2026-10-25), fiche 32-9 validation P2, R5** : pour qu'une réponse MCP reste « sous 10 000
 jetons » (spike § 6), `MCP_ENVOI_OCTETS_MAX` passe de **65 536 à 24 576 octets** (hypothèse prudente de 2,5 octets par
-jeton). À l'étape 0 de la 32-8b, **greper la valeur** dans cette fiche et dans le code (`grep -nE '65 ?536|65 ?537|64 ?Kio'`) et
+jeton). À l'étape 0 de la 32-8b, **greper la valeur** dans cette fiche et dans le code (`grep -nE '65[ _]?53[0-9]|64 ?Kio|64 ?\* ?1024'`, qui voit aussi la graphie Rust `65_536` et la valeur dérivée
+`65 530` → `24 570`) et
 la remplacer partout par 24 576 / 24 577 / 24 Kio — AC-B4, AC-B9, `taille_des_envois`, `contenu_modifie_controle`
 (65 536 admis, 65 537 refusé), le compteur d'écran « N octets sur … » de la 32-8c, le point 6 pour Guy et le manuel de la
 32-8c ; liste non close, c'est le grep qui la ferme. Si la 32-8 est déjà fusionnée avec 65 536, c'est la 32-9a qui amende
 la constante et ces sites. *(Note corrigée le 2026-10-25, validation P3 de la fiche 32-9, R1 : la première version ne
-nommait que quatre sites.)*
+nommait que quatre sites ; motif élargi le même jour, validation P4 de la 32-9, H2.)*
 
 Ligne lue citée au Change Log pour chacun :
 
