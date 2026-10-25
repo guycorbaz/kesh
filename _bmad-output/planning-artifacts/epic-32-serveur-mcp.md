@@ -442,6 +442,19 @@ modifiée à l'écran est celle que reçoit le client (test de bout en bout) ; u
 transmet rien ; l'outil de démonstration y passe. **Risque** : **élevé** — mécanisme neuf, dépendant des clients ; c'est
 pourquoi il passe **avant** les outils de données (32-9).
 
+*(Annoté le 2026-10-25, fiche de la 32-8 — `implementation-artifacts/32-8-validation-avant-envoi.md`, C-32-8-24. Le
+texte ci-dessus, du kickoff, est conservé ; il est **périmé** sur trois points par la spike (C-32-2-17, C-32-2-24) et par
+la réponse de Guy à Q10 : (1) **la forme est la poignée** (Q10 (c)) — l'outil rend aussitôt « envoi n° X en attente »,
+l'utilisateur valide tel quel, modifie ou refuse dans un écran de Kesh à son rythme, l'agent relit par `kesh_lire_envoi` ;
+(2) **« état en mémoire (perdu au redémarrage) » est remplacé par une table**, `mcp_sends` — la story devient 🗄️ :
+une migration de plus, à compter au plafond de la release (§ *Release v0.16.0*), table au `.keshbackup` (#722), vidée à
+la remise à zéro ; un envoi survit à un redémarrage, et son échéance (24 h) se lit à l'horloge de la base ; (3) **« par
+construction » disparaît** : la propriété est l'exigence E1 de la spike, tenue par des types à champs privés et prouvée
+par des tests et des mutations. La validation est **par clé** (Q12) : une clé `dispensée` envoie sans écran, chaque envoi
+journalisé. **Découpage** (règle préventive, dix modules) : **32-8a** 🗄️ (la table, son dépôt, la sauvegarde),
+**32-8b** (la poignée côté serveur et les routes de décision de l'Administrateur), **32-8c** (l'écran, le manuel) —
+5, 5 et 4 modules.)*
+
 ### 32-9 — Les outils de lecture (deux clés)
 
 Chaque outil est un `McpTool` sur un service de la 32-3 / 32-4, sa portée déclarée, son schéma d'entrée strict, ses
