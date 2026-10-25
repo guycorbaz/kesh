@@ -497,3 +497,51 @@ impl McpTool for LecteurRetarde {
         })
     }
 }
+
+/// L'outil **en erreur** (Story 32-6b) : rend toujours `erreur`, sans rien
+/// lire — pour les issues `introuvable` et `erreur` du journal.
+pub struct EnErreur {
+    pub nom: &'static str,
+    pub erreur: ErreurOutil,
+}
+
+impl McpTool for EnErreur {
+    fn nom(&self) -> &'static str {
+        self.nom
+    }
+    fn description(&self) -> &'static str {
+        "outil de test : rend une erreur"
+    }
+    fn schema_entree(&self) -> &'static str {
+        SCHEMA_VIDE
+    }
+    fn portee(&self) -> Portee {
+        Portee::BooksRead
+    }
+    fn executer<'a>(&'a self, _ctx: &'a ContexteMcp<'a>, _a: serde_json::Value) -> FuturOutil<'a> {
+        let erreur = self.erreur;
+        Box::pin(async move { Err(erreur) })
+    }
+}
+
+/// L'outil **paniqué** (Story 32-6b) : panique à l'exécution — pour l'issue
+/// `erreur` d'un panic (C-32-6-58).
+pub struct Panique;
+
+impl McpTool for Panique {
+    fn nom(&self) -> &'static str {
+        "panique"
+    }
+    fn description(&self) -> &'static str {
+        "outil de test : panique"
+    }
+    fn schema_entree(&self) -> &'static str {
+        SCHEMA_VIDE
+    }
+    fn portee(&self) -> Portee {
+        Portee::BooksRead
+    }
+    fn executer<'a>(&'a self, _ctx: &'a ContexteMcp<'a>, _a: serde_json::Value) -> FuturOutil<'a> {
+        Box::pin(async move { panic!("outil de test : panique voulue (326b)") })
+    }
+}

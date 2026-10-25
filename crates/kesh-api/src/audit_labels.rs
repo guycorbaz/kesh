@@ -151,6 +151,7 @@ pub const ACTIONS: &[&str] = &[
     "journal_entry.updated",
     "lettering.created",
     "lettering.removed",
+    "mcp.tool_called",
     "mcp_key.created",
     "mcp_key.revoked",
     "mcp_key.send_validation_changed",

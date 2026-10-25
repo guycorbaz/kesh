@@ -1,6 +1,6 @@
 # Story 32.6 : l'endpoint `/mcp` — protocole, garde, lecture seule, filtre, journal
 
-Status: in-progress (32-6a en review, 32-6b ready-for-dev)
+Status: review (32-6a done, fusionnée ; 32-6b en review)
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-6`, branche `story/32-6` partie de `main`
 `b723e3d9` (32-5a fusionnée). Registre : `epic-32-choix-autonomes-326.md` (C-32-6-1 à C-32-6-41). Clé courte : `326`.
@@ -792,6 +792,13 @@ Il en va de même des tests qui reposent sur un outillage existant (une capture,
 36. **AC-b5 — libellés.** `mcp.tool_called` à `audit_labels::ACTIONS` (ordre trié), libellé dans les **quatre**
     locales (`audit-log-action-…`, repli égal à la valeur fr-CH) ; `audit_label_registry.rs` vert ; l'action est un
     **littéral** au site `NewAuditLogEntry::user(` (règle R4 de `services`).
+    *(Annoté le 2026-10-25, développement de la 32-6b, issue #758 : « repli égal à la valeur fr-CH » supposait une
+    garde générale qui n'existe pas (#758) — et il est ici **sans objet**. Les libellés `audit-log-action-…` n'ont
+    **aucun repli** côté frontend : l'écran du journal affiche ce que la route lui rend, sans rien traduire
+    (`audit_labels.rs:5-6`, `grep -rn "audit-log-action" frontend/src` → rien). Leur seule traduction est au serveur,
+    et la garde réelle qui les tient est `audit_label_registry.rs::chaque_code_a_son_libelle_dans_les_quatre_catalogues`
+    (`:1007`), qui lit les **quatre** `.ftl` directement — c'est elle, non une garde de repli, qui fait rougir une
+    locale en retard. Le repli de `I18nBundle::format` sur le français n'est donc jamais atteint pour ces clés.)*
 37. **AC-b6 — le registre des routes suit (validation P1, F7).** `tests/audit_route_registry.rs` : `("route_service",
     "mcp::recevoir", …)` (le verbe de l'AC-a6 ; validation P5, R1) passe de `Exempt("issue #723 — …")` à **`Traced`** (rejeu `SansEcritureAuJournal`
     inchangé, AC-a6) ; compteurs littéraux qui bougent, nommés : `traced` (`:770-771`, +1, généalogie « plus chaque appel
@@ -838,7 +845,7 @@ routes::mcp::recevoir.with_state(EtatMcp))` → `mcp::transport` (pair → règl
 | N23 | `unsafe` (transmutation d'une poignée) | `forbid(unsafe_code)` sur la lib (`lib.rs:9`) | compilateur |
 | N24 | **un contexte d'accès fabriqué** à société, utilisateur et portées arbitraires (`ContexteAcces::mcp`, public, `services/acces.rs:84`) et passé à un service par un outil, le transport ou une tâche | `ContexteAcces::mcp(` appelé en production par `authentifier` seul ; un outil ne nomme pas `ContexteAcces::` | gardes `contexte_acces_mcp_construit_par_authentifier_seul` et `mcp_sans_pool` (AC-a30) — la fonction reste publique pour les tests d'intégration (`services_motif.rs`), d'où une garde et non une visibilité |
 | N25 | **une `AppError` rendue par `IntoResponse`** (corps de l'API, message recopié) | toute réponse sort de `reponse::rendre(ReponseMcp)`, énumération sans `AppError` ; `AppError` convertie par `depuis_app_error` et le `match` d'`authentifier` seuls | conception (AC-a31) + garde d'inventaire `reponses_par_rendre_seul` + test d'égalité de chaque refus |
-| N26 | **un panic** dans un outil ou le transport ; **l'abandon** de la requête par le client | un panic interrompt la connexion, l'abandon annule le futur : **aucune donnée ne part** dans les deux cas *(amendé le 2026-10-25, revue de code P2, C-32-6-56 : dans un **outil**, le panic est pris dans sa tâche et rend `TEXTE_ERREUR_INTERNE`, détail au journal du serveur ; l'abandon n'annule plus l'outil, qui va au bout dans sa tâche, résultat jeté — aucune donnée ne part non plus)* | **angle mort** : ni réponse, ni ligne de journal (32-6b) — voir ci-dessous |
+| N26 | **un panic** dans un outil ou le transport ; **l'abandon** de la requête par le client | un panic interrompt la connexion, l'abandon annule le futur : **aucune donnée ne part** dans les deux cas *(amendé le 2026-10-25, revue de code P2, C-32-6-56 : dans un **outil**, le panic est pris dans sa tâche et rend `TEXTE_ERREUR_INTERNE`, détail au journal du serveur ; l'abandon n'annule plus l'outil, qui va au bout dans sa tâche, résultat jeté — aucune donnée ne part non plus)* | **angle mort** : ni réponse, ni ligne de journal (32-6b) — voir ci-dessous *(annoté le 2026-10-25, développement de la 32-6b, C-32-6-58 : le panic d'un **outil** et l'abandon par le client **sont journalisés** — issue `erreur` pour le premier, issue réelle de l'outil allé au bout pour le second —, la ligne s'écrivant dans la tâche de l'appel ; tests `chaque_appel_est_journalise` (cas `panique`) et `appel_abandonne_journalise`. Reste sans ligne : le panic **hors de l'outil**, dans la tâche de l'appel elle-même, et l'arrêt du runtime — aucune donnée ne part)* |
 | N27 | **un appel de `appliquer`/`autoriser` hors du répartiteur, ou un `impl McpTool` hors de `src/mcp/outils/`** (qui échapperait aux gardes de ce dossier) ; **le pool ordinaire** à portée du transport | `EtatMcp` sans `AppState` ; sites de la politique, des outils et de `Donnees::nouvelles` écrits ; ⚠️ depuis la P3, le pool ordinaire **est** à portée du transport sous `etat.garde` (lisible des seuls `services`) : il ne peut pas servir aux outils, `ContexteMcp::nouveau` exigeant un `LectureOutils` (N28) | gardes `outils_et_politique_en_leur_lieu` et `mcp_sans_pool` (AC-a30) |
 | N28 | **la `garde` passée aux outils, ou la `lecture` des outils à la règle « servi » ou à l'authentification** (validation P4, F2 = R1) | deux types distincts : `Lecture` (garde) et `LectureOutils` (outils), ce dernier jamais déballé hors de `mcp/outil.rs` | compilateur (Ma51, Ma52 déclarées non compilables) ; garde `outils_et_politique_en_leur_lieu` (`LectureOutils::nouvelle` en `lib.rs` seul) — **angle mort** : un accesseur public ajouté à `LectureOutils` (revue) |
 
@@ -846,7 +853,8 @@ routes::mcp::recevoir.with_state(EtatMcp))` → `mcp::transport` (pair → règl
 même emprunt** après une forme qui défait le mode de session (N20) ; une forme interdite **composée à l'exécution** ou
 émise par une dépendance (N20) ; un service de `services/` qui emploierait `lecture.pool()` pour écrire (N20, vu par
 l'exécution seulement) ; une macro qui fabriquerait un identifiant (N1, N3, N24) ; la configuration de Traefik et de
-Docker (N13) ; un appel paniqué ou abandonné, non journalisé (N26).
+Docker (N13) ; un appel paniqué ou abandonné, non journalisé (N26). *(Annoté le 2026-10-25, 32-6b : réduit au panic
+hors de l'outil et à l'arrêt du runtime, C-32-6-58.)*
 
 ## La frontière avec la 32-8
 
@@ -895,11 +903,11 @@ phrase « son bras `Required` et rien d'autre » allait au-delà de ce que la co
 - [ ] **T-a6** — mutations Ma1 à Ma52 (et Ma13b, Ma20b, Ma23b), gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
 
 ### 32-6b
-- [ ] **T-b0** — étape 0 : 32-6a fusionnée ; recontrôle des faits 8, 9, de `audit_labels.rs` et des compteurs
+- [x] **T-b0** — étape 0 : 32-6a fusionnée ; recontrôle des faits 8, 9, de `audit_labels.rs` et des compteurs
   d'`audit_route_registry.rs`.
-- [ ] **T-b1** — `journaliser_appel`, appel au répartiteur, fail closed (AC-b1, AC-b3, AC-b4).
-- [ ] **T-b2** — libellés, quatre locales (AC-b5) ; registre des routes (AC-b6) ; `mcp_journal_e2e.rs` (AC-b1 à AC-b4).
-- [ ] **T-b3** — mutations Mb1 à Mb6, gates.
+- [x] **T-b1** — `journaliser_appel`, appel au répartiteur, fail closed (AC-b1, AC-b3, AC-b4).
+- [x] **T-b2** — libellés, quatre locales (AC-b5) ; registre des routes (AC-b6) ; `mcp_journal_e2e.rs` (AC-b1 à AC-b4).
+- [x] **T-b3** — mutations Mb1 à Mb6, gates. *(Et Mb7, Mq1a, Mq1b — C-32-6-58, C-32-6-61.)*
 
 ## Tests et mutations prévus
 
@@ -1002,7 +1010,10 @@ Tests hors mutations, nommés au Dev Agent Record : `chemins_voisins` (N10), `re
   les clients paraissent venir de son adresse (privée, admise par défaut) ; derrière une publication de port Docker
   par le mandataire en espace utilisateur (`userland-proxy`), tous peuvent paraître venir de la passerelle du pont
   Docker (`172.17.0.1`) : **tout le monde est admis**. Kesh ne le détecte pas (sauf si Guy retient la garde du point
-  2 bis). **Non vérifié sur le NAS** — point 2 pour Guy, texte de la 32-7.
+  2 bis). **Non vérifié sur le NAS** — point 2 pour Guy, texte de la 32-7. *(Annoté le 2026-10-25, développement de
+  la 32-6b : la parenthèse « sauf si Guy retient la garde du point 2 bis » est **close** — Guy a écarté la garde 2 bis
+  (la sécurité relève de l'infrastructure, décision relayée par l'orchestrateur). Kesh ne détecte donc pas ce cas, et
+  le test (f) de l'AC-a9 reste tel quel.)*
 - **Traefik et `X-Forwarded-For`** : selon `forwardedHeaders.trustedIPs`, Traefik conserve ou écrase l'en-tête reçu ;
   la lecture de droite à gauche est juste dans les deux cas, à condition que seul Traefik soit déclaré. Non éprouvé
   contre un Traefik réel.
@@ -1024,7 +1035,12 @@ Tests hors mutations, nommés au Dev Agent Record : `chemins_voisins` (N10), `re
 - **Un panic ou un abandon (N26)** : aucune donnée ne part, mais l'appel n'est pas journalisé (32-6b) ; seul le journal
   du serveur garde le panic. *(Amendé le 2026-10-25, revue de code P2, C-32-6-56 : l'outil s'exécute désormais dans une
   tâche que l'abandon n'annule pas ; la 32-6b décidera si la ligne de journal d'un appel abandonné s'écrit dans cette
-  tâche, à sa fin.)*
+  tâche, à sa fin.)* *(Annoté le 2026-10-25, développement de la 32-6b — décidé, C-32-6-58 : la ligne s'écrit dans une
+  **tâche de l'appel**, qui englobe la tâche de l'outil, à l'issue — abandon compris, avec l'issue réelle ; un panic
+  d'outil est l'issue `erreur`. Ce qui reste sans ligne : un panic dans la tâche de l'appel elle-même (hors de l'outil)
+  et l'arrêt du runtime ; aucune donnée ne part alors. Corollaire : un appel abandonné **écrit** une ligne après la
+  coupure — un porteur de clé qui coupe en boucle remplit le journal comme il le remplirait sans couper (aucune limite
+  de débit, point 8).)*
 - **Une donnée recopiée dans un prompt** par un humain ou un agent approuvé (cas assumé d'E1) : la 32-10a.
 - **La restriction de construction** (AC-a23) ne voit pas un `Box::leak` d'un texte fabriqué à l'exécution logé dans
   une réponse statique : la revue le lit à chaque ajout de méthode.
@@ -1297,6 +1313,9 @@ l'AC-a27) ; `tests/services_rollout.rs:60`, `:519` ; `axum-0.8.9/src/routing/mod
     exactement `/mcp` (`/mcp/` rend la page de l'application) ; en-têtes de contrôle répétés refusés ; toute
     notification reçoit 202 ; les erreurs JSON-RPC du transport n'ont pas d'`id` (C-32-6-42) ; un `0.0.0.0/0` dans les
     plages admet tout client (#738) ; un `KESH_PUBLIC_BASE_URL` à sous-chemin donne son origine (A2).
+    *(Annoté le 2026-10-25, développement de la 32-6b : un `0.0.0.0/0` admet tout client **IPv4** — une IPv4 mappée
+    comprise, le pair étant normalisé (`reseau.rs:64`, `to_canonical`) —, non un client IPv6 natif : `ipnet` ne range
+    pas une adresse IPv6 dans une plage IPv4 (`reseau.rs:57`). Pour tout client IPv6, `::/0`. Texte de la 32-7.)*
   - **A3** — `admin-manual.tex:2935` (et son PDF) dit « 122 des 128 routes à verbe mutant », « 122 + 4 + 2 = 128 » : le
     registre compte désormais **129** routes (`exempt` 5, avec `/mcp`) — et la 32-6b passera `/mcp` à `Traced` (123). À
     corriger par la 32-11 avec la synchronisation des documents de release.
@@ -1338,6 +1357,8 @@ boucle de revue* et son exception `kesh-db`, *Recompter*, *Recette visuelle*) ; 
      en-tête — la garde n'y peut rien ; un Traefik non déclaré rendrait `/mcp` **muet** pour tous (route absente), le
      diagnostic n'étant qu'au journal du serveur ; et un « oui » inverse le test (f) et appelle une mutation de plus.
      Oui ou non ?
+     *(Annoté le 2026-10-25, développement de la 32-6b : **non** — Guy a écarté la garde 2 bis, la sécurité relevant
+     de l'infrastructure (décision relayée par l'orchestrateur). Point clos ; le test (f) reste tel quel.)*
 3. **Le découpage en deux parties** (32-6a garde, 32-6b journal) et l'ordre a → b — confirmé par l'orchestrateur le
    2026-10-25 ; pour information.
 4. **L'acteur du journal** : chaque appel est écrit au nom du **créateur de la clé** (`actor_type = 'user'`), la clé
@@ -1440,10 +1461,15 @@ Ligne lue citée au Change Log pour chacun :
 32-6a : Opus 5.5 (Claude Code), en autonomie, le 2026-10-25, worktree `kesh-32-6`, branche `story/32-6`, partie de
 `3dbd3692` (`main` `76869cc9` fusionné : toute la 32-5).
 
+32-6b : Opus 5.5 (Claude Code), en autonomie, le 2026-10-25, worktree `kesh-32-6`, branche `story/32-6b`, partie de
+`origin/main` `7e47bff4` (la 32-6a fusionnée, PR #760).
+
 ### Statut des parties
 
 - **32-6a** — `review` (développement terminé le 2026-10-25 ; revue P1 à lancer, `326a-review-prompt-p1.md`).
-- **32-6b** — `ready-for-dev`, après la 32-6a.
+  *(Annoté le 2026-10-25 : `done`, revue terminée en trois passes, fusionnée par la PR #760.)*
+- **32-6b** — `review` (développement terminé le 2026-10-25 ; revue P1 à lancer, `32-6b-review-prompt-p1.md`, Sonnet,
+  lentilles B, E, A).
 
 ### Completion Notes List
 
@@ -1577,7 +1603,9 @@ déclarées non compilables** — Ma23b (`E0451`, `Autorisation { _prive: () }` 
 "/mcp\b"` → rien) ; les PDF aplatis ne contiennent pas `/mcp`. `docs/api-external.md:185` et `:831` (183 et 829 à
 `b723e3d9`) restent bornés à la v0.2 ; `admin-manual.tex:2237`, `:2249`, `:2925`, `user-manual.tex:3028-3030`, `:3204`,
 `:3214` et la brochure (`:480`) restent vrais. À ajouter à la liste de la 32-7 : un `0.0.0.0/0` (ou `::/0`) dans les
-plages admet tout client (#738) ; un mandataire saisi en IPv4 mappée est reconnu.
+plages admet tout client (#738) ; un mandataire saisi en IPv4 mappée est reconnu. *(Annoté le 2026-10-25,
+développement de la 32-6b : « tout client » est trop large — `0.0.0.0/0` admet tout client **IPv4**, `::/0` tout
+client **IPv6** ; il faut les deux pour tout admettre. Cf. l'annotation du même jour à la liste E8.)*
 
 #### 32-6a — décomptes (recomptés, périmètre `76869cc9..11ec6ca7`)
 
@@ -1592,6 +1620,122 @@ plages admet tout client (#738) ; un mandataire saisi en IPv4 mappée est reconn
 - Registre des routes : `LIB_ROUTES` 129, `traced` 122, `exempt` 5, `no_matter` 2, total 132, `sans_ecriture` 104,
   `tout` 132. `services_motif.rs` : `EXCEPTIONS_V1` 1, `FABRIQUES_V2` 3, `services/` 12.
 
+#### 32-6b — l'étape 0 (lignes lues à `7e47bff4`)
+
+- **32-6a fusionnée** : `git log -1` → `7e47bff4 Story 32-6a : le point d'entrée /mcp et sa garde (refs #723) (#760)`,
+  branche partie de lui (`git merge-base --is-ancestor 7e47bff4 HEAD` → vrai).
+- **Fait 8** : `actor_type ENUM('user', 'api_key')` (`20260605000002_audit_log_actor.sql:23`), `ActorType::from_str`
+  strict (`entities/audit_log.rs:53-62`) ; `insert_in_tx` dérive `actor_label` et `company_id` par sous-SELECT sur
+  `users` (`repositories/audit_log.rs:95`) — une transaction, jamais commitée par lui (`:65`). ⇒ C-32-6-21 tient sans
+  migration (`actor_type = 'user'`).
+- **Fait 9** : `extract_counted` à `audit_route_registry.rs:520`, lecture de `lib.rs` par `include_str!` (`:583`,
+  `:779`), `appels_non_handlers` (`:750`) ; l'entrée `("route_service", "mcp::recevoir", Exempt("issue #723 — journal
+  des appels MCP : Story 32-6b"), SansEcritureAuJournal)` à `:343` ; compteurs littéraux `LIB_ROUTES.len()` 129
+  (`:891`), `traced` 122 (`:896`), `exempt` 5 (`:916`), totaux 132 (`:923`), `sans_ecriture` 104 (`:1248`),
+  `tout.len()` 132 (`:1258`). Message d'`exempt` d'avant la 32-6a : `"4 routes d'auth (#435)"`
+  (`git show 76869cc9:… | grep -n "exempt, 4"` → `:799`), rétabli.
+- **`audit_labels.rs`** : `"mcp_key"` aux `ENTITY_TYPES` (`:46`) ; `ACTIONS` triées (test
+  `les_trois_listes_sont_triees_et_sans_doublon`), 124 entrées ; `mcp.tool_called` se range **avant** `mcp_key.created`
+  (`.` < `_`).
+- **Le répartiteur fusionné (C-32-6-56)** : `repartiteur.rs` (à `7e47bff4`) lance l'outil par
+  `let tache = tokio::spawn(async move { … outil.executer(&ctx, arguments).await })` et l'attend sous
+  `tokio::time::timeout(etat.registre.delai(), tache)` ; le panic de la tâche rend `TEXTE_ERREUR_INTERNE`
+  (bras `Ok(Err(panne))`) ; le gestionnaire `routes::mcp::recevoir` est abandonné par hyper à la coupure du client.
+  Conséquence et règle : **C-32-6-58** (tâche de l'appel qui englobe la tâche de l'outil ; l'entrée s'y écrit à
+  l'issue, abandon et panic d'outil compris ; fail closed).
+- **`Trace::pool`** : doc-comment à `poignees.rs:51-55` (non `:46-49`, cité par la fiche à `b723e3d9`) ; l'inventaire
+  clos à `services/mod.rs:77-92` (« 3. Aucune autre » à `:87`).
+- **§ *À recontrôler à l'étape 0*** : ses points visent la 32-6a (32-5b/5d/5c, Axum, `tower-http`, schéma
+  `2025-11-25`, MariaDB 1146, P7-H1 à H4) et ont été traités par elle (§ *32-6a — l'étape 0* ci-dessus) ; deux
+  concernent aussi la 32-6b, relus : la capture de `tracing` — sans objet, la 32-6b ne capte pas `tracing`, elle lit
+  la base ; `touch_last_used` *best-effort* sur la `Trace` (`cles_mcp.rs:101-106`) — inchangé, sans incidence sur le
+  journal (il n'écrit pas `audit_log`).
+- **Aucune migration** : `git diff --name-status origin/main..HEAD -- crates/kesh-db/migrations` → vide ; P1 à P8 sans
+  objet ; aucun fichier de `kesh-db` touché (gate complet au dernier commit seulement, non en boucle).
+
+#### 32-6b — ce qui a été fait
+
+- `services::serveur_mcp::journaliser_appel(&Trace, &AppelOutil)`, `IssueAppel` (énumération fermée, codes de
+  l'AC-b1), `OUTIL_INCONNU` ; dérogation R1, R2, R7 écrite en tête du module ; doc de `Trace::pool` et inventaire clos
+  de `services/mod.rs` complétés.
+- `mcp::repartiteur` : `appeler` (tâche de l'appel), `appeler_et_journaliser` (issue → entrée → réponse, fail closed),
+  `traiter_appel` (l'ancien `appeler`, qui rend issue, nom et réponse), `issue_d_erreur` ; un `tools/call` à `params`
+  non objet passe désormais par `appeler` (même réponse, `-32602` `TEXTE_PARAMS_INVALIDES`) pour être journalisé.
+  Ordre des contrôles de `mcp/mod.rs` complété.
+- `mcp.tool_called` aux `ACTIONS` et dans les quatre `.ftl` ; `/mcp` à `Traced` au registre des routes (`traced` 123,
+  `exempt` 4).
+- Tests : `mcp_journal_e2e.rs` (six tests : `chaque_appel_est_journalise` — treize cas plus `delai_depasse`, dont
+  les deux sources d'`arguments_invalides` (quatre formes mal formées) et le panic —, `journal_sans_arguments_ni_donnees`,
+  `journal_indisponible_rien_ne_part`, `ce_qui_n_est_pas_journalise`, `appel_abandonne_journalise`,
+  `le_journal_n_execute_pas_l_outil_deux_fois`) ; outils de test `EnErreur` et `Panique` (`tests/common/mcp.rs`).
+- **#759** : marges des deux tests d'abandon élargies (C-32-6-61).
+- **Fiche** : annotations datées — AC-b5 (« repli égal à la valeur fr-CH », #758 : sans objet, la garde réelle est
+  `chaque_code_a_son_libelle_dans_les_quatre_catalogues`) ; `0.0.0.0/0` = tout client IPv4 (liste E8 et DAR de la
+  32-6a) ; garde 2 bis écartée par Guy (§ *Ce que les gardes ne voient pas* et point 2 bis) ; N26 (deux sites).
+- ⚠️ **Écart de méthode, déclaré** : le premier jet du bloc de journal de `serveur_mcp.rs` a été ajouté par `cat >>`
+  (consigne 14 : Edit seul) ; défait aussitôt par `git checkout --` et refait par l'outil Edit, avant toute
+  compilation.
+
+#### 32-6b — les mutations (une à une, `mutations_326b.py` du scratchpad, restauration `git checkout -- && touch`, diff résiduel nul vérifié pour chacune ; journaux `kesh-gate-logs/326b-mut-<id>.log`)
+
+| # | Mutation | Tuée par (assertion) |
+|---|---|---|
+| Mb1 | appel de `journaliser_appel` remplacé par `Ok(())` | les six tests de `mcp_journal_e2e` ; `chaque_appel_est_journalise` à « une ligne par appel » (`:181`) |
+| Mb2 | la demande entière (`params`, arguments compris) écrite en `outil` | `journal_sans_arguments_ni_donnees` (piège au détail, `:389`), `chaque_appel_est_journalise` (« détail de l'appel », `:194`) |
+| Mb3 | le nom reçu du client écrit pour un outil inconnu (`Box::leak`) | `journal_sans_arguments_ni_donnees` (`:389`, `PIEGE_NOM_326`), `chaque_appel_est_journalise` (cas `n_existe_pas`) |
+| Mb4 | journal *best-effort* (`Ok(()) \| Err(_) => reponse`) | `journal_indisponible_rien_ne_part` (égalité du corps, `:436`) |
+| Mb5 | `journaliser_appel` sur la `Lecture` des outils (READ ONLY) | les six tests (1792 → fail closed : aucune ligne, réponse d'erreur) |
+| Mb6 | un 401 journalisé en base (transport) | `ce_qui_n_est_pas_journalise` (« aucune ligne ajoutée », `:475`) |
+| Mb7 | tâche de l'appel retirée (journal dans le futur du gestionnaire) | `appel_abandonne_journalise` (« journalisé, une fois », `:521`) seul |
+| Mq1a | #759 : tâche de l'**outil** retirée (attente directe de son futur) | `abandon_au_delai_le_permis_reste_pris` (`:1638`) ; `chaque_appel_est_journalise` (cas `panique`, `:181`) ; `abandon_par_deconnexion_le_permis_reste_pris` **passe** — tenu par la tâche de l'appel (C-32-6-61) |
+| Mq1b | #759 : les **deux** tâches retirées (état d'avant C-32-6-56) | `abandon_au_delai_le_permis_reste_pris` (`:1638`) et `abandon_par_deconnexion_le_permis_reste_pris` (`:1681`) |
+
+Neuf mutations jouées, neuf tuées (Mq1a tuée par deux tests, le troisième passant pour la raison écrite). **Non
+éprouvée par mutation** : la règle 4 de C-32-6-58 (panic de la tâche de l'appel hors de l'outil) — aucun moyen propre
+de l'injecter ; elle se lit au bras `Err(panne)` d'`appeler`.
+
+#### 32-6b — les gates (réellement exécutés, au dernier commit de code `29ac7f41`)
+
+- Entre les pas : `cargo fmt --all -- --check` vert ; `clippy --workspace --all-targets -D warnings` vert au troisième
+  essai (deux rouges corrigés : liste de doc sans retrait à `services/mod.rs`, type complexe dans le test —
+  `326b-clippy-{1,2,3}.log`) ; ciblé `binary(mcp_journal_e2e) | binary(audit_label_registry) |
+  binary(audit_route_registry) | binary(mcp_transport_e2e) | binary(mcp_gardes_lexicales) | binary(services_motif)` :
+  **102/102** (`326b-cible-1.log`).
+- **Bases remises à zéro** avant le gate final : `kesh_326b` et `kesh_e2e_326b` (drop et create par le compte `kesh`,
+  migrations du worktree, seed ; `kesh-gate-logs/326b-reset-db.sh`, sans GRANT).
+- **Gate complet** `scripts/test-fast.sh --ci` sous verrou : fmt, clippy, nextest **4189 passés / 0 échoué / 7
+  ignorés** (`326b-gate-complet-1.log`).
+- **Frontend** : `npm run check` 0 erreur (29 avertissements, préexistants) ; `lint-i18n-ownership` PASS ;
+  `test:unit` **163 fichiers, 1939 tests** verts ; `build` vert (`326b-front-*.log`).
+- **E2E complet** (port 3327, base `kesh_e2e_326b`, dossiers neufs `/tmp/kesh-e2e-326b/`) : **314 passés, 8 échoués,
+  17 ignorés** (`326b-e2e-1.log`) — les **sept KF-029** (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`,
+  `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et `sidebar-navigation.spec.ts:75`, **rejoué seul : vert**
+  (`326b-e2e-seul-1.log`, 1 passé) — d'après `docs/testing.md:423`, c'est donc la pollution entre specs, non la KF-052
+  (qui échoue rejouée seule) ; dans les deux cas, dans les 7 à 10 attendus. Backends arrêtés par PID (aucun processus
+  `kesh-api` restant, `ps` vérifié).
+- Recette visuelle : sans objet (aucun contrôle visible).
+
+#### 32-6b — l'axe du manuel
+
+Aucun manuel touché. `admin-manual.tex:2935` (« 122 des 128 routes à verbe mutant », « quatre routes exemptées »,
+« 122 + 4 + 2 = 128 ») : après la 32-6b le registre compte **123 tracées sur 129**, **4 exemptées**, 2 sans mutation —
+« quatre routes exemptées » redevient vrai, les deux nombres restent périmés (A3 de la revue P1 de la 32-6a, renvoyé à
+la 32-11 ; la 32-6b ne l'élargit pas). Le manuel utilisateur ne nomme aucune action MCP (`grep -n "mcp_key\.\|tool_called"
+docs/manual/fr/*.tex` → rien). Ce que la 32-7 devra écrire en plus : un appel MCP paraît au journal au nom du créateur
+de la clé (déjà listé) ; **un appel abandonné par le client paraît quand même**, avec l'issue de l'outil allé au bout ;
+si le journal ne peut s'écrire, l'agent reçoit « Erreur interne. » et rien d'autre.
+
+#### 32-6b — décomptes (recomptés, périmètre `7e47bff4..29ac7f41`)
+
+- **Tests neufs : 6** (`grep -cE '^\s*#\[(sqlx::|tokio::)?test'` aux deux bornes) — `mcp_journal_e2e.rs` 0 → 6 ;
+  `mcp_transport_e2e.rs` 36 → 36 ; `audit_route_registry.rs` 12 → 12.
+- **Fichiers touchés : 14** (`git diff --name-status 7e47bff4..29ac7f41`) : 1 neuf, 13 modifiés ; aucune migration ;
+  `Cargo.lock` inchangé. 927 insertions, 69 suppressions.
+- `ACTIONS` : 124 → 125 ; clés `audit-log-action-*` : 124 → 125 par locale (`grep -c '^audit-log-action-'`), égal
+  dans les quatre.
+- Registre des routes : `LIB_ROUTES` 129, `traced` 123, `exempt` 4, `no_matter` 2, total 132, `sans_ecriture` 104,
+  `tout` 132 — seuls `traced` (+1) et `exempt` (−1) ont bougé.
+
 ### File List
 
 32-6a — neufs : `crates/kesh-api/src/mcp/{mod,outil,politique,prompts,registre,repartiteur,reponse,reseau,textes,transport}.rs`,
@@ -1605,6 +1749,12 @@ plages admet tout client (#738) ; un mandataire saisi en IPv4 mappée est reconn
 `crates/kesh-db/src/pool.rs`, `crates/kesh-db/src/repositories/mcp_server_settings.rs`,
 `crates/kesh-db/tests/mcp_keys_repository.rs` ; artefacts : cette fiche, `epic-32-choix-autonomes-326.md`,
 `326a-review-prompt-p1.md`, `sprint-status.yaml`.
+
+32-6b — neuf : `crates/kesh-api/tests/mcp_journal_e2e.rs` ; modifiés : `crates/kesh-api/src/audit_labels.rs`,
+`crates/kesh-api/src/mcp/{mod,repartiteur}.rs`, `crates/kesh-api/src/services/{mod,poignees,serveur_mcp}.rs`,
+`crates/kesh-api/tests/{audit_route_registry,mcp_transport_e2e}.rs`, `crates/kesh-api/tests/common/mcp.rs`,
+`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ; artefacts : cette fiche,
+`epic-32-choix-autonomes-326.md` (C-32-6-58 à 61), `32-6b-review-prompt-p1.md`, `sprint-status.yaml`.
 
 ## Change Log
 
@@ -1622,3 +1772,5 @@ plages admet tout client (#738) ; un mandataire saisi en IPv4 mappée est reconn
 | 2026-10-25 | **Revue de code P1 (32-6a)** | **Sonnet ×3** (lentilles B, E, A, contexte frais, prompt `326a-review-prompt-p1.md` ; rapports `kesh-gate-logs/326a-review-p1-{B,E,A}.md`) : B 0/0/0/4, E 0/0/2/6, A 0/0/0/6 ⇒ **trend P1 : 0 CRITICAL / 0 HIGH / 2 MEDIUM / 16 LOW** (doublons E1 = B2, B1 = E3 = A4, B3 = E7 comptés une fois par lentille). Tous **nés du développement** de la 32-6a (A3 : pour l'écart d'une unité seulement). L'écart C-32-6-42 (erreurs sans `id`) est **accepté par l'orchestrateur**, noté au registre. **MEDIUM remédiés** : E1 = B2 → `pool_lecture_seule(depuis, max, delai_instruction)` pose `SET SESSION max_statement_time` (délai du registre) dans `after_connect` ; **vérifié par un test réel**, le test (g) de `kesh-db/tests/pool_lecture_seule.rs` — une `SLEEP(5)` attendue échoue en 1969 avant 3 s, une `SLEEP(5)` abandonnée par son futur n'est plus exécutée 1,5 s après, l'emprunt suivant part d'une connexion neuve ; sans la borne, la partie (2) rougit seule (`326a-mut-P1-Mp1-g2-seul.log` : MariaDB poursuivait l'instruction abandonnée) ; `kesh_version` rend `delaiInstructionS` (C-32-6-54, AC-a28 amendé) ; un outil de test qui lancerait `SLEEP` par l'API est impossible sans ouvrir le pool hors des services : l'angle mort qui reste et le critère de la 32-9 sont écrits au § *Ce que les gardes ne voient pas* ; E2 → test `enveloppe_avant_la_cle` (sans clé, clé inconnue, clé valide : même 415, même 400). **LOW de sécurité traités** : B1 = E3 = A4 → l'étape 9 rend le 401 fixe, égal à celui d'une clé inconnue ; le 403 reste à l'étape 4, avant la clé (C-32-6-52) ; A1 → `lecture_seule_jamais_defaite` retire les lignes de commentaire **avant** les blocs (un `/*` de glob n'avale plus le code), garde lisibles les commentaires exécutables `/*!` et `/*M!` et les refuse en eux-mêmes dans le Rust (les `.sql` en sont exemptés : le squash de test en porte des dizaines, qui ne passent pas sur la connexion du MCP) ; la limite du `/*` dans une chaîne est écrite ; E4 → `transport::unique` : `Origin`, `Authorization`, `Content-Type`, `MCP-Protocol-Version` répétés refusés, test `en_tetes_repetes_refuses`, `Bearer  x` admis, décision pour les autres en-têtes écrite (C-32-6-53). **Autres LOW traités** : B3 = E7 (angle mort écrit, sans dédoublonnage) ; E5 (`chemins_voisins` : un attendu par chemin) ; E6 (bras `kesh_api::mcp` au motif) ; A2 (sous-chemin de `KESH_PUBLIC_BASE_URL` retiré, C-32-6-55) ; A5 (le total des tests neufs du développement est 64, non 65 — annotation datée) ; A6 (imports groupés de `kesh_db`, `socket2`, `from_raw_fd` aux motifs ; angle mort écrit ; doublons de `[dev-dependencies]` retirés). **Reportés à la 32-7 ou à la 32-11, écrits au § *Le manuel*** : B4 (message de type réponse : 400 au lieu de 202), E8 (liste de la 32-7 complétée), A3 (`admin-manual.tex:2935`, 128 → 129), `docs/api-external.md:185` et `:831`. **Tests neufs** (`11ec6ca7..63d3f659`) : **4** — `pool_lecture_seule.rs` 4 → 5, `mcp_transport_e2e.rs` 31 → 34 ; total depuis `76869cc9` : **68** (`grep -cE '^\s*#\[(sqlx::|tokio::)?test'`, 36 → 104). **Mutations** de la remédiation : **13 journaux** (`326a-mut-P1-*.log`), **toutes tuées** par l'assertion visée — Mp1 (borne retirée ; au dépôt et à l'API), Mp1-g2-seul (variante qui isole la partie (2) du test), Mp2 (délai constant au câblage), Mp3 (`Content-Type` déplacé après la clé), Mp4 (403 rétabli à l'étape 9), Mp5 à Mp8 (chaque en-tête répété lu en silence ; chaque rouge nomme son en-tête), Mp9 (commentaire exécutable effacé), Mp10 (bras `kesh_api::mcp` retiré), Mp11 (sous-chemin conservé). **Gates** : ciblé (lot `mcp_* | audit_route_registry | services_motif | services_rollout | cles_mcp_e2e | admin_pat_denied_e2e | pool_lecture_seule | mcp_keys_repository | mcp_admin_routes_e2e | lib kesh-api`) **739/739**, clippy `-D warnings` vert ; **gate complet** au dernier commit de code `63d3f659`, base remise à zéro juste avant, `test-fast.sh --ci` : **4181/4181**, 7 ignorés (`326a-p1-gate-complet.log`) ; frontend non touché, `npm run build` vert ; **E2E complet** (binaire reconstruit à 13:17 après le commit de 13:08, `/proc/<pid>/exe` vérifié, base `kesh_e2e_326a` remise à zéro, dossier neuf `/tmp/kesh-e2e-326a-p1/`) : **314 passés, 8 échecs, 17 ignorés** — les 7 KF-029 et **KF-052** (`sidebar-navigation.spec.ts:75`), **rejouée seule au vert** (`326a-p1-e2e-kf052.log` : 4 passés) ; backend arrêté par son PID. Le correctif touche la production : passe suivante **ciblée** (regression hunter, **Opus**, `326a-review-prompt-p2.md`, commit à part ; rapport `kesh-gate-logs/326a-review-p2.md`). |
 | 2026-10-25 | **Revue de code P2 (32-6a)** | **Passe ciblée** (regression hunter, **Opus**, une lentille, braquée sur `63d3f659` ; prompt `326a-review-prompt-p2.md` ; rapport `kesh-gate-logs/326a-review-p2.md`) : **0/0/2/7**. **Trend** : P1 Sonnet ×3 (B, E, A) 0/0/2/16 → **P2 Opus ciblée 0/0/2/7**. Les deux MEDIUM sont **nés de la remédiation P1** (H1 : une garantie affirmée que la borne ne donnait pas ; H2 : le « 403 » de l'étape 9 non propagé à la fiche). **Remédiation** (commit `dd4b8398`) : **H1** — fermé **par construction** (C-32-6-56) : l'outil s'exécute dans un `tokio::spawn` qui possède l'outil (`Registre::outil_pour` rend un `Arc<dyn McpTool>`), une copie du `ContexteAcces` et de `LectureOutils` ; le handler n'attend que la tâche, sous le délai ; un panic de l'outil rend `TEXTE_ERREUR_INTERNE`. Option `Drop` + `KILL QUERY` écartée, raison au registre. Prémisse de H1 relue à la source (`hyper-1.10.1/src/proto/h1/conn.rs:495-504`, `axum-0.8.9/src/serve/mod.rs:385-396`). Tests neufs `abandon_au_delai_le_permis_reste_pris` et `abandon_par_deconnexion_le_permis_reste_pris` (trois lectures du plan tenues par `LOCK TABLES accounts WRITE`, abandonnées ; témoin : le serveur les exécute encore ; une sonde `kesh_version` ne trouve aucun permis 300 ms ; servie après `UNLOCK`) ; verts trois fois de suite au binaire ciblé (`326a-p2-cible-2.log`). Textes faux corrigés : doc de `pool_lecture_seule` (`pool.rs`) et § *Ce que les gardes ne voient pas* (phrase barrée, correction datée, ce qui reste depuis C-32-6-56) ; valeur « quelques millisecondes » greppée sur tout le dépôt : aucun autre site ne parle de la borne ; N26 et l'angle mort « panic ou abandon » annotés ; doc du module `mcp` et de `MCP_POOL_CONNEXIONS`. **H2** — AC-a10 (deux sites) et ordre des contrôles des Dev Notes annotés (étape 9 → 401 fixe, C-32-6-52) ; « 403 » greppé sur la fiche, `docs/`, manuels `.tex`, `website/`, le code `mcp/` et le fichier d'epic : les autres sites parlent de l'étape 4 ou de listes de refus, toujours justes ; aucun manuel ne parle de `/mcp`. **LOW traités** : H3 (C-32-6-57, `max_statement_time` dans `lecture_seule_jamais_defaite`, deux exceptions de plus, un message de test reformulé) ; H4 (angles morts de `MOTIF_SANS_POOL` écrits) ; H5 (faux positif `/*!` de doc Rust écrit) ; H6 (preuve reformulée par un `grep` brut, rejoué : cinq exceptions, rien d'autre hors commentaires) ; H7 (doc de module de `kesh_version`) ; H9 (emprunt avant la fenêtre de 100 ms, connexion fermée explicitement). **H8** : le périmètre de « 36 → 104 » de l'entrée P1 est celui des fichiers de `crates/` touchés par `76869cc9..63d3f659` **dont le décompte change** — `services_motif.rs` (24), `util.rs` (17) et `routes/mcp_server_settings.rs` (7) écartés ; sur tous les fichiers touchés, 84 → 152 ; delta 68 dans les deux cas (recompté ici, fichier par fichier ; l'entrée P1 n'est pas réécrite). **Tests neufs** (`4d99cdcd..dd4b8398`, `grep -cE '^\s*#\[(sqlx::\|tokio::)?test'`) : **2** — `mcp_transport_e2e.rs` 34 → 36 ; `mcp_gardes_lexicales.rs` 13 → 13 et `pool_lecture_seule.rs` 5 → 5 (témoins ajoutés à des tests existants). **Mutations** : **3, toutes tuées** par l'assertion visée — P2-Mq1 (attente directe du futur de l'outil, sans tâche : les deux tests rougissent à « le permis n'est pas rendu avant la fin de l'instruction », témoin passé ; `326a-mut-P2-Mq1-sans-tache.log`), P2-Mq2 (motif sans `max_statement_time` : « rouge (SQL) : SET SESSION max_statement_time = 0 » ; `-Mq2-motif-sans-borne.log`), P2-Mq3 (une pose `= 0` ajoutée à `pool.rs` : trouvée par le balayage ; `-Mq3-borne-defaite.log`). **Gates au dernier commit de code `dd4b8398`** : bases `kesh_326a` et `kesh_e2e_326a` supprimées puis recréées (84 migrations du worktree, seed) ; `test-fast.sh --ci` sous verrou — fmt, clippy `-D warnings`, nextest **4183/4183**, 7 ignorés (`326a-p2-gate-complet.log`) ; frontend non touché : `npm run check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit` **1939/1939** (163 fichiers), `build` vert (`326a-p2-frontend.log`) ; **E2E complet** (port 3326, `kesh_e2e_326a`, dossiers neufs `/tmp/kesh-e2e-326a-p2/`) : **315 passés, 7 échecs = les 7 KF-029**, 17 ignorés, KF-052 non déclenchée (`326a-p2-e2e.log`) ; backend arrêté par son PID. **Écart de méthode déclaré** : le premier arrêt du backend a visé le PID de l'enveloppe `bash` ; le processus `kesh-api` a été arrêté ensuite par son propre PID, port 3326 constaté libre. Le correctif touche la production : passe suivante **ciblée** (regression hunter, **Sonnet**, `32-6a-review-prompt-p3.md` ; rapport `kesh-gate-logs/326a-review-p3.md`). |
 | 2026-10-25 | **Revue de code P3 (32-6a) — REVUE TERMINÉE** | **Passe ciblée** (regression hunter, **Sonnet**, une lentille, braquée sur `dd4b8398` ; prompt `32-6a-review-prompt-p3.md` ; rapport `kesh-gate-logs/326a-review-p3.md`) : **0/0/0/1**. **Trend** : P1 Sonnet ×3 (B, E, A) 0/0/2/16 → P2 Opus ciblée 0/0/2/7 → **P3 Sonnet ciblée 0/0/0/1**. Recyclage déclaré en P2 (les deux MEDIUM nés de la remédiation P1). **Clôture** sur une passe sans finding au-dessus de LOW (`CLAUDE.md`, décision Q3 (c)), **3 passes sur 8**. Le LOW R1-P3 (marges de temps des deux tests d'abandon, faux rouge possible sous charge, fréquence non établie) n'est pas remédié ici : il est tracé en commentaire de #759 et repris à l'étape 0 de la 32-6b (même worktree). Dernier commit de code `dd4b8398` : gate complet 4183/4183, frontend 1939/1939, E2E 315 passés et 7 KF-029 (entrée P2). Fusion de `origin/main` (`966baed5`, documentation seule : `CLAUDE.md`, fichier d'epic) sans nouveau gate, aucun code touché. *(Écrit par l'orchestrateur.)* |
+| 2026-10-25 | **Développement 32-6b** | **Opus 5.5**, en autonomie, branche `story/32-6b` contre `7e47bff4` (32-6a fusionnée). **Étape 0** au Dev Agent Record, lignes lues citées (faits 8 et 9, `audit_labels.rs`, compteurs du registre, répartiteur de C-32-6-56). **Règle du journal** : C-32-6-58 — une tâche de l'appel englobe la tâche de l'outil et écrit l'entrée à l'issue, abandon par le client et panic d'outil compris ; fail closed. Choix C-32-6-58 à 61. **Code** (`29ac7f41`) : `journaliser_appel`, répartiteur, libellés ×4, `/mcp` à `Traced` (`traced` 123, `exempt` 4) ; 6 tests neufs ; marges de #759. **Mutations** : 9 jouées, 9 tuées (Mb1 à Mb7, Mq1a, Mq1b). **Gates au dernier commit de code** : bases remises à zéro ; `test-fast.sh --ci` 4189/4189 (7 ignorés) ; frontend 1939/1939, check, lint, build verts ; E2E 314 passés, 8 échoués = 7 KF-029 + `sidebar-navigation.spec.ts:75` vert rejoué seul. **Fiche** : annotations datées (AC-b5 et #758, `0.0.0.0/0` IPv4 ×2, 2 bis écartée ×2, N26 ×3). Prompt de revue P1 : `32-6b-review-prompt-p1.md` (Sonnet, B, E, A). |
+| 2026-10-25 | **Revue de code P1 (32-6b) — REVUE TERMINÉE** | **Sonnet ×3** (lentilles B, E, A, contexte frais, prompt `32-6b-review-prompt-p1.md` ; rapports `kesh-gate-logs/326b-review-p1-{B,E,A}.md`) : B 0/0/0/4, E 0/0/0/4, A 0/0/0/2 ⇒ **trend P1 : 0 CRITICAL / 0 HIGH / 0 MEDIUM / 10 LOW** (doublons B1 = E2, B2 = E1 comptés une fois par lentille). **Clôture** sur une passe sans finding au-dessus de LOW (`CLAUDE.md`, décision Q3 (c)), **1 passe sur 8**. Les LOW ne sont pas remédiés : ils sont tracés dans **#761** (test d'abandon à 100 ms, refus non assertés, Mq1b, journal indisponible à cause unique, panic après délai, tâche détachée, `exempt` 5 de la liste A3, compte du manuel `admin-manual.tex:2935` renvoyé à la 32-11). Note pour la 32-7 (lentille A) : `user-manual.tex:3152-3153` doit dire qu'un appel MCP paraît au journal au nom du créateur de la clé, sans la marque « clé API ». Dernier commit de code `29ac7f41` : gate complet 4189/4189, frontend 1939/1939, E2E 314 passés + 7 KF-029 + `sidebar-navigation.spec.ts:75` rejouée seule au vert (pollution entre specs). *(Écrit par l'orchestrateur.)* |
