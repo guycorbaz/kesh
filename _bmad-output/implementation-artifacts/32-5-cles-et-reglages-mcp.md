@@ -1896,4 +1896,11 @@ cohérent avec 4085 → 4089 au gate complet. Commit des manuels (`f123f12d..20c
   - **CHANGELOG** : non touché (C-32-5-49).
   - Clé `32-5d-cle-mcp-principal` à **`review`** ; prompt de revue P1 : `325d-review-prompt-p1.md` (Sonnet, lentilles B,
     E, A).
+- **2026-10-25 — Revue de code de la 32-5d — REVUE TERMINÉE en P1** (Sonnet ×3, lentilles B, E, A, contexte frais,
+  lecture seule, prompt `325d-review-prompt-p1.md`, rapports `kesh-gate-logs/325d-review-p1-{B,E,A}.md`) : B
+  **0/0/0/2**, E **0/0/0/3**, A **0/0/0/3** — aucun finding au-dessus de LOW dès la première passe. AC-d1 à AC-d3
+  tenus ; ordre des verrous cohérent aux cinq sites ; manuels vrais contre le code, PDF aplatis conformes. LOW non
+  traités (B1 = A2, B2, E1 = A3, E2, E3, A1) **tracés sur #738**. Gates au dernier commit de code `f123f12d` : complet
+  4089/4089 (7 ignorés, lancé à `20cbf50a`, qui ne diffère que par les manuels), E2E 315 passés et les 7 KF-029.
+  Mutations de la partie d : 7 jouées, 7 tuées. Statut `done`.
 

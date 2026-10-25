@@ -498,6 +498,11 @@ parcours est décrit pas à pas au manuel **et rejoué depuis le PDF** ; le test
 de la révision figée ; aucun texte ne promet une écriture. **Risque** : moyen — documentation exécutée (31-4) ; la fiche
 **fixe le périmètre du parcours** dès le départ pour éviter le recyclage qu'a connu la 31-4.
 
+*(Ajouté le 2026-10-25 par l'orchestrateur, sur report des fiches 32-6 (R13) et 32-10a (C-32-10a-29) : deux textes
+publiés deviennent faux pendant l'epic et reviennent à la 32-11 — `README.md:233` (« montrées avant de partir », faux
+pour une clé `dispensée` ; « aucune écriture par l'agent dans cette version », faux dès `proposer_prompt`) et
+`website/roadmap.html:375` (mêmes deux affirmations). La 32-11 les réécrit, en recomptant les lignes à son étape 0.)*
+
 ### Release v0.16.0
 
 `scripts/prepare-release.sh`, macros des manuels, URL au tag (G19), CHANGELOG daté — avec : **trois migrations non
