@@ -151,6 +151,9 @@ elles. Chaque choix : contexte, option retenue, alternatives écartées, révers
 - **Écartées** : le dépôt puis `journaliser_appel` (un journal en échec laisserait un envoi déposé, annoncé en échec à
   l'agent, visible à l'écran) ; pas de numéro au journal (l'appel ne se rattacherait à l'envoi que par l'heure).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, validation P2, F3 : un dépôt **refusé ou en échec** n'écrit rien dans sa transaction ; le
+  répartiteur appelle alors `journaliser_appel` après l'échec (issue `envoi_trop_volumineux`, `limite_atteinte` ou
+  `erreur`, `envoi: None`), fail closed. Une seule entrée par appel : dans la transaction s'il réussit, à part sinon.)*
 
 ### C-32-8-13 — Vingt envois en attente au plus par clé, limite souple
 
@@ -338,3 +341,7 @@ elles. Chaque choix : contexte, option retenue, alternatives écartées, révers
   (rien ne la justifiait, un déplacement suffisant).
 - **Réversible** : oui. *Coût* : entre les fusions de la 32-8a et de la 32-8c, deux textes de `main`, non publiés,
   comptent deux tables pour trois.
+- *(Annoté le 2026-10-25, validation P2, F13 : c'est une **dérogation à la règle d'inclusion** de `CLAUDE.md` (« tout
+  update de doc … dans le même commit ou la même PR que le code qui le motive »), déclarée et soumise à Guy (point 13).
+  Le coût réel est de **six** sites incomplets sur `main` entre les deux fusions, non deux : `admin-manual.tex:1414`,
+  `:2230`, `:2237`, `:2249`, `user-manual.tex:3027-3033`, `CHANGELOG.md:15-16` — jamais dans une version publiée.)*
