@@ -1446,6 +1446,13 @@ celle de la 32-10a-i ; les compteurs (tables, migrations, P6) se recomptent.
 `cle: &CleMcpAuthentifiee`. En conséquence, le service `proposer` de l'AC-iii2 reçoit **`&CleMcpAuthentifiee`** et non
 `acces`, `cle_id` et `validation` séparés : il en tire les trois. La fiche 32-8 (§ *Note pour la 32-10a*) porte aussi la
 liaison unique du pool en lecture seule et la signature amendée de `journaliser_appel`, à constater à l'étape 0.)*
+*(Précision de l'orchestrateur, 2026-10-25, validation P3 de la fiche 32-8 : (1) U+2065 n'est **pas** dans
+l'ancienne liste de `bank_accounts.rs` (2060–2064, 2066–2069) ; il est refusé au titre de Cn, non « comme aujourd'hui »
+— rectifier l'AC-ii1 à l'étape 0. (2) L'AC-ii2 emploie `is_forbidden_in_description`, qui reste privée à
+`routes/bank_accounts.rs` : la description d'un prompt emploie le prédicat public livré par la 32-8b0. (3) `registre_coherent`
+reste inchangé (AC-iii2 point 5) : la note de la fiche 32-8 qui dit le contraire est la fautive ; constater. (4) L'ordre des
+descripteurs de `tools/list` après la 32-8b — registre, `kesh_lire_envoi`, puis `proposer_prompt` — et les corps attendus
+de `tools_list_filtre` se recomptent à l'étape 0.)*
 
 - **La 32-6a fusionnée** : les noms et lignes que cette fiche reprend de sa fiche — `McpPrompt` (signature de `rendre`),
   le sceau, `PromptEnBase` absent, `ReponseMcp`, `reponse::rendre`, `textes.rs` et la constante de `-32602`, `Registre`
