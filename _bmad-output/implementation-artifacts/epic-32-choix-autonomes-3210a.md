@@ -129,6 +129,9 @@
 - **Écartées** : exclure de la sauvegarde les versions non approuvées (historique tronqué) ; conserver les prompts à la
   remise à zéro (changerait la règle 4 de la partition, attachée aux principaux).
 - **Réversible** : oui avant publication.
+- *Annoté le 2026-10-25, validation P2 (R5 = F9)* : depuis C-32-10a-8 annoté (validation P1), les standards ne
+  reviennent plus « au démarrage suivant » après une remise à zéro : **ils sont réinstallés à la fin de la remise à
+  zéro**, dans `routes::onboarding::reset` ; seulement si cette réinstallation échoue, au démarrage suivant.
 
 ### C-32-10a-12 — Le prédicat des caractères refusés, partagé en `kesh-core` ; la validation hors de `kesh-db`
 
@@ -147,6 +150,13 @@
   U+180B–U+180D et U+180F, U+2065, U+1D173–U+1D17A, U+E0100–U+E01EF), retirés de cet angle mort ; la description d'un
   compte bancaire en profite (changement de comportement voulu). Reste écrit : les caractères de format d'une version
   future d'Unicode, les homoglyphes.
+- *Annoté le 2026-10-25, validation P2 (F4), décision de l'orchestrateur* : la liste de plages, même complétée, laissait
+  passer des contrôles de format **attribués** (U+0600–U+0605, U+13430–U+1343F, U+1BCA0–U+1BCA3…). **Retenu
+  désormais** : la **catégorie générale** — Cf, Co, Cn (et Cc hors `\n`, `\t` pour un prompt) — par
+  `unicode-properties 0.1.4`, déjà au graphe par `stringprep` (aucune crate de plus à compiler), lue à sa source
+  (Unicode 17.0.0), plus deux listes écrites (remplissages `Lo`, marques `Mn` sans rendu, Zl/Zp). L'angle mort devient
+  « une autre catégorie hors des listes, selon Unicode 17.0.0 ». Écartée : la table `FORMAT` de `regex-syntax` (Unicode
+  16.0.0, crate de syntaxe d'expressions, non faite pour cet usage).
 
 ### C-32-10a-13 — Bornes : texte 16 000 caractères, description 500, vingt propositions en attente
 
@@ -174,6 +184,8 @@
 - **Retenu** : `services::prompts_mcp::{lister, obtenir}(&acces, &etat.garde, …)` ; aucune écriture sur ce chemin (R4).
 - **Écartée** : la `Lecture` des outils (déballer `LectureOutils` hors de `outil.rs`, contre une garde de la 32-6).
 - **Réversible** : oui.
+- *Annoté le 2026-10-25, validation P2 (F6)* : le catalogue ne lit plus sur `etat.garde` mais par une poignée propre,
+  `LecturePrompts`, **sans pool visible** (C-32-10a-30), placée dans `EtatMcp`.
 
 ### C-32-10a-16 — La portée des prompts est `books:read`, sans colonne
 
@@ -200,6 +212,11 @@
   seul lieu), n'appelle pas `politique::autoriser`, et ajoute à `tools/list` un descripteur statique à
   `readOnlyHint: false` (explicite) sous `prompts:write` ; `registre_coherent` et `registre_standard_inventaire` restent
   inchangés, `tools_list_filtre` gagne deux cas (AC-iii2 de la fiche). Le nom réservé sort en `arguments_invalides`.
+- *Annoté le 2026-10-25, validation P2 (R1 = F1 = F2), décision de l'orchestrateur* : le service rend des **types
+  propres aux services** — `AccuseServi` et `RefusProposition` (`HorsPortee`, `ArgumentsInvalides`, `NomReserve`,
+  `PlafondAtteint`, `Interne`) —, jamais `AppError` ni `VersionEcrite` ; `src/mcp/` les traduit par un `match`
+  exhaustif ; `ErreurOutil` gagne `LimiteAtteinte` et les motifs `Reserve` (`outil.rs` touché) ; `depuis_app_error`,
+  AC-a31, N25 et `reponses_par_rendre_seul` inchangés ; test neuf `traduction_des_refus_de_proposition`.
 
 ### C-32-10a-18 — Le journal : `prompts/get` tracé et fail closed ; `prompts/list` non ; une issue de plus
 
@@ -210,6 +227,10 @@
 - **Écartées** : une action d'audit `mcp_prompt.proposed` en plus du journal de l'appel (doublon : la version porte
   l'auteur et la date) ; ranger le plafond sous `arguments_invalides` (faux).
 - **Réversible** : oui.
+- *Annoté le 2026-10-25, validation P2 (F3), décision de l'orchestrateur* : la version `pending` et son entrée
+  d'audit s'écrivent **dans la même transaction** ; l'audit de la proposition **est** le journal de l'appel
+  (`mcp.tool_called`, issue `servi`, construit par la fonction extraite de `journaliser_appel`), et le répartiteur ne le
+  réécrit pas. Écartée : deux entrées (`mcp_prompt.proposed` et `mcp.tool_called`) — un doublon.
 
 ### C-32-10a-19 — Les routes de gestion, dans `admin_routes`, par le dépôt et dans la transaction de l'audit
 
@@ -301,6 +322,7 @@
 - **Écartées** : une reprise sur conflit d'unicité (une branche de plus pour un cas que le verrou exclut) ; un plafond
   approximatif écrit comme borne.
 - **Réversible** : oui.
+- *Annoté le 2026-10-25, validation P2 (F11)* : étendu par C-32-10a-32 à **toute** écriture du dépôt.
 
 ### C-32-10a-29 — Le README et la feuille de route du site, à la 32-11
 
@@ -309,4 +331,33 @@
 - **Retenu** (décision de l'orchestrateur) : la reformulation est affectée à la 32-11, qui réécrit les textes publics
   du serveur MCP ; la fiche le note (§ *Le manuel*), l'orchestrateur l'inscrit au fichier d'epic.
 - **Écartée** : la corriger en 32-10a-iii (un module de plus, docs, pour une partie déjà à cinq).
+- **Réversible** : oui.
+
+### C-32-10a-30 — Des poignées qui n'exposent que le dépôt des prompts
+
+- **Contexte** : validation P2, F6 — une garde lexicale sur les imports ne tenait pas « le chemin des prompts ne lit que
+  les tables des prompts » : les services lisent aussi par `lecture.pool()` et `crate::helpers`.
+- **Retenu** (consigne de l'orchestrateur : la conception la plus simple qui ferme la classe) : `LecturePrompts` et
+  `EcriturePrompts`, champ privé, **sans méthode `pool()`**, n'exposent que les fonctions du dépôt des prompts ; le
+  service des prompts ne reçoit qu'elles ; une petite garde reste pour une signature élargie.
+- **Écartées** : une garde lexicale élargie aux voies de lecture (une de plus à contourner) ; le service sur la
+  `Lecture` ordinaire.
+- **Réversible** : oui.
+
+### C-32-10a-31 — Le préréglage de test réinstalle les standards
+
+- **Contexte** : validation P2, R13 = F14 — `POST /api/v1/_test/seed` vide tout et recrée une société sans prompts ;
+  les E2E de la 32-10b en partent.
+- **Retenu** (décision de l'orchestrateur) : `seed_handler` appelle `amorcer_standards` après les préréglages ; la
+  garde l'admet (trois appels).
+- **Écartée** : laisser la 32-10b amender la garde.
+- **Réversible** : oui.
+
+### C-32-10a-32 — Le verrou de société en tête de toute écriture des prompts
+
+- **Contexte** : validation P2, F11 — un verrou de société pris par les seules créations laissait un cycle entre
+  `approuver` (prompt, puis audit) et `reset_demo` (société, `audit_log`, vidage).
+- **Retenu** : toute écriture du dépôt, l'amorçage compris, prend `companies` d'abord (Pattern 5) ; la table des ordres
+  de verrous de `docs/MULTI-TENANT-SCOPING-PATTERNS.md` gagne la ligne.
+- **Écartée** : nommer le cycle et compter sur le rejeu.
 - **Réversible** : oui.
