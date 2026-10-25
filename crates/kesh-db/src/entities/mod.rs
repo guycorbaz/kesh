@@ -72,7 +72,9 @@ pub use journal_entry::{
     Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,
 };
-pub use mcp_key::{McpKey, McpScope, McpScopeError, McpScopes, NewMcpKey, SendValidation};
+pub use mcp_key::{
+    McpKey, McpScope, McpScopeError, McpScopes, NewMcpKey, SendValidation, StoredMcpScopes,
+};
 pub use mcp_server_settings::{McpServerSettings, McpServerSettingsUpdate};
 pub use onboarding::{OnboardingState, UiMode};
 pub use password_reset_token::PasswordResetToken;

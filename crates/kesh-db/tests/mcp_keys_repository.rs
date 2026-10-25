@@ -9,7 +9,7 @@ use chrono::NaiveDate;
 use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{
     Language, McpScope, McpScopes, McpServerSettings, McpServerSettingsUpdate, NewCompany,
-    NewMcpKey, NewUser, OrgType, Role, SendValidation,
+    NewMcpKey, NewUser, OrgType, Role, SendValidation, StoredMcpScopes,
 };
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{companies, mcp_keys, mcp_server_settings, users};
@@ -246,8 +246,10 @@ async fn mcp_keys_refuses_scopes_that_are_not_a_non_empty_json_array(pool: MySql
     let c = company(&pool, "A").await;
     let u = user(&pool, c, "admin-a", Role::Admin).await;
     // JSON invalide : la contrainte implicite de la colonne JSON (`mcp_keys.scopes`).
+    // Revue P1 (E5, B4) : le nom de la contrainte implicite, et non « scopes »
+    // seul, que le message de `chk_mcp_keys_scopes` satisferait aussi.
     let msg = raw_key_insert_err(&pool, c, u, "k", &hash('a'), "pas du json", None).await;
-    assert!(msg.contains("scopes"), "non JSON : {msg}");
+    assert!(msg.contains("`mcp_keys.scopes`"), "non JSON : {msg}");
     // JSON valide mais pas un tableau, puis tableau vide : `chk_mcp_keys_scopes`.
     for (i, scopes) in [r#"{}"#, r#""books:read""#, "[]"].into_iter().enumerate() {
         let msg = raw_key_insert_err(
@@ -341,6 +343,18 @@ async fn mcp_keys_foreign_keys_are_enforced_and_restrict(pool: MySqlPool) {
         .await
         .expect_err("RESTRICT sur users");
     assert!(err.to_string().contains("fk_mcp_keys_created_by"), "{err}");
+
+    // Revue P1 (B4) : la société aussi. Une société D sans utilisateur, dont la
+    // seule référence est une clé (créée par l'administrateur de C) : seul
+    // `fk_mcp_keys_company` peut refuser sa suppression.
+    let d = company(&pool, "D").await;
+    new_key(&pool, d, u, hash('d'), &[McpScope::BooksRead], None).await;
+    let err = sqlx::query("DELETE FROM companies WHERE id = ?")
+        .bind(d)
+        .execute(&pool)
+        .await
+        .expect_err("RESTRICT sur companies");
+    assert!(err.to_string().contains("fk_mcp_keys_company"), "{err}");
 }
 
 // ---------------------------------------------------------------------------
@@ -396,6 +410,17 @@ async fn mcp_server_settings_defaults_and_one_row_per_company(pool: MySqlPool) {
         .await
         .expect_err("FK companies");
     assert!(msg.contains("fk_mcp_server_settings_company"), "{msg}");
+    // Revue P1 (B4) : RESTRICT à la suppression — la société A n'a que sa ligne
+    // de réglages pour référence.
+    let err = sqlx::query("DELETE FROM companies WHERE id = ?")
+        .bind(c)
+        .execute(&pool)
+        .await
+        .expect_err("RESTRICT sur companies");
+    assert!(
+        err.to_string().contains("fk_mcp_server_settings_company"),
+        "{err}"
+    );
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -414,7 +439,10 @@ async fn mcp_server_settings_lists_must_be_json_arrays(pool: MySqlPool) {
     let msg = raw_settings_insert(&pool, c, "pas du json", "[]", "[]")
         .await
         .expect_err("liste non JSON");
-    assert!(msg.contains("allowed_networks"), "{msg}");
+    assert!(
+        msg.contains("`mcp_server_settings.allowed_networks`"),
+        "{msg}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -442,10 +470,11 @@ async fn create_list_and_find_are_scoped_by_company(pool: MySqlPool) {
     assert_eq!(k1.name, "agent");
     assert_eq!(k1.key_hash, hash('1'));
     assert_eq!(
-        k1.scopes.iter().collect::<Vec<_>>(),
+        k1.scopes.known().iter().copied().collect::<Vec<_>>(),
         vec![McpScope::BooksRead, McpScope::PromptsWrite],
         "portées relues dans l'ordre canonique"
     );
+    assert!(k1.scopes.unknown().is_empty());
     assert_eq!(k1.send_validation, SendValidation::Required);
     assert_eq!(k1.expires_at, Some(far_future()));
     assert_eq!(k1.version, 1);
@@ -553,7 +582,7 @@ async fn auth_lookup_finds_an_active_key_with_its_creator(pool: MySqlPool) {
     assert_eq!(row.mcp_key_id, k.id);
     assert_eq!(row.company_id, a);
     assert_eq!(row.created_by_user_id, ua);
-    assert_eq!(row.scopes, k.scopes);
+    assert_eq!(StoredMcpScopes::from(row.scopes.clone()), k.scopes);
     assert_eq!(row.send_validation, SendValidation::Required);
     assert_eq!(row.creator_role, Role::Admin);
     assert!(row.creator_active);
@@ -592,6 +621,83 @@ async fn auth_lookup_ignores_a_revoked_key(pool: MySqlPool) {
             .unwrap()
             .is_none(),
         "clé révoquée : jamais trouvée (mutation Ma4, revoked_at)"
+    );
+}
+
+/// Revue P1 (E5) — la frontière de l'expiration, au plus près que l'horloge de
+/// la base le permet : une clé expirée depuis une seconde n'est pas rendue, une
+/// clé qui expire dans une minute l'est. Tue une tolérance glissée dans le
+/// filtre (`NOW(3) - INTERVAL …`). ⚠️ Ne distingue PAS `>` de `>=` : il
+/// faudrait une clé qui expire exactement à `NOW(3)`, ce que l'horloge de
+/// MariaDB ne permet pas de poser — limite déclarée au Change Log.
+#[sqlx::test(migrations = "./test-schema")]
+async fn auth_lookup_expiry_boundary(pool: MySqlPool) {
+    let a = company(&pool, "A").await;
+    let ua = user(&pool, a, "admin-a", Role::Admin).await;
+    let passee = new_key(&pool, a, ua, hash('1'), &[McpScope::BooksRead], None).await;
+    let proche = new_key(&pool, a, ua, hash('2'), &[McpScope::BooksRead], None).await;
+    sqlx::query("UPDATE mcp_keys SET expires_at = NOW(3) - INTERVAL 1 SECOND WHERE id = ?")
+        .bind(passee.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE mcp_keys SET expires_at = NOW(3) + INTERVAL 1 MINUTE WHERE id = ?")
+        .bind(proche.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        mcp_keys::find_active_auth_by_key_hash(&pool, &hash('1'))
+            .await
+            .unwrap()
+            .is_none(),
+        "expirée depuis une seconde : jamais rendue"
+    );
+    assert!(
+        mcp_keys::find_active_auth_by_key_hash(&pool, &hash('2'))
+            .await
+            .unwrap()
+            .is_some(),
+        "expire dans une minute : encore rendue"
+    );
+}
+
+/// Revue P1 (E5) — l'ordre de `list_by_company` : `created_at DESC`, puis
+/// `id DESC` à égalité. Horodatages posés à la main (deux égaux).
+#[sqlx::test(migrations = "./test-schema")]
+async fn list_by_company_orders_by_creation_then_id_descending(pool: MySqlPool) {
+    let a = company(&pool, "A").await;
+    let ua = user(&pool, a, "admin-a", Role::Admin).await;
+    let mut ids = Vec::new();
+    for c in ['1', '2', '3'] {
+        ids.push(
+            new_key(&pool, a, ua, hash(c), &[McpScope::BooksRead], None)
+                .await
+                .id,
+        );
+    }
+    for (id, at) in [
+        (ids[0], "2026-10-20 10:00:00.000"),
+        (ids[1], "2026-10-20 09:00:00.000"),
+        (ids[2], "2026-10-20 09:00:00.000"),
+    ] {
+        sqlx::query("UPDATE mcp_keys SET created_at = ? WHERE id = ?")
+            .bind(at)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let ordre: Vec<i64> = mcp_keys::list_by_company(&pool, a, true)
+        .await
+        .unwrap()
+        .iter()
+        .map(|k| k.id)
+        .collect();
+    assert_eq!(
+        ordre,
+        vec![ids[0], ids[2], ids[1]],
+        "la plus récente d'abord, puis l'id le plus grand à égalité"
     );
 }
 
@@ -762,19 +868,21 @@ async fn touch_last_used_sets_it_but_never_on_a_revoked_key(pool: MySqlPool) {
     );
 }
 
+/// C-32-5-37 (revue P1, E1) — une portée inconnue en base (une sauvegarde
+/// d'une version future, une écriture à la main) est **ignorée** à la lecture :
+/// la clé garde ses portées connues, se liste à côté des autres, et
+/// s'authentifie avec elles. Tue la mutation « décodage redevenu strict ».
 #[sqlx::test(migrations = "./test-schema")]
-async fn a_stored_unknown_scope_fails_to_decode(pool: MySqlPool) {
-    // Le décodage strict vaut aussi à la lecture : une portée inconnue écrite
-    // en base (à la main, ou par une version future) fait échouer la lecture
-    // au lieu d'être ignorée.
+async fn a_stored_unknown_scope_is_ignored_and_the_known_ones_remain(pool: MySqlPool) {
     let a = company(&pool, "A").await;
     let ua = user(&pool, a, "admin-a", Role::Admin).await;
+    let saine = new_key(&pool, a, ua, hash('0'), &[McpScope::InvoicesRead], None).await;
     assert_eq!(
         raw_key_insert(
             &pool,
             a,
             ua,
-            "k",
+            "future",
             &hash('1'),
             r#"["books:read","books:write"]"#,
             None
@@ -782,14 +890,74 @@ async fn a_stored_unknown_scope_fails_to_decode(pool: MySqlPool) {
         .await,
         None
     );
-    let err = mcp_keys::list_by_company(&pool, a, true)
+    let liste = mcp_keys::list_by_company(&pool, a, true)
         .await
-        .expect_err("portée inconnue en base");
-    assert!(err.to_string().contains("books:write"), "{err}");
-    let err = mcp_keys::find_active_auth_by_key_hash(&pool, &hash('1'))
+        .expect("une portée inconnue ne fait pas échouer la liste");
+    assert_eq!(liste.len(), 2, "la clé saine reste listée à côté");
+    let future = liste.iter().find(|k| k.name == "future").unwrap();
+    assert_eq!(
+        future.scopes.known().iter().copied().collect::<Vec<_>>(),
+        vec![McpScope::BooksRead]
+    );
+    assert_eq!(future.scopes.unknown(), ["books:write"]);
+    assert!(liste.iter().any(|k| k.id == saine.id));
+    let row = mcp_keys::find_active_auth_by_key_hash(&pool, &hash('1'))
         .await
-        .expect_err("portée inconnue à l'authentification");
-    assert!(err.to_string().contains("books:write"), "{err}");
+        .expect("jamais une erreur de base")
+        .expect("authentifiée par ses portées connues");
+    assert_eq!(
+        row.scopes.iter().collect::<Vec<_>>(),
+        vec![McpScope::BooksRead]
+    );
+}
+
+/// C-32-5-37 — une clé sans **aucune** portée connue (inconnues seules, ou un
+/// tableau qui ne porte pas de chaînes) se liste, se relit et se révoque, mais
+/// n'authentifie jamais — sans erreur de base.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_key_without_any_known_scope_is_listed_and_revocable_but_never_authenticates(
+    pool: MySqlPool,
+) {
+    let a = company(&pool, "A").await;
+    let ua = user(&pool, a, "admin-a", Role::Admin).await;
+    for (c, scopes) in [('1', r#"["books:write"]"#), ('2', "[1, null]")] {
+        assert_eq!(
+            raw_key_insert(&pool, a, ua, "inconnue", &hash(c), scopes, None).await,
+            None
+        );
+        let k = mcp_keys::list_by_company(&pool, a, false)
+            .await
+            .expect("liste lisible")
+            .into_iter()
+            .find(|k| k.key_hash == hash(c))
+            .expect("la clé est listée");
+        assert!(k.scopes.known().is_empty(), "{scopes}");
+        assert_eq!(k.scopes.usable(), None, "{scopes}");
+        assert!(
+            mcp_keys::find_active_auth_by_key_hash(&pool, &hash(c))
+                .await
+                .expect("jamais une erreur de base")
+                .is_none(),
+            "{scopes} : une clé sans portée connue n'authentifie pas"
+        );
+        let relue = mcp_keys::find_by_id_for_company(&pool, a, k.id)
+            .await
+            .unwrap()
+            .expect("relue par son id");
+        let mut tx = pool.begin().await.unwrap();
+        mcp_keys::revoke_in_tx(&mut tx, a, relue.id, relue.version)
+            .await
+            .expect("révocable");
+        tx.commit().await.unwrap();
+        assert!(
+            mcp_keys::find_by_id_for_company(&pool, a, k.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .revoked_at
+                .is_some()
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

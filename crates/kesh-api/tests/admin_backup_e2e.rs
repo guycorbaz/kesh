@@ -313,9 +313,12 @@ async fn import_backup(app: &TestApp, jwt: &str, bytes: Vec<u8>) {
 /// colonne** — portées, politique, `last_used_at` et `revoked_at` à la
 /// milliseconde, listes JSON à l'identique — et un serveur **activé** dans la
 /// sauvegarde l'est après l'import (hypothèse Q7, C-32-5-11). Entre l'export
-/// et l'import, tout est altéré : clé active supprimée, réglages vidés et
-/// désactivés ; l'import doit tout rendre. Tue la mutation Ma6 (une colonne
-/// JSON rebindée mal à l'import).
+/// et l'import, tout est altéré : clé active **révoquée** (revue P1, E2 — la
+/// restauration rétablit l'état au moment de la sauvegarde, donc une clé
+/// révoquée depuis redevient active, ce que le manuel dit), une clé créée
+/// depuis, réglages vidés et désactivés ; l'import doit tout rendre, et la clé
+/// créée depuis disparaît. Tue la mutation Ma6 (une colonne JSON rebindée mal
+/// à l'import).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn mcp_tables_roundtrip_column_by_column_and_enabled_server_stays_enabled(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
@@ -361,12 +364,37 @@ async fn mcp_tables_roundtrip_column_by_column_and_enabled_server_stays_enabled(
 
     let backup = export_backup(&app, &jwt).await;
 
-    // Altération entre l'export et l'import.
-    sqlx::query("DELETE FROM mcp_keys WHERE key_hash = ?")
-        .bind("a".repeat(64))
-        .execute(&pool)
-        .await
-        .unwrap();
+    // Altération entre l'export et l'import : la clé active est révoquée, une
+    // clé neuve est créée.
+    let revoked = sqlx::query(
+        "UPDATE mcp_keys SET revoked_at = NOW(3), version = version + 1 WHERE key_hash = ?",
+    )
+    .bind("a".repeat(64))
+    .execute(&pool)
+    .await
+    .unwrap()
+    .rows_affected();
+    assert_eq!(
+        revoked, 1,
+        "montage : la clé active est révoquée après l'export"
+    );
+    assert!(
+        mcp_keys::find_active_auth_by_key_hash(&pool, &"a".repeat(64))
+            .await
+            .unwrap()
+            .is_none(),
+        "montage : la clé révoquée n'authentifie plus avant l'import"
+    );
+    sqlx::query(
+        "INSERT INTO mcp_keys (company_id, created_by_user_id, name, key_hash, scopes) \
+         VALUES (?, ?, 'créée depuis', ?, '[\"books:read\"]')",
+    )
+    .bind(seeded.company_id)
+    .bind(seeded.admin_user_id)
+    .bind("c".repeat(64))
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         "UPDATE mcp_server_settings SET enabled = FALSE, allowed_networks = '[]', \
          trusted_proxies = '[]', allowed_origins = '[]', version = version + 1",
@@ -416,6 +444,13 @@ async fn mcp_tables_roundtrip_column_by_column_and_enabled_server_stays_enabled(
             .unwrap()
             .is_none(),
         "la clé révoquée avant l'export reste révoquée"
+    );
+    assert!(
+        mcp_keys::find_active_auth_by_key_hash(&pool, &"c".repeat(64))
+            .await
+            .unwrap()
+            .is_none(),
+        "la clé créée après l'export disparaît avec l'import"
     );
 }
 

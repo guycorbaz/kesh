@@ -13,12 +13,18 @@
 //! ([`find_active_auth_by_key_hash`]) joint aussi `companies` — une clé
 //! orpheline (société absente) n'est jamais trouvée, avant même toute
 //! réparation (C-32-5-12).
+//!
+//! **Portées lues avec tolérance** (C-32-5-37, revue P1 E1) : une portée que
+//! cette version ne connaît pas est mise de côté et journalisée (id de la clé,
+//! jamais le condensat), les portées connues restent. Une ligne ne fait donc
+//! jamais échouer la liste entière ; une clé sans aucune portée connue se liste
+//! et se révoque, mais [`find_active_auth_by_key_hash`] ne la rend jamais.
 
 use chrono::NaiveDateTime;
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, Transaction};
 
-use crate::entities::mcp_key::{McpKey, McpScopes, NewMcpKey, SendValidation};
+use crate::entities::mcp_key::{McpKey, McpScopes, NewMcpKey, SendValidation, StoredMcpScopes};
 use crate::entities::user::Role;
 use crate::errors::{DbError, map_db_error};
 
@@ -27,8 +33,9 @@ const COLUMNS: &str = "id, company_id, created_by_user_id, name, key_hash, \
      version, created_at, updated_at";
 
 /// Ligne d'authentification d'une clé MCP : la clé, jointe à son créateur
-/// (rôle et état **courants**) et à sa société.
-#[derive(Debug, Clone, sqlx::FromRow)]
+/// (rôle et état **courants**) et à sa société. `scopes` est non vide par
+/// construction : une clé sans portée connue n'est jamais rendue.
+#[derive(Debug, Clone)]
 pub struct McpKeyAuthRow {
     pub mcp_key_id: i64,
     pub company_id: i64,
@@ -38,6 +45,91 @@ pub struct McpKeyAuthRow {
     pub expires_at: Option<NaiveDateTime>,
     pub creator_role: Role,
     pub creator_active: bool,
+}
+
+/// La ligne telle que la base la rend, portées en texte brut.
+#[derive(sqlx::FromRow)]
+struct KeyRow {
+    id: i64,
+    company_id: i64,
+    created_by_user_id: i64,
+    name: String,
+    key_hash: String,
+    scopes: String,
+    send_validation: SendValidation,
+    expires_at: Option<NaiveDateTime>,
+    last_used_at: Option<NaiveDateTime>,
+    revoked_at: Option<NaiveDateTime>,
+    version: i32,
+    created_at: NaiveDateTime,
+    updated_at: NaiveDateTime,
+}
+
+#[derive(sqlx::FromRow)]
+struct AuthRow {
+    mcp_key_id: i64,
+    company_id: i64,
+    created_by_user_id: i64,
+    scopes: String,
+    send_validation: SendValidation,
+    expires_at: Option<NaiveDateTime>,
+    creator_role: Role,
+    creator_active: bool,
+}
+
+/// Lit les portées stockées ; journalise ce qui est mis de côté, en nommant
+/// l'id de la clé (jamais le condensat).
+fn read_scopes(mcp_key_id: i64, json: &str) -> StoredMcpScopes {
+    let stored = StoredMcpScopes::from_stored_json(json);
+    if !stored.unknown().is_empty() {
+        tracing::warn!(
+            mcp_key_id,
+            unknown = ?stored.unknown(),
+            "clé MCP : portées inconnues de cette version, ignorées à la lecture"
+        );
+    }
+    stored
+}
+
+impl From<KeyRow> for McpKey {
+    fn from(r: KeyRow) -> Self {
+        McpKey {
+            scopes: read_scopes(r.id, &r.scopes),
+            id: r.id,
+            company_id: r.company_id,
+            created_by_user_id: r.created_by_user_id,
+            name: r.name,
+            key_hash: r.key_hash,
+            send_validation: r.send_validation,
+            expires_at: r.expires_at,
+            last_used_at: r.last_used_at,
+            revoked_at: r.revoked_at,
+            version: r.version,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }
+    }
+}
+
+/// `None` si la clé n'a aucune portée connue : elle n'authentifie pas.
+fn auth_row(r: AuthRow) -> Option<McpKeyAuthRow> {
+    let Some(scopes) = read_scopes(r.mcp_key_id, &r.scopes).usable() else {
+        tracing::warn!(
+            mcp_key_id = r.mcp_key_id,
+            "clé MCP sans aucune portée connue de cette version : elle n'authentifie pas"
+        );
+        return None;
+    };
+    Some(McpKeyAuthRow {
+        mcp_key_id: r.mcp_key_id,
+        company_id: r.company_id,
+        created_by_user_id: r.created_by_user_id,
+        scopes,
+        send_validation: r.send_validation,
+        expires_at: r.expires_at,
+        creator_role: r.creator_role,
+        creator_active: r.creator_active,
+    })
 }
 
 /// Insère une clé dans une transaction en cours et rend l'entité persistée.
@@ -71,10 +163,11 @@ pub async fn create_in_tx(
     let id = i64::try_from(last_id)
         .map_err(|_| DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX")))?;
 
-    sqlx::query_as::<_, McpKey>(&format!("SELECT {COLUMNS} FROM mcp_keys WHERE id = ?"))
+    sqlx::query_as::<_, KeyRow>(&format!("SELECT {COLUMNS} FROM mcp_keys WHERE id = ?"))
         .bind(id)
         .fetch_one(&mut **tx)
         .await
+        .map(McpKey::from)
         .map_err(map_db_error)
 }
 
@@ -90,14 +183,17 @@ pub async fn list_by_company(
     } else {
         " AND revoked_at IS NULL"
     };
-    sqlx::query_as::<_, McpKey>(&format!(
+    Ok(sqlx::query_as::<_, KeyRow>(&format!(
         "SELECT {COLUMNS} FROM mcp_keys WHERE company_id = ?{filtre} \
          ORDER BY created_at DESC, id DESC"
     ))
     .bind(company_id)
     .fetch_all(pool)
     .await
-    .map_err(map_db_error)
+    .map_err(map_db_error)?
+    .into_iter()
+    .map(McpKey::from)
+    .collect())
 }
 
 /// Cherche une clé par id, **scopée par société** : `None` si elle n'existe
@@ -107,19 +203,21 @@ pub async fn find_by_id_for_company(
     company_id: i64,
     id: i64,
 ) -> Result<Option<McpKey>, DbError> {
-    sqlx::query_as::<_, McpKey>(&format!(
+    sqlx::query_as::<_, KeyRow>(&format!(
         "SELECT {COLUMNS} FROM mcp_keys WHERE company_id = ? AND id = ? LIMIT 1"
     ))
     .bind(company_id)
     .bind(id)
     .fetch_optional(pool)
     .await
+    .map(|r| r.map(McpKey::from))
     .map_err(map_db_error)
 }
 
 /// Recherche d'authentification : une clé **active** (non révoquée, non
 /// expirée) par son condensat, jointe à son créateur **et à sa société**.
-/// `None` si aucune clé active ou si la société a disparu (clé orpheline).
+/// `None` si aucune clé active, si la société a disparu (clé orpheline), ou si
+/// la clé ne porte **aucune portée connue** de cette version (C-32-5-37).
 ///
 /// Le rôle et l'état du créateur sont rendus, non filtrés : c'est
 /// l'authentification (32-5b) qui décide de leur sens.
@@ -127,7 +225,7 @@ pub async fn find_active_auth_by_key_hash(
     pool: &MySqlPool,
     key_hash: &str,
 ) -> Result<Option<McpKeyAuthRow>, DbError> {
-    sqlx::query_as::<_, McpKeyAuthRow>(
+    let row = sqlx::query_as::<_, AuthRow>(
         "SELECT k.id AS mcp_key_id, k.company_id AS company_id, \
                 k.created_by_user_id AS created_by_user_id, \
                 CAST(k.scopes AS CHAR) AS scopes, k.send_validation AS send_validation, \
@@ -142,7 +240,8 @@ pub async fn find_active_auth_by_key_hash(
     .bind(key_hash)
     .fetch_optional(pool)
     .await
-    .map_err(map_db_error)
+    .map_err(map_db_error)?;
+    Ok(row.and_then(auth_row))
 }
 
 /// Révoque une clé (verrou optimiste sur `version`, scopé par société).

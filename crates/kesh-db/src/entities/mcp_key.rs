@@ -170,12 +170,79 @@ impl<'q> Encode<'q, MySql> for McpScopes {
     }
 }
 
-/// ⚠️ La colonne `JSON` se lit par `CAST(scopes AS CHAR)` : MariaDB la rend
-/// sinon en `BLOB` (motif `bank_profiles.column_mapping`).
-impl<'r> Decode<'r, MySql> for McpScopes {
-    fn decode(value: <MySql as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
-        let s = <String as Decode<MySql>>::decode(value)?;
-        McpScopes::from_json(&s).map_err(Into::into)
+/// Les portées d'une clé **telles que la base les porte** — lues avec
+/// tolérance (C-32-5-37, revue P1 E1).
+///
+/// ⚠️ **Pourquoi pas [`McpScopes`] à la lecture.** Une ligne peut porter une
+/// portée que cette version ne connaît pas — une sauvegarde d'une version
+/// future qui n'ajoute aucune table s'importe ici, et l'import ne contrôle pas
+/// le contenu des cellules. Un décodage strict rendait alors la **liste entière**
+/// illisible (`list_by_company` est un `fetch_all`), la clé fautive impossible à
+/// relire donc à révoquer, et l'authentification en erreur de base plutôt qu'en
+/// refus. La lecture garde donc les portées **connues** et met les autres de
+/// côté ([`StoredMcpScopes::unknown`]) ; le dépôt les journalise en nommant
+/// l'id de la clé (`repositories::mcp_keys`). La colonne `JSON` s'y lit par
+/// `CAST(scopes AS CHAR)` : MariaDB la rend sinon en `BLOB`.
+///
+/// Ce qui reste strict : l'**écriture** (on ne stocke qu'un [`McpScopes`]) et
+/// la lecture d'une entrée d'API ([`McpScopes::parse`], [`McpScopes::from_json`]).
+/// Une clé sans aucune portée connue se liste et se révoque, mais
+/// [`StoredMcpScopes::usable`] rend `None` : elle n'authentifie jamais
+/// (`repositories::mcp_keys::find_active_auth_by_key_hash`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StoredMcpScopes {
+    known: BTreeSet<McpScope>,
+    unknown: Vec<String>,
+}
+
+impl StoredMcpScopes {
+    /// Lit la colonne `scopes` sans jamais échouer : chaque chaîne connue est
+    /// gardée ; une chaîne inconnue, un élément qui n'est pas une chaîne, ou un
+    /// texte qui n'est pas un tableau JSON va dans [`Self::unknown`].
+    pub fn from_stored_json(json: &str) -> Self {
+        let mut stored = Self::default();
+        match serde_json::from_str::<serde_json::Value>(json) {
+            Ok(serde_json::Value::Array(items)) => {
+                for item in items {
+                    match item.as_str() {
+                        Some(s) => match s.parse::<McpScope>() {
+                            Ok(scope) => {
+                                stored.known.insert(scope);
+                            }
+                            Err(_) => stored.unknown.push(s.to_string()),
+                        },
+                        None => stored.unknown.push(item.to_string()),
+                    }
+                }
+            }
+            _ => stored.unknown.push(json.to_string()),
+        }
+        stored
+    }
+
+    /// Les portées connues, dans l'ordre canonique.
+    pub fn known(&self) -> &BTreeSet<McpScope> {
+        &self.known
+    }
+
+    /// Ce que cette version ne reconnaît pas, tel que stocké.
+    pub fn unknown(&self) -> &[String] {
+        &self.unknown
+    }
+
+    /// Les portées connues, si elles forment un ensemble utilisable (non vide) ;
+    /// `None` pour une clé sans aucune portée connue.
+    pub fn usable(&self) -> Option<McpScopes> {
+        McpScopes::new(self.known.iter().copied()).ok()
+    }
+}
+
+impl From<McpScopes> for StoredMcpScopes {
+    fn from(scopes: McpScopes) -> Self {
+        Self {
+            known: scopes.0,
+            unknown: Vec::new(),
+        }
     }
 }
 
@@ -238,15 +305,16 @@ impl<'r> Decode<'r, MySql> for SendValidation {
 }
 
 /// Clé MCP persistée. Pas de `Serialize`/`Deserialize` ; `Debug` manuel qui
-/// masque `key_hash` (cf. note du module).
-#[derive(Clone, sqlx::FromRow)]
+/// masque `key_hash` (cf. note du module). Construite par le dépôt, qui lit
+/// les portées avec tolérance ([`StoredMcpScopes`]).
+#[derive(Clone)]
 pub struct McpKey {
     pub id: i64,
     pub company_id: i64,
     pub created_by_user_id: i64,
     pub name: String,
     pub key_hash: String,
-    pub scopes: McpScopes,
+    pub scopes: StoredMcpScopes,
     pub send_validation: SendValidation,
     pub expires_at: Option<NaiveDateTime>,
     pub last_used_at: Option<NaiveDateTime>,
@@ -380,6 +448,47 @@ mod tests {
     }
 
     #[test]
+    fn stored_scopes_keep_the_known_and_set_aside_the_unknown() {
+        // C-32-5-37 : à la lecture, une portée inconnue est mise de côté, jamais
+        // une erreur ; les portées connues restent.
+        let s =
+            StoredMcpScopes::from_stored_json(r#"["books:write","books:read","prompts:write"]"#);
+        assert_eq!(
+            s.known().iter().copied().collect::<Vec<_>>(),
+            vec![McpScope::BooksRead, McpScope::PromptsWrite]
+        );
+        assert_eq!(s.unknown(), ["books:write"]);
+        assert_eq!(
+            s.usable().map(|u| u.to_json()).as_deref(),
+            Some(r#"["books:read","prompts:write"]"#)
+        );
+        // Une forme entièrement à jour n'a rien de côté.
+        let ok = StoredMcpScopes::from_stored_json(r#"["books:read"]"#);
+        assert!(ok.unknown().is_empty());
+        assert_eq!(ok, McpScopes::new([McpScope::BooksRead]).unwrap().into());
+    }
+
+    #[test]
+    fn stored_scopes_without_any_known_scope_are_not_usable() {
+        for j in [r#"["books:write"]"#, "[1, null]", "{}", "pas du json", "[]"] {
+            let s = StoredMcpScopes::from_stored_json(j);
+            assert!(s.known().is_empty(), "{j}");
+            assert_eq!(
+                s.usable(),
+                None,
+                "{j} : une clé sans portée connue n'est pas utilisable"
+            );
+        }
+        assert_eq!(
+            StoredMcpScopes::from_stored_json("[1, null]").unknown(),
+            ["1", "null"]
+        );
+        assert_eq!(StoredMcpScopes::from_stored_json("{}").unknown(), ["{}"]);
+        // L'entrée d'une API, elle, reste stricte (mutation Ma3).
+        assert!(McpScopes::from_json(r#"["books:write","books:read"]"#).is_err());
+    }
+
+    #[test]
     fn send_validation_roundtrip_and_default() {
         assert_eq!(SendValidation::default(), SendValidation::Required);
         for v in [SendValidation::Required, SendValidation::Exempt] {
@@ -397,7 +506,7 @@ mod tests {
             created_by_user_id: 3,
             name: "agent".into(),
             key_hash: "deadbeef".repeat(8),
-            scopes: McpScopes::new([McpScope::BooksRead]).unwrap(),
+            scopes: McpScopes::new([McpScope::BooksRead]).unwrap().into(),
             send_validation: SendValidation::Required,
             expires_at: None,
             last_used_at: None,
