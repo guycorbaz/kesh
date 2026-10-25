@@ -2094,4 +2094,45 @@ non testable sans concurrence forcée).
     C-32-5-53).
   - Clé `32-5c-routes-gestion-cles-mcp` à **`review`** ; prompt de revue P1 : `325c-review-prompt-p1.md` (Sonnet,
     lentilles B, E, A).
+- **2026-10-25 — Revue de code P1 de la 32-5c** (passe complète, trois lentilles en contexte frais, **Sonnet** ×3,
+  lecture seule, prompt `325c-review-prompt-p1.md`, rapports `kesh-gate-logs/325c-review-p1-{B,E,A}.md`) : B
+  **0/0/1/8**, E **0/0/0/8**, A **0/0/0/3**. Remédiation (Opus 5.5, commit `277b7b88`, arbitrage de l'orchestrateur) :
+  - **B1 = A1 (MEDIUM)** — `docs/api-external.md:35` disait aussi « Depuis la 0.16.0, l'Administrateur peut créer des
+    clés du serveur MCP » et « une clé d'API n'ouvre pas le serveur MCP » (aucun `/mcp` monté, aucun écran ; § 6.4 et § 9
+    du même fichier disaient le contraire). Réduit à : « Une clé `kesh_mcp_…` n'est pas une clé d'API : présentée à
+    `/api/v1`, elle est refusée en `401`. » `grep -niF "serveur MCP" docs/api-external.md` → l. 181, 183, 185, 187, 831
+    (§ 6.4 et § 9, laissés à la 32-11) : plus aucune phrase qui les contredise.
+  - **B4 = E3 = A2 (LOW)** — la portée inconnue recopiée au message de refus n'était bornée que par la taille du corps :
+    `cite()` et `SCOPE_CITED_MAX_CHARS = 64` (coupure sur une frontière de caractère, `…`) ; test
+    `an_unknown_scope_is_cited_within_bounds`.
+  - **E1 = B9 (LOW)** — une expiration au-delà du `9999-12-31` (UTC) : refus traduit
+    `admin-mcp-keys-error-expiry-out-of-range` (quatre catalogues ; G9 étendue : 8 clés pour `mcp_keys.rs`, 13 en
+    tout pour les deux fichiers de la 32-5c) ; test `c3_an_expiry_beyond_year_9999_is_refused_not_a_500`.
+    ⚠️ **Constats d'exécution qui corrigent la prémisse des rapports** : (i) une année à cinq chiffres
+    (`+10000-01-01T00:00:00Z`) est refusée par l'extracteur JSON avant le handler (premier gate ciblé,
+    `325c-p1-cible-1.log`) — la forme atteignable est une date de l'an 9999 dont le fuseau la porte au-delà en UTC
+    (`9999-12-31T23:59:59-05:00`) ; (ii) sans la garde (mutation Mp2), cette clé n'est **pas** un 500 : elle est créée
+    en **201 avec `expiresAt: null`**, c'est-à-dire **permanente** (`325c-mut-Mp2.log`). Le premier libellé
+    (« l'an 9999 ») faisait rougir `les_comptes_cites_en_exemple_existent_dans_les_plans_livres` (9999 lu comme un
+    compte) : réécrit en « le 9999-12-31 (UTC) », forme déjà admise par la garde
+    (`audit-log-query-error-date-out-of-range`).
+  - **`routes/api_keys.rs` porte le même défaut** (`:140-146` : seul `exp <= Utc::now()` est contrôlé ; colonne
+    `api_keys.expires_at DATETIME(3)`, `20260605000001_api_keys.sql:25`) — **non corrigé**, signalé à l'orchestrateur
+    pour traçage ; effet attendu par analogie (même conversion, même type de colonne) : PAT créé sans expiration —
+    **non exécuté** sur cette route.
+  - **Tracés sur #738 par l'orchestrateur, non traités ici** : B2 = E4, B3 = E5, B5 = E2, B6, B7 = E6, B8, E7, E8, A3.
+  - **Gates** au dernier commit de code `277b7b88` : ciblé — premier run 142/144 (les deux rouges ci-dessus), second
+    **144 réussis** (`325c-p1-cible-2.log`) ; clippy workspace `-D warnings` vert ; **gate complet**, `kesh_325c` remise
+    à zéro juste avant, **4113 réussis, 7 ignorés** (`325c-p1-gate-complet.log` ; 4111 + 2 tests neufs) ; build du
+    frontend vert (`325c-p1-front-build.log`) ; **E2E complet**, `kesh_e2e_325c` reconstruite, dossier neuf
+    `/tmp/kesh-e2e-325c-p1/`, binaire reconstruit à 10:32:54 après le commit (10:20:07), vérifié (`/proc/2586278/exe`),
+    port 3330 : **315 passés, 7 échecs (les 7 KF-029), 17 ignorés** (13,0 min, `325c-p1-e2e.log`) ; backend arrêté par
+    son PID.
+  - **Mutations** (`325c-mutations-p1.log`) : **3 jouées, 3 tuées** — Mp1a (`cite` sans borne) et Mp1b (la portée
+    recopiée sans `cite`) par `an_unknown_scope_is_cited_within_bounds` ; Mp2 (garde de l'an 9999 neutralisée) par
+    `c3_an_expiry_beyond_year_9999_is_refused_not_a_500`.
+  - **Décomptes** (périmètre `7200ac0d..277b7b88`) : 8 fichiers ; 2 tests neufs (`routes/mcp_keys.rs` 5 → 6,
+    `mcp_admin_routes_e2e.rs` 9 → 10) ; 1 clé i18n neuve par locale (18 → 19).
+  - Passe suivante : **P2 ciblée** (regression hunter, Sonnet), prompt `325c-review-prompt-p2.md` (commit `4a1b9623`),
+    rapport attendu `kesh-gate-logs/325c-review-p2.md`.
 
