@@ -1124,6 +1124,91 @@ la File List en nommait bien six)* ; **30 tests neufs** (`grep -cE '#\[(sqlx::)?
 bornes) : `mcp_keys_repository.rs` 0 → 21, `entities/mcp_key.rs` 0 → 7, `entities/mcp_server_settings.rs` 0 → 1,
 `admin_backup_e2e.rs` 3 → 4 ; `admin_full_import_e2e.rs` 55 → 55 (`ac10` renommé, non ajouté). Migrations 83 → 84.
 
+#### 32-5b
+
+- **Génération (AC-b1)** : `MCP_PREFIX = "kesh_mcp_"`, `generate_mcp_key`, et un cœur privé `generate_prefixed(prefix)`
+  qui sert aussi `generate_pat` et `generate_reset_token` (préfixe vide, C-32-5-39) ; `grep -c "OsRng.fill_bytes"`
+  2 → **1**. Tests neufs : `generate_mcp_key_format_and_hash`, `generate_mcp_key_is_unique`, `prefixes_are_disjoint` ;
+  ceux de `generate_pat` et `generate_reset_token` inchangés et verts.
+- **`Portee` (AC-b2)** : `pub use kesh_db::entities::McpScope as Portee;` ; le doc-comment dit ce que chaque portée ouvre
+  aux services (celui des variantes de la 32-4a et de la 32-4b y est repris). Les 14 occurrences de `src/` compilent
+  inchangées. `TOUTES` = `Portee::ALL` dans `services_motif.rs` et `services_rollout.rs` ; refus par les quatre autres
+  portées ensemble (C-32-5-40) ; `ac10_vi` 10 → **11** fichiers, `RESIDUS_VI` inchangé.
+- **`services::cles_mcp` (AC-b3)** : `ROLE_CLE_MCP`, `CleMcpAuthentifiee`, `authentifier` — l'ordre de C-32-5-14, un
+  refus = un 401 uniforme, le motif au journal seulement (C-32-5-41) ; la ligne `McpKeyAuthRow` du dépôt, sans relecture
+  des portées. Doc-comments : `poignees.rs` (`Trace::pool` sert aussi la dernière utilisation d'une clé MCP),
+  `services/mod.rs` (inventaire des écritures, point 2 ; § *L'authentification d'une clé MCP*), `acces.rs`
+  (`ContexteAcces` : constructeur de production). Le module ne nomme ni `axum`, ni `AppState`, ni `CurrentUser`
+  (`ac10_vi` vert).
+- **R5 de la 32-5a** : `auth_row` n'avertit qu'une fois, et seulement pour un refus ; une clé mixte n'émet qu'un
+  `debug!` (C-32-5-38). Angle mort déclaré : aucune capture de `tracing` dans le dépôt.
+- **Tests** : `cles_mcp_e2e.rs` (17) — AC-b3 (succès, politique par défaut, inconnue, révoquée, expirée, créateur
+  inactif, créateur `Comptable` puis `Consultation` avec contrôle positif, société absente, portées inconnues et clé
+  mixte, préfixe aux octets, (α) et (β) sur un pool vers `127.0.0.1:1`) ; AC-b4 (a)+(b) par HTTP (en-tête **et**
+  cookie, sur `/api/v1/accounts` et `/api/v1/admin/backup-schedule`, contrôle JWT à 200 sur les deux), (c), (d) sous
+  deux formes ; AC-b5 et son témoin 1792 sur la requête même de `touch_last_used`. AC-b6 :
+  `full_import_restores_mcp_keys_that_authenticate` (`admin_full_import_e2e.rs`).
+- **Manuel** : la partie b ne change **rien de visible** — aucune route, aucun écran, aucun texte que l'utilisateur ou
+  l'administrateur lise ne devient faux ; `docs/` n'est pas touché. `docs/api-external.md:29` (« une clé Kesh a toujours
+  la forme `kesh_pat_` ») et `:183` restent vrais tant qu'aucune route ne crée de clé MCP : leur révision est à la
+  32-5c (AC-c7, C-32-5-42).
+- ⚠️ **Écart à la consigne, déclaré** : le test de l'AC-b6 a d'abord été ajouté par un `cat >>` (heredoc), contraire à
+  « le code s'édite par l'outil Edit uniquement » ; constaté aussitôt, le fichier a été restauré
+  (`git checkout -- crates/kesh-api/tests/admin_full_import_e2e.rs`, aucune autre modification de ma part n'y était) et
+  le même test réécrit par Edit, avant toute compilation et tout commit. `cargo fmt --all` a reformaté
+  `cles_mcp_e2e.rs` (outil de formatage, non une édition à la main).
+
+**Gates (32-5b)** — journaux `kesh-gate-logs/325b-*` :
+
+- **ciblé** pendant l'itération : `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings` vert
+  (`325b-clippy-1.log`) ; nextest sur `cles_mcp_e2e`, `services_motif`, `services_rollout`, `admin_full_import_e2e`,
+  `mcp_keys_repository`, les tests unitaires `api_key` de `kesh-api` et `mcp` de `kesh-db` : **162 réussis**
+  (`325b-cible-1.log`) ;
+- **gate complet** au dernier commit de code `3afa49e8`, `kesh_325b` remise à zéro juste avant (base, migrations,
+  seed) : `scripts/test-fast.sh --ci` — garde des droits conforme, `cargo fmt --check`, `cargo clippy --all-targets
+  -D warnings`, nextest **4083 réussis, 7 ignorés** (`325b-gate-complet.log`). `cargo build --workspace --all-targets`
+  n'a **pas** tourné à part (clippy `--all-targets` et la compilation de nextest le couvrent). Exception `kesh-db`
+  tenue (R5 touche un dépôt) ;
+- **frontend** : non touché ; **build seul** (`npm run build`) vert (`325b-front-build.log`) ;
+- **E2E complet** au commit `3afa49e8`, binaire `target/debug/kesh-api` reconstruit après le commit (04:52:03, commit
+  04:43:53) et vérifié comme exécutable du processus (`/proc/<pid>/exe`), port 3328, `kesh_e2e_325b` reconstruite,
+  arrêt par PID :
+  - **premier run (`325b-e2e.log`) : 301 passés, 11 échecs, 17 ignorés, 10 non lancés** — **montage fautif de ma
+    part** : le runner ne recevait ni `KESH_INBOX_DIR` ni `KESH_DOCUMENTS_DIR` (il lisait `/tmp/kesh-e2e/inbox`, absent),
+    d'où quatre échecs hors liste (`backup-restore-new-install.spec.ts:140`, `:262`, `inbox-import.spec.ts:59`,
+    `supplier-documents.spec.ts:78`), chacun sur « KESH_INBOX_DIR = /tmp/kesh-e2e/inbox : répertoire absent ou non
+    inscriptible par le runner » ;
+  - **second run (`325b-e2e-r2.log`)**, base reconstruite, backend relancé sur le même binaire, dossier neuf
+    `/tmp/kesh-e2e-325b-r2/`, les trois dossiers passés **aussi au runner** : **315 passés, 7 échecs, 17 ignorés**
+    (12,9 min). Les 7 échecs sont les **7 KF-029** (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`,
+    `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`), jugés contre `docs/testing.md` § *Les échecs attendus*. KF-052 ne
+    s'est pas déclenchée. Aucune régression.
+
+**Mutations (32-5b)** — `325b-mutations.log`, une à la fois, motif vérifié unique, seul `cles_mcp_e2e` relinké
+(`cargo nextest run -p kesh-api --test cles_mcp_e2e`), restauration `git checkout --` puis `touch`, diff résiduel nul
+vérifié après chacune : **7 jouées, 7 tuées**.
+
+| # | Mutation | Rougit |
+|---|---|---|
+| Mb1 | `authentifier` admet `kesh_pat_` et cherche dans `api_keys` | `b4_c_un_pat_n_authentifie_pas_au_mcp` (et `alpha_…`) |
+| Mb2 | `require_auth` route `kesh_mcp_` vers `authentifier` | `b4_a_b_une_cle_mcp_n_ouvre_pas_l_api` |
+| Mb3 | `touch_last_used` sur la `Lecture` | `b5_lecture_seule_et_trace` |
+| Mb4 | contrôle de rôle neutralisé | `createur_non_administrateur_refuse` |
+| Mb5 | contrôle d'activité neutralisé | `createur_inactif_refuse` |
+| Mb6a | contrôle du préfixe neutralisé | `alpha_sans_prefixe_aucun_acces_a_la_base` |
+| Mb6b | contrôle du préfixe déplacé après la recherche | `alpha_sans_prefixe_aucun_acces_a_la_base` |
+
+Non jouées, déclarées : le journal de `auth_row` (C-32-5-38, aucune capture de `tracing`) ; les mutations de
+l'énumération des portées dans les services (couvertes par les tests de la 32-3 et de la 32-4, non rejouées ici).
+
+**Décomptes** (recomptés, périmètre `b723e3d9..3afa49e8`, code seul) : **10 fichiers** (`git diff --name-status
+b723e3d9 3afa49e8`) — 2 neufs, 8 modifiés, dont 1 de `kesh-db` ; **21 tests neufs** (`grep -cE
+'#\[(sqlx::|tokio::)?test'` aux deux bornes) : `cles_mcp_e2e.rs` 0 → 17, `auth/api_key.rs` 7 → 10,
+`admin_full_import_e2e.rs` 55 → 56 ; `services_motif.rs` 24 → 24 et `services_rollout.rs` 21 → 21 (tests modifiés, non
+ajoutés). `Portee::` dans `crates/` : 43 occurrences sur 41 lignes → **39 sur 37** (`services_motif.rs` 13 → 6,
+`services_rollout.rs` 16 → 14, `src/` 14 → 14, les cinq autres dans les deux fichiers de tests neufs ou complétés).
+Fichiers de `services/` : 10 → 11. Aucune migration, aucun fichier de `docs/` ni de `frontend/`.
+
 ### File List
 
 #### 32-5a
@@ -1492,4 +1577,19 @@ bornes) : `mcp_keys_repository.rs` 0 → 21, `entities/mcp_key.rs` 0 → 7, `ent
   - **Angles morts et reports** : R2 et R5 (Change Log, « Revue de code P2 ») ; § *Pour la 32-5b* (lecture tolérante,
     R5) ; § *Pour la 32-5c* (B1 = E4, B3, E3) ; #747, #748.
   - Clé `32-5a-tables-et-sauvegarde-mcp` à **`done`** ; 32-5b, 32-5d, 32-5c `ready-for-dev`, dans cet ordre.
+- **2026-10-25 — Développement 32-5b** (Opus 5.5, en autonomie, worktree `kesh-32-5b`, départ `b723e3d9` ; dernier
+  commit de code `3afa49e8`).
+  - **Étape 0** au Dev Agent Record (§ *32-5b*), ligne lue citée : faits 1, 2, 6 recomptés **relativement à
+    `b723e3d9`** ; doc-comments de la Q11 déjà corrigés par la 32-4b (rien refait) ; `pool_lecture_seule` déjà dans
+    `tests/common/` (32-4a) ; R5 de la revue de la 32-5a traité ; `services_rollout.rs`, inconnu de la fiche, revu.
+  - **Livré** : AC-b1 à AC-b6 (Dev Agent Record, *Completion Notes* § *32-5b*). Registre : C-32-5-38 à C-32-5-42.
+  - **Gates** au dernier commit de code : gate complet **4083 réussis, 7 ignorés** ; build du frontend vert ; E2E
+    complet **315 passés, 7 échecs (les 7 KF-029), 17 ignorés** au second run — le premier (301 / 11 / 17 / 10 non
+    lancés) avait un montage fautif (dossiers non passés au runner), déclaré.
+  - **Mutations** : Mb1 à Mb6 (Mb6 sous deux formes) — **7 jouées, 7 tuées**.
+  - **Décomptes** (périmètre `b723e3d9..3afa49e8`) : 10 fichiers de code (2 neufs), 21 tests neufs.
+  - **Manuel** : rien de visible ne change ; `api-external.md` laissé à la 32-5c (C-32-5-42).
+  - Écart à la consigne « Edit seul » (un `cat >>`, annulé et refait par Edit avant compilation), déclaré.
+  - Clé `32-5b-authentification-cle-mcp` à **`review`** ; prompt de revue P1 : `325b-review-prompt-p1.md` (Sonnet,
+    lentilles B, E, A).
 
