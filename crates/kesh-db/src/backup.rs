@@ -73,7 +73,14 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "journal_entries",
     "audit_log",
     "api_keys", // Story 17-2a (#100) — enfant de companies + users (RESTRICT).
+    // Story 32-5a (#723) — clés du serveur MCP : enfant de companies + users
+    // (RESTRICT), sans enfant propre ; sa place suit celle d'`api_keys`.
+    "mcp_keys",
     "company_invoice_settings",
+    // Story 32-5a (#723) — réglages du serveur MCP : une ligne par société au
+    // plus, enfant de companies (RESTRICT) ; sa place suit celle de
+    // `company_invoice_settings`, autre ligne de réglages de société.
+    "mcp_server_settings",
     "bank_transactions", // Story 8-1b — enfant de bank_imports + bank_accounts.
     "bank_imports",      // Story 8-1b — enfant de bank_accounts + companies.
     "bank_profiles",     // Story 8-2 — enfant de companies (CASCADE).

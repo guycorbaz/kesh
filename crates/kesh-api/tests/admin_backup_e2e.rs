@@ -28,8 +28,11 @@ use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
 use kesh_db::backup::TABLES_TO_TRUNCATE;
 use kesh_db::entities::address::StructuredAddress;
-use kesh_db::entities::{Language, NewCompany, OrgType};
-use kesh_db::repositories::companies;
+use kesh_db::entities::{
+    Language, McpScope, McpScopes, McpServerSettingsUpdate, NewCompany, NewMcpKey, OrgType,
+    SendValidation,
+};
+use kesh_db::repositories::{companies, mcp_keys, mcp_server_settings};
 use kesh_db::test_fixtures::seed_accounting_company;
 use reqwest::multipart;
 use serde_json::Value;
@@ -142,6 +145,280 @@ async fn table_counts(pool: &MySqlPool) -> BTreeMap<&'static str, i64> {
     counts
 }
 
+/// Story 32-5a (AC-a7) — peuple les deux tables du serveur MCP : une clé
+/// active (dispensée, deux portées, dernière utilisation à la milliseconde),
+/// une clé révoquée, et des réglages **serveur activé** aux trois listes non
+/// vides. Écrit par les dépôts, puis horodaté à la main (`last_used_at`,
+/// `revoked_at`) pour éprouver la milliseconde.
+async fn seed_mcp(pool: &MySqlPool, company_id: i64, user_id: i64) {
+    let mut tx = pool.begin().await.unwrap();
+    let active = mcp_keys::create_in_tx(
+        &mut tx,
+        NewMcpKey {
+            company_id,
+            created_by_user_id: user_id,
+            name: "Agent comptable".into(),
+            key_hash: "a".repeat(64),
+            scopes: McpScopes::new([McpScope::DocumentsRead, McpScope::BooksRead]).unwrap(),
+            send_validation: SendValidation::Exempt,
+            expires_at: Some(
+                chrono::NaiveDate::from_ymd_opt(2999, 1, 1)
+                    .unwrap()
+                    .and_hms_milli_opt(12, 0, 0, 250)
+                    .unwrap(),
+            ),
+        },
+    )
+    .await
+    .unwrap();
+    let revoked = mcp_keys::create_in_tx(
+        &mut tx,
+        NewMcpKey {
+            company_id,
+            created_by_user_id: user_id,
+            name: "Ancienne clé".into(),
+            key_hash: "b".repeat(64),
+            scopes: McpScopes::new([McpScope::PromptsWrite]).unwrap(),
+            send_validation: SendValidation::Required,
+            expires_at: None,
+        },
+    )
+    .await
+    .unwrap();
+    mcp_server_settings::save_in_tx(
+        &mut tx,
+        company_id,
+        0,
+        &McpServerSettingsUpdate {
+            enabled: true,
+            address_filter_enabled: false,
+            allowed_networks: vec!["10.0.0.0/8".into(), "fd00::/8".into()],
+            trusted_proxies: vec!["192.168.1.1/32".into()],
+            allowed_origins: vec!["http://nas.local:3000".into()],
+        },
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    sqlx::query("UPDATE mcp_keys SET last_used_at = '2026-10-20 10:11:12.345' WHERE id = ?")
+        .bind(active.id)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE mcp_keys SET revoked_at = '2026-10-21 08:09:10.678', version = version + 1 \
+         WHERE id = ?",
+    )
+    .bind(revoked.id)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// Instantané colonne par colonne d'une table, chaque cellule rendue en texte
+/// par MariaDB (`CAST(… AS CHAR)` : les `DATETIME(3)` gardent leurs
+/// millisecondes, les `JSON` leur texte exact).
+async fn column_snapshot(
+    pool: &MySqlPool,
+    table: &str,
+    columns: &[&str],
+    order_by: &str,
+) -> Vec<Vec<Option<String>>> {
+    use sqlx::Row;
+    let select = columns
+        .iter()
+        .map(|c| format!("CAST(`{c}` AS CHAR)"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    sqlx::query(&format!(
+        "SELECT {select} FROM `{table}` ORDER BY {order_by}"
+    ))
+    .fetch_all(pool)
+    .await
+    .unwrap_or_else(|e| panic!("instantané {table}: {e}"))
+    .iter()
+    .map(|row| {
+        (0..columns.len())
+            .map(|i| row.get::<Option<String>, _>(i))
+            .collect()
+    })
+    .collect()
+}
+
+const MCP_KEYS_COLUMNS: [&str; 13] = [
+    "id",
+    "company_id",
+    "created_by_user_id",
+    "name",
+    "key_hash",
+    "scopes",
+    "send_validation",
+    "expires_at",
+    "last_used_at",
+    "revoked_at",
+    "version",
+    "created_at",
+    "updated_at",
+];
+
+const MCP_SERVER_SETTINGS_COLUMNS: [&str; 8] = [
+    "company_id",
+    "enabled",
+    "address_filter_enabled",
+    "allowed_networks",
+    "trusted_proxies",
+    "allowed_origins",
+    "version",
+    "updated_at",
+];
+
+/// Export d'installation par HTTP ; rend les octets du `.keshbackup`.
+async fn export_backup(app: &TestApp, jwt: &str) -> Vec<u8> {
+    let resp = app
+        .client
+        .get(app.url("/api/v1/admin/full-export"))
+        .header("Authorization", format!("Bearer {jwt}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "export → 200");
+    resp.bytes().await.unwrap().to_vec()
+}
+
+/// Import d'installation par HTTP ; exige un 200.
+async fn import_backup(app: &TestApp, jwt: &str, bytes: Vec<u8>) {
+    let form = multipart::Form::new().part(
+        "file",
+        multipart::Part::bytes(bytes)
+            .file_name("installation.keshbackup")
+            .mime_str("application/octet-stream")
+            .unwrap(),
+    );
+    let resp = app
+        .client
+        .post(app.url("/api/v1/admin/full-import"))
+        .header("Authorization", format!("Bearer {jwt}"))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "import → 200");
+}
+
+// ============================================================
+// Story 32-5a (AC-a7) — les tables du serveur MCP font l'aller-retour
+// ============================================================
+
+/// Les deux lignes de chaque table MCP reviennent **identiques, colonne par
+/// colonne** — portées, politique, `last_used_at` et `revoked_at` à la
+/// milliseconde, listes JSON à l'identique — et un serveur **activé** dans la
+/// sauvegarde l'est après l'import (hypothèse Q7, C-32-5-11). Entre l'export
+/// et l'import, tout est altéré : clé active supprimée, réglages vidés et
+/// désactivés ; l'import doit tout rendre. Tue la mutation Ma6 (une colonne
+/// JSON rebindée mal à l'import).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn mcp_tables_roundtrip_column_by_column_and_enabled_server_stays_enabled(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    seed_mcp(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let jwt = forge_jwt(seeded.admin_user_id, "Admin", seeded.company_id);
+
+    let keys_before = column_snapshot(&pool, "mcp_keys", &MCP_KEYS_COLUMNS, "id").await;
+    let settings_before = column_snapshot(
+        &pool,
+        "mcp_server_settings",
+        &MCP_SERVER_SETTINGS_COLUMNS,
+        "company_id",
+    )
+    .await;
+    assert_eq!(keys_before.len(), 2, "deux clés au montage");
+    assert_eq!(settings_before.len(), 1, "une ligne de réglages au montage");
+    // Le montage porte bien ce que le test prétend éprouver (sans quoi la
+    // comparaison passerait à vide sur ces valeurs).
+    let active = &keys_before[0];
+    assert_eq!(
+        active[5].as_deref(),
+        Some(r#"["books:read","documents:read"]"#),
+        "portées stockées sous forme canonique"
+    );
+    assert_eq!(active[6].as_deref(), Some("exempt"));
+    assert_eq!(active[8].as_deref(), Some("2026-10-20 10:11:12.345"));
+    assert_eq!(
+        keys_before[1][9].as_deref(),
+        Some("2026-10-21 08:09:10.678")
+    );
+    assert_eq!(
+        settings_before[0][1].as_deref(),
+        Some("1"),
+        "serveur activé"
+    );
+    assert!(
+        settings_before[0][3]
+            .as_deref()
+            .unwrap()
+            .contains("fd00::/8")
+    );
+
+    let backup = export_backup(&app, &jwt).await;
+
+    // Altération entre l'export et l'import.
+    sqlx::query("DELETE FROM mcp_keys WHERE key_hash = ?")
+        .bind("a".repeat(64))
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE mcp_server_settings SET enabled = FALSE, allowed_networks = '[]', \
+         trusted_proxies = '[]', allowed_origins = '[]', version = version + 1",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    import_backup(&app, &jwt, backup).await;
+
+    let keys_after = column_snapshot(&pool, "mcp_keys", &MCP_KEYS_COLUMNS, "id").await;
+    let settings_after = column_snapshot(
+        &pool,
+        "mcp_server_settings",
+        &MCP_SERVER_SETTINGS_COLUMNS,
+        "company_id",
+    )
+    .await;
+    assert_eq!(keys_after, keys_before, "mcp_keys : colonne par colonne");
+    assert_eq!(
+        settings_after, settings_before,
+        "mcp_server_settings : colonne par colonne"
+    );
+
+    // Et par le dépôt : le serveur activé l'est encore (Q7), la clé active se
+    // retrouve à l'authentification avec ses portées et sa politique.
+    let settings = mcp_server_settings::get(&pool, seeded.company_id)
+        .await
+        .unwrap()
+        .expect("réglages restaurés");
+    assert!(
+        settings.enabled,
+        "un serveur activé dans la sauvegarde l'est après l'import"
+    );
+    let auth = mcp_keys::find_active_auth_by_key_hash(&pool, &"a".repeat(64))
+        .await
+        .unwrap()
+        .expect("clé active restaurée");
+    assert_eq!(
+        auth.scopes.iter().collect::<Vec<_>>(),
+        vec![McpScope::BooksRead, McpScope::DocumentsRead]
+    );
+    assert_eq!(auth.send_validation, SendValidation::Exempt);
+    assert!(
+        mcp_keys::find_active_auth_by_key_hash(&pool, &"b".repeat(64))
+            .await
+            .unwrap()
+            .is_none(),
+        "la clé révoquée avant l'export reste révoquée"
+    );
+}
+
 // ============================================================
 // AC22 — round-trip exhaustif sur données riches
 // ============================================================
@@ -158,6 +435,9 @@ async fn full_roundtrip_rich_dataset_preserves_all_tables(pool: MySqlPool) {
     kesh_db::test_fixtures::seed_contact_and_product(&pool, seeded.company_id)
         .await
         .expect("seed contact+product");
+    // Story 32-5a (AC-a7) : les deux tables du serveur MCP, peuplées, pour que
+    // l'équivalence ne passe pas à vide sur elles.
+    seed_mcp(&pool, seeded.company_id, seeded.admin_user_id).await;
 
     let jwt = forge_jwt(seeded.admin_user_id, "Admin", seeded.company_id);
 
@@ -169,7 +449,8 @@ async fn full_roundtrip_rich_dataset_preserves_all_tables(pool: MySqlPool) {
         populated >= 6,
         "le seed riche doit peupler ≥ 6 tables, got {populated} : {baseline:?}"
     );
-    // Équivalence NON-TRIVIALE (review P1) : les 8 tables peuplées par le seed
+    // Équivalence NON-TRIVIALE (review P1) : les 10 tables peuplées par le seed
+    // (8, puis les deux du serveur MCP à la Story 32-5a)
     // doivent avoir un baseline > 0, sinon `after == baseline` serait vacuement
     // `0 == 0`. Les autres tables (journal/bank/invoices) restent vides — leur
     // sérialisation par type est couverte par les tests unitaires de
@@ -183,6 +464,8 @@ async fn full_roundtrip_rich_dataset_preserves_all_tables(pool: MySqlPool) {
         "vat_rates",
         "contacts",
         "products",
+        "mcp_keys",
+        "mcp_server_settings",
     ] {
         assert!(
             baseline[t] > 0,
