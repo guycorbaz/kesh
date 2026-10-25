@@ -922,6 +922,13 @@ développement fait chaque correction **à l'étape 0**, et la déclare au Chang
 
 - **32-5a** : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-5`, départ `deb3b250`.
 
+### Statut des parties
+
+- **32-5a — `done`** (2026-10-25) : revue de code terminée (P3 ciblée, 0 finding au-dessus de LOW), gate complet et
+  E2E complet au dernier commit de code `88eae2b2`. Clé `32-5a-tables-et-sauvegarde-mcp` à `done` dans
+  `sprint-status.yaml`.
+- **32-5b, 32-5d, 32-5c** — `ready-for-dev`, dans l'ordre a → b → d → c (C-32-5-27).
+
 ### Étape 0 — recontrôle (ligne lue citée)
 
 #### 32-5a (le 2026-10-25, contre `deb3b250`)
@@ -1404,4 +1411,25 @@ bornes) : `mcp_keys_repository.rs` 0 → 21, `entities/mcp_key.rs` 0 → 7, `ent
     la fiche et le registre. Aucune migration touchée.
   - La remédiation touche un fichier de `crates/` (commentaires et test) : passe suivante **ciblée** (P3, regression
     hunter, **Sonnet**, `325a-review-prompt-p3.md`, commits `88eae2b2` et `a08c17ee`).
+- **2026-10-25 — Revue de code P3 de la 32-5a — REVUE TERMINÉE** (passe **ciblée**, regression hunter, contexte frais,
+  **Sonnet**, sur `88eae2b2` et `a08c17ee` ; rapport `kesh-gate-logs/325a-review-p3.md` : **0 / 0 / 0 / 0**).
+  - **Trend de la boucle** : P1 complète (Sonnet ×3) — B 0/0/0/4, E 0/0/1/4, A 0/0/0/3 (1 MEDIUM, 11 LOW) → P2 ciblée
+    (Opus) 0/0/1/4, les cinq nés de la remédiation P1 → **P3 ciblée (Sonnet) 0/0/0/0**. La boucle se clôt sur une passe
+    sans aucun finding au-dessus de LOW (`CLAUDE.md`, *Review Iteration Rule*, décision Q3 (c)) ; aucune remédiation
+    n'est écrite après elle. Modèles : Sonnet → Opus → Sonnet.
+  - **Gates du dernier commit de code (`88eae2b2`)** : gate complet `scripts/test-fast.sh --ci`, `kesh_325` remise à
+    zéro juste avant — garde des droits, fmt, clippy `-D warnings`, **4051 réussis, 7 ignorés**
+    (`325a-p2r-gate-complet.log`) ; **E2E complet rejoué à `88eae2b2`** (règle D7 : l'entrée « Revue de code P2 » le
+    disait non rejoué, sur une consigne que l'orchestrateur a corrigée), binaire reconstruit après le commit (03:36:09,
+    commit 03:26:25) et processus vérifié sur ce binaire avant la suite, `kesh_e2e_325` reconstruite, dossier neuf
+    `/tmp/kesh-e2e-325a-p2r/` : **314 passés, 8 échecs, 17 ignorés** (12,9 min, `325a-p2r-e2e.log`) — les 7 KF-029 et
+    `sidebar-navigation.spec.ts:75` (KF-052, #424), **rejouée seule : 1 passé** (`325a-p2r-e2e-rejeu-sidebar.log`).
+    Frontend non touché par la partie a ; ses quatre gates verts au commit `e548574c` (développement).
+  - **Mutations de la partie a, au total : 16 jouées, 16 tuées** — Ma1a, Ma1b, Ma2, Ma3, Ma4a, Ma4b, Ma4c, Ma5, Ma6, Ma7
+    (développement, 10) ; Mp1 à Mp5 (revue P1, 5) ; Mq1 (revue P2, 1). Déclarées non écrivables ou non jouables : portée
+    inconnue acceptée telle quelle (`enum` clos), `>`/`>=` à l'expiration, les RESTRICT (schéma, P8), le journal de
+    `read_scopes` (aucun outil de capture de `tracing`, R2).
+  - **Angles morts et reports** : R2 et R5 (Change Log, « Revue de code P2 ») ; § *Pour la 32-5b* (lecture tolérante,
+    R5) ; § *Pour la 32-5c* (B1 = E4, B3, E3) ; #747, #748.
+  - Clé `32-5a-tables-et-sauvegarde-mcp` à **`done`** ; 32-5b, 32-5d, 32-5c `ready-for-dev`, dans cet ordre.
 
