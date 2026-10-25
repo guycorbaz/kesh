@@ -40,7 +40,25 @@ pub const PIEGE_E1: &str = "PIEGE_E1_326";
 /// Le contenu de l'`index.html` de test.
 pub const INDEX_HTML: &str = "<!doctype html><title>Kesh 326</title><p>index de test</p>";
 
-const TEST_JWT_SECRET: &str = "test-secret-32-bytes-minimum-test-secret-padding";
+/// Le secret JWT de la `Config` de test.
+pub const TEST_JWT_SECRET: &str = "test-secret-32-bytes-minimum-test-secret-padding";
+
+/// Un compte du plan de la société, nommé `nom` (fixture synthétique).
+pub async fn compte(pool: &MySqlPool, company_id: i64, user_id: i64, numero: &str, nom: &str) {
+    kesh_db::repositories::accounts::create(
+        pool,
+        user_id,
+        kesh_db::entities::NewAccount::new(
+            company_id,
+            numero,
+            nom,
+            kesh_db::entities::AccountType::Asset,
+            None,
+        ),
+    )
+    .await
+    .expect("compte");
+}
 
 /// Une société ; rend son id.
 pub async fn societe(pool: &MySqlPool, nom: &str) -> i64 {

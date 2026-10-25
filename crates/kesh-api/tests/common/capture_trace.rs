@@ -73,10 +73,15 @@ impl CaptureTrace {
 
     /// Le témoin : exige un évènement qui contienne `fragment`.
     pub fn exiger(&self, fragment: &str) {
+        self.exiger_ensemble(&[fragment]);
+    }
+
+    /// Exige **un même** évènement qui contienne chacun des `fragments`.
+    pub fn exiger_ensemble(&self, fragments: &[&str]) {
         let vus = self.evenements();
         assert!(
-            vus.iter().any(|e| e.contains(fragment)),
-            "⛔ témoin de la capture : aucun évènement ne contient {fragment:?} \
+            vus.iter().any(|e| fragments.iter().all(|f| e.contains(f))),
+            "⛔ témoin de la capture : aucun évènement ne contient {fragments:?} \
              (vus : {vus:?}) — la capture ne voit pas les évènements du serveur, \
              et un test d'absence passerait à vide"
         );

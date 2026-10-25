@@ -188,7 +188,7 @@ pub fn origine_admise<'a>(
     else {
         return false;
     };
-    propres.iter().any(|o| *o == recue)
+    propres.contains(&recue)
         || admises
             .into_iter()
             .any(|o| crate::util::origine_canonique(o).is_some_and(|o| o == recue))

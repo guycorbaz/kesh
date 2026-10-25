@@ -14,13 +14,168 @@
 
 mod common;
 
+use std::net::SocketAddr;
+use std::pin::Pin;
+use std::sync::atomic::Ordering;
+use std::task::{Context, Poll};
+use std::time::Duration;
+
+use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use chrono::{NaiveDateTime, Utc};
+use jsonwebtoken::{Algorithm, EncodingKey, Header};
+use kesh_api::auth::jwt::Claims;
 use kesh_api::mcp::Registre;
-use kesh_db::entities::{McpScope, SendValidation};
+use kesh_api::mcp::textes::*;
+use kesh_api::services::acces::Portee;
+use kesh_db::entities::{ApiKeyScope, McpScope, NewApiKey, SendValidation};
+use kesh_db::repositories::api_keys;
+use serde_json::json;
 use sqlx::MySqlPool;
 
+use common::capture_trace::CaptureTrace;
 use common::mcp::*;
+
+/// Un banc : le routeur et son `static_dir`, gardé vivant.
+struct Banc {
+    app: Router,
+    _statique: tempfile::TempDir,
+}
+
+fn banc_avec(
+    pool: &MySqlPool,
+    registre: Registre,
+    pair: &str,
+    cfg: kesh_api::config::Config,
+) -> Banc {
+    let statique = static_dir();
+    Banc {
+        app: routeur(pool.clone(), cfg, statique.path(), registre, pair),
+        _statique: statique,
+    }
+}
+
+fn banc(pool: &MySqlPool, registre: Registre) -> Banc {
+    banc_avec(pool, registre, "127.0.0.1", config())
+}
+
+impl Banc {
+    async fn mcp(&self, jeton: Option<&str>, corps: &str) -> Rendu {
+        envoyer(&self.app, post_mcp(jeton, corps)).await
+    }
+
+    async fn avec(&self, methode: &str, chemin: &str, h: &HeaderMap, corps: &str) -> Rendu {
+        envoyer(
+            &self.app,
+            requete(methode, chemin, h, Body::from(corps.to_string())),
+        )
+        .await
+    }
+}
+
+/// Les en-têtes d'un `POST` JSON-RPC ordinaire, sous `jeton`.
+fn en_tetes(jeton: Option<&str>) -> HeaderMap {
+    let mut h = HeaderMap::new();
+    h.insert("content-type", HeaderValue::from_static("application/json"));
+    h.insert(
+        "mcp-protocol-version",
+        HeaderValue::from_static("2025-11-25"),
+    );
+    if let Some(j) = jeton {
+        h.insert(
+            "authorization",
+            HeaderValue::from_str(&format!("Bearer {j}")).unwrap(),
+        );
+    }
+    h
+}
+
+const LISTE: &str = r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#;
+
+/// La réponse attendue d'un `kesh_version` servi.
+fn attendu_version(id: i64) -> serde_json::Value {
+    let s = json!({ "version": env!("CARGO_PKG_VERSION"), "lectureSeule": true });
+    json!({
+        "jsonrpc": "2.0", "id": id,
+        "result": {
+            "content": [{ "type": "text", "text": s.to_string() }],
+            "structuredContent": s,
+            "isError": false,
+        },
+    })
+}
+
+/// Le descripteur attendu de `kesh_version`.
+fn descripteur_version() -> serde_json::Value {
+    json!({
+        "name": "kesh_version",
+        "description": "Version de Kesh et mode de la session de lecture (lecture seule ou non). \
+                        Ne lit aucune donnée comptable.",
+        "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
+        "annotations": { "readOnlyHint": true },
+    })
+}
+
+fn sans_id(mut v: serde_json::Value) -> serde_json::Value {
+    v.as_object_mut().unwrap().remove("id");
+    v
+}
+
+/// Une société servie, son administrateur et une clé `books:read`.
+async fn servie(pool: &MySqlPool, validation: SendValidation) -> (i64, i64, i64, String) {
+    let (c, u) = livres(pool).await;
+    activer(pool, c).await;
+    let (k, jeton) = cle(pool, c, u, &[McpScope::BooksRead], validation).await;
+    (c, u, k, jeton)
+}
+
+/// Un PAT `read-write` actif ; rend `(id, jeton)`.
+async fn pat(pool: &MySqlPool, company_id: i64, user_id: i64) -> (i64, String) {
+    let (jeton, key_hash) = kesh_api::auth::api_key::generate_pat();
+    let mut tx = pool.begin().await.unwrap();
+    let id = api_keys::create_in_tx(
+        &mut tx,
+        NewApiKey {
+            company_id,
+            created_by_user_id: user_id,
+            name: "intégration".into(),
+            key_hash,
+            scope: ApiKeyScope::ReadWrite,
+            expires_at: None,
+        },
+    )
+    .await
+    .expect("PAT")
+    .id;
+    tx.commit().await.unwrap();
+    (id, jeton)
+}
+
+fn jwt(user_id: i64, company_id: i64) -> String {
+    let now = Utc::now().timestamp();
+    let claims = Claims {
+        sub: user_id.to_string(),
+        role: "Admin".to_string(),
+        company_id,
+        iat: now,
+        exp: now + 3600,
+    };
+    jsonwebtoken::encode(
+        &Header::new(Algorithm::HS256),
+        &claims,
+        &EncodingKey::from_secret(TEST_JWT_SECRET.as_bytes()),
+    )
+    .unwrap()
+}
+
+async fn derniere_utilisation(pool: &MySqlPool, table: &str, id: i64) -> Option<NaiveDateTime> {
+    sqlx::query_scalar(&format!("SELECT last_used_at FROM {table} WHERE id = ?"))
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
 
 const ABSENTE: &str = "/mcp-route-absente-326";
 const TROIS_MIO: usize = 3 * 1024 * 1024;
@@ -154,4 +309,1274 @@ async fn desactive_indiscernable_d_une_route_absente(pool: MySqlPool) {
     let r = envoyer(&app, requete_matrice("GET", "/mcp", None, 0)).await;
     assert_eq!(r.statut, StatusCode::METHOD_NOT_ALLOWED);
     assert_eq!(r.en_tete("allow").as_deref(), Some("POST"));
+}
+// ---------------------------------------------------------------------------
+// AC-a2, AC-a7 — la règle « servi » ferme en cas de doute
+// ---------------------------------------------------------------------------
+
+/// Une erreur de la base pendant la règle « servi » → réponse **égale** à
+/// celle d'une route absente.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn regle_servi_erreur_de_base_route_absente(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(&pool, Registre::standard());
+    assert_eq!(
+        b.mcp(Some(&jeton), LISTE).await.statut,
+        StatusCode::OK,
+        "témoin : servi"
+    );
+    sqlx::query("ALTER TABLE mcp_server_settings RENAME TO mcp_server_settings_cachee")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let h = en_tetes(Some(&jeton));
+    let mcp = b.avec("POST", "/mcp", &h, LISTE).await;
+    let absente = b.avec("POST", ABSENTE, &h, LISTE).await;
+    assert_eq!(mcp, absente);
+}
+
+/// Une ligne illisible est écartée et journalisée en `error!`, les autres
+/// sociétés restent servies ; la clé de la société écartée reçoit le 401 fixe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ligne_illisible_ecartee_les_autres_servies(pool: MySqlPool) {
+    let (a, ua) = livres(&pool).await;
+    let b_id = societe(&pool, "B").await;
+    let ub = administrateur(&pool, b_id, "admin-b").await;
+    reglages(&pool, a, true, true, "[1]", "[]", "[]").await;
+    activer(&pool, b_id).await;
+    let (_, ja) = cle(&pool, a, ua, &[McpScope::BooksRead], SendValidation::Exempt).await;
+    let (_, jb) = cle(
+        &pool,
+        b_id,
+        ub,
+        &[McpScope::BooksRead],
+        SendValidation::Exempt,
+    )
+    .await;
+    let b = banc(&pool, Registre::standard());
+    let capture = CaptureTrace::installer();
+    let r = b.mcp(Some(&ja), LISTE).await;
+    assert_eq!(r.statut, StatusCode::UNAUTHORIZED);
+    assert_eq!(r.corps, TEXTE_NON_AUTHENTIFIE.as_bytes());
+    capture.exiger_ensemble(&[
+        "ERROR kesh_api::services::serveur_mcp",
+        "ligne de réglages illisible",
+        &format!("company_id={a}"),
+    ]);
+    assert_eq!(b.mcp(Some(&jb), LISTE).await.statut, StatusCode::OK);
+}
+
+/// `ConnectInfo` absent → réponse de route absente, avec une ligne activée aux
+/// défauts (`127.0.0.0/8` admis), pour que le test ne passe pas à vide.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn connect_info_absent_route_absente(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let statique = static_dir();
+    let nu = routeur_nu(
+        pool.clone(),
+        config(),
+        statique.path(),
+        Registre::standard(),
+    );
+    let h = en_tetes(Some(&jeton));
+    let mcp = envoyer(&nu, requete("POST", "/mcp", &h, Body::from(LISTE))).await;
+    let absente = envoyer(&nu, requete("POST", ABSENTE, &h, Body::from(LISTE))).await;
+    assert_eq!(mcp, absente);
+    let b = banc(&pool, Registre::standard());
+    assert_eq!(
+        b.mcp(Some(&jeton), LISTE).await.statut,
+        StatusCode::OK,
+        "témoin"
+    );
+}
+
+/// N10 — les chemins voisins : route absente, ou le même gestionnaire avec
+/// toutes ses gardes ; jamais un outil sans clé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn chemins_voisins(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(&pool, Registre::standard());
+    let corps = appel(1, "kesh_version", json!({}));
+    for chemin in ["/mcp/", "/MCP", "/%6Dcp", "//mcp", "/mcp/x", "/mcp?x=1"] {
+        for j in [None, Some(jeton.as_str())] {
+            let h = en_tetes(j);
+            let r = b.avec("POST", chemin, &h, &corps).await;
+            let absente = b.avec("POST", ABSENTE, &h, &corps).await;
+            let meme = b.avec("POST", "/mcp", &h, &corps).await;
+            assert!(
+                r == absente || r == meme,
+                "{chemin} (clé : {}) : ni route absente, ni /mcp : {r:?}",
+                j.is_some()
+            );
+            if j.is_none() {
+                assert_ne!(r.statut, StatusCode::OK, "{chemin} : jamais servi sans clé");
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AC-a4 — la société de la clé doit elle-même servir
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn la_societe_de_la_cle_doit_servir(pool: MySqlPool) {
+    let (a, ua) = livres(&pool).await;
+    let b_id = societe(&pool, "B").await;
+    let ub = administrateur(&pool, b_id, "admin-b").await;
+    let (_, ja) = cle(&pool, a, ua, &[McpScope::BooksRead], SendValidation::Exempt).await;
+    let (_, jb) = cle(
+        &pool,
+        b_id,
+        ub,
+        &[McpScope::BooksRead],
+        SendValidation::Exempt,
+    )
+    .await;
+    let b = banc(&pool, Registre::standard());
+
+    // (i) A activée, B non.
+    activer(&pool, a).await;
+    let r = b.mcp(Some(&jb), LISTE).await;
+    assert_eq!(
+        (r.statut, r.corps.as_slice()),
+        (StatusCode::UNAUTHORIZED, TEXTE_NON_AUTHENTIFIE.as_bytes()),
+        "(i)"
+    );
+    // (iii) clé de A → servi.
+    assert_eq!(
+        b.mcp(Some(&ja), LISTE).await.statut,
+        StatusCode::OK,
+        "(iii)"
+    );
+    // (ii) A et B activées, le filtre de B refuse le pair, celui de A l'admet.
+    reglages(&pool, b_id, true, true, r#"["192.168.0.0/16"]"#, "[]", "[]").await;
+    let r = b.mcp(Some(&jb), LISTE).await;
+    assert_eq!(
+        (r.statut, r.corps.as_slice()),
+        (StatusCode::UNAUTHORIZED, TEXTE_NON_AUTHENTIFIE.as_bytes()),
+        "(ii)"
+    );
+    // Basculement immédiat, sans cache.
+    reglages(&pool, b_id, true, true, RESEAUX_DEFAUT, "[]", "[]").await;
+    assert_eq!(
+        b.mcp(Some(&jb), LISTE).await.statut,
+        StatusCode::OK,
+        "B servie"
+    );
+    reglages(&pool, b_id, false, true, RESEAUX_DEFAUT, "[]", "[]").await;
+    assert_eq!(
+        b.mcp(Some(&jb), LISTE).await.statut,
+        StatusCode::UNAUTHORIZED,
+        "B désactivée"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// AC-a5 — méthodes HTTP quand `/mcp` est servi
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn methodes_http_quand_servi(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(&pool, Registre::standard());
+    for methode in ["GET", "HEAD", "DELETE", "PUT", "PATCH", "OPTIONS"] {
+        for j in [None, Some(jeton.as_str())] {
+            let r = b.avec(methode, "/mcp", &en_tetes(j), LISTE).await;
+            assert_eq!(r.statut, StatusCode::METHOD_NOT_ALLOWED, "{methode}");
+            assert_eq!(
+                r.en_tetes,
+                vec![("allow".to_string(), b"POST".to_vec())],
+                "{methode}"
+            );
+            assert!(r.corps.is_empty(), "{methode}");
+        }
+    }
+    assert!(
+        b.mcp(Some(&jeton), LISTE)
+            .await
+            .en_tete("mcp-session-id")
+            .is_none(),
+        "sans session"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// AC-a10 — `Origin`
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn origine(pool: MySqlPool) {
+    let (a, ua) = livres(&pool).await;
+    reglages(
+        &pool,
+        a,
+        true,
+        true,
+        RESEAUX_DEFAUT,
+        "[]",
+        r#"["https://kesh.example:443"]"#,
+    )
+    .await;
+    let b_id = societe(&pool, "B").await;
+    let ub = administrateur(&pool, b_id, "admin-b").await;
+    activer(&pool, b_id).await;
+    let (_, ja) = cle(&pool, a, ua, &[McpScope::BooksRead], SendValidation::Exempt).await;
+    let (_, jb) = cle(
+        &pool,
+        b_id,
+        ub,
+        &[McpScope::BooksRead],
+        SendValidation::Exempt,
+    )
+    .await;
+    let b = banc(&pool, Registre::standard());
+    let avec_origine = |j: Option<&str>, o: Option<&str>, host: Option<&str>| {
+        let mut h = en_tetes(j);
+        if let Some(o) = o {
+            h.insert("origin", HeaderValue::from_str(o).unwrap());
+        }
+        if let Some(x) = host {
+            h.insert("host", HeaderValue::from_str(x).unwrap());
+        }
+        h
+    };
+    // Absent → admis (puis 401 sans clé).
+    let r = b
+        .avec("POST", "/mcp", &avec_origine(None, None, None), LISTE)
+        .await;
+    assert_eq!(r.statut, StatusCode::UNAUTHORIZED);
+    for (o, attendu) in [
+        ("http://localhost", StatusCode::UNAUTHORIZED),
+        ("HTTP://LOCALHOST:80", StatusCode::UNAUTHORIZED),
+        ("http://127.0.0.1", StatusCode::UNAUTHORIZED),
+        ("http://[::1]", StatusCode::UNAUTHORIZED),
+        ("https://kesh.example", StatusCode::UNAUTHORIZED),
+        ("https://evil.example", StatusCode::FORBIDDEN),
+        ("null", StatusCode::FORBIDDEN),
+        ("http://localhost:3000", StatusCode::FORBIDDEN),
+    ] {
+        let r = b
+            .avec("POST", "/mcp", &avec_origine(None, Some(o), None), LISTE)
+            .await;
+        assert_eq!(r.statut, attendu, "{o}");
+        if attendu == StatusCode::FORBIDDEN {
+            assert_eq!(r.corps, TEXTE_ORIGINE_REFUSEE.as_bytes(), "{o}");
+            assert_eq!(
+                r.en_tete("content-type").as_deref(),
+                Some("application/json")
+            );
+        }
+    }
+    // Jamais déduite de `Host`.
+    let r = b
+        .avec(
+            "POST",
+            "/mcp",
+            &avec_origine(Some(&ja), Some("http://evil.example"), Some("evil.example")),
+            LISTE,
+        )
+        .await;
+    assert_eq!(r.statut, StatusCode::FORBIDDEN, "Origin = Host forgé");
+    // Origine de A, clé de A → servi ; clé de B (servie) → 403 après authentification.
+    let h = avec_origine(Some(&ja), Some("https://kesh.example"), None);
+    assert_eq!(
+        b.avec("POST", "/mcp", &h, LISTE).await.statut,
+        StatusCode::OK
+    );
+    let h = avec_origine(Some(&jb), Some("https://kesh.example"), None);
+    let r = b.avec("POST", "/mcp", &h, LISTE).await;
+    assert_eq!(
+        (r.statut, r.corps.as_slice()),
+        (StatusCode::FORBIDDEN, TEXTE_ORIGINE_REFUSEE.as_bytes())
+    );
+
+    // `public_base_url` sans schéma : aucune origine propre n'en vient.
+    let mut cfg = config();
+    cfg.public_base_url = Some("kesh.example".to_string());
+    reglages(&pool, a, true, true, RESEAUX_DEFAUT, "[]", "[]").await;
+    let b2 = banc_avec(&pool, Registre::standard(), "127.0.0.1", cfg);
+    let r = b2
+        .avec(
+            "POST",
+            "/mcp",
+            &avec_origine(None, Some("https://kesh.example"), None),
+            LISTE,
+        )
+        .await;
+    assert_eq!(r.statut, StatusCode::FORBIDDEN, "public_base_url invalide");
+    let mut cfg = config();
+    cfg.public_base_url = Some("https://kesh.example".to_string());
+    let b3 = banc_avec(&pool, Registre::standard(), "127.0.0.1", cfg);
+    let r = b3
+        .avec(
+            "POST",
+            "/mcp",
+            &avec_origine(None, Some("https://kesh.example"), None),
+            LISTE,
+        )
+        .await;
+    assert_eq!(
+        r.statut,
+        StatusCode::UNAUTHORIZED,
+        "témoin : public_base_url valide"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// AC-a11 — l'enveloppe HTTP
+// ---------------------------------------------------------------------------
+
+/// Un corps qui échoue en cours de lecture.
+struct Casse;
+
+impl tokio::io::AsyncRead for Casse {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        _buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Err(std::io::Error::other("flux interrompu")))
+    }
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn enveloppe_http(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(&pool, Registre::standard());
+    let mut h = en_tetes(Some(&jeton));
+
+    // 415.
+    for ct in ["text/plain", "application/jsonx", ""] {
+        h.insert("content-type", HeaderValue::from_str(ct).unwrap());
+        let r = b.avec("POST", "/mcp", &h, LISTE).await;
+        assert_eq!(
+            (r.statut, r.corps.as_slice()),
+            (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                CORPS_TYPE_NON_ADMIS.as_bytes()
+            ),
+            "{ct:?}"
+        );
+    }
+    h.remove("content-type");
+    assert_eq!(
+        b.avec("POST", "/mcp", &h, LISTE).await.statut,
+        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        "absent"
+    );
+    for ct in ["application/json; charset=utf-8", "APPLICATION/JSON"] {
+        h.insert("content-type", HeaderValue::from_str(ct).unwrap());
+        assert_eq!(
+            b.avec("POST", "/mcp", &h, LISTE).await.statut,
+            StatusCode::OK,
+            "{ct}"
+        );
+    }
+
+    // MCP-Protocol-Version.
+    for v in ["2026-07-28", "2025-03-26", "x"] {
+        h.insert("mcp-protocol-version", HeaderValue::from_str(v).unwrap());
+        let r = b.avec("POST", "/mcp", &h, LISTE).await;
+        assert_eq!(
+            (r.statut, r.corps.as_slice()),
+            (StatusCode::BAD_REQUEST, CORPS_VERSION_NON_SERVIE.as_bytes()),
+            "{v}"
+        );
+        assert!(r.en_tete("content-type").unwrap().starts_with("text/plain"));
+    }
+    h.insert(
+        "mcp-protocol-version",
+        HeaderValue::from_static("2025-06-18"),
+    );
+    assert_eq!(
+        b.avec("POST", "/mcp", &h, LISTE).await.statut,
+        StatusCode::OK
+    );
+    h.remove("mcp-protocol-version");
+    assert_eq!(
+        b.avec("POST", "/mcp", &h, LISTE).await.statut,
+        StatusCode::OK,
+        "absente → admise"
+    );
+    let h = en_tetes(Some(&jeton));
+
+    // Corps interrompu → 400, distinct du 413.
+    let corps = Body::from_stream(tokio_util::io::ReaderStream::new(Casse));
+    let r = envoyer(&b.app, requete("POST", "/mcp", &h, corps)).await;
+    assert_eq!(
+        (r.statut, r.corps.as_slice()),
+        (StatusCode::BAD_REQUEST, CORPS_ILLISIBLE.as_bytes())
+    );
+
+    // JSON-RPC.
+    for (corps, attendu) in [
+        ("pas du json", CORPS_JSON_INVALIDE),
+        (
+            r#"[{"jsonrpc":"2.0","id":1,"method":"ping"}]"#,
+            CORPS_REQUETE_INVALIDE,
+        ),
+        ("42", CORPS_REQUETE_INVALIDE),
+        (
+            r#"{"jsonrpc":"1.0","id":1,"method":"ping"}"#,
+            CORPS_REQUETE_INVALIDE,
+        ),
+        (r#"{"id":1,"method":"ping"}"#, CORPS_REQUETE_INVALIDE),
+        (
+            r#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#,
+            CORPS_REQUETE_INVALIDE,
+        ),
+        (
+            r#"{"jsonrpc":"2.0","id":{},"method":"ping"}"#,
+            CORPS_REQUETE_INVALIDE,
+        ),
+        (
+            r#"{"jsonrpc":"2.0","id":true,"method":"ping"}"#,
+            CORPS_REQUETE_INVALIDE,
+        ),
+        (
+            r#"{"jsonrpc":"2.0","id":1,"method":5}"#,
+            CORPS_REQUETE_INVALIDE,
+        ),
+        (
+            r#"{"jsonrpc":"2.0","id":1,"result":{}}"#,
+            CORPS_REQUETE_INVALIDE,
+        ),
+        (
+            r#"{"jsonrpc":"2.0","id":1,"error":{"code":1,"message":"x"}}"#,
+            CORPS_REQUETE_INVALIDE,
+        ),
+    ] {
+        let r = b.mcp(Some(&jeton), corps).await;
+        assert_eq!(
+            (r.statut, r.corps.as_slice()),
+            (StatusCode::BAD_REQUEST, attendu.as_bytes()),
+            "{corps}"
+        );
+        assert_eq!(
+            r.en_tete("content-type").as_deref(),
+            Some("application/json"),
+            "{corps}"
+        );
+    }
+
+    // Requête → 200, JSON, `no-store`, `id` chaîne rendu tel quel.
+    let r = b
+        .mcp(
+            Some(&jeton),
+            r#"{"jsonrpc":"2.0","id":"a-1","method":"ping"}"#,
+        )
+        .await;
+    assert_eq!(r.statut, StatusCode::OK);
+    assert_eq!(
+        r.en_tete("content-type").as_deref(),
+        Some("application/json")
+    );
+    assert_eq!(r.en_tete("cache-control").as_deref(), Some("no-store"));
+    assert_eq!(r.json(), json!({"jsonrpc":"2.0","id":"a-1","result":{}}));
+}
+
+/// Une notification complète `tools/call`, sans `id`, sous une clé `exempt`,
+/// n'exécute aucun outil (202) ; témoin : avec un `id`, le compteur passe à 1.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn notification_jamais_traitee(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let (outil, n) = Compteur::nouveau("compteur", Portee::BooksRead);
+    let b = banc(&pool, Registre::vide().avec(Box::new(outil)));
+    let notif =
+        r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"compteur","arguments":{}}}"#;
+    let r = b.mcp(Some(&jeton), notif).await;
+    assert_eq!(r.statut, StatusCode::ACCEPTED);
+    assert!(r.corps.is_empty());
+    let r = b
+        .mcp(
+            Some(&jeton),
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+        )
+        .await;
+    assert_eq!(r.statut, StatusCode::ACCEPTED);
+    assert_eq!(n.load(Ordering::SeqCst), 0, "aucune exécution");
+    let r = b.mcp(Some(&jeton), &appel(1, "compteur", json!({}))).await;
+    assert_eq!(r.statut, StatusCode::OK);
+    assert_eq!(
+        n.load(Ordering::SeqCst),
+        1,
+        "témoin : avec un id, l'outil s'exécute"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// AC-a12, AC-a13 — méthodes, `initialize`, inventaire
+// ---------------------------------------------------------------------------
+
+/// Les six méthodes servies ne rendent pas `-32601` ; chaque méthode client du
+/// schéma `2025-11-25` qui n'y est pas, et un nom inventé, le rendent. Liste
+/// des méthodes client tirée de `schema/2025-11-25/schema.ts` (union
+/// `ClientRequest`), relevée à l'étape 0.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn methodes_servies_liste_close(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Required).await;
+    let b = banc(&pool, Registre::standard());
+    let servies = [
+        "initialize",
+        "ping",
+        "tools/list",
+        "tools/call",
+        "prompts/list",
+        "prompts/get",
+    ];
+    for m in servies {
+        let corps =
+            json!({"jsonrpc":"2.0","id":7,"method":m,"params":{"name":"kesh_version"}}).to_string();
+        let r = b.mcp(Some(&jeton), &corps).await;
+        assert_eq!(r.statut, StatusCode::OK, "{m}");
+        assert_ne!(r.json()["error"]["code"], json!(-32601), "{m} est servie");
+    }
+    for m in [
+        "resources/list",
+        "resources/read",
+        "resources/templates/list",
+        "resources/subscribe",
+        "resources/unsubscribe",
+        "completion/complete",
+        "logging/setLevel",
+        "tasks/get",
+        "tasks/list",
+        "tasks/result",
+        "tasks/cancel",
+        "kesh/methode_inventee",
+        "Tools/List",
+    ] {
+        let corps = json!({"jsonrpc":"2.0","id":7,"method":m}).to_string();
+        let r = b.mcp(Some(&jeton), &corps).await;
+        assert_eq!(
+            r.json(),
+            attendu_erreur(7, -32601, MESSAGE_METHODE_INCONNUE),
+            "{m}"
+        );
+    }
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn initialize_ping_prompts(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Required).await;
+    let b = banc(&pool, Registre::standard());
+    for (demandee, rendue) in [
+        (json!("2025-06-18"), "2025-06-18"),
+        (json!("2025-11-25"), "2025-11-25"),
+        (json!("2024-11-05"), "2025-11-25"),
+        (json!(null), "2025-11-25"),
+    ] {
+        let corps = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":demandee}}).to_string();
+        let r = b.mcp(Some(&jeton), &corps).await;
+        assert_eq!(
+            r.json(),
+            json!({"jsonrpc":"2.0","id":1,"result":{
+                "protocolVersion": rendue,
+                "capabilities": {"tools":{"listChanged":false},"prompts":{"listChanged":false}},
+                "serverInfo": {"name":"kesh","version":env!("CARGO_PKG_VERSION")},
+                "instructions": INSTRUCTIONS,
+            }}),
+            "{demandee}"
+        );
+    }
+    let r = b
+        .mcp(Some(&jeton), r#"{"jsonrpc":"2.0","id":2,"method":"ping"}"#)
+        .await;
+    assert_eq!(r.json(), json!({"jsonrpc":"2.0","id":2,"result":{}}));
+    let r = b
+        .mcp(
+            Some(&jeton),
+            r#"{"jsonrpc":"2.0","id":3,"method":"prompts/list"}"#,
+        )
+        .await;
+    assert_eq!(
+        r.json(),
+        json!({"jsonrpc":"2.0","id":3,"result":{"prompts":[]}})
+    );
+    let r = b
+        .mcp(
+            Some(&jeton),
+            r#"{"jsonrpc":"2.0","id":4,"method":"prompts/get","params":{"name":"x"}}"#,
+        )
+        .await;
+    assert_eq!(r.json(), attendu_erreur(4, -32602, TEXTE_PROMPT_INCONNU));
+    let r = b
+        .mcp(
+            Some(&jeton),
+            r#"{"jsonrpc":"2.0","id":5,"method":"ping","params":[1]}"#,
+        )
+        .await;
+    assert_eq!(
+        r.json(),
+        attendu_erreur(5, -32602, TEXTE_PARAMS_INVALIDES),
+        "params non objet"
+    );
+}
+
+#[test]
+fn registre_standard_inventaire() {
+    let noms: Vec<&str> = Registre::standard()
+        .inventaire()
+        .into_iter()
+        .map(|(n, _, _)| n)
+        .collect();
+    assert_eq!(noms, vec!["kesh_version"]);
+}
+
+#[test]
+fn registre_coherent() {
+    let inventaire = Registre::standard().inventaire();
+    assert!(!inventaire.is_empty());
+    let mut vus = std::collections::BTreeSet::new();
+    for (nom, schema, portee) in inventaire {
+        assert!(
+            !nom.is_empty()
+                && nom.len() <= 64
+                && nom
+                    .bytes()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_'),
+            "{nom} : [a-z0-9_]{{1,64}}"
+        );
+        assert!(vus.insert(nom), "{nom} : nom unique");
+        let s: serde_json::Value = serde_json::from_str(schema).expect("schéma JSON");
+        assert_eq!(s["type"], json!("object"), "{nom}");
+        assert_eq!(s["additionalProperties"], json!(false), "{nom}");
+        assert_ne!(portee, Portee::PromptsWrite, "{nom}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AC-a14 — clé MCP seulement
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn pat_refuse_a_l_endpoint(pool: MySqlPool) {
+    let (c, u, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let (pat_id, pat_jeton) = pat(&pool, c, u).await;
+    let b = banc(&pool, Registre::standard());
+    let r = b.mcp(Some(&pat_jeton), LISTE).await;
+    assert_eq!(
+        (r.statut, r.corps.as_slice()),
+        (StatusCode::UNAUTHORIZED, TEXTE_NON_AUTHENTIFIE.as_bytes())
+    );
+    assert_eq!(
+        derniere_utilisation(&pool, "api_keys", pat_id).await,
+        None,
+        "PAT inchangé"
+    );
+    // Témoin inverse : même route, même requête au jeton près.
+    assert_eq!(b.mcp(Some(&jeton), LISTE).await.statut, StatusCode::OK);
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn session_refusee(pool: MySqlPool) {
+    let (c, u, _, _) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(&pool, Registre::standard());
+    let jeton_session = jwt(u, c);
+    let r = b.mcp(Some(&jeton_session), LISTE).await;
+    assert_eq!(
+        (r.statut, r.corps.as_slice()),
+        (StatusCode::UNAUTHORIZED, TEXTE_NON_AUTHENTIFIE.as_bytes()),
+        "JWT en Bearer"
+    );
+    let mut h = en_tetes(None);
+    h.insert(
+        "cookie",
+        HeaderValue::from_str(&format!("kesh_access_token={jeton_session}")).unwrap(),
+    );
+    let r = b.avec("POST", "/mcp", &h, LISTE).await;
+    assert_eq!(
+        (r.statut, r.corps.as_slice()),
+        (StatusCode::UNAUTHORIZED, TEXTE_NON_AUTHENTIFIE.as_bytes()),
+        "cookie"
+    );
+    // Témoin : le même JWT ouvre l'API.
+    let mut h = HeaderMap::new();
+    h.insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {jeton_session}")).unwrap(),
+    );
+    assert_eq!(
+        b.avec("GET", "/api/v1/auth/me", &h, "").await.statut,
+        StatusCode::OK
+    );
+}
+
+/// Toutes les causes de refus rendent **la même** réponse 401 — statut,
+/// en-têtes hors `date`, octets du corps.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refus_indiscernables(pool: MySqlPool) {
+    let (c, u, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let (_, pat_jeton) = pat(&pool, c, u).await;
+    let b_id = societe(&pool, "B").await;
+    let ub = administrateur(&pool, b_id, "admin-b").await;
+    let (_, jb) = cle(
+        &pool,
+        b_id,
+        ub,
+        &[McpScope::BooksRead],
+        SendValidation::Exempt,
+    )
+    .await;
+    let (k_rev, j_rev) = cle(&pool, c, u, &[McpScope::BooksRead], SendValidation::Exempt).await;
+    sqlx::query("UPDATE mcp_keys SET revoked_at = NOW(3) WHERE id = ?")
+        .bind(k_rev)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (k_exp, j_exp) = cle(&pool, c, u, &[McpScope::BooksRead], SendValidation::Exempt).await;
+    sqlx::query("UPDATE mcp_keys SET expires_at = NOW(3) - INTERVAL 1 DAY WHERE id = ?")
+        .bind(k_exp)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let u_inactif = administrateur(&pool, c, "admin-inactif").await;
+    let (_, j_inactif) = cle(
+        &pool,
+        c,
+        u_inactif,
+        &[McpScope::BooksRead],
+        SendValidation::Exempt,
+    )
+    .await;
+    sqlx::query("UPDATE users SET active = FALSE WHERE id = ?")
+        .bind(u_inactif)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let u_retro = administrateur(&pool, c, "admin-retrograde").await;
+    let (_, j_retro) = cle(
+        &pool,
+        c,
+        u_retro,
+        &[McpScope::BooksRead],
+        SendValidation::Exempt,
+    )
+    .await;
+    sqlx::query("UPDATE users SET role = 'Comptable' WHERE id = ?")
+        .bind(u_retro)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let pat_deguise = format!("kesh_mcp_{}", pat_jeton.trim_start_matches("kesh_pat_"));
+    let b = banc(&pool, Registre::standard());
+
+    let reference = b.avec("POST", "/mcp", &en_tetes(None), LISTE).await;
+    assert_eq!(reference.statut, StatusCode::UNAUTHORIZED);
+    assert_eq!(reference.corps, TEXTE_NON_AUTHENTIFIE.as_bytes());
+    assert!(reference.en_tete("www-authenticate").is_none());
+
+    let mut cas: Vec<(&str, HeaderMap)> = Vec::new();
+    let mut avec_auth = |nom: &'static str, valeur: String| {
+        let mut h = en_tetes(None);
+        h.insert("authorization", HeaderValue::from_str(&valeur).unwrap());
+        cas.push((nom, h));
+    };
+    avec_auth("schéma Basic", format!("Basic {jeton}"));
+    avec_auth("jeton vide", "Bearer ".to_string());
+    avec_auth("Bearer sans espace", "Bearer".to_string());
+    avec_auth("PAT actif", format!("Bearer {pat_jeton}"));
+    avec_auth("JWT", format!("Bearer {}", jwt(u, c)));
+    avec_auth("clé inconnue", "Bearer kesh_mcp_inconnue_326".to_string());
+    avec_auth("clé révoquée", format!("Bearer {j_rev}"));
+    avec_auth("clé expirée", format!("Bearer {j_exp}"));
+    avec_auth("créateur inactif", format!("Bearer {j_inactif}"));
+    avec_auth("créateur rétrogradé", format!("Bearer {j_retro}"));
+    avec_auth(
+        "PAT derrière le préfixe MCP",
+        format!("Bearer {pat_deguise}"),
+    );
+    avec_auth("clé d'une société qui ne sert pas", format!("Bearer {jb}"));
+    let mut h = en_tetes(None);
+    h.insert(
+        "cookie",
+        HeaderValue::from_str(&format!("kesh_access_token={}", jwt(u, c))).unwrap(),
+    );
+    cas.push(("cookie de session", h));
+    for (nom, h) in &cas {
+        assert_eq!(b.avec("POST", "/mcp", h, LISTE).await, reference, "{nom}");
+    }
+    assert_eq!(cas.len(), 13);
+    // Témoin : `bearer` en minuscules est le même schéma.
+    let mut h = en_tetes(None);
+    h.insert(
+        "authorization",
+        HeaderValue::from_str(&format!("bearer {jeton}")).unwrap(),
+    );
+    assert_eq!(
+        b.avec("POST", "/mcp", &h, LISTE).await.statut,
+        StatusCode::OK
+    );
+}
+
+/// Une erreur de la base pendant l'authentification : 500, corps fixe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn erreur_de_base_a_l_authentification(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(&pool, Registre::standard());
+    sqlx::query("ALTER TABLE mcp_keys RENAME TO mcp_keys_cachee")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let r = b.mcp(Some(&jeton), LISTE).await;
+    assert_eq!(
+        (r.statut, r.corps.as_slice()),
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            CORPS_ERREUR_INTERNE.as_bytes()
+        )
+    );
+}
+
+/// Ni le jeton, ni l'en-tête, ni le corps ne vont au journal du serveur.
+/// Témoin : le `debug!` qu'émet le transport pour une requête sans
+/// `MCP-Protocol-Version`, pendant la requête éprouvée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn jeton_jamais_journalise(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(&pool, Registre::standard());
+    let capture = CaptureTrace::installer();
+    let mut h = en_tetes(Some("kesh_mcp_PIEGE_JETON_326"));
+    h.remove("mcp-protocol-version");
+    let corps = appel(
+        1,
+        "kesh_version",
+        json!({ "PIEGE_CORPS_326": "PIEGE_CORPS_326" }),
+    );
+    let r = b.avec("POST", "/mcp", &h, &corps).await;
+    assert_eq!(r.statut, StatusCode::UNAUTHORIZED);
+    capture.exiger("requête sans MCP-Protocol-Version");
+    let mut h = en_tetes(Some(&jeton));
+    h.remove("mcp-protocol-version");
+    let r = b.avec("POST", "/mcp", &h, &corps).await;
+    assert_eq!(
+        r.json(),
+        attendu_outil_en_erreur(1, TEXTE_ARGUMENTS_INVALIDES),
+        "servie, refusée par l'outil"
+    );
+    let r = b
+        .avec("POST", "/mcp", &h, &appel(2, "kesh_version", json!({})))
+        .await;
+    assert_eq!(r.statut, StatusCode::OK);
+    for piege in [
+        "PIEGE_JETON_326",
+        "PIEGE_CORPS_326",
+        jeton.as_str(),
+        "kesh_mcp_",
+    ] {
+        capture.exiger_absent(piege);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AC-a15 — la politique de validation, avant l'exécution
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cle_requise_refusee_sans_execution(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Required).await;
+    let (outil, n) = Compteur::nouveau("compteur", Portee::BooksRead);
+    let b = banc(&pool, Registre::vide().avec(Box::new(outil)));
+    let r = b.mcp(Some(&jeton), &appel(1, "compteur", json!({}))).await;
+    assert_eq!(
+        r.json(),
+        attendu_outil_en_erreur(1, TEXTE_VALIDATION_REQUISE)
+    );
+    assert_eq!(n.load(Ordering::SeqCst), 0, "l'outil n'est pas exécuté");
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cle_dispensee_servie(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let (outil, n) = Compteur::nouveau("compteur", Portee::BooksRead);
+    let b = banc(&pool, Registre::vide().avec(Box::new(outil)));
+    let r = b.mcp(Some(&jeton), &appel(1, "compteur", json!({}))).await;
+    let s = json!({ "n": 1 });
+    assert_eq!(
+        r.json(),
+        json!({"jsonrpc":"2.0","id":1,"result":{
+            "content":[{"type":"text","text":s.to_string()}],"structuredContent":s,"isError":false}})
+    );
+    assert_eq!(n.load(Ordering::SeqCst), 1);
+}
+
+// ---------------------------------------------------------------------------
+// AC-a17, AC-a18 — `tools/list` filtré ; hors portée = inconnu
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn tools_list_filtre(pool: MySqlPool) {
+    let (c, u, _, jeton) = servie(&pool, SendValidation::Required).await;
+    let (_, contacts) = cle(
+        &pool,
+        c,
+        u,
+        &[McpScope::ContactsRead],
+        SendValidation::Required,
+    )
+    .await;
+    let b = banc(&pool, Registre::standard());
+    let r = b.mcp(Some(&jeton), LISTE).await;
+    assert_eq!(
+        r.json(),
+        json!({"jsonrpc":"2.0","id":1,"result":{"tools":[descripteur_version()]}})
+    );
+    let r = b.mcp(Some(&contacts), LISTE).await;
+    assert_eq!(
+        r.json(),
+        json!({"jsonrpc":"2.0","id":1,"result":{"tools":[]}})
+    );
+    let r = b
+        .mcp(
+            Some(&jeton),
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"cursor":"x"}}"#,
+        )
+        .await;
+    assert_eq!(
+        r.json(),
+        attendu_erreur(1, -32602, TEXTE_PARAMS_INVALIDES),
+        "cursor"
+    );
+
+    let (livres_o, _) = Compteur::nouveau("livres", Portee::BooksRead);
+    let (factures_o, _) = Compteur::nouveau("factures", Portee::InvoicesRead);
+    let b = banc(
+        &pool,
+        Registre::vide()
+            .avec(Box::new(livres_o))
+            .avec(Box::new(factures_o)),
+    );
+    let r = b.mcp(Some(&jeton), LISTE).await;
+    let outils = r.json()["result"]["tools"].clone();
+    assert_eq!(outils.as_array().unwrap().len(), 1);
+    assert_eq!(outils[0]["name"], json!("livres"));
+    assert_eq!(outils[0]["annotations"], json!({"readOnlyHint": true}));
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn hors_portee_indiscernable(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let (factures_o, n_factures) = Compteur::nouveau("factures", Portee::InvoicesRead);
+    let n_refus = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let b = banc(
+        &pool,
+        Registre::vide()
+            .avec(Box::new(factures_o))
+            .avec(Box::new(RefusDeService { n: n_refus.clone() })),
+    );
+    let inconnu = b
+        .mcp(Some(&jeton), &appel(1, "inexistant", json!({})))
+        .await;
+    let hors = b.mcp(Some(&jeton), &appel(2, "factures", json!({}))).await;
+    let refus = b
+        .mcp(Some(&jeton), &appel(3, "refus_de_service", json!({})))
+        .await;
+    assert_eq!(
+        inconnu.json(),
+        attendu_erreur(1, -32602, TEXTE_OUTIL_INCONNU)
+    );
+    assert_eq!(sans_id(inconnu.json()), sans_id(hors.json()));
+    assert_eq!(sans_id(inconnu.json()), sans_id(refus.json()));
+    assert_eq!(inconnu.en_tetes, hors.en_tetes);
+    assert_eq!(
+        n_factures.load(Ordering::SeqCst),
+        0,
+        "hors portée : non exécuté"
+    );
+    assert_eq!(
+        n_refus.load(Ordering::SeqCst),
+        1,
+        "le refus vient bien du service"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// AC-a19, AC-a20 — arguments, erreurs à texte fixe, délai
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn arguments_et_params(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(&pool, Registre::standard());
+    let r = b
+        .mcp(
+            Some(&jeton),
+            &appel(1, "kesh_version", json!({"PIEGE_ARG_326": 1})),
+        )
+        .await;
+    assert_eq!(
+        r.json(),
+        attendu_outil_en_erreur(1, TEXTE_ARGUMENTS_INVALIDES)
+    );
+    // params mal formés (validation P6, H5).
+    for corps in [
+        r#"{"jsonrpc":"2.0","id":1,"method":"tools/call"}"#,
+        r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":5}}"#,
+        r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"kesh_version","arguments":[]}}"#,
+    ] {
+        let r = b.mcp(Some(&jeton), corps).await;
+        assert_eq!(
+            r.json(),
+            attendu_erreur(1, -32602, TEXTE_PARAMS_INVALIDES),
+            "{corps}"
+        );
+    }
+    // `arguments` absent vaut `{}`.
+    let r = b
+        .mcp(
+            Some(&jeton),
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"kesh_version"}}"#,
+        )
+        .await;
+    assert_eq!(r.json(), attendu_version(1));
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn erreur_interne_texte_fixe(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(&pool, Registre::vide().avec(Box::new(Piege)));
+    assert_eq!(
+        b.mcp(Some(&jeton), &appel(1, "piege", json!({})))
+            .await
+            .statut,
+        StatusCode::OK
+    );
+    sqlx::query("ALTER TABLE accounts RENAME TO accounts_cachee_326")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let r = b.mcp(Some(&jeton), &appel(1, "piege", json!({}))).await;
+    assert_eq!(r.json(), attendu_outil_en_erreur(1, TEXTE_ERREUR_INTERNE));
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn delai_depasse(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let registre = Registre::vide()
+        .avec(Box::new(Lent))
+        .avec_delai(Duration::from_millis(50));
+    assert_eq!(registre.delai(), Duration::from_millis(50));
+    let b = banc(&pool, registre);
+    let debut = std::time::Instant::now();
+    let r = b.mcp(Some(&jeton), &appel(1, "lent", json!({}))).await;
+    assert_eq!(r.json(), attendu_outil_en_erreur(1, TEXTE_DELAI_DEPASSE));
+    assert!(
+        debut.elapsed() < Duration::from_secs(4),
+        "le délai a coupé l'outil"
+    );
+    assert_eq!(Registre::standard().delai(), kesh_api::mcp::DELAI_OUTIL);
+}
+
+// ---------------------------------------------------------------------------
+// AC-a22 — E1 côté répartiteur
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn e1_rien_ne_part_sous_cle_requise(pool: MySqlPool) {
+    let (c, u, _, requise) = servie(&pool, SendValidation::Required).await;
+    let (_, exempte) = cle(&pool, c, u, &[McpScope::BooksRead], SendValidation::Exempt).await;
+    compte(&pool, c, u, "1099", PIEGE_E1).await;
+    let b = banc(&pool, Registre::standard().avec(Box::new(Piege)));
+    let attendus: Vec<(String, Option<serde_json::Value>)> = vec![
+        (
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}).to_string(),
+            None,
+        ),
+        (
+            r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#.into(),
+            Some(json!({"jsonrpc":"2.0","id":1,"result":{}})),
+        ),
+        (LISTE.into(), None),
+        (
+            appel(1, "piege", json!({})),
+            Some(attendu_outil_en_erreur(1, TEXTE_VALIDATION_REQUISE)),
+        ),
+        (
+            appel(1, "kesh_version", json!({})),
+            Some(attendu_outil_en_erreur(1, TEXTE_VALIDATION_REQUISE)),
+        ),
+        (
+            r#"{"jsonrpc":"2.0","id":1,"method":"prompts/list"}"#.into(),
+            Some(json!({"jsonrpc":"2.0","id":1,"result":{"prompts":[]}})),
+        ),
+        (
+            r#"{"jsonrpc":"2.0","id":1,"method":"prompts/get","params":{"name":"piege"}}"#.into(),
+            Some(attendu_erreur(1, -32602, TEXTE_PROMPT_INCONNU)),
+        ),
+        (
+            r#"{"jsonrpc":"2.0","id":1,"method":"resources/read"}"#.into(),
+            Some(attendu_erreur(1, -32601, MESSAGE_METHODE_INCONNUE)),
+        ),
+        (
+            r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"piege"}}"#.into(),
+            None,
+        ),
+    ];
+    for (corps, attendu) in &attendus {
+        let r = b.mcp(Some(&requise), corps).await;
+        assert!(
+            !String::from_utf8_lossy(&r.corps).contains(PIEGE_E1),
+            "{corps} : la donnée piégée est partie sous une clé requise"
+        );
+        if let Some(a) = attendu {
+            assert_eq!(&r.json(), a, "{corps}");
+        }
+    }
+    let r = b.mcp(Some(&requise), LISTE).await;
+    assert_eq!(
+        r.json()["result"]["tools"].as_array().unwrap().len(),
+        2,
+        "tools/list : textes du binaire"
+    );
+    // Témoin : sous une clé `exempt`, l'outil piégé rend la donnée.
+    let r = b.mcp(Some(&exempte), &appel(1, "piege", json!({}))).await;
+    assert!(
+        String::from_utf8_lossy(&r.corps).contains(PIEGE_E1),
+        "témoin"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// AC-a26 — les outils lisent en lecture seule, la trace écrit
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn kesh_version_lit_en_lecture_seule(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(&pool, Registre::standard());
+    let r = b
+        .mcp(Some(&jeton), &appel(1, "kesh_version", json!({})))
+        .await;
+    assert_eq!(r.json(), attendu_version(1));
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn l_appel_pose_la_derniere_utilisation(pool: MySqlPool) {
+    let (_, _, k, jeton) = servie(&pool, SendValidation::Exempt).await;
+    assert_eq!(derniere_utilisation(&pool, "mcp_keys", k).await, None);
+    let b = banc(&pool, Registre::standard());
+    let r = b
+        .mcp(Some(&jeton), &appel(1, "kesh_version", json!({})))
+        .await;
+    assert_eq!(r.statut, StatusCode::OK);
+    assert!(derniere_utilisation(&pool, "mcp_keys", k).await.is_some());
+}
+
+// ---------------------------------------------------------------------------
+// AC-a31 — chaque refus égal à sa constante, jamais au format de l'API
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn aucun_refus_au_format_de_l_api(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(&pool, Registre::standard());
+    let mut h = en_tetes(None);
+    h.insert("origin", HeaderValue::from_static("https://evil.example"));
+    let mut sans_type = en_tetes(Some(&jeton));
+    sans_type.remove("content-type");
+    let mut version = en_tetes(Some(&jeton));
+    version.insert(
+        "mcp-protocol-version",
+        HeaderValue::from_static("2026-07-28"),
+    );
+    for (r, statut, corps) in [
+        (
+            b.avec("POST", "/mcp", &en_tetes(None), LISTE).await,
+            StatusCode::UNAUTHORIZED,
+            TEXTE_NON_AUTHENTIFIE,
+        ),
+        (
+            b.avec("POST", "/mcp", &h, LISTE).await,
+            StatusCode::FORBIDDEN,
+            TEXTE_ORIGINE_REFUSEE,
+        ),
+        (
+            b.avec("GET", "/mcp", &en_tetes(None), "").await,
+            StatusCode::METHOD_NOT_ALLOWED,
+            "",
+        ),
+        (
+            b.avec("POST", "/mcp", &sans_type, LISTE).await,
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            CORPS_TYPE_NON_ADMIS,
+        ),
+        (
+            b.avec("POST", "/mcp", &version, LISTE).await,
+            StatusCode::BAD_REQUEST,
+            CORPS_VERSION_NON_SERVIE,
+        ),
+        (
+            b.mcp(Some(&jeton), "{").await,
+            StatusCode::BAD_REQUEST,
+            CORPS_JSON_INVALIDE,
+        ),
+    ] {
+        assert_eq!((r.statut, r.corps.as_slice()), (statut, corps.as_bytes()));
+        assert!(
+            !String::from_utf8_lossy(&r.corps).contains(r#""error":{"code":""#),
+            "format de l'API"
+        );
+    }
+    for constante in [
+        TEXTE_NON_AUTHENTIFIE,
+        TEXTE_ORIGINE_REFUSEE,
+        CORPS_ERREUR_INTERNE,
+        CORPS_JSON_INVALIDE,
+        CORPS_REQUETE_INVALIDE,
+    ] {
+        let v: serde_json::Value = serde_json::from_str(constante).expect("constante JSON");
+        assert!(
+            v.get("id").is_none(),
+            "{constante} : sans id (schéma 2025-11-25)"
+        );
+        assert_eq!(v["jsonrpc"], json!("2.0"));
+        assert!(v["error"]["code"].is_i64());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Par le fil : l'extracteur `ConnectInfo` réel
+// ---------------------------------------------------------------------------
+
+/// Le seul test sur une vraie connexion : le pair vient de
+/// `into_make_service_with_connect_info`, comme en production (`main.rs`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn par_le_fil_connect_info_reel(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let statique = static_dir();
+    let app = routeur_nu(
+        pool.clone(),
+        config(),
+        statique.path(),
+        Registre::standard(),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr: SocketAddr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    });
+    let client = reqwest::Client::new();
+    let envoi = |j: Option<String>| {
+        let mut r = client
+            .post(format!("http://{addr}/mcp"))
+            .header("content-type", "application/json")
+            .body(appel(1, "kesh_version", json!({})));
+        if let Some(j) = j {
+            r = r.header("authorization", format!("Bearer {j}"));
+        }
+        r.send()
+    };
+    let r = envoi(None).await.unwrap();
+    assert_eq!(r.status(), 401);
+    assert_eq!(r.text().await.unwrap(), TEXTE_NON_AUTHENTIFIE);
+    let r = envoi(Some(jeton)).await.unwrap();
+    assert_eq!(r.status(), 200);
+    let v: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(v, attendu_version(1));
 }
