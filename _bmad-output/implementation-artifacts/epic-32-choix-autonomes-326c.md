@@ -100,6 +100,10 @@ réversibilité.
 - **Réversible** : oui.
 - **Annoté à la validation P1 (R1)** : `RUST_LOG` est déjà décrit au manuel (`admin-manual.tex:792`) ; la
   sous-section y renvoie, et dit que les variables du terminal l'emportent sur le `.env` (`:1641`).
+- **Annoté à la validation P2 (F1, R4, F7)** : la précédence du terminal (`:1641`, écrite pour une machine de
+  développement, sans `sudo`) n'est plus transposée au NAS ; la sous-section fait **remplacer** la ligne
+  `RUST_LOG=info` du `.env` (`.env.example:253`), lancer `sudo docker compose up -d`, et vérifier l'effet par la
+  présence des lignes `DEBUG` au journal.
 
 ### C-32-6c-8 — L'exemple de ligne du manuel se copie d'une sortie réelle
 
@@ -145,6 +149,13 @@ réversibilité.
   posé par les composes (deux fichiers de plus, un module de plus, même effet global) ; dire seulement « ne greppez
   que le message » (le tableau de lecture se lit champ par champ).
 - **Réversible** : oui.
+- **Annoté à la validation P2 (F8, R3, R5, F4/R6, F10)** : le repli par `sed` sur la sortie standard est **retiré** —
+  il n'a été éprouvé sur aucun NAS (ni le `sed` de DSM, ni `sudo`) ; le manuel garde une seule commande,
+  `sudo grep "filtre d'adresse" ./log/kesh.*.log`, avec ses limites en une phrase (rotation `never` → `kesh.log`,
+  `KESH_LOG_HOST_DIR`, motif développé avant `sudo`). La ligne de code qui décide des couleurs est
+  `fmt_layer.rs:743` (`:305-312` en est la documentation). L'alternative écartée, `.with_ansi(false)` sur la sortie
+  standard, rendrait justes les `docker compose logs | grep` du manuel ; à soumettre à Guy si le fichier se révèle
+  insuffisant à la mise à jour du NAS.
 
 ### C-32-6c-12 — Une mutation de plus que les deux demandées pour le comptage, et une pour l'AC-T3 et l'AC-T5
 

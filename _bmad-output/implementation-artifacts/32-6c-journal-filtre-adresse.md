@@ -4,8 +4,8 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-6c`, branche `story/32-6c` partie de
 `origin/main` `c5287dec` (32-6a, 32-6b, 32-8b0 et 32-8a fusionnées). Registre : `epic-32-choix-autonomes-326c.md`
-(C-32-6c-1 à C-32-6c-13 ; 11 à 13 ajoutés à la validation P1). Clé courte : `326c`. Issue de l'epic : #723 (CR « Serveur MCP intégré à Kesh »), en `refs`
-seulement. Les numéros de ligne cités sont ceux de `c5287dec`. Validation P1 remédiée le 2026-10-25 (Change Log) ;
+(C-32-6c-1 à C-32-6c-13 ; 11 à 13 ajoutés à la validation P1, 7 et 11 annotés à la validation P2). Clé courte : `326c`. Issue de l'epic : #723 (CR « Serveur MCP intégré à Kesh »), en `refs`
+seulement. Les numéros de ligne cités sont ceux de `c5287dec`. Validations P1 et P2 remédiées le 2026-10-25 (Change Log) ;
 réponses de Guy du même jour aux cinq points soumis : § *Points soumis à Guy*.*
 
 ⚠️ **Story de diagnostic, sans changement de comportement.** Elle ajoute au journal du serveur ce qu'il faut pour
@@ -50,14 +50,19 @@ de confiance en connaissance de cause.
    filtre. `grep -n "tracing::" crates/kesh-api/src/mcp/reseau.rs crates/kesh-api/src/mcp/transport.rs` → 6 lignes :
    `reseau.rs:110`, `:129`, `:161`, `transport.rs:87`, `:121`, `:138` — aucune ne nomme une adresse.
    **Les autres chemins d'une requête `/mcp` sans décision** (validation P1, R3) — chacun rend la route absente sans
-   évènement de décision : (a) **toutes** les lignes de réglages illisibles en base : `transport.rs:87`, `error!`
-   « serveur MCP : réglages illisibles, /mcp n'est pas servi » ; (b) **une** ligne illisible (une liste qui n'est pas
+   évènement de décision : (a) une **erreur de la base** à la lecture des réglages (`list_enabled` rend `Err`,
+   `kesh-db/src/repositories/mcp_server_settings.rs:96-100`, `:107`) : `transport.rs:87`, `error!` « serveur MCP :
+   réglages illisibles, /mcp n'est pas servi », aucune société servie — **non** des lignes illisibles, qui relèvent
+   de (b) *(corrigé à la validation P2, R1)* ; (b) **une** ligne illisible (une liste qui n'est pas
    un tableau de chaînes) : `services/serveur_mcp.rs:41`, `error!` « serveur MCP : ligne de réglages illisible, la
    société n'est pas servie », avec le `company_id` (exercé par `tests/mcp_transport_e2e.rs:355-370`) — la société est
    absente de `reglages`, donc aucun `decider` ne tourne pour elle ; (c) `ConnectInfo` absent : `transport.rs:78-80`,
    route absente sans rien écrire — **inatteignable en production** (`main.rs:399` :
    `into_make_service_with_connect_info::<SocketAddr>()`). `grep -n "tracing::" crates/kesh-api/src/services/serveur_mcp.rs`
-   → `:41` seul. Ces trois chemins sont hors de la story (elle n'ajoute rien à `transport.rs` ni à `serveur_mcp.rs`) ;
+   → `:41` seul. **En amont du transport** (validation P2, F3) : `/mcp` est monté par `route_service("/mcp", …)`
+   (`lib.rs:1278`), sur ce chemin exact ; les chemins voisins (`/mcp/`, `/MCP`, `//mcp`, `/mcp/x`) partent au repli
+   statique sans passer par le transport (`tests/mcp_transport_e2e.rs:405-418`, `chemins_voisins`) — aucune ligne,
+   aucune erreur. Ces chemins sont hors de la story (elle n'ajoute rien à `transport.rs` ni à `serveur_mcp.rs`) ;
    le manuel les nomme (AC-7, AC-9 (viii)).
 3. **Le filtre désactivé ne calcule pas le client** : `if !s.address_filter_enabled { return Decision::Admis; }`
    (`reseau.rs:119-121`) précède `client(...)` (`:122`). Le mandataire est lu **avant** l'état du filtre (`:105-118`,
@@ -106,22 +111,28 @@ de confiance en connaissance de cause.
     décrit** au tableau *Journalisation* de § `sec:env-vars` (`:792` : « Niveau/directives (`trace`..`error`). Baseline
     `sqlx=warn` maintenue en `debug` (anti-fuite SQL). », défaut `info`) ; le `.tex` écrit `RUST\_LOG`, que
     `grep -n "RUST_LOG"` ne voit pas — le motif à rejouer est `grep -nE 'RUST\\?_LOG'`, qui rend `:792`, `:1641`, `:1643`,
-    `:1885`, `:1924`. `:1641` dit que **les variables du terminal l'emportent sur le `.env`** (interpolation de Compose) ;
+    `:1885`, `:1924`. `:1641` dit que **les variables du terminal l'emportent sur le `.env`** (interpolation de Compose),
+    dans le contexte d'une répétition sur une machine de développement, sans `sudo` — la 32-6c ne le transpose pas au
+    NAS (validation P2, F1) ;
     `:621` fait appliquer une modification du `.env` par `sudo docker compose up -d`. **Aucune ligne ne décrit `/mcp`**
     (la section *Le serveur MCP* est à la 32-7, `backlog`). *(Fait corrigé à la validation P1, R1 : il affirmait
     qu'aucune ligne ne parlait de `RUST_LOG`.)*
 13. **Où lire le journal sans couleurs** (validation P1, R2 = F2). La sortie standard (`fmt::layer()`, `logging.rs:135`)
     n'appelle pas `with_ansi(false)` : avec la fonctionnalité `ansi` (par défaut, `crates/kesh-api/Cargo.toml:36` ne
     coupe pas les défauts), elle émet des codes couleur sauf si `NO_COLOR` est non vide
-    (`tracing-subscriber-0.3.23/src/fmt/fmt_layer.rs:305-312`), ce que ni les composes ni le `Dockerfile` ne posent :
+    (`tracing-subscriber-0.3.23/src/fmt/fmt_layer.rs:743` : `let ansi = cfg!(feature = "ansi") &&
+    env::var("NO_COLOR").map_or(true, |v| v.is_empty());` ; `:305-312` en est la documentation), ce que ni les composes ni le `Dockerfile` ne posent :
     `docker compose logs` porte des séquences d'échappement autour des noms de champs et des `=`, et un `grep` sur
     `champ=valeur` y échoue (le message, non stylé, se retrouve). **Le fichier de log, lui, est sans couleurs**
     (`logging.rs:143` : `.with_ansi(false) // jamais de codes couleur dans un fichier`) et **actif par défaut** dans
-    les deux composes (`docker-compose.yml:96`, `docker-compose.prod.yml:119` : `/var/log/kesh/kesh.log`, monté sur
-    `./log`, `:140` et `:165`), au format `pretty` par défaut (`:99`, `:122`) — le même formateur que la sortie
+    les deux composes (`docker-compose.yml:96`, `docker-compose.prod.yml:119` : `/var/log/kesh/kesh.log`), monté sur
+    `./log` par le compose du Synology (`docker-compose.prod.yml:165`, montage fixe ; installé sous le nom
+    `docker-compose.yml`, `admin-manual.tex:574`), sur `${KESH_LOG_HOST_DIR:-./log}` par `docker-compose.yml:140`
+    (validation P2, R5), au format `pretty` par défaut (`:99`, `:122`) — le même formateur que la sortie
     standard (`logging.rs:143-147`). ⚠️ **Le nom réel du fichier** : avec la rotation `daily` (défaut), le fichier
     s'appelle `kesh.<AAAA-MM-JJ>.log` (`tracing-appender-0.2.5/src/rolling.rs:648` :
-    `format!("{}.{}.{}", filename, date, suffix)`, date `[year]-[month]-[day]`, `:564`), **non** `kesh.log` — que le
+    `format!("{}.{}.{}", filename, date, suffix)`, date `[year]-[month]-[day]`, `:564`) ; avec la rotation `never`,
+    `kesh.log` (`:643` : `format!("{}.{}", filename, suffix)`). Par défaut donc **non** `kesh.log` — que le
     manuel (`admin-manual.tex:957`, `sudo tail -f ./log/kesh.log`) et `.env.example:289` écrivent à tort. Défaut
     préexistant, hors du périmètre (C-32-6c-13) ; la sous-section de la 32-6c écrit le nom réel.
 
@@ -177,12 +188,8 @@ tests (a) à (s)) et dans `crates/kesh-api/src/logging.rs` (`mod tests`). Adress
    (`verdict(…)`, `mcp_reseau_e2e.rs:44-68` ; pour l'AC-T4, par `envoyer` et `requete`, `tests/common/mcp.rs:272`,
    `:304`). Le journal ne devient pas un oracle : il ne sort pas du serveur.
 7. **AC-7 — le serveur désactivé n'écrit rien.** Sans société `enabled = TRUE`, aucune décision n'est prise (fait 7) :
-   **aucun** évènement de décision. Le manuel le dit : **aucune ligne de décision et aucune erreur** veut dire
-   « serveur MCP activé pour aucune société », ou « requête jamais parvenue à Kesh » ; **aucune ligne de décision mais
-   une erreur** du serveur MCP veut dire que les réglages ne se lisent pas — tous (« réglages illisibles, /mcp n'est
-   pas servi », `transport.rs:87`), une société (« ligne de réglages illisible, la société n'est pas servie »,
-   `services/serveur_mcp.rs:41`), ou une entrée de mandataire (« une entrée de trusted_proxies ne s'analyse pas »,
-   `reseau.rs:110-114`, AC-4) (fait 2, validation P1, R3).
+   **aucun** évènement de décision. Le manuel dit ce que veut dire l'absence de ligne de décision pour une société,
+   par l'énumération de l'AC-9 (viii) (fait 2 ; validation P1, R3 ; validation P2, R1 et F3).
 
 ### B — La directive de journal
 
@@ -203,40 +210,53 @@ tests (a) à (s)) et dans `crates/kesh-api/src/logging.rs` (`mod tests`). Adress
      l'AC-T1) — n'écrit rien au niveau par défaut** : pour le vérifier, passer le filtre en `debug` le temps du test
      (validation P1, F3) ;
    - **où poser `RUST_LOG`** : la variable est déjà décrite au tableau *Journalisation* (renvoi à § `sec:env-vars`,
-     `admin-manual.tex:792`, sans la redécrire) ; pour la seule cible du filtre,
-     `RUST_LOG=info,kesh_api::mcp::reseau=debug` **dans le `.env`** de l'installation, puis `sudo docker compose up -d`
-     (comme `:621`) pour recréer le conteneur ; ⚠️ **les variables du terminal l'emportent sur le `.env`** (`:1641`) :
-     `env | grep RUST_LOG` doit ne rien rendre dans le shell qui lance la commande, sinon la valeur exportée gagne
-     (`unset RUST_LOG`) ; **revenir à `info` ensuite** (même geste) ; ne pas employer `RUST_LOG=debug` tout court
-     (tout Kesh passe en `debug`) ;
-   - **lire dans le fichier de log**, sans couleurs (fait 13) : `sudo grep "filtre d'adresse" ./log/kesh.*.log`
-     dans le dossier de l'installation (rotation quotidienne : `kesh.<AAAA-MM-JJ>.log`), format `pretty` (avec
-     `KESH_LOG_FILE_FORMAT=json`, une ligne JSON par évènement, mêmes champs) ; **si le fichier est désactivé**
-     (`KESH_LOG_FILE_PATH=` vide), la sortie standard porte des codes couleur qui coupent les `grep` sur
-     `champ=valeur` : `docker compose logs --since=10m kesh-api | sed 's/\x1b\[[0-9;]*m//g' | grep "filtre d'adresse"`
-     (C-32-6c-11) ;
+     `admin-manual.tex:792`, sans la redécrire) ; pour la seule cible du filtre, **remplacer** la ligne
+     `RUST_LOG=info` du `.env` de l'installation (`.env.example:253`) par `RUST_LOG=info,kesh_api::mcp::reseau=debug`,
+     puis `sudo docker compose up -d` (comme `:621`) ; **vérifier l'effet** par la présence de lignes `DEBUG` de
+     décision au journal après une requête admise ; **revenir à `RUST_LOG=info` ensuite** (même geste) ; ne pas
+     employer `RUST_LOG=debug` tout court (tout Kesh passe en `debug`) (validation P2, F1, R4, F7) ;
+   - **lire dans le fichier de log**, sans couleurs (fait 13) — une seule commande, juste dans la configuration par
+     défaut : `sudo grep "filtre d'adresse" ./log/kesh.*.log`, dans le dossier de l'installation (rotation
+     quotidienne : `kesh.<AAAA-MM-JJ>.log`) ; **ses limites, en une phrase** : avec la rotation `never` le fichier
+     s'appelle `kesh.log`, avec `KESH_LOG_HOST_DIR` il est dans ce dossier-là, et le motif est développé par le shell
+     de l'utilisateur avant `sudo`, si bien que le dossier doit lui être lisible (validation P2, F8, R5, R3). Format
+     `pretty` par défaut (avec `KESH_LOG_FILE_FORMAT=json`, une ligne JSON par évènement, mêmes champs). **Aucune
+     commande n'est prescrite pour la sortie standard** (`docker compose logs`), dont les codes couleur coupent les
+     `grep` sur `champ=valeur` (fait 13) : le repli de la validation P1, éprouvé sur aucun NAS, est retiré
+     (validation P2, F8, R3 ; C-32-6c-11 annoté) ;
    - **une ligne d'exemple copiée d'une sortie réelle** du binaire, **prise du fichier de log** (fait 9, fait 13),
      adresses de documentation ;
    - chaque champ en une ligne, et ce qu'il permet de trancher : un tableau de lecture au moins pour ces cas —
      (i) `pair` = une adresse de passerelle Docker, `pair_mandataire=false`, `xff_lignes=0` : le proxy ne pose pas
-     `X-Forwarded-For`, Kesh voit tous les clients sous l'adresse du proxy, le filtre ne distingue personne — c'est le cas où,
-     derrière Traefik ou la passerelle Docker, le filtre ne filtre rien (Guy, 2026-10-25 : « le manuel le dit » ; la
-     sécurité relève de l'infrastructure) ;
-     (ii) même pair, `pair_mandataire=false`, `xff_lignes` ≥ 1 : l'en-tête est posé mais ignoré — déclarer le pair
-     parmi les mandataires de confiance, **avec cette réserve, écrite au manuel** (validation P1, R4 ; acceptée par
-     Guy) : *si le mandataire déclaré est une adresse par laquelle passent tous les clients (la passerelle Docker),
-     tout poste qui l'atteint sans passer par le mandataire — un poste du réseau local qui joint directement le port
-     publié — peut forger `X-Forwarded-For` ; le filtre est une défense en profondeur, non une barrière* ;
+     `X-Forwarded-For`, Kesh voit tous les clients sous l'adresse du proxy, le filtre ne distingue personne — c'est le
+     cas de la publication de port par le mandataire en espace utilisateur de Docker (la passerelle) (Guy,
+     2026-10-25 : le filtre ne filtre rien et « le manuel le dit » ; la sécurité relève de l'infrastructure) ;
+     (ii) `pair_mandataire=false`, `xff_lignes` ≥ 1 : l'en-tête est posé mais ignoré, le filtre ne distingue pas
+     davantage — par exemple un Traefik non déclaré, qui pose l'en-tête (`pair` = l'adresse de son conteneur), **non
+     éprouvé** (fiche 32-6, `32-6-endpoint-mcp.md:1017-1019`) (validation P2, F2 = R2) ; déclarer le pair parmi les
+     mandataires de confiance, **avec cette réserve, écrite au manuel** (validation P1, R4 ; acceptée par Guy) : *si le
+     mandataire déclaré est une adresse par laquelle passent tous les clients (la passerelle Docker), tout poste qui
+     joint directement le port publié peut forger `X-Forwarded-For`, ou, sans en-tête, être vu comme la passerelle
+     elle-même, admise par les plages par défaut (`reseau.rs:76-78`) ; le filtre est une défense en profondeur, non
+     une barrière* (validation P2, R7) ;
      (iii) `pair_mandataire=true`, `client` = l'adresse du poste : le filtre voit le vrai client ;
      (iv) `client=aucun` : l'en-tête du mandataire porte une entrée qui n'est pas une adresse nue (port, `unknown`),
      **filtre activé** la requête est refusée (filtre coupé, elle est admise : (vi)) ;
      (v) `x_real_ip=true` ou `forwarded=true` : ces en-têtes ne sont **jamais** lus par `/mcp` ;
      (vi) `filtre=false` : la ligne dit ce que le filtre retiendrait, rien n'est refusé ;
      (vii) `filtre=true`, `plages=0` : personne n'est admis ;
-     (viii) **aucune ligne de décision** (pour la société attendue) : sans erreur du serveur MCP, serveur MCP activé pour aucune société, ou
-     requête jamais parvenue à Kesh ; avec une **erreur**, les réglages ne se lisent pas — « réglages illisibles »
-     (toutes les sociétés), « ligne de réglages illisible » (une société, `company_id` donné), « une entrée de
-     trusted_proxies ne s'analyse pas » (AC-4) (fait 2, AC-7) ;
+     (viii) **aucune ligne de décision pour une société**, le filtre étant en `debug` (au niveau par défaut, une
+     admission n'écrit rien) — **énumération des sorties de Kesh, non des causes extérieures** (validation P2, F3 et
+     R1). Fait foi : les trois retours `RouteAbsente` du transport (`transport.rs:79`, `:88`, `:96`) et la route
+     exacte `route_service("/mcp", …)` (`lib.rs:1278`). Au code de `c5287dec` :
+     — **avec une erreur** du serveur MCP : « réglages illisibles, /mcp n'est pas servi » (`transport.rs:87`) : la
+     base n'a pas pu être lue, aucune société n'est servie ; « ligne de réglages illisible, la société n'est pas
+     servie » (`services/serveur_mcp.rs:41`) : les réglages de cette société (`company_id` donné) ne se décodent pas ;
+     « une entrée de trusted_proxies ne s'analyse pas » (`reseau.rs:110-114`, AC-4) ;
+     — **sans erreur** : le serveur MCP n'est pas activé pour cette société (fait 7 ; sans aucune ligne pour aucune
+     société, il ne l'est pour aucune) ; ou la requête est arrivée sur un chemin voisin (`/mcp/`, `/MCP`), servi par le
+     repli statique (fait 2) ; ou elle n'est pas parvenue à Kesh. `transport.rs:79` (`ConnectInfo` absent) est
+     inatteignable en production (fait 2 (c)) ;
      (ix) `pair_mandataire=true`, `xff_lignes=0`, `client` = le pair : le mandataire est déclaré mais ne pose pas
      `X-Forwarded-For` (`reseau.rs:76-78`) — le diagnostic qui suit (ii) si le proxy n'envoie rien (validation P1, R6) ;
    - avec plusieurs sociétés activées, **une ligne par société** (`company_id`) : un refus pour l'une n'empêche pas
@@ -298,7 +318,9 @@ tests (a) à (s)) et dans `crates/kesh-api/src/logging.rs` (`mod tests`). Adress
     (mandataire `172.18.0.1`, XFF piégé), portant `Authorization: Bearer kesh_mcp_PIEGE_JETON_326C`,
     `Cookie: kesh_session=PIEGE_COOKIE_326C`, `X-Forwarded-For: PIEGE_XFF_326C` (sur la requête refusée),
     `X-Real-IP: PIEGE_XRI_326C`, `Forwarded: for=PIEGE_FWD_326C`, corps `{"PIEGE_CORPS_326C": …}` ; **`Origin:
-    https://piege-origine-326c.example` sur la seule requête refusée**. Les requêtes passent par `envoyer` et `requete`
+    https://piege-origine-326c.example` sur la seule requête refusée**. Les deux requêtes partent en **`POST`** avec
+    **`Content-Type: application/json`** (sans quoi l'admise s'arrête en 405 ou 415 avant l'authentification,
+    `transport.rs:100`, `:115` ; validation P2, F6). Les requêtes passent par `envoyer` et `requete`
     (`tests/common/mcp.rs:272`, `:304`), **non** par `verdict(…)` : `verdict` fixe le corps `LISTE` et exige 401 d'une
     requête admise (`mcp_reseau_e2e.rs:44-68`). Assertions de réponse : la refusée égale la route absente ; l'admise,
     sans `Origin`, atteint l'authentification et rend **401** avec `TEXTE_NON_AUTHENTIFIE` (le jeton piégé est donc lu
@@ -310,7 +332,7 @@ tests (a) à (s)) et dans `crates/kesh-api/src/logging.rs` (`mod tests`). Adress
     `allowed_networks = ["192.0.2.0/24"]` ; pair `192.0.2.10` → admis (par `b`, réponse 401 par `verdict(…)`) ; la
     liste des évènements de décision est **égale**, dans l'ordre, à `[refuse en WARN pour a, admis en DEBUG pour b]`.
     **Sans tri** : `list_enabled` rend les sociétés `ORDER BY company_id` (`kesh-db/src/repositories/mcp_server_settings.rs:103`)
-    et `reglages_actifs` l'écrit comme contrat (« par `company_id` croissant (AC-a2) », `services/serveur_mcp.rs:30`),
+    et `reglages_actifs` l'écrit comme contrat (« par `company_id` croissant (AC-a2) », `services/serveur_mcp.rs:31`),
     et le transport appelle `decider` dans cet ordre (`transport.rs:91-94`) (validation P1, F4, F5, R7). L'aide `livres`
     ne convient pas : elle ne rend pas l'id du leurre (`tests/common/mcp.rs:171`).
 17. **AC-T6 — `filtre_cible_n_ouvre_que_le_filtre_mcp`** (`logging.rs`) : un abonné local (`with_default`) composé de
@@ -330,8 +352,7 @@ tests (a) à (s)) et dans `crates/kesh-api/src/logging.rs` (`mod tests`). Adress
 - [ ] **T-2 — les tests** AC-T1 à AC-T5 dans `tests/mcp_reseau_e2e.rs` ; AC-T6 dans `logging.rs`.
 - [ ] **T-3 — le manuel** (AC-9 à AC-11) : sous-section, phrase DSM, ligne d'exemple prise d'une sortie réelle — le
   **fichier de log** du backend local de l'E2E (`KESH_LOG_FILE_PATH` vers un dossier du worktree, format `pretty`),
-  après une requête vers `/mcp` depuis `127.0.0.1` avec un réglage qui refuse — ; la commande `sed` de repli jouée une
-  fois sur la sortie standard du même backend ; PDF régénéré sous le verrou ; contrôle du PDF aplati, sorties citées.
+  après une requête vers `/mcp` depuis `127.0.0.1` avec un réglage qui refuse — ; PDF régénéré sous le verrou ; contrôle du PDF aplati, sorties citées.
 - [ ] **T-4 — mutations** (§ *Tests et mutations*), une à une, restauration par `git checkout --` + `touch`.
 - [ ] **T-5 — gates** (§ *Gates*), Dev Agent Record, `sprint-status.yaml` → `review`, prompt de revue P1.
 
@@ -357,7 +378,7 @@ tests (a) à (s)) et dans `crates/kesh-api/src/logging.rs` (`mod tests`). Adress
 | M16 | `build_log_filter` remplace la chaîne par `debug` quand elle contient `::` (directive ciblée élargie) | AC-T6 (`kesh_api::routes` bloqué) |
 | M17 | `plages` = nombre d'entrées **valides** de `allowed_networks` | AC-T1 (cas 13 : `plages=2` attendu, 1 émis) |
 | M18 | `xff_entrees` compté sur le texte (`to_str().ok()`), lignes non ASCII ignorées | AC-T1 (cas 13 : `xff_entrees=2` attendu, 0 émis) |
-| M19 | `xff_entrees` saute les morceaux vides (`split(…).filter(\|m\| !m.is_empty())`, ou `split_terminator`) | AC-T1 (cas 14 : `xff_entrees=3` attendu, 1 émis) |
+| M19 | `xff_entrees` saute les morceaux vides (`split(…).filter(\|m\| !m.is_empty())`) | AC-T1 (cas 14 : `xff_entrees=3` attendu, 1 émis) |
 | M20 | `transport.rs` émet un évènement de décision (`verdict=refuse`) quand `servies` est vide | AC-T3 (aucun évènement attendu, serveur désactivé) |
 | M21 | une seule décision journalisée par requête (la première société ; ou émission déplacée au transport, une ligne par requête) | AC-T5 (deux éléments attendus) |
 
@@ -413,8 +434,7 @@ jeton), `mcp_journal_e2e.rs`, les tests unitaires de `reseau.rs` et de `logging.
   fiche 32-6 (la décision lit la base, une route absente non) reste ce qu'il était.
 - **La mise en forme réelle** (guillemets, ordre, couleurs de la sortie standard, format `json`) n'est vue d'aucun
   test : l'exemple du manuel se copie d'une sortie réelle, prise du fichier de log (faits 9 et 13), et la revue le relit.
-  La commande `sed` de repli (sortie standard, AC-9) n'est exécutée par aucun test : le développement la joue une fois
-  sur la sortie réelle et cite le résultat au Dev Agent Record.
+  La commande de lecture du manuel (AC-9) n'est éprouvée sur aucun NAS ; ses limites y sont écrites.
 - **Le manuel** : aucun gate ne le lit ; le prompt de revue nomme l'axe.
 
 ## Dev Notes
@@ -490,11 +510,12 @@ restent telles qu'elles ont été posées ; chaque réponse suit sa question.*
    remplit déjà en frappant la page de connexion (`warn` par requête une fois la limite atteinte). *Ma recommandation :
    `warn`* — c'est le cas qui demande une action, et un refus d'un poste légitime doit se voir sans changer `RUST_LOG`.
    L'autre choix : tout en `debug`, le journal ne disant rien tant qu'on ne l'a pas demandé.
-   *Complément de la validation P1 (F3), écrit au manuel (AC-9)* : (a) avec plusieurs sociétés activées, un `warn`
-   « refuse » part pour chaque société qui refuse, même quand une autre sert la requête ; (b) le cas que la mise à jour
-   doit établir — DSM non déclaré, admis par les plages par défaut — n'écrit rien au niveau `info` : il faut le niveau
-   `debug` le temps du test.
    → **Guy : oui** (refus en `warn`).
+   *Ajout de l'orchestrateur, après la réponse — rien n'établit que Guy l'a vu (déplacé à la validation P2, F9 ;
+   il figurait dans la question)* : complément de la validation P1 (F3), écrit au manuel (AC-9) : (a) avec plusieurs
+   sociétés activées, un `warn` « refuse » part pour chaque société qui refuse, même quand une autre sert la requête ;
+   (b) le cas que la mise à jour doit établir — DSM non déclaré, admis par les plages par défaut — n'écrit rien au
+   niveau `info` : il faut le niveau `debug` le temps du test.
 2. **Ne journaliser que la forme des en-têtes (nombre de lignes et d'entrées, présence), jamais leur valeur ?**
    *Ma recommandation : oui.* La valeur d'un en-tête est écrite par le client, donc par qui veut : la recopier ouvrirait
    le journal à des textes forgés. Le client **retenu**, lui, est une adresse analysée, et il suffit au diagnostic. Le
@@ -557,3 +578,4 @@ restent telles qu'elles ont été posées ; chaque réponse suit sa question.*
 |---|---|---|
 | 2026-10-25 | création | Fiche rédigée en autonomie (Opus 5.5) contre `c5287dec`, sur la demande de Guy du même jour (« ajoute le nécessaire dans les logs au cas où ») ; registre C-32-6c-1 à C-32-6c-10 ; epic annoté (§ 32-6c, après la 32-6) ; `sprint-status.yaml` : `32-6c-journal-filtre-adresse: ready-for-dev` ; prompt de validation P1 `326c-validate-prompt-p1.md` (Sonnet, lentilles R et F). Constat au relevé : C-32-6-4 et l'AC-b4 promettaient le refus « au journal du serveur », que le code n'écrit pas (fait 2). Décomptes (recomptés sur la fiche) : 17 AC (11 + 6 tests), 6 tâches (T-0 à T-5), 16 mutations (M1 à M16), 12 cas à l'AC-T1, 3 modules. |
 | 2026-10-25 | validation P1 (remédiation) | Passe complète, lentilles R et F (Sonnet 5.5, contexte frais), rapports `kesh-gate-logs/326c-validate-p1-{R,F}.md` : R 0/0/4/6, F 0/0/1/4 ; **trend P1 : 0 CRITICAL / 0 HIGH / 5 MEDIUM / 10 LOW** (R2 et F2 sont un même constat, compté MEDIUM chez R et LOW chez F). Prémisse de chaque finding relue au code : **aucun finding réfuté**. Deux précisions : F2 cite `logging.rs:150` pour `with_ansi(false)`, la ligne est `:143` ; le tri par identifiants analysés que proposait R7 pour l'AC-T5 est remplacé par l'ordre contractuel de `list_enabled` (F4 : `ORDER BY company_id`, `mcp_server_settings.rs:103`). Remédiations (décisions de l'orchestrateur sur les MEDIUM) : **R1** fait 12 corrigé (`RUST\_LOG` décrit à `admin-manual.tex:792`, motif `grep -nE 'RUST\\?_LOG'`), l'AC-9 y renvoie et dit la précédence du terminal (`:1641`) ; **R2 = F2** fait 13 neuf — lecture dans le fichier de log (`logging.rs:143`, sans couleurs, actif par défaut), repli `sed` sur la sortie standard, ligne d'exemple prise du fichier, format global inchangé (C-32-6c-11) ; constat annexe : le fichier s'appelle `kesh.<AAAA-MM-JJ>.log` (`tracing-appender-0.2.5`), `admin-manual.tex:957` et `.env.example:289` disent `kesh.log` — défaut préexistant, hors périmètre, issue demandée (C-32-6c-13) ; **R3** fait 2 complété (`transport.rs:87`, `services/serveur_mcp.rs:41`, `transport.rs:78-80`), AC-7 et AC-9 (viii) reformulés ; **R4** réserve sur le mandataire déclaré écrite à l'AC-9 (ii), Dev Notes 32-7 annotées ; **F1** cas 13 et 14, mutations M17 et M18, plus M19 pour le cas 14 (C-32-6c-12). LOW intégrés : R5 (message en tête, AC-1, AC-T1, fait 9), R6 (AC-9 (iv) « filtre activé », cas (ix)), R7 (M12 reformulée, M20 pour l'AC-T3, M21 pour l'AC-T5), R8 (AC-T4 par `envoyer`/`requete`, `Origin` sur la seule requête refusée), R9 (fait 9 : `record_i64` `:291`, `record_u64` `:296`, `record_bool` `:311` ; `HeaderValue` lu en `http-1.4.2`), R10 (couvert par l'AC-9 : `up -d` comme `:621`, précédence du terminal), F3 (point 1 complété, AC-9), F4 (AC-1 « un seul jeu de champs » ; AC-T5 : l'ordre est un contrat), F5 (AC-T5 par `societe` ×2). Réponses de Guy du 2026-10-25 inscrites (§ *Points soumis à Guy* : 1 oui, 2 oui, 3 oui, 4 non, 5 oui) ; la description détaillée du fonctionnement de MCP inscrite à l'epic, § 32-11, et au § *Réponses de Guy (2026-10-25)*. Registre : C-32-6c-11 à 13 neufs, C-3 à C-7 et C-9 annotés. Symptômes grepés (`RUST_LOG`, `with_ansi`, `aucune ligne`, `douze`, `16 mutations`) : un résidu corrigé (Dev Notes, § *Le manuel* : `grep "RUST_LOG"` → `RUST\\?_LOG`). Décomptes recomptés à la source (`grep -c` sur la fiche et le registre) : 17 AC (11 + 6 tests), 6 tâches, **21 mutations** (M1 à M21), **14 cas** à l'AC-T1, **13 faits**, **13 choix** (C-32-6c-1 à 13), 3 modules. Passe suivante : P2, lentilles R et F, Opus, `326c-validate-prompt-p2.md`. |
+| 2026-10-25 | validation P2 (remédiation) | Passe complète, lentilles R et F (Opus 5.5, contexte frais), rapports `kesh-gate-logs/326c-validate-p2-{R,F}.md` : R 0/0/2/5, F 0/0/3/7 ; **trend : P1 0/0/5/10 → P2 0/0/5/12** (sommes brutes des deux lentilles ; recouvrements : F2 = R2, F3 ⊃ R1, F1 ≈ R4 ≈ F7, F8 ⊃ R3 + R5, F4 = R6 (a)). ⚠️ **Signal D5 pour le Project Lead : recyclage.** Les dix-sept findings **naissent tous de la remédiation P1** (les deux lentilles le déclarent, aucun défaut d'origine neuf) et portent tous sur ce que la fiche fait écrire au manuel ; la sévérité ne décroît pas (5 MEDIUM → 5 MEDIUM). Ce n'est pas l'exception D5 (défauts distincts et d'origine) : c'est le correctif précédent qui produit le défaut suivant. Consigne de l'orchestrateur appliquée : **retirer plutôt qu'enrichir** — une phrase du manuel non éprouvée sur le NAS se retire ou se marque « non éprouvé ». Prémisses relues au code (`transport.rs:77-97`, `:100`, `:115`, `services/serveur_mcp.rs:31-47`, `mcp_server_settings.rs:96-107`, `lib.rs:1278`, `mcp_transport_e2e.rs:405-418`, `reseau.rs:76-78`, `:104-116`, `.env.example:250-253`, `docker-compose.yml:138-140`, `docker-compose.prod.yml:163-165`, `admin-manual.tex:572-576`, `:955-958`, `tracing-subscriber-0.3.23/src/fmt/fmt_layer.rs:741-743`, `tracing-appender-0.2.5/src/rolling.rs:636-650`) : **aucun finding réfuté**. Remédiations (décisions de l'orchestrateur) : **F1 + R4 + F7** AC-9 : remplacer la ligne `RUST_LOG=info` du `.env` par `RUST_LOG=info,kesh_api::mcp::reseau=debug`, `sudo docker compose up -d`, vérifier par les lignes `DEBUG` au journal ; la vérification `env \| grep` et la précédence du terminal sous `sudo` sont **retirées** ; fait 12 précisé (`:1641` vaut pour une machine de développement, non transposé) ; C-32-6c-7 annoté. **F2 = R2** AC-9 (i) ne cite plus que la publication de port en espace utilisateur de Docker ; Traefik non déclaré passe en exemple du cas (ii), marqué « non éprouvé » (fiche 32-6, `:1017-1019`). **F3 + R1** fait 2 (a) corrigé (`transport.rs:87` = erreur de la base, non lignes illisibles) et complété du chemin amont (`lib.rs:1278`, chemins voisins `/mcp/`, `/MCP` au repli statique) ; AC-9 (viii) réécrit en **énumération des sorties de Kesh**, la règle qui fait foi écrite (les trois `RouteAbsente` de `transport.rs:79`, `:88`, `:96` et la route exacte de `lib.rs:1278`), les causes extérieures déclarées hors énumération, et la condition de niveau (`debug`) ; « (pour la société attendue) » remplacé par « non activé pour cette société » ; AC-7 renvoie à (viii) au lieu d'en tenir une copie. **F8 + R5 + R3** une seule commande (`sudo grep "filtre d'adresse" ./log/kesh.*.log`), ses limites en une phrase (rotation `never`, `KESH_LOG_HOST_DIR`, motif développé avant `sudo`) ; le **repli `sed` est retiré** de l'AC-9, de T-3 et de § *Ce que les gardes ne voient pas* ; fait 13 précisé (montage par compose, nom sous rotation `never`) ; C-32-6c-11 annoté. LOW intégrés : F4 = R6 (a) (fait 13 et annotation C-11 : `fmt_layer.rs:743`), R6 (b) (AC-T5 : `serveur_mcp.rs:31`), F5 (M19 sans `split_terminator`), F6 (AC-T4 : `POST` et `Content-Type: application/json`), F9 (point 1 : le complément P1 déplacé **après** la réponse de Guy, comme ajout de l'orchestrateur), F10 (alternative `with_ansi(false)` notée à C-32-6c-11, à soumettre à Guy si le fichier ne suffit pas), R7 (réserve (ii) : tout poste qui joint le port publié, et le cas sans en-tête vu comme la passerelle, `reseau.rs:76-78`). Symptômes grepés par valeur (`env \| grep`, `Traefik`, `sed `, `kesh.*.log`, `pour la société attendue`, `toutes les sociétés`, `1641`, `split_terminator`, `305-312`, `serveur_mcp.rs:30`) sur la fiche, le registre et l'epic : restent seulement des occurrences légitimes — entrées passées du registre (C-7 et C-11 *Retenu*, annotés, non réécrits), transcription de la réponse de Guy à l'epic (`:627`), contexte de l'epic (`:34`, `:183`, `:412`), Dev Notes (« ne prescrit rien pour Traefik », toujours vrai). Décomptes recomptés à la source (`grep -c`) : 17 AC (11 + 6 tests), 6 tâches, 21 mutations, 14 cas, 13 faits, 13 choix, 3 modules — inchangés. Passe suivante : P3, lentilles R et F, Sonnet, `326c-validate-prompt-p3.md`, avec un axe obligatoire sur les régressions de cette remédiation. |
