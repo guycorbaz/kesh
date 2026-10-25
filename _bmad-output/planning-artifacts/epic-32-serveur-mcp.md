@@ -581,6 +581,28 @@ nombre de tables du NAS) : à Guy avant la release.
 - **Q6** : fait — CR #723.
 - **Q3, Q5, Q7** : pas encore de réponse ; les recommandations restent l'hypothèse de travail des fiches 32-5 et 32-6.
 
+### Réponses de Guy (2026-10-25)
+
+Toutes les recommandations soumises le 2026-10-25 sont **acceptées** (« oui pour tout ») :
+
+- **Q3, Q5, Q7 (clés MCP)** : création réservée à l'Administrateur ; portées `books:read`, `invoices:read`,
+  `contacts:read`, `documents:read`, `prompts:write` ; réglages MCP restaurés tels quels (serveur activé s'il l'était).
+- **32-6 (endpoint)** : désactivé, `/mcp` répond **exactement comme une route absente** (pas de 404 littéral) ; derrière
+  Traefik ou la passerelle Docker le filtre d'adresse ne filtre rien et **le manuel le dit** (la sécurité relève de
+  l'infrastructure) ; **pas de limite de débit** en 0.16.0 ; la règle « servi » et l'authentification lisent sur la
+  connexion ordinaire, seuls les outils sur la connexion en lecture seule (Q11 tenue).
+- **32-8 (validation)** : échéance de **24 h** ; validation par un **Administrateur** seulement ; une erreur d'outil part
+  sans validation (un bit d'information, accepté) ; **pas de purge périodique** pour l'instant.
+- **32-10a (prompts)** : les règles de l'agent de développement ajoutent « **jamais de solde, de ligne ni d'agrégat réel
+  hors de Kesh** » (« bonne idée ») ; un agent ne propose **aucune** version d'un prompt `kesh-*` ; standards en français
+  seulement ; plafond de vingt propositions en attente.
+- **32-9 (outils)** : les **noms des tiers restent visibles** (Kesh les écrit déjà dans les libellés), seuls l'IBAN, le
+  QR-IBAN et l'adresse d'envoi sont masqués sans `contacts:read`.
+- **32-8b0** : la description d'un compte bancaire refuse les caractères invisibles de plus (catégorie générale) —
+  durcissement accepté.
+- **Permission** : les agents peuvent supprimer leurs dossiers `/tmp/kesh-e2e-*` ; la règle est à poser par Guy
+  (`/permissions`), l'orchestrateur ne modifiant pas ses propres permissions.
+
 [#98]: https://github.com/guycorbaz/kesh/issues/98
 [#164]: https://github.com/guycorbaz/kesh/issues/164
 [#197]: https://github.com/guycorbaz/kesh/issues/197
