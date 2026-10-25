@@ -24,7 +24,8 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   format de certaines écritures, sélecteurs de variante), les caractères d'usage privé — tel le logo Apple collé depuis
   un Mac — et les caractères non attribués, dont un emoji plus récent qu'Unicode 17.0 ; les emojis qui portent un
   sélecteur de variante (U+FE0E, U+FE0F) ou un liant invisible (U+200D), tel `⚠️`, l'étaient déjà ; les autres, drapeaux
-  et teints compris, restent admis. Une description déjà enregistrée n'est pas modifiée ; si elle porte un de ces
+  de pays et teints compris, restent admis (un drapeau de subdivision, tel celui de l'Écosse, porte des balises
+  invisibles et est refusé). Une description déjà enregistrée n'est pas modifiée ; si elle porte un de ces
   caractères, le prochain enregistrement du compte par sa modification — même pour en changer un autre champ — demande
   de la corriger.
 
