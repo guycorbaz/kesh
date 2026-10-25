@@ -8,8 +8,9 @@
 //! que deux instances se **sérialisent** sur elle **dès que la base porte au
 //! moins une société** — la seconde attend le `commit` de la première, puis
 //! ne trouve plus rien à réparer. Sur une base sans société, ce verrou ne
-//! tient aucune ligne : elles se sérialisent alors sur les lignes `users` et
-//! `api_keys` que verrouille la règle des principaux (raisonné, non testé).
+//! tient aucune ligne : elles se sérialisent alors sur les lignes `users`,
+//! `api_keys` et `mcp_keys` (dans cet ordre) que verrouille la règle des
+//! principaux (raisonné, non testé).
 //!
 //! **Avant la matrice, à chaque démarrage** (Story 15-7b3, #528, #542) :
 //! réparation de l'installation (`companies::repair_installation_in_tx`) —
@@ -431,6 +432,8 @@ async fn repair_installation_at_startup(pool: &MySqlPool) {
             users_repointed = report.principals.user_ids.len(),
             api_keys_revoked = report.principals.api_keys_revoked.len(),
             api_keys_repointed = report.principals.api_keys_repointed,
+            mcp_keys_revoked = report.principals.mcp_keys_revoked.len(),
+            mcp_keys_repointed = report.principals.mcp_keys_repointed,
             "réparation de l'installation au démarrage : faite (entrée installation.repaired)"
         ),
         Ok(None) => {}
@@ -1236,6 +1239,8 @@ mod tests {
                 "user_ids": m.users,
                 "api_keys_revoked": [revoked_key_json(&pool, m.active_key.0).await],
                 "api_keys_repointed": 2,
+                "mcp_keys_revoked": [],
+                "mcp_keys_repointed": 0,
                 "trigger": "startup",
             })
         );
@@ -1305,6 +1310,8 @@ mod tests {
         assert_eq!(entries[0].2["company_id"], serde_json::Value::Null);
         assert_eq!(entries[0].2["users_repointed"], 0);
         assert_eq!(entries[0].2["api_keys_repointed"], 0);
+        assert_eq!(entries[0].2["mcp_keys_repointed"], 0);
+        assert_eq!(entries[0].2["mcp_keys_revoked"], serde_json::json!([]));
         assert_eq!(
             entries[0].2["stub_companies_removed"],
             serde_json::json!([])
@@ -1334,6 +1341,8 @@ mod tests {
         assert_eq!(entries[0].2["company_id"], serde_json::Value::Null);
         assert_eq!(entries[0].2["users_repointed"], 0);
         assert_eq!(entries[0].2["api_keys_repointed"], 0);
+        assert_eq!(entries[0].2["mcp_keys_repointed"], 0);
+        assert_eq!(entries[0].2["mcp_keys_revoked"], serde_json::json!([]));
     }
 
     /// Porte l'onboarding à l'étape 2 (langue et mode choisis), l'état que

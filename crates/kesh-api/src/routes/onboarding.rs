@@ -1226,8 +1226,9 @@ async fn ensure_company_with_language_in_tx(
             // provisoire insérée (`companies::insert_stub`, mêmes valeurs que
             // le bootstrap et la remise à zéro), puis **rattachement** des
             // principaux orphelins (Story 15-7b2, AC 4) : les utilisateurs
-            // rejoignent la société créée, les clés d'API actives orphelines
-            // sont révoquées puis rattachées — jamais réveillées.
+            // rejoignent la société créée, les clés d'API et (Story 32-5d) MCP
+            // actives orphelines sont révoquées puis rattachées — jamais
+            // réveillées.
             // `set_coordinates` lèvera le drapeau (`clear_stub_in_tx`).
             let id = companies::insert_stub(&mut **tx, lang).await?;
             let principals = companies::reattach_orphan_principals_in_tx(tx, Some(id)).await?;
@@ -1244,6 +1245,8 @@ async fn ensure_company_with_language_in_tx(
                         "users_repointed": principals.user_ids.len(),
                         "api_keys_revoked": principals.api_keys_revoked,
                         "api_keys_repointed": principals.api_keys_repointed,
+                        "mcp_keys_revoked": principals.mcp_keys_revoked,
+                        "mcp_keys_repointed": principals.mcp_keys_repointed,
                     })),
                 ),
             )

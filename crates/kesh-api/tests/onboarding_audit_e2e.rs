@@ -2048,6 +2048,7 @@ async fn reset_clears_every_company_table_and_traces_itself(pool: MySqlPool) {
             "api_keys",
             "refresh_tokens",
             "password_reset_tokens",
+            "mcp_keys",
         ] {
             v.push(snapshot(&pool, t).await);
         }
@@ -2089,6 +2090,8 @@ async fn reset_clears_every_company_table_and_traces_itself(pool: MySqlPool) {
             "users_repointed": 0,
             "api_keys_revoked": [],
             "api_keys_repointed": 0,
+            "mcp_keys_revoked": [],
+            "mcp_keys_repointed": 0,
         })
     );
     let after = table_counts(&pool).await;
@@ -2103,6 +2106,7 @@ async fn reset_clears_every_company_table_and_traces_itself(pool: MySqlPool) {
         "api_keys",
         "refresh_tokens",
         "password_reset_tokens",
+        "mcp_keys",
     ] {
         preserved_after.push(snapshot(&pool, t).await);
     }
@@ -2120,6 +2124,83 @@ async fn reset_clears_every_company_table_and_traces_itself(pool: MySqlPool) {
     assert!(key_after.0.is_none());
     assert_eq!(after["companies"], 1);
     assert_eq!(after["onboarding_state"], 1);
+    assert_eq!(after["mcp_keys"], before["mcp_keys"], "clés MCP conservées");
+    assert_eq!(after["mcp_server_settings"], 0, "serveur MCP désactivé");
+}
+
+/// Test 4 bis (Story 32-5d, AC-d1, C-32-5-11) — après la remise à zéro d'une
+/// démonstration, une clé MCP **active** créée avant **authentifie encore**
+/// (`services::cles_mcp::authentifier`, même clé, même société, mêmes
+/// portées), et `mcp_server_settings` est **vide** : le serveur est désactivé
+/// (les réglages par défaut le disent). Contrôle de montage : la clé
+/// authentifie avant, et les réglages activés existent avant.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_keeps_mcp_keys_that_authenticate_and_disables_the_server(pool: MySqlPool) {
+    use kesh_api::services::cles_mcp::authentifier;
+    use kesh_api::services::poignees::{Lecture, Trace};
+    use kesh_db::repositories::mcp_server_settings;
+
+    let (app, token, company_id) = seeded_demo(&pool).await;
+    let (jeton, key_hash) = kesh_api::auth::api_key::generate_mcp_key();
+    let key_id = sqlx::query(
+        "INSERT INTO mcp_keys (company_id, created_by_user_id, name, key_hash, scopes) \
+         VALUES (?, ?, 'née en démo', ?, '[\"books:read\", \"contacts:read\"]')",
+    )
+    .bind(company_id)
+    .bind(admin_user_id(&pool).await)
+    .bind(&key_hash)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO mcp_server_settings \
+         (company_id, enabled, allowed_networks, trusted_proxies, allowed_origins) \
+         VALUES (?, TRUE, '[]', '[]', '[]')",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let lecture = Lecture::new(pool.clone());
+    let trace = Trace::new(pool.clone());
+    let before = authentifier(&lecture, &trace, &jeton)
+        .await
+        .expect("montage : la clé authentifie avant la remise à zéro");
+    assert!(
+        mcp_server_settings::get_or_defaults(&pool, company_id)
+            .await
+            .unwrap()
+            .enabled,
+        "montage : serveur activé"
+    );
+
+    let (status, body) = reset_with_flag(&app, &token).await;
+    assert_eq!(status, 200, "{body}");
+
+    let after = authentifier(&lecture, &trace, &jeton)
+        .await
+        .expect("la clé MCP conservée authentifie après la remise à zéro");
+    assert_eq!(after.cle_id, key_id);
+    assert_eq!(after.acces.company_id(), company_id, "même société");
+    assert_eq!(
+        after.acces.user_id(),
+        before.acces.user_id(),
+        "même créateur"
+    );
+    assert_eq!(after.acces.canal(), before.acces.canal(), "mêmes portées");
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mcp_server_settings")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 0, "réglages du serveur MCP vidés");
+    assert!(
+        !mcp_server_settings::get_or_defaults(&pool, company_id)
+            .await
+            .unwrap()
+            .enabled,
+        "serveur MCP désactivé"
+    );
 }
 
 // --- Test 5 (15-7b2) --------------------------------------------------------
@@ -2261,10 +2342,10 @@ async fn reset_restores_the_stub_columns_in_place(pool: MySqlPool) {
 
 // --- Tests 6a à 6d (15-7b2) -------------------------------------------------
 
-/// Rend la clé et l'utilisateur ORPHELINS — l'état laissé par une remise à
-/// zéro v0.12.x (#528) — par une connexion **détachée du pool**
-/// (`FOREIGN_KEY_CHECKS=0` n'y retourne jamais). `drop_companies` : la société
-/// est aussi effacée (installation sans société).
+/// Rend les clés (d'API et, depuis la 32-5d, MCP) et l'utilisateur ORPHELINS —
+/// l'état laissé par une remise à zéro v0.12.x (#528) — par une connexion
+/// **détachée du pool** (`FOREIGN_KEY_CHECKS=0` n'y retourne jamais).
+/// `drop_companies` : la société est aussi effacée (installation sans société).
 async fn make_orphans(pool: &MySqlPool, drop_companies: bool) {
     use sqlx::Connection;
     let mut conn = pool.acquire().await.unwrap().detach();
@@ -2278,29 +2359,81 @@ async fn make_orphans(pool: &MySqlPool, drop_companies: bool) {
             .await
             .unwrap();
     }
-    sqlx::query("UPDATE users SET company_id = ?")
-        .bind(DEAD_COMPANY_ID)
-        .execute(&mut conn)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE api_keys SET company_id = ?")
-        .bind(DEAD_COMPANY_ID)
-        .execute(&mut conn)
-        .await
-        .unwrap();
+    for table in ["users", "api_keys", "mcp_keys"] {
+        sqlx::query(&format!("UPDATE {table} SET company_id = ?"))
+            .bind(DEAD_COMPANY_ID)
+            .execute(&mut conn)
+            .await
+            .unwrap();
+    }
     conn.close().await.unwrap();
 }
 
-/// Ce que l'entrée d'audit doit dire de la clé révoquée, relu de la base.
+/// Une clé MCP active (`books:read`) de la société de l'administrateur, créée
+/// par lui ; rend `(id, jeton)` — Story 32-5d.
+async fn insert_mcp_key(pool: &MySqlPool, company_id: i64, name: &str) -> (i64, String) {
+    let (jeton, key_hash) = kesh_api::auth::api_key::generate_mcp_key();
+    let id = sqlx::query(
+        "INSERT INTO mcp_keys (company_id, created_by_user_id, name, key_hash, scopes) \
+         VALUES (?, ?, ?, ?, '[\"books:read\"]')",
+    )
+    .bind(company_id)
+    .bind(admin_user_id(pool).await)
+    .bind(name)
+    .bind(&key_hash)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    (id, jeton)
+}
+
+/// La clé MCP est révoquée, désigne `company_id`, et son jeton n'authentifie
+/// plus (`services::cles_mcp::authentifier` → 401) — Story 32-5d.
+async fn assert_mcp_key_revoked_on(pool: &MySqlPool, key_id: i64, jeton: &str, company_id: i64) {
+    use kesh_api::services::poignees::{Lecture, Trace};
+    let (company, revoked): (i64, bool) =
+        sqlx::query_as("SELECT company_id, revoked_at IS NOT NULL FROM mcp_keys WHERE id = ?")
+            .bind(key_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(company, company_id, "clé MCP rattachée à la société");
+    assert!(revoked, "clé MCP orpheline révoquée");
+    let auth = kesh_api::services::cles_mcp::authentifier(
+        &Lecture::new(pool.clone()),
+        &Trace::new(pool.clone()),
+        jeton,
+    )
+    .await;
+    assert!(
+        matches!(auth, Err(kesh_api::errors::AppError::Unauthenticated(_))),
+        "le jeton MCP n'authentifie plus : {:?}",
+        auth.err()
+    );
+}
+
+/// Ce que l'entrée d'audit doit dire de la clé d'API révoquée, relu de la base.
 async fn revoked_key_json(pool: &MySqlPool, key_id: i64) -> Value {
+    revoked_row_json(pool, "api_keys", key_id).await
+}
+
+/// Ce que l'entrée d'audit doit dire de la clé MCP révoquée — Story 32-5d.
+async fn revoked_mcp_key_json(pool: &MySqlPool, key_id: i64) -> Value {
+    revoked_row_json(pool, "mcp_keys", key_id).await
+}
+
+/// Ce que l'entrée d'audit dit d'une clé révoquée de `table` (`api_keys` ou
+/// `mcp_keys`), relu de la base : une liste d'un élément.
+async fn revoked_row_json(pool: &MySqlPool, table: &str, key_id: i64) -> Value {
     let (name, created_by, created_at, last_used_at): (
         String,
         i64,
         chrono::NaiveDateTime,
         Option<chrono::NaiveDateTime>,
-    ) = sqlx::query_as(
-        "SELECT name, created_by_user_id, created_at, last_used_at FROM api_keys WHERE id = ?",
-    )
+    ) = sqlx::query_as(&format!(
+        "SELECT name, created_by_user_id, created_at, last_used_at FROM {table} WHERE id = ?"
+    ))
     .bind(key_id)
     .fetch_one(pool)
     .await
@@ -2362,6 +2495,7 @@ async fn reset_reattaches_the_orphans_of_a_528_installation(pool: MySqlPool) {
         "read-write",
     )
     .await;
+    let (mcp_id, mcp_jeton) = insert_mcp_key(&pool, company_id, "mcp née en démo").await;
     make_orphans(&pool, false).await;
 
     let (status, body) = reset_without_flag(&app, &token).await;
@@ -2373,6 +2507,7 @@ async fn reset_reattaches_the_orphans_of_a_528_installation(pool: MySqlPool) {
         .unwrap();
     assert_eq!(user_company, company_id);
     assert_key_revoked_on(&pool, key_id, &key, company_id).await;
+    assert_mcp_key_revoked_on(&pool, mcp_id, &mcp_jeton, company_id).await;
     let (_, _, _, audit_company, _, details) = sole_entry(&pool).await;
     assert_eq!(
         audit_company,
@@ -2386,6 +2521,12 @@ async fn reset_reattaches_the_orphans_of_a_528_installation(pool: MySqlPool) {
         revoked_key_json(&pool, key_id).await
     );
     assert_eq!(details["api_keys_repointed"], 1);
+    assert_eq!(
+        details["mcp_keys_revoked"],
+        revoked_mcp_key_json(&pool, mcp_id).await,
+        "Story 32-5d : la clé MCP orpheline paraît au détail"
+    );
+    assert_eq!(details["mcp_keys_repointed"], 1);
 }
 
 /// Test 6b (15-7b2, AC 2, 4, 5) — installation atteinte par #528 **sans**
@@ -2446,6 +2587,7 @@ async fn language_without_company_reattaches_and_revokes(pool: MySqlPool) {
         "read-write",
     )
     .await;
+    let (mcp_id, mcp_jeton) = insert_mcp_key(&pool, dead_company_id, "mcp née en démo").await;
     make_orphans(&pool, true).await;
     let marker = max_audit_id(&pool).await;
 
@@ -2466,6 +2608,7 @@ async fn language_without_company_reattaches_and_revokes(pool: MySqlPool) {
         .unwrap();
     assert_eq!(user_company, new_id, "utilisateur rattaché");
     assert_key_revoked_on(&pool, key_id, &key, new_id).await;
+    assert_mcp_key_revoked_on(&pool, mcp_id, &mcp_jeton, new_id).await;
     let (entity_type, entity_id, audit_company_id, raw): (String, i64, Option<i64>, Vec<u8>) =
         sqlx::query_as(
             "SELECT entity_type, entity_id, company_id, details_json FROM audit_log \
@@ -2490,6 +2633,8 @@ async fn language_without_company_reattaches_and_revokes(pool: MySqlPool) {
             "users_repointed": 1,
             "api_keys_revoked": revoked_key_json(&pool, key_id).await,
             "api_keys_repointed": 1,
+            "mcp_keys_revoked": revoked_mcp_key_json(&pool, mcp_id).await,
+            "mcp_keys_repointed": 1,
         })
     );
     assert_current_after_login(&app, new_id).await;
