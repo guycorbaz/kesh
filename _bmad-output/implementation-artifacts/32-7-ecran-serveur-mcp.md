@@ -4,26 +4,26 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-7`, branche `story/32-7` partie de `main`
 `966baed5` (toute la 32-5 fusionnée ; 32-6, 32-8, 32-9 et 32-10a non fusionnées). Registre :
-`epic-32-choix-autonomes-327.md` (C-32-7-1 à C-32-7-20). Clé courte : `327`. Issue de l'epic : #723 (CR « Serveur MCP
+`epic-32-choix-autonomes-327.md` (C-32-7-1 à C-32-7-22 ; C-32-7-21 et 22 ajoutés en validation P1). Clé courte : `327`. Issue de l'epic : #723 (CR « Serveur MCP
 intégré à Kesh »), en `refs` seulement. Les numéros de ligne cités sont ceux de `966baed5`, sauf mention d'une fiche
 voisine (lue dans son worktree, en lecture seule, à la date de rédaction).*
 
-⛔ **Développement APRÈS la fusion des 32-6a, 32-6b, 32-8 (a, b0, b, c), 32-9a, 32-9b et 32-10a** (C-32-7-3). L'écran
-seul ne dépend que de la 32-5 ; mais la section du manuel décrit **ce que fait le code** de ces stories — le comportement
-de `/mcp`, le journal des appels, la validation avant envoi, les outils et ce que chaque portée démasque, la portée
-`prompts:write` —, et elle **range** sous elle les sous-sections que la 32-8 (`sec:mcp-envois`) et la 32-9
-(`sec:mcp-outils`) auront écrites. **Tout ce qui, dans cette fiche, dépend de ces stories se recontrôle à l'étape 0**
-(§ *À recontrôler à l'étape 0*), ligne lue citée au Dev Agent Record ; une phrase prescrite ici que le code ne confirme
-pas **se réécrit selon le code**, elle ne se garde pas.
+⛔ **Développement APRÈS la fusion de ses prérequis, dans l'ordre nominal : 32-6a, 32-6b, 32-8a, 32-8b0, 32-8b, 32-8c,
+32-9a, 32-9b, 32-10a, puis la 32-7** (C-32-7-3, récrit en validation P1). Le code de l'écran ne dépend que de la 32-5 ;
+mais ses textes et la section du manuel décrivent **ce que fait le code** de ces stories — le comportement de `/mcp`,
+le 401 fixe, le journal des appels, la validation avant envoi et son écran, les outils et ce que chaque portée
+démasque, la portée `prompts:write` —, et la section **range** sous elle les sous-sections que la 32-8
+(`sec:mcp-envois`) et la 32-9 (`sec:mcp-outils`) auront écrites. **L'étape 0 le vérifie** : `git log --oneline
+origin/main` porte **chacune** des neuf stories ; s'il en manque une, le développement **ne commence pas** et l'agent le
+dit à l'orchestrateur — aucun AC de cette fiche n'a de variante « si la story n'a pas fusionné ». **Tout ce qui, dans
+cette fiche, décrit le code de ces stories se recontrôle à l'étape 0** (§ *À recontrôler à l'étape 0*), ligne lue citée
+au Dev Agent Record ; une phrase prescrite ici que le code ne confirme pas **se réécrit selon le code**, elle ne se garde
+pas.
 
-⚠️ **Ordre de rechange, si l'orchestrateur veut l'écran plus tôt** (C-32-7-3) : les AC sont rangés en **trois groupes**
-— A (l'écran, AC-1 à AC-17), B (le manuel et les textes, AC-18 à AC-24), C (les gardes de cohérence, AC-25). Le
-groupe A se développe sur la **seule 32-5** (les six routes existent, fait 1), **à trois exceptions près**, nommées :
-la seconde moitié de l'E2E (AC-16 (c), qui présente la clé à `/mcp` : 32-6a), le lien vers *Envois du serveur MCP*
-(AC-13 (d) : 32-8c) et la vérification au code des textes de portée (AC-10 : 32-9, 32-10a) — qui passent alors au
-groupe B. Le découpage serait mécanique : `32-7a` (groupe A, sans les trois exceptions) puis `32-7b` (groupe B, C et
-les trois exceptions). **Il n'est pas retenu par défaut** : quatre modules en tout, et un écran publié avant que le
-manuel le décrive ferait une fusion où l'écran parle d'un serveur que `main` n'a pas encore.
+Les AC sont rangés en **trois groupes** pour la lecture — A (l'écran, AC-1 à AC-17), B (le manuel et les textes, AC-18 à
+AC-24), C (les gardes de cohérence, AC-25) — et se livrent ensemble, en une seule clé (C-32-7-1). *(L'ordre de rechange
+écrit à la création — un `32-7a` sur la seule 32-5 — est retiré en validation P1, décision de l'orchestrateur : F1 avait
+montré que ses trois exceptions n'étaient pas les seules dépendances du groupe A.)*
 
 ## Story
 
@@ -139,8 +139,10 @@ pas** —, afin d'ouvrir ce canal en sachant exactement ce qu'il expose, et de p
 18. **`docs/api-external.md`** : l. 29-35 (deux types de clé, réécrit par la 32-5c), l. 183-185 (§ 6.4, « pas de
     serveur MCP Kesh-natif en v0.2 »), l. 831 (« Hors périmètre (non planifié pour v0.2) : … serveur MCP
     Kesh-natif »).
-19. **CHANGELOG** : `## [0.16.0] — Non publié` (l. 11), section `### Modifié` seule ; aucune `### Ajouté` encore à
-    `966baed5` (les 32-8 et 32-9 en ajoutent une).
+19. **CHANGELOG** : `## [0.16.0] — Non publié` (l. 11), sections `### Modifié` (l. 13) puis `### Corrigé` (l. 24, #714) ;
+    aucune `### Ajouté` encore à `966baed5` (les 32-8 et 32-9 en ajoutent une). L'ordre du dépôt est celui de la 0.15.0 :
+    `### Ajouté` (l. 59), `### Modifié` (l. 111), `### Corrigé` (l. 134). *(Corrigé en validation P1, R3 : la fiche disait
+    « `### Modifié` seule ».)*
 20. **Le garde des textes** : `crates/kesh-api/tests/textes_coherents.rs`, gardes G2 à G22 (l. 12-27) ; G22 (l. 1673)
     est le précédent d'une cohérence **manuel ↔ écran ↔ quatre locales**. Aucune fiche voisine ne réserve G23
     (`grep -n 'G23' kesh-32-*/…/32-*.md` → rien au 2026-10-25).
@@ -151,8 +153,9 @@ Modules, au grain du kickoff : **frontend** (`features/mcp-server/` neuf, `route
 `+layout.svelte`, `tests/e2e/mcp-server.spec.ts`), **`kesh-i18n`** (quatre catalogues), **docs** (`admin-manual`,
 `user-manual`, leurs PDF, `CHANGELOG.md`), **`kesh-api`** (le seul fichier de test `tests/textes_coherents.rs`, garde
 G23, AC-25) — **4**, au plus cinq : **pas de découpage** (C-32-7-1). Aucune migration, aucun dépôt, `kesh-db` non
-touché : l'exception `kesh-db` de *Pendant une boucle de revue* ne s'applique pas. L'ordre de rechange (deux clés) est
-décrit en tête de fiche.
+touché : l'exception `kesh-db` de *Pendant une boucle de revue* ne s'applique pas. Les deux gardes frontend partagées
+qu'amende la story (`i18n-repli-divergent-actif.test.ts`, AC-14) et le commentaire de G22 restent dans ces modules
+(frontend, `kesh-api/tests`). L'ordre de développement est nominal (tête de fiche) ; aucune rechange.
 
 ## Critères d'acceptation
 
@@ -160,7 +163,10 @@ Conventions : feature `frontend/src/lib/features/mcp-server/` — `mcp-server.ap
 `mcp-time.ts`, `secret-unique.svelte.ts`, `McpServerPanel.svelte`, `McpSettingsSection.svelte`,
 `McpKeysSection.svelte`, `McpKeySecretNotice.svelte` (noms indicatifs ; la répartition en composants est libre, **les
 propriétés ne le sont pas**) ; tests Vitest à côté (`*.test.ts`) ; route `frontend/src/routes/(app)/admin/mcp/`. Tous
-les libellés par `i18nMsg('mcp-server-…', '<repli fr-CH>')`. Tous les `data-testid` préfixés `mcp-server-`. « Vert »
+les libellés par `i18nMsg('mcp-server-…', '<repli fr-CH>')`, **clé et repli littéraux** (jamais une clé bâtie par
+gabarit : la garde de l'AC-14 ne verrait pas une clé dynamique). Tous les `data-testid` de la feature préfixés
+`mcp-server-` — **sauf** le lien de menu, dont le `data-testid` est dérivé de son `href` par `navTestid`
+(`+layout.svelte:267-270`) : `nav-link-admin-mcp`, distinct de `nav-link-admin-mcp-sends` (32-8c). « Vert »
 s'entend `npm run test:unit -- <fichier>` puis le gate complet (§ *Gates*).
 
 ⛔ **Règle commune des gardes lexicales** (reprise de la fiche 32-6, l. 172-184) : pour chaque garde, la fiche fixe la
@@ -176,12 +182,16 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
 
 1. **AC-1 — la route et sa garde.** `frontend/src/routes/(app)/admin/mcp/+page.ts`, copie de
    `admin/backup/+page.ts:11-17` (`ssr = false`, `redirect(302, '/')` hors rôle `Admin`) ; `+page.svelte` mince, qui
-   monte `McpServerPanel`. Test Vitest du `load` : `Comptable` et `Consultation` → redirection 302 vers `/` ;
-   `Admin` → aucune. Le serveur reste l'autorité (fait 1) : la garde est une garde d'écran.
+   monte `McpServerPanel`. Test Vitest du `load`, **sous `vi.mock('$app/environment', () => ({ browser: true }))`**
+   (le `load` ne redirige que si `browser` est vrai, `admin/backup/+page.ts:14` ; précédent
+   `contacts/contacts-page.test.ts:17`) : `Comptable` et `Consultation` → redirection 302 vers `/` ; `Admin` → aucune.
+   **Témoin** : dans le même fichier, le même `load` lève bien la redirection pour un Comptable — sans quoi le cas
+   `Admin` passerait à vide sous un `browser` resté faux. Le serveur reste l'autorité (fait 1) : la garde est une garde
+   d'écran.
 2. **AC-2 — la navigation.** Entrée `adminOnly` `{ i18nKey: 'nav-admin-mcp', fallback: 'Serveur MCP', href:
-   '/admin/mcp' }` au groupe *Administration* (`+layout.svelte:147-170`), **après** `nav-admin-restore` (l. 166) ; si la
-   32-8c a posé `nav-admin-mcp-sends` (constaté à l'étape 0), l'entrée de la 32-7 se place **immédiatement avant**
-   elle. Un Comptable ne la voit pas (E2E, AC-16 (e)).
+   '/admin/mcp' }` au groupe *Administration* (`+layout.svelte:147-170`), **immédiatement avant** l'entrée
+   `nav-admin-mcp-sends` que la 32-8c a posée (prérequis fusionné ; sa place relue à l'étape 0). Un Comptable ne la
+   voit pas (E2E, AC-16 (f)).
 3. **AC-3 — la couche d'API sépare le secret de la clé** (C-32-7-5). `mcp-server.api.ts` expose `listMcpKeys`,
    `createMcpKey`, `revokeMcpKey(id, version)` (`DELETE` avec corps `{ version }`, motif `api-keys.api.ts:41-43`),
    `setMcpKeySendValidation(id, sendValidation, version)`, `getMcpServerSettings`, `updateMcpServerSettings`.
@@ -204,7 +214,8 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
    - (c) L'expiration saisie (`<input type="date">`, `AAAA-MM-JJ`) devient la **fin de cette journée dans le fuseau
      du navigateur** (`23:59:59.999` local), envoyée en `toISOString()` ; le `min` du champ est le lendemain local,
      recalculé à l'ouverture du formulaire. Réaffichée, elle redonne **la même date**.
-   - Tests `mcp-time.test.ts`, sous `process.env.TZ = 'Europe/Zurich'` posé dans le fichier et rétabli après, avec un
+   - Tests `mcp-time.test.ts`, sous `process.env.TZ = 'Europe/Zurich'` posé dans le fichier et rétabli après
+     (précédent au dépôt : `routes/(app)/bank-accounts/bank-accounts-page.test.ts:701-720`, `try`/`finally`), avec un
      **témoin** que le fuseau a pris (`new Date(2026, 6, 1, 12).getTimezoneOffset() === -120`) — sans lui, la CI en UTC
      ferait passer à vide la mutation M7 : `depuisUtcNaif('2026-10-25T10:00:00.123')` égale
      `Date.UTC(2026, 9, 25, 10, 0, 0, 123)` ; l'aller-retour `'2026-12-31'` → ISO → date affichée `31.12.2026`
@@ -224,12 +235,21 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
      sont pas enregistrées »), puis rechargement.
    - (f) Erreur hors `ApiError` → le générique traduit (motif `api-keys-page.test.ts`, cas B6/B7), ni le message
      technique ni `[object Object]`.
+   - (g) **Le chargement des réglages** (validation P1, R12 = F6) : pendant le `GET`, *Enregistrer* est désactivé ;
+     échec du `GET` → le `message` de l'`ApiError` dans la section (`role="alert"`), sinon le générique, et
+     *Enregistrer* **reste désactivé** — sans `version` lue, rien ne s'envoie (b).
    - Tests `McpSettingsSection.test.ts` : un cas par lettre, corps envoyé comparé **en entier**.
+   - ⚠️ **Ce que l'écran ne répare pas** (C-32-5-53, `routes/mcp_server_settings.rs:35-38`) : une ligne de réglages à
+     `version = 0` **réelle** (SQL à la main, sauvegarde fabriquée) est rendue telle quelle par le `GET`, et chaque
+     `PUT` à `version: 0` rend alors 409 — (e) recharge, et l'enregistrement suivant rend encore 409. La boucle n'est
+     pas automatique (elle suit chaque clic) ; le manuel le dit (AC-18 (1)), l'écran n'a pas de cas propre.
 6. **AC-6 — ce que le filtre ne garantit pas, écrit à l'écran** (décision de Guy, 2026-10-25). Un encadré
    **permanent** de la section, quatre phrases au moins, dans les quatre locales :
-   - (1) le filtre juge l'**adresse que voit Kesh** ; derrière **Traefik** non déclaré parmi les mandataires, ou
-     derrière une **publication de port Docker**, tous les clients paraissent venir d'une adresse privée : **le filtre
-     n'arrête alors personne** ;
+   - (1) le filtre juge l'**adresse que voit Kesh** ; derrière **Traefik** non déclaré parmi les mandataires, tous les
+     clients paraissent venir de lui ; derrière une publication de port **Docker** par le mandataire en espace
+     utilisateur, tous peuvent paraître venir de la passerelle Docker — dans les deux cas une adresse privée, admise par
+     défaut : **le filtre n'arrête alors personne** (même formulation que le manuel, AC-18 (4), et que la fiche 32-6,
+     point 2 ; validation P1, R5 — une publication de port ordinaire conserve l'adresse source) ;
    - (2) il ne remplace **ni le pare-feu ni le VPN** : Kesh ne doit jamais être exposé sur Internet ; l'accès de
      l'extérieur passe par un VPN ;
    - (3) la plage **`100.64.0.0/10`** (VPN de type Tailscale) **n'est pas admise par défaut** : l'ajouter soi-même aux
@@ -243,7 +263,8 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
    - (c) un **mandataire** de préfixe `/0` → « tout pair est cru sur son en-tête `X-Forwarded-For` » ;
    - (d) filtre activé et aucune plage admise → « personne n'est admis ».
    Tests : chaque avertissement **présent** quand sa condition l'est, **absent** sinon (témoin) ; l'encadré (1)-(4)
-   présent dans tous les états ; `100.64.0.0/10` dans le texte rendu.
+   présent dans tous les états, **chacune des quatre phrases** cherchée par son repli fr-CH (mutation M25) ;
+   `100.64.0.0/10` dans le texte rendu.
 7. **AC-7 — l'activation, la restauration, la remise à zéro et l'adresse.** Sous la case *Serveur activé* :
    - (a) désactivé, « `/mcp` répond comme une adresse qui n'existe pas » ; activé, « le serveur répond aux clés MCP de
      cette société, depuis les adresses admises » ;
@@ -254,7 +275,8 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
      sauvegarde l'est après l'import » (Q7, C-32-5-11 ; `admin-manual.tex:2237`) ;
    - (d) « la **réinitialisation** des données de démonstration efface ces réglages (serveur désactivé) et conserve
      les clés » (`admin-manual.tex:1414`).
-   Test : (a) suit la case **enregistrée** (non la case cochée avant l'envoi) ; (b) rend `http://localhost:3000/mcp`
+   Test : (a) suit la case **enregistrée** (non la case cochée avant l'envoi : case cochée, aucun envoi, la phrase
+   reste celle du serveur désactivé — mutation M24) ; (b) rend `http://localhost:3000/mcp`
    sous `window.location.origin` simulé ; (c) et (d) présents.
 8. **AC-8 — la liste des clés.** Colonnes : nom ; portées (le **code** `books:read` tel quel, chacune) ; politique
    (*Requise* / *Dispensée*) ; créée le ; expire le (ou « jamais ») ; **dernière utilisation** ; statut (*Active*,
@@ -276,20 +298,34 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
    - (b) 400 du serveur → son `message` dans le formulaire, saisies conservées.
    - (c) Double soumission impossible (garde avant le `disabled`, motif `api-keys/+page.svelte:128-130`).
    - (d) Succès → encart du secret (AC-11), formulaire fermé et **remis à zéro**, liste **rechargée par `GET`**
-     (jamais complétée par l'objet de création).
-   - Tests : (a), (b), (c), (d), et le corps envoyé (AC-3 (b)).
+     (jamais complétée par l'objet de création). *Assertion* (validation P1, R10) : `listMcpKeys` est appelé **deux**
+     fois (au montage, puis après le 201), et la liste affichée est celle du **second** `GET`, simulé pour rendre une
+     clé (`id`, `name`) que le `POST` n'a **pas** rendue — l'objet de création ajouté à la liste (mutation M4) ferait
+     paraître le nom du `POST`, non celui du `GET`.
+   - (e) **Les valeurs par défaut décidées** (Q12, C-32-7-6 ; validation P1, F4) — test
+     `formulaire_a_l_ouverture_requise_et_aucune_portee` : à l'ouverture, le bouton *Requise* est coché et *Dispensée*
+     ne l'est pas, **aucune** des cinq cases de portée n'est cochée ; puis, une portée cochée et un nom saisi sans
+     toucher à la politique, le corps envoyé porte `sendValidation: 'required'` (comparé en entier). Le même test,
+     rouvrant le formulaire après une création réussie, retrouve ces défauts (remise à zéro de (d)). Mutations M20
+     (`exempt` coché par défaut) et M21 (`books:read` précochée).
+   - Tests : (a), (b), (c), (d), (e), et le corps envoyé (AC-3 (b)).
 10. **AC-10 — la phrase de chaque portée** (Q5 ; décision de Guy sur les tiers, 2026-10-25 ; fiches 32-9 l. 1339-1341
     et 32-10a l. 1386-1387). Sous la case, dans les quatre locales, **telle que le code des 32-9a, 32-9b et 32-10a la
     rend vraie** — formulation de départ, à confronter au code à l'étape 0 (ligne lue citée ; une phrase que le code ne
     confirme pas se réécrit) :
     - `books:read` — « le plan comptable, les exercices, les écritures, le grand livre, la balance, le bilan, le compte
       de résultat et les postes ouverts » ;
-    - `invoices:read` — « les factures clientes et fournisseur et la balance âgée ; les **noms des tiers** sont
-      lisibles, mais l'IBAN, le QR-IBAN du créancier et l'adresse d'envoi sont **masqués** sans `contacts:read` » ;
+    - `invoices:read` — « les factures clientes et fournisseur, l'échéancier et la balance âgée ; les **noms des
+      tiers** sont lisibles, mais l'IBAN, le QR-IBAN du créancier et l'adresse d'envoi sont **masqués** sans
+      `contacts:read` » (l'échéancier : `kesh_echeancier`, fiche 32-9 l. 700 ; validation P1, R4 (b)) ;
     - `contacts:read` — « le carnet d'adresses — des **données personnelles** — ; elle **démasque** aussi, dans les
-      factures, l'IBAN et le QR-IBAN du créancier et l'adresse d'envoi ; les noms des tiers se lisent sans elle » (et
-      l'IBAN n'est pas une donnée du contact, `contacts.rs:380-381` selon la 32-9 : à recontrôler) ;
-    - `documents:read` — « la liste des pièces et de leurs rattachements, **sans leur contenu** » ;
+      factures, l'IBAN et le QR-IBAN du créancier et l'adresse d'envoi ; les noms des tiers se lisent sans elle.
+      L'IBAN n'est pas une donnée du carnet d'adresses. » — les **trois** phrases que la fiche
+      32-9 (l. 1339-1341) demande à l'écran, la troisième **écrite à l'écran** et non seulement vérifiée
+      (`contacts.rs:380-381` selon la 32-9, relu à l'étape 0 ; validation P1, R4 (c)) ;
+    - `documents:read` — « le nom du fichier, le type et l'état de chaque pièce importée, **sans son contenu** »
+      (`kesh_pieces` rend `nomFichier`, `typeMime`, `statut` et `qrLu`, ni rattachement ni contenu, fiche 32-9
+      l. 328-332 ; validation P1, R4 (a) — « et de leurs rattachements » retiré) ;
     - `prompts:write` — « **proposer** une version d'un prompt, qui attend l'approbation d'un administrateur ; elle ne
       permet ni d'approuver ni de relire une proposition ; une clé à validation requise peut proposer ».
     Et, au-dessus des cases : « Aucune portée n'écrit dans les livres ni n'administre Kesh. »
@@ -303,8 +339,10 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
       (renvoi `sec:mcp-client`) ; le secret dans **un seul** élément `<code data-testid="mcp-server-secret-value">` —
       ni `<input>`, ni attribut (`value`, `title`, `data-*`, `aria-*`) ; boutons *Copier* (`copyToClipboard`, fait 8)
       et *Fermer* ;
-    - le secret est tenu par **une instance** de la classe `SecretUnique` (`secret-unique.svelte.ts` : `montrer(s)`,
-      `lire()`, `oublier()`), créée **dans le `<script>` du composant** — jamais au niveau d'un module ; *Fermer*
+    - le secret est tenu par **une instance** de la classe `SecretUnique` (`secret-unique.svelte.ts`), de signature
+      **fixée** (validation P1, F9) : `montrer(nom: string, valeur: string)`, `lire(): { nom: string; valeur: string }
+      | null`, `oublier()` — l'encart a besoin du nom (« Clé « {nom} » créée ») ; l'instance est créée **dans le bloc
+      `<script>` d'instance du composant** — jamais au niveau d'un module, ni dans un `<script module>` (G-b) ; *Fermer*
       appelle `oublier()` ; une **nouvelle création** appelle `oublier()` avant `montrer()` ; quitter la page détruit
       le composant et son instance.
     Les cinq « ni », chacun son test :
@@ -313,21 +351,32 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
       échoué, ni après un rechargement de la liste ;
     - (ii) **l'état** — `secret-unique.test.ts` : après `oublier()`, `lire() === null` et ni `JSON.stringify` de
       l'instance ni aucune propriété propre (`Object.getOwnPropertyNames`, valeurs lues) ne contient le secret ; le test
-      du composant, la classe espionnée, vérifie que *Fermer* appelle `oublier()` ;
+      du composant, la classe espionnée, vérifie que *Fermer* appelle `oublier()` — **c'est cette sonde, et elle
+      seule, qui tue M1** : un encart masqué qui sort du DOM laisse (i) vert (validation P1, F9) ;
     - (iii) **la liste** — AC-3 (a), et aucune ligne du tableau ne contient le secret après création ;
     - (iv) **un journal** — `console.log`, `info`, `warn`, `error`, `debug`, `trace` espionnés pendant tout le
       parcours (création, copie, fermeture, échec simulé d'une seconde création) : aucun argument, converti en texte
-      (`String` et `JSON.stringify`), ne contient le secret ; aucun appel de `toast.*` non plus ; `document.title` non
-      plus ; **témoin** : un `console.info('kesh_mcp_TEMOIN')` posé par le test lui-même est bien vu par l'espion ;
-    - (v) **le stockage et l'adresse** — `Storage.prototype.setItem` (donc `localStorage` et `sessionStorage`)
-      espionné : jamais appelé avec le secret ; `indexedDB.open` jamais appelé ; `history.pushState`/`replaceState`
-      jamais appelés avec une URL qui le contient.
+      (`String` et `JSON.stringify`), ne contient le secret ; `toast.*` (`svelte-sonner`) espionné : un toast reste
+      **permis** (succès de la copie, de la révocation), mais **aucun argument** d'un appel ne contient le secret
+      (tranché en validation P1) ; `document.title` non plus ; **témoin** : un `console.info('kesh_mcp_TEMOIN')` et un
+      `toast.info('kesh_mcp_TEMOIN')` posés par le test lui-même sont bien vus par leurs espions ;
+    - (v) **le stockage et l'adresse** (validation P1, R1 — `indexedDB` n'existe pas sous jsdom 29.0.2,
+      `vite.config.ts:58`) — `vi.spyOn(Storage.prototype, 'setItem')` (donc `localStorage` et `sessionStorage`) :
+      jamais appelé avec le secret ; `vi.stubGlobal('indexedDB', { open: vi.fn() })`, rétabli par
+      `vi.unstubAllGlobals()` : `open` jamais appelé ; `vi.spyOn(history, 'pushState')` et `'replaceState'` : jamais
+      appelés avec une URL qui le contient. **Chaque espion a son témoin**, un appel posé par le test lui-même et
+      **vu** par l'espion avant le parcours : `sessionStorage.setItem('k', 'kesh_mcp_TEMOIN')`,
+      `indexedDB.open('t')`, `history.pushState({}, '', '/kesh_mcp_TEMOIN')` (puis l'adresse rétablie) — sans eux, un
+      espion posé sur le mauvais objet ferait passer M5 à vide.
     Côté serveur, déjà établi par la 32-5c et cité au Dev Agent Record : la liste sans secret ni condensat
     (`mcp_admin_routes_e2e.rs:371`), l'audit sans l'un ni l'autre (`:803`), aucun journal de corps (fait 14).
 12. **AC-12 — révoquer.** Offerte pour **toute clé non révoquée**, expirée comprise (C-32-7-9). Confirmation inline :
     « L'agent qui emploie cette clé perd l'accès immédiatement. La révocation est définitive ; seule la restauration
     d'une sauvegarde antérieure rendrait la clé de nouveau active. » ; bouton `<Button variant="destructive">`, **sans
-    rouge posé à la main** (fait 12 : la table de `boutons-rouges-inventory.test.ts` reste inchangée) ; 204 → message
+    rouge posé à la main** (fait 12 : la table de `boutons-rouges-inventory.test.ts` reste inchangée) — y compris le
+    **déclencheur** *Révoquer* de chaque ligne, qui ouvre la confirmation : un `Button` partagé (`variant="destructive"`
+    ou une variante neutre), **jamais** un `<button>` brut à `text-red-600` comme le précédent `api-keys` (validation P1,
+    F10) ; 204 → message
     et rechargement ; 404 ou 409 → message (« la clé a changé ou n'existe plus ; liste rechargée ») et rechargement ;
     hors `ApiError` → le générique. Tests : chaque issue ; le bouton absent sur une clé révoquée ; présent sur une
     expirée ; `revokeMcpKey` appelé avec la `version` de la ligne.
@@ -342,15 +391,41 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
       plafonds et exceptions **tels que le code de la 32-8 les fixe**, recontrôlés à l'étape 0 : 24 h, 20 envois en
       attente par clé, une erreur d'outil partant sans validation, fiche 32-8 l. 916-930) ; *Dispensée* — « les
       données partent sans validation ; chaque appel reste journalisé » ;
-    - (d) un lien vers *Envois du serveur MCP* (`/admin/mcp/sends`), **si** la route existe à l'étape 0 (32-8c) ;
-      sinon, pas de lien et un écart déclaré.
+    - (d) un lien vers *Envois du serveur MCP* (`/admin/mcp/sends`, posé par la 32-8c, prérequis fusionné ; la route
+      relue à l'étape 0).
     Tests : (a) confirmation présente vers `exempt` et absente vers `required` ; (b) chaque issue ; pas de contrôle sur
     une clé révoquée ; (d) le lien et sa cible.
 14. **AC-14 — i18n.** Toutes les clés `mcp-server-*` et `nav-admin-mcp` dans les **quatre** catalogues ;
-    `npm run lint-i18n-ownership` vert sans entrée neuve à `KNOWN_VIOLATIONS` ; repli **égal** à la valeur fr-CH (garde
-    frontend existante, nommée à l'étape 0) ; `i18n-keys.test.ts` vert ; aucune collision avec `mcp-sends-*` (32-8) ni
-    avec les messages serveur `admin-mcp-*` (fait 11). Les noms propres (`Traefik`, `Docker`, `100.64.0.0/10`,
-    `X-Forwarded-For`, `.mcp.json`) et les codes de portée **ne se traduisent pas**.
+    `npm run lint-i18n-ownership` vert sans entrée neuve à `KNOWN_VIOLATIONS` ; `i18n-keys.test.ts` vert ; aucune
+    collision avec `mcp-sends-*` (32-8) ni avec les messages serveur `admin-mcp-*` (fait 11). Les noms propres
+    (`Traefik`, `Docker`, `100.64.0.0/10`, `X-Forwarded-For`, `.mcp.json`) et les codes de portée **ne se traduisent
+    pas**.
+    - (a) **Le repli égal à la valeur fr-CH, par une garde réelle** (validation P1, F2 ; C-32-7-21). Aucune garde du
+      dépôt ne le tient aujourd'hui pour un domaine entier : `i18n-un-repli-par-cle.test.ts` compare les sites d'une clé
+      **entre eux** (`parTexte.size > 1`, l. 216), sur ses seuls `PREFIXES` (l. 51-72), jamais au catalogue ; G13
+      de `i18n-repli-divergent-actif.test.ts` compare bien le repli au catalogue (`valeurDuCatalogueFr`,
+      `les_replis_frontend_a_site_unique_suivent_le_catalogue`), mais sur la **liste fermée** `REPLIS_A_SITE_UNIQUE`
+      (treize clés, l. 216-235 ; boucle l. 248-252). La story **étend G13 par préfixe**, dans ce même fichier : une liste
+      `PREFIXES_REPLI_EGAL_AU_CATALOGUE = ['mcp-server-']` (plus la clé `nav-admin-mcp`, nommée) et un test
+      `les_replis_mcp_server_suivent_le_catalogue` qui, sur le relevé `replisParCle()` du fichier, exige pour **chaque**
+      clé du préfixe des replis égaux à `[valeurDuCatalogueFr(cle)]` ; la fonction de comparaison est **pure**
+      (`ecartsAuCatalogue(releve, cles, valeurDe)` → liste des clés en écart, nommées). *Fermeture de la classe* :
+      l'ensemble des clés `mcp-server-*` du relevé est **égal**, dans les deux sens, à celui des clés `mcp-server-*` du
+      FTL fr-CH — une clé du catalogue sans site littéral (bâtie par gabarit, ou morte) rougit, une clé du relevé
+      absente du catalogue aussi. *Témoin rouge* : `ecartsAuCatalogue` sur un relevé factice dont un repli diffère de sa
+      valeur → la clé est rendue ; *témoin vert* : relevé factice égal → `[]` ; *anti-test-muet* : le nombre de clés
+      `mcp-server-*` relevées est **écrit en dur** (`toBe(N)`, N recompté depuis le FTL au développement). Mutation M22.
+    - (b) **Les autres gardes frontend que la story touche**, à garder vertes et à citer au Dev Agent Record
+      (validation P1, F10) : `erreurs-en-texte.test.ts` (les liaisons de `catch` — AC-5 (f), AC-9 (b), AC-12,
+      AC-13 (b)) ; `i18n-repli-divergent-actif.test.ts`, garde générique (une clé partagée par deux sites — les phrases
+      de politique de l'AC-13 (c) servent le formulaire **et** la note du tableau : un seul repli, ou deux clés) ;
+      `i18n-entrees-a-variables.test.ts` (toute clé à `{ $x }`) ; `e2e-selecteurs-traduits.test.ts` (fait 13).
+    - (c) **Le commentaire de G22 est faux, et la story le corrige** (`textes_coherents.rs:1688`, doc de
+      `la_sauvegarde_automatique_dit_vrai`) : il dit le repli Svelte de `admin-backup-auto-reminder` « tenu égal au fr-CH
+      par le Vitest `i18n-un-repli-par-cle` », qui ne compare pas au catalogue et dont les préfixes n'incluent pas
+      `admin-backup-`. Nouvelle phrase : « **aucune** garde ne tient le repli Svelte égal au fr-CH (angle mort écrit ;
+      `i18n-un-repli-par-cle` compare les sites entre eux, sur ses seuls préfixes) ». La story ne l'étend pas à
+      `admin-backup-` (hors périmètre ; demande à l'orchestrateur 4).
 15. **AC-15 — deux gardes lexicales** (règle commune ; fichier `frontend/src/lib/features/mcp-server/
     mcp-server-gardes.test.ts`, `// @vitest-environment node`) :
     - **G-a — ni stockage, ni journal, ni HTML brut.** *Propriété* : aucune source **hors tests** de
@@ -364,16 +439,30 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
       `routes/(app)/settings/api-keys/+page.svelte:41`, un **commentaire** (« pas de localStorage ») — que le masquage
       doit écarter : c'est le **témoin vert**. *Témoin rouge* : `sessionStorage.setItem('k', s)` sur source factice.
     - **G-b — l'instance du secret ne vit que dans un composant.** *Propriété* : `new SecretUnique` n'apparaît que dans
-      le `<script>` d'un `.svelte` du périmètre de G-a, jamais dans un `.ts`/`.svelte.ts` hors tests (une instance de
-      module survivrait à la fermeture et à la navigation). *Mesure à la rédaction* : la classe n'existe pas
-      (`grep -rn 'SecretUnique' frontend/src` → rien) ; la mesure se refait à l'étape 0 **et** après T3. *Témoin
-      rouge* : `export const s = new SecretUnique();` dans un `.ts` factice ; *témoin vert* :
-      `const secret = new SecretUnique();` dans le `<script>` d'un `.svelte` factice.
-    Chaque garde lit les **vrais** fichiers du périmètre, et porte une assertion de **cardinalité** du périmètre lu
-    (nombre de fichiers ≥ celui que la story crée, recompté) — sans elle, un chemin faux la ferait passer à vide.
+      le bloc `<script>` **d'instance** d'un `.svelte` du périmètre de G-a — jamais dans un `.ts`/`.svelte.ts` hors
+      tests, **ni dans un `<script module>` ou un `<script context="module">` d'un `.svelte`** (validation P1, F3 = R2) :
+      une instance de module, qu'elle vive dans un `.ts` ou dans le bloc de module d'un composant, est évaluée une fois
+      par module et survit à la fermeture et à la navigation. La garde découpe donc chaque `.svelte` en ses blocs
+      `<script …>` et classe chacun par ses attributs (`module`, `context="module"`) ; une occurrence hors de tout
+      bloc `<script>` (gabarit) compte aussi comme refusée. *Mesure à la rédaction* : la classe n'existe pas
+      (`grep -rn 'SecretUnique' frontend/src` → rien) ; la mesure se refait à l'étape 0 **et** après T3. *Témoins
+      rouges* : `export const s = new SecretUnique();` dans un `.ts` factice ; `<script module> export const s = new
+      SecretUnique(); </script>` dans un `.svelte` factice ; la même ligne sous `<script context="module">` ; *témoin
+      vert* : `const secret = new SecretUnique();` dans le `<script lang="ts">` d'instance d'un `.svelte` factice.
+      Mutations M16 (`.ts`) et M23 (`<script module>` de `McpKeysSection.svelte`).
+    Chaque garde lit les **vrais** fichiers du périmètre, et porte une assertion de **cardinalité** du périmètre lu,
+    **écrite en dur** (`toBe(N)`, N = nombre de fichiers hors tests que la story crée dans le périmètre, recompté au
+    développement et écrit avec sa liste ; validation P1, R13) — un « au moins » laisserait passer un chemin faux qui
+    lirait un sous-ensemble.
 16. **AC-16 — l'E2E** (`frontend/tests/e2e/mcp-server.spec.ts`, sélecteurs par `data-testid` seulement, fait 13 ; motif
-    `api-keys.spec.ts`). Préalable lu à l'étape 0 : ce que `seedTestState` vide (`mcp_keys`, `mcp_server_settings`) ;
-    si l'une n'est pas vidée, un `afterAll` remet le serveur **désactivé** et révoque les clés de la spec.
+    `api-keys.spec.ts`). **Fait** (validation P1, R8 = F5) : `seedTestState` appelle `truncate_all`
+    (`routes/test_endpoints.rs:172`), qui vide toute `TABLES_TO_TRUNCATE` (`kesh-db/src/test_fixtures.rs:392-402`), où
+    figurent `mcp_keys` (`backup.rs:78`) et `mcp_server_settings` (`:83`) : chaque spec repart d'un serveur désactivé et
+    sans clé — **aucun `afterAll`** de remise en état. Aucun préréglage ne fournit de Comptable
+    (`tests/e2e/helpers/test-state.ts:33-41`, type `Preset`) : (f) le crée sur le motif de `backup-schedule.spec.ts:200-218`
+    (`POST /api/v1/users` rôle `Comptable`, `clearAuthStorage`, connexion sous ce compte). Le groupe *Administration*
+    est **replié** par défaut (`+layout.svelte:225`) : (a) l'ouvre par `nav-group-administration` (l. 366) avant de
+    suivre `nav-link-admin-mcp`.
     - (a) **activer** : Administrateur, menu *Administration* → *Serveur MCP* (par `data-testid`) ; état initial
       désactivé ; cocher, *Enregistrer* ; `GET /api/v1/admin/mcp/settings` (contexte authentifié) rend
       `enabled: true` ;
@@ -401,7 +490,13 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
     politique ; (11) un refus du formulaire (aucune portée) ; (12) l'encart du secret ; (13) la liste après
     *Fermer* ; (14) la confirmation de révocation ; (15) une clé révoquée ; (16) une clé expirée ; (17) une clé à
     portée inconnue (posée par SQL sur la base de démonstration du worktree) ; (18) la confirmation du passage en
-    dispensée ; (19) une clé dispensée dans la liste ; (20) l'entrée de menu ; (21) l'échec du chargement.
+    dispensée ; (19) une clé dispensée dans la liste ; (20) l'entrée de menu ; (21) l'échec du chargement de la liste
+    des clés ; et, ajoutées en validation P1 (F7) : (22) le chargement puis l'échec du chargement des **réglages**,
+    *Enregistrer* désactivé (AC-5 (g)) ; (23) le message de succès des réglages (AC-5 (c)) ; (24) l'erreur générique
+    hors `ApiError` (AC-5 (f)) ; (25) un 400 du serveur à la création d'une clé (AC-9 (b)) ; (26) le message d'un 404
+    ou 409 de révocation (AC-12) ; (27) le message d'un 409 de changement de politique (AC-13 (b)) ; (28) une clé dont
+    la **dernière utilisation** est renseignée, avec sa note (AC-8 (b) ; la clé que l'E2E (c) présente à `/mcp`, ou
+    une présentation équivalente sur la démonstration).
     ⚠️ La capture (12) montre un **secret réel de la démonstration** : la clé est **révoquée** juste après, et la
     capture reste hors du dépôt.
 
@@ -416,7 +511,10 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
        littéral ; l'activation est par société, et une clé d'une société qui ne sert pas reçoit le 401 d'une clé
        inconnue ; l'adresse est **exactement** `/mcp` (`/mcp/` rend la page de l'application) ; une **restauration** rend
        les réglages tels quels — serveur actif s'il l'était (renvoi au § sauvegarde, l. 2237) ; la **réinitialisation**
-       les efface (renvoi l. 1414).
+       les efface (renvoi l. 1414) ; une **ligne de réglages illisible** fait paraître le serveur de la société
+       **désactivé** (fiche 32-6, AC-a2, liste de la 32-7 l. 1247-1248 à la date de lecture : relu au code de la 32-6a à l'étape 0 ; validation P1, R6 (a)) ;
+       une ligne à `version = 0` posée hors de l'écran (SQL, sauvegarde fabriquée) ne s'enregistre plus par l'écran —
+       chaque enregistrement rend un conflit (C-32-5-53, `routes/mcp_server_settings.rs:35-38` ; validation P1, R12).
     2. `\subsection{Les clés du serveur MCP}\label{sec:mcp-cles}` — création par l'**Administrateur** seul ; le secret
        `kesh_mcp_…` **affiché une seule fois**, seul son condensat conservé ; les **portées** en tableau entre les
        lignes `% mcp-portees:debut` et `% mcp-portees:fin` (une ligne par portée : code, ce qu'elle ouvre — dont ce que
@@ -441,9 +539,9 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
        les clients paraissent venir de lui ; la publication de port Docker par le mandataire en espace utilisateur, où
        tous peuvent paraître venir de la passerelle (`172.17.0.1`), adresse privée admise par défaut — **le filtre ne
        filtre alors rien** ; il ne remplace ni le pare-feu (renvoi `sec:firewall`) ni le VPN ; Kesh n'est **jamais**
-       exposé sur Internet ; **pas de limite de débit** ; et, **si la 32-6a l'a posée** (point 2 bis de sa fiche,
-       constaté à l'étape 0), la garde qui refuse un pair non déclaré porteur d'un en-tête de mandataire — sinon, la
-       phrase « un tel en-tête venu d'un pair non déclaré est ignoré ».
+       exposé sur Internet ; **pas de limite de débit** ; et « un en-tête `X-Forwarded-For` venu d'un pair non déclaré
+       est ignoré » (le pair est jugé sur sa propre adresse ; la garde « 2 bis » de la fiche 32-6 n'est pas retenue —
+       décision de l'orchestrateur, validation P1, R7 ; la phrase relue au code de la 32-6a à l'étape 0).
     5. `\subsection{L'en-tête Origin}\label{sec:mcp-origin}` — ne protège que **d'un navigateur** (DNS rebinding) ; la
        vraie barrière est la clé ; `Host` n'est pas contrôlé ; origines propres (`KESH_PUBLIC_BASE_URL`,
        `localhost`/`127.0.0.1`/`[::1]` au port de Kesh, port par défaut normalisé) ; un `KESH_PUBLIC_BASE_URL` invalide
@@ -463,15 +561,26 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
        délai de 30 s par outil ; en-têtes de contrôle répétés refusés ; toute notification reçoit 202 ; un message de
        type réponse reçoit 400 (32-6 B4) ; les erreurs JSON-RPC du transport n'ont pas d'`id` ; chaque appel d'outil
        ouvre une connexion MariaDB neuve — chaque valeur **relue au code** de la 32-6a à l'étape 0.
-    8. `\subsection{Configurer un client}\label{sec:mcp-client}` (C-32-7-13) — pour **Claude Code** :
-       `claude mcp add --transport http --scope user kesh <adresse>/mcp --header "Authorization: Bearer <clé>"` (ou
-       `--scope local`) ; la clé y est enregistrée **en clair** dans `~/.claude.json` — protéger ce fichier ; **jamais**
-       `--scope project`, qui écrit un `.mcp.json` **versionné**, sauf avec `"Authorization": "Bearer
-       ${KESH_MCP_KEY}"` et la variable hors du dépôt ; la commande passe par l'historique du shell : la précéder d'une
-       espace (avec `HISTCONTROL=ignorespace`) ou lire la clé par `read -rs` ; la limite de **25 000 jetons** d'une
-       réponse dans Claude Code ; pour **Hermes**, le bloc `mcp_servers` de `~/.hermes/config.yaml` (spike § 2.4). Une
-       phrase dit que ces gestes **ne sont pas éprouvés** contre un client réel par cette story, et renvoie au parcours
-       pas à pas de la 32-11 (*Brancher un agent*).
+    8. `\subsection{Configurer un client}\label{sec:mcp-client}` (C-32-7-13, **propriété de la 32-7** — C-32-7-22 ;
+       la 32-11 n'ouvre pas de seconde section de configuration : son parcours *Brancher un agent* y renvoie et, une
+       fois les gestes éprouvés, **amende celle-ci en place**). Chaque geste porte sa source, et rien n'est écrit qui ne
+       soit sourcé (validation P1, R11 ; décision acceptée de Guy) :
+       - **Claude Code**, d'après sa documentation (spike § 2.1, l. 211-213) : `claude mcp add --transport http
+         --scope local kesh <adresse>/mcp --header "Authorization: Bearer <clé>"` ; la portée `local` (défaut) écrit la
+         clé **en clair** dans `~/.claude.json` (spike l. 212, l. 302) — protéger ce fichier ; la portée `user` est
+         nommée, **sans** dire où elle stocke la clé (la spike ne le dit pas) ; **jamais** `--scope project`, qui écrit
+         un `.mcp.json` à la racine du projet, **versionné**, sauf avec `"Authorization": "Bearer ${KESH_MCP_KEY}"` et
+         la variable hors du dépôt (spike l. 212-213, l. 302-304) ; la limite de **25 000 jetons** d'une réponse
+         (`MAX_MCP_OUTPUT_TOKENS`, spike l. 252). Le conseil sur l'historique du shell (précéder la commande d'une espace
+         sous `HISTCONTROL=ignorespace`, ou lire la clé par `read -rs`) est un geste **général de Bash**, présenté
+         comme tel, non comme un comportement de Claude Code.
+       - **Hermes Agent (Nous Research)**, le client que documente la spike (§ 2.2, l. 255-260) : le bloc
+         `mcp_servers.<nom>` de `~/.hermes/config.yaml`, avec `url` et `headers` — **et rien d'autre** ; la Q9 de la
+         spike (« s'agit-il bien de Hermes Agent ? », l. 1027) n'ayant pas de réponse, le manuel nomme le client par son
+         nom complet et n'affirme rien de plus que sa documentation.
+       - Une phrase dit que **la configuration de ces deux clients n'est pas éprouvée** contre un client réel (spike,
+         l. 206-207 : « non éprouvé tant que Guy ou la 32-11 n'a pas rejoué le § 2.4 »), et renvoie au parcours pas à
+         pas de la 32-11 (*Brancher un agent*).
     9. **Rangées sous `sec:mcp`**, déplacées sans changer leurs étiquettes : `\subsection{Les outils et leurs
        portées}\label{sec:mcp-outils}` (32-9, et son bloc `% matrice-mcp:debut`/`fin`, dont le test de la 32-9 doit
        rester vert — son ancrage relu à l'étape 0) ; `\subsection{Les envois du serveur MCP}\label{sec:mcp-envois}`
@@ -491,9 +600,13 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
     chacun et **écrit au Dev Agent Record** s'il est faux à cette date ; elle ne le corrige pas.
 21. **AC-21 — le PDF.** `admin-manual.pdf` et `user-manual.pdf` régénérés (`make fr` dans `docs/manual/`) et commités ;
     contrôle **aplati** cité au Dev Agent Record : `pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s
-    ' ' | grep -oiE '.{0,60}(Le serveur MCP|100\.64\.0\.0/10|ne filtre alors rien|\.mcp\.json|25 000 jetons).{0,80}'`
-    — chaque motif trouvé au moins une fois ; et les renvois de l'AC-19 rendus (aucun `??`).
-22. **AC-22 — CHANGELOG.** Sous `## [0.16.0] — Non publié`, `### Ajouté` (créée si absente, ordre Keep a Changelog) :
+    ' ' | command grep -oiE '.{0,30}(Le serveur MCP|100\.64\.0\.0/10|ne filtre alors rien|\.mcp\.json|25 000
+    jetons).{0,30}'` — chaque motif trouvé au moins une fois ; et les renvois de l'AC-19 rendus (aucun `??`).
+    ⚠️ **`command grep`, et des fenêtres de 30** (validation P1, F11) : sur ce poste, `grep` est une fonction qui lance
+    `ugrep`, qui refuse `.{0,80}` (« exceeds complexity limits », constaté). Le nombre s'écrit `25\,000` au `.tex`
+    (précédent `10\,000`, `admin-manual.tex:1297`), que `pdftotext` rend `25 000` à espace ASCII — non `25~000`.
+22. **AC-22 — CHANGELOG.** Sous `## [0.16.0] — Non publié`, `### Ajouté` — à **compléter** si la 32-8 ou la 32-9 l'a
+    créée (constaté à l'étape 0), sinon **créée avant `### Modifié`**, ordre du dépôt (fait 19 ; validation P1, R3) :
     « **Administration → Serveur MCP** : activer le serveur, régler son filtre d'adresse, créer, révoquer et régler les
     clés du serveur MCP ; manuel d'administration, § *Le serveur MCP* » — sans date (la release la pose).
 23. **AC-23 — README et site.** Aucune fonctionnalité annoncée *(à venir)* ne devient livrée par la seule 32-7 (le
@@ -509,16 +622,26 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
     - (a) le bloc `% mcp-reseaux-defaut:debut`/`fin` du manuel liste **exactement** `DEFAULT_ALLOWED_NETWORKS`
       (`kesh_db::entities::mcp_server_settings`, fait 6), ensemble égal dans les deux sens ; et la chaîne
       `100.64.0.0/10` paraît dans `sec:mcp-filtre` **hors** de ce bloc ;
-    - (b) le bloc `% mcp-portees:debut`/`fin` nomme **exactement** les cinq `McpScope::ALL` (`as_str`), dans cet ordre ;
+    - (b) le bloc `% mcp-portees:debut`/`fin` nomme **exactement** les cinq `McpScope::ALL` (`as_str`), dans cet ordre —
+      en lisant **le premier code de chaque ligne** du tableau, non tous les codes qu'elle cite (la phrase
+      d'`invoices:read` cite `contacts:read`) ; *témoin* : une ligne factice qui cite une seconde portée n'ajoute rien à
+      la liste extraite (validation P1, R13) ;
     - (c) dans les **quatre** catalogues, la clé de l'AC-6 (3) contient `100.64.0.0/10`, et celle de l'AC-6 (1)
       contient `Traefik` **et** `Docker` (noms des clés fixés au développement, écrits dans la garde) ;
+    - **l'extraction des blocs se fait sur le source brut** (`lire(...)`), jamais après `normaliser`
+      (`tests/common/manuel.rs:32-34` : les sauts de ligne y disparaissent, et les marqueurs `% …:debut`/`fin` avec
+      eux) — précédent `sections_synology` (même fichier, l. 14-16), **non** G22, qui normalise (validation P1, R13) ;
+      `DEFAULT_ALLOWED_NETWORKS` est `pub const` (`kesh-db/src/entities/mcp_server_settings.rs:26`) d'un module `pub`,
+      et `kesh-db` est une dépendance de `kesh-api` : l'accès est direct (G22 n'en est pas le précédent) ;
     - chaque volet a son **témoin** : la fonction pure qui extrait un bloc rend une erreur sur un bloc absent (sans quoi
       un marqueur supprimé ferait passer (a) et (b) à vide).
 
 ## Tâches
 
 - [ ] **T0 — étape 0** (§ *À recontrôler à l'étape 0*) : chaque point relu, ligne citée au Dev Agent Record ; les
-  mesures des gardes G-a et G-b refaites ; l'état des 32-6a/b, 32-8, 32-9, 32-10a et 32-10b constaté.
+  mesures des gardes G-a et G-b refaites ; la fusion des neuf prérequis (32-6a, 32-6b, 32-8a, 32-8b0, 32-8b, 32-8c,
+  32-9a, 32-9b, 32-10a) **constatée** par `git log --oneline origin/main` — s'il en manque une, arrêt et rapport à
+  l'orchestrateur ; l'état de la 32-10b constaté (non prérequis).
 - [ ] **T1 — la couche d'API et les dates** : `mcp-server.types.ts`, `mcp-server.api.ts`, `mcp-time.ts` et leurs tests
   (AC-3, AC-4).
 - [ ] **T2 — les réglages** : `McpSettingsSection` et ses tests (AC-5, AC-6, AC-7).
@@ -536,24 +659,25 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
 |---|---|---|
 | `features/mcp-server/mcp-server.api.test.ts` | séparation du secret ; corps de chaque appel | 3 |
 | `features/mcp-server/mcp-time.test.ts` | naïf UTC ; fuseau déjà porté ; illisible ; fin de journée locale ; témoin du fuseau | 4 |
-| `features/mcp-server/McpSettingsSection.test.ts` | (a) à (f) ; avertissements (a) à (d) et leurs témoins ; encadré ; AC-7 | 5, 6, 7 |
+| `features/mcp-server/McpSettingsSection.test.ts` | (a) à (g) ; avertissements (a) à (d) et leurs témoins ; encadré, ses quatre phrases ; AC-7 | 5, 6, 7 |
 | `features/mcp-server/secret-unique.test.ts` | `oublier` efface tout ; `montrer` remplace | 11 (ii) |
-| `features/mcp-server/McpKeysSection.test.ts` | liste ; création ; les cinq « ni » ; révocation ; politique | 8 à 13 |
-| `features/mcp-server/mcp-server-gardes.test.ts` | G-a, G-b, témoins, cardinalité | 15 |
-| `routes/(app)/admin/mcp/admin-mcp-page.test.ts` | garde du `load` | 1 |
+| `features/mcp-server/McpKeysSection.test.ts` | liste ; création, dont `formulaire_a_l_ouverture_requise_et_aucune_portee` et le double `GET` ; les cinq « ni » et les témoins de leurs espions ; révocation ; politique | 8 à 13 |
+| `features/mcp-server/mcp-server-gardes.test.ts` | G-a, G-b (blocs `<script>` d'instance et de module), témoins, cardinalité exacte | 15 |
+| `lib/shared/i18n-repli-divergent-actif.test.ts` (amendé) | `les_replis_mcp_server_suivent_le_catalogue`, `ecartsAuCatalogue` et ses témoins, égalité des ensembles relevé ↔ FTL, compte exact | 14 (a) |
+| `routes/(app)/admin/mcp/admin-mcp-page.test.ts` | garde du `load` sous `browser` simulé, et son témoin | 1 |
 | `tests/e2e/mcp-server.spec.ts` | (a) à (f) | 16 |
-| `crates/kesh-api/tests/textes_coherents.rs` | G23 (a) à (c), témoin du bloc absent | 25 |
+| `crates/kesh-api/tests/textes_coherents.rs` | G23 (a) à (c), témoin du bloc absent, témoin du premier code de ligne ; commentaire de G22 corrigé | 25, 14 (c) |
 
 **Mutations** — chacune jouée sur une copie, le fichier restauré **et touché** ensuite (mémoire *Mutation restaurée,
 binaire périmé*), journal `kesh-gate-logs/327-mut-<id>.log`, verdict au Dev Agent Record :
 
 | Id | Mutation | Doit tuer |
 |---|---|---|
-| M1 | *Fermer* masque l'encart (`visible = false`) sans appeler `oublier()` | AC-11 (i)/(ii) — test composant |
+| M1 | *Fermer* masque l'encart (`visible = false`) sans appeler `oublier()` | AC-11 (ii) — la sonde sur `oublier()` du test composant (le DOM seul, (i), ne la tue pas) |
 | M2 | `oublier()` remet un drapeau sans effacer la valeur | `secret-unique.test.ts` |
 | M3 | `createMcpKey` rend `cle = { ...res }` | `createMcpKey_separe_le_secret` |
-| M4 | l'objet de création ajouté à la liste au lieu d'un `GET` | AC-9 (d) / AC-11 (iii) |
-| M5 | `sessionStorage.setItem('mcp-secret', secret)` à la création | AC-11 (v) **et** G-a |
+| M4 | l'objet de création ajouté à la liste au lieu d'un `GET` | AC-9 (d) seul — deux `GET`, la liste du second affichée |
+| M5 | `sessionStorage.setItem('mcp-secret', secret)` à la création | AC-11 (v) (espion à témoin) **et** G-a |
 | M6 | `console.info('créée', res)` | AC-11 (iv) **et** G-a |
 | M7 | `depuisUtcNaif` sans ajout du `Z` | `mcp-time.test.ts` (sous TZ Zurich, témoin) |
 | M8 | expiration envoyée `${date}T23:59:59Z` (motif PAT) | aller-retour de date, AC-4 (c) |
@@ -568,6 +692,12 @@ binaire périmé*), journal `kesh-gate-logs/327-mut-<id>.log`, verdict au Dev Ag
 | M17 | `10.0.0.0/8` retiré du bloc `mcp-reseaux-defaut` du manuel | G23 (a) |
 | M18 | `100.64.0.0/10` retiré de la clé fr-CH de l'AC-6 (3) | G23 (c) |
 | M19 | les marqueurs `% mcp-portees:` retirés | G23 témoin (bloc absent) |
+| M20 | le bouton *Dispensée* (`exempt`) coché par défaut au formulaire | AC-9 (e) |
+| M21 | la case `books:read` précochée au formulaire | AC-9 (e) |
+| M22 | le repli fr-CH de la clé de l'AC-6 (1) modifié dans le `.svelte` (« Traefik » retiré), le catalogue inchangé | AC-14 (a) |
+| M23 | `export const secret = new SecretUnique()` dans un `<script module>` de `McpKeysSection.svelte` | G-b |
+| M24 | la phrase de l'AC-7 (a) calculée sur la case **cochée** au lieu de la valeur enregistrée | AC-7 (a) |
+| M25 | la phrase (4) de l'encadré (« aucune limite de débit ») retirée du composant | AC-6, encadré |
 
 ## Gates
 
@@ -594,7 +724,8 @@ binaire périmé*), journal `kesh-gate-logs/327-mut-<id>.log`, verdict au Dev Ag
 - **L'outillage de développement** (HMR de Vite, extension Svelte) peut conserver un état de composant ; hors
   production.
 - **Une écriture indirecte** dans un stockage (par une bibliothèque, par `window['local' + 'Storage']`) échappe à G-a ;
-  les espions de l'AC-11 (v) couvrent les chemins **exécutés** par les tests seulement.
+  les espions de l'AC-11 (v) couvrent les chemins **exécutés** par les tests seulement — et `indexedDB`, absent de
+  jsdom, n'y est vu que par le substitut `vi.stubGlobal` : une écriture réelle dans le navigateur ne passe que par G-a.
 - **Ce que l'utilisateur fait du secret** : l'historique du shell, `~/.claude.json` en clair, un `.mcp.json` versionné
   malgré l'avertissement. Le manuel le dit ; rien ne le contrôle.
 - **La topologie réelle** (Traefik, Docker, NAS) : l'écran et le manuel **décrivent** ce que le filtre ne garantit pas ;
@@ -603,12 +734,21 @@ binaire périmé*), journal `kesh-gate-logs/327-mut-<id>.log`, verdict au Dev Ag
 - **Les textes de portée et de politique** (AC-10, AC-13 (c)) sont tenus vrais par une **relecture** au code à l'étape 0
   et en revue, non par un test : seul l'ordre des portées l'est (AC-10), et les deux listes du manuel (G23).
 - **L'E2E ne tourne qu'en `fr-CH`** ; la justesse des trois autres langues n'est vérifiée que par la parité des clés.
+- **Une copie du secret dans un autre `$state`** du composant parent (`McpKeysSection`, `McpServerPanel`), hors de
+  l'instance `SecretUnique` : aucune garde lexicale ne la voit, et aucune mutation ne la joue ; seuls le test du DOM
+  après *Fermer* (AC-11 (i)) et la relecture en revue la limitent — une copie non rendue survivrait à *Fermer* sans que
+  rien ne rougisse (validation P1, R, LOW non numéroté ; écrit plutôt que muté).
+- **Le repli des clés hors `mcp-server-`** : l'AC-14 (a) ne tient égal au catalogue que le préfixe `mcp-server-` et
+  `nav-admin-mcp` ; les autres domaines restent sous G13 et ses treize clés, ou sous aucune garde (G22 : AC-14 (c)).
+- **Une ligne de réglages à `version = 0` posée hors de l'écran** (C-32-5-53) : l'écran ne la répare pas, chaque
+  enregistrement rend un conflit ; seul le manuel le dit (AC-18 (1)).
 - **Les dates** s'affichent dans le fuseau du navigateur ; un administrateur hors de Suisse verra l'heure de son poste.
 
 ## Inventaire des reports
 
 Méthode : `grep -n '32-7'` sur l'epic, la fiche 32-5 (worktree de la 32-7), les fiches 32-6, 32-8, 32-9, 32-10a (leurs
-worktrees), la spike (l. 945-948), et `gh issue view 738` (la phrase « l'écran de la 32-7 » et les points qui touchent
+worktrees), la spike (l. 945-948), et `gh issue view 738 --comments` — les points B2 à B8 sont dans un **commentaire** (« Relevés à la revue de code P1
+de la Story 32-5c »), le corps de #738 étant celui de la 32-3 (validation P1, R) — (la phrase « l'écran de la 32-7 » et les points qui touchent
 l'écran). Chaque report est rattaché à un AC, ou écarté avec sa raison.
 
 | # | Source | Report | Où |
@@ -623,14 +763,14 @@ l'écran). Chaque report est rattaché à un AC, ou écarté avec sa raison.
 | R8 | #738 B2 = E4 | `010.0.0.0/8` mis en forme sans signal | AC-5 (c) (forme réaffichée) |
 | R9 | #738 B5 = E2 | corps mal formé non traduit | **écarté** : l'écran n'envoie que des corps bien formés (AC-3 (b)) ; le défaut reste sur #738 |
 | R10 | #738 B8 | `version: -1` → 409 | **écarté** : l'écran n'envoie que la version lue (AC-5 (b)) ; reste sur #738 |
-| R11 | fiche 32-6 l. 1231-1252 (« Ce qu'elle laisse à la 32-7 ») | route absente, activation par société, filtre et mandataires, `Origin`, seul `Bearer` lu, 1 Mio, 30 s, journal, appel qui écrit, acteur au nom du créateur, `last_used_at`, `KESH_PUBLIC_BASE_URL`, ligne illisible, requêtes anonymes, `Forwarded`/`X-Real-IP`, 415, 400, connexion neuve | AC-18 (1), (2), (4)-(7) ; « une clé `required` ne peut appeler aucun outil » **écartée** (fausse après la 32-8, R16) ; « ligne de réglages illisible → désactivée » : AC-18 (1), à constater à l'étape 0 |
+| R11 | fiche 32-6 l. 1231-1252 (« Ce qu'elle laisse à la 32-7 ») | route absente, activation par société, filtre et mandataires, `Origin`, seul `Bearer` lu, 1 Mio, 30 s, journal, appel qui écrit, acteur au nom du créateur, `last_used_at`, `KESH_PUBLIC_BASE_URL`, ligne illisible, requêtes anonymes, `Forwarded`/`X-Real-IP`, 415, 400, connexion neuve | AC-18 (1), (2), (4)-(7) ; « une clé `required` ne peut appeler aucun outil » **écartée** (fausse après la 32-8, R16) ; « ligne de réglages illisible → désactivée » : **écrite** à l'AC-18 (1) (validation P1, R6 (a)), relue au code à l'étape 0 |
 | R12 | fiche 32-6 l. 1002, 1310 (point 2) | Traefik et Docker devant le filtre | AC-6 (1), AC-18 (4) — tranché par Guy (2026-10-25) ; NAS non vérifié (*Ce que les gardes ne voient pas*) |
-| R13 | fiche 32-6 l. 1311 (point 2 bis) | garde d'un pair non déclaré porteur d'en-tête | AC-18 (4), selon ce que la 32-6a a fait (étape 0) |
+| R13 | fiche 32-6 l. 1311 (point 2 bis) | garde d'un pair non déclaré porteur d'en-tête | **sans objet** : garde non retenue (décision de l'orchestrateur, validation P1, R7) ; la phrase « en-tête ignoré » est à l'AC-18 (4) |
 | R14 | fiche 32-6 l. 1015-1018 | `last_used_at` n'est pas « dernier appel » | AC-8 (b), AC-18 (2) |
 | R15 | fiche 32-6 l. 1253-1257 | `README.md:233`, `website/roadmap.html:375` (clé dispensée) | **écarté** vers la 32-11 (fiches 32-6, 32-8 l. 1397-1401, 32-10a l. 1390) ; constaté, AC-20 |
 | R16 | fiche 32-6 l. 1258-1263 | pas de CORS, `OPTIONS` → 405 | AC-18 (5) |
 | R17 | fiche 32-6 l. 1267-1271 (B4) | message de type réponse → 400 | AC-18 (7) |
-| R18 | fiche 32-6 l. 1272-1278 (E8) | route absente, 401 unique (dont `Origin`), cookie et PAT non lus, JSON, 1 Mio, `kesh_version`, pas de CORS, `/mcp` exact, en-têtes répétés, 202, erreurs sans `id`, `/0`, sous-chemin | AC-18 (1), (2), (4), (5), (7) ; AC-7 (b) |
+| R18 | fiche 32-6 l. 1272-1278 (E8) | route absente, 401 unique (dont `Origin`), cookie et PAT non lus, JSON, 1 Mio, `kesh_version`, pas de CORS, `/mcp` exact, en-têtes répétés, 202, erreurs sans `id`, `/0`, sous-chemin | AC-18 (1), (2), (4), (5), (7) ; AC-7 (b) ; « `kesh_version` seul outil, qui rend aussi le délai d'instruction » (32-6 l. 1275) **n'est pas porté** : il cesse d'être vrai avec la 32-9, et ce que rendent les outils revient à la 32-9 (`sec:mcp-outils`) et à la 32-11 (validation P1, R6 (b)) |
 | R19 | fiche 32-6 l. 1279-1281 (A3) | `admin-manual.tex:2935`, 128 → 129 | **écarté** : 32-10b puis 32-11 (AC-20) |
 | R20 | fiche 32-6 l. 1282-1283, 32-9 l. 1328 | `api-external.md:185`, `:831` | **écarté** : 32-11 (AC-20) |
 | R21 | fiche 32-6 l. 1402, 1469 (P7-H3) | entrée invalide des mandataires coupe le serveur, filtre activé ou non | AC-18 (4) |
@@ -640,7 +780,7 @@ l'écran). Chaque report est rattaché à un AC, ou écarté avec sa raison.
 | R25 | fiche 32-9 l. 914, 1315-1325, 1373, 1429 | ranger `sec:mcp-outils` sous *Le serveur MCP* | AC-18 (9) |
 | R26 | fiche 32-9 l. 1339-1341, 1373 | à l'écran de création, ce que `contacts:read` démasque ; noms lisibles sans elle ; l'IBAN n'est pas une donnée du contact | AC-10, AC-18 (2) |
 | R27 | fiche 32-10a l. 1006-1008, 1386-1387 | portée `prompts:write` (proposer, jamais approuver, ni lire ; une clé `required` peut proposer) | AC-10, AC-18 (2) |
-| R28 | fiche 32-10a l. 1008, 1384 | le compte de l'admin l. 2935 à la 32-10b | AC-20 (constaté, non porté) |
+| R28 | fiche 32-10a l. 1008, 1384 | le compte de l'admin l. 2935 à la 32-10b | **écarté** : 32-10b puis 32-11, comme R19 (AC-20, constaté, non porté ; reclassé en validation P1, R6 (c)) |
 | R29 | spike l. 945-946 | configuration des deux clients, limite de 25 000 jetons, `Origin` ne protège que d'un navigateur | AC-18 (5), (8) |
 | R30 | spike l. 946-947 (Q11 (b)/(c)) | création à la main d'un utilisateur `SELECT` | **sans objet** : Q11 (a) |
 | R31 | spike l. 947-948 (Q10 (b)) | au-delà de 2 min Claude Code poursuit | **sans objet** : Q10 (c), la poignée |
@@ -654,13 +794,13 @@ l'écran). Chaque report est rattaché à un AC, ou écarté avec sa raison.
 ```
 POST /api/v1/admin/mcp/keys ──201 { …clé, key }──► mcp-server.api.ts
                                                    ├─ cle    (champ par champ, sans key) ──► (rien : la liste se recharge par GET)
-                                                   └─ secret ──► McpKeysSection : secret.montrer(s)   [instance SecretUnique, locale au composant]
+                                                   └─ secret ──► McpKeysSection : secret.montrer(nom, s)   [instance SecretUnique, <script> d'instance]
                                                                    └─ McpKeySecretNotice : <code> unique
                                                                         Fermer ──► secret.oublier()  ; démontage ──► instance perdue
 ```
 
-Jamais : la liste, un `$state` de module, un stockage du navigateur, l'URL, `document.title`, un `toast`, un
-`console.*`, un attribut HTML. La classe, indicative :
+Jamais : la liste, un `$state` de module ou d'un `<script module>`, un stockage du navigateur, l'URL, `document.title`,
+l'argument d'un `toast`, un `console.*`, un attribut HTML. La classe, indicative :
 
 ```ts
 // secret-unique.svelte.ts — une instance par composant, jamais au niveau d'un module.
@@ -729,7 +869,8 @@ l'écart est déclaré.
 `frontend/src/lib/features/mcp-server/**` (neuf) ; `frontend/src/routes/(app)/admin/mcp/{+page.ts, +page.svelte,
 admin-mcp-page.test.ts}` (neufs) ; `frontend/src/routes/(app)/+layout.svelte` ; `frontend/tests/e2e/mcp-server.spec.ts`
 (neuf) ; `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` ; `crates/kesh-api/tests/textes_coherents.rs` ;
-`docs/manual/fr/{admin-manual,user-manual}.{tex,pdf}` ; `CHANGELOG.md` ; et, si le déplacement l'exige, le test de la
+`docs/manual/fr/{admin-manual,user-manual}.{tex,pdf}` ; `CHANGELOG.md` ; `frontend/src/lib/shared/
+i18n-repli-divergent-actif.test.ts` (extension de G13, AC-14 (a)) ; et, si le déplacement l'exige, le test de la
 matrice de la 32-9 (écart déclaré).
 
 ### Références
@@ -751,45 +892,75 @@ préventif*, *E2E*, *Recompter*) ; `docs/agents-orchestration.md` ; `docs/testin
    (C-32-7-15). *Recommandation* : en décider après la recette de la 0.16.0.
 4. **Le créateur d'une clé n'est pas affiché** (la réponse n'en porte que le numéro, C-32-7-16) ; une seule personne
    administre aujourd'hui. *Recommandation* : l'accepter ; l'ajouter demanderait de toucher la route.
-5. **La configuration d'un client au manuel** (C-32-7-13) : la 32-7 écrit les gestes (Claude Code, Hermes) **sans les
-   éprouver** ; la 32-11 les rejoue. La commande de Claude Code enregistre la clé **en clair** dans `~/.claude.json` :
-   c'est le fonctionnement de Claude Code, que le manuel dit.
+5. ~~**La configuration d'un client au manuel**~~ — **réglé** (validation P1, R11 ; décision acceptée de Guy relayée par
+   l'orchestrateur) : la configuration de Claude Code reste marquée « non éprouvée » au manuel, et le manuel n'écrit rien
+   de Hermes qui ne soit sourcé (AC-18 (8)). La **Q9** de la spike (« s'agit-il bien de Hermes Agent (Nous
+   Research) ? ») reste **sans réponse** : à poser à Guy avec la 32-11, qui éprouvera le client.
 6. **Pour information** : la capture du secret (recette visuelle) montre une clé de démonstration, révoquée aussitôt,
    et reste hors du dépôt.
 
 ## Demandes à l'orchestrateur
 
-1. **Le propriétaire du compte de `admin-manual.tex:2935`** : la fiche 32-6 (A3) le donne à la 32-11, la fiche 32-10a à
-   la 32-10b. La 32-7 n'ajoute aucune route et ne le porte pas (AC-20). *Proposition* : la 32-10b le recompte après
-   ses routes, la 32-11 au dernier état ; l'inscrire aux deux sections de l'epic.
+*(Demandes 1, 3, 4 et 5 de la création **closes** en validation P1, tranchées par l'orchestrateur : (1) le compte de
+`admin-manual.tex:2935` à la 32-10b, puis à la 32-11 au dernier état (AC-20) ; (3) la garde « 2 bis » de la 32-6 n'est
+pas retenue (AC-18 (4)) ; (4) G23 réservé à la 32-7 (AC-25) ; (5) l'ordre nominal, sans rechange (tête de fiche,
+C-32-7-3). Elles restent ici barrées pour l'historique.)*
+
+1. ~~**Le propriétaire du compte de `admin-manual.tex:2935`**~~ — close (voir ci-dessus).
 2. **La fiche 32-10b** : ranger *Les prompts du serveur MCP* sous `\section{Le serveur MCP}` (`sec:mcp`) si la 32-7 a
    fusionné avant elle.
-3. **Le point 2 bis de la fiche 32-6** (garde du pair non déclaré porteur d'en-tête) : la 32-7 décrit ce que la 32-6a a
-   fait ; si Guy ne l'a pas tranché, le lui reposer avant la 32-7.
-4. **Le numéro G23** de `textes_coherents.rs`, réservé à la 32-7 par cette fiche.
-5. **L'ordre** : la 32-7 en dernier des stories citées (C-32-7-3) ; si l'écran doit venir plus tôt, découper selon
-   l'ordre de rechange (32-7a, 32-7b), sans réécrire les AC.
+3. ~~**Le point 2 bis de la fiche 32-6**~~ — close.
+4. ~~**Le numéro G23**~~ — close.
+5. ~~**L'ordre**~~ — close.
+6. **La propriété de `sec:mcp-client`** (validation P1, F8 ; C-32-7-22) : la 32-7 l'écrit et en est propriétaire ; la
+   32-11 **ne rouvre pas** de section de configuration — *Brancher un agent* y renvoie et, une fois les gestes éprouvés,
+   amende `sec:mcp-client` en place (retire « non éprouvée », corrige ce que l'essai réfute). *Demande* : l'inscrire à la
+   section 32-11 de l'epic (`epic-32-serveur-mcp.md:491-493`, « manuel d'administration (*Brancher un agent*,
+   configuration de Claude Code) »), que la 32-7 ne touche pas.
+7. **Le repli de `admin-backup-auto-reminder`** (AC-14 (c)) : aucune garde ne le tient égal au fr-CH, contrairement à ce
+   que disait le commentaire de G22. La 32-7 corrige le commentaire, non le trou. *Demande* : ouvrir une issue P3
+   (« on trace toujours ») ou l'accepter comme angle mort écrit.
 
 ## À recontrôler à l'étape 0 du développement
 
-- **Fusions** : 32-6a, 32-6b, 32-8 (a, b0, b, c), 32-9a, 32-9b, 32-10a — `git log --oneline origin/main` ; état de la
-  32-10b. Ce que chaque story a **réellement** livré, contre ce que cette fiche prescrit d'en écrire (AC-10, AC-13 (c),
+- **Fusions** : 32-6a, 32-6b, 32-8a, 32-8b0, 32-8b, 32-8c, 32-9a, 32-9b, 32-10a — `git log --oneline origin/main` porte
+  **chacune**, sinon **arrêt** (tête de fiche) ; état de la 32-10b (non prérequis). Ce que chaque story a **réellement** livré, contre ce que cette fiche prescrit d'en écrire (AC-10, AC-13 (c),
   AC-18) : chaque phrase, ligne lue citée ; une phrase non confirmée se réécrit.
 - **Les routes de la 32-5c** (fait 1 à 5) inchangées ; un champ ajouté à `McpKeyResponse` par une story suivante entre
   à l'AC-3 (a).
-- **`/admin/mcp/sends`** (32-8c) et `nav-admin-mcp-sends` : présents ? (AC-2, AC-13 (d)) ; les sous-dossiers de
-  `routes/(app)/admin/mcp/` d'autres stories, exclus de G-a.
-- **`seedTestState`** : vide-t-il `mcp_keys` et `mcp_server_settings` ? Quel utilisateur Comptable le préréglage
-  fournit-il ? (AC-16).
+- **`/admin/mcp/sends`** (32-8c) et `nav-admin-mcp-sends` : leur place relue (AC-2, AC-13 (d)) — présents par
+  prérequis ; les sous-dossiers de `routes/(app)/admin/mcp/` d'autres stories, exclus de G-a.
+- **`seedTestState`** (AC-16) : *tranché à la rédaction* (validation P1, R8 = F5) — `truncate_all` vide `mcp_keys` et
+  `mcp_server_settings` ; aucun préréglage Comptable. *À recontrôler* : que `TABLES_TO_TRUNCATE` les porte toujours
+  (`grep -nF '"mcp_keys"' crates/kesh-db/src/backup.rs`) ; *correction attendue si non* : rétablir un `afterAll` qui
+  désactive le serveur et révoque les clés de la spec, et le déclarer.
 - **Le 401 fixe** de la 32-6a (constante de `mcp/textes.rs`) pour l'AC-16 (e) ; la réponse d'`initialize` (200) sans
   `Origin`, depuis `127.0.0.1`.
 - **`last_used_at`** : ce que pose `services::cles_mcp::authentifier` et quand (AC-8 (b)).
-- **Le point 2 bis** de la 32-6 (AC-18 (4)) ; la « ligne de réglages illisible » (fiche 32-6, AC-a2) ; les valeurs de
-  l'AC-18 (7) (415, 400, 1 Mio, 30 s, 202, 400 d'une réponse).
+- La phrase « un en-tête `X-Forwarded-For` venu d'un pair non déclaré est ignoré » (AC-18 (4)) contre le code de la
+  32-6a ; la « ligne de réglages illisible » (fiche 32-6, AC-a2 ; AC-18 (1)) ; les valeurs de l'AC-18 (7) (415, 400,
+  1 Mio, 30 s, 202, 400 d'une réponse).
 - **La place de `sec:mcp-outils` et `sec:mcp-envois`** dans le manuel, et l'ancrage du test de la matrice de la 32-9.
 - **Les lignes du manuel** (fait 16, 17 ; AC-19, AC-20) : recomptées, la 32-8c ayant amendé l. 1414, 2230, 2237, 2249
   et `user-manual.tex:3027-3033`.
-- **La garde frontend** qui contrôle qu'un repli égale la valeur fr-CH (AC-14) : la nommer.
+- **Le repli égal au fr-CH** (AC-14 (a)) : *tranché à la rédaction* — aucune garde ne le tenait, la story étend G13 de
+  `i18n-repli-divergent-actif.test.ts` par préfixe. *À recontrôler* : que `REPLIS_A_SITE_UNIQUE`, `replisParCle` et
+  `valeurDuCatalogueFr` existent encore sous ces noms (`grep -nF`) ; *correction attendue si non* : ancrer l'extension
+  sur leur successeur et le dire. Et le commentaire de G22 (`textes_coherents.rs:1688`), à corriger (AC-14 (c)).
+- **Les LOW de la validation P1 qui relèvent de l'étape 0**, chacun avec sa correction attendue :
+  - les lignes de la fiche 32-6 citées par l'AC-6 (1), l'AC-18 (1) et l'inventaire (R11 à R21) — *si décalées* : citer
+    la ligne relue ;
+  - la phrase de chaque portée (AC-10, R4) contre `kesh_pieces`, `kesh_echeancier` et `contacts.rs:380-381` — *si le
+    code dit autre chose* : réécrire la phrase, aux quatre locales et au bloc `% mcp-portees:` ;
+  - la `### Ajouté` du CHANGELOG (AC-22, R3) — *si la 32-8 ou la 32-9 l'a créée* : la compléter, sinon la créer avant
+    `### Modifié` ;
+  - la commande de l'AC-21 (F11) — *si `grep` reste la fonction `ugrep`* : `command grep` et fenêtres de 30, comme écrit ;
+  - `navTestid` et `nav-group-administration` (AC-16 (a), F5) — *si renommés* : suivre le nom relu ;
+  - le motif Comptable de `backup-schedule.spec.ts:200-218` (AC-16 (f)) — *si déplacé* : citer sa nouvelle place ;
+  - le `browser` de `admin/backup/+page.ts:14` (AC-1, R9) — *si la garde ne le lit plus* : retirer la simulation et le
+    dire ;
+  - l'absence d'`indexedDB` sous jsdom (AC-11 (v), R1) — *si une version de jsdom ou un `fake-indexeddb` l'apporte* :
+    espionner l'objet réel, témoin conservé.
 - **G23** libre (AC-25) ; la mesure de G-a et G-b refaite (AC-15).
 - **Les échecs E2E attendus** : `docs/testing.md` § *Les échecs attendus*, à la date de l'étape 0.
 
@@ -806,3 +977,4 @@ préventif*, *E2E*, *Recompter*) ; `docs/agents-orchestration.md` ; `docs/testin
 | Date | Étape | Résumé |
 |---|---|---|
 | 2026-10-25 | création | Fiche rédigée en autonomie (Opus 5.5), contre `966baed5`. 25 AC (A : 17, B : 7, C : 1), 9 tâches, 19 mutations, gardes G-a, G-b, G23 ; 33 reports inventoriés (R1 à R33 : 24 rattachés à un AC, 9 écartés ou sans objet avec leur raison — R9, R10, R15, R19, R20, R23, R24, R30, R31) ; choix C-32-7-1 à C-32-7-20 ; 4 modules, pas de découpage. Prompt de validation P1 : `327-validate-prompt-p1.md`. |
+| 2026-10-25 | validation P1 | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `327-validate-prompt-p1.md` ; rapports `kesh-gate-logs/327-validate-p1-R.md` 0/0/1/12 et `-F.md` 0/0/4/7) ⇒ **trend P1 0/0/5/19** (doublons R2 = F3 et R8 ≈ F5 comptés une fois par lentille). Prémisses relues au dépôt avant application ; **aucune réfutée**. Corrigés à la lecture : deux numéros de ligne des rapports (R6 (a) — la ligne illisible est à la fiche 32-6 l. 1247-1248, non 1241-1243 ; R12 — `mcp_server_settings.rs:35-38`, non `:36-39`) ; l'option préférée de l'orchestrateur pour F2 (ajouter `mcp-server-` aux `PREFIXES` de `i18n-un-repli-par-cle`) **écartée** sur lecture : ce test compare les replis d'une clé entre eux (`parTexte.size > 1`, l. 216), jamais au catalogue. **Décisions de l'orchestrateur appliquées d'abord** : F1 — ordre de rechange retiré, ordre nominal des neuf prérequis vérifié à l'étape 0 (arrêt sinon), AC-2 et AC-13 (d) sans branche conditionnelle, C-32-7-3 récrit et C-32-7-1 annoté ; R7 — branche « 2 bis » de l'AC-18 (4) retirée (une seule phrase), R13 passé « sans objet », Demandes 1, 3, 4, 5 closes ; F2 — G13 de `i18n-repli-divergent-actif.test.ts` étendue par préfixe (AC-14 (a), C-32-7-21, témoins rouge et vert, égalité relevé ↔ FTL, compte exact), commentaire de G22 corrigé (AC-14 (c)) ; F3 = R2 — G-b couvre `<script module>` et `context="module"` (deux témoins rouges `.svelte`, M23) ; F4 — AC-9 (e), test `formulaire_a_l_ouverture_requise_et_aucune_portee`, M20, M21 ; R1 — AC-11 (v) par `vi.stubGlobal('indexedDB', …)`, chaque espion (`Storage.prototype`, `history`, `indexedDB`) avec son appel témoin. **LOW intégrés** : R3 (fait 19, AC-22 avant `### Modifié`), R4 (a)-(c) (AC-10), R5 (AC-6 (1) aligné sur le manuel et la 32-6), R6 (ligne illisible à l'AC-18 (1), `kesh_version` à la 32-9/32-11, R28 écarté comme R19), R8 = F5 (fait `seedTestState`, aucun `afterAll`, motif Comptable, `nav-link-admin-mcp`, groupe replié), R9 (`browser` simulé et témoin), R10 (M4 à l'AC-9 (d) seul, deux `GET`), R11 (gestes sourcés un à un, Hermes Agent sans rien de plus que la spike, Claude Code « non éprouvée » — décision acceptée de Guy), R12 = F6 (AC-5 (g), version 0 au manuel), R13 (cardinalité exacte, premier code de ligne, extraction sur le source brut), LOW non numérotés de R (`gh issue view 738 --comments`, copie du secret dans un autre `$state` écrite en angle mort, `toast.*` tranché — permis, sans le secret, avec témoin —, M24, M25, précédent TZ cité), F7 (sept captures, 28 au total), F8 (propriété de `sec:mcp-client` à la 32-7, C-32-7-22, demande 6), F9 (signature de `SecretUnique` fixée, M1 à la sonde de (ii)), F10 (gardes nommées, déclencheur *Révoquer* sans rouge à la main), F11 (`command grep`, fenêtres de 30, `25\,000`). Relevé en passant : l'AC-2 renvoyait le Comptable à l'AC-16 (e), lire (f). **Symptômes grepés** (valeurs) sur la fiche, le registre et les fiches voisines (`rechange`, `32-7a`, `2 bis`, `afterAll`, `Hermes`, `rattachements`, `i18n-un-repli-par-cle`, `sec:mcp-client`, `{0,80}`, `repli … égal`) : résidus de la fiche tous historiques ; voisines — note à l'orchestrateur (rapport). **Décomptes** recomptés à la source : 25 AC (A : 17, B : 7, C : 1), 9 tâches, **25 mutations** (M1 à M25), 33 reports (**22 rattachés, 11 écartés ou sans objet** — R9, R10, R13, R15, R19, R20, R23, R24, R28, R30, R31), **22 choix** (C-32-7-1 à C-32-7-22 ; 1, 3, 13, 19 annotés), 28 captures, 4 modules. Remédiation sur la fiche et le registre seulement ; **1 passe sur 8** ; passe suivante **complète** (P2, Opus, lentilles R et F, `327-validate-prompt-p2.md`). |

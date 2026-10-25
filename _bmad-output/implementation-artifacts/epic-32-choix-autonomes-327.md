@@ -16,7 +16,9 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
 - **Écartées** : deux clés d'office (écran, manuel) — la seconde ne vivrait que de la première, et un écran fusionné
   sans sa section ferait parler Kesh d'un serveur que le manuel ne décrit pas ; ajouter une route (créateur affiché,
   C-32-7-16) — un cinquième module pour un confort.
-- **Réversible** : oui — l'ordre de rechange (C-32-7-3) découpe sans réécrire.
+- **Réversible** : oui. *(Amendé en validation P1, 2026-10-25 : la phrase d'origine — « l'ordre de rechange (C-32-7-3)
+  découpe sans réécrire » — tombe avec la rechange, retirée par l'orchestrateur ; la clé unique se développe après ses
+  neuf prérequis, C-32-7-3.)*
 
 ### C-32-7-2 — `/admin/mcp`, feature `mcp-server`, préfixe `mcp-server-`
 
@@ -30,17 +32,26 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
   d'un dossier `mcp`).
 - **Réversible** : oui, avant publication.
 
-### C-32-7-3 — L'ordre de développement : en dernier ; un ordre de rechange décrit
+### C-32-7-3 — L'ordre de développement : en dernier, ordre nominal, sans rechange
 
-- **Contexte** : la consigne place la 32-7 après les 32-6a/b, 32-8, 32-9 et 32-10a. L'écran seul ne dépend que de la
-  32-5 ; le manuel décrit le code de ces stories et range leurs sous-sections.
-- **Retenu** : développement **après** ces fusions ; les AC sont groupés A (écran), B (manuel), C (garde). **Ordre de
-  rechange** écrit en tête de fiche : `32-7a` (groupe A sans trois exceptions nommées — AC-16 (c), AC-13 (d), AC-10) sur
-  la seule 32-5, puis `32-7b` (B, C et les exceptions).
-- **Écartées** : développer l'écran tout de suite et le manuel « plus tard » sans le dire (une fusion où l'écran existe
-  sans texte) ; écrire le manuel d'après les fiches voisines plutôt que d'après leur code (il mentirait à la première
-  remédiation de leur revue).
-- **Réversible** : oui — l'orchestrateur choisit à l'étape de lancement.
+- **Contexte** : la consigne place la 32-7 après les 32-6a/b, 32-8, 32-9 et 32-10a. Le code de l'écran ne dépend que
+  de la 32-5 ; ses textes et le manuel décrivent le code de ces stories (401 fixe, `/mcp` exact, validation avant envoi
+  et son écran, outils, `prompts:write`) et le manuel range leurs sous-sections. La validation P1 (F1) a montré que
+  l'ordre de rechange écrit à la création n'était pas mécanique : ses trois exceptions (AC-16 (c), AC-13 (d), AC-10)
+  n'étaient pas les seules dépendances du groupe A (AC-13 (c), AC-16 (e), AC-7 (a)-(b), AC-6, AC-8 (b) en avaient
+  aussi).
+- **Retenu** (récrit en validation P1, 2026-10-25, décision de l'orchestrateur) : développement **après** la fusion,
+  dans l'ordre nominal, de 32-6a, 32-6b, 32-8a, 32-8b0, 32-8b, 32-8c, 32-9a, 32-9b, 32-10a ; l'**étape 0 le vérifie**
+  (`git log --oneline origin/main` porte chacune ; sinon arrêt et rapport). Aucun AC conditionnel à une fusion ; les
+  groupes A, B, C ne servent qu'à la lecture.
+- **Écartées** : l'ordre de rechange `32-7a`/`32-7b` (retiré : non mécanique, F1) ; développer l'écran tout de suite et
+  le manuel « plus tard » sans le dire (une fusion où l'écran existe sans texte) ; écrire le manuel d'après les fiches
+  voisines plutôt que d'après leur code (il mentirait à la première remédiation de leur revue).
+- **Réversible** : oui, par une nouvelle décision de l'orchestrateur — elle demanderait de réécrire les AC dépendants,
+  ce que la rechange prétendait éviter.
+- *(Version de la création, pour l'historique : « développement après ces fusions ; un ordre de rechange `32-7a`
+  (groupe A sans trois exceptions) sur la seule 32-5, puis `32-7b` ; réversible, l'orchestrateur choisit au
+  lancement ».)*
 
 ### C-32-7-4 — *Le serveur MCP* est une `\section`, après *Sécurité*
 
@@ -143,6 +154,10 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
 - **Écartées** : tout laisser à la 32-11 (l'écran qui montre le secret ne dirait pas où le mettre) ; écrire le parcours
   complet ici (doublon de la 32-11, non éprouvé).
 - **Réversible** : oui.
+- *(Amendé en validation P1, 2026-10-25, R11 et F8 : la propriété de `sec:mcp-client` est fixée par C-32-7-22 ; les
+  gestes y sont **sourcés** un à un — Claude Code par la spike § 2.1, Hermes Agent par la spike § 2.2, rien de plus,
+  la Q9 restant sans réponse —, la portée `user` nommée sans lieu de stockage (la spike ne le dit pas), le conseil sur
+  l'historique du shell présenté comme un geste général de Bash.)*
 
 ### C-32-7-14 — Les textes que la 32-7 ne porte pas
 
@@ -193,7 +208,9 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
   specs.
 - **Retenu** : la clé lue à l'écran fait un `initialize` 200, puis un 401 après révocation ; un `afterAll` désactive le
   serveur et révoque les clés **si** `seedTestState` ne vide pas `mcp_keys` et `mcp_server_settings` (constaté à
-  l'étape 0).
+  l'étape 0). *(Amendé en validation P1, 2026-10-25, R8 = F5 : c'est tranché au dépôt — `seedTestState` appelle
+  `truncate_all` (`routes/test_endpoints.rs:172`), qui vide `TABLES_TO_TRUNCATE`, où sont `mcp_keys` et
+  `mcp_server_settings` (`kesh-db/src/backup.rs:78`, `:83`) ; **aucun `afterAll`**, le recontrôle seul reste à l'étape 0.)*
 - **Écartées** : vérifier seulement la forme du secret (un secret faux bien formé passerait).
 - **Réversible** : oui.
 
@@ -204,3 +221,37 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
 - **Retenu** : libellé « Dernière utilisation » et une note qui dit ce qu'il mesure ; formulation relue à l'étape 0.
 - **Écartées** : « Dernier appel » (faux) ; masquer la colonne (le kickoff la demande).
 - **Réversible** : oui.
+
+### C-32-7-21 — Le repli égal à la valeur fr-CH : G13 étendue par préfixe
+
+- **Contexte** (validation P1, F2) : l'AC-14 s'adossait à une « garde frontend existante » qui tiendrait le repli égal
+  au fr-CH. Lue au dépôt, aucune ne le fait pour un domaine : `i18n-un-repli-par-cle.test.ts` compare les replis d'une
+  clé **entre eux** (`parTexte.size > 1`, l. 216), sur ses seuls `PREFIXES` (l. 51-72), jamais au catalogue — l'option
+  préférée de l'orchestrateur (y ajouter `mcp-server-`) n'imposerait donc pas l'égalité ; G13
+  (`i18n-repli-divergent-actif.test.ts`) compare bien au catalogue (`valeurDuCatalogueFr`, l. 188 ; test l. 248-252),
+  mais sur la liste fermée `REPLIS_A_SITE_UNIQUE` (l. 216-235). Le commentaire de G22 (`textes_coherents.rs:1688`)
+  répétait la même prémisse fausse.
+- **Retenu** : étendre G13 dans son fichier par une liste de **préfixes** (`['mcp-server-']`, plus `nav-admin-mcp`
+  nommée) ; pour chaque clé du préfixe relevée par `replisParCle()`, replis égaux à `[valeurDuCatalogueFr(cle)]`, par une
+  fonction pure `ecartsAuCatalogue` à témoins rouge et vert ; ensemble des clés du relevé **égal** à celui du FTL fr-CH
+  (une clé bâtie par gabarit ou morte rougit) ; compte exact en dur. Le commentaire de G22 corrigé (« aucune garde ») ;
+  le trou de `admin-backup-` laissé à l'orchestrateur (issue ou angle mort).
+- **Écartées** : ajouter `mcp-server-` aux `PREFIXES` de `i18n-un-repli-par-cle` (n'impose pas l'égalité au catalogue) ;
+  inscrire quelques clés à `REPLIS_A_SITE_UNIQUE` (ne ferme pas la classe : une clé neuve y échapperait) ; un fichier de
+  test neuf (redoublerait `replisParCle` et `valeurDuCatalogueFr`, contre la règle DRY) ; retirer la propriété de
+  l'AC-14 (le repli de l'encadré de l'AC-6 porte une décision de Guy).
+- **Réversible** : oui — une liste et un test.
+
+### C-32-7-22 — `sec:mcp-client` appartient à la 32-7 ; la 32-11 l'amende en place
+
+- **Contexte** (validation P1, F8) : la 32-7 écrit `sec:mcp-client` (où va la clé, comment configurer Claude Code et
+  Hermes Agent) ; le kickoff donne à la 32-11 « manuel d'administration (*Brancher un agent*, configuration de Claude
+  Code) » (`epic-32-serveur-mcp.md:491-493`), et la fiche 32-9 (l. 1325-1327) lui attribue aussi « la clé en portée
+  `local`/`user` » : deux sections du même manuel diraient la même chose.
+- **Retenu** : une seule propriétaire, la **32-7** — l'encart du secret renvoie à `sec:mcp-client`, qui doit exister dès
+  que l'écran montre une clé ; la 32-11 n'ouvre pas de seconde section de configuration : *Brancher un agent* (le
+  parcours joué) y renvoie et, les gestes éprouvés, **amende `sec:mcp-client` en place**. Demande à l'orchestrateur 6
+  (inscrire ce partage à la section 32-11 de l'epic).
+- **Écartées** : donner la configuration à la 32-11 (l'encart renverrait à une étiquette absente, `??` au PDF, jusqu'à
+  la 32-11) ; laisser deux textes (dérive assurée).
+- **Réversible** : oui — un déplacement de texte entre deux stories du même epic.
