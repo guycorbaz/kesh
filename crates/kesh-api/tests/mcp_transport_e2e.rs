@@ -971,8 +971,27 @@ async fn pat_refuse_a_l_endpoint(pool: MySqlPool) {
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn session_refusee(pool: MySqlPool) {
-    let (c, u, _, _) = servie(&pool, SendValidation::Exempt).await;
+    let (c, u, _, cle_mcp) = servie(&pool, SendValidation::Exempt).await;
     let b = banc(&pool, Registre::standard());
+    // Une clé MCP **valide** dans le cookie, sans en-tête : le cookie n'est
+    // jamais lu (sans ce cas, lire le cookie passerait inaperçu : un JWT y
+    // serait refusé par `authentifier` de toute façon).
+    let mut h = en_tetes(None);
+    h.insert(
+        "cookie",
+        HeaderValue::from_str(&format!("kesh_access_token={cle_mcp}")).unwrap(),
+    );
+    let r = b.avec("POST", "/mcp", &h, LISTE).await;
+    assert_eq!(
+        (r.statut, r.corps.as_slice()),
+        (StatusCode::UNAUTHORIZED, TEXTE_NON_AUTHENTIFIE.as_bytes()),
+        "clé MCP dans le cookie"
+    );
+    assert_eq!(
+        b.mcp(Some(&cle_mcp), LISTE).await.statut,
+        StatusCode::OK,
+        "témoin : la même clé en Bearer"
+    );
     let jeton_session = jwt(u, c);
     let r = b.mcp(Some(&jeton_session), LISTE).await;
     assert_eq!(
