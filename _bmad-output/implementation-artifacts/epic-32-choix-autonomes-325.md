@@ -589,3 +589,78 @@ liste) est fermée par C-32-5-37.
   l'état que laisse #528 —, si bien que seule la jointure à `companies` refuse la clé. Ma4c est rejouée (mutation mx5).
 - **Réversible** : oui.
 
+## Développement de la 32-5d (2026-10-25, Opus 5.5, en autonomie)
+
+### C-32-5-45 — Une seule forme de clé révoquée, deux listes au détail
+
+- **Contexte** : AC-d2 demande `mcp_keys_revoked: Vec<RevokedMcpKey>` (aucun condensat) ; `RevokedApiKey`
+  (`companies.rs:247` à `d993106c`) a exactement les champs voulus (id, nom, créateur, dates). C-32-5-12 écarte de
+  **mêler** les deux natures de clé dans une même liste, non de partager une forme.
+- **Retenu** : une structure `RevokedKey` (mêmes champs, `Serialize`), et deux alias publics `RevokedApiKey` et
+  `RevokedMcpKey` ; les deux listes restent distinctes dans `OrphanPrincipals` et au détail d'audit
+  (`api_keys_revoked`, `mcp_keys_revoked`). Les tests qui construisent `companies::RevokedApiKey { … }` compilent
+  inchangés.
+- **Écartées** : deux structures identiques (code dupliqué, règle DRY) ; une liste unique avec un champ de nature
+  (C-32-5-12 l'écarte : le JSON d'audit changerait de sens en silence).
+- **Conséquence** : le compilateur ne distingue pas une clé d'API révoquée d'une clé MCP révoquée — seul le nom du
+  champ les sépare. Les tests à égalité stricte (AC-d2) le gardent.
+- **Réversible** : oui.
+
+### C-32-5-46 — Deux aides privées pour la règle des orphelins, la table en littéral
+
+- **Contexte** : étendre la règle aux clés MCP dupliquait la sélection verrouillante et le `UPDATE` de repointage.
+- **Retenu** : `lock_active_orphan_keys(tx, table)` et `repoint_orphans(tx, table, target)`, privées à
+  `companies.rs`, `table: &'static str` (toujours un littéral du module : `users`, `api_keys`, `mcp_keys`) ; la
+  révocation reste celle de chaque dépôt (`api_keys::revoke_in_tx`, `mcp_keys::revoke_in_tx`, verrou optimiste
+  propre). L'ordre des verrous `users → api_keys → mcp_keys` est celui des appels.
+- **Écartée** : un `enum` de table (plus lourd pour trois littéraux d'un même module).
+- **Réversible** : oui.
+
+### C-32-5-47 — Les deux montages d'orphelins, et les consommateurs éprouvés au-delà de la fiche
+
+- **Contexte** : la fiche nomme le montage commun `installations_atteintes.rs:38-41` ; `onboarding_audit_e2e.rs` a
+  **son propre** montage, `make_orphans` (l. 2268-2292 à `d993106c`), que la fiche ne nomme pas. Et les tests (i)/(ii)
+  de l'AC-d2 portent sur la règle et sur `repair_installation_in_tx` : un consommateur (`kesh_seed::reset_demo`,
+  `routes::onboarding`) qui oublierait les deux champs ne rougirait que par les attentes à égalité stricte où il n'y a
+  rien à révoquer (`[]`, `0`).
+- **Retenu** : `make_orphans` orpheline aussi `mcp_keys` (boucle sur les trois tables) ; les tests 6a (remise à zéro
+  d'une installation #528) et 6c (choix de la langue sans société) montent une clé MCP réelle (`generate_mcp_key`)
+  avant le montage, et vérifient qu'elle est révoquée, rattachée, refusée par `authentifier` (401), et qu'elle paraît au
+  détail (`installation.reset`, `company.created`, ce dernier à égalité stricte). Le montage de `bootstrap.rs`
+  (`montage_1`) n'ajoute pas de clé MCP : le démarrage n'écrit les deux champs qu'au journal du serveur
+  (`tracing::info!`, que rien ne capture) et délègue l'entrée d'audit à `repair_installation_in_tx`, éprouvée par
+  `repair_with_only_an_orphan_mcp_key` ; ses attentes strictes reçoivent `[]` et `0`.
+- **Réversible** : oui.
+
+### C-32-5-48 — Le manuel ne renvoie pas à une page des clés MCP qui n'existe pas encore
+
+- **Contexte** : AC-d3 ; la réparation dit des clés d'API qu'« elles paraissent, révoquées, sur la page des clés ».
+  Aucun écran ne liste encore les clés MCP (32-7).
+- **Retenu** : les clés MCP font l'objet d'une phrase à part (« depuis la 0.16.0, les clés du serveur MCP qui la
+  désignaient sont traitées de même : révoquées, puis rattachées à la société »), sans la page ; la remise à zéro dit
+  qu'elle conserve les clés du serveur MCP (« revoyez-les » s'y applique : une clé de démonstration garde son accès en
+  lecture aux livres de production) et que le serveur MCP est **désactivé** ; le détail d'`installation.repaired` porte
+  les deux natures de clé « en deux listes distinctes ». La 32-7, qui écrit l'écran et la section *Le serveur MCP*,
+  reprend ces passages pour y renvoyer (report déjà inscrit à sa section du fichier d'epic).
+- **Réversible** : oui.
+
+### C-32-5-49 — Pas d'entrée de CHANGELOG pour la partie d
+
+- **Contexte** : le CHANGELOG de la 0.16.0 annonce déjà les clés et réglages « du futur serveur MCP » (32-5a). Avant
+  la 32-5c, aucune clé MCP ne se crée hors des tests ; le comportement de la partie d n'a donc aucun effet observable
+  sur une installation.
+- **Retenu** : aucune ligne neuve ; la 32-5c (création des clés) ou la 32-7 (écran) écrira l'entrée qui annonce les clés
+  du serveur MCP, et la conservation à la remise à zéro peut y figurer. Le manuel, lui, est corrigé ici (C-32-5-22),
+  parce qu'il décrit le comportement du code.
+- **Écartée** : une ligne « la remise à zéro conserve les clés MCP » qui annoncerait un effet sur des clés que personne
+  ne peut encore créer.
+- **Réversible** : oui (une ligne à ajouter).
+
+### C-32-5-50 — Trois mutations de plus que la fiche
+
+- **Contexte** : Md1 à Md4 couvrent la partition, la révocation, `is_empty` et le détail de la réparation ; ni l'oubli
+  des champs par `kesh_seed::reset_demo` ou par `routes::onboarding`, ni l'absence de repointage des clés MCP.
+- **Retenu** : md5 (`kesh-seed` sans `mcp_keys_revoked`), md6 (`routes/onboarding.rs` sans `mcp_keys_revoked`), md7
+  (`mcp_keys_repointed` forcé à 0, sans `UPDATE`) — jouées comme Md1 à Md4.
+- **Réversible** : sans objet.
+

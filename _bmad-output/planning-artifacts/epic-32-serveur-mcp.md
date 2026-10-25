@@ -423,7 +423,10 @@ en portée `local`/`user` (jamais en `.mcp.json` versionné sauf `${VARIABLE}`, 
 au manuel (C-32-5-10) ; (3) **la restauration d'un serveur activé** : les réglages sont restaurés tels quels (hypothèse
 Q7, C-32-5-11) — l'écran et le manuel disent qu'un serveur actif dans la sauvegarde l'est après l'import ; (4) **les
 renvois** depuis les passages corrigés par la 32-5d : `admin-manual.tex` § remise à zéro (l. 1414) et réparation
-(l. 1416, 2461), `user-manual.tex` l. 190, 3202, 3209-3212.
+(l. 1416, 2461), `user-manual.tex` l. 190, 3202, 3209-3212. *(Annoté le 2026-10-25, développement de la 32-5d : à
+`20cbf50a`, ces passages sont aux l. 1414, 1416, 2467 et 2472 du manuel d'administration, et aux l. 190, 3204-3205 et
+3214-3215 du manuel utilisateur ; aucune phrase n'y renvoie encore à une page des clés MCP, que la 32-7 écrira —
+C-32-5-48.)*
 
 ### 32-8 — La validation avant envoi
 
@@ -494,6 +497,11 @@ Modules : `kesh-api/tests`, docs (`api-external.md`), manuels FR (admin, utilisa
 parcours est décrit pas à pas au manuel **et rejoué depuis le PDF** ; le test de contrat rougit si une réponse s'écarte
 de la révision figée ; aucun texte ne promet une écriture. **Risque** : moyen — documentation exécutée (31-4) ; la fiche
 **fixe le périmètre du parcours** dès le départ pour éviter le recyclage qu'a connu la 31-4.
+
+*(Ajouté le 2026-10-25 par l'orchestrateur, sur report des fiches 32-6 (R13) et 32-10a (C-32-10a-29) : deux textes
+publiés deviennent faux pendant l'epic et reviennent à la 32-11 — `README.md:233` (« montrées avant de partir », faux
+pour une clé `dispensée` ; « aucune écriture par l'agent dans cette version », faux dès `proposer_prompt`) et
+`website/roadmap.html:375` (mêmes deux affirmations). La 32-11 les réécrit, en recomptant les lignes à son étape 0.)*
 
 ### Release v0.16.0
 
