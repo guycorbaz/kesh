@@ -273,7 +273,9 @@ passages du manuel qui les décrivent (C-32-5-22).
    `entities/api_key.rs:94-111`). `kesh_db::entities::mcp_server_settings` : `McpServerSettings` et
    `McpServerSettings::defaults(company_id)` (C-32-5-8 à 10 ; constantes nommées). Tests unitaires : aller-retour de
    chaque portée, chaîne inconnue refusée, ensemble vide refusé, doublon normalisé, ordre canonique, `Debug` sans
-   condensat.
+   condensat. *(Révisé le 2026-10-25, revue de code P1 de la 32-5a, E1 — C-32-5-37 : l'**entrée d'API** reste
+   stricte (`McpScopes::parse`, `from_json`) ; la **lecture d'une ligne stockée** est tolérante — `StoredMcpScopes`,
+   portée inconnue mise de côté et journalisée, jamais accordée ; `McpKey.scopes` est un `StoredMcpScopes`.)*
 5. **AC-a5 — dépôts.** `repositories::mcp_keys` : `create_in_tx`, `list_by_company(include_revoked)`,
    `find_by_id_for_company` (`None` pour une autre société), `find_active_auth_by_key_hash` (clé non révoquée, non
    expirée, **jointe à `users` et à `companies`** — une clé orpheline n'est jamais trouvée, C-32-5-12), `revoke_in_tx`
@@ -739,6 +741,8 @@ suivante.
 pub enum McpScope { BooksRead, InvoicesRead, ContactsRead, DocumentsRead, PromptsWrite }
 impl McpScope { pub const ALL: [McpScope; 5] = [/* … */]; }
 pub struct McpScopes(BTreeSet<McpScope>);            // non vide ; encode/décode JSON strict
+// (révisé le 2026-10-25, revue P1 de la 32-5a — C-32-5-37 : strict en ENTRÉE d'API ;
+//  la lecture d'une ligne passe par StoredMcpScopes, tolérante)
 pub enum SendValidation { Required, Exempt }          // "required" | "exempt"
 
 // kesh-api/src/services/cles_mcp.rs
@@ -889,11 +893,17 @@ développement fait chaque correction **à l'étape 0**, et la déclare au Chang
   L'`impl Decode for McpScopes` n'existe plus. `McpScope` (alias `Portee` en AC-b2) est inchangé.
 - Le test AC-b6 (clé restaurée) peut s'appuyer sur `mcp_tables_roundtrip_…` (`admin_backup_e2e.rs`), qui éprouve déjà
   qu'une clé révoquée après l'export redevient active à l'import.
+- **R5 de la revue P2 (LOW, bruit de journal)** : `auth_row` journalise deux fois une clé sans portée connue
+  (`read_scopes`, puis le refus), et une clé **mixte** (connues + inconnues), qui s'authentifie, émet son `warn!` à
+  **chaque** requête MCP. À la 32-5b (ou à la 32-6, qui sert ces requêtes) : ne journaliser l'avertissement de lecture
+  que sur les chemins d'administration, ou le dédupliquer — sans jamais nommer le condensat.
 
 ### Pour la 32-5c (ajouté à la revue de code P1 de la 32-5a ; LOW reportés)
 
-- **B1 = E4 — les blancs Unicode du nom.** `chk_mcp_keys_name_nonempty` (`REGEXP '[^[:space:]]'`) refuse U+00A0 en base
-  (éprouvé à la main au développement), mais U+3000 et U+200B ne sont pas éprouvés, et la migration ne se modifie plus
+- **B1 = E4 — les blancs Unicode du nom.** `chk_mcp_keys_name_nonempty` (`REGEXP '[^[:space:]]'`) : son comportement sur U+00A0,
+  U+3000 et U+200B est **non éprouvé** *(rectifié à la revue de code P2, R4 : la première rédaction disait U+00A0
+  « refusé, éprouvé à la main » ; un essai sur une table jetable au développement l'avait vu refusé, mais aucun test ni
+  journal ne le consigne)*, et la migration ne se modifie plus
   (P8). La validation de la route (AC-c3) rogne et refuse un nom fait de blancs **Unicode** (`char::is_whitespace`, plus
   les caractères de largeur nulle), avec ses cas de test.
 - **B3 — `mcp_server_settings.version` sans `CHECK (version >= 1)`.** Une ligne à `version = 0` (SQL à la main,
@@ -1331,7 +1341,9 @@ bornes) : `mcp_keys_repository.rs` 0 → 21, `entities/mcp_key.rs` 0 → 7, `ent
     migration de plus), E3 (justifications `Durable` sans le marqueur).
   - **Propagation** : `strict`, `jamais ignorée`, `fails_to_decode` grepés sur le code, les tests et le manuel → le
     doc-comment du module `mcp_key.rs` disait encore la lecture stricte : corrigé (`a5cc29c4`) ; les autres occurrences
-    parlent de l'entrée d'API, de `send_validation` ou d'autres sujets.
+    parlent de l'entrée d'API, de `send_validation` ou d'autres sujets. *(Annoté le 2026-10-25, revue de code P2, R1 :
+    faux à sa date — `mcp_key.rs:127` et `:414` parlaient encore de la **colonne** ; et le grep n'avait couvert ni la
+    fiche (AC-a4, Dev Notes) ni le registre (C-32-5-3). Corrigés en P2, cf. l'entrée « Revue de code P2 ».)*
   - **Mutations de la remédiation** (`325a-p1r-mutations.log`) : **5 jouées, 5 tuées** — Mp1 (lecture redevenue
     stricte) → `a_stored_unknown_scope_is_ignored_and_the_known_ones_remain` ; Mp2 (clé sans portée connue qui
     authentifie, portée inventée) → `a_key_without_any_known_scope_is_listed_and_revocable_but_never_authenticates` ;

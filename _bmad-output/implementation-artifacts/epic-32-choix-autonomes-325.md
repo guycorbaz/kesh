@@ -56,6 +56,9 @@ de ligne cités sont ceux de `e59d63e8`.
   (`backup.rs:307-316`) et l'import la rebinde.
 - **Retenu** : `scopes JSON NOT NULL`, `CHECK` : JSON valide, tableau, au moins un élément ; tri et unicité imposés à
   l'écriture par Rust ; décodage **strict** (une portée inconnue est une erreur, jamais ignorée en silence).
+  *(Révisé le 2026-10-25, revue de code P1 de la 32-5a, E1 → **C-32-5-37** : le décodage reste strict en **entrée
+  d'API** ; la **lecture d'une ligne stockée** est tolérante — une portée inconnue y est mise de côté et journalisée,
+  jamais accordée ; renvoi ajouté à la revue de code P2, R1.)*
 - **Écartées** : `SET(...)` MariaDB (membres contrôlés par le type, mais le rejet d'un membre inconnu dépend du
   `sql_mode`, que la production n'applique pas — #669) ; une table fille (une table de plus à l'inventaire, une
   jointure à chaque authentification) ; une chaîne à virgules (format ad hoc).
