@@ -47,3 +47,42 @@ pub async fn create_pool(
         .await
         .map_err(map_db_error)
 }
+
+/// Le pool **en lecture seule** des outils du serveur MCP — Story 32-6a
+/// (AC-a25, C-32-6-9, C-32-6-35 ; Q11, tranchée le 2026-10-24).
+///
+/// Copié de `depuis` (mêmes options de connexion, même délai d'acquisition) ;
+/// **aucun autre réglage de session** que celui-ci, le pool de production n'en
+/// ayant pas (#669) : l'API et le MCP lisent la même chose.
+///
+/// - `after_connect` : `SET SESSION TRANSACTION READ ONLY` — MariaDB refuse
+///   alors toute écriture et tout `SELECT … FOR UPDATE` (erreur 1792) ;
+/// - `after_release` rend **toujours** `Ok(false)` : **chaque connexion est
+///   fermée à sa restitution** (`sqlx-core` 0.8.6, `pool/connection.rs`), si
+///   bien que chaque emprunt part d'une connexion neuve, passée par
+///   `after_connect`. Aucun état de session ne survit d'un emprunt à l'autre,
+///   quelle que soit l'instruction qui l'aurait défait — la forme sans
+///   `SESSION`, qui ne vaut que pour la transaction suivante et que `@@session`
+///   ne montre pas, comprise. Coût : une connexion par emprunt.
+///
+/// ⚠️ **Ce que cette fabrique ne ferme pas** : une forme qui défait le mode de
+/// session **dans** un emprunt, suivie d'une écriture dans le même emprunt. La
+/// garde lexicale `lecture_seule_jamais_defaite`
+/// (`kesh-api/tests/mcp_gardes_lexicales.rs`) lit le texte du dépôt ; un SQL
+/// composé à l'exécution lui échappe.
+///
+/// ⚠️ `connect_lazy_with` lance les tâches d'entretien du pool : l'appel exige
+/// un runtime Tokio.
+pub fn pool_lecture_seule(depuis: &MySqlPool, max_connections: u32) -> MySqlPool {
+    MySqlPoolOptions::new()
+        .max_connections(max_connections)
+        .acquire_timeout(depuis.options().get_acquire_timeout())
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                conn.execute("SET SESSION TRANSACTION READ ONLY").await?;
+                Ok(())
+            })
+        })
+        .after_release(|_conn, _meta| Box::pin(async move { Ok(false) }))
+        .connect_lazy_with((*depuis.connect_options()).clone())
+}
