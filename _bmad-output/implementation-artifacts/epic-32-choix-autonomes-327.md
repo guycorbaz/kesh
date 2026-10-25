@@ -295,3 +295,29 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
 - **Écartées** : un bouton « rétablir les défauts » à l'écran (exigerait une route qui supprime la ligne : `kesh-api`
   hors périmètre, la story n'ajoute aucune route) ; un `PUT` toléré sans version lue (contournerait le verrou optimiste).
 - **Réversible** : oui — une phrase et un paragraphe.
+- *Annotation du 2026-10-25, validation P3 (F2, R2, F6)* : « Aucune voie de réparation dans Kesh » ci-dessus est trop
+  large — la restauration est une fonction de Kesh. Lire : **aucune voie depuis l'écran**, ni par une action ciblée de
+  Kesh. L'ordre des voies au manuel devient : d'abord supprimer la ligne par SQL (la moins coûteuse), en dernier
+  recours restaurer une sauvegarde antérieure, qui remplace toute l'installation et refuse une sauvegarde d'une
+  version qui ne porte pas les mêmes tables (`admin-manual.tex:2249`, `:2262`) ; le renvoi sur la réinitialisation va à
+  la rangée `KESH\_PRODUCTION\_RESET` (`sec:env-vars`, l. 767). « Un tableau JSON illisible » se lit : un tableau qui
+  ne contient pas que des chaînes — la base garantit un tableau JSON valide (migration `20261025000001`, l. 81-83).
+  Un troisième état, une entrée invalide des mandataires, se répare **à l'écran** (fiche, AC-5).
+
+### C-32-7-25 — Une clé dont le créateur est désactivé ou rétrogradé : dit au manuel, non à l'écran
+
+- **Contexte** (validation P3, F1) : une clé MCP n'authentifie que tant que son créateur est actif et de rôle
+  `Admin`, relus à chaque requête (`crates/kesh-api/src/services/cles_mcp.rs:20-21`, `:47`, `:94-99` ; refus avant
+  `touch_last_used`, `:100`). La liste `GET /api/v1/admin/mcp/keys` ne porte que `createdByUserId`
+  (`kesh-db/src/repositories/mcp_keys.rs:197-217`, sans jointure ; `routes/mcp_keys.rs:260-266`) : l'écran montre
+  donc *Active* une clé qui n'authentifie plus.
+- **Retenu** (décision de l'orchestrateur : « le plus simple ») : la phrase au manuel (AC-18 (2)), une ligne à *Ce que
+  les gardes ne voient pas*, une mention à l'AC-8 (b) ; **aucun état à l'écran**.
+- **Écartées** : un état « inopérante » calculé côté serveur (la route ne le fournit pas ; il faudrait joindre
+  `users` dans `list_by_company` et ajouter un champ à `McpKeyResponse` — du code de production de `kesh-db` et de
+  `kesh-api`, hors du seul fichier de test que la story touche dans `kesh-api`) ; un état calculé à l'écran depuis
+  `/api/v1/users` (même écart que C-32-7-16 : une requête et un couplage de plus) ; une phrase fixe sous le tableau
+  (« *Active* : ni révoquée ni expirée ») — non retenue, la consigne bornant la correction au manuel et à la liste
+  des gardes quand l'écran ne peut pas calculer l'état.
+- **Réversible** : oui — un état ajouté plus tard ne change rien au manuel ; lié au point 4 soumis à Guy (créateur
+  non affiché).

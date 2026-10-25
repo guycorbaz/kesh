@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-7`, branche `story/32-7` partie de `main`
 `966baed5` (toute la 32-5 fusionnée ; 32-6, 32-8, 32-9 et 32-10a non fusionnées). Registre :
-`epic-32-choix-autonomes-327.md` (C-32-7-1 à C-32-7-24 ; C-32-7-21 et 22 ajoutés en validation P1, C-32-7-23 et 24 en validation P2). Clé courte : `327`. Issue de l'epic : #723 (CR « Serveur MCP
+`epic-32-choix-autonomes-327.md` (C-32-7-1 à C-32-7-25 ; C-32-7-21 et 22 ajoutés en validation P1, C-32-7-23 et 24 en validation P2, C-32-7-25 en validation P3). Clé courte : `327`. Issue de l'epic : #723 (CR « Serveur MCP
 intégré à Kesh »), en `refs` seulement. Les numéros de ligne cités sont ceux de `966baed5`, sauf mention d'une fiche
 voisine (lue dans son worktree, en lecture seule, à la date de rédaction).*
 
@@ -151,7 +151,8 @@ pas** —, afin d'ouvrir ce canal en sachant exactement ce qu'il expose, et de p
 21. **La garde des clés demandées** (`frontend/src/lib/shared/i18n-keys.test.ts` ; ajouté en validation P2, F1 = R1) :
     - les clés de menu sont des **données** (`{ i18nKey, fallback }`), résolues par `i18nMsg(item.i18nKey,
       item.fallback)` (`+layout.svelte:174-176`) — un site **non littéral**, que `replisParCle()` de
-      `i18n-repli-divergent-actif.test.ts` écarte (`site.arg?.kind !== 'literal'`, l. 121) ; leurs clés sont déclarées
+      `i18n-repli-divergent-actif.test.ts` écarte (`site.arg?.kind !== 'literal'`, l. 122 — « l. 121 » jusqu'en
+      validation P3, F3) ; leurs clés sont déclarées
       à `FAMILLES_RESOLUES['nav-']` (`i18n-keys.test.ts:858-868`, dont `'admin-backup'`, `'admin-restore'`,
       `'audit-log'`) ;
     - ce que cette famille **vérifie**, et seulement cela : chaque clé déclarée existe au catalogue **fr-CH**
@@ -264,10 +265,12 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
      *Enregistrer* **reste désactivé** — sans `version` lue, rien ne s'envoie (b). L'état d'échec porte en outre une
      **phrase fixe** qui dit ce qu'il signifie (validation P2, R3 ; C-32-7-24) : « Les réglages n'ont pas pu être lus :
      tant qu'ils ne le sont pas, rien ne s'enregistre depuis cet écran. Si l'erreur persiste, voir le manuel
-     d'administration, § *Activer le serveur*. » — c'est le cas d'une **ligne de réglages corrompue** (un tableau JSON
-     illisible : `decode_list`, `kesh-db/src/repositories/mcp_server_settings.rs:40-45`, rend `DbError::Invariant`,
-     traduit en **500** `INTERNAL_ERROR`, `kesh-api/src/errors.rs:4270-4276` ; #738 B8). Test : la phrase présente à
-     l'échec du `GET` (500 simulé), absente au succès (témoin).
+     d'administration, § *Activer le serveur*. » — c'est le cas d'une **ligne de réglages corrompue** : un tableau qui
+     ne contient pas que des chaînes (`[1]`) — la base garantit un tableau JSON **valide** (`CHECK (JSON_VALID(…) AND
+     JSON_TYPE(…) = 'ARRAY')`, migration `20261025000001_mcp_keys_and_server_settings.sql:81-83`), mais `decode_list`
+     attend des chaînes (`kesh-db/src/repositories/mcp_server_settings.rs:40-45`) et rend `DbError::Invariant`,
+     traduit en **500** `INTERNAL_ERROR`, `kesh-api/src/errors.rs:4270-4276` ; #738 B8 ; validation P3, F6). Test : la
+     phrase présente à l'échec du `GET` (500 simulé), absente au succès (témoin).
    - (h) **Une phrase fixe sous *Origines admises*** (validation P2, F14 ; fiche 32-6 à `dd4b8398`, l. 1279-1283) :
      « Une origine admise n'ouvre le serveur à aucune page web : elle ne sert qu'aux clients qui envoient un en-tête
      `Origin` sans être des navigateurs. » Test : la phrase rendue, cherchée par son repli fr-CH.
@@ -277,20 +280,29 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
        `routes/mcp_server_settings.rs:35-38`) est rendue telle quelle par le `GET`, et chaque `PUT` à `version: 0` rend
        alors 409 — (e) recharge, et l'enregistrement suivant rend encore 409. La boucle n'est pas automatique (elle suit
        chaque clic) ;
-     - une ligne **corrompue** (tableau JSON illisible) rend 500 au `GET` : (g) s'affiche, *Enregistrer* reste
+     - une ligne **corrompue** (un tableau qui ne contient pas que des chaînes, (g)) rend 500 au `GET` : (g) s'affiche, *Enregistrer* reste
        désactivé (validation P2, R3 ; #738 B8, seconde moitié) ; et même un `PUT` qui porterait la bonne `version`
        rendrait 500 : la route relit l'« avant » de l'audit par `get_or_defaults` avant d'écrire
        (`routes/mcp_server_settings.rs:245`) — la ligne ne se réécrit donc pas non plus par l'API.
-     Ni l'un ni l'autre ne se répare **dans Kesh** sur une installation de production (C-32-7-24) : la remise à zéro
+     Ni l'un ni l'autre ne se répare **depuis l'écran**, ni par une action ciblée de Kesh, sur une installation de
+     production (C-32-7-24, annoté en validation P3, F2) : la remise à zéro
      efface bien la ligne (`kesh-db/src/backup.rs:105-116`, `mcp_server_settings` hors de `RESET_PRESERVED_TABLES`),
      mais elle est **refusée** au-delà de l'étape 2 de l'assistant (`kesh-api/src/routes/onboarding.rs:255-268` :
      « Une installation de production n'est jamais remise à zéro au-delà de l'étape 2 ») ; la réparation au démarrage
      (#528, 32-5d) ne touche pas `mcp_server_settings` (`grep -rn 'mcp_server_settings' crates --include=*.rs` hors
      entité, dépôt, route et tests : `lib.rs`, `audit_labels.rs`, `exports/global.rs`, `backup.rs`, `post_restore.rs`
-     seulement — aucun dans `kesh-seed` ni dans la réparation). Restent, **hors de l'écran** : restaurer une sauvegarde
-     antérieure (elle remplace la ligne, et tout le reste) ou supprimer la ligne par SQL (le `GET` rend alors les
-     défauts à `version: 0`, fait 5 ; serveur désactivé). Le manuel le dit (AC-18 (1)) ; l'écran n'a pas de cas propre
-     au-delà de (e) et (g).
+     seulement — aucun dans `kesh-seed` ni dans la réparation). Restent, **hors de l'écran**, dans cet ordre
+     (validation P3, F2) : d'abord **supprimer la ligne par SQL**, la voie la moins coûteuse (le `GET` rend alors les
+     défauts à `version: 0`, fait 5 ; serveur désactivé) ; en dernier recours, **restaurer une sauvegarde antérieure**,
+     qui remplace **toute** l'installation, non la seule ligne (`admin-manual.tex:2262`), et refuse une sauvegarde
+     d'une version qui ne porte pas les mêmes tables — celles de la 0.15.0 et d'avant (`admin-manual.tex:2249`). Le
+     manuel le dit (AC-18 (1)) ; l'écran n'a pas de cas propre au-delà de (e) et (g).
+     Un troisième état, lui, **se répare à l'écran** (validation P3, F7) : une entrée invalide de *Mandataires de
+     confiance* posée hors de l'écran (sauvegarde, SQL) coupe le serveur de la société, filtre activé ou non (P7-H3,
+     AC-18 (4)), alors que la case *Serveur activé* reste cochée — le `GET` la rend telle quelle (une chaîne se décode).
+     Tant qu'elle est dans la zone, *Enregistrer* rend le 400 du serveur qui la nomme (`validate_settings`,
+     `routes/mcp_server_settings.rs:198-208`, (d)) ; la retirer et enregistrer rétablit le serveur. L'écran ne
+     signale pas l'entrée avant l'enregistrement (*Ce que les gardes ne voient pas*).
 6. **AC-6 — ce que le filtre ne garantit pas, écrit à l'écran** (décision de Guy, 2026-10-25). Un encadré
    **permanent** de la section, quatre phrases au moins, dans les quatre locales :
    - (1) le filtre juge l'**adresse que voit Kesh** ; derrière **Traefik** non déclaré parmi les mandataires, tous les
@@ -308,11 +320,22 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
    Puis des **avertissements conditionnels**, informatifs, jamais bloquants (C-32-7-12), calculés sur les champs
    **tels qu'affichés** :
    - (a) filtre désactivé → « toute adresse est admise » ;
-   - (b) une plage admise de préfixe `/0` (`0.0.0.0/0`, `::/0`, ou toute entrée dont le préfixe, rogné, vaut 0) →
-     « cette plage admet toute adresse, comme un filtre désactivé » (#738 B3 = E5) ;
-   - (c) un **mandataire** de préfixe `/0` → « tout pair est cru sur son en-tête `X-Forwarded-For` » ;
+   - (b) une plage admise de préfixe `/0` (toute entrée dont le préfixe, rogné, vaut 0) → un avertissement qui
+     **nomme la famille** de l'entrée (IPv6 si elle contient `:`, IPv4 sinon) : « `0.0.0.0/0` admet tout client
+     IPv4 » ou « `::/0` admet tout client IPv6 », suivi de « pour admettre les deux familles, il faut les deux
+     entrées » (#738 B3 = E5 ; validation P3, R1 — la formulation « toute adresse, comme un filtre désactivé » était
+     fausse). *Fait sourcé* (code de la 32-6a, `kesh-32-6`, branche `story/32-6`, PR #760) : le pair est ramené à sa
+     forme canonique avant tout contrôle (`transport.rs:81`, `reseau.rs:64` et `:73` pour les entrées de
+     `X-Forwarded-For` — `IpAddr::to_canonical`, doc `reseau.rs:9-12` : une adresse IPv4 mappée `::ffff:a.b.c.d`
+     devient IPv4), puis chaque réseau est comparé par `IpNet::contains` (`reseau.rs:57`, `:128`), qui rend **faux**
+     entre familles différentes (`ipnet` 2.12.0, version de `Cargo.lock:1872-1873`, `src/ipnet.rs:1419-1426`). Une
+     adresse IPv4 mappée compte donc comme **IPv4** : `::/0` ne l'admet pas, `0.0.0.0/0` l'admet ;
+   - (c) un **mandataire** de préfixe `/0` → même règle de famille : « `0.0.0.0/0` : tout pair IPv4 est cru sur son
+     en-tête `X-Forwarded-For` » ou « `::/0` : tout pair IPv6 … » (validation P3, R1) ;
    - (d) filtre activé et aucune plage admise → « personne n'est admis ».
-   Tests : chaque avertissement **présent** quand sa condition l'est, **absent** sinon (témoin) ; l'encadré (1)-(4)
+   Tests : chaque avertissement **présent** quand sa condition l'est, **absent** sinon (témoin) ; pour (b) et (c),
+   `0.0.0.0/0` seul rend la formulation IPv4 et non l'IPv6, `::/0` seul l'IPv6 et non l'IPv4, et aucune ne dit
+   « toute adresse » sans famille (validation P3, R1) ; l'encadré (1)-(4)
    présent dans tous les états, **chacune des quatre phrases** cherchée par son repli fr-CH (mutation M25) ;
    `100.64.0.0/10` dans le texte rendu.
 7. **AC-7 — l'activation, la restauration, la remise à zéro et l'adresse.** Sous la case *Serveur activé* :
@@ -339,7 +362,15 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
      inconnue **et** voit sa dernière utilisation posée — fiche 32-6 à `dd4b8398`, C-32-6-52 « Ce qui reste ») —
      jamais le libellé « dernier appel »
      (32-6, l. 1015-1018 ; la formulation exacte se recontrôle à l'étape 0 contre `services::cles_mcp::authentifier`
-     et la 32-6a).
+     et la 32-6a). « Reconnue » s'entend après les contrôles du créateur : une clé dont le créateur est désactivé ou
+     n'est plus Administrateur est refusée **avant** la pose (`services/cles_mcp.rs:94-100`).
+     ⚠️ **Le statut *Active* ne dit que « ni révoquée ni expirée »** (validation P3, F1 ; C-32-7-25) : une clé n'authentifie
+     que tant que son créateur est **actif et Administrateur**, relus à chaque requête (`services/cles_mcp.rs:20-21`,
+     `:47` `ROLE_CLE_MCP = Role::Admin`, `:94-99`) ; désactiver ce compte ou lui retirer le rôle coupe ses clés sans
+     les révoquer — l'agent reçoit le 401 d'une clé inconnue, la dernière utilisation ne bouge plus, et **l'écran montre
+     toujours la clé *Active*** : la liste ne porte ni l'état ni le rôle du créateur (`list_by_company`,
+     `kesh-db/src/repositories/mcp_keys.rs:197-217`, sans jointure ; fait 2). L'écran ne le dit pas ; le manuel le
+     dit (AC-18 (2)), et *Ce que les gardes ne voient pas* l'écrit.
    - (c) État vide : « Aucune clé MCP. » ; échec du chargement : le message de l'`ApiError`, sinon le générique
      (motif `api-keys-page.test.ts`, B6).
    - (d) Le créateur de la clé n'est **pas** affiché (la réponse ne porte que `createdByUserId`, fait 2 ; C-32-7-16).
@@ -413,10 +444,13 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
       (`String` et `JSON.stringify`), ne contient le secret ; **`toast` lui-même** espionné, et non ses seules méthodes
       (validation P2, R5 : `svelte-sonner` exporte `toast` comme une fonction appelable **et** porteuse de méthodes —
       espionner `toast.success`, `toast.info`… laisserait passer `toast(secret)`) : `vi.mock('svelte-sonner', …)` rend
-      un `toast` qui est un `vi.fn()` dont chaque méthode est aussi un `vi.fn()` — `success`, `info`, `warning`,
-      `error`, `custom`, `message`, `promise`, `dismiss`, `loading` (`svelte-sonner` 1.1.0,
-      `dist/toast-state.svelte.js:213-225`, `Object.assign(basicToast, {…})`, lu dans les `node_modules` du dépôt
-      principal ; relu au paquet du worktree à l'étape 0) ; un toast reste **permis** (succès de la
+      un `toast` qui est un `vi.fn()` portant **toutes les entrées de l'export réel**, chacune un `vi.fn()` (validation
+      P3, R3 = F4 : la liste fermée de neuf méthodes omettait la dixième) — à la rédaction, `success`, `info`,
+      `warning`, `error`, `custom`, `message`, `promise`, `dismiss`, `loading` et `getActiveToasts` (simulée
+      `vi.fn(() => [])` ; elle ne reçoit aucun argument et ne peut porter le secret), `svelte-sonner` 1.1.0,
+      `dist/toast-state.svelte.js:213-226`, `Object.assign(basicToast, {…})`, lu dans les `node_modules` du dépôt
+      principal ; l'ensemble des entrées se **relit au paquet du worktree à l'étape 0**, et le simulacre les reprend
+      toutes ; un toast reste **permis** (succès de la
       copie, de la révocation), mais **aucun argument** d'aucun de ces appels ne contient le secret (tranché en
       validation P1) ; `document.title` non plus ; **témoins** : `console.info('kesh_mcp_TEMOIN')`,
       `toast('kesh_mcp_TEMOIN')` et `toast.info('kesh_mcp_TEMOIN')`, posés par le test lui-même, sont bien vus par
@@ -575,7 +609,7 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
     démonstration, captures hors du dépôt (`/home/gcorbaz/devel/kesh-gate-logs/327-captures/`), jointes au Dev Agent
     Record et au prompt de la revue de code, **une par état touché** :
     (1) l'écran à l'état initial (désactivé, défauts, aucune clé, encadré AC-6) ; (2) serveur activé et enregistré,
-    date de modification ; (3) filtre désactivé, avertissement (a) ; (4) une plage `0.0.0.0/0`, avertissement (b) ; (5)
+    date de modification ; (3) filtre désactivé, avertissement (a) ; (4) une plage `0.0.0.0/0` et une `::/0`, avertissement (b) dans ses deux familles ; (5)
     un mandataire `/0`, avertissement (c) ; (6) filtre activé sans plage, avertissement (d) ; (7) une entrée refusée
     par le serveur (bits d'hôte) ; (8) une forme canonique réaffichée après enregistrement (`192.168.1.10` →
     `/32`) ; (9) le conflit de version ; (10) le formulaire de création, les cinq phrases de portée, les deux de
@@ -590,7 +624,11 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
     la **dernière utilisation** est renseignée, avec sa note (AC-8 (b) ; la clé que l'E2E (c) présente à `/mcp`, ou
     une présentation équivalente sur la démonstration) ; et, ajoutée en validation P2 (F11) : (29) le toast de succès
     de la copie du secret. La capture (22) montre la phrase fixe de l'échec de lecture (AC-5 (g)), la capture (1) celle
-    des *Origines admises* (AC-5 (h)).
+    des *Origines admises* (AC-5 (h)), la capture (4) l'avertissement (b) dans ses deux familles — une plage
+    `0.0.0.0/0` **et** une `::/0` (validation P3, R1). *Recette de la capture (22)* (validation P3, F6) : sur la base de
+    démonstration du worktree, `UPDATE mcp_server_settings SET allowed_networks = '[1]' WHERE company_id = <la société
+    de démonstration>` (un tableau JSON valide que `decode_list` refuse), la page rechargée ; puis la ligne rétablie
+    (valeur relevée avant l'`UPDATE`, ou la ligne supprimée — défauts) et le rétablissement constaté à l'écran.
     ⚠️ La capture (12) montre un **secret réel de la démonstration** : la clé est **révoquée** juste après, et la
     capture reste hors du dépôt.
 
@@ -611,14 +649,20 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
        chaque enregistrement rend un conflit (C-32-5-53, `routes/mcp_server_settings.rs:35-38` ; validation P1, R12) ;
        une ligne **corrompue** — c'est la ligne illisible qui fait paraître le serveur désactivé — empêche aussi l'écran
        de lire les réglages : il affiche une erreur de lecture et n'enregistre rien (AC-5 (g) ; #738 B8 ; validation P2,
-       R3). Phrase du manuel, pour les deux cas : « Ces deux états ne se réparent pas depuis l'écran, et la
-       réinitialisation, qui efface les réglages, n'est pas permise sur une installation de production
-       (voir la sous-section *Configuration de la company via l'onboarding*). Restaurez une sauvegarde antérieure, ou supprimez la ligne de la société dans
-       la table \texttt{mcp\_server\_settings} : le serveur revient alors à ses réglages par défaut, désactivé. » — voies
-       relues au code à l'étape 0 (C-32-7-24 ; AC-5, ⚠️ *Ce que l'écran ne répare pas*) ; cette sous-section
-       (`admin-manual.tex:1404` à `966baed5`) n'a pas d'étiquette : le renvoi se fait par son titre, ou par une
-       étiquette ajoutée à l'étape 0 et déclarée ; la commande SQL exacte, si le manuel la donne, suit les conventions de
-       ses autres procédures SQL (relues à l'étape 0), sinon il n'en donne pas.
+       R3). Phrase du manuel, pour les deux cas (récrite en validation P3, R2 et F2) : « Ces deux états ne se
+       réparent pas depuis l'écran, et la réinitialisation, qui efface les réglages, n'est jamais permise sur une
+       installation de production (\S\ref{sec:env-vars}, variable \texttt{KESH\_PRODUCTION\_RESET}). Supprimez la ligne
+       de la société dans la table \texttt{mcp\_server\_settings} : le serveur revient à ses réglages par défaut,
+       désactivé, et l'écran les relit. En dernier recours seulement, restaurez une sauvegarde antérieure
+       (\S\ref{sec:backup-ui-keshbackup}) : la restauration remplace toute l'installation, non la seule ligne, et refuse
+       une sauvegarde d'une version qui ne porte pas les mêmes tables, dont celles de la 0.15.0 et d'avant. » — voies
+       relues au code à l'étape 0 (C-32-7-24 ; AC-5, ⚠️ *Ce que l'écran ne répare pas*). Le renvoi va à la ligne qui
+       porte l'information : la rangée `KESH\_PRODUCTION\_RESET` du tableau des variables (`admin-manual.tex:767`,
+       « une installation de production ne l'est jamais »), sous `\label{sec:env-vars}` (l. 705) — la sous-section
+       *Configuration de la company via l'onboarding* (l. 1404), citée jusqu'en P3, ne le dit pas (R2) ;
+       `sec:backup-ui-keshbackup` existe (l. 2177 ; remplacement de toute l'installation l. 2262, compatibilité
+       l. 2249). La commande SQL exacte, si le manuel la donne, suit les conventions de ses autres procédures SQL
+       (relues à l'étape 0), sinon il n'en donne pas.
     2. `\subsection{Les clés du serveur MCP}\label{sec:mcp-cles}` — création par l'**Administrateur** seul ; le secret
        `kesh_mcp_…` **affiché une seule fois**, seul son condensat conservé ; les **portées** en tableau entre les
        lignes `% mcp-portees:debut` et `% mcp-portees:fin` (une ligne par portée : code, ce qu'elle ouvre — dont ce que
@@ -628,6 +672,12 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
        `Authorization: Bearer <clé MCP>` — ni un PAT ni le navigateur connecté ; au journal d'audit, un appel paraît
        **au nom du créateur de la clé**, sans la marque « clé API » (point 4 de la fiche 32-6, accepté) ; restauration
        (une clé révoquée depuis redevient active), remise à zéro (clés conservées), réparation (#528 : révoquées).
+       Et (validation P3, F1 ; C-32-7-25 ; AC-8 (b)), phrase du manuel : « Une clé n'authentifie que tant que son
+       créateur est actif et Administrateur, relus à chaque requête : désactiver ce compte, ou lui retirer le rôle
+       Administrateur, coupe ses clés sans les révoquer --- l'agent reçoit le refus d'une clé inconnue, et l'écran
+       \emph{Serveur MCP} les montre toujours actives. Rendre au compte son état ou son rôle rouvre celles qui ne sont ni révoquées ni expirées ; pour les
+       fermer, révoquez-les. » (`services/cles_mcp.rs:20-21`, `:47`, `:94-99`, relus au code à l'étape 0 ; le
+       précédent des clés d'API est `admin-manual.tex:2910`.)
     3. `\subsection{La politique de validation}\label{sec:mcp-validation}` — `requise` par défaut, `dispensée` désignée
        par l'administrateur ; ce que chacune fait, **sans** la phrase « une clé `required` ne peut appeler aucun outil »
        (devenue fausse avec la 32-8, fiche 32-8 l. 1397, 1408) ; renvoi à `sec:mcp-envois`.
@@ -638,12 +688,20 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
        le client voit une route absente ; filtre activé et liste vide = personne ; une entrée invalide des **plages**
        est ignorée, une entrée invalide des **mandataires** coupe le serveur MCP de la société (route absente, erreur au
        journal du serveur), **filtre activé ou non** (P7-H3 de la 32-6) — l'écran n'en laisse enregistrer aucune, une
-       sauvegarde ou une écriture SQL le peut ; sur une installation à **plusieurs** sociétés, la clé d'une société
+       sauvegarde ou une écriture SQL le peut ; phrase du manuel (validation P3, F7) : « l'écran affiche alors le
+       serveur activé, sans autre signe ; retirer l'entrée fautive des mandataires de confiance et enregistrer suffit
+       à le rétablir --- tant qu'elle y est, l'enregistrement est refusé et le message la nomme » (AC-5, ⚠️, troisième
+       état ; `validate_settings`, `routes/mcp_server_settings.rs:198-208`) ; sur une installation à **plusieurs** sociétés, la clé d'une société
        ainsi coupée reçoit le 401 d'une clé inconnue — et non une route absente — quand elle vient d'une adresse qu'une
        **autre** société servie admet (P7-H3, second volet, fiche 32-6 à `dd4b8398`, l. 1427-1428 ; une seule société
        aujourd'hui ; validation P2, R9) ; les **défauts**, listés exactement entre `% mcp-reseaux-defaut:debut` et
-       `% mcp-reseaux-defaut:fin` (fait 6) ; **`100.64.0.0/10` absente**, à ajouter pour un VPN de type Tailscale ; un
-       `0.0.0.0/0` ou `::/0` admet tout client (#738) ; une adresse IPv4 mappée en IPv6 est reconnue ; puis un
+       `% mcp-reseaux-defaut:fin` (fait 6) ; **`100.64.0.0/10` absente**, à ajouter pour un VPN de type Tailscale ;
+       phrase du manuel (#738 ; validation P3, R1 — « un `0.0.0.0/0` ou `::/0` admet tout client » était faux) :
+       « \texttt{0.0.0.0/0} admet tout client IPv4, \texttt{::/0} tout client IPv6 : pour admettre les deux familles,
+       il faut les deux entrées. Il en va de même d'un mandataire de confiance de préfixe \texttt{/0}, qui fait croire
+       l'en-tête \texttt{X-Forwarded-For} de tout pair de sa famille. Une adresse IPv4 écrite sous sa forme mappée en
+       IPv6 (\texttt{::ffff:192.168.1.10}) est ramenée à sa forme IPv4 et compte comme IPv4. » (fait sourcé à l'AC-6
+       (b) : `transport.rs:81`, `reseau.rs:9-12`, `:57`, `:64`, `:73`, `:128`, `ipnet` 2.12.0) ; puis un
        `keshwarning` **Ce que le filtre ne garantit pas** : Traefik à déclarer parmi les mandataires, faute de quoi tous
        les clients paraissent venir de lui ; la publication de port Docker par le mandataire en espace utilisateur, où
        tous peuvent paraître venir de la passerelle (`172.17.0.1`), adresse privée admise par défaut — **le filtre ne
@@ -662,11 +720,18 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
        R2 = F2 ; fiche 32-6 à `dd4b8398`, ordre des contrôles l. 1070-1085, C-32-6-52 et C-32-6-53 du registre
        `-326`), phrases du manuel :
        - « Une origine qu'aucune société servie n'admet reçoit **403**, avant tout examen de la clé ; un en-tête
-         \texttt{Origin} envoyé **deux fois** reçoit aussi 403. » (étape 4 ; `transport::unique`, C-32-6-53) ;
+         \texttt{Origin} envoyé **deux fois** reçoit aussi 403. Ajoutez l'origine du client aux \emph{Origines
+         admises} de la société (écran \emph{Serveur MCP}), ou vérifiez \texttt{KESH\_PUBLIC\_BASE\_URL} si le client
+         devrait employer l'origine de Kesh ; un en-tête répété se corrige dans le client. » (étape 4 ;
+         `transport::unique`, C-32-6-53 ; la voie utile ajoutée en validation P3, F8 : l'étape 4 compare aux origines
+         propres et aux `allowed_origins` des sociétés servies, `kesh-32-6/…/transport.rs:105-111`,
+         `reseau.rs:182-205`) ;
        - « Une origine que la société **de la clé** n'admet pas — admise par une autre société servie — reçoit le
          **401** d'une clé inconnue : le client ne peut pas distinguer ce refus d'une clé fausse. Avant de soupçonner la
-         clé, vérifiez l'origine que le client envoie et \texttt{KESH\_PUBLIC\_BASE\_URL}. » (étape 9, C-32-6-52 ; une
-         seule société aujourd'hui, si bien que le cas courant est le 403) ;
+         clé, vérifiez l'origine que le client envoie, les \emph{Origines admises} de la société de la clé (écran
+         \emph{Serveur MCP}) et \texttt{KESH\_PUBLIC\_BASE\_URL}. » (étape 9, C-32-6-52, `transport.rs:151-162` ; une
+         seule société aujourd'hui, si bien que le cas courant est le 403 ; *Origines admises* ajoutées en validation
+         P3, F8) ;
        - un client qui n'envoie pas d'`Origin` n'est pas concerné (absente, admise ; fiche 32-6 l. 44 et 388).
        Statuts et étapes **relus au code de la 32-6a** à l'étape 0 (`kesh-api/src/mcp/transport.rs`, `reponse.rs:136`,
        `textes.rs:35` à `dd4b8398`).
@@ -733,7 +798,11 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
 21. **AC-21 — le PDF.** `admin-manual.pdf` et `user-manual.pdf` régénérés (`make fr` dans `docs/manual/`) et commités ;
     contrôle **aplati** cité au Dev Agent Record : `pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s
     ' ' | command grep -oiE '.{0,30}(Le serveur MCP|100\.64\.0\.0/10|ne filtre alors rien|\.mcp\.json|25 000
-    jetons).{0,30}'` — chaque motif trouvé au moins une fois ; et les renvois de l'AC-19 rendus (aucun `??`).
+    jetons).{0,30}'` — chaque motif trouvé au moins une fois ; puis, pour les phrases neuves des validations P2 et P3
+    (validation P3, F5), le même contrôle aplati avec le motif `(mcp_server_settings|X-Real-IP|aucune société
+    servie|tout client IPv6|Origines admises|son créateur est actif)` — chacun trouvé au moins une fois ;
+    `mcp\_server\_settings` doit paraître **`mcp_server_settings`** au PDF (soulignés rendus, non `mcp\_…`) ; et les renvois de l'AC-19 **et** de l'AC-18 (1) (`sec:env-vars`, `sec:backup-ui-keshbackup`)
+    rendus (aucun `??`).
     ⚠️ **`command grep`, et des fenêtres de 30** (validation P1, F11) : sur ce poste, `grep` est une fonction qui lance
     `ugrep`, qui refuse `.{0,80}` (« exceeds complexity limits », constaté). Le nombre s'écrit `25\,000` au `.tex`
     (précédent `10\,000`, `admin-manual.tex:1297`), que `pdftotext` rend `25 000` à espace ASCII — non `25~000`.
@@ -799,7 +868,7 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
 |---|---|---|
 | `features/mcp-server/mcp-server.api.test.ts` | séparation du secret ; corps de chaque appel | 3 |
 | `features/mcp-server/mcp-time.test.ts` | naïf UTC ; fuseau déjà porté ; illisible ; fin de journée locale ; témoin du fuseau | 4 |
-| `features/mcp-server/McpSettingsSection.test.ts` | (a) à (h), dont la phrase de l'échec de lecture et son témoin ; avertissements (a) à (d) et leurs témoins ; encadré, ses quatre phrases ; AC-7 | 5, 6, 7 |
+| `features/mcp-server/McpSettingsSection.test.ts` | (a) à (h), dont la phrase de l'échec de lecture et son témoin ; avertissements (a) à (d) et leurs témoins, (b) et (c) dans chaque famille (`0.0.0.0/0`, `::/0`) ; encadré, ses quatre phrases ; AC-7 | 5, 6, 7 |
 | `features/mcp-server/secret-unique.test.ts` | `oublier` efface tout ; `montrer` remplace | 11 (ii) |
 | `features/mcp-server/McpKeysSection.test.ts` | liste ; création, dont `formulaire_a_l_ouverture_requise_et_aucune_portee` et le double `GET` ; les cinq « ni » et les témoins de leurs espions ; révocation ; politique | 8 à 13 |
 | `features/mcp-server/mcp-server-gardes.test.ts` | G-a (route sans descente), G-b (blocs `<script>` d'instance et de module, après `masquerCommentaires`), témoins, cardinalité exacte | 15 |
@@ -888,8 +957,19 @@ binaire périmé*), journal `kesh-gate-logs/327-mut-<id>.log`, verdict au Dev Ag
 - **Une ligne de réglages à `version = 0` posée hors de l'écran** (C-32-5-53) : l'écran ne la répare pas, chaque
   enregistrement rend un conflit ; seul le manuel le dit (AC-18 (1)).
 - **Une ligne de réglages corrompue** (#738 B8 ; validation P2, R3 ; C-32-7-24) : `GET` en 500, l'écran affiche
-  l'échec de lecture et n'enregistre rien (AC-5 (g)) ; aucune voie de réparation dans Kesh sur une installation de
-  production (AC-5, ⚠️ *Ce que l'écran ne répare pas*) ; seul le manuel dit les voies hors de l'écran (AC-18 (1)).
+  l'échec de lecture et n'enregistre rien (AC-5 (g)) ; aucune voie de réparation depuis l'écran sur une installation
+  de production (AC-5, ⚠️ *Ce que l'écran ne répare pas* ; « dans Kesh » jusqu'en validation P3, F2 — la restauration
+  est une fonction de Kesh) ; seul le manuel dit les voies hors de l'écran (AC-18 (1)).
+- **Une entrée invalide des mandataires de confiance posée hors de l'écran** (validation P3, F7 ; P7-H3) : le serveur
+  de la société est coupé alors que la case *Serveur activé* reste cochée ; l'écran ne signale rien avant
+  l'enregistrement, qui rend le 400 nommant l'entrée. La réparation se fait à l'écran (AC-5, troisième état) ; seuls
+  le manuel (AC-18 (4)) et le journal du serveur le disent.
+- **Une clé dont le créateur est désactivé ou n'est plus Administrateur** (validation P3, F1 ; C-32-7-25) :
+  elle n'authentifie plus, et l'écran la montre *Active*, sa dernière utilisation figée (AC-8 (b)) — la liste ne
+  porte ni l'état ni le rôle du créateur. Seul le manuel le dit (AC-18 (2)) ; aucun test ne le voit.
+- **Un réseau mappé de préfixe 96** (`::ffff:0:0/96`, validation P3, R1) : la 32-6a le ramène à `0.0.0.0/0`
+  (`reseau_canonique`, `kesh-32-6/…/reseau.rs:34-43`), qui admet tout client IPv4 ; l'avertissement (b), qui lit le
+  préfixe écrit (96), ne le signale pas. Cas improbable, écrit plutôt que traité.
 - **Les dates** s'affichent dans le fuseau du navigateur ; un administrateur hors de Suisse verra l'heure de son poste.
 
 ## Inventaire des reports
@@ -907,7 +987,7 @@ l'écran). Chaque report est rattaché à un AC, ou écarté avec sa raison.
 | R4 | epic l. 423-424, C-32-5-11, Q7 | un serveur actif dans la sauvegarde l'est après l'import | AC-7 (c), AC-18 (1) |
 | R5 | epic l. 424-429, C-32-5-48, fiche 32-5 l. 572-573 | renvois depuis admin 1414, 1416, 2467, 2472 ; utilisateur 190, 3204-3205, 3214-3215 | AC-19 |
 | R6 | #738 B7 = E6 | horodatages des clés sans `Z`, des réglages avec | AC-4 |
-| R7 | #738 B3 = E5, fiche 32-6 l. 1558 | `/0` accepté, admet tout client | AC-6 (b), (c), AC-18 (4) |
+| R7 | #738 B3 = E5, fiche 32-6 l. 1558 | `/0` accepté, admet tout client **de sa famille** (IPv4 ou IPv6 ; précisé en validation P3, R1) | AC-6 (b), (c), AC-18 (4) |
 | R8 | #738 B2 = E4 | `010.0.0.0/8` mis en forme sans signal | AC-5 (c) (forme réaffichée) |
 | R9 | #738 B5 = E2 | corps mal formé non traduit | **écarté** : l'écran n'envoie que des corps bien formés (AC-3 (b)) ; le défaut reste sur #738 |
 | R10 | #738 B8 | `version: -1` → 409 ; une ligne de réglages corrompue → 500 au `GET` et au `PUT` | `version: -1` **écarté** : l'écran n'envoie que la version lue (AC-5 (b)) ; reste sur #738. Ligne corrompue **rattachée** (validation P2, R3) : AC-5 (g) (phrase de l'échec de lecture) et ⚠️ *Ce que l'écran ne répare pas*, AC-18 (1) (les voies hors de l'écran), C-32-7-24 |
@@ -1041,7 +1121,10 @@ préventif*, *E2E*, *Recompter*) ; `docs/agents-orchestration.md` ; `docs/testin
 3. **Un compteur des envois en attente au menu** (question 12 de la fiche 32-8, sans réponse) : la 32-7 n'en pose pas
    (C-32-7-15). *Recommandation* : en décider après la recette de la 0.16.0.
 4. **Le créateur d'une clé n'est pas affiché** (la réponse n'en porte que le numéro, C-32-7-16) ; une seule personne
-   administre aujourd'hui. *Recommandation* : l'accepter ; l'ajouter demanderait de toucher la route.
+   administre aujourd'hui. *Recommandation* : l'accepter ; l'ajouter demanderait de toucher la route. *Conséquence
+   écrite en validation P3 (F1, C-32-7-25)* : une clé dont le créateur est désactivé ou n'est plus Administrateur
+   n'authentifie plus et reste affichée *Active* ; le manuel le dit, l'écran non. Un état « inopérante » à l'écran
+   demanderait, lui aussi, que la route joigne le créateur.
 5. ~~**La configuration d'un client au manuel**~~ — **réglé** (validation P1, R11 ; décision acceptée de Guy relayée par
    l'orchestrateur) : la configuration de Claude Code reste marquée « non éprouvée » au manuel, et le manuel n'écrit rien
    de Hermes qui ne soit sourcé (AC-18 (8)). La **Q9** de la spike (« s'agit-il bien de Hermes Agent (Nous
@@ -1078,6 +1161,10 @@ C-32-7-3). Elles restent ici barrées pour l'historique.)*
    `nav-admin-mcp` » ; `nav-admin-mcp` en est retirée (clé de donnée, hors de portée de `replisParCle()`), et reste
    un cas de la classe que #758 trace (seule `FAMILLES_RESOLUES['nav-']` la tient, sans comparer son repli).
    *Demande* : le dire en commentaire de #758 (écriture `gh` réservée à l'orchestrateur).
+10. **La fiche 32-6** (validation P3, R1) : `32-6-endpoint-mcp.md` l. 1299 et 1580 (worktree `kesh-32-6`) écrivent
+    « un `0.0.0.0/0` dans les plages admet tout client » ; son code admet tout client **IPv4** (`reseau.rs:57`, `:128` ;
+    `IpNet::contains` faux entre familles), comme son registre l'écrit (`epic-32-choix-autonomes-326.md:597`).
+    *Demande* : préciser « IPv4 » dans la fiche 32-6, que la 32-7 ne touche pas.
 
 ## À recontrôler à l'étape 0 du développement
 
@@ -1139,6 +1226,19 @@ C-32-7-3). Elles restent ici barrées pour l'historique.)*
   - les méthodes de `toast` (`svelte-sonner`, AC-11 (iv) ; R5) — *si la version installée en ajoute* : les simuler
     aussi ;
   - `sitesTotal` et le décompte des sites recomptés **au dernier commit de code**, non à l'étape 0 seulement.
+- **Ajoutés en validation P3**, chacun avec sa correction attendue :
+  - la famille d'adresses (AC-6 (b), (c), AC-18 (4) ; R1) : `to_canonical` du pair et des entrées de
+    `X-Forwarded-For`, `IpNet::contains` entre familles, `reseau_canonique` d'un réseau mappé, contre le code fusionné
+    de la 32-6a (`kesh-api/src/mcp/reseau.rs`, `transport.rs`) et la version d'`ipnet` du `Cargo.lock` — *si le code
+    admet entre familles* : réécrire les phrases de l'écran et du manuel selon le code ;
+  - la condition de vie d'une clé (AC-8 (b), AC-18 (2) ; F1) : `services/cles_mcp.rs` (créateur actif, rôle au moins
+    `ROLE_CLE_MCP`, refus avant `touch_last_used`) et `list_by_company` — *si la route rend désormais l'état du
+    créateur* : le dire à l'orchestrateur (un état à l'écran redeviendrait possible), sans l'ajouter d'office ;
+  - la réparation d'un mandataire invalide à l'écran (AC-5, troisième état ; F7) : `validate_settings` refuse toujours
+    l'entrée au `PUT` — *sinon* : réécrire la phrase du manuel ;
+  - les entrées de l'export de `toast` (AC-11 (iv) ; R3 = F4) : toutes reprises par le simulacre ;
+  - les étiquettes `sec:env-vars` et `sec:backup-ui-keshbackup` et la rangée `KESH\_PRODUCTION\_RESET` (AC-18 (1) ; R2,
+    F2) — *si renommées ou déplacées* : suivre le nom relu.
 - **Les échecs E2E attendus** : `docs/testing.md` § *Les échecs attendus*, à la date de l'étape 0.
 
 ## Dev Agent Record
@@ -1156,3 +1256,4 @@ C-32-7-3). Elles restent ici barrées pour l'historique.)*
 | 2026-10-25 | création | Fiche rédigée en autonomie (Opus 5.5), contre `966baed5`. 25 AC (A : 17, B : 7, C : 1), 9 tâches, 19 mutations, gardes G-a, G-b, G23 ; 33 reports inventoriés (R1 à R33 : 24 rattachés à un AC, 9 écartés ou sans objet avec leur raison — R9, R10, R15, R19, R20, R23, R24, R30, R31) ; choix C-32-7-1 à C-32-7-20 ; 4 modules, pas de découpage. Prompt de validation P1 : `327-validate-prompt-p1.md`. |
 | 2026-10-25 | validation P1 | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `327-validate-prompt-p1.md` ; rapports `kesh-gate-logs/327-validate-p1-R.md` 0/0/1/12 et `-F.md` 0/0/4/7) ⇒ **trend P1 0/0/5/19** (doublons R2 = F3 et R8 ≈ F5 comptés une fois par lentille). Prémisses relues au dépôt avant application ; **aucune réfutée**. Corrigés à la lecture : deux numéros de ligne des rapports (R6 (a) — la ligne illisible est à la fiche 32-6 l. 1247-1248, non 1241-1243 ; R12 — `mcp_server_settings.rs:35-38`, non `:36-39`) ; l'option préférée de l'orchestrateur pour F2 (ajouter `mcp-server-` aux `PREFIXES` de `i18n-un-repli-par-cle`) **écartée** sur lecture : ce test compare les replis d'une clé entre eux (`parTexte.size > 1`, l. 216), jamais au catalogue. **Décisions de l'orchestrateur appliquées d'abord** : F1 — ordre de rechange retiré, ordre nominal des neuf prérequis vérifié à l'étape 0 (arrêt sinon), AC-2 et AC-13 (d) sans branche conditionnelle, C-32-7-3 récrit et C-32-7-1 annoté ; R7 — branche « 2 bis » de l'AC-18 (4) retirée (une seule phrase), R13 passé « sans objet », Demandes 1, 3, 4, 5 closes ; F2 — G13 de `i18n-repli-divergent-actif.test.ts` étendue par préfixe (AC-14 (a), C-32-7-21, témoins rouge et vert, égalité relevé ↔ FTL, compte exact), commentaire de G22 corrigé (AC-14 (c)) ; F3 = R2 — G-b couvre `<script module>` et `context="module"` (deux témoins rouges `.svelte`, M23) ; F4 — AC-9 (e), test `formulaire_a_l_ouverture_requise_et_aucune_portee`, M20, M21 ; R1 — AC-11 (v) par `vi.stubGlobal('indexedDB', …)`, chaque espion (`Storage.prototype`, `history`, `indexedDB`) avec son appel témoin. **LOW intégrés** : R3 (fait 19, AC-22 avant `### Modifié`), R4 (a)-(c) (AC-10), R5 (AC-6 (1) aligné sur le manuel et la 32-6), R6 (ligne illisible à l'AC-18 (1), `kesh_version` à la 32-9/32-11, R28 écarté comme R19), R8 = F5 (fait `seedTestState`, aucun `afterAll`, motif Comptable, `nav-link-admin-mcp`, groupe replié), R9 (`browser` simulé et témoin), R10 (M4 à l'AC-9 (d) seul, deux `GET`), R11 (gestes sourcés un à un, Hermes Agent sans rien de plus que la spike, Claude Code « non éprouvée » — décision acceptée de Guy), R12 = F6 (AC-5 (g), version 0 au manuel), R13 (cardinalité exacte, premier code de ligne, extraction sur le source brut), LOW non numérotés de R (`gh issue view 738 --comments`, copie du secret dans un autre `$state` écrite en angle mort, `toast.*` tranché — permis, sans le secret, avec témoin —, M24, M25, précédent TZ cité), F7 (sept captures, 28 au total), F8 (propriété de `sec:mcp-client` à la 32-7, C-32-7-22, demande 6), F9 (signature de `SecretUnique` fixée, M1 à la sonde de (ii)), F10 (gardes nommées, déclencheur *Révoquer* sans rouge à la main), F11 (`command grep`, fenêtres de 30, `25\,000`). Relevé en passant : l'AC-2 renvoyait le Comptable à l'AC-16 (e), lire (f). **Symptômes grepés** (valeurs) sur la fiche, le registre et les fiches voisines (`rechange`, `32-7a`, `2 bis`, `afterAll`, `Hermes`, `rattachements`, `i18n-un-repli-par-cle`, `sec:mcp-client`, `{0,80}`, `repli … égal`) : résidus de la fiche tous historiques ; voisines — note à l'orchestrateur (rapport). **Décomptes** recomptés à la source : 25 AC (A : 17, B : 7, C : 1), 9 tâches, **25 mutations** (M1 à M25), 33 reports (**22 rattachés, 11 écartés ou sans objet** — R9, R10, R13, R15, R19, R20, R23, R24, R28, R30, R31), **22 choix** (C-32-7-1 à C-32-7-22 ; 1, 3, 13, 19 annotés), 28 captures, 4 modules. Remédiation sur la fiche et le registre seulement ; **1 passe sur 8** ; passe suivante **complète** (P2, Opus, lentilles R et F, `327-validate-prompt-p2.md`). |
 | 2026-10-25 | validation P2 | **Opus ×2** (lentilles R et F, contexte frais, prompt `327-validate-prompt-p2.md` ; rapports `kesh-gate-logs/327-validate-p2-R.md` 0/0/3/12 et `-F.md` 0/0/2/13) ⇒ **trend P1 0/0/5/19 → P2 0/0/5/25** (doublons R1 = F1, R2 ⊂ F2, R9 ⊂ F2, R4 ≈ F8, R7 ≈ F10, R15 = F6, comptés une fois par lentille). ⚠️ **Recyclage déclaré** : **F1 = R1 naît de la remédiation P1** (C-32-7-21 avait nommé `nav-admin-mcp` dans l'extension de G13) ; de même les LOW F3 (renvoi à la demande 4 close), F4 (C-32-7-14 non annoté), F5 (« sinon omis ») et R14 (« sinon créée »). R2 = F2 et R3 sont des **omissions d'origine** (le 403/401 de l'`Origin`, #738 B8 seconde moitié), non des régressions. Sévérité MEDIUM → MEDIUM : signal de découpage de `CLAUDE.md` (amendement D5) — un MEDIUM recyclé sur trois ; **déclaré au Project Lead** par le rapport. **Prémisses relues au dépôt avant application ; aucune réfutée** ; précisées à la lecture : F1 proposait une mutation « `'admin-mcp'` retiré de `FAMILLES_RESOLUES` » à vérifier — elle **ne rougirait pas** (`'nav-'` hors de `PREFIXES_A_COUVERTURE_CLOSE`, `i18n-keys.test.ts:932`), écrite en angle mort, et la mutation retenue est M26 (clé retirée des catalogues) ; R3 — le 500 au `PUT` confirmé au code (`routes/mcp_server_settings.rs:245`, l'« avant » relu par `get_or_defaults`) ; R5 — les méthodes de `toast` relues dans `svelte-sonner` 1.1.0 (`toast-state.svelte.js:213-225`, dépôt principal en lecture) ; R13 — lignes de la fiche 32-6 relues à `dd4b8398`. **Décisions de l'orchestrateur appliquées** : R1 = F1 — `nav-admin-mcp` retirée de l'extension (AC-14 (a)), tenue par `FAMILLES_RESOLUES['nav-']` (AC-14 (d), fait 21 neuf), qui **ne compare pas** le repli au fr-CH : angle mort écrit, #758 cité ; `sitesTotal` (l. 724, assertion l. 1034) recompté et commenté par la story, `i18n-keys.test.ts` au § *Fichiers touchés* ; fait sourcé : aucune clé `mcp-server-` n'existe ni n'est résolue par une table (`grep -rnF 'mcp-server-' frontend/src` → rien), et le FTL porte deux clés `audit-log-…-mcp-server-…` qui contiennent la chaîne — l'appartenance au préfixe se juge par `startsWith`, avec un témoin ; C-32-7-23. R2 = F2 — AC-18 (5) : 403 (aucune société servie n'admet l'origine, ou `Origin` répétée) et 401 fixe (la société de la clé ne l'admet pas), phrases du manuel ; AC-18 (7) y renvoie, avec les quatre en-têtes répétés ; F2 = R9 — requête anonyme qui lit la base, conséquence de `X-Real-IP`, second volet de P7-H3, à l'AC-18 (4). R3 — AC-5 (g) : phrase fixe de l'état d'échec de lecture ; ⚠️ *Ce que l'écran ne répare pas* : ligne à `version = 0` et ligne corrompue ; **aucune voie de réparation dans Kesh** sur une installation de production (remise à zéro refusée au-delà de l'étape 2, `routes/onboarding.rs:252-268` ; réparation #528 sans `mcp_server_settings`) — le manuel (AC-18 (1)) donne les voies hors de l'écran : restaurer une sauvegarde antérieure, ou supprimer la ligne par SQL ; C-32-7-24 ; R10 de l'inventaire rattaché. **LOW intégrés** : R4 = F8 (`mockClear()` après chaque témoin ; secret simulé `kesh_mcp_SECRET…` distinct des témoins `kesh_mcp_TEMOIN`), R5 (`toast` lui-même simulé, ses neuf méthodes), R6 (« même sens que »), R7 = F10 (`--scope local` sourcé à la spike l. 320 ; forme JSON de `.mcp.json` retirée ; Hermes : « et rien d'autre » retiré, transport par défaut non nommé par sa référence, Kesh en Streamable HTTP), R8 (les trois issues d'outil), R10 (C-32-5-49 rattaché à l'AC-22, inventaire R34), R12 (G-b après `masquerCommentaires`, témoin vert commentaire), R13 (lignes de la 32-6 à `dd4b8398`), R14 (AC-22 sans branche « sinon »), F3 (#758 au lieu de la demande 4), F4 (C-32-7-14 annoté), F5 (AC-18 (6) sans « sinon omis »), F7 (G23 (b) par rangée, découpée sur `\\`, témoin d'une rangée sur deux lignes), F9 (`oublier()` avant l'envoi du `POST`), F11 (capture (11) étendue au nom vide, capture (29) du toast de copie), F12 (G-a sans descente dans `admin/mcp/`), F13 (« reconnue, même si l'appel est ensuite refusé ou n'est pas servi »), F14 (AC-5 (h), phrase sous *Origines admises*), F15 (les deux gardes nommées). **Aux demandes à l'orchestrateur** : 6 étendue à la fiche 32-9 (R11), 7 close (#758), 8 neuve — le graphe de l'epic (F6 = R15), 9 neuve — un commentaire sur #758 (`nav-admin-mcp` retirée). **Symptômes grepés** (valeurs) sur la fiche et le registre : `nav-admin-mcp` (restent l'AC-2, l'AC-14, la donnée de menu, C-32-7-2 et l'historique de C-32-7-21, annoté), `403` (les seuls sites neufs), `demande 1` (la seule annotation de C-32-7-14), `demande 4`, `sinon omis`, `sinon créée`, `acceptée, même` → rien. **Décomptes** recomptés à la source : 25 AC (A : 17, B : 7, C : 1), 9 tâches, **26 mutations** (M1 à M26), **34 reports** (**24 rattachés, 10 écartés ou sans objet** — R9, R13, R15, R19, R20, R23, R24, R28, R30, R31), **24 choix** (C-32-7-1 à C-32-7-24 ; 14 et 21 annotés), **29 captures**, **21 faits**, 4 modules. Remédiation sur la fiche et le registre seulement ; **2 passes sur 8** ; passe suivante **complète** (P3, **Sonnet**, lentilles R et F, `327-validate-prompt-p3.md`). |
+| 2026-10-25 | validation P3 | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `327-validate-prompt-p3.md` ; rapports `kesh-gate-logs/327-validate-p3-R.md` 0/0/1/2 et `-F.md` 0/0/1/7) ⇒ **trend P2 0/0/5/25 → P3 0/0/2/9** (doublon R3 = F4 compté une fois par lentille). **Les deux MEDIUM sont des omissions d'origine**, non des régressions : R1 (`0.0.0.0/0` et `::/0` n'admettent chacun que leur famille ; la fiche disait « tout client » depuis la création, en étendant la phrase de la fiche 32-6 à `::/0`) et F1 (une clé dont le créateur est désactivé ou n'est plus Administrateur n'authentifie plus et reste affichée *Active*). **Les LOW naissent de la remédiation P2** (R2, R3 ; F2 à F8, déclarés tels par leur lentille). Sévérité MEDIUM → MEDIUM : défauts **distincts** et **non issus d'une remédiation** — selon l'amendement D5 de `CLAUDE.md`, ce n'est pas un signal de découpage ; **déclaré au Project Lead** par le rapport. **Prémisses relues au code avant application ; aucune réfutée.** Précisées à la lecture : R1 cite `ipnet-2.12.2` — le `Cargo.lock` verrouille **2.12.0** (l. 1872-1873), dont `Contains<&IpAddr> for IpNet` (`src/ipnet.rs:1419-1426`) rend le même `false` entre familles ; F2 situe `sec:backup-ui-keshbackup` à `admin-manual.tex:1926` — elle est à **l. 2177** ; R3 et F4 situent `getActiveToasts` aux l. 226-228 et 225-227 — elle est aux **l. 223-225**, l'objet de `Object.assign` aux l. 213-226 ; F7 cite `routes/mcp_server_settings.rs:205-206` — `validate_settings` occupe les l. 198-208 (`trusted_proxies` l. 205). **Fait sourcé (R1)**, code de la 32-6a (`kesh-32-6`, branche `story/32-6`, PR #760) : le pair est ramené à sa forme canonique (`transport.rs:81`, `reseau.rs:64`, entrées de `X-Forwarded-For` l. 73 ; `IpAddr::to_canonical`, doc l. 9-12) — une adresse IPv4 mappée compte comme IPv4 —, puis comparé par `IpNet::contains` (l. 57, 128). **Décisions de l'orchestrateur appliquées** : R1 — AC-6 (b) et (c) nomment la famille (« `0.0.0.0/0` admet tout client IPv4 », « `::/0` tout client IPv6 », « pour admettre les deux familles, il faut les deux entrées »), même règle pour un mandataire `/0` ; tests de chaque famille et de l'absence de « toute adresse » sans famille ; phrase de l'AC-18 (4) récrite ; capture (4) dans les deux familles ; inventaire R7 précisé ; relevé en passant : un réseau mappé `::ffff:0:0/96` devient `0.0.0.0/0` à la 32-6a (`reseau_canonique`, l. 34-43) sans avertissement à l'écran — écrit à *Ce que les gardes ne voient pas* ; demande 10 neuve (fiche 32-6 l. 1299 et 1580). F1 — l'écran **ne peut pas** le dire sans élargir la story (`list_by_company`, `kesh-db/src/repositories/mcp_keys.rs:197-217`, sans jointure ; `McpKeyResponse` sans état du créateur) : phrase au manuel (AC-18 (2)), mention à l'AC-8 (b) (dont « reconnue » précisé : le refus du créateur précède la pose de la dernière utilisation, `services/cles_mcp.rs:94-100`), ligne à *Ce que les gardes ne voient pas*, point 4 à Guy complété ; **C-32-7-25** neuf. **LOW intégrés** : F2 (suppression par SQL d'abord, restauration en dernier recours — elle remplace toute l'installation et refuse une sauvegarde d'une version qui ne porte pas les mêmes tables, `admin-manual.tex:2249`, `:2262`, renvoi `sec:backup-ui-keshbackup` ; « dans Kesh » → « depuis l'écran » à l'AC-5 et aux gardes ; C-32-7-24 **annoté**, non réécrit), R2 (renvoi à la rangée `KESH\_PRODUCTION\_RESET`, `admin-manual.tex:767`, sous `sec:env-vars`, l. 705), R3 = F4 (« toutes les entrées de l'export réel », dont `getActiveToasts`), F3 (l. 122), F5 (second motif du contrôle aplati, rendu de `mcp_server_settings`, renvois de l'AC-18 (1) sans `??`), F6 (« un tableau qui ne contient pas que des chaînes », la base garantissant un tableau JSON valide, migration `20261025000001`, l. 81-83 ; recette SQL de la capture (22)), F7 (troisième état à l'AC-5, qui **se répare à l'écran** ; phrase à l'AC-18 (4) ; ligne aux gardes), F8 (voie utile du 403 et du 401 : *Origines admises* de l'écran ; lignes `transport.rs:105-111` et `:151-162` relues). Ajouts au § *À recontrôler* (cinq points de la P3). **Symptômes grepés** (valeurs) sur la fiche, le registre, l'epic, le manuel et le FTL fr-CH : `0.0.0.0/0`, `::/0`, `tout client`, `toute adresse`, `filtre désactivé`, `aucune voie`, `neuf méthodes` — restent les sites neufs de la P3, l'entrée P2 de ce Change Log et le texte d'origine de C-32-7-24 (annoté) ; hors du worktree, la fiche 32-6 (demande 10). **Décomptes** recomptés à la source : 25 AC (A : 17, B : 7, C : 1), 9 tâches, 26 mutations (M1 à M26, aucune neuve), 34 reports (24 rattachés, 10 écartés ou sans objet — inchangé), **25 choix** (C-32-7-1 à C-32-7-25 ; 14, 21 et 24 annotés), 29 captures, 21 faits, 4 modules. Remédiation sur la fiche et le registre seulement ; **3 passes sur 8** ; passe suivante **complète** (P4, **Opus**, lentilles R et F, `327-validate-prompt-p4.md`). |
