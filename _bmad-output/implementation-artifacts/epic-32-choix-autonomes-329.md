@@ -2,7 +2,7 @@
 
 Registre propre à la story (`docs/agents-orchestration.md` § 1), à verser **par union** dans
 `epic-32-choix-autonomes.md` au merge. Fiche : `32-9-outils-de-lecture.md`. Numérotation `C-32-9-k`. Les numéros de
-ligne du dépôt sont ceux de `fa5b3468` ; ceux des fiches 32-6 (`kesh-32-6`, `ecb26dc8`), 32-8 (`kesh-32-8`,
+ligne du dépôt sont ceux de `fa5b3468` ; ceux des fiches 32-6 (`kesh-32-6`, `5f6733be` depuis la validation P4, L1 — `ecb26dc8` auparavant), 32-8 (`kesh-32-8`,
 `bf74805a`) et 32-10a (`kesh-32-10a`), validées et non fusionnées, sont cités d'après ces fiches et se recomptent à
 l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, réversibilité.
 
@@ -23,6 +23,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
   sixième module, `kesh-db` : C-32-9-21).
 - **Réversible** : oui (avant développement). ⚠️ Les deux parties sont **au plafond** : une remédiation qui ajouterait un
   module se déclare et redécoupe.
+- *(Annoté le 2026-10-25, validation P4, L6 : le module « manuel » de la 32-9a compte aussi le `CHANGELOG.md` (et le `user-manual.tex` si la note pour la 32-8 l'exige) — écart à la convention de la 32-8, **accepté par l'orchestrateur** ; 5 modules inchangés.)*
 
 ### C-32-9-2 — L'enveloppe tenue par le typage : `TexteNonFiable`, le trait scellé `ChampSur`, la macro `sortie!`
 
