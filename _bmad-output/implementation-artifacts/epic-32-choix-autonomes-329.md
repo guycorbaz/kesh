@@ -103,6 +103,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - *(Révisé le 2026-10-25, validation P1, F4 = R4 : la première rédaction disait que les défauts « visent ≈ 10 000
   jetons » sans mesure, et ne disait pas que le plafond dépasse l'avertissement.)*
 
+- *(Annoté le 2026-10-25, validation P2, R5 — décision de l'orchestrateur : suivre la spike, « sous 10 000 jetons », à **2,5 octets par jeton** (hypothèse prudente) ; le plafond partagé `MCP_ENVOI_OCTETS_MAX` **passe de 65 536 à 24 576 octets** (≈ 9 800 jetons), note pour la 32-8 à son étape 0 (fiche, § *Les tailles mesurées*) ; défauts ≈ 12 Kio, maximums ≈ 22 Kio ; jetons comptés à T-a2 avec un tokenizer local s'il existe, sinon déclarés estimés. Voir C-32-9-30.)*
 ### C-32-9-8 — Les bornes : mesurées, le plus petit du plafond du service et du maximum de l'outil
 
 - **Contexte** : chaque service porte ses bornes (32-4a, 32-4b, fait 5 de la fiche) ; certaines listes refusent hors
@@ -122,6 +123,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - *(Réécrit le 2026-10-25, validation P1 ; la version de la création retenait « le `maximum` égale la constante du
   service » et des défauts de 20 écritures et 100 lignes de grand livre.)*
 
+- *(Annoté le 2026-10-25, validation P2, R5 et F3 : valeurs recalculées sous le plafond de 24 576 octets — plan 40 / 70, écritures 12 / 22, grand livre 15 / 30, balance 30 / 55 (**tranchée dans l'outil** : le rapport rend tout compte actif, `trial_balance.rs:15-18`), postes ouverts 12 / 24, factures et échéancier 20 / 40, fournisseur 40 / 70, contacts 12 / 22, pièces 35 / 65 ; bilan et compte de résultat non paginés, refus au-delà de ≈ 60 comptes à solde non nul, recours par la période pour le seul compte de résultat ; un appel sans `limit` rend exactement le défaut, avec assertions de taille (F4).)*
 ### C-32-9-9 — Q1 de la 32-4b, en hypothèse : les coordonnées structurées des tiers masquées sans `contacts:read`, non leurs noms
 
 - **Contexte** : sous `invoices:read`, la liste des factures rend le nom du client, la fiche fournisseur l'IBAN du
@@ -149,6 +151,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - *(Réécrit le 2026-10-25, validation P1 ; la version de la création masquait aussi les noms des clients et des
   fournisseurs.)*
 
+- *(Annoté le 2026-10-25, validation P2 : **Guy a tranché le 2026-10-25** en acceptant la recommandation (epic, § *Réponses de Guy (2026-10-25)*, PR #757) — la Q1 est retirée des points à Guy. Un cinquième libellé composé porte le nom du client, à chaque encaissement rapproché (`routes/reconciliation.rs:2734`, F2 = R6). Les contacts ne portent pas d'IBAN (`contacts.rs:380-381`, R8) : `contacts:read` démasque un IBAN qui ne vit que sur les factures. `Tiers` gagne `Absent` : masqué, il rend toujours `Masque`, présent ou absent (pas d'oracle) ; visible, `null` pour une valeur absente ; `Canal::Api` → fermé (R7). Le relevé de l'AC-a6 se fait par usage des colonnes (R9).)*
 ### C-32-9-10 — Les rapports : `ContexteMcp` porte la `Trace` en privé et n'offre que `afficher`
 
 - **Contexte** : un rapport ne se lit que par `Rapport::afficher(self, &Trace)` (règle R5, `services/rapports.rs:347`) ;
@@ -201,6 +204,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - **Réversible** : oui. Soumis à Guy (Q5).
 - *(Annoté le 2026-10-25, validation P1, F5, R3 = F9 : le service rend `PiecePublique`, sans `file_hash`, `storage_path` ni champ du QR — le typage tient « aucun outil n'ouvre un fichier » —, et `lister_tout` pour l'API ; il **lit la société d'abord**, comme `list_imported` aujourd'hui (`routes/imported_supplier_invoices.rs:93`), ordre conservé (R6) ; plafond 160, mesuré.)*
 
+- *(Annoté le 2026-10-25, validation P2, R5 : bornes du service neuf 35 / 65.)*
 ### C-32-9-14 — Les fixtures piégées : un module `kesh_seed::pieges`, hors de `seed_demo`
 
 - **Contexte** : `seed_demo` ne crée que la société, le plan, l'exercice, les réglages et les taux
@@ -216,6 +220,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - **Réversible** : oui (un appel de plus dans `seed_demo`). Soumis à Guy (Q2).
 - *(Annoté le 2026-10-25, validation P1, F2, R9, F11 : `semer(pool, acteur, company_id, marque)` — les dépôts exigent un `user_id` ; le texte d'un piège dépend de la **largeur de sa colonne**, mesurée sur le schéma (formes L, C, T, ou exemption sous sept caractères ; fiche, § *Les pièges et la largeur des colonnes*), vérifiée par `largeurs_des_pieges` ; le module est derrière la fonctionnalité `pieges`, activée par la seule dépendance de développement de `kesh-api` : les textes d'injection n'entrent pas dans le binaire de production ; la forme `PIEGE_329_<marque>_<champ>` de 143 caractères ne tenait pas dans une vingtaine de colonnes.)*
 
+- *(Annoté le 2026-10-25, validation P2, R1 = F1, R3, R13, R14 : un seul motif, `MOTIF_PIEGE` (C-32-9-29) ; `semer` **renomme** l'exercice de la démonstration plutôt que d'en créer un (les écritures du jour y tombent) ; un numéro par rôle pour `contacts.name` (client, fournisseur) ; `semer` crée en 32-9a une pièce rattachée `completed`, sans fichier ni QR, et en 32-9b une seconde, non rattachée, portant les pièges du QR ; `societe_complete` vit dans `kesh_seed::pieges` et appelle les dépôts, jamais `final_body`.)*
 ### C-32-9-15 — Le test d'enveloppe parcourt la sortie, il n'énumère pas les champs
 
 - **Contexte** : un test qui vérifierait les champs prévus ne verrait pas un champ imprévu.
@@ -227,6 +232,7 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - **Écartées** : un test par champ (liste ouverte).
 - **Réversible** : oui.
 
+- *(Annoté le 2026-10-25, validation P2, L6 : le parcours ne cherche plus la chaîne `PIEGE_329` mais `MOTIF_PIEGE` = `P(IEGE_329_|329)[AB][0-9]{2}`, qui reconnaît les trois formes — le motif de la P1, `P(IEGE_)?329[AB]`, ne reconnaissait que la forme T (C-32-9-29).)*
 ### C-32-9-16 — La matrice portée × outil : tirée de `tools/list`, comparée au manuel d'administration
 
 - **Contexte** : le kickoff veut la matrice « générée depuis le registre et comparée au manuel » (l. 178).
@@ -369,4 +375,49 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
   (`books:read` → dix outils puis `kesh_lire_envoi`) et par la 32-9b (`contacts:read` → `kesh_contacts`,
   `kesh_contact`, `kesh_lire_envoi`).
 - **Écartées** : retirer `kesh_lire_envoi` de la liste lue avant comparaison (le test ne verrait plus qu'il est listé).
+- **Réversible** : oui.
+
+### C-32-9-29 — Une seule constante de motif des pièges, et son témoin
+
+- **Contexte** (validation P2, R1 = F1, HIGH) : le motif de la P1, `P(IEGE_)?329[AB]`, exigeait la marque juste après
+  `329` ; les formes L et C (`PIEGE_329_{M}{nn}`) portent un souligné entre les deux. Seule la forme T était vue : les
+  tests d'absence (cloisonnement des sociétés, coordonnées masquées, données du QR, résumé) passaient à vide, et Ma18,
+  Mb3 survivaient.
+- **Retenu** : `kesh_seed::pieges::MOTIF_PIEGE = r"P(IEGE_329_|329)[AB][0-9]{2}"`, seul motif, employé par tout test qui
+  parcourt une sortie ; test pur `motif_reconnait_les_trois_formes` (chaque ligne de `CHAMPS`, marques `A` et `B` ; un
+  texte ordinaire refusé) ; mutation Ma27 (le motif de la P1) tuée par ce test. Mesuré : trois correspondances sur les
+  trois formes, aucune sur « Exercice 2026 » ni sur `P329` seul.
+- **Écartées** : un préfixe commun aux trois formes (`P329_`) — change les largeurs mesurées pour un gain nul.
+- **Réversible** : oui.
+
+### C-32-9-30 — Le plafond d'un envoi ramené à 24 576 octets, « sous 10 000 jetons »
+
+- **Contexte** (validation P2, R5, décision de l'orchestrateur) : la spike (§ 6, l. 961) et la 32-8 (§ *Ce que la 32-8
+  laisse*) demandent des réponses sous 10 000 jetons ; à 2,5 octets par jeton (JSON indenté), 65 536 octets font ≈ 26 000
+  jetons, au-delà de la coupure de 25 000 de Claude Code.
+- **Retenu** : `services::envois_mcp::MCP_ENVOI_OCTETS_MAX` = **24 576** (constante partagée avec la 32-8, qui la porte
+  à son étape 0 — note dans la fiche 32-9 ; à défaut, la 32-9a l'amende avec `taille_des_envois`, amendement nommé) ;
+  défauts ≈ 12 Kio, maximums ≈ 22 Kio ; jetons comptés à T-a2 avec un tokenizer local s'il existe.
+- **Écartées** : une constante propre aux outils, plus petite que celle d'un envoi (deux plafonds pour le même texte) ;
+  garder 65 536 (une réponse au maximum peut être coupée par le client).
+- **Réversible** : oui (une constante, et les tests qui la lisent).
+
+### C-32-9-31 — La balance tranchée dans l'outil
+
+- **Contexte** (validation P2, F3) : `generate_trial_balance` rend tout compte **actif** (`trial_balance.rs:15-18`,
+  `:208-209`) ; 86 comptes actifs d'un plan PME font ≈ 33 Ko, au-delà du plafond sur toute période.
+- **Retenu** : `kesh_balance` tranche `lignes` (30 / 55) et rend les totaux du rapport entier ; bilan et compte de
+  résultat restent entiers (comptes à solde non nul seulement), refus au-delà de ≈ 60, recours par la période pour le
+  seul compte de résultat — dit, et soumis à Guy (Q4).
+- **Écartées** : paginer le bilan (trois listes et leurs totaux, une lecture mal coupée).
+- **Réversible** : oui.
+
+### C-32-9-32 — `sortie!` n'admet aucun attribut de champ ; les fabriques de `&'static str` interdites dans `src/mcp/`
+
+- **Contexte** (validation P2, R10) : un `#[serde(serialize_with = …)]` sur un champ, ou un `Box::leak` vers le résumé,
+  contournaient le typage sans aucune forme de la garde.
+- **Retenu** : le motif de `sortie!` n'accepte pas d'attribut de champ (Ma26, déclarée non compilable) ; la garde
+  `sorties_sans_serialisation_parallele` interdit dans `src/mcp/` `leak(`, `serialize_with`, `serde(with`, `static mut`,
+  `OnceLock<String>`, `LazyLock<String>` (Ma29) ; une fabrique hors de `src/mcp/` est un angle mort écrit.
+- **Écartées** : vérifier les `&'static str` à l'exécution (aucun moyen fiable).
 - **Réversible** : oui.
