@@ -144,6 +144,7 @@ pub mod acces;
 pub mod carnet;
 pub mod ecritures;
 pub mod factures;
+pub mod factures_fournisseur;
 pub mod plan_comptable;
 pub mod poignees;
 pub mod postes_ouverts;
