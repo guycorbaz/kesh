@@ -335,6 +335,10 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("delete", "mcp_keys::revoke_mcp_key", Traced, SansEcritureAuJournal),
     ("put", "mcp_keys::set_mcp_key_send_validation", Traced, SansEcritureAuJournal),
     ("put", "mcp_server_settings::update_mcp_server_settings", Traced, SansEcritureAuJournal),
+    // Story 32-8b (refs #723) — la décision d'un envoi du serveur MCP
+    // (`mcp_send.approved` / `.refused`), dans la transaction de la décision.
+    // Elle n'écrit pas au journal comptable.
+    ("post", "mcp_envois::decider_envoi", Traced, SansEcritureAuJournal),
     // Story 32-6a (refs #723) — l'endpoint `/mcp`, monté par `route_service`
     // (toute méthode, dont `POST`). Ses outils ne lisent qu'en lecture seule ;
     // il écrit la dernière utilisation de la clé et, depuis la 32-6b, l'entrée
@@ -888,12 +892,13 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        129,
-        "l'inventaire porte sur 129 routes (+ 1 : `/mcp`, 32-6a)"
+        130,
+        "l'inventaire porte sur 130 routes (+ 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+         envoi MCP, 32-8b)"
     );
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 123,
+        traced, 124,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -911,7 +916,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          réglage et « Sauvegarder maintenant » de la sauvegarde automatique (31-1c, #503), \
          plus la création, la révocation et la politique de validation d'une clé du serveur \
          MCP et l'enregistrement de ses réglages (32-5c, refs #723), plus chaque appel \
-         d'outil MCP (32-6b, #723)"
+         d'outil MCP (32-6b, #723), plus la décision d'un envoi du serveur MCP (32-8b, \
+         refs #723)"
     );
     assert_eq!(exempt, 4, "4 routes d'auth (#435)");
     assert_eq!(
@@ -920,7 +926,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        132,
+        133,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1245,17 +1251,18 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 104,
-        "103 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
+        sans_ecriture, 105,
+        "104 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
          import, 27-1 ; l'annulation d'un rejet, 28-5a ; la clôture et la réouverture d'un \
          compte bancaire, 28-4a ; le rattachement d'une transaction à un règlement, 29-8 ; \
          le rattachement et le détachement d'un document fournisseur, 30-2c ; le réglage et \
          « Sauvegarder maintenant » de la sauvegarde automatique, 31-1c ; les quatre routes \
-         mutantes des clés et des réglages du serveur MCP, 32-5c ; + 1 : `/mcp`, 32-6a), \
+         mutantes des clés et des réglages du serveur MCP, 32-5c ; + 1 : `/mcp`, 32-6a ; la \
+         décision d'un envoi du serveur MCP, 32-8b), \
          plus /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
-    assert_eq!(tout.len(), 132);
+    assert_eq!(tout.len(), 133);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

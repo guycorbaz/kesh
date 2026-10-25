@@ -9,7 +9,9 @@
 //!
 //! - [`journaliser_appel`] (Story 32-6b) : l'entrée du journal d'audit de
 //!   chaque `tools/call`, sur la `Trace` — la seule fonction de ce module qui
-//!   écrit.
+//!   écrit. Son entrée est construite par [`entree_appel`] (Story 32-8b),
+//!   fonction pure que le dépôt d'un envoi emploie aussi, pour écrire l'entrée
+//!   de son appel **dans** sa transaction (`envois_mcp::deposer`).
 //!
 //! ⚠️ **Dérogation écrite aux règles R1, R2 et R7 de `services`** pour
 //! [`reglages_actifs`] (validation P2 de la 32-6, R14) : elle précède
@@ -21,11 +23,12 @@
 //! un appel **refusé** comme pour un appel servi.
 
 use kesh_db::entities::audit_log::NewAuditLogEntry;
-use kesh_db::entities::{McpServerSettings, Role, SendValidation};
+use kesh_db::entities::{McpServerSettings, Role};
 use kesh_db::repositories::{audit_log, mcp_server_settings};
 
 use crate::errors::AppError;
 use crate::services::acces::{ContexteAcces, Exigence, Portee};
+use crate::services::cles_mcp::CleMcpAuthentifiee;
 use crate::services::poignees::{Lecture, Trace};
 
 /// Les réglages des sociétés **activées**, par `company_id` croissant (AC-a2).
@@ -97,15 +100,30 @@ pub async fn etat(acces: &ContexteAcces, lecture: &Lecture) -> Result<EtatServeu
 /// **jamais** écrit.
 pub const OUTIL_INCONNU: &str = "(inconnu)";
 
-/// L'issue d'un appel d'outil — une énumération **fermée** (AC-b1).
+/// L'issue d'un appel d'outil — une énumération **fermée** (AC-b1 de la 32-6b,
+/// amendée par l'AC-B11 de la 32-8b : `validation_requise` retirée, six issues
+/// des envois ajoutées).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IssueAppel {
-    /// L'outil a rendu ses données.
+    /// L'outil a rendu ses données — sous une clé `exempt`, ou la relecture
+    /// d'un envoi validé (`kesh_lire_envoi`).
     Servi,
-    /// La clé est soumise à la validation avant envoi (refus avant exécution).
-    ValidationRequise,
+    /// Sous une clé `required` : les données sont déposées, rien ne part.
+    EnvoiDepose,
+    /// Relecture d'un envoi qui attend encore la décision.
+    EnvoiEnAttente,
+    /// Relecture d'un envoi refusé.
+    EnvoiRefuse,
+    /// Relecture d'un envoi échu.
+    EnvoiEchu,
+    /// Dépôt refusé : le texte ou le résumé dépassent leur taille.
+    EnvoiTropVolumineux,
+    /// Dépôt refusé : la clé a trop d'envois en attente.
+    LimiteAtteinte,
     /// Outil inconnu, hors des portées de la clé, ou refusé par son service :
-    /// **une seule** issue (aucun oracle, C-32-6-21).
+    /// **une seule** issue (aucun oracle, C-32-6-21) — et, pour
+    /// `kesh_lire_envoi`, un numéro inexistant, d'une autre clé ou d'une autre
+    /// société.
     Inconnu,
     /// Arguments refusés par l'outil, ou demande mal formée (AC-a19).
     ArgumentsInvalides,
@@ -122,7 +140,12 @@ impl IssueAppel {
     pub fn code(self) -> &'static str {
         match self {
             Self::Servi => "servi",
-            Self::ValidationRequise => "validation_requise",
+            Self::EnvoiDepose => "envoi_depose",
+            Self::EnvoiEnAttente => "envoi_en_attente",
+            Self::EnvoiRefuse => "envoi_refuse",
+            Self::EnvoiEchu => "envoi_echu",
+            Self::EnvoiTropVolumineux => "envoi_trop_volumineux",
+            Self::LimiteAtteinte => "limite_atteinte",
             Self::Inconnu => "inconnu",
             Self::ArgumentsInvalides => "arguments_invalides",
             Self::Introuvable => "introuvable",
@@ -132,60 +155,120 @@ impl IssueAppel {
     }
 }
 
-/// Ce qu'on journalise d'un appel d'outil — **ni ses arguments, ni ses
-/// données** (AC-b2) : aucun champ ne peut en porter.
-#[derive(Debug, Clone, Copy)]
-pub struct AppelOutil {
-    /// `mcp_keys.id` de la clé.
-    pub cle_id: i64,
-    /// Le créateur de la clé : l'acteur de l'entrée (C-32-6-21).
-    pub createur: i64,
-    /// Le nom d'un outil du registre, ou [`OUTIL_INCONNU`]. `&'static str` : un
-    /// texte du binaire — le nom reçu du client, emprunté au corps de la
-    /// requête, n'a pas cette durée de vie.
-    pub outil: &'static str,
-    /// L'issue.
-    pub issue: IssueAppel,
-    /// La durée de l'appel, de sa prise en charge par le répartiteur à son
-    /// issue, en millisecondes.
-    pub duree_ms: u64,
-    /// La politique de validation de la clé.
-    pub validation: SendValidation,
+/// L'entrée `mcp.tool_called` d'un appel d'outil — fonction **pure** (AC-B11
+/// de la 32-8b, signature fixée par la fiche ; la 32-10a-iii l'appelle avec
+/// `None`).
+///
+/// L'entrée est au nom du créateur de la clé (`actor_type = 'user'`), type
+/// d'entité `mcp_key`, `entity_id` = l'id de la clé. Le détail a **cinq
+/// clés** — `{cleMcpId, outil, issue, dureeMs, validation}` — quand `envoi`
+/// vaut `None`, et **six**, les cinq et `"envoi": n`, quand il vaut `Some(n)`
+/// (un dépôt, ou une relecture aux arguments valides : le numéro demandé).
+/// **Ni arguments, ni données** (AC-b2) : aucun paramètre ne peut en porter.
+/// `outil` est le nom d'un outil du registre, un nom réservé
+/// (`kesh_lire_envoi`), ou [`OUTIL_INCONNU`] — jamais le nom reçu du client.
+///
+/// `pub` et non `pub(crate)` (C-32-8-52) : son test pur vit dans
+/// `tests/mcp_journal_e2e.rs`, faute de pouvoir construire une
+/// `CleMcpAuthentifiee` sans base.
+#[doc(hidden)]
+pub fn entree_appel(
+    cle: &CleMcpAuthentifiee,
+    outil: &str,
+    issue: IssueAppel,
+    duree_ms: u64,
+    envoi: Option<i64>,
+) -> NewAuditLogEntry {
+    let mut detail = serde_json::json!({
+        "cleMcpId": cle.cle_id,
+        "outil": outil,
+        "issue": issue.code(),
+        "dureeMs": duree_ms,
+        "validation": cle.validation.as_str(),
+    });
+    if let Some(n) = envoi {
+        detail["envoi"] = serde_json::Value::from(n);
+    }
+    NewAuditLogEntry::user(
+        cle.acces.user_id(),
+        "mcp.tool_called",
+        "mcp_key",
+        cle.cle_id,
+        Some(detail),
+    )
 }
 
-/// Écrit l'entrée `mcp.tool_called` d'un appel d'outil, sur la `Trace`
+/// Écrit l'entrée [`entree_appel`] d'un appel d'outil, sur la `Trace`
 /// (AC-b1).
-///
-/// Le détail est **exactement** `{cleMcpId, outil, issue, dureeMs,
-/// validation}` ; l'entrée est au nom du créateur de la clé (`actor_type =
-/// 'user'`), type d'entité `mcp_key`, `entity_id` = l'id de la clé.
 ///
 /// ⛔ **Fail closed** (C-32-6-30) : une erreur est **rendue**, jamais avalée —
 /// le répartiteur ne laisse alors partir aucune donnée. Contrairement aux
-/// traces des rapports (`rapports.rs`), qui sont *best-effort*.
-pub async fn journaliser_appel(trace: &Trace, appel: &AppelOutil) -> Result<(), AppError> {
+/// traces des rapports (`rapports.rs`), qui sont *best-effort*. Un dépôt
+/// **réussi** n'appelle pas cette fonction : son entrée est écrite dans la
+/// transaction du dépôt (`envois_mcp::deposer`).
+pub async fn journaliser_appel(
+    trace: &Trace,
+    cle: &CleMcpAuthentifiee,
+    outil: &str,
+    issue: IssueAppel,
+    duree_ms: u64,
+    envoi: Option<i64>,
+) -> Result<(), AppError> {
     let mut tx = trace
         .pool()
         .begin()
         .await
         .map_err(kesh_db::errors::map_db_error)?;
-    audit_log::insert_in_tx(
-        &mut tx,
-        NewAuditLogEntry::user(
-            appel.createur,
-            "mcp.tool_called",
-            "mcp_key",
-            appel.cle_id,
-            Some(serde_json::json!({
-                "cleMcpId": appel.cle_id,
-                "outil": appel.outil,
-                "issue": appel.issue.code(),
-                "dureeMs": appel.duree_ms,
-                "validation": appel.validation.as_str(),
-            })),
-        ),
-    )
-    .await?;
+    audit_log::insert_in_tx(&mut tx, entree_appel(cle, outil, issue, duree_ms, envoi)).await?;
     tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `entree_appel_cinq_ou_six_cles` vit dans `tests/mcp_journal_e2e.rs` : une
+    // `CleMcpAuthentifiee` ne se construit que par `cles_mcp::authentifier`
+    // (garde `contexte_acces_mcp_construit_par_authentifier_seul`), qui exige
+    // une base (C-32-8-52).
+
+    /// AC-B11 — l'énumération close des issues et leurs codes.
+    #[test]
+    fn issues_closes() {
+        let codes: Vec<&str> = [
+            IssueAppel::Servi,
+            IssueAppel::EnvoiDepose,
+            IssueAppel::EnvoiEnAttente,
+            IssueAppel::EnvoiRefuse,
+            IssueAppel::EnvoiEchu,
+            IssueAppel::EnvoiTropVolumineux,
+            IssueAppel::LimiteAtteinte,
+            IssueAppel::Inconnu,
+            IssueAppel::ArgumentsInvalides,
+            IssueAppel::Introuvable,
+            IssueAppel::Erreur,
+            IssueAppel::DelaiDepasse,
+        ]
+        .into_iter()
+        .map(IssueAppel::code)
+        .collect();
+        assert_eq!(
+            codes,
+            [
+                "servi",
+                "envoi_depose",
+                "envoi_en_attente",
+                "envoi_refuse",
+                "envoi_echu",
+                "envoi_trop_volumineux",
+                "limite_atteinte",
+                "inconnu",
+                "arguments_invalides",
+                "introuvable",
+                "erreur",
+                "delai_depasse",
+            ]
+        );
+    }
 }

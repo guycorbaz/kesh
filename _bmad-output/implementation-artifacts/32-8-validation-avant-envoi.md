@@ -559,11 +559,11 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     d'intégration `depot_rend_visible` (`mcp_envois_e2e.rs`) : un outil de test dont le texte porte U+202E, `\r` et
     U+200B, sous une clé `required` → `content` en base **égal** au texte où ces trois caractères sont remplacés par
     `\u{202E}`, `\u{000D}`, `\u{200B}` ; la valeur rendue par le `GET` du détail lui est égale.
-16. **AC-B4 — la taille** (C-32-8-14). Après le rendu visible : `contenu.len() ≤ MCP_ENVOI_OCTETS_MAX` (**65 536**)
+16. **AC-B4 — la taille** (C-32-8-14). Après le rendu visible : `contenu.len() ≤ MCP_ENVOI_OCTETS_MAX` (**24 576**, note de l'orchestrateur ; 65 536 à la rédaction)
     et `resume.len() ≤ MCP_ENVOI_RESUME_OCTETS_MAX` (**1 024**), constantes de `services/envois_mcp.rs` (employées aussi
     par la décision, AC-B9) ; au-delà, **rien n'est déposé** : `isError: true`, `TEXTE_ENVOI_TROP_VOLUMINEUX`, nouvelle
     variante sans champ `ErreurOutil::TropVolumineux` (`outil.rs`, AC-a20 tenue), issue `envoi_trop_volumineux`. Tests
-    `taille_des_envois` : 65 536 octets déposés ; 65 537 refusés, table inchangée, corps égal ; 65 530 octets de texte
+    `taille_des_envois` : 24 576 octets déposés ; 24 577 refusés, table inchangée, corps égal ; 24 570 octets de texte
     dont deux U+200B (trois octets chacun, huit à l'échappement `\u{200B}`) → refusé (la borne porte sur le texte **rendu visible**).
 17. **AC-B5 — le dépôt et son journal, en une transaction** (C-32-8-12, C-32-8-13, C-32-8-15). `EnvoiAValider::deposer`
     reçoit **la clé authentifiée entière** — `pub(in crate::mcp) async fn deposer(self, cle: &CleMcpAuthentifiee,
@@ -704,8 +704,8 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     -> Result<(), MotifContenu>` : `TropVolumineux` au-delà de `MCP_ENVOI_OCTETS_MAX`, `CaractereCache` si un caractère
     vérifie `kesh_core::text::is_hidden_in_text` (AC-02, AC-B3) ; **aucun** rognage, **aucune** normalisation. Le gestionnaire rend 400 avec
     `t("mcp-send-content-too-large")` ou `t("mcp-send-content-hidden-character")`. Test `contenu_modifie_controle` :
-    `"a\r\nb"` refusé ; U+202E refusé ; U+0378 refusé ; `"⚠ é"` admis et stocké égal ; chaîne vide admise ; 65 536 octets
-    admis, 65 537 refusés ; un blanc final conservé.
+    `"a\r\nb"` refusé ; U+202E refusé ; U+0378 refusé ; `"⚠ é"` admis et stocké égal ; chaîne vide admise ; 24 576 octets
+    admis, 24 577 refusés ; un blanc final conservé.
 22. **AC-B10 — les poignées des envois, sans pool visible** (C-32-8-22 ; patron de `LecturePrompts`/`EcriturePrompts`,
     32-10a AC-ii3, AC-iii1). `services::poignees::LectureEnvois(MySqlPool)` — **posée sur le pool en lecture seule du
     MCP** (celui de l'unique appel de `pool_lecture_seule`, lié une fois en `lib.rs` puis enveloppé), une seule méthode
@@ -878,7 +878,7 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     remplacés par leur code (`\u{…}`) ; un tel code peut aussi avoir été écrit tel quel dans vos livres. » (validation
     P1, F6). Un bloc **Résumé de la demande — n'est pas envoyé** (le résumé, en texte). Le
     bloc **Ce qui sera envoyé à l'agent** : une **`<textarea>`** en police à chasse fixe, `readonly` par défaut, dont
-    la **valeur** est la chaîne `content` reçue, sans transformation ; un compteur « N octets sur 65 536 » (taille UTF-8
+    la **valeur** est la chaîne `content` reçue, sans transformation ; un compteur « N octets sur 24 576 » (taille UTF-8
     de la valeur). Actions d'un envoi en attente : *Modifier* (retire `readonly`), *Rétablir* (remet la valeur reçue),
     *Envoyer tel quel* tant que la valeur égale la valeur reçue, *Envoyer la version modifiée* sinon, *Refuser*
     (variante destructive, dialogue de confirmation). Un envoi validé montre son contenu en lecture seule, avec
@@ -923,7 +923,7 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     d'administration, la 32-7 l'y rattachant (C-32-8-21) — qui dit, **tel que le code le fait** : qu'une clé
     `required` (le défaut) ne rend aucune donnée à l'agent sans validation ; l'accusé et la relecture ; l'écran, ce qu'il
     montre et ce qui part (le texte, octet pour octet ; le résumé non envoyé ; la donnée structurée non envoyée) ; les
-    trois gestes ; l'échéance de 24 h depuis la demande ; la limite de 20 envois en attente par clé et de 64 Kio par
+    trois gestes ; l'échéance de 24 h depuis la demande ; la limite de 20 envois en attente par clé et de 24 Kio par
     envoi ; les caractères invisibles rendus visibles, et refusés dans une modification — et qu'un code `\u{…}` peut aussi
     avoir été écrit tel quel dans la donnée (F6), et que des **données ordinaires** paraissent codées — le sélecteur d'un
     emoji composé, les liants U+200C et U+200D de certaines écritures (validation P2, F15) ; les **issues d'outil** qui partent sans validation sous une clé
@@ -960,7 +960,7 @@ servies** (liste close de l'AC-a12 de la 32-6a, E2 de la spike) et des **autres 
 | D1 | `tools/call` d'un `McpTool`, clé `required` | l'accusé : un entier et des constantes | `autoriser` → `Depot` ; `appliquer` → `Deposer(EnvoiAValider)`, illisible, consommé par le dépôt | types (champs privés, AC-B1) + gardes (AC-B14) + `e1_rien_ne_part_sous_cle_requise` (AC-B7) |
 | D2 | `tools/call` d'un `McpTool`, clé `exempt` | les données de l'outil, sans écran | **la seule voie hors validation** (E1), par décision de l'administrateur, journalisée (32-6b) | `cle_dispensee_servie` ; manuel (AC-C10) |
 | D3 | une **erreur** d'un `McpTool` sous clé `required` (introuvable, arguments, interne, délai) | un texte fixe — mais **un bit** : l'existence d'un identifiant, la réussite d'une lecture | E5 (aucun texte libre) | **angle mort** (C-32-8-18, point 3 pour Guy) |
-| D4 | un dépôt refusé pour la **taille** | un texte fixe — **un bit** : le résultat dépasse 64 Kio | — | **angle mort** (même famille que D3) |
+| D4 | un dépôt refusé pour la **taille** | un texte fixe — **un bit** : le résultat dépasse 24 Kio | — | **angle mort** (même famille que D3) |
 | D5 | `tools/call` de `kesh_lire_envoi` | le texte **validé**, pour la même clé, la même société, avant l'échéance ; sinon des constantes et l'entier demandé | `ContenuValide` construit par le service seul depuis une ligne `Valide` de la clé et de la société | types + garde `envoi_valide_construit_par_le_service_seul` + tests (AC-B6, AC-B7) |
 | D6 | le **résumé** d'un envoi | rien : il ne va qu'à l'écran | `EnvoiAValider` le passe au dépôt seul ; `ContenuValide` n'a pas de résumé | type + `une_seule_representation` (AC-B2) |
 | D7 | la **donnée structurée** d'un outil sous clé `required` | rien | `texte_a_valider` ne la lit pas | `une_seule_representation` (AC-B2) |
@@ -997,7 +997,7 @@ servies** (liste close de l'AC-a12 de la 32-6a, E2 de la spike) et des **autres 
 | **Concurrence** | décision sous `FOR UPDATE` et version ; échéance lue dans la même requête ; limite d'envois souple (C-32-8-13) ; purge hors transaction | AC-A6, AC-B5, AC-B8 (`decisions_concurrentes`) |
 | **Envoi relu deux fois** | permis jusqu'à l'échéance, mêmes octets, chaque relecture journalisée | AC-B7 (`relu_deux_fois_memes_octets`), AC-B11 |
 | **Autre clé, autre société** | même réponse qu'un numéro inexistant ; à l'écran, la société de la session seulement | AC-A7, AC-A8, AC-B7 |
-| **Taille** | 64 Kio de texte rendu visible, 1 Kio de résumé ; au-delà, rien n'est déposé ; même borne à la modification | AC-B4, AC-B9 |
+| **Taille** | 24 Kio de texte rendu visible, 1 Kio de résumé ; au-delà, rien n'est déposé ; même borne à la modification | AC-B4, AC-B9 |
 | **Contenu non fiable** | caractères cachés échappés au dépôt, refusés à la modification ; affichage en texte seul ; avis permanent ; aucune `{@html}` | AC-B3, AC-B9, AC-C3, AC-C6 |
 | **Rôle requis** | Administrateur, par une session ; aucune clé ne valide | AC-B8 |
 | **Sauvegarde** | la table est au `.keshbackup` (#722), vidée à la remise à zéro ; P7 sans objet (aucune donnée écrite) | AC-A10, AC-A11 |
@@ -1157,11 +1157,11 @@ Tests hors mutations, nommés au Dev Agent Record : `survit_au_redemarrage`, `ke
   résumé ; les métadonnées (clé, outil, dates, état) croissent avec l'usage et entrent dans chaque sauvegarde — point 5
   pour Guy.
 - **La validation est humaine.** Kesh garantit que ce qui part est ce qui a été montré et accepté ; il ne garantit pas
-  que l'utilisateur a **lu** 64 Kio de texte, ni qu'il a repéré un **homoglyphe** (un « а » cyrillique visible n'est pas
+  que l'utilisateur a **lu** 24 Kio de texte, ni qu'il a repéré un **homoglyphe** (un « а » cyrillique visible n'est pas
   un caractère caché), ni l'effet de l'algorithme bidirectionnel sur des lettres **visibles** de droite à gauche
   (arabe, hébreu) qui réordonnent l'affichage d'une ligne sans caractère de contrôle (`dir="ltr"` n'y peut rien).
 - **Un bit part sans validation sous une clé `required`** (D3, D4) : qu'un identifiant existe (« introuvable » contre
-  « envoi en attente »), qu'une lecture a réussi, qu'un résultat dépasse 64 Kio. Fermer ce point demanderait de déposer
+  « envoi en attente »), qu'une lecture a réussi, qu'un résultat dépasse 24 Kio. Fermer ce point demanderait de déposer
   aussi les erreurs — soumis à Guy (point 3).
 - **Le canal de l'API** (D17) : une clé d'API donnée au même agent lit `/api/v1` sans validation. La validation est
   celle du serveur MCP.
@@ -1190,6 +1190,7 @@ Tests hors mutations, nommés au Dev Agent Record : `survit_au_redemarrage`, `ke
   textes de l'accusé, de la relecture et d'`instructions` (C-32-8-26) reposent donc sur une hypothèse non éprouvée ;
   s'ils ne suffisent pas, c'est un texte à changer, non la poignée (rien ne part si l'agent oublie de relire). Point 10
   pour Guy ; la 32-11 consigne l'observation.
+- **L'ordre des verrous de la décision** (constat P3-R6, C-32-8-58) : la décision verrouille la ligne de `mcp_sends` puis écrit `audit_log` ; la remise à zéro prend `audit_log` avant de vider `mcp_sends`. Une décision simultanée d'une remise à zéro peut se perdre en interblocage : la remise à zéro est rejouée, la décision non — elle rend une 500 et n'écrit rien. À porter au document des motifs de portée par la 32-8c.
 - **Le manuel** : aucun gate ne le lit ; les prompts de revue nomment l'axe et exigent le PDF aplati.
 
 ## Dev Notes
@@ -1287,7 +1288,7 @@ impl EnvoiAValider {
 fn texte_a_valider(d: &Donnees) -> String { /* blocs de texte, dans l'ordre, joints par "\n\n" */ }
 
 // services/envois_mcp.rs
-pub const MCP_ENVOI_OCTETS_MAX: usize = 65_536;
+pub const MCP_ENVOI_OCTETS_MAX: usize = 24_576;
 pub const MCP_ENVOI_RESUME_OCTETS_MAX: usize = 1_024;
 pub const MCP_ENVOI_DUREE_S: u32 = 86_400;
 pub const MCP_ENVOIS_EN_ATTENTE_MAX: u32 = 20;
@@ -1413,7 +1414,7 @@ l. 497-503 (routes de la 32-5c).
   « une clé `required` ne peut appeler aucun outil » de sa liste.
 - **32-9a, 32-9b** (outils de données) : sous une clé `required`, l'agent ne reçoit **que le texte** des blocs — le
   bloc texte doit porter **toute** la donnée (la recommandation d'E1 : il sérialise la structure) ; pagination sous
-  64 Kio de texte **après** le rendu visible (et sous les 10 000 jetons de Claude Code) ; l'enveloppe « donnée non
+  24 Kio de texte **après** le rendu visible (et sous les 10 000 jetons de Claude Code) ; l'enveloppe « donnée non
   fiable » paraît telle quelle à l'écran ; le **résumé** de chaque outil est court (≤ 1 Kio), écrit par Kesh, et dit la
   demande.
 - **32-10a** : voir § *Note pour la 32-10a* ; le prompt standard de l'agent de développement (clé souvent
@@ -1454,7 +1455,7 @@ l. 497-503 (routes de la 32-5c).
    pool_mcp.clone()))` et `LectureEnvois::new(pool_mcp…)` (AC-B15, point 3) ; « lié une fois puis enveloppé deux fois »
    devient « déjà lié par la 32-8b, enveloppé **une fois de plus** » par `LecturePrompts::new(pool_mcp.clone())`, et les
    entrées de `FABRIQUES_V2` que la 32-10a-ii prévoit partent de celles que la 32-8b aura réécrites.
-3. **`registre_coherent`** refuse déjà le nom réservé `kesh_lire_envoi` ; la 32-10a-iii y ajoute `proposer_prompt`.
+3. **`registre_coherent`** refuse déjà le nom réservé `kesh_lire_envoi` ; la 32-10a-iii y ajoute `proposer_prompt`. *(Complété le 2026-10-25, étape 0 de la 32-8b — P3-R4 (a), P3-R3.)* Le refus vit dans `Registre::avec` (`registre::NOMS_RESERVES`, C-32-8-61) ; ce que la 32-10a-iii fait de `proposer_prompt` relève de son AC-iii2. **L'ordre de `tools/list` après la 32-8b** est : les outils du registre ouverts par les portées de la clé, dans l'ordre du registre, **puis** `kesh_lire_envoi`, pour toute clé (`mcp/repartiteur.rs`, bras `Methode::ToolsList` : `let mut outils = etat.registre.descripteurs_pour(&portees(cle)); outils.push(descripteur_lire_envoi());`) ; la 32-10a-iii placera `proposer_prompt` après `kesh_lire_envoi`. Les corps attendus de `tools_list_filtre` (`tests/mcp_transport_e2e.rs`) partent de la liste amendée par la 32-8b : `books:read` → `[descripteur_version(), descripteur_lire_envoi()]`, `contacts:read` seule → `[descripteur_lire_envoi()]`, et le registre de test à deux outils → `livres` puis `kesh_lire_envoi` (AC-iii2, point 4, de la 32-10a). Le pool en lecture seule s'appelle `pool_outils`, non `pool_mcp` (C-32-8-53).
 4. **Les compteurs** que la 32-10a recompte (`TABLES_TO_TRUNCATE`, l'export, `admin-manual.tex:2249`, le CHANGELOG,
    `migrations_upgrade_path.rs`, `admin_pat_denied_e2e.rs`) partent des valeurs que la 32-8 aura posées.
 
@@ -1487,7 +1488,7 @@ boucle de revue* et son exception `kesh-db`, *Recompter*) ; `docs/agents-orchest
    périodique serait une tâche de fond de plus. Et les **lignes** elles-mêmes ne se suppriment jamais : seuls le contenu
    et le résumé s'effacent, les métadonnées (clé, outil, dates, état) restent et entrent dans chaque sauvegarde
    (validation P1, F9). Faut-il une purge périodique, et faut-il supprimer les lignes anciennes ?
-6. **Les bornes** : 20 envois en attente par clé, 64 Kio par envoi, 1 Kio de résumé (C-32-8-13, C-32-8-14). Pour
+6. **Les bornes** : 20 envois en attente par clé, 24 Kio par envoi, 1 Kio de résumé (C-32-8-13, C-32-8-14). Pour
    information.
 7. **Les caractères invisibles** (contrôles bidirectionnels, espaces de largeur nulle…) sont remplacés par leur code
    `\u{…}` dans ce que tu vois **et** dans ce qui part : l'agent reçoit le code, jamais le caractère (C-32-8-5) ; une

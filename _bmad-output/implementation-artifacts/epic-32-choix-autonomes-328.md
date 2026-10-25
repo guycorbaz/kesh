@@ -436,3 +436,132 @@ qu'ils ne heurtent pas ceux de la 32-8b0, développée en parallèle (union à l
   `modified = FALSE` (exigé par `chk_mcp_sends_modified`) ; la migration est horodatée `20261025000002`, après
   `20261025000001`, dernière de `main` à l'étape 0.
 - **Réversible** : oui.
+
+## Story 32-8b — la poignée côté serveur (2026-10-25, Opus 5.5, en autonomie)
+
+### C-32-8-50 — `Donnees` n'a ni `BlocContenu` ni résumé : un texte, et un résumé facultatif
+
+- **Contexte** : la fiche raisonne sur `Donnees { resume, contenu: Vec<BlocContenu>, structure }` (esquisse de la fiche
+  32-6). Le code fusionné de la 32-6a porte `Donnees { texte: String, structure: Option<Value> }`
+  (`mcp/politique.rs:21-34` à `c5287dec`) : un seul bloc de texte, aucun résumé, aucune variante non textuelle.
+- **Retenu** : `texte_a_valider` rend le texte de l'outil tel quel ; le cas « bloc non textuel refusé » (AC-B2, P3-F6)
+  est **sans objet** et `appliquer` reste infaillible ; le résumé entre par `Donnees::avec_resume(String)`, additive —
+  `Donnees::nouvelles` et `kesh_version` ne changent pas ; sans résumé, `summary` est `NULL`.
+- **Écartées** : changer la signature de `nouvelles` (tous les outils et outils de test touchés) ; refuser un dépôt
+  sans résumé.
+- **Réversible** : oui — un `BlocContenu` à venir (32-9) fera de `texte_a_valider` un `match`.
+
+### C-32-8-51 — Le service de dépôt rend visible lui-même (constat P3-F7, option a)
+
+- **Contexte** : l'AC-B3 fait rendre visible par `appliquer` ; P3-F7 demande que l'invariant ne dépende pas de
+  l'appelant.
+- **Retenu** : `envois_mcp::deposer` applique `rendre_visible` au texte et au résumé, **puis** contrôle les tailles ;
+  `appliquer` ne rend rien visible (une seule définition, DRY). `EnvoiAValider` porte donc les textes bruts, illisibles
+  hors de `politique.rs`. La mutation MB3 se joue au service.
+- **Écartées** : rendre visible deux fois (`appliquer` puis le service), qui rend MB3 équivalente ; refuser au service un
+  texte non rendu visible.
+- **Réversible** : oui.
+
+### C-32-8-52 — `entree_appel` est `pub` (doc cachée), son test pur vit dans `mcp_journal_e2e.rs`
+
+- **Contexte** : l'AC-B11 fixe `pub(crate) fn entree_appel(cle: &CleMcpAuthentifiee, …)` et un test pur en `mod tests`.
+  Une `CleMcpAuthentifiee` ne se construit qu'avec un `ContexteAcces::mcp`, que la garde
+  `contexte_acces_mcp_construit_par_authentifier_seul` n'admet qu'en `services/cles_mcp.rs` — tests de `src/` compris.
+- **Retenu** : `entree_appel` est `pub` et `#[doc(hidden)]`, signature inchangée ; `entree_appel_cinq_ou_six_cles` vit
+  dans `tests/mcp_journal_e2e.rs`, sur une clé réelle authentifiée.
+- **Écartées** : une exception à la garde N24 ; un constructeur de test de `CleMcpAuthentifiee`.
+- **Réversible** : oui.
+
+### C-32-8-53 — Le pool en lecture seule garde son nom `pool_outils`
+
+- **Contexte** : l'AC-B15 (point 3) écrit `let pool_mcp = …`. Le pool était déjà lié une fois, sous le nom
+  `pool_outils` (`lib.rs` à `c5287dec`).
+- **Retenu** : le nom reste ; `Lecture::new(pool_outils.clone())` puis `LectureEnvois::new(pool_outils)`. Seules les
+  lignes `LectureOutils::nouvelle(…)` de `FABRIQUES_V2` (`services_motif.rs`), `LIB_NOMME_MCP` et de
+  `outils_et_politique_en_leur_lieu` (`mcp_gardes_lexicales.rs`) sont réécrites ; `EXCEPTIONS_V1` et
+  `pool_lecture_seule_en_un_lieu` ne bougent pas (la ligne du pool est inchangée). Pour la 32-10a : « `pool_mcp` » de la
+  *Note* se lit `pool_outils`.
+- **Réversible** : oui.
+
+### C-32-8-54 — `journaliser_appel` reçoit la clé ; `AppelOutil` est retiré
+
+- **Contexte** : la 32-6b a écrit `journaliser_appel(&Trace, &AppelOutil)` ; l'AC-B11 fixe `entree_appel(cle, outil,
+  issue, duree_ms, envoi)` et dit que `journaliser_appel` « gagne le même paramètre `envoi` ».
+- **Retenu** : `journaliser_appel(trace, cle, outil, issue, duree_ms, envoi)`, qui écrit `entree_appel(…)` ; la
+  structure `AppelOutil`, qui ne recopiait que des champs de la clé, disparaît (aucun test ne la nommait). L'acteur reste
+  le créateur de la clé (`cle.acces.user_id()`).
+- **Écartées** : garder `AppelOutil` avec un champ `envoi` (deux formes de la même entrée).
+- **Réversible** : oui.
+
+### C-32-8-55 — Valider un envoi : le texte vide est un contenu ; une ligne sans contenu échoue fermée (point 3 de #765)
+
+- **Contexte** : #765 (3) — `Valider { contenu: Some("") }` n'était ni spécifié ni testé ; `Valider { contenu: None }`
+  sur une ligne en attente sans contenu donne un validé sans contenu.
+- **Retenu** : `Some("")` est une modification comme une autre — admise (`verifier_contenu_modifie`), stockée `""`,
+  relue `""`, `modifie` vrai (test `contenu_modifie_controle_par_la_route`). Une ligne en attente sans contenu ne naît
+  d'aucun dépôt (le dépôt écrit toujours un texte ; la purge ne touche que les échus) ; posée par le pool du test, sa
+  validation tel quel est **admise**, et sa relecture **échoue fermée** (`DbError::Invariant` du dépôt, C-32-8-42 →
+  erreur interne, issue `erreur` au journal ; test `validation_tel_quel_sans_contenu_echoue_fermee`).
+- **Écartées** : refuser la décision à la route (une lecture de plus avant la transaction, ou un changement du dépôt —
+  `kesh-db`, sixième module).
+- **Réversible** : oui.
+
+### C-32-8-56 — Les points de #765 : trois pris, un laissé
+
+- **Contexte** : la 32-8b consomme le dépôt de la 32-8a ; #765 en relève quatre défauts à reprendre ici. La fiche fixe la
+  32-8b à cinq modules **sans `kesh-db`** ; un changement du dépôt en ferait un sixième.
+- **Retenu** : (1) **l'ordre des refus** est épinglé par la route, à deux causes (`ordre_des_refus_de_la_decision` :
+  refusé et échu, validé et échu → déjà décidé ; échu à mauvaise version → échu ; vivant à mauvaise version → version) ;
+  mutations jouées sur `decider_in_tx`, restaurées ; (3) C-32-8-55 ; (4) **les entrées de `deposer_in_tx`** sont bornées
+  par le service : durée et plafond constants, non nuls (assertion à la compilation), tailles contrôlées avant, société
+  et clé tirées de la **seule** clé authentifiée (`cle_requise_deposee` vérifie la ligne). **(2) n'est pas pris** : le
+  recoupement de `k.company_id` et `u.company_id` dans `lister` et `trouver` est un changement du SQL du dépôt
+  (`kesh-db`) ; il reste dans #765, pour une story qui touche `kesh-db`.
+- **Écartées** : élargir la 32-8b à `kesh-db` (consigne : s'arrêter plutôt qu'élargir).
+- **Réversible** : oui.
+
+### C-32-8-57 — Les tests passent par `oneshot` sur le routeur de production
+
+- **Contexte** : les conventions de l'AC disent `mcp_envois_e2e.rs` « HTTP réel, motif `spawn_app` des tests de la
+  32-6a » ; les tests de la 32-6a (`mcp_transport_e2e.rs`, `mcp_journal_e2e.rs`) emploient en réalité
+  `tower::ServiceExt::oneshot` sur `build_router_avec_registre`, avec `MockConnectInfo`.
+- **Retenu** : le motif réel de la 32-6a : un seul routeur sert `/mcp` et `/api/v1/admin/mcp/sends`, avec ses couches
+  (RBAC, anti-PAT, authentification) ; les sessions sont des JWT forgés.
+- **Réversible** : oui.
+
+### C-32-8-58 — L'ordre des verrous de la décision (constat P3-R6) : un angle mort écrit, pas de rejeu
+
+- **Contexte** : la décision verrouille la ligne de `mcp_sends` (`SELECT … FOR UPDATE`) puis insère dans `audit_log` ; la
+  remise à zéro (`kesh_seed::reset_demo`) prend `audit_log` (lecture verrouillante) **avant** les tables de
+  `reset_cleared_tables()`, dont `mcp_sends` (`docs/MULTI-TENANT-SCOPING-PATTERNS.md:339`). Le cycle est possible.
+- **Retenu** : la remise à zéro est **rejouée** sur 1213 (`is_seed_retryable`) ; la décision ne l'est pas : une décision
+  simultanée d'une remise à zéro peut rendre une 500, sans rien écrire (transaction annulée). Écrit au § *Ce que les
+  gardes ne voient pas* de la fiche. Le document des motifs de portée n'est **pas** amendé ici (`docs/`, sixième module)
+  : demandé à la 32-8c, qui touche `docs`.
+- **Écartées** : `retry_app_on_deadlock` sur la décision (complexité pour un geste d'administration exceptionnel).
+- **Réversible** : oui.
+
+### C-32-8-59 — Messages et corps de la décision
+
+- **Contexte** : l'AC-B8 nomme quatre clés de message ; la décision doit aussi refuser une version invalide et un refus
+  porteur de contenu.
+- **Retenu** : six clés `mcp-send-*` dans les quatre catalogues (`already-decided`, `expired`, `version-invalid`,
+  `content-with-refusal`, `content-too-large`, `content-hidden-character`), replis égaux à la valeur fr-CH (G9) ; le
+  corps est désérialisé par `Json` d'Axum, `decision` en énumération (`approve`, `refuse`) : une valeur inconnue rend le
+  refus de l'extracteur, comme pour les autres routes ; le détail rendu après décision est relu hors transaction.
+- **Réversible** : oui.
+
+### C-32-8-60 — Le journal de `kesh_lire_envoi`
+
+- **Contexte** : l'AC-B11 donne `envoi` à « tout appel de `kesh_lire_envoi` aux arguments valides ».
+- **Retenu** : arguments invalides → cinq clés, sans `envoi` ; relecture → six clés, le numéro demandé, y compris pour
+  une relecture en erreur (issue `erreur`) ; la relecture est résolue pour **toute** clé, quelle que soit sa portée.
+- **Réversible** : oui.
+
+### C-32-8-61 — Le registre refuse le nom réservé à l'ajout
+
+- **Contexte** : l'AC-B6 veut que `registre_coherent` refuse un outil du registre à nom réservé (MB24).
+- **Retenu** : `registre::NOM_LIRE_ENVOI` et `NOMS_RESERVES` ; `Registre::avec` panique sur un nom réservé (au câblage,
+  comme pour un schéma invalide) ; `registre_coherent` l'éprouve (`catch_unwind`) et contrôle le registre standard. La
+  32-10a-iii décidera de ce qu'elle fait de `proposer_prompt` (P3-R3).
+- **Réversible** : oui.

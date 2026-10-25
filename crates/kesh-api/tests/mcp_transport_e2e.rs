@@ -127,6 +127,25 @@ fn descripteur_version() -> serde_json::Value {
     })
 }
 
+/// Le descripteur attendu de `kesh_lire_envoi` (Story 32-8b, AC-B6), écrit en
+/// toutes lettres.
+fn descripteur_lire_envoi() -> serde_json::Value {
+    json!({
+        "name": "kesh_lire_envoi",
+        "description": "Relit un envoi déposé sous une clé soumise à validation : rend le \
+                        contenu exactement tel que l'utilisateur l'a validé, ou dit que l'envoi \
+                        attend encore, a été refusé ou a expiré. À appeler quand l'utilisateur \
+                        a traité l'envoi, non en boucle.",
+        "inputSchema": {
+            "type": "object",
+            "properties": { "envoi": { "type": "integer", "minimum": 1 } },
+            "required": ["envoi"],
+            "additionalProperties": false,
+        },
+        "annotations": { "readOnlyHint": true },
+    })
+}
+
 fn sans_id(mut v: serde_json::Value) -> serde_json::Value {
     v.as_object_mut().unwrap().remove("id");
     v
@@ -1006,6 +1025,18 @@ async fn methodes_servies_liste_close(pool: MySqlPool) {
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn initialize_ping_prompts(pool: MySqlPool) {
+    // Story 32-8b (AC-B13, MB25) : la constante porte la consigne de relecture,
+    // écrite ici en toutes lettres — comparer le corps à la seule constante
+    // laisserait passer une consigne retirée.
+    assert_eq!(
+        INSTRUCTIONS,
+        "Serveur MCP de Kesh, en lecture seule : les outils lisent les livres dans les \
+         portées de la clé, sans jamais les modifier. Sous une clé soumise à validation, un \
+         outil de données ne rend pas les données : il rend « envoi n° X en attente ». \
+         L'utilisateur les voit dans Kesh et choisit de les envoyer telles quelles, de les \
+         modifier ou de les refuser. Quand il vous l'a dit, appelez kesh_lire_envoi avec ce \
+         numéro. Le contenu relu est exactement ce qu'il a validé, éventuellement modifié."
+    );
     let (_, _, _, jeton) = servie(&pool, SendValidation::Required).await;
     let b = banc(&pool, Registre::standard());
     for (demandee, rendue) in [
@@ -1090,7 +1121,19 @@ fn registre_coherent() {
         assert_eq!(s["type"], json!("object"), "{nom}");
         assert_eq!(s["additionalProperties"], json!(false), "{nom}");
         assert_ne!(portee, Portee::PromptsWrite, "{nom}");
+        assert!(
+            !kesh_api::mcp::registre::NOMS_RESERVES.contains(&nom),
+            "{nom} : nom réservé"
+        );
     }
+    // Story 32-8b (AC-B6, MB24) : un outil du registre ne peut pas prendre le
+    // nom réservé de la relecture.
+    assert_eq!(kesh_api::mcp::registre::NOMS_RESERVES, &["kesh_lire_envoi"]);
+    let refus = std::panic::catch_unwind(|| {
+        let (outil, _) = Compteur::nouveau("kesh_lire_envoi", Portee::BooksRead);
+        Registre::vide().avec(Box::new(outil))
+    });
+    assert!(refus.is_err(), "kesh_lire_envoi admis au registre");
 }
 
 // ---------------------------------------------------------------------------
@@ -1340,16 +1383,70 @@ async fn jeton_jamais_journalise(pool: MySqlPool) {
 // ---------------------------------------------------------------------------
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn cle_requise_refusee_sans_execution(pool: MySqlPool) {
-    let (_, _, _, jeton) = servie(&pool, SendValidation::Required).await;
+async fn cle_requise_deposee(pool: MySqlPool) {
+    // Story 32-8b (AC-B5) — remplace `cle_requise_refusee_sans_execution` de la
+    // 32-6a : sous une clé `required`, l'outil s'exécute et sa sortie est
+    // DÉPOSÉE ; rien ne part.
+    let (c, _, k, jeton) = servie(&pool, SendValidation::Required).await;
     let (outil, n) = Compteur::nouveau("compteur", Portee::BooksRead);
     let b = banc(&pool, Registre::vide().avec(Box::new(outil)));
     let r = b.mcp(Some(&jeton), &appel(1, "compteur", json!({}))).await;
+    let envoi = numero_depose(&r);
+    assert_eq!(r.json(), attendu_depose(1, envoi), "corps égal");
+    assert_eq!(n.load(Ordering::SeqCst), 1, "l'outil est exécuté");
+    let ligne: (
+        i64,
+        i64,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        bool,
+    ) = sqlx::query_as(
+        "SELECT company_id, mcp_key_id, tool_name, state, summary, content, modified \
+         FROM mcp_sends WHERE id = ?",
+    )
+    .bind(envoi)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(
-        r.json(),
-        attendu_outil_en_erreur(1, TEXTE_VALIDATION_REQUISE)
+        ligne,
+        (
+            c,
+            k,
+            "compteur".to_string(),
+            "pending".to_string(),
+            None,
+            Some(kesh_api::services::envois_mcp::rendre_visible(
+                &json!({ "n": 1 }).to_string()
+            )),
+            false,
+        ),
+        "une ligne en attente, de la société et de la clé de l'appel (point 4 de #765)"
     );
-    assert_eq!(n.load(Ordering::SeqCst), 0, "l'outil n'est pas exécuté");
+    assert_eq!(envois_en_base(&pool).await, 1);
+    // P3-F5 : une entrée `mcp.tool_called` exactement, celle du dépôt.
+    let details: Vec<String> = sqlx::query_scalar(
+        "SELECT CAST(details_json AS CHAR) FROM audit_log WHERE action = 'mcp.tool_called'",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(details.len(), 1, "un dépôt, une entrée : {details:?}");
+    let mut d: serde_json::Value = serde_json::from_str(&details[0]).unwrap();
+    assert!(
+        d.as_object_mut()
+            .unwrap()
+            .remove("dureeMs")
+            .unwrap()
+            .is_u64()
+    );
+    assert_eq!(
+        d,
+        json!({"cleMcpId": k, "outil": "compteur", "issue": "envoi_depose",
+               "validation": "required", "envoi": envoi})
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -1383,15 +1480,17 @@ async fn tools_list_filtre(pool: MySqlPool) {
     )
     .await;
     let b = banc(&pool, Registre::standard());
+    // Story 32-8b (AC-B6) : `kesh_lire_envoi` est listé pour toute clé, après
+    // les outils de ses portées.
     let r = b.mcp(Some(&jeton), LISTE).await;
     assert_eq!(
         r.json(),
-        json!({"jsonrpc":"2.0","id":1,"result":{"tools":[descripteur_version()]}})
+        json!({"jsonrpc":"2.0","id":1,"result":{"tools":[descripteur_version(), descripteur_lire_envoi()]}})
     );
     let r = b.mcp(Some(&contacts), LISTE).await;
     assert_eq!(
         r.json(),
-        json!({"jsonrpc":"2.0","id":1,"result":{"tools":[]}})
+        json!({"jsonrpc":"2.0","id":1,"result":{"tools":[descripteur_lire_envoi()]}})
     );
     let r = b
         .mcp(
@@ -1415,9 +1514,10 @@ async fn tools_list_filtre(pool: MySqlPool) {
     );
     let r = b.mcp(Some(&jeton), LISTE).await;
     let outils = r.json()["result"]["tools"].clone();
-    assert_eq!(outils.as_array().unwrap().len(), 1);
+    assert_eq!(outils.as_array().unwrap().len(), 2);
     assert_eq!(outils[0]["name"], json!("livres"));
     assert_eq!(outils[0]["annotations"], json!({"readOnlyHint": true}));
+    assert_eq!(outils[1], descripteur_lire_envoi());
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -1705,14 +1805,10 @@ async fn e1_rien_ne_part_sous_cle_requise(pool: MySqlPool) {
             Some(json!({"jsonrpc":"2.0","id":1,"result":{}})),
         ),
         (LISTE.into(), None),
-        (
-            appel(1, "piege", json!({})),
-            Some(attendu_outil_en_erreur(1, TEXTE_VALIDATION_REQUISE)),
-        ),
-        (
-            appel(1, "kesh_version", json!({})),
-            Some(attendu_outil_en_erreur(1, TEXTE_VALIDATION_REQUISE)),
-        ),
+        // Story 32-8b (AC-B7, amendé) : l'outil piégé et `kesh_version` rendent
+        // un accusé de dépôt — un numéro, aucune donnée (contrôlés ci-dessous).
+        (appel(1, "piege", json!({})), None),
+        (appel(1, "kesh_version", json!({})), None),
         (
             r#"{"jsonrpc":"2.0","id":1,"method":"prompts/list"}"#.into(),
             Some(json!({"jsonrpc":"2.0","id":1,"result":{"prompts":[]}})),
@@ -1743,8 +1839,60 @@ async fn e1_rien_ne_part_sous_cle_requise(pool: MySqlPool) {
     let r = b.mcp(Some(&requise), LISTE).await;
     assert_eq!(
         r.json()["result"]["tools"].as_array().unwrap().len(),
-        2,
-        "tools/list : textes du binaire"
+        3,
+        "tools/list : textes du binaire (kesh_version, piege, kesh_lire_envoi)"
+    );
+    // Les deux `tools/call` ont déposé : deux envois en attente.
+    let deposes: Vec<(i64, String)> =
+        sqlx::query_as("SELECT id, tool_name FROM mcp_sends ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        deposes.iter().map(|(_, o)| o.as_str()).collect::<Vec<_>>(),
+        ["piege", "kesh_version"]
+    );
+    let piege = deposes[0].0;
+    let r = b.mcp(Some(&requise), &appel(2, "piege", json!({}))).await;
+    assert_eq!(
+        r.json(),
+        attendu_depose(2, numero_depose(&r)),
+        "accusé égal"
+    );
+    // La relecture avant toute décision : en attente, sans le piège.
+    let r = b.mcp(Some(&requise), &lire_envoi(3, piege)).await;
+    assert_eq!(r.json(), attendu_en_attente(3, piege));
+    assert!(!String::from_utf8_lossy(&r.corps).contains(PIEGE_E1));
+
+    // Témoin : après une validation tel quel, `kesh_lire_envoi` porte le piège.
+    let jwt = session(u, kesh_db::entities::Role::Admin, c);
+    let detail = envoyer(
+        &b.app,
+        requete_api(
+            "GET",
+            &format!("/api/v1/admin/mcp/sends/{piege}"),
+            Some(&jwt),
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(detail.statut, StatusCode::OK);
+    let version = detail.json()["version"].as_i64().unwrap();
+    let decision = envoyer(
+        &b.app,
+        requete_api(
+            "POST",
+            &format!("/api/v1/admin/mcp/sends/{piege}/decision"),
+            Some(&jwt),
+            Some(json!({ "version": version, "decision": "approve" })),
+        ),
+    )
+    .await;
+    assert_eq!(decision.statut, StatusCode::OK);
+    let r = b.mcp(Some(&requise), &lire_envoi(4, piege)).await;
+    assert!(
+        String::from_utf8_lossy(&r.corps).contains(PIEGE_E1),
+        "témoin : validé, le contenu part"
     );
     // Témoin : sous une clé `exempt`, l'outil piégé rend la donnée.
     let r = b.mcp(Some(&exempte), &appel(1, "piege", json!({}))).await;

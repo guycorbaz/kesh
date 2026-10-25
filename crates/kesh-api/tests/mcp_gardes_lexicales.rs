@@ -164,7 +164,7 @@ const LIB_NOMME_MCP: &[(&str, &str)] = &[
     ),
     (
         "lib.rs",
-        "mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils));",
+        "mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils.clone()));",
     ),
     ("lib.rs", "let etat_mcp = mcp::EtatMcp {"),
     ("lib.rs", "origines_propres: mcp::origines_propres("),
@@ -249,8 +249,8 @@ fn executer_appele_par_le_repartiteur_seul() {
     }
     for vert in [
         "    fn executer<'a>(",
-        "pub(crate) fn autoriser(validation: SendValidation) -> Result<Autorisation, Refus> {",
-        "pub(crate) fn appliquer(_autorisation: Autorisation, donnees: Donnees) -> DonneesEnvoyables {",
+        "pub(crate) fn autoriser(validation: SendValidation) -> Autorisation {",
+        "pub(crate) fn appliquer(autorisation: Autorisation, donnees: Donnees) -> Sortie {",
         "    pub(in crate::mcp) fn outil_pour(",
         "    pub(in crate::mcp) fn descripteurs_pour(",
     ] {
@@ -560,8 +560,40 @@ fn outils_et_politique_en_leur_lieu() {
         sites(&sources_src(), |f| f != "mcp/outil.rs", &lecture),
         liste(&[(
             "lib.rs",
-            "mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils));"
+            "mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils.clone()));"
         )])
+    );
+
+    // Story 32-8b (AC-B1) : `.deposer(` d'un `EnvoiAValider` n'est appelé, dans
+    // `src/mcp/`, qu'au répartiteur ; la définition (`fn deposer`) n'est pas un
+    // appel. Hors de `src/mcp/`, `.deposer(` est la poignée des envois
+    // (`services/`), hors du périmètre.
+    let deposer = re(r"\.\s*deposer\s*\(");
+    assert_eq!(
+        sites_factices(
+            "        .deposer(cle, &etat.ecriture_envois, nom, debut)",
+            &deposer
+        ),
+        1
+    );
+    assert_eq!(
+        sites_factices("    pub(in crate::mcp) async fn deposer(", &deposer),
+        0,
+        "vert : la définition"
+    );
+    assert_eq!(
+        sites_factices("        envois_mcp::deposer(", &deposer),
+        0,
+        "vert : l'appel du service par la méthode, en politique.rs"
+    );
+    let trouves: Vec<String> = sites(&sources_src(), |f| f.starts_with("mcp/"), &deposer)
+        .into_iter()
+        .map(|(f, _)| f)
+        .collect();
+    assert_eq!(
+        trouves,
+        vec!["mcp/repartiteur.rs".to_string()],
+        "`.deposer(` d'un EnvoiAValider hors du répartiteur"
     );
 
     let donnees = re(r"\bDonnees\s*::\s*nouvelles\b|\bDonnees\s*\{");
@@ -589,12 +621,13 @@ fn outils_et_politique_en_leur_lieu() {
 // AC-a23 — donnees_construites_par_la_politique_seule
 // ---------------------------------------------------------------------------
 
-/// Les attributs `#[derive(…)]` qui précèdent `struct <nom>` (commentaires de
-/// doc sautés).
+/// Les attributs `#[derive(…)]` qui précèdent `struct <nom>` ou `enum <nom>`
+/// (commentaires de doc sautés) — `enum` depuis la 32-8b, `Autorisation` et
+/// `Sortie` étant des énumérations.
 fn derives_de(source: &str, nom: &str) -> Vec<String> {
     let lignes: Vec<&str> = source.lines().collect();
     let tete = re(&format!(
-        r"^\s*pub(\([^)]*\))?\s+struct\s+{nom}\b|^\s*struct\s+{nom}\b"
+        r"^\s*pub(\([^)]*\))?\s+(struct|enum)\s+{nom}\b|^\s*(struct|enum)\s+{nom}\b"
     ));
     let mut v = Vec::new();
     for (i, l) in lignes.iter().enumerate() {
@@ -661,25 +694,36 @@ fn donnees_construites_par_la_politique_seule() {
         vec!["#[derive(Clone)]".to_string()],
         "vert existant"
     );
+    let tous = &["Serialize", "Default", "Debug", "Clone", "Copy"][..];
     for (nom, interdits) in [
         ("Donnees", &["Serialize", "Default", "Debug"][..]),
         ("DonneesEnvoyables", &["Serialize", "Default", "Debug"][..]),
-        (
-            "Autorisation",
-            &["Serialize", "Default", "Debug", "Clone", "Copy"][..],
-        ),
+        ("Autorisation", tous),
+        // Story 32-8b (AC-B1) : les deux jetons, l'envoi à valider, la sortie.
+        ("JetonEnvoi", tous),
+        ("JetonDepot", tous),
+        ("EnvoiAValider", tous),
+        ("Sortie", tous),
     ] {
         let fautifs = interdits_dans(&derives_de(&politique, nom), interdits);
         assert!(fautifs.is_empty(), "{nom} : {fautifs:?}");
     }
+    // Témoin : `derives_de` voit une énumération (sans quoi `Autorisation` et
+    // `Sortie` passeraient à vide).
+    assert_eq!(
+        derives_de("#[derive(Debug)]\npub(crate) enum Sortie {\n", "Sortie"),
+        vec!["#[derive(Debug)]".to_string()]
+    );
     let imp = re(
-        r"\bimpl\b[^{]*\b(Default|Serialize|Debug)\b[^{]*\bfor\s+(Donnees|DonneesEnvoyables|Autorisation)\b|\bimpl\b[^{]*\b(Clone|Copy)\b[^{]*\bfor\s+Autorisation\b",
+        r"\bimpl\b[^{]*\b(Default|Serialize|Debug)\b[^{]*\bfor\s+(Donnees|DonneesEnvoyables|Autorisation|JetonEnvoi|JetonDepot|EnvoiAValider|Sortie)\b|\bimpl\b[^{]*\b(Clone|Copy)\b[^{]*\bfor\s+(Autorisation|JetonEnvoi|JetonDepot|EnvoiAValider|Sortie)\b",
     );
     for rouge in [
         "impl Default for Donnees {",
         "impl serde::Serialize for DonneesEnvoyables {",
         "impl std::fmt::Debug for Autorisation {",
         "impl Clone for Autorisation {",
+        "impl Clone for EnvoiAValider {",
+        "impl std::fmt::Debug for JetonDepot {",
     ] {
         assert_eq!(sites_factices(rouge, &imp), 1, "rouge : {rouge}");
     }
@@ -689,6 +733,37 @@ fn donnees_construites_par_la_politique_seule() {
         "vert : permis"
     );
     assert!(sites(&sources_src(), tout, &imp).is_empty());
+
+    // Story 32-8b (AC-B1) — les jetons, l'envoi à valider et les variantes de
+    // l'autorisation ne se construisent qu'en `politique.rs` ; `Sortie` s'y
+    // construit aussi, et le répartiteur la DÉFAIT par un `match` — ses deux
+    // lignes de motif sont la liste blanche, lexicalement indiscernables d'une
+    // construction.
+    let construction = re(
+        r"\b(JetonEnvoi|JetonDepot|EnvoiAValider)\s*\{|\bEnvoiAValider\s*::|\bAutorisation\s*::\s*(Envoi|Depot)\b|\bSortie\s*::\s*(Envoyer|Deposer)\b|\bimpl\s+EnvoiAValider\b",
+    );
+    for rouge in [
+        "    let j = JetonDepot { _prive: () };",
+        "    let e = EnvoiAValider { resume: None, contenu: c };",
+        "    Autorisation::Envoi(j)",
+        "    Sortie::Envoyer(d)",
+        "impl EnvoiAValider {",
+    ] {
+        assert_eq!(sites_factices(rouge, &construction), 1, "rouge : {rouge}");
+    }
+    assert_eq!(
+        sites_factices("    a_valider: EnvoiAValider,", &construction),
+        0,
+        "vert"
+    );
+    assert_eq!(
+        sites(&sources_src(), |f| f != "mcp/politique.rs", &construction),
+        liste(&[
+            ("mcp/repartiteur.rs", "Sortie::Envoyer(donnees) => ("),
+            ("mcp/repartiteur.rs", "Sortie::Deposer(a_valider) => {"),
+        ]),
+        "jeton, envoi à valider ou sortie construits hors de politique.rs"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1004,4 +1079,445 @@ fn reponses_par_rendre_seul() {
             "}"
         ]
     );
+}
+
+// ===========================================================================
+// Story 32-8b (refs #723) — les gardes des envois à valider (AC-B12, AC-B14)
+// ===========================================================================
+
+/// Le texte **aplati** d'une source Rust, débarrassé de ses commentaires et
+/// de ses littéraux, et la liste de ses littéraux de chaîne.
+///
+/// Dans le squelette, chaque littéral de chaîne (`"…"`, `b"…"`, brut
+/// `r#"…"#`) et de caractère (`'('`) est remplacé par une espace — sauf les
+/// **interpolations** `{ident…}` d'un littéral, rendues comme l'identifiant
+/// seul (`{{` est un échappement, non une interpolation) ; une durée de vie
+/// (`'a`) reste du code. Les sauts de ligne deviennent des espaces : une forme
+/// coupée sur plusieurs lignes se lit d'un tenant.
+///
+/// ⚠️ **Angles morts écrits** : une chaîne produite par une macro autre que
+/// celles de `tracing` (`concat!`, `stringify!`) n'est pas interprétée ; un
+/// identifiant fabriqué par une macro, un alias (`use … as`), un argument
+/// renommé (`let c = contenu; warn!("{c}")`) et un type porteur formaté par
+/// `Debug` ne sont pas vus — les identifiants visés sont exacts, non des
+/// sous-chaînes. Les types de `kesh-db` qui portent contenu ou résumé masquent
+/// l'un et l'autre dans leur `Debug` (C-32-8-40).
+fn squelette(source: &str) -> (String, Vec<String>) {
+    let c: Vec<char> = source.chars().collect();
+    let mut code = String::with_capacity(source.len());
+    let mut litteraux = Vec::new();
+    let mut i = 0;
+    let ident = |ch: char| ch.is_alphanumeric() || ch == '_';
+    while i < c.len() {
+        // Commentaire de ligne (doc comprise) et de bloc.
+        if c[i] == '/' && c.get(i + 1) == Some(&'/') {
+            while i < c.len() && c[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if c[i] == '/' && c.get(i + 1) == Some(&'*') {
+            i += 2;
+            while i + 1 < c.len() && !(c[i] == '*' && c[i + 1] == '/') {
+                i += 1;
+            }
+            i += 2;
+            code.push(' ');
+            continue;
+        }
+        let precedent_ident = i > 0 && ident(c[i - 1]);
+        // Chaîne brute : `r"…"`, `r#"…"#`, `br#"…"#`.
+        let debut_brut = if c[i] == 'r' && !precedent_ident {
+            Some(i + 1)
+        } else if c[i] == 'b' && c.get(i + 1) == Some(&'r') && !precedent_ident {
+            Some(i + 2)
+        } else {
+            None
+        };
+        if let Some(mut j) = debut_brut {
+            let mut dieses = 0;
+            while c.get(j) == Some(&'#') {
+                dieses += 1;
+                j += 1;
+            }
+            if c.get(j) == Some(&'"') {
+                j += 1;
+                let mut contenu = String::new();
+                loop {
+                    if j >= c.len() {
+                        break;
+                    }
+                    if c[j] == '"' && (1..=dieses).all(|k| c.get(j + k) == Some(&'#')) {
+                        j += 1 + dieses;
+                        break;
+                    }
+                    contenu.push(c[j]);
+                    j += 1;
+                }
+                code.push(' ');
+                code.push_str(&interpolations(&contenu));
+                code.push(' ');
+                litteraux.push(contenu);
+                i = j;
+                continue;
+            }
+        }
+        // Chaîne ordinaire (et `b"…"`).
+        if c[i] == '"' {
+            let mut j = i + 1;
+            let mut contenu = String::new();
+            while j < c.len() && c[j] != '"' {
+                if c[j] == '\\' && j + 1 < c.len() {
+                    contenu.push(c[j]);
+                    contenu.push(c[j + 1]);
+                    j += 2;
+                    continue;
+                }
+                contenu.push(c[j]);
+                j += 1;
+            }
+            code.push(' ');
+            code.push_str(&interpolations(&contenu));
+            code.push(' ');
+            litteraux.push(contenu);
+            i = j + 1;
+            continue;
+        }
+        // Caractère (`'('`, `'\''`) — une durée de vie (`'a`) reste du code.
+        if c[i] == '\'' {
+            if c.get(i + 1) == Some(&'\\') {
+                let mut j = i + 2;
+                while j < c.len() && c[j] != '\'' {
+                    j += 1;
+                }
+                code.push(' ');
+                i = j + 1;
+                continue;
+            }
+            if c.get(i + 2) == Some(&'\'') {
+                code.push(' ');
+                i += 3;
+                continue;
+            }
+        }
+        code.push(if c[i] == '\n' { ' ' } else { c[i] });
+        i += 1;
+    }
+    (code, litteraux)
+}
+
+/// Les interpolations `{ident…}` d'un littéral de format, séparées par des
+/// espaces (`{{` sauté).
+fn interpolations(litteral: &str) -> String {
+    let c: Vec<char> = litteral.chars().collect();
+    let mut v = Vec::new();
+    let mut i = 0;
+    while i < c.len() {
+        if c[i] == '{' {
+            if c.get(i + 1) == Some(&'{') {
+                i += 2;
+                continue;
+            }
+            let nom: String = c[i + 1..]
+                .iter()
+                .take_while(|ch| ch.is_alphanumeric() || **ch == '_')
+                .collect();
+            if !nom.is_empty() {
+                v.push(nom);
+            }
+        }
+        i += 1;
+    }
+    v.join(" ")
+}
+
+/// Les arguments (de la parenthèse ouvrante à celle qui lui répond) de
+/// chaque appel d'une macro d'évènement de `tracing` du squelette.
+fn appels_d_evenement(code: &str) -> Vec<String> {
+    let tete = re(r"\b(trace|debug|info|warn|error|event)\s*!\s*\(");
+    let octets: Vec<char> = code.chars().collect();
+    let mut v = Vec::new();
+    for m in tete.find_iter(code) {
+        // `find_iter` donne des positions en octets ; on repart en caractères.
+        let debut = code[..m.end()].chars().count();
+        let mut profondeur = 1;
+        let mut j = debut;
+        while j < octets.len() && profondeur > 0 {
+            match octets[j] {
+                '(' => profondeur += 1,
+                ')' => profondeur -= 1,
+                _ => {}
+            }
+            j += 1;
+        }
+        v.push(octets[debut..j.saturating_sub(1)].iter().collect());
+    }
+    v
+}
+
+/// Les identifiants que ni un évènement ni un span ne doivent nommer.
+const IDENTS_DU_CONTENU: &str = r"\b(content|contenu|resume|summary|texte|body)\b";
+
+/// Les appels d'évènement de `source` qui nomment le contenu.
+fn evenements_fautifs(source: &str) -> Vec<String> {
+    let (code, _) = squelette(source);
+    let vises = re(IDENTS_DU_CONTENU);
+    appels_d_evenement(&code)
+        .into_iter()
+        .filter(|a| vises.is_match(a))
+        .collect()
+}
+
+/// Le périmètre des gardes du chemin des envois : tout `src/mcp/`, le service,
+/// les routes et les poignées des envois — et, constat P3-F3, l'entité et le
+/// dépôt de `kesh-db`. Rend (chemin lisible, texte).
+fn chemin_des_envois() -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = sources_src()
+        .into_iter()
+        .filter(|(f, _)| {
+            f.starts_with("mcp/")
+                || f == "services/envois_mcp.rs"
+                || f == "routes/mcp_envois.rs"
+                || f == "services/poignees.rs"
+        })
+        .collect();
+    for f in [
+        "kesh-db/src/entities/mcp_send.rs",
+        "kesh-db/src/repositories/mcp_sends.rs",
+    ] {
+        v.push((
+            f.to_string(),
+            std::fs::read_to_string(racine_crates().join(f)).unwrap(),
+        ));
+    }
+    assert!(
+        v.iter().any(|(f, _)| f == "services/envois_mcp.rs")
+            && v.iter().any(|(f, _)| f == "mcp/repartiteur.rs")
+            && v.len() >= 16,
+        "périmètre lu : {:?}",
+        v.iter().map(|(f, _)| f).collect::<Vec<_>>()
+    );
+    v
+}
+
+/// AC-B12 — aucun évènement `tracing` du chemin des envois ne nomme le contenu
+/// ni le résumé (les chemins d'erreur, que le test par capture n'exécute pas).
+#[test]
+fn aucun_evenement_ne_nomme_le_contenu() {
+    // Rouges factices : chaque forme de l'AC-B12.
+    for rouge in [
+        "warn!(contenu = %c, \"x\");",
+        "tracing::error!(\"{}\", contenu);",
+        "info!(\"purge : {contenu}\");",
+        "tracing::warn!(\n    company_id,\n    \"purge : {}\",\n    contenu\n);",
+        // l'appariement saute les littéraux : une parenthèse orpheline dans
+        // le message ne ferme pas l'appel (P2, F12)
+        "warn!(\"échec :) {}\", contenu)",
+        // constat P3-F4 : un caractère `)`, une durée de vie, une chaîne brute,
+        // des délimiteurs `[]` et `{}`
+        "warn!(x = ')', \"y {}\", contenu)",
+        "fn f<'a>(s: &'a str) { warn!(\"{}\", contenu); }",
+        "warn!(r#\"a ) b\"#, contenu)",
+        "warn!(\"{}\", [contenu][0])",
+        "warn!(\"{}\", { body })",
+        "debug!(\"{:?}\", summary)",
+    ] {
+        assert_eq!(evenements_fautifs(rouge).len(), 1, "rouge : {rouge}");
+    }
+    // Verts factices : la prose d'un littéral ne compte pas.
+    for vert in [
+        "warn!(\"le contenu est purgé\")",
+        "warn!(r#\"le contenu ( purgé\"#)",
+        "error!(\"{{contenu}} littéral\")",
+        "let contenu = 1; warn!(\"x\");",
+    ] {
+        assert!(evenements_fautifs(vert).is_empty(), "vert : {vert}");
+    }
+    // Témoin vert existant : l'évènement multi-ligne de `cles_mcp.rs`.
+    let cles = std::fs::read_to_string(racine_src().join("services/cles_mcp.rs")).unwrap();
+    let (code, _) = squelette(&cles);
+    assert_eq!(appels_d_evenement(&code).len(), 1, "cles_mcp.rs lu");
+    assert!(evenements_fautifs(&cles).is_empty());
+
+    let mut appels = 0;
+    let mut fautifs = Vec::new();
+    for (f, t) in chemin_des_envois() {
+        let (code, _) = squelette(&t);
+        appels += appels_d_evenement(&code).len();
+        fautifs.extend(evenements_fautifs(&t).into_iter().map(|a| (f.clone(), a)));
+    }
+    assert!(appels >= 10, "témoin : {appels} appels d'évènement lus");
+    assert!(
+        fautifs.is_empty(),
+        "évènement qui nomme le contenu : {fautifs:?}"
+    );
+}
+
+/// AC-B12 — aucun span, ni `#[instrument]`, dans le chemin des envois : un span
+/// enregistrerait par défaut chaque argument de la fonction (P2, F4).
+#[test]
+fn aucun_span_dans_le_chemin_des_envois() {
+    let motif = re(
+        r"#\s*\[\s*(tracing\s*::\s*)?instrument\b|\b(span|trace_span|debug_span|info_span|warn_span|error_span)\s*!\s*\(",
+    );
+    let compte = |source: &str| motif.find_iter(&squelette(source).0).count();
+    assert_eq!(
+        compte("#[tracing::instrument]\nfn deposer(contenu: &str) {}"),
+        1,
+        "rouge factice"
+    );
+    assert_eq!(
+        compte("#[instrument(skip_all)]\nfn f() {}"),
+        1,
+        "rouge factice"
+    );
+    let exports = std::fs::read_to_string(racine_src().join("routes/exports.rs")).unwrap();
+    assert!(compte(&exports) >= 1, "rouge existant : routes/exports.rs");
+    assert_eq!(compte("use tracing::Instrument;"), 0, "vert existant");
+    assert_eq!(
+        compte("    fut.instrument(span.clone()).await"),
+        0,
+        "vert existant"
+    );
+    let fautifs: Vec<String> = chemin_des_envois()
+        .into_iter()
+        .filter(|(_, t)| compte(t) > 0)
+        .map(|(f, _)| f)
+        .collect();
+    assert!(
+        fautifs.is_empty(),
+        "span dans le chemin des envois : {fautifs:?}"
+    );
+}
+
+/// AC-B14 — le dépôt des envois n'est importé ou nommé qu'en ses deux lieux :
+/// les poignées (`services/poignees.rs`) et les routes de décision
+/// (`routes/mcp_envois.rs`) ; et le nom de la table n'est écrit dans aucun
+/// littéral hors de l'entrée de `TABLES_HORS_EXPORT`.
+#[test]
+fn envois_lus_par_leurs_lieux() {
+    let chemin = re(r"\brepositories\s*::\s*mcp_sends\b");
+    let groupe = re(r"\brepositories\s*::\s*\{[^;]*\bmcp_sends\b");
+    let etoile = re(r"\brepositories\s*::\s*\*");
+    let nomme = |source: &str| {
+        let (code, _) = squelette(source);
+        chemin.is_match(&code) || groupe.is_match(&code) || etoile.is_match(&code)
+    };
+    for rouge in [
+        "use kesh_db::repositories::{accounts, mcp_sends};",
+        "use kesh_db::repositories::{\n    accounts,\n    mcp_sends,\n};",
+        "use kesh_db::repositories::{invoices::{self}, mcp_sends};",
+        "    kesh_db::repositories::mcp_sends::trouver(p, 1, 2)",
+        "use kesh_db::repositories::*;",
+    ] {
+        assert!(nomme(rouge), "rouge : {rouge}");
+    }
+    for vert in [
+        "use kesh_db::repositories::mcp_keys;",
+        "use kesh_db::repositories::{api_keys, audit_log};",
+        "use kesh_db::entities::mcp_send::NouvelEnvoi;",
+    ] {
+        assert!(!nomme(vert), "vert : {vert}");
+    }
+    let lieux: Vec<String> = sources_src()
+        .into_iter()
+        .filter(|(_, t)| nomme(t))
+        .map(|(f, _)| f)
+        .collect();
+    assert_eq!(
+        lieux,
+        vec![
+            "routes/mcp_envois.rs".to_string(),
+            "services/poignees.rs".to_string()
+        ],
+        "le dépôt des envois nommé hors de ses lieux"
+    );
+    // Le nom de la table dans un littéral (P2, F11).
+    let table = re(r"\bmcp_sends\b");
+    let dans_litteraux = |source: &str| {
+        squelette(source)
+            .1
+            .iter()
+            .filter(|l| table.is_match(l))
+            .count()
+    };
+    assert_eq!(
+        dans_litteraux("sqlx::query(\"SELECT content FROM mcp_sends WHERE id = ?\")"),
+        1,
+        "rouge factice"
+    );
+    assert_eq!(
+        dans_litteraux("let x = \"mcp_sends_purges\"; let y = \"mcp_keys_revoked\";"),
+        0,
+        "vert : mot entier"
+    );
+    let trouves: Vec<String> = sources_src()
+        .into_iter()
+        .filter(|(_, t)| dans_litteraux(t) > 0)
+        .map(|(f, _)| f)
+        .collect();
+    assert_eq!(
+        trouves,
+        vec!["exports/global.rs".to_string()],
+        "le nom de la table hors de l'entrée de TABLES_HORS_EXPORT"
+    );
+    let global = std::fs::read_to_string(racine_src().join("exports/global.rs")).unwrap();
+    assert_eq!(
+        dans_litteraux(&global),
+        1,
+        "une seule entrée, celle de TABLES_HORS_EXPORT"
+    );
+}
+
+/// AC-B14 — `ContenuValide` et `AccuseEnvoi` ne se construisent, ne
+/// s'implémentent et ne se dérivent qu'en `services/envois_mcp.rs`, sans
+/// `Serialize`, `Default`, `Debug` ni `Clone`.
+#[test]
+fn envoi_valide_construit_par_le_service_seul() {
+    let motif = re(
+        r"\b(ContenuValide|AccuseEnvoi)\s*\{|\b(ContenuValide|AccuseEnvoi)\s*::|\bimpl\b[^{]*\b(ContenuValide|AccuseEnvoi)\b",
+    );
+    assert_eq!(
+        sites_factices(
+            "    let c = ContenuValide { numero: 1, modifie: false, texte: s };",
+            &motif
+        ),
+        1,
+        "rouge factice"
+    );
+    assert_eq!(
+        sites_factices("impl Clone for AccuseEnvoi {", &motif),
+        1,
+        "rouge factice"
+    );
+    assert_eq!(
+        sites_factices("    Valide(ContenuValide),", &motif),
+        0,
+        "vert : une variante qui le porte"
+    );
+    assert_eq!(
+        sites_factices("    pub fn texte(&self) -> &str {", &motif),
+        0,
+        "vert factice : un accesseur dans l'impl"
+    );
+    let hors: Vec<_> = sites(&sources_src(), |f| f != "services/envois_mcp.rs", &motif);
+    assert!(hors.is_empty(), "construit hors du service : {hors:?}");
+    let service = std::fs::read_to_string(racine_src().join("services/envois_mcp.rs")).unwrap();
+    assert!(
+        sites(
+            &[("services/envois_mcp.rs".to_string(), service.clone())],
+            tout,
+            &motif
+        )
+        .len()
+            >= 3,
+        "témoin : le service les construit"
+    );
+    for nom in ["ContenuValide", "AccuseEnvoi"] {
+        let fautifs = interdits_dans(
+            &derives_de(&service, nom),
+            &["Serialize", "Default", "Debug", "Clone"],
+        );
+        assert!(fautifs.is_empty(), "{nom} : {fautifs:?}");
+    }
 }
