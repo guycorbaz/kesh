@@ -1686,6 +1686,7 @@ admin-mcp-keys-error-name-too-long = The key name is too long: 255 characters at
 admin-mcp-keys-error-scopes-empty = An MCP server key carries at least one scope.
 admin-mcp-keys-error-scope-unknown = Unknown scope: { $scope }. Allowed scopes: books:read, invoices:read, contacts:read, documents:read, prompts:write.
 admin-mcp-keys-error-expiry-past = The expiry date must be in the future.
+admin-mcp-keys-error-expiry-out-of-range = The expiry date cannot be later than 9999-12-31 (UTC).
 admin-mcp-keys-error-send-validation-unknown = Unknown validation policy: “required” or “exempt” expected.
 admin-mcp-keys-error-version-invalid = Invalid version: an integer greater than or equal to 1 is expected.
 admin-mcp-settings-error-too-many-entries = List too long: 64 entries at most.

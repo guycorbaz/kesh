@@ -32,7 +32,7 @@ Une clé d'API a toujours la forme **`kesh_pat_`** suivie de **27 caractères** 
 kesh_pat_3kQ9mZ1aB7cD4eF6gH8iJ0kL2mN
 ```
 
-> ⚠️ **Une clé `kesh_mcp_…` n'est pas une clé d'API.** Depuis la 0.16.0, l'Administrateur peut créer des clés du **serveur MCP** de Kesh (préfixe `kesh_mcp_`, même longueur). Elles sont propres à ce serveur : présentée à `/api/v1`, une clé `kesh_mcp_…` est refusée en **`401`**, et une clé d'API n'ouvre pas le serveur MCP.
+> ⚠️ **Une clé `kesh_mcp_…` n'est pas une clé d'API** : présentée à `/api/v1`, elle est refusée en **`401`**.
 
 Le secret encode 160 bits d'entropie cryptographique. Côté serveur, **seule une empreinte SHA-256 est stockée** — le secret en clair n'existe qu'au moment de la création et **ne peut plus jamais être récupéré** ensuite. En cas de perte, créez une nouvelle clé et révoquez l'ancienne.
 

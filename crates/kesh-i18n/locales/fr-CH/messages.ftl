@@ -1757,6 +1757,7 @@ admin-mcp-keys-error-name-too-long = Le nom de la clé est trop long : 255 carac
 admin-mcp-keys-error-scopes-empty = Une clé du serveur MCP porte au moins une portée.
 admin-mcp-keys-error-scope-unknown = Portée inconnue : { $scope }. Portées admises : books:read, invoices:read, contacts:read, documents:read, prompts:write.
 admin-mcp-keys-error-expiry-past = La date d'expiration doit être dans le futur.
+admin-mcp-keys-error-expiry-out-of-range = La date d'expiration ne peut pas dépasser le 9999-12-31 (UTC).
 admin-mcp-keys-error-send-validation-unknown = Politique de validation inconnue : « required » ou « exempt » attendu.
 admin-mcp-keys-error-version-invalid = Version invalide : un entier supérieur ou égal à 1 est attendu.
 admin-mcp-settings-error-too-many-entries = Liste trop longue : 64 entrées au plus.

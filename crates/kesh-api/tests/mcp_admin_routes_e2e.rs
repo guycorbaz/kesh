@@ -452,6 +452,62 @@ async fn c1_a_key_of_another_company_is_not_found(pool: MySqlPool) {
 // AC-c3 — la validation des clés
 // ---------------------------------------------------------------------------
 
+/// Revue de code P1 (E1 = B9) — une expiration au-delà de l'an 9999 **en UTC**
+/// (hors de `DATETIME`) est un 400 traduit, non une erreur d'écriture. La forme
+/// atteignable est une date de l'an 9999 dont le fuseau la porte au-delà une
+/// fois ramenée en UTC (l'extracteur refuse lui-même une année à cinq
+/// chiffres, constaté au gate ciblé). Témoin : `9999-12-31T23:59:59Z` s'écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn c3_an_expiry_beyond_year_9999_is_refused_not_a_500(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (_c, _u, jwt) = livres(&pool).await;
+    for expiration in ["9999-12-31T23:59:59-05:00", "9999-12-31T20:00:00-12:00"] {
+        let resp = app
+            .send(
+                "POST",
+                "/api/v1/admin/mcp/keys",
+                Some(&jwt),
+                json!({ "name": "agent", "scopes": ["books:read"], "expiresAt": expiration }),
+            )
+            .await;
+        let status = resp.status().as_u16();
+        let body: Value = resp.json().await.unwrap();
+        assert_eq!(
+            (status, body["error"]["code"].as_str().unwrap_or("")),
+            (400, "VALIDATION_ERROR"),
+            "{expiration} : {body}"
+        );
+        assert_eq!(
+            body["error"]["message"],
+            "La date d'expiration ne peut pas dépasser le 9999-12-31 (UTC).",
+            "{expiration}"
+        );
+    }
+    assert_eq!(compte(&pool, "SELECT COUNT(*) FROM mcp_keys").await, 0);
+    assert_eq!(
+        compte(
+            &pool,
+            "SELECT COUNT(*) FROM audit_log WHERE action LIKE 'mcp\\_%'"
+        )
+        .await,
+        0
+    );
+
+    let cree = creer(
+        &app,
+        &jwt,
+        json!({ "name": "agent", "scopes": ["books:read"], "expiresAt": "9999-12-31T23:59:59Z" }),
+    )
+    .await;
+    assert!(
+        cree["expiresAt"]
+            .as_str()
+            .unwrap()
+            .starts_with("9999-12-31"),
+        "{cree}"
+    );
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn c3_an_invalid_key_request_writes_nothing_and_traces_nothing(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;

@@ -836,6 +836,8 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("admin-mcp-keys-error-scopes-empty", 1, &[]),
                 ("admin-mcp-keys-error-scope-unknown", 1, PORTEE),
                 ("admin-mcp-keys-error-expiry-past", 1, &[]),
+                // Revue de code P1 de la 32-5c (E1 = B9) — l'an 9999 de `DATETIME`.
+                ("admin-mcp-keys-error-expiry-out-of-range", 1, &[]),
                 ("admin-mcp-keys-error-send-validation-unknown", 1, &[]),
                 ("admin-mcp-keys-error-version-invalid", 1, &[]),
             ],

@@ -1686,6 +1686,7 @@ admin-mcp-keys-error-name-too-long = Il nome della chiave è troppo lungo: al ma
 admin-mcp-keys-error-scopes-empty = Una chiave del server MCP porta almeno un ambito.
 admin-mcp-keys-error-scope-unknown = Ambito sconosciuto: { $scope }. Ambiti ammessi: books:read, invoices:read, contacts:read, documents:read, prompts:write.
 admin-mcp-keys-error-expiry-past = La data di scadenza deve essere nel futuro.
+admin-mcp-keys-error-expiry-out-of-range = La data di scadenza non può superare il 9999-12-31 (UTC).
 admin-mcp-keys-error-send-validation-unknown = Regola di convalida sconosciuta: «required» o «exempt» atteso.
 admin-mcp-keys-error-version-invalid = Versione non valida: è atteso un intero maggiore o uguale a 1.
 admin-mcp-settings-error-too-many-entries = Elenco troppo lungo: al massimo 64 voci.

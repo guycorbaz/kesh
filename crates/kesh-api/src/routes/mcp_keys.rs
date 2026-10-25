@@ -32,7 +32,7 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::SendValidation;
@@ -152,12 +152,37 @@ pub fn validate_name(raw: &str) -> Result<String, AppError> {
     Ok(name.to_string())
 }
 
+/// Longueur maximale, en caractères, d'une portée inconnue **recopiée** dans le
+/// message de refus (revue de code P1, B4 = E3 = A2) : la chaîne vient du
+/// client et n'est bornée par rien d'autre que la taille du corps.
+pub const SCOPE_CITED_MAX_CHARS: usize = 64;
+
+/// La chaîne du client telle qu'un message la cite : coupée après
+/// [`SCOPE_CITED_MAX_CHARS`] caractères (frontière de caractère, jamais
+/// d'octet), suivie de `…` si elle l'a été.
+pub fn cite(raw: &str) -> String {
+    let mut chars = raw.chars();
+    let tete: String = chars.by_ref().take(SCOPE_CITED_MAX_CHARS).collect();
+    if chars.next().is_some() {
+        format!("{tete}…")
+    } else {
+        tete
+    }
+}
+
+/// Année maximale d'une expiration : la colonne `expires_at` est un
+/// `DATETIME(3)`, borné à `9999-12-31` (revue de code P1, E1 = B9 — au-delà,
+/// l'écriture échouait en base, en 500).
+pub const EXPIRY_MAX_YEAR: i32 = 9999;
+
 /// Les portées demandées, lues **strictement** : une chaîne inconnue (dont
 /// `books:write`, `admin`, `read`) ou une liste vide est refusée ; les doublons
-/// sont normalisés (un ensemble ne les connaît pas).
+/// sont normalisés (un ensemble ne les connaît pas). La portée inconnue citée au
+/// message est bornée par [`cite`].
 pub fn validate_scopes(raw: &[String]) -> Result<McpScopes, AppError> {
     McpScopes::parse(raw.iter().map(String::as_str)).map_err(|e| match e {
-        McpScopeError::Unknown(portee) => {
+        McpScopeError::Unknown(inconnue) => {
+            let portee = cite(&inconnue);
             let mut args = FluentArgs::new();
             args.set("scope", portee.clone());
             AppError::Validation(t_args(
@@ -262,6 +287,14 @@ pub async fn create_mcp_key(
         return Err(AppError::Validation(t(
             "admin-mcp-keys-error-expiry-past",
             "La date d'expiration doit être dans le futur.",
+        )));
+    }
+    if let Some(exp) = req.expires_at
+        && exp.year() > EXPIRY_MAX_YEAR
+    {
+        return Err(AppError::Validation(t(
+            "admin-mcp-keys-error-expiry-out-of-range",
+            "La date d'expiration ne peut pas dépasser le 9999-12-31 (UTC).",
         )));
     }
 
@@ -440,6 +473,33 @@ mod tests {
             );
         }
         assert!(matches!(validate_scopes(&[]), Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn an_unknown_scope_is_cited_within_bounds() {
+        // À la borne : intacte.
+        let a_la_borne = "é".repeat(SCOPE_CITED_MAX_CHARS);
+        assert_eq!(cite(&a_la_borne), a_la_borne);
+        // Au-delà : coupée sur une frontière de caractère, suivie de « … ».
+        let long = "é".repeat(SCOPE_CITED_MAX_CHARS + 1000);
+        let cite_long = cite(&long);
+        assert_eq!(cite_long.chars().count(), SCOPE_CITED_MAX_CHARS + 1);
+        assert!(cite_long.ends_with('…'));
+        assert_eq!(
+            cite_long.trim_end_matches('…'),
+            "é".repeat(SCOPE_CITED_MAX_CHARS)
+        );
+        // Au message de refus.
+        let m = match validate_scopes(&[format!("x{long}")]) {
+            Err(AppError::Validation(m)) => m,
+            other => panic!("400 attendu, obtenu {other:?}"),
+        };
+        assert!(m.contains('…'), "{m}");
+        assert!(
+            m.chars().count() < SCOPE_CITED_MAX_CHARS + 200,
+            "message non borné : {} caractères",
+            m.chars().count()
+        );
     }
 
     #[test]

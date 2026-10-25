@@ -1686,6 +1686,7 @@ admin-mcp-keys-error-name-too-long = Der Name des Schlüssels ist zu lang: höch
 admin-mcp-keys-error-scopes-empty = Ein Schlüssel des MCP-Servers trägt mindestens eine Berechtigung.
 admin-mcp-keys-error-scope-unknown = Unbekannte Berechtigung: { $scope }. Zulässige Berechtigungen: books:read, invoices:read, contacts:read, documents:read, prompts:write.
 admin-mcp-keys-error-expiry-past = Das Ablaufdatum muss in der Zukunft liegen.
+admin-mcp-keys-error-expiry-out-of-range = Das Ablaufdatum darf den 9999-12-31 (UTC) nicht überschreiten.
 admin-mcp-keys-error-send-validation-unknown = Unbekannte Freigaberegel: «required» oder «exempt» erwartet.
 admin-mcp-keys-error-version-invalid = Ungültige Version: eine ganze Zahl grösser oder gleich 1 wird erwartet.
 admin-mcp-settings-error-too-many-entries = Liste zu lang: höchstens 64 Einträge.
