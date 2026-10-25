@@ -156,18 +156,42 @@ async fn appeler(
             texte: textes::TEXTE_VALIDATION_REQUISE,
         };
     };
-    let ctx = ContexteMcp::nouveau(&cle.acces, &etat.lecture);
-    let issue = tokio::time::timeout(etat.registre.delai(), outil.executer(&ctx, arguments)).await;
+    // C-32-6-56 (revue P2, H1) : l'outil s'exécute dans une **tâche qui possède**
+    // tout ce qu'il emprunte — l'outil, le contexte d'accès, la lecture des
+    // outils, donc chaque connexion du pool qu'il prend. Abandonner l'attente
+    // (délai de Kesh, ou futur du handler abandonné quand le client se
+    // déconnecte) **n'annule pas** la tâche : une instruction en vol garde sa
+    // connexion, donc son permis, jusqu'à ce que MariaDB l'ait finie ou
+    // interrompue (`max_statement_time`). Le nombre d'instructions simultanées
+    // côté serveur reste ainsi borné par les permis du pool
+    // (`MCP_POOL_CONNEXIONS`) ; abandonner le futur de l'outil lui-même aurait
+    // fermé la connexion et rendu le permis pendant que le serveur poursuivait.
+    let acces = cle.acces.clone();
+    let lecture = etat.lecture.clone();
+    let tache = tokio::spawn(async move {
+        let ctx = ContexteMcp::nouveau(&acces, &lecture);
+        outil.executer(&ctx, arguments).await
+    });
+    let issue = tokio::time::timeout(etat.registre.delai(), tache).await;
     match issue {
         Err(_delai) => ReponseMcp::OutilEnErreur {
             id,
             texte: textes::TEXTE_DELAI_DEPASSE,
         },
-        Ok(Ok(donnees)) => ReponseMcp::Outil {
+        Ok(Err(panne)) => {
+            // La tâche a paniqué (ou a été annulée par l'arrêt du runtime) :
+            // le détail ne va qu'au journal du serveur (E5).
+            tracing::error!("outil MCP : la tâche de l'outil a échoué : {panne}");
+            ReponseMcp::OutilEnErreur {
+                id,
+                texte: textes::TEXTE_ERREUR_INTERNE,
+            }
+        }
+        Ok(Ok(Ok(donnees))) => ReponseMcp::Outil {
             id,
             donnees: politique::appliquer(autorisation, donnees),
         },
-        Ok(Err(e)) => match textes::texte_erreur_outil(e) {
+        Ok(Ok(Err(e))) => match textes::texte_erreur_outil(e) {
             Some(texte) => ReponseMcp::OutilEnErreur { id, texte },
             None => erreur(
                 id,

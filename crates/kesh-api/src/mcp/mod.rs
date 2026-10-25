@@ -22,7 +22,8 @@
 //! 9. Origin (propres ∪ celles de la société)     refusée           → 401 fixe (le même qu'en 7)
 //! 10. corps (1 Mio) puis JSON-RPC                (transport)
 //! 11. répartiteur : liste close des méthodes ; tools/call → outil_pour(nom,
-//!     portées) → politique::autoriser → executer (délai) → politique::appliquer
+//!     portées) → politique::autoriser → executer (dans une tâche qui possède
+//!     ses connexions, attendue sous le délai — C-32-6-56) → politique::appliquer
 //! 12. reponse::rendre — seule sortie
 //! ```
 //!
@@ -71,7 +72,9 @@ pub use politique::Donnees;
 pub use registre::Registre;
 pub(crate) use reseau::origines_propres;
 
-/// Connexions au plus du pool des outils (C-32-6-10).
+/// Connexions au plus du pool des outils (C-32-6-10) — et donc instructions
+/// simultanées au plus côté serveur, un abandon ne rendant pas le permis avant
+/// la fin de l'instruction (C-32-6-56).
 pub const MCP_POOL_CONNEXIONS: u32 = 3;
 
 /// Taille maximale du corps d'une requête : 1 Mio.

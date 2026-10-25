@@ -291,7 +291,9 @@ fn contexte_mcp_construit_par_le_repartiteur_seul() {
         sites(&sources_src(), tout, &motif),
         liste(&[(
             "mcp/repartiteur.rs",
-            "let ctx = ContexteMcp::nouveau(&cle.acces, &etat.lecture);"
+            // dans la tâche de l'outil, sur les copies de `cle.acces` et
+            // `etat.lecture` qu'elle possède (C-32-6-56)
+            "let ctx = ContexteMcp::nouveau(&acces, &lecture);"
         )])
     );
 }
@@ -457,8 +459,17 @@ fn pool_lecture_seule_en_un_lieu() {
 // ---------------------------------------------------------------------------
 
 /// Les noms d'un pool et de ce qui en fabrique un ; `kesh_db::{…, repositories…}`
-/// et `kesh_db::{…, pool…}` (import groupé que produit rustfmt) compris (revue
-/// P1, A6).
+/// et `kesh_db::{…, pool…}` compris quand l'import groupé tient **sur une
+/// ligne** (revue P1, A6).
+///
+/// ⚠️ **Angles morts écrits** (revue P2, H4) : la garde lit ligne par ligne ;
+/// l'import groupé que rustfmt **coupe** (`use kesh_db::{` / `repositories::x,`
+/// / `};`) lui échappe, la ligne qui nomme `repositories` ne nommant pas
+/// `kesh_db` ; un groupe **imbriqué** (`kesh_db::{entities::{A, B},
+/// repositories::x}`) aussi, `[^}]*` s'arrêtant au premier `}`. Le chemin utile
+/// reste fermé par le compilateur : `Lecture::pool` est
+/// `pub(in crate::services)`, si bien qu'un module de `mcp/` ne peut tirer un
+/// pool d'aucune `Lecture`.
 const MOTIF_SANS_POOL: &str = r"\bMySqlPool\b|\bsqlx\b|\bAppState\b|\.\s*pool\b|\bkesh_db\s*::\s*repositories\b|\bkesh_db\s*::\s*pool\b|\bkesh_db\s*::\s*\{[^}]*\b(repositories|pool)\b|\bcreate_pool\b|\bdatabase_url\b|\bConfig\b";
 
 #[test]
@@ -726,8 +737,13 @@ fn prompts_scelles() {
 /// READ ONLY` et le nom de la variable de session, quelle que soit la casse.
 /// Les commentaires exécutables de MariaDB (`/*!…*/`, `/*M!…*/`) ne sont **pas**
 /// effacés (ils sont exécutés) : une forme qu'ils logent est vue (revue P1, A1).
+///
+/// S'y ajoute `max_statement_time` (revue P2, H3) : la borne que pose
+/// `pool_lecture_seule` à côté du `READ ONLY` se défait de la même manière
+/// (`SET SESSION max_statement_time = 0`, `SET STATEMENT max_statement_time = 0
+/// FOR …`) ; tout site qui la nomme est une exception écrite.
 const MOTIF_LECTURE_SEULE: &str =
-    r"(?i)\bread\s+write\b|\btx_read_only\b|\btransaction_read_only\b";
+    r"(?i)\bread\s+write\b|\btx_read_only\b|\btransaction_read_only\b|\bmax_statement_time\b";
 
 /// En plus, dans le **Rust** : tout commentaire exécutable, refusé en lui-même
 /// — aucun code de Kesh n'en émet, et un SQL émis sur la connexion du MCP n'a
@@ -735,6 +751,11 @@ const MOTIF_LECTURE_SEULE: &str =
 /// (`test-schema/0001_schema_squash.sql`, produit par `mysqldump`) en porte des
 /// dizaines (`/*!40101 SET … */`), qui ne passent jamais sur la connexion du
 /// MCP ; leur contenu reste lu par [`MOTIF_LECTURE_SEULE`].
+///
+/// ⚠️ **Faux positif écrit** (revue P2, H5) : en Rust, `/*! … */` est aussi un
+/// commentaire de doc **interne** de bloc ; la garde le refuserait. Écrire la
+/// doc interne en `//!` (lignes écartées d'abord, jamais vues ici). Aucun
+/// `/*!` dans le Rust de `crates/` aujourd'hui, hors de ce fichier.
 const MOTIF_COMMENTAIRE_EXECUTABLE: &str = r"/\*M?!";
 
 /// Les lignes d'un texte : lignes de commentaire (`//`, `--`, `#` en SQL)
@@ -746,10 +767,15 @@ const MOTIF_COMMENTAIRE_EXECUTABLE: &str = r"/\*M?!";
 ///
 /// ⚠️ **Limite écrite** (revue P1, A1) : l'aide ne connaît pas les littéraux.
 /// Un `/*` **dans une chaîne** d'une ligne de code ouvre un bloc qui avale tout
-/// jusqu'au `*/` suivant, sur plusieurs lignes ; aucun fichier de `crates/` ne
-/// porte aujourd'hui une telle chaîne suivie d'une forme interdite (mesuré par
-/// cette garde même : sa liste blanche est exacte), mais une forme placée là
+/// jusqu'au `*/` suivant, sur plusieurs lignes ; une forme placée là
 /// échapperait. Même limite que `sans_commentaires` de `services_motif.rs`.
+/// La garde ne peut pas mesurer ce qu'elle avale : le fait qu'aucune forme ne
+/// s'y cache aujourd'hui s'établit **hors d'elle**, par un `grep` brut qui ne
+/// retire aucun commentaire (revue P2, H6) — `grep -rniE
+/// 'read\s+write|tx_read_only|transaction_read_only|max_statement_time'
+/// --include=*.rs crates/`, hors de ce fichier, ne rend que des lignes de
+/// commentaire et les cinq exceptions de la liste blanche ci-dessous (relevé
+/// du 2026-10-25).
 fn lignes_decommentees(texte: &str, sql: bool) -> Vec<String> {
     let sans_lignes: String = texte
         .lines()
@@ -798,6 +824,9 @@ fn lecture_seule_jamais_defaite() {
         // une forme logée dans un commentaire exécutable (revue P1, A1)
         "SET TRANSACTION /*M!100000 READ WRITE */",
         "SET /*!50000 SESSION TRANSACTION READ WRITE */",
+        // la borne d'instruction défaite (revue P2, H3)
+        "SET SESSION max_statement_time = 0",
+        "SET STATEMENT MAX_STATEMENT_TIME=0 FOR SELECT 1",
     ] {
         assert_eq!(
             formes_interdites(rouge, true).len(),
@@ -819,6 +848,8 @@ fn lecture_seule_jamais_defaite() {
         "/// la forme READ WRITE est interdite",
         "-- READ WRITE en commentaire SQL",
         "/* READ WRITE */ SELECT 1",
+        "/// la borne max_statement_time en commentaire",
+        "    let max_statement_timeout = 0;",
     ] {
         assert!(formes_interdites(vert, true).is_empty(), "vert : {vert}");
     }
@@ -879,6 +910,15 @@ fn lecture_seule_jamais_defaite() {
             (
                 "kesh-api/src/services/serveur_mcp.rs",
                 "sqlx::query_as(\"SELECT @@session.tx_read_only, @@session.max_statement_time\")"
+            ),
+            // C-32-6-54 : la pose de la borne, et sa lecture par le test (g).
+            (
+                "kesh-db/src/pool.rs",
+                "\"SET SESSION max_statement_time = {}.{:03}\","
+            ),
+            (
+                "kesh-db/tests/pool_lecture_seule.rs",
+                "sqlx::query_scalar(\"SELECT @@session.max_statement_time\")"
             ),
         ]),
         "forme qui défait le mode de session hors des exceptions écrites"

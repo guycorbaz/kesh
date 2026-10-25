@@ -196,10 +196,13 @@ async fn sommeils_en_cours(pool: &MySqlPool, marque: &str) -> i64 {
 
 /// (g) — `max_statement_time` : une instruction plus longue que le délai est
 /// interrompue **par MariaDB**. (1) attendue jusqu'au bout, elle échoue en 1969
-/// bien avant sa fin ; (2) abandonnée par son futur (comme au délai d'un outil
-/// MCP), elle ne survit pas côté serveur : après le délai, plus aucune session
-/// ne l'exécute — sans la borne, le serveur la poursuivrait jusqu'à son terme ;
-/// (3) l'emprunt suivant part d'une connexion neuve.
+/// bien avant sa fin ; (2) abandonnée par son futur et sa connexion fermée,
+/// elle survit côté serveur — la borne se compte depuis **son** début, non
+/// depuis l'abandon —, mais pas au-delà de la borne : après le délai, plus
+/// aucune session ne l'exécute ; sans la borne, le serveur la poursuivrait
+/// jusqu'à son terme ; (3) l'emprunt suivant part d'une connexion neuve.
+/// Que le permis reste pris tant que l'instruction court est l'affaire du
+/// répartiteur du MCP (C-32-6-56, `mcp_transport_e2e.rs`, `abandon_*`).
 #[sqlx::test(migrations = "./test-schema")]
 async fn g_une_instruction_trop_longue_est_interrompue_par_le_serveur(pool: MySqlPool) {
     let ro = pool_lecture_seule(&pool, 1, Duration::from_millis(500));
@@ -220,21 +223,27 @@ async fn g_une_instruction_trop_longue_est_interrompue_par_le_serveur(pool: MySq
         let e = sqlx::query("SELECT SLEEP(5) AS sommeil_g1_326")
             .fetch_one(&mut *c)
             .await
-            .expect_err("interrompue par max_statement_time");
+            .expect_err("interrompue par la borne de la session");
         assert_eq!(code_mariadb(&e), Some(1969), "{e}");
         id
     };
     assert!(debut.elapsed() < Duration::from_secs(3), "interrompue tôt");
 
-    // (2) abandonnée par son futur.
+    // (2) abandonnée par son futur, puis sa connexion fermée. L'emprunt se fait
+    // **avant** la fenêtre de 100 ms (revue P2, H9) : l'ouverture d'une
+    // connexion neuve n'y entre pas, si bien que la fenêtre ne mesure que
+    // l'instruction.
+    let mut c = ro.acquire().await.unwrap();
     let abandon = tokio::time::timeout(Duration::from_millis(100), async {
-        let mut c = ro.acquire().await.unwrap();
         sqlx::query("SELECT SLEEP(5) AS sommeil_g2_326")
             .fetch_one(&mut *c)
             .await
     })
     .await;
     assert!(abandon.is_err(), "le futur est abandonné en vol");
+    // La connexion est fermée en vol, comme le faisait l'abandon du futur de
+    // l'outil avant C-32-6-56 : le permis est rendu, le serveur poursuit.
+    drop(c);
     assert_eq!(
         sommeils_en_cours(&pool, "sommeil_g2_326").await,
         1,

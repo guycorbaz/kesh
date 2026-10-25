@@ -8,6 +8,7 @@
 //! privée.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::mcp::DELAI_OUTIL;
@@ -15,8 +16,10 @@ use crate::mcp::outil::McpTool;
 use crate::mcp::outils::kesh_version::KeshVersion;
 use crate::services::acces::Portee;
 
+/// Un outil et son schéma. L'outil est partagé (`Arc`) : le répartiteur
+/// l'exécute dans une tâche qui le possède (C-32-6-56, revue P2, H1).
 struct Entree {
-    outil: Box<dyn McpTool>,
+    outil: Arc<dyn McpTool>,
     schema: serde_json::Value,
 }
 
@@ -51,7 +54,10 @@ impl Registre {
     pub fn avec(mut self, outil: Box<dyn McpTool>) -> Self {
         let schema = serde_json::from_str(outil.schema_entree())
             .unwrap_or_else(|_| panic!("schéma d'entrée de `{}` : JSON invalide", outil.nom()));
-        self.outils.push(Entree { outil, schema });
+        self.outils.push(Entree {
+            outil: Arc::from(outil),
+            schema,
+        });
         self
     }
 
@@ -77,16 +83,17 @@ impl Registre {
     }
 
     /// L'outil de ce nom, **si** sa portée appartient à `portees` ; sinon
-    /// `None`, comme un nom inconnu (aucun oracle).
+    /// `None`, comme un nom inconnu (aucun oracle). Rendu partagé, pour que la
+    /// tâche qui l'exécute le possède (C-32-6-56).
     pub(in crate::mcp) fn outil_pour(
         &self,
         nom: &str,
         portees: &BTreeSet<Portee>,
-    ) -> Option<&dyn McpTool> {
+    ) -> Option<Arc<dyn McpTool>> {
         self.outils
             .iter()
             .find(|e| e.outil.nom() == nom && portees.contains(&e.outil.portee()))
-            .map(|e| e.outil.as_ref())
+            .map(|e| Arc::clone(&e.outil))
     }
 
     /// Les descripteurs de `tools/list` des outils que `portees` ouvrent, dans

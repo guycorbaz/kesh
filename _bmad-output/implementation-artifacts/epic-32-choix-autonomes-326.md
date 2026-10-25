@@ -634,10 +634,56 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
   `services` (`Lecture::pool` est `pub(in crate::services)`), ou sans un service de test en production ; la preuve
   côté serveur est faite sur la fabrique de production, au dépôt.
 - **Réversible** : oui.
+- *(Annoté le 2026-10-25, revue de code P2, H1 : la borne seule **ne fermait pas** E1 — elle se compte depuis le début
+  de l'instruction, et une déconnexion rendait le permis sur-le-champ. Fermé par C-32-6-56 ; la borne reste, elle
+  borne la durée de chaque instruction.)*
 
 ### C-32-6-55 — Le sous-chemin de `KESH_PUBLIC_BASE_URL` est retiré avant d'en tirer l'origine propre
 
 - **Retenu** (A2) : `https://kesh.example/app` donne l'origine propre `https://kesh.example`, comme l'AC-a10 l'écrit
   (« réduite à son origine ») ; une base avec identifiants, sans schéma ou de schéma autre n'en donne toujours aucune.
   Test unitaire `origines_normalisees`, mutation P1-Mp11.
+- **Réversible** : oui.
+
+## Choix de la remédiation de la revue de code P2 de la 32-6a (2026-10-25)
+
+### C-32-6-56 — L'outil s'exécute dans une tâche qui possède ses connexions ; le handler n'attend que la tâche
+
+- **Contexte** : H1 de la revue P2 — `max_statement_time` (C-32-6-54) se compte depuis le début de l'instruction, le
+  délai de Kesh depuis l'entrée dans l'outil ; et l'abandon du futur du handler par hyper, quand le client coupe sa
+  connexion (`hyper-1.10.1/src/proto/h1/conn.rs:495-503`, sans `half_close`), fermait la connexion du pool et rendait
+  le permis **sur-le-champ**, MariaDB poursuivant l'instruction. La concurrence réelle côté serveur n'était donc plus
+  bornée par les trois permis.
+- **Retenu** (option préférée de l'orchestrateur) : `repartiteur::appeler` lance `outil.executer` dans un
+  `tokio::spawn` qui **possède** l'outil (`Arc<dyn McpTool>` : `Registre::outil_pour` rend désormais un `Arc`), une
+  copie du `ContexteAcces` de la clé et une copie de `LectureOutils` ; `ContexteMcp::nouveau` est appelé dans la tâche
+  (toujours au seul répartiteur, garde mise à jour). Le handler n'attend que le `JoinHandle`, sous le délai du
+  registre. Abandonner l'attente — au délai, ou parce que le handler lui-même est abandonné — n'annule pas la tâche :
+  chaque instruction garde sa connexion, donc son permis, jusqu'à sa fin côté serveur. Un panic de l'outil est pris par
+  la tâche (`JoinError`) et rend `TEXTE_ERREUR_INTERNE`, détail au journal du serveur. Même motif que la restauration
+  (`routes/admin.rs:10`, « tâche que l'abandon du client n'interrompt pas »). Tests
+  `abandon_au_delai_le_permis_reste_pris` et `abandon_par_deconnexion_le_permis_reste_pris` (`mcp_transport_e2e.rs`) :
+  trois lectures du plan tenues par un `LOCK TABLES accounts WRITE`, abandonnées ; témoin : le serveur les exécute
+  encore ; constat : un `kesh_version` ne trouve aucun permis libre pendant 300 ms ; après `UNLOCK TABLES`, il est servi.
+  Mutation P2-Mq1 (retour à l'attente directe du futur) : les deux tests rougissent à leur assertion de permis, le
+  témoin passant (`326a-mut-P2-Mq1-sans-tache.log`).
+- **Écartée** : un garde `Drop` qui enverrait `KILL QUERY <CONNECTION_ID()>`. Plus complexe et moins sûre : les
+  connexions sont empruntées **dans les services** (`Lecture::pool`, `pub(in crate::services)`), hors de portée du
+  répartiteur, si bien que le garde devrait vivre dans chaque emprunt de chaque service ; le `KILL` exige une **autre**
+  connexion, à prendre dans un pool peut-être plein, depuis un `Drop` synchrone (donc une tâche lancée quand même) ; et
+  entre la fermeture de la connexion et l'arrivée du `KILL`, le permis serait déjà rendu — la fenêtre ne se fermerait
+  pas, elle se raccourcirait.
+- **Ce qui reste** (écrit au § *Ce que les gardes ne voient pas* de la fiche) : une tâche abandonnée va au bout de
+  l'outil, résultat jeté ; les tâches abandonnées en attente d'un permis ne sont pas bornées en nombre (elles font
+  attendre les appels légitimes, sans dépasser trois instructions côté serveur) — à reprendre avec la limite de débit.
+- **Réversible** : oui.
+
+### C-32-6-57 — La garde `lecture_seule_jamais_defaite` lit aussi `max_statement_time`
+
+- **Retenu** (H3) : `\bmax_statement_time\b` rejoint `MOTIF_LECTURE_SEULE` ; deux exceptions de plus à la liste blanche
+  (`kesh-db/src/pool.rs`, la pose ; `kesh-db/tests/pool_lecture_seule.rs`, la lecture du test (g)) ; un message de
+  test du (g) qui nommait la variable est reformulé plutôt que listé. Témoins rouges `SET SESSION max_statement_time = 0`
+  et `SET STATEMENT MAX_STATEMENT_TIME=0 FOR SELECT 1`, verts (commentaire, `max_statement_timeout`). Mutations
+  P2-Mq2 (motif sans la borne : le témoin rouge rougit) et P2-Mq3 (une pose `= 0` ajoutée à `pool.rs` : le balayage la
+  trouve).
 - **Réversible** : oui.

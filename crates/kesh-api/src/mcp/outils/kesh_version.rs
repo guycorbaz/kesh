@@ -1,5 +1,6 @@
-//! L'outil de démonstration `kesh_version` (AC-a28) : la version du binaire et
-//! le mode de la session qui l'a servi. **Aucune donnée des livres.**
+//! L'outil de démonstration `kesh_version` (AC-a28) : la version du binaire, le
+//! mode de la session qui l'a servi et sa borne d'instruction
+//! (`delaiInstructionS`, C-32-6-54). **Aucune donnée des livres.**
 
 use serde::Deserialize;
 

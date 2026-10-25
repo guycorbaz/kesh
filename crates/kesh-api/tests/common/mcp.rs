@@ -464,3 +464,36 @@ impl McpTool for Lent {
         })
     }
 }
+
+/// L'outil **lecteur retardé** : attend `attente`, puis lit le plan comptable
+/// par `plan_comptable::lister` — une instruction sur `accounts`, que le test
+/// peut tenir en attente par un `LOCK TABLES accounts WRITE` (revue P2, H1).
+/// L'attente fait partir l'instruction **après** le début du délai de Kesh :
+/// c'est le cas où elle survit à l'abandon.
+pub struct LecteurRetarde {
+    pub attente: Duration,
+}
+
+impl McpTool for LecteurRetarde {
+    fn nom(&self) -> &'static str {
+        "lecteur_retarde"
+    }
+    fn description(&self) -> &'static str {
+        "outil de test : lit le plan comptable après une attente"
+    }
+    fn schema_entree(&self) -> &'static str {
+        SCHEMA_VIDE
+    }
+    fn portee(&self) -> Portee {
+        Portee::BooksRead
+    }
+    fn executer<'a>(&'a self, ctx: &'a ContexteMcp<'a>, _a: serde_json::Value) -> FuturOutil<'a> {
+        Box::pin(async move {
+            tokio::time::sleep(self.attente).await;
+            kesh_api::services::plan_comptable::lister(ctx.acces(), ctx.lecture(), true)
+                .await
+                .map_err(kesh_api::mcp::textes::depuis_app_error)?;
+            Ok(Donnees::nouvelles(String::new(), None))
+        })
+    }
+}

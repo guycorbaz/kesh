@@ -378,7 +378,9 @@ Il en va de même des tests qui reposent sur un outillage existant (une capture,
     C-32-5-19). Admise si elle égale une **origine propre** — `config.public_base_url` réduite à son origine,
     `http://127.0.0.1:<port>`, `http://localhost:<port>`, `http://[::1]:<port>` (`config.port`, fait 10) — ou une entrée
     de `allowed_origins` d'un réglage de **S** ; après l'authentification, la même règle se rejoue avec les seules
-    `allowed_origins` de la société de la clé. Sinon → **403**, `Content-Type: application/json`, corps JSON-RPC à
+    `allowed_origins` de la société de la clé *(amendé le 2026-10-25, revue de code P2, H2 : ce second refus, à
+    l'étape 9, rend le **401 fixe** d'une clé inconnue, non le 403 qui suit — C-32-6-52 ; le 403 ne vaut plus que pour
+    le premier contrôle, à l'étape 4, avant la clé)*. Sinon → **403**, `Content-Type: application/json`, corps JSON-RPC à
     **`"id": null`** (JSON-RPC 2.0 § 5 : un `id` qu'on ne peut déterminer **doit** être nul ; à recontrôler contre le
     schéma `2025-11-25` à T-a0 — validation P4, R8), égal à la constante `TEXTE_ORIGINE_REFUSEE`. **Jamais déduite de `Host`**. `public_base_url` qui ne
     s'analyse pas en origine `http(s)://hôte[:port]` (sans schéma, avec identifiants ou schéma autre) → **aucune**
@@ -386,7 +388,8 @@ Il en va de même des tests qui reposent sur un outillage existant (une capture,
     Tests : `Origin` absent → 401 sans clé ; `http://localhost:<port>` → admis ; `https://evil.example` → 403 ;
     `Origin: null` → 403 ; `Origin` égale à `Host` forgé (`Host: evil.example`, `Origin: http://evil.example`) → 403 ;
     origine listée dans la société A, clé de B — **B servie** (dans S), sinon l'étape 8 rend le 401 avant l'étape 9
-    (validation P4, F11) — → 403 après authentification ; `HTTP://LOCALHOST:<port>` → admis ; ⚠️ `<port>` est le `config.port` **du test** — un test d'intégration
+    (validation P4, F11) — → 403 après authentification *(amendé le 2026-10-25, revue de code P2, H2 : → **401 fixe**,
+    égal à celui d'une clé inconnue, C-32-6-52 ; test `origine`, mutation P1-Mp4)* ; `HTTP://LOCALHOST:<port>` → admis ; ⚠️ `<port>` est le `config.port` **du test** — un test d'intégration
     obtient sa `Config` par une fonction locale `fn test_config()` de son propre fichier (p. ex.
     `tests/accounts_e2e.rs:51`, `tests/api_keys_e2e.rs:47` ; `tests/common/` n'en fournit aucune), qui appelle
     `Config::from_fields_for_test` (`config.rs:443`, `port: 80` à `:502`) ; `<port>` vaut donc 80, normalisé en
@@ -835,7 +838,7 @@ routes::mcp::recevoir.with_state(EtatMcp))` → `mcp::transport` (pair → règl
 | N23 | `unsafe` (transmutation d'une poignée) | `forbid(unsafe_code)` sur la lib (`lib.rs:9`) | compilateur |
 | N24 | **un contexte d'accès fabriqué** à société, utilisateur et portées arbitraires (`ContexteAcces::mcp`, public, `services/acces.rs:84`) et passé à un service par un outil, le transport ou une tâche | `ContexteAcces::mcp(` appelé en production par `authentifier` seul ; un outil ne nomme pas `ContexteAcces::` | gardes `contexte_acces_mcp_construit_par_authentifier_seul` et `mcp_sans_pool` (AC-a30) — la fonction reste publique pour les tests d'intégration (`services_motif.rs`), d'où une garde et non une visibilité |
 | N25 | **une `AppError` rendue par `IntoResponse`** (corps de l'API, message recopié) | toute réponse sort de `reponse::rendre(ReponseMcp)`, énumération sans `AppError` ; `AppError` convertie par `depuis_app_error` et le `match` d'`authentifier` seuls | conception (AC-a31) + garde d'inventaire `reponses_par_rendre_seul` + test d'égalité de chaque refus |
-| N26 | **un panic** dans un outil ou le transport ; **l'abandon** de la requête par le client | un panic interrompt la connexion, l'abandon annule le futur : **aucune donnée ne part** dans les deux cas | **angle mort** : ni réponse, ni ligne de journal (32-6b) — voir ci-dessous |
+| N26 | **un panic** dans un outil ou le transport ; **l'abandon** de la requête par le client | un panic interrompt la connexion, l'abandon annule le futur : **aucune donnée ne part** dans les deux cas *(amendé le 2026-10-25, revue de code P2, C-32-6-56 : dans un **outil**, le panic est pris dans sa tâche et rend `TEXTE_ERREUR_INTERNE`, détail au journal du serveur ; l'abandon n'annule plus l'outil, qui va au bout dans sa tâche, résultat jeté — aucune donnée ne part non plus)* | **angle mort** : ni réponse, ni ligne de journal (32-6b) — voir ci-dessous |
 | N27 | **un appel de `appliquer`/`autoriser` hors du répartiteur, ou un `impl McpTool` hors de `src/mcp/outils/`** (qui échapperait aux gardes de ce dossier) ; **le pool ordinaire** à portée du transport | `EtatMcp` sans `AppState` ; sites de la politique, des outils et de `Donnees::nouvelles` écrits ; ⚠️ depuis la P3, le pool ordinaire **est** à portée du transport sous `etat.garde` (lisible des seuls `services`) : il ne peut pas servir aux outils, `ContexteMcp::nouveau` exigeant un `LectureOutils` (N28) | gardes `outils_et_politique_en_leur_lieu` et `mcp_sans_pool` (AC-a30) |
 | N28 | **la `garde` passée aux outils, ou la `lecture` des outils à la règle « servi » ou à l'authentification** (validation P4, F2 = R1) | deux types distincts : `Lecture` (garde) et `LectureOutils` (outils), ce dernier jamais déballé hors de `mcp/outil.rs` | compilateur (Ma51, Ma52 déclarées non compilables) ; garde `outils_et_politique_en_leur_lieu` (`LectureOutils::nouvelle` en `lib.rs` seul) — **angle mort** : un accesseur public ajouté à `LectureOutils` (revue) |
 
@@ -1019,7 +1022,9 @@ Tests hors mutations, nommés au Dev Agent Record : `chemins_voisins` (N10), `re
   temps** : la vérification complète et l'écriture de `last_used_at` le rendent plus lent que celui d'une clé inconnue
   (oracle temporel, faible : il ne sert qu'à qui détient déjà une clé valide ; validation P2, F15).
 - **Un panic ou un abandon (N26)** : aucune donnée ne part, mais l'appel n'est pas journalisé (32-6b) ; seul le journal
-  du serveur garde le panic.
+  du serveur garde le panic. *(Amendé le 2026-10-25, revue de code P2, C-32-6-56 : l'outil s'exécute désormais dans une
+  tâche que l'abandon n'annule pas ; la 32-6b décidera si la ligne de journal d'un appel abandonné s'écrit dans cette
+  tâche, à sa fin.)*
 - **Une donnée recopiée dans un prompt** par un humain ou un agent approuvé (cas assumé d'E1) : la 32-10a.
 - **La restriction de construction** (AC-a23) ne voit pas un `Box::leak` d'un texte fabriqué à l'exécution logé dans
   une réponse statique : la revue le lit à chaque ajout de méthode.
@@ -1039,11 +1044,26 @@ Tests hors mutations, nommés au Dev Agent Record : `chemins_voisins` (N10), `re
   client, elle était poursuivie par MariaDB jusqu'à son terme — **mesuré** : sans borne, une `SLEEP(5)` abandonnée
   tourne encore 1,5 s après l'abandon (`326a-mut-P1-Mp1-g2-seul.log`). Depuis la remédiation, chaque connexion du pool
   des outils porte `max_statement_time` = le délai du registre (`DELAI_OUTIL`, 30 s) : MariaDB l'interrompt (1969).
-  **Ce qui reste** : la fenêtre entre la fin du délai côté Kesh et l'interruption par le serveur (les deux bornes sont
-  égales ; une instruction peut donc occuper le serveur quelques millisecondes après que son permis est rendu) ;
-  `max_statement_time` ne borne pas une instruction **en attente d'un verrou** de métadonnées au-delà de ce que MariaDB
-  compte dans le temps d'exécution. **Critère pour la 32-9** : chaque outil de lecture des livres doit tenir sous
-  `DELAI_OUTIL` sur les volumes de démonstration, et un test par outil le constate.
+  ~~**Ce qui reste** : la fenêtre entre la fin du délai côté Kesh et l'interruption par le serveur (les deux bornes sont
+  égales ; une instruction peut donc occuper le serveur quelques millisecondes après que son permis est rendu) ;~~
+  *(Corrigé le 2026-10-25, revue de code P2, H1 : la phrase barrée était fausse. `max_statement_time` se compte depuis
+  le début **de l'instruction**, le délai de Kesh depuis l'entrée dans l'outil, emprunt compris : une instruction partie
+  à `t0` survivait `t0` après l'abandon, jusqu'à presque 30 s ; et une **déconnexion** du client, qui abandonne le futur
+  du handler, rendait le permis sur-le-champ, si bien qu'un porteur de clé pouvait empiler des instructions au-delà
+  des trois connexions. **Fermé par construction** (C-32-6-56) : l'outil s'exécute dans une tâche `tokio::spawn` qui
+  possède ses connexions ; le handler n'attend que la tâche, sous le délai. Un abandon, au délai ou par déconnexion,
+  n'annule plus la tâche : chaque instruction garde son permis jusqu'à sa fin côté serveur — au plus
+  `max_statement_time` après **son** début — et le nombre d'instructions simultanées reste borné par
+  `MCP_POOL_CONNEXIONS`. Tests `abandon_au_delai_le_permis_reste_pris` et
+  `abandon_par_deconnexion_le_permis_reste_pris` ; mutation P2-Mq1.)* **Ce qui reste, depuis C-32-6-56** : (i) une
+  tâche abandonnée va **au bout de l'outil**, résultat jeté — pour un outil à plusieurs instructions (la 32-9), au plus
+  une `max_statement_time` par instruction, plus l'attente d'un permis (le délai d'acquisition du pool) ; (ii) les
+  tâches abandonnées **en attente d'un permis** ne sont pas bornées en nombre : un porteur de clé qui coupe ses
+  requêtes en boucle fait attendre les appels légitimes derrière les siennes, sans dépasser trois instructions côté
+  serveur — à reprendre avec la limite de débit (point 8 pour Guy) ; (iii) `max_statement_time` ne borne pas une
+  instruction **en attente d'un verrou** de métadonnées au-delà de ce que MariaDB compte dans le temps d'exécution
+  (non mesuré). **Critère pour la 32-9** : chaque outil de lecture des livres doit tenir sous `DELAI_OUTIL` sur les
+  volumes de démonstration, et un test par outil le constate.
 
 ## Dev Notes
 
@@ -1059,6 +1079,7 @@ Tests hors mutations, nommés au Dev Agent Record : `chemins_voisins` (N10), `re
 7. Authorization: Bearer → cles_mcp::authentifier         refus               → 401 fixe ; erreur base → 500 fixe
 8. société de la clé ∈ S                                  non                 → 401 fixe (même corps qu'en 7)
 9. Origin (propres ∪ allowed_origins de la société)       refusée             → 403
+   (amendé le 2026-10-25, revue de code P2, H2 : → 401 fixe, même corps qu'en 7 — C-32-6-52)
 10. to_bytes(corps, 1 Mio), JSON-RPC                      (AC-a11)
 11. répartiteur : liste close → tools/call → outil_pour(nom, portées) → politique::autoriser (Required → refus, sans
     exécution ; premier emprunt du pool des outils après ce point seulement) → executer (délai du registre) → politique::appliquer → [32-6b] journaliser_appel (fail closed)

@@ -1535,6 +1535,151 @@ async fn delai_depasse(pool: MySqlPool) {
 }
 
 // ---------------------------------------------------------------------------
+// Revue P2, H1 (C-32-6-56) — un abandon ne rend pas le permis avant la fin de
+// l'instruction
+// ---------------------------------------------------------------------------
+
+/// Les instructions sur `accounts` en cours côté serveur, dans la base **du
+/// test** (l'utilisateur voit ses propres sessions sans privilège `PROCESS`).
+/// Une instruction préparée de sqlx s'y montre en `COMMAND = 'Execute'`.
+async fn lectures_du_plan_en_cours(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.PROCESSLIST \
+         WHERE DB = DATABASE() AND COMMAND IN ('Query', 'Execute') \
+         AND ID <> CONNECTION_ID() AND INFO LIKE '%FROM accounts%'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Vrai si un `kesh_version` — qui emprunte une connexion du pool des outils —
+/// reste sans réponse 300 ms : aucun permis n'est libre.
+async fn sonde_bloquee(b: &Banc, jeton: &str) -> bool {
+    tokio::time::timeout(
+        Duration::from_millis(300),
+        b.mcp(Some(jeton), &appel(9, "kesh_version", json!({}))),
+    )
+    .await
+    .is_err()
+}
+
+/// Tient `accounts` sous `LOCK TABLES … WRITE` : toute lecture du plan par une
+/// autre session attend, côté serveur, que le verrou soit levé.
+async fn verrouiller_le_plan(pool: &MySqlPool) -> sqlx::pool::PoolConnection<sqlx::MySql> {
+    let mut verrou = pool.acquire().await.unwrap();
+    sqlx::query("LOCK TABLES accounts WRITE")
+        .execute(&mut *verrou)
+        .await
+        .unwrap();
+    verrou
+}
+
+/// Lève le verrou, puis constate que les permis reviennent **à la fin** des
+/// instructions : la sonde est servie.
+async fn deverrouiller_et_sonder(
+    mut verrou: sqlx::pool::PoolConnection<sqlx::MySql>,
+    b: &Banc,
+    jeton: &str,
+    delai_s: f64,
+) {
+    sqlx::query("UNLOCK TABLES")
+        .execute(&mut *verrou)
+        .await
+        .unwrap();
+    drop(verrou);
+    let r = tokio::time::timeout(
+        Duration::from_secs(10),
+        b.mcp(Some(jeton), &appel(1, "kesh_version", json!({}))),
+    )
+    .await
+    .expect("les permis sont rendus à la fin des instructions");
+    assert_eq!(r.json(), attendu_version_delai(1, delai_s));
+}
+
+/// (1) Abandon **au délai de Kesh**. L'outil attend 600 ms puis lit le plan,
+/// tenu verrouillé : sa lecture part après le début du délai (1 s), si bien
+/// qu'au délai elle tourne encore côté serveur — `max_statement_time` (1 s)
+/// ne l'interromprait qu'à ≈ 1,6 s. Trois appels prennent les trois permis ;
+/// juste après leurs trois « délai dépassé », un `kesh_version` ne trouve aucun
+/// permis libre. Avant C-32-6-56, le futur de l'outil était abandonné, sa
+/// connexion fermée et son permis rendu sur-le-champ : la sonde était servie.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn abandon_au_delai_le_permis_reste_pris(pool: MySqlPool) {
+    assert_eq!(kesh_api::mcp::MCP_POOL_CONNEXIONS, 3, "trois appels");
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(
+        &pool,
+        Registre::standard()
+            .avec(Box::new(LecteurRetarde {
+                attente: Duration::from_millis(600),
+            }))
+            .avec_delai(Duration::from_millis(1000)),
+    );
+    assert!(!sonde_bloquee(&b, &jeton).await, "témoin : sonde servie");
+    let verrou = verrouiller_le_plan(&pool).await;
+    let corps = appel(1, "lecteur_retarde", json!({}));
+    let (r1, r2, r3) = tokio::join!(
+        b.mcp(Some(&jeton), &corps),
+        b.mcp(Some(&jeton), &corps),
+        b.mcp(Some(&jeton), &corps),
+    );
+    for r in [r1, r2, r3] {
+        assert_eq!(r.json(), attendu_outil_en_erreur(1, TEXTE_DELAI_DEPASSE));
+    }
+    assert_eq!(
+        lectures_du_plan_en_cours(&pool).await,
+        3,
+        "témoin : après l'abandon, le serveur exécute encore les trois lectures"
+    );
+    assert!(
+        sonde_bloquee(&b, &jeton).await,
+        "après l'abandon au délai, le permis n'est pas rendu avant la fin de l'instruction"
+    );
+    deverrouiller_et_sonder(verrou, &b, &jeton, 1.0).await;
+}
+
+/// (2) Abandon **par déconnexion** : le futur de la requête est abandonné
+/// (c'est ce que fait hyper quand le client coupe sa connexion en pleine
+/// requête), le délai de Kesh (10 s) est loin. Mêmes constats qu'en (1).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn abandon_par_deconnexion_le_permis_reste_pris(pool: MySqlPool) {
+    let (_, _, _, jeton) = servie(&pool, SendValidation::Exempt).await;
+    let b = banc(
+        &pool,
+        Registre::standard()
+            .avec(Box::new(LecteurRetarde {
+                attente: Duration::ZERO,
+            }))
+            .avec_delai(Duration::from_secs(10)),
+    );
+    let verrou = verrouiller_le_plan(&pool).await;
+    let corps = appel(1, "lecteur_retarde", json!({}));
+    let coupe = |c: &str| {
+        let c = c.to_string();
+        let b = &b;
+        let jeton = &jeton;
+        async move {
+            tokio::time::timeout(Duration::from_millis(400), b.mcp(Some(jeton), &c))
+                .await
+                .is_err()
+        }
+    };
+    let (c1, c2, c3) = tokio::join!(coupe(&corps), coupe(&corps), coupe(&corps));
+    assert!(c1 && c2 && c3, "les trois requêtes sont abandonnées en vol");
+    assert_eq!(
+        lectures_du_plan_en_cours(&pool).await,
+        3,
+        "témoin : après la déconnexion, le serveur exécute encore les trois lectures"
+    );
+    assert!(
+        sonde_bloquee(&b, &jeton).await,
+        "après la déconnexion, le permis n'est pas rendu avant la fin de l'instruction"
+    );
+    deverrouiller_et_sonder(verrou, &b, &jeton, 10.0).await;
+}
+
+// ---------------------------------------------------------------------------
 // AC-a22 — E1 côté répartiteur
 // ---------------------------------------------------------------------------
 

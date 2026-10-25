@@ -59,9 +59,14 @@ pub async fn create_pool(
 ///   alors toute écriture et tout `SELECT … FOR UPDATE` (erreur 1792) ;
 /// - `after_connect` encore : `SET SESSION max_statement_time = <delai_instruction>`
 ///   (secondes, au millième) — **MariaDB interrompt lui-même** toute instruction
-///   qui dépasse ce délai (erreur 1969), si bien qu'une requête dont le futur a
-///   été abandonné au délai de l'outil ne continue pas côté serveur après la
-///   fermeture de sa connexion (revue P1 de la 32-6a, E1 = B2 ; test (g)) ;
+///   qui dépasse ce délai (erreur 1969), compté **depuis le début de
+///   l'instruction** côté serveur (revue P1 de la 32-6a, E1 = B2 ; test (g)).
+///   ⚠️ Cette borne **ne suffit pas** à borner la charge : une instruction dont
+///   la connexion est fermée en vol continue côté serveur jusqu'à
+///   `delai_instruction` après **son** début — non après l'abandon —, alors que
+///   le permis du pool est déjà rendu (revue P2, H1). Le répartiteur du MCP
+///   l'évite par construction : l'outil s'exécute dans une tâche qui garde ses
+///   connexions jusqu'à la fin de l'instruction (C-32-6-56) ;
 /// - `after_release` rend **toujours** `Ok(false)` : **chaque connexion est
 ///   fermée à sa restitution** (`sqlx-core` 0.8.6, `pool/connection.rs`), si
 ///   bien que chaque emprunt part d'une connexion neuve, passée par
