@@ -49,9 +49,9 @@
 //!   **dans** `services`, on n'ouvre aucun autre chemin vers lui et on n'emploie
 //!   `lecture.pool()` qu'à lire, `trace.pool()` qu'aux fonctions d'audit — ce
 //!   qu'aucune garde ne prouve : la revue le lit, le test
-//!   `tests/services_motif.rs` le vérifie à l'exécution, et la connexion du
-//!   MCP se déclarera en outre `READ ONLY` (mode de session, 32-6 ; Q11,
-//!   tranchée le 2026-10-24). Ce qu'un handler doit lire pour sa présentation
+//!   `tests/services_motif.rs` le vérifie à l'exécution, et la connexion des
+//!   outils du MCP se déclare en outre `READ ONLY` (mode de session, 32-6a ;
+//!   Q11, tranchée le 2026-10-24). Ce qu'un handler doit lire pour sa présentation
 //!   (le contexte PDF) passe par une fonction de service. L'action d'audit reste
 //!   un **littéral** à chaque `NewAuditLogEntry::user(` (garde
 //!   `tests/audit_label_registry.rs`).
@@ -84,6 +84,12 @@
 //!    (`mcp_keys::touch_last_used`) sur la `Trace`, dans
 //!    `cles_mcp::authentifier` (Story 32-5b) — une écriture d'authentification,
 //!    non d'un chemin de lecture des livres.
+//!
+//!    Et, depuis la Story 32-6b, `serveur_mcp::journaliser_appel` : l'entrée
+//!    `mcp.tool_called` de chaque appel d'outil MCP, sur la `Trace`, écrite par
+//!    le répartiteur du MCP avant l'envoi de la réponse — **fail closed** : si
+//!    elle échoue, aucune donnée ne part (C-32-6-30). Dérogation écrite aux
+//!    règles R1, R2 et R7 (une écriture d'audit, sans `exiger`).
 //! 3. Aucune autre : les générateurs de `kesh-report`, `ReportPeriod::resolve`,
 //!    `resolve_scope`, `rapports::identite_societe`, `helpers::company_for_ids`,
 //!    `accounts::list_by_company` et `letterings::letterable_account_ids` ne
@@ -198,22 +204,32 @@
 //!
 //! La réponse de Guy à Q11 : la lecture seule est **tenue par l'application**
 //! — les outils MCP n'atteignent que des services qui reçoivent une `Lecture`
-//! —, et la connexion du MCP se déclare en outre `READ ONLY` (mode de session),
-//! l'une et l'autre réalisées par la 32-6 ; **aucun second compte MariaDB**.
-//! En 32-3, les deux poignées enveloppent le même pool de production ; seule
-//! leur **distinction** est posée ici. La garantie repose donc sur le code de
-//! Kesh et ses tests (la revue, les gardes, l'exécution sur une `Lecture` en
-//! lecture seule) : la base n'arrête pas un défaut qui contournerait le mode
-//! de session.
+//! —, et la connexion des outils du MCP se déclare en outre `READ ONLY` (mode
+//! de session) ; **aucun second compte MariaDB**. Réalisé par la 32-6a : les
+//! outils lisent sur une `Lecture` construite au câblage du MCP
+//! (`build_router_avec_registre`) sur `kesh_db::pool::pool_lecture_seule`, dont
+//! chaque connexion passe `SET SESSION TRANSACTION READ ONLY` et est fermée à
+//! sa restitution ; `AppState::lecture()` reste la `Lecture` **ordinaire** —
+//! celle de l'API, et la `garde` du MCP (règle « servi », authentification,
+//! C-32-6-38). La garantie repose sur le code de Kesh et ses tests (la revue,
+//! les gardes, l'exécution sur une `Lecture` en lecture seule) : la base
+//! n'arrête pas un défaut qui contournerait le mode de session.
 //!
 //! # L'authentification d'une clé MCP — Story 32-5b
 //!
 //! `cles_mcp::authentifier(&Lecture, &Trace, jeton)` est le **seul**
 //! constructeur de production d'un `ContexteAcces` du canal MCP : il cherche la
 //! clé sur la `Lecture` et écrit sa dernière utilisation sur la `Trace`, si
-//! bien qu'il fonctionne sur une `Lecture` en `READ ONLY`. Il n'est branché
-//! nulle part : le middleware de `/api/v1` ne le connaît pas (une clé MCP y
-//! échoue en 401), et la garde de l'endpoint `/mcp` (32-6) l'appellera.
+//! bien qu'il fonctionne sur une `Lecture` en `READ ONLY`. Le middleware de
+//! `/api/v1` ne le connaît pas (une clé MCP y échoue en 401) ; la garde de
+//! l'endpoint `/mcp` l'appelle (`mcp::transport`, Story 32-6a).
+//!
+//! # Le serveur MCP — Story 32-6a
+//!
+//! `serveur_mcp::reglages_actifs` (la règle « servi », lue à chaque requête
+//! vers `/mcp` avant l'authentification) **déroge** aux règles R1, R2 et R7 :
+//! aucune portée ne s'y applique, d'où ni `ContexteAcces`, ni `exiger`, ni
+//! test de refus. `serveur_mcp::etat` (l'outil `kesh_version`) suit le motif.
 
 #![cfg_attr(not(test), forbid(unsafe_code))]
 
@@ -227,3 +243,4 @@ pub mod plan_comptable;
 pub mod poignees;
 pub mod postes_ouverts;
 pub mod rapports;
+pub mod serveur_mcp;

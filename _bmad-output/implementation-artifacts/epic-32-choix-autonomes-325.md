@@ -664,3 +664,112 @@ liste) est fermée par C-32-5-37.
   (`mcp_keys_repointed` forcé à 0, sans `UPDATE`) — jouées comme Md1 à Md4.
 - **Réversible** : sans objet.
 
+## Développement de la 32-5c (2026-10-25, Opus 5.5, en autonomie)
+
+### C-32-5-51 — Ce que rendent les routes des clés
+
+- **Contexte** : AC-c1 exige « jamais de condensat ni de secret » ; C-32-5-37 rend une clé lisible même si elle porte
+  des portées inconnues de cette version ; la route des clés d'API rend `id`, `name`, `scope`, dates et `version`.
+- **Retenu** : `McpKeyResponse` — `id`, `name`, `scopes` (connues, ordre canonique), `unknownScopes` (ce que la version
+  ne reconnaît pas, jamais accordé), `sendValidation`, `createdByUserId`, `createdAt`, `lastUsedAt`, `revokedAt`,
+  `expiresAt`, `version` ; aucun champ pour le condensat. La création rend ces champs **aplatis** plus `key` (le secret,
+  une seule fois), 201. Le `PUT` de politique rend la clé relue (200). Les dates sont rendues comme celles des clés
+  d'API (`NaiveDateTime`, sans `Z`), par cohérence avec la page des clés d'API que la 32-7 imitera.
+- **Écartées** : taire les portées inconnues (une clé qui n'authentifie plus sans que l'écran dise pourquoi) ; rendre
+  les dates avec `Z` comme `backup-schedule` (deux conventions pour deux sortes de clés).
+- **Réversible** : oui, avant la 32-7.
+
+### C-32-5-52 — Le nom d'une clé, rogné par le prédicat existant de `kesh-core` (B1 = E4)
+
+- **Contexte** : le `CHECK` de `mcp_keys.name` ne voit que `[:space:]` ; la fiche demande de refuser un nom fait de
+  blancs Unicode et de caractères de largeur nulle ; la fiche 32-10a (non fusionnée) prévoit de faire évoluer le
+  prédicat des invisibles de `kesh-core`.
+- **Retenu** : `name.trim_matches(kesh_core::text::is_invisible)` — blancs Unicode (U+00A0, U+3000), contrôles, largeur
+  nulle (U+200B, U+FEFF, U+2060…) retirés **aux bords**, nom refusé s'il ne reste rien ; borne de 255 **caractères**
+  sur le nom rogné. Le prédicat n'est ni recopié ni modifié : son évolution par la 32-10a s'appliquera ici d'elle-même.
+- **Écartées** : `char::is_whitespace` seul (laisse passer U+200B) ; un prédicat local (une seconde définition de
+  « invisible », que le module de `kesh-core` dit unique).
+- **Réversible** : oui.
+
+### C-32-5-53 — Pas de migration pour `CHECK (version >= 1)` sur `mcp_server_settings` (B3)
+
+- **Contexte** : une ligne de réglages à `version = 0` (SQL à la main, sauvegarde fabriquée) serait lue comme existante
+  et rendue `version: 0` ; tout `PUT` à `version: 0` tente alors un `INSERT`, la clé primaire le refuse, et la route
+  rend 409 **à chaque fois**. La contrainte demanderait une migration (🗄️ : fichier neuf, ligne de
+  `migrations.sha384`, squash régénéré, audit d'idempotence, compteurs de P6 84 → 85, gate complet sous l'exception
+  `kesh-db`) dans une partie déclarée « non 🗄️ » au découpage.
+- **Retenu** : **pas de migration** ici. Raisons : l'état n'est atteignable que par une écriture hors de Kesh (aucune
+  route n'écrit `version = 0`, le défaut de la colonne est 1, le dépôt n'incrémente jamais vers 0) ; il ne fausse
+  aucune donnée ni aucun accès (le serveur garde ses réglages lus) ; il se répare par la remise à zéro ou par le SQL qui
+  le crée. La route **ne fait pas confiance** à la version lue pour écrire : c'est le verrou du dépôt qui décide (C-32-5-54),
+  si bien qu'aucun écrasement n'est possible. Écrit au doc-comment de `routes/mcp_server_settings.rs`.
+- **À tracer** : une issue (P3, dette) « `mcp_server_settings.version` sans `CHECK (version >= 1)` » — l'agent n'a pas
+  accès à `gh` ; demandé à l'orchestrateur. La contrainte a sa place dans la prochaine migration qui touche la table
+  (la 32-6 ou la 32-8, déjà 🗄️).
+- **Écartées** : la migration maintenant (coût 🗄️ pour un état fabriqué) ; un `UPDATE … WHERE version = 0` de
+  rattrapage dans la route (un chemin d'écriture de plus, pour le même état).
+- **Réversible** : oui (une migration suivante).
+
+### C-32-5-54 — L'« avant » de l'audit des réglages se lit hors verrou ; aucun pré-contrôle de version à la route
+
+- **Contexte** : `mcp_server_settings.updated` porte l'avant et l'après ; le dépôt ne lit pas sous verrou ; un
+  pré-contrôle « version lue == version présentée » à la route rendrait le verrou du dépôt **invisible aux tests** (il
+  masquerait toute régression de `save_in_tx`, dont Mc4).
+- **Retenu** : la route lit l'avant (`get_or_defaults`), puis appelle `save_in_tx`, qui seul décide du conflit. Une
+  écriture réussie à `version = n` part de la ligne de version `n` ; l'avant lu est donc exact, sauf pour un client qui
+  présenterait une version qu'aucune lecture ne lui a rendue, en concurrence avec un autre écrivain (l'avant serait
+  alors celui d'une version plus ancienne d'un cran). Dit au doc-comment du handler. Mc4 se joue donc **sur le dépôt**.
+- **Écartée** : lire l'avant `FOR UPDATE` (une fonction de dépôt de plus, 🗄️, pour un écart d'audit sur une entrée
+  fabriquée).
+- **Réversible** : oui.
+
+### C-32-5-55 — Les origines : `url`, et « sans chemin » lu sur le texte saisi
+
+- **Contexte** : C-32-5-19 fixe `http(s)://hôte[:port]`, sans chemin, en minuscules ; `url` est déjà une dépendance
+  directe de `kesh-api` (Story 15-13a) ; `Url::parse` rend le chemin `/` pour `http://h` comme pour `http://h/`.
+- **Retenu** : refus si le schéma n'est ni `http` ni `https`, si l'autorité saisie est vide ou contient `/`, `?`, `#`,
+  `@`, `\` ou un blanc, ou si `url` ne l'analyse pas (port hors de 0-65535 compris) ; forme stockée :
+  `url.origin().ascii_serialization()` — minuscules, **port par défaut retiré** (`https://nas.local:443` →
+  `https://nas.local`), nom international en `xn--`. C'est la forme qu'un en-tête `Origin` porte, que la 32-6 comparera.
+- **Écartée** : un analyseur maison de l'autorité (une seconde implémentation d'une notation normée, comme C-32-5-19
+  l'écarte pour les plages).
+- **Réversible** : oui.
+
+### C-32-5-56 — Les bornes des listes
+
+- **Contexte** : AC-c4 — 64 entrées, 255 caractères l'une, doublons retirés.
+- **Retenu** : les 64 entrées se comptent sur la liste **reçue** (avant dédoublonnage) ; les 255 caractères sur l'entrée
+  reçue, avant rognage ; chaque entrée est rognée de ses blancs (`str::trim`) avant analyse ; le dédoublonnage porte sur
+  la forme **canonique** (`10.0.0.1` et `10.0.0.1/32` sont un doublon), la première occurrence gardée, l'ordre conservé.
+  Les plages et les mandataires suivent la même règle (adresse, sinon réseau sans bits d'hôte).
+- **Réversible** : oui.
+
+### C-32-5-57 — Un changement de politique identique s'écrit et se trace
+
+- **Contexte** : `PUT …/send-validation` avec la politique déjà en place.
+- **Retenu** : il s'écrit (version + 1) et s'inscrit au journal (`before == after`), comme tout enregistrement : la
+  route ne compare pas, et le client qui l'envoie reçoit la version nouvelle. Pas de 304 ni de court-circuit.
+- **Réversible** : oui.
+
+### C-32-5-58 — Pas d'entrée de CHANGELOG pour la partie c
+
+- **Contexte** : C-32-5-49 (partie d) : la fonction « serveur MCP » n'est pas encore utilisable ; la 32-5a porte
+  l'entrée ⚠️ de la limite de Q4.
+- **Retenu** : rien au CHANGELOG ici. Les routes existent, mais sans écran (32-7) ni endpoint `/mcp` (32-6) une clé ne
+  sert à rien ; l'entrée « serveur MCP » s'écrit avec la story qui le rend utilisable. `docs/api-external.md` dit dès
+  maintenant qu'une clé `kesh_mcp_…` n'est pas une clé d'API (AC-c7).
+- **Réversible** : oui (une ligne).
+
+### C-32-5-59 — Deux mutations de plus que la fiche ; un test de langue de plus
+
+- **Retenu** : mc7 (le nom rogné par `str::trim` au lieu du prédicat des invisibles — tue B1) et mc8 (origine à chemin
+  admise — tue C-32-5-55) ; un test `mcp_settings_host_bits_refusal_in_german` (`i18n_e2e.rs`) : le refus à deux
+  paramètres rendu en `de-CH`, sans marques d'isolation — G9 ne contrôle que le repli français.
+- **Réversible** : sans objet.
+
+### C-32-5-60 — Les doc-comments `bootstrap.rs:74-75` et `admin.rs:501-502` ne sont pas touchés
+
+- **Contexte** : A1 de la revue de la 32-5d (tracé #738) ; consigne : les corriger **si** la partie touche ces fichiers.
+- **Retenu** : la 32-5c ne touche ni `auth/bootstrap.rs` ni `routes/admin.rs` ; les deux doc-comments restent à #738.
+- **Réversible** : sans objet.
+

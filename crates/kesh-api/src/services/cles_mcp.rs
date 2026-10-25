@@ -3,8 +3,8 @@
 //! Une clé MCP (`kesh_mcp_…`, `auth::api_key::generate_mcp_key`) est un second
 //! type de clé, **distinct** des clés d'API : elle n'ouvre jamais `/api/v1`, et
 //! une clé d'API n'ouvre jamais le MCP. [`authentifier`] est son seul chemin
-//! de validation ; la garde de l'endpoint `/mcp` (32-6) l'appellera. Rien ne
-//! l'appelle encore en production.
+//! de validation ; la garde de l'endpoint `/mcp` l'appelle (`mcp::transport`,
+//! Story 32-6a), sur la `Lecture` ordinaire.
 //!
 //! # L'ordre (C-32-5-14)
 //!
