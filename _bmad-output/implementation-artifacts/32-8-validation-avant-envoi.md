@@ -1635,16 +1635,72 @@ la partie qui la fait est entre crochets.
 
 ### Agent Model Used
 
+- **32-8b0** : Opus 5.5 (Claude Code), en autonomie, le 2026-10-25.
+
 ### Statut des parties
 
 - **32-8a** — `ready-for-dev`, après la 32-6a et la 32-6b ; une migration à la fois.
-- **32-8b0** — `ready-for-dev`, après la 32-8a (ordre de l'orchestrateur).
+- **32-8b0** — **`review`** (développée **avant** la 32-8a, sur décision de l'orchestrateur, C-32-8-30) ; revue P1 :
+  `32-8b0-review-prompt-p1.md` (Opus, lentilles B, E, A).
 - **32-8b** — `ready-for-dev`, après la 32-8b0.
 - **32-8c** — `ready-for-dev`, après la 32-8b.
 
 ### Completion Notes List
 
+**32-8b0** (branche `story/32-8b0` ; commits `7e1582d4` étape 0, `0e358efc` code ; périmètre des décomptes :
+`origin/main` (`7e47bff4`) → `0e358efc`) :
+
+- **T-00** : étape 0 au Change Log (AC-ii1 de la 32-10a inchangée depuis `00114c6d`, `tables.rs` cité point par
+  point, P3-R1 rectifié, P3-R4 (b) tranché ; aucun fichier de `src/mcp/` ni de `migrations/`).
+- **T-01** : `kesh_core::text::is_hidden_format` (Cf, Co, Cn + les deux listes de l'AC-ii1, à la lettre),
+  `is_hidden_in_text` (AC-02, à la lettre) et **`is_hidden_in_line`** (= `c.is_control() || is_hidden_format(c)`,
+  C-32-8-31) ; dépendance `unicode-properties = { version = "0.1.4", default-features = false, features =
+  ["general-category"] }` ; `Cargo.lock` : **une ligne** (`"unicode-properties"` aux dépendances de `kesh-core`), aucune
+  crate neuve. `is_forbidden_in_description` délègue à `is_hidden_in_line` ; liste fermée et angle mort de la 26-2a
+  retirés. Message de refus inchangé (C-32-8-32) : aucun libellé, la note #758 est sans objet. CHANGELOG, entrée
+  *Modifié* de la 0.16.0 : le texte prescrit, plus une phrase vérifiée au code — `update_bank_account`
+  (`bank_accounts.rs:767`) revalide la description entière, si bien qu'une description ancienne qui porte un caractère
+  désormais refusé doit être corrigée au prochain enregistrement du compte.
+- **Tests** (`grep -c '#\[test\]'` aux deux bornes) : `kesh-core/src/text.rs` **5 → 16** (+11 :
+  `version_d_unicode_epinglee`, `famille_cf_refusee`, `famille_co_refusee`, `famille_cn_refusee`,
+  `listes_ecrites_refusees`, `bidi_et_etiquettes_refuses`, `voisins_visibles_admis`,
+  `emojis_simples_admis_composes_refuses`, `texte_sur_plusieurs_lignes`, `valeur_d_une_ligne`,
+  `ancienne_liste_reste_refusee` — le test déménagé, qui contrôle **chaque point** de l'ancienne liste, non ses seules
+  bornes) ; `routes/bank_accounts.rs` **4 → 5** (−1 `ensemble_refuse_borne_par_borne` déménagé, +2
+  `description_refuse_par_categorie`, `emojis_simples_admis_composes_refuses`) ; `controles_cc_refuses`,
+  `lettres_et_espaces_ordinaires_acceptes`, `normalisation_de_la_description` inchangés, verts. Ajout au-delà de la
+  fiche : `version_d_unicode_epinglee` (l'angle mort est daté par la version d'Unicode de la crate ; une mise à jour le
+  fait rougir).
+- **Mutations M01 à M08, 8/8 tuées** (journal `kesh-gate-logs/328b0-mutations.log`, une à la fois, motif vérifié unique,
+  restauration `git checkout -- <f> && touch <f>`, diff résiduel nul après chacune) : M01 → `famille_cf_refusee` (+4
+  autres) ; M02 → `famille_cn_refusee` (+ `ancienne_liste_reste_refusee`) ; M03 → `famille_co_refusee` (+
+  `valeur_d_une_ligne`) ; M04 → `listes_ecrites_refusees` (+ `texte_sur_plusieurs_lignes`) ; M05 (`FE00..=FE0E`) →
+  `emojis_simples_admis_composes_refuses`, `listes_ecrites_refusees`, `ancienne_liste_reste_refusee` ; M06
+  (`c != '\u{200D}' && …`) → `emojis_simples_admis_composes_refuses`, `ancienne_liste_reste_refusee` ; M07 →
+  `texte_sur_plusieurs_lignes` seul ; M08 (ancienne liste remise) → `description_refuse_par_categorie` seul (5 tests de
+  `bank_accounts::tests`, 1 rouge). La seconde cible de M07 (`rendre_visible_par_famille`) est de la 32-8b, non écrite.
+- **Gates, au dernier commit de code `0e358efc`** : bases `kesh_328b0` et `kesh_e2e_328b0` supprimées et recréées par
+  le compte `kesh`, migrations du worktree (dernière `20261025000001`), seed `scripts/seed-dev-db.sql` ;
+  **`scripts/test-fast.sh --ci`** sous flock, `DATABASE_URL` sur `kesh_328b0` : fmt, clippy `-D warnings`, nextest
+  **4195 exécutés, 4195 passés, 7 ignorés** (`kesh-gate-logs/328b0-gate-complet.log`, `exit=0`) ; **`cargo publish
+  --dry-run -p kesh-import`** : `exit=0` (`328b0-publish-dry-run.log`) ; **frontend** sous flock : `npm run check`
+  0 erreur (29 avertissements, préexistants), `lint-i18n-ownership` PASS, `test:unit` **163 fichiers, 1939 tests
+  passés**, `build` vert (`328b0-gate-frontend.log`, `exit=0`) ; **E2E complet** sous flock, port 3328, base
+  `kesh_e2e_328b0`, dossiers neufs `/tmp/kesh-e2e-328b0/{inbox,documents,backup}` : **315 passés, 7 échoués, 17
+  sautés** (12,9 min ; `328b0-e2e.log`) — les 7 échecs sont **exactement** ceux de la KF-029 (#97) listés à
+  `docs/testing.md:394-400` (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ;
+  `onboarding.spec.ts:57`, `:77`, `:150`), aucune KF-052 ni pollution ; les deux specs de la description d'un compte
+  (`bank-accounts-crud.spec.ts:220`, `:262`) vertes. Backend arrêté par son PID (1172055), contrôlé par `ps -p`.
+- **Interdits respectés** : aucun push, aucun `gh` qui écrit, aucun tag, aucun `prepare-release`, aucun redémarrage du
+  conteneur ni `GRANT` ; code édité par l'outil Edit seulement (`cargo fmt` a reformaté trois blocs de tests).
+
 ### File List
+
+**32-8b0** : `crates/kesh-core/Cargo.toml` ; `crates/kesh-core/src/text.rs` ; `Cargo.lock` ;
+`crates/kesh-api/src/routes/bank_accounts.rs` ; `CHANGELOG.md` ; la présente fiche ;
+`_bmad-output/implementation-artifacts/epic-32-choix-autonomes-328.md` (C-32-8-30 à 32) ;
+`_bmad-output/implementation-artifacts/sprint-status.yaml` ;
+`_bmad-output/implementation-artifacts/32-8b0-review-prompt-p1.md` (neuf).
 
 ## Change Log
 
@@ -1655,3 +1711,4 @@ la partie qui la fait est entre crochets.
 | 2026-10-25 | validation P2 | **Opus ×2** (lentilles R et F, contexte frais, prompt `328-validate-prompt-p2.md` ; rapports `kesh-gate-logs/328-validate-p2-{R,F}.md`) : R 0/0/6/7, F 0/0/4/11 ⇒ **trend P1 0/4/10/15 → P2 0/0/10/18** (doublons R1 = F1, R2 = F2, R3 ⊃ F7, R4 = F6, R11 = F10, R12 ⊂ F4 en partie, comptés une fois par lentille). ⚠️ **Recyclage déclaré** : **neuf des dix MEDIUM sont nés de la remédiation P1** (R1 à R6, F1, F2, F4) ; un seul lui est antérieur, F3 (le journal d'un dépôt refusé), que la P1 a rendu absolu. Sévérité en baisse (HIGH → 0) mais MEDIUM → MEDIUM **par recyclage** : signal de découpage de `CLAUDE.md` (amendement D5) — **déclaré au Project Lead** ; consigne appliquée : la conception la plus simple qui ferme la classe, et le **grep de la valeur** plutôt qu'une liste de lignes. **MEDIUM remédiés** : R1 = F1 → l'AC-03, le point 11 et l'entrée du CHANGELOG disent le **vrai** changement, mesuré contre `bank_accounts.rs:303-323` et `tables.rs` : les emojis composés étaient **déjà** refusés ; s'ajoutent 41 contrôles de format attribués (U+0600–0605, U+06DD, U+070F, U+0890–0891, U+08E2, U+110BD, U+110CD, U+13430–1343F, U+1BCA0–1BCA3, U+1D173–1D17A), tout Co (dont le logo Apple U+F8FF), tout Cn, et neuf entrées des listes ; différence non vide, entrée au CHANGELOG gardée ; R2 = F2 → test `description_refuse_par_categorie` dans `bank_accounts.rs` (U+0600, U+F8FF, U+0378, U+115F, U+E0100), qui tue M08 ; R3 = F7 → `grep -nE "\b(84|50|49)\b"` prescrit, sortie relevée, `:210` ; R4 = F6 → « Les douze … les 42 tables », `grep -nwE "onze|douze|41|42"`, consommateurs nommés ; R5 (décision de l'orchestrateur) → `entree_appel(cle: &CleMcpAuthentifiee, …)` gardée, `prompts_mcp::proposer` recevra aussi `&CleMcpAuthentifiee`, écrit à la note pour la 32-10a avec la liaison unique du pool et la signature de `journaliser_appel` (F5) ; R6 → AC-B15 close (points 10 et 11 : gardes de `mcp_gardes_lexicales.rs`, `tests/common/mcp.rs` ; point 9 : chaque test dans `mcp_transport_e2e.rs` ou `mcp_journal_e2e.rs`) ; F3 → chaque issue d'un dépôt journalisée une fois — dans la transaction s'il réussit, par `journaliser_appel` après l'échec sinon (`envoi_trop_volumineux`, `limite_atteinte`, `erreur`), AC-B5, AC-B11, AC-B15 2(b) réalignées, test `depot_refuse_journalise`, MB30 ; F4 → garde `aucun_span_dans_le_chemin_des_envois` : `#[instrument` et toute macro de span **interdits** dans le périmètre (mesure : 0 attribut, 7 spans hors périmètre ; témoins existants `routes/exports.rs:71`, `:72`, `:81`), MB31. **LOW remédiés** : R7 (`autoriser` seule à décider), R8 = F14 (AC-C renumérotées 28 à 38, faits 15 à 17 déplacés après le 14, ordre avec 32-8c dans `sprint-status.yaml` et la note), R9 (phrase de l'AC-A7), R10 (« si fusionné » retiré, numéros de l'inventaire de `services/mod.rs` recomptés à l'étape 0), R11 = F10 (MB9 retirée, équivalente à MA12), R12 (périmètre de la garde d'évènements étendu à tout `src/mcp/`), R13 (`IssueAppel` recontrôlé), F5 (AC-a26 de la 32-6a amendée, `FABRIQUES_V2`/`EXCEPTIONS_V1` réécrites ; `journaliser_appel` gagne `envoi`), F9 (« égal à la réponse `Inconnu(X)` attendue »), F11 (nom de table `mcp_sends` dans un littéral : forme ajoutée à `envois_lus_par_leurs_lieux`, mesurée sur `mcp_keys`), F12 (l'appariement saute les littéraux ; témoins factices), F13 (**dérogation à la règle d'inclusion** déclarée, six sites, point 13 pour Guy), F15 (données ordinaires codées : point 7, AC-C10). **Propagation** : greppés sur la fiche — « dont les emojis composés », « déjà le cas », `:211`, « si fusionné », « lectrice », « les 41 tables », « onze ci-dessous », `HorsBornes`, « n'appelle pas `journaliser_appel` » ; ne restent que les mentions rectifiées et les entrées datées du Change Log. *(Annotation de l'entrée P1, datée du 2026-10-25 : son « ordre … 32-8b, puis 32-10a » omettait la 32-8c, placée avant la 32-10a.)* **Décomptes** (recomptés par `grep`) : 42 AC (12 / 4 / 15 / 11), 18 tâches (5 / 3 / 6 / 4), **61 lignes de mutation, 60 actives** (MA 16 / M0 8 / MB 31 dont MB9 retirée / MC 6), D1 à D27, registre C-32-8-1 à 29 (C-12 et C-29 annotés) ; modules inchangés **5 / 3 / 5 / 4**, douze distincts. **2 passes sur 8.** Prompt de la passe suivante : `328-validate-prompt-p3.md` (Sonnet, R et F). |
 | 2026-10-25 | **validation P3 — VALIDATION TERMINÉE** | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `328-validate-prompt-p3.md` ; rapports `kesh-gate-logs/328-validate-p3-{R,F}.md`) : R 0/0/0/6, F 0/0/0/8 (doublon R1 = F2) ⇒ **0 CRITICAL / 0 HIGH / 0 MEDIUM / 14 LOW**. **Trend complet** : P1 Sonnet ×2 (R, F) 0/4/10/15 → P2 Opus ×2 0/0/10/18 → **P3 Sonnet ×2 0/0/0/14**. ⚠️ **Recyclage déclaré en P2** : neuf des dix MEDIUM y étaient nés de la remédiation P1 ; fermé par la conception la plus simple (une seule écriture de journal par appel, les spans interdits plutôt que gardés, le grep de la valeur plutôt qu'une liste de lignes) et la mesure du vrai changement de la description d'un compte. **Clôture** : la boucle se clôt sur une passe à **0 MEDIUM** (`CLAUDE.md` § *La passe ciblée*, décision Q3 (c) du 2026-10-23), **3 passes sur 8**. Les quatorze LOW ne sont **pas** remédiés à la fiche : ils sont au § *À recontrôler à l'étape 0*, chacun avec sa correction attendue (P3-R1 à P3-R6, P3-F1 à P3-F8) ; seuls sont faits à la clôture P3-R2 (registre annoté) et l'annotation du point 13 (P3-R5 : la clause d'exception de `CLAUDE.md:944` s'applique, ce n'est pas une dérogation). Ordre de développement : 32-6a, 32-6b, 32-8a, 32-8b0, 32-8b, 32-8c, puis 32-10a. |
 | 2026-10-25 | **32-8b0 — étape 0 (T-00)** | Opus 5.5, en autonomie, worktree `kesh-32-8`, branche `story/32-8b0` (partie de `story/32-8`, `origin/main` intégré à `7e47bff4`, 32-6a fusionnée). **Ordre** : la 32-8b0 se développe **avant** la 32-8a, sur décision de l'orchestrateur (C-32-8-30) — elle ne touche ni la table des envois ni le MCP : `git diff --name-only origin/main \| grep -E "kesh-api/src/mcp/\|kesh-db/migrations/"` → vide. **AC-ii1 de la 32-10a relue** à `66aae379` (`kesh-32-10a`, lecture seule) : `git diff 00114c6d HEAD -- …/32-10a-prompts-en-base.md` ne touche **pas** les l. 583-635 ; il n'ajoute que la note de l'orchestrateur au § *À recontrôler* (l. 1437-1465), dont deux précisions portent sur la 32-8b0 — (1) U+2065 hors de l'ancienne liste, (2) « la description d'un prompt emploie le prédicat public livré par la 32-8b0 ». **`bank_accounts.rs` relu** (`7e47bff4`) : prédicat `:303-323`, ancienne liste `:307-321` (`'\u{2060}'..='\u{2064}'` `:314`, `'\u{2066}'..='\u{2069}'` `:315`), message `:344`, tests `:1469-1530` (`ensemble_refuse_borne_par_borne` `:1470`, `controles_cc_refuses` `:1516`, `lettres_et_espaces_ordinaires_acceptes` `:1525`) ; message épinglé par `tests/bank_accounts_e2e.rs:2106`. **`unicode-properties-0.1.4/src/tables.rs` relu** pour chaque point (tables lues par un script de classement, chaque ligne recontrôlée par `sed -n`) : `UNICODE_VERSION = (17, 0, 0)` `:17` ; recherche `:24-37` ; `unwrap_or(GeneralCategory::Unassigned)` `:130` ; listes `Lo` — U+115F et U+1160 dans `('\u{1100}', '\u{1248}', OtherLetter)` `:880`, U+3164 dans `('\u{3131}', '\u{318e}', …)` `:1715`, U+FFA0 `:2168` ; listes `Mn` — U+034F dans `('\u{300}', '\u{36f}', NonspacingMark)` `:415`, U+17B4–U+17B5 `:913`, U+180B–U+180D `:926`, U+180F `:928`, U+FE00–U+FE0F `:2093`, U+E0100–U+E01EF `:2786` ; U+2028 `LineSeparator` `:1329`, U+2029 `ParagraphSeparator` `:1330` ; voisins U+1161 `:880` (`Lo`), U+17B6 `SpacingMark` `:913`, U+180A `:925`, U+FE10 `:2093` ; U+26A0 `OtherSymbol` dans `('\u{2670}', '\u{2767}', …)` **`:1425`** (la fiche et l'AC-ii1 disent `:1424`, qui porte `2600–266E` : écart de citation, sans effet), U+1F4BB et U+1F468 `:2761` ; Cf U+0600–U+0605 `:603-604`, U+13430 `:2535`, U+1BCA0 `:2588`, U+200D `:1319` ; Co `:2074`, `:2787` ; Cn U+0378 (entre `:420` et `:421`), U+2065 (entre `:1345` et `:1346`), U+E0000 et U+E0002–U+E001F (autour de `:2785`). **Constats P3 traités** : **P3-R1** (U+2065) rectifié à l'AC-03 (annotation datée) — même écart dans l'AC-ii1 de la 32-10a, que la note de l'orchestrateur y signale déjà ; **P3-R4 (b)** tranché : `kesh_core::text::is_hidden_in_line` public (C-32-8-31). **Note de l'orchestrateur sur le repli fr-CH** (l. ≈908, #758) : **sans objet** — la 32-8b0 n'ajoute aucun libellé ; le message de refus reste inchangé (C-32-8-32). |
+| 2026-10-25 | **32-8b0 — développement (T-01, T-02) — DÉVELOPPEMENT TERMINÉ** | Opus 5.5, en autonomie. Commit de code `0e358efc` : `is_hidden_format`, `is_hidden_in_text`, `is_hidden_in_line` (C-32-8-31), dépendance `unicode-properties` 0.1.4 (une ligne au `Cargo.lock`), description d'un compte bancaire sur `is_hidden_in_line`, test de l'ancienne liste déménagé en `kesh-core` (chaque point, non ses bornes), deux tests neufs dans `bank_accounts.rs`, CHANGELOG *Modifié*. Tests : `text.rs` 5 → 16, `bank_accounts.rs` 4 → 5 (de `7e47bff4` à `0e358efc`). **Mutations M01 à M08 : 8/8 tuées** par l'assertion visée. **Gates au dernier commit de code** : bases remises à zéro ; `test-fast.sh --ci` 4195/4195 (7 ignorés) ; `cargo publish --dry-run -p kesh-import` vert ; frontend `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` 1939/1939, `build` vert ; E2E 315 passés, 7 échecs = KF-029 exactement, 17 sautés. Détail au Dev Agent Record. `sprint-status.yaml` : `32-8b0-predicat-caracteres-caches` → `review`. Prompt de revue P1 : `32-8b0-review-prompt-p1.md` (Opus, B, E, A). |
