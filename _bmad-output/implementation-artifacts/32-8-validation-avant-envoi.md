@@ -1005,13 +1005,13 @@ servies** (liste close de l'AC-a12 de la 32-6a, E2 de la spike) et des **autres 
 ## Tâches
 
 ### 32-8a
-- [ ] **T-A0** — étape 0 (§ *À recontrôler*) : 32-6a et 32-6b fusionnées ; dernière migration de `main` ; recomptes
+- [x] **T-A0** — étape 0 (§ *À recontrôler*) : 32-6a et 32-6b fusionnées ; dernière migration de `main` ; recomptes
   (`TABLES_TO_TRUNCATE`, export, migrations, `EMPTY_BEFORE_RESET`), ligne lue citée au Change Log.
-- [ ] **T-A1** — migration, entité, dépôt, tests du dépôt (AC-A1 à AC-A9).
-- [ ] **T-A2** — `backup.rs`, squash régénéré, tests de sauvegarde, d'export, d'import et de remise à zéro (AC-A10).
-- [ ] **T-A3** — audit d'idempotence, P5 à P7, `migrations_upgrade_path.rs` (AC-A11) ; export global (AC-A12) ; la
+- [x] **T-A1** — migration, entité, dépôt, tests du dépôt (AC-A1 à AC-A9).
+- [x] **T-A2** — `backup.rs`, squash régénéré, tests de sauvegarde, d'export, d'import et de remise à zéro (AC-A10).
+- [x] **T-A3** — audit d'idempotence, P5 à P7, `migrations_upgrade_path.rs` (AC-A11) ; export global (AC-A12) ; la
   ligne de `migrations.sha384` **en dernier** (AC-A1).
-- [ ] **T-A4** — mutations MA1 à MA16, gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
+- [x] **T-A4** — mutations MA1 à MA16, gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
 
 ### 32-8b0
 - [ ] **T-00** — étape 0 : l'AC-ii1 de la fiche 32-10a relue telle qu'elle est alors (si elle a été amendée depuis
@@ -1646,11 +1646,12 @@ la partie qui la fait est entre crochets.
 
 ### Agent Model Used
 
+- **32-8a** : Opus 5.5 (`claude-opus-5-5`), en autonomie, worktree `kesh-32-8a`, branche `story/32-8a`.
 - **32-8b0** : Opus 5.5 (Claude Code), en autonomie, le 2026-10-25.
 
 ### Statut des parties
 
-- **32-8a** — `ready-for-dev`, après la 32-6a et la 32-6b ; une migration à la fois.
+- **32-8a** — `review` (2026-10-25) : développement terminé, revue P1 à lancer (`32-8a-review-prompt-p1.md`).
 - **32-8b0** — **`review`** (développée **avant** la 32-8a, sur décision de l'orchestrateur, C-32-8-30) ; revue P1 :
   `32-8b0-review-prompt-p1.md` (Opus, lentilles B, E, A) ; remédiée en `6bfd9872` ; revue P2 ciblée :
   `32-8b0-review-prompt-p2.md` (Sonnet, regression hunter).
@@ -1659,6 +1660,100 @@ la partie qui la fait est entre crochets.
 
 ### Completion Notes List
 
+**32-8a (2026-10-25).** Périmètre des décomptes : `5c8ff91b..HEAD` (le commit de fusion de la fiche avec `origin/main`
+à `cd86dc74`, puis les deux commits de la 32-8a, `d424c5ee` et `032ab8bb`).
+
+- **Étape 0 (T-A0), lignes lues** : 32-6a et 32-6b fusionnées (`git log 5c8ff91b^2` : `cd86dc74` 32-6b, `7e47bff4`
+  32-6a). Dernière migration de `main` : `20261025000001_mcp_keys_and_server_settings.sql` (`ls
+  crates/kesh-db/migrations/ | tail -1`), dernière ligne de `migrations.sha384` : `20261025000001 aa425d40…` ; d'où
+  l'horodatage `20261025000002` (C-32-8-43). Comptes à `5c8ff91b` : migrations **84** (`ls … | wc -l`) ;
+  `TABLES_TO_TRUNCATE` **41** (`backup.rs:44`, recompté par `awk` sur le bloc) ; export de sauvegarde **41**
+  (`admin_full_export_e2e.rs:282`) ; `TABLES_HORS_EXPORT` **onze** (`global.rs:166-167`) ; `EMPTY_BEFORE_RESET` **17**,
+  inchangée ; `migrations_upgrade_path.rs` `total == 84` (`:122`), `total - 50` (`:210`). MariaDB **10.11.19** (`SELECT
+  VERSION()`) : les cinq `CHECK`, `NOW(3) + INTERVAL ? SECOND` lié en paramètre et l'état dérivé par `CASE` sont
+  constatés par les tests du dépôt. Constat P3-F3 traité côté `kesh-db` (C-32-8-40).
+- **AC-A1/A2** : migration `20261025000002_mcp_sends.sql`, DDL seul (un `CREATE TABLE`), schéma du § *Le schéma* à la
+  lettre, `state` et `modified` sans `DEFAULT`. Contraintes éprouvées par 7 tests (`mcp_sends_repository.rs`), dont
+  chaque contre-exemple écrit de l'AC, chacun cherchant **le nom** de la contrainte dans le message de MariaDB.
+- **AC-A3 à AC-A9** : entité `kesh_db::entities::mcp_send` (+2 tests unitaires : décodage strict, `Debug` masqué) ; dépôt
+  `kesh_db::repositories::mcp_sends` : `deposer_in_tx`, `purger_echus`, `lire_pour_cle`, `lister` (`LISTE_MAX = 200`),
+  `trouver`, `decider_in_tx`, signatures du § *Ce que le dépôt fournit* ; 20 tests de dépôt. **Aucun besoin de la 32-8b
+  n'a été trouvé manquant** au regard du § *Le flux d'un `tools/call`* (AC-A4) ; écarts au minimum de l'AC : C-32-8-43.
+- **AC-A10** : `"mcp_sends"` avant `"mcp_keys"` (`backup.rs`), absent de `RESET_PRESERVED_TABLES` ; tests de partition
+  verts **sans modification** de leurs listes ; squash régénéré par `scripts/regen-test-schema.sh` (« 44 tables (rejeu
+  vérifié) ») ; export **42** et sa généalogie ; test neuf `full_import_restores_mcp_sends_byte_for_byte` ;
+  `reset_clears_every_company_table_and_traces_itself` : `mcp_sends` peuplée par `populate`, ajoutée à la liste « doit
+  être peuplée », constatée vide après (`EMPTY_BEFORE_RESET` inchangée, 17).
+- **AC-A11 — P5** : ligne `tracked-by-sqlx` au tableau ; recompte `ls crates/kesh-db/migrations/*.sql | wc -l` = **85**
+  = `grep -c '^| \`20'` = **85** ; partition `yes` 10, `tracked-by-sqlx` **75**, `no` 0 (somme 85) ; en-tête et `Total`
+  à 85, généalogie « + 1 Story 32-8a ». **P6** : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` — tous
+  les sites résolvent par version (`common::migrations_before`, dans `lettering_documents_backfill.rs`,
+  `audit_log_company_id_backfill.rs`, `invoice_lines_revenue_account_backfill.rs`, `closing_accounts_backfill.rs`,
+  `accounts_role_backfill.rs`, `journal_entry_number_sequences_bootstrap.rs`, `migrations_upgrade_path.rs:588`, `:667`),
+  sauf le site positionnel assumé `migrations_upgrade_path.rs:120-214`. **Grep de la valeur** après correction :
+  `grep -nE "\b(84|85|50|51|49)\b" crates/kesh-db/tests/migrations_upgrade_path.rs` rend `:44` (`total - 51`), `:46`
+  (`total == 85`), `:63`, `:64` (51), `:86`, `:87` (généalogie historique 50, 51 — restent), `:119` (généalogie 84 —
+  reste), `:120` (+ mcp_sends = 85), `:123`, `:124` (85), `:127` (51), `:135` (85), `:142` (51), `:144`, `:145` (« Le
+  laisser à 50 avec `total = 85` »), `:202`, `:203` (généalogies 49, 50 — restent), `:204` (« 50 → 51, 85 - 51 = 34 »),
+  `:211`, `:214` (`total - 51`), `:283` (51). Frontière inchangée, **34**. **P7** : aucune donnée écrite, ni registre
+  ni exemption ; `every_data_backfill_migration_is_triaged` et `registry_entries_are_within_import_window` verts au gate
+  complet. **P2/P3** : aucun `DROP`, `RENAME`, `MODIFY`, `CHANGE`. **P8** : la ligne `20261025000002 9bdc905c…` est
+  inscrite **en dernier** (commit `032ab8bb`), somme égale à `sha384sum` du fichier et au message de
+  `published_migrations_keep_their_checksums` ; `kesh_e2e_328a` l'a appliquée (85 lignes à `_sqlx_migrations`) : le
+  fichier ne se modifie plus.
+- **AC-A12** : `("mcp_sends", …)` après `mcp_keys` dans `TABLES_HORS_EXPORT` ; doc-comment « Les douze … les 42
+  tables ». `grep -nwE "onze|douze|41|42" crates/kesh-api/src/exports/global.rs` rend `:45`, `:142`, `:345`, `:480`,
+  `:646` (les onze tables comptables de la 25-5-a — sans rapport, restent) et `:166-167` (corrigés).
+- **Tests neufs** (`#[test]`/`#[sqlx::test]` recomptés aux deux bornes) : `mcp_sends_repository.rs` 0 → **27** ;
+  `entities/mcp_send.rs` 0 → **2** ; `admin_full_import_e2e.rs` 56 → **57** — **30** au total ; deux tests amendés
+  (`reset_clears_every_company_table_and_traces_itself`, le compte de `admin_full_export_e2e.rs`) et
+  `upgrade_path_preserves_data`.
+- **Mutations** (T-A4, `kesh-gate-logs/328a-mutations.log` et `328a-mutations-resultats.json`, script
+  `scratchpad/328a/mutations-328a.py`, une à la fois, restaurée par `git checkout -- f` + `touch`, diff résiduel **nul**
+  après chacune) : **MA1 à MA16 tuées, chacune par le test visé** ; les trois mutations de `CHECK` jouées **deux fois** —
+  sur le squash (MA3, MA4, MA5 : test du dépôt **et** `squash_matches_real_schema_structure`) et sur la migration seule
+  (MA3-mig, MA4-mig, MA5-mig : `squash_matches_real_schema_structure`) — soit **19 jouées, 19 tuées**, aucune non
+  compilable. MA6 rougit aussi la relecture, la purge et le détail (une seule définition de l'échéance, C-32-8-41) ;
+  MA12 n'est tuée **que** par la ligne incohérente (`lire_pour_cle_ecarte_une_ligne_incoherente`), comme la fiche le
+  prévoyait. ⚠️ Le journal brut affiche « SURVIT/PARTIEL » pour MA1, MA2 et MA16 : défaut **du script**, qui comparait le
+  nom exact du test alors que nextest le préfixe du chemin de module (`backup::tests::…`, `exports::global::tests::…`) ;
+  les tests visés figurent bien parmi les échecs, recalculés par suffixe depuis le JSON.
+- **Gates au dernier commit de code (`032ab8bb`)**, bases `kesh_328a` et `kesh_e2e_328a` remises à zéro juste avant
+  (compte `kesh`, `DROP`/`CREATE`, migrations du worktree — 85 —, seed) :
+  - `scripts/test-fast.sh --ci` sous verrou, `DATABASE_URL` sur `kesh_328a` : garde des droits conforme, fmt, clippy
+    `-D warnings`, **4219 / 4219** passés, 7 ignorés, aucun échec ni nouvel essai (`kesh-gate-logs/328a-gate-complet.log`) ;
+  - frontend, sous verrou : `npm run check` (0 erreur, 29 avertissements préexistants), `lint-i18n-ownership` (PASS),
+    `test:unit` (**163** fichiers, **1939** tests), `build` (vert) ;
+  - **E2E complet** (port 3329, `kesh_e2e_328a`, dossiers neufs `/tmp/kesh-e2e-328a/{inbox,documents,backup}`) :
+    **315 passés, 7 échecs, 17 ignorés** ; les sept échecs sont **exactement** ceux de la KF-029 (`docs/testing.md:394-400` :
+    `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ;
+    ni KF-052 ni pollution ; backend arrêté par PID (`kesh-gate-logs/328a-frontend-e2e.log`).
+  Entre-temps (avant le dernier commit), gates ciblés : `binary(mcp_sends_repository)` 29/29 avec les tests de
+  l'entité ; gardes de schéma, upgrade et sauvegarde de `kesh-db` 101/102 (seul rouge attendu : la somme non encore
+  inscrite) ; 53 tests `kesh-api` (export, import, remise à zéro, export global) 53/53.
+- **Manuel** : aucun texte touché (C-32-8-29 : la 32-8c) ; `grep -nE "MCP|deux tables|en ajoute deux"
+  docs/manual/fr/*.tex CHANGELOG.md` relu : les sites de l'AC-C11 sont présents ; la phrase du CHANGELOG est désormais
+  à **`CHANGELOG.md:16-17`** (et non `:15-16`), à reporter à la 32-8c.
+- **Observation, non traitée** : la réparation des principaux orphelins (`companies::reattach_orphan_principals_in_tx`)
+  **repointe** `mcp_keys.company_id` ; un envoi d'une clé orpheline garderait son `company_id` mort. Sans effet de
+  lecture (`lire_pour_cle` filtre la société **et** la clé ; la liste filtre la société), et la remise à zéro vide la
+  table ; signalé pour la revue.
+
+### File List
+
+- `crates/kesh-db/migrations/20261025000002_mcp_sends.sql` (neuf)
+- `crates/kesh-db/migrations.sha384`
+- `crates/kesh-db/src/entities/mcp_send.rs` (neuf), `crates/kesh-db/src/entities/mod.rs`
+- `crates/kesh-db/src/repositories/mcp_sends.rs` (neuf), `crates/kesh-db/src/repositories/mod.rs`
+- `crates/kesh-db/src/backup.rs`
+- `crates/kesh-db/test-schema/0001_schema_squash.sql` (régénéré)
+- `crates/kesh-db/tests/mcp_sends_repository.rs` (neuf), `crates/kesh-db/tests/migrations_upgrade_path.rs`
+- `crates/kesh-api/src/exports/global.rs`
+- `crates/kesh-api/tests/admin_full_export_e2e.rs`, `crates/kesh-api/tests/admin_full_import_e2e.rs`,
+  `crates/kesh-api/tests/onboarding_audit_e2e.rs`
+- `docs/migrations-idempotence-audit.md`
+- `_bmad-output/implementation-artifacts/epic-32-choix-autonomes-328.md` (C-32-8-40 à 43),
+  `32-8-validation-avant-envoi.md`, `32-8a-review-prompt-p1.md` (neuf), `sprint-status.yaml`
 **32-8b0** (branche `story/32-8b0` ; commits `7e1582d4` étape 0, `0e358efc` code ; périmètre des décomptes :
 `origin/main` (`7e47bff4`) → `0e358efc`) :
 
@@ -1742,3 +1837,5 @@ la partie qui la fait est entre crochets.
 | 2026-10-25 | **32-8b0 — développement (T-01, T-02) — DÉVELOPPEMENT TERMINÉ** | Opus 5.5, en autonomie. Commit de code `0e358efc` : `is_hidden_format`, `is_hidden_in_text`, `is_hidden_in_line` (C-32-8-31), dépendance `unicode-properties` 0.1.4 (une ligne au `Cargo.lock`), description d'un compte bancaire sur `is_hidden_in_line`, test de l'ancienne liste déménagé en `kesh-core` (chaque point, non ses bornes), deux tests neufs dans `bank_accounts.rs`, CHANGELOG *Modifié*. Tests : `text.rs` 5 → 16, `bank_accounts.rs` 4 → 5 (de `7e47bff4` à `0e358efc`). **Mutations M01 à M08 : 8/8 tuées** par l'assertion visée. **Gates au dernier commit de code** : bases remises à zéro ; `test-fast.sh --ci` 4195/4195 (7 ignorés) ; `cargo publish --dry-run -p kesh-import` vert ; frontend `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` 1939/1939, `build` vert ; E2E 315 passés, 7 échecs = KF-029 exactement, 17 sautés. Détail au Dev Agent Record. `sprint-status.yaml` : `32-8b0-predicat-caracteres-caches` → `review`. Prompt de revue P1 : `32-8b0-review-prompt-p1.md` (Opus, B, E, A). |
 | 2026-10-25 | **32-8b0 — revue de code P1** | **Opus ×3** (lentilles B, E, A, contexte frais, prompt `32-8b0-review-prompt-p1.md` ; rapports `kesh-gate-logs/328b0-review-p1-{B,E,A}.md`) : B 0/0/1/4, E 0/0/1/4, A 0/0/1/4 ⇒ **0 CRITICAL / 0 HIGH / 3 MEDIUM / 12 LOW** (doublons B-L1 = E4, B-L2 = E5, B-L3 = E2, B-L4 = E3, comptés une fois par lentille). Prémisses vérifiées au code et à `tables.rs` (catégorie de chaque voisin ajouté contrôlée par script). **MEDIUM remédiés** (`6bfd9872`) : **B-M1** → `voisins_visibles_admis` couvre les deux côtés de chaque point ou plage des listes là où le voisin est visible (U+115E, U+1161, U+3163, U+3165, U+FF9F, U+FFA1, U+034E, U+0350, U+17B3, U+17B6, U+180A, U+1810, U+FDFF, U+FE10, U+2027) et deux `Mn` visibles (U+0301, U+17B7) ; côtés sans voisin visible écrits au doc-comment (U+1160 en liste, U+180E et U+202A Cf, U+E00FF et U+E01F0 Cn) ; `bank_accounts.rs` admet `"Re\u{0301}serve"` ; mutations MP1 (`FFA0..=FFBE`) → `voisins_visibles_admis`, MP2 (`0300..=036F`) et MP3 (`NonspacingMark` en voie 1) → `voisins_visibles_admis` et `lettres_et_espaces_ordinaires_acceptes` ; **E1** → le doc-comment d'`is_hidden_in_text` ne promet plus de normalisation : c'est à l'emploi de normaliser (32-10a) ou de refuser (32-8b, AC-B9) ; **A-M1** → phrase au point 1 de la *Note pour la 32-10a* : la description d'un prompt emploie `is_hidden_in_line`, non `is_hidden_in_text`. **LOW remédiés** : B-L1 = E4 (U+000B, U+001B, U+007F, U+0085 refusés au test `texte_sur_plusieurs_lignes` ; MP4, U+0085 admis, tuée) ; B-L3 = E2 (critère réel — sélecteur U+FE0E/U+FE0F ou liant U+200D ; drapeaux et teints admis — à `text.rs` et au CHANGELOG ; AC-03 et point 11 annotés) ; A-L1 (« par sa modification ») ; A-L2 (emoji postérieur à Unicode 17.0 refusé, au CHANGELOG) ; B-L2 = E5 (U+2800, U+1D159, U+16FE4 et les `Zs` nommés à l'angle mort). **Réfuté** : B, axe obligatoire, « U+26A0 `:1424` » — `grep -n` sur `tables.rs` : `1424: ('\u{2600}', '\u{266e}', OtherSymbol), ('\u{266f}', …` et `1425: GeneralCategory::MathSymbol), ('\u{2670}', '\u{2767}', GeneralCategory::OtherSymbol)` ; U+26A0 > U+266E, il est dans `2670–2767`, **`:1425`** (A juste, étape 0 juste) ; E4, U+009F : non ajouté au test de `kesh-core`, déjà refusé par `controles_cc_refuses`. **Non remédiés** (issue ouverte par l'orchestrateur) : B-L4 = E3 (message de refus qui ne nomme pas un caractère d'usage privé ou non attribué, et bloque la modification d'un compte à description ancienne), A-L3 (cible « description » de M05 non rejouée) ; **A-L4** (P3-R4 (a)) renvoyé à la 32-8b, au § *À recontrôler*. **Propagation** : `git grep -nE "emojis? compos\|se normalise avant le contrôle\|même pour en changer"` — ne restent que les entrées datées, les prompts passés et `bank_accounts.rs:1469`, déjà précis. **Gates à `6bfd9872`** : nextest 4195/4195 (7 ignorés), publish dry-run, frontend 1939 tests, mutations 4/4 ; E2E essai 1 : 11 échecs (7 KF-029 + 4 dus au montage, dossiers non passés au runner), essai 2 : 315 passés, 7 échecs = KF-029, 17 sautés — détail au Dev Agent Record. **1 passe sur 8.** Prompt de la passe suivante : `32-8b0-review-prompt-p2.md` (**ciblée**, Sonnet, regression hunter, sur le seul `6bfd9872`). |
 | 2026-10-25 | **Revue de code P2 (32-8b0) — REVUE TERMINÉE** | **Sonnet**, passe ciblée *regression hunter* sur `6bfd9872` (prompt `32-8b0-review-prompt-p2.md` ; rapport `kesh-gate-logs/328b0-review-p2.md`) : **0/0/0/2**. **Trend** : P1 (Opus ×3, B, E, A) 0/0/3/12 → **P2 (Sonnet, ciblée) 0/0/0/2**. **Clôture** sur une passe sans finding au-dessus de LOW, **2 passes sur 8**. LOW L1 (né de `6bfd9872`) : le CHANGELOG disait les drapeaux admis sans réserve ; un drapeau de subdivision porte des balises U+E0020–E007F (Cf, `tables.rs:2785-2786`) et est refusé — **phrase du CHANGELOG précisée par l'orchestrateur** (« drapeaux de pays », la subdivision nommée), sans toucher au code ; les annotations de la fiche (l. ≈492, ≈1510) et L2 (« emojis composés » sans réserve, l. ≈479, ≈1495) restent : relevés datés. LOW non remédiés de la P1 tracés dans **#763**. Dernier commit de code `6bfd9872` : gate complet 4195/4195, `cargo publish --dry-run -p kesh-import` vert, frontend 1939/1939, E2E essai 2 315 + 7 KF-029. *(Écrit par l'orchestrateur.)* |
+| 2026-10-25 | **développement 32-8a** | Opus 5.5, en autonomie, worktree `kesh-32-8a` (branche `story/32-8a`, partie de la fiche fusionnée avec `origin/main` à `cd86dc74`, 32-6a et 32-6b comprises). Commits `d424c5ee` (code, tests, audit, registre) et `032ab8bb` (ligne de `migrations.sha384`, **en dernier**). **Étape 0**, ligne lue citée au Dev Agent Record : dernière migration `20261025000001` (`migrations.sha384:99`), comptes 84 / 41 / 41 / onze / 17 (`backup.rs:44`, `admin_full_export_e2e.rs:282`, `global.rs:166-167`, `EMPTY_BEFORE_RESET`), `migrations_upgrade_path.rs:122` et `:210`. Livré : migration `20261025000002_mcp_sends` (DDL seul, non breaking), entité, dépôt (six fonctions de la table de correspondance), `TABLES_TO_TRUNCATE` (avant `mcp_keys`), squash, upgrade path **85 / `total - 51`** (frontière 34), audit P5 (**85** lignes, `tracked-by-sqlx` **75**), export **42**, `TABLES_HORS_EXPORT` (**douze**), aller-retour d'import, remise à zéro. **30 tests neufs** (27 + 2 + 1, périmètre `5c8ff91b..HEAD`). **Mutations : 19 jouées (MA1 à MA16, et MA3 à MA5 aussi sur la migration seule), 19 tuées par le test visé**, diff résiduel nul. **Gates au dernier commit de code**, bases remises à zéro : backend **4219 / 4219** ; frontend check, lint-i18n-ownership, test:unit (1939), build verts ; **E2E 315 passés, 7 échecs = KF-029**, ni KF-052 ni pollution. Choix **C-32-8-40 à C-32-8-43** (Debug masqué — constat P3-F3 traité côté `kesh-db` ; alias `s` de `ETAT_DERIVE_SQL`, qui sert aussi au plafond et à la purge ; validé vivant sans contenu = erreur ; retours de la décision et du détail). Manuel non touché (32-8c) ; la phrase du CHANGELOG est à `:16-17`. Clé `32-8a-table-envois-sauvegarde` → `review` ; prompt de revue P1 `32-8a-review-prompt-p1.md` (Sonnet, lentilles B, E, A). |
+| 2026-10-25 | **Revue de code P1 (32-8a) — REVUE TERMINÉE** | **Sonnet ×3** (lentilles B, E, A, contexte frais, prompt `32-8a-review-prompt-p1.md` ; rapports `kesh-gate-logs/328a-review-p1-{B,E,A}.md`) : B 0/0/0/5, E 0/0/0/5, A 0/0/0/5 ⇒ **0 CRITICAL / 0 HIGH / 0 MEDIUM / 15 LOW** (convergences : ordre des refus B3 = A-1 = E2 ; jointures sans recoupement de société B2 = A-5 = E4 ; validation sans contenu B4 = A-2 = E3). **Clôture** sur une passe sans finding au-dessus de LOW, **1 passe sur 8**. LOW non remédiés, tracés dans **#765** ; l'ordre des refus, le recoupement de société et la validation des entrées de `deposer_in_tx` sont à reprendre à l'étape 0 de la **32-8b**, qui consomme ce dépôt. L'observation du Dev Agent Record (envoi rattaché à une clé orpheline) est sans objet pratique (A-4 : `fk_mcp_sends_company` en `RESTRICT`, remise à zéro qui vide la table). Fusion de `origin/main` (`aa61fdae`, 32-8b0) : fiche, registre et `sprint-status.yaml` conciliés par union, sans code commun. Dernier commit de code `032ab8bb` : gate complet 4219/4219, frontend 1939/1939, E2E 315 + 7 KF-029, 19 mutations tuées. *(Écrit par l'orchestrateur.)* |

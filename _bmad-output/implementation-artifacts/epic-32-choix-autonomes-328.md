@@ -387,4 +387,52 @@ elles. Chaque choix : contexte, option retenue, alternatives écartées, révers
   égal à la valeur fr-CH (fiche l. ≈908, issue #758) est donc **sans objet** pour la 32-8b0.
 - **Écartées** : réécrire le message (« … ni de caractère invisible ») — gain faible pour un cas qu'une saisie ordinaire
   ne rencontre qu'au copier-coller du logo Apple, au prix d'un test e2e et d'un texte à revoir.
+
+---
+
+*Choix du développement de la 32-8a (2026-10-25, Opus 5.5, worktree `kesh-32-8a`). Numérotés à partir de 40 pour
+qu'ils ne heurtent pas ceux de la 32-8b0, développée en parallèle (union à la fusion).*
+
+### C-32-8-40 — Aucun `Debug` dérivé sur un type de `kesh-db` qui porte le contenu ou le résumé (constat P3-F3)
+
+- **Contexte** : le constat P3-F3 de la validation demandait soit d'interdire `Debug` aux types de `kesh-db` qui portent
+  `content`/`summary`, soit de l'écrire en angle mort de la garde `aucun_evenement_ne_nomme_le_contenu` (32-8b), dont le
+  périmètre ne couvre pas `kesh-db`.
+- **Retenu** : `NouvelEnvoi`, `Decision`, `EnvoiPourCle` et `EnvoiDetail` ont un `Debug` **écrit à la main**, qui ne
+  montre que la taille (`<N octets masqués>`) ; test `debug_ne_montre_ni_contenu_ni_resume` (piège `PIEGE_DEBUG_328A`,
+  témoin de la taille). `EnvoiResume` et `EnvoiDecide`, qui ne portent ni l'un ni l'autre, dérivent `Debug`. Le dépôt
+  n'émet aucun évènement `tracing`.
+- **Écartées** : aucun `Debug` du tout (les erreurs et les `assert_eq!` des tests en ont besoin) ; l'angle mort écrit
+  (moins cher, mais une `{:?}` dans un message d'erreur de la 32-8b suffirait à recopier un contenu dans les journaux).
+- **Réversible** : oui. *La 32-8b peut retirer l'angle mort correspondant de sa garde.*
+
+### C-32-8-41 — `ETAT_DERIVE_SQL` désigne la table par l'alias `s`, et sert aussi au plafond et à la purge
+
+- **Contexte** : l'AC-A3 prescrit l'expression `CASE WHEN state IN (…) AND expires_at <= NOW(3) …` sans préfixe ; or la
+  liste et le détail joignent `mcp_keys`, qui porte elle aussi une colonne `expires_at` : l'expression nue serait ambiguë.
+- **Retenu** : l'expression porte le préfixe `s.` et toutes les requêtes du dépôt désignent `mcp_sends` par `s`. Le
+  compte du plafond (`= 'pending'`) et la purge (`= 'expired'`) l'emploient aussi : l'échéance n'a qu'une définition, et
+  la mutation MA6 atteint toutes ses lectures.
+- **Écartées** : deux constantes (avec et sans préfixe), contre la règle d'une seule définition ; des conditions écrites
+  à la main pour le plafond et la purge.
+- **Réversible** : oui.
+
+### C-32-8-42 — Un envoi validé et vivant sans contenu est une erreur, non un texte vide
+
+- **Contexte** : l'AC-A7 rend le contenu d'un envoi validé ; les invariants (dépôt toujours avec contenu, purge des seuls
+  échus) excluent un validé vivant à `content` nul, mais rien dans le type ne l'interdit.
+- **Retenu** : `lire_pour_cle` rend `DbError::Invariant` (fail closed) plutôt que `Some("")` ou `None`.
+- **Écartées** : rendre `contenu: None` avec l'état `Valide` (l'appelant enverrait un texte vide) ; un `CHECK` de plus
+  (l'échéance, dérivée, ne s'exprime pas dans un `CHECK`).
+- **Réversible** : oui.
+
+### C-32-8-43 — Ce que rendent la décision et le détail, au-delà du minimum de l'AC
+
+- **Contexte** : l'AC-A6 dit que la décision rend « identifiant, clé, outil, `modified` » ; l'AC-A8 que le détail porte
+  la ligne de liste plus le résumé, le contenu, sa taille et la version.
+- **Retenu** : `EnvoiDecide` porte aussi l'état écrit (`Valide`/`Refuse`) et la version nouvelle (l'audit de la 32-8b
+  et une réponse 200 en ont besoin) ; `EnvoiDetail` **contient** un `EnvoiResume` plutôt que d'en recopier les champs ;
+  `content_bytes` se calcule en Rust (`len()` des octets UTF-8), `None` quand le contenu l'est ; un refus pose aussi
+  `modified = FALSE` (exigé par `chk_mcp_sends_modified`) ; la migration est horodatée `20261025000002`, après
+  `20261025000001`, dernière de `main` à l'étape 0.
 - **Réversible** : oui.
