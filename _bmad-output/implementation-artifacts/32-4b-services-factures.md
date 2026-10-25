@@ -859,3 +859,11 @@ registres `epic-32-choix-autonomes.md` (C-32-0-4, C-32-0-7), `-323.md`, `-324a.m
   - **Trend** : P1 0/0/5/14 (Sonnet ×2) → P2 0/0/1/10 (Opus ×2). La remédiation ne touche que la fiche et le registre :
     **P3 ciblée**, une lentille (regression hunter), **Sonnet**, sur le seul commit de cette remédiation
     (`324b-validate-prompt-p3.md`).
+- **2026-10-25 — Validation P3, passe ciblée — VALIDATION TERMINÉE** (Sonnet, une lentille — regression hunter —,
+  contexte frais, lecture seule, commit `d7783685`, prompt `324b-validate-prompt-p3.md`, rapport
+  `kesh-gate-logs/324b-validate-p3.md`) : **0/0/0/1**. Le témoin de M12b, le contrôle Q11 (dix lignes), les formes
+  de `dueBefore`, F3, F4, F7, F8 et l'ordre de fusion (C-32-4b-18) tiennent au code. **P3-1** (LOW : à l'AC9 (2), le
+  doc-comment de `Cas::Invalide`, `services_rollout.rs:402`, ne nomme pas encore `limit = Some(0)` — lire « qui devra
+  nommer aussi ») est **renvoyé à l'étape 0 du développement**, ligne lue citée au Change Log : une remédiation après
+  la dernière passe ne serait relue par personne. **Trend** : P1 0/0/5/14 (Sonnet ×2) → P2 0/0/1/10 (Opus ×2) → P3
+  0/0/0/1 (Sonnet). Prête pour le développement.
