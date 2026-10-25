@@ -34,12 +34,16 @@ use kesh_api::services::poignees::Lecture;
 use kesh_api::services::postes_ouverts::{self, DemandePostesOuverts};
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::address::StructuredAddress;
+use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
-    Language, NewCompany, NewJournalEntry, NewJournalEntryLine, OrgType, Role,
+    Language, NewCompany, NewJournalEntry, NewJournalEntryLine, NewSupplierInvoice,
+    NewSupplierInvoiceLine, OrgType, Role, SettlementChoice,
 };
 use kesh_db::errors::DbError;
-use kesh_db::repositories::{companies, journal_entries};
+use kesh_db::repositories::{
+    companies, invoice_settlements_write, invoices, journal_entries, supplier_invoices,
+};
 use kesh_db::test_fixtures::{SeededCompany, seed_accounting_company};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -164,11 +168,19 @@ async fn societe(pool: &MySqlPool) -> SeededCompany {
 }
 
 /// Les livres du rollout : la société seedée, une écriture (débit 1000, crédit
-/// 2000, deux comptes lettrables), un contact.
+/// 2000, deux comptes lettrables), un contact ; et, pour la 32-4b (C-32-4b-15),
+/// un brouillon, une facture validée partiellement réglée et une facture
+/// fournisseur, posés par les dépôts.
 struct Livres {
     s: SeededCompany,
     ecriture_id: i64,
     contact_id: i64,
+    /// Un brouillon (le réglage d'arrondi est lu pour lui).
+    brouillon_id: i64,
+    /// Une facture validée portant un règlement partiel (50.00 sur 108.10).
+    facture_reglee_id: i64,
+    /// Une facture fournisseur ouverte.
+    facture_fournisseur_id: i64,
 }
 
 impl Livres {
@@ -216,11 +228,161 @@ async fn poser_livres(pool: &MySqlPool) -> Livres {
     .await
     .expect("contact synthétique")
     .last_insert_id() as i64;
+    let date = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
+    let brouillon_id = poser_facture(pool, &s, contact_id, date, date, dec!(100), false).await;
+    let facture_reglee_id = poser_facture(pool, &s, contact_id, date, date, dec!(100), true).await;
+    regler(pool, &s, facture_reglee_id, dec!(50.00), date).await;
+    let fournisseur =
+        poser_contact_fournisseur(pool, s.company_id, "Fournisseur synthétique SA").await;
+    let facture_fournisseur_id =
+        poser_facture_fournisseur(pool, &s, fournisseur, date, "FF-1").await;
     Livres {
         ecriture_id: ecriture.entry.id,
         contact_id,
+        brouillon_id,
+        facture_reglee_id,
+        facture_fournisseur_id,
         s,
     }
+}
+
+/// Une facture synthétique d'une ligne (`montant` HT à 8.10 %, TTC multiple de
+/// 0.05 pour les montants employés ici : le seed laisse l'arrondi à 5 centimes
+/// actif sans compte d'arrondi) ; validée par le dépôt si `valider`. Rend son id.
+async fn poser_facture(
+    pool: &MySqlPool,
+    s: &SeededCompany,
+    contact_id: i64,
+    date: NaiveDate,
+    echeance: NaiveDate,
+    montant: Decimal,
+    valider: bool,
+) -> i64 {
+    let (facture, _) = invoices::create(
+        pool,
+        s.admin_user_id,
+        NewInvoice {
+            company_id: s.company_id,
+            contact_id,
+            date,
+            due_date: Some(echeance),
+            payment_terms: None,
+            lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
+                description: "Prestation synthétique".into(),
+                quantity: dec!(1),
+                unit_price: montant,
+                vat_rate: dec!(8.10),
+            }],
+            project_id: None,
+        },
+    )
+    .await
+    .expect("facture synthétique");
+    if valider {
+        invoices::validate_invoice(pool, s.company_id, facture.id, s.admin_user_id)
+            .await
+            .expect("validation synthétique");
+    }
+    facture.id
+}
+
+/// Un règlement en compte interne (1000) de `montant`, au `jour`.
+async fn regler(
+    pool: &MySqlPool,
+    s: &SeededCompany,
+    facture_id: i64,
+    montant: Decimal,
+    jour: NaiveDate,
+) {
+    invoice_settlements_write::settle_invoice(
+        pool,
+        s.admin_user_id,
+        s.company_id,
+        facture_id,
+        SettlementChoice::InternalAccount {
+            account_id: s.accounts["1000"],
+        },
+        montant,
+        jour,
+    )
+    .await
+    .expect("règlement synthétique");
+}
+
+/// Un contact client synthétique ; rend son id.
+async fn poser_contact_client(pool: &MySqlPool, company_id: i64, nom: &str) -> i64 {
+    sqlx::query(
+        "INSERT INTO contacts (company_id, contact_type, name, is_client, is_supplier) \
+         VALUES (?, 'Entreprise', ?, TRUE, FALSE)",
+    )
+    .bind(company_id)
+    .bind(nom)
+    .execute(pool)
+    .await
+    .expect("client synthétique")
+    .last_insert_id() as i64
+}
+
+/// Un contact fournisseur synthétique ; rend son id.
+async fn poser_contact_fournisseur(pool: &MySqlPool, company_id: i64, nom: &str) -> i64 {
+    sqlx::query(
+        "INSERT INTO contacts (company_id, contact_type, name, is_client, is_supplier) \
+         VALUES (?, 'Entreprise', ?, FALSE, TRUE)",
+    )
+    .bind(company_id)
+    .bind(nom)
+    .execute(pool)
+    .await
+    .expect("fournisseur synthétique")
+    .last_insert_id() as i64
+}
+
+/// Une facture fournisseur de 100.00 (TVA 0), ouverte, au patron de
+/// `supplier_settlement_cancel_e2e.rs` (compte fournisseurs par défaut posé à
+/// 2000, que le seed ne désigne pas) ; rend son id.
+async fn poser_facture_fournisseur(
+    pool: &MySqlPool,
+    s: &SeededCompany,
+    fournisseur: i64,
+    date: NaiveDate,
+    numero: &str,
+) -> i64 {
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_payable_account_id = ? WHERE company_id = ?",
+    )
+    .bind(s.accounts["2000"])
+    .bind(s.company_id)
+    .execute(pool)
+    .await
+    .expect("compte fournisseurs");
+    supplier_invoices::create(
+        pool,
+        NewSupplierInvoice {
+            company_id: s.company_id,
+            contact_id: fournisseur,
+            supplier_invoice_number: Some(numero.into()),
+            invoice_date: date,
+            due_date: None,
+            creditor_iban: None,
+            creditor_qr_iban: None,
+            payment_reference: None,
+            expected_payment_amount: None,
+            project_id: None,
+            lines: vec![NewSupplierInvoiceLine {
+                description: "Prestation synthétique".into(),
+                quantity: dec!(1),
+                unit_price: dec!(100.00),
+                vat_rate: dec!(0),
+                expense_account_id: s.accounts["4000"],
+            }],
+        },
+        s.admin_user_id,
+    )
+    .await
+    .expect("facture fournisseur synthétique")
+    .invoice
+    .id
 }
 
 /// Une seconde société, sans utilisateur ni livres (AC11 (b)) — par
@@ -1418,6 +1580,447 @@ async fn tri_par_defaut_et_filtres_du_carnet(pool: MySqlPool) {
         echecs.push(format!(
             "{chemin} : attendu 200 [{M:?}], total 3, offset 1 ; rendu {statut} {rendu:?}, total {}, offset {}",
             corps["total"], corps["offset"]
+        ));
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+// ============================================================
+// Story 32-4b — les factures, par la route (AC11 (c) à (g), T1 (i) : jouées
+// sur le code d'avant le déplacement, elles décrivent le comportement
+// d'aujourd'hui, puis tiennent le code déplacé)
+// ============================================================
+
+/// Les factures de l'AC11 (d) à (g) — fixture synthétique, au patron des trois
+/// écritures de `filtres_des_ecritures_par_la_route` : quatre factures validées
+/// (F1 à F4) et un brouillon (F5), chacune d'un client distinct, dont les cinq
+/// colonnes de tri rendent cinq ordres distincts deux à deux, dans les deux sens
+/// (dix ordres en tout, chacun différent des neuf autres) :
+///
+/// | | date | échéance | HT | client | créée |
+/// |---|---|---|---|---|---|
+/// | F1 | 10.01.2021 | 31.05.2021 (échue) | 200 | Bravo SA | 03.01.2026 |
+/// | F2 | 10.02.2021 | 30.09.2030 | 400 | Alpha SA | 02.01.2026 |
+/// | F3 | 10.03.2021 | 20.03.2021 (échue) | 300 | Delta SA | 01.01.2026 |
+/// | F4 | 10.04.2021 | 30.06.2030 | 100 | Charlie SA | 04.01.2026 |
+/// | F5 (brouillon) | 10.06.2021 | 30.06.2021 | 50 | Echo SA | 05.01.2026 |
+///
+/// F1 porte un règlement partiel (50.00 sur 216.20), F4 est **payée** (108.10),
+/// F2 a ses rappels **suspendus**. `created_at` est posé par un `UPDATE`
+/// explicite, distinct pour chacune (validation P1, F5). Dates indépendantes de
+/// l'horloge : 2021 est échu, 2030 à échoir.
+struct Factures {
+    s: SeededCompany,
+    /// Les ids de F1 à F5.
+    ids: [i64; 5],
+    /// Les clients de F1 à F5.
+    clients: [i64; 5],
+    /// Le numéro de F1 (pour la recherche par numéro).
+    numero_f1: String,
+}
+
+impl Factures {
+    /// Le libellé (`"F1"` … `"F5"`) d'un id rendu, `"?"` s'il est étranger.
+    fn libelle(&self, id: i64) -> String {
+        self.ids
+            .iter()
+            .position(|x| *x == id)
+            .map_or("?".into(), |i| format!("F{}", i + 1))
+    }
+
+    /// Les libellés d'une page de `GET /api/v1/invoices` ou de l'échéancier,
+    /// dans l'ordre rendu.
+    fn page(&self, corps: &Value) -> Vec<String> {
+        corps["items"]
+            .as_array()
+            .map(|v| {
+                v.iter()
+                    .filter_map(|e| e["id"].as_i64())
+                    .map(|id| self.libelle(id))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
+
+async fn poser_factures(pool: &MySqlPool) -> Factures {
+    let s = societe(pool).await;
+    let jour = |a, m, j| NaiveDate::from_ymd_opt(a, m, j).unwrap();
+    let mut clients = [0; 5];
+    for (i, nom) in ["Bravo SA", "Alpha SA", "Delta SA", "Charlie SA", "Echo SA"]
+        .iter()
+        .enumerate()
+    {
+        clients[i] = poser_contact_client(pool, s.company_id, nom).await;
+    }
+    // (date, échéance, HT, validée, créée)
+    let fiches = [
+        (
+            jour(2021, 1, 10),
+            jour(2021, 5, 31),
+            dec!(200),
+            true,
+            "2026-01-03 00:00:00",
+        ),
+        (
+            jour(2021, 2, 10),
+            jour(2030, 9, 30),
+            dec!(400),
+            true,
+            "2026-01-02 00:00:00",
+        ),
+        (
+            jour(2021, 3, 10),
+            jour(2021, 3, 20),
+            dec!(300),
+            true,
+            "2026-01-01 00:00:00",
+        ),
+        (
+            jour(2021, 4, 10),
+            jour(2030, 6, 30),
+            dec!(100),
+            true,
+            "2026-01-04 00:00:00",
+        ),
+        (
+            jour(2021, 6, 10),
+            jour(2021, 6, 30),
+            dec!(50),
+            false,
+            "2026-01-05 00:00:00",
+        ),
+    ];
+    let mut ids = [0; 5];
+    for (i, (date, echeance, ht, valider, cree)) in fiches.into_iter().enumerate() {
+        ids[i] = poser_facture(pool, &s, clients[i], date, echeance, ht, valider).await;
+        sqlx::query("UPDATE invoices SET created_at = ? WHERE id = ?")
+            .bind(cree)
+            .bind(ids[i])
+            .execute(pool)
+            .await
+            .expect("created_at synthétique");
+    }
+    regler(pool, &s, ids[0], dec!(50.00), jour(2021, 6, 15)).await;
+    regler(pool, &s, ids[3], dec!(108.10), jour(2021, 6, 15)).await;
+    sqlx::query("UPDATE invoices SET dunning_paused_at = UTC_TIMESTAMP(6) WHERE id = ?")
+        .bind(ids[1])
+        .execute(pool)
+        .await
+        .expect("suspension synthétique");
+    let numero_f1: String = sqlx::query_scalar("SELECT invoice_number FROM invoices WHERE id = ?")
+        .bind(ids[0])
+        .fetch_one(pool)
+        .await
+        .expect("numéro de F1");
+    Factures {
+        s,
+        ids,
+        clients,
+        numero_f1,
+    }
+}
+
+/// Les dix ordres de tri (colonne, sens) de l'AC11 (e), attendus sur F1 à F4.
+const ORDRES_DES_FACTURES: [(&str, &str, [&str; 4]); 10] = [
+    ("Date", "Asc", ["F1", "F2", "F3", "F4"]),
+    ("Date", "Desc", ["F4", "F3", "F2", "F1"]),
+    ("DueDate", "Asc", ["F3", "F1", "F4", "F2"]),
+    ("DueDate", "Desc", ["F2", "F4", "F1", "F3"]),
+    ("TotalAmount", "Asc", ["F4", "F1", "F3", "F2"]),
+    ("TotalAmount", "Desc", ["F2", "F3", "F1", "F4"]),
+    ("ContactName", "Asc", ["F2", "F1", "F4", "F3"]),
+    ("ContactName", "Desc", ["F3", "F4", "F1", "F2"]),
+    ("CreatedAt", "Asc", ["F3", "F2", "F1", "F4"]),
+    ("CreatedAt", "Desc", ["F4", "F1", "F2", "F3"]),
+];
+
+/// AC11 (c) — les bornes et les refus des trois listes, par la route : les
+/// listes clientes **refusent** hors bornes (400, `VALIDATION_ERROR`, message
+/// du code), la liste fournisseur **écrête**.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac324b_c_bornes_et_refus_des_factures_par_la_route(pool: MySqlPool) {
+    let s = societe(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(s.admin_user_id, "Consultation", s.company_id);
+    let mut echecs = Vec::new();
+    for (chemin, message) in [
+        (
+            "/api/v1/invoices?limit=101",
+            "limit doit être compris entre 1 et 100",
+        ),
+        (
+            "/api/v1/invoices?limit=0",
+            "limit doit être compris entre 1 et 100",
+        ),
+        (
+            "/api/v1/invoices?offset=-1",
+            "offset doit être positif ou nul",
+        ),
+        (
+            "/api/v1/invoices/due-dates?offset=1000001",
+            "offset doit être ≤ 1000000",
+        ),
+    ] {
+        let (statut, corps) = get_json(&app, &jwt, chemin).await;
+        if statut != 400
+            || corps["error"]["code"] != "VALIDATION_ERROR"
+            || corps["error"]["message"] != message
+        {
+            echecs.push(format!(
+                "{chemin} : attendu 400 VALIDATION_ERROR « {message} » ; rendu {statut} {corps}"
+            ));
+        }
+    }
+    for (chemin, limit, offset) in [
+        ("/api/v1/invoices", 20, 0),
+        ("/api/v1/supplier-invoices?limit=1000&offset=-3", 200, 0),
+        ("/api/v1/supplier-invoices", 50, 0),
+    ] {
+        let (statut, corps) = get_json(&app, &jwt, chemin).await;
+        if statut != 200 || corps["limit"] != limit || corps["offset"] != offset {
+            echecs.push(format!(
+                "{chemin} : attendu 200, limit {limit}, offset {offset} ; rendu {statut} {corps}"
+            ));
+        }
+    }
+    let (statut, corps) = get_json(&app, &jwt, "/api/v1/invoices?status=cancelled").await;
+    if statut != 200 {
+        echecs.push(format!(
+            "?status=cancelled : attendu 200 ; rendu {statut} {corps}"
+        ));
+    }
+    assert!(echecs.is_empty(), "AC11 (c) :\n{}", echecs.join("\n"));
+}
+
+/// AC11 (d), (e), (f) — la liste des factures, par la route : chaque filtre
+/// seul (`search` par client et par numéro, `status`, `contactId`, `dateFrom`,
+/// `dateTo` bornes incluses, `paused` sous ses trois valeurs), un `offset`
+/// positif, chaque colonne et chaque sens du tri en ordre rendu (sur F1 à F4,
+/// `status=validated`), et le tri par défaut (`Date`, `Desc`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac324b_d_e_f_la_liste_des_factures_par_la_route(pool: MySqlPool) {
+    let f = poser_factures(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(f.s.admin_user_id, "Consultation", f.s.company_id);
+    let mut echecs = Vec::new();
+    let table: Vec<(String, Vec<&str>)> = vec![
+        (String::new(), vec!["F1", "F2", "F3", "F4", "F5"]),
+        ("search=Charlie".into(), vec!["F4"]),
+        (format!("search={}", f.numero_f1), vec!["F1"]),
+        ("status=draft".into(), vec!["F5"]),
+        ("status=validated".into(), vec!["F1", "F2", "F3", "F4"]),
+        (format!("contactId={}", f.clients[0]), vec!["F1"]),
+        ("dateFrom=2021-02-10".into(), vec!["F2", "F3", "F4", "F5"]),
+        ("dateTo=2021-02-10".into(), vec!["F1", "F2"]),
+        ("paused=paused".into(), vec!["F2"]),
+        ("paused=not-paused".into(), vec!["F1", "F3", "F4", "F5"]),
+        ("paused=all".into(), vec!["F1", "F2", "F3", "F4", "F5"]),
+    ];
+    for (filtre, attendu) in table {
+        let chemin = format!("/api/v1/invoices?{filtre}");
+        let (statut, corps) = get_json(&app, &jwt, &chemin).await;
+        let rendu: BTreeSet<String> = f.page(&corps).into_iter().collect();
+        let attendu: BTreeSet<String> = attendu.iter().map(|x| x.to_string()).collect();
+        if statut != 200 || rendu != attendu || corps["total"] != attendu.len() {
+            echecs.push(format!(
+                "{chemin} : attendu 200 {attendu:?} ; rendu {statut} {rendu:?}, total {} — {}",
+                corps["total"], corps["error"]
+            ));
+        }
+    }
+    let mut ordonnee: Vec<(String, Vec<&str>, usize)> = vec![
+        (String::new(), vec!["F5", "F4", "F3", "F2", "F1"], 5),
+        ("limit=1&offset=1".into(), vec!["F4"], 5),
+    ];
+    for (colonne, sens, attendu) in ORDRES_DES_FACTURES {
+        ordonnee.push((
+            format!("status=validated&sortBy={colonne}&sortDirection={sens}"),
+            attendu.to_vec(),
+            4,
+        ));
+    }
+    for (filtre, attendu, total) in ordonnee {
+        let chemin = format!("/api/v1/invoices?{filtre}");
+        let (statut, corps) = get_json(&app, &jwt, &chemin).await;
+        let rendu = f.page(&corps);
+        if statut != 200 || rendu != attendu || corps["total"] != total {
+            echecs.push(format!(
+                "{chemin} (ordonné) : attendu 200 {attendu:?}, total {total} ; rendu {statut} {rendu:?}, total {} — {}",
+                corps["total"], corps["error"]
+            ));
+        }
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// AC11 (d), (e), (f) — l'échéancier, par la route : chaque filtre seul
+/// (`search`, `contactId`, `dateFrom`, `dateTo`, `dueBefore`, `paymentStatus`
+/// sous ses quatre valeurs), un `offset` positif ; les constantes — un
+/// brouillon n'y paraît jamais, même avec `paymentStatus=all` (M21a) ; F2
+/// suspendue **et** F1, F3 non suspendues y paraissent (M21b) ; F4 payée n'y
+/// paraît pas sans `paymentStatus` (M21c) — ; le résumé, le même pour
+/// `paymentStatus=paid` et sans paramètre (contrat de la route ; le dépôt ignore
+/// lui-même `payment_status`, M21d équivalente) ; chaque colonne et chaque sens
+/// du tri sur F1 à F4 (`paymentStatus=all`) ; le tri par défaut (`DueDate`,
+/// `Asc`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac324b_d_e_f_l_echeancier_par_la_route(pool: MySqlPool) {
+    let f = poser_factures(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(f.s.admin_user_id, "Consultation", f.s.company_id);
+    let mut echecs = Vec::new();
+    let table: Vec<(String, Vec<&str>)> = vec![
+        (String::new(), vec!["F1", "F2", "F3"]),
+        ("paymentStatus=all".into(), vec!["F1", "F2", "F3", "F4"]),
+        ("paymentStatus=paid".into(), vec!["F4"]),
+        ("paymentStatus=unpaid".into(), vec!["F1", "F2", "F3"]),
+        ("paymentStatus=overdue".into(), vec!["F1", "F3"]),
+        ("search=Delta".into(), vec!["F3"]),
+        (format!("contactId={}", f.clients[0]), vec!["F1"]),
+        ("dateFrom=2021-02-10".into(), vec!["F2", "F3"]),
+        ("dateTo=2021-02-10".into(), vec!["F1", "F2"]),
+        ("dueBefore=2021-05-31".into(), vec!["F1", "F3"]),
+    ];
+    for (filtre, attendu) in table {
+        let chemin = format!("/api/v1/invoices/due-dates?{filtre}");
+        let (statut, corps) = get_json(&app, &jwt, &chemin).await;
+        let rendu: BTreeSet<String> = f.page(&corps).into_iter().collect();
+        let attendu: BTreeSet<String> = attendu.iter().map(|x| x.to_string()).collect();
+        if statut != 200 || rendu != attendu || corps["total"] != attendu.len() {
+            echecs.push(format!(
+                "{chemin} : attendu 200 {attendu:?} ; rendu {statut} {rendu:?}, total {} — {}",
+                corps["total"], corps["error"]
+            ));
+        }
+    }
+    let mut ordonnee: Vec<(String, Vec<&str>, usize)> = vec![
+        (String::new(), vec!["F3", "F1", "F2"], 3),
+        ("limit=1&offset=1".into(), vec!["F1"], 3),
+    ];
+    for (colonne, sens, attendu) in ORDRES_DES_FACTURES {
+        ordonnee.push((
+            format!("paymentStatus=all&sortBy={colonne}&sortDirection={sens}"),
+            attendu.to_vec(),
+            4,
+        ));
+    }
+    for (filtre, attendu, total) in ordonnee {
+        let chemin = format!("/api/v1/invoices/due-dates?{filtre}");
+        let (statut, corps) = get_json(&app, &jwt, &chemin).await;
+        let rendu = f.page(&corps);
+        if statut != 200 || rendu != attendu || corps["total"] != total {
+            echecs.push(format!(
+                "{chemin} (ordonné) : attendu 200 {attendu:?}, total {total} ; rendu {statut} {rendu:?}, total {} — {}",
+                corps["total"], corps["error"]
+            ));
+        }
+    }
+    let (_, sans) = get_json(&app, &jwt, "/api/v1/invoices/due-dates").await;
+    let (_, payees) = get_json(&app, &jwt, "/api/v1/invoices/due-dates?paymentStatus=paid").await;
+    if sans["summary"].is_null() || sans["summary"] != payees["summary"] {
+        echecs.push(format!(
+            "résumé : sans paramètre {} ; paymentStatus=paid {}",
+            sans["summary"], payees["summary"]
+        ));
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// Les numéros d'une page de `GET /api/v1/supplier-invoices`, dans l'ordre
+/// rendu.
+fn numeros_fournisseur(corps: &Value) -> Vec<String> {
+    corps["items"]
+        .as_array()
+        .map(|v| {
+            v.iter()
+                .filter_map(|e| e["supplierInvoiceNumber"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Trois factures fournisseur posées dans l'ordre FA (01.03.2021), FB
+/// (01.01.2021), FC (01.02.2021) : l'ordre du dépôt (`invoice_date DESC,
+/// id DESC`) rend FA, FC, FB — distinct de l'ordre des ids, dans un sens comme
+/// dans l'autre.
+async fn poser_factures_fournisseur(pool: &MySqlPool) -> SeededCompany {
+    let s = societe(pool).await;
+    let fournisseur = poser_contact_fournisseur(pool, s.company_id, "Fournisseur SA").await;
+    for (numero, mois) in [("FA", 3), ("FB", 1), ("FC", 2)] {
+        poser_facture_fournisseur(
+            pool,
+            &s,
+            fournisseur,
+            NaiveDate::from_ymd_opt(2021, mois, 1).unwrap(),
+            numero,
+        )
+        .await;
+    }
+    s
+}
+
+/// AC11 (d), (f) — la liste fournisseur, par la route : l'ordre du dépôt
+/// (`invoice_date DESC, id DESC`, non déplacé) et un `offset` positif.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac324b_d_f_la_liste_fournisseur_par_la_route(pool: MySqlPool) {
+    let s = poser_factures_fournisseur(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(s.admin_user_id, "Consultation", s.company_id);
+    let mut echecs = Vec::new();
+    for (chemin, attendu) in [
+        ("/api/v1/supplier-invoices", vec!["FA", "FC", "FB"]),
+        ("/api/v1/supplier-invoices?limit=1&offset=1", vec!["FC"]),
+    ] {
+        let (statut, corps) = get_json(&app, &jwt, chemin).await;
+        let rendu = numeros_fournisseur(&corps);
+        if statut != 200 || rendu != attendu || corps["total"] != 3 {
+            echecs.push(format!(
+                "{chemin} : attendu 200 {attendu:?}, total 3 ; rendu {statut} {rendu:?}, total {}",
+                corps["total"]
+            ));
+        }
+    }
+    assert!(echecs.is_empty(), "{}", echecs.join("\n"));
+}
+
+/// Un montant décimal d'un corps JSON (rendu en chaîne).
+fn montant(v: &Value) -> Option<Decimal> {
+    v.as_str().and_then(|s| s.parse().ok())
+}
+
+/// AC11 (g) — le détail, par la route : F1, partiellement réglée →
+/// `amountSettled` 50.00 et `amountDue` 166.20 ; F5, brouillon →
+/// `roundingIsPreview: true` (le réglage est lu) ; F2, validée →
+/// `roundingIsPreview: false`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac324b_g_le_detail_d_une_facture_par_la_route(pool: MySqlPool) {
+    let f = poser_factures(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(f.s.admin_user_id, "Consultation", f.s.company_id);
+    let mut echecs = Vec::new();
+    let (statut, corps) = get_json(&app, &jwt, &format!("/api/v1/invoices/{}", f.ids[0])).await;
+    let (regle, du) = (
+        montant(&corps["amountSettled"]),
+        montant(&corps["amountDue"]),
+    );
+    if statut != 200 || regle != Some(dec!(50.00)) || du != Some(dec!(166.20)) {
+        echecs.push(format!(
+            "F1 : attendu 200, réglé 50.00, dû 166.20 ; rendu {statut}, {regle:?}, {du:?}"
+        ));
+    }
+    let (statut, corps) = get_json(&app, &jwt, &format!("/api/v1/invoices/{}", f.ids[4])).await;
+    if statut != 200 || corps["roundingIsPreview"] != true {
+        echecs.push(format!(
+            "F5 brouillon : attendu roundingIsPreview true ; rendu {statut} {}",
+            corps["roundingIsPreview"]
+        ));
+    }
+    let (statut, corps) = get_json(&app, &jwt, &format!("/api/v1/invoices/{}", f.ids[1])).await;
+    if statut != 200 || corps["roundingIsPreview"] != false {
+        echecs.push(format!(
+            "F2 validée : attendu roundingIsPreview false ; rendu {statut} {}",
+            corps["roundingIsPreview"]
         ));
     }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
