@@ -4286,3 +4286,150 @@ async fn full_import_restores_mcp_keys_that_authenticate(pool: MySqlPool) {
         .expect("K3, révoquée après l'export, authentifie de nouveau");
     assert_eq!(cle3.cle_id, k3);
 }
+
+// ---------------------------------------------------------------------------
+// Story 32-8a (AC-A10) — les envois MCP reviennent octet pour octet
+// ---------------------------------------------------------------------------
+
+/// Une ligne de `mcp_sends`, colonne par colonne ; résumé et contenu en octets.
+#[derive(Debug, PartialEq, sqlx::FromRow)]
+struct LigneEnvoi {
+    id: i64,
+    company_id: i64,
+    mcp_key_id: i64,
+    tool_name: String,
+    state: String,
+    summary: Option<Vec<u8>>,
+    content: Option<Vec<u8>>,
+    modified: bool,
+    expires_at: chrono::NaiveDateTime,
+    decided_at: Option<chrono::NaiveDateTime>,
+    decided_by_user_id: Option<i64>,
+    version: i32,
+    created_at: chrono::NaiveDateTime,
+}
+
+async fn ligne_envoi(pool: &MySqlPool, id: i64) -> Option<LigneEnvoi> {
+    sqlx::query_as(
+        "SELECT id, company_id, mcp_key_id, tool_name, state, \
+         CAST(summary AS BINARY) AS summary, CAST(content AS BINARY) AS content, modified, \
+         expires_at, decided_at, decided_by_user_id, version, created_at \
+         FROM mcp_sends WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .unwrap()
+}
+
+/// AC-A10 — un envoi validé **modifié** (contenu de 65 536 octets piégé) et un
+/// envoi en attente sont exportés ; entre l'export et l'import, le premier est
+/// supprimé et le second refusé par le pool du test ; après l'import, les deux
+/// lignes sont égales à celles d'avant l'export, colonne par colonne.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_restores_mcp_sends_byte_for_byte(pool: MySqlPool) {
+    use kesh_db::entities::mcp_send::{Decision, NouvelEnvoi};
+    use kesh_db::entities::{McpScope, SendValidation};
+    use kesh_db::repositories::mcp_sends;
+
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Envois").await;
+    let c = admin.company_id;
+    let (k, _jeton) = cle_mcp_restauree(
+        &pool,
+        c,
+        admin.user_id,
+        "envois",
+        &[McpScope::BooksRead],
+        SendValidation::Required,
+    )
+    .await;
+
+    let tete = "Écriture n° 12\tÉlan\tçà\n\\u{202E} ⚠ 帳\n";
+    let contenu = format!("{tete}{}\n\n", "x".repeat(65_536 - tete.len() - 2));
+    assert_eq!(contenu.len(), 65_536, "montage");
+
+    let mut tx = pool.begin().await.unwrap();
+    let mut ids = Vec::new();
+    for texte in ["déposé", "en attente\t "] {
+        ids.push(
+            mcp_sends::deposer_in_tx(
+                &mut tx,
+                &NouvelEnvoi {
+                    company_id: c,
+                    mcp_key_id: k,
+                    tool_name: "outil".into(),
+                    summary: Some("résumé — Élan".into()),
+                    content: texte.into(),
+                },
+                86_400,
+                20,
+            )
+            .await
+            .unwrap(),
+        );
+    }
+    let (valide, attente) = (ids[0], ids[1]);
+    let decide = mcp_sends::decider_in_tx(
+        &mut tx,
+        c,
+        valide,
+        1,
+        Decision::Valider {
+            contenu: Some(contenu.clone()),
+        },
+        admin.user_id,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert!(decide.modified, "montage : validé modifié");
+
+    let avant_valide = ligne_envoi(&pool, valide).await.unwrap();
+    let avant_attente = ligne_envoi(&pool, attente).await.unwrap();
+    assert_eq!(
+        avant_valide.content.as_deref(),
+        Some(contenu.as_bytes()),
+        "montage"
+    );
+    assert_eq!(
+        (avant_valide.state.as_str(), avant_valide.modified),
+        ("approved", true),
+        "montage"
+    );
+    assert_eq!(avant_attente.state, "pending", "montage");
+
+    let sauvegarde = export_backup(&app, &admin.jwt).await;
+
+    sqlx::query("DELETE FROM mcp_sends WHERE id = ?")
+        .bind(valide)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE mcp_sends SET state = 'refused', content = NULL, summary = NULL, \
+         decided_at = NOW(3), decided_by_user_id = ?, version = version + 1 WHERE id = ?",
+    )
+    .bind(admin.user_id)
+    .bind(attente)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ligne_envoi(&pool, valide).await, None, "montage : supprimé");
+    assert_ne!(
+        ligne_envoi(&pool, attente).await.as_ref(),
+        Some(&avant_attente),
+        "montage : refusé"
+    );
+
+    let resp = post_import(&app, &admin.jwt, sauvegarde).await;
+    assert_eq!(resp.status(), 200, "l'import doit réussir");
+
+    assert_eq!(ligne_envoi(&pool, valide).await, Some(avant_valide));
+    assert_eq!(ligne_envoi(&pool, attente).await, Some(avant_attente));
+    let compte: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mcp_sends")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(compte, 2);
+}

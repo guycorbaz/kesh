@@ -1903,9 +1903,10 @@ async fn call(
 /// article, une facture **validée** (écriture), un avoir, une clé d'API saine
 /// et un jeton de réinitialisation de mot de passe — L4-3 de la P4 : sans eux,
 /// « inchangés » serait vrai à vide. Depuis la Story 32-5a (AC-a6, C-32-5-26),
-/// aussi une clé MCP et une ligne de réglages du serveur MCP : le test de la
-/// remise à zéro prouve ainsi qu'elle les VIDE, et non qu'elles l'étaient déjà
-/// (`EMPTY_BEFORE_RESET` reste inchangée).
+/// aussi une clé MCP et une ligne de réglages du serveur MCP ; depuis la Story
+/// 32-8a (AC-A10), un envoi MCP en attente sur cette clé : le test de la
+/// remise à zéro prouve ainsi qu'elle vide les réglages et les envois, et non
+/// qu'ils l'étaient déjà (`EMPTY_BEFORE_RESET` reste inchangée).
 async fn populate(pool: &MySqlPool, app: &TestApp, token: &str, company_id: i64) -> i64 {
     let (contact_id, _product_id) =
         kesh_db::test_fixtures::seed_contact_and_product(pool, company_id)
@@ -1957,12 +1958,26 @@ async fn populate(pool: &MySqlPool, app: &TestApp, token: &str, company_id: i64)
     .execute(pool)
     .await
     .unwrap();
-    sqlx::query(
+    let mcp_key_id = sqlx::query(
         "INSERT INTO mcp_keys (company_id, created_by_user_id, name, key_hash, scopes) \
          VALUES (?, ?, 'démonstration', SHA2('cle-mcp', 256), '[\"books:read\"]')",
     )
     .bind(company_id)
     .bind(admin_user_id(pool).await)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id();
+    // Story 32-8a (AC-A10) — un envoi en attente sur la clé MCP : la remise à
+    // zéro doit le VIDER, sa clé restant conservée.
+    sqlx::query(
+        "INSERT INTO mcp_sends (company_id, mcp_key_id, tool_name, state, summary, content, \
+         modified, expires_at) \
+         VALUES (?, ?, 'outil', 'pending', 'résumé', 'contenu', FALSE, \
+                 NOW(3) + INTERVAL 1 DAY)",
+    )
+    .bind(company_id)
+    .bind(mcp_key_id)
     .execute(pool)
     .await
     .unwrap();
@@ -2029,6 +2044,7 @@ async fn reset_clears_every_company_table_and_traces_itself(pool: MySqlPool) {
         "audit_log",
         "mcp_keys",
         "mcp_server_settings",
+        "mcp_sends",
     ] {
         assert!(before[t] > 0, "montage : {t} doit être peuplée");
     }
@@ -2126,6 +2142,7 @@ async fn reset_clears_every_company_table_and_traces_itself(pool: MySqlPool) {
     assert_eq!(after["onboarding_state"], 1);
     assert_eq!(after["mcp_keys"], before["mcp_keys"], "clés MCP conservées");
     assert_eq!(after["mcp_server_settings"], 0, "serveur MCP désactivé");
+    assert_eq!(after["mcp_sends"], 0, "envois MCP vidés (Story 32-8a)");
 }
 
 /// Test 4 bis (Story 32-5d, AC-d1, C-32-5-11) — après la remise à zéro d'une

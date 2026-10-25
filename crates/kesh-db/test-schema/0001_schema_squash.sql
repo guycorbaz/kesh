@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 84 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 85 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -888,6 +888,37 @@ CREATE TABLE `mcp_keys` (
   CONSTRAINT `chk_mcp_keys_name_nonempty` CHECK (`name` regexp '[^[:space:]]'),
   CONSTRAINT `chk_mcp_keys_scopes` CHECK (json_valid(`scopes`) and json_type(`scopes`) = 'ARRAY' and json_length(`scopes`) >= 1),
   CONSTRAINT `chk_mcp_keys_send_validation` CHECK (`send_validation` collate utf8mb4_nopad_bin in ('required','exempt'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `mcp_sends`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `mcp_sends` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` bigint(20) NOT NULL,
+  `mcp_key_id` bigint(20) NOT NULL,
+  `tool_name` varchar(64) NOT NULL,
+  `state` varchar(16) NOT NULL COMMENT 'pending | approved | refused — « échu » est dérivé, jamais écrit',
+  `summary` text DEFAULT NULL COMMENT 'Résumé de la demande, montré à l''écran, jamais envoyé',
+  `content` mediumtext DEFAULT NULL COMMENT 'Texte rendu visible ; remplacé à la validation modifiée ; NULL si refusé ou purgé',
+  `modified` tinyint(1) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `decided_at` datetime(3) DEFAULT NULL,
+  `decided_by_user_id` bigint(20) DEFAULT NULL,
+  `version` int(11) NOT NULL DEFAULT 1,
+  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (`id`),
+  KEY `fk_mcp_sends_decided_by` (`decided_by_user_id`),
+  KEY `idx_mcp_sends_key` (`mcp_key_id`,`state`,`expires_at`),
+  KEY `idx_mcp_sends_company` (`company_id`,`created_at`),
+  CONSTRAINT `fk_mcp_sends_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
+  CONSTRAINT `fk_mcp_sends_decided_by` FOREIGN KEY (`decided_by_user_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_mcp_sends_key` FOREIGN KEY (`mcp_key_id`) REFERENCES `mcp_keys` (`id`),
+  CONSTRAINT `chk_mcp_sends_state` CHECK (`state` collate utf8mb4_nopad_bin in ('pending','approved','refused')),
+  CONSTRAINT `chk_mcp_sends_decision` CHECK (`decided_at` is null = (`decided_by_user_id` is null) and `state` = 'pending' = (`decided_at` is null)),
+  CONSTRAINT `chk_mcp_sends_refused_empty` CHECK (`state` <> 'refused' or `content` is null and `summary` is null),
+  CONSTRAINT `chk_mcp_sends_modified` CHECK (`state` = 'approved' or `modified` = 0),
+  CONSTRAINT `chk_mcp_sends_tool` CHECK (char_length(`tool_name`) between 1 and 64)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `mcp_server_settings`;
