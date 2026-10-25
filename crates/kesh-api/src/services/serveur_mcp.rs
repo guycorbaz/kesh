@@ -167,6 +167,9 @@ impl IssueAppel {
 /// **Ni arguments, ni données** (AC-b2) : aucun paramètre ne peut en porter.
 /// `outil` est le nom d'un outil du registre, un nom réservé
 /// (`kesh_lire_envoi`), ou [`OUTIL_INCONNU`] — jamais le nom reçu du client.
+/// `&'static str` le garantit par le type, comme `AppelOutil::outil` de la
+/// 32-6b : un texte du binaire — le nom reçu du client, emprunté au corps de
+/// la requête, n'a pas cette durée de vie (revue de code P1 de la 32-8b, B-2).
 ///
 /// `pub` et non `pub(crate)` (C-32-8-52) : son test pur vit dans
 /// `tests/mcp_journal_e2e.rs`, faute de pouvoir construire une
@@ -174,7 +177,7 @@ impl IssueAppel {
 #[doc(hidden)]
 pub fn entree_appel(
     cle: &CleMcpAuthentifiee,
-    outil: &str,
+    outil: &'static str,
     issue: IssueAppel,
     duree_ms: u64,
     envoi: Option<i64>,
@@ -209,7 +212,7 @@ pub fn entree_appel(
 pub async fn journaliser_appel(
     trace: &Trace,
     cle: &CleMcpAuthentifiee,
-    outil: &str,
+    outil: &'static str,
     issue: IssueAppel,
     duree_ms: u64,
     envoi: Option<i64>,

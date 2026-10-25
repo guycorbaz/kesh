@@ -1107,7 +1107,16 @@ fn reponses_par_rendre_seul() {
 /// renommé (`let c = contenu; warn!("{c}")`) et un type porteur formaté par
 /// `Debug` ne sont pas vus — les identifiants visés sont exacts, non des
 /// sous-chaînes. Les types de `kesh-db` qui portent contenu ou résumé masquent
-/// l'un et l'autre dans leur `Debug` (C-32-8-40).
+/// l'un et l'autre dans leur `Debug` (C-32-8-40). Trois formes encore, écrites
+/// à la revue de code P1 (B-4) et non traitées : un commentaire de bloc
+/// **imbriqué** (`/* a /* b */ contenu */`, que Rust admet) se ferme au
+/// premier `*/` ; une macro d'évènement invoquée par `{…}` ou `[…]`
+/// (`warn!{…}`, `error![…]`) échappe à `appels_d_evenement`, qui n'apparie
+/// que la parenthèse ; les préfixes `c"…"` et `cr"…"` ne sont pas reconnus
+/// comme tels : l'un et l'autre se lisent comme un identifiant suivi d'une
+/// chaîne **ordinaire** — sans effet pour `c"…"`, dont les échappements sont
+/// ceux d'une chaîne ordinaire, mais une `cr#"…"#` est lue avec les règles
+/// d'échappement d'une chaîne ordinaire, non d'une chaîne brute.
 fn squelette(source: &str) -> (String, Vec<String>) {
     let c: Vec<char> = source.chars().collect();
     let mut code = String::with_capacity(source.len());
@@ -1192,7 +1201,9 @@ fn squelette(source: &str) -> (String, Vec<String>) {
         // Caractère (`'('`, `'\''`) — une durée de vie (`'a`) reste du code.
         if c[i] == '\'' {
             if c.get(i + 1) == Some(&'\\') {
-                let mut j = i + 2;
+                // `i + 3` : le caractère échappé (`i + 2`) peut être lui-même
+                // une apostrophe, `'\''` (revue de code P1, B-3).
+                let mut j = i + 3;
                 while j < c.len() && c[j] != '\'' {
                     j += 1;
                 }
@@ -1327,6 +1338,9 @@ fn aucun_evenement_ne_nomme_le_contenu() {
         "warn!(\"{}\", [contenu][0])",
         "warn!(\"{}\", { body })",
         "debug!(\"{:?}\", summary)",
+        // revue de code P1, B-3 : `'\''` collé à un caractère `')'` — lue
+        // `'\'` puis `','`, l'appariement fermait la macro avant `contenu`
+        "warn!(a = ('\\'',')'), contenu)",
     ] {
         assert_eq!(evenements_fautifs(rouge).len(), 1, "rouge : {rouge}");
     }

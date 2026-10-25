@@ -1826,6 +1826,7 @@ async fn e1_rien_ne_part_sous_cle_requise(pool: MySqlPool) {
             None,
         ),
     ];
+    let mut reponses = Vec::new();
     for (corps, attendu) in &attendus {
         let r = b.mcp(Some(&requise), corps).await;
         assert!(
@@ -1835,6 +1836,7 @@ async fn e1_rien_ne_part_sous_cle_requise(pool: MySqlPool) {
         if let Some(a) = attendu {
             assert_eq!(&r.json(), a, "{corps}");
         }
+        reponses.push(r);
     }
     let r = b.mcp(Some(&requise), LISTE).await;
     assert_eq!(
@@ -1852,11 +1854,27 @@ async fn e1_rien_ne_part_sous_cle_requise(pool: MySqlPool) {
         deposes.iter().map(|(_, o)| o.as_str()).collect::<Vec<_>>(),
         ["piege", "kesh_version"]
     );
+    // Les deux accusés, comparés entiers, au numéro lu en base et non dans la
+    // réponse comparée (revue de code P1, A-L3) : indices 3 et 4 d'`attendus`.
+    assert_eq!(
+        reponses[3].json(),
+        attendu_depose(1, deposes[0].0),
+        "accusé de piege"
+    );
+    assert_eq!(
+        reponses[4].json(),
+        attendu_depose(1, deposes[1].0),
+        "accusé de kesh_version"
+    );
     let piege = deposes[0].0;
     let r = b.mcp(Some(&requise), &appel(2, "piege", json!({}))).await;
+    let (troisieme,): (Option<i64>,) = sqlx::query_as("SELECT MAX(id) FROM mcp_sends")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(
         r.json(),
-        attendu_depose(2, numero_depose(&r)),
+        attendu_depose(2, troisieme.expect("un troisième dépôt")),
         "accusé égal"
     );
     // La relecture avant toute décision : en attente, sans le piège.

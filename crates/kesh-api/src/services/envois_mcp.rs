@@ -209,10 +209,12 @@ pub async fn deposer(
     }
 
     let company_id = cle.acces.company_id();
-    if let Err(e) = ecriture.purger_echus(company_id).await {
+    // Journalisée par l'id de société seul (AC-B5) : ni l'erreur, ni rien qui
+    // vienne de la base (revue de code P1 de la 32-8b, A-L9).
+    if ecriture.purger_echus(company_id).await.is_err() {
         tracing::warn!(
             company_id,
-            "envois MCP : purge des contenus échus non faite (sans effet sur le dépôt) : {e}"
+            "envois MCP : purge des contenus échus non faite (sans effet sur le dépôt)"
         );
     }
 

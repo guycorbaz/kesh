@@ -306,4 +306,46 @@ mod tests {
             assert!(matches!(decision(refusee), Err(AppError::Validation(_))));
         }
     }
+
+    /// « 24 576 octets », écrit en toutes lettres dans le repli et les quatre
+    /// catalogues, lié à `MCP_ENVOI_OCTETS_MAX` : changer la constante sans
+    /// le message rougit ici (revue de code P1 de la 32-8b, B-7).
+    #[test]
+    fn message_de_taille_lie_a_la_constante() {
+        use crate::services::envois_mcp::MCP_ENVOI_OCTETS_MAX;
+        let n = MCP_ENVOI_OCTETS_MAX;
+        assert!((1_000..1_000_000).contains(&n), "format à deux groupes");
+        let espace = format!("{} {:03}", n / 1000, n % 1000);
+        let virgule = format!("{},{:03}", n / 1000, n % 1000);
+
+        let trop = "a".repeat(n + 1);
+        match decision(req(1, Choix::Approve, Some(&trop))) {
+            Err(AppError::Validation(m)) => assert!(m.contains(&espace), "message : {m}"),
+            _ => panic!("contenu trop volumineux refusé"),
+        }
+
+        let cle = "mcp-send-content-too-large = ";
+        for (catalogue, attendu) in [
+            (
+                include_str!("../../../kesh-i18n/locales/fr-CH/messages.ftl"),
+                &espace,
+            ),
+            (
+                include_str!("../../../kesh-i18n/locales/de-CH/messages.ftl"),
+                &espace,
+            ),
+            (
+                include_str!("../../../kesh-i18n/locales/it-CH/messages.ftl"),
+                &espace,
+            ),
+            (
+                include_str!("../../../kesh-i18n/locales/en-CH/messages.ftl"),
+                &virgule,
+            ),
+        ] {
+            let lignes: Vec<&str> = catalogue.lines().filter(|l| l.starts_with(cle)).collect();
+            assert_eq!(lignes.len(), 1, "une seule ligne {cle}");
+            assert!(lignes[0].contains(attendu.as_str()), "{}", lignes[0]);
+        }
+    }
 }

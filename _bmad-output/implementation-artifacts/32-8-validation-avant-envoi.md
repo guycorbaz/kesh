@@ -521,7 +521,8 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     - `pub(crate) fn appliquer(a: Autorisation, d: Donnees) -> Sortie`, `Sortie` = `Envoyer(DonneesEnvoyables)` |
       `Deposer(EnvoiAValider)` ; `appliquer` ne fait que construire : `Envoi` → `Envoyer` (comportement de la 32-6a,
       inchangé), `Depot` → `Deposer` (AC-B2, AC-B3) ;
-    - `EnvoiAValider` : champs privés (`resume`, `contenu`, chaînes déjà rendues visibles), **aucun accesseur**, ni
+    - `EnvoiAValider` : champs privés (`resume`, `contenu`, chaînes déjà rendues visibles — *annoté le 2026-10-25, revue de code P1,
+      A-L8 : brutes, rendues visibles par le service au dépôt, C-32-8-51*), **aucun accesseur**, ni
       `Clone`, ni `Debug`, ni `Default`, ni `Serialize` ; sa **seule** méthode, `pub(in crate::mcp) async fn
       deposer(self, …) -> Result<AccuseEnvoi, RefusDepot>` (AC-B5), consomme l'envoi : les deux chaînes ne quittent
       `politique.rs` que comme arguments du service de dépôt.
@@ -547,7 +548,8 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     validation P1, R17) ; `services::envois_mcp::rendre_visible(s: &str) -> String` remplace chaque caractère dont
     `is_hidden_in_text` est vrai par `\u{XXXX}` (Rust,
     hexadécimal en capitales, quatre à six chiffres, sans zéro de tête au-delà de quatre) et laisse le reste intact ;
-    appliquée par `appliquer` au texte **et** au résumé. Elle est **idempotente** (sa sortie n'a aucun caractère caché).
+    appliquée par `appliquer` au texte **et** au résumé *(annoté le 2026-10-25, revue de code P1, A-L8 : appliquée par le
+    service `envois_mcp::deposer`, non par `appliquer`, C-32-8-51)*. Elle est **idempotente** (sa sortie n'a aucun caractère caché).
     Test `rendre_visible_par_famille` (fonction pure, `envois_mcp.rs`, `mod tests`) : U+202E, U+2066, U+200B, U+200D,
     U+FEFF, U+FE0F, U+E000, U+0378, U+180E, U+2028, `\r`, U+0000, U+0085, U+007F → échappés ; `\n`, `\t`, `é`, `€`,
     `⚠` (U+26A0), `中`, une espace → intacts ; `rendre_visible(rendre_visible(s)) == rendre_visible(s)` sur chacun ; un
@@ -581,7 +583,8 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     chemin du MCP, que la règle R4 de `services/mod.rs` (`:44-56`) et l'« inventaire clos des écritures » (`:77-90`,
     « 3. Aucune autre ») ne connaissent pas : l'inventaire gagne **deux** entrées (le dépôt d'un envoi et l'entrée
     d'appel, en une transaction, sur `EcritureEnvois` ; la purge des contenus échus, sur `EcritureEnvois` — numérotées à
-    la suite de celles que la 32-6b y aura posées, recomptées à l'étape 0 ; validation P2, R10), R4 gagne
+    la suite de celles que la 32-6b y aura posées, recomptées à l'étape 0 ; validation P2, R10 ; *annoté le 2026-10-25,
+    revue de code P1, A-L8 : rangées en sous-points (a) et (b) du point 2, non à la suite*), R4 gagne
     la phrase qui les nomme, et la **dérogation à R2** est écrite pour `deposer` comme pour `lire` (AC-B6) : la portée a
     été exigée par le **service de l'outil** avant la lecture, et le dépôt ne lit rien des livres. `TropNombreux` →
     `ErreurOutil::LimiteAtteinte`, `TEXTE_ENVOIS_TROP_NOMBREUX`, issue `limite_atteinte` ; toute erreur de base →
@@ -610,8 +613,9 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     ligne déposée.
 18. **AC-B6 — `kesh_lire_envoi`, hors registre** (C-32-8-7, C-32-8-8, C-32-8-9). Nom réservé, constante
     `NOM_LIRE_ENVOI`. **Pas** un `McpTool`, **pas** au `Registre` ; le répartiteur le résout **avant** le registre ;
-    `registre_coherent` (AC-a16) refuse un outil du registre à nom réservé (`kesh_lire_envoi` ; la 32-10a-iii, qui vient après,
-    y ajoutera `proposer_prompt`). Descripteur **statique** (nom, description, `inputSchema` `{"type":"object","properties":
+    `registre_coherent` (AC-a16) refuse un outil du registre à nom réservé **de la 32-8** (`kesh_lire_envoi` ; ce que la
+    32-10a-iii fait de `proposer_prompt` relève de son AC-iii2 — *annoté le 2026-10-25, revue de code P1 de la 32-8b,
+    A-M2*). Descripteur **statique** (nom, description, `inputSchema` `{"type":"object","properties":
     {"envoi":{"type":"integer","minimum":1}},"required":["envoi"],"additionalProperties":false}`, `annotations:
     {readOnlyHint: true}`), listé par `tools/list` **pour toute clé**, après les outils du registre ; `tools_list_filtre`
     amendé (`books:read` → `[kesh_version, kesh_lire_envoi]` ; `contacts:read` seule → `[kesh_lire_envoi]`).
@@ -724,6 +728,8 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     validée a l'issue `servi`, un numéro inconnu `inconnu`. `outil` peut valoir `kesh_lire_envoi`. **`entree_appel`,
     signature fixée ici** (validation P1, R8, décision de l'orchestrateur) : `pub(crate) fn entree_appel(cle:
     &CleMcpAuthentifiee, outil: &str, issue: IssueAppel, duree_ms: u64, envoi: Option<i64>) -> NewAuditLogEntry`
+    *(annoté le 2026-10-25, revue de code P1, B-2 = A-L1 : `outil: &'static str` dans `entree_appel` et dans
+    `journaliser_appel`, et `pub` + `#[doc(hidden)]` au lieu de `pub(crate)`, C-32-8-52)*
     (`services/serveur_mcp.rs`), fonction **pure** extraite de `journaliser_appel`, qui l'appelle désormais et ne fait
     plus qu'écrire son résultat ; **`journaliser_appel` gagne le même paramètre `envoi: Option<i64>`** (validation P2,
     F5) — ses sites d'appel au répartiteur passent `None`, sauf la relecture (le numéro demandé) ; un dépôt **réussi**
@@ -853,7 +859,10 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
        objet** (les deux politiques exécutent) et Ma23 **reformulée** (MB1) ;
     10. **les gardes de `tests/mcp_gardes_lexicales.rs`** (32-6a), **étendues** : `donnees_construites_par_la_politique_seule`
         à `EnvoiAValider`, `Sortie` et aux deux jetons ; `outils_et_politique_en_leur_lieu` à `.deposer(` (AC-B1) — et le
-        même fichier **gagne** les gardes neuves de l'AC-B14 et de l'AC-B12 (validation P2, R6) ;
+        même fichier **gagne** les gardes neuves de l'AC-B14 et de l'AC-B12 (validation P2, R6) ; *(annoté le 2026-10-25,
+        revue de code P1, A-L8 : deux gardes de la 32-6a sont aussi touchées hors de cette liste, déclarées au Dev Agent
+        Record — l'exception ajoutée à `lecture_seule_jamais_defaite` pour le témoin de `lire_pour_cle_en_lecture_seule`
+        (`e84d9bc5`), et les témoins verts de `executer_appele_par_le_repartiteur_seul`)*
     11. **`tests/common/mcp.rs`** (32-6a) **gagne** des outils de test : deux blocs, une structure et un résumé piégés
         (AC-B2), un texte porteur d'U+202E, `\r` et U+200B (AC-B3), un texte de taille réglable (AC-B4), et le compteur
         existant sert `cle_requise_deposee` (validation P2, R6).
@@ -961,6 +970,9 @@ servies** (liste close de l'AC-a12 de la 32-6a, E2 de la spike) et des **autres 
 | D2 | `tools/call` d'un `McpTool`, clé `exempt` | les données de l'outil, sans écran | **la seule voie hors validation** (E1), par décision de l'administrateur, journalisée (32-6b) | `cle_dispensee_servie` ; manuel (AC-C10) |
 | D3 | une **erreur** d'un `McpTool` sous clé `required` (introuvable, arguments, interne, délai) | un texte fixe — mais **un bit** : l'existence d'un identifiant, la réussite d'une lecture | E5 (aucun texte libre) | **angle mort** (C-32-8-18, point 3 pour Guy) |
 | D4 | un dépôt refusé pour la **taille** | un texte fixe — **un bit** : le résultat dépasse 24 Kio | — | **angle mort** (même famille que D3) |
+| D4 bis | un dépôt refusé au **plafond** (`limite_atteinte`, `TEXTE_ENVOIS_TROP_NOMBREUX`) | un texte fixe — **un bit** tiré de `mcp_sends` : la clé a au moins 20 envois en attente — et, comme D3, celui d'une lecture réussie de l'outil | — | **angle mort** (même famille que D3 ; ajouté à la revue de code P1, A-L5 = B-8 = E-3) |
+| D4 ter | un dépôt en **échec interne** (`RefusDepot::Interne`), ou le **journal** de l'appel en échec (`appeler_et_journaliser`, fail closed) | `TEXTE_ERREUR_INTERNE`, un texte fixe ; rien de la base | fail closed : aucune donnée ne part, le détail ne va qu'au journal du serveur, sans contenu | `depot_et_journal_dans_la_meme_transaction` (AC-B5) ; ajouté à la revue de code P1 |
+| D4 quater | sous une clé `required`, une demande **mal formée** (nom absent, arguments non objet) ou un outil **inconnu ou hors portée** | une erreur JSON-RPC constante (`params_invalides`, `-32602`), rien de la base | inchangés depuis la 32-6a : l'inventaire de la 32-6 les couvre (AC-a12, E2) | 32-6a ; ajouté à la revue de code P1 |
 | D5 | `tools/call` de `kesh_lire_envoi` | le texte **validé**, pour la même clé, la même société, avant l'échéance ; sinon des constantes et l'entier demandé | `ContenuValide` construit par le service seul depuis une ligne `Valide` de la clé et de la société | types + garde `envoi_valide_construit_par_le_service_seul` + tests (AC-B6, AC-B7) |
 | D6 | le **résumé** d'un envoi | rien : il ne va qu'à l'écran | `EnvoiAValider` le passe au dépôt seul ; `ContenuValide` n'a pas de résumé | type + `une_seule_representation` (AC-B2) |
 | D7 | la **donnée structurée** d'un outil sous clé `required` | rien | `texte_a_valider` ne la lit pas | `une_seule_representation` (AC-B2) |
@@ -985,7 +997,8 @@ servies** (liste close de l'AC-a12 de la 32-6a, E2 de la spike) et des **autres 
 | D26 | une clé **révoquée** ou **expirée** entre le dépôt et la relecture ; une portée changée | rien | refus à l'authentification (32-5b) ; les portées ne se changent pas après la création (fiche 32-5, routes de la 32-5c : aucun `PUT` des portées) | 32-5b, 32-5c |
 | D27 | un dépôt dont la réponse se **perd** après la validation de sa transaction (client parti, connexion coupée) | rien vers l'agent ; l'envoi et son entrée d'appel existent | l'agent n'apprend pas le numéro ; l'envoi paraît à l'écran, peut être validé, et n'est relu que par qui connaît son numéro (même clé) | **angle mort** (l'agent redépose, borné à 20 ; validation P1, R19) |
 
-**Angles morts assumés** — chacun au § *Ce que les gardes ne voient pas* : D3, D4, D17, D18, D19, D20, D21, D24, D27.
+**Angles morts assumés** — chacun au § *Ce que les gardes ne voient pas* : D3, D4, D17, D18, D19, D20, D21, D24, D27 ; et
+D4 bis, de la famille de D3 et D4 *(ajouté le 2026-10-25, revue de code P1 de la 32-8b)*.
 
 ## Les points à traiter, et où ils le sont
 
@@ -1162,7 +1175,8 @@ Tests hors mutations, nommés au Dev Agent Record : `survit_au_redemarrage`, `ke
   (arabe, hébreu) qui réordonnent l'affichage d'une ligne sans caractère de contrôle (`dir="ltr"` n'y peut rien).
 - **Un bit part sans validation sous une clé `required`** (D3, D4) : qu'un identifiant existe (« introuvable » contre
   « envoi en attente »), qu'une lecture a réussi, qu'un résultat dépasse 24 Kio. Fermer ce point demanderait de déposer
-  aussi les erreurs — soumis à Guy (point 3).
+  aussi les erreurs — soumis à Guy (point 3). Et (D4 bis, *ajouté le 2026-10-25, revue de code P1*) qu'une clé a au
+  moins 20 envois en attente, le refus au plafond suivant une lecture réussie.
 - **Le canal de l'API** (D17) : une clé d'API donnée au même agent lit `/api/v1` sans validation. La validation est
   celle du serveur MCP.
 - **Un agent qui conduit le navigateur de l'administrateur** (D18) — extension de navigateur, *computer use* : il voit
@@ -1190,7 +1204,7 @@ Tests hors mutations, nommés au Dev Agent Record : `survit_au_redemarrage`, `ke
   textes de l'accusé, de la relecture et d'`instructions` (C-32-8-26) reposent donc sur une hypothèse non éprouvée ;
   s'ils ne suffisent pas, c'est un texte à changer, non la poignée (rien ne part si l'agent oublie de relire). Point 10
   pour Guy ; la 32-11 consigne l'observation.
-- **L'ordre des verrous de la décision** (constat P3-R6, C-32-8-58) : la décision verrouille la ligne de `mcp_sends` puis écrit `audit_log` ; la remise à zéro prend `audit_log` avant de vider `mcp_sends`. Une décision simultanée d'une remise à zéro peut se perdre en interblocage : la remise à zéro est rejouée, la décision non — elle rend une 500 et n'écrit rien. À porter au document des motifs de portée par la 32-8c.
+- **L'ordre des verrous de la décision** (constat P3-R6, C-32-8-58) : la décision verrouille la ligne de `mcp_sends` puis écrit `audit_log` ; la remise à zéro prend `audit_log` avant de vider `mcp_sends`. Une décision simultanée d'une remise à zéro peut se perdre en interblocage : la remise à zéro est rejouée, la décision non — elle rend une 500 et n'écrit rien. **Le dépôt a le même ordre** (`EcritureEnvois::deposer`, `services/poignees.rs` : `mcp_sends` puis `audit_log`, dans une transaction) : pris dans le même interblocage, il échoue fermé — erreur interne côté agent, rien d'écrit *(complété le 2026-10-25, revue de code P1, E-1)*. À porter au document des motifs de portée par la 32-8c, la décision et le dépôt ensemble.
 - **Le manuel** : aucun gate ne le lit ; les prompts de revue nomment l'axe et exigent le PDF aplati.
 
 ## Dev Notes
@@ -1280,6 +1294,8 @@ pub(crate) enum Autorisation { Envoi(JetonEnvoi), Depot(JetonDepot) }   // jeton
 pub(crate) fn autoriser(validation: SendValidation) -> Autorisation { /* Required → Depot, Exempt → Envoi */ }
 pub(crate) enum Sortie { Envoyer(DonneesEnvoyables), Deposer(EnvoiAValider) }
 pub(crate) fn appliquer(a: Autorisation, d: Donnees) -> Sortie { /* Envoi → Envoyer ; Depot → Deposer(rendu visible) */ }
+// Annoté le 2026-10-25 (revue de code P1, A-L8) : `Deposer` porte les chaînes brutes ; le rendu visible est fait par
+// `envois_mcp::deposer` (C-32-8-51).
 pub struct EnvoiAValider { resume: String, contenu: String }            // aucun accesseur
 impl EnvoiAValider {
     pub(in crate::mcp) async fn deposer(self, cle: &CleMcpAuthentifiee, ecriture: &EcritureEnvois,
@@ -1304,6 +1320,9 @@ pub async fn lire(cle: &CleMcpAuthentifiee, lecture: &LectureEnvois, numero: i64
 // services/serveur_mcp.rs — fixée ici (AC-B11) ; la 32-10a-iii l'appelle avec `None`
 pub(crate) fn entree_appel(cle: &CleMcpAuthentifiee, outil: &str, issue: IssueAppel, duree_ms: u64,
     envoi: Option<i64>) -> NewAuditLogEntry { … }  // cinq clés ; six avec "envoi"
+// Annoté le 2026-10-25 (revue de code P1, B-2 = A-L1) : `outil: &'static str`, dans `entree_appel` comme dans
+// `journaliser_appel` — le type garantit, comme `AppelOutil::outil` de la 32-6b, qu'aucun nom reçu du client n'est
+// journalisé ; `pub` + `#[doc(hidden)]`, non `pub(crate)` (C-32-8-52).
 
 // kesh-core/src/text.rs (32-8b0)
 pub fn is_hidden_format(c: char) -> bool { … }    // Cf, Co, Cn + deux listes (AC-ii1 de la 32-10a)
@@ -1441,8 +1460,8 @@ l. 497-503 (routes de la 32-5c).
    `is_hidden_in_text` : elle n'admet ni `\n` ni `\t` ; aucune seconde définition. *(Ajouté le 2026-10-25, revue de code
    P1 de la 32-8b0, A-M1 — P3-R4 (b).)*
 2. **32-10a-iii, AC-iii2 et AC-iii3 — `entree_appel` et `ErreurOutil::LimiteAtteinte` existent.** La signature est
-   celle de l'AC-B11 de la 32-8 : **`entree_appel(cle: &CleMcpAuthentifiee, outil: &str, issue: IssueAppel, duree_ms:
-   u64, envoi: Option<i64>) -> NewAuditLogEntry`** ; la proposition d'un prompt l'appelle avec **`None`** — détail à cinq
+   celle de l'AC-B11 de la 32-8 : **`entree_appel(cle: &CleMcpAuthentifiee, outil: &'static str, issue: IssueAppel,
+   duree_ms: u64, envoi: Option<i64>) -> NewAuditLogEntry`** (`&'static str` depuis la revue de code P1, B-2) ; la proposition d'un prompt l'appelle avec **`None`** — détail à cinq
    clés, comme l'AC-iii3 l'exige. **Décision de l'orchestrateur (validation P2, R5)** : `entree_appel` garde
    `cle: &CleMcpAuthentifiee`, et le service **`services::prompts_mcp::proposer` reçoit lui aussi `cle:
    &CleMcpAuthentifiee`** au lieu de `acces`, `cle_id` et `validation` (AC-iii2, point 0, de la 32-10a, amendé) — même
@@ -1450,12 +1469,19 @@ l. 497-503 (routes de la 32-5c).
    `cle.acces`, `cle.cle_id`, `cle.validation`. `LimiteAtteinte` et l'issue `limite_atteinte` sont posées ; la 32-10a-iii
    les réemploie pour son plafond. **`journaliser_appel`** a gagné le paramètre `envoi: Option<i64>` (AC-B11) : la
    32-10a-iii l'appelle, pour `prompts/get` et pour une proposition refusée, avec `None` (validation P2, F5).
+   *(Complété le 2026-10-25, revue de code P1, A-L7 et B-2.)* Ce que la 32-10a trouvera réellement : `AppelOutil` est
+   **retiré** (C-32-8-54) ; les signatures sont **`journaliser_appel(trace: &Trace, cle: &CleMcpAuthentifiee, outil:
+   &'static str, issue: IssueAppel, duree_ms: u64, envoi: Option<i64>) -> Result<(), AppError>`** et
+   **`entree_appel(cle: &CleMcpAuthentifiee, outil: &'static str, issue: IssueAppel, duree_ms: u64, envoi:
+   Option<i64>) -> NewAuditLogEntry`**, `entree_appel` étant `pub` + `#[doc(hidden)]` (C-32-8-52) ; `outil` est
+   `&'static str` dans l'une et l'autre — le nom `proposer_prompt` passé par la 32-10a-iii doit être une constante du
+   binaire, jamais le nom reçu ; le pool en lecture seule s'appelle **`pool_outils`** (C-32-8-53, point 3 ci-dessous).
 2 bis. **32-10a-ii, AC-ii3 — le pool en lecture seule est déjà lié une fois** (validation P2, F5) : la 32-8b a écrit en
    `lib.rs` `let pool_mcp = kesh_db::pool::pool_lecture_seule(…);` puis `LectureOutils::nouvelle(Lecture::new(
    pool_mcp.clone()))` et `LectureEnvois::new(pool_mcp…)` (AC-B15, point 3) ; « lié une fois puis enveloppé deux fois »
    devient « déjà lié par la 32-8b, enveloppé **une fois de plus** » par `LecturePrompts::new(pool_mcp.clone())`, et les
    entrées de `FABRIQUES_V2` que la 32-10a-ii prévoit partent de celles que la 32-8b aura réécrites.
-3. **`registre_coherent`** refuse déjà le nom réservé `kesh_lire_envoi` ; la 32-10a-iii y ajoute `proposer_prompt`. *(Complété le 2026-10-25, étape 0 de la 32-8b — P3-R4 (a), P3-R3.)* Le refus vit dans `Registre::avec` (`registre::NOMS_RESERVES`, C-32-8-61) ; ce que la 32-10a-iii fait de `proposer_prompt` relève de son AC-iii2. **L'ordre de `tools/list` après la 32-8b** est : les outils du registre ouverts par les portées de la clé, dans l'ordre du registre, **puis** `kesh_lire_envoi`, pour toute clé (`mcp/repartiteur.rs`, bras `Methode::ToolsList` : `let mut outils = etat.registre.descripteurs_pour(&portees(cle)); outils.push(descripteur_lire_envoi());`) ; la 32-10a-iii placera `proposer_prompt` après `kesh_lire_envoi`. Les corps attendus de `tools_list_filtre` (`tests/mcp_transport_e2e.rs`) partent de la liste amendée par la 32-8b : `books:read` → `[descripteur_version(), descripteur_lire_envoi()]`, `contacts:read` seule → `[descripteur_lire_envoi()]`, et le registre de test à deux outils → `livres` puis `kesh_lire_envoi` (AC-iii2, point 4, de la 32-10a). Le pool en lecture seule s'appelle `pool_outils`, non `pool_mcp` (C-32-8-53).
+3. **`registre_coherent`** refuse déjà le nom réservé `kesh_lire_envoi`, seul nom réservé de la 32-8. *(Complété le 2026-10-25, étape 0 de la 32-8b — P3-R4 (a), P3-R3 ; phrase de tête corrigée le même jour, revue de code P1, A-M2 : elle annonçait que la 32-10a-iii y ajoute `proposer_prompt`, ce que l'AC-iii2 de la 32-10a, point 5 — `registre_coherent` « inchangé » —, contredit.)* Le refus vit dans `Registre::avec` (`registre::NOMS_RESERVES`, C-32-8-61) ; ce que la 32-10a-iii fait de `proposer_prompt` relève de son AC-iii2. **L'ordre de `tools/list` après la 32-8b** est : les outils du registre ouverts par les portées de la clé, dans l'ordre du registre, **puis** `kesh_lire_envoi`, pour toute clé (`mcp/repartiteur.rs`, bras `Methode::ToolsList` : `let mut outils = etat.registre.descripteurs_pour(&portees(cle)); outils.push(descripteur_lire_envoi());`) ; la 32-10a-iii placera `proposer_prompt` après `kesh_lire_envoi`. Les corps attendus de `tools_list_filtre` (`tests/mcp_transport_e2e.rs`) partent de la liste amendée par la 32-8b : `books:read` → `[descripteur_version(), descripteur_lire_envoi()]`, `contacts:read` seule → `[descripteur_lire_envoi()]`, et le registre de test à deux outils → `livres` puis `kesh_lire_envoi` (AC-iii2, point 4, de la 32-10a). Le pool en lecture seule s'appelle `pool_outils`, non `pool_mcp` (C-32-8-53).
 4. **Les compteurs** que la 32-10a recompte (`TABLES_TO_TRUNCATE`, l'export, `admin-manual.tex:2249`, le CHANGELOG,
    `migrations_upgrade_path.rs`, `admin_pat_denied_e2e.rs`) partent des valeurs que la 32-8 aura posées.
 

@@ -408,8 +408,11 @@ async fn arguments_de_kesh_lire_envoi(pool: MySqlPool) {
     }
     assert_eq!(envois_en_base(&pool).await, 0, "aucun dépôt");
     // Aucune relecture n'est tentée : chaque appel est journalisé en
-    // `arguments_invalides`, sans `envoi`.
-    for d in appels_journalises(&pool).await {
+    // `arguments_invalides`, sans `envoi`. Le nombre d'abord, pour que la
+    // boucle ne puisse pas passer à vide (revue de code P1, A-L4 = B-5).
+    let journal = appels_journalises(&pool).await;
+    assert_eq!(journal.len(), 7, "une entrée par appel");
+    for d in journal {
         assert_eq!(
             d,
             json!({"cleMcpId": l.requise.0, "outil": "kesh_lire_envoi",

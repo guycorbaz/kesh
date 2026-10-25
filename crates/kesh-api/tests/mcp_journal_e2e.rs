@@ -615,7 +615,7 @@ async fn journal_sans_arguments_ni_donnees(pool: MySqlPool) {
 
     let es = entrees(&pool).await;
     assert_eq!(es.len(), 4);
-    for e in &es {
+    for (i, e) in es.iter().enumerate() {
         let texte = e.details.to_string();
         for piege in [PIEGE_ARG, PIEGE_NOM, PIEGE_E1] {
             assert!(!texte.contains(piege), "{piege} au détail : {texte}");
@@ -630,8 +630,10 @@ async fn journal_sans_arguments_ni_donnees(pool: MySqlPool) {
             .collect();
         cles.sort_unstable();
         // Cinq clés, ou six avec `envoi` pour un dépôt et une relecture (AC-b2
-        // de la 32-6b, amendée par l'AC-B11 de la 32-8b).
-        let attendues: &[&str] = if e.details.get("envoi").is_some() {
+        // de la 32-6b, amendée par l'AC-B11 de la 32-8b). L'attendu se fixe
+        // par l'indice, non par la donnée contrôlée : les deux premiers appels
+        // à cinq clés, le dépôt et la relecture à six (revue de code P1, A-L2).
+        let attendues: &[&str] = if i >= 2 {
             &[
                 "cleMcpId",
                 "dureeMs",

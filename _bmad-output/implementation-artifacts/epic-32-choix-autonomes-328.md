@@ -539,6 +539,9 @@ qu'ils ne heurtent pas ceux de la 32-8b0, développée en parallèle (union à l
   gardes ne voient pas* de la fiche. Le document des motifs de portée n'est **pas** amendé ici (`docs/`, sixième module)
   : demandé à la 32-8c, qui touche `docs`.
 - **Écartées** : `retry_app_on_deadlock` sur la décision (complexité pour un geste d'administration exceptionnel).
+- **Complété le 2026-10-25** (revue de code P1 de la 32-8b, E-1) : le **dépôt** (`EcritureEnvois::deposer`,
+  `services/poignees.rs`) a le même ordre — `mcp_sends` puis `audit_log` — et le même sort : pris dans l'interblocage, il
+  échoue fermé (erreur interne côté agent, rien d'écrit). La 32-8c porte les deux au document des motifs de portée.
 - **Réversible** : oui.
 
 ### C-32-8-59 — Messages et corps de la décision
