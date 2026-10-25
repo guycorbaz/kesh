@@ -1,6 +1,6 @@
 # Story 32.4b : la couche de services — rollout des lectures : factures clientes, échéancier, règlements, factures fournisseur
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-4b`, branche `story/32-4b` partie de `main`
 `592ee430` (la 32-4a fusionnée). Registre : `epic-32-choix-autonomes-324b.md` (C-32-4b-1 à C-32-4b-18). Clé courte :
@@ -930,7 +930,9 @@ Décompte : 16 + 7 + 15 + 44 + 4 + 4 + 5 + 5 = **100** (le pilote en définit 10
   warnings` (vert ; un `clippy::type_complexity` sur `SITES_NON_RESOLUS` vu et corrigé en T5), `cargo nextest` :
   `package(kesh-api) & kind(lib)` + `services_rollout` **551/551** (1 ignoré) ; `services_motif` **24/24** ;
   `invoice_echeancier_e2e` **34/34** ; lib + `services_rollout` + `services_motif` + `textes_coherents` **594/594**
-  (1 ignoré).
+  (1 ignoré). *(Annoté le 2026-10-25, revue de code P1, A1 : ces chiffres du gate ciblé ne sont étayés par aucun
+  journal conservé dans `kesh-gate-logs` ; seuls `services_motif` 24 et `invoice_echeancier_e2e` 34 se retrouvent
+  au gate complet. Ils restent ici comme relevé de l'agent, non comme preuve.)*
 - **Gate complet**, au dernier commit de code **`bb51e779`**, bases `kesh_324b` et `kesh_e2e_324b` remises à zéro
   juste avant (sans toucher au conteneur), sous `flock` : `scripts/test-fast.sh --ci` — garde des droits, `fmt`,
   `clippy`, nextest — **4027 exécutés, 4027 passés, 7 ignorés**, code 0 (`324b-gate-complet-bb51e779.log`).
@@ -1083,3 +1085,11 @@ la plage des dates des listes de factures → commentaire sur #742. Q1 et Q2 res
   aucun `get_or_create`, aucun verrou. Tests : **+11** (`592ee430` → `bb51e779`). Choix C-32-4b-19 à 24. Écart de
   méthode déclaré au Dev Agent Record (une édition de test par script). Revue de code P1 à lancer :
   `324b-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
+- **2026-10-25 — Revue de code P1 — REVUE TERMINÉE** (Sonnet ×3, lentilles B, E, A, contexte frais, lecture seule,
+  prompt `324b-review-prompt-p1.md`, rapports `kesh-gate-logs/324b-review-p1-{B,E,A}.md`) : B **0/0/0/5**, E
+  **0/0/0/1**, A **0/0/0/2** — aucun finding au-dessus de LOW dès la première passe ; déplacement fidèle au code
+  d'avant (`592ee430`) selon les trois lentilles ; dix ordres de tri recalculés, gardes (iii) et (ix) recomptées,
+  M21d équivalente confirmée. LOW non traités (B1 = E1, B2 à B5, A2) et le constat antérieur O1 (liste fournisseur
+  lue hors transaction, `kesh-db`) **tracés sur #749** ; A1 traité par annotation datée du Dev Agent Record (gate
+  ciblé non étayé par un journal). Gates au dernier commit de code `bb51e779` : complet 4027/4027 (7 ignorés), E2E
+  315 passés et les 7 KF-029. Mutations : 100, 99 tuées, M21d équivalente. Statut `done`.
