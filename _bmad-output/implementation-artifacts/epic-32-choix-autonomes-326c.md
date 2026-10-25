@@ -156,6 +156,11 @@ réversibilité.
   `fmt_layer.rs:743` (`:305-312` en est la documentation). L'alternative écartée, `.with_ansi(false)` sur la sortie
   standard, rendrait justes les `docker compose logs | grep` du manuel ; à soumettre à Guy si le fichier se révèle
   insuffisant à la mise à jour du NAS.
+- **Annoté à l'étape 0 du développement (LOW F5 de la validation P3)** : le **titre** de ce choix (« la sortie
+  standard, par un filtre de repli ») et son *Retenu* (`docker compose logs … | sed … | grep …`) décrivent l'état
+  d'avant la validation P2 ; ils restent tels quels, comme relevé daté. **Ce qui vaut** : le journal se lit dans le
+  fichier de log seulement ; **aucune** commande n'est prescrite pour la sortie standard, dont le manuel dit
+  seulement que les codes couleur y coupent les recherches sur `champ=valeur`.
 
 ### C-32-6c-12 — Une mutation de plus que les deux demandées pour le comptage, et une pour l'AC-T3 et l'AC-T5
 

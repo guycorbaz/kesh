@@ -132,7 +132,8 @@ de confiance en connaissance de cause.
     standard (`logging.rs:143-147`). ⚠️ **Le nom réel du fichier** : avec la rotation `daily` (défaut), le fichier
     s'appelle `kesh.<AAAA-MM-JJ>.log` (`tracing-appender-0.2.5/src/rolling.rs:648` :
     `format!("{}.{}.{}", filename, date, suffix)`, date `[year]-[month]-[day]`, `:564`) ; avec la rotation `never`,
-    `kesh.log` (`:643` : `format!("{}.{}", filename, suffix)`). Par défaut donc **non** `kesh.log` — que le
+    `kesh.log` (`:646` : `format!("{}.{}", filename, suffix)` ; *`:643` corrigé à l'étape 0, LOW R1 = F1 de la
+    validation P3*). Par défaut donc **non** `kesh.log` — que le
     manuel (`admin-manual.tex:957`, `sudo tail -f ./log/kesh.log`) et `.env.example:289` écrivent à tort. Défaut
     préexistant, hors du périmètre (C-32-6c-13) ; la sous-section de la 32-6c écrit le nom réel.
 
@@ -213,23 +214,28 @@ tests (a) à (s)) et dans `crates/kesh-api/src/logging.rs` (`mod tests`). Adress
      `admin-manual.tex:792`, sans la redécrire) ; pour la seule cible du filtre, **remplacer** la ligne
      `RUST_LOG=info` du `.env` de l'installation (`.env.example:253`) par `RUST_LOG=info,kesh_api::mcp::reseau=debug`,
      puis `sudo docker compose up -d` (comme `:621`) ; **vérifier l'effet** par la présence de lignes `DEBUG` de
-     décision au journal après une requête admise ; **revenir à `RUST_LOG=info` ensuite** (même geste) ; ne pas
+     décision au journal après une requête admise — **provoquée depuis un poste du réseau local**, et, si aucune ligne
+     n'apparaît, renvoi au cas (viii) (étape 0, LOW R3) ; **revenir à `RUST_LOG=info` ensuite** (même geste) ; ne pas
      employer `RUST_LOG=debug` tout court (tout Kesh passe en `debug`) (validation P2, F1, R4, F7) ;
    - **lire dans le fichier de log**, sans couleurs (fait 13) — une seule commande, juste dans la configuration par
      défaut : `sudo grep "filtre d'adresse" ./log/kesh.*.log`, dans le dossier de l'installation (rotation
      quotidienne : `kesh.<AAAA-MM-JJ>.log`) ; **ses limites, en une phrase** : avec la rotation `never` le fichier
-     s'appelle `kesh.log`, avec `KESH_LOG_HOST_DIR` il est dans ce dossier-là, et le motif est développé par le shell
+     s'appelle `kesh.log`, avec `KESH_LOG_HOST_DIR` il est dans ce dossier-là — **sous `docker-compose.yml` seulement**,
+     le compose du Synology montant `./log` en dur (`docker-compose.prod.yml:161`, `:165` ; `.env.example:262-263` ;
+     étape 0, LOW R2) —, avec `KESH_LOG_FILE_PATH` vide le journal fichier est désactivé (`admin-manual.tex:793` ;
+     étape 0, LOW F2), et le motif est développé par le shell
      de l'utilisateur avant `sudo`, si bien que le dossier doit lui être lisible (validation P2, F8, R5, R3). Format
      `pretty` par défaut (avec `KESH_LOG_FILE_FORMAT=json`, une ligne JSON par évènement, mêmes champs). **Aucune
      commande n'est prescrite pour la sortie standard** (`docker compose logs`), dont les codes couleur coupent les
      `grep` sur `champ=valeur` (fait 13) : le repli de la validation P1, éprouvé sur aucun NAS, est retiré
      (validation P2, F8, R3 ; C-32-6c-11 annoté) ;
    - **une ligne d'exemple copiée d'une sortie réelle** du binaire, **prise du fichier de log** (fait 9, fait 13),
-     adresses de documentation ;
+     adresses de documentation **ou de bouclage** (étape 0, LOW F3 : la sortie réelle part de `127.0.0.1`) ;
    - chaque champ en une ligne, et ce qu'il permet de trancher : un tableau de lecture au moins pour ces cas —
      (i) `pair` = une adresse de passerelle Docker, `pair_mandataire=false`, `xff_lignes=0` : le proxy ne pose pas
      `X-Forwarded-For`, Kesh voit tous les clients sous l'adresse du proxy, le filtre ne distingue personne — c'est le
-     cas de la publication de port par le mandataire en espace utilisateur de Docker (la passerelle) (Guy,
+     cas de la publication de port par le mandataire en espace utilisateur de Docker (la passerelle) — qui explique le
+     **`pair`**, non l'absence d'en-tête, laquelle vient du proxy (étape 0, LOW F4) (Guy,
      2026-10-25 : le filtre ne filtre rien et « le manuel le dit » ; la sécurité relève de l'infrastructure) ;
      (ii) `pair_mandataire=false`, `xff_lignes` ≥ 1 : l'en-tête est posé mais ignoré, le filtre ne distingue pas
      davantage — par exemple un Traefik non déclaré, qui pose l'en-tête (`pair` = l'adresse de son conteneur), **non
