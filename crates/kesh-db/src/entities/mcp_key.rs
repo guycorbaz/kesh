@@ -12,10 +12,13 @@
 //! masquer `key_hash`. Seul le condensat SHA-256 hex du jeton est persisté ; le
 //! secret n'existe qu'en mémoire, à la création.
 //!
-//! **Portées en base** : la colonne `scopes` est un tableau JSON trié, sans
-//! doublon, non vide (`CHECK` de la migration `20261025000001`). Le décodage
-//! est **strict** : une chaîne inconnue est une erreur, jamais ignorée — une
-//! portée qu'on ignorerait en silence serait un droit qu'on croit retiré.
+//! **Portées en base** : la colonne `scopes` est un tableau JSON non vide
+//! (`CHECK` de la migration `20261025000001`), écrit sans doublon dans l'ordre
+//! de [`McpScope::ALL`]. L'**entrée** d'une API se lit strictement
+//! ([`McpScopes::parse`], [`McpScopes::from_json`] : une chaîne inconnue est une
+//! erreur, jamais ignorée). La **lecture** d'une ligne stockée est tolérante
+//! ([`StoredMcpScopes`], C-32-5-37) : une portée que cette version ne connaît
+//! pas est mise de côté et journalisée, jamais accordée.
 
 use std::collections::BTreeSet;
 
