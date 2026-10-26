@@ -167,3 +167,10 @@ pub mod capture_rejeu;
 
 /// La `Lecture` de test en lecture seule (Story 32-4a, C-32-4a-9).
 pub mod lecture_seule;
+
+/// La capture générique de `tracing`, tous niveaux et toutes cibles (Story
+/// 32-6a, AC-a14).
+pub mod capture_trace;
+
+/// Le montage et les outils de test du serveur MCP (Story 32-6a).
+pub mod mcp;

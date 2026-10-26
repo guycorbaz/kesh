@@ -20,6 +20,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   une sauvegarde complète** : les sauvegardes précédentes, automatiques comprises, ne s'y importent plus. Pour la même
   raison, l'import ne rejoue plus aucune reprise de données d'une version antérieure (le lettrage des pièces de la
   0.13 était la dernière) : le manuel d'administration le dit, § *Reprises de données rejouées à l'import*.
+- **La description d'un compte bancaire refuse aussi les caractères invisibles qu'elle laissait passer** (marques de
+  format de certaines écritures, sélecteurs de variante), les caractères d'usage privé — tel le logo Apple collé depuis
+  un Mac — et les caractères non attribués, dont un emoji plus récent qu'Unicode 17.0 ; les emojis qui portent un
+  sélecteur de variante (U+FE0E, U+FE0F) ou un liant invisible (U+200D), tel `⚠️`, l'étaient déjà ; les autres, drapeaux
+  de pays et teints compris, restent admis (un drapeau de subdivision, tel celui de l'Écosse, porte des balises
+  invisibles et est refusé). Une description déjà enregistrée n'est pas modifiée ; si elle porte un de ces
+  caractères, le prochain enregistrement du compte par sa modification — même pour en changer un autre champ — demande
+  de la corriger.
 
 ### Corrigé
 

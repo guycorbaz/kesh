@@ -13,3 +13,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 unicode-normalization = "0.1"
+# Story 32-8b0 — catégorie générale Unicode du prédicat `text::is_hidden_format`.
+# Aucune crate de plus au graphe : la même version y est déjà par `stringprep`.
+unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }
