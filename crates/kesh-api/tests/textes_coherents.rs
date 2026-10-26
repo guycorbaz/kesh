@@ -1052,14 +1052,24 @@ const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
         "docs/manual/fr/marketing-brochure.tex",
         "(La bascule entre sociétés depuis l'interface reste à venir.)",
     ),
+    // Story 32-6c (§ « Diagnostiquer le filtre d'adresse du serveur MCP ») :
+    // ce que le journal écrit pour une installation qui porte plus d'une
+    // société — le cas existe (réglages MCP par société, installations
+    // touchées par #528/#542), la phrase décrit le journal et ne promet pas
+    // qu'on puisse en créer une seconde.
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "Avec plusieurs sociétés activées, chaque requête écrit",
+    ),
 ];
 
 /// Nombre **exact** d'occurrences de [`MULTI_SOCIETE`] dans la documentation
 /// utilisateur, toutes assumées (recompté le 2026-10-09 en revue de code P1 :
 /// 7 de la forme d'origine + 9 du motif élargi ; + 1 le 2026-10-13, Story 28-3 :
-/// le nom de table du remède de moteur). Un motif qui cesserait de voir
+/// le nom de table du remède de moteur ; + 1 le 2026-10-26, Story 32-6c : le
+/// journal du filtre d'adresse). Un motif qui cesserait de voir
 /// un site rougit (A-9, B10 : `>=` laissait passer une occurrence perdue).
-const MULTI_SOCIETE_TOTAL: usize = 17;
+const MULTI_SOCIETE_TOTAL: usize = 18;
 
 /// **G18** (#127) — une installation porte une société : la documentation
 /// utilisateur ne promet pas le contraire. Chaque occurrence de

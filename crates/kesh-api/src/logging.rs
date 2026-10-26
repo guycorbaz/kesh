@@ -224,22 +224,27 @@ mod tests {
             }
         }
 
+        // La cible des évènements de `mcp/reseau.rs`, en une seule ligne : la
+        // garde `un_seul_point_d_entree` (`tests/mcp_gardes_lexicales.rs`)
+        // l'inscrit à sa liste fermée.
+        const CIBLE_FILTRE_MCP: &str = "kesh_api::mcp::reseau";
+
         let vus = Arc::new(Mutex::new(Vec::new()));
         let abonne = tracing_subscriber::registry()
-            .with(build_log_filter("info,kesh_api::mcp::reseau=debug"))
+            .with(build_log_filter(&format!("info,{CIBLE_FILTRE_MCP}=debug")))
             .with(Couche(vus.clone()));
         tracing::subscriber::with_default(abonne, || {
-            tracing::debug!(target: "kesh_api::mcp::reseau", "passe");
+            tracing::debug!(target: CIBLE_FILTRE_MCP, "passe");
             tracing::debug!(target: "kesh_api::routes", "bloqué");
             tracing::info!(target: "sqlx::query", "bloqué");
-            tracing::warn!(target: "kesh_api::mcp::reseau", "passe");
+            tracing::warn!(target: CIBLE_FILTRE_MCP, "passe");
             tracing::info!(target: "kesh_api", "passe");
         });
         assert_eq!(
             *vus.lock().unwrap(),
             vec![
-                "DEBUG kesh_api::mcp::reseau".to_string(),
-                "WARN kesh_api::mcp::reseau".to_string(),
+                format!("DEBUG {CIBLE_FILTRE_MCP}"),
+                format!("WARN {CIBLE_FILTRE_MCP}"),
                 "INFO kesh_api".to_string(),
             ]
         );

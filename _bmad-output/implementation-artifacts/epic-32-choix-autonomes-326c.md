@@ -183,3 +183,22 @@ réversibilité.
 - **Écartées** : corriger `:957` et `.env.example` dans la story (un fichier de configuration de plus, hors du but
   diagnostique ; la correction mérite sa propre vérification au NAS).
 - **Réversible** : oui.
+
+### C-32-6c-14 — Deux gardes de texte inscrivent les sites neufs, au lieu d'être contournées (développement)
+
+- **Contexte** : le premier gate complet (`326c-gate-complet.log`, 4237 tests, 2 échecs) rougit sur deux gardes que la
+  fiche n'avait pas prévues. (a) `mcp_gardes_lexicales::un_seul_point_d_entree` (motif `\bkesh_api\s*::\s*mcp\b`, liste
+  fermée `LIB_NOMME_MCP`) voit les cinq chaînes `"kesh_api::mcp::reseau"` du test AC-T6 de `logging.rs` ; (b)
+  `textes_coherents::une_installation_une_societe` (G18, motif `plusieurs (?:sociétés|companies)`, total 17) voit
+  « Avec plusieurs sociétés activées » dans la sous-section du manuel (l'AC-9 prescrit ce cas).
+- **Retenu** : (a) le test AC-T6 nomme la cible par **une** constante, `CIBLE_FILTRE_MCP`, inscrite à `LIB_NOMME_MCP`
+  avec sa justification (un nom de cible `tracing`, non un chemin de module), doc-comment de la liste complété ; (b) un
+  fragment assumé de plus à `MULTI_SOCIETE_ASSUME`, justifié (la phrase décrit le journal d'une installation qui porte
+  plus d'une société, cas réel des réglages MCP et de #528/#542 ; elle ne promet pas d'en créer), `MULTI_SOCIETE_TOTAL`
+  17 → 18, commentaire daté.
+- **Écartées** : reformuler pour échapper aux motifs (`plus d'une société`, `concat!` de la cible) — c'est contourner
+  une garde, qui ne verrait plus le site ; déplacer AC-T6 hors de `logging.rs` (`build_log_filter` est privé).
+- **Coût** : `mcp_gardes_lexicales.rs` et `textes_coherents.rs` changent — le premier est un `tests/mcp_*` (module
+  `mcp`), le second une garde transverse de la documentation, rattachée au manuel ; aucun module neuf au sens de la
+  règle de découpage. La 32-8b, en parallèle, peut toucher `LIB_NOMME_MCP` : fusion à surveiller.
+- **Réversible** : oui.
