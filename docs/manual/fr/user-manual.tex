@@ -3028,7 +3028,8 @@ couvrent l'ensemble de votre comptabilité~:
 (les numéros attribués figurent déjà sur les pièces), les \textbf{clés d'API, les clés du
 serveur MCP et les jetons de session} (ce sont des secrets~: les exporter dans un fichier destiné
 à être transmis serait une fuite), les \textbf{réglages du serveur MCP} (sans valeur comptable),
-le \textbf{registre des utilisateurs} (sans perte~: chaque entrée du journal d'audit
+les \textbf{envois du serveur MCP} (des copies transitoires de données des livres, demandées par un
+agent, sans valeur comptable), le \textbf{registre des utilisateurs} (sans perte~: chaque entrée du journal d'audit
 porte le nom de son auteur \emph{au moment de l'écriture}), les \textbf{gabarits d'e-mail} et
 l'\textbf{état d'installation} (configuration, non comptabilité).
 
@@ -3150,7 +3151,10 @@ transactions à rapprocher) est prévu mais pas encore disponible.
           jour UTC \emph{précédent}~: si elle manque, élargissez la période d'un jour. Une date de
           début postérieure à la date de fin est refusée par l'écran.
     \item \textbf{Le tableau}~: la date, l'auteur (tel qu'il s'appelait au moment de l'opération,
-          et «~clé API~» si elle a été faite par une clé), l'action et le type d'entité
+          et «~clé API~» si elle a été faite par une clé d'API~; un appel du \textbf{serveur MCP}
+          paraît, lui, \textbf{au nom du créateur de la clé du serveur MCP}, \textbf{sans} cette
+          marque --- c'est l'action «~Outil du serveur MCP appelé~» et le numéro de la clé, au
+          détail, qui le distinguent), l'action et le type d'entité
           \textbf{traduits}, le numéro de la pièce --- «~---~» quand l'opération ne vise pas une pièce
           précise --- et un bouton qui déplie le \textbf{détail} enregistré.
     \item \textbf{Une action ancienne}, écrite par une version antérieure et absente de la liste

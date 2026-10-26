@@ -1049,12 +1049,12 @@ D4 bis, de la famille de D3 et D4 *(ajouté le 2026-10-25, revue de code P1 de l
 - [x] **T-B5** — mutations MB1 à MB31 (MB9 retirée), gates ; Dev Agent Record.
 
 ### 32-8c
-- [ ] **T-C0** — étape 0 : 32-8b fusionnée ; l'état de la 32-7 (section du manuel, écran `/admin/mcp`) ; les routes de
+- [x] **T-C0** — étape 0 : 32-8b fusionnée ; l'état de la 32-7 (section du manuel, écran `/admin/mcp`) ; les routes de
   la 32-5c employées par l'E2E.
-- [ ] **T-C1** — feature `mcp-sends` (API, types, composants, tests Vitest), pages, navigation, i18n (AC-C1 à AC-C6,
+- [x] **T-C1** — feature `mcp-sends` (API, types, composants, tests Vitest), pages, navigation, i18n (AC-C1 à AC-C6,
   AC-C8).
-- [ ] **T-C2** — E2E (AC-C7) ; recette visuelle (AC-C9).
-- [ ] **T-C3** — manuels d'administration et utilisateur, PDF, CHANGELOG (AC-C10, AC-C11) ; mutations MC1 à MC6, gates ;
+- [x] **T-C2** — E2E (AC-C7) ; recette visuelle (AC-C9).
+- [x] **T-C3** — manuels d'administration et utilisateur, PDF, CHANGELOG (AC-C10, AC-C11) ; mutations MC1 à MC6, gates ;
   Dev Agent Record.
 
 ## Tests et mutations prévus
@@ -1676,6 +1676,7 @@ la partie qui la fait est entre crochets.
 - **32-8a** : Opus 5.5 (`claude-opus-5-5`), en autonomie, worktree `kesh-32-8a`, branche `story/32-8a`.
 - **32-8b0** : Opus 5.5 (Claude Code), en autonomie, le 2026-10-25.
 - **32-8b** : Opus 5.5 (`claude-opus-5-5`), en autonomie, le 2026-10-25, worktree `kesh-32-8a`, branche `story/32-8b`.
+- **32-8c** : Opus 5.5 (`claude-opus-5-5`), en autonomie, le 2026-10-26, worktree `kesh-32-8a`, branche `story/32-8c`.
 
 ### Statut des parties
 
@@ -1684,7 +1685,8 @@ la partie qui la fait est entre crochets.
   `32-8b0-review-prompt-p1.md` (Opus, lentilles B, E, A) ; remédiée en `6bfd9872` ; revue P2 ciblée :
   `32-8b0-review-prompt-p2.md` (Sonnet, regression hunter).
 - **32-8b** — **`review`** (2026-10-25) : développement terminé ; revue P1 : `32-8b-review-prompt-p1.md` (Opus, lentilles B, E, A).
-- **32-8c** — `ready-for-dev`, après la 32-8b.
+- **32-8c** — **`review`** (2026-10-26) : développement terminé ; revue P1 : `32-8c-review-prompt-p1.md` (Opus,
+  lentilles B, E, A).
 
 ### Completion Notes List
 
@@ -1930,6 +1932,66 @@ décomptes : `origin/main...HEAD`.
   existante**, créée dans la transaction du dépôt (clé étrangère valide) → `cle_requise_deposee` panique à l'assertion
   « point 4 de #765 » (`left: (3, 1, …)`, `right: (2, 1, …)`).
 
+**32-8c (2026-10-26).** Branche `story/32-8c`, partie de `origin/main` à `89b9819b` (32-8b fusionnée). Commit de code
+**`3ae60eb3`** (le seul, donc le dernier commit de code) ; périmètre des décomptes : `origin/main...HEAD`.
+
+- **Étape 0 (T-C0)** : au Change Log, lignes lues citées. En bref : routes à `lib.rs:372-381` (liste, détail,
+  décision) ; contrat de la décision `DecisionRequest` (`routes/mcp_envois.rs:122-127`, `#[serde(default)] pub content:
+  Option<String>` — absent **ou nul** = « tel quel », #768 point 4) ; `MCP_ENVOI_OCTETS_MAX: usize = 24_576`
+  (`services/envois_mcp.rs:55`) ; six messages `mcp-send-*` (`fr-CH/messages.ftl:1764-1769`). La 32-7 **n'a pas
+  fusionné** (`git log origin/main | grep -c 32-7` → 0 ; worktree `kesh-32-7` à `7e38f92d`, validation seulement) : ni
+  écran `/admin/mcp`, ni section *Le serveur MCP* ; la 32-8c ne dépend d'aucun des deux (C-32-8-70). Routes de la 32-5c
+  employées par l'E2E : `GET`/`PUT /api/v1/admin/mcp/settings` (`lib.rs:362`), `POST /api/v1/admin/mcp/keys`
+  (`lib.rs:350`).
+- **Livré** (T-C1 à T-C3) : `features/mcp-sends/` (neuf) — `mcp-sends.types.ts`, `mcp-sends.api.ts` (les trois
+  fabriques de corps), `mcp-sends-format.ts` (octets UTF-8, dates locales, badge, erreurs), `McpSendsList.svelte`,
+  `McpSendDetail.svelte` ; pages `routes/(app)/admin/mcp/sends/{+page.svelte, [id]/+page.svelte}` ; entrée `adminOnly`
+  `nav-admin-mcp-sends` ; 48 clés `mcp-sends-*` + `nav-admin-mcp-sends` dans les quatre catalogues ;
+  `i18n-keys.test.ts` (`sitesTotal` 2334 → 2393, `FAMILLES_RESOLUES['nav-']` + `admin-mcp-sends`) ; E2E
+  `tests/e2e/mcp-sends.spec.ts` (deux tests) ; manuel d'administration (section `sec:mcp-envois`, `:1414`, `:2230`,
+  `:2237`, `:2249`) et manuel utilisateur (l'export global, l'auteur d'un appel MCP au journal), **les deux PDF**
+  régénérés (la brochure, régénérée par `make fr`, est **restaurée** : source inchangée) ; `CHANGELOG.md` (`### Ajouté`,
+  phrase des tables à `:16-17`) ; `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (deux lignes au tableau des verrous, une note
+  sur le cycle avec la remise à zéro, C-32-8-58).
+- **Points de l'orchestrateur** : (1) compteur « N octets sur 24 576 » en octets UTF-8, message de dépassement égal à
+  celui du serveur dans chaque langue, constante liée à la source Rust, aide écrite (C-32-8-72) ; (2) corps figés au
+  caractère près (`tel_quel_n_envoie_pas_de_contenu` : `'{"version":3,"decision":"approve"}'` ; version modifiée vide :
+  `"content":""`, jamais `null`) ; (3) sélecteurs de variante : aide à l'écran et au manuel (C-32-8-73) ; (4) garde
+  réelle des replis pour le préfixe, dans le dossier de l'écran, #758 cité pour le reste (C-32-8-71) ; (5) ordre des
+  verrous au document (C-32-8-58) ; (6) manuels et PDF ; (7) CHANGELOG à `:16-17` ; (8) captures.
+- **Tests** (périmètre `origin/main...HEAD`) : **37 tests Vitest neufs** (`McpSendDetail.test.ts` 18,
+  `mcp-sends.api.test.ts` 6, `mcp-sends-i18n.test.ts` 9, `McpSendsList.test.ts` 4 ; recompte `grep -cE "^\s*it\("`) —
+  la suite passe de **1939 à 1976** tests, de 163 à 167 fichiers ; **2 tests E2E** neufs. Aucun test Rust ajouté :
+  le backend n'a changé que par ses catalogues.
+- **Mutations MC1 à MC6 : 6 jouées, 6 tuées par le test visé** (script `scratchpad/328c/mutations-328c.py`, motif
+  vérifié unique, une à la fois ; journaux `kesh-gate-logs/328c-mutations.log`, `328c-mutations-resultats.json`). Les
+  fichiers mutés étant **neufs**, la restauration se fait par copie de la sauvegarde + `touch`, contrôlée par `cmp`
+  (identique pour les six) puis `git diff --stat` vide. MC1 (`valeur.trim()`) → `envoie_la_valeur_exacte` ; MC2
+  (`corpsTelQuel` avec `content: ''`) → `tel_quel_n_envoie_pas_de_contenu` (les deux, API et composant) ; MC3
+  (`{@html detail.summary}` — le contenu n'étant qu'une **valeur** de `textarea`, le résumé est le seul site où la
+  mutation est réalisable) → `ecran_sans_html_brut` ; MC4 (*Refuser* appelle la confirmation directement) →
+  `refus_apres_confirmation` ; MC5 (`trimStart()` sur la valeur reçue) → `la_valeur_affichee_est_la_valeur_recue` ;
+  MC6 (branche 409 neutralisée) → les deux tests 409. **Non jouée** : la seconde cible de MC1 (E2E (1)).
+- **Recette visuelle** (AC-C9) : dix captures, thème clair, base de démonstration (`with-data`), dans
+  `/home/gcorbaz/devel/kesh-gate-logs/328c-captures/` (`01-liste-vide` … `10-entree-de-navigation`) ; la (6) s'appuie
+  sur un envoi piégé inséré en SQL (C-32-8-76). Constat hors périmètre : sur les pages courtes, la barre latérale
+  déborde sous le pied de page (visible aux captures 02 et 10) — mise en page de l'application, préexistante.
+- **Gates, au dernier commit de code `3ae60eb3`** : bases `kesh_328c` et `kesh_e2e_328c` supprimées et recréées (une
+  commande chacune), migrées (dernière `20261025000002`), seedées (`scripts/seed-dev-db.sql`) ;
+  **`scripts/test-fast.sh --ci`** sous flock, `DATABASE_URL` sur `kesh_328c` : fmt, clippy `-D warnings`, nextest
+  **4270 exécutés, 4270 passés, 7 ignorés** (`328c-gate-complet.log`, `exit=0`) ; **frontend** sous flock :
+  `npm run check` 0 erreur (29 avertissements, préexistants), `lint-i18n-ownership` PASS, `test:unit` **167 fichiers,
+  1976 tests**, `build` vert (`328c-gate-frontend-final.log`, `exit=0`) ; **E2E complet** sous flock, port 3332, base
+  `kesh_e2e_328c`, dossiers neufs `/tmp/kesh-e2e-328c-final/{inbox,documents,backup}` passés au backend **et** au
+  runner : **317 passés, 7 échoués, 17 sautés** sur 341 (12,9 min ; `328c-e2e.log`) — les sept échecs sont **exactement**
+  ceux de la KF-029 (`docs/testing.md` : `mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ;
+  `onboarding.spec.ts:57`, `:77`, `:150`), aucun autre à rejouer ; les deux tests de `mcp-sends.spec.ts` verts.
+  Backend arrêté par son PID (1160858, `KESH_PORT=3332` relu dans `/proc`).
+  Manuels : `make fr` sous flock (`328c-make-fr.log`, trois PDF stables, aucun caractère manquant) ; contrôle aplati au
+  Change Log.
+- **Interdits respectés** : aucun push, aucun `gh` qui écrit, aucun tag, aucun `prepare-release`, aucun redémarrage du
+  conteneur ni `GRANT` ; backends arrêtés par leur PID ; code édité par les outils Write (fichiers neufs) et Edit.
+
 ### File List
 
 **32-8b0** : `crates/kesh-core/Cargo.toml` ; `crates/kesh-core/src/text.rs` ; `Cargo.lock` ;
@@ -1940,6 +2002,15 @@ décomptes : `origin/main...HEAD`.
 `_bmad-output/implementation-artifacts/32-8b0-review-prompt-p2.md` (neuf, revue de code P1).
 
 **32-8b** : `crates/kesh-api/src/mcp/{politique,repartiteur,reponse,textes,outil,registre,mod}.rs` ; `crates/kesh-api/src/services/{envois_mcp.rs (neuf), poignees.rs, serveur_mcp.rs, mod.rs}` ; `crates/kesh-api/src/routes/{mcp_envois.rs (neuf), mod.rs}` ; `crates/kesh-api/src/lib.rs` ; `crates/kesh-api/src/audit_labels.rs` ; `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ; `crates/kesh-api/tests/{mcp_envois_e2e.rs (neuf), mcp_transport_e2e.rs, mcp_journal_e2e.rs, mcp_gardes_lexicales.rs, common/mcp.rs, services_motif.rs, admin_pat_denied_e2e.rs, audit_route_registry.rs}` ; la présente fiche ; `epic-32-choix-autonomes-328.md` (C-32-8-50 à 61) ; `sprint-status.yaml` ; `32-8b-review-prompt-p1.md` (neuf).
+
+**32-8c** : `frontend/src/lib/features/mcp-sends/{mcp-sends.types.ts, mcp-sends.api.ts, mcp-sends-format.ts,
+McpSendsList.svelte, McpSendDetail.svelte, mcp-sends.api.test.ts, McpSendsList.test.ts, McpSendDetail.test.ts,
+mcp-sends-i18n.test.ts}` (neufs) ; `frontend/src/routes/(app)/admin/mcp/sends/{+page.svelte, [id]/+page.svelte}`
+(neufs) ; `frontend/src/routes/(app)/+layout.svelte` ; `frontend/src/lib/shared/i18n-keys.test.ts` ;
+`frontend/tests/e2e/mcp-sends.spec.ts` (neuf) ; `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ;
+`docs/manual/fr/{admin-manual,user-manual}.{tex,pdf}` ; `CHANGELOG.md` ; `docs/MULTI-TENANT-SCOPING-PATTERNS.md` ; la
+présente fiche ; `epic-32-choix-autonomes-328.md` (C-32-8-70 à 77) ; `sprint-status.yaml` ;
+`32-8c-review-prompt-p1.md` (neuf).
 
 ## Change Log
 
@@ -1959,3 +2030,6 @@ décomptes : `origin/main...HEAD`.
 | 2026-10-25 | **32-8b — développement (T-B1 à T-B5) — DÉVELOPPEMENT TERMINÉ** | Opus 5.5, en autonomie. Commits de code `6426c830`, `e84d9bc5`. Politique à deux sorties, dépôt et entrée d'appel en une transaction, `kesh_lire_envoi` hors registre, trois routes de décision dans `admin_routes`, audit et libellés, borne 24 576 octets ; amendements de la 32-6 selon l'AC-B15. **37 tests neufs** (`origin/main...HEAD`). **Mutations : 35 jouées (MB1 à MB31 sans MB9, MF5, M765-1a, -1b, -3, -4), 35 tuées par l'assertion visée**, diff résiduel nul ; première campagne tuée par `systemd-oomd` et analyseur corrigé, quatre rejouées (détail au Dev Agent Record) ; un défaut réel révélé et corrigé (`e84d9bc5`). **Gates au dernier commit de code** : bases remises à zéro ; `test-fast.sh --ci` **4268/4268** (7 ignorés) ; frontend `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` 1939/1939, `build` vert ; **E2E 315 passés, 7 échecs = KF-029**, 17 sautés. Choix **C-32-8-50 à C-32-8-61**. `sprint-status.yaml` : `32-8b-poignee-serveur` → `review`. Prompt de revue P1 : `32-8b-review-prompt-p1.md` (Opus, B, E, A). *(Annoté le 2026-10-26, revue de code P1, A-M1 : « tuées par l'assertion visée » est à lire « tuées par le **test** visé » — le script ne comparait que des noms de test ; M765-4 et MB6 rejouées à la remédiation, voir l'entrée suivante.)* |
 | 2026-10-26 | **32-8b — revue de code P1** | **Opus ×3** (lentilles B, E, A, contexte frais, prompt `32-8b-review-prompt-p1.md` ; rapports `kesh-gate-logs/328b-review-p1-{B,E,A}.md`) : B 0/0/2/6, E 0/0/0/9, A 0/0/2/9 ⇒ **trend P1 : 0 CRITICAL / 0 HIGH / 4 MEDIUM / 24 LOW** (doublons B-2 = A-L1, B-5 = A-L4, B-8 = E-3 = A-L5, B-6 = E-5, comptés une fois par lentille). Remédiation par Opus 5.5, en autonomie ; **prémisse de chaque finding relue au code**. **MEDIUM remédiés** : **B-1** → test `textes_envoi_epingles_par_un_litteral` (`mcp/textes.rs`) : les six `texte_envoi_*` (sept appels, `valide` modifié ou non) épinglés par un littéral écrit en toutes lettres ; **B-2 = A-L1** → `outil: &'static str` dans `entree_appel` et `journaliser_appel` (fiche annotée aux *Signatures*, à l'AC-B11 et à la *Note pour la 32-10a*) ; **A-M1** → record et entrée du développement rectifiés (« tuées par le **test** visé ») ; M765-4 rejouée sous une **seconde société existante**, MB6 déclarée et rejouée (MB6-bis) ; **A-M2** → « y ajoutera `proposer_prompt` » retiré de l'AC-B6 et de la tête du point 3 de la *Note pour la 32-10a*, qui ne se contredit plus. **LOW remédiés** : A-L2 (attendu par indice), A-L3 (les deux accusés comparés entiers au numéro lu en base, le troisième à `MAX(id)`), A-L4 = B-5 (`len() == 7`), A-L5 = B-8 = E-3 (inventaire : **D4 bis** — refus au plafond, angle mort, aussi au § *Ce que les gardes ne voient pas* ; **D4 ter** — échec interne et journal en échec ; **D4 quater** — refus constants du répartiteur), A-L6 (JSON inexistant retiré), A-L7 (point 2 de la *Note* : `AppelOutil` retiré, signatures réelles, `pool_outils`), A-L8 (annotations à l'AC-B1, l'AC-B3, l'AC-B5, l'AC-B15 point 10 et aux *Signatures*), A-L9 (purge en échec journalisée par l'id de société seul), B-3 (`i + 3` ; rouge neuf), B-4 (trois angles morts écrits : commentaires imbriqués, macros à `{}`/`[]`, préfixes `c"…"`/`cr"…"`), B-7 (test `message_de_taille_lie_a_la_constante` : repli et quatre catalogues liés à `MCP_ENVOI_OCTETS_MAX`), E-1 (le dépôt a le même ordre de verrous que la décision : angle mort et C-32-8-58 complétés). **Réfuté en partie** : l'exemple de B-3, `warn!(a = ('\'', ')'), contenu)`, ne rougit **pas** avec l'ancienne forme (l'espace après la virgule empêche le faux littéral) ; le défaut est réel sans l'espace — le rouge retenu est `warn!(a = ('\'',')'), contenu)`, vérifié par MP1-5. **LOW non traités, à verser à une issue** (demandée à l'orchestrateur) : B-6 = E-5 (500 après la validation de la décision), E-2 (commentaire « d'une unité » de `kesh-db`), E-4 (`COMMIT` ambigu du dépôt), E-6 (`"content": null` vaut « tel quel », contrat à préciser par la 32-8c), E-7 (sélecteurs de variante refusés, à expliquer par la 32-8c), E-8 (point de mesure de la durée d'un dépôt réussi), E-9 (purge en échec non éprouvée). **Commit de code** `8b7de9fb` (dernier commit de code). **Tests** : 2 neufs, 4 renforcés (`8b7de9fb^..8b7de9fb`). **Mutations** (`scratchpad/328b/mutations-328b-p1.py`, arbre commité, une à la fois, `git checkout -- f` + `touch`, diff résiduel nul après chacune ; journaux `328b-p1-mutation-<id>.log`, `328b-p1-mutations.log`, analyse `328b-p1-mutations-analyse.log`) : **7 jouées — 6 tuées par l'assertion visée** (MP1-1 `textes.rs:234` ; M765-4-bis `mcp_transport_e2e.rs:1413`, message « point 4 de #765 » ; MB6-bis `mcp_envois_e2e.rs:215` ; MP1-5 `mcp_gardes_lexicales.rs:1345`, « rouge : … » ; MP1-6 `routes/mcp_envois.rs:348`, ligne du catalogue fr-CH ; MP1-7 `mcp_envois_e2e.rs:414`, « une entrée par appel ») **et 1 non compilable comme attendu** (MP1-2 : un nom reçu du client passé à `journaliser_appel` → `E0597`, `nom_client` does not live long enough). ⚠️ Le verdict automatique du script (« autre assertion ») était faux : son analyseur cherchait des en-têtes `--- STDERR` que cette version de nextest n'écrit pas ; l'assertion a été relevée dans la panique du test visé (`thread '<test>' panicked at …`), copiée à `328b-p1-mutations-analyse.log`. **Gates au dernier commit de code** : bases `kesh_328b` et `kesh_e2e_328b` supprimées et recréées, migrations du worktree (dernière `20261025000002`), seed, en commandes séparées ; `scripts/test-fast.sh --ci` sous flock : garde des droits conforme, fmt, clippy, nextest **4270 exécutés, 4270 passés, 7 ignorés** (4268 + 2, `328b-p1-gate-complet.log`) ; frontend sous flock **et** mem-guard : `check` 0 erreur (29 avertissements), `lint-i18n-ownership` PASS, `test:unit` **1939/1939** (163 fichiers), `build` vert (`328b-p1-gate-frontend.log`) ; **E2E complet** sous flock, port 3330, dossiers neufs `/tmp/kesh-e2e-328b-p1/`, INBOX et DOCUMENTS passés au backend et au runner : **315 passés, 7 échecs = KF-029 exactement** (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`), 17 sautés (`328b-p1-e2e.log`) ; backend arrêté par son PID, port libre. **Pour la 32-10a** (à reporter par l'orchestrateur) : son AC-iii2, point 5 (`registre_coherent` « inchangé ») est désormais cohérent avec la 32-8 ; la 32-10a-iii appelle `journaliser_appel`/`entree_appel` avec un `outil: &'static str`. **1 passe sur 8.** Prompt de la passe suivante : `32-8b-review-prompt-p2.md` (passe **ciblée**, une lentille, regression hunter, **Sonnet**, sur le seul commit `8b7de9fb`). |
 | 2026-10-26 | **Revue de code P2 (32-8b) — REVUE TERMINÉE** | **Sonnet**, passe ciblée *regression hunter* sur `8b7de9fb` (prompt `32-8b-review-prompt-p2.md` ; rapport `kesh-gate-logs/328b-review-p2.md`) : **0/0/0/3**. **Trend** : P1 (Opus ×3, B, E, A) 0/0/4/24 → **P2 (Sonnet, ciblée) 0/0/0/3**. **Clôture** sur une passe sans finding au-dessus de LOW, **2 passes sur 8**. LOW non remédiés (L-1 mutations des renforcements A-L2/A-L3, L-2 C-32-8-52 non annoté, L-3 relevé réécrit en place) et LOW non traités de la P1 : tracés dans **#768**. Point 2 de #765 (jointures de `kesh-db`) laissé à une story qui touche `kesh-db`. Dernier commit de code `8b7de9fb` : gate complet 4270/4270, frontend 1939/1939, E2E 315 + 7 KF-029. *(Écrit par l'orchestrateur.)* |
+| 2026-10-26 | **32-8c — étape 0 (T-C0)** | Opus 5.5, en autonomie, worktree `kesh-32-8a`, branche `story/32-8c` partie de `origin/main` à `89b9819b` (32-8b fusionnée). **Lignes lues, à `89b9819b`** : routes `lib.rs:372` (`"/api/v1/admin/mcp/sends"`), `:376` (`…/{id}`), `:380` (`…/{id}/decision`) ; `routes/mcp_envois.rs:122` `pub struct DecisionRequest`, `:125` `#[serde(default)]`, `:126` `pub content: Option<String>` — un `content` absent **ou nul** vaut « tel quel » (#768 point 4) : l'écran ne l'envoie qu'en chaîne, pour une version modifiée ; `:179` `"mcp-send-content-too-large"`, `:183` `"mcp-send-content-hidden-character"` ; `services/envois_mcp.rs:55` `pub const MCP_ENVOI_OCTETS_MAX: usize = 24_576;` ; `fr-CH/messages.ftl:1764-1769` (six `mcp-send-*`, dont `:1768` « … (24 576 octets). ») ; refus de la décision : 409 `ILLEGAL_STATE_TRANSITION` (déjà décidé, échu), 409 `OPTIMISTIC_LOCK_CONFLICT` (version), 404, 400 (`erreur_de_decision`, `decision`). **32-7** : non fusionnée (`git log --oneline origin/main \| grep -c 32-7` → 0 ; `kesh-32-7` à `7e38f92d`, validation terminée) — ni écran `/admin/mcp`, ni section *Le serveur MCP* : la 32-8c s'écrit sans elles (C-32-8-70). **32-5c** pour l'E2E : `lib.rs:350` `"/api/v1/admin/mcp/keys"` (création, `sendValidation` `required` par défaut), `:362` `"/api/v1/admin/mcp/settings"` (`GET`, `PUT` à tous les champs + `version`). Sites de l'AC-C11 recomptés : `admin-manual.tex:1414`, `:2230`, `:2237`, `:2249` (« La 0.16.0 ajoute deux tables » — **trois** depuis la 32-8a, `git diff --name-status v0.15.0 HEAD -- crates/kesh-db/migrations` : `mcp_keys`, `mcp_server_settings`, `mcp_sends`) ; `user-manual.tex:3027-3033` ; `user-manual.tex:3153` (« clé API » — un appel MCP s'écrit `NewAuditLogEntry::user(cle.acces.user_id(), "mcp.tool_called", …)`, `services/serveur_mcp.rs:195-201`, donc au nom du créateur, sans la marque) ; `CHANGELOG.md:16-17` (« en ajoute deux »). Témoin vert de `ecran_sans_html_brut` : `ReminderHistory.svelte:51` (`{@const cancelled = r.cancelledAt !== null}`), relu. Constat P3-R6 : ordre des verrous relu (`repositories/mcp_sends.rs:44-80` dépôt, `:291-301` décision ; `services/poignees.rs:98-101` ; purge **avant** le dépôt, `services/envois_mcp.rs:214`, `:230`). |
+| 2026-10-26 | **32-8c — développement (T-C1 à T-C3) — DÉVELOPPEMENT TERMINÉ** | Opus 5.5, en autonomie. Commit de code **`3ae60eb3`**. Écran `/admin/mcp/sends` (liste, détail, trois gestes, dialogue de refus, erreurs par code), entrée de menu, 48 clés `mcp-sends-*` + `nav-admin-mcp-sends` (quatre langues), garde des replis du préfixe (C-32-8-71, #758), compteur d'octets lié à la constante Rust (C-32-8-72), aide aux sélecteurs de variante (C-32-8-73), E2E de bout en bout (deux tests), manuels (`sec:mcp-envois` sous *Sécurité*, C-32-8-70 ; AC-C11 ; journal d'audit), PDF admin et utilisateur régénérés, CHANGELOG (*Ajouté*, `:16-17`), ordre des verrous au document des motifs de portée. **37 tests Vitest neufs** (1939 → 1976) ; **mutations MC1 à MC6 : 6/6 tuées par le test visé**, restaurées à l'identique ; dix captures (`kesh-gate-logs/328c-captures/`). **Gates au dernier commit de code** : bases remises à zéro ; `test-fast.sh --ci` 4270/4270 (7 ignorés) ; frontend `check` 0 erreur, lint PASS, 1976/1976, build vert ; **E2E 317 passés, 7 échecs = KF-029, 17 sautés**. **Contrôle aplati** : `pdftotext docs/manual/fr/admin-manual.pdf - \| tr '\n' ' ' \| tr -s ' ' \| grep -oiE ".{60}envois? du serveur MCP.{80}"` → 8 occurrences (table des matières, `:1414`, `:2230`, `:2237`, `:2249`, la section) ; idem `user-manual.pdf` → 1 (l'export global) ; `grep -rnE "ajoute deux tables\|en ajoute deux" CHANGELOG.md docs/manual/fr/*.tex` → **0**. Choix C-32-8-70 à 77. Modules : **quatre** (frontend, `kesh-i18n`, manuel, docs). Revue P1 à lancer : `32-8c-review-prompt-p1.md` (Opus, lentilles B, E, A). |
+| 2026-10-26 | **Revue de code P1 (32-8c) — REVUE TERMINÉE** | **Opus ×3** (lentilles B, E, A, contexte frais, prompt `32-8c-review-prompt-p1.md` ; rapports `kesh-gate-logs/328c-review-p1-{B,E,A}.md`) : B 0/0/0/6, E 0/0/0/8, A 0/0/0/6 ⇒ **0/0/0/20**. La propriété centrale tient au code (aucun chemin ne fait partir un texte différent de celui qui a été vu ; « tel quel » sans clé `content`, `content` jamais `null`). **Clôture** sur une passe sans finding au-dessus de LOW, **1 passe sur 8**. LOW non remédiés, tracés dans **#773**. La lentille A a lancé une fois `awk` en lecture seule (interdit par la consigne, permis par le prompt versionné) : sans effet. Fusion de `origin/main` (32-6c) : conflit sur `admin-manual.pdf` seul, résolu en régénérant le PDF sur le `.tex` fusionné (`make fr`, les deux sections présentes au PDF aplati) ; `user-manual.pdf` et la brochure inchangés. Dernier commit de code `3ae60eb3` : gate complet 4270/4270, frontend 1976/1976, E2E 317 + 7 KF-029, MC1 à MC6 tuées. **Story 32-8 complète** (32-8a, 32-8b0, 32-8b, 32-8c). *(Écrit par l'orchestrateur.)* |

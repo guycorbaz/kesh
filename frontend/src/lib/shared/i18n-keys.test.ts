@@ -721,7 +721,15 @@ const ATTENDU = {
 	// reculée, `admin-backup-banner-future`), `AdminRestorePanel.svelte` 20 → 20 et
 	// `shared/utils/unknown-outcome.ts` 0 → 0 (prédicat extrait, sans texte). Que des
 	// littéraux : les autres compteurs inchangés.
-	sitesTotal: 2334,
+	// Story 32-8c (refs #723, écran des envois du serveur MCP) : **2334 → 2393** (+59),
+	// mesuré par la collecte de ce test et recompté par `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('`
+	// aux deux bornes (`origin/main` `89b9819b` → HEAD de `story/32-8c`), périmètre : les
+	// fichiers touchés par la branche — `features/mcp-sends/McpSendDetail.svelte` 0 → 39,
+	// `McpSendsList.svelte` 0 → 13, `mcp-sends-format.ts` 0 → 7 (fichiers neufs) ; les deux
+	// pages `routes/(app)/admin/mcp/sends/` 0 → 0 et `routes/(app)/+layout.svelte` inchangé
+	// (l'entrée de menu passe par `i18nKey`, `FAMILLES_RESOLUES['nav-']`). Que des
+	// littéraux : les autres compteurs inchangés.
+	sitesTotal: 2393,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
@@ -864,7 +872,9 @@ const FAMILLES_RESOLUES: Record<string, readonly string[]> = {
 		'projects', 'export-global', 'settings', 'opening-balances', 'email-templates',
 		'admin-backup', 'admin-restore',
 		// Story 25-1c-b1 (#378) — l'écran du journal d'audit.
-		'audit-log'
+		'audit-log',
+		// Story 32-8c (refs #723) — l'écran des envois du serveur MCP.
+		'admin-mcp-sends'
 	],
 	// routes/(app)/reports/+page.svelte:628 — table `labelKey` des onglets
 	'reports-': [
