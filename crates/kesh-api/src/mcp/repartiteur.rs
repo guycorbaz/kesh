@@ -19,18 +19,75 @@
 //! 4. si la tâche de l'appel elle-même échoue (panic hors de l'outil, arrêt du
 //!    runtime), aucune donnée ne part et l'appel n'a pas d'entrée : le journal
 //!    du serveur seul en garde la trace.
+//!
+//! # Les envois à valider (Story 32-8b, AC-B15)
+//!
+//! - le nom réservé `kesh_lire_envoi` est résolu **avant** le registre : la
+//!   relecture n'est pas un `McpTool`, ne passe pas par la politique (pas de
+//!   boucle) et ne fabrique aucun `DonneesEnvoyables` (pas d'exemption) ;
+//! - sous une clé `required`, la sortie de l'outil est **déposée** : un dépôt
+//!   réussi écrit l'entrée de son appel **dans** sa transaction, et la règle 1
+//!   ci-dessus s'y tient — `journaliser_appel` n'est pas appelé en plus ; un
+//!   dépôt refusé ou en échec n'a rien écrit, et l'appel est journalisé ici,
+//!   après l'échec, comme toute autre issue (une seule entrée par appel).
 
 use std::collections::BTreeSet;
 use std::time::Instant;
 
+use serde::Deserialize;
+
 use crate::mcp::EtatMcp;
-use crate::mcp::outil::{ContexteMcp, ErreurOutil};
-use crate::mcp::politique;
-use crate::mcp::reponse::{IdRequete, ReponseMcp};
+use crate::mcp::outil::{ContexteMcp, ErreurOutil, MotifArgument, arguments};
+use crate::mcp::politique::{self, Sortie};
+use crate::mcp::registre::NOM_LIRE_ENVOI;
+use crate::mcp::reponse::{IdRequete, ReponseEnvoi, ReponseMcp};
 use crate::mcp::textes;
 use crate::services::acces::{Canal, Portee};
 use crate::services::cles_mcp::CleMcpAuthentifiee;
-use crate::services::serveur_mcp::{self, AppelOutil, IssueAppel, OUTIL_INCONNU};
+use crate::services::envois_mcp::{self, EnvoiLu, RefusDepot};
+use crate::services::serveur_mcp::{self, IssueAppel, OUTIL_INCONNU};
+
+/// Ce qu'un appel laisse au journal (règle 1).
+enum Journal {
+    /// L'entrée est à écrire par `journaliser_appel`.
+    AEcrire {
+        /// L'issue.
+        issue: IssueAppel,
+        /// Un nom du registre, le nom réservé, ou [`OUTIL_INCONNU`].
+        outil: &'static str,
+        /// Le numéro d'envoi : la relecture (le numéro demandé), sinon `None`.
+        envoi: Option<i64>,
+    },
+    /// L'entrée est déjà écrite, dans la transaction d'un dépôt réussi.
+    DejaEcrit,
+}
+
+fn a_ecrire(issue: IssueAppel, outil: &'static str, envoi: Option<i64>) -> Journal {
+    Journal::AEcrire {
+        issue,
+        outil,
+        envoi,
+    }
+}
+
+/// Les arguments de `kesh_lire_envoi`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArgsLireEnvoi {
+    envoi: u64,
+}
+
+/// Le descripteur **statique** de `kesh_lire_envoi` (AC-B6) : textes du
+/// binaire seulement.
+fn descripteur_lire_envoi() -> serde_json::Value {
+    serde_json::json!({
+        "name": NOM_LIRE_ENVOI,
+        "description": textes::DESCRIPTION_LIRE_ENVOI,
+        "inputSchema": serde_json::from_str::<serde_json::Value>(textes::SCHEMA_LIRE_ENVOI)
+            .expect("schéma de kesh_lire_envoi : un texte JSON du binaire"),
+        "annotations": { "readOnlyHint": true },
+    })
+}
 
 /// Les méthodes servies — une énumération **fermée** ; tout autre nom rend
 /// `-32601` (E2). Aucune `resources/*`, `logging/*`, `completion/*` ni
@@ -131,11 +188,13 @@ pub(crate) async fn repartir(
             if params.get("cursor").is_some() {
                 return params_invalides(id);
             }
+            // Les outils des portées de la clé, puis `kesh_lire_envoi`, pour
+            // toute clé (AC-B6 ; amende l'AC-a17).
+            let mut outils = etat.registre.descripteurs_pour(&portees(cle));
+            outils.push(descripteur_lire_envoi());
             ReponseMcp::Resultat {
                 id,
-                resultat: serde_json::json!({
-                    "tools": etat.registre.descripteurs_pour(&portees(cle)),
-                }),
+                resultat: serde_json::json!({ "tools": outils }),
             }
         }
         Methode::ToolsCall => appeler(etat, cle, id, params).await,
@@ -186,16 +245,18 @@ async fn appeler_et_journaliser(
     params: serde_json::Value,
 ) -> ReponseMcp {
     let debut = Instant::now();
-    let (issue, outil, reponse) = traiter_appel(etat, cle, id.clone(), params).await;
-    let appel = AppelOutil {
-        cle_id: cle.cle_id,
-        createur: cle.acces.user_id(),
-        outil,
+    let (journal, reponse) = traiter_appel(etat, cle, id.clone(), params, debut).await;
+    let Journal::AEcrire {
         issue,
-        duree_ms: u64::try_from(debut.elapsed().as_millis()).unwrap_or(u64::MAX),
-        validation: cle.validation,
+        outil,
+        envoi,
+    } = journal
+    else {
+        // Un dépôt réussi : l'entrée est écrite dans sa transaction (AC-B5).
+        return reponse;
     };
-    match serveur_mcp::journaliser_appel(&etat.trace, &appel).await {
+    let duree_ms = u64::try_from(debut.elapsed().as_millis()).unwrap_or(u64::MAX);
+    match serveur_mcp::journaliser_appel(&etat.trace, cle, outil, issue, duree_ms, envoi).await {
         Ok(()) => reponse,
         Err(e) => {
             tracing::error!(
@@ -217,23 +278,102 @@ fn issue_d_erreur(e: ErreurOutil) -> IssueAppel {
         ErreurOutil::Inconnu => IssueAppel::Inconnu,
         ErreurOutil::Introuvable => IssueAppel::Introuvable,
         ErreurOutil::Interne => IssueAppel::Erreur,
+        ErreurOutil::TropVolumineux => IssueAppel::EnvoiTropVolumineux,
+        ErreurOutil::LimiteAtteinte => IssueAppel::LimiteAtteinte,
     }
 }
 
-/// `tools/call` : outil dans les portées → politique → exécution sous délai →
-/// politique (AC-a15, AC-a18, AC-a20). Rend l'issue, le nom à journaliser — un
-/// nom du registre ou [`OUTIL_INCONNU`], jamais celui du client — et la
-/// réponse.
+/// L'erreur d'outil d'un dépôt refusé ou en échec (AC-B4, AC-B5).
+fn erreur_de_depot(r: RefusDepot) -> ErreurOutil {
+    match r {
+        RefusDepot::TropVolumineux => ErreurOutil::TropVolumineux,
+        RefusDepot::TropNombreux => ErreurOutil::LimiteAtteinte,
+        RefusDepot::Interne => ErreurOutil::Interne,
+    }
+}
+
+/// La réponse d'une erreur d'outil : `isError: true` à texte fixe, ou
+/// l'erreur JSON-RPC de l'outil inconnu.
+fn reponse_d_erreur(id: IdRequete, e: ErreurOutil) -> ReponseMcp {
+    match textes::texte_erreur_outil(e) {
+        Some(texte) => ReponseMcp::OutilEnErreur { id, texte },
+        None => erreur(
+            id,
+            textes::CODE_PARAMS_INVALIDES,
+            textes::TEXTE_OUTIL_INCONNU,
+        ),
+    }
+}
+
+/// `kesh_lire_envoi` : la relecture d'un envoi, **hors registre** (AC-B6) —
+/// ni `autoriser`, ni `Donnees`, ni `DonneesEnvoyables`. Le numéro est un
+/// entier de 1 à `i64::MAX` ; tout autre argument rend la même erreur qu'un
+/// mauvais type.
+async fn relire(
+    etat: &EtatMcp,
+    cle: &CleMcpAuthentifiee,
+    id: IdRequete,
+    arguments_recus: serde_json::Value,
+) -> (Journal, ReponseMcp) {
+    let numero = match arguments::<ArgsLireEnvoi>(arguments_recus) {
+        Ok(a) if a.envoi >= 1 => i64::try_from(a.envoi).ok(),
+        _ => None,
+    };
+    let Some(numero) = numero else {
+        return (
+            a_ecrire(IssueAppel::ArgumentsInvalides, NOM_LIRE_ENVOI, None),
+            reponse_d_erreur(
+                id,
+                ErreurOutil::ArgumentsInvalides {
+                    argument: "envoi",
+                    motif: MotifArgument::Invalide,
+                },
+            ),
+        );
+    };
+    let (issue, envoi) = match envois_mcp::lire(cle, &etat.lecture_envois, numero).await {
+        Ok(EnvoiLu::Valide(c)) => (IssueAppel::Servi, ReponseEnvoi::Valide(c)),
+        Ok(EnvoiLu::EnAttente { numero }) => {
+            (IssueAppel::EnvoiEnAttente, ReponseEnvoi::EnAttente(numero))
+        }
+        Ok(EnvoiLu::Refuse { numero }) => (IssueAppel::EnvoiRefuse, ReponseEnvoi::Refuse(numero)),
+        Ok(EnvoiLu::Echu { numero }) => (IssueAppel::EnvoiEchu, ReponseEnvoi::Echu(numero)),
+        Ok(EnvoiLu::Inconnu { numero }) => (IssueAppel::Inconnu, ReponseEnvoi::Inconnu(numero)),
+        Err(e) => {
+            tracing::error!(
+                mcp_key_id = cle.cle_id,
+                "kesh_lire_envoi : relecture impossible, rien ne part : {e}"
+            );
+            return (
+                a_ecrire(IssueAppel::Erreur, NOM_LIRE_ENVOI, Some(numero)),
+                ReponseMcp::OutilEnErreur {
+                    id,
+                    texte: textes::TEXTE_ERREUR_INTERNE,
+                },
+            );
+        }
+    };
+    (
+        a_ecrire(issue, NOM_LIRE_ENVOI, Some(numero)),
+        ReponseMcp::Envoi { id, envoi },
+    )
+}
+
+/// `tools/call` : nom réservé, ou outil dans les portées → politique →
+/// exécution sous délai → politique → envoi ou dépôt (AC-a15, AC-a18, AC-a20 ;
+/// AC-B1, AC-B5, AC-B6). Rend ce qu'il reste à journaliser — l'issue et le nom
+/// (un nom du registre, le nom réservé ou [`OUTIL_INCONNU`], jamais celui du
+/// client), ou rien pour un dépôt réussi — et la réponse.
 async fn traiter_appel(
     etat: &EtatMcp,
     cle: &CleMcpAuthentifiee,
     id: IdRequete,
     params: serde_json::Value,
-) -> (IssueAppel, &'static str, ReponseMcp) {
+    debut: Instant,
+) -> (Journal, ReponseMcp) {
     let Some(nom) = params.get("name").and_then(|v| v.as_str()) else {
         return (
-            IssueAppel::ArgumentsInvalides,
-            OUTIL_INCONNU,
+            a_ecrire(IssueAppel::ArgumentsInvalides, OUTIL_INCONNU, None),
             params_invalides(id),
         );
     };
@@ -242,16 +382,17 @@ async fn traiter_appel(
         Some(a) if a.is_object() => a.clone(),
         Some(_) => {
             return (
-                IssueAppel::ArgumentsInvalides,
-                OUTIL_INCONNU,
+                a_ecrire(IssueAppel::ArgumentsInvalides, OUTIL_INCONNU, None),
                 params_invalides(id),
             );
         }
     };
+    if nom == NOM_LIRE_ENVOI {
+        return relire(etat, cle, id, arguments).await;
+    }
     let Some(outil) = etat.registre.outil_pour(nom, &portees(cle)) else {
         return (
-            IssueAppel::Inconnu,
-            OUTIL_INCONNU,
+            a_ecrire(IssueAppel::Inconnu, OUTIL_INCONNU, None),
             erreur(
                 id,
                 textes::CODE_PARAMS_INVALIDES,
@@ -260,16 +401,9 @@ async fn traiter_appel(
         );
     };
     let nom_outil = outil.nom();
-    let Ok(autorisation) = politique::autoriser(cle.validation) else {
-        return (
-            IssueAppel::ValidationRequise,
-            nom_outil,
-            ReponseMcp::OutilEnErreur {
-                id,
-                texte: textes::TEXTE_VALIDATION_REQUISE,
-            },
-        );
-    };
+    // Les deux politiques exécutent l'outil ; `autoriser` décide seulement de
+    // ce que deviendra sa sortie (AC-B1).
+    let autorisation = politique::autoriser(cle.validation);
     // C-32-6-56 (revue P2, H1) : l'outil s'exécute dans une **tâche qui possède**
     // tout ce qu'il emprunte — l'outil, le contexte d'accès, la lecture des
     // outils, donc chaque connexion du pool qu'il prend. Abandonner l'attente
@@ -287,9 +421,9 @@ async fn traiter_appel(
         outil.executer(&ctx, arguments).await
     });
     let issue = tokio::time::timeout(etat.registre.delai(), tache).await;
-    let (issue, reponse) = match issue {
+    match issue {
         Err(_delai) => (
-            IssueAppel::DelaiDepasse,
+            a_ecrire(IssueAppel::DelaiDepasse, nom_outil, None),
             ReponseMcp::OutilEnErreur {
                 id,
                 texte: textes::TEXTE_DELAI_DEPASSE,
@@ -300,31 +434,43 @@ async fn traiter_appel(
             // le détail ne va qu'au journal du serveur (E5).
             tracing::error!("outil MCP : la tâche de l'outil a échoué : {panne}");
             (
-                IssueAppel::Erreur,
+                a_ecrire(IssueAppel::Erreur, nom_outil, None),
                 ReponseMcp::OutilEnErreur {
                     id,
                     texte: textes::TEXTE_ERREUR_INTERNE,
                 },
             )
         }
-        Ok(Ok(Ok(donnees))) => (
-            IssueAppel::Servi,
-            ReponseMcp::Outil {
-                id,
-                donnees: politique::appliquer(autorisation, donnees),
-            },
-        ),
+        Ok(Ok(Ok(donnees))) => match politique::appliquer(autorisation, donnees) {
+            Sortie::Envoyer(donnees) => (
+                a_ecrire(IssueAppel::Servi, nom_outil, None),
+                ReponseMcp::Outil { id, donnees },
+            ),
+            Sortie::Deposer(a_valider) => {
+                match a_valider
+                    .deposer(cle, &etat.ecriture_envois, nom_outil, debut)
+                    .await
+                {
+                    Ok(accuse) => (
+                        Journal::DejaEcrit,
+                        ReponseMcp::Envoi {
+                            id,
+                            envoi: ReponseEnvoi::Depose(accuse),
+                        },
+                    ),
+                    Err(refus) => {
+                        let e = erreur_de_depot(refus);
+                        (
+                            a_ecrire(issue_d_erreur(e), nom_outil, None),
+                            reponse_d_erreur(id, e),
+                        )
+                    }
+                }
+            }
+        },
         Ok(Ok(Err(e))) => (
-            issue_d_erreur(e),
-            match textes::texte_erreur_outil(e) {
-                Some(texte) => ReponseMcp::OutilEnErreur { id, texte },
-                None => erreur(
-                    id,
-                    textes::CODE_PARAMS_INVALIDES,
-                    textes::TEXTE_OUTIL_INCONNU,
-                ),
-            },
+            a_ecrire(issue_d_erreur(e), nom_outil, None),
+            reponse_d_erreur(id, e),
         ),
-    };
-    (issue, nom_outil, reponse)
+    }
 }

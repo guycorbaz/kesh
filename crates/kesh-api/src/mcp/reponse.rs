@@ -13,6 +13,72 @@ use tower::ServiceExt;
 use crate::mcp::EtatMcp;
 use crate::mcp::politique::DonneesEnvoyables;
 use crate::mcp::textes;
+use crate::services::envois_mcp::{AccuseEnvoi, ContenuValide};
+
+/// Ce qu'un `tools/call` rend d'un envoi à valider (Story 32-8b, AC-B5,
+/// AC-B6) : l'accusé d'un dépôt, ou l'issue d'une relecture. Seuls l'entier du
+/// numéro, le booléen « modifié » et, pour un envoi validé, le texte validé en
+/// sortent.
+pub(crate) enum ReponseEnvoi {
+    /// Dépôt réussi : un numéro, aucune donnée.
+    Depose(AccuseEnvoi),
+    /// Relecture : en attente.
+    EnAttente(i64),
+    /// Relecture : validé — le texte validé part, octet pour octet.
+    Valide(ContenuValide),
+    /// Relecture : refusé.
+    Refuse(i64),
+    /// Relecture : échu.
+    Echu(i64),
+    /// Relecture : inexistant, autre clé ou autre société.
+    Inconnu(i64),
+}
+
+impl ReponseEnvoi {
+    /// Le `result` d'un `tools/call` d'envoi — corps exacts de l'AC-B5 et de
+    /// l'AC-B6.
+    fn en_resultat(self) -> serde_json::Value {
+        let un_bloc = |texte: String, erreur: bool| {
+            serde_json::json!({
+                "content": [{ "type": "text", "text": texte }],
+                "isError": erreur,
+            })
+        };
+        match self {
+            Self::Depose(accuse) => {
+                let n = accuse.numero();
+                serde_json::json!({
+                    "content": [{ "type": "text", "text": textes::texte_envoi_depose(n) }],
+                    "structuredContent": { "envoi": n, "etat": "en_attente" },
+                    "isError": false,
+                })
+            }
+            Self::EnAttente(n) => serde_json::json!({
+                "content": [{ "type": "text", "text": textes::texte_envoi_en_attente(n) }],
+                "structuredContent": { "envoi": n, "etat": "en_attente" },
+                "isError": false,
+            }),
+            Self::Valide(valide) => serde_json::json!({
+                "content": [
+                    {
+                        "type": "text",
+                        "text": textes::texte_envoi_valide(valide.numero(), valide.modifie()),
+                    },
+                    { "type": "text", "text": valide.texte() },
+                ],
+                "structuredContent": {
+                    "envoi": valide.numero(),
+                    "etat": "valide",
+                    "modifie": valide.modifie(),
+                },
+                "isError": false,
+            }),
+            Self::Refuse(n) => un_bloc(textes::texte_envoi_refuse(n), true),
+            Self::Echu(n) => un_bloc(textes::texte_envoi_echu(n), true),
+            Self::Inconnu(n) => un_bloc(textes::texte_envoi_inconnu(n), true),
+        }
+    }
+}
 
 /// L'`id` d'une requête JSON-RPC : une chaîne ou un nombre, tel que reçu.
 #[derive(Debug, Clone, PartialEq)]
@@ -75,6 +141,14 @@ pub(crate) enum ReponseMcp {
         id: IdRequete,
         /// Les données que la politique laisse partir.
         donnees: DonneesEnvoyables,
+    },
+    /// 200, `result` d'un envoi à valider : accusé d'un dépôt ou issue d'une
+    /// relecture (Story 32-8b).
+    Envoi {
+        /// L'`id` reçu.
+        id: IdRequete,
+        /// L'envoi.
+        envoi: ReponseEnvoi,
     },
     /// 200, `result` d'un outil en erreur (`isError: true`), texte fixe.
     OutilEnErreur {
@@ -177,6 +251,7 @@ pub(crate) async fn rendre(etat: &EtatMcp, r: ReponseMcp) -> Response {
         ),
         ReponseMcp::Resultat { id, resultat } => jsonrpc(id, "result", resultat),
         ReponseMcp::Outil { id, donnees } => jsonrpc(id, "result", donnees.en_resultat()),
+        ReponseMcp::Envoi { id, envoi } => jsonrpc(id, "result", envoi.en_resultat()),
         ReponseMcp::OutilEnErreur { id, texte } => jsonrpc(
             id,
             "result",

@@ -22,10 +22,13 @@
 //! 8. société de la clé ∈ S                       non               → 401 fixe
 //! 9. Origin (propres ∪ celles de la société)     refusée           → 401 fixe (le même qu'en 7)
 //! 10. corps (1 Mio) puis JSON-RPC                (transport)
-//! 11. répartiteur : liste close des méthodes ; tools/call → outil_pour(nom,
+//! 11. répartiteur : liste close des méthodes ; tools/call → nom réservé
+//!     `kesh_lire_envoi` (relecture, hors registre, 32-8b) ou outil_pour(nom,
 //!     portées) → politique::autoriser → executer (dans une tâche qui possède
 //!     ses connexions, attendue sous le délai — C-32-6-56) → politique::appliquer
-//!     → serveur_mcp::journaliser_appel (fail closed) — le tout dans la tâche de
+//!     → envoi (clé `exempt`) ou dépôt (clé `required`, 32-8b) →
+//!     serveur_mcp::journaliser_appel (fail closed ; un dépôt réussi est
+//!     journalisé dans sa propre transaction) — le tout dans la tâche de
 //!     l'appel, qu'un abandon du client n'annule pas (C-32-6-58)
 //! 12. reponse::rendre — seule sortie
 //! ```
@@ -47,17 +50,18 @@
 //!
 //! # La frontière avec la 32-8
 //!
-//! Le point de branchement est le module `politique` : la 32-8 change
-//! `autoriser` et `appliquer` (dépôt d'une proposition sous une clé
-//! `required`), signatures et sites d'appel compris ; rien d'autre du
-//! répartiteur.
+//! Le point de branchement est le module `politique` : la 32-8b a changé
+//! `autoriser` et `appliquer` (dépôt d'un envoi sous une clé `required`),
+//! signatures et sites d'appel compris. Ce qu'elle a changé d'autre — le nom
+//! réservé `kesh_lire_envoi`, la branche de dépôt, `tools/list`, les champs
+//! d'`EtatMcp`, `ReponseMcp::Envoi` — est la liste close de son AC-B15.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use tower_http::services::{ServeDir, ServeFile};
 
-use crate::services::poignees::{Lecture, Trace};
+use crate::services::poignees::{EcritureEnvois, Lecture, LectureEnvois, Trace};
 
 pub mod outil;
 pub mod outils;
@@ -108,6 +112,12 @@ pub struct EtatMcp {
     /// La trace : dernière utilisation de la clé, journal des appels d'outil
     /// (32-6b).
     pub(crate) trace: Trace,
+    /// La relecture des envois (`kesh_lire_envoi`), sur le pool en lecture
+    /// seule du MCP (Story 32-8b, AC-B10).
+    pub(crate) lecture_envois: LectureEnvois,
+    /// Le dépôt des envois et la purge des contenus échus, sur le pool
+    /// ordinaire (Story 32-8b, AC-B10).
+    pub(crate) ecriture_envois: EcritureEnvois,
     /// Les outils servis et leur délai.
     pub(crate) registre: Arc<Registre>,
     /// Le service du repli statique, pour la réponse de route absente.

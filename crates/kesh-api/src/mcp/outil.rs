@@ -107,6 +107,12 @@ pub enum ErreurOutil {
     Introuvable,
     /// Toute autre erreur ; le détail ne va qu'au journal du serveur.
     Interne,
+    /// Sous une clé `required` : le résultat dépasse ce qu'un envoi peut
+    /// porter ; rien n'est déposé (Story 32-8b, AC-B4).
+    TropVolumineux,
+    /// Une limite est atteinte — à la 32-8b, trop d'envois en attente pour la
+    /// clé (AC-B5) ; la 32-10a-iii la réemploie.
+    LimiteAtteinte,
 }
 
 /// Lit les arguments d'un outil. Le type `T` doit porter
