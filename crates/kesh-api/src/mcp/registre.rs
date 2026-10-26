@@ -16,6 +16,15 @@ use crate::mcp::outil::McpTool;
 use crate::mcp::outils::kesh_version::KeshVersion;
 use crate::services::acces::Portee;
 
+/// Le nom de l'outil de relecture des envois, **hors registre** (Story 32-8b,
+/// AC-B6) : le répartiteur le résout avant le registre ; il n'est pas un
+/// `McpTool` et ne passe pas par la politique.
+pub const NOM_LIRE_ENVOI: &str = "kesh_lire_envoi";
+
+/// Les noms réservés de la 32-8, qu'aucun outil du registre ne peut prendre
+/// (`Registre::avec` refuse ; test `registre_coherent`).
+pub const NOMS_RESERVES: &[&str] = &[NOM_LIRE_ENVOI];
+
 /// Un outil et son schéma. L'outil est partagé (`Arc`) : le répartiteur
 /// l'exécute dans une tâche qui le possède (C-32-6-56, revue P2, H1).
 struct Entree {
@@ -50,8 +59,15 @@ impl Registre {
     /// # Panics
     ///
     /// Si son schéma d'entrée n'est pas du JSON — un texte du binaire, que le
-    /// test `registre_coherent` contrôle pour le registre de production.
+    /// test `registre_coherent` contrôle pour le registre de production —, ou si
+    /// son nom est **réservé** ([`NOMS_RESERVES`], Story 32-8b, AC-B6) : un
+    /// outil du registre ne peut pas prendre la place de `kesh_lire_envoi`.
     pub fn avec(mut self, outil: Box<dyn McpTool>) -> Self {
+        assert!(
+            !NOMS_RESERVES.contains(&outil.nom()),
+            "outil `{}` : nom réservé hors registre",
+            outil.nom()
+        );
         let schema = serde_json::from_str(outil.schema_entree())
             .unwrap_or_else(|_| panic!("schéma d'entrée de `{}` : JSON invalide", outil.nom()));
         self.outils.push(Entree {

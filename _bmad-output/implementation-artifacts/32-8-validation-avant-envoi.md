@@ -521,7 +521,8 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     - `pub(crate) fn appliquer(a: Autorisation, d: Donnees) -> Sortie`, `Sortie` = `Envoyer(DonneesEnvoyables)` |
       `Deposer(EnvoiAValider)` ; `appliquer` ne fait que construire : `Envoi` → `Envoyer` (comportement de la 32-6a,
       inchangé), `Depot` → `Deposer` (AC-B2, AC-B3) ;
-    - `EnvoiAValider` : champs privés (`resume`, `contenu`, chaînes déjà rendues visibles), **aucun accesseur**, ni
+    - `EnvoiAValider` : champs privés (`resume`, `contenu`, chaînes déjà rendues visibles — *annoté le 2026-10-25, revue de code P1,
+      A-L8 : brutes, rendues visibles par le service au dépôt, C-32-8-51*), **aucun accesseur**, ni
       `Clone`, ni `Debug`, ni `Default`, ni `Serialize` ; sa **seule** méthode, `pub(in crate::mcp) async fn
       deposer(self, …) -> Result<AccuseEnvoi, RefusDepot>` (AC-B5), consomme l'envoi : les deux chaînes ne quittent
       `politique.rs` que comme arguments du service de dépôt.
@@ -547,7 +548,8 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     validation P1, R17) ; `services::envois_mcp::rendre_visible(s: &str) -> String` remplace chaque caractère dont
     `is_hidden_in_text` est vrai par `\u{XXXX}` (Rust,
     hexadécimal en capitales, quatre à six chiffres, sans zéro de tête au-delà de quatre) et laisse le reste intact ;
-    appliquée par `appliquer` au texte **et** au résumé. Elle est **idempotente** (sa sortie n'a aucun caractère caché).
+    appliquée par `appliquer` au texte **et** au résumé *(annoté le 2026-10-25, revue de code P1, A-L8 : appliquée par le
+    service `envois_mcp::deposer`, non par `appliquer`, C-32-8-51)*. Elle est **idempotente** (sa sortie n'a aucun caractère caché).
     Test `rendre_visible_par_famille` (fonction pure, `envois_mcp.rs`, `mod tests`) : U+202E, U+2066, U+200B, U+200D,
     U+FEFF, U+FE0F, U+E000, U+0378, U+180E, U+2028, `\r`, U+0000, U+0085, U+007F → échappés ; `\n`, `\t`, `é`, `€`,
     `⚠` (U+26A0), `中`, une espace → intacts ; `rendre_visible(rendre_visible(s)) == rendre_visible(s)` sur chacun ; un
@@ -559,11 +561,11 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     d'intégration `depot_rend_visible` (`mcp_envois_e2e.rs`) : un outil de test dont le texte porte U+202E, `\r` et
     U+200B, sous une clé `required` → `content` en base **égal** au texte où ces trois caractères sont remplacés par
     `\u{202E}`, `\u{000D}`, `\u{200B}` ; la valeur rendue par le `GET` du détail lui est égale.
-16. **AC-B4 — la taille** (C-32-8-14). Après le rendu visible : `contenu.len() ≤ MCP_ENVOI_OCTETS_MAX` (**65 536**)
+16. **AC-B4 — la taille** (C-32-8-14). Après le rendu visible : `contenu.len() ≤ MCP_ENVOI_OCTETS_MAX` (**24 576**, note de l'orchestrateur ; 65 536 à la rédaction)
     et `resume.len() ≤ MCP_ENVOI_RESUME_OCTETS_MAX` (**1 024**), constantes de `services/envois_mcp.rs` (employées aussi
     par la décision, AC-B9) ; au-delà, **rien n'est déposé** : `isError: true`, `TEXTE_ENVOI_TROP_VOLUMINEUX`, nouvelle
     variante sans champ `ErreurOutil::TropVolumineux` (`outil.rs`, AC-a20 tenue), issue `envoi_trop_volumineux`. Tests
-    `taille_des_envois` : 65 536 octets déposés ; 65 537 refusés, table inchangée, corps égal ; 65 530 octets de texte
+    `taille_des_envois` : 24 576 octets déposés ; 24 577 refusés, table inchangée, corps égal ; 24 570 octets de texte
     dont deux U+200B (trois octets chacun, huit à l'échappement `\u{200B}`) → refusé (la borne porte sur le texte **rendu visible**).
 17. **AC-B5 — le dépôt et son journal, en une transaction** (C-32-8-12, C-32-8-13, C-32-8-15). `EnvoiAValider::deposer`
     reçoit **la clé authentifiée entière** — `pub(in crate::mcp) async fn deposer(self, cle: &CleMcpAuthentifiee,
@@ -581,7 +583,8 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     chemin du MCP, que la règle R4 de `services/mod.rs` (`:44-56`) et l'« inventaire clos des écritures » (`:77-90`,
     « 3. Aucune autre ») ne connaissent pas : l'inventaire gagne **deux** entrées (le dépôt d'un envoi et l'entrée
     d'appel, en une transaction, sur `EcritureEnvois` ; la purge des contenus échus, sur `EcritureEnvois` — numérotées à
-    la suite de celles que la 32-6b y aura posées, recomptées à l'étape 0 ; validation P2, R10), R4 gagne
+    la suite de celles que la 32-6b y aura posées, recomptées à l'étape 0 ; validation P2, R10 ; *annoté le 2026-10-25,
+    revue de code P1, A-L8 : rangées en sous-points (a) et (b) du point 2, non à la suite*), R4 gagne
     la phrase qui les nomme, et la **dérogation à R2** est écrite pour `deposer` comme pour `lire` (AC-B6) : la portée a
     été exigée par le **service de l'outil** avant la lecture, et le dépôt ne lit rien des livres. `TropNombreux` →
     `ErreurOutil::LimiteAtteinte`, `TEXTE_ENVOIS_TROP_NOMBREUX`, issue `limite_atteinte` ; toute erreur de base →
@@ -610,8 +613,9 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     ligne déposée.
 18. **AC-B6 — `kesh_lire_envoi`, hors registre** (C-32-8-7, C-32-8-8, C-32-8-9). Nom réservé, constante
     `NOM_LIRE_ENVOI`. **Pas** un `McpTool`, **pas** au `Registre` ; le répartiteur le résout **avant** le registre ;
-    `registre_coherent` (AC-a16) refuse un outil du registre à nom réservé (`kesh_lire_envoi` ; la 32-10a-iii, qui vient après,
-    y ajoutera `proposer_prompt`). Descripteur **statique** (nom, description, `inputSchema` `{"type":"object","properties":
+    `registre_coherent` (AC-a16) refuse un outil du registre à nom réservé **de la 32-8** (`kesh_lire_envoi` ; ce que la
+    32-10a-iii fait de `proposer_prompt` relève de son AC-iii2 — *annoté le 2026-10-25, revue de code P1 de la 32-8b,
+    A-M2*). Descripteur **statique** (nom, description, `inputSchema` `{"type":"object","properties":
     {"envoi":{"type":"integer","minimum":1}},"required":["envoi"],"additionalProperties":false}`, `annotations:
     {readOnlyHint: true}`), listé par `tools/list` **pour toute clé**, après les outils du registre ; `tools_list_filtre`
     amendé (`books:read` → `[kesh_version, kesh_lire_envoi]` ; `contacts:read` seule → `[kesh_lire_envoi]`).
@@ -704,8 +708,8 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     -> Result<(), MotifContenu>` : `TropVolumineux` au-delà de `MCP_ENVOI_OCTETS_MAX`, `CaractereCache` si un caractère
     vérifie `kesh_core::text::is_hidden_in_text` (AC-02, AC-B3) ; **aucun** rognage, **aucune** normalisation. Le gestionnaire rend 400 avec
     `t("mcp-send-content-too-large")` ou `t("mcp-send-content-hidden-character")`. Test `contenu_modifie_controle` :
-    `"a\r\nb"` refusé ; U+202E refusé ; U+0378 refusé ; `"⚠ é"` admis et stocké égal ; chaîne vide admise ; 65 536 octets
-    admis, 65 537 refusés ; un blanc final conservé.
+    `"a\r\nb"` refusé ; U+202E refusé ; U+0378 refusé ; `"⚠ é"` admis et stocké égal ; chaîne vide admise ; 24 576 octets
+    admis, 24 577 refusés ; un blanc final conservé.
 22. **AC-B10 — les poignées des envois, sans pool visible** (C-32-8-22 ; patron de `LecturePrompts`/`EcriturePrompts`,
     32-10a AC-ii3, AC-iii1). `services::poignees::LectureEnvois(MySqlPool)` — **posée sur le pool en lecture seule du
     MCP** (celui de l'unique appel de `pool_lecture_seule`, lié une fois en `lib.rs` puis enveloppé), une seule méthode
@@ -724,6 +728,8 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     validée a l'issue `servi`, un numéro inconnu `inconnu`. `outil` peut valoir `kesh_lire_envoi`. **`entree_appel`,
     signature fixée ici** (validation P1, R8, décision de l'orchestrateur) : `pub(crate) fn entree_appel(cle:
     &CleMcpAuthentifiee, outil: &str, issue: IssueAppel, duree_ms: u64, envoi: Option<i64>) -> NewAuditLogEntry`
+    *(annoté le 2026-10-25, revue de code P1, B-2 = A-L1 : `outil: &'static str` dans `entree_appel` et dans
+    `journaliser_appel`, et `pub` + `#[doc(hidden)]` au lieu de `pub(crate)`, C-32-8-52)*
     (`services/serveur_mcp.rs`), fonction **pure** extraite de `journaliser_appel`, qui l'appelle désormais et ne fait
     plus qu'écrire son résultat ; **`journaliser_appel` gagne le même paramètre `envoi: Option<i64>`** (validation P2,
     F5) — ses sites d'appel au répartiteur passent `None`, sauf la relecture (le numéro demandé) ; un dépôt **réussi**
@@ -853,7 +859,10 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
        objet** (les deux politiques exécutent) et Ma23 **reformulée** (MB1) ;
     10. **les gardes de `tests/mcp_gardes_lexicales.rs`** (32-6a), **étendues** : `donnees_construites_par_la_politique_seule`
         à `EnvoiAValider`, `Sortie` et aux deux jetons ; `outils_et_politique_en_leur_lieu` à `.deposer(` (AC-B1) — et le
-        même fichier **gagne** les gardes neuves de l'AC-B14 et de l'AC-B12 (validation P2, R6) ;
+        même fichier **gagne** les gardes neuves de l'AC-B14 et de l'AC-B12 (validation P2, R6) ; *(annoté le 2026-10-25,
+        revue de code P1, A-L8 : deux gardes de la 32-6a sont aussi touchées hors de cette liste, déclarées au Dev Agent
+        Record — l'exception ajoutée à `lecture_seule_jamais_defaite` pour le témoin de `lire_pour_cle_en_lecture_seule`
+        (`e84d9bc5`), et les témoins verts de `executer_appele_par_le_repartiteur_seul`)*
     11. **`tests/common/mcp.rs`** (32-6a) **gagne** des outils de test : deux blocs, une structure et un résumé piégés
         (AC-B2), un texte porteur d'U+202E, `\r` et U+200B (AC-B3), un texte de taille réglable (AC-B4), et le compteur
         existant sert `cle_requise_deposee` (validation P2, R6).
@@ -878,7 +887,7 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     remplacés par leur code (`\u{…}`) ; un tel code peut aussi avoir été écrit tel quel dans vos livres. » (validation
     P1, F6). Un bloc **Résumé de la demande — n'est pas envoyé** (le résumé, en texte). Le
     bloc **Ce qui sera envoyé à l'agent** : une **`<textarea>`** en police à chasse fixe, `readonly` par défaut, dont
-    la **valeur** est la chaîne `content` reçue, sans transformation ; un compteur « N octets sur 65 536 » (taille UTF-8
+    la **valeur** est la chaîne `content` reçue, sans transformation ; un compteur « N octets sur 24 576 » (taille UTF-8
     de la valeur). Actions d'un envoi en attente : *Modifier* (retire `readonly`), *Rétablir* (remet la valeur reçue),
     *Envoyer tel quel* tant que la valeur égale la valeur reçue, *Envoyer la version modifiée* sinon, *Refuser*
     (variante destructive, dialogue de confirmation). Un envoi validé montre son contenu en lecture seule, avec
@@ -923,7 +932,7 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     d'administration, la 32-7 l'y rattachant (C-32-8-21) — qui dit, **tel que le code le fait** : qu'une clé
     `required` (le défaut) ne rend aucune donnée à l'agent sans validation ; l'accusé et la relecture ; l'écran, ce qu'il
     montre et ce qui part (le texte, octet pour octet ; le résumé non envoyé ; la donnée structurée non envoyée) ; les
-    trois gestes ; l'échéance de 24 h depuis la demande ; la limite de 20 envois en attente par clé et de 64 Kio par
+    trois gestes ; l'échéance de 24 h depuis la demande ; la limite de 20 envois en attente par clé et de 24 Kio par
     envoi ; les caractères invisibles rendus visibles, et refusés dans une modification — et qu'un code `\u{…}` peut aussi
     avoir été écrit tel quel dans la donnée (F6), et que des **données ordinaires** paraissent codées — le sélecteur d'un
     emoji composé, les liants U+200C et U+200D de certaines écritures (validation P2, F15) ; les **issues d'outil** qui partent sans validation sous une clé
@@ -960,7 +969,10 @@ servies** (liste close de l'AC-a12 de la 32-6a, E2 de la spike) et des **autres 
 | D1 | `tools/call` d'un `McpTool`, clé `required` | l'accusé : un entier et des constantes | `autoriser` → `Depot` ; `appliquer` → `Deposer(EnvoiAValider)`, illisible, consommé par le dépôt | types (champs privés, AC-B1) + gardes (AC-B14) + `e1_rien_ne_part_sous_cle_requise` (AC-B7) |
 | D2 | `tools/call` d'un `McpTool`, clé `exempt` | les données de l'outil, sans écran | **la seule voie hors validation** (E1), par décision de l'administrateur, journalisée (32-6b) | `cle_dispensee_servie` ; manuel (AC-C10) |
 | D3 | une **erreur** d'un `McpTool` sous clé `required` (introuvable, arguments, interne, délai) | un texte fixe — mais **un bit** : l'existence d'un identifiant, la réussite d'une lecture | E5 (aucun texte libre) | **angle mort** (C-32-8-18, point 3 pour Guy) |
-| D4 | un dépôt refusé pour la **taille** | un texte fixe — **un bit** : le résultat dépasse 64 Kio | — | **angle mort** (même famille que D3) |
+| D4 | un dépôt refusé pour la **taille** | un texte fixe — **un bit** : le résultat dépasse 24 Kio | — | **angle mort** (même famille que D3) |
+| D4 bis | un dépôt refusé au **plafond** (`limite_atteinte`, `TEXTE_ENVOIS_TROP_NOMBREUX`) | un texte fixe — **un bit** tiré de `mcp_sends` : la clé a au moins 20 envois en attente — et, comme D3, celui d'une lecture réussie de l'outil | — | **angle mort** (même famille que D3 ; ajouté à la revue de code P1, A-L5 = B-8 = E-3) |
+| D4 ter | un dépôt en **échec interne** (`RefusDepot::Interne`), ou le **journal** de l'appel en échec (`appeler_et_journaliser`, fail closed) | `TEXTE_ERREUR_INTERNE`, un texte fixe ; rien de la base | fail closed : aucune donnée ne part, le détail ne va qu'au journal du serveur, sans contenu | `depot_et_journal_dans_la_meme_transaction` (AC-B5) ; ajouté à la revue de code P1 |
+| D4 quater | sous une clé `required`, une demande **mal formée** (nom absent, arguments non objet) ou un outil **inconnu ou hors portée** | une erreur JSON-RPC constante (`params_invalides`, `-32602`), rien de la base | inchangés depuis la 32-6a : l'inventaire de la 32-6 les couvre (AC-a12, E2) | 32-6a ; ajouté à la revue de code P1 |
 | D5 | `tools/call` de `kesh_lire_envoi` | le texte **validé**, pour la même clé, la même société, avant l'échéance ; sinon des constantes et l'entier demandé | `ContenuValide` construit par le service seul depuis une ligne `Valide` de la clé et de la société | types + garde `envoi_valide_construit_par_le_service_seul` + tests (AC-B6, AC-B7) |
 | D6 | le **résumé** d'un envoi | rien : il ne va qu'à l'écran | `EnvoiAValider` le passe au dépôt seul ; `ContenuValide` n'a pas de résumé | type + `une_seule_representation` (AC-B2) |
 | D7 | la **donnée structurée** d'un outil sous clé `required` | rien | `texte_a_valider` ne la lit pas | `une_seule_representation` (AC-B2) |
@@ -985,7 +997,8 @@ servies** (liste close de l'AC-a12 de la 32-6a, E2 de la spike) et des **autres 
 | D26 | une clé **révoquée** ou **expirée** entre le dépôt et la relecture ; une portée changée | rien | refus à l'authentification (32-5b) ; les portées ne se changent pas après la création (fiche 32-5, routes de la 32-5c : aucun `PUT` des portées) | 32-5b, 32-5c |
 | D27 | un dépôt dont la réponse se **perd** après la validation de sa transaction (client parti, connexion coupée) | rien vers l'agent ; l'envoi et son entrée d'appel existent | l'agent n'apprend pas le numéro ; l'envoi paraît à l'écran, peut être validé, et n'est relu que par qui connaît son numéro (même clé) | **angle mort** (l'agent redépose, borné à 20 ; validation P1, R19) |
 
-**Angles morts assumés** — chacun au § *Ce que les gardes ne voient pas* : D3, D4, D17, D18, D19, D20, D21, D24, D27.
+**Angles morts assumés** — chacun au § *Ce que les gardes ne voient pas* : D3, D4, D17, D18, D19, D20, D21, D24, D27 ; et
+D4 bis, de la famille de D3 et D4 *(ajouté le 2026-10-25, revue de code P1 de la 32-8b)*.
 
 ## Les points à traiter, et où ils le sont
 
@@ -997,7 +1010,7 @@ servies** (liste close de l'AC-a12 de la 32-6a, E2 de la spike) et des **autres 
 | **Concurrence** | décision sous `FOR UPDATE` et version ; échéance lue dans la même requête ; limite d'envois souple (C-32-8-13) ; purge hors transaction | AC-A6, AC-B5, AC-B8 (`decisions_concurrentes`) |
 | **Envoi relu deux fois** | permis jusqu'à l'échéance, mêmes octets, chaque relecture journalisée | AC-B7 (`relu_deux_fois_memes_octets`), AC-B11 |
 | **Autre clé, autre société** | même réponse qu'un numéro inexistant ; à l'écran, la société de la session seulement | AC-A7, AC-A8, AC-B7 |
-| **Taille** | 64 Kio de texte rendu visible, 1 Kio de résumé ; au-delà, rien n'est déposé ; même borne à la modification | AC-B4, AC-B9 |
+| **Taille** | 24 Kio de texte rendu visible, 1 Kio de résumé ; au-delà, rien n'est déposé ; même borne à la modification | AC-B4, AC-B9 |
 | **Contenu non fiable** | caractères cachés échappés au dépôt, refusés à la modification ; affichage en texte seul ; avis permanent ; aucune `{@html}` | AC-B3, AC-B9, AC-C3, AC-C6 |
 | **Rôle requis** | Administrateur, par une session ; aucune clé ne valide | AC-B8 |
 | **Sauvegarde** | la table est au `.keshbackup` (#722), vidée à la remise à zéro ; P7 sans objet (aucune donnée écrite) | AC-A10, AC-A11 |
@@ -1022,18 +1035,18 @@ servies** (liste close de l'AC-a12 de la 32-6a, E2 de la spike) et des **autres 
 - [ ] **T-02** — mutations M01 à M08 ; gates (dont `cargo publish --dry-run -p kesh-import`) ; Dev Agent Record.
 
 ### 32-8b
-- [ ] **T-B0** — étape 0 : 32-8a et 32-8b0 fusionnées ; le code réel de la 32-6a et de la 32-6b relu (signatures de la
+- [x] **T-B0** — étape 0 : 32-8a et 32-8b0 fusionnées ; le code réel de la 32-6a et de la 32-6b relu (signatures de la
   politique, `BlocContenu`, `EtatMcp` et ce qui énumère ses champs, `arguments`, `MotifArgument`, `journaliser_appel`,
   textes, gardes) ; recomptes des registres de routes (`ADMIN_COUPLES`, `(reached_layer, stopped_by_scope)`,
   `discriminating`) et de `services_motif.rs`.
-- [ ] **T-B1** — `services/envois_mcp.rs` (rendu visible, contrôles, dépôt, lecture, types), les deux poignées,
+- [x] **T-B1** — `services/envois_mcp.rs` (rendu visible, contrôles, dépôt, lecture, types), les deux poignées,
   `entree_appel`, `services/mod.rs` (R2, R4, inventaire des écritures) (AC-B3, AC-B4, AC-B5, AC-B9, AC-B10, AC-B11).
-- [ ] **T-B2** — `mcp/` : politique à deux sorties, représentation source, `ReponseMcp::Envoi`, `kesh_lire_envoi`,
+- [x] **T-B2** — `mcp/` : politique à deux sorties, représentation source, `ReponseMcp::Envoi`, `kesh_lire_envoi`,
   textes, consignes ; amendements du code et des tests de la 32-6a et de la 32-6b, **et seulement ceux de l'AC-B15**
   (AC-B1, AC-B2, AC-B5, AC-B6, AC-B11, AC-B13, AC-B15).
-- [ ] **T-B3** — `routes/mcp_envois.rs`, montage dans `admin_routes`, audit, libellés, messages, registres (AC-B8).
-- [ ] **T-B4** — `mcp_envois_e2e.rs`, gardes lexicales (AC-B7, AC-B12, AC-B14).
-- [ ] **T-B5** — mutations MB1 à MB31 (MB9 retirée), gates ; Dev Agent Record.
+- [x] **T-B3** — `routes/mcp_envois.rs`, montage dans `admin_routes`, audit, libellés, messages, registres (AC-B8).
+- [x] **T-B4** — `mcp_envois_e2e.rs`, gardes lexicales (AC-B7, AC-B12, AC-B14).
+- [x] **T-B5** — mutations MB1 à MB31 (MB9 retirée), gates ; Dev Agent Record.
 
 ### 32-8c
 - [ ] **T-C0** — étape 0 : 32-8b fusionnée ; l'état de la 32-7 (section du manuel, écran `/admin/mcp`) ; les routes de
@@ -1157,12 +1170,13 @@ Tests hors mutations, nommés au Dev Agent Record : `survit_au_redemarrage`, `ke
   résumé ; les métadonnées (clé, outil, dates, état) croissent avec l'usage et entrent dans chaque sauvegarde — point 5
   pour Guy.
 - **La validation est humaine.** Kesh garantit que ce qui part est ce qui a été montré et accepté ; il ne garantit pas
-  que l'utilisateur a **lu** 64 Kio de texte, ni qu'il a repéré un **homoglyphe** (un « а » cyrillique visible n'est pas
+  que l'utilisateur a **lu** 24 Kio de texte, ni qu'il a repéré un **homoglyphe** (un « а » cyrillique visible n'est pas
   un caractère caché), ni l'effet de l'algorithme bidirectionnel sur des lettres **visibles** de droite à gauche
   (arabe, hébreu) qui réordonnent l'affichage d'une ligne sans caractère de contrôle (`dir="ltr"` n'y peut rien).
 - **Un bit part sans validation sous une clé `required`** (D3, D4) : qu'un identifiant existe (« introuvable » contre
-  « envoi en attente »), qu'une lecture a réussi, qu'un résultat dépasse 64 Kio. Fermer ce point demanderait de déposer
-  aussi les erreurs — soumis à Guy (point 3).
+  « envoi en attente »), qu'une lecture a réussi, qu'un résultat dépasse 24 Kio. Fermer ce point demanderait de déposer
+  aussi les erreurs — soumis à Guy (point 3). Et (D4 bis, *ajouté le 2026-10-25, revue de code P1*) qu'une clé a au
+  moins 20 envois en attente, le refus au plafond suivant une lecture réussie.
 - **Le canal de l'API** (D17) : une clé d'API donnée au même agent lit `/api/v1` sans validation. La validation est
   celle du serveur MCP.
 - **Un agent qui conduit le navigateur de l'administrateur** (D18) — extension de navigateur, *computer use* : il voit
@@ -1190,6 +1204,7 @@ Tests hors mutations, nommés au Dev Agent Record : `survit_au_redemarrage`, `ke
   textes de l'accusé, de la relecture et d'`instructions` (C-32-8-26) reposent donc sur une hypothèse non éprouvée ;
   s'ils ne suffisent pas, c'est un texte à changer, non la poignée (rien ne part si l'agent oublie de relire). Point 10
   pour Guy ; la 32-11 consigne l'observation.
+- **L'ordre des verrous de la décision** (constat P3-R6, C-32-8-58) : la décision verrouille la ligne de `mcp_sends` puis écrit `audit_log` ; la remise à zéro prend `audit_log` avant de vider `mcp_sends`. Une décision simultanée d'une remise à zéro peut se perdre en interblocage : la remise à zéro est rejouée, la décision non — elle rend une 500 et n'écrit rien. **Le dépôt a le même ordre** (`EcritureEnvois::deposer`, `services/poignees.rs` : `mcp_sends` puis `audit_log`, dans une transaction) : pris dans le même interblocage, il échoue fermé — erreur interne côté agent, rien d'écrit *(complété le 2026-10-25, revue de code P1, E-1)*. À porter au document des motifs de portée par la 32-8c, la décision et le dépôt ensemble.
 - **Le manuel** : aucun gate ne le lit ; les prompts de revue nomment l'axe et exigent le PDF aplati.
 
 ## Dev Notes
@@ -1279,6 +1294,8 @@ pub(crate) enum Autorisation { Envoi(JetonEnvoi), Depot(JetonDepot) }   // jeton
 pub(crate) fn autoriser(validation: SendValidation) -> Autorisation { /* Required → Depot, Exempt → Envoi */ }
 pub(crate) enum Sortie { Envoyer(DonneesEnvoyables), Deposer(EnvoiAValider) }
 pub(crate) fn appliquer(a: Autorisation, d: Donnees) -> Sortie { /* Envoi → Envoyer ; Depot → Deposer(rendu visible) */ }
+// Annoté le 2026-10-25 (revue de code P1, A-L8) : `Deposer` porte les chaînes brutes ; le rendu visible est fait par
+// `envois_mcp::deposer` (C-32-8-51).
 pub struct EnvoiAValider { resume: String, contenu: String }            // aucun accesseur
 impl EnvoiAValider {
     pub(in crate::mcp) async fn deposer(self, cle: &CleMcpAuthentifiee, ecriture: &EcritureEnvois,
@@ -1287,7 +1304,7 @@ impl EnvoiAValider {
 fn texte_a_valider(d: &Donnees) -> String { /* blocs de texte, dans l'ordre, joints par "\n\n" */ }
 
 // services/envois_mcp.rs
-pub const MCP_ENVOI_OCTETS_MAX: usize = 65_536;
+pub const MCP_ENVOI_OCTETS_MAX: usize = 24_576;
 pub const MCP_ENVOI_RESUME_OCTETS_MAX: usize = 1_024;
 pub const MCP_ENVOI_DUREE_S: u32 = 86_400;
 pub const MCP_ENVOIS_EN_ATTENTE_MAX: u32 = 20;
@@ -1303,6 +1320,9 @@ pub async fn lire(cle: &CleMcpAuthentifiee, lecture: &LectureEnvois, numero: i64
 // services/serveur_mcp.rs — fixée ici (AC-B11) ; la 32-10a-iii l'appelle avec `None`
 pub(crate) fn entree_appel(cle: &CleMcpAuthentifiee, outil: &str, issue: IssueAppel, duree_ms: u64,
     envoi: Option<i64>) -> NewAuditLogEntry { … }  // cinq clés ; six avec "envoi"
+// Annoté le 2026-10-25 (revue de code P1, B-2 = A-L1) : `outil: &'static str`, dans `entree_appel` comme dans
+// `journaliser_appel` — le type garantit, comme `AppelOutil::outil` de la 32-6b, qu'aucun nom reçu du client n'est
+// journalisé ; `pub` + `#[doc(hidden)]`, non `pub(crate)` (C-32-8-52).
 
 // kesh-core/src/text.rs (32-8b0)
 pub fn is_hidden_format(c: char) -> bool { … }    // Cf, Co, Cn + deux listes (AC-ii1 de la 32-10a)
@@ -1413,7 +1433,7 @@ l. 497-503 (routes de la 32-5c).
   « une clé `required` ne peut appeler aucun outil » de sa liste.
 - **32-9a, 32-9b** (outils de données) : sous une clé `required`, l'agent ne reçoit **que le texte** des blocs — le
   bloc texte doit porter **toute** la donnée (la recommandation d'E1 : il sérialise la structure) ; pagination sous
-  64 Kio de texte **après** le rendu visible (et sous les 10 000 jetons de Claude Code) ; l'enveloppe « donnée non
+  24 Kio de texte **après** le rendu visible (et sous les 10 000 jetons de Claude Code) ; l'enveloppe « donnée non
   fiable » paraît telle quelle à l'écran ; le **résumé** de chaque outil est court (≤ 1 Kio), écrit par Kesh, et dit la
   demande.
 - **32-10a** : voir § *Note pour la 32-10a* ; le prompt standard de l'agent de développement (clé souvent
@@ -1440,8 +1460,8 @@ l. 497-503 (routes de la 32-5c).
    `is_hidden_in_text` : elle n'admet ni `\n` ni `\t` ; aucune seconde définition. *(Ajouté le 2026-10-25, revue de code
    P1 de la 32-8b0, A-M1 — P3-R4 (b).)*
 2. **32-10a-iii, AC-iii2 et AC-iii3 — `entree_appel` et `ErreurOutil::LimiteAtteinte` existent.** La signature est
-   celle de l'AC-B11 de la 32-8 : **`entree_appel(cle: &CleMcpAuthentifiee, outil: &str, issue: IssueAppel, duree_ms:
-   u64, envoi: Option<i64>) -> NewAuditLogEntry`** ; la proposition d'un prompt l'appelle avec **`None`** — détail à cinq
+   celle de l'AC-B11 de la 32-8 : **`entree_appel(cle: &CleMcpAuthentifiee, outil: &'static str, issue: IssueAppel,
+   duree_ms: u64, envoi: Option<i64>) -> NewAuditLogEntry`** (`&'static str` depuis la revue de code P1, B-2) ; la proposition d'un prompt l'appelle avec **`None`** — détail à cinq
    clés, comme l'AC-iii3 l'exige. **Décision de l'orchestrateur (validation P2, R5)** : `entree_appel` garde
    `cle: &CleMcpAuthentifiee`, et le service **`services::prompts_mcp::proposer` reçoit lui aussi `cle:
    &CleMcpAuthentifiee`** au lieu de `acces`, `cle_id` et `validation` (AC-iii2, point 0, de la 32-10a, amendé) — même
@@ -1449,12 +1469,19 @@ l. 497-503 (routes de la 32-5c).
    `cle.acces`, `cle.cle_id`, `cle.validation`. `LimiteAtteinte` et l'issue `limite_atteinte` sont posées ; la 32-10a-iii
    les réemploie pour son plafond. **`journaliser_appel`** a gagné le paramètre `envoi: Option<i64>` (AC-B11) : la
    32-10a-iii l'appelle, pour `prompts/get` et pour une proposition refusée, avec `None` (validation P2, F5).
+   *(Complété le 2026-10-25, revue de code P1, A-L7 et B-2.)* Ce que la 32-10a trouvera réellement : `AppelOutil` est
+   **retiré** (C-32-8-54) ; les signatures sont **`journaliser_appel(trace: &Trace, cle: &CleMcpAuthentifiee, outil:
+   &'static str, issue: IssueAppel, duree_ms: u64, envoi: Option<i64>) -> Result<(), AppError>`** et
+   **`entree_appel(cle: &CleMcpAuthentifiee, outil: &'static str, issue: IssueAppel, duree_ms: u64, envoi:
+   Option<i64>) -> NewAuditLogEntry`**, `entree_appel` étant `pub` + `#[doc(hidden)]` (C-32-8-52) ; `outil` est
+   `&'static str` dans l'une et l'autre — le nom `proposer_prompt` passé par la 32-10a-iii doit être une constante du
+   binaire, jamais le nom reçu ; le pool en lecture seule s'appelle **`pool_outils`** (C-32-8-53, point 3 ci-dessous).
 2 bis. **32-10a-ii, AC-ii3 — le pool en lecture seule est déjà lié une fois** (validation P2, F5) : la 32-8b a écrit en
    `lib.rs` `let pool_mcp = kesh_db::pool::pool_lecture_seule(…);` puis `LectureOutils::nouvelle(Lecture::new(
    pool_mcp.clone()))` et `LectureEnvois::new(pool_mcp…)` (AC-B15, point 3) ; « lié une fois puis enveloppé deux fois »
    devient « déjà lié par la 32-8b, enveloppé **une fois de plus** » par `LecturePrompts::new(pool_mcp.clone())`, et les
    entrées de `FABRIQUES_V2` que la 32-10a-ii prévoit partent de celles que la 32-8b aura réécrites.
-3. **`registre_coherent`** refuse déjà le nom réservé `kesh_lire_envoi` ; la 32-10a-iii y ajoute `proposer_prompt`.
+3. **`registre_coherent`** refuse déjà le nom réservé `kesh_lire_envoi`, seul nom réservé de la 32-8. *(Complété le 2026-10-25, étape 0 de la 32-8b — P3-R4 (a), P3-R3 ; phrase de tête corrigée le même jour, revue de code P1, A-M2 : elle annonçait que la 32-10a-iii y ajoute `proposer_prompt`, ce que l'AC-iii2 de la 32-10a, point 5 — `registre_coherent` « inchangé » —, contredit.)* Le refus vit dans `Registre::avec` (`registre::NOMS_RESERVES`, C-32-8-61) ; ce que la 32-10a-iii fait de `proposer_prompt` relève de son AC-iii2. **L'ordre de `tools/list` après la 32-8b** est : les outils du registre ouverts par les portées de la clé, dans l'ordre du registre, **puis** `kesh_lire_envoi`, pour toute clé (`mcp/repartiteur.rs`, bras `Methode::ToolsList` : `let mut outils = etat.registre.descripteurs_pour(&portees(cle)); outils.push(descripteur_lire_envoi());`) ; la 32-10a-iii placera `proposer_prompt` après `kesh_lire_envoi`. Les corps attendus de `tools_list_filtre` (`tests/mcp_transport_e2e.rs`) partent de la liste amendée par la 32-8b : `books:read` → `[descripteur_version(), descripteur_lire_envoi()]`, `contacts:read` seule → `[descripteur_lire_envoi()]`, et le registre de test à deux outils → `livres` puis `kesh_lire_envoi` (AC-iii2, point 4, de la 32-10a). Le pool en lecture seule s'appelle `pool_outils`, non `pool_mcp` (C-32-8-53).
 4. **Les compteurs** que la 32-10a recompte (`TABLES_TO_TRUNCATE`, l'export, `admin-manual.tex:2249`, le CHANGELOG,
    `migrations_upgrade_path.rs`, `admin_pat_denied_e2e.rs`) partent des valeurs que la 32-8 aura posées.
 
@@ -1487,7 +1514,7 @@ boucle de revue* et son exception `kesh-db`, *Recompter*) ; `docs/agents-orchest
    périodique serait une tâche de fond de plus. Et les **lignes** elles-mêmes ne se suppriment jamais : seuls le contenu
    et le résumé s'effacent, les métadonnées (clé, outil, dates, état) restent et entrent dans chaque sauvegarde
    (validation P1, F9). Faut-il une purge périodique, et faut-il supprimer les lignes anciennes ?
-6. **Les bornes** : 20 envois en attente par clé, 64 Kio par envoi, 1 Kio de résumé (C-32-8-13, C-32-8-14). Pour
+6. **Les bornes** : 20 envois en attente par clé, 24 Kio par envoi, 1 Kio de résumé (C-32-8-13, C-32-8-14). Pour
    information.
 7. **Les caractères invisibles** (contrôles bidirectionnels, espaces de largeur nulle…) sont remplacés par leur code
    `\u{…}` dans ce que tu vois **et** dans ce qui part : l'agent reçoit le code, jamais le caractère (C-32-8-5) ; une
@@ -1648,6 +1675,7 @@ la partie qui la fait est entre crochets.
 
 - **32-8a** : Opus 5.5 (`claude-opus-5-5`), en autonomie, worktree `kesh-32-8a`, branche `story/32-8a`.
 - **32-8b0** : Opus 5.5 (Claude Code), en autonomie, le 2026-10-25.
+- **32-8b** : Opus 5.5 (`claude-opus-5-5`), en autonomie, le 2026-10-25, worktree `kesh-32-8a`, branche `story/32-8b`.
 
 ### Statut des parties
 
@@ -1655,7 +1683,7 @@ la partie qui la fait est entre crochets.
 - **32-8b0** — **`review`** (développée **avant** la 32-8a, sur décision de l'orchestrateur, C-32-8-30) ; revue P1 :
   `32-8b0-review-prompt-p1.md` (Opus, lentilles B, E, A) ; remédiée en `6bfd9872` ; revue P2 ciblée :
   `32-8b0-review-prompt-p2.md` (Sonnet, regression hunter).
-- **32-8b** — `ready-for-dev`, après la 32-8b0.
+- **32-8b** — **`review`** (2026-10-25) : développement terminé ; revue P1 : `32-8b-review-prompt-p1.md` (Opus, lentilles B, E, A).
 - **32-8c** — `ready-for-dev`, après la 32-8b.
 
 ### Completion Notes List
@@ -1816,6 +1844,92 @@ la partie qui la fait est entre crochets.
   `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`), aucun échec à rejouer seul ;
   `bank-accounts-crud.spec.ts:220` et `:262` verts. Backends arrêtés par leur PID (1477835, 1572696).
 
+**32-8b (2026-10-25).** Branche `story/32-8b`, partie de `origin/main` à `c5287dec` (32-6a, 32-6b, 32-8b0, 32-8a
+fusionnées). Commits de code `6426c830` (développement) et `e84d9bc5` (garde de la lecture seule) ; périmètre des
+décomptes : `origin/main...HEAD`.
+
+- **Étape 0 (T-B0)** : au Change Log, ligne lue citée. Écarts trouvés au code réel, traités sans élargir :
+  `Donnees` n'a ni `BlocContenu` ni résumé (C-32-8-50) ; `journaliser_appel(&Trace, &AppelOutil)` (C-32-8-54) ;
+  le pool en lecture seule s'appelle `pool_outils` (C-32-8-53) ; la 32-5c est fusionnée (39 couples admin). Borne de
+  taille portée à **24 576** octets (note de l'orchestrateur), dans le code et la fiche (AC-B4, AC-B9, D4, *Les points*,
+  *Ce que les gardes ne voient pas*, signatures, point 6) ; restent 65 536 au fait 12, à l'AC-A (capacité de stockage
+  de la 32-8a) et dans la note elle-même. **Modules : cinq** (`kesh-api/mcp`, `kesh-api/services`, `kesh-api/routes`
+  avec `lib.rs`, `kesh-api/audit_labels`, `kesh-i18n`) — `git diff --name-only origin/main...HEAD -- crates` : aucun
+  fichier de `kesh-db`, ni de `docs/`.
+- **#765** : (1) ordre des refus épinglé à deux causes (`ordre_des_refus_de_la_decision`), mutations M765-1a et
+  M765-1b tuées ; (3) `Some("")` admis et stocké vide, ligne sans contenu → relecture fermée
+  (`validation_tel_quel_sans_contenu_echoue_fermee`), M765-3 tuée ; (4) entrées de `deposer_in_tx` bornées par le
+  service (`cle_requise_deposee` vérifie société et clé), M765-4 tuée ; **(2) non pris** (SQL du dépôt, `kesh-db`,
+  sixième module) — C-32-8-56.
+- **Constats P3 traités** : P3-R3 (le registre refuse les noms réservés de la 32-8 ; la 32-10a décide de
+  `proposer_prompt`) ; P3-R4 (a) (point 3 de la *Note pour la 32-10a*) ; P3-R6 (angle mort écrit, C-32-8-58 ; document
+  des motifs de portée à la 32-8c) ; P3-F1 (MB31 sur `rendre_visible`) ; P3-F3 (périmètre de la garde d'évènements
+  étendu à l'entité et au dépôt de `kesh-db`, identifiants exacts écrits en angle mort) ; P3-F4 (témoins `')'`, `'a`,
+  chaîne brute, `[]`, `{}`) ; P3-F5 (`cle_requise_deposee` compte une entrée ; MF5 tuée) ; P3-F6 (sans objet, C-32-8-50) ;
+  P3-F7 (rendu visible au service, C-32-8-51) ; P3-F8 (renvoi « AC-B11 », déjà juste au texte de l'AC-B5).
+- **Livré** (T-B1 à T-B4) : `services/envois_mcp.rs` (neuf) ; poignées `LectureEnvois`, `EcritureEnvois` ;
+  `entree_appel` et issues des envois ; politique à deux sorties, `Sortie`, `EnvoiAValider`, jetons ;
+  `ReponseMcp::Envoi(ReponseEnvoi)` ; `kesh_lire_envoi` hors registre (`NOM_LIRE_ENVOI`, `NOMS_RESERVES`) ; textes et
+  `instructions` ; `ErreurOutil::TropVolumineux`, `LimiteAtteinte` ; `routes/mcp_envois.rs` (neuf) et les trois routes
+  dans `admin_routes` ; audit `mcp_send.approved` / `.refused`, type `mcp_send`, libellés et six messages
+  `mcp-send-*` dans les quatre catalogues ; registres (`ADMIN_COUPLES` 39 → 42, `(10, 29)` → `(12, 30)`,
+  `discriminating` 8 → 10, `audit_route_registry` 129/123/104/132 → 130/124/105/133, `FABRIQUES_V2` +2 et `MOTIF_V2`,
+  (vi) 12 → 13 fichiers) ; quatre gardes neuves, deux étendues ; tests de la 32-6 amendés selon l'AC-B15 (point 9).
+  `cle_requise_refusee_sans_execution` est **remplacé** par `cle_requise_deposee`. Aucun repli frontend : #758 sans
+  objet ; les libellés d'audit sont tenus par `chaque_code_a_son_libelle_dans_les_quatre_catalogues`
+  (`tests/audit_label_registry.rs:1007`), vert.
+- **Tests** (`#[test]`/`#[sqlx::test]`, `origin/main` → `HEAD`) : `mcp_envois_e2e.rs` 0 → **27** ; `mcp_journal_e2e.rs`
+  6 → 7 ; `mcp_gardes_lexicales.rs` 13 → 17 ; `services/envois_mcp.rs` 0 → 3 ; `services/serveur_mcp.rs` 0 → 1 ;
+  `routes/mcp_envois.rs` 0 → 1 ; `mcp_transport_e2e.rs` 36 → 36 (un remplacé, quatre amendés) — **37 tests neufs**.
+- **Mutations** (T-B5 ; script `scratchpad/328b/mutations-328b.py`, une à la fois, restauration `git checkout -- f` +
+  `touch`, diff résiduel nul vérifié après chacune ; journaux `kesh-gate-logs/328b-mutations.log`,
+  `328b-mutations-2.log`, `328b-mutations-resultats-2.json` — la première campagne, tuée par `systemd-oomd`, n'a pas
+  écrit de JSON) : **MB1 à MB31 (MB9 retirée) : 30 jouées, 30
+  tuées par le test visé** ; plus **MF5** (P3-F5) et **M765-1a, M765-1b, M765-3, M765-4** : **35 jouées, 35
+  tuées**, aucune non compilable. *(Rectifié le 2026-10-26, revue de code P1, A-M1 et A-L6 : ce relevé disait « tuées
+  par l'assertion visée » et citait un `328b-mutations-resultats.json` qui n'existe pas ; le script ne compare que des
+  **noms de test**. M765-4 et MB6 ont été rejouées à la remédiation — voir « Revue de code P1 » ci-dessous.)* Formes jouées autrement que la fiche, équivalentes en effet : MB6 (le résumé recopié
+  dans le texte déposé, seul chemin vers l'agent), MB8 (le filtre de clé levé dans `lire_pour_cle` — seule forme, le
+  service n'ayant pas d'autre accès), MB11 (un échu rendu en attente), MB12 (la relecture validée redéposée par
+  `appliquer(autoriser(…))`), MB31 (`#[tracing::instrument]` sur `rendre_visible`, P3-F1). ⚠️ Déroulement : la
+  première campagne a été tuée par `systemd-oomd` pendant MF5 (`kesh-memguard-2686112.scope`, 21:25:44 ; session
+  intacte) — MF5 restée appliquée a été restaurée à la main (`git checkout -- repartiteur.rs` + `touch`, diff nul) ; son
+  analyseur ne lisait pas les échecs des tests de bibliothèque (MB4, MB14, MB18 rapportées « tuées ailleurs ») et MB26
+  n'appliquait que la moitié de la mutation : les quatre ont été **rejouées** (script corrigé) avec MF5 et M765-*, et
+  tuées par le test visé. La première campagne a aussi révélé un **défaut réel** du commit `6426c830` : la garde
+  `lecture_seule_jamais_defaite` rougissait sur le témoin de `lire_pour_cle_en_lecture_seule` (lecture de
+  `@@session.tx_read_only`) ; exception écrite en `e84d9bc5`, à côté de celle de l'AC-a28.
+- **Gates au dernier commit de code (`e84d9bc5`)**, bases `kesh_328b` et `kesh_e2e_328b` supprimées et recréées par le
+  compte `kesh`, migrations du worktree (dernière `20261025000002`), seed, commandes séparées :
+  - **`scripts/test-fast.sh --ci`** sous flock, `DATABASE_URL` sur `kesh_328b` : garde des droits conforme, fmt,
+    clippy `-D warnings`, nextest **4268 exécutés, 4268 passés, 7 ignorés** (`kesh-gate-logs/328b-gate-complet.log`,
+    `exit=0`) ;
+  - **frontend** sous flock : `npm run check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` PASS,
+    `test:unit` **163 fichiers, 1939 tests**, `build` vert (`328b-gate-frontend.log`, `exit=0`) ;
+  - **E2E complet** sous flock, port 3330, base `kesh_e2e_328b`, dossiers neufs `/tmp/kesh-e2e-328b/{inbox,documents,backup}`, `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR` passés au backend **et** au runner (`328b-e2e.log`, `328b-e2e-backend.log`) : **315 passés, 7 échoués, 17 sautés** (12,6 min) — exactement la KF-029 (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`), aucun échec à rejouer seul. Backend arrêté par son PID (372969), port 3330 libre (`ss -ltnp`).
+  Entre les passes, gates ciblés : les binaires de l'AC (`mcp_envois_e2e` 27/27, puis les neuf binaires touchés,
+  698/698 avant l'écriture de `mcp_envois_e2e.rs`).
+- **Manuel** : aucun texte touché (32-8c). Phrases devenues fausses, à corriger à la 32-8c ou à la 32-7 : celles que
+  nomme le § *Le manuel (axe de revue)* ; `grep -niE "aucun outil|validation_requise" docs CHANGELOG.md README.md
+  website` relu.
+- **Interdits respectés** : aucun push, aucun `gh` qui écrit, aucun tag, aucun `prepare-release`, aucun redémarrage du
+  conteneur ni `GRANT` ; code édité par l'outil Edit (et `cargo fmt`) ; backend E2E arrêté par son PID.
+- **Revue de code P1 — remédiation** (2026-10-26, commit de code `8b7de9fb`) : voir l'entrée « Revue de code P1 » du
+  Change Log, qui fait foi. En bref : **2 tests neufs** (`textes_envoi_epingles_par_un_litteral`,
+  `message_de_taille_lie_a_la_constante`, `8b7de9fb^..8b7de9fb`), quatre tests renforcés, `outil: &'static str` ;
+  **7 mutations** jouées par `scratchpad/328b/mutations-328b-p1.py` sur l'arbre commité (journaux
+  `kesh-gate-logs/328b-p1-mutation-<id>.log`, verdict d'assertion relevé dans `328b-p1-mutations-analyse.log`) :
+  **six tuées par l'assertion visée**, panique du test visé citée, **une non compilable comme attendu** (MP1-2,
+  `E0597`), diff résiduel nul après chacune. **MB6, forme réelle déclarée** : la première campagne recopiait le résumé
+  dans le texte **déposé** ; elle est tuée par `assert_eq!(content…, "le texte seul")` (base), non par l'absence du
+  résumé dans la réponse — la forme de la fiche (le résumé dans la réponse de `kesh_lire_envoi`) est irréalisable par
+  le type (`ContenuValide` n'a pas de résumé). Rejouée en **MB6-bis** : la relecture SQL renvoie `CONCAT(content,
+  summary)` (`kesh-db`, `lire_pour_cle`), la base restant juste → tuée à `mcp_envois_e2e.rs:215`, l'égalité **entière**
+  du corps de `kesh_lire_envoi`, qui contient l'absence du résumé (la boucle d'absence qui suit n'est alors pas
+  atteinte : elle est redondante après une égalité entière). **M765-4-bis** : le dépôt écrit sous une **seconde société
+  existante**, créée dans la transaction du dépôt (clé étrangère valide) → `cle_requise_deposee` panique à l'assertion
+  « point 4 de #765 » (`left: (3, 1, …)`, `right: (2, 1, …)`).
+
 ### File List
 
 **32-8b0** : `crates/kesh-core/Cargo.toml` ; `crates/kesh-core/src/text.rs` ; `Cargo.lock` ;
@@ -1824,6 +1938,8 @@ la partie qui la fait est entre crochets.
 `_bmad-output/implementation-artifacts/sprint-status.yaml` ;
 `_bmad-output/implementation-artifacts/32-8b0-review-prompt-p1.md` (neuf) ;
 `_bmad-output/implementation-artifacts/32-8b0-review-prompt-p2.md` (neuf, revue de code P1).
+
+**32-8b** : `crates/kesh-api/src/mcp/{politique,repartiteur,reponse,textes,outil,registre,mod}.rs` ; `crates/kesh-api/src/services/{envois_mcp.rs (neuf), poignees.rs, serveur_mcp.rs, mod.rs}` ; `crates/kesh-api/src/routes/{mcp_envois.rs (neuf), mod.rs}` ; `crates/kesh-api/src/lib.rs` ; `crates/kesh-api/src/audit_labels.rs` ; `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ; `crates/kesh-api/tests/{mcp_envois_e2e.rs (neuf), mcp_transport_e2e.rs, mcp_journal_e2e.rs, mcp_gardes_lexicales.rs, common/mcp.rs, services_motif.rs, admin_pat_denied_e2e.rs, audit_route_registry.rs}` ; la présente fiche ; `epic-32-choix-autonomes-328.md` (C-32-8-50 à 61) ; `sprint-status.yaml` ; `32-8b-review-prompt-p1.md` (neuf).
 
 ## Change Log
 
@@ -1839,3 +1955,7 @@ la partie qui la fait est entre crochets.
 | 2026-10-25 | **Revue de code P2 (32-8b0) — REVUE TERMINÉE** | **Sonnet**, passe ciblée *regression hunter* sur `6bfd9872` (prompt `32-8b0-review-prompt-p2.md` ; rapport `kesh-gate-logs/328b0-review-p2.md`) : **0/0/0/2**. **Trend** : P1 (Opus ×3, B, E, A) 0/0/3/12 → **P2 (Sonnet, ciblée) 0/0/0/2**. **Clôture** sur une passe sans finding au-dessus de LOW, **2 passes sur 8**. LOW L1 (né de `6bfd9872`) : le CHANGELOG disait les drapeaux admis sans réserve ; un drapeau de subdivision porte des balises U+E0020–E007F (Cf, `tables.rs:2785-2786`) et est refusé — **phrase du CHANGELOG précisée par l'orchestrateur** (« drapeaux de pays », la subdivision nommée), sans toucher au code ; les annotations de la fiche (l. ≈492, ≈1510) et L2 (« emojis composés » sans réserve, l. ≈479, ≈1495) restent : relevés datés. LOW non remédiés de la P1 tracés dans **#763**. Dernier commit de code `6bfd9872` : gate complet 4195/4195, `cargo publish --dry-run -p kesh-import` vert, frontend 1939/1939, E2E essai 2 315 + 7 KF-029. *(Écrit par l'orchestrateur.)* |
 | 2026-10-25 | **développement 32-8a** | Opus 5.5, en autonomie, worktree `kesh-32-8a` (branche `story/32-8a`, partie de la fiche fusionnée avec `origin/main` à `cd86dc74`, 32-6a et 32-6b comprises). Commits `d424c5ee` (code, tests, audit, registre) et `032ab8bb` (ligne de `migrations.sha384`, **en dernier**). **Étape 0**, ligne lue citée au Dev Agent Record : dernière migration `20261025000001` (`migrations.sha384:99`), comptes 84 / 41 / 41 / onze / 17 (`backup.rs:44`, `admin_full_export_e2e.rs:282`, `global.rs:166-167`, `EMPTY_BEFORE_RESET`), `migrations_upgrade_path.rs:122` et `:210`. Livré : migration `20261025000002_mcp_sends` (DDL seul, non breaking), entité, dépôt (six fonctions de la table de correspondance), `TABLES_TO_TRUNCATE` (avant `mcp_keys`), squash, upgrade path **85 / `total - 51`** (frontière 34), audit P5 (**85** lignes, `tracked-by-sqlx` **75**), export **42**, `TABLES_HORS_EXPORT` (**douze**), aller-retour d'import, remise à zéro. **30 tests neufs** (27 + 2 + 1, périmètre `5c8ff91b..HEAD`). **Mutations : 19 jouées (MA1 à MA16, et MA3 à MA5 aussi sur la migration seule), 19 tuées par le test visé**, diff résiduel nul. **Gates au dernier commit de code**, bases remises à zéro : backend **4219 / 4219** ; frontend check, lint-i18n-ownership, test:unit (1939), build verts ; **E2E 315 passés, 7 échecs = KF-029**, ni KF-052 ni pollution. Choix **C-32-8-40 à C-32-8-43** (Debug masqué — constat P3-F3 traité côté `kesh-db` ; alias `s` de `ETAT_DERIVE_SQL`, qui sert aussi au plafond et à la purge ; validé vivant sans contenu = erreur ; retours de la décision et du détail). Manuel non touché (32-8c) ; la phrase du CHANGELOG est à `:16-17`. Clé `32-8a-table-envois-sauvegarde` → `review` ; prompt de revue P1 `32-8a-review-prompt-p1.md` (Sonnet, lentilles B, E, A). |
 | 2026-10-25 | **Revue de code P1 (32-8a) — REVUE TERMINÉE** | **Sonnet ×3** (lentilles B, E, A, contexte frais, prompt `32-8a-review-prompt-p1.md` ; rapports `kesh-gate-logs/328a-review-p1-{B,E,A}.md`) : B 0/0/0/5, E 0/0/0/5, A 0/0/0/5 ⇒ **0 CRITICAL / 0 HIGH / 0 MEDIUM / 15 LOW** (convergences : ordre des refus B3 = A-1 = E2 ; jointures sans recoupement de société B2 = A-5 = E4 ; validation sans contenu B4 = A-2 = E3). **Clôture** sur une passe sans finding au-dessus de LOW, **1 passe sur 8**. LOW non remédiés, tracés dans **#765** ; l'ordre des refus, le recoupement de société et la validation des entrées de `deposer_in_tx` sont à reprendre à l'étape 0 de la **32-8b**, qui consomme ce dépôt. L'observation du Dev Agent Record (envoi rattaché à une clé orpheline) est sans objet pratique (A-4 : `fk_mcp_sends_company` en `RESTRICT`, remise à zéro qui vide la table). Fusion de `origin/main` (`aa61fdae`, 32-8b0) : fiche, registre et `sprint-status.yaml` conciliés par union, sans code commun. Dernier commit de code `032ab8bb` : gate complet 4219/4219, frontend 1939/1939, E2E 315 + 7 KF-029, 19 mutations tuées. *(Écrit par l'orchestrateur.)* |
+| 2026-10-25 | **32-8b — étape 0 (T-B0)** | Opus 5.5, en autonomie, worktree `kesh-32-8a`, branche `story/32-8b` partie de `origin/main` à `c5287dec`. **Code réel relu, à `c5287dec`** : `mcp/politique.rs:21-34` (`Donnees { texte, structure }` — **ni `BlocContenu` ni résumé** : `git grep -n BlocContenu c5287dec -- crates` → 0), `:37-44` (`Autorisation`, `Refus`), `:55-60` (`autoriser`), `:63-65` (`appliquer`), `:70-82` (`en_resultat`) ; `mcp/repartiteur.rs:156-178` (**tâche de l'appel**, `tokio::spawn`, C-32-6-58), `:182-211` (`appeler_et_journaliser`, fail closed), `:263-272` (refus `ValidationRequise`), `:283-289` (**tâche de l'outil**, C-32-6-56 : elle possède l'outil, l'accès et la lecture) ; `services/serveur_mcp.rs:102` (`IssueAppel`, sept issues), `:138` (`AppelOutil`), `:166` (`journaliser_appel(trace, &AppelOutil)`) ; `mcp/outil.rs:88` (`MotifArgument`, une seule variante `Invalide`), `:96` (`ErreurOutil`), `:115` (`arguments`) ; `mcp/mod.rs:99` (`EtatMcp`, six champs) ; `mcp/textes.rs:80-81` (`TEXTE_VALIDATION_REQUISE`), `:97-98` (`INSTRUCTIONS`) ; `kesh-db/src/repositories/mcp_sends.rs:44-84` (`deposer_in_tx`, aucune validation de ses entrées — #765 (4)), `:116-151` (`lire_pour_cle`, filtre `:125` société **et** clé ; `Invariant` pour un validé sans contenu `:136-142`), `:164-166` (`JOINTURES` sans recoupement de société — #765 (2)), `:290-319` (`decider_in_tx`, ordre absent → déjà décidé → échu → version, `:311-319` — #765 (1)), `entities/mcp_send.rs` (`ETAT_DERIVE_SQL`, alias `s`) ; `kesh-core/src/text.rs:116-121` (`is_hidden_in_text` « ne normalise rien » : « refuser le texte tel qu'il est reçu (un envoi modifié, 32-8b, AC-B9 : aucune normalisation) ») ; `lib.rs:247`/`:449` (marqueurs), `:250` (39, 32-5c fusionnée), `:1262-1266` (`pool_outils`, lié une fois) ; `tests/admin_pat_denied_e2e.rs` (39 couples, `(10, 29)`, `discriminating = 8`) ; `tests/audit_route_registry.rs` (129, 123, 104, 132) ; `tests/services_motif.rs:1896-1911` (`FABRIQUES_V2`), `:1927` (`MOTIF_V2`), `:2572` (douze fichiers) ; `docs/MULTI-TENANT-SCOPING-PATTERNS.md:339` (ordre des verrous de la remise à zéro). **Grep de la valeur 65 536** (`grep -nE '65[ _]?53[0-9]|64 ?Kio|64 ?\* ?1024'`) : aucun site de la 32-8 dans le code ; douze sites de la fiche portés à 24 576 / 24 Kio, trois laissés (fait 12, AC-A, la note). **Points de #765** : (1), (3), (4) pris, (2) laissé (C-32-8-56). **P3-R4 (a)** : point 3 de la *Note pour la 32-10a*, écrit. **Libellés d'audit** : tenus par `chaque_code_a_son_libelle_dans_les_quatre_catalogues` ; aucun repli frontend, #758 sans objet. **Le découpage tient** : cinq modules, aucune prémisse bloquante — les écarts au code réel se traitent dans les fichiers déjà au périmètre (C-32-8-50, 53, 54). |
+| 2026-10-25 | **32-8b — développement (T-B1 à T-B5) — DÉVELOPPEMENT TERMINÉ** | Opus 5.5, en autonomie. Commits de code `6426c830`, `e84d9bc5`. Politique à deux sorties, dépôt et entrée d'appel en une transaction, `kesh_lire_envoi` hors registre, trois routes de décision dans `admin_routes`, audit et libellés, borne 24 576 octets ; amendements de la 32-6 selon l'AC-B15. **37 tests neufs** (`origin/main...HEAD`). **Mutations : 35 jouées (MB1 à MB31 sans MB9, MF5, M765-1a, -1b, -3, -4), 35 tuées par l'assertion visée**, diff résiduel nul ; première campagne tuée par `systemd-oomd` et analyseur corrigé, quatre rejouées (détail au Dev Agent Record) ; un défaut réel révélé et corrigé (`e84d9bc5`). **Gates au dernier commit de code** : bases remises à zéro ; `test-fast.sh --ci` **4268/4268** (7 ignorés) ; frontend `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` 1939/1939, `build` vert ; **E2E 315 passés, 7 échecs = KF-029**, 17 sautés. Choix **C-32-8-50 à C-32-8-61**. `sprint-status.yaml` : `32-8b-poignee-serveur` → `review`. Prompt de revue P1 : `32-8b-review-prompt-p1.md` (Opus, B, E, A). *(Annoté le 2026-10-26, revue de code P1, A-M1 : « tuées par l'assertion visée » est à lire « tuées par le **test** visé » — le script ne comparait que des noms de test ; M765-4 et MB6 rejouées à la remédiation, voir l'entrée suivante.)* |
+| 2026-10-26 | **32-8b — revue de code P1** | **Opus ×3** (lentilles B, E, A, contexte frais, prompt `32-8b-review-prompt-p1.md` ; rapports `kesh-gate-logs/328b-review-p1-{B,E,A}.md`) : B 0/0/2/6, E 0/0/0/9, A 0/0/2/9 ⇒ **trend P1 : 0 CRITICAL / 0 HIGH / 4 MEDIUM / 24 LOW** (doublons B-2 = A-L1, B-5 = A-L4, B-8 = E-3 = A-L5, B-6 = E-5, comptés une fois par lentille). Remédiation par Opus 5.5, en autonomie ; **prémisse de chaque finding relue au code**. **MEDIUM remédiés** : **B-1** → test `textes_envoi_epingles_par_un_litteral` (`mcp/textes.rs`) : les six `texte_envoi_*` (sept appels, `valide` modifié ou non) épinglés par un littéral écrit en toutes lettres ; **B-2 = A-L1** → `outil: &'static str` dans `entree_appel` et `journaliser_appel` (fiche annotée aux *Signatures*, à l'AC-B11 et à la *Note pour la 32-10a*) ; **A-M1** → record et entrée du développement rectifiés (« tuées par le **test** visé ») ; M765-4 rejouée sous une **seconde société existante**, MB6 déclarée et rejouée (MB6-bis) ; **A-M2** → « y ajoutera `proposer_prompt` » retiré de l'AC-B6 et de la tête du point 3 de la *Note pour la 32-10a*, qui ne se contredit plus. **LOW remédiés** : A-L2 (attendu par indice), A-L3 (les deux accusés comparés entiers au numéro lu en base, le troisième à `MAX(id)`), A-L4 = B-5 (`len() == 7`), A-L5 = B-8 = E-3 (inventaire : **D4 bis** — refus au plafond, angle mort, aussi au § *Ce que les gardes ne voient pas* ; **D4 ter** — échec interne et journal en échec ; **D4 quater** — refus constants du répartiteur), A-L6 (JSON inexistant retiré), A-L7 (point 2 de la *Note* : `AppelOutil` retiré, signatures réelles, `pool_outils`), A-L8 (annotations à l'AC-B1, l'AC-B3, l'AC-B5, l'AC-B15 point 10 et aux *Signatures*), A-L9 (purge en échec journalisée par l'id de société seul), B-3 (`i + 3` ; rouge neuf), B-4 (trois angles morts écrits : commentaires imbriqués, macros à `{}`/`[]`, préfixes `c"…"`/`cr"…"`), B-7 (test `message_de_taille_lie_a_la_constante` : repli et quatre catalogues liés à `MCP_ENVOI_OCTETS_MAX`), E-1 (le dépôt a le même ordre de verrous que la décision : angle mort et C-32-8-58 complétés). **Réfuté en partie** : l'exemple de B-3, `warn!(a = ('\'', ')'), contenu)`, ne rougit **pas** avec l'ancienne forme (l'espace après la virgule empêche le faux littéral) ; le défaut est réel sans l'espace — le rouge retenu est `warn!(a = ('\'',')'), contenu)`, vérifié par MP1-5. **LOW non traités, à verser à une issue** (demandée à l'orchestrateur) : B-6 = E-5 (500 après la validation de la décision), E-2 (commentaire « d'une unité » de `kesh-db`), E-4 (`COMMIT` ambigu du dépôt), E-6 (`"content": null` vaut « tel quel », contrat à préciser par la 32-8c), E-7 (sélecteurs de variante refusés, à expliquer par la 32-8c), E-8 (point de mesure de la durée d'un dépôt réussi), E-9 (purge en échec non éprouvée). **Commit de code** `8b7de9fb` (dernier commit de code). **Tests** : 2 neufs, 4 renforcés (`8b7de9fb^..8b7de9fb`). **Mutations** (`scratchpad/328b/mutations-328b-p1.py`, arbre commité, une à la fois, `git checkout -- f` + `touch`, diff résiduel nul après chacune ; journaux `328b-p1-mutation-<id>.log`, `328b-p1-mutations.log`, analyse `328b-p1-mutations-analyse.log`) : **7 jouées — 6 tuées par l'assertion visée** (MP1-1 `textes.rs:234` ; M765-4-bis `mcp_transport_e2e.rs:1413`, message « point 4 de #765 » ; MB6-bis `mcp_envois_e2e.rs:215` ; MP1-5 `mcp_gardes_lexicales.rs:1345`, « rouge : … » ; MP1-6 `routes/mcp_envois.rs:348`, ligne du catalogue fr-CH ; MP1-7 `mcp_envois_e2e.rs:414`, « une entrée par appel ») **et 1 non compilable comme attendu** (MP1-2 : un nom reçu du client passé à `journaliser_appel` → `E0597`, `nom_client` does not live long enough). ⚠️ Le verdict automatique du script (« autre assertion ») était faux : son analyseur cherchait des en-têtes `--- STDERR` que cette version de nextest n'écrit pas ; l'assertion a été relevée dans la panique du test visé (`thread '<test>' panicked at …`), copiée à `328b-p1-mutations-analyse.log`. **Gates au dernier commit de code** : bases `kesh_328b` et `kesh_e2e_328b` supprimées et recréées, migrations du worktree (dernière `20261025000002`), seed, en commandes séparées ; `scripts/test-fast.sh --ci` sous flock : garde des droits conforme, fmt, clippy, nextest **4270 exécutés, 4270 passés, 7 ignorés** (4268 + 2, `328b-p1-gate-complet.log`) ; frontend sous flock **et** mem-guard : `check` 0 erreur (29 avertissements), `lint-i18n-ownership` PASS, `test:unit` **1939/1939** (163 fichiers), `build` vert (`328b-p1-gate-frontend.log`) ; **E2E complet** sous flock, port 3330, dossiers neufs `/tmp/kesh-e2e-328b-p1/`, INBOX et DOCUMENTS passés au backend et au runner : **315 passés, 7 échecs = KF-029 exactement** (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`), 17 sautés (`328b-p1-e2e.log`) ; backend arrêté par son PID, port libre. **Pour la 32-10a** (à reporter par l'orchestrateur) : son AC-iii2, point 5 (`registre_coherent` « inchangé ») est désormais cohérent avec la 32-8 ; la 32-10a-iii appelle `journaliser_appel`/`entree_appel` avec un `outil: &'static str`. **1 passe sur 8.** Prompt de la passe suivante : `32-8b-review-prompt-p2.md` (passe **ciblée**, une lentille, regression hunter, **Sonnet**, sur le seul commit `8b7de9fb`). |
+| 2026-10-26 | **Revue de code P2 (32-8b) — REVUE TERMINÉE** | **Sonnet**, passe ciblée *regression hunter* sur `8b7de9fb` (prompt `32-8b-review-prompt-p2.md` ; rapport `kesh-gate-logs/328b-review-p2.md`) : **0/0/0/3**. **Trend** : P1 (Opus ×3, B, E, A) 0/0/4/24 → **P2 (Sonnet, ciblée) 0/0/0/3**. **Clôture** sur une passe sans finding au-dessus de LOW, **2 passes sur 8**. LOW non remédiés (L-1 mutations des renforcements A-L2/A-L3, L-2 C-32-8-52 non annoté, L-3 relevé réécrit en place) et LOW non traités de la P1 : tracés dans **#768**. Point 2 de #765 (jointures de `kesh-db`) laissé à une story qui touche `kesh-db`. Dernier commit de code `8b7de9fb` : gate complet 4270/4270, frontend 1939/1939, E2E 315 + 7 KF-029. *(Écrit par l'orchestrateur.)* |

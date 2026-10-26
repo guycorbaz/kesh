@@ -247,7 +247,7 @@ pub fn build_router_avec_registre(
     // KESH-ADMIN-ROUTES-BEGIN
     // ⚠️ Bloc borné — Story 22-4a (#167). Le test `admin_pat_denied_e2e` lit CE
     // fichier par `include_str!`, compte les constructeurs de méthode entre les
-    // deux marqueurs, et exige exactement 39 (Story 32-5c). Toute route ajoutée ici sans son
+    // deux marqueurs, et exige exactement 42 (Story 32-8b). Toute route ajoutée ici sans son
     // couple dans la liste du test fait ROUGIR le test : c'est le rappel qui
     // manquait, et qui a laissé 16 routes sur 19 sans garde anti-PAT.
     // Ne pas déplacer ni reformuler les marqueurs sans ajuster le test.
@@ -362,6 +362,23 @@ pub fn build_router_avec_registre(
             "/api/v1/admin/mcp/settings",
             get(routes::mcp_server_settings::get_mcp_server_settings)
                 .put(routes::mcp_server_settings::update_mcp_server_settings),
+        )
+        // Story 32-8b (refs #723) : les envois du serveur MCP à valider — la
+        // liste, le détail (contenu compris) et la décision. Admin seulement,
+        // par une SESSION : un PAT reçoit la couche anti-PAT, une clé MCP n'est
+        // pas reconnue par `require_auth` (401) — l'agent ne peut pas valider
+        // son propre envoi (C-32-8-10).
+        .route(
+            "/api/v1/admin/mcp/sends",
+            get(routes::mcp_envois::lister_envois),
+        )
+        .route(
+            "/api/v1/admin/mcp/sends/{id}",
+            get(routes::mcp_envois::detail_envoi),
+        )
+        .route(
+            "/api/v1/admin/mcp/sends/{id}/decision",
+            post(routes::mcp_envois::decider_envoi),
         )
         // Story 20-1 : socle templates d'e-mail (Admin-only — pas de lecture
         // Comptable+ v1, seul consommateur = section Admin dédiée 20-2).
@@ -1258,12 +1275,17 @@ pub fn build_router_avec_registre(
     // sienne (clé MCP seulement). Les outils lisent sur un pool en lecture
     // seule, construit ici une fois, dont MariaDB interrompt toute instruction
     // au-delà du délai d'un outil (revue P1, E1) ; la `garde` est la `Lecture`
+    // ordinaire. Story 32-8b (refs #723) : le pool en lecture seule, lié **une
+    // fois**, est enveloppé deux fois — la lecture des outils et la relecture
+    // des envois (`kesh_lire_envoi`) ; le dépôt des envois écrit sur le pool
     // ordinaire.
     let delai = registre.delai();
     let pool_outils =
         kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);
     let lecture_outils =
-        mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils));
+        mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils.clone()));
+    let lecture_envois = services::poignees::LectureEnvois::new(pool_outils);
+    let ecriture_envois = services::poignees::EcritureEnvois::new(state.pool.clone());
     let etat_mcp = mcp::EtatMcp {
         origines_propres: mcp::origines_propres(
             state.config.port,
@@ -1272,6 +1294,8 @@ pub fn build_router_avec_registre(
         garde: state.lecture(),
         lecture: lecture_outils,
         trace: state.trace(),
+        lecture_envois,
+        ecriture_envois,
         registre: Arc::new(registre),
         statique: fallback.clone(),
     };

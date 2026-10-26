@@ -54,7 +54,12 @@
 //!   Q11, tranchée le 2026-10-24). Ce qu'un handler doit lire pour sa présentation
 //!   (le contexte PDF) passe par une fonction de service. L'action d'audit reste
 //!   un **littéral** à chaque `NewAuditLogEntry::user(` (garde
-//!   `tests/audit_label_registry.rs`).
+//!   `tests/audit_label_registry.rs`). Les envois du serveur MCP (Story 32-8b)
+//!   ont leurs poignées propres, sans pool visible : `LectureEnvois` (une
+//!   relecture, sur le pool en lecture seule du MCP) et `EcritureEnvois` (le
+//!   dépôt avec l'entrée d'audit de son appel, et la purge des contenus échus,
+//!   sur le pool ordinaire) — les deux seules écritures d'un chemin du MCP hors
+//!   de la `Trace` (inventaire ci-dessous, point 2).
 //! - **R5** — Une trace qu'un handler pourrait oublier est une trace muette : le
 //!   contenu ne se rend qu'à travers la méthode qui trace
 //!   (`Rapport::afficher`/`exporter`). Une lecture sans trace (le plan
@@ -90,6 +95,19 @@
 //!    le répartiteur du MCP avant l'envoi de la réponse — **fail closed** : si
 //!    elle échoue, aucune donnée ne part (C-32-6-30). Dérogation écrite aux
 //!    règles R1, R2 et R7 (une écriture d'audit, sans `exiger`).
+//!
+//!    Et, depuis la Story 32-8b, deux écritures des **envois du serveur MCP**,
+//!    sur la poignée `poignees::EcritureEnvois` (pool ordinaire), jamais sur une
+//!    `Lecture` : (a) `envois_mcp::deposer` — le dépôt d'un envoi **et**
+//!    l'entrée `mcp.tool_called` de son appel (`serveur_mcp::entree_appel`), en
+//!    **une** transaction ; (b) la purge des contenus échus de la société
+//!    (`EcritureEnvois::purger_echus`), *best-effort*, hors de cette
+//!    transaction. Dérogation écrite aux règles R2 et R7 (`envois_mcp`, en tête
+//!    du module) : la portée a été exigée par le service de l'outil avant sa
+//!    lecture, et le dépôt ne lit rien des livres. La relecture
+//!    (`envois_mcp::lire`, sur `poignees::LectureEnvois`, pool en lecture seule
+//!    du MCP) déroge de même à R2 et R7 : sa règle est « même clé, même
+//!    société », plus étroite qu'une portée.
 //! 3. Aucune autre : les générateurs de `kesh-report`, `ReportPeriod::resolve`,
 //!    `resolve_scope`, `rapports::identite_societe`, `helpers::company_for_ids`,
 //!    `accounts::list_by_company` et `letterings::letterable_account_ids` ne
@@ -237,6 +255,7 @@ pub mod acces;
 pub mod carnet;
 pub mod cles_mcp;
 pub mod ecritures;
+pub mod envois_mcp;
 pub mod factures;
 pub mod factures_fournisseur;
 pub mod plan_comptable;

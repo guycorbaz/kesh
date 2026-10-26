@@ -545,3 +545,184 @@ impl McpTool for Panique {
         Box::pin(async move { panic!("outil de test : panique voulue (326b)") })
     }
 }
+
+// ---------------------------------------------------------------------------
+// Story 32-8b — les envois à valider : un outil à sortie fixée et les aides
+// ---------------------------------------------------------------------------
+
+/// Outil de test de la 32-8b (AC-B15, point 11) : rend un texte, une structure
+/// et un résumé **fixés** — les pièges de l'AC-B2, les caractères cachés de
+/// l'AC-B3, un texte de taille réglable pour l'AC-B4 — et compte ses
+/// exécutions.
+pub struct Fixe {
+    pub nom: &'static str,
+    pub texte: String,
+    pub structure: Option<serde_json::Value>,
+    pub resume: Option<String>,
+    pub n: Arc<AtomicUsize>,
+}
+
+impl Fixe {
+    /// Un outil `nom` (portée `books:read`) qui rend `texte`, sans structure ni
+    /// résumé ; rend aussi son compteur.
+    pub fn texte(nom: &'static str, texte: impl Into<String>) -> (Self, Arc<AtomicUsize>) {
+        let n = Arc::new(AtomicUsize::new(0));
+        (
+            Self {
+                nom,
+                texte: texte.into(),
+                structure: None,
+                resume: None,
+                n: n.clone(),
+            },
+            n,
+        )
+    }
+}
+
+impl McpTool for Fixe {
+    fn nom(&self) -> &'static str {
+        self.nom
+    }
+    fn description(&self) -> &'static str {
+        "outil de test : sortie fixée (32-8b)"
+    }
+    fn schema_entree(&self) -> &'static str {
+        SCHEMA_VIDE
+    }
+    fn portee(&self) -> Portee {
+        Portee::BooksRead
+    }
+    fn executer<'a>(&'a self, _ctx: &'a ContexteMcp<'a>, _a: serde_json::Value) -> FuturOutil<'a> {
+        Box::pin(async move {
+            self.n.fetch_add(1, Ordering::SeqCst);
+            let d = Donnees::nouvelles(self.texte.clone(), self.structure.clone());
+            Ok(match &self.resume {
+                Some(r) => d.avec_resume(r.clone()),
+                None => d,
+            })
+        })
+    }
+}
+
+/// `tools/call` de `kesh_lire_envoi` pour le numéro `n`.
+pub fn lire_envoi(id: i64, n: i64) -> String {
+    appel(id, "kesh_lire_envoi", serde_json::json!({ "envoi": n }))
+}
+
+/// Le numéro que rend l'accusé d'un dépôt.
+pub fn numero_depose(r: &Rendu) -> i64 {
+    r.json()["result"]["structuredContent"]["envoi"]
+        .as_i64()
+        .unwrap_or_else(|| {
+            panic!(
+                "accusé de dépôt attendu : {}",
+                String::from_utf8_lossy(&r.corps)
+            )
+        })
+}
+
+/// La réponse attendue d'un dépôt réussi (AC-B5).
+pub fn attendu_depose(id: i64, n: i64) -> serde_json::Value {
+    serde_json::json!({"jsonrpc":"2.0","id":id,"result":{
+        "content":[{"type":"text","text":kesh_api::mcp::textes::texte_envoi_depose(n)}],
+        "structuredContent":{"envoi":n,"etat":"en_attente"},"isError":false}})
+}
+
+/// La réponse attendue d'une relecture d'un envoi en attente (AC-B6).
+pub fn attendu_en_attente(id: i64, n: i64) -> serde_json::Value {
+    serde_json::json!({"jsonrpc":"2.0","id":id,"result":{
+        "content":[{"type":"text","text":kesh_api::mcp::textes::texte_envoi_en_attente(n)}],
+        "structuredContent":{"envoi":n,"etat":"en_attente"},"isError":false}})
+}
+
+/// La réponse attendue d'une relecture d'un envoi validé (AC-B6) : le second
+/// bloc est `texte`, octet pour octet.
+pub fn attendu_valide(id: i64, n: i64, modifie: bool, texte: &str) -> serde_json::Value {
+    serde_json::json!({"jsonrpc":"2.0","id":id,"result":{
+        "content":[
+            {"type":"text","text":kesh_api::mcp::textes::texte_envoi_valide(n, modifie)},
+            {"type":"text","text":texte},
+        ],
+        "structuredContent":{"envoi":n,"etat":"valide","modifie":modifie},"isError":false}})
+}
+
+/// La réponse attendue d'une relecture refusée, échue ou inconnue (AC-B6).
+pub fn attendu_refuse(id: i64, n: i64) -> serde_json::Value {
+    attendu_outil_en_erreur(id, &kesh_api::mcp::textes::texte_envoi_refuse(n))
+}
+
+/// Idem, échu.
+pub fn attendu_echu(id: i64, n: i64) -> serde_json::Value {
+    attendu_outil_en_erreur(id, &kesh_api::mcp::textes::texte_envoi_echu(n))
+}
+
+/// Idem, inconnu (numéro inexistant, autre clé, autre société).
+pub fn attendu_inconnu(id: i64, n: i64) -> serde_json::Value {
+    attendu_outil_en_erreur(id, &kesh_api::mcp::textes::texte_envoi_inconnu(n))
+}
+
+/// Une session (JWT forgé) d'un utilisateur `user_id` du rôle `role`.
+pub fn session(user_id: i64, role: Role, company_id: i64) -> String {
+    let now = chrono::Utc::now().timestamp();
+    let claims = kesh_api::auth::jwt::Claims {
+        sub: user_id.to_string(),
+        role: role.as_str().to_string(),
+        company_id,
+        iat: now,
+        exp: now + 3600,
+    };
+    jsonwebtoken::encode(
+        &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret(TEST_JWT_SECRET.as_bytes()),
+    )
+    .unwrap()
+}
+
+/// Une requête vers l'API d'administration, `Authorization: Bearer <jeton>`,
+/// corps JSON facultatif.
+pub fn requete_api(
+    methode: &str,
+    chemin: &str,
+    jeton: Option<&str>,
+    corps: Option<serde_json::Value>,
+) -> Request<Body> {
+    let mut b = Request::builder().method(methode).uri(chemin);
+    if let Some(j) = jeton {
+        b = b.header("authorization", format!("Bearer {j}"));
+    }
+    match corps {
+        Some(c) => b
+            .header("content-type", "application/json")
+            .body(Body::from(c.to_string()))
+            .unwrap(),
+        None => b.body(Body::empty()).unwrap(),
+    }
+}
+
+/// Le contenu d'un envoi en base, octet pour octet (`None` si nul).
+pub async fn contenu_en_base(pool: &MySqlPool, id: i64) -> Option<String> {
+    sqlx::query_scalar("SELECT content FROM mcp_sends WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Le nombre de lignes de `mcp_sends`.
+pub async fn envois_en_base(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM mcp_sends")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Pose l'échéance de l'envoi `id` dans le passé (AC-B7).
+pub async fn echoir(pool: &MySqlPool, id: i64) {
+    sqlx::query("UPDATE mcp_sends SET expires_at = NOW(3) - INTERVAL 1 SECOND WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
