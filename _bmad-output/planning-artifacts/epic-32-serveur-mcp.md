@@ -33,6 +33,7 @@ quand les stories ci-dessous sont `done` et la v0.16.0 publiée.
   **pas d'OAuth**. La sécurité réseau est l'affaire de l'infrastructure (NAS non exposé, accès externe par VPN, une partie
   des conteneurs derrière Traefik) ; Kesh garde un **filtre d'adresse de défense en profondeur, désactivable**, décrit
   comme un complément.
+  *(Annoté le 2026-10-25 au soir, décision de Guy : « hermes n'est pas installé pour l'instant : je prévois de m'en occuper probablement début de l'année prochaine : sors-le donc du contexte de ce projet ». **Hermes est hors du périmètre de l'Epic 32** : seul Claude Code est nommé comme client dans les manuels et les fiches vivantes ; la question 2 de la spike ci-dessous et la Q9 sont sans objet pour Hermes. Le créateur d'une clé MCP n'est pas affiché à l'écran (recommandation acceptée).)*
 - Authentification par un **second type de clé, dédié au MCP**, à **portées fines** (`books:read` et `documents:read`
   séparées…), **jamais de portée d'administration**.
 - **Lecture seule sur les livres, prouvée par construction** (connexion en lecture seule).
