@@ -421,3 +421,521 @@ async fn p_q_r_s_lignes_multiples_mappees_non_ascii(pool: MySqlPool) {
         "(s) témoin : il est bien mandataire"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Story 32-6c — le journal du filtre d'adresse (AC-T1 à AC-T5)
+// ---------------------------------------------------------------------------
+
+/// Le fragment qui distingue un évènement de décision (le `debug!` d'une
+/// entrée ignorée de `allowed_networks` n'en est pas un).
+const DECISION: &str = "décision du filtre d'adresse";
+
+/// Un mandataire déclaré, dans `172.16.0.0/12` (plages par défaut).
+const MANDATAIRE: &str = r#"["172.18.0.1"]"#;
+
+/// Les évènements de décision de la capture, dans l'ordre.
+fn decisions(capture: &CaptureTrace) -> Vec<String> {
+    capture
+        .evenements()
+        .into_iter()
+        .filter(|e| e.contains(DECISION))
+        .collect()
+}
+
+/// Un évènement de décision attendu — le message d'abord, puis les onze champs
+/// dans l'ordre de l'AC-1 ; comparé par **égalité de chaîne complète**.
+#[derive(Clone, Copy)]
+struct Attendu {
+    niveau: &'static str,
+    company_id: i64,
+    filtre: bool,
+    plages: usize,
+    pair: &'static str,
+    pair_mandataire: bool,
+    xff_lignes: usize,
+    xff_entrees: usize,
+    x_real_ip: bool,
+    forwarded: bool,
+    client: &'static str,
+    verdict: &'static str,
+}
+
+impl Attendu {
+    /// Un refus en `WARN` : filtre activé, sept plages, aucun en-tête de
+    /// mandataire, le client étant le pair.
+    fn refus(company_id: i64, pair: &'static str) -> Self {
+        Self {
+            niveau: "WARN",
+            company_id,
+            filtre: true,
+            plages: 7,
+            pair,
+            pair_mandataire: false,
+            xff_lignes: 0,
+            xff_entrees: 0,
+            x_real_ip: false,
+            forwarded: false,
+            client: pair,
+            verdict: "refuse",
+        }
+    }
+
+    /// Le même évènement, en admission (`DEBUG`).
+    fn admis(self) -> Self {
+        Self {
+            niveau: "DEBUG",
+            verdict: "admis",
+            ..self
+        }
+    }
+
+    fn texte(&self) -> String {
+        format!(
+            "{} kesh_api::mcp::reseau message=serveur MCP : {DECISION} company_id={} filtre={} \
+             plages={} pair={} pair_mandataire={} xff_lignes={} xff_entrees={} x_real_ip={} \
+             forwarded={} client={} verdict={}",
+            self.niveau,
+            self.company_id,
+            self.filtre,
+            self.plages,
+            self.pair,
+            self.pair_mandataire,
+            self.xff_lignes,
+            self.xff_entrees,
+            self.x_real_ip,
+            self.forwarded,
+            self.client,
+            self.verdict,
+        )
+    }
+}
+
+/// Un cas de l'AC-T1 : les réglages, la requête, la réponse et l'évènement.
+struct Cas {
+    n: u8,
+    filtre: bool,
+    reseaux: &'static str,
+    mandataires: &'static str,
+    pair: &'static str,
+    en_tetes: Vec<(&'static str, &'static [u8])>,
+    verdict: Verdict,
+    attendu: Attendu,
+}
+
+/// AC-T1 — un évènement, et un seul, par décision ; ses onze champs, son
+/// niveau, et la réponse inchangée (refusé ⇔ route absente).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn decision_journalisee_par_cas(pool: MySqlPool) {
+    let (c, _) = societe_servie(&pool).await;
+    let r = |pair| Attendu::refus(c, pair);
+    let cas = vec![
+        Cas {
+            n: 1,
+            filtre: true,
+            reseaux: RESEAUX_DEFAUT,
+            mandataires: "[]",
+            pair: "198.51.100.7",
+            en_tetes: vec![],
+            verdict: Refuse,
+            attendu: r("198.51.100.7"),
+        },
+        Cas {
+            n: 2,
+            filtre: true,
+            reseaux: RESEAUX_DEFAUT,
+            mandataires: "[]",
+            pair: "192.168.1.20",
+            en_tetes: vec![],
+            verdict: Admis,
+            attendu: r("192.168.1.20").admis(),
+        },
+        Cas {
+            n: 3,
+            filtre: true,
+            reseaux: RESEAUX_DEFAUT,
+            mandataires: MANDATAIRE,
+            pair: "172.18.0.1",
+            en_tetes: vec![(XFF, b"198.51.100.7")],
+            verdict: Refuse,
+            attendu: Attendu {
+                pair_mandataire: true,
+                xff_lignes: 1,
+                xff_entrees: 1,
+                client: "198.51.100.7",
+                ..r("172.18.0.1")
+            },
+        },
+        Cas {
+            n: 4,
+            filtre: true,
+            reseaux: RESEAUX_DEFAUT,
+            mandataires: MANDATAIRE,
+            pair: "172.18.0.1",
+            en_tetes: vec![(XFF, b"192.168.1.20"), ("x-real-ip", b"198.51.100.7")],
+            verdict: Admis,
+            attendu: Attendu {
+                pair_mandataire: true,
+                xff_lignes: 1,
+                xff_entrees: 1,
+                x_real_ip: true,
+                client: "192.168.1.20",
+                ..r("172.18.0.1")
+            }
+            .admis(),
+        },
+        // Le cas DSM non déclaré : l'en-tête est posé, ignoré ; le pair est
+        // le client, admis par les plages par défaut.
+        Cas {
+            n: 5,
+            filtre: true,
+            reseaux: RESEAUX_DEFAUT,
+            mandataires: "[]",
+            pair: "172.18.0.1",
+            en_tetes: vec![
+                (XFF, b"198.51.100.7, 192.0.2.10"),
+                ("forwarded", b"for=192.0.2.10"),
+            ],
+            verdict: Admis,
+            attendu: Attendu {
+                xff_lignes: 1,
+                xff_entrees: 2,
+                forwarded: true,
+                ..r("172.18.0.1")
+            }
+            .admis(),
+        },
+        Cas {
+            n: 6,
+            filtre: true,
+            reseaux: RESEAUX_DEFAUT,
+            mandataires: MANDATAIRE,
+            pair: "172.18.0.1",
+            en_tetes: vec![(XFF, b"unknown")],
+            verdict: Refuse,
+            attendu: Attendu {
+                pair_mandataire: true,
+                xff_lignes: 1,
+                xff_entrees: 1,
+                client: "aucun",
+                ..r("172.18.0.1")
+            },
+        },
+        Cas {
+            n: 7,
+            filtre: true,
+            reseaux: RESEAUX_DEFAUT,
+            mandataires: MANDATAIRE,
+            pair: "172.18.0.1",
+            en_tetes: vec![(XFF, b"192.0.2.10, 192.168.1.20"), (XFF, b"198.51.100.7")],
+            verdict: Refuse,
+            attendu: Attendu {
+                pair_mandataire: true,
+                xff_lignes: 2,
+                xff_entrees: 3,
+                client: "198.51.100.7",
+                ..r("172.18.0.1")
+            },
+        },
+        Cas {
+            n: 8,
+            filtre: false,
+            reseaux: RESEAUX_DEFAUT,
+            mandataires: "[]",
+            pair: "198.51.100.7",
+            en_tetes: vec![],
+            verdict: Admis,
+            attendu: Attendu {
+                filtre: false,
+                ..r("198.51.100.7")
+            }
+            .admis(),
+        },
+        // Filtre coupé, en-tête illisible : le client est `aucun`, la
+        // décision reste `Admis` (M15).
+        Cas {
+            n: 9,
+            filtre: false,
+            reseaux: RESEAUX_DEFAUT,
+            mandataires: MANDATAIRE,
+            pair: "172.18.0.1",
+            en_tetes: vec![(XFF, b"unknown")],
+            verdict: Admis,
+            attendu: Attendu {
+                filtre: false,
+                pair_mandataire: true,
+                xff_lignes: 1,
+                xff_entrees: 1,
+                client: "aucun",
+                ..r("172.18.0.1")
+            }
+            .admis(),
+        },
+        Cas {
+            n: 10,
+            filtre: true,
+            reseaux: "[]",
+            mandataires: "[]",
+            pair: "192.168.1.20",
+            en_tetes: vec![],
+            verdict: Refuse,
+            attendu: Attendu {
+                plages: 0,
+                ..r("192.168.1.20")
+            },
+        },
+        Cas {
+            n: 11,
+            filtre: true,
+            reseaux: RESEAUX_DEFAUT,
+            mandataires: "[]",
+            pair: "2001:db8::7",
+            en_tetes: vec![],
+            verdict: Refuse,
+            attendu: r("2001:db8::7"),
+        },
+        // Le pair est normalisé : l'IPv4 mappée s'écrit en IPv4.
+        Cas {
+            n: 12,
+            filtre: true,
+            reseaux: RESEAUX_DEFAUT,
+            mandataires: "[]",
+            pair: "::ffff:198.51.100.7",
+            en_tetes: vec![],
+            verdict: Refuse,
+            attendu: r("198.51.100.7"),
+        },
+        // `plages` compte l'entrée invalide ; la ligne non ASCII se compte sur
+        // ses octets.
+        Cas {
+            n: 13,
+            filtre: true,
+            reseaux: r#"["pas-un-réseau","192.0.2.0/24"]"#,
+            mandataires: MANDATAIRE,
+            pair: "172.18.0.1",
+            en_tetes: vec![(XFF, b"192.0.2.10, \xe9")],
+            verdict: Refuse,
+            attendu: Attendu {
+                plages: 2,
+                pair_mandataire: true,
+                xff_lignes: 1,
+                xff_entrees: 2,
+                client: "aucun",
+                ..r("172.18.0.1")
+            },
+        },
+        // Une ligne vide compte un morceau ; une virgule finale en ouvre un.
+        Cas {
+            n: 14,
+            filtre: true,
+            reseaux: RESEAUX_DEFAUT,
+            mandataires: MANDATAIRE,
+            pair: "172.18.0.1",
+            en_tetes: vec![(XFF, b""), (XFF, b"192.0.2.10,")],
+            verdict: Refuse,
+            attendu: Attendu {
+                pair_mandataire: true,
+                xff_lignes: 2,
+                xff_entrees: 3,
+                client: "aucun",
+                ..r("172.18.0.1")
+            },
+        },
+    ];
+    assert_eq!(cas.len(), 14, "quatorze cas");
+    for k in cas {
+        reglages(&pool, c, true, k.filtre, k.reseaux, k.mandataires, "[]").await;
+        let capture = CaptureTrace::installer();
+        assert_eq!(
+            verdict(&pool, k.pair, &k.en_tetes).await,
+            k.verdict,
+            "cas {} : réponse",
+            k.n
+        );
+        assert_eq!(
+            decisions(&capture),
+            vec![k.attendu.texte()],
+            "cas {} : évènement de décision",
+            k.n
+        );
+    }
+}
+
+/// AC-T2 — l'issue `Ecartee` n'a pas d'évènement de décision ; témoin : son
+/// `error!` est dans la même capture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ecartee_sans_evenement_de_decision(pool: MySqlPool) {
+    let (c, _) = societe_servie(&pool).await;
+    reglages(
+        &pool,
+        c,
+        true,
+        true,
+        RESEAUX_DEFAUT,
+        r#"["pas-un-mandataire"]"#,
+        "[]",
+    )
+    .await;
+    let capture = CaptureTrace::installer();
+    assert_eq!(verdict(&pool, "192.168.1.20", &[]).await, Refuse);
+    capture.exiger_ensemble(&[
+        "ERROR kesh_api::mcp::reseau",
+        "trusted_proxies",
+        &format!("company_id={c}"),
+    ]);
+    assert_eq!(decisions(&capture), Vec::<String>::new());
+}
+
+/// AC-T3 — sans société activée, aucune décision, aucun évènement ; témoin :
+/// la société activée, la même requête produit l'évènement attendu.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn serveur_desactive_aucun_evenement(pool: MySqlPool) {
+    let (c, _) = livres(&pool).await;
+    let capture = CaptureTrace::installer();
+    assert_eq!(
+        verdict(&pool, "192.168.1.20", &[]).await,
+        Refuse,
+        "aucune ligne de réglages"
+    );
+    reglages(&pool, c, false, true, RESEAUX_DEFAUT, "[]", "[]").await;
+    assert_eq!(
+        verdict(&pool, "192.168.1.20", &[]).await,
+        Refuse,
+        "serveur désactivé"
+    );
+    assert_eq!(decisions(&capture), Vec::<String>::new());
+    activer(&pool, c).await;
+    assert_eq!(verdict(&pool, "192.168.1.20", &[]).await, Admis, "témoin");
+    assert_eq!(
+        decisions(&capture),
+        vec![Attendu::refus(c, "192.168.1.20").admis().texte()]
+    );
+}
+
+/// AC-T4 — ni clé, ni en-tête reçu, ni corps au journal : deux requêtes
+/// piégées, l'une admise (jusqu'à l'authentification), l'autre refusée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn journal_du_filtre_sans_secret(pool: MySqlPool) {
+    let (c, _) = societe_servie(&pool).await;
+    reglages(&pool, c, true, true, RESEAUX_DEFAUT, MANDATAIRE, "[]").await;
+    const CORPS: &str = r#"{"PIEGE_CORPS_326C":"PIEGE_CORPS_326C"}"#;
+    let pieges = |refusee: bool| {
+        let mut h = base(Some("kesh_mcp_PIEGE_JETON_326C"));
+        h.insert(
+            "cookie",
+            HeaderValue::from_static("kesh_session=PIEGE_COOKIE_326C"),
+        );
+        h.insert("x-real-ip", HeaderValue::from_static("PIEGE_XRI_326C"));
+        h.insert("forwarded", HeaderValue::from_static("for=PIEGE_FWD_326C"));
+        if refusee {
+            h.insert(XFF, HeaderValue::from_static("PIEGE_XFF_326C"));
+            h.insert(
+                "origin",
+                HeaderValue::from_static("https://piege-origine-326c.example"),
+            );
+        }
+        h
+    };
+    let statique = static_dir();
+    let capture = CaptureTrace::installer();
+
+    let admise = routeur(
+        pool.clone(),
+        config(),
+        statique.path(),
+        Registre::standard(),
+        "192.168.1.20",
+    );
+    let r = envoyer(
+        &admise,
+        requete("POST", "/mcp", &pieges(false), Body::from(CORPS)),
+    )
+    .await;
+    assert_eq!(
+        (r.statut, r.corps.as_slice()),
+        (StatusCode::UNAUTHORIZED, TEXTE_NON_AUTHENTIFIE.as_bytes()),
+        "admise : jusqu'à l'authentification"
+    );
+
+    let refusee = routeur(
+        pool.clone(),
+        config(),
+        statique.path(),
+        Registre::standard(),
+        "172.18.0.1",
+    );
+    let mcp = envoyer(
+        &refusee,
+        requete("POST", "/mcp", &pieges(true), Body::from(CORPS)),
+    )
+    .await;
+    let absente = envoyer(
+        &refusee,
+        requete("POST", ABSENTE, &pieges(true), Body::from(CORPS)),
+    )
+    .await;
+    assert_eq!(mcp, absente, "refusée : route absente");
+
+    // Témoin : les deux évènements de décision sont dans la capture.
+    let tous = Attendu {
+        x_real_ip: true,
+        forwarded: true,
+        ..Attendu::refus(c, "192.168.1.20")
+    };
+    assert_eq!(
+        decisions(&capture),
+        vec![
+            tous.admis().texte(),
+            Attendu {
+                pair: "172.18.0.1",
+                pair_mandataire: true,
+                xff_lignes: 1,
+                xff_entrees: 1,
+                client: "aucun",
+                ..tous
+            }
+            .texte(),
+        ]
+    );
+    for piege in [
+        "PIEGE_JETON_326C",
+        "PIEGE_COOKIE_326C",
+        "PIEGE_XFF_326C",
+        "PIEGE_XRI_326C",
+        "PIEGE_FWD_326C",
+        "PIEGE_CORPS_326C",
+        "piege-origine-326c",
+        "kesh_mcp_",
+    ] {
+        capture.exiger_absent(piege);
+    }
+}
+
+/// AC-T5 — deux sociétés activées, deux évènements, dans l'ordre des
+/// `company_id` (`list_enabled` : `ORDER BY company_id`) : un refus pour l'une
+/// n'empêche pas l'autre de servir.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn deux_societes_deux_evenements(pool: MySqlPool) {
+    let a = societe(&pool, "A").await;
+    let b = societe(&pool, "B").await;
+    assert!(a < b, "identifiants croissants");
+    activer(&pool, a).await;
+    reglages(&pool, b, true, true, r#"["192.0.2.0/24"]"#, "[]", "[]").await;
+    let capture = CaptureTrace::installer();
+    assert_eq!(
+        verdict(&pool, "192.0.2.10", &[]).await,
+        Admis,
+        "servi par b"
+    );
+    assert_eq!(
+        decisions(&capture),
+        vec![
+            Attendu::refus(a, "192.0.2.10").texte(),
+            Attendu {
+                plages: 1,
+                ..Attendu::refus(b, "192.0.2.10")
+            }
+            .admis()
+            .texte(),
+        ]
+    );
+}
