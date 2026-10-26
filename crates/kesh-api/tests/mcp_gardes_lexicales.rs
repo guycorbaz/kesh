@@ -147,7 +147,9 @@ fn dans_mcp(f: &str) -> bool {
 const MOTIF_MODULE_MCP: &str =
     r"\bcrate\s*::\s*mcp\b|\bsuper\s*::\s*mcp\b|\bkesh_api\s*::\s*mcp\b|(^|[^A-Za-z0-9_:])mcp\s*::";
 
-/// Les lignes de `lib.rs` qui nomment le module (déclaration et câblage).
+/// Les lignes de `lib.rs` qui nomment le module (déclaration et câblage) ; et,
+/// depuis la Story 32-6c, la constante de cible `tracing` d'un test de
+/// `logging.rs`.
 const LIB_NOMME_MCP: &[(&str, &str)] = &[
     (
         "lib.rs",
@@ -168,6 +170,13 @@ const LIB_NOMME_MCP: &[(&str, &str)] = &[
     ),
     ("lib.rs", "let etat_mcp = mcp::EtatMcp {"),
     ("lib.rs", "origines_propres: mcp::origines_propres("),
+    // Story 32-6c (AC-T6) : la cible `tracing` du filtre d'adresse, chaîne de
+    // texte dans un test de `logging.rs` — un nom de cible, non un chemin de
+    // module ; le test prouve la directive que prescrit le manuel.
+    (
+        "logging.rs",
+        "const CIBLE_FILTRE_MCP: &str = \"kesh_api::mcp::reseau\";",
+    ),
 ];
 
 #[test]
