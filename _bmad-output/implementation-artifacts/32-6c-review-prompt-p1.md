@@ -136,6 +136,12 @@ preuve. En particulier :
 - **Le registre** : C-32-6c-11 annoté (non réécrit) ; les choix du développement, s'il y en a, justifiés ; aucun ne
   contredit une décision de Guy (refus en `warn` ; formes et présences seulement ; journal même filtre coupé ; aucun
   conseil `X-Forwarded-For` à DSM).
+- **Les deux gardes étendues (C-32-6c-14)** : `tests/mcp_gardes_lexicales.rs` (`LIB_NOMME_MCP` gagne la constante de
+  cible du test AC-T6 de `logging.rs`) et `tests/textes_coherents.rs` (G18 : un fragment assumé de plus,
+  `MULTI_SOCIETE_TOTAL` 17 → 18). Chaque inscription est-elle **justifiée** — la ligne inscrite est-elle bien un nom de
+  cible `tracing` et non un usage du module ; la phrase du manuel décrit-elle le journal sans promettre qu'on puisse
+  créer une seconde société — ou bien l'extension affaiblit-elle la garde (une ligne qui ouvrirait la porte à d'autres
+  sites, un fragment trop large) ? Le compteur 18 est-il recompté du manuel livré ?
 - **Les décomptes du Dev Agent Record** (tests ajoutés, mutations jouées, chiffres des gates, échecs E2E) : recompte-les
   depuis les journaux et le diff, périmètre déclaré.
 - **Les commits** : `refs #723`, **aucun mot-clé de fermeture**
