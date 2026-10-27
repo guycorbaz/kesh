@@ -653,3 +653,43 @@
   puis `kesh_lire_envoi`. La ii ne touche pas `tools/list` ; `proposer_prompt` (iii) s'y placera, et `tools_list_filtre`
   se recomptera alors.
 - **Réversible** : sans objet.
+
+### C-32-10a-94 — `composer_version`, la seule décision « origine → marque » (revue de code P1, B1 = E1 = A2)
+
+- **Contexte** : `composer` (publique) recevait `Option<(numero, cle)>` : c'était l'appelant qui décidait qu'une
+  version porte la marque, et le refus d'une version d'agent sans clé auteur (C-32-10a-90) vivait dans `servir`,
+  privée. La route de détail de la iii (D1, D1 étendu) aurait dû recopier ce `match`.
+- **Retenu** : une fonction publique unique, `services::prompts_mcp::composer_version(origine, numero, cle_auteur,
+  description, texte) -> Result<VersionServie, RefusVersion>`. `origine` est une énumération **propre aux services**,
+  `OrigineVersion { Standard, Admin, Agent }` (conversion `From<kesh_db::entities::mcp_prompt::Origine>`), pour que la
+  signature ne porte que des primitives et des types de `services/`. `RefusVersion::AgentSansCle` est distinct de
+  `RefusVersion::Contenu(ErreurContenu)`, et la clé se contrôle **avant** le contenu. Une clé auteur posée sur une
+  version standard ou d'administrateur est ignorée (le `CHECK chk_mcp_prompt_versions_agent` l'interdit ; elle ne
+  donnerait pas de marque). `servir` l'appelle, la route de détail de la iii l'appellera (contrainte écrite à l'étape 0
+  de la iii) ; `composer` devient privée.
+- **Alternatives** : prendre `kesh_db::entities::mcp_prompt::Origine` en entrée (permis dans `services/`, mais la
+  consigne de l'orchestrateur demandait des primitives ou une énumération des services) ; laisser la décision à
+  l'appelant et l'écrire à l'étape 0 de la iii (recopie, site de divergence que D1 voulait supprimer).
+- **Réversible** : oui.
+
+### C-32-10a-95 — Le nom servi est revalidé au service (revue de code P1, B2 = A5)
+
+- **Retenu** : `servir` refuse, avec un `tracing::error!` à identifiants, une version dont le **nom** lu en base n'est
+  pas conforme (`nom_conforme`) — symétrique de la revalidation du contenu ; le `CHECK chk_mcp_prompts_name` reste le
+  premier rempart, le service ferme l'écriture SQL hors de Kesh (P24) pour le nom aussi.
+- **Réversible** : oui.
+
+### C-32-10a-96 — Une version structurellement incohérente fait échouer toute la liste (revue de code P1, E4)
+
+- **Contexte** : une version de texte sans contenu (`description` ou `body` NULL) ou une valeur d'énumération
+  indécodable fait rendre `DbError` au dépôt pour toute `en_vigueur_par_societe` → `-32603` sur `prompts/list` ; une
+  version aux caractères refusés est, elle, omise seule.
+- **Retenu** : **les deux politiques sont gardées, et distinguées** : un contenu présent mais refusé est un verdict
+  du service sur un texte (omission par ligne, journalisée) ; une ligne qui viole le schéma est une base corrompue —
+  l'erreur interne fixe, pour toute la liste comme pour `prompts/get`, fail closed, journalisée par l'erreur du dépôt
+  (identifiants seuls). Masquer une corruption derrière une liste plus courte la rendrait muette. Les deux cas ne
+  sont atteignables qu'à `CHECK` contourné (`chk_mcp_prompt_versions_content`, `chk_mcp_prompt_versions_origin`).
+  Écrit au doc-comment de `lister`.
+- **Alternatives** : omettre la ligne incohérente (changer le dépôt de la 32-10a-i pour rendre des `Result` par
+  ligne) — plus de code, et une corruption silencieuse.
+- **Réversible** : oui.

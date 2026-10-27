@@ -190,6 +190,17 @@ const TEXTE_AGENT: &str = "[Prompt standard de Kesh]\n\nTexte de l'agent.";
 async fn catalogue(pool: &MySqlPool) -> Catalogue {
     let (c, u) = livres(pool).await;
     activer(pool, c).await;
+    // Une clé de plus **avant** celle de l'agent : le numéro de la clé auteur
+    // diffère du numéro de la version (revue de code P1, A6), si bien qu'une
+    // marque qui les inverse rougit.
+    cle(
+        pool,
+        c,
+        u,
+        &[McpScope::InvoicesRead],
+        SendValidation::Exempt,
+    )
+    .await;
     let (cle_agent, jeton) = cle(pool, c, u, &[McpScope::BooksRead], SendValidation::Exempt).await;
     let (_, requise) = cle(pool, c, u, &[McpScope::BooksRead], SendValidation::Required).await;
     let (_, sans_livres) = cle(
@@ -220,6 +231,11 @@ async fn catalogue(pool: &MySqlPool) -> Catalogue {
     )
     .await;
     decider(pool, c, u, &agent, true).await;
+    assert_ne!(
+        cle_agent,
+        i64::from(agent.numero),
+        "montage : numéro de clé et numéro de version distincts"
+    );
     proposer(
         pool,
         c,
@@ -312,6 +328,43 @@ async fn prompts_list_corps_egal(pool: MySqlPool) {
         )
         .await;
     assert_eq!(r.json(), attendu_erreur(1, -32602, TEXTE_PARAMS_INVALIDES));
+}
+
+/// Le tri de la liste est l'ordre des **octets** (C-32-10a-91 ; revue de code
+/// P1, E2) : `-` (0x2D) < chiffres < `_` (0x5F) < lettres minuscules, alors
+/// que la collation `utf8mb4_unicode_ci` du `ORDER BY` du dépôt range `_` et
+/// `-` autrement. Trois noms qui ne diffèrent qu'à ces caractères.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn tri_octet_pour_octet(pool: MySqlPool) {
+    let cat = catalogue(&pool).await;
+    for nom in ["a_b", "a1", "a-b"] {
+        admin(&pool, cat.c, cat.u, nom, "Tri", "Tri").await;
+    }
+    let attendu = [
+        "a-b",
+        "a1",
+        "a_b",
+        "admin-a",
+        "agent-ok",
+        "kesh-assistant",
+        "kesh-developpement",
+    ];
+    let mut octets = attendu.to_vec();
+    octets.sort_unstable();
+    assert_eq!(octets, attendu, "l'attendu est l'ordre des octets");
+    let lecture = LecturePrompts::new(pool.clone());
+    let livres = acces(cat.c, cat.u, &[Portee::BooksRead]);
+    let servis = prompts_mcp::lister(&livres, &lecture).await.unwrap();
+    assert_eq!(servis.iter().map(|p| p.nom()).collect::<Vec<_>>(), attendu);
+    // Par `/mcp`, le même ordre.
+    let b = banc(&pool);
+    let noms: Vec<String> = b.liste(&cat.jeton).await["result"]["prompts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(noms, attendu);
 }
 
 // ---------------------------------------------------------------------------

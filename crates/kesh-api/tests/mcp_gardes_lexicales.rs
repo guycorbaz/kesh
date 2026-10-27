@@ -918,18 +918,32 @@ fn code_seul(source: &str) -> String {
 /// comprises ; validation P4, H4). Le module de route `routes::module::` n'est
 /// pas pris.
 fn nomme_le_depot(code: &str, module: &str) -> bool {
-    let directe = re(&format!(r"\brepositories\s*::\s*{module}\b"));
-    let en_liste = re(&format!(r"\brepositories\s*::\s*\{{[^;]*\b{module}\b"));
-    directe.is_match(code) || en_liste.is_match(code)
+    nomme_le_depot_directe(code, module) || nomme_le_depot_en_liste(code, module)
+}
+
+/// La forme **directe** : `repositories::module` (import ou chemin).
+fn nomme_le_depot_directe(code: &str, module: &str) -> bool {
+    re(&format!(r"\brepositories\s*::\s*{module}\b")).is_match(code)
+}
+
+/// La forme **en liste** : `repositories::{…module…}`, lue jusqu'au `;`.
+fn nomme_le_depot_en_liste(code: &str, module: &str) -> bool {
+    re(&format!(r"\brepositories\s*::\s*\{{[^;]*\b{module}\b")).is_match(code)
+}
+
+/// Les fichiers de `src/` (code seul) qui nomment le dépôt `module` selon
+/// `forme`.
+fn fichiers_par_forme(module: &str, forme: fn(&str, &str) -> bool) -> Vec<String> {
+    sources_src()
+        .iter()
+        .filter(|(_, t)| forme(&code_seul(t), module))
+        .map(|(f, _)| f.clone())
+        .collect()
 }
 
 /// Les fichiers de `src/` (code seul) qui nomment le dépôt `module`.
 fn fichiers_nommant_le_depot(module: &str) -> Vec<String> {
-    sources_src()
-        .iter()
-        .filter(|(_, t)| nomme_le_depot(&code_seul(t), module))
-        .map(|(f, _)| f.clone())
-        .collect()
+    fichiers_par_forme(module, nomme_le_depot)
 }
 
 /// Les fichiers de `src/` qui peuvent nommer le dépôt des prompts : la poignée
@@ -947,11 +961,34 @@ const NOMMENT_LE_DEPOT_DES_PROMPTS: &[&str] = &[
 #[test]
 fn prompts_lus_par_leur_service() {
     // Mesure sur l'analogue existant (`api_keys`, validation P3, R2) : deux
-    // fichiers par la forme directe, un par la forme en liste.
+    // fichiers par la forme directe, un par la forme en liste — chaque motif
+    // mesuré seul (revue de code P1, A4), puis leur union.
+    assert_eq!(
+        fichiers_par_forme("api_keys", nomme_le_depot_directe),
+        ["auth/api_key.rs", "auth/bootstrap.rs"],
+        "analogue api_keys, forme directe"
+    );
+    assert_eq!(
+        fichiers_par_forme("api_keys", nomme_le_depot_en_liste),
+        ["routes/api_keys.rs"],
+        "analogue api_keys, forme en liste"
+    );
     assert_eq!(
         fichiers_nommant_le_depot("api_keys"),
         ["auth/api_key.rs", "auth/bootstrap.rs", "routes/api_keys.rs"],
         "analogue api_keys"
+    );
+    // Témoin vert existant multi-ligne (AC-ii10) : `services/factures.rs`
+    // (`use kesh_db::repositories::{` sur trois lignes, `invoice_settlements`
+    // à la deuxième), pris par la forme en liste seule.
+    let factures = std::fs::read_to_string(racine_src().join("services/factures.rs")).unwrap();
+    assert!(factures.contains(
+        "use kesh_db::repositories::{\n    company_invoice_settings, invoice_settlements,"
+    ));
+    assert!(
+        nomme_le_depot_en_liste(&code_seul(&factures), "invoice_settlements")
+            && !nomme_le_depot_directe(&code_seul(&factures), "invoice_settlements"),
+        "témoin existant : la liste multi-ligne de services/factures.rs"
     );
     // `repositories::*` n'apparaît nulle part.
     assert!(sites(&sources_src(), tout, &re(r"\brepositories\s*::\s*\*")).is_empty());
@@ -1001,8 +1038,10 @@ fn prompts_lus_par_leur_service() {
 // Story 32-10a-ii (AC-ii9) — service_des_prompts_sans_poignee_des_livres
 // ---------------------------------------------------------------------------
 
-/// Les jetons d'une poignée ou d'un accès qui mène aux livres.
-const MOTIF_LIVRES: &str = r"\bLecture\b|\bTrace\b|\bLectureOutils\b|\.\s*pool\s*\(|\bsqlx\s*::|\bkesh_db\s*::\s*repositories\b|\bcrate\s*::\s*helpers\b|\bcrate\s*::\s*routes\b";
+/// Les jetons d'une poignée ou d'un accès qui mène aux livres. Le dépôt de
+/// `kesh_db` se prend aussi sous la forme en accolades,
+/// `kesh_db::{…repositories…}`, lue jusqu'au `;` (revue de code P1, B5).
+const MOTIF_LIVRES: &str = r"\bLecture\b|\bTrace\b|\bLectureOutils\b|\.\s*pool\s*\(|\bsqlx\s*::|\bkesh_db\s*::\s*repositories\b|\bkesh_db\s*::\s*\{[^;]*\brepositories\b|\bcrate\s*::\s*helpers\b|\bcrate\s*::\s*routes\b";
 
 /// Le code de production d'une source : jusqu'à sa première ligne
 /// `#[cfg(test)]`.
@@ -1047,6 +1086,25 @@ fn service_des_prompts_sans_poignee_des_livres() {
     assert_eq!(sites_factices("    livres: &Lecture,", &motif), 1);
     assert_eq!(sites_factices("    let p = lecture.pool();", &motif), 1);
     assert_eq!(sites_factices("    sqlx::query(\"SELECT 1\")", &motif), 1);
+    // Rouges factices (revue de code P1, B5) : le dépôt en accolades, sur une
+    // ligne et imbriqué ; multi-ligne, pris sur le code aplati.
+    for rouge in [
+        "use kesh_db::{entities::Role, repositories::accounts};",
+        "use kesh_db::{entities::{Role}, repositories::{accounts}};",
+    ] {
+        assert_eq!(sites_factices(rouge, &motif), 1, "rouge : {rouge}");
+    }
+    let multi = "use kesh_db::{\n    entities::Role,\n    repositories::accounts,\n};";
+    assert_eq!(sites_factices(multi, &motif), 0, "ligne à ligne : non pris");
+    assert!(motif.is_match(&code_aplati(multi)), "aplati : pris");
+    // Vert factice : des accolades de `kesh_db` sans le dépôt.
+    assert_eq!(
+        sites_factices(
+            "use kesh_db::{entities::Role, errors::DbError}; // repositories",
+            &motif
+        ),
+        0
+    );
 
     let code = avant_les_tests(&src("services/prompts_mcp.rs"));
     let trouves: Vec<&str> = code
@@ -1056,6 +1114,10 @@ fn service_des_prompts_sans_poignee_des_livres() {
     assert!(
         trouves.is_empty(),
         "le service des prompts nomme une poignée ou un accès aux livres : {trouves:?}"
+    );
+    assert!(
+        !motif.is_match(&code_aplati(&code)),
+        "le service des prompts, aplati, nomme une poignée ou un accès aux livres"
     );
     assert!(
         code.contains("lecture: &LecturePrompts,"),

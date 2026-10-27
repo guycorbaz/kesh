@@ -1037,7 +1037,8 @@ d'une, c'est un écart déclaré, qui touche `routes` et l'audit.
 
 ### 32-10a-iii
 - [ ] **T-iii0** — étape 0 : 32-10a-ii et 32-6b fusionnées ; recomptes d'`admin_pat_denied_e2e.rs`,
-  `audit_route_registry.rs`, `audit_labels.rs`, `FABRIQUES_V2`.
+  `audit_route_registry.rs`, `audit_labels.rs`, `FABRIQUES_V2` ; les deux contraintes de la revue de code P1 de la ii
+  (§ *À recontrôler à l'étape 0* : contenu normalisé enregistré, `composer_version` à la route de détail).
 - [ ] **T-iii1** — `EcriturePrompts`, `proposer_prompt`, service `proposer` (AC-iii1 à AC-iii4).
 - [ ] **T-iii2** — journal (AC-iii5).
 - [ ] **T-iii3** — routes de gestion, gardes, validation, audit, libellés, registre des routes (AC-iii6 à AC-iii10).
@@ -1542,6 +1543,21 @@ propres amendements de ces fichiers s'écrivent sur cet état, recompté à l'é
   - **D1 étendu, complément (validation P2 de la 32-10b, 2026-10-27)** : le texte servi **et la description servie** sont rendus, chacun exact et rendu visible (marque comprise : la marque fait partie du texte servi, il n'y a pas de champ `marque` séparé) ; de même pour le standard du code (texte et description) ; plus `creeLe` et `decideLe` de chaque version et `numeroEnVigueur`. **La fonction de composition du texte servi (marque comprise) vit dans `services/`**, appelée par le catalogue MCP et par la route de détail : la garde N1 de la 32-6 (`un_seul_point_d_entree`, `mcp_gardes_lexicales.rs:134-223`) interdit à `routes/mcp_prompts.rs` de nommer `crate::mcp`, et l'on n'élargit pas `LIB_NOMME_MCP`. Le refus de D2 rend **400**, le même code que la création.
   - **D1, champs du détail (validation P4 de la 32-10b, 2026-10-27)** : `GET /api/v1/admin/mcp/prompts/{id}` rend aussi la `version` du prompt (le verrou de l'approbation, AC-7 de la 32-10b) et, pour chaque version, `numero`, `origine`, `etat` et `nature`.
   - Ces amendements (D1, D1 étendu, D2) restent dans les modules déjà comptés de la 32-10a-iii (routes de gestion, `services/`), sans en ajouter un. S'ils les font dépasser, s'arrêter et rendre compte.
+
+- **Pour la 32-10a-iii (revue de code P1 de la 32-10a-ii, 2026-10-27 ; E1, E6, B1, A2)** — deux contraintes, à
+  constater à l'étape 0 :
+  - **La iii enregistre le contenu normalisé**, celui que rend `services::prompts_mcp::valider_contenu`
+    (`ContenuPrompt::description()` et `ContenuPrompt::texte()`), **jamais** le texte reçu. Les bornes de
+    `valider_contenu` se comptent après la normalisation `\r\n` → `\n`, celles de la base (`CHAR_LENGTH(body) <= 16000`,
+    `description VARCHAR(500)`) sur la chaîne stockée : un texte reçu de 16 005 caractères portant cinq `\r\n` passe
+    la validation et serait refusé par le `CHECK` (erreur 500) s'il était enregistré tel quel. La description **servie**
+    d'une version d'agent (marque comprise) dépasse 500 caractères : l'écran de la 32-10b ne la suppose pas bornée.
+  - **La route de détail (D1, D1 étendu) appelle `services::prompts_mcp::composer_version`**, la fonction publique
+    qu'appelle aussi le catalogue servi (`servir`) : elle prend l'origine (`OrigineVersion`, propre aux services), le
+    numéro, la clé auteur et le contenu, décide seule de la marque, et refuse distinctement une version d'agent sans
+    clé auteur (`RefusVersion::AgentSansCle`, C-32-10a-90). Le verdict `servable` de D1 étendu est
+    `composer_version(…).is_ok()`, non `valider_contenu(…).is_ok()` : sinon l'écran dirait « servable » une version
+    d'agent sans clé que `prompts/get` ne sert pas. `composer` est privée depuis la remédiation P1 de la ii.
 
 - **Pour la 32-10a-iii (revue de code P1 de la 32-10a-i, #783 point 1)** : le plafond (`COUNT`) et la numérotation (`MAX(number)+1`) sont des lectures simples sous le verrou de société ; en `REPEATABLE READ`, ils ne sont justes que si l'appelant n'a fait **aucune lecture** avant le premier appel dans sa transaction. La iii, qui appelle ces fonctions, écrit la précondition au doc-comment et au Pattern 5 de `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, ou rend ces lectures verrouillantes ; un test de concurrence le prouve. Elle vérifie aussi que la clé de `proposer_version_agent_in_tx` appartient à la société (#783 point 4).
 

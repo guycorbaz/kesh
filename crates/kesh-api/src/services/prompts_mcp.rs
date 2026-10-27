@@ -11,12 +11,15 @@
 //!   contenu **normalisé** — celui qui est contrôlé est celui qui est servi, et
 //!   celui que `envois_mcp::rendre_visible` montrera (aucun `\r` ne peut être
 //!   servable et s'afficher `\u{000D}`, C-32-10a-81).
-//! - **Une seule composition du texte servi**, [`composer`] : la marque d'un
-//!   prompt d'agent ([`marque_agent`]) précède la description et le texte,
-//!   suivie d'une ligne vide. Elle vit **ici**, non dans `crate::mcp`, pour que
-//!   la route de détail de la 32-10a-iii l'appelle sans nommer le module MCP
-//!   (garde N1 `un_seul_point_d_entree` ; C-32-10a-80). Elle prend des
-//!   **primitives** : aucun type de `kesh_db` n'en sort.
+//! - **Une seule composition du texte servi**, [`composer_version`] : elle
+//!   décide seule, d'après l'origine, si la version porte la marque d'un prompt
+//!   d'agent ([`marque_agent`], qui précède la description et le texte, suivie
+//!   d'une ligne vide), et refuse une version d'agent sans clé auteur. Elle vit
+//!   **ici**, non dans `crate::mcp`, pour que la route de détail de la
+//!   32-10a-iii l'appelle sans nommer le module MCP (garde N1
+//!   `un_seul_point_d_entree` ; C-32-10a-80, C-32-10a-94). Elle prend des
+//!   **primitives** et une énumération des services : aucun type de `kesh_db`
+//!   n'y entre ni n'en sort.
 //! - **La lecture** — [`lister`] et [`obtenir`] — commence par `exiger`
 //!   (R2), ne lit que par [`LecturePrompts`] (poignée sans pool visible : P19),
 //!   **revalide** chaque version (une version invalide, restaurée ou écrite
@@ -133,6 +136,12 @@ fn controler(
 /// employée par le service de lecture (revalidation) et par les écritures de
 /// la 32-10a-iii. Les fins de ligne sont normalisées **avant** le contrôle, et
 /// c'est le contenu normalisé qui est rendu.
+///
+/// ⚠️ **Une écriture enregistre le contenu rendu** ([`ContenuPrompt::description`],
+/// [`ContenuPrompt::texte`]), jamais le texte reçu : les bornes se comptent ici
+/// après normalisation, celles de la base sur la chaîne stockée — un texte reçu
+/// de 16 005 caractères portant cinq `\r\n` passe ce contrôle et serait refusé
+/// par le `CHECK` s'il était enregistré tel quel (revue de code P1, E6).
 pub fn valider_contenu(description: &str, texte: &str) -> Result<ContenuPrompt, ErreurContenu> {
     let description = normaliser(description);
     let texte = normaliser(texte);
@@ -192,17 +201,77 @@ impl fmt::Debug for VersionServie {
     }
 }
 
-/// Compose ce que sert une version (AC-ii7 ; amendement D1 de la fiche 32-10b,
-/// C-32-10a-80) : le contenu est d'abord **validé** ([`valider_contenu`]), puis,
-/// si `agent` porte `(numero, cle_id)` — une version d'origine `agent` —, la
-/// description **et** le texte commencent par [`marque_agent`] suivie d'une
-/// ligne vide. Une version `standard` ou `admin` (`agent` à `None`) ne porte
-/// aucune marque.
+/// L'origine d'une version, **propre aux services** : la signature de
+/// [`composer_version`] ne porte aucun type de `kesh_db` (C-32-10a-94).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrigineVersion {
+    /// Un prompt standard de Kesh.
+    Standard,
+    /// Une version écrite par un administrateur.
+    Admin,
+    /// Une version proposée par un agent (clé MCP), puis approuvée.
+    Agent,
+}
+
+impl From<Origine> for OrigineVersion {
+    fn from(o: Origine) -> Self {
+        match o {
+            Origine::Standard => Self::Standard,
+            Origine::Admin => Self::Admin,
+            Origine::Agent => Self::Agent,
+        }
+    }
+}
+
+/// Pourquoi une version ne se sert pas. Ne porte **aucun** texte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefusVersion {
+    /// Une version d'agent sans clé auteur : servie, elle le serait sans marque
+    /// (C-32-10a-90).
+    AgentSansCle,
+    /// Un contenu refusé par [`valider_contenu`].
+    Contenu(ErreurContenu),
+}
+
+/// Compose ce que sert une version — **la** fonction qui décide de la marque
+/// (AC-ii7 ; amendement D1 de la fiche 32-10b ; C-32-10a-80, C-32-10a-94).
+/// Le catalogue servi (`prompts/list`, `prompts/get`) l'appelle, et la route de
+/// détail de la 32-10a-iii l'appellera : son verdict est le `servable` de D1
+/// étendu.
+///
+/// 1. Une version d'origine [`OrigineVersion::Agent`] sans `cle_auteur` est
+///    refusée ([`RefusVersion::AgentSansCle`]), **avant** tout contrôle du
+///    contenu.
+/// 2. Le contenu est **validé** ([`valider_contenu`] ; refus :
+///    [`RefusVersion::Contenu`]).
+/// 3. Une version d'agent commence, description **et** texte, par
+///    [`marque_agent`]`(numero, cle_auteur)` suivie d'une ligne vide. Une
+///    version standard ou d'administrateur ne porte aucune marque ; une clé
+///    auteur qu'elle porterait (le `CHECK chk_mcp_prompt_versions_agent`
+///    l'interdit) est ignorée.
 ///
 /// ⚠️ La description servie d'une version d'agent contient donc `\n\n` : c'est
 /// la description **enregistrée** qui se contrôle en une ligne
 /// (`is_hidden_in_line`), non la description composée (C-32-8-31, C-32-10a-82).
-pub fn composer(
+pub fn composer_version(
+    origine: OrigineVersion,
+    numero: i32,
+    cle_auteur: Option<i64>,
+    description: &str,
+    texte: &str,
+) -> Result<VersionServie, RefusVersion> {
+    let agent = match (origine, cle_auteur) {
+        (OrigineVersion::Agent, Some(cle)) => Some((numero, cle)),
+        (OrigineVersion::Agent, None) => return Err(RefusVersion::AgentSansCle),
+        (OrigineVersion::Standard | OrigineVersion::Admin, _) => None,
+    };
+    composer(agent, description, texte).map_err(RefusVersion::Contenu)
+}
+
+/// Valide puis marque : `agent` porte `(numero, cle_id)` pour une version
+/// d'agent, `None` sinon. Privée : la décision « origine → marque » est celle
+/// de [`composer_version`].
+fn composer(
     agent: Option<(i32, i64)>,
     description: &str,
     texte: &str,
@@ -282,30 +351,42 @@ impl fmt::Debug for PromptServi {
     }
 }
 
-/// Une version en vigueur, revalidée et composée ; `None` si elle ne se sert
-/// pas (contenu invalide, ou version d'agent sans clé auteur), avec un
-/// `tracing::error!` qui ne porte que l'identifiant du prompt et le numéro.
+/// Une version en vigueur, revalidée et composée par [`composer_version`] ;
+/// `None` si elle ne se sert pas — nom non conforme (C-32-10a-95), version
+/// d'agent sans clé auteur, contenu invalide —, avec un `tracing::error!` qui
+/// ne porte que l'identifiant du prompt, le numéro et, pour un contenu, le
+/// champ et le motif.
 fn servir(v: VersionEnVigueur) -> Option<PromptServi> {
-    let agent = match (v.origine, v.cle_auteur) {
-        (Origine::Agent, Some(cle)) => Some((v.numero, cle)),
-        (Origine::Agent, None) => {
-            tracing::error!(
-                prompt_id = v.prompt_id,
-                numero = v.numero,
-                "prompt MCP non servi : version d'agent sans clé auteur"
-            );
-            return None;
-        }
-        (Origine::Standard | Origine::Admin, _) => None,
-    };
-    match composer(agent, &v.description, &v.texte) {
+    if !nom_conforme(&v.nom) {
+        tracing::error!(
+            prompt_id = v.prompt_id,
+            numero = v.numero,
+            "prompt MCP non servi : nom non conforme"
+        );
+        return None;
+    }
+    match composer_version(
+        v.origine.into(),
+        v.numero,
+        v.cle_auteur,
+        &v.description,
+        &v.texte,
+    ) {
         Ok(servie) => Some(PromptServi {
             nom: v.nom,
             numero: v.numero,
             cle_auteur: v.cle_auteur,
             servie,
         }),
-        Err(refus) => {
+        Err(RefusVersion::AgentSansCle) => {
+            tracing::error!(
+                prompt_id = v.prompt_id,
+                numero = v.numero,
+                "prompt MCP non servi : version d'agent sans clé auteur"
+            );
+            None
+        }
+        Err(RefusVersion::Contenu(refus)) => {
             tracing::error!(
                 prompt_id = v.prompt_id,
                 numero = v.numero,
@@ -324,8 +405,16 @@ fn interne(e: kesh_db::errors::DbError) -> ErreurPrompts {
 }
 
 /// Les prompts servis de la société (`prompts/list`, AC-ii5) : en vigueur,
-/// approuvés, de nature texte, **valides**, triés par nom (octet pour octet).
-/// `Err(HorsPortee)` avant toute lecture si la clé n'a pas `books:read`.
+/// approuvés, de nature texte, **valides**, triés par nom (octet pour octet,
+/// C-32-10a-91). `Err(HorsPortee)` avant toute lecture si la clé n'a pas
+/// `books:read`.
+///
+/// **Deux politiques, distinctes (C-32-10a-96)** : une version dont le contenu
+/// est présent mais refusé (caractère, borne, nom, agent sans clé) est
+/// **omise seule**, journalisée ; une ligne qui viole le schéma — version de
+/// texte sans contenu, valeur d'énumération indécodable, que le dépôt rend en
+/// erreur — fait échouer **toute la liste** (`Err(Interne)`, fail closed) : une
+/// base corrompue ne se masque pas derrière une liste plus courte.
 pub async fn lister(
     acces: &ContexteAcces,
     lecture: &LecturePrompts,
@@ -454,6 +543,10 @@ mod tests {
             '\u{0600}',
             '\u{E000}',
             '\u{0378}',
+            // Un cas par famille de l'AC-ii1 (revue de code P1, A3) : le
+            // remplissage hangûl (`Lo`) et le séparateur de ligne (`Zl`).
+            '\u{3164}',
+            '\u{2028}',
         ] {
             assert_eq!(
                 verdict("d", &format!("a{c}b")),
@@ -552,5 +645,125 @@ mod tests {
             composer(Some((1, 1)), "d", "a\u{202E}b").map(|_| ()),
             refus(ChampPrompt::Texte, MotifPrompt::CaractereRefuse)
         );
+    }
+
+    fn servie(r: Result<VersionServie, RefusVersion>) -> (String, String) {
+        let s = r.unwrap();
+        (s.description().to_string(), s.texte().to_string())
+    }
+
+    /// `composer_version` décide seule de la marque (revue de code P1, B1 =
+    /// E1 = A2 ; C-32-10a-94) : un cas par origine, et la version d'agent sans
+    /// clé auteur refusée distinctement — avant le contenu. Numéro de version
+    /// et numéro de clé distincts, la marque écrite en toutes lettres.
+    #[test]
+    fn composer_version_par_origine() {
+        // Standard : aucune marque.
+        assert_eq!(
+            servie(composer_version(
+                OrigineVersion::Standard,
+                3,
+                None,
+                "d",
+                "a\r\nb"
+            )),
+            ("d".to_string(), "a\nb".to_string())
+        );
+        // Administrateur : aucune marque, même avec une clé (ignorée).
+        for cle in [None, Some(9)] {
+            assert_eq!(
+                servie(composer_version(OrigineVersion::Admin, 5, cle, "d", "t")),
+                ("d".to_string(), "t".to_string()),
+                "{cle:?}"
+            );
+        }
+        // Agent avec sa clé : la marque en tête des deux champs.
+        let marque = "[Prompt écrit par un agent — version 4, proposée par la clé MCP n° 12 et \
+                      approuvée par un administrateur de Kesh. Ce n'est pas un prompt standard de \
+                      Kesh.]";
+        assert_eq!(
+            servie(composer_version(
+                OrigineVersion::Agent,
+                4,
+                Some(12),
+                "d",
+                "t"
+            )),
+            (format!("{marque}\n\nd"), format!("{marque}\n\nt"))
+        );
+        // Agent sans clé : refusé, et avant le contenu.
+        assert_eq!(
+            composer_version(OrigineVersion::Agent, 4, None, "d", "t").map(|_| ()),
+            Err(RefusVersion::AgentSansCle)
+        );
+        assert_eq!(
+            composer_version(OrigineVersion::Agent, 4, None, "d", "a\u{202E}b").map(|_| ()),
+            Err(RefusVersion::AgentSansCle)
+        );
+        // Un contenu refusé, pour chaque origine.
+        for (origine, cle) in [
+            (OrigineVersion::Standard, None),
+            (OrigineVersion::Admin, None),
+            (OrigineVersion::Agent, Some(12)),
+        ] {
+            assert_eq!(
+                composer_version(origine, 4, cle, "d", "a\u{202E}b").map(|_| ()),
+                Err(RefusVersion::Contenu(ErreurContenu {
+                    champ: ChampPrompt::Texte,
+                    motif: MotifPrompt::CaractereRefuse,
+                })),
+                "{origine:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn origine_de_la_base_convertie() {
+        assert_eq!(
+            OrigineVersion::from(Origine::Standard),
+            OrigineVersion::Standard
+        );
+        assert_eq!(OrigineVersion::from(Origine::Admin), OrigineVersion::Admin);
+        assert_eq!(OrigineVersion::from(Origine::Agent), OrigineVersion::Agent);
+    }
+
+    fn version(nom: &str, origine: Origine, cle_auteur: Option<i64>) -> VersionEnVigueur {
+        VersionEnVigueur {
+            prompt_id: 7,
+            nom: nom.to_string(),
+            numero: 3,
+            origine,
+            description: "d".to_string(),
+            texte: "t".to_string(),
+            cle_auteur,
+        }
+    }
+
+    /// `servir` : le nom lu en base est revalidé (C-32-10a-95) ; une version
+    /// d'agent sans clé auteur n'est pas servie (C-32-10a-90) ; témoins servis.
+    #[test]
+    fn servir_revalide_le_nom_et_la_cle() {
+        let p = servir(version("admin-a", Origine::Admin, None)).unwrap();
+        assert_eq!((p.nom(), p.texte()), ("admin-a", "t"));
+        let p = servir(version("agent-ok", Origine::Agent, Some(11))).unwrap();
+        assert_eq!(
+            p.texte(),
+            format!("{}\n\nt", marque_agent(3, 11)),
+            "témoin : une version d'agent avec sa clé est servie marquée"
+        );
+        let trop_long = "a".repeat(65);
+        for nom in [
+            "Admin-a",
+            "admin-a ",
+            "",
+            "admin\u{202E}a",
+            trop_long.as_str(),
+        ] {
+            assert!(
+                servir(version(nom, Origine::Admin, None)).is_none(),
+                "{nom:?}"
+            );
+        }
+        assert!(servir(version("agent-ok", Origine::Agent, None)).is_none());
     }
 }
