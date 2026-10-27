@@ -505,8 +505,16 @@ mod tests {
         for bon in ["a", "mon-prompt", "x_1", "a".repeat(64).as_str()] {
             assert!(nom_conforme(bon), "{bon:?} refusé");
         }
-        for mauvais in ["", "Valide", "valide\n", "valide ", " valide", "é", "a.b", "a".repeat(65).as_str()]
-        {
+        for mauvais in [
+            "",
+            "Valide",
+            "valide\n",
+            "valide ",
+            " valide",
+            "é",
+            "a.b",
+            "a".repeat(65).as_str(),
+        ] {
             assert!(!nom_conforme(mauvais), "{mauvais:?} accepté");
         }
         for reserve in ["kesh", "kesh-x", "kesh_x", "keshx"] {
@@ -525,7 +533,10 @@ mod tests {
         };
         assert!(contenu_dans_les_bornes(&t("d", "x")));
         assert!(contenu_dans_les_bornes(&Contenu::Retrait));
-        assert!(contenu_dans_les_bornes(&t(&"é".repeat(500), &"é".repeat(16_000))));
+        assert!(contenu_dans_les_bornes(&t(
+            &"é".repeat(500),
+            &"é".repeat(16_000)
+        )));
         assert!(!contenu_dans_les_bornes(&t(" \t\n", "x")));
         assert!(!contenu_dans_les_bornes(&t("d", "  ")));
         assert!(!contenu_dans_les_bornes(&t(&"a".repeat(501), "x")));

@@ -278,8 +278,12 @@ async fn brut_version(
 #[sqlx::test(migrations = "./test-schema")]
 async fn mcp_prompts_contraintes(pool: MySqlPool) {
     let m = montage(&pool, "contraintes").await;
-    let p = brut_prompt(&pool, m.c, "libre", false).await.expect("témoin");
-    let s = brut_prompt(&pool, m.c, "kesh-std", true).await.expect("témoin");
+    let p = brut_prompt(&pool, m.c, "libre", false)
+        .await
+        .expect("témoin");
+    let s = brut_prompt(&pool, m.c, "kesh-std", true)
+        .await
+        .expect("témoin");
 
     // Les prompts : chaque cas refusé.
     let soixante_cinq = "a".repeat(65);
@@ -302,7 +306,9 @@ async fn mcp_prompts_contraintes(pool: MySqlPool) {
         );
     }
     assert!(
-        brut_prompt(&pool, 999_999, "orphelin", false).await.is_err(),
+        brut_prompt(&pool, 999_999, "orphelin", false)
+            .await
+            .is_err(),
         "accepté : société inexistante"
     );
 
@@ -326,31 +332,306 @@ async fn mcp_prompts_contraintes(pool: MySqlPool) {
         bool,
         &str,
     )> = vec![
-        ("Standard", "approved", "text", d, b, None, None, None, false, "origine en capitale"),
-        ("standard", "approved ", "text", d, b, None, None, None, false, "état à blanc final"),
-        ("standard", "approved", "Text", d, b, None, None, None, false, "nature en capitale"),
-        ("standard", "pending", "text", d, b, None, None, None, false, "standard ⇒ approved"),
-        ("standard", "approved", "text", d, b, u, None, None, false, "standard avec auteur"),
-        ("standard", "approved", "text", d, b, None, None, u, true, "standard avec décision"),
-        ("admin", "approved", "text", d, b, None, None, None, false, "admin sans auteur"),
-        ("admin", "pending", "text", d, b, u, None, None, false, "admin ⇒ approved"),
-        ("admin", "approved", "text", d, b, u, k, None, false, "admin avec clé"),
-        ("admin", "approved", "text", d, b, u, None, u, true, "admin avec décision"),
-        ("agent", "pending", "text", d, b, None, None, None, false, "agent sans clé"),
-        ("agent", "pending", "text", d, b, u, k, None, false, "agent avec utilisateur"),
-        ("agent", "pending", "withdrawal", None, None, None, k, None, false, "agent retrait"),
-        ("agent", "pending", "text", d, b, None, k, u, true, "agent pending décidé"),
-        ("agent", "approved", "text", d, b, None, k, None, false, "agent approved sans décision"),
-        ("agent", "refused", "text", d, b, None, k, u, false, "décision sans date"),
-        ("agent", "approved", "text", d, b, None, k, None, true, "date sans décideur"),
-        ("admin", "approved", "text", d, None, u, None, None, false, "texte sans corps"),
-        ("admin", "approved", "text", None, b, u, None, None, false, "texte sans description"),
-        ("admin", "approved", "text", Some(" \t\n"), b, u, None, None, false, "description blanche"),
-        ("admin", "approved", "text", d, Some("  \n "), u, None, None, false, "corps blanc"),
-        ("admin", "approved", "withdrawal", None, b, u, None, None, false, "retrait avec corps"),
-        ("admin", "approved", "withdrawal", d, None, u, None, None, false, "retrait avec description"),
-        ("admin", "approved", "text", d, Some(&long), u, None, None, false, "corps > 16000"),
-        ("admin", "approved", "text", Some(&desc_longue), b, u, None, None, false, "description > 500"),
+        (
+            "Standard",
+            "approved",
+            "text",
+            d,
+            b,
+            None,
+            None,
+            None,
+            false,
+            "origine en capitale",
+        ),
+        (
+            "standard",
+            "approved ",
+            "text",
+            d,
+            b,
+            None,
+            None,
+            None,
+            false,
+            "état à blanc final",
+        ),
+        (
+            "standard",
+            "approved",
+            "Text",
+            d,
+            b,
+            None,
+            None,
+            None,
+            false,
+            "nature en capitale",
+        ),
+        (
+            "standard",
+            "pending",
+            "text",
+            d,
+            b,
+            None,
+            None,
+            None,
+            false,
+            "standard ⇒ approved",
+        ),
+        (
+            "standard",
+            "approved",
+            "text",
+            d,
+            b,
+            u,
+            None,
+            None,
+            false,
+            "standard avec auteur",
+        ),
+        (
+            "standard",
+            "approved",
+            "text",
+            d,
+            b,
+            None,
+            None,
+            u,
+            true,
+            "standard avec décision",
+        ),
+        (
+            "admin",
+            "approved",
+            "text",
+            d,
+            b,
+            None,
+            None,
+            None,
+            false,
+            "admin sans auteur",
+        ),
+        (
+            "admin",
+            "pending",
+            "text",
+            d,
+            b,
+            u,
+            None,
+            None,
+            false,
+            "admin ⇒ approved",
+        ),
+        (
+            "admin",
+            "approved",
+            "text",
+            d,
+            b,
+            u,
+            k,
+            None,
+            false,
+            "admin avec clé",
+        ),
+        (
+            "admin",
+            "approved",
+            "text",
+            d,
+            b,
+            u,
+            None,
+            u,
+            true,
+            "admin avec décision",
+        ),
+        (
+            "agent",
+            "pending",
+            "text",
+            d,
+            b,
+            None,
+            None,
+            None,
+            false,
+            "agent sans clé",
+        ),
+        (
+            "agent",
+            "pending",
+            "text",
+            d,
+            b,
+            u,
+            k,
+            None,
+            false,
+            "agent avec utilisateur",
+        ),
+        (
+            "agent",
+            "pending",
+            "withdrawal",
+            None,
+            None,
+            None,
+            k,
+            None,
+            false,
+            "agent retrait",
+        ),
+        (
+            "agent",
+            "pending",
+            "text",
+            d,
+            b,
+            None,
+            k,
+            u,
+            true,
+            "agent pending décidé",
+        ),
+        (
+            "agent",
+            "approved",
+            "text",
+            d,
+            b,
+            None,
+            k,
+            None,
+            false,
+            "agent approved sans décision",
+        ),
+        (
+            "agent",
+            "refused",
+            "text",
+            d,
+            b,
+            None,
+            k,
+            u,
+            false,
+            "décision sans date",
+        ),
+        (
+            "agent",
+            "approved",
+            "text",
+            d,
+            b,
+            None,
+            k,
+            None,
+            true,
+            "date sans décideur",
+        ),
+        (
+            "admin",
+            "approved",
+            "text",
+            d,
+            None,
+            u,
+            None,
+            None,
+            false,
+            "texte sans corps",
+        ),
+        (
+            "admin",
+            "approved",
+            "text",
+            None,
+            b,
+            u,
+            None,
+            None,
+            false,
+            "texte sans description",
+        ),
+        (
+            "admin",
+            "approved",
+            "text",
+            Some(" \t\n"),
+            b,
+            u,
+            None,
+            None,
+            false,
+            "description blanche",
+        ),
+        (
+            "admin",
+            "approved",
+            "text",
+            d,
+            Some("  \n "),
+            u,
+            None,
+            None,
+            false,
+            "corps blanc",
+        ),
+        (
+            "admin",
+            "approved",
+            "withdrawal",
+            None,
+            b,
+            u,
+            None,
+            None,
+            false,
+            "retrait avec corps",
+        ),
+        (
+            "admin",
+            "approved",
+            "withdrawal",
+            d,
+            None,
+            u,
+            None,
+            None,
+            false,
+            "retrait avec description",
+        ),
+        (
+            "admin",
+            "approved",
+            "text",
+            d,
+            Some(&long),
+            u,
+            None,
+            None,
+            false,
+            "corps > 16000",
+        ),
+        (
+            "admin",
+            "approved",
+            "text",
+            Some(&desc_longue),
+            b,
+            u,
+            None,
+            None,
+            false,
+            "description > 500",
+        ),
     ];
     let mut numero = 100;
     for (o, st, n, de, bo, au, ke, dec, at, cas) in &refus_versions {
@@ -363,33 +644,67 @@ async fn mcp_prompts_contraintes(pool: MySqlPool) {
         );
     }
     // Unicité, numéro positif, clés étrangères.
-    brut_version(&pool, p, 1, "admin", "approved", "text", d, b, u, None, None, false)
-        .await
-        .expect("témoin du doublon");
+    brut_version(
+        &pool, p, 1, "admin", "approved", "text", d, b, u, None, None, false,
+    )
+    .await
+    .expect("témoin du doublon");
     let structurels = [
         (
-            brut_version(&pool, p, 1, "admin", "approved", "text", d, b, u, None, None, false)
-                .await,
+            brut_version(
+                &pool, p, 1, "admin", "approved", "text", d, b, u, None, None, false,
+            )
+            .await,
             "doublon (prompt_id, number)",
         ),
         (
-            brut_version(&pool, p, 0, "admin", "approved", "text", d, b, u, None, None, false)
-                .await,
+            brut_version(
+                &pool, p, 0, "admin", "approved", "text", d, b, u, None, None, false,
+            )
+            .await,
             "numéro 0",
         ),
         (
-            brut_version(&pool, 999_999, 1, "admin", "approved", "text", d, b, u, None, None, false)
-                .await,
+            brut_version(
+                &pool, 999_999, 1, "admin", "approved", "text", d, b, u, None, None, false,
+            )
+            .await,
             "prompt inexistant",
         ),
         (
-            brut_version(&pool, p, 50, "admin", "approved", "text", d, b, Some(999_999), None, None, false)
-                .await,
+            brut_version(
+                &pool,
+                p,
+                50,
+                "admin",
+                "approved",
+                "text",
+                d,
+                b,
+                Some(999_999),
+                None,
+                None,
+                false,
+            )
+            .await,
             "auteur inexistant",
         ),
         (
-            brut_version(&pool, p, 51, "agent", "pending", "text", d, b, None, Some(999_999), None, false)
-                .await,
+            brut_version(
+                &pool,
+                p,
+                51,
+                "agent",
+                "pending",
+                "text",
+                d,
+                b,
+                None,
+                Some(999_999),
+                None,
+                false,
+            )
+            .await,
             "clé inexistante",
         ),
     ];
@@ -404,13 +719,67 @@ async fn mcp_prompts_contraintes(pool: MySqlPool) {
 
     // Témoins : chaque combinaison permise passe.
     let permis = [
-        brut_version(&pool, s, 1, "standard", "approved", "text", d, b, None, None, None, false).await,
-        brut_version(&pool, s, 2, "standard", "approved", "withdrawal", None, None, None, None, None, false).await,
-        brut_version(&pool, p, 2, "admin", "approved", "withdrawal", None, None, u, None, None, false).await,
-        brut_version(&pool, p, 3, "agent", "pending", "text", d, b, None, k, None, false).await,
-        brut_version(&pool, p, 4, "agent", "approved", "text", d, b, None, k, u, true).await,
-        brut_version(&pool, p, 5, "agent", "refused", "text", d, b, None, k, u, true).await,
-        brut_version(&pool, p, 6, "admin", "approved", "text", Some(&"é".repeat(500)), Some(&"é".repeat(16_000)), u, None, None, false).await,
+        brut_version(
+            &pool, s, 1, "standard", "approved", "text", d, b, None, None, None, false,
+        )
+        .await,
+        brut_version(
+            &pool,
+            s,
+            2,
+            "standard",
+            "approved",
+            "withdrawal",
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await,
+        brut_version(
+            &pool,
+            p,
+            2,
+            "admin",
+            "approved",
+            "withdrawal",
+            None,
+            None,
+            u,
+            None,
+            None,
+            false,
+        )
+        .await,
+        brut_version(
+            &pool, p, 3, "agent", "pending", "text", d, b, None, k, None, false,
+        )
+        .await,
+        brut_version(
+            &pool, p, 4, "agent", "approved", "text", d, b, None, k, u, true,
+        )
+        .await,
+        brut_version(
+            &pool, p, 5, "agent", "refused", "text", d, b, None, k, u, true,
+        )
+        .await,
+        brut_version(
+            &pool,
+            p,
+            6,
+            "admin",
+            "approved",
+            "text",
+            Some(&"é".repeat(500)),
+            Some(&"é".repeat(16_000)),
+            u,
+            None,
+            None,
+            false,
+        )
+        .await,
     ];
     for (i, r) in permis.iter().enumerate() {
         assert!(r.is_ok(), "témoin {i} refusé : {r:?}");
@@ -419,7 +788,10 @@ async fn mcp_prompts_contraintes(pool: MySqlPool) {
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(tous, 8, "le doublon témoin et les sept combinaisons permises");
+    assert_eq!(
+        tous, 8,
+        "le doublon témoin et les sept combinaisons permises"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -432,29 +804,65 @@ async fn version_en_vigueur(pool: MySqlPool) {
     let p = creer_admin(&pool, &m, "aide").await;
     // Une proposition postérieure, à valider, ne change pas la version en
     // vigueur ; refusée, non plus.
-    proposer(&pool, &m, "aide", "PIEGE_PENDING_3210A").await.unwrap();
-    let v = depot::en_vigueur_par_nom(&pool, m.c, "aide").await.unwrap().unwrap();
-    assert_eq!((v.numero, v.origine, v.texte.as_str()), (1, Origine::Admin, "Texte."));
+    proposer(&pool, &m, "aide", "PIEGE_PENDING_3210A")
+        .await
+        .unwrap();
+    let v = depot::en_vigueur_par_nom(&pool, m.c, "aide")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (v.numero, v.origine, v.texte.as_str()),
+        (1, Origine::Admin, "Texte.")
+    );
     decider(&pool, &m, p, 2, version_du_prompt(&pool, p).await, false)
         .await
         .unwrap();
-    let v = depot::en_vigueur_par_nom(&pool, m.c, "aide").await.unwrap().unwrap();
+    let v = depot::en_vigueur_par_nom(&pool, m.c, "aide")
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(v.numero, 1);
     // Une proposition approuvée devient la version en vigueur.
-    proposer(&pool, &m, "aide", "Texte de l'agent.").await.unwrap();
+    proposer(&pool, &m, "aide", "Texte de l'agent.")
+        .await
+        .unwrap();
     decider(&pool, &m, p, 3, version_du_prompt(&pool, p).await, true)
         .await
         .unwrap();
-    let v = depot::en_vigueur_par_nom(&pool, m.c, "aide").await.unwrap().unwrap();
-    assert_eq!((v.numero, v.origine, v.cle_auteur), (3, Origine::Agent, Some(m.k)));
+    let v = depot::en_vigueur_par_nom(&pool, m.c, "aide")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (v.numero, v.origine, v.cle_auteur),
+        (3, Origine::Agent, Some(m.k))
+    );
     // Un retrait l'ôte des versions servies.
     let mut tx = pool.begin().await.unwrap();
-    depot::ajouter_version_admin_in_tx(&mut tx, m.c, p, version_du_prompt(&pool, p).await, m.u, &Contenu::Retrait)
-        .await
-        .unwrap();
+    depot::ajouter_version_admin_in_tx(
+        &mut tx,
+        m.c,
+        p,
+        version_du_prompt(&pool, p).await,
+        m.u,
+        &Contenu::Retrait,
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
-    assert!(depot::en_vigueur_par_nom(&pool, m.c, "aide").await.unwrap().is_none());
-    assert!(depot::en_vigueur_par_societe(&pool, m.c).await.unwrap().is_empty());
+    assert!(
+        depot::en_vigueur_par_nom(&pool, m.c, "aide")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        depot::en_vigueur_par_societe(&pool, m.c)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -467,7 +875,10 @@ async fn deux_societes_ne_se_voient_pas(pool: MySqlPool) {
         .await
         .unwrap();
     tx.commit().await.unwrap();
-    let va = depot::en_vigueur_par_nom(&pool, a.c, "commun").await.unwrap().unwrap();
+    let va = depot::en_vigueur_par_nom(&pool, a.c, "commun")
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(va.texte, "Texte.");
     let liste_a = depot::en_vigueur_par_societe(&pool, a.c).await.unwrap();
     assert_eq!(liste_a.len(), 1);
@@ -478,8 +889,18 @@ async fn deux_societes_ne_se_voient_pas(pool: MySqlPool) {
         .await
         .unwrap();
     tx.commit().await.unwrap();
-    assert!(depot::en_vigueur_par_nom(&pool, a.c, "seulement-b").await.unwrap().is_none());
-    assert!(depot::en_vigueur_par_nom(&pool, a.c, "COMMUN").await.unwrap().is_none());
+    assert!(
+        depot::en_vigueur_par_nom(&pool, a.c, "seulement-b")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        depot::en_vigueur_par_nom(&pool, a.c, "COMMUN")
+            .await
+            .unwrap()
+            .is_none()
+    );
     // L'historique d'un prompt d'une autre société : indiscernable d'un absent.
     let pb = prompt_par_nom(&pool, b.c, "commun").await;
     assert!(depot::historique(&pool, a.c, pb).await.unwrap().is_none());
@@ -497,13 +918,23 @@ async fn approuver_exige_la_derniere_version(pool: MySqlPool) {
     proposer(&pool, &m, "aide", "Proposé.").await.unwrap();
     // Une version d'administrateur vient entre-temps.
     let mut tx = pool.begin().await.unwrap();
-    depot::ajouter_version_admin_in_tx(&mut tx, m.c, p, version_du_prompt(&pool, p).await, m.u, &texte("D.", "Admin."))
-        .await
-        .unwrap();
+    depot::ajouter_version_admin_in_tx(
+        &mut tx,
+        m.c,
+        p,
+        version_du_prompt(&pool, p).await,
+        m.u,
+        &texte("D.", "Admin."),
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
     let avant = versions_de(&pool, p).await;
     let r = decider(&pool, &m, p, 2, version_du_prompt(&pool, p).await, true).await;
-    assert!(matches!(r, Err(ErreurEcriturePrompt::PasLaDerniere)), "{r:?}");
+    assert!(
+        matches!(r, Err(ErreurEcriturePrompt::PasLaDerniere)),
+        "{r:?}"
+    );
     assert_eq!(versions_de(&pool, p).await, avant, "rien d'écrit");
     // Le refus, lui, ne l'exige pas.
     decider(&pool, &m, p, 2, version_du_prompt(&pool, p).await, false)
@@ -520,13 +951,27 @@ async fn etats_terminaux_et_verrou(pool: MySqlPool) {
     proposer(&pool, &m, "aide", "Un.").await.unwrap();
     let v = version_du_prompt(&pool, p).await;
     let r = decider(&pool, &m, p, 2, v - 1, true).await;
-    assert!(matches!(r, Err(ErreurEcriturePrompt::VersionPerimee)), "{r:?}");
+    assert!(
+        matches!(r, Err(ErreurEcriturePrompt::VersionPerimee)),
+        "{r:?}"
+    );
     let r = decider(&pool, &m, p, 2, v + 1, false).await;
-    assert!(matches!(r, Err(ErreurEcriturePrompt::VersionPerimee)), "{r:?}");
+    assert!(
+        matches!(r, Err(ErreurEcriturePrompt::VersionPerimee)),
+        "{r:?}"
+    );
     // Approuvée puis re-décidée : refusé dans les deux sens.
     decider(&pool, &m, p, 2, v, true).await.unwrap();
     for approuver in [true, false] {
-        let r = decider(&pool, &m, p, 2, version_du_prompt(&pool, p).await, approuver).await;
+        let r = decider(
+            &pool,
+            &m,
+            p,
+            2,
+            version_du_prompt(&pool, p).await,
+            approuver,
+        )
+        .await;
         assert!(matches!(r, Err(ErreurEcriturePrompt::DejaDecidee)), "{r:?}");
     }
     // Refusée puis re-décidée.
@@ -535,19 +980,49 @@ async fn etats_terminaux_et_verrou(pool: MySqlPool) {
         .await
         .unwrap();
     for approuver in [true, false] {
-        let r = decider(&pool, &m, p, 3, version_du_prompt(&pool, p).await, approuver).await;
+        let r = decider(
+            &pool,
+            &m,
+            p,
+            3,
+            version_du_prompt(&pool, p).await,
+            approuver,
+        )
+        .await;
         assert!(matches!(r, Err(ErreurEcriturePrompt::DejaDecidee)), "{r:?}");
     }
     // Une version d'administrateur ou standard ne se décide pas.
     for approuver in [true, false] {
-        let r = decider(&pool, &m, p, 1, version_du_prompt(&pool, p).await, approuver).await;
-        assert!(matches!(r, Err(ErreurEcriturePrompt::PasUneProposition)), "{r:?}");
+        let r = decider(
+            &pool,
+            &m,
+            p,
+            1,
+            version_du_prompt(&pool, p).await,
+            approuver,
+        )
+        .await;
+        assert!(
+            matches!(r, Err(ErreurEcriturePrompt::PasUneProposition)),
+            "{r:?}"
+        );
     }
     depot::amorcer_standards(&pool, &[S1]).await.unwrap();
     let s = prompt_par_nom(&pool, m.c, "kesh-un").await;
     for approuver in [true, false] {
-        let r = decider(&pool, &m, s, 1, version_du_prompt(&pool, s).await, approuver).await;
-        assert!(matches!(r, Err(ErreurEcriturePrompt::PasUneProposition)), "{r:?}");
+        let r = decider(
+            &pool,
+            &m,
+            s,
+            1,
+            version_du_prompt(&pool, s).await,
+            approuver,
+        )
+        .await;
+        assert!(
+            matches!(r, Err(ErreurEcriturePrompt::PasUneProposition)),
+            "{r:?}"
+        );
     }
     // Numéro inexistant, prompt d'une autre société : NotFound.
     let r = decider(&pool, &m, p, 99, version_du_prompt(&pool, p).await, true).await;
@@ -590,7 +1065,10 @@ async fn noms_refuses_et_pris(pool: MySqlPool) {
     let mut tx = pool.begin().await.unwrap();
     let r = depot::creer_prompt_admin_in_tx(&mut tx, m.c, m.u, "vide", " ", "T.").await;
     tx.rollback().await.unwrap();
-    assert!(matches!(r, Err(ErreurEcriturePrompt::ContenuInvalide)), "{r:?}");
+    assert!(
+        matches!(r, Err(ErreurEcriturePrompt::ContenuInvalide)),
+        "{r:?}"
+    );
     assert_eq!(nb_versions(&pool).await, avant, "rien d'écrit");
 }
 
@@ -602,14 +1080,20 @@ async fn propositions_d_agent(pool: MySqlPool) {
     // Aucune proposition sur un nom en `kesh`, même existant (C-32-10a-27).
     for nom in ["kesh-developpement", "kesh-assistant", "kesh-neuf", "keshx"] {
         let r = proposer(&pool, &m, nom, "PIEGE_STANDARD_3210A").await;
-        assert!(matches!(r, Err(ErreurEcriturePrompt::NomReserve)), "{nom} : {r:?}");
+        assert!(
+            matches!(r, Err(ErreurEcriturePrompt::NomReserve)),
+            "{nom} : {r:?}"
+        );
     }
     let r = proposer(&pool, &m, "Majuscule", "T.").await;
     assert!(matches!(r, Err(ErreurEcriturePrompt::NomInvalide)), "{r:?}");
     assert_eq!(nb_versions(&pool).await, avant, "aucune version ajoutée");
     // Nom neuf : prompt et version 1 à valider.
     let e = proposer(&pool, &m, "neuf", "Un.").await.unwrap();
-    assert_eq!((e.numero, e.origine, e.etat, e.version), (1, Origine::Agent, Etat::EnAttente, 1));
+    assert_eq!(
+        (e.numero, e.origine, e.etat, e.version),
+        (1, Origine::Agent, Etat::EnAttente, 1)
+    );
     // Nom existant non standard : version ajoutée à ce prompt.
     let p = creer_admin(&pool, &m, "existant").await;
     let e = proposer(&pool, &m, "existant", "Deux.").await.unwrap();
@@ -630,9 +1114,15 @@ async fn plafond_des_propositions(pool: MySqlPool) {
     }
     let avant = nb_versions(&pool).await;
     let r = proposer(&pool, &m, "un-de-trop", "T.").await;
-    assert!(matches!(r, Err(ErreurEcriturePrompt::PlafondAtteint)), "{r:?}");
+    assert!(
+        matches!(r, Err(ErreurEcriturePrompt::PlafondAtteint)),
+        "{r:?}"
+    );
     let r = proposer(&pool, &m, "p0", "T.").await;
-    assert!(matches!(r, Err(ErreurEcriturePrompt::PlafondAtteint)), "{r:?}");
+    assert!(
+        matches!(r, Err(ErreurEcriturePrompt::PlafondAtteint)),
+        "{r:?}"
+    );
     assert_eq!(nb_versions(&pool).await, avant);
     // Une autre société n'est pas comptée.
     let autre = montage(&pool, "autre").await;
@@ -655,14 +1145,30 @@ async fn plafond_sous_le_verrou_de_societe(pool: MySqlPool) {
         proposer(&pool, &m, &format!("p{i}"), "T.").await.unwrap();
     }
     let mut tx_a = pool.begin().await.unwrap();
-    depot::proposer_version_agent_in_tx(&mut tx_a, m.c, m.k, "premier", "D.", "T.", PLAFOND_A_VALIDER)
-        .await
-        .expect("la vingtième passe");
+    depot::proposer_version_agent_in_tx(
+        &mut tx_a,
+        m.c,
+        m.k,
+        "premier",
+        "D.",
+        "T.",
+        PLAFOND_A_VALIDER,
+    )
+    .await
+    .expect("la vingtième passe");
     let (pool_b, c, k) = (pool.clone(), m.c, m.k);
     let b = tokio::spawn(async move {
         let mut tx_b = pool_b.begin().await.unwrap();
-        let r = depot::proposer_version_agent_in_tx(&mut tx_b, c, k, "second", "D.", "T.", PLAFOND_A_VALIDER)
-            .await;
+        let r = depot::proposer_version_agent_in_tx(
+            &mut tx_b,
+            c,
+            k,
+            "second",
+            "D.",
+            "T.",
+            PLAFOND_A_VALIDER,
+        )
+        .await;
         match &r {
             Ok(_) => tx_b.commit().await.unwrap(),
             Err(_) => tx_b.rollback().await.unwrap(),
@@ -670,16 +1176,26 @@ async fn plafond_sous_le_verrou_de_societe(pool: MySqlPool) {
         r
     });
     tokio::time::sleep(Duration::from_millis(700)).await;
-    assert!(!b.is_finished(), "la seconde n'attend pas le verrou de société");
+    assert!(
+        !b.is_finished(),
+        "la seconde n'attend pas le verrou de société"
+    );
     tx_a.commit().await.unwrap();
     let r = b.await.unwrap();
-    assert!(matches!(r, Err(ErreurEcriturePrompt::PlafondAtteint)), "{r:?}");
+    assert!(
+        matches!(r, Err(ErreurEcriturePrompt::PlafondAtteint)),
+        "{r:?}"
+    );
     let a_valider: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM mcp_prompt_versions WHERE state = 'pending'")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(a_valider, i64::from(PLAFOND_A_VALIDER), "aucune vingt et unième");
+    assert_eq!(
+        a_valider,
+        i64::from(PLAFOND_A_VALIDER),
+        "aucune vingt et unième"
+    );
 }
 
 /// Ce qui se refuse sans lire la base se refuse **avant** le verrou de société
@@ -705,7 +1221,15 @@ async fn refus_avant_le_verrou(pool: MySqlPool) {
             .unwrap();
         let r = tokio::time::timeout(
             Duration::from_millis(500),
-            depot::proposer_version_agent_in_tx(&mut tx, m.c, m.k, nom, "D.", "T.", PLAFOND_A_VALIDER),
+            depot::proposer_version_agent_in_tx(
+                &mut tx,
+                m.c,
+                m.k,
+                nom,
+                "D.",
+                "T.",
+                PLAFOND_A_VALIDER,
+            ),
         )
         .await
         .unwrap_or_else(|_| panic!("{nom} : l'appel attend le verrou de société"));
@@ -726,7 +1250,15 @@ async fn refus_avant_le_verrou(pool: MySqlPool) {
         .unwrap();
     let r = tokio::time::timeout(
         Duration::from_millis(500),
-        depot::proposer_version_agent_in_tx(&mut tx, m.c, m.k, "valide", "D.", "T.", PLAFOND_A_VALIDER),
+        depot::proposer_version_agent_in_tx(
+            &mut tx,
+            m.c,
+            m.k,
+            "valide",
+            "D.",
+            "T.",
+            PLAFOND_A_VALIDER,
+        ),
     )
     .await;
     assert!(r.is_err(), "témoin : un nom valide n'a pas attendu");
@@ -742,19 +1274,32 @@ async fn refus_avant_le_verrou(pool: MySqlPool) {
 async fn amorcage_premiere_et_deuxieme_execution(pool: MySqlPool) {
     let m = montage(&pool, "amorce").await;
     let r = depot::amorcer_standards(&pool, &[S1, S2]).await.unwrap();
-    assert_eq!((r.societes, r.creations, r.mises_a_jour, r.retraits), (1, 2, 0, 0));
+    assert_eq!(
+        (r.societes, r.creations, r.mises_a_jour, r.retraits),
+        (1, 2, 0, 0)
+    );
     for s in [S1, S2] {
         let p = prompt_par_nom(&pool, m.c, s.nom).await;
         assert_eq!(
             versions_de(&pool, p).await,
-            vec![(1, "standard".into(), "approved".into(), "text".into(), Some(s.texte.into()))]
+            vec![(
+                1,
+                "standard".into(),
+                "approved".into(),
+                "text".into(),
+                Some(s.texte.into())
+            )]
         );
         assert_eq!(version_du_prompt(&pool, p).await, 1);
     }
     let avant = nb_versions(&pool).await;
     let r = depot::amorcer_standards(&pool, &[S1, S2]).await.unwrap();
     assert_eq!((r.creations, r.mises_a_jour, r.retraits), (0, 0, 0));
-    assert_eq!(nb_versions(&pool).await, avant, "deuxième exécution sans effet");
+    assert_eq!(
+        nb_versions(&pool).await,
+        avant,
+        "deuxième exécution sans effet"
+    );
     // Aucune entrée d'audit.
     let audit: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log")
         .fetch_one(&pool)
@@ -767,15 +1312,24 @@ async fn amorcage_premiere_et_deuxieme_execution(pool: MySqlPool) {
 async fn amorcage_code_modifie(pool: MySqlPool) {
     let m = montage(&pool, "modifie").await;
     depot::amorcer_standards(&pool, &[S1]).await.unwrap();
-    let r = depot::amorcer_standards(&pool, &[S1_MODIFIE]).await.unwrap();
+    let r = depot::amorcer_standards(&pool, &[S1_MODIFIE])
+        .await
+        .unwrap();
     assert_eq!(r.mises_a_jour, 1);
     let p = prompt_par_nom(&pool, m.c, "kesh-un").await;
     let v = versions_de(&pool, p).await;
     assert_eq!(v.len(), 2);
-    assert_eq!(v[0].4.as_deref(), Some(S1.texte), "la précédente intacte, octet pour octet");
+    assert_eq!(
+        v[0].4.as_deref(),
+        Some(S1.texte),
+        "la précédente intacte, octet pour octet"
+    );
     assert_eq!(v[1].4.as_deref(), Some(S1_MODIFIE.texte));
     assert_eq!(v[1].1, "standard");
-    let en_vigueur = depot::en_vigueur_par_nom(&pool, m.c, "kesh-un").await.unwrap().unwrap();
+    let en_vigueur = depot::en_vigueur_par_nom(&pool, m.c, "kesh-un")
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(en_vigueur.texte, S1_MODIFIE.texte);
 }
 
@@ -802,7 +1356,9 @@ async fn amorcage_respecte_les_personnalisations(pool: MySqlPool) {
         texte: "Deux, modifié.",
         ..S2
     };
-    let r = depot::amorcer_standards(&pool, &[S1_MODIFIE, s2_modifie]).await.unwrap();
+    let r = depot::amorcer_standards(&pool, &[S1_MODIFIE, s2_modifie])
+        .await
+        .unwrap();
     assert_eq!((r.creations, r.mises_a_jour, r.retraits), (0, 0, 0));
     assert_eq!(nb_versions(&pool).await, avant, "personnalisés : inchangés");
     // Retiré du code alors que personnalisé : rien non plus.
@@ -817,11 +1373,26 @@ async fn amorcage_respecte_une_version_d_agent_approuvee(pool: MySqlPool) {
     let p = prompt_par_nom(&pool, m.c, "kesh-un").await;
     // Une proposition d'agent ne vise jamais un standard par le dépôt : posée
     // en SQL brut, décidée.
-    brut_version(&pool, p, 2, "agent", "approved", "text", Some("D."), Some("Agent."), None, Some(m.k), Some(m.u), true)
+    brut_version(
+        &pool,
+        p,
+        2,
+        "agent",
+        "approved",
+        "text",
+        Some("D."),
+        Some("Agent."),
+        None,
+        Some(m.k),
+        Some(m.u),
+        true,
+    )
+    .await
+    .unwrap();
+    let avant = nb_versions(&pool).await;
+    depot::amorcer_standards(&pool, &[S1_MODIFIE])
         .await
         .unwrap();
-    let avant = nb_versions(&pool).await;
-    depot::amorcer_standards(&pool, &[S1_MODIFIE]).await.unwrap();
     assert_eq!(nb_versions(&pool).await, avant);
 }
 
@@ -830,16 +1401,34 @@ async fn amorcage_et_proposition_en_attente(pool: MySqlPool) {
     let m = montage(&pool, "attente").await;
     depot::amorcer_standards(&pool, &[S1]).await.unwrap();
     let p = prompt_par_nom(&pool, m.c, "kesh-un").await;
-    brut_version(&pool, p, 2, "agent", "pending", "text", Some("D."), Some("Agent."), None, Some(m.k), None, false)
+    brut_version(
+        &pool,
+        p,
+        2,
+        "agent",
+        "pending",
+        "text",
+        Some("D."),
+        Some("Agent."),
+        None,
+        Some(m.k),
+        None,
+        false,
+    )
+    .await
+    .unwrap();
+    let r = depot::amorcer_standards(&pool, &[S1_MODIFIE])
         .await
         .unwrap();
-    let r = depot::amorcer_standards(&pool, &[S1_MODIFIE]).await.unwrap();
     assert_eq!(r.mises_a_jour, 1);
     let v = versions_de(&pool, p).await;
     assert_eq!(v.len(), 3);
     assert_eq!((v[1].2.as_str(), v[2].1.as_str()), ("pending", "standard"));
     let r = decider(&pool, &m, p, 2, version_du_prompt(&pool, p).await, true).await;
-    assert!(matches!(r, Err(ErreurEcriturePrompt::PasLaDerniere)), "{r:?}");
+    assert!(
+        matches!(r, Err(ErreurEcriturePrompt::PasLaDerniere)),
+        "{r:?}"
+    );
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -850,7 +1439,16 @@ async fn amorcage_standard_retire_du_code(pool: MySqlPool) {
     assert_eq!((r.mises_a_jour, r.retraits), (0, 1));
     let deux = prompt_par_nom(&pool, m.c, "kesh-deux").await;
     let v = versions_de(&pool, deux).await;
-    assert_eq!(v[1], (2, "standard".into(), "approved".into(), "withdrawal".into(), None));
+    assert_eq!(
+        v[1],
+        (
+            2,
+            "standard".into(),
+            "approved".into(),
+            "withdrawal".into(),
+            None
+        )
+    );
     let servis: Vec<_> = depot::en_vigueur_par_societe(&pool, m.c)
         .await
         .unwrap()
@@ -864,7 +1462,12 @@ async fn amorcage_standard_retire_du_code(pool: MySqlPool) {
     assert_eq!(nb_versions(&pool).await, avant);
     let r = depot::amorcer_standards(&pool, &[S1, S2]).await.unwrap();
     assert_eq!(r.mises_a_jour, 1);
-    assert!(depot::en_vigueur_par_nom(&pool, m.c, "kesh-deux").await.unwrap().is_some());
+    assert!(
+        depot::en_vigueur_par_nom(&pool, m.c, "kesh-deux")
+            .await
+            .unwrap()
+            .is_some()
+    );
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -878,7 +1481,13 @@ async fn amorcage_standard_altere_en_base(pool: MySqlPool) {
         .execute(&pool)
         .await
         .unwrap();
-    assert_eq!(depot::amorcer_standards(&pool, &[S1]).await.unwrap().mises_a_jour, 1);
+    assert_eq!(
+        depot::amorcer_standards(&pool, &[S1])
+            .await
+            .unwrap()
+            .mises_a_jour,
+        1
+    );
     // Cas 2 : la seule casse d'une lettre (F12 : la collation des tables ne la
     // verrait pas).
     let altere = S1.texte.replacen('T', "t", 1);
@@ -889,7 +1498,13 @@ async fn amorcage_standard_altere_en_base(pool: MySqlPool) {
         .execute(&pool)
         .await
         .unwrap();
-    assert_eq!(depot::amorcer_standards(&pool, &[S1]).await.unwrap().mises_a_jour, 1);
+    assert_eq!(
+        depot::amorcer_standards(&pool, &[S1])
+            .await
+            .unwrap()
+            .mises_a_jour,
+        1
+    );
     let v = versions_de(&pool, p).await;
     assert_eq!(v.len(), 3);
     assert_eq!(v[2].4.as_deref(), Some(S1.texte));
@@ -925,10 +1540,7 @@ async fn amorcage_refuse_un_standard_invalide(pool: MySqlPool) {
             nom: "sans-prefixe",
             ..S1
         },
-        Standard {
-            texte: "  ",
-            ..S1
-        },
+        Standard { texte: "  ", ..S1 },
     ] {
         assert!(depot::amorcer_standards(&pool, &[s]).await.is_err());
     }
@@ -957,15 +1569,23 @@ async fn synthese_par_societe(pool: MySqlPool) {
     let autre = montage(&pool, "autre").await;
     proposer(&pool, &autre, "ailleurs", "D.").await.unwrap();
 
-    let s = depot::synthese_par_societe(&pool, m.c, &[S1, S2]).await.unwrap();
+    let s = depot::synthese_par_societe(&pool, m.c, &[S1, S2])
+        .await
+        .unwrap();
     let noms: Vec<_> = s.iter().map(|l| l.nom.as_str()).collect();
     assert_eq!(noms, ["attente-seule", "kesh-deux", "kesh-un", "libre"]);
     let par = |n: &str| s.iter().find(|l| l.nom == n).unwrap().clone();
 
     let l = par("libre");
-    assert_eq!((l.id, l.is_standard, l.a_valider, l.standard_differe), (libre, false, 2, false));
+    assert_eq!(
+        (l.id, l.is_standard, l.a_valider, l.standard_differe),
+        (libre, false, 2, false)
+    );
     assert_eq!((l.derniere.numero, l.derniere.etat), (3, Etat::EnAttente));
-    assert_eq!(l.en_vigueur.map(|v| (v.numero, v.origine)), Some((1, Origine::Admin)));
+    assert_eq!(
+        l.en_vigueur.map(|v| (v.numero, v.origine)),
+        Some((1, Origine::Admin))
+    );
 
     let l = par("attente-seule");
     assert_eq!((l.a_valider, l.en_vigueur), (1, None));
@@ -976,18 +1596,35 @@ async fn synthese_par_societe(pool: MySqlPool) {
 
     let l = par("kesh-deux");
     assert!(l.standard_differe, "retrait d'administrateur : diffère");
-    assert_eq!(l.en_vigueur.map(|v| (v.origine, v.nature)), Some((Origine::Admin, Nature::Retrait)));
+    assert_eq!(
+        l.en_vigueur.map(|v| (v.origine, v.nature)),
+        Some((Origine::Admin, Nature::Retrait))
+    );
 
     // Le code a changé : le standard non personnalisé diffère (jusqu'à
     // l'amorçage) ; la comparaison est en Rust, octet pour octet.
-    let s = depot::synthese_par_societe(&pool, m.c, &[S1_MODIFIE, S2]).await.unwrap();
-    assert!(s.iter().find(|l| l.nom == "kesh-un").unwrap().standard_differe);
+    let s = depot::synthese_par_societe(&pool, m.c, &[S1_MODIFIE, S2])
+        .await
+        .unwrap();
+    assert!(
+        s.iter()
+            .find(|l| l.nom == "kesh-un")
+            .unwrap()
+            .standard_differe
+    );
     let casse = Standard {
         texte: "texte du standard un.",
         ..S1
     };
-    let s = depot::synthese_par_societe(&pool, m.c, &[casse, S2]).await.unwrap();
-    assert!(s.iter().find(|l| l.nom == "kesh-un").unwrap().standard_differe);
+    let s = depot::synthese_par_societe(&pool, m.c, &[casse, S2])
+        .await
+        .unwrap();
+    assert!(
+        s.iter()
+            .find(|l| l.nom == "kesh-un")
+            .unwrap()
+            .standard_differe
+    );
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -1020,17 +1657,32 @@ async fn historique_et_retour_au_standard(pool: MySqlPool) {
         assert!(ok, "{cas} : {r:?}");
     }
     let mut tx = pool.begin().await.unwrap();
-    let e = depot::revenir_au_standard_in_tx(&mut tx, m.c, p, 2, &S1).await.unwrap();
+    let e = depot::revenir_au_standard_in_tx(&mut tx, m.c, p, 2, &S1)
+        .await
+        .unwrap();
     tx.commit().await.unwrap();
     assert_eq!((e.numero, e.origine, e.version), (3, Origine::Standard, 3));
-    let v = depot::en_vigueur_par_nom(&pool, m.c, "kesh-un").await.unwrap().unwrap();
+    let v = depot::en_vigueur_par_nom(&pool, m.c, "kesh-un")
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!((v.numero, v.texte.as_str()), (3, S1.texte));
 
     let (prompt, versions) = depot::historique(&pool, m.c, p).await.unwrap().unwrap();
-    assert_eq!((prompt.name.as_str(), prompt.is_standard, prompt.version), ("kesh-un", true, 3));
+    assert_eq!(
+        (prompt.name.as_str(), prompt.is_standard, prompt.version),
+        ("kesh-un", true, 3)
+    );
     let resume: Vec<_> = versions
         .iter()
-        .map(|v| (v.version.number, v.version.origin, v.auteur_nom.clone(), v.cle_revoquee))
+        .map(|v| {
+            (
+                v.version.number,
+                v.version.origin,
+                v.auteur_nom.clone(),
+                v.cle_revoquee,
+            )
+        })
         .collect();
     assert_eq!(
         resume,

@@ -1990,6 +1990,50 @@ async fn populate(pool: &MySqlPool, app: &TestApp, token: &str, company_id: i64)
     .execute(pool)
     .await
     .unwrap();
+    // Story 32-10a-i (AC-i12) — les prompts : les standards amorcés, une
+    // version d'administrateur et une proposition d'agent, par le dépôt. La
+    // remise à zéro doit les VIDER, puis la route réinstaller les standards
+    // seuls.
+    {
+        use kesh_db::entities::mcp_prompt::{Contenu, PLAFOND_A_VALIDER};
+        use kesh_db::entities::mcp_prompt_standards::STANDARDS;
+        use kesh_db::repositories::mcp_prompts as depot;
+        depot::amorcer_standards(pool, STANDARDS).await.unwrap();
+        let admin = admin_user_id(pool).await;
+        let standard: (i64, i32) = sqlx::query_as(
+            "SELECT id, version FROM mcp_prompts WHERE company_id = ? AND is_standard ORDER BY id LIMIT 1",
+        )
+        .bind(company_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        depot::ajouter_version_admin_in_tx(
+            &mut tx,
+            company_id,
+            standard.0,
+            standard.1,
+            admin,
+            &Contenu::Texte {
+                description: "Personnalisé.".into(),
+                texte: "PIEGE_ADMIN_3210A".into(),
+            },
+        )
+        .await
+        .unwrap();
+        depot::proposer_version_agent_in_tx(
+            &mut tx,
+            company_id,
+            mcp_key_id as i64,
+            "proposition",
+            "Proposé.",
+            "PIEGE_AGENT_3210A",
+            PLAFOND_A_VALIDER,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+    }
     key_id
 }
 
@@ -2045,9 +2089,18 @@ async fn reset_clears_every_company_table_and_traces_itself(pool: MySqlPool) {
         "mcp_keys",
         "mcp_server_settings",
         "mcp_sends",
+        "mcp_prompts",
+        "mcp_prompt_versions",
     ] {
         assert!(before[t] > 0, "montage : {t} doit être peuplée");
     }
+    assert_ne!(
+        kesh_db::test_fixtures::prompts_de_societe(&pool, company_id)
+            .await
+            .unwrap(),
+        kesh_db::test_fixtures::prompts_standard_seuls(),
+        "témoin : le montage porte plus que les standards"
+    );
     let cleared = reset_cleared_tables();
     let empty: std::collections::BTreeSet<&str> =
         cleared.iter().copied().filter(|t| before[t] == 0).collect();
@@ -2112,10 +2165,30 @@ async fn reset_clears_every_company_table_and_traces_itself(pool: MySqlPool) {
     );
     let after = table_counts(&pool).await;
     for t in &cleared {
-        if *t != "audit_log" {
+        // `audit_log` porte l'entrée de la remise à zéro ; les tables des
+        // prompts portent les standards réinstallés par la route (Story
+        // 32-10a-i, AC-i12), assertés exactement ci-dessous.
+        if !["audit_log", "mcp_prompts", "mcp_prompt_versions"].contains(t) {
             assert_eq!(after[t], 0, "#279 : {t} doit être vidée");
         }
     }
+    assert_eq!(
+        kesh_db::test_fixtures::prompts_de_societe(&pool, company_id)
+            .await
+            .unwrap(),
+        kesh_db::test_fixtures::prompts_standard_seuls(),
+        "après la remise à zéro : les standards seuls, version d'administrateur et \
+         proposition disparues"
+    );
+    let tous: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mcp_prompts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        tous as usize,
+        kesh_db::entities::mcp_prompt_standards::STANDARDS.len(),
+        "aucun prompt hors de la société"
+    );
     let mut preserved_after = Vec::new();
     for t in [
         "users",
@@ -2624,6 +2697,14 @@ async fn language_without_company_reattaches_and_revokes(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(user_company, new_id, "utilisateur rattaché");
+    // Story 32-10a-i (AC-i11, Mi22) — la société créée par `language` reçoit
+    // les prompts standard, à la fin de la route.
+    assert_eq!(
+        kesh_db::test_fixtures::prompts_de_societe(&pool, new_id)
+            .await
+            .unwrap(),
+        kesh_db::test_fixtures::prompts_standard_seuls()
+    );
     assert_key_revoked_on(&pool, key_id, &key, new_id).await;
     assert_mcp_key_revoked_on(&pool, mcp_id, &mcp_jeton, new_id).await;
     let (entity_type, entity_id, audit_company_id, raw): (String, i64, Option<i64>, Vec<u8>) =

@@ -145,7 +145,10 @@ pub async fn synthese_par_societe(
             let standard_differe = r.is_standard
                 && differe_du_standard(
                     &r.name,
-                    en_vigueur.as_ref().zip(contenu.as_ref()).map(|(e, c)| (e.origine, c)),
+                    en_vigueur
+                        .as_ref()
+                        .zip(contenu.as_ref())
+                        .map(|(e, c)| (e.origine, c)),
                     standards,
                 );
             Ok(SynthesePrompt {
@@ -358,16 +361,15 @@ async fn creer_prompt(
     nom: &str,
     is_standard: bool,
 ) -> Result<i64, DbError> {
-    let id = sqlx::query(
-        "INSERT INTO mcp_prompts (company_id, name, is_standard) VALUES (?, ?, ?)",
-    )
-    .bind(company_id)
-    .bind(nom)
-    .bind(is_standard)
-    .execute(&mut **tx)
-    .await
-    .map_err(map_db_error)?
-    .last_insert_id();
+    let id =
+        sqlx::query("INSERT INTO mcp_prompts (company_id, name, is_standard) VALUES (?, ?, ?)")
+            .bind(company_id)
+            .bind(nom)
+            .bind(is_standard)
+            .execute(&mut **tx)
+            .await
+            .map_err(map_db_error)?
+            .last_insert_id();
     if id == 0 {
         return Err(DbError::Invariant(
             "identifiant nul à la création d'un prompt MCP".into(),
@@ -529,7 +531,14 @@ pub async fn creer_prompt_admin_in_tx(
         false,
     )
     .await?;
-    Ok(ecrite(prompt_id, nom, n, Origine::Admin, Nature::Texte, Etat::Approuvee))
+    Ok(ecrite(
+        prompt_id,
+        nom,
+        n,
+        Origine::Admin,
+        Nature::Texte,
+        Etat::Approuvee,
+    ))
 }
 
 /// Ajoute une version d'administrateur (`admin`, approuvée) — un texte ou un
@@ -633,7 +642,14 @@ pub async fn proposer_version_agent_in_tx(
         incrementer,
     )
     .await?;
-    Ok(ecrite(prompt_id, nom, n, Origine::Agent, Nature::Texte, Etat::EnAttente))
+    Ok(ecrite(
+        prompt_id,
+        nom,
+        n,
+        Origine::Agent,
+        Nature::Texte,
+        Etat::EnAttente,
+    ))
 }
 
 /// Décide une proposition d'agent (C-32-10a-20). Ordre des contrôles :

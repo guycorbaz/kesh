@@ -212,7 +212,9 @@ const OUVRE_TABLE: &[&str] = &[
     "INSERT", "REPLACE", "UPDATE", "DELETE", "TRUNCATE", "LOAD", "INTO", "FROM", "JOIN", "TABLE",
 ];
 /// Mots qui terminent la liste des tables.
-const FIN_TABLES: &[&str] = &["SET", "VALUES", "VALUE", "SELECT", "WHERE", "ORDER", "LIMIT"];
+const FIN_TABLES: &[&str] = &[
+    "SET", "VALUES", "VALUE", "SELECT", "WHERE", "ORDER", "LIMIT",
+];
 /// Mots sautés sans changer d'état.
 const NEUTRES: &[&str] = &[
     "LOW_PRIORITY",
@@ -344,7 +346,10 @@ mod tests {
 
     #[test]
     fn premier_mot_et_ecriture() {
-        assert_eq!(premier_mot_cle("  insert ignore into t values (1)"), "INSERT");
+        assert_eq!(
+            premier_mot_cle("  insert ignore into t values (1)"),
+            "INSERT"
+        );
         for e in [
             "INSERT INTO t VALUES (1)",
             "insert low_priority into t values (1)",
@@ -375,7 +380,10 @@ mod tests {
         let cas: &[(&str, &[&str])] = &[
             ("INSERT INTO prompts_x (a, b) VALUES (?, ?)", &["prompts_x"]),
             ("INSERT prompts_x (a) VALUES (1)", &["prompts_x"]),
-            ("INSERT LOW_PRIORITY INTO `prompts_x` VALUES (1)", &["prompts_x"]),
+            (
+                "INSERT LOW_PRIORITY INTO `prompts_x` VALUES (1)",
+                &["prompts_x"],
+            ),
             ("REPLACE INTO kesh.versions_x SELECT 1", &["versions_x"]),
             (
                 "UPDATE prompts_x p JOIN versions_x v ON v.prompt_id = p.id SET v.body = ?",
@@ -401,7 +409,9 @@ mod tests {
     #[test]
     fn set() {
         assert_eq!(
-            colonnes_du_set("UPDATE cles_x SET revoked_at = NOW(3), version = version + 1 WHERE id = ?"),
+            colonnes_du_set(
+                "UPDATE cles_x SET revoked_at = NOW(3), version = version + 1 WHERE id = ?"
+            ),
             Some(vec!["revoked_at".into(), "version".into()])
         );
         assert_eq!(

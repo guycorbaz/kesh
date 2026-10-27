@@ -115,7 +115,11 @@ mod tests {
         assert_eq!(STANDARDS.len(), 2, "deux standards (C-32-10a-9)");
         for s in STANDARDS {
             assert!(nom_conforme(s.nom), "{} non conforme", s.nom);
-            assert!(s.nom.starts_with(PREFIXE_STANDARD), "{} sans préfixe", s.nom);
+            assert!(
+                s.nom.starts_with(PREFIXE_STANDARD),
+                "{} sans préfixe",
+                s.nom
+            );
         }
     }
 
@@ -150,7 +154,9 @@ mod tests {
     fn regles_de_guy_presentes_dans_le_standard_de_developpement() {
         assert!(regles_de_guy_presentes(KESH_DEVELOPPEMENT.texte));
         // Témoin : la même fonction sur un texte privé d'une règle rend faux.
-        let prive = KESH_DEVELOPPEMENT.texte.replace("par sa structure", "par ses effets");
+        let prive = KESH_DEVELOPPEMENT
+            .texte
+            .replace("par sa structure", "par ses effets");
         assert_ne!(prive, KESH_DEVELOPPEMENT.texte, "témoin sans effet");
         assert!(!regles_de_guy_presentes(&prive));
         // Témoin de la mise en minuscules : `IBAN` est en capitales au texte.
@@ -160,7 +166,11 @@ mod tests {
     #[test]
     fn forme_non_fiable_nommee_par_les_deux_standards() {
         for s in STANDARDS {
-            assert!(s.texte.contains(FORME_NON_FIABLE), "{} ne la nomme pas", s.nom);
+            assert!(
+                s.texte.contains(FORME_NON_FIABLE),
+                "{} ne la nomme pas",
+                s.nom
+            );
         }
         assert_eq!(FORME_NON_FIABLE, r#"{"nonFiable": "…"}"#);
     }

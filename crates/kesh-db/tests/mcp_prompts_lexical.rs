@@ -23,8 +23,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use kesh_db::sql_lexical::{
-    colonnes_du_set, est_ecriture, premier_mot_cle, retirer_commentaires_de_bloc,
-    split_statements, tables_nommees,
+    colonnes_du_set, est_ecriture, premier_mot_cle, retirer_commentaires_de_bloc, split_statements,
+    tables_nommees,
 };
 
 // ---------------------------------------------------------------------------
@@ -46,7 +46,9 @@ fn fichiers(dir: &Path, ext: &str, sortie: &mut Vec<PathBuf>) {
     for e in entrees.flatten() {
         let p = e.path();
         if p.is_dir() {
-            if p.file_name().is_some_and(|n| n == "target" || n == "node_modules") {
+            if p.file_name()
+                .is_some_and(|n| n == "target" || n == "node_modules")
+            {
                 continue;
             }
             fichiers(&p, ext, sortie);
@@ -250,7 +252,11 @@ fn ecritures_sur<'a>(
     stmts
         .into_iter()
         .filter(|(_, s)| est_ecriture(s))
-        .filter(|(_, s)| tables_nommees(s).iter().any(|t| tables.contains(&t.as_str())))
+        .filter(|(_, s)| {
+            tables_nommees(s)
+                .iter()
+                .any(|t| tables.contains(&t.as_str()))
+        })
         .cloned()
         .collect()
 }
@@ -288,7 +294,10 @@ fn statement_existant(fichier: &str, marqueur: &str) -> String {
         .map(|(_, s)| s)
         .filter(|s| s.contains(marqueur))
         .collect();
-    assert!(!trouves.is_empty(), "témoin introuvable : {fichier} « {marqueur} »");
+    assert!(
+        !trouves.is_empty(),
+        "témoin introuvable : {fichier} « {marqueur} »"
+    );
     trouves[0].clone()
 }
 
@@ -326,7 +335,10 @@ fn frontiere_du_code_de_production() {
     let prod = code_de_production(src);
     assert!(prod.contains("fn f()"));
     assert!(!prod.contains("fn g()"));
-    assert_eq!(creations_de_societe(prod), vec![(String::new(), "f".to_string())]);
+    assert_eq!(
+        creations_de_societe(prod),
+        vec![(String::new(), "f".to_string())]
+    );
     // Témoins sur le vrai fichier : `bootstrap.rs:47-49` n'est pas une
     // frontière (le code d'`ensure_admin_user` reste de production),
     // `mod tests {` en est une.
@@ -422,18 +434,30 @@ fn tables_des_prompts_temoins() {
     assert!(est_ecriture(&s));
     assert_eq!(tables_nommees(&s), ["fiscal_years"]);
     // Rouges existants, sur leur table : multi-tables à alias, nom composé.
-    let s = statement_existant("kesh-db/tests/open_items.rs", "UPDATE journal_entry_lines jel");
-    assert_eq!(tables_nommees(&s), ["journal_entry_lines", "journal_entries"]);
+    let s = statement_existant(
+        "kesh-db/tests/open_items.rs",
+        "UPDATE journal_entry_lines jel",
+    );
+    assert_eq!(
+        tables_nommees(&s),
+        ["journal_entry_lines", "journal_entries"]
+    );
     let s = statement_existant("kesh-db/src/test_fixtures.rs", "TRUNCATE TABLE");
     assert!(est_ecriture(&s));
     assert_eq!(tables_nommees(&s), ["{table}"]);
-    let s = statement_existant("kesh-db/src/repositories/companies.rs", "t SET t.company_id");
+    let s = statement_existant(
+        "kesh-db/src/repositories/companies.rs",
+        "t SET t.company_id",
+    );
     assert!(est_ecriture(&s));
     assert_eq!(tables_nommees(&s), ["{table}"]);
     // `WITH` de lecture existants : pas des écritures.
     for (f, m) in [
         ("kesh-db/tests/letterings.rs", "WITH pieces AS"),
-        ("kesh-db/tests/support/lettering_documents.rs", "WITH ancre AS"),
+        (
+            "kesh-db/tests/support/lettering_documents.rs",
+            "WITH ancre AS",
+        ),
     ] {
         let s = statement_existant(f, m);
         assert_eq!(premier_mot_cle(&s), "WITH");
@@ -476,7 +500,10 @@ fn versions_jamais_reecrites() {
     // Témoin : le dépôt écrit bien cette table (un `INSERT`, un `UPDATE`).
     let ecritures = ecritures_sur(&statements_rs(&src), &["mcp_prompt_versions"]);
     let verbes: BTreeSet<_> = ecritures.iter().map(|(_, s)| premier_mot_cle(s)).collect();
-    assert_eq!(verbes, BTreeSet::from(["INSERT".to_string(), "UPDATE".to_string()]));
+    assert_eq!(
+        verbes,
+        BTreeSet::from(["INSERT".to_string(), "UPDATE".to_string()])
+    );
     // Rouges factices.
     for r in [
         "q(\"UPDATE mcp_prompt_versions SET state = ?, body = ? WHERE id = ?\")",
@@ -495,12 +522,18 @@ fn versions_jamais_reecrites() {
         assert!(reecritures(v).is_empty(), "vert pris : {v}");
     }
     // Verts existants de l'extracteur du `SET` (multi-ligne, alias retiré).
-    let s = statement_existant("kesh-db/src/repositories/mcp_keys.rs", "SET revoked_at = NOW(3)");
+    let s = statement_existant(
+        "kesh-db/src/repositories/mcp_keys.rs",
+        "SET revoked_at = NOW(3)",
+    );
     assert_eq!(
         colonnes_du_set(&s),
         Some(vec!["revoked_at".to_string(), "version".to_string()])
     );
-    let s = statement_existant("kesh-db/src/repositories/companies.rs", "t SET t.company_id");
+    let s = statement_existant(
+        "kesh-db/src/repositories/companies.rs",
+        "t SET t.company_id",
+    );
     assert_eq!(colonnes_du_set(&s), Some(vec!["company_id".to_string()]));
 }
 
@@ -540,7 +573,10 @@ fn creations_de_societe_liste_fermee() {
         ("kesh-db/src/repositories/companies.rs", "create"),
         ("kesh-db/src/repositories/companies.rs", "insert_stub"),
         ("kesh-db/src/test_fixtures.rs", "seed_accounting_company"),
-        ("kesh-db/src/test_fixtures.rs", "seed_accounting_company_no_fy"),
+        (
+            "kesh-db/src/test_fixtures.rs",
+            "seed_accounting_company_no_fy",
+        ),
         ("kesh-db/src/test_fixtures.rs", "seed_changeme_user_only"),
         ("kesh-db/src/test_fixtures.rs", "seed_stub_company_only"),
     ]
@@ -557,8 +593,12 @@ fn creations_de_societe_liste_fermee() {
 #[test]
 fn creations_de_societe_temoins() {
     // Rouge factice : une fonction de production qui crée une société.
-    let rouge = "pub async fn neuve(pool: &P) {\n    q(\"INSERT INTO companies (name) VALUES (?)\");\n}\n";
-    assert_eq!(creations_de_societe(rouge), vec![(String::new(), "neuve".to_string())]);
+    let rouge =
+        "pub async fn neuve(pool: &P) {\n    q(\"INSERT INTO companies (name) VALUES (?)\");\n}\n";
+    assert_eq!(
+        creations_de_societe(rouge),
+        vec![(String::new(), "neuve".to_string())]
+    );
     for forme in [
         "INSERT IGNORE INTO `companies` (a) VALUES (1)",
         "REPLACE companies (a) VALUES (1)",
@@ -585,6 +625,9 @@ fn creations_de_societe_temoins() {
     // sont pas comptés (frontière `mod tests {`).
     let bootstrap =
         fs::read_to_string(racine_crates().join("kesh-api/src/auth/bootstrap.rs")).unwrap();
-    assert!(creations_de_societe(&bootstrap).len() >= 7, "témoin : le fichier entier les porte");
+    assert!(
+        creations_de_societe(&bootstrap).len() >= 7,
+        "témoin : le fichier entier les porte"
+    );
     assert!(creations_de_societe(code_de_production(&bootstrap)).is_empty());
 }
