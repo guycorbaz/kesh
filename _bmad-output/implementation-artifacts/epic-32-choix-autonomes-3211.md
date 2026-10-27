@@ -350,3 +350,5 @@ alternatives écartées, réversibilité.
 - **Écartées** : une fixture de la capture versionnée par la 32-11 (elle attendrait la recette, après le
   développement) ; garder le pilotage de `claude -p` par défaut (C-32-11-28).
 - **Réversible** : oui (point 1).
+
+*(Amendé le 2026-10-27, validation P4 de la fiche, A2 : « déjà prévue » (C-32-11-29, Retenu) est devenu vrai depuis la P3 — la recette de Guy est **inscrite à la § *Release v0.16.0* de l'epic** (ligne datée du 2026-10-27), non plus seulement attendue. Le texte du choix est laissé tel quel.)*

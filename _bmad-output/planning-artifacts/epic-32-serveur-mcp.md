@@ -558,6 +558,8 @@ nombre de tables du NAS) : à Guy avant la release.
 
 *(Ajouté le 2026-10-27, validation P3 de la fiche 32-11)* **Recette de Guy** : capture des requêtes de Claude Code et rejeu des gestes interactifs depuis le PDF (fiche 32-11, AC-A8).
 
+*(Ajouté le 2026-10-27, validation P4 de la fiche 32-11, A1)* **CHANGELOG** : l'entrée de la 32-11 ne nomme pas Claude Code ; **la phrase sur Claude Code, « éprouvée » ou « non éprouvée », s'écrit à la release, par l'orchestrateur, après la recette de Guy** (fiche 32-11, AC-A8), avec la version de `claude` relevée à la recette.
+
 ---
 
 ## Actions des rétrospectives portées par cet epic
