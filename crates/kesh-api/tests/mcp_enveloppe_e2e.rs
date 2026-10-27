@@ -370,7 +370,92 @@ const INVENTAIRE: &[LigneInventaire] = &[
         "ff_ligne",
         &[("kesh_facture_fournisseur", 0)],
     ),
+    // contacts:read (32-9b) — la portée est celle des données personnelles :
+    // tout est enveloppé, rien n'est masqué (pas de `Tiers`).
+    nf("kesh_contacts", "contacts[].nom (C)", "client_nom", CLIENT),
+    nf(
+        "kesh_contacts",
+        "contacts[].nom (Fo)",
+        "fournisseur_nom",
+        &[("kesh_contacts", 0), ("kesh_contact", 1)],
+    ),
+    nf(
+        "kesh_contacts",
+        "contacts[].prenom",
+        "client_prenom",
+        CLIENT,
+    ),
+    nf(
+        "kesh_contacts",
+        "contacts[].nomDeFamille",
+        "client_nom_de_famille",
+        CLIENT,
+    ),
+    // L'adresse d'affichage est composée par le dépôt de ses composants
+    // (`derive_contact_address_display`) : elle porte le piège de la rue.
+    nf(
+        "kesh_contacts",
+        "contacts[].adresse (composée par Kesh)",
+        "client_rue",
+        CLIENT,
+    ),
+    nf("kesh_contacts", "contacts[].rue", "client_rue", CLIENT),
+    nf(
+        "kesh_contacts",
+        "contacts[].batiment",
+        "client_batiment",
+        CLIENT,
+    ),
+    nf("kesh_contacts", "contacts[].npa", "client_npa", CLIENT),
+    nf(
+        "kesh_contacts",
+        "contacts[].localite",
+        "client_localite",
+        CLIENT,
+    ),
+    exempte(
+        "kesh_contacts",
+        "contacts[].pays",
+        "deux caractères (CHAR(2)) : aucun piège n'y tient ; enveloppé quand même",
+    ),
+    nf("kesh_contacts", "contacts[].email", "client_email", CLIENT),
+    nf(
+        "kesh_contacts",
+        "contacts[].telephone",
+        "client_telephone",
+        CLIENT,
+    ),
+    nf("kesh_contacts", "contacts[].ide", "client_ide", CLIENT),
+    nf(
+        "kesh_contacts",
+        "contacts[].numeroClient",
+        "client_numero",
+        CLIENT,
+    ),
+    nf(
+        "kesh_contacts",
+        "contacts[].conditions",
+        "client_conditions",
+        CLIENT,
+    ),
+    // documents:read (32-9b) — les métadonnées de P2 ; les champs de son QR,
+    // posés, ne sortent jamais (`pieces_sans_donnees_du_qr`).
+    nf(
+        "kesh_pieces",
+        "pieces[].nomFichier",
+        "piece_nom_fichier",
+        &[("kesh_pieces", 0)],
+    ),
+    nf(
+        "kesh_pieces",
+        "pieces[].typeMime",
+        "piece_type_mime",
+        &[("kesh_pieces", 0)],
+    ),
 ];
+
+/// Les jeux qui font sortir un champ du client C : la liste et sa fiche.
+const CLIENT: &[(&str, usize)] = &[("kesh_contacts", 0), ("kesh_contact", 0)];
 
 /// Les outils sans champ libre.
 const SANS_CHAMP_LIBRE: [&str; 1] = ["kesh_version"];
@@ -732,6 +817,153 @@ async fn coordonnees_visibles_avec_contacts_read(pool: MySqlPool) {
     assert_eq!(
         ff["qrIbanCreancier"],
         json!({"nonFiable": pieges::texte_seme('A', par_cle("ff_qr_iban"))})
+    );
+}
+
+/// Les pièges des champs d'un contact que seul `contacts:read` rend — tous
+/// ceux du client C, **hors** son nom (que les factures et les libellés
+/// portent, C-32-9-9). Lus de `CHAMPS` : un piège de contact ajouté y entre.
+fn champs_du_contact() -> Vec<&'static str> {
+    let v: Vec<&str> = CHAMPS
+        .iter()
+        .filter(|c| c.table == "contacts" && c.colonne != "name")
+        .map(|c| c.cle)
+        .collect();
+    assert_eq!(v.len(), 11, "témoin : onze champs du client piégés ({v:?})");
+    v
+}
+
+/// #781, point 3 (revue de code P1 de la 32-9a, B5) : le masquage éprouvé sous
+/// les portées **combinées** sans `contacts:read` — livres, factures et pièces
+/// ensemble. Les trois coordonnées des tiers sont masquées dans les fiches ;
+/// et, sous cette clé, **aucun** outil — `kesh_pieces` compris — ne fait sortir
+/// ni ces trois pièges, ni aucun piège d'un champ du contact autre que son nom.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordonnees_masquees_sous_portees_combinees(pool: MySqlPool) {
+    let a = societe_piegee(&pool, "Société A 329", 'A').await;
+    let portees = [
+        McpScope::BooksRead,
+        McpScope::InvoicesRead,
+        McpScope::DocumentsRead,
+    ];
+    let jeton = cle_de(&pool, &a, &portees, SendValidation::Exempt).await;
+    let b = banc(&pool);
+    let masque = json!(TEXTE_TIERS_MASQUE);
+    let f = structure(
+        &b.appeler(&jeton, "kesh_facture", json!({"id": a.p.facture}))
+            .await,
+        "kesh_facture",
+    );
+    assert_eq!(f["envoyeeA"], masque);
+    let ff = structure(
+        &b.appeler(
+            &jeton,
+            "kesh_facture_fournisseur",
+            json!({"id": a.p.facture_fournisseur}),
+        )
+        .await,
+        "kesh_facture_fournisseur",
+    );
+    assert_eq!(ff["ibanCreancier"], masque);
+    assert_eq!(ff["qrIbanCreancier"], masque);
+    let interdits: Vec<String> = coordonnees()
+        .into_iter()
+        .chain(champs_du_contact())
+        .map(|c| pieges::identifiant('A', par_cle(c)))
+        .collect();
+    let motif = motif();
+    let mut outils_vus = BTreeSet::new();
+    let mut trouves_ailleurs = 0;
+    for outil in b.liste(&jeton).await {
+        if HORS_REGISTRE.contains(&outil.as_str()) {
+            continue;
+        }
+        outils_vus.insert(outil.clone());
+        for args in (temoin(&outil).1)(&a.p) {
+            let r = b.appeler(&jeton, &outil, args.clone()).await;
+            let t = serde_json::to_string(&r).unwrap();
+            for id in &interdits {
+                assert!(
+                    !t.contains(id),
+                    "{outil} {args} : {id} sorti sans contacts:read"
+                );
+            }
+            trouves_ailleurs += motif.find_iter(&t).count();
+        }
+    }
+    // Témoins : la clé voit bien les outils des trois portées, et des pièges
+    // sortent (ceux qu'elle a le droit de lire).
+    for o in ["kesh_bilan", "kesh_facture", "kesh_pieces"] {
+        assert!(outils_vus.contains(o), "{o} servi sous la clé combinée");
+    }
+    assert!(!outils_vus.contains("kesh_contacts"));
+    assert!(
+        trouves_ailleurs > 20,
+        "témoin : {trouves_ailleurs} pièges vus"
+    );
+}
+
+/// AC-b3 — la pièce sans les données de son QR-code : sous toutes les portées
+/// de lecture, `MOTIF_PIEGE` ne trouve **aucun** des pièges posés dans le QR de
+/// P2 dans la réponse **entière** d'aucun outil — `kesh_pieces` d'abord ; et
+/// `qrLu` vaut `true` pour P2 (témoin que la pièce est lue, et que son QR
+/// existe), son nom de fichier sortant, enveloppé (témoin du parcours).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn pieces_sans_donnees_du_qr(pool: MySqlPool) {
+    let a = societe_piegee(&pool, "Société A 329", 'A').await;
+    let jeton = cle_de(&pool, &a, &LECTURE, SendValidation::Exempt).await;
+    let b = banc(&pool);
+    let motif = motif();
+    let du_qr: BTreeSet<String> = pieges::CHAMPS_DU_QR
+        .iter()
+        .map(|c| pieges::identifiant('A', par_cle(c)))
+        .collect();
+    assert_eq!(du_qr.len(), 9, "témoin : neuf pièges dans le QR");
+    let r = b
+        .appeler(&jeton, "kesh_pieces", json!({"statut": "to_complete"}))
+        .await;
+    let s = structure(&r, "kesh_pieces");
+    let p2: Vec<&Value> = s["pieces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["id"] == json!(a.p.piece_qr))
+        .collect();
+    assert_eq!(p2.len(), 1, "P2 listée : {s}");
+    assert_eq!(p2[0]["qrLu"], json!(true));
+    assert_eq!(
+        p2[0]["nomFichier"],
+        json!({"nonFiable": pieges::texte_seme('A', par_cle("piece_nom_fichier"))})
+    );
+    for (outil, jeux, _) in TEMOINS {
+        for args in jeux(&a.p) {
+            let r = b.appeler(&jeton, outil, args.clone()).await;
+            let t = serde_json::to_string(&r).unwrap();
+            let vus: BTreeSet<String> = motif
+                .find_iter(&t)
+                .map(|m| m.as_str().to_string())
+                .collect();
+            let fuites: Vec<&String> = vus.intersection(&du_qr).collect();
+            assert!(fuites.is_empty(), "{outil} {args} : {fuites:?}");
+        }
+    }
+    // La pièce rattachée (sans QR) : `qrLu` faux, sous le filtre `completed`.
+    let s = structure(
+        &b.appeler(&jeton, "kesh_pieces", json!({"statut": "completed"}))
+            .await,
+        "kesh_pieces",
+    );
+    let p1: Vec<&Value> = s["pieces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["id"] == json!(a.p.piece))
+        .collect();
+    assert_eq!(p1.len(), 1, "P1 listée sous completed : {s}");
+    assert_eq!(p1[0]["qrLu"], json!(false));
+    assert_eq!(
+        p1[0]["factureFournisseurId"],
+        json!(a.p.facture_fournisseur)
     );
 }
 

@@ -133,6 +133,11 @@ champ_enum!(
     kesh_db::entities::AccountRole,
     kesh_db::entities::Journal,
     kesh_db::entities::FiscalYearStatus,
+    // Story 32-9b : les énumérations d'un contact, sans champ, `Serialize`
+    // dérivé (`entities/contact.rs:53`, `:110` ; `company.rs:73-74`).
+    kesh_db::entities::contact::ContactType,
+    kesh_db::entities::contact::Salutation,
+    kesh_db::entities::Language,
 );
 
 // ---------------------------------------------------------------------------

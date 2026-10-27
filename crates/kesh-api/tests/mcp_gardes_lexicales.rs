@@ -550,11 +550,12 @@ fn outils_et_politique_en_leur_lieu() {
         hors.is_empty(),
         "impl McpTool hors de src/mcp/outils/ : {hors:?}"
     );
-    // Story 32-9a (AC-a9) : les seize outils du registre standard.
+    // Story 32-9a (AC-a9) : les seize outils du registre standard ; Story 32-9b
+    // (AC-b2) : dix-neuf.
     assert_eq!(
         sites(&sources_src(), |f| f.starts_with("mcp/outils/"), &imp).len(),
-        16,
-        "témoin : kesh_version et les quinze outils de la 32-9a"
+        19,
+        "témoin : kesh_version, les quinze outils de la 32-9a et les trois de la 32-9b"
     );
 
     let lecture = re(r"\bLectureOutils\s*::\s*nouvelle\b|\bLectureOutils\s*\(");
@@ -994,9 +995,17 @@ fn sorties_sans_serialisation_parallele() {
 /// n'est rendu à `src/mcp/` (`factures_fournisseur::detail_sans_fichier`,
 /// `factures::detail_sans_fichier`, C-32-9-49).
 ///
+/// Story 32-9b (#781, LOW R2 de la revue P2 de la 32-9a) : l'import groupé que
+/// rustfmt **coupe** sur plusieurs lignes (`use std::{` / `fs,` / `};`), ou
+/// **imbriqué** (`use tokio::{io::{AsyncReadExt}, fs};`, que `[^}]*` arrêtait
+/// au premier `}`), est vu par [`imports_groupes_de_fs`], sur le texte aplati,
+/// jusqu'au `;` de l'instruction.
+///
 /// ⚠️ Angles morts écrits : un alias posé **hors** de `src/mcp/` (`use
 /// tokio::fs as disque;` dans un service, réexporté) ; un champ de chemin
-/// nommé autrement (`pdf_path`, `chemin`) — le typage, non le motif, l'écarte.
+/// nommé autrement (`pdf_path`, `chemin`) — le typage, non le motif, l'écarte ;
+/// un `use` de `fs` par un chemin relatif à un module qui le réexporte
+/// (`use crate::x::{fs};`).
 #[test]
 fn mcp_sans_fichier() {
     let motif = re(
@@ -1026,6 +1035,52 @@ fn mcp_sans_fichier() {
     }
     let trouves = sites(&sources_src(), |f| f.starts_with("mcp/"), &motif);
     assert!(trouves.is_empty(), "{trouves:?}");
+
+    // Story 32-9b : les imports groupés coupés ou imbriqués, sur le texte
+    // aplati (témoins rouges et verts factices, dits tels).
+    for rouge in [
+        "use std::{\n    fs,\n    io,\n};",
+        "use tokio::{\n    io::AsyncReadExt,\n    fs as disque,\n};",
+        "use tokio::{io::{AsyncReadExt}, fs};",
+        "use ::std::{collections::BTreeSet, fs::File};",
+    ] {
+        assert_eq!(imports_groupes_de_fs(rouge), 1, "rouge : {rouge}");
+    }
+    for vert in [
+        // l'import groupé de `sortie.rs`, sans `fs`
+        "use std::{\n    collections::BTreeSet,\n    fmt,\n};",
+        // un commentaire qui le cite n'est pas un import
+        "// use std::{fs};\nuse std::fmt;",
+        // `fs` après la fin de l'instruction
+        "use std::{fmt, io};\nlet fs = 1;",
+    ] {
+        assert_eq!(
+            imports_groupes_de_fs(vert),
+            0,
+            "vert (factice, dit tel) : {vert}"
+        );
+    }
+    let groupes: Vec<String> = sources_src()
+        .into_iter()
+        .filter(|(f, _)| f.starts_with("mcp/"))
+        .filter(|(_, t)| imports_groupes_de_fs(t) > 0)
+        .map(|(f, _)| f)
+        .collect();
+    assert!(groupes.is_empty(), "import groupé de fs : {groupes:?}");
+}
+
+/// Le nombre d'imports groupés de `std` ou `tokio` qui nomment `fs`, sur le
+/// texte **aplati** (lignes de commentaire écartées d'abord), de la `{` au `;`
+/// de l'instruction — coupés ou imbriqués compris.
+fn imports_groupes_de_fs(texte: &str) -> usize {
+    let aplati = texte
+        .lines()
+        .filter(|l| !est_commentaire(l))
+        .collect::<Vec<_>>()
+        .join(" ");
+    re(r"\buse\s+(::\s*)?(std|tokio)\s*::\s*\{[^;]*\bfs\b")
+        .find_iter(&aplati)
+        .count()
 }
 
 // ---------------------------------------------------------------------------

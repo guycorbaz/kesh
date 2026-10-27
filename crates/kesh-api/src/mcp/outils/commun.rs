@@ -145,7 +145,44 @@ pub const TYPES_REGLEMENT: &[(&str, TypeReglement)] = &[
     ("internal_account", TypeReglement::InternalAccount),
 ];
 
-champ_enum!(Sens, StatutFacture, StatutFactureFournisseur, TypeReglement);
+/// Le statut d'une pièce importée (contrainte `chk_imported_si_status` de la
+/// base) — rendu par `kesh_pieces`, et lu en argument (`statut`, requis).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatutPiece {
+    /// À compléter : importée, sans facture fournisseur.
+    ToComplete,
+    /// Complétée : la facture fournisseur en est créée.
+    Completed,
+    /// Écartée.
+    Discarded,
+}
+
+/// La table du statut d'une pièce.
+pub const STATUTS_PIECE: &[(&str, StatutPiece)] = &[
+    ("to_complete", StatutPiece::ToComplete),
+    ("completed", StatutPiece::Completed),
+    ("discarded", StatutPiece::Discarded),
+];
+
+impl StatutPiece {
+    /// La valeur de la base et du service.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::ToComplete => "to_complete",
+            Self::Completed => "completed",
+            Self::Discarded => "discarded",
+        }
+    }
+}
+
+champ_enum!(
+    Sens,
+    StatutFacture,
+    StatutFactureFournisseur,
+    TypeReglement,
+    StatutPiece
+);
 
 #[cfg(test)]
 mod tests {
