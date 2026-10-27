@@ -1014,16 +1014,16 @@ d'une, c'est un écart déclaré, qui touche `routes` et l'audit.
 ## Tâches
 
 ### 32-10a-i
-- [ ] **T-i0** — étape 0 (§ *À recontrôler*) : 32-6a, 32-5c et 32-5d fusionnées ; `git log -1` partie de `main` à
+- [x] **T-i0** — étape 0 (§ *À recontrôler*) : 32-6a, 32-5c et 32-5d fusionnées ; `git log -1` partie de `main` à
   jour ; recomptes et relectures, ligne lue citée au Change Log ; horodatage de la migration choisi après la dernière.
-- [ ] **T-i1** — migration, entités, dépôt, standards et leurs tests (AC-i1 à AC-i10) ; squash régénéré ;
+- [x] **T-i1** — migration, entités, dépôt, standards et leurs tests (AC-i1 à AC-i10) ; squash régénéré ;
   `migrations.sha384`.
-- [ ] **T-i2** — les cinq appels d'amorçage, leurs doc-comments, le test `creations_de_societe_liste_fermee`, la garde
+- [x] **T-i2** — les cinq appels d'amorçage, leurs doc-comments, le test `creations_de_societe_liste_fermee`, la garde
   `amorcage_au_demarrage` et les tests d'exécution par point d'entrée (AC-i11).
-- [ ] **T-i3** — sauvegarde, export, remise à zéro, restauration jouée ; le classeur `sql_lexical` sorti de
+- [x] **T-i3** — sauvegarde, export, remise à zéro, restauration jouée ; le classeur `sql_lexical` sorti de
   `post_restore.rs` et les gardes des écritures (AC-i12 à AC-i14).
-- [ ] **T-i4** — P5, P6, P7, P8 (AC-i15) ; textes et PDF (AC-i16).
-- [ ] **T-i5** — mutations Mi1 à Mi28 (Mi23 retirée ; étape 0, P5-H4), gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
+- [x] **T-i4** — P5, P6, P7, P8 (AC-i15) ; textes et PDF (AC-i16).
+- [x] **T-i5** — mutations Mi1 à Mi28 (Mi23 retirée ; étape 0, P5-H4), gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
 
 ### 32-10a-ii
 - [ ] **T-ii0** — étape 0 : 32-10a-i fusionnée ; schéma `2025-11-25` (`Prompt`, `GetPromptResult`) relevé, source
@@ -1547,17 +1547,118 @@ propres amendements de ces fichiers s'écrivent sur cet état, recompté à l'é
 
 ### Agent Model Used
 
+Partie i : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-10a`, branche `story/32-10a-dev`, 2026-10-27.
+
 ### Statut des parties
 
 | Partie | Statut |
 |---|---|
-| 32-10a-i | ready-for-dev |
+| 32-10a-i | review |
 | 32-10a-ii | ready-for-dev |
 | 32-10a-iii | ready-for-dev |
 
 ### Completion Notes List
 
+#### 32-10a-i (2026-10-27)
+
+**Étape 0** (lignes lues, citées) :
+- Base : `56af24f2`, fusion de `origin/main` à `cb432098` (`git merge-base --is-ancestor origin/main HEAD` vrai). Dernière
+  migration de `main` : `20261025000002_mcp_sends.sql` (`ls crates/kesh-db/migrations/*.sql | tail`) ⇒ la migration
+  est **`20261027000001_mcp_prompts.sql`**. La 32-9b (en parallèle) n'ajoute pas de migration
+  (`ls /home/gcorbaz/devel/kesh-32-9/crates/kesh-db/migrations/ | tail -2` : la même dernière).
+- Recomptes avant la story : 85 migrations, 85 lignes d'audit (sites `:17` et `:111`), `TABLES_TO_TRUNCATE` 42 (commande
+  du fait 4), `total, 85` / `total - 51` (`migrations_upgrade_path.rs:123`, `:211`), export d'installation 42
+  (`admin_full_export_e2e.rs:282`), douze tables hors export (`exports/global.rs:166`), manuel « ajoute trois tables »
+  (`admin-manual.tex:2250`), CHANGELOG « en ajoute trois » (`CHANGELOG.md:37`).
+- Note de la 32-8b : `entree_appel(cle: &CleMcpAuthentifiee, outil: &'static str, issue, duree_ms, envoi)`
+  (`services/serveur_mcp.rs:178-184`), `journaliser_appel(trace, cle, outil: &'static str, …)` (`:212`) ; `AppelOutil`
+  n'est plus nommé que dans un doc-comment (`serveur_mcp.rs:170`) ; `let pool_outils =` (`lib.rs:1283`) ; ordre de
+  `tools/list` : à recompter en iii. ⇒ `proposer_prompt` devra être une constante `&'static str` (iii).
+- Note de la 32-9a : `pub fn depuis_app_error(e: AppError) -> ErreurOutil` (`mcp/textes.rs:235`) ;
+  `ContexteMcp::nouveau(acces, lecture, trace)` à trois paramètres (`mcp/outil.rs:53-57`) ;
+  `traduction_des_erreurs_de_service` (`tests/mcp_traduction.rs:22`) ; forme `{"nonFiable": "…"}`
+  (`mcp/textes.rs:111-117`) ⇒ nommée par les deux standards (C-32-10a-69).
+- D1, D1 étendu, son complément, D1 champs du détail : la partie i ne les empêche pas — `historique` rend les noms de
+  l'auteur, du décideur, de la clé et sa révocation (C-32-10a-60) ; `numeroEnVigueur`, `standardDiffere` et le texte
+  du standard du code se calculent par `en_vigueur`, `differe_du_standard`, `contenu_attendu` et `STANDARDS`
+  (C-32-10a-61). D2 (revalidation à l'approbation) : `approuver_in_tx` reçoit la transaction de l'appelant, le service
+  valide avant — rien n'y fait obstacle. D5 (compte des routes du manuel) : iii/10b, non touché. Le `\r` restauré :
+  le dépôt stocke les octets reçus, `valider_contenu` et `rendre_visible` sont de la ii — à aligner là.
+- Validation P5 : H2, H3 (sévérités relues, `kesh-gate-logs/3210a-validate-p4.md:54`, `:72`, `:148`), H4, H7, H8
+  corrigés à la fiche ou au registre ; H5 (témoin factice en fonction pure, `frontiere_du_code_de_production`) et H6
+  (`SET SESSION innodb_lock_wait_timeout = 1`, `refus_avant_le_verrou`) faits dans les tests ; **H1 réfuté** :
+  `unicode-properties-0.1.4/src/tables.rs:1424` porte `('\u{2600}', '\u{266e}', GeneralCategory::OtherSymbol)`.
+- Validation P3 : l'inventaire des créateurs rejoué par le test `creations_de_societe_liste_fermee` (six fonctions,
+  exactement) ; `conclude_step(` de `set_language` unique ; la réparation #542 (C-32-10a-68) ; les tests qui comptent
+  après `_test/seed` (`test_endpoints_e2e.rs`) ne comptent pas les tables des prompts. Aucun littéral de
+  `repositories/mcp_prompts.rs` ne commence par un verbe SQL sans en être un (garde `versions_jamais_reecrites`, verbes
+  rendus : `INSERT`, `UPDATE`).
+- Validation P2 : section des ordres de verrous de `MULTI-TENANT-SCOPING-PATTERNS.md` (ligne ajoutée) ; `post_restore.rs`
+  inchangé de comportement après la sortie du classeur (ses tests verts au gate complet).
+- **Aucun écart de module** : cinq modules (kesh-db, exports, admin_backup, routes, docs). Aucune prémisse fausse
+  bloquante ; deux citations corrigées (C-32-10a-70).
+
+**Mesures des gardes** (règle commune) : `$` du `REGEXP` éprouvé à la main (`'valide\n'` accepté) ⇒ `\z`
+(C-32-10a-62). Analogue `mcp_keys` : hors des tests, ses écritures ne vivent qu'en `repositories/mcp_keys.rs`
+(assertion du test `tables_des_prompts_ecrites_par_leur_depot`). Mesure de la fiche
+(`grep -rnPi '…companies…' crates/*/src | wc -l`) : 25 lignes au relevé du développement (23 à la fiche), dont, hors
+modules de tests et hors le message `companies.rs:195`, exactement les six créateurs — le test le tient.
+
+**Tests** (périmètre `origin/main..HEAD`, `#[test]`/`#[sqlx::test]` recomptés aux deux bornes) : **44 fonctions
+neuves** — `mcp_prompts_repository.rs` 22, `mcp_prompts_lexical.rs` 7, `prompts_amorcage.rs` 2, unitaires
+`entities/mcp_prompt.rs` 4, `mcp_prompt_standards.rs` 4, `sql_lexical.rs` 4, `admin_backup_e2e.rs` 1
+(`prompts_roundtrip_ligne_pour_ligne`) ; assertions ajoutées à cinq tests existants (`test_endpoints_e2e.rs` : trois ;
+`onboarding_audit_e2e.rs` : `reset_clears_every_company_table_and_traces_itself`,
+`language_without_company_reattaches_and_revokes`). `mcp_prompts_contraintes` compte 41 cas refusés (10 + 1 + 25 + 5)
+et 7 combinaisons permises. `reset_partition_is_guarded_by_the_schema` vert **sans modification**.
+
+**Mutations** : 27 numérotées jouées (Mi1 à Mi28, Mi23 retirée), **27 tuées**, chacune par le test visé, diff nul
+après restauration (`git checkout -- <f> && touch <f>`, `git diff --quiet`) ; journaux
+`kesh-gate-logs/3210a-i-mutations-serie{1,2}.log` et `3210a-i-mut-<id>.log`. Mi7 et Mi14 jouées sur le squash :
+`mcp_prompts_contraintes` **et** `squash_matches_real_schema_structure` (attendu). Mi13 sous ses deux formes. ⚠️
+**Mi12** n'était d'abord tuée que par `reset_partition_is_guarded_by_the_schema` : le test de la remise à zéro
+survivait (versions orphelines invisibles de `prompts_de_societe`) ; renforcé (`3ebd53a6`, compte de la table
+entière), rejouée (Mi12bis) : tuée par « une version par standard, aucune autre » (6 contre 2).
+
+**Gates, au dernier commit de code** (`3ebd53a6` ; `ca07ee9d` ne touche que la fiche et le registre) : bases
+`kesh_3210a` et `kesh_e2e_3210a` remises à zéro par le compte `kesh` (migrations du worktree, seed) ;
+`scripts/test-fast.sh --ci` sous `flock` : **4371 passés / 4371, 7 ignorés** (fmt, clippy `-D warnings` compris ;
+`kesh-gate-logs/3210a-i-gate-complet.log`) ; frontend : `check` 0 erreur (29 avertissements), `lint-i18n-ownership`
+vert, `test:unit` **1976 / 1976** (167 fichiers), `build` vert ; `cargo publish --dry-run -p kesh-import` vert ;
+**E2E complet** (port 3336, base `kesh_e2e_3210a` remise à zéro de nouveau, dossiers neufs
+`/tmp/kesh-e2e-3210a-i-b/{inbox,documents,backup}` passés au backend et au runner) : **317 passés, 7 échoués, 17
+ignorés** — les sept échecs sont exactement les sept KF-029 de `docs/testing.md:394-400` (`mode-expert:26`, `:41`,
+`onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) ; aucun autre à rejouer
+(`kesh-gate-logs/3210a-i-e2e.log`). Au démarrage, le journal du backend dit « prompts standard du serveur MCP amorcés
+societes=1 creations=2 ». Backend tué par le PID du binaire `kesh-api`, port 3336 libre ensuite. PDF FR régénérés
+(`make fr`) et contrôlés aplatis (« prompts du serveur MCP », « cinq tables » trouvés dans les deux manuels). Recette
+visuelle : sans objet.
+
+**P5 à P8** : P5 — ligne `tracked-by-sqlx` ; `ls …/*.sql | wc -l` 86, `grep -c '^| \`20'` 86, partition 10 / 76 / 0,
+total 86 aux deux sites (généalogie « + 1 Story 32-10a »). P6 — `grep -rn "migrations.len()\|apply_migrations_up_to"
+crates/` : `migrations_upgrade_path.rs` porté à `total, 86` et `total - 52` (frontière 34, chaque littéral grepé :
+`\b(85|86|51|52)\b`) ; tous les autres sites résolvent par version (`migrations_before`). P7 — aucune écriture, rien au
+registre ni aux exemptions ; les trois tests de triage verts au gate. P8 — ligne de `migrations.sha384` ajoutée en
+dernier (`ccc1babc`), égale à `sha384sum` du fichier.
+
+**Angles morts** (en plus de la fiche) : C-32-10a-68 (société provisoire superflue née après le démarrage) ;
+C-32-10a-67 (une version orpheline échappe à `prompts_de_societe`, compensé dans le test de la remise à zéro).
+
 ### File List
+
+- `crates/kesh-db/migrations/20261027000001_mcp_prompts.sql` (neuf), `crates/kesh-db/migrations.sha384`,
+  `crates/kesh-db/test-schema/0001_schema_squash.sql`
+- `crates/kesh-db/src/entities/{mcp_prompt.rs, mcp_prompt_standards.rs}` (neufs), `entities/{mod.rs, mcp_send.rs}`
+- `crates/kesh-db/src/repositories/mcp_prompts.rs` (neuf), `repositories/mod.rs`
+- `crates/kesh-db/src/{sql_lexical.rs (neuf), lib.rs, post_restore.rs, backup.rs, test_fixtures.rs}`
+- `crates/kesh-db/tests/{mcp_prompts_repository.rs, mcp_prompts_lexical.rs}` (neufs), `tests/migrations_upgrade_path.rs`
+- `crates/kesh-api/src/{main.rs, routes/onboarding.rs, routes/test_endpoints.rs, exports/global.rs}`
+- `crates/kesh-api/tests/prompts_amorcage.rs` (neuf), `tests/{admin_backup_e2e.rs, admin_full_export_e2e.rs,
+  onboarding_audit_e2e.rs, test_endpoints_e2e.rs}`
+- `docs/migrations-idempotence-audit.md`, `docs/MULTI-TENANT-SCOPING-PATTERNS.md`,
+  `docs/manual/fr/{admin-manual,user-manual}.{tex,pdf}`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/{32-10a-prompts-en-base.md, epic-32-choix-autonomes-3210a.md,
+  32-10a-i-review-prompt-p1.md (neuf), sprint-status.yaml}`
 
 ## Change Log
 
@@ -1570,3 +1671,4 @@ propres amendements de ces fichiers s'écrivent sur cet état, recompté à l'é
 | 2026-10-25 | validation P4 — **retrait** | **Passe ciblée** (regression hunter, **Opus**, une lentille, braquée sur `0fd5b00b` ; prompt `3210a-validate-prompt-p4.md` ; rapport `kesh-gate-logs/3210a-validate-p4.md`) : **0/0/5/6** ⇒ trend P1 0/0/11/18 → P2 0/0/13/19 → P3 0/0/3/20 → **P4 0/0/5/6**. ⚠️ **Recyclage déclaré** : les **cinq** MEDIUM sont nés de la remédiation P3, et la sévérité **remonte** (3 → 5). **Décision de l'orchestrateur : retrait, non une correction de plus.** **Retraits** : (1) la garde lexicale `toute_creation_de_societe_est_amorcee` (H1 : frontière `#[cfg(test)]` de `bootstrap.rs:46` ; H2 : écritures autres que des créations ; H9 : intermédiaires publics) — remplacée par la **liste fermée des six fonctions qui créent une société** (test `creations_de_societe_liste_fermee` : les `INSERT`/`REPLACE`/`LOAD` visant `companies` en code de production l'égalent ; frontière de production écrite, `bootstrap.rs:46-48` non-frontière et `:460-461` frontière, témoins existants ; `companies.rs:195`, `:216` témoins verts), les appelants couverts par les **tests d'exécution** par point d'entrée, une petite garde `amorcage_au_demarrage` pour `main.rs` seul, un appelant neuf écrit en angle mort (C-32-10a-33 annoté) ; (2) **l'amorçage à la fin de `full_import`** (H3) — la sauvegarde porte ses prompts, l'équivalence stricte d'`admin_backup_e2e.rs:587-599` reste vraie, nommée à l'AC-i13 (C-32-10a-8 annoté) ; (3) **l'exception des emojis** (H5) — U+FE0E, U+FE0F, U+200D, invisibles, formaient un alphabet binaire : refusés de nouveau dans les prompts et la description d'un compte bancaire, emoji simple admis, point 9 pour Guy réécrit (C-32-10a-12 et 34 annotés). **Corrigé** : H4 (motif de liste lu jusqu'au `;`, témoin existant `routes/invoices.rs:30-35`, rouge factice imbriqué). **LOW** : H6 (supprimé avec la garde), H7 (`sprint-status.yaml` : six puis cinq points d'entrée, `LecturePrompts`), H8 (prédicat neuf `sql_lexical::est_ecriture` ; `writes_data` garde son `#[cfg(test)]`), H9 (angle mort écrit), H10 (témoin factice dit tel), H11 (test du refus avant le verrou, Mi27). **Mutations** : Mi11, Mi18 sur `amorcage_au_demarrage` ; Mi19, Mi21, Mi22, Mi24, Mi26 sur les tests d'exécution ; Mi23 **retirée** ; Mi25 sur la liste fermée ; Mi27, Mi28 neuves ; Mii12, Mii13 inversées. **Propagation** : greppés — `toute_creation_de_societe_est_amorcee`, « par exception écrite », « aucun texte caché », « six points d'entrée », « aux prompts vidés », `[^}]*`, « `writes_data` perd », « emojis admis », `routes/admin.rs` parmi les appelants d'amorçage et les fichiers touchés ; ne restent que la mention du retrait et les entrées datées. **Décomptes** (recomptés par `grep`) : 39 AC, 16 tâches, **53 mutations numérotées** (28 / 13 / 12), dont **51 effectives** (Mi23 et Mii1 retirées), C-32-10a-1 à 34 (C-8, 12, 33, 34 annotés), P1 à P27 ; modules inchangés (i 5, `routes/admin.rs` sorti ; ii 4 ; iii 5). **4 passes sur 8.** Remédiation sur la fiche, le registre et `sprint-status.yaml` seulement : passe suivante **ciblée** (regression hunter, Sonnet, `3210a-validate-prompt-p5.md`, commit à part). |
 | 2026-10-25 | **validation P5 — VALIDATION TERMINÉE** | **Passe ciblée** (regression hunter, **Sonnet**, une lentille, braquée sur `bb406fcb` ; prompt `3210a-validate-prompt-p5.md` ; rapport `kesh-gate-logs/3210a-validate-p5.md`) : **0/0/0/8**. **Trend complet** : P1 Sonnet ×2 (R, F) 0/0/11/18 → P2 Opus ×2 0/0/13/19 → P3 Sonnet ×2 0/0/3/20 → P4 Opus ciblée 0/0/5/6 → **P5 Sonnet ciblée 0/0/0/8**. ⚠️ **Recyclage déclaré de la P2 à la P4** : en P2, dix MEDIUM sur treize naissaient de la remédiation P1 ; en P3, les trois ; en P4, les cinq, la sévérité remontant (3 → 5). Il a été fermé, à la P2, par des **simplifications de conception** (poignées sans pool visible, types propres aux services, proposition et audit dans une transaction, classeur de P7 réemployé, catégorie générale Unicode), puis, à la P4, par un **retrait** décidé par l'orchestrateur — la garde lexicale « toute création amorcée », l'amorçage à la fin de l'import et l'exception des emojis —, au profit d'une liste fermée des créateurs et de tests d'exécution par point d'entrée. **Clôture** : la boucle se clôt sur une passe à **0 MEDIUM** (`CLAUDE.md` § *La passe ciblée*, décision Q3 (c) du 2026-10-23), **cinq passes sur huit**, la dernière remédiation (P4) n'ayant touché que la fiche, le registre et `sprint-status.yaml`. Les huit LOW de la P5 ne sont **pas** remédiés à la fiche : ils sont au § *À recontrôler à l'étape 0* (P5-H1 à P5-H8), chacun avec sa correction attendue. Développement : 32-10a-i après la fusion de la 32-6a (la 32-5d l'est) ; puis ii, puis iii (après la 32-6b). |
 | 2026-10-27 | amendements D1, D2 | Demandés par la fiche 32-10b (`32-10b-ecran-prompts.md`, demandes à l'orchestrateur D1 et D2), **acceptés** par l'orchestrateur : le texte servi calculé par le serveur dans la route de détail, et la revalidation à l'approbation. Inscrits au § *À recontrôler à l'étape 0*, sans remédiation du corps de la fiche (validation terminée). *(Écrit par l'orchestrateur.)* |
+| 2026-10-27 | **développement 32-10a-i** | Opus 5.5, en autonomie. Étape 0 citée au Dev Agent Record (P5-H1 réfuté, H2-H8 traités ; D1 à D5, notes des 32-8b et 32-9a recontrôlées) ; migration `20261027000001_mcp_prompts` (DDL seul, `\z`), entités, dépôt (6 écritures `_in_tx` + amorçage, verrou de société d'abord), deux standards (forme `nonFiable` nommée), amorçage aux cinq points d'entrée, `sql_lexical`, gardes ; sauvegarde (44 tables), export (quatorze hors export), restauration jouée, remise à zéro ; P5 à P8 ; manuels, PDF, CHANGELOG. 44 tests neufs ; 27 mutations, 27 tuées (Mi12 après renfort du test de la remise à zéro). Gate complet 4371/4371 ; frontend 1976 ; E2E 317 passés + 7 KF-029. Choix C-32-10a-60 à 71. Prompt de revue P1 : `32-10a-i-review-prompt-p1.md` (Sonnet, B, E, A). |
