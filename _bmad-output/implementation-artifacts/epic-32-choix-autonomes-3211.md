@@ -474,3 +474,42 @@ alternatives écartées, réversibilité.
   première instance et sa base n'existent plus ; l'état *En attente* est établi par `parcours.log` (P7, 21:13:51) et par
   la capture 13 du rejeu (`t8/captures/13-P7-envoi-en-attente.png`).
 - **Réversible** : oui.
+
+*Entrées de la remédiation de la revue de code P2 (Opus 5.5, 2026-10-27).*
+
+### C-32-11-41 — Le fondement de l'`id` absent, cas par cas ; K16 en décision de Kesh (R1)
+
+- **Contexte** (revue P2, R1) : la branche « `id` absent ou `null` » d'`enveloppe_conforme` marquait `CLAUSE` quatre
+  appelants ; aucune phrase ne couvre K16 (401 sans `Authorization`). La requête de K16 est bien formée et son `id`
+  lisible ; Kesh refuse **avant de lire le corps** (`transport.rs` : la clé à l'étape 7, le corps à l'étape 10 ;
+  C-32-6-27). BASIC, *Error Responses*, dit : « Error responses **MUST** include the same ID as the request they
+  correspond to (except in error cases where the ID could not be read due a malformed request). »
+- **Retenu** : `IdAttendu::{Lu(n), SansId(Fondement)}` et un `Fondement` par appelant — K15 `OrigineRefusee`
+  (*Security Warning*, « MAY comprise a JSON-RPC *error response* that has no `id` »), K19 `RequeteInvalide` (JSON-RPC
+  § 5, « … it MUST be Null »), K21 `EntreeNonAcceptee` (*transports*, point 4, phrase entière citée, « … that has no
+  `id` ») gardent la `CLAUSE` « absent ou `null` » et la `DECISION_KESH` « absent » ; K16 `RefusAvantLeCorps` : la seule
+  `DECISION_KESH` « absent », la tension avec BASIC écrite au test. Mutation **MR3** (`TEXTE_NON_AUTHENTIFIE` portant
+  `"id":16`) tuée par cette `DECISION_KESH` (« 401 sans id, refusé avant la lecture du corps ») ; MR2 tuée par la
+  `DECISION_KESH` de K19 et K21 (messages relevés, `mutations/campagne-p2-messages.log`).
+- **Le défaut** : à la lettre de BASIC, le corps JSON-RPC du 401 devrait porter l'`id` de la requête. Le choix de Kesh
+  (ne rien lire d'une requête non authentifiée) est défendable ; il n'est pas corrigé ici (réponse 4 de Guy) — **issue
+  demandée** pour arbitrage (un 401 sans corps JSON-RPC, ou l'`id` lu après le refus).
+- **Écartées** : garder K16 sous la `CLAUSE` commune (une phrase manque) ; corriger le transport (hors de la 32-11).
+- **Réversible** : oui.
+
+### C-32-11-42 — K8 vérifie la version et le JSON du texte (R2)
+
+- **Retenu** : `structuredContent.version` égale `env!("CARGO_PKG_VERSION")` lu par le crate de test, et le texte
+  porte, après l'en-tête et une ligne vide, un JSON égal à `structuredContent`. `DECISION_KESH` (32-9a, AC-a3, AC-a8).
+- **Réversible** : oui.
+
+### C-32-11-43 — Le manuel : ce qu'un appel écrit, et le plafond par clé (R3, R4)
+
+- **Retenu** : chapeau de `sec:mcp` — « aucun outil n'écrit dans les livres ; un appel n'écrit que sa trace (la
+  dernière utilisation de la clé, son entrée au journal d'audit) et, sous une clé à validation requise, l'envoi qu'il
+  dépose, et `proposer_prompt` une version de prompt à valider » ; symptôme propagé à `sec:mcp-fonctionnement` (« Un
+  seul outil écrit autre chose que la trace de l'appel et l'envoi qu'il dépose ») et à `sec:mcp-outils` (« un seul
+  outil qui écrit autre chose que la trace de l'appel et l'envoi qu'il dépose ») ; `sec:mcp-envois` — « un envoi
+  au-delà ne s'y voit plus — en attente compris, si plus de 200 attendent, le plafond de 20 envois en attente valant
+  par clé ».
+- **Réversible** : oui.
