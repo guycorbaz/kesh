@@ -176,6 +176,8 @@ async fn seed_fresh_produces_expected_db_state(pool: MySqlPool) {
             .unwrap();
         assert_eq!(count, 0, "{table} must be empty in fresh preset");
     }
+    // Story 32-10a-i (AC-i11) — la société provisoire reçoit les standards.
+    assert_standards_seuls(&pool).await;
 }
 
 // --- AC #8 / #9 : preset `post-onboarding` et alias `with-company` ----------
@@ -247,6 +249,9 @@ async fn seed_with_company_is_alias_for_post_onboarding(pool: MySqlPool) {
         ],
     )
     .await;
+    // Story 32-10a-i (AC-i11, Mi21, Mi26) — la société du préréglage reçoit
+    // les standards : l'amorçage suit la création.
+    assert_standards_seuls(&pool).await;
 }
 
 // --- AC #10 : preset `with-data` --------------------------------------------
@@ -397,6 +402,8 @@ async fn reset_endpoint_produces_fresh_state(pool: MySqlPool) {
         company_count, 1,
         "expected 1 placeholder company after reset"
     );
+    // Story 32-10a-i (AC-i11, Mi24) — la société recréée reçoit les standards.
+    assert_standards_seuls(&pool).await;
 }
 
 // --- Idempotence : seed × 2 produit le même état ---------------------------
@@ -430,6 +437,26 @@ async fn seed_is_idempotent_on_repeated_calls(pool: MySqlPool) {
 }
 
 // --- Helpers ----------------------------------------------------------------
+
+/// L'unique société porte exactement les prompts standard, une version
+/// chacun, au texte du code (Story 32-10a-i, AC-i11).
+async fn assert_standards_seuls(pool: &MySqlPool) {
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        kesh_db::test_fixtures::prompts_de_societe(pool, company_id)
+            .await
+            .unwrap(),
+        kesh_db::test_fixtures::prompts_standard_seuls(),
+        "prompts standard après le préréglage"
+    );
+    assert!(
+        !kesh_db::test_fixtures::prompts_standard_seuls().is_empty(),
+        "témoin"
+    );
+}
 
 async fn assert_row_counts(pool: &MySqlPool, expected: &[(&str, i64)]) {
     for (table, expected_count) in expected {

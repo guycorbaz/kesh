@@ -98,7 +98,9 @@ impl<'r> Decode<'r, MySql> for EtatEnvoi {
 }
 
 /// Décrit un texte sans le montrer : sa taille en octets, ou son absence.
-struct Masque<'a>(&'a Option<String>);
+/// Partagé avec les prompts du serveur MCP (`entities::mcp_prompt`, Story
+/// 32-10a-i), dont les textes ne se journalisent pas davantage.
+pub(crate) struct Masque<'a>(pub(crate) &'a Option<String>);
 
 impl fmt::Debug for Masque<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

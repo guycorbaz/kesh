@@ -14,6 +14,8 @@ pub mod post_restore;
 pub mod repositories;
 pub mod retry;
 pub mod snapshot;
+#[doc(hidden)]
+pub mod sql_lexical;
 pub mod test_fixtures;
 pub mod util;
 pub mod version;

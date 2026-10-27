@@ -42,9 +42,9 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 ### Modifié
 
 - ⚠️ **Sauvegarde : la 0.16.0 refuse les sauvegardes de la 0.15.0 et d'avant.** Une sauvegarde ne se réimporte que
-  dans une version de Kesh qui porte **les mêmes tables** qu'elle ; la 0.16.0 en ajoute trois — les clés, les réglages
-  et les envois du serveur MCP, qui entrent au fichier `.keshbackup` (activation et contenu des envois compris)
-  et restent hors de l'export global. Une sauvegarde plus ancienne se restaure avec la version qui l'a produite, dont le manuel se trouve dans le
+  dans une version de Kesh qui porte **les mêmes tables** qu'elle ; la 0.16.0 en ajoute cinq — les clés, les réglages,
+  les envois, les prompts et les versions des prompts du serveur MCP, qui entrent au fichier `.keshbackup`
+  (activation, contenu des envois et historique complet des prompts compris) et restent hors de l'export global. Une sauvegarde plus ancienne se restaure avec la version qui l'a produite, dont le manuel se trouve dans le
   dépôt, au tag de cette version ; ensuite, on met à jour. **Après la mise à jour vers la 0.16.0, prenez sans attendre
   une sauvegarde complète** : les sauvegardes précédentes, automatiques comprises, ne s'y importent plus. Pour la même
   raison, l'import ne rejoue plus aucune reprise de données d'une version antérieure (le lettrage des pièces de la
