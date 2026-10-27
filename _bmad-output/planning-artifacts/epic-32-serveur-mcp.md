@@ -528,6 +528,8 @@ Claude Code » ci-dessus ne veut pas dire que la 32-11 l'écrit — elle apparti
 C-32-7-22) ; la 32-11 l'**éprouve** par le parcours et l'**amende en place** (fiche 32-11, AC-C3). Le texte d'origine
 est laissé tel quel.)*
 
+*(Annoté le 2026-10-27, validation P3 de la fiche 32-11, R2 : le client réel — Claude Code, selon la spike — n'est pas branché par la story ; la capture de ses requêtes et le rejeu de ses gestes interactifs depuis le PDF sont la recette de Guy, inscrite à la § *Release v0.16.0* (fiche 32-11, AC-A8). Le texte d'origine est laissé tel quel.)*
+
 Modules : `kesh-api/tests`, docs (`api-external.md`), manuels FR (admin, utilisateur, brochure) — **3**. **AC** : le
 parcours est décrit pas à pas au manuel **et rejoué depuis le PDF** ; le test de contrat rougit si une réponse s'écarte
 de la révision figée ; aucun texte ne promet une écriture. **Risque** : moyen — documentation exécutée (31-4) ; la fiche
@@ -553,6 +555,8 @@ avant la mise à jour ; **les sauvegardes 0.15.0 ne se restaurent plus en 0.16.0
 MCP est **désactivé** après la mise à jour. **A6 de la rétrospective 31** : le refus de l'image 0.15.0 sur une base
 migrée en 0.16.0 est **constaté à l'exécution**, et le journal de l'essai cité dans la PR de release. **A9** (témoin du
 nombre de tables du NAS) : à Guy avant la release.
+
+*(Ajouté le 2026-10-27, validation P3 de la fiche 32-11)* **Recette de Guy** : capture des requêtes de Claude Code et rejeu des gestes interactifs depuis le PDF (fiche 32-11, AC-A8).
 
 ---
 
