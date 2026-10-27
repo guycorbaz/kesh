@@ -1021,11 +1021,17 @@ describe('régressions trouvées en passe 1 de revue (Sonnet ×3, 2026-08-21)', 
 	// aux formes couvertes par `analysee`. Ce test rougira le jour où la prémisse tombe, ce qui
 	// est exactement ce que la limite jumelle (2ᵉ déclaration d'une liste) obtient déjà.
 	// (Passe 3 de revue.)
-	it('la prémisse de la limite « méthodes de classe » tient encore — aucune classe dans src/', () => {
+	// Story 32-7 (refs #723, C-32-7-29) : la prémisse tombe pour UNE classe, `SecretUnique`,
+	// prescrite par la fiche 32-7 (AC-11 : une instance par composant, garde G-b sur
+	// `new SecretUnique`). Ses trois méthodes (`montrer`, `lire`, `oublier`) ne rendent aucun
+	// libellé — elles tiennent un nom et un secret reçus. Elle est donc admise, nommément ;
+	// toute autre classe fait toujours rougir ce test.
+	const CLASSES_ADMISES: readonly string[] = ['src/lib/features/mcp-server/secret-unique.svelte.ts'];
+	it('la prémisse de la limite « méthodes de classe » tient encore — aucune classe dans src/, hors admises', () => {
 		const avecClasse = releverLesFichiers()
 			.filter(({ source }) => /(^|\n)\s*(export\s+)?(abstract\s+)?class\s+\w/.test(source))
 			.map(({ chemin }) => chemin);
-		expect(avecClasse).toEqual([]);
+		expect(avecClasse).toEqual(CLASSES_ADMISES);
 	});
 
 	it('limite assumée — un appel quelconque blanchit son littéral', () => {

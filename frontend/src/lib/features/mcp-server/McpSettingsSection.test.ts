@@ -61,7 +61,7 @@ async function monter(r: McpServerSettings = reglages()) {
 	return vue;
 }
 
-function zone(vue: ReturnType<typeof render>, id: string): HTMLTextAreaElement {
+function zone(vue: { getByTestId: (id: string) => HTMLElement }, id: string): HTMLTextAreaElement {
 	return vue.getByTestId(id) as HTMLTextAreaElement;
 }
 

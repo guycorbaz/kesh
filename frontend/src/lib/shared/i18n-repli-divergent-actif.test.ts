@@ -32,6 +32,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { findCallSites, readFallback, masquerCommentaires } from './i18n-literal-reader.js';
 import { dansLePerimetreDeFichier } from './i18n-harvest.js';
+import { catalogueDe, ecartsAuCatalogue, releveDesReplis, sourcesDesDossiers } from './i18n-repli-catalogue';
 
 const RACINE = 'src';
 const RACINE_FTL = '../crates/kesh-i18n/locales';
@@ -251,4 +252,59 @@ describe('les replis frontend à site unique suivent le catalogue fr-CH (G13)', 
 			expect([...(releve.get(cle)?.keys() ?? [])], cle).toEqual([valeurDuCatalogueFr(cle)]);
 		}
 	});
+});
+
+/**
+ * G13 étendue par PRÉFIXE — Story 32-7 (refs #723 ; C-32-7-21, C-32-7-28 ; #758).
+ *
+ * Pour chaque préfixe d'écran ci-dessous, toutes les clés relevées dans `src/` (sites
+ * littéraux, tests exclus) ont pour seul repli leur valeur fr-CH, et l'ensemble des clés
+ * relevées est ÉGAL, dans les deux sens, à celui des clés du catalogue fr-CH qui
+ * commencent par le préfixe — l'appartenance se juge par `startsWith`, jamais par une
+ * sous-chaîne (le catalogue porte `audit-log-entity-mcp-server-settings`). Le relevé et
+ * la comparaison sont ceux du module partagé `i18n-repli-catalogue.ts` (32-10b), réemployé
+ * plutôt que dupliqué (DRY).
+ *
+ * `mcp-sends-` (32-8c) et `mcp-prompts-` (32-10b) avaient chacun leur garde, bornée au
+ * dossier de leur écran, en attendant cette extension : ils y entrent, et le relevé
+ * couvre désormais tout `src/`.
+ *
+ * Angle mort écrit : `nav-admin-mcp` est une clé de DONNÉE du menu, résolue par un site
+ * non littéral que le relevé ne voit pas ; seule `FAMILLES_RESOLUES['nav-']`
+ * (`i18n-keys.test.ts`) la tient — sans comparer son repli (#758).
+ *
+ * Anti-test-muet : le nombre de clés de chaque préfixe est écrit en dur, recompté par
+ * `grep -c '^<préfixe>' crates/kesh-i18n/locales/fr-CH/messages.ftl`.
+ */
+const PREFIXES_REPLI_EGAL_AU_CATALOGUE: Readonly<Record<string, number>> = {
+	'mcp-server-': 95,
+	'mcp-sends-': 48,
+	'mcp-prompts-': 94,
+};
+
+describe('G13 par préfixe — les replis suivent le catalogue fr-CH (Story 32-7)', () => {
+	it('ecartsAuCatalogue : témoin rouge, témoin vert, startsWith', () => {
+		const valeurs = new Map([
+			['mcp-server-a', 'A'],
+			['audit-log-entity-mcp-server-settings', 'Réglages'],
+		]);
+		expect(ecartsAuCatalogue(new Map([['mcp-server-a', new Set(['A'])]]), valeurs, 'mcp-server-')).toEqual([]);
+		expect(ecartsAuCatalogue(new Map([['mcp-server-a', new Set(['B'])]]), valeurs, 'mcp-server-')).toEqual([
+			'mcp-server-a : repli ["B"] ≠ "A"',
+		]);
+		// une clé au catalogue sans site littéral rougit ; une sous-chaîne n'entre pas
+		expect(ecartsAuCatalogue(new Map(), valeurs, 'mcp-server-')).toEqual([
+			'mcp-server-a : au catalogue, demandée par aucun site littéral',
+		]);
+	});
+
+	const releve = releveDesReplis(sourcesDesDossiers([RACINE]));
+	const fr = catalogueDe(RACINE_FTL, 'fr-CH');
+
+	for (const [prefixe, nombre] of Object.entries(PREFIXES_REPLI_EGAL_AU_CATALOGUE)) {
+		it(`les_replis_${prefixe}suivent_le_catalogue`, () => {
+			expect(ecartsAuCatalogue(releve, fr, prefixe)).toEqual([]);
+			expect([...releve.keys()].filter((c) => c.startsWith(prefixe))).toHaveLength(nombre);
+		});
+	}
 });
