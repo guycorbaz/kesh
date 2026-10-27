@@ -103,6 +103,7 @@ par union au registre de l'epic à la clôture.*
   d'administrateur (la marque dit qui a écrit, et c'est l'Administrateur).
 - **Réversible** : oui.
 - **Annoté à la validation P1 (2026-10-27)** : l'aperçu des caractères cachés de la saisie et les compteurs « N / 16 000 », « N / 500 » sont **retirés** (logique Unicode côté écran ; R13 tombe) ; une aide dit les bornes, le serveur refuse (400, saisies conservées).
+- **Annoté à la validation P4 (2026-10-27)** (H3, H6) : après toute relecture réussie (décision, geste, *Recharger*), l'éditeur est réinitialisé sur la version en vigueur (P3, F5) ; la saisie non enregistrée est perdue, et l'AC-12 et le manuel le disent ; il n'est jamais pré-rempli par le texte servi (P3, R1).
 
 ### C-32-10b-9 — Pas de `+page.ts` : le 403 de l'API, affiché
 
