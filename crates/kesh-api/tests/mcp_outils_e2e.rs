@@ -17,13 +17,16 @@ use kesh_api::mcp::outils;
 use kesh_api::mcp::textes::*;
 use kesh_api::services::acces::Portee;
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
+use kesh_db::entities::imported_supplier_invoice::NewImportedSupplierInvoice;
 use kesh_db::entities::invoice::{NewInvoice, NewInvoiceLine};
 use kesh_db::entities::supplier_invoice::{NewSupplierInvoice, NewSupplierInvoiceLine};
 use kesh_db::entities::{
     AccountType, Journal, McpScope, NewAccount, NewJournalEntry, NewJournalEntryLine, Role,
     SendValidation,
 };
-use kesh_db::repositories::{accounts, contacts, invoices, journal_entries, supplier_invoices};
+use kesh_db::repositories::{
+    accounts, contacts, imported_supplier_invoices, invoices, journal_entries, supplier_invoices,
+};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
@@ -141,6 +144,17 @@ fn bornes_attendues() -> Vec<(&'static str, i64, i64)> {
             factures_fournisseur::LIMITE_MAX.min(outils::factures_fournisseur::LIMITE_MAX_MCP),
             outils::factures_fournisseur::LIMITE_DEFAUT,
         ),
+        // Story 32-9b (AC-b2).
+        (
+            "kesh_contacts",
+            kesh_api::services::carnet::LIMITE_MAX.min(outils::contacts::LIMITE_MAX_MCP),
+            outils::contacts::LIMITE_DEFAUT,
+        ),
+        (
+            "kesh_pieces",
+            kesh_api::services::pieces::LIMITE_MAX.min(outils::pieces::LIMITE_MAX_MCP),
+            outils::pieces::LIMITE_DEFAUT,
+        ),
     ]
 }
 
@@ -174,6 +188,8 @@ fn bornes_des_schemas() {
         ("kesh_echeancier", (40, 20)),
         ("kesh_balance_agee", (68, 38)),
         ("kesh_factures_fournisseur", (70, 40)),
+        ("kesh_contacts", (22, 12)),
+        ("kesh_pieces", (65, 35)),
     ]
     .into();
     for (nom, max, defaut) in attendues {
@@ -183,6 +199,30 @@ fn bornes_des_schemas() {
         assert_eq!(l["minimum"], json!(1), "{nom} minimum");
         assert_eq!(mesurees[nom], (max, defaut), "{nom} : valeurs de la fiche");
     }
+}
+
+/// Story 32-9b — le statut d'une pièce dit une seule valeur partout : la
+/// contrainte de la base (`services::pieces::STATUTS`), la table du miroir,
+/// `code()`, sa sérialisation, sa lecture en argument et l'énumération du
+/// schéma de `kesh_pieces`.
+#[test]
+fn statut_piece_une_seule_valeur() {
+    use kesh_api::mcp::outils::commun::{STATUTS_PIECE, StatutPiece};
+    let service: Vec<&str> = kesh_api::services::pieces::STATUTS.to_vec();
+    let table: Vec<&str> = STATUTS_PIECE.iter().map(|(c, _)| *c).collect();
+    assert_eq!(table, service);
+    assert_eq!(
+        schema("kesh_pieces")["properties"]["statut"]["enum"],
+        json!(service)
+    );
+    assert_eq!(schema("kesh_pieces")["required"], json!(["statut"]));
+    for (c, s) in STATUTS_PIECE {
+        assert_eq!(s.code(), *c);
+        assert_eq!(serde_json::to_value(s).unwrap(), json!(c));
+        let lu: StatutPiece = serde_json::from_value(json!(c)).unwrap();
+        assert_eq!(lu, *s);
+    }
+    assert!(serde_json::from_value::<StatutPiece>(json!("PIEGE")).is_err());
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -288,11 +328,14 @@ async fn tools_list_par_portee(pool: MySqlPool) {
         "kesh_facture_fournisseur",
         "kesh_lire_envoi",
     ];
+    // Story 32-9b (AC-b2) : les contacts et les pièces.
+    let contacts = ["kesh_contacts", "kesh_contact", "kesh_lire_envoi"];
+    let pieces = ["kesh_pieces", "kesh_lire_envoi"];
     for (p, attendu) in [
         (McpScope::BooksRead, &livres[..]),
         (McpScope::InvoicesRead, &factures[..]),
-        (McpScope::ContactsRead, &["kesh_lire_envoi"][..]),
-        (McpScope::DocumentsRead, &["kesh_lire_envoi"][..]),
+        (McpScope::ContactsRead, &contacts[..]),
+        (McpScope::DocumentsRead, &pieces[..]),
     ] {
         let jeton = cle_de(&pool, &a, &[p], SendValidation::Exempt).await;
         assert_eq!(b.liste(&jeton).await, attendu, "{p:?}");
@@ -548,6 +591,12 @@ async fn introuvable_indiscernable(pool: MySqlPool) {
             Box::new(|id| json!({"accountId": id})),
             b_soc.p.compte_k1,
         ),
+        // Story 32-9b : le contact d'une autre société = inexistant.
+        (
+            "kesh_contact",
+            Box::new(|id| json!({"id": id})),
+            b_soc.p.client,
+        ),
     ];
     for (outil, args, de_b) in cas {
         let r_b = b.appeler(&jeton, outil, args(de_b)).await;
@@ -562,6 +611,7 @@ async fn introuvable_indiscernable(pool: MySqlPool) {
             "kesh_facture",
             "kesh_facture_fournisseur",
             "kesh_postes_ouverts",
+            "kesh_contact",
         ]
         .contains(&outil)
         {
@@ -696,6 +746,8 @@ fn elements<'a>(outil: &str, s: &'a Value) -> &'a Vec<Value> {
         "kesh_balance" | "kesh_balance_agee" => &s["lignes"],
         "kesh_postes_ouverts" => &s["postes"],
         "kesh_factures" | "kesh_echeancier" | "kesh_factures_fournisseur" => &s["factures"],
+        "kesh_contacts" => &s["contacts"],
+        "kesh_pieces" => &s["pieces"],
         autre => panic!("{autre} : non paginé"),
     };
     v.as_array().unwrap_or_else(|| panic!("{outil} : éléments"))
@@ -712,6 +764,7 @@ fn base(outil: &str, s: &Societe) -> Value {
         "kesh_postes_ouverts" | "kesh_ecritures" => json!({"accountId": p.compte_k1}),
         "kesh_balance" => json!({"fiscalYearId": p.exercice_id}),
         "kesh_echeancier" => json!({"paymentStatus": "all"}),
+        "kesh_pieces" => json!({"statut": "to_complete"}),
         _ => json!({}),
     }
 }
@@ -798,7 +851,7 @@ async fn fixture_tailles(pool: &MySqlPool, s: &Societe, large: bool) {
         let c = contacts::create(
             pool,
             s.u,
-            contact(s.c, texte_de(tiers, &format!("Client {i}")), true),
+            contact_complet(s.c, texte_de(tiers, &format!("Client {i}")), true, i, large),
         )
         .await
         .unwrap();
@@ -831,7 +884,13 @@ async fn fixture_tailles(pool: &MySqlPool, s: &Societe, large: bool) {
         let fo = contacts::create(
             pool,
             s.u,
-            contact(s.c, texte_de(tiers, &format!("Fournisseur {i}")), false),
+            contact_complet(
+                s.c,
+                texte_de(tiers, &format!("Fournisseur {i}")),
+                false,
+                100 + i,
+                large,
+            ),
         )
         .await
         .unwrap();
@@ -863,6 +922,72 @@ async fn fixture_tailles(pool: &MySqlPool, s: &Societe, large: bool) {
         )
         .await
         .unwrap();
+    }
+    // Story 32-9b : 66 pièces à compléter, sans fichier ni QR (le nom et le
+    // type à leur largeur sous `large`).
+    for i in 0..66 {
+        imported_supplier_invoices::create(
+            pool,
+            &NewImportedSupplierInvoice {
+                company_id: s.c,
+                file_hash: format!("{:0>64}", format!("fixture{i}")),
+                storage_path: format!("fixture-329b/{i}.pdf"),
+                original_filename: if large {
+                    texte_de(255, &format!("piece-{i}"))
+                } else {
+                    format!("facture-fournisseur-{i:03}.pdf")
+                },
+                mime_type: if large {
+                    texte_de(100, "application/pdf")
+                } else {
+                    "application/pdf".into()
+                },
+                byte_size: 48_213 + i,
+                creditor_iban: None,
+                is_qr_iban: None,
+                creditor_address_type: None,
+                creditor_name: None,
+                creditor_line1: None,
+                creditor_line2: None,
+                creditor_postal_code: None,
+                creditor_town: None,
+                creditor_country: None,
+                reference_type: None,
+                reference_value: None,
+                amount: None,
+                currency: None,
+                unstructured_message: None,
+                billing_information: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+}
+
+/// Un contact de la fixture des tailles, chaque champ rempli (Story 32-9b) —
+/// une valeur ordinaire, ou, sous `large`, chaque colonne à sa largeur ; le
+/// numéro IDE et le numéro de client uniques par `n`.
+fn contact_complet(company_id: i64, nom: String, client: bool, n: i64, large: bool) -> NewContact {
+    let (rue, bat, npa, ville, email, tel, cond) = if large {
+        (70, 16, 16, 35, 320, 50, 100)
+    } else {
+        (16, 2, 4, 8, 22, 16, 12)
+    };
+    NewContact {
+        address_street: Some(texte_de(rue, "Rue des Fixtures")),
+        address_building: Some(texte_de(bat, "12")),
+        address_postal_code: Some(texte_de(npa, "1000")),
+        address_city: Some(texte_de(ville, "Lausanne")),
+        address_country: Some("CH".into()),
+        email: Some(texte_de(email, &format!("contact{n}@exemple.invalid"))),
+        phone: Some(texte_de(tel, "+41 21 000 00 00")),
+        ide_number: Some(format!("CHE{n:09}")),
+        client_number: Some(texte_de(if large { 50 } else { 6 }, &format!("C{n:03}-"))),
+        default_payment_terms: Some(texte_de(cond, "30 jours net")),
+        default_payment_terms_days: Some(30),
+        language: Some(kesh_db::entities::Language::Fr),
+        ..contact(company_id, nom, client)
     }
 }
 
@@ -931,6 +1056,154 @@ async fn pagination_transmise(pool: MySqlPool) {
             "{outil} : la page 2 commence où la page 1 s'arrête (offset transmis)"
         );
     }
+}
+
+/// Les identifiants des contacts rendus par `kesh_contacts` sous `args`, dans
+/// l'ordre.
+async fn ids_de_contacts(b: &Banc, jeton: &str, args: Value) -> Vec<i64> {
+    let s = structure(
+        &b.appeler(jeton, "kesh_contacts", args.clone()).await,
+        "kesh_contacts",
+    );
+    s["contacts"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{args} : {s}"))
+        .iter()
+        .map(|c| c["id"].as_i64().unwrap())
+        .collect()
+}
+
+/// Revue de code P1 de la 32-9b, E2 = B2 — les filtres de `kesh_contacts`
+/// atteignent le service et changent le résultat : sur la société piégée, le
+/// client C (personne), le fournisseur Fo (entreprise) et un contact archivé
+/// X (entreprise, fournisseur). Les dates de création sont posées pour que le
+/// tri par date (Fo, C, X) diffère du tri par nom (X, C, Fo).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn filtres_de_kesh_contacts_transmis(pool: MySqlPool) {
+    let a = societe_piegee(&pool, "Société A 329", 'A').await;
+    let x = contacts::create(&pool, a.u, contact(a.c, "AAA archivé 329b".into(), false))
+        .await
+        .unwrap();
+    contacts::archive(&pool, x.id, x.version, a.u)
+        .await
+        .unwrap();
+    let (c, fo, x) = (a.p.client, a.p.fournisseur, x.id);
+    // Dates de modification posées avec celles de création (une mise à jour
+    // séparée les réécrirait) : C, Fo, X — ni l'ordre par nom, ni par création.
+    for (id, cree, modifie) in [
+        (fo, "2020-01-01", "2023-02-01"),
+        (c, "2021-01-01", "2023-01-01"),
+        (x, "2022-01-01", "2023-03-01"),
+    ] {
+        sqlx::query("UPDATE contacts SET created_at = ?, updated_at = ? WHERE id = ?")
+            .bind(format!("{cree} 00:00:00"))
+            .bind(format!("{modifie} 00:00:00"))
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let jeton = cle_de(&pool, &a, &[McpScope::ContactsRead], SendValidation::Exempt).await;
+    let b = banc(&pool);
+    // Le numéro IDE de C (`P329A26`, sans `_` : le plein texte du nom ne le
+    // découpe pas), retrouvé par le `LIKE` de l'IDE.
+    let ide = kesh_seed::pieges::identifiant('A', kesh_seed::pieges::par_cle("client_ide"));
+    for (args, attendu) in [
+        // Les défauts : actifs seulement, triés par nom.
+        (json!({}), vec![c, fo]),
+        (json!({"includeArchived": false}), vec![c, fo]),
+        (json!({"includeArchived": true}), vec![x, c, fo]),
+        (json!({"isClient": true}), vec![c]),
+        (json!({"isClient": false}), vec![fo]),
+        (json!({"isSupplier": true}), vec![fo]),
+        (json!({"isSupplier": false}), vec![c]),
+        (json!({"contactType": "Personne"}), vec![c]),
+        (json!({"contactType": "Entreprise"}), vec![fo]),
+        (
+            json!({"contactType": "Entreprise", "includeArchived": true}),
+            vec![x, fo],
+        ),
+        (
+            json!({"includeArchived": true, "sortBy": "name"}),
+            vec![x, c, fo],
+        ),
+        (
+            json!({"includeArchived": true, "sortBy": "name", "sortDirection": "desc"}),
+            vec![fo, c, x],
+        ),
+        (
+            json!({"includeArchived": true, "sortBy": "createdAt"}),
+            vec![fo, c, x],
+        ),
+        (
+            json!({"includeArchived": true, "sortBy": "createdAt", "sortDirection": "desc"}),
+            vec![x, c, fo],
+        ),
+        (json!({"search": ide}), vec![c]),
+        // Revue de code P2, R3 : le sens seul (tri par défaut, par nom), et le
+        // tri par date de modification.
+        (json!({"sortDirection": "desc"}), vec![fo, c]),
+        (
+            json!({"includeArchived": true, "sortDirection": "desc"}),
+            vec![fo, c, x],
+        ),
+        (
+            json!({"includeArchived": true, "sortBy": "updatedAt"}),
+            vec![c, fo, x],
+        ),
+        (
+            json!({"includeArchived": true, "sortBy": "updatedAt", "sortDirection": "desc"}),
+            vec![x, fo, c],
+        ),
+    ] {
+        assert_eq!(
+            ids_de_contacts(&b, &jeton, args.clone()).await,
+            attendu,
+            "kesh_contacts {args} (C {c}, Fo {fo}, X {x})"
+        );
+    }
+    // Revue de code P2, R1 : `actif` est lu de la ligne, non posé en dur —
+    // faux pour le contact archivé, vrai pour les deux autres.
+    let s = structure(
+        &b.appeler(&jeton, "kesh_contacts", json!({"includeArchived": true}))
+            .await,
+        "kesh_contacts",
+    );
+    let actifs: Vec<(i64, bool)> = s["contacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| (k["id"].as_i64().unwrap(), k["actif"].as_bool().unwrap()))
+        .collect();
+    assert_eq!(actifs, vec![(x, false), (c, true), (fo, true)]);
+}
+
+/// Revue de code P1 de la 32-9b, B5 — `search` de `kesh_contacts` borné à
+/// 100 caractères une fois rognée, comme `kesh_factures` : au schéma
+/// (`maxLength`) et à l'outil ; 100 servis, 101 refusés d'un texte fixe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn recherche_de_kesh_contacts_bornee(pool: MySqlPool) {
+    assert_eq!(
+        schema("kesh_contacts")["properties"]["search"]["maxLength"],
+        json!(kesh_api::services::factures::RECHERCHE_MAX)
+    );
+    assert_eq!(
+        schema("kesh_factures")["properties"]["search"]["maxLength"],
+        schema("kesh_contacts")["properties"]["search"]["maxLength"]
+    );
+    let a = societe_piegee(&pool, "Société A 329", 'A').await;
+    let jeton = cle_de(&pool, &a, &[McpScope::ContactsRead], SendValidation::Exempt).await;
+    let b = banc(&pool);
+    let cent = format!("  {}  ", "é".repeat(100));
+    let r = b
+        .appeler(&jeton, "kesh_contacts", json!({"search": cent}))
+        .await;
+    structure(&r, "kesh_contacts"); // 100 caractères, rognés : servis
+
+    let r = b
+        .appeler(&jeton, "kesh_contacts", json!({"search": "é".repeat(101)}))
+        .await;
+    assert_eq!(r, attendu_outil_en_erreur(1, TEXTE_ARGUMENTS_INVALIDES));
 }
 
 /// Le grand livre d'un compte lu par `kesh_grand_livre` page après page

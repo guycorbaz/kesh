@@ -256,6 +256,31 @@ pub const TEMOINS: &[(&str, Jeux, Complet)] = &[
         |p| vec![json!({"id": p.facture_fournisseur})],
         |p| json!({"id": p.facture_fournisseur}),
     ),
+    // Story 32-9b (AC-b4) : les contacts et les pièces.
+    (
+        "kesh_contacts",
+        |_| vec![json!({"limit": 22})],
+        |_| {
+            json!({"search": "P", "contactType": "Personne", "isClient": true,
+                   "isSupplier": false, "includeArchived": true, "sortBy": "name",
+                   "sortDirection": "asc", "limit": 22, "offset": 0})
+        },
+    ),
+    (
+        "kesh_contact",
+        |p| vec![json!({"id": p.client}), json!({"id": p.fournisseur})],
+        |p| json!({"id": p.client}),
+    ),
+    (
+        "kesh_pieces",
+        |_| {
+            vec![
+                json!({"statut": "to_complete"}),
+                json!({"statut": "completed"}),
+            ]
+        },
+        |_| json!({"statut": "to_complete", "limit": 65, "offset": 0}),
+    ),
 ];
 
 /// La ligne de `TEMOINS` de `outil`.

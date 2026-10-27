@@ -27,8 +27,10 @@ use crate::middleware::auth::CurrentUser;
 ///   règlements, balance âgée des débiteurs (32-3, 32-4b, C-32-4b-3) ;
 /// - `ContactsRead` — carnet d'adresses, données personnelles (32-4a,
 ///   C-32-4a-4) ;
-/// - `DocumentsRead`, `PromptsWrite` — aucun service encore (les pièces et la
-///   proposition d'un prompt viennent avec les stories suivantes de l'Epic 32).
+/// - `DocumentsRead` — la liste des pièces importées, métadonnées seules
+///   (32-9b, `services::pieces`) ;
+/// - `PromptsWrite` — aucun service encore (la proposition d'un prompt par un
+///   agent vient avec les stories suivantes de l'Epic 32).
 pub use kesh_db::entities::McpScope as Portee;
 
 /// Canal par lequel arrive une lecture.

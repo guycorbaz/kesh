@@ -38,6 +38,27 @@ pub fn decalage(offset: Option<i64>) -> Result<i64, ErreurOutil> {
     }
 }
 
+/// Longueur maximale d'une recherche (`search`), en caractères, une fois
+/// rognée : la borne du service des factures, reprise par les outils dont le
+/// service n'en pose pas (`kesh_contacts` — revue de code P1 de la 32-9b, B5 ;
+/// C-32-9-64).
+pub const RECHERCHE_MAX: usize = crate::services::factures::RECHERCHE_MAX;
+
+/// La recherche d'un outil dont le service ne la borne pas : refusée au-delà
+/// de [`RECHERCHE_MAX`] caractères une fois rognée, rendue **telle quelle**
+/// sinon — le service la rogne lui-même, son comportement ne change pas.
+pub fn recherche_bornee(search: Option<String>) -> Result<Option<String>, ErreurOutil> {
+    match &search {
+        Some(s) if s.trim().chars().count() > RECHERCHE_MAX => {
+            Err(ErreurOutil::ArgumentsInvalides {
+                argument: "search",
+                motif: MotifArgument::Invalide,
+            })
+        }
+        _ => Ok(search),
+    }
+}
+
 /// La tranche `[offset, offset + limit)` d'une liste lue en entier.
 pub fn tranche<T>(v: Vec<T>, offset: i64, limit: i64) -> Vec<T> {
     let debut = usize::try_from(offset).unwrap_or(usize::MAX);
@@ -145,7 +166,44 @@ pub const TYPES_REGLEMENT: &[(&str, TypeReglement)] = &[
     ("internal_account", TypeReglement::InternalAccount),
 ];
 
-champ_enum!(Sens, StatutFacture, StatutFactureFournisseur, TypeReglement);
+/// Le statut d'une pièce importée (contrainte `chk_imported_si_status` de la
+/// base) — rendu par `kesh_pieces`, et lu en argument (`statut`, requis).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatutPiece {
+    /// À compléter : importée, sans facture fournisseur.
+    ToComplete,
+    /// Complétée : la facture fournisseur en est créée.
+    Completed,
+    /// Écartée.
+    Discarded,
+}
+
+/// La table du statut d'une pièce.
+pub const STATUTS_PIECE: &[(&str, StatutPiece)] = &[
+    ("to_complete", StatutPiece::ToComplete),
+    ("completed", StatutPiece::Completed),
+    ("discarded", StatutPiece::Discarded),
+];
+
+impl StatutPiece {
+    /// La valeur de la base et du service.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::ToComplete => "to_complete",
+            Self::Completed => "completed",
+            Self::Discarded => "discarded",
+        }
+    }
+}
+
+champ_enum!(
+    Sens,
+    StatutFacture,
+    StatutFactureFournisseur,
+    TypeReglement,
+    StatutPiece
+);
 
 #[cfg(test)]
 mod tests {
@@ -161,5 +219,17 @@ mod tests {
         assert!(decalage(Some(-1)).is_err());
         assert_eq!(tranche(vec![1, 2, 3, 4], 1, 2), vec![2, 3]);
         assert_eq!(tranche(vec![1, 2], 5, 2), Vec::<i32>::new());
+    }
+
+    #[test]
+    fn recherche_bornee_a_cent_caracteres_rognes() {
+        assert_eq!(RECHERCHE_MAX, 100);
+        assert_eq!(recherche_bornee(None), Ok(None));
+        let cent = "é".repeat(100);
+        assert_eq!(recherche_bornee(Some(cent.clone())), Ok(Some(cent.clone())));
+        // Rognée avant d'être comptée, rendue telle quelle.
+        let entouree = format!("  {cent}  ");
+        assert_eq!(recherche_bornee(Some(entouree.clone())), Ok(Some(entouree)));
+        assert!(recherche_bornee(Some("é".repeat(101))).is_err());
     }
 }

@@ -37,6 +37,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   et `kesh-assistant`, l'agent qui lit la comptabilité pour l'utilisateur. Seule une version approuvée est servie ; un
   prompt écrit par un agent l'est précédé d'une marque qui le dit, et un texte portant un caractère invisible ou
   bidirectionnel ne l'est pas. Un prompt est un texte fixe : les arguments d'un client sont ignorés.
+- **Les outils de lecture du serveur MCP — contacts et pièces** (refs
+  [#723](https://github.com/guycorbaz/kesh/issues/723)). Sous `contacts:read`, le carnet d'adresses (liste et
+  fiche d'un contact), chaque texte enveloppé ; sous `documents:read`, la liste des pièces importées d'un statut,
+  **leurs métadonnées seulement** — nom et type du fichier, taille, date d'import, facture fournisseur créée, et le
+  fait qu'un QR-code y a été lu ; `kesh_pieces` ne rend ni le fichier ni rien de ce qui a été lu du QR-code. Une fois
+  la pièce complétée, l'IBAN, la référence et le montant lus de son QR-code appartiennent à la facture fournisseur
+  créée, que `kesh_facture_fournisseur` rend — la référence et le montant sous `invoices:read`, l'IBAN (ou le
+  QR-IBAN) sous `contacts:read` seulement. Le contenu des pièces viendra dans une version ultérieure.
 
 ### Modifié
 

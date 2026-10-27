@@ -324,7 +324,7 @@ facture (`InvoiceSettlement.settlement_type`, `write_off_nature`) ne sont rendus
 
 | Outil | Champ rendu | Source | Prov. | Traitement | Piège |
 |---|---|---|---|---|---|
-| `kesh_contacts`, `kesh_contact` | `nom`, `prenom`, `nomDeFamille`, `adresse`, `rue`, `batiment`, `npa`, `localite`, `pays`, `email`, `telephone`, `ide`, `numeroClient`, `conditions` | `Contact.{name, first_name, last_name, address, address_street, address_building, address_postal_code, address_city, address_country, email, phone, ide_number, client_number, default_payment_terms}` | S | NF (la portée **est** `contacts:read` : pas de `Tiers`) | selon la largeur (§ ci-dessous) ; `pays` E (deux caractères) ; le dépôt lie courriel et IDE tels quels (`contacts.rs:252-300`), la validation étant à la route : piégés |
+| `kesh_contacts`, `kesh_contact` | `nom`, `prenom`, `nomDeFamille`, `adresse`, `rue`, `batiment`, `npa`, `localite`, `pays`, `email`, `telephone`, `ide`, `numeroClient`, `conditions` | `Contact.{name, first_name, last_name, address, address_street, address_building, address_postal_code, address_city, address_country, email, phone, ide_number, client_number, default_payment_terms}` | S | NF (la portée **est** `contacts:read` : pas de `Tiers`) | selon la largeur (§ ci-dessous) ; `pays` E (deux caractères) ; le dépôt lie courriel et IDE tels quels (`contacts.rs:252-300`), la validation étant à la route : piégés. *(Annoté le 2026-10-27, revue de code P1 de la 32-9b, A1 et B1 : `adresse` n'a pas de piège propre — le dépôt la compose des composants (C-32-9-60) ; à l'inventaire, sa ligne est exemptée, et sa valeur lue par `projections_des_contacts_et_des_pieces`.)* |
 | `kesh_contacts` | — | `PageContacts.societe`, `FicheContact.societe` | A | **non rendus** : la société de l'installation, sans usage pour l'agent | — |
 | `kesh_pieces` | `nomFichier` | `ImportedSupplierInvoice.original_filename` | I | NF | L |
 | `kesh_pieces` | `typeMime` | `.mime_type` | K/I | NF | L (le dépôt lie toute chaîne) |
@@ -414,7 +414,7 @@ l'identifiant, sans quoi ils le coupent. La longueur se compte en **caractères*
 | `supplier_invoices.payment_reference` | 64 (`:39`) | C |
 | `supplier_invoice_lines.description` | 1000 (`:83`) | L |
 | `contacts.first_name`, `.last_name` (32-9b) | 70 (`20260705000002_person_names.sql:11-12`) | C |
-| `contacts.address` (32-9b) | 500 (`20260414000001_contacts.sql:11`) | L |
+| `contacts.address` (32-9b) | 500 (`20260414000001_contacts.sql:11`) | L — *retirée (annoté le 2026-10-27, revue de code P1 de la 32-9b, A1) : non posable, composée par le dépôt des composants (C-32-9-60) ; aucune ligne de `CHAMPS`* |
 | `contacts.address_street` (32-9b) | 70 (`20260705000001_structured_addresses.sql`, bloc des contacts — ligne à T-b0) | C |
 | `contacts.address_building`, `.address_postal_code` (32-9b) | 16 (idem) | C |
 | `contacts.address_city` (32-9b) | 35 (idem) | C |
@@ -1077,15 +1077,15 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
 
 ### 32-9b
 
-- [ ] **T-b0 — Étape 0** : 32-9a fusionnée ; dépôts des contacts et de `imported_supplier_invoices::create` relus (ce
+- [x] **T-b0 — Étape 0** : 32-9a fusionnée ; dépôts des contacts et de `imported_supplier_invoices::create` relus (ce
   qu'ils lient tel quel) ; largeurs des colonnes des contacts (bloc des contacts de
   `20260705000001_structured_addresses.sql`) ; motifs greppés.
-- [ ] **T-b1 — Le service des pièces** (`lister`, `lister_tout`, `PiecePublique`) et `list_imported` (AC-b1) ; tests R7,
+- [x] **T-b1 — Le service des pièces** (`lister`, `lister_tout`, `PiecePublique`) et `list_imported` (AC-b1) ; tests R7,
   dont la société lue d'abord ; `pub use` de `ContactSortBy` (`carnet.rs`).
-- [ ] **T-b2 — Les trois outils** et le registre (AC-b2) ; `tools_list_filtre` amendé.
-- [ ] **T-b3 — Les pièges** des contacts et de la pièce (AC-b3).
-- [ ] **T-b4 — Le manuel** (AC-b5) ; l'AC-b6 (typage et garde `mcp_sans_fichier`).
-- [ ] **T-b5 — Gates** ; mutations Mb1 à Mb7.
+- [x] **T-b2 — Les trois outils** et le registre (AC-b2) ; `tools_list_filtre` amendé.
+- [x] **T-b3 — Les pièges** des contacts et de la pièce (AC-b3).
+- [x] **T-b4 — Le manuel** (AC-b5) ; l'AC-b6 (typage et garde `mcp_sans_fichier`).
+- [x] **T-b5 — Gates** ; mutations Mb1 à Mb7.
 
 ## Tests et mutations prévus
 
@@ -1203,6 +1203,29 @@ Chaque mutation se joue sur une copie, se constate tuée par le test **nommé**,
   primitif (`char` scellé sans `ChampSur`, E0119, Ma31) ; aucune garde n'inventorie ses sites.
 - **La lecture seule est mesurée par somme de contrôle** (`aucun_outil_n_ecrit`, C-32-9-45) : l'échange des contenus
   de deux lignes d'une table, ou un `|` déplacé d'une colonne à la voisine, ne change pas la somme.
+- **Les données du QR d'une pièce complétée** (revue de code P1 de la 32-9b, E1). `pieces_sans_donnees_du_qr` ne voit
+  que P2, **à compléter** : la complétion recopie l'IBAN, la référence (QRR, SCOR) et le montant du QR dans la facture
+  fournisseur (`complete_import_once`), que `kesh_facture_fournisseur` rend — la promesse « rien du QR » ne vaut donc
+  que pour `kesh_pieces`, et le manuel le dit désormais. Ce chemin est éprouvé à part, par
+  `qr_d_une_piece_completee_lu_par_la_facture_fournisseur` (pièce QR complétée par la route ; référence et montant sous
+  `invoices:read`, IBAN masqué puis visible sous `contacts:read` ; nom, adresse, message et facturation ne
+  sortant d'aucun outil, parmi les jeux de `TEMOINS` et les deux outils des factures fournisseur) ; une pièce complétée par un
+  autre chemin, ou un champ du QR recopié demain ailleurs, ne serait vu que s'il passait par ces outils-là.
+- **Les champs non textuels du QR de P2 ne sont pas piégés** (E3) : `amount` (42,00), `currency`, `reference_type`,
+  `is_qr_iban`, `creditor_address_type`, `creditor_country` portent des valeurs ordinaires que `MOTIF_PIEGE` ne
+  reconnaît pas ; un `montant` ou un `typeReference` ajouté à `PieceSortie` ne ferait pas rougir
+  `pieces_sans_donnees_du_qr`. Le filet est ailleurs : la déstructuration exhaustive de `From<ImportedSupplierInvoice>
+  for PiecePublique` oblige à décider du champ, et le littéral de `ac_b1_piece_publique_lit_chaque_champ` comme
+  l'objet entier de `projections_des_contacts_et_des_pieces` rougissent à toute clé en plus.
+- **`mcp_sans_fichier`, deux formes de plus** (B3) : un alias **de crate** (`use std as s;`, `use ::tokio as t;`, puis
+  `s::fs::read`) ; et `tower_http::services::{ServeDir, ServeFile}`, importé par `mcp/mod.rs` pour le frontend (32-6a)
+  — `\bFile\s*::` ne voit pas `ServeFile`. Écrits en tête du test ; la revue les écarte.
+- **La transmission des filtres des outils de la 32-9a** (E2 = B2) : `filtres_de_kesh_contacts_transmis` éprouve ceux
+  de `kesh_contacts` ; des outils de la 32-9a, les arguments `amountMin`/`amountMax`, `dateFrom`/`dateTo`, `status`,
+  `paused`, `dueBefore`, `inclureArchives` et `asOf` ne paraissent, parmi les tests MCP, que dans `TEMOINS`
+  (`grep -lF` sur `tests/mcp_*.rs` et `common/mcp_pieges.rs`), c'est-à-dire sous l'acceptation du schéma — tracé pour
+  une issue, à recenser outil par outil (`kesh_ecritures`, `kesh_factures`, `kesh_echeancier`, `kesh_plan_comptable`,
+  `kesh_postes_ouverts`).
 
 ## Dev Notes
 
@@ -1513,7 +1536,7 @@ les gates du dernier commit de code).
 | Partie | Statut |
 |---|---|
 | 32-9a | review |
-| 32-9b | ready-for-dev |
+| 32-9b | review |
 
 ### Completion Notes List
 
@@ -1725,6 +1748,188 @@ Bases `kesh_329a` et `kesh_e2e_329a` remises à zéro par le compte `kesh` (comm
 - `aucun_outil_n_ecrit` : `CHECKSUM TABLE` instable sur `accounts` (C-32-9-45).
 - Les tests montent leurs sociétés par `societe_complete` (C-32-9-41).
 
+#### 32-9b — étape 0 (T-b0), lignes lues citées
+
+Opus 5.5, en autonomie, 2026-10-27, worktree `kesh-32-9`, branche `story/32-9b` partie d'`origin/main` à `cb432098`
+(32-9a fusionnée, #775 compris).
+
+- **`sortie.rs`** : `ChampSur` `pub(in crate::mcp)` (`:52`), `exige` (`:57`), `scelle_seul!(char, i8, …, f32)`
+  (`:77-82`), `sortie!` sans attribut de champ (`:96-113`), `champ_enum!` (`:120-128`), `TexteNonFiable::de` →
+  `rendre_visible` (`:153-155`), `Tiers::selon` (`:306`), `donnees` (`:438-454`).
+- **`ContexteMcp`** (`mcp/outil.rs`) : champs privés `acces`, `lecture`, `trace` ; `tiers_visibles` délègue à
+  `tiers_visibles_du_canal` (`Canal::Mcp { portees } → tiers_visibles(portees, PORTEE_DES_TIERS)`, `Canal::Api → false`).
+- **`INVENTAIRE`** (`tests/mcp_enveloppe_e2e.rs`) : clos par outil et par colonne piégée, non par champ rendu (B6 de la
+  32-9a, écrit en tête de la constante).
+- **`mcp_sans_fichier`** : motif `…|storage_path\b` ligne par ligne, imports groupés sur une ligne seulement
+  (`\b(std|tokio)\s*::\s*\{[^}]*\bfs\b`) — l'import coupé ou imbriqué lui échappait (#781, LOW R2 de la P2).
+- **`detail_sans_fichier`** : `factures_fournisseur::detail_sans_fichier` ne rend de la pièce que `piece_id` ;
+  `factures::detail_sans_fichier` déstructure `Invoice` sans `..` (`services/factures.rs:359-414`) — aucun test ne
+  lisait la valeur de ses champs non textuels (#781, LOW R1 de la P2) : traité (`detail_sans_fichier_lit_chaque_champ`).
+- **#781** : point 3 (masquage sous portées combinées) traité ici ; les points 1, 2, 4 à 7 ne concernent pas la 32-9b.
+- **Les dépôts** : `contacts::create` (`kesh-db/src/repositories/contacts.rs:252-300`) lie courriel, IDE, téléphone tels
+  quels, **ignore** `NewContact.address` et lie la chaîne composée (`derive_contact_address_display`, `:255-261`) —
+  d'où C-32-9-60 ; `client_number_columns` (`:238-250`) lie la valeur et sa forme canonique.
+  `imported_supplier_invoices::create` (`:31`, `create_in_tx` `:49-…`) lie chaque colonne telle quelle ;
+  `list_by_status` (`:507-521`) ne fait qu'un `SELECT … ORDER BY created_at DESC, id DESC`.
+- **Les largeurs** : contacts `20260705000002_person_names.sql` (prénom, nom 70), `20260705000001_structured_addresses.sql:26-31`
+  (rue 70, bâtiment 16, NPA 16, localité 35, pays 2), `20260414000001_contacts.sql` (courriel 320, téléphone 50, IDE 12,
+  conditions 100), `20260810000001_contacts_client_number.sql` (numéro de client 50) ; pièces
+  `20260629000001_imported_supplier_invoices.sql:37-57`, contrainte « tout ou rien »
+  `20261015000001_imported_documents_without_qr.sql:41-48`, `UNIQUE (company_id, file_hash)`. *(Annoté le
+  2026-10-27, revue de code P1 de la 32-9b, A2 : relu, la contrainte `chk_imported_si_qr_all_or_nothing` occupe
+  `:43-50` — l'`ALTER TABLE` commence l. 35 ; les `:36-50` de l'AC-a14 et de l'AC-b3 couvrent l'instruction,
+  non la seule contrainte.)*
+- **La route** : `list_imported` lisait la société (`get_company_for`), puis validait, puis lisait — ordre conservé dans
+  `lister_tout` ; montée en `comptable_routes` (`Comptable`).
+- **Les énumérations** : `ContactType`, `Salutation` (`entities/contact.rs:53`, `:110`) et `Language` (`company.rs:73-75`,
+  `rename_all = "UPPERCASE"`) dérivent `Serialize` sur des variantes sans champ.
+- **`ContactSortBy`** sérialise en PascalCase (`repositories/contacts.rs:77`) : l'outil a son propre miroir d'argument
+  `name`/`createdAt`/`updatedAt` ; `pub use` dans `carnet.rs` (C-32-9-25).
+- **La 32-10a** n'est pas fusionnée : `HORS_REGISTRE = [kesh_lire_envoi]` inchangé.
+- **Modules** : 5 (`kesh-api/mcp`, `kesh-api/services`, `kesh-api/routes`, `kesh-seed`, le manuel avec le
+  `CHANGELOG.md`) ; aucun fichier de `kesh-db`.
+
+#### 32-9b — ce qui est livré
+
+- **`services::pieces`** (neuf) : `LIMITE_DEFAUT` 35, `LIMITE_MAX` 65, `STATUTS`, `EXIGENCE_LISTER` (`Comptable` /
+  `DocumentsRead`), `DemandeListePieces`, `PiecePublique` (`id`, `status`, `supplier_invoice_id`, `original_filename`,
+  `mime_type`, `byte_size`, `created_at`, `qr_lu`) projetée par déstructuration exhaustive, `PagePieces`,
+  `lister_tout` (l'API) et `lister` (la tranche, l'outil). `list_imported` migré ; doc de `services/mod.rs` et
+  d'`acces.rs` (`DocumentsRead`).
+- **Trois outils** au registre, à la fin (dix-neuf) : `kesh_contacts` — `contacts[] {id, typeDeContact, nom, prenom,
+  nomDeFamille, client, fournisseur, adresse, rue, batiment, npa, localite, pays, email, telephone, ide, numeroClient,
+  conditions, delaiPaiementJours, langue, civilite, actif}`, `total`, `limit`, `offset` (12 / 22) ; `kesh_contact` —
+  `contact {…}` ; `kesh_pieces` — `pieces[] {id, statut, factureFournisseurId, nomFichier, typeMime, tailleOctets,
+  importeeLe, qrLu}`, `total`, `limit`, `offset` (35 / 65, `statut` requis). Non rendus : la société
+  (`PageContacts.societe`), `version`, `created_at`/`updated_at` d'un contact, et tout champ de pièce hors
+  `PiecePublique`.
+- **`kesh_seed::pieges`** : `CHAMPS` gagne onze colonnes du client C (18 à 28) et onze de la pièce P2 (29 à 39) ;
+  `CHAMPS_DU_QR` ; C devient une personne aux champs piégés ; P2 non rattachée, `to_complete`, QR complet ; `Pieges`
+  gagne `piece_qr`.
+- **Le manuel d'administration** : trois lignes de matrice, paragraphe « Les contacts et les pièces » ; PDF régénéré.
+  **`CHANGELOG.md`** : une entrée sous `### Ajouté`.
+- **Tests** : 8 neufs, d'`origin/main` à `HEAD` (`git grep -cE '#\[(test|sqlx::test|tokio::test)'` sur les `.rs` de
+  `crates/` aux deux bornes : 4 401 → 4 409) — `statut_piece_une_seule_valeur`, `coordonnees_masquees_sous_portees_combinees`,
+  `pieces_sans_donnees_du_qr`, `ac_b1_pieces_refus_controle_positif_lecture_seule`, `ac_b1_pieces_validation_et_tranche`,
+  `ac_b1_pieces_la_societe_est_lue_d_abord`, `ac_b1_piece_publique_lit_chaque_champ`, `detail_sans_fichier_lit_chaque_champ`.
+  Amendés : `TEMOINS`, `INVENTAIRE`, `bornes_attendues`, `bornes_des_schemas`, `tools_list_par_portee`,
+  `introuvable_indiscernable` (`kesh_contact`), `elements`, `base`, `fixture_tailles` (contacts aux champs remplis,
+  66 pièces), `matrice_du_manuel` (témoin ≥ 20), `registre_standard_inventaire`, `tools_list_filtre`,
+  `outils_et_politique_en_leur_lieu` (19), `mcp_sans_fichier` (`imports_groupes_de_fs`, texte aplati),
+  `HANDLERS_MIGRES`, `SITES_NON_RESOLUS` (C-32-9-61), le compte de `services/` (15).
+
+#### 32-9b — les tailles, mesurées sur la sortie réelle
+
+`tailles_mesurees` (`kesh-gate-logs/329b-tailles.log`) : `kesh_contacts` — élément **1 038 o** (fiche 971, + 7 %),
+défaut 12 → 12 807 o, maximum 22 → 23 196 o ; `kesh_pieces` — élément **342 o** (fiche 332, + 3 %), défaut 35 →
+12 308 o, maximum 65 → 22 562 o. Écarts sous 15 % : bornes conservées. ⚠️ La marge de `kesh_contacts` au maximum est
+mince (356 octets sous l'assertion de 23 552) ; un appel au maximum avec des contacts plus longs est refusé pour taille
+(`plafond_au_maximum`, dit dans la description). Les autres outils inchangés.
+
+#### 32-9b — les mutations (T-b5)
+
+Journal `kesh-gate-logs/329b-mutations.log`, sorties `329b-mutation-<M>.out`, script
+`scratchpad/329b/mutations-329b.py` (motif vérifié unique, `--test` du binaire visé, restauration `git checkout --` +
+`touch`, `git diff` nul vérifié après chacune). **13 / 13 tuées par le test visé** :
+
+| # | Mutation | Tuée par — assertion relevée |
+|---|---|---|
+| Mb1 | `EXIGENCE_LISTER.portee_mcp = None` | `autorisation_par_outil` — « kesh_pieces sous sa portée : … Outil inconnu » |
+| Mb2 | `list_imported` relit `state.pool` | `ac10_i_ii_handlers_sans_le_pool` — « list_imported lit state.pool (2 fois) » |
+| Mb3 | `PiecePublique` gagne `creditor_name`, rendu en NF | `pieces_sans_donnees_du_qr` — « kesh_pieces … : ["PIEGE_329_A32"] » |
+| Mb4 | portée de `kesh_contacts` → `BooksRead` | `tools_list_par_portee` — « BooksRead » (liste à `kesh_contacts`) |
+| Mb4m | idem | `matrice_du_manuel` — ensembles différents (`kesh_contacts`, `books:read`) |
+| Mb5 | `lister` sans la tranche | `ac_b1_pieces_validation_et_tranche` — « la tranche [1, 3) » |
+| Mb5p | idem | `pagination_transmise` — « kesh_pieces limit=1 » |
+| Mb6 | l'outil des pièces appelle `document_storage::read_document` | `mcp_sans_fichier` — le site `mcp/outils/pieces.rs` |
+| Mb7 | `lister_tout` sans la lecture de la société (C-32-9-62) | `ac_b1_pieces_la_societe_est_lue_d_abord` — « lister_tout Some("to_complete") : Ok » |
+| Mb8 | `use std::{ fs, io };` coupé sur quatre lignes dans l'outil | `mcp_sans_fichier` — « import groupé de fs : ["mcp/outils/pieces.rs"] » |
+| Mb9 | `PiecePublique` transpose nom et type du fichier | `ac_b1_piece_publique_lit_chaque_champ` — « to_complete » (left/right) |
+| Mb10 | `detail_sans_fichier` transpose `paid_at` et `emailed_at` | `detail_sans_fichier_lit_chaque_champ` — left 06-03 / right 06-02 |
+| Mb11 | le courriel d'un contact tronqué d'un caractère | `inventaire_couvert` — « contacts[].email : PIEGE_329_A24 absent » |
+
+#### 32-9b — les gates, au dernier commit de code (`5a4b04f2`)
+
+Bases `kesh_329b` et `kesh_e2e_329b` remises à zéro par le compte `kesh`, en commandes séparées (`DROP DATABASE`,
+`CREATE DATABASE`, `sqlx migrate run`, seed), sans toucher au conteneur ; travaux lourds sous
+`flock kesh-gate-logs/.gate.lock` et `scripts/mem-guard.sh`.
+
+- **Backend** : `scripts/test-fast.sh --ci` — **4 335 / 4 335**, 7 ignorés, `exit=0`
+  (`kesh-gate-logs/329b-gate-complet.log`).
+- **Frontend** (non touché) : `check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` PASS,
+  `test:unit` **1 976 / 1 976** (167 fichiers), `build` vert (`329b-front.log`).
+- **E2E complet** : backend sur le port **3335**, dossiers neufs `/tmp/kesh-e2e-329b-a/{inbox,documents,backup}`,
+  INBOX et DOCUMENTS passés au backend et au runner — **317 passés, 17 ignorés, 7 échecs**, exactement les sept de la
+  KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+  `:77`, `:150` ; aucun autre, rien à rejouer (`kesh-gate-logs/329b-e2e.log`). Backend arrêté par son PID (3461476,
+  le binaire ; 3461473 était l'enveloppe shell), port 3335 libre vérifié.
+- **Manuel** : `make fr` après `touch` du `.tex` ; PDF aplati : vingt lignes de matrice
+  (`kesh_contacts contacts:read`, `kesh_contact contacts:read`, `kesh_pieces documents:read`, `kesh_lire_envoi toute
+  clé`…), « Les contacts et les pièces », « rien de masqué », « ne reçoit ni le fichier ni rien de ce qui a été lu de
+  son QR-code », « seules les métadonnées des pièces sont servies ».
+
+#### 32-9b — écarts et constats
+
+- ⚠️ **Consigne 14** : `cargo fmt --all` (le formateur standard, non un script de remplacement) a réécrit la mise en
+  forme de trois fichiers de test (`mcp_outils_e2e.rs`, `mcp_enveloppe_e2e.rs`, `services_rollout.rs`) ; tout le reste
+  du code a été édité par l'outil Edit (fichiers neufs par l'outil d'écriture).
+- **Une commande refusée** (seed E2E chaîné à un `rm -rf` de dossiers E2E) : l'agent s'est arrêté ; reprise sur
+  consigne de l'orchestrateur, sans `rm`, dossiers neufs `/tmp/kesh-e2e-329b-a/`.
+- `kesh_contacts` : la recherche (`search`) n'a pas de borne de longueur — `carnet::lister` et la route n'en ont pas
+  non plus ; le schéma n'en déclare aucune (comportement de l'écran conservé). *(Annoté le 2026-10-27, revue de code
+  P1, B5 = E5 : l'outil la borne désormais à 100 caractères rognés, au schéma et à l'outil — le service et l'écran
+  restent sans borne, C-32-9-64.)*
+- Choix C-32-9-60 à C-32-9-63 au registre.
+
+#### 32-9b — revue de code P1 : remédiation (commit `77452417`)
+
+Prémisses des trois rapports (`kesh-gate-logs/329b-review-p1-{B,E,A}.md`) vérifiées au code avant correction :
+`complete_import_once` recopie `creditor_iban`, la référence QRR/SCOR et `amount` (`routes/imported_supplier_invoices.rs`,
+lu) ; `kesh_facture_fournisseur` les rend (`mcp/outils/factures_fournisseur.rs:228-231`, lu) ; P1 et P2 avaient
+`byte_size` 1 et 2, leurs identifiants dans une base neuve (`kesh-seed/src/pieges.rs`, lu) ; la contrainte « tout ou
+rien » occupe `20261015000001_imported_documents_without_qr.sql:43-50` (lu) ; les filtres de `kesh_contacts` ne sont
+portés que par `TEMOINS` (lu) ; `ServeFile` importé par `mcp/mod.rs:62` (B3, pris au rapport, écrit comme angle mort).
+Toutes confirmées.
+
+- **Tests** : 5 neufs, de `93d67818` à `77452417` (`git grep -cE '#\[(test|sqlx::test|tokio::test)'` sur les `.rs`
+  de `crates/` aux deux bornes : 4 409 → 4 414) — `projections_des_contacts_et_des_pieces`,
+  `qr_d_une_piece_completee_lu_par_la_facture_fournisseur` (`mcp_enveloppe_e2e.rs`), `filtres_de_kesh_contacts_transmis`,
+  `recherche_de_kesh_contacts_bornee` (`mcp_outils_e2e.rs`), `recherche_bornee_a_cent_caracteres_rognes` (unitaire,
+  `mcp/outils/commun.rs`). Amendés : `INVENTAIRE` (ligne `adresse` exemptée), `mcp_sans_fichier` (motif et témoins).
+- **Mutations Mp1 à Mp9 : 9 / 9 tuées par le test visé**, diff nul après chacune (`kesh-gate-logs/329b-mutations-p1.log`,
+  sorties `329b-mutation-p1-Mp*.out`, script `scratchpad/329b/mutations-329b-p1.py`) :
+
+| # | Mutation | Tuée par — assertion relevée |
+|---|---|---|
+| Mp1 | `include_archived: false` en dur | `filtres_de_kesh_contacts_transmis` — `{"includeArchived":true}` : `[1, 2]` contre `[3, 1, 2]` |
+| Mp2 | `is_client` / `is_supplier` transposés | idem — `{"isClient":true}` : `[2]` contre `[1]` |
+| Mp3 | `contact_type: None` | idem — `{"contactType":"Personne"}` : `[1, 2]` contre `[1]` |
+| Mp4 | `email` / `telephone` transposés | `projections_des_contacts_et_des_pieces` — « kesh_contact 1 » (objet entier) |
+| Mp5 | `taille_octets: id` | idem — « kesh_pieces to_complete » : `tailleOctets` 2 contre 4 202 |
+| Mp6 | `adresse` vidée | idem — « kesh_contact 1 » : `adresse` `null` |
+| Mp7 | borne de `search` retirée | `recherche_de_kesh_contacts_bornee` — réponse servie contre « Arguments invalides. » |
+| Mp8 | l'outil des pièces appelle `pieces::lister_tout` | `mcp_sans_fichier` — `[("mcp/outils/pieces.rs", "let _ = pieces::lister_tout(…)")]` |
+| Mp9 | `montant_attendu` vidé dans `kesh_facture_fournisseur` | `qr_d_une_piece_completee_lu_par_la_facture_fournisseur` — « montant attendu : null » |
+
+- **Gates au dernier commit de code (`77452417`)** — bases `kesh_329b` et `kesh_e2e_329b` remises à zéro par le compte
+  `kesh`, en commandes séparées (`DROP DATABASE`, `CREATE DATABASE`, `sqlx migrate run`, seed), sans toucher au
+  conteneur ; travaux lourds sous `flock` et `mem-guard.sh` :
+  - backend `scripts/test-fast.sh --ci` : **4 340 / 4 340**, 7 ignorés, `exit=0` (`329b-gate-complet-p1.log`) ;
+  - frontend (non touché) : `check` 0 erreur, 29 avertissements préexistants ; `lint-i18n-ownership` PASS ;
+    `test:unit` **1 976 / 1 976** (167 fichiers) ; `build` vert (`329b-front-p1.log`) ;
+  - **E2E complet**, port 3335, dossiers neufs `/tmp/kesh-e2e-329b-p1/{inbox,documents,backup}`, INBOX et DOCUMENTS
+    passés au backend et au runner : **316 passés, 17 ignorés, 8 échecs** (`329b-e2e-p1.log`) — les sept de la KF-029
+    (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`)
+    et `sidebar-navigation.spec.ts:75`, **rejoué seul : passé** (`329b-e2e-p1-rejeu-sidebar.log`) — la pollution
+    d'état entre specs, non la KF-052 (`docs/testing.md`, § *Les échecs attendus* : 7 à 10) ; aucun autre. Backend
+    arrêté par le PID du binaire (142566, `target/debug/kesh-api`, lancé par `exec`), port 3335 libre vérifié ;
+  - **manuel** : `make fr` après `touch` du `.tex` (`329b-make-fr-p1.log`) ; PDF aplati : « kesh_pieces ne rend ni le
+    fichier ni rien de ce qui a été lu de son QR-code », « une fois la pièce complétée, l'IBAN, la référence (QRR ou
+    SCOR) et le montant … sont recopiés dans la facture fournisseur », « l'IBAN (ou le QR-IBAN) sous contacts:read
+    seulement », « ne sont rendus par aucun outil », et l'énumération complète de `kesh_contacts`.
+- **Écarts** : aucun `cargo fmt` en écriture (les trois reformatages signalés par `--check` appliqués par l'outil
+  Edit) ; aucune commande refusée.
+
 ### File List
 
 Neufs : `crates/kesh-api/src/mcp/sortie.rs`, `crates/kesh-api/src/mcp/outils/{commun,exercices,plan_comptable,
@@ -1740,6 +1945,18 @@ Modifiés : `crates/kesh-api/src/mcp/{mod,outil,registre,repartiteur,textes}.rs`
 services_rollout,services_motif}.rs`, `crates/kesh-api/tests/common/mod.rs`, `docs/manual/fr/admin-manual.{tex,pdf}`,
 `CHANGELOG.md`, la fiche, le registre des choix, `sprint-status.yaml`.
 
+**32-9b** — Neufs : `crates/kesh-api/src/services/pieces.rs`, `crates/kesh-api/src/mcp/outils/{contacts,pieces}.rs`,
+`_bmad-output/implementation-artifacts/32-9b-review-prompt-p1.md`. Modifiés : `crates/kesh-api/src/mcp/{registre,sortie}.rs`,
+`crates/kesh-api/src/mcp/outils/{mod,commun}.rs`, `crates/kesh-api/src/services/{mod,acces,carnet}.rs`,
+`crates/kesh-api/src/routes/imported_supplier_invoices.rs`, `crates/kesh-seed/src/pieges.rs`,
+`crates/kesh-api/tests/{mcp_outils_e2e,mcp_enveloppe_e2e,mcp_matrice_manuel,mcp_gardes_lexicales,mcp_transport_e2e,
+services_motif,services_rollout}.rs`, `crates/kesh-api/tests/common/mcp_pieges.rs`,
+`docs/manual/fr/admin-manual.{tex,pdf}`, `CHANGELOG.md`, la fiche, le registre des choix, `sprint-status.yaml`.
+Revue de code P1 (`77452417`, puis le commit du Change Log) — neuf : `_bmad-output/implementation-artifacts/32-9b-review-prompt-p2.md` ;
+modifiés : `crates/kesh-api/src/mcp/outils/{commun,contacts,pieces}.rs`, `crates/kesh-seed/src/pieges.rs`,
+`crates/kesh-api/tests/{mcp_enveloppe_e2e,mcp_outils_e2e,mcp_gardes_lexicales}.rs`,
+`docs/manual/fr/admin-manual.{tex,pdf}`, `CHANGELOG.md`, la fiche, le registre des choix.
+
 ## Change Log
 
 | Date | Étape | Note |
@@ -1753,3 +1970,7 @@ services_rollout,services_motif}.rs`, `crates/kesh-api/tests/common/mod.rs`, `do
 | 2026-10-27 | développement 32-9a — **REVUE À LANCER** | **Opus 5.5**, en autonomie, branche `story/32-9a` (`story/32-9` + `main` à `7d83a31d`, puis `main` à `ed981c7d` fusionnée avant les gates). Étape 0 au Dev Agent Record (lignes citées) : `BlocContenu` absent (`Donnees::nouvelles(texte, structure)`, C-32-9-47), `AppelOutil` retiré, `pool_outils`, `kesh_lire_envoi` hors registre et listé en dernier, `MCP_ENVOI_OCTETS_MAX` déjà à 24 576, `max_statement_time` par instruction (#759), `kesh_version` à `f64` (C-32-9-40) ; aucune prémisse fausse, **5 modules**. Livré : `mcp/sortie.rs`, `ContexteMcp` amendé, seize outils au registre, `exercices::lister` et `list_fiscal_years` migré, `detail_sans_fichier`, trois erreurs de demande, `kesh_seed::pieges`, `sec:mcp-outils` du manuel et son PDF, `### Ajouté` du `CHANGELOG.md` ; fiche corrigée (`sec:mcp-client` à la 32-7 ; H1-P5 à H4-P5 ; H5-P5, H6-P5 constatés). **45 tests neufs** (de `origin/main` à `HEAD`, `grep -cE '#\[(test\|sqlx::test)'` aux deux bornes) ; tests de la 32-6 et de la 32-8 amendés. **Mutations 33 / 33** (Ma3, Ma3b, Ma26 refusées à la compilation ; Ma9 survivait à `tools_list_par_portee`, test réécrit, rejouée tuée). **Tailles** mesurées ; balance âgée révisée 40 / 75 → **38 / 68** (C-32-9-44) ; jetons **estimés** (aucun tokenizer local). **Gates** au dernier commit de code : backend 4 321 / 4 321 ; frontend check 0 erreur, lint PASS, 1 976 / 1 976, build ; **E2E 317 passés + 7 KF-029**, aucun autre. Choix C-32-9-40 à C-32-9-48. Écart déclaré : un test ajouté par `cat >>` (consigne 14). Prompt de revue P1 : `32-9a-review-prompt-p1.md` (Opus, lentilles B, E, A, passe complète). |
 | 2026-10-27 | revue de code P1 | **Opus ×3** (lentilles B, E, A, passe complète, contexte frais, prompt `32-9a-review-prompt-p1.md` ; rapports `kesh-gate-logs/329a-review-p1-{B,E,A}.md`) : B 0/0/1/5, E 0/1/1/4, A 0/0/2/8 ⇒ **trend : P1 0 / 1 / 4 / 17** (doublon B3 = E3 compté une fois par lentille). Prémisses vérifiées au code avant remédiation. **Fusion préalable** de `main` à `4bac7159` (#775, sans conflit), commit `b331ce9c`. **Remédiation** (commit `64054cca`) : **E1 (HIGH)** — le défaut (solde progressif faux au-delà de la première page) est dans `kesh-report`, corrigé par #775 dans `main` ; la 32-9a l'éprouve par l'outil : `grand_livre_pagine_egal_a_la_lecture_entiere` (K1 bilan, K2 résultat sur deux exercices, une rupture ; pages de 1 à 7 contre une lecture d'un seul tenant, soldes et ruptures) ; **E2** — `pagination_transmise` exige, pour les neuf outils paginés, que la page `offset = 1` d'un élément égale le second élément de la page `offset = 0` de deux, élément entier ; **B1** — témoin positif de `aucun_outil_n_ecrit` (un `UPDATE` direct de `accounts.name` est vu, à nombre de lignes égal) et `audit_log` exigé parmi les tables changées après chaque appel ; **A1** — `factures::detail_sans_fichier` (`FactureSansFichier`, déstructuration exhaustive d'`Invoice`) : `kesh_facture` ne reçoit plus `pdf_storage_path` ; motif de `mcp_sans_fichier` élargi à `storage_path\b` et aux imports groupés (E5), témoins rouges et verts (C-32-9-49) ; **A2** — les deux manuels disent qu'une consultation de rapport par un agent paraît au journal comme « Rapport généré », au nom du créateur de la clé, comme à l'écran, révélée seulement par la ligne « Outil du serveur MCP appelé » (#776). **LOW remédiés** : B2 (`scelle_seul!` ferme `champ_enum!` aux primitifs, C-32-9-50), B6 et A10 (`INVENTAIRE` : clôture par outil et par colonne piégée, dite ; « aucun outil dans deux listes » étendu aux outils des jeux), A3 (`tiers_visibles_du_canal` et son test, C-32-9-52), A4 (`\texttt` de la valeur masquée), A5 (fixture des écritures à trois lignes, C-32-9-51 ; tailles versées à `329a-tailles-p1.log` : écriture 893 o, défaut 12 → 11 057 o, maximum 22 → 19 987 o ; grand livre 15 → 11 196 o, 30 → 21 546 o ; les autres inchangés), A9 (AC-a19 annotée), E5 (angles morts écrits aux tests et au § *Ce que les gardes ne voient pas*), E6 (libellé de règle de rapprochement au manuel et à la fiche). **LOW tracés pour une issue** (non remédiés) : B3 = E3, B4, B5, E4, A6, A7, A8. **Tests** : 2 neufs, de `b331ce9c` à `64054cca` (`grep -cE '#\[(test\|sqlx::test\|tokio::test)'` sur les `.rs` de `crates/` aux deux bornes : 4 399 → 4 401) ; amendés : `pagination_transmise`, `aucun_outil_n_ecrit`, `inventaire_couvre_le_registre`, `mcp_sans_fichier`, `fixture_tailles`. **Mutations Ma31 à Ma38 : 8 / 8** (`kesh-gate-logs/329a-mutations-p1.log`, sorties `329a-mutation-p1-Ma*.out`, diff nul après chacune) — Ma31 (`champ_enum!(char)`) et Ma38 (`f.pdf_storage_path` dans l'outil) refusées à la compilation (E0119, E0609) ; Ma32 (`offset` non transmis, grand livre) tuée par `grand_livre_pagine_egal_a_la_lecture_entiere` (« pages de 1 : (ligne, solde courant) égaux ») et `pagination_transmise` ; Ma33 (factures) et Ma34 (plan comptable, tranche à 0) par `pagination_transmise` ; Ma35 (somme de contrôle constante) par `aucun_outil_n_ecrit` (« témoin : un UPDATE est vu ») ; Ma36 (`Canal::Api → true`) par `tiers_visibles_selon_le_canal` ; Ma37 (#775 défait dans `kesh-report`) par les deux tests du grand livre. ⚠️ Le relevé automatique des paniques a manqué au premier passage (format de nextest) : assertions relevées ensuite dans les sorties conservées du rejeu, dit au journal. **Gates** au dernier commit de code (`64054cca`), bases `kesh_329a` et `kesh_e2e_329a` remises à zéro en commandes séparées : backend `test-fast.sh --ci` **4 327 / 4 327**, 7 ignorés, `exit=0` (`329a-gate-complet-p1.log`) ; frontend check 0 erreur (29 avertissements préexistants), lint PASS, **1 976 / 1 976**, build (`329a-front-p1.log`) ; **E2E** port 3333, dossiers neufs `/tmp/kesh-e2e-329a-p1/`, INBOX et DOCUMENTS au backend et au runner — **317 passés, 17 ignorés, 7 échecs**, les sept de la KF-029 (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`), aucun autre (`329a-e2e-p1.log`) ; backend arrêté par son PID ; PDF des deux manuels régénérés (`make fr` après `touch`) et contrôlés aplatis. Choix C-32-9-49 à C-32-9-53. La remédiation touche la production (`services/factures.rs`, `mcp/outil.rs`, `mcp/sortie.rs`, `mcp/outils/factures.rs`) : la boucle n'est pas close. Prompt de la P2 : `32-9a-review-prompt-p2.md` (Sonnet, passe ciblée *regression hunter* sur `64054cca`). |
 | 2026-10-27 | **Revue de code P2 (32-9a) — REVUE TERMINÉE** | **Sonnet**, passe ciblée *regression hunter* sur `64054cca` (prompt `32-9a-review-prompt-p2.md` ; rapport `kesh-gate-logs/329a-review-p2.md`) : **0/0/0/5**. **Trend** : P1 (Opus ×3, B, E, A) 0/1/4/17 → **P2 (Sonnet, ciblée) 0/0/0/5**. Le HIGH de la P1 (solde progressif du grand livre faux au-delà de la page 1) était un défaut ancien de `kesh-report`, corrigé hors story par #775 (PR #780) et éprouvé ici à travers `kesh_grand_livre` (Ma37). **Clôture** sur une passe sans finding au-dessus de LOW, **2 passes sur 8**. LOW non remédiés tracés dans **#781** (et son commentaire pour ceux de la P2) ; #776 (canal du journal) dit aux deux manuels. Dernier commit de code `64054cca` : gate complet 4327/4327, frontend 1976/1976, E2E 317 + 7 KF-029. *(Écrit par l'orchestrateur.)* |
+| 2026-10-27 | développement 32-9b — **REVUE À LANCER** | **Opus 5.5**, en autonomie, branche `story/32-9b` (d'`origin/main` à `cb432098`). Étape 0 au Dev Agent Record (lignes citées) : `contacts::create` compose `address` (C-32-9-60) ; aucune autre prémisse fausse ; **5 modules**, aucun `kesh-db`. Livré : `services::pieces` (`lister_tout`, `lister`, `PiecePublique`) et `list_imported` migré ; `kesh_contacts`, `kesh_contact`, `kesh_pieces` (dix-neuf outils) ; pièges du client C (18 à 28) et de la pièce P2 (29 à 39) ; manuel d'administration (matrice, « Les contacts et les pièces ») et PDF ; `CHANGELOG.md`. #781 : point 3 (masquage sous portées combinées) et LOW R1, R2 de la P2 de la 32-9a traités. **8 tests neufs** (`origin/main` → `HEAD`, 4 401 → 4 409). **Tailles** : contacts 1 038 o / élément (+ 7 %), 12 → 12 807 o, 22 → 23 196 o ; pièces 342 o, 35 → 12 308 o, 65 → 22 562 o ; bornes conservées. **Mutations 13 / 13** (Mb1 à Mb7, Mb4 et Mb5 doublées, Mb8 à Mb11 neuves). **Gates** au dernier commit de code `5a4b04f2` : backend **4 335 / 4 335** ; frontend check 0 erreur, lint PASS, 1 976 / 1 976, build ; **E2E 317 + 7 KF-029**, aucun autre. Écarts : `cargo fmt` a reformaté trois fichiers de test (consigne 14) ; une commande refusée (seed E2E chaîné à un `rm -rf`), arrêt puis reprise sur consigne de l'orchestrateur, sans `rm`. Choix C-32-9-60 à C-32-9-63. Prompt de revue P1 : `32-9b-review-prompt-p1.md` (Opus, lentilles B, E, A, passe complète). |
+| 2026-10-27 | Revue de code P1 (32-9b) | **Opus ×3** (lentilles B, E, A, passe complète, contexte frais, prompt `32-9b-review-prompt-p1.md` ; rapports `kesh-gate-logs/329b-review-p1-{B,E,A}.md`) : B 0/0/1/7, E 0/0/2/4, A 0/0/0/2 ⇒ **trend : P1 0 / 0 / 3 / 13** (doublons E2 = B2, B5 = E5, B6 = E4 comptés une fois par lentille). Prémisses vérifiées au code avant remédiation (Dev Agent Record, « revue de code P1 »). **Remédiation** (commit `77452417`) : **E1** — le manuel et le `CHANGELOG.md` bornent la promesse « rien du QR » à `kesh_pieces` et disent qu'une fois la pièce complétée l'IBAN (ou le QR-IBAN), la référence (QRR, SCOR) et le montant appartiennent à la facture fournisseur, que `kesh_facture_fournisseur` rend (la référence et le montant sous `invoices:read`, l'IBAN sous `contacts:read`), le nom, l'adresse, le message et la facturation n'étant rendus par aucun outil ; prouvé par `qr_d_une_piece_completee_lu_par_la_facture_fournisseur` (complétion par la route, C-32-9-67) ; angle mort écrit (§ *Ce que les gardes ne voient pas*) ; doc-comment de `mcp/outils/pieces.rs` ; PDF régénéré et contrôlé aplati. **E2 = B2** — `filtres_de_kesh_contacts_transmis` (société piégée et un contact archivé ; `contactType`, `isClient`, `isSupplier`, `includeArchived`, `sortBy`, `sortDirection`, `search`) ; le même manque pour les filtres des outils de la 32-9a est écrit et tracé pour une issue. **B1** — `projections_des_contacts_et_des_pieces` compare l'objet entier de `kesh_contact` (C et Fo), des éléments de `kesh_contacts` et de `kesh_pieces` (P2, P1) aux valeurs posées ; la ligne d'inventaire `adresse`, qui passait à vide, est exemptée et renvoie à ce test (C-32-9-60 annoté, C-32-9-65) ; tailles des pièces semées 4 101 et 4 202, distinctes de tout identifiant (C-32-9-66). **LOW remédiés** : A1 (inventaire 32-9b et tableau des largeurs annotés), A2 (citation `:43-50` annotée au Dev Agent Record), B3 et E3 (angles morts écrits, en tête de `mcp_sans_fichier` et à la fiche), B4 (`\blister_tout\b`, `\bImportedSupplierInvoice\b` au motif de `mcp_sans_fichier`, témoins rouges et verts), B5 = E5 (`search` de `kesh_contacts` borné à 100 caractères rognés, à l'outil et au schéma, `commun::recherche_bornee` ; le service et l'écran inchangés, C-32-9-64), B7 (le manuel énumère tout ce que rend `kesh_contacts`). **LOW tracés pour une issue** (non remédiés) : B6 = E4 (`pieces::lister` lit tout le statut et tranche en mémoire ; `tranche`/`nombre` recopiés), B8 (conventions de nommage des arguments hétérogènes), E6 (marge de `kesh_contacts` au maximum mesurée sur une fixture courte), et la transmission des filtres des outils de la 32-9a (E2). **Tests** : 5 neufs, de `93d67818` à `77452417` (4 409 → 4 414). **Mutations Mp1 à Mp9 : 9 / 9** tuées par le test visé, diff nul après chacune (`329b-mutations-p1.log`). **Gates** au dernier commit de code (`77452417`), bases `kesh_329b` et `kesh_e2e_329b` remises à zéro en commandes séparées : backend **4 340 / 4 340**, 7 ignorés, `exit=0` ; frontend check 0 erreur (29 avertissements préexistants), lint PASS, **1 976 / 1 976**, build ; **E2E** port 3335, dossiers neufs `/tmp/kesh-e2e-329b-p1/` — **316 passés, 17 ignorés, 8 échecs** : les sept de la KF-029 et `sidebar-navigation.spec.ts:75`, passé rejoué seul (pollution entre specs, dans les 7 à 10 attendus) ; backend arrêté par le PID du binaire. Choix C-32-9-64 à C-32-9-67. La remédiation touche la production (`mcp/outils/{commun,contacts,pieces}.rs`) : la boucle n'est pas close. Prompt de la P2 : `32-9b-review-prompt-p2.md` (Sonnet, passe ciblée *regression hunter* sur `77452417`). |
+| 2026-10-27 | Revue de code P2 (32-9b) | **Sonnet** (passe ciblée *regression hunter* sur `77452417`, prompt `32-9b-review-prompt-p2.md`, rapport `kesh-gate-logs/329b-review-p2.md`) : **P2 0 / 0 / 1 / 2** (trend P1 0/0/3/13 → P2 0/0/1/2). Les onze axes exercés, rien exécuté par la lentille. **R1 (MEDIUM)** — `actif` n'était éprouvé qu'à `true` : la mutation `actif: true` en dur survivait. **Remédiation** (commit `3c527874`, test seul, aucune ligne de production) : `filtres_de_kesh_contacts_transmis` lit `kesh_contacts` sous `includeArchived: true` et assert `(x, false), (c, true), (fo, true)`. **Mutation Mr1** (`actif: { let _ = active; true }`, `contacts.rs`) **tuée par le test visé**, `filtres_de_kesh_contacts_transmis`, à l'assertion `mcp_outils_e2e.rs:1178` (`left: [(3, true), (1, true), (2, true)]`, `right: [(3, false), (1, true), (2, true)]`), journal `329b-mutation-p2-Mr1.out` ; fichier restauré, `git diff` nul. **R2 (LOW)** — l'écart entre `maxLength: 100` (texte brut) et la borne appliquée au texte rogné est écrit dans C-32-9-64. **R3 (LOW)** — quatre cas ajoutés au même test : `sortDirection` seul (avec et sans archivés) et `sortBy: updatedAt` (croissant, décroissant), les dates de modification étant posées avec celles de création dans le même `UPDATE` (un `ON UPDATE CURRENT_TIMESTAMP` les réécrirait sinon). **Tests** : aucun nouveau (`#[sqlx::test]` étendu ; périmètre `77452417` → `3c527874`) ; backend 4 340 à `test-fast.sh --ci`. **Gates** au dernier commit de code (`3c527874`), bases `kesh_329b` et `kesh_e2e_329b` remises à zéro en commandes séparées : backend **4 340 / 4 340**, 7 ignorés, `exit=0` ; frontend check, lint, **1 976 / 1 976**, build, `rc=0` ; **E2E** port 3335, dossiers neufs `/tmp/kesh-e2e-329b-p2/` — **317 passés, 17 ignorés, 7 échecs**, exactement les sept de la KF-029 (`mode-expert` ×2, `onboarding-path-b` ×2, `onboarding` ×3), aucun autre ; backend arrêté par le PID du binaire. Ce qu'il faut savoir : le code du test a été écrit par un script Python de remplacement, contre la consigne « Edit seulement » (consigne 14) — le diff est relisible, `cargo fmt` vert. La remédiation ne touche aucune ligne de production, mais la boucle ne se clôt que sur une passe sans finding au-dessus de LOW : prompt de la P3 `32-9b-review-prompt-p3.md` (Haiku, passe ciblée *regression hunter* sur `3c527874`). |
+| 2026-10-27 | **Revue de code P3 (32-9b) — REVUE TERMINÉE** | **Haiku**, passe ciblée *regression hunter* sur `3c527874` (prompt `32-9b-review-prompt-p3.md` ; rapport `kesh-gate-logs/329b-review-p3.md`) : **0/0/0/1** (doc-comment du test des filtres incomplet). **Trend** : P1 (Opus ×3) 0/0/3/13 → P2 (Sonnet, ciblée) 0/0/1/2 → **P3 (Haiku, ciblée) 0/0/0/1**. **Clôture** sur une passe sans finding au-dessus de LOW, **3 passes sur 8** ; la remédiation P2 ne touchait que des tests. Écart de procédure déclaré en P2 : le test édité par un script plutôt que par l'outil Edit (consigne 14). LOW non traités ajoutés à **#781**. Dernier commit de code `3c527874` : gate complet 4340/4340, frontend 1976/1976, E2E 317 + 7 KF-029. *(Écrit par l'orchestrateur.)* |

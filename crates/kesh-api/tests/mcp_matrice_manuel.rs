@@ -110,7 +110,7 @@ async fn matrice_du_manuel(pool: MySqlPool) {
         }
     }
     assert!(
-        generee.len() >= 17,
+        generee.len() >= 20,
         "témoin : {} couples générés",
         generee.len()
     );

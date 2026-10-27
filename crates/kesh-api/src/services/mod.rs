@@ -241,6 +241,23 @@
 //! `factures::detail_sans_fichier`, qui projette la facture cliente sans son
 //! PDF figé (`pdf_storage_path` et ses trois compagnons).
 //!
+//! # Le rollout de la 32-9b — la liste des pièces importées, sans trace
+//!
+//! | Service | Route | Exigence API / MCP |
+//! |---|---|---|
+//! | `pieces::lister_tout` | `GET /imported-supplier-invoices?status=` | `Comptable` / `DocumentsRead` |
+//! | `pieces::lister` | (l'outil MCP `kesh_pieces` seul) | `Comptable` / `DocumentsRead` |
+//!
+//! L'ordre de la route est conservé : la société d'abord (`Internal` si elle
+//! manque), puis la validation du statut, puis la lecture
+//! (`imported_supplier_invoices::list_by_status`, un `SELECT`, établi par
+//! lecture). `lister` tranche la liste et la projette en `PiecePublique`, qui
+//! ne porte ni l'empreinte ni le chemin du fichier, ni aucune donnée lue du
+//! QR-code : aucun chemin de fichier n'atteint `src/mcp/` (C-32-9-13). Les
+//! autres gestionnaires de `routes/imported_supplier_invoices.rs` — l'import,
+//! la complétion, l'écart, les fournisseurs proposés, les documents — restent
+//! sur `state.pool`, figés par la garde (iii) : aucun outil ne les sert.
+//!
 //! # La lecture seule du MCP — Q11, tranchée le 2026-10-24
 //!
 //! La réponse de Guy à Q11 : la lecture seule est **tenue par l'application**
@@ -282,6 +299,7 @@ pub mod envois_mcp;
 pub mod exercices;
 pub mod factures;
 pub mod factures_fournisseur;
+pub mod pieces;
 pub mod plan_comptable;
 pub mod poignees;
 pub mod postes_ouverts;
