@@ -1,7 +1,8 @@
 //! Les poignées sur la base : [`Lecture`] pour lire les livres, [`Trace`]
 //! pour écrire le journal d'audit — et, depuis la Story 32-8b, les deux
 //! poignées des envois du serveur MCP, [`LectureEnvois`] et
-//! [`EcritureEnvois`], qui n'exposent aucun pool.
+//! [`EcritureEnvois`], qui n'exposent aucun pool ; depuis la Story 32-10a-ii,
+//! la lecture des prompts, [`LecturePrompts`], de même.
 //!
 //! Deux types distincts, sans conversion de l'un à l'autre, à champ privé : un
 //! service qui reçoit une `Lecture` ne peut pas en faire une `Trace`, et le pool
@@ -18,9 +19,10 @@
 //! ordinaire.
 
 use kesh_db::entities::audit_log::NewAuditLogEntry;
+use kesh_db::entities::mcp_prompt::VersionEnVigueur;
 use kesh_db::entities::mcp_send::{EnvoiPourCle, ErreurDepot, NouvelEnvoi};
 use kesh_db::errors::{DbError, map_db_error};
-use kesh_db::repositories::{audit_log, mcp_sends};
+use kesh_db::repositories::{audit_log, mcp_prompts, mcp_sends};
 use sqlx::MySqlPool;
 
 /// Poignée de **lecture** des livres : dépôts, générateurs de rapports.
@@ -67,6 +69,42 @@ impl LectureEnvois {
         id: i64,
     ) -> Result<Option<EnvoiPourCle>, DbError> {
         mcp_sends::lire_pour_cle(&self.0, company_id, mcp_key_id, id).await
+    }
+}
+
+/// Poignée de **lecture des prompts** du serveur MCP (Story 32-10a-ii, AC-ii3,
+/// C-32-10a-30) — posée sur le pool **en lecture seule** du MCP, celui des
+/// outils. Deux méthodes, les versions en vigueur de la société ou d'un nom ;
+/// **aucun** accès au pool : champ privé, sans méthode `pool()`. Le service des
+/// prompts (`services::prompts_mcp`) ne reçoit qu'elle : il ne peut lire ni les
+/// livres ni une autre table que celles des prompts (P19 de la fiche).
+#[derive(Clone)]
+pub struct LecturePrompts(MySqlPool);
+
+impl LecturePrompts {
+    /// Enveloppe le pool en lecture seule du MCP — appelé une fois, au câblage
+    /// de `build_router_avec_registre` (garde (v-2) de `services_motif.rs`).
+    pub fn new(pool: MySqlPool) -> Self {
+        Self(pool)
+    }
+
+    /// Les versions en vigueur, de nature texte, des prompts de la société
+    /// (`mcp_prompts::en_vigueur_par_societe`).
+    pub(in crate::services) async fn en_vigueur_par_societe(
+        &self,
+        company_id: i64,
+    ) -> Result<Vec<VersionEnVigueur>, DbError> {
+        mcp_prompts::en_vigueur_par_societe(&self.0, company_id).await
+    }
+
+    /// La version en vigueur, de nature texte, du prompt `nom` de la société
+    /// (`mcp_prompts::en_vigueur_par_nom`).
+    pub(in crate::services) async fn en_vigueur_par_nom(
+        &self,
+        company_id: i64,
+        nom: &str,
+    ) -> Result<Option<VersionEnVigueur>, DbError> {
+        mcp_prompts::en_vigueur_par_nom(&self.0, company_id, nom).await
     }
 }
 

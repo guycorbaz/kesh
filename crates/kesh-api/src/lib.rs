@@ -1278,13 +1278,16 @@ pub fn build_router_avec_registre(
     // ordinaire. Story 32-8b (refs #723) : le pool en lecture seule, lié **une
     // fois**, est enveloppé deux fois — la lecture des outils et la relecture
     // des envois (`kesh_lire_envoi`) ; le dépôt des envois écrit sur le pool
-    // ordinaire.
+    // ordinaire. Story 32-10a-ii : la lecture des prompts (`prompts/list`,
+    // `prompts/get`) est une troisième enveloppe du même pool en lecture seule
+    // (AC-ii3).
     let delai = registre.delai();
     let pool_outils =
         kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);
     let lecture_outils =
         mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils.clone()));
-    let lecture_envois = services::poignees::LectureEnvois::new(pool_outils);
+    let lecture_envois = services::poignees::LectureEnvois::new(pool_outils.clone());
+    let lecture_prompts = services::poignees::LecturePrompts::new(pool_outils);
     let ecriture_envois = services::poignees::EcritureEnvois::new(state.pool.clone());
     let etat_mcp = mcp::EtatMcp {
         origines_propres: mcp::origines_propres(
@@ -1296,6 +1299,7 @@ pub fn build_router_avec_registre(
         trace: state.trace(),
         lecture_envois,
         ecriture_envois,
+        lecture_prompts,
         registre: Arc::new(registre),
         statique: fallback.clone(),
     };

@@ -25,6 +25,9 @@ pub const CODE_REQUETE_INVALIDE: i64 = -32600;
 pub const CODE_METHODE_INCONNUE: i64 = -32601;
 /// Code JSON-RPC : paramètres refusés — dont l'outil inconnu ou hors portée.
 pub const CODE_PARAMS_INVALIDES: i64 = -32602;
+/// Code JSON-RPC : erreur interne — `prompts/list` et `prompts/get` en échec
+/// de lecture (Story 32-10a-ii), message [`TEXTE_ERREUR_INTERNE`].
+pub const CODE_ERREUR_INTERNE: i64 = -32603;
 
 /// 401 — clé absente, refusée, ou d'une société qui ne sert pas : **un seul
 /// corps** pour toutes les causes (AC-a14), sans `WWW-Authenticate`
@@ -72,7 +75,9 @@ pub const TEXTE_PARAMS_INVALIDES: &str = "Paramètres invalides.";
 /// service — **le même** pour les trois (aucun oracle, AC-a18).
 pub const TEXTE_OUTIL_INCONNU: &str = "Outil inconnu.";
 
-/// Message d'un prompt inconnu (aucun prompt en 32-6).
+/// Message d'un prompt inconnu, non servi (en attente, refusé, retiré,
+/// invalide), d'une autre société, au nom non conforme, ou demandé par une clé
+/// sans `books:read` — **le même** pour tous (aucun oracle, AC-ii6).
 pub const TEXTE_PROMPT_INCONNU: &str = "Prompt inconnu.";
 
 /// Texte d'outil : arguments refusés.
