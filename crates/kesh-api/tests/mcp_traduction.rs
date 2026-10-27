@@ -10,7 +10,8 @@
 
 use kesh_api::errors::AppError;
 use kesh_api::mcp::textes::{
-    TEXTE_ARGUMENTS_INVALIDES, TEXTE_ERREUR_INTERNE, TEXTE_INTROUVABLE, depuis_app_error,
+    TEXTE_ARGUMENTS_INVALIDES, TEXTE_COMPTE_NON_LETTRABLE, TEXTE_ERREUR_INTERNE,
+    TEXTE_EXERCICE_INTROUVABLE, TEXTE_INTROUVABLE, TEXTE_PERIODE_HORS_EXERCICE, depuis_app_error,
 };
 use kesh_api::mcp::{ErreurOutil, MotifArgument};
 use kesh_db::errors::DbError;
@@ -31,6 +32,37 @@ fn traduction_des_erreurs_de_service() {
             motif: MotifArgument::Invalide
         }
     );
+    // Story 32-9a (AC-a22) : trois erreurs de demande, à texte fixe, sans
+    // recopier leurs champs.
+    let jour = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+    assert_eq!(
+        depuis_app_error(AppError::ReportFiscalYearNotFound { fiscal_year_id: 7 }),
+        ErreurOutil::ExerciceIntrouvable
+    );
+    assert_eq!(
+        depuis_app_error(AppError::ReportPeriodOutOfFiscalYear {
+            fy_start: jour,
+            fy_end: jour,
+            requested_start: jour,
+            requested_end: jour,
+        }),
+        ErreurOutil::PeriodeHorsExercice
+    );
+    assert_eq!(
+        depuis_app_error(AppError::Database(DbError::LetteringAccountNotLetterable)),
+        ErreurOutil::CompteNonLettrable
+    );
+    // Les textes ne portent aucune valeur de l'erreur (identifiant, dates).
+    for t in [
+        TEXTE_EXERCICE_INTROUVABLE,
+        TEXTE_PERIODE_HORS_EXERCICE,
+        TEXTE_COMPTE_NON_LETTRABLE,
+    ] {
+        assert!(
+            !t.is_empty() && !t.contains("2026") && !t.contains('7'),
+            "{t}"
+        );
+    }
 
     let hors_liste = [
         AppError::Internal(PIEGE.to_string()),

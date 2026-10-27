@@ -218,6 +218,22 @@
 //! (`rapports::balance_agee`, 32-3) : l'outil de la 32-9a l'appellera tel
 //! quel.
 //!
+//! # Le rollout de la 32-9a — la liste des exercices, sans trace
+//!
+//! | Service | Route | Exigence API / MCP |
+//! |---|---|---|
+//! | `exercices::lister` | `GET /fiscal-years` | `Consultation` / `BooksRead` |
+//!
+//! Sans lecture de la société ni borne propre : le comportement de la route
+//! est conservé (le dépôt filtre par société et borne la liste). L'inventaire
+//! clos des écritures sur les chemins de lecture s'y étend :
+//! `fiscal_years::list_by_company` ne fait qu'un `SELECT` (établi par lecture).
+//! Les autres gestionnaires de `routes/fiscal_years.rs` restent sur
+//! `state.pool`, figés par la garde (iii). La 32-9a ajoute aussi
+//! `factures_fournisseur::detail_sans_fichier`, qui appelle `detail` et ne
+//! rend de la pièce que son identifiant : aucun chemin de fichier n'atteint
+//! `src/mcp/` (C-32-9-13).
+//!
 //! # La lecture seule du MCP — Q11, tranchée le 2026-10-24
 //!
 //! La réponse de Guy à Q11 : la lecture seule est **tenue par l'application**
@@ -256,6 +272,7 @@ pub mod carnet;
 pub mod cles_mcp;
 pub mod ecritures;
 pub mod envois_mcp;
+pub mod exercices;
 pub mod factures;
 pub mod factures_fournisseur;
 pub mod plan_comptable;

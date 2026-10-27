@@ -11,10 +11,14 @@
 //! (`SupplierInvoiceResponse::from_view`, C-32-4b-5).
 
 use kesh_db::entities::Role;
+use kesh_db::entities::supplier_invoice::{SupplierInvoice, SupplierInvoiceLine};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::supplier_invoices::{
-    self, SupplierInvoiceListItem, SupplierInvoiceSettlementView,
-};
+use kesh_db::repositories::supplier_invoices::{self, SupplierInvoiceSettlementView};
+
+/// Réexporté pour l'outil MCP de la 32-9a (C-32-9-25) : `src/mcp/` ne nomme pas
+/// `kesh_db::repositories`. `SupplierInvoiceSettlementView`, qui porte le
+/// chemin de la pièce, **n'est pas** réexporté.
+pub use kesh_db::repositories::supplier_invoices::SupplierInvoiceListItem;
 
 use crate::errors::AppError;
 use crate::services::acces::{ContexteAcces, Exigence, Portee};
@@ -108,4 +112,33 @@ pub async fn detail(
     supplier_invoices::get_settlement_view(lecture.pool(), company.id, id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))
+}
+
+/// La fiche d'une facture fournisseur **sans aucun chemin de fichier** (Story
+/// 32-9a, C-32-9-13, AC-a10) : la facture, ses lignes, et de sa pièce le seul
+/// identifiant.
+#[derive(Debug)]
+pub struct FicheFactureFournisseur {
+    /// La facture.
+    pub facture: SupplierInvoice,
+    /// Ses lignes.
+    pub lignes: Vec<SupplierInvoiceLine>,
+    /// L'identifiant de la pièce importée rattachée, s'il y en a une.
+    pub piece_id: Option<i64>,
+}
+
+/// [`detail`] — même exigence, même lecture —, projeté en
+/// [`FicheFactureFournisseur`] : l'outil MCP ne reçoit ni `storage_path` ni
+/// aucun autre champ de la pièce.
+pub async fn detail_sans_fichier(
+    acces: &ContexteAcces,
+    lecture: &Lecture,
+    id: i64,
+) -> Result<FicheFactureFournisseur, AppError> {
+    let vue = detail(acces, lecture, id).await?;
+    Ok(FicheFactureFournisseur {
+        facture: vue.invoice,
+        lignes: vue.lines,
+        piece_id: vue.source_document.map(|d| d.id),
+    })
 }

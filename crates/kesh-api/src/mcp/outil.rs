@@ -7,8 +7,10 @@ use std::pin::Pin;
 use serde::de::DeserializeOwned;
 
 use crate::mcp::politique::Donnees;
-use crate::services::acces::{ContexteAcces, Portee};
-use crate::services::poignees::Lecture;
+use crate::mcp::sortie::{PORTEE_DES_TIERS, tiers_visibles};
+use crate::services::acces::{Canal, ContexteAcces, Portee};
+use crate::services::poignees::{Lecture, Trace};
+use crate::services::rapports::{Affichage, Rapport};
 
 /// La lecture des outils : une `Lecture` sur le pool **en lecture seule**
 /// (`kesh_db::pool::pool_lecture_seule`), d'un type que rien d'autre
@@ -30,19 +32,52 @@ impl LectureOutils {
     }
 }
 
-/// Le contexte d'un appel d'outil : qui lit (le contexte d'accès de la clé) et
-/// par quoi (la lecture des outils). **Rien d'autre** : ni trace, ni état.
+/// Le contexte d'un appel d'outil : qui lit (le contexte d'accès de la clé),
+/// par quoi (la lecture des outils) et, pour les seuls rapports, où s'inscrit
+/// leur consultation (la `Trace`, privée — Story 32-9a, AC-a7, C-32-9-10).
+/// **Rien d'autre** : aucun état.
+///
+/// ⚠️ La `Trace` ne sort jamais d'ici : seule [`ContexteMcp::afficher`] s'en
+/// sert, pour écrire la trace de consultation d'un rapport (garde
+/// `trace_confinee_dans_outil`).
 pub struct ContexteMcp<'a> {
     acces: &'a ContexteAcces,
     lecture: &'a LectureOutils,
+    trace: &'a Trace,
 }
 
 impl<'a> ContexteMcp<'a> {
     /// Construit par le **répartiteur seul** (garde
     /// `contexte_mcp_construit_par_le_repartiteur_seul`) ; `pub(super)` le rend
     /// visible du module `mcp` et de ses descendants.
-    pub(super) fn nouveau(acces: &'a ContexteAcces, lecture: &'a LectureOutils) -> Self {
-        Self { acces, lecture }
+    pub(super) fn nouveau(
+        acces: &'a ContexteAcces,
+        lecture: &'a LectureOutils,
+        trace: &'a Trace,
+    ) -> Self {
+        Self {
+            acces,
+            lecture,
+            trace,
+        }
+    }
+
+    /// Le contenu d'un rapport affiché, après l'écriture de sa trace de
+    /// consultation (règle R5 de `services`) — la seule voie d'un outil vers
+    /// un rapport.
+    pub async fn afficher<T>(&self, rapport: Rapport<T, Affichage>) -> T {
+        rapport.afficher(self.trace).await
+    }
+
+    /// La clé voit-elle les coordonnées des tiers (IBAN, QR-IBAN du créancier,
+    /// adresse d'envoi d'une facture) ? Selon [`PORTEE_DES_TIERS`] ; un
+    /// contexte de l'API, qui n'atteint pas `src/mcp/`, n'ouvre rien (bras
+    /// fermé, validation P2, R7).
+    pub fn tiers_visibles(&self) -> bool {
+        match self.acces.canal() {
+            Canal::Mcp { portees } => tiers_visibles(portees, PORTEE_DES_TIERS),
+            Canal::Api { .. } => false,
+        }
     }
 
     /// Le contexte d'accès que reçoivent les services.
@@ -113,6 +148,15 @@ pub enum ErreurOutil {
     /// Une limite est atteinte — à la 32-8b, trop d'envois en attente pour la
     /// clé (AC-B5) ; la 32-10a-iii la réemploie.
     LimiteAtteinte,
+    /// L'exercice demandé n'existe pas dans la société de la clé (Story 32-9a,
+    /// AC-a22) — aucun champ : l'identifiant demandé n'est pas recopié.
+    ExerciceIntrouvable,
+    /// La période demandée sort de l'exercice (AC-a22) — les dates de
+    /// l'exercice ne sont pas recopiées.
+    PeriodeHorsExercice,
+    /// Le compte demandé n'est pas lettrable : il n'a pas de postes ouverts
+    /// (AC-a22).
+    CompteNonLettrable,
 }
 
 /// Lit les arguments d'un outil. Le type `T` doit porter

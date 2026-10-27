@@ -19,8 +19,12 @@ use kesh_db::entities::Role;
 use kesh_db::entities::invoice::{Invoice, InvoiceLine};
 use kesh_db::entities::invoice_settlement::InvoiceSettlement;
 use kesh_db::errors::{DbError, map_db_error};
-use kesh_db::repositories::invoices::{
-    self, DueDatesSummary, InvoiceListQuery, InvoiceListResult, InvoiceSortBy, PausedFilter,
+use kesh_db::repositories::invoices::{self, InvoiceListQuery};
+
+/// Réexportés pour l'outil MCP de la 32-9a (C-32-9-25) — les types rendus et
+/// ceux de la demande : `src/mcp/` ne nomme pas `kesh_db::repositories`.
+pub use kesh_db::repositories::invoices::{
+    DueDatesSummary, InvoiceListItem, InvoiceListResult, InvoiceSortBy, PausedFilter,
     PaymentStatusFilter,
 };
 use kesh_db::repositories::settlement_cancellation::SettlementCancelHit;

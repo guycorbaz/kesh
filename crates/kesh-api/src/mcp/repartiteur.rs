@@ -280,6 +280,11 @@ fn issue_d_erreur(e: ErreurOutil) -> IssueAppel {
         ErreurOutil::Interne => IssueAppel::Erreur,
         ErreurOutil::TropVolumineux => IssueAppel::EnvoiTropVolumineux,
         ErreurOutil::LimiteAtteinte => IssueAppel::LimiteAtteinte,
+        // Story 32-9a (AC-a22) : les trois erreurs de demande gardent les
+        // issues existantes.
+        ErreurOutil::ExerciceIntrouvable => IssueAppel::Introuvable,
+        ErreurOutil::PeriodeHorsExercice => IssueAppel::ArgumentsInvalides,
+        ErreurOutil::CompteNonLettrable => IssueAppel::ArgumentsInvalides,
     }
 }
 
@@ -416,8 +421,11 @@ async fn traiter_appel(
     // fermé la connexion et rendu le permis pendant que le serveur poursuivait.
     let acces = cle.acces.clone();
     let lecture = etat.lecture.clone();
+    // Story 32-9a (AC-a7) : la trace de consultation des rapports, possédée
+    // par la tâche comme le reste.
+    let trace = etat.trace.clone();
     let tache = tokio::spawn(async move {
-        let ctx = ContexteMcp::nouveau(&acces, &lecture);
+        let ctx = ContexteMcp::nouveau(&acces, &lecture, &trace);
         outil.executer(&ctx, arguments).await
     });
     let issue = tokio::time::timeout(etat.registre.delai(), tache).await;
