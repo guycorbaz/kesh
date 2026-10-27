@@ -997,6 +997,16 @@ async fn rupture_d_exercice_a_la_frontiere_de_deux_pages(pool: MySqlPool) {
         p1.lines.last().expect("page 1 non vide").running_balance,
         "la rupture clôt l'exercice au dernier solde de la page précédente"
     );
+    // #778 — la clôture est le solde de l'exercice en cours à la fin de la
+    // période (le dernier solde progressif), non le cumul 720 ; elle ne dépend
+    // pas de la page. Le cumul reste dans les totaux.
+    assert_eq!(p1.closing, dec!(120.00), "clôture lue en page 1 (#778)");
+    assert_eq!(p2.closing, dec!(120.00), "clôture lue en page 2 (#778)");
+    assert_eq!(
+        p2.total_credit,
+        dec!(720.00),
+        "le cumul reste dans les totaux"
+    );
 }
 
 /// Page qui commence en plein milieu d'un exercice, sur un compte de RÉSULTAT à
@@ -1158,6 +1168,13 @@ async fn la_lecture_paginee_egale_la_lecture_entiere(pool: MySqlPool) {
             );
         }
 
+        // #778 — la clôture est le dernier solde progressif de la lecture entière.
+        assert_eq!(
+            entiere.closing,
+            attendu_lignes.last().expect("lignes").1,
+            "compte {compte} : clôture = dernier solde progressif"
+        );
+
         for taille in 1..=attendu_lignes.len() as i64 {
             let (lignes, ruptures) =
                 lecture_par_pages(&pool, seeded.company_id, &period, compte, taille).await;
@@ -1171,4 +1188,295 @@ async fn la_lecture_paginee_egale_la_lecture_entiere(pool: MySqlPool) {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// #777 et #778 — l'exercice de l'ouverture et la clôture d'un compte de
+// résultat quand la période franchit une fin d'exercice. Montants et dates
+// synthétiques.
+// ---------------------------------------------------------------------------
+
+/// Crée un exercice de la société seedée.
+async fn creer_exercice(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    name: &str,
+    start: NaiveDate,
+    end: NaiveDate,
+) -> i64 {
+    sqlx::query_scalar(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, 'Open', NOW(3), NOW(3)) RETURNING id",
+    )
+    .bind(seeded.company_id)
+    .bind(name)
+    .bind(start)
+    .bind(end)
+    .fetch_one(pool)
+    .await
+    .expect("exercice créé")
+}
+
+/// Trois exercices consécutifs : l'exercice seedé rétréci à 2024, puis 2025 et
+/// 2026. Rend `(fy2024, fy2025, fy2026)` (cf. `deux_exercices` pour le
+/// rétrécissement).
+async fn trois_exercices(pool: &MySqlPool, seeded: &SeededCompany) -> (i64, i64, i64) {
+    sqlx::query("UPDATE fiscal_years SET end_date = '2024-12-31' WHERE id = ?")
+        .bind(seeded.fiscal_year_id)
+        .execute(pool)
+        .await
+        .expect("exercice seedé rétréci à 2024");
+    let fy2025 = creer_exercice(pool, seeded, "FY 2025", ymd(2025, 1, 1), ymd(2025, 12, 31)).await;
+    let fy2026 = creer_exercice(pool, seeded, "FY 2026", ymd(2026, 1, 1), ymd(2026, 12, 31)).await;
+    (seeded.fiscal_year_id, fy2025, fy2026)
+}
+
+/// Les ruptures d'une section, réduites à ce qui se compare.
+fn ruptures(s: &LedgerSection) -> Vec<(NaiveDate, i64, Decimal)> {
+    s.fiscal_year_breaks.iter().map(rupture).collect()
+}
+
+/// #777 — le cas de l'issue. La période commence dans l'exercice 2025, dont
+/// l'ouverture porte une vente de 400 ; sa seule ligne tombe en 2026. Le compte
+/// de résultat doit clore 2025 à 400 avant cette ligne, puis repartir de zéro ;
+/// le compte de bilan, lui, ne change pas.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ouverture_de_resultat_close_avant_une_premiere_ligne_d_un_exercice_posterieur(
+    pool: MySqlPool,
+) {
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let caisse = seeded.accounts["1000"];
+    let ventes = seeded.accounts["3000"];
+    let (fy2025, fy2026) = deux_exercices(&pool, &seeded).await;
+
+    post_fy(
+        &pool,
+        &seeded,
+        fy2025,
+        ymd(2025, 3, 1),
+        caisse,
+        ventes,
+        dec!(400.00),
+        "vente 2025",
+    )
+    .await;
+    post_fy(
+        &pool,
+        &seeded,
+        fy2026,
+        ymd(2026, 2, 1),
+        caisse,
+        ventes,
+        dec!(100.00),
+        "vente 2026",
+    )
+    .await;
+
+    let period = LedgerPeriod::new(ymd(2025, 6, 1), ymd(2026, 12, 31)).expect("période");
+    let v = section_paginee(&pool, seeded.company_id, &period, ventes, 0, None).await;
+    assert_eq!(v.opening, dec!(400.00), "l'ouverture appartient à 2025");
+    assert_eq!(
+        ruptures(&v),
+        vec![(ymd(2026, 2, 1), fy2025, dec!(400.00))],
+        "une rupture clôt 2025 à 400 avant la première ligne, de 2026 (#777)"
+    );
+    assert_eq!(
+        soldes(&v),
+        vec![dec!(100.00)],
+        "le solde repart de zéro en 2026 : l'ouverture de 2025 ne s'y reporte pas (#777)"
+    );
+    assert_eq!(v.closing, dec!(100.00));
+
+    // Concordance : clos en 2026, le compte vaut ce que dit la balance de 2026.
+    let tb = generate_trial_balance(
+        &pool,
+        seeded.company_id,
+        &ReportPeriod {
+            fiscal_year_id: fy2026,
+            start_date: ymd(2026, 1, 1),
+            end_date: ymd(2026, 12, 31),
+        },
+    )
+    .await
+    .expect("balance 2026");
+    let row = tb
+        .rows
+        .iter()
+        .find(|r| r.account_id == ventes)
+        .expect("ventes à la balance 2026");
+    assert_eq!(v.closing, row.closing_balance, "clôture = balance de 2026");
+
+    // Compte de BILAN : la chaîne est continue, rien ne change.
+    let c = section_paginee(&pool, seeded.company_id, &period, caisse, 0, None).await;
+    assert_eq!(c.opening, dec!(400.00));
+    assert_eq!(soldes(&c), vec![dec!(500.00)]);
+    assert!(
+        c.fiscal_year_breaks.is_empty(),
+        "un compte de bilan ne rompt pas"
+    );
+    assert_eq!(c.closing, dec!(500.00));
+}
+
+/// Trois exercices : un compte de produits mouvementé dans chacun, un compte de
+/// charges dont la première ligne saute l'exercice du milieu (#777), et le
+/// compte de bilan qui en reçoit la contrepartie, continu.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn compte_de_resultat_sur_trois_exercices(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let caisse = seeded.accounts["1000"];
+    let ventes = seeded.accounts["3000"];
+    let charges = seeded.accounts["4000"];
+    let (fy2024, fy2025, fy2026) = trois_exercices(&pool, &seeded).await;
+
+    let mouvements = [
+        // Avant la période, dans l'exercice qui contient `from`.
+        (fy2024, ymd(2024, 2, 1), caisse, ventes, dec!(10.00)),
+        (fy2024, ymd(2024, 2, 1), charges, caisse, dec!(15.00)),
+        // Dans la période.
+        (fy2024, ymd(2024, 7, 1), caisse, ventes, dec!(20.00)),
+        (fy2025, ymd(2025, 3, 1), caisse, ventes, dec!(30.00)),
+        (fy2025, ymd(2025, 9, 1), caisse, ventes, dec!(40.00)),
+        (fy2026, ymd(2026, 5, 1), caisse, ventes, dec!(50.00)),
+        (fy2026, ymd(2026, 6, 1), charges, caisse, dec!(25.00)),
+    ];
+    for (fy, date, d, c, montant) in mouvements {
+        post_fy(&pool, &seeded, fy, date, d, c, montant, "mvt").await;
+    }
+
+    let period = LedgerPeriod::new(ymd(2024, 6, 1), ymd(2026, 12, 31)).expect("période");
+
+    let v = section_paginee(&pool, seeded.company_id, &period, ventes, 0, None).await;
+    assert_eq!(v.opening, dec!(10.00));
+    assert_eq!(
+        soldes(&v),
+        vec![dec!(30.00), dec!(30.00), dec!(70.00), dec!(50.00)]
+    );
+    assert_eq!(
+        ruptures(&v),
+        vec![
+            (ymd(2025, 3, 1), fy2024, dec!(30.00)),
+            (ymd(2026, 5, 1), fy2025, dec!(70.00)),
+        ]
+    );
+    assert_eq!(v.closing, dec!(50.00), "clôture = solde de 2026 (#778)");
+    assert_eq!(
+        v.total_credit,
+        dec!(140.00),
+        "le cumul reste dans les totaux"
+    );
+
+    let ch = section_paginee(&pool, seeded.company_id, &period, charges, 0, None).await;
+    assert_eq!(ch.opening, dec!(15.00));
+    assert_eq!(
+        ruptures(&ch),
+        vec![(ymd(2026, 6, 1), fy2024, dec!(15.00))],
+        "la première ligne, de 2026, clôt l'exercice de `from` (#777)"
+    );
+    assert_eq!(soldes(&ch), vec![dec!(25.00)]);
+    assert_eq!(ch.closing, dec!(25.00));
+
+    let c = section_paginee(&pool, seeded.company_id, &period, caisse, 0, None).await;
+    assert_eq!(c.opening, dec!(-5.00));
+    assert_eq!(
+        soldes(&c),
+        vec![
+            dec!(15.00),
+            dec!(45.00),
+            dec!(85.00),
+            dec!(135.00),
+            dec!(110.00)
+        ]
+    );
+    assert!(c.fiscal_year_breaks.is_empty());
+    assert_eq!(c.closing, dec!(110.00));
+
+    // Les pages rendent ce que rend la lecture entière, ruptures comprises.
+    for (compte, entiere) in [(ventes, &v), (charges, &ch), (caisse, &c)] {
+        let attendu: Vec<(i64, Decimal)> = entiere
+            .lines
+            .iter()
+            .map(|l| (l.line_id, l.running_balance))
+            .collect();
+        for taille in 1..=attendu.len() as i64 {
+            let (lignes, r) =
+                lecture_par_pages(&pool, seeded.company_id, &period, compte, taille).await;
+            assert_eq!(lignes, attendu, "compte {compte}, pages de {taille}");
+            assert_eq!(r, ruptures(entiere), "compte {compte}, pages de {taille}");
+        }
+    }
+}
+
+/// #778 — la clôture d'un compte de résultat à cheval sur deux exercices est le
+/// solde de l'exercice en cours à la fin de la période, même quand aucune ligne
+/// de cet exercice ne figure dans la période : la fin d'exercice franchie après
+/// la dernière ligne est alors rendue, et la clôture vaut zéro.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cloture_d_un_compte_de_resultat_a_cheval_sur_deux_exercices(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let caisse = seeded.accounts["1000"];
+    let ventes = seeded.accounts["3000"];
+    let (fy2025, _fy2026) = deux_exercices(&pool, &seeded).await;
+
+    for (date, montant, label) in [
+        (ymd(2025, 3, 1), dec!(400.00), "avant la période"),
+        (ymd(2025, 7, 1), dec!(100.00), "v1"),
+        (ymd(2025, 9, 1), dec!(200.00), "v2"),
+    ] {
+        post_fy(&pool, &seeded, fy2025, date, caisse, ventes, montant, label).await;
+    }
+
+    // Deux lignes en 2025, aucune en 2026.
+    let period = LedgerPeriod::new(ymd(2025, 6, 1), ymd(2026, 6, 30)).expect("période");
+    let v = section_paginee(&pool, seeded.company_id, &period, ventes, 0, None).await;
+    assert_eq!(v.opening, dec!(400.00));
+    assert_eq!(soldes(&v), vec![dec!(500.00), dec!(700.00)]);
+    assert_eq!(
+        ruptures(&v),
+        vec![(ymd(2026, 1, 1), fy2025, dec!(700.00))],
+        "la fin d'exercice franchie après la dernière ligne est rendue, \
+         datée du premier jour de 2026"
+    );
+    assert_eq!(
+        v.closing,
+        Decimal::ZERO,
+        "clôture = solde de l'exercice en cours à la fin de la période (#778)"
+    );
+    assert_eq!(
+        v.total_credit,
+        dec!(300.00),
+        "le cumul reste dans les totaux"
+    );
+    assert!(!v.unnatural_balance);
+
+    // Paginée : la rupture finale n'apparaît que sur la dernière page, et la
+    // clôture ne dépend pas de la page.
+    let p1 = section_paginee(&pool, seeded.company_id, &period, ventes, 0, Some(1)).await;
+    let p2 = section_paginee(&pool, seeded.company_id, &period, ventes, 1, Some(1)).await;
+    let p3 = section_paginee(&pool, seeded.company_id, &period, ventes, 2, Some(1)).await;
+    assert!(p1.fiscal_year_breaks.is_empty(), "pas en page 1");
+    assert_eq!(ruptures(&p2), ruptures(&v), "en dernière page");
+    assert!(p3.fiscal_year_breaks.is_empty(), "pas au-delà de la fin");
+    for p in [&p1, &p2, &p3] {
+        assert_eq!(p.closing, Decimal::ZERO);
+    }
+
+    // Aucune ligne dans la période : l'ouverture se clôt quand même, et la
+    // clôture vaut zéro.
+    let vide = LedgerPeriod::new(ymd(2025, 10, 1), ymd(2026, 6, 30)).expect("période");
+    let s = section_paginee(&pool, seeded.company_id, &vide, ventes, 0, None).await;
+    assert_eq!(s.opening, dec!(700.00));
+    assert!(s.lines.is_empty());
+    assert_eq!(ruptures(&s), vec![(ymd(2026, 1, 1), fy2025, dec!(700.00))]);
+    assert_eq!(s.closing, Decimal::ZERO);
+
+    // Période d'un seul exercice : clôture = ouverture + mouvements, sans rupture.
+    let un_seul = LedgerPeriod::new(ymd(2025, 6, 1), ymd(2025, 12, 31)).expect("période");
+    let s = section_paginee(&pool, seeded.company_id, &un_seul, ventes, 0, None).await;
+    assert!(s.fiscal_year_breaks.is_empty());
+    assert_eq!(s.closing, dec!(700.00));
+
+    // Compte de bilan sur la même période : continu.
+    let c = section_paginee(&pool, seeded.company_id, &period, caisse, 0, None).await;
+    assert!(c.fiscal_year_breaks.is_empty());
+    assert_eq!(c.closing, dec!(700.00));
 }

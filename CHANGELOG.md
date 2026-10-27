@@ -75,6 +75,22 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   qui la précèdent, avec les mêmes remises à zéro aux exercices franchis ; une lecture page après page rend, ligne
   pour ligne, les soldes d'une lecture entière. L'écran et les exports PDF et CSV, qui ne paginent pas, n'étaient pas
   touchés.
+- **Grand livre — l'ouverture d'un compte de produits ou de charges ne se reporte plus dans l'exercice suivant**
+  ([#777](https://github.com/guycorbaz/kesh/issues/777)). Quand la période commençait dans un exercice et que la
+  première écriture du compte tombait dans le suivant, le solde d'ouverture s'ajoutait aux mouvements du nouvel
+  exercice, sans ligne de rupture : par exemple, une ouverture de 400 suivie d'une vente de 100 l'exercice suivant
+  affichait un solde de 500 au lieu de 100. Une rupture clôt désormais l'exercice de l'ouverture avant la première
+  écriture, et le solde repart de zéro — à l'écran, dans les exports PDF et CSV, et par l'API. Les comptes d'actif et
+  de passif n'étaient pas touchés.
+- **Grand livre — le solde de clôture d'un compte de produits ou de charges suit les fins d'exercice**
+  ([#778](https://github.com/guycorbaz/kesh/issues/778)). Sur une période qui franchit une fin d'exercice, le solde
+  de clôture valait l'ouverture plus tous les mouvements de la période, sans la remise à zéro que le solde progressif
+  appliquait — 720 là où la dernière ligne affichait 120. Il est désormais le **solde de l'exercice en cours à la fin
+  de la période** : le dernier solde progressif, remis à zéro à chaque fin d'exercice franchie, et zéro si cet
+  exercice n'a aucune écriture dans la période. Le cumul de la période reste lisible dans le total des mouvements. Une
+  fin d'exercice franchie après la dernière écriture a désormais elle aussi sa ligne de rupture, et l'export CSV écrit
+  chaque rupture comme une ligne du tableau. Pour un compte d'actif ou de passif, rien ne change. Le manuel
+  utilisateur le dit, § *Grand livre*.
 - **Manuels et brochure : la répétition d'une clôture dit vrai, et les signes s'impriment**
   ([#714](https://github.com/guycorbaz/kesh/issues/714)). Dans le manuel d'administration, § *Répéter une clôture sur
   une copie*, sans qu'aucune commande change : ce que les deux exports écrivent sur la production (journal d'audit,

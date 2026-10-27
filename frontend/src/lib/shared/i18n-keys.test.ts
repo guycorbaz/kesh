@@ -729,7 +729,13 @@ const ATTENDU = {
 	// pages `routes/(app)/admin/mcp/sends/` 0 → 0 et `routes/(app)/+layout.svelte` inchangé
 	// (l'entrée de menu passe par `i18nKey`, `FAMILLES_RESOLUES['nav-']`). Que des
 	// littéraux : les autres compteurs inchangés.
-	sitesTotal: 2393,
+	// Correctif #777/#778 (revue P1) : **2393 → 2394** (+1), recompté par
+	// `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('` aux deux bornes (`origin/main` `782bbc2f` → HEAD
+	// de `fix/777-778-grand-livre-exercices`), périmètre : les fichiers touchés par la
+	// branche — `features/reports/GeneralLedgerView.svelte` 21 → 22 (compte sans mouvement
+	// dont l'ouverture se clôt dans la période, `reports-ledger-no-movement-closed`). Un
+	// littéral : les autres compteurs inchangés.
+	sitesTotal: 2394,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

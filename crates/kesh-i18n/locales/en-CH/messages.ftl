@@ -2605,6 +2605,7 @@ reports-ledger-unnatural = Balance against account nature
 reports-ledger-unnatural-hint = This account shows a balance on the side opposite to its nature. Worth checking.
 reports-ledger-fy-break = Fiscal year close — the balance restarts at zero
 reports-ledger-no-movement = No movement in this period. The opening balance remains outstanding.
+reports-ledger-no-movement-closed = No movement in this period. The fiscal year of the opening balance closes within the period: the balance restarts at zero.
 reports-ledger-empty = No account to display for this period.
 reports-ledger-open-from-balance = See the detail in the general ledger
 reports-ledger-truncated = Only the first { $shown } of { $total } lines are shown. The export contains them all.
