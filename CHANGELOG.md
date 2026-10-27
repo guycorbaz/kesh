@@ -41,6 +41,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Corrigé
 
+- **Grand livre — le solde progressif est juste au-delà de la première page**
+  ([#775](https://github.com/guycorbaz/kesh/issues/775)). Lu par l'API avec `offset`, chaque page repartait du solde
+  d'ouverture de la période, sans les lignes des pages précédentes : toute page autre que la première affichait un
+  solde progressif faux, et, sur un compte de produits ou de charges, une fin d'exercice tombant pile entre deux pages
+  n'était pas signalée et le solde n'y repartait pas de zéro. Une page part désormais de l'ouverture plus les lignes
+  qui la précèdent, avec les mêmes remises à zéro aux exercices franchis ; une lecture page après page rend, ligne
+  pour ligne, les soldes d'une lecture entière. L'écran et les exports PDF et CSV, qui ne paginent pas, n'étaient pas
+  touchés.
 - **Manuels et brochure : la répétition d'une clôture dit vrai, et les signes s'impriment**
   ([#714](https://github.com/guycorbaz/kesh/issues/714)). Dans le manuel d'administration, § *Répéter une clôture sur
   une copie*, sans qu'aucune commande change : ce que les deux exports écrivent sur la production (journal d'audit,
