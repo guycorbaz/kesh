@@ -69,6 +69,18 @@ macro_rules! champ_sur_primitif {
 // de `kesh_version` (C-32-9-40).
 champ_sur_primitif!(i32, i64, u32, u64, bool, f64);
 
+// Les autres primitifs que `x as isize` accepte — `char` d'abord, qui porterait
+// un caractère lu, brut et sans `rendre_visible` : scellés **sans** `ChampSur`.
+// `champ_enum!(char)` poserait alors une seconde implémentation du sceau et ne
+// compile pas (E0119) ; les six primitifs de `champ_sur_primitif!` sont déjà
+// fermés de la même façon (revue de code P1, B2).
+macro_rules! scelle_seul {
+    ($($t:ty),* $(,)?) => {
+        $( impl scelle::Scelle for $t {} )*
+    };
+}
+scelle_seul!(char, i8, i16, i128, isize, u8, u16, u128, usize, f32);
+
 impl<T: ChampSur> scelle::Scelle for Option<T> {}
 impl<T: ChampSur> ChampSur for Option<T> {}
 impl<T: ChampSur> scelle::Scelle for Vec<T> {}
@@ -103,7 +115,8 @@ pub(in crate::mcp) use sortie;
 
 /// Admet une énumération **sans champ** qui dérive `Serialize` : implémente
 /// `ChampSur` et pose `const _: fn(E) -> isize = |x| x as isize;`, qui ne
-/// compile que pour une énumération sans champ (Ma3b).
+/// compile que pour une énumération sans champ (Ma3b) — ou pour un primitif,
+/// que le sceau déjà posé ferme (`scelle_seul!`, E0119, mutation Ma31).
 macro_rules! champ_enum {
     ($($t:ty),* $(,)?) => {
         $(

@@ -74,10 +74,7 @@ impl<'a> ContexteMcp<'a> {
     /// contexte de l'API, qui n'atteint pas `src/mcp/`, n'ouvre rien (bras
     /// fermé, validation P2, R7).
     pub fn tiers_visibles(&self) -> bool {
-        match self.acces.canal() {
-            Canal::Mcp { portees } => tiers_visibles(portees, PORTEE_DES_TIERS),
-            Canal::Api { .. } => false,
-        }
+        tiers_visibles_du_canal(self.acces.canal())
     }
 
     /// Le contexte d'accès que reçoivent les services.
@@ -88,6 +85,16 @@ impl<'a> ContexteMcp<'a> {
     /// La lecture des outils, en lecture seule.
     pub fn lecture(&self) -> &Lecture {
         &self.lecture.0
+    }
+}
+
+/// La règle de [`ContexteMcp::tiers_visibles`], sur le canal seul — pure, pour
+/// que le bras `Canal::Api`, inatteignable par un outil, soit éprouvé
+/// (`tiers_visibles_selon_le_canal`, revue de code P1, A3, mutation Ma36).
+fn tiers_visibles_du_canal(canal: &Canal) -> bool {
+    match canal {
+        Canal::Mcp { portees } => tiers_visibles(portees, PORTEE_DES_TIERS),
+        Canal::Api { .. } => false,
     }
 }
 
@@ -167,4 +174,26 @@ pub fn arguments<T: DeserializeOwned>(valeur: serde_json::Value) -> Result<T, Er
         argument: "(arguments)",
         motif: MotifArgument::Invalide,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use kesh_db::entities::Role;
+
+    use super::*;
+
+    /// AC-a6 : un contexte de l'API n'ouvre aucune coordonnée de tiers, quel
+    /// que soit le rôle ; sous le MCP, `contacts:read` les ouvre (témoin).
+    #[test]
+    fn tiers_visibles_selon_le_canal() {
+        for role in [Role::Admin, Role::Comptable, Role::Consultation] {
+            assert!(!tiers_visibles_du_canal(&Canal::Api { role }), "{role:?}");
+        }
+        let avec = BTreeSet::from([Portee::InvoicesRead, Portee::ContactsRead]);
+        assert!(tiers_visibles_du_canal(&Canal::Mcp { portees: avec }));
+        let sans = BTreeSet::from([Portee::InvoicesRead]);
+        assert!(!tiers_visibles_du_canal(&Canal::Mcp { portees: sans }));
+    }
 }

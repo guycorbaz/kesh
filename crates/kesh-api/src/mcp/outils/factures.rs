@@ -5,7 +5,8 @@
 //! d'une facture est une coordonnée de tiers ([`Tiers`]), masquée sans
 //! `contacts:read`. Ne sont pas rendus : le PDF figé (chemin, empreinte,
 //! langue, instant), l'aperçu d'arrondi d'un brouillon, les règlements
-//! (C-32-9-11).
+//! (C-32-9-11). Le PDF figé n'atteint même pas l'outil :
+//! `factures::detail_sans_fichier` le retire par le typage (C-32-9-49).
 
 use chrono::NaiveDate;
 use serde::Deserialize;
@@ -451,7 +452,7 @@ impl McpTool for KeshFacture {
     ) -> FuturOutil<'a> {
         Box::pin(async move {
             let ArgumentsDetail { id } = arguments(valeur)?;
-            let fiche = factures::detail(ctx.acces(), ctx.lecture(), id)
+            let fiche = factures::detail_sans_fichier(ctx.acces(), ctx.lecture(), id)
                 .await
                 .map_err(depuis_app_error)?;
             let f = fiche.facture;

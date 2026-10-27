@@ -858,6 +858,11 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
     (`mcp.tool_called`), ou deux pour un outil de rapport (AC-a7). Sous clé `required`, la même chose, `mcp_sends` en
     plus (une ligne). L'outil s'exécute sur `EtatMcp.lecture` (pool `READ ONLY`, 32-6) : une écriture sur la lecture
     rendrait `Interne`, que le test verrait (`isError: true`).
+    *(Annoté le 2026-10-27, revue de code P1, A9 et B1 : `CHECKSUM TABLE` n'est pas stable sur `accounts` (colonne
+    générée virtuelle) ; la mesure est devenue, par table, `COUNT(*)` et `BIT_XOR(CRC32(CONCAT_WS('|', …)))` des seules
+    colonnes stockées (C-32-9-45), avec un témoin de stabilité, un **témoin positif** — un `UPDATE` direct d'une colonne
+    stockée fait paraître sa table — et, après chaque appel, `audit_log` exigé parmi les tables changées. Angle mort
+    écrit : l'échange des contenus de deux lignes, un `|` déplacé d'une colonne à la voisine.)*
 20. **AC-a20 — la société** (validation P1, F8 ; validation P2, R14, R16, R1). Base : la société A par `seed_demo` (qui
     exige une société unique, `kesh-seed/src/lib.rs:215`), **puis** la société B par `kesh_seed::pieges::societe_complete`
     (AC-a14) ; `semer(…, 'A')` et `semer(…, 'B')`. `outils_bornes_a_la_societe` : sous une clé de A (toutes portées de
@@ -1157,7 +1162,7 @@ Chaque mutation se joue sur une copie, se constate tuée par le test **nommé**,
   n'écrit (Q11), ce qui borne ce qu'une injection peut faire **dans Kesh** ; elle peut encore faire écrire l'agent
   **ailleurs** (sa réponse, un autre serveur MCP de la même session).
 - **Les noms des tiers et les champs libres ne sont pas masqués.** Kesh écrit lui-même le nom du fournisseur dans le
-  libellé d'une écriture d'achat ou de règlement, celui du tiers dans un avoir, celui du client dans un encaissement rapproché (`reconciliation.rs:2734`), et celui du client si le gabarit le
+  libellé d'une écriture d'achat ou de règlement, celui du tiers dans un avoir, celui du client dans un encaissement rapproché (`reconciliation.rs:2734`), celui de la contrepartie bancaire dans une écriture de règle de rapprochement (`reconciliation.rs:4130`, revue de code P1, E6), et celui du client si le gabarit le
   demande (§ *Champs libres qui restent libres*) ; un libellé, une description, des conditions peuvent aussi porter à la
   main un nom ou un IBAN. Tout cela part sous `books:read` ou `invoices:read`, enveloppé. `Tiers` ne masque que trois
   coordonnées structurées ; la séparation de `contacts:read` n'est pas une protection des données personnelles au sens
@@ -1190,6 +1195,14 @@ Chaque mutation se joue sur une copie, se constate tuée par le test **nommé**,
   bornes) ne dit pas lequel — l'agent se guide sur le schéma.
 - **Deux sociétés** : l'installation n'en porte qu'une (`user-manual.tex:190`) ; le test à deux sociétés éprouve le
   cloisonnement des services, non un usage réel.
+- **Les formes que les gardes neuves ne voient pas** (revue de code P1, E5, B2, A1 ; écrites aussi en tête des
+  tests) : pour `mcp_sans_fichier`, un alias de `std::fs`/`tokio::fs` posé **hors** de `src/mcp/` puis réexporté, ou
+  un champ de chemin nommé sans `storage_path` (`pdf_path`) — c'est le typage (`detail_sans_fichier`, C-32-9-49) qui
+  l'écarte ; pour `trace_confinee_dans_outil`, un alias de `Trace` posé hors de `src/mcp/`, et une déstructuration
+  `let Self { trace, .. } = self;` que le compte « un seul `self.trace` » ne voit pas. `champ_enum!` n'admet plus de
+  primitif (`char` scellé sans `ChampSur`, E0119, Ma31) ; aucune garde n'inventorie ses sites.
+- **La lecture seule est mesurée par somme de contrôle** (`aucun_outil_n_ecrit`, C-32-9-45) : l'échange des contenus
+  de deux lignes d'une table, ou un `|` déplacé d'une colonne à la voisine, ne change pas la somme.
 
 ## Dev Notes
 

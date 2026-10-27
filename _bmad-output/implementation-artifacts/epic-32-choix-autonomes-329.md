@@ -505,3 +505,63 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
   `ArgumentsInvalides` (argument `limit` ou `offset`), avant tout appel du service — l'agent se guide sur le schéma ;
   le service reçoit toujours une valeur dans ses bornes.
 - **Réversible** : oui.
+
+## Choix de la remédiation de la revue de code P1 de la 32-9a (2026-10-27, Opus 5.5)
+
+### C-32-9-49 — La facture cliente atteint `kesh_facture` sans son PDF figé
+
+- **Contexte** (revue de code P1, A1) : `kesh_facture` recevait `FicheFacture`, dont l'`Invoice` porte
+  `pdf_storage_path` (`kesh-db/src/entities/invoice.rs`) : rien n'était rendu, mais la phrase de l'AC-a10 et de
+  l'AC-a24, « aucun type qui porte un chemin de fichier n'atteint `src/mcp/` » (C-32-9-27), était fausse ; et le motif
+  `\bstorage_path\b` de `mcp_sans_fichier` ne voyait pas `pdf_storage_path` (`_` est un caractère de mot).
+- **Retenu** : la forme la plus simple, sur le modèle de `factures_fournisseur::detail_sans_fichier` —
+  `factures::detail_sans_fichier`, qui appelle `detail` (même exigence, même lecture) et projette en
+  `FicheFactureSansFichier` / `FactureSansFichier`, sans les quatre colonnes du PDF figé (ni `version`, `created_at`,
+  `updated_at`, `company_id`, que l'outil ne rend pas). La déstructuration d'`Invoice` est **exhaustive**, sans `..` :
+  un champ ajouté à l'entité ne compile pas tant qu'on n'a pas décidé s'il atteint l'outil. Le motif de la garde passe
+  à `storage_path\b`, sans frontière initiale, avec ses témoins rouges (`pdf_storage_path`, imports groupés `use
+  std::{fs, …}` — E5) et verts.
+- **Écartées** : amender la phrase de l'AC (la propriété est voulue et peu coûteuse à tenir) ; mettre
+  `pdf_storage_path` à `None` dans l'outil (le type le porterait encore).
+- **Réversible** : oui.
+
+### C-32-9-50 — `champ_enum!` fermé aux primitifs par le sceau
+
+- **Contexte** (revue de code P1, B2) : le contrôle `|x| x as isize` de `champ_enum!` compile aussi pour `char` et
+  tout type numérique ; `champ_enum!(char)` aurait rendu un caractère lu, brut et sans `rendre_visible`.
+- **Retenu** : `scelle_seul!(char, i8, i16, i128, isize, u8, u16, u128, usize, f32)` pose le sceau **sans** `ChampSur`
+  sur les primitifs que `champ_sur_primitif!` ne couvre pas : `champ_enum!` d'un primitif poserait une seconde
+  implémentation du sceau (E0119). Mutation Ma31, jouée : refusée à la compilation.
+- **Écartées** : une garde lexicale figeant la liste des types passés à `champ_enum!` (trois sites) — plus fragile, et
+  le compilateur ferme la classe entière.
+- **Réversible** : oui.
+
+### C-32-9-51 — La fixture des tailles : écritures à trois lignes
+
+- **Contexte** (revue de code P1, A5) : la fiche prescrit « une écriture à trois lignes » ; `fixture_tailles` en
+  posait deux, d'où l'écart « écriture 691 contre 922 » non expliqué.
+- **Retenu** : K2 au débit, K1 et CR au crédit (6,17 chacun). Mesuré : élément d'écriture **893** octets (fiche 922,
+  − 3 %) ; défaut 12 → 11 057 o, maximum 22 → 19 987 o ; grand livre 15 → 11 196 o, 30 → 21 546 o ; tous sous 13 312 et
+  23 552. Les mesures sont versées au journal `kesh-gate-logs/329a-tailles-p1.log` (`--no-capture`).
+- **Réversible** : oui.
+
+### C-32-9-52 — La règle des tiers par canal, extraite en fonction pure
+
+- **Contexte** (revue de code P1, A3) : le bras `Canal::Api → false` de `ContexteMcp::tiers_visibles` n'était éprouvé
+  par aucun test ; un test qui construirait un `ContexteMcp` rougirait la garde
+  `contexte_mcp_construit_par_le_repartiteur_seul`.
+- **Retenu** : `tiers_visibles_du_canal(&Canal)`, privée à `mcp/outil.rs`, que `tiers_visibles` appelle ; test
+  unitaire `tiers_visibles_selon_le_canal` (trois rôles de l'API fermés ; sous le MCP, `contacts:read` ouvre, son
+  absence ferme). Mutation Ma36.
+- **Réversible** : oui.
+
+### C-32-9-53 — Le grand livre paginé éprouvé par l'outil, sur deux exercices
+
+- **Contexte** (revue de code P1, E1, E2) : #775 (solde progressif faux au-delà de la première page) est corrigé dans
+  `kesh-report` par `main` ; l'outil, qui pagine à 15 lignes, n'avait aucun test d'`offset`.
+- **Retenu** : `grand_livre_pagine_egal_a_la_lecture_entiere` — un exercice précédent posé par `INSERT` dans le test
+  (comme `deux_exercices` de `kesh-report`), douze écritures K2 / K1 réparties sur les deux exercices ; pour K1 (bilan)
+  et K2 (résultat, une rupture), chaque taille de page de 1 à 7 relit le compte page après page et compare
+  (ligne, solde courant) et ruptures à la lecture d'un seul tenant. Et `pagination_transmise` exige, pour les neuf
+  outils paginés, que la page `offset = 1` d'un élément égale le second élément de la page `offset = 0` de deux.
+- **Réversible** : oui.

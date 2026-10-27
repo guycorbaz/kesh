@@ -13,7 +13,7 @@
 //! change pas le plafond de l'écran. Aucun dépôt n'écrête : la borne de ce
 //! service est la **seule**.
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
 use kesh_core::listing::SortDirection;
 use kesh_db::entities::Role;
 use kesh_db::entities::invoice::{Invoice, InvoiceLine};
@@ -308,6 +308,108 @@ pub async fn detail(
         montant_regle,
         reste_du,
         arrondi_5_centimes,
+    })
+}
+
+/// L'en-tête d'une facture **sans son PDF figé** (Story 32-9a, revue de code
+/// P1, A1 ; C-32-9-49) : les champs d'[`Invoice`] moins `pdf_storage_path`,
+/// `pdf_sha256`, `pdf_frozen_at` et `pdf_language` (ni `version`, `created_at`,
+/// `updated_at`, `company_id`, que l'outil ne rend pas). C'est le type que
+/// reçoit l'outil MCP `kesh_facture` : aucun chemin de fichier n'atteint
+/// `src/mcp/` (C-32-9-27), par le typage et non par convention.
+#[derive(Debug)]
+pub struct FactureSansFichier {
+    pub id: i64,
+    pub contact_id: i64,
+    pub invoice_number: Option<String>,
+    pub status: String,
+    pub date: NaiveDate,
+    pub due_date: Option<NaiveDate>,
+    pub payment_terms: Option<String>,
+    pub total_amount: Decimal,
+    pub rounding_amount: Decimal,
+    pub journal_entry_id: Option<i64>,
+    pub paid_at: Option<NaiveDateTime>,
+    pub emailed_at: Option<NaiveDateTime>,
+    pub emailed_to: Option<String>,
+    pub project_id: Option<i64>,
+    pub dunning_paused_at: Option<NaiveDateTime>,
+    pub dunning_paused_note: Option<String>,
+}
+
+/// La fiche d'une facture projetée pour le MCP : [`FactureSansFichier`], les
+/// lignes, le réglé et le reste dû.
+#[derive(Debug)]
+pub struct FicheFactureSansFichier {
+    /// L'en-tête, sans le PDF figé.
+    pub facture: FactureSansFichier,
+    /// Ses lignes.
+    pub lignes: Vec<InvoiceLine>,
+    /// Total déjà réglé.
+    pub montant_regle: Decimal,
+    /// Reste dû.
+    pub reste_du: Decimal,
+}
+
+/// [`detail`] — même exigence, même lecture —, projeté en
+/// [`FicheFactureSansFichier`]. ⚠️ La déstructuration d'[`Invoice`] est
+/// **exhaustive**, sans `..` : un champ ajouté à l'entité (un second chemin de
+/// fichier, par exemple) ne compile pas ici tant qu'on n'a pas décidé s'il
+/// atteint l'outil.
+pub async fn detail_sans_fichier(
+    acces: &ContexteAcces,
+    lecture: &Lecture,
+    id: i64,
+) -> Result<FicheFactureSansFichier, AppError> {
+    let fiche = detail(acces, lecture, id).await?;
+    let Invoice {
+        id,
+        company_id: _,
+        contact_id,
+        invoice_number,
+        status,
+        date,
+        due_date,
+        payment_terms,
+        total_amount,
+        rounding_amount,
+        journal_entry_id,
+        paid_at,
+        emailed_at,
+        emailed_to,
+        project_id,
+        dunning_paused_at,
+        dunning_paused_note,
+        pdf_storage_path: _,
+        pdf_sha256: _,
+        pdf_frozen_at: _,
+        pdf_language: _,
+        version: _,
+        created_at: _,
+        updated_at: _,
+    } = fiche.facture;
+    Ok(FicheFactureSansFichier {
+        facture: FactureSansFichier {
+            id,
+            contact_id,
+            invoice_number,
+            status,
+            date,
+            due_date,
+            payment_terms,
+            total_amount,
+            rounding_amount,
+            journal_entry_id,
+            paid_at,
+            emailed_at,
+            emailed_to,
+            project_id,
+            dunning_paused_at,
+            dunning_paused_note,
+        },
+        lignes: fiche.lignes,
+        montant_regle: fiche.montant_regle,
+        reste_du: fiche.reste_du,
     })
 }
 

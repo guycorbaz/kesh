@@ -894,6 +894,13 @@ fn champ_sur_en_un_lieu() {
 /// (`mcp/mod.rs`) ; dans le répartiteur, aucun (il passe `&trace`, une copie
 /// d'`etat.trace`). Toute autre ligne rougit : `-> Option<&Trace>`,
 /// `-> impl Deref<Target = Trace>`, une fermeture `f(&Trace)`, `pub trace`.
+///
+/// ⚠️ Angles morts écrits (revue de code P1, E5) : un alias de type posé
+/// **hors** de `src/mcp/` (`pub type Tr = poignees::Trace;` dans un service),
+/// puis nommé dans `outil.rs`, échappe au jeton ; et le compte « un seul
+/// emploi de `self.trace` » ne voit pas une déstructuration
+/// (`let Self { trace, .. } = self;`). Le champ reste privé : la revue lit
+/// `outil.rs`, qui est court.
 #[test]
 fn trace_confinee_dans_outil() {
     let motif = re(r"\bTrace\b");
@@ -979,27 +986,44 @@ fn sorties_sans_serialisation_parallele() {
 }
 
 /// `mcp_sans_fichier` — rien dans `src/mcp/` ne lit un fichier. Formes :
-/// `std::fs`, `tokio::fs`, `File::`, `OpenOptions`, `read_to_string`,
-/// `document_storage`, `storage_path`. Le typage fait le reste : aucun type qui
-/// porte `storage_path` n'est rendu à `src/mcp/` (`detail_sans_fichier`).
+/// `std::fs`, `tokio::fs`, leurs imports groupés (`use std::{fs, io};`, revue
+/// de code P1, E5), `File::`, `OpenOptions`, `read_to_string`,
+/// `document_storage`, et tout identifiant **terminé** par `storage_path`
+/// (`pdf_storage_path` compris : sans frontière initiale, revue de code P1,
+/// A1). Le typage fait le reste : aucun type qui porte un chemin de fichier
+/// n'est rendu à `src/mcp/` (`factures_fournisseur::detail_sans_fichier`,
+/// `factures::detail_sans_fichier`, C-32-9-49).
+///
+/// ⚠️ Angles morts écrits : un alias posé **hors** de `src/mcp/` (`use
+/// tokio::fs as disque;` dans un service, réexporté) ; un champ de chemin
+/// nommé autrement (`pdf_path`, `chemin`) — le typage, non le motif, l'écarte.
 #[test]
 fn mcp_sans_fichier() {
     let motif = re(
-        r"\bstd\s*::\s*fs\b|\btokio\s*::\s*fs\b|\bFile\s*::|\bOpenOptions\b|\bread_to_string\b|\bdocument_storage\b|\bstorage_path\b",
+        r"\bstd\s*::\s*fs\b|\btokio\s*::\s*fs\b|\b(std|tokio)\s*::\s*\{[^}]*\bfs\b|\bFile\s*::|\bOpenOptions\b|\bread_to_string\b|\bdocument_storage\b|storage_path\b",
     );
-    assert_eq!(
-        sites_factices(
-            "    let o = tokio::fs::read(&piece.storage_path).await;",
-            &motif
-        ),
-        1,
-        "rouge : Ma23"
-    );
-    assert_eq!(
-        sites_factices("    piece_id: Option<i64>,", &motif),
-        0,
-        "vert (factice, dit tel)"
-    );
+    for rouge in [
+        // Ma23
+        "    let o = tokio::fs::read(&piece.storage_path).await;",
+        // A1 : le chemin du PDF figé d'une facture cliente.
+        "    let p = f.pdf_storage_path;",
+        // E5 : les imports groupés.
+        "use std::{fs, io};",
+        "use tokio::{fs, io::AsyncReadExt};",
+    ] {
+        assert_eq!(sites_factices(rouge, &motif), 1, "rouge : {rouge}");
+    }
+    for vert in [
+        "    piece_id: Option<i64>,",
+        // l'import groupé de `sortie.rs`, sans `fs`
+        "use std::{collections::BTreeSet, fmt};",
+    ] {
+        assert_eq!(
+            sites_factices(vert, &motif),
+            0,
+            "vert (factice, dit tel) : {vert}"
+        );
+    }
     let trouves = sites(&sources_src(), |f| f.starts_with("mcp/"), &motif);
     assert!(trouves.is_empty(), "{trouves:?}");
 }

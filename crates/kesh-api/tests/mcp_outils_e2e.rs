@@ -327,6 +327,12 @@ async fn sommes_de_controle(pool: &MySqlPool) -> BTreeMap<String, (i64, Option<i
     // différaient, relevé du 2026-10-27, C-32-9-45) : la somme porte sur les
     // seules colonnes **stockées**, ligne par ligne (CRC32 combinés par XOR,
     // et le nombre de lignes).
+    //
+    // ⚠️ Angles morts écrits (revue de code P1, B1, A9) : le XOR ne voit pas
+    // l'échange des contenus de deux lignes d'une même table, ni un `|`
+    // déplacé d'une colonne à la voisine ; une écriture qui ferait l'un ou
+    // l'autre, et rien d'autre, passerait. Le témoin positif de
+    // `aucun_outil_n_ecrit` établit qu'un UPDATE ordinaire est vu.
     let mut v = BTreeMap::new();
     for t in tables {
         let colonnes: Vec<String> = sqlx::query_scalar(
@@ -363,6 +369,23 @@ async fn aucun_outil_n_ecrit(pool: MySqlPool) {
     let a = societe_piegee(&pool, "Société A 329", 'A').await;
     let exempte = cle_de(&pool, &a, &LECTURE, SendValidation::Exempt).await;
     let b = banc(&pool);
+    // Témoin positif de la mesure (revue de code P1, B1) : un UPDATE direct
+    // d'une colonne stockée — sans changer le nombre de lignes — fait paraître
+    // sa table parmi les tables changées. Sans lui, une mesure dégénérée
+    // (somme constante) passerait le témoin de stabilité et le test entier.
+    let avant = sommes_de_controle(&pool).await;
+    sqlx::query("UPDATE accounts SET name = CONCAT(name, '+') WHERE id = ?")
+        .bind(a.p.compte_k2)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let apres = sommes_de_controle(&pool).await;
+    let changees: Vec<&String> = avant.keys().filter(|t| avant[*t] != apres[*t]).collect();
+    assert_eq!(changees, ["accounts"], "témoin : un UPDATE est vu (Ma35)");
+    assert_eq!(
+        avant["accounts"].0, apres["accounts"].0,
+        "même nombre de lignes : seule la somme l'a vu"
+    );
     for (validation, admises) in [
         (SendValidation::Exempt, vec!["audit_log", "mcp_keys"]),
         (
@@ -393,6 +416,12 @@ async fn aucun_outil_n_ecrit(pool: MySqlPool) {
             for t in &changees {
                 assert!(admises.contains(&t.as_str()), "{outil} a écrit dans {t}");
             }
+            // Témoin positif à chaque appel (B1) : l'appel s'inscrit au journal
+            // d'audit, et la mesure le voit.
+            assert!(
+                changees.iter().any(|t| t.as_str() == "audit_log"),
+                "{outil} : audit_log parmi les tables changées ({changees:?})"
+            );
             let rapport = i64::from(RAPPORTS.contains(outil));
             assert_eq!(
                 compte(&pool, "SELECT COUNT(*) FROM audit_log").await - audit,
@@ -724,7 +753,9 @@ async fn fixture_tailles(pool: &MySqlPool, s: &Societe, large: bool) {
         .await
         .unwrap();
     }
-    // 31 écritures sur K1 : écritures, grand livre, postes ouverts.
+    // 31 écritures sur K1 : écritures, grand livre, postes ouverts — chacune à
+    // **trois** lignes, comme le prescrit la fiche (§ *Les tailles mesurées* ;
+    // revue de code P1, A5) : K2 au débit, K1 et CR au crédit.
     for i in 0..31 {
         journal_entries::create(
             pool,
@@ -746,7 +777,13 @@ async fn fixture_tailles(pool: &MySqlPool, s: &Societe, large: bool) {
                     NewJournalEntryLine {
                         account_id: p.compte_k1,
                         debit: Decimal::ZERO,
-                        credit: Decimal::new(1234, 2),
+                        credit: Decimal::new(617, 2),
+                        project_id: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: p.compte_cr,
+                        debit: Decimal::ZERO,
+                        credit: Decimal::new(617, 2),
                         project_id: None,
                     },
                 ],
@@ -874,6 +911,157 @@ async fn pagination_transmise(pool: MySqlPool) {
             "{outil} : le défaut appliqué"
         );
         assert_eq!(s["limit"], json!(defaut), "{outil} : limit par défaut");
+        // `offset` transmis (revue de code P1, E2) : la page d'un élément à
+        // `offset = 1` commence où la page de deux à `offset = 0` s'arrête —
+        // l'élément entier, solde courant du grand livre compris (#775).
+        let mut args = base(outil, &a);
+        args["limit"] = json!(2);
+        let page1 = structure(&b.appeler(&jeton, outil, args).await, outil);
+        let mut args = base(outil, &a);
+        args["limit"] = json!(1);
+        args["offset"] = json!(1);
+        let page2 = structure(&b.appeler(&jeton, outil, args).await, outil);
+        assert_eq!(page1["offset"], json!(0), "{outil} : offset rendu (0)");
+        assert_eq!(page2["offset"], json!(1), "{outil} : offset rendu (1)");
+        let (e1, e2) = (elements(outil, &page1), elements(outil, &page2));
+        assert_eq!((e1.len(), e2.len()), (2, 1), "{outil} : tailles des pages");
+        assert_ne!(e1[0], e1[1], "{outil} : témoin, deux éléments distincts");
+        assert_eq!(
+            e2[0], e1[1],
+            "{outil} : la page 2 commence où la page 1 s'arrête (offset transmis)"
+        );
+    }
+}
+
+/// Le grand livre d'un compte lu par `kesh_grand_livre` page après page
+/// (`offset`) : les lignes et leurs soldes courants égalent ceux d'une lecture
+/// d'un seul tenant, et les ruptures d'exercice aussi — sur un compte de bilan
+/// (K1) et sur un compte de résultat (K2), qui franchit une fin d'exercice
+/// (revue de code P1, E1 ; #775, corrigé dans `kesh-report`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn grand_livre_pagine_egal_a_la_lecture_entiere(pool: MySqlPool) {
+    use chrono::{Datelike, NaiveDate};
+
+    let a = societe_piegee(&pool, "Société A 329", 'A').await;
+    let p = &a.p;
+    // L'exercice précédent, ouvert : le solde de K2 y repart de zéro à son
+    // franchissement.
+    let annee = p.exercice_debut.year() - 1;
+    let debut = NaiveDate::from_ymd_opt(annee, 1, 1).unwrap();
+    let precedent: i64 = sqlx::query_scalar(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status, created_at, \
+         updated_at) VALUES (?, 'Exercice précédent', ?, ?, 'Open', NOW(3), NOW(3)) RETURNING id",
+    )
+    .bind(a.c)
+    .bind(debut)
+    .bind(NaiveDate::from_ymd_opt(annee, 12, 31).unwrap())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // Six écritures dans chacun des deux exercices, de montants distincts.
+    for i in 0..12_u32 {
+        let (exercice, date) = if i < 6 {
+            (
+                precedent,
+                NaiveDate::from_ymd_opt(annee, 2 + i, 10).unwrap(),
+            )
+        } else {
+            (
+                p.exercice_id,
+                p.exercice_debut + chrono::Days::new(u64::from(i - 6)),
+            )
+        };
+        let montant = Decimal::new(1000 + 137 * i64::from(i), 2);
+        journal_entries::create(
+            &pool,
+            exercice,
+            a.u,
+            NewJournalEntry {
+                company_id: a.c,
+                entry_date: date,
+                journal: Journal::OD,
+                description: format!("Écriture paginée {i}"),
+                project_id: None,
+                lines: vec![
+                    NewJournalEntryLine {
+                        account_id: p.compte_k2,
+                        debit: montant,
+                        credit: Decimal::ZERO,
+                        project_id: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: p.compte_k1,
+                        debit: Decimal::ZERO,
+                        credit: montant,
+                        project_id: None,
+                    },
+                ],
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let jeton = cle_de(&pool, &a, &[McpScope::BooksRead], SendValidation::Exempt).await;
+    let b = banc(&pool);
+    let (du, au) = (debut.to_string(), p.exercice_fin.to_string());
+    let lire = |compte: i64, offset: usize, limit: usize| json!({"accountId": compte, "from": du, "to": au, "offset": offset, "limit": limit});
+    /// Les lignes d'une section, réduites à (ligne, solde courant).
+    fn lignes(section: &Value) -> Vec<(Value, Value)> {
+        section["lignes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| (l["ligneId"].clone(), l["soldeCourant"].clone()))
+            .collect()
+    }
+    for (compte, ruptures_attendues) in [(p.compte_k1, 0), (p.compte_k2, 1)] {
+        let entiere = structure(
+            &b.appeler(&jeton, "kesh_grand_livre", lire(compte, 0, 30))
+                .await,
+            "entière",
+        );
+        let section = &entiere["sections"][0];
+        let n = usize::try_from(section["nombreLignes"].as_i64().unwrap()).unwrap();
+        let attendu = lignes(section);
+        assert_eq!(
+            attendu.len(),
+            n,
+            "{compte} : la lecture entière tient en une page"
+        );
+        assert!(
+            n >= 12,
+            "{compte} : témoin, au moins les douze écritures ({n})"
+        );
+        let ruptures = section["ruptures"].as_array().unwrap().clone();
+        assert_eq!(
+            ruptures.len(),
+            ruptures_attendues,
+            "{compte} : ruptures d'exercice de la lecture entière"
+        );
+        for taille in 1..=7 {
+            let mut vues = Vec::new();
+            let mut ruptures_vues = Vec::new();
+            let mut offset = 0;
+            while offset < n {
+                let page = structure(
+                    &b.appeler(&jeton, "kesh_grand_livre", lire(compte, offset, taille))
+                        .await,
+                    "page",
+                );
+                let s = &page["sections"][0];
+                vues.extend(lignes(s));
+                ruptures_vues.extend(s["ruptures"].as_array().unwrap().iter().cloned());
+                offset += taille;
+            }
+            assert_eq!(
+                vues, attendu,
+                "{compte}, pages de {taille} : (ligne, solde courant) égaux à la lecture entière"
+            );
+            assert_eq!(
+                ruptures_vues, ruptures,
+                "{compte}, pages de {taille} : ruptures égales à la lecture entière"
+            );
+        }
     }
 }
 

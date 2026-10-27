@@ -232,7 +232,9 @@
 //! `state.pool`, figés par la garde (iii). La 32-9a ajoute aussi
 //! `factures_fournisseur::detail_sans_fichier`, qui appelle `detail` et ne
 //! rend de la pièce que son identifiant : aucun chemin de fichier n'atteint
-//! `src/mcp/` (C-32-9-13).
+//! `src/mcp/` (C-32-9-13) ; et, à la revue de code P1 (A1, C-32-9-49),
+//! `factures::detail_sans_fichier`, qui projette la facture cliente sans son
+//! PDF figé (`pdf_storage_path` et ses trois compagnons).
 //!
 //! # La lecture seule du MCP — Q11, tranchée le 2026-10-24
 //!

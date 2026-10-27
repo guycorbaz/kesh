@@ -90,6 +90,18 @@ const fn tiers(
 }
 
 /// AC-a13 — l'inventaire, recopié de la fiche.
+///
+/// ⚠️ **Ce qui est clos, et ce qui ne l'est pas** (revue de code P1, B6) :
+/// l'inventaire est clos **par outil** (`inventaire_couvre_le_registre`
+/// compare des noms d'outils) et **par colonne piégée** (chaque ligne exige
+/// sa trouvaille) — non par champ rendu. Un champ `TexteNonFiable` d'une
+/// structure de sortie qui partage la colonne d'une autre ligne n'y a pas sa
+/// propre ligne (`kesh_facture` : `numero`, `conditions`, `noteSuspension` ;
+/// `kesh_facture_fournisseur` : `numero` ; `kesh_bilan` : `passifs[]`,
+/// `fondsPropres[]` ; `kesh_compte_de_resultat` : `produits[]`), et un champ
+/// neuf oublié ici ne rougit nulle part : c'est le typage (`sortie!` exige
+/// `ChampSur`) qui tient l'enveloppe, et la revue du tableau de l'AC-a10 qui
+/// tient l'inventaire.
 const INVENTAIRE: &[LigneInventaire] = &[
     // books:read
     nf(
@@ -467,17 +479,29 @@ async fn inventaire_couvre_le_registre(pool: MySqlPool) {
         .chain(HORS_REGISTRE.iter())
         .map(|s| s.to_string())
         .collect();
-    // Les outils que les lignes « jeux » nomment entrent aussi au compte.
+    // Les outils que les lignes « jeux » nomment entrent aussi au compte : une
+    // ligne de la fiche peut porter plusieurs outils (`kesh_echeancier` n'est
+    // le champ `outil` d'aucune ligne, il n'y entre que par les jeux des lignes
+    // `kesh_factures`) — écart à la lettre de l'AC-a13, dit ici (revue de code
+    // P1, A10).
+    let nommes_par_jeux: BTreeSet<&str> = INVENTAIRE
+        .iter()
+        .flat_map(|l| l.jeux.iter().map(|(o, _)| *o))
+        .collect();
     let mut par_jeux: BTreeSet<String> = couvert.clone();
-    for l in INVENTAIRE {
-        par_jeux.extend(l.jeux.iter().map(|(o, _)| o.to_string()));
-    }
+    par_jeux.extend(nommes_par_jeux.iter().map(|o| o.to_string()));
     assert_eq!(
         par_jeux, liste,
         "inventaire ∪ sans champ libre ∪ hors registre"
     );
+    // « Aucun outil dans deux listes » porte aussi sur les outils nommés par
+    // les jeux (A10).
     for o in SANS_CHAMP_LIBRE.iter().chain(HORS_REGISTRE.iter()) {
         assert!(!inventaire.contains(o), "{o} dans deux listes");
+        assert!(
+            !nommes_par_jeux.contains(o),
+            "{o} nommé par un jeu et sans champ libre ou hors registre"
+        );
     }
     assert!(!SANS_CHAMP_LIBRE.iter().any(|o| HORS_REGISTRE.contains(o)));
     for l in INVENTAIRE {
