@@ -469,7 +469,7 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
 
 ### C-32-7-38 — le secret factice des tests est hors du format d'un secret réel
 
-- **Contexte** (revue P1, A-7) : `kesh_mcp_SECRET0123456789abcdefghijk` correspondait à `kesh_mcp_[0-9A-Za-z]{27}`.
+- **Contexte** (revue P1, A-7) : l'ancien littéral (`kesh_mcp_SECRET` suivi de dix chiffres et de onze lettres) correspondait à `kesh_mcp_[0-9A-Za-z]{27}`.
 - **Retenu** : `kesh_mcp_SECRET_factice_0123456789` dans les trois fichiers de test ; aucun test unitaire n'exige le
   format exact (seul l'E2E le vérifie, sur le secret réel de la base de test).
 - **Réversible** : oui.
