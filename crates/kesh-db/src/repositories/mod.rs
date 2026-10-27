@@ -34,6 +34,7 @@ pub mod journal_entries;
 pub mod journal_entry_number_sequences;
 pub mod letterings;
 pub mod mcp_keys;
+pub mod mcp_prompts;
 pub mod mcp_sends;
 pub mod mcp_server_settings;
 pub mod onboarding;

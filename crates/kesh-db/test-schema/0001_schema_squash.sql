@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 85 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 86 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -888,6 +888,62 @@ CREATE TABLE `mcp_keys` (
   CONSTRAINT `chk_mcp_keys_name_nonempty` CHECK (`name` regexp '[^[:space:]]'),
   CONSTRAINT `chk_mcp_keys_scopes` CHECK (json_valid(`scopes`) and json_type(`scopes`) = 'ARRAY' and json_length(`scopes`) >= 1),
   CONSTRAINT `chk_mcp_keys_send_validation` CHECK (`send_validation` collate utf8mb4_nopad_bin in ('required','exempt'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `mcp_prompt_versions`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `mcp_prompt_versions` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `prompt_id` bigint(20) NOT NULL,
+  `number` int(11) NOT NULL,
+  `origin` varchar(16) NOT NULL COMMENT 'standard | admin | agent',
+  `state` varchar(16) NOT NULL COMMENT 'approved | pending | refused',
+  `nature` varchar(16) NOT NULL COMMENT 'text | withdrawal',
+  `description` varchar(500) DEFAULT NULL,
+  `body` text DEFAULT NULL,
+  `author_user_id` bigint(20) DEFAULT NULL,
+  `author_mcp_key_id` bigint(20) DEFAULT NULL,
+  `decided_by_user_id` bigint(20) DEFAULT NULL,
+  `decided_at` datetime(3) DEFAULT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mcp_prompt_versions_number` (`prompt_id`,`number`),
+  KEY `fk_mcp_prompt_versions_author` (`author_user_id`),
+  KEY `fk_mcp_prompt_versions_key` (`author_mcp_key_id`),
+  KEY `fk_mcp_prompt_versions_decider` (`decided_by_user_id`),
+  KEY `idx_mcp_prompt_versions_state` (`prompt_id`,`state`,`number`),
+  CONSTRAINT `fk_mcp_prompt_versions_author` FOREIGN KEY (`author_user_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_mcp_prompt_versions_decider` FOREIGN KEY (`decided_by_user_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_mcp_prompt_versions_key` FOREIGN KEY (`author_mcp_key_id`) REFERENCES `mcp_keys` (`id`),
+  CONSTRAINT `fk_mcp_prompt_versions_prompt` FOREIGN KEY (`prompt_id`) REFERENCES `mcp_prompts` (`id`),
+  CONSTRAINT `chk_mcp_prompt_versions_number` CHECK (`number` >= 1),
+  CONSTRAINT `chk_mcp_prompt_versions_origin` CHECK (`origin` collate utf8mb4_nopad_bin in ('standard','admin','agent')),
+  CONSTRAINT `chk_mcp_prompt_versions_state` CHECK (`state` collate utf8mb4_nopad_bin in ('approved','pending','refused')),
+  CONSTRAINT `chk_mcp_prompt_versions_nature` CHECK (`nature` collate utf8mb4_nopad_bin in ('text','withdrawal')),
+  CONSTRAINT `chk_mcp_prompt_versions_standard` CHECK (`origin` <> 'standard' or `state` = 'approved' and `author_user_id` is null and `author_mcp_key_id` is null and `decided_by_user_id` is null and `decided_at` is null),
+  CONSTRAINT `chk_mcp_prompt_versions_admin` CHECK (`origin` <> 'admin' or `state` = 'approved' and `author_user_id` is not null and `author_mcp_key_id` is null and `decided_by_user_id` is null and `decided_at` is null),
+  CONSTRAINT `chk_mcp_prompt_versions_agent` CHECK (`origin` <> 'agent' or `author_mcp_key_id` is not null and `author_user_id` is null and `nature` = 'text' and `state` = 'pending' = (`decided_by_user_id` is null) and `decided_by_user_id` is null = (`decided_at` is null)),
+  CONSTRAINT `chk_mcp_prompt_versions_content` CHECK (`nature` = 'text' and `description` is not null and `body` is not null and `description` regexp '[^[:space:]]' and `body` regexp '[^[:space:]]' or `nature` = 'withdrawal' and `description` is null and `body` is null),
+  CONSTRAINT `chk_mcp_prompt_versions_body_length` CHECK (`body` is null or char_length(`body`) <= 16000)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `mcp_prompts`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `mcp_prompts` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` bigint(20) NOT NULL,
+  `name` varchar(64) NOT NULL COMMENT '[a-z0-9_-]{1,64} ; préfixe kesh- réservé aux standards',
+  `is_standard` tinyint(1) NOT NULL,
+  `version` int(11) NOT NULL DEFAULT 1,
+  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mcp_prompts_company_name` (`company_id`,`name`),
+  CONSTRAINT `fk_mcp_prompts_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
+  CONSTRAINT `chk_mcp_prompts_name` CHECK (`name` collate utf8mb4_nopad_bin regexp '^[a-z0-9_-]{1,64}\\z'),
+  CONSTRAINT `chk_mcp_prompts_reserved` CHECK (`is_standard` <> 0 and `name` collate utf8mb4_nopad_bin like 'kesh-%' or `is_standard` = 0 and `name` collate utf8mb4_nopad_bin  not like 'kesh%')
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `mcp_sends`;
