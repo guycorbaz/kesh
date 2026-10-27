@@ -3028,7 +3028,7 @@ L'écran \emph{Serveur MCP} porte les réglages du serveur de la société : une
 \begin{itemize}
     \item \textbf{Désactivé} (le défaut), \keshpath{/mcp} répond \textbf{comme une route absente} : la réponse est celle de toute adresse inconnue de Kesh, non une erreur propre au serveur MCP.
     \item L'activation vaut \textbf{pour la société}. Une clé d'une société dont le serveur n'est pas activé reçoit le refus d'une clé inconnue (\texttt{401}).
-    \item L'adresse du serveur est \textbf{exactement} \keshpath{/mcp}, sans barre finale : \keshpath{/mcp/} rend la page de l'application. L'écran affiche l'adresse que voit votre navigateur ; derrière un mandataire, un agent du réseau local peut devoir en employer une autre.
+    \item L'adresse du serveur est \textbf{exactement} \keshpath{/mcp}, sans barre finale : \keshpath{/mcp/} n'est pas le serveur --- un navigateur y reçoit la page de l'application, un client MCP un refus (\texttt{405}). L'écran affiche l'adresse que voit votre navigateur ; derrière un mandataire, un agent du réseau local peut devoir en employer une autre.
     \item Une \textbf{restauration} rend ces réglages tels qu'ils étaient dans la sauvegarde --- un serveur actif dans la sauvegarde l'est après l'import (\S\ref{sec:backup-ui-keshbackup}) ; la \textbf{réinitialisation} des données de démonstration les efface --- le serveur repart désactivé --- et conserve les clés (\S\ref{sec:onboarding-config}).
 \end{itemize}
 
