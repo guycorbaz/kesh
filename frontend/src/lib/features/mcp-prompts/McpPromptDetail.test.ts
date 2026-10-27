@@ -118,7 +118,15 @@ function enAttente<T>() {
 	return { p, liberer };
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+	vi.clearAllMocks();
+	// Une réponse « une fois » restée en file ne doit pas fuir dans le test suivant.
+	mockApi.getMcpPrompt.mockReset();
+	mockApi.addMcpPromptVersion.mockReset();
+	mockApi.approveMcpPromptVersion.mockReset();
+	mockApi.refuseMcpPromptVersion.mockReset();
+	mockApi.restoreMcpPromptStandard.mockReset();
+});
 afterEach(() => cleanup());
 
 describe('McpPromptDetail — le texte servi (AC-4)', () => {
@@ -186,16 +194,25 @@ describe('McpPromptDetail — la décision (AC-7)', () => {
 	// M1
 	it('approbation_porte_la_version_lue — un seul GET avant le POST', async () => {
 		const r = await monter(detail([v(1), v(2), agent(3)], { version: 7 }));
+		// Le nombre de GET au moment du POST est RELEVÉ, non asserté dans la simulation :
+		// une assertion levée ici serait avalée par le `catch` de l'écran (M1 survivait).
+		let getAuPost = -1;
 		mockApi.approveMcpPromptVersion.mockImplementationOnce(async () => {
-			expect(mockApi.getMcpPrompt).toHaveBeenCalledTimes(1);
+			getAuPost = mockApi.getMcpPrompt.mock.calls.length;
 			return { ...ECRITE, numero: 3 };
 		});
-		mockApi.getMcpPrompt.mockResolvedValueOnce(detail([v(1), v(2), agent(3, { etat: 'approved' })]));
+		// Toute relecture rend une `version` différente : une relecture avant le POST se verrait.
+		// (Deux réponses « une fois » : `clearAllMocks` ne retire pas une réponse permanente.)
+		const relu = detail([v(1), v(2), agent(3, { etat: 'approved' })], { version: 8, numeroEnVigueur: 3 });
+		mockApi.getMcpPrompt.mockResolvedValueOnce(relu).mockResolvedValueOnce(relu);
 		await fireEvent.click(r.getByTestId('mcp-prompt-approve-3'));
 		await fireEvent.click(await r.findByTestId('mcp-prompt-approve-confirm'));
-		await waitFor(() => expect(mockApi.approveMcpPromptVersion).toHaveBeenCalledWith(4, 3, 7));
+		await waitFor(() => expect(mockApi.approveMcpPromptVersion).toHaveBeenCalledTimes(1));
+		expect(mockApi.approveMcpPromptVersion).toHaveBeenCalledWith(4, 3, 7);
+		expect(getAuPost, 'un seul GET avant le POST').toBe(1);
 		// La relecture vient APRÈS la décision.
 		await waitFor(() => expect(mockApi.getMcpPrompt).toHaveBeenCalledTimes(2));
+		await r.findByTestId('mcp-prompt-in-force-badge-3');
 	});
 
 	// M7
