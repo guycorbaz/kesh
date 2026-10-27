@@ -3273,8 +3273,10 @@ au serveur dans Claude Code \emph{(non éprouvé~: forme tirée de la documentat
 Code)}. Kesh ne l'impose jamais à l'agent.
 
 \paragraph{Reconnaître l'activité de l'agent.} Au journal d'audit (\S\ref{sec:tracabilite}),
-chaque appel de l'agent paraît comme «~Outil du serveur MCP appelé~», \textbf{au nom de
-l'Administrateur qui a créé la clé}, avec le numéro de la clé au détail~; chaque décision sur
+chaque appel d'un \textbf{outil} par l'agent paraît comme «~Outil du serveur MCP appelé~»,
+\textbf{au nom de l'Administrateur qui a créé la clé}, avec le numéro de la clé au détail, et
+chaque prompt servi comme «~Prompt du serveur MCP servi~»~; la liste des outils et celle des
+prompts, que l'agent demande aussi, n'y laissent aucune trace~; chaque décision sur
 un envoi, comme «~Envoi du serveur MCP validé~» ou «~refusé~». \keshAttention\ Une
 consultation de rapport par l'agent paraît comme «~Rapport généré~», exactement comme une
 consultation faite à l'écran~; seule la ligne «~Outil du serveur MCP appelé~» de même heure
