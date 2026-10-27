@@ -167,6 +167,12 @@
 					fallback: 'Restaurer / Importer',
 					href: '/admin/restore',
 				},
+				// Story 32-8c (refs #723) — les envois du serveur MCP à valider.
+				{
+					i18nKey: 'nav-admin-mcp-sends',
+					fallback: 'Envois du serveur MCP',
+					href: '/admin/mcp/sends',
+				},
 			],
 		},
 	];

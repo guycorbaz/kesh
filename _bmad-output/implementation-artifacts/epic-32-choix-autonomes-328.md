@@ -568,3 +568,86 @@ qu'ils ne heurtent pas ceux de la 32-8b0, développée en parallèle (union à l
   comme pour un schéma invalide) ; `registre_coherent` l'éprouve (`catch_unwind`) et contrôle le registre standard. La
   32-10a-iii décidera de ce qu'elle fait de `proposer_prompt` (P3-R3).
 - **Réversible** : oui.
+
+### C-32-8-70 — La section du manuel, sous *Sécurité*, en attendant la 32-7
+
+- **Contexte** (AC-C10) : la section *Le serveur MCP* de la 32-7 n'existe pas (32-7 non fusionnée, `git log origin/main`
+  n'en porte aucun commit) ; la fiche 32-7 (AC-18) la place après `\section{Sécurité}` et y range `sec:mcp-envois`.
+- **Retenu** : `\subsection{Les envois du serveur MCP}\label{sec:mcp-envois}` dans `\section{Sécurité}`, après
+  `sec:api-keys` (les deux parlent de clés et de ce qu'un agent peut lire) ; la 32-7 la déplacera sous sa section, le
+  libellé ne changeant pas (les renvois `\S\ref{sec:mcp-envois}` posés aux lignes ≈1414, ≈2230 et ≈2237 de `admin-manual.tex` suivent).
+- **Écartées** : créer moi-même `\section{Le serveur MCP}\label{sec:mcp}` (collision de libellé et de plan avec la
+  32-7, qui en écrit le reste).
+- **Réversible** : oui.
+
+### C-32-8-71 — Le repli égal au catalogue, gardé pour le préfixe `mcp-sends-` dans le dossier de l'écran (#758)
+
+- **Contexte** (point 4 de l'orchestrateur, AC-C8) : aucune garde générale ne tient un repli égal à sa valeur fr-CH
+  (#758) ; la 32-7 étend G13 par préfixe (C-32-7-21) dans `i18n-repli-divergent-actif.test.ts`, non fusionnée.
+- **Retenu** : une garde propre à l'écran, `features/mcp-sends/mcp-sends-i18n.test.ts`, sur le lecteur commun
+  (`findCallSites`, `readFallback`) : fonction pure `ecartsAuCatalogue` à témoins vert et rouges ; replis égaux à la
+  valeur fr-CH pour chaque clé `mcp-sends-*` ; ensemble des clés relevées **égal**, dans les deux sens, à celui du
+  catalogue (`startsWith`, témoin `audit-log-entity-mcp-sends-x`) ; compte exact (48) ; quatre catalogues. L'entrée de
+  menu `nav-admin-mcp-sends`, que le relevé ne voit pas (`i18nMsg(item.i18nKey, item.fallback)`), est lue à part dans
+  `+layout.svelte` ; `FAMILLES_RESOLUES['nav-']` de `i18n-keys.test.ts` gagne `'admin-mcp-sends'`. Le reste du
+  catalogue reste hors garde : angle mort, #758.
+- **Écartées** : étendre G13 dans son fichier comme la 32-7 (conflit garanti au merge de la 32-7, qui réécrit le même
+  bloc) ; écrire seulement l'angle mort (la fiche demande une garde réelle quand elle existe).
+- **Réversible** : oui — à la fusion de la 32-7, `mcp-sends-` peut rejoindre sa liste de préfixes et ce fichier
+  maigrir.
+
+### C-32-8-72 — Le compteur d'octets : informatif, lié au serveur
+
+- **Contexte** (point 1) : la taille d'un texte modifié se compte en octets UTF-8 contre 24 576, avec le message du
+  serveur ; AC-C5 / C-32-8-20 : aucun contrôle du prédicat côté client.
+- **Retenu** : `octetsUtf8` (`TextEncoder`), « N octets sur 24 576 » (nombres mis en forme par la langue de
+  l'installation), et, au-delà, le message `mcp-sends-content-too-large` dont la valeur est, dans chaque langue, celle de
+  `mcp-send-content-too-large` (garde de `mcp-sends-i18n.test.ts`) ; une aide explique la mesure. Le bouton **n'est pas
+  bloqué** : le serveur reste seul juge et refuse avec le même message. `MCP_ENVOI_OCTETS_MAX` du frontend est tenu égal
+  à la constante Rust par une lecture de `services/envois_mcp.rs`.
+- **Écartées** : bloquer l'envoi au-delà de la borne (une seconde règle côté client, qui dériverait de la première).
+- **Réversible** : oui.
+
+### C-32-8-73 — Les sélecteurs de variante refusés (#768 point 5) : une aide, pas un contrôle
+
+- **Contexte** : `⚠️` (U+26A0 U+FE0F) dans un texte modifié est refusé avec un message qui parle de caractère
+  « invisible ou de contrôle ».
+- **Retenu** : en modification, une aide permanente (`mcp-sends-hidden-help`) dit ce qui est refusé, que les emojis
+  sont concernés (sélecteur U+FE0F que le clavier ou le copier-coller ajoute), et quoi faire ; après un 400 d'une
+  version modifiée qui tient dans la borne, la même aide passe **sous** le message du serveur (une seule fois à l'écran).
+  Aucun prédicat côté client. Le manuel le dit (§ *Les caractères invisibles*).
+- **Réversible** : oui.
+
+### C-32-8-74 — La page ne redirige pas un non-administrateur : elle montre le refus de l'API
+
+- **Contexte** : AC-C1 — « la page lui rend le refus existant (403 de l'API) » ; `/admin/backup` et `/admin/restore`
+  redirigent, elles, par un `+page.ts`.
+- **Retenu** : la lettre de l'AC : pas de `+page.ts`, l'entrée de menu est `adminOnly`, la liste et le détail montrent
+  le message du 403 (tests `refus de l'API (403)` et `chargement refusé (403)`).
+- **Réversible** : oui (un `+page.ts` de redirection s'ajoute en trois lignes).
+
+### C-32-8-75 — Les dates à l'heure locale, les conflits par code
+
+- **Retenu** : les dates de `mcp_sends` (UTC, `time_zone = '+00:00'`, sans suffixe) reçoivent un `Z` et s'affichent à
+  l'heure locale, comme le journal d'audit ; un 409 `ILLEGAL_STATE_TRANSITION` (déjà décidé, échu) montre le message du
+  serveur, déjà traduit ; un 409 `OPTIMISTIC_LOCK_CONFLICT` (version périmée) un message de l'écran ; les deux, le bouton
+  *Recharger*. Un numéro illisible dans l'adresse rend « Envoi introuvable » sans appel.
+- **Réversible** : oui.
+
+### C-32-8-76 — L'E2E et la recette visuelle avec le seul outil fusionné
+
+- **Contexte** : le registre de production ne porte que `kesh_version` (la 32-9 n'a pas fusionné) : aucun outil ne lit
+  encore un libellé des livres.
+- **Retenu** : l'E2E (AC-C7) dépose par `kesh_version` ; la valeur est remplacée **au clavier** (`ControlOrMeta+a`,
+  `Delete`, `pressSequentially`) ; un second test éprouve le refus d'une version à sélecteur de variante. La capture (6)
+  de la recette (contenu piégé) s'appuie sur un envoi **inséré en SQL** dans la base E2E du worktree, au contenu déjà
+  rendu visible comme le dépôt le ferait (`\u{202E}` en toutes lettres), fixture synthétique ; le script de captures
+  vit hors du dépôt (scratchpad), les captures dans `kesh-gate-logs/328c-captures/`.
+- **Réversible** : oui — la 32-9 pourra déposer un vrai libellé piégé.
+
+### C-32-8-77 — Le CHANGELOG : une entrée *Ajouté*, la phrase des tables suivie
+
+- **Retenu** : `### Ajouté` créé dans la 0.16.0 (la validation avant envoi, ce qu'elle montre, ses bornes, renvoi au
+  manuel) ; la phrase de `CHANGELOG.md:16-17` passe à « trois — les clés, les réglages et les envois du serveur MCP »,
+  « futur » retiré (le serveur est livré par la même version).
+- **Réversible** : oui.
