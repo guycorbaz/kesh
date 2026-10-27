@@ -3262,7 +3262,7 @@ claude mcp add --transport http --scope local kesh \
 \end{lstlisting}
 \begin{itemize}
     \item La portée \texttt{local} (le défaut) écrit la clé \textbf{en clair} dans \keshpath{\textasciitilde/.claude.json} : protégez ce fichier. La portée \texttt{user} est l'autre portée admise.
-    \item \textbf{Jamais} \texttt{--scope project} : elle écrit un fichier \keshpath{.mcp.json} à la racine du projet, \textbf{versionné} --- la clé partirait avec le dépôt ; sauf si la clé y est écrite par expansion de variable, \texttt{\$\{KESH\_MCP\_KEY\}}, la variable restant hors du dépôt.
+    \item \textbf{Jamais} \texttt{--scope project} : elle écrit un fichier \keshpath{.mcp.json} à la racine du projet, \textbf{versionné} --- la clé partirait avec le dépôt ; sauf si la clé y est écrite par expansion de variable, par exemple \texttt{\$\{CLE\_MCP\}} --- une variable de votre shell, que Kesh ne lit pas ---, la variable restant hors du dépôt.
     \item Claude Code limite une réponse d'outil à \textbf{25\,000 jetons} (\texttt{MAX\_MCP\_OUTPUT\_TOKENS}).
 \end{itemize}
 Un geste général de Bash, et non de Claude Code : pour que la clé ne reste pas dans l'historique du shell, précédez la commande d'une espace (sous \texttt{HISTCONTROL=ignorespace}), ou lisez la clé par \keshcommand{read -rs}.
