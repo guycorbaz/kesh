@@ -173,6 +173,13 @@
 					fallback: 'Envois du serveur MCP',
 					href: '/admin/mcp/sends',
 				},
+				// Story 32-10b (refs #723) — les prompts du serveur MCP, leur historique
+				// et l'approbation des propositions d'un agent.
+				{
+					i18nKey: 'nav-admin-mcp-prompts',
+					fallback: 'Prompts du serveur MCP',
+					href: '/admin/mcp/prompts',
+				},
 			],
 		},
 	];
