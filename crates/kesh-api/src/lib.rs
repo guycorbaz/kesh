@@ -247,7 +247,7 @@ pub fn build_router_avec_registre(
     // KESH-ADMIN-ROUTES-BEGIN
     // ⚠️ Bloc borné — Story 22-4a (#167). Le test `admin_pat_denied_e2e` lit CE
     // fichier par `include_str!`, compte les constructeurs de méthode entre les
-    // deux marqueurs, et exige exactement 42 (Story 32-8b). Toute route ajoutée ici sans son
+    // deux marqueurs, et exige exactement 49 (Story 32-10a-iii). Toute route ajoutée ici sans son
     // couple dans la liste du test fait ROUGIR le test : c'est le rappel qui
     // manquait, et qui a laissé 16 routes sur 19 sans garde anti-PAT.
     // Ne pas déplacer ni reformuler les marqueurs sans ajuster le test.

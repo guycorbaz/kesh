@@ -874,6 +874,20 @@ async fn approuvee_par_megarde(pool: MySqlPool) {
     let b = banc(&pool);
     let p = proposer(&pool, &s, "megarde", "Proposée", "Texte de l'agent").await;
     let id = p.prompt_id;
+    // L'approbation exige la `version` lue (Miii9) : une version périmée →
+    // 409, rien d'écrit.
+    let r = b
+        .decider(&s.jwt, id, 1, "approve", json!(p.version + 1))
+        .await;
+    assert_eq!(
+        code(&r),
+        (StatusCode::CONFLICT, "OPTIMISTIC_LOCK_CONFLICT".into())
+    );
+    assert!(
+        details(&pool, "mcp_prompt.version_approved")
+            .await
+            .is_empty()
+    );
     let r = b.decider(&s.jwt, id, 1, "approve", json!(p.version)).await;
     assert_eq!(r.statut, StatusCode::OK);
     // (f) approuver deux fois → 409.
