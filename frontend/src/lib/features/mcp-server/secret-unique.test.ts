@@ -7,7 +7,8 @@
 import { describe, it, expect } from 'vitest';
 import { SecretUnique } from './secret-unique.svelte';
 
-const SECRET = 'kesh_mcp_SECRET0123456789abcdefghijk';
+// Factice, hors du format d'un secret réel (revue de code P1, A-7 ; C-32-7-38).
+const SECRET = 'kesh_mcp_SECRET_factice_0123456789';
 
 describe('SecretUnique', () => {
 	it('montrer puis lire', () => {

@@ -63,3 +63,29 @@ describe('mcp-time (TZ Europe/Zurich)', () => {
 		expect(estPasse(null, maintenant)).toBe(false);
 	});
 });
+
+/**
+ * Revue de code P1, B1 : sous Zurich, la fin d'une journée locale tombe le même jour en UTC ;
+ * un affichage en UTC passerait les tests ci-dessus. Sous un fuseau NÉGATIF, la fin de journée
+ * locale est le lendemain en UTC : seul un affichage dans le fuseau du navigateur redonne la
+ * date choisie.
+ */
+describe('mcp-time (TZ America/New_York, décalage négatif)', () => {
+	beforeAll(() => {
+		process.env.TZ = 'America/New_York';
+	});
+	afterAll(() => {
+		if (TZ_AVANT === undefined) delete process.env.TZ;
+		else process.env.TZ = TZ_AVANT;
+	});
+
+	it('témoin : le fuseau de New York a pris (hiver : UTC−5)', () => {
+		expect(new Date(2026, 11, 31, 12).getTimezoneOffset()).toBe(300);
+	});
+
+	it('l’aller-retour redonne la même date, alors que l’UTC est au lendemain', () => {
+		const iso = finDeJourneeLocale('2026-12-31');
+		expect(iso).toBe('2027-01-01T04:59:59.999Z');
+		expect(dateAffichee(iso)).toBe('31.12.2026');
+	});
+});

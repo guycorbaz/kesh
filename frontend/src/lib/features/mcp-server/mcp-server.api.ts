@@ -72,7 +72,13 @@ export async function createMcpKey(payload: NewMcpKeyPayload): Promise<McpKeyCre
 	};
 	if (payload.expiresAt !== undefined) corps.expiresAt = payload.expiresAt;
 	const r = await apiClient.post<ReponseCle>(CLES, corps);
-	return { cle: cleDepuis(r), secret: String(r.key) };
+	// Un secret absent ou d'une autre forme ne s'affiche jamais (« undefined » copié comme
+	// une clé) : la création se dit en échec, et l'erreur ne porte pas la valeur reçue
+	// (revue de code P1, B2).
+	if (typeof r.key !== 'string' || !r.key.startsWith('kesh_mcp_')) {
+		throw new Error('réponse de création de clé MCP sans secret lisible');
+	}
+	return { cle: cleDepuis(r), secret: r.key };
 }
 
 /** `DELETE /api/v1/admin/mcp/keys/{id}` — 204 ; 404 absente ; 409 périmée ou déjà révoquée. */

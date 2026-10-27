@@ -3197,3 +3197,5 @@ mcp-server-warning-network-any-v6 = { $entry } admet tout client IPv6 ; pour adm
 mcp-server-warning-nobody = Filtre activé et aucune plage admise : personne n’est admis.
 mcp-server-warning-proxy-any-v4 = { $entry } : tout pair IPv4 est cru sur son en-tête X-Forwarded-For.
 mcp-server-warning-proxy-any-v6 = { $entry } : tout pair IPv6 est cru sur son en-tête X-Forwarded-For.
+mcp-server-form-expires-invalid = Date d’expiration invalide : choisissez un jour à venir, jusqu’au 30.12.9999.
+mcp-server-settings-retry = Réessayer

@@ -3035,8 +3035,11 @@ L'écran \emph{Serveur MCP} porte les réglages du serveur de la société : une
 \paragraph{Une ligne de réglages illisible ou posée hors de l'écran.} Une ligne de la table \texttt{mcp\_server\_settings} que Kesh ne sait pas lire --- une liste qui ne contient pas que des textes --- fait paraître le serveur de la société \textbf{désactivé}, et l'écran ne peut plus lire les réglages : il affiche une erreur de lecture et n'enregistre rien. Une ligne dont la version vaut \texttt{0}, posée par SQL ou par une sauvegarde fabriquée, ne s'enregistre plus par l'écran : chaque enregistrement rend un conflit. Ces deux états ne se réparent pas depuis l'écran, et la réinitialisation, qui efface les réglages, n'est jamais permise sur une installation de production (\S\ref{sec:env-vars}, variable \texttt{KESH\_PRODUCTION\_RESET}). Supprimez la ligne de la société dans la table \texttt{mcp\_server\_settings} : le serveur revient à ses réglages par défaut, désactivé, et l'écran les relit. En dernier recours seulement, restaurez une sauvegarde antérieure (\S\ref{sec:backup-ui-keshbackup}) : la restauration remplace toute l'installation, non la seule ligne, et refuse une sauvegarde d'une version qui ne porte pas les mêmes tables, dont celles de la 0.15.0 et d'avant.
 
 \begin{lstlisting}[language=SQL]
--- dans la base de Kesh (avec docker-compose.yml :
---   docker compose exec mariadb mariadb -uroot -p)
+-- avec docker-compose.yml : docker compose exec mariadb mariadb -uroot -p
+-- la base de Kesh est celle que nomme DATABASE_URL (après le dernier « / »)
+USE <base de Kesh>;
+-- le numéro de la société
+SELECT id, name FROM companies;
 DELETE FROM mcp_server_settings WHERE company_id = <numéro de la société>;
 \end{lstlisting}
 
@@ -3094,7 +3097,7 @@ Le filtre d'adresse décide, pour chaque requête vers \keshpath{/mcp}, si le cl
 \texttt{127.0.0.0/8}, \texttt{::1/128}, \texttt{10.0.0.0/8}, \texttt{172.16.0.0/12}, \texttt{192.168.0.0/16}, \texttt{fc00::/7} et \texttt{fe80::/10}.
 % mcp-reseaux-defaut:fin
     La plage partagée \texttt{100.64.0.0/10}, celle des VPN de type Tailscale, \textbf{n'est pas} admise par défaut : ajoutez-la vous-même si vos agents passent par un tel VPN.
-    \item \texttt{0.0.0.0/0} admet tout client IPv4, \texttt{::/0} tout client IPv6 : pour admettre les deux familles, il faut les deux entrées. Il en va de même d'un mandataire de confiance de préfixe \texttt{/0}, qui fait croire l'en-tête \texttt{X-Forwarded-For} de tout pair de sa famille. Une adresse IPv4 écrite sous sa forme mappée en IPv6 (\texttt{::ffff:192.168.1.10}) est lue par le serveur sous sa forme IPv4 et compte comme IPv4 ; l'écran la garde telle qu'enregistrée (\texttt{::ffff:192.168.1.10/128}). L'écran signale ces cas par un avertissement, sans les refuser.
+    \item \texttt{0.0.0.0/0} admet tout client IPv4, \texttt{::/0} tout client IPv6 : pour admettre les deux familles, il faut les deux entrées. Il en va de même d'un mandataire de confiance de préfixe \texttt{/0}, qui fait croire l'en-tête \texttt{X-Forwarded-For} de tout pair de sa famille. Une adresse IPv4 écrite sous sa forme mappée en IPv6 (\texttt{::ffff:192.168.1.10}) est lue par le serveur sous sa forme IPv4 et compte comme IPv4 ; l'écran la garde telle qu'enregistrée (\texttt{::ffff:192.168.1.10/128}). De même, un réseau mappé de préfixe 96 au moins devient le réseau IPv4 de préfixe diminué de 96 : \texttt{::ffff:0.0.0.0/96} est lu comme \texttt{0.0.0.0/0}. L'écran signale par un avertissement, sans le refuser, toute entrée qui admet ainsi une famille entière --- un préfixe \texttt{/0}, ou un réseau mappé que le serveur ramène à \texttt{0.0.0.0/0} ---, plage admise comme mandataire de confiance (celui-ci, filtre activé seulement).
     \item Il n'y a \textbf{pas de limite de débit} sur \keshpath{/mcp}, et toute requête vers \keshpath{/mcp}, même anonyme, lit la base --- les réglages, pour savoir si le serveur est servi et à qui.
 \end{itemize}
 

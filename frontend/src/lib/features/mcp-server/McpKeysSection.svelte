@@ -136,9 +136,19 @@
 			erreurFormulaire = i18nMsg('mcp-server-form-scope-required', 'Choisissez au moins une portée.');
 			return;
 		}
+		// Une saisie non vide qui ne se lit pas — ou dont la fin de journée locale tombe
+		// au-delà de l'an 9999 en UTC — est refusée ici : elle ne devient jamais « sans
+		// expiration » (revue de code P1, B3).
+		const expiresAt = expiration.trim() === '' ? null : finDeJourneeLocale(expiration);
+		if (expiration.trim() !== '' && (expiresAt === null || !/^\d{4}-/.test(expiresAt))) {
+			erreurFormulaire = i18nMsg(
+				'mcp-server-form-expires-invalid',
+				'Date d’expiration invalide : choisissez un jour à venir, jusqu’au 30.12.9999.',
+			);
+			return;
+		}
 		envoi = true;
 		try {
-			const expiresAt = expiration.trim() === '' ? null : finDeJourneeLocale(expiration);
 			const creee = await createMcpKey({
 				name: nomRogne,
 				scopes: PORTEES_MCP.filter((p) => portees.includes(p)),
@@ -154,6 +164,9 @@
 			void charger();
 		} catch (err) {
 			erreurFormulaire = errorMessageOf(err);
+			// Hors ApiError, la clé a pu être créée sans que son secret soit montré : la
+			// liste relue la fait paraître, à révoquer (revue de code P1, B2).
+			if (!isApiError(err)) void charger();
 		} finally {
 			envoi = false;
 		}
@@ -376,7 +389,8 @@
 								{#each k.scopes as s (s)}
 									<code class="mr-1 font-mono">{s}</code>
 								{/each}
-								{#each k.unknownScopes as u (u)}
+								<!-- clé par index : une portée inconnue peut être stockée deux fois (revue P1, E1) -->
+								{#each k.unknownScopes as u, i (i)}
 									<span class="block text-text-muted"
 										>{u} — {i18nMsg('mcp-server-keys-scope-unknown', 'inconnue de cette version — jamais accordée')}</span
 									>

@@ -760,7 +760,11 @@ const ATTENDU = {
 	// les deux fichiers de `routes/(app)/admin/mcp/` 0 → 0 ; `routes/(app)/+layout.svelte`
 	// 6 → 6 (l'entrée de menu passe par `i18nKey`, `FAMILLES_RESOLUES['nav-']`). Que des
 	// littéraux : les autres compteurs inchangés.
-	sitesTotal: 2617,
+	// Story 32-7, remédiation de la revue de code P1 : **2617 → 2619** (+2), recompté par le
+	// même `grep` aux deux bornes (`f9b154f8` → HEAD), périmètre : les fichiers touchés —
+	// `McpKeysSection.svelte` 60 → 61 (`mcp-server-form-expires-invalid`, B3),
+	// `McpSettingsSection.svelte` 33 → 34 (`mcp-server-settings-retry`, E3). Que des littéraux.
+	sitesTotal: 2619,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

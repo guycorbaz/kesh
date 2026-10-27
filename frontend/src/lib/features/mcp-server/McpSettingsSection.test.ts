@@ -194,6 +194,74 @@ describe('McpSettingsSection — lecture et enregistrement (AC-5)', () => {
 		expect((await vue3.findByTestId('mcp-server-settings-load-error')).textContent?.trim()).toBe('Erreur inattendue.');
 	});
 
+	it('réglages non lus : l’écran n’affirme rien et rien n’est modifiable ; Réessayer relit (revue P1, E3)', async () => {
+		const AFFIRMATIONS = [
+			'mcp-server-state',
+			'mcp-server-settings-enabled',
+			'mcp-server-settings-filter',
+			'mcp-server-settings-networks',
+			'mcp-server-settings-proxies',
+			'mcp-server-settings-origins',
+			'mcp-server-warnings',
+			'mcp-server-warning-nobody',
+			'mcp-server-settings-updated',
+		];
+		// pendant le chargement
+		let resoudre!: (r: McpServerSettings) => void;
+		mockApi.getMcpServerSettings.mockReturnValueOnce(new Promise((r) => (resoudre = r)));
+		const vue = render(McpSettingsSection);
+		for (const id of AFFIRMATIONS) expect(vue.queryByTestId(id), id).toBeNull();
+		expect(vue.container.textContent).not.toContain('personne n’est admis');
+		resoudre(reglages());
+		await vue.findByTestId('mcp-server-settings-enabled');
+		// témoin : une fois lus, la phrase d'état et les champs paraissent
+		expect(vue.getByTestId('mcp-server-state')).toBeTruthy();
+		cleanup();
+
+		// après un échec du GET
+		mockApi.getMcpServerSettings.mockRejectedValueOnce({ code: 'NETWORK_ERROR', status: 0, message: 'Hors ligne.' });
+		const vue2 = render(McpSettingsSection);
+		await vue2.findByTestId('mcp-server-settings-load-error');
+		for (const id of AFFIRMATIONS) expect(vue2.queryByTestId(id), id).toBeNull();
+		expect(vue2.container.textContent).not.toContain('Désactivé : /mcp répond');
+		expect(vue2.container.textContent).not.toContain('personne n’est admis');
+		mockApi.getMcpServerSettings.mockResolvedValueOnce(reglages({ enabled: true, version: 3 }));
+		await fireEvent.click(vue2.getByTestId('mcp-server-settings-retry'));
+		await waitFor(() =>
+			expect((vue2.getByTestId('mcp-server-settings-enabled') as HTMLInputElement).checked).toBe(true),
+		);
+		expect(vue2.queryByTestId('mcp-server-settings-load-error')).toBeNull();
+	});
+
+	it('le message de succès s’efface à la modification suivante (revue P1, B8)', async () => {
+		const vue = await monter();
+		mockApi.updateMcpServerSettings.mockResolvedValueOnce(reglages({ version: 1 }));
+		await fireEvent.click(vue.getByTestId('mcp-server-settings-save'));
+		await vue.findByTestId('mcp-server-settings-saved');
+		await fireEvent.input(zone(vue, 'mcp-server-settings-networks'), { target: { value: '10.0.0.0/8' } });
+		expect(vue.queryByTestId('mcp-server-settings-saved')).toBeNull();
+	});
+
+	it('409 dont la relecture échoue : pas de « rechargés » (revue P1, B8)', async () => {
+		const vue = await monter();
+		mockApi.updateMcpServerSettings.mockRejectedValueOnce({ code: 'OPTIMISTIC_LOCK_CONFLICT', status: 409, message: 'x' });
+		mockApi.getMcpServerSettings.mockRejectedValueOnce({ code: 'INTERNAL_ERROR', status: 500, message: 'Erreur interne.' });
+		await fireEvent.click(vue.getByTestId('mcp-server-settings-save'));
+		await vue.findByTestId('mcp-server-settings-load-error');
+		expect(vue.container.textContent).not.toContain('ils sont rechargés');
+	});
+
+	it('les champs sont désactivés pendant l’envoi (revue P1, B8)', async () => {
+		const vue = await monter();
+		let resoudre!: (r: McpServerSettings) => void;
+		mockApi.updateMcpServerSettings.mockReturnValueOnce(new Promise((r) => (resoudre = r)));
+		await fireEvent.click(vue.getByTestId('mcp-server-settings-save'));
+		expect(zone(vue, 'mcp-server-settings-networks').closest('fieldset')?.disabled).toBe(true);
+		resoudre(reglages({ version: 1 }));
+		await vue.findByTestId('mcp-server-settings-saved');
+		expect(zone(vue, 'mcp-server-settings-networks').closest('fieldset')?.disabled).toBe(false);
+	});
+
 	it('(h) la phrase fixe sous Origines admises', async () => {
 		const vue = await monter();
 		expect(
@@ -267,6 +335,25 @@ describe('McpSettingsSection — ce que le filtre ne garantit pas (AC-6)', () =>
 		expect(vue.getByTestId('mcp-server-warning-nobody').textContent).toContain('personne n’est admis');
 		await fireEvent.click(vue.getByTestId('mcp-server-settings-filter'));
 		expect(vue.queryByTestId('mcp-server-warning-nobody')).toBeNull();
+	});
+
+	it('un réseau mappé que le serveur lit comme 0.0.0.0/0 est signalé, en plage et en mandataire (revue P1, E2)', async () => {
+		const vue = await monter();
+		await fireEvent.input(zone(vue, 'mcp-server-settings-networks'), {
+			target: { value: '::ffff:0.0.0.0/96\n::ffff:0:0/96\n0:0:0:0:0:ffff:0:0/96' },
+		});
+		const avis = vue.getAllByTestId('mcp-server-warning-network-any').map((e) => e.textContent ?? '');
+		expect(avis).toHaveLength(3);
+		expect(avis[0]).toContain('::ffff:0.0.0.0/96 admet tout client IPv4');
+		await fireEvent.input(zone(vue, 'mcp-server-settings-proxies'), { target: { value: '::ffff:0:0/96' } });
+		expect(vue.getByTestId('mcp-server-warning-proxy-any').textContent).toContain(
+			'::ffff:0:0/96 : tout pair IPv4 est cru',
+		);
+		// témoins : un réseau mappé étroit, et un /96 non mappé, ne sont pas signalés
+		await fireEvent.input(zone(vue, 'mcp-server-settings-networks'), {
+			target: { value: '::ffff:192.168.0.0/112\n2001:db8::/96\n::ffff:192.168.1.10' },
+		});
+		expect(vue.queryAllByTestId('mcp-server-warning-network-any')).toHaveLength(0);
 	});
 });
 

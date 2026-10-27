@@ -3136,3 +3136,5 @@ mcp-server-warning-network-any-v6 = { $entry } allows every IPv6 client; to allo
 mcp-server-warning-nobody = Filter enabled and no allowed range: nobody is allowed.
 mcp-server-warning-proxy-any-v4 = { $entry }: every IPv4 peer is believed on its X-Forwarded-For header.
 mcp-server-warning-proxy-any-v6 = { $entry }: every IPv6 peer is believed on its X-Forwarded-For header.
+mcp-server-form-expires-invalid = Invalid expiry date: choose a future day, no later than 30.12.9999.
+mcp-server-settings-retry = Try again

@@ -46,14 +46,21 @@
 		origines = texteDe(r.allowedOrigins);
 	}
 
-	async function charger() {
+	/**
+	 * Lit les réglages. Rend `true` si la lecture a réussi. Tant qu'ils ne sont pas lus
+	 * (`lus === null`), l'écran n'affiche ni état, ni cases, ni listes, ni avertissements :
+	 * il n'affirme rien d'un état inconnu (revue de code P1, E3).
+	 */
+	async function charger(): Promise<boolean> {
 		chargement = true;
 		erreurLecture = null;
 		try {
 			remplir(await getMcpServerSettings());
+			return true;
 		} catch (err) {
 			lus = null;
 			erreurLecture = errorMessageOf(err);
+			return false;
 		} finally {
 			chargement = false;
 		}
@@ -82,11 +89,14 @@
 			succes = true;
 		} catch (err) {
 			if (isApiError(err) && err.status === 409) {
-				erreur = i18nMsg(
-					'mcp-server-settings-conflict',
-					'Les réglages ont changé entre-temps ; ils sont rechargés, vos modifications ne sont pas enregistrées.',
-				);
-				await charger();
+				// « rechargés » ne se dit qu'après une relecture réussie ; sinon l'échec de
+				// lecture parle seul (revue de code P1, B8).
+				if (await charger()) {
+					erreur = i18nMsg(
+						'mcp-server-settings-conflict',
+						'Les réglages ont changé entre-temps ; ils sont rechargés, vos modifications ne sont pas enregistrées.',
+					);
+				}
 			} else {
 				erreur = errorMessageOf(err);
 			}
@@ -149,24 +159,19 @@
 				'Les réglages n’ont pas pu être lus : tant qu’ils ne le sont pas, rien ne s’enregistre depuis cet écran. Si l’erreur persiste, voir le manuel d’administration, § Activer le serveur.',
 			)}
 		</p>
+		<Button variant="outline" onclick={() => charger()} disabled={chargement} data-testid="mcp-server-settings-retry">
+			{i18nMsg('mcp-server-settings-retry', 'Réessayer')}
+		</Button>
 	{/if}
 
-	<form class="space-y-4" onsubmit={enregistrer} data-testid="mcp-server-settings-form">
+	<form
+		class="space-y-4"
+		onsubmit={enregistrer}
+		oninput={() => (succes = false)}
+		onchange={() => (succes = false)}
+		data-testid="mcp-server-settings-form"
+	>
 		<div class="space-y-1">
-			<label class="flex items-center gap-2 text-sm font-medium">
-				<input type="checkbox" bind:checked={actif} data-testid="mcp-server-settings-enabled" />
-				{i18nMsg('mcp-server-settings-enabled', 'Serveur activé')}
-			</label>
-			<p class="text-sm text-text-muted" data-testid="mcp-server-state">
-				{#if lus?.enabled}
-					{i18nMsg(
-						'mcp-server-state-on',
-						'Activé : le serveur répond aux clés MCP de cette société, depuis les adresses admises.',
-					)}
-				{:else}
-					{i18nMsg('mcp-server-state-off', 'Désactivé : /mcp répond comme une adresse qui n’existe pas.')}
-				{/if}
-			</p>
 			<p class="text-sm">
 				{i18nMsg('mcp-server-address-label', 'Adresse du serveur :')}
 				<code class="rounded bg-muted px-1 font-mono" data-testid="mcp-server-address">{adresse}</code>
@@ -188,6 +193,27 @@
 					'mcp-server-reset-note',
 					'La réinitialisation des données de démonstration efface ces réglages (serveur désactivé) et conserve les clés.',
 				)}
+			</p>
+		</div>
+
+		<!-- Tant que les réglages ne sont pas lus, rien de ce qui suit ne paraît : l'écran
+		     n'affirme rien d'un état inconnu ; pendant l'envoi, les champs sont figés. -->
+		{#if lus !== null}
+		<fieldset class="space-y-4" disabled={envoi} data-testid="mcp-server-settings-fields">
+		<div class="space-y-1">
+			<label class="flex items-center gap-2 text-sm font-medium">
+				<input type="checkbox" bind:checked={actif} data-testid="mcp-server-settings-enabled" />
+				{i18nMsg('mcp-server-settings-enabled', 'Serveur activé')}
+			</label>
+			<p class="text-sm text-text-muted" data-testid="mcp-server-state">
+				{#if lus.enabled}
+					{i18nMsg(
+						'mcp-server-state-on',
+						'Activé : le serveur répond aux clés MCP de cette société, depuis les adresses admises.',
+					)}
+				{:else}
+					{i18nMsg('mcp-server-state-off', 'Désactivé : /mcp répond comme une adresse qui n’existe pas.')}
+				{/if}
 			</p>
 		</div>
 
@@ -299,6 +325,8 @@
 				{i18nMsg('mcp-server-settings-never', 'Jamais modifiés — valeurs par défaut.')}
 			{/if}
 		</p>
+		</fieldset>
+		{/if}
 
 		{#if erreur !== null}
 			<div

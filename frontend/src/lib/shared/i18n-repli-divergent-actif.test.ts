@@ -277,7 +277,8 @@ describe('les replis frontend à site unique suivent le catalogue fr-CH (G13)', 
  * `grep -c '^<préfixe>' crates/kesh-i18n/locales/fr-CH/messages.ftl`.
  */
 const PREFIXES_REPLI_EGAL_AU_CATALOGUE: Readonly<Record<string, number>> = {
-	'mcp-server-': 95,
+	// 95 → 97 à la remédiation de la revue de code P1 de la 32-7 (`-settings-retry`, `-form-expires-invalid`).
+	'mcp-server-': 97,
 	'mcp-sends-': 48,
 	'mcp-prompts-': 94,
 };

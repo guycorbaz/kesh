@@ -41,10 +41,12 @@ import { toast } from 'svelte-sonner';
 import * as api from './mcp-server.api';
 import { SecretUnique } from './secret-unique.svelte';
 import McpKeysSection from './McpKeysSection.svelte';
-import type { McpKey } from './mcp-server.types';
+import { PORTEES_MCP, type McpKey } from './mcp-server.types';
 
 const mockApi = vi.mocked(api);
-const SECRET = 'kesh_mcp_SECRET0123456789abcdefghijk';
+// Factice, et hors du format d'un secret réel (`kesh_mcp_` + 27 base62) : les `_` le
+// rendent invisible à tout détecteur de secrets (revue de code P1, A-7 ; C-32-7-38).
+const SECRET = 'kesh_mcp_SECRET_factice_0123456789';
 const TEMOIN = 'kesh_mcp_TEMOIN';
 
 function cle(id: number, over: Partial<McpKey> = {}): McpKey {
@@ -54,7 +56,7 @@ function cle(id: number, over: Partial<McpKey> = {}): McpKey {
 		scopes: ['books:read'],
 		unknownScopes: [],
 		sendValidation: 'required',
-		createdByUserId: 1,
+		createdByUserId: 987654,
 		createdAt: '2026-10-25T10:00:00.123',
 		lastUsedAt: null,
 		revokedAt: null,
@@ -119,7 +121,16 @@ describe('la liste des clés (AC-8)', () => {
 		expect(vue.getByTestId('mcp-server-key-expires-3').textContent?.trim()).toBe('jamais');
 		expect(vue.getByTestId('mcp-server-key-last-used-3').textContent?.trim()).toBe('jamais');
 		// le créateur n'est pas affiché (C-32-7-16)
-		expect(vue.getByTestId('mcp-server-keys-table').textContent).not.toContain('createdBy');
+		// (revue de code P1, A-5 : le numéro du créateur, non le nom du champ)
+		expect(vue.getByTestId('mcp-server-keys-table').textContent).not.toContain('987654');
+	});
+
+	it('une portée inconnue en double ne fait pas tomber la liste (revue de code P1, E1)', async () => {
+		const vue = await monter([cle(2, { scopes: ['books:read'], unknownScopes: ['admin', 'admin'] }), cle(1)]);
+		const portees = vue.getByTestId('mcp-server-key-scopes-2').textContent ?? '';
+		expect(portees.split('admin — inconnue de cette version').length - 1).toBe(2);
+		// la révocation des autres clés reste offerte
+		expect(vue.getByTestId('mcp-server-key-revoke-1')).toBeTruthy();
 	});
 
 	it('(a) portées inconnues : « jamais accordée », et « n’ouvre aucun accès » si elles seules', async () => {
@@ -191,6 +202,9 @@ describe('créer une clé (AC-9, AC-10)', () => {
 	it('les cinq phrases de portée, une par case, dans l’ordre de McpScope::ALL', async () => {
 		const vue = await monter([]);
 		await fireEvent.click(vue.getByTestId('mcp-server-keys-new'));
+		// `PORTEES_MCP` = `McpScope::ALL`, recopié de `crates/kesh-db/src/entities/mcp_key.rs:48-54`
+		// (ordre canonique ; revue de code P1, A-3).
+		expect(PORTEES_MCP).toEqual(['books:read', 'invoices:read', 'contacts:read', 'documents:read', 'prompts:write']);
 		const cases = [...vue.getByTestId('mcp-server-form').querySelectorAll('input[type="checkbox"]')].map((e) =>
 			e.getAttribute('data-testid'),
 		);
@@ -246,6 +260,17 @@ describe('créer une clé (AC-9, AC-10)', () => {
 		expect((vue.getByTestId('mcp-server-form-scope-books-read') as HTMLInputElement).checked).toBe(true);
 		const envoye = mockApi.createMcpKey.mock.calls[0][0];
 		expect(envoye.expiresAt).toBe(new Date(2099, 11, 31, 23, 59, 59, 999).toISOString());
+	});
+
+	it('une expiration saisie mais illisible est refusée, jamais envoyée comme « sans expiration » (revue P1, B3)', async () => {
+		const vue = await monter([]);
+		await ouvrirEtRemplir(vue);
+		await fireEvent.input(vue.getByTestId('mcp-server-form-expires'), { target: { value: '10000-01-01' } });
+		// témoin : la saisie a bien pris (sans quoi le cas passerait à vide, champ vide)
+		expect((vue.getByTestId('mcp-server-form-expires') as HTMLInputElement).value).toBe('10000-01-01');
+		await fireEvent.click(vue.getByTestId('mcp-server-form-submit'));
+		expect(vue.getByTestId('mcp-server-form-error').textContent).toContain('Date d’expiration invalide');
+		expect(mockApi.createMcpKey).not.toHaveBeenCalled();
 	});
 
 	it('(c) double soumission impossible', async () => {

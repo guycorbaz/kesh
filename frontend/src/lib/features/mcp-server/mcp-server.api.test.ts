@@ -27,7 +27,8 @@ import {
 	updateMcpServerSettings,
 } from './mcp-server.api';
 
-const SECRET = 'kesh_mcp_SECRET0123456789abcdefghijk';
+// Factice, hors du format d'un secret réel (revue de code P1, A-7 ; C-32-7-38).
+const SECRET = 'kesh_mcp_SECRET_factice_0123456789';
 
 const REPONSE_CLE = {
 	id: 4,
@@ -89,6 +90,15 @@ describe('mcp-server.api', () => {
 			sendValidation: 'exempt',
 			expiresAt: '2026-12-31T22:59:59.999Z',
 		});
+	});
+
+	it('une réponse 201 sans secret lisible lève une erreur, jamais « undefined » (revue P1, B2)', async () => {
+		for (const sans of [{ ...REPONSE_CLE }, { ...REPONSE_CLE, key: 42 }, { ...REPONSE_CLE, key: 'autre' }]) {
+			postMock.mockResolvedValueOnce(sans);
+			await expect(
+				createMcpKey({ name: 'a', scopes: ['books:read'], sendValidation: 'required' }),
+			).rejects.toThrow();
+		}
 	});
 
 	it('révocation : DELETE avec { version }', async () => {
