@@ -18,6 +18,7 @@ par union au registre de l'epic à la clôture.*
   et l'audit) ; montrer le texte stocké avec la marque en légende (la marque n'y serait pas à sa place).
 - **Réversible** : oui, tant que la 32-10a-iii n'est pas développée ; ensuite, la variante B reste possible.
 - **Annoté à la validation P1 (2026-10-27)** : D1 accepté, puis **étendu** par l'orchestrateur (fiche 32-10a, `e7a90572`) — `servable`, champs rendus visibles par le serveur, texte du code d'un standard, noms et date. La **variante B est retirée** : sans l'amendement, le développement s'arrête et rend compte ; elle apportait son propre angle mort (une composition serveur modifiée sans toucher au gabarit).
+- **Annoté à la validation P2 (2026-10-27)** : la note complétée de la 32-10a (`20a02a86`) rend le texte et la description servis, chacun exact et rendu visible ; **la marque fait partie du texte servi, il n'y a pas de champ `marque` séparé** — le `servi: {description, texte, marque}` du « Retenu » est périmé. La composition vit dans `services/` (garde `un_seul_point_d_entree` de la 32-6).
 
 ### C-32-10b-2 — La marque dans le texte, encadrée, à sa place
 
@@ -28,6 +29,7 @@ par union au registre de l'epic à la clôture.*
 - **Écartées** : une pastille seule (l'Administrateur ne verrait pas ce que l'agent lit) ; masquer la marque du texte
   pour « alléger » (contraire à la propriété).
 - **Réversible** : oui.
+- **Annoté à la validation P2 (2026-10-27)** : l'**encadré séparé est retiré** (R1, F6 ; consigne « retirer plutôt qu'enrichir ») : la marque se lit dans le texte servi rendu visible, à sa place, sans traitement de l'écran — ni encadré, ni comparaison au début du texte, ni avis « marque manquante ». La pastille *Écrit par un agent*, tirée de l'origine de la version, reste hors du `<pre>`. La preuve : l'égalité du `textContent` avec le champ visible sur une version d'agent.
 
 ### C-32-10b-3 — Un signalement des caractères cachés côté écran, miroir gardé de `kesh-core`
 
@@ -85,6 +87,7 @@ par union au registre de l'epic à la clôture.*
   numéro, de toute nature) en fonction pure testée sur les cas `pending`, `refused` et retrait.
 - **Écartée** : toujours recalculer côté écran (une seconde implémentation d'une règle du serveur).
 - **Réversible** : oui.
+- **Annoté à la validation P2 (2026-10-27)** : le repli « sinon, par la règle » est **retiré** (R5) : `numeroEnVigueur` est rendu par le serveur (note `20a02a86`) et figure à la liste d'arrêt de l'étape 0 ; l'écran ne recalcule rien.
 
 ### C-32-10b-8 — L'éditeur : valeurs exactes, aperçu des caractères cachés, avis P26, retrait
 
@@ -119,6 +122,7 @@ par union au registre de l'epic à la clôture.*
   32-10a pour un gain faible : il paraît en tête de l'historique aussitôt après) ; le bouton toujours présent.
 - **Réversible** : oui.
 - **Annoté à la validation P1 (2026-10-27)** (R7, F2) : l'alternative écartée « montrer le texte standard du code avant le geste » est **retenue** — D1 étendu rend `standardDuCode`, rendu visible, que le dialogue montre avant la confirmation ; inventaire E16. La condition du bouton devient le seul drapeau `standardDiffere` du serveur, qui couvre déjà les cas énumérés (R3).
+- **Annoté à la validation P2 (2026-10-27)** : la condition devient `standardDiffere && standardDuCode !== null` (F5, R11 : un standard que le binaire ne porte plus a le drapeau levé, aucun texte du code, et la route le refuse) ; le cas « version d'agent approuvée » sur un standard est retiré, inatteignable (C-32-10a-27).
 
 ### C-32-10b-11 — Le repli égal au catalogue : G13 par préfixe si la 32-7 l'a posé, sinon un module partagé
 
@@ -187,6 +191,7 @@ par union au registre de l'epic à la clôture.*
 - **Écartées** : le bouton présent, le serveur répondant 409 (geste offert puis refusé) ; un blocage calculé par
   l'écran (logique Unicode côté client, retirée).
 - **Réversible** : oui.
+- **Annoté à la validation P2 (2026-10-27)** : le refus du serveur est un **400**, « le même code que la création » (D2, note `20a02a86` ; R4), non un 409 ; l'AC-12 le range sous le 400.
 
 ### C-32-10b-18 — Un seul envoi à la fois sur chaque geste
 
@@ -195,6 +200,7 @@ par union au registre de l'epic à la clôture.*
   réponse remplace l'état ; test paramétré par geste, mutation M17.
 - **Écartée** : s'en remettre au 409 du serveur (le second refus s'afficherait sur un geste réussi).
 - **Réversible** : oui.
+- **Annoté à la validation P2 (2026-10-27)** : **un seul** état d'envoi pour **tous** les gestes de la page, comme la 32-8c (`McpSendDetail.svelte:47`) — F8 ; le test `gestes_desactives_pendant_l_envoi` asserte l'état `disabled` de chaque geste (F3, R13 : compter les appels ne tuait pas M17) ; le retrait du retour anticipé du gestionnaire est déclaré mutation équivalente, non jouée.
 
 ### C-32-10b-19 — Le drapeau `standardDiffere` n'est pas affiché tel quel
 

@@ -15,11 +15,12 @@ clés de messages du serveur, règles d'approbation — **se relit au code à l'
 ligne lue citée au Change Log ; une phrase de cette fiche que le code ne confirme pas **se réécrit selon le code**.
 
 ⚠️ **L'écran repose sur l'amendement « D1 étendu » de la 32-10a-iii**, accepté par l'orchestrateur et inscrit à la
-fiche 32-10a (branche `story/32-10a`, commit `e7a90572`, § *À recontrôler à l'étape 0*) : la route `GET
-/api/v1/admin/mcp/prompts/{id}` rend, pour chaque version, le verdict **`servable`** du serveur, le texte et la
-description servis **exacts** (marque comprise), les mêmes **rendus visibles par le serveur** (`rendre_visible`), pour
-un standard le **texte du code** rendu visible, les **noms** de l'auteur et du décideur et la **date** de dernière
-modification. **L'écran n'a donc aucune logique Unicode** : il affiche ce que le serveur a rendu visible et le verdict
+fiche 32-10a (branche `story/32-10a`, commits `e7a90572` puis **`20a02a86`**, note « D1 étendu, complément », § *À
+recontrôler à l'étape 0*) : la route `GET /api/v1/admin/mcp/prompts/{id}` rend, pour chaque version, le verdict
+**`servable`** du serveur, le texte et la description servis, chacun **exact** et **rendu visible par le serveur**
+(`rendre_visible`) — la marque fait partie du texte servi, **sans champ séparé** —, pour un standard le texte et la
+description du code, exacts et rendus visibles, les **noms** de l'auteur et du décideur, `creeLe`, `decideLe`,
+`numeroEnVigueur` et la **date** de dernière modification. **L'écran n'a donc aucune logique Unicode** : il affiche ce que le serveur a rendu visible et le verdict
 du serveur (validation P1). Si l'étape 0 constate que l'amendement manque en tout ou partie, le développement
 **s'arrête** et rend compte à l'orchestrateur — il n'y a plus de variante de repli côté écran (C-32-10b-1, annoté).
 
@@ -27,7 +28,7 @@ du serveur (validation P1). Si l'étape 0 constate que l'amendement manque en to
 
 En tant que Guy, Administrateur d'une installation où un agent lira mes livres, je veux, dans **Administration →
 Prompts du serveur MCP**, voir chaque prompt et **tout son historique**, lire **exactement** le texte que l'agent
-recevra — marque d'un prompt d'agent et caractères invisibles compris —, approuver ou refuser une version proposée par
+recevra — marque d'un prompt d'agent comprise, caractères de contrôle et de mise en page écrits en code —, approuver ou refuser une version proposée par
 un agent **sur ce que j'ai lu**, écrire ma propre version, retirer un prompt ou revenir au texte standard, sans que
 rien ne soit jamais écrasé — afin qu'aucune instruction ne parvienne à un agent sans que je l'aie vue telle qu'elle
 part.
@@ -138,14 +139,14 @@ Chaque fait a été lu ; la ligne ou la commande est citée.
 | Élément | Fiche 32-10a | Ce que l'écran en fait |
 |---|---|---|
 | `GET /api/v1/admin/mcp/prompts` : nom, standard, version en vigueur (numéro, origine, nature), nombre à valider, « le standard du code diffère », `version` | AC-iii6 ; dépôt `synthese_par_societe` (AC-i5) | la liste (AC-3) |
-| `GET /…/{id}` : le prompt et **tout** son historique, textes compris ; **par D1 étendu** (note d'étape 0, `e7a90572`) : par version, `servable`, servi exact, servi rendu visible, noms de l'auteur et du décideur ; pour un standard, le texte du code rendu visible ; la date de dernière modification | AC-iii6 ; `historique` ; D1, D1 étendu | le détail (AC-4 à AC-8, AC-10) |
+| `GET /…/{id}` : le prompt et **tout** son historique, textes compris ; **par D1 étendu et son complément** (note d'étape 0, `e7a90572`, `20a02a86`) : par version, `servable`, texte et description servis, chacun exact et rendu visible (marque comprise, sans champ séparé), `creeLe`, `decideLe`, noms de l'auteur et du décideur, nom et révocation de la clé auteur ; `numeroEnVigueur`, `standardDiffere` ; pour un standard, le texte et la description du code, exacts et rendus visibles ; la date de dernière modification ; la composition dans `services/` | AC-iii6 ; `historique` ; D1, D1 étendu | le détail (AC-4 à AC-8, AC-10) |
 | `POST` (nom, description, texte → 201) | AC-iii6, AC-iii8 | la création (AC-11) |
 | `POST /{id}/versions` (texte **ou** retrait, `version` attendue → 201) | AC-iii6 | l'édition, le retrait (AC-9) |
 | `POST /{id}/versions/{numero}/approve` et `…/refuse` (`version` attendue → 200) | AC-iii6, AC-i7 | la décision (AC-7) |
 | `POST /{id}/standard` (`version` attendue → 201) | AC-iii6, AC-iii11 (d) | le retour au standard (AC-10) |
-| 404 autre société ; 409 verrou périmé, version non la dernière, déjà décidée, standard inconnu ; 400 validation (messages `t(…)`, quatre locales) | AC-iii6, AC-iii8 | les erreurs (AC-12) |
+| 404 autre société ; 409 verrou périmé, version non la dernière, déjà décidée, standard inconnu ; 400 validation (messages `t(…)`, quatre locales), et 400 au refus d'approuver une version non servable (D2, « le même code que la création », `20a02a86`) | AC-iii6, AC-iii8 | les erreurs (AC-12) |
 | Comptable 403, PAT 403, clé MCP 401 | AC-iii7 | les rôles (AC-14) |
-| la marque d'un prompt d'agent, en tête de la description **et** du texte servis, suivie d'une ligne vide | AC-ii7, *Dev Notes — La marque* | le texte servi (AC-5) |
+| la marque d'un prompt d'agent, en tête de la description **et** du texte servis, suivie d'une ligne vide | AC-ii7, *Dev Notes — La marque* | rien de propre : elle se lit dans le texte servi rendu visible, à sa place (AC-5) |
 | approbation : version `agent` `pending` **et la dernière** ; refus : `agent` `pending`, dernière ou non ; états terminaux | AC-i7 | les boutons (AC-7) |
 | servi : `books:read` (C-32-10a-16) ; `prompts/get` d'un prompt non servi → `-32602` à texte fixe | AC-ii5, AC-ii6 | l'E2E (AC-16) |
 
@@ -177,11 +178,13 @@ qu'une proposition plus récente est arrivée entre la lecture et le clic, ou qu
 endroit. D'où quatre règles, chacune tenue par un test :
 
 1. **On montre le texte servi, non le texte stocké** (AC-5). Pour une version d'agent, le texte servi commence par la
-   marque ; l'écran montre la marque **dans** le texte, à sa place, et non comme un ornement à côté. La forme servie
-   est calculée par le serveur, par la fonction du catalogue (D1) ; l'E2E prouve que `prompts/get` rend **exactement**
+   marque ; elle fait partie du champ que rend le serveur, si bien que l'écran la montre **dans** le texte, à sa place,
+   sans aucun traitement propre. La forme servie est calculée par le serveur, par la fonction de composition du
+   catalogue, dans `services/` (D1, note `20a02a86`) ; l'E2E prouve que `prompts/get` rend **exactement**
    ce que la page montrait avant l'approbation (AC-16).
-2. **On rend visible ce qui ne se voit pas — par le serveur** (AC-6). Le serveur rend chaque caractère caché sous la
-   forme `\u{XXXX}` (`rendre_visible`, fait 12) et dit si la version est **servable** (`valider_contenu`) ; l'écran
+2. **On rend visible ce qui ne se voit pas — par le serveur** (AC-6). Le serveur écrit en code, sous la forme
+   `\u{XXXX}`, les caractères de contrôle et de mise en page qu'il refuse (`rendre_visible`, fait 12 ; les espaces
+   qu'il admet restent invisibles, § *Ce que les gardes ne voient pas*) et dit si la version est **servable** (`valider_contenu`) ; l'écran
    affiche ce champ **sans aucune transformation** (test au niveau du DOM) et ce verdict. **L'écran n'a aucune logique
    Unicode** : ni prédicat recopié, ni classe du moteur JavaScript, ni garde de version — la classe « le navigateur ne
    classe pas comme le serveur » est fermée par la conception (C-32-8-20, appliqué à la lettre ; C-32-10b-3 annoté).
@@ -253,52 +256,51 @@ telle**) ; commandes et sorties citées au Dev Agent Record.
    n'est pas valide : Kesh refuse de la servir (elle a pu être restaurée d'une sauvegarde ou écrite hors de Kesh) »
    (`servable` faux, AC-ii2 et l. 665 de la fiche 32-10a) — et, dans ce dernier cas, le texte rendu visible montré
    **sous** la phrase, titré « Texte de la version en vigueur, non servi ». Puis les **versions à valider** (AC-7),
-   puis l'**historique** (AC-8), puis les gestes (AC-9, AC-10). Avis permanent en tête (`role="note"`), **exact pour
-   chaque bloc** (validation P1, F3) : « Un prompt est une consigne donnée à l'agent. Sous *Ce que l'agent reçoit
-   aujourd'hui*, le texte est celui qu'il reçoit ; sous *À valider*, celui qu'il recevrait si vous approuviez la
-   version. La marque d'un prompt écrit par un agent en fait partie, et Kesh y montre chaque caractère invisible sous
-   la forme `\u{XXXX}`. » Tests : `bloc_du_jour_seulement_si_servable` (en vigueur `servable: false` → la phrase,
-   aucun bloc *reçoit aujourd'hui*) ; `avis_distingue_servi_et_a_valider`.
+   puis l'**historique** (AC-8), puis les gestes (AC-9, AC-10). Avis permanent en tête (`role="note"`,
+   `data-testid="mcp-prompt-notice"`), réduit à ce qui est vrai (validation P1, F3 ; validation P2, R3, F1) : « Un
+   prompt est une consigne donnée à l'agent. Cet écran montre le texte que Kesh lui sert : sous *Ce que l'agent reçoit
+   aujourd'hui*, celui qu'il reçoit ; sous *À valider*, celui qu'il recevrait si vous approuviez la version. La marque
+   d'un prompt écrit par un agent en fait partie. Les caractères de contrôle et de mise en page que Kesh refuse y sont
+   écrits en code, sous la forme `\u{XXXX}`. Dans une version que Kesh sert, un `\u{…}` est écrit en toutes lettres. »
+   ⚠️ La dernière phrase **se recontrôle à l'étape 0** contre le cas du `\r` restauré (§ *À recontrôler*) : si le code
+   montre qu'une version servable peut porter un `\u{000D}` rendu visible, elle se retire de l'avis, de l'AC-6, de
+   l'AC-18 et de la ligne E17. Tests : `bloc_du_jour_seulement_si_servable` (en vigueur `servable: false` → la phrase,
+   aucun bloc *reçoit aujourd'hui*) ; `avis_distingue_servi_et_a_valider` — le `textContent` de l'avis **égal** au
+   texte prescrit ci-dessus (valeur fr-CH du catalogue).
 
 ### B — Ce qui est montré : le texte servi, la marque, les caractères cachés
 
-5. **AC-5 — on montre le texte servi, tel que le serveur l'a rendu visible** (C-32-10b-1, C-32-10b-2 ; D1 étendu).
+5. **AC-5 — on montre le texte servi, tel que le serveur l'a rendu visible** (C-32-10b-1, C-32-10b-2 ; D1 étendu et
+   son complément, note `20a02a86`).
    - **Les champs** (noms indicatifs, alignés à l'étape 0 sur le DTO réel) : pour chaque version de nature *texte*, la
-     réponse de `GET /…/{id}` porte `servi: { description, texte, descriptionVisible, texteVisible, marque }` —
+     réponse de `GET /…/{id}` porte `servi: { description, texte, descriptionVisible, texteVisible }` —
      `description` et `texte` **exactement** ce que `prompts/list` et `prompts/get` rendraient si cette version était
-     en vigueur, marque comprise ; `descriptionVisible` et `texteVisible` les mêmes passés par `rendre_visible` (fait
-     12) ; `marque` la marque seule (nulle pour une version `standard` ou `admin`) — et `servable: boolean`, le verdict
-     de `valider_contenu` sur le contenu stocké. Le serveur les calcule par **la même fonction** que le catalogue
-     (AC-ii4, AC-ii7 de la 32-10a) : **aucun texte servi n'est recomposé côté écran**, et l'écran ne transforme aucun
-     de ces champs.
+     en vigueur, **marque comprise** ; `descriptionVisible` et `texteVisible` les mêmes passés par `rendre_visible`
+     (fait 12) — et `servable: boolean`, le verdict de `valider_contenu` sur le contenu stocké. **La marque n'a pas de
+     champ séparé** : elle fait partie du texte et de la description servis. Le serveur les calcule par **la même
+     fonction de composition** que le catalogue, qui vit dans `services/` (note `20a02a86`) : **aucun texte servi n'est
+     recomposé côté écran**, et l'écran ne transforme aucun de ces champs.
    - **Ce qui sert à quoi.** Le texte **rendu visible** sert à l'**affichage**, et à lui seul ; le texte **exact**
-     n'est jamais affiché — il sert à l'**égalité avec `prompts/get`** dans l'E2E (AC-16). La marque se compose
-     d'entiers et d'un gabarit constant (AC-ii7) : elle n'a aucun caractère caché, si bien que, pour une version
-     d'agent, `texteVisible` commence par `marque + "\n\n"` comme `texte` (à recontrôler à l'étape 0).
+     n'est jamais affiché — il sert à l'**égalité avec `prompts/get`** dans l'E2E (AC-16).
    - **Le rendu** (`McpPromptVersion.svelte`) : deux blocs `<pre class="whitespace-pre-wrap break-words font-mono"
-     dir="ltr">`, `data-testid="mcp-prompt-served-description-{numero}"` et `"mcp-prompt-served-text-{numero}"`. Quand
-     `servi.marque` n'est pas nulle **et** que le champ visible commence par `servi.marque + "\n\n"` (comparaison de
-     chaînes, aucune logique Unicode), la portion de la marque est un `<span data-testid="mcp-prompt-mark">` **à
-     l'intérieur** du `<pre>`, encadré ; la pastille *Écrit par un agent* est **hors** du `<pre>`, au-dessus. Le reste
-     est une interpolation Svelte de la tranche qui suit la marque. Sinon, le champ visible entier est interpolé, sans
-     encadré — jamais masqué — et, pour une version `agent` dont la marque manque en tête, un avis (`role="alert"`,
-     `data-testid="mcp-prompt-mark-missing"`) : « La marque attendue d'un prompt d'agent manque en tête de ce texte :
-     n'approuvez pas, et signalez-le. » (validation P1, R11 ; la description suit la même règle que le texte).
-   - ⛔ **La règle des blancs de gabarit** (validation P1, F4, R8) : à l'intérieur de chaque `<pre>`, la source Svelte
-     ne porte **aucun** blanc, retour à la ligne ni indentation entre les balises et les blocs `{#if}` / `{:else}` /
-     `{/if}` — le contenu du `<pre>` s'écrit d'un tenant, sur une ligne, car un `<pre>` affiche les blancs du gabarit
-     comme du texte. Aucun `{#each}` dans un `<pre>`. Aucun libellé, pastille ni titre à l'intérieur.
+     dir="ltr">`, `data-testid="mcp-prompt-served-description-{numero}"` et `"mcp-prompt-served-text-{numero}"`, dont
+     le contenu est l'**interpolation seule** du champ visible. La marque d'une version d'agent s'y lit à sa place, en
+     tête, **sans traitement de l'écran** — ni encadré, ni découpe, ni comparaison (validation P2, R1, F6 : l'encadré
+     séparé est retiré). La pastille *Écrit par un agent*, tirée de l'**origine** de la version, est **hors** du
+     `<pre>`, au-dessus.
+   - ⛔ **La règle des blancs de gabarit** (validation P1, F4, R8) : chaque `<pre>` s'écrit d'un tenant, sur une ligne
+     — `<pre …>{servi.texteVisible}</pre>` —, sans blanc, retour à la ligne ni indentation entre les balises et
+     l'interpolation, car un `<pre>` affiche les blancs du gabarit comme du texte. Aucun bloc `{#if}` ni `{#each}`,
+     aucun libellé, pastille ni titre à l'intérieur.
    - **Tests au niveau du DOM** (`McpPromptVersion.test.ts`, composant monté, jsdom) :
-     `texte_affiche_egal_au_champ_visible` — pour une fixture **multi-paragraphe** à blanc de tête, tabulation, ligne
-     vide finale et un caractère rendu visible (`texte` portant U+202E, `texteVisible` portant `\u{202E}` à sa place),
-     `pre.textContent === servi.texteVisible` **exactement**, `pre.textContent !== servi.texte`, et la chaîne exacte
-     `servi.texte` n'apparaît nulle part dans le `textContent` du composant ; idem pour la description
-     (`description_affichee_egale_au_champ_visible`) ; `marque_dans_le_bloc` — version d'agent : `pre.contains(mark)`,
-     `mark.textContent === servi.marque`, `pre.textContent.startsWith(servi.marque + "\n\n")`, et la pastille *Écrit
-     par un agent* n'est **pas** descendante du `<pre>` ; `sans_marque_pour_standard_et_admin` ;
-     `marque_manquante_signalee` (un `texteVisible` d'agent qui ne commence pas par la marque : rendu entier, aucun
-     encadré, l'avis présent). ⚠️ `marque_dans_le_bloc` ne peut pas passer à vide : une marque rendue hors du `<pre>`
-     échoue à `pre.contains(mark)` **et** à l'égalité de `textContent` (M13).
+     `texte_affiche_egal_au_champ_visible` — sur une version d'**agent** (origine fixée : la marque est dans le champ),
+     fixture **multi-paragraphe** dont `texteVisible` commence par un texte de marque suivi de `\n\n`, à blanc de tête
+     après la marque, tabulation, ligne vide finale et un caractère rendu visible (`texte` portant U+202E,
+     `texteVisible` portant `\u{202E}` à sa place) : `pre.textContent === servi.texteVisible` **exactement**,
+     `pre.textContent !== servi.texte`, et la chaîne exacte `servi.texte` n'apparaît nulle part dans le `textContent`
+     du composant ; idem pour la description (`description_affichee_egale_au_champ_visible`, même version d'agent) ;
+     `pastille_agent_hors_du_bloc` — la pastille *Écrit par un agent* n'est **pas** descendante du `<pre>`, et elle est
+     absente pour une version `standard` ou `admin`.
 6. **AC-6 — les caractères cachés et le verdict : ce que dit le serveur, rien d'autre** (C-32-10b-3, C-32-10b-4,
    annotés à la validation P1).
    - L'écran n'a **aucune** logique Unicode : ni copie des listes de `kesh-core`, ni classe `\p{…}` du moteur
@@ -308,9 +310,10 @@ telle**) ; commandes et sorties citées au Dev Agent Record.
    - **Le verdict** : sur chaque version de nature texte dont `servable` est faux, un avis (`role="alert"`,
      `data-testid="mcp-prompt-not-servable-{numero}"`) : « Kesh ne servirait pas cette version : son contenu n'est pas
      valide (caractère invisible, longueur ou description sur plusieurs lignes). Elle a pu être restaurée d'une
-     sauvegarde ou écrite hors de Kesh. » (le motif exact s'affiche si la réponse le rend, relu à l'étape 0). Une
-     version **servable** ne contient aucun caractère caché : toute suite `\u{…}` qu'on y lit est **écrite en toutes
-     lettres** dans le texte — l'avis permanent et le manuel le disent (§ *Ce que les gardes ne voient pas*).
+     sauvegarde ou écrite hors de Kesh. » (la note de la 32-10a ne promet pas de motif : l'écran n'en affiche pas).
+     **Sous réserve du recontrôle du `\r` à l'étape 0** (§ *À recontrôler*), une version **servable** ne contient aucun
+     caractère que `rendre_visible` écrit en code : toute suite `\u{…}` qu'on y lit est alors **écrite en toutes
+     lettres** dans le texte — la dernière phrase de l'avis permanent (AC-4) et le manuel (AC-18) le disent.
    - Tests (`McpPromptVersion.test.ts`) : `avis_non_servable_selon_le_serveur` (`servable: false` → l'avis ;
      `servable: true` sur un texte dont `texteVisible` porte une suite `\u{202E}` littérale → **aucun** avis : l'écran
      ne juge pas le texte, il lit le verdict).
@@ -320,7 +323,7 @@ telle**) ; commandes et sorties citées au Dev Agent Record.
 7. **AC-7 — la version d'agent à valider : on approuve ce qu'on a vu** (C-32-10b-5, C-32-10b-6).
    - Chaque version `agent` `pending` est montrée **en entier** — description et texte servis (AC-5, AC-6), jamais
      tronqués, jamais repliés, sans « voir plus » — avec : son numéro, la clé auteur (numéro et nom de la clé ;
-     « révoquée » le cas échéant, si la réponse le rend), la date de la proposition, et la pastille *Écrit par un
+     « révoquée » le cas échéant, champs de D1), la date de la proposition (`creeLe`), et la pastille *Écrit par un
      agent — à valider*. Test `version_a_valider_jamais_repliee` (validation P1, R15, F6) : le `<pre>` du texte de la
      version à valider est dans le DOM et **visible** au premier rendu, aucun ancêtre `<details>` fermé ni
      `hidden`, aucun bouton « voir plus ».
@@ -348,23 +351,26 @@ telle**) ; commandes et sorties citées au Dev Agent Record.
      écrite** (validation P1, R6, F6) : version d'agent à valider n° 3, dernière n° 4 (d'administrateur) ; *Refuser* sur
      la n° 3, confirmation → `POST …/versions/3/refuse` (chemin **égal**, jamais `…/versions/4/…`) avec la `version`
      lue ; `dialogue_restate_numero_cle_et_marque`.
-   - ⛔ **Règle d'envoi en cours, sur chaque dialogue et chaque bouton qui envoie** (validation P1, F8 ; C-32-10b-18) —
-     *Approuver*, *Refuser*, *Enregistrer comme nouvelle version*, *Retirer*, *Revenir au texte standard*, *Créer* :
-     dès le clic de confirmation, le bouton est désactivé (`disabled`, `aria-busy="true"`) jusqu'à la réponse ; un
-     second clic n'émet rien ; la réponse (succès ou erreur) remplace l'état, jamais ne s'ajoute à un message
-     antérieur. Test paramétré `un_seul_post_pendant_l_envoi` (un `POST` simulé en attente, deux clics → **un**
-     appel), un cas par geste.
+   - ⛔ **Règle d'envoi en cours, un seul état par page** (validation P1, F8 ; validation P2, F3, F8, R13 ;
+     C-32-10b-18 ; modèle de la 32-8c, `McpSendDetail.svelte:47`, `:92`, `:309-368`) : la page de détail tient **un**
+     état `envoiEnCours` pour **tous** ses gestes — *Approuver*, *Refuser*, *Enregistrer comme nouvelle version*,
+     *Retirer*, *Revenir au texte standard*, les boutons de leurs dialogues — ; dès le clic de confirmation, **tous**
+     sont désactivés (`disabled`) jusqu'à la réponse, et le bouton cliqué porte `aria-busy="true"`. La page de la liste
+     fait de même pour *Créer*. Test paramétré `gestes_desactives_pendant_l_envoi` (`McpPromptDetail.test.ts`, un cas
+     par geste ; un cas *Créer* dans `McpPromptsList.test.ts`) : un `POST` simulé laissé en attente, **chaque** bouton
+     de geste de la page est `disabled`, le bouton cliqué porte `aria-busy="true"`, et un seul `POST` est parti.
 8. **AC-8 — l'historique, jamais réécrit.** Un tableau de **toutes** les versions, plus récente en tête : numéro ;
    origine (*Standard* ; *Administrateur* — nom de l'auteur ; *Agent* — clé n° K, pastille d'avertissement) ; état
    (*Approuvée*, *À valider*, *Refusée*) ; nature (*Texte*, *Retrait*) ; la décision d'une version d'agent (par qui,
-   quand — nom du décideur et date, champs de D1 étendu) ; la date ; la pastille **En vigueur** sur la version en vigueur (champ du serveur si la réponse le rend,
-   sinon la règle de l'AC-i6 — approuvée de plus grand numéro, de toute nature — appliquée par une fonction pure
-   testée, C-32-10b-7). Chaque version de nature *texte* se **déplie** pour montrer son texte servi (AC-5, AC-6) — le
+   quand — `decideurNom` et `decideLe`, champs de D1 étendu) ; la date (`creeLe`) ; la pastille **En vigueur** sur la
+   version dont le numéro est `numeroEnVigueur`, rendu par le serveur — **l'écran ne recalcule rien** (validation P2,
+   R5 ; C-32-10b-7 annoté). Chaque version de nature *texte* se **déplie** pour montrer son texte servi (AC-5, AC-6) — le
    repli de l'historique est permis, celui d'une version **à valider** ne l'est pas (AC-7). Action **Reprendre cette
    version** sur une version de nature *texte* : pré-remplit l'éditeur (AC-9) avec sa description et son texte
    **stockés** (C-32-10a-19 : « l'écran pré-remplit, l'administrateur enregistre »). Tests : chaque origine, état et
-   nature rendus ; `en_vigueur_selon_la_regle` (une `pending` postérieure, une `refused` postérieure, un retrait en
-   vigueur) ; `marque_visible_dans_l_historique` (la pastille *Agent* sur chaque version d'agent, décidée ou non).
+   nature rendus ; `en_vigueur_selon_le_serveur` (la pastille sur la version de numéro `numeroEnVigueur` et sur elle
+   seule, fixtures où une `pending` et une `refused` sont postérieures et où un retrait est en vigueur ; aucune
+   pastille quand `numeroEnVigueur` est nul) ; `marque_visible_dans_l_historique` (la pastille *Agent* sur chaque version d'agent, décidée ou non).
 9. **AC-9 — écrire une nouvelle version, ou retirer** (C-32-10b-8).
    - **Éditeur** (`McpPromptEditor.svelte`) : un champ *Description* (une ligne) et une `<textarea>` *Texte* en police à
      chasse fixe, `dir="ltr"`, `spellcheck="false"` ; pré-remplis par la version en vigueur si elle est un texte, ou par
@@ -376,30 +382,35 @@ telle**) ; commandes et sorties citées au Dev Agent Record.
      comme nouvelle version* → `POST /{id}/versions` avec `corpsTexte(version lue,
      description, texte)`, valeurs **exactes**. Une phrase sous le bouton : « Une nouvelle version n° N+1 est créée ; les
      versions précédentes restent à l'historique. »
-   - **P26, rendu visible** : quand l'éditeur est pré-rempli depuis une version `agent`, un avis (`role="note"`,
+   - **P26, rendu visible** : quand l'éditeur est pré-rempli depuis une version `agent` — **d'office**, par la version
+     en vigueur, comme par *Reprendre cette version* —, un avis (`role="note"`,
      `data-testid="mcp-prompt-editor-agent-origin"`) : « Ce texte a été écrit par un agent. L'enregistrer en fait **votre**
      version : elle sera servie **sans** la marque d'un prompt d'agent. Relisez-le comme s'il venait de vous. »
    - **Retirer** : bouton *Retirer ce prompt* (variante destructive), dialogue : « Le prompt cessera d'être servi. Une
      version n° N+1 de retrait est ajoutée ; l'historique reste. Une nouvelle version le servira de nouveau. » → `POST
      /{id}/versions` avec `corpsRetrait(version lue)`. Absent si la version en vigueur est déjà un retrait.
-   - Tests (`McpPromptEditor.test.ts`) : `envoie_la_valeur_exacte` ; `avis_p26_si_reprise_d_une_version_d_agent` (et
-     absent depuis une version d'administrateur ou standard) ; `retrait_apres_confirmation` ;
+   - Tests (`McpPromptEditor.test.ts`) : `envoie_la_valeur_exacte` ; `avis_p26_si_pre_rempli_par_une_version_d_agent`
+     (deux cas présents : le pré-remplissage d'office par une version d'agent en vigueur, et *Reprendre cette version*
+     sur une version d'agent ; absent depuis une version d'administrateur ou standard ; validation P2, F12) ; `retrait_apres_confirmation` ;
      `aucun_controle_bloquant_cote_ecran` (un texte de 16 001 caractères et un U+202E partent ; le 400 simulé est
      affiché).
-10. **AC-10 — revenir au standard, sans rien écraser, et sur un texte vu** (C-32-10b-10, annoté). Sur un prompt
-    `is_standard` dont le drapeau `standardDiffere` est levé — ce qui, par sa définition (AC-i5 de la 32-10a), couvre
-    la version en vigueur personnalisée par l'administrateur, la version d'agent approuvée, le retrait, et le standard
-    non personnalisé dont le texte diffère de celui du code (la condition « origine ≠ standard **ou** drapeau » de la
-    première rédaction était redondante, validation P1, R3 ; à recontrôler au code à l'étape 0) : bouton *Revenir au
-    texte standard*. Le dialogue montre **d'abord le texte que le geste fera servir** (validation P1, R7, F2) — le
-    champ `standardDuCode: { descriptionVisible, texteVisible }` de D1 étendu, rendu comme à l'AC-5 dans deux `<pre>`
+10. **AC-10 — revenir au standard, sans rien écraser, et sur un texte vu** (C-32-10b-10, annoté). Le bouton *Revenir
+    au texte standard* n'apparaît que si **`standardDiffere && standardDuCode !== null`** (validation P2, F5, R11) — le
+    drapeau, par sa définition (AC-i5 de la 32-10a), couvre la version en vigueur personnalisée par l'administrateur,
+    le retrait et le standard non personnalisé dont le texte diffère de celui du code (à recontrôler au code à l'étape
+    0) ; `standardDuCode` nul — prompt non standard, ou standard que ce binaire ne porte plus, que la route refuserait
+    (409 « standard inconnu du code ») — retire le bouton. *(Un agent ne propose jamais sur un nom en `kesh`,
+    C-32-10a-27 : une version d'agent approuvée sur un standard n'existe pas, et ne se teste pas.)* Le dialogue montre
+    **d'abord le texte que le geste fera servir** (validation P1, R7, F2) — les champs visibles de `standardDuCode`
+    (D1 étendu et son complément), rendus comme à l'AC-5 dans deux `<pre>`
     (`data-testid="mcp-prompt-standard-description"`, `"mcp-prompt-standard-text"`, même règle des blancs de gabarit) —,
     puis : « Une nouvelle version n° N+1 reprend ce texte, le standard de cette version de Kesh. Vos versions et celles
     de l'agent restent à l'historique, et vous pourrez reprendre l'une d'elles. Le prompt redevient *non personnalisé* :
     il suivra désormais le texte des prochaines versions de Kesh. » → `POST /{id}/standard` avec `corpsStandard(version
-    lue)`. Après 201, relecture : la nouvelle version paraît en tête, d'origine *Standard*, en vigueur. Absent pour un
-    prompt non standard et pour un standard au drapeau baissé. Tests : `retour_au_standard_seulement_si_utile` (les
-    quatre cas, plus un non standard et un standard à jour) ; `retour_au_standard_apres_confirmation` ;
+    lue)`. Après 201, relecture : la nouvelle version paraît en tête, d'origine *Standard*, en vigueur. Tests :
+    `retour_au_standard_seulement_si_utile` (présent : personnalisé par l'administrateur, retiré, standard non
+    personnalisé au drapeau levé ; absent : non standard, standard à jour, standard au drapeau levé dont
+    `standardDuCode` est nul) ; `retour_au_standard_apres_confirmation` ;
     `dialogue_standard_montre_le_texte_du_code` (`textContent` du `<pre>` du dialogue **égal** à
     `standardDuCode.texteVisible`, et le dialogue ouvert avant tout `POST`).
 11. **AC-11 — créer un prompt** (C-32-10b-16). Formulaire *Nouveau prompt* (liste) : nom, description, texte. Aide sous le nom :
@@ -407,11 +418,11 @@ telle**) ; commandes et sorties citées au Dev Agent Record.
     prompts standard. » (règle de l'AC-i2 de la 32-10a, **non contrôlée côté écran** : le 400 du serveur est affiché).
     `POST` → 201 → navigation vers le détail du prompt créé. Tests : corps exact ; 400 affiché, saisies conservées.
 12. **AC-12 — les erreurs** (patron de `erreurDeDecision`, fait 2 ; codes relus à l'étape 0). 409 (verrou périmé,
-    version non la dernière, déjà décidée, standard inconnu du code, version non servable refusée à l'approbation par
-    D2 — code relu à l'étape 0) → le message (celui du serveur s'il est traduit,
+    version non la dernière, déjà décidée, standard inconnu du code) → le message (celui du serveur s'il est traduit,
     sinon « Ce prompt a changé depuis son affichage : rechargez-le avant d'agir ») **et** le bouton *Recharger*, qui
     relit le détail ; **aucune** relance automatique. 404 → « Prompt introuvable ». 400 → le message du serveur, saisies
-    **conservées**. 403 → « Réservé à l'Administrateur ». Le reste → `errorMessageOf`. Tests par code ;
+    **conservées** — y compris le refus d'approuver une version non servable (D2 : **400**, « le même code que la
+    création », note `20a02a86` ; validation P2, R4). 403 → « Réservé à l'Administrateur ». Le reste → `errorMessageOf`. Tests par code ;
     `aucune_relance_automatique_sur_409`.
 13. **AC-13 — un texte non fiable se montre comme du texte.** Textes, descriptions, noms de clé et marques ne passent
     que par une interpolation Svelte ou la valeur d'un champ — **jamais** `{@html`. Garde `ecran_sans_html_brut` (règle
@@ -419,7 +430,8 @@ telle**) ; commandes et sorties citées au Dev Agent Record.
     mcp-prompts/` ni de `frontend/src/routes/(app)/admin/mcp/prompts/` ne contient `{@html` ; *mesure* : `grep -rn
     '{@html' frontend/src/lib frontend/src/routes` → **0** au relevé (à recompter) ; *témoin vert existant* :
     `{@const cancelled = r.cancelledAt !== null}` (`src/lib/features/reminders/ReminderHistory.svelte:51`) ; *témoin
-    rouge factice* : `{@html version.texte}`. Et chaque `<textarea>` et `<pre>` de texte porte `dir="ltr"` ; chaque
+    rouge factice*, **composé par une constante** comme à la 32-8c (`mcp-sends-i18n.test.ts:231`, `HTML_BRUT`), pour
+    que la garde ne rougisse pas sur son propre fichier (validation P2, R10). Et chaque `<textarea>` et `<pre>` de texte porte `dir="ltr"` ; chaque
     `<textarea>`, `spellcheck="false"`. ⚠️ `dir="ltr"` fixe le sens de **base** ; il ne neutralise pas les lettres
     arabes ou hébraïques **visibles**, que l'algorithme bidirectionnel réordonne encore avec les signes voisins — angle
     mort écrit (§ *Ce que les gardes ne voient pas* ; validation P1, R9, F9). Les **contrôles** bidirectionnels, eux,
@@ -448,7 +460,9 @@ telle**) ; commandes et sorties citées au Dev Agent Record.
       première (ses tests verts, son `NOMBRE_DE_CLES` inchangé) ; la neuve porte son `NOMBRE_DE_CLES` en dur, lit
       `nav-admin-mcp-prompts` dans `+layout.svelte` comme la 32-8c, et tient l'égalité dans les deux sens par
       `startsWith`.
-    *Témoin vert* (factice) : un catalogue portant `audit-log-entity-mcp_prompt` n'ajoute rien à l'ensemble du préfixe.
+    *Témoin vert* (factice, dit tel) : un catalogue portant `audit-log-entity-mcp-prompts-x` — qui **contient** le
+    préfixe sans commencer par lui, comme `'audit-log-entity-mcp-sends-x'` à la 32-8c (`mcp-sends-i18n.test.ts:136`) —
+    n'ajoute rien à l'ensemble du préfixe ; une appartenance par sous-chaîne le ferait rougir (validation P2, R9).
     **Angle mort écrit, avec renvoi** : le reste du catalogue reste hors garde (#758).
 16. **AC-16 — le parcours de bout en bout** (C-32-10b-14 ; `frontend/tests/e2e/mcp-prompts.spec.ts`, Playwright ; montage de
     `docs/testing.md` § *Prérequis Playwright local* ; `seedTestState('with-company')` en `beforeAll`, qui amorce les
@@ -466,10 +480,12 @@ telle**) ; commandes et sorties citées au Dev Agent Record.
       `servi.texteVisible === servi.texte` ; *Approuver*, confirmation ; puis le client appelle `prompts/get` →
       `messages[0].content.text` **égal** à `servi.texte` (le texte **exact**) **et** à `T`, et `description` **égale**
       à `servi.description` et à `D` ; `prompts/list` porte une entrée `{ name, description: D, arguments: [] }`. Et `T`
-      commence par `[Prompt écrit par un agent` (la marque, relue à l'étape 0 dans `mcp/textes.rs`).
-    - **(b) Refus.** Seconde proposition ; *Refuser*, confirmation ; l'historique montre *Refusée* ; `prompts/get` de ce
-      nom → l'erreur `-32602` (corps égal à celle d'un nom inconnu, demandée dans le même test) ; `prompts/list` ne le
-      porte pas.
+      commence par `[Prompt écrit par un agent` (la marque, relue à l'étape 0 à son lieu réel : la fonction de
+      composition de `services/`, note `20a02a86`).
+    - **(b) Refus.** Seconde proposition, **sur un nom unique neuf** (sur le nom de (a), déjà approuvé, `prompts/get`
+      ne rendrait pas d'erreur) ; *Refuser*, confirmation ; l'historique montre *Refusée* ; `prompts/get` de ce nom →
+      l'erreur `-32602`, son membre `error` **égal** à celui d'un nom inconnu demandé dans le même test (les `id`
+      JSON-RPC diffèrent ; validation P2, R14) ; `prompts/list` ne le porte pas.
     - **(c) Nouvelle version d'administrateur** sur le prompt de (a), par *Reprendre cette version* : l'avis P26 est
       visible ; le texte modifié au clavier ; *Enregistrer* ; le texte servi lu dans la page `T2` **ne commence pas**
       par la marque ; `prompts/get` → **égal** à `T2`.
@@ -490,7 +506,7 @@ telle**) ; commandes et sorties citées au Dev Agent Record.
     **une par état** : (1) l'entrée de menu ; (2) la liste — les deux standards seuls ; (3) la liste avec une version
     à valider, un prompt retiré, un prompt non servi, un standard *Personnalisé* et un standard « Diffère du standard
     de cette version de Kesh » ; (4) le détail d'un standard servi ;
-    (5) le détail avec une version d'agent à valider, **marque encadrée** ; (6) le dialogue d'approbation ; (7) le
+    (5) le détail avec une version d'agent à valider, **la marque en tête du texte** ; (6) le dialogue d'approbation ; (7) le
     dialogue de refus ; (8) une version à valider qui n'est plus la dernière (*Refuser* seul) ; (9) l'historique après
     approbation, *En vigueur* et la pastille *Agent* ; (10) une version **piégée** — U+202E, U+200B, U+E0041 et une
     espace insécable, posés par un `INSERT` SQL dans `kesh_3210b` (le seul chemin : le serveur les refuse à
@@ -527,8 +543,9 @@ telle**) ; commandes et sorties citées au Dev Agent Record.
       version **ôte la marque** — l'écran le dit, le manuel aussi ;
     - **les caractères invisibles** : refusés à l'écriture et non servis s'ils ont été restaurés ou écrits hors de
       Kesh ; montrés à l'écran sous la forme `\u{XXXX}`, **calculée par le serveur** (le même rendu que l'écran des
-      envois) ; une version que Kesh ne servirait pas est signalée comme telle et ne s'approuve pas ; une version
-      servable n'en contient aucun, si bien qu'un `\u{…}` lu dans son texte y est **écrit en toutes lettres** ; les
+      envois) ; une version que Kesh ne servirait pas est signalée comme telle et ne s'approuve pas ; **si l'étape 0
+      le confirme** (cas du `\r` restauré, § *À recontrôler* ; sinon la phrase ne s'écrit pas), une version servable
+      n'en contient aucun, si bien qu'un `\u{…}` lu dans son texte y est **écrit en toutes lettres** ; les
       espaces spéciales (insécable, fine insécable) et les quelques invisibles que Kesh admet **ne sont pas** montrées ;
       les lettres arabes ou hébraïques visibles restent soumises au réordonnancement bidirectionnel ;
     - **une version approuvée par mégarde** : ce qui ne se fait pas (la désapprouver, l'effacer) et ce qui se fait
@@ -566,7 +583,7 @@ ensuite.*
 | # | Site non résolu | Comment il se ferme | Par quoi |
 |---|---|---|---|
 | E1 | l'écran montre le texte **stocké**, l'agent reçoit le texte **servi** (marque) | l'écran affiche le champ servi du serveur (D1), rendu visible par lui | AC-5, M2, E2E (a) |
-| E2 | la marque montrée à côté du texte, non dedans — l'Administrateur croit qu'elle n'est qu'un ornement | elle est **dans** le `<pre>`, encadrée, à sa place ; test au niveau du DOM | AC-5, M13 |
+| E2 | la marque montrée à côté du texte, non dedans — l'Administrateur croit qu'elle n'est qu'un ornement | elle fait partie du champ servi que rend le serveur (note `20a02a86`, sans champ séparé) ; l'écran l'affiche par la même interpolation que le reste, sans traitement ; test au niveau du DOM sur une version d'agent | AC-5, M13 |
 | E3 | un caractère invisible ou bidirectionnel ne se voit pas | le serveur l'écrit `\u{XXXX}` (`rendre_visible`) ; l'écran affiche ce champ | AC-5, AC-6, M2, M3 — **angle mort** : les espaces admises et les lettres RTL visibles (§ *Ce que les gardes ne voient pas*) |
 | E4 | le rendu **retire**, **remplace** ou **ajoute** un caractère (blancs de gabarit) : le texte affiché n'est plus le champ | `textContent` du `<pre>` **égal** au champ visible ; règle des blancs de gabarit | AC-5, M3, M13 |
 | E5 | une proposition arrive entre la lecture et le clic | `numero` et `version` de l'objet **affiché** ; 409 | AC-7, M1 ; AC-i7 de la 32-10a |
@@ -581,7 +598,8 @@ ensuite.*
 | E14 | une version à caractère refusé (restaurée, SQL) approuvée : rien n'est servi, l'Administrateur croit le contraire | verdict `servable` du serveur affiché ; *Approuver* absent ; le serveur refuse l'approbation (D2, acceptée) | AC-4, AC-6, AC-7, M4 |
 | E15 | un agent qui pilote le navigateur de l'Administrateur approuve à sa place | hors de Kesh | **angle mort** (comme la 32-8c) |
 | E16 | le retour au standard fait servir un texte que l'Administrateur n'a pas vu (texte du binaire) | le dialogue montre `standardDuCode`, rendu visible par le serveur, **avant** le geste | AC-10, M12, E2E (d) — **angle mort** : un binaire mis à jour entre l'affichage et le clic (le texte du code change sans que la `version` du prompt bouge) |
-| E17 | un `\u{202E}` écrit **en toutes lettres** par un agent se confond avec un caractère rendu visible | verdict `servable` : une version servable n'a aucun caractère caché, donc tout `\u{…}` y est littéral ; dit par l'avis et le manuel | AC-6, AC-18 — **angle mort** : la seule forme ne distingue pas les deux, le verdict le fait |
+| E17 | un `\u{202E}` écrit **en toutes lettres** par un agent se confond avec un caractère rendu visible | verdict `servable` : une version servable n'a aucun caractère que `rendre_visible` écrit en code, donc tout `\u{…}` y est littéral (sous réserve du `\r`, recontrôlé à l'étape 0) ; dit par la dernière phrase de l'avis (AC-4, texte vérifié par `avis_distingue_servi_et_a_valider`) et le manuel | AC-4, AC-6, AC-18 — **angle mort** : la seule forme ne distingue pas les deux, le verdict le fait |
+| E18 | une restauration (ou la sauvegarde d'une autre installation) ramène le compteur `version` du prompt à une valeur déjà lue : l'onglet resté ouvert approuve, sous le même `(numero, version)`, une version d'un autre contenu | **non fermé** : le verrou `version` compte des écritures, il ne désigne pas un contenu | **angle mort** (validation P2, F7) — le même que l'issue #773 (point 15) pour les envois ; le fermer demanderait à la 32-10a une empreinte du contenu vu dans le corps d'approbation, hors de cette story |
 
 ## Tâches
 
@@ -606,12 +624,16 @@ ensuite.*
 Une mutation à la fois, restaurée par `git checkout -- <f> && touch <f>` (`memory/mutation-restauree-binaire-perime`),
 diff résiduel nul vérifié ; chacune nomme le test qui doit rougir ; une mutation qui survit, ou qui ne compile pas, se
 déclare telle. *(Validation P1 : M2, M3, M4, M12 et M13 réécrites — les mutations des listes Unicode et des modes de
-l'écran tombent avec sa logique Unicode ; M17 ajoutée.)*
+l'écran tombent avec sa logique Unicode ; M17 ajoutée. Validation P2 : M10, M13 et M17 réécrites ; M2 ne cite plus
+l'E2E (a), qui ne monte aucun texte où les deux champs diffèrent, F4.)* **Mutation équivalente, non jouée** (validation
+P2, F3, R13) : le retrait du retour anticipé `if (envoiEnCours) return` du gestionnaire, quand `disabled` reste posé —
+aucun test ne la distingue, un bouton désactivé ne recevant pas le clic ; la garde qui compte est `disabled`, tenue par
+M17.
 
 | # | Mutation | Doit rougir |
 |---|---|---|
 | M1 | l'approbation relit le détail (`GET`) avant le `POST` et envoie la `version` relue | `approbation_porte_la_version_lue` (Vitest) |
-| M2 | le bloc servi affiche `servi.texte` (exact) au lieu de `servi.texteVisible` | `texte_affiche_egal_au_champ_visible` ; E2E (a) (`T` ≠ `servi.texteVisible`) |
+| M2 | le bloc servi affiche `servi.texte` (exact) au lieu de `servi.texteVisible` | `texte_affiche_egal_au_champ_visible` |
 | M3 | un retour à la ligne et une indentation insérés dans le gabarit, à l'intérieur du `<pre>` (ou `trim()` appliqué au champ affiché) | `texte_affiche_egal_au_champ_visible` |
 | M4 | *Approuver* rendu sur une version `servable: false` | `pas_d_approbation_d_une_version_non_servable` |
 | M5 | `{@html servi.texteVisible}` dans `McpPromptVersion.svelte` | `ecran_sans_html_brut` |
@@ -619,17 +641,17 @@ l'écran tombent avec sa logique Unicode ; M17 ajoutée.)*
 | M7 | *Approuver* envoie le `POST` sans dialogue | `approbation_apres_confirmation` |
 | M8 | le repli d'une clé `mcp-prompts-*` diffère de sa valeur fr-CH | la garde des replis (AC-15) |
 | M9 | `corpsTexte` applique `trim()` au texte | `corps_texte_exact` ; `envoie_la_valeur_exacte` |
-| M10 | *Revenir au texte standard* rendu sur un prompt non standard | `retour_au_standard_seulement_si_utile` |
+| M10 | la condition du bouton *Revenir au texte standard* réduite à `standardDiffere` (sans `standardDuCode !== null`) | `retour_au_standard_seulement_si_utile` (cas « drapeau levé, `standardDuCode` nul ») |
 | M11 | le refus envoie le numéro de la **dernière** version au lieu de celle affichée | `refus_apres_confirmation` (fixture n° 3 à valider, n° 4 dernière ; chemin `…/versions/3/refuse` égal) |
 | M12 | le dialogue de retour au standard n'affiche pas `standardDuCode` | `dialogue_standard_montre_le_texte_du_code` ; E2E (d) |
-| M13 | la marque rendue hors du `<pre>` (au-dessus, en titre) | `marque_dans_le_bloc` (`pre.contains(mark)` et égalité de `textContent`) |
-| M14 | l'avis P26 retiré de l'éditeur | `avis_p26_si_reprise_d_une_version_d_agent` ; E2E (c) |
+| M13 | le composant retire la marque du texte affiché (n'interpole que ce qui suit le premier `\n\n` d'une version d'agent) | `texte_affiche_egal_au_champ_visible` (version d'agent, égalité de `textContent`) |
+| M14 | l'avis P26 retiré de l'éditeur | `avis_p26_si_pre_rempli_par_une_version_d_agent` ; E2E (c) |
 | M15 | la version à valider rendue repliée (`<details>` fermé) | `version_a_valider_jamais_repliee` (AC-7 : le texte entier est dans le DOM et visible) |
 | M16 | `nav-admin-mcp-prompts` retiré des quatre catalogues, `'admin-mcp-prompts'` gardé à `FAMILLES_RESOLUES` | `i18n-keys.test.ts`, « toute clé demandée existe au catalogue » |
-| M17 | le bouton de confirmation d'*Approuver* n'est plus désactivé pendant l'envoi | `un_seul_post_pendant_l_envoi` |
+| M17 | `disabled={envoiEnCours}` retiré du bouton de confirmation d'*Approuver* | `gestes_desactives_pendant_l_envoi` (cas *Approuver* : l'état `disabled` est asserté) |
 
 Tests hors mutations, nommés au Dev Agent Record : les témoins de chaque garde ;
-`description_affichee_egale_au_champ_visible` ; `marque_manquante_signalee` ; `avis_non_servable_selon_le_serveur` ;
+`description_affichee_egale_au_champ_visible` ; `pastille_agent_hors_du_bloc` ; `avis_non_servable_selon_le_serveur` ;
 `bloc_du_jour_seulement_si_servable` ; `avis_distingue_servi_et_a_valider` ;
 `personnalise_sans_avis_de_standard_change` ; `aucune_relance_automatique_sur_409` ; les tests de la liste.
 
@@ -656,8 +678,9 @@ Tests hors mutations, nommés au Dev Agent Record : les témoins de chaque garde
   U+2800, U+1D159, U+16FE4 (l'angle mort écrit de `kesh-core`, fait 6) — ne sont **pas** rendus visibles et partent
   tels quels à l'agent ; `\t` non plus (admis dans un texte). C'est le point 3 pour Guy.
 - **Un `\u{…}` écrit en toutes lettres** dans le texte d'un agent s'affiche exactement comme un caractère rendu visible
-  par le serveur (E17). Le verdict `servable` les distingue : une version servable n'a aucun caractère caché. L'avis et
-  le manuel le disent ; la forme seule ne le dit pas.
+  par le serveur (E17). Le verdict `servable` les distingue — sous réserve du cas du `\r` restauré, recontrôlé à
+  l'étape 0 : une version servable n'a aucun caractère que `rendre_visible` écrit en code. La dernière phrase de l'avis
+  et le manuel le disent ; la forme seule ne le dit pas.
 - **Les lettres bidirectionnelles visibles** (arabe, hébreu) : `dir="ltr"` fixe le sens de base, l'algorithme
   bidirectionnel les réordonne encore avec les signes voisins (validation P1, R9, F9). Les **contrôles** bidi, eux,
   sont rendus `\u{…}`.
@@ -667,9 +690,19 @@ Tests hors mutations, nommés au Dev Agent Record : les témoins de chaque garde
   standard est ouvert fait servir un texte que le dialogue ne montrait pas — la `version` du prompt ne bouge pas.
 - **La marque dit qui a écrit, non d'où viennent les mots** (P26, E9) : l'avis de l'éditeur et le manuel le disent ;
   rien ne l'empêche.
-- **La justesse des champs de D1 étendu** est tenue par les tests de la 32-10a-iii (égalité de `servi.texte` avec
-  `prompts/get`) et, de bout en bout, par l'E2E (a) et (d) ; les tests Vitest de l'écran ne la voient pas (réponses
-  simulées).
+- **La justesse des champs de D1 étendu** est tenue par les tests de la 32-10a-iii ; les tests Vitest de l'écran ne la
+  voient pas (réponses simulées). Le test au niveau du DOM couvre l'**affichage** (le `textContent` égal au champ
+  visible) ; l'E2E couvre l'**égalité du texte exact avec `prompts/get`** (a, c, d). **Aucun E2E ne vérifie le champ
+  rendu visible** (`texteVisible` égal à `rendre_visible(texte)`) : le serveur refuse à l'écriture tout texte où les
+  deux champs diffèrent, si bien qu'un E2E à caractère caché passerait par une version restaurée — trop lourd pour
+  cette story (validation P2, F4). La capture (10) de l'AC-17, sur une version posée par `INSERT`, en est le seul
+  témoin de bout en bout, visuel.
+- **La liste ne juge pas ; le détail le dit** (validation P2, R8) : la synthèse ne porte aucun verdict `servable`, si
+  bien qu'un prompt dont la version en vigueur n'est pas valide (restaurée) paraît « n° N » dans la liste ; seul le
+  détail dit « n'est servi à aucun agent ».
+- **Un retour du compteur `version` par restauration** (E18, validation P2, F7) : le verrou compte des écritures, il ne
+  désigne pas un contenu ; un onglet resté ouvert peut approuver, sous le même `(numero, version)`, une version d'un
+  autre contenu. Même angle mort que l'issue #773 (point 15) pour les envois.
 - **Les replis i18n hors des préfixes de l'écran** (#758).
 - **Un agent qui piloterait le navigateur** de l'Administrateur pourrait approuver à sa place (E15) — comme pour la
   32-8c.
@@ -691,11 +724,11 @@ export interface McpPromptSummary {
 	aValider: number; standardDiffere: boolean;
 }
 
-/** Ce que `prompts/get` servirait si la version était en vigueur (D1, D1 étendu). */
+/** Ce que `prompts/get` servirait si la version était en vigueur (D1, D1 étendu et son complément) —
+ *  marque comprise, sans champ séparé (note `20a02a86`). */
 export interface ServiPrompt {
 	description: string; texte: string;                  // exacts — jamais affichés (égalité E2E)
 	descriptionVisible: string; texteVisible: string;    // rendus visibles par le serveur — seuls affichés
-	marque: string | null;                               // nulle hors `agent`
 }
 
 export interface McpPromptVersion {
@@ -710,7 +743,7 @@ export interface McpPromptVersion {
 export interface McpPromptDetail {
 	id: number; nom: string; isStandard: boolean; version: number; modifieLe: string;
 	numeroEnVigueur: number | null; standardDiffere: boolean;
-	standardDuCode: { descriptionVisible: string; texteVisible: string } | null;   // nul hors standard
+	standardDuCode: ServiPrompt | null;   // nul hors standard, ou pour un standard que ce binaire ne porte plus
 	versions: McpPromptVersion[];
 }
 ```
@@ -718,7 +751,7 @@ export interface McpPromptDetail {
 ### Les amendements D1, D1 étendu et D2 — acceptés, inscrits à la fiche 32-10a
 
 Acceptés par l'orchestrateur et inscrits au § *À recontrôler à l'étape 0* de la fiche 32-10a (commits `47394982` pour
-D1 et D2, `e7a90572` pour D1 étendu, branche `story/32-10a`). Ce que l'écran en attend, pour le recontrôle de son
+D1 et D2, `e7a90572` pour D1 étendu, `20a02a86` pour son complément, branche `story/32-10a`). Ce que l'écran en attend, pour le recontrôle de son
 étape 0 :
 
 - **D1** : par version de nature texte, le texte et la description **tels que `prompts/get` et `prompts/list` les
@@ -729,23 +762,28 @@ D1 et D2, `e7a90572` pour D1 étendu, branche `story/32-10a`). Ce que l'écran e
   (b) les mêmes champs passés par `rendre_visible` ; (c) pour un standard, le texte du code (`STANDARDS`) qu'un
   retour au standard ferait servir, rendu visible ; (d) les **noms** de l'auteur et du décideur, et la **date** de
   dernière modification (validation P1, R4, R12).
+- **D1 étendu, complément** (`20a02a86`, validation P2) : le texte **et la description** servis, chacun exact et rendu
+  visible, la marque comprise dans le texte servi (**pas** de champ `marque` séparé) ; de même pour le standard du
+  code (texte et description) ; `creeLe` et `decideLe` de chaque version, et `numeroEnVigueur`. **La fonction de
+  composition du texte servi, marque comprise, vit dans `services/`**, appelée par le catalogue MCP et par la route de
+  détail ; le refus de D2 rend **400**.
 - ⛔ **Contrainte des primitives** (validation P1, R4 ; fiche 32-10a, validation P1 R1/F1, l. 666-670) : la fonction de
   composition prend des **primitives** (`i64`/`u32`, `&str`) — **aucun** type de `kesh_db` ne sort du service vers
-  `src/mcp/` ; `PromptEnBase` et la route l'appellent tous deux. La description d'une version d'agent contient `\n\n`
+  `src/mcp/` ; `PromptEnBase` et la route l'appellent tous deux, et elle vit dans `services/` (note `20a02a86`). La description d'une version d'agent contient `\n\n`
   après la marque : le contrôle qui s'y applique est celui de l'AC-ii7, non le prédicat d'une ligne (validation P1,
   R1 : sans quoi chaque description d'agent saine serait dite non valide).
 - **D2** : la route d'approbation revalide le contenu par `valider_contenu` et refuse une version non servable
-  (code relu à l'étape 0) ; l'écran n'offre déjà pas le geste (C-32-10b-17).
+  (**400**, le même code que la création, `20a02a86`) ; l'écran n'offre déjà pas le geste (C-32-10b-17).
 
 ### Esquisse des fichiers (indicative)
 
 ```text
 frontend/src/lib/features/mcp-prompts/mcp-prompts.api.ts        — routes, fabriques de corps (seules)
 frontend/src/lib/features/mcp-prompts/mcp-prompts.types.ts      — types des réponses
-frontend/src/lib/features/mcp-prompts/mcp-prompts-format.ts     — badges, dates, erreurs, en vigueur (fonctions pures)
+frontend/src/lib/features/mcp-prompts/mcp-prompts-format.ts     — badges, dates, erreurs (fonctions pures)
 frontend/src/lib/features/mcp-prompts/McpPromptsList.svelte     — liste, création
 frontend/src/lib/features/mcp-prompts/McpPromptDetail.svelte    — en-tête, servi aujourd'hui, à valider, historique
-frontend/src/lib/features/mcp-prompts/McpPromptVersion.svelte   — rendu d'un texte servi visible (marque, verdict)
+frontend/src/lib/features/mcp-prompts/McpPromptVersion.svelte   — rendu d'un texte servi visible (interpolation seule, verdict)
 frontend/src/lib/features/mcp-prompts/McpPromptEditor.svelte    — nouvelle version, retrait, avis P26
 frontend/src/lib/features/mcp-prompts/*.test.ts                 — Vitest, gardes
 frontend/src/routes/(app)/admin/mcp/prompts/+page.svelte        — mince
@@ -757,7 +795,8 @@ frontend/tests/e2e/mcp-prompts.spec.ts                          — AC-16
 
 `frontend/src/routes/(app)/+layout.svelte:147-176`, `:171-175`, `:180-185` ;
 `frontend/src/lib/features/mcp-sends/mcp-sends.api.ts:1-11`, `:36`, `:45`, `:50`, `:59` ;
-`mcp-sends-i18n.test.ts:46`, `:47`, `:59`, `:101`, `:219` ; `McpSendDetail.svelte:202`, `:220-227` ;
+`mcp-sends-i18n.test.ts:46`, `:47`, `:52`, `:59`, `:101`, `:136`, `:219`, `:231` ; `McpSendDetail.svelte:47`, `:92`,
+`:202`, `:220-227`, `:309-368` ; issue #773 (point 15, lecture) ;
 `frontend/src/lib/shared/i18n-keys.test.ts:724-732`, `:866`, `:876-877` ;
 `frontend/src/lib/shared/i18n-repli-divergent-actif.test.ts:216` ; `crates/kesh-i18n/src/loader.rs:1106` ;
 `crates/kesh-core/src/text.rs:79-85`, `:86-105`, `:119` ; `crates/kesh-api/src/services/envois_mcp.rs:75`,
@@ -768,7 +807,7 @@ frontend/tests/e2e/mcp-prompts.spec.ts                          — AC-16
 `frontend/tests/e2e/backup-schedule.spec.ts:200-217` ; `.github/workflows/ci.yml:218-222` (validation P1) ;
 `_bmad-output/implementation-artifacts/sprint-status.yaml:820`, `:829-832` ;
 fiche 32-10a l. 289-296, 333-358, 635-640, 663-670, 703-710, 899-916, 935-941, 991, 998-1011, 1276-1297, 1379-1397,
-1533-1538 (D1, D2, D1 étendu, branche `story/32-10a` à `e7a90572`) ;
+1534-1541 (D1, D2, D1 étendu, D5, `\r` restauré, D1 étendu complément ; branche `story/32-10a` à `20a02a86`) ;
 fiche 32-8 l. 872-958 ; fiche 32-7 l. 218-221, 529-594, 858-871 ; registre 328 l. 227-245 ; registre 3210a
 l. 254-272.
 
@@ -804,17 +843,15 @@ l. 254-272.
    (C-32-10b-15).
 5. **Le dialogue d'approbation te suffit-il, ou veux-tu une case « J'ai lu le texte en entier »** ?
    *Recommandation* : le dialogue suffit ; une case se coche par réflexe et n'ajoute qu'un clic.
-6. **L'écran reste-t-il réservé à l'Administrateur, même en lecture** (un Comptable ne voit pas les prompts) ?
-   *Recommandation* : oui — c'est la règle des routes de la 32-10a (C-32-10a-19), et un prompt instruit un agent qui
-   lit les livres.
-7. **Après un retour au standard, le prompt suit de nouveau le texte des versions de Kesh** : le dialogue le dit, et
+6. **Après un retour au standard, le prompt suit de nouveau le texte des versions de Kesh** : le dialogue le dit, et
    montre d'abord le texte qui sera servi. Le libellé *Revenir au texte standard* te convient-il ? *Recommandation* :
    oui.
 
 ## Demandes à l'orchestrateur
 
-- **D1** et **D1 étendu** (§ *Dev Notes*) : **acceptées**, inscrites à la fiche 32-10a (`47394982`, `e7a90572`).
-  Reste à les recontrôler au code à l'étape 0 de la 32-10b, champ par champ.
+- **D1** et **D1 étendu** (§ *Dev Notes*) : **acceptées**, inscrites à la fiche 32-10a (`47394982`, `e7a90572`), le
+  complément de la validation P2 aussi (`20a02a86` : descriptions, `creeLe`, `decideLe`, `numeroEnVigueur`, la
+  composition dans `services/`, le refus de D2 en 400). Reste à les recontrôler au code à l'étape 0 de la 32-10b, champ par champ.
 - **D2** (§ *Dev Notes*) : **acceptée**, inscrite à la fiche 32-10a (`47394982`).
 - **D3** : aviser la fiche 32-7 (non fusionnée) qu'un troisième écran existe sous `/admin/mcp/` (`prompts/`) — son
   menu (ordre *Serveur MCP*, *Envois*, *Prompts*), sa garde G-a (sans descente, déjà écrite), un lien éventuel vers
@@ -825,8 +862,10 @@ l. 254-272.
 - **D5** (validation P1, R16) : la fiche 32-10a cite `admin-manual.tex:2935` pour la phrase du compte des routes
   mutantes (ses l. 1008, 1331 et 1384) — juste sur sa propre base, où la phrase dit « 108 des 114 » ; sur `main`
   fusionné (`42680725`), la ligne est **2978** et dit « 122 des 128 » (`grep -n "routes à verbe mutant"
-  docs/manual/fr/admin-manual.tex` dans les deux worktrees). À signaler à l'étape 0 de la 32-10a — et le compte de
-  `main` est lui-même déjà faux de deux (fait 8).
+  docs/manual/fr/admin-manual.tex` dans les deux worktrees). **Inscrite** à la fiche 32-10a (`d6cceafd`) — et le
+  compte de `main` est lui-même déjà faux de deux (fait 8). *(Validation P2, R12 : la dernière puce de la note de la
+  32-10a, l. 1541 à `20a02a86`, dit encore « les trois modules de la 32-10a-iii », que sa table du découpage compte
+  cinq — signalé à l'orchestrateur, non corrigé ici.)*
 
 ## À recontrôler à l'étape 0 du développement
 
@@ -834,23 +873,27 @@ l. 254-272.
   - `crates/kesh-api/src/routes/mcp_prompts.rs` : les sept chemins, méthodes, corps attendus (noms des champs : `version`,
     `nature`, `description`, `texte` ?), DTO de réponse de chaque route, codes et `code` d'erreur (409 : lesquels ?
     `OPTIMISTIC_LOCK_CONFLICT`, `ILLEGAL_STATE_TRANSITION` ou neufs ?), statuts (201, 200) ; lignes citées au Change Log.
-  - **D1 et D1 étendu faits, champ par champ** (`servi` exact et rendu visible, `servable`, `standardDuCode`,
-    `numeroEnVigueur`, `standardDiffere`, clé auteur, noms de l'auteur et du décideur, `modifieLe`) ; s'il en manque un :
-    **arrêt**, compte rendu à l'orchestrateur (§ *Le découpage* : écart déclaré). La fonction de composition à
-    signature primitive ; le rendu visible fait par `rendre_visible` (fait 12) ; la description d'agent (`\n\n` après
+  - **D1, D1 étendu et son complément faits, champ par champ** — la liste d'arrêt, c'est-à-dire **tous** les champs
+    que l'écran consomme, et eux seuls : par version, `servi.texte` et `servi.description` (exacts, marque comprise,
+    sans champ `marque` séparé), `servi.texteVisible` et `servi.descriptionVisible` (rendus visibles), `servable`,
+    `creeLe`, `decideLe`, `auteurNom`, `decideurNom`, la clé auteur (numéro, nom, révocation) ; par prompt,
+    `numeroEnVigueur`, `standardDiffere`, `modifieLe`, et `standardDuCode` (texte et description, exacts et rendus
+    visibles ; nul hors standard ou pour un standard que le binaire ne porte plus) ; s'il en manque un : **arrêt**,
+    compte rendu à l'orchestrateur (§ *Le découpage* : écart déclaré). La fonction de composition à signature
+    primitive, **dans `services/`** (note `20a02a86`) ; le rendu visible fait par `rendre_visible` (fait 12) ; la description d'agent (`\n\n` après
     la marque) jugée par le contrôle de l'AC-ii7, et une version d'agent saine dite `servable`.
   - **Une version servable a-t-elle toujours `texteVisible === texte`** ? Oui si `valider_contenu` refuse tout ce que
     `rendre_visible` rend visible ; à vérifier sur `\r` (normalisé par `valider_contenu` **avant** le contrôle, AC-ii2,
     mais rendu `\u{000D}` par `rendre_visible`) : une version restaurée portant `\r\n` serait-elle servable avec un
-    `\u{000D}` affiché ? La réponse (et ce que sert `prompts/get` dans ce cas) se cite au Change Log ; l'avis de l'AC-6
-    et la ligne E17 se réécrivent selon le code.
-  - **D2 fait** : le code de refus de l'approbation d'une version non servable (AC-12).
+    `\u{000D}` affiché ? La réponse (et ce que sert `prompts/get` dans ce cas) se cite au Change Log ; la dernière
+    phrase de l'avis (AC-4), l'AC-6, l'AC-18 et la ligne E17 se gardent ou se retirent selon le code.
+  - **D2 fait** : le refus de l'approbation d'une version non servable, **400** attendu (AC-12).
   - La règle de l'AC-i6 et de l'AC-i7 telle que codée (dernière version, états terminaux) — l'écran la reflète, il ne
     la refait pas.
   - Les bornes de longueur (500, 16 000) et la normalisation (`\r\n`) de `valider_contenu`.
   - Les clés de messages du serveur ajoutées par la 32-10a-iii (préfixe ; collision avec `mcp-prompts-`) et
     `audit-log-*` des prompts.
-  - Le texte de la marque (`mcp/textes.rs`) pour l'E2E (a) et le manuel.
+  - Le texte de la marque, à son lieu réel (la fonction de composition de `services/`), pour l'E2E (a) et le manuel.
   - `seedTestState('with-company')` amorce bien les deux standards (AC-i11) ; le patron d'un Comptable pour l'E2E (e)
     (fait 13).
   - `prompts/get` et `prompts/list` : forme des réponses et texte de l'erreur `-32602` (AC-ii5, AC-ii6), et l'exigence
@@ -880,3 +923,4 @@ l. 254-272.
 |---|---|---|
 | 2026-10-27 | création | Fiche rédigée en autonomie (Opus 5.5) contre `42680725` (branche `story/32-10b` = fiche 32-10a + `origin/main` `ed981c7d`) ; registre C-32-10b-1 à C-32-10b-16 ; **3 modules** (frontend, `kesh-i18n`, docs), aucun découpage ; **20 AC** (A : 4, B : 2, C : 8, D : 6), **9 tâches** (T0 à T8), **16 mutations** (M1 à M16) ; inventaire E1 à E15 ; 7 points pour Guy ; 4 demandes à l'orchestrateur (D1 : le texte servi calculé par le serveur, amendement de l'AC-iii6 de la 32-10a ; D2 : revalidation à l'approbation ; D3 : avis à la 32-7 ; D4 : issue de comparaison si la recette la demande). Prompt de validation P1 `3210b-validate-prompt-p1.md` (Sonnet, lentilles R et F). |
 | 2026-10-27 | validation P1 | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `3210b-validate-prompt-p1.md` ; rapports `kesh-gate-logs/3210b-validate-p1-{R,F}.md`) : R 0/2/5/9, F 0/1/3/6 ⇒ **trend P1 0/3/8/15** (doublons F1 = R2, F2 = R7, F6 ⊃ R6 + R15, F7 = R5, F9 = R9, comptés une fois par lentille). **Décision de l'orchestrateur : fermer les classes par la conception, pas par des gardes** — D1 **étendu** inscrit à la fiche 32-10a (`story/32-10a`, `e7a90572`, § *À recontrôler à l'étape 0*) : par version, `servable`, servi exact et **rendu visible par le serveur** (`rendre_visible`, 32-8b, fait 12), pour un standard le texte du code rendu visible, noms de l'auteur et du décideur, date de dernière modification. **L'écran n'a plus aucune logique Unicode** : retirés `caracteres-caches.ts` (`segmenter`, `reconstituer`), la copie des listes de `kesh-core` et sa garde, la garde de version d'Unicode du moteur, les pastilles et les comptes calculés dans le navigateur, l'aperçu et les compteurs de l'éditeur, la variante B de l'AC-5 (sans D1 étendu, arrêt et compte rendu). **HIGH** : R1 (description d'agent rendue en mode « ligne », `\n\n` signalé) → **tombe** avec la logique de l'écran ; la note de la 32-10a dit le contrôle de la description d'agent (AC-ii7) ; R2 = F1 (garde de version irréalisable dans le job Frontend, `ci.yml:218-222` relu : `node-version: 22`, aucune étape Rust) → **garde retirée**. ⚠️ Prémisses **non vérifiées et devenues sans objet** : la version d'Unicode de l'ICU de Node 22 (R2 : « peut être inférieure » ; F1 : « 15.1/16 ») — `node` interdit, aucune mesure ; écrit tel quel. **MEDIUM** : R3 (le drapeau `standardDiffere` vrai pour tout standard personnalisé, AC-i5 de la 32-10a l. 289-296 relue : confirmé) → *Personnalisé* et « Diffère du standard de cette version de Kesh » distingués, le drapeau seul conditionne *Revenir au texte standard*, C-32-10b-19 ; R4 → champs de D1 étendu, **contrainte des primitives** écrite (Dev Notes) ; R5 = F7 → E2E (d) « **deux** versions de plus », compte **relatif** `k → k + 2`, E2E (a) borné à la ligne du nom unique ; R6 (+ F6) → fixture de `refus_apres_confirmation` écrite (n° 3 à valider, n° 4 dernière, chemin `…/versions/3/refuse`) ; R7 = F2 → le dialogue de retour au standard montre `standardDuCode` **avant** le geste, test `dialogue_standard_montre_le_texte_du_code`, M12 réécrite, E16 ; F3 → verdict `servable` du serveur : avis de l'AC-6, *Approuver* absent sur une version non servable (C-32-10b-17, M4 réécrite), bloc « reçoit aujourd'hui » seulement si servable, **avis permanent de l'AC-4 rendu exact** pour une version à valider ; F4 (+ R8) → tests **au niveau du DOM** (`pre.textContent === servi.texteVisible`, `pre.contains(mark)`, pastille hors du `<pre>`), **règle des blancs de gabarit** écrite, M3 et M13 réécrites (M13 ne peut plus passer à vide : elle rompt aussi l'égalité de `textContent`). **LOW** : R8 (intégré à F4) ; R9 = F9 → angle mort écrit (AC-13, § *Ce que les gardes ne voient pas*) ; R10 → relevé confirmé (`audit_route_registry.rs:895` → 130, `:901` → 124) : « 122 des 128 » déjà faux de deux, fait 8 et AC-19 rectifiés, à recompter au développement ; R11 → avis `mcp-prompt-mark-missing`, la description suit la règle du texte ; R12 → `modifieLe` (D1 étendu) ; R13 → **tombe** (compteurs retirés, C-32-10b-8 annoté) ; R14 → fait 13, patron `backup-schedule.spec.ts:200-217` (relu : `POST /api/v1/users`, `role: 'Comptable'`, aucun helper ; `ls helpers/` cité) ; R15 → `version_a_valider_jamais_repliee` défini à l'AC-7, `marque_dans_le_bloc` exige l'intérieur du `<pre>` ; R16 → **en partie réfuté** : `admin-manual.tex:2935` est **juste sur la base de la fiche 32-10a** (`grep -n "routes à verbe mutant"` dans `kesh-32-10a` → l. 2935, « 108 des 114 ») ; sur `main` fusionné la phrase est l. 2978 — demande D5 à l'orchestrateur (lignes citées par la 32-10a : 1008, 1331, 1384, non 1383) ; F5 → **tombe** (plus de pastille ; l'imitation d'un `\u{…}` littéral est l'angle mort E17, distingué par `servable`) ; F6 → intégré (R6, R15) ; F7 → intégré (R5) ; F8 → règle d'envoi en cours sur chaque geste, test `un_seul_post_pendant_l_envoi`, M17, C-32-10b-18 ; F10 (a) → **tombe** (les espaces admises ne sont plus rendues : point 3 pour Guy reformulé) ; F10 (b) → dialogue « Une fois approuvé, ce texte sera servi… ». **Questions pour Guy** : 1 et 2 **tranchées par l'orchestrateur** (oui, oui) en attendant Guy ; 3 **reformulée** (le serveur rendant visible, accepter que les caractères admis ne soient pas montrés ?). **Registre** : C-32-10b-1, 3, 4, 8, 10 annotés ; C-32-10b-17 à 19 ajoutés. **Propagation** : greppés sur la fiche et le registre — `version_unicode`, `UNICODE_VERSION`, `is_hidden_in_line`, `trois versions`, `standard a changé`, `caracteres-caches`, `segmenter`, `reconstituer`, `LISTES_KESH_CORE`, `listes_egales`, `variante B`, `⟦`, `[data-cache]`, `process.versions`, `N / 16`, « comptes de l'AC-6 » ; ne restent que l'entrée de création du Change Log (non réécrite), les annotations datées du registre et les mentions de retrait. **Décomptes** (recomptés par `grep`) : 20 AC (A 4, B 2, C 8, D 6), 9 tâches (T0 à T8), **17 mutations** (M1 à M17 ; M2, M3, M4, M12, M13 réécrites), inventaire **E1 à E17**, 7 points pour Guy, **5 demandes** (D1 et D1 étendu, D2 acceptées ; D3, D4, D5), C-32-10b-1 à **19** ; **3 modules**, inchangés. **1 passe sur 8.** Prompt de la passe suivante : `3210b-validate-prompt-p2.md` (**Opus**, R et F, axe obligatoire des régressions de cette remédiation). |
+| 2026-10-27 | validation P2 | **Opus ×2** (lentilles R et F, contexte frais, prompt `3210b-validate-prompt-p2.md` ; rapports `kesh-gate-logs/3210b-validate-p2-{R,F}.md`) : R 0/0/3/11, F 0/0/7/5 ⇒ **trend 0/3/8/15 → 0/0/10/16** (doublons R1 = F6, R3 = F1, R11 = F5, R13 = F3, R6 = F11, comptés une fois par lentille). ⚠️ **Recyclage déclaré — signal D5 pour le Project Lead** : la sévérité tombe (HIGH → 0), mais MEDIUM → MEDIUM, et **la plupart des findings naissent de la remédiation P1** — R : 2 MEDIUM sur 3 et 7 LOW sur 11 classés « régression P1 » ; F : 5 MEDIUM sur 7 et 1 LOW (F6 en partie). Ce n'est pas la revue qui trouve des défauts d'origine neufs : c'est le patch précédent qui en crée. Consigne de l'orchestrateur appliquée : **retirer plutôt qu'enrichir** — toute promesse que l'écran ne tient pas simplement est retirée. **Note de la 32-10a complétée** par l'orchestrateur (`20a02a86`, « D1 étendu, complément ») : texte **et** description servis, chacun exact et rendu visible, **la marque comprise dans le texte servi, sans champ séparé** ; de même pour le standard du code ; `creeLe`, `decideLe`, `numeroEnVigueur` ; composition dans `services/` ; refus de D2 en **400**. **MEDIUM** : R1 = F6 → l'écran ne consomme que les champs de la note complétée ; **encadré séparé de la marque retiré** (`servi.marque`, le `<span data-testid="mcp-prompt-mark">`, `marque_dans_le_bloc`, `marque_manquante_signalee` et l'avis `mcp-prompt-mark-missing` retirés) : la marque se lit dans le texte rendu visible, à sa place, sans traitement ; `<pre>` d'un tenant, interpolation seule ; `texte_affiche_egal_au_champ_visible` porte sur une version d'**agent** (origine fixée, marque comprise — F2) ; `pastille_agent_hors_du_bloc` ; **M13 réécrite** (le composant retire la marque → égalité de `textContent`) ; liste d'arrêt de l'étape 0 réécrite champ par champ ; types (`ServiPrompt` sans `marque`, `standardDuCode: ServiPrompt | null`) ; R2 → réglé par la note : composition dans `services/`, cité (AC-5, *Dev Notes*, E2E (a)) ; R3 = F1 → **avis de l'AC-4 réduit à ce qui est vrai** (le texte que Kesh sert ; les caractères de contrôle et de mise en page **qu'il refuse** écrits en code ; la phrase sur le `\u{…}` en toutes lettres ajoutée, sur laquelle E17 et l'AC-6 s'appuient), « chaque caractère invisible » retiré (avis, Story, conception § 2) ; `avis_distingue_servi_et_a_valider` vérifie le texte de l'avis ; F3 = R13 → modèle de la 32-8c (`McpSendDetail.svelte:47`, `:92`, `:309-368`) : test `gestes_desactives_pendant_l_envoi`, qui asserte `disabled` de **tous** les gestes de la page (F8) et `aria-busy` du bouton cliqué ; **M17 réécrite** (`disabled={envoiEnCours}` retiré d'*Approuver*) ; le retrait du retour anticipé du gestionnaire est **déclaré équivalent** et retiré des mutations (un bouton désactivé ne reçoit pas le clic) ; « la réponse remplace l'état », non testé, retiré ; F4 → la prétention que l'E2E vérifie le champ rendu visible est **retirée** (§ *Ce que les gardes ne voient pas* ; M2 ne cite plus l'E2E (a)) : le test DOM couvre l'affichage, l'E2E l'égalité du texte exact avec `prompts/get` ; l'E2E à caractère caché, qui passerait par une version restaurée, est écrit en **angle mort** ; F5 = R11 → bouton seulement si `standardDiffere && standardDuCode !== null`, cas impossible retiré (F9), **M10 réécrite** sur la clause neuve ; F7 → ligne **E18** en **angle mort** (le verrou `version` compte des écritures, il ne désigne pas un contenu ; même angle mort que #773, point 15, relu par `gh issue view 773`). **LOW** : R4 → D2 rend **400**, rangé sous le 400 à l'AC-12, tableau de la 32-10a, *Dev Notes*, étape 0, C-32-10b-17 annoté ; R5 → la pastille *En vigueur* suit `numeroEnVigueur`, repli et fonction pure retirés, test `en_vigueur_selon_le_serveur`, C-32-10b-7 annoté, esquisse ; R6 = F11 → `sprint-status.yaml` (en-tête et ligne de la story) ; R7 → la phrase sur le `\u{…}` littéral rendue **conditionnelle** au recontrôle du `\r` (AC-4, AC-6, AC-18, E17, § *Ce que les gardes ne voient pas*, étape 0) ; R8 → angle mort « la liste ne juge pas ; le détail le dit » ; R9 → témoin vert `audit-log-entity-mcp-prompts-x` (`mcp-sends-i18n.test.ts:136`) ; R10 → témoin rouge composé par une constante (`:52`, `:231`) ; R12 → `20a02a86` cité (en-tête, tableau, *Dev Notes*, demandes, *Ce qui est lu et cité* : l. 1534-1541), D5 **inscrite** (`d6cceafd`) ; la phrase « trois modules de la 32-10a-iii » de la note (l. 1541, cinq à sa table) signalée à l'orchestrateur ; R14 → E2E (b) sur un **nom unique neuf**, membre `error` égal (les `id` diffèrent) ; F8 → intégré à F3 ; F9 → intégré à F5 ; F10 → **question 6 retirée** (déjà tranchée par l'AC-iii7 de la 32-10a ; la 32-10b n'ajoute aucune route), l'ancienne 7 devient la 6 ; F12 → avis P26 au pré-remplissage **d'office** par une version d'agent en vigueur, test renommé `avis_p26_si_pre_rempli_par_une_version_d_agent` (M14 suit) ; AC-6 : le « motif exact si la réponse le rend » retiré (la note n'en promet pas) ; AC-7 : `creeLe`. **Registre** : C-32-10b-1, 2, 7, 10, 17, 18 annotés (validation P2) ; aucun choix neuf. **Propagation** : greppés sur la fiche, le registre et `sprint-status.yaml` — `marque_dans_le_bloc`, `marque_manquante`, `mark-missing`, `mcp-prompt-mark`, `servi.marque`, `chaque caractère invisible`, `409`, `e7a90572`, `pastilles`, `16 mutations`, `encadr`, `un_seul_post`, `en_vigueur_selon_la_regle`, `avis_p26_si_reprise`, `mcp/textes.rs`, `si la réponse le rend` ; ne restent que les entrées passées du Change Log (non réécrites), les annotations datées du registre, `e7a90572` cité avec `20a02a86` comme commit de D1 étendu, les 409 légitimes (verrou, dernière version, standard inconnu, patron de la 32-8c) et, dans `sprint-status.yaml`, les « 16 mutations » et « encadr » d'autres stories. **Décomptes** (recomptés par `grep`) : 20 AC (A 4, B 2, C 8, D 6), 9 tâches (T0 à T8), **17 mutations** (M1 à M17 ; M10, M13, M17 réécrites ; une équivalente déclarée hors table), inventaire **E1 à E18**, **6 points pour Guy**, 5 demandes, C-32-10b-1 à 19 ; **3 modules**, inchangés. **2 passes sur 8.** Prompt de la passe suivante : `3210b-validate-prompt-p3.md` (**Sonnet**, R et F, axe obligatoire des régressions de cette remédiation). |
