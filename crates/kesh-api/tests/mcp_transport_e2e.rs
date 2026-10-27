@@ -158,7 +158,8 @@ fn descripteur_proposer_prompt() -> serde_json::Value {
     json!({
         "name": "proposer_prompt",
         "description": "Propose un prompt à l'administrateur de Kesh : une version « à \
-                        valider », jamais servie avant qu'il l'approuve dans Kesh. Le nom suit \
+                        valider », jamais servie avant qu'il l'approuve dans Kesh ; d'ici là, \
+                        la version en vigueur du prompt reste servie, inchangée. Le nom suit \
                         [a-z0-9_-] (1 à 64 caractères) et ne commence pas par « kesh », réservé \
                         aux prompts standard ; sur le nom d'un prompt existant — écrit par un \
                         administrateur ou retiré compris —, la proposition en devient une \

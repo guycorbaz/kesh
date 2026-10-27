@@ -767,9 +767,30 @@
 - **Contexte** : `proposer_version_agent_in_tx` ajoute une version `pending` à **tout** prompt non standard existant de
   la société — prompt d'administrateur, prompt retiré, prompt dont toutes les versions ont été refusées ; C-32-10a-27
   ne refuse que les noms en `kesh`. La description servie à l'agent disait « sur un nom déjà proposé ».
-- **Retenu** (décision de l'orchestrateur ; question soumise à Guy à part) : **le comportement reste tel quel** — rien
+- **Fondement — la règle de Guy** (transmise par l'orchestrateur le 2026-10-27), citée mot pour mot : « le prompt
+  proposé par l'agent doit être validé et approuvé par un utilisateur, et un agent ne peut pas directement modifier un
+  prompt validé ». Une proposition reste une version « à valider », jamais servie avant l'approbation d'un
+  administrateur, et **aucune écriture d'agent ne modifie la version en vigueur**.
+- **Vérifié au code** (`c96fea3b`, lignes lues) :
+  - `prompts/get` et `prompts/list` ne servent que la version **approuvée** de plus grand numéro, de nature texte :
+    `NUMERO_EN_VIGUEUR_SQL` (`kesh-db/src/repositories/mcp_prompts.rs:59-60`, `… WHERE x.prompt_id = p.id AND x.state
+    = 'approved'`), employé par `requete_en_vigueur` (`:259`, `:265`), qu'appellent `en_vigueur_par_societe` (`:274`)
+    et `en_vigueur_par_nom` (`:300`) — les seules lectures de `LecturePrompts` (`kesh-api/src/services/poignees.rs:94`,
+    `:103`).
+  - L'outil n'a qu'un chemin d'écriture : `mcp/prompts.rs:227` → `prompts_mcp::proposer` → `EcriturePrompts::proposer`
+    (`poignees.rs:187`, seule méthode d'écriture de la poignée) → `proposer_version_agent_in_tx` (`mcp_prompts.rs:610`),
+    qui **insère** une version `Etat::EnAttente` (`:660`) — elle ne met à jour aucune version existante ; son seul
+    `UPDATE` est celui du verrou optimiste du prompt (`inserer_version`, `:436`).
+  - Le seul `UPDATE mcp_prompt_versions` du dépôt (`:727`, état et décision) est dans `decider`, appelé par
+    `approuver_in_tx`/`refuser_in_tx`, qu'appelle **seule** la route d'approbation ou de refus
+    (`routes/mcp_prompts.rs:719` et le refus), dans `admin_routes` : session d'Administrateur, PAT 403, clé MCP 401.
+    `ajouter_version_admin_in_tx` (`:638`) et `revenir_au_standard_in_tx` (`:825`) ne sont appelés que par les routes.
+    **Aucun chemin d'agent n'approuve ni ne remplace la version en vigueur.**
+- **Retenu** (décision de l'orchestrateur, conforme à la règle) : **le comportement reste tel quel** — rien
   n'est servi sans l'approbation d'un administrateur, qui fait garde. La description de `proposer_prompt` est rendue
-  exacte (« sur le nom d'un prompt existant — écrit par un administrateur ou retiré compris —, la proposition en
+  exacte et dit en clair que la proposition attend l'approbation et que la version en vigueur reste servie d'ici là
+  (« … jamais servie avant qu'il l'approuve dans Kesh ; d'ici là, la version en vigueur du prompt reste servie,
+  inchangée … sur le nom d'un prompt existant — écrit par un administrateur ou retiré compris —, la proposition en
   devient une nouvelle version, elle aussi à valider »).
 - **Les deux effets, et leurs bornes** : chaque proposition incrémente la `version` du prompt, donc (1) fait échouer en
   **409** une édition en cours de l'administrateur sur ce prompt (il relit et recommence), et (2) rend **non

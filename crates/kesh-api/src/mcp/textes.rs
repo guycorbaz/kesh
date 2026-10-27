@@ -25,9 +25,12 @@ use crate::services::prompts_mcp::RefusProposition;
 /// La description statique de `proposer_prompt` (`tools/list`, AC-iii2) —
 /// exacte sur le nom d'un prompt existant (revue de code P1, E6 = A3 ;
 /// C-32-10a-106) : la proposition s'ajoute à **tout** prompt non standard de la
-/// société, prompt d'administrateur ou retiré compris, et reste à valider.
+/// société, prompt d'administrateur ou retiré compris, et reste à valider ; la
+/// version en vigueur reste servie d'ici là (règle de Guy : « un agent ne peut
+/// pas directement modifier un prompt validé »).
 pub const DESCRIPTION_PROPOSER_PROMPT: &str = "Propose un prompt à l'administrateur de Kesh : \
-     une version « à valider », jamais servie avant qu'il l'approuve dans Kesh. Le nom suit \
+     une version « à valider », jamais servie avant qu'il l'approuve dans Kesh ; d'ici là, la \
+     version en vigueur du prompt reste servie, inchangée. Le nom suit \
      [a-z0-9_-] (1 à 64 caractères) et ne commence pas par « kesh », réservé aux prompts \
      standard ; sur le nom d'un prompt existant — écrit par un administrateur ou retiré \
      compris —, la proposition en devient une nouvelle version, elle aussi à valider. Ne \

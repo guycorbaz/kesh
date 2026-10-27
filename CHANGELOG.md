@@ -39,7 +39,8 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   bidirectionnel ne l'est pas. Un prompt est un texte fixe : les arguments d'un client sont ignorés.
 - **Proposer un prompt, et le gérer** (refs [#723](https://github.com/guycorbaz/kesh/issues/723)). Sous la portée
   `prompts:write`, un agent appelle l'outil `proposer_prompt` : il propose un prompt, qui devient une version « à
-  valider », jamais servie avant qu'un administrateur l'approuve. L'agent n'écrit rien dans les livres, ne propose
+  valider », jamais servie avant qu'un administrateur l'approuve — d'ici là, la version en vigueur reste servie, et
+  aucune clé ne peut approuver. L'agent n'écrit rien dans les livres, ne propose
   jamais sur un nom en `kesh` (les prompts standard) et ne relit pas ses propositions ; au plus vingt attendent par
   société. Sur le nom d'un prompt existant, la proposition en devient une nouvelle version, elle aussi à valider. Les
   routes d'administration `/api/v1/admin/mcp/prompts` — une session d'Administrateur seulement, jamais une clé —
