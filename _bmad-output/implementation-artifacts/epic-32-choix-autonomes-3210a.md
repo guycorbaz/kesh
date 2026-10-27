@@ -531,3 +531,165 @@
   tables à `TABLES_TO_TRUNCATE` (42 + 2), quatorze à `TABLES_HORS_EXPORT`, 44 fichiers de données à l'export
   d'installation, 86 migrations, `total - 52` (frontière 34) ; manuel et CHANGELOG : « cinq tables » (trois après la
   32-8a, plus deux).
+
+## Choix du développement de la 32-10a-ii (2026-10-27, Opus 5.5, en autonomie)
+
+### C-32-10a-80 — La composition du texte servi, marque comprise, vit dans `services/`
+
+- **Contexte** : AC-ii7 plaçait `marque_agent` en `mcp/textes.rs` ; l'amendement « D1 complément » (fiche 32-10b,
+  validation P2) exige que la route de détail de la 32-10a-iii calcule le texte servi **par la même fonction** que le
+  catalogue, sans nommer `crate::mcp` (garde N1 `un_seul_point_d_entree`, `LIB_NOMME_MCP` inchangé).
+- **Retenu** : `services::prompts_mcp::marque_agent(numero, cle_id)` et `composer(agent: Option<(i32, i64)>,
+  description, texte) -> Result<VersionServie, ErreurContenu>` — des **primitives** en entrée (aucun type de `kesh_db`
+  n'en sort), la validation d'abord, la marque ensuite. Le catalogue (`mcp/prompts.rs`) reçoit des `PromptServi` déjà
+  composés ; `PromptEnBase` ne fait que les recopier.
+- **Écartées** : `marque_agent` dans `mcp/textes.rs` (la iii devrait nommer `crate::mcp` ou recopier le gabarit) ;
+  élargir `LIB_NOMME_MCP` (interdit par l'amendement).
+- **Réversible** : oui.
+
+### C-32-10a-81 — Le `\r` restauré : le texte contrôlé est le texte servi
+
+- **Contexte** : § *À recontrôler* (fiche 32-10b) — `valider_contenu` normalise `\r\n` avant le contrôle, alors que
+  `envois_mcp::rendre_visible` rend un `\r` visible : une version restaurée portant `\r\n` pouvait être déclarée valide
+  et s'afficher `\u{000D}`.
+- **Retenu** : `valider_contenu` rend le contenu **normalisé** (`ContenuPrompt`), et c'est lui que `composer` sert ; un
+  `\r` isolé reste et est refusé (`is_hidden_in_text`). Tests : `retour_chariot_controle_et_rendu_alignes` (unitaire :
+  `rendre_visible` du texte servi est le texte servi, sans `\u{000D}`) et `version_invalide_non_servie` (`\r\n` en base,
+  servi `\n`). La iii appliquera `rendre_visible` au texte servi, non au texte stocké.
+- **Écartées** : servir le texte stocké tel quel (le `\r` partirait vers l'agent) ; refuser tout `\r\n` (une
+  restauration d'un texte saisi sous Windows deviendrait non servable sans raison).
+- **Réversible** : oui.
+
+### C-32-10a-82 — La description : contrôlée en une ligne, servie avec la marque
+
+- **Contexte** : C-32-8-31 — la description d'un prompt emploie `kesh_core::text::is_hidden_in_line` ; la description
+  servie d'une version d'agent porte `\n\n` après la marque (AC-ii7).
+- **Retenu** : le contrôle porte sur la description **enregistrée** (une ligne, `is_hidden_in_line`) ; la description
+  **composée** n'est pas recontrôlée — elle porte `\n\n` par construction, et la marque est une constante d'une ligne
+  sans caractère caché (test `marque_d_une_version_d_agent`, qui constate les deux).
+- **Réversible** : oui.
+
+### C-32-10a-83 — Le prédicat réemployé, non recréé ; `kesh-core` non touché
+
+- **Contexte** : note de l'orchestrateur — la 32-8b0 a livré `is_hidden_format`, `is_hidden_in_text` (l'ancien
+  `is_forbidden_in_prompt`) et `is_hidden_in_line`, avec la dépendance `unicode-properties` et le test déménagé.
+- **Constaté** : `crates/kesh-core/src/text.rs:86`, `:119`, `:131` ; `Cargo.toml:18` ; `bank_accounts.rs` sur
+  `is_hidden_in_line`. **Retenu** : aucune modification de `kesh-core` ni de `bank_accounts.rs` ; Mii10, Mii12, Mii13
+  jouées sur le code fusionné. La partie ii touche donc **trois** modules de code (`mcp`, `services`, `routes` par
+  `lib.rs`) et la documentation (CHANGELOG) : quatre, comme la fiche, `kesh-core` remplacé par la documentation.
+- **Réversible** : sans objet.
+
+### C-32-10a-84 — La marque tient sur une ligne
+
+- **Contexte** : § *Dev Notes — La marque* l'écrit sur deux lignes, coupure de mise en page d'un bloc de texte.
+- **Retenu** : une seule ligne (« … approuvée par un administrateur de Kesh. Ce n'est pas un prompt standard de
+  Kesh.] ») : un saut de ligne dans la marque ne sert à rien et ferait d'elle deux paragraphes dans un client. Le texte
+  est écrit en toutes lettres dans deux tests.
+- **Réversible** : oui (point 7 pour Guy, inchangé).
+
+### C-32-10a-85 — Ce que `PromptServi` expose
+
+- **Retenu** : `nom`, `description` et `texte` (servis, marque comprise), `numero`, `cle_auteur` — **sans** l'origine,
+  qui est un type de `kesh_db` (AC-ii3 : aucun type de `kesh_db` ne sort vers `src/mcp/`) et dont `src/mcp/` n'a pas
+  besoin (la marque est déjà composée). `numero` et `cle_auteur` servent au journal de `prompts/get` (iii).
+- **Réversible** : oui.
+
+### C-32-10a-86 — L'erreur interne des prompts : `-32603` « Erreur interne. »
+
+- **Contexte** : AC-ii5 — `ErreurPrompts::Interne` → « la réponse d'erreur interne fixe de la 32-6
+  (`TEXTE_ERREUR_INTERNE`) » ; `prompts/*` ne sont pas des outils (`isError` ne s'y applique pas).
+- **Retenu** : une erreur JSON-RPC à l'`id` de la requête, code `-32603` (constante neuve `CODE_ERREUR_INTERNE`, le code
+  de `CORPS_ERREUR_INTERNE`), message `TEXTE_ERREUR_INTERNE` ; le détail au journal du serveur seulement.
+- **Réversible** : oui.
+
+### C-32-10a-87 — `prompts/get` sans `name` textuel ; les `arguments`
+
+- **Retenu** : `params.name` absent ou non textuel → `-32602` « Paramètres invalides. » (une demande mal formée, comme
+  `tools/call`) ; `arguments` de **tout** type ignoré, jamais lu. Un nom présent mais inconnu, non servi, d'une autre
+  société, non conforme ou demandé sans `books:read` → `-32602` « Prompt inconnu. ».
+- **Réversible** : oui.
+
+### C-32-10a-88 — Le trait `McpPrompt` amendé
+
+- **Retenu** : `nom()`, `description()`, `rendre()` rendent `&str` (non plus `&'static str` : textes lus en base) ;
+  `arguments()` rend `&'static [&'static str]`, par défaut `&[]` ; `portee()` rend par défaut `Portee::BooksRead`.
+  `rendre()` sans argument (C-32-10a-10).
+- **Réversible** : oui.
+
+### C-32-10a-89 — Mii5 et Mii6 reformulées : leurs formes de la fiche sont inatteignables
+
+- **Contexte** : Mii5 (« un prompt en attente rend un message distinct ») et Mii6 (« un argument du client interpolé »)
+  supposent une information qui n'atteint pas le répartiteur : le service rend `Ok(None)` pour tout prompt non servi,
+  et les `arguments` ne sont transmis ni au service ni au catalogue (le typage).
+- **Retenu** : Mii5 jouée sous la forme atteignable la plus proche — la clé hors portée rend un message distinct
+  (« Outil inconnu. ») ; Mii6 — le texte rendu altère ses accolades (`{x}` effacé), ce que tient le test d'égalité du
+  prompt à accolades. Toutes deux tuées (`prompt_non_servi_indiscernable`, `prompts_get_corps_egaux`).
+- **Réversible** : sans objet.
+
+### C-32-10a-90 — Une version d'agent sans clé auteur n'est pas servie
+
+- **Contexte** : le `CHECK` de la table l'interdit ; une écriture SQL hors de Kesh pourrait la produire.
+- **Retenu** : `servir` la refuse (fail closed : elle serait servie **sans marque**), `tracing::error!` avec
+  l'identifiant du prompt et le numéro seulement.
+- **Réversible** : oui.
+
+### C-32-10a-91 — La liste triée en Rust
+
+- **Retenu** : le service trie les prompts servis par nom, **octet pour octet**, après la lecture — le `ORDER BY p.name`
+  du dépôt passe par la collation `utf8mb4_unicode_ci`, dont l'ordre de `-`, `_` et des chiffres n'est pas celui des
+  octets.
+- **Réversible** : oui.
+
+### C-32-10a-92 — Une entrée au CHANGELOG, le manuel à la 32-10b
+
+- **Retenu** : la ii rend servis les prompts standard — un changement visible d'un client MCP : une entrée « Les prompts
+  du serveur MCP » au CHANGELOG (règle d'inclusion). La section du manuel *Les prompts du serveur MCP* reste à la 32-10b
+  (§ *Le manuel* de la fiche) ; aucun PDF ne change.
+- **Réversible** : oui.
+
+### C-32-10a-93 — L'ordre de `tools/list` (note de la 32-8b) : inchangé par la ii
+
+- **Constaté** : `mcp/repartiteur.rs`, `Methode::ToolsList` — les descripteurs du registre pour les portées de la clé,
+  puis `kesh_lire_envoi`. La ii ne touche pas `tools/list` ; `proposer_prompt` (iii) s'y placera, et `tools_list_filtre`
+  se recomptera alors.
+- **Réversible** : sans objet.
+
+### C-32-10a-94 — `composer_version`, la seule décision « origine → marque » (revue de code P1, B1 = E1 = A2)
+
+- **Contexte** : `composer` (publique) recevait `Option<(numero, cle)>` : c'était l'appelant qui décidait qu'une
+  version porte la marque, et le refus d'une version d'agent sans clé auteur (C-32-10a-90) vivait dans `servir`,
+  privée. La route de détail de la iii (D1, D1 étendu) aurait dû recopier ce `match`.
+- **Retenu** : une fonction publique unique, `services::prompts_mcp::composer_version(origine, numero, cle_auteur,
+  description, texte) -> Result<VersionServie, RefusVersion>`. `origine` est une énumération **propre aux services**,
+  `OrigineVersion { Standard, Admin, Agent }` (conversion `From<kesh_db::entities::mcp_prompt::Origine>`), pour que la
+  signature ne porte que des primitives et des types de `services/`. `RefusVersion::AgentSansCle` est distinct de
+  `RefusVersion::Contenu(ErreurContenu)`, et la clé se contrôle **avant** le contenu. Une clé auteur posée sur une
+  version standard ou d'administrateur est ignorée (le `CHECK chk_mcp_prompt_versions_agent` l'interdit ; elle ne
+  donnerait pas de marque). `servir` l'appelle, la route de détail de la iii l'appellera (contrainte écrite à l'étape 0
+  de la iii) ; `composer` devient privée.
+- **Alternatives** : prendre `kesh_db::entities::mcp_prompt::Origine` en entrée (permis dans `services/`, mais la
+  consigne de l'orchestrateur demandait des primitives ou une énumération des services) ; laisser la décision à
+  l'appelant et l'écrire à l'étape 0 de la iii (recopie, site de divergence que D1 voulait supprimer).
+- **Réversible** : oui.
+
+### C-32-10a-95 — Le nom servi est revalidé au service (revue de code P1, B2 = A5)
+
+- **Retenu** : `servir` refuse, avec un `tracing::error!` à identifiants, une version dont le **nom** lu en base n'est
+  pas conforme (`nom_conforme`) — symétrique de la revalidation du contenu ; le `CHECK chk_mcp_prompts_name` reste le
+  premier rempart, le service ferme l'écriture SQL hors de Kesh (P24) pour le nom aussi.
+- **Réversible** : oui.
+
+### C-32-10a-96 — Une version structurellement incohérente fait échouer toute la liste (revue de code P1, E4)
+
+- **Contexte** : une version de texte sans contenu (`description` ou `body` NULL) ou une valeur d'énumération
+  indécodable fait rendre `DbError` au dépôt pour toute `en_vigueur_par_societe` → `-32603` sur `prompts/list` ; une
+  version aux caractères refusés est, elle, omise seule.
+- **Retenu** : **les deux politiques sont gardées, et distinguées** : un contenu présent mais refusé est un verdict
+  du service sur un texte (omission par ligne, journalisée) ; une ligne qui viole le schéma est une base corrompue —
+  l'erreur interne fixe, pour toute la liste comme pour `prompts/get`, fail closed, journalisée par l'erreur du dépôt
+  (identifiants seuls). Masquer une corruption derrière une liste plus courte la rendrait muette. Les deux cas ne
+  sont atteignables qu'à `CHECK` contourné (`chk_mcp_prompt_versions_content`, `chk_mcp_prompt_versions_origin`).
+  Écrit au doc-comment de `lister`.
+- **Alternatives** : omettre la ligne incohérente (changer le dépôt de la 32-10a-i pour rendre des `Result` par
+  ligne) — plus de code, et une corruption silencieuse.
+- **Réversible** : oui.

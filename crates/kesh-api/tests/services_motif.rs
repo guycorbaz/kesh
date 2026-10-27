@@ -1892,8 +1892,9 @@ const EXCEPTIONS_V1: &[(&str, &str)] = &[
     ),
 ];
 
-/// Les cinq fabriques de poignées, au câblage de `lib.rs` (v-2) — trois
-/// jusqu'à la 32-8b, qui ajoute les deux poignées des envois.
+/// Les six fabriques de poignées, au câblage de `lib.rs` (v-2) — trois
+/// jusqu'à la 32-8b, qui ajoute les deux poignées des envois ; la 32-10a-ii y
+/// ajoute la lecture des prompts.
 const FABRIQUES_V2: &[(&str, &str)] = &[
     (
         "lib.rs",
@@ -1915,7 +1916,14 @@ const FABRIQUES_V2: &[(&str, &str)] = &[
     // relecture sur le pool en lecture seule, le dépôt sur le pool ordinaire.
     (
         "lib.rs",
-        "let lecture_envois = services::poignees::LectureEnvois::new(pool_outils);",
+        // Story 32-10a-ii : le pool est cloné pour une troisième enveloppe.
+        "let lecture_envois = services::poignees::LectureEnvois::new(pool_outils.clone());",
+    ),
+    // Story 32-10a-ii (AC-ii3) — la lecture des prompts du serveur MCP, sur le
+    // pool en lecture seule.
+    (
+        "lib.rs",
+        "let lecture_prompts = services::poignees::LecturePrompts::new(pool_outils);",
     ),
     (
         "lib.rs",
@@ -1937,8 +1945,7 @@ const RESIDUS_VI: &[(&str, &str)] = &[
 ];
 
 const MOTIF_V1: &str = r"\.\s*pool\s*\(|::\s*pool\b";
-const MOTIF_V2: &str =
-    r"\bLecture::new\(|\bTrace::new\(|\bLectureEnvois::new\(|\bEcritureEnvois::new\(";
+const MOTIF_V2: &str = r"\bLecture::new\(|\bTrace::new\(|\bLectureEnvois::new\(|\bEcritureEnvois::new\(|\bLecturePrompts::new\(";
 const MOTIF_VI: &str = r"axum|AppState|CurrentUser";
 
 fn racine_src() -> PathBuf {
@@ -2092,6 +2099,9 @@ fn ac10_temoins_des_motifs() {
         !v2.is_match("DetailsTrace::new(p)"),
         "(v-2) : frontière de mot"
     );
+    // Story 32-10a-ii (AC-ii3) : la poignée des prompts.
+    assert!(v2.is_match("x::LecturePrompts::new(p)"));
+    assert!(!v2.is_match("AutreLecturePrompts::new(p)"));
     // Story 32-8b (AC-B10) : les poignées des envois.
     assert!(v2.is_match("LectureEnvois::new(p)") && v2.is_match("x::EcritureEnvois::new(p)"));
     assert!(
@@ -2633,10 +2643,10 @@ fn ac10_vi_services_sans_axum_ni_app_state() {
         .collect();
     assert_eq!(
         services.len(),
-        15,
-        "services/ : quinze fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b, \
+        16,
+        "services/ : seize fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b, \
          cles_mcp.rs de la 32-5b, serveur_mcp.rs de la 32-6a, envois_mcp.rs de la 32-8b, \
-         exercices.rs de la 32-9a, pieces.rs de la 32-9b), {:?}",
+         exercices.rs de la 32-9a, pieces.rs de la 32-9b, prompts_mcp.rs de la 32-10a-ii), {:?}",
         services.iter().map(|(f, _)| f).collect::<Vec<_>>()
     );
     assert_eq!(

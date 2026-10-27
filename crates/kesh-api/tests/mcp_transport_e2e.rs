@@ -1854,11 +1854,61 @@ async fn abandon_par_deconnexion_le_permis_reste_pris(pool: MySqlPool) {
 // AC-a22 — E1 côté répartiteur
 // ---------------------------------------------------------------------------
 
+/// Story 32-10a-ii (AC-ii9) — le montage des prompts d'`e1_…` : les standards
+/// amorcés (les vrais) et un prompt d'agent `aide`, proposé par la clé `cle`
+/// et approuvé par `u`. Rend le `result` attendu de `prompts/list` et celui de
+/// `prompts/get` de `kesh-assistant`.
+async fn prompts_servis_e1(
+    pool: &MySqlPool,
+    c: i64,
+    u: i64,
+    cle: i64,
+) -> (serde_json::Value, serde_json::Value) {
+    use kesh_api::services::prompts_mcp::marque_agent;
+    use kesh_db::entities::mcp_prompt::PLAFOND_A_VALIDER;
+    use kesh_db::entities::mcp_prompt_standards::{KESH_ASSISTANT, KESH_DEVELOPPEMENT, STANDARDS};
+    use kesh_db::repositories::mcp_prompts as depot;
+    depot::amorcer_standards(pool, STANDARDS).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let v = depot::proposer_version_agent_in_tx(
+        &mut tx,
+        c,
+        cle,
+        "aide",
+        "Aide de l'agent",
+        "Texte de l'agent.",
+        PLAFOND_A_VALIDER,
+    )
+    .await
+    .unwrap();
+    depot::approuver_in_tx(&mut tx, c, v.prompt_id, v.numero, v.version, u)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let marque = marque_agent(v.numero, cle);
+    let ligne = |nom: &str, description: &str| json!({"name": nom, "description": description, "arguments": []});
+    let liste = json!({"prompts": [
+        ligne("aide", &format!("{marque}\n\nAide de l'agent")),
+        ligne(KESH_ASSISTANT.nom, KESH_ASSISTANT.description),
+        ligne(KESH_DEVELOPPEMENT.nom, KESH_DEVELOPPEMENT.description),
+    ]});
+    let assistant = json!({
+        "description": KESH_ASSISTANT.description,
+        "messages": [{"role": "user", "content": {"type": "text", "text": KESH_ASSISTANT.texte}}],
+    });
+    (liste, assistant)
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn e1_rien_ne_part_sous_cle_requise(pool: MySqlPool) {
     let (c, u, _, requise) = servie(&pool, SendValidation::Required).await;
-    let (_, exempte) = cle(&pool, c, u, &[McpScope::BooksRead], SendValidation::Exempt).await;
+    let (k_exempte, exempte) =
+        cle(&pool, c, u, &[McpScope::BooksRead], SendValidation::Exempt).await;
     compte(&pool, c, u, "1099", PIEGE_E1).await;
+    // Story 32-10a-ii (AC-ii9, amendé) : les standards amorcés et un prompt
+    // d'agent approuvé sont servis sous une clé `required` — hors politique ;
+    // le piège du compte n'apparaît dans aucune réponse.
+    let (liste_prompts, assistant) = prompts_servis_e1(&pool, c, u, k_exempte).await;
     let b = banc(&pool, Registre::standard().avec(Box::new(Piege)));
     let attendus: Vec<(String, Option<serde_json::Value>)> = vec![
         (
@@ -1876,11 +1926,16 @@ async fn e1_rien_ne_part_sous_cle_requise(pool: MySqlPool) {
         (appel(1, "kesh_version", json!({})), None),
         (
             r#"{"jsonrpc":"2.0","id":1,"method":"prompts/list"}"#.into(),
-            Some(json!({"jsonrpc":"2.0","id":1,"result":{"prompts":[]}})),
+            Some(json!({"jsonrpc":"2.0","id":1,"result":liste_prompts})),
         ),
         (
             r#"{"jsonrpc":"2.0","id":1,"method":"prompts/get","params":{"name":"piege"}}"#.into(),
             Some(attendu_erreur(1, -32602, TEXTE_PROMPT_INCONNU)),
+        ),
+        (
+            r#"{"jsonrpc":"2.0","id":1,"method":"prompts/get","params":{"name":"kesh-assistant"}}"#
+                .into(),
+            Some(json!({"jsonrpc":"2.0","id":1,"result":assistant})),
         ),
         (
             r#"{"jsonrpc":"2.0","id":1,"method":"resources/read"}"#.into(),

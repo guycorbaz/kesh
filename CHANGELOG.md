@@ -30,6 +30,13 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   consigne. Sans la portée `contacts:read`, l'IBAN et le QR-IBAN du créancier et l'adresse d'envoi d'une facture sont
   masqués ; les noms des clients et des fournisseurs, que Kesh écrit lui-même dans les libellés, ne le sont pas. Une
   réponse reste sous 24 Kio de texte, soit environ 10 000 jetons (estimation) ; les listes se lisent par pages.
+- **Les prompts du serveur MCP** (refs [#723](https://github.com/guycorbaz/kesh/issues/723)). Le serveur MCP sert
+  ses prompts par `prompts/list` et `prompts/get` à une clé qui porte la portée `books:read`, quelle que soit sa
+  politique de validation : un prompt est un texte, non une donnée des livres. Deux prompts standard sont installés
+  dans chaque société — `kesh-developpement`, l'agent de développement, qui porte les règles sur les données réelles,
+  et `kesh-assistant`, l'agent qui lit la comptabilité pour l'utilisateur. Seule une version approuvée est servie ; un
+  prompt écrit par un agent l'est précédé d'une marque qui le dit, et un texte portant un caractère invisible ou
+  bidirectionnel ne l'est pas. Un prompt est un texte fixe : les arguments d'un client sont ignorés.
 - **Les outils de lecture du serveur MCP — contacts et pièces** (refs
   [#723](https://github.com/guycorbaz/kesh/issues/723)). Sous `contacts:read`, le carnet d'adresses (liste et
   fiche d'un contact), chaque texte enveloppé ; sous `documents:read`, la liste des pièces importées d'un statut,
