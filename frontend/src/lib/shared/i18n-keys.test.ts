@@ -750,7 +750,21 @@ const ATTENDU = {
 	// `McpPromptDetail.svelte` 65 → 67 (`mcp-prompts-error-reread`, `mcp-prompts-retry`),
 	// `McpPromptsList.svelte` 25 → 26 (`mcp-prompts-created-open`), la page `[id]` 0 → 0.
 	// Que des littéraux : les autres compteurs inchangés.
-	sitesTotal: 2513,
+	// Story 32-7 (refs #723, écran « Serveur MCP ») : **2513 → 2617** (+104), mesuré par la
+	// collecte de ce test et recompté par `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('` aux deux
+	// bornes (`e901a992` → HEAD de `story/32-7`), périmètre : les fichiers touchés par la
+	// branche — `features/mcp-server/McpKeysSection.svelte` 0 → 60,
+	// `McpSettingsSection.svelte` 0 → 33, `McpKeySecretNotice.svelte` 0 → 7,
+	// `McpServerPanel.svelte` 0 → 4 (fichiers neufs) ; `mcp-server.api.ts`,
+	// `mcp-server.types.ts`, `mcp-time.ts`, `mcp-reglages.ts`, `secret-unique.svelte.ts` et
+	// les deux fichiers de `routes/(app)/admin/mcp/` 0 → 0 ; `routes/(app)/+layout.svelte`
+	// 6 → 6 (l'entrée de menu passe par `i18nKey`, `FAMILLES_RESOLUES['nav-']`). Que des
+	// littéraux : les autres compteurs inchangés.
+	// Story 32-7, remédiation de la revue de code P1 : **2617 → 2619** (+2), recompté par le
+	// même `grep` aux deux bornes (`f9b154f8` → HEAD), périmètre : les fichiers touchés —
+	// `McpKeysSection.svelte` 60 → 61 (`mcp-server-form-expires-invalid`, B3),
+	// `McpSettingsSection.svelte` 33 → 34 (`mcp-server-settings-retry`, E3). Que des littéraux.
+	sitesTotal: 2619,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
@@ -894,6 +908,11 @@ const FAMILLES_RESOLUES: Record<string, readonly string[]> = {
 		'admin-backup', 'admin-restore',
 		// Story 25-1c-b1 (#378) — l'écran du journal d'audit.
 		'audit-log',
+		// Story 32-7 (refs #723, 2026-10-27) — l'écran du serveur MCP. ⚠️ Cette famille
+		// exige que la clé existe au catalogue fr-CH, non que son repli `'Serveur MCP'` égale
+		// la valeur fr-CH ; et `'nav-'` n'est pas à couverture close : un oubli ici ne rougit
+		// pas (angle mort de #758, C-32-7-23).
+		'admin-mcp',
 		// Story 32-8c (refs #723) — l'écran des envois du serveur MCP.
 		'admin-mcp-sends',
 		// Story 32-10b (refs #723, 2026-10-27) — l'écran des prompts du serveur MCP.

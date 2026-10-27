@@ -187,7 +187,7 @@ Si vous souhaitez \textbf{tester Kesh sans données réelles}, choisissez le mod
 
 \textbf{Rien d'autre} : aucun contact, aucun produit, aucune écriture. Les listes sont vides~; c'est à vous de saisir les données sur lesquelles vous voulez essayer Kesh.
 
-Vous pouvez librement créer, modifier, supprimer des données dans ce mode. L'installation ne porte qu'une société~: pour passer en mode production, réinitialisez-la par le bouton \emph{Réinitialiser pour la production} de la bannière de démonstration, qui ramène l'assistant au début. \keshAttention\ \emph{Ce bouton n'agit que si l'administrateur de l'installation l'a autorisé au préalable} (variable \texttt{KESH\_PRODUCTION\_RESET}, voir le manuel d'administration)~: sans cette autorisation, la réinitialisation est refusée, \textbf{même à un administrateur}. Elle vide \textbf{toutes} les données de la société --- y compris ce que vous avez saisi pendant l'exploration --- et \textbf{conserve} les utilisateurs, les clés d'API et les clés du serveur MCP~; elle désactive le serveur MCP.
+Vous pouvez librement créer, modifier, supprimer des données dans ce mode. L'installation ne porte qu'une société~: pour passer en mode production, réinitialisez-la par le bouton \emph{Réinitialiser pour la production} de la bannière de démonstration, qui ramène l'assistant au début. \keshAttention\ \emph{Ce bouton n'agit que si l'administrateur de l'installation l'a autorisé au préalable} (variable \texttt{KESH\_PRODUCTION\_RESET}, voir le manuel d'administration)~: sans cette autorisation, la réinitialisation est refusée, \textbf{même à un administrateur}. Elle vide \textbf{toutes} les données de la société --- y compris ce que vous avez saisi pendant l'exploration --- et \textbf{conserve} les utilisateurs, les clés d'API et les clés du serveur MCP~; elle désactive le serveur MCP (manuel d'administration, § \emph{Le serveur MCP}).
 
 \subsection{Chemin B — Mode production}
 
@@ -3225,8 +3225,8 @@ journal d'audit avec les données de la société, puis y inscrit \textbf{son pr
 geste} --- une entrée \emph{Installation réinitialisée}, type \emph{Installation},
 la seule du journal neuf. Son détail dit l'étape et le mode d'avant, le
 \textbf{nombre d'entrées effacées} et la \textbf{plage de leurs numéros}, la liste des
-tables vidées, et les utilisateurs, clés d'API ou clés du serveur MCP rattachés à la
-société. Les numéros
+tables vidées, et les utilisateurs, clés d'API ou clés du serveur MCP (manuel
+d'administration, § \emph{Le serveur MCP}) rattachés à la société. Les numéros
 des entrées ne repartent pas de 1~: \textbf{le trou qui précède cette entrée
 s'explique par elle}.
 
@@ -3236,7 +3236,7 @@ installation touchée par un défaut d'une version antérieure (\#528, \#542) --
 au démarrage, ou à l'import d'une sauvegarde. Personne ne l'a faite~: au
 démarrage, elle est signée par le plus ancien administrateur actif. Son détail
 nomme les utilisateurs rattachés, les clés d'API et les clés du serveur MCP
-révoquées, et les sociétés provisoires supprimées.
+révoquées (manuel d'administration, § \emph{Le serveur MCP}), et les sociétés provisoires supprimées.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{FAQ et dépannage utilisateur}
