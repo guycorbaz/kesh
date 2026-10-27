@@ -159,7 +159,24 @@ pub struct SeedResponse {
     pub ok: bool,
 }
 
-/// `POST /api/v1/_test/seed` — truncate puis re-seed selon le preset.
+/// Installe les prompts standard du serveur MCP dans chaque société (Story
+/// 32-10a-i, AC-i11) : **tout** préréglage crée une société (`fresh` et
+/// `setup-required` une société provisoire, les autres une société complète),
+/// et l'amorçage suit la création. Un échec rend `500`, comme les autres
+/// étapes du préréglage.
+async fn amorcer_prompts_standard(pool: &sqlx::MySqlPool) -> Result<(), AppError> {
+    kesh_db::repositories::mcp_prompts::amorcer_standards(
+        pool,
+        kesh_db::entities::mcp_prompt_standards::STANDARDS,
+    )
+    .await
+    .map(|_| ())
+    .map_err(|e| AppError::Internal(format!("amorcer_standards: {e}")))
+}
+
+/// `POST /api/v1/_test/seed` — truncate puis re-seed selon le preset, puis
+/// amorçage des prompts standard ([`amorcer_prompts_standard`], après le
+/// préréglage : la société naît avec lui).
 ///
 /// Sérialisé par `seed_lock()` pour empêcher les races inter-workers
 /// (code review P2).
@@ -224,6 +241,7 @@ async fn seed_handler(
             "setup-required"
         }
     };
+    amorcer_prompts_standard(&state.pool).await?;
 
     // Story v011-5 (BH2-3) — synchroniser le flag mémoire `users_exist` après
     // chaque seed pour éviter une divergence cache mémoire vs DB. Après
@@ -298,7 +316,8 @@ async fn password_reset_token_handler(
     Ok(Json(PasswordResetTokenResponse { token: token_clear }))
 }
 
-/// `POST /api/v1/_test/reset` — alias de `seed { preset: "fresh" }`.
+/// `POST /api/v1/_test/reset` — alias de `seed { preset: "fresh" }`, amorçage
+/// des prompts standard compris ([`amorcer_prompts_standard`]).
 /// Également sérialisé par `seed_lock()` (code review P2).
 async fn reset_handler(State(state): State<AppState>) -> Result<Json<SeedResponse>, AppError> {
     let _guard = seed_lock().lock().await;
@@ -309,6 +328,7 @@ async fn reset_handler(State(state): State<AppState>) -> Result<Json<SeedRespons
     seed_changeme_user_only(&state.pool)
         .await
         .map_err(|e| AppError::Internal(format!("seed_changeme_user_only: {e}")))?;
+    amorcer_prompts_standard(&state.pool).await?;
     // Story v011-5 (BH2-3) — sync users_exist post-reset (preset fresh inclut un user).
     state
         .users_exist
