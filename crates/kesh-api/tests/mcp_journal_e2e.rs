@@ -753,14 +753,19 @@ async fn appel_abandonne_journalise(pool: MySqlPool) {
         &pool,
         Registre::vide()
             .avec(Box::new(LecteurRetarde {
-                attente: Duration::from_millis(500),
+                attente: Duration::from_millis(2000),
             }))
             .avec_delai(Duration::from_secs(10)),
     );
-    // Le client abandonne la requête au bout de 100 ms (le futur du
+    // Le client abandonne la requête au bout de 1 s (le futur du
     // gestionnaire est abandonné, comme quand hyper voit la connexion coupée).
+    // La coupure doit tomber APRÈS le lancement de la tâche de l'appel —
+    // authentification comprise — et AVANT la fin de l'outil (2 s). *(Marges
+    // élargies, issue #761 : coupure 100 ms → 1 s, attente 500 ms → 2 s ; à
+    // 100 ms, un abandon tombé avant le lancement de la tâche a fait rougir le
+    // test à tort en CI, comme pour #759.)*
     let coupe = tokio::time::timeout(
-        Duration::from_millis(100),
+        Duration::from_secs(1),
         b.mcp(Some(&l.exempte.1), &appel(1, "lecteur_retarde", json!({}))),
     )
     .await;
@@ -784,7 +789,7 @@ async fn appel_abandonne_journalise(pool: MySqlPool) {
         attendu(l.exempte.0, "lecteur_retarde", "servi", "exempt")
     );
     assert!(
-        duree >= 500,
+        duree >= 2000,
         "l'issue est celle de l'outil allé au bout : {duree}"
     );
 }
