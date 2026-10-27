@@ -30,6 +30,9 @@
 //!     serveur_mcp::journaliser_appel (fail closed ; un dépôt réussi est
 //!     journalisé dans sa propre transaction) — le tout dans la tâche de
 //!     l'appel, qu'un abandon du client n'annule pas (C-32-6-58)
+//!     prompts/list, prompts/get → prompts::{lister, obtenir} → service
+//!     prompts_mcp (exiger books:read, LecturePrompts, revalidation, marque)
+//!     — hors politique : un prompt n'est pas une donnée lue (Story 32-10a-ii)
 //! 12. reponse::rendre — seule sortie
 //! ```
 //!
@@ -61,7 +64,8 @@ use std::time::Duration;
 
 use tower_http::services::{ServeDir, ServeFile};
 
-use crate::services::poignees::{EcritureEnvois, Lecture, LectureEnvois, Trace};
+use crate::services::poignees::EcriturePrompts;
+use crate::services::poignees::{EcritureEnvois, Lecture, LectureEnvois, LecturePrompts, Trace};
 
 pub mod outil;
 pub mod outils;
@@ -71,6 +75,7 @@ pub mod registre;
 pub(crate) mod repartiteur;
 pub(crate) mod reponse;
 pub mod reseau;
+pub mod sortie;
 pub mod textes;
 pub(crate) mod transport;
 
@@ -118,6 +123,12 @@ pub struct EtatMcp {
     /// Le dépôt des envois et la purge des contenus échus, sur le pool
     /// ordinaire (Story 32-8b, AC-B10).
     pub(crate) ecriture_envois: EcritureEnvois,
+    /// La lecture des prompts (`prompts/list`, `prompts/get`), sur le pool en
+    /// lecture seule du MCP (Story 32-10a-ii, AC-ii3).
+    pub(crate) lecture_prompts: LecturePrompts,
+    /// La proposition d'un prompt par un agent (`proposer_prompt`), sur le
+    /// pool ordinaire (Story 32-10a-iii, AC-iii1) ; aucun pool visible.
+    pub(crate) ecriture_prompts: EcriturePrompts,
     /// Les outils servis et leur délai.
     pub(crate) registre: Arc<Registre>,
     /// Le service du repli statique, pour la réponse de route absente.

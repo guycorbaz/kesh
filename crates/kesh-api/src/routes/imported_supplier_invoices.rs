@@ -44,9 +44,8 @@ use crate::routes::supplier_invoices::{
     CreateSupplierInvoiceRequest, PaymentDetails, PaymentSource, SupplierInvoiceResponse,
     normalize_payment_field,
 };
-
-/// Domaine valide du query param `status` (AC9 / dette D1).
-const VALID_STATUSES: [&str; 3] = ["to_complete", "completed", "discarded"];
+use crate::services::acces::ContexteAcces;
+use crate::services::pieces;
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/inbox-import
@@ -83,21 +82,21 @@ pub struct ListImportedQuery {
 }
 
 /// Liste les factures importées d'une company filtrées par statut (Comptable+).
-/// Le `status` est validé à la frontière HTTP (dette D1) : absent ou hors-domaine
-/// → `400`, PAS une liste vide silencieuse.
+/// Le `status` est validé (dette D1) : absent ou hors-domaine → `400`, PAS une
+/// liste vide silencieuse. Story 32-9b (AC-b1) : la société, la validation et
+/// la lecture passent par le service (`services::pieces::lister_tout`), dans
+/// l'ordre d'avant.
 pub async fn list_imported(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Query(params): Query<ListImportedQuery>,
 ) -> Result<Json<Vec<ImportedSupplierInvoice>>, AppError> {
-    let company = get_company_for(&current_user, &state.pool).await?;
-    let status = params.status.as_deref().unwrap_or_default();
-    if !VALID_STATUSES.contains(&status) {
-        return Err(AppError::Validation(format!(
-            "Paramètre 'status' requis et ∈ {{to_complete, completed, discarded}} (reçu : '{status}')"
-        )));
-    }
-    let items = imported_supplier_invoices::list_by_status(&state.pool, company.id, status).await?;
+    let items = pieces::lister_tout(
+        &ContexteAcces::depuis_api(&current_user),
+        &state.lecture(),
+        params.status,
+    )
+    .await?;
     Ok(Json(items))
 }
 

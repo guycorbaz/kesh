@@ -11,7 +11,11 @@
 //!   chaque `tools/call`, sur la `Trace` — la seule fonction de ce module qui
 //!   écrit. Son entrée est construite par [`entree_appel`] (Story 32-8b),
 //!   fonction pure que le dépôt d'un envoi emploie aussi, pour écrire l'entrée
-//!   de son appel **dans** sa transaction (`envois_mcp::deposer`).
+//!   de son appel **dans** sa transaction (`envois_mcp::deposer`) — et la
+//!   proposition d'un prompt (`prompts_mcp::proposer`, Story 32-10a-iii).
+//! - [`journaliser_prompt`] (Story 32-10a-iii, AC-iii5) : l'entrée
+//!   `mcp.prompt_served` de chaque `prompts/get`, sur la `Trace`, **fail
+//!   closed** comme les appels d'outil ; construite par [`entree_prompt`].
 //!
 //! ⚠️ **Dérogation écrite aux règles R1, R2 et R7 de `services`** pour
 //! [`reglages_actifs`] (validation P2 de la 32-6, R14) : elle précède
@@ -166,7 +170,8 @@ impl IssueAppel {
 /// (un dépôt, ou une relecture aux arguments valides : le numéro demandé).
 /// **Ni arguments, ni données** (AC-b2) : aucun paramètre ne peut en porter.
 /// `outil` est le nom d'un outil du registre, un nom réservé
-/// (`kesh_lire_envoi`), ou [`OUTIL_INCONNU`] — jamais le nom reçu du client.
+/// (`kesh_lire_envoi`, et `proposer_prompt` depuis la 32-10a-iii), ou
+/// [`OUTIL_INCONNU`] — jamais le nom reçu du client.
 /// `&'static str` le garantit par le type, comme `AppelOutil::outil` de la
 /// 32-6b : un texte du binaire — le nom reçu du client, emprunté au corps de
 /// la requête, n'a pas cette durée de vie (revue de code P1 de la 32-8b, B-2).
@@ -227,9 +232,120 @@ pub async fn journaliser_appel(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Le journal des `prompts/get` — Story 32-10a-iii (AC-iii5, C-32-10a-18)
+// ---------------------------------------------------------------------------
+
+/// L'issue d'un `prompts/get` — une énumération **fermée** (AC-iii5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IssuePrompt {
+    /// Le prompt est servi.
+    Servi,
+    /// Nom inconnu, non servi (à valider, refusé, retiré, invalide), d'une
+    /// autre société, non conforme, ou clé sans `books:read` : **une seule**
+    /// issue, comme la réponse (aucun oracle).
+    Inconnu,
+    /// Erreur de lecture.
+    Erreur,
+}
+
+impl IssuePrompt {
+    /// Le code écrit au détail.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Servi => "servi",
+            Self::Inconnu => "inconnu",
+            Self::Erreur => "erreur",
+        }
+    }
+}
+
+/// Ce qu'un `prompts/get` a servi : le nom **du catalogue** (celui que le
+/// service a revalidé, jamais le nom reçu du client) et le numéro de la
+/// version servie. `None` hors de l'issue `servi`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PromptJournalise<'a> {
+    /// Le nom du prompt servi.
+    pub nom: &'a str,
+    /// Le numéro de la version servie.
+    pub numero: i32,
+}
+
+/// L'entrée `mcp.prompt_served` d'un `prompts/get` — fonction **pure**
+/// (AC-iii5). Au nom du créateur de la clé, type d'entité `mcp_key`,
+/// `entity_id` = l'id de la clé ; détail **exactement** `{cleMcpId, prompt,
+/// numero, issue}` — `prompt` vaut [`OUTIL_INCONNU`] et `numero` est nul hors
+/// de l'issue `servi`. **Ni description ni texte** : aucun paramètre ne peut
+/// en porter.
+#[doc(hidden)]
+pub fn entree_prompt(
+    cle: &CleMcpAuthentifiee,
+    servi: Option<PromptJournalise<'_>>,
+    issue: IssuePrompt,
+) -> NewAuditLogEntry {
+    let (prompt, numero) = match servi {
+        Some(p) => (
+            serde_json::Value::from(p.nom),
+            serde_json::Value::from(p.numero),
+        ),
+        None => (
+            serde_json::Value::from(OUTIL_INCONNU),
+            serde_json::Value::Null,
+        ),
+    };
+    NewAuditLogEntry::user(
+        cle.acces.user_id(),
+        "mcp.prompt_served",
+        "mcp_key",
+        cle.cle_id,
+        Some(serde_json::json!({
+            "cleMcpId": cle.cle_id,
+            "prompt": prompt,
+            "numero": numero,
+            "issue": issue.code(),
+        })),
+    )
+}
+
+/// Écrit l'entrée [`entree_prompt`] d'un `prompts/get`, sur la `Trace`.
+///
+/// ⛔ **Fail closed**, comme [`journaliser_appel`] (AC-b3 de la 32-6b) : une
+/// erreur est rendue, et le répartiteur ne sert alors aucun texte. Même
+/// dérogation écrite aux règles R1, R2 et R7 : une écriture d'audit, qui doit
+/// s'écrire pour un prompt refusé comme pour un prompt servi.
+pub async fn journaliser_prompt(
+    trace: &Trace,
+    cle: &CleMcpAuthentifiee,
+    servi: Option<PromptJournalise<'_>>,
+    issue: IssuePrompt,
+) -> Result<(), AppError> {
+    let mut tx = trace
+        .pool()
+        .begin()
+        .await
+        .map_err(kesh_db::errors::map_db_error)?;
+    audit_log::insert_in_tx(&mut tx, entree_prompt(cle, servi, issue)).await?;
+    tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// AC-iii5 — l'énumération close des issues d'un `prompts/get`.
+    #[test]
+    fn issues_de_prompt_closes() {
+        let codes: Vec<&str> = [
+            IssuePrompt::Servi,
+            IssuePrompt::Inconnu,
+            IssuePrompt::Erreur,
+        ]
+        .into_iter()
+        .map(IssuePrompt::code)
+        .collect();
+        assert_eq!(codes, ["servi", "inconnu", "erreur"]);
+    }
 
     // `entree_appel_cinq_ou_six_cles` vit dans `tests/mcp_journal_e2e.rs` : une
     // `CleMcpAuthentifiee` ne se construit que par `cles_mcp::authentifier`

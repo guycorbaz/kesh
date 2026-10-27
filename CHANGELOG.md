@@ -19,13 +19,50 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   `kesh_lire_envoi`. Un envoi échoit 24 heures après la demande ; il pèse au plus 24 Kio, et une clé en a au plus 20
   en attente. Les caractères invisibles y sont montrés par leur code, et refusés dans une version modifiée. Le manuel
   d'administration le décrit, § *Les envois du serveur MCP*, avec ce que la validation ne couvre pas.
+- **Les outils de lecture du serveur MCP — livres et factures** (refs
+  [#723](https://github.com/guycorbaz/kesh/issues/723)). Quinze outils, chacun dans sa portée : sous `books:read`,
+  les exercices, le plan comptable, les écritures (liste et détail), le grand livre d'un compte, la balance, le bilan,
+  le compte de résultat et les postes ouverts ; sous `invoices:read`, les factures clientes (liste, détail,
+  échéancier), la balance âgée des débiteurs et les factures fournisseur (liste et détail). Le manuel
+  d'administration en donne la liste exacte, § *Les outils du serveur MCP et leurs portées*. Aucun n'écrit ; la
+  consultation d'un rapport s'inscrit au journal d'audit. Tout texte saisi ou importé — libellé, nom, numéro,
+  condition, description — parvient à l'agent sous la forme `{"nonFiable": "…"}`, marqué comme une donnée et non une
+  consigne. Sans la portée `contacts:read`, l'IBAN et le QR-IBAN du créancier et l'adresse d'envoi d'une facture sont
+  masqués ; les noms des clients et des fournisseurs, que Kesh écrit lui-même dans les libellés, ne le sont pas. Une
+  réponse reste sous 24 Kio de texte, soit environ 10 000 jetons (estimation) ; les listes se lisent par pages.
+- **Les prompts du serveur MCP** (refs [#723](https://github.com/guycorbaz/kesh/issues/723)). Le serveur MCP sert
+  ses prompts par `prompts/list` et `prompts/get` à une clé qui porte la portée `books:read`, quelle que soit sa
+  politique de validation : un prompt est un texte, non une donnée des livres. Deux prompts standard sont installés
+  dans chaque société — `kesh-developpement`, l'agent de développement, qui porte les règles sur les données réelles,
+  et `kesh-assistant`, l'agent qui lit la comptabilité pour l'utilisateur. Seule une version approuvée est servie ; un
+  prompt écrit par un agent l'est précédé d'une marque qui le dit, et un texte portant un caractère invisible ou
+  bidirectionnel ne l'est pas. Un prompt est un texte fixe : les arguments d'un client sont ignorés.
+- **Proposer un prompt, et le gérer** (refs [#723](https://github.com/guycorbaz/kesh/issues/723)). Sous la portée
+  `prompts:write`, un agent appelle l'outil `proposer_prompt` : il propose un prompt, qui devient une version « à
+  valider », jamais servie avant qu'un administrateur l'approuve — d'ici là, la version en vigueur reste servie, et
+  aucune clé ne peut approuver. L'agent n'écrit rien dans les livres, ne propose
+  jamais sur un nom en `kesh` (les prompts standard) et ne relit pas ses propositions ; au plus vingt attendent par
+  société. Sur le nom d'un prompt existant, la proposition en devient une nouvelle version, elle aussi à valider. Les
+  routes d'administration `/api/v1/admin/mcp/prompts` — une session d'Administrateur seulement, jamais une clé —
+  listent les prompts, rendent l'historique avec le texte tel qu'il serait servi, créent un prompt, enregistrent une
+  nouvelle version ou un retrait, approuvent ou refusent une proposition (l'approbation revérifie le texte) et
+  rétablissent le texte standard ; chaque geste est inscrit au journal d'audit, sans le texte. Chaque `prompts/get` y
+  est inscrit aussi ; si l'inscription échoue, rien n'est servi.
+- **Les outils de lecture du serveur MCP — contacts et pièces** (refs
+  [#723](https://github.com/guycorbaz/kesh/issues/723)). Sous `contacts:read`, le carnet d'adresses (liste et
+  fiche d'un contact), chaque texte enveloppé ; sous `documents:read`, la liste des pièces importées d'un statut,
+  **leurs métadonnées seulement** — nom et type du fichier, taille, date d'import, facture fournisseur créée, et le
+  fait qu'un QR-code y a été lu ; `kesh_pieces` ne rend ni le fichier ni rien de ce qui a été lu du QR-code. Une fois
+  la pièce complétée, l'IBAN, la référence et le montant lus de son QR-code appartiennent à la facture fournisseur
+  créée, que `kesh_facture_fournisseur` rend — la référence et le montant sous `invoices:read`, l'IBAN (ou le
+  QR-IBAN) sous `contacts:read` seulement. Le contenu des pièces viendra dans une version ultérieure.
 
 ### Modifié
 
 - ⚠️ **Sauvegarde : la 0.16.0 refuse les sauvegardes de la 0.15.0 et d'avant.** Une sauvegarde ne se réimporte que
-  dans une version de Kesh qui porte **les mêmes tables** qu'elle ; la 0.16.0 en ajoute trois — les clés, les réglages
-  et les envois du serveur MCP, qui entrent au fichier `.keshbackup` (activation et contenu des envois compris)
-  et restent hors de l'export global. Une sauvegarde plus ancienne se restaure avec la version qui l'a produite, dont le manuel se trouve dans le
+  dans une version de Kesh qui porte **les mêmes tables** qu'elle ; la 0.16.0 en ajoute cinq — les clés, les réglages,
+  les envois, les prompts et les versions des prompts du serveur MCP, qui entrent au fichier `.keshbackup`
+  (activation, contenu des envois et historique complet des prompts compris) et restent hors de l'export global. Une sauvegarde plus ancienne se restaure avec la version qui l'a produite, dont le manuel se trouve dans le
   dépôt, au tag de cette version ; ensuite, on met à jour. **Après la mise à jour vers la 0.16.0, prenez sans attendre
   une sauvegarde complète** : les sauvegardes précédentes, automatiques comprises, ne s'y importent plus. Pour la même
   raison, l'import ne rejoue plus aucune reprise de données d'une version antérieure (le lettrage des pièces de la
@@ -41,6 +78,30 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Corrigé
 
+- **Grand livre — le solde progressif est juste au-delà de la première page**
+  ([#775](https://github.com/guycorbaz/kesh/issues/775)). Lu par l'API avec `offset`, chaque page repartait du solde
+  d'ouverture de la période, sans les lignes des pages précédentes : toute page autre que la première affichait un
+  solde progressif faux, et, sur un compte de produits ou de charges, une fin d'exercice tombant pile entre deux pages
+  n'était pas signalée et le solde n'y repartait pas de zéro. Une page part désormais de l'ouverture plus les lignes
+  qui la précèdent, avec les mêmes remises à zéro aux exercices franchis ; une lecture page après page rend, ligne
+  pour ligne, les soldes d'une lecture entière. L'écran et les exports PDF et CSV, qui ne paginent pas, n'étaient pas
+  touchés.
+- **Grand livre — l'ouverture d'un compte de produits ou de charges ne se reporte plus dans l'exercice suivant**
+  ([#777](https://github.com/guycorbaz/kesh/issues/777)). Quand la période commençait dans un exercice et que la
+  première écriture du compte tombait dans le suivant, le solde d'ouverture s'ajoutait aux mouvements du nouvel
+  exercice, sans ligne de rupture : par exemple, une ouverture de 400 suivie d'une vente de 100 l'exercice suivant
+  affichait un solde de 500 au lieu de 100. Une rupture clôt désormais l'exercice de l'ouverture avant la première
+  écriture, et le solde repart de zéro — à l'écran, dans les exports PDF et CSV, et par l'API. Les comptes d'actif et
+  de passif n'étaient pas touchés.
+- **Grand livre — le solde de clôture d'un compte de produits ou de charges suit les fins d'exercice**
+  ([#778](https://github.com/guycorbaz/kesh/issues/778)). Sur une période qui franchit une fin d'exercice, le solde
+  de clôture valait l'ouverture plus tous les mouvements de la période, sans la remise à zéro que le solde progressif
+  appliquait — 720 là où la dernière ligne affichait 120. Il est désormais le **solde de l'exercice en cours à la fin
+  de la période** : le dernier solde progressif, remis à zéro à chaque fin d'exercice franchie, et zéro si cet
+  exercice n'a aucune écriture dans la période. Le cumul de la période reste lisible dans le total des mouvements. Une
+  fin d'exercice franchie après la dernière écriture a désormais elle aussi sa ligne de rupture, et l'export CSV écrit
+  chaque rupture comme une ligne du tableau. Pour un compte d'actif ou de passif, rien ne change. Le manuel
+  utilisateur le dit, § *Grand livre*.
 - **Manuels et brochure : la répétition d'une clôture dit vrai, et les signes s'impriment**
   ([#714](https://github.com/guycorbaz/kesh/issues/714)). Dans le manuel d'administration, § *Répéter une clôture sur
   une copie*, sans qu'aucune commande change : ce que les deux exports écrivent sur la production (journal d'audit,

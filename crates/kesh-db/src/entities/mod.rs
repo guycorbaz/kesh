@@ -30,6 +30,8 @@ pub mod invoice_reminder;
 pub mod invoice_settlement;
 pub mod journal_entry;
 pub mod mcp_key;
+pub mod mcp_prompt;
+pub mod mcp_prompt_standards;
 pub mod mcp_send;
 pub mod mcp_server_settings;
 pub mod onboarding;

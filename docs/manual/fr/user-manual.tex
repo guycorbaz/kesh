@@ -2804,7 +2804,18 @@ progressif} après chaque mouvement et, en dernière colonne, son \textbf{lettra
     \item \textbf{Période libre, sans exercice.} C'est le seul rapport qui ne demande pas de
           choisir un exercice : il en franchit la borne. Quand la période en traverse deux, une
           ligne de rupture marque la clôture, et le solde d'un compte de charges ou de produits
-          y \textbf{repart de zéro} — c'est ce que fait un bouclement.
+          y \textbf{repart de zéro} — c'est ce que fait un bouclement. Le solde d'ouverture
+          appartient à l'exercice qui contient le premier jour de la période~: si la première
+          écriture de la période tombe dans un exercice suivant, une rupture clôt d'abord
+          l'ouverture. Une fin d'exercice franchie après la dernière écriture de la période a
+          aussi sa ligne de rupture, sous les écritures.
+    \item \textbf{Le solde de clôture d'un compte de charges ou de produits} est, quand la
+          période franchit une fin d'exercice, le \textbf{solde de l'exercice en cours à la fin
+          de la période} --- le dernier solde progressif, ruptures comprises~; il vaut zéro si
+          cet exercice n'a aucune écriture dans la période. Il n'est alors \emph{pas} l'ouverture
+          plus les mouvements~: le cumul de la période se lit dans le \textbf{total des
+          mouvements}. Pour un compte de bilan, rien ne change~: la clôture est l'ouverture plus
+          les mouvements.
     \item \textbf{Compte facultatif.} Sans sélection, tous les comptes mouvementés sont rendus.
     \item \textbf{Les comptes archivés apparaissent} s'ils portent encore un solde, signalés
           comme tels. Ce n'est pas un oubli de filtrage : un compte archivé à solde résiduel est
@@ -2824,8 +2835,11 @@ progressif} après chaque mouvement et, en dernière colonne, son \textbf{lettra
           exports CSV et PDF du grand livre.
     \item \textbf{Exports PDF et CSV.} Le PDF répète l'en-tête du compte sur chaque page et
           porte « À reporter » au bas d'une page, « Report » en haut de la suivante, selon
-          l'usage suisse. Le CSV écrit l'ouverture et la clôture comme des \textbf{lignes du
-          tableau}, pour que le fichier reste additionnable dans un tableur.
+          l'usage suisse. Le CSV écrit l'ouverture, les ruptures d'exercice et la clôture comme
+          des \textbf{lignes du tableau}, pour que le fichier reste additionnable dans un
+          tableur~: sur un compte de charges ou de produits dont la période franchit une fin
+          d'exercice, la clôture est l'ouverture plus les mouvements, moins le solde porté par
+          chaque ligne de rupture.
 \end{itemize}
 
 \begin{keshnote}
@@ -3029,7 +3043,8 @@ couvrent l'ensemble de votre comptabilité~:
 serveur MCP et les jetons de session} (ce sont des secrets~: les exporter dans un fichier destiné
 à être transmis serait une fuite), les \textbf{réglages du serveur MCP} (sans valeur comptable),
 les \textbf{envois du serveur MCP} (des copies transitoires de données des livres, demandées par un
-agent, sans valeur comptable), le \textbf{registre des utilisateurs} (sans perte~: chaque entrée du journal d'audit
+agent, sans valeur comptable), les \textbf{prompts du serveur MCP} et leur historique (des
+instructions données à un agent, sans valeur comptable), le \textbf{registre des utilisateurs} (sans perte~: chaque entrée du journal d'audit
 porte le nom de son auteur \emph{au moment de l'écriture}), les \textbf{gabarits d'e-mail} et
 l'\textbf{état d'installation} (configuration, non comptabilité).
 
@@ -3154,7 +3169,12 @@ transactions à rapprocher) est prévu mais pas encore disponible.
           et «~clé API~» si elle a été faite par une clé d'API~; un appel du \textbf{serveur MCP}
           paraît, lui, \textbf{au nom du créateur de la clé du serveur MCP}, \textbf{sans} cette
           marque --- c'est l'action «~Outil du serveur MCP appelé~» et le numéro de la clé, au
-          détail, qui le distinguent), l'action et le type d'entité
+          détail, qui le distinguent~; et la \textbf{consultation d'un rapport} par un agent
+          (grand livre, balance, bilan, compte de résultat, balance âgée) paraît comme
+          «~Rapport généré~», au nom du créateur de la clé, \textbf{exactement comme une
+          consultation à l'écran}~: rien, dans cette ligne, ne dit qu'elle vient du serveur MCP~;
+          seule la ligne «~Outil du serveur MCP appelé~», inscrite à part pour le même appel, le
+          révèle --- limite connue, issue \#776), l'action et le type d'entité
           \textbf{traduits}, le numéro de la pièce --- «~---~» quand l'opération ne vise pas une pièce
           précise --- et un bouton qui déplie le \textbf{détail} enregistré.
     \item \textbf{Une action ancienne}, écrite par une version antérieure et absente de la liste

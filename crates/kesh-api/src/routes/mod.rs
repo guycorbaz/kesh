@@ -33,6 +33,7 @@ pub mod limits;
 pub mod mcp;
 pub mod mcp_envois;
 pub mod mcp_keys;
+pub mod mcp_prompts;
 pub mod mcp_server_settings;
 pub mod onboarding;
 pub mod opening_balances;
