@@ -219,3 +219,80 @@ par union au registre de l'epic à la clôture.*
   second drapeau (inutile : l'origine est déjà dans la synthèse).
 - **Réversible** : oui.
 - **Annoté à la validation P3 (2026-10-27)** (R2, F7) : « le drapeau seul conditionne *Revenir au texte standard* » est **périmé** depuis la P2 ; la condition est `standardDiffere && standardDuCode !== null` (C-32-10b-10, annotation P2).
+
+## Développement (2026-10-27, Opus 5.5, autonomie, worktree `kesh-32-10a`, branche `story/32-10b`)
+
+### C-32-10b-20 — La saisie survit au 409 de son enregistrement : gardée dans l'éditeur
+
+- **Contexte** : amendement de l'AC-12 (note de l'orchestrateur, `7b9ba572` ; KF-055, #796) — une proposition
+  d'agent relève la `version` du prompt ; l'enregistrement d'une version d'administrateur en cours échoue alors en 409.
+- **Retenu** : sur un 409 rendu à l'**enregistrement**, *Recharger* relit le détail **sans** réinitialiser l'éditeur ;
+  la saisie y reste, et un avis (`mcp-prompt-editor-kept`) dit de relire l'historique rechargé avant de réenregistrer.
+  Rien n'est renvoyé d'office ; le réenregistrement porte la `version` relue. Les 409 des autres gestes gardent l'AC-12
+  (l'éditeur est remis sur la version en vigueur). Test `saisie_conservee_apres_409`, mutation M19 (tuée).
+- **Écarté** : un geste *Reprendre ma saisie* (un clic de plus, et une saisie cachée qu'on peut oublier).
+- **Réversible** : oui.
+
+### C-32-10b-21 — Une version non servable : le texte ENREGISTRÉ, rendu visible par le serveur
+
+- **Contexte** : le DTO réel (`VersionDetailResponse`, `routes/mcp_prompts.rs:166-191`) rend `descriptionServie` et
+  `texteServi` **nuls** quand la version n'est pas servable (`composer_version(…).ok()`, l. 462-469) : rien n'est
+  composé, la marque comprise.
+- **Retenu** : l'avis du verdict (AC-6), puis la description et le texte **enregistrés** rendus visibles par le
+  serveur (`description.visible`, `texte.visible`, `TexteRendu::de`, l. 151-158), sous des `data-testid` `stored-`
+  (non `served-` : rien n'est servi). Aucun champ ne manque à la liste d'arrêt : l'écran ne consomme que des champs
+  rendus.
+- **Écarté** : arrêter le développement (le champ existe sous une autre forme, et la fiche demande précisément « le
+  texte rendu visible » sous la phrase).
+- **Réversible** : oui.
+
+### C-32-10b-22 — Les types suivent la forme des DTO réels
+
+- **Contexte** : la fiche donne les types « indicatifs dans la forme ».
+- **Retenu** : `standard` (non `isStandard`) ; chaque texte en `TexteRendu { exact, visible }` ; `descriptionServie`
+  et `texteServi` séparés (non `servi: {…}`) ; la clé auteur à plat (`cleAuteurId`, `cleNom`, `cleRevoquee`) ; la
+  synthèse porte `derniere` ; `servable` est un booléen, faux pour un retrait. Aucun écart au fond.
+- **Réversible** : oui.
+
+### C-32-10b-23 — `dateLocale` réemployée de l'écran des envois
+
+- **Retenu** : `mcp-prompts-format.ts` réexporte `dateLocale` de `mcp-sends-format.ts` (DRY) plutôt qu'une copie.
+- **Écarté** : la déplacer dans `shared/` (toucher l'écran des envois sans nécessité).
+- **Réversible** : oui.
+
+### C-32-10b-24 — Les dialogues et l'état d'envoi tenus par la page ; *Retirer* et *Revenir au standard* sous l'éditeur
+
+- **Retenu** : `McpPromptDetail` porte les quatre dialogues et l'unique `envoiEnCours` ; `McpPromptEditor` est un
+  composant de saisie (valeurs liées, `onEnregistrer`) ; *Retirer ce prompt* et *Revenir au texte standard* forment une
+  barre de gestes sous l'éditeur.
+- **Réversible** : oui.
+
+### C-32-10b-25 — Deux retours anticipés : M18 équivalente, M18b jouée
+
+- **Contexte** : la fiche prescrit M18 (retour anticipé retiré du gestionnaire de confirmation d'*Approuver*). Le
+  gestionnaire appelle `agir`, qui garde lui aussi `if (envoiEnCours) return`.
+- **Retenu** : garder les deux gardes ; M18 est **équivalente** (démontré : la seconde garde arrête le second clic ;
+  la mutation survit) ; M18b retire les deux et est tuée par `gestes_desactives_pendant_l_envoi`.
+- **Réversible** : oui.
+
+### C-32-10b-26 — La garde des replis par un module partagé (AC-15 (b))
+
+- **Contexte** : la 32-7 n'a pas fusionné (`grep -rn PREFIXES_REPLI frontend/src` → rien).
+- **Retenu** : `frontend/src/lib/shared/i18n-repli-catalogue.ts` (module de test, `node:fs`, importé par aucun code
+  de l'application) ; la garde des envois l'emploie (ses 9 tests et son `NOMBRE_DE_CLES = 48` inchangés), la garde
+  neuve `mcp-prompts-i18n.test.ts` aussi (`NOMBRE_DE_CLES = 91`).
+- **Réversible** : oui (la 32-7 pourra y substituer `PREFIXES_REPLI_EGAL_AU_CATALOGUE`).
+
+### C-32-10b-27 — *Retirer* offert aussi sans version approuvée
+
+- **Contexte** : la route accepte un retrait sur tout prompt (`contenu_de`, l. 605-624).
+- **Retenu** : le bouton est absent seulement si la version en vigueur est déjà un retrait (AC-9, à la lettre).
+- **Réversible** : oui.
+
+### C-32-10b-28 — La recette visuelle par un script hors du dépôt
+
+- **Retenu** : `kesh-gate-logs/3210b-captures.mjs` (Playwright en bibliothèque) contre `kesh_3210b`, l'état préparé
+  par l'API et, pour la version piégée et le standard « Diffère », par `INSERT` SQL ; aucune spec versionnée ne porte
+  de capture.
+- **Écarté** : une spec de captures dans `tests/e2e/` (elle tournerait dans chaque E2E complet).
+- **Réversible** : oui.
