@@ -25,6 +25,7 @@
 //! | G20 | #616, #617, #619 | ni case « Compte de banque » au plan comptable, ni CAMT.053 présenté comme universel ; l'écran d'import dit « CAMT.053 ou CSV » dans les quatre langues |
 //! | G21 | #697 | le `FROM rust:` du `Dockerfile` et le `channel` de `rust-toolchain.toml` désignent la même chaîne (même mineure, même patch si les deux en portent un) |
 //! | G22 | #503 | la sauvegarde automatique : le manuel dit la reprise au bout d'une heure et le bandeau à partir d'au moins deux intervalles ; le rappel de l'écran dit le volume (nombre conservé plus une, une par import jamais purgée) dans les quatre langues |
+//! | G23 | #723 | le serveur MCP : le manuel liste exactement les plages admises par défaut et les cinq portées (dans l'ordre), nomme `100.64.0.0/10` hors des défauts ; l'écran le nomme, ainsi que Traefik et Docker, dans les quatre langues |
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -1061,15 +1062,34 @@ const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
         "docs/manual/fr/admin-manual.tex",
         "Avec plusieurs sociétés activées, chaque requête écrit",
     ),
+    // Story 32-7 (§ « Le serveur MCP », fiche AC-18 (4) et (5)) : ce que voit la
+    // clé d'une société quand une AUTRE société servie admet l'adresse ou
+    // l'origine — le cas existe (réglages MCP par société, installations
+    // touchées par #528/#542) ; les phrases décrivent le refus et ne promettent
+    // pas qu'on puisse créer une seconde société.
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "Sur une installation à plusieurs sociétés, la clé d'une société ainsi coupée",
+    ),
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "quand elle vient d'une adresse qu'une autre société servie admet",
+    ),
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "admise par une autre société servie --- reçoit le 401",
+    ),
 ];
 
 /// Nombre **exact** d'occurrences de [`MULTI_SOCIETE`] dans la documentation
 /// utilisateur, toutes assumées (recompté le 2026-10-09 en revue de code P1 :
 /// 7 de la forme d'origine + 9 du motif élargi ; + 1 le 2026-10-13, Story 28-3 :
 /// le nom de table du remède de moteur ; + 1 le 2026-10-26, Story 32-6c : le
-/// journal du filtre d'adresse). Un motif qui cesserait de voir
+/// journal du filtre d'adresse ; + 3 le 2026-10-27, Story 32-7 : le second volet
+/// de P7-H3 et le 401 d'une origine admise par une autre société, § « Le serveur
+/// MCP »). Un motif qui cesserait de voir
 /// un site rougit (A-9, B10 : `>=` laissait passer une occurrence perdue).
-const MULTI_SOCIETE_TOTAL: usize = 18;
+const MULTI_SOCIETE_TOTAL: usize = 21;
 
 /// **G18** (#127) — une installation porte une société : la documentation
 /// utilisateur ne promet pas le contraire. Chaque occurrence de
@@ -1694,8 +1714,11 @@ fn le_dockerfile_et_rust_toolchain_designent_la_meme_chaine() {
 ///
 /// **Positives adossées** : la phrase de reprise et celle du bandeau sont trouvées ; la
 /// clé existe dans chaque catalogue. **Angle mort écrit** : les marqueurs de/en/it
-/// prouvent que la phrase du volume y est, pas la qualité de sa traduction ; le repli
-/// Svelte est tenu égal au fr-CH par le Vitest `i18n-un-repli-par-cle`.
+/// prouvent que la phrase du volume y est, pas la qualité de sa traduction ; **aucune**
+/// garde ne tient le repli Svelte égal au fr-CH (angle mort écrit ; `i18n-un-repli-par-cle`
+/// compare les sites entre eux, sur ses seuls préfixes ; #758). *(Corrigé par la Story
+/// 32-7 : ce commentaire attribuait cette tenue à `i18n-un-repli-par-cle`, qui ne compare
+/// pas au catalogue et dont les préfixes n'incluent pas `admin-backup-`.)*
 #[test]
 fn la_sauvegarde_automatique_dit_vrai() {
     let manuel = normaliser(&lire("docs/manual/fr/admin-manual.tex"));
@@ -1741,6 +1764,174 @@ fn la_sauvegarde_automatique_dit_vrai() {
     assert!(
         erreurs.is_empty(),
         "G22 — {} écart(s) :\n  - {}",
+        erreurs.len(),
+        erreurs.join("\n  - ")
+    );
+}
+
+/// **Fonction pure de G23** — le texte entre `% <nom>:debut` et `% <nom>:fin` d'un source
+/// LaTeX **brut** (jamais normalisé : `normaliser` efface les sauts de ligne, et les
+/// marqueurs avec eux). Erreur si un marqueur manque : sans elle, un bloc supprimé ferait
+/// passer G23 (a) et (b) à vide.
+fn bloc_marque<'a>(source: &'a str, nom: &str) -> Result<&'a str, String> {
+    let debut = format!("% {nom}:debut");
+    let fin = format!("% {nom}:fin");
+    let i = source
+        .find(&debut)
+        .ok_or(format!("bloc absent : {debut}"))?
+        + debut.len();
+    let j = source[i..]
+        .find(&fin)
+        .ok_or(format!("bloc non fermé : {fin}"))?;
+    Ok(&source[i..i + j])
+}
+
+/// Le contenu de chaque `\texttt{…}` d'un texte, `\_` rendu `_`.
+fn textes_texttt(texte: &str) -> Vec<String> {
+    Regex::new(r"\\texttt\{([^}]*)\}")
+        .unwrap()
+        .captures_iter(texte)
+        .map(|c| c[1].replace("\\_", "_"))
+        .collect()
+}
+
+/// **Fonction pure de G23 (b)** — le PREMIER `\texttt{…}` de chaque rangée d'un tableau,
+/// rangées découpées sur `\\` (non sur les sauts de ligne du source : une rangée peut
+/// s'étendre sur plusieurs lignes) ; une rangée sans `\texttt` n'ajoute rien (en-tête).
+fn premiers_codes_des_rangees(bloc: &str) -> Vec<String> {
+    bloc.split("\\\\")
+        .filter_map(|rangee| textes_texttt(rangee).into_iter().next())
+        .collect()
+}
+
+/// Le texte de la sous-section de `label` : de `\label{label}` à la prochaine
+/// `\subsection` ou `\section`.
+fn sous_section<'a>(source: &'a str, label: &str) -> Result<&'a str, String> {
+    let marque = format!("\\label{{{label}}}");
+    let i = source.find(&marque).ok_or(format!("{marque} absent"))? + marque.len();
+    let reste = &source[i..];
+    let j = Regex::new(r"\\(sub)?section\{")
+        .unwrap()
+        .find(reste)
+        .map_or(reste.len(), |m| m.start());
+    Ok(&reste[..j])
+}
+
+/// G23 — témoins des fonctions pures : un bloc absent ou non fermé est une erreur ; une
+/// rangée qui cite une seconde portée n'ajoute que la première ; une rangée écrite sur
+/// deux lignes de source, dont la seconde commence par une portée, n'en ajoute pas.
+#[test]
+fn g23_les_fonctions_pures() {
+    assert!(bloc_marque("rien", "mcp-portees").is_err());
+    assert!(bloc_marque("% mcp-portees:debut\nx", "mcp-portees").is_err());
+    let bloc = bloc_marque(
+        "a\n% mcp-portees:debut\n\\texttt{books:read} & x \\\\\n\\texttt{invoices:read} & sans \\texttt{contacts:read} \\\\\n\\texttt{documents:read} & sur deux\n\\texttt{contacts:read} lignes \\\\\n% mcp-portees:fin\n",
+        "mcp-portees",
+    )
+    .unwrap();
+    assert_eq!(
+        premiers_codes_des_rangees(bloc),
+        ["books:read", "invoices:read", "documents:read"]
+    );
+    assert_eq!(
+        premiers_codes_des_rangees("Portée & Ce qu'elle ouvre \\\\ \\hline \\texttt{a} \\\\"),
+        ["a"]
+    );
+    assert_eq!(textes_texttt("\\texttt{mcp\\_server}"), ["mcp_server"]);
+    assert_eq!(
+        sous_section("\\subsection{A}\\label{x} corps \\subsection{B}", "x").unwrap(),
+        " corps "
+    );
+}
+
+/// **G23** (#723, Story 32-7) — le serveur MCP dit vrai :
+///
+/// - (a) le bloc `% mcp-reseaux-defaut` du manuel d'administration liste **exactement**
+///   `DEFAULT_ALLOWED_NETWORKS` (ensemble égal dans les deux sens), et `100.64.0.0/10`
+///   paraît dans `sec:mcp-filtre` **hors** de ce bloc ;
+/// - (b) le bloc `% mcp-portees` nomme exactement les cinq `McpScope::ALL`, dans cet
+///   ordre — le premier `\texttt` de chaque rangée ;
+/// - (c) dans les quatre catalogues, `mcp-server-guarantee-tailscale` contient
+///   `100.64.0.0/10`, et `mcp-server-guarantee-proxy` contient `Traefik` et `Docker`.
+///
+/// Les blocs s'extraient du source **brut** (`lire`), jamais après `normaliser`.
+/// **Angle mort écrit** : les phrases de portée du manuel et de l'écran sont tenues vraies
+/// par la relecture du code, non par ce test (seul l'ordre des codes l'est).
+#[test]
+fn le_serveur_mcp_dit_vrai() {
+    use kesh_db::entities::mcp_key::McpScope;
+    use kesh_db::entities::mcp_server_settings::DEFAULT_ALLOWED_NETWORKS;
+
+    let manuel = lire("docs/manual/fr/admin-manual.tex");
+    let mut erreurs = Vec::new();
+
+    match bloc_marque(&manuel, "mcp-reseaux-defaut") {
+        Ok(bloc) => {
+            let lus: std::collections::BTreeSet<String> = textes_texttt(bloc).into_iter().collect();
+            let attendus: std::collections::BTreeSet<String> = DEFAULT_ALLOWED_NETWORKS
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            if lus != attendus {
+                erreurs.push(format!("(a) défauts du manuel {lus:?} ≠ code {attendus:?}"));
+            }
+            if bloc.contains("100.64.0.0/10") {
+                erreurs.push("(a) 100.64.0.0/10 dans le bloc des défauts".to_string());
+            }
+        }
+        Err(e) => erreurs.push(format!("(a) {e}")),
+    }
+    match sous_section(&manuel, "sec:mcp-filtre") {
+        Ok(texte) => {
+            let hors_bloc = match (
+                texte.find("% mcp-reseaux-defaut:debut"),
+                texte.find("% mcp-reseaux-defaut:fin"),
+            ) {
+                (Some(i), Some(j)) => format!("{}{}", &texte[..i], &texte[j..]),
+                _ => texte.to_string(),
+            };
+            if !hors_bloc.contains("100.64.0.0/10") {
+                erreurs.push("(a) 100.64.0.0/10 absent de sec:mcp-filtre hors du bloc".to_string());
+            }
+        }
+        Err(e) => erreurs.push(format!("(a) {e}")),
+    }
+
+    match bloc_marque(&manuel, "mcp-portees") {
+        Ok(bloc) => {
+            let lus = premiers_codes_des_rangees(bloc);
+            let attendus: Vec<String> = McpScope::ALL
+                .iter()
+                .map(|s| s.as_str().to_string())
+                .collect();
+            if lus != attendus {
+                erreurs.push(format!(
+                    "(b) portées du manuel {lus:?} ≠ McpScope::ALL {attendus:?}"
+                ));
+            }
+        }
+        Err(e) => erreurs.push(format!("(b) {e}")),
+    }
+
+    for locale in ["fr-CH", "de-CH", "it-CH", "en-CH"] {
+        let cat = catalogue(locale);
+        match cat.get("mcp-server-guarantee-tailscale") {
+            Some(v) if v.contains("100.64.0.0/10") => {}
+            autre => erreurs.push(format!(
+                "(c) {locale} : mcp-server-guarantee-tailscale sans 100.64.0.0/10 ({autre:?})"
+            )),
+        }
+        match cat.get("mcp-server-guarantee-proxy") {
+            Some(v) if v.contains("Traefik") && v.contains("Docker") => {}
+            autre => erreurs.push(format!(
+                "(c) {locale} : mcp-server-guarantee-proxy sans Traefik et Docker ({autre:?})"
+            )),
+        }
+    }
+
+    assert!(
+        erreurs.is_empty(),
+        "G23 — {} écart(s) :\n  - {}",
         erreurs.len(),
         erreurs.join("\n  - ")
     );

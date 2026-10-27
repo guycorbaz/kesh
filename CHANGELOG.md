@@ -63,6 +63,11 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   la pièce complétée, l'IBAN, la référence et le montant lus de son QR-code appartiennent à la facture fournisseur
   créée, que `kesh_facture_fournisseur` rend — la référence et le montant sous `invoices:read`, l'IBAN (ou le
   QR-IBAN) sous `contacts:read` seulement. Le contenu des pièces viendra dans une version ultérieure.
+- **Administration → Serveur MCP** (refs [#723](https://github.com/guycorbaz/kesh/issues/723)) : activer le serveur,
+  régler son filtre d'adresse, créer, révoquer et régler les clés du serveur MCP ; une réinitialisation des données de
+  démonstration conserve ces clés et efface les réglages du serveur, qui repart désactivé ; manuel d'administration,
+  § *Le serveur MCP*. Le secret d'une clé n'est affiché qu'une fois, à sa création ; l'écran dit ce que le filtre
+  d'adresse ne garantit pas (derrière un mandataire non déclaré, il n'arrête personne).
 
 ### Modifié
 
