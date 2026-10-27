@@ -19,6 +19,7 @@ alternatives écartées, réversibilité.
   la 32-11a attendrait la 32-11b. **Pré-déclaré** : si une passe de validation ou de revue montre un recyclage sur le
   contrat seul, il se détache en 32-11a, la fixture K4 retirée (AC-B5).
 - **Réversible** : oui.
+- **Amendé le 2026-10-27 (validation P2, décision de l'orchestrateur)** : le test de contrat ne dépend plus du parcours (aucune fixture, AC-B5) ; le lien « la fixture de la 32-11a attendrait la 32-11b » tombe. Le découpage reste écarté (quatre modules) et pré-déclaré.
 
 ### C-32-11-2 — Le périmètre du parcours est une liste close : P1 à P11, et P-pièges selon Q3
 
@@ -32,6 +33,7 @@ alternatives écartées, réversibilité.
   minimal sans restauration (l'epic l'exige).
 - **Réversible** : oui, par une décision écrite.
 - **Amendé le 2026-10-27 (validation P1, R1, F1, F3)** : douze gestes, P0 à P11 — P0, l'amorçage, ajouté (C-32-11-25) — et deux conditionnels nommés, P3-direct et P-pièges ; la liste de l'AC-A2 est la seule source des gestes, les variantes des Dev Notes en sont retirées.
+- **Amendé le 2026-10-27 (validation P2, décision de l'orchestrateur ; R11)** : douze gestes, P0 à P11 — P0 compris, que la rédaction d'origine (« P1 à P11 ») omettait —, **aucun geste conditionnel** : P3 devient le client HTTP (C-32-11-28), P3-direct est retiré (il naissait du mandataire placé devant Claude Code), P-pièges passe à l'Annexe (C-32-11-24).
 
 ### C-32-11-3 — Un défaut révélé par le parcours ne se corrige pas dans la 32-11
 
@@ -55,6 +57,7 @@ alternatives écartées, réversibilité.
 - **Écartées** : Guy seul (coûteux à chaque correction, non rejouable par un agent) ; le test serveur seul (ne dit rien
   du client).
 - **Réversible** : oui (réponse de Guy).
+- **Amendé le 2026-10-27 (validation P2, décision de l'orchestrateur ; R11)** : l'agent joue P0 à P11 et la restauration **en client HTTP**, sans lancer `claude` (C-32-11-28) ; Guy joue les gestes de Claude Code et capture ses requêtes à la recette (C-32-11-29). Le pilotage de `claude -p` par l'agent devient une variante soumise à Guy (point 1, Annexe), non retenue par défaut.
 
 ### C-32-11-5 — La configuration de Claude Code de Guy n'est pas un banc
 
@@ -68,6 +71,7 @@ alternatives écartées, réversibilité.
   serveurs MCP propres chargés pendant le parcours).
 - **Réversible** : oui.
 - **Amendé le 2026-10-27 (validation P1, F2)** : « il n'écrit jamais `~/.claude.json`, `~/.claude/` » devient « il n'y écrit jamais **lui-même** » : `claude`, lancé avec l'authentification de Guy, écrit ses sessions dans le magasin habituel de Guy, ce qui est accepté et déclaré (C-32-11-26). `claude mcp add` ne s'éprouve plus du tout : la condition « variable qui déplace le dossier de configuration » est retirée, un tel dossier retirant l'authentification.
+- **Amendé le 2026-10-27 (validation P2, décision de l'orchestrateur ; F3 = R6)** : l'amendement de la validation P1 (« jamais **lui-même** ») tombe : l'agent ne lance pas `claude` et n'écrit rien dans `~/.claude.json` ni `~/.claude/`. Les écritures de `claude` dans ces fichiers dérogeraient à `docs/agents-orchestration.md` § 2.1 ; elles ne se posent qu'à la variante de l'Annexe, sur un oui de Guy (point 1).
 
 ### C-32-11-6 — Les échanges se capturent par un mandataire `socat`, sans changer le produit
 
@@ -79,6 +83,7 @@ alternatives écartées, réversibilité.
   fixé par C-32-11-3 ; utile peut-être, à proposer en issue si le parcours le montre) ; le journal de débogage de Claude
   Code (son contenu n'est pas documenté dans les sources de la spike).
 - **Réversible** : oui.
+- **Amendé le 2026-10-27 (validation P2, décision de l'orchestrateur)** : l'agent ne lance plus `socat` ; la capture des requêtes de Claude Code est un geste de Guy à la recette (AC-A8, C-32-11-29). Le parcours de l'agent garde ses requêtes et ses réponses dans des fichiers (AC-A1).
 
 ### C-32-11-7 — L'oracle du contrat est la phrase de la spécification, jamais la sortie de Kesh
 
@@ -113,6 +118,7 @@ alternatives écartées, réversibilité.
 - **Écartées** : une requête écrite à la main « comme Claude Code » (rien ne la distingue d'une invention) ; versionner
   les réponses (C-32-11-7).
 - **Réversible** : oui.
+- **Amendé le 2026-10-27 (validation P2, décision de l'orchestrateur)** : **retiré** — aucune fixture de Claude Code n'est versionnée par la 32-11 (AC-B5) ; K4 et MF1 sont retirés ; les requêtes capturées par Guy se comparent aux clauses, une contradiction s'ouvre en issue.
 
 ### C-32-11-10 — Le compte des routes se recompte, et une garde le relie au registre ; retrait pré-déclaré
 
@@ -177,6 +183,7 @@ alternatives écartées, réversibilité.
 - **Écartées** : réécrire toute la ligne (elle est juste pour le reste) ; attendre la release (elles mentent dès que le
   code fusionné les dément).
 - **Réversible** : oui.
+- **Amendé le 2026-10-27 (validation P2, R1)** : une troisième affirmation se réécrit — « en lecture seule » devient « en lecture seule des livres » (`README.md:233`), « read-only » « read-only on the books » (`roadmap.html:375`) —, `proposer_prompt` écrivant une version de prompt ; la même formule « a built-in, read-only MCP server » est corrigée à `roadmap.html:223` et `:43`, à ce seul endroit de chaque ligne ; le reste de `:43` reste à la release (point 5).
 
 ### C-32-11-16 — Le ✅ et la section *Fonctionnalités* à la release ; le CHANGELOG, une ligne sans date
 
@@ -243,6 +250,7 @@ alternatives écartées, réversibilité.
 - **Écartées** : faire jouer le rejeu par une passe de revue (une lentille ne lance rien) ; le confier à Guy seul (Q1 :
   il ne rejoue que l'interactif).
 - **Réversible** : oui.
+- **Amendé le 2026-10-27 (validation P2, décision de l'orchestrateur ; F8 ; R11)** : le rejeu, **un seul**, repasse P0 à P11 (P0 compris) : P0 et les requêtes depuis la fiche, les gestes d'écran depuis le PDF ; ses corrections du manuel n'appellent pas de troisième passage ; les gestes de Claude Code du PDF se rejouent à la recette de Guy.
 
 ### C-32-11-23 — L'outil appelé est le bilan, sous une clé `books:read` seule ; un prompt personnalisé avant l'export
 
@@ -265,6 +273,7 @@ alternatives écartées, réversibilité.
 - **Écartées** : les jouer d'office (la décision appartient à Guy, ouverte à la 32-9) ; les ajouter à la démonstration
   publique (C-32-9-14 l'écarte).
 - **Réversible** : oui.
+- **Amendé le 2026-10-27 (validation P2, décision de l'orchestrateur)** : P-pièges sort de la liste des gestes et passe à l'Annexe : observer un agent réel demande un agent réel ; la Q3 ne se pose que si Guy répond oui au point 1. Sinon, angle mort écrit.
 
 ### C-32-11-25 — L'amorçage P0 : trois écritures synthétiques par l'API, avec un témoin positif
 
@@ -292,6 +301,7 @@ alternatives écartées, réversibilité.
   montage, Q1) ; neutraliser `~/.claude/CLAUDE.md` et les hooks de Guy (aucune option connue sans retirer
   l'authentification ; ce qui reste chargé se cite au journal).
 - **Réversible** : oui (Q1).
+- **Amendé le 2026-10-27 (validation P2, décision de l'orchestrateur)** : **retiré du montage par défaut** — l'agent ne lance pas `claude` (C-32-11-28) ; ce montage est repris en esquisse à l'Annexe, avec la dérogation qu'il demande, pour le cas où Guy répond oui au point 1.
 
 ### C-32-11-27 — L'oracle du contrat : `CLAUSE` pour ce que la spécification exige, `DECISION_KESH` pour le reste, attendus en littéraux
 
@@ -307,3 +317,36 @@ alternatives écartées, réversibilité.
 - **Écartées** : une garde qui lirait le source de `mcp_contrat.rs` (garde de texte nouvelle, contraire à la clôture
   de la fiche) ; le schéma officiel validé par `jsonschema` (Q2).
 - **Réversible** : oui.
+- **Amendé le 2026-10-27 (validation P2, R5 = F2, F5, R9, F11)** : rangement **par défaut** sous `DECISION_KESH` de tout ce qui est douteux, marqué « à constater à l'étape 0 sur la page » ; `CLAUSE` seulement pour ce que la spike cite en MUST et pour les exigences de base nommées, chacune à citer. Rangés : K3 (une version servie en `CLAUSE`, la plus récente en `DECISION_KESH`), K8 à K10 et K14 (blocs typés en `CLAUSE`, du texte seulement en `DECISION_KESH`), K11 (`-32602`, exemple de la page), K15 (403 en `CLAUSE`, corps en `DECISION_KESH`), K16 (401, `DECISION_KESH`), K17 (400 en `CLAUSE`, corps en `DECISION_KESH`), K18 (SHOULD, `DECISION_KESH`), K20 (`GET` 405 en `CLAUSE`, `DELETE` et `Allow` en `DECISION_KESH`), K21 (400 en `DECISION_KESH`, la clause « 202 ou statut d'erreur » à constater, jamais « 400 » seul). Preuve des littéraux étendue : M21 (`INSTRUCTIONS` → K1), M22 (texte du 400 → K17) ; M19 (K13) et M20 (K14, témoin d'une liste non vide) ajoutées.
+
+### C-32-11-28 — Le parcours en client HTTP, par `curl` ; l'agent ne lance pas `claude`
+
+- **Contexte** (validation P2, décision de l'orchestrateur) : le pilotage de `claude -p` par l'agent produisait la
+  plupart des défauts de la P2 — sessions non bornées (F1 = R2), mal comptées (F4 = R3), écritures dans `~/.claude*`
+  qui dérogent à `docs/agents-orchestration.md` § 2.1 (F3 = R6) — après avoir produit ceux de la P1 : un recyclage.
+- **Retenu** : l'agent joue P0 à P11 et la restauration **en client HTTP** : chaque requête JSON-RPC (`initialize`,
+  `notifications/initialized`, `tools/list`, `prompts/list`, `prompts/get`, `tools/call`, `kesh_lire_envoi`) est un
+  fichier écrit avant l'envoi, envoyé **une fois** par `curl` à l'instance de démonstration, sa réponse gardée ; neuf
+  requêtes au parcours, quatre à la restauration, neuf au rejeu ; un envoi par instance, **par construction**. `curl`
+  est déclaré au § *Gates*.
+- **Écartées** : un **test d'intégration Rust** qui piloterait le routeur — c'est déjà le cas K10 du contrat, qui joue
+  dépôt, décision et relecture sans écran, en CI ; le parcours, lui, entrelace ces requêtes avec des gestes d'écran sur
+  **la même instance** (P5, P7, P9, P10) : un test Rust contre un serveur réel devrait attendre un geste du navigateur
+  (un harnais de plus) ou s'ignorer en CI (un test muet, `#[ignore]` proscrit) ; le pilotage de `claude -p` (variante
+  de l'Annexe, point 1).
+- **Réversible** : oui (point 1).
+
+### C-32-11-29 — La recette de Guy : Claude Code joué depuis le PDF, et la capture de ses requêtes
+
+- **Contexte** (validation P2, décision de l'orchestrateur) : sans `claude` lancé par l'agent, le comportement du
+  client (observations (a) à (h) de la spike), les gestes interactifs et les requêtes réelles ne s'observent qu'avec
+  Claude Code ouvert par Guy.
+- **Retenu** : à la recette de la 0.16.0, déjà prévue, vingt à trente minutes : la capture en une étape (`socat -v`,
+  sortie dans `kesh-gate-logs/3211/capture-recette.log`), puis les gestes de Claude Code depuis le PDF ; l'orchestrateur
+  tranche les observations et compare les requêtes aux clauses ; une contradiction s'ouvre en issue ; les marques
+  « non éprouvé » se retirent ensuite. Le test de contrat de la CI ne dépend pas de la capture (AC-B5). Le point 1 pour
+  Guy devient une question : accepte-t-il qu'un agent lance `claude -p` sur son compte (dérogation nommée) ?
+  Recommandation : non.
+- **Écartées** : une fixture de la capture versionnée par la 32-11 (elle attendrait la recette, après le
+  développement) ; garder le pilotage de `claude -p` par défaut (C-32-11-28).
+- **Réversible** : oui (point 1).
