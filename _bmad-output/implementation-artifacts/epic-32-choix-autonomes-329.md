@@ -423,3 +423,85 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
   `OnceLock<String>`, `LazyLock<String>` (Ma29) ; une fabrique hors de `src/mcp/` est un angle mort écrit.
 - **Écartées** : vérifier les `&'static str` à l'exécution (aucun moyen fiable).
 - **Réversible** : oui.
+
+## Choix du développement de la 32-9a (2026-10-26 → 2026-10-27, Opus 5.5)
+
+*Numérotés à partir de C-32-9-40 (consigne de l'orchestrateur ; C-32-9-33 à 39 réservés).*
+
+### C-32-9-40 — `kesh_version` garde son délai d'instruction ; `f64` admis à `ChampSur`
+
+- **Contexte** : la fiche esquisse `Version { version, lecture_seule }` ; le code fusionné (C-32-6-54) rend aussi
+  `delaiInstructionS`, un `f64` lu de `@@session.max_statement_time`, que les tests de la 32-6 épinglent.
+- **Retenu** : `Version { version: VersionBinaire, lecture_seule: bool, delai_instruction_s: f64 }` ; `f64` rejoint
+  les entiers et `bool` parmi les primitifs de `ChampSur` (un nombre, aucun texte).
+- **Écartées** : retirer le champ (régression de la 32-6) ; un type `Secondes(f64)` (une enveloppe de plus pour un
+  nombre).
+- **Réversible** : oui.
+
+### C-32-9-41 — Les deux sociétés des tests par `societe_complete`
+
+- **Contexte** : la fiche monte la société A par `seed_demo`, qui exige une installation à l'étape 2 et une seule
+  société (`lib.rs:215`), puis B par `societe_complete`.
+- **Retenu** : A et B par `kesh_seed::pieges::societe_complete` — les mêmes dépôts que `seed_demo` (plan PME,
+  exercice de l'année, réglages, taux) ; A est créée la première (identifiant 1 sur une base neuve, ce que Ma30 vise).
+- **Écartées** : monter l'onboarding dans chaque test (coût, sans rien éprouver de plus).
+- **Réversible** : oui.
+
+### C-32-9-42 — Les gardes des sceaux : `prompts_scelles` et `champ_sur_en_un_lieu`
+
+- **Contexte** : la garde `prompts_scelles` (32-6) refuse tout `impl … Scelle for` dans `src/mcp/` ; le sceau de
+  `ChampSur` que la fiche prescrit vit dans `mcp/sortie.rs`. `mcp/prompts.rs` et `services/rapports.rs` portent chacun
+  un sceau homonyme, privé.
+- **Retenu** : `prompts_scelles` exclut `mcp/sortie.rs` (amendement en connaissance de cause, commenté) ;
+  `champ_sur_en_un_lieu` exclut les deux fichiers aux sceaux homonymes de la recherche de `Scelle`, mais y cherche
+  `ChampSur` et `sortie::scelle`.
+- **Écartées** : renommer le sceau de `sortie` (la fiche et ses mutations le nomment `Scelle`).
+- **Réversible** : oui.
+
+### C-32-9-43 — `societe_complete(pool, nom)` sans acteur
+
+- **Contexte** : la fiche donne `societe_complete(pool, acteur)` ; aucun des dépôts qu'elle appelle
+  (`companies::create`, `bulk_create_from_chart`, `create_for_seed`, les dépôts `_in_tx` des réglages) n'exige
+  d'utilisateur, et l'administrateur se crée après la société.
+- **Retenu** : `societe_complete(pool, nom) -> i64` ; `semer` garde l'acteur.
+- **Réversible** : oui.
+
+### C-32-9-44 — La balance âgée bornée à 38 / 68, sur la mesure
+
+- **Contexte** : la fiche estime un débiteur à 287 octets (40 / 75). Mesuré sur la fixture ordinaire
+  (`tailles_mesurees`, différence d'une page de deux et d'un) : **331 octets** (+ 15 %, le seuil de la fiche) ;
+  75 débiteurs dépassaient le plafond de 24 576 octets, 40 dépassaient l'assertion de 13 312.
+- **Retenu** : défaut **38** (13 125 octets mesurés), maximum **68** (23 053 octets) — sous 13 312 et 23 552.
+- **Écartées** : relever les assertions (elles portent la règle des 10 000 jetons).
+- **Réversible** : oui (deux constantes, le schéma, la table de `bornes_des_schemas`).
+
+### C-32-9-45 — `aucun_outil_n_ecrit` mesure les colonnes stockées
+
+- **Contexte** : `CHECKSUM TABLE` n'est pas stable sur `accounts` (colonne générée virtuelle `singleton_role`) :
+  deux mesures sans aucune écriture différaient (relevé du 2026-10-27, deux fois sur trois).
+- **Retenu** : par table, `COUNT(*)` et `BIT_XOR(CRC32(CONCAT_WS('|', …)))` sur les seules colonnes non générées ;
+  témoin : deux relevés sans appel sont égaux.
+- **Réversible** : oui.
+
+### C-32-9-46 — Le numéro d'une facture cliente en exemption
+
+- **Contexte** (T-a0) : `validate_invoice` calcule le numéro du format de la société (`{YEAR}-{INVOICE_NUMBER}` par
+  défaut) ; aucun dépôt ne le pose libre. La facture semée **est** validée : l'échéancier et la balance âgée la
+  rendent.
+- **Retenu** : ligne `kesh_factures` / `numero` de l'inventaire en exemption écrite ; le champ reste enveloppé.
+- **Réversible** : oui (un gabarit piégé, si l'administrateur peut l'écrire, la rendrait posable).
+
+### C-32-9-47 — `Donnees` sans `BlocContenu`
+
+- **Contexte** : la 32-8b a fixé `Donnees::nouvelles(texte, structure)` et `avec_resume` ; aucune énumération de blocs.
+- **Retenu** : `sortie::donnees` rend `Donnees::nouvelles(texte, Some(valeur)).avec_resume(resume)` — seul site de
+  `src/`.
+- **Réversible** : sans objet.
+
+### C-32-9-48 — Les bornes de pagination refusées par l'outil
+
+- **Contexte** : les services écrêtent (écritures, postes ouverts, fournisseur) ou refusent (factures clientes).
+- **Retenu** : chaque outil refuse un `limit` hors de `1..=maximum` et un `offset` négatif en
+  `ArgumentsInvalides` (argument `limit` ou `offset`), avant tout appel du service — l'agent se guide sur le schéma ;
+  le service reçoit toujours une valeur dans ses bornes.
+- **Réversible** : oui.

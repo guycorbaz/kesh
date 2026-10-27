@@ -263,15 +263,38 @@ async fn autorisation_par_outil(pool: MySqlPool) {
 async fn tools_list_par_portee(pool: MySqlPool) {
     let a = societe_piegee(&pool, "Société A 329", 'A').await;
     let b = banc(&pool);
-    for p in LECTURE {
+    // Les listes attendues sont **écrites** (fiche, AC-a10), non tirées du
+    // registre : comparé à lui-même, le registre ne verrait pas une portée
+    // fausse (Ma9 survivait à la première version de ce test).
+    let livres = [
+        "kesh_version",
+        "kesh_exercices",
+        "kesh_plan_comptable",
+        "kesh_ecritures",
+        "kesh_ecriture",
+        "kesh_grand_livre",
+        "kesh_balance",
+        "kesh_bilan",
+        "kesh_compte_de_resultat",
+        "kesh_postes_ouverts",
+        "kesh_lire_envoi",
+    ];
+    let factures = [
+        "kesh_factures",
+        "kesh_facture",
+        "kesh_echeancier",
+        "kesh_balance_agee",
+        "kesh_factures_fournisseur",
+        "kesh_facture_fournisseur",
+        "kesh_lire_envoi",
+    ];
+    for (p, attendu) in [
+        (McpScope::BooksRead, &livres[..]),
+        (McpScope::InvoicesRead, &factures[..]),
+        (McpScope::ContactsRead, &["kesh_lire_envoi"][..]),
+        (McpScope::DocumentsRead, &["kesh_lire_envoi"][..]),
+    ] {
         let jeton = cle_de(&pool, &a, &[p], SendValidation::Exempt).await;
-        let mut attendu: Vec<String> = Registre::standard()
-            .inventaire()
-            .into_iter()
-            .filter(|(_, _, q)| *q == p)
-            .map(|(n, _, _)| n.to_string())
-            .collect();
-        attendu.extend(HORS_REGISTRE.iter().map(|s| s.to_string()));
         assert_eq!(b.liste(&jeton).await, attendu, "{p:?}");
     }
 }

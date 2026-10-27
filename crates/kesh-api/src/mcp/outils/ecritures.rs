@@ -241,14 +241,14 @@ impl McpTool for KeshEcritures {
                 date_from: a.date_from.map(|d| d.to_string()),
                 date_to: a.date_to.map(|d| d.to_string()),
                 journal: a.journal.map(JournalArg::du_service),
-                sort_by: a.sort_by.map_or(
-                    kesh_core::listing::SortBy::EntryDate,
-                    TriEcritures::du_service,
-                ),
-                sort_dir: a.sort_dir.map_or(
-                    kesh_core::listing::SortDirection::Desc,
-                    SensDuTri::du_service,
-                ),
+                // Les défauts de la route (`SortBy::default`,
+                // `SortDirection::default`) : le même ordre qu'à l'écran.
+                sort_by: a
+                    .sort_by
+                    .map_or_else(Default::default, TriEcritures::du_service),
+                sort_dir: a
+                    .sort_dir
+                    .map_or_else(Default::default, SensDuTri::du_service),
                 limit: Some(limit),
                 offset: Some(offset),
             };
