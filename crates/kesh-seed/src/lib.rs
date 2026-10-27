@@ -4,6 +4,12 @@
 //! `POST /api/v1/onboarding/seed-demo` ([`seed_demo`]) et
 //! `POST /api/v1/onboarding/reset` ([`reset_demo`], qui remet l'installation à
 //! zéro et inscrit son geste, Story 15-7b2).
+//!
+//! Le module [`pieges`] (fonctionnalité `pieges`, tests seulement) sème les
+//! fixtures piégées du serveur MCP (Story 32-9a).
+
+#[cfg(feature = "pieges")]
+pub mod pieges;
 
 use chrono::{Datelike, Utc};
 use kesh_db::backup::reset_cleared_tables;
@@ -486,7 +492,9 @@ pub struct ResetOutcome {
 ///    `FOREIGN_KEY_CHECKS=1`, et commite.
 ///
 /// Ordre des verrous : `onboarding_state → companies → audit_log → tables de
-/// reset_cleared_tables() (ordre de TABLES_TO_TRUNCATE) → users → api_keys`.
+/// reset_cleared_tables() (ordre de TABLES_TO_TRUNCATE) → users → api_keys →
+/// mcp_keys` (les clés MCP depuis la Story 32-5d, conservées comme les clés
+/// d'API).
 /// Les deux premiers suivent le Pattern 5 ; la suite le contredit (vidage
 /// enfants → parents) — exception écrite à
 /// `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, atténuée par les deux verrous de
@@ -645,6 +653,8 @@ async fn reset_body(
                 "users_repointed": principals.user_ids.len(),
                 "api_keys_revoked": principals.api_keys_revoked,
                 "api_keys_repointed": principals.api_keys_repointed,
+                "mcp_keys_revoked": principals.mcp_keys_revoked,
+                "mcp_keys_repointed": principals.mcp_keys_repointed,
             })),
         ),
     )

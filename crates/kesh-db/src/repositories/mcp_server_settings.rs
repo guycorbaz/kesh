@@ -89,6 +89,34 @@ pub async fn get_or_defaults(
         .unwrap_or_else(|| McpServerSettings::defaults(company_id)))
 }
 
+/// Les lignes des sociétés dont le serveur MCP est **activé** (`enabled =
+/// TRUE`), par `company_id` croissant — Story 32-6a (AC-a2, C-32-6-3,
+/// C-32-6-6). N'écrit rien.
+///
+/// Rend `(lues, écartées)` : une ligne dont une liste n'est pas un tableau de
+/// chaînes (SQL à la main ; la base n'impose qu'un tableau JSON) **n'est pas
+/// rendue** — l'identifiant de sa société va dans `écartées`, que l'appelant
+/// journalise —, et les autres lignes restent servies. Une erreur de la base,
+/// elle, est rendue telle quelle (l'appelant ferme alors l'accès).
+pub async fn list_enabled(pool: &MySqlPool) -> Result<(Vec<McpServerSettings>, Vec<i64>), DbError> {
+    let rows = sqlx::query_as::<_, Row>(&format!(
+        "SELECT {COLUMNS} FROM mcp_server_settings WHERE enabled = TRUE ORDER BY company_id"
+    ))
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)?;
+    let mut lues = Vec::with_capacity(rows.len());
+    let mut ecartees = Vec::new();
+    for r in rows {
+        let company_id = r.company_id;
+        match McpServerSettings::try_from(r) {
+            Ok(s) => lues.push(s),
+            Err(_) => ecartees.push(company_id),
+        }
+    }
+    Ok((lues, ecartees))
+}
+
 /// Enregistre les réglages (remplacement complet), sous verrou optimiste, et
 /// rend la ligne écrite.
 ///

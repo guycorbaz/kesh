@@ -187,7 +187,7 @@ Si vous souhaitez \textbf{tester Kesh sans données réelles}, choisissez le mod
 
 \textbf{Rien d'autre} : aucun contact, aucun produit, aucune écriture. Les listes sont vides~; c'est à vous de saisir les données sur lesquelles vous voulez essayer Kesh.
 
-Vous pouvez librement créer, modifier, supprimer des données dans ce mode. L'installation ne porte qu'une société~: pour passer en mode production, réinitialisez-la par le bouton \emph{Réinitialiser pour la production} de la bannière de démonstration, qui ramène l'assistant au début. \keshAttention\ \emph{Ce bouton n'agit que si l'administrateur de l'installation l'a autorisé au préalable} (variable \texttt{KESH\_PRODUCTION\_RESET}, voir le manuel d'administration)~: sans cette autorisation, la réinitialisation est refusée, \textbf{même à un administrateur}. Elle vide \textbf{toutes} les données de la société --- y compris ce que vous avez saisi pendant l'exploration --- et \textbf{conserve} les utilisateurs et les clés d'API.
+Vous pouvez librement créer, modifier, supprimer des données dans ce mode. L'installation ne porte qu'une société~: pour passer en mode production, réinitialisez-la par le bouton \emph{Réinitialiser pour la production} de la bannière de démonstration, qui ramène l'assistant au début. \keshAttention\ \emph{Ce bouton n'agit que si l'administrateur de l'installation l'a autorisé au préalable} (variable \texttt{KESH\_PRODUCTION\_RESET}, voir le manuel d'administration)~: sans cette autorisation, la réinitialisation est refusée, \textbf{même à un administrateur}. Elle vide \textbf{toutes} les données de la société --- y compris ce que vous avez saisi pendant l'exploration --- et \textbf{conserve} les utilisateurs, les clés d'API et les clés du serveur MCP~; elle désactive le serveur MCP.
 
 \subsection{Chemin B — Mode production}
 
@@ -3028,7 +3028,8 @@ couvrent l'ensemble de votre comptabilité~:
 (les numéros attribués figurent déjà sur les pièces), les \textbf{clés d'API, les clés du
 serveur MCP et les jetons de session} (ce sont des secrets~: les exporter dans un fichier destiné
 à être transmis serait une fuite), les \textbf{réglages du serveur MCP} (sans valeur comptable),
-le \textbf{registre des utilisateurs} (sans perte~: chaque entrée du journal d'audit
+les \textbf{envois du serveur MCP} (des copies transitoires de données des livres, demandées par un
+agent, sans valeur comptable), le \textbf{registre des utilisateurs} (sans perte~: chaque entrée du journal d'audit
 porte le nom de son auteur \emph{au moment de l'écriture}), les \textbf{gabarits d'e-mail} et
 l'\textbf{état d'installation} (configuration, non comptabilité).
 
@@ -3150,7 +3151,15 @@ transactions à rapprocher) est prévu mais pas encore disponible.
           jour UTC \emph{précédent}~: si elle manque, élargissez la période d'un jour. Une date de
           début postérieure à la date de fin est refusée par l'écran.
     \item \textbf{Le tableau}~: la date, l'auteur (tel qu'il s'appelait au moment de l'opération,
-          et «~clé API~» si elle a été faite par une clé), l'action et le type d'entité
+          et «~clé API~» si elle a été faite par une clé d'API~; un appel du \textbf{serveur MCP}
+          paraît, lui, \textbf{au nom du créateur de la clé du serveur MCP}, \textbf{sans} cette
+          marque --- c'est l'action «~Outil du serveur MCP appelé~» et le numéro de la clé, au
+          détail, qui le distinguent~; et la \textbf{consultation d'un rapport} par un agent
+          (grand livre, balance, bilan, compte de résultat, balance âgée) paraît comme
+          «~Rapport généré~», au nom du créateur de la clé, \textbf{exactement comme une
+          consultation à l'écran}~: rien, dans cette ligne, ne dit qu'elle vient du serveur MCP~;
+          seule la ligne «~Outil du serveur MCP appelé~», inscrite à part pour le même appel, le
+          révèle --- limite connue, issue \#776), l'action et le type d'entité
           \textbf{traduits}, le numéro de la pièce --- «~---~» quand l'opération ne vise pas une pièce
           précise --- et un bouton qui déplie le \textbf{détail} enregistré.
     \item \textbf{Une action ancienne}, écrite par une version antérieure et absente de la liste
@@ -3201,7 +3210,8 @@ journal d'audit avec les données de la société, puis y inscrit \textbf{son pr
 geste} --- une entrée \emph{Installation réinitialisée}, type \emph{Installation},
 la seule du journal neuf. Son détail dit l'étape et le mode d'avant, le
 \textbf{nombre d'entrées effacées} et la \textbf{plage de leurs numéros}, la liste des
-tables vidées, et les utilisateurs ou clés d'API rattachés à la société. Les numéros
+tables vidées, et les utilisateurs, clés d'API ou clés du serveur MCP rattachés à la
+société. Les numéros
 des entrées ne repartent pas de 1~: \textbf{le trou qui précède cette entrée
 s'explique par elle}.
 
@@ -3210,8 +3220,8 @@ l'installation}, type \emph{Installation}, dit que Kesh a réparé de lui-même 
 installation touchée par un défaut d'une version antérieure (\#528, \#542) ---
 au démarrage, ou à l'import d'une sauvegarde. Personne ne l'a faite~: au
 démarrage, elle est signée par le plus ancien administrateur actif. Son détail
-nomme les utilisateurs rattachés, les clés d'API révoquées et les sociétés
-provisoires supprimées.
+nomme les utilisateurs rattachés, les clés d'API et les clés du serveur MCP
+révoquées, et les sociétés provisoires supprimées.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{FAQ et dépannage utilisateur}

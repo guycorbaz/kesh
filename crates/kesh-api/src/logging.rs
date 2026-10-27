@@ -203,6 +203,53 @@ mod tests {
         );
     }
 
+    /// Story 32-6c (AC-8, AC-T6) — la directive que prescrit le manuel
+    /// (`RUST_LOG=info,kesh_api::mcp::reseau=debug`) n'ouvre au `debug` que le
+    /// filtre d'adresse du serveur MCP : ni une autre cible de `kesh_api`, ni
+    /// `sqlx` (baseline `sqlx=warn` maintenue). Prouvé par le filtre réel, sur
+    /// un abonné local qui retient la cible et le niveau de chaque évènement.
+    #[test]
+    fn filtre_cible_n_ouvre_que_le_filtre_mcp() {
+        use std::sync::{Arc, Mutex};
+        use tracing_subscriber::layer::Context;
+
+        struct Couche(Arc<Mutex<Vec<String>>>);
+        impl<S: tracing::Subscriber> Layer<S> for Couche {
+            fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+                let m = event.metadata();
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(format!("{} {}", m.level(), m.target()));
+            }
+        }
+
+        // La cible des évènements de `mcp/reseau.rs`, en une seule ligne : la
+        // garde `un_seul_point_d_entree` (`tests/mcp_gardes_lexicales.rs`)
+        // l'inscrit à sa liste fermée.
+        const CIBLE_FILTRE_MCP: &str = "kesh_api::mcp::reseau";
+
+        let vus = Arc::new(Mutex::new(Vec::new()));
+        let abonne = tracing_subscriber::registry()
+            .with(build_log_filter(&format!("info,{CIBLE_FILTRE_MCP}=debug")))
+            .with(Couche(vus.clone()));
+        tracing::subscriber::with_default(abonne, || {
+            tracing::debug!(target: CIBLE_FILTRE_MCP, "passe");
+            tracing::debug!(target: "kesh_api::routes", "bloqué");
+            tracing::info!(target: "sqlx::query", "bloqué");
+            tracing::warn!(target: CIBLE_FILTRE_MCP, "passe");
+            tracing::info!(target: "kesh_api", "passe");
+        });
+        assert_eq!(
+            *vus.lock().unwrap(),
+            vec![
+                format!("DEBUG {CIBLE_FILTRE_MCP}"),
+                format!("WARN {CIBLE_FILTRE_MCP}"),
+                "INFO kesh_api".to_string(),
+            ]
+        );
+    }
+
     #[test]
     fn log_filter_substring_crate_does_not_count_as_sqlx_target() {
         // Une cible qui *contient* "sqlx" sans être la crate `sqlx` (ex. un

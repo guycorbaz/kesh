@@ -1120,3 +1120,76 @@ async fn settings_with_a_non_string_list_fail_to_decode(pool: MySqlPool) {
         .expect_err("liste de nombres refusée au décodage");
     assert!(matches!(err, DbError::Invariant(_)), "{err:?}");
 }
+
+// ---------------------------------------------------------------------------
+// Story 32-6a (AC-a2) — `list_enabled`, la règle « servi »
+// ---------------------------------------------------------------------------
+
+async fn enable(pool: &MySqlPool, company_id: i64, enabled: bool) {
+    sqlx::query("UPDATE mcp_server_settings SET enabled = ? WHERE company_id = ?")
+        .bind(enabled)
+        .bind(company_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+fn ids(lues: &[McpServerSettings]) -> Vec<i64> {
+    lues.iter().map(|s| s.company_id).collect()
+}
+
+/// Aucune ligne, une, deux sociétés activées ; une ligne `enabled = FALSE`
+/// n'est pas rendue ; le dépôt n'écrit rien (aucune ligne créée).
+#[sqlx::test(migrations = "./test-schema")]
+async fn list_enabled_rend_les_seules_societes_activees(pool: MySqlPool) {
+    let a = company(&pool, "A").await;
+    let b = company(&pool, "B").await;
+    let c = company(&pool, "C").await;
+
+    let (lues, ecartees) = mcp_server_settings::list_enabled(&pool).await.unwrap();
+    assert!(lues.is_empty() && ecartees.is_empty(), "aucune ligne");
+
+    for s in [a, b, c] {
+        raw_settings_insert(&pool, s, r#"["10.0.0.0/8"]"#, "[]", "[]")
+            .await
+            .unwrap();
+    }
+    let (lues, _) = mcp_server_settings::list_enabled(&pool).await.unwrap();
+    assert!(lues.is_empty(), "trois lignes désactivées : aucune rendue");
+
+    enable(&pool, b, true).await;
+    let (lues, ecartees) = mcp_server_settings::list_enabled(&pool).await.unwrap();
+    assert_eq!(ids(&lues), vec![b], "une société activée");
+    assert!(ecartees.is_empty());
+    assert_eq!(lues[0].allowed_networks, vec!["10.0.0.0/8".to_string()]);
+    assert!(lues[0].enabled);
+
+    enable(&pool, a, true).await;
+    let (lues, _) = mcp_server_settings::list_enabled(&pool).await.unwrap();
+    assert_eq!(ids(&lues), vec![a, b], "deux sociétés, par id croissant");
+
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mcp_server_settings")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 3, "le dépôt n'écrit rien");
+}
+
+/// Une ligne activée dont une liste n'est pas un tableau de chaînes (`[1]`,
+/// que le `CHECK` admet) est écartée et nommée ; les autres restent rendues.
+#[sqlx::test(migrations = "./test-schema")]
+async fn list_enabled_ecarte_une_ligne_illisible_et_garde_les_autres(pool: MySqlPool) {
+    let a = company(&pool, "A").await;
+    let b = company(&pool, "B").await;
+    raw_settings_insert(&pool, a, "[1]", "[]", "[]")
+        .await
+        .expect("le CHECK admet un tableau de nombres");
+    raw_settings_insert(&pool, b, "[]", "[]", "[]")
+        .await
+        .unwrap();
+    enable(&pool, a, true).await;
+    enable(&pool, b, true).await;
+    let (lues, ecartees) = mcp_server_settings::list_enabled(&pool).await.unwrap();
+    assert_eq!(ids(&lues), vec![b]);
+    assert_eq!(ecartees, vec![a]);
+}

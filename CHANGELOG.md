@@ -10,19 +10,56 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.16.0] — Non publié
 
+### Ajouté
+
+- **La validation avant envoi du serveur MCP.** Sous une clé du serveur MCP dont la validation est requise (le
+  défaut), aucune donnée des livres ne part vers l'agent sans l'accord d'un Administrateur : ce que l'agent demande
+  est déposé comme un *envoi*, et l'écran **Administration → Envois du serveur MCP** montre le texte exact qui
+  partira. On l'envoie tel quel, on le modifie avant de l'envoyer, ou on le refuse ; l'agent le relit ensuite par
+  `kesh_lire_envoi`. Un envoi échoit 24 heures après la demande ; il pèse au plus 24 Kio, et une clé en a au plus 20
+  en attente. Les caractères invisibles y sont montrés par leur code, et refusés dans une version modifiée. Le manuel
+  d'administration le décrit, § *Les envois du serveur MCP*, avec ce que la validation ne couvre pas.
+- **Les outils de lecture du serveur MCP — livres et factures** (refs
+  [#723](https://github.com/guycorbaz/kesh/issues/723)). Quinze outils, chacun dans sa portée : sous `books:read`,
+  les exercices, le plan comptable, les écritures (liste et détail), le grand livre d'un compte, la balance, le bilan,
+  le compte de résultat et les postes ouverts ; sous `invoices:read`, les factures clientes (liste, détail,
+  échéancier), la balance âgée des débiteurs et les factures fournisseur (liste et détail). Le manuel
+  d'administration en donne la liste exacte, § *Les outils du serveur MCP et leurs portées*. Aucun n'écrit ; la
+  consultation d'un rapport s'inscrit au journal d'audit. Tout texte saisi ou importé — libellé, nom, numéro,
+  condition, description — parvient à l'agent sous la forme `{"nonFiable": "…"}`, marqué comme une donnée et non une
+  consigne. Sans la portée `contacts:read`, l'IBAN et le QR-IBAN du créancier et l'adresse d'envoi d'une facture sont
+  masqués ; les noms des clients et des fournisseurs, que Kesh écrit lui-même dans les libellés, ne le sont pas. Une
+  réponse reste sous 24 Kio de texte, soit environ 10 000 jetons (estimation) ; les listes se lisent par pages.
+
 ### Modifié
 
 - ⚠️ **Sauvegarde : la 0.16.0 refuse les sauvegardes de la 0.15.0 et d'avant.** Une sauvegarde ne se réimporte que
-  dans une version de Kesh qui porte **les mêmes tables** qu'elle ; la 0.16.0 en ajoute deux — les clés et les
-  réglages du futur serveur MCP, qui entrent au fichier `.keshbackup` (activation comprise) et restent hors de l'export
-  global. Une sauvegarde plus ancienne se restaure avec la version qui l'a produite, dont le manuel se trouve dans le
+  dans une version de Kesh qui porte **les mêmes tables** qu'elle ; la 0.16.0 en ajoute trois — les clés, les réglages
+  et les envois du serveur MCP, qui entrent au fichier `.keshbackup` (activation et contenu des envois compris)
+  et restent hors de l'export global. Une sauvegarde plus ancienne se restaure avec la version qui l'a produite, dont le manuel se trouve dans le
   dépôt, au tag de cette version ; ensuite, on met à jour. **Après la mise à jour vers la 0.16.0, prenez sans attendre
   une sauvegarde complète** : les sauvegardes précédentes, automatiques comprises, ne s'y importent plus. Pour la même
   raison, l'import ne rejoue plus aucune reprise de données d'une version antérieure (le lettrage des pièces de la
   0.13 était la dernière) : le manuel d'administration le dit, § *Reprises de données rejouées à l'import*.
+- **La description d'un compte bancaire refuse aussi les caractères invisibles qu'elle laissait passer** (marques de
+  format de certaines écritures, sélecteurs de variante), les caractères d'usage privé — tel le logo Apple collé depuis
+  un Mac — et les caractères non attribués, dont un emoji plus récent qu'Unicode 17.0 ; les emojis qui portent un
+  sélecteur de variante (U+FE0E, U+FE0F) ou un liant invisible (U+200D), tel `⚠️`, l'étaient déjà ; les autres, drapeaux
+  de pays et teints compris, restent admis (un drapeau de subdivision, tel celui de l'Écosse, porte des balises
+  invisibles et est refusé). Une description déjà enregistrée n'est pas modifiée ; si elle porte un de ces
+  caractères, le prochain enregistrement du compte par sa modification — même pour en changer un autre champ — demande
+  de la corriger.
 
 ### Corrigé
 
+- **Grand livre — le solde progressif est juste au-delà de la première page**
+  ([#775](https://github.com/guycorbaz/kesh/issues/775)). Lu par l'API avec `offset`, chaque page repartait du solde
+  d'ouverture de la période, sans les lignes des pages précédentes : toute page autre que la première affichait un
+  solde progressif faux, et, sur un compte de produits ou de charges, une fin d'exercice tombant pile entre deux pages
+  n'était pas signalée et le solde n'y repartait pas de zéro. Une page part désormais de l'ouverture plus les lignes
+  qui la précèdent, avec les mêmes remises à zéro aux exercices franchis ; une lecture page après page rend, ligne
+  pour ligne, les soldes d'une lecture entière. L'écran et les exports PDF et CSV, qui ne paginent pas, n'étaient pas
+  touchés.
 - **Manuels et brochure : la répétition d'une clôture dit vrai, et les signes s'impriment**
   ([#714](https://github.com/guycorbaz/kesh/issues/714)). Dans le manuel d'administration, § *Répéter une clôture sur
   une copie*, sans qu'aucune commande change : ce que les deux exports écrivent sur la production (journal d'audit,

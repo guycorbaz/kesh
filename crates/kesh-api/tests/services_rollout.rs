@@ -2917,3 +2917,53 @@ async fn ac324b_d_detail_et_echeances_ne_lisent_pas_la_societe(pool: MySqlPool) 
     }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
 }
+
+// ============================================================
+// Story 32-9a (AC-a12) — le service des exercices (règle R7)
+// ============================================================
+
+/// AC-a12 — `exercices::lister` : (i) une clé MCP sans `BooksRead` (aucune
+/// portée, chacune des autres seule, les autres ensemble) est refusée **avant
+/// toute lecture** — sur une `Lecture` dont le pool ne joint aucun serveur, le
+/// refus vient d'`exiger`, une lecture aurait rendu une erreur de base ; (ii)
+/// contrôle positif sous `BooksRead` et sous l'API (`Consultation`) ; (iii)
+/// exécution sur la `Lecture` en lecture seule.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac_a12_exercices_refus_controle_positif_lecture_seule(pool: MySqlPool) {
+    use kesh_api::services::exercices;
+    let s = societe(&pool).await;
+    let injoignable = Lecture::new(
+        sqlx::mysql::MySqlPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(200))
+            .connect_lazy("mysql://x:y@127.0.0.1:1/z")
+            .unwrap(),
+    );
+    let autres: Vec<Portee> = TOUTES
+        .into_iter()
+        .filter(|p| *p != Portee::BooksRead)
+        .collect();
+    let mut jeux: Vec<Vec<Portee>> = vec![Vec::new(), autres.clone()];
+    jeux.extend(autres.iter().map(|p| vec![*p]));
+    for portees in &jeux {
+        let acces = mcp_societe(s.company_id, s.admin_user_id, portees);
+        let r = exercices::lister(&acces, &injoignable).await.map(drop);
+        assert!(est_interdit(&r), "{portees:?} : {}", resume(&r));
+    }
+    // Témoin : la même lecture, sous la bonne portée, échoue sur la base.
+    let acces = mcp_societe(s.company_id, s.admin_user_id, &[Portee::BooksRead]);
+    let r = exercices::lister(&acces, &injoignable).await.map(drop);
+    assert!(!est_interdit(&r) && r.is_err(), "témoin : {}", resume(&r));
+
+    let lecture = Lecture::new(pool.clone());
+    let liste = exercices::lister(&acces, &lecture)
+        .await
+        .expect("BooksRead");
+    assert_eq!(
+        liste.iter().map(|f| f.id).collect::<Vec<_>>(),
+        vec![s.fiscal_year_id]
+    );
+    let api = api_societe(s.company_id, s.admin_user_id, Role::Consultation);
+    assert_eq!(exercices::lister(&api, &lecture).await.unwrap().len(), 1);
+    let seule = lecture_seule(&pool).await;
+    assert_eq!(exercices::lister(&acces, &seule).await.unwrap().len(), 1);
+}

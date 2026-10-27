@@ -33,6 +33,7 @@ quand les stories ci-dessous sont `done` et la v0.16.0 publiée.
   **pas d'OAuth**. La sécurité réseau est l'affaire de l'infrastructure (NAS non exposé, accès externe par VPN, une partie
   des conteneurs derrière Traefik) ; Kesh garde un **filtre d'adresse de défense en profondeur, désactivable**, décrit
   comme un complément.
+  *(Annoté le 2026-10-25 au soir, décision de Guy : « hermes n'est pas installé pour l'instant : je prévois de m'en occuper probablement début de l'année prochaine : sors-le donc du contexte de ce projet ». **Hermes est hors du périmètre de l'Epic 32** : seul Claude Code est nommé comme client dans les manuels et les fiches vivantes ; la question 2 de la spike ci-dessous et la Q9 sont sans objet pour Hermes. Le créateur d'une clé MCP n'est pas affiché à l'écran (recommandation acceptée).)*
 - Authentification par un **second type de clé, dédié au MCP**, à **portées fines** (`books:read` et `documents:read`
   séparées…), **jamais de portée d'administration**.
 - **Lecture seule sur les livres, prouvée par construction** (connexion en lecture seule).
@@ -402,6 +403,17 @@ la société de la clé ne l'a pas) et la teste dans les deux branches. S'y ajou
 garde, la politique `CleMcpAuthentifiee::validation` au répartiteur (refus d'une clé `required` avant la 32-8) et la
 lecture des réglages sur la `Lecture`, sans écriture.
 
+### 32-6c — Le journal du filtre d'adresse *(ajoutée le 2026-10-25, sur demande de Guy)*
+
+Derrière le proxy inversé de DSM, le filtre d'adresse ne filtre que si DSM pose `X-Forwarded-For`, ce que rien
+n'établit. Guy, le 2026-10-25 : « on vérifiera lors de la mise à jour : ajoute le nécessaire dans les logs au cas
+où ». La 32-6c ajoute **un évènement par décision du filtre** (par société) — pair, présence et forme des en-têtes de
+mandataire, client retenu, verdict ; refus en `warn`, admission en `debug` ; aucune clé, aucun en-tête
+`Authorization`, aucun corps, aucune valeur d'en-tête —, sans rien changer à ce que reçoit le client, et le manuel
+d'administration dit comment lire ce journal (`RUST_LOG` ciblé, fichier de log `./log/kesh.*.log`). Fiche
+`32-6c-journal-filtre-adresse.md`, registre `epic-32-choix-autonomes-326c.md`. Modules : `mcp`, `logging` (tests), manuel
+— **3**. Après la 32-6b ; indépendante des 32-7 et 32-8.
+
 ### 32-7 — L'écran « Serveur MCP » (Administration)
 
 Activation (désactivé par défaut), filtre d'adresse et proxies de confiance, **clés MCP** (création avec ses portées,
@@ -423,7 +435,10 @@ en portée `local`/`user` (jamais en `.mcp.json` versionné sauf `${VARIABLE}`, 
 au manuel (C-32-5-10) ; (3) **la restauration d'un serveur activé** : les réglages sont restaurés tels quels (hypothèse
 Q7, C-32-5-11) — l'écran et le manuel disent qu'un serveur actif dans la sauvegarde l'est après l'import ; (4) **les
 renvois** depuis les passages corrigés par la 32-5d : `admin-manual.tex` § remise à zéro (l. 1414) et réparation
-(l. 1416, 2461), `user-manual.tex` l. 190, 3202, 3209-3212.
+(l. 1416, 2461), `user-manual.tex` l. 190, 3202, 3209-3212. *(Annoté le 2026-10-25, développement de la 32-5d : à
+`20cbf50a`, ces passages sont aux l. 1414, 1416, 2467 et 2472 du manuel d'administration, et aux l. 190, 3204-3205 et
+3214-3215 du manuel utilisateur ; aucune phrase n'y renvoie encore à une page des clés MCP, que la 32-7 écrira —
+C-32-5-48.)*
 
 ### 32-8 — La validation avant envoi
 
@@ -438,6 +453,24 @@ Modules : `kesh-api/mcp`, frontend (écran ou avis d'approbation), `kesh-i18n`, 
 modifiée à l'écran est celle que reçoit le client (test de bout en bout) ; un refus ne transmet rien ; une expiration ne
 transmet rien ; l'outil de démonstration y passe. **Risque** : **élevé** — mécanisme neuf, dépendant des clients ; c'est
 pourquoi il passe **avant** les outils de données (32-9).
+
+*(Annoté le 2026-10-25, fiche de la 32-8 — `implementation-artifacts/32-8-validation-avant-envoi.md`, C-32-8-24. Le
+texte ci-dessus, du kickoff, est conservé ; il est **périmé** sur trois points par la spike (C-32-2-17, C-32-2-24) et par
+la réponse de Guy à Q10 : (1) **la forme est la poignée** (Q10 (c)) — l'outil rend aussitôt « envoi n° X en attente »,
+l'utilisateur valide tel quel, modifie ou refuse dans un écran de Kesh à son rythme, l'agent relit par `kesh_lire_envoi` ;
+(2) **« état en mémoire (perdu au redémarrage) » est remplacé par une table**, `mcp_sends` — la story devient 🗄️ :
+une migration de plus, à compter au plafond de la release (§ *Release v0.16.0*), table au `.keshbackup` (#722), vidée à
+la remise à zéro ; un envoi survit à un redémarrage, et son échéance (24 h) se lit à l'horloge de la base ; (3) **« par
+construction » disparaît** : la propriété est l'exigence E1 de la spike, tenue par des types à champs privés et prouvée
+par des tests et des mutations. La validation est **par clé** (Q12) : une clé `dispensée` envoie sans écran, chaque envoi
+journalisé. **Découpage** (règle préventive, dix modules) : **32-8a** 🗄️ (la table, son dépôt, la sauvegarde),
+**32-8b** (la poignée côté serveur et les routes de décision de l'Administrateur), **32-8c** (l'écran, le manuel) —
+5, 5 et 4 modules.)*
+
+*(Annoté de nouveau le 2026-10-25, validation P1 de la fiche 32-8 : **quatre parties**. L'ordre est fixé par
+l'orchestrateur — 32-6a, 32-6b, 32-8a, 32-8b0, 32-8b, 32-8c, puis 32-10a — si bien que la 32-8 crée le prédicat partagé
+des caractères cachés que la 32-10a prévoyait (sous-partie **32-8b0**, `kesh-core`, 3 modules) ; la 32-8a gagne l'export
+global et cède sa partie documentaire à la 32-8c. Modules 5, 3, 5 et 4.)*
 
 ### 32-9 — Les outils de lecture (deux clés)
 
@@ -494,6 +527,18 @@ Modules : `kesh-api/tests`, docs (`api-external.md`), manuels FR (admin, utilisa
 parcours est décrit pas à pas au manuel **et rejoué depuis le PDF** ; le test de contrat rougit si une réponse s'écarte
 de la révision figée ; aucun texte ne promet une écriture. **Risque** : moyen — documentation exécutée (31-4) ; la fiche
 **fixe le périmètre du parcours** dès le départ pour éviter le recyclage qu'a connu la 31-4.
+
+**La description détaillée du fonctionnement de MCP** *(ajoutée le 2026-10-25, décision de Guy à la fiche 32-6c,
+point 5 : « ajoute la description détaillée du fonctionnement de MCP »)* : manuels d'administration **et**
+utilisateur — ce qu'est MCP ; le parcours d'une requête, de l'agent jusqu'au journal (pair et filtre d'adresse,
+origine, clé et portées, outil, validation avant envoi, journal d'audit) ; les portées ; les outils ; les prompts ;
+la validation avant envoi ; ce que Kesh garantit et ce qu'il ne garantit pas. La 32-6c ne l'écrit pas : elle
+livre seulement le mode d'emploi du journal du filtre (`sec:mcp-journal-filtre`), auquel cette description renvoie.
+
+*(Ajouté le 2026-10-25 par l'orchestrateur, sur report des fiches 32-6 (R13) et 32-10a (C-32-10a-29) : deux textes
+publiés deviennent faux pendant l'epic et reviennent à la 32-11 — `README.md:233` (« montrées avant de partir », faux
+pour une clé `dispensée` ; « aucune écriture par l'agent dans cette version », faux dès `proposer_prompt`) et
+`website/roadmap.html:375` (mêmes deux affirmations). La 32-11 les réécrit, en recomptant les lignes à son étape 0.)*
 
 ### Release v0.16.0
 
@@ -572,6 +617,33 @@ nombre de tables du NAS) : à Guy avant la release.
   prompt de validation.)*
 - **Q6** : fait — CR #723.
 - **Q3, Q5, Q7** : pas encore de réponse ; les recommandations restent l'hypothèse de travail des fiches 32-5 et 32-6.
+
+### Réponses de Guy (2026-10-25)
+
+Toutes les recommandations soumises le 2026-10-25 sont **acceptées** (« oui pour tout ») :
+
+- **Q3, Q5, Q7 (clés MCP)** : création réservée à l'Administrateur ; portées `books:read`, `invoices:read`,
+  `contacts:read`, `documents:read`, `prompts:write` ; réglages MCP restaurés tels quels (serveur activé s'il l'était).
+- **32-6 (endpoint)** : désactivé, `/mcp` répond **exactement comme une route absente** (pas de 404 littéral) ; derrière
+  Traefik ou la passerelle Docker le filtre d'adresse ne filtre rien et **le manuel le dit** (la sécurité relève de
+  l'infrastructure) ; **pas de limite de débit** en 0.16.0 ; la règle « servi » et l'authentification lisent sur la
+  connexion ordinaire, seuls les outils sur la connexion en lecture seule (Q11 tenue).
+- **32-8 (validation)** : échéance de **24 h** ; validation par un **Administrateur** seulement ; une erreur d'outil part
+  sans validation (un bit d'information, accepté) ; **pas de purge périodique** pour l'instant.
+- **32-10a (prompts)** : les règles de l'agent de développement ajoutent « **jamais de solde, de ligne ni d'agrégat réel
+  hors de Kesh** » (« bonne idée ») ; un agent ne propose **aucune** version d'un prompt `kesh-*` ; standards en français
+  seulement ; plafond de vingt propositions en attente.
+- **32-9 (outils)** : les **noms des tiers restent visibles** (Kesh les écrit déjà dans les libellés), seuls l'IBAN, le
+  QR-IBAN et l'adresse d'envoi sont masqués sans `contacts:read`.
+- **32-8b0** : la description d'un compte bancaire refuse les caractères invisibles de plus (catégorie générale) —
+  durcissement accepté.
+- **32-6c (journal du filtre d'adresse)** : refus en `warn` ; formes et présences des en-têtes seulement, jamais leurs
+  valeurs ; journaliser aussi filtre coupé ; **pas** de conseil `X-Forwarded-For` à DSM avant vérification ; la
+  sous-section du manuel précède la section MCP de la 32-7 — « ajoute la description détaillée du fonctionnement de
+  MCP », qui revient à la **32-11** (§ 32-11). La réserve sur la déclaration du pair comme mandataire (un poste qui
+  atteint le port sans passer par le mandataire peut forger `X-Forwarded-For`) est écrite au manuel dès la 32-6c.
+- **Permission** : les agents peuvent supprimer leurs dossiers `/tmp/kesh-e2e-*` ; la règle est à poser par Guy
+  (`/permissions`), l'orchestrateur ne modifiant pas ses propres permissions.
 
 [#98]: https://github.com/guycorbaz/kesh/issues/98
 [#164]: https://github.com/guycorbaz/kesh/issues/164
