@@ -421,3 +421,55 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
   prompts ne sont pas touchés (leurs clés appartiennent à leurs stories).
 - **Écartées** : un lien retour dans les écrans des envois et des prompts — clés et tests d'autres features.
 - **Réversible** : oui.
+
+## Choix de la remédiation de la revue de code P1 (2026-10-27)
+
+### C-32-7-34 — l'écran lit la famille et le préfixe d'une entrée comme le serveur (`reseau_canonique`)
+
+- **Contexte** (revue P1, E2 = B4) : `::ffff:0.0.0.0/96` est accepté et stocké tel quel par la route, mais le filtre le
+  ramène à `0.0.0.0/0` (`crates/kesh-api/src/mcp/reseau.rs:39-49`, `reseau_canonique`) ; l'écran ne l'avertissait pas,
+  et le manuel disait que l'écran signalait « ces cas ».
+- **Retenu** : `familleEtPrefixe` (`mcp-reglages.ts`) applique la même règle — un réseau IPv6 inclus dans
+  `::ffff:0:0/96`, de préfixe ≥ 96, devient IPv4 de préfixe `p − 96` ; une adresse sans préfixe vaut `/32` ou `/128`.
+  Un petit lecteur de groupes IPv6 (`::`, queue pointée) suffit à reconnaître toutes les graphies d'une adresse
+  mappée ; il ne valide rien (le serveur valide). `aPrefixeNul` et `familleDe` en dérivent : une entrée mappée compte
+  désormais comme IPv4, comme au serveur — l'angle mort « classée IPv6 à l'écran » de l'AC-6 (b) tombe. Le manuel le
+  dit (`sec:mcp-filtre`), PDF régénéré.
+- **Écartées** : une regex des seules formes `::ffff:0.0.0.0/96` et `::ffff:0:0/96` (graphies longues manquées) ; une
+  bibliothèque d'adresses IP (dépendance pour une règle de dix lignes) ; un appel au serveur (aucune route).
+- **Réversible** : oui.
+
+### C-32-7-35 — réglages non lus : l'écran n'affiche ni état, ni champs, ni avertissements ; il offre *Réessayer*
+
+- **Contexte** (revue P1, E3) : pendant le chargement et après un échec du `GET`, l'écran affichait « Désactivé », une
+  case décochée et « personne n'est admis » — trois affirmations sur un état inconnu —, et les champs restaient
+  modifiables.
+- **Retenu** : la case, la phrase d'état, le filtre, les trois listes, les avertissements et la date ne paraissent que
+  réglages lus, dans un `<fieldset>` désactivé pendant l'envoi ; l'encadré permanent, l'adresse et les phrases de
+  restauration et de réinitialisation restent ; *Enregistrer* reste affiché, désactivé ; un bouton *Réessayer* suit
+  l'échec de lecture. Clé neuve `mcp-server-settings-retry`.
+- **Réversible** : oui.
+
+### C-32-7-36 — une expiration saisie mais illisible, ou au-delà de l'an 9999 en UTC, est refusée à l'écran
+
+- **Contexte** (revue P1, B3 = E5) : une saisie non vide que `finDeJourneeLocale` ne lit pas partait sans `expiresAt` —
+  une clé sans expiration ; `9999-12-31` sous un fuseau négatif donne une année à cinq chiffres que le serveur refuse
+  par un 400 générique.
+- **Retenu** : saisie non vide et ISO absente ou hors `AAAA-` → erreur du formulaire, sans envoi ; clé neuve
+  `mcp-server-form-expires-invalid` (« jusqu'au 30.12.9999 »).
+- **Réversible** : oui.
+
+### C-32-7-37 — un secret absent ou mal formé de la réponse 201 est une erreur, et la liste se relit
+
+- **Contexte** (revue P1, B2 = E7) : `String(r.key)` aurait affiché « undefined » comme secret.
+- **Retenu** : `createMcpKey` lève une erreur (sans la valeur reçue) si `key` n'est pas une chaîne `kesh_mcp_…` ; le
+  composant affiche le générique et, hors `ApiError`, relit la liste — la clé créée sans secret montré y paraît, à
+  révoquer.
+- **Réversible** : oui.
+
+### C-32-7-38 — le secret factice des tests est hors du format d'un secret réel
+
+- **Contexte** (revue P1, A-7) : `kesh_mcp_SECRET0123456789abcdefghijk` correspondait à `kesh_mcp_[0-9A-Za-z]{27}`.
+- **Retenu** : `kesh_mcp_SECRET_factice_0123456789` dans les trois fichiers de test ; aucun test unitaire n'exige le
+  format exact (seul l'E2E le vérifie, sur le secret réel de la base de test).
+- **Réversible** : oui.

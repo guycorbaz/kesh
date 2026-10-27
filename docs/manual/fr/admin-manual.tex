@@ -3038,8 +3038,8 @@ L'écran \emph{Serveur MCP} porte les réglages du serveur de la société : une
 -- avec docker-compose.yml : docker compose exec mariadb mariadb -uroot -p
 -- la base de Kesh est celle que nomme DATABASE_URL (après le dernier « / »)
 USE <base de Kesh>;
--- le numéro de la société
-SELECT id, name FROM companies;
+-- le numéro de la société dont la ligne est en cause
+SELECT company_id, version FROM mcp_server_settings;
 DELETE FROM mcp_server_settings WHERE company_id = <numéro de la société>;
 \end{lstlisting}
 
