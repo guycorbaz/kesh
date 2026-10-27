@@ -393,9 +393,10 @@ montage) lit d'abord ce que l'outillage **capte**, et porte un **témoin** qui p
     des tables ne verrait pas le second) ; deux sociétés → amorcées chacune ; aucune ligne ajoutée à `audit_log`.
 11. **AC-i11 — toute société créée reçoit les standards : la liste fermée des créateurs, un appel par point d'entrée**
     (C-32-10a-8 et C-32-10a-33 annotés ; validation P3, R1 ; **validation P4 : retrait** de la garde lexicale
-    `toute_creation_de_societe_est_amorcee`, dont la remédiation avait produit trois des cinq MEDIUM — H1, H2, H9 —,
+    `toute_creation_de_societe_est_amorcee`, dont la remédiation avait produit deux des cinq MEDIUM (H1, H2) et un LOW (H9) — *corrigé à l'étape 0, P5-H3* —,
     décision de l'orchestrateur). **Propriété** : après toute opération qui crée une société, la société porte les
-    standards de `STANDARDS`. **Conception** : une seule fonction, `amorcer_standards(pool, STANDARDS)` (AC-i10),
+    standards de `STANDARDS` — sauf la restauration, qui rend les prompts de la sauvegarde (AC-i13 ; étape 0, P5-H7).
+    **Conception** : une seule fonction, `amorcer_standards(pool, STANDARDS)` (AC-i10),
     idempotente et portant sur toutes les sociétés, **appelée à la fin de chaque point d'entrée** qui crée une société,
     après la validation de la transaction qui crée.
     - **La liste fermée des fonctions qui créent une société** — six fonctions, chacune avec son unique instruction
@@ -1022,7 +1023,7 @@ d'une, c'est un écart déclaré, qui touche `routes` et l'audit.
 - [ ] **T-i3** — sauvegarde, export, remise à zéro, restauration jouée ; le classeur `sql_lexical` sorti de
   `post_restore.rs` et les gardes des écritures (AC-i12 à AC-i14).
 - [ ] **T-i4** — P5, P6, P7, P8 (AC-i15) ; textes et PDF (AC-i16).
-- [ ] **T-i5** — mutations Mi1 à Mi26, gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
+- [ ] **T-i5** — mutations Mi1 à Mi28 (Mi23 retirée ; étape 0, P5-H4), gates ; Dev Agent Record (n'affirmer que ce qui a tourné, avec périmètre).
 
 ### 32-10a-ii
 - [ ] **T-ii0** — étape 0 : 32-10a-i fusionnée ; schéma `2025-11-25` (`Prompt`, `GetPromptResult`) relevé, source
@@ -1152,8 +1153,9 @@ Tests hors mutations, nommés au Dev Agent Record : `regles_de_guy_presentes` et
 - **Entre une restauration et le démarrage suivant** (C-32-10a-8 annoté, C-32-10a-11) : après une restauration, les
   standards sont ceux de la sauvegarde (un standard altéré y est servi s'il est valide). La remise à zéro, elle,
   ré-amorce aussitôt (AC-i11) ; si cette réinstallation échoue, aucun prompt n'est servi jusqu'au démarrage suivant, et
-  seul le journal du serveur le dit. Une société créée par l'assistant sur une base sans société (fait 3) n'a ses
-  standards qu'au démarrage suivant.
+  seul le journal du serveur le dit. Une société créée par l'assistant sur une base sans société (fait 3) reçoit ses
+  standards à la fin de `set_language` ; seul un échec de cet amorçage, non fatal, les reporte au démarrage suivant
+  (étape 0, P5-H2).
 - **L'invisibilité est jugée par la catégorie générale d'Unicode 17.0.0** (la version de `unicode-properties 0.1.4`) et
   deux listes écrites (AC-ii1) : un caractère attribué après cette version est `Cn` pour la crate, donc refusé ; passe
   encore un invisible d'une catégorie autre que Cf, Co, Cn, hors des listes. Les **homoglyphes** (un `а` cyrillique pour
