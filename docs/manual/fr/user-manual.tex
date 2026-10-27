@@ -3239,6 +3239,56 @@ nomme les utilisateurs rattachés, les clés d'API et les clés du serveur MCP
 révoquées (manuel d'administration, § \emph{Le serveur MCP}), et les sociétés provisoires supprimées.
 
 %%─────────────────────────────────────────────────────────────────────────────
+\section{L'agent IA et le serveur MCP}\label{sec:agent-mcp}
+
+Depuis la 0.16.0, un \textbf{agent IA} --- un assistant comme Claude Code, auquel on pose des
+questions en langage courant --- peut lire vos livres par le \textbf{serveur MCP} de Kesh.
+\emph{MCP} (\emph{Model Context Protocol}) est la langue commune par laquelle l'agent demande à
+Kesh ce qu'il sait faire, puis lui demande une donnée~: le bilan d'un exercice, les écritures
+d'une période, une facture. Le serveur est \textbf{désactivé par défaut}~; c'est un
+Administrateur qui l'active et qui remet à l'agent une \textbf{clé} dédiée (manuel
+d'administration, § \emph{Le serveur MCP}).
+
+\paragraph{Ce que l'agent peut lire.} Ce que les \textbf{portées} de sa clé lui ouvrent~: les
+livres (\texttt{books:read}), les factures (\texttt{invoices:read}), le carnet d'adresses
+(\texttt{contacts:read}), la liste des pièces importées (\texttt{documents:read}). La liste
+exacte des outils de chaque portée est au manuel d'administration, § \emph{Les outils du
+serveur MCP et leurs portées}. \textbf{L'agent ne modifie pas les livres}~: aucun outil n'y
+écrit. Une clé qui porte \texttt{prompts:write} peut seulement \textbf{proposer} un prompt, qui
+n'est jamais servi avant qu'un Administrateur l'ait approuvé, et qu'il peut aussi refuser.
+
+\paragraph{Ce qu'on vous montre avant l'envoi.} Sous une clé à validation \textbf{requise} (le
+défaut), rien de ce que l'agent demande ne lui parvient tout de suite~: Kesh lui répond
+«~envoi n°~N en attente~», et un Administrateur voit, à l'écran \emph{Envois du serveur MCP},
+le \textbf{texte exact} qui partira. Il l'envoie tel quel, le modifie avant de l'envoyer, ou le
+refuse~; l'agent relit ensuite ce qui a été validé, et seulement cela. Sous une clé
+\textbf{dispensée}, les données partent \textbf{sans être montrées}~; chaque appel reste
+journalisé.
+
+\paragraph{Invoquer un prompt.} Un \emph{prompt} est une consigne toute faite, tenue dans Kesh,
+que vous choisissez de donner à l'agent --- par exemple \texttt{kesh-assistant}, qui lui
+rappelle de lire en demandant en cas de doute. Dans Claude Code, il se choisit comme une
+commande, sous la forme \texttt{/kesh:kesh-assistant (MCP)}, où \texttt{kesh} est le nom donné
+au serveur dans Claude Code \emph{(non éprouvé~: forme tirée de la documentation de Claude
+Code)}. Kesh ne l'impose jamais à l'agent.
+
+\paragraph{Reconnaître l'activité de l'agent.} Au journal d'audit (\S\ref{sec:tracabilite}),
+chaque appel de l'agent paraît comme «~Outil du serveur MCP appelé~», \textbf{au nom de
+l'Administrateur qui a créé la clé}, avec le numéro de la clé au détail~; chaque décision sur
+un envoi, comme «~Envoi du serveur MCP validé~» ou «~refusé~». \keshAttention\ Une
+consultation de rapport par l'agent paraît comme «~Rapport généré~», exactement comme une
+consultation faite à l'écran~; seule la ligne «~Outil du serveur MCP appelé~» de même heure
+permet de les rapprocher (limite connue, issue \#776).
+
+\paragraph{Ce que Kesh garantit, et ce qu'il ne garantit pas.} Sous une clé requise, ce qui
+part est exactement ce qu'un Administrateur a vu et accepté. Kesh ne garantit pas que l'agent
+comprenne juste, ni qu'il ne suive pas une consigne cachée dans un libellé saisi par un tiers~:
+Kesh la lui signale comme une donnée, il ne peut pas l'en empêcher. Ce qui part vers l'agent
+part, le plus souvent, chez le fournisseur de son modèle, hors de Kesh. Une clé d'API donnée au
+même agent lit sans aucune validation. Le détail est au manuel d'administration, § \emph{Comment
+fonctionne le serveur MCP}.
+
+%%─────────────────────────────────────────────────────────────────────────────
 \section{FAQ et dépannage utilisateur}
 
 \subsection{Mes écritures ne se balancent pas, que faire ?}

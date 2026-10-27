@@ -180,11 +180,11 @@ const created = await fetch(`${BASE}/contacts`, {
 
 ### 6.4 Agent IA / serveur MCP
 
-L'API de Kesh est consommable par **tout client HTTP**, donc par tout agent IA ou serveur MCP (*Model Context Protocol*) capable d'appeler des API REST avec un en-tête d'authentification.
+> ℹ️ **Depuis la 0.16.0, Kesh a son propre serveur MCP** (*Model Context Protocol*), sur `/mcp`, avec ses propres clés `kesh_mcp_…` : désactivé par défaut, portées fines, données montrées à un Administrateur avant de partir sous une clé à validation requise, chaque appel journalisé. C'est la voie à préférer pour brancher un agent IA ; elle est décrite au manuel d'administration, § *Le serveur MCP*. Une clé d'API (`kesh_pat_…`) y est refusée (`401`), comme une clé `kesh_mcp_…` l'est ici (§ 2).
 
-> ℹ️ **Il n'existe pas de serveur MCP « Kesh-natif » en v0.2.** Pour exposer Kesh à un agent, utilisez un serveur MCP HTTP générique (ou un client d'API custom) et injectez-y l'en-tête `Authorization`.
+L'API de Kesh reste consommable par **tout client HTTP**, donc aussi par un serveur MCP générique capable d'appeler des API REST avec un en-tête d'authentification. Cette voie reste possible, mais elle passe **sans** la validation avant envoi ni le journal des appels du serveur MCP : l'agent lit tout ce que la clé d'API ouvre, sans que personne ne voie ce qui part.
 
-Exemple de configuration d'un serveur MCP HTTP générique pointant vers Kesh (le format exact dépend du serveur MCP utilisé) :
+Exemple de configuration d'un serveur MCP HTTP générique pointant vers l'API de Kesh — **cette voie-là seulement**, non le serveur MCP de Kesh (le format exact dépend du serveur MCP utilisé) :
 
 ```json
 {
@@ -830,7 +830,7 @@ La même sémantique de remplacement s'applique à **`PUT /api/v1/invoices/:id`*
 >
 > ⚠️ **Dans quelle version ?** Cette fermeture est livrée depuis la **v0.10.0** (entrée [#167](https://github.com/guycorbaz/kesh/issues/167) du [CHANGELOG](../CHANGELOG.md)). Jusqu'à la v0.9.0 incluse, une clé `read-write` créée par un Administrateur atteint les routes d'administration : sur une telle version, traitez une clé d'origine Administrateur comme un secret d'administrateur, et mettez Kesh à jour.
 
-Hors périmètre (non planifié pour v0.2) : OAuth/SSO, webhooks, serveur MCP Kesh-natif (cf. `epic-17.md` — « Hors scope »).
+Hors périmètre (non planifié pour v0.2) : OAuth/SSO, webhooks (cf. `epic-17.md` — « Hors scope »).
 
 ---
 
